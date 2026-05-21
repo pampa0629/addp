@@ -365,7 +365,7 @@ batch checkpoint 最小结构：
 1. **增强 Parquet whole scope 读取能力**
    真实 NFS / MinIO Parquet dataset 的 `layout=whole` Transfer 链路已验收通过，Hive-style 分区字段已能进入 schema 和 row。下一步可以在现有 `ScopeTableReaderProvider` 基础上继续补 row group 和 predicate。
 
-   `field_selection` 是 table data type 的通用读取选项，表达调用方希望输出哪些字段。它不是某个格式的私有能力，也不是 GIS projection / CRS 投影。当前接口已落到 `common/format.ParseOptions.FieldSelection`；Parquet single / scope reader 已作为第一个 provider 消费该通用选项；Transfer planner 已能从 `field_mapping` 的 `project` 模式推导 source `FieldSelectionOptions`，并分别传给 encoded source parse options 与 native source read options。
+   `field_selection` 是 table data type 的通用读取选项，表达调用方希望输出哪些字段。它不是某个格式的私有能力，也不是 GIS projection / CRS 投影。当前接口已落到 `common/format.ParseOptions.FieldSelection`；Parquet、CSV、JSON、Shapefile reader 已消费该通用选项；Transfer planner 已能从 `field_mapping` 的 `project` 模式推导 source `FieldSelectionOptions`，并分别传给 encoded source parse options 与 native source read options。
 
    当前接口口径：
 
@@ -400,6 +400,7 @@ batch checkpoint 最小结构：
    - Transfer planner 仅从 `field_mapping mode=project` 的显式 `source` 字段推导读取字段；默认值 / 常量目标字段不进入读取字段；`mode=passthrough` 必须保留源 row 全字段，因此不下推 `field_selection`。
    - 空间字段不由 reader 隐式保留。若调用方需要 geometry 字段，必须显式加入 `Include`；CRS / 坐标投影仍属于 spatial capability 或 transform，不得和 `field_selection` 混用。
    - 第一版只支持 `Include`，暂不提供 `Exclude`，避免 include / exclude 优先级和隐式保留字段规则复杂化。
+   - 如果 `field_selection` 排除了 geometry 字段，返回的 `SpatialInfo` 也必须同步移除，避免 schema 指向不存在字段。
    - Parquet scope reader 打开单个文件时不会把 scope 级分区字段传入单文件 reader；它会先合并文件字段和 Hive-style 分区字段，再统一应用 `field_selection`。
 
 2. **补 Transfer 验收用例沉淀**

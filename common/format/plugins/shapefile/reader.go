@@ -55,6 +55,10 @@ func (plugin *Plugin) OpenMultiTableReader(ctx context.Context, reader contentio
 			if err != nil {
 				return nil, fmt.Errorf("describe indexed shapefile ref table: %w", err)
 			}
+			schema, err = format.ApplyFieldSelectionToTableInfo(schema, opts.FieldSelection)
+			if err != nil {
+				return nil, err
+			}
 			return &indexedMultiTableReader{
 				source: source,
 				schema: schema,
@@ -117,7 +121,7 @@ func (r *indexedMultiTableReader) ReadRows(ctx context.Context, limit int) ([]ma
 	if len(rows) < limit {
 		r.done = true
 	}
-	return rows, nil
+	return format.ApplyFieldSelectionToRows(rows, r.opts.FieldSelection), nil
 }
 
 func (r *indexedMultiTableReader) Close(context.Context) error {
@@ -158,7 +162,7 @@ func (r *sequentialMultiTableReader) ReadRows(ctx context.Context, limit int) ([
 	if err := r.reader.Err(); err != nil {
 		return rows, fmt.Errorf("read shapefile rows: %w", err)
 	}
-	return rows, nil
+	return format.ApplyFieldSelectionToRows(rows, r.opts.FieldSelection), nil
 }
 
 func (r *sequentialMultiTableReader) Close(context.Context) error {

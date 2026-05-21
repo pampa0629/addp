@@ -404,6 +404,53 @@ func TestShapefileTableReaderUsesCallGeometryFieldOption(t *testing.T) {
 	}
 }
 
+func TestShapefileFieldSelection(t *testing.T) {
+	t.Parallel()
+
+	base := createPointShapefileRows(t, []string{"a", "b"})
+	reader := newLocalRefReader(base)
+	refs := reader.refs()
+	plugin := NewPlugin(nil)
+	opts := format.DefaultParseOptions()
+	opts.FieldSelection = &format.FieldSelectionOptions{Include: []string{"NAME", "geometry"}}
+
+	info, err := plugin.DescribeMultiTable(context.Background(), reader, refs, opts)
+	if err != nil {
+		t.Fatalf("DescribeMultiTable() error = %v", err)
+	}
+	if len(info.Fields) != 2 || info.Fields[0].Name != "NAME" || info.Fields[1].Name != "geometry" {
+		t.Fatalf("fields = %#v, want NAME,geometry", info.Fields)
+	}
+
+	rows, err := plugin.SampleMultiTable(context.Background(), reader, refs, 0, 1, opts)
+	if err != nil {
+		t.Fatalf("SampleMultiTable() error = %v", err)
+	}
+	if len(rows) != 1 || len(rows[0]) != 2 || rows[0]["NAME"] != "a" {
+		t.Fatalf("rows = %#v, want selected NAME/geometry", rows)
+	}
+
+	refReader := newOpenOnlyRefReader(base)
+	tableReader, err := plugin.OpenMultiTableReader(context.Background(), refReader, refReader.refs(), opts)
+	if err != nil {
+		t.Fatalf("OpenMultiTableReader() error = %v", err)
+	}
+	defer tableReader.Close(context.Background())
+	readRows, err := tableReader.ReadRows(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("ReadRows() error = %v", err)
+	}
+	if len(readRows) != 1 || len(readRows[0]) != 2 {
+		t.Fatalf("read rows = %#v, want selected rows", readRows)
+	}
+	if _, ok := readRows[0]["NAME"]; !ok {
+		t.Fatalf("read rows = %#v, want NAME", readRows)
+	}
+	if _, ok := readRows[0]["geometry"]; !ok {
+		t.Fatalf("read rows = %#v, want geometry", readRows)
+	}
+}
+
 func TestShapefilePluginDoesNotFallbackWhenIndexedRequiredRefReadFails(t *testing.T) {
 	t.Parallel()
 

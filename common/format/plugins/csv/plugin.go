@@ -107,9 +107,11 @@ func (p *Plugin) effectiveOptions(options *format.ParseOptions) *format.ParseOpt
 	copied.ContentIndexStep = options.ContentIndexStep
 	copied.HasHeader = options.HasHeader
 	copied.SpatialRefSys = options.SpatialRefSys
+	copied.GeometryEncoding = options.GeometryEncoding
 	copied.SheetName = options.SheetName
 	copied.SheetIndex = options.SheetIndex
 	copied.TableSample = options.TableSample
+	copied.FieldSelection = options.FieldSelection
 	if options.Delimiter != 0 {
 		copied.Delimiter = options.Delimiter
 	}
@@ -220,7 +222,7 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 		tableInfo.ContentIndex = &format.ContentIndexInfo{Table: index}
 	}
 
-	return tableInfo, nil
+	return format.ApplyFieldSelectionToTableInfo(tableInfo, opts.FieldSelection)
 }
 
 // SampleTable 读取 CSV 表格样本。
@@ -281,7 +283,7 @@ func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit
 		records = append(records, row)
 	}
 
-	return records, nil
+	return format.ApplyFieldSelectionToRows(records, opts.FieldSelection), nil
 }
 
 func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, schema *format.TableInfo, options *format.WriteOptions) (format.TableWriter, error) {
@@ -345,11 +347,15 @@ func (p *Plugin) OpenTableReader(ctx context.Context, input io.Reader, options *
 		return nil, fmt.Errorf("csv table reader requires at least one field")
 	}
 
+	schema, err := format.ApplyFieldSelectionToTableInfo(&format.TableInfo{Name: "csv_data", Fields: fields}, opts.FieldSelection)
+	if err != nil {
+		return nil, err
+	}
 	return &tableReader{
 		reader:  reader,
 		plugin:  p,
 		headers: fieldNames(fields),
-		schema:  &format.TableInfo{Name: "csv_data", Fields: fields},
+		schema:  schema,
 	}, nil
 }
 
@@ -404,7 +410,18 @@ func (r *tableReader) ReadRows(ctx context.Context, limit int) ([]map[string]int
 		}
 		rows = append(rows, row)
 	}
-	return rows, nil
+	return format.ApplyFieldSelectionToRows(rows, r.schemaFieldSelection()), nil
+}
+
+func (r *tableReader) schemaFieldSelection() *format.FieldSelectionOptions {
+	if r == nil || r.schema == nil || len(r.schema.Fields) == 0 {
+		return nil
+	}
+	include := make([]string, 0, len(r.schema.Fields))
+	for _, field := range r.schema.Fields {
+		include = append(include, field.Name)
+	}
+	return &format.FieldSelectionOptions{Include: include, MissingFieldPolicy: format.MissingFieldIgnore}
 }
 
 func (r *tableReader) Close(ctx context.Context) error {

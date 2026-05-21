@@ -150,6 +150,7 @@ func (p *Plugin) OpenTableReader(ctx context.Context, input io.Reader, options *
 	return &tableReader{
 		iter:          iter,
 		geometryField: geometryField,
+		selection:     optionsFieldSelection(options),
 	}, nil
 }
 
@@ -314,7 +315,7 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 		tableInfo.ContentIndex = &format.ContentIndexInfo{Table: index}
 	}
 
-	return tableInfo, nil
+	return format.ApplyFieldSelectionToTableInfo(tableInfo, opts.FieldSelection)
 }
 
 // SampleTable 读取 JSON 记录集合样本数据。
@@ -376,7 +377,7 @@ func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit
 		read++
 	}
 
-	return records, nil
+	return format.ApplyFieldSelectionToRows(records, optionsFieldSelection(options)), nil
 }
 
 func (p *Plugin) samplePositionedTable(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions, geometryField string) ([]map[string]interface{}, error) {
@@ -427,12 +428,13 @@ func (p *Plugin) samplePositionedTable(ctx context.Context, input io.Reader, off
 		}
 		records = append(records, feature.ToRecord(geometryField))
 	}
-	return records, nil
+	return format.ApplyFieldSelectionToRows(records, optionsFieldSelection(options)), nil
 }
 
 type tableReader struct {
 	iter          *iterator
 	geometryField string
+	selection     *format.FieldSelectionOptions
 	schema        *format.TableInfo
 	closed        bool
 }
@@ -474,9 +476,13 @@ func (r *tableReader) ReadRows(ctx context.Context, limit int) ([]map[string]int
 		rows = append(rows, feature.ToRecord(r.geometryField))
 	}
 	if len(rows) > 0 {
-		r.schema = mergeTableInfo(r.schema, builder.Build())
+		info := builder.Build()
+		if selected, err := format.ApplyFieldSelectionToTableInfo(info, r.selection); err == nil {
+			info = selected
+		}
+		r.schema = mergeTableInfo(r.schema, info)
 	}
-	return rows, nil
+	return format.ApplyFieldSelectionToRows(rows, r.selection), nil
 }
 
 func (r *tableReader) Close(ctx context.Context) error {
@@ -890,6 +896,13 @@ func geometryFieldFromOptions(opts *format.ParseOptions, fallback string) string
 		return strings.TrimSpace(v)
 	}
 	return fallback
+}
+
+func optionsFieldSelection(opts *format.ParseOptions) *format.FieldSelectionOptions {
+	if opts == nil {
+		return nil
+	}
+	return opts.FieldSelection
 }
 
 func init() {

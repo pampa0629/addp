@@ -73,6 +73,59 @@ func TestCSVPlugin_SampleTable(t *testing.T) {
 	}
 }
 
+func TestCSVPlugin_FieldSelection(t *testing.T) {
+	csvData := `id,name,value
+1,Test,100
+2,Sample,200`
+	opts := format.DefaultParseOptions()
+	opts.FieldSelection = &format.FieldSelectionOptions{Include: []string{"name", "id"}}
+	plugin := NewPlugin(nil)
+
+	info, err := plugin.DescribeTable(context.Background(), strings.NewReader(csvData), opts)
+	if err != nil {
+		t.Fatalf("DescribeTable failed: %v", err)
+	}
+	if len(info.Fields) != 2 || info.Fields[0].Name != "name" || info.Fields[1].Name != "id" {
+		t.Fatalf("fields = %#v, want name,id", info.Fields)
+	}
+
+	rows, err := plugin.SampleTable(context.Background(), strings.NewReader(csvData), 0, 1, opts)
+	if err != nil {
+		t.Fatalf("SampleTable failed: %v", err)
+	}
+	if len(rows) != 1 || len(rows[0]) != 2 || rows[0]["name"] != "Test" {
+		t.Fatalf("rows = %#v, want selected name/id", rows)
+	}
+	if _, ok := rows[0]["value"]; ok {
+		t.Fatalf("rows = %#v, value should be pruned", rows)
+	}
+
+	reader, err := plugin.OpenTableReader(context.Background(), strings.NewReader(csvData), opts)
+	if err != nil {
+		t.Fatalf("OpenTableReader failed: %v", err)
+	}
+	defer reader.Close(context.Background())
+	if schema := reader.Schema(); schema == nil || len(schema.Fields) != 2 || schema.Fields[0].Name != "name" {
+		t.Fatalf("schema = %#v, want selected fields", schema)
+	}
+	readRows, err := reader.ReadRows(context.Background(), 2)
+	if err != nil {
+		t.Fatalf("ReadRows failed: %v", err)
+	}
+	if len(readRows) != 2 || len(readRows[0]) != 2 || readRows[0]["name"] != "Test" {
+		t.Fatalf("read rows = %#v, want selected rows", readRows)
+	}
+}
+
+func TestCSVPlugin_FieldSelectionMissingFieldErrors(t *testing.T) {
+	opts := format.DefaultParseOptions()
+	opts.FieldSelection = &format.FieldSelectionOptions{Include: []string{"missing"}}
+	_, err := NewPlugin(nil).DescribeTable(context.Background(), strings.NewReader("id,name\n1,A\n"), opts)
+	if err == nil {
+		t.Fatal("DescribeTable succeeded, want missing field error")
+	}
+}
+
 func TestCSVPlugin_DescribeFormat(t *testing.T) {
 	plugin := NewPlugin(nil)
 	reader := strings.NewReader("id,name\n1,Alice\n")

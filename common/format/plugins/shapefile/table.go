@@ -20,14 +20,18 @@ func (plugin *Plugin) DescribeMultiTable(ctx context.Context, reader contentio.R
 	defer cleanup()
 
 	opts := plugin.resolveMaterializedOptions(basePath, options)
-	return plugin.describeTableInfoFromHeaders(basePath, refs, opts)
+	info, err := plugin.describeTableInfoFromHeaders(basePath, refs, opts)
+	if err != nil {
+		return nil, err
+	}
+	return format.ApplyFieldSelectionToTableInfo(info, opts.FieldSelection)
 }
 
 func (plugin *Plugin) SampleMultiTable(ctx context.Context, reader contentio.Reader, refs []format.RelatedRef, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
 	opts := plugin.resolveOptions(options)
 	if rows, ok, err := plugin.sampleMultiTableIndexed(ctx, reader, refs, offset, limit, opts); ok {
 		if err == nil {
-			return rows, nil
+			return format.ApplyFieldSelectionToRows(rows, opts.FieldSelection), nil
 		}
 		if !isIndexedSampleFallbackError(err) {
 			return nil, err
@@ -43,13 +47,17 @@ func (plugin *Plugin) SampleMultiTable(ctx context.Context, reader contentio.Rea
 	applyMaterializedSidecarOptions(basePath, opts)
 	if rows, ok, err := plugin.sampleMaterializedTableIndexed(ctx, basePath, refs, offset, limit, opts); ok {
 		if err == nil {
-			return rows, nil
+			return format.ApplyFieldSelectionToRows(rows, opts.FieldSelection), nil
 		}
 		if !isIndexedSampleFallbackError(err) {
 			return nil, err
 		}
 	}
-	return plugin.sampleTableFromPath(ctx, basePath+extSHP, offset, limit, opts)
+	rows, err := plugin.sampleTableFromPath(ctx, basePath+extSHP, offset, limit, opts)
+	if err != nil {
+		return nil, err
+	}
+	return format.ApplyFieldSelectionToRows(rows, opts.FieldSelection), nil
 }
 
 func (plugin *Plugin) describeTableInfoFromHeaders(basePath string, refs []format.RelatedRef, opts *format.ParseOptions) (*format.TableInfo, error) {

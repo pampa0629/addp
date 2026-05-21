@@ -29,6 +29,9 @@ func ApplyFieldSelectionToTableInfo(info *TableInfo, selection *FieldSelectionOp
 	copied := *info
 	copied.Fields = fields
 	copied.PrimaryKey = selectedPrimaryKeys(info.PrimaryKey, seen)
+	if copied.SpatialInfo != nil && !seen[copied.SpatialInfo.GeometryColumn] {
+		copied.SpatialInfo = nil
+	}
 	return &copied, nil
 }
 
