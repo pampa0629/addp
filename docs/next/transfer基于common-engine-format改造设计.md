@@ -239,7 +239,7 @@ Manager 的上传导入入口目前用于“用户上传一个 Shapefile ZIP，�
 | CSV / TSV | `TableReaderProvider` 已有 | `TableWriterProvider` 已有 | table transfer 主链路已使用。 |
 | JSON / JSONL | `TableReaderProvider` 已有 | `TableWriterProvider` 已有 | 支持 JSON array、JSON Lines。 |
 | GeoJSON encoding | 复用 JSON table reader / writer | JSON writer 支持 `spatial.target_encoding=geojson` | GeoJSON 不是顶层独立格式，而是 JSON 的空间编码策略。 |
-| Parquet | `TableReaderProvider` 已有；`ScopeTableReaderProvider` 已支持 dataset / partitioned table 连续读取，并可从 Hive-style `key=value` 路径补充分区字段 | 最小 `TableWriterProvider` 已有 | 单文件和 whole scope table transfer 已有主链路；row group 性能、predicate / field selection 仍待增强。 |
+| Parquet | `TableReaderProvider` 已有；`ScopeTableReaderProvider` 已支持 dataset / partitioned table 连续读取，并可从 Hive-style `key=value` 路径补充分区字段 | 最小 `TableWriterProvider` 已有 | 单文件和 whole scope table transfer 已有主链路；已支持通用 `field_selection`，row group 性能仍待增强，`row_filter` / predicate 暂缓。 |
 | Shapefile | `MultiTableReaderProvider` 已有，Transfer 主链路优先使用；info / sample 保留给 Meta / Manager / 探查 | `MultiTableWriterProvider` 已有 | multi ref 读写已可用于 Transfer；range source 下按 `.shx` 读取索引窗口、`.dbf` 连续属性块和 `.shp` 记录窗口；非 range source materialize 到本地后也继续使用本地 `.shx` 索引，只有缺索引或不支持 shape 类型时才回退顺序读取。 |
 
 ### 4.3 Transfer
@@ -272,6 +272,13 @@ Manager 的上传导入入口目前用于“用户上传一个 Shapefile ZIP，�
 | MinIO Shapefile -> PostgreSQL table | 已真实验收通过 | 对象存储 multi ref 读侧可导入 native table；空间行值可走 EWKB。 |
 | NFS Shapefile -> MinIO Shapefile | 已手动验证通过，默认测试已覆盖核心 format 链路 | multi ref 正确生成；Meta deep scan 后可得到字段、行数、format info、spatial capabilities；executor 半集成测试已覆盖 Shapefile encoded source -> Shapefile encoded target，并校验 refs、`SpatialInfo.Dimension=3` 和 Z WKT。 |
 | Parquet dataset / partitioned table -> CSV | 已通过 executor 单元链路验证 | `layout=whole` source 通过 `ScopeTableReaderProvider` 递归读取 scope 下 `.parquet` 文件，不使用 sample reader 冒充全量读取。 |
+| MinIO Parquet dataset -> NFS Parquet | 已真实验收通过 | 2026-05-21 手动回归，读取分区 Parquet dataset 146180 行，目标路径自动补齐为 `.parquet`，写后 deep scan 生成 NFS meta item。 |
+| NFS Parquet dataset -> MinIO Parquet | 已真实验收通过 | 2026-05-21 手动回归，源 3 个 part 文件完整递归读取 219270 行，目标对象自动补齐为 `.parquet`，写后 deep scan 生成 MinIO meta item。 |
+
+`layout=whole` 真实回归中已经修正两条边界：
+
+- 对象存储分区目录下的 Parquet dataset 需要在直接父 prefix 之外，额外按分区根 prefix 形成 whole-scope 候选。
+- Transfer planner 消费对象存储 whole item 时，source scope 优先使用 `attributes.storage.physical_path`，再回退到 `storage.path + storage.name` / `storage.path`，避免把父 prefix 当作完整读取范围。
 
 ## 六、写后 Meta 扫描规则
 
@@ -352,7 +359,7 @@ batch checkpoint 最小结构：
 | schema evolution | PostgreSQL 写侧可 ensure/create table，但字段变化、类型演进和目标表差异处理仍未完善。 |
 | 并行读取 | PostgreSQL cursor session 已有，但分区并行读取、稳定快照和多 worker 协调仍未补。 |
 | 其他数据库写侧 | MySQL、Doris、ClickHouse 等 common writer 仍待按真实需求补。 |
-| Parquet 高性能 | 当前是最小 reader / writer，已支持通用 `field_selection`；row group reader、predicate 仍待补。 |
+| Parquet 高性能 | 当前是最小 reader / writer，已支持通用 `field_selection`；row group reader 仍待补；`row_filter` / predicate 暂缓。 |
 | Shapefile 读取 | 连续 `MultiTableReaderProvider` 已接入 Transfer 主链路；indexed reader 支持 range source 和本地 materialized fallback，当前覆盖 Point / Polyline / Polygon / MultiPoint，Z 类型已完成主要链路验收。 |
 | non-table data type | document / media / container / graph 还未形成 Transfer 主链路。 |
 | stream / CDC | common engine 尚无稳定 `StreamReadableProvider`、`CDCReadableProvider`、change event / offset 标准。 |
@@ -363,7 +370,7 @@ batch checkpoint 最小结构：
 ### 近期优先级
 
 1. **增强 Parquet whole scope 读取能力**
-   真实 NFS / MinIO Parquet dataset 的 `layout=whole` Transfer 链路已验收通过，Hive-style 分区字段已能进入 schema 和 row。下一步可以在现有 `ScopeTableReaderProvider` 基础上继续补 row group 和 predicate。
+   真实 NFS / MinIO Parquet dataset 的 `layout=whole` Transfer 链路已验收通过，Hive-style 分区字段已能进入 schema 和 row。下一步可以在现有 `ScopeTableReaderProvider` 基础上继续补 row group 读取能力。
 
    `field_selection` 是 table data type 的通用读取选项，表达调用方希望输出哪些字段。它不是某个格式的私有能力，也不是 GIS projection / CRS 投影。当前接口已落到 `common/format.ParseOptions.FieldSelection`；Parquet、CSV、JSON、Shapefile reader 已消费该通用选项；Transfer planner 已能从 `field_mapping` 的 `project` 模式推导 source `FieldSelectionOptions`，并分别传给 encoded source parse options 与 native source read options。
 
@@ -409,66 +416,11 @@ batch checkpoint 最小结构：
    - `mode=passthrough` 不下推 `field_selection`，保持源 row 全字段，避免隐式丢字段。
    - 已覆盖 NFS / MinIO encoded source 场景；CSV、JSON、Shapefile、Parquet reader 均已消费通用 `field_selection`。
 
-   `row_filter` 接口设计草案：
+   `row_filter` 暂缓：
 
-   `row_filter` 是 table data type 的通用读取语义，表达调用方希望返回哪些行；“predicate pushdown”只是 provider 的优化实现方式。外部接口不使用 SQL 字符串，也不暴露 Parquet row group 作为通用读取参数，避免把调用方绑到单一格式。
-
-   建议第一版接口口径：
-
-   ```go
-   type ParseOptions struct {
-       FieldSelection *FieldSelectionOptions
-       RowFilter      *RowFilterOptions
-   }
-
-   type RowFilterOptions struct {
-       Expr              *RowFilterExpr
-       MissingFieldPolicy MissingFieldPolicy
-       UnsupportedPolicy UnsupportedFilterPolicy
-   }
-
-   type RowFilterExpr struct {
-       Op       RowFilterOp
-       Field    string
-       Value    interface{}
-       Values   []interface{}
-       Children []RowFilterExpr
-   }
-
-   type RowFilterOp string
-
-   const (
-       RowFilterAnd       RowFilterOp = "and"
-       RowFilterOr        RowFilterOp = "or"
-       RowFilterNot       RowFilterOp = "not"
-       RowFilterEq        RowFilterOp = "eq"
-       RowFilterNe        RowFilterOp = "ne"
-       RowFilterLt        RowFilterOp = "lt"
-       RowFilterLte       RowFilterOp = "lte"
-       RowFilterGt        RowFilterOp = "gt"
-       RowFilterGte       RowFilterOp = "gte"
-       RowFilterIn        RowFilterOp = "in"
-       RowFilterIsNull    RowFilterOp = "is_null"
-       RowFilterIsNotNull RowFilterOp = "is_not_null"
-   )
-   ```
-
-   第一版边界：
-
-   - `row_filter` 必须保证语义正确。provider 可以下推，也可以读全后用 common evaluator 过滤；不得静默忽略。
-   - `UnsupportedPolicy` 默认 `error`。如果调用方显式允许 `scan`，provider 可读全后过滤，但最终返回 row 必须满足过滤条件。
-   - `MissingFieldPolicy` 默认 `error`，与 `field_selection` 保持一致；`ignore` 仅适合调用方明确接受某些字段不存在的探查场景。
-   - `row_filter` 只表达行过滤，不表达字段重命名、派生字段、空间坐标转换或排序分页。
-   - 空间谓词第一版不进入 `row_filter`。空间相交、包含、距离等应等空间能力和 transform 边界稳定后再设计。
-   - `row_filter` 与 `field_selection` 可同时存在。过滤字段不要求一定出现在 `FieldSelection.Include` 中；reader 可以为了过滤内部读取额外字段，但输出 schema / row 仍必须按 `field_selection` 裁剪。
-
-   Parquet row group 设计边界：
-
-   - row group 是 Parquet provider 的物理优化单元，不作为第一版通用 `ParseOptions` 字段暴露给 Transfer。
-   - Parquet single / scope reader 可根据 footer statistics、dictionary、null count、row group row count 对 `row_filter` 做行组跳过。
-   - Parquet scope reader 可以先用 Hive-style 分区字段做 scope / file 级裁剪，再打开具体 Parquet 文件读取 row group。
-   - 即使命中 row group pushdown，也要保留 residual filter 校验，避免因为统计信息缺失、类型转换或边界值问题返回不满足条件的 row。
-   - 后续如果要做并行读取或 checkpoint 恢复，再单独设计 `TableReadSplit` / `ReadPartition` 这类物理执行计划对象，不塞进 `row_filter`。
+   - 已讨论 `row_filter` 类似 SQL `WHERE` 的通用行过滤价值，但当前需求收益和接口复杂度不匹配，先不进入实现。
+   - 文档不保留详细接口草案，避免新会话误以为已经确认。
+   - 后续只有在出现明确的按条件 Transfer、增量同步、Manager 条件预览或质量规则复用需求时，再重新拉起设计。
 
 2. **补 Transfer 验收用例沉淀**
    将已通过的 PostgreSQL spatial table -> NFS / MinIO Shapefile、MinIO Shapefile -> PostgreSQL table、NFS Shapefile -> MinIO Shapefile 继续形成可重复的集成测试或操作清单。
@@ -481,7 +433,7 @@ batch checkpoint 最小结构：
 
 ### 中期优先级
 
-1. Parquet row group reader / writer 增强，支持 field selection、predicate 和 row group 级读取。
+1. Parquet row group reader / writer 增强，优先解决大文件读取性能；`row_filter` / predicate 另行讨论。
 2. PostgreSQL schema evolution：字段新增、类型映射、目标表差异处理。
 3. MySQL / Doris / ClickHouse 写侧 common writer，按真实链路逐个补，不一次性铺开。
 4. document / media raw copy：先走 content reader / writer，不做格式转换。
