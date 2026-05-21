@@ -768,8 +768,6 @@ const getCapabilitySections = (caps) => {
   const sections = []
   if (hasStorageCapability(caps)) sections.push(t('system.engine.dialog.capabilities.storageCapabilities'))
   if (hasComputeCapability(caps)) sections.push(t('system.engine.dialog.capabilities.computeCapabilities'))
-  if (caps.transfer) sections.push(t('system.engine.dialog.capabilities.transferCapabilities'))
-  if (caps.preview) sections.push(t('system.engine.dialog.capabilities.previewCapabilities'))
   if (caps.limits) sections.push(t('system.engine.dialog.capabilities.limits'))
   if (caps.extensions) sections.push(t('system.engine.dialog.capabilities.extensions'))
   return sections.length > 0 ? sections : [t('system.engine.capabilities.none')]
@@ -892,8 +890,7 @@ const humanizeCapabilityValue = (value) => {
 const getCapabilityStatusTagType = (status) => {
   const typeMap = {
     available: 'success',
-    engine_unavailable: 'info',
-    addp_pending: 'warning'
+    engine_unavailable: 'info'
   }
   return typeMap[status] || 'info'
 }

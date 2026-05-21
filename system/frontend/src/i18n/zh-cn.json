@@ -220,8 +220,6 @@
         "capabilities": {
           "storageCapabilities": "存储能力",
           "computeCapabilities": "计算能力",
-          "transferCapabilities": "传输能力",
-          "previewCapabilities": "预览能力",
           "schemaVersion": "结构版本",
           "engineFamily": "引擎族",
           "engineType": "引擎类型",
@@ -233,8 +231,6 @@
           "store": "读写能力",
           "semantics": "语义",
           "notSupported": "不支持",
-          "transfer": "传输",
-          "preview": "预览",
           "connectorTypes": "连接器类型",
           "languages": "语言",
           "modes": "模式",
@@ -305,7 +301,6 @@
         "status": {
           "available": "可用",
           "engine_unavailable": "引擎不具备",
-          "addp_pending": "ADDP 暂未支持",
           "unknown": "未知"
         },
         "summary": {
@@ -313,9 +308,6 @@
           "catalog": "可浏览实时目录",
           "contentRead": "可读取内容",
           "rangeRead": "支持范围读取",
-          "transferRead": "可作为传输来源",
-          "transferWrite": "可作为传输目标",
-          "preview": "支持内容预览",
           "query": "支持查询",
           "workflow": "支持工作流",
           "script": "支持脚本"
@@ -323,8 +315,6 @@
         "sections": {
           "storage": "存储能力",
           "compute": "计算能力",
-          "transfer": "传输适配",
-          "preview": "预览能力",
           "extensions": "扩展能力"
         },
         "items": {
@@ -337,17 +327,8 @@
           "query": "查询",
           "workflow": "工作流",
           "script": "脚本 / Notebook",
-          "transfer": "传输能力",
-          "transferRead": "作为来源",
-          "transferWrite": "作为目标",
           "formats": "支持格式",
-          "checkpoint": "检查点恢复",
-          "preview": "内容预览"
-        },
-        "reasons": {
-          "engineNoQuery": "该引擎本身不提供查询运行时。",
-          "addpTransferPending": "该引擎理论上可以参与数据传输，但 ADDP 当前尚未实现对应适配。",
-          "addpPreviewPending": "该引擎理论上可以预览内容，但 ADDP 当前尚未实现对应预览链路。"
+          "checkpoint": "检查点恢复"
         },
         "values": {
           "realTime": "实时目录",

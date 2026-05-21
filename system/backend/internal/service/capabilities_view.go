@@ -15,7 +15,6 @@ import (
 const (
 	capabilityStatusAvailable         = "available"
 	capabilityStatusEngineUnavailable = "engine_unavailable"
-	capabilityStatusAddpPending       = "addp_pending"
 )
 
 func BuildCapabilitiesView(capabilitiesJSON *models.JSONString, engineType string) *models.CapabilitiesView {
@@ -60,15 +59,6 @@ func buildCapabilitySummary(caps *engineplugin.EngineCapabilities, engineType st
 	if caps.Storage != nil && caps.Storage.Store != nil && caps.Storage.Store.RangeRead {
 		badges = append(badges, capabilityBadge("range_read", "system.engine.capabilityView.summary.rangeRead"))
 	}
-	if hasTransferRead(caps) {
-		badges = append(badges, capabilityBadge("transfer_read", "system.engine.capabilityView.summary.transferRead"))
-	}
-	if hasTransferWrite(caps) {
-		badges = append(badges, capabilityBadge("transfer_write", "system.engine.capabilityView.summary.transferWrite"))
-	}
-	if hasPreview(caps) {
-		badges = append(badges, capabilityBadge("preview", "system.engine.capabilityView.summary.preview"))
-	}
 	if hasQuery(caps) {
 		badges = append(badges, capabilityBadge("query", "system.engine.capabilityView.summary.query"))
 	}
@@ -92,12 +82,6 @@ func buildCapabilitySections(caps *engineplugin.EngineCapabilities) []models.Cap
 		sections = append(sections, *section)
 	}
 	if section := buildComputeSection(caps); section != nil {
-		sections = append(sections, *section)
-	}
-	if section := buildTransferSection(caps); section != nil {
-		sections = append(sections, *section)
-	}
-	if section := buildPreviewSection(caps); section != nil {
 		sections = append(sections, *section)
 	}
 	if section := buildExtensionsSection(caps); section != nil {
@@ -248,13 +232,6 @@ func buildComputeSection(caps *engineplugin.EngineCapabilities) *models.Capabili
 			item.Tags = append(item.Tags, capabilityValueTag("cancel", "system.engine.capabilityView.values.cancel"))
 		}
 		section.Items = append(section.Items, item)
-	} else if computeUnavailableForEngine(caps) {
-		section.Items = append(section.Items, models.CapabilityViewItem{
-			ID:        "query_unavailable",
-			LabelKey:  "system.engine.capabilityView.items.query",
-			ReasonKey: "system.engine.capabilityView.reasons.engineNoQuery",
-			Status:    capabilityStatusEngineUnavailable,
-		})
 	}
 
 	if hasWorkflow(caps) {
@@ -279,106 +256,6 @@ func buildComputeSection(caps *engineplugin.EngineCapabilities) *models.Capabili
 		return nil
 	}
 	section.Status = deriveSectionStatus(section.Items)
-	return section
-}
-
-func buildTransferSection(caps *engineplugin.EngineCapabilities) *models.CapabilityViewSection {
-	if caps.Transfer == nil {
-		return buildPendingTransferSection(caps)
-	}
-
-	section := &models.CapabilityViewSection{
-		ID:       "transfer",
-		TitleKey: "system.engine.capabilityView.sections.transfer",
-		Status:   capabilityStatusAvailable,
-		Items:    []models.CapabilityViewItem{},
-	}
-
-	read := capabilityItem("transfer_read", "system.engine.capabilityView.items.transferRead", boolStatus(caps.Transfer.Read))
-	if reader := caps.Transfer.ConnectorTypes["reader"]; reader != "" {
-		read.Tags = append(read.Tags, models.CapabilityViewTag{ID: "reader", LabelKey: "system.engine.capabilityView.values.reader", Value: reader})
-	}
-	if caps.Transfer.StreamRead {
-		read.Tags = append(read.Tags, capabilityValueTag("stream_read", "system.engine.capabilityView.values.streamRead"))
-	}
-	if caps.Transfer.ParallelRead {
-		read.Tags = append(read.Tags, capabilityValueTag("parallel_read", "system.engine.capabilityView.values.parallelRead"))
-	}
-	section.Items = append(section.Items, read)
-
-	write := capabilityItem("transfer_write", "system.engine.capabilityView.items.transferWrite", boolStatus(caps.Transfer.Write))
-	if writer := caps.Transfer.ConnectorTypes["writer"]; writer != "" {
-		write.Tags = append(write.Tags, models.CapabilityViewTag{ID: "writer", LabelKey: "system.engine.capabilityView.values.writer", Value: writer})
-	}
-	if caps.Transfer.BulkWrite {
-		write.Tags = append(write.Tags, capabilityValueTag("bulk_write", "system.engine.capabilityView.values.bulkWrite"))
-	}
-	if caps.Transfer.ParallelWrite {
-		write.Tags = append(write.Tags, capabilityValueTag("parallel_write", "system.engine.capabilityView.values.parallelWrite"))
-	}
-	section.Items = append(section.Items, write)
-	if caps.Transfer.Checkpoint {
-		section.Items = append(section.Items, capabilityItem("checkpoint", "system.engine.capabilityView.items.checkpoint", capabilityStatusAvailable))
-	}
-
-	section.Status = deriveSectionStatus(section.Items)
-	return section
-}
-
-func buildPendingTransferSection(caps *engineplugin.EngineCapabilities) *models.CapabilityViewSection {
-	if caps.Storage == nil {
-		return nil
-	}
-	return &models.CapabilityViewSection{
-		ID:       "transfer",
-		TitleKey: "system.engine.capabilityView.sections.transfer",
-		Status:   capabilityStatusAddpPending,
-		Items: []models.CapabilityViewItem{{
-			ID:        "transfer_pending",
-			LabelKey:  "system.engine.capabilityView.items.transfer",
-			ReasonKey: "system.engine.capabilityView.reasons.addpTransferPending",
-			Status:    capabilityStatusAddpPending,
-		}},
-	}
-}
-
-func buildPreviewSection(caps *engineplugin.EngineCapabilities) *models.CapabilityViewSection {
-	if caps.Preview == nil || !caps.Preview.Supported {
-		if caps.Storage == nil {
-			return nil
-		}
-		return &models.CapabilityViewSection{
-			ID:       "preview",
-			TitleKey: "system.engine.capabilityView.sections.preview",
-			Status:   capabilityStatusAddpPending,
-			Items: []models.CapabilityViewItem{{
-				ID:        "preview_pending",
-				LabelKey:  "system.engine.capabilityView.items.preview",
-				ReasonKey: "system.engine.capabilityView.reasons.addpPreviewPending",
-				Status:    capabilityStatusAddpPending,
-			}},
-		}
-	}
-
-	section := &models.CapabilityViewSection{
-		ID:       "preview",
-		TitleKey: "system.engine.capabilityView.sections.preview",
-		Status:   capabilityStatusAvailable,
-		Items:    []models.CapabilityViewItem{},
-	}
-
-	item := capabilityItem("preview", "system.engine.capabilityView.items.preview", capabilityStatusAvailable)
-	item.Tags = valueTags("mode", caps.Preview.Modes)
-	if caps.Preview.MaxRows > 0 {
-		item.Tags = append(item.Tags, models.CapabilityViewTag{ID: "max_rows", LabelKey: "system.engine.capabilityView.values.maxRows", Value: strconv.Itoa(caps.Preview.MaxRows)})
-	}
-	if caps.Preview.MaxBytes > 0 {
-		item.Tags = append(item.Tags, models.CapabilityViewTag{ID: "max_bytes", LabelKey: "system.engine.capabilityView.values.maxBytes", Value: formatBytes(caps.Preview.MaxBytes)})
-	}
-	if caps.Preview.DirectPreview {
-		item.Tags = append(item.Tags, capabilityValueTag("direct_preview", "system.engine.capabilityView.values.directPreview"))
-	}
-	section.Items = append(section.Items, item)
 	return section
 }
 
@@ -535,29 +412,12 @@ func capabilityKeySegment(value string) string {
 	return result
 }
 
-func boolStatus(enabled bool) string {
-	if enabled {
-		return capabilityStatusAvailable
-	}
-	return capabilityStatusAddpPending
-}
-
 func deriveSectionStatus(items []models.CapabilityViewItem) string {
-	hasAvailable := false
-	hasPending := false
 	for _, item := range items {
 		switch item.Status {
 		case capabilityStatusAvailable:
-			hasAvailable = true
-		case capabilityStatusAddpPending:
-			hasPending = true
+			return capabilityStatusAvailable
 		}
-	}
-	if hasAvailable {
-		return capabilityStatusAvailable
-	}
-	if hasPending {
-		return capabilityStatusAddpPending
 	}
 	return capabilityStatusEngineUnavailable
 }
@@ -574,18 +434,6 @@ func hasAnyStoreRead(caps *engineplugin.EngineCapabilities) bool {
 	return store.StreamRead || store.RangeRead || store.BatchRead
 }
 
-func hasTransferRead(caps *engineplugin.EngineCapabilities) bool {
-	return caps.Transfer != nil && caps.Transfer.Read
-}
-
-func hasTransferWrite(caps *engineplugin.EngineCapabilities) bool {
-	return caps.Transfer != nil && caps.Transfer.Write
-}
-
-func hasPreview(caps *engineplugin.EngineCapabilities) bool {
-	return caps.Preview != nil && caps.Preview.Supported
-}
-
 func hasQuery(caps *engineplugin.EngineCapabilities) bool {
 	return caps.Compute != nil && caps.Compute.Query != nil && caps.Compute.Query.Supported
 }
@@ -596,15 +444,6 @@ func hasWorkflow(caps *engineplugin.EngineCapabilities) bool {
 
 func hasScript(caps *engineplugin.EngineCapabilities) bool {
 	return caps.Compute != nil && caps.Compute.Script != nil && caps.Compute.Script.Supported
-}
-
-func computeUnavailableForEngine(caps *engineplugin.EngineCapabilities) bool {
-	switch caps.EngineFamily {
-	case "object", "file":
-		return true
-	default:
-		return false
-	}
 }
 
 func inferEngineFamily(engineType string) string {

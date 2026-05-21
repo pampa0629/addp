@@ -41,11 +41,7 @@ func (p *JupyterPlugin) SensitiveFields() []string {
 }
 
 func (p *JupyterPlugin) Capabilities() plugin.EngineCapabilities {
-	caps := plugin.NewScriptCapabilities(p.Type(), []string{"notebook", "lab"}, []string{"python"})
-	caps.Preview = &plugin.PreviewCapabilities{
-		Supported: false,
-	}
-	return caps
+	return plugin.NewScriptCapabilities(p.Type(), []string{"notebook", "lab"}, []string{"python"})
 }
 
 func (p *JupyterPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {

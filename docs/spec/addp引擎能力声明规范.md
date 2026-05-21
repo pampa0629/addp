@@ -2,7 +2,7 @@
 
 本文规范 engine plugin 的结构化能力声明。插件接口边界见 [addp引擎插件接口规范.md](addp引擎插件接口规范.md)，Catalog 路径语义见 [addp存储引擎路径体系规范.md](addp存储引擎路径体系规范.md)。
 
-能力声明用于回答“一个引擎实例能被哪些模块以什么方式消费”。上层模块不得只根据 `engine_type` 或 `engine_family` 猜能力。
+能力声明用于回答“一个引擎实例自身具备哪些可由 ADDP 统一消费的能力”。上层模块不得只根据 `engine_type` 或 `engine_family` 猜能力。
 
 当前版本固定为：
 
@@ -14,10 +14,10 @@ engine.capabilities/v1
 
 ## 一、基本原则
 
-- capabilities 是模块消费能力的事实来源；Provider 是能力实现承诺。
+- capabilities 是引擎自身能力与 Provider 实现承诺的事实来源。
 - 声明了可调用能力，就必须有对应 Provider 或明确的模块执行面。
-- Catalog、Metadata、Store、Query、Workflow、Script、Transfer、Preview 是不同能力面，不能混用。
-- 核心结构表达“ADDP 当前可用能力”。引擎本身不具备的能力、ADDP 尚未实现的能力，可由展示模型派生说明，不强行塞入核心结构。
+- Catalog、Metadata、Store、Query、Workflow、Script 是不同能力面，不能混用。
+- 核心结构只表达引擎自身原生能力与对应 Provider 能力，不承载模块适配状态。
 - 没有明确模块消费价值的字段不进入核心声明；后续有真实调用方时再扩展。
 - `extensions` 只承载引擎特有补充信息，不得替代核心字段。
 
@@ -34,8 +34,6 @@ type EngineCapabilities struct {
     EngineFamily  string                 `json:"engine_family"`
     Storage       *StorageCapabilities   `json:"storage,omitempty"`
     Compute       *ComputeCapabilities   `json:"compute,omitempty"`
-    Transfer      *TransferCapabilities  `json:"transfer,omitempty"`
-    Preview       *PreviewCapabilities   `json:"preview,omitempty"`
     Limits        map[string]interface{} `json:"limits,omitempty"`
     Extensions    map[string]interface{} `json:"extensions,omitempty"`
 }
@@ -48,8 +46,6 @@ type EngineCapabilities struct {
 | `engine_family` | 主引擎族，如 `tabular`、`document`、`graph`、`object`、`file`、`workflow`、`script`。 | 必须保留，但只作为粗分类。 |
 | `storage` | 存储、目录、元数据、内容访问能力。 | 具备存储能力的引擎必须声明。 |
 | `compute` | 查询、工作流、脚本运行能力。 | 具备计算能力的引擎必须声明。 |
-| `transfer` | Transfer 读写适配、连接器和格式范围。 | 需要 Transfer 消费时声明。 |
-| `preview` | Manager 内容预览能力。 | 需要预览时声明。 |
 | `limits` | 跨能力通用限制，如预览大小、超时建议。 | 可选，有真实调用方时声明。 |
 | `extensions` | 引擎特有扩展。 | 可选，不得替代核心字段。 |
 
@@ -286,74 +282,7 @@ type ScriptCapability struct {
 
 ---
 
-## 五、TransferCapabilities
-
-```go
-type TransferCapabilities struct {
-    Read            bool              `json:"read"`
-    Write           bool              `json:"write"`
-    BulkWrite       bool              `json:"bulk_write,omitempty"`
-    StreamRead      bool              `json:"stream_read,omitempty"`
-    Checkpoint      bool              `json:"checkpoint,omitempty"`
-    ParallelRead    bool              `json:"parallel_read,omitempty"`
-    ParallelWrite   bool              `json:"parallel_write,omitempty"`
-    ConnectorTypes  map[string]string `json:"connector_types,omitempty"`
-    PreferredWriter string            `json:"preferred_writer,omitempty"`
-}
-```
-
-Transfer 的 Reader / Writer 由 Transfer 模块实现。capabilities 只声明是否可读写、推荐 connector 和格式范围。
-
-| 字段 | 说明 | 保留要求 |
-| --- | --- | --- |
-| `read` | Transfer 是否可把该引擎作为数据来源。 | Transfer 需要消费时必须保留。 |
-| `write` | Transfer 是否可把该引擎作为目标端。 | Transfer 需要消费时必须保留。 |
-| `bulk_write` | 是否支持高吞吐批量写。 | 可选，有真实 writer 时声明。 |
-| `stream_read` | Transfer 读取是否可走流式方式。 | 可选，有真实 reader 时声明。 |
-| `checkpoint` | Transfer 任务是否可利用检查点恢复。 | 可选，有执行面支持时声明。 |
-| `parallel_read` / `parallel_write` | 是否支持并行读写。 | 可选，有真实执行能力时声明。 |
-| `connector_types` | 推荐 Transfer 连接器类型，如 reader=s3、writer=jdbc。 | Transfer 需要消费时建议声明。 |
-| `preferred_writer` | 多 writer 可选时的默认写端。 | 可选。 |
-
----
-
-## 六、PreviewCapabilities
-
-```go
-type PreviewCapabilities struct {
-    Supported     bool     `json:"supported"`
-    Modes         []string `json:"modes"`
-    MaxRows       int      `json:"max_rows,omitempty"`
-    MaxBytes      int64    `json:"max_bytes,omitempty"`
-    UsesComposer  bool     `json:"uses_composer,omitempty"`
-    DirectPreview bool     `json:"direct_preview,omitempty"`
-}
-```
-
-| 字段 | 说明 |
-| --- | --- |
-| `supported` | Manager 是否能预览该引擎的数据内容。 |
-| `modes` | 预览方式，如 `tabular_rows`、`object_parse`、`raw_text`。 |
-| `max_rows` | 表格、文档、图样本预览的默认行数上限。 |
-| `max_bytes` | 对象或文件预览最大读取字节数。 |
-| `uses_composer` | 预览是否由 Manager 组合 Store、格式解析、Meta 属性等能力完成。 |
-| `direct_preview` | 插件自身是否提供直接预览结果。 |
-
-预览模式：
-
-| 值 | 含义 |
-| --- | --- |
-| `tabular_rows` | 表格行预览。 |
-| `document_samples` | 文档样本预览。 |
-| `graph_sample` | 图节点关系预览。 |
-| `file_parse` | 文件解析预览。 |
-| `object_parse` | 对象解析预览。 |
-| `raw_text` | 文本预览。 |
-| `binary_metadata` | 二进制文件只预览元数据。 |
-
----
-
-## 七、能力展示模型
+## 五、能力展示模型
 
 能力详情页由 System 后端生成 `capabilities_view`，前端按展示模型渲染并根据当前语言解析 i18n key。
 
@@ -369,23 +298,14 @@ type CapabilitiesView struct {
 
 - 决定哪些能力进入主展示，哪些只进入 `json_view`。
 - 决定能力分组、排序、标签、状态和解释。
-- 区分 `available`、`engine_unavailable`、`addp_pending`。
 - 返回 `label_key`、`description_key`、`reason_key`、`value_key` 和参数，由前端翻译。
 - 将未知 `extensions` 转换为可陈列的 key-value 项。
-
-展示状态：
-
-| 状态 | 含义 |
-| --- | --- |
-| `available` | 引擎本身具备，ADDP 当前也支持。 |
-| `engine_unavailable` | 引擎本身不具备该能力。 |
-| `addp_pending` | 引擎本身可以具备，但 ADDP 当前尚未实现。 |
 
 主展示原则：
 
 - 不直接展示布尔字段名，展示业务结论。
 - 不展示空分组、空数组和 false 字段，除非该“不支持”会影响用户操作。
-- 不把 `schema_version`、`path_version`、`i18n_key`、`supported`、`uses_composer` 放在主信息区。
+- 不把 `schema_version`、`path_version`、`i18n_key`、`supported` 放在主信息区。
 - `extensions` 只要存在就展示；未知结构按 key-value 陈列。
 - 完整能力声明通过“查看 JSON”入口以 key-value 树形方式查看，不在主页面展示原始 JSON 文本。
 
@@ -436,16 +356,7 @@ PostgreSQL 示例：
   },
   "compute": {
     "query": {"supported": true, "languages": ["sql"], "default_language": "sql", "result_kinds": ["table", "scalar"]}
-  },
-  "transfer": {
-    "read": true,
-    "write": true,
-    "bulk_write": true,
-    "checkpoint": true,
-    "connector_types": {"reader": "jdbc", "writer": "jdbc"},
-    "preferred_writer": "jdbc"
-  },
-  "preview": {"supported": true, "modes": ["tabular_rows"], "max_rows": 1000, "uses_composer": true}
+  }
 }
 ```
 
@@ -471,12 +382,6 @@ MinIO 示例：
     "store": {"stream_read": true, "range_read": true},
     "semantics": ["bucket", "prefix_listing", "object", "stream_read", "range_read"],
     "not_supported": ["range_write", "real_directory"]
-  },
-  "transfer": {
-    "read": true,
-    "write": true,
-    "connector_types": {"reader": "s3", "writer": "s3"}
-  },
-  "preview": {"supported": true, "modes": ["object_parse", "raw_text", "binary_metadata"], "max_bytes": 10485760, "uses_composer": true}
+  }
 }
 ```

@@ -220,8 +220,6 @@
         "capabilities": {
           "storageCapabilities": "Storage Capabilities",
           "computeCapabilities": "Compute Capabilities",
-          "transferCapabilities": "Transfer Capabilities",
-          "previewCapabilities": "Preview Capabilities",
           "schemaVersion": "Schema Version",
           "engineFamily": "Engine Family",
           "engineType": "Engine Type",
@@ -233,8 +231,6 @@
           "store": "Store",
           "semantics": "Semantics",
           "notSupported": "Not Supported",
-          "transfer": "Transfer",
-          "preview": "Preview",
           "connectorTypes": "Connector Types",
           "languages": "Languages",
           "modes": "Modes",
@@ -305,7 +301,6 @@
         "status": {
           "available": "Available",
           "engine_unavailable": "Not native to engine",
-          "addp_pending": "Pending in ADDP",
           "unknown": "Unknown"
         },
         "summary": {
@@ -313,9 +308,6 @@
           "catalog": "Live catalog browsing",
           "contentRead": "Content readable",
           "rangeRead": "Range read",
-          "transferRead": "Transfer source",
-          "transferWrite": "Transfer target",
-          "preview": "Content preview",
           "query": "Query",
           "workflow": "Workflow",
           "script": "Script"
@@ -323,8 +315,6 @@
         "sections": {
           "storage": "Storage Capabilities",
           "compute": "Compute Capabilities",
-          "transfer": "Transfer Adapter",
-          "preview": "Preview Capabilities",
           "extensions": "Extensions"
         },
         "items": {
@@ -337,17 +327,8 @@
           "query": "Query",
           "workflow": "Workflow",
           "script": "Script / Notebook",
-          "transfer": "Transfer capability",
-          "transferRead": "As source",
-          "transferWrite": "As target",
           "formats": "Supported formats",
-          "checkpoint": "Checkpoint recovery",
-          "preview": "Content preview"
-        },
-        "reasons": {
-          "engineNoQuery": "This engine does not provide a query runtime by nature.",
-          "addpTransferPending": "This engine can theoretically participate in transfer, but ADDP has not implemented the adapter yet.",
-          "addpPreviewPending": "This engine can theoretically preview content, but ADDP has not implemented the preview path yet."
+          "checkpoint": "Checkpoint recovery"
         },
         "values": {
           "realTime": "Live catalog",

@@ -13,8 +13,6 @@ type EngineCapabilities struct {
 	EngineFamily  string                 `json:"engine_family"`
 	Storage       *StorageCapabilities   `json:"storage,omitempty"`
 	Compute       *ComputeCapabilities   `json:"compute,omitempty"`
-	Transfer      *TransferCapabilities  `json:"transfer,omitempty"`
-	Preview       *PreviewCapabilities   `json:"preview,omitempty"`
 	Limits        map[string]interface{} `json:"limits,omitempty"`
 	Extensions    map[string]interface{} `json:"extensions,omitempty"`
 }
@@ -147,27 +145,6 @@ type ScriptCapability struct {
 	Supported bool     `json:"supported"`
 	Modes     []string `json:"modes"`
 	Languages []string `json:"languages,omitempty"`
-}
-
-type TransferCapabilities struct {
-	Read            bool              `json:"read"`
-	Write           bool              `json:"write"`
-	BulkWrite       bool              `json:"bulk_write,omitempty"`
-	StreamRead      bool              `json:"stream_read,omitempty"`
-	Checkpoint      bool              `json:"checkpoint,omitempty"`
-	ParallelRead    bool              `json:"parallel_read,omitempty"`
-	ParallelWrite   bool              `json:"parallel_write,omitempty"`
-	ConnectorTypes  map[string]string `json:"connector_types,omitempty"`
-	PreferredWriter string            `json:"preferred_writer,omitempty"`
-}
-
-type PreviewCapabilities struct {
-	Supported     bool     `json:"supported"`
-	Modes         []string `json:"modes"`
-	MaxRows       int      `json:"max_rows,omitempty"`
-	MaxBytes      int64    `json:"max_bytes,omitempty"`
-	UsesComposer  bool     `json:"uses_composer,omitempty"`
-	DirectPreview bool     `json:"direct_preview,omitempty"`
 }
 
 func MarshalEngineCapabilities(capabilities EngineCapabilities) (string, error) {

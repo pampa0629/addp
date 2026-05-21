@@ -55,35 +55,8 @@ func NewTabularCapabilities(engineType, namespaceTerm string, opts TabularCapabi
 				SupportsCancel:  opts.SupportsCancel,
 			},
 		},
-		Transfer: &TransferCapabilities{
-			Read:       true,
-			Write:      opts.Write,
-			BulkWrite:  opts.BulkWrite,
-			Checkpoint: true,
-			ConnectorTypes: map[string]string{
-				"reader": "jdbc",
-				"writer": opts.WriterConnector,
-			},
-			PreferredWriter: opts.WriterConnector,
-		},
-		Preview: &PreviewCapabilities{
-			Supported:    true,
-			Modes:        []string{"tabular_rows"},
-			MaxRows:      1000,
-			UsesComposer: true,
-		},
 	}
 
-	if caps.Transfer.ConnectorTypes["writer"] == "" {
-		caps.Transfer.ConnectorTypes["writer"] = "jdbc"
-		caps.Transfer.PreferredWriter = "jdbc"
-	}
-	if !opts.Write {
-		caps.Transfer.Write = false
-		caps.Transfer.BulkWrite = false
-		caps.Transfer.PreferredWriter = ""
-		delete(caps.Transfer.ConnectorTypes, "writer")
-	}
 	if opts.BatchWrite {
 		caps.Storage.Store.BatchWrite = true
 	}
@@ -149,20 +122,6 @@ func NewObjectCapabilities(engineType string) EngineCapabilities {
 			Semantics:    []string{"bucket", "prefix_listing", "object", "stream_read", "range_read", "stream_write", "delete"},
 			NotSupported: []string{"range_write", "real_directory"},
 		},
-		Transfer: &TransferCapabilities{
-			Read:  true,
-			Write: true,
-			ConnectorTypes: map[string]string{
-				"reader": "s3",
-				"writer": "s3",
-			},
-		},
-		Preview: &PreviewCapabilities{
-			Supported:    true,
-			Modes:        []string{"object_parse", "raw_text", "binary_metadata"},
-			MaxBytes:     10 * 1024 * 1024,
-			UsesComposer: true,
-		},
 	}
 }
 
@@ -196,20 +155,6 @@ func NewFileCapabilities(engineType string) EngineCapabilities {
 				Delete:      true,
 			},
 			Semantics: []string{"root", "directory", "file", "stream_read", "range_read", "stream_write", "delete"},
-		},
-		Transfer: &TransferCapabilities{
-			Read:  true,
-			Write: true,
-			ConnectorTypes: map[string]string{
-				"reader": "nfs",
-				"writer": "nfs",
-			},
-		},
-		Preview: &PreviewCapabilities{
-			Supported:    true,
-			Modes:        []string{"file_parse", "raw_text", "binary_metadata"},
-			MaxBytes:     10 * 1024 * 1024,
-			UsesComposer: true,
 		},
 	}
 }
@@ -247,17 +192,6 @@ func NewDocumentCapabilities(engineType string) EngineCapabilities {
 				ResultKinds:     []string{"document", "table"},
 			},
 		},
-		Transfer: &TransferCapabilities{
-			Read:      true,
-			Write:     true,
-			BulkWrite: true,
-		},
-		Preview: &PreviewCapabilities{
-			Supported:    true,
-			Modes:        []string{"document_samples"},
-			MaxRows:      1000,
-			UsesComposer: true,
-		},
 	}
 }
 
@@ -289,12 +223,6 @@ func NewGraphCapabilities(engineType string) EngineCapabilities {
 				DefaultLanguage: "cypher",
 				ResultKinds:     []string{"graph", "table"},
 			},
-		},
-		Preview: &PreviewCapabilities{
-			Supported:    true,
-			Modes:        []string{"graph_sample"},
-			MaxRows:      1000,
-			UsesComposer: true,
 		},
 	}
 }
