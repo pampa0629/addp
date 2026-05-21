@@ -15,6 +15,12 @@ func DetectFormat(filename string, peek []byte) FormatType {
 		return format
 	}
 	if len(peek) > 0 {
+		if format := detectByDescriptorSignature(peek); format != FormatUnknown {
+			return format
+		}
+		if format := detectByPluginSniffer(peek); format != FormatUnknown {
+			return format
+		}
 		return detectByMagic(peek)
 	}
 	return FormatUnknown

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
 )
 
 // StorageResource is Meta's normalized view of a catalog item that can be
@@ -34,6 +35,11 @@ func ObjectStorageResourceFromNode(bucket string, node plugin.CatalogNode) Stora
 	lastModified := catalogNodeTimeAttribute(node.Attributes, "modified_at")
 	etag := catalogNodeStringAttribute(node.Attributes, "etag")
 	formatName := strings.TrimPrefix(strings.ToLower(filepath.Ext(itemPath)), ".")
+	if formatName == "" {
+		if detected := format.MIMEToFormat(contentType); detected != format.FormatUnknown {
+			formatName = string(detected)
+		}
+	}
 	return StorageResource{
 		RootName:     bucket,
 		Path:         itemPath,

@@ -211,6 +211,51 @@ func TestExtractJSONSingleFileInfoStrictRequiresRecordCollection(t *testing.T) {
 	}
 }
 
+func TestEnrichSingleTableFileItemDetectsFormatFromContent(t *testing.T) {
+	content := buildMetaitemParquetRows(t, testMetaitemParquetRow{ID: 1, Name: "Alice"})
+	size := int64(len(content))
+	item := &metaitem.DetectedItem{
+		ResolvedItem: dataitem.ResolvedItem{
+			Layout:    dataitem.LayoutSingle,
+			DataType:  dataitem.DataTypeUnknown,
+			Format:    string(format.FormatUnknown),
+			EntryPath: "lake3",
+			SizeBytes: &size,
+		},
+		PhysicalPath: "lake3",
+		Attributes:   map[string]interface{}{},
+	}
+
+	enriched, ok, err := EnrichSingleTableFileItem(
+		context.Background(),
+		staticContentReader{content: string(content)},
+		nil,
+		1,
+		item,
+		"lake3",
+		size,
+		false,
+		func(path string) plugin.CatalogPath {
+			return plugin.FileItemPath(1, path)
+		},
+	)
+	if err != nil {
+		t.Fatalf("EnrichSingleTableFileItem() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("expected content-detected parquet file to be enriched")
+	}
+	if enriched.Format != string(format.FormatParquet) {
+		t.Fatalf("Format = %q, want parquet", enriched.Format)
+	}
+	if enriched.DataType != dataitem.DataTypeTable {
+		t.Fatalf("DataType = %q, want table", enriched.DataType)
+	}
+	if len(enriched.Fields) == 0 {
+		t.Fatal("expected parquet fields")
+	}
+}
+
 func TestExtractJSONSingleFileInfoStrictAcceptsObjectArray(t *testing.T) {
 	reader := staticContentReader{content: `[
 		{"id":"1","name":"A","area":"356.16704388138885"},

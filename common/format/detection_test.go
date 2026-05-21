@@ -93,6 +93,12 @@ func TestDetectFormat(t *testing.T) {
 			want:     FormatPNG,
 		},
 		{
+			name:     "Parquet by registered content signature",
+			filename: "unknown",
+			peek:     []byte("PAR1\x15\x04\x15"),
+			want:     FormatParquet,
+		},
+		{
 			name:     "WebP by extension",
 			filename: "image.webp",
 			peek:     nil,

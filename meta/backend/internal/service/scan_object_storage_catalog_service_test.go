@@ -55,6 +55,32 @@ func TestEnrichObjectStorageJSONTableUpdatesItemDataType(t *testing.T) {
 	}
 }
 
+func TestDetectObjectCatalogResourceFormatUsesCommonFormatSniffing(t *testing.T) {
+	t.Parallel()
+
+	resource := metacatalog.StorageResource{
+		RootName:    "addp",
+		Path:        "datasets/lake3",
+		FullPath:    "addp/datasets/lake3",
+		NodeType:    "object",
+		SizeBytes:   8,
+		CatalogPath: plugin.ObjectItemPath(7, "addp", "datasets/lake3"),
+	}
+
+	detected, err := detectObjectCatalogResourceFormat(
+		context.Background(),
+		staticObjectContentReader{content: "PAR1\x15\x04\x15\x00"},
+		nil,
+		resource,
+	)
+	if err != nil {
+		t.Fatalf("detectObjectCatalogResourceFormat() error = %v", err)
+	}
+	if detected != string(format.FormatParquet) {
+		t.Fatalf("detected format = %q, want parquet", detected)
+	}
+}
+
 func TestEnsureObjectCatalogPrefixNodesUsesCompositeItemParentPath(t *testing.T) {
 	db := openObjectCatalogScanTestDB(t)
 	repo := metaRepo.NewScanRepository(db)

@@ -10,6 +10,7 @@ import (
 
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/extractor"
@@ -532,6 +533,9 @@ func (s *ObjectStorageCatalogScanService) persistObjectResources(
 		return 0, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
 	}
 	readableProvider, _ := enginePlugin.(plugin.ContentReadableProvider)
+	if strings.EqualFold(scanDepth, "deep") && readableProvider != nil {
+		s.detectObjectCatalogResourceFormats(context.Background(), readableProvider, connInfo, resources)
+	}
 
 	// 重要：在循环外部只处理一次scanPathPrefix，建立基础父节点
 	// 例如：扫描 "addp/shapefile" 时，scanPathPrefix = "shapefile"
@@ -804,6 +808,57 @@ func (s *ObjectStorageCatalogScanService) persistObjectCatalogCompositeItems(
 		}
 	}
 	return count, nil
+}
+
+func (s *ObjectStorageCatalogScanService) detectObjectCatalogResourceFormats(
+	ctx context.Context,
+	readableProvider plugin.ContentReadableProvider,
+	connInfo plugin.ConnectionInfo,
+	resources []metacatalog.StorageResource,
+) {
+	for i := range resources {
+		if resources[i].NodeType != "object" || !needsContentFormatDetection(resources[i].Format) {
+			continue
+		}
+		detected, err := detectObjectCatalogResourceFormat(ctx, readableProvider, connInfo, resources[i])
+		if err != nil {
+			if s.log != nil {
+				s.log.Warn("对象内容格式嗅探失败，保留基础格式", "bucket", resources[i].RootName, "path", resources[i].Path, "error", err)
+			}
+			continue
+		}
+		if detected != "" {
+			resources[i].Format = detected
+		}
+	}
+}
+
+func detectObjectCatalogResourceFormat(
+	ctx context.Context,
+	readableProvider plugin.ContentReadableProvider,
+	connInfo plugin.ConnectionInfo,
+	resource metacatalog.StorageResource,
+) (string, error) {
+	if readableProvider == nil {
+		return "", nil
+	}
+	detected, err := metaenrich.DetectSingleFileFormat(ctx, readableProvider, connInfo, resource.CatalogPath, resource.Path)
+	if err != nil {
+		return "", err
+	}
+	if detected == format.FormatUnknown {
+		return "", nil
+	}
+	return string(detected), nil
+}
+
+func needsContentFormatDetection(formatName string) bool {
+	formatName = strings.ToLower(strings.TrimSpace(formatName))
+	if formatName == "" || formatName == string(format.FormatUnknown) {
+		return true
+	}
+	_, ok := format.GetFormatDescriptor(format.FormatType(formatName))
+	return !ok
 }
 
 func itemRowCountFromAttributes(attrs map[string]interface{}) *int64 {

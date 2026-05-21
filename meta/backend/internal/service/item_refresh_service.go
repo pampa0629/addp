@@ -159,7 +159,17 @@ func enrichKnownSingleNonTableItem(
 	item *metaitem.DetectedItem,
 	path string,
 ) (bool, error) {
-	if item == nil || path == "" || item.Format == "" {
+	if item == nil || path == "" {
+		return false, nil
+	}
+	if metaenrich.IsUnknownFormatName(item.Format) && catalogPathFor != nil {
+		detectedFormat, err := metaenrich.DetectSingleFileFormat(ctx, contentReader, connInfo, catalogPathFor(path), path)
+		if err != nil {
+			return false, err
+		}
+		metaenrich.ApplySingleFileFormat(item, detectedFormat)
+	}
+	if metaenrich.IsUnknownFormatName(item.Format) {
 		return false, nil
 	}
 	formatType := format.FormatType(item.Format)

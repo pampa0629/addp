@@ -664,7 +664,20 @@ func ExtractTableFileSingleFileInfo(
 	catalogPathFor ...func(path string) plugin.CatalogPath,
 ) (*metaitem.CompositeItemInfo, error) {
 	formatName := fileFormatName(filePath)
+	return extractTableFileSingleFileInfoWithFormat(ctx, contentReader, connInfo, engineID, filePath, fileSize, includeContentIndex, formatName, catalogPathFor...)
+}
 
+func extractTableFileSingleFileInfoWithFormat(
+	ctx context.Context,
+	contentReader plugin.ContentReadableProvider,
+	connInfo plugin.ConnectionInfo,
+	engineID uint,
+	filePath string,
+	fileSize int64,
+	includeContentIndex bool,
+	formatName string,
+	catalogPathFor ...func(path string) plugin.CatalogPath,
+) (*metaitem.CompositeItemInfo, error) {
 	provider, providerErr := format.GetTableInfoProvider(format.FormatType(formatName))
 	if providerErr != nil {
 		return &metaitem.CompositeItemInfo{
@@ -772,14 +785,32 @@ func EnrichSingleTableFileItem(
 	includeContentIndex bool,
 	catalogPathFor ...func(path string) plugin.CatalogPath,
 ) (*metaitem.DetectedItem, bool, error) {
-	if item == nil || item.Layout != dataitem.LayoutSingle || !hasTableProvider(item.Format) {
+	if item == nil || item.Layout != dataitem.LayoutSingle {
 		return item, false, nil
 	}
-	extract := ExtractTableFileSingleFileInfo
-	if item.DataType != dataitem.DataTypeTable {
-		extract = ExtractTableFileSingleFileInfoStrict
+	if IsUnknownFormatName(item.Format) {
+		if catalogPath := firstCatalogPathResolver(catalogPathFor); catalogPath != nil {
+			detectedFormat, err := DetectSingleFileFormat(ctx, contentReader, connInfo, catalogPath(filePath), filePath)
+			if err != nil {
+				return item, false, err
+			}
+			ApplySingleFileFormat(item, detectedFormat)
+		}
 	}
-	info, err := extract(ctx, contentReader, connInfo, engineID, filePath, fileSize, includeContentIndex, firstCatalogPathResolver(catalogPathFor))
+	if !hasTableProvider(item.Format) {
+		return item, false, nil
+	}
+	if item.DataType == dataitem.DataTypeUnknown {
+		item.DataType = dataitem.DetectDataType(item.Format)
+	}
+	if item.DataType != dataitem.DataTypeTable {
+		info, err := ExtractTableFileSingleFileInfoStrict(ctx, contentReader, connInfo, engineID, filePath, fileSize, includeContentIndex, firstCatalogPathResolver(catalogPathFor))
+		if err != nil || info == nil {
+			return item, false, err
+		}
+		return metaitem.DetectedItemFromCompositeInfo(info, filePath, fileSize), true, nil
+	}
+	info, err := extractTableFileSingleFileInfoWithFormat(ctx, contentReader, connInfo, engineID, filePath, fileSize, includeContentIndex, item.Format, firstCatalogPathResolver(catalogPathFor))
 	if err != nil || info == nil {
 		return item, false, err
 	}

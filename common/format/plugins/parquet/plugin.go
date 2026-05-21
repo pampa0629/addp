@@ -113,13 +113,17 @@ func (p *Plugin) Format() format.FormatType {
 
 func (p *Plugin) Descriptor() format.FormatDescriptor {
 	return format.FormatDescriptor{
-		ID:             "builtin-parquet",
-		Format:         format.FormatParquet,
-		I18nKey:        "format.parquet",
-		DataType:       format.FormatDataTypeTable,
-		Layouts:        []string{format.FormatLayoutSingle, format.FormatLayoutWhole},
-		ProviderHints:  []string{format.FormatProviderTable},
-		Identification: format.FormatIdentification{Extensions: []string{".parquet"}, MimeTypes: []string{"application/parquet", "application/x-parquet", "application/vnd.apache.parquet"}},
+		ID:            "builtin-parquet",
+		Format:        format.FormatParquet,
+		I18nKey:       "format.parquet",
+		DataType:      format.FormatDataTypeTable,
+		Layouts:       []string{format.FormatLayoutSingle, format.FormatLayoutWhole},
+		ProviderHints: []string{format.FormatProviderTable},
+		Identification: format.FormatIdentification{
+			Extensions:        []string{".parquet"},
+			MimeTypes:         []string{"application/parquet", "application/x-parquet", "application/vnd.apache.parquet"},
+			ContentSignatures: []string{"hex:50415231"},
+		},
 		Providers:      format.FormatProviderDescriptor{TableInfo: true, TableSample: true, Table: true, ScopeTable: true},
 		ContentReaders: []string{string(format.ContentReaderTableSample), string(format.ContentReaderScopeTableSample), string(format.ContentReaderRawContent)},
 		TransferRead:   true,
@@ -127,6 +131,10 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		Parse:          true,
 		EngineFamilies: []string{format.EngineFamilyObject, format.EngineFamilyFile},
 	}
+}
+
+func (p *Plugin) SniffFormat(peek []byte) bool {
+	return len(peek) >= 4 && string(peek[:4]) == "PAR1"
 }
 
 func (p *Plugin) Capabilities() format.FormatCapability {

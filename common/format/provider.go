@@ -26,6 +26,14 @@ type FormatPlugin interface {
 	Capabilities() FormatCapability
 }
 
+// ContentSniffer 表示格式 plugin 可以基于内容前缀自行判断是否认领资源。
+//
+// 该接口只用于格式身份兜底识别；调用方应传入已截断的 peek bytes，
+// 不应让 sniffer 负责打开 engine 资源或决定 data item 边界。
+type ContentSniffer interface {
+	SniffFormat(peek []byte) bool
+}
+
 // FormatInfoProvider 表示格式能够提供自身私有元数据。
 //
 // 结果应写入 attributes.format_info.<format>，不得混入 type_info 或上层模块 DTO。

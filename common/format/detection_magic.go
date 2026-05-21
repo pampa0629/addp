@@ -2,6 +2,7 @@ package format
 
 import (
 	"bytes"
+	"encoding/hex"
 	"strings"
 )
 
@@ -15,11 +16,19 @@ func needMagicValidation(format FormatType) bool {
 }
 
 func validateMagicBytes(format FormatType, peek []byte) bool {
-	magic := getMagicBytes(format)
-	if len(magic) == 0 || len(peek) < len(magic) {
+	if len(peek) == 0 {
 		return true
 	}
-	return bytes.HasPrefix(peek, magic)
+	if descriptor, ok := GetFormatDescriptor(format); ok && len(descriptor.Identification.ContentSignatures) > 0 {
+		for _, signature := range descriptor.Identification.ContentSignatures {
+			if contentSignatureMatches(signature, peek) {
+				return true
+			}
+		}
+		return false
+	}
+	magic := getMagicBytes(format)
+	return len(magic) == 0 || len(peek) < len(magic) || bytes.HasPrefix(peek, magic)
 }
 
 func getMagicBytes(format FormatType) []byte {
@@ -92,6 +101,44 @@ func detectByMagic(peek []byte) FormatType {
 		}
 	}
 	return FormatUnknown
+}
+
+func detectByDescriptorSignature(peek []byte) FormatType {
+	for _, descriptor := range ListFormatDescriptors() {
+		for _, signature := range descriptor.Identification.ContentSignatures {
+			if contentSignatureMatches(signature, peek) {
+				return descriptor.Format
+			}
+		}
+	}
+	return FormatUnknown
+}
+
+func detectByPluginSniffer(peek []byte) FormatType {
+	for _, formatType := range ListFormatPluginFormats() {
+		plugin, err := GetFormatPlugin(formatType)
+		if err != nil {
+			continue
+		}
+		sniffer, ok := plugin.(ContentSniffer)
+		if !ok || !sniffer.SniffFormat(peek) {
+			continue
+		}
+		return formatType
+	}
+	return FormatUnknown
+}
+
+func contentSignatureMatches(signature string, peek []byte) bool {
+	signature = strings.ToLower(strings.TrimSpace(signature))
+	if signature == "" {
+		return false
+	}
+	if hexValue, ok := strings.CutPrefix(signature, "hex:"); ok {
+		magic, err := hex.DecodeString(strings.TrimSpace(hexValue))
+		return err == nil && len(peek) >= len(magic) && bytes.HasPrefix(peek, magic)
+	}
+	return bytes.HasPrefix(bytes.ToLower(peek), []byte(signature))
 }
 
 func minInt(a, b int) int {
