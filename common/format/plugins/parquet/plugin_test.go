@@ -18,6 +18,11 @@ type testParquetRow struct {
 	Name string `parquet:"name"`
 }
 
+type partitionColumnParquetRow struct {
+	ID int64  `parquet:"id"`
+	DT string `parquet:"dt"`
+}
+
 func TestParquetPluginImplementsTargetInterfaces(t *testing.T) {
 	plugin := NewPlugin()
 	var _ format.FormatPlugin = plugin
@@ -271,6 +276,53 @@ func TestParquetPluginScopeRecursesPartitionDirs(t *testing.T) {
 	if info.RowCount == nil || *info.RowCount != 2 {
 		t.Fatalf("row count = %v, want 2", info.RowCount)
 	}
+	if field := info.GetField("dt"); field == nil || field.Type != format.FieldTypeString {
+		t.Fatalf("partition field dt = %#v, want string field", field)
+	}
+	parquetInfo := InfoFromTableInfo(info)
+	if parquetInfo == nil || strings.Join(parquetInfo.PartitionColumns, ",") != "dt" {
+		t.Fatalf("partition columns = %#v, want dt", parquetInfo)
+	}
+}
+
+func TestParquetPluginSampleScopeAddsPartitionValues(t *testing.T) {
+	plugin := NewPlugin()
+	reader := parquetMemoryContentReader{data: map[string][]byte{
+		"dataset/dt=2026-05-05/part-000.parquet": buildParquetRows(t, testParquetRow{ID: 1, Name: "Alice"}),
+		"dataset/dt=2026-05-06/part-000.parquet": buildParquetRows(t, testParquetRow{ID: 2, Name: "Bob"}),
+	}}
+	scope := contentio.NewRef("dataset", contentio.RoleScope)
+
+	rows, err := plugin.SampleTableScope(context.Background(), reader, scope, 0, 2, nil)
+	if err != nil {
+		t.Fatalf("SampleTableScope failed: %v", err)
+	}
+	if len(rows) != 2 || rows[0]["dt"] != "2026-05-05" || rows[1]["dt"] != "2026-05-06" {
+		t.Fatalf("rows = %#v, want partition dt values", rows)
+	}
+}
+
+func TestParquetPluginScopeDoesNotOverrideExistingPartitionNamedColumn(t *testing.T) {
+	plugin := NewPlugin()
+	reader := parquetMemoryContentReader{data: map[string][]byte{
+		"dataset/dt=2026-05-05/part-000.parquet": buildPartitionColumnParquetRows(t, partitionColumnParquetRow{ID: 1, DT: "from-file"}),
+	}}
+	scope := contentio.NewRef("dataset", contentio.RoleScope)
+
+	info, err := plugin.DescribeTableScope(context.Background(), reader, scope, nil)
+	if err != nil {
+		t.Fatalf("DescribeTableScope failed: %v", err)
+	}
+	if len(info.Fields) != 2 {
+		t.Fatalf("fields = %#v, want only file fields without duplicate dt", info.Fields)
+	}
+	rows, err := plugin.SampleTableScope(context.Background(), reader, scope, 0, 1, nil)
+	if err != nil {
+		t.Fatalf("SampleTableScope failed: %v", err)
+	}
+	if len(rows) != 1 || rows[0]["dt"] != "from-file" {
+		t.Fatalf("rows = %#v, want dt from file", rows)
+	}
 }
 
 func TestParquetPluginOpenTableScopeReader(t *testing.T) {
@@ -299,6 +351,13 @@ func TestParquetPluginOpenTableScopeReader(t *testing.T) {
 	want := []string{"Alice", "Bob", "Carol"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("rows = %#v, want names %v", append(first, second...), want)
+	}
+	if first[0]["dt"] != "2026-05-05" || first[1]["dt"] != "2026-05-06" || second[0]["dt"] != "2026-05-06" {
+		t.Fatalf("partition values = %#v %#v, want dt from path", first, second)
+	}
+	schema := tableReader.Schema()
+	if field := schema.GetField("dt"); field == nil || field.Type != format.FieldTypeString {
+		t.Fatalf("schema partition field dt = %#v, want string field", field)
 	}
 	empty, err := tableReader.ReadRows(context.Background(), 2)
 	if err != nil {
@@ -355,6 +414,19 @@ func buildAlternateParquetData(t *testing.T) []byte {
 	}
 	if err := writer.Close(); err != nil {
 		t.Fatalf("close alternate parquet writer: %v", err)
+	}
+	return buf.Bytes()
+}
+
+func buildPartitionColumnParquetRows(t *testing.T, rows ...partitionColumnParquetRow) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	writer := parquetgo.NewGenericWriter[partitionColumnParquetRow](&buf)
+	if _, err := writer.Write(rows); err != nil {
+		t.Fatalf("write partition column parquet rows: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close partition column parquet writer: %v", err)
 	}
 	return buf.Bytes()
 }

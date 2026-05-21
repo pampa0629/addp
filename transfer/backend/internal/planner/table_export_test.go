@@ -460,6 +460,32 @@ func TestBuildTableTransferPlanConsumesMetaWholeSourceAttributes(t *testing.T) {
 	}
 }
 
+func TestBuildTableTransferPlanUsesMetaObjectWholePhysicalPathAsScope(t *testing.T) {
+	spec := minimalEncodedToEncodedSpec()
+	spec.Source.Format = ""
+	spec.Source.EndpointResource = EndpointResourceSpec{Kind: EndpointResourceKindObject, Path: map[string]interface{}{"bucket": "manager", "path": "stale"}}
+	spec.Source.Attributes = tableSourceAttributes("whole", "parquet", "regression/codex-parquet-whole-20260521", nil, []map[string]interface{}{
+		{"name": "id", "type": "bigint"},
+	}, nil)
+	spec.Source.Attributes["storage"].(map[string]interface{})["bucket"] = "manager"
+	spec.Source.Attributes["storage"].(map[string]interface{})["path"] = "regression/"
+	spec.Source.Attributes["storage"].(map[string]interface{})["name"] = "codex-parquet-whole-20260521"
+
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		1: {Type: "minio"},
+		2: {Type: "nfs"},
+	})
+	if err != nil {
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
+	}
+	if result.Plan.Source.Layout != format.FormatLayoutWhole {
+		t.Fatalf("source layout = %q, want whole", result.Plan.Source.Layout)
+	}
+	if got := result.Plan.Source.Path.StringPath(); got != "manager/regression/codex-parquet-whole-20260521" {
+		t.Fatalf("source path = %q, want manager/regression/codex-parquet-whole-20260521", got)
+	}
+}
+
 func TestBuildTableTransferPlanRequestsEWKBForSpatialEncodedImportToNativeTarget(t *testing.T) {
 	spec := minimalEncodedToNativeSpec()
 	spec.Source.Format = format.FormatShapefile

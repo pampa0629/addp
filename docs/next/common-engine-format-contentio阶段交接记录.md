@@ -143,6 +143,53 @@ go test ./manager/backend/internal/preview ./manager/backend/internal/objectcont
 go test ./common/dataitem
 ```
 
+### 5. Transfer 输出后缀归 common/format 管理
+
+针对用户选择 `format=parquet` 但目标名称未带 `.parquet` 后缀，导致写出后 Meta 识别和预览体验割裂的问题，本轮已明确并实现统一规则：
+
+- 期望输出后缀属于格式能力，不属于 Transfer 私有规则。
+- `common/format` 提供默认写出后缀能力；Transfer planner 只消费该能力。
+- encoded target 缺少格式后缀时自动补齐；已有冲突后缀时拒绝计划，避免写出“格式是 A、文件名像 B”的结果。
+- 不为 Parquet 单独硬编码，后续 CSV、JSON、Shapefile 等有明确写出后缀的格式都走同一套能力。
+
+这条规则已同步到 `docs/next/transfer基于common-engine-format改造设计.md` 的 endpoint 规则中：encoded target 默认写出后缀归 `common/format` 定义，Transfer 只消费。
+
+### 6. 无后缀内容格式识别与 Meta refresh 链路
+
+针对 MinIO 中无后缀 Parquet 文件 `lake3`，Manager item refresh 显示成功但预览仍 unsupported 的问题，本轮确认根因不是前端刷新失败，而是 Meta 的已知 item refresh 只基于旧 attributes 还原 descriptor。旧 item 为 `layout=single,data_type=unknown,format=unknown` 时，原有 `EnrichSingleTableFileItem` 会因为没有 table provider 直接跳过，不会重新读取内容识别格式。
+
+本轮已收敛为以下统一方案：
+
+- `common/format.DetectFormat(filename, peek)` 支持在扩展名无法判断时，通过注册格式 descriptor 的 `ContentSignatures` 和格式 plugin 的 `ContentSniffer` 认领内容。
+- `common/format/plugins/parquet` 通过 descriptor / sniffer 声明 Parquet 的内容签名，不在 magic fallback 中为 Parquet 写特例。
+- `meta/internal/metaenrich/single_format.go` 提供统一的 single content 前缀识别入口，负责读取有限 peek bytes 并调用 `common/format.DetectFormat`。
+- `meta/internal/metaenrich/table_file.go` 在 single table enrichment 前，如果 item format 为空或 unknown，先调用统一内容识别，再继续原有 schema / row count / format info 提取。
+- `meta/internal/service/item_refresh_service.go` 的已知 item refresh 复用该入口，因此 Manager 对 single item 刷新后可修正 format / data_type。
+- `meta/internal/service/scan_object_storage_catalog_service.go` 的 object deep scan 也复用该入口，不再保留单独一套 peek + DetectFormat 实现。
+
+这次改动的关键原则是：内容格式识别能力归 `common/format`，何时打开 engine content 归 Meta enrich / scan 链路；不把内容读取下沉到 `common/dataitem`，也不在各扫描入口分别补特例。
+
+相关验证：
+
+```bash
+go test ./common/format ./common/format/plugins/parquet ./meta/backend/internal/metacatalog ./meta/backend/internal/metaenrich ./meta/backend/internal/service
+```
+
+功能验证：Manager 对无后缀 Parquet item 执行刷新后，Meta attributes 可被修正，预览可正常选择 table preview provider。
+
+### 7. Meta 扫描分层约定已写入模块文档
+
+为了避免后续在 `common/dataitem`、`metaitem`、`metacatalog`、`metaenrich`、`metaattr` 之间反复摇摆，本轮已将分工记录到 `meta/CLAUDE.md`：
+
+- `common/dataitem` 是跨模块纯规则层，只处理候选事实，不打开内容。
+- `internal/metaitem/` 负责 Meta item resolver 编排和 `DetectedItem`。
+- `internal/metacatalog/` 负责 catalog 资源规范化和 item plan。
+- `internal/metaenrich/` 负责打开内容、读 schema、读容器内部和内容前缀识别。
+- `internal/metaattr/` 负责标准 attributes 合并与落库结构。
+- `internal/metapath/` 负责路径语义工具。
+
+文档同时列出了对象存储 catalog scan、文件系统 catalog scan、已知 item refresh 三条主链路，以及 Manager 预览只消费 Meta attributes、不重新识别格式的边界。
+
 ## 三、当前仍需继续处理的关键问题
 
 ### 1. Transfer 消费 Meta item attributes
@@ -170,6 +217,7 @@ Manager 后续只需用真实 NFS / MinIO / ZIP 样例继续回归：
 
 稳定口径已进入或本轮应同步到以下文档：
 
+- `meta/CLAUDE.md`
 - `docs/spec/addp内容IO抽象规范.md`
 - `docs/spec/addp数据项探测器规范.md`
 - `docs/spec/addp元数据扫描机制规范.md`
@@ -182,10 +230,21 @@ Manager 后续只需用真实 NFS / MinIO / ZIP 样例继续回归：
 
 ## 五、下一轮建议执行顺序
 
-1. 用真实 NFS / MinIO Parquet dataset 回归 `layout=whole` Transfer 链路，确认 scope path、分区目录递归、Meta attributes 和写后扫描闭环。
-2. 继续补 Shapefile 几何 M 值策略和 NFS / MinIO Shapefile import/export 验收沉淀。
-3. 如后续调整 item refresh，必须同时验证 single / multi / whole 三类 layout，尤其确认 multi 的 `type_info.table.fields`、`capabilities.spatial` 不因只读 primary content 而丢失。
-4. Manager 后续只做真实样例回归和小修，不再作为下一轮主线。
+1. 如后续调整 item refresh，必须同时验证 single / multi / whole 三类 layout，尤其确认 multi 的 `type_info.table.fields`、`capabilities.spatial` 不因只读 primary content 而丢失。
+2. 如果继续扩展无后缀识别，优先给格式 descriptor / plugin 补 `ContentSignatures` / `ContentSniffer`，再复用 Meta enrich 的统一入口；不要在扫描 service 中新增格式特例。
+3. Manager 后续只做真实样例回归和小修，不再作为下一轮主线。
+
+### 已完成：真实 `layout=whole` Transfer 回归
+
+2026-05-21 已用真实 NFS / MinIO Parquet dataset 回归 `layout=whole` encoded Transfer 链路：
+
+- MinIO 分区 Parquet dataset -> NFS Parquet：task `13`，execution `522`，`records_read=146180`，`records_written=146180`。目标路径自动补齐为 `exports/codex_minio_whole_to_nfs_20260521.parquet`，写后 deep scan 生成 NFS meta item `1867`。
+- NFS whole Parquet dataset -> MinIO Parquet：task `14`，execution `524`，`records_read=219270`，`records_written=219270`。源 item `1841` 的 3 个 part 文件被完整递归读取；目标对象自动补齐为 `manager/regression/codex-nfs-whole-to-minio-20260521.parquet`，写后 deep scan 生成 MinIO meta item `1868`。
+
+本轮实跑发现并修复两类边界问题：
+
+- 对象存储分区目录下的 Parquet dataset 需要在直接父 prefix 之外，额外按分区根 prefix 形成 whole-scope 候选。
+- Transfer planner 消费对象存储 whole item 时，source scope 应优先使用 `attributes.storage.physical_path`，再回退到 `storage.path + storage.name` / `storage.path`，避免把父 prefix 当作完整读取范围。
 
 ## 六、新会话起手点
 
@@ -197,6 +256,14 @@ Manager 后续只需用真实 NFS / MinIO / ZIP 样例继续回归：
 
 对应代码重点是：
 
+- `meta/CLAUDE.md`
+- `common/format/detection.go`
+- `common/format/detection_magic.go`
+- `common/format/provider.go`
+- `meta/backend/internal/metaenrich/single_format.go`
+- `meta/backend/internal/metaenrich/table_file.go`
+- `meta/backend/internal/service/item_refresh_service.go`
+- `meta/backend/internal/service/scan_object_storage_catalog_service.go`
 - `transfer/backend/internal/planner/table_export.go`
 - `transfer/backend/internal/planner/table_export_test.go`
 - `transfer/backend/internal/executor/table_transfer.go`

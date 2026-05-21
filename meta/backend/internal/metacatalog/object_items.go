@@ -41,7 +41,7 @@ func DetectObjectCatalogCompositeItems(
 		return skipPaths, nil, nil
 	}
 
-	groups := objectResourcesByParentPrefix(resources)
+	groups := objectResourcesByCompositePrefix(resources)
 	items := make([]ObjectCatalogCompositeItem, 0)
 	warnings := make([]ObjectCatalogCompositeDetectionError, 0)
 	groupKeys := make([]string, 0, len(groups))
@@ -318,6 +318,52 @@ func objectResourcesByParentPrefix(resources []StorageResource) map[string][]Sto
 		groups[key] = append(groups[key], resource)
 	}
 	return groups
+}
+
+func objectResourcesByCompositePrefix(resources []StorageResource) map[string][]StorageResource {
+	groups := objectResourcesByParentPrefix(resources)
+	for key, group := range objectResourcesByPartitionRootPrefix(resources) {
+		groups[key] = append(groups[key], group...)
+	}
+	return groups
+}
+
+func objectResourcesByPartitionRootPrefix(resources []StorageResource) map[string][]StorageResource {
+	groups := map[string][]StorageResource{}
+	for _, resource := range resources {
+		if resource.NodeType != plugin.CatalogKindObject {
+			continue
+		}
+		prefix := partitionRootPrefix(resource.Path)
+		if prefix == "" {
+			continue
+		}
+		key := resource.RootName + "\x00" + prefix
+		groups[key] = append(groups[key], resource)
+	}
+	return groups
+}
+
+func partitionRootPrefix(objectPath string) string {
+	parent := strings.Trim(ParentObjectPath(objectPath), "/")
+	if parent == "" {
+		return ""
+	}
+	segments := splitObjectCatalogPathSegments(parent)
+	for i, segment := range segments {
+		if isPartitionPathSegment(segment) {
+			if i == 0 {
+				return ""
+			}
+			return strings.Join(segments[:i], "/")
+		}
+	}
+	return ""
+}
+
+func isPartitionPathSegment(segment string) bool {
+	segment = strings.TrimSpace(segment)
+	return segment != "" && (strings.Contains(segment, "=") || strings.HasPrefix(segment, "_"))
 }
 
 func unclaimedObjectResources(group []StorageResource, skipPaths map[string]bool) []StorageResource {

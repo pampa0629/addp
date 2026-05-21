@@ -26,6 +26,22 @@ func TestObjectResourcesByParentPrefixDoesNotAddCrossLayerCompositeCandidates(t 
 	}
 }
 
+func TestObjectResourcesByCompositePrefixAddsPartitionedWholeScopeCandidate(t *testing.T) {
+	t.Parallel()
+
+	groups := objectResourcesByCompositePrefix([]StorageResource{
+		{RootName: "addp", Path: "datasets/orders/dt=2026-05-20/part-000.parquet", NodeType: "object"},
+		{RootName: "addp", Path: "datasets/orders/dt=2026-05-21/part-001.parquet", NodeType: "object"},
+	})
+
+	if got := len(groups["addp\x00datasets/orders"]); got != 2 {
+		t.Fatalf("partitioned dataset candidate size = %d, want 2", got)
+	}
+	if got := len(groups["addp\x00datasets/orders/dt=2026-05-20"]); got != 1 {
+		t.Fatalf("direct partition candidate size = %d, want 1", got)
+	}
+}
+
 func TestUnclaimedObjectResourcesFiltersAlreadyClaimedComponents(t *testing.T) {
 	t.Parallel()
 

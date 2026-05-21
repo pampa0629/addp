@@ -27,7 +27,8 @@ const FileRowCountsOption = "parquet_file_row_counts"
 type Plugin struct{}
 
 type Info struct {
-	Files []FileInfo
+	Files            []FileInfo
+	PartitionColumns []string
 }
 
 type FileInfo struct {
@@ -39,9 +40,13 @@ func (i *Info) FormatAttributes() map[string]interface{} {
 	if i == nil || len(i.Files) == 0 {
 		return nil
 	}
-	return map[string]interface{}{
+	attrs := map[string]interface{}{
 		"files": i.Files,
 	}
+	if len(i.PartitionColumns) > 0 {
+		attrs["partition_columns"] = i.PartitionColumns
+	}
+	return attrs
 }
 
 func InfoFromTableInfo(tableInfo *format.TableInfo) *Info {
@@ -679,17 +684,20 @@ func jsonString(value interface{}) string {
 }
 
 func (p *Plugin) DescribeTableScope(ctx context.Context, reader contentio.Reader, scope contentio.Ref, options *format.ParseOptions) (*format.TableInfo, error) {
-	refs, err := listParquetResources(ctx, reader, scope)
+	scopedRefs, err := listParquetScopeResources(ctx, reader, scope)
 	if err != nil {
 		return nil, err
 	}
 	var merged *format.TableInfo
+	var dataFields []format.FieldInfo
 	totalRows := int64(0)
-	files := make([]FileInfo, 0, len(refs))
-	for _, ref := range refs {
+	files := make([]FileInfo, 0, len(scopedRefs))
+	partitionFields := partitionFieldsFromScopedRefs(scopedRefs)
+	for _, scopedRef := range scopedRefs {
 		if err := contextErr(ctx); err != nil {
 			return nil, err
 		}
+		ref := scopedRef.Ref
 		input, err := reader.Open(ctx, ref)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open parquet file %s: %w", ref.Path, err)
@@ -703,12 +711,13 @@ func (p *Plugin) DescribeTableScope(ctx context.Context, reader contentio.Reader
 			return nil, fmt.Errorf("failed to close parquet file %s: %w", ref.Path, closeErr)
 		}
 		if merged == nil {
+			dataFields = append([]format.FieldInfo(nil), info.Fields...)
 			merged = &format.TableInfo{
 				Name:       contentio.BaseName(scope),
-				Fields:     append([]format.FieldInfo(nil), info.Fields...),
+				Fields:     appendPartitionFields(info.Fields, partitionFields),
 				PrimaryKey: append([]string(nil), info.PrimaryKey...),
 			}
-		} else if !sameFieldSchema(merged.Fields, info.Fields) {
+		} else if !sameFieldSchema(dataFields, info.Fields) {
 			return nil, fmt.Errorf("parquet scope %s has incompatible schema in %s", scope.Path, ref.Path)
 		}
 		if info.RowCount != nil {
@@ -723,12 +732,12 @@ func (p *Plugin) DescribeTableScope(ctx context.Context, reader contentio.Reader
 		return nil, fmt.Errorf("parquet scope %s has no parquet files", scope.Path)
 	}
 	merged.RowCount = &totalRows
-	merged.FormatInfo = map[string]interface{}{"parquet": &Info{Files: files}}
+	merged.FormatInfo = map[string]interface{}{"parquet": &Info{Files: files, PartitionColumns: fieldNames(partitionFields)}}
 	return merged, nil
 }
 
 func (p *Plugin) SampleTableScope(ctx context.Context, reader contentio.Reader, scope contentio.Ref, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
-	refs, err := listParquetResources(ctx, reader, scope)
+	scopedRefs, err := listParquetScopeResources(ctx, reader, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -741,13 +750,14 @@ func (p *Plugin) SampleTableScope(ctx context.Context, reader contentio.Reader, 
 	}
 	rows := make([]map[string]interface{}, 0, limit)
 	remainingOffset := offset
-	for _, ref := range refs {
+	for _, scopedRef := range scopedRefs {
 		if err := contextErr(ctx); err != nil {
 			return nil, err
 		}
 		if int64(len(rows)) >= limit {
 			break
 		}
+		ref := scopedRef.Ref
 		fileRows := int64(0)
 		if rowCount, ok := fileRowCounts[normalizeParquetPath(ref.Path)]; ok {
 			fileRows = rowCount
@@ -785,38 +795,42 @@ func (p *Plugin) SampleTableScope(ctx context.Context, reader contentio.Reader, 
 		if closeErr != nil {
 			return nil, fmt.Errorf("failed to close parquet file %s: %w", ref.Path, closeErr)
 		}
-		rows = append(rows, partRows...)
+		rows = append(rows, withPartitionValues(partRows, scopedRef.Partitions)...)
 		remainingOffset = 0
 	}
 	return rows, nil
 }
 
 func (p *Plugin) OpenTableScopeReader(ctx context.Context, reader contentio.Reader, scope contentio.Ref, options *format.ParseOptions) (format.TableReader, error) {
-	refs, err := listParquetResources(ctx, reader, scope)
+	scopedRefs, err := listParquetScopeResources(ctx, reader, scope)
 	if err != nil {
 		return nil, err
 	}
-	if len(refs) == 0 {
+	if len(scopedRefs) == 0 {
 		return nil, fmt.Errorf("parquet scope %s has no parquet files", scope.Path)
 	}
 	return &scopeTableReader{
-		plugin:       p,
-		reader:       reader,
-		refs:         refs,
-		parseOptions: options,
+		plugin:          p,
+		reader:          reader,
+		refs:            scopedRefs,
+		partitionFields: partitionFieldsFromScopedRefs(scopedRefs),
+		parseOptions:    options,
 	}, nil
 }
 
 type scopeTableReader struct {
-	plugin       *Plugin
-	reader       contentio.Reader
-	refs         []contentio.Ref
-	parseOptions *format.ParseOptions
-	schema       *format.TableInfo
-	index        int
-	currentInput io.Closer
-	current      format.TableReader
-	closed       bool
+	plugin            *Plugin
+	reader            contentio.Reader
+	refs              []scopedParquetRef
+	partitionFields   []format.FieldInfo
+	parseOptions      *format.ParseOptions
+	schema            *format.TableInfo
+	dataFields        []format.FieldInfo
+	index             int
+	currentInput      io.Closer
+	current           format.TableReader
+	currentPartitions []partitionValue
+	closed            bool
 }
 
 func (r *scopeTableReader) Schema() *format.TableInfo {
@@ -856,7 +870,7 @@ func (r *scopeTableReader) ReadRows(ctx context.Context, limit int) ([]map[strin
 		if err != nil {
 			return result, err
 		}
-		result = append(result, rows...)
+		result = append(result, withPartitionValues(rows, r.currentPartitions)...)
 		if len(rows) == 0 {
 			if err := r.closeCurrent(ctx); err != nil {
 				return result, err
@@ -879,8 +893,9 @@ func (r *scopeTableReader) Close(ctx context.Context) error {
 
 func (r *scopeTableReader) openNext(ctx context.Context) error {
 	for r.index < len(r.refs) {
-		ref := r.refs[r.index]
+		scopedRef := r.refs[r.index]
 		r.index++
+		ref := scopedRef.Ref
 		input, err := r.reader.Open(ctx, ref)
 		if err != nil {
 			return fmt.Errorf("failed to open parquet file %s: %w", ref.Path, err)
@@ -892,14 +907,18 @@ func (r *scopeTableReader) openNext(ctx context.Context) error {
 		}
 		schema := tableReader.Schema()
 		if r.schema == nil {
-			r.schema = schema
-		} else if schema != nil && !sameFieldSchema(r.schema.Fields, schema.Fields) {
+			if schema != nil {
+				r.dataFields = append([]format.FieldInfo(nil), schema.Fields...)
+			}
+			r.schema = copyTableInfoWithPartitionFields(schema, r.partitionFields)
+		} else if schema != nil && !sameFieldSchema(r.dataFields, schema.Fields) {
 			_ = tableReader.Close(ctx)
 			_ = input.Close()
 			return fmt.Errorf("parquet scope has incompatible schema in %s", ref.Path)
 		}
 		r.currentInput = input
 		r.current = tableReader
+		r.currentPartitions = scopedRef.Partitions
 		return nil
 	}
 	return nil
@@ -917,6 +936,7 @@ func (r *scopeTableReader) closeCurrent(ctx context.Context) error {
 		}
 		r.currentInput = nil
 	}
+	r.currentPartitions = nil
 	return firstErr
 }
 
@@ -994,6 +1014,78 @@ func interfaceInt64(value interface{}) int64 {
 
 func normalizeParquetPath(path string) string {
 	return strings.Trim(path, "/")
+}
+
+func partitionFieldsFromScopedRefs(refs []scopedParquetRef) []format.FieldInfo {
+	seen := map[string]bool{}
+	fields := make([]format.FieldInfo, 0)
+	for _, ref := range refs {
+		for _, partition := range ref.Partitions {
+			if seen[partition.Name] {
+				continue
+			}
+			seen[partition.Name] = true
+			fields = append(fields, format.FieldInfo{
+				Name:     partition.Name,
+				Type:     format.FieldTypeString,
+				Nullable: false,
+			})
+		}
+	}
+	return fields
+}
+
+func appendPartitionFields(fields []format.FieldInfo, partitions []format.FieldInfo) []format.FieldInfo {
+	result := append([]format.FieldInfo(nil), fields...)
+	if len(partitions) == 0 {
+		return result
+	}
+	existing := map[string]bool{}
+	for _, field := range result {
+		existing[field.Name] = true
+	}
+	for _, partition := range partitions {
+		if existing[partition.Name] {
+			continue
+		}
+		result = append(result, partition)
+	}
+	return result
+}
+
+func fieldNames(fields []format.FieldInfo) []string {
+	names := make([]string, 0, len(fields))
+	for _, field := range fields {
+		names = append(names, field.Name)
+	}
+	return names
+}
+
+func withPartitionValues(rows []map[string]interface{}, partitions []partitionValue) []map[string]interface{} {
+	if len(rows) == 0 || len(partitions) == 0 {
+		return rows
+	}
+	result := make([]map[string]interface{}, 0, len(rows))
+	for _, row := range rows {
+		for _, partition := range partitions {
+			if _, exists := row[partition.Name]; exists {
+				continue
+			}
+			row[partition.Name] = partition.Value
+		}
+		result = append(result, row)
+	}
+	return result
+}
+
+func copyTableInfoWithPartitionFields(info *format.TableInfo, partitions []format.FieldInfo) *format.TableInfo {
+	if info == nil {
+		return nil
+	}
+	copied := *info
+	copied.Fields = appendPartitionFields(info.Fields, partitions)
+	copied.PrimaryKey = append([]string(nil), info.PrimaryKey...)
+	return &copied
 }
 
 func contextErr(ctx context.Context) error {

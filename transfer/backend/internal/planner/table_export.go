@@ -250,20 +250,7 @@ func sourceEndpointContentCatalogPath(engineID uint, resource EndpointResourceSp
 		return engineplugin.FileItemPath(engineID, path), nil
 	case EndpointResourceKindObject:
 		bucket := descriptor.StorageBucket
-		objectPath := descriptor.StoragePath
-		if objectPath == "" && descriptor.PhysicalPath != "" {
-			cleaned := strings.Trim(descriptor.PhysicalPath, "/")
-			if cleaned != "" {
-				if splitBucket, splitPath, ok := strings.Cut(cleaned, "/"); ok {
-					if bucket == "" {
-						bucket = splitBucket
-					}
-					objectPath = splitPath
-				} else {
-					objectPath = cleaned
-				}
-			}
-		}
+		objectPath := objectPathFromDescriptor(descriptor, &bucket)
 		if bucket == "" || objectPath == "" {
 			values, _ := resource.Path.(map[string]interface{})
 			if bucket == "" {
@@ -283,6 +270,28 @@ func sourceEndpointContentCatalogPath(engineID uint, resource EndpointResourceSp
 	default:
 		return endpointContentCatalogPath(engineID, resource, "source")
 	}
+}
+
+func objectPathFromDescriptor(descriptor dataitem.ItemDescriptor, bucket *string) string {
+	if physicalPath := strings.Trim(descriptor.PhysicalPath, "/"); physicalPath != "" {
+		if bucket != nil && *bucket != "" {
+			prefix := strings.Trim(*bucket, "/") + "/"
+			return strings.Trim(strings.TrimPrefix(physicalPath, prefix), "/")
+		}
+		if splitBucket, splitPath, ok := strings.Cut(physicalPath, "/"); ok {
+			if bucket != nil && *bucket == "" {
+				*bucket = splitBucket
+			}
+			return strings.Trim(splitPath, "/")
+		}
+		return physicalPath
+	}
+	storagePath := strings.Trim(descriptor.StoragePath, "/")
+	storageName := strings.Trim(descriptor.StorageName, "/")
+	if storageName != "" {
+		return strings.Trim(pathpkg.Join(storagePath, storageName), "/")
+	}
+	return storagePath
 }
 
 func itemDescriptorWithPhysicalPath(descriptor dataitem.ItemDescriptor, physicalPath string) dataitem.ItemDescriptor {

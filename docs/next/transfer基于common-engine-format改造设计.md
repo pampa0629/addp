@@ -239,7 +239,7 @@ Manager 的上传导入入口目前用于“用户上传一个 Shapefile ZIP，�
 | CSV / TSV | `TableReaderProvider` 已有 | `TableWriterProvider` 已有 | table transfer 主链路已使用。 |
 | JSON / JSONL | `TableReaderProvider` 已有 | `TableWriterProvider` 已有 | 支持 JSON array、JSON Lines。 |
 | GeoJSON encoding | 复用 JSON table reader / writer | JSON writer 支持 `spatial.target_encoding=geojson` | GeoJSON 不是顶层独立格式，而是 JSON 的空间编码策略。 |
-| Parquet | `TableReaderProvider` 已有；`ScopeTableReaderProvider` 已支持 dataset / partitioned table 连续读取 | 最小 `TableWriterProvider` 已有 | 单文件和 whole scope table transfer 已有主链路；row group 性能、predicate / projection 仍待增强。 |
+| Parquet | `TableReaderProvider` 已有；`ScopeTableReaderProvider` 已支持 dataset / partitioned table 连续读取，并可从 Hive-style `key=value` 路径补充分区字段 | 最小 `TableWriterProvider` 已有 | 单文件和 whole scope table transfer 已有主链路；row group 性能、predicate / projection 仍待增强。 |
 | Shapefile | `MultiTableReaderProvider` 已有，Transfer 主链路优先使用；info / sample 保留给 Meta / Manager / 探查 | `MultiTableWriterProvider` 已有 | multi ref 读写已可用于 Transfer；range source 下按 `.shx` 读取索引窗口、`.dbf` 连续属性块和 `.shp` 记录窗口；非 range source materialize 到本地后也继续使用本地 `.shx` 索引，只有缺索引或不支持 shape 类型时才回退顺序读取。 |
 
 ### 4.3 Transfer
@@ -347,13 +347,13 @@ batch checkpoint 最小结构：
 
 | 方向 | 当前不足 |
 |---|---|
-| whole scope table 全量读取 | `ScopeTableReaderProvider` 和 Parquet dataset 首条链路已接入；仍需真实 NFS / MinIO dataset 回归，并继续增强 row group、projection、predicate 和分区字段处理。 |
+| whole scope table 全量读取 | `ScopeTableReaderProvider` 和 Parquet dataset 链路已接入；真实 NFS / MinIO dataset 已验收；Hive-style 分区字段已能进入 schema 和 row。 |
 | checkpoint / progress | 已有 batch-level metrics / checkpoint / logs 最小闭环；尚未实现从 checkpoint 恢复执行。 |
 | schema evolution | PostgreSQL 写侧可 ensure/create table，但字段变化、类型演进和目标表差异处理仍未完善。 |
 | 并行读取 | PostgreSQL cursor session 已有，但分区并行读取、稳定快照和多 worker 协调仍未补。 |
 | 其他数据库写侧 | MySQL、Doris、ClickHouse 等 common writer 仍待按真实需求补。 |
-| Parquet 高性能 | 当前是最小 reader / writer，row group reader、predicate / projection、分区数据集读取仍待补。 |
-| Shapefile 读取 | 连续 `MultiTableReaderProvider` 已接入 Transfer 主链路；indexed reader 支持 range source 和本地 materialized fallback，当前覆盖 Point / Polyline / Polygon / MultiPoint，Z/M 类型和更复杂几何仍需补齐。 |
+| Parquet 高性能 | 当前是最小 reader / writer，row group reader、predicate / projection 仍待补。 |
+| Shapefile 读取 | 连续 `MultiTableReaderProvider` 已接入 Transfer 主链路；indexed reader 支持 range source 和本地 materialized fallback，当前覆盖 Point / Polyline / Polygon / MultiPoint，Z 类型已完成主要链路验收。 |
 | non-table data type | document / media / container / graph 还未形成 Transfer 主链路。 |
 | stream / CDC | common engine 尚无稳定 `StreamReadableProvider`、`CDCReadableProvider`、change event / offset 标准。 |
 | transform 扩展 | `field_mapping` 已进入主链路；过滤、派生字段、表达式、空间坐标转换等更完整 ETL transform 尚未设计。 |
@@ -362,30 +362,27 @@ batch checkpoint 最小结构：
 
 ### 近期优先级
 
-1. **回归真实 Parquet whole scope 链路**  
-   使用真实 NFS / MinIO Parquet dataset 验证 `layout=whole` source：planner 从 Meta attributes 还原 scope path，executor 通过 `ScopeTableReaderProvider` 递归读取分区目录，target 写出后触发 Meta deep scan。确认没有退回 sample reader，也没有把目录误当单文件。
+1. **增强 Parquet whole scope 读取能力**
+   真实 NFS / MinIO Parquet dataset 的 `layout=whole` Transfer 链路已验收通过，Hive-style 分区字段已能进入 schema 和 row。下一步可以在现有 `ScopeTableReaderProvider` 基础上继续补 row group、projection 和 predicate。
 
-2. **补 Shapefile reader 的几何覆盖和集成验收**  
-   当前 Transfer 已优先走连续 multi table reader；encoded spatial source -> native table target 的默认行值协议已按 format capability 选择 `ewkb`，不再根据具体 target engine type 硬编码。Shapefile -> PostgreSQL/PostGIS 的 EWKB 写入已有默认跳过的集成测试，可通过 `ADDP_POSTGRES_INTEGRATION=1 go test ./internal/executor -run 'TestIntegrationShapefile.*Z.*Postgres|TestIntegrationShapefileToPostgresWritesEWKBGeometry' -count=1` 验证。PointZ / PolylineZ / PolygonZ / MultiPointZ 已真实验收；Shapefile 写侧已按 `SpatialInfo.Dimension` 输出 Z shape。下一步补 M 值处理策略，并继续把 NFS / MinIO Shapefile import/export 的验收步骤沉淀为可重复测试或操作清单。
-
-3. **补 Transfer 验收用例沉淀**  
+2. **补 Transfer 验收用例沉淀**
    将已通过的 PostgreSQL spatial table -> NFS / MinIO Shapefile、MinIO Shapefile -> PostgreSQL table、NFS Shapefile -> MinIO Shapefile 继续形成可重复的集成测试或操作清单。
 
-4. **设计 checkpoint 恢复语义**  
+3. **设计 checkpoint 恢复语义**
    明确哪些 source reader 支持 seek / cursor 恢复、哪些 target writer 可幂等续写，再决定恢复执行是否进入主链路。
 
-5. **设计下一批 transform 类型**  
+4. **设计下一批 transform 类型**
    在 `field_mapping` 稳定后，再讨论过滤、派生字段、简单表达式、空间坐标转换等 ETL 能力边界。
 
 ### 中期优先级
 
-1. Parquet row group reader / writer 增强，支持 projection、row group 级读取和分区数据集。
+1. Parquet row group reader / writer 增强，支持 projection、predicate 和 row group 级读取。
 2. PostgreSQL schema evolution：字段新增、类型映射、目标表差异处理。
 3. MySQL / Doris / ClickHouse 写侧 common writer，按真实链路逐个补，不一次性铺开。
 4. document / media raw copy：先走 content reader / writer，不做格式转换。
 5. container child table transfer：Excel sheet、SQLite table、GeoPackage layer 等按 child table 转出。
 
-### 长期方向 
+### 长期方向
 
 1. Kafka / stream：新增 stream event、partition / offset checkpoint。
 2. CDC：新增 change event 抽象，支持 snapshot + incremental。
