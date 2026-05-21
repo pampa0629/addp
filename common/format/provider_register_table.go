@@ -84,6 +84,25 @@ func (r *ProviderRegistry) RegisterScopeTableSampleReader(reader ScopeTableSampl
 	return nil
 }
 
+func RegisterScopeTableReaderProvider(provider ScopeTableReaderProvider) error {
+	return globalProviderRegistry.RegisterScopeTableReaderProvider(provider)
+}
+
+func (r *ProviderRegistry) RegisterScopeTableReaderProvider(provider ScopeTableReaderProvider) error {
+	if provider == nil {
+		return fmt.Errorf("scope table reader provider cannot be nil")
+	}
+	formatType := provider.Format()
+	if err := validateProviderFormat(formatType, "scope table reader provider"); err != nil {
+		return err
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.scopeTableReaders[formatType] = provider
+	return nil
+}
+
 func RegisterTableInfoProvider(provider TableInfoProvider) error {
 	return globalProviderRegistry.RegisterTableInfoProvider(provider)
 }

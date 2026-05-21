@@ -26,6 +26,7 @@ type FormatImplementationStatus struct {
 	MultiTableSampleReader bool `json:"multi_table_sample_reader,omitempty"`
 	ScopeTableInfoProvider bool `json:"scope_table_info_provider,omitempty"`
 	ScopeTableSampleReader bool `json:"scope_table_sample_reader,omitempty"`
+	ScopeTableReader       bool `json:"scope_table_reader_provider,omitempty"`
 	TableReaderProvider    bool `json:"table_reader_provider,omitempty"`
 	MultiTableReader       bool `json:"multi_table_reader_provider,omitempty"`
 	TableWriterProvider    bool `json:"table_writer_provider,omitempty"`
@@ -105,6 +106,9 @@ func implementationStatusForFormat(formatType FormatType, identification FormatI
 	}
 	if _, err := GetScopeTableSampleReader(formatType); err == nil {
 		status.ScopeTableSampleReader = true
+	}
+	if _, err := GetScopeTableReaderProvider(formatType); err == nil {
+		status.ScopeTableReader = true
 	}
 	if _, err := GetTableReaderProvider(formatType); err == nil {
 		status.TableReaderProvider = true

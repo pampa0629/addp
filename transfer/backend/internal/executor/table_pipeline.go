@@ -311,6 +311,7 @@ type encodedContentTableSource struct {
 	multiReaderProvider format.MultiTableReaderProvider
 	multiInfoProvider   format.MultiTableInfoProvider
 	multiSampleReader   format.MultiTableSampleReader
+	scopeReaderProvider format.ScopeTableReaderProvider
 	sampleProvider      format.TableSampleReader
 	infoProvider        format.TableInfoProvider
 	connInfo            engineplugin.ConnectionInfo
@@ -322,6 +323,23 @@ type encodedContentTableSource struct {
 }
 
 func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader, error) {
+	if s.scopeReaderProvider != nil {
+		scope := contentRefFromCatalogPath(s.path)
+		scope.Role = contentio.RoleScope
+		tableReader, err := s.scopeReaderProvider.OpenTableScopeReader(ctx, s.scopeReader(), scope, s.parseOptions)
+		if err != nil {
+			return nil, fmt.Errorf("open encoded source scope table reader: %w", err)
+		}
+		schema := s.schema
+		if tableSchemaEmpty(schema) {
+			schema = tableReader.Schema()
+		}
+		return &multiTableBatchReader{
+			tableReader: tableReader,
+			schema:      schema,
+		}, nil
+	}
+
 	if s.multiReaderProvider != nil {
 		reader, refs := s.refReader(s.multiReaderProvider.RelatedRefSpecs())
 		tableReader, err := s.multiReaderProvider.OpenMultiTableReader(ctx, reader, refs, s.parseOptions)
@@ -567,6 +585,10 @@ func (r *sampleEncodedTableBatchReader) Close(context.Context) error {
 
 func (s *encodedContentTableSource) contentReader() contentio.Reader {
 	return contentadapter.NewMappedReader(s.reader, s.connInfo, contentadapter.FixedPathMapper(s.path), s.readOptions)
+}
+
+func (s *encodedContentTableSource) scopeReader() contentio.Reader {
+	return contentadapter.NewMappedReader(s.reader, s.connInfo, contentadapter.ScopePathMapper(s.path), s.readOptions)
 }
 
 func (s *encodedContentTableSource) refReader(specs []format.RelatedRefSpec) (contentio.Reader, []format.RelatedRef) {

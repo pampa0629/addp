@@ -95,6 +95,7 @@ type TableTransferExecutor struct {
 	SourceMultiReadProvider    format.MultiTableReaderProvider
 	SourceMultiInfoProvider    format.MultiTableInfoProvider
 	SourceMultiSampleReader    format.MultiTableSampleReader
+	SourceScopeReadProvider    format.ScopeTableReaderProvider
 	TargetContentWriter        engineplugin.ContentWritableProvider
 	TargetFormatProvider       format.TableWriterProvider
 	TargetMultiProvider        format.MultiTableWriterProvider
@@ -129,6 +130,7 @@ func NewTableTransferExecutor(sourceEngineType, targetEngineType string, sourceF
 		executor.SourceMultiReadProvider, _ = format.GetMultiTableReaderProvider(sourceFormat)
 		executor.SourceMultiInfoProvider, _ = format.GetMultiTableInfoProvider(sourceFormat)
 		executor.SourceMultiSampleReader, _ = format.GetMultiTableSampleReader(sourceFormat)
+		executor.SourceScopeReadProvider, _ = format.GetScopeTableReaderProvider(sourceFormat)
 		if executor.SourceMultiReadProvider != nil {
 			executor.SourceMultiInfoProvider = nil
 			executor.SourceMultiSampleReader = nil
@@ -194,6 +196,20 @@ func (e *TableTransferExecutor) openSource(plan TableSourcePlan) (TableBatchSour
 	case TableEndpointEncoded:
 		if e.SourceContentReader == nil {
 			return nil, fmt.Errorf("encoded table source requires content reader")
+		}
+		if plan.Layout == format.FormatLayoutWhole {
+			if e.SourceScopeReadProvider == nil {
+				return nil, fmt.Errorf("encoded whole scope table source requires scope table reader provider")
+			}
+			return &encodedContentTableSource{
+				reader:              e.SourceContentReader,
+				scopeReaderProvider: e.SourceScopeReadProvider,
+				connInfo:            plan.ConnInfo,
+				path:                plan.Path,
+				readOptions:         plan.ContentRead,
+				parseOptions:        plan.ParseOptions,
+				schema:              plan.Schema,
+			}, nil
 		}
 		if e.SourceTableReadProvider == nil && e.SourceMultiReadProvider == nil && (e.SourceMultiInfoProvider == nil || e.SourceMultiSampleReader == nil) && e.SourceFormatProvider == nil {
 			return nil, fmt.Errorf("encoded table source requires table reader provider")

@@ -81,7 +81,7 @@ func tableCapabilityFromFormat(backendType format.FormatType, value string, opti
 		Value:        value,
 		BackendType:  string(backendType),
 		Label:        tableFormatLabel(value),
-		Extension:    tableFormatExtension(value, descriptor),
+		Extension:    tableFormatExtension(backendType, value, options),
 		Group:        tableFormatGroup(spatial),
 		Spatial:      spatial,
 		Read:         read,
@@ -113,15 +113,10 @@ func transferWritable(formatType format.FormatType) (bool, string) {
 	return false, ""
 }
 
-func tableFormatExtension(value string, descriptor format.FormatDescriptor) string {
-	switch value {
-	case "jsonl":
-		return "jsonl"
-	case "geojson":
-		return "geojson"
-	}
-	if len(descriptor.Identification.Extensions) > 0 {
-		return strings.TrimPrefix(descriptor.Identification.Extensions[0], ".")
+func tableFormatExtension(backendType format.FormatType, value string, options map[string]any) string {
+	extension := format.DefaultWriteExtension(backendType, &format.WriteOptions{ExtraParams: options})
+	if extension != "" {
+		return strings.TrimPrefix(extension, ".")
 	}
 	return value
 }

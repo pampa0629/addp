@@ -755,6 +755,70 @@ func (w *fakeContentWriter) OpenRange(_ context.Context, _ engineplugin.Connecti
 	return io.NopCloser(bytes.NewReader(data[opts.Offset:end])), nil
 }
 
+func (w *fakeContentWriter) ListChildren(_ context.Context, _ engineplugin.ConnectionInfo, parent engineplugin.CatalogPath, _ engineplugin.ListOptions) ([]engineplugin.CatalogNode, error) {
+	if w.files == nil {
+		return nil, nil
+	}
+	parentPath := strings.Trim(parent.StringPath(), "/")
+	dirs := map[string]bool{}
+	nodes := make([]engineplugin.CatalogNode, 0)
+	for path := range w.files {
+		trimmed := strings.Trim(path, "/")
+		if parentPath != "" {
+			if !strings.HasPrefix(trimmed, parentPath+"/") {
+				continue
+			}
+			trimmed = strings.TrimPrefix(trimmed, parentPath+"/")
+		}
+		if trimmed == "" {
+			continue
+		}
+		if strings.Contains(trimmed, "/") {
+			name := strings.Split(trimmed, "/")[0]
+			if dirs[name] {
+				continue
+			}
+			dirs[name] = true
+			dirPath := parentPath
+			if dirPath != "" {
+				dirPath += "/"
+			}
+			dirPath += name
+			nodes = append(nodes, engineplugin.CatalogNode{
+				Name:        name,
+				Path:        engineplugin.FileDirectoryPath(parent.EngineID, dirPath),
+				Term:        engineplugin.CatalogTermDirectory,
+				Kind:        engineplugin.CatalogKindDirectory,
+				IsContainer: true,
+			})
+			continue
+		}
+		filePath := parentPath
+		if filePath != "" {
+			filePath += "/"
+		}
+		filePath += trimmed
+		nodes = append(nodes, engineplugin.CatalogNode{
+			Name:   trimmed,
+			Path:   engineplugin.FileItemPath(parent.EngineID, filePath),
+			Term:   engineplugin.CatalogTermFile,
+			Kind:   engineplugin.CatalogKindFile,
+			IsItem: true,
+		})
+	}
+	return nodes, nil
+}
+
+func (w *fakeContentWriter) ResolvePath(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.CatalogPath) (*engineplugin.CatalogNode, error) {
+	return &engineplugin.CatalogNode{
+		Name:        path.StringPath(),
+		Path:        path,
+		Term:        engineplugin.CatalogTermDirectory,
+		Kind:        engineplugin.CatalogKindDirectory,
+		IsContainer: true,
+	}, nil
+}
+
 type fakeWriteCloser struct {
 	io.Writer
 	close func()

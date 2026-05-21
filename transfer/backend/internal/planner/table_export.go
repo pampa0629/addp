@@ -3,6 +3,7 @@ package planner
 import (
 	"encoding/json"
 	"fmt"
+	pathpkg "path"
 	"path/filepath"
 	"strings"
 
@@ -243,6 +244,9 @@ func sourceEndpointContentCatalogPath(engineID uint, resource EndpointResourceSp
 		if path == "" {
 			return engineplugin.CatalogPath{}, fmt.Errorf("source file resource path requires path")
 		}
+		if descriptor.Layout == dataitem.LayoutWhole {
+			return engineplugin.FileDirectoryPath(engineID, path), nil
+		}
 		return engineplugin.FileItemPath(engineID, path), nil
 	case EndpointResourceKindObject:
 		bucket := descriptor.StorageBucket
@@ -271,6 +275,9 @@ func sourceEndpointContentCatalogPath(engineID uint, resource EndpointResourceSp
 		}
 		if bucket == "" || objectPath == "" {
 			return engineplugin.CatalogPath{}, fmt.Errorf("source object resource path requires bucket and path")
+		}
+		if descriptor.Layout == dataitem.LayoutWhole {
+			return engineplugin.ObjectDirectoryPath(engineID, bucket, objectPath), nil
 		}
 		return engineplugin.ObjectItemPath(engineID, bucket, objectPath), nil
 	default:
@@ -612,10 +619,6 @@ func buildTableTargetPlan(endpoint EndpointSpec, engine EngineBinding) (executor
 			},
 		}, nil
 	case representationEncoded:
-		targetPath, err := targetEndpointContentCatalogPath(engine.EngineID, endpoint.EndpointResource)
-		if err != nil {
-			return executor.TableTargetPlan{}, fmt.Errorf("build target path: %w", err)
-		}
 		targetFormat := endpoint.Format
 		if targetFormat == "" {
 			return executor.TableTargetPlan{}, fmt.Errorf("target format is required")
@@ -624,6 +627,10 @@ func buildTableTargetPlan(endpoint EndpointSpec, engine EngineBinding) (executor
 			return executor.TableTargetPlan{}, err
 		}
 		writeOptions := tableWriteOptions(endpoint.Options, targetFormat)
+		targetPath, err := targetEndpointContentCatalogPath(engine.EngineID, endpoint.EndpointResource, targetFormat, writeOptions)
+		if err != nil {
+			return executor.TableTargetPlan{}, fmt.Errorf("build target path: %w", err)
+		}
 		return executor.TableTargetPlan{
 			Kind:              executor.TableEndpointEncoded,
 			ConnInfo:          engine.ConnInfo,
@@ -886,16 +893,27 @@ func nativeTablePath(engineID uint, raw interface{}) (engineplugin.CatalogPath, 
 	}, nil
 }
 
-func targetEndpointContentCatalogPath(engineID uint, resource EndpointResourceSpec) (engineplugin.CatalogPath, error) {
-	return endpointContentCatalogPath(engineID, resource, "target")
+func targetEndpointContentCatalogPath(engineID uint, resource EndpointResourceSpec, formatType format.FormatType, writeOptions *format.WriteOptions) (engineplugin.CatalogPath, error) {
+	return endpointContentCatalogPathWithTargetFormat(engineID, resource, "target", formatType, writeOptions)
 }
 
 func endpointContentCatalogPath(engineID uint, resource EndpointResourceSpec, role string) (engineplugin.CatalogPath, error) {
+	return endpointContentCatalogPathWithTargetFormat(engineID, resource, role, "", nil)
+}
+
+func endpointContentCatalogPathWithTargetFormat(engineID uint, resource EndpointResourceSpec, role string, formatType format.FormatType, writeOptions *format.WriteOptions) (engineplugin.CatalogPath, error) {
 	switch resource.Kind {
 	case EndpointResourceKindFile:
 		path := engineplugin.NormalizeFileCatalogPath(contentPathString(resource.Path, "file"))
 		if path == "" {
 			return engineplugin.CatalogPath{}, fmt.Errorf("%s file resource path requires path", role)
+		}
+		if role == "target" && formatType != "" {
+			normalizedPath, err := normalizeTargetContentPathExtension(path, formatType, writeOptions)
+			if err != nil {
+				return engineplugin.CatalogPath{}, err
+			}
+			path = normalizedPath
 		}
 		return engineplugin.FileItemPath(engineID, path), nil
 	case EndpointResourceKindObject:
@@ -905,10 +923,33 @@ func endpointContentCatalogPath(engineID uint, resource EndpointResourceSpec, ro
 		if bucket == "" || objectPath == "" {
 			return engineplugin.CatalogPath{}, fmt.Errorf("%s object resource path requires bucket and path", role)
 		}
+		if role == "target" && formatType != "" {
+			normalizedPath, err := normalizeTargetContentPathExtension(objectPath, formatType, writeOptions)
+			if err != nil {
+				return engineplugin.CatalogPath{}, err
+			}
+			objectPath = normalizedPath
+		}
 		return engineplugin.ObjectItemPath(engineID, bucket, objectPath), nil
 	default:
 		return engineplugin.CatalogPath{}, fmt.Errorf("unsupported %s resource kind %q", role, resource.Kind)
 	}
+}
+
+func normalizeTargetContentPathExtension(rawPath string, formatType format.FormatType, writeOptions *format.WriteOptions) (string, error) {
+	path := strings.TrimSpace(rawPath)
+	expectedExt := format.DefaultWriteExtension(formatType, writeOptions)
+	if path == "" || expectedExt == "" {
+		return path, nil
+	}
+	currentExt := format.NormalizeExtension(pathpkg.Ext(path))
+	if currentExt == "" {
+		return path + expectedExt, nil
+	}
+	if currentExt != expectedExt {
+		return "", fmt.Errorf("target path extension %q conflicts with target format %q; expected %q", currentExt, formatType, expectedExt)
+	}
+	return path, nil
 }
 
 func writeMode(policy map[string]interface{}) string {

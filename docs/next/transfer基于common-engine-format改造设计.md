@@ -160,9 +160,10 @@ format / engine native field type
 7. native endpoint 不写 `format=table`。
 8. GeoJSON 输出按 `format=json + spatial.target_encoding=geojson` 表达。
 9. Shapefile 输出按 `format=shapefile` 表达，并通过 multi ref writer 写出 `.shp/.shx/.dbf/.cpg/.prj` 等相关内容。
-10. `policy.write_mode` 目前只保留 `overwrite` 和 `append`。是否先删、删什么，是 Transfer 策略；common engine 只提供删除指定资源的原子能力。
-11. `transforms` 描述 source 和 target 之间的 table batch 转换，不属于 source / target endpoint。
-12. endpoint 的 `engine.type` 不是必填事实。生产链路应以 `engine.id` 为身份，Transfer 通过 System engine resolver 获取 engine type 和 connection info；`engine.type` 只作为测试或诊断时的可选一致性校验，不应由上游模块硬编码。
+10. encoded target 的默认写出后缀归 `common/format` 定义。Transfer planner 只消费 `common/format` 的默认写出后缀来规范化目标 file/object 路径：缺失后缀时自动补齐，已有冲突后缀时拒绝创建计划，不在 Transfer 内硬编码具体格式后缀。
+11. `policy.write_mode` 目前只保留 `overwrite` 和 `append`。是否先删、删什么，是 Transfer 策略；common engine 只提供删除指定资源的原子能力。
+12. `transforms` 描述 source 和 target 之间的 table batch 转换，不属于 source / target endpoint。
+13. endpoint 的 `engine.type` 不是必填事实。生产链路应以 `engine.id` 为身份，Transfer 通过 System engine resolver 获取 engine type 和 connection info；`engine.type` 只作为测试或诊断时的可选一致性校验，不应由上游模块硬编码。
 
 旧字段 `connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等不再兼容，出现即拒绝。
 
@@ -238,7 +239,7 @@ Manager 的上传导入入口目前用于“用户上传一个 Shapefile ZIP，�
 | CSV / TSV | `TableReaderProvider` 已有 | `TableWriterProvider` 已有 | table transfer 主链路已使用。 |
 | JSON / JSONL | `TableReaderProvider` 已有 | `TableWriterProvider` 已有 | 支持 JSON array、JSON Lines。 |
 | GeoJSON encoding | 复用 JSON table reader / writer | JSON writer 支持 `spatial.target_encoding=geojson` | GeoJSON 不是顶层独立格式，而是 JSON 的空间编码策略。 |
-| Parquet | 最小 `TableReaderProvider` 已有 | 最小 `TableWriterProvider` 已有 | 已能跑通基础 table transfer；row group / 分区数据集仍待增强。 |
+| Parquet | `TableReaderProvider` 已有；`ScopeTableReaderProvider` 已支持 dataset / partitioned table 连续读取 | 最小 `TableWriterProvider` 已有 | 单文件和 whole scope table transfer 已有主链路；row group 性能、predicate / projection 仍待增强。 |
 | Shapefile | `MultiTableReaderProvider` 已有，Transfer 主链路优先使用；info / sample 保留给 Meta / Manager / 探查 | `MultiTableWriterProvider` 已有 | multi ref 读写已可用于 Transfer；range source 下按 `.shx` 读取索引窗口、`.dbf` 连续属性块和 `.shp` 记录窗口；非 range source materialize 到本地后也继续使用本地 `.shx` 索引，只有缺索引或不支持 shape 类型时才回退顺序读取。 |
 
 ### 4.3 Transfer
@@ -246,8 +247,8 @@ Manager 的上传导入入口目前用于“用户上传一个 Shapefile ZIP，�
 | 能力 | 状态 |
 |---|---|
 | 新 endpoint JSON | 创建、编辑、详情、执行已切换到新结构。 |
-| planner | 已能规划 native table、encoded table file/object、multi ref export、native table import；下一步需要优先消费 Meta item attributes，避免 source 侧重新猜 refs、字段类型或空间字段。 |
-| executor | 已统一走 common engine / format / contentio 能力；single content 使用固定 CatalogPath，multi writer 可按 format specs 生成目标 refs。source 侧已入库 multi item 后续必须优先使用 `attributes.item.refs`，不再按 basename 猜测 sidecar。 |
+| planner | 已能规划 native table、encoded table file/object、multi ref export、native table import；source endpoint 可消费 Meta item 标准 attributes，还原 `layout/data_type/format/refs/storage/type_info/capabilities`，不再默认猜 refs、字段类型或空间字段。 |
+| executor | 已统一走 common engine / format / contentio 能力；single content 使用固定 CatalogPath，multi source 优先使用 planner 提供的 `attributes.item.refs`，whole source 走 `ScopeTableReaderProvider`，multi writer 可按 format specs 生成目标 refs。 |
 | worker | Asynq worker 保留，执行入口已切到 planner + executor。 |
 | field mapping transform | 已进入 `config.transforms[type=field_mapping]`，executor 可执行投影、重命名、默认值、目标类型和 geometry schema 同步。 |
 | metrics | 已回写基础 records_read / records_written。 |
@@ -270,6 +271,7 @@ Manager 的上传导入入口目前用于“用户上传一个 Shapefile ZIP，�
 | NFS Shapefile -> PostgreSQL table | 已真实验收通过 | Shapefile multi ref 读侧可进入统一 table reader / writer 链路，PostgreSQL 目标优先 COPY session；空间行值可走 EWKB；已补默认跳过的 PostGIS 集成测试，覆盖二维 Point 以及 PointZ / PolylineZ / PolygonZ / MultiPointZ。 |
 | MinIO Shapefile -> PostgreSQL table | 已真实验收通过 | 对象存储 multi ref 读侧可导入 native table；空间行值可走 EWKB。 |
 | NFS Shapefile -> MinIO Shapefile | 已手动验证通过，默认测试已覆盖核心 format 链路 | multi ref 正确生成；Meta deep scan 后可得到字段、行数、format info、spatial capabilities；executor 半集成测试已覆盖 Shapefile encoded source -> Shapefile encoded target，并校验 refs、`SpatialInfo.Dimension=3` 和 Z WKT。 |
+| Parquet dataset / partitioned table -> CSV | 已通过 executor 单元链路验证 | `layout=whole` source 通过 `ScopeTableReaderProvider` 递归读取 scope 下 `.parquet` 文件，不使用 sample reader 冒充全量读取。 |
 
 ## 六、写后 Meta 扫描规则
 
@@ -345,7 +347,7 @@ batch checkpoint 最小结构：
 
 | 方向 | 当前不足 |
 |---|---|
-| Meta item attributes 消费 | Transfer planner 仍需系统化消费已入库 item attributes。`layout=multi` source 应使用 `attributes.item.refs`，字段类型应使用 `type_info.table.fields` 的 ADDP 标准类型，空间字段应使用 `capabilities.spatial`，不得重新猜 refs、native type 或默认 `geom`。 |
+| whole scope table 全量读取 | `ScopeTableReaderProvider` 和 Parquet dataset 首条链路已接入；仍需真实 NFS / MinIO dataset 回归，并继续增强 row group、projection、predicate 和分区字段处理。 |
 | checkpoint / progress | 已有 batch-level metrics / checkpoint / logs 最小闭环；尚未实现从 checkpoint 恢复执行。 |
 | schema evolution | PostgreSQL 写侧可 ensure/create table，但字段变化、类型演进和目标表差异处理仍未完善。 |
 | 并行读取 | PostgreSQL cursor session 已有，但分区并行读取、稳定快照和多 worker 协调仍未补。 |
@@ -360,8 +362,8 @@ batch checkpoint 最小结构：
 
 ### 近期优先级
 
-1. **补 Transfer planner 对 Meta item attributes 的消费**  
-   source endpoint 如果指向已入库 Meta item，planner 应从标准 attributes 还原 `layout/data_type/format/refs/physical_path/capabilities.spatial`。`layout=multi` 使用 `attributes.item.refs`，不在 Transfer 内按 basename 猜 `.shx/.dbf`；字段类型只用 `type_info.table.fields` 的 ADDP 标准类型；空间字段使用 `capabilities.spatial.primary_geometry_column` 或 `geometry_columns`，不得默认 `geom`。建议先补 single / multi / whole 三类 planner 单元测试，再改实现。
+1. **回归真实 Parquet whole scope 链路**  
+   使用真实 NFS / MinIO Parquet dataset 验证 `layout=whole` source：planner 从 Meta attributes 还原 scope path，executor 通过 `ScopeTableReaderProvider` 递归读取分区目录，target 写出后触发 Meta deep scan。确认没有退回 sample reader，也没有把目录误当单文件。
 
 2. **补 Shapefile reader 的几何覆盖和集成验收**  
    当前 Transfer 已优先走连续 multi table reader；encoded spatial source -> native table target 的默认行值协议已按 format capability 选择 `ewkb`，不再根据具体 target engine type 硬编码。Shapefile -> PostgreSQL/PostGIS 的 EWKB 写入已有默认跳过的集成测试，可通过 `ADDP_POSTGRES_INTEGRATION=1 go test ./internal/executor -run 'TestIntegrationShapefile.*Z.*Postgres|TestIntegrationShapefileToPostgresWritesEWKBGeometry' -count=1` 验证。PointZ / PolylineZ / PolygonZ / MultiPointZ 已真实验收；Shapefile 写侧已按 `SpatialInfo.Dimension` 输出 Z shape。下一步补 M 值处理策略，并继续把 NFS / MinIO Shapefile import/export 的验收步骤沉淀为可重复测试或操作清单。

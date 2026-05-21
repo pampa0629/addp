@@ -213,6 +213,7 @@ Info provider 只返回元数据，主要服务 Meta 写入 `type_info.*`、`for
 | `MultiTableWriterProvider` | `table` | `multi` | `contentio.Writer` + `[]RelatedRef` + `TableInfo` -> `TableWriter` | 多 ref table 的连续写出会话。 | Transfer 写侧 | Shapefile |
 | `ScopeTableInfoProvider` | `table` | `whole` | `contentio.Reader` + scope | 目录 / prefix / scope 级 table 类型信息。 | Meta、Manager、Transfer 探查 | Parquet dataset、未来 lake table |
 | `ScopeTableSampleReader` | `table` | `whole` | `contentio.Reader` + scope | 目录 / prefix / scope 级 table 样本读取。 | Manager、Transfer 探查 | Parquet dataset、未来 lake table |
+| `ScopeTableReaderProvider` | `table` | `whole` | `contentio.Reader` + scope -> `TableReader` | 目录 / prefix / scope 级 table 连续全量读取会话。 | Transfer 主链路 | Parquet dataset、未来 lake table |
 | `DocumentInfoProvider` | `document` | 通常 `single` | `io.Reader` | 返回文档标题、语言、编码、大小等文档类型信息。 | Meta、Manager、Search | text、markdown、未来 PDF/DOCX 解析 |
 | `DocumentTextReader` | `document` | 通常 `single` | `io.Reader` | 读取正文片段，可标记 truncated。 | Manager、Search、AI / 摘要 | text、markdown、未来 PDF/DOCX 解析 |
 | `MediaInfoProvider` | `media` | 通常 `single` | `io.Reader` | 返回宽高、时长、编码、MIME、颜色空间、可选空间事实。 | Meta、Manager | image、jpeg、png、gif、tiff |
@@ -316,6 +317,11 @@ type ScopeTableInfoProvider interface {
 type ScopeTableSampleReader interface {
     Provider
     SampleTableScope(ctx context.Context, reader contentio.Reader, scope contentio.Ref, offset, limit int64, options *ParseOptions) ([]map[string]interface{}, error)
+}
+
+type ScopeTableReaderProvider interface {
+    Provider
+    OpenTableScopeReader(ctx context.Context, reader contentio.Reader, scope contentio.Ref, options *ParseOptions) (TableReader, error)
 }
 ```
 

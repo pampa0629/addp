@@ -27,7 +27,7 @@
 - `FormatPlugin` 声明格式身份、descriptor 和 capability。
 - `TableInfoProvider` / `TableSampleReader` / `TableReaderProvider` 服务 single table content。
 - `MultiTableInfoProvider` / `MultiTableSampleReader` / `MultiTableReaderProvider` / `MultiTableWriterProvider` 服务 multi ref table content。
-- `ScopeTableInfoProvider` / `ScopeTableSampleReader` 服务 whole scope table content。
+- `ScopeTableInfoProvider` / `ScopeTableSampleReader` / `ScopeTableReaderProvider` 服务 whole scope table content。
 - `RelatedRefSpec` 表达格式层的 ref 规则；`RelatedRef` 表达已解析 ref + 集合标注。
 
 格式实现不得接 `engine_id` 并自行构造 reader，不得判断 data item 边界，不得把 native field type 泄漏到上层执行链路。各格式的 native field type 与 ADDP 标准字段类型转换由各格式自己负责。
@@ -147,15 +147,16 @@ go test ./common/dataitem
 
 ### 1. Transfer 消费 Meta item attributes
 
-Manager container 动态预览路径已经完成主要边界收口。下一轮建议把重点切到 Transfer planner：让 Transfer 优先消费已入库 Meta item 的标准 attributes，而不是重新猜测 refs、字段类型或空间字段。
+Transfer planner 已开始消费已入库 Meta item 的标准 attributes，而不是重新猜测 refs、字段类型或空间字段：
 
-下一轮重点：
-
-- source endpoint 如果指向已入库 Meta item，应从 attributes 还原 `layout/data_type/format/refs/physical_path/capabilities.spatial`。
-- `layout=multi` 必须使用 `attributes.item.refs` 的完整集合，不能在 Transfer 里按同 basename 自行猜 `.shx/.dbf` 等 sidecar。缺 refs 或 refs 不完整时，应提示回到 Meta node scan 重新识别 item。
+- source endpoint 如果携带 `attributes`，planner 会从 attributes 还原 `layout/data_type/format/refs/physical_path/capabilities.spatial`。
+- `layout=multi` source 必须使用 `attributes.item.refs` 的完整集合；缺 refs 或 refs 不完整时，提示回到 Meta node scan 重新识别 item。
 - 字段类型使用 `type_info.table.fields` 中的 ADDP 标准字段类型，不读取或判断 format / engine native field type。
 - 空间字段使用 `capabilities.spatial.primary_geometry_column` 或 `geometry_columns` 中的标准事实，不默认 `geom`。
 - encoded spatial source -> native target 的 geometry row value 继续通过 `ParseOptions.GeometryEncoding` 请求 WKB / EWKB，不按具体 engine type 写特殊分支。
+- Transfer executor 已接收 planner 提供的 schema、layout 和 related refs；multi source 优先使用 planner refs，避免按 basename 猜 sidecar。
+
+`layout=whole` encoded source 已能被 planner 识别；`common/format` 已补 `ScopeTableReaderProvider`，Transfer executor 可通过连续 scope table reader 执行 whole scope table。Parquet dataset / partitioned table 是第一条落地链路；其他 whole scope 格式不能用 sample reader 冒充全量读取，必须补正式连续 reader。
 
 ### 2. Manager 剩余回归
 
@@ -181,8 +182,8 @@ Manager 后续只需用真实 NFS / MinIO / ZIP 样例继续回归：
 
 ## 五、下一轮建议执行顺序
 
-1. 推进 Transfer planner 对 Meta item attributes 的消费，避免自行猜 refs、字段类型或空间字段。
-2. 先补 planner 单元测试：single / multi / whole 三类 layout；尤其是 Shapefile multi source 必须从 `attributes.item.refs` 生成 source plan。
+1. 用真实 NFS / MinIO Parquet dataset 回归 `layout=whole` Transfer 链路，确认 scope path、分区目录递归、Meta attributes 和写后扫描闭环。
+2. 继续补 Shapefile 几何 M 值策略和 NFS / MinIO Shapefile import/export 验收沉淀。
 3. 如后续调整 item refresh，必须同时验证 single / multi / whole 三类 layout，尤其确认 multi 的 `type_info.table.fields`、`capabilities.spatial` 不因只读 primary content 而丢失。
 4. Manager 后续只做真实样例回归和小修，不再作为下一轮主线。
 

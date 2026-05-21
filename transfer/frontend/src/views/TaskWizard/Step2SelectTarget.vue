@@ -126,8 +126,17 @@
         <el-input
           v-model="outputFileName"
           :placeholder="outputFileNamePlaceholder"
+          :class="{ 'is-extension-error': !!outputFileNameError }"
           @input="syncTarget"
+          @blur="applyOutputFileExtension"
         />
+        <div v-if="outputFileNameError" class="field-hint error-hint">{{ outputFileNameError }}</div>
+        <div v-else-if="finalOutputPath" class="field-hint">
+          {{ t('transfer.taskWizard.finalOutputPathLabel') }}: {{ finalOutputPath }}
+        </div>
+        <div v-if="selectedOutputExtension" class="field-hint">
+          {{ t('transfer.taskWizard.outputFileExtensionAutoHint', { extension: `.${selectedOutputExtension}` }) }}
+        </div>
       </el-form-item>
 
       <el-form-item v-if="isContentTarget && isDelimitedFormat" :label="t('transfer.taskWizard.delimitedOptionsLabel')">
@@ -271,7 +280,7 @@ const canProceed = computed(() => {
   }
   if (isContentTarget.value) {
     const hasRequiredPath = targetStorageKind.value === 's3' ? !!outputPath.value.trim() : true
-    return !!(formData.engineID && hasRequiredPath && outputFileName.value.trim())
+    return !!(formData.engineID && hasRequiredPath && outputFileName.value.trim() && !outputFileNameError.value)
   }
   return false
 })
@@ -282,6 +291,28 @@ const selectedOutputFormat = computed(() => {
 
 const outputFileNamePlaceholder = computed(() => {
   return `example.${selectedOutputFormat.value.extension}`
+})
+
+const selectedOutputExtension = computed(() => normalizeExtension(selectedOutputFormat.value.extension))
+
+const normalizedOutputFileName = computed(() => outputFileNameWithExtension(outputFileName.value))
+
+const outputFileNameError = computed(() => {
+  const extension = selectedOutputExtension.value
+  const current = outputFileName.value.trim()
+  if (!extension || !current) return ''
+  const currentExtension = currentFileExtension(current)
+  if (!currentExtension || currentExtension === extension) return ''
+  return t('transfer.taskWizard.outputFileExtensionConflict', {
+    current: `.${currentExtension}`,
+    expected: `.${extension}`
+  })
+})
+
+const finalOutputPath = computed(() => {
+  const fileName = normalizedOutputFileName.value
+  if (!fileName || outputFileNameError.value) return ''
+  return [normalizeFileCatalogPath(outputPath.value), normalizeFileCatalogPath(fileName)].filter(Boolean).join('/')
 })
 
 const isDelimitedFormat = computed(() => {
@@ -336,7 +367,7 @@ function isObjectStorageEngine(engineType) {
 }
 
 function syncTarget() {
-  if (!canProceed.value || !selectedEngine.value) return
+  if (!selectedEngine.value) return
 
   const extra = isNativeTableTarget.value
     ? {
@@ -348,13 +379,14 @@ function syncTarget() {
         format: outputFormat.value,
         backendFormat: selectedOutputFormat.value.backendType,
         resourcePath: outputPath.value,
-        resourceFile: outputFileName.value,
+        resourceFile: normalizedOutputFileName.value,
         includeHeader: csvHeaders.value,
         delimiter: outputFormat.value === 'tsv' ? '\t' : csvDelimiter.value,
         geometryField: primaryGeometryFieldName.value,
         geometryType: primaryGeometryType.value,
         backendOptions: selectedOutputFormat.value.options || {},
-        writeMode: 'overwrite'
+        writeMode: 'overwrite',
+        extensionError: outputFileNameError.value
       }
 
   props.wizardState.updateTarget({
@@ -370,7 +402,7 @@ function syncTarget() {
 }
 
 function handleOutputFormatChange() {
-  applyOutputFileExtension()
+  applyOutputFileExtension({ replaceKnown: true })
   if (isSpatialFormat.value) {
     applyDefaultGeometryConfig()
   }
@@ -514,21 +546,45 @@ async function restoreState() {
   }
 }
 
-function applyOutputFileExtension() {
-  const extension = selectedOutputFormat.value.extension
-  const current = outputFileName.value.trim()
-  if (!current) return
+function applyOutputFileExtension(options = {}) {
+  const normalized = outputFileNameWithExtension(outputFileName.value, options)
+  if (normalized && normalized !== outputFileName.value) {
+    outputFileName.value = normalized
+  }
+  syncTarget()
+}
 
-  const knownExtensions = outputFormats.value.map(format => format.extension)
+function outputFileNameWithExtension(value, options = {}) {
+  const extension = selectedOutputExtension.value
+  const current = String(value || '').trim().replace(/\\/g, '/')
+  if (!current || !extension) return current
+
+  const knownExtensions = outputFormats.value.map(format => normalizeExtension(format.extension)).filter(Boolean)
   const parts = current.split('/')
   const file = parts.pop() || ''
   const dotIndex = file.lastIndexOf('.')
-  const currentExtension = dotIndex > 0 ? file.slice(dotIndex + 1).toLowerCase() : ''
-  const baseName = dotIndex > 0 && knownExtensions.includes(currentExtension)
-    ? file.slice(0, dotIndex)
-    : file
-  parts.push(`${baseName}.${extension}`)
-  outputFileName.value = parts.join('/')
+  const currentExtension = dotIndex > 0 ? normalizeExtension(file.slice(dotIndex + 1)) : ''
+  if (!currentExtension) {
+    parts.push(`${file}.${extension}`)
+    return parts.join('/')
+  }
+  if (currentExtension === extension) return current
+  if (options.replaceKnown && knownExtensions.includes(currentExtension)) {
+    parts.push(`${file.slice(0, dotIndex)}.${extension}`)
+    return parts.join('/')
+  }
+  return current
+}
+
+function currentFileExtension(value) {
+  const file = String(value || '').trim().replace(/\\/g, '/').split('/').pop() || ''
+  const dotIndex = file.lastIndexOf('.')
+  if (dotIndex <= 0) return ''
+  return normalizeExtension(file.slice(dotIndex + 1))
+}
+
+function normalizeExtension(value) {
+  return String(value || '').trim().toLowerCase().replace(/^\.+/, '')
 }
 
 function applyDefaultGeometryConfig() {
@@ -651,6 +707,14 @@ onMounted(async () => {
   line-height: 1.5;
   color: var(--addp-text-secondary);
   font-size: 12px;
+}
+
+.error-hint {
+  color: var(--el-color-danger);
+}
+
+.is-extension-error :deep(.el-input__wrapper) {
+  box-shadow: 0 0 0 1px var(--el-color-danger) inset;
 }
 
 .write-mode-option {

@@ -979,7 +979,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "创建一个新的数据导入/导出/同步任务 | Create a new data import/export/sync task",
+                "description": "创建一个新的数据导入/导出/同步任务。新任务 config 使用 source/target endpoint；source 指向已入库 Meta item 时可携带 source.attributes，Transfer planner 将消费其中的 item.layout、item.format、item.refs、type_info.table.fields 和 capabilities.spatial。| Create a new data import/export/sync task. New config uses source/target endpoints; source.attributes may carry Meta item attributes consumed by the planner.",
                 "consumes": [
                     "application/json"
                 ],
@@ -997,7 +997,7 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_transfer_internal_models.CreateTaskRequest"
+                            "$ref": "#/definitions/github_com_addp_transfer_internal_models.CreateTaskRequestDoc"
                         }
                     }
                 ],
@@ -1144,7 +1144,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "更新任务的配置信息 | Update task configuration",
+                "description": "更新任务的配置信息。config.source.attributes 会按 JSONB 原样保存，用于 planner 消费已入库 Meta item 标准 attributes。| Update task configuration. config.source.attributes is preserved as JSONB for planner consumption.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1169,7 +1169,7 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_transfer_internal_models.UpdateTaskRequest"
+                            "$ref": "#/definitions/github_com_addp_transfer_internal_models.UpdateTaskRequestDoc"
                         }
                     }
                 ],
@@ -1672,23 +1672,19 @@
                 }
             }
         },
-        "github_com_addp_transfer_internal_models.CreateTaskRequest": {
+        "github_com_addp_transfer_internal_models.CreateTaskRequestDoc": {
             "type": "object",
-            "required": [
-                "config",
-                "name"
-            ],
             "properties": {
                 "auto_scan_metadata": {
-                    "type": "boolean"
+                    "type": "boolean",
+                    "example": true
                 },
                 "batch_size": {
-                    "type": "integer"
+                    "type": "integer",
+                    "example": 1000
                 },
                 "config": {
-                    "description": "包含 source 和 target 配置",
-                    "type": "object",
-                    "additionalProperties": true
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.TableTransferTaskConfigDoc"
                 },
                 "description": {
                     "type": "string"
@@ -1700,14 +1696,15 @@
                     }
                 },
                 "name": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "导入道路 Shapefile"
                 },
                 "schedule": {
                     "type": "string"
                 },
                 "task_type": {
-                    "description": "import | export | sync",
-                    "type": "string"
+                    "type": "string",
+                    "example": "import"
                 }
             }
         },
@@ -1770,6 +1767,31 @@
                 }
             }
         },
+        "github_com_addp_transfer_internal_models.FieldMappingSpecDoc": {
+            "type": "object",
+            "properties": {
+                "default": {},
+                "format": {
+                    "type": "string"
+                },
+                "nullable": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "source": {
+                    "type": "string",
+                    "example": "geom"
+                },
+                "target": {
+                    "type": "string",
+                    "example": "geometry"
+                },
+                "target_type": {
+                    "type": "string",
+                    "example": "geometry"
+                }
+            }
+        },
         "github_com_addp_transfer_internal_models.JSONMap": {
             "type": "object",
             "additionalProperties": true
@@ -1779,6 +1801,31 @@
             "properties": {
                 "time.Time": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_transfer_internal_models.TableTransferTaskConfigDoc": {
+            "type": "object",
+            "properties": {
+                "batch_size": {
+                    "type": "integer",
+                    "example": 1000
+                },
+                "mode": {
+                    "type": "string",
+                    "example": "batch"
+                },
+                "source": {
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.TransferEndpointDoc"
+                },
+                "target": {
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.TransferEndpointDoc"
+                },
+                "transforms": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_transfer_internal_models.TransferTransformDoc"
+                    }
                 }
             }
         },
@@ -1892,6 +1939,78 @@
                 "TaskStatusRunning"
             ]
         },
+        "github_com_addp_transfer_internal_models.TransferEndpointDoc": {
+            "type": "object",
+            "properties": {
+                "attributes": {
+                    "type": "object"
+                },
+                "data_type": {
+                    "type": "string",
+                    "example": "table"
+                },
+                "engine": {
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.TransferEngineRefDoc"
+                },
+                "format": {
+                    "type": "string",
+                    "example": "shapefile"
+                },
+                "options": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "policy": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "representation": {
+                    "type": "string",
+                    "enum": [
+                        "native",
+                        "encoded"
+                    ],
+                    "example": "encoded"
+                },
+                "resource": {
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.TransferEndpointResourceDoc"
+                }
+            }
+        },
+        "github_com_addp_transfer_internal_models.TransferEndpointResourceDoc": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "enum": [
+                        "native_table",
+                        "file",
+                        "object"
+                    ],
+                    "example": "file"
+                },
+                "path": {
+                    "type": "object"
+                }
+            }
+        },
+        "github_com_addp_transfer_internal_models.TransferEngineRefDoc": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "scope": {
+                    "type": "string",
+                    "example": "system"
+                },
+                "type": {
+                    "type": "string",
+                    "example": "nfs"
+                }
+            }
+        },
         "github_com_addp_transfer_internal_models.TransferTask": {
             "type": "object",
             "properties": {
@@ -1965,7 +2084,34 @@
                 }
             }
         },
-        "github_com_addp_transfer_internal_models.UpdateTaskRequest": {
+        "github_com_addp_transfer_internal_models.TransferTransformDoc": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_transfer_internal_models.FieldMappingSpecDoc"
+                    }
+                },
+                "mode": {
+                    "type": "string",
+                    "example": "project"
+                },
+                "type": {
+                    "type": "string",
+                    "example": "field_mapping"
+                },
+                "version": {
+                    "type": "string",
+                    "example": "v1"
+                }
+            }
+        },
+        "github_com_addp_transfer_internal_models.UpdateTaskRequestDoc": {
             "type": "object",
             "properties": {
                 "auto_scan_metadata": {
@@ -1975,8 +2121,7 @@
                     "type": "integer"
                 },
                 "config": {
-                    "type": "object",
-                    "additionalProperties": true
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.TableTransferTaskConfigDoc"
                 },
                 "description": {
                     "type": "string"

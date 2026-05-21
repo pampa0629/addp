@@ -30,16 +30,16 @@ definitions:
     - source_field
     - target_field
     type: object
-  github_com_addp_transfer_internal_models.CreateTaskRequest:
+  github_com_addp_transfer_internal_models.CreateTaskRequestDoc:
     properties:
       auto_scan_metadata:
+        example: true
         type: boolean
       batch_size:
+        example: 1000
         type: integer
       config:
-        additionalProperties: true
-        description: 包含 source 和 target 配置
-        type: object
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.TableTransferTaskConfigDoc'
       description:
         type: string
       mappings:
@@ -47,15 +47,13 @@ definitions:
           $ref: '#/definitions/github_com_addp_transfer_internal_models.FieldMapping'
         type: array
       name:
+        example: 导入道路 Shapefile
         type: string
       schedule:
         type: string
       task_type:
-        description: import | export | sync
+        example: import
         type: string
-    required:
-    - config
-    - name
     type: object
   github_com_addp_transfer_internal_models.ExecutionStatus:
     enum:
@@ -100,6 +98,24 @@ definitions:
       task_id:
         type: integer
     type: object
+  github_com_addp_transfer_internal_models.FieldMappingSpecDoc:
+    properties:
+      default: {}
+      format:
+        type: string
+      nullable:
+        example: true
+        type: boolean
+      source:
+        example: geom
+        type: string
+      target:
+        example: geometry
+        type: string
+      target_type:
+        example: geometry
+        type: string
+    type: object
   github_com_addp_transfer_internal_models.JSONMap:
     additionalProperties: true
     type: object
@@ -107,6 +123,23 @@ definitions:
     properties:
       time.Time:
         type: string
+    type: object
+  github_com_addp_transfer_internal_models.TableTransferTaskConfigDoc:
+    properties:
+      batch_size:
+        example: 1000
+        type: integer
+      mode:
+        example: batch
+        type: string
+      source:
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.TransferEndpointDoc'
+      target:
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.TransferEndpointDoc'
+      transforms:
+        items:
+          $ref: '#/definitions/github_com_addp_transfer_internal_models.TransferTransformDoc'
+        type: array
     type: object
   github_com_addp_transfer_internal_models.TaskExecution:
     properties:
@@ -182,6 +215,57 @@ definitions:
     x-enum-varnames:
     - TaskStatusIdle
     - TaskStatusRunning
+  github_com_addp_transfer_internal_models.TransferEndpointDoc:
+    properties:
+      attributes:
+        type: object
+      data_type:
+        example: table
+        type: string
+      engine:
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.TransferEngineRefDoc'
+      format:
+        example: shapefile
+        type: string
+      options:
+        additionalProperties: true
+        type: object
+      policy:
+        additionalProperties: true
+        type: object
+      representation:
+        enum:
+        - native
+        - encoded
+        example: encoded
+        type: string
+      resource:
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.TransferEndpointResourceDoc'
+    type: object
+  github_com_addp_transfer_internal_models.TransferEndpointResourceDoc:
+    properties:
+      kind:
+        enum:
+        - native_table
+        - file
+        - object
+        example: file
+        type: string
+      path:
+        type: object
+    type: object
+  github_com_addp_transfer_internal_models.TransferEngineRefDoc:
+    properties:
+      id:
+        example: 1
+        type: integer
+      scope:
+        example: system
+        type: string
+      type:
+        example: nfs
+        type: string
+    type: object
   github_com_addp_transfer_internal_models.TransferTask:
     properties:
       auto_scan_metadata:
@@ -230,15 +314,33 @@ definitions:
       updated_at:
         type: string
     type: object
-  github_com_addp_transfer_internal_models.UpdateTaskRequest:
+  github_com_addp_transfer_internal_models.TransferTransformDoc:
+    properties:
+      config:
+        additionalProperties: true
+        type: object
+      fields:
+        items:
+          $ref: '#/definitions/github_com_addp_transfer_internal_models.FieldMappingSpecDoc'
+        type: array
+      mode:
+        example: project
+        type: string
+      type:
+        example: field_mapping
+        type: string
+      version:
+        example: v1
+        type: string
+    type: object
+  github_com_addp_transfer_internal_models.UpdateTaskRequestDoc:
     properties:
       auto_scan_metadata:
         type: boolean
       batch_size:
         type: integer
       config:
-        additionalProperties: true
-        type: object
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.TableTransferTaskConfigDoc'
       description:
         type: string
       enabled:
@@ -1054,14 +1156,18 @@ paths:
     post:
       consumes:
       - application/json
-      description: 创建一个新的数据导入/导出/同步任务 | Create a new data import/export/sync task
+      description: 创建一个新的数据导入/导出/同步任务。新任务 config 使用 source/target endpoint；source
+        指向已入库 Meta item 时可携带 source.attributes，Transfer planner 将消费其中的 item.layout、item.format、item.refs、type_info.table.fields
+        和 capabilities.spatial。| Create a new data import/export/sync task. New config
+        uses source/target endpoints; source.attributes may carry Meta item attributes
+        consumed by the planner.
       parameters:
       - description: 任务创建请求 | Task creation request
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_addp_transfer_internal_models.CreateTaskRequest'
+          $ref: '#/definitions/github_com_addp_transfer_internal_models.CreateTaskRequestDoc'
       produces:
       - application/json
       responses:
@@ -1172,7 +1278,9 @@ paths:
     put:
       consumes:
       - application/json
-      description: 更新任务的配置信息 | Update task configuration
+      description: 更新任务的配置信息。config.source.attributes 会按 JSONB 原样保存，用于 planner 消费已入库
+        Meta item 标准 attributes。| Update task configuration. config.source.attributes
+        is preserved as JSONB for planner consumption.
       parameters:
       - description: 任务ID | Task ID
         in: path
@@ -1184,7 +1292,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_addp_transfer_internal_models.UpdateTaskRequest'
+          $ref: '#/definitions/github_com_addp_transfer_internal_models.UpdateTaskRequestDoc'
       produces:
       - application/json
       responses:

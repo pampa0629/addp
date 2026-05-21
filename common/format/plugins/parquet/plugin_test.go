@@ -25,6 +25,7 @@ func TestParquetPluginImplementsTargetInterfaces(t *testing.T) {
 	var _ format.TableSampleReader = plugin
 	var _ format.ScopeTableInfoProvider = plugin
 	var _ format.ScopeTableSampleReader = plugin
+	var _ format.ScopeTableReaderProvider = plugin
 	var _ format.TableReaderProvider = plugin
 	var _ format.TableWriterProvider = plugin
 }
@@ -269,6 +270,42 @@ func TestParquetPluginScopeRecursesPartitionDirs(t *testing.T) {
 	}
 	if info.RowCount == nil || *info.RowCount != 2 {
 		t.Fatalf("row count = %v, want 2", info.RowCount)
+	}
+}
+
+func TestParquetPluginOpenTableScopeReader(t *testing.T) {
+	plugin := NewPlugin()
+	reader := parquetMemoryContentReader{data: map[string][]byte{
+		"dataset/dt=2026-05-05/part-000.parquet": buildParquetRows(t, testParquetRow{ID: 1, Name: "Alice"}),
+		"dataset/dt=2026-05-06/part-000.parquet": buildParquetRows(t, testParquetRow{ID: 2, Name: "Bob"}, testParquetRow{ID: 3, Name: "Carol"}),
+	}}
+	scope := contentio.NewRef("dataset", contentio.RoleScope)
+
+	tableReader, err := plugin.OpenTableScopeReader(context.Background(), reader, scope, nil)
+	if err != nil {
+		t.Fatalf("OpenTableScopeReader failed: %v", err)
+	}
+	defer tableReader.Close(context.Background())
+
+	first, err := tableReader.ReadRows(context.Background(), 2)
+	if err != nil {
+		t.Fatalf("ReadRows first batch failed: %v", err)
+	}
+	second, err := tableReader.ReadRows(context.Background(), 2)
+	if err != nil {
+		t.Fatalf("ReadRows second batch failed: %v", err)
+	}
+	got := append(rowNames(first), rowNames(second)...)
+	want := []string{"Alice", "Bob", "Carol"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("rows = %#v, want names %v", append(first, second...), want)
+	}
+	empty, err := tableReader.ReadRows(context.Background(), 2)
+	if err != nil {
+		t.Fatalf("ReadRows EOF failed: %v", err)
+	}
+	if len(empty) != 0 {
+		t.Fatalf("EOF rows = %#v, want empty", empty)
 	}
 }
 

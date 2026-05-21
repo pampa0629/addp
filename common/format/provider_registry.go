@@ -13,6 +13,7 @@ type ProviderRegistry struct {
 	multiTableSampleReaders map[FormatType]MultiTableSampleReader
 	scopeTableInfoProviders map[FormatType]ScopeTableInfoProvider
 	scopeTableSampleReaders map[FormatType]ScopeTableSampleReader
+	scopeTableReaders       map[FormatType]ScopeTableReaderProvider
 	formatInfoProviders     map[FormatType]FormatInfoProvider
 	tableInfoProviders      map[FormatType]TableInfoProvider
 	tableSampleProviders    map[FormatType]TableSampleReader
@@ -36,6 +37,7 @@ func NewProviderRegistry() *ProviderRegistry {
 		multiTableSampleReaders: make(map[FormatType]MultiTableSampleReader),
 		scopeTableInfoProviders: make(map[FormatType]ScopeTableInfoProvider),
 		scopeTableSampleReaders: make(map[FormatType]ScopeTableSampleReader),
+		scopeTableReaders:       make(map[FormatType]ScopeTableReaderProvider),
 		formatInfoProviders:     make(map[FormatType]FormatInfoProvider),
 		tableInfoProviders:      make(map[FormatType]TableInfoProvider),
 		tableSampleProviders:    make(map[FormatType]TableSampleReader),
@@ -97,6 +99,14 @@ func GetScopeTableSampleReader(formatType FormatType) (ScopeTableSampleReader, e
 
 func (r *ProviderRegistry) GetScopeTableSampleReader(formatType FormatType) (ScopeTableSampleReader, error) {
 	return providerFromMap(r, r.scopeTableSampleReaders, formatType, "scope table sample reader")
+}
+
+func GetScopeTableReaderProvider(formatType FormatType) (ScopeTableReaderProvider, error) {
+	return globalProviderRegistry.GetScopeTableReaderProvider(formatType)
+}
+
+func (r *ProviderRegistry) GetScopeTableReaderProvider(formatType FormatType) (ScopeTableReaderProvider, error) {
+	return providerFromMap(r, r.scopeTableReaders, formatType, "scope table reader provider")
 }
 
 func GetTableInfoProvider(formatType FormatType) (TableInfoProvider, error) {
@@ -245,6 +255,14 @@ func ListScopeTableSampleReaderFormats() []FormatType {
 
 func (r *ProviderRegistry) ListScopeTableSampleReaderFormats() []FormatType {
 	return sortedMapKeys(r, r.scopeTableSampleReaders)
+}
+
+func ListScopeTableReaderProviderFormats() []FormatType {
+	return globalProviderRegistry.ListScopeTableReaderProviderFormats()
+}
+
+func (r *ProviderRegistry) ListScopeTableReaderProviderFormats() []FormatType {
+	return sortedMapKeys(r, r.scopeTableReaders)
 }
 
 func ListTableInfoProviderFormats() []FormatType {

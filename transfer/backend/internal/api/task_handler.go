@@ -25,11 +25,11 @@ func NewTaskHandler(taskService *service.TaskService) *TaskHandler {
 
 // CreateTask 创建任务
 // @Summary 创建数据传输任务 | Create data transfer task
-// @Description 创建一个新的数据导入/导出/同步任务 | Create a new data import/export/sync task
+// @Description 创建一个新的数据导入/导出/同步任务。新任务 config 使用 source/target endpoint；source 指向已入库 Meta item 时可携带 source.attributes，Transfer planner 将消费其中的 item.layout、item.format、item.refs、type_info.table.fields 和 capabilities.spatial。| Create a new data import/export/sync task. New config uses source/target endpoints; source.attributes may carry Meta item attributes consumed by the planner.
 // @Tags         任务管理 | Task Management
 // @Accept json
 // @Produce json
-// @Param request body models.CreateTaskRequest true "任务创建请求 | Task creation request"
+// @Param request body models.CreateTaskRequestDoc true "任务创建请求 | Task creation request"
 // @Success 201 {object} models.TransferTask "任务创建成功 | Task created successfully"
 // @Failure 400 {object} map[string]string "请求参数错误 | Bad request"
 // @Failure 401 {object} map[string]string "未授权 | Unauthorized"
@@ -129,12 +129,12 @@ func (h *TaskHandler) ListTasks(c *gin.Context) {
 
 // UpdateTask 更新任务
 // @Summary 更新任务 | Update task
-// @Description 更新任务的配置信息 | Update task configuration
+// @Description 更新任务的配置信息。config.source.attributes 会按 JSONB 原样保存，用于 planner 消费已入库 Meta item 标准 attributes。| Update task configuration. config.source.attributes is preserved as JSONB for planner consumption.
 // @Tags         任务管理 | Task Management
 // @Accept json
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
-// @Param request body models.UpdateTaskRequest true "任务更新请求 | Task update request"
+// @Param request body models.UpdateTaskRequestDoc true "任务更新请求 | Task update request"
 // @Success 200 {object} models.TransferTask "更新成功 | Updated successfully"
 // @Failure 400 {object} map[string]string "参数错误 | Bad request"
 // @Failure 500 {object} map[string]string "服务器错误 | Server error"

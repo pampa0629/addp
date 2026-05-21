@@ -167,7 +167,7 @@ type CreateTaskRequest struct {
 	Name             string                 `json:"name" binding:"required"`
 	Description      string                 `json:"description"`
 	TaskType         string                 `json:"task_type"`                 // import | export | sync
-	Config           map[string]interface{} `json:"config" binding:"required"` // 包含 source 和 target 配置
+	Config           map[string]interface{} `json:"config" binding:"required"` // 包含 source 和 target endpoint 配置；source.attributes 可携带 Meta item 标准 attributes
 	Schedule         string                 `json:"schedule"`
 	BatchSize        int                    `json:"batch_size"`
 	AutoScanMetadata *bool                  `json:"auto_scan_metadata"`

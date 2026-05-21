@@ -783,6 +783,135 @@ func (p *Plugin) SampleTableScope(ctx context.Context, reader contentio.Reader, 
 	return rows, nil
 }
 
+func (p *Plugin) OpenTableScopeReader(ctx context.Context, reader contentio.Reader, scope contentio.Ref, options *format.ParseOptions) (format.TableReader, error) {
+	refs, err := listParquetResources(ctx, reader, scope)
+	if err != nil {
+		return nil, err
+	}
+	if len(refs) == 0 {
+		return nil, fmt.Errorf("parquet scope %s has no parquet files", scope.Path)
+	}
+	return &scopeTableReader{
+		plugin:       p,
+		reader:       reader,
+		refs:         refs,
+		parseOptions: options,
+	}, nil
+}
+
+type scopeTableReader struct {
+	plugin       *Plugin
+	reader       contentio.Reader
+	refs         []contentio.Ref
+	parseOptions *format.ParseOptions
+	schema       *format.TableInfo
+	index        int
+	currentInput io.Closer
+	current      format.TableReader
+	closed       bool
+}
+
+func (r *scopeTableReader) Schema() *format.TableInfo {
+	if r == nil || r.schema == nil {
+		return nil
+	}
+	copied := *r.schema
+	copied.Fields = append([]format.FieldInfo(nil), r.schema.Fields...)
+	copied.PrimaryKey = append([]string(nil), r.schema.PrimaryKey...)
+	return &copied
+}
+
+func (r *scopeTableReader) ReadRows(ctx context.Context, limit int) ([]map[string]interface{}, error) {
+	if r.closed {
+		return nil, fmt.Errorf("parquet scope table reader is closed")
+	}
+	if limit < 0 {
+		return nil, fmt.Errorf("parquet scope table reader limit cannot be negative")
+	}
+	if limit == 0 {
+		limit = 1
+	}
+	result := make([]map[string]interface{}, 0, limit)
+	for len(result) < limit {
+		if err := contextErr(ctx); err != nil {
+			return result, err
+		}
+		if r.current == nil {
+			if err := r.openNext(ctx); err != nil {
+				return result, err
+			}
+			if r.current == nil {
+				break
+			}
+		}
+		rows, err := r.current.ReadRows(ctx, limit-len(result))
+		if err != nil {
+			return result, err
+		}
+		result = append(result, rows...)
+		if len(rows) == 0 {
+			if err := r.closeCurrent(ctx); err != nil {
+				return result, err
+			}
+		}
+	}
+	return result, nil
+}
+
+func (r *scopeTableReader) Close(ctx context.Context) error {
+	if r.closed {
+		return nil
+	}
+	if err := contextErr(ctx); err != nil {
+		return err
+	}
+	r.closed = true
+	return r.closeCurrent(ctx)
+}
+
+func (r *scopeTableReader) openNext(ctx context.Context) error {
+	for r.index < len(r.refs) {
+		ref := r.refs[r.index]
+		r.index++
+		input, err := r.reader.Open(ctx, ref)
+		if err != nil {
+			return fmt.Errorf("failed to open parquet file %s: %w", ref.Path, err)
+		}
+		tableReader, err := r.plugin.OpenTableReader(ctx, input, r.parseOptions)
+		if err != nil {
+			_ = input.Close()
+			return fmt.Errorf("failed to open parquet table reader for %s: %w", ref.Path, err)
+		}
+		schema := tableReader.Schema()
+		if r.schema == nil {
+			r.schema = schema
+		} else if schema != nil && !sameFieldSchema(r.schema.Fields, schema.Fields) {
+			_ = tableReader.Close(ctx)
+			_ = input.Close()
+			return fmt.Errorf("parquet scope has incompatible schema in %s", ref.Path)
+		}
+		r.currentInput = input
+		r.current = tableReader
+		return nil
+	}
+	return nil
+}
+
+func (r *scopeTableReader) closeCurrent(ctx context.Context) error {
+	var firstErr error
+	if r.current != nil {
+		firstErr = r.current.Close(ctx)
+		r.current = nil
+	}
+	if r.currentInput != nil {
+		if err := r.currentInput.Close(); firstErr == nil && err != nil {
+			firstErr = err
+		}
+		r.currentInput = nil
+	}
+	return firstErr
+}
+
 func parquetFileRowCountsFromOptions(options *format.ParseOptions) map[string]int64 {
 	if options == nil || options.ExtraParams == nil {
 		return nil

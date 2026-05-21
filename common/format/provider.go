@@ -112,6 +112,15 @@ type ScopeTableSampleReader interface {
 	SampleTableScope(ctx context.Context, reader contentio.Reader, scope contentio.Ref, offset, limit int64, options *ParseOptions) ([]map[string]interface{}, error)
 }
 
+// ScopeTableReaderProvider 表示 whole scope table 格式能够打开连续 table 行读取会话。
+//
+// 它面向 Transfer 等全量读取场景；与 ScopeTableSampleReader 的 SampleTableScope
+// 不同，TableReader 持有一次 scope 读取状态，调用方循环 ReadRows 直到返回空结果。
+type ScopeTableReaderProvider interface {
+	Provider
+	OpenTableScopeReader(ctx context.Context, reader contentio.Reader, scope contentio.Ref, options *ParseOptions) (TableReader, error)
+}
+
 // TableWriterProvider 表示格式能够把 table 数据写出为该格式编码。
 //
 // Provider 是可注册的无状态能力入口；TableWriter 是一次输出会话的状态对象。

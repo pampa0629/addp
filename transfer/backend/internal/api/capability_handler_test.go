@@ -29,6 +29,9 @@ func TestBuildTableFormatCapabilitiesExposeUserFacingFormats(t *testing.T) {
 	if !jsonl.Read || !jsonl.Write {
 		t.Fatalf("jsonl read/write = %v/%v, want true/true", jsonl.Read, jsonl.Write)
 	}
+	if jsonl.Extension != "jsonl" {
+		t.Fatalf("jsonl extension = %q, want jsonl", jsonl.Extension)
+	}
 
 	geojson := byValue["geojson"]
 	if geojson.BackendType != "json" {
@@ -39,6 +42,21 @@ func TestBuildTableFormatCapabilitiesExposeUserFacingFormats(t *testing.T) {
 	}
 	if !geojson.Spatial {
 		t.Fatal("geojson spatial = false, want true")
+	}
+	if geojson.Extension != "geojson" {
+		t.Fatalf("geojson extension = %q, want geojson", geojson.Extension)
+	}
+
+	for value, want := range map[string]string{
+		"csv":       "csv",
+		"tsv":       "tsv",
+		"json":      "json",
+		"parquet":   "parquet",
+		"shapefile": "shp",
+	} {
+		if got := byValue[value].Extension; got != want {
+			t.Fatalf("%s extension = %q, want %s", value, got, want)
+		}
 	}
 
 	shapefile := byValue["shapefile"]

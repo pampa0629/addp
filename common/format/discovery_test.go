@@ -183,6 +183,9 @@ func TestFormatCapabilityViewReportsTableProviderSpecializations(t *testing.T) {
 	if err := RegisterScopeTableSampleReader(provider); err != nil {
 		t.Fatalf("RegisterScopeTableSampleReader() error = %v", err)
 	}
+	if err := RegisterScopeTableReaderProvider(provider); err != nil {
+		t.Fatalf("RegisterScopeTableReaderProvider() error = %v", err)
+	}
 
 	view, ok := GetFormatCapabilityView(formatType)
 	if !ok {
@@ -191,8 +194,8 @@ func TestFormatCapabilityViewReportsTableProviderSpecializations(t *testing.T) {
 	if !view.Implementations.TableInfoProvider || !view.Implementations.TableSampleReader {
 		t.Fatalf("implementations = %#v, want table info and sample providers", view.Implementations)
 	}
-	if !view.Implementations.ScopeTableInfoProvider || !view.Implementations.ScopeTableSampleReader {
-		t.Fatalf("implementations = %#v, want scope table info and sample readers", view.Implementations)
+	if !view.Implementations.ScopeTableInfoProvider || !view.Implementations.ScopeTableSampleReader || !view.Implementations.ScopeTableReader {
+		t.Fatalf("implementations = %#v, want scope table info, sample, and reader providers", view.Implementations)
 	}
 	if view.Implementations.MultiTableInfoProvider || view.Implementations.MultiTableSampleReader {
 		t.Fatalf("implementations = %#v, did not expect multi table providers", view.Implementations)
@@ -284,6 +287,10 @@ func (p discoveryScopeTableProvider) DescribeTableScope(context.Context, content
 }
 
 func (p discoveryScopeTableProvider) SampleTableScope(context.Context, contentio.Reader, contentio.Ref, int64, int64, *ParseOptions) ([]map[string]interface{}, error) {
+	return nil, nil
+}
+
+func (p discoveryScopeTableProvider) OpenTableScopeReader(context.Context, contentio.Reader, contentio.Ref, *ParseOptions) (TableReader, error) {
 	return nil, nil
 }
 

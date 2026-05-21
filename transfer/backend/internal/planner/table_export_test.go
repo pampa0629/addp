@@ -114,6 +114,89 @@ func TestBuildTableTransferPlanForObjectTarget(t *testing.T) {
 	}
 }
 
+func TestBuildTableTransferPlanAppendsTargetExtensionForObjectTarget(t *testing.T) {
+	spec := minimalNativeToEncodedSpec()
+	spec.Target.Format = format.FormatParquet
+	spec.Target.EndpointResource = EndpointResourceSpec{Kind: EndpointResourceKindObject, Path: map[string]interface{}{"bucket": "exports", "path": "lake3"}}
+
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		1: {Type: "postgresql"},
+		2: {Type: "minio"},
+	})
+	if err != nil {
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
+	}
+	if got := result.Plan.Target.Path.StringPath(); got != "exports/lake3.parquet" {
+		t.Fatalf("target path = %q, want exports/lake3.parquet", got)
+	}
+}
+
+func TestBuildTableTransferPlanAppendsTargetExtensionForFileTarget(t *testing.T) {
+	spec := minimalNativeToEncodedSpec()
+	spec.Target.Format = format.FormatCSV
+	spec.Target.EndpointResource = EndpointResourceSpec{Kind: EndpointResourceKindFile, Path: map[string]interface{}{"path": "exports/roads"}}
+
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		1: {Type: "postgresql"},
+		2: {Type: "nfs"},
+	})
+	if err != nil {
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
+	}
+	if got := result.Plan.Target.Path.StringPath(); got != "exports/roads.csv" {
+		t.Fatalf("target path = %q, want exports/roads.csv", got)
+	}
+}
+
+func TestBuildTableTransferPlanRejectsConflictingTargetExtension(t *testing.T) {
+	spec := minimalNativeToEncodedSpec()
+	spec.Target.Format = format.FormatParquet
+	spec.Target.EndpointResource = EndpointResourceSpec{Kind: EndpointResourceKindFile, Path: map[string]interface{}{"path": "exports/roads.csv"}}
+
+	_, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		1: {Type: "postgresql"},
+		2: {Type: "nfs"},
+	})
+	if err == nil {
+		t.Fatal("BuildTableTransferPlan succeeded, want extension conflict error")
+	}
+	if !strings.Contains(err.Error(), "target path extension") || !strings.Contains(err.Error(), ".parquet") {
+		t.Fatalf("error = %q, want target extension conflict", err)
+	}
+}
+
+func TestBuildTableTransferPlanAppendsLogicalJSONTargetExtensions(t *testing.T) {
+	tests := []struct {
+		name    string
+		options map[string]interface{}
+		want    string
+	}{
+		{name: "json array", options: map[string]interface{}{"json_mode": "array"}, want: "exports/roads.json"},
+		{name: "json lines", options: map[string]interface{}{"json_mode": "jsonl"}, want: "exports/roads.jsonl"},
+		{name: "geojson", options: map[string]interface{}{"spatial.target_encoding": "geojson"}, want: "exports/roads.geojson"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec := minimalNativeToEncodedSpec()
+			spec.Target.Format = format.FormatJSON
+			spec.Target.Options = tt.options
+			spec.Target.EndpointResource = EndpointResourceSpec{Kind: EndpointResourceKindFile, Path: map[string]interface{}{"path": "exports/roads"}}
+
+			result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+				1: {Type: "postgresql"},
+				2: {Type: "nfs"},
+			})
+			if err != nil {
+				t.Fatalf("BuildTableTransferPlan failed: %v", err)
+			}
+			if got := result.Plan.Target.Path.StringPath(); got != tt.want {
+				t.Fatalf("target path = %q, want %s", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestBuildTableTransferPlanAllowsJSONTableWriter(t *testing.T) {
 	spec := minimalNativeToEncodedSpec()
 	spec.Target.Format = format.FormatJSON
@@ -646,6 +729,47 @@ func TestParseTableExportTaskSpecAppliesFallbackBatchSize(t *testing.T) {
 	}
 	if spec.BatchSize != 2048 {
 		t.Fatalf("batch size = %d, want 2048", spec.BatchSize)
+	}
+}
+
+func TestParseTableExportTaskSpecPreservesSourceAttributes(t *testing.T) {
+	spec, err := ParseTableExportTaskSpec(map[string]interface{}{
+		"mode": "batch",
+		"source": map[string]interface{}{
+			"engine":         map[string]interface{}{"scope": "system", "id": 1},
+			"resource":       map[string]interface{}{"kind": "file", "path": map[string]interface{}{"path": "imports/roads.shp"}},
+			"data_type":      "table",
+			"representation": "encoded",
+			"attributes": tableSourceAttributes("multi", "shapefile", "imports/roads.shp", []map[string]interface{}{
+				{"path": "imports/roads.shp", "role": "main", "extension": ".shp", "required": true, "primary": true},
+				{"path": "imports/roads.shx", "role": "index", "extension": ".shx", "required": true},
+				{"path": "imports/roads.dbf", "role": "attributes", "extension": ".dbf", "required": true},
+			}, []map[string]interface{}{
+				{"name": "shape", "type": "geometry"},
+			}, map[string]interface{}{
+				"primary_geometry_column": "shape",
+				"geometry_columns":        []map[string]interface{}{{"name": "shape", "geometry_type": "Point", "srid": 4326}},
+			}),
+		},
+		"target": map[string]interface{}{
+			"engine":         map[string]interface{}{"scope": "system", "id": 2},
+			"resource":       map[string]interface{}{"kind": "native_table", "path": map[string]interface{}{"schema": "public", "table": "roads"}},
+			"data_type":      "table",
+			"representation": "native",
+		},
+	}, 1000)
+	if err != nil {
+		t.Fatalf("ParseTableExportTaskSpec failed: %v", err)
+	}
+	if spec.Source.Format != "" {
+		t.Fatalf("source format = %q, want format restored later from attributes", spec.Source.Format)
+	}
+	if spec.Source.Attributes == nil {
+		t.Fatal("source attributes are nil")
+	}
+	itemAttrs, ok := spec.Source.Attributes["item"].(map[string]interface{})
+	if !ok || itemAttrs["format"] != "shapefile" {
+		t.Fatalf("source item attrs = %#v, want shapefile attributes preserved", spec.Source.Attributes["item"])
 	}
 }
 

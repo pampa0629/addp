@@ -55,7 +55,12 @@ export function useTaskWizardState() {
         if (targetRepresentation.value === 'native') {
           return !!(targetEngineID.value && targetSchema.value && targetTable.value)
         }
-        return !!(targetEngineID.value && targetConfig.value?.resourceFile)
+        return !!(
+          targetEngineID.value &&
+          targetConfig.value?.resourceFile &&
+          !targetConfig.value?.extensionError &&
+          (targetType.value !== 's3' || targetConfig.value?.resourcePath)
+        )
       case 2: // 字段映射
         return fieldMappings.value.length > 0 || sourceFields.value.length === 0
       case 3: // 配置
