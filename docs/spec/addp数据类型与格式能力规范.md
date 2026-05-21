@@ -380,6 +380,8 @@ info provider 只回答对应 data type 的元数据语义；sample / text reade
 
 字段选择属于 table data type 的通用读取语义，不得作为某个格式的私有能力；术语使用 `field_selection`，不得使用容易与 GIS 坐标投影混淆的 projection。
 
+行过滤属于 table data type 的通用读取语义；术语使用 `row_filter`。格式或引擎可以将 `row_filter` 下推为 SQL WHERE、Parquet row group predicate、分区裁剪或其他物理优化，但不得把这些实现细节暴露为上层通用接口，也不得在不满足语义正确性的情况下静默忽略过滤条件。
+
 后续完整表格能力至少要覆盖：
 
 - 表结构和字段元数据。

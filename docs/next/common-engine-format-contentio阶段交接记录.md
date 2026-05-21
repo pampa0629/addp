@@ -246,6 +246,15 @@ Manager 后续只需用真实 NFS / MinIO / ZIP 样例继续回归：
 - 对象存储分区目录下的 Parquet dataset 需要在直接父 prefix 之外，额外按分区根 prefix 形成 whole-scope 候选。
 - Transfer planner 消费对象存储 whole item 时，source scope 应优先使用 `attributes.storage.physical_path`，再回退到 `storage.path + storage.name` / `storage.path`，避免把父 prefix 当作完整读取范围。
 
+### 已完成：`field_selection` Transfer 手动回归
+
+2026-05-21 已完成真实 Transfer 手动回归：
+
+- `field_mapping mode=project` 可由 Transfer planner 推导 source `FieldSelectionOptions`，encoded source 进入 `ParseOptions.FieldSelection`，native source 进入 read options。
+- `mode=passthrough` 不下推 `field_selection`，保持源 row 全字段，避免隐式丢字段。
+- Parquet、CSV、JSON、Shapefile encoded reader 已消费通用 `field_selection`；PostgreSQL native table read session 已下推到字段级 `SELECT`。
+- 若 `field_selection` 排除 geometry 字段，返回的 schema 会同步移除 `SpatialInfo`，避免空间元数据指向不存在字段。
+
 ## 六、新会话起手点
 
 如果后续另开会话，建议先从下面三个位置接着看：
@@ -260,6 +269,14 @@ Manager 后续只需用真实 NFS / MinIO / ZIP 样例继续回归：
 - `common/format/detection.go`
 - `common/format/detection_magic.go`
 - `common/format/provider.go`
+- `common/format/options.go`
+- `common/format/field_selection.go`
+- `common/format/plugins/csv/plugin.go`
+- `common/format/plugins/json/plugin.go`
+- `common/format/plugins/shapefile/table.go`
+- `common/format/plugins/shapefile/reader.go`
+- `common/format/plugins/parquet/plugin.go`
+- `common/engine/plugins/postgresql/table_read_session.go`
 - `meta/backend/internal/metaenrich/single_format.go`
 - `meta/backend/internal/metaenrich/table_file.go`
 - `meta/backend/internal/service/item_refresh_service.go`

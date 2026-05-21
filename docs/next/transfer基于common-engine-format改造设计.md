@@ -403,6 +403,73 @@ batch checkpoint 最小结构：
    - 如果 `field_selection` 排除了 geometry 字段，返回的 `SpatialInfo` 也必须同步移除，避免 schema 指向不存在字段。
    - Parquet scope reader 打开单个文件时不会把 scope 级分区字段传入单文件 reader；它会先合并文件字段和 Hive-style 分区字段，再统一应用 `field_selection`。
 
+   手动验收：
+
+   - 2026-05-21 已完成真实 Transfer 手动回归：`field_mapping mode=project` 能触发 source 侧 `field_selection`，目标输出只包含映射后的字段。
+   - `mode=passthrough` 不下推 `field_selection`，保持源 row 全字段，避免隐式丢字段。
+   - 已覆盖 NFS / MinIO encoded source 场景；CSV、JSON、Shapefile、Parquet reader 均已消费通用 `field_selection`。
+
+   `row_filter` 接口设计草案：
+
+   `row_filter` 是 table data type 的通用读取语义，表达调用方希望返回哪些行；“predicate pushdown”只是 provider 的优化实现方式。外部接口不使用 SQL 字符串，也不暴露 Parquet row group 作为通用读取参数，避免把调用方绑到单一格式。
+
+   建议第一版接口口径：
+
+   ```go
+   type ParseOptions struct {
+       FieldSelection *FieldSelectionOptions
+       RowFilter      *RowFilterOptions
+   }
+
+   type RowFilterOptions struct {
+       Expr              *RowFilterExpr
+       MissingFieldPolicy MissingFieldPolicy
+       UnsupportedPolicy UnsupportedFilterPolicy
+   }
+
+   type RowFilterExpr struct {
+       Op       RowFilterOp
+       Field    string
+       Value    interface{}
+       Values   []interface{}
+       Children []RowFilterExpr
+   }
+
+   type RowFilterOp string
+
+   const (
+       RowFilterAnd       RowFilterOp = "and"
+       RowFilterOr        RowFilterOp = "or"
+       RowFilterNot       RowFilterOp = "not"
+       RowFilterEq        RowFilterOp = "eq"
+       RowFilterNe        RowFilterOp = "ne"
+       RowFilterLt        RowFilterOp = "lt"
+       RowFilterLte       RowFilterOp = "lte"
+       RowFilterGt        RowFilterOp = "gt"
+       RowFilterGte       RowFilterOp = "gte"
+       RowFilterIn        RowFilterOp = "in"
+       RowFilterIsNull    RowFilterOp = "is_null"
+       RowFilterIsNotNull RowFilterOp = "is_not_null"
+   )
+   ```
+
+   第一版边界：
+
+   - `row_filter` 必须保证语义正确。provider 可以下推，也可以读全后用 common evaluator 过滤；不得静默忽略。
+   - `UnsupportedPolicy` 默认 `error`。如果调用方显式允许 `scan`，provider 可读全后过滤，但最终返回 row 必须满足过滤条件。
+   - `MissingFieldPolicy` 默认 `error`，与 `field_selection` 保持一致；`ignore` 仅适合调用方明确接受某些字段不存在的探查场景。
+   - `row_filter` 只表达行过滤，不表达字段重命名、派生字段、空间坐标转换或排序分页。
+   - 空间谓词第一版不进入 `row_filter`。空间相交、包含、距离等应等空间能力和 transform 边界稳定后再设计。
+   - `row_filter` 与 `field_selection` 可同时存在。过滤字段不要求一定出现在 `FieldSelection.Include` 中；reader 可以为了过滤内部读取额外字段，但输出 schema / row 仍必须按 `field_selection` 裁剪。
+
+   Parquet row group 设计边界：
+
+   - row group 是 Parquet provider 的物理优化单元，不作为第一版通用 `ParseOptions` 字段暴露给 Transfer。
+   - Parquet single / scope reader 可根据 footer statistics、dictionary、null count、row group row count 对 `row_filter` 做行组跳过。
+   - Parquet scope reader 可以先用 Hive-style 分区字段做 scope / file 级裁剪，再打开具体 Parquet 文件读取 row group。
+   - 即使命中 row group pushdown，也要保留 residual filter 校验，避免因为统计信息缺失、类型转换或边界值问题返回不满足条件的 row。
+   - 后续如果要做并行读取或 checkpoint 恢复，再单独设计 `TableReadSplit` / `ReadPartition` 这类物理执行计划对象，不塞进 `row_filter`。
+
 2. **补 Transfer 验收用例沉淀**
    将已通过的 PostgreSQL spatial table -> NFS / MinIO Shapefile、MinIO Shapefile -> PostgreSQL table、NFS Shapefile -> MinIO Shapefile 继续形成可重复的集成测试或操作清单。
 
