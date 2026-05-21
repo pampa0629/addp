@@ -1,11 +1,13 @@
 package preview
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/sqldialect"
+	"github.com/addp/manager/internal/models"
 )
 
 func TestBuildDatabaseRenderGeometryColumns(t *testing.T) {
@@ -89,3 +91,185 @@ func TestDatabasePreviewPostgreSQLPrimaryKeyPageQueryOrdersFirstPage(t *testing.
 		t.Fatalf("unexpected query:\n%s\nwant:\n%s", query, want)
 	}
 }
+
+func TestDatabaseTablePreviewProviderPreviewUsesBatchReadAndAttributeRowCount(t *testing.T) {
+	previous, previousErr := plugin.Get("postgresql")
+	enginePlugin := &recordingDatabasePreviewPlugin{
+		engineType: "postgresql",
+		itemMetadata: &plugin.ItemMetadata{
+			Fields: []plugin.FieldInfo{
+				{Name: "SmID", Type: "bigint", Nullable: false, PrimaryKey: true},
+				{Name: "SmGeometry", Type: "geometry(MultiPolygon,2360)", Nullable: true},
+				{Name: "DLMC", Type: "text", Nullable: true},
+			},
+			Stats: map[string]interface{}{
+				"row_count": int64(999),
+			},
+		},
+		batchData: &plugin.BatchData{
+			Rows: []map[string]interface{}{
+				{
+					"SmID":                      int64(10),
+					"SmGeometry":                "POINT(1 2)",
+					"DLMC":                      "test",
+					"__render_geojson_SmGeometry": `{"type":"Point","coordinates":[1,2]}`,
+				},
+			},
+		},
+	}
+	plugin.Register(enginePlugin)
+	defer func() {
+		if previousErr == nil {
+			plugin.Register(previous)
+			return
+		}
+		plugin.Unregister(enginePlugin.Type())
+	}()
+
+	provider := &DatabaseTablePreviewProvider{}
+	req := &PreviewRequest{
+		Engine: &models.Engine{
+			ID:         7,
+			EngineType: enginePlugin.Type(),
+		},
+		Schema: "public",
+		Table:  "public.dltb",
+		Page:   3,
+		PageSize: 2,
+		Attributes: map[string]interface{}{
+			"type_info": map[string]interface{}{
+				"table": map[string]interface{}{
+					"row_count": int64(321),
+				},
+			},
+		},
+	}
+
+	preview, err := provider.Preview(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+
+	if preview.Total != 321 {
+		t.Fatalf("Total = %d, want 321 from request attributes", preview.Total)
+	}
+	if len(enginePlugin.readBatchCalls) != 1 {
+		t.Fatalf("ReadBatch call count = %d, want 1", len(enginePlugin.readBatchCalls))
+	}
+	if got := enginePlugin.readBatchCalls[0].Query; !strings.Contains(got, `WITH "__addp_page_keys"`) {
+		t.Fatalf("ReadBatch query does not use page-key CTE:\n%s", got)
+	}
+	if !strings.Contains(enginePlugin.readBatchCalls[0].Query, `OFFSET 4`) {
+		t.Fatalf("ReadBatch query = %q, want offset 4", enginePlugin.readBatchCalls[0].Query)
+	}
+	if preview.RenderGeometryColumns["SmGeometry"] != "__render_geojson_SmGeometry" {
+		t.Fatalf("RenderGeometryColumns = %#v", preview.RenderGeometryColumns)
+	}
+}
+
+func TestDatabaseTablePreviewProviderPreviewFallsBackToItemMetadataRowCount(t *testing.T) {
+	previous, previousErr := plugin.Get("postgresql")
+	enginePlugin := &recordingDatabasePreviewPlugin{
+		engineType: "postgresql",
+		itemMetadata: &plugin.ItemMetadata{
+			Fields: []plugin.FieldInfo{
+				{Name: "id", Type: "bigint", Nullable: false, PrimaryKey: true},
+				{Name: "name", Type: "text", Nullable: true},
+			},
+			Stats: map[string]interface{}{
+				"row_count": int64(999),
+			},
+		},
+		batchData: &plugin.BatchData{
+			Rows: []map[string]interface{}{
+				{"id": int64(1), "name": "alice"},
+			},
+		},
+	}
+	plugin.Register(enginePlugin)
+	defer func() {
+		if previousErr == nil {
+			plugin.Register(previous)
+			return
+		}
+		plugin.Unregister(enginePlugin.Type())
+	}()
+
+	provider := &DatabaseTablePreviewProvider{}
+	req := &PreviewRequest{
+		Engine: &models.Engine{
+			ID:         8,
+			EngineType: enginePlugin.Type(),
+		},
+		Schema: "public",
+		Table:  "public.people",
+		Page:   1,
+		PageSize: 10,
+	}
+
+	preview, err := provider.Preview(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+
+	if preview.Total != 999 {
+		t.Fatalf("Total = %d, want 999 from item metadata", preview.Total)
+	}
+	if len(enginePlugin.readBatchCalls) != 1 {
+		t.Fatalf("ReadBatch call count = %d, want 1", len(enginePlugin.readBatchCalls))
+	}
+	if enginePlugin.readBatchCalls[0].Query == "" {
+		t.Fatalf("ReadBatch query should not be empty")
+	}
+}
+
+type recordingDatabasePreviewPlugin struct {
+	engineType     string
+	itemMetadata   *plugin.ItemMetadata
+	batchData      *plugin.BatchData
+	readBatchCalls []plugin.BatchReadOptions
+}
+
+func (p *recordingDatabasePreviewPlugin) Type() string         { return p.engineType }
+func (p *recordingDatabasePreviewPlugin) DisplayName() string  { return p.engineType }
+func (p *recordingDatabasePreviewPlugin) EngineOrigin() string { return "general" }
+func (p *recordingDatabasePreviewPlugin) TestConnection(context.Context, plugin.ConnectionInfo) error {
+	return nil
+}
+func (p *recordingDatabasePreviewPlugin) ValidateConnectionInfo(plugin.ConnectionInfo) error {
+	return nil
+}
+func (p *recordingDatabasePreviewPlugin) DefaultPort() int          { return 0 }
+func (p *recordingDatabasePreviewPlugin) RequiredFields() []string  { return nil }
+func (p *recordingDatabasePreviewPlugin) SensitiveFields() []string { return nil }
+func (p *recordingDatabasePreviewPlugin) StoreSemantics() plugin.StoreSemantics {
+	return plugin.StoreSemantics{}
+}
+func (p *recordingDatabasePreviewPlugin) Capabilities() plugin.EngineCapabilities {
+	return plugin.EngineCapabilities{
+		SchemaVersion: plugin.CapabilitiesSchemaVersion,
+		EngineType:    p.engineType,
+		EngineFamily:  "tabular",
+	}
+}
+func (p *recordingDatabasePreviewPlugin) CatalogModel() plugin.CatalogModelSpec {
+	return plugin.TabularCatalogModel("schema")
+}
+func (p *recordingDatabasePreviewPlugin) DescribeItem(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
+	if p.itemMetadata == nil {
+		return nil, nil
+	}
+	return p.itemMetadata, nil
+}
+func (p *recordingDatabasePreviewPlugin) ReadBatch(_ context.Context, _ plugin.ConnectionInfo, _ plugin.CatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
+	p.readBatchCalls = append(p.readBatchCalls, opts)
+	if p.batchData == nil {
+		return &plugin.BatchData{}, nil
+	}
+	return p.batchData, nil
+}
+
+var _ plugin.EnginePlugin = (*recordingDatabasePreviewPlugin)(nil)
+var _ plugin.CatalogModelProvider = (*recordingDatabasePreviewPlugin)(nil)
+var _ plugin.ItemMetadataProvider = (*recordingDatabasePreviewPlugin)(nil)
+var _ plugin.BatchReadableProvider = (*recordingDatabasePreviewPlugin)(nil)

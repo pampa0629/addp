@@ -45,6 +45,9 @@ func TestGetFormatCapabilityView(t *testing.T) {
 	if !view.Providers.MultiTable {
 		t.Fatal("shapefile capability view should declare multi table provider")
 	}
+	if view.Providers.ContentIndex {
+		t.Fatal("shapefile capability view should not declare content index provider; .shx is native format indexing")
+	}
 }
 
 func TestListFormatConflictDiagnosticsIsAvailable(t *testing.T) {

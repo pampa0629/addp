@@ -426,6 +426,66 @@ func TestFileTablePreviewProviderDoesNotUseContainerChildAttributesAsTableInfo(t
 	}
 }
 
+func TestFileTablePreviewProviderDoesNotUseGeoPackageChildAttributesAsTableInfo(t *testing.T) {
+	t.Parallel()
+
+	provider := &FileTablePreviewProvider{}
+	tableProvider := &recordingTableProvider{}
+	req := &PreviewRequest{
+		Page:      1,
+		PageSize:  2,
+		Table:     "manager/sample.gpkg",
+		ChildName: "Road Layer",
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"format": "geopackage",
+			},
+			"type_info": map[string]interface{}{
+				"container": map[string]interface{}{
+					"children": []interface{}{
+						map[string]interface{}{
+							"name":       "Road Layer",
+							"table":      "roads",
+							"child_kind": "layer",
+							"row_count":  int64(99),
+							"columns": []interface{}{
+								map[string]interface{}{"name": "stale_name", "type": "string"},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	preview, err := provider.previewStreamable(
+		context.Background(),
+		staticContentReader{content: []byte("mock")},
+		"manager",
+		"manager/sample.gpkg",
+		format.FormatGeoPackage,
+		tableProvider,
+		tableProvider,
+		provider.buildParseOptions(format.FormatGeoPackage, req),
+		req,
+	)
+	if err != nil {
+		t.Fatalf("previewStreamable() error = %v", err)
+	}
+	if tableProvider.describeCalls != 1 {
+		t.Fatalf("DescribeTable calls = %d, want 1 because container child attributes are only an index", tableProvider.describeCalls)
+	}
+	if tableProvider.sampleOptions == nil || tableProvider.sampleOptions.ExtraParams[format.ChildTableParam] != "roads" {
+		t.Fatalf("geopackage sample table option = %#v, want roads", tableProvider.sampleOptions)
+	}
+	if preview.Total != 3 {
+		t.Fatalf("Total = %d, want 3 from DescribeTable", preview.Total)
+	}
+	if len(preview.Columns) != 1 || preview.Columns[0] != "name" {
+		t.Fatalf("Columns = %#v, want described columns", preview.Columns)
+	}
+}
+
 func TestFileTablePreviewProviderResolvesZIPEntryBeforeTablePreview(t *testing.T) {
 	previous, previousErr := plugin.Get("nfs")
 	enginePlugin := &recordingContentPlugin{engineType: "nfs"}
@@ -891,6 +951,89 @@ func TestContainerChildPreviewProviderPreviewsDeepNestedZIPEntryByNestedChildPat
 	}
 }
 
+func TestContainerChildPreviewProviderPreviewsNestedZIPMultiTableChildRefs(t *testing.T) {
+	previousEngine, previousEngineErr := plugin.Get("nfs")
+	enginePlugin := &recordingContentPlugin{engineType: "nfs"}
+	plugin.Register(enginePlugin)
+	defer func() {
+		if previousEngineErr == nil {
+			plugin.Register(previousEngine)
+			return
+		}
+		plugin.Unregister(enginePlugin.Type())
+	}()
+
+	inner := zipBytesRawForFilePreviewTest(t, map[string][]byte{
+		"roads.shp": []byte("shape"),
+		"roads.shx": []byte("index"),
+		"roads.dbf": []byte("attrs"),
+	})
+	enginePlugin.content = zipBytesRawForFilePreviewTest(t, map[string][]byte{
+		"inner.zip": inner,
+	})
+
+	previousInfoProvider, previousInfoErr := format.GetMultiTableInfoProvider(format.FormatShapefile)
+	previousSampleReader, previousSampleErr := format.GetMultiTableSampleReader(format.FormatShapefile)
+	refProvider := &recordingMultiTableProvider{}
+	if err := format.RegisterMultiTableInfoProvider(refProvider); err != nil {
+		t.Fatalf("RegisterMultiTableInfoProvider() error = %v", err)
+	}
+	if err := format.RegisterMultiTableSampleReader(refProvider); err != nil {
+		t.Fatalf("RegisterMultiTableSampleReader() error = %v", err)
+	}
+	defer func() {
+		if previousInfoErr == nil {
+			_ = format.RegisterMultiTableInfoProvider(previousInfoProvider)
+		}
+		if previousSampleErr == nil {
+			_ = format.RegisterMultiTableSampleReader(previousSampleReader)
+		}
+	}()
+
+	provider := NewContainerChildPreviewProvider(objectcontent.NewObjectContentRegistry())
+	req := &PreviewRequest{
+		Engine:          &models.Engine{EngineType: enginePlugin.Type(), ID: 7},
+		ItemType:        "file",
+		Schema:          "datasets",
+		Table:           "outer.zip",
+		PhysicalPath:    "/datasets/outer.zip",
+		ChildName:       "inner.zip",
+		NestedChildPath: "roads.shp",
+		Page:            1,
+		PageSize:        10,
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"format":    string(format.FormatZIP),
+				"data_type": "container",
+			},
+			"type_info": map[string]interface{}{
+				"container": map[string]interface{}{
+					"children": []interface{}{
+						map[string]interface{}{
+							"name":       "inner.zip",
+							"child_kind": "file",
+							"data_type":  "container",
+							"format":     string(format.FormatZIP),
+							"path":       "inner.zip",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	preview, err := provider.Preview(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+	if preview.Mode != PreviewModeTable {
+		t.Fatalf("Mode = %q, want %q", preview.Mode, PreviewModeTable)
+	}
+	if len(refProvider.lastRefs) != 3 {
+		t.Fatalf("refs = %#v, want shapefile shp/shx/dbf refs", refProvider.lastRefs)
+	}
+}
+
 func TestFileTablePreviewProviderRestoresSpatialInfoFromAttributes(t *testing.T) {
 	t.Parallel()
 
@@ -1241,6 +1384,7 @@ type recordingMultiTableProvider struct {
 	formatType    format.FormatType
 	sampleOffset  int64
 	describeCalls int
+	lastRefs      []format.RelatedRef
 }
 
 func (p *recordingMultiTableProvider) Format() format.FormatType {
@@ -1258,8 +1402,9 @@ func (p *recordingMultiTableProvider) RelatedRefSpecs() []format.RelatedRefSpec 
 	}
 }
 
-func (p *recordingMultiTableProvider) DescribeMultiTable(context.Context, contentio.Reader, []format.RelatedRef, *format.ParseOptions) (*format.TableInfo, error) {
+func (p *recordingMultiTableProvider) DescribeMultiTable(_ context.Context, _ contentio.Reader, refs []format.RelatedRef, _ *format.ParseOptions) (*format.TableInfo, error) {
 	p.describeCalls++
+	p.lastRefs = append([]format.RelatedRef(nil), refs...)
 	rowCount := int64(1)
 	return &format.TableInfo{
 		Fields:   []format.FieldInfo{{Name: "name", Type: format.FieldTypeString}},

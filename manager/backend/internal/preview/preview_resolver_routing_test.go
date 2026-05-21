@@ -242,6 +242,41 @@ func TestResolveProviderByMetaUsesContainerChildForSQLiteChild(t *testing.T) {
 	}
 }
 
+func TestResolveProviderByMetaUsesContainerChildForNestedContainerChild(t *testing.T) {
+	registry := NewPreviewRegistry()
+	registry.Register(namedPreviewProvider{name: "builtin:container-child"})
+	registry.Register(namedPreviewProvider{name: "builtin:file-table"})
+	registry.Register(namedPreviewProvider{name: "builtin:file-catalog"})
+	resolver := NewPreviewResolver(registry, nil, nil)
+
+	req := &PreviewResolverRequest{
+		Locator: &catalogview.ResourceLocator{},
+		Engine:  &commonModels.Engine{EngineType: "nfs"},
+		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"data_type": "container",
+				"format":    "zip",
+				"layout":    "single",
+			},
+		}},
+		ItemType:        "file",
+		ChildName:       "inner.zip",
+		NestedChildPath: "roads.shp",
+	}
+	provider, err := resolver.resolveProviderByMeta(req, &PreviewRequest{
+		Engine:          &models.Engine{EngineType: "nfs"},
+		Table:           "outer.zip",
+		ChildName:       "inner.zip",
+		NestedChildPath: "roads.shp",
+	})
+	if err != nil {
+		t.Fatalf("resolveProviderByMeta() error = %v", err)
+	}
+	if provider.Name() != "builtin:container-child" {
+		t.Fatalf("provider = %q, want builtin:container-child", provider.Name())
+	}
+}
+
 func TestResolveProviderByMetaPrefersPartitionedItemAttributes(t *testing.T) {
 	registry := NewPreviewRegistry()
 	registry.Register(namedPreviewProvider{name: "builtin:file-table"})

@@ -115,9 +115,20 @@ func (s *ScanService) refreshKnownItemAttributes(
 	if enriched {
 		attrs = metaattr.JSONMap(detected.Attributes)
 	}
+	clearObsoleteKnownItemAttributes(attrs, detected)
 	metaattr.MergeDataItemAttributes(attrs, detected)
 	restoreKnownItemStorage(attrs, descriptor, item)
 	return metaattr.Normalize(attrs), len(detected.Fields), nil
+}
+
+func clearObsoleteKnownItemAttributes(attrs map[string]interface{}, item *metaitem.DetectedItem) {
+	if attrs == nil || item == nil {
+		return
+	}
+	if item.Format == string(format.FormatShapefile) {
+		delete(attrs, "content_index")
+		delete(item.Attributes, "content_index")
+	}
 }
 
 func detectedItemFromDescriptor(item *models.MetaItem, descriptor dataitem.ItemDescriptor) *metaitem.DetectedItem {

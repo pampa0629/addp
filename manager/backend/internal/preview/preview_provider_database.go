@@ -16,8 +16,8 @@ import (
 	"github.com/addp/manager/internal/repository"
 )
 
-// DatabaseTablePreviewProvider 通用数据库表预览 Provider
-// 自动支持所有实现 SQLQueryRuntimeProvider 的表格型数据库。
+// DatabaseTablePreviewProvider 通用数据库表预览 Provider。
+// 自动支持所有实现 BatchReadableProvider 的表格型数据库。
 type DatabaseTablePreviewProvider struct {
 	metadataRepo *repository.MetadataRepository
 	metaClient   *commonClient.MetaClient
@@ -42,9 +42,9 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 	if err != nil {
 		return nil, fmt.Errorf("unsupported engine type: %s", req.Engine.EngineType)
 	}
-	sqlRuntime, ok := plug.(plugin.SQLQueryRuntimeProvider)
+	batchReader, ok := plug.(plugin.BatchReadableProvider)
 	if !ok {
-		return nil, fmt.Errorf("engine %s does not implement SQLQueryRuntimeProvider", req.Engine.EngineType)
+		return nil, fmt.Errorf("engine %s does not implement BatchReadableProvider", req.Engine.EngineType)
 	}
 	metadataProvider, _ := plug.(plugin.ItemMetadataProvider)
 	connInfo := plugin.ConnectionInfo(req.Engine.ConnectionInfo)
@@ -103,17 +103,8 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 		}
 	}
 
-	// 4. 获取总行数，优先使用 ItemMetadataProvider stats，缺失时通过 SQL runtime 查询。
-	totalCount, err := p.resolveTableRowCount(ctx, sqlRuntime, connInfo, req.Engine.ID, req.Engine.EngineType, req.Schema, tableName, itemMetadata)
-	if err != nil && p.isTableNotFoundError(err) {
-		return nil, &TableNotFoundError{
-			Schema: req.Schema,
-			Table:  tableName,
-		}
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to get row count: %w", err)
-	}
+	// 4. 获取总行数，优先使用 Meta / ItemMetadata 中已知的估算值。
+	totalCount := p.resolveTableRowCount(req, itemMetadata)
 
 	// 5. 计算分页参数
 	page := req.Page
@@ -132,7 +123,7 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 	limit := pageSize
 
 	// 6. 执行分页查询
-	rows, err := p.queryData(ctx, sqlRuntime, connInfo, req.Engine.ID, req.Engine.EngineType, req.Schema, tableName, offset, limit, columns)
+	rows, err := p.queryData(ctx, batchReader, connInfo, req.Engine.ID, plug, req.Engine.EngineType, req.Schema, tableName, offset, limit, columns)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query data: %w", err)
 	}
@@ -161,9 +152,10 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 // queryData 执行分页查询
 func (p *DatabaseTablePreviewProvider) queryData(
 	ctx context.Context,
-	sqlRuntime plugin.SQLQueryRuntimeProvider,
+	batchReader plugin.BatchReadableProvider,
 	connInfo plugin.ConnectionInfo,
 	engineID uint,
+	plug plugin.EnginePlugin,
 	engineType, schema, table string,
 	offset, limit int,
 	columns []plugin.ColumnInfo,
@@ -184,11 +176,8 @@ func (p *DatabaseTablePreviewProvider) queryData(
 	if query == "" {
 		query = dialect.SelectTableSQL(selectExpr, schema, table, "", "", limit, offset)
 	}
-	result, err := sqlRuntime.ExecuteSQL(ctx, connInfo, query, plugin.QueryOptions{
-		EngineID:   engineID,
-		EngineType: engineType,
-		Limit:      limit,
-		ReadOnly:   true,
+	result, err := batchReader.ReadBatch(ctx, connInfo, databaseTableCatalogPath(engineID, plug, schema, table), plugin.BatchReadOptions{
+		Query: query,
 	})
 	if err != nil {
 		return nil, err
@@ -457,45 +446,21 @@ func databaseNamespaceTerm(plug plugin.EnginePlugin) string {
 }
 
 func (p *DatabaseTablePreviewProvider) resolveTableRowCount(
-	ctx context.Context,
-	sqlRuntime plugin.SQLQueryRuntimeProvider,
-	connInfo plugin.ConnectionInfo,
-	engineID uint,
-	engineType, schema, table string,
+	req *PreviewRequest,
 	itemMetadata *plugin.ItemMetadata,
-) (int64, error) {
+) int64 {
+	if rowCount, ok := previewTableRowCountFromAttributes(req.Attributes); ok {
+		return rowCount
+	}
 	if itemMetadata != nil {
-		if rowCount, ok := databaseInt64Stat(itemMetadata.Stats, "row_count"); ok {
-			if rowCount > 0 {
-				return rowCount, nil
-			}
+		if rowCount, ok := databaseInt64Stat(itemMetadata.Stats, "row_count"); ok && rowCount > 0 {
+			return rowCount
 		}
-		if rowCount, ok := databaseInt64Stat(itemMetadata.Stats, "document_count"); ok {
-			if rowCount > 0 {
-				return rowCount, nil
-			}
+		if rowCount, ok := databaseInt64Stat(itemMetadata.Stats, "document_count"); ok && rowCount > 0 {
+			return rowCount
 		}
 	}
-	query := databasePreviewCountQuery(engineType, schema, table)
-	result, err := sqlRuntime.ExecuteSQL(ctx, connInfo, query, plugin.QueryOptions{
-		EngineID:   engineID,
-		EngineType: engineType,
-		ReadOnly:   true,
-	})
-	if err != nil {
-		return 0, err
-	}
-	if len(result.Rows) == 0 {
-		return 0, nil
-	}
-	for _, value := range result.Rows[0] {
-		return numericToInt64(value), nil
-	}
-	return 0, nil
-}
-
-func databasePreviewCountQuery(engineType, schema, table string) string {
-	return sqldialect.ForEngine(engineType).CountTableSQL(schema, table, "")
+	return 0
 }
 
 func databaseInt64Stat(stats map[string]interface{}, key string) (int64, bool) {
@@ -543,6 +508,18 @@ func numericToInt64(value interface{}) int64 {
 		}
 	}
 	return 0
+}
+
+func previewTableRowCountFromAttributes(attrs map[string]interface{}) (int64, bool) {
+	tableAttrs := commonJSON.Section(attrs, "type_info.table")
+	if len(tableAttrs) == 0 {
+		return 0, false
+	}
+	rowCount, ok := databaseInt64Stat(tableAttrs, "row_count")
+	if !ok || rowCount <= 0 {
+		return 0, false
+	}
+	return rowCount, true
 }
 
 // getColumnMetadataFromMeta 从 Meta 服务获取列元数据（包含准确的几何类型）

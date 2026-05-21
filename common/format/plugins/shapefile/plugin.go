@@ -34,7 +34,7 @@ func (plugin *Plugin) Descriptor() format.FormatDescriptor {
 		Layouts:        []string{format.FormatLayoutMulti},
 		ProviderHints:  []string{format.FormatProviderTable, format.FormatProviderSpatial},
 		Identification: format.FormatIdentification{Extensions: []string{extSHP}, MimeTypes: []string{"application/x-shapefile", "application/x-esri-shapefile"}},
-		Providers:      format.FormatProviderDescriptor{MultiTable: true, ContentIndex: true},
+		Providers:      format.FormatProviderDescriptor{MultiTable: true},
 		ContentReaders: []string{string(format.ContentReaderMultiTableSample), string(format.ContentReaderRawContent)},
 		TransferRead:   true,
 		TransferWrite:  true,

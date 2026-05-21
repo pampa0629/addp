@@ -23,7 +23,10 @@ type TableSourcePlan struct {
 	ReadOptions  map[string]interface{}
 	ContentRead  engineplugin.ReadOptions
 	Format       format.FormatType
+	Layout       format.Layout
 	ParseOptions *format.ParseOptions
+	Schema       *format.TableInfo
+	RelatedRefs  []format.RelatedRef
 }
 
 type TableTargetPlan struct {
@@ -186,6 +189,7 @@ func (e *TableTransferExecutor) openSource(plan TableSourcePlan) (TableBatchSour
 			path:                 plan.Path,
 			query:                plan.Query,
 			readOptions:          plan.ReadOptions,
+			schema:               plan.Schema,
 		}, nil
 	case TableEndpointEncoded:
 		if e.SourceContentReader == nil {
@@ -206,6 +210,8 @@ func (e *TableTransferExecutor) openSource(plan TableSourcePlan) (TableBatchSour
 			path:                plan.Path,
 			readOptions:         plan.ContentRead,
 			parseOptions:        plan.ParseOptions,
+			schema:              plan.Schema,
+			relatedRefs:         plan.RelatedRefs,
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported table source kind %q", plan.Kind)

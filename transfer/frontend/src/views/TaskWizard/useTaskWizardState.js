@@ -142,7 +142,8 @@ export function useTaskWizardState() {
         }
       },
       data_type: sourceDataType.value || 'table',
-      representation: sourceRepresentation.value || 'native'
+      representation: sourceRepresentation.value || 'native',
+      attributes: config.sourceItem?.attributes || config.attributes || {}
     }
 
     const format = sourceBackendFormat(sourceFormat.value || config.format)
@@ -588,7 +589,8 @@ export function useTaskWizardState() {
       dataType: source.data_type || 'table',
       representation: source.representation || 'native',
       format: targetUiFormat(source.format, source.options || {}),
-      resource: endpointResource
+      resource: endpointResource,
+      attributes: source.attributes || {}
     }
   }
 

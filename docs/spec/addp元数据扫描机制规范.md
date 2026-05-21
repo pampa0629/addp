@@ -286,7 +286,7 @@ Manager 的刷新行为必须区分 node 和 item：
 | node | 可异步触发 Meta deep + force 扫描；前端刷新树即可，不要求等待整个扫描完成。 |
 | item | 调用 Meta 的已知 item refresh 接口并同步等待完成，再重新读取 item 元数据和预览。 |
 
-item 刷新只刷新 item 本身，但必须包含该 item 的所有 content。对于 Shapefile 这类 `layout=multi` 的 item，刷新时必须使用已入库 `attributes.item.refs` 的完整 refs 集合作为 provider 输入；只读取 `.shp` 主文件会导致字段、空间信息或 `content_index` 被错误覆盖或丢失。`refs` 不是 catalog scan target，Manager 也不得把它展开后自行发起目录扫描。
+item 刷新只刷新 item 本身，但必须包含该 item 的所有 content。对于 Shapefile 这类 `layout=multi` 的 item，刷新时必须使用已入库 `attributes.item.refs` 的完整 refs 集合作为 provider 输入；只读取 `.shp` 主文件会导致字段或空间信息被错误覆盖或丢失。`refs` 不是 catalog scan target，Manager 也不得把它展开后自行发起目录扫描。
 
 Manager 预览前的 deep 补齐与刷新按钮不同：补齐使用 `force=false`，只在 item 未达到 deep 或源数据过期时扫描；刷新按钮使用 `force=true`，用于用户明确要求重建当前 item 元数据。
 

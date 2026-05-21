@@ -697,7 +697,7 @@ function restoreSourceNodeFromState(state) {
           table ? { name: table, kind: 'table', term: 'table' } : null
         ].filter(Boolean)
       },
-      attributes: restoreSourceAttributes(state)
+      attributes: restoreSourceAttributes(state, config.attributes)
     }
   }
 
@@ -722,7 +722,7 @@ function restoreSourceNodeFromState(state) {
           }))
         ].filter(Boolean)
       },
-      attributes: restoreSourceAttributes(state)
+      attributes: restoreSourceAttributes(state, config.attributes)
     }
   }
 
@@ -742,7 +742,7 @@ function restoreSourceNodeFromState(state) {
           term: index === parts.length - 1 ? 'file' : 'directory'
         }))
       },
-      attributes: restoreSourceAttributes(state)
+      attributes: restoreSourceAttributes(state, config.attributes)
     }
   }
 

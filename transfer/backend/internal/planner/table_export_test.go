@@ -248,6 +248,135 @@ func TestBuildTableTransferPlanForEncodedFileToNativeTable(t *testing.T) {
 	}
 }
 
+func TestBuildTableTransferPlanConsumesMetaSingleSourceAttributes(t *testing.T) {
+	spec := minimalEncodedToNativeSpec()
+	spec.Source.Format = ""
+	spec.Source.EndpointResource = EndpointResourceSpec{Kind: EndpointResourceKindFile, Path: "imports/stale.csv"}
+	spec.Source.Attributes = tableSourceAttributes("single", "csv", "imports/meta_roads.csv", nil, []map[string]interface{}{
+		{"name": "id", "type": "bigint", "nullable": false, "is_primary_key": true},
+		{"name": "road_name", "type": "string", "nullable": true},
+	}, nil)
+
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		1: {Type: "nfs"},
+		2: {Type: "postgresql"},
+	})
+	if err != nil {
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
+	}
+	if result.Plan.Source.Format != format.FormatCSV {
+		t.Fatalf("source format = %q, want csv from Meta attributes", result.Plan.Source.Format)
+	}
+	if got := result.Plan.Source.Path.StringPath(); got != "imports/meta_roads.csv" {
+		t.Fatalf("source path = %q, want Meta storage physical path", got)
+	}
+	if result.Plan.Source.Schema == nil || len(result.Plan.Source.Schema.Fields) != 2 {
+		t.Fatalf("source schema = %#v, want fields from Meta attributes", result.Plan.Source.Schema)
+	}
+	if result.Plan.Source.Schema.Fields[0].Type != format.FieldTypeBigInt || !result.Plan.Source.Schema.Fields[0].IsPrimaryKey {
+		t.Fatalf("first source field = %#v, want standard bigint primary key field", result.Plan.Source.Schema.Fields[0])
+	}
+}
+
+func TestBuildTableTransferPlanConsumesMetaMultiSourceRefsAndSpatialAttributes(t *testing.T) {
+	spec := minimalEncodedToNativeSpec()
+	spec.Source.Format = ""
+	spec.Source.EndpointResource = EndpointResourceSpec{Kind: EndpointResourceKindFile, Path: "imports/stale.shp"}
+	spec.Source.Attributes = tableSourceAttributes("multi", "shapefile", "imports/roads.shp", []map[string]interface{}{
+		{"path": "imports/roads.shp", "role": "main", "extension": ".shp", "required": true, "primary": true},
+		{"path": "imports/roads.shx", "role": "index", "extension": ".shx", "required": true},
+		{"path": "imports/roads.dbf", "role": "attributes", "extension": ".dbf", "required": true},
+		{"path": "imports/roads.prj", "role": "projection", "extension": ".prj", "required": false},
+	}, []map[string]interface{}{
+		{"name": "id", "type": "bigint", "nullable": false},
+		{"name": "shape", "type": "geometry", "nullable": false},
+	}, map[string]interface{}{
+		"geometry_columns":        []map[string]interface{}{{"name": "shape", "geometry_type": "MultiPolygon", "srid": 4326, "dimension": 2}},
+		"primary_geometry_column": "shape",
+		"has_spatial_index":       true,
+	})
+
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		1: {Type: "nfs"},
+		2: {Type: "postgresql"},
+	})
+	if err != nil {
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
+	}
+	if result.Plan.Source.Format != format.FormatShapefile {
+		t.Fatalf("source format = %q, want shapefile from Meta attributes", result.Plan.Source.Format)
+	}
+	if got := result.Plan.Source.Path.StringPath(); got != "imports/roads.shp" {
+		t.Fatalf("source path = %q, want primary ref path", got)
+	}
+	if len(result.Plan.Source.RelatedRefs) != 4 {
+		t.Fatalf("source related refs = %#v, want refs restored from Meta attributes", result.Plan.Source.RelatedRefs)
+	}
+	if result.Plan.Source.RelatedRefs[2].Ref.Path != "imports/roads.dbf" || !result.Plan.Source.RelatedRefs[2].Required {
+		t.Fatalf("dbf ref = %#v, want required attributes ref from Meta attributes", result.Plan.Source.RelatedRefs[2])
+	}
+	if result.Plan.Source.Schema == nil || result.Plan.Source.Schema.SpatialInfo == nil {
+		t.Fatalf("source schema = %#v, want spatial info from Meta attributes", result.Plan.Source.Schema)
+	}
+	if result.Plan.Source.Schema.SpatialInfo.GeometryColumn != "shape" || result.Plan.Source.Schema.SpatialInfo.GeometryType != "MultiPolygon" {
+		t.Fatalf("source spatial info = %#v, want primary geometry column from capabilities.spatial", result.Plan.Source.Schema.SpatialInfo)
+	}
+	if result.Plan.Source.ParseOptions == nil || result.Plan.Source.ParseOptions.ExtraParams["geometry_field"] != "shape" {
+		t.Fatalf("source parse options = %#v, want geometry_field from capabilities.spatial", result.Plan.Source.ParseOptions)
+	}
+	if result.Plan.Source.ParseOptions.GeometryEncoding != format.GeometryEncodingEWKB {
+		t.Fatalf("geometry encoding = %q, want ewkb for spatial encoded import", result.Plan.Source.ParseOptions.GeometryEncoding)
+	}
+}
+
+func TestBuildTableTransferPlanRejectsIncompleteMetaMultiSourceRefs(t *testing.T) {
+	spec := minimalEncodedToNativeSpec()
+	spec.Source.Format = ""
+	spec.Source.EndpointResource = EndpointResourceSpec{Kind: EndpointResourceKindFile, Path: "imports/roads.shp"}
+	spec.Source.Attributes = tableSourceAttributes("multi", "shapefile", "imports/roads.shp", []map[string]interface{}{
+		{"path": "imports/roads.shp", "role": "main", "extension": ".shp", "required": true, "primary": true},
+		{"path": "imports/roads.shx", "role": "index", "extension": ".shx", "required": true},
+	}, []map[string]interface{}{{"name": "id", "type": "bigint"}}, nil)
+
+	_, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		1: {Type: "nfs"},
+		2: {Type: "postgresql"},
+	})
+	if err == nil {
+		t.Fatal("BuildTableTransferPlan succeeded, want incomplete Meta refs error")
+	}
+	if !strings.Contains(err.Error(), "missing required refs") || !strings.Contains(err.Error(), ".dbf") {
+		t.Fatalf("error = %q, want missing required dbf ref error", err)
+	}
+}
+
+func TestBuildTableTransferPlanConsumesMetaWholeSourceAttributes(t *testing.T) {
+	spec := minimalEncodedToEncodedSpec()
+	spec.Source.Format = ""
+	spec.Source.EndpointResource = EndpointResourceSpec{Kind: EndpointResourceKindFile, Path: "datasets/stale"}
+	spec.Source.Attributes = tableSourceAttributes("whole", "parquet", "datasets/lake_table", nil, []map[string]interface{}{
+		{"name": "id", "type": "bigint"},
+		{"name": "amount", "type": "decimal", "size": 18, "precision": 2},
+	}, nil)
+
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		1: {Type: "nfs"},
+		2: {Type: "nfs"},
+	})
+	if err != nil {
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
+	}
+	if result.Plan.Source.Layout != format.FormatLayoutWhole {
+		t.Fatalf("source layout = %q, want whole from Meta attributes", result.Plan.Source.Layout)
+	}
+	if got := result.Plan.Source.Path.StringPath(); got != "datasets/lake_table" {
+		t.Fatalf("source path = %q, want whole scope physical path", got)
+	}
+	if result.Plan.Source.Schema == nil || len(result.Plan.Source.Schema.Fields) != 2 {
+		t.Fatalf("source schema = %#v, want fields from Meta attributes", result.Plan.Source.Schema)
+	}
+}
+
 func TestBuildTableTransferPlanRequestsEWKBForSpatialEncodedImportToNativeTarget(t *testing.T) {
 	spec := minimalEncodedToNativeSpec()
 	spec.Source.Format = format.FormatShapefile
@@ -576,4 +705,29 @@ func minimalEncodedToEncodedSpec() TableExportTaskSpec {
 			Format:           format.FormatCSV,
 		},
 	}
+}
+
+func tableSourceAttributes(layout, formatName, physicalPath string, refs []map[string]interface{}, fields []map[string]interface{}, spatial map[string]interface{}) map[string]interface{} {
+	attrs := map[string]interface{}{
+		"storage": map[string]interface{}{
+			"physical_path": physicalPath,
+		},
+		"item": map[string]interface{}{
+			"layout":    layout,
+			"data_type": "table",
+			"format":    formatName,
+		},
+		"type_info": map[string]interface{}{
+			"table": map[string]interface{}{
+				"fields": fields,
+			},
+		},
+	}
+	if refs != nil {
+		attrs["item"].(map[string]interface{})["refs"] = refs
+	}
+	if spatial != nil {
+		attrs["capabilities"] = map[string]interface{}{"spatial": spatial}
+	}
+	return attrs
 }

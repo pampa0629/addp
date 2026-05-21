@@ -1,6 +1,6 @@
 # common engine / format / contentio 阶段交接记录
 
-更新时间：2026-05-20
+更新时间：2026-05-21
 
 本文记录本轮围绕 `common/contentio`、`common/format`、`common/dataitem`、Meta、Manager 和 Transfer 的阶段性结论、已完成工作和下一轮需要继续处理的问题。本文只作为交接记录；稳定规则应继续沉淀到 `docs/spec/` 和 `docs/concepts/`。
 
@@ -124,25 +124,46 @@ Transfer 当前的关键要求不是“先把流程走通”，而是按标准 i
 
 - 当 ZIP / 容器 child 预览无法直接走 `RangeReader` 时，Shapefile multi ref 会先 materialize 到临时目录。
 - 只要本地 `.shp/.shx/.dbf` 可用，就继续走 `.shx` 索引窗口 + `.dbf` 连续属性块 + `.shp` 记录窗口，不再退回从第 0 行顺序跳页。
-- 这样 `content_index` 或 `.shx` 的索引价值可以在本地 fallback 路径里继续生效，不必把大 ZIP 解成完整目录后再慢慢翻页。
+- 这样 `.shx` 原生索引价值可以在本地 fallback 路径里继续生效，不必把大 ZIP 解成完整目录后再慢慢翻页；Shapefile 不再额外落 `content_index` 元数据。
+
+### 4. Manager container 动态预览路径收口
+
+本轮已经继续核查并收口 Manager 的 container 动态预览边界：
+
+- 已入库 item 预览继续消费 Meta 标准 attributes；container 内部子项预览才临时调用 `common/dataitem` 做动态识别。
+- `objectcontent` 暴露 `ResolveContainerInfoForPreview()`，复用已有 `common/dataitem.ResolveItems()` 对容器当前层 children 做预览口径归并。
+- `ContainerChildPreviewProvider` 在解析 `nested_child_path` 时，优先读取当前层 container children 并按预览口径归并，再继续寻址。这样 `outer.zip -> inner.zip -> roads.shp` 能识别出内层 Shapefile 的 `.shp/.shx/.dbf` refs，而不是只把 `.shp` 当单文件。
+- 已补测试确认 SQLite / GeoPackage child 的 `type_info.container.children` 只是子项索引，不会被当作父 item 的 `type_info.table.fields`。
+- 已补测试确认带 `child_name + nested_child_path` 的预览路由走 `builtin:container-child`，不误入 `file-table` 或 catalog provider。
+
+本轮相关验证：
+
+```bash
+go test ./manager/backend/internal/preview ./manager/backend/internal/objectcontent
+go test ./common/dataitem
+```
 
 ## 三、当前仍需继续处理的关键问题
 
-### 1. container 动态识别与 Meta 落库边界
+### 1. Transfer 消费 Meta item attributes
 
-已经达成的规则：
+Manager container 动态预览路径已经完成主要边界收口。下一轮建议把重点切到 Transfer planner：让 Transfer 优先消费已入库 Meta item 的标准 attributes，而不是重新猜测 refs、字段类型或空间字段。
 
-- Meta deep scan 只记录容器直接 children，不继续无限套娃识别下一层 data item。
-- Manager 预览 container 时可以调用 `common/dataitem` 对容器内部当前层做动态识别。
-- 动态识别结果不入 Meta，用完即弃。
-- `common/dataitem` 的能力本身应支持多层递归，递归深度和是否落库由调用方控制。
+下一轮重点：
 
-下一轮需要继续核查 Manager 的两条路径：
+- source endpoint 如果指向已入库 Meta item，应从 attributes 还原 `layout/data_type/format/refs/physical_path/capabilities.spatial`。
+- `layout=multi` 必须使用 `attributes.item.refs` 的完整集合，不能在 Transfer 里按同 basename 自行猜 `.shx/.dbf` 等 sidecar。缺 refs 或 refs 不完整时，应提示回到 Meta node scan 重新识别 item。
+- 字段类型使用 `type_info.table.fields` 中的 ADDP 标准字段类型，不读取或判断 format / engine native field type。
+- 空间字段使用 `capabilities.spatial.primary_geometry_column` 或 `geometry_columns` 中的标准事实，不默认 `geom`。
+- encoded spatial source -> native target 的 geometry row value 继续通过 `ParseOptions.GeometryEncoding` 请求 WKB / EWKB，不按具体 engine type 写特殊分支。
 
-- 已入库 meta item 预览路径。
-- container 内部动态识别路径。
+### 2. Manager 剩余回归
 
-避免两条路径混用字段、合并所有 children 字段、或把 container child kind 与外部 item type 混淆。
+Manager 后续只需用真实 NFS / MinIO / ZIP 样例继续回归：
+
+- 大 ZIP 中 Shapefile 翻页不会退回顺序跳行。
+- 嵌套 ZIP / SQLite / GeoPackage / Shapefile 子项显示和字段来源正确。
+- 动态识别结果只服务本次预览，不写回 Meta。
 
 ## 四、已修订或应继续同步的文档
 
@@ -160,26 +181,26 @@ Transfer 当前的关键要求不是“先把流程走通”，而是按标准 i
 
 ## 五、下一轮建议执行顺序
 
-1. 继续整理 Manager container 动态预览路径，确保 SQLite / ZIP / Shapefile 子项显示和字段来源正确。
-2. 推进 Transfer 对 Meta item attributes 的消费，避免自行猜 refs、字段类型或空间字段。
-3. 如后续调整 item refresh，必须同时验证 single / multi / whole 三类 layout，尤其确认 multi 的 `content_index`、`type_info.table.fields`、`capabilities.spatial` 不因只读 primary content 而丢失。
-4. Shapefile 动态预览已接入本地索引回退，后续只需继续用真实 NFS / ZIP 样例回归分页和大文件体验，确认不会再退回顺序跳行。
+1. 推进 Transfer planner 对 Meta item attributes 的消费，避免自行猜 refs、字段类型或空间字段。
+2. 先补 planner 单元测试：single / multi / whole 三类 layout；尤其是 Shapefile multi source 必须从 `attributes.item.refs` 生成 source plan。
+3. 如后续调整 item refresh，必须同时验证 single / multi / whole 三类 layout，尤其确认 multi 的 `type_info.table.fields`、`capabilities.spatial` 不因只读 primary content 而丢失。
+4. Manager 后续只做真实样例回归和小修，不再作为下一轮主线。
 
 ## 六、新会话起手点
 
 如果后续另开会话，建议先从下面三个位置接着看：
 
-1. `docs/spec/addp元数据扫描机制规范.md`
+1. `docs/next/transfer基于common-engine-format改造设计.md`
 2. `docs/spec/addp数据项探测器规范.md`
-3. `docs/spec/addp内容IO抽象规范.md`
+3. `docs/spec/addp元数据attributes规范.md`
 
 对应代码重点是：
 
-- `common/dataitem`
-- `meta/backend/internal/service/scan_service.go`
-- `manager/backend/internal/service/metadata_service.go`
-- `manager/backend/internal/service/explorer_service.go`
+- `transfer/backend/internal/planner/table_export.go`
+- `transfer/backend/internal/planner/table_export_test.go`
+- `transfer/backend/internal/executor/table_transfer.go`
 - `transfer/backend/internal/executor/table_pipeline.go`
+- `common/dataitem`
 
 ## 七、交接提醒
 

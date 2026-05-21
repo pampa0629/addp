@@ -73,6 +73,9 @@ func resolveNestedPreviewContainerChild(ctx context.Context, parent *format.Cont
 	if nestedPath == "" {
 		return parent, nil
 	}
+	if resolved, ok, err := resolveNestedPreviewContainerChildFromContainerInfo(ctx, parent, nestedPath, req); ok || err != nil {
+		return resolved, err
+	}
 	childInfo := childInfoForNestedContainerPath(nestedPath)
 	resolved, directErr := resolveOpenablePreviewContainerChild(ctx, parent.Reader, parent.Ref, parent.Format, previewRequestForRef(req, childInfo))
 	if directErr == nil {
@@ -92,6 +95,117 @@ func resolveNestedPreviewContainerChild(ctx context.Context, parent *format.Cont
 		return resolveNestedPreviewContainerChild(ctx, prefixChild, rest, req)
 	}
 	return nil, directErr
+}
+
+func resolveNestedPreviewContainerChildFromContainerInfo(ctx context.Context, parent *format.ContainerChildResource, nestedPath string, req *PreviewRequest) (*format.ContainerChildResource, bool, error) {
+	if !isContainerChildResource(parent) {
+		return nil, false, nil
+	}
+	children, err := previewContainerChildren(ctx, parent)
+	if err != nil || len(children) == 0 {
+		return nil, false, nil
+	}
+	if child := findPreviewContainerChild(children, nestedPath); child != nil {
+		resolved, err := resolveContainerChildResource(ctx, parent, child, req)
+		return resolved, true, err
+	}
+	for _, index := range nestedPathSplitIndexes(nestedPath) {
+		prefix := strings.Trim(nestedPath[:index], "/")
+		rest := strings.Trim(nestedPath[index+1:], "/")
+		if prefix == "" || rest == "" {
+			continue
+		}
+		child := findPreviewContainerChild(children, prefix)
+		if child == nil {
+			continue
+		}
+		resolved, err := resolveContainerChildResource(ctx, parent, child, req)
+		if err != nil || !isContainerChildResource(resolved) {
+			continue
+		}
+		nested, err := resolveNestedPreviewContainerChild(ctx, resolved, rest, req)
+		return nested, true, err
+	}
+	return nil, false, nil
+}
+
+func previewContainerChildren(ctx context.Context, parent *format.ContainerChildResource) ([]map[string]interface{}, error) {
+	if parent == nil {
+		return nil, nil
+	}
+	provider, err := format.GetContainerInfoProvider(parent.Format)
+	if err != nil {
+		return nil, nil
+	}
+	reader, err := parent.Open(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+	info, err := provider.DescribeContainer(ctx, reader, format.ContainerParseOptions(0, 0))
+	if err != nil {
+		return nil, err
+	}
+	info = objectcontent.ResolveContainerInfoForPreview(info)
+	if info == nil {
+		return nil, nil
+	}
+	children := make([]map[string]interface{}, 0, len(info.Children))
+	for _, child := range info.Children {
+		children = append(children, previewContainerChildInfoMap(child))
+	}
+	return children, nil
+}
+
+func previewContainerChildInfoMap(child format.ContainerChildInfo) map[string]interface{} {
+	result := map[string]interface{}{}
+	for key, value := range child.Properties {
+		result[key] = value
+	}
+	result["name"] = child.Name
+	result["child_kind"] = child.ChildKind
+	result["data_type"] = child.DataType
+	result["format"] = string(child.Format)
+	result["layout"] = child.Layout
+	if len(child.Refs) > 0 {
+		refs := make([]interface{}, 0, len(child.Refs))
+		for _, ref := range child.Refs {
+			refs = append(refs, map[string]interface{}{
+				"role":      ref.Role,
+				"path":      ref.Path,
+				"required":  ref.Required,
+				"primary":   ref.Primary,
+				"extension": ref.Extension,
+			})
+		}
+		result["refs"] = refs
+	}
+	return result
+}
+
+func findPreviewContainerChild(children []map[string]interface{}, childPath string) map[string]interface{} {
+	childPath = strings.Trim(strings.TrimSpace(childPath), "/")
+	for _, child := range children {
+		if containerChildNameMatches(child, childPath) {
+			return child
+		}
+	}
+	return nil
+}
+
+func resolveContainerChildResource(ctx context.Context, parent *format.ContainerChildResource, child map[string]interface{}, req *PreviewRequest) (*format.ContainerChildResource, error) {
+	reader, ref, parentFormat := containerChildResourceContext(parent)
+	return resolveOpenablePreviewContainerChild(ctx, reader, ref, parentFormat, previewRequestForRef(req, child))
+}
+
+func containerChildResourceContext(child *format.ContainerChildResource) (contentio.Reader, contentio.Ref, format.FormatType) {
+	if child == nil {
+		return nil, contentio.Ref{}, format.FormatUnknown
+	}
+	if child.ResourceKind == format.ContainerChildResourceNative {
+		return child.ParentReader, child.ParentRef, child.Format
+	}
+	return child.Reader, child.Ref, child.Format
 }
 
 func resolveOpenablePreviewContainerChild(ctx context.Context, parent contentio.Reader, parentRef contentio.Ref, parentFormat format.FormatType, req *PreviewRequest) (*format.ContainerChildResource, error) {

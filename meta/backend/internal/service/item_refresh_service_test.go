@@ -80,6 +80,11 @@ func TestRefreshKnownMultiItemUsesStoredRefsWithoutCatalogRediscovery(t *testing
 				"name":       "roads.shp",
 				"total_size": total,
 			},
+			"content_index": map[string]interface{}{
+				"table": map[string]interface{}{
+					"kind": "sparse_row_index",
+				},
+			},
 		},
 	}
 	if err := db.Create(&item).Error; err != nil {
@@ -98,12 +103,10 @@ func TestRefreshKnownMultiItemUsesStoredRefsWithoutCatalogRediscovery(t *testing
 	if err := db.First(&refreshed, item.ID).Error; err != nil {
 		t.Fatalf("load refreshed item: %v", err)
 	}
-	contentIndex := refreshed.Attributes["content_index"].(map[string]interface{})["table"].(map[string]interface{})
-	if contentIndex["kind"] != "sparse_row_index" {
-		t.Fatalf("content_index.table = %#v, want sparse_row_index", contentIndex)
-	}
-	if _, ok := contentIndex["anchors"]; !ok {
-		t.Fatalf("content_index.table.anchors missing: %#v", contentIndex)
+	if contentIndex, ok := refreshed.Attributes["content_index"].(map[string]interface{}); ok {
+		if tableIndex, exists := contentIndex["table"]; exists {
+			t.Fatalf("content_index.table = %#v, want stale shapefile table index removed", tableIndex)
+		}
 	}
 }
 

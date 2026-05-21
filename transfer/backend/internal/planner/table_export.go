@@ -3,10 +3,13 @@ package planner
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 
+	"github.com/addp/common/dataitem"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
+	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/transfer/internal/executor"
 )
 
@@ -45,6 +48,7 @@ type EndpointSpec struct {
 	Format           format.FormatType      `json:"format,omitempty"`
 	Options          map[string]interface{} `json:"options,omitempty"`
 	Policy           map[string]interface{} `json:"policy,omitempty"`
+	Attributes       map[string]interface{} `json:"attributes,omitempty"`
 }
 
 type TableExportTaskSpec struct {
@@ -193,7 +197,7 @@ func applySourceGeometryEncodingForTarget(sourcePlan *executor.TableSourcePlan, 
 	if sourcePlan == nil || sourcePlan.Kind != executor.TableEndpointEncoded || targetPlan.Kind != executor.TableEndpointNative {
 		return
 	}
-	if !formatHasSpatialRows(sourcePlan.Format) {
+	if !formatHasSpatialRows(sourcePlan.Format) && (sourcePlan.Schema == nil || sourcePlan.Schema.SpatialInfo == nil) {
 		return
 	}
 	if sourcePlan.ParseOptions == nil {
@@ -209,7 +213,326 @@ func formatHasSpatialRows(formatType format.FormatType) bool {
 	return ok && descriptor.Spatial
 }
 
+func sourceItemDescriptor(attrs map[string]interface{}) (dataitem.ItemDescriptor, bool) {
+	descriptor := dataitem.DescriptorFromAttributes(attrs)
+	if descriptor.Layout == "" && descriptor.DataType == "" && descriptor.Format == "" && descriptor.PhysicalPath == "" && descriptor.StoragePath == "" && len(descriptor.Refs) == 0 {
+		return dataitem.ItemDescriptor{}, false
+	}
+	return descriptor, true
+}
+
+func sourceFormatFromEndpoint(endpoint EndpointSpec, descriptor dataitem.ItemDescriptor) (format.FormatType, error) {
+	metaFormat := format.FormatType(strings.TrimSpace(descriptor.Format))
+	endpointFormat := format.FormatType(strings.TrimSpace(string(endpoint.Format)))
+	if metaFormat == "" {
+		return endpointFormat, nil
+	}
+	if endpointFormat != "" && endpointFormat != metaFormat {
+		return "", fmt.Errorf("source format %q conflicts with Meta item format %q", endpointFormat, metaFormat)
+	}
+	return metaFormat, nil
+}
+
+func sourceEndpointContentCatalogPath(engineID uint, resource EndpointResourceSpec, descriptor dataitem.ItemDescriptor) (engineplugin.CatalogPath, error) {
+	switch resource.Kind {
+	case EndpointResourceKindFile:
+		path := descriptor.PhysicalPath
+		if path == "" {
+			path = engineplugin.NormalizeFileCatalogPath(contentPathString(resource.Path, "file"))
+		}
+		if path == "" {
+			return engineplugin.CatalogPath{}, fmt.Errorf("source file resource path requires path")
+		}
+		return engineplugin.FileItemPath(engineID, path), nil
+	case EndpointResourceKindObject:
+		bucket := descriptor.StorageBucket
+		objectPath := descriptor.StoragePath
+		if objectPath == "" && descriptor.PhysicalPath != "" {
+			cleaned := strings.Trim(descriptor.PhysicalPath, "/")
+			if cleaned != "" {
+				if splitBucket, splitPath, ok := strings.Cut(cleaned, "/"); ok {
+					if bucket == "" {
+						bucket = splitBucket
+					}
+					objectPath = splitPath
+				} else {
+					objectPath = cleaned
+				}
+			}
+		}
+		if bucket == "" || objectPath == "" {
+			values, _ := resource.Path.(map[string]interface{})
+			if bucket == "" {
+				bucket = stringValue(values, "bucket")
+			}
+			if objectPath == "" {
+				objectPath = contentPathString(resource.Path, "object")
+			}
+		}
+		if bucket == "" || objectPath == "" {
+			return engineplugin.CatalogPath{}, fmt.Errorf("source object resource path requires bucket and path")
+		}
+		return engineplugin.ObjectItemPath(engineID, bucket, objectPath), nil
+	default:
+		return endpointContentCatalogPath(engineID, resource, "source")
+	}
+}
+
+func itemDescriptorWithPhysicalPath(descriptor dataitem.ItemDescriptor, physicalPath string) dataitem.ItemDescriptor {
+	if strings.TrimSpace(physicalPath) == "" {
+		return descriptor
+	}
+	descriptor.PhysicalPath = strings.TrimSpace(physicalPath)
+	return descriptor
+}
+
+func validateSourceRelatedRefs(formatType format.FormatType, refs []format.RelatedRef) error {
+	if len(refs) == 0 {
+		return nil
+	}
+	provider, err := format.GetMultiTableReaderProvider(formatType)
+	if err != nil {
+		return fmt.Errorf("source meta item layout=multi requires attributes.item.refs, but format %q has no multi table reader provider: %w", formatType, err)
+	}
+	if err := format.ValidateRelatedRefs(refs); err != nil {
+		return fmt.Errorf("source meta item related refs are invalid: %w", err)
+	}
+	specs := provider.RelatedRefSpecs()
+	if len(specs) == 0 {
+		return nil
+	}
+	required := make(map[string]bool, len(specs))
+	for _, spec := range specs {
+		if !spec.Required {
+			continue
+		}
+		required[relatedRefSpecKey(spec)] = false
+	}
+	for _, ref := range refs {
+		for _, spec := range specs {
+			if !spec.Required {
+				continue
+			}
+			if relatedRefMatchesSpec(ref, spec) {
+				required[relatedRefSpecKey(spec)] = true
+			}
+		}
+	}
+	missing := make([]string, 0, len(required))
+	for key, present := range required {
+		if !present {
+			missing = append(missing, key)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("source meta item related refs are incomplete, missing required refs: %s", strings.Join(missing, ", "))
+	}
+	return nil
+}
+
+func relatedRefMatchesSpec(ref format.RelatedRef, spec format.RelatedRefSpec) bool {
+	ext := format.NormalizeExtension(filepath.Ext(ref.Ref.Path))
+	if specExt := format.NormalizeExtension(spec.Extension); specExt != "" && ext == specExt {
+		return true
+	}
+	role := strings.ToLower(strings.TrimSpace(ref.Ref.Role))
+	if specRole := strings.ToLower(strings.TrimSpace(spec.Role)); specRole != "" && role == specRole {
+		return true
+	}
+	return false
+}
+
+func relatedRefSpecKey(spec format.RelatedRefSpec) string {
+	ext := format.NormalizeExtension(spec.Extension)
+	role := strings.ToLower(strings.TrimSpace(spec.Role))
+	if role == "" {
+		role = strings.TrimPrefix(ext, ".")
+	}
+	return role + ":" + ext
+}
+
+func tableInfoFromMetaAttributes(attrs map[string]interface{}) *format.TableInfo {
+	tableAttrs := commonJSON.Section(attrs, "type_info.table")
+	if len(tableAttrs) == 0 {
+		return nil
+	}
+	fields := tableFieldsFromAttributes(tableAttrs["fields"])
+	if len(fields) == 0 {
+		return nil
+	}
+	info := &format.TableInfo{
+		Name:       strings.TrimSpace(commonJSON.InterfaceString(tableAttrs["name"])),
+		Fields:     fields,
+		PrimaryKey: interfaceToStringSlice(tableAttrs["primary_key"]),
+	}
+	if info.Name == "" {
+		info.Name = "table"
+	}
+	if rowCount := commonJSON.InterfaceInt64(tableAttrs["row_count"]); rowCount > 0 {
+		info.RowCount = &rowCount
+	}
+	if sizeBytes := commonJSON.InterfaceInt64(tableAttrs["size_bytes"]); sizeBytes > 0 {
+		info.SizeBytes = &sizeBytes
+	}
+	if spatialInfo := spatialInfoFromMetaAttributes(attrs); spatialInfo != nil {
+		info.SpatialInfo = spatialInfo
+		for i := range info.Fields {
+			if strings.EqualFold(info.Fields[i].Name, spatialInfo.GeometryColumn) {
+				info.Fields[i].Type = format.FieldTypeGeometry
+				break
+			}
+		}
+	}
+	return info
+}
+
+func tableFieldsFromAttributes(value interface{}) []format.FieldInfo {
+	items := interfaceSlice(value)
+	fields := make([]format.FieldInfo, 0, len(items))
+	for _, item := range items {
+		attrs := rawMapAttribute(item)
+		name := strings.TrimSpace(commonJSON.InterfaceString(attrs["name"]))
+		if name == "" {
+			continue
+		}
+		fieldType := format.FieldType(strings.TrimSpace(commonJSON.InterfaceString(attrs["type"])))
+		if fieldType == "" {
+			fieldType = format.FieldTypeUnknown
+		}
+		field := format.FieldInfo{
+			Name:         name,
+			Type:         fieldType,
+			Nullable:     fieldBoolAttribute(attrs, "nullable", "is_nullable"),
+			IsPrimaryKey: fieldBoolAttribute(attrs, "is_primary_key"),
+			Comment:      strings.TrimSpace(commonJSON.InterfaceString(attrs["comment"])),
+			Size:         int(commonJSON.InterfaceInt64(attrs["size"])),
+			Precision:    int(commonJSON.InterfaceInt64(attrs["precision"])),
+		}
+		if format.IsGeometryType(field.Type) {
+			field.Type = format.FieldTypeGeometry
+		}
+		fields = append(fields, field)
+	}
+	return fields
+}
+
+func spatialInfoFromMetaAttributes(attrs map[string]interface{}) *format.SpatialInfo {
+	spatialAttrs := commonJSON.Section(attrs, "capabilities.spatial")
+	if len(spatialAttrs) == 0 {
+		return nil
+	}
+	geometryColumn := commonJSON.InterfaceString(spatialAttrs["primary_geometry_column"])
+	var geometryType string
+	var srid int
+	var dimension int
+	for _, item := range interfaceSlice(spatialAttrs["geometry_columns"]) {
+		column := rawMapAttribute(item)
+		if len(column) == 0 {
+			continue
+		}
+		name := strings.TrimSpace(commonJSON.InterfaceString(column["name"]))
+		if geometryColumn != "" && !strings.EqualFold(name, geometryColumn) {
+			continue
+		}
+		if geometryColumn == "" {
+			geometryColumn = name
+		}
+		geometryType = strings.TrimSpace(commonJSON.InterfaceString(column["geometry_type"]))
+		srid = int(commonJSON.InterfaceInt64(column["srid"]))
+		dimension = int(commonJSON.InterfaceInt64(column["dimension"]))
+		break
+	}
+	if geometryColumn == "" {
+		return nil
+	}
+	if dimension == 0 {
+		dimension = int(commonJSON.InterfaceInt64(spatialAttrs["dimension"]))
+	}
+	spatialInfo := &format.SpatialInfo{
+		GeometryColumn:  geometryColumn,
+		GeometryType:    geometryType,
+		SRID:            srid,
+		HasSpatialIndex: commonJSON.InterfaceBool(spatialAttrs["has_spatial_index"]),
+		IndexName:       commonJSON.InterfaceString(spatialAttrs["index_name"]),
+		Dimension:       dimension,
+	}
+	if spatialInfo.Dimension == 0 {
+		spatialInfo.Dimension = 2
+	}
+	if extent := commonJSON.InterfaceFloat64Slice(spatialAttrs["extent"]); len(extent) == 4 {
+		spatialInfo.BoundingBox = &[4]float64{extent[0], extent[1], extent[2], extent[3]}
+	}
+	return spatialInfo
+}
+
+func applyMetaSpatialParseOptions(opts *format.ParseOptions, schema *format.TableInfo) {
+	if opts == nil || schema == nil || schema.SpatialInfo == nil {
+		return
+	}
+	if opts.ExtraParams == nil {
+		opts.ExtraParams = map[string]interface{}{}
+	}
+	if strings.TrimSpace(commonJSON.InterfaceString(opts.ExtraParams["geometry_field"])) == "" && schema.SpatialInfo.GeometryColumn != "" {
+		opts.ExtraParams["geometry_field"] = schema.SpatialInfo.GeometryColumn
+	}
+}
+
+func interfaceSlice(value interface{}) []interface{} {
+	switch typed := value.(type) {
+	case []interface{}:
+		return typed
+	case []map[string]interface{}:
+		result := make([]interface{}, 0, len(typed))
+		for _, item := range typed {
+			result = append(result, item)
+		}
+		return result
+	default:
+		return nil
+	}
+}
+
+func rawMapAttribute(value interface{}) map[string]interface{} {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		return typed
+	case map[string]string:
+		result := make(map[string]interface{}, len(typed))
+		for key, val := range typed {
+			result[key] = val
+		}
+		return result
+	default:
+		return nil
+	}
+}
+
+func interfaceToStringSlice(value interface{}) []string {
+	items := interfaceSlice(value)
+	if len(items) == 0 {
+		return nil
+	}
+	result := make([]string, 0, len(items))
+	for _, item := range items {
+		if text := strings.TrimSpace(commonJSON.InterfaceString(item)); text != "" {
+			result = append(result, text)
+		}
+	}
+	return result
+}
+
+func fieldBoolAttribute(attrs map[string]interface{}, keys ...string) bool {
+	for _, key := range keys {
+		if value, ok := attrs[key]; ok {
+			return commonJSON.InterfaceBool(value)
+		}
+	}
+	return false
+}
+
 func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding) (executor.TableSourcePlan, error) {
+	itemDescriptor, hasItemAttributes := sourceItemDescriptor(endpoint.Attributes)
+	sourceSchema := tableInfoFromMetaAttributes(endpoint.Attributes)
 	switch endpoint.Representation {
 	case representationNative:
 		sourcePath, err := nativeTablePath(engine.EngineID, endpoint.EndpointResource.Path)
@@ -220,25 +543,51 @@ func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding) (executor
 			Kind:     executor.TableEndpointNative,
 			ConnInfo: engine.ConnInfo,
 			Path:     sourcePath,
+			Layout:   itemDescriptor.Layout,
+			Schema:   sourceSchema,
 		}, nil
 	case representationEncoded:
-		sourcePath, err := endpointContentCatalogPath(engine.EngineID, endpoint.EndpointResource, "source")
+		sourcePath, err := sourceEndpointContentCatalogPath(engine.EngineID, endpoint.EndpointResource, itemDescriptor)
 		if err != nil {
 			return executor.TableSourcePlan{}, fmt.Errorf("build source path: %w", err)
 		}
-		sourceFormat := endpoint.Format
+		sourceFormat, err := sourceFormatFromEndpoint(endpoint, itemDescriptor)
+		if err != nil {
+			return executor.TableSourcePlan{}, err
+		}
 		if sourceFormat == "" {
 			return executor.TableSourcePlan{}, fmt.Errorf("source format is required")
 		}
 		if err := validateTransferReadableTableFormat(sourceFormat); err != nil {
 			return executor.TableSourcePlan{}, err
 		}
+		parseOptions := tableParseOptions(endpoint.Options, sourceFormat)
+		applyMetaSpatialParseOptions(parseOptions, sourceSchema)
+		relatedRefs := itemDescriptor.RelatedRefs()
+		if itemDescriptor.Layout == dataitem.LayoutMulti {
+			if len(relatedRefs) == 0 {
+				return executor.TableSourcePlan{}, fmt.Errorf("source meta item layout=multi requires attributes.item.refs; rescan the Meta node to restore item refs")
+			}
+			if err := validateSourceRelatedRefs(sourceFormat, relatedRefs); err != nil {
+				return executor.TableSourcePlan{}, err
+			}
+			if primary, err := format.PrimaryRelatedRef(relatedRefs); err == nil {
+				if primaryPath, pathErr := sourceEndpointContentCatalogPath(engine.EngineID, endpoint.EndpointResource, itemDescriptorWithPhysicalPath(itemDescriptor, primary.Ref.Path)); pathErr == nil {
+					sourcePath = primaryPath
+				}
+			}
+		} else if hasItemAttributes && itemDescriptor.Layout == dataitem.LayoutWhole {
+			relatedRefs = itemDescriptor.RelatedRefs()
+		}
 		return executor.TableSourcePlan{
 			Kind:         executor.TableEndpointEncoded,
 			ConnInfo:     engine.ConnInfo,
 			Path:         sourcePath,
 			Format:       sourceFormat,
-			ParseOptions: tableParseOptions(endpoint.Options, sourceFormat),
+			Layout:       itemDescriptor.Layout,
+			ParseOptions: parseOptions,
+			Schema:       sourceSchema,
+			RelatedRefs:  relatedRefs,
 		}, nil
 	default:
 		return executor.TableSourcePlan{}, fmt.Errorf("unsupported source representation %q", endpoint.Representation)

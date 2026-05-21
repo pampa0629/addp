@@ -134,6 +134,10 @@ func BuildContainerPreviewFromInfo(info *format.ContainerInfo, fallbackFormat st
 	return buildContainerPreviewFromContainerInfo(info, fallbackFormat)
 }
 
+func ResolveContainerInfoForPreview(info *format.ContainerInfo) *format.ContainerInfo {
+	return resolveContainerChildrenForPreview(info)
+}
+
 func ContainerInfoTruncated(info *format.ContainerInfo) bool {
 	return containerInfoTruncated(info)
 }

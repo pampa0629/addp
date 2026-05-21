@@ -1,6 +1,6 @@
 # Transfer 基于 common engine / format 的改造进展
 
-更新时间：2026-05-19
+更新时间：2026-05-21
 
 本文记录 Transfer 模块基于 `common/engine`、`common/format`、`common/contentio` 重构后的当前状态和后续路线。当前口径采用 clean break：不兼容旧任务 JSON，不保留 Transfer 私有 reader / writer 插件体系，不为历史 pipeline 做兼容分支。
 
@@ -246,8 +246,8 @@ Manager 的上传导入入口目前用于“用户上传一个 Shapefile ZIP，�
 | 能力 | 状态 |
 |---|---|
 | 新 endpoint JSON | 创建、编辑、详情、执行已切换到新结构。 |
-| planner | 已能规划 native table、encoded table file/object、multi ref export、native table import。 |
-| executor | 已统一走 common engine / format / contentio 能力；single content 使用固定 CatalogPath，multi sibling refs 使用 basename 推导。 |
+| planner | 已能规划 native table、encoded table file/object、multi ref export、native table import；下一步需要优先消费 Meta item attributes，避免 source 侧重新猜 refs、字段类型或空间字段。 |
+| executor | 已统一走 common engine / format / contentio 能力；single content 使用固定 CatalogPath，multi writer 可按 format specs 生成目标 refs。source 侧已入库 multi item 后续必须优先使用 `attributes.item.refs`，不再按 basename 猜测 sidecar。 |
 | worker | Asynq worker 保留，执行入口已切到 planner + executor。 |
 | field mapping transform | 已进入 `config.transforms[type=field_mapping]`，executor 可执行投影、重命名、默认值、目标类型和 geometry schema 同步。 |
 | metrics | 已回写基础 records_read / records_written。 |
@@ -345,6 +345,7 @@ batch checkpoint 最小结构：
 
 | 方向 | 当前不足 |
 |---|---|
+| Meta item attributes 消费 | Transfer planner 仍需系统化消费已入库 item attributes。`layout=multi` source 应使用 `attributes.item.refs`，字段类型应使用 `type_info.table.fields` 的 ADDP 标准类型，空间字段应使用 `capabilities.spatial`，不得重新猜 refs、native type 或默认 `geom`。 |
 | checkpoint / progress | 已有 batch-level metrics / checkpoint / logs 最小闭环；尚未实现从 checkpoint 恢复执行。 |
 | schema evolution | PostgreSQL 写侧可 ensure/create table，但字段变化、类型演进和目标表差异处理仍未完善。 |
 | 并行读取 | PostgreSQL cursor session 已有，但分区并行读取、稳定快照和多 worker 协调仍未补。 |
@@ -359,16 +360,19 @@ batch checkpoint 最小结构：
 
 ### 近期优先级
 
-1. **补 Shapefile reader 的几何覆盖和集成验收**  
+1. **补 Transfer planner 对 Meta item attributes 的消费**  
+   source endpoint 如果指向已入库 Meta item，planner 应从标准 attributes 还原 `layout/data_type/format/refs/physical_path/capabilities.spatial`。`layout=multi` 使用 `attributes.item.refs`，不在 Transfer 内按 basename 猜 `.shx/.dbf`；字段类型只用 `type_info.table.fields` 的 ADDP 标准类型；空间字段使用 `capabilities.spatial.primary_geometry_column` 或 `geometry_columns`，不得默认 `geom`。建议先补 single / multi / whole 三类 planner 单元测试，再改实现。
+
+2. **补 Shapefile reader 的几何覆盖和集成验收**  
    当前 Transfer 已优先走连续 multi table reader；encoded spatial source -> native table target 的默认行值协议已按 format capability 选择 `ewkb`，不再根据具体 target engine type 硬编码。Shapefile -> PostgreSQL/PostGIS 的 EWKB 写入已有默认跳过的集成测试，可通过 `ADDP_POSTGRES_INTEGRATION=1 go test ./internal/executor -run 'TestIntegrationShapefile.*Z.*Postgres|TestIntegrationShapefileToPostgresWritesEWKBGeometry' -count=1` 验证。PointZ / PolylineZ / PolygonZ / MultiPointZ 已真实验收；Shapefile 写侧已按 `SpatialInfo.Dimension` 输出 Z shape。下一步补 M 值处理策略，并继续把 NFS / MinIO Shapefile import/export 的验收步骤沉淀为可重复测试或操作清单。
 
-2. **补 Transfer 验收用例沉淀**  
+3. **补 Transfer 验收用例沉淀**  
    将已通过的 PostgreSQL spatial table -> NFS / MinIO Shapefile、MinIO Shapefile -> PostgreSQL table、NFS Shapefile -> MinIO Shapefile 继续形成可重复的集成测试或操作清单。
 
-3. **设计 checkpoint 恢复语义**  
+4. **设计 checkpoint 恢复语义**  
    明确哪些 source reader 支持 seek / cursor 恢复、哪些 target writer 可幂等续写，再决定恢复执行是否进入主链路。
 
-4. **设计下一批 transform 类型**  
+5. **设计下一批 transform 类型**  
    在 `field_mapping` 稳定后，再讨论过滤、派生字段、简单表达式、空间坐标转换等 ETL 能力边界。
 
 ### 中期优先级

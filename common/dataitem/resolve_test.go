@@ -210,3 +210,27 @@ func TestScanTargetsFromAttributesFallsBackToStoragePath(t *testing.T) {
 		t.Fatalf("targets = %#v, want storage path", targets)
 	}
 }
+
+func TestDescriptorFromAttributesRestoresRelatedRefs(t *testing.T) {
+	t.Parallel()
+
+	descriptor := DescriptorFromAttributes(map[string]interface{}{
+		"item": map[string]interface{}{
+			"refs": []map[string]interface{}{
+				{"path": "roads.shp", "role": "main", "required": true, "primary": true},
+				{"path": "roads.dbf", "extension": ".dbf", "required": true},
+			},
+		},
+	})
+
+	refs := descriptor.RelatedRefs()
+	if len(refs) != 2 {
+		t.Fatalf("refs = %#v, want 2", refs)
+	}
+	if refs[0].Ref.Path != "roads.shp" || refs[0].Ref.Role != "main" || !refs[0].Primary {
+		t.Fatalf("primary ref = %#v, want restored primary ref", refs[0])
+	}
+	if refs[1].Ref.Path != "roads.dbf" || refs[1].Ref.Role != "dbf" || !refs[1].Required {
+		t.Fatalf("secondary ref = %#v, want extension-derived role", refs[1])
+	}
+}

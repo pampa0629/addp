@@ -1,6 +1,8 @@
 package dataitem
 
 import (
+	"strings"
+
 	"github.com/addp/common/contentio"
 	"github.com/addp/common/format"
 )
@@ -183,4 +185,19 @@ type ItemDescriptor struct {
 	StorageBucket string
 	Refs          []ItemRef
 	SizeBytes     *int64
+}
+
+func (descriptor ItemDescriptor) RelatedRefs() []format.RelatedRef {
+	if len(descriptor.Refs) == 0 {
+		return nil
+	}
+	refs := make([]format.RelatedRef, 0, len(descriptor.Refs))
+	for _, itemRef := range descriptor.Refs {
+		role := strings.TrimSpace(itemRef.Role)
+		if role == "" {
+			role = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(itemRef.Extension)), ".")
+		}
+		refs = append(refs, format.NewRelatedRef(contentio.NewRef(itemRef.Path, role), itemRef.Required, itemRef.Primary))
+	}
+	return refs
 }

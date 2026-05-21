@@ -199,6 +199,7 @@ type nativeTableBatchSource struct {
 	path                 engineplugin.CatalogPath
 	query                string
 	readOptions          map[string]interface{}
+	schema               *format.TableInfo
 }
 
 func (s *nativeTableBatchSource) Open(ctx context.Context) (TableBatchReader, error) {
@@ -210,7 +211,7 @@ func (s *nativeTableBatchSource) Open(ctx context.Context) (TableBatchReader, er
 		if err != nil {
 			return nil, fmt.Errorf("open native table read session: %w", err)
 		}
-		return &nativeTableSessionBatchReader{session: session}, nil
+		return &nativeTableSessionBatchReader{session: session, schema: s.schema}, nil
 	}
 	if s.reader == nil {
 		return nil, fmt.Errorf("native table source requires batch reader")
@@ -220,6 +221,7 @@ func (s *nativeTableBatchSource) Open(ctx context.Context) (TableBatchReader, er
 		connInfo: s.connInfo,
 		path:     s.path,
 		query:    s.query,
+		schema:   s.schema,
 	}, nil
 }
 
@@ -242,7 +244,7 @@ func (r *nativeTableSessionBatchReader) ReadBatch(ctx context.Context, limit int
 		_ = r.Close(ctx)
 		return nil, err
 	}
-	if !tableSchemaEmpty(tableInfoFromBatch(batch)) {
+	if tableSchemaEmpty(r.schema) && !tableSchemaEmpty(tableInfoFromBatch(batch)) {
 		r.schema = tableInfoFromBatch(batch)
 	}
 	if batch == nil || len(batch.Rows) == 0 || len(batch.Rows) < limit {
@@ -289,7 +291,7 @@ func (r *nativeOffsetBatchReader) ReadBatch(ctx context.Context, limit int) (*en
 	}
 	if batch != nil {
 		r.offset += int64(len(batch.Rows))
-		if !tableSchemaEmpty(tableInfoFromBatch(batch)) {
+		if tableSchemaEmpty(r.schema) && !tableSchemaEmpty(tableInfoFromBatch(batch)) {
 			r.schema = tableInfoFromBatch(batch)
 		}
 		if len(batch.Rows) < limit {
@@ -315,6 +317,8 @@ type encodedContentTableSource struct {
 	path                engineplugin.CatalogPath
 	readOptions         engineplugin.ReadOptions
 	parseOptions        *format.ParseOptions
+	schema              *format.TableInfo
+	relatedRefs         []format.RelatedRef
 }
 
 func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader, error) {
@@ -324,17 +328,25 @@ func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader,
 		if err != nil {
 			return nil, fmt.Errorf("open encoded source multi table reader: %w", err)
 		}
+		schema := s.schema
+		if tableSchemaEmpty(schema) {
+			schema = tableReader.Schema()
+		}
 		return &multiTableBatchReader{
 			tableReader: tableReader,
-			schema:      tableReader.Schema(),
+			schema:      schema,
 		}, nil
 	}
 
 	if s.multiInfoProvider != nil && s.multiSampleReader != nil {
 		reader, refs := s.refReader(s.multiInfoProvider.RelatedRefSpecs())
-		schema, err := s.multiInfoProvider.DescribeMultiTable(ctx, reader, refs, s.parseOptions)
-		if err != nil {
-			return nil, fmt.Errorf("describe encoded source table refs: %w", err)
+		schema := s.schema
+		if tableSchemaEmpty(schema) {
+			var err error
+			schema, err = s.multiInfoProvider.DescribeMultiTable(ctx, reader, refs, s.parseOptions)
+			if err != nil {
+				return nil, fmt.Errorf("describe encoded source table refs: %w", err)
+			}
 		}
 		return &multiEncodedTableBatchReader{
 			reader:         reader,
@@ -345,9 +357,13 @@ func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader,
 		}, nil
 	}
 
-	schema, err := s.describeSchema(ctx)
-	if err != nil {
-		return nil, err
+	schema := s.schema
+	if tableSchemaEmpty(schema) {
+		var err error
+		schema, err = s.describeSchema(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if s.tableProvider == nil {
 		if s.sampleProvider == nil {
@@ -554,6 +570,9 @@ func (s *encodedContentTableSource) contentReader() contentio.Reader {
 }
 
 func (s *encodedContentTableSource) refReader(specs []format.RelatedRefSpec) (contentio.Reader, []format.RelatedRef) {
+	if len(s.relatedRefs) > 0 {
+		return contentadapter.NewReader(s.reader, s.connInfo, s.path, s.readOptions), append([]format.RelatedRef(nil), s.relatedRefs...)
+	}
 	return contentadapter.NewReader(s.reader, s.connInfo, s.path, s.readOptions), format.SameBasenameRelatedRefs(s.path.StringPath(), specs)
 }
 
