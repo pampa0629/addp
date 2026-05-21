@@ -98,6 +98,67 @@ func TestBuildTableTransferPlanIncludesFieldMappingTransform(t *testing.T) {
 	}
 }
 
+func TestBuildTableTransferPlanPushesFieldSelectionForEncodedSourceProjectMapping(t *testing.T) {
+	spec := minimalEncodedToEncodedSpec()
+	spec.Transforms = []TransformSpec{{
+		Type: "field_mapping",
+		Mode: "project",
+		Fields: []FieldMappingSpec{
+			{Source: "id", Target: "road_id"},
+			{Source: "name", Target: "road_name"},
+			{Source: "id", Target: "id_copy"},
+			{Target: "created_by", Default: "transfer"},
+		},
+	}}
+
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		1: {Type: "nfs"},
+		2: {Type: "nfs"},
+	})
+	if err != nil {
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
+	}
+	selection := result.Plan.Source.ParseOptions.FieldSelection
+	if selection == nil {
+		t.Fatal("source field selection is nil")
+	}
+	if selection.EffectiveMissingFieldPolicy() != format.MissingFieldError {
+		t.Fatalf("missing field policy = %q, want error", selection.EffectiveMissingFieldPolicy())
+	}
+	want := []string{"id", "name"}
+	if len(selection.Include) != len(want) {
+		t.Fatalf("field selection include = %#v, want %#v", selection.Include, want)
+	}
+	for i, field := range want {
+		if selection.Include[i] != field {
+			t.Fatalf("field selection include = %#v, want %#v", selection.Include, want)
+		}
+	}
+}
+
+func TestBuildTableTransferPlanDoesNotPushFieldSelectionForPassthroughMapping(t *testing.T) {
+	spec := minimalEncodedToEncodedSpec()
+	spec.Transforms = []TransformSpec{{
+		Type: "field_mapping",
+		Mode: "passthrough",
+		Fields: []FieldMappingSpec{
+			{Source: "id", Target: "road_id"},
+			{Target: "created_by", Default: "transfer"},
+		},
+	}}
+
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		1: {Type: "nfs"},
+		2: {Type: "nfs"},
+	})
+	if err != nil {
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
+	}
+	if result.Plan.Source.ParseOptions.FieldSelection != nil {
+		t.Fatalf("source field selection = %#v, want nil for passthrough", result.Plan.Source.ParseOptions.FieldSelection)
+	}
+}
+
 func TestBuildTableTransferPlanForObjectTarget(t *testing.T) {
 	spec := minimalNativeToEncodedSpec()
 	spec.Target.EndpointResource = EndpointResourceSpec{Kind: EndpointResourceKindObject, Path: map[string]interface{}{"bucket": "exports", "path": "roads.csv"}}

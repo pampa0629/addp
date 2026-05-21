@@ -170,7 +170,7 @@ func BuildTableTransferPlan(spec TableExportTaskSpec, resolver EngineResolver) (
 		return nil, fmt.Errorf("target engine type is required")
 	}
 
-	sourcePlan, err := buildTableSourcePlan(spec.Source, sourceEngine)
+	sourcePlan, err := buildTableSourcePlan(spec.Source, sourceEngine, spec.Transforms)
 	if err != nil {
 		return nil, err
 	}
@@ -546,7 +546,7 @@ func fieldBoolAttribute(attrs map[string]interface{}, keys ...string) bool {
 	return false
 }
 
-func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding) (executor.TableSourcePlan, error) {
+func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding, transforms []TransformSpec) (executor.TableSourcePlan, error) {
 	itemDescriptor, hasItemAttributes := sourceItemDescriptor(endpoint.Attributes)
 	sourceSchema := tableInfoFromMetaAttributes(endpoint.Attributes)
 	switch endpoint.Representation {
@@ -579,6 +579,9 @@ func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding) (executor
 		}
 		parseOptions := tableParseOptions(endpoint.Options, sourceFormat)
 		applyMetaSpatialParseOptions(parseOptions, sourceSchema)
+		if selection := sourceFieldSelectionFromTransforms(transforms); selection != nil {
+			parseOptions.FieldSelection = selection
+		}
 		relatedRefs := itemDescriptor.RelatedRefs()
 		if itemDescriptor.Layout == dataitem.LayoutMulti {
 			if len(relatedRefs) == 0 {
@@ -723,6 +726,41 @@ func buildTableTransforms(transforms []TransformSpec) []executor.TableTransformP
 		}
 	}
 	return plans
+}
+
+func sourceFieldSelectionFromTransforms(transforms []TransformSpec) *format.FieldSelectionOptions {
+	if len(transforms) == 0 {
+		return nil
+	}
+	fields := make([]string, 0)
+	seen := map[string]bool{}
+	for _, transform := range transforms {
+		if strings.ToLower(strings.TrimSpace(transform.Type)) != "field_mapping" {
+			return nil
+		}
+		mode := normalizeFieldMappingMode(transform.Mode)
+		if mode == string(executor.FieldMappingModePassthrough) {
+			return nil
+		}
+		if mode != string(executor.FieldMappingModeProject) {
+			return nil
+		}
+		for _, field := range transform.Fields {
+			source := strings.TrimSpace(field.Source)
+			if source == "" || seen[source] {
+				continue
+			}
+			seen[source] = true
+			fields = append(fields, source)
+		}
+	}
+	if len(fields) == 0 {
+		return nil
+	}
+	return &format.FieldSelectionOptions{
+		Include:            fields,
+		MissingFieldPolicy: format.MissingFieldError,
+	}
 }
 
 func normalizeFieldMappingMode(mode string) string {

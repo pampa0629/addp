@@ -352,7 +352,7 @@ batch checkpoint 最小结构：
 | schema evolution | PostgreSQL 写侧可 ensure/create table，但字段变化、类型演进和目标表差异处理仍未完善。 |
 | 并行读取 | PostgreSQL cursor session 已有，但分区并行读取、稳定快照和多 worker 协调仍未补。 |
 | 其他数据库写侧 | MySQL、Doris、ClickHouse 等 common writer 仍待按真实需求补。 |
-| Parquet 高性能 | 当前是最小 reader / writer，row group reader、predicate / field selection 仍待补。 |
+| Parquet 高性能 | 当前是最小 reader / writer，已支持通用 `field_selection`；row group reader、predicate 仍待补。 |
 | Shapefile 读取 | 连续 `MultiTableReaderProvider` 已接入 Transfer 主链路；indexed reader 支持 range source 和本地 materialized fallback，当前覆盖 Point / Polyline / Polygon / MultiPoint，Z 类型已完成主要链路验收。 |
 | non-table data type | document / media / container / graph 还未形成 Transfer 主链路。 |
 | stream / CDC | common engine 尚无稳定 `StreamReadableProvider`、`CDCReadableProvider`、change event / offset 标准。 |
@@ -363,9 +363,9 @@ batch checkpoint 最小结构：
 ### 近期优先级
 
 1. **增强 Parquet whole scope 读取能力**
-   真实 NFS / MinIO Parquet dataset 的 `layout=whole` Transfer 链路已验收通过，Hive-style 分区字段已能进入 schema 和 row。下一步可以在现有 `ScopeTableReaderProvider` 基础上继续补 row group、field selection 和 predicate。
+   真实 NFS / MinIO Parquet dataset 的 `layout=whole` Transfer 链路已验收通过，Hive-style 分区字段已能进入 schema 和 row。下一步可以在现有 `ScopeTableReaderProvider` 基础上继续补 row group 和 predicate。
 
-   `field_selection` 是 table data type 的通用读取选项，表达调用方希望输出哪些字段。它不是某个格式的私有能力，也不是 GIS projection / CRS 投影。当前接口已落到 `common/format.ParseOptions.FieldSelection`；Parquet single / scope reader 已作为第一个 provider 消费该通用选项。
+   `field_selection` 是 table data type 的通用读取选项，表达调用方希望输出哪些字段。它不是某个格式的私有能力，也不是 GIS projection / CRS 投影。当前接口已落到 `common/format.ParseOptions.FieldSelection`；Parquet single / scope reader 已作为第一个 provider 消费该通用选项；Transfer planner 已能从 `field_mapping` 的 `project` 模式推导 encoded source 的 `FieldSelectionOptions`。
 
    当前接口口径：
 
@@ -397,6 +397,7 @@ batch checkpoint 最小结构：
    - format provider 能下推则下推；不能下推时也可以读全后裁剪输出，但必须保证返回的 schema 与 row 字段一致。
    - native table engine 后续应复用同一语义，并尽量下推到 SQL `SELECT` 字段列表。
    - Transfer planner 只生成通用 `FieldSelectionOptions`，不得根据 Parquet、CSV、PostgreSQL 等具体格式或引擎写分支。
+   - Transfer planner 仅从 `field_mapping mode=project` 的显式 `source` 字段推导读取字段；默认值 / 常量目标字段不进入读取字段；`mode=passthrough` 必须保留源 row 全字段，因此不下推 `field_selection`。
    - 空间字段不由 reader 隐式保留。若调用方需要 geometry 字段，必须显式加入 `Include`；CRS / 坐标投影仍属于 spatial capability 或 transform，不得和 `field_selection` 混用。
    - 第一版只支持 `Include`，暂不提供 `Exclude`，避免 include / exclude 优先级和隐式保留字段规则复杂化。
    - Parquet scope reader 打开单个文件时不会把 scope 级分区字段传入单文件 reader；它会先合并文件字段和 Hive-style 分区字段，再统一应用 `field_selection`。
