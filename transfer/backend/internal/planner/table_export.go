@@ -179,7 +179,7 @@ func BuildTableTransferPlan(spec TableExportTaskSpec, resolver EngineResolver) (
 		return nil, err
 	}
 	if sourcePlan.Kind == executor.TableEndpointNative && targetPlan.Kind == executor.TableEndpointEncoded {
-		sourcePlan.ReadOptions = readOptionsForTarget(targetPlan.Format, targetPlan.FormatOptions)
+		sourcePlan.ReadOptions = mergeReadOptions(sourcePlan.ReadOptions, readOptionsForTarget(targetPlan.Format, targetPlan.FormatOptions))
 	}
 	applySourceGeometryEncodingForTarget(&sourcePlan, targetPlan)
 	return &TableTransferBuildResult{
@@ -555,12 +555,14 @@ func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding, transform
 		if err != nil {
 			return executor.TableSourcePlan{}, fmt.Errorf("build source path: %w", err)
 		}
+		readOptions := nativeReadOptionsFromTransforms(transforms)
 		return executor.TableSourcePlan{
-			Kind:     executor.TableEndpointNative,
-			ConnInfo: engine.ConnInfo,
-			Path:     sourcePath,
-			Layout:   itemDescriptor.Layout,
-			Schema:   sourceSchema,
+			Kind:        executor.TableEndpointNative,
+			ConnInfo:    engine.ConnInfo,
+			Path:        sourcePath,
+			ReadOptions: readOptions,
+			Layout:      itemDescriptor.Layout,
+			Schema:      sourceSchema,
 		}, nil
 	case representationEncoded:
 		sourcePath, err := sourceEndpointContentCatalogPath(engine.EngineID, endpoint.EndpointResource, itemDescriptor)
@@ -760,6 +762,16 @@ func sourceFieldSelectionFromTransforms(transforms []TransformSpec) *format.Fiel
 	return &format.FieldSelectionOptions{
 		Include:            fields,
 		MissingFieldPolicy: format.MissingFieldError,
+	}
+}
+
+func nativeReadOptionsFromTransforms(transforms []TransformSpec) map[string]interface{} {
+	selection := sourceFieldSelectionFromTransforms(transforms)
+	if selection == nil {
+		return nil
+	}
+	return map[string]interface{}{
+		format.FieldSelectionOptionKey: selection,
 	}
 }
 
@@ -1100,6 +1112,28 @@ func readOptionsForTarget(formatType format.FormatType, writeOptions *format.Wri
 		options["geometry_field"] = geometryField
 	}
 	return options
+}
+
+func mergeReadOptions(base map[string]interface{}, overlays ...map[string]interface{}) map[string]interface{} {
+	var result map[string]interface{}
+	if len(base) > 0 {
+		result = make(map[string]interface{}, len(base))
+		for key, value := range base {
+			result[key] = value
+		}
+	}
+	for _, overlay := range overlays {
+		if len(overlay) == 0 {
+			continue
+		}
+		if result == nil {
+			result = make(map[string]interface{}, len(overlay))
+		}
+		for key, value := range overlay {
+			result[key] = value
+		}
+	}
+	return result
 }
 
 func tableParseOptions(raw map[string]interface{}, formatType format.FormatType) *format.ParseOptions {

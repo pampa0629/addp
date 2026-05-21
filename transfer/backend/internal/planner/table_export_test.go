@@ -98,6 +98,40 @@ func TestBuildTableTransferPlanIncludesFieldMappingTransform(t *testing.T) {
 	}
 }
 
+func TestBuildTableTransferPlanPushesFieldSelectionForNativeSourceProjectMapping(t *testing.T) {
+	spec := minimalNativeToEncodedSpec()
+	spec.Transforms = []TransformSpec{{
+		Type: "field_mapping",
+		Mode: "project",
+		Fields: []FieldMappingSpec{
+			{Source: "id", Target: "road_id"},
+			{Source: "name", Target: "road_name"},
+			{Target: "created_by", Default: "transfer"},
+		},
+	}}
+
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		1: {Type: "postgresql"},
+		2: {Type: "nfs"},
+	})
+	if err != nil {
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
+	}
+	selection, ok := result.Plan.Source.ReadOptions[format.FieldSelectionOptionKey].(*format.FieldSelectionOptions)
+	if !ok || selection == nil {
+		t.Fatalf("source read options = %#v, want field selection", result.Plan.Source.ReadOptions)
+	}
+	want := []string{"id", "name"}
+	if len(selection.Include) != len(want) {
+		t.Fatalf("field selection include = %#v, want %#v", selection.Include, want)
+	}
+	for i, field := range want {
+		if selection.Include[i] != field {
+			t.Fatalf("field selection include = %#v, want %#v", selection.Include, want)
+		}
+	}
+}
+
 func TestBuildTableTransferPlanPushesFieldSelectionForEncodedSourceProjectMapping(t *testing.T) {
 	spec := minimalEncodedToEncodedSpec()
 	spec.Transforms = []TransformSpec{{
@@ -156,6 +190,29 @@ func TestBuildTableTransferPlanDoesNotPushFieldSelectionForPassthroughMapping(t 
 	}
 	if result.Plan.Source.ParseOptions.FieldSelection != nil {
 		t.Fatalf("source field selection = %#v, want nil for passthrough", result.Plan.Source.ParseOptions.FieldSelection)
+	}
+}
+
+func TestBuildTableTransferPlanDoesNotPushNativeFieldSelectionForPassthroughMapping(t *testing.T) {
+	spec := minimalNativeToEncodedSpec()
+	spec.Transforms = []TransformSpec{{
+		Type: "field_mapping",
+		Mode: "passthrough",
+		Fields: []FieldMappingSpec{
+			{Source: "id", Target: "road_id"},
+			{Target: "created_by", Default: "transfer"},
+		},
+	}}
+
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		1: {Type: "postgresql"},
+		2: {Type: "nfs"},
+	})
+	if err != nil {
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
+	}
+	if result.Plan.Source.ReadOptions != nil {
+		t.Fatalf("source read options = %#v, want nil for passthrough", result.Plan.Source.ReadOptions)
 	}
 }
 

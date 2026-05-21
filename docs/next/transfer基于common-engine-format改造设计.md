@@ -365,7 +365,7 @@ batch checkpoint 最小结构：
 1. **增强 Parquet whole scope 读取能力**
    真实 NFS / MinIO Parquet dataset 的 `layout=whole` Transfer 链路已验收通过，Hive-style 分区字段已能进入 schema 和 row。下一步可以在现有 `ScopeTableReaderProvider` 基础上继续补 row group 和 predicate。
 
-   `field_selection` 是 table data type 的通用读取选项，表达调用方希望输出哪些字段。它不是某个格式的私有能力，也不是 GIS projection / CRS 投影。当前接口已落到 `common/format.ParseOptions.FieldSelection`；Parquet single / scope reader 已作为第一个 provider 消费该通用选项；Transfer planner 已能从 `field_mapping` 的 `project` 模式推导 encoded source 的 `FieldSelectionOptions`。
+   `field_selection` 是 table data type 的通用读取选项，表达调用方希望输出哪些字段。它不是某个格式的私有能力，也不是 GIS projection / CRS 投影。当前接口已落到 `common/format.ParseOptions.FieldSelection`；Parquet single / scope reader 已作为第一个 provider 消费该通用选项；Transfer planner 已能从 `field_mapping` 的 `project` 模式推导 source `FieldSelectionOptions`，并分别传给 encoded source parse options 与 native source read options。
 
    当前接口口径：
 
@@ -395,7 +395,7 @@ batch checkpoint 最小结构：
 
    - `field_selection` 由 `common/format` 定义，`TableInfoProvider`、`TableSampleReader`、`TableReaderProvider`、`MultiTable*` 和 `ScopeTable*` 可按需消费。
    - format provider 能下推则下推；不能下推时也可以读全后裁剪输出，但必须保证返回的 schema 与 row 字段一致。
-   - native table engine 后续应复用同一语义，并尽量下推到 SQL `SELECT` 字段列表。
+   - native table engine 应复用同一语义，并尽量下推到 SQL `SELECT` 字段列表。当前 PostgreSQL `TableReadSessionProvider` 已消费 `field_selection` 并生成字段级 SELECT。
    - Transfer planner 只生成通用 `FieldSelectionOptions`，不得根据 Parquet、CSV、PostgreSQL 等具体格式或引擎写分支。
    - Transfer planner 仅从 `field_mapping mode=project` 的显式 `source` 字段推导读取字段；默认值 / 常量目标字段不进入读取字段；`mode=passthrough` 必须保留源 row 全字段，因此不下推 `field_selection`。
    - 空间字段不由 reader 隐式保留。若调用方需要 geometry 字段，必须显式加入 `Include`；CRS / 坐标投影仍属于 spatial capability 或 transform，不得和 `field_selection` 混用。

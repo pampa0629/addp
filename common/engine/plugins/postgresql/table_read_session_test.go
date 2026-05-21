@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
 )
 
 func TestPostgresFieldInfoFromColumnConvertsSpatialNativeTypeToAttributes(t *testing.T) {
@@ -39,5 +40,64 @@ func TestPostgresReadBatchFieldsKeepsSchemaMetadataInColumnOrder(t *testing.T) {
 	}
 	if fields[1].Name != "SmGeometry" || fields[1].Type != "geometry" || fields[1].Attributes["geometry_type"] != "MultiPolygon" {
 		t.Fatalf("second field = %#v, want spatial field metadata", fields[1])
+	}
+}
+
+func TestPostgresSelectedFieldsFollowsFieldSelectionOrder(t *testing.T) {
+	fields := []plugin.FieldInfo{
+		{Name: "id", Type: "bigint"},
+		{Name: "name", Type: "string"},
+		{Name: "geom", Type: "geometry"},
+	}
+
+	selected, err := postgresSelectedFields(fields, map[string]interface{}{
+		format.FieldSelectionOptionKey: &format.FieldSelectionOptions{
+			Include: []string{"name", "id", "name"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("postgresSelectedFields failed: %v", err)
+	}
+	if len(selected) != 2 {
+		t.Fatalf("selected fields = %#v, want 2 fields", selected)
+	}
+	if selected[0].Name != "name" || selected[1].Name != "id" {
+		t.Fatalf("selected fields = %#v, want name,id", selected)
+	}
+}
+
+func TestPostgresSelectedFieldsErrorsOnMissingFieldByDefault(t *testing.T) {
+	_, err := postgresSelectedFields([]plugin.FieldInfo{{Name: "id"}}, map[string]interface{}{
+		format.FieldSelectionOptionKey: &format.FieldSelectionOptions{
+			Include: []string{"id", "missing"},
+		},
+	})
+	if err == nil {
+		t.Fatal("postgresSelectedFields succeeded, want missing field error")
+	}
+}
+
+func TestPostgresSelectedFieldsIgnoresMissingFieldWhenConfigured(t *testing.T) {
+	selected, err := postgresSelectedFields([]plugin.FieldInfo{{Name: "id"}}, map[string]interface{}{
+		format.FieldSelectionOptionKey: format.FieldSelectionOptions{
+			Include:            []string{"missing", "id"},
+			MissingFieldPolicy: format.MissingFieldIgnore,
+		},
+	})
+	if err != nil {
+		t.Fatalf("postgresSelectedFields failed: %v", err)
+	}
+	if len(selected) != 1 || selected[0].Name != "id" {
+		t.Fatalf("selected fields = %#v, want id", selected)
+	}
+}
+
+func TestPostgresSelectExprForFieldsQuotesSelectedColumns(t *testing.T) {
+	expr := postgresSelectExprForFields([]plugin.FieldInfo{
+		{Name: "id"},
+		{Name: "Road Name"},
+	})
+	if expr != `"id", "Road Name"` {
+		t.Fatalf("select expr = %q, want quoted selected fields", expr)
 	}
 }

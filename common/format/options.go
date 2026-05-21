@@ -16,6 +16,8 @@ const (
 	MissingFieldIgnore MissingFieldPolicy = "ignore"
 )
 
+const FieldSelectionOptionKey = "field_selection"
+
 // ParseOptions 解析选项。
 type ParseOptions struct {
 	Encoding         string

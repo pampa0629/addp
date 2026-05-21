@@ -66,15 +66,88 @@ func postgresReadSessionQuery(ctx context.Context, db *sql.DB, path plugin.Catal
 	for _, column := range columns {
 		fields = append(fields, postgresFieldInfoFromColumn(column))
 	}
-	selectExpr := "*"
+	selectedFields, err := postgresSelectedFields(fields, opts.Metadata)
+	if err != nil {
+		return "", nil, err
+	}
+	if len(selectedFields) > 0 {
+		fields = selectedFields
+	}
+	selectExpr := postgresSelectExprForFields(fields)
 	if shouldReadPostgresSpatialAsGeoJSON(opts.Metadata) {
-		if expr, err := postgresGeoJSONSelectExpr(columns, opts.Metadata); err != nil {
+		if expr, err := postgresGeoJSONSelectExpr(columns, opts.Metadata, fields); err != nil {
 			return "", nil, err
 		} else if expr != "" {
 			selectExpr = expr
 		}
 	}
 	return sqldialect.ForEngine("postgresql").SelectTableSQL(selectExpr, schema, table, "", "", 0, 0), fields, nil
+}
+
+func postgresSelectedFields(fields []plugin.FieldInfo, metadata map[string]interface{}) ([]plugin.FieldInfo, error) {
+	if len(fields) == 0 || metadata == nil {
+		return nil, nil
+	}
+	selection := postgresFieldSelection(metadata)
+	if selection == nil || len(selection.Include) == 0 {
+		return nil, nil
+	}
+	byName := make(map[string]plugin.FieldInfo, len(fields))
+	for _, field := range fields {
+		byName[field.Name] = field
+	}
+	selected := make([]plugin.FieldInfo, 0, len(selection.Include))
+	seen := map[string]bool{}
+	for _, name := range selection.Include {
+		name = strings.TrimSpace(name)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		field, ok := byName[name]
+		if !ok {
+			if selection.EffectiveMissingFieldPolicy() == format.MissingFieldIgnore {
+				continue
+			}
+			return nil, fmt.Errorf("field selection references missing field %q", name)
+		}
+		selected = append(selected, field)
+	}
+	return selected, nil
+}
+
+func postgresFieldSelection(metadata map[string]interface{}) *format.FieldSelectionOptions {
+	if metadata == nil {
+		return nil
+	}
+	value := metadata[format.FieldSelectionOptionKey]
+	switch selection := value.(type) {
+	case *format.FieldSelectionOptions:
+		return selection
+	case format.FieldSelectionOptions:
+		return &selection
+	default:
+		return nil
+	}
+}
+
+func postgresSelectExprForFields(fields []plugin.FieldInfo) string {
+	if len(fields) == 0 {
+		return "*"
+	}
+	dialect := sqldialect.ForEngine("postgresql")
+	exprs := make([]string, 0, len(fields))
+	for _, field := range fields {
+		name := strings.TrimSpace(field.Name)
+		if name == "" {
+			continue
+		}
+		exprs = append(exprs, dialect.QuoteIdentifier(name))
+	}
+	if len(exprs) == 0 {
+		return "*"
+	}
+	return strings.Join(exprs, ", ")
 }
 
 func shouldReadPostgresSpatialAsGeoJSON(metadata map[string]interface{}) bool {
@@ -84,11 +157,20 @@ func shouldReadPostgresSpatialAsGeoJSON(metadata map[string]interface{}) bool {
 	return strings.EqualFold(strings.TrimSpace(metadataString(metadata, "spatial.target_encoding")), "geojson")
 }
 
-func postgresGeoJSONSelectExpr(columns []postgresColumnInfo, metadata map[string]interface{}) (string, error) {
+func postgresGeoJSONSelectExpr(columns []postgresColumnInfo, metadata map[string]interface{}, fields []plugin.FieldInfo) (string, error) {
 	geometryField := strings.TrimSpace(metadataString(metadata, "geometry_field"))
+	selected := map[string]bool{}
+	if len(fields) > 0 {
+		for _, field := range fields {
+			selected[field.Name] = true
+		}
+	}
 	dialect := sqldialect.ForEngine("postgresql")
 	exprs := make([]string, 0, len(columns))
 	for _, column := range columns {
+		if len(selected) > 0 && !selected[column.Name] {
+			continue
+		}
 		quoted := dialect.QuoteIdentifier(column.Name)
 		if column.IsSpatial() && (geometryField == "" || column.Name == geometryField) {
 			exprs = append(exprs, "ST_AsGeoJSON("+quoted+")::json AS "+quoted)
