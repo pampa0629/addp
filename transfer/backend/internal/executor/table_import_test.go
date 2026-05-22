@@ -377,7 +377,7 @@ func (s *fakeTableWriteSession) Abort(context.Context) error {
 }
 
 type fakeTableWritePreparer struct {
-	fields []engineplugin.FieldInfo
+	fields []datatype.FieldInfo
 }
 
 func (p *fakeTableWritePreparer) Type() string { return "fake_table_write_preparer" }
@@ -409,6 +409,6 @@ func (p *fakeTableWritePreparer) StoreSemantics() engineplugin.StoreSemantics {
 }
 
 func (p *fakeTableWritePreparer) PrepareTableWrite(_ context.Context, _ engineplugin.ConnectionInfo, _ engineplugin.CatalogPath, opts engineplugin.TableWriteOptions) error {
-	p.fields = append([]engineplugin.FieldInfo(nil), opts.Fields...)
+	p.fields = append([]datatype.FieldInfo(nil), opts.Fields...)
 	return nil
 }

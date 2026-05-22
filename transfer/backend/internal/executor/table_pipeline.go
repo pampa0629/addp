@@ -668,7 +668,7 @@ type nativeDirectBatchWriter struct {
 	connInfo     engineplugin.ConnectionInfo
 	path         engineplugin.CatalogPath
 	writeOptions engineplugin.BatchWriteOptions
-	fields       []engineplugin.FieldInfo
+	fields       []datatype.FieldInfo
 	spatialInfo  *datatype.SpatialInfo
 }
 
@@ -691,13 +691,13 @@ func (w *nativeDirectBatchWriter) Abort(context.Context) error {
 	return nil
 }
 
-func batchWithTargetFields(batch *engineplugin.BatchData, fields []engineplugin.FieldInfo, spatialInfo *datatype.SpatialInfo) *engineplugin.BatchData {
+func batchWithTargetFields(batch *engineplugin.BatchData, fields []datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) *engineplugin.BatchData {
 	if batch == nil || (len(fields) == 0 && spatialInfo == nil) {
 		return batch
 	}
 	copyBatch := *batch
 	if len(fields) > 0 {
-		copyBatch.Fields = append([]engineplugin.FieldInfo(nil), fields...)
+		copyBatch.Fields = append([]datatype.FieldInfo(nil), fields...)
 	}
 	copyBatch.Spatial = spatialInfo.Clone()
 	return &copyBatch
@@ -705,7 +705,7 @@ func batchWithTargetFields(batch *engineplugin.BatchData, fields []engineplugin.
 
 type nativeTableSessionBatchWriter struct {
 	session     engineplugin.TableWriteSession
-	fields      []engineplugin.FieldInfo
+	fields      []datatype.FieldInfo
 	spatialInfo *datatype.SpatialInfo
 	closed      bool
 }

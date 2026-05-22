@@ -20,14 +20,14 @@ func TestTableTransferExecutorWritesNativeTableToCSV(t *testing.T) {
 	reader := &fakeBatchReader{
 		batches: []*engineplugin.BatchData{
 			{
-				Fields: []engineplugin.FieldInfo{{Name: "id", Type: "int"}, {Name: "name", Type: "string"}},
+				Fields: []datatype.FieldInfo{{Name: "id", Type: "int"}, {Name: "name", Type: "string"}},
 				Rows: []map[string]interface{}{
 					{"id": int64(1), "name": "Alice"},
 					{"id": int64(2), "name": "Bob"},
 				},
 			},
 			{
-				Fields: []engineplugin.FieldInfo{{Name: "id", Type: "int"}, {Name: "name", Type: "string"}},
+				Fields: []datatype.FieldInfo{{Name: "id", Type: "int"}, {Name: "name", Type: "string"}},
 				Rows: []map[string]interface{}{
 					{"id": int64(3), "name": "Carol"},
 				},
@@ -68,7 +68,7 @@ func TestTableTransferExecutorAppliesFieldMappingTransform(t *testing.T) {
 	reader := &fakeBatchReader{
 		batches: []*engineplugin.BatchData{
 			{
-				Fields: []engineplugin.FieldInfo{
+				Fields: []datatype.FieldInfo{
 					{Name: "id", Type: "int"},
 					{Name: "name", Type: "string"},
 					{Name: "geom", Type: "geometry"},
@@ -119,14 +119,14 @@ func TestTableTransferExecutorReportsBatchProgress(t *testing.T) {
 	reader := &fakeBatchReader{
 		batches: []*engineplugin.BatchData{
 			{
-				Fields: []engineplugin.FieldInfo{{Name: "id", Type: "int"}},
+				Fields: []datatype.FieldInfo{{Name: "id", Type: "int"}},
 				Rows: []map[string]interface{}{
 					{"id": 1},
 					{"id": 2},
 				},
 			},
 			{
-				Fields: []engineplugin.FieldInfo{{Name: "id", Type: "int"}},
+				Fields: []datatype.FieldInfo{{Name: "id", Type: "int"}},
 				Offset: 2,
 				Rows:   []map[string]interface{}{{"id": 3}},
 			},
@@ -195,14 +195,14 @@ func TestTableTransferExecutorPrefersNativeTableReadSession(t *testing.T) {
 	reader := &fakeBatchReader{
 		batches: []*engineplugin.BatchData{
 			{
-				Fields: []engineplugin.FieldInfo{{Name: "id"}, {Name: "name"}},
+				Fields: []datatype.FieldInfo{{Name: "id"}, {Name: "name"}},
 				Rows: []map[string]interface{}{
 					{"id": 1, "name": "Alice"},
 					{"id": 2, "name": "Bob"},
 				},
 			},
 			{
-				Fields: []engineplugin.FieldInfo{{Name: "id"}, {Name: "name"}},
+				Fields: []datatype.FieldInfo{{Name: "id"}, {Name: "name"}},
 				Rows:   []map[string]interface{}{{"id": 3, "name": "Carol"}},
 			},
 		},
@@ -241,7 +241,7 @@ func TestTableTransferExecutorWritesShapefileRefs(t *testing.T) {
 	reader := &fakeBatchReader{
 		batches: []*engineplugin.BatchData{
 			{
-				Fields: []engineplugin.FieldInfo{
+				Fields: []datatype.FieldInfo{
 					{Name: "id", Type: "int"},
 					{Name: "name", Type: "string"},
 					{Name: "geom", Type: "geometry"},
@@ -294,7 +294,7 @@ func TestTableTransferExecutorWritesShapefileZFromNativeSpatialDimension(t *test
 	reader := &fakeBatchReader{
 		batches: []*engineplugin.BatchData{
 			{
-				Fields: []engineplugin.FieldInfo{
+				Fields: []datatype.FieldInfo{
 					{Name: "id", Type: "int"},
 					{Name: "geom", Type: "geometry"},
 				},
@@ -368,7 +368,7 @@ func TestTableTransferExecutorPreservesNativeSchemaForNativeTarget(t *testing.T)
 	reader := &fakeBatchReader{
 		batches: []*engineplugin.BatchData{
 			{
-				Fields: []engineplugin.FieldInfo{
+				Fields: []datatype.FieldInfo{
 					{Name: "id", Type: "bigint"},
 					{Name: "SmGeometry", Type: "geometry"},
 				},
@@ -426,7 +426,7 @@ func TestTableTransferExecutorTransformsNativeTargetSchema(t *testing.T) {
 	reader := &fakeBatchReader{
 		batches: []*engineplugin.BatchData{
 			{
-				Fields: []engineplugin.FieldInfo{
+				Fields: []datatype.FieldInfo{
 					{Name: "id", Type: "int"},
 					{Name: "geom", Type: "geometry"},
 				},
@@ -623,9 +623,9 @@ type fakeContentWriter struct {
 }
 
 type fakeNativeTableWriter struct {
-	preparedFields      []engineplugin.FieldInfo
+	preparedFields      []datatype.FieldInfo
 	preparedSpatialInfo *datatype.SpatialInfo
-	sessionFields       []engineplugin.FieldInfo
+	sessionFields       []datatype.FieldInfo
 	sessionSpatialInfo  *datatype.SpatialInfo
 	batches             []*engineplugin.BatchData
 	deleted             bool
@@ -660,7 +660,7 @@ func (w *fakeNativeTableWriter) StoreSemantics() engineplugin.StoreSemantics {
 }
 
 func (w *fakeNativeTableWriter) PrepareTableWrite(_ context.Context, _ engineplugin.ConnectionInfo, _ engineplugin.CatalogPath, opts engineplugin.TableWriteOptions) error {
-	w.preparedFields = append([]engineplugin.FieldInfo(nil), opts.Fields...)
+	w.preparedFields = append([]datatype.FieldInfo(nil), opts.Fields...)
 	w.preparedSpatialInfo = opts.SpatialInfo.Clone()
 	return nil
 }
@@ -676,7 +676,7 @@ func (w *fakeNativeTableWriter) WriteBatch(_ context.Context, _ engineplugin.Con
 }
 
 func (w *fakeNativeTableWriter) OpenTableWriteSession(_ context.Context, _ engineplugin.ConnectionInfo, _ engineplugin.CatalogPath, opts engineplugin.TableWriteSessionOptions) (engineplugin.TableWriteSession, error) {
-	w.sessionFields = append([]engineplugin.FieldInfo(nil), opts.Fields...)
+	w.sessionFields = append([]datatype.FieldInfo(nil), opts.Fields...)
 	w.sessionSpatialInfo = opts.SpatialInfo.Clone()
 	return &fakeNativeTableWriteSession{writer: w}, nil
 }

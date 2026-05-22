@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/addp/common/datatype"
-	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 )
 
@@ -17,16 +16,16 @@ func isCopyWriteMethod(method string) bool {
 	}
 }
 
-func tableInfoFields(info *format.TableInfo) []engineplugin.FieldInfo {
+func tableInfoFields(info *format.TableInfo) []datatype.FieldInfo {
 	if info == nil {
 		return nil
 	}
-	fields := make([]engineplugin.FieldInfo, 0, len(info.Fields))
+	fields := make([]datatype.FieldInfo, 0, len(info.Fields))
 	for _, field := range info.Fields {
 		if field.Name == "" {
 			continue
 		}
-		fields = append(fields, engineplugin.FieldInfo{
+		fields = append(fields, datatype.FieldInfo{
 			Name:       field.Name,
 			Type:       field.Type,
 			Nullable:   field.Nullable,

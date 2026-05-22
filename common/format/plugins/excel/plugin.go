@@ -294,7 +294,7 @@ func (p *Plugin) convertToTableDescribeResult(analysis *WorkbookAnalysis, opts *
 			Fields:     fields,
 			PrimaryKey: []string{},
 		},
-		FormatInfo: map[string]interface{}{"excel": excelInfo},
+		FormatInfo: excelInfo.FormatAttributes(),
 	}, nil
 }
 

@@ -276,6 +276,7 @@ func (e *MetadataExtractor) ExtractObjectMetadataOnDemand(
 	if len(extractedAttrs) == 0 {
 		return nil, fmt.Errorf("format %s did not return metadata", formatType)
 	}
+	standardAttrs := formatInfoProviderAttributes(formatType, extractedAttrs)
 
 	if item != nil {
 		enhancedAttrs := item.Attributes
@@ -284,8 +285,8 @@ func (e *MetadataExtractor) ExtractObjectMetadataOnDemand(
 		}
 
 		setExtractionAttribute(enhancedAttrs, "metadata_extracted", true)
-		setExtractionAttribute(enhancedAttrs, "extracted_metadata", extractedAttrs)
-		mergeStandardAttributes(enhancedAttrs, extractedAttrs)
+		setExtractionAttribute(enhancedAttrs, "extracted_metadata", standardAttrs)
+		mergeStandardAttributes(enhancedAttrs, standardAttrs)
 		metaattr.SetStorage(enhancedAttrs, "content_type", contentType)
 		enhancedAttrs = metaattr.Normalize(enhancedAttrs)
 
@@ -294,7 +295,23 @@ func (e *MetadataExtractor) ExtractObjectMetadataOnDemand(
 		}
 	}
 
-	return extractedAttrs, nil
+	return standardAttrs, nil
+}
+
+func formatInfoProviderAttributes(formatType format.FormatType, formatAttrs map[string]interface{}) map[string]interface{} {
+	if len(formatAttrs) == 0 {
+		return nil
+	}
+	for _, section := range []string{"storage", "item", "type_info", "format_info", "content_index", "capabilities"} {
+		if values := interfaceMap(formatAttrs[section]); len(values) > 0 {
+			return formatAttrs
+		}
+	}
+	return map[string]interface{}{
+		"format_info": map[string]interface{}{
+			string(formatType): formatAttrs,
+		},
+	}
 }
 
 func (e *MetadataExtractor) BuildObjectContentIndexOnDemand(

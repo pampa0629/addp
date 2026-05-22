@@ -70,13 +70,62 @@ func FormatAttributesFromTableInfo(tableInfo *format.TableInfo) map[string]inter
 }
 
 func infoFromFormatInfo(formatInfo map[string]interface{}) *Info {
-	if info, ok := formatInfo["parquet"].(Info); ok {
-		return &info
+	if len(formatInfo) == 0 {
+		return nil
 	}
-	if info, ok := formatInfo["parquet"].(*Info); ok {
-		return info
+	files := parquetFileInfos(formatInfo["files"])
+	partitionColumns := parquetPartitionColumns(formatInfo["partition_columns"])
+	if len(files) == 0 && len(partitionColumns) == 0 {
+		return nil
 	}
-	return nil
+	return &Info{
+		Files:            files,
+		PartitionColumns: partitionColumns,
+	}
+}
+
+func parquetFileInfos(value interface{}) []FileInfo {
+	switch files := value.(type) {
+	case []FileInfo:
+		return append([]FileInfo(nil), files...)
+	case []interface{}:
+		result := make([]FileInfo, 0, len(files))
+		for _, item := range files {
+			attrs, ok := item.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			path := commonJSON.InterfaceString(attrs["path"])
+			if path == "" {
+				continue
+			}
+			result = append(result, FileInfo{
+				Path:     path,
+				RowCount: commonJSON.InterfaceInt64(attrs["row_count"]),
+			})
+		}
+		return result
+	default:
+		return nil
+	}
+}
+
+func parquetPartitionColumns(value interface{}) []string {
+	switch columns := value.(type) {
+	case []string:
+		return append([]string(nil), columns...)
+	case []interface{}:
+		result := make([]string, 0, len(columns))
+		for _, item := range columns {
+			column := strings.TrimSpace(commonJSON.InterfaceString(item))
+			if column != "" {
+				result = append(result, column)
+			}
+		}
+		return result
+	default:
+		return nil
+	}
 }
 
 func SampleOptionsFromAttributes(attrs map[string]interface{}) *format.ParseOptions {
@@ -765,7 +814,7 @@ func (p *Plugin) DescribeTableScope(ctx context.Context, reader contentio.Reader
 		return nil, fmt.Errorf("parquet scope %s has no parquet files", scope.Path)
 	}
 	merged.Table.RowCount = &totalRows
-	merged.FormatInfo = map[string]interface{}{"parquet": &Info{Files: files, PartitionColumns: fieldNames(partitionFields)}}
+	merged.FormatInfo = (&Info{Files: files, PartitionColumns: fieldNames(partitionFields)}).FormatAttributes()
 	return merged, nil
 }
 

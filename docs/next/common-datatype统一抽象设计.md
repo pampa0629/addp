@@ -207,6 +207,90 @@ type TableDescribeResult struct {
 | `ContentIndex` | `attributes.content_index.table` |
 | `FormatInfo` | `attributes.format_info.<format>` |
 
+`FormatInfo` 的语义是“当前格式的裸格式私有事实”，不是 attributes 中已经命名空间化的 `format_info` 结构。Provider 自身和调用编排层已经知道当前格式，因此 describe result 中不得再套一层格式名。例如 Shapefile provider 应返回：
+
+```go
+FormatInfo: map[string]interface{}{
+    "base_name": "roads",
+    "ref_extensions": []string{".shp", ".dbf", ".shx"},
+    "shape_type": "Polygon",
+}
+```
+
+由 Meta normalizer 或等价编排层负责写入：
+
+```json
+{
+  "format_info": {
+    "shapefile": {
+      "base_name": "roads",
+      "ref_extensions": [".shp", ".dbf", ".shx"],
+      "shape_type": "Polygon"
+    }
+  }
+}
+```
+
+因此 `TableDescribeResult.FormatInfo` 保持 `map[string]interface{}`，不升级为 `map[string]map[string]interface{}`。如果极少数编排场景确实需要一次聚合多个格式的私有事实，应在上层聚合结构中表达，不污染单个 data type describe result。
+
+### format_info 与 capabilities 边界
+
+核心原则：
+
+> `format_info` 回答“这个文件、对象或容器的具体格式实现事实是什么”；`capabilities` 回答“这个 data item 可被平台按什么跨格式能力消费”。
+
+进入 `format_info.<format>` 的事实满足以下任一条件：
+
+- 只对某个具体格式有意义。
+- 用于复现、调试或解析这个格式。
+- 换成其他格式后，字段名或语义不稳定。
+- 描述文件封装、编码、容器、头信息、sidecar/ref 结构、格式版本或格式内部组织。
+
+典型示例：
+
+| 格式 | `format_info.<format>` 示例 |
+|---|---|
+| CSV / TSV | `delimiter`、`quote_char`、`escape_char`、`line_ending`、`has_header` |
+| Shapefile | `base_name`、`ref_extensions`、`has_prj`、`has_cpg`、`dbf_version`、header 原生 `shape_type` |
+| Excel | `sheet_name`、`sheet_index`、`sheet_count` |
+| Parquet | row group、压缩、schema 版本、scope 文件清单、partition column 摘要 |
+| SQLite / GeoPackage | SQLite 版本、page size、page count、内部表 / 视图 / 索引摘要 |
+| PDF | PDF 版本、producer、读取限制、格式头或对象结构摘要 |
+
+进入 `capabilities.<capability>` 的事实满足以下任一条件：
+
+- 跨格式、跨引擎有统一消费方式。
+- Manager、Transfer、Meta、Service 等上层会按该能力执行通用行为。
+- 它描述的不是“格式怎么存”，而是“这个 item 能被当成什么能力处理”。
+- 同一能力未来可以来自文件格式、数据库、对象存储或外部服务。
+
+典型示例：
+
+| 能力 | `capabilities.<capability>` 示例 |
+|---|---|
+| spatial | `geometry_columns`、`primary_geometry_column`、`srid`、`crs`、`extent`、`dimension`、`has_spatial_index` |
+| temporal | 时间字段、时间范围、粒度、时区 |
+| statistics | 字段分布、null 率、min/max、采样规模、画像时间 |
+| indexing | 空间索引、全文索引、向量索引摘要 |
+| extraction | 文本提取状态、可用 extractor、提取索引引用 |
+
+容易混淆的字段按以下规则处理：
+
+| 字段 / 事实 | 处理规则 |
+|---|---|
+| `shape_type` | Shapefile header 原生 shape type 进入 `format_info.shapefile.shape_type`；平台统一几何类型进入 `capabilities.spatial.geometry_columns[].geometry_type`。 |
+| `has_prj` / `has_cpg` | sidecar 文件存在性进入 `format_info.shapefile`；解析出的 CRS / SRID 进入 `capabilities.spatial`。 |
+| `bbox` | GeoJSON 原生 bbox 可作为格式事实保留在 `format_info.json.bbox`；平台统一空间范围进入 `capabilities.spatial.extent`，通用消费只依赖后者。 |
+| `feature_count` | 不属于 spatial。表格行数进入 `type_info.table.row_count`；画像或统计任务产生的要素统计进入 `capabilities.statistics`。 |
+| `has_geometry` | 不作为长期通用判断依据；是否具备空间能力由 `capabilities.spatial` 是否存在表达。 |
+
+一句话规则：
+
+- 格式怎么编码、封装、组织：`format_info`
+- 数据能被平台如何通用消费：`capabilities`
+- 数据类型本体事实：`type_info`
+- 内容定位索引：`content_index`
+
 后续如果 document、media、container、graph 也存在同类“一次解析产出多个事实”的情况，可以继续定义对应 describe result，或者抽出更通用的 `DescribeResult`。但不应为省事把横切事实塞进各自 `TypeInfo`。
 
 ### FieldInfo

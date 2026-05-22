@@ -51,7 +51,7 @@ func (p *PostgreSQLPlugin) OpenTableReadSession(ctx context.Context, connInfo pl
 	}, nil
 }
 
-func postgresReadSessionQuery(ctx context.Context, db *sql.DB, path plugin.CatalogPath, opts plugin.TableReadSessionOptions) (string, []plugin.FieldInfo, *datatype.SpatialInfo, error) {
+func postgresReadSessionQuery(ctx context.Context, db *sql.DB, path plugin.CatalogPath, opts plugin.TableReadSessionOptions) (string, []datatype.FieldInfo, *datatype.SpatialInfo, error) {
 	query := strings.TrimSpace(opts.Query)
 	if query != "" {
 		return query, nil, nil, nil
@@ -64,7 +64,7 @@ func postgresReadSessionQuery(ctx context.Context, db *sql.DB, path plugin.Catal
 	if err != nil {
 		return "", nil, nil, err
 	}
-	fields := make([]plugin.FieldInfo, 0, len(columns))
+	fields := make([]datatype.FieldInfo, 0, len(columns))
 	for _, column := range columns {
 		fields = append(fields, postgresFieldInfoFromColumn(column))
 	}
@@ -86,7 +86,7 @@ func postgresReadSessionQuery(ctx context.Context, db *sql.DB, path plugin.Catal
 	return sqldialect.ForEngine("postgresql").SelectTableSQL(selectExpr, schema, table, "", "", 0, 0), fields, postgresSpatialInfoFromFields(fields), nil
 }
 
-func postgresSelectedFields(fields []plugin.FieldInfo, metadata map[string]interface{}) ([]plugin.FieldInfo, error) {
+func postgresSelectedFields(fields []datatype.FieldInfo, metadata map[string]interface{}) ([]datatype.FieldInfo, error) {
 	if len(fields) == 0 || metadata == nil {
 		return nil, nil
 	}
@@ -94,11 +94,11 @@ func postgresSelectedFields(fields []plugin.FieldInfo, metadata map[string]inter
 	if selection == nil || len(selection.Include) == 0 {
 		return nil, nil
 	}
-	byName := make(map[string]plugin.FieldInfo, len(fields))
+	byName := make(map[string]datatype.FieldInfo, len(fields))
 	for _, field := range fields {
 		byName[field.Name] = field
 	}
-	selected := make([]plugin.FieldInfo, 0, len(selection.Include))
+	selected := make([]datatype.FieldInfo, 0, len(selection.Include))
 	seen := map[string]bool{}
 	for _, name := range selection.Include {
 		name = strings.TrimSpace(name)
@@ -133,7 +133,7 @@ func postgresFieldSelection(metadata map[string]interface{}) *format.FieldSelect
 	}
 }
 
-func postgresSelectExprForFields(fields []plugin.FieldInfo) string {
+func postgresSelectExprForFields(fields []datatype.FieldInfo) string {
 	if len(fields) == 0 {
 		return "*"
 	}
@@ -159,7 +159,7 @@ func shouldReadPostgresSpatialAsGeoJSON(metadata map[string]interface{}) bool {
 	return strings.EqualFold(strings.TrimSpace(metadataString(metadata, "spatial.target_encoding")), "geojson")
 }
 
-func postgresGeoJSONSelectExpr(columns []postgresColumnInfo, metadata map[string]interface{}, fields []plugin.FieldInfo) (string, error) {
+func postgresGeoJSONSelectExpr(columns []postgresColumnInfo, metadata map[string]interface{}, fields []datatype.FieldInfo) (string, error) {
 	geometryField := strings.TrimSpace(metadataString(metadata, "geometry_field"))
 	selected := map[string]bool{}
 	if len(fields) > 0 {
@@ -249,9 +249,9 @@ func postgresTableColumns(ctx context.Context, db *sql.DB, schema, table string)
 	return columns, nil
 }
 
-func postgresFieldInfoFromColumn(column postgresColumnInfo) plugin.FieldInfo {
+func postgresFieldInfoFromColumn(column postgresColumnInfo) datatype.FieldInfo {
 	nativeType := postgresColumnNativeType(column)
-	return plugin.FieldInfo{
+	return datatype.FieldInfo{
 		Name:       column.Name,
 		Type:       postgresCommonFieldType(column, nativeType),
 		NativeType: nativeType,
@@ -298,7 +298,7 @@ func stripPostgresTypeModifiers(value string) string {
 	return postgresTypeModifierPattern.ReplaceAllString(strings.TrimSpace(value), "")
 }
 
-func postgresSpatialInfoFromFields(fields []plugin.FieldInfo) *datatype.SpatialInfo {
+func postgresSpatialInfoFromFields(fields []datatype.FieldInfo) *datatype.SpatialInfo {
 	if len(fields) == 0 {
 		return nil
 	}
@@ -390,7 +390,7 @@ type postgresTableReadSession struct {
 	db          *sql.DB
 	tx          *sql.Tx
 	cursorName  string
-	fields      []plugin.FieldInfo
+	fields      []datatype.FieldInfo
 	spatialInfo *datatype.SpatialInfo
 	closed      bool
 	offset      int64
@@ -441,7 +441,7 @@ func (s *postgresTableReadSession) Close(ctx context.Context) error {
 	return closeErr
 }
 
-func scanPostgresRowsToBatch(rows *sql.Rows, schemaFields []plugin.FieldInfo, spatialInfo *datatype.SpatialInfo, offset int64) (*plugin.BatchData, error) {
+func scanPostgresRowsToBatch(rows *sql.Rows, schemaFields []datatype.FieldInfo, spatialInfo *datatype.SpatialInfo, offset int64) (*plugin.BatchData, error) {
 	columns, err := rows.Columns()
 	if err != nil {
 		return nil, fmt.Errorf("get postgresql cursor columns: %w", err)
@@ -479,15 +479,15 @@ func scanPostgresRowsToBatch(rows *sql.Rows, schemaFields []plugin.FieldInfo, sp
 	}, nil
 }
 
-func postgresReadBatchFields(columns []string, schemaFields []plugin.FieldInfo) []plugin.FieldInfo {
-	fields := make([]plugin.FieldInfo, 0, len(columns))
+func postgresReadBatchFields(columns []string, schemaFields []datatype.FieldInfo) []datatype.FieldInfo {
+	fields := make([]datatype.FieldInfo, 0, len(columns))
 	if len(schemaFields) == 0 {
 		for _, column := range columns {
-			fields = append(fields, plugin.FieldInfo{Name: column})
+			fields = append(fields, datatype.FieldInfo{Name: column})
 		}
 		return fields
 	}
-	byName := make(map[string]plugin.FieldInfo, len(schemaFields))
+	byName := make(map[string]datatype.FieldInfo, len(schemaFields))
 	for _, field := range schemaFields {
 		if field.Name == "" {
 			continue
@@ -500,7 +500,7 @@ func postgresReadBatchFields(columns []string, schemaFields []plugin.FieldInfo) 
 			fields = append(fields, field)
 			continue
 		}
-		fields = append(fields, plugin.FieldInfo{Name: column})
+		fields = append(fields, datatype.FieldInfo{Name: column})
 	}
 	return fields
 }

@@ -3,7 +3,7 @@ package postgresql
 import (
 	"testing"
 
-	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 )
 
@@ -24,14 +24,14 @@ func TestPostgresFieldInfoFromColumnKeepsSpatialNativeType(t *testing.T) {
 	if field.NativeType != "geometry(MultiPolygon,4326)" {
 		t.Fatalf("native type = %q, want geometry(MultiPolygon,4326)", field.NativeType)
 	}
-	spatialInfo := postgresSpatialInfoFromFields([]plugin.FieldInfo{field})
+	spatialInfo := postgresSpatialInfoFromFields([]datatype.FieldInfo{field})
 	if spatialInfo.PrimaryGeometryType() != "MultiPolygon" || spatialInfo.PrimarySRIDValue() != 4326 {
 		t.Fatalf("spatial info = %#v, want standard spatial facts", spatialInfo)
 	}
 }
 
 func TestPostgresReadBatchFieldsKeepsSchemaMetadataInColumnOrder(t *testing.T) {
-	fields := postgresReadBatchFields([]string{"id", "SmGeometry"}, []plugin.FieldInfo{
+	fields := postgresReadBatchFields([]string{"id", "SmGeometry"}, []datatype.FieldInfo{
 		{Name: "SmGeometry", Type: "geometry", NativeType: "geometry(MultiPolygon,4326)"},
 		{Name: "id", Type: "bigint"},
 	})
@@ -48,7 +48,7 @@ func TestPostgresReadBatchFieldsKeepsSchemaMetadataInColumnOrder(t *testing.T) {
 }
 
 func TestPostgresSelectedFieldsFollowsFieldSelectionOrder(t *testing.T) {
-	fields := []plugin.FieldInfo{
+	fields := []datatype.FieldInfo{
 		{Name: "id", Type: "bigint"},
 		{Name: "name", Type: "string"},
 		{Name: "geom", Type: "geometry"},
@@ -71,7 +71,7 @@ func TestPostgresSelectedFieldsFollowsFieldSelectionOrder(t *testing.T) {
 }
 
 func TestPostgresSelectedFieldsErrorsOnMissingFieldByDefault(t *testing.T) {
-	_, err := postgresSelectedFields([]plugin.FieldInfo{{Name: "id"}}, map[string]interface{}{
+	_, err := postgresSelectedFields([]datatype.FieldInfo{{Name: "id"}}, map[string]interface{}{
 		format.FieldSelectionOptionKey: &format.FieldSelectionOptions{
 			Include: []string{"id", "missing"},
 		},
@@ -82,7 +82,7 @@ func TestPostgresSelectedFieldsErrorsOnMissingFieldByDefault(t *testing.T) {
 }
 
 func TestPostgresSelectedFieldsIgnoresMissingFieldWhenConfigured(t *testing.T) {
-	selected, err := postgresSelectedFields([]plugin.FieldInfo{{Name: "id"}}, map[string]interface{}{
+	selected, err := postgresSelectedFields([]datatype.FieldInfo{{Name: "id"}}, map[string]interface{}{
 		format.FieldSelectionOptionKey: format.FieldSelectionOptions{
 			Include:            []string{"missing", "id"},
 			MissingFieldPolicy: format.MissingFieldIgnore,
@@ -97,7 +97,7 @@ func TestPostgresSelectedFieldsIgnoresMissingFieldWhenConfigured(t *testing.T) {
 }
 
 func TestPostgresSelectExprForFieldsQuotesSelectedColumns(t *testing.T) {
-	expr := postgresSelectExprForFields([]plugin.FieldInfo{
+	expr := postgresSelectExprForFields([]datatype.FieldInfo{
 		{Name: "id"},
 		{Name: "Road Name"},
 	})

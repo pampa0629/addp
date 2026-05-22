@@ -383,7 +383,7 @@ func tableFileAttributes(formatName string, mode string, fieldsData []map[string
 		}
 	}
 	if tableInfo != nil {
-		if formatAttrs := formatAttributesFromTableInfo(formatName, tableInfo); len(formatAttrs) > 0 {
+		if formatAttrs := formatAttributesFromTableInfo(tableInfo); len(formatAttrs) > 0 {
 			attrs["format_info"].(map[string]interface{})[formatName] = mergeInterfaceMaps(
 				attrs["format_info"].(map[string]interface{})[formatName],
 				formatAttrs,
@@ -436,21 +436,11 @@ func tableFileAttributes(formatName string, mode string, fieldsData []map[string
 	return attrs
 }
 
-type formatAttributesProvider interface {
-	FormatAttributes() map[string]interface{}
-}
-
-func formatAttributesFromTableInfo(formatName string, tableInfo *datatype.TableDescribeResult) map[string]interface{} {
+func formatAttributesFromTableInfo(tableInfo *datatype.TableDescribeResult) map[string]interface{} {
 	if tableInfo == nil || len(tableInfo.FormatInfo) == 0 {
 		return nil
 	}
-	if provider, ok := tableInfo.FormatInfo[formatName].(formatAttributesProvider); ok {
-		return provider.FormatAttributes()
-	}
-	if attrs, ok := tableInfo.FormatInfo[formatName].(map[string]interface{}); ok {
-		return attrs
-	}
-	return nil
+	return tableInfo.FormatInfo
 }
 
 func mergeInterfaceMaps(existing interface{}, additions map[string]interface{}) map[string]interface{} {

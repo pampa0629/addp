@@ -204,7 +204,7 @@ func buildShapefileTableInfo(input shapefileTableInfoInput) *format.TableInfo {
 		Fields:      fields,
 		PrimaryKey:  []string{},
 		SpatialInfo: spatialInfo,
-		FormatInfo:  map[string]interface{}{"shapefile": info.FormatAttributes()},
+		FormatInfo:  info.FormatAttributes(),
 	}
 }
 

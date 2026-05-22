@@ -201,8 +201,6 @@ type ItemMetadata struct {
 	UpdatedAt  *time.Time             `json:"updated_at,omitempty"`
 }
 
-type FieldInfo = datatype.FieldInfo
-
 type StoreSemantics struct {
 	Semantics    []string `json:"semantics,omitempty"`
 	NotSupported []string `json:"not_supported,omitempty"`
@@ -284,7 +282,7 @@ type OperatorMetadata struct {
 	Parameters          []ParameterMetadata    `json:"parameters,omitempty"`
 	Inputs              []interface{}          `json:"inputs,omitempty"`
 	OutputPorts         []OutputPortMetadata   `json:"output_ports,omitempty"`
-	Outputs             []FieldInfo            `json:"outputs,omitempty"`
+	Outputs             []datatype.FieldInfo   `json:"outputs,omitempty"`
 	Module              string                 `json:"module,omitempty"`
 	Attributes          map[string]interface{} `json:"attributes,omitempty"`
 }

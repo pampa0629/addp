@@ -29,7 +29,7 @@ func (p *PostgreSQLPlugin) PrepareTableWrite(ctx context.Context, connInfo plugi
 	return createPostgresTableIfNotExists(ctx, db, schema, table, opts.Fields, opts.SpatialInfo)
 }
 
-func createPostgresTableIfNotExists(ctx context.Context, db *sql.DB, schema, table string, fields []plugin.FieldInfo, spatialInfo *datatype.SpatialInfo) error {
+func createPostgresTableIfNotExists(ctx context.Context, db *sql.DB, schema, table string, fields []datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) error {
 	if len(fields) == 0 {
 		return fmt.Errorf("postgresql table write prepare requires table fields")
 	}
@@ -95,7 +95,7 @@ func (p *PostgreSQLPlugin) DeleteResource(ctx context.Context, connInfo plugin.C
 	return nil
 }
 
-func postgresSQLTypeForField(field plugin.FieldInfo, spatialInfo *datatype.SpatialInfo) string {
+func postgresSQLTypeForField(field datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) string {
 	if sqlType := postgresSpatialTypeForField(field, spatialInfo); sqlType != "" {
 		return sqlType
 	}
@@ -105,7 +105,7 @@ func postgresSQLTypeForField(field plugin.FieldInfo, spatialInfo *datatype.Spati
 	return "TEXT"
 }
 
-func postgresSpatialTypeForField(field plugin.FieldInfo, spatialInfo *datatype.SpatialInfo) string {
+func postgresSpatialTypeForField(field datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) string {
 	if !datatype.IsSpatialFieldType(field.Type) {
 		return ""
 	}

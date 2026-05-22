@@ -140,7 +140,7 @@ func upsertRefTableInfo(item *DetectedItem, tableInfo *datatype.TableDescribeRes
 		return
 	}
 	upsertItemSection(&item.Attributes, "type_info", "table", tableAttributes(tableInfo))
-	if formatAttrs := formatAttributesFromDescribeResult(item.Format, tableInfo); len(formatAttrs) > 0 {
+	if formatAttrs := formatAttributesFromDescribeResult(tableInfo); len(formatAttrs) > 0 {
 		upsertItemSection(&item.Attributes, "format_info", item.Format, formatAttrs)
 	}
 	if spatialAttrs := spatialAttributes(tableInfo.Spatial); len(spatialAttrs) > 0 {
@@ -204,21 +204,11 @@ func fieldAttributesFromDatatype(fields []datatype.FieldInfo) []map[string]inter
 	return fieldsData
 }
 
-type formatAttributesProvider interface {
-	FormatAttributes() map[string]interface{}
-}
-
-func formatAttributesFromDescribeResult(formatName string, tableInfo *datatype.TableDescribeResult) map[string]interface{} {
+func formatAttributesFromDescribeResult(tableInfo *datatype.TableDescribeResult) map[string]interface{} {
 	if tableInfo == nil || len(tableInfo.FormatInfo) == 0 {
 		return nil
 	}
-	if provider, ok := tableInfo.FormatInfo[formatName].(formatAttributesProvider); ok {
-		return provider.FormatAttributes()
-	}
-	if attrs, ok := tableInfo.FormatInfo[formatName].(map[string]interface{}); ok {
-		return attrs
-	}
-	return nil
+	return tableInfo.FormatInfo
 }
 
 func spatialAttributes(spatialInfo *datatype.SpatialInfo) map[string]interface{} {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/lib/pq"
 )
@@ -62,7 +63,7 @@ func shouldUseCopyWriteMethod(method string) bool {
 	}
 }
 
-func fieldColumns(fields []plugin.FieldInfo) []string {
+func fieldColumns(fields []datatype.FieldInfo) []string {
 	seen := map[string]struct{}{}
 	columns := make([]string, 0, len(fields))
 	for _, field := range fields {

@@ -29,14 +29,14 @@ func TestPostgreSQLCapabilitiesDeclareTableWritePrepare(t *testing.T) {
 func TestPostgresSQLTypeForField(t *testing.T) {
 	tests := []struct {
 		name        string
-		field       plugin.FieldInfo
+		field       datatype.FieldInfo
 		spatialInfo *datatype.SpatialInfo
 		want        string
 	}{
-		{name: "spatial info geometry type and srid", field: plugin.FieldInfo{Name: "geom", Type: datatype.FieldTypeGeometry}, spatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", "MultiPolygon", 4326, 0), want: "GEOMETRY(MultiPolygon,4326)"},
-		{name: "spatial info dimension z", field: plugin.FieldInfo{Name: "geom", Type: datatype.FieldTypeGeometry}, spatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", "Point", 4326, 3), want: "GEOMETRY(PointZ,4326)"},
-		{name: "common int", field: plugin.FieldInfo{Name: "id", Type: "int"}, want: "INTEGER"},
-		{name: "unknown defaults text", field: plugin.FieldInfo{Name: "x", Type: "unknown"}, want: "TEXT"},
+		{name: "spatial info geometry type and srid", field: datatype.FieldInfo{Name: "geom", Type: datatype.FieldTypeGeometry}, spatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", "MultiPolygon", 4326, 0), want: "GEOMETRY(MultiPolygon,4326)"},
+		{name: "spatial info dimension z", field: datatype.FieldInfo{Name: "geom", Type: datatype.FieldTypeGeometry}, spatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", "Point", 4326, 3), want: "GEOMETRY(PointZ,4326)"},
+		{name: "common int", field: datatype.FieldInfo{Name: "id", Type: "int"}, want: "INTEGER"},
+		{name: "unknown defaults text", field: datatype.FieldInfo{Name: "x", Type: "unknown"}, want: "TEXT"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

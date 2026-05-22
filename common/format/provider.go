@@ -37,7 +37,8 @@ type ContentSniffer interface {
 
 // FormatInfoProvider 表示格式能够提供自身私有元数据。
 //
-// 结果应写入 attributes.format_info.<format>，不得混入 type_info 或上层模块 DTO。
+// 结果是当前格式的裸 format_info 内容；调用编排层负责按格式名写入
+// attributes.format_info.<format>，provider 不得混入 type_info 或上层模块 DTO。
 type FormatInfoProvider interface {
 	Provider
 	DescribeFormat(ctx context.Context, input io.Reader, options *ParseOptions) (map[string]interface{}, error)

@@ -216,7 +216,7 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 			Fields:     fields,
 			PrimaryKey: []string{}, // CSV 没有主键
 		},
-		FormatInfo: map[string]interface{}{"csv": csvInfo},
+		FormatInfo: csvInfo.FormatAttributes(),
 	}
 	if len(index.Anchors) > 0 {
 		result.ContentIndex = index

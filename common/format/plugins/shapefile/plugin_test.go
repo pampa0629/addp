@@ -256,9 +256,8 @@ func TestShapefilePluginUsesCPGForRefSamples(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DescribeMultiTable() error = %v", err)
 	}
-	shpAttrs, _ := info.FormatInfo["shapefile"].(map[string]interface{})
-	if shpAttrs["encoding"] != "gbk" {
-		t.Fatalf("shapefile encoding = %#v, want gbk", shpAttrs["encoding"])
+	if info.FormatInfo["encoding"] != "gbk" {
+		t.Fatalf("shapefile encoding = %#v, want gbk", info.FormatInfo["encoding"])
 	}
 
 	rows, err := plugin.SampleMultiTable(context.Background(), reader, refs, 0, 10, nil)

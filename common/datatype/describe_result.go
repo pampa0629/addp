@@ -4,7 +4,7 @@ package datatype
 //
 // The fields map to separate attributes partitions: Table to type_info.table,
 // Spatial to capabilities.spatial, ContentIndex to content_index.table and
-// FormatInfo to format_info.<format>.
+// FormatInfo to the current format's format_info.<format> namespace.
 type TableDescribeResult struct {
 	Table        *TableInfo             `json:"table,omitempty"`
 	Spatial      *SpatialInfo           `json:"spatial,omitempty"`

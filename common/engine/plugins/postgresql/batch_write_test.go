@@ -5,12 +5,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 )
 
 func TestBatchColumnsUsesFieldOrder(t *testing.T) {
 	batch := &plugin.BatchData{
-		Fields: []plugin.FieldInfo{
+		Fields: []datatype.FieldInfo{
 			{Name: "id"},
 			{Name: "name"},
 			{Name: "id"},
@@ -88,7 +89,7 @@ func TestBuildPostgresInsertSQLNormalizesGeometryBytes(t *testing.T) {
 }
 
 func TestPostgresGeometryColumns(t *testing.T) {
-	fields := []plugin.FieldInfo{
+	fields := []datatype.FieldInfo{
 		{Name: "id", Type: "int"},
 		{Name: "geom", Type: "geometry"},
 		{Name: "shape", Type: "polygon"},

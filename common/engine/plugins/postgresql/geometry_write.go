@@ -5,10 +5,9 @@ import (
 	"strings"
 
 	"github.com/addp/common/datatype"
-	"github.com/addp/common/engine/plugin"
 )
 
-func postgresGeometryColumns(fields []plugin.FieldInfo) map[string]struct{} {
+func postgresGeometryColumns(fields []datatype.FieldInfo) map[string]struct{} {
 	columns := map[string]struct{}{}
 	for _, field := range fields {
 		name := strings.TrimSpace(field.Name)

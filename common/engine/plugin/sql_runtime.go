@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/sqldialect"
 	"gorm.io/gorm"
 )
@@ -115,9 +116,9 @@ func QueryResultToBatchData(result *QueryResult, offset int64) *BatchData {
 	if result == nil {
 		return &BatchData{Offset: offset}
 	}
-	fields := make([]FieldInfo, 0, len(result.Columns))
+	fields := make([]datatype.FieldInfo, 0, len(result.Columns))
 	for _, column := range result.Columns {
-		fields = append(fields, FieldInfo{Name: column})
+		fields = append(fields, datatype.FieldInfo{Name: column})
 	}
 	return &BatchData{
 		Rows:   result.Rows,

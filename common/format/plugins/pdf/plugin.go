@@ -180,18 +180,11 @@ func estimatePageCount(content []byte) int {
 }
 
 func (p *Plugin) DescribeFormat(ctx context.Context, input io.Reader, options *format.ParseOptions) (map[string]interface{}, error) {
-	docAttrs, formatAttrs, err := p.readDocumentAttributes(ctx, input, options)
+	_, formatAttrs, err := p.readDocumentAttributes(ctx, input, options)
 	if err != nil {
 		return nil, err
 	}
-	return map[string]interface{}{
-		"type_info": map[string]interface{}{
-			"document": docAttrs,
-		},
-		"format_info": map[string]interface{}{
-			string(format.FormatPDF): formatAttrs,
-		},
-	}, nil
+	return formatAttrs, nil
 }
 
 func (p *Plugin) readDocumentAttributes(ctx context.Context, input io.Reader, options *format.ParseOptions) (map[string]interface{}, map[string]interface{}, error) {

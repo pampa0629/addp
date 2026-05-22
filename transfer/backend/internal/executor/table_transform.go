@@ -188,23 +188,23 @@ func fieldInfoForMapping(schema *format.TableInfo, mapping FieldMappingFieldPlan
 	return field
 }
 
-func fieldMappingBatchFields(source []engineplugin.FieldInfo, mappings []FieldMappingFieldPlan, mode FieldMappingMode) []engineplugin.FieldInfo {
+func fieldMappingBatchFields(source []datatype.FieldInfo, mappings []FieldMappingFieldPlan, mode FieldMappingMode) []datatype.FieldInfo {
 	if mode == FieldMappingModePassthrough {
-		fields := append([]engineplugin.FieldInfo(nil), source...)
+		fields := append([]datatype.FieldInfo(nil), source...)
 		for _, mapping := range mappings {
 			field := engineFieldForMapping(source, mapping)
 			fields = upsertEngineField(fields, field)
 		}
 		return fields
 	}
-	fields := make([]engineplugin.FieldInfo, 0, len(mappings))
+	fields := make([]datatype.FieldInfo, 0, len(mappings))
 	for _, mapping := range mappings {
 		fields = append(fields, engineFieldForMapping(source, mapping))
 	}
 	return fields
 }
 
-func engineFieldForMapping(source []engineplugin.FieldInfo, mapping FieldMappingFieldPlan) engineplugin.FieldInfo {
+func engineFieldForMapping(source []datatype.FieldInfo, mapping FieldMappingFieldPlan) datatype.FieldInfo {
 	field := findEngineField(source, mapping.Source)
 	if field.Name == "" {
 		field = findEngineField(source, mapping.Target)
@@ -217,7 +217,7 @@ func engineFieldForMapping(source []engineplugin.FieldInfo, mapping FieldMapping
 	return field
 }
 
-func fieldMappingBatchSpatial(source *datatype.SpatialInfo, fields []engineplugin.FieldInfo, mappings []FieldMappingFieldPlan, mode FieldMappingMode) *datatype.SpatialInfo {
+func fieldMappingBatchSpatial(source *datatype.SpatialInfo, fields []datatype.FieldInfo, mappings []FieldMappingFieldPlan, mode FieldMappingMode) *datatype.SpatialInfo {
 	if source == nil {
 		for _, field := range fields {
 			if datatype.IsSpatialFieldType(field.Type) {
@@ -277,16 +277,16 @@ func findFieldInfo(schema *format.TableInfo, name string) format.FieldInfo {
 	return format.FieldInfo{}
 }
 
-func findEngineField(fields []engineplugin.FieldInfo, name string) engineplugin.FieldInfo {
+func findEngineField(fields []datatype.FieldInfo, name string) datatype.FieldInfo {
 	if name == "" {
-		return engineplugin.FieldInfo{}
+		return datatype.FieldInfo{}
 	}
 	for _, field := range fields {
 		if strings.EqualFold(field.Name, name) {
 			return field
 		}
 	}
-	return engineplugin.FieldInfo{}
+	return datatype.FieldInfo{}
 }
 
 func upsertFieldInfo(info *format.TableInfo, field format.FieldInfo) {
@@ -299,7 +299,7 @@ func upsertFieldInfo(info *format.TableInfo, field format.FieldInfo) {
 	info.Fields = append(info.Fields, field)
 }
 
-func upsertEngineField(fields []engineplugin.FieldInfo, field engineplugin.FieldInfo) []engineplugin.FieldInfo {
+func upsertEngineField(fields []datatype.FieldInfo, field datatype.FieldInfo) []datatype.FieldInfo {
 	for i := range fields {
 		if strings.EqualFold(fields[i].Name, field.Name) {
 			fields[i] = field
