@@ -113,10 +113,14 @@ common/format common/engine common/dataitem
 | `graph` | `GraphInfo` | 节点 label、关系类型、属性结构、节点数、边数 |
 | `file` | `FileInfo` | MIME、编码、大小、基础校验或可读性摘要 |
 
-目标代码形态可以是独立结构，而不是强行做一个大 union：
+目标代码形态使用轻量 `TypeInfo` 接口标记这些结构的 data type 归属，同时保持各 info 为独立结构，不做大 union：
 
 ```go
 type DataType string
+
+type TypeInfo interface {
+    TypeInfoDataType() DataType
+}
 
 type TableInfo struct { ... }
 type DocumentInfo struct { ... }
@@ -125,6 +129,8 @@ type ContainerInfo struct { ... }
 type GraphInfo struct { ... }
 type FileInfo struct { ... }
 ```
+
+`TypeInfo` 只回答“该结构写入哪个 `type_info.<data_type>` 分区”，不承载空间、内容索引、格式私有信息或运行时业务逻辑。
 
 Meta attributes 仍负责将这些结构写入：
 

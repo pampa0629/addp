@@ -431,7 +431,7 @@ info, err := provider.DescribeMedia(ctx, input, nil)
 
 ## TableInfo
 
-`TableInfo` 是 provider 返回的表类型信息模型。目标态中，通用结构归属 `common/datatype`；当前迁移前仍可见于 `common/format`。
+`TableInfo` 是 provider 返回的表类型信息模型。通用事实源归属 `common/datatype.TableInfo`；`common/format.TableInfo` 只作为 reader / writer / Transfer 操作 schema 使用，并在 provider 边界通过 `datatype.TableDescribeResult` 暴露给 Meta。
 
 ```go
 type TableInfo struct {
@@ -455,7 +455,7 @@ type TableInfo struct {
 
 ## 字段类型与类型映射
 
-字段结构统一承载在 `TableInfo.Fields` / `FieldInfo` 中；根包不再保留并行的 `Schema` / `Field` 模型。目标态中 `FieldInfo` 和 `FieldType` 归属 `common/datatype`。
+字段结构统一承载在 `TableInfo.Fields` / `FieldInfo` 中；根包不再保留并行的 `Schema` / `Field` 模型。`FieldType` 归属 `common/datatype`，`format.FieldInfo.Type` 直接使用 `datatype.FieldType`。
 
 `TypeMapper` 只应在对应 format / engine plugin 内部使用，负责原生类型和 `datatype.FieldType` 互转：
 

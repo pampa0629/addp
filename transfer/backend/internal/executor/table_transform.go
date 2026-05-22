@@ -282,7 +282,7 @@ func cloneTableInfo(info *format.TableInfo) *format.TableInfo {
 		next.RowCount = &rowCount
 	}
 	next.SpatialInfo = cloneSpatialInfo(info.SpatialInfo)
-	return next
+	return &next
 }
 
 func cloneSpatialInfo(info *datatype.SpatialInfo) *datatype.SpatialInfo {
@@ -318,7 +318,7 @@ func cloneSpatialInfo(info *datatype.SpatialInfo) *datatype.SpatialInfo {
 		hasSpatialIndex := *info.HasSpatialIndex
 		next.HasSpatialIndex = &hasSpatialIndex
 	}
-	return &next
+	return next
 }
 
 func cloneMap(values map[string]interface{}) map[string]interface{} {

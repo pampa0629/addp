@@ -219,13 +219,13 @@ attributes 分区统一采用以下概念：
 
 | 字段 | 规则 |
 |---|---|
-| `geometry_columns` | 支持多个 Geometry 字段。每个元素描述一个空间字段。 |
+| `geometry_columns` | 支持多个 Geometry 字段。每个元素描述一个空间字段；GeoTIFF、栅格覆盖等没有字段列概念的空间媒体可只写 `srid` 或 `crs`，不虚构字段名。 |
 | `geometry_type` | 写入声明类型或格式天然可确定的类型。PostGIS 字段声明为 `geometry` 时就写 `geometry`，不得为了得到 Point/Polygon 等具体类型扫描全表。 |
 | `srid` | 能确定 EPSG/SRID 编号时写数字，例如 `4326`。 |
 | `crs` | 不能确定编号但能获得 CRS 描述时写 `crs`，例如 WKT、PROJJSON、proj4。`srid` 和 `crs` 二选一，不同时写。 |
 | `dimension` | 坐标维度，无法确定时可省略。 |
 | `nullable` | 字段是否可空，无法确定时可省略。 |
-| `primary_geometry_column` | Manager 默认空间预览使用的几何字段。多几何字段时必须明确；单几何字段时建议写入。 |
+| `primary_geometry_column` | Manager 默认空间预览使用的几何字段。多几何字段时必须明确；单几何字段时建议写入；没有字段列概念的空间媒体应省略。 |
 | `extent` | 空间范围。无法轻量获得时写 `null` 或省略，不得为了 extent 扫描全量数据。 |
 | `has_spatial_index` | 是否存在空间索引；无法确定时可省略。 |
 
