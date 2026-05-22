@@ -2,8 +2,8 @@ package postgresql
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/addp/common/engine/plugin"
 	_ "github.com/lib/pq"
@@ -196,6 +196,7 @@ func (p *PostgreSQLPlugin) listTables(ctx context.Context, db *gorm.DB, schema s
 				ELSE lower(replace(t.table_type, ' ', '_'))
 			END AS table_kind,
 			COALESCE(pg_total_relation_size(quote_ident(t.table_schema)||'.'||quote_ident(t.table_name)), 0) as size_bytes,
+			GREATEST(c.reltuples::bigint, 0) as row_count,
 			GREATEST(
 				s.last_autoanalyze,
 				s.last_autovacuum,
@@ -205,6 +206,8 @@ func (p *PostgreSQLPlugin) listTables(ctx context.Context, db *gorm.DB, schema s
 		FROM information_schema.tables t
 		LEFT JOIN pg_stat_user_tables s
 			ON t.table_schema = s.schemaname AND t.table_name = s.relname
+		LEFT JOIN pg_class c
+			ON c.oid = to_regclass(quote_ident(t.table_schema)||'.'||quote_ident(t.table_name))
 		WHERE t.table_schema = $1
 		  AND t.table_type IN ('BASE TABLE', 'VIEW')
 		ORDER BY t.table_name
@@ -213,24 +216,6 @@ func (p *PostgreSQLPlugin) listTables(ctx context.Context, db *gorm.DB, schema s
 	err := db.WithContext(ctx).Raw(query, schema).Scan(&tables).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tables: %w", err)
-	}
-
-	// 获取每个表的行数（使用统计估算，避免慢查询）
-	for i := range tables {
-		var rowCount sql.NullInt64
-		countQuery := `
-			SELECT reltuples::bigint
-			FROM pg_class
-			WHERE oid = $1::regclass
-		`
-		fullTableName := fmt.Sprintf("%s.%s", schema, tables[i].TableName)
-		err := db.WithContext(ctx).Raw(countQuery, fullTableName).Scan(&rowCount).Error
-		if err == nil && rowCount.Valid {
-			// reltuples = -1 表示统计未知；Catalog Provider 必须只读，不主动 ANALYZE。
-			if rowCount.Int64 >= 0 {
-				tables[i].RowCount = rowCount.Int64
-			}
-		}
 	}
 
 	return tables, nil
@@ -286,13 +271,12 @@ func (p *PostgreSQLPlugin) getTableRowCount(ctx context.Context, db *gorm.DB, sc
 
 	// 使用统计估算（快速）
 	query := `
-		SELECT reltuples::bigint
+		SELECT GREATEST(reltuples::bigint, 0)
 		FROM pg_class
-		WHERE oid = $1::regclass
+		WHERE oid = to_regclass(quote_ident($1)||'.'||quote_ident($2))
 	`
-	fullTableName := fmt.Sprintf("%s.%s", schema, table)
 
-	err := db.WithContext(ctx).Raw(query, fullTableName).Scan(&count).Error
+	err := db.WithContext(ctx).Raw(query, schema, table).Scan(&count).Error
 	if err != nil {
 		return 0, fmt.Errorf("failed to get row count: %w", err)
 	}
@@ -302,6 +286,7 @@ func (p *PostgreSQLPlugin) getTableRowCount(ctx context.Context, db *gorm.DB, sc
 
 // isSystemSchema 判断是否为系统 Schema
 func (p *PostgreSQLPlugin) isSystemSchema(schemaName string) bool {
+	normalized := strings.ToLower(schemaName)
 	systemSchemas := map[string]bool{
 		"pg_catalog":         true,
 		"information_schema": true,
@@ -311,14 +296,10 @@ func (p *PostgreSQLPlugin) isSystemSchema(schemaName string) bool {
 	}
 
 	// 检查是否在系统 schema 列表中
-	if systemSchemas[schemaName] {
+	if systemSchemas[normalized] {
 		return true
 	}
 
 	// 检查是否以 pg_toast_ 或 pg_temp_ 开头
-	if len(schemaName) >= 9 && (schemaName[:9] == "pg_toast_" || schemaName[:8] == "pg_temp_") {
-		return true
-	}
-
-	return false
+	return strings.HasPrefix(normalized, "pg_toast_") || strings.HasPrefix(normalized, "pg_temp_")
 }

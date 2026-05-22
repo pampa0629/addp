@@ -3,6 +3,7 @@ package clickhouse
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	_ "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/addp/common/engine/plugin"
@@ -157,7 +158,7 @@ func (p *ClickHousePlugin) GetDialect() string {
 func (p *ClickHousePlugin) listSchemas(ctx context.Context, db *gorm.DB) ([]plugin.SchemaInfo, error) {
 	var schemas []plugin.SchemaInfo
 
-	// ClickHouse 使用 SHOW DATABASES 命令
+	// ClickHouse 使用 system.databases 获取 database 列表和表数量统计。
 	query := `
 		SELECT
 			name,
@@ -186,6 +187,8 @@ func (p *ClickHousePlugin) listTables(ctx context.Context, db *gorm.DB, schema s
 			database as schema,
 			name as table_name,
 			CASE
+				WHEN engine = 'MaterializedView' THEN 'materialized_view'
+				WHEN engine = 'View' THEN 'view'
 				WHEN engine LIKE '%View%' THEN 'view'
 				ELSE 'table'
 			END AS table_kind,
@@ -255,7 +258,6 @@ func (p *ClickHousePlugin) isSystemSchema(schemaName string) bool {
 	systemDatabases := map[string]bool{
 		"system":             true,
 		"information_schema": true,
-		"INFORMATION_SCHEMA": true,
 	}
-	return systemDatabases[schemaName]
+	return systemDatabases[strings.ToLower(schemaName)]
 }
