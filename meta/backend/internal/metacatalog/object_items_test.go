@@ -1,12 +1,11 @@
 package metacatalog
 
 import (
-	"github.com/addp/common/datatype"
 	"testing"
 	"time"
 
 	commondataitem "github.com/addp/common/dataitem"
-	"github.com/addp/common/format"
+	"github.com/addp/common/datatype"
 	"github.com/addp/meta/internal/metaitem"
 )
 
@@ -157,7 +156,7 @@ func TestPlanObjectCatalogCompositeItemBuildsStandardAttributes(t *testing.T) {
 				EntryPath: "addp/datasets/roads/roads.shp",
 				SizeBytes: int64PtrForTest(256),
 			},
-			Fields: []format.FieldInfo{{
+			Fields: []datatype.FieldInfo{{
 				Name: "id",
 				Type: datatype.FieldTypeInt,
 			}},

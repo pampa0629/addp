@@ -1,11 +1,10 @@
 package metaattr
 
 import (
-	"github.com/addp/common/datatype"
 	"testing"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/common/format"
 	"github.com/addp/meta/internal/models"
 )
 
@@ -39,7 +38,7 @@ func TestSpatialMetadataWritesMinimalCapabilitiesSpatial(t *testing.T) {
 func TestFieldAttributesFromFormatWritesSpatialFieldFacts(t *testing.T) {
 	t.Parallel()
 
-	fields := FieldAttributesFromFormat([]format.FieldInfo{{
+	fields := FieldAttributesFromFormat([]datatype.FieldInfo{{
 		Name:     "SmGeometry",
 		Type:     datatype.FieldTypeGeometry,
 		Nullable: true,

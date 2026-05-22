@@ -169,7 +169,7 @@ func (t *fieldMappingTransform) TransformBatch(ctx context.Context, batch *engin
 	return next, nil
 }
 
-func fieldInfoForMapping(schema *format.TableInfo, mapping FieldMappingFieldPlan) format.FieldInfo {
+func fieldInfoForMapping(schema *format.TableInfo, mapping FieldMappingFieldPlan) datatype.FieldInfo {
 	field := findFieldInfo(schema, mapping.Source)
 	if field.Name == "" {
 		field = findFieldInfo(schema, mapping.Target)
@@ -265,16 +265,16 @@ func cloneSpatialInfoForColumn(source *datatype.SpatialInfo, columnName string) 
 	return spatial
 }
 
-func findFieldInfo(schema *format.TableInfo, name string) format.FieldInfo {
+func findFieldInfo(schema *format.TableInfo, name string) datatype.FieldInfo {
 	if schema == nil || name == "" {
-		return format.FieldInfo{}
+		return datatype.FieldInfo{}
 	}
 	for _, field := range schema.Fields {
 		if strings.EqualFold(field.Name, name) {
 			return field
 		}
 	}
-	return format.FieldInfo{}
+	return datatype.FieldInfo{}
 }
 
 func findEngineField(fields []datatype.FieldInfo, name string) datatype.FieldInfo {
@@ -289,7 +289,7 @@ func findEngineField(fields []datatype.FieldInfo, name string) datatype.FieldInf
 	return datatype.FieldInfo{}
 }
 
-func upsertFieldInfo(info *format.TableInfo, field format.FieldInfo) {
+func upsertFieldInfo(info *format.TableInfo, field datatype.FieldInfo) {
 	for i := range info.Fields {
 		if strings.EqualFold(info.Fields[i].Name, field.Name) {
 			info.Fields[i] = field

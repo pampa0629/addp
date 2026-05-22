@@ -557,19 +557,25 @@ func contentIndexAnchorsFromAttribute(value interface{}) []datatype.ContentIndex
 	return anchors
 }
 
-func fieldsFromAttribute(value interface{}) []format.FieldInfo {
+func fieldsFromAttribute(value interface{}) []datatype.FieldInfo {
 	items := interfaceSlice(value)
-	fields := make([]format.FieldInfo, 0, len(items))
+	fields := make([]datatype.FieldInfo, 0, len(items))
 	for _, item := range items {
 		attrs := rawMapAttribute(item)
 		name := commonJSON.InterfaceString(attrs["name"])
 		if name == "" {
 			continue
 		}
-		fields = append(fields, format.FieldInfo{
-			Name:     name,
-			Type:     datatype.FieldType(commonJSON.InterfaceString(attrs["type"])),
-			Nullable: commonJSON.InterfaceBool(attrs["nullable"]),
+		fields = append(fields, datatype.FieldInfo{
+			Name:       name,
+			Type:       datatype.FieldType(commonJSON.InterfaceString(attrs["type"])),
+			NativeType: commonJSON.InterfaceString(attrs["native_type"]),
+			Nullable:   commonJSON.InterfaceBool(attrs["nullable"]),
+			PrimaryKey: commonJSON.InterfaceBool(attrs["is_primary_key"]),
+			Comment:    commonJSON.InterfaceString(attrs["comment"]),
+			Size:       int(commonJSON.InterfaceInt64(attrs["size"])),
+			Precision:  int(commonJSON.InterfaceInt64(attrs["precision"])),
+			Scale:      int(commonJSON.InterfaceInt64(attrs["scale"])),
 		})
 	}
 	return fields

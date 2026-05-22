@@ -73,11 +73,15 @@ func shapefileDBFSchema(schema *format.TableInfo, geometryField string) shapefil
 			continue
 		}
 		dbfType, size, precision := commonTypeToDBFNative(field.Type)
-		if field.Size > 0 {
+		if datatype.IsNumericFieldType(field.Type) {
+			if field.Precision > 0 {
+				size = field.Precision
+			}
+			if field.Scale > 0 {
+				precision = field.Scale
+			}
+		} else if field.Size > 0 {
 			size = field.Size
-		}
-		if field.Precision > 0 {
-			precision = field.Precision
 		}
 		name := uniqueDBFFieldName(field.Name, used)
 		info.fields = append(info.fields, dbfField(name, dbfType, size, precision))

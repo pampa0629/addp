@@ -17,19 +17,14 @@ func tableInfoFromBatch(batch *engineplugin.BatchData) *format.TableInfo {
 	if batch == nil {
 		return info
 	}
-	info.Fields = make([]format.FieldInfo, 0, len(batch.Fields))
+	info.Fields = make([]datatype.FieldInfo, 0, len(batch.Fields))
 	for _, field := range batch.Fields {
 		name := field.Name
 		if name == "" {
 			continue
 		}
-		info.Fields = append(info.Fields, format.FieldInfo{
-			Name:         name,
-			Type:         field.Type,
-			Nullable:     field.Nullable,
-			IsPrimaryKey: field.PrimaryKey,
-			Comment:      field.Comment,
-		})
+		field.Name = name
+		info.Fields = append(info.Fields, field)
 	}
 	info.SpatialInfo = spatialInfoFromBatch(batch)
 	if len(info.Fields) == 0 && len(batch.Rows) > 0 {
@@ -39,7 +34,7 @@ func tableInfoFromBatch(batch *engineplugin.BatchData) *format.TableInfo {
 		}
 		sort.Strings(names)
 		for _, name := range names {
-			info.Fields = append(info.Fields, format.FieldInfo{Name: name, Type: datatype.FieldTypeUnknown})
+			info.Fields = append(info.Fields, datatype.FieldInfo{Name: name, Type: datatype.FieldTypeUnknown})
 		}
 	}
 	return info

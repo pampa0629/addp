@@ -40,7 +40,7 @@ func DatatypeTableInfo(info *TableInfo) *datatype.TableInfo {
 		SizeBytes:  info.SizeBytes,
 		CreatedAt:  info.CreatedAt,
 		UpdatedAt:  info.UpdatedAt,
-		Fields:     DatatypeFieldInfos(info.Fields),
+		Fields:     append([]datatype.FieldInfo(nil), info.Fields...),
 		PrimaryKey: append([]string(nil), info.PrimaryKey...),
 	}
 }
@@ -55,79 +55,8 @@ func FormatTableInfo(info *datatype.TableInfo) *TableInfo {
 		SizeBytes:  info.SizeBytes,
 		CreatedAt:  info.CreatedAt,
 		UpdatedAt:  info.UpdatedAt,
-		Fields:     FormatFieldInfos(info.Fields),
+		Fields:     append([]datatype.FieldInfo(nil), info.Fields...),
 		PrimaryKey: append([]string(nil), info.PrimaryKey...),
-	}
-}
-
-func DatatypeFieldInfos(fields []FieldInfo) []datatype.FieldInfo {
-	if len(fields) == 0 {
-		return nil
-	}
-	result := make([]datatype.FieldInfo, 0, len(fields))
-	for i, field := range fields {
-		result = append(result, datatype.FieldInfo{
-			Name:            field.Name,
-			Type:            field.Type,
-			Nullable:        field.Nullable,
-			PrimaryKey:      field.IsPrimaryKey,
-			Comment:         field.Comment,
-			Size:            datatypeFieldSize(field),
-			Precision:       datatypeFieldPrecision(field),
-			Scale:           datatypeFieldScale(field),
-			OrdinalPosition: i + 1,
-		})
-	}
-	return result
-}
-
-func FormatFieldInfos(fields []datatype.FieldInfo) []FieldInfo {
-	if len(fields) == 0 {
-		return nil
-	}
-	result := make([]FieldInfo, 0, len(fields))
-	for _, field := range fields {
-		size := field.Size
-		if size == 0 {
-			size = field.Precision
-		}
-		result = append(result, FieldInfo{
-			Name:         field.Name,
-			Type:         field.Type,
-			Nullable:     field.Nullable,
-			IsPrimaryKey: field.PrimaryKey,
-			Comment:      field.Comment,
-			Size:         size,
-			Precision:    field.Scale,
-		})
-	}
-	return result
-}
-
-func datatypeFieldSize(field FieldInfo) int {
-	switch field.Type {
-	case datatype.FieldTypeString, datatype.FieldTypeBytes:
-		return field.Size
-	default:
-		return 0
-	}
-}
-
-func datatypeFieldPrecision(field FieldInfo) int {
-	switch field.Type {
-	case datatype.FieldTypeInt, datatype.FieldTypeBigInt, datatype.FieldTypeFloat, datatype.FieldTypeDouble, datatype.FieldTypeDecimal:
-		return field.Size
-	default:
-		return 0
-	}
-}
-
-func datatypeFieldScale(field FieldInfo) int {
-	switch field.Type {
-	case datatype.FieldTypeFloat, datatype.FieldTypeDouble, datatype.FieldTypeDecimal:
-		return field.Precision
-	default:
-		return 0
 	}
 }
 

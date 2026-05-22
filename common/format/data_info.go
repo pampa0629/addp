@@ -19,28 +19,14 @@ type TableInfo struct {
 	UpdatedAt *time.Time // 更新时间
 
 	// 字段定义
-	Fields     []FieldInfo // 字段列表
-	PrimaryKey []string    // 主键字段名列表
+	Fields     []datatype.FieldInfo // 字段列表
+	PrimaryKey []string             // 主键字段名列表
 
 	// 可选补充事实。FormatInfo 写入 attributes.format_info.<format>，
 	// SpatialInfo 写入 capabilities.spatial，ContentIndex 写入 content_index.table。
 	FormatInfo   map[string]interface{}
 	SpatialInfo  *datatype.SpatialInfo
 	ContentIndex *datatype.ContentIndex
-}
-
-// FieldInfo 是 format 操作 schema 内的字段信息。
-//
-// 通用字段事实源是 datatype.FieldInfo；FieldInfo 只保留当前 format
-// reader / writer 仍需要的字段子集。
-type FieldInfo struct {
-	Name         string             // 字段名
-	Type         datatype.FieldType // 统一的字段类型
-	Nullable     bool               // 是否允许 NULL
-	IsPrimaryKey bool               // 是否主键
-	Comment      string             // 字段注释
-	Size         int                // 字符串长度或数值精度（0表示不限制）
-	Precision    int                // 小数位数（仅用于 decimal/numeric 类型）
 }
 
 // GetSpatialInfo 获取空间扩展信息（便捷方法）
@@ -63,7 +49,7 @@ func (t *TableInfo) Clone() *TableInfo {
 		return nil
 	}
 	cloned := *t
-	cloned.Fields = append([]FieldInfo(nil), t.Fields...)
+	cloned.Fields = append([]datatype.FieldInfo(nil), t.Fields...)
 	cloned.PrimaryKey = append([]string(nil), t.PrimaryKey...)
 	cloned.FormatInfo = cloneInterfaceMap(t.FormatInfo)
 	cloned.SpatialInfo = t.SpatialInfo.Clone()
@@ -97,7 +83,7 @@ func (t *TableInfo) FieldNames() []string {
 }
 
 // GetField 根据字段名查找字段定义
-func (t *TableInfo) GetField(name string) *FieldInfo {
+func (t *TableInfo) GetField(name string) *datatype.FieldInfo {
 	for i := range t.Fields {
 		if t.Fields[i].Name == name {
 			return &t.Fields[i]

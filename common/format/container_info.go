@@ -1,6 +1,10 @@
 package format
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/addp/common/datatype"
+)
 
 // ContainerInfo 描述容器格式内部对象的结构化元数据。
 //
@@ -25,7 +29,7 @@ type ContainerChildInfo struct {
 	RowCount    *int64
 	ColumnCount *int
 	HasHeader   *bool
-	Fields      []FieldInfo
+	Fields      []datatype.FieldInfo
 	Refs        []ContainerChildRef
 	Properties  map[string]interface{}
 }

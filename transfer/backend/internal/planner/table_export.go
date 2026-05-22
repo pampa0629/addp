@@ -404,9 +404,9 @@ func tableInfoFromMetaAttributes(attrs map[string]interface{}) *format.TableInfo
 	return info
 }
 
-func tableFieldsFromAttributes(value interface{}) []format.FieldInfo {
+func tableFieldsFromAttributes(value interface{}) []datatype.FieldInfo {
 	items := interfaceSlice(value)
-	fields := make([]format.FieldInfo, 0, len(items))
+	fields := make([]datatype.FieldInfo, 0, len(items))
 	for _, item := range items {
 		attrs := rawMapAttribute(item)
 		name := strings.TrimSpace(commonJSON.InterfaceString(attrs["name"]))
@@ -417,14 +417,15 @@ func tableFieldsFromAttributes(value interface{}) []format.FieldInfo {
 		if fieldType == "" {
 			fieldType = datatype.FieldTypeUnknown
 		}
-		field := format.FieldInfo{
-			Name:         name,
-			Type:         fieldType,
-			Nullable:     fieldBoolAttribute(attrs, "nullable", "is_nullable"),
-			IsPrimaryKey: fieldBoolAttribute(attrs, "is_primary_key"),
-			Comment:      strings.TrimSpace(commonJSON.InterfaceString(attrs["comment"])),
-			Size:         int(commonJSON.InterfaceInt64(attrs["size"])),
-			Precision:    int(commonJSON.InterfaceInt64(attrs["precision"])),
+		field := datatype.FieldInfo{
+			Name:       name,
+			Type:       fieldType,
+			Nullable:   fieldBoolAttribute(attrs, "nullable", "is_nullable"),
+			PrimaryKey: fieldBoolAttribute(attrs, "is_primary_key"),
+			Comment:    strings.TrimSpace(commonJSON.InterfaceString(attrs["comment"])),
+			Size:       int(commonJSON.InterfaceInt64(attrs["size"])),
+			Precision:  int(commonJSON.InterfaceInt64(attrs["precision"])),
+			Scale:      int(commonJSON.InterfaceInt64(attrs["scale"])),
 		}
 		if datatype.IsSpatialFieldType(field.Type) {
 			field.Type = datatype.FieldTypeGeometry

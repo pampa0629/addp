@@ -308,14 +308,15 @@ func describeSQLiteTable(ctx context.Context, db *sql.DB, tableName string) (Tab
 }
 
 func sqliteTableInfoToFormatTable(table TableInfo) *format.TableInfo {
-	fields := make([]format.FieldInfo, 0, len(table.Columns))
+	fields := make([]datatype.FieldInfo, 0, len(table.Columns))
 	primaryKey := make([]string, 0)
 	for _, column := range table.Columns {
-		fields = append(fields, format.FieldInfo{
-			Name:         column.Name,
-			Type:         mapSQLiteTypeToFieldType(column.Type),
-			Nullable:     !column.NotNull,
-			IsPrimaryKey: column.PrimaryKey,
+		fields = append(fields, datatype.FieldInfo{
+			Name:       column.Name,
+			Type:       mapSQLiteTypeToFieldType(column.Type),
+			NativeType: column.Type,
+			Nullable:   !column.NotNull,
+			PrimaryKey: column.PrimaryKey,
 		})
 		if column.PrimaryKey {
 			primaryKey = append(primaryKey, column.Name)

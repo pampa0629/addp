@@ -172,7 +172,7 @@ func TestParquetPluginFieldSelectionMissingFieldPolicies(t *testing.T) {
 
 func TestParquetPluginOpenTableWriter(t *testing.T) {
 	plugin := NewPlugin()
-	schema := &format.TableInfo{Fields: []format.FieldInfo{
+	schema := &format.TableInfo{Fields: []datatype.FieldInfo{
 		{Name: "id", Type: datatype.FieldTypeBigInt},
 		{Name: "name", Type: datatype.FieldTypeString, Nullable: true},
 		{Name: "score", Type: datatype.FieldTypeDouble, Nullable: true},
@@ -212,7 +212,7 @@ func TestParquetPluginOpenTableWriter(t *testing.T) {
 
 func TestParquetPluginOpenTableWriterSerializesJSONLikeFields(t *testing.T) {
 	plugin := NewPlugin()
-	schema := &format.TableInfo{Fields: []format.FieldInfo{
+	schema := &format.TableInfo{Fields: []datatype.FieldInfo{
 		{Name: "id", Type: datatype.FieldTypeInt},
 		{Name: "payload", Type: datatype.FieldTypeJSON, Nullable: true},
 	}}

@@ -106,7 +106,7 @@ func enrichRefTableInfo(
 		return
 	}
 	if tableInfo != nil && tableInfo.Table != nil {
-		detected.Fields = format.FormatFieldInfos(tableInfo.Table.Fields)
+		detected.Fields = append([]datatype.FieldInfo(nil), tableInfo.Table.Fields...)
 	}
 	upsertRefTableInfo(detected, tableInfo)
 }
@@ -172,7 +172,7 @@ func EnrichKnownMultiTableItem(
 		return item, false, err
 	}
 	if tableInfo.Table != nil {
-		item.Fields = format.FormatFieldInfos(tableInfo.Table.Fields)
+		item.Fields = append([]datatype.FieldInfo(nil), tableInfo.Table.Fields...)
 	}
 	upsertRefTableInfo(item, tableInfo)
 	return item, true, nil

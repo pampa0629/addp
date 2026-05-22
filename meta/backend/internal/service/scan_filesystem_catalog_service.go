@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/addp/common/dataitem"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
@@ -394,7 +394,7 @@ func (s *FilesystemCatalogScanService) enrichSingleFileAttributes(
 	file plugin.FileEntry,
 	detected *metaitem.DetectedItem,
 	includeContentIndex bool,
-) (models.JSONMap, []format.FieldInfo, error) {
+) (models.JSONMap, []datatype.FieldInfo, error) {
 	if detected == nil {
 		detected = metaitem.InferSingleResourceItem(file)
 	}

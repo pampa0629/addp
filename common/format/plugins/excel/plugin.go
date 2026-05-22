@@ -339,8 +339,8 @@ func (p *Plugin) convertToContainerInfo(analysis *WorkbookAnalysis) *format.Cont
 	}
 }
 
-func excelSheetFields(sheet SheetSummary) []format.FieldInfo {
-	fields := make([]format.FieldInfo, 0, len(sheet.Headers))
+func excelSheetFields(sheet SheetSummary) []datatype.FieldInfo {
+	fields := make([]datatype.FieldInfo, 0, len(sheet.Headers))
 	for i, header := range sheet.Headers {
 		fieldType := datatype.FieldTypeString
 		originalType := ""
@@ -348,7 +348,7 @@ func excelSheetFields(sheet SheetSummary) []format.FieldInfo {
 			originalType = sheet.ColumnTypes[i]
 			fieldType = mapExcelTypeToFieldType(originalType)
 		}
-		fields = append(fields, format.FieldInfo{
+		fields = append(fields, datatype.FieldInfo{
 			Name:     header,
 			Type:     fieldType,
 			Nullable: true,

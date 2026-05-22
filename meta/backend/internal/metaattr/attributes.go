@@ -1,10 +1,9 @@
 package metaattr
 
 import (
-	"github.com/addp/common/datatype"
 	"strings"
 
-	"github.com/addp/common/format"
+	"github.com/addp/common/datatype"
 	"github.com/addp/meta/internal/models"
 )
 
@@ -105,8 +104,8 @@ func JSONMap(attrs map[string]interface{}) models.JSONMap {
 	return result
 }
 
-func FieldAttributesFromFormat(fields []format.FieldInfo) []map[string]interface{} {
-	return FieldAttributesFromDatatype(format.DatatypeFieldInfos(fields))
+func FieldAttributesFromFormat(fields []datatype.FieldInfo) []map[string]interface{} {
+	return FieldAttributesFromDatatype(fields)
 }
 
 func FieldAttributesFromDatatype(fields []datatype.FieldInfo) []map[string]interface{} {
@@ -122,6 +121,15 @@ func FieldAttributesFromDatatype(fields []datatype.FieldInfo) []map[string]inter
 		}
 		if f.NativeType != "" {
 			field["native_type"] = f.NativeType
+		}
+		if f.Size > 0 {
+			field["size"] = f.Size
+		}
+		if f.Precision > 0 {
+			field["precision"] = f.Precision
+		}
+		if f.Scale > 0 {
+			field["scale"] = f.Scale
 		}
 		if datatype.IsSpatialFieldType(f.Type) {
 			field["is_spatial"] = true

@@ -18,7 +18,7 @@ func TestTableInfoCloneDeepCopiesMutableFields(t *testing.T) {
 		SizeBytes: &sizeBytes,
 		CreatedAt: &createdAt,
 		UpdatedAt: &updatedAt,
-		Fields: []FieldInfo{
+		Fields: []datatype.FieldInfo{
 			{Name: "id", Type: datatype.FieldTypeInt},
 			{Name: "geom", Type: datatype.FieldTypeGeometry},
 		},

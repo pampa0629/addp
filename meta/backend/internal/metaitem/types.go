@@ -4,13 +4,13 @@ import (
 	"context"
 
 	"github.com/addp/common/dataitem"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/common/format"
 )
 
 // CompositeItemInfo 是 Meta resolver 提取出的 data item 元信息。
 type CompositeItemInfo struct {
-	Fields     []format.FieldInfo
+	Fields     []datatype.FieldInfo
 	Attributes map[string]interface{}
 	Layout     dataitem.Layout
 	DataType   dataitem.DataType
@@ -34,7 +34,7 @@ type DetectionResult struct {
 type DetectedItem struct {
 	dataitem.ResolvedItem
 	PhysicalPath string
-	Fields       []format.FieldInfo
+	Fields       []datatype.FieldInfo
 	Attributes   map[string]interface{}
 }
 

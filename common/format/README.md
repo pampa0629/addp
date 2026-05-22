@@ -440,7 +440,7 @@ type TableInfo struct {
     SizeBytes  *int64
     CreatedAt  *time.Time
     UpdatedAt  *time.Time
-    Fields     []FieldInfo
+    Fields     []datatype.FieldInfo
     PrimaryKey []string
 }
 ```
@@ -457,7 +457,7 @@ Provider 对外返回 `datatype.TableDescribeResult`。其中 `Table` 只表达 
 
 ## 字段类型与类型映射
 
-字段结构统一承载在 `TableInfo.Fields` / `FieldInfo` 中；根包不再保留并行的 `Schema` / `Field` 模型。`FieldType` 归属 `common/datatype`，`format.FieldInfo.Type` 直接使用 `datatype.FieldType`。
+字段结构统一承载在 `TableInfo.Fields` / `datatype.FieldInfo` 中；根包不再保留并行的 `Schema` / `Field` 模型，也不再保留 `format.FieldInfo`。`FieldType` 归属 `common/datatype`，字段名、类型、主键、精度、默认值等通用字段事实以 `datatype.FieldInfo` 为唯一事实源。
 
 `TypeMapper` 只应在对应 format / engine plugin 内部使用，负责原生类型和 `datatype.FieldType` 互转：
 

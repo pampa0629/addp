@@ -291,7 +291,7 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 
 	result := &datatype.TableDescribeResult{
 		Table: &datatype.TableInfo{
-			Fields:   format.DatatypeFieldInfos(fields),
+			Fields:   fields,
 			RowCount: &rowCount,
 		},
 	}
@@ -496,7 +496,7 @@ func (r *tableReader) closeCurrentRows() error {
 
 type tableWriter struct {
 	writer *parquetgo.GenericWriter[any]
-	fields []format.FieldInfo
+	fields []datatype.FieldInfo
 	closed bool
 }
 
@@ -534,11 +534,11 @@ func (w *tableWriter) Close(ctx context.Context) error {
 	return nil
 }
 
-func parquetWriterFields(schema *format.TableInfo) []format.FieldInfo {
+func parquetWriterFields(schema *format.TableInfo) []datatype.FieldInfo {
 	if schema == nil {
 		return nil
 	}
-	fields := make([]format.FieldInfo, 0, len(schema.Fields))
+	fields := make([]datatype.FieldInfo, 0, len(schema.Fields))
 	seen := map[string]struct{}{}
 	for _, field := range schema.Fields {
 		name := strings.TrimSpace(field.Name)
@@ -555,7 +555,7 @@ func parquetWriterFields(schema *format.TableInfo) []format.FieldInfo {
 	return fields
 }
 
-func parquetNodeForField(field format.FieldInfo) parquetgo.Node {
+func parquetNodeForField(field datatype.FieldInfo) parquetgo.Node {
 	var node parquetgo.Node
 	switch field.Type {
 	case datatype.FieldTypeBool:
@@ -589,7 +589,7 @@ func parquetNodeForField(field format.FieldInfo) parquetgo.Node {
 	return node
 }
 
-func parquetWriterRow(row map[string]interface{}, fields []format.FieldInfo) map[string]any {
+func parquetWriterRow(row map[string]interface{}, fields []datatype.FieldInfo) map[string]any {
 	out := make(map[string]any, len(fields))
 	for _, field := range fields {
 		out[field.Name] = parquetWriterValue(row[field.Name], field.Type)
@@ -791,7 +791,7 @@ func (p *Plugin) DescribeTableScope(ctx context.Context, reader contentio.Reader
 			baseInfo := &datatype.TableDescribeResult{
 				Table: &datatype.TableInfo{
 					Name:       contentio.BaseName(scope),
-					Fields:     appendDatatypePartitionFields(info.Fields, partitionFields),
+					Fields:     appendPartitionFields(info.Fields, partitionFields),
 					PrimaryKey: append([]string(nil), info.PrimaryKey...),
 				},
 			}
@@ -799,7 +799,7 @@ func (p *Plugin) DescribeTableScope(ctx context.Context, reader contentio.Reader
 			if err != nil {
 				return nil, err
 			}
-		} else if !sameDatatypeFieldSchema(dataFields, info.Fields) {
+		} else if !sameFieldSchema(dataFields, info.Fields) {
 			return nil, fmt.Errorf("parquet scope %s has incompatible schema in %s", scope.Path, ref.Path)
 		}
 		if info.RowCount != nil {
@@ -906,11 +906,11 @@ type scopeTableReader struct {
 	plugin            *Plugin
 	reader            contentio.Reader
 	refs              []scopedParquetRef
-	partitionFields   []format.FieldInfo
+	partitionFields   []datatype.FieldInfo
 	parseOptions      *format.ParseOptions
 	fieldSelection    *format.FieldSelectionOptions
 	schema            *format.TableInfo
-	dataFields        []format.FieldInfo
+	dataFields        []datatype.FieldInfo
 	index             int
 	currentInput      io.Closer
 	current           format.TableReader
@@ -990,7 +990,7 @@ func (r *scopeTableReader) openNext(ctx context.Context) error {
 		schema := tableReader.Schema()
 		if r.schema == nil {
 			if schema != nil {
-				r.dataFields = append([]format.FieldInfo(nil), schema.Fields...)
+				r.dataFields = append([]datatype.FieldInfo(nil), schema.Fields...)
 			}
 			r.schema, err = format.ApplyFieldSelectionToTableInfo(copyTableInfoWithPartitionFields(schema, r.partitionFields), r.fieldSelection)
 			if err != nil {
@@ -1119,16 +1119,16 @@ func parseOptionsWithoutFieldSelection(options *format.ParseOptions) *format.Par
 	return &copied
 }
 
-func partitionFieldsFromScopedRefs(refs []scopedParquetRef) []format.FieldInfo {
+func partitionFieldsFromScopedRefs(refs []scopedParquetRef) []datatype.FieldInfo {
 	seen := map[string]bool{}
-	fields := make([]format.FieldInfo, 0)
+	fields := make([]datatype.FieldInfo, 0)
 	for _, ref := range refs {
 		for _, partition := range ref.Partitions {
 			if seen[partition.Name] {
 				continue
 			}
 			seen[partition.Name] = true
-			fields = append(fields, format.FieldInfo{
+			fields = append(fields, datatype.FieldInfo{
 				Name:     partition.Name,
 				Type:     datatype.FieldTypeString,
 				Nullable: false,
@@ -1138,8 +1138,8 @@ func partitionFieldsFromScopedRefs(refs []scopedParquetRef) []format.FieldInfo {
 	return fields
 }
 
-func appendPartitionFields(fields []format.FieldInfo, partitions []format.FieldInfo) []format.FieldInfo {
-	result := append([]format.FieldInfo(nil), fields...)
+func appendPartitionFields(fields []datatype.FieldInfo, partitions []datatype.FieldInfo) []datatype.FieldInfo {
+	result := append([]datatype.FieldInfo(nil), fields...)
 	if len(partitions) == 0 {
 		return result
 	}
@@ -1156,25 +1156,7 @@ func appendPartitionFields(fields []format.FieldInfo, partitions []format.FieldI
 	return result
 }
 
-func appendDatatypePartitionFields(fields []datatype.FieldInfo, partitions []format.FieldInfo) []datatype.FieldInfo {
-	result := append([]datatype.FieldInfo(nil), fields...)
-	if len(partitions) == 0 {
-		return result
-	}
-	existing := map[string]bool{}
-	for _, field := range result {
-		existing[field.Name] = true
-	}
-	for _, partition := range format.DatatypeFieldInfos(partitions) {
-		if existing[partition.Name] {
-			continue
-		}
-		result = append(result, partition)
-	}
-	return result
-}
-
-func fieldNames(fields []format.FieldInfo) []string {
+func fieldNames(fields []datatype.FieldInfo) []string {
 	names := make([]string, 0, len(fields))
 	for _, field := range fields {
 		names = append(names, field.Name)
@@ -1199,7 +1181,7 @@ func withPartitionValues(rows []map[string]interface{}, partitions []partitionVa
 	return result
 }
 
-func copyTableInfoWithPartitionFields(info *format.TableInfo, partitions []format.FieldInfo) *format.TableInfo {
+func copyTableInfoWithPartitionFields(info *format.TableInfo, partitions []datatype.FieldInfo) *format.TableInfo {
 	if info == nil {
 		return nil
 	}
@@ -1220,21 +1202,7 @@ func contextErr(ctx context.Context) error {
 	}
 }
 
-func sameFieldSchema(left, right []format.FieldInfo) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	for i := range left {
-		if left[i].Name != right[i].Name ||
-			left[i].Type != right[i].Type ||
-			left[i].Nullable != right[i].Nullable {
-			return false
-		}
-	}
-	return true
-}
-
-func sameDatatypeFieldSchema(left, right []datatype.FieldInfo) bool {
+func sameFieldSchema(left, right []datatype.FieldInfo) bool {
 	if len(left) != len(right) {
 		return false
 	}
@@ -1276,16 +1244,16 @@ func valueToInterface(v parquetgo.Value) interface{} {
 }
 
 // extractFields 从 Parquet Schema 提取 FieldInfo 列表
-func extractFields(schema *parquetgo.Schema) []format.FieldInfo {
+func extractFields(schema *parquetgo.Schema) []datatype.FieldInfo {
 	if schema == nil {
 		return nil
 	}
 
 	fields := schema.Fields()
-	result := make([]format.FieldInfo, 0, len(fields))
+	result := make([]datatype.FieldInfo, 0, len(fields))
 
 	for _, f := range fields {
-		fieldInfo := format.FieldInfo{
+		fieldInfo := datatype.FieldInfo{
 			Name:     f.Name(),
 			Nullable: f.Optional(),
 			Type:     mapParquetType(f),

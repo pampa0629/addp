@@ -11,11 +11,11 @@ func ApplyFieldSelectionToTableInfo(info *TableInfo, selection *FieldSelectionOp
 		return info, nil
 	}
 	copied := info.Clone()
-	fieldByName := make(map[string]FieldInfo, len(info.Fields))
+	fieldByName := make(map[string]datatype.FieldInfo, len(info.Fields))
 	for _, field := range info.Fields {
 		fieldByName[field.Name] = field
 	}
-	fields := make([]FieldInfo, 0, len(selection.Include))
+	fields := make([]datatype.FieldInfo, 0, len(selection.Include))
 	seen := map[string]bool{}
 	for _, name := range selection.Include {
 		if name == "" || seen[name] {

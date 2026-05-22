@@ -1,5 +1,7 @@
 package format
 
+import "github.com/addp/common/datatype"
+
 // GeometryEncoding 描述表格行值中 geometry 字段的编码形式。
 type GeometryEncoding string
 
@@ -51,7 +53,7 @@ type FieldSelectionOptions struct {
 // input 必须从某个数据行边界开始，InputStartsAtRow 表示该局部流第一条
 // 数据行的全局行号，Fields 提供列定义，格式 plugin 不再从 input 读取表头。
 type TableSampleOptions struct {
-	Fields            []FieldInfo
+	Fields            []datatype.FieldInfo
 	InputStartsAtRow  int64
 	InputHasHeader    bool
 	InputIsPositioned bool

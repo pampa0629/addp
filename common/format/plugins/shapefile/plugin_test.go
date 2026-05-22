@@ -55,7 +55,7 @@ func TestOpenMultiTableWriterWritesReadableShapefile(t *testing.T) {
 	refs := format.SameBasenameRelatedRefs(target.Path, RelatedRefSpecs())
 	output := newMemoryRefStore()
 	schema := &format.TableInfo{
-		Fields: []format.FieldInfo{
+		Fields: []datatype.FieldInfo{
 			{Name: "id", Type: datatype.FieldTypeInt},
 			{Name: "name", Type: datatype.FieldTypeString, Size: 32},
 			{Name: "geom", Type: datatype.FieldTypeGeometry},
@@ -101,7 +101,7 @@ func TestOpenMultiTableWriterWritesReadableShapefile(t *testing.T) {
 func TestOpenMultiTableWriterRequiresRefs(t *testing.T) {
 	plugin := NewPlugin(nil)
 	schema := &format.TableInfo{
-		Fields: []format.FieldInfo{
+		Fields: []datatype.FieldInfo{
 			{Name: "geom", Type: datatype.FieldTypeGeometry},
 		},
 		SpatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", "Point", 0, 0),
@@ -118,7 +118,7 @@ func TestOpenMultiTableWriterRequiresPrimaryRef(t *testing.T) {
 		format.NewRelatedRef(contentio.NewRef("exports/cities"+extDBF, roleAttributes), true, false),
 	}
 	schema := &format.TableInfo{
-		Fields: []format.FieldInfo{
+		Fields: []datatype.FieldInfo{
 			{Name: "geom", Type: datatype.FieldTypeGeometry},
 		},
 		SpatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", "Point", 0, 0),

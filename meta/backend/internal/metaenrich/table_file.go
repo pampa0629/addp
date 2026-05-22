@@ -347,15 +347,15 @@ func tableFileSize(files []plugin.FileEntry) int64 {
 	return totalSize
 }
 
-func tableFileFieldAttributes(fields []format.FieldInfo) []map[string]interface{} {
+func tableFileFieldAttributes(fields []datatype.FieldInfo) []map[string]interface{} {
 	return metaattr.FieldAttributesFromFormat(fields)
 }
 
-func tableFieldsFromDescribeResult(tableInfo *datatype.TableDescribeResult) []format.FieldInfo {
+func tableFieldsFromDescribeResult(tableInfo *datatype.TableDescribeResult) []datatype.FieldInfo {
 	if tableInfo == nil || tableInfo.Table == nil {
 		return nil
 	}
-	return format.FormatFieldInfos(tableInfo.Table.Fields)
+	return append([]datatype.FieldInfo(nil), tableInfo.Table.Fields...)
 }
 
 func tableFileAttributes(formatName string, mode string, fieldsData []map[string]interface{}, files []plugin.FileEntry, dirPath string, totalSize int64, tableInfo *datatype.TableDescribeResult, includeContentIndex bool) map[string]interface{} {

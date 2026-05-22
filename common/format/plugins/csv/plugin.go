@@ -335,13 +335,13 @@ func (p *Plugin) OpenTableReader(ctx context.Context, input io.Reader, options *
 	if err != nil {
 		return nil, err
 	}
-	fields := make([]format.FieldInfo, 0, len(headers))
+	fields := make([]datatype.FieldInfo, 0, len(headers))
 	for _, header := range headers {
 		name := strings.TrimSpace(header)
 		if name == "" {
 			continue
 		}
-		fields = append(fields, format.FieldInfo{
+		fields = append(fields, datatype.FieldInfo{
 			Name:     name,
 			Type:     datatype.FieldTypeString,
 			Nullable: true,
@@ -593,7 +593,7 @@ func (p *Plugin) recordSparseRowAnchor(index *datatype.ContentIndex, nextRow int
 	})
 }
 
-func fieldNames(fields []format.FieldInfo) []string {
+func fieldNames(fields []datatype.FieldInfo) []string {
 	names := make([]string, 0, len(fields))
 	for _, field := range fields {
 		name := strings.TrimSpace(field.Name)

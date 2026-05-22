@@ -70,7 +70,7 @@ func TestTableTransferExecutorReadsShapefileRefs(t *testing.T) {
 	contentWriter := contentadapter.NewWriter(source, nil, target, engineplugin.WriteOptions{Overwrite: true})
 	refs := format.SameBasenameRelatedRefs(target.StringPath(), shapefilePlugin.RelatedRefSpecs())
 	tableWriter, err := shapefilePlugin.OpenMultiTableWriter(context.Background(), contentWriter, refs, &format.TableInfo{
-		Fields: []format.FieldInfo{
+		Fields: []datatype.FieldInfo{
 			{Name: "id", Type: datatype.FieldTypeInt},
 			{Name: "name", Type: datatype.FieldTypeString, Size: 32},
 			{Name: "geom", Type: datatype.FieldTypeGeometry},
@@ -123,7 +123,7 @@ func TestTableTransferExecutorUsesPlannedSourceRelatedRefs(t *testing.T) {
 	sourceWriter := contentadapter.NewWriter(source, nil, actualSourcePath, engineplugin.WriteOptions{Overwrite: true})
 	sourceRefs := format.SameBasenameRelatedRefs(actualSourcePath.StringPath(), shapefilePlugin.RelatedRefSpecs())
 	tableWriter, err := shapefilePlugin.OpenMultiTableWriter(context.Background(), sourceWriter, sourceRefs, &format.TableInfo{
-		Fields: []format.FieldInfo{
+		Fields: []datatype.FieldInfo{
 			{Name: "id", Type: datatype.FieldTypeInt},
 			{Name: "name", Type: datatype.FieldTypeString, Size: 32},
 			{Name: "geom", Type: datatype.FieldTypeGeometry},
@@ -221,7 +221,7 @@ func TestTableTransferExecutorReadsParquetWholeScopeSource(t *testing.T) {
 			Path:   engineplugin.FileDirectoryPath(7, "datasets/orders"),
 			Format: format.FormatParquet,
 			Layout: format.FormatLayoutWhole,
-			Schema: &format.TableInfo{Fields: []format.FieldInfo{
+			Schema: &format.TableInfo{Fields: []datatype.FieldInfo{
 				{Name: "id", Type: datatype.FieldTypeInt},
 				{Name: "name", Type: datatype.FieldTypeString},
 			}},
@@ -250,7 +250,7 @@ func writeParquetTestFile(t *testing.T, storage *fakeContentWriter, path enginep
 	if err != nil {
 		t.Fatalf("Create parquet content failed: %v", err)
 	}
-	tableWriter, err := plugin.OpenTableWriter(context.Background(), output, &format.TableInfo{Fields: []format.FieldInfo{
+	tableWriter, err := plugin.OpenTableWriter(context.Background(), output, &format.TableInfo{Fields: []datatype.FieldInfo{
 		{Name: "id", Type: datatype.FieldTypeInt},
 		{Name: "name", Type: datatype.FieldTypeString},
 	}}, nil)
@@ -278,7 +278,7 @@ func TestTableTransferExecutorCopiesShapefileRefsPreservingSpatialInfo(t *testin
 	sourceWriter := contentadapter.NewWriter(source, nil, sourcePath, engineplugin.WriteOptions{Overwrite: true})
 	sourceRefs := format.SameBasenameRelatedRefs(sourcePath.StringPath(), shapefilePlugin.RelatedRefSpecs())
 	tableWriter, err := shapefilePlugin.OpenMultiTableWriter(context.Background(), sourceWriter, sourceRefs, &format.TableInfo{
-		Fields: []format.FieldInfo{
+		Fields: []datatype.FieldInfo{
 			{Name: "id", Type: datatype.FieldTypeInt},
 			{Name: "name", Type: datatype.FieldTypeString, Size: 32},
 			{Name: "geometry", Type: datatype.FieldTypeGeometry},
@@ -361,7 +361,7 @@ func TestTableTransferExecutorPrefersMultiTableProvider(t *testing.T) {
 	contentWriter := contentadapter.NewWriter(source, nil, target, engineplugin.WriteOptions{Overwrite: true})
 	refs := format.SameBasenameRelatedRefs(target.StringPath(), shapefilePlugin.RelatedRefSpecs())
 	tableWriter, err := shapefilePlugin.OpenMultiTableWriter(context.Background(), contentWriter, refs, &format.TableInfo{
-		Fields: []format.FieldInfo{
+		Fields: []datatype.FieldInfo{
 			{Name: "id", Type: datatype.FieldTypeInt},
 			{Name: "name", Type: datatype.FieldTypeString, Size: 32},
 			{Name: "geom", Type: datatype.FieldTypeGeometry},

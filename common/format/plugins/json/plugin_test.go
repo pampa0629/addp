@@ -300,7 +300,7 @@ func TestJSONPluginOpenTableReaderLines(t *testing.T) {
 
 func TestJSONPluginOpenTableWriterArray(t *testing.T) {
 	plugin := NewPlugin(nil)
-	schema := &format.TableInfo{Fields: []format.FieldInfo{
+	schema := &format.TableInfo{Fields: []datatype.FieldInfo{
 		{Name: "id", Type: datatype.FieldTypeInt},
 		{Name: "name", Type: datatype.FieldTypeString},
 	}}
@@ -374,7 +374,7 @@ func TestJSONPluginOpenTableWriterGeoJSON(t *testing.T) {
 		"geometry_field":          "geom",
 	}
 	schema := &format.TableInfo{
-		Fields: []format.FieldInfo{
+		Fields: []datatype.FieldInfo{
 			{Name: "id", Type: datatype.FieldTypeInt},
 			{Name: "name", Type: datatype.FieldTypeString},
 			{Name: "geom", Type: datatype.FieldTypeGeometry},

@@ -475,7 +475,7 @@ func TestBuildTableTransferPlanConsumesMetaSingleSourceAttributes(t *testing.T) 
 	if result.Plan.Source.Schema == nil || len(result.Plan.Source.Schema.Fields) != 2 {
 		t.Fatalf("source schema = %#v, want fields from Meta attributes", result.Plan.Source.Schema)
 	}
-	if result.Plan.Source.Schema.Fields[0].Type != datatype.FieldTypeBigInt || !result.Plan.Source.Schema.Fields[0].IsPrimaryKey {
+	if result.Plan.Source.Schema.Fields[0].Type != datatype.FieldTypeBigInt || !result.Plan.Source.Schema.Fields[0].PrimaryKey {
 		t.Fatalf("first source field = %#v, want standard bigint primary key field", result.Plan.Source.Schema.Fields[0])
 	}
 }

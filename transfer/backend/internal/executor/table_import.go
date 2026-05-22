@@ -25,13 +25,7 @@ func tableInfoFields(info *format.TableInfo) []datatype.FieldInfo {
 		if field.Name == "" {
 			continue
 		}
-		fields = append(fields, datatype.FieldInfo{
-			Name:       field.Name,
-			Type:       field.Type,
-			Nullable:   field.Nullable,
-			PrimaryKey: field.IsPrimaryKey,
-			Comment:    field.Comment,
-		})
+		fields = append(fields, field)
 	}
 	return fields
 }

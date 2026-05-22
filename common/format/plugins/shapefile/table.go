@@ -161,23 +161,28 @@ func buildShapefileTableInfo(input shapefileTableInfoInput) *format.TableInfo {
 	if input.GeometryField == "" {
 		input.GeometryField = "geometry"
 	}
-	fields := make([]format.FieldInfo, 0, len(input.DBFHeader.Fields)+1)
+	fields := make([]datatype.FieldInfo, 0, len(input.DBFHeader.Fields)+1)
 	geomType := determineShapefileGeometryType(input.SHPHeader.ShapeType)
-	fields = append(fields, format.FieldInfo{
-		Name:         input.GeometryField,
-		Type:         datatype.FieldTypeGeometry,
-		Nullable:     false,
-		IsPrimaryKey: false,
-		Comment:      "Shapefile geometry field",
+	fields = append(fields, datatype.FieldInfo{
+		Name:     input.GeometryField,
+		Type:     datatype.FieldTypeGeometry,
+		Nullable: false,
+		Comment:  "Shapefile geometry field",
 	})
 	for _, field := range input.DBFHeader.Fields {
-		fields = append(fields, format.FieldInfo{
-			Name:      field.Name,
-			Type:      dbfFieldToCommonType(field),
-			Nullable:  true,
-			Size:      field.Size,
-			Precision: field.Precision,
-		})
+		fieldType := dbfFieldToCommonType(field)
+		fieldInfo := datatype.FieldInfo{
+			Name:     field.Name,
+			Type:     fieldType,
+			Nullable: true,
+		}
+		if datatype.IsNumericFieldType(fieldType) {
+			fieldInfo.Precision = field.Size
+			fieldInfo.Scale = field.Precision
+		} else {
+			fieldInfo.Size = field.Size
+		}
+		fields = append(fields, fieldInfo)
 	}
 
 	rowCount := int64(input.DBFHeader.RecordCount)
