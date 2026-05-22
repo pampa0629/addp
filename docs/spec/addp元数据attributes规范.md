@@ -77,12 +77,25 @@ attributes 分区统一采用以下概念：
 | `content_index` | format plugin / reader、Meta item normalizer | 用于按内容窗口读取的访问索引，例如 table 稀疏行号到字节偏移索引 |
 | `capabilities` | format provider、画像任务、Meta item normalizer | spatial、temporal、statistics、extraction、semantic、partitioning、indexing 等横切能力 |
 
+`common/datatype` 是 type info、field type、空间横切事实和内容索引结构的代码事实源；attributes 是这些事实的落库模型。Meta normalizer 负责将 provider 返回的 `datatype.*` 结构写入对应 attributes 分区。
+
+| 输入结构 | attributes 落点 |
+|---|---|
+| `datatype.TableInfo` | `attributes.type_info.table` |
+| `datatype.DocumentInfo` | `attributes.type_info.document` |
+| `datatype.MediaInfo` | `attributes.type_info.media` |
+| `datatype.ContainerInfo` | `attributes.type_info.container` |
+| `datatype.GraphInfo` | `attributes.type_info.graph` |
+| `datatype.FileInfo` | `attributes.type_info.file` |
+| `datatype.SpatialInfo` | `attributes.capabilities.spatial` |
+| `datatype.ContentIndex` | `attributes.content_index.<data_type>` |
+
 ## 写入规则
 
 1. `meta` 在落库前通过统一 normalizer 生成 attributes，并对平台核心字段拥有最终裁决权。
 2. 引擎抽象层只提供资源位置、catalog 和基础存储属性，不直接决定 `data_type` 或 `layout`。
 3. data item 的 content 内容布局、识别逻辑、claims、exclusive、`refs`、`meta_item.full_name` 决策见 [ADDP 数据项探测器规范](addp数据项探测器规范.md)；本规范只定义这些结果如何进入 `attributes.item` 和相关分区。
-4. `common/format` 只提供文件格式枚举、格式识别、类型信息 / 格式信息模型、format plugin、info provider、content reader 和 analyzer 等通用能力，不直接决定 meta item 如何归并，也不绕过 Meta normalizer 写最终 attributes。
+4. `common/format` 只提供文件格式枚举、格式识别、format plugin、info provider、content reader、reader / writer 和 analyzer 等格式能力，不直接决定 meta item 如何归并，也不绕过 Meta normalizer 写最终 attributes。通用 data type / type info / field type 结构归属 `common/datatype`。
 5. `common/jsonmap` 只作为 decoded JSON map 的通用读写 helper，不承载 attributes 规范语义；不得再使用 `common/attributes` 作为 attributes 规范包占位。
 6. 第三方插件不得直接写入平台保留字段，只能返回候选识别信息和命名空间扩展。
 7. 容器内部 table、sheet、layer、文件默认写入 `type_info.container.children`；未形成规范前不得自动展开为独立 meta item。
@@ -91,7 +104,8 @@ attributes 分区统一采用以下概念：
 10. 对 `layout=multi` 的 item，primary content 应直接作为 `meta_item.full_name`，related refs 写入 `item.refs`。
 11. 对 `layout=whole` 的 item，whole scope 根范围应直接作为 `meta_item.full_name`，并在 `item.scope_exclusive=true`、`item.claim_policy=whole_scope` 中表达独占语义。
 12. `content_index` 是读取优化信息，不是 data type info，也不是 format 私有信息。索引必须能通过源对象大小、etag、mtime 或 fingerprint 等事实判断是否仍适用于当前资源；资源变化后应重建，不得继续复用旧索引。对于 multi-ref 格式，`content_index.source` 允许记录 ref 级事实（如 `refs`、`ref_count`、`index_format`），用于重建、失效判断和调试，但不应把格式私有语义写成新的顶层分区。
-13. attributes 写入受 `scan_depth` 约束。`basic` 只写不读取 file/object 内容即可获得的身份、存储和轻量 item 事实；字段、行数、容器 children、`content_index`、需要读取内容的 `format_info` 和横切能力应由 `deep` 写入。
+13. `SpatialInfo`、`ContentIndex`、`format_info` 不是 `TableInfo` 的组成部分。provider 如果一次解析同时得到这些事实，应作为同级结果交给 Meta normalizer，分别写入 `capabilities.spatial`、`content_index.<data_type>` 和 `format_info.<format>`。
+14. attributes 写入受 `scan_depth` 约束。`basic` 只写不读取 file/object 内容即可获得的身份、存储和轻量 item 事实；字段、行数、容器 children、`content_index`、需要读取内容的 `format_info` 和横切能力应由 `deep` 写入。
 
 ## content_index 结构约定
 
@@ -148,7 +162,7 @@ attributes 分区统一采用以下概念：
 | `graph` | `type_info.graph` | labels、relationships、properties、node_count、edge_count |
 | `unknown` | `type_info.unknown` | detection_reason、fallback_action |
 
-表字段统一放在 `type_info.table.fields`，不得写入 attributes 顶层。字段不是 data item，字段类型只能使用 `type` 表达 ADDP 标准字段类型，不得在字段对象内写入 `data_type`。原生字段类型如需展示，只能作为只读诊断信息写入 `native_type`，不得参与执行决策；哪个字段是空间字段、SRID、extent 等属于 `capabilities.spatial`。
+表字段统一放在 `type_info.table.fields`，不得写入 attributes 顶层。字段不是 data item，字段类型只能使用 `type` 表达 ADDP 标准字段类型，不得在字段对象内写入 `data_type`。原生字段类型如需展示，只能作为只读诊断信息写入 `native_type`，不得参与执行决策；哪个字段是空间字段、SRID、extent 等属于 `capabilities.spatial`，不得塞回 `type_info.table`。
 
 ## format_info 命名空间
 

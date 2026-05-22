@@ -13,6 +13,7 @@
 ```text
 判断 data item 内容布局
   -> 判断 data type 和 format
+  -> 复用或补充 common/datatype 通用模型
   -> 实现 FormatPlugin
   -> 实现需要的 info provider / content reader
   -> 注册 descriptor 和实现
@@ -34,6 +35,8 @@
 | `unknown` | 暂不能归类 | 只保留 storage、item 和必要 raw / range content 能力 |
 
 只有以上数据类型无法表达用户理解方式、内容读取方式和治理方式时，才新增 data type。新增 data type 必须先修订概念文档和能力规范。
+
+通用 data type、type info、field type、空间信息和内容索引的事实源是 `common/datatype`。新增格式或 provider 不得在格式包内新增平行的 `FieldType`、`TableInfo`、`DocumentInfo`、`MediaInfo`、`ContainerInfo` 等公共模型；确有新增通用字段时，先修订 `common/datatype` 设计和相关规范。
 
 ## 2. 判断内容布局
 
@@ -116,9 +119,21 @@ func (p *Plugin) Capabilities() format.FormatCapability
 | 媒体元信息 | `MediaInfoProvider` | Meta、Manager |
 | 容器内部对象信息 | `ContainerInfoProvider` | Meta、Manager |
 | 容器 child 解析 | `ContainerChildResolver` | Manager、Transfer 后续 child 读取 |
-| 空间横切事实 | 在 table/media info 中提供候选事实，由 Meta 写入 `capabilities.spatial` | Meta、Manager、Search |
+| 空间横切事实 | 通过 describe result 或等价结构提供 `datatype.SpatialInfo`，由 Meta 写入 `capabilities.spatial` | Meta、Manager、Search |
+| 内容访问索引 | 通过 describe result 或等价结构提供 `datatype.ContentIndex`，由 Meta 写入 `content_index.<data_type>` | Meta、Manager、Transfer |
 
 新增实现必须直接使用拆分后的接口。multi / scope 的 info、sample、连续全量读取必须分别使用对应接口；后续如果 scope 表格进入 Transfer 主链路，再新增明确的 `ScopeTableReaderProvider`，不得引入组合 provider。
+
+Info provider 一次解析可能同时得到多类事实。以 table 为例：
+
+| 解析结果 | 写入位置 |
+|---|---|
+| `datatype.TableInfo` | `attributes.type_info.table` |
+| `datatype.SpatialInfo` | `attributes.capabilities.spatial` |
+| `datatype.ContentIndex` | `attributes.content_index.table` |
+| `format_info.<format>` 候选事实 | `attributes.format_info.<format>` |
+
+这些事实应作为同级结果交给 Meta normalizer，不得为了调用方便把 `SpatialInfo`、`ContentIndex` 或 `format_info` 塞进 `TableInfo`。
 
 ## 5. 注册方式
 
@@ -190,7 +205,7 @@ FormatPlugin 不生成最终 data item，但新增格式不必然修改 Meta。�
 
 只有突破现有 data item 识别或 attributes 标准映射能力时，才补 Meta detector / normalizer。即便需要补 Meta，也只补通用规则或明确的格式规则，不在 Manager 中按后缀硬编码新格式。
 
-同一事实只能写一个位置。内容样本、原始内容、前端渲染器、Manager DTO 不得写入 `type_info` 或 `format_info`。
+同一事实只能写一个位置。内容样本、原始内容、前端渲染器、Manager DTO 不得写入 `type_info` 或 `format_info`。`SpatialInfo` 不写入 `type_info.table`；`ContentIndex` 不写入 `type_info.table` 或 `format_info`。
 
 ## 7. 验证清单
 

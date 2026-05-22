@@ -1,6 +1,6 @@
 # ADDP 数据类型与格式能力规范
 
-本文定义 `common/format` 中的 FormatPlugin、format capability、info provider 与 content reader 边界。它只约束格式和数据类型能力，不定义 Meta 的 item 归并实现。
+本文定义 `common/format` 中的 FormatPlugin、format capability、info provider 与 content reader 边界，并规定它们如何消费 `common/datatype` 中的通用 data type / type info 模型。它只约束格式和数据类型能力，不定义 Meta 的 item 归并实现。
 
 概念边界见 [ADDP 数据类型和格式体系图](../concepts/addp数据类型和格式体系图.md)，资源链条和模块边界见 [ADDP 数据项体系图](../concepts/addp数据项体系图.md)，资源读取边界见 [ADDP 内容 I/O 抽象规范](addp内容IO抽象规范.md)。
 
@@ -10,7 +10,7 @@
 |---|---|
 | format capability 表达格式实现能做什么 | data item 如何归并和 claims 如何合并 |
 | FormatPlugin 如何声明格式身份、能力和布局 | `meta_item.name/full_name/item_type` 来源规则 |
-| info provider 如何提供 data type info 和 format info | `meta_item.attributes` 的完整 schema |
+| info provider 如何提供 `common/datatype` 定义的 data type info、横切事实和 format info | `meta_item.attributes` 的完整 schema |
 | content reader 如何提供内容数据 | contentio Reader / Writer 与 `[]format.RelatedRef` 的具体接口 |
 
 item 归并见 [ADDP 数据项探测器规范](addp数据项探测器规范.md)，attributes 写入见 [ADDP 元数据 attributes 规范](addp元数据attributes规范.md)。
@@ -19,15 +19,36 @@ item 归并见 [ADDP 数据项探测器规范](addp数据项探测器规范.md)�
 
 `format capability` 与 `engine capability` 术语对齐，都是插件或实现对平台声明“我能做什么”。它不同于 `meta_item.attributes.capabilities`；后者是扫描后的 item 事实结果。
 
-`common/format` 只回答格式和数据类型能力问题：
+`common/format` 只回答格式和数据类型能力实现问题：
 
 - 这个资源像什么格式。
 - 这个格式如何组织资源。
 - 这个格式能提取什么结构事实。
 - 这个格式能否通过 content reader 提供样本、文本、原始内容、批量读写。
-- 解码结果如何归一为平台 data type 语义。
+- 解码结果如何归一为 `common/datatype` 定义的平台 data type 语义。
 
-其中 `xxx info` 是对应 data type 的元数据，例如 `TableInfo`、`DocumentInfo`、`MediaInfo`、`ContainerInfo`。`xxx info provider` 只负责提取这类元数据；样本、文本片段、缩略图、raw content、range content 等内容数据必须通过独立 content reader 表达。
+其中 `xxx info` 是对应 data type 的通用元数据，例如 `datatype.TableInfo`、`datatype.DocumentInfo`、`datatype.MediaInfo`、`datatype.ContainerInfo`。这些结构的事实源属于 `common/datatype`，不属于 `common/format`。`xxx info provider` 只负责从具体格式中提取并返回这类元数据；样本、文本片段、缩略图、raw content、range content 等内容数据必须通过独立 content reader 表达。
+
+## `common/datatype` 与 `common/format` 分工
+
+`common/datatype` 是 ADDP 通用数据类型语义的事实源：
+
+| 类型 | 归属 | 说明 |
+|---|---|---|
+| `DataType` | `common/datatype` | `table`、`document`、`media`、`container`、`graph`、`file`、`unknown` |
+| `FieldType` / `FieldInfo` | `common/datatype` | 平台通用字段类型和字段语义 |
+| `TableInfo` / `DocumentInfo` / `MediaInfo` / `ContainerInfo` / `GraphInfo` / `FileInfo` | `common/datatype` | 各 data type 的通用 type info |
+| `SpatialInfo` | `common/datatype` | 空间横切事实，落点是 `attributes.capabilities.spatial` |
+| `ContentIndex` | `common/datatype` | 内容读取索引，落点是 `attributes.content_index.<data_type>` |
+
+`common/format` 负责格式侧能力：
+
+- format identity、descriptor、capability 和 detection。
+- FormatPlugin、info provider、content reader、reader/writer provider 注册和发现。
+- 具体格式解析、编码、解码和格式私有信息。
+- native type mapper，将格式或引擎原生类型转换为 `datatype.FieldType`。
+
+`common/format` 不再定义通用 data type、field type 或 type info。新增格式实现不得在格式包内新增平行的 `FieldType`、`TableInfo`、`DocumentInfo` 等公共模型。
 
 `common/format` 不定义任何展示概念。页面展示策略、前端渲染器选择和 Manager 返回给前端的 DTO 均属于 Manager / Frontend 边界。
 
@@ -165,7 +186,7 @@ import _ "github.com/addp/common/format/builtin"
 |---|---|---|---|
 | Identification | 如何识别格式 | 扩展名、MIME、magic bytes、内容签名 | Meta、Registry |
 | Layout | 格式自身如何组织 content | single / multi / whole、primary ref、related refs 规则、manifest 规则 | Meta |
-| Info / Facts | 能提取什么 data type info 和横切事实 | table / document / media / container info、spatial facts | Meta、Manager、Transfer |
+| Info / Facts | 能提取什么 data type info、横切事实和 format info | table / document / media / container info、spatial facts、content index、format_info | Meta、Manager、Transfer |
 | Content Reader | 能否提供按 data type 组织后的内容数据 | 行样本、文本片段、缩略图、容器树、raw content、range content | Manager、Transfer |
 | Transfer | 能否参与批量读写和 multi ref 提交 | batch read / write、multi read / write、commit policy | Transfer |
 | Provider hints | 实现了哪些 provider 家族 | table / document / media / container / graph / spatial | Registry、上层调用方 |
@@ -231,7 +252,7 @@ Shapefile 这类 multi 格式尤其要区分：单个 `.shp/.dbf/.shx` 的识别
 
 ### Info / Facts
 
-Info / facts 能力负责把原始资源转成平台能理解的类型信息和横切事实。
+Info / facts 能力负责把原始资源转成平台能理解的类型信息、横切事实、内容索引和格式私有事实。
 
 常见产出：
 
@@ -243,13 +264,38 @@ Info / facts 能力负责把原始资源转成平台能理解的类型信息和�
 - `capabilities.spatial`
 - `capabilities.extraction`
 - `capabilities.statistics`
+- `content_index.<data_type>`
 
-表格解析能力应说明字段名、原始字段类型、行数、主键和索引等 info 是否可得。文档提取能力应说明标题、作者、页数、语言和提取状态等 info 是否可得。媒体提取能力应说明宽高、时长、编码、颜色模式和 EXIF 等 info 是否可得。容器能力应说明内部对象、默认入口和对象摘要是否可得。空间能力应说明 geometry columns、primary geometry column、SRID / CRS、extent 和 spatial index 是否可得。
+表格解析能力应说明字段名、原始字段类型、行数、主键等 table info 是否可得。文档提取能力应说明标题、作者、页数、语言和提取状态等 info 是否可得。媒体提取能力应说明宽高、时长、编码、颜色模式和 EXIF 等 info 是否可得。容器能力应说明内部对象、默认入口和对象摘要是否可得。空间能力应说明 geometry columns、primary geometry column、SRID / CRS、extent 和 spatial index 是否可得。内容索引能力应说明索引类型、定位单位、锚点和失效判断来源是否可得。
+
+Provider 一次解析可能同时得到多个事实。为避免污染各 data type 的 type info，应通过 describe result 或等价结构将这些事实同级返回，再由 Meta normalizer 写入各自 attributes 分区。
+
+表格描述结果的概念形态：
+
+```go
+type TableDescribeResult struct {
+    Table        *datatype.TableInfo
+    Spatial      *datatype.SpatialInfo
+    ContentIndex *datatype.ContentIndex
+    FormatInfo   map[string]interface{}
+}
+```
+
+映射规则：
+
+| 结果字段 | 规范落点 |
+|---|---|
+| `Table` | `attributes.type_info.table` |
+| `Spatial` | `attributes.capabilities.spatial` |
+| `ContentIndex` | `attributes.content_index.table` |
+| `FormatInfo` | `attributes.format_info.<format>` |
+
+后续 document、media、container、graph 如果也存在“一次解析产出多个事实”的场景，应使用相同原则定义对应 describe result，不能把横切事实或内容索引塞进各自 `TypeInfo`。
 
 空间表的几何字段遵循以下规则：
 
 - `FieldTypeGeometry` 只表达字段语义，不固定行值编码。
-- `TableInfo.SpatialInfo` 是空间事实入口，负责表达主空间字段、几何类型、SRID / CRS、extent、dimension 和空间索引等信息。
+- `datatype.SpatialInfo` 是空间事实入口，负责表达主空间字段、几何类型、SRID / CRS、extent、dimension 和空间索引等信息；它不属于 `datatype.TableInfo`。
 - table sample 默认返回 WKT 字符串，便于 Manager 预览、日志和调试。
 - continuous table reader 可以通过 `ParseOptions.GeometryEncoding` 请求 `wkt`、`wkb` 或 `ewkb`。默认值为 `wkt`。
 - `wkb` / `ewkb` 行值使用 `[]byte` 表达，供 Transfer 等批处理链路在目标 writer 明确支持时使用；调用方不得假定所有 engine writer 都能直接接收二进制几何参数。
@@ -257,7 +303,7 @@ Info / facts 能力负责把原始资源转成平台能理解的类型信息和�
 - 各格式 native 几何类型必须在对应 format plugin 内转换为 ADDP 通用几何值，不得把 `shp.Shape` 等 native 类型暴露到 format 根接口、engine 或 Transfer 执行层。
 - 格式写出空间数据时，应根据 `SpatialInfo.GeometryType` 和 `SpatialInfo.Dimension` 选择自身 native 表达。例如 Shapefile writer 在 `dimension >= 3` 时写出 `PointZ`、`PolyLineZ`、`PolygonZ` 或 `MultiPointZ`；M / measure 不属于 ADDP 当前标准空间维度，除非后续有明确 measure 规范，否则不得伪装为 Z 坐标。
 
-注意：`type_info.*` 只保存对应 data type 的元数据。内容样本、原始内容、缩略图、文本片段不是 info，不能为了上层使用方便塞进 `table info`、`document info` 或 `media info`。
+注意：`type_info.*` 只保存对应 data type 的元数据。内容样本、原始内容、缩略图、文本片段不是 info，不能为了上层使用方便塞进 `table info`、`document info` 或 `media info`。空间、时间、统计、提取、语义等横切事实进入 `capabilities`；内容读取索引进入 `content_index`；格式私有事实进入 `format_info`。
 
 容器型 data item 的父级 `type_info.container.children` 只保存轻量子对象索引，例如 child 名称、真实入口名、类型、行数、列数和默认入口。子对象的完整字段信息、行样本和分页内容属于该 child 自身，应在指定 child 后继续调用对应 table / document / media info provider 或 content reader 获取；父容器不能把所有 child 的 `fields`、`rows` 等内容展开塞进自身 attributes。
 
@@ -368,7 +414,7 @@ info provider 只回答对应 data type 的元数据语义；sample / text reade
 
 表格能力按消费意图拆成四类：
 
-- `TableInfoProvider`：返回表结构与字段元数据，是 `type_info.table` 的主来源。
+- `TableInfoProvider`：返回表结构与字段元数据，是 `type_info.table` 的主来源；如果同次解析得到空间事实、内容索引或格式私有事实，应通过 describe result 同级返回。
 - `TableSampleReader`：返回分页或采样样本，是 Manager 表格探查和 Transfer 探查的主来源。
 - `TableReaderProvider`：打开单资源 table 的连续读取会话，是 Transfer 读取 encoded table 的主入口。
 - `TableWriterProvider`：打开单资源 table 的连续写出会话，是 Transfer 写出 encoded table 的主入口。
@@ -385,7 +431,7 @@ info provider 只回答对应 data type 的元数据语义；sample / text reade
 - 表结构和字段元数据。
 - 分页或采样读取。
 - 行样本。
-- 空间列、SRID、extent 等空间信息。
+- 空间列、SRID、extent 等空间信息，作为 `datatype.SpatialInfo` 横切事实返回，不进入 `datatype.TableInfo`。
 - 批量读取和批量写入边界。
 
 能力可按四类组织：

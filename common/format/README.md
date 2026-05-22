@@ -1,6 +1,6 @@
 # common/format
 
-`common/format` 是 ADDP 后端共享的格式基础包，负责格式身份、格式识别、格式能力声明、轻量 schema、info provider 和 content reader 注册。
+`common/format` 是 ADDP 后端共享的格式基础包，负责格式身份、格式识别、格式能力声明、info provider 和 content reader 注册。
 
 它只表达“格式自身能提供什么”，不负责 Meta item 归并、不负责 Manager 面向前端的 DTO、不直接连接 engine，也不承担 Transfer 任务编排。
 
@@ -10,7 +10,7 @@
 
 - 根据文件名、MIME、magic bytes 识别 `FormatType`。
 - 声明格式 capability，例如 data type、layout、info provider、content reader、是否可 parse、是否支持 transfer read/write。
-- 提供 `TableInfo`、`FieldInfo`、`FieldType` 等跨模块可复用的结构化语义模型。
+- 提供 format identity、FormatPlugin、provider / reader 注册与发现；通用 `DataType`、`FieldType`、`TableInfo` 等结构化语义模型目标归属 `common/datatype`。
 - 注册和获取 format plugin、info provider / content reader，例如 `FormatPlugin`、`FormatInfoProvider`、`TableInfoProvider`、`TableSampleReader`、`MultiTableInfoProvider`、`MultiTableSampleReader`、`ScopeTableInfoProvider`、`ScopeTableSampleReader`、`TableReaderProvider`、`MultiTableReaderProvider`、`TableWriterProvider`、`MultiTableWriterProvider`、`DocumentInfoProvider`、`DocumentTextReader`、`MediaInfoProvider`、`ContainerInfoProvider`、`ContainerChildResolver`。
 - 提供 `TypeMapper` 注册机制，供 engine / format 在自身边界内把原生类型映射到 ADDP 通用字段类型；上层执行链路不读取原生字段类型。
 - 不再保留 `FileMetadataExtractor` 旁路注册表；新增格式必须通过 FormatPlugin、info provider 和 content reader 进入主线。
@@ -37,8 +37,8 @@
 | 格式检测 | `detection.go`、`detection_mime.go`、`detection_magic.go` | 基于扩展名、MIME、magic bytes 和 descriptor 识别 format candidate，不决定 data item 边界；根包保留稳定 facade。 |
 | FormatPlugin、info provider、content reader 接口 | `provider.go` | 只定义格式层能力接口，不接 engine id，不返回 Manager DTO。 |
 | provider / reader 注册表 | `provider_registry.go`、`provider_register*.go`、`provider_constructors.go`、`provider_views.go` | 注册和获取当前进程已加载的 plugin、info provider、content reader 和 writer。 |
-| data type 通用 info 模型 | `data_info.go`、`field_type.go`、`container_info.go`、`container_child.go` | 表、字段类型、容器、内容索引等跨模块结构。内容样本不进入这些 info。 |
-| 格式私有 info 与横切事实候选 | `plugins/<format>/`、`data_info.go` | 具体格式私有结构留在对应插件目录；`TableInfo` 只提供通用 `FormatInfo`、`SpatialInfo`、`ContentIndex` 承载，由 Meta 映射到 `format_info.*`、`capabilities.*`、`content_index.*`。 |
+| data type 通用 info 模型 | 目标归属 `common/datatype`；当前迁移前仍可见于 `data_info.go`、`field_type.go`、`container_info.go`、`container_child.go` | 表、字段类型、容器、内容索引等跨模块结构最终不属于 `common/format`。内容样本不进入这些 info。 |
+| 格式私有 info 与横切事实候选 | `plugins/<format>/`，目标通过 describe result 或等价结构返回 | 具体格式私有结构留在对应插件目录；`SpatialInfo`、`ContentIndex`、`FormatInfo` 与 `TableInfo` 同级返回，由 Meta 映射到 `capabilities.*`、`content_index.*`、`format_info.*`。 |
 | 解析选项和 manifest | `options.go`、`manifest.go` | provider / reader 调用选项，以及第三方 descriptor manifest 加载。 |
 | 类型映射注册机制 | `type_mapper.go`、`mappers/`、`plugins/<format>/` | 根包只提供注册表和通用接口；数据库 engine 映射位于 `mappers/`，格式私有映射留在对应 `plugins/<format>/` 目录内。 |
 | 内置格式加载入口 | `builtin/` | 统一 blank import 内置格式插件和 type mapper。 |
@@ -203,7 +203,7 @@ Info provider 只返回元数据，主要服务 Meta 写入 `type_info.*`、`for
 |---|---|---|---|---|---|---|
 | `FormatPlugin` | 任意 | 任意 | 无内容输入 | 声明格式身份、descriptor、capability；自动注册已实现的 provider / reader。 | Meta、Manager、Transfer、能力发现 | 所有稳定 format |
 | `FormatInfoProvider` | 任意 | 通常 `single`，也可服务 `multi` / `whole` 的格式私有摘要 | `io.Reader` | 返回 `format_info.<format>` 候选事实，不写类型信息。 | Meta | CSV delimiter、PDF 版本、图片 EXIF、压缩方式等 |
-| `TableInfoProvider` | `table` | `single` | `io.Reader` | 返回字段、行数、空间信息、内容索引等 table 类型信息。 | Meta、Manager、Transfer 探查 | CSV、JSON/JSONL、Parquet 单文件 |
+| `TableInfoProvider` | `table` | `single` | `io.Reader` | 返回字段、行数等 table 类型信息；空间信息、内容索引和格式私有事实作为同级 describe result 候选事实返回。 | Meta、Manager、Transfer 探查 | CSV、JSON/JSONL、Parquet 单文件 |
 | `TableSampleReader` | `table` | `single` | `io.Reader` | 按逻辑行窗口读取少量样本。 | Manager 预览、Transfer 探查 | CSV、JSON/JSONL、Parquet 单文件 |
 | `TableReaderProvider` | `table` | `single` | `io.Reader` -> `TableReader` | 打开一次连续读取会话，按批读取全量行。 | Transfer 主链路、批处理导出/导入 | CSV、JSON/JSONL、Parquet 单文件 |
 | `TableWriterProvider` | `table` | `single` | `io.Writer` + `TableInfo` -> `TableWriter` | 打开一次连续写出会话，按批编码写入。 | Transfer 写侧 | CSV、JSON/JSONL、Parquet 单文件 |
@@ -230,7 +230,7 @@ Info provider 只返回元数据，主要服务 Meta 写入 `type_info.*`、`for
 - 不决定 data item 边界；`single` / `multi` / `whole` 的归并由 Meta detector 和 item 组织规则负责。
 - 不返回 Manager DTO、前端渲染 hint 或 Transfer 任务结构；只返回通用 info、样本、文本、媒体信息或 reader/writer 会话。
 - Info provider 不返回内容样本；content reader 不写 `type_info` / `format_info`。
-- `FormatInfoProvider` 只承载格式私有事实；跨格式事实进入 `TableInfo`、`DocumentInfo`、`MediaInfo`、`ContainerInfo` 等类型模型，再由 Meta 映射到标准 attributes。
+- `FormatInfoProvider` 只承载格式私有事实；跨格式 type info 使用 `common/datatype` 模型，横切事实和内容索引与 type info 同级返回，再由 Meta 映射到标准 attributes。
 - `Sample*` 接口的 offset / limit 是逻辑内容窗口，不是字节范围。
 - `*ReaderProvider` / `*WriterProvider` 打开的是一次有状态会话，调用方负责循环读取 / 写入并调用 `Close`。
 - multi 格式不得在 provider 内自行猜测相关路径；refs 集合由调用方基于 item detector 或 `RelatedRefSpecs()` 构造后传入。
@@ -304,7 +304,7 @@ type MultiTableWriterProvider interface {
 }
 ```
 
-空间表的 `FieldTypeGeometry` 只表达字段语义，行值编码由 `ParseOptions.GeometryEncoding` 决定。默认编码是 `wkt`，用于 Manager sample、日志和调试；连续读取链路可显式请求 `wkb` 或 `ewkb`，此时行值为 `[]byte`。SRID / CRS 事实仍以 `TableInfo.SpatialInfo` 为准，`ewkb` 携带 SRID 只是行值编码能力，不替代 schema 事实。具体格式的 native 几何类型必须在各自 plugin 内转换，不得暴露到 format 根接口或 engine / Transfer 层。
+空间表的 `FieldTypeGeometry` 只表达字段语义，行值编码由 `ParseOptions.GeometryEncoding` 决定。默认编码是 `wkt`，用于 Manager sample、日志和调试；连续读取链路可显式请求 `wkb` 或 `ewkb`，此时行值为 `[]byte`。SRID / CRS 事实以 `datatype.SpatialInfo` 为准，`ewkb` 携带 SRID 只是行值编码能力，不替代 schema 事实。具体格式的 native 几何类型必须在各自 plugin 内转换，不得暴露到 format 根接口或 engine / Transfer 层。
 
 目录 scope 格式同样拆成 info 和 sample：
 
@@ -431,7 +431,7 @@ info, err := provider.DescribeMedia(ctx, input, nil)
 
 ## TableInfo
 
-`TableInfo` 是 provider 返回的表语义模型。
+`TableInfo` 是 provider 返回的表类型信息模型。目标态中，通用结构归属 `common/datatype`；当前迁移前仍可见于 `common/format`。
 
 ```go
 type TableInfo struct {
@@ -442,25 +442,22 @@ type TableInfo struct {
     UpdatedAt  *time.Time
     Fields     []FieldInfo
     PrimaryKey []string
-    FormatInfo   map[string]interface{}
-    SpatialInfo  *SpatialInfo
-    ContentIndex *ContentIndexInfo
 }
 ```
 
-`TableInfo` 的补充事实必须按归属写入明确字段，不再通过开放式 extension 机制承载：
+`TableInfo` 只表达 `attributes.type_info.table`。provider 同次解析得到的补充事实必须作为同级 describe result 候选事实返回，由 Meta normalizer 写入对应分区：
 
-- `FormatInfo`：格式私有事实，例如 CSV 分隔符、Excel sheet、Shapefile refs、Parquet 文件行数。
-- `SpatialInfo`：空间字段、几何类型、坐标系、范围等横切事实。
-- `ContentIndex`：读取优化索引，例如 `content_index.table` 的稀疏行索引。
+- `FormatInfo`：格式私有事实，写入 `format_info.<format>`。
+- `SpatialInfo`：空间字段、几何类型、坐标系、范围等横切事实，写入 `capabilities.spatial`。
+- `ContentIndex`：读取优化索引，例如稀疏行索引，写入 `content_index.table`。
 
-空间判断应基于 `TableInfo.IsSpatial()` 或 `SpatialInfo`，不要通过 `format=geojson` 推断。
+空间判断应基于标准 `SpatialInfo` / `capabilities.spatial`，不要通过 `format=geojson` 推断。
 
 ## 字段类型与类型映射
 
-字段结构统一承载在 `TableInfo.Fields` / `FieldInfo` 中；根包不再保留并行的 `Schema` / `Field` 模型。
+字段结构统一承载在 `TableInfo.Fields` / `FieldInfo` 中；根包不再保留并行的 `Schema` / `Field` 模型。目标态中 `FieldInfo` 和 `FieldType` 归属 `common/datatype`。
 
-`TypeMapper` 只应在对应 format / engine plugin 内部使用，负责原生类型和通用字段类型互转：
+`TypeMapper` 只应在对应 format / engine plugin 内部使用，负责原生类型和 `datatype.FieldType` 互转：
 
 ```go
 mapper := format.GetTypeMapper("postgresql")
@@ -479,7 +476,7 @@ func (m *OracleTypeMapper) ToCommon(nativeType string) format.FieldType
 func (m *OracleTypeMapper) FromCommon(commonType format.FieldType) (string, int, int)
 ```
 
-原生字段类型不得作为执行链路的公共 schema 语义向外扩散。`TableInfo.Fields` 对外只表达 ADDP 标准字段事实；如 Manager / Meta 需要展示原始字段类型，应由对应插件写入只读 attributes，供查看和诊断使用，不得参与 Transfer、transform 或目标写入决策。
+原生字段类型不得作为执行链路的公共 schema 语义向外扩散。`TableInfo.Fields` 对外只表达 ADDP 标准字段事实；如 Manager / Meta 需要展示原始字段类型，应由 provider 返回标准 `native_type` 或由 Meta 写入只读 attributes，供查看和诊断使用，不得参与 Transfer、transform 或目标写入决策。
 
 ## 旧 FileMetadataExtractor 已删除
 
@@ -489,6 +486,7 @@ func (m *OracleTypeMapper) FromCommon(commonType format.FieldType) (string, int,
 
 - 确定的类型元数据进入 `TableInfoProvider`、`DocumentInfoProvider`、`MediaInfoProvider`、`ContainerInfoProvider` 等 info provider。
 - 格式私有元信息进入 `FormatInfoProvider`。
+- 空间等横切事实和内容索引作为同级结果进入 Meta normalizer，不塞进 `TableInfo`。
 - 样本、文本片段、缩略图、raw content、range content 等进入独立 content reader。
 - Meta 只编排 provider / reader 结果并写入标准 attributes，不通过 MIME extractor 旁路写 attributes。
 
