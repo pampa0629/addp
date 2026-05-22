@@ -56,12 +56,12 @@ curl http://localhost:8097/health | jq
 curl http://localhost:8097/api/operators | jq
 
 # 测试单算子执行
-curl -X POST http://localhost:8097/api/spatial/operators/add/execute \
+curl -X POST http://localhost:8097/api/operators/add/execute \
   -H "Content-Type: application/json" \
   -d '{"params": {"a": 5, "b": 3}}' | jq
 
 # 测试工作流执行
-curl -X POST http://localhost:8097/api/spatial/workflow \
+curl -X POST http://localhost:8097/api/workflow \
   -H "Content-Type: application/json" \
   -d '{
     "workflow_def": {
@@ -108,14 +108,14 @@ curl http://localhost:8097/health
 curl http://localhost:8097/api/operators
 ```
 
-### 3. 工作流执行 - `POST /api/spatial/workflow`
+### 3. 工作流执行 - `POST /api/workflow`
 
 执行包含多个算子的 DAG 工作流。
 
 示例：计算 `(10 + 20) × 2 = 60`
 
 ```bash
-curl -X POST http://localhost:8097/api/spatial/workflow \
+curl -X POST http://localhost:8097/api/workflow \
   -H "Content-Type: application/json" \
   -d '{
     "workflow_def": {
@@ -154,12 +154,12 @@ curl -X POST http://localhost:8097/api/spatial/workflow \
 }
 ```
 
-### 4. 单算子执行 - `POST /api/spatial/operators/{name}/execute`
+### 4. 单算子执行 - `POST /api/operators/{name}/execute`
 
 快速执行单个算子（用于测试或简单计算）。
 
 ```bash
-curl -X POST http://localhost:8097/api/spatial/operators/add/execute \
+curl -X POST http://localhost:8097/api/operators/add/execute \
   -H "Content-Type: application/json" \
   -d '{"params": {"a": 5, "b": 3}}'
 ```
@@ -174,10 +174,10 @@ curl -X POST http://localhost:8097/api/spatial/operators/add/execute \
 }
 ```
 
-### 5. 执行状态查询 - `GET /api/spatial/executions/{execution_id}`
+### 5. 执行状态查询 - `GET /api/executions/{execution_id}`
 
 ```bash
-curl http://localhost:8097/api/spatial/executions/uuid-1234
+curl http://localhost:8097/api/executions/uuid-1234
 ```
 
 ## 🏗️ 架构设计

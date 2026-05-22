@@ -28,26 +28,35 @@ type WorkflowStandard struct {
 
 // WorkflowStandards 各类工作流引擎的标准配置
 var WorkflowStandards = map[string]WorkflowStandard{
-	"python_workflow": {
+	"math_workflow": {
 		Endpoints: map[string]WorkflowEndpoint{
 			"execute": {
 				Method:  "POST",
-				Path:    "/api/workflows/execute",
+				Path:    "/api/workflow",
 				Timeout: 300,
 			},
 			"status": {
 				Method:  "GET",
-				Path:    "/api/workflows/status/{id}",
-				Timeout: 10,
+				Path:    "/api/executions/{id}",
+				Timeout: 30,
 			},
-			"logs": {
-				Method:  "GET",
-				Path:    "/api/workflows/logs/{id}",
-				Timeout: 10,
-			},
-			"cancel": {
+		},
+		HealthCheck: WorkflowHealthCheck{
+			Endpoint: "/health",
+			Timeout:  5,
+			Interval: 60,
+		},
+	},
+	"python_workflow": {
+		Endpoints: map[string]WorkflowEndpoint{
+			"execute": {
 				Method:  "POST",
-				Path:    "/api/workflows/cancel/{id}",
+				Path:    "/api/workflow",
+				Timeout: 300,
+			},
+			"status": {
+				Method:  "GET",
+				Path:    "/api/executions/{id}",
 				Timeout: 30,
 			},
 		},
@@ -61,22 +70,12 @@ var WorkflowStandards = map[string]WorkflowStandard{
 		Endpoints: map[string]WorkflowEndpoint{
 			"execute": {
 				Method:  "POST",
-				Path:    "/api/workflows/execute",
+				Path:    "/api/workflow",
 				Timeout: 300,
 			},
 			"status": {
 				Method:  "GET",
-				Path:    "/api/workflows/status/{id}",
-				Timeout: 10,
-			},
-			"logs": {
-				Method:  "GET",
-				Path:    "/api/workflows/logs/{id}",
-				Timeout: 10,
-			},
-			"cancel": {
-				Method:  "POST",
-				Path:    "/api/workflows/cancel/{id}",
+				Path:    "/api/executions/{id}",
 				Timeout: 30,
 			},
 		},

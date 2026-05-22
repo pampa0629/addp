@@ -59,9 +59,9 @@
 │  │ • GET  /api/spatial/tasks (任务列表) ★                     │ │
 │  │ • POST /api/spatial/tasks (创建任务)                       │ │
 │  │ • POST /api/spatial/tasks/:id/execute (执行任务) ★         │ │
-│  │ • GET  /api/spatial/executions/:id (查询状态) ★            │ │
-│  │ • GET  /api/spatial/operators (算子列表 - 供前端使用)      │ │
-│  │ • POST /api/spatial/workflow (即时执行 - 供 Develop 使用) │ │
+│  │ • GET  /api/executions/:id (查询状态) ★            │ │
+│  │ • GET  /api/operators (算子列表 - 供前端使用)      │ │
+│  │ • POST /api/workflow (即时执行 - 供 Develop 使用) │ │
 │  │ • GET  /health (健康检查)                                  │ │
 │  └────────────────┬───────────────────────────────────────────┘ │
 │                   │                                              │
@@ -254,7 +254,7 @@ POST /api/develop/spatial/execute
   }
 }
     ↓
-Develop Backend → Python Workflow Engine: POST /api/spatial/workflow
+Develop Backend → Python Workflow Engine: POST /api/workflow
     ↓
 Python Workflow Engine 执行（内存中）
     ↓
@@ -532,11 +532,11 @@ CREATE INDEX idx_gis_results_geom ON orchestrator.gis_results USING GIST(geom);
 docker-compose up -d python-workflow-engine
 
 # 测试单算子
-curl -X POST http://localhost:8090/api/spatial/operators/buffer \
+curl -X POST http://localhost:8090/api/operators/buffer \
   -d '{"input_geom": {...}, "distance": 0.001}'
 
 # 测试工作流
-curl -X POST http://localhost:8090/api/spatial/workflow \
+curl -X POST http://localhost:8090/api/workflow \
   -d '{"tasks": [...]}'
 ```
 
@@ -761,7 +761,7 @@ docker-compose up -d python-workflow-engine
 curl http://localhost:8090/health
 
 # 测试工作流执行
-curl -X POST http://localhost:8090/api/spatial/workflow \
+curl -X POST http://localhost:8090/api/workflow \
   -H "Content-Type: application/json" \
   -d '{"tasks": [{"id": "t1", "operator": "buffer", "params": {...}}]}'
 

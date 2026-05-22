@@ -109,7 +109,7 @@ python3 api_server.py
 ### 示例 1: 单算子执行
 
 ```bash
-curl -X POST http://localhost:8098/api/spatial/operators/st_buffer/execute \
+curl -X POST http://localhost:8098/api/operators/st_buffer/execute \
   -H "Content-Type: application/json" \
   -d '{
     "engine_id": 34,
@@ -124,7 +124,7 @@ curl -X POST http://localhost:8098/api/spatial/operators/st_buffer/execute \
 ### 示例 2: 工作流执行
 
 ```bash
-curl -X POST http://localhost:8098/api/spatial/workflow \
+curl -X POST http://localhost:8098/api/workflow \
   -H "Content-Type: application/json" \
   -d '{
     "engine_id": 34,
@@ -311,19 +311,19 @@ GET /api/operators
 
 ### 执行工作流
 ```
-POST /api/spatial/workflow
+POST /api/workflow
 Body: {"engine_id": 34, "workflow_def": {...}}
 ```
 
 ### 执行单个算子
 ```
-POST /api/spatial/operators/{operator_name}/execute
+POST /api/operators/{operator_name}/execute
 Body: {"engine_id": 34, "params": {...}}
 ```
 
 ### 查询执行状态
 ```
-GET /api/spatial/executions/{execution_id}
+GET /api/executions/{execution_id}
 ```
 
 ## 故障排查

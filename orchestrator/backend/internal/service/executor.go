@@ -146,27 +146,17 @@ func (e *Executor) executeWithDynamicEngine(ctx context.Context, step *models.St
 		return result, fmt.Errorf("%s", result.Error)
 	}
 
-	// 2. 创建任务（使用解析后的参数）
-	taskID, err := e.taskClient.CreateTask(ctx, engine, resolvedParams)
+	// 2. 提交工作流执行请求（工作流引擎的 execute 端点会直接返回 execution_id）
+	executionID, err := e.taskClient.CreateTask(ctx, engine, resolvedParams)
 	if err != nil {
 		result.Status = "failed"
-		result.Error = fmt.Sprintf("failed to create task: %v", err)
+		result.Error = fmt.Sprintf("failed to submit workflow: %v", err)
 		result.EndedAt = time.Now()
 		result.Duration = time.Since(start).Milliseconds()
 		return result, fmt.Errorf("%s", result.Error)
 	}
 
-	// 3. 执行任务（使用解析后的参数）
-	executionID, err := e.taskClient.ExecuteTask(ctx, engine, taskID, resolvedParams)
-	if err != nil {
-		result.Status = "failed"
-		result.Error = fmt.Sprintf("failed to execute task: %v", err)
-		result.EndedAt = time.Now()
-		result.Duration = time.Since(start).Milliseconds()
-		return result, fmt.Errorf("%s", result.Error)
-	}
-
-	// 4. 轮询任务状态
+	// 3. 轮询任务状态
 	timeout := time.Duration(step.Timeout) * time.Second
 	if timeout == 0 {
 		timeout = 5 * time.Minute
@@ -475,6 +465,10 @@ func (e *Executor) resolveStringTemplate(template string, stepResults models.Ste
 
 // splitPath 分割路径字符串（支持 . 分隔符）
 func splitPath(path string) []string {
+	if path == "" {
+		return []string{}
+	}
+
 	var parts []string
 	current := ""
 

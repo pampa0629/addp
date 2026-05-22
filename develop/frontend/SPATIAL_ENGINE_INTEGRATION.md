@@ -258,7 +258,7 @@ onMounted(async () => {
 
 3. **算子**: 新引擎提供自己的算子列表API
    ```
-   GET /api/spatial/operators?engine=spark_workflow
+   GET /api/operators?engine=spark_workflow
    ```
 
 ## 注意事项

@@ -84,7 +84,10 @@ func (c *TaskClient) CreateTask(ctx context.Context, engine *commonModels.Engine
 		return "", fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	// 提取任务 ID（优先级: id > task_id > run_id）
+	// 提取任务 ID（优先级: execution_id > id > task_id > run_id）
+	if executionID, ok := result["execution_id"]; ok {
+		return fmt.Sprintf("%v", executionID), nil
+	}
 	if id, ok := result["id"]; ok {
 		return fmt.Sprintf("%v", id), nil
 	}
