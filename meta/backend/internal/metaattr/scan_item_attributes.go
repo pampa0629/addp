@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/dataitem"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/meta/internal/models"
 )
@@ -226,14 +227,17 @@ func firstPresent(primary, secondary map[string]interface{}, keys ...string) int
 	return nil
 }
 
-func DocumentFieldAttributes(fields []plugin.FieldInfo) []map[string]interface{} {
+func DocumentFieldAttributes(fields []datatype.FieldInfo) []map[string]interface{} {
 	result := make([]map[string]interface{}, 0, len(fields))
 	for _, field := range fields {
 		fieldAttr := map[string]interface{}{
 			"name":           field.Name,
-			"type":           field.Type,
+			"type":           string(field.Type),
 			"nullable":       field.Nullable,
 			"is_primary_key": field.PrimaryKey,
+		}
+		if field.NativeType != "" {
+			fieldAttr["native_type"] = field.NativeType
 		}
 
 		result = append(result, fieldAttr)

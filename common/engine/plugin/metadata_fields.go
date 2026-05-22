@@ -1,34 +1,34 @@
 package plugin
 
-import commonJSON "github.com/addp/common/jsonmap"
+import "github.com/addp/common/datatype"
 
-func FieldInfosFromColumns(columns []ColumnInfo) []FieldInfo {
+func FieldInfosFromColumns(columns []ColumnInfo) []datatype.FieldInfo {
 	if len(columns) == 0 {
 		return nil
 	}
-	fields := make([]FieldInfo, 0, len(columns))
+	fields := make([]datatype.FieldInfo, 0, len(columns))
 	for _, col := range columns {
-		fields = append(fields, FieldInfo{
+		fields = append(fields, datatype.FieldInfo{
 			Name:       col.ColumnName,
-			Type:       col.DataType,
+			Type:       datatype.ParseFieldType(col.DataType),
+			NativeType: col.DataType,
 			Nullable:   col.IsNullable,
 			PrimaryKey: col.IsPrimaryKey,
 			Comment:    col.Comment,
-			Attributes: map[string]interface{}{"native_type": col.DataType},
 		})
 	}
 	return fields
 }
 
-func ColumnInfosFromFields(fields []FieldInfo) []ColumnInfo {
+func ColumnInfosFromFields(fields []datatype.FieldInfo) []ColumnInfo {
 	if len(fields) == 0 {
 		return nil
 	}
 	columns := make([]ColumnInfo, 0, len(fields))
 	for _, field := range fields {
-		dataType := commonJSON.InterfaceString(field.Attributes["native_type"])
+		dataType := field.NativeType
 		if dataType == "" {
-			dataType = field.Type
+			dataType = string(field.Type)
 		}
 		columns = append(columns, ColumnInfo{
 			ColumnName:   field.Name,

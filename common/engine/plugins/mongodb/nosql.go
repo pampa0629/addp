@@ -6,6 +6,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -194,16 +195,14 @@ func (p *MongoDBPlugin) SampleDocumentMetadata(ctx context.Context, connInfo plu
 		}
 	}
 
-	fields := make([]plugin.FieldInfo, 0, len(fieldStats))
+	fields := make([]datatype.FieldInfo, 0, len(fieldStats))
 	for name, stat := range fieldStats {
-		fields = append(fields, plugin.FieldInfo{
+		fields = append(fields, datatype.FieldInfo{
 			Name:       name,
 			Type:       mapMongoBSONType(stat.Type),
+			NativeType: stat.Type,
 			Nullable:   true,
 			PrimaryKey: name == "_id",
-			Attributes: map[string]interface{}{
-				"native_type": stat.Type,
-			},
 		})
 	}
 	sort.Slice(fields, func(i, j int) bool {
@@ -326,32 +325,32 @@ func detectMongoBSONType(value interface{}) string {
 	}
 }
 
-func mapMongoBSONType(bsonType string) string {
+func mapMongoBSONType(bsonType string) datatype.FieldType {
 	switch bsonType {
 	case "string", "objectid":
-		return "string"
+		return datatype.FieldTypeString
 	case "int64":
-		return "integer"
+		return datatype.FieldTypeBigInt
 	case "float64":
-		return "double"
+		return datatype.FieldTypeDouble
 	case "bool":
-		return "boolean"
+		return datatype.FieldTypeBool
 	case "datetime":
-		return "timestamp"
+		return datatype.FieldTypeTimestamp
 	case "array":
-		return "array"
+		return datatype.FieldTypeArray
 	case "object":
-		return "json"
+		return datatype.FieldTypeJSON
 	case "binary":
-		return "bytes"
+		return datatype.FieldTypeBytes
 	case "decimal":
-		return "decimal"
+		return datatype.FieldTypeDecimal
 	case "mixed":
-		return "mixed"
+		return datatype.FieldTypeMixed
 	case "null":
-		return "unknown"
+		return datatype.FieldTypeUnknown
 	default:
-		return "unknown"
+		return datatype.FieldTypeUnknown
 	}
 }
 

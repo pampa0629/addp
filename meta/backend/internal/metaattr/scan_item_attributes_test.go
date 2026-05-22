@@ -82,9 +82,9 @@ func TestBuildDocumentCollectionAttributesWritesTypeInfoTableSection(t *testing.
 	t.Parallel()
 
 	attrs := BuildDocumentCollectionAttributes(&plugin.ItemMetadata{
-		Fields: []plugin.FieldInfo{{
+		Fields: []datatype.FieldInfo{{
 			Name: "name",
-			Type: "string",
+			Type: datatype.FieldTypeString,
 		}},
 		Indexes: []plugin.IndexInfo{{
 			Name:      "name_idx",

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/sqldialect"
 	"github.com/addp/manager/internal/models"
@@ -97,10 +98,10 @@ func TestDatabaseTablePreviewProviderPreviewUsesBatchReadAndAttributeRowCount(t 
 	enginePlugin := &recordingDatabasePreviewPlugin{
 		engineType: "postgresql",
 		itemMetadata: &plugin.ItemMetadata{
-			Fields: []plugin.FieldInfo{
-				{Name: "SmID", Type: "bigint", Nullable: false, PrimaryKey: true},
-				{Name: "SmGeometry", Type: "geometry(MultiPolygon,2360)", Nullable: true},
-				{Name: "DLMC", Type: "text", Nullable: true},
+			Fields: []datatype.FieldInfo{
+				{Name: "SmID", Type: datatype.FieldTypeBigInt, NativeType: "bigint", Nullable: false, PrimaryKey: true},
+				{Name: "SmGeometry", Type: datatype.FieldTypeGeometry, NativeType: "geometry(MultiPolygon,2360)", Nullable: true},
+				{Name: "DLMC", Type: datatype.FieldTypeString, NativeType: "text", Nullable: true},
 			},
 			Stats: map[string]interface{}{
 				"row_count": int64(999),
@@ -109,9 +110,9 @@ func TestDatabaseTablePreviewProviderPreviewUsesBatchReadAndAttributeRowCount(t 
 		batchData: &plugin.BatchData{
 			Rows: []map[string]interface{}{
 				{
-					"SmID":                      int64(10),
-					"SmGeometry":                "POINT(1 2)",
-					"DLMC":                      "test",
+					"SmID":                        int64(10),
+					"SmGeometry":                  "POINT(1 2)",
+					"DLMC":                        "test",
 					"__render_geojson_SmGeometry": `{"type":"Point","coordinates":[1,2]}`,
 				},
 			},
@@ -132,9 +133,9 @@ func TestDatabaseTablePreviewProviderPreviewUsesBatchReadAndAttributeRowCount(t 
 			ID:         7,
 			EngineType: enginePlugin.Type(),
 		},
-		Schema: "public",
-		Table:  "public.dltb",
-		Page:   3,
+		Schema:   "public",
+		Table:    "public.dltb",
+		Page:     3,
 		PageSize: 2,
 		Attributes: map[string]interface{}{
 			"type_info": map[string]interface{}{
@@ -172,9 +173,9 @@ func TestDatabaseTablePreviewProviderPreviewFallsBackToItemMetadataRowCount(t *t
 	enginePlugin := &recordingDatabasePreviewPlugin{
 		engineType: "postgresql",
 		itemMetadata: &plugin.ItemMetadata{
-			Fields: []plugin.FieldInfo{
-				{Name: "id", Type: "bigint", Nullable: false, PrimaryKey: true},
-				{Name: "name", Type: "text", Nullable: true},
+			Fields: []datatype.FieldInfo{
+				{Name: "id", Type: datatype.FieldTypeBigInt, NativeType: "bigint", Nullable: false, PrimaryKey: true},
+				{Name: "name", Type: datatype.FieldTypeString, NativeType: "text", Nullable: true},
 			},
 			Stats: map[string]interface{}{
 				"row_count": int64(999),
@@ -201,9 +202,9 @@ func TestDatabaseTablePreviewProviderPreviewFallsBackToItemMetadataRowCount(t *t
 			ID:         8,
 			EngineType: enginePlugin.Type(),
 		},
-		Schema: "public",
-		Table:  "public.people",
-		Page:   1,
+		Schema:   "public",
+		Table:    "public.people",
+		Page:     1,
 		PageSize: 10,
 	}
 

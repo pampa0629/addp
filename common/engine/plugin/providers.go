@@ -5,6 +5,8 @@ import (
 	"io"
 	"strings"
 	"time"
+
+	"github.com/addp/common/datatype"
 )
 
 // CatalogModelProvider declares an engine's catalog shape and terminology.
@@ -192,7 +194,7 @@ type MetadataOptions struct {
 type ItemMetadata struct {
 	Path       CatalogPath            `json:"path"`
 	Kind       string                 `json:"kind"`
-	Fields     []FieldInfo            `json:"fields,omitempty"`
+	Fields     []datatype.FieldInfo   `json:"fields,omitempty"`
 	Indexes    []IndexInfo            `json:"indexes,omitempty"`
 	Stats      map[string]interface{} `json:"stats,omitempty"`
 	Attributes map[string]interface{} `json:"attributes,omitempty"`

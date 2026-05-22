@@ -1,6 +1,10 @@
 package plugin
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/addp/common/datatype"
+)
 
 func TestFieldInfosFromColumnsPreservesNativeType(t *testing.T) {
 	fields := FieldInfosFromColumns([]ColumnInfo{{
@@ -15,7 +19,7 @@ func TestFieldInfosFromColumnsPreservesNativeType(t *testing.T) {
 		t.Fatalf("fields = %#v, want one field", fields)
 	}
 	field := fields[0]
-	if field.Name != "id" || field.Type != "int4" || field.Attributes["native_type"] != "int4" {
+	if field.Name != "id" || field.Type != datatype.FieldTypeUnknown || field.NativeType != "int4" {
 		t.Fatalf("field identity = %#v", field)
 	}
 	if !field.PrimaryKey || field.Nullable || field.Comment != "identifier" {
@@ -24,13 +28,13 @@ func TestFieldInfosFromColumnsPreservesNativeType(t *testing.T) {
 }
 
 func TestColumnInfosFromFieldsPrefersNativeType(t *testing.T) {
-	columns := ColumnInfosFromFields([]FieldInfo{{
+	columns := ColumnInfosFromFields([]datatype.FieldInfo{{
 		Name:       "id",
-		Type:       "int",
+		Type:       datatype.FieldTypeInt,
+		NativeType: "int4",
 		Nullable:   false,
 		PrimaryKey: true,
 		Comment:    "identifier",
-		Attributes: map[string]interface{}{"native_type": "int4"},
 	}})
 
 	if len(columns) != 1 {
