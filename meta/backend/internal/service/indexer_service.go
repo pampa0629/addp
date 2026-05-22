@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metacatalog"
@@ -34,7 +34,7 @@ func NewIndexerService(indexer *search.Indexer, log *slog.Logger) *IndexerServic
 }
 
 // IndexTableAsset 索引表资产到 Meilisearch
-func (s *IndexerService) IndexTableAsset(resource *commonModels.Engine, tenantID uint, schemaName string, tableInfo plugin.TableInfo, fields []format.FieldInfo, item *models.MetaItem) {
+func (s *IndexerService) IndexTableAsset(resource *commonModels.Engine, tenantID uint, schemaName string, tableInfo plugin.TableInfo, fields []datatype.FieldInfo, item *models.MetaItem) {
 	if s.indexer == nil || !s.indexer.Enabled() || resource == nil || item == nil {
 		return
 	}
@@ -53,7 +53,7 @@ func (s *IndexerService) IndexTableAsset(resource *commonModels.Engine, tenantID
 			ColumnType:   string(field.Type),
 			Comment:      field.Comment,
 			IsNullable:   field.Nullable,
-			IsPrimaryKey: field.IsPrimaryKey,
+			IsPrimaryKey: field.PrimaryKey,
 		})
 	}
 

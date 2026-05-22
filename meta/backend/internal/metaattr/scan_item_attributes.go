@@ -236,11 +236,6 @@ func DocumentFieldAttributes(fields []plugin.FieldInfo) []map[string]interface{}
 			"is_primary_key": field.PrimaryKey,
 		}
 
-		if field.Attributes != nil {
-			if occurrenceRate, ok := field.Attributes["occurrence_rate"]; ok {
-				fieldAttr["occurrence_rate"] = occurrenceRate
-			}
-		}
 		result = append(result, fieldAttr)
 	}
 	return result

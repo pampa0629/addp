@@ -41,9 +41,6 @@ type FieldInfo struct {
 	Comment      string             // 字段注释
 	Size         int                // 字符串长度或数值精度（0表示不限制）
 	Precision    int                // 小数位数（仅用于 decimal/numeric 类型）
-
-	// 用于文档数据库的动态 Schema
-	OccurrenceRate float64 // 字段出现率（0.0-1.0），仅用于文档数据库采样推断
 }
 
 // GetSpatialInfo 获取空间扩展信息（便捷方法）

@@ -54,6 +54,30 @@ func TestFieldAttributesFromFormatWritesSpatialFieldFacts(t *testing.T) {
 	}
 }
 
+func TestFieldAttributesFromDatatypeWritesStandardFieldFacts(t *testing.T) {
+	t.Parallel()
+
+	fields := FieldAttributesFromDatatype([]datatype.FieldInfo{{
+		Name:       "id",
+		Type:       datatype.FieldTypeInt,
+		NativeType: "int4",
+		Nullable:   false,
+		PrimaryKey: true,
+		Comment:    "identifier",
+	}})
+
+	if len(fields) != 1 {
+		t.Fatalf("fields = %#v, want one field", fields)
+	}
+	field := fields[0]
+	if field["name"] != "id" || field["type"] != "int" || field["native_type"] != "int4" {
+		t.Fatalf("field identity = %#v", field)
+	}
+	if field["is_primary_key"] != true || field["nullable"] != false || field["comment"] != "identifier" {
+		t.Fatalf("field facts = %#v", field)
+	}
+}
+
 func TestBuildDocumentCollectionAttributesWritesTypeInfoTableSection(t *testing.T) {
 	t.Parallel()
 

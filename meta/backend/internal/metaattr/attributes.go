@@ -106,6 +106,10 @@ func JSONMap(attrs map[string]interface{}) models.JSONMap {
 }
 
 func FieldAttributesFromFormat(fields []format.FieldInfo) []map[string]interface{} {
+	return FieldAttributesFromDatatype(format.DatatypeFieldInfos(fields))
+}
+
+func FieldAttributesFromDatatype(fields []datatype.FieldInfo) []map[string]interface{} {
 	fieldsData := make([]map[string]interface{}, 0, len(fields))
 	for _, f := range fields {
 		field := map[string]interface{}{
@@ -113,8 +117,11 @@ func FieldAttributesFromFormat(fields []format.FieldInfo) []map[string]interface
 			"type":           string(f.Type),
 			"is_nullable":    f.Nullable,
 			"nullable":       f.Nullable,
-			"is_primary_key": f.IsPrimaryKey,
+			"is_primary_key": f.PrimaryKey,
 			"comment":        f.Comment,
+		}
+		if f.NativeType != "" {
+			field["native_type"] = f.NativeType
 		}
 		if datatype.IsSpatialFieldType(f.Type) {
 			field["is_spatial"] = true

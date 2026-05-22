@@ -407,21 +407,7 @@ func (p *DatabaseTablePreviewProvider) describeDatabaseTable(
 	if err != nil {
 		return nil, nil, err
 	}
-	columns := make([]plugin.ColumnInfo, 0, len(itemMetadata.Fields))
-	for _, field := range itemMetadata.Fields {
-		dataType := commonJSON.InterfaceString(field.Attributes["native_type"])
-		if dataType == "" {
-			dataType = field.Type
-		}
-		columns = append(columns, plugin.ColumnInfo{
-			ColumnName:   field.Name,
-			DataType:     dataType,
-			IsNullable:   field.Nullable,
-			IsPrimaryKey: field.PrimaryKey,
-			Comment:      field.Comment,
-		})
-	}
-	return itemMetadata, columns, nil
+	return itemMetadata, plugin.ColumnInfosFromFields(itemMetadata.Fields), nil
 }
 
 func databaseTableCatalogPath(engineID uint, plug plugin.EnginePlugin, schema, table string) plugin.CatalogPath {

@@ -9,8 +9,6 @@ import (
 
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/common/format"
-	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metapath"
@@ -329,8 +327,8 @@ func (s *DatabaseScanService) scanTableDetails(
 	tableInfo plugin.TableInfo,
 	existingItem *models.MetaItem,
 	isDeepScan bool,
-) ([]format.FieldInfo, models.JSONMap, error) {
-	var fields []format.FieldInfo
+) ([]datatype.FieldInfo, models.JSONMap, error) {
+	var fields []datatype.FieldInfo
 	var attrs models.JSONMap
 
 	if isDeepScan {
@@ -339,7 +337,7 @@ func (s *DatabaseScanService) scanTableDetails(
 			return nil, nil, fmt.Errorf("字段扫描失败: %w", err)
 		}
 
-		fields = databaseFieldInfo(pluginColumns)
+		fields = databaseDatatypeFieldInfo(pluginColumns)
 
 		s.log.Info("字段扫描成功",
 			"table", tableInfo.TableName,
@@ -348,7 +346,7 @@ func (s *DatabaseScanService) scanTableDetails(
 		// 提取主键信息
 		primaryKeyColumns := []string{}
 		for _, field := range fields {
-			if field.IsPrimaryKey {
+			if field.PrimaryKey {
 				primaryKeyColumns = append(primaryKeyColumns, field.Name)
 			}
 		}
@@ -364,7 +362,7 @@ func (s *DatabaseScanService) scanTableDetails(
 			"primary_key_name": primaryKeyName,
 			"has_primary_key":  len(primaryKeyColumns) > 0,
 		}
-		attrs = metaattr.BuildTableAttributes(schemaName, metaattr.FieldAttributesFromFormat(fields), tableMetadata, tableType(tableInfo), tableComment(tableInfo))
+		attrs = metaattr.BuildTableAttributes(schemaName, metaattr.FieldAttributesFromDatatype(fields), tableMetadata, tableType(tableInfo), tableComment(tableInfo))
 		if len(primaryKeyColumns) > 0 {
 			metaattr.UpsertNested(attrs, "type_info", "table", map[string]interface{}{
 				"primary_key": primaryKeyColumns,
@@ -414,15 +412,16 @@ func engineSupportsSpatialMetadata(engineType string) bool {
 		capabilities.Storage.Metadata.SpatialMetadata
 }
 
-func databaseFieldInfo(columns []plugin.ColumnInfo) []format.FieldInfo {
-	fields := make([]format.FieldInfo, 0, len(columns))
+func databaseDatatypeFieldInfo(columns []plugin.ColumnInfo) []datatype.FieldInfo {
+	fields := make([]datatype.FieldInfo, 0, len(columns))
 	for _, col := range columns {
-		fields = append(fields, format.FieldInfo{
-			Name:         col.ColumnName,
-			Type:         datatype.FieldType(metaquery.StandardizeFieldType(col.DataType, col.DataType)),
-			Nullable:     col.IsNullable,
-			IsPrimaryKey: col.IsPrimaryKey,
-			Comment:      col.Comment,
+		fields = append(fields, datatype.FieldInfo{
+			Name:       col.ColumnName,
+			Type:       datatype.FieldType(metaquery.StandardizeFieldType(col.DataType, col.DataType)),
+			NativeType: col.DataType,
+			Nullable:   col.IsNullable,
+			PrimaryKey: col.IsPrimaryKey,
+			Comment:    col.Comment,
 		})
 	}
 	return fields
@@ -457,21 +456,7 @@ func (s *DatabaseScanService) listColumns(
 	if err != nil {
 		return nil, err
 	}
-	columns := make([]plugin.ColumnInfo, 0, len(item.Fields))
-	for _, field := range item.Fields {
-		dataType := commonJSON.InterfaceString(field.Attributes["native_type"])
-		if dataType == "" {
-			dataType = field.Type
-		}
-		columns = append(columns, plugin.ColumnInfo{
-			ColumnName:   field.Name,
-			DataType:     dataType,
-			IsNullable:   field.Nullable,
-			IsPrimaryKey: field.PrimaryKey,
-			Comment:      field.Comment,
-		})
-	}
-	return columns, nil
+	return plugin.ColumnInfosFromFields(item.Fields), nil
 }
 
 // scanSpatialMetadata 扫描PostGIS空间元数据

@@ -202,8 +202,7 @@ func (p *MongoDBPlugin) SampleDocumentMetadata(ctx context.Context, connInfo plu
 			Nullable:   true,
 			PrimaryKey: name == "_id",
 			Attributes: map[string]interface{}{
-				"occurrence_rate": float64(stat.Count) / maxFloat64(float64(len(documents)), 1),
-				"native_type":     stat.Type,
+				"native_type": stat.Type,
 			},
 		})
 	}
@@ -214,12 +213,7 @@ func (p *MongoDBPlugin) SampleDocumentMetadata(ctx context.Context, connInfo plu
 		if fields[j].Name == "_id" {
 			return false
 		}
-		left, _ := fields[i].Attributes["occurrence_rate"].(float64)
-		right, _ := fields[j].Attributes["occurrence_rate"].(float64)
-		if left == right {
-			return fields[i].Name < fields[j].Name
-		}
-		return left > right
+		return fields[i].Name < fields[j].Name
 	})
 
 	stats, err := p.getCollectionStats(ctx, connInfo, database, collection)

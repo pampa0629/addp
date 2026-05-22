@@ -14,6 +14,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
+	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metaitem"
 )
 
@@ -347,15 +348,7 @@ func tableFileSize(files []plugin.FileEntry) int64 {
 }
 
 func tableFileFieldAttributes(fields []format.FieldInfo) []map[string]interface{} {
-	fieldsData := make([]map[string]interface{}, 0, len(fields))
-	for _, f := range fields {
-		fieldsData = append(fieldsData, map[string]interface{}{
-			"name":     f.Name,
-			"type":     string(f.Type),
-			"nullable": f.Nullable,
-		})
-	}
-	return fieldsData
+	return metaattr.FieldAttributesFromFormat(fields)
 }
 
 func tableFieldsFromDescribeResult(tableInfo *datatype.TableDescribeResult) []format.FieldInfo {
@@ -736,14 +729,7 @@ func extractTableFileSingleFileInfoWithFormat(
 	}
 
 	fields := tableFieldsFromDescribeResult(tableInfo)
-	fieldsData := make([]map[string]interface{}, 0, len(fields))
-	for _, f := range fields {
-		fieldsData = append(fieldsData, map[string]interface{}{
-			"name":     f.Name,
-			"type":     string(f.Type),
-			"nullable": f.Nullable,
-		})
-	}
+	fieldsData := tableFileFieldAttributes(fields)
 
 	return &metaitem.CompositeItemInfo{
 		Fields:     fields,

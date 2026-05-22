@@ -165,17 +165,7 @@ func DescribeTabularItem(ctx context.Context, callbacks TabularCatalogCallbacks,
 		return nil, err
 	}
 
-	fields := make([]FieldInfo, 0, len(columns))
-	for _, col := range columns {
-		fields = append(fields, FieldInfo{
-			Name:       col.ColumnName,
-			Type:       col.DataType,
-			Nullable:   col.IsNullable,
-			PrimaryKey: col.IsPrimaryKey,
-			Comment:    col.Comment,
-			Attributes: map[string]interface{}{"native_type": col.DataType},
-		})
-	}
+	fields := FieldInfosFromColumns(columns)
 
 	stats := map[string]interface{}{}
 	if callbacks.RowCount != nil {
