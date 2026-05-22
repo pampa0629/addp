@@ -378,9 +378,7 @@ func (r *tableReader) Schema() *format.TableInfo {
 	if r == nil || r.schema == nil {
 		return nil
 	}
-	copied := *r.schema
-	copied.Fields = append([]format.FieldInfo(nil), r.schema.Fields...)
-	return &copied
+	return r.schema.Clone()
 }
 
 func (r *tableReader) ReadRows(ctx context.Context, limit int) ([]map[string]interface{}, error) {

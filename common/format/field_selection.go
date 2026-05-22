@@ -6,6 +6,7 @@ func ApplyFieldSelectionToTableInfo(info *TableInfo, selection *FieldSelectionOp
 	if info == nil || selection == nil || len(selection.Include) == 0 {
 		return info, nil
 	}
+	copied := info.Clone()
 	fieldByName := make(map[string]FieldInfo, len(info.Fields))
 	for _, field := range info.Fields {
 		fieldByName[field.Name] = field
@@ -26,16 +27,15 @@ func ApplyFieldSelectionToTableInfo(info *TableInfo, selection *FieldSelectionOp
 		}
 		fields = append(fields, field)
 	}
-	copied := *info
 	copied.Fields = fields
-	copied.PrimaryKey = selectedPrimaryKeys(info.PrimaryKey, seen)
+	copied.PrimaryKey = selectedPrimaryKeys(copied.PrimaryKey, seen)
 	if copied.SpatialInfo != nil {
 		geometry := copied.SpatialInfo.PrimaryGeometry()
 		if geometry == nil || !seen[geometry.Name] {
 			copied.SpatialInfo = nil
 		}
 	}
-	return &copied, nil
+	return copied, nil
 }
 
 func ApplyFieldSelectionToRows(rows []map[string]interface{}, selection *FieldSelectionOptions) []map[string]interface{} {

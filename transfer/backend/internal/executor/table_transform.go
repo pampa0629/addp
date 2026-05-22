@@ -39,7 +39,7 @@ func buildTableTransforms(plans []TableTransformPlan) ([]tableTransform, error) 
 }
 
 func applySchemaTransforms(schema *format.TableInfo, transforms []tableTransform) (*format.TableInfo, error) {
-	next := cloneTableInfo(schema)
+	next := schema.Clone()
 	for _, transform := range transforms {
 		var err error
 		next, err = transform.TransformSchema(next)
@@ -97,26 +97,27 @@ func newFieldMappingTransform(plan FieldMappingTransformPlan) (*fieldMappingTran
 
 func (t *fieldMappingTransform) TransformSchema(schema *format.TableInfo) (*format.TableInfo, error) {
 	if t == nil {
-		return cloneTableInfo(schema), nil
+		return schema.Clone(), nil
 	}
-	source := cloneTableInfo(schema)
+	source := schema.Clone()
 	if source == nil {
 		source = &format.TableInfo{}
 	}
 
 	var next *format.TableInfo
 	if t.mode == FieldMappingModePassthrough {
-		next = cloneTableInfo(source)
+		next = source.Clone()
 	} else {
+		sourceCopy := source.Clone()
 		next = &format.TableInfo{
 			Name:       source.Name,
-			PrimaryKey: append([]string(nil), source.PrimaryKey...),
-			FormatInfo: cloneMap(source.FormatInfo),
+			PrimaryKey: sourceCopy.PrimaryKey,
+			FormatInfo: sourceCopy.FormatInfo,
 		}
-		if source.RowCount != nil {
-			rowCount := *source.RowCount
-			next.RowCount = &rowCount
-		}
+		next.RowCount = sourceCopy.RowCount
+		next.SizeBytes = sourceCopy.SizeBytes
+		next.CreatedAt = sourceCopy.CreatedAt
+		next.UpdatedAt = sourceCopy.UpdatedAt
 	}
 	if next == nil {
 		next = &format.TableInfo{}
@@ -267,31 +268,4 @@ func upsertEngineField(fields []engineplugin.FieldInfo, field engineplugin.Field
 		}
 	}
 	return append(fields, field)
-}
-
-func cloneTableInfo(info *format.TableInfo) *format.TableInfo {
-	if info == nil {
-		return nil
-	}
-	next := *info
-	next.Fields = append([]format.FieldInfo(nil), info.Fields...)
-	next.PrimaryKey = append([]string(nil), info.PrimaryKey...)
-	next.FormatInfo = cloneMap(info.FormatInfo)
-	if info.RowCount != nil {
-		rowCount := *info.RowCount
-		next.RowCount = &rowCount
-	}
-	next.SpatialInfo = info.SpatialInfo.Clone()
-	return &next
-}
-
-func cloneMap(values map[string]interface{}) map[string]interface{} {
-	if len(values) == 0 {
-		return nil
-	}
-	next := make(map[string]interface{}, len(values))
-	for key, value := range values {
-		next[key] = value
-	}
-	return next
 }

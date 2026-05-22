@@ -443,9 +443,7 @@ func (r *tableReader) Schema() *format.TableInfo {
 	if r == nil || r.schema == nil {
 		return nil
 	}
-	copied := *r.schema
-	copied.Fields = append([]format.FieldInfo(nil), r.schema.Fields...)
-	return &copied
+	return r.schema.Clone()
 }
 
 func (r *tableReader) ReadRows(ctx context.Context, limit int) ([]map[string]interface{}, error) {
@@ -750,8 +748,7 @@ func mergeTableInfo(current, next *format.TableInfo) *format.TableInfo {
 	for _, field := range current.Fields {
 		existing[field.Name] = struct{}{}
 	}
-	copied := *current
-	copied.Fields = append([]format.FieldInfo(nil), current.Fields...)
+	copied := current.Clone()
 	for _, field := range next.Fields {
 		if _, ok := existing[field.Name]; ok {
 			continue
@@ -759,10 +756,9 @@ func mergeTableInfo(current, next *format.TableInfo) *format.TableInfo {
 		copied.Fields = append(copied.Fields, field)
 	}
 	if copied.SpatialInfo == nil && next.SpatialInfo != nil {
-		spatial := *next.SpatialInfo
-		copied.SpatialInfo = &spatial
+		copied.SpatialInfo = next.SpatialInfo.Clone()
 	}
-	return &copied
+	return copied
 }
 
 func formatOptionString(value interface{}) string {

@@ -1,6 +1,7 @@
 package shapefile
 
 import (
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	commonSpatial "github.com/addp/common/spatial"
 	"github.com/jonas-p/go-shp"

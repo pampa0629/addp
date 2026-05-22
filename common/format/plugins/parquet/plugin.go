@@ -361,10 +361,7 @@ func (r *tableReader) Schema() *format.TableInfo {
 	if r == nil || r.schema == nil {
 		return nil
 	}
-	copied := *r.schema
-	copied.Fields = append([]format.FieldInfo(nil), r.schema.Fields...)
-	copied.PrimaryKey = append([]string(nil), r.schema.PrimaryKey...)
-	return &copied
+	return r.schema.Clone()
 }
 
 func (r *tableReader) ReadRows(ctx context.Context, limit int) ([]map[string]interface{}, error) {
@@ -861,10 +858,7 @@ func (r *scopeTableReader) Schema() *format.TableInfo {
 	if r == nil || r.schema == nil {
 		return nil
 	}
-	copied := *r.schema
-	copied.Fields = append([]format.FieldInfo(nil), r.schema.Fields...)
-	copied.PrimaryKey = append([]string(nil), r.schema.PrimaryKey...)
-	return &copied
+	return r.schema.Clone()
 }
 
 func (r *scopeTableReader) ReadRows(ctx context.Context, limit int) ([]map[string]interface{}, error) {
@@ -1127,10 +1121,9 @@ func copyTableInfoWithPartitionFields(info *format.TableInfo, partitions []forma
 	if info == nil {
 		return nil
 	}
-	copied := *info
+	copied := info.Clone()
 	copied.Fields = appendPartitionFields(info.Fields, partitions)
-	copied.PrimaryKey = append([]string(nil), info.PrimaryKey...)
-	return &copied
+	return copied
 }
 
 func contextErr(ctx context.Context) error {

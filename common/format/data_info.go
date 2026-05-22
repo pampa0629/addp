@@ -54,6 +54,36 @@ func (t *TableInfo) IsSpatial() bool {
 	return spatialInfo != nil && spatialInfo.IsSpatial()
 }
 
+// Clone 返回 TableInfo 的深拷贝，供 reader / writer / transfer 操作 schema 复用。
+func (t *TableInfo) Clone() *TableInfo {
+	if t == nil {
+		return nil
+	}
+	cloned := *t
+	cloned.Fields = append([]FieldInfo(nil), t.Fields...)
+	cloned.PrimaryKey = append([]string(nil), t.PrimaryKey...)
+	cloned.FormatInfo = cloneInterfaceMap(t.FormatInfo)
+	cloned.SpatialInfo = t.SpatialInfo.Clone()
+	cloned.ContentIndex = t.ContentIndex.Clone()
+	if t.RowCount != nil {
+		rowCount := *t.RowCount
+		cloned.RowCount = &rowCount
+	}
+	if t.SizeBytes != nil {
+		sizeBytes := *t.SizeBytes
+		cloned.SizeBytes = &sizeBytes
+	}
+	if t.CreatedAt != nil {
+		createdAt := *t.CreatedAt
+		cloned.CreatedAt = &createdAt
+	}
+	if t.UpdatedAt != nil {
+		updatedAt := *t.UpdatedAt
+		cloned.UpdatedAt = &updatedAt
+	}
+	return &cloned
+}
+
 // FieldNames 返回所有字段名
 func (t *TableInfo) FieldNames() []string {
 	names := make([]string, len(t.Fields))
