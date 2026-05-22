@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"strings"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 )
 
@@ -19,13 +20,8 @@ func postgresGeometryColumns(fields []plugin.FieldInfo) map[string]struct{} {
 	return columns
 }
 
-func isPostgresGeometryField(fieldType string) bool {
-	switch strings.ToLower(strings.TrimSpace(fieldType)) {
-	case "geometry", "point", "linestring", "polygon", "multipoint":
-		return true
-	default:
-		return false
-	}
+func isPostgresGeometryField(fieldType datatype.FieldType) bool {
+	return datatype.IsSpatialFieldType(fieldType)
 }
 
 func postgresWriteValue(value interface{}, isGeometry bool) interface{} {

@@ -3,6 +3,7 @@ package postgresql
 import (
 	"testing"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 )
 
@@ -27,18 +28,19 @@ func TestPostgreSQLCapabilitiesDeclareTableWritePrepare(t *testing.T) {
 
 func TestPostgresSQLTypeForField(t *testing.T) {
 	tests := []struct {
-		name  string
-		field plugin.FieldInfo
-		want  string
+		name        string
+		field       plugin.FieldInfo
+		spatialInfo *datatype.SpatialInfo
+		want        string
 	}{
-		{name: "standard spatial attributes map", field: plugin.FieldInfo{Name: "geom", Type: "geometry", Attributes: map[string]interface{}{"geometry_type": "MultiPolygon", "srid": 4326}}, want: "GEOMETRY(MultiPolygon,4326)"},
-		{name: "standard spatial dimension z", field: plugin.FieldInfo{Name: "geom", Type: "geometry", Attributes: map[string]interface{}{"geometry_type": "Point", "srid": 4326, "dimension": 3}}, want: "GEOMETRY(PointZ,4326)"},
+		{name: "spatial info geometry type and srid", field: plugin.FieldInfo{Name: "geom", Type: datatype.FieldTypeGeometry}, spatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", "MultiPolygon", 4326, 0), want: "GEOMETRY(MultiPolygon,4326)"},
+		{name: "spatial info dimension z", field: plugin.FieldInfo{Name: "geom", Type: datatype.FieldTypeGeometry}, spatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", "Point", 4326, 3), want: "GEOMETRY(PointZ,4326)"},
 		{name: "common int", field: plugin.FieldInfo{Name: "id", Type: "int"}, want: "INTEGER"},
 		{name: "unknown defaults text", field: plugin.FieldInfo{Name: "x", Type: "unknown"}, want: "TEXT"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := postgresSQLTypeForField(tt.field); got != tt.want {
+			if got := postgresSQLTypeForField(tt.field, tt.spatialInfo); got != tt.want {
 				t.Fatalf("postgresSQLTypeForField() = %q, want %q", got, tt.want)
 			}
 		})

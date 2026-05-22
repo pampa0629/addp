@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/contentadapter"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
@@ -295,8 +296,9 @@ func TestTableTransferExecutorWritesShapefileZFromNativeSpatialDimension(t *test
 			{
 				Fields: []engineplugin.FieldInfo{
 					{Name: "id", Type: "int"},
-					{Name: "geom", Type: "geometry", Attributes: map[string]interface{}{"geometry_type": "Point", "srid": 4326, "dimension": 3}},
+					{Name: "geom", Type: "geometry"},
 				},
+				Spatial: datatype.NewSingleGeometrySpatialInfo("geom", "Point", 4326, 3),
 				Rows: []map[string]interface{}{
 					{"id": 1, "geom": "POINT Z (120 30 99.5)"},
 				},
@@ -368,8 +370,9 @@ func TestTableTransferExecutorPreservesNativeSchemaForNativeTarget(t *testing.T)
 			{
 				Fields: []engineplugin.FieldInfo{
 					{Name: "id", Type: "bigint"},
-					{Name: "SmGeometry", Type: "geometry", Attributes: map[string]interface{}{"geometry_type": "MultiPolygon", "srid": 4326}},
+					{Name: "SmGeometry", Type: "geometry"},
 				},
+				Spatial: datatype.NewSingleGeometrySpatialInfo("SmGeometry", "MultiPolygon", 4326, 0),
 				Rows: []map[string]interface{}{
 					{"id": int64(1), "SmGeometry": "0106000020E610000000000000"},
 				},
@@ -408,11 +411,14 @@ func TestTableTransferExecutorPreservesNativeSchemaForNativeTarget(t *testing.T)
 		t.Fatalf("prepared fields = %#v, want 2 fields", writer.preparedFields)
 	}
 	geom := writer.preparedFields[1]
-	if geom.Name != "SmGeometry" || geom.Type != "geometry" || geom.Attributes["geometry_type"] != "MultiPolygon" {
-		t.Fatalf("prepared spatial field = %#v, want standard spatial attributes", geom)
+	if geom.Name != "SmGeometry" || geom.Type != "geometry" {
+		t.Fatalf("prepared spatial field = %#v, want geometry field", geom)
 	}
-	if len(writer.sessionFields) != 2 || writer.sessionFields[1].Attributes["geometry_type"] != "MultiPolygon" {
-		t.Fatalf("session fields = %#v, want standard spatial attributes", writer.sessionFields)
+	if writer.preparedSpatialInfo.PrimaryGeometryType() != "MultiPolygon" || writer.preparedSpatialInfo.PrimarySRIDValue() != 4326 {
+		t.Fatalf("prepared spatial info = %#v, want standard spatial facts", writer.preparedSpatialInfo)
+	}
+	if len(writer.sessionFields) != 2 || writer.sessionSpatialInfo.PrimaryGeometryType() != "MultiPolygon" {
+		t.Fatalf("session fields = %#v, spatial info = %#v, want standard spatial facts", writer.sessionFields, writer.sessionSpatialInfo)
 	}
 }
 
@@ -422,8 +428,9 @@ func TestTableTransferExecutorTransformsNativeTargetSchema(t *testing.T) {
 			{
 				Fields: []engineplugin.FieldInfo{
 					{Name: "id", Type: "int"},
-					{Name: "geom", Type: "geometry", Attributes: map[string]interface{}{"geometry_type": "Point", "srid": 4326}},
+					{Name: "geom", Type: "geometry"},
 				},
+				Spatial: datatype.NewSingleGeometrySpatialInfo("geom", "Point", 4326, 0),
 				Rows: []map[string]interface{}{
 					{"id": 1, "geom": "POINT (120 30)"},
 				},
@@ -469,8 +476,14 @@ func TestTableTransferExecutorTransformsNativeTargetSchema(t *testing.T) {
 	if writer.preparedFields[1].Name != "geometry" || writer.preparedFields[1].Type != "geometry" {
 		t.Fatalf("second prepared field = %#v, want geometry geometry", writer.preparedFields[1])
 	}
+	if writer.preparedSpatialInfo.PrimaryGeometryName() != "geometry" || writer.preparedSpatialInfo.PrimaryGeometryType() != "Point" {
+		t.Fatalf("prepared spatial info = %#v, want transformed geometry spatial facts", writer.preparedSpatialInfo)
+	}
 	if len(writer.batches) != 1 {
 		t.Fatalf("session batches = %#v, want one batch", writer.batches)
+	}
+	if writer.batches[0].Spatial.PrimaryGeometryName() != "geometry" {
+		t.Fatalf("batch spatial info = %#v, want transformed geometry column", writer.batches[0].Spatial)
 	}
 	if _, ok := writer.batches[0].Rows[0]["road_id"]; !ok {
 		t.Fatalf("written row = %#v, want transformed road_id", writer.batches[0].Rows[0])
@@ -610,12 +623,14 @@ type fakeContentWriter struct {
 }
 
 type fakeNativeTableWriter struct {
-	preparedFields []engineplugin.FieldInfo
-	sessionFields  []engineplugin.FieldInfo
-	batches        []*engineplugin.BatchData
-	deleted        bool
-	closed         bool
-	aborted        bool
+	preparedFields      []engineplugin.FieldInfo
+	preparedSpatialInfo *datatype.SpatialInfo
+	sessionFields       []engineplugin.FieldInfo
+	sessionSpatialInfo  *datatype.SpatialInfo
+	batches             []*engineplugin.BatchData
+	deleted             bool
+	closed              bool
+	aborted             bool
 }
 
 func (w *fakeNativeTableWriter) Type() string { return "fake_native_table_writer" }
@@ -646,6 +661,7 @@ func (w *fakeNativeTableWriter) StoreSemantics() engineplugin.StoreSemantics {
 
 func (w *fakeNativeTableWriter) PrepareTableWrite(_ context.Context, _ engineplugin.ConnectionInfo, _ engineplugin.CatalogPath, opts engineplugin.TableWriteOptions) error {
 	w.preparedFields = append([]engineplugin.FieldInfo(nil), opts.Fields...)
+	w.preparedSpatialInfo = opts.SpatialInfo.Clone()
 	return nil
 }
 
@@ -661,6 +677,7 @@ func (w *fakeNativeTableWriter) WriteBatch(_ context.Context, _ engineplugin.Con
 
 func (w *fakeNativeTableWriter) OpenTableWriteSession(_ context.Context, _ engineplugin.ConnectionInfo, _ engineplugin.CatalogPath, opts engineplugin.TableWriteSessionOptions) (engineplugin.TableWriteSession, error) {
 	w.sessionFields = append([]engineplugin.FieldInfo(nil), opts.Fields...)
+	w.sessionSpatialInfo = opts.SpatialInfo.Clone()
 	return &fakeNativeTableWriteSession{writer: w}, nil
 }
 

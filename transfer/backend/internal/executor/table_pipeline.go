@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"github.com/addp/common/contentio"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/contentadapter"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
@@ -427,9 +428,10 @@ func (r *multiTableBatchReader) ReadBatch(ctx context.Context, limit int) (*engi
 		return nil, fmt.Errorf("read encoded source multi table rows at offset %d: %w", r.offset, err)
 	}
 	batch := &engineplugin.BatchData{
-		Rows:   rows,
-		Fields: tableInfoFields(r.Schema()),
-		Offset: r.offset,
+		Rows:    rows,
+		Fields:  tableInfoFields(r.Schema()),
+		Spatial: tableInfoSpatialInfo(r.Schema()),
+		Offset:  r.offset,
 	}
 	r.offset += int64(len(rows))
 	return batch, nil
@@ -481,9 +483,10 @@ func (r *encodedTableBatchReader) ReadBatch(ctx context.Context, limit int) (*en
 		return nil, fmt.Errorf("read encoded source rows at offset %d: %w", r.offset, err)
 	}
 	batch := &engineplugin.BatchData{
-		Rows:   rows,
-		Fields: tableInfoFields(r.Schema()),
-		Offset: r.offset,
+		Rows:    rows,
+		Fields:  tableInfoFields(r.Schema()),
+		Spatial: tableInfoSpatialInfo(r.Schema()),
+		Offset:  r.offset,
 	}
 	r.offset += int64(len(rows))
 	return batch, nil
@@ -525,9 +528,10 @@ func (r *multiEncodedTableBatchReader) ReadBatch(ctx context.Context, limit int)
 		return nil, fmt.Errorf("sample encoded source table refs at offset %d: %w", r.offset, err)
 	}
 	batch := &engineplugin.BatchData{
-		Rows:   rows,
-		Fields: tableInfoFields(r.schema),
-		Offset: r.offset,
+		Rows:    rows,
+		Fields:  tableInfoFields(r.schema),
+		Spatial: tableInfoSpatialInfo(r.schema),
+		Offset:  r.offset,
 	}
 	r.offset += int64(len(rows))
 	if len(rows) < limit {
@@ -568,9 +572,10 @@ func (r *sampleEncodedTableBatchReader) ReadBatch(ctx context.Context, limit int
 		return nil, fmt.Errorf("close encoded source content at offset %d: %w", r.offset, closeErr)
 	}
 	batch := &engineplugin.BatchData{
-		Rows:   rows,
-		Fields: tableInfoFields(r.schema),
-		Offset: r.offset,
+		Rows:    rows,
+		Fields:  tableInfoFields(r.schema),
+		Spatial: tableInfoSpatialInfo(r.schema),
+		Offset:  r.offset,
 	}
 	r.offset += int64(len(rows))
 	if len(rows) < limit {
@@ -619,15 +624,17 @@ func (t *nativeTableBatchTarget) Open(ctx context.Context, schema *format.TableI
 		return nil, err
 	}
 	fields := tableInfoFields(schema)
+	spatialInfo := tableInfoSpatialInfo(schema)
 	if t.tableSessionProvider != nil && isCopyWriteMethod(t.writeOptions.Method) {
 		session, err := t.tableSessionProvider.OpenTableWriteSession(ctx, t.connInfo, t.path, engineplugin.TableWriteSessionOptions{
-			Method: t.writeOptions.Method,
-			Fields: fields,
+			Method:      t.writeOptions.Method,
+			Fields:      fields,
+			SpatialInfo: spatialInfo,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("open native table write session: %w", err)
 		}
-		return &nativeTableSessionBatchWriter{session: session, fields: fields}, nil
+		return &nativeTableSessionBatchWriter{session: session, fields: fields, spatialInfo: spatialInfo}, nil
 	}
 	if t.writer == nil {
 		return nil, fmt.Errorf("native table target requires batch writer")
@@ -638,6 +645,7 @@ func (t *nativeTableBatchTarget) Open(ctx context.Context, schema *format.TableI
 		path:         t.path,
 		writeOptions: t.writeOptions,
 		fields:       fields,
+		spatialInfo:  spatialInfo,
 	}, nil
 }
 
@@ -646,7 +654,8 @@ func (t *nativeTableBatchTarget) prepare(ctx context.Context, schema *format.Tab
 		return fmt.Errorf("target engine does not implement table write prepare")
 	}
 	opts := engineplugin.TableWriteOptions{
-		Fields: tableInfoFields(schema),
+		Fields:      tableInfoFields(schema),
+		SpatialInfo: tableInfoSpatialInfo(schema),
 	}
 	if err := t.preparer.PrepareTableWrite(ctx, t.connInfo, t.path, opts); err != nil {
 		return fmt.Errorf("prepare native table write: %w", err)
@@ -660,13 +669,14 @@ type nativeDirectBatchWriter struct {
 	path         engineplugin.CatalogPath
 	writeOptions engineplugin.BatchWriteOptions
 	fields       []engineplugin.FieldInfo
+	spatialInfo  *datatype.SpatialInfo
 }
 
 func (w *nativeDirectBatchWriter) WriteBatch(ctx context.Context, batch *engineplugin.BatchData) error {
 	if batch == nil || len(batch.Rows) == 0 {
 		return nil
 	}
-	batch = batchWithTargetFields(batch, w.fields)
+	batch = batchWithTargetFields(batch, w.fields, w.spatialInfo)
 	if err := w.writer.WriteBatch(ctx, w.connInfo, w.path, batch, w.writeOptions); err != nil {
 		return fmt.Errorf("write native table batch at offset %d: %w", batch.Offset, err)
 	}
@@ -681,26 +691,30 @@ func (w *nativeDirectBatchWriter) Abort(context.Context) error {
 	return nil
 }
 
-func batchWithTargetFields(batch *engineplugin.BatchData, fields []engineplugin.FieldInfo) *engineplugin.BatchData {
-	if batch == nil || len(fields) == 0 {
+func batchWithTargetFields(batch *engineplugin.BatchData, fields []engineplugin.FieldInfo, spatialInfo *datatype.SpatialInfo) *engineplugin.BatchData {
+	if batch == nil || (len(fields) == 0 && spatialInfo == nil) {
 		return batch
 	}
 	copyBatch := *batch
-	copyBatch.Fields = append([]engineplugin.FieldInfo(nil), fields...)
+	if len(fields) > 0 {
+		copyBatch.Fields = append([]engineplugin.FieldInfo(nil), fields...)
+	}
+	copyBatch.Spatial = spatialInfo.Clone()
 	return &copyBatch
 }
 
 type nativeTableSessionBatchWriter struct {
-	session engineplugin.TableWriteSession
-	fields  []engineplugin.FieldInfo
-	closed  bool
+	session     engineplugin.TableWriteSession
+	fields      []engineplugin.FieldInfo
+	spatialInfo *datatype.SpatialInfo
+	closed      bool
 }
 
 func (w *nativeTableSessionBatchWriter) WriteBatch(ctx context.Context, batch *engineplugin.BatchData) error {
 	if batch == nil || len(batch.Rows) == 0 {
 		return nil
 	}
-	batch = batchWithTargetFields(batch, w.fields)
+	batch = batchWithTargetFields(batch, w.fields, w.spatialInfo)
 	if err := w.session.WriteBatch(ctx, batch); err != nil {
 		_ = w.session.Abort(ctx)
 		w.closed = true

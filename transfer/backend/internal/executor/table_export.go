@@ -1,14 +1,13 @@
 package executor
 
 import (
-	"github.com/addp/common/datatype"
 	"sort"
 	"strings"
 
 	"github.com/addp/common/contentio"
+	"github.com/addp/common/datatype"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
-	commonJSON "github.com/addp/common/jsonmap"
 )
 
 const defaultBatchSize = 1000
@@ -26,13 +25,13 @@ func tableInfoFromBatch(batch *engineplugin.BatchData) *format.TableInfo {
 		}
 		info.Fields = append(info.Fields, format.FieldInfo{
 			Name:         name,
-			Type:         datatype.FieldType(field.Type),
+			Type:         field.Type,
 			Nullable:     field.Nullable,
 			IsPrimaryKey: field.PrimaryKey,
 			Comment:      field.Comment,
 		})
-		applySpatialInfoFromField(info, field)
 	}
+	info.SpatialInfo = spatialInfoFromBatch(batch)
 	if len(info.Fields) == 0 && len(batch.Rows) > 0 {
 		names := make([]string, 0, len(batch.Rows[0]))
 		for name := range batch.Rows[0] {
@@ -46,39 +45,20 @@ func tableInfoFromBatch(batch *engineplugin.BatchData) *format.TableInfo {
 	return info
 }
 
-func applySpatialInfoFromField(info *format.TableInfo, field engineplugin.FieldInfo) {
-	if info == nil || !datatype.IsSpatialFieldType(datatype.FieldType(field.Type)) {
-		return
+func spatialInfoFromBatch(batch *engineplugin.BatchData) *datatype.SpatialInfo {
+	if batch == nil {
+		return nil
 	}
-	geometryType := ""
-	srid := 0
-	dimension := 0
-	if field.Attributes == nil {
-		if info.SpatialInfo.PrimaryGeometryName() == "" {
-			info.SpatialInfo = datatype.NewSingleGeometrySpatialInfo(field.Name, "", 0, 0)
+	if batch.Spatial != nil {
+		return batch.Spatial.Clone()
+	}
+	for _, field := range batch.Fields {
+		if field.Name == "" || !datatype.IsSpatialFieldType(field.Type) {
+			continue
 		}
-		return
+		return datatype.NewSingleGeometrySpatialInfo(field.Name, "", 0, 0)
 	}
-	geometryType = commonJSON.InterfaceString(field.Attributes["geometry_type"])
-	srid = int(commonJSON.InterfaceInt64(field.Attributes["srid"]))
-	dimension = int(commonJSON.InterfaceInt64(field.Attributes["dimension"]))
-	if info.SpatialInfo == nil || info.SpatialInfo.PrimaryGeometryName() == "" {
-		info.SpatialInfo = datatype.NewSingleGeometrySpatialInfo(field.Name, geometryType, srid, dimension)
-		return
-	}
-	column := info.SpatialInfo.PrimaryGeometry()
-	if column == nil || column.Name != field.Name {
-		return
-	}
-	if column.GeometryType == "" {
-		column.GeometryType = geometryType
-	}
-	if column.SRID == nil && srid > 0 {
-		column.SRID = &srid
-	}
-	if column.Dimension == nil && dimension > 0 {
-		column.Dimension = &dimension
-	}
+	return nil
 }
 
 func contentRefFromCatalogPath(path engineplugin.CatalogPath) contentio.Ref {

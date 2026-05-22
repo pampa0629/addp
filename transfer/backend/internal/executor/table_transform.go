@@ -3,9 +3,9 @@ package executor
 import (
 	"context"
 	"fmt"
-	"github.com/addp/common/datatype"
 	"strings"
 
+	"github.com/addp/common/datatype"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 )
@@ -127,20 +127,9 @@ func (t *fieldMappingTransform) TransformSchema(schema *format.TableInfo) (*form
 		field := fieldInfoForMapping(source, mapping)
 		upsertFieldInfo(next, field)
 		if datatype.IsSpatialFieldType(field.Type) {
-			geometryType := source.SpatialInfo.PrimaryGeometryType()
-			srid := source.SpatialInfo.PrimarySRIDValue()
-			dimension := source.SpatialInfo.PrimaryDimensionValue()
-			next.SpatialInfo = datatype.NewSingleGeometrySpatialInfo(mapping.Target, geometryType, srid, dimension)
-			if source.SpatialInfo != nil {
-				if source.SpatialInfo.Extent != nil {
-					extent := *source.SpatialInfo.Extent
-					next.SpatialInfo.Extent = &extent
-				}
-				if source.SpatialInfo.HasSpatialIndex != nil {
-					hasSpatialIndex := *source.SpatialInfo.HasSpatialIndex
-					next.SpatialInfo.HasSpatialIndex = &hasSpatialIndex
-				}
-				next.SpatialInfo.IndexName = source.SpatialInfo.IndexName
+			next.SpatialInfo = cloneSpatialInfoForColumn(source.SpatialInfo, mapping.Target)
+			if next.SpatialInfo == nil {
+				next.SpatialInfo = datatype.NewSingleGeometrySpatialInfo(mapping.Target, "", 0, 0)
 			}
 		}
 	}
@@ -151,10 +140,12 @@ func (t *fieldMappingTransform) TransformBatch(ctx context.Context, batch *engin
 	if t == nil || batch == nil {
 		return batch, nil
 	}
+	fields := fieldMappingBatchFields(batch.Fields, t.fields, t.mode)
 	next := &engineplugin.BatchData{
-		Rows:   make([]map[string]interface{}, 0, len(batch.Rows)),
-		Fields: fieldMappingBatchFields(batch.Fields, t.fields, t.mode),
-		Offset: batch.Offset,
+		Rows:    make([]map[string]interface{}, 0, len(batch.Rows)),
+		Fields:  fields,
+		Spatial: fieldMappingBatchSpatial(batch.Spatial, fields, t.fields, t.mode),
+		Offset:  batch.Offset,
 	}
 	for _, row := range batch.Rows {
 		if err := ctx.Err(); err != nil {
@@ -220,10 +211,58 @@ func engineFieldForMapping(source []engineplugin.FieldInfo, mapping FieldMapping
 	}
 	field.Name = mapping.Target
 	if mapping.TargetType != "" {
-		field.Type = mapping.TargetType
+		field.Type = datatype.FieldType(mapping.TargetType)
 	}
 	field.Nullable = mapping.Nullable
 	return field
+}
+
+func fieldMappingBatchSpatial(source *datatype.SpatialInfo, fields []engineplugin.FieldInfo, mappings []FieldMappingFieldPlan, mode FieldMappingMode) *datatype.SpatialInfo {
+	if source == nil {
+		for _, field := range fields {
+			if datatype.IsSpatialFieldType(field.Type) {
+				return datatype.NewSingleGeometrySpatialInfo(field.Name, "", 0, 0)
+			}
+		}
+		return nil
+	}
+	if mode == FieldMappingModePassthrough {
+		return source.Clone()
+	}
+	primaryName := source.PrimaryGeometryName()
+	for _, mapping := range mappings {
+		field := findEngineField(fields, mapping.Target)
+		if !datatype.IsSpatialFieldType(field.Type) {
+			continue
+		}
+		if primaryName != "" && !strings.EqualFold(mapping.Source, primaryName) && !strings.EqualFold(mapping.Target, primaryName) {
+			continue
+		}
+		return cloneSpatialInfoForColumn(source, mapping.Target)
+	}
+	return nil
+}
+
+func cloneSpatialInfoForColumn(source *datatype.SpatialInfo, columnName string) *datatype.SpatialInfo {
+	if source == nil || columnName == "" {
+		return nil
+	}
+	spatial := datatype.NewSingleGeometrySpatialInfo(
+		columnName,
+		source.PrimaryGeometryType(),
+		source.PrimarySRIDValue(),
+		source.PrimaryDimensionValue(),
+	)
+	if source.Extent != nil {
+		extent := *source.Extent
+		spatial.Extent = &extent
+	}
+	if source.HasSpatialIndex != nil {
+		hasSpatialIndex := *source.HasSpatialIndex
+		spatial.HasSpatialIndex = &hasSpatialIndex
+	}
+	spatial.IndexName = source.IndexName
+	return spatial
 }
 
 func findFieldInfo(schema *format.TableInfo, name string) format.FieldInfo {

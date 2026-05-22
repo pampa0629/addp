@@ -1,9 +1,9 @@
 package executor
 
 import (
-	"github.com/addp/common/datatype"
 	"strings"
 
+	"github.com/addp/common/datatype"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 )
@@ -28,36 +28,18 @@ func tableInfoFields(info *format.TableInfo) []engineplugin.FieldInfo {
 		}
 		fields = append(fields, engineplugin.FieldInfo{
 			Name:       field.Name,
-			Type:       string(field.Type),
+			Type:       field.Type,
 			Nullable:   field.Nullable,
 			PrimaryKey: field.IsPrimaryKey,
 			Comment:    field.Comment,
-			Attributes: fieldAttributes(info, field),
 		})
 	}
 	return fields
 }
 
-func fieldAttributes(info *format.TableInfo, field format.FieldInfo) map[string]interface{} {
-	if info == nil || info.SpatialInfo == nil || !datatype.IsSpatialFieldType(field.Type) {
+func tableInfoSpatialInfo(info *format.TableInfo) *datatype.SpatialInfo {
+	if info == nil {
 		return nil
 	}
-	geometryColumn := info.SpatialInfo.PrimaryGeometryName()
-	if geometryColumn != "" && geometryColumn != field.Name {
-		return nil
-	}
-	attrs := map[string]interface{}{}
-	if geometryType := info.SpatialInfo.PrimaryGeometryType(); geometryType != "" {
-		attrs["geometry_type"] = geometryType
-	}
-	if srid := info.SpatialInfo.PrimarySRIDValue(); srid > 0 {
-		attrs["srid"] = srid
-	}
-	if dimension := info.SpatialInfo.PrimaryDimensionValue(); dimension > 0 {
-		attrs["dimension"] = dimension
-	}
-	if len(attrs) == 0 {
-		return nil
-	}
-	return attrs
+	return info.SpatialInfo.Clone()
 }

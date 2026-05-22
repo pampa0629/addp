@@ -201,14 +201,7 @@ type ItemMetadata struct {
 	UpdatedAt  *time.Time             `json:"updated_at,omitempty"`
 }
 
-type FieldInfo struct {
-	Name       string                 `json:"name"`
-	Type       string                 `json:"type"`
-	Nullable   bool                   `json:"nullable"`
-	PrimaryKey bool                   `json:"primary_key,omitempty"`
-	Comment    string                 `json:"comment,omitempty"`
-	Attributes map[string]interface{} `json:"attributes,omitempty"`
-}
+type FieldInfo = datatype.FieldInfo
 
 type StoreSemantics struct {
 	Semantics    []string `json:"semantics,omitempty"`
@@ -242,17 +235,20 @@ type BatchWriteOptions struct {
 }
 
 type TableWriteSessionOptions struct {
-	Method string
-	Fields []FieldInfo
+	Method      string
+	Fields      []datatype.FieldInfo
+	SpatialInfo *datatype.SpatialInfo
 }
 
 type TableWriteOptions struct {
-	Fields []FieldInfo
+	Fields      []datatype.FieldInfo
+	SpatialInfo *datatype.SpatialInfo
 }
 
 type BatchData struct {
 	Rows     []map[string]interface{} `json:"rows"`
-	Fields   []FieldInfo              `json:"fields,omitempty"`
+	Fields   []datatype.FieldInfo     `json:"fields,omitempty"`
+	Spatial  *datatype.SpatialInfo    `json:"spatial,omitempty"`
 	Metadata map[string]interface{}   `json:"metadata,omitempty"`
 	Offset   int64                    `json:"offset,omitempty"`
 }

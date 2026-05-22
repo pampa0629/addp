@@ -7,7 +7,7 @@ import (
 	"github.com/addp/common/format"
 )
 
-func TestPostgresFieldInfoFromColumnConvertsSpatialNativeTypeToAttributes(t *testing.T) {
+func TestPostgresFieldInfoFromColumnKeepsSpatialNativeType(t *testing.T) {
 	field := postgresFieldInfoFromColumn(postgresColumnInfo{
 		Name:       "SmGeometry",
 		DataType:   "USER-DEFINED",
@@ -21,14 +21,18 @@ func TestPostgresFieldInfoFromColumnConvertsSpatialNativeTypeToAttributes(t *tes
 	if field.Type != "geometry" {
 		t.Fatalf("field type = %q, want geometry", field.Type)
 	}
-	if field.Attributes["geometry_type"] != "MultiPolygon" || field.Attributes["srid"] != 4326 {
-		t.Fatalf("attributes = %#v, want standard spatial attributes", field.Attributes)
+	if field.NativeType != "geometry(MultiPolygon,4326)" {
+		t.Fatalf("native type = %q, want geometry(MultiPolygon,4326)", field.NativeType)
+	}
+	spatialInfo := postgresSpatialInfoFromFields([]plugin.FieldInfo{field})
+	if spatialInfo.PrimaryGeometryType() != "MultiPolygon" || spatialInfo.PrimarySRIDValue() != 4326 {
+		t.Fatalf("spatial info = %#v, want standard spatial facts", spatialInfo)
 	}
 }
 
 func TestPostgresReadBatchFieldsKeepsSchemaMetadataInColumnOrder(t *testing.T) {
 	fields := postgresReadBatchFields([]string{"id", "SmGeometry"}, []plugin.FieldInfo{
-		{Name: "SmGeometry", Type: "geometry", Attributes: map[string]interface{}{"geometry_type": "MultiPolygon", "srid": 4326}},
+		{Name: "SmGeometry", Type: "geometry", NativeType: "geometry(MultiPolygon,4326)"},
 		{Name: "id", Type: "bigint"},
 	})
 
@@ -38,7 +42,7 @@ func TestPostgresReadBatchFieldsKeepsSchemaMetadataInColumnOrder(t *testing.T) {
 	if fields[0].Name != "id" || fields[0].Type != "bigint" {
 		t.Fatalf("first field = %#v, want id bigint", fields[0])
 	}
-	if fields[1].Name != "SmGeometry" || fields[1].Type != "geometry" || fields[1].Attributes["geometry_type"] != "MultiPolygon" {
+	if fields[1].Name != "SmGeometry" || fields[1].Type != "geometry" || fields[1].NativeType != "geometry(MultiPolygon,4326)" {
 		t.Fatalf("second field = %#v, want spatial field metadata", fields[1])
 	}
 }

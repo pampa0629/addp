@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
-	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/sqldialect"
 )
 
@@ -26,10 +26,10 @@ func (p *PostgreSQLPlugin) PrepareTableWrite(ctx context.Context, connInfo plugi
 	}
 	defer db.Close()
 
-	return createPostgresTableIfNotExists(ctx, db, schema, table, opts.Fields)
+	return createPostgresTableIfNotExists(ctx, db, schema, table, opts.Fields, opts.SpatialInfo)
 }
 
-func createPostgresTableIfNotExists(ctx context.Context, db *sql.DB, schema, table string, fields []plugin.FieldInfo) error {
+func createPostgresTableIfNotExists(ctx context.Context, db *sql.DB, schema, table string, fields []plugin.FieldInfo, spatialInfo *datatype.SpatialInfo) error {
 	if len(fields) == 0 {
 		return fmt.Errorf("postgresql table write prepare requires table fields")
 	}
@@ -50,7 +50,7 @@ func createPostgresTableIfNotExists(ctx context.Context, db *sql.DB, schema, tab
 			continue
 		}
 		seen[name] = struct{}{}
-		definition := dialect.QuoteIdentifier(name) + " " + postgresSQLTypeForField(field)
+		definition := dialect.QuoteIdentifier(name) + " " + postgresSQLTypeForField(field, spatialInfo)
 		if !field.Nullable {
 			definition += " NOT NULL"
 		}
@@ -95,8 +95,8 @@ func (p *PostgreSQLPlugin) DeleteResource(ctx context.Context, connInfo plugin.C
 	return nil
 }
 
-func postgresSQLTypeForField(field plugin.FieldInfo) string {
-	if sqlType := postgresSpatialTypeForField(field); sqlType != "" {
+func postgresSQLTypeForField(field plugin.FieldInfo, spatialInfo *datatype.SpatialInfo) string {
+	if sqlType := postgresSpatialTypeForField(field, spatialInfo); sqlType != "" {
 		return sqlType
 	}
 	if sqlType, ok := postgresSQLTypeForCommonType(field.Type); ok {
@@ -105,33 +105,61 @@ func postgresSQLTypeForField(field plugin.FieldInfo) string {
 	return "TEXT"
 }
 
-func postgresSpatialTypeForField(field plugin.FieldInfo) string {
-	fieldType := strings.ToLower(strings.TrimSpace(field.Type))
-	if fieldType != "geometry" && fieldType != "point" && fieldType != "linestring" && fieldType != "polygon" && fieldType != "multipoint" {
+func postgresSpatialTypeForField(field plugin.FieldInfo, spatialInfo *datatype.SpatialInfo) string {
+	if !datatype.IsSpatialFieldType(field.Type) {
 		return ""
 	}
-	geometryType := commonJSON.InterfaceString(field.Attributes["geometry_type"])
-	if geometryType == "" {
-		switch fieldType {
-		case "point":
-			geometryType = "Point"
-		case "linestring":
-			geometryType = "LineString"
-		case "polygon":
-			geometryType = "Polygon"
-		case "multipoint":
-			geometryType = "MultiPoint"
+	column := postgresSpatialColumnForField(spatialInfo, field.Name)
+	geometryType := ""
+	dimension := int64(0)
+	srid := int64(0)
+	if column != nil {
+		geometryType = strings.TrimSpace(column.GeometryType)
+		if column.Dimension != nil {
+			dimension = int64(*column.Dimension)
+		}
+		if column.SRID != nil {
+			srid = int64(*column.SRID)
 		}
 	}
 	if geometryType == "" {
+		geometryType = postgresGeometryTypeForFieldType(field.Type)
+	}
+	if geometryType == "" {
 		return ""
 	}
-	geometryType = postgresGeometryTypeWithDimension(geometryType, commonJSON.InterfaceInt64(field.Attributes["dimension"]))
-	srid := commonJSON.InterfaceInt64(field.Attributes["srid"])
+	geometryType = postgresGeometryTypeWithDimension(geometryType, dimension)
 	if srid > 0 {
 		return fmt.Sprintf("GEOMETRY(%s,%d)", geometryType, srid)
 	}
 	return fmt.Sprintf("GEOMETRY(%s)", geometryType)
+}
+
+func postgresSpatialColumnForField(spatialInfo *datatype.SpatialInfo, fieldName string) *datatype.GeometryColumnInfo {
+	if spatialInfo == nil || fieldName == "" {
+		return nil
+	}
+	for i := range spatialInfo.GeometryColumns {
+		if strings.EqualFold(spatialInfo.GeometryColumns[i].Name, fieldName) {
+			return &spatialInfo.GeometryColumns[i]
+		}
+	}
+	return nil
+}
+
+func postgresGeometryTypeForFieldType(fieldType datatype.FieldType) string {
+	switch fieldType {
+	case datatype.FieldTypePoint:
+		return "Point"
+	case datatype.FieldTypeLineString:
+		return "LineString"
+	case datatype.FieldTypePolygon:
+		return "Polygon"
+	case datatype.FieldTypeMultiPoint:
+		return "MultiPoint"
+	default:
+		return ""
+	}
 }
 
 func postgresGeometryTypeWithDimension(geometryType string, dimension int64) string {
@@ -149,45 +177,47 @@ func postgresGeometryTypeWithDimension(geometryType string, dimension int64) str
 	return normalized + "Z"
 }
 
-func postgresSQLTypeForCommonType(fieldType string) (string, bool) {
-	switch strings.ToLower(strings.TrimSpace(fieldType)) {
-	case "string", "":
+func postgresSQLTypeForCommonType(fieldType datatype.FieldType) (string, bool) {
+	switch datatype.ParseFieldType(string(fieldType)) {
+	case datatype.FieldTypeString:
 		return "TEXT", true
-	case "int":
+	case "":
+		return "TEXT", true
+	case datatype.FieldTypeInt:
 		return "INTEGER", true
-	case "bigint":
+	case datatype.FieldTypeBigInt:
 		return "BIGINT", true
-	case "float":
+	case datatype.FieldTypeFloat:
 		return "REAL", true
-	case "double":
+	case datatype.FieldTypeDouble:
 		return "DOUBLE PRECISION", true
-	case "decimal":
+	case datatype.FieldTypeDecimal:
 		return "NUMERIC", true
-	case "bool", "boolean":
+	case datatype.FieldTypeBool:
 		return "BOOLEAN", true
-	case "date":
+	case datatype.FieldTypeDate:
 		return "DATE", true
-	case "time":
+	case datatype.FieldTypeTime:
 		return "TIME", true
-	case "timestamp", "datetime":
+	case datatype.FieldTypeTimestamp:
 		return "TIMESTAMP", true
-	case "bytes", "binary":
+	case datatype.FieldTypeBytes:
 		return "BYTEA", true
-	case "geometry":
+	case datatype.FieldTypeGeometry:
 		return "GEOMETRY", true
-	case "point":
+	case datatype.FieldTypePoint:
 		return "GEOMETRY(Point)", true
-	case "linestring":
+	case datatype.FieldTypeLineString:
 		return "GEOMETRY(LineString)", true
-	case "polygon":
+	case datatype.FieldTypePolygon:
 		return "GEOMETRY(Polygon)", true
-	case "multipoint":
+	case datatype.FieldTypeMultiPoint:
 		return "GEOMETRY(MultiPoint)", true
-	case "json":
+	case datatype.FieldTypeJSON:
 		return "JSONB", true
-	case "uuid":
+	case datatype.FieldTypeUUID:
 		return "UUID", true
-	case "array":
+	case datatype.FieldTypeArray:
 		return "TEXT[]", true
 	default:
 		return "", false
