@@ -104,56 +104,42 @@ POST /api/{module}/operators/:name/execute
 }
 ```
 
-## 开发模式声明
+## 能力声明
 
-引擎通过`dev_modes`字段声明支持的开发方式:
+引擎能力统一使用 `engine.capabilities/v1` 结构，由 common engine 插件的 `Capabilities()` 方法声明。外部引擎启动自注册时也可以提交同结构的能力声明；未提交时，System 会按 `engine_type` 生成默认能力声明。
 
-| DevMode | 说明 | 使用场景 |
-|---------|------|---------|
-| `sql` | SQL编辑器(文本编码) | PostgreSQL, Apache Spark等数据库引擎 |
-| `workflow` | 工作流画布(算子拖拽成DAG) | GeoPandas, Spark 工作流等计算引擎 |
-| `form` | 简单表单配置 | 单一算子快速执行(如手动触发扫描) |
-| `script` | 脚本编辑器(未来) | Python/JavaScript等脚本语言 |
+能力只表达引擎自身 native / provider 能力，例如 `compute.workflow`、`compute.script`、`storage.catalog`、`storage.store`。不要在引擎能力中维护 Transfer、Preview、Develop 等模块对引擎的适配列表。
+
+工作流引擎的算子列表、参数、输出端口等动态能力不写入 `capabilities`，通过 `GET /api/operators` 和 common engine 的 `WorkflowRuntimeProvider.ListOperators()` 实时发现。
 
 ## 引擎自动注册
 
 引擎启动时应自动注册到System资源中心:
 
-**注册端点**: `POST http://system-backend:8180/internal/registry/capabilities`
+**注册端点**: `POST http://system-backend:8180/api/v1/internal/engines/register`
 
 **注册数据格式**:
 ```json
 {
-  "unique_identifier": "python_workflow",
-  "name": "python_workflow_engine",
-  "display_name": "Python Workflow 空间计算引擎",
-  "resource_type": "python_workflow",
+  "engine_type": "python_workflow",
+  "name": "Python Workflow 工作流引擎",
+  "description": "基于 Python 的工作流执行引擎",
+  "connection_info": {
+    "protocol": "http",
+    "port": 8099
+  },
   "is_builtin": true,
   "capabilities": {
-    "compute": [{
-      "type": "spatial",
-      "dev_modes": ["workflow"],
-      "supported_formats": ["geojson", "wkt", "shapely"],
-      "features": ["dag", "memory_efficient", "batch"]
-    }]
-  },
-  "task_api_config": {
-    "base_url": "http://python-workflow-engine:8099",
-    "endpoints": {
-      "list_operators": {
-        "method": "GET",
-        "path": "/api/spatial/operators"
-      },
-      "execute": {
-        "method": "POST",
-        "path": "/api/spatial/operators/{{.OperatorName}}/execute"
+    "schema_version": "engine.capabilities/v1",
+    "engine_type": "python_workflow",
+    "engine_family": "workflow",
+    "compute": {
+      "workflow": {
+        "supported": true,
+        "runtime_api": "addp.workflow/v1",
+        "dynamic_operators": true
       }
     }
-  },
-  "health_check_config": {
-    "endpoint": "/health",
-    "timeout": 5,
-    "interval": 60
   }
 }
 ```
@@ -164,7 +150,7 @@ POST /api/{module}/operators/:name/execute
 
 - [ ] 在`engines/`目录下创建引擎目录
 - [ ] 实现统一算子API(`/api/operators`, `/api/operators/:op/execute`)
-- [ ] 声明引擎能力(compute/storage)和支持的dev_modes
+- [ ] 在 common engine 插件中声明 `engine.capabilities/v1` 能力
 - [ ] 实现健康检查端点(`/health`)
 - [ ] 配置自动注册逻辑
 - [ ] 添加到docker-compose.yml

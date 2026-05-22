@@ -519,6 +519,7 @@ type RegisterEngineRequest struct {
 	Name           string                 `json:"name" binding:"required"`
 	Description    string                 `json:"description"`
 	ConnectionInfo map[string]interface{} `json:"connection_info" binding:"required"`
+	Capabilities   *models.JSONString     `json:"capabilities"`
 	IsBuiltin      bool                   `json:"is_builtin"` // 是否为内置引擎（对所有租户可见）
 }
 
@@ -562,6 +563,7 @@ func (h *EngineHandler) RegisterEngineInternal(c *gin.Context) {
 			EngineOrigin:     "extension",
 			Description:      req.Description,
 			ConnectionInfo:   req.ConnectionInfo,
+			Capabilities:     req.Capabilities,
 			IsActive:         true,
 			IsBuiltin:        req.IsBuiltin, // 使用请求中的 is_builtin 值
 			TenantID:         nil,           // 平台级引擎
@@ -581,7 +583,7 @@ func (h *EngineHandler) RegisterEngineInternal(c *gin.Context) {
 		existingEngine.Name = req.Name
 		existingEngine.Description = req.Description
 		existingEngine.ConnectionInfo = req.ConnectionInfo
-		existingEngine.Capabilities = nil
+		existingEngine.Capabilities = req.Capabilities
 		existingEngine.IsBuiltin = req.IsBuiltin // 更新 is_builtin 字段
 
 		if err := h.engineService.UpdateEngine(existingEngine); err != nil {

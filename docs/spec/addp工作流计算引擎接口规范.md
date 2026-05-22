@@ -201,7 +201,8 @@ Content-Type: application/json
       }
     ]
   },
-  "input_data": {}  // 可选，外部输入数据
+  "input_data": {},  // 可选，外部输入数据
+  "engine_id": 34    // 可选，运行时资源 ID，例如 spark_workflow 指向实际 Spark 资源
 }
 ```
 
@@ -471,7 +472,7 @@ def register_to_system():
             "protocol": "http",
             "port": 8097
         },
-        "capabilities": json.dumps({
+        "capabilities": {
             "schema_version": "engine.capabilities/v1",
             "engine_type": "math_workflow",
             "engine_family": "workflow",
@@ -482,13 +483,17 @@ def register_to_system():
                     "dynamic_operators": True
                 }
             }
-        })
+        }
     }
 
-    requests.post(f"{SYSTEM_URL}/internal/engines/register",
+    requests.post(f"{SYSTEM_URL}/api/v1/internal/engines/register",
                   json=payload,
                   headers={"X-Internal-API-Key": API_KEY})
 ```
+
+`capabilities.compute.workflow` 只声明该引擎具备统一工作流运行时能力。算子列表、参数、分类和输出端口通过 `GET /api/operators` 动态获取，不写入注册时的能力声明。
+
+工作流执行由 Common Engine 的 `WorkflowRuntimeProvider.ExecuteWorkflow()` 统一调用。若某类工作流引擎需要绑定外部运行时资源，例如 `spark_workflow` 需要实际 Spark 资源 ID，应作为执行期运行时参数传入标准请求顶层字段（当前为 `engine_id`），而不是写入 `capabilities`，也不是由 Develop 等业务模块直接拼接引擎私有 HTTP 契约。
 
 ---
 

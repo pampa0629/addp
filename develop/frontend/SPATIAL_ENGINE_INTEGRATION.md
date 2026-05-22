@@ -2,7 +2,7 @@
 
 ## 概述
 
-ADDP平台现已支持多空间引擎架构。Develop模块通过新的API可以动态获取支持workflow开发模式的空间引擎列表,为未来扩展(如Spark 工作流)做好准备。
+ADDP平台现已支持多空间引擎架构。Develop模块通过新的API可以动态获取具备 `compute.workflow` 能力的空间引擎列表,为未来扩展(如Spark 工作流)做好准备。
 
 ## 后端API
 
@@ -21,12 +21,16 @@ ADDP平台现已支持多空间引擎架构。Develop模块通过新的API可以
       "display_name": "Python Workflow 空间计算引擎",
       "resource_type": "python_workflow",
       "capabilities": {
-        "compute": [{
-          "type": "spatial",
-          "dev_modes": ["workflow"],
-          "supported_formats": ["geojson", "wkt", "shapely"],
-          "features": ["dag", "memory_efficient", "batch"]
-        }]
+        "schema_version": "engine.capabilities/v1",
+        "engine_type": "python_workflow",
+        "engine_family": "workflow",
+        "compute": {
+          "workflow": {
+            "supported": true,
+            "runtime_api": "addp.workflow/v1",
+            "dynamic_operators": true
+          }
+        }
       },
       "is_builtin": true,
       "status": "active"
@@ -195,13 +199,11 @@ const settings = ref({
 })
 
 const getFormats = (engine) => {
-  const compute = engine.capabilities?.compute?.[0]
-  return compute?.supported_formats || []
+  return engine.capabilities?.extensions?.workflow_runtime?.supported_formats || []
 }
 
 const getFeatures = (engine) => {
-  const compute = engine.capabilities?.compute?.[0]
-  return compute?.features || []
+  return engine.capabilities?.extensions?.workflow_runtime?.features || []
 }
 
 onMounted(async () => {
@@ -241,16 +243,14 @@ onMounted(async () => {
    ```python
    # 新引擎启动时自动注册
    registration_data = {
-       "unique_identifier": "spark_workflow",
-       "resource_type": "spark_workflow",
-       "capabilities": {
-           "compute": [{
-               "type": "spatial",
-               "dev_modes": ["workflow"],
-               "engine": "spark",
-               "scale": "distributed"
-           }]
-       }
+       "engine_type": "spark_workflow",
+       "name": "Spark 工作流引擎",
+       "description": "基于 Apache Spark 的分布式工作流执行引擎",
+       "connection_info": {
+           "protocol": "http",
+           "port": 8098
+       },
+       "is_builtin": true
    }
    ```
 
@@ -300,11 +300,11 @@ curl -H "Authorization: Bearer YOUR_TOKEN" \
 ### 2. 测试引擎能力
 
 ```javascript
-// 检查引擎支持的开发模式
+// 检查引擎是否支持工作流能力
 const engine = engines[0]
-const compute = engine.capabilities.compute[0]
-console.log('支持的开发模式:', compute.dev_modes)
-// 输出: ["workflow"]
+const workflow = engine.capabilities.compute.workflow
+console.log('支持工作流:', workflow.supported)
+// 输出: true
 ```
 
 ### 3. 测试引擎切换

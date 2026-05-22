@@ -117,8 +117,10 @@ func ParseCommaSeparated(s string) []string {
 	return result
 }
 
-// SupportsDevMode 检查资源是否支持指定的开发模式
-// devMode: "sql", "workflow", "form", "script"
+// SupportsDevMode 检查资源是否支持指定的开发入口。
+// 这是兼容命名；事实源是 engine.capabilities/v1 的 compute.query/workflow/script，
+// 不是旧版 capabilities.compute[].dev_modes 字段。
+// devMode: "query"/"sql", "workflow", "notebook"/"script"
 func SupportsDevMode(resource *models.Engine, devMode string) bool {
 	cap, err := ParseCapabilities(resource.Capabilities)
 	if err != nil || cap == nil {
@@ -128,7 +130,7 @@ func SupportsDevMode(resource *models.Engine, devMode string) bool {
 	return supportsDevMode(cap, devMode)
 }
 
-// GetSupportedDevModes 获取资源支持的所有开发模式
+// GetSupportedDevModes 获取资源支持的开发入口名称，名称由 compute 能力派生。
 func GetSupportedDevModes(resource *models.Engine) []string {
 	cap, err := ParseCapabilities(resource.Capabilities)
 	if err != nil || cap == nil {

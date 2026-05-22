@@ -64,6 +64,9 @@ func HTTPExecuteWorkflow(ctx context.Context, connInfo ConnectionInfo, req Workf
 		"workflow_def": req.WorkflowDef,
 		"input_data":   req.InputData,
 	}
+	for key, value := range req.Runtime {
+		payload[key] = value
+	}
 	if req.InputData != nil {
 		if engineID, ok := req.InputData["engine_id"]; ok {
 			payload["engine_id"] = engineID

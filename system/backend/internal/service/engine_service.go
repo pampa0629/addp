@@ -847,8 +847,8 @@ func (s *EngineService) ValidateSystemEngineType(engineType string) error {
 	return s.validateSystemEngineType(engineType, nil)
 }
 
-// RefreshAllEngineCapabilities 将已注册引擎的能力声明统一刷新为当前插件体系结构。
-// ADDP 当前不保留旧 capabilities 结构；未知插件类型保留为 unknown 族的新结构。
+// RefreshAllEngineCapabilities 将空能力或旧能力声明刷新为当前插件体系结构。
+// 已经符合 engine.capabilities/v1 的声明保留，避免覆盖外部 runtime 自注册上报的引擎自身扩展能力。
 func (s *EngineService) RefreshAllEngineCapabilities() error {
 	engines, err := s.repo.ListAll()
 	if err != nil {
@@ -857,6 +857,9 @@ func (s *EngineService) RefreshAllEngineCapabilities() error {
 
 	for i := range engines {
 		engine := engines[i]
+		if !s.shouldRefreshCapabilities(engine.Capabilities) {
+			continue
+		}
 		capabilities := s.generateDefaultCapabilities(engine.EngineType)
 		capabilitiesJSON := toJSONStringPtr(capabilities)
 		if err := s.validateCapabilities(capabilitiesJSON); err != nil {
@@ -872,6 +875,13 @@ func (s *EngineService) RefreshAllEngineCapabilities() error {
 	}
 
 	return nil
+}
+
+func (s *EngineService) shouldRefreshCapabilities(capabilities *models.JSONString) bool {
+	if capabilities == nil || *capabilities == "" {
+		return true
+	}
+	return s.validateCapabilities(capabilities) != nil
 }
 
 // checkDuplicateResource 检查是否存在重复资源

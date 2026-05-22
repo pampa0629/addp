@@ -13,7 +13,7 @@
    - **任务保存**: 保存为 GIS 任务定义（存储到 `develop.spatial_tasks`），供 Orchestrator 发现和编排
 5. **通用模式**: 为未来的统计引擎（R/Python）、机器学习引擎提供参考架构
 6. **仅注册引擎本身**: System 中只注册 `python-workflow.engine.default`，不注册 21 个具体算子
-7. **动态任务发现**: Orchestrator 通过 `task_api_config.endpoints["list"]` 动态查询 Python Workflow Engine 的任务列表（类似 Transfer 模式）
+7. **动态任务发现**: Orchestrator 通过 Python Workflow Engine 的标准工作流 API 动态查询和执行任务（类似 Transfer 模式）
 
 **核心价值**:
 - ✅ 空间算子在 GeoPandas 内存中链式计算（高性能）
@@ -30,21 +30,16 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  System Backend (能力注册中心)                                  │
+│  System Backend (引擎注册中心)                                  │
 │  ┌───────────────────────────────────────────────────────────┐ │
 │  │ PostgreSQL (system.engines 表) ★ 任务定义存储       │ │
 │  │                                                            │ │
 │  │ ★ 只注册引擎本身（1 条记录）                               │ │
 │  │   {                                                        │ │
-│  │     unique_identifier: "python-workflow.engine.default",        │ │
-│  │     resource_type: "compute_engine",                      │ │
-│  │     task_api_config: {                                    │ │
-│  │       base_url: "http://python-workflow-engine:8090",          │ │
-│  │       endpoints: {                                        │ │
-│  │         list: { path: "/api/spatial/tasks" },  ← 关键端点 │ │
-│  │         execute: { path: "/api/spatial/tasks/:id/execute" } │ │
-│  │       }                                                    │ │
-│  │     }                                                      │ │
+│  │     engine_type: "python_workflow",                       │ │
+│  │     engine_family: "workflow",                            │ │
+│  │     connection_info: { protocol: "http", port: 8099 },     │ │
+│  │     capabilities: engine.capabilities/v1                   │ │
 │  │   }                                                        │ │
 │  │                                                            │ │
 │  │ ✅ Transfer: "transfer.worker.default"                    │ │
@@ -122,10 +117,9 @@
 
 ┌──────────────────────────────────────────────────────────────────┐
 │  Orchestrator Backend (统一编排层)                                │
-│  • 查询 System: GET /internal/registry/capabilities              │
+│  • 查询 System: GET /internal/registry/compute-engines           │
 │  • 返回引擎列表: [transfer, meta, python-workflow]                     │
-│  • 查询任务列表: GET /api/tasks/list?unique_identifier=...       │
-│  • 解析 task_api_config.endpoints["list"]                       │
+│  • 查询工作流运行时能力: compute.workflow                        │
 │  • 调用引擎 API: GET http://python-workflow-engine:8090/api/spatial/tasks │
 │  • 动态发现 GIS 任务（类似 Transfer）                            │
 │  • 混合编排：SQL → GIS 工作流 → Transfer                         │
@@ -290,10 +284,7 @@ POST /api/develop/spatial/tasks
     ↓
 存储到 PostgreSQL: develop.spatial_tasks 表
     ↓
-自动注册到 System: system.engines
-  - unique_identifier: "spatial.beijing_poi_buffer.v1"
-  - resource_type: "spatial_task"
-  - task_api_config: {...}  // 指向 Python Workflow Engine
+保存为 Develop 任务定义，记录所使用的 Python Workflow Engine
     ↓
 Orchestrator Frontend 从 System 查询，显示在任务库
     ↓
@@ -389,66 +380,14 @@ func (e *Executor) resolveTemplateReferences(params map[string]interface{}, step
 
 ```json
 {
-  "unique_identifier": "python-workflow.engine.default",
+  "engine_type": "python_workflow",
   "name": "Python Workflow 空间计算引擎",
-  "resource_type": "compute_engine",
-  "is_builtin": true,
-  "capabilities": {
-    "compute": [{
-      "type": "spatial.workflow",
-      "supported_formats": ["geojson", "wkt", "shapely"],
-      "features": ["dag", "memory_efficient", "batch"]
-    }]
+  "description": "基于 Python 的工作流执行引擎",
+  "connection_info": {
+    "protocol": "http",
+    "port": 8099
   },
-  "task_api_config": {
-    "base_url": "http://python-workflow-engine:8090",
-    "endpoints": {
-      "list": {
-        "method": "GET",
-        "path": "/api/spatial/tasks",
-        "query_params": {
-          "tenant_id": "{{.TenantID}}",
-          "page": "{{.Page}}",
-          "page_size": "{{.PageSize}}"
-        }
-      },
-      "create": {
-        "method": "POST",
-        "path": "/api/spatial/tasks",
-        "body_template": {
-          "name": "{{.Name}}",
-          "workflow_def": "{{.WorkflowDef}}",
-          "input_schema": "{{.InputSchema}}"
-        }
-      },
-      "execute": {
-        "method": "POST",
-        "path": "/api/spatial/tasks/{{.TaskID}}/execute",
-        "body_template": {
-          "inputs": "{{.Inputs}}"
-        }
-      },
-      "status": {
-        "method": "GET",
-        "path": "/api/spatial/executions/{{.ExecutionID}}",
-        "response_mapping": {
-          "status_field": "status",
-          "progress_field": "progress",
-          "result_field": "result"
-        }
-      }
-    },
-    "timeout": {
-      "create": 30,
-      "execute": 600,
-      "status": 10
-    }
-  },
-  "health_check_config": {
-    "endpoint": "/health",
-    "timeout": 5,
-    "interval": 60
-  }
+  "is_builtin": true
 }
 ```
 
@@ -811,7 +750,7 @@ def save_to_postgis(self, gdf: gpd.GeoDataFrame, execution_id: str, tenant_id: i
 3. 实现 `operators.py`（21个空间算子封装）
 4. 实现 `api_server.py`（Flask REST API）
 5. 容器化（Dockerfile + docker-compose.yml）
-6. 启动时自动注册到 System（POST /internal/registry/capabilities）
+6. 启动时自动注册到 System（POST /api/v1/internal/engines/register）
 
 **验证**:
 ```bash
@@ -827,8 +766,8 @@ curl -X POST http://localhost:8090/api/spatial/workflow \
   -d '{"tasks": [{"id": "t1", "operator": "buffer", "params": {...}}]}'
 
 # 验证 System 注册
-curl http://localhost:8180/internal/registry/capabilities | \
-  jq '.[] | select(.unique_identifier == "python-workflow.engine.default")'
+curl http://localhost:8180/internal/registry/compute-engines | \
+  jq '.[] | select(.engine_type == "python_workflow")'
 ```
 
 ---

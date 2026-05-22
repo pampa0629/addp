@@ -29,7 +29,7 @@
 | 字段名 | 类型 | 约束 | 说明 |
 |--------|------|------|------|
 | `is_builtin` | BOOLEAN | DEFAULT false, INDEX | 是否为内置引擎（内置引擎不可删除） |
-| `capabilities` | JSONB | | 能力声明（存储和计算能力） |
+| `capabilities` | JSONB | | 引擎自身 native / provider 能力声明 |
 
 **注意**：
 - `extension_api_config` 和 `health_check_config` 字段已废弃（数据库字段保留但不使用）
@@ -119,12 +119,16 @@
     "port": 8099
   },
   "capabilities": {
-    "compute": [{
-      "dev_modes": ["workflow"],
-      "supported_sources": ["postgresql", "mysql", "minio"],
-      "features": ["dag", "pandas", "numpy"],
-      "description": "Python数据处理引擎"
-    }]
+    "schema_version": "engine.capabilities/v1",
+    "engine_type": "python_workflow",
+    "engine_family": "workflow",
+    "compute": {
+      "workflow": {
+        "supported": true,
+        "runtime_api": "addp.workflow/v1",
+        "dynamic_operators": true
+      }
+    }
   }
 }
 ```
@@ -189,72 +193,104 @@
 ### 4.2 Capabilities（能力声明）
 
 **类型**：JSONB
-**作用**：声明引擎支持的存储和计算能力
+**作用**：声明引擎自身具备、且可由 ADDP 统一消费的 native / provider 能力。
+
+`system.engines.capabilities` 使用 `engine.capabilities/v1` 结构。内置引擎的事实来源是引擎插件的 `Capabilities()` 方法；System 服务启动时会基于当前插件体系刷新已注册引擎能力。Engine API 创建或更新引擎时，如果调用方未提供能力声明，System 会按 `engine_type` 生成当前结构；Registry 注册接口提交能力时也必须使用该结构。
+
+**边界**：
+- 该字段只表达引擎自身能力，例如 catalog、metadata、store、query、workflow、script。
+- 不表达 Transfer、Manager Preview、Meta 等 ADDP 模块对某个引擎的适配状态。
+- 上层模块可以读取该字段形成自己的执行策略，但模块适配情况不写回该字段。
+- 旧版 `storage[]` / `compute[]`、`dev_modes`、`supported_sources` 结构已不再兼容，发现后应刷新为当前结构。
 
 #### 数据结构
 
 ```go
-type Capability struct {
-    Storage []StorageCapability `json:"storage,omitempty"`
-    Compute []ComputeCapability `json:"compute,omitempty"`
+type EngineCapabilities struct {
+    SchemaVersion string                 `json:"schema_version"`
+    EngineType    string                 `json:"engine_type"`
+    EngineFamily  string                 `json:"engine_family"`
+    Storage       *StorageCapabilities   `json:"storage,omitempty"`
+    Compute       *ComputeCapabilities   `json:"compute,omitempty"`
+    Limits        map[string]interface{} `json:"limits,omitempty"`
+    Extensions    map[string]interface{} `json:"extensions,omitempty"`
 }
 
-type StorageCapability struct {
-    Type    string   `json:"type"`              // read（可读）, write（可写）
-    Formats []string `json:"formats,omitempty"` // 支持的格式
+type StorageCapabilities struct {
+    CatalogModel *CatalogModelSpec   `json:"catalog_model,omitempty"`
+    Catalog      *CatalogCapability  `json:"catalog,omitempty"`
+    Metadata     *MetadataCapability `json:"metadata,omitempty"`
+    Store        *StoreCapability    `json:"store,omitempty"`
+    Semantics    []string            `json:"semantics,omitempty"`
+    NotSupported []string            `json:"not_supported,omitempty"`
 }
 
-type ComputeCapability struct {
-    SupportedSources []string `json:"supported_sources,omitempty"` // 支持的数据源
-    Features         []string `json:"features,omitempty"`          // 功能特性
-    DevModes         []string `json:"dev_modes,omitempty"`         // 开发模式
-    Description      string   `json:"description,omitempty"`       // 描述
+type ComputeCapabilities struct {
+    Query    *QueryCapability    `json:"query,omitempty"`
+    Workflow *WorkflowCapability `json:"workflow,omitempty"`
+    Script   *ScriptCapability   `json:"script,omitempty"`
 }
 ```
 
-#### DevModes 可选值
+#### 顶层字段
 
-| 值 | 含义 | 适用引擎 |
-|---|---|---|
-| `query` | 查询语言开发（SQL/MQL等） | PostgreSQL、MySQL、MongoDB |
-| `workflow` | 可视化工作流 | Python Workflow、Spark Workflow |
-| `notebook` | Notebook 开发 | Jupyter Notebook |
+| 字段 | 说明 |
+|---|---|
+| `schema_version` | 固定为 `engine.capabilities/v1` |
+| `engine_type` | 引擎类型，如 `postgresql`、`mysql`、`python_workflow` |
+| `engine_family` | 粗粒度引擎族，如 `tabular`、`object`、`file`、`document`、`graph`、`workflow`、`script` |
+| `storage` | 存储、目录、元数据、内容访问能力 |
+| `compute` | 查询、工作流、脚本或 Notebook 运行能力 |
+| `limits` | 跨能力限制，有真实调用方时使用 |
+| `extensions` | 引擎特有补充信息，不得替代核心字段 |
+
+详细规范见 [ADDP 引擎能力声明规范](../../../docs/spec/addp引擎能力声明规范.md)。
 
 #### PostgreSQL 示例
 ```json
 {
-  "storage": [
-    {
-      "type": "read",
-      "formats": ["sql", "table"]
+  "schema_version": "engine.capabilities/v1",
+  "engine_type": "postgresql",
+  "engine_family": "tabular",
+  "storage": {
+    "catalog_model": {
+      "path_version": "catalog.path/v1",
+      "root_term": "server",
+      "levels": [
+        {"term": "schema", "kinds": ["schema"], "container": true, "i18n_key": "engine.term.schema"},
+        {"term": "table", "kinds": ["table", "view", "materialized_view", "external_table"], "item": true, "i18n_key": "engine.term.table"}
+      ]
     },
-    {
-      "type": "write",
-      "formats": ["sql", "table"]
+    "catalog": {"supported": true, "real_time": true, "system_filtering": true},
+    "metadata": {"supported": true, "field_schema": true, "statistics": true, "indexes": true, "constraints": true, "spatial_metadata": true, "native_metadata": true},
+    "store": {"batch_read": true, "table_read_session": true, "batch_write": true, "table_write_session": true, "table_write_prepare": true, "delete": true}
+  },
+  "compute": {
+    "query": {
+      "supported": true,
+      "languages": ["sql"],
+      "default_language": "sql",
+      "result_kinds": ["table", "scalar"],
+      "supports_explain": true,
+      "supports_cancel": true
     }
-  ],
-  "compute": [
-    {
-      "dev_modes": ["query"],
-      "supported_sources": ["postgresql"],
-      "features": ["sql", "transaction", "acid"],
-      "description": "PostgreSQL SQL查询引擎"
-    }
-  ]
+  }
 }
 ```
 
 #### Python Workflow 示例
 ```json
 {
-  "compute": [
-    {
-      "dev_modes": ["workflow"],
-      "supported_sources": ["postgresql", "mysql", "minio", "s3"],
-      "features": ["dag", "memory_efficient", "batch", "pandas", "numpy", "scipy"],
-      "description": "Python数据处理（Pandas, GeoPandas, NumPy, SciPy）"
+  "schema_version": "engine.capabilities/v1",
+  "engine_type": "python_workflow",
+  "engine_family": "workflow",
+  "compute": {
+    "workflow": {
+      "supported": true,
+      "runtime_api": "addp.workflow/v1",
+      "dynamic_operators": true
     }
-  ]
+  }
 }
 ```
 
@@ -499,14 +535,16 @@ Content-Type: application/json
   "engine_type": "python_workflow",
   "is_builtin": true,
   "capabilities": {
-    "compute": [
-      {
-        "dev_modes": ["workflow"],
-        "supported_sources": ["postgresql", "mysql", "minio"],
-        "features": ["dag", "pandas"],
-        "description": "Python数据处理"
+    "schema_version": "engine.capabilities/v1",
+    "engine_type": "python_workflow",
+    "engine_family": "workflow",
+    "compute": {
+      "workflow": {
+        "supported": true,
+        "runtime_api": "addp.workflow/v1",
+        "dynamic_operators": true
       }
-    ]
+    }
   },
   "description": "基于 Python 的工作流引擎",
   "connection_info": {
@@ -653,14 +691,16 @@ curl -X POST http://localhost:8180/api/engines \
       "port": 8099
     },
     "capabilities": {
-      "compute": [
-        {
-          "dev_modes": ["workflow"],
-          "supported_sources": ["postgresql", "mysql", "minio"],
-          "features": ["dag", "pandas", "numpy"],
-          "description": "Python数据处理引擎"
+      "schema_version": "engine.capabilities/v1",
+      "engine_type": "python_workflow",
+      "engine_family": "workflow",
+      "compute": {
+        "workflow": {
+          "supported": true,
+          "runtime_api": "addp.workflow/v1",
+          "dynamic_operators": true
         }
-      ]
+      }
     },
     "description": "基于 Python 的通用数据处理工作流引擎"
   }'
@@ -709,12 +749,16 @@ curl http://localhost:8180/internal/registry/compute-engines
         "port": 8099
       },
       "capabilities": {
-        "compute": [
-          {
-            "dev_modes": ["workflow"],
-            "description": "Python数据处理引擎"
+        "schema_version": "engine.capabilities/v1",
+        "engine_type": "python_workflow",
+        "engine_family": "workflow",
+        "compute": {
+          "workflow": {
+            "supported": true,
+            "runtime_api": "addp.workflow/v1",
+            "dynamic_operators": true
           }
-        ]
+        }
       }
     }
   ]

@@ -122,6 +122,157 @@ func toPluginEngine(engine *models.Engine) *plugin.Engine {
 	return pluginEngine
 }
 
+// ListWorkflowOperators 通过工作流运行时 Provider 动态发现算子。
+func ListWorkflowOperators(ctx context.Context, engine *models.Engine) ([]models.OperatorMetadata, error) {
+	p, err := plugin.Get(engine.EngineType)
+	if err != nil {
+		return nil, err
+	}
+	workflowProvider, ok := p.(plugin.WorkflowRuntimeProvider)
+	if !ok {
+		return nil, fmt.Errorf("plugin %s does not implement WorkflowRuntimeProvider", engine.EngineType)
+	}
+
+	operators, err := workflowProvider.ListOperators(ctx, plugin.ConnectionInfo(engine.ConnectionInfo))
+	if err != nil {
+		return nil, err
+	}
+	return toModelOperators(engine, operators), nil
+}
+
+// ExecuteWorkflow 通过工作流运行时 Provider 执行工作流。
+func ExecuteWorkflow(ctx context.Context, engine *models.Engine, req plugin.WorkflowExecuteRequest) (*plugin.WorkflowExecuteResult, error) {
+	p, err := plugin.Get(engine.EngineType)
+	if err != nil {
+		return nil, err
+	}
+	workflowProvider, ok := p.(plugin.WorkflowRuntimeProvider)
+	if !ok {
+		return nil, fmt.Errorf("plugin %s does not implement WorkflowRuntimeProvider", engine.EngineType)
+	}
+	return workflowProvider.ExecuteWorkflow(ctx, plugin.ConnectionInfo(engine.ConnectionInfo), req)
+}
+
+func toModelOperators(engine *models.Engine, operators []plugin.OperatorMetadata) []models.OperatorMetadata {
+	result := make([]models.OperatorMetadata, 0, len(operators))
+	for _, op := range operators {
+		result = append(result, models.OperatorMetadata{
+			ID:                  firstNonEmpty(op.ID, op.Name),
+			Name:                op.Name,
+			DisplayName:         op.DisplayName,
+			Type:                op.Type,
+			Category:            op.Category,
+			Description:         op.Description,
+			BriefDescription:    op.BriefDescription,
+			DetailedDescription: op.DetailedDescription,
+			Parameters:          toModelParameters(op.Parameters),
+			Inputs:              toStringInputs(op.Inputs),
+			OutputPorts:         toModelOutputPorts(op.OutputPorts),
+			Module:              firstNonEmpty(op.Module, engine.EngineType),
+		})
+	}
+	return result
+}
+
+func toModelParameters(parameters []plugin.ParameterMetadata) []models.ParameterMetadata {
+	result := make([]models.ParameterMetadata, 0, len(parameters))
+	for _, param := range parameters {
+		result = append(result, models.ParameterMetadata{
+			Name:        param.Name,
+			Type:        param.Type,
+			Required:    param.Required,
+			Default:     param.Default,
+			Description: param.Description,
+			Enum:        param.Enum,
+			Min:         param.Min,
+			Max:         param.Max,
+			Pattern:     param.Pattern,
+			ItemType:    param.ItemType,
+			Properties:  toModelParameterMap(param.Properties),
+			DependsOn:   param.DependsOn,
+			ShowWhen:    param.ShowWhen,
+			Notes:       param.Notes,
+			UIType:      param.UIType,
+			UIConfig:    param.UIConfig,
+		})
+	}
+	return result
+}
+
+func toModelParameterMap(parameters map[string]plugin.ParameterMetadata) map[string]models.ParameterMetadata {
+	if len(parameters) == 0 {
+		return nil
+	}
+	result := make(map[string]models.ParameterMetadata, len(parameters))
+	for name, param := range parameters {
+		result[name] = models.ParameterMetadata{
+			Name:        param.Name,
+			Type:        param.Type,
+			Required:    param.Required,
+			Default:     param.Default,
+			Description: param.Description,
+			Enum:        param.Enum,
+			Min:         param.Min,
+			Max:         param.Max,
+			Pattern:     param.Pattern,
+			ItemType:    param.ItemType,
+			Properties:  toModelParameterMap(param.Properties),
+			DependsOn:   param.DependsOn,
+			ShowWhen:    param.ShowWhen,
+			Notes:       param.Notes,
+			UIType:      param.UIType,
+			UIConfig:    param.UIConfig,
+		}
+	}
+	return result
+}
+
+func toStringInputs(inputs []interface{}) []string {
+	if len(inputs) == 0 {
+		return nil
+	}
+	result := make([]string, 0, len(inputs))
+	for _, input := range inputs {
+		switch v := input.(type) {
+		case string:
+			result = append(result, v)
+		case map[string]interface{}:
+			if name, _ := v["name"].(string); name != "" {
+				result = append(result, name)
+			} else if typ, _ := v["type"].(string); typ != "" {
+				result = append(result, typ)
+			}
+		default:
+			if text := fmt.Sprintf("%v", v); text != "" {
+				result = append(result, text)
+			}
+		}
+	}
+	return result
+}
+
+func toModelOutputPorts(ports []plugin.OutputPortMetadata) []models.OutputPortMetadata {
+	result := make([]models.OutputPortMetadata, 0, len(ports))
+	for _, port := range ports {
+		result = append(result, models.OutputPortMetadata{
+			Name:        port.Name,
+			Type:        port.Type,
+			Description: port.Description,
+			IsDefault:   port.IsDefault,
+		})
+	}
+	return result
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
 // ListCatalogChildren 列出指定 catalog 路径下的实时子节点。
 func ListCatalogChildren(ctx context.Context, engine *models.Engine, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
 	pluginEngine := toPluginEngine(engine)

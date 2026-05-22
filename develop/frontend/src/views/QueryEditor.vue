@@ -211,7 +211,7 @@ const loadEngines = async () => {
       return
     }
 
-    // 后端已按 dev_modes=query 过滤，直接使用全部结果
+    // 后端已按 compute.query 能力过滤，直接使用全部结果
     engines.value = response
 
     // 默认选择第一个

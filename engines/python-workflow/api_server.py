@@ -548,7 +548,6 @@ def register_to_system():
     向 System Backend 自注册（创建或更新引擎记录）
     """
     import requests
-    import json
 
     system_url = os.getenv('SYSTEM_URL', 'http://localhost:8180')
     api_key = os.getenv('INTERNAL_API_KEY', '')
@@ -557,21 +556,23 @@ def register_to_system():
     port = int(os.getenv('PORT', 8099))
     protocol = os.getenv('PROTOCOL', 'http')
 
-    # 生成 capabilities
     capabilities = {
-        "compute": [{
-            "dev_modes": ["workflow"],
-            "api_endpoints": {
-                "operators": "/api/operators",
-                "execute": "/api/operators/:name/execute",
-                "workflow": "/api/workflow",
-                "tasks": "/api/tasks",
-                "executions": "/api/executions/:id"
-            },
-            "supported_formats": ["geojson", "wkt", "csv", "parquet"],
-            "features": ["dag", "memory_efficient", "batch", "pandas", "numpy", "scipy"],
-            "description": "Python数据处理（Pandas, GeoPandas, NumPy, SciPy）"
-        }]
+        "schema_version": "engine.capabilities/v1",
+        "engine_type": "python_workflow",
+        "engine_family": "workflow",
+        "compute": {
+            "workflow": {
+                "supported": True,
+                "runtime_api": "addp.workflow/v1",
+                "dynamic_operators": True
+            }
+        },
+        "extensions": {
+            "workflow_runtime": {
+                "supported_formats": ["geojson", "wkt", "csv", "parquet"],
+                "features": ["dag", "memory_efficient", "batch", "pandas", "numpy", "scipy"]
+            }
+        }
     }
 
     # 构建注册请求
@@ -584,7 +585,7 @@ def register_to_system():
             "port": port
             # host 由 System 自动填充
         },
-        "capabilities": json.dumps(capabilities),
+        "capabilities": capabilities,
         "is_builtin": True  # 内置引擎，对所有租户可见
     }
 

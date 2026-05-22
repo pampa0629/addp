@@ -11,6 +11,7 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dbbridge"
 	commonModels "github.com/addp/common/models"
 )
 
@@ -85,19 +86,12 @@ func (s *OperatorDiscoveryService) DiscoverAllOperators(ctx context.Context) ([]
 		go func(eng commonModels.Engine) {
 			defer wg.Done()
 
-			// 从引擎的 connection_info 中构建 base_url
-			baseURL, err := commonModels.BuildBaseURL(eng.ConnectionInfo)
-			if err != nil {
-				log.Printf("⚠️ [OperatorDiscovery] 引擎 %s base_url 构建失败: %v", eng.Name, err)
-				errors <- fmt.Errorf("引擎 %s base_url 构建失败: %w", eng.Name, err)
-				return
-			}
-
-			operators, err := s.fetchOperatorsFromModule(ctx, eng.Name, baseURL)
+			operators, err := dbbridge.ListWorkflowOperators(ctx, &eng)
 			if err != nil {
 				log.Printf("⚠️ [OperatorDiscovery] 引擎 %s 获取失败: %v", eng.Name, err)
 				errors <- err
 			} else {
+				log.Printf("✅ [OperatorDiscovery] 工作流引擎 %s 返回 %d 个算子", eng.Name, len(operators))
 				results <- operators
 			}
 		}(engine)
@@ -200,13 +194,12 @@ func (s *OperatorDiscoveryService) GetOperatorsByEngineType(ctx context.Context,
 		return nil, fmt.Errorf("类型为 %s 的引擎均未激活", engineType)
 	}
 
-	// 从引擎的 connection_info 中构建 base_url
-	baseURL, err := commonModels.BuildBaseURL(targetEngine.ConnectionInfo)
+	operators, err := dbbridge.ListWorkflowOperators(ctx, targetEngine)
 	if err != nil {
-		return nil, fmt.Errorf("引擎 %s base_url 构建失败: %w", targetEngine.Name, err)
+		return nil, fmt.Errorf("引擎 %s 获取算子失败: %w", targetEngine.Name, err)
 	}
 
-	return s.fetchOperatorsFromModule(ctx, targetEngine.Name, baseURL)
+	return operators, nil
 }
 
 // GetOperatorsByModule 获取指定模块的算子（兼容旧接口，支持静态模块和动态引擎）

@@ -284,24 +284,14 @@ def test_complex_workflow():
 ```python
 # api_server.py 中的自动注册逻辑
 registration_data = {
-    "unique_identifier": "api.math-workflow",
-    "engine_type": "api.math-workflow",
-    "display_name": "Math Workflow 计算引擎",
-    "dev_modes": ["workflow"],  # 关键：声明支持工作流
-    "capabilities": {
-        "compute": [{
-            "type": "math",
-            "dev_modes": ["workflow"],
-            "api_endpoints": {
-                "operators": "/api/operators",
-                "execute": "/api/spatial/operators/:name/execute",
-                "workflow": "/api/spatial/workflow"
-            }
-        }]
-    },
+    "engine_type": "math_workflow",
+    "name": "Math Workflow 计算引擎",
+    "description": "基于 Python 的数学计算工作流引擎，支持基本数学运算",
     "connection_info": {
-        "api_url": "http://math-workflow-engine:8097"
-    }
+        "protocol": "http",
+        "port": 8089
+    },
+    "is_builtin": True
 }
 ```
 

@@ -18,6 +18,7 @@ engine.capabilities/v1
 - 声明了可调用能力，就必须有对应 Provider 或明确的模块执行面。
 - Catalog、Metadata、Store、Query、Workflow、Script 是不同能力面，不能混用。
 - 核心结构只表达引擎自身原生能力与对应 Provider 能力，不承载模块适配状态。
+- `compute.query`、`compute.workflow`、`compute.script` 是计算能力事实源，取代旧版 `dev_modes` 字符串数组；开发界面可以由这些能力派生，但不得再把 `dev_modes` 作为能力声明事实源。
 - 没有明确模块消费价值的字段不进入核心声明；后续有真实调用方时再扩展。
 - `extensions` 只承载引擎特有补充信息，不得替代核心字段。
 
@@ -222,6 +223,18 @@ type ComputeCapabilities struct {
 }
 ```
 
+`compute` 表达引擎可被 ADDP 统一调用的计算运行时能力，而不是 UI 开发模式标签。旧版 `dev_modes` 只能回答“应该出现在哪个开发界面”，不能表达查询语言、运行协议、动态算子、脚本模式和对应 Provider，因此不再进入 `engine.capabilities/v1`。
+
+Develop 等上层模块如仍需“开发模式”概念，应从 `compute` 能力派生：
+
+| 派生开发入口 | 能力事实源 |
+| --- | --- |
+| 查询工作台 | `compute.query.supported=true` |
+| 工作流编辑器 | `compute.workflow.supported=true` |
+| Notebook / 脚本编辑器 | `compute.script.supported=true`，并结合 `compute.script.modes` |
+
+这些派生名称可作为兼容 API、前端路由或展示文案使用，但不得反向写回为 `dev_modes` 字段。
+
 ### 4.1 QueryCapability
 
 ```go
@@ -263,6 +276,10 @@ type WorkflowCapability struct {
 | `runtime_api` | 工作流运行时接口版本或协议。 |
 | `dynamic_operators` | 算子是否可动态发现。 |
 | `supported_operator_mode` | 支持的算子运行模式。 |
+
+工作流引擎的静态能力声明只回答“是否具备统一工作流运行时，以及使用哪个 runtime API”。算子列表、算子参数、分类、输入输出端口等动态能力，不写入 `capabilities`，必须通过 `WorkflowRuntimeProvider.ListOperators()` 获取；当前 `addp.workflow/v1` 对应的标准 HTTP 入口为 `GET /api/operators`。工作流执行通过 `WorkflowRuntimeProvider.ExecuteWorkflow()`，对应标准 HTTP 入口为 `POST /api/workflow`。执行期绑定的外部运行时资源（例如 `spark_workflow` 绑定某个 Spark 资源 ID）属于执行请求参数，不属于能力声明。
+
+`dynamic_operators=true` 表示调用方可以通过 Provider 动态发现算子。它不是“已有算子列表”的缓存，也不是某个模块对该引擎的适配状态。
 
 ### 4.3 ScriptCapability
 
@@ -327,6 +344,8 @@ type CapabilitiesView struct {
 - 声明 `storage.store.table_write_session=true` 的插件必须实现 `TableWriteSessionProvider`。
 - 声明 `storage.store.table_write_prepare=true` 的插件必须实现 `TableWritePreparer`。
 - 声明 `compute.query.supported=true` 的插件必须实现对应 query runtime provider。
+- 声明 `compute.workflow.supported=true` 的插件必须实现 `WorkflowRuntimeProvider`。若 `dynamic_operators=true`，则其 `ListOperators()` 必须可调用，并返回符合工作流计算引擎接口规范的算子元数据。
+- 声明 `compute.script.supported=true` 的插件必须实现 `ScriptRuntimeProvider`。
 - capabilities 由插件返回结构体，System 统一序列化为 JSONB。
 - 旧 capabilities 结构不再兼容，发现旧结构可直接刷新或清空。
 

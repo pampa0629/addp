@@ -275,17 +275,52 @@ type QueryOptions struct {
 }
 
 type OperatorMetadata struct {
-	Name        string                 `json:"name"`
-	DisplayName string                 `json:"display_name,omitempty"`
-	Category    string                 `json:"category,omitempty"`
-	Inputs      []FieldInfo            `json:"inputs,omitempty"`
-	Outputs     []FieldInfo            `json:"outputs,omitempty"`
-	Attributes  map[string]interface{} `json:"attributes,omitempty"`
+	ID                  string                 `json:"id,omitempty"`
+	Name                string                 `json:"name"`
+	DisplayName         string                 `json:"display_name,omitempty"`
+	Type                string                 `json:"type,omitempty"`
+	Category            string                 `json:"category,omitempty"`
+	Description         string                 `json:"description,omitempty"`
+	BriefDescription    string                 `json:"brief_description,omitempty"`
+	DetailedDescription map[string]interface{} `json:"detailed_description,omitempty"`
+	Parameters          []ParameterMetadata    `json:"parameters,omitempty"`
+	Inputs              []interface{}          `json:"inputs,omitempty"`
+	OutputPorts         []OutputPortMetadata   `json:"output_ports,omitempty"`
+	Outputs             []FieldInfo            `json:"outputs,omitempty"`
+	Module              string                 `json:"module,omitempty"`
+	Attributes          map[string]interface{} `json:"attributes,omitempty"`
+}
+
+type ParameterMetadata struct {
+	Name        string                       `json:"name"`
+	Type        string                       `json:"type"`
+	Required    bool                         `json:"required"`
+	Default     interface{}                  `json:"default,omitempty"`
+	Description string                       `json:"description,omitempty"`
+	Enum        []string                     `json:"enum,omitempty"`
+	Min         *float64                     `json:"min,omitempty"`
+	Max         *float64                     `json:"max,omitempty"`
+	Pattern     string                       `json:"pattern,omitempty"`
+	ItemType    string                       `json:"item_type,omitempty"`
+	Properties  map[string]ParameterMetadata `json:"properties,omitempty"`
+	DependsOn   string                       `json:"depends_on,omitempty"`
+	ShowWhen    map[string]interface{}       `json:"show_when,omitempty"`
+	Notes       string                       `json:"notes,omitempty"`
+	UIType      string                       `json:"ui_type,omitempty"`
+	UIConfig    map[string]interface{}       `json:"ui_config,omitempty"`
+}
+
+type OutputPortMetadata struct {
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Description string `json:"description,omitempty"`
+	IsDefault   bool   `json:"is_default"`
 }
 
 type WorkflowExecuteRequest struct {
 	WorkflowDef map[string]interface{} `json:"workflow_def"`
 	InputData   map[string]interface{} `json:"input_data,omitempty"`
+	Runtime     map[string]interface{} `json:"runtime,omitempty"`
 }
 
 type WorkflowExecuteResult struct {

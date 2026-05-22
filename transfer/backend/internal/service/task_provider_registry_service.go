@@ -62,11 +62,10 @@ func (s *TaskProviderRegistryService) Register() error {
 				"description":  "双向数据同步",
 			},
 		},
-		"execution_modes":   []string{"batch", "stream", "micro-batch"},
-		"supported_sources": []string{"postgresql", "mysql", "doris", "minio", "s3", "csv", "json", "parquet"},
-		"features":          []string{"async", "checkpoint", "retry", "field_mapping", "scheduled"},
-		"create_task_url":   "http://localhost:5176/#/tasks/new",
-		"edit_task_url":     "http://localhost:5176/#/tasks/:id",
+		"execution_modes": []string{"batch", "stream", "micro-batch"},
+		"features":        []string{"async", "checkpoint", "retry", "field_mapping", "scheduled"},
+		"create_task_url": "http://localhost:5176/#/tasks/new",
+		"edit_task_url":   "http://localhost:5176/#/tasks/:id",
 	}
 
 	// 序列化为 JSON 字符串

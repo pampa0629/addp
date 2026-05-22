@@ -7,7 +7,6 @@ import os
 import requests
 import time
 import logging
-import json
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -32,6 +31,24 @@ def register_engine():
     port = parsed_url.port or 8097
     protocol = parsed_url.scheme or "http"
 
+    capabilities = {
+        "schema_version": "engine.capabilities/v1",
+        "engine_type": "jupyter",
+        "engine_family": "script",
+        "compute": {
+            "script": {
+                "supported": True,
+                "modes": ["notebook", "lab"],
+                "languages": ["python", "shell"]
+            }
+        },
+        "extensions": {
+            "script_runtime": {
+                "features": ["interactive", "parametrized", "async"]
+            }
+        }
+    }
+
     # 构造引擎注册数据（与其他工作流引擎保持一致）
     engine_data = {
         "engine_type": "jupyter",
@@ -42,16 +59,7 @@ def register_engine():
             "port": port,
             "protocol": protocol
         },
-        "capabilities": json.dumps({  # 注意：capabilities 是 JSON 字符串
-            "compute": [
-                {
-                    "dev_modes": ["notebook"],
-                    "features": ["interactive", "parametrized", "async"],
-                    "supported_languages": ["python", "shell"],
-                    "description": "Jupyter Notebook 交互式开发和执行"
-                }
-            ]
-        }),
+        "capabilities": capabilities,
         "is_builtin": True
     }
 

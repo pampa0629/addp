@@ -592,16 +592,12 @@ func (c *SystemClient) ListWorkflowEngines(tenantID uint) ([]models.Engine, erro
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	// 过滤出工作流引擎（使用 common/utils 的 SupportsDevMode 函数）
+	// 过滤出具备 compute.workflow 能力的引擎。
+	// SupportsDevMode 是兼容命名，实际读取的是 engine.capabilities/v1 的 compute.workflow.supported。
 	filtered := make([]models.Engine, 0)
 	for _, r := range engines {
-		// 需要在这里导入 utils 包并使用 SupportsDevMode(&r, "workflow")
-		// 但为了避免循环导入，直接在这里实现过滤逻辑
-		if r.IsActive && r.Capabilities != nil && *r.Capabilities != "" {
-			// 简单的 JSON 字符串匹配（临时方案，更好的做法是导入 utils）
-			if strings.Contains(string(*r.Capabilities), "\"workflow\"") {
-				filtered = append(filtered, r)
-			}
+		if r.IsActive && commonutils.SupportsDevMode(&r, "workflow") {
+			filtered = append(filtered, r)
 		}
 	}
 	return filtered, nil

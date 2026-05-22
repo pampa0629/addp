@@ -34,6 +34,33 @@ func TestValidateCapabilitiesRejectsLegacySchema(t *testing.T) {
 	}
 }
 
+func TestShouldRefreshCapabilitiesKeepsValidStructuredSchema(t *testing.T) {
+	service := NewEngineService(&repository.EngineRepository{}, nil, nil, nil)
+	valid := toJSONStringPtr(`{
+		"schema_version":"engine.capabilities/v1",
+		"engine_type":"python_workflow",
+		"engine_family":"workflow",
+		"compute":{"workflow":{"supported":true,"runtime_api":"addp.workflow/v1","dynamic_operators":true}},
+		"extensions":{"workflow_runtime":{"features":["dag"]}}
+	}`)
+
+	if service.shouldRefreshCapabilities(valid) {
+		t.Fatal("expected valid structured capabilities with extensions to be kept")
+	}
+}
+
+func TestShouldRefreshCapabilitiesRefreshesEmptyOrLegacySchema(t *testing.T) {
+	service := NewEngineService(&repository.EngineRepository{}, nil, nil, nil)
+	legacy := toJSONStringPtr(`{"compute":[{"dev_modes":["workflow"]}]}`)
+
+	if !service.shouldRefreshCapabilities(nil) {
+		t.Fatal("expected nil capabilities to be refreshed")
+	}
+	if !service.shouldRefreshCapabilities(legacy) {
+		t.Fatal("expected legacy capabilities to be refreshed")
+	}
+}
+
 func TestValidateSystemEngineTypeRejectsSQLiteAndSpatiaLite(t *testing.T) {
 	service := NewEngineService(&repository.EngineRepository{}, nil, nil, nil)
 

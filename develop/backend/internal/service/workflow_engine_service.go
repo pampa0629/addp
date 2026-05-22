@@ -13,6 +13,8 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dbbridge"
+	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/utils"
 	"github.com/addp/develop/backend/internal/models"
@@ -99,14 +101,81 @@ func (s *WorkflowEngineService) ExecuteWorkflow(
 		return nil, fmt.Errorf("预处理工作流参数失败: %w", err)
 	}
 
-	// 4. 检查是否需要 Spark 运行时（从 engine_specific 判断）
-	if sparkClusterID, ok := config.EngineSpecific["spark_cluster_id"].(float64); ok {
-		// Spark 工作流引擎（需要目标 Spark 集群）
-		return s.executeViaSparkWorkflow(ctx, engine, uint(sparkClusterID), preprocessedWorkflowDef, inputData)
+	// 4. 通过 Common Engine 的 WorkflowRuntimeProvider 执行工作流
+	workflowReq := plugin.WorkflowExecuteRequest{
+		WorkflowDef: preprocessedWorkflowDef,
+		InputData:   inputData,
+		Runtime:     workflowRuntimeOptions(config),
+	}
+	result, err := dbbridge.ExecuteWorkflow(ctx, engine, workflowReq)
+	if err != nil {
+		return nil, fmt.Errorf("调用工作流引擎 %s 失败: %w", engine.Name, err)
 	}
 
-	// 5. 通用工作流引擎（自带运行时：python_workflow、math_workflow 等）
-	return s.executeViaGenericWorkflow(ctx, engine, preprocessedWorkflowDef, inputData)
+	return toWorkflowResponse(result), nil
+}
+
+func workflowRuntimeOptions(config models.WorkflowExecutionConfig) map[string]interface{} {
+	if len(config.EngineSpecific) == 0 {
+		return nil
+	}
+	runtime := make(map[string]interface{})
+	if sparkClusterID, ok := config.EngineSpecific["spark_cluster_id"]; ok {
+		runtime["engine_id"] = sparkClusterID
+	}
+	if len(runtime) == 0 {
+		return nil
+	}
+	return runtime
+}
+
+func toWorkflowResponse(result *plugin.WorkflowExecuteResult) *WorkflowResponse {
+	if result == nil {
+		return &WorkflowResponse{}
+	}
+
+	resp := &WorkflowResponse{
+		Status:      result.Status,
+		ExecutionID: result.ExecutionID,
+		Error:       result.Error,
+	}
+	if result.Result == nil {
+		return resp
+	}
+
+	if finalResult, ok := result.Result["final_result"].(string); ok {
+		resp.FinalResult = finalResult
+	} else if finalResult, ok := result.Result["result"].(string); ok {
+		resp.FinalResult = finalResult
+	} else if finalResult, ok := result.Result["final_result"]; ok {
+		if encoded, err := json.Marshal(finalResult); err == nil {
+			resp.FinalResult = string(encoded)
+		}
+	}
+
+	if rawResults, ok := result.Result["all_results"].(map[string]string); ok {
+		resp.AllResults = rawResults
+	} else if rawResults, ok := result.Result["all_results"].(map[string]interface{}); ok {
+		resp.AllResults = make(map[string]string, len(rawResults))
+		for key, value := range rawResults {
+			switch v := value.(type) {
+			case string:
+				resp.AllResults[key] = v
+			default:
+				if encoded, err := json.Marshal(v); err == nil {
+					resp.AllResults[key] = string(encoded)
+				}
+			}
+		}
+	}
+
+	if logs, ok := result.Result["logs"].([]map[string]interface{}); ok {
+		resp.Logs = logs
+	}
+	if traceback, ok := result.Result["traceback"].(string); ok {
+		resp.Traceback = traceback
+	}
+	return resp
 }
 
 // preprocessWorkflowParams 预处理工作流参数
