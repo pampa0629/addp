@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"github.com/addp/common/contentio"
+	"github.com/addp/common/datatype"
 )
 
 func NewFormatInfoProvider(
@@ -23,10 +24,10 @@ func NewFormatInfoProvider(
 
 func NewTableInfoProvider(
 	formatType FormatType,
-	describe func(context.Context, io.Reader, *ParseOptions) (*TableInfo, error),
+	describe func(context.Context, io.Reader, *ParseOptions) (*datatype.TableDescribeResult, error),
 ) TableInfoProvider {
 	if describe == nil {
-		describe = func(context.Context, io.Reader, *ParseOptions) (*TableInfo, error) {
+		describe = func(context.Context, io.Reader, *ParseOptions) (*datatype.TableDescribeResult, error) {
 			return nil, fmt.Errorf("table info provider %s does not implement DescribeTable", formatType)
 		}
 	}
@@ -53,10 +54,10 @@ func NewTableSampleReader(
 
 func NewMediaInfoProvider(
 	formatType FormatType,
-	describe func(context.Context, io.Reader, *ParseOptions) (*MediaInfo, error),
+	describe func(context.Context, io.Reader, *ParseOptions) (*datatype.MediaDescribeResult, error),
 ) MediaInfoProvider {
 	if describe == nil {
-		describe = func(context.Context, io.Reader, *ParseOptions) (*MediaInfo, error) {
+		describe = func(context.Context, io.Reader, *ParseOptions) (*datatype.MediaDescribeResult, error) {
 			return nil, fmt.Errorf("media provider %s does not implement DescribeMedia", formatType)
 		}
 	}
@@ -98,10 +99,10 @@ func NewContainerChildResolver(
 
 func NewDocumentInfoProvider(
 	formatType FormatType,
-	describe func(context.Context, io.Reader, *ParseOptions) (*DocumentInfo, error),
+	describe func(context.Context, io.Reader, *ParseOptions) (*datatype.DocumentInfo, error),
 ) DocumentInfoProvider {
 	if describe == nil {
-		describe = func(context.Context, io.Reader, *ParseOptions) (*DocumentInfo, error) {
+		describe = func(context.Context, io.Reader, *ParseOptions) (*datatype.DocumentInfo, error) {
 			return nil, fmt.Errorf("document info provider %s does not implement DescribeDocument", formatType)
 		}
 	}

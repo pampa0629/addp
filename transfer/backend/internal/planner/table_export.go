@@ -3,6 +3,7 @@ package planner
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/addp/common/datatype"
 	pathpkg "path"
 	"path/filepath"
 	"strings"
@@ -392,9 +393,10 @@ func tableInfoFromMetaAttributes(attrs map[string]interface{}) *format.TableInfo
 	}
 	if spatialInfo := spatialInfoFromMetaAttributes(attrs); spatialInfo != nil {
 		info.SpatialInfo = spatialInfo
+		geometryColumn := format.PrimaryGeometryColumn(spatialInfo)
 		for i := range info.Fields {
-			if strings.EqualFold(info.Fields[i].Name, spatialInfo.GeometryColumn) {
-				info.Fields[i].Type = format.FieldTypeGeometry
+			if strings.EqualFold(info.Fields[i].Name, geometryColumn) {
+				info.Fields[i].Type = datatype.FieldTypeGeometry
 				break
 			}
 		}
@@ -411,9 +413,9 @@ func tableFieldsFromAttributes(value interface{}) []format.FieldInfo {
 		if name == "" {
 			continue
 		}
-		fieldType := format.FieldType(strings.TrimSpace(commonJSON.InterfaceString(attrs["type"])))
+		fieldType := datatype.FieldType(strings.TrimSpace(commonJSON.InterfaceString(attrs["type"])))
 		if fieldType == "" {
-			fieldType = format.FieldTypeUnknown
+			fieldType = datatype.FieldTypeUnknown
 		}
 		field := format.FieldInfo{
 			Name:         name,
@@ -424,15 +426,15 @@ func tableFieldsFromAttributes(value interface{}) []format.FieldInfo {
 			Size:         int(commonJSON.InterfaceInt64(attrs["size"])),
 			Precision:    int(commonJSON.InterfaceInt64(attrs["precision"])),
 		}
-		if format.IsGeometryType(field.Type) {
-			field.Type = format.FieldTypeGeometry
+		if datatype.IsSpatialFieldType(field.Type) {
+			field.Type = datatype.FieldTypeGeometry
 		}
 		fields = append(fields, field)
 	}
 	return fields
 }
 
-func spatialInfoFromMetaAttributes(attrs map[string]interface{}) *format.SpatialInfo {
+func spatialInfoFromMetaAttributes(attrs map[string]interface{}) *datatype.SpatialInfo {
 	spatialAttrs := commonJSON.Section(attrs, "capabilities.spatial")
 	if len(spatialAttrs) == 0 {
 		return nil
@@ -464,19 +466,16 @@ func spatialInfoFromMetaAttributes(attrs map[string]interface{}) *format.Spatial
 	if dimension == 0 {
 		dimension = int(commonJSON.InterfaceInt64(spatialAttrs["dimension"]))
 	}
-	spatialInfo := &format.SpatialInfo{
-		GeometryColumn:  geometryColumn,
-		GeometryType:    geometryType,
-		SRID:            srid,
-		HasSpatialIndex: commonJSON.InterfaceBool(spatialAttrs["has_spatial_index"]),
-		IndexName:       commonJSON.InterfaceString(spatialAttrs["index_name"]),
-		Dimension:       dimension,
+	if dimension == 0 {
+		dimension = 2
 	}
-	if spatialInfo.Dimension == 0 {
-		spatialInfo.Dimension = 2
-	}
+	spatialInfo := format.NewSingleGeometrySpatialInfo(geometryColumn, geometryType, srid, dimension)
+	hasSpatialIndex := commonJSON.InterfaceBool(spatialAttrs["has_spatial_index"])
+	spatialInfo.HasSpatialIndex = &hasSpatialIndex
+	spatialInfo.IndexName = commonJSON.InterfaceString(spatialAttrs["index_name"])
 	if extent := commonJSON.InterfaceFloat64Slice(spatialAttrs["extent"]); len(extent) == 4 {
-		spatialInfo.BoundingBox = &[4]float64{extent[0], extent[1], extent[2], extent[3]}
+		boundingBox := datatype.BoundingBox{extent[0], extent[1], extent[2], extent[3]}
+		spatialInfo.Extent = &boundingBox
 	}
 	return spatialInfo
 }
@@ -488,8 +487,8 @@ func applyMetaSpatialParseOptions(opts *format.ParseOptions, schema *format.Tabl
 	if opts.ExtraParams == nil {
 		opts.ExtraParams = map[string]interface{}{}
 	}
-	if strings.TrimSpace(commonJSON.InterfaceString(opts.ExtraParams["geometry_field"])) == "" && schema.SpatialInfo.GeometryColumn != "" {
-		opts.ExtraParams["geometry_field"] = schema.SpatialInfo.GeometryColumn
+	if geometryColumn := format.PrimaryGeometryColumn(schema.SpatialInfo); strings.TrimSpace(commonJSON.InterfaceString(opts.ExtraParams["geometry_field"])) == "" && geometryColumn != "" {
+		opts.ExtraParams["geometry_field"] = geometryColumn
 	}
 }
 

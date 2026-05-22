@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"github.com/addp/common/datatype"
 	"log/slog"
 	"strings"
 
@@ -418,7 +419,7 @@ func databaseFieldInfo(columns []plugin.ColumnInfo) []format.FieldInfo {
 	for _, col := range columns {
 		fields = append(fields, format.FieldInfo{
 			Name:         col.ColumnName,
-			Type:         format.FieldType(metaquery.StandardizeFieldType(col.DataType, col.DataType)),
+			Type:         datatype.FieldType(metaquery.StandardizeFieldType(col.DataType, col.DataType)),
 			Nullable:     col.IsNullable,
 			IsPrimaryKey: col.IsPrimaryKey,
 			Comment:      col.Comment,

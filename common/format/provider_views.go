@@ -6,11 +6,12 @@ import (
 	"io"
 
 	"github.com/addp/common/contentio"
+	"github.com/addp/common/datatype"
 )
 
 type tableInfoProviderView struct {
 	formatType FormatType
-	describe   func(context.Context, io.Reader, *ParseOptions) (*TableInfo, error)
+	describe   func(context.Context, io.Reader, *ParseOptions) (*datatype.TableDescribeResult, error)
 }
 
 type tableSampleReaderView struct {
@@ -25,7 +26,7 @@ type formatInfoProviderView struct {
 
 type documentInfoProviderView struct {
 	formatType FormatType
-	describe   func(context.Context, io.Reader, *ParseOptions) (*DocumentInfo, error)
+	describe   func(context.Context, io.Reader, *ParseOptions) (*datatype.DocumentInfo, error)
 }
 
 type documentTextReaderView struct {
@@ -35,7 +36,7 @@ type documentTextReaderView struct {
 
 type mediaProviderView struct {
 	formatType FormatType
-	describe   func(context.Context, io.Reader, *ParseOptions) (*MediaInfo, error)
+	describe   func(context.Context, io.Reader, *ParseOptions) (*datatype.MediaDescribeResult, error)
 }
 
 type containerProviderView struct {
@@ -79,7 +80,7 @@ func (p tableInfoProviderView) Capabilities() FormatCapability {
 	}
 }
 
-func (p tableInfoProviderView) DescribeTable(ctx context.Context, input io.Reader, options *ParseOptions) (*TableInfo, error) {
+func (p tableInfoProviderView) DescribeTable(ctx context.Context, input io.Reader, options *ParseOptions) (*datatype.TableDescribeResult, error) {
 	return p.describe(ctx, input, options)
 }
 
@@ -141,7 +142,7 @@ func (p documentInfoProviderView) Capabilities() FormatCapability {
 	}
 }
 
-func (p documentInfoProviderView) DescribeDocument(ctx context.Context, input io.Reader, options *ParseOptions) (*DocumentInfo, error) {
+func (p documentInfoProviderView) DescribeDocument(ctx context.Context, input io.Reader, options *ParseOptions) (*datatype.DocumentInfo, error) {
 	return p.describe(ctx, input, options)
 }
 
@@ -183,7 +184,7 @@ func (p mediaProviderView) Capabilities() FormatCapability {
 	}
 }
 
-func (p mediaProviderView) DescribeMedia(ctx context.Context, input io.Reader, options *ParseOptions) (*MediaInfo, error) {
+func (p mediaProviderView) DescribeMedia(ctx context.Context, input io.Reader, options *ParseOptions) (*datatype.MediaDescribeResult, error) {
 	return p.describe(ctx, input, options)
 }
 

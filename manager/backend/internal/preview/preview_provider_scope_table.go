@@ -81,7 +81,11 @@ func (p *ScopeTablePreviewProvider) Preview(ctx context.Context, req *PreviewReq
 			if openErr != nil {
 				err = openErr
 			} else {
-				tableInfo, err = infoProvider.DescribeTable(ctx, input, nil)
+				result, describeErr := infoProvider.DescribeTable(ctx, input, nil)
+				if describeErr == nil {
+					tableInfo = format.TableSchemaFromDescribeResult(result)
+				}
+				err = describeErr
 				input.Close()
 			}
 			if err == nil {
@@ -112,7 +116,11 @@ func (p *ScopeTablePreviewProvider) Preview(ctx context.Context, req *PreviewReq
 			}
 			sampleOptions := scopeTableSampleOptionsFromAttributes(req.Attributes)
 			if tableInfo == nil {
-				tableInfo, err = scopeInfoProvider.DescribeTableScope(ctx, reader, scope, nil)
+				result, describeErr := scopeInfoProvider.DescribeTableScope(ctx, reader, scope, nil)
+				if describeErr == nil {
+					tableInfo = format.TableSchemaFromDescribeResult(result)
+				}
+				err = describeErr
 			}
 			if err == nil {
 				rows, err = scopeSampleReader.SampleTableScope(ctx, reader, scope, offset, limit, sampleOptions)

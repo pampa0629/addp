@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 )
 
@@ -69,12 +70,12 @@ func (p *Plugin) Capabilities() format.FormatCapability {
 	}
 }
 
-func (p *Plugin) DescribeDocument(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.DocumentInfo, error) {
+func (p *Plugin) DescribeDocument(ctx context.Context, input io.Reader, options *format.ParseOptions) (*datatype.DocumentInfo, error) {
 	docAttrs, _, err := p.readDocumentAttributes(ctx, input, options)
 	if err != nil {
 		return nil, err
 	}
-	info := &format.DocumentInfo{Format: p.Format()}
+	info := &datatype.DocumentInfo{}
 	if title, ok := docAttrs["title"].(string); ok {
 		info.Title = title
 	}

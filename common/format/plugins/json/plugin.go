@@ -11,6 +11,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	commonSpatial "github.com/addp/common/spatial"
 )
@@ -113,7 +114,7 @@ func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, schema *
 		idField:        opts.idField,
 	}
 	if writer.geometryField == "" && schema != nil && schema.SpatialInfo != nil {
-		writer.geometryField = strings.TrimSpace(schema.SpatialInfo.GeometryColumn)
+		writer.geometryField = strings.TrimSpace(format.PrimaryGeometryColumn(schema.SpatialInfo))
 	}
 	if writer.geometryField == "" {
 		writer.geometryField = p.geometryField
@@ -193,12 +194,11 @@ func (p *Plugin) DescribeFormat(ctx context.Context, input io.Reader, options *f
 }
 
 // DescribeDocument 返回普通 JSON 文档的轻量信息。
-func (p *Plugin) DescribeDocument(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.DocumentInfo, error) {
+func (p *Plugin) DescribeDocument(ctx context.Context, input io.Reader, options *format.ParseOptions) (*datatype.DocumentInfo, error) {
 	if err := contextErr(ctx); err != nil {
 		return nil, err
 	}
-	return &format.DocumentInfo{
-		Format:   format.FormatJSON,
+	return &datatype.DocumentInfo{
 		Encoding: "utf-8",
 	}, nil
 }
@@ -239,7 +239,7 @@ func removeUTF8BOM(data []byte) []byte {
 }
 
 // DescribeTable 从 JSON 记录集合结构中提取 TableInfo。
-func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableInfo, error) {
+func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*datatype.TableDescribeResult, error) {
 	geometryField := p.geometryField
 	opts := p.options
 	if options != nil {
@@ -283,8 +283,8 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 	geometryType := builder.GeometryType()
 	if geometryType != "" {
 		spatialGeometryField := geometryField
-		if tableInfo.SpatialInfo != nil && tableInfo.SpatialInfo.GeometryColumn != "" {
-			spatialGeometryField = tableInfo.SpatialInfo.GeometryColumn
+		if tableInfo.SpatialInfo != nil && format.PrimaryGeometryColumn(tableInfo.SpatialInfo) != "" {
+			spatialGeometryField = format.PrimaryGeometryColumn(tableInfo.SpatialInfo)
 		}
 		srid := builder.SRID()
 		if crsSRID := commonSpatial.ParseSRID(iter.meta.CoordinateSystem); crsSRID > 0 {
@@ -293,29 +293,29 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 			srid = commonSpatial.SRIDWGS84
 		}
 
-		tableInfo.SpatialInfo = &format.SpatialInfo{
-			GeometryColumn: spatialGeometryField,
-			GeometryType:   geometryType,
-			SRID:           srid,
-			Dimension:      2, // GeoJSON 主要是 2D
-		}
+		tableInfo.SpatialInfo = format.NewSingleGeometrySpatialInfo(spatialGeometryField, geometryType, srid, 2)
 		if len(iter.meta.BoundingBox) == 4 {
-			tableInfo.SpatialInfo.BoundingBox = &[4]float64{
+			tableInfo.SpatialInfo.Extent = &datatype.BoundingBox{
 				iter.meta.BoundingBox[0],
 				iter.meta.BoundingBox[1],
 				iter.meta.BoundingBox[2],
 				iter.meta.BoundingBox[3],
 			}
 		} else if bbox, ok := builder.BoundingBox(); ok {
-			tableInfo.SpatialInfo.BoundingBox = &bbox
+			extent := datatype.BoundingBox(bbox)
+			tableInfo.SpatialInfo.Extent = &extent
 		}
 	}
 
 	if len(index.Anchors) > 0 {
-		tableInfo.ContentIndex = &format.ContentIndexInfo{Table: index}
+		tableInfo.ContentIndex = index
 	}
 
-	return format.ApplyFieldSelectionToTableInfo(tableInfo, opts.FieldSelection)
+	selected, err := format.ApplyFieldSelectionToTableInfo(tableInfo, opts.FieldSelection)
+	if err != nil {
+		return nil, err
+	}
+	return format.TableDescribeResultFromSchema(selected), nil
 }
 
 // SampleTable 读取 JSON 记录集合样本数据。
@@ -838,27 +838,27 @@ func jsonObjectFragments(data []byte) [][]byte {
 	return fragments
 }
 
-func (p *Plugin) newSparseRowIndex(opts *format.ParseOptions, headerBytes int64) *format.ContentIndex {
+func (p *Plugin) newSparseRowIndex(opts *format.ParseOptions, headerBytes int64) *datatype.ContentIndex {
 	step := int64(5000)
 	if opts != nil && opts.ContentIndexStep > 0 {
 		step = opts.ContentIndexStep
 	}
-	return &format.ContentIndex{
-		Kind:        format.ContentIndexKindSparseRow,
-		DataType:    format.ContentIndexDataTypeTable,
+	return &datatype.ContentIndex{
+		Kind:        datatype.ContentIndexKindSparseRow,
+		DataType:    datatype.DataTypeTable,
 		Format:      string(format.FormatJSON),
-		Unit:        format.ContentIndexUnitRow,
-		OffsetUnit:  format.ContentIndexOffsetByte,
+		Unit:        datatype.ContentIndexUnitRow,
+		OffsetUnit:  datatype.ContentIndexOffsetByte,
 		Step:        step,
 		HeaderBytes: headerBytes,
-		Anchors: []format.ContentIndexAnchor{{
+		Anchors: []datatype.ContentIndexAnchor{{
 			Row:        0,
 			ByteOffset: headerBytes,
 		}},
 	}
 }
 
-func (p *Plugin) recordSparseRowAnchor(index *format.ContentIndex, nextRow int64, byteOffset int64) {
+func (p *Plugin) recordSparseRowAnchor(index *datatype.ContentIndex, nextRow int64, byteOffset int64) {
 	if index == nil || index.Step <= 0 || nextRow <= 0 || nextRow%index.Step != 0 {
 		return
 	}
@@ -867,7 +867,7 @@ func (p *Plugin) recordSparseRowAnchor(index *format.ContentIndex, nextRow int64
 		index.Anchors[len(anchors)-1].ByteOffset = byteOffset
 		return
 	}
-	index.Anchors = append(index.Anchors, format.ContentIndexAnchor{
+	index.Anchors = append(index.Anchors, datatype.ContentIndexAnchor{
 		Row:        nextRow,
 		ByteOffset: byteOffset,
 	})

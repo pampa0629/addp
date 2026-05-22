@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/addp/common/dataitem"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
@@ -296,7 +297,7 @@ func clonePlainMap(input models.JSONMap) map[string]interface{} {
 	return output
 }
 
-func upsertDocumentInfoAttributes(attrs *map[string]interface{}, info *format.DocumentInfo) {
+func upsertDocumentInfoAttributes(attrs *map[string]interface{}, info *datatype.DocumentInfo) {
 	if attrs == nil || info == nil {
 		return
 	}

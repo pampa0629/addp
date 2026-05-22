@@ -3,6 +3,7 @@ package preview
 import (
 	"context"
 	"fmt"
+	"github.com/addp/common/datatype"
 	"io"
 	"path/filepath"
 	"sort"
@@ -192,10 +193,11 @@ func (p *FileTablePreviewProvider) previewStreamable(
 		defer object.Close()
 
 		// 解析 TableInfo（获取列信息和总行数）
-		tableInfo, err = infoProvider.DescribeTable(ctx, object, opts)
+		result, err := infoProvider.DescribeTable(ctx, object, opts)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse table info: %w", err)
 		}
+		tableInfo = format.TableSchemaFromDescribeResult(result)
 	}
 
 	// 提取列名
@@ -243,7 +245,7 @@ func (p *FileTablePreviewProvider) previewStreamable(
 	spatialInfo := tableInfo.GetSpatialInfo()
 	srid := 0
 	if spatialInfo != nil {
-		srid = spatialInfo.SRID
+		srid = format.PrimaryGeometrySRID(spatialInfo)
 	}
 
 	return &models.TablePreview{
@@ -303,7 +305,7 @@ func containerChildNameMatches(child map[string]interface{}, childName string) b
 	return false
 }
 
-func spatialInfoFromAttributes(attrs map[string]interface{}) *format.SpatialInfo {
+func spatialInfoFromAttributes(attrs map[string]interface{}) *datatype.SpatialInfo {
 	spatialAttrs := commonJSON.Section(attrs, "capabilities.spatial")
 	if len(spatialAttrs) == 0 {
 		return nil
@@ -311,6 +313,7 @@ func spatialInfoFromAttributes(attrs map[string]interface{}) *format.SpatialInfo
 	geometryColumn := commonJSON.InterfaceString(spatialAttrs["primary_geometry_column"])
 	geometryType := ""
 	srid := 0
+	dimension := 0
 	for _, item := range interfaceSlice(spatialAttrs["geometry_columns"]) {
 		column := rawMapAttribute(item)
 		if len(column) == 0 {
@@ -323,25 +326,26 @@ func spatialInfoFromAttributes(attrs map[string]interface{}) *format.SpatialInfo
 			}
 			geometryType = commonJSON.InterfaceString(column["geometry_type"])
 			srid = int(commonJSON.InterfaceInt64(column["srid"]))
+			dimension = int(commonJSON.InterfaceInt64(column["dimension"]))
 			break
 		}
 	}
 	if geometryColumn == "" {
 		return nil
 	}
-	spatialInfo := &format.SpatialInfo{
-		GeometryColumn:  geometryColumn,
-		GeometryType:    geometryType,
-		SRID:            srid,
-		HasSpatialIndex: commonJSON.InterfaceBool(spatialAttrs["has_spatial_index"]),
-		IndexName:       commonJSON.InterfaceString(spatialAttrs["index_name"]),
-		Dimension:       int(commonJSON.InterfaceInt64(spatialAttrs["dimension"])),
+	if dimension == 0 {
+		dimension = int(commonJSON.InterfaceInt64(spatialAttrs["dimension"]))
 	}
-	if spatialInfo.Dimension == 0 {
-		spatialInfo.Dimension = 2
+	if dimension == 0 {
+		dimension = 2
 	}
+	spatialInfo := format.NewSingleGeometrySpatialInfo(geometryColumn, geometryType, srid, dimension)
+	hasSpatialIndex := commonJSON.InterfaceBool(spatialAttrs["has_spatial_index"])
+	spatialInfo.HasSpatialIndex = &hasSpatialIndex
+	spatialInfo.IndexName = commonJSON.InterfaceString(spatialAttrs["index_name"])
 	if extent := commonJSON.InterfaceFloat64Slice(spatialAttrs["extent"]); len(extent) == 4 {
-		spatialInfo.BoundingBox = &[4]float64{extent[0], extent[1], extent[2], extent[3]}
+		boundingBox := datatype.BoundingBox{extent[0], extent[1], extent[2], extent[3]}
+		spatialInfo.Extent = &boundingBox
 	}
 	return spatialInfo
 }
@@ -482,16 +486,16 @@ func positionedTableSampleOptions(opts *format.ParseOptions, tableInfo *format.T
 	return &sampleOpts
 }
 
-func usableTableContentIndex(index *format.ContentIndex) bool {
+func usableTableContentIndex(index *datatype.ContentIndex) bool {
 	return index != nil &&
-		index.Kind == format.ContentIndexKindSparseRow &&
-		index.Unit == format.ContentIndexUnitRow &&
-		index.OffsetUnit == format.ContentIndexOffsetByte &&
+		index.Kind == datatype.ContentIndexKindSparseRow &&
+		index.Unit == datatype.ContentIndexUnitRow &&
+		index.OffsetUnit == datatype.ContentIndexOffsetByte &&
 		len(index.Anchors) > 0
 }
 
-func rangeForTableWindow(index *format.ContentIndex, offset, limit, totalSize int64) (format.ContentIndexAnchor, int64) {
-	anchors := append([]format.ContentIndexAnchor(nil), index.Anchors...)
+func rangeForTableWindow(index *datatype.ContentIndex, offset, limit, totalSize int64) (datatype.ContentIndexAnchor, int64) {
+	anchors := append([]datatype.ContentIndexAnchor(nil), index.Anchors...)
 	sort.Slice(anchors, func(i, j int) bool {
 		return anchors[i].Row < anchors[j].Row
 	})
@@ -517,14 +521,14 @@ func rangeForTableWindow(index *format.ContentIndex, offset, limit, totalSize in
 	return anchor, endByte - anchor.ByteOffset
 }
 
-func tableContentIndexFromAttributes(attrs map[string]interface{}) *format.ContentIndex {
+func tableContentIndexFromAttributes(attrs map[string]interface{}) *datatype.ContentIndex {
 	indexAttrs := commonJSON.Section(attrs, "content_index.table")
 	if len(indexAttrs) == 0 {
 		return nil
 	}
-	index := &format.ContentIndex{
+	index := &datatype.ContentIndex{
 		Kind:        commonJSON.InterfaceString(indexAttrs["kind"]),
-		DataType:    commonJSON.InterfaceString(indexAttrs["data_type"]),
+		DataType:    datatype.DataType(commonJSON.InterfaceString(indexAttrs["data_type"])),
 		Format:      commonJSON.InterfaceString(indexAttrs["format"]),
 		Unit:        commonJSON.InterfaceString(indexAttrs["unit"]),
 		OffsetUnit:  commonJSON.InterfaceString(indexAttrs["offset_unit"]),
@@ -537,15 +541,15 @@ func tableContentIndexFromAttributes(attrs map[string]interface{}) *format.Conte
 	return index
 }
 
-func contentIndexAnchorsFromAttribute(value interface{}) []format.ContentIndexAnchor {
+func contentIndexAnchorsFromAttribute(value interface{}) []datatype.ContentIndexAnchor {
 	items := interfaceSlice(value)
-	anchors := make([]format.ContentIndexAnchor, 0, len(items))
+	anchors := make([]datatype.ContentIndexAnchor, 0, len(items))
 	for _, item := range items {
 		attrs := rawMapAttribute(item)
 		if len(attrs) == 0 {
 			continue
 		}
-		anchors = append(anchors, format.ContentIndexAnchor{
+		anchors = append(anchors, datatype.ContentIndexAnchor{
 			Row:        commonJSON.InterfaceInt64(attrs["row"]),
 			ByteOffset: commonJSON.InterfaceInt64(attrs["byte_offset"]),
 		})
@@ -564,7 +568,7 @@ func fieldsFromAttribute(value interface{}) []format.FieldInfo {
 		}
 		fields = append(fields, format.FieldInfo{
 			Name:     name,
-			Type:     format.FieldType(commonJSON.InterfaceString(attrs["type"])),
+			Type:     datatype.FieldType(commonJSON.InterfaceString(attrs["type"])),
 			Nullable: commonJSON.InterfaceBool(attrs["nullable"]),
 		})
 	}
@@ -615,10 +619,11 @@ func (p *FileTablePreviewProvider) previewRefs(
 		return nil, err
 	}
 	if tableInfo == nil {
-		tableInfo, err = infoProvider.DescribeMultiTable(ctx, reader, refs, opts)
+		result, err := infoProvider.DescribeMultiTable(ctx, reader, refs, opts)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse %s ref table info: %w", formatType, err)
 		}
+		tableInfo = format.TableSchemaFromDescribeResult(result)
 	}
 
 	// 提取列名
@@ -655,7 +660,7 @@ func (p *FileTablePreviewProvider) previewRefs(
 	spatialInfo := tableInfo.GetSpatialInfo()
 	srid := 0
 	if spatialInfo != nil {
-		srid = spatialInfo.SRID
+		srid = format.PrimaryGeometrySRID(spatialInfo)
 	}
 
 	return &models.TablePreview{
@@ -915,7 +920,7 @@ func fileSystemPathFromPreviewRequest(req *PreviewRequest) string {
 func (p *FileTablePreviewProvider) detectGeometryColumns(tableInfo *format.TableInfo) []string {
 	var geometryColumns []string
 	for _, field := range tableInfo.Fields {
-		if field.Type == format.FieldTypeGeometry {
+		if field.Type == datatype.FieldTypeGeometry {
 			geometryColumns = append(geometryColumns, field.Name)
 		}
 	}

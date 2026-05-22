@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"github.com/addp/common/datatype"
 	"os"
 	"testing"
 
@@ -31,11 +32,11 @@ func TestDescribeTableUsesSelectedTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DescribeTable() error = %v", err)
 	}
-	if info.Name != "cities" {
-		t.Fatalf("Name = %q, want cities", info.Name)
+	if info.Table.Name != "cities" {
+		t.Fatalf("Name = %q, want cities", info.Table.Name)
 	}
-	if len(info.Fields) != 2 || info.Fields[0].Name != "id" || info.Fields[1].Name != "name" {
-		t.Fatalf("Fields = %#v, want id/name", info.Fields)
+	if len(info.Table.Fields) != 2 || info.Table.Fields[0].Name != "id" || info.Table.Fields[1].Name != "name" {
+		t.Fatalf("Fields = %#v, want id/name", info.Table.Fields)
 	}
 }
 
@@ -113,21 +114,21 @@ func TestDescribeGeoPackageTableCarriesChildSpatialInfo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DescribeTable() error = %v", err)
 	}
-	if field := info.GetField("geom"); field == nil || field.Type != format.FieldTypeGeometry {
+	if field := info.Table.GetField("geom"); field == nil || field.Type != datatype.FieldTypeGeometry {
 		t.Fatalf("geom field = %#v, want geometry", field)
 	}
-	spatial := info.GetSpatialInfo()
+	spatial := info.Spatial
 	if spatial == nil {
 		t.Fatal("spatial info missing")
 	}
-	if spatial.GeometryColumn != "geom" || spatial.GeometryType != "LINESTRING" || spatial.SRID != 4326 {
+	if format.PrimaryGeometryColumn(spatial) != "geom" || format.PrimaryGeometryType(spatial) != "LINESTRING" || format.PrimaryGeometrySRID(spatial) != 4326 {
 		t.Fatalf("spatial = %#v", spatial)
 	}
-	if !spatial.HasSpatialIndex {
+	if spatial.HasSpatialIndex == nil || !*spatial.HasSpatialIndex {
 		t.Fatalf("spatial index = false, want true")
 	}
-	if spatial.BoundingBox == nil || *spatial.BoundingBox != [4]float64{120.0, 30.0, 121.0, 31.0} {
-		t.Fatalf("bbox = %#v", spatial.BoundingBox)
+	if spatial.Extent == nil || *spatial.Extent != (datatype.BoundingBox{120.0, 30.0, 121.0, 31.0}) {
+		t.Fatalf("bbox = %#v", spatial.Extent)
 	}
 }
 

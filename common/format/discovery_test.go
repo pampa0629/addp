@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/addp/common/contentio"
+	"github.com/addp/common/datatype"
 	. "github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
 )
@@ -274,16 +275,16 @@ func (p discoveryScopeTableProvider) Capabilities() FormatCapability {
 	return capability
 }
 
-func (p discoveryScopeTableProvider) DescribeTable(context.Context, io.Reader, *ParseOptions) (*TableInfo, error) {
-	return &TableInfo{}, nil
+func (p discoveryScopeTableProvider) DescribeTable(context.Context, io.Reader, *ParseOptions) (*datatype.TableDescribeResult, error) {
+	return &datatype.TableDescribeResult{Table: &datatype.TableInfo{}}, nil
 }
 
 func (p discoveryScopeTableProvider) SampleTable(context.Context, io.Reader, int64, int64, *ParseOptions) ([]map[string]interface{}, error) {
 	return nil, nil
 }
 
-func (p discoveryScopeTableProvider) DescribeTableScope(context.Context, contentio.Reader, contentio.Ref, *ParseOptions) (*TableInfo, error) {
-	return &TableInfo{}, nil
+func (p discoveryScopeTableProvider) DescribeTableScope(context.Context, contentio.Reader, contentio.Ref, *ParseOptions) (*datatype.TableDescribeResult, error) {
+	return &datatype.TableDescribeResult{Table: &datatype.TableInfo{}}, nil
 }
 
 func (p discoveryScopeTableProvider) SampleTableScope(context.Context, contentio.Reader, contentio.Ref, int64, int64, *ParseOptions) ([]map[string]interface{}, error) {

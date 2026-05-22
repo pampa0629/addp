@@ -6,6 +6,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/spatial"
 )
 
@@ -39,7 +40,7 @@ type tiffTag struct {
 	inline []byte
 }
 
-func extractGeoTIFFSpatial(data []byte, width, height int) map[string]interface{} {
+func extractGeoTIFFSpatial(data []byte, width, height int) *datatype.SpatialInfo {
 	if width <= 0 || height <= 0 {
 		return nil
 	}
@@ -48,21 +49,26 @@ func extractGeoTIFFSpatial(data []byte, width, height int) map[string]interface{
 		return nil
 	}
 
-	spatialAttrs := map[string]interface{}{
-		"has_spatial_index": false,
-	}
+	spatialInfo := &datatype.SpatialInfo{}
+	hasSpatialFact := false
 	if extent, ok := geoTIFFExtent(ifd, width, height); ok {
-		spatialAttrs["extent"] = extent
+		bbox := datatype.BoundingBox{extent[0], extent[1], extent[2], extent[3]}
+		spatialInfo.Extent = &bbox
+		hasSpatialFact = true
 	}
 	if srid, crs := geoTIFFCRS(ifd); srid > 0 {
-		spatialAttrs["srid"] = srid
+		spatialInfo.GeometryColumns = []datatype.GeometryColumnInfo{{SRID: &srid}}
+		hasSpatialFact = true
 	} else if crs != "" {
-		spatialAttrs["crs"] = crs
+		spatialInfo.GeometryColumns = []datatype.GeometryColumnInfo{{CRS: crs}}
+		hasSpatialFact = true
 	}
-	if len(spatialAttrs) == 1 {
+	hasSpatialIndex := false
+	spatialInfo.HasSpatialIndex = &hasSpatialIndex
+	if !hasSpatialFact {
 		return nil
 	}
-	return spatialAttrs
+	return spatialInfo
 }
 
 func parseFirstIFD(data []byte) (*tiffIFD, bool) {

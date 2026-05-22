@@ -1,6 +1,7 @@
 package metaattr
 
 import (
+	"github.com/addp/common/datatype"
 	"testing"
 
 	"github.com/addp/common/engine/plugin"
@@ -40,7 +41,7 @@ func TestFieldAttributesFromFormatWritesSpatialFieldFacts(t *testing.T) {
 
 	fields := FieldAttributesFromFormat([]format.FieldInfo{{
 		Name:     "SmGeometry",
-		Type:     format.FieldTypeGeometry,
+		Type:     datatype.FieldTypeGeometry,
 		Nullable: true,
 	}})
 

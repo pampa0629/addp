@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/addp/common/datatype"
 	"regexp"
 	"strings"
 
@@ -277,20 +278,20 @@ func postgresColumnNativeType(column postgresColumnInfo) string {
 
 func postgresCommonFieldType(column postgresColumnInfo, nativeType string) string {
 	if column.IsSpatial() {
-		return string(format.FieldTypeGeometry)
+		return string(datatype.FieldTypeGeometry)
 	}
 	if mapper := format.GetTypeMapper("postgresql"); mapper != nil {
-		if fieldType := mapper.ToCommon(nativeType); fieldType != "" && fieldType != format.FieldTypeUnknown {
+		if fieldType := mapper.ToCommon(nativeType); fieldType != "" && fieldType != datatype.FieldTypeUnknown {
 			return string(fieldType)
 		}
 	}
 	fallbackType := stripPostgresTypeModifiers(strings.TrimSpace(column.DataType))
 	if mapper := format.GetTypeMapper("postgresql"); mapper != nil {
-		if fieldType := mapper.ToCommon(fallbackType); fieldType != "" && fieldType != format.FieldTypeUnknown {
+		if fieldType := mapper.ToCommon(fallbackType); fieldType != "" && fieldType != datatype.FieldTypeUnknown {
 			return string(fieldType)
 		}
 	}
-	return string(format.FieldTypeUnknown)
+	return string(datatype.FieldTypeUnknown)
 }
 
 var postgresTypeModifierPattern = regexp.MustCompile(`\s*\(.*\)$`)

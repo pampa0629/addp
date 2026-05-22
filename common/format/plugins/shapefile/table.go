@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/addp/common/contentio"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	commonSpatial "github.com/addp/common/spatial"
 	"io"
@@ -12,7 +13,7 @@ import (
 	"strings"
 )
 
-func (plugin *Plugin) DescribeMultiTable(ctx context.Context, reader contentio.Reader, refs []format.RelatedRef, options *format.ParseOptions) (*format.TableInfo, error) {
+func (plugin *Plugin) DescribeMultiTable(ctx context.Context, reader contentio.Reader, refs []format.RelatedRef, options *format.ParseOptions) (*datatype.TableDescribeResult, error) {
 	_, basePath, cleanup, err := materializeRefs(ctx, reader, refs)
 	if err != nil {
 		return nil, err
@@ -24,7 +25,11 @@ func (plugin *Plugin) DescribeMultiTable(ctx context.Context, reader contentio.R
 	if err != nil {
 		return nil, err
 	}
-	return format.ApplyFieldSelectionToTableInfo(info, opts.FieldSelection)
+	selected, err := format.ApplyFieldSelectionToTableInfo(info, opts.FieldSelection)
+	if err != nil {
+		return nil, err
+	}
+	return format.TableDescribeResultFromSchema(selected), nil
 }
 
 func (plugin *Plugin) SampleMultiTable(ctx context.Context, reader contentio.Reader, refs []format.RelatedRef, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
@@ -155,7 +160,7 @@ func buildShapefileTableInfo(input shapefileTableInfoInput) *format.TableInfo {
 	geomType := determineShapefileGeometryType(input.SHPHeader.ShapeType)
 	fields = append(fields, format.FieldInfo{
 		Name:         input.GeometryField,
-		Type:         format.FieldTypeGeometry,
+		Type:         datatype.FieldTypeGeometry,
 		Nullable:     false,
 		IsPrimaryKey: false,
 		Comment:      "Shapefile geometry field",
@@ -171,16 +176,12 @@ func buildShapefileTableInfo(input shapefileTableInfoInput) *format.TableInfo {
 	}
 
 	rowCount := int64(input.DBFHeader.RecordCount)
-	spatialInfo := &format.SpatialInfo{
-		GeometryColumn: input.GeometryField,
-		GeometryType:   geomType,
-		SRID:           0,
-		BoundingBox:    &input.SHPHeader.BBox,
-		Dimension:      determineShapefileDimension(input.SHPHeader.ShapeType),
-	}
+	spatialInfo := format.NewSingleGeometrySpatialInfo(input.GeometryField, geomType, 0, determineShapefileDimension(input.SHPHeader.ShapeType))
+	bbox := datatype.BoundingBox(input.SHPHeader.BBox)
+	spatialInfo.Extent = &bbox
 	if input.SpatialRefSys != "" {
 		if srid := commonSpatial.ParseSRID(input.SpatialRefSys); srid > 0 {
-			spatialInfo.SRID = srid
+			spatialInfo.GeometryColumns[0].SRID = &srid
 		}
 	}
 	info := &Info{

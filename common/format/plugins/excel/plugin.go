@@ -3,6 +3,7 @@ package excel
 import (
 	"context"
 	"fmt"
+	"github.com/addp/common/datatype"
 	"io"
 	"strings"
 
@@ -96,7 +97,7 @@ func (p *Plugin) DescribeContainer(ctx context.Context, input io.Reader, options
 }
 
 // DescribeTable 从 Excel 文件中提取 TableInfo。
-func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableInfo, error) {
+func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*datatype.TableDescribeResult, error) {
 	// 使用传入的 options，如果为 nil 则使用默认的
 	opts := p.options
 	if options != nil {
@@ -113,11 +114,11 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 	if p.hasExplicitSheetSelection(opts) {
 		sheetName := p.getTargetSheetNameFromOptions(workbook, opts)
 		if sheetName == "" {
-			return &format.TableInfo{
+			return format.TableDescribeResultFromSchema(&format.TableInfo{
 				Name:       "excel_data",
 				Fields:     []format.FieldInfo{},
 				PrimaryKey: []string{},
-			}, nil
+			}), nil
 		}
 		sheetIndex := p.sheetIndex(workbook, sheetName)
 		summary, _, err := analyzeSheet(workbook, sheetName, sheetIndex, *analyzeOpts)
@@ -130,14 +131,22 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 			ActiveSheet:  sheetName,
 			Sheets:       []SheetSummary{summary},
 		}
-		return p.convertToTableInfo(analysis, opts)
+		tableInfo, err := p.convertToTableInfo(analysis, opts)
+		if err != nil {
+			return nil, err
+		}
+		return format.TableDescribeResultFromSchema(tableInfo), nil
 	}
 
 	analysis, err := Analyze(ctx, workbook, analyzeOpts)
 	if err != nil {
 		return nil, err
 	}
-	return p.convertToTableInfo(analysis, opts)
+	tableInfo, err := p.convertToTableInfo(analysis, opts)
+	if err != nil {
+		return nil, err
+	}
+	return format.TableDescribeResultFromSchema(tableInfo), nil
 }
 
 // SampleTable 读取 Excel 表格样本。
@@ -252,7 +261,7 @@ func (p *Plugin) convertToTableInfo(analysis *WorkbookAnalysis, opts *format.Par
 	// 构建字段列表
 	fields := make([]format.FieldInfo, len(sheet.Headers))
 	for i, header := range sheet.Headers {
-		fieldType := format.FieldTypeString
+		fieldType := datatype.FieldTypeString
 		if i < len(sheet.ColumnTypes) {
 			fieldType = mapExcelTypeToFieldType(sheet.ColumnTypes[i])
 		}
@@ -329,7 +338,7 @@ func (p *Plugin) convertToContainerInfo(analysis *WorkbookAnalysis) *format.Cont
 func excelSheetFields(sheet SheetSummary) []format.FieldInfo {
 	fields := make([]format.FieldInfo, 0, len(sheet.Headers))
 	for i, header := range sheet.Headers {
-		fieldType := format.FieldTypeString
+		fieldType := datatype.FieldTypeString
 		originalType := ""
 		if i < len(sheet.ColumnTypes) {
 			originalType = sheet.ColumnTypes[i]
@@ -418,18 +427,18 @@ func (p *Plugin) sheetIndex(workbook *excelize.File, sheetName string) int {
 }
 
 // mapExcelTypeToFieldType 将 Excel 类型字符串映射到 FieldType
-func mapExcelTypeToFieldType(excelType string) format.FieldType {
+func mapExcelTypeToFieldType(excelType string) datatype.FieldType {
 	switch excelType {
 	case "int":
-		return format.FieldTypeInt
+		return datatype.FieldTypeInt
 	case "float":
-		return format.FieldTypeDouble // Excel 中的浮点数为双精度
+		return datatype.FieldTypeDouble // Excel 中的浮点数为双精度
 	case "bool":
-		return format.FieldTypeBool
+		return datatype.FieldTypeBool
 	case "date":
-		return format.FieldTypeDate
+		return datatype.FieldTypeDate
 	default:
-		return format.FieldTypeString
+		return datatype.FieldTypeString
 	}
 }
 

@@ -3,6 +3,7 @@ package parquet
 import (
 	"bytes"
 	"context"
+	"github.com/addp/common/datatype"
 	"io"
 	"sort"
 	"strings"
@@ -43,11 +44,11 @@ func TestParquetPluginDescribeAndSampleTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DescribeTable failed: %v", err)
 	}
-	if info.RowCount == nil || *info.RowCount != 2 {
-		t.Fatalf("row count = %v, want 2", info.RowCount)
+	if info.Table.RowCount == nil || *info.Table.RowCount != 2 {
+		t.Fatalf("row count = %v, want 2", info.Table.RowCount)
 	}
-	if len(info.Fields) != 2 {
-		t.Fatalf("fields = %#v, want 2 fields", info.Fields)
+	if len(info.Table.Fields) != 2 {
+		t.Fatalf("fields = %#v, want 2 fields", info.Table.Fields)
 	}
 
 	rows, err := plugin.SampleTable(context.Background(), bytes.NewReader(data), 1, 1, nil)
@@ -172,10 +173,10 @@ func TestParquetPluginFieldSelectionMissingFieldPolicies(t *testing.T) {
 func TestParquetPluginOpenTableWriter(t *testing.T) {
 	plugin := NewPlugin()
 	schema := &format.TableInfo{Fields: []format.FieldInfo{
-		{Name: "id", Type: format.FieldTypeBigInt},
-		{Name: "name", Type: format.FieldTypeString, Nullable: true},
-		{Name: "score", Type: format.FieldTypeDouble, Nullable: true},
-		{Name: "active", Type: format.FieldTypeBool, Nullable: true},
+		{Name: "id", Type: datatype.FieldTypeBigInt},
+		{Name: "name", Type: datatype.FieldTypeString, Nullable: true},
+		{Name: "score", Type: datatype.FieldTypeDouble, Nullable: true},
+		{Name: "active", Type: datatype.FieldTypeBool, Nullable: true},
 	}}
 	var buf bytes.Buffer
 
@@ -197,8 +198,8 @@ func TestParquetPluginOpenTableWriter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DescribeTable failed: %v", err)
 	}
-	if info.RowCount == nil || *info.RowCount != 2 {
-		t.Fatalf("row count = %v, want 2", info.RowCount)
+	if info.Table.RowCount == nil || *info.Table.RowCount != 2 {
+		t.Fatalf("row count = %v, want 2", info.Table.RowCount)
 	}
 	rows, err := plugin.SampleTable(context.Background(), bytes.NewReader(buf.Bytes()), 0, 2, nil)
 	if err != nil {
@@ -212,8 +213,8 @@ func TestParquetPluginOpenTableWriter(t *testing.T) {
 func TestParquetPluginOpenTableWriterSerializesJSONLikeFields(t *testing.T) {
 	plugin := NewPlugin()
 	schema := &format.TableInfo{Fields: []format.FieldInfo{
-		{Name: "id", Type: format.FieldTypeInt},
-		{Name: "payload", Type: format.FieldTypeJSON, Nullable: true},
+		{Name: "id", Type: datatype.FieldTypeInt},
+		{Name: "payload", Type: datatype.FieldTypeJSON, Nullable: true},
 	}}
 	var buf bytes.Buffer
 
@@ -250,13 +251,13 @@ func TestParquetPluginDescribeAndSampleScopeAcrossFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DescribeTableScope failed: %v", err)
 	}
-	if info.RowCount == nil || *info.RowCount != 4 {
-		t.Fatalf("row count = %v, want 4", info.RowCount)
+	if info.Table.RowCount == nil || *info.Table.RowCount != 4 {
+		t.Fatalf("row count = %v, want 4", info.Table.RowCount)
 	}
-	if len(info.Fields) != 2 {
-		t.Fatalf("fields = %#v, want 2 fields", info.Fields)
+	if len(info.Table.Fields) != 2 {
+		t.Fatalf("fields = %#v, want 2 fields", info.Table.Fields)
 	}
-	parquetInfo := InfoFromTableInfo(info)
+	parquetInfo := InfoFromTableInfo(format.TableSchemaFromDescribeResult(info))
 	if parquetInfo == nil || len(parquetInfo.Files) != 2 {
 		t.Fatalf("parquet info = %#v, want two files", parquetInfo)
 	}
@@ -325,13 +326,13 @@ func TestParquetPluginScopeRecursesPartitionDirs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DescribeTableScope failed: %v", err)
 	}
-	if info.RowCount == nil || *info.RowCount != 2 {
-		t.Fatalf("row count = %v, want 2", info.RowCount)
+	if info.Table.RowCount == nil || *info.Table.RowCount != 2 {
+		t.Fatalf("row count = %v, want 2", info.Table.RowCount)
 	}
-	if field := info.GetField("dt"); field == nil || field.Type != format.FieldTypeString {
+	if field := info.Table.GetField("dt"); field == nil || field.Type != datatype.FieldTypeString {
 		t.Fatalf("partition field dt = %#v, want string field", field)
 	}
-	parquetInfo := InfoFromTableInfo(info)
+	parquetInfo := InfoFromTableInfo(format.TableSchemaFromDescribeResult(info))
 	if parquetInfo == nil || strings.Join(parquetInfo.PartitionColumns, ",") != "dt" {
 		t.Fatalf("partition columns = %#v, want dt", parquetInfo)
 	}
@@ -365,8 +366,8 @@ func TestParquetPluginScopeDoesNotOverrideExistingPartitionNamedColumn(t *testin
 	if err != nil {
 		t.Fatalf("DescribeTableScope failed: %v", err)
 	}
-	if len(info.Fields) != 2 {
-		t.Fatalf("fields = %#v, want only file fields without duplicate dt", info.Fields)
+	if len(info.Table.Fields) != 2 {
+		t.Fatalf("fields = %#v, want only file fields without duplicate dt", info.Table.Fields)
 	}
 	rows, err := plugin.SampleTableScope(context.Background(), reader, scope, 0, 1, nil)
 	if err != nil {
@@ -408,7 +409,7 @@ func TestParquetPluginOpenTableScopeReader(t *testing.T) {
 		t.Fatalf("partition values = %#v %#v, want dt from path", first, second)
 	}
 	schema := tableReader.Schema()
-	if field := schema.GetField("dt"); field == nil || field.Type != format.FieldTypeString {
+	if field := schema.GetField("dt"); field == nil || field.Type != datatype.FieldTypeString {
 		t.Fatalf("schema partition field dt = %#v, want string field", field)
 	}
 	empty, err := tableReader.ReadRows(context.Background(), 2)

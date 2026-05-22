@@ -263,7 +263,7 @@ type Provider interface {
 
 type TableInfoProvider interface {
     Provider
-    DescribeTable(ctx context.Context, input io.Reader, options *ParseOptions) (*TableInfo, error)
+    DescribeTable(ctx context.Context, input io.Reader, options *ParseOptions) (*datatype.TableDescribeResult, error)
 }
 
 type TableSampleReader interface {
@@ -278,7 +278,7 @@ type TableSampleReader interface {
 type MultiTableInfoProvider interface {
     Provider
     RelatedRefSpecs() []RelatedRefSpec
-    DescribeMultiTable(ctx context.Context, reader contentio.Reader, refs []RelatedRef, options *ParseOptions) (*TableInfo, error)
+    DescribeMultiTable(ctx context.Context, reader contentio.Reader, refs []RelatedRef, options *ParseOptions) (*datatype.TableDescribeResult, error)
 }
 
 type MultiTableSampleReader interface {
@@ -311,7 +311,7 @@ type MultiTableWriterProvider interface {
 ```go
 type ScopeTableInfoProvider interface {
     Provider
-    DescribeTableScope(ctx context.Context, reader contentio.Reader, scope contentio.Ref, options *ParseOptions) (*TableInfo, error)
+    DescribeTableScope(ctx context.Context, reader contentio.Reader, scope contentio.Ref, options *ParseOptions) (*datatype.TableDescribeResult, error)
 }
 
 type ScopeTableSampleReader interface {
@@ -366,7 +366,7 @@ rows, err := reader.SampleTable(ctx, input, 0, 50, nil)
 ```go
 type DocumentInfoProvider interface {
     Provider
-    DescribeDocument(ctx context.Context, input io.Reader, options *ParseOptions) (*DocumentInfo, error)
+    DescribeDocument(ctx context.Context, input io.Reader, options *ParseOptions) (*datatype.DocumentInfo, error)
 }
 
 type DocumentTextReader interface {
@@ -402,7 +402,7 @@ WPS、DOCX、PPTX 这类后端不适合解析的格式，不应因为只能提�
 ```go
 type MediaInfoProvider interface {
     Provider
-    DescribeMedia(ctx context.Context, input io.Reader, options *ParseOptions) (*MediaInfo, error)
+    DescribeMedia(ctx context.Context, input io.Reader, options *ParseOptions) (*datatype.MediaDescribeResult, error)
 }
 ```
 
@@ -427,7 +427,7 @@ if err != nil {
 info, err := provider.DescribeMedia(ctx, input, nil)
 ```
 
-图片 MediaInfoProvider 目前返回宽高、编码、MIME、颜色空间和可选 GeoTIFF 空间属性。缩略图、视频、音频等内容读取能力后续通过独立 content reader 扩展。
+图片 MediaInfoProvider 目前返回宽高、编码、MIME、颜色空间，并可通过 `MediaDescribeResult.Spatial` 携带 GeoTIFF 等空间横切事实。缩略图、视频、音频等内容读取能力后续通过独立 content reader 扩展。
 
 ## TableInfo
 
@@ -463,7 +463,7 @@ type TableInfo struct {
 mapper := format.GetTypeMapper("postgresql")
 commonType := mapper.ToCommon("varchar(255)")
 
-nativeType, size, precision := mapper.FromCommon(format.FieldTypeFloat)
+nativeType, size, precision := mapper.FromCommon(datatype.FieldTypeFloat)
 ```
 
 新增类型映射时，实现并注册：
@@ -472,8 +472,8 @@ nativeType, size, precision := mapper.FromCommon(format.FieldTypeFloat)
 type OracleTypeMapper struct{}
 
 func (m *OracleTypeMapper) Name() string { return "oracle" }
-func (m *OracleTypeMapper) ToCommon(nativeType string) format.FieldType
-func (m *OracleTypeMapper) FromCommon(commonType format.FieldType) (string, int, int)
+func (m *OracleTypeMapper) ToCommon(nativeType string) datatype.FieldType
+func (m *OracleTypeMapper) FromCommon(commonType datatype.FieldType) (string, int, int)
 ```
 
 原生字段类型不得作为执行链路的公共 schema 语义向外扩散。`TableInfo.Fields` 对外只表达 ADDP 标准字段事实；如 Manager / Meta 需要展示原始字段类型，应由 provider 返回标准 `native_type` 或由 Meta 写入只读 attributes，供查看和诊断使用，不得参与 Transfer、transform 或目标写入决策。

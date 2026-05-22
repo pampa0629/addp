@@ -3,6 +3,7 @@ package executor
 import (
 	"context"
 	"fmt"
+	"github.com/addp/common/datatype"
 	"strings"
 
 	engineplugin "github.com/addp/common/engine/plugin"
@@ -124,14 +125,22 @@ func (t *fieldMappingTransform) TransformSchema(schema *format.TableInfo) (*form
 	for _, mapping := range t.fields {
 		field := fieldInfoForMapping(source, mapping)
 		upsertFieldInfo(next, field)
-		if format.IsGeometryType(field.Type) {
-			if next.SpatialInfo == nil && source.SpatialInfo != nil {
-				next.SpatialInfo = cloneSpatialInfo(source.SpatialInfo)
+		if datatype.IsSpatialFieldType(field.Type) {
+			geometryType := format.PrimaryGeometryType(source.SpatialInfo)
+			srid := format.PrimaryGeometrySRID(source.SpatialInfo)
+			dimension := format.PrimaryGeometryDimension(source.SpatialInfo)
+			next.SpatialInfo = format.NewSingleGeometrySpatialInfo(mapping.Target, geometryType, srid, dimension)
+			if source.SpatialInfo != nil {
+				if source.SpatialInfo.Extent != nil {
+					extent := *source.SpatialInfo.Extent
+					next.SpatialInfo.Extent = &extent
+				}
+				if source.SpatialInfo.HasSpatialIndex != nil {
+					hasSpatialIndex := *source.SpatialInfo.HasSpatialIndex
+					next.SpatialInfo.HasSpatialIndex = &hasSpatialIndex
+				}
+				next.SpatialInfo.IndexName = source.SpatialInfo.IndexName
 			}
-			if next.SpatialInfo == nil {
-				next.SpatialInfo = &format.SpatialInfo{}
-			}
-			next.SpatialInfo.GeometryColumn = mapping.Target
 		}
 	}
 	return next, nil
@@ -175,14 +184,14 @@ func fieldInfoForMapping(schema *format.TableInfo, mapping FieldMappingFieldPlan
 	}
 	field.Name = mapping.Target
 	if mapping.TargetType != "" {
-		field.Type = format.FieldType(mapping.TargetType)
+		field.Type = datatype.FieldType(mapping.TargetType)
 	}
 	field.Nullable = mapping.Nullable
 	if mapping.Format != "" {
 		field.Comment = mapping.Format
 	}
 	if field.Type == "" {
-		field.Type = format.FieldTypeUnknown
+		field.Type = datatype.FieldTypeUnknown
 	}
 	return field
 }
@@ -273,17 +282,41 @@ func cloneTableInfo(info *format.TableInfo) *format.TableInfo {
 		next.RowCount = &rowCount
 	}
 	next.SpatialInfo = cloneSpatialInfo(info.SpatialInfo)
-	return &next
+	return next
 }
 
-func cloneSpatialInfo(info *format.SpatialInfo) *format.SpatialInfo {
+func cloneSpatialInfo(info *datatype.SpatialInfo) *datatype.SpatialInfo {
 	if info == nil {
 		return nil
 	}
-	next := *info
-	if info.BoundingBox != nil {
-		box := *info.BoundingBox
-		next.BoundingBox = &box
+	next := &datatype.SpatialInfo{
+		GeometryColumns:       make([]datatype.GeometryColumnInfo, 0, len(info.GeometryColumns)),
+		PrimaryGeometryColumn: info.PrimaryGeometryColumn,
+		IndexName:             info.IndexName,
+	}
+	for _, column := range info.GeometryColumns {
+		cloned := column
+		if column.SRID != nil {
+			srid := *column.SRID
+			cloned.SRID = &srid
+		}
+		if column.Dimension != nil {
+			dimension := *column.Dimension
+			cloned.Dimension = &dimension
+		}
+		if column.Nullable != nil {
+			nullable := *column.Nullable
+			cloned.Nullable = &nullable
+		}
+		next.GeometryColumns = append(next.GeometryColumns, cloned)
+	}
+	if info.Extent != nil {
+		extent := *info.Extent
+		next.Extent = &extent
+	}
+	if info.HasSpatialIndex != nil {
+		hasSpatialIndex := *info.HasSpatialIndex
+		next.HasSpatialIndex = &hasSpatialIndex
 	}
 	return &next
 }

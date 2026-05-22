@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/addp/common/datatype"
 	"io"
 	"os"
 	"os/exec"
@@ -676,38 +677,41 @@ func buildSpatialJSONPreview(ctx context.Context, data []byte, parsed interface{
 	if err != nil {
 		return nil, false
 	}
-	if tableInfo == nil || !tableInfo.IsSpatial() {
+	tableSchema := format.TableSchemaFromDescribeResult(tableInfo)
+	if tableSchema == nil || !tableSchema.IsSpatial() {
 		return nil, false
 	}
 
 	sampleRecords, _ := sampleReader.SampleTable(ctx, bytes.NewReader(data), 0, 10, opts)
 
 	metadata := make(map[string]interface{})
-	columns := make([]map[string]interface{}, 0, len(tableInfo.Fields))
-	for _, field := range tableInfo.Fields {
+	columns := make([]map[string]interface{}, 0, len(tableSchema.Fields))
+	for _, field := range tableSchema.Fields {
 		col := map[string]interface{}{
 			"name":     field.Name,
 			"type":     string(field.Type),
 			"nullable": field.Nullable,
 		}
-		if field.Type == format.FieldTypeGeometry {
+		if field.Type == datatype.FieldTypeGeometry {
 			col["type"] = "geometry"
 		}
 		columns = append(columns, col)
 	}
 	metadata["columns"] = columns
 
-	if tableInfo.RowCount != nil {
-		metadata["record_count"] = *tableInfo.RowCount
-		metadata["feature_count"] = *tableInfo.RowCount
+	if tableSchema.RowCount != nil {
+		metadata["record_count"] = *tableSchema.RowCount
+		metadata["feature_count"] = *tableSchema.RowCount
 	}
 
-	if spatialInfo := tableInfo.GetSpatialInfo(); spatialInfo != nil {
-		metadata["geometry_field"] = spatialInfo.GeometryColumn
-		metadata["geometry_type"] = spatialInfo.GeometryType
-		metadata["geometry_types"] = []string{spatialInfo.GeometryType}
-		if spatialInfo.SRID != 0 {
-			metadata["spatial_ref_sys"] = fmt.Sprintf("EPSG:%d", spatialInfo.SRID)
+	if spatialInfo := tableSchema.GetSpatialInfo(); spatialInfo != nil {
+		geometryField := format.PrimaryGeometryColumn(spatialInfo)
+		geometryType := format.PrimaryGeometryType(spatialInfo)
+		metadata["geometry_field"] = geometryField
+		metadata["geometry_type"] = geometryType
+		metadata["geometry_types"] = []string{geometryType}
+		if srid := format.PrimaryGeometrySRID(spatialInfo); srid != 0 {
+			metadata["spatial_ref_sys"] = fmt.Sprintf("EPSG:%d", srid)
 		}
 	}
 
@@ -1755,6 +1759,7 @@ func (h *parquetContentHandler) HandleStream(ctx context.Context, req *ObjectCon
 	if err != nil {
 		return nil, false, fmt.Errorf("解析 %s Schema 失败: %w", formatType, err)
 	}
+	tableSchema := format.TableSchemaFromDescribeResult(tableInfo)
 
 	// 重新打开文件读取预览数据（DescribeTable 已消耗 reader）
 	f2, err := os.Open(tmpPath)
@@ -1773,8 +1778,8 @@ func (h *parquetContentHandler) HandleStream(ctx context.Context, req *ObjectCon
 	}
 
 	// 构建列信息
-	columns := make([]map[string]interface{}, 0, len(tableInfo.Fields))
-	for _, field := range tableInfo.Fields {
+	columns := make([]map[string]interface{}, 0, len(tableSchema.Fields))
+	for _, field := range tableSchema.Fields {
 		col := map[string]interface{}{
 			"name":     field.Name,
 			"type":     string(field.Type),
@@ -1784,8 +1789,8 @@ func (h *parquetContentHandler) HandleStream(ctx context.Context, req *ObjectCon
 	}
 
 	totalRows := int64(0)
-	if tableInfo.RowCount != nil {
-		totalRows = *tableInfo.RowCount
+	if tableSchema.RowCount != nil {
+		totalRows = *tableSchema.RowCount
 	}
 	truncated := int64(len(rows)) < totalRows
 
@@ -1830,6 +1835,7 @@ func (h *parquetContentHandler) Handle(ctx context.Context, req *ObjectContentRe
 	if err != nil {
 		return nil, false, fmt.Errorf("解析 %s Schema 失败: %w", formatType, err)
 	}
+	tableSchema := format.TableSchemaFromDescribeResult(tableInfo)
 
 	rowLimit := int64(h.rowLimit)
 	if rowLimit <= 0 {
@@ -1840,8 +1846,8 @@ func (h *parquetContentHandler) Handle(ctx context.Context, req *ObjectContentRe
 		return nil, false, fmt.Errorf("读取 %s 预览数据失败: %w", formatType, err)
 	}
 
-	columns := make([]map[string]interface{}, 0, len(tableInfo.Fields))
-	for _, field := range tableInfo.Fields {
+	columns := make([]map[string]interface{}, 0, len(tableSchema.Fields))
+	for _, field := range tableSchema.Fields {
 		columns = append(columns, map[string]interface{}{
 			"name":     field.Name,
 			"type":     string(field.Type),
@@ -1850,8 +1856,8 @@ func (h *parquetContentHandler) Handle(ctx context.Context, req *ObjectContentRe
 	}
 
 	totalRows := int64(0)
-	if tableInfo.RowCount != nil {
-		totalRows = *tableInfo.RowCount
+	if tableSchema.RowCount != nil {
+		totalRows = *tableSchema.RowCount
 	}
 
 	return decoratePreviewContent(&models.ObjectPreviewContent{

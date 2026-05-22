@@ -2,6 +2,7 @@ package jsonformat
 
 import (
 	"encoding/json"
+	"github.com/addp/common/datatype"
 	"sort"
 	"strings"
 
@@ -10,7 +11,7 @@ import (
 
 type tableInfoBuilder struct {
 	geometryField string
-	fieldTypes    map[string]format.FieldType
+	fieldTypes    map[string]datatype.FieldType
 	geometryTypes map[string]struct{}
 	propertySet   map[string]struct{}
 	bounds        geometryBounds
@@ -20,7 +21,7 @@ type tableInfoBuilder struct {
 func newTableInfoBuilder(geometryField string) *tableInfoBuilder {
 	return &tableInfoBuilder{
 		geometryField: geometryField,
-		fieldTypes:    make(map[string]format.FieldType),
+		fieldTypes:    make(map[string]datatype.FieldType),
 		geometryTypes: make(map[string]struct{}),
 		propertySet:   make(map[string]struct{}),
 	}
@@ -86,14 +87,14 @@ func (b *tableInfoBuilder) Build() *format.TableInfo {
 	if b.HasGeometry() {
 		fields = append(fields, format.FieldInfo{
 			Name:     geometryField,
-			Type:     format.FieldTypeGeometry,
+			Type:     datatype.FieldTypeGeometry,
 			Nullable: false,
 		})
 	}
 	for _, name := range fieldNames {
 		fieldType := b.fieldTypes[name]
 		if fieldType == "" {
-			fieldType = format.FieldTypeUnknown
+			fieldType = datatype.FieldTypeUnknown
 		}
 		fields = append(fields, format.FieldInfo{
 			Name:     name,
@@ -107,96 +108,91 @@ func (b *tableInfoBuilder) Build() *format.TableInfo {
 		Fields: fields,
 	}
 	if b.HasGeometry() {
-		tableInfo.SpatialInfo = &format.SpatialInfo{
-			GeometryColumn: geometryField,
-			GeometryType:   b.GeometryType(),
-			SRID:           b.SRID(),
-			Dimension:      2,
-		}
+		tableInfo.SpatialInfo = format.NewSingleGeometrySpatialInfo(geometryField, b.GeometryType(), b.SRID(), 2)
 	}
 	return tableInfo
 }
 
-func inferFieldType(value interface{}) format.FieldType {
+func inferFieldType(value interface{}) datatype.FieldType {
 	switch v := value.(type) {
 	case nil:
-		return format.FieldTypeUnknown
+		return datatype.FieldTypeUnknown
 	case bool:
-		return format.FieldTypeBool
+		return datatype.FieldTypeBool
 	case int, int8, int16, int32, int64:
-		return format.FieldTypeInt
+		return datatype.FieldTypeInt
 	case uint, uint8, uint16, uint32, uint64:
-		return format.FieldTypeBigInt
+		return datatype.FieldTypeBigInt
 	case float32:
-		return format.FieldTypeFloat
+		return datatype.FieldTypeFloat
 	case float64:
-		return format.FieldTypeDouble
+		return datatype.FieldTypeDouble
 	case json.Number:
 		str := v.String()
 		if strings.Contains(str, ".") {
-			return format.FieldTypeDouble
+			return datatype.FieldTypeDouble
 		}
-		return format.FieldTypeInt
+		return datatype.FieldTypeInt
 	case string:
 		if looksLikeDate(v) {
-			return format.FieldTypeDate
+			return datatype.FieldTypeDate
 		}
 		if looksLikeTimestamp(v) {
-			return format.FieldTypeTimestamp
+			return datatype.FieldTypeTimestamp
 		}
-		return format.FieldTypeString
+		return datatype.FieldTypeString
 	case map[string]interface{}:
-		return format.FieldTypeJSON
+		return datatype.FieldTypeJSON
 	case []interface{}:
-		return format.FieldTypeArray
+		return datatype.FieldTypeArray
 	default:
-		return format.FieldTypeString
+		return datatype.FieldTypeString
 	}
 }
 
-func mergeFieldType(current, next format.FieldType) format.FieldType {
-	if current == "" || current == format.FieldTypeUnknown {
+func mergeFieldType(current, next datatype.FieldType) datatype.FieldType {
+	if current == "" || current == datatype.FieldTypeUnknown {
 		return next
 	}
-	if next == "" || next == format.FieldTypeUnknown {
+	if next == "" || next == datatype.FieldTypeUnknown {
 		return current
 	}
 	if current == next {
 		return current
 	}
 	if isNumericType(current) && isNumericType(next) {
-		if current == format.FieldTypeDecimal || next == format.FieldTypeDecimal {
-			return format.FieldTypeDecimal
+		if current == datatype.FieldTypeDecimal || next == datatype.FieldTypeDecimal {
+			return datatype.FieldTypeDecimal
 		}
-		if current == format.FieldTypeDouble || next == format.FieldTypeDouble {
-			return format.FieldTypeDouble
+		if current == datatype.FieldTypeDouble || next == datatype.FieldTypeDouble {
+			return datatype.FieldTypeDouble
 		}
-		if current == format.FieldTypeFloat || next == format.FieldTypeFloat {
-			return format.FieldTypeFloat
+		if current == datatype.FieldTypeFloat || next == datatype.FieldTypeFloat {
+			return datatype.FieldTypeFloat
 		}
-		if current == format.FieldTypeBigInt || next == format.FieldTypeBigInt {
-			return format.FieldTypeBigInt
+		if current == datatype.FieldTypeBigInt || next == datatype.FieldTypeBigInt {
+			return datatype.FieldTypeBigInt
 		}
-		return format.FieldTypeInt
+		return datatype.FieldTypeInt
 	}
 	if isTemporalType(current) && isTemporalType(next) {
-		return format.FieldTypeString
+		return datatype.FieldTypeString
 	}
-	return format.FieldTypeString
+	return datatype.FieldTypeString
 }
 
-func isNumericType(t format.FieldType) bool {
+func isNumericType(t datatype.FieldType) bool {
 	switch t {
-	case format.FieldTypeInt, format.FieldTypeBigInt, format.FieldTypeFloat, format.FieldTypeDouble, format.FieldTypeDecimal:
+	case datatype.FieldTypeInt, datatype.FieldTypeBigInt, datatype.FieldTypeFloat, datatype.FieldTypeDouble, datatype.FieldTypeDecimal:
 		return true
 	default:
 		return false
 	}
 }
 
-func isTemporalType(t format.FieldType) bool {
+func isTemporalType(t datatype.FieldType) bool {
 	switch t {
-	case format.FieldTypeDate, format.FieldTypeTime, format.FieldTypeTimestamp:
+	case datatype.FieldTypeDate, datatype.FieldTypeTime, datatype.FieldTypeTimestamp:
 		return true
 	default:
 		return false

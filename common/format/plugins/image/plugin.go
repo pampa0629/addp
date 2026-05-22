@@ -11,6 +11,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	_ "golang.org/x/image/tiff"
 )
@@ -93,7 +94,7 @@ func (p *Plugin) Capabilities() format.FormatCapability {
 	}
 }
 
-func (p *Plugin) DescribeMedia(ctx context.Context, input io.Reader, _ *format.ParseOptions) (*format.MediaInfo, error) {
+func (p *Plugin) DescribeMedia(ctx context.Context, input io.Reader, _ *format.ParseOptions) (*datatype.MediaDescribeResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -104,19 +105,19 @@ func (p *Plugin) DescribeMedia(ctx context.Context, input io.Reader, _ *format.P
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	info := &format.MediaInfo{
-		Format:     p.Format(),
-		MediaType:  "image",
+	info := &datatype.MediaInfo{
+		Kind:       datatype.MediaKindImage,
 		MIMEType:   imageMIMEType(formatName),
 		Width:      cfg.Width,
 		Height:     cfg.Height,
 		Encoding:   formatName,
 		ColorSpace: inferColorModel(cfg),
 	}
+	result := &datatype.MediaDescribeResult{Media: info}
 	if len(data) > 0 {
-		info.SpatialAttrs = extractGeoTIFFSpatial(data, cfg.Width, cfg.Height)
+		result.Spatial = extractGeoTIFFSpatial(data, cfg.Width, cfg.Height)
 	}
-	return info, nil
+	return result, nil
 }
 
 func decodeImageConfig(input io.Reader, keepData bool) (image.Config, string, []byte, error) {

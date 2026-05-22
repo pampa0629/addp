@@ -1,6 +1,7 @@
 package planner
 
 import (
+	"github.com/addp/common/datatype"
 	"strings"
 	"testing"
 
@@ -474,7 +475,7 @@ func TestBuildTableTransferPlanConsumesMetaSingleSourceAttributes(t *testing.T) 
 	if result.Plan.Source.Schema == nil || len(result.Plan.Source.Schema.Fields) != 2 {
 		t.Fatalf("source schema = %#v, want fields from Meta attributes", result.Plan.Source.Schema)
 	}
-	if result.Plan.Source.Schema.Fields[0].Type != format.FieldTypeBigInt || !result.Plan.Source.Schema.Fields[0].IsPrimaryKey {
+	if result.Plan.Source.Schema.Fields[0].Type != datatype.FieldTypeBigInt || !result.Plan.Source.Schema.Fields[0].IsPrimaryKey {
 		t.Fatalf("first source field = %#v, want standard bigint primary key field", result.Plan.Source.Schema.Fields[0])
 	}
 }
@@ -519,7 +520,7 @@ func TestBuildTableTransferPlanConsumesMetaMultiSourceRefsAndSpatialAttributes(t
 	if result.Plan.Source.Schema == nil || result.Plan.Source.Schema.SpatialInfo == nil {
 		t.Fatalf("source schema = %#v, want spatial info from Meta attributes", result.Plan.Source.Schema)
 	}
-	if result.Plan.Source.Schema.SpatialInfo.GeometryColumn != "shape" || result.Plan.Source.Schema.SpatialInfo.GeometryType != "MultiPolygon" {
+	if format.PrimaryGeometryColumn(result.Plan.Source.Schema.SpatialInfo) != "shape" || format.PrimaryGeometryType(result.Plan.Source.Schema.SpatialInfo) != "MultiPolygon" {
 		t.Fatalf("source spatial info = %#v, want primary geometry column from capabilities.spatial", result.Plan.Source.Schema.SpatialInfo)
 	}
 	if result.Plan.Source.ParseOptions == nil || result.Plan.Source.ParseOptions.ExtraParams["geometry_field"] != "shape" {

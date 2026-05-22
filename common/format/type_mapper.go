@@ -3,6 +3,8 @@ package format
 import (
 	"sort"
 	"sync"
+
+	"github.com/addp/common/datatype"
 )
 
 // TypeMapper 类型映射器接口
@@ -15,12 +17,12 @@ type TypeMapper interface {
 	// ToCommon 将原生类型转换为通用类型
 	// nativeType: 原生类型字符串（如 PostgreSQL 的 "varchar", MySQL 的 "int"）
 	// 返回: 通用的 FieldType
-	ToCommon(nativeType string) FieldType
+	ToCommon(nativeType string) datatype.FieldType
 
 	// FromCommon 将通用类型转换为原生类型
 	// commonType: 通用的 FieldType
 	// 返回: (原生类型名称, 长度/精度, 小数位数)
-	FromCommon(commonType FieldType) (nativeType string, size int, precision int)
+	FromCommon(commonType datatype.FieldType) (nativeType string, size int, precision int)
 }
 
 // TypeMapperRegistry 类型映射器注册表
@@ -60,7 +62,7 @@ func GetTypeMapper(name string) TypeMapper {
 }
 
 // InferCommonFieldType 使用已注册 TypeMapper 将原生字段类型归一到通用字段类型。
-func InferCommonFieldType(nativeType string) FieldType {
+func InferCommonFieldType(nativeType string) datatype.FieldType {
 	return defaultMapperRegistry.InferCommonFieldType(nativeType)
 }
 
@@ -73,7 +75,7 @@ func (r *TypeMapperRegistry) GetTypeMapper(name string) TypeMapper {
 }
 
 // InferCommonFieldType 使用当前注册表中的 TypeMapper 推断通用字段类型。
-func (r *TypeMapperRegistry) InferCommonFieldType(nativeType string) FieldType {
+func (r *TypeMapperRegistry) InferCommonFieldType(nativeType string) datatype.FieldType {
 	r.mu.RLock()
 	names := make([]string, 0, len(r.mappers))
 	for name := range r.mappers {
@@ -88,12 +90,12 @@ func (r *TypeMapperRegistry) InferCommonFieldType(nativeType string) FieldType {
 	sort.Strings(names)
 	for _, name := range names {
 		if mapper := mappers[name]; mapper != nil {
-			if fieldType := mapper.ToCommon(nativeType); fieldType != "" && fieldType != FieldTypeUnknown {
+			if fieldType := mapper.ToCommon(nativeType); fieldType != "" && fieldType != datatype.FieldTypeUnknown {
 				return fieldType
 			}
 		}
 	}
-	return FieldTypeUnknown
+	return datatype.FieldTypeUnknown
 }
 
 // ListTypeMappers 列出所有已注册的类型映射器名称

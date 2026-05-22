@@ -2,11 +2,11 @@ package preview
 
 import (
 	"context"
+	"github.com/addp/common/datatype"
 	"testing"
 
 	"github.com/addp/common/contentio"
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
 	"github.com/addp/manager/internal/models"
 )
@@ -112,7 +112,7 @@ func TestScopeTableInfoFromAttributes(t *testing.T) {
 	if info == nil || info.RowCount == nil || *info.RowCount != rowCount {
 		t.Fatalf("table info row count = %#v, want %d", info, rowCount)
 	}
-	if len(info.Fields) != 1 || info.Fields[0].Name != "id" || info.Fields[0].Type != format.FieldTypeBigInt {
+	if len(info.Fields) != 1 || info.Fields[0].Name != "id" || info.Fields[0].Type != datatype.FieldTypeBigInt {
 		t.Fatalf("fields = %#v", info.Fields)
 	}
 }

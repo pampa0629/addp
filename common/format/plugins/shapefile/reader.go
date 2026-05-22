@@ -67,10 +67,11 @@ func (plugin *Plugin) OpenMultiTableReader(ctx context.Context, reader contentio
 		}
 	}
 
-	schema, err := plugin.DescribeMultiTable(ctx, reader, refs, opts)
+	describeResult, err := plugin.DescribeMultiTable(ctx, reader, refs, opts)
 	if err != nil {
 		return nil, err
 	}
+	schema := format.TableSchemaFromDescribeResult(describeResult)
 
 	_, basePath, cleanup, err := materializeRefs(ctx, reader, refs)
 	if err != nil {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/addp/common/contentio"
 	"github.com/addp/common/dataitem"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 )
@@ -104,7 +105,7 @@ func enrichRefTableInfo(
 	if err != nil {
 		return
 	}
-	detected.Fields = tableInfo.Fields
+	detected.Fields = format.TableSchemaFromDescribeResult(tableInfo).Fields
 	upsertRefTableInfo(detected, tableInfo)
 }
 
@@ -132,19 +133,19 @@ func (r *metaRefReader) Stat(context.Context, contentio.Ref) (*contentio.Stat, e
 	return nil, contentio.ErrContentNotFound
 }
 
-func upsertRefTableInfo(item *DetectedItem, tableInfo *format.TableInfo) {
+func upsertRefTableInfo(item *DetectedItem, tableInfo *datatype.TableDescribeResult) {
 	if item == nil || tableInfo == nil {
 		return
 	}
 	upsertItemSection(&item.Attributes, "type_info", "table", tableAttributes(tableInfo))
-	if formatAttrs := formatAttributesFromTableInfo(item.Format, tableInfo); len(formatAttrs) > 0 {
+	if formatAttrs := formatAttributesFromDescribeResult(item.Format, tableInfo); len(formatAttrs) > 0 {
 		upsertItemSection(&item.Attributes, "format_info", item.Format, formatAttrs)
 	}
-	if spatialAttrs := spatialAttributes(tableInfo.GetSpatialInfo()); len(spatialAttrs) > 0 {
+	if spatialAttrs := spatialAttributes(tableInfo.Spatial); len(spatialAttrs) > 0 {
 		upsertItemSection(&item.Attributes, "capabilities", "spatial", spatialAttrs)
 	}
-	if indexInfo := tableInfo.GetContentIndexInfo(); indexInfo != nil && indexInfo.Table != nil {
-		upsertItemSection(&item.Attributes, "content_index", "table", contentIndexAttributes(indexInfo.Table))
+	if tableInfo.ContentIndex != nil {
+		upsertItemSection(&item.Attributes, "content_index", "table", contentIndexAttributes(tableInfo.ContentIndex))
 	}
 }
 
@@ -168,23 +169,26 @@ func EnrichKnownMultiTableItem(
 	if err != nil {
 		return item, false, err
 	}
-	item.Fields = tableInfo.Fields
+	item.Fields = format.TableSchemaFromDescribeResult(tableInfo).Fields
 	upsertRefTableInfo(item, tableInfo)
 	return item, true, nil
 }
 
-func tableAttributes(tableInfo *format.TableInfo) map[string]interface{} {
-	attrs := map[string]interface{}{
-		"fields":      fieldAttributesFromFormat(tableInfo.Fields),
-		"primary_key": append([]string(nil), tableInfo.PrimaryKey...),
+func tableAttributes(tableInfo *datatype.TableDescribeResult) map[string]interface{} {
+	if tableInfo == nil || tableInfo.Table == nil {
+		return nil
 	}
-	if tableInfo.RowCount != nil {
-		attrs["row_count"] = *tableInfo.RowCount
+	attrs := map[string]interface{}{
+		"fields":      fieldAttributesFromDatatype(tableInfo.Table.Fields),
+		"primary_key": append([]string(nil), tableInfo.Table.PrimaryKey...),
+	}
+	if tableInfo.Table.RowCount != nil {
+		attrs["row_count"] = *tableInfo.Table.RowCount
 	}
 	return attrs
 }
 
-func fieldAttributesFromFormat(fields []format.FieldInfo) []map[string]interface{} {
+func fieldAttributesFromDatatype(fields []datatype.FieldInfo) []map[string]interface{} {
 	fieldsData := make([]map[string]interface{}, 0, len(fields))
 	for _, f := range fields {
 		fieldsData = append(fieldsData, map[string]interface{}{
@@ -200,7 +204,7 @@ type formatAttributesProvider interface {
 	FormatAttributes() map[string]interface{}
 }
 
-func formatAttributesFromTableInfo(formatName string, tableInfo *format.TableInfo) map[string]interface{} {
+func formatAttributesFromDescribeResult(formatName string, tableInfo *datatype.TableDescribeResult) map[string]interface{} {
 	if tableInfo == nil || len(tableInfo.FormatInfo) == 0 {
 		return nil
 	}
@@ -213,29 +217,42 @@ func formatAttributesFromTableInfo(formatName string, tableInfo *format.TableInf
 	return nil
 }
 
-func spatialAttributes(spatialInfo *format.SpatialInfo) map[string]interface{} {
+func spatialAttributes(spatialInfo *datatype.SpatialInfo) map[string]interface{} {
 	if spatialInfo == nil {
 		return nil
 	}
-	attrs := map[string]interface{}{
-		"geometry_columns": []map[string]interface{}{{
-			"name":          spatialInfo.GeometryColumn,
-			"geometry_type": spatialInfo.GeometryType,
-			"srid":          spatialInfo.SRID,
-			"dimension":     spatialInfo.Dimension,
-			"nullable":      false,
-		}},
-		"primary_geometry_column": spatialInfo.GeometryColumn,
-		"has_spatial_index":       spatialInfo.HasSpatialIndex,
+	geometryColumns := make([]map[string]interface{}, 0, len(spatialInfo.GeometryColumns))
+	for _, column := range spatialInfo.GeometryColumns {
+		columnAttrs := map[string]interface{}{
+			"name":          column.Name,
+			"geometry_type": column.GeometryType,
+		}
+		if column.SRID != nil {
+			columnAttrs["srid"] = *column.SRID
+		}
+		if column.Dimension != nil {
+			columnAttrs["dimension"] = *column.Dimension
+		}
+		if column.Nullable != nil {
+			columnAttrs["nullable"] = *column.Nullable
+		}
+		geometryColumns = append(geometryColumns, columnAttrs)
 	}
-	if spatialInfo.BoundingBox != nil {
-		bbox := *spatialInfo.BoundingBox
+	attrs := map[string]interface{}{
+		"geometry_columns":        geometryColumns,
+		"primary_geometry_column": spatialInfo.PrimaryGeometryColumn,
+	}
+	if spatialInfo.HasSpatialIndex != nil {
+		attrs["has_spatial_index"] = *spatialInfo.HasSpatialIndex
+	}
+	if spatialInfo.Extent != nil {
+		bbox := *spatialInfo.Extent
 		attrs["extent"] = []float64{bbox[0], bbox[1], bbox[2], bbox[3]}
 	}
 	return attrs
 }
 
-func contentIndexAttributes(index *format.ContentIndex) map[string]interface{} {
+func contentIndexAttributes(index *datatype.ContentIndex) map[string]interface{} {
 	if index == nil {
 		return nil
 	}

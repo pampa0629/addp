@@ -2,6 +2,7 @@ package shapefile
 
 import (
 	"fmt"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	commonSpatial "github.com/addp/common/spatial"
 	"github.com/jonas-p/go-shp"
@@ -38,7 +39,7 @@ func spatialSRID(info *format.TableInfo) int {
 	if info == nil || info.SpatialInfo == nil {
 		return 0
 	}
-	return info.SpatialInfo.SRID
+	return format.PrimaryGeometrySRID(info.SpatialInfo)
 }
 
 func sridFromParseOptions(opts *format.ParseOptions) int {
@@ -78,12 +79,12 @@ func shapeTypeFromSchema(schema *format.TableInfo) (shp.ShapeType, error) {
 	geometryType := ""
 	dimension := 0
 	if schema != nil && schema.SpatialInfo != nil {
-		geometryType = schema.SpatialInfo.GeometryType
-		dimension = schema.SpatialInfo.Dimension
+		geometryType = format.PrimaryGeometryType(schema.SpatialInfo)
+		dimension = format.PrimaryGeometryDimension(schema.SpatialInfo)
 	}
 	if geometryType == "" && schema != nil {
 		for _, field := range schema.Fields {
-			if format.IsGeometryType(field.Type) {
+			if datatype.IsSpatialFieldType(field.Type) {
 				geometryType = string(field.Type)
 				break
 			}

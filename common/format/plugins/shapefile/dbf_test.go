@@ -1,7 +1,7 @@
 package shapefile
 
 import (
-	"github.com/addp/common/format"
+	"github.com/addp/common/datatype"
 	"github.com/jonas-p/go-shp"
 	"golang.org/x/text/encoding/simplifiedchinese"
 	"testing"
@@ -52,15 +52,15 @@ func TestDBFFieldToCommonTypeUsesHeaderContext(t *testing.T) {
 	tests := []struct {
 		name  string
 		field dbfFieldInfo
-		want  format.FieldType
+		want  datatype.FieldType
 	}{
-		{name: "numeric integer", field: dbfFieldInfo{RawType: "N", Size: 9, Precision: 0}, want: format.FieldTypeInt},
-		{name: "numeric big integer", field: dbfFieldInfo{RawType: "N", Size: 18, Precision: 0}, want: format.FieldTypeBigInt},
-		{name: "numeric decimal", field: dbfFieldInfo{RawType: "N", Size: 20, Precision: 8}, want: format.FieldTypeDecimal},
-		{name: "float", field: dbfFieldInfo{RawType: "F", Size: 13, Precision: 6}, want: format.FieldTypeFloat},
-		{name: "double", field: dbfFieldInfo{RawType: "F", Size: 20, Precision: 8}, want: format.FieldTypeDouble},
-		{name: "character", field: dbfFieldInfo{RawType: "C", Size: 32}, want: format.FieldTypeString},
-		{name: "logical", field: dbfFieldInfo{RawType: "L", Size: 1}, want: format.FieldTypeBool},
+		{name: "numeric integer", field: dbfFieldInfo{RawType: "N", Size: 9, Precision: 0}, want: datatype.FieldTypeInt},
+		{name: "numeric big integer", field: dbfFieldInfo{RawType: "N", Size: 18, Precision: 0}, want: datatype.FieldTypeBigInt},
+		{name: "numeric decimal", field: dbfFieldInfo{RawType: "N", Size: 20, Precision: 8}, want: datatype.FieldTypeDecimal},
+		{name: "float", field: dbfFieldInfo{RawType: "F", Size: 13, Precision: 6}, want: datatype.FieldTypeFloat},
+		{name: "double", field: dbfFieldInfo{RawType: "F", Size: 20, Precision: 8}, want: datatype.FieldTypeDouble},
+		{name: "character", field: dbfFieldInfo{RawType: "C", Size: 32}, want: datatype.FieldTypeString},
+		{name: "logical", field: dbfFieldInfo{RawType: "L", Size: 1}, want: datatype.FieldTypeBool},
 	}
 
 	for _, tt := range tests {

@@ -1,6 +1,6 @@
 # common/format/mappers
 
-本目录存放 format 类型映射器。类型映射器只负责在数据源原生字段类型和 `format.FieldType` 之间转换，不负责连接数据库、执行 SQL、读取文件或推断 item。
+本目录存放 format 类型映射器。类型映射器只负责在数据源原生字段类型和 `datatype.FieldType` 之间转换，不负责连接数据库、执行 SQL、读取文件或推断 item。
 
 ## 已有映射器
 

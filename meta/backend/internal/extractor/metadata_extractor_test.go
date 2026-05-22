@@ -3,7 +3,7 @@ package extractor
 import (
 	"testing"
 
-	"github.com/addp/common/format"
+	"github.com/addp/common/datatype"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/meta/internal/models"
 )
@@ -54,20 +54,24 @@ func TestMediaInfoAttributesWritesTypeInfoAndSpatial(t *testing.T) {
 
 	duration := int64(1234)
 	size := int64(4567)
-	attrs := MediaInfoAttributes(&format.MediaInfo{
-		Format:     format.FormatTIFF,
-		MediaType:  "image",
-		MIMEType:   "image/tiff",
-		Width:      800,
-		Height:     600,
-		DurationMS: &duration,
-		Encoding:   "tiff",
-		ColorSpace: "RGB",
-		SizeBytes:  &size,
-		SpatialAttrs: map[string]interface{}{
-			"srid":              4326,
-			"extent":            []float64{100, 180, 120, 200},
-			"has_spatial_index": false,
+	srid := 4326
+	hasSpatialIndex := false
+	extent := datatype.BoundingBox{100, 180, 120, 200}
+	attrs := MediaInfoAttributes(&datatype.MediaDescribeResult{
+		Media: &datatype.MediaInfo{
+			Kind:       datatype.MediaKindImage,
+			MIMEType:   "image/tiff",
+			Width:      800,
+			Height:     600,
+			DurationMS: &duration,
+			Encoding:   "tiff",
+			ColorSpace: "RGB",
+			SizeBytes:  &size,
+		},
+		Spatial: &datatype.SpatialInfo{
+			GeometryColumns: []datatype.GeometryColumnInfo{{SRID: &srid}},
+			Extent:          &extent,
+			HasSpatialIndex: &hasSpatialIndex,
 		},
 	})
 

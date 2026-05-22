@@ -27,17 +27,17 @@ func TestImageMediaInfoProviderDescribePNG(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DescribeMedia() error = %v", err)
 	}
-	if info.Format != format.FormatPNG {
-		t.Fatalf("Format = %q, want png", info.Format)
+	if info.Media == nil {
+		t.Fatal("media info missing")
 	}
-	if info.MediaType != "image" {
-		t.Fatalf("MediaType = %q, want image", info.MediaType)
+	if info.Media.Kind != "image" {
+		t.Fatalf("Kind = %q, want image", info.Media.Kind)
 	}
-	if info.Width != 2 || info.Height != 3 {
-		t.Fatalf("size = %dx%d, want 2x3", info.Width, info.Height)
+	if info.Media.Width != 2 || info.Media.Height != 3 {
+		t.Fatalf("size = %dx%d, want 2x3", info.Media.Width, info.Media.Height)
 	}
-	if info.MIMEType != "image/png" {
-		t.Fatalf("MIMEType = %q, want image/png", info.MIMEType)
+	if info.Media.MIMEType != "image/png" {
+		t.Fatalf("MIMEType = %q, want image/png", info.Media.MIMEType)
 	}
 }
 

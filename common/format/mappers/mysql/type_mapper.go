@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"github.com/addp/common/datatype"
 	"strings"
 
 	"github.com/addp/common/format"
@@ -15,7 +16,7 @@ func (m *TypeMapper) Name() string {
 }
 
 // ToCommon 将MySQL类型转换为通用类型
-func (m *TypeMapper) ToCommon(mysqlType string) format.FieldType {
+func (m *TypeMapper) ToCommon(mysqlType string) datatype.FieldType {
 	mysqlType = strings.ToLower(strings.TrimSpace(mysqlType))
 
 	// 处理带精度的类型
@@ -26,99 +27,99 @@ func (m *TypeMapper) ToCommon(mysqlType string) format.FieldType {
 	switch mysqlType {
 	// 字符串类型
 	case "varchar", "char", "text", "tinytext", "mediumtext", "longtext":
-		return format.FieldTypeString
+		return datatype.FieldTypeString
 
 	// 整数类型
 	case "tinyint", "smallint", "mediumint", "int", "integer":
-		return format.FieldTypeInt
+		return datatype.FieldTypeInt
 	case "bigint":
-		return format.FieldTypeBigInt
+		return datatype.FieldTypeBigInt
 
 	// 浮点类型
 	case "float":
-		return format.FieldTypeFloat // 4字节单精度
+		return datatype.FieldTypeFloat // 4字节单精度
 	case "double", "real":
-		return format.FieldTypeDouble // 8字节双精度
+		return datatype.FieldTypeDouble // 8字节双精度
 	case "decimal", "numeric":
-		return format.FieldTypeDecimal
+		return datatype.FieldTypeDecimal
 
 	// 布尔类型 (MySQL没有真正的bool，用tinyint(1)表示)
 	case "boolean", "bool":
-		return format.FieldTypeBool
+		return datatype.FieldTypeBool
 
 	// 日期时间类型
 	case "date":
-		return format.FieldTypeDate
+		return datatype.FieldTypeDate
 	case "time":
-		return format.FieldTypeTime
+		return datatype.FieldTypeTime
 	case "datetime", "timestamp":
-		return format.FieldTypeTimestamp
+		return datatype.FieldTypeTimestamp
 
 	// 二进制类型
 	case "binary", "varbinary", "blob", "tinyblob", "mediumblob", "longblob":
-		return format.FieldTypeBytes
+		return datatype.FieldTypeBytes
 
 	// 地理空间类型
 	case "geometry":
-		return format.FieldTypeGeometry
+		return datatype.FieldTypeGeometry
 	case "point":
-		return format.FieldTypePoint
+		return datatype.FieldTypePoint
 	case "linestring":
-		return format.FieldTypeLineString
+		return datatype.FieldTypeLineString
 	case "polygon":
-		return format.FieldTypePolygon
+		return datatype.FieldTypePolygon
 	case "multipoint":
-		return format.FieldTypeMultiPoint
+		return datatype.FieldTypeMultiPoint
 	case "multilinestring", "multipolygon", "geometrycollection":
-		return format.FieldTypeGeometry
+		return datatype.FieldTypeGeometry
 
 	// 复杂类型
 	case "json":
-		return format.FieldTypeJSON
+		return datatype.FieldTypeJSON
 
 	default:
-		return format.FieldTypeUnknown
+		return datatype.FieldTypeUnknown
 	}
 }
 
 // FromCommon 将通用类型转换为MySQL类型
-func (m *TypeMapper) FromCommon(commonType format.FieldType) (string, int, int) {
+func (m *TypeMapper) FromCommon(commonType datatype.FieldType) (string, int, int) {
 	switch commonType {
-	case format.FieldTypeString:
+	case datatype.FieldTypeString:
 		return "TEXT", 0, 0
-	case format.FieldTypeInt:
+	case datatype.FieldTypeInt:
 		return "INT", 0, 0
-	case format.FieldTypeBigInt:
+	case datatype.FieldTypeBigInt:
 		return "BIGINT", 0, 0
-	case format.FieldTypeFloat:
+	case datatype.FieldTypeFloat:
 		return "FLOAT", 0, 0 // 4字节单精度
-	case format.FieldTypeDouble:
+	case datatype.FieldTypeDouble:
 		return "DOUBLE", 0, 0 // 8字节双精度
-	case format.FieldTypeDecimal:
+	case datatype.FieldTypeDecimal:
 		return "DECIMAL", 10, 2 // 默认 (10,2)
-	case format.FieldTypeBool:
+	case datatype.FieldTypeBool:
 		return "TINYINT", 1, 0 // TINYINT(1)
-	case format.FieldTypeDate:
+	case datatype.FieldTypeDate:
 		return "DATE", 0, 0
-	case format.FieldTypeTime:
+	case datatype.FieldTypeTime:
 		return "TIME", 0, 0
-	case format.FieldTypeTimestamp:
+	case datatype.FieldTypeTimestamp:
 		return "DATETIME", 0, 0
-	case format.FieldTypeBytes:
+	case datatype.FieldTypeBytes:
 		return "BLOB", 0, 0
-	case format.FieldTypeGeometry:
+	case datatype.FieldTypeGeometry:
 		return "GEOMETRY", 0, 0
-	case format.FieldTypePoint:
+	case datatype.FieldTypePoint:
 		return "POINT", 0, 0
-	case format.FieldTypeLineString:
+	case datatype.FieldTypeLineString:
 		return "LINESTRING", 0, 0
-	case format.FieldTypePolygon:
+	case datatype.FieldTypePolygon:
 		return "POLYGON", 0, 0
-	case format.FieldTypeMultiPoint:
+	case datatype.FieldTypeMultiPoint:
 		return "MULTIPOINT", 0, 0
-	case format.FieldTypeJSON:
+	case datatype.FieldTypeJSON:
 		return "JSON", 0, 0
-	case format.FieldTypeUUID:
+	case datatype.FieldTypeUUID:
 		return "VARCHAR", 36, 0 // UUID 存储为 VARCHAR(36)
 	default:
 		return "TEXT", 0, 0

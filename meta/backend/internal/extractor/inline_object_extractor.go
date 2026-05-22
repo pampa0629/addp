@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
@@ -119,41 +120,98 @@ func (e *InlineObjectMetadataExtractor) Extract(
 	return attrs
 }
 
-func MediaInfoAttributes(info *format.MediaInfo) models.JSONMap {
+func MediaInfoAttributes(info *datatype.MediaDescribeResult) models.JSONMap {
 	attrs := models.JSONMap{}
-	if info == nil {
+	if info == nil || info.Media == nil {
 		return attrs
 	}
 	media := map[string]interface{}{}
-	if info.MediaType != "" {
-		media["kind"] = info.MediaType
+	if info.Media.Kind != "" {
+		media["kind"] = string(info.Media.Kind)
 	}
-	if info.Width > 0 {
-		media["width"] = info.Width
+	if info.Media.Width > 0 {
+		media["width"] = info.Media.Width
 	}
-	if info.Height > 0 {
-		media["height"] = info.Height
+	if info.Media.Height > 0 {
+		media["height"] = info.Media.Height
 	}
-	if info.DurationMS != nil {
-		media["duration_ms"] = *info.DurationMS
+	if info.Media.DurationMS != nil {
+		media["duration_ms"] = *info.Media.DurationMS
 	}
-	if info.Encoding != "" {
-		media["encoding"] = info.Encoding
+	if info.Media.Encoding != "" {
+		media["encoding"] = info.Media.Encoding
 	}
-	if info.ColorSpace != "" {
-		media["color_space"] = info.ColorSpace
+	if info.Media.ColorSpace != "" {
+		media["color_space"] = info.Media.ColorSpace
 	}
-	if info.MIMEType != "" {
-		media["mime_type"] = info.MIMEType
+	if info.Media.MIMEType != "" {
+		media["mime_type"] = info.Media.MIMEType
 	}
-	if info.SizeBytes != nil {
-		media["size_bytes"] = *info.SizeBytes
+	if info.Media.SizeBytes != nil {
+		media["size_bytes"] = *info.Media.SizeBytes
 	}
 	if len(media) > 0 {
 		metaattr.UpsertNested(attrs, "type_info", "media", media)
 	}
-	if len(info.SpatialAttrs) > 0 {
-		metaattr.UpsertNested(attrs, "capabilities", "spatial", info.SpatialAttrs)
+	if spatialAttrs := spatialInfoAttributes(info.Spatial); len(spatialAttrs) > 0 {
+		metaattr.UpsertNested(attrs, "capabilities", "spatial", spatialAttrs)
+	}
+	return attrs
+}
+
+func spatialInfoAttributes(info *datatype.SpatialInfo) map[string]interface{} {
+	if info == nil {
+		return nil
+	}
+	attrs := map[string]interface{}{}
+	if len(info.GeometryColumns) > 0 {
+		geometryColumns := make([]map[string]interface{}, 0, len(info.GeometryColumns))
+		for _, column := range info.GeometryColumns {
+			columnAttrs := map[string]interface{}{}
+			if column.Name != "" {
+				columnAttrs["name"] = column.Name
+			}
+			if column.GeometryType != "" {
+				columnAttrs["geometry_type"] = column.GeometryType
+			}
+			if column.SRID != nil {
+				columnAttrs["srid"] = *column.SRID
+				if len(info.GeometryColumns) == 1 && column.Name == "" {
+					attrs["srid"] = *column.SRID
+				}
+			}
+			if column.CRS != "" {
+				columnAttrs["crs"] = column.CRS
+				if len(info.GeometryColumns) == 1 && column.Name == "" {
+					attrs["crs"] = column.CRS
+				}
+			}
+			if column.Dimension != nil {
+				columnAttrs["dimension"] = *column.Dimension
+			}
+			if column.Nullable != nil {
+				columnAttrs["nullable"] = *column.Nullable
+			}
+			if len(columnAttrs) > 0 {
+				geometryColumns = append(geometryColumns, columnAttrs)
+			}
+		}
+		if len(geometryColumns) > 0 && geometryColumns[0]["name"] != nil {
+			attrs["geometry_columns"] = geometryColumns
+		}
+	}
+	if info.PrimaryGeometryColumn != "" {
+		attrs["primary_geometry_column"] = info.PrimaryGeometryColumn
+	}
+	if info.Extent != nil {
+		bbox := *info.Extent
+		attrs["extent"] = []float64{bbox[0], bbox[1], bbox[2], bbox[3]}
+	}
+	if info.HasSpatialIndex != nil {
+		attrs["has_spatial_index"] = *info.HasSpatialIndex
+	}
+	if info.IndexName != "" {
+		attrs["index_name"] = info.IndexName
 	}
 	return attrs
 }

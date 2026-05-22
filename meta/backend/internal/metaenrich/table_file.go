@@ -10,6 +10,7 @@ import (
 
 	"github.com/addp/common/contentio"
 	"github.com/addp/common/dataitem"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
@@ -357,7 +358,7 @@ func tableFileFieldAttributes(fields []format.FieldInfo) []map[string]interface{
 	return fieldsData
 }
 
-func tableFileAttributes(formatName string, mode string, fieldsData []map[string]interface{}, files []plugin.FileEntry, dirPath string, totalSize int64, tableInfo *format.TableInfo, includeContentIndex bool) map[string]interface{} {
+func tableFileAttributes(formatName string, mode string, fieldsData []map[string]interface{}, files []plugin.FileEntry, dirPath string, totalSize int64, tableInfo *datatype.TableDescribeResult, includeContentIndex bool) map[string]interface{} {
 	attrs := map[string]interface{}{
 		"storage": map[string]interface{}{
 			"physical_path": dirPath,
@@ -374,8 +375,8 @@ func tableFileAttributes(formatName string, mode string, fieldsData []map[string
 		tableAttrs := map[string]interface{}{
 			"fields": fieldsData,
 		}
-		if tableInfo != nil && tableInfo.RowCount != nil {
-			tableAttrs["row_count"] = *tableInfo.RowCount
+		if tableInfo != nil && tableInfo.Table != nil && tableInfo.Table.RowCount != nil {
+			tableAttrs["row_count"] = *tableInfo.Table.RowCount
 		}
 		attrs["type_info"] = map[string]interface{}{
 			"table": tableAttrs,
@@ -388,32 +389,47 @@ func tableFileAttributes(formatName string, mode string, fieldsData []map[string
 				formatAttrs,
 			)
 		}
-		if spatialInfo := tableInfo.GetSpatialInfo(); spatialInfo != nil {
-			spatialAttrs := map[string]interface{}{
-				"geometry_columns": []map[string]interface{}{{
-					"name":          spatialInfo.GeometryColumn,
-					"geometry_type": spatialInfo.GeometryType,
-					"srid":          spatialInfo.SRID,
-				}},
-				"primary_geometry_column": spatialInfo.GeometryColumn,
-				"has_spatial_index":       spatialInfo.HasSpatialIndex,
+		if spatialInfo := tableInfo.Spatial; spatialInfo != nil {
+			geometryColumns := make([]map[string]interface{}, 0, len(spatialInfo.GeometryColumns))
+			for _, column := range spatialInfo.GeometryColumns {
+				columnAttrs := map[string]interface{}{
+					"name":          column.Name,
+					"geometry_type": column.GeometryType,
+				}
+				if column.SRID != nil {
+					columnAttrs["srid"] = *column.SRID
+				}
+				if column.Dimension != nil {
+					columnAttrs["dimension"] = *column.Dimension
+				}
+				if column.Nullable != nil {
+					columnAttrs["nullable"] = *column.Nullable
+				}
+				geometryColumns = append(geometryColumns, columnAttrs)
 			}
-			if spatialInfo.BoundingBox != nil {
-				bbox := *spatialInfo.BoundingBox
+			spatialAttrs := map[string]interface{}{
+				"geometry_columns":        geometryColumns,
+				"primary_geometry_column": spatialInfo.PrimaryGeometryColumn,
+			}
+			if spatialInfo.HasSpatialIndex != nil {
+				spatialAttrs["has_spatial_index"] = *spatialInfo.HasSpatialIndex
+			}
+			if spatialInfo.Extent != nil {
+				bbox := *spatialInfo.Extent
 				spatialAttrs["extent"] = []float64{bbox[0], bbox[1], bbox[2], bbox[3]}
 			}
 			attrs["capabilities"] = map[string]interface{}{
 				"spatial": spatialAttrs,
 			}
 		}
-		if indexInfo := tableInfo.GetContentIndexInfo(); includeContentIndex && indexInfo != nil && indexInfo.Table != nil {
-			if indexInfo.Table.Source == nil {
-				indexInfo.Table.Source = map[string]interface{}{
+		if indexInfo := tableInfo.ContentIndex; includeContentIndex && indexInfo != nil {
+			if indexInfo.Source == nil {
+				indexInfo.Source = map[string]interface{}{
 					"size_bytes": totalSize,
 				}
 			}
 			attrs["content_index"] = map[string]interface{}{
-				"table": indexInfo.Table,
+				"table": indexInfo,
 			}
 		}
 	}
@@ -424,7 +440,7 @@ type formatAttributesProvider interface {
 	FormatAttributes() map[string]interface{}
 }
 
-func formatAttributesFromTableInfo(formatName string, tableInfo *format.TableInfo) map[string]interface{} {
+func formatAttributesFromTableInfo(formatName string, tableInfo *datatype.TableDescribeResult) map[string]interface{} {
 	if tableInfo == nil || len(tableInfo.FormatInfo) == 0 {
 		return nil
 	}
@@ -614,9 +630,10 @@ func (d *tableFileItemResolver) extractTableFileInfo(
 			totalSize = *resolved.SizeBytes
 		}
 	}
-	fieldsData := tableFileFieldAttributes(tableInfo.Fields)
+	tableSchema := format.TableSchemaFromDescribeResult(tableInfo)
+	fieldsData := tableFileFieldAttributes(tableSchema.Fields)
 	return &metaitem.CompositeItemInfo{
-		Fields:     tableInfo.Fields,
+		Fields:     tableSchema.Fields,
 		Layout:     layout,
 		DataType:   dataitem.DataTypeTable,
 		Format:     formatName,
@@ -627,7 +644,7 @@ func (d *tableFileItemResolver) extractTableFileInfo(
 	}, nil
 }
 
-func describeTableFileScope(ctx context.Context, formatName string, reader contentio.Reader, dirPath string) (*format.TableInfo, error) {
+func describeTableFileScope(ctx context.Context, formatName string, reader contentio.Reader, dirPath string) (*datatype.TableDescribeResult, error) {
 	provider, err := format.GetScopeTableInfoProvider(format.FormatType(formatName))
 	if err != nil {
 		return nil, err
@@ -711,8 +728,9 @@ func extractTableFileSingleFileInfoWithFormat(
 		}, nil
 	}
 
-	fieldsData := make([]map[string]interface{}, 0, len(tableInfo.Fields))
-	for _, f := range tableInfo.Fields {
+	tableSchema := format.TableSchemaFromDescribeResult(tableInfo)
+	fieldsData := make([]map[string]interface{}, 0, len(tableSchema.Fields))
+	for _, f := range tableSchema.Fields {
 		fieldsData = append(fieldsData, map[string]interface{}{
 			"name":     f.Name,
 			"type":     string(f.Type),
@@ -721,7 +739,7 @@ func extractTableFileSingleFileInfoWithFormat(
 	}
 
 	return &metaitem.CompositeItemInfo{
-		Fields:     tableInfo.Fields,
+		Fields:     tableSchema.Fields,
 		Layout:     dataitem.LayoutSingle,
 		DataType:   dataitem.DataTypeTable,
 		Format:     formatName,
@@ -761,9 +779,10 @@ func ExtractTableFileSingleFileInfoStrict(
 		return nil, err
 	}
 
-	fieldsData := tableFileFieldAttributes(tableInfo.Fields)
+	tableSchema := format.TableSchemaFromDescribeResult(tableInfo)
+	fieldsData := tableFileFieldAttributes(tableSchema.Fields)
 	return &metaitem.CompositeItemInfo{
-		Fields:     tableInfo.Fields,
+		Fields:     tableSchema.Fields,
 		Layout:     dataitem.LayoutSingle,
 		DataType:   dataitem.DataTypeTable,
 		Format:     formatName,
@@ -858,7 +877,7 @@ func hasTableProvider(formatName string) bool {
 	return err == nil
 }
 
-func describeTableFile(ctx context.Context, formatName string, rc io.Reader) (*format.TableInfo, error) {
+func describeTableFile(ctx context.Context, formatName string, rc io.Reader) (*datatype.TableDescribeResult, error) {
 	provider, err := format.GetTableInfoProvider(format.FormatType(formatName))
 	if err != nil {
 		return nil, err

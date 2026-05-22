@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/addp/common/contentio"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	"github.com/jonas-p/go-shp"
 	"io"
@@ -198,11 +199,11 @@ func multiWriterGeometryField(schema *format.TableInfo, opts *format.WriteOption
 			return strings.TrimSpace(value)
 		}
 	}
-	if schema != nil && schema.SpatialInfo != nil && strings.TrimSpace(schema.SpatialInfo.GeometryColumn) != "" {
-		return strings.TrimSpace(schema.SpatialInfo.GeometryColumn)
+	if schema != nil && schema.SpatialInfo != nil && strings.TrimSpace(format.PrimaryGeometryColumn(schema.SpatialInfo)) != "" {
+		return strings.TrimSpace(format.PrimaryGeometryColumn(schema.SpatialInfo))
 	}
 	for _, field := range schema.Fields {
-		if format.IsGeometryType(field.Type) {
+		if datatype.IsSpatialFieldType(field.Type) {
 			return field.Name
 		}
 	}

@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"github.com/addp/common/datatype"
 	"io"
 	"reflect"
 	"strings"
@@ -252,8 +253,8 @@ func TestFileTablePreviewProviderPreviewTSVWithRegisteredProvider(t *testing.T) 
 				"table": map[string]interface{}{
 					"row_count": int64(2),
 					"fields": []interface{}{
-						map[string]interface{}{"name": "name", "type": string(format.FieldTypeString), "nullable": true},
-						map[string]interface{}{"name": "age", "type": string(format.FieldTypeInt), "nullable": true},
+						map[string]interface{}{"name": "name", "type": string(datatype.FieldTypeString), "nullable": true},
+						map[string]interface{}{"name": "age", "type": string(datatype.FieldTypeInt), "nullable": true},
 					},
 				},
 			},
@@ -336,7 +337,7 @@ func TestFileTablePreviewProviderUsesAttributesTableInfo(t *testing.T) {
 				"table": map[string]interface{}{
 					"row_count": int64(5),
 					"fields": []interface{}{
-						map[string]interface{}{"name": "name", "type": string(format.FieldTypeString), "nullable": true},
+						map[string]interface{}{"name": "name", "type": string(datatype.FieldTypeString), "nullable": true},
 					},
 				},
 			},
@@ -1048,8 +1049,8 @@ func TestFileTablePreviewProviderRestoresSpatialInfoFromAttributes(t *testing.T)
 				"table": map[string]interface{}{
 					"row_count": int64(1),
 					"fields": []interface{}{
-						map[string]interface{}{"name": "geometry", "type": string(format.FieldTypeGeometry), "nullable": false},
-						map[string]interface{}{"name": "name", "type": string(format.FieldTypeString), "nullable": true},
+						map[string]interface{}{"name": "geometry", "type": string(datatype.FieldTypeGeometry), "nullable": false},
+						map[string]interface{}{"name": "name", "type": string(datatype.FieldTypeString), "nullable": true},
 					},
 				},
 			},
@@ -1364,13 +1365,13 @@ func (p *recordingTableProvider) Capabilities() format.FormatCapability {
 	return format.FormatCapability{}
 }
 
-func (p *recordingTableProvider) DescribeTable(context.Context, io.Reader, *format.ParseOptions) (*format.TableInfo, error) {
+func (p *recordingTableProvider) DescribeTable(context.Context, io.Reader, *format.ParseOptions) (*datatype.TableDescribeResult, error) {
 	p.describeCalls++
 	rowCount := int64(3)
-	return &format.TableInfo{
-		Fields:   []format.FieldInfo{{Name: "name", Type: format.FieldTypeString}},
+	return format.TableDescribeResultFromSchema(&format.TableInfo{
+		Fields:   []format.FieldInfo{{Name: "name", Type: datatype.FieldTypeString}},
 		RowCount: &rowCount,
-	}, nil
+	}), nil
 }
 
 func (p *recordingTableProvider) SampleTable(_ context.Context, _ io.Reader, offset, _ int64, opts *format.ParseOptions) ([]map[string]interface{}, error) {
@@ -1402,14 +1403,14 @@ func (p *recordingMultiTableProvider) RelatedRefSpecs() []format.RelatedRefSpec 
 	}
 }
 
-func (p *recordingMultiTableProvider) DescribeMultiTable(_ context.Context, _ contentio.Reader, refs []format.RelatedRef, _ *format.ParseOptions) (*format.TableInfo, error) {
+func (p *recordingMultiTableProvider) DescribeMultiTable(_ context.Context, _ contentio.Reader, refs []format.RelatedRef, _ *format.ParseOptions) (*datatype.TableDescribeResult, error) {
 	p.describeCalls++
 	p.lastRefs = append([]format.RelatedRef(nil), refs...)
 	rowCount := int64(1)
-	return &format.TableInfo{
-		Fields:   []format.FieldInfo{{Name: "name", Type: format.FieldTypeString}},
+	return format.TableDescribeResultFromSchema(&format.TableInfo{
+		Fields:   []format.FieldInfo{{Name: "name", Type: datatype.FieldTypeString}},
 		RowCount: &rowCount,
-	}, nil
+	}), nil
 }
 
 func (p *recordingMultiTableProvider) SampleMultiTable(_ context.Context, _ contentio.Reader, _ []format.RelatedRef, offset, _ int64, _ *format.ParseOptions) ([]map[string]interface{}, error) {

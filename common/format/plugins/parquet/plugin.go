@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/addp/common/datatype"
 	"io"
 	"math"
 	"strconv"
@@ -214,7 +215,7 @@ func (p *Plugin) OpenTableReader(ctx context.Context, input io.Reader, options *
 }
 
 // DescribeTable 从 Parquet 文件中提取 TableInfo（Schema + 行数）
-func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableInfo, error) {
+func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*datatype.TableDescribeResult, error) {
 	data, err := io.ReadAll(input)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read parquet data: %w", err)
@@ -232,7 +233,11 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 		Fields:   fields,
 		RowCount: &rowCount,
 	}
-	return format.ApplyFieldSelectionToTableInfo(info, fieldSelectionFromOptions(options))
+	selected, err := format.ApplyFieldSelectionToTableInfo(info, fieldSelectionFromOptions(options))
+	if err != nil {
+		return nil, err
+	}
+	return format.TableDescribeResultFromSchema(selected), nil
 }
 
 // SampleTable 读取 Parquet 表格样本。
@@ -494,27 +499,27 @@ func parquetWriterFields(schema *format.TableInfo) []format.FieldInfo {
 func parquetNodeForField(field format.FieldInfo) parquetgo.Node {
 	var node parquetgo.Node
 	switch field.Type {
-	case format.FieldTypeBool:
+	case datatype.FieldTypeBool:
 		node = parquetgo.Leaf(parquetgo.BooleanType)
-	case format.FieldTypeInt:
+	case datatype.FieldTypeInt:
 		node = parquetgo.Int(32)
-	case format.FieldTypeBigInt:
+	case datatype.FieldTypeBigInt:
 		node = parquetgo.Int(64)
-	case format.FieldTypeFloat:
+	case datatype.FieldTypeFloat:
 		node = parquetgo.Leaf(parquetgo.FloatType)
-	case format.FieldTypeDouble, format.FieldTypeDecimal:
+	case datatype.FieldTypeDouble, datatype.FieldTypeDecimal:
 		node = parquetgo.Leaf(parquetgo.DoubleType)
-	case format.FieldTypeBytes:
+	case datatype.FieldTypeBytes:
 		node = parquetgo.Leaf(parquetgo.ByteArrayType)
-	case format.FieldTypeDate:
+	case datatype.FieldTypeDate:
 		node = parquetgo.Date()
-	case format.FieldTypeTimestamp, format.FieldTypeTime:
+	case datatype.FieldTypeTimestamp, datatype.FieldTypeTime:
 		node = parquetgo.String()
-	case format.FieldTypeJSON, format.FieldTypeArray,
-		format.FieldTypeGeometry, format.FieldTypePoint, format.FieldTypeLineString,
-		format.FieldTypePolygon, format.FieldTypeMultiPoint:
+	case datatype.FieldTypeJSON, datatype.FieldTypeArray,
+		datatype.FieldTypeGeometry, datatype.FieldTypePoint, datatype.FieldTypeLineString,
+		datatype.FieldTypePolygon, datatype.FieldTypeMultiPoint:
 		node = parquetgo.String()
-	case format.FieldTypeUUID:
+	case datatype.FieldTypeUUID:
 		node = parquetgo.UUID()
 	default:
 		node = parquetgo.String()
@@ -533,33 +538,33 @@ func parquetWriterRow(row map[string]interface{}, fields []format.FieldInfo) map
 	return out
 }
 
-func parquetWriterValue(value interface{}, fieldType format.FieldType) any {
+func parquetWriterValue(value interface{}, fieldType datatype.FieldType) any {
 	if value == nil {
 		return nil
 	}
 	switch fieldType {
-	case format.FieldTypeBool:
+	case datatype.FieldTypeBool:
 		return boolValue(value)
-	case format.FieldTypeInt:
+	case datatype.FieldTypeInt:
 		return int32(int64Value(value))
-	case format.FieldTypeBigInt:
+	case datatype.FieldTypeBigInt:
 		return int64Value(value)
-	case format.FieldTypeFloat:
+	case datatype.FieldTypeFloat:
 		return float32(float64Value(value))
-	case format.FieldTypeDouble, format.FieldTypeDecimal:
+	case datatype.FieldTypeDouble, datatype.FieldTypeDecimal:
 		return float64Value(value)
-	case format.FieldTypeBytes:
+	case datatype.FieldTypeBytes:
 		if bytes, ok := value.([]byte); ok {
 			return bytes
 		}
 		return []byte(fmt.Sprint(value))
-	case format.FieldTypeDate:
+	case datatype.FieldTypeDate:
 		return dateValue(value)
-	case format.FieldTypeTimestamp, format.FieldTypeTime:
+	case datatype.FieldTypeTimestamp, datatype.FieldTypeTime:
 		return temporalString(value)
-	case format.FieldTypeJSON, format.FieldTypeArray,
-		format.FieldTypeGeometry, format.FieldTypePoint, format.FieldTypeLineString,
-		format.FieldTypePolygon, format.FieldTypeMultiPoint:
+	case datatype.FieldTypeJSON, datatype.FieldTypeArray,
+		datatype.FieldTypeGeometry, datatype.FieldTypePoint, datatype.FieldTypeLineString,
+		datatype.FieldTypePolygon, datatype.FieldTypeMultiPoint:
 		return jsonString(value)
 	default:
 		return fmt.Sprint(value)
@@ -694,7 +699,7 @@ func jsonString(value interface{}) string {
 	}
 }
 
-func (p *Plugin) DescribeTableScope(ctx context.Context, reader contentio.Reader, scope contentio.Ref, options *format.ParseOptions) (*format.TableInfo, error) {
+func (p *Plugin) DescribeTableScope(ctx context.Context, reader contentio.Reader, scope contentio.Ref, options *format.ParseOptions) (*datatype.TableDescribeResult, error) {
 	scopedRefs, err := listParquetScopeResources(ctx, reader, scope)
 	if err != nil {
 		return nil, err
@@ -713,7 +718,7 @@ func (p *Plugin) DescribeTableScope(ctx context.Context, reader contentio.Reader
 		if err != nil {
 			return nil, fmt.Errorf("failed to open parquet file %s: %w", ref.Path, err)
 		}
-		info, describeErr := p.DescribeTable(ctx, input, parseOptionsWithoutFieldSelection(options))
+		result, describeErr := p.DescribeTable(ctx, input, parseOptionsWithoutFieldSelection(options))
 		closeErr := input.Close()
 		if describeErr != nil {
 			return nil, fmt.Errorf("failed to describe parquet file %s: %w", ref.Path, describeErr)
@@ -721,6 +726,7 @@ func (p *Plugin) DescribeTableScope(ctx context.Context, reader contentio.Reader
 		if closeErr != nil {
 			return nil, fmt.Errorf("failed to close parquet file %s: %w", ref.Path, closeErr)
 		}
+		info := format.TableSchemaFromDescribeResult(result)
 		if merged == nil {
 			dataFields = append([]format.FieldInfo(nil), info.Fields...)
 			baseInfo := &format.TableInfo{
@@ -748,7 +754,7 @@ func (p *Plugin) DescribeTableScope(ctx context.Context, reader contentio.Reader
 	}
 	merged.RowCount = &totalRows
 	merged.FormatInfo = map[string]interface{}{"parquet": &Info{Files: files, PartitionColumns: fieldNames(partitionFields)}}
-	return merged, nil
+	return format.TableDescribeResultFromSchema(merged), nil
 }
 
 func (p *Plugin) SampleTableScope(ctx context.Context, reader contentio.Reader, scope contentio.Ref, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
@@ -781,7 +787,7 @@ func (p *Plugin) SampleTableScope(ctx context.Context, reader contentio.Reader, 
 			if err != nil {
 				return nil, fmt.Errorf("failed to open parquet file %s: %w", ref.Path, err)
 			}
-			info, describeErr := p.DescribeTable(ctx, input, parseOptionsWithoutFieldSelection(options))
+			result, describeErr := p.DescribeTable(ctx, input, parseOptionsWithoutFieldSelection(options))
 			closeErr := input.Close()
 			if describeErr != nil {
 				return nil, fmt.Errorf("failed to describe parquet file %s: %w", ref.Path, describeErr)
@@ -789,6 +795,7 @@ func (p *Plugin) SampleTableScope(ctx context.Context, reader contentio.Reader, 
 			if closeErr != nil {
 				return nil, fmt.Errorf("failed to close parquet file %s: %w", ref.Path, closeErr)
 			}
+			info := result.Table
 			if info.RowCount != nil {
 				fileRows = *info.RowCount
 			}
@@ -1065,7 +1072,7 @@ func partitionFieldsFromScopedRefs(refs []scopedParquetRef) []format.FieldInfo {
 			seen[partition.Name] = true
 			fields = append(fields, format.FieldInfo{
 				Name:     partition.Name,
-				Type:     format.FieldTypeString,
+				Type:     datatype.FieldTypeString,
 				Nullable: false,
 			})
 		}
@@ -1222,9 +1229,9 @@ func parquetTypeString(f parquetgo.Field) string {
 }
 
 // mapParquetType 将 Parquet 类型映射到 ADDP 统一类型
-func mapParquetType(f parquetgo.Field) format.FieldType {
+func mapParquetType(f parquetgo.Field) datatype.FieldType {
 	if f.Type() == nil {
-		return format.FieldTypeUnknown
+		return datatype.FieldTypeUnknown
 	}
 
 	// 先检查逻辑类型
@@ -1232,42 +1239,42 @@ func mapParquetType(f parquetgo.Field) format.FieldType {
 	if lt != nil {
 		switch {
 		case lt.Date != nil:
-			return format.FieldTypeDate
+			return datatype.FieldTypeDate
 		case lt.Time != nil:
-			return format.FieldTypeTime
+			return datatype.FieldTypeTime
 		case lt.Timestamp != nil:
-			return format.FieldTypeTimestamp
+			return datatype.FieldTypeTimestamp
 		case lt.Decimal != nil:
-			return format.FieldTypeDecimal
+			return datatype.FieldTypeDecimal
 		case lt.UTF8 != nil:
-			return format.FieldTypeString
+			return datatype.FieldTypeString
 		case lt.UUID != nil:
-			return format.FieldTypeUUID
+			return datatype.FieldTypeUUID
 		case lt.List != nil:
-			return format.FieldTypeArray
+			return datatype.FieldTypeArray
 		case lt.Map != nil:
-			return format.FieldTypeJSON
+			return datatype.FieldTypeJSON
 		}
 	}
 
 	// 按物理类型映射
 	switch f.Type() {
 	case parquetgo.BooleanType:
-		return format.FieldTypeBool
+		return datatype.FieldTypeBool
 	case parquetgo.Int32Type:
-		return format.FieldTypeInt
+		return datatype.FieldTypeInt
 	case parquetgo.Int64Type:
-		return format.FieldTypeBigInt
+		return datatype.FieldTypeBigInt
 	case parquetgo.FloatType:
-		return format.FieldTypeFloat
+		return datatype.FieldTypeFloat
 	case parquetgo.DoubleType:
-		return format.FieldTypeDouble
+		return datatype.FieldTypeDouble
 	case parquetgo.ByteArrayType:
-		return format.FieldTypeString
+		return datatype.FieldTypeString
 	case parquetgo.Int96Type:
-		return format.FieldTypeTimestamp
+		return datatype.FieldTypeTimestamp
 	default:
-		return format.FieldTypeString
+		return datatype.FieldTypeString
 	}
 }
 

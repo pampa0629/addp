@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/addp/common/datatype"
 	"io"
 	"os"
 	"strings"
@@ -187,7 +188,7 @@ func (p *Plugin) DescribeContainer(ctx context.Context, input io.Reader, options
 	}, nil
 }
 
-func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableInfo, error) {
+func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*datatype.TableDescribeResult, error) {
 	tableName := tableNameFromOptions(options)
 	if tableName == "" {
 		return nil, fmt.Errorf("sqlite table preview requires table option")
@@ -207,7 +208,7 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 	if p.Format() == format.FormatGeoPackage {
 		applyGeoPackageSpatialInfo(ctx, db, info)
 	}
-	return info, nil
+	return format.TableDescribeResultFromSchema(info), nil
 }
 
 func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
@@ -382,7 +383,7 @@ func scanRows(rows *sql.Rows) ([]map[string]interface{}, error) {
 }
 
 // mapSQLiteTypeToFieldType 将 SQLite 类型映射到 FieldType
-func mapSQLiteTypeToFieldType(sqliteType string) format.FieldType {
+func mapSQLiteTypeToFieldType(sqliteType string) datatype.FieldType {
 	// SQLite 类型不区分大小写
 	upperType := ""
 	for _, r := range sqliteType {
@@ -396,19 +397,19 @@ func mapSQLiteTypeToFieldType(sqliteType string) format.FieldType {
 	// SQLite 类型亲和性规则
 	switch {
 	case contains(upperType, "INT"):
-		return format.FieldTypeInt
+		return datatype.FieldTypeInt
 	case contains(upperType, "CHAR") || contains(upperType, "CLOB") || contains(upperType, "TEXT"):
-		return format.FieldTypeString
+		return datatype.FieldTypeString
 	case contains(upperType, "BLOB"):
-		return format.FieldTypeBytes
+		return datatype.FieldTypeBytes
 	case contains(upperType, "REAL") || contains(upperType, "FLOA") || contains(upperType, "DOUB"):
-		return format.FieldTypeDouble // SQLite REAL 是 8 字节双精度
+		return datatype.FieldTypeDouble // SQLite REAL 是 8 字节双精度
 	case contains(upperType, "DATE") || contains(upperType, "TIME"):
-		return format.FieldTypeTimestamp
+		return datatype.FieldTypeTimestamp
 	case contains(upperType, "BOOL"):
-		return format.FieldTypeBool
+		return datatype.FieldTypeBool
 	default:
-		return format.FieldTypeString
+		return datatype.FieldTypeString
 	}
 }
 

@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"github.com/addp/common/datatype"
 	"strings"
 
 	"github.com/addp/common/format"
@@ -55,18 +56,16 @@ func applyGeoPackageSpatialInfo(ctx context.Context, db *sql.DB, info *format.Ta
 	}
 	for i := range info.Fields {
 		if strings.EqualFold(info.Fields[i].Name, layer.GeometryColumn) {
-			info.Fields[i].Type = format.FieldTypeGeometry
+			info.Fields[i].Type = datatype.FieldTypeGeometry
 			break
 		}
 	}
-	spatial := &format.SpatialInfo{
-		GeometryColumn:  layer.GeometryColumn,
-		GeometryType:    layer.GeometryType,
-		SRID:            layer.SRID,
-		HasSpatialIndex: geoPackageLayerHasSpatialIndex(ctx, db, layer),
-	}
+	spatial := format.NewSingleGeometrySpatialInfo(layer.GeometryColumn, layer.GeometryType, layer.SRID, 0)
+	hasSpatialIndex := geoPackageLayerHasSpatialIndex(ctx, db, layer)
+	spatial.HasSpatialIndex = &hasSpatialIndex
 	if bbox, ok := geoPackageLayerBoundingBox(layer); ok {
-		spatial.BoundingBox = &bbox
+		extent := datatype.BoundingBox(bbox)
+		spatial.Extent = &extent
 	}
 	info.SpatialInfo = spatial
 }

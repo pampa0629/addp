@@ -3,6 +3,7 @@ package executor
 import (
 	"context"
 	"fmt"
+	"github.com/addp/common/datatype"
 	"strings"
 	"testing"
 
@@ -70,14 +71,11 @@ func TestTableTransferExecutorReadsShapefileRefs(t *testing.T) {
 	refs := format.SameBasenameRelatedRefs(target.StringPath(), shapefilePlugin.RelatedRefSpecs())
 	tableWriter, err := shapefilePlugin.OpenMultiTableWriter(context.Background(), contentWriter, refs, &format.TableInfo{
 		Fields: []format.FieldInfo{
-			{Name: "id", Type: format.FieldTypeInt},
-			{Name: "name", Type: format.FieldTypeString, Size: 32},
-			{Name: "geom", Type: format.FieldTypeGeometry},
+			{Name: "id", Type: datatype.FieldTypeInt},
+			{Name: "name", Type: datatype.FieldTypeString, Size: 32},
+			{Name: "geom", Type: datatype.FieldTypeGeometry},
 		},
-		SpatialInfo: &format.SpatialInfo{
-			GeometryColumn: "geom",
-			GeometryType:   "Point",
-		},
+		SpatialInfo: format.NewSingleGeometrySpatialInfo("geom", "Point", 0, 0),
 	}, nil)
 	if err != nil {
 		t.Fatalf("OpenMultiTableWriter failed: %v", err)
@@ -126,14 +124,11 @@ func TestTableTransferExecutorUsesPlannedSourceRelatedRefs(t *testing.T) {
 	sourceRefs := format.SameBasenameRelatedRefs(actualSourcePath.StringPath(), shapefilePlugin.RelatedRefSpecs())
 	tableWriter, err := shapefilePlugin.OpenMultiTableWriter(context.Background(), sourceWriter, sourceRefs, &format.TableInfo{
 		Fields: []format.FieldInfo{
-			{Name: "id", Type: format.FieldTypeInt},
-			{Name: "name", Type: format.FieldTypeString, Size: 32},
-			{Name: "geom", Type: format.FieldTypeGeometry},
+			{Name: "id", Type: datatype.FieldTypeInt},
+			{Name: "name", Type: datatype.FieldTypeString, Size: 32},
+			{Name: "geom", Type: datatype.FieldTypeGeometry},
 		},
-		SpatialInfo: &format.SpatialInfo{
-			GeometryColumn: "geom",
-			GeometryType:   "Point",
-		},
+		SpatialInfo: format.NewSingleGeometrySpatialInfo("geom", "Point", 0, 0),
 	}, nil)
 	if err != nil {
 		t.Fatalf("OpenMultiTableWriter failed: %v", err)
@@ -227,8 +222,8 @@ func TestTableTransferExecutorReadsParquetWholeScopeSource(t *testing.T) {
 			Format: format.FormatParquet,
 			Layout: format.FormatLayoutWhole,
 			Schema: &format.TableInfo{Fields: []format.FieldInfo{
-				{Name: "id", Type: format.FieldTypeInt},
-				{Name: "name", Type: format.FieldTypeString},
+				{Name: "id", Type: datatype.FieldTypeInt},
+				{Name: "name", Type: datatype.FieldTypeString},
 			}},
 		},
 		Target:    TableTargetPlan{Kind: TableEndpointEncoded, Format: format.FormatCSV},
@@ -256,8 +251,8 @@ func writeParquetTestFile(t *testing.T, storage *fakeContentWriter, path enginep
 		t.Fatalf("Create parquet content failed: %v", err)
 	}
 	tableWriter, err := plugin.OpenTableWriter(context.Background(), output, &format.TableInfo{Fields: []format.FieldInfo{
-		{Name: "id", Type: format.FieldTypeInt},
-		{Name: "name", Type: format.FieldTypeString},
+		{Name: "id", Type: datatype.FieldTypeInt},
+		{Name: "name", Type: datatype.FieldTypeString},
 	}}, nil)
 	if err != nil {
 		_ = output.Close()
@@ -284,16 +279,11 @@ func TestTableTransferExecutorCopiesShapefileRefsPreservingSpatialInfo(t *testin
 	sourceRefs := format.SameBasenameRelatedRefs(sourcePath.StringPath(), shapefilePlugin.RelatedRefSpecs())
 	tableWriter, err := shapefilePlugin.OpenMultiTableWriter(context.Background(), sourceWriter, sourceRefs, &format.TableInfo{
 		Fields: []format.FieldInfo{
-			{Name: "id", Type: format.FieldTypeInt},
-			{Name: "name", Type: format.FieldTypeString, Size: 32},
-			{Name: "geometry", Type: format.FieldTypeGeometry},
+			{Name: "id", Type: datatype.FieldTypeInt},
+			{Name: "name", Type: datatype.FieldTypeString, Size: 32},
+			{Name: "geometry", Type: datatype.FieldTypeGeometry},
 		},
-		SpatialInfo: &format.SpatialInfo{
-			GeometryColumn: "geometry",
-			GeometryType:   "Point",
-			SRID:           4326,
-			Dimension:      3,
-		},
+		SpatialInfo: format.NewSingleGeometrySpatialInfo("geometry", "Point", 4326, 3),
 	}, &format.WriteOptions{
 		Encoding: "utf-8",
 		ExtraParams: map[string]interface{}{
@@ -343,8 +333,9 @@ func TestTableTransferExecutorCopiesShapefileRefsPreservingSpatialInfo(t *testin
 	if err != nil {
 		t.Fatalf("DescribeMultiTable failed: %v", err)
 	}
-	if info.SpatialInfo == nil || info.SpatialInfo.Dimension != 3 || info.SpatialInfo.GeometryType != "Point" {
-		t.Fatalf("spatial info = %#v, want Point dimension 3", info.SpatialInfo)
+	schema := format.TableSchemaFromDescribeResult(info)
+	if schema.SpatialInfo == nil || format.PrimaryGeometryDimension(schema.SpatialInfo) != 3 || format.PrimaryGeometryType(schema.SpatialInfo) != "Point" {
+		t.Fatalf("spatial info = %#v, want Point dimension 3", schema.SpatialInfo)
 	}
 	rows, err := shapefilePlugin.SampleMultiTable(context.Background(), targetReader, targetRefs, 0, 1, format.DefaultParseOptions())
 	if err != nil {
@@ -353,9 +344,10 @@ func TestTableTransferExecutorCopiesShapefileRefsPreservingSpatialInfo(t *testin
 	if len(rows) != 1 {
 		t.Fatalf("rows = %#v, want one row", rows)
 	}
-	got, ok := rows[0][info.SpatialInfo.GeometryColumn].(string)
+	geometryColumn := format.PrimaryGeometryColumn(schema.SpatialInfo)
+	got, ok := rows[0][geometryColumn].(string)
 	if !ok {
-		t.Fatalf("geometry value = %#v, want WKT string", rows[0][info.SpatialInfo.GeometryColumn])
+		t.Fatalf("geometry value = %#v, want WKT string", rows[0][geometryColumn])
 	}
 	if got != "POINT Z (120 30 99.5)" {
 		t.Fatalf("geometry = %q, want POINT Z", got)
@@ -370,14 +362,11 @@ func TestTableTransferExecutorPrefersMultiTableProvider(t *testing.T) {
 	refs := format.SameBasenameRelatedRefs(target.StringPath(), shapefilePlugin.RelatedRefSpecs())
 	tableWriter, err := shapefilePlugin.OpenMultiTableWriter(context.Background(), contentWriter, refs, &format.TableInfo{
 		Fields: []format.FieldInfo{
-			{Name: "id", Type: format.FieldTypeInt},
-			{Name: "name", Type: format.FieldTypeString, Size: 32},
-			{Name: "geom", Type: format.FieldTypeGeometry},
+			{Name: "id", Type: datatype.FieldTypeInt},
+			{Name: "name", Type: datatype.FieldTypeString, Size: 32},
+			{Name: "geom", Type: datatype.FieldTypeGeometry},
 		},
-		SpatialInfo: &format.SpatialInfo{
-			GeometryColumn: "geom",
-			GeometryType:   "Point",
-		},
+		SpatialInfo: format.NewSingleGeometrySpatialInfo("geom", "Point", 0, 0),
 	}, nil)
 	if err != nil {
 		t.Fatalf("OpenMultiTableWriter failed: %v", err)

@@ -28,9 +28,6 @@ func TestTextProviderDescribeDocument(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DescribeDocument() error = %v", err)
 	}
-	if info.Format != format.FormatMarkdown {
-		t.Fatalf("Format = %q, want markdown", info.Format)
-	}
 	if info.Encoding != "utf-8" {
 		t.Fatalf("Encoding = %q, want utf-8", info.Encoding)
 	}

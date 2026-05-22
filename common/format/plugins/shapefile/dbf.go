@@ -2,6 +2,7 @@ package shapefile
 
 import (
 	"fmt"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	"github.com/jonas-p/go-shp"
 	"golang.org/x/text/encoding"
@@ -68,7 +69,7 @@ func shapefileDBFSchema(schema *format.TableInfo, geometryField string) shapefil
 	}
 	used := map[string]int{}
 	for _, field := range schema.Fields {
-		if strings.EqualFold(field.Name, geometryField) || format.IsGeometryType(field.Type) {
+		if strings.EqualFold(field.Name, geometryField) || datatype.IsSpatialFieldType(field.Type) {
 			continue
 		}
 		dbfType, size, precision := commonTypeToDBFNative(field.Type)
@@ -302,74 +303,74 @@ func (m *TypeMapper) Name() string {
 
 // ToCommon 将Shapefile DBF类型转换为通用类型
 // nativeType 为单字符字符串（如 "C", "N", "F", "L", "D", "M"）
-func (m *TypeMapper) ToCommon(nativeType string) format.FieldType {
+func (m *TypeMapper) ToCommon(nativeType string) datatype.FieldType {
 	return dbfNativeTypeToCommon(nativeType)
 }
 
 // FromCommon 将通用类型转换为Shapefile DBF类型
 // 返回: (DBF类型字符, 字段长度, 小数位数)
-func (m *TypeMapper) FromCommon(commonType format.FieldType) (string, int, int) {
+func (m *TypeMapper) FromCommon(commonType datatype.FieldType) (string, int, int) {
 	return commonTypeToDBFNative(commonType)
 }
 
-func dbfNativeTypeToCommon(nativeType string) format.FieldType {
+func dbfNativeTypeToCommon(nativeType string) datatype.FieldType {
 	if len(nativeType) == 0 {
-		return format.FieldTypeUnknown
+		return datatype.FieldTypeUnknown
 	}
 
 	switch nativeType[0] {
 	case 'C':
-		return format.FieldTypeString
+		return datatype.FieldTypeString
 	case 'N':
-		return format.FieldTypeFloat
+		return datatype.FieldTypeFloat
 	case 'F':
-		return format.FieldTypeFloat
+		return datatype.FieldTypeFloat
 	case 'L':
-		return format.FieldTypeBool
+		return datatype.FieldTypeBool
 	case 'D':
-		return format.FieldTypeDate
+		return datatype.FieldTypeDate
 	case 'M':
-		return format.FieldTypeString
+		return datatype.FieldTypeString
 	default:
-		return format.FieldTypeUnknown
+		return datatype.FieldTypeUnknown
 	}
 }
 
-func dbfFieldToCommonType(field dbfFieldInfo) format.FieldType {
+func dbfFieldToCommonType(field dbfFieldInfo) datatype.FieldType {
 	switch strings.ToUpper(strings.TrimSpace(field.RawType)) {
 	case "N":
 		if field.Precision > 0 {
-			return format.FieldTypeDecimal
+			return datatype.FieldTypeDecimal
 		}
 		if field.Size > 10 {
-			return format.FieldTypeBigInt
+			return datatype.FieldTypeBigInt
 		}
-		return format.FieldTypeInt
+		return datatype.FieldTypeInt
 	case "F":
 		if field.Size > 13 || field.Precision > 6 {
-			return format.FieldTypeDouble
+			return datatype.FieldTypeDouble
 		}
-		return format.FieldTypeFloat
+		return datatype.FieldTypeFloat
 	default:
 		return dbfNativeTypeToCommon(field.RawType)
 	}
 }
 
-func commonTypeToDBFNative(commonType format.FieldType) (string, int, int) {
+func commonTypeToDBFNative(commonType datatype.FieldType) (string, int, int) {
 	switch commonType {
-	case format.FieldTypeString:
+	case datatype.FieldTypeString:
 		return "C", 254, 0 // Character, 最大254字节
-	case format.FieldTypeInt, format.FieldTypeBigInt:
+	case datatype.FieldTypeInt, datatype.FieldTypeBigInt:
 		return "N", 18, 0 // Numeric, 18位整数
-	case format.FieldTypeFloat:
+	case datatype.FieldTypeFloat:
 		return "F", 13, 6 // Float, 单精度，13位总长度，6位小数
-	case format.FieldTypeDouble:
+	case datatype.FieldTypeDouble:
 		return "F", 20, 8 // Float, 双精度，20位总长度，8位小数
-	case format.FieldTypeDecimal:
+	case datatype.FieldTypeDecimal:
 		return "N", 20, 8 // Numeric, 高精度小数
-	case format.FieldTypeBool:
+	case datatype.FieldTypeBool:
 		return "L", 1, 0 // Logical
-	case format.FieldTypeDate:
+	case datatype.FieldTypeDate:
 		return "D", 8, 0 // Date (YYYYMMDD)
 	default:
 		return "C", 254, 0 // 默认为Character

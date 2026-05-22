@@ -1,6 +1,7 @@
 package metaattr
 
 import (
+	"github.com/addp/common/datatype"
 	"strings"
 
 	"github.com/addp/common/format"
@@ -115,7 +116,7 @@ func FieldAttributesFromFormat(fields []format.FieldInfo) []map[string]interface
 			"is_primary_key": f.IsPrimaryKey,
 			"comment":        f.Comment,
 		}
-		if format.IsGeometryType(f.Type) {
+		if datatype.IsSpatialFieldType(f.Type) {
 			field["is_spatial"] = true
 			field["geometry_type"] = NormalizeGeometryType(string(f.Type))
 		}

@@ -1,6 +1,7 @@
 package metaquery
 
 import (
+	"github.com/addp/common/datatype"
 	"strings"
 
 	"github.com/addp/common/format"
@@ -26,7 +27,7 @@ func IsSpatialDataType(dataType string) bool {
 // StandardizeFieldType 标准化字段类型。
 func StandardizeFieldType(dataType, columnType string) string {
 	if dataType == "" && columnType == "" {
-		return string(format.FieldTypeUnknown)
+		return string(datatype.FieldTypeUnknown)
 	}
 
 	typeToMap := dataType
@@ -36,8 +37,8 @@ func StandardizeFieldType(dataType, columnType string) string {
 	typeToMap = strings.ToLower(strings.TrimSpace(typeToMap))
 
 	standardType := format.InferCommonFieldType(typeToMap)
-	if standardType == "" || standardType == format.FieldTypeUnknown {
-		return string(format.FieldTypeString)
+	if standardType == "" || standardType == datatype.FieldTypeUnknown {
+		return string(datatype.FieldTypeString)
 	}
 	return string(standardType)
 }

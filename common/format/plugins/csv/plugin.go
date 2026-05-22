@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
+	"github.com/addp/common/datatype"
 	"io"
 	"strconv"
 	"strings"
@@ -142,7 +143,7 @@ func (p *Plugin) DescribeFormat(ctx context.Context, input io.Reader, options *f
 }
 
 // DescribeTable 从 CSV 文件中提取 table 类型信息。
-func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableInfo, error) {
+func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*datatype.TableDescribeResult, error) {
 	opts := p.effectiveOptions(options)
 
 	reader := csv.NewReader(input)
@@ -219,10 +220,14 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 		FormatInfo: map[string]interface{}{"csv": csvInfo},
 	}
 	if len(index.Anchors) > 0 {
-		tableInfo.ContentIndex = &format.ContentIndexInfo{Table: index}
+		tableInfo.ContentIndex = index
 	}
 
-	return format.ApplyFieldSelectionToTableInfo(tableInfo, opts.FieldSelection)
+	selected, err := format.ApplyFieldSelectionToTableInfo(tableInfo, opts.FieldSelection)
+	if err != nil {
+		return nil, err
+	}
+	return format.TableDescribeResultFromSchema(selected), nil
 }
 
 // SampleTable 读取 CSV 表格样本。
@@ -339,7 +344,7 @@ func (p *Plugin) OpenTableReader(ctx context.Context, input io.Reader, options *
 		}
 		fields = append(fields, format.FieldInfo{
 			Name:     name,
-			Type:     format.FieldTypeString,
+			Type:     datatype.FieldTypeString,
 			Nullable: true,
 		})
 	}
@@ -556,27 +561,27 @@ func (p *Plugin) sampleHeadersAndLocalSkip(reader *csv.Reader, offset int64, opt
 	return normalizedHeaders(headers), offset, nil
 }
 
-func (p *Plugin) newSparseRowIndex(opts *format.ParseOptions, headerBytes int64) *format.ContentIndex {
+func (p *Plugin) newSparseRowIndex(opts *format.ParseOptions, headerBytes int64) *datatype.ContentIndex {
 	step := int64(5000)
 	if opts != nil && opts.ContentIndexStep > 0 {
 		step = opts.ContentIndexStep
 	}
-	return &format.ContentIndex{
-		Kind:        format.ContentIndexKindSparseRow,
-		DataType:    format.ContentIndexDataTypeTable,
+	return &datatype.ContentIndex{
+		Kind:        datatype.ContentIndexKindSparseRow,
+		DataType:    datatype.DataTypeTable,
 		Format:      string(p.formatType),
-		Unit:        format.ContentIndexUnitRow,
-		OffsetUnit:  format.ContentIndexOffsetByte,
+		Unit:        datatype.ContentIndexUnitRow,
+		OffsetUnit:  datatype.ContentIndexOffsetByte,
 		Step:        step,
 		HeaderBytes: headerBytes,
-		Anchors: []format.ContentIndexAnchor{{
+		Anchors: []datatype.ContentIndexAnchor{{
 			Row:        0,
 			ByteOffset: headerBytes,
 		}},
 	}
 }
 
-func (p *Plugin) recordSparseRowAnchor(index *format.ContentIndex, nextRow int64, byteOffset int64) {
+func (p *Plugin) recordSparseRowAnchor(index *datatype.ContentIndex, nextRow int64, byteOffset int64) {
 	if index == nil || index.Step <= 0 || nextRow <= 0 || nextRow%index.Step != 0 {
 		return
 	}
@@ -585,7 +590,7 @@ func (p *Plugin) recordSparseRowAnchor(index *format.ContentIndex, nextRow int64
 		index.Anchors[len(anchors)-1].ByteOffset = byteOffset
 		return
 	}
-	index.Anchors = append(index.Anchors, format.ContentIndexAnchor{
+	index.Anchors = append(index.Anchors, datatype.ContentIndexAnchor{
 		Row:        nextRow,
 		ByteOffset: byteOffset,
 	})
@@ -612,9 +617,9 @@ func normalizedHeaders(headers []string) []string {
 }
 
 // inferColumnType 推断列的数据类型
-func (p *Plugin) inferColumnType(rows [][]string, colIndex int) format.FieldType {
+func (p *Plugin) inferColumnType(rows [][]string, colIndex int) datatype.FieldType {
 	if len(rows) == 0 {
-		return format.FieldTypeString
+		return datatype.FieldTypeString
 	}
 
 	// 统计各类型的出现次数
@@ -667,19 +672,19 @@ func (p *Plugin) inferColumnType(rows [][]string, colIndex int) format.FieldType
 	threshold := float64(totalCount) * 0.8
 
 	if float64(boolCount) >= threshold {
-		return format.FieldTypeBool
+		return datatype.FieldTypeBool
 	}
 	if float64(intCount) >= threshold {
-		return format.FieldTypeInt
+		return datatype.FieldTypeInt
 	}
 	if float64(floatCount+intCount) >= threshold {
-		return format.FieldTypeDouble // CSV 中的浮点数默认为双精度
+		return datatype.FieldTypeDouble // CSV 中的浮点数默认为双精度
 	}
 	if float64(dateCount) >= threshold {
-		return format.FieldTypeTimestamp
+		return datatype.FieldTypeTimestamp
 	}
 
-	return format.FieldTypeString
+	return datatype.FieldTypeString
 }
 
 // convertValue 将字符串转换为适当的类型

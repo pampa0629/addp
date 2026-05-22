@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/logger"
@@ -322,11 +323,10 @@ func (e *MetadataExtractor) BuildObjectContentIndexOnDemand(
 	if err != nil {
 		return nil, fmt.Errorf("failed to build content index for %s: %w", objectKey, err)
 	}
-	indexInfo := tableInfo.GetContentIndexInfo()
-	if indexInfo == nil || indexInfo.Table == nil {
+	index := tableInfo.ContentIndex
+	if index == nil {
 		return nil, fmt.Errorf("format %s did not return content index", formatType)
 	}
-	index := indexInfo.Table
 	if index.Source == nil {
 		index.Source = map[string]interface{}{}
 	}
@@ -342,12 +342,13 @@ func (e *MetadataExtractor) BuildObjectContentIndexOnDemand(
 
 	enhancedAttrs := cloneJSONMap(item.Attributes)
 	metaattr.UpsertNested(enhancedAttrs, "content_index", "table", contentIndexAttributes(index))
-	if len(tableInfo.Fields) > 0 {
+	tableSchema := format.TableSchemaFromDescribeResult(tableInfo)
+	if len(tableSchema.Fields) > 0 {
 		tableAttrs := map[string]interface{}{
-			"fields": metaattr.FieldAttributesFromFormat(tableInfo.Fields),
+			"fields": metaattr.FieldAttributesFromFormat(tableSchema.Fields),
 		}
-		if tableInfo.RowCount != nil {
-			tableAttrs["row_count"] = *tableInfo.RowCount
+		if tableInfo.Table != nil && tableInfo.Table.RowCount != nil {
+			tableAttrs["row_count"] = *tableInfo.Table.RowCount
 		}
 		metaattr.UpsertNested(enhancedAttrs, "type_info", "table", tableAttrs)
 	}
@@ -367,7 +368,7 @@ func cloneJSONMap(attrs models.JSONMap) models.JSONMap {
 	return cloned
 }
 
-func contentIndexAttributes(index *format.ContentIndex) map[string]interface{} {
+func contentIndexAttributes(index *datatype.ContentIndex) map[string]interface{} {
 	return map[string]interface{}{
 		"kind":         index.Kind,
 		"data_type":    index.DataType,
@@ -382,7 +383,7 @@ func contentIndexAttributes(index *format.ContentIndex) map[string]interface{} {
 	}
 }
 
-func indexAnchorsAttributes(anchors []format.ContentIndexAnchor) []map[string]interface{} {
+func indexAnchorsAttributes(anchors []datatype.ContentIndexAnchor) []map[string]interface{} {
 	result := make([]map[string]interface{}, 0, len(anchors))
 	for _, anchor := range anchors {
 		result = append(result, map[string]interface{}{

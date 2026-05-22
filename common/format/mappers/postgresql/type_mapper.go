@@ -1,6 +1,7 @@
 package postgresql
 
 import (
+	"github.com/addp/common/datatype"
 	"strings"
 
 	"github.com/addp/common/format"
@@ -15,7 +16,7 @@ func (m *TypeMapper) Name() string {
 }
 
 // ToCommon 将PostgreSQL类型转换为通用类型
-func (m *TypeMapper) ToCommon(pgType string) format.FieldType {
+func (m *TypeMapper) ToCommon(pgType string) datatype.FieldType {
 	pgType = strings.ToLower(strings.TrimSpace(pgType))
 
 	// 处理带精度的类型（如 varchar(255) -> varchar）
@@ -26,103 +27,103 @@ func (m *TypeMapper) ToCommon(pgType string) format.FieldType {
 	switch pgType {
 	// 字符串类型
 	case "varchar", "character varying", "char", "character", "text", "name":
-		return format.FieldTypeString
+		return datatype.FieldTypeString
 
 	// 整数类型
 	case "smallint", "int2":
-		return format.FieldTypeInt
+		return datatype.FieldTypeInt
 	case "integer", "int", "int4":
-		return format.FieldTypeInt
+		return datatype.FieldTypeInt
 	case "bigint", "int8":
-		return format.FieldTypeBigInt
+		return datatype.FieldTypeBigInt
 
 	// 浮点类型
 	case "real", "float4":
-		return format.FieldTypeFloat // 4字节单精度
+		return datatype.FieldTypeFloat // 4字节单精度
 	case "double precision", "float8":
-		return format.FieldTypeDouble // 8字节双精度
+		return datatype.FieldTypeDouble // 8字节双精度
 	case "numeric", "decimal":
-		return format.FieldTypeDecimal
+		return datatype.FieldTypeDecimal
 
 	// 布尔类型
 	case "boolean", "bool":
-		return format.FieldTypeBool
+		return datatype.FieldTypeBool
 
 	// 日期时间类型
 	case "date":
-		return format.FieldTypeDate
+		return datatype.FieldTypeDate
 	case "time", "time without time zone":
-		return format.FieldTypeTime
+		return datatype.FieldTypeTime
 	case "timestamp", "timestamp without time zone", "timestamp with time zone", "timestamptz":
-		return format.FieldTypeTimestamp
+		return datatype.FieldTypeTimestamp
 
 	// 二进制类型
 	case "bytea":
-		return format.FieldTypeBytes
+		return datatype.FieldTypeBytes
 
 	// 地理空间类型
 	case "geometry":
-		return format.FieldTypeGeometry
+		return datatype.FieldTypeGeometry
 	case "point":
-		return format.FieldTypePoint
+		return datatype.FieldTypePoint
 	case "linestring":
-		return format.FieldTypeLineString
+		return datatype.FieldTypeLineString
 	case "polygon":
-		return format.FieldTypePolygon
+		return datatype.FieldTypePolygon
 
 	// 复杂类型
 	case "json", "jsonb":
-		return format.FieldTypeJSON
+		return datatype.FieldTypeJSON
 	case "uuid":
-		return format.FieldTypeUUID
+		return datatype.FieldTypeUUID
 
 	// 数组类型（简化处理）
 	default:
 		if strings.HasSuffix(pgType, "[]") {
-			return format.FieldTypeArray
+			return datatype.FieldTypeArray
 		}
-		return format.FieldTypeUnknown
+		return datatype.FieldTypeUnknown
 	}
 }
 
 // FromCommon 将通用类型转换为PostgreSQL类型
-func (m *TypeMapper) FromCommon(commonType format.FieldType) (string, int, int) {
+func (m *TypeMapper) FromCommon(commonType datatype.FieldType) (string, int, int) {
 	switch commonType {
-	case format.FieldTypeString:
+	case datatype.FieldTypeString:
 		return "TEXT", 0, 0
-	case format.FieldTypeInt:
+	case datatype.FieldTypeInt:
 		return "INTEGER", 0, 0
-	case format.FieldTypeBigInt:
+	case datatype.FieldTypeBigInt:
 		return "BIGINT", 0, 0
-	case format.FieldTypeFloat:
+	case datatype.FieldTypeFloat:
 		return "REAL", 0, 0 // 4字节单精度
-	case format.FieldTypeDouble:
+	case datatype.FieldTypeDouble:
 		return "DOUBLE PRECISION", 0, 0 // 8字节双精度
-	case format.FieldTypeDecimal:
+	case datatype.FieldTypeDecimal:
 		return "NUMERIC", 0, 0
-	case format.FieldTypeBool:
+	case datatype.FieldTypeBool:
 		return "BOOLEAN", 0, 0
-	case format.FieldTypeDate:
+	case datatype.FieldTypeDate:
 		return "DATE", 0, 0
-	case format.FieldTypeTime:
+	case datatype.FieldTypeTime:
 		return "TIME", 0, 0
-	case format.FieldTypeTimestamp:
+	case datatype.FieldTypeTimestamp:
 		return "TIMESTAMP", 0, 0
-	case format.FieldTypeBytes:
+	case datatype.FieldTypeBytes:
 		return "BYTEA", 0, 0
-	case format.FieldTypeGeometry:
+	case datatype.FieldTypeGeometry:
 		return "GEOMETRY", 0, 0
-	case format.FieldTypePoint:
+	case datatype.FieldTypePoint:
 		return "GEOMETRY(Point)", 0, 0
-	case format.FieldTypeLineString:
+	case datatype.FieldTypeLineString:
 		return "GEOMETRY(LineString)", 0, 0
-	case format.FieldTypePolygon:
+	case datatype.FieldTypePolygon:
 		return "GEOMETRY(Polygon)", 0, 0
-	case format.FieldTypeJSON:
+	case datatype.FieldTypeJSON:
 		return "JSONB", 0, 0
-	case format.FieldTypeUUID:
+	case datatype.FieldTypeUUID:
 		return "UUID", 0, 0
-	case format.FieldTypeArray:
+	case datatype.FieldTypeArray:
 		return "TEXT[]", 0, 0 // 默认为文本数组
 	default:
 		return "TEXT", 0, 0

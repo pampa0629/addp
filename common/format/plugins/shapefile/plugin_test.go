@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"github.com/addp/common/contentio"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	"github.com/jonas-p/go-shp"
 	"golang.org/x/text/encoding/simplifiedchinese"
@@ -55,15 +56,11 @@ func TestOpenMultiTableWriterWritesReadableShapefile(t *testing.T) {
 	output := newMemoryRefStore()
 	schema := &format.TableInfo{
 		Fields: []format.FieldInfo{
-			{Name: "id", Type: format.FieldTypeInt},
-			{Name: "name", Type: format.FieldTypeString, Size: 32},
-			{Name: "geom", Type: format.FieldTypeGeometry},
+			{Name: "id", Type: datatype.FieldTypeInt},
+			{Name: "name", Type: datatype.FieldTypeString, Size: 32},
+			{Name: "geom", Type: datatype.FieldTypeGeometry},
 		},
-		SpatialInfo: &format.SpatialInfo{
-			GeometryColumn: "geom",
-			GeometryType:   "Point",
-			SRID:           4326,
-		},
+		SpatialInfo: format.NewSingleGeometrySpatialInfo("geom", "Point", 4326, 0),
 	}
 
 	writer, err := plugin.OpenMultiTableWriter(context.Background(), output, refs, schema, nil)
@@ -105,12 +102,9 @@ func TestOpenMultiTableWriterRequiresRefs(t *testing.T) {
 	plugin := NewPlugin(nil)
 	schema := &format.TableInfo{
 		Fields: []format.FieldInfo{
-			{Name: "geom", Type: format.FieldTypeGeometry},
+			{Name: "geom", Type: datatype.FieldTypeGeometry},
 		},
-		SpatialInfo: &format.SpatialInfo{
-			GeometryColumn: "geom",
-			GeometryType:   "Point",
-		},
+		SpatialInfo: format.NewSingleGeometrySpatialInfo("geom", "Point", 0, 0),
 	}
 
 	if _, err := plugin.OpenMultiTableWriter(context.Background(), newMemoryRefStore(), nil, schema, nil); err == nil {
@@ -125,12 +119,9 @@ func TestOpenMultiTableWriterRequiresPrimaryRef(t *testing.T) {
 	}
 	schema := &format.TableInfo{
 		Fields: []format.FieldInfo{
-			{Name: "geom", Type: format.FieldTypeGeometry},
+			{Name: "geom", Type: datatype.FieldTypeGeometry},
 		},
-		SpatialInfo: &format.SpatialInfo{
-			GeometryColumn: "geom",
-			GeometryType:   "Point",
-		},
+		SpatialInfo: format.NewSingleGeometrySpatialInfo("geom", "Point", 0, 0),
 	}
 
 	if _, err := plugin.OpenMultiTableWriter(context.Background(), newMemoryRefStore(), refs, schema, nil); err == nil {
@@ -354,11 +345,12 @@ func TestShapefileReadUsesCallGeometryFieldOption(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DescribeMultiTable() error = %v", err)
 	}
-	if info.SpatialInfo == nil || info.SpatialInfo.GeometryColumn != "geom" {
-		t.Fatalf("geometry column = %#v, want geom", info.SpatialInfo)
+	spatial := info.Spatial
+	if spatial == nil || format.PrimaryGeometryColumn(spatial) != "geom" {
+		t.Fatalf("geometry column = %#v, want geom", spatial)
 	}
-	if info.Fields[0].Name != "geom" || info.Fields[0].Type != format.FieldTypeGeometry {
-		t.Fatalf("first field = %#v, want geom geometry field", info.Fields[0])
+	if info.Table.Fields[0].Name != "geom" || info.Table.Fields[0].Type != datatype.FieldTypeGeometry {
+		t.Fatalf("first field = %#v, want geom geometry field", info.Table.Fields[0])
 	}
 
 	rows, err := plugin.SampleMultiTable(context.Background(), reader, refs, 0, 1, opts)
@@ -389,7 +381,7 @@ func TestShapefileTableReaderUsesCallGeometryFieldOption(t *testing.T) {
 	}
 	defer tableReader.Close(context.Background())
 
-	if schema := tableReader.Schema(); schema.SpatialInfo == nil || schema.SpatialInfo.GeometryColumn != "geom" {
+	if schema := tableReader.Schema(); schema.SpatialInfo == nil || format.PrimaryGeometryColumn(schema.SpatialInfo) != "geom" {
 		t.Fatalf("schema spatial info = %#v, want geom geometry column", schema.SpatialInfo)
 	}
 	rows, err := tableReader.ReadRows(context.Background(), 1)
@@ -418,8 +410,8 @@ func TestShapefileFieldSelection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DescribeMultiTable() error = %v", err)
 	}
-	if len(info.Fields) != 2 || info.Fields[0].Name != "NAME" || info.Fields[1].Name != "geometry" {
-		t.Fatalf("fields = %#v, want NAME,geometry", info.Fields)
+	if len(info.Table.Fields) != 2 || info.Table.Fields[0].Name != "NAME" || info.Table.Fields[1].Name != "geometry" {
+		t.Fatalf("fields = %#v, want NAME,geometry", info.Table.Fields)
 	}
 
 	rows, err := plugin.SampleMultiTable(context.Background(), reader, refs, 0, 1, opts)

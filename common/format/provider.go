@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"github.com/addp/common/contentio"
+	"github.com/addp/common/datatype"
 )
 
 // Provider 是格式层能力实现的基础接口。
@@ -47,7 +48,7 @@ type FormatInfoProvider interface {
 // 类型信息是 meta 层写入 type_info.table 的主来源，不应夹带 Manager 展示 DTO。
 type TableInfoProvider interface {
 	Provider
-	DescribeTable(ctx context.Context, input io.Reader, options *ParseOptions) (*TableInfo, error)
+	DescribeTable(ctx context.Context, input io.Reader, options *ParseOptions) (*datatype.TableDescribeResult, error)
 }
 
 // ContentReader 是内容读取能力的标记接口。
@@ -88,7 +89,7 @@ type TableReader interface {
 type MultiTableInfoProvider interface {
 	Provider
 	RelatedRefSpecs() []RelatedRefSpec
-	DescribeMultiTable(ctx context.Context, reader contentio.Reader, refs []RelatedRef, options *ParseOptions) (*TableInfo, error)
+	DescribeMultiTable(ctx context.Context, reader contentio.Reader, refs []RelatedRef, options *ParseOptions) (*datatype.TableDescribeResult, error)
 }
 
 // MultiTableSampleReader 表示多 ref table 格式能够读取 table 样本数据。
@@ -111,7 +112,7 @@ type MultiTableReaderProvider interface {
 // ScopeTableInfoProvider 表示 whole scope table 格式能够提取 table 类型信息。
 type ScopeTableInfoProvider interface {
 	Provider
-	DescribeTableScope(ctx context.Context, reader contentio.Reader, scope contentio.Ref, options *ParseOptions) (*TableInfo, error)
+	DescribeTableScope(ctx context.Context, reader contentio.Reader, scope contentio.Ref, options *ParseOptions) (*datatype.TableDescribeResult, error)
 }
 
 // ScopeTableSampleReader 表示 whole scope table 格式能够读取 table 样本数据。
@@ -155,27 +156,6 @@ type TableWriter interface {
 	Close(ctx context.Context) error
 }
 
-type DocumentInfo struct {
-	Format    FormatType
-	Title     string
-	Language  string
-	Encoding  string
-	SizeBytes *int64
-}
-
-type MediaInfo struct {
-	Format       FormatType
-	MediaType    string
-	MIMEType     string
-	Width        int
-	Height       int
-	DurationMS   *int64
-	Encoding     string
-	ColorSpace   string
-	SizeBytes    *int64
-	SpatialAttrs map[string]interface{}
-}
-
 // ContainerInfoProvider 表示格式能够提供容器内部对象信息。
 //
 // 结果应由 Meta 映射到 type_info.container 和 format_info.<format>；
@@ -187,7 +167,7 @@ type ContainerInfoProvider interface {
 
 type DocumentInfoProvider interface {
 	Provider
-	DescribeDocument(ctx context.Context, input io.Reader, options *ParseOptions) (*DocumentInfo, error)
+	DescribeDocument(ctx context.Context, input io.Reader, options *ParseOptions) (*datatype.DocumentInfo, error)
 }
 
 type DocumentTextReader interface {
@@ -197,7 +177,7 @@ type DocumentTextReader interface {
 
 type MediaInfoProvider interface {
 	Provider
-	DescribeMedia(ctx context.Context, input io.Reader, options *ParseOptions) (*MediaInfo, error)
+	DescribeMedia(ctx context.Context, input io.Reader, options *ParseOptions) (*datatype.MediaDescribeResult, error)
 }
 
 // RelatedRefSpecProvider 表示格式能够声明多 ref 资源的 ref 规格。

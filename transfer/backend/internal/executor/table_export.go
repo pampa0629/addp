@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"github.com/addp/common/datatype"
 	"sort"
 	"strings"
 
@@ -25,7 +26,7 @@ func tableInfoFromBatch(batch *engineplugin.BatchData) *format.TableInfo {
 		}
 		info.Fields = append(info.Fields, format.FieldInfo{
 			Name:         name,
-			Type:         format.FieldType(field.Type),
+			Type:         datatype.FieldType(field.Type),
 			Nullable:     field.Nullable,
 			IsPrimaryKey: field.PrimaryKey,
 			Comment:      field.Comment,
@@ -39,33 +40,44 @@ func tableInfoFromBatch(batch *engineplugin.BatchData) *format.TableInfo {
 		}
 		sort.Strings(names)
 		for _, name := range names {
-			info.Fields = append(info.Fields, format.FieldInfo{Name: name, Type: format.FieldTypeUnknown})
+			info.Fields = append(info.Fields, format.FieldInfo{Name: name, Type: datatype.FieldTypeUnknown})
 		}
 	}
 	return info
 }
 
 func applySpatialInfoFromField(info *format.TableInfo, field engineplugin.FieldInfo) {
-	if info == nil || !format.IsGeometryType(format.FieldType(field.Type)) {
+	if info == nil || !datatype.IsSpatialFieldType(datatype.FieldType(field.Type)) {
 		return
 	}
-	if info.SpatialInfo == nil {
-		info.SpatialInfo = &format.SpatialInfo{}
-	}
-	if info.SpatialInfo.GeometryColumn == "" {
-		info.SpatialInfo.GeometryColumn = field.Name
-	}
+	geometryType := ""
+	srid := 0
+	dimension := 0
 	if field.Attributes == nil {
+		if format.PrimaryGeometryColumn(info.SpatialInfo) == "" {
+			info.SpatialInfo = format.NewSingleGeometrySpatialInfo(field.Name, "", 0, 0)
+		}
 		return
 	}
-	if info.SpatialInfo.GeometryType == "" {
-		info.SpatialInfo.GeometryType = commonJSON.InterfaceString(field.Attributes["geometry_type"])
+	geometryType = commonJSON.InterfaceString(field.Attributes["geometry_type"])
+	srid = int(commonJSON.InterfaceInt64(field.Attributes["srid"]))
+	dimension = int(commonJSON.InterfaceInt64(field.Attributes["dimension"]))
+	if info.SpatialInfo == nil || format.PrimaryGeometryColumn(info.SpatialInfo) == "" {
+		info.SpatialInfo = format.NewSingleGeometrySpatialInfo(field.Name, geometryType, srid, dimension)
+		return
 	}
-	if info.SpatialInfo.SRID == 0 {
-		info.SpatialInfo.SRID = int(commonJSON.InterfaceInt64(field.Attributes["srid"]))
+	column := info.SpatialInfo.PrimaryGeometry()
+	if column == nil || column.Name != field.Name {
+		return
 	}
-	if info.SpatialInfo.Dimension == 0 {
-		info.SpatialInfo.Dimension = int(commonJSON.InterfaceInt64(field.Attributes["dimension"]))
+	if column.GeometryType == "" {
+		column.GeometryType = geometryType
+	}
+	if column.SRID == nil && srid > 0 {
+		column.SRID = &srid
+	}
+	if column.Dimension == nil && dimension > 0 {
+		column.Dimension = &dimension
 	}
 }
 
@@ -83,21 +95,23 @@ func applySpatialInfoFromOptions(info *format.TableInfo, opts *format.WriteOptio
 	if geometryField == "" && geometryType == "" {
 		return
 	}
-	if info.SpatialInfo == nil {
-		info.SpatialInfo = &format.SpatialInfo{}
-	}
+	srid := format.PrimaryGeometrySRID(info.SpatialInfo)
+	dimension := format.PrimaryGeometryDimension(info.SpatialInfo)
 	if geometryField != "" {
-		info.SpatialInfo.GeometryColumn = geometryField
 		for i := range info.Fields {
 			if strings.EqualFold(info.Fields[i].Name, geometryField) {
-				info.Fields[i].Type = format.FieldTypeGeometry
+				info.Fields[i].Type = datatype.FieldTypeGeometry
 				break
 			}
 		}
 	}
-	if geometryType != "" {
-		info.SpatialInfo.GeometryType = geometryType
+	if geometryField == "" {
+		geometryField = format.PrimaryGeometryColumn(info.SpatialInfo)
 	}
+	if geometryType == "" {
+		geometryType = format.PrimaryGeometryType(info.SpatialInfo)
+	}
+	info.SpatialInfo = format.NewSingleGeometrySpatialInfo(geometryField, geometryType, srid, dimension)
 }
 
 func optionString(values map[string]interface{}, key string) string {

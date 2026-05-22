@@ -9,11 +9,12 @@ import (
 	"testing"
 
 	"github.com/addp/common/contentio"
+	"github.com/addp/common/datatype"
 )
 
-func providerTestDescribe(context.Context, io.Reader, *ParseOptions) (*TableInfo, error) {
+func providerTestDescribe(context.Context, io.Reader, *ParseOptions) (*datatype.TableDescribeResult, error) {
 	rowCount := int64(1)
-	return &TableInfo{RowCount: &rowCount}, nil
+	return &datatype.TableDescribeResult{Table: &datatype.TableInfo{RowCount: &rowCount}}, nil
 }
 
 func providerTestSample(context.Context, io.Reader, int64, int64, *ParseOptions) ([]map[string]interface{}, error) {
@@ -493,8 +494,8 @@ func TestRegisterDocumentInfoProviderAndTextReader(t *testing.T) {
 	registry := NewProviderRegistry()
 	infoProvider := NewDocumentInfoProvider(
 		FormatType("doc_test"),
-		func(context.Context, io.Reader, *ParseOptions) (*DocumentInfo, error) {
-			return &DocumentInfo{Format: FormatType("doc_test"), Encoding: "utf-8"}, nil
+		func(context.Context, io.Reader, *ParseOptions) (*datatype.DocumentInfo, error) {
+			return &datatype.DocumentInfo{Encoding: "utf-8"}, nil
 		},
 	)
 	textReader := NewDocumentTextReader(
@@ -547,8 +548,8 @@ func TestRegisterMediaInfoProvider(t *testing.T) {
 	registry := NewProviderRegistry()
 	provider := NewMediaInfoProvider(
 		FormatType("media_test"),
-		func(context.Context, io.Reader, *ParseOptions) (*MediaInfo, error) {
-			return &MediaInfo{Format: FormatType("media_test"), MediaType: "image"}, nil
+		func(context.Context, io.Reader, *ParseOptions) (*datatype.MediaDescribeResult, error) {
+			return &datatype.MediaDescribeResult{Media: &datatype.MediaInfo{Kind: datatype.MediaKindImage}}, nil
 		},
 	)
 

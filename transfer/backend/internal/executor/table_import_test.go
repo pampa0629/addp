@@ -2,6 +2,7 @@ package executor
 
 import (
 	"context"
+	"github.com/addp/common/datatype"
 	"io"
 	"strings"
 	"testing"
@@ -77,8 +78,8 @@ func TestTableTransferExecutorPreparesNativeTargetOnce(t *testing.T) {
 func TestTableInfoFieldsUseStandardTypes(t *testing.T) {
 	fields := tableInfoFields(&format.TableInfo{
 		Fields: []format.FieldInfo{
-			{Name: "value", Type: format.FieldTypeFloat},
-			{Name: "name", Type: format.FieldTypeString},
+			{Name: "value", Type: datatype.FieldTypeFloat},
+			{Name: "name", Type: datatype.FieldTypeString},
 		},
 	})
 
@@ -93,14 +94,9 @@ func TestTableInfoFieldsUseStandardTypes(t *testing.T) {
 func TestTableInfoFieldsCarriesStandardSpatialAttributes(t *testing.T) {
 	fields := tableInfoFields(&format.TableInfo{
 		Fields: []format.FieldInfo{
-			{Name: "geom", Type: format.FieldTypeGeometry},
+			{Name: "geom", Type: datatype.FieldTypeGeometry},
 		},
-		SpatialInfo: &format.SpatialInfo{
-			GeometryColumn: "geom",
-			GeometryType:   "Polygon",
-			SRID:           4326,
-			Dimension:      3,
-		},
+		SpatialInfo: format.NewSingleGeometrySpatialInfo("geom", "Polygon", 4326, 3),
 	})
 
 	if len(fields) != 1 {

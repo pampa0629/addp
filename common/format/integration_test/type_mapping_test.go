@@ -1,6 +1,7 @@
 package integration_test
 
 import (
+	"github.com/addp/common/datatype"
 	"testing"
 
 	"github.com/addp/common/format"
@@ -17,36 +18,36 @@ func TestPostgreSQLTypeMapperToCommon(t *testing.T) {
 
 	tests := []struct {
 		pgType string
-		want   format.FieldType
+		want   datatype.FieldType
 	}{
-		{"varchar", format.FieldTypeString},
-		{"varchar(255)", format.FieldTypeString},
-		{"text", format.FieldTypeString},
-		{"character varying", format.FieldTypeString},
-		{"smallint", format.FieldTypeInt},
-		{"integer", format.FieldTypeInt},
-		{"int", format.FieldTypeInt},
-		{"bigint", format.FieldTypeBigInt},
-		{"real", format.FieldTypeFloat},              // 4字节单精度
-		{"double precision", format.FieldTypeDouble}, // 8字节双精度
-		{"numeric", format.FieldTypeDecimal},
-		{"numeric(10,2)", format.FieldTypeDecimal},
-		{"boolean", format.FieldTypeBool},
-		{"bool", format.FieldTypeBool},
-		{"date", format.FieldTypeDate},
-		{"time", format.FieldTypeTime},
-		{"timestamp", format.FieldTypeTimestamp},
-		{"timestamp with time zone", format.FieldTypeTimestamp},
-		{"geometry", format.FieldTypeGeometry},
-		{"point", format.FieldTypePoint},
-		{"linestring", format.FieldTypeLineString},
-		{"polygon", format.FieldTypePolygon},
-		{"json", format.FieldTypeJSON},
-		{"jsonb", format.FieldTypeJSON},
-		{"uuid", format.FieldTypeUUID},
-		{"integer[]", format.FieldTypeArray},
-		{"text[]", format.FieldTypeArray},
-		{"custom_type", format.FieldTypeUnknown},
+		{"varchar", datatype.FieldTypeString},
+		{"varchar(255)", datatype.FieldTypeString},
+		{"text", datatype.FieldTypeString},
+		{"character varying", datatype.FieldTypeString},
+		{"smallint", datatype.FieldTypeInt},
+		{"integer", datatype.FieldTypeInt},
+		{"int", datatype.FieldTypeInt},
+		{"bigint", datatype.FieldTypeBigInt},
+		{"real", datatype.FieldTypeFloat},              // 4字节单精度
+		{"double precision", datatype.FieldTypeDouble}, // 8字节双精度
+		{"numeric", datatype.FieldTypeDecimal},
+		{"numeric(10,2)", datatype.FieldTypeDecimal},
+		{"boolean", datatype.FieldTypeBool},
+		{"bool", datatype.FieldTypeBool},
+		{"date", datatype.FieldTypeDate},
+		{"time", datatype.FieldTypeTime},
+		{"timestamp", datatype.FieldTypeTimestamp},
+		{"timestamp with time zone", datatype.FieldTypeTimestamp},
+		{"geometry", datatype.FieldTypeGeometry},
+		{"point", datatype.FieldTypePoint},
+		{"linestring", datatype.FieldTypeLineString},
+		{"polygon", datatype.FieldTypePolygon},
+		{"json", datatype.FieldTypeJSON},
+		{"jsonb", datatype.FieldTypeJSON},
+		{"uuid", datatype.FieldTypeUUID},
+		{"integer[]", datatype.FieldTypeArray},
+		{"text[]", datatype.FieldTypeArray},
+		{"custom_type", datatype.FieldTypeUnknown},
 	}
 
 	for _, tt := range tests {
@@ -67,16 +68,16 @@ func TestMySQLTypeMapperToCommon(t *testing.T) {
 
 	tests := []struct {
 		mysqlType string
-		want      format.FieldType
+		want      datatype.FieldType
 	}{
-		{"varchar", format.FieldTypeString},
-		{"int", format.FieldTypeInt},
-		{"bigint", format.FieldTypeBigInt},
-		{"float", format.FieldTypeFloat},   // 4字节单精度
-		{"double", format.FieldTypeDouble}, // 8字节双精度
-		{"decimal", format.FieldTypeDecimal},
-		{"datetime", format.FieldTypeTimestamp},
-		{"json", format.FieldTypeJSON},
+		{"varchar", datatype.FieldTypeString},
+		{"int", datatype.FieldTypeInt},
+		{"bigint", datatype.FieldTypeBigInt},
+		{"float", datatype.FieldTypeFloat},   // 4字节单精度
+		{"double", datatype.FieldTypeDouble}, // 8字节双精度
+		{"decimal", datatype.FieldTypeDecimal},
+		{"datetime", datatype.FieldTypeTimestamp},
+		{"json", datatype.FieldTypeJSON},
 	}
 
 	for _, tt := range tests {
@@ -97,22 +98,22 @@ func TestSpatiaLiteTypeMapperToCommon(t *testing.T) {
 
 	tests := []struct {
 		sqliteType string
-		want       format.FieldType
+		want       datatype.FieldType
 	}{
-		{"text", format.FieldTypeString},
-		{"varchar(255)", format.FieldTypeString},
-		{"integer", format.FieldTypeInt},
-		{"bigint", format.FieldTypeInt},
-		{"real", format.FieldTypeDouble},
-		{"boolean", format.FieldTypeBool},
-		{"datetime", format.FieldTypeTimestamp},
-		{"blob", format.FieldTypeBytes},
-		{"geometry", format.FieldTypeGeometry},
-		{"point", format.FieldTypePoint},
-		{"linestring", format.FieldTypeLineString},
-		{"polygon", format.FieldTypePolygon},
-		{"multipoint", format.FieldTypeMultiPoint},
-		{"custom_type", format.FieldTypeString},
+		{"text", datatype.FieldTypeString},
+		{"varchar(255)", datatype.FieldTypeString},
+		{"integer", datatype.FieldTypeInt},
+		{"bigint", datatype.FieldTypeInt},
+		{"real", datatype.FieldTypeDouble},
+		{"boolean", datatype.FieldTypeBool},
+		{"datetime", datatype.FieldTypeTimestamp},
+		{"blob", datatype.FieldTypeBytes},
+		{"geometry", datatype.FieldTypeGeometry},
+		{"point", datatype.FieldTypePoint},
+		{"linestring", datatype.FieldTypeLineString},
+		{"polygon", datatype.FieldTypePolygon},
+		{"multipoint", datatype.FieldTypeMultiPoint},
+		{"custom_type", datatype.FieldTypeString},
 	}
 
 	for _, tt := range tests {
@@ -133,15 +134,15 @@ func TestShapefileTypeMapperDBFToCommon(t *testing.T) {
 
 	tests := []struct {
 		dbfType byte
-		want    format.FieldType
+		want    datatype.FieldType
 	}{
-		{'C', format.FieldTypeString},
-		{'N', format.FieldTypeFloat},
-		{'F', format.FieldTypeFloat},
-		{'L', format.FieldTypeBool},
-		{'D', format.FieldTypeDate},
-		{'M', format.FieldTypeString},
-		{'X', format.FieldTypeUnknown},
+		{'C', datatype.FieldTypeString},
+		{'N', datatype.FieldTypeFloat},
+		{'F', datatype.FieldTypeFloat},
+		{'L', datatype.FieldTypeBool},
+		{'D', datatype.FieldTypeDate},
+		{'M', datatype.FieldTypeString},
+		{'X', datatype.FieldTypeUnknown},
 	}
 
 	for _, tt := range tests {
@@ -161,22 +162,22 @@ func TestPostgreSQLTypeMapperFromCommon(t *testing.T) {
 	}
 
 	tests := []struct {
-		commonType format.FieldType
+		commonType datatype.FieldType
 		want       string
 	}{
-		{format.FieldTypeString, "TEXT"},
-		{format.FieldTypeInt, "INTEGER"},
-		{format.FieldTypeBigInt, "BIGINT"},
-		{format.FieldTypeFloat, "REAL"},              // 4字节单精度
-		{format.FieldTypeDouble, "DOUBLE PRECISION"}, // 8字节双精度
-		{format.FieldTypeDecimal, "NUMERIC"},
-		{format.FieldTypeBool, "BOOLEAN"},
-		{format.FieldTypeDate, "DATE"},
-		{format.FieldTypeTimestamp, "TIMESTAMP"},
-		{format.FieldTypeGeometry, "GEOMETRY"},
-		{format.FieldTypePoint, "GEOMETRY(Point)"},
-		{format.FieldTypeJSON, "JSONB"},
-		{format.FieldTypeUUID, "UUID"},
+		{datatype.FieldTypeString, "TEXT"},
+		{datatype.FieldTypeInt, "INTEGER"},
+		{datatype.FieldTypeBigInt, "BIGINT"},
+		{datatype.FieldTypeFloat, "REAL"},              // 4字节单精度
+		{datatype.FieldTypeDouble, "DOUBLE PRECISION"}, // 8字节双精度
+		{datatype.FieldTypeDecimal, "NUMERIC"},
+		{datatype.FieldTypeBool, "BOOLEAN"},
+		{datatype.FieldTypeDate, "DATE"},
+		{datatype.FieldTypeTimestamp, "TIMESTAMP"},
+		{datatype.FieldTypeGeometry, "GEOMETRY"},
+		{datatype.FieldTypePoint, "GEOMETRY(Point)"},
+		{datatype.FieldTypeJSON, "JSONB"},
+		{datatype.FieldTypeUUID, "UUID"},
 	}
 
 	for _, tt := range tests {
@@ -196,20 +197,20 @@ func TestShapefileTypeMapperFromCommon(t *testing.T) {
 	}
 
 	tests := []struct {
-		commonType format.FieldType
+		commonType datatype.FieldType
 		wantType   byte
 		wantSize   uint8
 		wantPrec   uint8
 	}{
-		{format.FieldTypeString, 'C', 254, 0},
-		{format.FieldTypeInt, 'N', 18, 0},
-		{format.FieldTypeBigInt, 'N', 18, 0},
-		{format.FieldTypeFloat, 'F', 13, 6},   // 单精度
-		{format.FieldTypeDouble, 'F', 20, 8},  // 双精度
-		{format.FieldTypeDecimal, 'N', 20, 8}, // 高精度小数用 Numeric
-		{format.FieldTypeBool, 'L', 1, 0},
-		{format.FieldTypeDate, 'D', 8, 0},
-		{format.FieldTypeUnknown, 'C', 254, 0},
+		{datatype.FieldTypeString, 'C', 254, 0},
+		{datatype.FieldTypeInt, 'N', 18, 0},
+		{datatype.FieldTypeBigInt, 'N', 18, 0},
+		{datatype.FieldTypeFloat, 'F', 13, 6},   // 单精度
+		{datatype.FieldTypeDouble, 'F', 20, 8},  // 双精度
+		{datatype.FieldTypeDecimal, 'N', 20, 8}, // 高精度小数用 Numeric
+		{datatype.FieldTypeBool, 'L', 1, 0},
+		{datatype.FieldTypeDate, 'D', 8, 0},
+		{datatype.FieldTypeUnknown, 'C', 254, 0},
 	}
 
 	for _, tt := range tests {

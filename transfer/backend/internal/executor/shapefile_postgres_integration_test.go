@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/addp/common/datatype"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,15 +48,11 @@ func TestIntegrationShapefileToPostgresWritesEWKBGeometry(t *testing.T) {
 	refs := format.SameBasenameRelatedRefs(sourcePath.StringPath(), shapefilePlugin.RelatedRefSpecs())
 	sourceSchema := &format.TableInfo{
 		Fields: []format.FieldInfo{
-			{Name: "id", Type: format.FieldTypeInt},
-			{Name: "name", Type: format.FieldTypeString, Size: 32},
-			{Name: "geometry", Type: format.FieldTypeGeometry},
+			{Name: "id", Type: datatype.FieldTypeInt},
+			{Name: "name", Type: datatype.FieldTypeString, Size: 32},
+			{Name: "geometry", Type: datatype.FieldTypeGeometry},
 		},
-		SpatialInfo: &format.SpatialInfo{
-			GeometryColumn: "geometry",
-			GeometryType:   "Point",
-			SRID:           4326,
-		},
+		SpatialInfo: format.NewSingleGeometrySpatialInfo("geometry", "Point", 4326, 0),
 	}
 	tableWriter, err := shapefilePlugin.OpenMultiTableWriter(ctx, contentWriter, refs, sourceSchema, &format.WriteOptions{
 		Encoding: "utf-8",

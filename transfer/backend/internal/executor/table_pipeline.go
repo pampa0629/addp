@@ -360,11 +360,11 @@ func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader,
 		reader, refs := s.refReader(s.multiInfoProvider.RelatedRefSpecs())
 		schema := s.schema
 		if tableSchemaEmpty(schema) {
-			var err error
-			schema, err = s.multiInfoProvider.DescribeMultiTable(ctx, reader, refs, s.parseOptions)
+			result, err := s.multiInfoProvider.DescribeMultiTable(ctx, reader, refs, s.parseOptions)
 			if err != nil {
 				return nil, fmt.Errorf("describe encoded source table refs: %w", err)
 			}
+			schema = format.TableSchemaFromDescribeResult(result)
 		}
 		return &multiEncodedTableBatchReader{
 			reader:         reader,
@@ -458,7 +458,7 @@ func (s *encodedContentTableSource) describeSchema(ctx context.Context) (*format
 	if closeErr != nil {
 		return nil, fmt.Errorf("close encoded source content after table info: %w", closeErr)
 	}
-	return info, nil
+	return format.TableSchemaFromDescribeResult(info), nil
 }
 
 type encodedTableBatchReader struct {

@@ -3,6 +3,7 @@ package csv
 import (
 	"bytes"
 	"context"
+	"github.com/addp/common/datatype"
 	"io"
 	"strings"
 	"testing"
@@ -24,19 +25,19 @@ Charlie,28,92.1,true`
 		t.Fatalf("DescribeTable failed: %v", err)
 	}
 
-	if len(tableInfo.Fields) != 4 {
-		t.Errorf("Expected 4 fields, got %d", len(tableInfo.Fields))
+	if len(tableInfo.Table.Fields) != 4 {
+		t.Errorf("Expected 4 fields, got %d", len(tableInfo.Table.Fields))
 	}
 
 	// 检查字段类型推断
-	expectedTypes := map[string]format.FieldType{
-		"name":   format.FieldTypeString,
-		"age":    format.FieldTypeInt,
-		"score":  format.FieldTypeDouble, // CSV 浮点数默认为双精度
-		"active": format.FieldTypeBool,
+	expectedTypes := map[string]datatype.FieldType{
+		"name":   datatype.FieldTypeString,
+		"age":    datatype.FieldTypeInt,
+		"score":  datatype.FieldTypeDouble, // CSV 浮点数默认为双精度
+		"active": datatype.FieldTypeBool,
 	}
 
-	for _, field := range tableInfo.Fields {
+	for _, field := range tableInfo.Table.Fields {
 		if expectedType, ok := expectedTypes[field.Name]; ok {
 			if field.Type != expectedType {
 				t.Errorf("Field %s: expected type %s, got %s", field.Name, expectedType, field.Type)
@@ -85,8 +86,8 @@ func TestCSVPlugin_FieldSelection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DescribeTable failed: %v", err)
 	}
-	if len(info.Fields) != 2 || info.Fields[0].Name != "name" || info.Fields[1].Name != "id" {
-		t.Fatalf("fields = %#v, want name,id", info.Fields)
+	if len(info.Table.Fields) != 2 || info.Table.Fields[0].Name != "name" || info.Table.Fields[1].Name != "id" {
+		t.Fatalf("fields = %#v, want name,id", info.Table.Fields)
 	}
 
 	rows, err := plugin.SampleTable(context.Background(), strings.NewReader(csvData), 0, 1, opts)
@@ -200,9 +201,9 @@ func TestCSVPlugin_OpenTableReader(t *testing.T) {
 func TestCSVPlugin_OpenTableWriter(t *testing.T) {
 	plugin := NewPlugin(nil)
 	schema := &format.TableInfo{Fields: []format.FieldInfo{
-		{Name: "id", Type: format.FieldTypeInt},
-		{Name: "name", Type: format.FieldTypeString},
-		{Name: "note", Type: format.FieldTypeString},
+		{Name: "id", Type: datatype.FieldTypeInt},
+		{Name: "name", Type: datatype.FieldTypeString},
+		{Name: "note", Type: datatype.FieldTypeString},
 	}}
 	var buf bytes.Buffer
 	writer, err := plugin.OpenTableWriter(context.Background(), &buf, schema, nil)
@@ -258,8 +259,8 @@ func TestTSVPlugin_DescribeAndSampleTable(t *testing.T) {
 	if plugin.Format() != format.FormatTSV {
 		t.Fatalf("Format = %q, want tsv", plugin.Format())
 	}
-	if len(tableInfo.Fields) != 2 || tableInfo.Fields[0].Name != "name" || tableInfo.Fields[1].Name != "age" {
-		t.Fatalf("fields = %#v", tableInfo.Fields)
+	if len(tableInfo.Table.Fields) != 2 || tableInfo.Table.Fields[0].Name != "name" || tableInfo.Table.Fields[1].Name != "age" {
+		t.Fatalf("fields = %#v", tableInfo.Table.Fields)
 	}
 
 	records, err := plugin.SampleTable(context.Background(), strings.NewReader(tsvData), 1, 1, nil)
@@ -328,8 +329,8 @@ func TestCSVPlugin_DescribeTableCountsRecords(t *testing.T) {
 		t.Fatalf("DescribeTable failed: %v", err)
 	}
 
-	if tableInfo.RowCount == nil || *tableInfo.RowCount != 3 {
-		t.Errorf("Expected 3 records, got %v", tableInfo.RowCount)
+	if tableInfo.Table.RowCount == nil || *tableInfo.Table.RowCount != 3 {
+		t.Errorf("Expected 3 records, got %v", tableInfo.Table.RowCount)
 	}
 }
 
@@ -350,12 +351,12 @@ func TestCSVPlugin_DescribeTableBuildsSparseRowIndex(t *testing.T) {
 		t.Fatalf("DescribeTable failed: %v", err)
 	}
 
-	indexInfo := tableInfo.GetContentIndexInfo()
-	if indexInfo == nil || indexInfo.Table == nil {
+	indexInfo := tableInfo.ContentIndex
+	if indexInfo == nil {
 		t.Fatalf("content index extension missing")
 	}
-	index := indexInfo.Table
-	if index.Kind != format.ContentIndexKindSparseRow {
+	index := indexInfo
+	if index.Kind != datatype.ContentIndexKindSparseRow {
 		t.Fatalf("index kind = %q, want sparse row", index.Kind)
 	}
 	if index.RowCount != 4 {
@@ -385,8 +386,8 @@ func TestCSVPlugin_SampleTableFromPositionedReader(t *testing.T) {
 	opts := format.DefaultParseOptions()
 	opts.TableSample = &format.TableSampleOptions{
 		Fields: []format.FieldInfo{
-			{Name: "id", Type: format.FieldTypeInt},
-			{Name: "name", Type: format.FieldTypeString},
+			{Name: "id", Type: datatype.FieldTypeInt},
+			{Name: "name", Type: datatype.FieldTypeString},
 		},
 		InputStartsAtRow:  2,
 		InputIsPositioned: true,

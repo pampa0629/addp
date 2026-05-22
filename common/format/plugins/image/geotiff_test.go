@@ -11,21 +11,24 @@ func TestExtractGeoTIFFSpatial(t *testing.T) {
 
 	data := testGeoTIFF(t)
 	spatial := extractGeoTIFFSpatial(data, 2, 2)
-	if len(spatial) == 0 {
+	if spatial == nil {
 		t.Fatalf("spatial attrs missing")
 	}
-	extent := spatial["extent"].([]float64)
+	if spatial.Extent == nil {
+		t.Fatalf("spatial extent missing")
+	}
+	extent := []float64{spatial.Extent[0], spatial.Extent[1], spatial.Extent[2], spatial.Extent[3]}
 	wantExtent := []float64{100, 180, 120, 200}
 	for i := range wantExtent {
 		if extent[i] != wantExtent[i] {
 			t.Fatalf("extent = %#v, want %#v", extent, wantExtent)
 		}
 	}
-	if spatial["srid"] != 4326 {
-		t.Fatalf("srid = %v, want 4326", spatial["srid"])
+	if len(spatial.GeometryColumns) != 1 || spatial.GeometryColumns[0].SRID == nil || *spatial.GeometryColumns[0].SRID != 4326 {
+		t.Fatalf("srid = %#v, want 4326", spatial.GeometryColumns)
 	}
-	if spatial["has_spatial_index"] != false {
-		t.Fatalf("has_spatial_index = %v, want false", spatial["has_spatial_index"])
+	if spatial.HasSpatialIndex == nil || *spatial.HasSpatialIndex {
+		t.Fatalf("has_spatial_index = %#v, want false", spatial.HasSpatialIndex)
 	}
 }
 

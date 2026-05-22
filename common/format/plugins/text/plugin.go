@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 )
 
@@ -71,9 +72,8 @@ func (p Provider) Capabilities() format.FormatCapability {
 	}
 }
 
-func (p Provider) DescribeDocument(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.DocumentInfo, error) {
-	return &format.DocumentInfo{
-		Format:   p.formatType,
+func (p Provider) DescribeDocument(ctx context.Context, input io.Reader, options *format.ParseOptions) (*datatype.DocumentInfo, error) {
+	return &datatype.DocumentInfo{
 		Encoding: "utf-8",
 	}, nil
 }

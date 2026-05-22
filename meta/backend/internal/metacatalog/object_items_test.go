@@ -1,6 +1,7 @@
 package metacatalog
 
 import (
+	"github.com/addp/common/datatype"
 	"testing"
 	"time"
 
@@ -158,7 +159,7 @@ func TestPlanObjectCatalogCompositeItemBuildsStandardAttributes(t *testing.T) {
 			},
 			Fields: []format.FieldInfo{{
 				Name: "id",
-				Type: format.FieldTypeInt,
+				Type: datatype.FieldTypeInt,
 			}},
 		},
 	}, "object")

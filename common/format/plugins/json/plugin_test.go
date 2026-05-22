@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/addp/common/datatype"
 	"strings"
 	"testing"
 
@@ -68,13 +69,13 @@ func TestJSONPluginDescribeAndSampleGeoJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DescribeTable failed: %v", err)
 	}
-	if info.RowCount == nil || *info.RowCount != 2 {
-		t.Fatalf("row count = %v, want 2", info.RowCount)
+	if info.Table.RowCount == nil || *info.Table.RowCount != 2 {
+		t.Fatalf("row count = %v, want 2", info.Table.RowCount)
 	}
-	if info.GetSpatialInfo() == nil {
+	if info.Spatial == nil {
 		t.Fatalf("spatial extension missing")
 	}
-	if field := info.GetField("geometry"); field == nil || field.Type != format.FieldTypeGeometry {
+	if field := info.Table.GetField("geometry"); field == nil || field.Type != datatype.FieldTypeGeometry {
 		t.Fatalf("geometry field = %#v", field)
 	}
 
@@ -101,10 +102,10 @@ func TestJSONPluginDoesNotInventSpatialInfoWithoutGeometry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DescribeTable failed: %v", err)
 	}
-	if info.GetSpatialInfo() != nil {
-		t.Fatalf("spatial extension should be absent: %#v", info.GetSpatialInfo())
+	if info.Spatial != nil {
+		t.Fatalf("spatial extension should be absent: %#v", info.Spatial)
 	}
-	if field := info.GetField("geometry"); field != nil {
+	if field := info.Table.GetField("geometry"); field != nil {
 		t.Fatalf("geometry field should be absent: %#v", field)
 	}
 
@@ -148,15 +149,15 @@ func TestJSONPluginDescribeAndSampleObjectArray(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DescribeTable failed: %v", err)
 	}
-	if info.RowCount == nil || *info.RowCount != 2 {
-		t.Fatalf("row count = %v, want 2", info.RowCount)
+	if info.Table.RowCount == nil || *info.Table.RowCount != 2 {
+		t.Fatalf("row count = %v, want 2", info.Table.RowCount)
 	}
-	if info.GetSpatialInfo() != nil {
-		t.Fatalf("spatial extension should be absent: %#v", info.GetSpatialInfo())
+	if info.Spatial != nil {
+		t.Fatalf("spatial extension should be absent: %#v", info.Spatial)
 	}
 	for _, name := range []string{"id", "name", "area"} {
-		if field := info.GetField(name); field == nil {
-			t.Fatalf("field %q missing: %#v", name, info.Fields)
+		if field := info.Table.GetField(name); field == nil {
+			t.Fatalf("field %q missing: %#v", name, info.Table.Fields)
 		}
 	}
 
@@ -182,8 +183,8 @@ func TestJSONPluginFieldSelection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DescribeTable failed: %v", err)
 	}
-	if len(info.Fields) != 2 || info.Fields[0].Name != "name" || info.Fields[1].Name != "id" {
-		t.Fatalf("fields = %#v, want name,id", info.Fields)
+	if len(info.Table.Fields) != 2 || info.Table.Fields[0].Name != "name" || info.Table.Fields[1].Name != "id" {
+		t.Fatalf("fields = %#v, want name,id", info.Table.Fields)
 	}
 
 	rows, err := plugin.SampleTable(context.Background(), strings.NewReader(data), 0, 1, opts)
@@ -228,10 +229,10 @@ func TestJSONPluginFieldSelectionPrunesSpatialInfoWhenGeometryExcluded(t *testin
 	if err != nil {
 		t.Fatalf("DescribeTable failed: %v", err)
 	}
-	if info.GetSpatialInfo() != nil {
-		t.Fatalf("spatial info = %#v, want nil when geometry is excluded", info.GetSpatialInfo())
+	if info.Spatial != nil {
+		t.Fatalf("spatial info = %#v, want nil when geometry is excluded", info.Spatial)
 	}
-	if field := info.GetField("geometry"); field != nil {
+	if field := info.Table.GetField("geometry"); field != nil {
 		t.Fatalf("geometry field = %#v, want pruned", field)
 	}
 }
@@ -300,8 +301,8 @@ func TestJSONPluginOpenTableReaderLines(t *testing.T) {
 func TestJSONPluginOpenTableWriterArray(t *testing.T) {
 	plugin := NewPlugin(nil)
 	schema := &format.TableInfo{Fields: []format.FieldInfo{
-		{Name: "id", Type: format.FieldTypeInt},
-		{Name: "name", Type: format.FieldTypeString},
+		{Name: "id", Type: datatype.FieldTypeInt},
+		{Name: "name", Type: datatype.FieldTypeString},
 	}}
 	var buf bytes.Buffer
 
@@ -374,11 +375,11 @@ func TestJSONPluginOpenTableWriterGeoJSON(t *testing.T) {
 	}
 	schema := &format.TableInfo{
 		Fields: []format.FieldInfo{
-			{Name: "id", Type: format.FieldTypeInt},
-			{Name: "name", Type: format.FieldTypeString},
-			{Name: "geom", Type: format.FieldTypeGeometry},
+			{Name: "id", Type: datatype.FieldTypeInt},
+			{Name: "name", Type: datatype.FieldTypeString},
+			{Name: "geom", Type: datatype.FieldTypeGeometry},
 		},
-		SpatialInfo: &format.SpatialInfo{GeometryColumn: "geom", GeometryType: "Point", SRID: 4326},
+		SpatialInfo: format.NewSingleGeometrySpatialInfo("geom", "Point", 4326, 0),
 	}
 	var buf bytes.Buffer
 
@@ -438,17 +439,17 @@ func TestJSONPluginObjectArrayDetectsVerifiedWKBGeometry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DescribeTable failed: %v", err)
 	}
-	spatial := info.GetSpatialInfo()
+	spatial := info.Spatial
 	if spatial == nil {
 		t.Fatalf("spatial extension missing")
 	}
-	if spatial.GeometryColumn != "SmGeometry" || spatial.GeometryType != "Point" {
+	if format.PrimaryGeometryColumn(spatial) != "SmGeometry" || format.PrimaryGeometryType(spatial) != "Point" {
 		t.Fatalf("spatial = %#v", spatial)
 	}
-	if spatial.SRID != 0 {
-		t.Fatalf("plain WKB should not imply SRID, got %d", spatial.SRID)
+	if srid := format.PrimaryGeometrySRID(spatial); srid != 0 {
+		t.Fatalf("plain WKB should not imply SRID, got %d", srid)
 	}
-	if field := info.GetField("SmGeometry"); field == nil || field.Type != format.FieldTypeGeometry {
+	if field := info.Table.GetField("SmGeometry"); field == nil || field.Type != datatype.FieldTypeGeometry {
 		t.Fatalf("geometry field = %#v", field)
 	}
 
@@ -477,15 +478,16 @@ func TestJSONPluginGeoJSONComputesBoundingBoxWithoutFileBBox(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DescribeTable failed: %v", err)
 	}
-	spatial := info.GetSpatialInfo()
-	if spatial == nil || spatial.BoundingBox == nil {
+	spatial := info.Spatial
+	if spatial == nil || spatial.Extent == nil {
 		t.Fatalf("spatial bbox missing: %#v", spatial)
 	}
-	if got, want := *spatial.BoundingBox, [4]float64{-1, -2, 8, 7}; got != want {
+	want := datatype.BoundingBox{-1, -2, 8, 7}
+	if got := *spatial.Extent; got != want {
 		t.Fatalf("bbox = %#v, want %#v", got, want)
 	}
-	if spatial.SRID != 4326 {
-		t.Fatalf("GeoJSON SRID = %d, want 4326", spatial.SRID)
+	if srid := format.PrimaryGeometrySRID(spatial); srid != 4326 {
+		t.Fatalf("GeoJSON SRID = %d, want 4326", srid)
 	}
 
 	formatInfo, err := plugin.DescribeFormat(context.Background(), strings.NewReader(data), nil)
@@ -505,11 +507,11 @@ func TestJSONPluginObjectArrayDetectsEWKBSRID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DescribeTable failed: %v", err)
 	}
-	spatial := info.GetSpatialInfo()
+	spatial := info.Spatial
 	if spatial == nil {
 		t.Fatalf("spatial extension missing")
 	}
-	if spatial.GeometryColumn != "geom" || spatial.GeometryType != "Point" || spatial.SRID != 4326 {
+	if format.PrimaryGeometryColumn(spatial) != "geom" || format.PrimaryGeometryType(spatial) != "Point" || format.PrimaryGeometrySRID(spatial) != 4326 {
 		t.Fatalf("spatial = %#v", spatial)
 	}
 
@@ -531,8 +533,8 @@ func TestJSONPluginObjectArrayDetectsMultiPolygonWKB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DescribeTable failed: %v", err)
 	}
-	spatial := info.GetSpatialInfo()
-	if spatial == nil || spatial.GeometryType != "MultiPolygon" {
+	spatial := info.Spatial
+	if spatial == nil || format.PrimaryGeometryType(spatial) != "MultiPolygon" {
 		t.Fatalf("spatial = %#v", spatial)
 	}
 
@@ -558,10 +560,10 @@ func TestJSONPluginDoesNotTreatArbitraryHexAsGeometry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DescribeTable failed: %v", err)
 	}
-	if spatial := info.GetSpatialInfo(); spatial != nil {
+	if spatial := info.Spatial; spatial != nil {
 		t.Fatalf("spatial extension should be absent: %#v", spatial)
 	}
-	if field := info.GetField("payload"); field == nil || field.Type != format.FieldTypeString {
+	if field := info.Table.GetField("payload"); field == nil || field.Type != datatype.FieldTypeString {
 		t.Fatalf("payload field = %#v", field)
 	}
 }
@@ -581,12 +583,12 @@ func TestJSONPluginDescribeTableBuildsSparseRowIndex(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DescribeTable failed: %v", err)
 	}
-	indexInfo := info.GetContentIndexInfo()
-	if indexInfo == nil || indexInfo.Table == nil {
+	indexInfo := info.ContentIndex
+	if indexInfo == nil {
 		t.Fatalf("content index missing")
 	}
-	index := indexInfo.Table
-	if index.Kind != format.ContentIndexKindSparseRow || index.RowCount != 4 || len(index.Anchors) != 3 {
+	index := indexInfo
+	if index.Kind != datatype.ContentIndexKindSparseRow || index.RowCount != 4 || len(index.Anchors) != 3 {
 		t.Fatalf("index = %#v", index)
 	}
 	if index.Anchors[1].Row != 2 || index.Anchors[1].ByteOffset <= index.Anchors[0].ByteOffset {
@@ -611,11 +613,12 @@ func TestJSONPluginSampleGeoJSONFromPositionedReader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DescribeTable failed: %v", err)
 	}
-	index := info.GetContentIndexInfo().Table
+	index := info.ContentIndex
 	start := index.Anchors[1].ByteOffset
+	schema := format.TableSchemaFromDescribeResult(info)
 	positioned := format.DefaultParseOptions()
 	positioned.TableSample = &format.TableSampleOptions{
-		Fields:            info.Fields,
+		Fields:            schema.Fields,
 		InputStartsAtRow:  index.Anchors[1].Row,
 		InputIsPositioned: true,
 	}
@@ -675,12 +678,13 @@ func TestJSONPluginSampleTableFromPositionedReader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DescribeTable failed: %v", err)
 	}
-	index := info.GetContentIndexInfo().Table
+	index := info.ContentIndex
 	start := index.Anchors[1].ByteOffset
 	fragment := data[start:]
+	schema := format.TableSchemaFromDescribeResult(info)
 	positioned := format.DefaultParseOptions()
 	positioned.TableSample = &format.TableSampleOptions{
-		Fields:            info.Fields,
+		Fields:            schema.Fields,
 		InputStartsAtRow:  index.Anchors[1].Row,
 		InputIsPositioned: true,
 	}
