@@ -2,10 +2,10 @@ package jsonformat
 
 import (
 	"encoding/json"
-	"github.com/addp/common/datatype"
 	"sort"
 	"strings"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 )
 
@@ -72,7 +72,12 @@ func (b *tableInfoBuilder) SRID() int {
 	return b.srid
 }
 
-func (b *tableInfoBuilder) Build() *format.TableInfo {
+type tableInfoBuildResult struct {
+	Table   *datatype.TableInfo
+	Spatial *datatype.SpatialInfo
+}
+
+func (b *tableInfoBuilder) Build() tableInfoBuildResult {
 	fieldNames := make([]string, 0, len(b.propertySet))
 	for name := range b.propertySet {
 		if name == "" {
@@ -82,10 +87,10 @@ func (b *tableInfoBuilder) Build() *format.TableInfo {
 	}
 	sort.Strings(fieldNames)
 
-	fields := make([]format.FieldInfo, 0, len(fieldNames)+1)
+	fields := make([]datatype.FieldInfo, 0, len(fieldNames)+1)
 	geometryField := b.geometryField
 	if b.HasGeometry() {
-		fields = append(fields, format.FieldInfo{
+		fields = append(fields, datatype.FieldInfo{
 			Name:     geometryField,
 			Type:     datatype.FieldTypeGeometry,
 			Nullable: false,
@@ -96,21 +101,34 @@ func (b *tableInfoBuilder) Build() *format.TableInfo {
 		if fieldType == "" {
 			fieldType = datatype.FieldTypeUnknown
 		}
-		fields = append(fields, format.FieldInfo{
+		fields = append(fields, datatype.FieldInfo{
 			Name:     name,
 			Type:     fieldType,
 			Nullable: true,
 		})
 	}
 
-	tableInfo := &format.TableInfo{
-		Name:   "json_records",
-		Fields: fields,
+	result := tableInfoBuildResult{
+		Table: &datatype.TableInfo{
+			Name:   "json_records",
+			Fields: fields,
+		},
 	}
 	if b.HasGeometry() {
-		tableInfo.SpatialInfo = datatype.NewSingleGeometrySpatialInfo(geometryField, b.GeometryType(), b.SRID(), 2)
+		result.Spatial = datatype.NewSingleGeometrySpatialInfo(geometryField, b.GeometryType(), b.SRID(), 2)
 	}
+	return result
+}
+
+func (b *tableInfoBuilder) BuildSchema() *format.TableInfo {
+	result := b.Build()
+	tableInfo := format.FormatTableInfo(result.Table)
+	tableInfo.SpatialInfo = result.Spatial
 	return tableInfo
+}
+
+func (b *tableInfoBuilder) BuildTableInfo() *datatype.TableInfo {
+	return b.Build().Table
 }
 
 func inferFieldType(value interface{}) datatype.FieldType {

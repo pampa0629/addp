@@ -6,7 +6,10 @@ import (
 	"github.com/addp/common/datatype"
 )
 
-// TableInfo 表信息（统一的表元数据结构）
+// TableInfo 是 format reader / writer / Transfer 使用的表操作 schema。
+//
+// 通用 table 类型事实源是 datatype.TableInfo；TableInfo 只在需要字段顺序、
+// 写出 schema、采样上下文或格式操作补充信息的边界使用。
 type TableInfo struct {
 	// 基础信息
 	Name      string     // 表名 / 文件名
@@ -26,7 +29,10 @@ type TableInfo struct {
 	ContentIndex *datatype.ContentIndex
 }
 
-// FieldInfo 字段信息
+// FieldInfo 是 format 操作 schema 内的字段信息。
+//
+// 通用字段事实源是 datatype.FieldInfo；FieldInfo 只保留当前 format
+// reader / writer 仍需要的字段子集。
 type FieldInfo struct {
 	Name         string             // 字段名
 	Type         datatype.FieldType // 统一的字段类型

@@ -677,16 +677,15 @@ func buildSpatialJSONPreview(ctx context.Context, data []byte, parsed interface{
 	if err != nil {
 		return nil, false
 	}
-	tableSchema := format.TableSchemaFromDescribeResult(tableInfo)
-	if tableSchema == nil || !tableSchema.IsSpatial() {
+	if tableInfo == nil || tableInfo.Table == nil || tableInfo.Spatial == nil || !tableInfo.Spatial.IsSpatial() {
 		return nil, false
 	}
 
 	sampleRecords, _ := sampleReader.SampleTable(ctx, bytes.NewReader(data), 0, 10, opts)
 
 	metadata := make(map[string]interface{})
-	columns := make([]map[string]interface{}, 0, len(tableSchema.Fields))
-	for _, field := range tableSchema.Fields {
+	columns := make([]map[string]interface{}, 0, len(tableInfo.Table.Fields))
+	for _, field := range tableInfo.Table.Fields {
 		col := map[string]interface{}{
 			"name":     field.Name,
 			"type":     string(field.Type),
@@ -699,12 +698,12 @@ func buildSpatialJSONPreview(ctx context.Context, data []byte, parsed interface{
 	}
 	metadata["columns"] = columns
 
-	if tableSchema.RowCount != nil {
-		metadata["record_count"] = *tableSchema.RowCount
-		metadata["feature_count"] = *tableSchema.RowCount
+	if tableInfo.Table.RowCount != nil {
+		metadata["record_count"] = *tableInfo.Table.RowCount
+		metadata["feature_count"] = *tableInfo.Table.RowCount
 	}
 
-	if spatialInfo := tableSchema.GetSpatialInfo(); spatialInfo != nil {
+	if spatialInfo := tableInfo.Spatial; spatialInfo != nil {
 		geometryField := spatialInfo.PrimaryGeometryName()
 		geometryType := spatialInfo.PrimaryGeometryType()
 		metadata["geometry_field"] = geometryField
@@ -1759,7 +1758,9 @@ func (h *parquetContentHandler) HandleStream(ctx context.Context, req *ObjectCon
 	if err != nil {
 		return nil, false, fmt.Errorf("解析 %s Schema 失败: %w", formatType, err)
 	}
-	tableSchema := format.TableSchemaFromDescribeResult(tableInfo)
+	if tableInfo == nil || tableInfo.Table == nil {
+		return nil, false, fmt.Errorf("解析 %s Schema 失败: 缺少 table info", formatType)
+	}
 
 	// 重新打开文件读取预览数据（DescribeTable 已消耗 reader）
 	f2, err := os.Open(tmpPath)
@@ -1778,8 +1779,9 @@ func (h *parquetContentHandler) HandleStream(ctx context.Context, req *ObjectCon
 	}
 
 	// 构建列信息
-	columns := make([]map[string]interface{}, 0, len(tableSchema.Fields))
-	for _, field := range tableSchema.Fields {
+	table := tableInfo.Table
+	columns := make([]map[string]interface{}, 0, len(table.Fields))
+	for _, field := range table.Fields {
 		col := map[string]interface{}{
 			"name":     field.Name,
 			"type":     string(field.Type),
@@ -1789,8 +1791,8 @@ func (h *parquetContentHandler) HandleStream(ctx context.Context, req *ObjectCon
 	}
 
 	totalRows := int64(0)
-	if tableSchema.RowCount != nil {
-		totalRows = *tableSchema.RowCount
+	if table.RowCount != nil {
+		totalRows = *table.RowCount
 	}
 	truncated := int64(len(rows)) < totalRows
 
@@ -1835,7 +1837,9 @@ func (h *parquetContentHandler) Handle(ctx context.Context, req *ObjectContentRe
 	if err != nil {
 		return nil, false, fmt.Errorf("解析 %s Schema 失败: %w", formatType, err)
 	}
-	tableSchema := format.TableSchemaFromDescribeResult(tableInfo)
+	if tableInfo == nil || tableInfo.Table == nil {
+		return nil, false, fmt.Errorf("解析 %s Schema 失败: 缺少 table info", formatType)
+	}
 
 	rowLimit := int64(h.rowLimit)
 	if rowLimit <= 0 {
@@ -1846,8 +1850,9 @@ func (h *parquetContentHandler) Handle(ctx context.Context, req *ObjectContentRe
 		return nil, false, fmt.Errorf("读取 %s 预览数据失败: %w", formatType, err)
 	}
 
-	columns := make([]map[string]interface{}, 0, len(tableSchema.Fields))
-	for _, field := range tableSchema.Fields {
+	table := tableInfo.Table
+	columns := make([]map[string]interface{}, 0, len(table.Fields))
+	for _, field := range table.Fields {
 		columns = append(columns, map[string]interface{}{
 			"name":     field.Name,
 			"type":     string(field.Type),
@@ -1856,8 +1861,8 @@ func (h *parquetContentHandler) Handle(ctx context.Context, req *ObjectContentRe
 	}
 
 	totalRows := int64(0)
-	if tableSchema.RowCount != nil {
-		totalRows = *tableSchema.RowCount
+	if table.RowCount != nil {
+		totalRows = *table.RowCount
 	}
 
 	return decoratePreviewContent(&models.ObjectPreviewContent{

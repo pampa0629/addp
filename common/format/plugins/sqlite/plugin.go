@@ -208,7 +208,10 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 	if p.Format() == format.FormatGeoPackage {
 		applyGeoPackageSpatialInfo(ctx, db, info)
 	}
-	return format.TableDescribeResultFromSchema(info), nil
+	return &datatype.TableDescribeResult{
+		Table:   format.DatatypeTableInfo(info),
+		Spatial: info.SpatialInfo.Clone(),
+	}, nil
 }
 
 func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {

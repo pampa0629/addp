@@ -342,10 +342,13 @@ func (e *MetadataExtractor) BuildObjectContentIndexOnDemand(
 
 	enhancedAttrs := cloneJSONMap(item.Attributes)
 	metaattr.UpsertNested(enhancedAttrs, "content_index", "table", contentIndexAttributes(index))
-	tableSchema := format.TableSchemaFromDescribeResult(tableInfo)
-	if len(tableSchema.Fields) > 0 {
+	fields := []format.FieldInfo(nil)
+	if tableInfo.Table != nil {
+		fields = format.FormatFieldInfos(tableInfo.Table.Fields)
+	}
+	if len(fields) > 0 {
 		tableAttrs := map[string]interface{}{
-			"fields": metaattr.FieldAttributesFromFormat(tableSchema.Fields),
+			"fields": metaattr.FieldAttributesFromFormat(fields),
 		}
 		if tableInfo.Table != nil && tableInfo.Table.RowCount != nil {
 			tableAttrs["row_count"] = *tableInfo.Table.RowCount

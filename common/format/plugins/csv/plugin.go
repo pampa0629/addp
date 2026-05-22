@@ -189,15 +189,13 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 	index.RowCount = rowCount
 
 	// 构建 FieldInfo 列表
-	fields := make([]format.FieldInfo, len(headers))
+	fields := make([]datatype.FieldInfo, len(headers))
 	for i, header := range headers {
 		fieldType := p.inferColumnType(sampleRows, i)
-		fields[i] = format.FieldInfo{
-			Name:         strings.TrimSpace(header),
-			Type:         fieldType,
-			Nullable:     true, // CSV 默认允许 NULL
-			IsPrimaryKey: false,
-			Comment:      "",
+		fields[i] = datatype.FieldInfo{
+			Name:     strings.TrimSpace(header),
+			Type:     fieldType,
+			Nullable: true, // CSV 默认允许 NULL
 		}
 	}
 
@@ -211,23 +209,24 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 		LineEnding: "\n",
 	}
 
-	// 构建 TableInfo
-	tableInfo := &format.TableInfo{
-		Name:       "csv_data", // CSV 文件没有表名，使用默认值
-		RowCount:   &rowCount,
-		Fields:     fields,
-		PrimaryKey: []string{}, // CSV 没有主键
+	result := &datatype.TableDescribeResult{
+		Table: &datatype.TableInfo{
+			Name:       "csv_data", // CSV 文件没有表名，使用默认值
+			RowCount:   &rowCount,
+			Fields:     fields,
+			PrimaryKey: []string{}, // CSV 没有主键
+		},
 		FormatInfo: map[string]interface{}{"csv": csvInfo},
 	}
 	if len(index.Anchors) > 0 {
-		tableInfo.ContentIndex = index
+		result.ContentIndex = index
 	}
 
-	selected, err := format.ApplyFieldSelectionToTableInfo(tableInfo, opts.FieldSelection)
+	selected, err := format.ApplyFieldSelectionToTableDescribeResult(result, opts.FieldSelection)
 	if err != nil {
 		return nil, err
 	}
-	return format.TableDescribeResultFromSchema(selected), nil
+	return selected, nil
 }
 
 // SampleTable 读取 CSV 表格样本。

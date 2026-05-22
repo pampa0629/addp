@@ -275,16 +275,18 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 	}
 	index.RowCount = featureCount
 
-	tableInfo := builder.Build()
+	buildResult := builder.Build()
+	tableInfo := buildResult.Table
 	tableInfo.RowCount = &featureCount
 	tableInfo.PrimaryKey = nil
+	spatialInfo := buildResult.Spatial
 
 	// 仅在实际记录里发现 geometry 结构时构建 SpatialInfo。
 	geometryType := builder.GeometryType()
 	if geometryType != "" {
 		spatialGeometryField := geometryField
-		if tableInfo.SpatialInfo != nil && tableInfo.SpatialInfo.PrimaryGeometryName() != "" {
-			spatialGeometryField = tableInfo.SpatialInfo.PrimaryGeometryName()
+		if spatialInfo != nil && spatialInfo.PrimaryGeometryName() != "" {
+			spatialGeometryField = spatialInfo.PrimaryGeometryName()
 		}
 		srid := builder.SRID()
 		if crsSRID := commonSpatial.ParseSRID(iter.meta.CoordinateSystem); crsSRID > 0 {
@@ -293,9 +295,9 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 			srid = commonSpatial.SRIDWGS84
 		}
 
-		tableInfo.SpatialInfo = datatype.NewSingleGeometrySpatialInfo(spatialGeometryField, geometryType, srid, 2)
+		spatialInfo = datatype.NewSingleGeometrySpatialInfo(spatialGeometryField, geometryType, srid, 2)
 		if len(iter.meta.BoundingBox) == 4 {
-			tableInfo.SpatialInfo.Extent = &datatype.BoundingBox{
+			spatialInfo.Extent = &datatype.BoundingBox{
 				iter.meta.BoundingBox[0],
 				iter.meta.BoundingBox[1],
 				iter.meta.BoundingBox[2],
@@ -303,19 +305,23 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 			}
 		} else if bbox, ok := builder.BoundingBox(); ok {
 			extent := datatype.BoundingBox(bbox)
-			tableInfo.SpatialInfo.Extent = &extent
+			spatialInfo.Extent = &extent
 		}
 	}
 
+	result := &datatype.TableDescribeResult{
+		Table:   tableInfo,
+		Spatial: spatialInfo,
+	}
 	if len(index.Anchors) > 0 {
-		tableInfo.ContentIndex = index
+		result.ContentIndex = index
 	}
 
-	selected, err := format.ApplyFieldSelectionToTableInfo(tableInfo, opts.FieldSelection)
+	selected, err := format.ApplyFieldSelectionToTableDescribeResult(result, opts.FieldSelection)
 	if err != nil {
 		return nil, err
 	}
-	return format.TableDescribeResultFromSchema(selected), nil
+	return selected, nil
 }
 
 // SampleTable 读取 JSON 记录集合样本数据。
@@ -474,7 +480,7 @@ func (r *tableReader) ReadRows(ctx context.Context, limit int) ([]map[string]int
 		rows = append(rows, feature.ToRecord(r.geometryField))
 	}
 	if len(rows) > 0 {
-		info := builder.Build()
+		info := builder.BuildSchema()
 		if selected, err := format.ApplyFieldSelectionToTableInfo(info, r.selection); err == nil {
 			info = selected
 		}

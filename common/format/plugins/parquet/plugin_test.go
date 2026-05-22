@@ -257,7 +257,7 @@ func TestParquetPluginDescribeAndSampleScopeAcrossFiles(t *testing.T) {
 	if len(info.Table.Fields) != 2 {
 		t.Fatalf("fields = %#v, want 2 fields", info.Table.Fields)
 	}
-	parquetInfo := InfoFromTableInfo(format.TableSchemaFromDescribeResult(info))
+	parquetInfo := InfoFromDescribeResult(info)
 	if parquetInfo == nil || len(parquetInfo.Files) != 2 {
 		t.Fatalf("parquet info = %#v, want two files", parquetInfo)
 	}
@@ -332,7 +332,7 @@ func TestParquetPluginScopeRecursesPartitionDirs(t *testing.T) {
 	if field := info.Table.GetField("dt"); field == nil || field.Type != datatype.FieldTypeString {
 		t.Fatalf("partition field dt = %#v, want string field", field)
 	}
-	parquetInfo := InfoFromTableInfo(format.TableSchemaFromDescribeResult(info))
+	parquetInfo := InfoFromDescribeResult(info)
 	if parquetInfo == nil || strings.Join(parquetInfo.PartitionColumns, ",") != "dt" {
 		t.Fatalf("partition columns = %#v, want dt", parquetInfo)
 	}

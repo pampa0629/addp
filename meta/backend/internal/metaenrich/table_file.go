@@ -358,6 +358,13 @@ func tableFileFieldAttributes(fields []format.FieldInfo) []map[string]interface{
 	return fieldsData
 }
 
+func tableFieldsFromDescribeResult(tableInfo *datatype.TableDescribeResult) []format.FieldInfo {
+	if tableInfo == nil || tableInfo.Table == nil {
+		return nil
+	}
+	return format.FormatFieldInfos(tableInfo.Table.Fields)
+}
+
 func tableFileAttributes(formatName string, mode string, fieldsData []map[string]interface{}, files []plugin.FileEntry, dirPath string, totalSize int64, tableInfo *datatype.TableDescribeResult, includeContentIndex bool) map[string]interface{} {
 	attrs := map[string]interface{}{
 		"storage": map[string]interface{}{
@@ -630,10 +637,10 @@ func (d *tableFileItemResolver) extractTableFileInfo(
 			totalSize = *resolved.SizeBytes
 		}
 	}
-	tableSchema := format.TableSchemaFromDescribeResult(tableInfo)
-	fieldsData := tableFileFieldAttributes(tableSchema.Fields)
+	fields := tableFieldsFromDescribeResult(tableInfo)
+	fieldsData := tableFileFieldAttributes(fields)
 	return &metaitem.CompositeItemInfo{
-		Fields:     tableSchema.Fields,
+		Fields:     fields,
 		Layout:     layout,
 		DataType:   dataitem.DataTypeTable,
 		Format:     formatName,
@@ -728,9 +735,9 @@ func extractTableFileSingleFileInfoWithFormat(
 		}, nil
 	}
 
-	tableSchema := format.TableSchemaFromDescribeResult(tableInfo)
-	fieldsData := make([]map[string]interface{}, 0, len(tableSchema.Fields))
-	for _, f := range tableSchema.Fields {
+	fields := tableFieldsFromDescribeResult(tableInfo)
+	fieldsData := make([]map[string]interface{}, 0, len(fields))
+	for _, f := range fields {
 		fieldsData = append(fieldsData, map[string]interface{}{
 			"name":     f.Name,
 			"type":     string(f.Type),
@@ -739,7 +746,7 @@ func extractTableFileSingleFileInfoWithFormat(
 	}
 
 	return &metaitem.CompositeItemInfo{
-		Fields:     tableSchema.Fields,
+		Fields:     fields,
 		Layout:     dataitem.LayoutSingle,
 		DataType:   dataitem.DataTypeTable,
 		Format:     formatName,
@@ -779,10 +786,10 @@ func ExtractTableFileSingleFileInfoStrict(
 		return nil, err
 	}
 
-	tableSchema := format.TableSchemaFromDescribeResult(tableInfo)
-	fieldsData := tableFileFieldAttributes(tableSchema.Fields)
+	fields := tableFieldsFromDescribeResult(tableInfo)
+	fieldsData := tableFileFieldAttributes(fields)
 	return &metaitem.CompositeItemInfo{
-		Fields:     tableSchema.Fields,
+		Fields:     fields,
 		Layout:     dataitem.LayoutSingle,
 		DataType:   dataitem.DataTypeTable,
 		Format:     formatName,

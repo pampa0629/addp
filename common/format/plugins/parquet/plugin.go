@@ -54,18 +54,29 @@ func InfoFromTableInfo(tableInfo *format.TableInfo) *Info {
 	if tableInfo == nil || len(tableInfo.FormatInfo) == 0 {
 		return nil
 	}
-	if info, ok := tableInfo.FormatInfo["parquet"].(Info); ok {
-		return &info
+	return infoFromFormatInfo(tableInfo.FormatInfo)
+}
+
+func InfoFromDescribeResult(result *datatype.TableDescribeResult) *Info {
+	if result == nil || len(result.FormatInfo) == 0 {
+		return nil
 	}
-	if info, ok := tableInfo.FormatInfo["parquet"].(*Info); ok {
-		return info
-	}
-	return nil
+	return infoFromFormatInfo(result.FormatInfo)
 }
 
 func FormatAttributesFromTableInfo(tableInfo *format.TableInfo) map[string]interface{} {
 	info := InfoFromTableInfo(tableInfo)
 	return info.FormatAttributes()
+}
+
+func infoFromFormatInfo(formatInfo map[string]interface{}) *Info {
+	if info, ok := formatInfo["parquet"].(Info); ok {
+		return &info
+	}
+	if info, ok := formatInfo["parquet"].(*Info); ok {
+		return info
+	}
+	return nil
 }
 
 func SampleOptionsFromAttributes(attrs map[string]interface{}) *format.ParseOptions {
@@ -229,15 +240,17 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 	fields := extractFields(file.Schema())
 	rowCount := file.NumRows()
 
-	info := &format.TableInfo{
-		Fields:   fields,
-		RowCount: &rowCount,
+	result := &datatype.TableDescribeResult{
+		Table: &datatype.TableInfo{
+			Fields:   format.DatatypeFieldInfos(fields),
+			RowCount: &rowCount,
+		},
 	}
-	selected, err := format.ApplyFieldSelectionToTableInfo(info, fieldSelectionFromOptions(options))
+	selected, err := format.ApplyFieldSelectionToTableDescribeResult(result, fieldSelectionFromOptions(options))
 	if err != nil {
 		return nil, err
 	}
-	return format.TableDescribeResultFromSchema(selected), nil
+	return selected, nil
 }
 
 // SampleTable 读取 Parquet 表格样本。
@@ -701,8 +714,8 @@ func (p *Plugin) DescribeTableScope(ctx context.Context, reader contentio.Reader
 	if err != nil {
 		return nil, err
 	}
-	var merged *format.TableInfo
-	var dataFields []format.FieldInfo
+	var merged *datatype.TableDescribeResult
+	var dataFields []datatype.FieldInfo
 	totalRows := int64(0)
 	files := make([]FileInfo, 0, len(scopedRefs))
 	partitionFields := partitionFieldsFromScopedRefs(scopedRefs)
@@ -723,19 +736,21 @@ func (p *Plugin) DescribeTableScope(ctx context.Context, reader contentio.Reader
 		if closeErr != nil {
 			return nil, fmt.Errorf("failed to close parquet file %s: %w", ref.Path, closeErr)
 		}
-		info := format.TableSchemaFromDescribeResult(result)
+		info := result.Table
 		if merged == nil {
-			dataFields = append([]format.FieldInfo(nil), info.Fields...)
-			baseInfo := &format.TableInfo{
-				Name:       contentio.BaseName(scope),
-				Fields:     appendPartitionFields(info.Fields, partitionFields),
-				PrimaryKey: append([]string(nil), info.PrimaryKey...),
+			dataFields = append([]datatype.FieldInfo(nil), info.Fields...)
+			baseInfo := &datatype.TableDescribeResult{
+				Table: &datatype.TableInfo{
+					Name:       contentio.BaseName(scope),
+					Fields:     appendDatatypePartitionFields(info.Fields, partitionFields),
+					PrimaryKey: append([]string(nil), info.PrimaryKey...),
+				},
 			}
-			merged, err = format.ApplyFieldSelectionToTableInfo(baseInfo, fieldSelectionFromOptions(options))
+			merged, err = format.ApplyFieldSelectionToTableDescribeResult(baseInfo, fieldSelectionFromOptions(options))
 			if err != nil {
 				return nil, err
 			}
-		} else if !sameFieldSchema(dataFields, info.Fields) {
+		} else if !sameDatatypeFieldSchema(dataFields, info.Fields) {
 			return nil, fmt.Errorf("parquet scope %s has incompatible schema in %s", scope.Path, ref.Path)
 		}
 		if info.RowCount != nil {
@@ -749,9 +764,9 @@ func (p *Plugin) DescribeTableScope(ctx context.Context, reader contentio.Reader
 	if merged == nil {
 		return nil, fmt.Errorf("parquet scope %s has no parquet files", scope.Path)
 	}
-	merged.RowCount = &totalRows
+	merged.Table.RowCount = &totalRows
 	merged.FormatInfo = map[string]interface{}{"parquet": &Info{Files: files, PartitionColumns: fieldNames(partitionFields)}}
-	return format.TableDescribeResultFromSchema(merged), nil
+	return merged, nil
 }
 
 func (p *Plugin) SampleTableScope(ctx context.Context, reader contentio.Reader, scope contentio.Ref, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
@@ -1092,6 +1107,24 @@ func appendPartitionFields(fields []format.FieldInfo, partitions []format.FieldI
 	return result
 }
 
+func appendDatatypePartitionFields(fields []datatype.FieldInfo, partitions []format.FieldInfo) []datatype.FieldInfo {
+	result := append([]datatype.FieldInfo(nil), fields...)
+	if len(partitions) == 0 {
+		return result
+	}
+	existing := map[string]bool{}
+	for _, field := range result {
+		existing[field.Name] = true
+	}
+	for _, partition := range format.DatatypeFieldInfos(partitions) {
+		if existing[partition.Name] {
+			continue
+		}
+		result = append(result, partition)
+	}
+	return result
+}
+
 func fieldNames(fields []format.FieldInfo) []string {
 	names := make([]string, 0, len(fields))
 	for _, field := range fields {
@@ -1139,6 +1172,20 @@ func contextErr(ctx context.Context) error {
 }
 
 func sameFieldSchema(left, right []format.FieldInfo) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i].Name != right[i].Name ||
+			left[i].Type != right[i].Type ||
+			left[i].Nullable != right[i].Nullable {
+			return false
+		}
+	}
+	return true
+}
+
+func sameDatatypeFieldSchema(left, right []datatype.FieldInfo) bool {
 	if len(left) != len(right) {
 		return false
 	}

@@ -25,11 +25,16 @@ func (plugin *Plugin) DescribeMultiTable(ctx context.Context, reader contentio.R
 	if err != nil {
 		return nil, err
 	}
-	selected, err := format.ApplyFieldSelectionToTableInfo(info, opts.FieldSelection)
+	result := &datatype.TableDescribeResult{
+		Table:      format.DatatypeTableInfo(info),
+		Spatial:    info.SpatialInfo.Clone(),
+		FormatInfo: info.FormatInfo,
+	}
+	selected, err := format.ApplyFieldSelectionToTableDescribeResult(result, opts.FieldSelection)
 	if err != nil {
 		return nil, err
 	}
-	return format.TableDescribeResultFromSchema(selected), nil
+	return selected, nil
 }
 
 func (plugin *Plugin) SampleMultiTable(ctx context.Context, reader contentio.Reader, refs []format.RelatedRef, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {

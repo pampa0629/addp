@@ -114,11 +114,13 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 	if p.hasExplicitSheetSelection(opts) {
 		sheetName := p.getTargetSheetNameFromOptions(workbook, opts)
 		if sheetName == "" {
-			return format.TableDescribeResultFromSchema(&format.TableInfo{
-				Name:       "excel_data",
-				Fields:     []format.FieldInfo{},
-				PrimaryKey: []string{},
-			}), nil
+			return &datatype.TableDescribeResult{
+				Table: &datatype.TableInfo{
+					Name:       "excel_data",
+					Fields:     []datatype.FieldInfo{},
+					PrimaryKey: []string{},
+				},
+			}, nil
 		}
 		sheetIndex := p.sheetIndex(workbook, sheetName)
 		summary, _, err := analyzeSheet(workbook, sheetName, sheetIndex, *analyzeOpts)
@@ -131,22 +133,22 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 			ActiveSheet:  sheetName,
 			Sheets:       []SheetSummary{summary},
 		}
-		tableInfo, err := p.convertToTableInfo(analysis, opts)
+		result, err := p.convertToTableDescribeResult(analysis, opts)
 		if err != nil {
 			return nil, err
 		}
-		return format.TableDescribeResultFromSchema(tableInfo), nil
+		return result, nil
 	}
 
 	analysis, err := Analyze(ctx, workbook, analyzeOpts)
 	if err != nil {
 		return nil, err
 	}
-	tableInfo, err := p.convertToTableInfo(analysis, opts)
+	result, err := p.convertToTableDescribeResult(analysis, opts)
 	if err != nil {
 		return nil, err
 	}
-	return format.TableDescribeResultFromSchema(tableInfo), nil
+	return result, nil
 }
 
 // SampleTable 读取 Excel 表格样本。
@@ -245,13 +247,15 @@ func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit
 	return records, nil
 }
 
-// convertToTableInfo 将 WorkbookAnalysis 转换为 TableInfo
-func (p *Plugin) convertToTableInfo(analysis *WorkbookAnalysis, opts *format.ParseOptions) (*format.TableInfo, error) {
+// convertToTableDescribeResult 将 WorkbookAnalysis 转换为 table describe result。
+func (p *Plugin) convertToTableDescribeResult(analysis *WorkbookAnalysis, opts *format.ParseOptions) (*datatype.TableDescribeResult, error) {
 	if len(analysis.Sheets) == 0 {
-		return &format.TableInfo{
-			Name:       "excel_data",
-			Fields:     []format.FieldInfo{},
-			PrimaryKey: []string{},
+		return &datatype.TableDescribeResult{
+			Table: &datatype.TableInfo{
+				Name:       "excel_data",
+				Fields:     []datatype.FieldInfo{},
+				PrimaryKey: []string{},
+			},
 		}, nil
 	}
 
@@ -259,18 +263,19 @@ func (p *Plugin) convertToTableInfo(analysis *WorkbookAnalysis, opts *format.Par
 	sheet := analysis.Sheets[0]
 
 	// 构建字段列表
-	fields := make([]format.FieldInfo, len(sheet.Headers))
+	fields := make([]datatype.FieldInfo, len(sheet.Headers))
 	for i, header := range sheet.Headers {
 		fieldType := datatype.FieldTypeString
 		if i < len(sheet.ColumnTypes) {
 			fieldType = mapExcelTypeToFieldType(sheet.ColumnTypes[i])
 		}
 
-		fields[i] = format.FieldInfo{
-			Name:         header,
-			Type:         fieldType, // Excel 没有原始类型概念
-			Nullable:     true,
-			IsPrimaryKey: false,
+		fields[i] = datatype.FieldInfo{
+			Name:            header,
+			Type:            fieldType, // Excel 没有原始类型概念
+			Nullable:        true,
+			PrimaryKey:      false,
+			OrdinalPosition: i + 1,
 		}
 	}
 
@@ -281,17 +286,16 @@ func (p *Plugin) convertToTableInfo(analysis *WorkbookAnalysis, opts *format.Par
 		SheetCount: analysis.SheetCount,
 	}
 
-	// 构建 TableInfo
 	rowCount := int64(sheet.RowCount)
-	tableInfo := &format.TableInfo{
-		Name:       sheet.Name, // 使用工作表名称作为表名
-		RowCount:   &rowCount,
-		Fields:     fields,
-		PrimaryKey: []string{},
+	return &datatype.TableDescribeResult{
+		Table: &datatype.TableInfo{
+			Name:       sheet.Name, // 使用工作表名称作为表名
+			RowCount:   &rowCount,
+			Fields:     fields,
+			PrimaryKey: []string{},
+		},
 		FormatInfo: map[string]interface{}{"excel": excelInfo},
-	}
-
-	return tableInfo, nil
+	}, nil
 }
 
 func (p *Plugin) convertToContainerInfo(analysis *WorkbookAnalysis) *format.ContainerInfo {

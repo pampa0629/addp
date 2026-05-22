@@ -30,6 +30,33 @@ type FieldInfo struct {
 	GenerationExpression string    `json:"generation_expression,omitempty"`
 }
 
+// Clone returns a deep copy of TableInfo.
+func (t *TableInfo) Clone() *TableInfo {
+	if t == nil {
+		return nil
+	}
+	cloned := *t
+	cloned.Fields = append([]FieldInfo(nil), t.Fields...)
+	cloned.PrimaryKey = append([]string(nil), t.PrimaryKey...)
+	if t.RowCount != nil {
+		rowCount := *t.RowCount
+		cloned.RowCount = &rowCount
+	}
+	if t.SizeBytes != nil {
+		sizeBytes := *t.SizeBytes
+		cloned.SizeBytes = &sizeBytes
+	}
+	if t.CreatedAt != nil {
+		createdAt := *t.CreatedAt
+		cloned.CreatedAt = &createdAt
+	}
+	if t.UpdatedAt != nil {
+		updatedAt := *t.UpdatedAt
+		cloned.UpdatedAt = &updatedAt
+	}
+	return &cloned
+}
+
 // FieldNames returns the table field names in declared order.
 func (t *TableInfo) FieldNames() []string {
 	if t == nil || len(t.Fields) == 0 {

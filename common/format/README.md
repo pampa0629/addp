@@ -429,9 +429,9 @@ info, err := provider.DescribeMedia(ctx, input, nil)
 
 图片 MediaInfoProvider 目前返回宽高、编码、MIME、颜色空间，并可通过 `MediaDescribeResult.Spatial` 携带 GeoTIFF 等空间横切事实。缩略图、视频、音频等内容读取能力后续通过独立 content reader 扩展。
 
-## TableInfo
+## Table Operation Schema
 
-`TableInfo` 是 provider 返回的表类型信息模型。通用事实源归属 `common/datatype.TableInfo`；`common/format.TableInfo` 只作为 reader / writer / Transfer 操作 schema 使用，并在 provider 边界通过 `datatype.TableDescribeResult` 暴露给 Meta。
+`common/datatype.TableInfo` 是 table 类型信息的通用事实源，对应 `attributes.type_info.table`。`common/format.TableInfo` 处于过渡期，只作为 reader / writer / Transfer 的 table operation schema 使用，用来表达执行期所需的字段顺序、写出 schema、采样上下文和格式操作补充信息。
 
 ```go
 type TableInfo struct {
@@ -445,11 +445,13 @@ type TableInfo struct {
 }
 ```
 
-`TableInfo` 只表达 `attributes.type_info.table`。provider 同次解析得到的补充事实必须作为同级 describe result 候选事实返回，由 Meta normalizer 写入对应分区：
+Provider 对外返回 `datatype.TableDescribeResult`。其中 `Table` 只表达 `attributes.type_info.table`；同次解析得到的补充事实必须作为同级候选事实返回，由 Meta normalizer 写入对应分区：
 
 - `FormatInfo`：格式私有事实，写入 `format_info.<format>`。
 - `SpatialInfo`：空间字段、几何类型、坐标系、范围等横切事实，写入 `capabilities.spatial`。
 - `ContentIndex`：读取优化索引，例如稀疏行索引，写入 `content_index.table`。
+
+`format.TableInfo` 不应成为新的元数据事实源。只读消费方应优先使用 `datatype.TableDescribeResult`；只有 reader / writer / sample options / Transfer pipeline 等操作边界才应从 `datatype.TableInfo` 转成 `format.TableInfo`。
 
 空间判断应基于标准 `SpatialInfo` / `capabilities.spatial`，不要通过 `format=geojson` 推断。
 
