@@ -6,9 +6,10 @@
 
 ## 未决事项
 
-1. SQL metadata provider 实现还需继续收敛：先维护 PostgreSQL、MySQL/Doris、ClickHouse、Spark SQL 的元数据来源和差异矩阵，再只对真实复用点抽 provider 内部 helper。
-2. ClickHouse 字段原生属性是否进入 metadata 结果需要单独设计：`system.columns` 可提供主键、排序键、分区键、默认表达式、codec、TTL 等，但当前 `ColumnInfo` 公共模型较薄，不应为单一引擎直接扩字段。
-3. 如果后续调整能力展示 API 或能力字段，要同步检查 `manager/docs/数据预览API重构方案.md`、`system/docs/tables/engines表.md`、`docs/spec/addp引擎能力声明规范.md`、`docs/spec/addp引擎插件接口规范.md`。
+1. Common datatype 统一抽象需先完成设计和分阶段迁移，见 [Common Datatype 统一抽象设计](common-datatype统一抽象设计.md)。`common/datatype` 的目标是收拢 ADDP 所有 data type / type info / field type / 横切基础结构；SQL metadata 字段模型只是 table 分支的一部分，后续应服从 `common/datatype`，不继续扩张 `plugin.ColumnInfo` 为平行模型。
+2. SQL metadata provider 实现还需继续收敛：先维护 PostgreSQL、MySQL/Doris、ClickHouse、Spark SQL 的元数据来源和差异矩阵，再只对真实复用点抽 provider 内部 helper。
+3. ClickHouse 字段原生属性是否进入 metadata 结果需要单独设计：`system.columns` 可提供主键、排序键、分区键、默认表达式、codec、TTL 等，但当前 `ColumnInfo` 公共模型较薄，不应为单一引擎直接扩字段；后续应先走 `common/datatype.FieldInfo` 的通用属性审定。
+4. 如果后续调整能力展示 API 或能力字段，要同步检查 `manager/docs/数据预览API重构方案.md`、`system/docs/tables/engines表.md`、`docs/spec/addp引擎能力声明规范.md`、`docs/spec/addp引擎插件接口规范.md`。
 
 ## 已冻结口径
 
@@ -20,13 +21,15 @@
 - `common/sqldialect` 当前定位为查询 SQL helper，负责标识符引用、表名限定、分页、count/sample SQL 等；不要把 catalog metadata 探测逻辑混入其中。
 - Metadata helper 只在多个引擎共享同一类事实来源时抽取，例如 MySQL/Doris 共享 `information_schema`；PostgreSQL、ClickHouse、Spark SQL 等差异较大的实现可以继续保留在插件内。
 - GORM 只作为连接池、driver 和 raw SQL 执行工具，不承担 ADDP 的 catalog path、item metadata、系统库过滤、row count 策略等平台元数据语义。
+- `plugin.ColumnInfo` 当前只作为 tabular provider 过渡 DTO，不作为 ADDP 字段元数据演进主模型；通用字段属性应围绕 `common/datatype.FieldInfo` 收敛。
 
 ## 推进顺序
 
-1. 补齐 SQL metadata provider 差异矩阵，标明 namespace 术语、元数据来源、表类型映射、字段信息来源、row count 策略、系统库过滤规则。
-2. 只对确认共享同一元数据来源和语义的引擎抽公共 helper；不做大一统 `SQLMetadataDialect`。
-3. 清理各插件中的真实问题，例如列表阶段触发重查询、标识符引用不一致、系统库过滤散落等。
-4. 统一联动文档和展示字段。能力字段一旦调整，相关 API、表结构说明和规范文档要一起校正。
+1. 先推进 `common/datatype` 文档审阅，确认 data type、type info、field type、横切结构和 layout 归属边界；table / field 只是其中一个分支。
+2. 补齐 SQL metadata provider 差异矩阵，标明 namespace 术语、元数据来源、表类型映射、字段信息来源、row count 策略、系统库过滤规则。
+3. 只对确认共享同一元数据来源和语义的引擎抽公共 helper；不做大一统 `SQLMetadataDialect`。
+4. 清理各插件中的真实问题，例如列表阶段触发重查询、标识符引用不一致、系统库过滤散落等。
+5. 统一联动文档和展示字段。能力字段一旦调整，相关 API、表结构说明和规范文档要一起校正。
 
 ## SQL metadata provider 差异矩阵
 
