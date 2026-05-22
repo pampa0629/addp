@@ -372,23 +372,12 @@ func (p *SparkSQLPlugin) listTables(ctx context.Context, db *gorm.DB, schema str
 			continue
 		}
 
-		// 获取表信息
 		tableInfo := plugin.TableInfo{
 			Schema:    schema,
 			TableName: tableName,
 			Kind:      plugin.CatalogKindTable,
 			RowCount:  0,
 			SizeBytes: 0,
-		}
-
-		// 尝试获取行数（使用DESCRIBE EXTENDED可能会更准确）
-		var count sql.NullInt64
-		// 重要：使用 quoteSparkIdentifier 保留标识符大小写
-		countQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s.%s LIMIT 1",
-			quoteSparkIdentifier(schema), quoteSparkIdentifier(tableName))
-		db.WithContext(ctx).Raw(countQuery).Scan(&count)
-		if count.Valid {
-			tableInfo.RowCount = count.Int64
 		}
 
 		tables = append(tables, tableInfo)
@@ -449,7 +438,7 @@ func (p *SparkSQLPlugin) getTableRowCount(ctx context.Context, db *gorm.DB, sche
 	var count int64
 
 	// 切换到指定数据库
-	if err := db.WithContext(ctx).Exec(fmt.Sprintf("USE %s", schema)).Error; err != nil {
+	if err := db.WithContext(ctx).Exec(fmt.Sprintf("USE %s", quoteSparkIdentifier(schema))).Error; err != nil {
 		return 0, fmt.Errorf("failed to use database: %w", err)
 	}
 
