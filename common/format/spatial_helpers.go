@@ -3,20 +3,7 @@ package format
 import "github.com/addp/common/datatype"
 
 func NewSingleGeometrySpatialInfo(columnName, geometryType string, srid int, dimension int) *datatype.SpatialInfo {
-	column := datatype.GeometryColumnInfo{
-		Name:         columnName,
-		GeometryType: geometryType,
-	}
-	if srid > 0 {
-		column.SRID = &srid
-	}
-	if dimension > 0 {
-		column.Dimension = &dimension
-	}
-	return &datatype.SpatialInfo{
-		GeometryColumns:       []datatype.GeometryColumnInfo{column},
-		PrimaryGeometryColumn: columnName,
-	}
+	return datatype.NewSingleGeometrySpatialInfo(columnName, geometryType, srid, dimension)
 }
 
 func PrimaryGeometryColumn(info *datatype.SpatialInfo) string {

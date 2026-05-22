@@ -47,6 +47,26 @@ func (c *ContentIndex) AddAnchor(row, byteOffset int64) {
 	c.Anchors = append(c.Anchors, ContentIndexAnchor{Row: row, ByteOffset: byteOffset})
 }
 
+// Clone returns a deep copy of ContentIndex.
+func (c *ContentIndex) Clone() *ContentIndex {
+	if c == nil {
+		return nil
+	}
+	cloned := &ContentIndex{
+		Kind:        c.Kind,
+		DataType:    c.DataType,
+		Format:      c.Format,
+		Unit:        c.Unit,
+		OffsetUnit:  c.OffsetUnit,
+		Step:        c.Step,
+		RowCount:    c.RowCount,
+		HeaderBytes: c.HeaderBytes,
+		Source:      cloneInterfaceMap(c.Source),
+		Anchors:     append([]ContentIndexAnchor(nil), c.Anchors...),
+	}
+	return cloned
+}
+
 // IsSparseRowIndex reports whether the index is the standard table sparse row index.
 func (c *ContentIndex) IsSparseRowIndex() bool {
 	return c != nil &&
@@ -54,4 +74,15 @@ func (c *ContentIndex) IsSparseRowIndex() bool {
 		c.DataType == DataTypeTable &&
 		c.Unit == ContentIndexUnitRow &&
 		c.OffsetUnit == ContentIndexOffsetByte
+}
+
+func cloneInterfaceMap(values map[string]interface{}) map[string]interface{} {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string]interface{}, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
 }

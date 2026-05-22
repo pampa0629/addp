@@ -26,3 +26,23 @@ func TestContentIndexHelpers(t *testing.T) {
 		t.Fatalf("marshaled index is not valid json: %s", raw)
 	}
 }
+
+func TestContentIndexCloneDeepCopiesSlicesAndMaps(t *testing.T) {
+	index := NewSparseRowContentIndex("csv", 5000, 27)
+	index.Source = map[string]interface{}{"etag": "v1"}
+	index.AddAnchor(0, 27)
+
+	cloned := index.Clone()
+	if cloned == nil || cloned == index {
+		t.Fatalf("Clone() = %#v", cloned)
+	}
+	cloned.Source["etag"] = "v2"
+	cloned.Anchors[0].ByteOffset = 99
+
+	if index.Source["etag"] != "v1" {
+		t.Fatalf("original source changed: %#v", index.Source)
+	}
+	if index.Anchors[0].ByteOffset != 27 {
+		t.Fatalf("original anchors changed: %#v", index.Anchors)
+	}
+}

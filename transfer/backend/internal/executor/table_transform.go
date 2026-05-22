@@ -281,44 +281,8 @@ func cloneTableInfo(info *format.TableInfo) *format.TableInfo {
 		rowCount := *info.RowCount
 		next.RowCount = &rowCount
 	}
-	next.SpatialInfo = cloneSpatialInfo(info.SpatialInfo)
+	next.SpatialInfo = info.SpatialInfo.Clone()
 	return &next
-}
-
-func cloneSpatialInfo(info *datatype.SpatialInfo) *datatype.SpatialInfo {
-	if info == nil {
-		return nil
-	}
-	next := &datatype.SpatialInfo{
-		GeometryColumns:       make([]datatype.GeometryColumnInfo, 0, len(info.GeometryColumns)),
-		PrimaryGeometryColumn: info.PrimaryGeometryColumn,
-		IndexName:             info.IndexName,
-	}
-	for _, column := range info.GeometryColumns {
-		cloned := column
-		if column.SRID != nil {
-			srid := *column.SRID
-			cloned.SRID = &srid
-		}
-		if column.Dimension != nil {
-			dimension := *column.Dimension
-			cloned.Dimension = &dimension
-		}
-		if column.Nullable != nil {
-			nullable := *column.Nullable
-			cloned.Nullable = &nullable
-		}
-		next.GeometryColumns = append(next.GeometryColumns, cloned)
-	}
-	if info.Extent != nil {
-		extent := *info.Extent
-		next.Extent = &extent
-	}
-	if info.HasSpatialIndex != nil {
-		hasSpatialIndex := *info.HasSpatialIndex
-		next.HasSpatialIndex = &hasSpatialIndex
-	}
-	return next
 }
 
 func cloneMap(values map[string]interface{}) map[string]interface{} {
