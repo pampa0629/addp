@@ -60,7 +60,7 @@ func applyGeoPackageSpatialInfo(ctx context.Context, db *sql.DB, info *format.Ta
 			break
 		}
 	}
-	spatial := format.NewSingleGeometrySpatialInfo(layer.GeometryColumn, layer.GeometryType, layer.SRID, 0)
+	spatial := datatype.NewSingleGeometrySpatialInfo(layer.GeometryColumn, layer.GeometryType, layer.SRID, 0)
 	hasSpatialIndex := geoPackageLayerHasSpatialIndex(ctx, db, layer)
 	spatial.HasSpatialIndex = &hasSpatialIndex
 	if bbox, ok := geoPackageLayerBoundingBox(layer); ok {

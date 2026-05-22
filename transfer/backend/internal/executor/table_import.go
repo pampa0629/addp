@@ -42,18 +42,18 @@ func fieldAttributes(info *format.TableInfo, field format.FieldInfo) map[string]
 	if info == nil || info.SpatialInfo == nil || !datatype.IsSpatialFieldType(field.Type) {
 		return nil
 	}
-	geometryColumn := format.PrimaryGeometryColumn(info.SpatialInfo)
+	geometryColumn := info.SpatialInfo.PrimaryGeometryName()
 	if geometryColumn != "" && geometryColumn != field.Name {
 		return nil
 	}
 	attrs := map[string]interface{}{}
-	if geometryType := format.PrimaryGeometryType(info.SpatialInfo); geometryType != "" {
+	if geometryType := info.SpatialInfo.PrimaryGeometryType(); geometryType != "" {
 		attrs["geometry_type"] = geometryType
 	}
-	if srid := format.PrimaryGeometrySRID(info.SpatialInfo); srid > 0 {
+	if srid := info.SpatialInfo.PrimarySRIDValue(); srid > 0 {
 		attrs["srid"] = srid
 	}
-	if dimension := format.PrimaryGeometryDimension(info.SpatialInfo); dimension > 0 {
+	if dimension := info.SpatialInfo.PrimaryDimensionValue(); dimension > 0 {
 		attrs["dimension"] = dimension
 	}
 	if len(attrs) == 0 {

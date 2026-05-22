@@ -54,16 +54,16 @@ func applySpatialInfoFromField(info *format.TableInfo, field engineplugin.FieldI
 	srid := 0
 	dimension := 0
 	if field.Attributes == nil {
-		if format.PrimaryGeometryColumn(info.SpatialInfo) == "" {
-			info.SpatialInfo = format.NewSingleGeometrySpatialInfo(field.Name, "", 0, 0)
+		if info.SpatialInfo.PrimaryGeometryName() == "" {
+			info.SpatialInfo = datatype.NewSingleGeometrySpatialInfo(field.Name, "", 0, 0)
 		}
 		return
 	}
 	geometryType = commonJSON.InterfaceString(field.Attributes["geometry_type"])
 	srid = int(commonJSON.InterfaceInt64(field.Attributes["srid"]))
 	dimension = int(commonJSON.InterfaceInt64(field.Attributes["dimension"]))
-	if info.SpatialInfo == nil || format.PrimaryGeometryColumn(info.SpatialInfo) == "" {
-		info.SpatialInfo = format.NewSingleGeometrySpatialInfo(field.Name, geometryType, srid, dimension)
+	if info.SpatialInfo == nil || info.SpatialInfo.PrimaryGeometryName() == "" {
+		info.SpatialInfo = datatype.NewSingleGeometrySpatialInfo(field.Name, geometryType, srid, dimension)
 		return
 	}
 	column := info.SpatialInfo.PrimaryGeometry()
@@ -95,8 +95,8 @@ func applySpatialInfoFromOptions(info *format.TableInfo, opts *format.WriteOptio
 	if geometryField == "" && geometryType == "" {
 		return
 	}
-	srid := format.PrimaryGeometrySRID(info.SpatialInfo)
-	dimension := format.PrimaryGeometryDimension(info.SpatialInfo)
+	srid := info.SpatialInfo.PrimarySRIDValue()
+	dimension := info.SpatialInfo.PrimaryDimensionValue()
 	if geometryField != "" {
 		for i := range info.Fields {
 			if strings.EqualFold(info.Fields[i].Name, geometryField) {
@@ -106,12 +106,12 @@ func applySpatialInfoFromOptions(info *format.TableInfo, opts *format.WriteOptio
 		}
 	}
 	if geometryField == "" {
-		geometryField = format.PrimaryGeometryColumn(info.SpatialInfo)
+		geometryField = info.SpatialInfo.PrimaryGeometryName()
 	}
 	if geometryType == "" {
-		geometryType = format.PrimaryGeometryType(info.SpatialInfo)
+		geometryType = info.SpatialInfo.PrimaryGeometryType()
 	}
-	info.SpatialInfo = format.NewSingleGeometrySpatialInfo(geometryField, geometryType, srid, dimension)
+	info.SpatialInfo = datatype.NewSingleGeometrySpatialInfo(geometryField, geometryType, srid, dimension)
 }
 
 func optionString(values map[string]interface{}, key string) string {

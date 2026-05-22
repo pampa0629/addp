@@ -52,7 +52,7 @@ func TestIntegrationShapefileToPostgresWritesEWKBGeometry(t *testing.T) {
 			{Name: "name", Type: datatype.FieldTypeString, Size: 32},
 			{Name: "geometry", Type: datatype.FieldTypeGeometry},
 		},
-		SpatialInfo: format.NewSingleGeometrySpatialInfo("geometry", "Point", 4326, 0),
+		SpatialInfo: datatype.NewSingleGeometrySpatialInfo("geometry", "Point", 4326, 0),
 	}
 	tableWriter, err := shapefilePlugin.OpenMultiTableWriter(ctx, contentWriter, refs, sourceSchema, &format.WriteOptions{
 		Encoding: "utf-8",

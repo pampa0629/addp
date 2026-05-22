@@ -379,7 +379,7 @@ func TestJSONPluginOpenTableWriterGeoJSON(t *testing.T) {
 			{Name: "name", Type: datatype.FieldTypeString},
 			{Name: "geom", Type: datatype.FieldTypeGeometry},
 		},
-		SpatialInfo: format.NewSingleGeometrySpatialInfo("geom", "Point", 4326, 0),
+		SpatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", "Point", 4326, 0),
 	}
 	var buf bytes.Buffer
 
@@ -443,10 +443,10 @@ func TestJSONPluginObjectArrayDetectsVerifiedWKBGeometry(t *testing.T) {
 	if spatial == nil {
 		t.Fatalf("spatial extension missing")
 	}
-	if format.PrimaryGeometryColumn(spatial) != "SmGeometry" || format.PrimaryGeometryType(spatial) != "Point" {
+	if spatial.PrimaryGeometryName() != "SmGeometry" || spatial.PrimaryGeometryType() != "Point" {
 		t.Fatalf("spatial = %#v", spatial)
 	}
-	if srid := format.PrimaryGeometrySRID(spatial); srid != 0 {
+	if srid := spatial.PrimarySRIDValue(); srid != 0 {
 		t.Fatalf("plain WKB should not imply SRID, got %d", srid)
 	}
 	if field := info.Table.GetField("SmGeometry"); field == nil || field.Type != datatype.FieldTypeGeometry {
@@ -486,7 +486,7 @@ func TestJSONPluginGeoJSONComputesBoundingBoxWithoutFileBBox(t *testing.T) {
 	if got := *spatial.Extent; got != want {
 		t.Fatalf("bbox = %#v, want %#v", got, want)
 	}
-	if srid := format.PrimaryGeometrySRID(spatial); srid != 4326 {
+	if srid := spatial.PrimarySRIDValue(); srid != 4326 {
 		t.Fatalf("GeoJSON SRID = %d, want 4326", srid)
 	}
 
@@ -511,7 +511,7 @@ func TestJSONPluginObjectArrayDetectsEWKBSRID(t *testing.T) {
 	if spatial == nil {
 		t.Fatalf("spatial extension missing")
 	}
-	if format.PrimaryGeometryColumn(spatial) != "geom" || format.PrimaryGeometryType(spatial) != "Point" || format.PrimaryGeometrySRID(spatial) != 4326 {
+	if spatial.PrimaryGeometryName() != "geom" || spatial.PrimaryGeometryType() != "Point" || spatial.PrimarySRIDValue() != 4326 {
 		t.Fatalf("spatial = %#v", spatial)
 	}
 
@@ -534,7 +534,7 @@ func TestJSONPluginObjectArrayDetectsMultiPolygonWKB(t *testing.T) {
 		t.Fatalf("DescribeTable failed: %v", err)
 	}
 	spatial := info.Spatial
-	if spatial == nil || format.PrimaryGeometryType(spatial) != "MultiPolygon" {
+	if spatial == nil || spatial.PrimaryGeometryType() != "MultiPolygon" {
 		t.Fatalf("spatial = %#v", spatial)
 	}
 

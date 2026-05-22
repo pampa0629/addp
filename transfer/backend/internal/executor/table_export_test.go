@@ -342,7 +342,7 @@ func TestTableTransferExecutorWritesShapefileZFromNativeSpatialDimension(t *test
 		t.Fatalf("DescribeMultiTable failed: %v", err)
 	}
 	schema := format.TableSchemaFromDescribeResult(info)
-	if schema.SpatialInfo == nil || format.PrimaryGeometryDimension(schema.SpatialInfo) != 3 {
+	if schema.SpatialInfo == nil || schema.SpatialInfo.PrimaryDimensionValue() != 3 {
 		t.Fatalf("spatial info = %#v, want dimension 3", schema.SpatialInfo)
 	}
 	rows, err := shapefilePlugin.SampleMultiTable(context.Background(), contentReader, refs, 0, 1, format.DefaultParseOptions())
@@ -352,7 +352,7 @@ func TestTableTransferExecutorWritesShapefileZFromNativeSpatialDimension(t *test
 	if len(rows) != 1 {
 		t.Fatalf("rows = %#v, want one row", rows)
 	}
-	geometryColumn := format.PrimaryGeometryColumn(schema.SpatialInfo)
+	geometryColumn := schema.SpatialInfo.PrimaryGeometryName()
 	got, ok := rows[0][geometryColumn].(string)
 	if !ok {
 		t.Fatalf("geometry value = %#v, want WKT string", rows[0][geometryColumn])

@@ -520,7 +520,7 @@ func TestBuildTableTransferPlanConsumesMetaMultiSourceRefsAndSpatialAttributes(t
 	if result.Plan.Source.Schema == nil || result.Plan.Source.Schema.SpatialInfo == nil {
 		t.Fatalf("source schema = %#v, want spatial info from Meta attributes", result.Plan.Source.Schema)
 	}
-	if format.PrimaryGeometryColumn(result.Plan.Source.Schema.SpatialInfo) != "shape" || format.PrimaryGeometryType(result.Plan.Source.Schema.SpatialInfo) != "MultiPolygon" {
+	if result.Plan.Source.Schema.SpatialInfo.PrimaryGeometryName() != "shape" || result.Plan.Source.Schema.SpatialInfo.PrimaryGeometryType() != "MultiPolygon" {
 		t.Fatalf("source spatial info = %#v, want primary geometry column from capabilities.spatial", result.Plan.Source.Schema.SpatialInfo)
 	}
 	if result.Plan.Source.ParseOptions == nil || result.Plan.Source.ParseOptions.ExtraParams["geometry_field"] != "shape" {

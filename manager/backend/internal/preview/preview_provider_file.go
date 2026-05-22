@@ -245,7 +245,7 @@ func (p *FileTablePreviewProvider) previewStreamable(
 	spatialInfo := tableInfo.GetSpatialInfo()
 	srid := 0
 	if spatialInfo != nil {
-		srid = format.PrimaryGeometrySRID(spatialInfo)
+		srid = spatialInfo.PrimarySRIDValue()
 	}
 
 	return &models.TablePreview{
@@ -339,7 +339,7 @@ func spatialInfoFromAttributes(attrs map[string]interface{}) *datatype.SpatialIn
 	if dimension == 0 {
 		dimension = 2
 	}
-	spatialInfo := format.NewSingleGeometrySpatialInfo(geometryColumn, geometryType, srid, dimension)
+	spatialInfo := datatype.NewSingleGeometrySpatialInfo(geometryColumn, geometryType, srid, dimension)
 	hasSpatialIndex := commonJSON.InterfaceBool(spatialAttrs["has_spatial_index"])
 	spatialInfo.HasSpatialIndex = &hasSpatialIndex
 	spatialInfo.IndexName = commonJSON.InterfaceString(spatialAttrs["index_name"])
@@ -660,7 +660,7 @@ func (p *FileTablePreviewProvider) previewRefs(
 	spatialInfo := tableInfo.GetSpatialInfo()
 	srid := 0
 	if spatialInfo != nil {
-		srid = format.PrimaryGeometrySRID(spatialInfo)
+		srid = spatialInfo.PrimarySRIDValue()
 	}
 
 	return &models.TablePreview{

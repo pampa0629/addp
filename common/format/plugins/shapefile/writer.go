@@ -199,8 +199,8 @@ func multiWriterGeometryField(schema *format.TableInfo, opts *format.WriteOption
 			return strings.TrimSpace(value)
 		}
 	}
-	if schema != nil && schema.SpatialInfo != nil && strings.TrimSpace(format.PrimaryGeometryColumn(schema.SpatialInfo)) != "" {
-		return strings.TrimSpace(format.PrimaryGeometryColumn(schema.SpatialInfo))
+	if schema != nil && schema.SpatialInfo != nil && strings.TrimSpace(schema.SpatialInfo.PrimaryGeometryName()) != "" {
+		return strings.TrimSpace(schema.SpatialInfo.PrimaryGeometryName())
 	}
 	for _, field := range schema.Fields {
 		if datatype.IsSpatialFieldType(field.Type) {

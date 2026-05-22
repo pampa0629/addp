@@ -705,12 +705,12 @@ func buildSpatialJSONPreview(ctx context.Context, data []byte, parsed interface{
 	}
 
 	if spatialInfo := tableSchema.GetSpatialInfo(); spatialInfo != nil {
-		geometryField := format.PrimaryGeometryColumn(spatialInfo)
-		geometryType := format.PrimaryGeometryType(spatialInfo)
+		geometryField := spatialInfo.PrimaryGeometryName()
+		geometryType := spatialInfo.PrimaryGeometryType()
 		metadata["geometry_field"] = geometryField
 		metadata["geometry_type"] = geometryType
 		metadata["geometry_types"] = []string{geometryType}
-		if srid := format.PrimaryGeometrySRID(spatialInfo); srid != 0 {
+		if srid := spatialInfo.PrimarySRIDValue(); srid != 0 {
 			metadata["spatial_ref_sys"] = fmt.Sprintf("EPSG:%d", srid)
 		}
 	}

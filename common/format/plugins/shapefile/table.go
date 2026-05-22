@@ -176,7 +176,7 @@ func buildShapefileTableInfo(input shapefileTableInfoInput) *format.TableInfo {
 	}
 
 	rowCount := int64(input.DBFHeader.RecordCount)
-	spatialInfo := format.NewSingleGeometrySpatialInfo(input.GeometryField, geomType, 0, determineShapefileDimension(input.SHPHeader.ShapeType))
+	spatialInfo := datatype.NewSingleGeometrySpatialInfo(input.GeometryField, geomType, 0, determineShapefileDimension(input.SHPHeader.ShapeType))
 	bbox := datatype.BoundingBox(input.SHPHeader.BBox)
 	spatialInfo.Extent = &bbox
 	if input.SpatialRefSys != "" {

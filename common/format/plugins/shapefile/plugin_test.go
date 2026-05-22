@@ -60,7 +60,7 @@ func TestOpenMultiTableWriterWritesReadableShapefile(t *testing.T) {
 			{Name: "name", Type: datatype.FieldTypeString, Size: 32},
 			{Name: "geom", Type: datatype.FieldTypeGeometry},
 		},
-		SpatialInfo: format.NewSingleGeometrySpatialInfo("geom", "Point", 4326, 0),
+		SpatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", "Point", 4326, 0),
 	}
 
 	writer, err := plugin.OpenMultiTableWriter(context.Background(), output, refs, schema, nil)
@@ -104,7 +104,7 @@ func TestOpenMultiTableWriterRequiresRefs(t *testing.T) {
 		Fields: []format.FieldInfo{
 			{Name: "geom", Type: datatype.FieldTypeGeometry},
 		},
-		SpatialInfo: format.NewSingleGeometrySpatialInfo("geom", "Point", 0, 0),
+		SpatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", "Point", 0, 0),
 	}
 
 	if _, err := plugin.OpenMultiTableWriter(context.Background(), newMemoryRefStore(), nil, schema, nil); err == nil {
@@ -121,7 +121,7 @@ func TestOpenMultiTableWriterRequiresPrimaryRef(t *testing.T) {
 		Fields: []format.FieldInfo{
 			{Name: "geom", Type: datatype.FieldTypeGeometry},
 		},
-		SpatialInfo: format.NewSingleGeometrySpatialInfo("geom", "Point", 0, 0),
+		SpatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", "Point", 0, 0),
 	}
 
 	if _, err := plugin.OpenMultiTableWriter(context.Background(), newMemoryRefStore(), refs, schema, nil); err == nil {
@@ -346,7 +346,7 @@ func TestShapefileReadUsesCallGeometryFieldOption(t *testing.T) {
 		t.Fatalf("DescribeMultiTable() error = %v", err)
 	}
 	spatial := info.Spatial
-	if spatial == nil || format.PrimaryGeometryColumn(spatial) != "geom" {
+	if spatial == nil || spatial.PrimaryGeometryName() != "geom" {
 		t.Fatalf("geometry column = %#v, want geom", spatial)
 	}
 	if info.Table.Fields[0].Name != "geom" || info.Table.Fields[0].Type != datatype.FieldTypeGeometry {
@@ -381,7 +381,7 @@ func TestShapefileTableReaderUsesCallGeometryFieldOption(t *testing.T) {
 	}
 	defer tableReader.Close(context.Background())
 
-	if schema := tableReader.Schema(); schema.SpatialInfo == nil || format.PrimaryGeometryColumn(schema.SpatialInfo) != "geom" {
+	if schema := tableReader.Schema(); schema.SpatialInfo == nil || schema.SpatialInfo.PrimaryGeometryName() != "geom" {
 		t.Fatalf("schema spatial info = %#v, want geom geometry column", schema.SpatialInfo)
 	}
 	rows, err := tableReader.ReadRows(context.Background(), 1)

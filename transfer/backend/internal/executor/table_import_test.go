@@ -96,7 +96,7 @@ func TestTableInfoFieldsCarriesStandardSpatialAttributes(t *testing.T) {
 		Fields: []format.FieldInfo{
 			{Name: "geom", Type: datatype.FieldTypeGeometry},
 		},
-		SpatialInfo: format.NewSingleGeometrySpatialInfo("geom", "Polygon", 4326, 3),
+		SpatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", "Polygon", 4326, 3),
 	})
 
 	if len(fields) != 1 {

@@ -126,10 +126,10 @@ func (t *fieldMappingTransform) TransformSchema(schema *format.TableInfo) (*form
 		field := fieldInfoForMapping(source, mapping)
 		upsertFieldInfo(next, field)
 		if datatype.IsSpatialFieldType(field.Type) {
-			geometryType := format.PrimaryGeometryType(source.SpatialInfo)
-			srid := format.PrimaryGeometrySRID(source.SpatialInfo)
-			dimension := format.PrimaryGeometryDimension(source.SpatialInfo)
-			next.SpatialInfo = format.NewSingleGeometrySpatialInfo(mapping.Target, geometryType, srid, dimension)
+			geometryType := source.SpatialInfo.PrimaryGeometryType()
+			srid := source.SpatialInfo.PrimarySRIDValue()
+			dimension := source.SpatialInfo.PrimaryDimensionValue()
+			next.SpatialInfo = datatype.NewSingleGeometrySpatialInfo(mapping.Target, geometryType, srid, dimension)
 			if source.SpatialInfo != nil {
 				if source.SpatialInfo.Extent != nil {
 					extent := *source.SpatialInfo.Extent

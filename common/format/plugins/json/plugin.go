@@ -114,7 +114,7 @@ func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, schema *
 		idField:        opts.idField,
 	}
 	if writer.geometryField == "" && schema != nil && schema.SpatialInfo != nil {
-		writer.geometryField = strings.TrimSpace(format.PrimaryGeometryColumn(schema.SpatialInfo))
+		writer.geometryField = strings.TrimSpace(schema.SpatialInfo.PrimaryGeometryName())
 	}
 	if writer.geometryField == "" {
 		writer.geometryField = p.geometryField
@@ -283,8 +283,8 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 	geometryType := builder.GeometryType()
 	if geometryType != "" {
 		spatialGeometryField := geometryField
-		if tableInfo.SpatialInfo != nil && format.PrimaryGeometryColumn(tableInfo.SpatialInfo) != "" {
-			spatialGeometryField = format.PrimaryGeometryColumn(tableInfo.SpatialInfo)
+		if tableInfo.SpatialInfo != nil && tableInfo.SpatialInfo.PrimaryGeometryName() != "" {
+			spatialGeometryField = tableInfo.SpatialInfo.PrimaryGeometryName()
 		}
 		srid := builder.SRID()
 		if crsSRID := commonSpatial.ParseSRID(iter.meta.CoordinateSystem); crsSRID > 0 {
@@ -293,7 +293,7 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 			srid = commonSpatial.SRIDWGS84
 		}
 
-		tableInfo.SpatialInfo = format.NewSingleGeometrySpatialInfo(spatialGeometryField, geometryType, srid, 2)
+		tableInfo.SpatialInfo = datatype.NewSingleGeometrySpatialInfo(spatialGeometryField, geometryType, srid, 2)
 		if len(iter.meta.BoundingBox) == 4 {
 			tableInfo.SpatialInfo.Extent = &datatype.BoundingBox{
 				iter.meta.BoundingBox[0],

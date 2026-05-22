@@ -108,7 +108,7 @@ func (b *tableInfoBuilder) Build() *format.TableInfo {
 		Fields: fields,
 	}
 	if b.HasGeometry() {
-		tableInfo.SpatialInfo = format.NewSingleGeometrySpatialInfo(geometryField, b.GeometryType(), b.SRID(), 2)
+		tableInfo.SpatialInfo = datatype.NewSingleGeometrySpatialInfo(geometryField, b.GeometryType(), b.SRID(), 2)
 	}
 	return tableInfo
 }
