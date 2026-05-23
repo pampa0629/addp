@@ -174,6 +174,7 @@ func scopeTableInfoFromAttributes(attrs map[string]interface{}) (*format.TableIn
 		TableInfo: datatype.TableInfo{
 			Name:   "table",
 			Fields: fields,
+			Native: cloneInterfaceMap(rawMapAttribute(tableAttrs["native"])),
 		},
 	}
 	if rowCount > 0 {

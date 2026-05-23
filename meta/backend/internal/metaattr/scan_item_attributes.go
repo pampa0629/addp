@@ -40,6 +40,24 @@ func BuildBasicTableAttributes(schemaName, tableType, tableComment string) model
 	}
 }
 
+func UpsertTableNative(attrs models.JSONMap, native map[string]interface{}) {
+	if attrs == nil || len(native) == 0 {
+		return
+	}
+	UpsertNested(attrs, "type_info", "table", map[string]interface{}{"native": cloneInterfaceMap(native)})
+}
+
+func cloneInterfaceMap(values map[string]interface{}) map[string]interface{} {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string]interface{}, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
+}
+
 func SpatialCapabilityFromMetadata(spatialMeta *models.SpatialMetadata) map[string]interface{} {
 	if spatialMeta == nil || spatialMeta.GeometryColumn == "" {
 		return map[string]interface{}{}

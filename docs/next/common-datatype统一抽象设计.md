@@ -1,6 +1,6 @@
 # Common Datatype 统一抽象设计
 
-更新时间：2026-05-22
+更新时间：2026-05-23
 
 本文是一次较大重构前的设计讨论文档，不是已落地规范。目标是在动代码前统一 `common/datatype` 的职责、数据类型边界和迁移顺序，避免继续在 `common/format`、`common/engine`、`common/dataitem`、Meta、Manager、Transfer 之间形成多套 data type / type info / field type 模型。
 
@@ -178,21 +178,57 @@ type TableInfo struct {
 
     Fields     []FieldInfo
     PrimaryKey []string
+    Native     map[string]interface{}
 }
 ```
 
 索引、唯一约束、外键、分区、排序键等先不塞进 `TableInfo` 顶层。它们需要先确认跨引擎语义和上层消费方式，再作为表级 metadata 单独设计。
 
+`Native` 表达当前 table item 的来源原生表级事实。它用于统一承载 format 和 engine 的表级差异信息，便于上层以一致的 `TableInfo` 视角消费文件类表和数据库类表。
+
+`Native` 的来源由 item 上下文决定：数据库表看 `engine_type`，文件表看 `format`。因此 `Native` 不再使用二级来源结构，不写成 `native.clickhouse.engine` 或 `native.shapefile.shape_type`。各来源能写入哪些 key 必须由对应 engine / format 的规范或白名单定义，不能作为无限制透传容器。
+
+进入 `Native` 的事实必须满足：
+
+- 是当前 table item 的表级来源原生事实。
+- 不能用现有通用字段表达。
+- 字段名和语义在对应 engine / format 内有清晰定义。
+- 后续能被存储、调试、展示、复现解析或专门消费。
+
+不得进入 `Native` 的事实：
+
+- 已标准化字段，例如 `row_count`、`size_bytes`、`created_at`、`updated_at`、`comment`、`kind`、`fields`、`primary_key`。
+- 空间事实，应进入 `SpatialInfo` / `capabilities.spatial`。
+- 内容访问索引，应进入 `ContentIndex` / `content_index`。
+- storage、path、etag、last_modified 等资源定位或存储事实。
+- 容器、文件集合、资源整体事实，例如 ZIP entry 数、SQLite page size、Shapefile sidecar 列表、Parquet scope 文件清单。
+
+典型候选：
+
+| 来源 | 可进入 `Native` 的表级事实 |
+|---|---|
+| ClickHouse | `engine` |
+| MySQL / Doris | `engine`、`table_collation`、`create_options` |
+| PostgreSQL | `table_type`、`relkind` |
+| CSV / TSV | `delimiter`、`quote_char`、`escape_char`、`has_header` |
+| Shapefile | `shape_type`、`dbf_version`、`encoding` |
+| Excel sheet | `sheet_name`、`sheet_index` |
+| Parquet table | `partition_columns`，但文件清单等 scope 事实不进入 |
+
 ### 描述结果包
 
 Provider 一次解析可能同时得到 type info、横切事实、内容索引和格式私有事实。描述结果包是 provider / 编排层的返回组合，不是 data type 本体。
+
+进一步结论：不应长期保留 `TableDescribeResult` / `MediaDescribeResult` 这类底层组合结构。它们把本应独立的事实从 provider 边界开始绑定在一起，会导致 format / engine 两边各自形成 result envelope，重新制造重复模型。
 
 当前原则：
 
 - `common/datatype` 的核心职责是统一 format 和 engine 共同需要表达的 ADDP 通用数据语义结构。
 - 描述结果包不应因为“同一次解析顺手得到多类事实”而污染 `TableInfo`、`MediaInfo` 等 type info。
 - `FormatInfo` 是 format 私有事实，应由 `common/format.FormatInfoProvider` 提供，不进入 `datatype` 结构。
-- 如果为了降低迁移风险暂时保留 `TableDescribeResult`、`MediaDescribeResult`，它们只能视为过渡结构，后续应移动到 provider 层或由 provider 接口拆分替代。
+- `SpatialInfo` 是横切空间事实，不是 table schema 本体；table provider 不应通过 table 结构夹带空间事实。需要空间事实的读取、写入或 Meta 编排，应使用独立参数、独立 provider 或上层组合函数。
+- `ContentIndex` 是内容访问索引事实，不是 table schema 本体；不应放入 `TableInfo`，也不应靠 table describe result 与 table type info 绑定。
+- 如果为了降低迁移风险暂时保留 `TableDescribeResult`、`MediaDescribeResult`，它们只能视为过渡结构，后续应由 provider 接口拆分替代，而不是从 `datatype` 平移到 `format`。
 
 描述结果中各类事实的映射关系必须清晰：
 
@@ -229,11 +265,65 @@ map[string]interface{}{
 
 如果极少数编排场景确实需要一次聚合多个格式的私有事实，应在上层聚合结构中表达，不污染单个 data type describe result。
 
+目标接口方向：
+
+```go
+DescribeTable(...) (*datatype.TableInfo, error)
+DescribeMedia(...) (*datatype.MediaInfo, error)
+```
+
+横切事实通过独立通道表达：
+
+| 事实 | 目标表达方式 |
+|---|---|
+| table type info | `datatype.TableInfo` |
+| media type info | `datatype.MediaInfo` |
+| spatial facts | 独立 `datatype.SpatialInfo`；由专门 provider、读取/写入参数或上层编排携带 |
+| content index | 独立 `datatype.ContentIndex`；由内容索引能力或上层编排生成 |
+| format private info | `FormatInfoProvider.DescribeFormat` 返回裸 `map[string]interface{}` |
+
+### `format.TableInfo` 过渡定位
+
+`format.TableInfo` 当前已嵌入 `datatype.TableInfo`，但仍临时保留 `FormatInfo`、`SpatialInfo`、`ContentIndex` 三个补充字段。这只是迁移过渡，不是最终模型。
+
+最终方向：
+
+```go
+type TableInfo struct {
+    datatype.TableInfo
+}
+```
+
+甚至后续可以删除 `format.TableInfo`，让 reader / writer 直接使用 `datatype.TableInfo`。在删除前，必须先拆掉以下耦合：
+
+- `FormatInfo` 改为只通过 `FormatInfoProvider` 获取。
+- `SpatialInfo` 改为独立参数或上层编排携带；Transfer / engine 写入链路已经有 `BatchData.Spatial`、`TableWriteOptions.SpatialInfo`、`TableWriteSessionOptions.SpatialInfo`，可以作为拆分方向参考。
+- `ContentIndex` 改为独立内容索引事实，不由 table schema 承载。
+
+### TableInfo.Native 与 format_info 的边界
+
+`TableInfo.Native` 只承载表级来源原生事实；`format_info.<format>` 仍承载文件、容器、资源整体或格式解析层面的私有事实。二者不是同义词。
+
+典型拆分：
+
+| 来源 | `TableInfo.Native` | `format_info.<format>` |
+|---|---|---|
+| CSV / TSV | `delimiter`、`quote_char`、`escape_char`、`has_header` | 文件编码探测、行尾风格、采样策略摘要 |
+| Shapefile | `shape_type`、`dbf_version`、`encoding` | `base_name`、`ref_extensions`、`has_prj`、`has_cpg` |
+| Excel | `sheet_name`、`sheet_index` | `sheet_count`、`default_sheet`、workbook 级摘要 |
+| Parquet | `partition_columns` | scope 文件清单、row group 摘要、压缩和文件级 schema 版本 |
+| SQLite / GeoPackage | 单表原生类型或表级选项 | page size、page count、table/view/index 数量 |
+| ZIP | 不适用，ZIP 本身不是 table item | entry count、file count、directory count、children truncated |
+
+数据库 engine 的表级原生事实同样进入 `TableInfo.Native`，但数据库、namespace、连接、catalog 层事实不进入 table native。
+
 ### format_info 与 capabilities 边界
 
 核心原则：
 
 > `format_info` 回答“这个文件、对象或容器的具体格式实现事实是什么”；`capabilities` 回答“这个 data item 可被平台按什么跨格式能力消费”。
+
+表级来源原生事实优先进入 `TableInfo.Native`。下面的 `format_info.<format>` 例子只表示文件、容器、资源整体或当前过渡期还没有拆出的格式事实；后续应按上一节逐步迁出表级事实。
 
 进入 `format_info.<format>` 的事实满足以下任一条件：
 
@@ -246,10 +336,10 @@ map[string]interface{}{
 
 | 格式 | `format_info.<format>` 示例 |
 |---|---|
-| CSV / TSV | `delimiter`、`quote_char`、`escape_char`、`line_ending`、`has_header` |
-| Shapefile | `base_name`、`ref_extensions`、`has_prj`、`has_cpg`、`dbf_version`、header 原生 `shape_type` |
-| Excel | `sheet_name`、`sheet_index`、`sheet_count` |
-| Parquet | row group、压缩、schema 版本、scope 文件清单、partition column 摘要 |
+| CSV / TSV | 文件编码探测、行尾风格、采样策略摘要 |
+| Shapefile | `base_name`、`ref_extensions`、`has_prj`、`has_cpg` |
+| Excel | `sheet_count`、`default_sheet`、workbook 级摘要 |
+| Parquet | row group、压缩、schema 版本、scope 文件清单 |
 | SQLite / GeoPackage | SQLite 版本、page size、page count、内部表 / 视图 / 索引摘要 |
 | PDF | PDF 版本、producer、读取限制、格式头或对象结构摘要 |
 
@@ -491,10 +581,10 @@ type SpatialInfo struct {
 
 | 问题 | 当前状态 | 暂缓原因 | 后续方向 |
 |---|---|---|---|
-| `datatype.TableDescribeResult` / `datatype.MediaDescribeResult` | 当前仍在 `common/datatype` 中，且代码仍有使用 | 迁移涉及 format provider、Meta enrich、Manager preview 等多条链路；先完成 format / engine 通用结构收敛 | 作为 provider / 编排层结果包处理；至少移除其中的 `FormatInfo`，format 私有事实统一走 `FormatInfoProvider` |
+| `datatype.TableDescribeResult` / `datatype.MediaDescribeResult` | 当前仍在 `common/datatype` 中，且代码仍有使用 | 迁移涉及 format provider、Meta enrich、Manager preview 等多条链路；先完成 format / engine 通用结构收敛 | 删除。provider 返回单一 type info，横切事实由独立 provider、参数或上层编排处理 |
 | `datatype.ContentIndex` | 当前放在 `common/datatype`，被 format、Meta、Manager preview 使用 | 它不是 data type 本体，但当前是跨模块复用结构；贸然移出会引入新包或新概念 | 暂不动。后续结合 engine range reader、format content index、Meta attributes 的消费链路再决定是否移出 |
 | `common/engine/plugin.DatabaseInfo` / `CollectionInfo` | 仍是 engine catalog 层结构 | 它们更接近 catalog hierarchy / namespace 事实，不等同于 data type info | 暂不迁入 `datatype`。后续如有重复，再从 catalog/path/node 语义统一 |
-| `format.TableInfo` | 当前作为 reader / writer / Transfer 操作结构存在，已嵌入 `datatype.TableInfo` | 它还承载 `FormatInfo`、`SpatialInfo`、`ContentIndex` 等执行期补充事实 | 暂保留为 format 操作 schema 薄包装；后续继续处理 describe result 的归属 |
+| `format.TableInfo` | 当前作为 reader / writer / Transfer 操作结构存在，已嵌入 `datatype.TableInfo` | 它还临时承载 `FormatInfo`、`SpatialInfo`、`ContentIndex` 等执行期补充事实 | 继续拆分这些补充字段；最终仅保留 `datatype.TableInfo` 薄壳，或完全删除 |
 
 ### `common/engine/plugin.TableInfo` 收敛结论
 

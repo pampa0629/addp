@@ -95,6 +95,7 @@ func TestScopeTableInfoFromAttributes(t *testing.T) {
 		"type_info": map[string]interface{}{
 			"table": map[string]interface{}{
 				"row_count": rowCount,
+				"native":    map[string]interface{}{"partition_columns": []interface{}{"ds"}},
 				"fields": []interface{}{
 					map[string]interface{}{
 						"name":        "id",
@@ -114,6 +115,9 @@ func TestScopeTableInfoFromAttributes(t *testing.T) {
 	}
 	if len(info.Fields) != 1 || info.Fields[0].Name != "id" || info.Fields[0].Type != datatype.FieldTypeBigInt {
 		t.Fatalf("fields = %#v", info.Fields)
+	}
+	if info.Native["partition_columns"] == nil {
+		t.Fatalf("native = %#v, want partition_columns", info.Native)
 	}
 }
 

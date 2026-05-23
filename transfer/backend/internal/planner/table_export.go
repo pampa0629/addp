@@ -382,6 +382,7 @@ func tableInfoFromMetaAttributes(attrs map[string]interface{}) *format.TableInfo
 			Name:       strings.TrimSpace(commonJSON.InterfaceString(tableAttrs["name"])),
 			Fields:     fields,
 			PrimaryKey: interfaceToStringSlice(tableAttrs["primary_key"]),
+			Native:     cloneInterfaceMap(rawMapAttribute(tableAttrs["native"])),
 		},
 	}
 	if info.Name == "" {
@@ -523,6 +524,17 @@ func rawMapAttribute(value interface{}) map[string]interface{} {
 	default:
 		return nil
 	}
+}
+
+func cloneInterfaceMap(values map[string]interface{}) map[string]interface{} {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string]interface{}, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 func interfaceToStringSlice(value interface{}) []string {

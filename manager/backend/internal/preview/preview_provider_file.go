@@ -287,6 +287,7 @@ func (p *FileTablePreviewProvider) tableInfoFromAttributes(req *PreviewRequest) 
 			Name:       "table",
 			Fields:     fields,
 			PrimaryKey: interfaceToStringSlice(tableAttrs["primary_key"]),
+			Native:     cloneInterfaceMap(rawMapAttribute(tableAttrs["native"])),
 		},
 	}
 	if rowCount > 0 {
@@ -607,6 +608,17 @@ func rawMapAttribute(value interface{}) map[string]interface{} {
 	default:
 		return nil
 	}
+}
+
+func cloneInterfaceMap(values map[string]interface{}) map[string]interface{} {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string]interface{}, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 // previewRefs 处理多 ref表格格式。

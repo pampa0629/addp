@@ -181,11 +181,12 @@ func (p *ClickHousePlugin) listNamespaces(ctx context.Context, db *gorm.DB) ([]p
 
 // ListTables 列出指定Database下的所有表
 func (p *ClickHousePlugin) listTables(ctx context.Context, db *gorm.DB, schema string) ([]datatype.TableInfo, error) {
-	var tables []datatype.TableInfo
+	var rows []clickhouseTableRow
 
 	query := `
 		SELECT
 			name,
+			engine,
 			CASE
 				WHEN engine = 'MaterializedView' THEN 'materialized_view'
 				WHEN engine = 'View' THEN 'view'
@@ -200,12 +201,45 @@ func (p *ClickHousePlugin) listTables(ctx context.Context, db *gorm.DB, schema s
 		ORDER BY name
 	`
 
-	err := db.WithContext(ctx).Raw(query, schema).Scan(&tables).Error
+	err := db.WithContext(ctx).Raw(query, schema).Scan(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tables: %w", err)
 	}
 
+	tables := make([]datatype.TableInfo, 0, len(rows))
+	for _, row := range rows {
+		tables = append(tables, datatype.TableInfo{
+			Name:      row.Name,
+			Kind:      row.Kind,
+			Comment:   row.Comment,
+			RowCount:  row.RowCount,
+			SizeBytes: row.SizeBytes,
+			Native:    clickhouseTableNative(nil, row.Engine),
+		})
+	}
+
 	return tables, nil
+}
+
+type clickhouseTableRow struct {
+	Name      string
+	Engine    string
+	Kind      string
+	Comment   string
+	RowCount  *int64
+	SizeBytes *int64
+}
+
+func clickhouseTableNative(native map[string]interface{}, engine string) map[string]interface{} {
+	engine = strings.TrimSpace(engine)
+	if engine == "" {
+		return native
+	}
+	if native == nil {
+		native = map[string]interface{}{}
+	}
+	native["engine"] = engine
+	return native
 }
 
 // ListColumns 列出指定表的所有列

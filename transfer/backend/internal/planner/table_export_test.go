@@ -458,6 +458,9 @@ func TestBuildTableTransferPlanConsumesMetaSingleSourceAttributes(t *testing.T) 
 		{"name": "id", "type": "bigint", "nullable": false, "is_primary_key": true},
 		{"name": "road_name", "type": "string", "nullable": true},
 	}, nil)
+	spec.Source.Attributes["type_info"].(map[string]interface{})["table"].(map[string]interface{})["native"] = map[string]interface{}{
+		"delimiter": ",",
+	}
 
 	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
 		1: {Type: "nfs"},
@@ -477,6 +480,9 @@ func TestBuildTableTransferPlanConsumesMetaSingleSourceAttributes(t *testing.T) 
 	}
 	if result.Plan.Source.Schema.Fields[0].Type != datatype.FieldTypeBigInt || !result.Plan.Source.Schema.Fields[0].PrimaryKey {
 		t.Fatalf("first source field = %#v, want standard bigint primary key field", result.Plan.Source.Schema.Fields[0])
+	}
+	if result.Plan.Source.Schema.Native["delimiter"] != "," {
+		t.Fatalf("source schema native = %#v, want delimiter", result.Plan.Source.Schema.Native)
 	}
 }
 

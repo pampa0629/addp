@@ -378,6 +378,9 @@ func tableFileAttributes(formatName string, mode string, fieldsData []map[string
 		if tableInfo != nil && tableInfo.Table != nil && tableInfo.Table.RowCount != nil {
 			tableAttrs["row_count"] = *tableInfo.Table.RowCount
 		}
+		if tableInfo != nil && tableInfo.Table != nil && len(tableInfo.Table.Native) > 0 {
+			tableAttrs["native"] = mergeInterfaceMaps(nil, tableInfo.Table.Native)
+		}
 		attrs["type_info"] = map[string]interface{}{
 			"table": tableAttrs,
 		}

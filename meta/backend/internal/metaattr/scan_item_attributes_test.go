@@ -129,6 +129,22 @@ func TestBuildDocumentCollectionAttributesWritesTypeInfoTableSection(t *testing.
 	}
 }
 
+func TestUpsertTableNativeWritesTypeInfoTableNative(t *testing.T) {
+	t.Parallel()
+
+	attrs := BuildBasicTableAttributes("public", "table", "roads")
+	native := map[string]interface{}{"engine": "MergeTree"}
+
+	UpsertTableNative(attrs, native)
+	native["engine"] = "Log"
+
+	table := attrs["type_info"].(map[string]interface{})["table"].(map[string]interface{})
+	got := table["native"].(map[string]interface{})
+	if got["engine"] != "MergeTree" {
+		t.Fatalf("type_info.table.native = %#v", got)
+	}
+}
+
 func TestApplyNamespaceItemAttributesDoesNotWriteEngineFormat(t *testing.T) {
 	t.Parallel()
 

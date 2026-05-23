@@ -366,6 +366,9 @@ func (e *MetadataExtractor) BuildObjectContentIndexOnDemand(
 		if tableInfo.Table.RowCount != nil {
 			tableAttrs["row_count"] = *tableInfo.Table.RowCount
 		}
+		if len(tableInfo.Table.Native) > 0 {
+			tableAttrs["native"] = cloneInterfaceMap(tableInfo.Table.Native)
+		}
 		metaattr.UpsertNested(enhancedAttrs, "type_info", "table", tableAttrs)
 	}
 	enhancedAttrs = metaattr.Normalize(enhancedAttrs)
@@ -378,6 +381,17 @@ func (e *MetadataExtractor) BuildObjectContentIndexOnDemand(
 
 func cloneJSONMap(attrs models.JSONMap) models.JSONMap {
 	cloned := make(models.JSONMap, len(attrs))
+	for key, value := range attrs {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func cloneInterfaceMap(attrs map[string]interface{}) map[string]interface{} {
+	if len(attrs) == 0 {
+		return nil
+	}
+	cloned := make(map[string]interface{}, len(attrs))
 	for key, value := range attrs {
 		cloned[key] = value
 	}

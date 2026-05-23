@@ -228,7 +228,21 @@ func tableAttributes(namespace string, table datatype.TableInfo) map[string]inte
 	if table.UpdatedAt != nil {
 		attrs["updated_at"] = table.UpdatedAt
 	}
+	if len(table.Native) > 0 {
+		attrs["native"] = cloneInterfaceMap(table.Native)
+	}
 	return attrs
+}
+
+func cloneInterfaceMap(values map[string]interface{}) map[string]interface{} {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string]interface{}, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 func (a TabularCatalogCallbacks) validate() error {

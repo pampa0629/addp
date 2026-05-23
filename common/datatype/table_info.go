@@ -4,15 +4,16 @@ import "time"
 
 // TableInfo is the common type info for table data items.
 type TableInfo struct {
-	Name       string      `json:"name,omitempty"`
-	Kind       string      `json:"kind,omitempty"`
-	Comment    string      `json:"comment,omitempty"`
-	RowCount   *int64      `json:"row_count,omitempty"`
-	SizeBytes  *int64      `json:"size_bytes,omitempty"`
-	CreatedAt  *time.Time  `json:"created_at,omitempty"`
-	UpdatedAt  *time.Time  `json:"updated_at,omitempty"`
-	Fields     []FieldInfo `json:"fields,omitempty"`
-	PrimaryKey []string    `json:"primary_key,omitempty"`
+	Name       string                 `json:"name,omitempty"`
+	Kind       string                 `json:"kind,omitempty"`
+	Comment    string                 `json:"comment,omitempty"`
+	RowCount   *int64                 `json:"row_count,omitempty"`
+	SizeBytes  *int64                 `json:"size_bytes,omitempty"`
+	CreatedAt  *time.Time             `json:"created_at,omitempty"`
+	UpdatedAt  *time.Time             `json:"updated_at,omitempty"`
+	Fields     []FieldInfo            `json:"fields,omitempty"`
+	PrimaryKey []string               `json:"primary_key,omitempty"`
+	Native     map[string]interface{} `json:"native,omitempty"`
 }
 
 // FieldInfo describes a common field or property semantic model.
@@ -40,6 +41,7 @@ func (t *TableInfo) Clone() *TableInfo {
 	cloned := *t
 	cloned.Fields = append([]FieldInfo(nil), t.Fields...)
 	cloned.PrimaryKey = append([]string(nil), t.PrimaryKey...)
+	cloned.Native = cloneInterfaceMap(t.Native)
 	if t.RowCount != nil {
 		rowCount := *t.RowCount
 		cloned.RowCount = &rowCount

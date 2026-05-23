@@ -40,6 +40,7 @@ func TestTableInfoCloneDeepCopiesMutableFields(t *testing.T) {
 			{Name: "id", Type: FieldTypeInt},
 		},
 		PrimaryKey: []string{"id"},
+		Native:     map[string]interface{}{"engine": "MergeTree"},
 	}
 
 	cloned := info.Clone()
@@ -48,6 +49,7 @@ func TestTableInfoCloneDeepCopiesMutableFields(t *testing.T) {
 	}
 	cloned.Fields[0].Name = "changed"
 	cloned.PrimaryKey[0] = "changed"
+	cloned.Native["engine"] = "Log"
 	*cloned.RowCount = 99
 	*cloned.SizeBytes = 88
 	*cloned.CreatedAt = time.Unix(300, 0)
@@ -55,6 +57,9 @@ func TestTableInfoCloneDeepCopiesMutableFields(t *testing.T) {
 
 	if info.Fields[0].Name != "id" || info.PrimaryKey[0] != "id" {
 		t.Fatalf("original fields changed: %#v %#v", info.Fields, info.PrimaryKey)
+	}
+	if info.Native["engine"] != "MergeTree" {
+		t.Fatalf("original native changed: %#v", info.Native)
 	}
 	if *info.RowCount != 10 || *info.SizeBytes != 20 {
 		t.Fatalf("original counts changed: row=%d size=%d", *info.RowCount, *info.SizeBytes)

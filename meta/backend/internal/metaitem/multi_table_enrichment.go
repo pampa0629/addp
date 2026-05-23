@@ -189,6 +189,9 @@ func tableAttributes(tableInfo *datatype.TableDescribeResult) map[string]interfa
 	if tableInfo.Table.RowCount != nil {
 		attrs["row_count"] = *tableInfo.Table.RowCount
 	}
+	if len(tableInfo.Table.Native) > 0 {
+		attrs["native"] = cloneInterfaceMap(tableInfo.Table.Native)
+	}
 	return attrs
 }
 
@@ -209,6 +212,17 @@ func formatAttributesFromDescribeResult(tableInfo *datatype.TableDescribeResult)
 		return nil
 	}
 	return tableInfo.FormatInfo
+}
+
+func cloneInterfaceMap(values map[string]interface{}) map[string]interface{} {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string]interface{}, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 func spatialAttributes(spatialInfo *datatype.SpatialInfo) map[string]interface{} {

@@ -269,6 +269,7 @@ func (s *DatabaseScanService) listTables(
 			RowCount:  rowCount,
 			SizeBytes: sizeBytes,
 			UpdatedAt: timeAttr(node.Attributes, "updated_at"),
+			Native:    mapAttr(node.Attributes, "native"),
 		})
 	}
 	return tables, nil
@@ -395,6 +396,7 @@ func (s *DatabaseScanService) scanTableDetails(
 			attrs = metaattr.BuildBasicTableAttributes(schemaName, tableType(tableInfo), tableComment(tableInfo))
 		}
 	}
+	metaattr.UpsertTableNative(attrs, tableInfo.Native)
 	metaattr.SetItem(attrs, "layout", string(dataitem.LayoutSingle))
 	metaattr.SetItem(attrs, "data_type", string(dataitem.DataTypeTable))
 	rowCount := derefInt64Ptr(tableInfo.RowCount)
@@ -441,6 +443,21 @@ func timeAttr(attrs map[string]interface{}, key string) *time.Time {
 	default:
 		return nil
 	}
+}
+
+func mapAttr(attrs map[string]interface{}, key string) map[string]interface{} {
+	if attrs == nil {
+		return nil
+	}
+	values, ok := attrs[key].(map[string]interface{})
+	if !ok || len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string]interface{}, len(values))
+	for k, v := range values {
+		cloned[k] = v
+	}
+	return cloned
 }
 
 func engineSupportsSpatialMetadata(engineType string) bool {
