@@ -336,9 +336,26 @@ func TestParquetPluginScopeRecursesPartitionDirs(t *testing.T) {
 	if field := info.Table.GetField("dt"); field == nil || field.Type != datatype.FieldTypeString {
 		t.Fatalf("partition field dt = %#v, want string field", field)
 	}
+	if got := parquetPartitionColumns(info.Table.Native["partition_columns"]); strings.Join(got, ",") != "dt" {
+		t.Fatalf("table native partition columns = %#v, want dt", info.Table.Native)
+	}
+	if info.FormatInfo["partition_columns"] != nil {
+		t.Fatalf("format info should not contain table native partition columns: %#v", info.FormatInfo)
+	}
 	parquetInfo := InfoFromDescribeResult(info)
 	if parquetInfo == nil || strings.Join(parquetInfo.PartitionColumns, ",") != "dt" {
 		t.Fatalf("partition columns = %#v, want dt", parquetInfo)
+	}
+}
+
+func TestParquetInfoFromDescribeResultReadsLegacyFormatPartitionColumns(t *testing.T) {
+	info := InfoFromDescribeResult(&datatype.TableDescribeResult{
+		FormatInfo: map[string]interface{}{
+			"partition_columns": []interface{}{"dt"},
+		},
+	})
+	if info == nil || strings.Join(info.PartitionColumns, ",") != "dt" {
+		t.Fatalf("InfoFromDescribeResult() = %#v, want legacy partition columns", info)
 	}
 }
 

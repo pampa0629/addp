@@ -75,14 +75,14 @@ CSV / TSV 是单资源表格文件。字段名来自表头；无表头时由 par
 | 分区 | 写入内容 |
 |---|---|
 | `item` | `layout`、`data_type`、`format` |
-| `type_info.table` | `fields`、`row_count`、`primary_key`、采样信息 |
-| `format_info.csv` / `format_info.tsv` | `encoding`、`delimiter`、`has_header`、`quote_char` 等格式私有信息 |
+| `type_info.table` | `fields`、`row_count`、`primary_key`、`native.delimiter`、`native.has_header`、`native.quote_char`、`native.escape_char`、采样信息 |
+| `format_info.csv` / `format_info.tsv` | `encoding`、`line_ending`、文件级解析摘要等格式私有信息 |
 | `capabilities.statistics` | 采样统计、画像摘要、空值率等可选统计能力 |
 
 ### 格式约束
 
 - 不得把 CSV / TSV 放入 `document`，除非明确按文档而不是表格消费。
-- 分隔符、编码和表头判断以 `format_info.csv|tsv` 为准，不在消费者侧二次猜测。
+- 分隔符和表头判断以 `type_info.table.native` 为准；编码以 `format_info.csv|tsv` 为准，不在消费者侧二次猜测。
 
 ## Excel
 
@@ -103,11 +103,13 @@ CSV / TSV 是单资源表格文件。字段名来自表头；无表头时由 par
 |---|---|
 | `item` | `layout`、`data_type`、`format` |
 | `type_info.container` | `children`、`default_child`、`child_count`、sheet 摘要 |
-| `format_info.excel` | 工作簿版本、sheet 数量、默认 sheet、表头判断、采样策略等 |
+| `format_info.excel` | 工作簿版本、sheet 数量、默认 sheet、采样策略等工作簿或格式层事实 |
 
 ### 内部读取
 
 Manager 可以基于 `type_info.container.children` 展示 sheet 列表；进入某个 sheet 的表格内容读取时，应由容器读取能力定位内部对象，再交给 `TableInfoProvider` / `TableSampleReader` 归一为表语义。
+
+当某个 sheet 被归一为 table item 或 table describe 结果时，`sheet_name`、`sheet_index` 等当前表级来源原生事实写入 `type_info.table.native`，不得写入 `format_info.excel`。外层工作簿的 `sheet_count`、`default_sheet` 等仍留在 `format_info.excel` 或 `type_info.container`。
 
 ### 格式约束
 
@@ -135,7 +137,7 @@ Manager 可以基于 `type_info.container.children` 展示 sheet 列表；进入
 | `type_info.table` | records / JSON Lines / FeatureCollection 的字段、行数、采样信息 |
 | `type_info.document` | 文档型 JSON 的标题、摘要、语言、文本片段等可选信息 |
 | `type_info.container` | 容器型 JSON 的内部对象摘要、默认入口、子对象数量 |
-| `format_info.json` | `json_type`、结构特征、编码、对象层级摘要等格式私有信息 |
+| `format_info.json` | `structure`、编码、对象层级摘要、GeoJSON 原文 `bbox` / `crs` 等格式私有信息 |
 | `capabilities.spatial` | 仅空间结构 JSON 写入几何字段、SRID / CRS、extent 等空间能力 |
 
 ### 格式约束
@@ -143,6 +145,7 @@ Manager 可以基于 `type_info.container.children` 展示 sheet 列表；进入
 - 不得引入独立顶层 `format=geojson`；GeoJSON 类结构应表达为 `format=json` + `capabilities.spatial`。
 - 不得只按扩展名把 JSON 判为 `table` 或 `spatial`。
 - 不得把 JSON 私有结构字段写入 `capabilities.spatial`。
+- 插件推导出来的记录数、几何类型、bbox 等归一事实不得写入 `format_info.json`；记录数进入 `type_info.table.row_count`，空间范围进入 `capabilities.spatial.extent`。只有 GeoJSON 原文显式声明的 `bbox` 可作为格式事实保留在 `format_info.json.bbox`。
 
 ## Shapefile
 
@@ -269,9 +272,9 @@ Parquet、ORC、Avro 是表格型数据的文件格式，不应直接称为“�
 | 分区 | 写入内容 |
 |---|---|
 | `item` | `layout`、`data_type=table`、`format`、可选 `refs`、whole scope 的 `scope_exclusive` 和 `claim_policy` |
-| `type_info.table` | 字段、原始字段类型、行数或估算行数、采样信息 |
-| `format_info.<format>` | 文件 footer、编码、压缩、row group、schema 版本、manifest 摘要等格式私有信息 |
-| `capabilities.partitioning` | 分区字段、分区数量、分区样例 |
+| `type_info.table` | 字段、原始字段类型、行数或估算行数、`native.partition_columns`、采样信息 |
+| `format_info.<format>` | 文件 footer、编码、压缩、row group、schema 版本、manifest 摘要、scope 文件清单等格式私有信息 |
+| `capabilities.partitioning` | 分区数量、分区样例、分区范围等画像能力 |
 | `capabilities.statistics` | 可轻量获得的列统计、采样统计 |
 
 `whole` item 的范围由 `meta_item.full_name` 表达，`item.scope_exclusive=true`、`item.claim_policy=whole_scope` 表达独占语义。`refs` 只包含规范认定的数据文件或 manifest 关键资源，不包含 `_SUCCESS`、`_metadata`、`_common_metadata`、CRC 等辅助文件，除非具体格式规范另有说明。
@@ -306,6 +309,8 @@ Parquet、ORC、Avro 是表格型数据的文件格式，不应直接称为“�
 | `format_info.sqlite` | SQLite 版本、内部表数量、表清单、pragma 摘要 | 不适用 |
 | `format_info.geopackage` | 不适用 | gpkg 容器级元数据和 layer / table 统计摘要 |
 | `capabilities.spatial` | 仅 SpatiaLite 等可确认空间能力时写入 | 外层容器不写入；选中具体 layer 后由 child `TableInfo.SpatialInfo` 表达空间字段、SRID / CRS、extent 和空间索引 |
+
+当内部表、view 或 layer 被归一为 table describe 结果时，SQLite `sqlite_master.type` 只映射到 `type_info.table.kind`。当前不为 SQLite / GeoPackage 增加表级 native key；page size、page count、内部表 / 视图 / 索引数量等是容器或文件级事实，继续留在 `format_info.sqlite/geopackage`。
 
 ### 内部读取
 

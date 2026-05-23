@@ -165,7 +165,7 @@ Meta normalizer 是 attributes 标准分区的最终裁决点。
 | `storage` | 引擎侧存储属性，例如 path、bucket、size、etag、last_modified_at |
 | `item` | layout、data_type、format、refs、scope_exclusive |
 | `type_info` | data type 通用元数据，例如 table fields、document page_count、media width |
-| `format_info` | 文件格式私有信息，例如 csv delimiter、shapefile refs |
+| `format_info` | 文件、容器或格式解析层面的私有信息，例如 csv encoding、shapefile refs |
 | `content_index` | 内容读取索引，例如 table sparse row index |
 | `capabilities` | spatial、temporal、statistics、extraction 等横切事实 |
 

@@ -1,6 +1,7 @@
 package shapefile
 
 import (
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	"os"
 	"path/filepath"
@@ -249,14 +250,24 @@ func (i *Info) FormatAttributes() map[string]interface{} {
 	}
 	attrs["has_prj"] = i.HasPRJ
 	attrs["has_cpg"] = i.HasCPG
+	return attrs
+}
+
+var tableNativeKeys = datatype.NewNativeAllowedKeys("shape_type", "dbf_version", "encoding")
+
+func (i *Info) TableNative() map[string]interface{} {
+	if i == nil {
+		return nil
+	}
+	native := map[string]interface{}{}
 	if i.ShapeType != "" {
-		attrs["shape_type"] = i.ShapeType
+		native["shape_type"] = i.ShapeType
 	}
 	if i.DBFVersion != 0 {
-		attrs["dbf_version"] = i.DBFVersion
+		native["dbf_version"] = i.DBFVersion
 	}
 	if i.Encoding != "" {
-		attrs["encoding"] = i.Encoding
+		native["encoding"] = i.Encoding
 	}
-	return attrs
+	return datatype.FilterTableNative(native, tableNativeKeys)
 }

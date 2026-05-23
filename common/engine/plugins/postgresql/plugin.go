@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
@@ -185,11 +186,13 @@ func (p *PostgreSQLPlugin) listNamespaces(ctx context.Context, db *gorm.DB) ([]p
 
 // ListTables 列出指定Schema下的所有表
 func (p *PostgreSQLPlugin) listTables(ctx context.Context, db *gorm.DB, schema string) ([]datatype.TableInfo, error) {
-	var tables []datatype.TableInfo
+	var rows []postgresTableRow
 
 	query := `
 		SELECT
 			t.table_name as name,
+			t.table_type,
+			COALESCE(c.relkind::text, '') as relkind,
 			CASE
 				WHEN t.table_type = 'VIEW' THEN 'view'
 				WHEN t.table_type = 'BASE TABLE' THEN 'table'
@@ -213,12 +216,47 @@ func (p *PostgreSQLPlugin) listTables(ctx context.Context, db *gorm.DB, schema s
 		ORDER BY t.table_name
 	`
 
-	err := db.WithContext(ctx).Raw(query, schema).Scan(&tables).Error
+	err := db.WithContext(ctx).Raw(query, schema).Scan(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tables: %w", err)
 	}
 
+	tables := make([]datatype.TableInfo, 0, len(rows))
+	for _, row := range rows {
+		tables = append(tables, datatype.TableInfo{
+			Name:      row.Name,
+			Kind:      row.Kind,
+			RowCount:  row.RowCount,
+			SizeBytes: row.SizeBytes,
+			UpdatedAt: row.UpdatedAt,
+			Native:    postgresTableNative(row.TableType, row.Relkind),
+		})
+	}
+
 	return tables, nil
+}
+
+type postgresTableRow struct {
+	Name      string
+	TableType string
+	Relkind   string
+	Kind      string
+	RowCount  *int64
+	SizeBytes *int64
+	UpdatedAt *time.Time
+}
+
+var postgresTableNativeKeys = datatype.NewNativeAllowedKeys("table_type", "relkind")
+
+func postgresTableNative(tableType, relkind string) map[string]interface{} {
+	native := map[string]interface{}{}
+	if tableType = strings.TrimSpace(tableType); tableType != "" {
+		native["table_type"] = tableType
+	}
+	if relkind = strings.TrimSpace(relkind); relkind != "" {
+		native["relkind"] = relkind
+	}
+	return datatype.FilterTableNative(native, postgresTableNativeKeys)
 }
 
 // ListColumns 列出指定表的所有列

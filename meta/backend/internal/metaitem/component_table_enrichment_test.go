@@ -135,9 +135,13 @@ func TestCommonDataItemResolverEnrichesRefTableViaFormatProvider(t *testing.T) {
 	if extent, ok := spatial["extent"].([]float64); !ok || len(extent) != 4 || extent[0] != 1 || extent[1] != 2 || extent[2] != 3 || extent[3] != 4 {
 		t.Fatalf("extent = %#v, want shp header bbox", spatial["extent"])
 	}
+	tableNative := commonJSON.Section(attrs, "type_info.table.native")
+	if tableNative["shape_type"] != "Point" {
+		t.Fatalf("type_info.table.native = %#v, want shape_type Point", tableNative)
+	}
 	formatInfo := commonJSON.Section(attrs, "format_info.shapefile")
-	if formatInfo["shape_type"] != "Point" {
-		t.Fatalf("format_info.shapefile = %#v, want shape_type Point", formatInfo)
+	if formatInfo["shape_type"] != nil {
+		t.Fatalf("format_info.shapefile should not contain table native facts: %#v", formatInfo)
 	}
 	if contentIndex := commonJSON.Section(attrs, "content_index.table"); len(contentIndex) != 0 {
 		t.Fatalf("content_index.table = %#v, want no shapefile content index metadata", contentIndex)

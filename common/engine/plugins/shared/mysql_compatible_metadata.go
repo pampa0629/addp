@@ -15,6 +15,7 @@ import (
 type MySQLCompatibleMetadataDialect struct {
 	SystemSchemas  map[string]bool
 	IncludeComment bool
+	IncludeEngine  bool
 }
 
 func (d MySQLCompatibleMetadataDialect) ListNamespaces(ctx context.Context, db *gorm.DB) ([]plugin.NamespaceInfo, error) {
@@ -44,14 +45,19 @@ func (d MySQLCompatibleMetadataDialect) ListNamespaces(ctx context.Context, db *
 }
 
 func (d MySQLCompatibleMetadataDialect) ListTables(ctx context.Context, db *gorm.DB, schema string) ([]datatype.TableInfo, error) {
-	var tables []datatype.TableInfo
+	var rows []mysqlCompatibleTableRow
 	commentExpr := "'' as comment"
 	if d.IncludeComment {
 		commentExpr = "COALESCE(table_comment, '') as comment"
 	}
+	engineExpr := "'' as engine"
+	if d.IncludeEngine {
+		engineExpr = "COALESCE(engine, '') as engine"
+	}
 	query := `
 		SELECT
 			table_name as name,
+			` + engineExpr + `,
 			CASE
 				WHEN table_type = 'VIEW' THEN 'view'
 				WHEN table_type = 'BASE TABLE' THEN 'table'
@@ -66,10 +72,43 @@ func (d MySQLCompatibleMetadataDialect) ListTables(ctx context.Context, db *gorm
 		ORDER BY table_name
 	`
 
-	if err := db.WithContext(ctx).Raw(query, schema).Scan(&tables).Error; err != nil {
+	if err := db.WithContext(ctx).Raw(query, schema).Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("failed to list tables: %w", err)
 	}
+	tables := make([]datatype.TableInfo, 0, len(rows))
+	for _, row := range rows {
+		tables = append(tables, datatype.TableInfo{
+			Name:      row.Name,
+			Kind:      row.Kind,
+			Comment:   row.Comment,
+			RowCount:  row.RowCount,
+			SizeBytes: row.SizeBytes,
+			Native:    d.tableNative(row.Engine),
+		})
+	}
 	return tables, nil
+}
+
+type mysqlCompatibleTableRow struct {
+	Name      string
+	Engine    string
+	Kind      string
+	Comment   string
+	RowCount  *int64
+	SizeBytes *int64
+}
+
+var mysqlCompatibleTableNativeKeys = datatype.NewNativeAllowedKeys("engine")
+
+func (d MySQLCompatibleMetadataDialect) tableNative(engine string) map[string]interface{} {
+	if !d.IncludeEngine {
+		return nil
+	}
+	engine = strings.TrimSpace(engine)
+	if engine == "" {
+		return nil
+	}
+	return datatype.FilterTableNative(map[string]interface{}{"engine": engine}, mysqlCompatibleTableNativeKeys)
 }
 
 func (d MySQLCompatibleMetadataDialect) ListColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]datatype.FieldInfo, error) {

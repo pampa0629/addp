@@ -15,3 +15,20 @@ func TestPostgreSQLIsSystemSchema(t *testing.T) {
 		t.Fatal("isSystemSchema(\"public\") = true, want false")
 	}
 }
+
+func TestPostgresTableNativeKeepsSourceFactsOnly(t *testing.T) {
+	native := postgresTableNative(" BASE TABLE ", " r ")
+
+	if native["table_type"] != "BASE TABLE" || native["relkind"] != "r" {
+		t.Fatalf("postgresTableNative() = %#v, want table_type and relkind", native)
+	}
+	if native["kind"] != nil {
+		t.Fatalf("postgresTableNative() should not include platform kind: %#v", native)
+	}
+}
+
+func TestPostgresTableNativeReturnsNilForEmptyFacts(t *testing.T) {
+	if got := postgresTableNative("", " "); got != nil {
+		t.Fatalf("postgresTableNative() = %#v, want nil", got)
+	}
+}

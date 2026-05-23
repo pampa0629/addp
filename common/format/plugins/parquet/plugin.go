@@ -41,27 +41,27 @@ func (i *Info) FormatAttributes() map[string]interface{} {
 	if i == nil || len(i.Files) == 0 {
 		return nil
 	}
-	attrs := map[string]interface{}{
+	return map[string]interface{}{
 		"files": i.Files,
 	}
-	if len(i.PartitionColumns) > 0 {
-		attrs["partition_columns"] = i.PartitionColumns
-	}
-	return attrs
 }
 
 func InfoFromTableInfo(tableInfo *format.TableInfo) *Info {
-	if tableInfo == nil || len(tableInfo.FormatInfo) == 0 {
+	if tableInfo == nil {
 		return nil
 	}
-	return infoFromFormatInfo(tableInfo.FormatInfo)
+	return infoFromFacts(tableInfo.FormatInfo, tableInfo.Native)
 }
 
 func InfoFromDescribeResult(result *datatype.TableDescribeResult) *Info {
-	if result == nil || len(result.FormatInfo) == 0 {
+	if result == nil {
 		return nil
 	}
-	return infoFromFormatInfo(result.FormatInfo)
+	var native map[string]interface{}
+	if result.Table != nil {
+		native = result.Table.Native
+	}
+	return infoFromFacts(result.FormatInfo, native)
 }
 
 func FormatAttributesFromTableInfo(tableInfo *format.TableInfo) map[string]interface{} {
@@ -69,12 +69,15 @@ func FormatAttributesFromTableInfo(tableInfo *format.TableInfo) map[string]inter
 	return info.FormatAttributes()
 }
 
-func infoFromFormatInfo(formatInfo map[string]interface{}) *Info {
-	if len(formatInfo) == 0 {
+func infoFromFacts(formatInfo, native map[string]interface{}) *Info {
+	if len(formatInfo) == 0 && len(native) == 0 {
 		return nil
 	}
 	files := parquetFileInfos(formatInfo["files"])
-	partitionColumns := parquetPartitionColumns(formatInfo["partition_columns"])
+	partitionColumns := parquetPartitionColumns(native["partition_columns"])
+	if len(partitionColumns) == 0 {
+		partitionColumns = parquetPartitionColumns(formatInfo["partition_columns"])
+	}
 	if len(files) == 0 && len(partitionColumns) == 0 {
 		return nil
 	}
@@ -82,6 +85,17 @@ func infoFromFormatInfo(formatInfo map[string]interface{}) *Info {
 		Files:            files,
 		PartitionColumns: partitionColumns,
 	}
+}
+
+var tableNativeKeys = datatype.NewNativeAllowedKeys("partition_columns")
+
+func parquetTableNative(partitionColumns []string) map[string]interface{} {
+	if len(partitionColumns) == 0 {
+		return nil
+	}
+	return datatype.FilterTableNative(map[string]interface{}{
+		"partition_columns": append([]string(nil), partitionColumns...),
+	}, tableNativeKeys)
 }
 
 func parquetFileInfos(value interface{}) []FileInfo {
@@ -797,6 +811,7 @@ func (p *Plugin) DescribeTableScope(ctx context.Context, reader contentio.Reader
 					Name:       contentio.BaseName(scope),
 					Fields:     appendPartitionFields(info.Fields, partitionFields),
 					PrimaryKey: append([]string(nil), info.PrimaryKey...),
+					Native:     parquetTableNative(fieldNames(partitionFields)),
 				},
 			}
 			merged, err = format.ApplyFieldSelectionToTableDescribeResult(baseInfo, fieldSelectionFromOptions(options))
@@ -818,7 +833,7 @@ func (p *Plugin) DescribeTableScope(ctx context.Context, reader contentio.Reader
 		return nil, fmt.Errorf("parquet scope %s has no parquet files", scope.Path)
 	}
 	merged.Table.RowCount = &totalRows
-	merged.FormatInfo = (&Info{Files: files, PartitionColumns: fieldNames(partitionFields)}).FormatAttributes()
+	merged.FormatInfo = (&Info{Files: files}).FormatAttributes()
 	return merged, nil
 }
 

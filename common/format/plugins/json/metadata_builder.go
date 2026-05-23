@@ -3,7 +3,6 @@ package jsonformat
 import "sort"
 
 type metadataBuilder struct {
-	count         int64
 	geometryTypes map[string]struct{}
 	propertySet   map[string]struct{}
 	bounds        geometryBounds
@@ -20,7 +19,6 @@ func (b *metadataBuilder) AddFeature(feature *Feature) {
 	if feature == nil {
 		return
 	}
-	b.count++
 	if gt := feature.GeometryType(); gt != "" {
 		b.geometryTypes[gt] = struct{}{}
 		b.bounds.AddGeometry(feature.Geometry)
@@ -34,17 +32,7 @@ func (b *metadataBuilder) AddFeature(feature *Feature) {
 }
 
 func (b *metadataBuilder) Build() map[string]interface{} {
-	meta := map[string]interface{}{
-		"feature_count": b.count,
-	}
-	if len(b.geometryTypes) > 0 {
-		types := make([]string, 0, len(b.geometryTypes))
-		for gt := range b.geometryTypes {
-			types = append(types, gt)
-		}
-		sort.Strings(types)
-		meta["geometry_types"] = types
-	}
+	meta := map[string]interface{}{}
 	if len(b.propertySet) > 0 {
 		props := make([]string, 0, len(b.propertySet))
 		for name := range b.propertySet {

@@ -135,14 +135,29 @@ func TestCSVPlugin_DescribeFormat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DescribeFormat failed: %v", err)
 	}
-	if info["delimiter"] != "," {
-		t.Fatalf("delimiter = %#v, want comma", info["delimiter"])
-	}
-	if info["has_header"] != true {
-		t.Fatalf("has_header = %#v, want true", info["has_header"])
+	if info["delimiter"] != nil || info["has_header"] != nil {
+		t.Fatalf("table native facts should not be in format info: %#v", info)
 	}
 	if info["column_count"] != 2 {
 		t.Fatalf("column_count = %#v, want 2", info["column_count"])
+	}
+}
+
+func TestCSVPlugin_DescribeTableWritesTableNative(t *testing.T) {
+	plugin := NewPlugin(nil)
+
+	info, err := plugin.DescribeTable(context.Background(), strings.NewReader("id,name\n1,Alice\n"), nil)
+	if err != nil {
+		t.Fatalf("DescribeTable failed: %v", err)
+	}
+	if info == nil || info.Table == nil {
+		t.Fatalf("DescribeTable() = %#v", info)
+	}
+	if info.Table.Native["delimiter"] != "," || info.Table.Native["has_header"] != true {
+		t.Fatalf("table native = %#v, want delimiter and has_header", info.Table.Native)
+	}
+	if info.FormatInfo["delimiter"] != nil || info.FormatInfo["has_header"] != nil {
+		t.Fatalf("format info should not contain table native facts: %#v", info.FormatInfo)
 	}
 }
 

@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"github.com/addp/common/datatype"
 	"os"
 	"testing"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -35,8 +35,29 @@ func TestDescribeTableUsesSelectedTable(t *testing.T) {
 	if info.Table.Name != "cities" {
 		t.Fatalf("Name = %q, want cities", info.Table.Name)
 	}
+	if info.Table.Kind != "table" {
+		t.Fatalf("Kind = %q, want table", info.Table.Kind)
+	}
+	if len(info.Table.Native) != 0 {
+		t.Fatalf("Native = %#v, want empty for SQLite table kind", info.Table.Native)
+	}
 	if len(info.Table.Fields) != 2 || info.Table.Fields[0].Name != "id" || info.Table.Fields[1].Name != "name" {
 		t.Fatalf("Fields = %#v, want id/name", info.Table.Fields)
+	}
+}
+
+func TestDescribeTableMarksSQLiteViewKind(t *testing.T) {
+	t.Parallel()
+
+	plugin := NewPlugin(nil)
+	info, err := plugin.DescribeTable(context.Background(), bytes.NewReader(sqliteViewTestDatabaseBytes(t)), &format.ParseOptions{
+		ExtraParams: map[string]interface{}{format.ChildTableParam: "city_names"},
+	})
+	if err != nil {
+		t.Fatalf("DescribeTable() error = %v", err)
+	}
+	if info.Table.Kind != "view" {
+		t.Fatalf("Kind = %q, want view", info.Table.Kind)
 	}
 }
 
@@ -170,6 +191,42 @@ func sqliteTestDatabaseBytes(t *testing.T) []byte {
 	for _, stmt := range []string{
 		`CREATE TABLE animals (name TEXT)`,
 		`CREATE TABLE cities (id INTEGER PRIMARY KEY, name TEXT NOT NULL)`,
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("exec %q: %v", stmt, err)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close sqlite: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read sqlite: %v", err)
+	}
+	return data
+}
+
+func sqliteViewTestDatabaseBytes(t *testing.T) []byte {
+	t.Helper()
+
+	tmp, err := os.CreateTemp("", "sqlite-plugin-view-test-*.db")
+	if err != nil {
+		t.Fatalf("create temp db: %v", err)
+	}
+	path := tmp.Name()
+	if err := tmp.Close(); err != nil {
+		t.Fatalf("close temp db: %v", err)
+	}
+	defer os.Remove(path)
+
+	db, err := sql.Open("sqlite3", path)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE cities (id INTEGER PRIMARY KEY, name TEXT NOT NULL)`,
+		`CREATE VIEW city_names AS SELECT name FROM cities`,
 	} {
 		if _, err := db.Exec(stmt); err != nil {
 			t.Fatalf("exec %q: %v", stmt, err)

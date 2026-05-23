@@ -258,7 +258,7 @@ Shapefile 这类 multi 格式尤其要区分：单个 `.shp/.dbf/.shx` 的识别
 | `storage` | 这个 item 在引擎侧的存储和访问属性是什么 | bucket、path、physical_path、size、etag、content_type |
 | `item` | 这个 data item 的核心语义是什么 | layout、data_type、format、refs、scope_exclusive |
 | `type_info` | 对应数据类型的通用元数据是什么 | table fields、media width/height、document page_count、container children |
-| `format_info` | 对应文件格式的私有信息是什么 | CSV delimiter、Shapefile refs、SQLite version |
+| `format_info` | 对应文件、容器或格式解析层面的私有信息是什么 | CSV encoding、Shapefile refs、SQLite version |
 | `content_index` | 面向内容读取的通用访问索引是什么 | table sparse_row_index |
 | `capabilities` | 这个 item 有哪些横切能力 | spatial、temporal、statistics、extraction |
 

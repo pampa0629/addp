@@ -131,15 +131,12 @@ func (p *Plugin) DescribeFormat(ctx context.Context, input io.Reader, options *f
 	if err != nil {
 		return nil, fmt.Errorf("failed to read CSV headers: %w", err)
 	}
-	return map[string]interface{}{
-		"delimiter":    string(opts.Delimiter),
-		"encoding":     opts.Encoding,
-		"has_header":   opts.HasHeader,
-		"quote_char":   "\"",
-		"escape_char":  "\"",
-		"line_ending":  "\n",
-		"column_count": len(headers),
-	}, nil
+	attrs := (&Info{
+		Encoding:   opts.Encoding,
+		LineEnding: "\n",
+	}).FormatAttributes()
+	attrs["column_count"] = len(headers)
+	return attrs, nil
 }
 
 // DescribeTable 从 CSV 文件中提取 table 类型信息。
@@ -215,6 +212,7 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 			RowCount:   &rowCount,
 			Fields:     fields,
 			PrimaryKey: []string{}, // CSV 没有主键
+			Native:     csvInfo.TableNative(),
 		},
 		FormatInfo: csvInfo.FormatAttributes(),
 	}

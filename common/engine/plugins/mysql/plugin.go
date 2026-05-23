@@ -20,6 +20,7 @@ var mysqlMetadataDialect = shared.MySQLCompatibleMetadataDialect{
 		"sys":                true,
 	},
 	IncludeComment: true,
+	IncludeEngine:  true,
 }
 
 // MySQLPlugin MySQL 数据库插件

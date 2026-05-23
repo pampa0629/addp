@@ -39,7 +39,7 @@ attributes 分区统一采用以下概念：
 | `storage` | 这个 item 在引擎侧的存储和访问属性是什么 | physical_path、bucket、path、etag、content_type、last_modified_at、total_size |
 | `item` | 这个 data item 的核心语义是什么 | layout、data_type、format、refs、file_count、scope_exclusive |
 | `type_info` | 对应数据类型的通用元数据是什么 | table fields、media width/height、document page_count、container children |
-| `format_info` | 对应文件格式的私有信息是什么 | csv delimiter、shapefile refs、sqlite version |
+| `format_info` | 对应文件、容器或格式解析层面的私有信息是什么 | csv encoding、shapefile refs、sqlite version |
 | `content_index` | 面向内容读取的通用访问索引是什么 | table sparse_row_index |
 | `capabilities` | 这个 item 有哪些横切能力 | spatial、temporal、statistics、extraction、semantic、partitioning、indexing |
 
@@ -164,6 +164,8 @@ attributes 分区统一采用以下概念：
 
 表字段统一放在 `type_info.table.fields`，不得写入 attributes 顶层。字段不是 data item，字段类型只能使用 `type` 表达 ADDP 标准字段类型，不得在字段对象内写入 `data_type`。原生字段类型如需展示，只能作为只读诊断信息写入 `native_type`，不得参与执行决策；哪个字段是空间字段、SRID、extent 等属于 `capabilities.spatial`，不得塞回 `type_info.table`。
 
+`type_info.table.native` 承载表级来源原生事实，例如 CSV 分隔符、Shapefile shape type、Excel 当前 sheet 名称和序号、Parquet 分区列、数据库表引擎或原生表类型。`native` 是单层结构，来源由 item 的 `format` 或 `engine_type` 决定；具体 key 必须由对应 format / engine 白名单约束。文件、容器、资源整体或格式解析层事实仍写入 `format_info.<format>`，例如 Excel 工作簿 sheet 数、默认 sheet、Parquet scope 文件清单、ZIP entry 统计等。
+
 ## format_info 命名空间
 
 格式私有或第三方扩展必须进入合规命名空间，例如：
@@ -187,7 +189,7 @@ attributes 分区统一采用以下概念：
 | `statistics` | 统计和采样 | sample_size、null_count、min、max、profiled_at |
 | `extraction` | 内容提取 | metadata_extracted、extractor_available、text_excerpt、summary、index_ref |
 | `semantic` | 语义能力 | embedding_model、vector_index_ref、semantic_tags |
-| `partitioning` | 分区能力 | partition_columns、partition_count、partition_sample |
+| `partitioning` | 分区画像能力 | partition_count、partition_sample、partition_range |
 | `indexing` | 索引能力 | spatial_indexes、fulltext_indexes、vector_indexes |
 
 横切能力不应变成顶层数据类型，也不应被塞进具体格式信息。

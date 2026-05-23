@@ -209,6 +209,7 @@ func buildShapefileTableInfo(input shapefileTableInfoInput) *format.TableInfo {
 			RowCount:   &rowCount,
 			Fields:     fields,
 			PrimaryKey: []string{},
+			Native:     info.TableNative(),
 		},
 		SpatialInfo: spatialInfo,
 		FormatInfo:  info.FormatAttributes(),

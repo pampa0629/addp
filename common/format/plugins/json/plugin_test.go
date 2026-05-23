@@ -6,10 +6,11 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
-	"github.com/addp/common/datatype"
+	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 )
 
@@ -133,8 +134,11 @@ func TestJSONPluginDescribeFormatDistinguishesDocumentAndFeatureCollection(t *te
 	if err != nil {
 		t.Fatalf("DescribeFormat(feature collection) failed: %v", err)
 	}
-	if fcInfo["structure"] != StructureGeoJSONFeatureSet || fcInfo["has_geometry"] != true {
+	if fcInfo["structure"] != StructureGeoJSONFeatureSet {
 		t.Fatalf("feature collection info = %#v", fcInfo)
+	}
+	if fcInfo["has_geometry"] != nil || fcInfo["geometry_types"] != nil || fcInfo["feature_count"] != nil {
+		t.Fatalf("format info should not contain inferred table or spatial facts: %#v", fcInfo)
 	}
 }
 
@@ -498,7 +502,26 @@ func TestJSONPluginGeoJSONComputesBoundingBoxWithoutFileBBox(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DescribeFormat failed: %v", err)
 	}
-	if got, want := formatInfo["bbox"], [4]float64{-1, -2, 8, 7}; got != want {
+	if formatInfo["bbox"] != nil {
+		t.Fatalf("format info should not contain computed bbox: %#v", formatInfo)
+	}
+}
+
+func TestJSONPluginDescribeFormatKeepsExplicitGeoJSONBBox(t *testing.T) {
+	data := `{
+		"type": "FeatureCollection",
+		"bbox": [-1, -2, 8, 7],
+		"features": [
+			{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{"name":"A"}}
+		]
+	}`
+	plugin := NewPlugin(nil)
+
+	formatInfo, err := plugin.DescribeFormat(context.Background(), strings.NewReader(data), nil)
+	if err != nil {
+		t.Fatalf("DescribeFormat failed: %v", err)
+	}
+	if got, want := formatInfo["bbox"], []float64{-1, -2, 8, 7}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("format bbox = %#v, want %#v", got, want)
 	}
 }

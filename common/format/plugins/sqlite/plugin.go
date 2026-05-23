@@ -4,12 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"github.com/addp/common/datatype"
 	"io"
 	"os"
 	"strings"
 
 	"github.com/addp/common/contentio"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -325,10 +325,20 @@ func sqliteTableInfoToFormatTable(table TableInfo) *format.TableInfo {
 	return &format.TableInfo{
 		TableInfo: datatype.TableInfo{
 			Name:       table.Name,
+			Kind:       sqliteTableKind(table.Type),
 			RowCount:   table.RowCount,
 			Fields:     fields,
 			PrimaryKey: primaryKey,
 		},
+	}
+}
+
+func sqliteTableKind(objectType string) string {
+	switch strings.ToLower(strings.TrimSpace(objectType)) {
+	case "view":
+		return "view"
+	default:
+		return "table"
 	}
 }
 

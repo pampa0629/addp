@@ -3,14 +3,16 @@ package excel
 import (
 	"context"
 	"fmt"
-	"github.com/addp/common/datatype"
 	"io"
 	"strings"
 
 	"github.com/addp/common/contentio"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	"github.com/xuri/excelize/v2"
 )
+
+var excelTableNativeKeys = datatype.NewNativeAllowedKeys("sheet_name", "sheet_index")
 
 // Plugin 实现 Excel 格式插件。
 type Plugin struct {
@@ -281,8 +283,6 @@ func (p *Plugin) convertToTableDescribeResult(analysis *WorkbookAnalysis, opts *
 
 	// 创建 Excel 格式私有信息
 	excelInfo := &Info{
-		SheetName:  sheet.Name,
-		SheetIndex: sheet.Index,
 		SheetCount: analysis.SheetCount,
 	}
 
@@ -293,9 +293,17 @@ func (p *Plugin) convertToTableDescribeResult(analysis *WorkbookAnalysis, opts *
 			RowCount:   &rowCount,
 			Fields:     fields,
 			PrimaryKey: []string{},
+			Native:     excelTableNative(sheet.Name, sheet.Index),
 		},
 		FormatInfo: excelInfo.FormatAttributes(),
 	}, nil
+}
+
+func excelTableNative(sheetName string, sheetIndex int) map[string]interface{} {
+	return datatype.FilterTableNative(map[string]interface{}{
+		"sheet_name":  sheetName,
+		"sheet_index": sheetIndex,
+	}, excelTableNativeKeys)
 }
 
 func (p *Plugin) convertToContainerInfo(analysis *WorkbookAnalysis) *format.ContainerInfo {

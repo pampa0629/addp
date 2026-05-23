@@ -181,11 +181,8 @@ func (p *Plugin) DescribeFormat(ctx context.Context, input io.Reader, options *f
 
 	info := builder.Build()
 	info["structure"] = iter.structure
-	info["has_geometry"] = builder.HasGeometry()
 	if len(iter.meta.BoundingBox) == 4 {
 		info["bbox"] = iter.meta.BoundingBox
-	} else if bbox, ok := builder.BoundingBox(); ok {
-		info["bbox"] = bbox
 	}
 	if iter.meta.CoordinateSystem != "" {
 		info["crs"] = iter.meta.CoordinateSystem

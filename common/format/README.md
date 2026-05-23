@@ -202,7 +202,7 @@ Info provider 只返回元数据，主要服务 Meta 写入 `type_info.*`、`for
 | Provider / Reader | Data type | 内容布局 | 输入 / 输出 | 核心能力 | 主要消费者 | 适合的 format |
 |---|---|---|---|---|---|---|
 | `FormatPlugin` | 任意 | 任意 | 无内容输入 | 声明格式身份、descriptor、capability；自动注册已实现的 provider / reader。 | Meta、Manager、Transfer、能力发现 | 所有稳定 format |
-| `FormatInfoProvider` | 任意 | 通常 `single`，也可服务 `multi` / `whole` 的格式私有摘要 | `io.Reader` | 返回 `format_info.<format>` 候选事实，不写类型信息。 | Meta | CSV delimiter、PDF 版本、图片 EXIF、压缩方式等 |
+| `FormatInfoProvider` | 任意 | 通常 `single`，也可服务 `multi` / `whole` 的格式私有摘要 | `io.Reader` | 返回 `format_info.<format>` 候选事实，不写类型信息。 | Meta | CSV encoding、PDF 版本、图片 EXIF、压缩方式等 |
 | `TableInfoProvider` | `table` | `single` | `io.Reader` | 返回字段、行数等 table 类型信息；空间信息、内容索引和格式私有事实作为同级 describe result 候选事实返回。 | Meta、Manager、Transfer 探查 | CSV、JSON/JSONL、Parquet 单文件 |
 | `TableSampleReader` | `table` | `single` | `io.Reader` | 按逻辑行窗口读取少量样本。 | Manager 预览、Transfer 探查 | CSV、JSON/JSONL、Parquet 单文件 |
 | `TableReaderProvider` | `table` | `single` | `io.Reader` -> `TableReader` | 打开一次连续读取会话，按批读取全量行。 | Transfer 主链路、批处理导出/导入 | CSV、JSON/JSONL、Parquet 单文件 |

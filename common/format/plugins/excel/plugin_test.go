@@ -5,6 +5,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	"github.com/xuri/excelize/v2"
 )
@@ -73,5 +74,71 @@ func TestPluginDescribeContainer(t *testing.T) {
 	}
 	if len(cities.Fields) < 2 || cities.Fields[0].Name != "id" {
 		t.Fatalf("Cities Fields = %#v", cities.Fields)
+	}
+	if info.FormatInfo["sheet_count"] != 2 {
+		t.Fatalf("sheet_count = %#v, want 2", info.FormatInfo["sheet_count"])
+	}
+	if info.FormatInfo["default_sheet"] != "Cities" {
+		t.Fatalf("default_sheet = %#v, want Cities", info.FormatInfo["default_sheet"])
+	}
+}
+
+func TestPluginDescribeTableWritesSheetFactsToNative(t *testing.T) {
+	t.Parallel()
+
+	workbook := excelize.NewFile()
+	defer workbook.Close()
+	index, err := workbook.NewSheet("Cities")
+	if err != nil {
+		t.Fatalf("new sheet: %v", err)
+	}
+	workbook.SetActiveSheet(index)
+	if err := workbook.SetSheetRow("Cities", "A1", &[]interface{}{"id", "name"}); err != nil {
+		t.Fatalf("set header: %v", err)
+	}
+	if err := workbook.SetSheetRow("Cities", "A2", &[]interface{}{1, "Hangzhou"}); err != nil {
+		t.Fatalf("set row: %v", err)
+	}
+
+	var buf bytes.Buffer
+	if err := workbook.Write(&buf); err != nil {
+		t.Fatalf("write workbook: %v", err)
+	}
+
+	opts := format.DefaultParseOptions()
+	opts.SheetName = "Cities"
+	info, err := NewPlugin(nil).DescribeTable(context.Background(), bytes.NewReader(buf.Bytes()), opts)
+	if err != nil {
+		t.Fatalf("DescribeTable() error = %v", err)
+	}
+	if info.Table == nil {
+		t.Fatalf("Table is nil")
+	}
+	if info.Table.Native["sheet_name"] != "Cities" {
+		t.Fatalf("native.sheet_name = %#v, want Cities", info.Table.Native["sheet_name"])
+	}
+	if info.Table.Native["sheet_index"] != index {
+		t.Fatalf("native.sheet_index = %#v, want %d", info.Table.Native["sheet_index"], index)
+	}
+	if info.FormatInfo["sheet_name"] != nil || info.FormatInfo["sheet_index"] != nil {
+		t.Fatalf("format info should not contain table native facts: %#v", info.FormatInfo)
+	}
+	if info.FormatInfo["sheet_count"] != 2 {
+		t.Fatalf("format_info.sheet_count = %#v, want 2", info.FormatInfo["sheet_count"])
+	}
+}
+
+func TestExcelTableNativeFiltersUnknownKeys(t *testing.T) {
+	t.Parallel()
+
+	native := datatype.FilterTableNative(map[string]interface{}{
+		"sheet_name": "Cities",
+		"unknown":    "ignored",
+	}, excelTableNativeKeys)
+	if native["sheet_name"] != "Cities" {
+		t.Fatalf("sheet_name = %#v, want Cities", native["sheet_name"])
+	}
+	if _, ok := native["unknown"]; ok {
+		t.Fatalf("unknown native key should be filtered: %#v", native)
 	}
 }

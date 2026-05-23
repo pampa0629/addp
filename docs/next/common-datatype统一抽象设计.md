@@ -188,6 +188,8 @@ type TableInfo struct {
 
 `Native` 的来源由 item 上下文决定：数据库表看 `engine_type`，文件表看 `format`。因此 `Native` 不再使用二级来源结构，不写成 `native.clickhouse.engine` 或 `native.shapefile.shape_type`。各来源能写入哪些 key 必须由对应 engine / format 的规范或白名单定义，不能作为无限制透传容器。
 
+`common/datatype` 只提供通用过滤 helper，用于按白名单清理 `Native`；它不登记具体 engine / format 的 key。具体来源必须在自己的包或规范中声明允许的 table native key，并在写入 `TableInfo.Native` 前过滤。
+
 进入 `Native` 的事实必须满足：
 
 - 是当前 table item 的表级来源原生事实。
@@ -208,12 +210,14 @@ type TableInfo struct {
 | 来源 | 可进入 `Native` 的表级事实 |
 |---|---|
 | ClickHouse | `engine` |
-| MySQL / Doris | `engine`、`table_collation`、`create_options` |
+| MySQL | `engine`；`table_collation`、`create_options` 暂为候选，待来源字段和消费链路确认 |
+| Doris | `engine` 等 Doris 表级原生事实暂为候选，待来源字段确认后进入白名单 |
 | PostgreSQL | `table_type`、`relkind` |
 | CSV / TSV | `delimiter`、`quote_char`、`escape_char`、`has_header` |
 | Shapefile | `shape_type`、`dbf_version`、`encoding` |
 | Excel sheet | `sheet_name`、`sheet_index` |
 | Parquet table | `partition_columns`，但文件清单等 scope 事实不进入 |
+| SQLite / GeoPackage | 暂不新增 table native key；表 / 视图分类进入 `Kind`，page size、page count、对象数量等仍属文件或容器事实 |
 
 ### 描述结果包
 
@@ -312,7 +316,7 @@ type TableInfo struct {
 | Shapefile | `shape_type`、`dbf_version`、`encoding` | `base_name`、`ref_extensions`、`has_prj`、`has_cpg` |
 | Excel | `sheet_name`、`sheet_index` | `sheet_count`、`default_sheet`、workbook 级摘要 |
 | Parquet | `partition_columns` | scope 文件清单、row group 摘要、压缩和文件级 schema 版本 |
-| SQLite / GeoPackage | 单表原生类型或表级选项 | page size、page count、table/view/index 数量 |
+| SQLite / GeoPackage | 暂无已确认 key；`sqlite_master.type` 统一为 `Kind` | page size、page count、table/view/index 数量 |
 | ZIP | 不适用，ZIP 本身不是 table item | entry count、file count、directory count、children truncated |
 
 数据库 engine 的表级原生事实同样进入 `TableInfo.Native`，但数据库、namespace、连接、catalog 层事实不进入 table native。
@@ -364,10 +368,11 @@ type TableInfo struct {
 
 | 字段 / 事实 | 处理规则 |
 |---|---|
-| `shape_type` | Shapefile header 原生 shape type 进入 `format_info.shapefile.shape_type`；平台统一几何类型进入 `capabilities.spatial.geometry_columns[].geometry_type`。 |
+| `shape_type` | Shapefile header 原生 shape type 进入 `type_info.table.native.shape_type`；平台统一几何类型进入 `capabilities.spatial.geometry_columns[].geometry_type`。 |
 | `has_prj` / `has_cpg` | sidecar 文件存在性进入 `format_info.shapefile`；解析出的 CRS / SRID 进入 `capabilities.spatial`。 |
-| `bbox` | GeoJSON 原生 bbox 可作为格式事实保留在 `format_info.json.bbox`；平台统一空间范围进入 `capabilities.spatial.extent`，通用消费只依赖后者。 |
+| `bbox` | GeoJSON 原文显式声明的 bbox 可作为格式事实保留在 `format_info.json.bbox`；插件扫描计算出的 bbox 只进入 `capabilities.spatial.extent`。通用消费只依赖后者。 |
 | `feature_count` | 不属于 spatial。表格行数进入 `type_info.table.row_count`；画像或统计任务产生的要素统计进入 `capabilities.statistics`。 |
+| `geometry_types` | 插件推导出的几何类型进入 `capabilities.spatial.geometry_columns[].geometry_type`，不在 `format_info.json` 中重复表达。 |
 | `has_geometry` | 不作为长期通用判断依据；是否具备空间能力由 `capabilities.spatial` 是否存在表达。 |
 
 一句话规则：
@@ -598,7 +603,7 @@ type SpatialInfo struct {
 | `RowCount` | `datatype.TableInfo.RowCount` | table 类型事实，使用 `*int64` 表达未知和 0 的差异 |
 | `SizeBytes` | `datatype.TableInfo.SizeBytes` | table 类型事实，使用 `*int64` 表达未知和 0 的差异 |
 | `Comment` | `datatype.TableInfo.Comment` | 当前写入 `type_info.table.table_comment`，作为通用 table 描述事实 |
-| `Kind` | `datatype.TableInfo.Kind` | 当前同时用于 catalog node kind 和 `type_info.table.table_type`，作为 table kind/type 事实 |
+| `Kind` | `datatype.TableInfo.Kind` | 平台通用 table 分类，例如 `table`、`view`、`materialized_view`；PostgreSQL `table_type` / `relkind` 等来源原生分类进入 `Native` |
 | `Schema` | catalog / storage / path 事实 | 不进入 `datatype.TableInfo` |
 | `LastModified` | `datatype.TableInfo.UpdatedAt` | 表源端更新时间事实，用于增量判断和 Meta `data_updated_at` |
 

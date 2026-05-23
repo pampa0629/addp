@@ -230,6 +230,8 @@ type clickhouseTableRow struct {
 	SizeBytes *int64
 }
 
+var clickhouseTableNativeKeys = datatype.NewNativeAllowedKeys("engine")
+
 func clickhouseTableNative(native map[string]interface{}, engine string) map[string]interface{} {
 	engine = strings.TrimSpace(engine)
 	if engine == "" {
@@ -239,7 +241,7 @@ func clickhouseTableNative(native map[string]interface{}, engine string) map[str
 		native = map[string]interface{}{}
 	}
 	native["engine"] = engine
-	return native
+	return datatype.FilterTableNative(native, clickhouseTableNativeKeys)
 }
 
 // ListColumns 列出指定表的所有列
