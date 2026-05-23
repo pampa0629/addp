@@ -32,20 +32,18 @@
 | `common/dataitem` | 定义 `DataType`、item 组织规则、layout、候选归并 | `DataType` 是平台通用概念，却放在 item 归并包内；同时依赖 `common/format` 的 layout 常量 |
 | `common/format/registry` | 定义 descriptor 的 data type、layout、provider、reader 常量 | format registry 成了 data type 常量事实源之一 |
 | `common/format` | 定义 `FieldType`、`TableInfo`、`DocumentInfo`、`MediaInfo`、`ContainerInfo`、`SpatialInfo`、`ContentIndex` | 这些 info 不是 format 私有语义，而是 ADDP 通用 data type info |
-| `common/engine/plugin` | 定义 `FieldInfo`、`ColumnInfo`、`TableInfo`、`SchemaInfo`、`CollectionInfo`、图相关 info 和 provider 接口 | engine 侧形成与 format 平行的字段和元数据模型 |
+| `common/engine/plugin` | 曾定义 `FieldInfo`、`ColumnInfo`、`TableInfo`、`SchemaInfo`、`CollectionInfo`、图相关 info 和 provider 接口 | engine 侧形成与 format 平行的字段和元数据模型；其中公共 `FieldInfo`、`ColumnInfo` 已收敛到 `datatype.FieldInfo` |
 | `common/models` | 定义 Meta API / client DTO，例如 `FieldInfo`、`SpatialMetadata` | API DTO 又定义了一套字段语义 |
-| Meta 内部 | 将 engine / format 结果转换为 `meta_item.attributes` | 数据库扫描链路存在 `ColumnInfo` / `FieldInfo` / `format.FieldInfo` 来回转换 |
+| Meta 内部 | 将 engine / format 结果转换为 `meta_item.attributes` | 历史上数据库扫描链路存在 `ColumnInfo` / `FieldInfo` / `format.FieldInfo` 来回转换；当前已先收敛公共 `ColumnInfo` 和 `format.FieldInfo` |
 | Manager / Transfer | 消费 Meta attributes、engine `FieldInfo` 或 format `FieldInfo` | 消费方不得不理解多套数据类型和字段模型 |
 
 典型绕路如下：
 
 ```text
 数据库插件 ListColumns()
-  -> plugin.ColumnInfo
+  -> datatype.FieldInfo
   -> common/engine/plugin.DescribeTabularItem()
-  -> plugin.FieldInfo
-  -> Meta 再反构造成 plugin.ColumnInfo
-  -> format.FieldInfo
+  -> Meta / Manager 直接消费 datatype.FieldInfo
   -> type_info.table.fields attributes
 ```
 
@@ -185,32 +183,28 @@ type TableInfo struct {
 
 ### 描述结果包
 
-Provider 一次解析可能同时得到 type info、format info、横切事实和内容索引。为了保留实现便利，同时避免污染 `TableInfo`，可以在 `datatype` 或 provider 层定义描述结果包。
+Provider 一次解析可能同时得到 type info、横切事实、内容索引和格式私有事实。描述结果包是 provider / 编排层的返回组合，不是 data type 本体。
 
-概念形态：
+当前原则：
 
-```go
-type TableDescribeResult struct {
-    Table        *TableInfo
-    Spatial      *SpatialInfo
-    ContentIndex *ContentIndex
-    FormatInfo   map[string]interface{}
-}
-```
+- `common/datatype` 的核心职责是统一 format 和 engine 共同需要表达的 ADDP 通用数据语义结构。
+- 描述结果包不应因为“同一次解析顺手得到多类事实”而污染 `TableInfo`、`MediaInfo` 等 type info。
+- `FormatInfo` 是 format 私有事实，应由 `common/format.FormatInfoProvider` 提供，不进入 `datatype` 结构。
+- 如果为了降低迁移风险暂时保留 `TableDescribeResult`、`MediaDescribeResult`，它们只能视为过渡结构，后续应移动到 provider 层或由 provider 接口拆分替代。
 
-它的映射关系必须清晰：
+描述结果中各类事实的映射关系必须清晰：
 
 | 字段 | 规范落点 |
 |---|---|
 | `Table` | `attributes.type_info.table` |
 | `Spatial` | `attributes.capabilities.spatial` |
 | `ContentIndex` | `attributes.content_index.table` |
-| `FormatInfo` | `attributes.format_info.<format>` |
+| format 私有事实 | `attributes.format_info.<format>`，由 `FormatInfoProvider` 独立提供 |
 
-`FormatInfo` 的语义是“当前格式的裸格式私有事实”，不是 attributes 中已经命名空间化的 `format_info` 结构。Provider 自身和调用编排层已经知道当前格式，因此 describe result 中不得再套一层格式名。例如 Shapefile provider 应返回：
+`FormatInfo` 的语义是“当前格式的裸格式私有事实”，不是 attributes 中已经命名空间化的 `format_info` 结构。Provider 自身和调用编排层已经知道当前格式，因此 `FormatInfoProvider` 不得再套一层格式名。例如 Shapefile format info 应返回：
 
 ```go
-FormatInfo: map[string]interface{}{
+map[string]interface{}{
     "base_name": "roads",
     "ref_extensions": []string{".shp", ".dbf", ".shx"},
     "shape_type": "Polygon",
@@ -231,7 +225,7 @@ FormatInfo: map[string]interface{}{
 }
 ```
 
-因此 `TableDescribeResult.FormatInfo` 保持 `map[string]interface{}`，不升级为 `map[string]map[string]interface{}`。如果极少数编排场景确实需要一次聚合多个格式的私有事实，应在上层聚合结构中表达，不污染单个 data type describe result。
+如果极少数编排场景确实需要一次聚合多个格式的私有事实，应在上层聚合结构中表达，不污染单个 data type describe result。
 
 ### format_info 与 capabilities 边界
 
@@ -487,6 +481,40 @@ type SpatialInfo struct {
 
 - 如果 provider 在解析某类 type info 时同时生成内容索引，应通过 describe result 的同级字段返回，再由 Meta 写入 `attributes.content_index`。
 - `ContentIndex` 的结构可以放在 `common/datatype`，但不应被理解为“数据类型”本身。
+- `ContentIndex` 当前暂不调整。后续是否留在 `common/datatype`，取决于它是否成为 format 和 engine 都需要消费的通用访问索引结构；如果它长期只服务内容读取优化，应考虑移出 `datatype`，但不为此提前新增含糊概念。
+
+## 已识别但暂缓处理的问题
+
+以下问题已经确认存在，但当前阶段不立即改代码；记录在这里，避免后续忘记边界和目标。
+
+| 问题 | 当前状态 | 暂缓原因 | 后续方向 |
+|---|---|---|---|
+| `datatype.TableDescribeResult` / `datatype.MediaDescribeResult` | 当前仍在 `common/datatype` 中，且代码仍有使用 | 迁移涉及 format provider、Meta enrich、Manager preview 等多条链路；先完成 format / engine 通用结构收敛 | 作为 provider / 编排层结果包处理；至少移除其中的 `FormatInfo`，format 私有事实统一走 `FormatInfoProvider` |
+| `datatype.ContentIndex` | 当前放在 `common/datatype`，被 format、Meta、Manager preview 使用 | 它不是 data type 本体，但当前是跨模块复用结构；贸然移出会引入新包或新概念 | 暂不动。后续结合 engine range reader、format content index、Meta attributes 的消费链路再决定是否移出 |
+| `common/engine/plugin.TableInfo` | 仍是 engine catalog table 列表结构 | 其中混有通用 table type info 和 catalog / engine listing 事实，不能简单整体替换 | 拆清 `datatype.TableInfo` 可承载的通用事实，与 schema/database、kind、comment 等 catalog 事实的边界 |
+| `common/engine/plugin.SchemaInfo` / `DatabaseInfo` / `CollectionInfo` | 仍是 engine catalog 层结构 | 它们更接近 catalog hierarchy / namespace 事实，不等同于 data type info | 暂不迁入 `datatype`。后续如有重复，再从 catalog/path/node 语义统一 |
+| `format.TableInfo` | 当前作为 reader / writer / Transfer 操作结构存在，字段已切到 `datatype.FieldInfo` | 它还承载 `FormatInfo`、`SpatialInfo`、`ContentIndex` 等执行期补充事实 | 后续继续收敛，避免它成为第二套 table metadata 事实源；非必要不改名为含糊的 schema 概念 |
+
+### `common/engine/plugin.TableInfo` 拆分建议
+
+`plugin.TableInfo` 是下一处重复事实源，但它不同于 `ColumnInfo`：它不是单纯的 table type info，而是 catalog listing、变更判断和 table type info 的混合结构。
+
+当前字段归属建议：
+
+| 当前字段 | 建议归属 | 说明 |
+|---|---|---|
+| `TableName` | `datatype.TableInfo.Name` | table data type 的名称事实，可统一 |
+| `RowCount` | `datatype.TableInfo.RowCount` | table 类型事实；当前为 `int64`，`datatype` 中为 `*int64` |
+| `SizeBytes` | `datatype.TableInfo.SizeBytes` | table 类型事实；当前为 `int64`，`datatype` 中为 `*int64` |
+| `Comment` | 倾向进入 `datatype.TableInfo` 或 Meta 派生字段 | 当前已写入 `type_info.table.table_comment`，需要确认是否作为通用 table type fact |
+| `Kind` | 倾向进入 `datatype.TableInfo` 或 catalog kind | 当前同时用于 catalog node kind 和 `type_info.table.table_type`，需要确认命名和落点 |
+| `Schema` | catalog / storage / path 事实 | 不进入 `datatype.TableInfo` |
+| `LastModified` | catalog / storage / source state 事实 | 用于变更判断，不进入 `datatype.TableInfo` |
+
+因此这一步需要先确认两个问题，再动代码：
+
+1. `table_type` / `table_comment` 是否正式进入 `datatype.TableInfo`。
+2. engine catalog 列表是否继续需要一个轻量 catalog table entry 结构承载 `schema`、`kind`、`last_modified` 等非 type info 事实；如果需要，必须先审定命名，不能随意新增 `schema` 这类含糊概念。
 
 ## 和现有模型的收拢关系
 
@@ -505,8 +533,8 @@ type SpatialInfo struct {
 | `common/format.ContainerInfo` | 迁到 `common/datatype.ContainerInfo` |
 | `common/format.SpatialInfo` | 迁到 `common/datatype.SpatialInfo` |
 | `common/format.ContentIndex*` | 迁到 `common/datatype` 或后续独立 `common/contentindex`，但不能继续属于 format |
-| `common/engine/plugin.FieldInfo` | 删除，改用 `datatype.FieldInfo` |
-| `common/engine/plugin.ColumnInfo` | 删除或限定为插件内部临时结构；provider 对外使用 `datatype.FieldInfo` |
+| `common/engine/plugin.FieldInfo` | 已删除，改用 `datatype.FieldInfo` |
+| `common/engine/plugin.ColumnInfo` | 已删除；provider 对外使用 `datatype.FieldInfo` |
 | `common/models.FieldInfo` | 删除，API / client 直接使用标准 attributes 或 `datatype.FieldInfo` 派生 DTO |
 | Meta 内部重复 `FieldInfo` | 删除，统一从 `datatype` 到 attributes |
 

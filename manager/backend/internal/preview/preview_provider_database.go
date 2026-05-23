@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/spatial"
@@ -84,7 +85,7 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 		// Meta 不可用或无数据，回退到 ItemMetadataProvider。
 		columnNames = make([]string, len(columns))
 		for i, col := range columns {
-			columnNames[i] = col.ColumnName
+			columnNames[i] = col.Name
 		}
 
 		// 检测几何列
@@ -94,10 +95,10 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 		columnMetadata = make([]models.ColumnMetadata, len(columns))
 		for i, col := range columns {
 			columnMetadata[i] = models.ColumnMetadata{
-				ColumnName:   col.ColumnName,
-				Type:         col.DataType,
-				IsNullable:   col.IsNullable,
-				IsPrimaryKey: col.IsPrimaryKey,
+				ColumnName:   col.Name,
+				Type:         databaseFieldNativeType(col),
+				IsNullable:   col.Nullable,
+				IsPrimaryKey: col.PrimaryKey,
 				Comment:      col.Comment,
 			}
 		}
@@ -158,7 +159,7 @@ func (p *DatabaseTablePreviewProvider) queryData(
 	plug plugin.EnginePlugin,
 	engineType, schema, table string,
 	offset, limit int,
-	columns []plugin.ColumnInfo,
+	columns []datatype.FieldInfo,
 ) ([]map[string]interface{}, error) {
 	dialect := sqldialect.ForEngine(engineType)
 	selectExpr := "*"
@@ -191,17 +192,25 @@ const (
 	databasePreviewKeyAlias    = "__addp_keys"
 )
 
-func databasePrimaryKeyColumns(columns []plugin.ColumnInfo) []string {
+func databaseFieldNativeType(field datatype.FieldInfo) string {
+	nativeType := strings.TrimSpace(field.NativeType)
+	if nativeType != "" {
+		return nativeType
+	}
+	return strings.TrimSpace(string(field.Type))
+}
+
+func databasePrimaryKeyColumns(columns []datatype.FieldInfo) []string {
 	primaryKeys := make([]string, 0)
 	for _, col := range columns {
-		if col.IsPrimaryKey && strings.TrimSpace(col.ColumnName) != "" {
-			primaryKeys = append(primaryKeys, col.ColumnName)
+		if col.PrimaryKey && strings.TrimSpace(col.Name) != "" {
+			primaryKeys = append(primaryKeys, col.Name)
 		}
 	}
 	return primaryKeys
 }
 
-func databasePreviewSelectExpr(dialect sqldialect.Dialect, columns []plugin.ColumnInfo, tableAlias string) string {
+func databasePreviewSelectExpr(dialect sqldialect.Dialect, columns []datatype.FieldInfo, tableAlias string) string {
 	if len(columns) == 0 {
 		if tableAlias != "" {
 			return dialect.QuoteIdentifier(tableAlias) + ".*"
@@ -211,19 +220,20 @@ func databasePreviewSelectExpr(dialect sqldialect.Dialect, columns []plugin.Colu
 
 	selectColumns := make([]string, 0, len(columns)*2)
 	for _, col := range columns {
-		columnRef := databasePreviewColumnRef(dialect, tableAlias, col.ColumnName)
-		if spatial.IsPostGISSpatialType(col.DataType) {
+		nativeType := databaseFieldNativeType(col)
+		columnRef := databasePreviewColumnRef(dialect, tableAlias, col.Name)
+		if spatial.IsPostGISSpatialType(nativeType) {
 			selectColumns = append(selectColumns, fmt.Sprintf("%s AS %s",
-				databasePreviewWKTExpr(columnRef, col.DataType),
-				dialect.QuoteIdentifier(col.ColumnName),
+				databasePreviewWKTExpr(columnRef, nativeType),
+				dialect.QuoteIdentifier(col.Name),
 			))
 			selectColumns = append(selectColumns, fmt.Sprintf("%s AS %s",
-				databasePreviewRenderExpr(columnRef, col.DataType),
-				dialect.QuoteIdentifier(renderGeometryColumnName(col.ColumnName)),
+				databasePreviewRenderExpr(columnRef, nativeType),
+				dialect.QuoteIdentifier(renderGeometryColumnName(col.Name)),
 			))
 			continue
 		}
-		selectColumns = append(selectColumns, fmt.Sprintf("%s AS %s", columnRef, dialect.QuoteIdentifier(col.ColumnName)))
+		selectColumns = append(selectColumns, fmt.Sprintf("%s AS %s", columnRef, dialect.QuoteIdentifier(col.Name)))
 	}
 	return strings.Join(selectColumns, ", ")
 }
@@ -369,15 +379,15 @@ func rowsContainColumn(rows []map[string]interface{}, column string) bool {
 }
 
 // detectGeometryColumns 检测几何列（仅 PostgreSQL + PostGIS）
-func (p *DatabaseTablePreviewProvider) detectGeometryColumns(engineType string, columns []plugin.ColumnInfo) []string {
+func (p *DatabaseTablePreviewProvider) detectGeometryColumns(engineType string, columns []datatype.FieldInfo) []string {
 	if !sqldialect.ForEngine(engineType).IsPostgreSQL() {
 		return []string{}
 	}
 
 	geometryColumns := []string{}
 	for _, col := range columns {
-		if p.isSpatialType(col.DataType) {
-			geometryColumns = append(geometryColumns, col.ColumnName)
+		if p.isSpatialType(databaseFieldNativeType(col)) {
+			geometryColumns = append(geometryColumns, col.Name)
 		}
 	}
 
@@ -396,7 +406,7 @@ func (p *DatabaseTablePreviewProvider) describeDatabaseTable(
 	engineID uint,
 	plug plugin.EnginePlugin,
 	schema, table string,
-) (*plugin.ItemMetadata, []plugin.ColumnInfo, error) {
+) (*plugin.ItemMetadata, []datatype.FieldInfo, error) {
 	if metadataProvider == nil {
 		return nil, nil, fmt.Errorf("engine %s does not implement ItemMetadataProvider", plug.Type())
 	}
@@ -407,7 +417,7 @@ func (p *DatabaseTablePreviewProvider) describeDatabaseTable(
 	if err != nil {
 		return nil, nil, err
 	}
-	return itemMetadata, plugin.ColumnInfosFromFields(itemMetadata.Fields), nil
+	return itemMetadata, itemMetadata.Fields, nil
 }
 
 func databaseTableCatalogPath(engineID uint, plug plugin.EnginePlugin, schema, table string) plugin.CatalogPath {

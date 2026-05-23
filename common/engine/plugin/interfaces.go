@@ -123,15 +123,6 @@ type TableInfo struct {
 	LastModified *time.Time `gorm:"column:last_modified"` // 表的最后修改时间（用于增量扫描）
 }
 
-// ColumnInfo 列信息
-type ColumnInfo struct {
-	ColumnName   string `gorm:"column:column_name"`    // 列名
-	DataType     string `gorm:"column:data_type"`      // 原生数据类型（如 varchar, int4, geometry, geography）
-	IsNullable   bool   `gorm:"column:is_nullable"`    // 是否可为空
-	IsPrimaryKey bool   `gorm:"column:is_primary_key"` // 是否主键
-	Comment      string `gorm:"column:comment"`        // 列注释
-}
-
 // DatabaseInfo Database 信息（NoSQL）
 type DatabaseInfo struct {
 	Name      string // 数据库名称

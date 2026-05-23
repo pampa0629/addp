@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	_ "github.com/lib/pq"
 	"gorm.io/driver/postgres"
@@ -222,18 +223,18 @@ func (p *PostgreSQLPlugin) listTables(ctx context.Context, db *gorm.DB, schema s
 }
 
 // ListColumns 列出指定表的所有列
-func (p *PostgreSQLPlugin) listColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]plugin.ColumnInfo, error) {
-	var columns []plugin.ColumnInfo
+func (p *PostgreSQLPlugin) listColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]datatype.FieldInfo, error) {
+	var fields []datatype.FieldInfo
 
 	query := `
 		SELECT
-			c.column_name,
+			c.column_name as name,
 			CASE
 				WHEN c.data_type = 'USER-DEFINED' THEN c.udt_name
 				ELSE c.data_type
-			END as data_type,
-			CASE WHEN c.is_nullable = 'YES' THEN true ELSE false END as is_nullable,
-			CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END as is_primary_key,
+			END as native_type,
+			CASE WHEN c.is_nullable = 'YES' THEN true ELSE false END as nullable,
+			CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END as primary_key,
 			COALESCE(
 				col_description(
 					(quote_ident(c.table_schema)||'.'||quote_ident(c.table_name))::regclass,
@@ -257,12 +258,12 @@ func (p *PostgreSQLPlugin) listColumns(ctx context.Context, db *gorm.DB, schema,
 		ORDER BY c.ordinal_position
 	`
 
-	err := db.WithContext(ctx).Raw(query, schema, table).Scan(&columns).Error
+	err := db.WithContext(ctx).Raw(query, schema, table).Scan(&fields).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to list columns: %w", err)
 	}
 
-	return columns, nil
+	return plugin.NormalizeFieldInfos(fields), nil
 }
 
 // GetTableRowCount 获取表的行数

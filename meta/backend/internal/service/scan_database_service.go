@@ -412,17 +412,16 @@ func engineSupportsSpatialMetadata(engineType string) bool {
 		capabilities.Storage.Metadata.SpatialMetadata
 }
 
-func databaseDatatypeFieldInfo(columns []plugin.ColumnInfo) []datatype.FieldInfo {
-	fields := make([]datatype.FieldInfo, 0, len(columns))
-	for _, col := range columns {
-		fields = append(fields, datatype.FieldInfo{
-			Name:       col.ColumnName,
-			Type:       datatype.FieldType(metaquery.StandardizeFieldType(col.DataType, col.DataType)),
-			NativeType: col.DataType,
-			Nullable:   col.IsNullable,
-			PrimaryKey: col.IsPrimaryKey,
-			Comment:    col.Comment,
-		})
+func databaseDatatypeFieldInfo(input []datatype.FieldInfo) []datatype.FieldInfo {
+	fields := make([]datatype.FieldInfo, 0, len(input))
+	for _, field := range input {
+		nativeType := field.NativeType
+		if nativeType == "" {
+			nativeType = string(field.Type)
+		}
+		field.NativeType = nativeType
+		field.Type = datatype.FieldType(metaquery.StandardizeFieldType(nativeType, string(field.Type)))
+		fields = append(fields, field)
 	}
 	return fields
 }
@@ -444,7 +443,7 @@ func (s *DatabaseScanService) listColumns(
 	metadataProvider plugin.ItemMetadataProvider,
 	schemaName string,
 	tableName string,
-) ([]plugin.ColumnInfo, error) {
+) ([]datatype.FieldInfo, error) {
 	item, err := metadataProvider.DescribeItem(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), plugin.CatalogPath{
 		Version:  plugin.CatalogPathVersion,
 		EngineID: resource.ID,
@@ -456,7 +455,7 @@ func (s *DatabaseScanService) listColumns(
 	if err != nil {
 		return nil, err
 	}
-	return plugin.ColumnInfosFromFields(item.Fields), nil
+	return item.Fields, nil
 }
 
 // scanSpatialMetadata 扫描PostGIS空间元数据

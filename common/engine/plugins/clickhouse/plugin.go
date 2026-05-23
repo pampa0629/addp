@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	_ "github.com/ClickHouse/clickhouse-go/v2"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"gorm.io/driver/clickhouse"
 	"gorm.io/gorm"
@@ -209,15 +210,15 @@ func (p *ClickHousePlugin) listTables(ctx context.Context, db *gorm.DB, schema s
 }
 
 // ListColumns 列出指定表的所有列
-func (p *ClickHousePlugin) listColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]plugin.ColumnInfo, error) {
-	var columns []plugin.ColumnInfo
+func (p *ClickHousePlugin) listColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]datatype.FieldInfo, error) {
+	var fields []datatype.FieldInfo
 
 	query := `
 		SELECT
-			name as column_name,
-			type as data_type,
-			IF(type LIKE '%Nullable%', 1, 0) as is_nullable,
-			0 as is_primary_key,
+			name,
+			type as native_type,
+			IF(type LIKE '%Nullable%', 1, 0) as nullable,
+			0 as primary_key,
 			comment
 		FROM system.columns
 		WHERE database = ?
@@ -225,12 +226,12 @@ func (p *ClickHousePlugin) listColumns(ctx context.Context, db *gorm.DB, schema,
 		ORDER BY position
 	`
 
-	err := db.WithContext(ctx).Raw(query, schema, table).Scan(&columns).Error
+	err := db.WithContext(ctx).Raw(query, schema, table).Scan(&fields).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to list columns: %w", err)
 	}
 
-	return columns, nil
+	return plugin.NormalizeFieldInfos(fields), nil
 }
 
 // GetTableRowCount 获取表的行数

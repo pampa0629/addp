@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/addp/common/datatype"
 	"gorm.io/gorm"
 )
 
@@ -35,7 +36,7 @@ type TabularCatalogCallbacks struct {
 	NamespaceTerm         string
 	ListSchemas           func(ctx context.Context, db *gorm.DB) ([]SchemaInfo, error)
 	ListTables            func(ctx context.Context, db *gorm.DB, schema string) ([]TableInfo, error)
-	ListColumns           func(ctx context.Context, db *gorm.DB, schema, table string) ([]ColumnInfo, error)
+	ListColumns           func(ctx context.Context, db *gorm.DB, schema, table string) ([]datatype.FieldInfo, error)
 	RowCount              func(ctx context.Context, db *gorm.DB, schema, table string) (int64, error)
 	IsSystemNamespaceFunc func(namespace string) bool
 }
@@ -165,7 +166,7 @@ func DescribeTabularItem(ctx context.Context, callbacks TabularCatalogCallbacks,
 		return nil, err
 	}
 
-	fields := FieldInfosFromColumns(columns)
+	fields := NormalizeFieldInfos(columns)
 
 	stats := map[string]interface{}{}
 	if callbacks.RowCount != nil {

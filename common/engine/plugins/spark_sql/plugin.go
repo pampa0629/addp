@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/beltran/gohive"
 	"gorm.io/driver/mysql"
@@ -387,8 +388,8 @@ func (p *SparkSQLPlugin) listTables(ctx context.Context, db *gorm.DB, schema str
 }
 
 // ListColumns 列出指定表的所有列
-func (p *SparkSQLPlugin) listColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]plugin.ColumnInfo, error) {
-	var columns []plugin.ColumnInfo
+func (p *SparkSQLPlugin) listColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]datatype.FieldInfo, error) {
+	var fields []datatype.FieldInfo
 
 	// 切换到指定数据库
 	// 重要：使用 quoteSparkIdentifier 保留标识符大小写
@@ -415,22 +416,14 @@ func (p *SparkSQLPlugin) listColumns(ctx context.Context, db *gorm.DB, schema, t
 			continue
 		}
 
-		column := plugin.ColumnInfo{
-			ColumnName:   colName.String,
-			DataType:     dataType.String,
-			IsNullable:   true, // Apache Spark 默认允许NULL
-			IsPrimaryKey: false,
-			Comment:      "",
-		}
-
+		commentText := ""
 		if comment.Valid {
-			column.Comment = comment.String
+			commentText = comment.String
 		}
-
-		columns = append(columns, column)
+		fields = append(fields, plugin.FieldInfoFromNative(colName.String, dataType.String, true, false, commentText))
 	}
 
-	return columns, nil
+	return plugin.NormalizeFieldInfos(fields), nil
 }
 
 // GetTableRowCount 获取表的行数

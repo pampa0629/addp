@@ -54,10 +54,10 @@ func TestDatabasePreviewPostgreSQLPrimaryKeyPageQueryUsesKeyCTEForDeepOffset(t *
 	t.Parallel()
 
 	dialect := sqldialect.ForEngine("postgresql")
-	columns := []plugin.ColumnInfo{
-		{ColumnName: "SmID", DataType: "bigint", IsPrimaryKey: true},
-		{ColumnName: "SmGeometry", DataType: "geometry(MultiPolygon,2360)"},
-		{ColumnName: "DLMC", DataType: "text"},
+	columns := []datatype.FieldInfo{
+		{Name: "SmID", NativeType: "bigint", PrimaryKey: true},
+		{Name: "SmGeometry", NativeType: "geometry(MultiPolygon,2360)"},
+		{Name: "DLMC", NativeType: "text"},
 	}
 	selectExpr := databasePreviewSelectExpr(dialect, columns, databasePreviewSourceAlias)
 	query := databasePreviewPostgreSQLPrimaryKeyPageQuery(dialect, selectExpr, "public", "dltb", databasePrimaryKeyColumns(columns), 20, 10000000)
@@ -80,9 +80,9 @@ func TestDatabasePreviewPostgreSQLPrimaryKeyPageQueryOrdersFirstPage(t *testing.
 	t.Parallel()
 
 	dialect := sqldialect.ForEngine("postgresql")
-	columns := []plugin.ColumnInfo{
-		{ColumnName: "id", DataType: "bigint", IsPrimaryKey: true},
-		{ColumnName: "name", DataType: "text"},
+	columns := []datatype.FieldInfo{
+		{Name: "id", NativeType: "bigint", PrimaryKey: true},
+		{Name: "name", NativeType: "text"},
 	}
 	selectExpr := databasePreviewSelectExpr(dialect, columns, databasePreviewSourceAlias)
 	query := databasePreviewPostgreSQLPrimaryKeyPageQuery(dialect, selectExpr, "public", "cities", databasePrimaryKeyColumns(columns), 50, 0)

@@ -6,19 +6,9 @@ import (
 	"github.com/addp/common/datatype"
 )
 
-func TestFieldInfosFromColumnsPreservesNativeType(t *testing.T) {
-	fields := FieldInfosFromColumns([]ColumnInfo{{
-		ColumnName:   "id",
-		DataType:     "int4",
-		IsNullable:   false,
-		IsPrimaryKey: true,
-		Comment:      "identifier",
-	}})
+func TestFieldInfoFromNativePreservesNativeType(t *testing.T) {
+	field := FieldInfoFromNative("id", "int4", false, true, "identifier")
 
-	if len(fields) != 1 {
-		t.Fatalf("fields = %#v, want one field", fields)
-	}
-	field := fields[0]
 	if field.Name != "id" || field.Type != datatype.FieldTypeUnknown || field.NativeType != "int4" {
 		t.Fatalf("field identity = %#v", field)
 	}
@@ -27,24 +17,20 @@ func TestFieldInfosFromColumnsPreservesNativeType(t *testing.T) {
 	}
 }
 
-func TestColumnInfosFromFieldsPrefersNativeType(t *testing.T) {
-	columns := ColumnInfosFromFields([]datatype.FieldInfo{{
-		Name:       "id",
-		Type:       datatype.FieldTypeInt,
-		NativeType: "int4",
-		Nullable:   false,
-		PrimaryKey: true,
-		Comment:    "identifier",
-	}})
+func TestNormalizeFieldInfosFillsNativeTypeAndDropsEmptyNames(t *testing.T) {
+	fields := NormalizeFieldInfos([]datatype.FieldInfo{
+		{Name: " id ", Type: datatype.FieldTypeInt, Nullable: false},
+		{Name: "", NativeType: "text"},
+		{Name: "name", NativeType: "string", Nullable: true},
+	})
 
-	if len(columns) != 1 {
-		t.Fatalf("columns = %#v, want one column", columns)
+	if len(fields) != 2 {
+		t.Fatalf("fields = %#v, want two fields", fields)
 	}
-	column := columns[0]
-	if column.ColumnName != "id" || column.DataType != "int4" {
-		t.Fatalf("column identity = %#v", column)
+	if fields[0].Name != "id" || fields[0].NativeType != "int" || fields[0].Type != datatype.FieldTypeInt {
+		t.Fatalf("first field = %#v", fields[0])
 	}
-	if !column.IsPrimaryKey || column.IsNullable || column.Comment != "identifier" {
-		t.Fatalf("column facts = %#v", column)
+	if fields[1].Name != "name" || fields[1].NativeType != "string" || fields[1].Type != datatype.FieldTypeString {
+		t.Fatalf("second field = %#v", fields[1])
 	}
 }

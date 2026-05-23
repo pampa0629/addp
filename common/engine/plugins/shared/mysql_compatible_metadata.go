@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"gorm.io/gorm"
 )
@@ -72,14 +73,14 @@ func (d MySQLCompatibleMetadataDialect) ListTables(ctx context.Context, db *gorm
 	return tables, nil
 }
 
-func (d MySQLCompatibleMetadataDialect) ListColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]plugin.ColumnInfo, error) {
-	var columns []plugin.ColumnInfo
+func (d MySQLCompatibleMetadataDialect) ListColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]datatype.FieldInfo, error) {
+	var fields []datatype.FieldInfo
 	query := `
 		SELECT
-			column_name as column_name,
-			data_type as data_type,
-			IF(is_nullable = 'YES', true, false) as is_nullable,
-			IF(column_key = 'PRI', true, false) as is_primary_key,
+			column_name as name,
+			data_type as native_type,
+			IF(is_nullable = 'YES', true, false) as nullable,
+			IF(column_key = 'PRI', true, false) as primary_key,
 			COALESCE(column_comment, '') as comment
 		FROM information_schema.columns
 		WHERE table_schema = ?
@@ -87,10 +88,10 @@ func (d MySQLCompatibleMetadataDialect) ListColumns(ctx context.Context, db *gor
 		ORDER BY ordinal_position
 	`
 
-	if err := db.WithContext(ctx).Raw(query, schema, table).Scan(&columns).Error; err != nil {
+	if err := db.WithContext(ctx).Raw(query, schema, table).Scan(&fields).Error; err != nil {
 		return nil, fmt.Errorf("failed to list columns: %w", err)
 	}
-	return columns, nil
+	return plugin.NormalizeFieldInfos(fields), nil
 }
 
 func (d MySQLCompatibleMetadataDialect) RowCount(ctx context.Context, db *gorm.DB, schema, table string) (int64, error) {

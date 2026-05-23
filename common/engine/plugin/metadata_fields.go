@@ -1,42 +1,42 @@
 package plugin
 
-import "github.com/addp/common/datatype"
+import (
+	"strings"
 
-func FieldInfosFromColumns(columns []ColumnInfo) []datatype.FieldInfo {
-	if len(columns) == 0 {
-		return nil
+	"github.com/addp/common/datatype"
+)
+
+func FieldInfoFromNative(name, nativeType string, nullable, primaryKey bool, comment string) datatype.FieldInfo {
+	nativeType = strings.TrimSpace(nativeType)
+	fieldType := datatype.ParseFieldType(nativeType)
+	return datatype.FieldInfo{
+		Name:       strings.TrimSpace(name),
+		Type:       fieldType,
+		NativeType: nativeType,
+		Nullable:   nullable,
+		PrimaryKey: primaryKey,
+		Comment:    comment,
 	}
-	fields := make([]datatype.FieldInfo, 0, len(columns))
-	for _, col := range columns {
-		fields = append(fields, datatype.FieldInfo{
-			Name:       col.ColumnName,
-			Type:       datatype.ParseFieldType(col.DataType),
-			NativeType: col.DataType,
-			Nullable:   col.IsNullable,
-			PrimaryKey: col.IsPrimaryKey,
-			Comment:    col.Comment,
-		})
-	}
-	return fields
 }
 
-func ColumnInfosFromFields(fields []datatype.FieldInfo) []ColumnInfo {
+func NormalizeFieldInfos(fields []datatype.FieldInfo) []datatype.FieldInfo {
 	if len(fields) == 0 {
 		return nil
 	}
-	columns := make([]ColumnInfo, 0, len(fields))
+	normalized := make([]datatype.FieldInfo, 0, len(fields))
 	for _, field := range fields {
-		dataType := field.NativeType
-		if dataType == "" {
-			dataType = string(field.Type)
+		field.Name = strings.TrimSpace(field.Name)
+		field.NativeType = strings.TrimSpace(field.NativeType)
+		if field.Name == "" {
+			continue
 		}
-		columns = append(columns, ColumnInfo{
-			ColumnName:   field.Name,
-			DataType:     dataType,
-			IsNullable:   field.Nullable,
-			IsPrimaryKey: field.PrimaryKey,
-			Comment:      field.Comment,
-		})
+		if field.NativeType == "" && field.Type != "" {
+			field.NativeType = string(field.Type)
+		}
+		if !datatype.IsKnownFieldType(field.Type) || field.Type == "" {
+			field.Type = datatype.ParseFieldType(field.NativeType)
+		}
+		normalized = append(normalized, field)
 	}
-	return columns
+	return normalized
 }

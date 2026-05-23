@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/shared"
 	_ "github.com/go-sql-driver/mysql"
@@ -167,7 +168,7 @@ func (p *DorisPlugin) listTables(ctx context.Context, db *gorm.DB, schema string
 }
 
 // ListColumns 列出指定表的所有列
-func (p *DorisPlugin) listColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]plugin.ColumnInfo, error) {
+func (p *DorisPlugin) listColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]datatype.FieldInfo, error) {
 	return dorisMetadataDialect.ListColumns(ctx, db, schema, table)
 }
 
