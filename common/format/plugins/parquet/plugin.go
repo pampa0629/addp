@@ -259,8 +259,10 @@ func (p *Plugin) OpenTableReader(ctx context.Context, input io.Reader, options *
 	}
 	rowCount := file.NumRows()
 	schema := &format.TableInfo{
-		Fields:   extractFields(file.Schema()),
-		RowCount: &rowCount,
+		TableInfo: datatype.TableInfo{
+			Fields:   extractFields(file.Schema()),
+			RowCount: &rowCount,
+		},
 	}
 	schema, err = format.ApplyFieldSelectionToTableInfo(schema, fieldSelectionFromOptions(options))
 	if err != nil {
@@ -317,7 +319,9 @@ func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit
 	// 提取列名（叶子列顺序）
 	fieldNames := extractLeafColumnNames(file.Schema())
 	fieldSelection := fieldSelectionFromOptions(options)
-	if _, err := format.ApplyFieldSelectionToTableInfo(&format.TableInfo{Fields: extractFields(file.Schema())}, fieldSelection); err != nil {
+	if _, err := format.ApplyFieldSelectionToTableInfo(&format.TableInfo{
+		TableInfo: datatype.TableInfo{Fields: extractFields(file.Schema())},
+	}, fieldSelection); err != nil {
 		return nil, err
 	}
 

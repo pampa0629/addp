@@ -17,8 +17,8 @@ type MySQLCompatibleMetadataDialect struct {
 	IncludeComment bool
 }
 
-func (d MySQLCompatibleMetadataDialect) ListSchemas(ctx context.Context, db *gorm.DB) ([]plugin.SchemaInfo, error) {
-	var schemas []plugin.SchemaInfo
+func (d MySQLCompatibleMetadataDialect) ListNamespaces(ctx context.Context, db *gorm.DB) ([]plugin.NamespaceInfo, error) {
+	var namespaces []plugin.NamespaceInfo
 	systemSchemas := d.systemSchemaNames()
 	query := fmt.Sprintf(`
 		SELECT
@@ -37,27 +37,26 @@ func (d MySQLCompatibleMetadataDialect) ListSchemas(ctx context.Context, db *gor
 		args = append(args, name)
 	}
 
-	if err := db.WithContext(ctx).Raw(query, args...).Scan(&schemas).Error; err != nil {
-		return nil, fmt.Errorf("failed to list schemas: %w", err)
+	if err := db.WithContext(ctx).Raw(query, args...).Scan(&namespaces).Error; err != nil {
+		return nil, fmt.Errorf("failed to list namespaces: %w", err)
 	}
-	return schemas, nil
+	return namespaces, nil
 }
 
-func (d MySQLCompatibleMetadataDialect) ListTables(ctx context.Context, db *gorm.DB, schema string) ([]plugin.TableInfo, error) {
-	var tables []plugin.TableInfo
+func (d MySQLCompatibleMetadataDialect) ListTables(ctx context.Context, db *gorm.DB, schema string) ([]datatype.TableInfo, error) {
+	var tables []datatype.TableInfo
 	commentExpr := "'' as comment"
 	if d.IncludeComment {
 		commentExpr = "COALESCE(table_comment, '') as comment"
 	}
 	query := `
 		SELECT
-			table_schema as ` + "`schema`" + `,
-			table_name as table_name,
+			table_name as name,
 			CASE
 				WHEN table_type = 'VIEW' THEN 'view'
 				WHEN table_type = 'BASE TABLE' THEN 'table'
 				ELSE LOWER(REPLACE(table_type, ' ', '_'))
-			END AS table_kind,
+			END AS kind,
 			` + commentExpr + `,
 			COALESCE(table_rows, 0) as row_count,
 			COALESCE(data_length + index_length, 0) as size_bytes

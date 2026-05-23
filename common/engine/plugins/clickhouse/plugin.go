@@ -70,7 +70,7 @@ func (p *ClickHousePlugin) StoreSemantics() plugin.StoreSemantics {
 func (p *ClickHousePlugin) tabularCatalogCallbacks() plugin.TabularCatalogCallbacks {
 	return plugin.TabularCatalogCallbacks{
 		NamespaceTerm:         "database",
-		ListSchemas:           p.listSchemas,
+		ListNamespaces:        p.listNamespaces,
 		ListTables:            p.listTables,
 		ListColumns:           p.listColumns,
 		RowCount:              p.getTableRowCount,
@@ -155,9 +155,9 @@ func (p *ClickHousePlugin) GetDialect() string {
 
 // === MetadataPlugin 接口实现 ===
 
-// ListSchemas 列出所有Database
-func (p *ClickHousePlugin) listSchemas(ctx context.Context, db *gorm.DB) ([]plugin.SchemaInfo, error) {
-	var schemas []plugin.SchemaInfo
+// listNamespaces 列出所有 Database。
+func (p *ClickHousePlugin) listNamespaces(ctx context.Context, db *gorm.DB) ([]plugin.NamespaceInfo, error) {
+	var namespaces []plugin.NamespaceInfo
 
 	// ClickHouse 使用 system.databases 获取 database 列表和表数量统计。
 	query := `
@@ -171,28 +171,27 @@ func (p *ClickHousePlugin) listSchemas(ctx context.Context, db *gorm.DB) ([]plug
 		ORDER BY name
 	`
 
-	err := db.WithContext(ctx).Raw(query).Scan(&schemas).Error
+	err := db.WithContext(ctx).Raw(query).Scan(&namespaces).Error
 	if err != nil {
-		return nil, fmt.Errorf("failed to list schemas: %w", err)
+		return nil, fmt.Errorf("failed to list namespaces: %w", err)
 	}
 
-	return schemas, nil
+	return namespaces, nil
 }
 
 // ListTables 列出指定Database下的所有表
-func (p *ClickHousePlugin) listTables(ctx context.Context, db *gorm.DB, schema string) ([]plugin.TableInfo, error) {
-	var tables []plugin.TableInfo
+func (p *ClickHousePlugin) listTables(ctx context.Context, db *gorm.DB, schema string) ([]datatype.TableInfo, error) {
+	var tables []datatype.TableInfo
 
 	query := `
 		SELECT
-			database as schema,
-			name as table_name,
+			name,
 			CASE
 				WHEN engine = 'MaterializedView' THEN 'materialized_view'
 				WHEN engine = 'View' THEN 'view'
 				WHEN engine LIKE '%View%' THEN 'view'
 				ELSE 'table'
-			END AS table_kind,
+			END AS kind,
 			comment,
 			total_rows as row_count,
 			total_bytes as size_bytes

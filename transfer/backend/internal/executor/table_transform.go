@@ -110,14 +110,16 @@ func (t *fieldMappingTransform) TransformSchema(schema *format.TableInfo) (*form
 	} else {
 		sourceCopy := source.Clone()
 		next = &format.TableInfo{
-			Name:       source.Name,
-			PrimaryKey: sourceCopy.PrimaryKey,
+			TableInfo: datatype.TableInfo{
+				Name:       source.Name,
+				PrimaryKey: sourceCopy.PrimaryKey,
+				RowCount:   sourceCopy.RowCount,
+				SizeBytes:  sourceCopy.SizeBytes,
+				CreatedAt:  sourceCopy.CreatedAt,
+				UpdatedAt:  sourceCopy.UpdatedAt,
+			},
 			FormatInfo: sourceCopy.FormatInfo,
 		}
-		next.RowCount = sourceCopy.RowCount
-		next.SizeBytes = sourceCopy.SizeBytes
-		next.CreatedAt = sourceCopy.CreatedAt
-		next.UpdatedAt = sourceCopy.UpdatedAt
 	}
 	if next == nil {
 		next = &format.TableInfo{}

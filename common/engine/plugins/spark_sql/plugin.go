@@ -64,7 +64,7 @@ func (p *SparkSQLPlugin) StoreSemantics() plugin.StoreSemantics {
 func (p *SparkSQLPlugin) tabularCatalogCallbacks() plugin.TabularCatalogCallbacks {
 	return plugin.TabularCatalogCallbacks{
 		NamespaceTerm:         "database",
-		ListSchemas:           p.listSchemas,
+		ListNamespaces:        p.listNamespaces,
 		ListTables:            p.listTables,
 		ListColumns:           p.listColumns,
 		RowCount:              p.getTableRowCount,
@@ -317,9 +317,9 @@ func executeSparkSQL(ctx context.Context, connInfo plugin.ConnectionInfo, query 
 
 // === MetadataPlugin 接口实现 ===
 
-// ListSchemas 列出所有Schema（Apache Spark 中对应Database）
-func (p *SparkSQLPlugin) listSchemas(ctx context.Context, db *gorm.DB) ([]plugin.SchemaInfo, error) {
-	var schemas []plugin.SchemaInfo
+// listNamespaces 列出所有 Database。
+func (p *SparkSQLPlugin) listNamespaces(ctx context.Context, db *gorm.DB) ([]plugin.NamespaceInfo, error) {
+	var namespaces []plugin.NamespaceInfo
 
 	// Apache Spark 使用 SHOW DATABASES 命令
 	rows, err := db.WithContext(ctx).Raw("SHOW DATABASES").Rows()
@@ -341,18 +341,18 @@ func (p *SparkSQLPlugin) listSchemas(ctx context.Context, db *gorm.DB) ([]plugin
 			quoteSparkIdentifier(dbName))
 		db.WithContext(ctx).Raw(countQuery, dbName).Scan(&tableCount)
 
-		schemas = append(schemas, plugin.SchemaInfo{
+		namespaces = append(namespaces, plugin.NamespaceInfo{
 			Name:       dbName,
 			TableCount: tableCount,
 		})
 	}
 
-	return schemas, nil
+	return namespaces, nil
 }
 
 // ListTables 列出指定Schema下的所有表
-func (p *SparkSQLPlugin) listTables(ctx context.Context, db *gorm.DB, schema string) ([]plugin.TableInfo, error) {
-	var tables []plugin.TableInfo
+func (p *SparkSQLPlugin) listTables(ctx context.Context, db *gorm.DB, schema string) ([]datatype.TableInfo, error) {
+	var tables []datatype.TableInfo
 
 	// 切换到指定数据库
 	// 重要：使用 quoteSparkIdentifier 保留标识符大小写
@@ -373,12 +373,13 @@ func (p *SparkSQLPlugin) listTables(ctx context.Context, db *gorm.DB, schema str
 			continue
 		}
 
-		tableInfo := plugin.TableInfo{
-			Schema:    schema,
-			TableName: tableName,
+		rowCount := int64(0)
+		sizeBytes := int64(0)
+		tableInfo := datatype.TableInfo{
+			Name:      tableName,
 			Kind:      plugin.CatalogKindTable,
-			RowCount:  0,
-			SizeBytes: 0,
+			RowCount:  &rowCount,
+			SizeBytes: &sizeBytes,
 		}
 
 		tables = append(tables, tableInfo)

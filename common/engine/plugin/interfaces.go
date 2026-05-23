@@ -106,21 +106,10 @@ func DefaultPoolConfig() *PoolConfig {
 	}
 }
 
-// SchemaInfo Schema/Database 信息
-type SchemaInfo struct {
-	Name       string `gorm:"column:name"`        // Schema 或 Database 名称
-	TableCount int    `gorm:"column:table_count"` // 包含的表数量
-}
-
-// TableInfo 表信息
-type TableInfo struct {
-	Schema       string     `gorm:"column:schema"`        // 所属 Schema
-	TableName    string     `gorm:"column:table_name"`    // 表名
-	Kind         string     `gorm:"column:table_kind"`    // Catalog kind: table/view/materialized_view/external_table
-	Comment      string     `gorm:"column:comment"`       // 表注释
-	RowCount     int64      `gorm:"column:row_count"`     // 行数（估算值）
-	SizeBytes    int64      `gorm:"column:size_bytes"`    // 表大小（字节）
-	LastModified *time.Time `gorm:"column:last_modified"` // 表的最后修改时间（用于增量扫描）
+// NamespaceInfo describes a tabular namespace, such as a schema or database.
+type NamespaceInfo struct {
+	Name       string // Schema 或 Database 名称
+	TableCount int    // 包含的表数量
 }
 
 // DatabaseInfo Database 信息（NoSQL）

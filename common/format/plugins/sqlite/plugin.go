@@ -323,10 +323,12 @@ func sqliteTableInfoToFormatTable(table TableInfo) *format.TableInfo {
 		}
 	}
 	return &format.TableInfo{
-		Name:       table.Name,
-		RowCount:   table.RowCount,
-		Fields:     fields,
-		PrimaryKey: primaryKey,
+		TableInfo: datatype.TableInfo{
+			Name:       table.Name,
+			RowCount:   table.RowCount,
+			Fields:     fields,
+			PrimaryKey: primaryKey,
+		},
 	}
 }
 

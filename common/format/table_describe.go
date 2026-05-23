@@ -34,29 +34,16 @@ func DatatypeTableInfo(info *TableInfo) *datatype.TableInfo {
 	if info == nil {
 		return nil
 	}
-	return &datatype.TableInfo{
-		Name:       info.Name,
-		RowCount:   info.RowCount,
-		SizeBytes:  info.SizeBytes,
-		CreatedAt:  info.CreatedAt,
-		UpdatedAt:  info.UpdatedAt,
-		Fields:     append([]datatype.FieldInfo(nil), info.Fields...),
-		PrimaryKey: append([]string(nil), info.PrimaryKey...),
-	}
+	return info.TableInfo.Clone()
 }
 
 func FormatTableInfo(info *datatype.TableInfo) *TableInfo {
 	if info == nil {
 		return &TableInfo{}
 	}
+	cloned := info.Clone()
 	return &TableInfo{
-		Name:       info.Name,
-		RowCount:   info.RowCount,
-		SizeBytes:  info.SizeBytes,
-		CreatedAt:  info.CreatedAt,
-		UpdatedAt:  info.UpdatedAt,
-		Fields:     append([]datatype.FieldInfo(nil), info.Fields...),
-		PrimaryKey: append([]string(nil), info.PrimaryKey...),
+		TableInfo: *cloned,
 	}
 }
 

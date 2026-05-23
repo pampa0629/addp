@@ -4,21 +4,22 @@ import (
 	"testing"
 	"time"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/models"
 )
 
-func TestShouldUpdateTableUsesLastModified(t *testing.T) {
+func TestShouldUpdateTableUsesUpdatedAt(t *testing.T) {
 	t.Parallel()
 
 	oldTime := time.Date(2026, 5, 7, 10, 0, 0, 0, time.UTC)
 	newTime := oldTime.Add(time.Hour)
 	item := &models.MetaItem{DataUpdatedAt: &oldTime}
-	table := plugin.TableInfo{LastModified: &newTime}
+	table := datatype.TableInfo{UpdatedAt: &newTime}
 
 	if !ShouldUpdateTable(item, table) {
-		t.Fatal("table should update when source last_modified is newer")
+		t.Fatal("table should update when source updated_at is newer")
 	}
 }
 

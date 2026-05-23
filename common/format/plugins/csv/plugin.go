@@ -351,7 +351,9 @@ func (p *Plugin) OpenTableReader(ctx context.Context, input io.Reader, options *
 		return nil, fmt.Errorf("csv table reader requires at least one field")
 	}
 
-	schema, err := format.ApplyFieldSelectionToTableInfo(&format.TableInfo{Name: "csv_data", Fields: fields}, opts.FieldSelection)
+	schema, err := format.ApplyFieldSelectionToTableInfo(&format.TableInfo{
+		TableInfo: datatype.TableInfo{Name: "csv_data", Fields: fields},
+	}, opts.FieldSelection)
 	if err != nil {
 		return nil, err
 	}

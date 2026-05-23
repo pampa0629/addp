@@ -13,16 +13,18 @@ func TestTableInfoCloneDeepCopiesMutableFields(t *testing.T) {
 	createdAt := time.Unix(100, 0)
 	updatedAt := time.Unix(200, 0)
 	info := &TableInfo{
-		Name:      "cities",
-		RowCount:  &rowCount,
-		SizeBytes: &sizeBytes,
-		CreatedAt: &createdAt,
-		UpdatedAt: &updatedAt,
-		Fields: []datatype.FieldInfo{
-			{Name: "id", Type: datatype.FieldTypeInt},
-			{Name: "geom", Type: datatype.FieldTypeGeometry},
+		TableInfo: datatype.TableInfo{
+			Name:      "cities",
+			RowCount:  &rowCount,
+			SizeBytes: &sizeBytes,
+			CreatedAt: &createdAt,
+			UpdatedAt: &updatedAt,
+			Fields: []datatype.FieldInfo{
+				{Name: "id", Type: datatype.FieldTypeInt},
+				{Name: "geom", Type: datatype.FieldTypeGeometry},
+			},
+			PrimaryKey: []string{"id"},
 		},
-		PrimaryKey:  []string{"id"},
 		FormatInfo:  map[string]interface{}{"encoding": "utf-8"},
 		SpatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", "Point", 4326, 2),
 		ContentIndex: datatype.NewSparseRowContentIndex(

@@ -1,26 +1,13 @@
 package format
 
-import (
-	"time"
-
-	"github.com/addp/common/datatype"
-)
+import "github.com/addp/common/datatype"
 
 // TableInfo 是 format reader / writer / Transfer 使用的表操作 schema。
 //
 // 通用 table 类型事实源是 datatype.TableInfo；TableInfo 只在需要字段顺序、
 // 写出 schema、采样上下文或格式操作补充信息的边界使用。
 type TableInfo struct {
-	// 基础信息
-	Name      string     // 表名 / 文件名
-	RowCount  *int64     // 记录数（可能未知）
-	SizeBytes *int64     // 大小（字节）
-	CreatedAt *time.Time // 创建时间
-	UpdatedAt *time.Time // 更新时间
-
-	// 字段定义
-	Fields     []datatype.FieldInfo // 字段列表
-	PrimaryKey []string             // 主键字段名列表
+	datatype.TableInfo
 
 	// 可选补充事实。FormatInfo 写入 attributes.format_info.<format>，
 	// SpatialInfo 写入 capabilities.spatial，ContentIndex 写入 content_index.table。
@@ -48,29 +35,13 @@ func (t *TableInfo) Clone() *TableInfo {
 	if t == nil {
 		return nil
 	}
-	cloned := *t
-	cloned.Fields = append([]datatype.FieldInfo(nil), t.Fields...)
-	cloned.PrimaryKey = append([]string(nil), t.PrimaryKey...)
-	cloned.FormatInfo = cloneInterfaceMap(t.FormatInfo)
-	cloned.SpatialInfo = t.SpatialInfo.Clone()
-	cloned.ContentIndex = t.ContentIndex.Clone()
-	if t.RowCount != nil {
-		rowCount := *t.RowCount
-		cloned.RowCount = &rowCount
+	base := t.TableInfo.Clone()
+	return &TableInfo{
+		TableInfo:    *base,
+		FormatInfo:   cloneInterfaceMap(t.FormatInfo),
+		SpatialInfo:  t.SpatialInfo.Clone(),
+		ContentIndex: t.ContentIndex.Clone(),
 	}
-	if t.SizeBytes != nil {
-		sizeBytes := *t.SizeBytes
-		cloned.SizeBytes = &sizeBytes
-	}
-	if t.CreatedAt != nil {
-		createdAt := *t.CreatedAt
-		cloned.CreatedAt = &createdAt
-	}
-	if t.UpdatedAt != nil {
-		updatedAt := *t.UpdatedAt
-		cloned.UpdatedAt = &updatedAt
-	}
-	return &cloned
 }
 
 // FieldNames 返回所有字段名

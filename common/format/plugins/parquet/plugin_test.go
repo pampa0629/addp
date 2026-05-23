@@ -172,12 +172,14 @@ func TestParquetPluginFieldSelectionMissingFieldPolicies(t *testing.T) {
 
 func TestParquetPluginOpenTableWriter(t *testing.T) {
 	plugin := NewPlugin()
-	schema := &format.TableInfo{Fields: []datatype.FieldInfo{
-		{Name: "id", Type: datatype.FieldTypeBigInt},
-		{Name: "name", Type: datatype.FieldTypeString, Nullable: true},
-		{Name: "score", Type: datatype.FieldTypeDouble, Nullable: true},
-		{Name: "active", Type: datatype.FieldTypeBool, Nullable: true},
-	}}
+	schema := &format.TableInfo{
+		TableInfo: datatype.TableInfo{Fields: []datatype.FieldInfo{
+			{Name: "id", Type: datatype.FieldTypeBigInt},
+			{Name: "name", Type: datatype.FieldTypeString, Nullable: true},
+			{Name: "score", Type: datatype.FieldTypeDouble, Nullable: true},
+			{Name: "active", Type: datatype.FieldTypeBool, Nullable: true},
+		}},
+	}
 	var buf bytes.Buffer
 
 	writer, err := plugin.OpenTableWriter(context.Background(), &buf, schema, nil)
@@ -212,10 +214,12 @@ func TestParquetPluginOpenTableWriter(t *testing.T) {
 
 func TestParquetPluginOpenTableWriterSerializesJSONLikeFields(t *testing.T) {
 	plugin := NewPlugin()
-	schema := &format.TableInfo{Fields: []datatype.FieldInfo{
-		{Name: "id", Type: datatype.FieldTypeInt},
-		{Name: "payload", Type: datatype.FieldTypeJSON, Nullable: true},
-	}}
+	schema := &format.TableInfo{
+		TableInfo: datatype.TableInfo{Fields: []datatype.FieldInfo{
+			{Name: "id", Type: datatype.FieldTypeInt},
+			{Name: "payload", Type: datatype.FieldTypeJSON, Nullable: true},
+		}},
+	}
 	var buf bytes.Buffer
 
 	writer, err := plugin.OpenTableWriter(context.Background(), &buf, schema, nil)

@@ -77,9 +77,11 @@ func TestTableTransferExecutorPreparesNativeTargetOnce(t *testing.T) {
 
 func TestTableInfoFieldsUseStandardTypes(t *testing.T) {
 	fields := tableInfoFields(&format.TableInfo{
-		Fields: []datatype.FieldInfo{
-			{Name: "value", Type: datatype.FieldTypeFloat},
-			{Name: "name", Type: datatype.FieldTypeString},
+		TableInfo: datatype.TableInfo{
+			Fields: []datatype.FieldInfo{
+				{Name: "value", Type: datatype.FieldTypeFloat},
+				{Name: "name", Type: datatype.FieldTypeString},
+			},
 		},
 	})
 
@@ -93,8 +95,10 @@ func TestTableInfoFieldsUseStandardTypes(t *testing.T) {
 
 func TestTableInfoSpatialInfoCarriesStandardSpatialFacts(t *testing.T) {
 	info := &format.TableInfo{
-		Fields: []datatype.FieldInfo{
-			{Name: "geom", Type: datatype.FieldTypeGeometry},
+		TableInfo: datatype.TableInfo{
+			Fields: []datatype.FieldInfo{
+				{Name: "geom", Type: datatype.FieldTypeGeometry},
+			},
 		},
 		SpatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", "Polygon", 4326, 3),
 	}

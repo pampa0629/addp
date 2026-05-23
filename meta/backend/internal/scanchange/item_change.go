@@ -1,26 +1,27 @@
 package scanchange
 
 import (
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/models"
 )
 
-func ShouldUpdateTable(existingItem *models.MetaItem, tableInfo plugin.TableInfo) bool {
+func ShouldUpdateTable(existingItem *models.MetaItem, tableInfo datatype.TableInfo) bool {
 	if existingItem == nil {
 		return true
 	}
-	if tableInfo.LastModified != nil && existingItem.DataUpdatedAt != nil {
-		return tableInfo.LastModified.After(*existingItem.DataUpdatedAt)
+	if tableInfo.UpdatedAt != nil && existingItem.DataUpdatedAt != nil {
+		return tableInfo.UpdatedAt.After(*existingItem.DataUpdatedAt)
 	}
-	if existingItem.RowCount != nil && *existingItem.RowCount != tableInfo.RowCount {
+	if tableInfo.RowCount != nil && existingItem.RowCount != nil && *existingItem.RowCount != *tableInfo.RowCount {
 		return true
 	}
-	if existingItem.SizeBytes != nil && *existingItem.SizeBytes != tableInfo.SizeBytes {
+	if tableInfo.SizeBytes != nil && existingItem.SizeBytes != nil && *existingItem.SizeBytes != *tableInfo.SizeBytes {
 		return true
 	}
-	return (existingItem.RowCount == nil && tableInfo.RowCount != 0) ||
-		(existingItem.SizeBytes == nil && tableInfo.SizeBytes != 0)
+	return (existingItem.RowCount == nil && tableInfo.RowCount != nil && *tableInfo.RowCount != 0) ||
+		(existingItem.SizeBytes == nil && tableInfo.SizeBytes != nil && *tableInfo.SizeBytes != 0)
 }
 
 func ShouldUpdateCollection(existingItem *models.MetaItem, newInfo plugin.CollectionInfo) bool {

@@ -31,7 +31,7 @@ func FileCatalogRootPaths(ctx context.Context, resource *commonModels.Engine, p 
 	return paths, nil
 }
 
-func NamespaceInfos(ctx context.Context, resource *commonModels.Engine, p plugin.EnginePlugin) ([]plugin.SchemaInfo, error) {
+func NamespaceInfos(ctx context.Context, resource *commonModels.Engine, p plugin.EnginePlugin) ([]plugin.NamespaceInfo, error) {
 	catalogProvider, ok := p.(plugin.CatalogProvider)
 	if !ok {
 		return nil, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
@@ -42,18 +42,18 @@ func NamespaceInfos(ctx context.Context, resource *commonModels.Engine, p plugin
 		return nil, err
 	}
 
-	schemas := make([]plugin.SchemaInfo, 0, len(nodes))
+	namespaces := make([]plugin.NamespaceInfo, 0, len(nodes))
 	for _, node := range nodes {
 		tableCount := 0
 		if count, ok := int64Stat(node.Stats, "table_count"); ok {
 			tableCount = int(count)
 		}
-		schemas = append(schemas, plugin.SchemaInfo{
+		namespaces = append(namespaces, plugin.NamespaceInfo{
 			Name:       node.Name,
 			TableCount: tableCount,
 		})
 	}
-	return schemas, nil
+	return namespaces, nil
 }
 
 func NamespaceDatabaseInfos(ctx context.Context, resource *commonModels.Engine, catalogProvider plugin.CatalogProvider) ([]plugin.DatabaseInfo, error) {

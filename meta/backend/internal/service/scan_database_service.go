@@ -3,11 +3,12 @@ package service
 import (
 	"context"
 	"fmt"
-	"github.com/addp/common/datatype"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/addp/common/dataitem"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
@@ -161,15 +162,15 @@ func (s *DatabaseScanService) scanTables(
 	// 处理每张表
 	for i, tableInfo := range pluginTables {
 		s.log.Info(fmt.Sprintf("处理第 %d/%d 张表", i+1, len(pluginTables)),
-			"table_name", tableInfo.TableName,
+			"table_name", tableInfo.Name,
 			"row_count", tableInfo.RowCount,
 		)
 
-		scannedTables[tableInfo.TableName] = true
+		scannedTables[tableInfo.Name] = true
 		tableInfo.RowCount = s.resolveTableRowCount(ctx, resource, schemaName, tableInfo)
 
 		// 检查是否需要更新
-		existingItem := existingTableMap[tableInfo.TableName]
+		existingItem := existingTableMap[tableInfo.Name]
 		needsUpdate := force || scanchange.ShouldUpdateTable(existingItem, tableInfo) || existingItem == nil
 		if isDeepScan && existingItem != nil && existingItem.ScannedDepth != models.ScannedDepthDeep {
 			needsUpdate = true
@@ -178,7 +179,7 @@ func (s *DatabaseScanService) scanTables(
 		if existingItem != nil && !needsUpdate {
 			s.log.Debug("表未变化，跳过更新",
 				"schema", schemaName,
-				"table", tableInfo.TableName,
+				"table", tableInfo.Name,
 			)
 			totalTables++
 			continue
@@ -189,29 +190,29 @@ func (s *DatabaseScanService) scanTables(
 		if err != nil {
 			s.log.Warn("表扫描失败，跳过",
 				"schema", schemaName,
-				"table", tableInfo.TableName,
+				"table", tableInfo.Name,
 				"error", err,
 			)
 			continue
 		}
 
 		// 持久化表元数据
-		fullName := metapath.ComposeNodeFullName(tableInfo.TableName, schemaNode, ".")
-		rowCount := tableInfo.RowCount
-		sizeBytes := tableInfo.SizeBytes
+		fullName := metapath.ComposeNodeFullName(tableInfo.Name, schemaNode, ".")
+		rowCount := derefInt64Ptr(tableInfo.RowCount)
+		sizeBytes := derefInt64Ptr(tableInfo.SizeBytes)
 
-		item, err := s.repo.UpsertItemWithDepth(tenantID, engineID, schemaNode, itemTerm, tableInfo.TableName, fullName, attrs, &rowCount, &sizeBytes, tableInfo.LastModified, scanDepth)
+		item, err := s.repo.UpsertItemWithDepth(tenantID, engineID, schemaNode, itemTerm, tableInfo.Name, fullName, attrs, &rowCount, &sizeBytes, tableInfo.UpdatedAt, scanDepth)
 		if err != nil {
 			s.log.Error("表元数据持久化失败",
 				"schema", schemaName,
-				"table", tableInfo.TableName,
+				"table", tableInfo.Name,
 				"error", err,
 			)
 			continue
 		}
 
 		s.log.Info("表元数据写入成功",
-			"table", tableInfo.TableName,
+			"table", tableInfo.Name,
 			"item_id", item.ID,
 		)
 
@@ -241,7 +242,7 @@ func (s *DatabaseScanService) listTables(
 	resource *commonModels.Engine,
 	catalogProvider plugin.CatalogProvider,
 	schemaName string,
-) ([]plugin.TableInfo, error) {
+) ([]datatype.TableInfo, error) {
 	nodes, err := catalogProvider.ListChildren(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), plugin.CatalogPath{
 		Version:  plugin.CatalogPathVersion,
 		EngineID: resource.ID,
@@ -254,43 +255,44 @@ func (s *DatabaseScanService) listTables(
 	if err != nil {
 		return nil, err
 	}
-	tables := make([]plugin.TableInfo, 0, len(nodes))
+	tables := make([]datatype.TableInfo, 0, len(nodes))
 	for _, node := range nodes {
 		if !node.IsItem {
 			continue
 		}
-		rowCount, _ := int64Stat(node.Stats, "row_count")
-		sizeBytes, _ := int64Stat(node.Stats, "size_bytes")
-		tables = append(tables, plugin.TableInfo{
-			Schema:    schemaName,
-			TableName: node.Name,
+		rowCount := int64StatPtr(node.Stats, "row_count")
+		sizeBytes := int64StatPtr(node.Stats, "size_bytes")
+		tables = append(tables, datatype.TableInfo{
+			Name:      node.Name,
 			Kind:      node.Kind,
+			Comment:   stringAttr(node.Attributes, "comment"),
 			RowCount:  rowCount,
 			SizeBytes: sizeBytes,
+			UpdatedAt: timeAttr(node.Attributes, "updated_at"),
 		})
 	}
 	return tables, nil
 }
 
-func (s *DatabaseScanService) resolveTableRowCount(ctx context.Context, resource *commonModels.Engine, schemaName string, tableInfo plugin.TableInfo) int64 {
-	if tableInfo.RowCount > 0 {
+func (s *DatabaseScanService) resolveTableRowCount(ctx context.Context, resource *commonModels.Engine, schemaName string, tableInfo datatype.TableInfo) *int64 {
+	if tableInfo.RowCount != nil && *tableInfo.RowCount > 0 {
 		return tableInfo.RowCount
 	}
 	count, err := plugin.CountItemRows(ctx, &plugin.Engine{
 		ID:             resource.ID,
 		EngineType:     resource.EngineType,
 		ConnectionInfo: plugin.ConnectionInfo(resource.ConnectionInfo),
-	}, schemaName, tableInfo.TableName)
+	}, schemaName, tableInfo.Name)
 	if err != nil {
 		s.log.Debug("表行数精确查询失败，保留 catalog 统计值",
 			"engine_id", resource.ID,
 			"schema", schemaName,
-			"table", tableInfo.TableName,
+			"table", tableInfo.Name,
 			"error", err,
 		)
 		return tableInfo.RowCount
 	}
-	return count
+	return &count
 }
 
 func (s *DatabaseScanService) tryOpenConnectionPool(resource *commonModels.Engine) *gorm.DB {
@@ -324,7 +326,7 @@ func (s *DatabaseScanService) scanTableDetails(
 	metadataProvider plugin.ItemMetadataProvider,
 	db *gorm.DB,
 	schemaName string,
-	tableInfo plugin.TableInfo,
+	tableInfo datatype.TableInfo,
 	existingItem *models.MetaItem,
 	isDeepScan bool,
 ) ([]datatype.FieldInfo, models.JSONMap, error) {
@@ -332,7 +334,7 @@ func (s *DatabaseScanService) scanTableDetails(
 	var attrs models.JSONMap
 
 	if isDeepScan {
-		pluginColumns, err := s.listColumns(ctx, resource, metadataProvider, schemaName, tableInfo.TableName)
+		pluginColumns, err := s.listColumns(ctx, resource, metadataProvider, schemaName, tableInfo.Name)
 		if err != nil {
 			return nil, nil, fmt.Errorf("字段扫描失败: %w", err)
 		}
@@ -340,7 +342,7 @@ func (s *DatabaseScanService) scanTableDetails(
 		fields = databaseDatatypeFieldInfo(pluginColumns)
 
 		s.log.Info("字段扫描成功",
-			"table", tableInfo.TableName,
+			"table", tableInfo.Name,
 			"field_count", len(fields),
 		)
 		// 提取主键信息
@@ -354,7 +356,7 @@ func (s *DatabaseScanService) scanTableDetails(
 		// 如果有主键，查询主键约束名
 		var primaryKeyName string
 		if len(primaryKeyColumns) > 0 && db != nil {
-			primaryKeyName, _ = s.queryPrimaryKeyName(ctx, db, schemaName, tableInfo.TableName)
+			primaryKeyName, _ = s.queryPrimaryKeyName(ctx, db, schemaName, tableInfo.Name)
 		}
 
 		tableMetadata := map[string]interface{}{
@@ -371,11 +373,11 @@ func (s *DatabaseScanService) scanTableDetails(
 
 		// 扫描空间元数据由引擎能力声明控制，具体实现通过连接池增强元数据。
 		if engineSupportsSpatialMetadata(resource.EngineType) && db != nil {
-			spatialMeta := s.scanSpatialMetadata(ctx, db, schemaName, tableInfo.TableName)
+			spatialMeta := s.scanSpatialMetadata(ctx, db, schemaName, tableInfo.Name)
 			if spatialMeta != nil {
 				metaattr.UpsertNested(attrs, "capabilities", "spatial", metaattr.SpatialCapabilityFromMetadata(spatialMeta))
 				s.log.Info("空间元数据扫描成功",
-					"table", tableInfo.TableName,
+					"table", tableInfo.Name,
 					"geometry_column", spatialMeta.GeometryColumn,
 				)
 			}
@@ -395,10 +397,50 @@ func (s *DatabaseScanService) scanTableDetails(
 	}
 	metaattr.SetItem(attrs, "layout", string(dataitem.LayoutSingle))
 	metaattr.SetItem(attrs, "data_type", string(dataitem.DataTypeTable))
-	metaattr.UpsertNested(attrs, "type_info", "table", map[string]interface{}{"row_count": tableInfo.RowCount})
-	metaattr.UpsertNested(attrs, "capabilities", "statistics", map[string]interface{}{"row_count": tableInfo.RowCount})
+	rowCount := derefInt64Ptr(tableInfo.RowCount)
+	metaattr.UpsertNested(attrs, "type_info", "table", map[string]interface{}{"row_count": rowCount})
+	metaattr.UpsertNested(attrs, "capabilities", "statistics", map[string]interface{}{"row_count": rowCount})
 
 	return fields, attrs, nil
+}
+
+func int64StatPtr(stats map[string]interface{}, key string) *int64 {
+	value, ok := int64Stat(stats, key)
+	if !ok {
+		return nil
+	}
+	return &value
+}
+
+func derefInt64Ptr(value *int64) int64 {
+	if value == nil {
+		return 0
+	}
+	return *value
+}
+
+func stringAttr(attrs map[string]interface{}, key string) string {
+	if attrs == nil {
+		return ""
+	}
+	if value, ok := attrs[key].(string); ok {
+		return value
+	}
+	return ""
+}
+
+func timeAttr(attrs map[string]interface{}, key string) *time.Time {
+	if attrs == nil {
+		return nil
+	}
+	switch value := attrs[key].(type) {
+	case *time.Time:
+		return value
+	case time.Time:
+		return &value
+	default:
+		return nil
+	}
 }
 
 func engineSupportsSpatialMetadata(engineType string) bool {
@@ -426,14 +468,14 @@ func databaseDatatypeFieldInfo(input []datatype.FieldInfo) []datatype.FieldInfo 
 	return fields
 }
 
-func tableType(table plugin.TableInfo) string {
+func tableType(table datatype.TableInfo) string {
 	if table.Kind != "" {
 		return table.Kind
 	}
 	return "table"
 }
 
-func tableComment(table plugin.TableInfo) string {
+func tableComment(table datatype.TableInfo) string {
 	return table.Comment
 }
 

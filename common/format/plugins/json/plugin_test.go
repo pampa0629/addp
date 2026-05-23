@@ -300,10 +300,12 @@ func TestJSONPluginOpenTableReaderLines(t *testing.T) {
 
 func TestJSONPluginOpenTableWriterArray(t *testing.T) {
 	plugin := NewPlugin(nil)
-	schema := &format.TableInfo{Fields: []datatype.FieldInfo{
-		{Name: "id", Type: datatype.FieldTypeInt},
-		{Name: "name", Type: datatype.FieldTypeString},
-	}}
+	schema := &format.TableInfo{
+		TableInfo: datatype.TableInfo{Fields: []datatype.FieldInfo{
+			{Name: "id", Type: datatype.FieldTypeInt},
+			{Name: "name", Type: datatype.FieldTypeString},
+		}},
+	}
 	var buf bytes.Buffer
 
 	writer, err := plugin.OpenTableWriter(context.Background(), &buf, schema, nil)
@@ -374,10 +376,12 @@ func TestJSONPluginOpenTableWriterGeoJSON(t *testing.T) {
 		"geometry_field":          "geom",
 	}
 	schema := &format.TableInfo{
-		Fields: []datatype.FieldInfo{
-			{Name: "id", Type: datatype.FieldTypeInt},
-			{Name: "name", Type: datatype.FieldTypeString},
-			{Name: "geom", Type: datatype.FieldTypeGeometry},
+		TableInfo: datatype.TableInfo{
+			Fields: []datatype.FieldInfo{
+				{Name: "id", Type: datatype.FieldTypeInt},
+				{Name: "name", Type: datatype.FieldTypeString},
+				{Name: "geom", Type: datatype.FieldTypeGeometry},
+			},
 		},
 		SpatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", "Point", 4326, 0),
 	}

@@ -32,7 +32,7 @@
 | `common/dataitem` | 定义 `DataType`、item 组织规则、layout、候选归并 | `DataType` 是平台通用概念，却放在 item 归并包内；同时依赖 `common/format` 的 layout 常量 |
 | `common/format/registry` | 定义 descriptor 的 data type、layout、provider、reader 常量 | format registry 成了 data type 常量事实源之一 |
 | `common/format` | 定义 `FieldType`、`TableInfo`、`DocumentInfo`、`MediaInfo`、`ContainerInfo`、`SpatialInfo`、`ContentIndex` | 这些 info 不是 format 私有语义，而是 ADDP 通用 data type info |
-| `common/engine/plugin` | 曾定义 `FieldInfo`、`ColumnInfo`、`TableInfo`、`SchemaInfo`、`CollectionInfo`、图相关 info 和 provider 接口 | engine 侧形成与 format 平行的字段和元数据模型；其中公共 `FieldInfo`、`ColumnInfo` 已收敛到 `datatype.FieldInfo` |
+| `common/engine/plugin` | 曾定义 `FieldInfo`、`ColumnInfo`、`TableInfo`、`SchemaInfo`、`CollectionInfo`、图相关 info 和 provider 接口 | engine 侧形成与 format 平行的字段和元数据模型；其中公共 `FieldInfo`、`ColumnInfo`、`TableInfo` 已收敛到 `datatype`，`SchemaInfo` 已更名为 `NamespaceInfo` |
 | `common/models` | 定义 Meta API / client DTO，例如 `FieldInfo`、`SpatialMetadata` | API DTO 又定义了一套字段语义 |
 | Meta 内部 | 将 engine / format 结果转换为 `meta_item.attributes` | 历史上数据库扫描链路存在 `ColumnInfo` / `FieldInfo` / `format.FieldInfo` 来回转换；当前已先收敛公共 `ColumnInfo` 和 `format.FieldInfo` |
 | Manager / Transfer | 消费 Meta attributes、engine `FieldInfo` 或 format `FieldInfo` | 消费方不得不理解多套数据类型和字段模型 |
@@ -169,6 +169,8 @@ type_info.file
 ```go
 type TableInfo struct {
     Name       string
+    Kind       string
+    Comment    string
     RowCount   *int64
     SizeBytes  *int64
     CreatedAt  *time.Time
@@ -491,30 +493,30 @@ type SpatialInfo struct {
 |---|---|---|---|
 | `datatype.TableDescribeResult` / `datatype.MediaDescribeResult` | 当前仍在 `common/datatype` 中，且代码仍有使用 | 迁移涉及 format provider、Meta enrich、Manager preview 等多条链路；先完成 format / engine 通用结构收敛 | 作为 provider / 编排层结果包处理；至少移除其中的 `FormatInfo`，format 私有事实统一走 `FormatInfoProvider` |
 | `datatype.ContentIndex` | 当前放在 `common/datatype`，被 format、Meta、Manager preview 使用 | 它不是 data type 本体，但当前是跨模块复用结构；贸然移出会引入新包或新概念 | 暂不动。后续结合 engine range reader、format content index、Meta attributes 的消费链路再决定是否移出 |
-| `common/engine/plugin.TableInfo` | 仍是 engine catalog table 列表结构 | 其中混有通用 table type info 和 catalog / engine listing 事实，不能简单整体替换 | 拆清 `datatype.TableInfo` 可承载的通用事实，与 schema/database、kind、comment 等 catalog 事实的边界 |
-| `common/engine/plugin.SchemaInfo` / `DatabaseInfo` / `CollectionInfo` | 仍是 engine catalog 层结构 | 它们更接近 catalog hierarchy / namespace 事实，不等同于 data type info | 暂不迁入 `datatype`。后续如有重复，再从 catalog/path/node 语义统一 |
-| `format.TableInfo` | 当前作为 reader / writer / Transfer 操作结构存在，字段已切到 `datatype.FieldInfo` | 它还承载 `FormatInfo`、`SpatialInfo`、`ContentIndex` 等执行期补充事实 | 后续继续收敛，避免它成为第二套 table metadata 事实源；非必要不改名为含糊的 schema 概念 |
+| `common/engine/plugin.DatabaseInfo` / `CollectionInfo` | 仍是 engine catalog 层结构 | 它们更接近 catalog hierarchy / namespace 事实，不等同于 data type info | 暂不迁入 `datatype`。后续如有重复，再从 catalog/path/node 语义统一 |
+| `format.TableInfo` | 当前作为 reader / writer / Transfer 操作结构存在，已嵌入 `datatype.TableInfo` | 它还承载 `FormatInfo`、`SpatialInfo`、`ContentIndex` 等执行期补充事实 | 暂保留为 format 操作 schema 薄包装；后续继续处理 describe result 的归属 |
 
-### `common/engine/plugin.TableInfo` 拆分建议
+### `common/engine/plugin.TableInfo` 收敛结论
 
-`plugin.TableInfo` 是下一处重复事实源，但它不同于 `ColumnInfo`：它不是单纯的 table type info，而是 catalog listing、变更判断和 table type info 的混合结构。
+`plugin.TableInfo` 已不再作为公共结构保留。engine tabular catalog 的 table 列表直接返回 `datatype.TableInfo`，避免 format / engine 继续维护两套 table metadata 事实源。
 
-当前字段归属建议：
+字段归属结论：
 
 | 当前字段 | 建议归属 | 说明 |
 |---|---|---|
-| `TableName` | `datatype.TableInfo.Name` | table data type 的名称事实，可统一 |
-| `RowCount` | `datatype.TableInfo.RowCount` | table 类型事实；当前为 `int64`，`datatype` 中为 `*int64` |
-| `SizeBytes` | `datatype.TableInfo.SizeBytes` | table 类型事实；当前为 `int64`，`datatype` 中为 `*int64` |
-| `Comment` | 倾向进入 `datatype.TableInfo` 或 Meta 派生字段 | 当前已写入 `type_info.table.table_comment`，需要确认是否作为通用 table type fact |
-| `Kind` | 倾向进入 `datatype.TableInfo` 或 catalog kind | 当前同时用于 catalog node kind 和 `type_info.table.table_type`，需要确认命名和落点 |
+| `TableName` | `datatype.TableInfo.Name` | table data type 的名称事实，已统一 |
+| `RowCount` | `datatype.TableInfo.RowCount` | table 类型事实，使用 `*int64` 表达未知和 0 的差异 |
+| `SizeBytes` | `datatype.TableInfo.SizeBytes` | table 类型事实，使用 `*int64` 表达未知和 0 的差异 |
+| `Comment` | `datatype.TableInfo.Comment` | 当前写入 `type_info.table.table_comment`，作为通用 table 描述事实 |
+| `Kind` | `datatype.TableInfo.Kind` | 当前同时用于 catalog node kind 和 `type_info.table.table_type`，作为 table kind/type 事实 |
 | `Schema` | catalog / storage / path 事实 | 不进入 `datatype.TableInfo` |
-| `LastModified` | catalog / storage / source state 事实 | 用于变更判断，不进入 `datatype.TableInfo` |
+| `LastModified` | `datatype.TableInfo.UpdatedAt` | 表源端更新时间事实，用于增量判断和 Meta `data_updated_at` |
 
-因此这一步需要先确认两个问题，再动代码：
+同时确认：
 
-1. `table_type` / `table_comment` 是否正式进入 `datatype.TableInfo`。
-2. engine catalog 列表是否继续需要一个轻量 catalog table entry 结构承载 `schema`、`kind`、`last_modified` 等非 type info 事实；如果需要，必须先审定命名，不能随意新增 `schema` 这类含糊概念。
+- 不新增 `TableCatalogEntry` 等中间公共结构，除非后续出现 `datatype.TableInfo` 无法表达的明确事实。
+- namespace 由 `CatalogPath` / `CatalogSegment` / `NamespaceTerm` 表达，不放入 `datatype.TableInfo`。
+- `SchemaInfo` 已改名为 `NamespaceInfo`，`ListSchemas` 已改名为 `ListNamespaces`，避免把 schema/database 作为同一个含糊概念继续扩散。
 
 ## 和现有模型的收拢关系
 
@@ -526,7 +528,7 @@ type SpatialInfo struct {
 | `common/format/registry.DataType*` | 改为使用 `datatype.DataType` 的字符串值，不再作为事实源 |
 | `common/format.FormatDataType*` | 删除或改为临时转发，最终由 `datatype` 提供 |
 | `common/format.FieldType` | 迁到 `common/datatype.FieldType` |
-| `common/format.TableInfo` | 迁到 `common/datatype.TableInfo` |
+| `common/format.TableInfo` | 已嵌入 `common/datatype.TableInfo`，仅保留 format 操作补充事实 |
 | `common/format.FieldInfo` | 迁到 `common/datatype.FieldInfo` |
 | `common/format.DocumentInfo` | 迁到 `common/datatype.DocumentInfo` |
 | `common/format.MediaInfo` | 迁到 `common/datatype.MediaInfo` |

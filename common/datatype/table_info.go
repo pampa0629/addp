@@ -5,6 +5,8 @@ import "time"
 // TableInfo is the common type info for table data items.
 type TableInfo struct {
 	Name       string      `json:"name,omitempty"`
+	Kind       string      `json:"kind,omitempty"`
+	Comment    string      `json:"comment,omitempty"`
 	RowCount   *int64      `json:"row_count,omitempty"`
 	SizeBytes  *int64      `json:"size_bytes,omitempty"`
 	CreatedAt  *time.Time  `json:"created_at,omitempty"`

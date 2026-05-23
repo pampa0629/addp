@@ -204,10 +204,12 @@ func buildShapefileTableInfo(input shapefileTableInfoInput) *format.TableInfo {
 		Encoding:      NormalizeDBFEncoding(input.Encoding),
 	}
 	return &format.TableInfo{
-		Name:        "shapefile_data",
-		RowCount:    &rowCount,
-		Fields:      fields,
-		PrimaryKey:  []string{},
+		TableInfo: datatype.TableInfo{
+			Name:       "shapefile_data",
+			RowCount:   &rowCount,
+			Fields:     fields,
+			PrimaryKey: []string{},
+		},
 		SpatialInfo: spatialInfo,
 		FormatInfo:  info.FormatAttributes(),
 	}

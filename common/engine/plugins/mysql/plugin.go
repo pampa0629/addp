@@ -73,7 +73,7 @@ func (p *MySQLPlugin) StoreSemantics() plugin.StoreSemantics {
 func (p *MySQLPlugin) tabularCatalogCallbacks() plugin.TabularCatalogCallbacks {
 	return plugin.TabularCatalogCallbacks{
 		NamespaceTerm:         "database",
-		ListSchemas:           p.listSchemas,
+		ListNamespaces:        p.listNamespaces,
 		ListTables:            p.listTables,
 		ListColumns:           p.listColumns,
 		RowCount:              p.getTableRowCount,
@@ -157,13 +157,13 @@ func (p *MySQLPlugin) GetDialect() string {
 
 // === MetadataPlugin 接口实现 ===
 
-// ListSchemas 列出所有Schema（MySQL中对应Database）
-func (p *MySQLPlugin) listSchemas(ctx context.Context, db *gorm.DB) ([]plugin.SchemaInfo, error) {
-	return mysqlMetadataDialect.ListSchemas(ctx, db)
+// listNamespaces 列出所有 Database。
+func (p *MySQLPlugin) listNamespaces(ctx context.Context, db *gorm.DB) ([]plugin.NamespaceInfo, error) {
+	return mysqlMetadataDialect.ListNamespaces(ctx, db)
 }
 
 // ListTables 列出指定Schema下的所有表
-func (p *MySQLPlugin) listTables(ctx context.Context, db *gorm.DB, schema string) ([]plugin.TableInfo, error) {
+func (p *MySQLPlugin) listTables(ctx context.Context, db *gorm.DB, schema string) ([]datatype.TableInfo, error) {
 	return mysqlMetadataDialect.ListTables(ctx, db, schema)
 }
 

@@ -378,9 +378,11 @@ func tableInfoFromMetaAttributes(attrs map[string]interface{}) *format.TableInfo
 		return nil
 	}
 	info := &format.TableInfo{
-		Name:       strings.TrimSpace(commonJSON.InterfaceString(tableAttrs["name"])),
-		Fields:     fields,
-		PrimaryKey: interfaceToStringSlice(tableAttrs["primary_key"]),
+		TableInfo: datatype.TableInfo{
+			Name:       strings.TrimSpace(commonJSON.InterfaceString(tableAttrs["name"])),
+			Fields:     fields,
+			PrimaryKey: interfaceToStringSlice(tableAttrs["primary_key"]),
+		},
 	}
 	if info.Name == "" {
 		info.Name = "table"

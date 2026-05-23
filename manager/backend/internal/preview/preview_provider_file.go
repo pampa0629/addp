@@ -283,9 +283,11 @@ func (p *FileTablePreviewProvider) tableInfoFromAttributes(req *PreviewRequest) 
 		return nil, nil
 	}
 	info := &format.TableInfo{
-		Name:       "table",
-		Fields:     fields,
-		PrimaryKey: interfaceToStringSlice(tableAttrs["primary_key"]),
+		TableInfo: datatype.TableInfo{
+			Name:       "table",
+			Fields:     fields,
+			PrimaryKey: interfaceToStringSlice(tableAttrs["primary_key"]),
+		},
 	}
 	if rowCount > 0 {
 		info.RowCount = &rowCount

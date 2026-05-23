@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/contentio"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
@@ -170,8 +171,10 @@ func scopeTableInfoFromAttributes(attrs map[string]interface{}) (*format.TableIn
 		return nil, nil
 	}
 	info := &format.TableInfo{
-		Name:   "table",
-		Fields: fields,
+		TableInfo: datatype.TableInfo{
+			Name:   "table",
+			Fields: fields,
+		},
 	}
 	if rowCount > 0 {
 		info.RowCount = &rowCount

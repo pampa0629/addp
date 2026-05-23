@@ -77,7 +77,7 @@ func (p *PostgreSQLPlugin) StoreSemantics() plugin.StoreSemantics {
 func (p *PostgreSQLPlugin) tabularCatalogCallbacks() plugin.TabularCatalogCallbacks {
 	return plugin.TabularCatalogCallbacks{
 		NamespaceTerm:         "schema",
-		ListSchemas:           p.listSchemas,
+		ListNamespaces:        p.listNamespaces,
 		ListTables:            p.listTables,
 		ListColumns:           p.listColumns,
 		RowCount:              p.getTableRowCount,
@@ -159,9 +159,9 @@ func (p *PostgreSQLPlugin) GetDialect() string {
 
 // === MetadataPlugin 接口实现 ===
 
-// ListSchemas 列出所有Schema
-func (p *PostgreSQLPlugin) listSchemas(ctx context.Context, db *gorm.DB) ([]plugin.SchemaInfo, error) {
-	var schemas []plugin.SchemaInfo
+// listNamespaces 列出所有 Schema。
+func (p *PostgreSQLPlugin) listNamespaces(ctx context.Context, db *gorm.DB) ([]plugin.NamespaceInfo, error) {
+	var namespaces []plugin.NamespaceInfo
 
 	query := `
 		SELECT
@@ -175,27 +175,26 @@ func (p *PostgreSQLPlugin) listSchemas(ctx context.Context, db *gorm.DB) ([]plug
 		ORDER BY schema_name
 	`
 
-	err := db.WithContext(ctx).Raw(query).Scan(&schemas).Error
+	err := db.WithContext(ctx).Raw(query).Scan(&namespaces).Error
 	if err != nil {
-		return nil, fmt.Errorf("failed to list schemas: %w", err)
+		return nil, fmt.Errorf("failed to list namespaces: %w", err)
 	}
 
-	return schemas, nil
+	return namespaces, nil
 }
 
 // ListTables 列出指定Schema下的所有表
-func (p *PostgreSQLPlugin) listTables(ctx context.Context, db *gorm.DB, schema string) ([]plugin.TableInfo, error) {
-	var tables []plugin.TableInfo
+func (p *PostgreSQLPlugin) listTables(ctx context.Context, db *gorm.DB, schema string) ([]datatype.TableInfo, error) {
+	var tables []datatype.TableInfo
 
 	query := `
 		SELECT
-			t.table_schema as schema,
-			t.table_name,
+			t.table_name as name,
 			CASE
 				WHEN t.table_type = 'VIEW' THEN 'view'
 				WHEN t.table_type = 'BASE TABLE' THEN 'table'
 				ELSE lower(replace(t.table_type, ' ', '_'))
-			END AS table_kind,
+			END AS kind,
 			COALESCE(pg_total_relation_size(quote_ident(t.table_schema)||'.'||quote_ident(t.table_name)), 0) as size_bytes,
 			GREATEST(c.reltuples::bigint, 0) as row_count,
 			GREATEST(
@@ -203,7 +202,7 @@ func (p *PostgreSQLPlugin) listTables(ctx context.Context, db *gorm.DB, schema s
 				s.last_autovacuum,
 				s.last_analyze,
 				s.last_vacuum
-			) as last_modified
+			) as updated_at
 		FROM information_schema.tables t
 		LEFT JOIN pg_stat_user_tables s
 			ON t.table_schema = s.schemaname AND t.table_name = s.relname

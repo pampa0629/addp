@@ -34,10 +34,10 @@ func TabularCatalogModel(namespaceTerm string) CatalogModelSpec {
 
 type TabularCatalogCallbacks struct {
 	NamespaceTerm         string
-	ListSchemas           func(ctx context.Context, db *gorm.DB) ([]SchemaInfo, error)
-	ListTables            func(ctx context.Context, db *gorm.DB, schema string) ([]TableInfo, error)
-	ListColumns           func(ctx context.Context, db *gorm.DB, schema, table string) ([]datatype.FieldInfo, error)
-	RowCount              func(ctx context.Context, db *gorm.DB, schema, table string) (int64, error)
+	ListNamespaces        func(ctx context.Context, db *gorm.DB) ([]NamespaceInfo, error)
+	ListTables            func(ctx context.Context, db *gorm.DB, namespace string) ([]datatype.TableInfo, error)
+	ListColumns           func(ctx context.Context, db *gorm.DB, namespace, table string) ([]datatype.FieldInfo, error)
+	RowCount              func(ctx context.Context, db *gorm.DB, namespace, table string) (int64, error)
 	IsSystemNamespaceFunc func(namespace string) bool
 }
 
@@ -53,23 +53,23 @@ func ListTabularCatalogChildren(ctx context.Context, callbacks TabularCatalogCal
 
 	namespaceTerm := callbacks.namespaceTerm()
 	if len(parent.Segments) == 0 {
-		schemas, err := callbacks.ListSchemas(ctx, db)
+		namespaces, err := callbacks.ListNamespaces(ctx, db)
 		if err != nil {
 			return nil, err
 		}
-		nodes := make([]CatalogNode, 0, len(schemas))
-		for _, schema := range schemas {
-			if callbacks.isSystemNamespace(schema.Name) {
+		nodes := make([]CatalogNode, 0, len(namespaces))
+		for _, namespace := range namespaces {
+			if callbacks.isSystemNamespace(namespace.Name) {
 				continue
 			}
 			nodes = append(nodes, CatalogNode{
-				Name:        schema.Name,
-				Path:        appendCatalogSegment(parent, engine.ID, namespaceTerm, CatalogKindNamespace, schema.Name),
+				Name:        namespace.Name,
+				Path:        appendCatalogSegment(parent, engine.ID, namespaceTerm, CatalogKindNamespace, namespace.Name),
 				Term:        namespaceTerm,
 				Kind:        CatalogKindNamespace,
 				IsContainer: true,
 				Stats: map[string]interface{}{
-					"table_count": schema.TableCount,
+					"table_count": namespace.TableCount,
 				},
 			})
 		}
@@ -84,18 +84,13 @@ func ListTabularCatalogChildren(ctx context.Context, callbacks TabularCatalogCal
 	nodes := make([]CatalogNode, 0, len(tables))
 	for _, table := range tables {
 		nodes = append(nodes, CatalogNode{
-			Name:   table.TableName,
-			Path:   appendCatalogSegment(parent, engine.ID, CatalogTermTable, CatalogKindTable, table.TableName),
-			Term:   CatalogTermTable,
-			Kind:   tableCatalogKind(table),
-			IsItem: true,
-			Stats: map[string]interface{}{
-				"row_count":  table.RowCount,
-				"size_bytes": table.SizeBytes,
-			},
-			Attributes: map[string]interface{}{
-				"schema": table.Schema,
-			},
+			Name:       table.Name,
+			Path:       appendCatalogSegment(parent, engine.ID, CatalogTermTable, CatalogKindTable, table.Name),
+			Term:       CatalogTermTable,
+			Kind:       tableCatalogKind(table),
+			IsItem:     true,
+			Stats:      tableStats(table),
+			Attributes: tableAttributes(namespace, table),
 		})
 	}
 	return nodes, nil
@@ -197,14 +192,14 @@ func catalogKindFromTableName(ctx context.Context, callbacks TabularCatalogCallb
 		return CatalogKindTable
 	}
 	for _, table := range tables {
-		if table.TableName == tableName {
+		if table.Name == tableName {
 			return tableCatalogKind(table)
 		}
 	}
 	return CatalogKindTable
 }
 
-func tableCatalogKind(table TableInfo) string {
+func tableCatalogKind(table datatype.TableInfo) string {
 	kind := table.Kind
 	if kind == "" {
 		kind = CatalogKindTable
@@ -212,8 +207,32 @@ func tableCatalogKind(table TableInfo) string {
 	return kind
 }
 
+func tableStats(table datatype.TableInfo) map[string]interface{} {
+	stats := map[string]interface{}{}
+	if table.RowCount != nil {
+		stats["row_count"] = *table.RowCount
+	}
+	if table.SizeBytes != nil {
+		stats["size_bytes"] = *table.SizeBytes
+	}
+	return stats
+}
+
+func tableAttributes(namespace string, table datatype.TableInfo) map[string]interface{} {
+	attrs := map[string]interface{}{
+		"namespace": namespace,
+	}
+	if table.Comment != "" {
+		attrs["comment"] = table.Comment
+	}
+	if table.UpdatedAt != nil {
+		attrs["updated_at"] = table.UpdatedAt
+	}
+	return attrs
+}
+
 func (a TabularCatalogCallbacks) validate() error {
-	if a.ListSchemas == nil || a.ListTables == nil || a.ListColumns == nil {
+	if a.ListNamespaces == nil || a.ListTables == nil || a.ListColumns == nil {
 		return fmt.Errorf("tabular catalog callbacks is incomplete")
 	}
 	return nil
