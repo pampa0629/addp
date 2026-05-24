@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/addp/common/datatype"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 )
@@ -26,6 +27,7 @@ type TableSourcePlan struct {
 	Layout       format.Layout
 	ParseOptions *format.ParseOptions
 	Schema       *format.TableInfo
+	SpatialInfo  *datatype.SpatialInfo
 	RelatedRefs  []format.RelatedRef
 }
 
@@ -209,6 +211,7 @@ func (e *TableTransferExecutor) openSource(plan TableSourcePlan) (TableBatchSour
 				readOptions:         plan.ContentRead,
 				parseOptions:        plan.ParseOptions,
 				schema:              plan.Schema,
+				spatialInfo:         plan.SpatialInfo,
 			}, nil
 		}
 		if e.SourceTableReadProvider == nil && e.SourceMultiReadProvider == nil && (e.SourceMultiInfoProvider == nil || e.SourceMultiSampleReader == nil) && e.SourceFormatProvider == nil {
@@ -227,6 +230,7 @@ func (e *TableTransferExecutor) openSource(plan TableSourcePlan) (TableBatchSour
 			readOptions:         plan.ContentRead,
 			parseOptions:        plan.ParseOptions,
 			schema:              plan.Schema,
+			spatialInfo:         plan.SpatialInfo,
 			relatedRefs:         plan.RelatedRefs,
 		}, nil
 	default:

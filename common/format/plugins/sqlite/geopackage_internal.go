@@ -46,13 +46,13 @@ func readGeoPackageLayers(ctx context.Context, db *sql.DB) map[string]geoPackage
 	return result
 }
 
-func applyGeoPackageSpatialInfo(ctx context.Context, db *sql.DB, info *format.TableInfo) {
+func applyGeoPackageSpatialInfo(ctx context.Context, db *sql.DB, info *format.TableInfo) *datatype.SpatialInfo {
 	if info == nil {
-		return
+		return nil
 	}
 	layer, ok := readGeoPackageLayers(ctx, db)[info.Name]
 	if !ok || strings.TrimSpace(layer.GeometryColumn) == "" {
-		return
+		return nil
 	}
 	for i := range info.Fields {
 		if strings.EqualFold(info.Fields[i].Name, layer.GeometryColumn) {
@@ -67,7 +67,7 @@ func applyGeoPackageSpatialInfo(ctx context.Context, db *sql.DB, info *format.Ta
 		extent := datatype.BoundingBox(bbox)
 		spatial.Extent = &extent
 	}
-	info.SpatialInfo = spatial
+	return spatial
 }
 
 func geoPackageLayerBoundingBox(layer geoPackageLayer) ([4]float64, bool) {

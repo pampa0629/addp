@@ -29,10 +29,3 @@ func tableInfoFields(info *format.TableInfo) []datatype.FieldInfo {
 	}
 	return fields
 }
-
-func tableInfoSpatialInfo(info *format.TableInfo) *datatype.SpatialInfo {
-	if info == nil {
-		return nil
-	}
-	return info.SpatialInfo.Clone()
-}

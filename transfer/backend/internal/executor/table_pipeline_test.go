@@ -77,8 +77,7 @@ func TestTableTransferExecutorReadsShapefileRefs(t *testing.T) {
 				{Name: "geom", Type: datatype.FieldTypeGeometry},
 			},
 		},
-		SpatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", "Point", 0, 0),
-	}, nil)
+	}, &format.WriteOptions{SpatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", "Point", 0, 0)})
 	if err != nil {
 		t.Fatalf("OpenMultiTableWriter failed: %v", err)
 	}
@@ -132,8 +131,7 @@ func TestTableTransferExecutorUsesPlannedSourceRelatedRefs(t *testing.T) {
 				{Name: "geom", Type: datatype.FieldTypeGeometry},
 			},
 		},
-		SpatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", "Point", 0, 0),
-	}, nil)
+	}, &format.WriteOptions{SpatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", "Point", 0, 0)})
 	if err != nil {
 		t.Fatalf("OpenMultiTableWriter failed: %v", err)
 	}
@@ -293,9 +291,14 @@ func TestTableTransferExecutorCopiesShapefileRefsPreservingSpatialInfo(t *testin
 				{Name: "geometry", Type: datatype.FieldTypeGeometry},
 			},
 		},
-		SpatialInfo: datatype.NewSingleGeometrySpatialInfo("geometry", "Point", 4326, 3),
 	}, &format.WriteOptions{
 		Encoding: "utf-8",
+		SpatialInfo: datatype.NewSingleGeometrySpatialInfo(
+			"geometry",
+			"Point",
+			4326,
+			3,
+		),
 		ExtraParams: map[string]interface{}{
 			"spatial_ref_sys": "EPSG:4326",
 		},
@@ -343,9 +346,9 @@ func TestTableTransferExecutorCopiesShapefileRefsPreservingSpatialInfo(t *testin
 	if err != nil {
 		t.Fatalf("DescribeMultiTable failed: %v", err)
 	}
-	schema := format.TableSchemaFromDescribeResult(info)
-	if schema.SpatialInfo == nil || schema.SpatialInfo.PrimaryDimensionValue() != 3 || schema.SpatialInfo.PrimaryGeometryType() != "Point" {
-		t.Fatalf("spatial info = %#v, want Point dimension 3", schema.SpatialInfo)
+	spatialInfo := info.Spatial
+	if spatialInfo == nil || spatialInfo.PrimaryDimensionValue() != 3 || spatialInfo.PrimaryGeometryType() != "Point" {
+		t.Fatalf("spatial info = %#v, want Point dimension 3", spatialInfo)
 	}
 	rows, err := shapefilePlugin.SampleMultiTable(context.Background(), targetReader, targetRefs, 0, 1, format.DefaultParseOptions())
 	if err != nil {
@@ -354,7 +357,7 @@ func TestTableTransferExecutorCopiesShapefileRefsPreservingSpatialInfo(t *testin
 	if len(rows) != 1 {
 		t.Fatalf("rows = %#v, want one row", rows)
 	}
-	geometryColumn := schema.SpatialInfo.PrimaryGeometryName()
+	geometryColumn := spatialInfo.PrimaryGeometryName()
 	got, ok := rows[0][geometryColumn].(string)
 	if !ok {
 		t.Fatalf("geometry value = %#v, want WKT string", rows[0][geometryColumn])
@@ -378,8 +381,7 @@ func TestTableTransferExecutorPrefersMultiTableProvider(t *testing.T) {
 				{Name: "geom", Type: datatype.FieldTypeGeometry},
 			},
 		},
-		SpatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", "Point", 0, 0),
-	}, nil)
+	}, &format.WriteOptions{SpatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", "Point", 0, 0)})
 	if err != nil {
 		t.Fatalf("OpenMultiTableWriter failed: %v", err)
 	}

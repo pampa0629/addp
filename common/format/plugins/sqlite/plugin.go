@@ -205,12 +205,13 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 		return nil, err
 	}
 	info := sqliteTableInfoToFormatTable(table)
+	var spatial *datatype.SpatialInfo
 	if p.Format() == format.FormatGeoPackage {
-		applyGeoPackageSpatialInfo(ctx, db, info)
+		spatial = applyGeoPackageSpatialInfo(ctx, db, info)
 	}
 	return &format.TableDescribeResult{
 		Table:   format.DatatypeTableInfo(info),
-		Spatial: info.SpatialInfo.Clone(),
+		Spatial: spatial.Clone(),
 	}, nil
 }
 

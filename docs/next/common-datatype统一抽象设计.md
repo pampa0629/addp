@@ -288,22 +288,20 @@ DescribeMedia(...) (*datatype.MediaInfo, error)
 
 ### `format.TableInfo` 过渡定位
 
-`format.TableInfo` 当前已嵌入 `datatype.TableInfo`，但仍临时保留 `SpatialInfo` 补充字段。这只是迁移过渡，不是最终模型。`FormatInfo` 和 `ContentIndex` 已从 `format.TableInfo` 拆出，只通过 `format.TableDescribeResult` 同级返回并由 Meta 写入 `format_info.<format>`、`content_index.table`。
+`format.TableInfo` 当前已嵌入 `datatype.TableInfo`，且已不再承载 `FormatInfo`、`ContentIndex`、`SpatialInfo`。这些事实只通过 `format.TableDescribeResult` 同级返回并由 Meta 写入 `format_info.<format>`、`content_index.table`、`capabilities.spatial`。
 
 最终方向：
 
 ```go
 type TableInfo struct {
     datatype.TableInfo
-
-    SpatialInfo *datatype.SpatialInfo
 }
 ```
 
 甚至后续可以删除 `format.TableInfo`，让 reader / writer 直接使用 `datatype.TableInfo`。在删除前，必须先拆掉以下耦合：
 
 - `FormatInfo` 已改为通过 `format.TableDescribeResult.FormatInfo` 或 `FormatInfoProvider` 获取，不再由 table operation schema 承载。
-- `SpatialInfo` 改为独立参数或上层编排携带；Transfer / engine 写入链路已经有 `BatchData.Spatial`、`TableWriteOptions.SpatialInfo`、`TableWriteSessionOptions.SpatialInfo`，可以作为拆分方向参考。
+- `SpatialInfo` 已改为独立参数或上层编排携带；format reader 使用 `TableSpatialInfoProvider`，format writer 使用 `WriteOptions.SpatialInfo`，Transfer / engine 写入链路使用 `BatchData.Spatial`、`TableWriteOptions.SpatialInfo`、`TableWriteSessionOptions.SpatialInfo`。
 - `ContentIndex` 已改为独立内容索引事实，不由 table schema 承载。
 
 `SpatialInfo` 的拆分需要单独设计，不能像 `FormatInfo` / `ContentIndex` 一样直接从 `TableInfo` 删除。原因是它当前同时承担两类职责：
@@ -311,18 +309,18 @@ type TableInfo struct {
 - 元数据事实：由 provider describe result 返回，再写入 `attributes.capabilities.spatial`。
 - 执行期空间参数：连续 reader / writer / Transfer pipeline 用它确定几何字段、几何类型、SRID、维度，并传给 engine table write prepare / session / batch write。
 
-因此，删除 `format.TableInfo.SpatialInfo` 前必须先明确替代通道：
+`format.TableInfo.SpatialInfo` 已删除，替代通道如下：
 
 | 场景 | 当前通道 | 后续候选 |
 |---|---|---|
 | format provider 解析空间事实 | `format.TableDescribeResult.Spatial` | 保持不变 |
 | Manager / Meta 展示空间能力 | attributes `capabilities.spatial` | 保持不变 |
-| format writer 写出 GeoJSON / Shapefile | `schema.SpatialInfo` | `WriteOptions.SpatialInfo` 或专门写出上下文 |
-| Transfer 批次传递空间事实 | `format.TableInfo.SpatialInfo` -> `BatchData.Spatial` | pipeline 单独保存 `SpatialInfo`，不放入 table schema |
+| format writer 写出 GeoJSON / Shapefile | `WriteOptions.SpatialInfo` | 已落地 |
+| Transfer 批次传递空间事实 | pipeline 单独保存 `SpatialInfo`，再写入 `BatchData.Spatial` | 已落地 |
 | engine 写表准备和会话 | `BatchData.Spatial` / `TableWriteOptions.SpatialInfo` | 保持 engine 侧现有独立空间参数 |
 | `TableReader` 返回读取字段和空间事实 | `Fields()` + 可选 `TableSpatialInfoProvider.SpatialInfo()` | 已不再用 `Schema() *TableInfo` 暴露完整 table operation schema |
 
-当前已先完成 reader 侧收敛：`TableReader` 只暴露实际读取 rows 对应的 `Fields()`，空间读取上下文通过可选 `TableSpatialInfoProvider` 提供。下一步应继续收敛 writer / pipeline 侧，让空间事实作为独立参数穿过写出链路，确认接口后再删除 `format.TableInfo.SpatialInfo`。
+当前已完成 reader / writer / Transfer pipeline 侧收敛：`TableReader` 只暴露实际读取 rows 对应的 `Fields()`，空间读取上下文通过可选 `TableSpatialInfoProvider` 提供，空间写出上下文通过 `WriteOptions.SpatialInfo` 提供，Transfer plan / pipeline 单独携带 `SpatialInfo`。
 
 ### TableInfo.Native 与 format_info 的边界
 
@@ -609,7 +607,7 @@ type SpatialInfo struct {
 | `format.TableDescribeResult` / `format.MediaDescribeResult` | 已迁出 `common/datatype`，作为 format provider 解析结果包存在 | Provider 一次解析自然可能得到多类事实；保留组合返回可以避免重复读取和过度设计 | 保持在 `common/format` provider 边界内，不进入 `datatype`；如后续确有必要，再按事实拆分 provider |
 | `datatype.ContentIndex` | 当前放在 `common/datatype`，被 format、Meta、Manager preview 使用 | 它不是 data type 本体，但当前是跨模块复用结构；贸然移出会引入新包或新概念 | 暂不动。后续结合 engine range reader、format content index、Meta attributes 的消费链路再决定是否移出 |
 | `common/engine/plugin.DatabaseInfo` / `CollectionInfo` | 仍是 engine catalog 层结构 | 它们更接近 catalog hierarchy / namespace 事实，不等同于 data type info | 暂不迁入 `datatype`。后续如有重复，再从 catalog/path/node 语义统一 |
-| `format.TableInfo` | 当前作为 reader / writer / Transfer 操作结构存在，已嵌入 `datatype.TableInfo` | 它还临时承载 `SpatialInfo` 执行期补充事实；`FormatInfo` 和 `ContentIndex` 已拆出 | 继续拆分 `SpatialInfo`；最终仅保留 `datatype.TableInfo` 薄壳，或完全删除 |
+| `format.TableInfo` | 当前作为 reader / writer / Transfer 操作结构存在，已嵌入 `datatype.TableInfo` | `FormatInfo`、`ContentIndex`、`SpatialInfo` 均已拆出 | 后续评估是否完全删除这个薄壳，直接使用 `datatype.TableInfo` |
 
 ### `common/engine/plugin.TableInfo` 收敛结论
 

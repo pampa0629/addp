@@ -523,11 +523,11 @@ func TestBuildTableTransferPlanConsumesMetaMultiSourceRefsAndSpatialAttributes(t
 	if result.Plan.Source.RelatedRefs[2].Ref.Path != "imports/roads.dbf" || !result.Plan.Source.RelatedRefs[2].Required {
 		t.Fatalf("dbf ref = %#v, want required attributes ref from Meta attributes", result.Plan.Source.RelatedRefs[2])
 	}
-	if result.Plan.Source.Schema == nil || result.Plan.Source.Schema.SpatialInfo == nil {
-		t.Fatalf("source schema = %#v, want spatial info from Meta attributes", result.Plan.Source.Schema)
+	if result.Plan.Source.Schema == nil || result.Plan.Source.SpatialInfo == nil {
+		t.Fatalf("source schema = %#v, spatial = %#v, want spatial info from Meta attributes", result.Plan.Source.Schema, result.Plan.Source.SpatialInfo)
 	}
-	if result.Plan.Source.Schema.SpatialInfo.PrimaryGeometryName() != "shape" || result.Plan.Source.Schema.SpatialInfo.PrimaryGeometryType() != "MultiPolygon" {
-		t.Fatalf("source spatial info = %#v, want primary geometry column from capabilities.spatial", result.Plan.Source.Schema.SpatialInfo)
+	if result.Plan.Source.SpatialInfo.PrimaryGeometryName() != "shape" || result.Plan.Source.SpatialInfo.PrimaryGeometryType() != "MultiPolygon" {
+		t.Fatalf("source spatial info = %#v, want primary geometry column from capabilities.spatial", result.Plan.Source.SpatialInfo)
 	}
 	if result.Plan.Source.ParseOptions == nil || result.Plan.Source.ParseOptions.ExtraParams["geometry_field"] != "shape" {
 		t.Fatalf("source parse options = %#v, want geometry_field from capabilities.spatial", result.Plan.Source.ParseOptions)

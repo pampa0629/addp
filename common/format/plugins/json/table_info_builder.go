@@ -122,9 +122,7 @@ func (b *tableInfoBuilder) Build() tableInfoBuildResult {
 
 func (b *tableInfoBuilder) BuildSchema() *format.TableInfo {
 	result := b.Build()
-	tableInfo := format.FormatTableInfo(result.Table)
-	tableInfo.SpatialInfo = result.Spatial
-	return tableInfo
+	return format.FormatTableInfo(result.Table)
 }
 
 func (b *tableInfoBuilder) BuildTableInfo() *datatype.TableInfo {

@@ -66,8 +66,9 @@ type WriteOptions struct {
 	Encoding    string
 	ExtraParams map[string]interface{}
 
-	Delimiter  rune
-	OmitHeader bool
+	Delimiter   rune
+	OmitHeader  bool
+	SpatialInfo *datatype.SpatialInfo
 }
 
 // DefaultWriteOptions 返回默认写出选项。

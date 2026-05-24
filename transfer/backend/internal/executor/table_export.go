@@ -26,7 +26,6 @@ func tableInfoFromBatch(batch *engineplugin.BatchData) *format.TableInfo {
 		field.Name = name
 		info.Fields = append(info.Fields, field)
 	}
-	info.SpatialInfo = spatialInfoFromBatch(batch)
 	if len(info.Fields) == 0 && len(batch.Rows) > 0 {
 		names := make([]string, 0, len(batch.Rows[0]))
 		for name := range batch.Rows[0] {
@@ -61,18 +60,42 @@ func contentRefFromCatalogPath(path engineplugin.CatalogPath) contentio.Ref {
 	return contentio.NewRef(stringPath, contentio.RoleMain)
 }
 
-func applySpatialInfoFromOptions(info *format.TableInfo, opts *format.WriteOptions) {
-	if info == nil || opts == nil || opts.ExtraParams == nil {
-		return
+func writeOptionsWithSpatialInfo(opts *format.WriteOptions, info *format.TableInfo, spatialInfo *datatype.SpatialInfo) *format.WriteOptions {
+	next := format.DefaultWriteOptions()
+	if opts != nil {
+		*next = *opts
 	}
-	geometryField := optionString(opts.ExtraParams, "geometry_field")
-	geometryType := optionString(opts.ExtraParams, "geometry_type")
+	next.SpatialInfo = spatialInfoForWriteOptions(next, info, spatialInfo)
+	return next
+}
+
+func spatialInfoForWriteOptions(opts *format.WriteOptions, info *format.TableInfo, fallback *datatype.SpatialInfo) *datatype.SpatialInfo {
+	var spatialInfo *datatype.SpatialInfo
+	if opts != nil && opts.SpatialInfo != nil {
+		spatialInfo = opts.SpatialInfo.Clone()
+	}
+	if spatialInfo == nil {
+		spatialInfo = fallback.Clone()
+	}
+	if spatialInfo == nil {
+		spatialInfo = spatialInfoFromTableInfoOrFields(info)
+	}
+	geometryField := ""
+	geometryType := ""
+	if opts != nil && opts.ExtraParams != nil {
+		geometryField = optionString(opts.ExtraParams, "geometry_field")
+		geometryType = optionString(opts.ExtraParams, "geometry_type")
+	}
 	if geometryField == "" && geometryType == "" {
-		return
+		return spatialInfo
 	}
-	srid := info.SpatialInfo.PrimarySRIDValue()
-	dimension := info.SpatialInfo.PrimaryDimensionValue()
-	if geometryField != "" {
+	srid := 0
+	dimension := 0
+	if spatialInfo != nil {
+		srid = spatialInfo.PrimarySRIDValue()
+		dimension = spatialInfo.PrimaryDimensionValue()
+	}
+	if geometryField != "" && info != nil {
 		for i := range info.Fields {
 			if strings.EqualFold(info.Fields[i].Name, geometryField) {
 				info.Fields[i].Type = datatype.FieldTypeGeometry
@@ -80,13 +103,16 @@ func applySpatialInfoFromOptions(info *format.TableInfo, opts *format.WriteOptio
 			}
 		}
 	}
-	if geometryField == "" {
-		geometryField = info.SpatialInfo.PrimaryGeometryName()
+	if geometryField == "" && spatialInfo != nil {
+		geometryField = spatialInfo.PrimaryGeometryName()
 	}
-	if geometryType == "" {
-		geometryType = info.SpatialInfo.PrimaryGeometryType()
+	if geometryType == "" && spatialInfo != nil {
+		geometryType = spatialInfo.PrimaryGeometryType()
 	}
-	info.SpatialInfo = datatype.NewSingleGeometrySpatialInfo(geometryField, geometryType, srid, dimension)
+	if geometryField == "" && geometryType == "" {
+		return spatialInfo
+	}
+	return datatype.NewSingleGeometrySpatialInfo(geometryField, geometryType, srid, dimension)
 }
 
 func optionString(values map[string]interface{}, key string) string {

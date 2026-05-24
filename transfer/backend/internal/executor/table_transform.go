@@ -11,7 +11,7 @@ import (
 )
 
 type tableTransform interface {
-	TransformSchema(schema *format.TableInfo) (*format.TableInfo, error)
+	TransformSchema(schema *format.TableInfo, spatialInfo *datatype.SpatialInfo) (*format.TableInfo, *datatype.SpatialInfo, error)
 	TransformBatch(ctx context.Context, batch *engineplugin.BatchData) (*engineplugin.BatchData, error)
 }
 
@@ -38,19 +38,20 @@ func buildTableTransforms(plans []TableTransformPlan) ([]tableTransform, error) 
 	return transforms, nil
 }
 
-func applySchemaTransforms(schema *format.TableInfo, transforms []tableTransform) (*format.TableInfo, error) {
+func applySchemaTransforms(schema *format.TableInfo, spatialInfo *datatype.SpatialInfo, transforms []tableTransform) (*format.TableInfo, *datatype.SpatialInfo, error) {
 	next := schema.Clone()
+	nextSpatial := spatialInfo.Clone()
 	for _, transform := range transforms {
 		var err error
-		next, err = transform.TransformSchema(next)
+		next, nextSpatial, err = transform.TransformSchema(next, nextSpatial)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	if next == nil {
 		next = &format.TableInfo{}
 	}
-	return next, nil
+	return next, nextSpatial, nil
 }
 
 func applyBatchTransforms(ctx context.Context, batch *engineplugin.BatchData, transforms []tableTransform) (*engineplugin.BatchData, error) {
@@ -95,9 +96,9 @@ func newFieldMappingTransform(plan FieldMappingTransformPlan) (*fieldMappingTran
 	return &fieldMappingTransform{mode: mode, fields: fields}, nil
 }
 
-func (t *fieldMappingTransform) TransformSchema(schema *format.TableInfo) (*format.TableInfo, error) {
+func (t *fieldMappingTransform) TransformSchema(schema *format.TableInfo, spatialInfo *datatype.SpatialInfo) (*format.TableInfo, *datatype.SpatialInfo, error) {
 	if t == nil {
-		return schema.Clone(), nil
+		return schema.Clone(), spatialInfo.Clone(), nil
 	}
 	source := schema.Clone()
 	if source == nil {
@@ -123,18 +124,22 @@ func (t *fieldMappingTransform) TransformSchema(schema *format.TableInfo) (*form
 	if next == nil {
 		next = &format.TableInfo{}
 	}
+	var nextSpatial *datatype.SpatialInfo
+	if t.mode == FieldMappingModePassthrough {
+		nextSpatial = spatialInfo.Clone()
+	}
 
 	for _, mapping := range t.fields {
 		field := fieldInfoForMapping(source, mapping)
 		upsertFieldInfo(next, field)
 		if datatype.IsSpatialFieldType(field.Type) {
-			next.SpatialInfo = cloneSpatialInfoForColumn(source.SpatialInfo, mapping.Target)
-			if next.SpatialInfo == nil {
-				next.SpatialInfo = datatype.NewSingleGeometrySpatialInfo(mapping.Target, "", 0, 0)
+			nextSpatial = cloneSpatialInfoForColumn(spatialInfo, mapping.Target)
+			if nextSpatial == nil {
+				nextSpatial = datatype.NewSingleGeometrySpatialInfo(mapping.Target, "", 0, 0)
 			}
 		}
 	}
-	return next, nil
+	return next, nextSpatial, nil
 }
 
 func (t *fieldMappingTransform) TransformBatch(ctx context.Context, batch *engineplugin.BatchData) (*engineplugin.BatchData, error) {

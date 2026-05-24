@@ -33,12 +33,6 @@ func ApplyFieldSelectionToTableInfo(info *TableInfo, selection *FieldSelectionOp
 	}
 	copied.Fields = fields
 	copied.PrimaryKey = selectedPrimaryKeys(copied.PrimaryKey, seen)
-	if copied.SpatialInfo != nil {
-		geometry := copied.SpatialInfo.PrimaryGeometry()
-		if geometry == nil || !seen[geometry.Name] {
-			copied.SpatialInfo = nil
-		}
-	}
 	return copied, nil
 }
 

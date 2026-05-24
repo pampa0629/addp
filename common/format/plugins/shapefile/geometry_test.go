@@ -103,9 +103,7 @@ func TestShapeTypeFromSchemaUsesSpatialDimension(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := shapeTypeFromSchema(&format.TableInfo{
-				SpatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", tt.geometryType, 0, tt.dimension),
-			})
+			got, err := shapeTypeFromSchema(nil, datatype.NewSingleGeometrySpatialInfo("geom", tt.geometryType, 0, tt.dimension))
 			if err != nil {
 				t.Fatalf("shapeTypeFromSchema() error = %v", err)
 			}

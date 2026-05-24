@@ -181,6 +181,7 @@ func (p *FileTablePreviewProvider) previewStreamable(
 	if err != nil {
 		return nil, err
 	}
+	spatialInfo := spatialInfoFromAttributes(req.Attributes)
 	if tableInfo == nil {
 		if infoProvider == nil {
 			return nil, fmt.Errorf("no table info provider for format %s", formatType)
@@ -198,6 +199,7 @@ func (p *FileTablePreviewProvider) previewStreamable(
 			return nil, fmt.Errorf("failed to parse table info: %w", err)
 		}
 		tableInfo = format.TableSchemaFromDescribeResult(result)
+		spatialInfo = result.Spatial.Clone()
 	}
 
 	// 提取列名
@@ -242,7 +244,6 @@ func (p *FileTablePreviewProvider) previewStreamable(
 
 	// 检测几何列（用于空间数据）
 	geometryColumns := p.detectGeometryColumns(tableInfo)
-	spatialInfo := tableInfo.GetSpatialInfo()
 	srid := 0
 	if spatialInfo != nil {
 		srid = spatialInfo.PrimarySRIDValue()
@@ -292,9 +293,6 @@ func (p *FileTablePreviewProvider) tableInfoFromAttributes(req *PreviewRequest) 
 	}
 	if rowCount > 0 {
 		info.RowCount = &rowCount
-	}
-	if spatialInfo := spatialInfoFromAttributes(attrs); spatialInfo != nil {
-		info.SpatialInfo = spatialInfo
 	}
 	return info, nil
 }
@@ -638,12 +636,14 @@ func (p *FileTablePreviewProvider) previewRefs(
 	if err != nil {
 		return nil, err
 	}
+	spatialInfo := spatialInfoFromAttributes(req.Attributes)
 	if tableInfo == nil {
 		result, err := infoProvider.DescribeMultiTable(ctx, reader, refs, opts)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse %s ref table info: %w", formatType, err)
 		}
 		tableInfo = format.TableSchemaFromDescribeResult(result)
+		spatialInfo = result.Spatial.Clone()
 	}
 
 	// 提取列名
@@ -677,7 +677,6 @@ func (p *FileTablePreviewProvider) previewRefs(
 
 	// 检测几何列
 	geometryColumns := p.detectGeometryColumns(tableInfo)
-	spatialInfo := tableInfo.GetSpatialInfo()
 	srid := 0
 	if spatialInfo != nil {
 		srid = spatialInfo.PrimarySRIDValue()

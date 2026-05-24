@@ -21,13 +21,13 @@ func (plugin *Plugin) DescribeMultiTable(ctx context.Context, reader contentio.R
 	defer cleanup()
 
 	opts := plugin.resolveMaterializedOptions(basePath, options)
-	info, formatInfo, err := plugin.describeTableInfoFromHeaders(basePath, refs, opts)
+	info, spatialInfo, formatInfo, err := plugin.describeTableInfoFromHeaders(basePath, refs, opts)
 	if err != nil {
 		return nil, err
 	}
 	result := &format.TableDescribeResult{
 		Table:      format.DatatypeTableInfo(info),
-		Spatial:    info.SpatialInfo.Clone(),
+		Spatial:    spatialInfo.Clone(),
 		FormatInfo: formatInfo,
 	}
 	selected, err := format.ApplyFieldSelectionToTableDescribeResult(result, opts.FieldSelection)
@@ -70,7 +70,7 @@ func (plugin *Plugin) SampleMultiTable(ctx context.Context, reader contentio.Rea
 	return format.ApplyFieldSelectionToRows(rows, opts.FieldSelection), nil
 }
 
-func (plugin *Plugin) describeTableInfoFromHeaders(basePath string, refs []format.RelatedRef, opts *format.ParseOptions) (*format.TableInfo, map[string]interface{}, error) {
+func (plugin *Plugin) describeTableInfoFromHeaders(basePath string, refs []format.RelatedRef, opts *format.ParseOptions) (*format.TableInfo, *datatype.SpatialInfo, map[string]interface{}, error) {
 	encodingName := ""
 	spatialRefSys := ""
 	if opts != nil {
@@ -80,11 +80,11 @@ func (plugin *Plugin) describeTableInfoFromHeaders(basePath string, refs []forma
 
 	shpHeader, err := readSHPHeader(basePath + extSHP)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	dbfHeader, err := readDBFHeader(basePath+extDBF, encodingName)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	input := shapefileTableInfoInput{
@@ -98,7 +98,8 @@ func (plugin *Plugin) describeTableInfoFromHeaders(basePath string, refs []forma
 		HasCPG:        fileExists(basePath + extCPG),
 		SpatialRefSys: spatialRefSys,
 	}
-	return buildShapefileTableInfo(input), shapefileFormatInfo(input), nil
+	tableInfo, spatialInfo := buildShapefileTableInfo(input)
+	return tableInfo, spatialInfo, shapefileFormatInfo(input), nil
 }
 
 func (plugin *Plugin) sampleTableFromPath(ctx context.Context, shpPath string, offset, limit int64, opts *format.ParseOptions) ([]map[string]interface{}, error) {
@@ -158,7 +159,7 @@ type shapefileTableInfoInput struct {
 	SpatialRefSys string
 }
 
-func buildShapefileTableInfo(input shapefileTableInfoInput) *format.TableInfo {
+func buildShapefileTableInfo(input shapefileTableInfoInput) (*format.TableInfo, *datatype.SpatialInfo) {
 	if input.GeometryField == "" {
 		input.GeometryField = "geometry"
 	}
@@ -204,8 +205,7 @@ func buildShapefileTableInfo(input shapefileTableInfoInput) *format.TableInfo {
 			PrimaryKey: []string{},
 			Native:     info.TableNative(),
 		},
-		SpatialInfo: spatialInfo,
-	}
+	}, spatialInfo
 }
 
 func shapefileFormatInfo(input shapefileTableInfoInput) map[string]interface{} {

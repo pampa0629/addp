@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/addp/common/contentio"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	"github.com/jonas-p/go-shp"
 	"io"
@@ -76,10 +77,10 @@ func newIndexedMultiTableReadSource(ctx context.Context, plugin *Plugin, refs []
 	}, true, nil
 }
 
-func (s *indexedMultiTableReadSource) describeTable(ctx context.Context, refs []format.RelatedRef, opts *format.ParseOptions) (*format.TableInfo, error) {
+func (s *indexedMultiTableReadSource) describeTable(ctx context.Context, refs []format.RelatedRef, opts *format.ParseOptions) (*format.TableInfo, *datatype.SpatialInfo, error) {
 	shpHeader, err := readSHPHeaderIndexed(ctx, s.rangeReader, s.shpRef)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	encodingName := s.encodingName
 	if opts != nil && opts.Encoding != "" {
@@ -90,7 +91,7 @@ func (s *indexedMultiTableReadSource) describeTable(ctx context.Context, refs []
 		spatialRefSys = opts.SpatialRefSys
 	}
 	refMap := shapefileRefsByExtension(refs)
-	return buildShapefileTableInfo(shapefileTableInfoInput{
+	tableInfo, spatialInfo := buildShapefileTableInfo(shapefileTableInfoInput{
 		GeometryField: s.geometryField,
 		BaseName:      strings.TrimSuffix(filepath.Base(s.shpRef.Ref.Path), filepath.Ext(s.shpRef.Ref.Path)),
 		Refs:          refs,
@@ -100,7 +101,8 @@ func (s *indexedMultiTableReadSource) describeTable(ctx context.Context, refs []
 		HasPRJ:        hasRefExtension(refMap, extPRJ),
 		HasCPG:        hasRefExtension(refMap, extCPG),
 		SpatialRefSys: spatialRefSys,
-	}), nil
+	})
+	return tableInfo, spatialInfo, nil
 }
 
 func (s *indexedMultiTableReadSource) readRows(ctx context.Context, offset, limit int64, srid int) ([]map[string]interface{}, bool, error) {

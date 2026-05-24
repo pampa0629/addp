@@ -93,26 +93,21 @@ func TestTableInfoFieldsUseStandardTypes(t *testing.T) {
 	}
 }
 
-func TestTableInfoSpatialInfoCarriesStandardSpatialFacts(t *testing.T) {
+func TestTableInfoFieldsCarriesStandardFieldFacts(t *testing.T) {
 	info := &format.TableInfo{
 		TableInfo: datatype.TableInfo{
 			Fields: []datatype.FieldInfo{
 				{Name: "geom", Type: datatype.FieldTypeGeometry},
 			},
 		},
-		SpatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", "Polygon", 4326, 3),
 	}
 	fields := tableInfoFields(info)
-	spatialInfo := tableInfoSpatialInfo(info)
 
 	if len(fields) != 1 {
 		t.Fatalf("fields = %#v, want one field", fields)
 	}
 	if fields[0].Type != datatype.FieldTypeGeometry {
 		t.Fatalf("fields = %#v, want geometry field type", fields)
-	}
-	if spatialInfo.PrimaryGeometryType() != "Polygon" || spatialInfo.PrimarySRIDValue() != 4326 || spatialInfo.PrimaryDimensionValue() != 3 {
-		t.Fatalf("spatial info = %#v, want standard spatial facts", spatialInfo)
 	}
 }
 

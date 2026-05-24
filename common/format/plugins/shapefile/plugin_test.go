@@ -62,10 +62,10 @@ func TestOpenMultiTableWriterWritesReadableShapefile(t *testing.T) {
 				{Name: "geom", Type: datatype.FieldTypeGeometry},
 			},
 		},
-		SpatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", "Point", 4326, 0),
 	}
+	opts := &format.WriteOptions{SpatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", "Point", 4326, 0)}
 
-	writer, err := plugin.OpenMultiTableWriter(context.Background(), output, refs, schema, nil)
+	writer, err := plugin.OpenMultiTableWriter(context.Background(), output, refs, schema, opts)
 	if err != nil {
 		t.Fatalf("OpenMultiTableWriter failed: %v", err)
 	}
@@ -108,7 +108,6 @@ func TestOpenMultiTableWriterRequiresRefs(t *testing.T) {
 				{Name: "geom", Type: datatype.FieldTypeGeometry},
 			},
 		},
-		SpatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", "Point", 0, 0),
 	}
 
 	if _, err := plugin.OpenMultiTableWriter(context.Background(), newMemoryRefStore(), nil, schema, nil); err == nil {
@@ -127,7 +126,6 @@ func TestOpenMultiTableWriterRequiresPrimaryRef(t *testing.T) {
 				{Name: "geom", Type: datatype.FieldTypeGeometry},
 			},
 		},
-		SpatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", "Point", 0, 0),
 	}
 
 	if _, err := plugin.OpenMultiTableWriter(context.Background(), newMemoryRefStore(), refs, schema, nil); err == nil {

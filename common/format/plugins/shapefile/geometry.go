@@ -35,11 +35,11 @@ func geometryEncoding(opts *format.ParseOptions) format.GeometryEncoding {
 	return opts.GeometryEncoding
 }
 
-func spatialSRID(info *format.TableInfo) int {
-	if info == nil || info.SpatialInfo == nil {
+func spatialSRID(info *datatype.SpatialInfo) int {
+	if info == nil {
 		return 0
 	}
-	return info.SpatialInfo.PrimarySRIDValue()
+	return info.PrimarySRIDValue()
 }
 
 func sridFromParseOptions(opts *format.ParseOptions) int {
@@ -75,12 +75,12 @@ func determineShapefileDimension(shapeType shp.ShapeType) int {
 	}
 }
 
-func shapeTypeFromSchema(schema *format.TableInfo) (shp.ShapeType, error) {
+func shapeTypeFromSchema(schema *format.TableInfo, spatialInfo *datatype.SpatialInfo) (shp.ShapeType, error) {
 	geometryType := ""
 	dimension := 0
-	if schema != nil && schema.SpatialInfo != nil {
-		geometryType = schema.SpatialInfo.PrimaryGeometryType()
-		dimension = schema.SpatialInfo.PrimaryDimensionValue()
+	if spatialInfo != nil {
+		geometryType = spatialInfo.PrimaryGeometryType()
+		dimension = spatialInfo.PrimaryDimensionValue()
 	}
 	if geometryType == "" && schema != nil {
 		for _, field := range schema.Fields {

@@ -52,7 +52,7 @@ func (plugin *Plugin) OpenMultiTableReader(ctx context.Context, reader contentio
 			return nil, err
 		}
 		if indexed {
-			schema, err := source.describeTable(ctx, refs, opts)
+			schema, spatialInfo, err := source.describeTable(ctx, refs, opts)
 			if err != nil {
 				return nil, fmt.Errorf("describe indexed shapefile ref table: %w", err)
 			}
@@ -61,9 +61,10 @@ func (plugin *Plugin) OpenMultiTableReader(ctx context.Context, reader contentio
 				return nil, err
 			}
 			return &indexedMultiTableReader{
-				source: source,
-				schema: schema,
-				opts:   opts,
+				source:      source,
+				schema:      schema,
+				spatialInfo: spatialInfo,
+				opts:        opts,
 			}, nil
 		}
 	}
@@ -73,6 +74,7 @@ func (plugin *Plugin) OpenMultiTableReader(ctx context.Context, reader contentio
 		return nil, err
 	}
 	schema := format.TableSchemaFromDescribeResult(describeResult)
+	spatialInfo := describeResult.Spatial.Clone()
 
 	_, basePath, cleanup, err := materializeRefs(ctx, reader, refs)
 	if err != nil {
@@ -87,6 +89,7 @@ func (plugin *Plugin) OpenMultiTableReader(ctx context.Context, reader contentio
 	return &sequentialMultiTableReader{
 		reader:        shpReader,
 		schema:        schema,
+		spatialInfo:   spatialInfo,
 		cleanup:       cleanup,
 		geometryField: plugin.getGeometryFieldName(opts),
 		opts:          opts,
@@ -94,11 +97,12 @@ func (plugin *Plugin) OpenMultiTableReader(ctx context.Context, reader contentio
 }
 
 type indexedMultiTableReader struct {
-	source *indexedMultiTableReadSource
-	schema *format.TableInfo
-	opts   *format.ParseOptions
-	offset int64
-	done   bool
+	source      *indexedMultiTableReadSource
+	schema      *format.TableInfo
+	spatialInfo *datatype.SpatialInfo
+	opts        *format.ParseOptions
+	offset      int64
+	done        bool
 }
 
 func (r *indexedMultiTableReader) Fields() []datatype.FieldInfo {
@@ -109,10 +113,10 @@ func (r *indexedMultiTableReader) Fields() []datatype.FieldInfo {
 }
 
 func (r *indexedMultiTableReader) SpatialInfo() *datatype.SpatialInfo {
-	if r == nil || r.schema == nil {
+	if r == nil {
 		return nil
 	}
-	return r.schema.SpatialInfo.Clone()
+	return r.spatialInfo.Clone()
 }
 
 func (r *indexedMultiTableReader) ReadRows(ctx context.Context, limit int) ([]map[string]interface{}, error) {
@@ -122,7 +126,7 @@ func (r *indexedMultiTableReader) ReadRows(ctx context.Context, limit int) ([]ma
 	if limit < 0 {
 		return nil, fmt.Errorf("read shapefile rows limit must be non-negative")
 	}
-	rows, _, err := r.source.readRows(ctx, r.offset, int64(limit), spatialSRID(r.schema))
+	rows, _, err := r.source.readRows(ctx, r.offset, int64(limit), spatialSRID(r.spatialInfo))
 	if err != nil {
 		if isIndexedSampleFallbackError(err) {
 			return nil, fmt.Errorf("indexed shapefile reader does not support this geometry type: %w", err)
@@ -143,6 +147,7 @@ func (r *indexedMultiTableReader) Close(context.Context) error {
 type sequentialMultiTableReader struct {
 	reader        *reader
 	schema        *format.TableInfo
+	spatialInfo   *datatype.SpatialInfo
 	cleanup       func()
 	geometryField string
 	opts          *format.ParseOptions
@@ -158,10 +163,10 @@ func (r *sequentialMultiTableReader) Fields() []datatype.FieldInfo {
 }
 
 func (r *sequentialMultiTableReader) SpatialInfo() *datatype.SpatialInfo {
-	if r == nil || r.schema == nil {
+	if r == nil {
 		return nil
 	}
-	return r.schema.SpatialInfo.Clone()
+	return r.spatialInfo.Clone()
 }
 
 func (r *sequentialMultiTableReader) ReadRows(ctx context.Context, limit int) ([]map[string]interface{}, error) {
@@ -178,7 +183,7 @@ func (r *sequentialMultiTableReader) ReadRows(ctx context.Context, limit int) ([
 			return rows, ctx.Err()
 		default:
 		}
-		rows = append(rows, readSequentialRow(r.reader, r.recordIndex, r.geometryField, r.opts, spatialSRID(r.schema)))
+		rows = append(rows, readSequentialRow(r.reader, r.recordIndex, r.geometryField, r.opts, spatialSRID(r.spatialInfo)))
 		r.recordIndex++
 	}
 	if err := r.reader.Err(); err != nil {

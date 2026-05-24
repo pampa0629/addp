@@ -379,6 +379,7 @@ func TestJSONPluginOpenTableWriterGeoJSON(t *testing.T) {
 		"spatial.target_encoding": "geojson",
 		"geometry_field":          "geom",
 	}
+	opts.SpatialInfo = datatype.NewSingleGeometrySpatialInfo("geom", "Point", 4326, 0)
 	schema := &format.TableInfo{
 		TableInfo: datatype.TableInfo{
 			Fields: []datatype.FieldInfo{
@@ -387,7 +388,6 @@ func TestJSONPluginOpenTableWriterGeoJSON(t *testing.T) {
 				{Name: "geom", Type: datatype.FieldTypeGeometry},
 			},
 		},
-		SpatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", "Point", 4326, 0),
 	}
 	var buf bytes.Buffer
 

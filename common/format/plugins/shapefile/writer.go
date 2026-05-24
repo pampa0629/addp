@@ -82,7 +82,7 @@ func (plugin *Plugin) OpenMultiTableWriter(ctx context.Context, output contentio
 	if geometryField == "" {
 		return nil, fmt.Errorf("shapefile table writer requires geometry field")
 	}
-	shapeType, err := shapeTypeFromSchema(schema)
+	shapeType, err := shapeTypeFromSchema(schema, opts.SpatialInfo)
 	if err != nil {
 		return nil, err
 	}
@@ -199,8 +199,8 @@ func multiWriterGeometryField(schema *format.TableInfo, opts *format.WriteOption
 			return strings.TrimSpace(value)
 		}
 	}
-	if schema != nil && schema.SpatialInfo != nil && strings.TrimSpace(schema.SpatialInfo.PrimaryGeometryName()) != "" {
-		return strings.TrimSpace(schema.SpatialInfo.PrimaryGeometryName())
+	if opts != nil && opts.SpatialInfo != nil && strings.TrimSpace(opts.SpatialInfo.PrimaryGeometryName()) != "" {
+		return strings.TrimSpace(opts.SpatialInfo.PrimaryGeometryName())
 	}
 	for _, field := range schema.Fields {
 		if datatype.IsSpatialFieldType(field.Type) {

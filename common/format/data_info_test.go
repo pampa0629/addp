@@ -25,7 +25,6 @@ func TestTableInfoCloneDeepCopiesMutableFields(t *testing.T) {
 			},
 			PrimaryKey: []string{"id"},
 		},
-		SpatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", "Point", 4326, 2),
 	}
 
 	cloned := info.Clone()
@@ -38,7 +37,6 @@ func TestTableInfoCloneDeepCopiesMutableFields(t *testing.T) {
 	*cloned.SizeBytes = 88
 	*cloned.CreatedAt = time.Unix(300, 0)
 	*cloned.UpdatedAt = time.Unix(400, 0)
-	*cloned.SpatialInfo.PrimaryGeometry().SRID = 3857
 
 	if info.Fields[0].Name != "id" || info.PrimaryKey[0] != "id" {
 		t.Fatalf("original field metadata changed: %#v %#v", info.Fields, info.PrimaryKey)
@@ -48,8 +46,5 @@ func TestTableInfoCloneDeepCopiesMutableFields(t *testing.T) {
 	}
 	if !info.CreatedAt.Equal(time.Unix(100, 0)) || !info.UpdatedAt.Equal(time.Unix(200, 0)) {
 		t.Fatalf("original timestamps changed: %v %v", info.CreatedAt, info.UpdatedAt)
-	}
-	if info.SpatialInfo.PrimarySRIDValue() != 4326 {
-		t.Fatalf("original spatial info changed: %#v", info.SpatialInfo)
 	}
 }

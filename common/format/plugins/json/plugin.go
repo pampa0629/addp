@@ -113,8 +113,8 @@ func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, schema *
 		geometryField:  opts.geometryField,
 		idField:        opts.idField,
 	}
-	if writer.geometryField == "" && schema != nil && schema.SpatialInfo != nil {
-		writer.geometryField = strings.TrimSpace(schema.SpatialInfo.PrimaryGeometryName())
+	if writer.geometryField == "" && options != nil && options.SpatialInfo != nil {
+		writer.geometryField = strings.TrimSpace(options.SpatialInfo.PrimaryGeometryName())
 	}
 	if writer.geometryField == "" {
 		writer.geometryField = p.geometryField
@@ -439,6 +439,7 @@ type tableReader struct {
 	geometryField string
 	selection     *format.FieldSelectionOptions
 	schema        *format.TableInfo
+	spatialInfo   *datatype.SpatialInfo
 	closed        bool
 }
 
@@ -450,10 +451,10 @@ func (r *tableReader) Fields() []datatype.FieldInfo {
 }
 
 func (r *tableReader) SpatialInfo() *datatype.SpatialInfo {
-	if r == nil || r.schema == nil {
+	if r == nil {
 		return nil
 	}
-	return r.schema.SpatialInfo.Clone()
+	return r.spatialInfo.Clone()
 }
 
 func (r *tableReader) ReadRows(ctx context.Context, limit int) ([]map[string]interface{}, error) {
@@ -484,11 +485,19 @@ func (r *tableReader) ReadRows(ctx context.Context, limit int) ([]map[string]int
 		rows = append(rows, feature.ToRecord(r.geometryField))
 	}
 	if len(rows) > 0 {
-		info := builder.BuildSchema()
-		if selected, err := format.ApplyFieldSelectionToTableInfo(info, r.selection); err == nil {
-			info = selected
+		result := builder.Build()
+		if selected, err := format.ApplyFieldSelectionToTableDescribeResult(&format.TableDescribeResult{
+			Table:   result.Table,
+			Spatial: result.Spatial,
+		}, r.selection); err == nil {
+			result.Table = selected.Table
+			result.Spatial = selected.Spatial
 		}
+		info := format.FormatTableInfo(result.Table)
 		r.schema = mergeTableInfo(r.schema, info)
+		if r.spatialInfo == nil && result.Spatial != nil {
+			r.spatialInfo = result.Spatial.Clone()
+		}
 	}
 	return format.ApplyFieldSelectionToRows(rows, r.selection), nil
 }
@@ -764,9 +773,6 @@ func mergeTableInfo(current, next *format.TableInfo) *format.TableInfo {
 			continue
 		}
 		copied.Fields = append(copied.Fields, field)
-	}
-	if copied.SpatialInfo == nil && next.SpatialInfo != nil {
-		copied.SpatialInfo = next.SpatialInfo.Clone()
 	}
 	return copied
 }

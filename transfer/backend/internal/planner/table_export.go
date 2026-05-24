@@ -199,7 +199,7 @@ func applySourceGeometryEncodingForTarget(sourcePlan *executor.TableSourcePlan, 
 	if sourcePlan == nil || sourcePlan.Kind != executor.TableEndpointEncoded || targetPlan.Kind != executor.TableEndpointNative {
 		return
 	}
-	if !formatHasSpatialRows(sourcePlan.Format) && (sourcePlan.Schema == nil || sourcePlan.Schema.SpatialInfo == nil) {
+	if !formatHasSpatialRows(sourcePlan.Format) && sourcePlan.SpatialInfo == nil {
 		return
 	}
 	if sourcePlan.ParseOptions == nil {
@@ -395,7 +395,6 @@ func tableInfoFromMetaAttributes(attrs map[string]interface{}) *format.TableInfo
 		info.SizeBytes = &sizeBytes
 	}
 	if spatialInfo := spatialInfoFromMetaAttributes(attrs); spatialInfo != nil {
-		info.SpatialInfo = spatialInfo
 		geometryColumn := spatialInfo.PrimaryGeometryName()
 		for i := range info.Fields {
 			if strings.EqualFold(info.Fields[i].Name, geometryColumn) {
@@ -484,14 +483,14 @@ func spatialInfoFromMetaAttributes(attrs map[string]interface{}) *datatype.Spati
 	return spatialInfo
 }
 
-func applyMetaSpatialParseOptions(opts *format.ParseOptions, schema *format.TableInfo) {
-	if opts == nil || schema == nil || schema.SpatialInfo == nil {
+func applyMetaSpatialParseOptions(opts *format.ParseOptions, spatialInfo *datatype.SpatialInfo) {
+	if opts == nil || spatialInfo == nil {
 		return
 	}
 	if opts.ExtraParams == nil {
 		opts.ExtraParams = map[string]interface{}{}
 	}
-	if geometryColumn := schema.SpatialInfo.PrimaryGeometryName(); strings.TrimSpace(commonJSON.InterfaceString(opts.ExtraParams["geometry_field"])) == "" && geometryColumn != "" {
+	if geometryColumn := spatialInfo.PrimaryGeometryName(); strings.TrimSpace(commonJSON.InterfaceString(opts.ExtraParams["geometry_field"])) == "" && geometryColumn != "" {
 		opts.ExtraParams["geometry_field"] = geometryColumn
 	}
 }
@@ -563,6 +562,7 @@ func fieldBoolAttribute(attrs map[string]interface{}, keys ...string) bool {
 func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding, transforms []TransformSpec) (executor.TableSourcePlan, error) {
 	itemDescriptor, hasItemAttributes := sourceItemDescriptor(endpoint.Attributes)
 	sourceSchema := tableInfoFromMetaAttributes(endpoint.Attributes)
+	sourceSpatialInfo := spatialInfoFromMetaAttributes(endpoint.Attributes)
 	switch endpoint.Representation {
 	case representationNative:
 		sourcePath, err := nativeTablePath(engine.EngineID, endpoint.EndpointResource.Path)
@@ -577,6 +577,7 @@ func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding, transform
 			ReadOptions: readOptions,
 			Layout:      itemDescriptor.Layout,
 			Schema:      sourceSchema,
+			SpatialInfo: sourceSpatialInfo,
 		}, nil
 	case representationEncoded:
 		sourcePath, err := sourceEndpointContentCatalogPath(engine.EngineID, endpoint.EndpointResource, itemDescriptor)
@@ -594,7 +595,7 @@ func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding, transform
 			return executor.TableSourcePlan{}, err
 		}
 		parseOptions := tableParseOptions(endpoint.Options, sourceFormat)
-		applyMetaSpatialParseOptions(parseOptions, sourceSchema)
+		applyMetaSpatialParseOptions(parseOptions, sourceSpatialInfo)
 		if selection := sourceFieldSelectionFromTransforms(transforms); selection != nil {
 			parseOptions.FieldSelection = selection
 		}
@@ -622,6 +623,7 @@ func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding, transform
 			Layout:       itemDescriptor.Layout,
 			ParseOptions: parseOptions,
 			Schema:       sourceSchema,
+			SpatialInfo:  sourceSpatialInfo,
 			RelatedRefs:  relatedRefs,
 		}, nil
 	default:
