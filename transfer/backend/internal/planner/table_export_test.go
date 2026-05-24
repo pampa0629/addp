@@ -589,7 +589,7 @@ func TestBuildTableTransferPlanConsumesMetaWholeSourceAttributes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildTableTransferPlan failed: %v", err)
 	}
-	if result.Plan.Source.Layout != format.FormatLayoutWhole {
+	if result.Plan.Source.Layout != format.LayoutWhole {
 		t.Fatalf("source layout = %q, want whole from Meta attributes", result.Plan.Source.Layout)
 	}
 	if got := result.Plan.Source.Path.StringPath(); got != "datasets/lake_table" {
@@ -618,7 +618,7 @@ func TestBuildTableTransferPlanUsesMetaObjectWholePhysicalPathAsScope(t *testing
 	if err != nil {
 		t.Fatalf("BuildTableTransferPlan failed: %v", err)
 	}
-	if result.Plan.Source.Layout != format.FormatLayoutWhole {
+	if result.Plan.Source.Layout != format.LayoutWhole {
 		t.Fatalf("source layout = %q, want whole", result.Plan.Source.Layout)
 	}
 	if got := result.Plan.Source.Path.StringPath(); got != "manager/regression/codex-parquet-whole-20260521" {

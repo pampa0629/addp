@@ -5,15 +5,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
-)
 
-const (
-	DataTypeTable     = "table"
-	DataTypeDocument  = "document"
-	DataTypeMedia     = "media"
-	DataTypeContainer = "container"
-	DataTypeGraph     = "graph"
-	DataTypeFile      = "file"
+	"github.com/addp/common/datatype"
 )
 
 const (
@@ -28,6 +21,60 @@ const (
 	LayoutMulti  = "multi"
 	LayoutWhole  = "whole"
 )
+
+// NormalizeLayout returns the canonical layout value, or an empty string for unknown values.
+func NormalizeLayout(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case LayoutSingle:
+		return LayoutSingle
+	case LayoutMulti:
+		return LayoutMulti
+	case LayoutWhole:
+		return LayoutWhole
+	default:
+		return ""
+	}
+}
+
+// IsKnownLayout reports whether value is one of the supported item layout values.
+func IsKnownLayout(value string) bool {
+	return NormalizeLayout(value) != ""
+}
+
+// NormalizeLayouts returns canonical, de-duplicated known layout values.
+func NormalizeLayouts(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		layout := NormalizeLayout(value)
+		if layout == "" {
+			continue
+		}
+		if _, ok := seen[layout]; ok {
+			continue
+		}
+		seen[layout] = struct{}{}
+		result = append(result, layout)
+	}
+	sort.Strings(result)
+	return result
+}
+
+// ValidateLayouts rejects unknown layout values.
+func ValidateLayouts(values []string) error {
+	for _, value := range values {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		if !IsKnownLayout(value) {
+			return fmt.Errorf("unsupported layout %q", value)
+		}
+	}
+	return nil
+}
 
 const (
 	ProviderTable     = "table"
@@ -75,7 +122,7 @@ type Descriptor struct {
 	Priority       int                `json:"priority,omitempty"`
 	Format         Format             `json:"format"`
 	I18nKey        string             `json:"i18n_key,omitempty"`
-	DataType       string             `json:"data_type"`
+	DataType       datatype.DataType  `json:"data_type"`
 	Layouts        []string           `json:"layouts,omitempty"`
 	ProviderHints  []string           `json:"provider_hints,omitempty"`
 	Identification Identification     `json:"identification,omitempty"`
@@ -125,6 +172,9 @@ func RegisterDescriptor(descriptor Descriptor) error {
 }
 
 func (r *Registry) RegisterDescriptor(descriptor Descriptor) error {
+	if err := ValidateLayouts(descriptor.Layouts); err != nil {
+		return fmt.Errorf("format descriptor has invalid layouts: %w", err)
+	}
 	descriptor = normalizeDescriptor(descriptor)
 	if descriptor.ID == "" {
 		return fmt.Errorf("format descriptor requires id")
@@ -207,8 +257,10 @@ func normalizeDescriptor(descriptor Descriptor) Descriptor {
 	descriptor.ID = strings.TrimSpace(descriptor.ID)
 	descriptor.Version = strings.TrimSpace(descriptor.Version)
 	descriptor.I18nKey = strings.TrimSpace(descriptor.I18nKey)
-	descriptor.DataType = strings.TrimSpace(descriptor.DataType)
-	descriptor.Layouts = normalizedStrings(descriptor.Layouts, false)
+	if value := strings.TrimSpace(string(descriptor.DataType)); value != "" {
+		descriptor.DataType = datatype.ParseDataType(value)
+	}
+	descriptor.Layouts = NormalizeLayouts(descriptor.Layouts)
 	descriptor.ProviderHints = normalizedStrings(descriptor.ProviderHints, false)
 	descriptor.ContentReaders = normalizedStrings(descriptor.ContentReaders, false)
 	descriptor.EngineFamilies = normalizedStrings(descriptor.EngineFamilies, false)

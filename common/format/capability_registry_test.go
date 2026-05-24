@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/addp/common/datatype"
 	. "github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
 	formatregistry "github.com/addp/common/format/registry"
@@ -57,8 +58,8 @@ func TestMarkdownCapabilityIsDocumentTextFormat(t *testing.T) {
 	if !ok {
 		t.Fatal("expected markdown capability")
 	}
-	if capability.DataType != FormatDataTypeDocument {
-		t.Fatalf("markdown DataType = %q, want %q", capability.DataType, FormatDataTypeDocument)
+	if capability.DataType != datatype.DataTypeDocument {
+		t.Fatalf("markdown DataType = %q, want %q", capability.DataType, datatype.DataTypeDocument)
 	}
 	if !containsStringForCapabilityTest(capability.ProviderHints, FormatProviderDocument) {
 		t.Fatalf("markdown ProviderHints = %#v, want document hint", capability.ProviderHints)
@@ -78,8 +79,8 @@ func TestMediaCapabilitiesArePreviewOnly(t *testing.T) {
 			if !ok {
 				t.Fatalf("expected %s capability", formatType)
 			}
-			if capability.DataType != FormatDataTypeMedia {
-				t.Fatalf("DataType = %q, want %q", capability.DataType, FormatDataTypeMedia)
+			if capability.DataType != datatype.DataTypeMedia {
+				t.Fatalf("DataType = %q, want %q", capability.DataType, datatype.DataTypeMedia)
 			}
 			if !containsStringForCapabilityTest(capability.ProviderHints, FormatProviderMedia) {
 				t.Fatalf("ProviderHints = %#v, want media", capability.ProviderHints)
@@ -100,8 +101,8 @@ func TestJSONCapabilityCarriesSpatialProviderHint(t *testing.T) {
 	if !ok {
 		t.Fatal("expected json capability")
 	}
-	if capability.DataType != FormatDataTypeDocument {
-		t.Fatalf("json DataType = %q, want %q", capability.DataType, FormatDataTypeDocument)
+	if capability.DataType != datatype.DataTypeDocument {
+		t.Fatalf("json DataType = %q, want %q", capability.DataType, datatype.DataTypeDocument)
 	}
 	if !containsStringForCapabilityTest(capability.ProviderHints, FormatProviderSpatial) {
 		t.Fatalf("json ProviderHints = %#v, want spatial hint", capability.ProviderHints)
@@ -114,6 +115,19 @@ func TestJSONCapabilityCarriesSpatialProviderHint(t *testing.T) {
 	}
 	if !containsStringForCapabilityTest(capability.ContentReaders, formatregistry.ContentReaderDocumentText) {
 		t.Fatalf("json ContentReaders = %#v, want document_text", capability.ContentReaders)
+	}
+}
+
+func TestLayoutHelpersNormalizeAndMatch(t *testing.T) {
+	if got := NormalizeLayout(" Whole "); got != LayoutWhole {
+		t.Fatalf("NormalizeLayout() = %q, want %q", got, LayoutWhole)
+	}
+	if IsKnownLayout("bundle") {
+		t.Fatal("bundle should not be a known layout")
+	}
+	values := []string{"single", "whole"}
+	if !HasLayout(values, LayoutWhole) || HasLayout(values, LayoutMulti) {
+		t.Fatalf("HasLayout(%#v) returned unexpected result", values)
 	}
 }
 

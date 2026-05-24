@@ -5,6 +5,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 )
 
@@ -82,19 +83,19 @@ func normalizePreviewHintFormat(input previewHintInput) format.FormatType {
 
 func previewHintDataType(formatType format.FormatType, contentType string) string {
 	if descriptor, ok := format.GetFormatDescriptor(formatType); ok && descriptor.DataType != "" {
-		return descriptor.DataType
+		return string(descriptor.DataType)
 	}
 	if capability, ok := format.GetFormatCapability(formatType); ok && capability.DataType != "" {
-		return capability.DataType
+		return string(capability.DataType)
 	}
 	contentType = strings.ToLower(strings.TrimSpace(contentType))
 	switch {
 	case strings.HasPrefix(contentType, "image/"), strings.HasPrefix(contentType, "video/"), strings.HasPrefix(contentType, "audio/"):
-		return format.FormatDataTypeMedia
+		return string(datatype.DataTypeMedia)
 	case strings.HasPrefix(contentType, "text/"):
-		return format.FormatDataTypeDocument
+		return string(datatype.DataTypeDocument)
 	default:
-		return format.FormatDataTypeFile
+		return string(datatype.DataTypeFile)
 	}
 }
 
@@ -112,13 +113,13 @@ func previewHintSemantics(formatType format.FormatType, dataType, contentType st
 		return previewMaterialText, "text", true, true
 	}
 	switch strings.TrimSpace(dataType) {
-	case format.FormatDataTypeTable:
+	case string(datatype.DataTypeTable):
 		return previewMaterialTable, "table", true, false
-	case format.FormatDataTypeContainer:
+	case string(datatype.DataTypeContainer):
 		return previewMaterialJSON, "container", true, false
-	case format.FormatDataTypeDocument:
+	case string(datatype.DataTypeDocument):
 		return previewMaterialRawBinary, "text", true, false
-	case format.FormatDataTypeMedia:
+	case string(datatype.DataTypeMedia):
 		return previewMaterialRawBinary, "", true, false
 	default:
 		return previewMaterialRawBinary, "text", false, false

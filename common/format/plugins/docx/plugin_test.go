@@ -3,6 +3,7 @@ package docx
 import (
 	"testing"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 )
 
@@ -12,7 +13,7 @@ func TestPluginDescriptorKeepsRawRangeBoundary(t *testing.T) {
 	if descriptor.Format != format.FormatDOCX {
 		t.Fatalf("descriptor format = %q, want %q", descriptor.Format, format.FormatDOCX)
 	}
-	if descriptor.DataType != format.FormatDataTypeDocument {
+	if descriptor.DataType != datatype.DataTypeDocument {
 		t.Fatalf("descriptor data type = %q, want document", descriptor.DataType)
 	}
 	if descriptor.Providers.DocumentInfo {

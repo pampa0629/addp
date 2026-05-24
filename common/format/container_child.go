@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/contentio"
+	"github.com/addp/common/datatype"
 )
 
 const (
@@ -22,7 +23,7 @@ const (
 type ContainerChildResource struct {
 	Name          string
 	Kind          string
-	DataType      string
+	DataType      datatype.DataType
 	Format        FormatType
 	Layout        string
 	Refs          []RelatedRef

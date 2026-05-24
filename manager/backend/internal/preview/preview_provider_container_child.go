@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/contentio"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/manager/internal/models"
@@ -39,7 +40,7 @@ func (p *ContainerChildPreviewProvider) Preview(ctx context.Context, req *Previe
 		return nil, err
 	}
 	if nestedChildPath := strings.Trim(strings.TrimSpace(req.NestedChildPath), "/"); nestedChildPath != "" {
-		if !strings.EqualFold(strings.TrimSpace(child.DataType), format.FormatDataTypeContainer) {
+		if child.DataType != datatype.DataTypeContainer {
 			return nil, fmt.Errorf("nested_child_path requires container child %s", req.ChildName)
 		}
 		resolved, err := resolveNestedPreviewContainerChild(ctx, child, nestedChildPath, req)
@@ -56,12 +57,12 @@ func (p *ContainerChildPreviewProvider) Preview(ctx context.Context, req *Previe
 		}
 		child = resolved
 	}
-	switch strings.ToLower(strings.TrimSpace(child.DataType)) {
-	case format.FormatDataTypeTable:
+	switch child.DataType {
+	case datatype.DataTypeTable:
 		return p.previewTableChild(ctx, req, contentCtx.bucket, child)
-	case format.FormatDataTypeContainer:
+	case datatype.DataTypeContainer:
 		return p.previewContainerChild(ctx, req, contentCtx.bucket, child)
-	case format.FormatDataTypeDocument, format.FormatDataTypeMedia, format.FormatDataTypeFile, "":
+	case datatype.DataTypeDocument, datatype.DataTypeMedia, datatype.DataTypeFile, "":
 		return p.previewObjectChild(ctx, req, contentCtx.bucket, child)
 	default:
 		return p.previewObjectChild(ctx, req, contentCtx.bucket, child)
@@ -238,11 +239,11 @@ func isContainerChildResource(child *format.ContainerChildResource) bool {
 	if child == nil {
 		return false
 	}
-	if strings.EqualFold(strings.TrimSpace(child.DataType), format.FormatDataTypeContainer) {
+	if child.DataType == datatype.DataTypeContainer {
 		return true
 	}
 	descriptor, ok := format.GetFormatDescriptor(child.Format)
-	return ok && descriptor.DataType == format.FormatDataTypeContainer
+	return ok && descriptor.DataType == datatype.DataTypeContainer
 }
 
 func childInfoForNestedContainerPath(refPath string) map[string]interface{} {
@@ -352,7 +353,7 @@ func previewHintForRefDescriptor(descriptor *format.RefDescriptor, path string) 
 		Name:     descriptor.Path,
 		Path:     descriptor.Path,
 		Format:   descriptor.Format,
-		DataType: descriptor.DataType,
+		DataType: string(descriptor.DataType),
 	})
 	return hint
 }

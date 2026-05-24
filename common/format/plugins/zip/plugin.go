@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/contentio"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 )
 
@@ -37,8 +38,8 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		ID:            "builtin-zip",
 		Format:        p.Format(),
 		I18nKey:       "format.zip",
-		DataType:      format.FormatDataTypeContainer,
-		Layouts:       []string{format.FormatLayoutSingle},
+		DataType:      datatype.DataTypeContainer,
+		Layouts:       []string{format.LayoutSingle},
 		ProviderHints: []string{format.FormatProviderContainer},
 		Identification: format.FormatIdentification{
 			Extensions: []string{".zip"},
@@ -60,8 +61,8 @@ func (p *Plugin) Capabilities() format.FormatCapability {
 	}
 	return format.FormatCapability{
 		Format:        p.Format(),
-		DataType:      format.FormatDataTypeContainer,
-		Layouts:       []string{format.FormatLayoutSingle},
+		DataType:      datatype.DataTypeContainer,
+		Layouts:       []string{format.LayoutSingle},
 		ProviderHints: []string{format.FormatProviderContainer},
 		ContentReaders: []string{
 			string(format.ContentReaderRawContent),
@@ -279,10 +280,10 @@ func sortedEntries(entries []*zip.File) []*zip.File {
 func zipEntryToContainerChild(entry *zip.File, isDir bool) format.ContainerChildInfo {
 	name := strings.Trim(strings.TrimSpace(entry.Name), "/")
 	kind := "file"
-	dataType := format.FormatDataTypeFile
+	dataType := datatype.DataTypeFile
 	if isDir {
 		kind = "directory"
-		dataType = format.FormatDataTypeContainer
+		dataType = datatype.DataTypeContainer
 	}
 	properties := map[string]interface{}{
 		"path":              name,

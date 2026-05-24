@@ -28,8 +28,8 @@ func (p Provider) Descriptor() format.FormatDescriptor {
 	descriptor := format.FormatDescriptor{
 		ID:            "builtin-" + string(p.formatType),
 		Format:        p.formatType,
-		DataType:      format.FormatDataTypeDocument,
-		Layouts:       []string{format.FormatLayoutSingle},
+		DataType:      datatype.DataTypeDocument,
+		Layouts:       []string{format.LayoutSingle},
 		ProviderHints: []string{format.FormatProviderDocument},
 		Providers:     format.FormatProviderDescriptor{DocumentInfo: true},
 		ContentReaders: []string{
@@ -66,8 +66,8 @@ func (p Provider) Capabilities() format.FormatCapability {
 	}
 	return format.FormatCapability{
 		Format:        p.formatType,
-		DataType:      format.FormatDataTypeDocument,
-		Layouts:       []string{format.FormatLayoutSingle},
+		DataType:      datatype.DataTypeDocument,
+		Layouts:       []string{format.LayoutSingle},
 		ProviderHints: []string{format.FormatProviderDocument},
 	}
 }

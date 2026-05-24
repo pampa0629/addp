@@ -199,15 +199,15 @@ type RelatedRefSpecProvider interface {
 }
 
 type RefDescriptor struct {
-	Key       string     `json:"key,omitempty"`
-	Path      string     `json:"path"`
-	Role      string     `json:"role,omitempty"`
-	Label     string     `json:"label,omitempty"`
-	Required  bool       `json:"required,omitempty"`
-	Primary   bool       `json:"primary,omitempty"`
-	DataType  string     `json:"data_type,omitempty"`
-	Format    FormatType `json:"format,omitempty"`
-	Extension string     `json:"extension,omitempty"`
+	Key       string            `json:"key,omitempty"`
+	Path      string            `json:"path"`
+	Role      string            `json:"role,omitempty"`
+	Label     string            `json:"label,omitempty"`
+	Required  bool              `json:"required,omitempty"`
+	Primary   bool              `json:"primary,omitempty"`
+	DataType  datatype.DataType `json:"data_type,omitempty"`
+	Format    FormatType        `json:"format,omitempty"`
+	Extension string            `json:"extension,omitempty"`
 }
 
 // RefDescriptorProvider 表示格式能够解释 multi item 的 refs。

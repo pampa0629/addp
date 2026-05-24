@@ -254,28 +254,27 @@ func (h *DataSourceHandler) GetTableMetadata(c *gin.Context) {
 	// 创建 MetaClient
 	metaClient := commonClient.NewMetaClient(h.metaBaseURL, authToken)
 
+	catalogPath := fmt.Sprintf("%s.%s", schema, table)
+
 	// 调用 Meta API 获取字段信息
-	fields, err := metaClient.GetItemFieldsByCatalogPath(uint(engineID), fmt.Sprintf("%s.%s", schema, table), true)
+	fields, err := metaClient.GetItemFieldsByCatalogPath(uint(engineID), catalogPath, true)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get table fields: " + err.Error()})
 		return
 	}
 
-	// 检测几何列
 	var geometryColumn string
 	var srid int
 	var geometryType string
 	hasGeometry := false
 
-	for _, field := range fields {
-		// 检查是否是空间字段
-		if field.IsSpatial {
-			geometryColumn = field.Name
-			srid = field.SRID
-			geometryType = field.GeometryType
-			hasGeometry = true
-			break
+	if spatialMeta, err := metaClient.GetItemSpatialMetadataByCatalogPath(uint(engineID), catalogPath); err == nil && spatialMeta != nil {
+		geometryColumn = spatialMeta.GeometryColumn
+		srid = spatialMeta.SRID
+		if len(spatialMeta.GeometryTypes) > 0 {
+			geometryType = spatialMeta.GeometryTypes[0]
 		}
+		hasGeometry = geometryColumn != ""
 	}
 
 	// 根据 API 规范：查询单个资源直接返回对象

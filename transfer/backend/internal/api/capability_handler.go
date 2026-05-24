@@ -88,7 +88,7 @@ func tableCapabilityFromFormat(backendType format.FormatType, value string, opti
 		Write:        write,
 		Options:      options,
 		Layouts:      append([]string(nil), descriptor.Layouts...),
-		MultiFile:    containsString(descriptor.Layouts, format.FormatLayoutMulti),
+		MultiFile:    containsString(descriptor.Layouts, format.LayoutMulti),
 		ProviderKind: providerKind,
 	}
 }

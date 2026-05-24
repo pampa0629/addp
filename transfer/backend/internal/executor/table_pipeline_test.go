@@ -182,7 +182,7 @@ func TestTableTransferExecutorRejectsEncodedWholeScopeSourceWithoutProvider(t *t
 		Source: TableSourcePlan{
 			Kind:   TableEndpointEncoded,
 			Format: format.FormatCSV,
-			Layout: format.FormatLayoutWhole,
+			Layout: format.LayoutWhole,
 		},
 		Target:    TableTargetPlan{Kind: TableEndpointEncoded, Format: format.FormatCSV},
 		BatchSize: 1,
@@ -218,7 +218,7 @@ func TestTableTransferExecutorReadsParquetWholeScopeSource(t *testing.T) {
 			Kind:   TableEndpointEncoded,
 			Path:   engineplugin.FileDirectoryPath(7, "datasets/orders"),
 			Format: format.FormatParquet,
-			Layout: format.FormatLayoutWhole,
+			Layout: format.LayoutWhole,
 			Schema: &datatype.TableInfo{
 				Fields: []datatype.FieldInfo{
 					{Name: "id", Type: datatype.FieldTypeInt},

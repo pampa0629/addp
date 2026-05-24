@@ -1,6 +1,7 @@
 package models
 
 import (
+	"github.com/addp/common/datatype"
 	commonModels "github.com/addp/common/models"
 )
 
@@ -108,19 +109,12 @@ type MetaItemLite struct {
 
 // SpatialMetadataResponse 空间元数据响应（用于 Manager MVT 瓦片生成）
 type SpatialMetadataResponse struct {
-	GeometryColumn string      `json:"geometry_column"`
-	GeometryTypes  []string    `json:"geometry_types,omitempty"` // 几何类型列表，如 ["ST_MultiPolygon"]
-	SRID           int         `json:"srid"`
-	ExtentSRID     int         `json:"extent_srid"`
-	Extent         []float64   `json:"extent"` // [minLng, minLat, maxLng, maxLat]
-	PrimaryKey     string      `json:"primary_key"`
-	Fields         []FieldInfo `json:"fields"`
-	RowCount       int64       `json:"row_count"` // 表记录数（从 meta_item.row_count 获取）
-}
-
-// FieldInfo 字段信息
-type FieldInfo struct {
-	Name         string `json:"name"`
-	Type         string `json:"type"`
-	IsPrimaryKey bool   `json:"primary_key,omitempty"`
+	GeometryColumn string               `json:"geometry_column"`
+	GeometryTypes  []string             `json:"geometry_types,omitempty"` // 几何类型列表，如 ["ST_MultiPolygon"]
+	SRID           int                  `json:"srid"`
+	ExtentSRID     int                  `json:"extent_srid"`
+	Extent         []float64            `json:"extent"` // [minLng, minLat, maxLng, maxLat]
+	PrimaryKey     string               `json:"primary_key"`
+	Fields         []datatype.FieldInfo `json:"fields"`
+	RowCount       int64                `json:"row_count"` // 表记录数（从 meta_item.row_count 获取）
 }

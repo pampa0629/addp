@@ -48,8 +48,8 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 			ID:             "builtin-geopackage",
 			Format:         format.FormatGeoPackage,
 			I18nKey:        "format.geopackage",
-			DataType:       format.FormatDataTypeContainer,
-			Layouts:        []string{format.FormatLayoutSingle},
+			DataType:       datatype.DataTypeContainer,
+			Layouts:        []string{format.LayoutSingle},
 			ProviderHints:  []string{format.FormatProviderContainer, format.FormatProviderTable, format.FormatProviderSpatial},
 			Identification: format.FormatIdentification{Extensions: []string{".gpkg"}, MimeTypes: []string{"application/geopackage+sqlite3"}},
 			Providers:      format.FormatProviderDescriptor{ContainerInfo: true, TableInfo: true, TableSample: true, Table: true},
@@ -62,8 +62,8 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		ID:             "builtin-sqlite",
 		Format:         format.FormatSQLite,
 		I18nKey:        "format.sqlite",
-		DataType:       format.FormatDataTypeContainer,
-		Layouts:        []string{format.FormatLayoutSingle},
+		DataType:       datatype.DataTypeContainer,
+		Layouts:        []string{format.LayoutSingle},
 		ProviderHints:  []string{format.FormatProviderContainer, format.FormatProviderTable},
 		Identification: format.FormatIdentification{Extensions: []string{".sqlite", ".sqlite3", ".db"}, MimeTypes: []string{"application/x-sqlite3", "application/vnd.sqlite3", "application/sqlite"}},
 		Providers:      format.FormatProviderDescriptor{ContainerInfo: true, TableInfo: true, TableSample: true, Table: true},
@@ -79,8 +79,8 @@ func (p *Plugin) Capabilities() format.FormatCapability {
 	}
 	return format.FormatCapability{
 		Format:        p.Format(),
-		DataType:      format.FormatDataTypeContainer,
-		Layouts:       []string{format.FormatLayoutSingle},
+		DataType:      datatype.DataTypeContainer,
+		Layouts:       []string{format.LayoutSingle},
 		ProviderHints: []string{format.FormatProviderContainer, format.FormatProviderTable},
 		ContentReaders: []string{
 			string(format.ContentReaderTableSample),
@@ -151,7 +151,7 @@ func (p *Plugin) DescribeContainer(ctx context.Context, input io.Reader, options
 		children = append(children, format.ContainerChildInfo{
 			Name:        name,
 			ChildKind:   kind,
-			DataType:    format.FormatDataTypeTable,
+			DataType:    datatype.DataTypeTable,
 			RowCount:    table.RowCount,
 			ColumnCount: &columnCount,
 			Properties: map[string]interface{}{

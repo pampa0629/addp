@@ -635,7 +635,7 @@ func ContainerChildInfoFromResolvedItem(item ResolvedItem) format.ContainerChild
 	return format.ContainerChildInfo{
 		Name:       item.Name,
 		ChildKind:  kind,
-		DataType:   string(item.DataType),
+		DataType:   item.DataType,
 		Format:     format.FormatType(item.Format),
 		Layout:     string(item.Layout),
 		Refs:       containerChildRefs(item),

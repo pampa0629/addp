@@ -62,8 +62,8 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		ID:             "builtin-json",
 		Format:         format.FormatJSON,
 		I18nKey:        "format.json",
-		DataType:       format.FormatDataTypeDocument,
-		Layouts:        []string{format.FormatLayoutSingle},
+		DataType:       datatype.DataTypeDocument,
+		Layouts:        []string{format.LayoutSingle},
 		ProviderHints:  []string{format.FormatProviderDocument, format.FormatProviderTable, format.FormatProviderSpatial},
 		Identification: format.FormatIdentification{Extensions: []string{".json", ".geojson"}, MimeTypes: []string{"application/json", "application/geo+json", "application/vnd.geo+json"}},
 		Providers:      format.FormatProviderDescriptor{DocumentInfo: true, FormatInfo: true, TableInfo: true, TableSample: true, Table: true, ContentIndex: true},
@@ -82,8 +82,8 @@ func (p *Plugin) Capabilities() format.FormatCapability {
 	}
 	return format.FormatCapability{
 		Format:        format.FormatJSON,
-		DataType:      format.FormatDataTypeDocument,
-		Layouts:       []string{format.FormatLayoutSingle},
+		DataType:      datatype.DataTypeDocument,
+		Layouts:       []string{format.LayoutSingle},
 		ProviderHints: []string{format.FormatProviderDocument, format.FormatProviderTable, format.FormatProviderSpatial},
 		TransferRead:  true,
 		TransferWrite: true,

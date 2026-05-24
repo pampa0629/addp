@@ -67,10 +67,10 @@ func tableFileItemRules() []dataitem.FormatRule {
 func tableFileFormatsByExtension() map[string]string {
 	formats := map[string]string{}
 	for _, capability := range format.ListFormatCapabilities() {
-		if capability.DataType != format.FormatDataTypeTable {
+		if capability.DataType != datatype.DataTypeTable {
 			continue
 		}
-		if !containsLayout(capability.Layouts, format.FormatLayoutWhole) {
+		if !format.HasLayout(capability.Layouts, format.LayoutWhole) {
 			continue
 		}
 		for _, ext := range capability.Extensions {
@@ -105,15 +105,6 @@ func preferredTableFileFormat(formats map[string]string) string {
 		return string(format.FormatParquet)
 	}
 	return values[0]
-}
-
-func containsLayout(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
 }
 
 func (d *tableFileItemResolver) Priority() int {

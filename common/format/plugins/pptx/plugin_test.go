@@ -3,6 +3,7 @@ package pptx
 import (
 	"testing"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 )
 
@@ -12,7 +13,7 @@ func TestPluginDescriptorKeepsRawRangeBoundary(t *testing.T) {
 	if descriptor.Format != format.FormatPPTX {
 		t.Fatalf("descriptor format = %q, want %q", descriptor.Format, format.FormatPPTX)
 	}
-	if descriptor.DataType != format.FormatDataTypeDocument {
+	if descriptor.DataType != datatype.DataTypeDocument {
 		t.Fatalf("descriptor data type = %q, want document", descriptor.DataType)
 	}
 	if descriptor.Providers.DocumentInfo {

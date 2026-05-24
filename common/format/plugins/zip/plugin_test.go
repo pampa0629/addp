@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/addp/common/contentio"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/plugins/csv"
 )
@@ -33,7 +34,7 @@ func TestDescribeContainerReturnsLightweightEntries(t *testing.T) {
 		t.Fatalf("DefaultChild = %q, want first sorted file", info.DefaultChild)
 	}
 	child := info.Children[0]
-	if child.Name != "data/cities.csv" || child.ChildKind != "file" || child.DataType != format.FormatDataTypeTable {
+	if child.Name != "data/cities.csv" || child.ChildKind != "file" || child.DataType != datatype.DataTypeTable {
 		t.Fatalf("child = %#v, want CSV table entry", child)
 	}
 	if child.Properties["format"] != string(format.FormatCSV) {
@@ -92,7 +93,7 @@ func TestResolveContainerChildReturnsEntryReader(t *testing.T) {
 	child := format.ContainerChildInfo{
 		Name:      "data/cities.csv",
 		ChildKind: "file",
-		DataType:  format.FormatDataTypeTable,
+		DataType:  datatype.DataTypeTable,
 		Properties: map[string]interface{}{
 			"path":   "data/cities.csv",
 			"format": string(format.FormatCSV),
@@ -131,7 +132,7 @@ func TestResolveContainerChildRefsUseParentQualifiedRefs(t *testing.T) {
 	child := format.ContainerChildInfo{
 		Name:      "roads.shp",
 		ChildKind: "file",
-		DataType:  format.FormatDataTypeTable,
+		DataType:  datatype.DataTypeTable,
 		Format:    format.FormatShapefile,
 		Properties: map[string]interface{}{
 			"path":   "roads.shp",

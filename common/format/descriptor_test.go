@@ -4,6 +4,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/addp/common/datatype"
 	. "github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
 )
@@ -28,17 +29,17 @@ func TestListFormatDescriptorsIncludesBuiltinTextAndMarkdown(t *testing.T) {
 func TestDescriptorsDeclareContentReadersForManagerHandledFormats(t *testing.T) {
 	tests := []struct {
 		formatType FormatType
-		dataType   string
+		dataType   datatype.DataType
 		reader     string
 	}{
-		{FormatPDF, FormatDataTypeDocument, string(ContentReaderRawContent)},
-		{FormatDOCX, FormatDataTypeDocument, string(ContentReaderRawContent)},
-		{FormatPPTX, FormatDataTypeDocument, string(ContentReaderRawContent)},
-		{FormatWPS, FormatDataTypeDocument, string(ContentReaderRawContent)},
-		{FormatJPEG, FormatDataTypeMedia, string(ContentReaderRawContent)},
-		{FormatPNG, FormatDataTypeMedia, string(ContentReaderRawContent)},
-		{FormatExcel, FormatDataTypeContainer, string(ContentReaderTableSample)},
-		{FormatSQLite, FormatDataTypeContainer, string(ContentReaderTableSample)},
+		{FormatPDF, datatype.DataTypeDocument, string(ContentReaderRawContent)},
+		{FormatDOCX, datatype.DataTypeDocument, string(ContentReaderRawContent)},
+		{FormatPPTX, datatype.DataTypeDocument, string(ContentReaderRawContent)},
+		{FormatWPS, datatype.DataTypeDocument, string(ContentReaderRawContent)},
+		{FormatJPEG, datatype.DataTypeMedia, string(ContentReaderRawContent)},
+		{FormatPNG, datatype.DataTypeMedia, string(ContentReaderRawContent)},
+		{FormatExcel, datatype.DataTypeContainer, string(ContentReaderTableSample)},
+		{FormatSQLite, datatype.DataTypeContainer, string(ContentReaderTableSample)},
 	}
 
 	for _, tt := range tests {
@@ -131,8 +132,8 @@ func TestRegisterFormatDescriptorUpdatesCapability(t *testing.T) {
 		Version:  "v1",
 		Priority: 10,
 		Format:   formatType,
-		DataType: FormatDataTypeDocument,
-		Layouts:  []string{FormatLayoutSingle},
+		DataType: datatype.DataTypeDocument,
+		Layouts:  []string{LayoutSingle},
 		Identification: FormatIdentification{
 			Extensions: []string{".ptd"},
 		},
@@ -154,7 +155,7 @@ func TestRegisterFormatDescriptorUpdatesCapability(t *testing.T) {
 	if !ok {
 		t.Fatal("registered descriptor did not update capability registry")
 	}
-	if capability.DataType != FormatDataTypeDocument {
+	if capability.DataType != datatype.DataTypeDocument {
 		t.Fatalf("capability data type = %q, want document", capability.DataType)
 	}
 	if !sameStrings(capability.Extensions, []string{".ptd"}) {

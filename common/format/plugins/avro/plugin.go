@@ -1,6 +1,9 @@
 package avro
 
-import "github.com/addp/common/format"
+import (
+	"github.com/addp/common/datatype"
+	"github.com/addp/common/format"
+)
 
 type Plugin struct{}
 
@@ -17,8 +20,8 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		ID:             "builtin-avro",
 		Format:         p.Format(),
 		I18nKey:        "format.avro",
-		DataType:       format.FormatDataTypeTable,
-		Layouts:        []string{format.FormatLayoutSingle, format.FormatLayoutWhole},
+		DataType:       datatype.DataTypeTable,
+		Layouts:        []string{format.LayoutSingle, format.LayoutWhole},
 		ProviderHints:  []string{format.FormatProviderTable},
 		Identification: format.FormatIdentification{Extensions: []string{".avro"}, MimeTypes: []string{"application/avro", "application/x-avro-binary"}},
 		ContentReaders: []string{string(format.ContentReaderRawContent)},

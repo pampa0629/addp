@@ -3,6 +3,8 @@ package format
 import (
 	"path/filepath"
 	"strings"
+
+	"github.com/addp/common/datatype"
 )
 
 // DetectFormat 根据文件名和内容前缀检测格式。
@@ -62,7 +64,7 @@ func IsGeospatialFormat(format FormatType) bool {
 
 func IsDocumentFormat(format FormatType) bool {
 	if capability, ok := GetFormatCapability(format); ok {
-		return capability.DataType == FormatDataTypeDocument
+		return capability.DataType == datatype.DataTypeDocument
 	}
 	switch format {
 	case FormatPDF, FormatDOCX, FormatPPTX, FormatWPS, FormatText, FormatMarkdown:
@@ -82,7 +84,7 @@ func IsImageFormat(format FormatType) bool {
 }
 
 func IsTableFormat(format FormatType) bool {
-	if capability, ok := GetFormatCapability(format); ok && capability.DataType == FormatDataTypeTable {
+	if capability, ok := GetFormatCapability(format); ok && capability.DataType == datatype.DataTypeTable {
 		return true
 	}
 	switch format {

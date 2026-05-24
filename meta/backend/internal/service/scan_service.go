@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/events"
 	commonJSON "github.com/addp/common/jsonmap"
@@ -939,7 +940,7 @@ func (s *ScanService) ListItemsByNamespace(engineID, tenantID uint, namespace st
 }
 
 // GetItemFieldDetailsByID 按 item_id 获取数据项字段详细信息。
-func (s *ScanService) GetItemFieldDetailsByID(tenantID, itemID uint) ([]commonModels.FieldInfo, error) {
+func (s *ScanService) GetItemFieldDetailsByID(tenantID, itemID uint) ([]datatype.FieldInfo, error) {
 	return s.metadataQueryService.GetItemFieldDetailsByID(tenantID, itemID)
 }
 

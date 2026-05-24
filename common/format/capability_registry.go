@@ -6,16 +6,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/addp/common/datatype"
 	formatregistry "github.com/addp/common/format/registry"
-)
-
-const (
-	FormatDataTypeTable     = formatregistry.DataTypeTable
-	FormatDataTypeDocument  = formatregistry.DataTypeDocument
-	FormatDataTypeMedia     = formatregistry.DataTypeMedia
-	FormatDataTypeContainer = formatregistry.DataTypeContainer
-	FormatDataTypeGraph     = formatregistry.DataTypeGraph
-	FormatDataTypeFile      = formatregistry.DataTypeFile
 )
 
 const (
@@ -23,18 +15,6 @@ const (
 	EngineFamilyObject   = formatregistry.EngineFamilyObject
 	EngineFamilyFile     = formatregistry.EngineFamilyFile
 	EngineFamilyDocument = formatregistry.EngineFamilyDocument
-)
-
-// Layout describes how a format can organize the content that forms a data item.
-//
-// Format capability uses layout as a declared possibility; data item detection
-// uses the same values as the resolved item layout.
-type Layout = string
-
-const (
-	FormatLayoutSingle Layout = formatregistry.LayoutSingle
-	FormatLayoutMulti  Layout = formatregistry.LayoutMulti
-	FormatLayoutWhole  Layout = formatregistry.LayoutWhole
 )
 
 const (
@@ -51,7 +31,7 @@ type FormatCapability struct {
 	Format         FormatType
 	I18nKey        string
 	Extensions     []string
-	DataType       string
+	DataType       datatype.DataType
 	Layouts        []string
 	ProviderHints  []string
 	ContentReaders []string
@@ -85,9 +65,14 @@ func (r *formatCapabilityRegistry) Register(capability FormatCapability) error {
 	}
 
 	capability.I18nKey = strings.TrimSpace(capability.I18nKey)
-	capability.DataType = strings.TrimSpace(capability.DataType)
+	if value := strings.TrimSpace(string(capability.DataType)); value != "" {
+		capability.DataType = datatype.ParseDataType(value)
+	}
+	if err := ValidateLayouts(capability.Layouts); err != nil {
+		return fmt.Errorf("format capability has invalid layouts: %w", err)
+	}
 	capability.Extensions = normalizedCapabilityStrings(capability.Extensions, true)
-	capability.Layouts = normalizedCapabilityStrings(capability.Layouts, false)
+	capability.Layouts = NormalizeLayouts(capability.Layouts)
 	capability.ProviderHints = normalizedCapabilityStrings(capability.ProviderHints, false)
 	capability.ContentReaders = normalizedCapabilityStrings(capability.ContentReaders, false)
 	capability.EngineFamilies = normalizedCapabilityStrings(capability.EngineFamilies, false)

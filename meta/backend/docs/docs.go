@@ -1587,19 +1587,98 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "github_com_addp_meta_internal_models.FieldInfo": {
+        "datatype.FieldInfo": {
             "type": "object",
             "properties": {
+                "comment": {
+                    "type": "string"
+                },
+                "default_expression": {
+                    "type": "string"
+                },
+                "generated": {
+                    "type": "boolean"
+                },
+                "generation_expression": {
+                    "type": "string"
+                },
                 "name": {
                     "type": "string"
+                },
+                "native_type": {
+                    "type": "string"
+                },
+                "nullable": {
+                    "type": "boolean"
+                },
+                "ordinal_position": {
+                    "type": "integer"
+                },
+                "precision": {
+                    "type": "integer"
                 },
                 "primary_key": {
                     "type": "boolean"
                 },
+                "scale": {
+                    "type": "integer"
+                },
+                "size": {
+                    "type": "integer"
+                },
                 "type": {
-                    "type": "string"
+                    "$ref": "#/definitions/datatype.FieldType"
                 }
             }
+        },
+        "datatype.FieldType": {
+            "type": "string",
+            "enum": [
+                "unknown",
+                "string",
+                "bool",
+                "bytes",
+                "mixed",
+                "int",
+                "bigint",
+                "float",
+                "double",
+                "decimal",
+                "date",
+                "time",
+                "timestamp",
+                "json",
+                "array",
+                "uuid",
+                "geometry",
+                "point",
+                "linestring",
+                "polygon",
+                "multipoint"
+            ],
+            "x-enum-varnames": [
+                "FieldTypeUnknown",
+                "FieldTypeString",
+                "FieldTypeBool",
+                "FieldTypeBytes",
+                "FieldTypeMixed",
+                "FieldTypeInt",
+                "FieldTypeBigInt",
+                "FieldTypeFloat",
+                "FieldTypeDouble",
+                "FieldTypeDecimal",
+                "FieldTypeDate",
+                "FieldTypeTime",
+                "FieldTypeTimestamp",
+                "FieldTypeJSON",
+                "FieldTypeArray",
+                "FieldTypeUUID",
+                "FieldTypeGeometry",
+                "FieldTypePoint",
+                "FieldTypeLineString",
+                "FieldTypePolygon",
+                "FieldTypeMultiPoint"
+            ]
         },
         "github_com_addp_meta_internal_models.MetaItemLite": {
             "type": "object",
@@ -1901,7 +1980,7 @@ const docTemplate = `{
                 "fields": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_addp_meta_internal_models.FieldInfo"
+                        "$ref": "#/definitions/datatype.FieldInfo"
                     }
                 },
                 "geometry_column": {

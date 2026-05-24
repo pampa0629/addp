@@ -1,6 +1,9 @@
 package format
 
-import formatregistry "github.com/addp/common/format/registry"
+import (
+	"github.com/addp/common/datatype"
+	formatregistry "github.com/addp/common/format/registry"
+)
 
 type FormatIdentification = formatregistry.Identification
 
@@ -26,7 +29,7 @@ type FormatDescriptor struct {
 	Priority       int                      `json:"priority,omitempty"`
 	Format         FormatType               `json:"format"`
 	I18nKey        string                   `json:"i18n_key,omitempty"`
-	DataType       string                   `json:"data_type"`
+	DataType       datatype.DataType        `json:"data_type"`
 	Layouts        []string                 `json:"layouts,omitempty"`
 	ProviderHints  []string                 `json:"provider_hints,omitempty"`
 	Identification FormatIdentification     `json:"identification,omitempty"`

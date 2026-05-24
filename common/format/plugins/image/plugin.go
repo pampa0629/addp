@@ -58,8 +58,8 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		ID:            "builtin-" + string(p.Format()),
 		Format:        p.Format(),
 		I18nKey:       "format." + string(p.Format()),
-		DataType:      format.FormatDataTypeMedia,
-		Layouts:       []string{format.FormatLayoutSingle},
+		DataType:      datatype.DataTypeMedia,
+		Layouts:       []string{format.LayoutSingle},
 		ProviderHints: []string{format.FormatProviderMedia},
 		Providers:     format.FormatProviderDescriptor{MediaInfo: true},
 		ContentReaders: []string{
@@ -88,8 +88,8 @@ func (p *Plugin) Capabilities() format.FormatCapability {
 	}
 	return format.FormatCapability{
 		Format:        p.Format(),
-		DataType:      format.FormatDataTypeMedia,
-		Layouts:       []string{format.FormatLayoutSingle},
+		DataType:      datatype.DataTypeMedia,
+		Layouts:       []string{format.LayoutSingle},
 		ProviderHints: []string{format.FormatProviderMedia},
 	}
 }

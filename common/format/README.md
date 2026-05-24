@@ -32,7 +32,7 @@
 
 | 职责 | 代码位置 | 说明 |
 | --- | --- | --- |
-| 格式标识常量与 data type/layout/provider/reader 枚举 | `format_type.go`、`capability_registry.go`、`registry/descriptor.go` | `format` 只表示 content 编码格式；`table`、`document` 等是 data type，不作为逻辑 format 注册。 |
+| 格式标识常量与 data type/layout/provider/reader 枚举 | `format_type.go`、`layout.go`、`capability_registry.go`、`registry/descriptor.go` | `format` 只表示 content 编码格式；`table`、`document` 等是 data type，不作为逻辑 format 注册；layout 对外统一使用 `format.Layout*` 和 helper。 |
 | 格式身份 descriptor 与能力发现 | `descriptor.go`、`discovery.go`、`registry/` | 运行时注册、查询、冲突诊断和 capability view；内置格式定义由各 `plugins/<format>/Descriptor()` 维护。 |
 | 格式检测 | `detection.go`、`detection_mime.go`、`detection_magic.go` | 基于扩展名、MIME、magic bytes 和 descriptor 识别 format candidate，不决定 data item 边界；根包保留稳定 facade。 |
 | FormatPlugin、info provider、content reader 接口 | `provider.go` | 只定义格式层能力接口，不接 engine id，不返回 Manager DTO。 |
@@ -110,7 +110,7 @@ type FormatCapability struct {
     Format         FormatType
     I18nKey        string
     Extensions     []string
-    DataType       string
+    DataType       datatype.DataType
     Layouts        []string
     ProviderHints  []string
     Spatial        bool
@@ -129,7 +129,7 @@ type FormatCapability struct {
 | `I18nKey` | 展示层可使用的国际化 key |
 | `Extensions` | 常见 content 扩展名，用于识别和展示 |
 | `DataType` | 默认可映射的数据类型，例如 `table`、`document`、`media` |
-| `Layouts` | format 可支持的 content layout：`single`、`multi`、`whole`；data item 落库时同一组值写入 `layout` |
+| `Layouts` | format 可支持的 content layout：`single`、`multi`、`whole`；使用 `NormalizeLayout` / `HasLayout` 等 helper 处理，不手写自由字符串判断 |
 | `ProviderHints` | 可用 provider 类型提示，例如 `table`、`spatial` |
 | `Spatial` | 是否天然包含空间语义 |
 | `TransferRead` | 是否适合作为 Transfer 读取格式 |
@@ -143,6 +143,7 @@ type FormatCapability struct {
 capability, ok := format.GetFormatCapability(format.FormatParquet)
 capabilities := format.ListFormatCapabilities()
 formats := format.ListTransferFormatsForEngineFamily(format.EngineFamilyObject)
+hasWhole := format.HasLayout(capability.Layouts, format.LayoutWhole)
 ```
 
 ## Descriptor 与能力发现

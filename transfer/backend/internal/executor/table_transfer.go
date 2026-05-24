@@ -199,7 +199,7 @@ func (e *TableTransferExecutor) openSource(plan TableSourcePlan) (TableBatchSour
 		if e.SourceContentReader == nil {
 			return nil, fmt.Errorf("encoded table source requires content reader")
 		}
-		if plan.Layout == format.FormatLayoutWhole {
+		if plan.Layout == format.LayoutWhole {
 			if e.SourceScopeReadProvider == nil {
 				return nil, fmt.Errorf("encoded whole scope table source requires scope table reader provider")
 			}

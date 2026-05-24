@@ -184,8 +184,8 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		ID:            "builtin-parquet",
 		Format:        format.FormatParquet,
 		I18nKey:       "format.parquet",
-		DataType:      format.FormatDataTypeTable,
-		Layouts:       []string{format.FormatLayoutSingle, format.FormatLayoutWhole},
+		DataType:      datatype.DataTypeTable,
+		Layouts:       []string{format.LayoutSingle, format.LayoutWhole},
 		ProviderHints: []string{format.FormatProviderTable},
 		Identification: format.FormatIdentification{
 			Extensions:        []string{".parquet"},
@@ -212,8 +212,8 @@ func (p *Plugin) Capabilities() format.FormatCapability {
 	}
 	return format.FormatCapability{
 		Format:        format.FormatParquet,
-		DataType:      format.FormatDataTypeTable,
-		Layouts:       []string{format.FormatLayoutSingle, format.FormatLayoutWhole},
+		DataType:      datatype.DataTypeTable,
+		Layouts:       []string{format.LayoutSingle, format.LayoutWhole},
 		ProviderHints: []string{format.FormatProviderTable},
 		TransferRead:  true,
 		TransferWrite: true,

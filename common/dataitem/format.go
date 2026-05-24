@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 )
 
@@ -32,7 +33,7 @@ func DetectDataType(formatName string) DataType {
 	if !ok {
 		return DataTypeUnknown
 	}
-	return dataTypeFromString(capability.DataType)
+	return capability.DataType
 }
 
 func InferFormat(fileName, contentType, explicitFormat string) string {
@@ -96,11 +97,11 @@ func BuiltinSingleResourceRules() []FormatRule {
 
 func singleResourceRuleFromCapability(formatName string) (FormatRule, bool) {
 	capability, ok := format.GetFormatCapability(format.FormatType(normalizeFormat(formatName)))
-	if !ok || !containsString(capability.Layouts, format.FormatLayoutSingle) || len(capability.Extensions) == 0 {
+	if !ok || !format.HasLayout(capability.Layouts, format.LayoutSingle) || len(capability.Extensions) == 0 {
 		return FormatRule{}, false
 	}
-	dataType := dataTypeFromString(capability.DataType)
-	if dataType == DataTypeUnknown && capability.DataType != format.FormatDataTypeFile {
+	dataType := capability.DataType
+	if dataType == DataTypeUnknown && capability.DataType != datatype.DataTypeFile {
 		return FormatRule{}, false
 	}
 	rule := FormatRule{
@@ -120,7 +121,7 @@ func singleResourceRuleFromCapability(formatName string) (FormatRule, bool) {
 func BuiltinMultiRules() []FormatRule {
 	rules := []FormatRule{}
 	for _, capability := range format.ListFormatCapabilities() {
-		if !containsString(capability.Layouts, format.FormatLayoutMulti) {
+		if !format.HasLayout(capability.Layouts, format.LayoutMulti) {
 			continue
 		}
 		specs := RelatedRefSpecs(format.FormatType(capability.Format))
@@ -129,7 +130,7 @@ func BuiltinMultiRules() []FormatRule {
 		}
 		rules = append(rules, FormatRule{
 			Format:          string(capability.Format),
-			DataType:        dataTypeFromString(capability.DataType),
+			DataType:        capability.DataType,
 			Layout:          LayoutMulti,
 			Priority:        100,
 			Entry:           EntryRule{Extensions: append([]string(nil), capability.Extensions...)},
@@ -149,10 +150,10 @@ func BuiltinMultiRules() []FormatRule {
 func BuiltinWholeScopeRules() []FormatRule {
 	rules := []FormatRule{}
 	for _, capability := range format.ListFormatCapabilities() {
-		if !containsString(capability.Layouts, format.FormatLayoutWhole) || len(capability.Extensions) == 0 {
+		if !format.HasLayout(capability.Layouts, format.LayoutWhole) || len(capability.Extensions) == 0 {
 			continue
 		}
-		dataType := dataTypeFromString(capability.DataType)
+		dataType := capability.DataType
 		if dataType == DataTypeUnknown {
 			continue
 		}
@@ -266,27 +267,6 @@ func NormalizeCandidate(candidate Candidate) Candidate {
 		candidate.BaseName = strings.TrimSuffix(candidate.Name, filepath.Ext(candidate.Name))
 	}
 	return candidate
-}
-
-func dataTypeFromString(value string) DataType {
-	switch DataType(strings.ToLower(strings.TrimSpace(value))) {
-	case DataTypeTable:
-		return DataTypeTable
-	case DataTypeDocument:
-		return DataTypeDocument
-	case DataTypeMedia:
-		return DataTypeMedia
-	case DataTypeContainer:
-		return DataTypeContainer
-	case DataTypeGraph:
-		return DataTypeGraph
-	case DataTypeFile:
-		return DataTypeFile
-	case DataTypeUnknown:
-		return DataTypeUnknown
-	default:
-		return DataTypeUnknown
-	}
 }
 
 func refRuleFromSpecs(specs []format.RelatedRefSpec) *RefRule {

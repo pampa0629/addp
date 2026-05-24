@@ -1,11 +1,14 @@
 package format
 
-import formatregistry "github.com/addp/common/format/registry"
+import (
+	"github.com/addp/common/datatype"
+	formatregistry "github.com/addp/common/format/registry"
+)
 
 type FormatCapabilityView struct {
 	PluginID        string                     `json:"plugin_id"`
 	Format          FormatType                 `json:"format"`
-	DataType        string                     `json:"data_type"`
+	DataType        datatype.DataType          `json:"data_type"`
 	Layouts         []string                   `json:"layouts,omitempty"`
 	Identification  FormatIdentification       `json:"identification,omitempty"`
 	Providers       FormatProviderDescriptor   `json:"providers,omitempty"`

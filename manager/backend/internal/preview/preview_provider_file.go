@@ -804,7 +804,7 @@ func mapToContainerChildInfo(child map[string]interface{}) format.ContainerChild
 	}
 	name := strings.TrimSpace(commonJSON.InterfaceString(child["name"]))
 	childKind := containerChildKindFromMap(child)
-	dataType := strings.TrimSpace(commonJSON.InterfaceString(child["data_type"]))
+	dataType := datatype.ParseDataType(commonJSON.InterfaceString(child["data_type"]))
 	properties := make(map[string]interface{}, len(child))
 	for key, value := range child {
 		switch key {

@@ -549,7 +549,7 @@ func (p *DatabaseTablePreviewProvider) getColumnMetadataFromMeta(
 	geometryColumns := []string{}
 
 	for i, field := range spatialMeta.Fields {
-		dataType := field.Type
+		dataType := string(field.Type)
 
 		// 对于几何列，使用 Meta 返回的标准空间能力信息来丰富 type
 		if field.Name == spatialMeta.GeometryColumn && spatialMeta.GeometryColumn != "" {
@@ -584,7 +584,7 @@ func (p *DatabaseTablePreviewProvider) getColumnMetadataFromMeta(
 			ColumnName:   field.Name,
 			Type:         dataType,
 			IsNullable:   true, // Meta 当前不存储 nullable 信息，默认为 true
-			IsPrimaryKey: field.IsPrimaryKey,
+			IsPrimaryKey: field.PrimaryKey,
 			Comment:      "", // Meta 当前不存储 comment 信息
 		}
 	}

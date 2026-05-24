@@ -3,12 +3,14 @@ package registry
 import (
 	"sort"
 	"strings"
+
+	"github.com/addp/common/datatype"
 )
 
 type CapabilityView struct {
 	PluginID       string             `json:"plugin_id"`
 	Format         Format             `json:"format"`
-	DataType       string             `json:"data_type"`
+	DataType       datatype.DataType  `json:"data_type"`
 	Layouts        []string           `json:"layouts,omitempty"`
 	Identification Identification     `json:"identification,omitempty"`
 	Providers      ProviderDescriptor `json:"providers,omitempty"`

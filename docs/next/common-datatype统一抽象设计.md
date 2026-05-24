@@ -29,8 +29,8 @@
 
 | 位置 | 当前职责 | 问题 |
 |---|---|---|
-| `common/dataitem` | 定义 `DataType`、item 组织规则、layout、候选归并 | `DataType` 是平台通用概念，却放在 item 归并包内；同时依赖 `common/format` 的 layout 常量 |
-| `common/format/registry` | 定义 descriptor 的 data type、layout、provider、reader 常量 | format registry 成了 data type 常量事实源之一 |
+| `common/dataitem` | 定义 item 组织规则、layout、候选归并 | 当前仍依赖 `common/format` 获取格式能力和 layout 常量；长期应拆分 core 与 format 规则适配 |
+| `common/format/registry` | 定义 descriptor 的 layout、provider、reader 常量 | registry 不应成为跨 engine / format 的 item layout 事实源 |
 | `common/format` | 定义 `FieldType`、`TableInfo`、`DocumentInfo`、`MediaInfo`、`ContainerInfo`、`SpatialInfo`、`ContentIndex` | 这些 info 不是 format 私有语义，而是 ADDP 通用 data type info |
 | `common/engine/plugin` | 曾定义 `FieldInfo`、`ColumnInfo`、`TableInfo`、`SchemaInfo`、`CollectionInfo`、图相关 info 和 provider 接口 | engine 侧形成与 format 平行的字段和元数据模型；其中公共 `FieldInfo`、`ColumnInfo`、`TableInfo` 已收敛到 `datatype`，`SchemaInfo` 已更名为 `NamespaceInfo` |
 | `common/models` | 定义 Meta API / client DTO，例如 `FieldInfo`、`SpatialMetadata` | API DTO 又定义了一套字段语义 |
@@ -641,9 +641,9 @@ type SpatialInfo struct {
 
 | 现有定义 | 目标 |
 |---|---|
-| `common/dataitem.DataType` | 迁到 `common/datatype.DataType`，`dataitem` 只消费 |
-| `common/format/registry.DataType*` | 改为使用 `datatype.DataType` 的字符串值，不再作为事实源 |
-| `common/format.FormatDataType*` | 删除或改为临时转发，最终由 `datatype` 提供 |
+| `common/dataitem.DataType` | 已改为 `common/datatype.DataType` 的类型别名，`dataitem` 只消费 |
+| `common/format/registry.DataType*` | 已删除；registry descriptor 直接使用 `datatype.DataType` |
+| `common/format.FormatDataType*` | 已删除；format 调用方直接使用 `datatype.DataType*` |
 | `common/format.FieldType` | 迁到 `common/datatype.FieldType` |
 | `common/format.TableInfo` | 已删除，直接使用 `common/datatype.TableInfo` |
 | `common/format.FieldInfo` | 迁到 `common/datatype.FieldInfo` |
@@ -654,8 +654,8 @@ type SpatialInfo struct {
 | `common/format.ContentIndex*` | 迁到 `common/datatype` 或后续独立 `common/contentindex`，但不能继续属于 format |
 | `common/engine/plugin.FieldInfo` | 已删除，改用 `datatype.FieldInfo` |
 | `common/engine/plugin.ColumnInfo` | 已删除；provider 对外使用 `datatype.FieldInfo` |
-| `common/models.FieldInfo` | 删除，API / client 直接使用标准 attributes 或 `datatype.FieldInfo` 派生 DTO |
-| Meta 内部重复 `FieldInfo` | 删除，统一从 `datatype` 到 attributes |
+| `common/models.FieldInfo` | 已删除；Meta fields API / common MetaClient 直接返回 `datatype.FieldInfo` |
+| Meta 内部重复 `FieldInfo` | 已删除；字段事实从 `attributes.type_info.table.fields[]` 投影为 `datatype.FieldInfo` |
 
 ### 不应迁入
 
@@ -665,6 +665,9 @@ type SpatialInfo struct {
 | Format detection / sniffer | 属于格式识别 |
 | Engine provider / catalog / connection | 属于 engine 能力 |
 | Manager 前端 DTO | 属于展示边界 |
+| Manager preview `ColumnMetadata` | 属于预览响应 DTO，由 `datatype.FieldInfo` 或 spatial metadata 投影而来，不作为字段事实源 |
+| Service query 内部 `metadataColumnInfo` / response column DTO | 属于查询执行和响应边界，可从 `datatype.FieldInfo` 投影，不下沉到 `datatype` |
+| `common/catalogview.ColumnMetadata` | 属于目录视图模型，只保留面向视图的最小列展示信息 |
 | Transfer plan / writer policy | 属于执行规划 |
 | Meta attributes schema | 属于落库和查询协议 |
 
@@ -672,12 +675,35 @@ type SpatialInfo struct {
 
 `layout` 回答“资源如何组成 data item”，不是 data type。
 
-当前 `common/dataitem.Layout` 复用 `common/format.Layout`，这会让 item 归并层依赖 format 包。这个依赖应清理，但不建议把 layout 伪装成 datatype：
+它描述的是多个 content 如何组织成一个 data item。这里的 content 可以是文件、object、容器内部子对象，将来也可以是数据库 table、消息 topic、图 label 等。因此 layout 是跨 format / engine 的 item 组织语义，不属于 `common/datatype`，也不应由 `common/format` 或 `common/engine` 独占定义。
 
-- 可选方案一：`layout` 回到 `common/dataitem`，format descriptor 只引用字符串值。
-- 可选方案二：后续新增更薄的 `common/itemtype` 或 `common/metaitem` 承载 `Layout`。
+需要区分两类事实：
 
-本次 `common/datatype` 文档只确认：`layout` 不继续以 `common/format` 为事实源。
+- format / engine 提供 layout 能力声明或候选事实：例如某个 format 支持 `single`、`multi`、`whole`，某个 engine 可把多个 table 组合成一个 item。
+- dataitem / Meta item 识别层基于上下文确认最终 item layout，并负责 refs、claims、exclusive、entry path 等 item 边界事实。
+
+当前阶段性处理：
+
+- 对外统一入口放在 `common/format` 顶层：`LayoutSingle`、`LayoutMulti`、`LayoutWhole`，以及 `NormalizeLayout`、`IsKnownLayout`、`NormalizeLayouts`、`ValidateLayouts`、`HasLayout`。
+- `common/dataitem.Layout` 复用 `common/format.Layout`，表达已经解析完成的 item layout；format capability 中的 layout 表达某个格式可支持的组织方式。
+- `common/dataitem` 当前仍需要询问 format descriptor / capability 来生成规则，因此简单让 `common/format` 反向依赖 `common/dataitem` 会形成循环依赖。
+- 为 `single/multi/whole` 三个取值新增独立顶层包过重，除非后续 layout 规则扩展到 engine、topic、graph 等更多 item 组织场景。
+
+长期目标：
+
+- `common/dataitem` core 定义 item layout、candidate、rule、resolver 等纯 item 组织语义。
+- `common/dataitem` core 不直接依赖 `common/format` 或 `common/engine`。
+- format / engine 只声明自己支持或发现的 layout 能力，不决定最终 item layout。
+- Meta / dataitem 编排层基于 format / engine 提供的能力声明和实际 content 上下文，确认最终 data item。
+
+建议迁移路径：
+
+1. 短期保持 `common/format` 顶层作为公开统一入口，不把 layout 放入 `common/datatype`，也暂不新增 `dataitem` 子包或独立 layout 包。
+2. format descriptor、format capability 和调用方统一使用 `Layout*` 常量及 helper，减少自由字符串扩散；不再使用 `FormatLayout*` 这类带包名前缀的重复命名。
+3. 后续拆分 `common/dataitem/format.go` 中依赖 format 的规则生成逻辑，形成 `dataitem` core + format 规则适配层。
+4. 当 engine 侧出现多个 table / topic / graph label 组成 item 的明确需求时，再判断是否需要抽出更薄的 item layout 公共包。
+
+阶段性结论：`layout` 不迁入 `common/datatype`；公开常量和 helper 先统一在 `common/format` 顶层；最终 item layout 由 dataitem / Meta item 识别层确认。
 
 ## Meta attributes 映射
 
@@ -744,6 +770,11 @@ datatype.ContentIndex
 2. FormatPlugin、provider、reader 接口直接使用 `datatype.*`。
 3. format 只保留 format identity、capability、provider registry、content reader、native type mapper。
 
+当前进展：
+
+- `FormatDescriptor.DataType`、`FormatCapability.DataType`、format discovery view、registry descriptor view、`ContainerChildInfo.DataType`、`RefDescriptor.DataType` 已统一使用 `datatype.DataType`。
+- format 对外 JSON 仍输出字符串值；Manager preview hint、API DTO、搜索索引等展示 / 传输边界可继续使用字符串投影。
+
 ### 阶段 3：engine 依赖 datatype
 
 1. engine provider 对外 metadata 结构改用 `datatype.*`。
@@ -753,10 +784,11 @@ datatype.ContentIndex
 
 ### 阶段 4：dataitem 与 Meta 收拢
 
-1. `common/dataitem` 使用 `datatype.DataType`。
+1. `common/dataitem` 已使用 `datatype.DataType`。
 2. Meta normalizer 从 `datatype.*` 生成 `attributes.type_info.*`。
 3. 删除 Meta 内部重复字段 DTO 和转换绕路。
-4. `common/models` 中重复的 `FieldInfo`、空间字段 DTO 改为消费标准 attributes 或由 Meta API 明确派生。
+4. `common/models` 中重复的 `FieldInfo` 已删除；字段 API 和 `MetaClient.GetItemFields*` 返回 `datatype.FieldInfo`。
+5. 字段 API 不混入空间事实；空间列、SRID、几何类型等通过 spatial metadata / `capabilities.spatial` 独立获取。
 
 ### 阶段 5：Manager / Transfer / 其他模块清理
 

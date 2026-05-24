@@ -1,6 +1,9 @@
 package docx
 
-import "github.com/addp/common/format"
+import (
+	"github.com/addp/common/datatype"
+	"github.com/addp/common/format"
+)
 
 type Plugin struct{}
 
@@ -17,8 +20,8 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		ID:            "builtin-docx",
 		Format:        p.Format(),
 		I18nKey:       "format.docx",
-		DataType:      format.FormatDataTypeDocument,
-		Layouts:       []string{format.FormatLayoutSingle},
+		DataType:      datatype.DataTypeDocument,
+		Layouts:       []string{format.LayoutSingle},
 		ProviderHints: []string{format.FormatProviderDocument},
 		Identification: format.FormatIdentification{
 			Extensions: []string{".docx"},
@@ -39,8 +42,8 @@ func (p *Plugin) Capabilities() format.FormatCapability {
 	}
 	return format.FormatCapability{
 		Format:        p.Format(),
-		DataType:      format.FormatDataTypeDocument,
-		Layouts:       []string{format.FormatLayoutSingle},
+		DataType:      datatype.DataTypeDocument,
+		Layouts:       []string{format.LayoutSingle},
 		ProviderHints: []string{format.FormatProviderDocument},
 		ContentReaders: []string{
 			string(format.ContentReaderRawContent),

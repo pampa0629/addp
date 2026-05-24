@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	commondatatype "github.com/addp/common/datatype"
 	commonformat "github.com/addp/common/format"
 	"github.com/addp/common/logger"
 	"github.com/addp/manager/internal/models"
@@ -85,7 +86,7 @@ func buildBuiltinContentHandler(cfg ObjectContentPluginConfig) (ObjectContentHan
 	if !ok {
 		return nil, fmt.Errorf("未知内置内容插件 %q", cfg.Builtin)
 	}
-	if descriptor.DataType == commonformat.FormatDataTypeMedia {
+	if descriptor.DataType == commondatatype.DataTypeMedia {
 		mediaKind := mediaKindFromDescriptor(descriptor)
 		switch mediaKind {
 		case "image":
@@ -94,7 +95,7 @@ func buildBuiltinContentHandler(cfg ObjectContentPluginConfig) (ObjectContentHan
 			return buildVideoContentHandler(cfg, string(descriptor.Format)), nil
 		}
 	}
-	if descriptor.DataType == commonformat.FormatDataTypeDocument && descriptorHasContentReader(descriptor, commonformat.ContentReaderRawContent) {
+	if descriptor.DataType == commondatatype.DataTypeDocument && descriptorHasContentReader(descriptor, commonformat.ContentReaderRawContent) {
 		return buildRawDocumentContentHandler(cfg, descriptor.Format), nil
 	}
 	return nil, fmt.Errorf("内置内容插件 %q 没有对应的对象内容处理器", cfg.Builtin)
@@ -372,7 +373,7 @@ func mediaMatcherDefaults(mediaKind string) ([]string, []string, []string) {
 	extensions := make([]string, 0)
 	contentTypes := make([]string, 0)
 	for _, descriptor := range commonformat.ListFormatDescriptors() {
-		if descriptor.DataType != commonformat.FormatDataTypeMedia {
+		if descriptor.DataType != commondatatype.DataTypeMedia {
 			continue
 		}
 		if mediaKind != "" && !formatDescriptorMatchesMediaKind(descriptor, mediaKind) {
@@ -416,7 +417,7 @@ func containerObjectContentMatcher(match ObjectContentMatcherConfig) objectConte
 	extensions := make([]string, 0)
 	contentTypes := make([]string, 0)
 	for _, descriptor := range commonformat.ListFormatDescriptors() {
-		if descriptor.DataType != commonformat.FormatDataTypeContainer || !descriptor.Providers.ContainerInfo {
+		if descriptor.DataType != commondatatype.DataTypeContainer || !descriptor.Providers.ContainerInfo {
 			continue
 		}
 		formats = append(formats, string(descriptor.Format))

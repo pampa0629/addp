@@ -1,13 +1,17 @@
 package registry
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/addp/common/datatype"
+)
 
 func init() {
 	for _, descriptor := range []Descriptor{
 		{
 			ID:            "builtin-markdown",
 			Format:        FormatMarkdown,
-			DataType:      DataTypeDocument,
+			DataType:      datatype.DataTypeDocument,
 			Layouts:       []string{LayoutSingle},
 			ProviderHints: []string{ProviderDocument},
 			ContentReaders: []string{
@@ -30,7 +34,7 @@ func mediaDescriptorForTest(id string, format Format) Descriptor {
 	return Descriptor{
 		ID:            id,
 		Format:        format,
-		DataType:      DataTypeMedia,
+		DataType:      datatype.DataTypeMedia,
 		Layouts:       []string{LayoutSingle},
 		ProviderHints: []string{ProviderMedia},
 		ContentReaders: []string{
@@ -69,14 +73,40 @@ func TestCapabilityViewFromDescriptor(t *testing.T) {
 	if view.Format != FormatMarkdown {
 		t.Fatalf("Format = %q, want %q", view.Format, FormatMarkdown)
 	}
-	if view.DataType != DataTypeDocument {
-		t.Fatalf("DataType = %q, want %q", view.DataType, DataTypeDocument)
+	if view.DataType != datatype.DataTypeDocument {
+		t.Fatalf("DataType = %q, want %q", view.DataType, datatype.DataTypeDocument)
 	}
 	if !containsStringForDescriptorTest(view.ContentReaders, ContentReaderDocumentText) {
 		t.Fatalf("ContentReaders = %#v, want document_text", view.ContentReaders)
 	}
 	if !view.Transfer.Read || !view.Transfer.Write {
 		t.Fatalf("Transfer = %#v, want read/write", view.Transfer)
+	}
+}
+
+func TestNormalizeLayoutsCanonicalizesValues(t *testing.T) {
+	got := NormalizeLayouts([]string{" Whole ", "single", "WHOLE", "", "multi"})
+	want := []string{LayoutMulti, LayoutSingle, LayoutWhole}
+	if len(got) != len(want) {
+		t.Fatalf("NormalizeLayouts() = %#v, want %#v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("NormalizeLayouts() = %#v, want %#v", got, want)
+		}
+	}
+}
+
+func TestRegisterDescriptorRejectsUnknownLayout(t *testing.T) {
+	registry := newRegistry()
+	err := registry.RegisterDescriptor(Descriptor{
+		ID:       "bad-layout",
+		Format:   Format("bad-layout"),
+		DataType: datatype.DataTypeDocument,
+		Layouts:  []string{"bundle"},
+	})
+	if err == nil {
+		t.Fatal("expected unknown layout error")
 	}
 }
 
@@ -93,8 +123,8 @@ func TestMediaDescriptorsDeclareRawRangeOnly(t *testing.T) {
 			if !ok {
 				t.Fatalf("expected %s capability view", format)
 			}
-			if view.DataType != DataTypeMedia {
-				t.Fatalf("DataType = %q, want %q", view.DataType, DataTypeMedia)
+			if view.DataType != datatype.DataTypeMedia {
+				t.Fatalf("DataType = %q, want %q", view.DataType, datatype.DataTypeMedia)
 			}
 			if !containsStringForDescriptorTest(view.ContentReaders, ContentReaderRawContent) ||
 				!containsStringForDescriptorTest(view.ContentReaders, ContentReaderRangeContent) {
@@ -121,7 +151,7 @@ func TestRegisterDescriptorRecordsFormatConflictAndHonorsPriority(t *testing.T) 
 	if err := registry.RegisterDescriptor(Descriptor{
 		ID:       "builtin-test",
 		Format:   Format("test"),
-		DataType: DataTypeDocument,
+		DataType: datatype.DataTypeDocument,
 		Priority: 10,
 	}); err != nil {
 		t.Fatalf("register builtin descriptor: %v", err)
@@ -129,7 +159,7 @@ func TestRegisterDescriptorRecordsFormatConflictAndHonorsPriority(t *testing.T) 
 	if err := registry.RegisterDescriptor(Descriptor{
 		ID:       "plugin-test-low",
 		Format:   Format("test"),
-		DataType: DataTypeTable,
+		DataType: datatype.DataTypeTable,
 		Priority: 5,
 	}); err != nil {
 		t.Fatalf("register low priority descriptor: %v", err)
@@ -157,7 +187,7 @@ func TestRegisterDescriptorRecordsIdentificationConflicts(t *testing.T) {
 	if err := registry.RegisterDescriptor(Descriptor{
 		ID:       "builtin-a",
 		Format:   Format("a"),
-		DataType: DataTypeDocument,
+		DataType: datatype.DataTypeDocument,
 		Identification: Identification{
 			Extensions: []string{"md"},
 			MimeTypes:  []string{"Text/Markdown"},
@@ -168,7 +198,7 @@ func TestRegisterDescriptorRecordsIdentificationConflicts(t *testing.T) {
 	if err := registry.RegisterDescriptor(Descriptor{
 		ID:       "plugin-b",
 		Format:   Format("b"),
-		DataType: DataTypeDocument,
+		DataType: datatype.DataTypeDocument,
 		Identification: Identification{
 			Extensions: []string{".MD"},
 			MimeTypes:  []string{"text/markdown"},

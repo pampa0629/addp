@@ -795,7 +795,7 @@ func buildContainerPreviewFromAttributes(attrs map[string]interface{}, sizeBytes
 			childMap["label"] = tableName
 		}
 		if childMap["data_type"] == "" {
-			childMap["data_type"] = string(format.FormatDataTypeTable)
+			childMap["data_type"] = string(datatype.DataTypeTable)
 		}
 		previewChildren = append(previewChildren, childMap)
 	}
@@ -871,7 +871,7 @@ func mapToContainerChildInfo(child map[string]interface{}) format.ContainerChild
 	}
 	name := strings.TrimSpace(commonJSON.InterfaceString(child["name"]))
 	childKind := containerChildKindFromMap(child)
-	dataType := strings.TrimSpace(commonJSON.InterfaceString(child["data_type"]))
+	dataType := datatype.ParseDataType(commonJSON.InterfaceString(child["data_type"]))
 	properties := make(map[string]interface{}, len(child))
 	for key, value := range child {
 		switch key {
@@ -1186,7 +1186,7 @@ func containerChildKey(name, tableName string, index int) string {
 func isContainerObjectContentFormat(formatName string) bool {
 	formatType := normalizeFileTableFormat(formatName)
 	descriptor, ok := format.GetFormatDescriptor(formatType)
-	return ok && descriptor.DataType == format.FormatDataTypeContainer && descriptor.Providers.ContainerInfo
+	return ok && descriptor.DataType == datatype.DataTypeContainer && descriptor.Providers.ContainerInfo
 }
 
 type textContentHandler struct {
@@ -1601,12 +1601,12 @@ func isContainerFormatType(formatType format.FormatType) bool {
 		return false
 	}
 	descriptor, ok := format.GetFormatDescriptor(formatType)
-	return ok && descriptor.DataType == format.FormatDataTypeContainer && descriptor.Providers.ContainerInfo
+	return ok && descriptor.DataType == datatype.DataTypeContainer && descriptor.Providers.ContainerInfo
 }
 
 func firstContainerFormatType() format.FormatType {
 	for _, descriptor := range format.ListFormatDescriptors() {
-		if descriptor.DataType == format.FormatDataTypeContainer && descriptor.Providers.ContainerInfo {
+		if descriptor.DataType == datatype.DataTypeContainer && descriptor.Providers.ContainerInfo {
 			return descriptor.Format
 		}
 	}

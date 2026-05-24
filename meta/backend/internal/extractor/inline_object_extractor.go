@@ -27,7 +27,7 @@ func (e *InlineObjectMetadataExtractor) ShouldExtract(key, contentType string, s
 		formatType = format.DetectFormat(key, nil)
 	}
 	capability, ok := format.GetFormatCapability(formatType)
-	if !ok || capability.DataType != format.FormatDataTypeMedia {
+	if !ok || capability.DataType != datatype.DataTypeMedia {
 		if e.log != nil {
 			e.log.Debug("跳过非媒体类型", "content_type", contentType, "format", formatType, "key", key)
 		}

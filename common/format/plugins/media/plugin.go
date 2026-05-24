@@ -1,6 +1,9 @@
 package media
 
-import "github.com/addp/common/format"
+import (
+	"github.com/addp/common/datatype"
+	"github.com/addp/common/format"
+)
 
 type Plugin struct {
 	formatType     format.FormatType
@@ -29,8 +32,8 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		ID:            "builtin-" + string(p.formatType),
 		Format:        p.formatType,
 		I18nKey:       p.i18nKey,
-		DataType:      format.FormatDataTypeMedia,
-		Layouts:       []string{format.FormatLayoutSingle},
+		DataType:      datatype.DataTypeMedia,
+		Layouts:       []string{format.LayoutSingle},
 		ProviderHints: []string{format.FormatProviderMedia},
 		Identification: format.FormatIdentification{
 			Extensions: p.extensions,

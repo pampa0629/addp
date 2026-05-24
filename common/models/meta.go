@@ -1,6 +1,10 @@
 package models
 
-import "time"
+import (
+	"time"
+
+	"github.com/addp/common/datatype"
+)
 
 // MetaNode 节点模型（Schema/Bucket/Prefix）
 type MetaNode struct {
@@ -48,32 +52,12 @@ type MetadataTree struct {
 
 // SpatialMetadata 空间元数据（用于 MVT 瓦片生成）
 type SpatialMetadata struct {
-	GeometryColumn string    `json:"geometry_column"`
-	GeometryTypes  []string  `json:"geometry_types,omitempty"` // 几何类型列表，如 ["ST_MultiPolygon"]
-	SRID           int       `json:"srid"`
-	ExtentSRID     int       `json:"extent_srid"`
-	Extent         []float64 `json:"extent"`
-	PrimaryKey     string    `json:"primary_key"`
-	Fields         []Field   `json:"fields"`
-	RowCount       int64     `json:"row_count"` // 表记录数（从 Meta 服务获取）
-}
-
-// Field 字段信息
-type Field struct {
-	Name         string `json:"name"`
-	Type         string `json:"type"`
-	IsPrimaryKey bool   `json:"primary_key,omitempty"`
-}
-
-// FieldInfo 字段详细信息
-type FieldInfo struct {
-	Name         string `json:"name"`
-	Type         string `json:"type"`
-	IsPrimaryKey bool   `json:"primary_key,omitempty"`
-	IsNullable   bool   `json:"nullable,omitempty"`
-	DefaultValue string `json:"default_value,omitempty"`
-	Comment      string `json:"comment,omitempty"`
-	IsSpatial    bool   `json:"is_spatial,omitempty"`
-	GeometryType string `json:"geometry_type,omitempty"`
-	SRID         int    `json:"srid,omitempty"`
+	GeometryColumn string               `json:"geometry_column"`
+	GeometryTypes  []string             `json:"geometry_types,omitempty"` // 几何类型列表，如 ["ST_MultiPolygon"]
+	SRID           int                  `json:"srid"`
+	ExtentSRID     int                  `json:"extent_srid"`
+	Extent         []float64            `json:"extent"`
+	PrimaryKey     string               `json:"primary_key"`
+	Fields         []datatype.FieldInfo `json:"fields"`
+	RowCount       int64                `json:"row_count"` // 表记录数（从 Meta 服务获取）
 }

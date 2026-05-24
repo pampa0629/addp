@@ -1012,7 +1012,7 @@ func validateTransferReadableTableFormat(formatType format.FormatType) error {
 	if !ok {
 		return fmt.Errorf("format %q is not registered", formatType)
 	}
-	if descriptor.DataType != format.FormatDataTypeTable {
+	if descriptor.DataType != datatype.DataTypeTable {
 		if !hasTableTransferReader(formatType) {
 			_, err := format.GetTableReaderProvider(formatType)
 			return fmt.Errorf("format %q has no table reader provider: %w", formatType, err)
@@ -1043,7 +1043,7 @@ func validateTransferWritableTableFormat(formatType format.FormatType) error {
 	if !ok {
 		return fmt.Errorf("format %q is not registered", formatType)
 	}
-	if descriptor.DataType != format.FormatDataTypeTable {
+	if descriptor.DataType != datatype.DataTypeTable {
 		if !hasTableExportWriter(formatType) {
 			_, err := format.GetTableWriterProvider(formatType)
 			return fmt.Errorf("format %q has no table writer provider: %w", formatType, err)

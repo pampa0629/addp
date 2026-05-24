@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/addp/common/datatype"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/models"
 )
@@ -510,7 +511,7 @@ func (c *MetaClient) ListItems(engineID uint, namespace string) ([]models.MetaIt
 }
 
 // GetItemFieldsByCatalogPath 获取指定 catalog path 数据项的字段列表。
-func (c *MetaClient) GetItemFieldsByCatalogPath(engineID uint, catalogPath string, includeDetails bool) ([]models.FieldInfo, error) {
+func (c *MetaClient) GetItemFieldsByCatalogPath(engineID uint, catalogPath string, includeDetails bool) ([]datatype.FieldInfo, error) {
 	item, err := c.GetItemByCatalogPath(engineID, catalogPath)
 	if err != nil {
 		return nil, err
@@ -519,7 +520,7 @@ func (c *MetaClient) GetItemFieldsByCatalogPath(engineID uint, catalogPath strin
 }
 
 // GetItemFieldsByID 获取指定 item_id 数据项的字段列表。
-func (c *MetaClient) GetItemFieldsByID(itemID uint, includeDetails bool) ([]models.FieldInfo, error) {
+func (c *MetaClient) GetItemFieldsByID(itemID uint, includeDetails bool) ([]datatype.FieldInfo, error) {
 	urlStr := fmt.Sprintf("%s/api/v1/meta/items/%d/fields", c.baseURL, itemID)
 	if includeDetails {
 		urlStr += "?include_details=true"
@@ -544,7 +545,7 @@ func (c *MetaClient) GetItemFieldsByID(itemID uint, includeDetails bool) ([]mode
 		return nil, fmt.Errorf("meta api returned status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
-	var result []models.FieldInfo
+	var result []datatype.FieldInfo
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}

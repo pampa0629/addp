@@ -14,7 +14,7 @@ func TestFieldsFromMetaItemReadsTypeInfoTableFields(t *testing.T) {
 			"type_info": map[string]interface{}{
 				"table": map[string]interface{}{
 					"fields": []interface{}{
-						map[string]interface{}{"name": "id", "type": "integer", "primary_key": true, "nullable": false},
+						map[string]interface{}{"name": "id", "type": "int", "primary_key": true, "nullable": false},
 					},
 				},
 			},
@@ -23,12 +23,12 @@ func TestFieldsFromMetaItemReadsTypeInfoTableFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FieldsFromMetaItem() error = %v", err)
 	}
-	if len(fields) != 1 || fields[0].Name != "id" || fields[0].Type != "integer" || !fields[0].IsPrimaryKey {
+	if len(fields) != 1 || fields[0].Name != "id" || fields[0].Type != "int" || !fields[0].PrimaryKey {
 		t.Fatalf("fields = %#v, want partitioned id field", fields)
 	}
 }
 
-func TestFieldsFromMetaItemMergesCapabilitiesSpatial(t *testing.T) {
+func TestFieldsFromMetaItemDoesNotMergeCapabilitiesSpatial(t *testing.T) {
 	t.Parallel()
 
 	fields, err := FieldsFromMetaItem(models.MetaItem{
@@ -62,8 +62,8 @@ func TestFieldsFromMetaItemMergesCapabilitiesSpatial(t *testing.T) {
 		t.Fatalf("fields = %#v, want 2 fields", fields)
 	}
 	geom := fields[1]
-	if geom.Name != "SmGeometry" || geom.Type != "geometry" || !geom.IsSpatial || geom.GeometryType != "Polygon" || geom.SRID != 2360 {
-		t.Fatalf("geometry field = %#v, want spatial SmGeometry Polygon SRID 2360", geom)
+	if geom.Name != "SmGeometry" || geom.Type != "geometry" {
+		t.Fatalf("geometry field = %#v, want type_info field only", geom)
 	}
 }
 
@@ -88,7 +88,7 @@ func TestSpatialMetadataFromItemReadsCapabilitiesSpatial(t *testing.T) {
 				"table": map[string]interface{}{
 					"primary_key": []interface{}{"id"},
 					"fields": []interface{}{
-						map[string]interface{}{"name": "id", "type": "integer", "primary_key": true},
+						map[string]interface{}{"name": "id", "type": "int", "primary_key": true},
 					},
 				},
 			},
@@ -100,7 +100,10 @@ func TestSpatialMetadataFromItemReadsCapabilitiesSpatial(t *testing.T) {
 	if meta.GeometryColumn != "shape" || meta.SRID != 4326 || meta.PrimaryKey != "id" {
 		t.Fatalf("spatial metadata = %#v, want partitioned spatial metadata", meta)
 	}
-	if len(meta.Fields) != 1 || meta.Fields[0].Name != "id" {
+	if len(meta.GeometryTypes) != 1 || meta.GeometryTypes[0] != "POLYGON" {
+		t.Fatalf("geometry types = %#v, want POLYGON", meta.GeometryTypes)
+	}
+	if len(meta.Fields) != 1 || meta.Fields[0].Name != "id" || !meta.Fields[0].PrimaryKey {
 		t.Fatalf("fields = %#v, want partitioned fields", meta.Fields)
 	}
 }

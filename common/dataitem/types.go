@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/contentio"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 )
 
@@ -15,21 +16,21 @@ import (
 type Layout = format.Layout
 
 const (
-	LayoutSingle Layout = format.FormatLayoutSingle
-	LayoutMulti  Layout = format.FormatLayoutMulti
-	LayoutWhole  Layout = format.FormatLayoutWhole
+	LayoutSingle Layout = format.LayoutSingle
+	LayoutMulti  Layout = format.LayoutMulti
+	LayoutWhole  Layout = format.LayoutWhole
 )
 
-type DataType string
+type DataType = datatype.DataType
 
 const (
-	DataTypeTable     DataType = "table"
-	DataTypeDocument  DataType = "document"
-	DataTypeMedia     DataType = "media"
-	DataTypeContainer DataType = "container"
-	DataTypeGraph     DataType = "graph"
-	DataTypeFile      DataType = "file"
-	DataTypeUnknown   DataType = "unknown"
+	DataTypeTable     DataType = datatype.DataTypeTable
+	DataTypeDocument  DataType = datatype.DataTypeDocument
+	DataTypeMedia     DataType = datatype.DataTypeMedia
+	DataTypeContainer DataType = datatype.DataTypeContainer
+	DataTypeGraph     DataType = datatype.DataTypeGraph
+	DataTypeFile      DataType = datatype.DataTypeFile
+	DataTypeUnknown   DataType = datatype.DataTypeUnknown
 )
 
 type RefMatchScope string

@@ -23,7 +23,7 @@ type ContainerInfo struct {
 type ContainerChildInfo struct {
 	Name        string
 	ChildKind   string
-	DataType    string
+	DataType    datatype.DataType
 	Format      FormatType
 	Layout      string
 	RowCount    *int64

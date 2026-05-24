@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"strings"
 
-	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/datatype"
 	"github.com/addp/meta/internal/metapath"
 	"github.com/addp/meta/internal/metaquery"
 	"github.com/addp/meta/internal/models"
@@ -93,7 +93,7 @@ func (s *MetadataQueryService) ListItemsByNamespace(engineID, tenantID uint, nam
 	return result, nil
 }
 
-func (s *MetadataQueryService) GetItemFieldDetailsByID(tenantID, itemID uint) ([]commonModels.FieldInfo, error) {
+func (s *MetadataQueryService) GetItemFieldDetailsByID(tenantID, itemID uint) ([]datatype.FieldInfo, error) {
 	var item models.MetaItem
 	if err := s.db.Where("tenant_id = ? AND id = ? AND deleted_at IS NULL", tenantID, itemID).First(&item).Error; err != nil {
 		return nil, fmt.Errorf("item metadata not found: %w", err)

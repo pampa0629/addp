@@ -32,15 +32,15 @@ func (p providerTestPlugin) Format() FormatType {
 }
 
 func (p providerTestPlugin) Capabilities() FormatCapability {
-	return FormatCapability{Format: p.formatType, DataType: FormatDataTypeTable, Layouts: []string{FormatLayoutSingle}}
+	return FormatCapability{Format: p.formatType, DataType: datatype.DataTypeTable, Layouts: []string{LayoutSingle}}
 }
 
 func (p providerTestPlugin) Descriptor() FormatDescriptor {
 	return FormatDescriptor{
 		ID:       "provider-test-plugin",
 		Format:   p.formatType,
-		DataType: FormatDataTypeTable,
-		Layouts:  []string{FormatLayoutSingle},
+		DataType: datatype.DataTypeTable,
+		Layouts:  []string{LayoutSingle},
 	}
 }
 
@@ -66,7 +66,7 @@ func TestRegisterFormatPlugin(t *testing.T) {
 	if descriptor, ok := GetFormatDescriptor(formatType); !ok || descriptor.ID != "provider-test-plugin" {
 		t.Fatalf("GetFormatDescriptor() = %#v, %v; want provider-test-plugin", descriptor, ok)
 	}
-	if capability, ok := GetFormatCapability(formatType); !ok || capability.DataType != FormatDataTypeTable {
+	if capability, ok := GetFormatCapability(formatType); !ok || capability.DataType != datatype.DataTypeTable {
 		t.Fatalf("GetFormatCapability() = %#v, %v; want table capability", capability, ok)
 	}
 	if _, err := registry.GetFormatInfoProvider(formatType); err != nil {
@@ -172,7 +172,7 @@ func (p providerTestTableReaderProvider) Format() FormatType {
 }
 
 func (p providerTestTableReaderProvider) Capabilities() FormatCapability {
-	return FormatCapability{Format: p.formatType, DataType: FormatDataTypeTable}
+	return FormatCapability{Format: p.formatType, DataType: datatype.DataTypeTable}
 }
 
 func (p providerTestTableReaderProvider) OpenTableReader(context.Context, io.Reader, *ParseOptions) (TableReader, error) {
@@ -189,7 +189,7 @@ func (p providerTestMultiTableReaderProvider) Format() FormatType {
 }
 
 func (p providerTestMultiTableReaderProvider) Capabilities() FormatCapability {
-	return FormatCapability{Format: p.formatType, DataType: FormatDataTypeTable}
+	return FormatCapability{Format: p.formatType, DataType: datatype.DataTypeTable}
 }
 
 func (p providerTestMultiTableReaderProvider) RelatedRefSpecs() []RelatedRefSpec {
@@ -213,7 +213,7 @@ func (p providerTestMultiTableWriterProvider) Format() FormatType {
 }
 
 func (p providerTestMultiTableWriterProvider) Capabilities() FormatCapability {
-	return FormatCapability{Format: p.formatType, DataType: FormatDataTypeTable}
+	return FormatCapability{Format: p.formatType, DataType: datatype.DataTypeTable}
 }
 
 func (p providerTestMultiTableWriterProvider) RelatedRefSpecs() []RelatedRefSpec {
@@ -401,7 +401,7 @@ func TestRegisterContainerInfoProvider(t *testing.T) {
 				Children: []ContainerChildInfo{{
 					Name:      "Sheet1",
 					ChildKind: "sheet",
-					DataType:  FormatDataTypeTable,
+					DataType:  datatype.DataTypeTable,
 				}},
 			}, nil
 		},

@@ -60,8 +60,8 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		ID:             "builtin-" + string(p.formatType),
 		Format:         p.formatType,
 		I18nKey:        i18nKey,
-		DataType:       format.FormatDataTypeTable,
-		Layouts:        []string{format.FormatLayoutSingle},
+		DataType:       datatype.DataTypeTable,
+		Layouts:        []string{format.LayoutSingle},
 		ProviderHints:  []string{format.FormatProviderTable},
 		Identification: format.FormatIdentification{Extensions: extensions, MimeTypes: mimeTypes},
 		Providers:      format.FormatProviderDescriptor{FormatInfo: true, TableInfo: true, TableSample: true, Table: true, ContentIndex: true},
@@ -80,8 +80,8 @@ func (p *Plugin) Capabilities() format.FormatCapability {
 	}
 	return format.FormatCapability{
 		Format:        p.formatType,
-		DataType:      format.FormatDataTypeTable,
-		Layouts:       []string{format.FormatLayoutSingle},
+		DataType:      datatype.DataTypeTable,
+		Layouts:       []string{format.LayoutSingle},
 		ProviderHints: []string{format.FormatProviderTable},
 		TransferRead:  true,
 		TransferWrite: true,

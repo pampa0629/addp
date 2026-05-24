@@ -61,8 +61,8 @@ func (p tableInfoProviderView) Descriptor() FormatDescriptor {
 	return FormatDescriptor{
 		ID:       "inline-" + string(p.formatType),
 		Format:   p.formatType,
-		DataType: FormatDataTypeTable,
-		Layouts:  []string{FormatLayoutSingle},
+		DataType: datatype.DataTypeTable,
+		Layouts:  []string{LayoutSingle},
 	}
 }
 
@@ -73,8 +73,8 @@ func (p tableInfoProviderView) Capabilities() FormatCapability {
 	}
 	return FormatCapability{
 		Format:        p.formatType,
-		DataType:      FormatDataTypeTable,
-		Layouts:       []string{FormatLayoutSingle},
+		DataType:      datatype.DataTypeTable,
+		Layouts:       []string{LayoutSingle},
 		ProviderHints: []string{FormatProviderTable},
 		Parse:         true,
 	}
@@ -95,8 +95,8 @@ func (p tableSampleReaderView) Capabilities() FormatCapability {
 	}
 	return FormatCapability{
 		Format:        p.formatType,
-		DataType:      FormatDataTypeTable,
-		Layouts:       []string{FormatLayoutSingle},
+		DataType:      datatype.DataTypeTable,
+		Layouts:       []string{LayoutSingle},
 		ProviderHints: []string{FormatProviderTable},
 		Parse:         true,
 	}
@@ -117,7 +117,7 @@ func (p formatInfoProviderView) Capabilities() FormatCapability {
 	}
 	return FormatCapability{
 		Format:  p.formatType,
-		Layouts: []string{FormatLayoutSingle},
+		Layouts: []string{LayoutSingle},
 	}
 }
 
@@ -136,8 +136,8 @@ func (p documentInfoProviderView) Capabilities() FormatCapability {
 	}
 	return FormatCapability{
 		Format:        p.formatType,
-		DataType:      FormatDataTypeDocument,
-		Layouts:       []string{FormatLayoutSingle},
+		DataType:      datatype.DataTypeDocument,
+		Layouts:       []string{LayoutSingle},
 		ProviderHints: []string{FormatProviderDocument},
 	}
 }
@@ -157,8 +157,8 @@ func (p documentTextReaderView) Capabilities() FormatCapability {
 	}
 	return FormatCapability{
 		Format:        p.formatType,
-		DataType:      FormatDataTypeDocument,
-		Layouts:       []string{FormatLayoutSingle},
+		DataType:      datatype.DataTypeDocument,
+		Layouts:       []string{LayoutSingle},
 		ProviderHints: []string{FormatProviderDocument},
 	}
 }
@@ -178,8 +178,8 @@ func (p mediaProviderView) Capabilities() FormatCapability {
 	}
 	return FormatCapability{
 		Format:        p.formatType,
-		DataType:      FormatDataTypeMedia,
-		Layouts:       []string{FormatLayoutSingle},
+		DataType:      datatype.DataTypeMedia,
+		Layouts:       []string{LayoutSingle},
 		ProviderHints: []string{FormatProviderMedia},
 	}
 }
@@ -199,8 +199,8 @@ func (p containerProviderView) Capabilities() FormatCapability {
 	}
 	return FormatCapability{
 		Format:        p.formatType,
-		DataType:      FormatDataTypeContainer,
-		Layouts:       []string{FormatLayoutSingle},
+		DataType:      datatype.DataTypeContainer,
+		Layouts:       []string{LayoutSingle},
 		ProviderHints: []string{FormatProviderContainer},
 	}
 }
@@ -220,8 +220,8 @@ func (p containerChildResolverView) Capabilities() FormatCapability {
 	}
 	return FormatCapability{
 		Format:         p.formatType,
-		DataType:       FormatDataTypeContainer,
-		Layouts:        []string{FormatLayoutSingle},
+		DataType:       datatype.DataTypeContainer,
+		Layouts:        []string{LayoutSingle},
 		ProviderHints:  []string{FormatProviderContainer},
 		ContentReaders: []string{string(ContentReaderContainerEntry)},
 	}

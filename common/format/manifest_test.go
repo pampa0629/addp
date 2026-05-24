@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/addp/common/datatype"
 )
 
 func TestRegisterFormatPluginManifest(t *testing.T) {
@@ -40,7 +42,7 @@ func TestRegisterFormatPluginManifest(t *testing.T) {
 	if !ok {
 		t.Fatal("manifest descriptor did not update capability registry")
 	}
-	if capability.DataType != FormatDataTypeDocument {
+	if capability.DataType != datatype.DataTypeDocument {
 		t.Fatalf("capability data type = %q, want document", capability.DataType)
 	}
 	if got := MIMEToFormat("text/x-manifest-doc"); got != FormatType("manifest_doc") {

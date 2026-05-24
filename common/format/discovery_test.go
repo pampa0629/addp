@@ -24,8 +24,8 @@ func TestListFormatCapabilityViewsIncludesMarkdown(t *testing.T) {
 		if view.PluginID != "builtin-markdown" {
 			t.Fatalf("PluginID = %q, want builtin-markdown", view.PluginID)
 		}
-		if view.DataType != FormatDataTypeDocument {
-			t.Fatalf("DataType = %q, want %q", view.DataType, FormatDataTypeDocument)
+		if view.DataType != datatype.DataTypeDocument {
+			t.Fatalf("DataType = %q, want %q", view.DataType, datatype.DataTypeDocument)
 		}
 		if !containsStringForDiscoveryTest(view.ContentReaders, string(ContentReaderDocumentText)) {
 			t.Fatalf("ContentReaders = %#v, want document text reader", view.ContentReaders)
@@ -63,8 +63,8 @@ func TestFormatCapabilityViewSeparatesDeclaredProvidersAndImplementations(t *tes
 	if err := RegisterFormatDescriptor(FormatDescriptor{
 		ID:       "discovery-declared-document",
 		Format:   formatType,
-		DataType: FormatDataTypeDocument,
-		Layouts:  []string{FormatLayoutSingle},
+		DataType: datatype.DataTypeDocument,
+		Layouts:  []string{LayoutSingle},
 		Identification: FormatIdentification{
 			Extensions: []string{".ddoc"},
 			MimeTypes:  []string{"application/x-discovery-declared-document"},
@@ -118,8 +118,8 @@ func TestFormatCapabilityViewReportsRegisteredImplementations(t *testing.T) {
 	if err := RegisterFormatDescriptor(FormatDescriptor{
 		ID:       "discovery-implemented-document",
 		Format:   formatType,
-		DataType: FormatDataTypeDocument,
-		Layouts:  []string{FormatLayoutSingle},
+		DataType: datatype.DataTypeDocument,
+		Layouts:  []string{LayoutSingle},
 		Identification: FormatIdentification{
 			Extensions: []string{".idoc"},
 			MimeTypes:  []string{"application/x-discovery-implemented-document"},
@@ -159,8 +159,8 @@ func TestFormatCapabilityViewReportsTableProviderSpecializations(t *testing.T) {
 	if err := RegisterFormatDescriptor(FormatDescriptor{
 		ID:       "discovery-scope-table",
 		Format:   formatType,
-		DataType: FormatDataTypeTable,
-		Layouts:  []string{FormatLayoutSingle, FormatLayoutWhole},
+		DataType: datatype.DataTypeTable,
+		Layouts:  []string{LayoutSingle, LayoutWhole},
 		Providers: FormatProviderDescriptor{
 			TableInfo:   true,
 			TableSample: true,
@@ -218,8 +218,8 @@ func TestFormatCapabilityViewReportsMediaInfoProvider(t *testing.T) {
 	if err := RegisterFormatDescriptor(FormatDescriptor{
 		ID:       "discovery-media",
 		Format:   formatType,
-		DataType: FormatDataTypeMedia,
-		Layouts:  []string{FormatLayoutSingle},
+		DataType: datatype.DataTypeMedia,
+		Layouts:  []string{LayoutSingle},
 		Providers: FormatProviderDescriptor{
 			MediaInfo: true,
 		},
@@ -252,8 +252,8 @@ func (p discoveryDocumentPlugin) Descriptor() FormatDescriptor {
 	return FormatDescriptor{
 		ID:       "discovery-document-plugin",
 		Format:   p.formatType,
-		DataType: FormatDataTypeDocument,
-		Layouts:  []string{FormatLayoutSingle},
+		DataType: datatype.DataTypeDocument,
+		Layouts:  []string{LayoutSingle},
 	}
 }
 

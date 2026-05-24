@@ -232,7 +232,7 @@ func (e *MetadataExtractor) ExtractObjectMetadataOnDemand(
 	if formatType == format.FormatUnknown {
 		formatType = format.DetectFormat(objectKey, nil)
 	}
-	if capability, ok := format.GetFormatCapability(formatType); ok && capability.DataType == format.FormatDataTypeMedia {
+	if capability, ok := format.GetFormatCapability(formatType); ok && capability.DataType == datatype.DataTypeMedia {
 		provider, err := format.GetMediaInfoProvider(formatType)
 		if err != nil {
 			return nil, fmt.Errorf("format %s has no media info provider: %w", formatType, err)

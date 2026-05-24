@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/contentio"
+	"github.com/addp/common/datatype"
 )
 
 func DescribeRefs(formatType FormatType, refs []RelatedRef) []RefDescriptor {
@@ -37,7 +38,7 @@ func defaultRefDescriptors(refs []RelatedRef) []RefDescriptor {
 			Label:     label,
 			Required:  ref.Required,
 			Primary:   ref.Primary,
-			DataType:  FormatDataTypeFile,
+			DataType:  datatype.DataTypeFile,
 			Format:    FormatUnknown,
 			Extension: extension,
 		})
