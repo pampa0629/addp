@@ -122,5 +122,5 @@ type SpatialMetadataResponse struct {
 type FieldInfo struct {
 	Name         string `json:"name"`
 	Type         string `json:"type"`
-	IsPrimaryKey bool   `json:"is_primary_key,omitempty"`
+	IsPrimaryKey bool   `json:"primary_key,omitempty"`
 }

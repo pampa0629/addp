@@ -342,16 +342,16 @@
         >
           <el-table-column prop="name" :label="t('manager.metadata.colFieldName')" width="200" />
           <el-table-column prop="data_type" :label="t('manager.metadata.colDataType')" width="150" />
-          <el-table-column prop="is_nullable" :label="t('manager.metadata.colNullable')" width="80">
+          <el-table-column prop="nullable" :label="t('manager.metadata.colNullable')" width="80">
             <template #default="{ row }">
-              <el-tag :type="row.is_nullable ? 'info' : 'warning'" size="small">
-                {{ row.is_nullable ? t('manager.metadata.nullableYes') : t('manager.metadata.nullableNo') }}
+              <el-tag :type="row.nullable ? 'info' : 'warning'" size="small">
+                {{ row.nullable ? t('manager.metadata.nullableYes') : t('manager.metadata.nullableNo') }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="is_primary_key" :label="t('manager.metadata.colPrimaryKey')" width="80">
+          <el-table-column prop="primary_key" :label="t('manager.metadata.colPrimaryKey')" width="80">
             <template #default="{ row }">
-              <el-icon v-if="row.is_primary_key" color="var(--el-color-success)"><Key /></el-icon>
+              <el-icon v-if="row.primary_key" color="var(--el-color-success)"><Key /></el-icon>
             </template>
           </el-table-column>
           <el-table-column prop="default_value" :label="t('manager.metadata.colDefaultValue')" min-width="150">

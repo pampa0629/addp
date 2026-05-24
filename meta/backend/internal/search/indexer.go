@@ -31,8 +31,8 @@ type FieldRecord struct {
 	ColumnType      string `json:"column_type,omitempty"`
 	Comment         string `json:"comment,omitempty"`
 	OrdinalPosition int    `json:"ordinal_position,omitempty"`
-	IsNullable      bool   `json:"is_nullable,omitempty"`
-	IsPrimaryKey    bool   `json:"is_primary_key,omitempty"`
+	IsNullable      bool   `json:"nullable,omitempty"`
+	IsPrimaryKey    bool   `json:"primary_key,omitempty"`
 	IsUniqueKey     bool   `json:"is_unique_key,omitempty"`
 }
 

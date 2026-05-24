@@ -1590,11 +1590,11 @@ const docTemplate = `{
         "github_com_addp_meta_internal_models.FieldInfo": {
             "type": "object",
             "properties": {
-                "is_primary_key": {
-                    "type": "boolean"
-                },
                 "name": {
                     "type": "string"
+                },
+                "primary_key": {
+                    "type": "boolean"
                 },
                 "type": {
                     "type": "string"
