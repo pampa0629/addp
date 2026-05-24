@@ -271,6 +271,8 @@
           "json": "JSON",
           "geojson": "GeoJSON",
           "parquet": "Parquet",
+          "native": "原生 Native",
+          "source": "来源",
           "refs": "相关内容"
         },
         "fields": {
@@ -303,6 +305,17 @@
           "dbfVersion": "DBF 版本",
           "hasCpg": "包含 CPG",
           "hasPrj": "包含 PRJ",
+          "relkind": "Relkind",
+          "tableType": "表类型",
+          "kind": "类型",
+          "sizeBytes": "大小",
+          "step": "步长",
+          "unit": "单位",
+          "offsetUnit": "偏移单位",
+          "headerBytes": "头部字节数",
+          "indexCount": "索引数",
+          "sampleSize": "样本数",
+          "avgDocSize": "平均文档大小",
           "contentIndex": "内容索引",
           "schemaVersion": "规范版本"
         },

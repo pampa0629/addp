@@ -271,6 +271,8 @@
           "json": "JSON",
           "geojson": "GeoJSON",
           "parquet": "Parquet",
+          "native": "Native",
+          "source": "Source",
           "refs": "Related Content"
         },
         "fields": {
@@ -303,6 +305,17 @@
           "dbfVersion": "DBF Version",
           "hasCpg": "Has CPG",
           "hasPrj": "Has PRJ",
+          "relkind": "Relkind",
+          "tableType": "Table Type",
+          "kind": "Kind",
+          "sizeBytes": "Size",
+          "step": "Step",
+          "unit": "Unit",
+          "offsetUnit": "Offset Unit",
+          "headerBytes": "Header Bytes",
+          "indexCount": "Index Count",
+          "sampleSize": "Sample Size",
+          "avgDocSize": "Avg Doc Size",
           "contentIndex": "Content Index",
           "schemaVersion": "Schema Version"
         },

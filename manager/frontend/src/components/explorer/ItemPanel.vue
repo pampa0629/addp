@@ -104,6 +104,68 @@
                     <span class="attribute-group-key">{{ group.key }}</span>
                   </div>
 
+                  <div v-if="group.entries.length" class="attribute-items">
+                    <div
+                      v-for="entry in group.entries"
+                      :key="entry.path"
+                      class="attribute-item"
+                    >
+                      <span class="attribute-key">{{ entry.label }}</span>
+                      <span class="attribute-value" :title="entry.title">
+                        {{ entry.display }}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div v-if="group.subgroups.length" class="attribute-subgroups">
+                    <div
+                      v-for="subgroup in group.subgroups"
+                      :key="subgroup.path"
+                      class="attribute-subgroup"
+                    >
+                      <div class="attribute-group-header">
+                        <span class="attribute-group-title">{{ subgroup.title }}</span>
+                        <span class="attribute-group-key">{{ subgroup.key }}</span>
+                      </div>
+
+                      <div v-if="subgroup.entries.length" class="attribute-items attribute-subgroup-items">
+                        <div
+                          v-for="entry in subgroup.entries"
+                          :key="entry.path"
+                          class="attribute-item"
+                        >
+                          <span class="attribute-key">{{ entry.label }}</span>
+                          <span class="attribute-value" :title="entry.title">
+                            {{ entry.display }}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div
+                        v-for="table in subgroup.tables"
+                        :key="table.path"
+                        class="attribute-table-wrap"
+                      >
+                        <div class="attribute-table-title">{{ table.title }}</div>
+                        <el-table
+                          :data="table.rows"
+                          size="small"
+                          border
+                          class="attribute-table"
+                        >
+                          <el-table-column
+                            v-for="column in table.columns"
+                            :key="column.key"
+                            :prop="column.key"
+                            :label="column.label"
+                            min-width="120"
+                            show-overflow-tooltip
+                          />
+                        </el-table>
+                      </div>
+                    </div>
+                  </div>
+
                   <div
                     v-for="table in group.tables"
                     :key="table.path"
@@ -125,19 +187,6 @@
                         show-overflow-tooltip
                       />
                     </el-table>
-                  </div>
-
-                  <div v-if="group.entries.length" class="attribute-items">
-                    <div
-                      v-for="entry in group.entries"
-                      :key="entry.path"
-                      class="attribute-item"
-                    >
-                      <span class="attribute-key">{{ entry.label }}</span>
-                      <span class="attribute-value" :title="entry.title">
-                        {{ entry.display }}
-                      </span>
-                    </div>
                   </div>
                 </div>
               </div>
@@ -231,6 +280,8 @@ const fieldOrder = [
   'row_count',
   'column_count',
   'fields',
+  'native',
+  'source',
   'geometry_columns',
   'extent',
   'primary_geometry_column',
@@ -272,6 +323,8 @@ const groupLabelKeys = {
   json: 'manager.explorer.attributes.groups.json',
   geojson: 'manager.explorer.attributes.groups.geojson',
   parquet: 'manager.explorer.attributes.groups.parquet',
+  native: 'manager.explorer.attributes.groups.native',
+  source: 'manager.explorer.attributes.groups.source',
   refs: 'manager.explorer.attributes.groups.refs'
 }
 
@@ -307,9 +360,22 @@ const fieldLabelKeys = {
   dbf_version: 'manager.explorer.attributes.fields.dbfVersion',
   has_cpg: 'manager.explorer.attributes.fields.hasCpg',
   has_prj: 'manager.explorer.attributes.fields.hasPrj',
+  relkind: 'manager.explorer.attributes.fields.relkind',
+  table_type: 'manager.explorer.attributes.fields.tableType',
+  kind: 'manager.explorer.attributes.fields.kind',
+  size_bytes: 'manager.explorer.attributes.fields.sizeBytes',
+  step: 'manager.explorer.attributes.fields.step',
+  unit: 'manager.explorer.attributes.fields.unit',
+  offset_unit: 'manager.explorer.attributes.fields.offsetUnit',
+  header_bytes: 'manager.explorer.attributes.fields.headerBytes',
+  index_count: 'manager.explorer.attributes.fields.indexCount',
+  sample_size: 'manager.explorer.attributes.fields.sampleSize',
+  avg_doc_size: 'manager.explorer.attributes.fields.avgDocSize',
   content_index: 'manager.explorer.attributes.fields.contentIndex',
   schema_version: 'manager.explorer.attributes.fields.schemaVersion'
 }
+
+const boxedNestedGroupKeys = new Set(['native', 'source'])
 
 const tableColumnLabelKeys = {
   name: 'manager.explorer.attributes.tableColumns.name',
@@ -456,6 +522,7 @@ const buildAttributeSection = (attr) => {
 
 const buildAttributeGroup = (pathParts, value) => {
   const tables = []
+  const subgroups = []
   let groupValue = value
 
   if (isTableRows(value)) {
@@ -478,10 +545,19 @@ const buildAttributeGroup = (pathParts, value) => {
       ))
       delete groupValue[key]
     })
+    boxedNestedGroupKeys.forEach(key => {
+      const childValue = groupValue[key]
+      if (!isStructuredGroupValue(childValue)) return
+      const subgroup = buildAttributeGroup([...pathParts, key], childValue)
+      if (subgroup.count > 0) subgroups.push(subgroup)
+      delete groupValue[key]
+    })
   }
 
   const entries = flattenAttributeValue(groupValue, pathParts, pathParts)
-  const count = entries.length + tables.reduce((total, table) => total + table.rows.length, 0)
+  const tableCount = tables.reduce((total, table) => total + table.rows.length, 0)
+  const subgroupCount = subgroups.reduce((total, subgroup) => total + subgroup.count, 0)
+  const count = entries.length + tableCount + subgroupCount
 
   return {
     key: pathParts.join('.'),
@@ -489,7 +565,8 @@ const buildAttributeGroup = (pathParts, value) => {
     title: translateFromMap(groupLabelKeys, pathParts[pathParts.length - 1], humanizeKey(pathParts[pathParts.length - 1])),
     count,
     entries,
-    tables
+    tables,
+    subgroups
   }
 }
 
@@ -843,6 +920,26 @@ const pickNestedNumber = (source, paths) => {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.attribute-subgroups {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.attribute-subgroup {
+  padding: 10px;
+  border: 1px solid var(--addp-border-color);
+  border-radius: 6px;
+  background: var(--addp-bg-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.attribute-subgroup-items .attribute-item {
+  background: var(--addp-bg-secondary);
 }
 
 .attribute-table-wrap {
