@@ -4,15 +4,17 @@ import (
 	"strings"
 
 	"github.com/addp/common/dataitem"
-	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/meta/internal/models"
 )
 
 func BuildTableAttributes(schemaName string, fields []map[string]interface{}, tableMetadata map[string]interface{}, tableKind, tableComment string) models.JSONMap {
-	table := map[string]interface{}{
-		"fields":         fields,
-		"table_metadata": tableMetadata,
+	table := map[string]interface{}{}
+	if len(fields) > 0 {
+		table["fields"] = fields
+	}
+	if len(tableMetadata) > 0 {
+		table["table_metadata"] = tableMetadata
 	}
 	if tableKind != "" {
 		table["kind"] = tableKind
@@ -139,7 +141,7 @@ func BuildDocumentCollectionAttributes(itemMetadata *plugin.ItemMetadata) models
 		UpsertNested(attrs, "type_info", "table", map[string]interface{}{"indexes": IndexAttributes(itemMetadata.Indexes)})
 	}
 	if len(itemMetadata.Fields) > 0 {
-		UpsertNested(attrs, "type_info", "table", map[string]interface{}{"fields": DocumentFieldAttributes(itemMetadata.Fields)})
+		UpsertNested(attrs, "type_info", "table", map[string]interface{}{"fields": FieldAttributes(itemMetadata.Fields)})
 	}
 	return attrs
 }
@@ -252,24 +254,6 @@ func firstPresent(primary, secondary map[string]interface{}, keys ...string) int
 		}
 	}
 	return nil
-}
-
-func DocumentFieldAttributes(fields []datatype.FieldInfo) []map[string]interface{} {
-	result := make([]map[string]interface{}, 0, len(fields))
-	for _, field := range fields {
-		fieldAttr := map[string]interface{}{
-			"name":           field.Name,
-			"type":           string(field.Type),
-			"nullable":       field.Nullable,
-			"is_primary_key": field.PrimaryKey,
-		}
-		if field.NativeType != "" {
-			fieldAttr["native_type"] = field.NativeType
-		}
-
-		result = append(result, fieldAttr)
-	}
-	return result
 }
 
 func ApplyNamespaceItemAttributes(attrs models.JSONMap, itemType string) {

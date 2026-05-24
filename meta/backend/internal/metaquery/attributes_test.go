@@ -14,7 +14,7 @@ func TestFieldsFromMetaItemReadsTypeInfoTableFields(t *testing.T) {
 			"type_info": map[string]interface{}{
 				"table": map[string]interface{}{
 					"fields": []interface{}{
-						map[string]interface{}{"name": "id", "type": "integer", "is_primary_key": true},
+						map[string]interface{}{"name": "id", "type": "integer", "primary_key": true, "nullable": false},
 					},
 				},
 			},
@@ -86,11 +86,9 @@ func TestSpatialMetadataFromItemReadsCapabilitiesSpatial(t *testing.T) {
 			},
 			"type_info": map[string]interface{}{
 				"table": map[string]interface{}{
-					"table_metadata": map[string]interface{}{
-						"primary_key": []interface{}{"id"},
-					},
+					"primary_key": []interface{}{"id"},
 					"fields": []interface{}{
-						map[string]interface{}{"name": "id", "type": "integer", "is_primary_key": true},
+						map[string]interface{}{"name": "id", "type": "integer", "primary_key": true},
 					},
 				},
 			},

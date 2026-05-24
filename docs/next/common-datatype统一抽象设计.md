@@ -314,6 +314,16 @@ DescribeMedia(...) (*datatype.MediaInfo, error)
 
 当前已完成 reader / writer / Transfer pipeline 侧收敛：`TableReader` 只暴露实际读取 rows 对应的 `Fields()`，空间读取上下文通过可选 `TableSpatialInfoProvider` 提供，空间写出上下文通过 `WriteOptions.SpatialInfo` 提供，Transfer plan / pipeline 单独携带 `SpatialInfo`。
 
+### Meta attributes 存储口径
+
+Meta attributes 是 item 事实的直接 JSON 投影，不是兼容旧实现的包装层。
+
+- `type_info.table` 直接对应 `datatype.TableInfo` 的 JSON 形态。
+- `type_info.table.fields[]` 直接对应 `datatype.FieldInfo` 的 JSON 形态。
+- 字段可空性只写 `nullable`，字段主键标记只写 `primary_key`。
+- 不再写入或运行期兼容 `is_nullable`、`is_primary_key`、`table_type`、`table_comment` 等旧字段。
+- 历史 Meta 数据不做迁移脚本；需要时删除旧 Meta 数据并重新 scan。
+
 ### TableInfo.Native 与 format_info 的边界
 
 `TableInfo.Native` 只承载表级来源原生事实；`format_info.<format>` 仍承载文件、容器、资源整体或格式解析层面的私有事实。二者不是同义词。

@@ -379,9 +379,13 @@ func tableInfoFromMetaAttributes(attrs map[string]interface{}) *datatype.TableIn
 	}
 	info := &datatype.TableInfo{
 		Name:       strings.TrimSpace(commonJSON.InterfaceString(tableAttrs["name"])),
+		Kind:       strings.TrimSpace(commonJSON.InterfaceString(tableAttrs["kind"])),
+		Comment:    strings.TrimSpace(commonJSON.InterfaceString(tableAttrs["comment"])),
 		Fields:     fields,
 		PrimaryKey: interfaceToStringSlice(tableAttrs["primary_key"]),
 		Native:     cloneInterfaceMap(rawMapAttribute(tableAttrs["native"])),
+		CreatedAt:  commonJSON.InterfaceTimePtr(tableAttrs["created_at"]),
+		UpdatedAt:  commonJSON.InterfaceTimePtr(tableAttrs["updated_at"]),
 	}
 	if info.Name == "" {
 		info.Name = "table"
@@ -420,8 +424,9 @@ func tableFieldsFromAttributes(value interface{}) []datatype.FieldInfo {
 		field := datatype.FieldInfo{
 			Name:       name,
 			Type:       fieldType,
-			Nullable:   fieldBoolAttribute(attrs, "nullable", "is_nullable"),
-			PrimaryKey: fieldBoolAttribute(attrs, "is_primary_key"),
+			NativeType: strings.TrimSpace(commonJSON.InterfaceString(attrs["native_type"])),
+			Nullable:   commonJSON.InterfaceBool(attrs["nullable"]),
+			PrimaryKey: commonJSON.InterfaceBool(attrs["primary_key"]),
 			Comment:    strings.TrimSpace(commonJSON.InterfaceString(attrs["comment"])),
 			Size:       int(commonJSON.InterfaceInt64(attrs["size"])),
 			Precision:  int(commonJSON.InterfaceInt64(attrs["precision"])),
@@ -494,33 +499,11 @@ func applyMetaSpatialParseOptions(opts *format.ParseOptions, spatialInfo *dataty
 }
 
 func interfaceSlice(value interface{}) []interface{} {
-	switch typed := value.(type) {
-	case []interface{}:
-		return typed
-	case []map[string]interface{}:
-		result := make([]interface{}, 0, len(typed))
-		for _, item := range typed {
-			result = append(result, item)
-		}
-		return result
-	default:
-		return nil
-	}
+	return commonJSON.InterfaceSlice(value)
 }
 
 func rawMapAttribute(value interface{}) map[string]interface{} {
-	switch typed := value.(type) {
-	case map[string]interface{}:
-		return typed
-	case map[string]string:
-		result := make(map[string]interface{}, len(typed))
-		for key, val := range typed {
-			result[key] = val
-		}
-		return result
-	default:
-		return nil
-	}
+	return commonJSON.InterfaceMap(value)
 }
 
 func cloneInterfaceMap(values map[string]interface{}) map[string]interface{} {
@@ -546,15 +529,6 @@ func interfaceToStringSlice(value interface{}) []string {
 		}
 	}
 	return result
-}
-
-func fieldBoolAttribute(attrs map[string]interface{}, keys ...string) bool {
-	for _, key := range keys {
-		if value, ok := attrs[key]; ok {
-			return commonJSON.InterfaceBool(value)
-		}
-	}
-	return false
 }
 
 func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding, transforms []TransformSpec) (executor.TableSourcePlan, error) {

@@ -360,12 +360,11 @@ func (s *DatabaseScanService) scanTableDetails(
 			primaryKeyName, _ = s.queryPrimaryKeyName(ctx, db, schemaName, tableInfo.Name)
 		}
 
-		tableMetadata := map[string]interface{}{
-			"primary_key":      primaryKeyColumns,
-			"primary_key_name": primaryKeyName,
-			"has_primary_key":  len(primaryKeyColumns) > 0,
+		tableMetadata := map[string]interface{}{}
+		if primaryKeyName != "" {
+			tableMetadata["primary_key_name"] = primaryKeyName
 		}
-		attrs = metaattr.BuildTableAttributes(schemaName, metaattr.FieldAttributesFromDatatype(fields), tableMetadata, tableType(tableInfo), tableComment(tableInfo))
+		attrs = metaattr.BuildTableAttributes(schemaName, metaattr.FieldAttributes(fields), tableMetadata, tableType(tableInfo), tableComment(tableInfo))
 		if len(primaryKeyColumns) > 0 {
 			metaattr.UpsertNested(attrs, "type_info", "table", map[string]interface{}{
 				"primary_key": primaryKeyColumns,
@@ -402,7 +401,6 @@ func (s *DatabaseScanService) scanTableDetails(
 	rowCount := derefInt64Ptr(tableInfo.RowCount)
 	metaattr.UpsertNested(attrs, "type_info", "table", map[string]interface{}{"row_count": rowCount})
 	metaattr.UpsertNested(attrs, "capabilities", "statistics", map[string]interface{}{"row_count": rowCount})
-	metaattr.RemoveTableInfoLegacyKeys(attrs)
 
 	return fields, attrs, nil
 }

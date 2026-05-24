@@ -162,23 +162,7 @@ func (p *ScopeTablePreviewProvider) Preview(ctx context.Context, req *PreviewReq
 
 func scopeTableInfoFromAttributes(attrs map[string]interface{}) (*datatype.TableInfo, error) {
 	tableAttrs := commonJSON.Section(attrs, "type_info.table")
-	if len(tableAttrs) == 0 {
-		return nil, nil
-	}
-	fields := fieldsFromAttribute(tableAttrs["fields"])
-	rowCount := commonJSON.InterfaceInt64(tableAttrs["row_count"])
-	if len(fields) == 0 {
-		return nil, nil
-	}
-	info := &datatype.TableInfo{
-		Name:   "table",
-		Fields: fields,
-		Native: cloneInterfaceMap(rawMapAttribute(tableAttrs["native"])),
-	}
-	if rowCount > 0 {
-		info.RowCount = &rowCount
-	}
-	return info, nil
+	return tableInfoFromTableAttributes(tableAttrs, "table"), nil
 }
 
 func scopeTableSampleOptionsFromAttributes(attrs map[string]interface{}) *format.ParseOptions {

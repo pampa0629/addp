@@ -74,3 +74,24 @@ func TestSectionSupportsNamedStringMapTypes(t *testing.T) {
 		t.Fatalf("String() = %q, want standard.parquet", got)
 	}
 }
+
+func TestInterfaceMapAndSliceSupportNamedTypes(t *testing.T) {
+	t.Parallel()
+
+	type jsonMap map[string]interface{}
+	type jsonSlice []jsonMap
+
+	mapped := InterfaceMap(jsonMap{"name": "orders"})
+	if mapped["name"] != "orders" {
+		t.Fatalf("InterfaceMap() = %#v, want named map converted", mapped)
+	}
+
+	items := InterfaceSlice(jsonSlice{{"name": "id"}, {"name": "name"}})
+	if len(items) != 2 {
+		t.Fatalf("InterfaceSlice() len = %d, want 2", len(items))
+	}
+	first := InterfaceMap(items[0])
+	if first["name"] != "id" {
+		t.Fatalf("InterfaceSlice()[0] = %#v, want first map", items[0])
+	}
+}

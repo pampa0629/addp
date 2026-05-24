@@ -1,6 +1,6 @@
 # Common Engine 引擎插件后续事项
 
-更新时间：2026-05-22
+更新时间：2026-05-24
 
 只保留未决事项。
 
@@ -9,7 +9,8 @@
 1. Common datatype 统一抽象需先完成设计和分阶段迁移，见 [Common Datatype 统一抽象设计](common-datatype统一抽象设计.md)。`common/datatype` 的目标是收拢 ADDP 所有 data type / type info / field type / 横切基础结构；SQL metadata 字段模型只是 table 分支的一部分，后续应服从 `common/datatype`，不继续扩张 `plugin.ColumnInfo` 为平行模型。
 2. SQL metadata provider 实现还需继续收敛：先维护 PostgreSQL、MySQL/Doris、ClickHouse、Spark SQL 的元数据来源和差异矩阵，再只对真实复用点抽 provider 内部 helper。
 3. ClickHouse 字段原生属性是否进入 metadata 结果需要单独设计：`system.columns` 可提供主键、排序键、分区键、默认表达式、codec、TTL 等，但当前 `ColumnInfo` 公共模型较薄，不应为单一引擎直接扩字段；后续应先走 `common/datatype.FieldInfo` 的通用属性审定。
-4. 如果后续调整能力展示 API 或能力字段，要同步检查 `manager/docs/数据预览API重构方案.md`、`system/docs/tables/engines表.md`、`docs/spec/addp引擎能力声明规范.md`、`docs/spec/addp引擎插件接口规范.md`。
+4. Doris 表级 `Native.engine` 暂不启用。虽然 Doris 复用 MySQL-compatible metadata helper，但需要先确认目标 Doris 版本的 `information_schema.tables.engine` 字段是否稳定存在；未确认前不打开 `IncludeEngine`，避免列表 SQL 因原生列差异失败。
+5. 如果后续调整能力展示 API 或能力字段，要同步检查 `manager/docs/数据预览API重构方案.md`、`system/docs/tables/engines表.md`、`docs/spec/addp引擎能力声明规范.md`、`docs/spec/addp引擎插件接口规范.md`。
 
 ## 已冻结口径
 
@@ -36,8 +37,8 @@
 | 引擎 | namespace 术语 | 元数据来源 | 表类型映射 | 字段信息来源 | row count 策略 | 系统 namespace 过滤 | 当前复用边界 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | PostgreSQL | schema | `information_schema.schemata/tables/columns` + `pg_class` + `pg_stat_user_tables` | `BASE TABLE` -> `table`，`VIEW` -> `view`，其他 `table_type` 转小写下划线 | `information_schema.columns`，主键来自约束表，注释来自 `col_description` | 列表和单表 metadata 均使用 `pg_class.reltuples` 统计估算，不主动 `ANALYZE`，不做真实 count | `pg_catalog`、`information_schema`、`pg_toast`、`pg_temp_*`、`pg_toast_*` | 暂留插件内；PostgreSQL 原生 catalog 语义较强，不与 MySQL/Doris 合并 |
-| MySQL | database | `information_schema.schemata/tables/columns` | `BASE TABLE` -> `table`，`VIEW` -> `view`，其他 `table_type` 转小写下划线 | `information_schema.columns`，主键来自 `column_key`，注释来自 `column_comment` | 使用 `information_schema.tables.table_rows` 统计值 | `information_schema`、`mysql`、`performance_schema`、`sys` | 与 Doris 共享 `MySQLCompatibleMetadataDialect` |
-| Doris | database | MySQL 兼容 `information_schema.schemata/tables/columns` | 同 MySQL 兼容逻辑 | 同 MySQL 兼容逻辑，注释能力按引擎实际返回 | 使用 `information_schema.tables.table_rows` 统计值 | MySQL 系统库 + `__internal_schema` | 与 MySQL 共享 `MySQLCompatibleMetadataDialect` |
+| MySQL | database | `information_schema.schemata/tables/columns` | `BASE TABLE` -> `table`，`VIEW` -> `view`，其他 `table_type` 转小写下划线 | `information_schema.columns`，主键来自 `column_key`，注释来自 `column_comment` | 使用 `information_schema.tables.table_rows` 统计值 | `information_schema`、`mysql`、`performance_schema`、`sys` | 与 Doris 共享 `MySQLCompatibleMetadataDialect`；已启用表级 `Native.engine` |
+| Doris | database | MySQL 兼容 `information_schema.schemata/tables/columns` | 同 MySQL 兼容逻辑 | 同 MySQL 兼容逻辑，注释能力按引擎实际返回 | 使用 `information_schema.tables.table_rows` 统计值 | MySQL 系统库 + `__internal_schema` | 与 MySQL 共享 `MySQLCompatibleMetadataDialect`；`Native.engine` 待确认 `information_schema.tables.engine` 稳定性后再启用 |
 | ClickHouse | database | `system.databases`、`system.tables`、`system.columns` | `MaterializedView` -> `materialized_view`，`View`/其他包含 `View` 的 engine -> `view`，其他 -> `table` | `system.columns`，nullable 从类型字符串推断，当前不表达主键 | 使用 `system.tables.total_rows` 统计值 | `system`、`information_schema`、`INFORMATION_SCHEMA` | 暂留插件内；ClickHouse `system.*` 语义独立 |
 | Spark SQL | database | `SHOW DATABASES`、`SHOW TABLES`、`DESCRIBE`，部分环境可查询 `information_schema` | 当前 `SHOW TABLES` 结果统一映射为 `table` | `DESCRIBE table` | 列表阶段不做真实 count；单表 metadata 显式请求时才执行 `COUNT(*)` | `information_schema`、`sys` | 暂留插件内；Spark metadata 更偏命令式接口 |
 

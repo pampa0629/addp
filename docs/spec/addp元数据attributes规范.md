@@ -162,7 +162,9 @@ attributes 分区统一采用以下概念：
 | `graph` | `type_info.graph` | labels、relationships、properties、node_count、edge_count |
 | `unknown` | `type_info.unknown` | detection_reason、fallback_action |
 
-表字段统一放在 `type_info.table.fields`，不得写入 attributes 顶层。字段不是 data item，字段类型只能使用 `type` 表达 ADDP 标准字段类型，不得在字段对象内写入 `data_type`。原生字段类型如需展示，只能作为只读诊断信息写入 `native_type`，不得参与执行决策；哪个字段是空间字段、SRID、extent 等属于 `capabilities.spatial`，不得塞回 `type_info.table`。
+表字段统一放在 `type_info.table.fields`，不得写入 attributes 顶层。`type_info.table` 是 `common/datatype.TableInfo` 的直接 JSON 投影，`type_info.table.fields[]` 是 `common/datatype.FieldInfo` 的直接 JSON 投影。字段不是 data item，字段类型只能使用 `type` 表达 ADDP 标准字段类型，不得在字段对象内写入 `data_type`。原生字段类型如需展示，只能作为只读诊断信息写入 `native_type`，不得参与执行决策；哪个字段是空间字段、SRID、extent 等属于 `capabilities.spatial`，不得塞回 `type_info.table`。
+
+Meta attributes 不维护旧字段兼容层。字段可空性只写 `nullable`，字段主键标记只写 `primary_key`；不得再写 `is_nullable`、`is_primary_key`。历史 Meta 数据如果不符合本规范，应删除后重新扫描，不在运行期做迁移或兼容读取。
 
 `type_info.table.native` 承载表级来源原生事实，例如 CSV 分隔符、Shapefile shape type、Excel 当前 sheet 名称和序号、Parquet 分区列、数据库表引擎或原生表类型。`native` 是单层结构，来源由 item 的 `format` 或 `engine_type` 决定；具体 key 必须由对应 format / engine 白名单约束。文件、容器、资源整体或格式解析层事实仍写入 `format_info.<format>`，例如 Excel 工作簿 sheet 数、默认 sheet、Parquet scope 文件清单、ZIP entry 统计等。
 

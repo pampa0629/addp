@@ -49,29 +49,6 @@ func TestNormalizeMetaItemAttributesKeepsOnlyStandardSections(t *testing.T) {
 	}
 }
 
-func TestNormalizeRemovesLegacyTableInfoKeys(t *testing.T) {
-	t.Parallel()
-
-	normalized := Normalize(models.JSONMap{
-		"type_info": map[string]interface{}{
-			"table": map[string]interface{}{
-				"table_type":    "table",
-				"table_comment": "legacy comment",
-				"kind":          "view",
-				"comment":       "standard comment",
-			},
-		},
-	})
-
-	table := normalized["type_info"].(map[string]interface{})["table"].(map[string]interface{})
-	if table["table_type"] != nil || table["table_comment"] != nil {
-		t.Fatalf("legacy table keys survived: %#v", table)
-	}
-	if table["kind"] != "view" || table["comment"] != "standard comment" {
-		t.Fatalf("standard table keys missing: %#v", table)
-	}
-}
-
 func TestAttributeHelpersWriteStandardPartitions(t *testing.T) {
 	t.Parallel()
 

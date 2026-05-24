@@ -40,8 +40,8 @@ func FieldsFromMetaItem(item models.MetaItem) ([]commonModels.FieldInfo, error) 
 		fieldInfos = append(fieldInfos, commonModels.FieldInfo{
 			Name:         fieldName,
 			Type:         dataType,
-			IsPrimaryKey: toBool(fieldMap["is_primary_key"]),
-			IsNullable:   toBool(fieldMap["is_nullable"]),
+			IsPrimaryKey: toBool(fieldMap["primary_key"]),
+			IsNullable:   toBool(fieldMap["nullable"]),
 			Comment:      toString(fieldMap["comment"]),
 			IsSpatial:    isSpatial,
 			GeometryType: geometryType,
@@ -112,13 +112,9 @@ func SpatialMetadataFromItem(item models.MetaItem) (*models.SpatialMetadataRespo
 		}
 	}
 
-	if tableMeta, ok := mapAttributeFromSection(item.Attributes, "type_info.table", "table_metadata"); ok {
-		if pk, ok := tableMeta["primary_key"].(string); ok {
-			spatialMeta.PrimaryKey = pk
-		} else if pkArray, ok := tableMeta["primary_key"].([]interface{}); ok && len(pkArray) > 0 {
-			if pkStr, ok := pkArray[0].(string); ok {
-				spatialMeta.PrimaryKey = pkStr
-			}
+	if pkArray, ok := sliceAttributeFromSection(item.Attributes, "type_info.table", "primary_key"); ok && len(pkArray) > 0 {
+		if pkStr := toString(pkArray[0]); pkStr != "" {
+			spatialMeta.PrimaryKey = pkStr
 		}
 	}
 
@@ -128,7 +124,7 @@ func SpatialMetadataFromItem(item models.MetaItem) (*models.SpatialMetadataRespo
 				spatialMeta.Fields = append(spatialMeta.Fields, models.FieldInfo{
 					Name:         toString(fieldMap["name"]),
 					Type:         toString(fieldMap["type"]),
-					IsPrimaryKey: toBool(fieldMap["is_primary_key"]),
+					IsPrimaryKey: toBool(fieldMap["primary_key"]),
 				})
 			}
 		}
@@ -218,21 +214,6 @@ func attributeFromSection(attrs models.JSONMap, section, key string) (interface{
 		return value, true
 	}
 	return nil, false
-}
-
-func mapAttributeFromSection(attrs models.JSONMap, section, key string) (map[string]interface{}, bool) {
-	value, ok := attributeFromSection(attrs, section, key)
-	if !ok {
-		return nil, false
-	}
-	switch typed := value.(type) {
-	case map[string]interface{}:
-		return typed, true
-	case models.JSONMap:
-		return map[string]interface{}(typed), true
-	default:
-		return nil, false
-	}
 }
 
 func sliceAttributeFromSection(attrs models.JSONMap, section, key string) ([]interface{}, bool) {

@@ -91,11 +91,16 @@ func TestScopeTableInfoFromAttributes(t *testing.T) {
 	t.Parallel()
 
 	rowCount := int64(42)
+	sizeBytes := int64(4096)
 	info, err := scopeTableInfoFromAttributes(map[string]interface{}{
 		"type_info": map[string]interface{}{
 			"table": map[string]interface{}{
-				"row_count": rowCount,
-				"native":    map[string]interface{}{"partition_columns": []interface{}{"ds"}},
+				"name":       "orders",
+				"kind":       "view",
+				"comment":    "order view",
+				"row_count":  rowCount,
+				"size_bytes": sizeBytes,
+				"native":     map[string]interface{}{"partition_columns": []interface{}{"ds"}},
 				"fields": []interface{}{
 					map[string]interface{}{
 						"name":        "id",
@@ -112,6 +117,12 @@ func TestScopeTableInfoFromAttributes(t *testing.T) {
 	}
 	if info == nil || info.RowCount == nil || *info.RowCount != rowCount {
 		t.Fatalf("table info row count = %#v, want %d", info, rowCount)
+	}
+	if info.Name != "orders" || info.Kind != "view" || info.Comment != "order view" {
+		t.Fatalf("table facts = %#v, want standard name/kind/comment", info)
+	}
+	if info.SizeBytes == nil || *info.SizeBytes != sizeBytes {
+		t.Fatalf("table size = %#v, want %d", info.SizeBytes, sizeBytes)
 	}
 	if len(info.Fields) != 1 || info.Fields[0].Name != "id" || info.Fields[0].Type != datatype.FieldTypeBigInt {
 		t.Fatalf("fields = %#v", info.Fields)

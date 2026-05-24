@@ -275,24 +275,7 @@ func (p *FileTablePreviewProvider) tableInfoFromAttributes(req *PreviewRequest) 
 		attrs = req.Attributes
 	}
 	tableAttrs := commonJSON.Section(attrs, "type_info.table")
-	if len(tableAttrs) == 0 {
-		return nil, nil
-	}
-	fields := fieldsFromAttribute(tableAttrs["fields"])
-	rowCount := commonJSON.InterfaceInt64(tableAttrs["row_count"])
-	if len(fields) == 0 {
-		return nil, nil
-	}
-	info := &datatype.TableInfo{
-		Name:       "table",
-		Fields:     fields,
-		PrimaryKey: interfaceToStringSlice(tableAttrs["primary_key"]),
-		Native:     cloneInterfaceMap(rawMapAttribute(tableAttrs["native"])),
-	}
-	if rowCount > 0 {
-		info.RowCount = &rowCount
-	}
-	return info, nil
+	return tableInfoFromTableAttributes(tableAttrs, "table"), nil
 }
 
 func containerChildNameMatches(child map[string]interface{}, childName string) bool {
@@ -570,7 +553,7 @@ func fieldsFromAttribute(value interface{}) []datatype.FieldInfo {
 			Type:       datatype.FieldType(commonJSON.InterfaceString(attrs["type"])),
 			NativeType: commonJSON.InterfaceString(attrs["native_type"]),
 			Nullable:   commonJSON.InterfaceBool(attrs["nullable"]),
-			PrimaryKey: commonJSON.InterfaceBool(attrs["is_primary_key"]),
+			PrimaryKey: commonJSON.InterfaceBool(attrs["primary_key"]),
 			Comment:    commonJSON.InterfaceString(attrs["comment"]),
 			Size:       int(commonJSON.InterfaceInt64(attrs["size"])),
 			Precision:  int(commonJSON.InterfaceInt64(attrs["precision"])),
@@ -580,30 +563,43 @@ func fieldsFromAttribute(value interface{}) []datatype.FieldInfo {
 	return fields
 }
 
-func interfaceSlice(value interface{}) []interface{} {
-	switch typed := value.(type) {
-	case []interface{}:
-		return typed
-	case []map[string]interface{}:
-		result := make([]interface{}, 0, len(typed))
-		for _, item := range typed {
-			result = append(result, item)
-		}
-		return result
-	default:
+func tableInfoFromTableAttributes(tableAttrs map[string]interface{}, fallbackName string) *datatype.TableInfo {
+	if len(tableAttrs) == 0 {
 		return nil
 	}
+	fields := fieldsFromAttribute(tableAttrs["fields"])
+	if len(fields) == 0 {
+		return nil
+	}
+	name := strings.TrimSpace(commonJSON.InterfaceString(tableAttrs["name"]))
+	if name == "" {
+		name = fallbackName
+	}
+	info := &datatype.TableInfo{
+		Name:       name,
+		Kind:       strings.TrimSpace(commonJSON.InterfaceString(tableAttrs["kind"])),
+		Comment:    strings.TrimSpace(commonJSON.InterfaceString(tableAttrs["comment"])),
+		Fields:     fields,
+		PrimaryKey: interfaceToStringSlice(tableAttrs["primary_key"]),
+		Native:     cloneInterfaceMap(rawMapAttribute(tableAttrs["native"])),
+		CreatedAt:  commonJSON.InterfaceTimePtr(tableAttrs["created_at"]),
+		UpdatedAt:  commonJSON.InterfaceTimePtr(tableAttrs["updated_at"]),
+	}
+	if rowCount := commonJSON.InterfaceInt64(tableAttrs["row_count"]); rowCount > 0 {
+		info.RowCount = &rowCount
+	}
+	if sizeBytes := commonJSON.InterfaceInt64(tableAttrs["size_bytes"]); sizeBytes > 0 {
+		info.SizeBytes = &sizeBytes
+	}
+	return info
+}
+
+func interfaceSlice(value interface{}) []interface{} {
+	return commonJSON.InterfaceSlice(value)
 }
 
 func rawMapAttribute(value interface{}) map[string]interface{} {
-	switch typed := value.(type) {
-	case map[string]interface{}:
-		return typed
-	case models.JSONMap:
-		return map[string]interface{}(typed)
-	default:
-		return nil
-	}
+	return commonJSON.InterfaceMap(value)
 }
 
 func cloneInterfaceMap(values map[string]interface{}) map[string]interface{} {

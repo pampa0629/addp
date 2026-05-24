@@ -263,7 +263,7 @@ func PlanObjectCatalogCompositeItem(engineID uint, composite ObjectCatalogCompos
 
 	attrs := models.JSONMap(metaattr.BuildAttributes(composite.Item))
 	if len(composite.Item.Fields) > 0 {
-		metaattr.SetSchemaFields(attrs, metaattr.FieldAttributesFromFormat(composite.Item.Fields))
+		metaattr.SetSchemaFields(attrs, metaattr.FieldAttributes(composite.Item.Fields))
 	}
 	metaattr.SetStorage(attrs, "bucket", composite.Bucket)
 	metaattr.SetStorage(attrs, "path", parentPath)

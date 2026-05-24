@@ -455,12 +455,18 @@ func TestBuildTableTransferPlanConsumesMetaSingleSourceAttributes(t *testing.T) 
 	spec.Source.Format = ""
 	spec.Source.EndpointResource = EndpointResourceSpec{Kind: EndpointResourceKindFile, Path: "imports/stale.csv"}
 	spec.Source.Attributes = tableSourceAttributes("single", "csv", "imports/meta_roads.csv", nil, []map[string]interface{}{
-		{"name": "id", "type": "bigint", "nullable": false, "is_primary_key": true},
+		{"name": "id", "type": "bigint", "nullable": false, "primary_key": true},
 		{"name": "road_name", "type": "string", "nullable": true},
 	}, nil)
 	spec.Source.Attributes["type_info"].(map[string]interface{})["table"].(map[string]interface{})["native"] = map[string]interface{}{
 		"delimiter": ",",
 	}
+	spec.Source.Attributes["type_info"].(map[string]interface{})["table"].(map[string]interface{})["name"] = "meta_roads"
+	spec.Source.Attributes["type_info"].(map[string]interface{})["table"].(map[string]interface{})["kind"] = "view"
+	spec.Source.Attributes["type_info"].(map[string]interface{})["table"].(map[string]interface{})["comment"] = "roads from meta"
+	spec.Source.Attributes["type_info"].(map[string]interface{})["table"].(map[string]interface{})["size_bytes"] = int64(2048)
+	spec.Source.Attributes["type_info"].(map[string]interface{})["table"].(map[string]interface{})["primary_key"] = []interface{}{"id"}
+	spec.Source.Attributes["type_info"].(map[string]interface{})["table"].(map[string]interface{})["fields"].([]map[string]interface{})[0]["native_type"] = "int8"
 
 	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
 		1: {Type: "nfs"},
@@ -480,6 +486,15 @@ func TestBuildTableTransferPlanConsumesMetaSingleSourceAttributes(t *testing.T) 
 	}
 	if result.Plan.Source.Schema.Fields[0].Type != datatype.FieldTypeBigInt || !result.Plan.Source.Schema.Fields[0].PrimaryKey {
 		t.Fatalf("first source field = %#v, want standard bigint primary key field", result.Plan.Source.Schema.Fields[0])
+	}
+	if result.Plan.Source.Schema.Name != "meta_roads" || result.Plan.Source.Schema.Kind != "view" || result.Plan.Source.Schema.Comment != "roads from meta" {
+		t.Fatalf("source schema facts = %#v, want standard table facts", result.Plan.Source.Schema)
+	}
+	if result.Plan.Source.Schema.SizeBytes == nil || *result.Plan.Source.Schema.SizeBytes != 2048 {
+		t.Fatalf("source schema size = %#v, want 2048", result.Plan.Source.Schema.SizeBytes)
+	}
+	if result.Plan.Source.Schema.Fields[0].NativeType != "int8" || len(result.Plan.Source.Schema.PrimaryKey) != 1 || result.Plan.Source.Schema.PrimaryKey[0] != "id" {
+		t.Fatalf("source schema field/key facts = %#v / %#v", result.Plan.Source.Schema.Fields[0], result.Plan.Source.Schema.PrimaryKey)
 	}
 	if result.Plan.Source.Schema.Native["delimiter"] != "," {
 		t.Fatalf("source schema native = %#v, want delimiter", result.Plan.Source.Schema.Native)

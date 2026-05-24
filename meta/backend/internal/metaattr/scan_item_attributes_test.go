@@ -35,34 +35,18 @@ func TestSpatialMetadataWritesMinimalCapabilitiesSpatial(t *testing.T) {
 	}
 }
 
-func TestFieldAttributesFromFormatWritesSpatialFieldFacts(t *testing.T) {
+func TestFieldAttributesWritesDatatypeFieldFacts(t *testing.T) {
 	t.Parallel()
 
-	fields := FieldAttributesFromFormat([]datatype.FieldInfo{{
-		Name:     "SmGeometry",
-		Type:     datatype.FieldTypeGeometry,
-		Nullable: true,
-	}})
-
-	if len(fields) != 1 {
-		t.Fatalf("fields = %#v, want one field", fields)
-	}
-	field := fields[0]
-	if field["type"] != "geometry" || field["is_spatial"] != true || field["geometry_type"] != "Geometry" {
-		t.Fatalf("spatial field attributes = %#v", field)
-	}
-}
-
-func TestFieldAttributesFromDatatypeWritesStandardFieldFacts(t *testing.T) {
-	t.Parallel()
-
-	fields := FieldAttributesFromDatatype([]datatype.FieldInfo{{
-		Name:       "id",
-		Type:       datatype.FieldTypeInt,
-		NativeType: "int4",
-		Nullable:   false,
-		PrimaryKey: true,
-		Comment:    "identifier",
+	fields := FieldAttributes([]datatype.FieldInfo{{
+		Name:              "id",
+		Type:              datatype.FieldTypeInt,
+		NativeType:        "int4",
+		Nullable:          false,
+		PrimaryKey:        true,
+		Comment:           "identifier",
+		OrdinalPosition:   1,
+		DefaultExpression: "0",
 	}})
 
 	if len(fields) != 1 {
@@ -72,8 +56,14 @@ func TestFieldAttributesFromDatatypeWritesStandardFieldFacts(t *testing.T) {
 	if field["name"] != "id" || field["type"] != "int" || field["native_type"] != "int4" {
 		t.Fatalf("field identity = %#v", field)
 	}
-	if field["is_primary_key"] != true || field["nullable"] != false || field["comment"] != "identifier" {
+	if field["primary_key"] != true || field["nullable"] != false || field["comment"] != "identifier" {
 		t.Fatalf("field facts = %#v", field)
+	}
+	if field["ordinal_position"] != 1 || field["default_expression"] != "0" {
+		t.Fatalf("field extended facts = %#v", field)
+	}
+	if field["is_primary_key"] != nil || field["is_nullable"] != nil || field["is_spatial"] != nil || field["geometry_type"] != nil {
+		t.Fatalf("legacy or cross-cutting field attrs should not be written: %#v", field)
 	}
 }
 
@@ -146,9 +136,6 @@ func TestUpsertTableNativeWritesTypeInfoTableNative(t *testing.T) {
 	if table["kind"] != "table" || table["comment"] != "roads" {
 		t.Fatalf("type_info.table standard attrs = %#v", table)
 	}
-	if table["table_type"] != nil || table["table_comment"] != nil {
-		t.Fatalf("legacy table attrs should not be written: %#v", table)
-	}
 }
 
 func TestTableInfoAttributesWritesStandardTableFacts(t *testing.T) {
@@ -183,9 +170,6 @@ func TestTableInfoAttributesWritesStandardTableFacts(t *testing.T) {
 	native := attrs["native"].(map[string]interface{})
 	if native["relkind"] != "v" {
 		t.Fatalf("native = %#v, want cloned relkind", native)
-	}
-	if attrs["table_type"] != nil || attrs["table_comment"] != nil {
-		t.Fatalf("legacy attrs should not be written: %#v", attrs)
 	}
 }
 

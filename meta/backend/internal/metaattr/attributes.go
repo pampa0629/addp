@@ -19,7 +19,6 @@ func Normalize(attrs models.JSONMap) models.JSONMap {
 	for _, section := range []string{"storage", "item", "type_info", "format_info", "content_index", "capabilities"} {
 		normalized[section] = Section(attrs, section)
 	}
-	RemoveTableInfoLegacyKeys(normalized)
 	return normalized
 }
 
@@ -97,21 +96,6 @@ func UpsertNested(attrs models.JSONMap, section string, namespace string, values
 	attrs[section] = sectionAttrs
 }
 
-func RemoveTableInfoLegacyKeys(attrs models.JSONMap) {
-	if attrs == nil {
-		return
-	}
-	typeInfo := Section(attrs, "type_info")
-	table, ok := typeInfo["table"].(map[string]interface{})
-	if !ok {
-		return
-	}
-	delete(table, "table_type")
-	delete(table, "table_comment")
-	typeInfo["table"] = table
-	attrs["type_info"] = typeInfo
-}
-
 func JSONMap(attrs map[string]interface{}) models.JSONMap {
 	result := models.JSONMap{}
 	for k, v := range attrs {
@@ -120,23 +104,22 @@ func JSONMap(attrs map[string]interface{}) models.JSONMap {
 	return result
 }
 
-func FieldAttributesFromFormat(fields []datatype.FieldInfo) []map[string]interface{} {
-	return FieldAttributesFromDatatype(fields)
-}
-
-func FieldAttributesFromDatatype(fields []datatype.FieldInfo) []map[string]interface{} {
+func FieldAttributes(fields []datatype.FieldInfo) []map[string]interface{} {
 	fieldsData := make([]map[string]interface{}, 0, len(fields))
 	for _, f := range fields {
 		field := map[string]interface{}{
-			"name":           f.Name,
-			"type":           string(f.Type),
-			"is_nullable":    f.Nullable,
-			"nullable":       f.Nullable,
-			"is_primary_key": f.PrimaryKey,
-			"comment":        f.Comment,
+			"name":     f.Name,
+			"type":     string(f.Type),
+			"nullable": f.Nullable,
 		}
 		if f.NativeType != "" {
 			field["native_type"] = f.NativeType
+		}
+		if f.PrimaryKey {
+			field["primary_key"] = true
+		}
+		if f.Comment != "" {
+			field["comment"] = f.Comment
 		}
 		if f.Size > 0 {
 			field["size"] = f.Size
@@ -147,9 +130,17 @@ func FieldAttributesFromDatatype(fields []datatype.FieldInfo) []map[string]inter
 		if f.Scale > 0 {
 			field["scale"] = f.Scale
 		}
-		if datatype.IsSpatialFieldType(f.Type) {
-			field["is_spatial"] = true
-			field["geometry_type"] = NormalizeGeometryType(string(f.Type))
+		if f.OrdinalPosition > 0 {
+			field["ordinal_position"] = f.OrdinalPosition
+		}
+		if f.DefaultExpression != "" {
+			field["default_expression"] = f.DefaultExpression
+		}
+		if f.Generated {
+			field["generated"] = true
+		}
+		if f.GenerationExpression != "" {
+			field["generation_expression"] = f.GenerationExpression
 		}
 		fieldsData = append(fieldsData, field)
 	}

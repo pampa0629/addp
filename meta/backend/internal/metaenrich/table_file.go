@@ -348,7 +348,7 @@ func tableFileSize(files []plugin.FileEntry) int64 {
 }
 
 func tableFileFieldAttributes(fields []datatype.FieldInfo) []map[string]interface{} {
-	return metaattr.FieldAttributesFromFormat(fields)
+	return metaattr.FieldAttributes(fields)
 }
 
 func tableFieldsFromDescribeResult(tableInfo *format.TableDescribeResult) []datatype.FieldInfo {

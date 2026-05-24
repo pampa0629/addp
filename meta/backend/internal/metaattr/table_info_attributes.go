@@ -29,7 +29,7 @@ func TableInfoAttributes(info *datatype.TableInfo) map[string]interface{} {
 		attrs["updated_at"] = info.UpdatedAt
 	}
 	if len(info.Fields) > 0 {
-		attrs["fields"] = FieldAttributesFromDatatype(info.Fields)
+		attrs["fields"] = FieldAttributes(info.Fields)
 	}
 	if len(info.PrimaryKey) > 0 {
 		attrs["primary_key"] = append([]string(nil), info.PrimaryKey...)

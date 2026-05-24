@@ -412,7 +412,7 @@ func (s *FilesystemCatalogScanService) enrichSingleFileAttributes(
 	}
 	attrs := metaattr.JSONMap(metaattr.BuildAttributes(detected))
 	if len(detected.Fields) > 0 {
-		metaattr.SetSchemaFields(attrs, metaattr.FieldAttributesFromFormat(detected.Fields))
+		metaattr.SetSchemaFields(attrs, metaattr.FieldAttributes(detected.Fields))
 	}
 	metacatalog.ApplyContainerSummary(attrs, detected)
 	if detected.DataType == dataitem.DataTypeContainer && contentReader != nil {

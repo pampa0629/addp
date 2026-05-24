@@ -238,10 +238,31 @@ func fieldAttributesFromDatatype(fields []datatype.FieldInfo) []map[string]inter
 			field["native_type"] = f.NativeType
 		}
 		if f.PrimaryKey {
-			field["is_primary_key"] = true
+			field["primary_key"] = true
 		}
 		if f.Comment != "" {
 			field["comment"] = f.Comment
+		}
+		if f.Size > 0 {
+			field["size"] = f.Size
+		}
+		if f.Precision > 0 {
+			field["precision"] = f.Precision
+		}
+		if f.Scale > 0 {
+			field["scale"] = f.Scale
+		}
+		if f.OrdinalPosition > 0 {
+			field["ordinal_position"] = f.OrdinalPosition
+		}
+		if f.DefaultExpression != "" {
+			field["default_expression"] = f.DefaultExpression
+		}
+		if f.Generated {
+			field["generated"] = true
+		}
+		if f.GenerationExpression != "" {
+			field["generation_expression"] = f.GenerationExpression
 		}
 		fieldsData = append(fieldsData, field)
 	}

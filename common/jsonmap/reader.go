@@ -194,6 +194,29 @@ func InterfaceTimePtr(value interface{}) *time.Time {
 	}
 }
 
+// InterfaceMap converts a string-keyed map-like value to map[string]interface{}.
+func InterfaceMap(value interface{}) map[string]interface{} {
+	return interfaceMap(value)
+}
+
+// InterfaceSlice converts common slice shapes to []interface{}.
+func InterfaceSlice(value interface{}) []interface{} {
+	switch typed := value.(type) {
+	case []interface{}:
+		return typed
+	default:
+		rv := reflect.ValueOf(value)
+		if !rv.IsValid() || rv.Kind() != reflect.Slice {
+			return nil
+		}
+		result := make([]interface{}, 0, rv.Len())
+		for i := 0; i < rv.Len(); i++ {
+			result = append(result, rv.Index(i).Interface())
+		}
+		return result
+	}
+}
+
 func interfaceMap(value interface{}) map[string]interface{} {
 	if value == nil {
 		return nil
