@@ -118,7 +118,6 @@ func (t *fieldMappingTransform) TransformSchema(schema *format.TableInfo) (*form
 				CreatedAt:  sourceCopy.CreatedAt,
 				UpdatedAt:  sourceCopy.UpdatedAt,
 			},
-			FormatInfo: sourceCopy.FormatInfo,
 		}
 	}
 	if next == nil {

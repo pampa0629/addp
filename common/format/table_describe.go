@@ -9,10 +9,8 @@ func TableDescribeResultFromSchema(info *TableInfo) *TableDescribeResult {
 		return nil
 	}
 	result := &TableDescribeResult{
-		Table:        DatatypeTableInfo(info),
-		Spatial:      info.SpatialInfo.Clone(),
-		ContentIndex: info.ContentIndex.Clone(),
-		FormatInfo:   cloneInterfaceMap(info.FormatInfo),
+		Table:   DatatypeTableInfo(info),
+		Spatial: info.SpatialInfo.Clone(),
 	}
 	return result
 }
@@ -25,8 +23,6 @@ func TableSchemaFromDescribeResult(result *TableDescribeResult) *TableInfo {
 	}
 	info := FormatTableInfo(result.Table)
 	info.SpatialInfo = result.Spatial.Clone()
-	info.FormatInfo = cloneInterfaceMap(result.FormatInfo)
-	info.ContentIndex = result.ContentIndex.Clone()
 	return info
 }
 

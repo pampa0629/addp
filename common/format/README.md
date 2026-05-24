@@ -431,17 +431,13 @@ info, err := provider.DescribeMedia(ctx, input, nil)
 
 ## Table Operation Schema
 
-`common/datatype.TableInfo` 是 table 类型信息的通用事实源，对应 `attributes.type_info.table`。`common/format.TableInfo` 处于过渡期，只作为 reader / writer / Transfer 的 table operation schema 使用，用来表达执行期所需的字段顺序、写出 schema、采样上下文和格式操作补充信息。
+`common/datatype.TableInfo` 是 table 类型信息的通用事实源，对应 `attributes.type_info.table`。`common/format.TableInfo` 处于过渡期，只作为 reader / writer / Transfer 的 table operation schema 使用，用来表达执行期所需的字段顺序、写出 schema、采样上下文和空间写出补充信息。
 
 ```go
 type TableInfo struct {
-    Name       string
-    RowCount   *int64
-    SizeBytes  *int64
-    CreatedAt  *time.Time
-    UpdatedAt  *time.Time
-    Fields     []datatype.FieldInfo
-    PrimaryKey []string
+    datatype.TableInfo
+
+    SpatialInfo *datatype.SpatialInfo
 }
 ```
 
@@ -452,6 +448,8 @@ Provider 对外返回 `format.TableDescribeResult`。这是 format provider 的�
 - `ContentIndex`：读取优化索引，例如稀疏行索引，写入 `content_index.table`。
 
 `format.TableInfo` 不应成为新的元数据事实源。只读消费方应优先使用 `format.TableDescribeResult` 中的标准事实；只有 reader / writer / sample options / Transfer pipeline 等操作边界才应从 `datatype.TableInfo` 转成 `format.TableInfo`。
+
+`format.TableInfo` 不承载 `FormatInfo` 或 `ContentIndex`。格式私有事实通过 `format.TableDescribeResult.FormatInfo` 或 `FormatInfoProvider` 返回；内容访问索引通过 `format.TableDescribeResult.ContentIndex` 返回。
 
 空间判断应基于标准 `SpatialInfo` / `capabilities.spatial`，不要通过 `format=geojson` 推断。
 

@@ -46,13 +46,6 @@ func (i *Info) FormatAttributes() map[string]interface{} {
 	}
 }
 
-func InfoFromTableInfo(tableInfo *format.TableInfo) *Info {
-	if tableInfo == nil {
-		return nil
-	}
-	return infoFromFacts(tableInfo.FormatInfo, tableInfo.Native)
-}
-
 func InfoFromDescribeResult(result *format.TableDescribeResult) *Info {
 	if result == nil {
 		return nil
@@ -62,11 +55,6 @@ func InfoFromDescribeResult(result *format.TableDescribeResult) *Info {
 		native = result.Table.Native
 	}
 	return infoFromFacts(result.FormatInfo, native)
-}
-
-func FormatAttributesFromTableInfo(tableInfo *format.TableInfo) map[string]interface{} {
-	info := InfoFromTableInfo(tableInfo)
-	return info.FormatAttributes()
 }
 
 func infoFromFacts(formatInfo, native map[string]interface{}) *Info {

@@ -1,6 +1,6 @@
 # Common Datatype 统一抽象设计
 
-更新时间：2026-05-23
+更新时间：2026-05-24
 
 本文是一次较大重构前的设计讨论文档，不是已落地规范。目标是在动代码前统一 `common/datatype` 的职责、数据类型边界和迁移顺序，避免继续在 `common/format`、`common/engine`、`common/dataitem`、Meta、Manager、Transfer 之间形成多套 data type / type info / field type 模型。
 
@@ -288,21 +288,23 @@ DescribeMedia(...) (*datatype.MediaInfo, error)
 
 ### `format.TableInfo` 过渡定位
 
-`format.TableInfo` 当前已嵌入 `datatype.TableInfo`，但仍临时保留 `FormatInfo`、`SpatialInfo`、`ContentIndex` 三个补充字段。这只是迁移过渡，不是最终模型。
+`format.TableInfo` 当前已嵌入 `datatype.TableInfo`，但仍临时保留 `SpatialInfo` 补充字段。这只是迁移过渡，不是最终模型。`FormatInfo` 和 `ContentIndex` 已从 `format.TableInfo` 拆出，只通过 `format.TableDescribeResult` 同级返回并由 Meta 写入 `format_info.<format>`、`content_index.table`。
 
 最终方向：
 
 ```go
 type TableInfo struct {
     datatype.TableInfo
+
+    SpatialInfo *datatype.SpatialInfo
 }
 ```
 
 甚至后续可以删除 `format.TableInfo`，让 reader / writer 直接使用 `datatype.TableInfo`。在删除前，必须先拆掉以下耦合：
 
-- `FormatInfo` 改为只通过 `FormatInfoProvider` 获取。
+- `FormatInfo` 已改为通过 `format.TableDescribeResult.FormatInfo` 或 `FormatInfoProvider` 获取，不再由 table operation schema 承载。
 - `SpatialInfo` 改为独立参数或上层编排携带；Transfer / engine 写入链路已经有 `BatchData.Spatial`、`TableWriteOptions.SpatialInfo`、`TableWriteSessionOptions.SpatialInfo`，可以作为拆分方向参考。
-- `ContentIndex` 改为独立内容索引事实，不由 table schema 承载。
+- `ContentIndex` 已改为独立内容索引事实，不由 table schema 承载。
 
 ### TableInfo.Native 与 format_info 的边界
 
@@ -589,7 +591,7 @@ type SpatialInfo struct {
 | `format.TableDescribeResult` / `format.MediaDescribeResult` | 已迁出 `common/datatype`，作为 format provider 解析结果包存在 | Provider 一次解析自然可能得到多类事实；保留组合返回可以避免重复读取和过度设计 | 保持在 `common/format` provider 边界内，不进入 `datatype`；如后续确有必要，再按事实拆分 provider |
 | `datatype.ContentIndex` | 当前放在 `common/datatype`，被 format、Meta、Manager preview 使用 | 它不是 data type 本体，但当前是跨模块复用结构；贸然移出会引入新包或新概念 | 暂不动。后续结合 engine range reader、format content index、Meta attributes 的消费链路再决定是否移出 |
 | `common/engine/plugin.DatabaseInfo` / `CollectionInfo` | 仍是 engine catalog 层结构 | 它们更接近 catalog hierarchy / namespace 事实，不等同于 data type info | 暂不迁入 `datatype`。后续如有重复，再从 catalog/path/node 语义统一 |
-| `format.TableInfo` | 当前作为 reader / writer / Transfer 操作结构存在，已嵌入 `datatype.TableInfo` | 它还临时承载 `FormatInfo`、`SpatialInfo`、`ContentIndex` 等执行期补充事实 | 继续拆分这些补充字段；最终仅保留 `datatype.TableInfo` 薄壳，或完全删除 |
+| `format.TableInfo` | 当前作为 reader / writer / Transfer 操作结构存在，已嵌入 `datatype.TableInfo` | 它还临时承载 `SpatialInfo` 执行期补充事实；`FormatInfo` 和 `ContentIndex` 已拆出 | 继续拆分 `SpatialInfo`；最终仅保留 `datatype.TableInfo` 薄壳，或完全删除 |
 
 ### `common/engine/plugin.TableInfo` 收敛结论
 

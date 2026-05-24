@@ -5,15 +5,12 @@ import "github.com/addp/common/datatype"
 // TableInfo 是 format reader / writer / Transfer 使用的表操作 schema。
 //
 // 通用 table 类型事实源是 datatype.TableInfo；TableInfo 只在需要字段顺序、
-// 写出 schema、采样上下文或格式操作补充信息的边界使用。
+// 写出 schema、采样上下文或空间写出补充信息的边界使用。
 type TableInfo struct {
 	datatype.TableInfo
 
-	// 可选补充事实。FormatInfo 写入 attributes.format_info.<format>，
-	// SpatialInfo 写入 capabilities.spatial，ContentIndex 写入 content_index.table。
-	FormatInfo   map[string]interface{}
-	SpatialInfo  *datatype.SpatialInfo
-	ContentIndex *datatype.ContentIndex
+	// 可选空间补充事实。SpatialInfo 写入 capabilities.spatial。
+	SpatialInfo *datatype.SpatialInfo
 }
 
 // GetSpatialInfo 获取空间扩展信息（便捷方法）
@@ -37,10 +34,8 @@ func (t *TableInfo) Clone() *TableInfo {
 	}
 	base := t.TableInfo.Clone()
 	return &TableInfo{
-		TableInfo:    *base,
-		FormatInfo:   cloneInterfaceMap(t.FormatInfo),
-		SpatialInfo:  t.SpatialInfo.Clone(),
-		ContentIndex: t.ContentIndex.Clone(),
+		TableInfo:   *base,
+		SpatialInfo: t.SpatialInfo.Clone(),
 	}
 }
 
