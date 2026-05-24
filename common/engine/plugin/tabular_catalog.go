@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/addp/common/datatype"
 	"gorm.io/gorm"
@@ -163,7 +164,23 @@ func DescribeTabularItem(ctx context.Context, callbacks TabularCatalogCallbacks,
 
 	fields := NormalizeFieldInfos(columns)
 
+	tableInfo, hasTableInfo := findTableInfo(ctx, callbacks, db, namespace, table)
 	stats := map[string]interface{}{}
+	kind := CatalogKindTable
+	attrs := map[string]interface{}{
+		"namespace": namespace,
+		"table":     table,
+	}
+	var updatedAt *time.Time
+	if hasTableInfo {
+		kind = tableCatalogKind(tableInfo)
+		stats = tableStats(tableInfo)
+		attrs = tableAttributes(namespace, tableInfo)
+		if _, ok := attrs["table"]; !ok {
+			attrs["table"] = table
+		}
+		updatedAt = tableInfo.UpdatedAt
+	}
 	if callbacks.RowCount != nil {
 		rowCount, err := callbacks.RowCount(ctx, db, namespace, table)
 		if err == nil {
@@ -172,31 +189,29 @@ func DescribeTabularItem(ctx context.Context, callbacks TabularCatalogCallbacks,
 	}
 
 	return &ItemMetadata{
-		Path:   path,
-		Kind:   catalogKindFromTableName(ctx, callbacks, db, namespace, table),
-		Fields: fields,
-		Stats:  stats,
-		Attributes: map[string]interface{}{
-			"namespace": namespace,
-			"table":     table,
-		},
+		Path:       path,
+		Kind:       kind,
+		Fields:     fields,
+		Stats:      stats,
+		Attributes: attrs,
+		UpdatedAt:  updatedAt,
 	}, nil
 }
 
-func catalogKindFromTableName(ctx context.Context, callbacks TabularCatalogCallbacks, db *gorm.DB, namespace, tableName string) string {
+func findTableInfo(ctx context.Context, callbacks TabularCatalogCallbacks, db *gorm.DB, namespace, tableName string) (datatype.TableInfo, bool) {
 	if callbacks.ListTables == nil {
-		return CatalogKindTable
+		return datatype.TableInfo{}, false
 	}
 	tables, err := callbacks.ListTables(ctx, db, namespace)
 	if err != nil {
-		return CatalogKindTable
+		return datatype.TableInfo{}, false
 	}
 	for _, table := range tables {
 		if table.Name == tableName {
-			return tableCatalogKind(table)
+			return table, true
 		}
 	}
-	return CatalogKindTable
+	return datatype.TableInfo{}, false
 }
 
 func tableCatalogKind(table datatype.TableInfo) string {
@@ -221,6 +236,9 @@ func tableStats(table datatype.TableInfo) map[string]interface{} {
 func tableAttributes(namespace string, table datatype.TableInfo) map[string]interface{} {
 	attrs := map[string]interface{}{
 		"namespace": namespace,
+	}
+	if table.Name != "" {
+		attrs["table"] = table.Name
 	}
 	if table.Comment != "" {
 		attrs["comment"] = table.Comment

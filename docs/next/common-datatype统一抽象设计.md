@@ -622,6 +622,7 @@ type SpatialInfo struct {
 - 不新增 `TableCatalogEntry` 等中间公共结构，除非后续出现 `datatype.TableInfo` 无法表达的明确事实。
 - namespace 由 `CatalogPath` / `CatalogSegment` / `NamespaceTerm` 表达，不放入 `datatype.TableInfo`。
 - `SchemaInfo` 已改名为 `NamespaceInfo`，`ListSchemas` 已改名为 `ListNamespaces`，避免把 schema/database 作为同一个含糊概念继续扩散。
+- tabular engine 的 `CatalogProvider.ListChildren` 和 `ItemMetadataProvider.DescribeItem` 必须从同一份 `datatype.TableInfo` 派生表级事实；`Native`、`Comment`、`UpdatedAt`、`SizeBytes` 等不能只在列表入口存在而在详情入口丢失。
 
 ## 和现有模型的收拢关系
 
