@@ -615,6 +615,7 @@ type SpatialInfo struct {
 |---|---|---|---|
 | `format.TableDescribeResult` / `format.MediaDescribeResult` | 已迁出 `common/datatype`，作为 format provider 解析结果包存在 | Provider 一次解析自然可能得到多类事实；保留组合返回可以避免重复读取和过度设计 | 保持在 `common/format` provider 边界内，不进入 `datatype`；如后续确有必要，再按事实拆分 provider |
 | `datatype.ContentIndex` | 当前放在 `common/datatype`，被 format、Meta、Manager preview 使用 | 它不是 data type 本体，但当前是跨模块复用结构；贸然移出会引入新包或新概念 | 暂不动。后续结合 engine range reader、format content index、Meta attributes 的消费链路再决定是否移出 |
+| `capabilities.spatial` 写入 helper | Meta 内仍存在多处手写转换 | 当前不只是结构投影，还夹带单几何顶层 `srid/crs`、空 geometry column 过滤、extent 表示等展示/兼容语义；直接换成 `jsonmap.MapFromStruct` 会改变 attributes 形态 | 先统一 `capabilities.spatial` schema，再决定用专门 helper 或纯 tag 转换 |
 | `common/engine/plugin.DatabaseInfo` / `CollectionInfo` | 仍是 engine catalog 层结构 | 它们更接近 catalog hierarchy / namespace 事实，不等同于 data type info | 暂不迁入 `datatype`。后续如有重复，再从 catalog/path/node 语义统一 |
 | `format.TableInfo` | 已删除 | 原薄壳只重复 `datatype.TableInfo`，没有独立事实边界 | reader / writer / Transfer 直接使用 `datatype.TableInfo` |
 | Manager `Metadata.vue` 历史页面 | 已删除 | 页面未挂路由，且调用的 `managerAPI.scanDataSource/getTables/manageTable/unmanageTable` 已不存在；继续保留会误导为旧 metadata 消费入口 | Manager 元数据展示以 Data Explorer + Meta 标准 attributes 为准；`quick_view` 保留为空间快显 / MVT 预缓存任务表，不承载 table info 事实 |
@@ -744,7 +745,14 @@ datatype.ContentIndex
   -> attributes.content_index.<data_type>
 ```
 
-转换规则必须集中在 Meta，不允许 Manager / Transfer 自己重复解释字段属性和 type info。
+转换规则必须集中在 Meta，不允许 Manager / Transfer 自己重复解释字段属性和 type info。通用的 `struct` / `map[string]interface{}` 转换能力放在 `common/jsonmap`，不放入 `common/datatype`；`datatype` 只定义事实结构和必要的语义 helper。
+
+当前转换收敛口径：
+
+- `TableInfo` / `FieldInfo`：由 `common/datatype` 提供专门 helper，内部复用 `common/jsonmap`，并保留 field type 归一化、空字段过滤、row count / size bytes 有效性等 table 语义。
+- `ContentIndex`：结构已具备明确 json tag，Meta 写入 `content_index.<data_type>` 时直接复用 `common/jsonmap.MapFromStruct`，不再为每个写入点手写 anchors / source / header bytes 转换。
+- `ContainerInfo`：Meta 写入 `type_info.container` 时可以复用 `common/jsonmap` 生成通用字段，但必须保留 container 语义约束：`child_count/resource_count/children` 是明确事实，即使为 0 或空列表也应写入；child 只写轻量摘要，不写 `Fields`；child `Native` 必须过滤 `format/ref_paths/components` 等协议字段。
+- `SpatialInfo`：暂不机械改成统一 tag 转换。原因是当前写入链路仍包含空间展示和兼容语义，例如单几何无字段名时的顶层 `srid/crs`、`geometry_columns` 空项过滤、`extent` 数组化等。后续应先统一 `capabilities.spatial` schema，再收口为专门 helper 或纯 `jsonmap` 转换。
 
 ## 迁移原则
 

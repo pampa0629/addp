@@ -14,6 +14,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
+	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metaitem"
 )
@@ -418,7 +419,7 @@ func tableFileAttributes(formatName string, mode string, fieldsData []map[string
 				}
 			}
 			attrs["content_index"] = map[string]interface{}{
-				"table": indexInfo,
+				"table": commonJSON.MapFromStruct(indexInfo),
 			}
 		}
 	}

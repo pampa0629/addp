@@ -358,7 +358,7 @@ func (e *MetadataExtractor) BuildObjectContentIndexOnDemand(
 	}
 
 	enhancedAttrs := cloneJSONMap(item.Attributes)
-	metaattr.UpsertNested(enhancedAttrs, "content_index", "table", contentIndexAttributes(index))
+	metaattr.UpsertNested(enhancedAttrs, "content_index", "table", commonJSON.MapFromStruct(index))
 	if tableInfo.Table != nil && len(tableInfo.Table.Fields) > 0 {
 		metaattr.UpsertNested(enhancedAttrs, "type_info", "table", metaattr.TableInfoAttributes(tableInfo.Table))
 	}
@@ -387,32 +387,6 @@ func cloneInterfaceMap(attrs map[string]interface{}) map[string]interface{} {
 		cloned[key] = value
 	}
 	return cloned
-}
-
-func contentIndexAttributes(index *datatype.ContentIndex) map[string]interface{} {
-	return map[string]interface{}{
-		"kind":         index.Kind,
-		"data_type":    index.DataType,
-		"format":       index.Format,
-		"unit":         index.Unit,
-		"offset_unit":  index.OffsetUnit,
-		"step":         index.Step,
-		"row_count":    index.RowCount,
-		"header_bytes": index.HeaderBytes,
-		"source":       index.Source,
-		"anchors":      indexAnchorsAttributes(index.Anchors),
-	}
-}
-
-func indexAnchorsAttributes(anchors []datatype.ContentIndexAnchor) []map[string]interface{} {
-	result := make([]map[string]interface{}, 0, len(anchors))
-	for _, anchor := range anchors {
-		result = append(result, map[string]interface{}{
-			"row":         anchor.Row,
-			"byte_offset": anchor.ByteOffset,
-		})
-	}
-	return result
 }
 
 func setExtractionAttribute(attrs models.JSONMap, key string, value interface{}) {

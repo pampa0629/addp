@@ -10,6 +10,7 @@ import (
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
+	commonJSON "github.com/addp/common/jsonmap"
 )
 
 func resolveCatalogPath(engineID uint, path string, catalogPathFor func(path string) plugin.CatalogPath) plugin.CatalogPath {
@@ -147,7 +148,7 @@ func upsertRefTableInfo(item *DetectedItem, tableInfo *format.TableDescribeResul
 		upsertItemSection(&item.Attributes, "capabilities", "spatial", spatialAttrs)
 	}
 	if tableInfo.ContentIndex != nil {
-		upsertItemSection(&item.Attributes, "content_index", "table", contentIndexAttributes(tableInfo.ContentIndex))
+		upsertItemSection(&item.Attributes, "content_index", "table", commonJSON.MapFromStruct(tableInfo.ContentIndex))
 	}
 }
 
@@ -227,38 +228,6 @@ func spatialAttributes(spatialInfo *datatype.SpatialInfo) map[string]interface{}
 	if spatialInfo.Extent != nil {
 		bbox := *spatialInfo.Extent
 		attrs["extent"] = []float64{bbox[0], bbox[1], bbox[2], bbox[3]}
-	}
-	return attrs
-}
-
-func contentIndexAttributes(index *datatype.ContentIndex) map[string]interface{} {
-	if index == nil {
-		return nil
-	}
-	attrs := map[string]interface{}{
-		"kind":        index.Kind,
-		"data_type":   index.DataType,
-		"format":      index.Format,
-		"unit":        index.Unit,
-		"offset_unit": index.OffsetUnit,
-		"step":        index.Step,
-		"row_count":   index.RowCount,
-	}
-	if index.HeaderBytes > 0 {
-		attrs["header_bytes"] = index.HeaderBytes
-	}
-	if len(index.Source) > 0 {
-		attrs["source"] = index.Source
-	}
-	if len(index.Anchors) > 0 {
-		anchors := make([]map[string]interface{}, 0, len(index.Anchors))
-		for _, anchor := range index.Anchors {
-			anchors = append(anchors, map[string]interface{}{
-				"row":         anchor.Row,
-				"byte_offset": anchor.ByteOffset,
-			})
-		}
-		attrs["anchors"] = anchors
 	}
 	return attrs
 }
