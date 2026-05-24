@@ -40,23 +40,23 @@ type FieldRecord struct {
 // 基础扫描只填充基本字段，深度扫描填充完整内容
 type AssetRecord struct {
 	// ===== 基础字段（所有资产，基础扫描即写） =====
-	AssetID       string                 `json:"asset_id"`
-	DocumentID    string                 `json:"document_id,omitempty"` // 文件SHA256指纹（对象特有）
-	TenantID      uint                   `json:"tenant_id"`
-	EngineID      uint                   `json:"engine_id"`
-	EngineName    string                 `json:"engine_name,omitempty"`
-	EngineType    string                 `json:"engine_type,omitempty"`
-	AssetType     string                 `json:"asset_type"` // "table" | "object"
-	Name          string                 `json:"name"`
-	FullName      string                 `json:"full_name,omitempty"`
-	Description   string                 `json:"description,omitempty"`
-	Tags          []string               `json:"tags,omitempty"`
+	AssetID     string   `json:"asset_id"`
+	DocumentID  string   `json:"document_id,omitempty"` // 文件SHA256指纹（对象特有）
+	TenantID    uint     `json:"tenant_id"`
+	EngineID    uint     `json:"engine_id"`
+	EngineName  string   `json:"engine_name,omitempty"`
+	EngineType  string   `json:"engine_type,omitempty"`
+	AssetType   string   `json:"asset_type"` // "table" | "object"
+	Name        string   `json:"name"`
+	FullName    string   `json:"full_name,omitempty"`
+	Description string   `json:"description,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
 
 	// ===== 表特有字段 =====
-	Schema        string         `json:"schema,omitempty"`
-	TableType     string         `json:"table_type,omitempty"`
-	Fields        []FieldRecord  `json:"fields,omitempty"`
-	RowCount      *int64         `json:"row_count,omitempty"`
+	Schema    string        `json:"schema,omitempty"`
+	TableKind string        `json:"table_kind,omitempty"`
+	Fields    []FieldRecord `json:"fields,omitempty"`
+	RowCount  *int64        `json:"row_count,omitempty"`
 
 	// ===== 对象特有字段 =====
 	Bucket        string     `json:"bucket,omitempty"`
@@ -66,9 +66,9 @@ type AssetRecord struct {
 	DataUpdatedAt *time.Time `json:"data_updated_at,omitempty"`
 
 	// ===== 文档内容字段（深度扫描才写） =====
-	Content        string     `json:"content,omitempty"`          // 全文内容
-	ContentPreview string     `json:"content_preview,omitempty"`  // 内容预览
-	DocumentType   string     `json:"document_type,omitempty"`    // pdf/docx/txt
+	Content        string     `json:"content,omitempty"`         // 全文内容
+	ContentPreview string     `json:"content_preview,omitempty"` // 内容预览
+	DocumentType   string     `json:"document_type,omitempty"`   // pdf/docx/txt
 	Title          string     `json:"title,omitempty"`
 	Author         string     `json:"author,omitempty"`
 	Keywords       []string   `json:"keywords,omitempty"`
@@ -78,8 +78,8 @@ type AssetRecord struct {
 	ModifiedDate   *time.Time `json:"modified_date,omitempty"`
 
 	// ===== 通用字段 =====
-	Metadata      map[string]interface{} `json:"metadata,omitempty"`
-	UpdatedAt     time.Time              `json:"updated_at"`
+	Metadata  map[string]interface{} `json:"metadata,omitempty"`
+	UpdatedAt time.Time              `json:"updated_at"`
 }
 
 // NewIndexer 创建索引器（若未配置 Meilisearch URL，则返回禁用状态）
@@ -146,18 +146,18 @@ func (i *Indexer) ensureIndexes() error {
 
 	// 设置可搜索字段（按权重排序）
 	_, err = assetIndex.UpdateSearchableAttributes(&[]string{
-		"name",               // 文件名/表名 - 最高权重
-		"title",              // 文档标题
-		"full_name",          // 完整路径名
-		"path",               // 目录路径（用于路径搜索）
-		"content_preview",    // 内容预览（中等权重）
-		"description",        // 描述
-		"tags",               // 标签
-		"content",            // 全文内容（权重较低但范围广）
-		"fields.name",        // 表字段名
-		"fields.comment",     // 字段注释
-		"keywords",           // 关键词
-		"author",             // 作者
+		"name",            // 文件名/表名 - 最高权重
+		"title",           // 文档标题
+		"full_name",       // 完整路径名
+		"path",            // 目录路径（用于路径搜索）
+		"content_preview", // 内容预览（中等权重）
+		"description",     // 描述
+		"tags",            // 标签
+		"content",         // 全文内容（权重较低但范围广）
+		"fields.name",     // 表字段名
+		"fields.comment",  // 字段注释
+		"keywords",        // 关键词
+		"author",          // 作者
 	})
 	if err != nil {
 		return fmt.Errorf("failed to update asset searchable attributes: %w", err)
@@ -168,11 +168,11 @@ func (i *Indexer) ensureIndexes() error {
 		"tenant_id",
 		"engine_id",
 		"engine_type",
-		"asset_type",     // 可过滤表/对象
+		"asset_type", // 可过滤表/对象
 		"schema",
 		"bucket",
-		"table_type",
-		"document_type",  // 可过滤文档类型
+		"table_kind",
+		"document_type", // 可过滤文档类型
 	})
 	if err != nil {
 		return fmt.Errorf("failed to update asset filterable attributes: %w", err)
@@ -216,7 +216,7 @@ func (i *Indexer) IndexAsset(ctx context.Context, record *AssetRecord) error {
 		"name":            record.Name,
 		"full_name":       record.FullName,
 		"schema":          record.Schema,
-		"table_type":      record.TableType,
+		"table_kind":      record.TableKind,
 		"bucket":          record.Bucket,
 		"path":            record.Path, // 目录路径
 		"description":     record.Description,

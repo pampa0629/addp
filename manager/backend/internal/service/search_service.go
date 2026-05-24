@@ -262,7 +262,7 @@ func (s *HybridSearchService) initIndexes() error {
 		"asset_type", // 可过滤表/对象
 		"schema",
 		"bucket",
-		"table_type",
+		"table_kind",
 		"document_type", // 可过滤文档类型
 	})
 	if err != nil {

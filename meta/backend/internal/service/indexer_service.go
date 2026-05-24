@@ -66,7 +66,7 @@ func (s *IndexerService) IndexTableAsset(resource *commonModels.Engine, tenantID
 		Name:          item.Name,
 		FullName:      item.FullName,
 		Schema:        schemaName,
-		TableType:     tableTypeForIndex(tableInfo),
+		TableKind:     tableKindForIndex(tableInfo),
 		Description:   tableInfo.Comment,
 		RowCount:      item.RowCount,
 		SizeBytes:     item.SizeBytes,
@@ -80,7 +80,7 @@ func (s *IndexerService) IndexTableAsset(resource *commonModels.Engine, tenantID
 	}
 }
 
-func tableTypeForIndex(tableInfo datatype.TableInfo) string {
+func tableKindForIndex(tableInfo datatype.TableInfo) string {
 	if tableInfo.Kind != "" {
 		return tableInfo.Kind
 	}

@@ -143,6 +143,50 @@ func TestUpsertTableNativeWritesTypeInfoTableNative(t *testing.T) {
 	if got["engine"] != "MergeTree" {
 		t.Fatalf("type_info.table.native = %#v", got)
 	}
+	if table["kind"] != "table" || table["comment"] != "roads" {
+		t.Fatalf("type_info.table standard attrs = %#v", table)
+	}
+	if table["table_type"] != nil || table["table_comment"] != nil {
+		t.Fatalf("legacy table attrs should not be written: %#v", table)
+	}
+}
+
+func TestTableInfoAttributesWritesStandardTableFacts(t *testing.T) {
+	t.Parallel()
+
+	rowCount := int64(7)
+	sizeBytes := int64(128)
+	info := &datatype.TableInfo{
+		Name:      "orders",
+		Kind:      "view",
+		Comment:   "order view",
+		RowCount:  &rowCount,
+		SizeBytes: &sizeBytes,
+		Fields: []datatype.FieldInfo{{
+			Name:       "id",
+			Type:       datatype.FieldTypeInt,
+			NativeType: "int4",
+		}},
+		PrimaryKey: []string{"id"},
+		Native:     map[string]interface{}{"relkind": "v"},
+	}
+
+	attrs := TableInfoAttributes(info)
+	info.Native["relkind"] = "r"
+
+	if attrs["name"] != "orders" || attrs["kind"] != "view" || attrs["comment"] != "order view" {
+		t.Fatalf("table identity attrs = %#v", attrs)
+	}
+	if attrs["row_count"] != int64(7) || attrs["size_bytes"] != int64(128) {
+		t.Fatalf("table count attrs = %#v", attrs)
+	}
+	native := attrs["native"].(map[string]interface{})
+	if native["relkind"] != "v" {
+		t.Fatalf("native = %#v, want cloned relkind", native)
+	}
+	if attrs["table_type"] != nil || attrs["table_comment"] != nil {
+		t.Fatalf("legacy attrs should not be written: %#v", attrs)
+	}
 }
 
 func TestApplyNamespaceItemAttributesDoesNotWriteEngineFormat(t *testing.T) {

@@ -19,6 +19,7 @@ func Normalize(attrs models.JSONMap) models.JSONMap {
 	for _, section := range []string{"storage", "item", "type_info", "format_info", "content_index", "capabilities"} {
 		normalized[section] = Section(attrs, section)
 	}
+	RemoveTableInfoLegacyKeys(normalized)
 	return normalized
 }
 
@@ -94,6 +95,21 @@ func UpsertNested(attrs models.JSONMap, section string, namespace string, values
 	}
 	sectionAttrs[namespace] = namespaceAttrs
 	attrs[section] = sectionAttrs
+}
+
+func RemoveTableInfoLegacyKeys(attrs models.JSONMap) {
+	if attrs == nil {
+		return
+	}
+	typeInfo := Section(attrs, "type_info")
+	table, ok := typeInfo["table"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	delete(table, "table_type")
+	delete(table, "table_comment")
+	typeInfo["table"] = table
+	attrs["type_info"] = typeInfo
 }
 
 func JSONMap(attrs map[string]interface{}) models.JSONMap {

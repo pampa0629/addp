@@ -139,7 +139,7 @@ func upsertRefTableInfo(item *DetectedItem, tableInfo *format.TableDescribeResul
 	if item == nil || tableInfo == nil {
 		return
 	}
-	upsertItemSection(&item.Attributes, "type_info", "table", tableAttributes(tableInfo))
+	upsertItemSection(&item.Attributes, "type_info", "table", tableAttributes(tableInfo.Table))
 	if formatAttrs := formatAttributesFromDescribeResult(tableInfo); len(formatAttrs) > 0 {
 		upsertItemSection(&item.Attributes, "format_info", item.Format, formatAttrs)
 	}
@@ -178,19 +178,50 @@ func EnrichKnownMultiTableItem(
 	return item, true, nil
 }
 
-func tableAttributes(tableInfo *format.TableDescribeResult) map[string]interface{} {
-	if tableInfo == nil || tableInfo.Table == nil {
+func formatAttributesFromDescribeResult(tableInfo *format.TableDescribeResult) map[string]interface{} {
+	if tableInfo == nil || len(tableInfo.FormatInfo) == 0 {
 		return nil
 	}
-	attrs := map[string]interface{}{
-		"fields":      fieldAttributesFromDatatype(tableInfo.Table.Fields),
-		"primary_key": append([]string(nil), tableInfo.Table.PrimaryKey...),
+	return tableInfo.FormatInfo
+}
+
+func tableAttributes(info *datatype.TableInfo) map[string]interface{} {
+	if info == nil {
+		return nil
 	}
-	if tableInfo.Table.RowCount != nil {
-		attrs["row_count"] = *tableInfo.Table.RowCount
+	attrs := map[string]interface{}{}
+	if info.Name != "" {
+		attrs["name"] = info.Name
 	}
-	if len(tableInfo.Table.Native) > 0 {
-		attrs["native"] = cloneInterfaceMap(tableInfo.Table.Native)
+	if info.Kind != "" {
+		attrs["kind"] = info.Kind
+	}
+	if info.Comment != "" {
+		attrs["comment"] = info.Comment
+	}
+	if info.RowCount != nil {
+		attrs["row_count"] = *info.RowCount
+	}
+	if info.SizeBytes != nil {
+		attrs["size_bytes"] = *info.SizeBytes
+	}
+	if info.CreatedAt != nil {
+		attrs["created_at"] = info.CreatedAt
+	}
+	if info.UpdatedAt != nil {
+		attrs["updated_at"] = info.UpdatedAt
+	}
+	if len(info.Fields) > 0 {
+		attrs["fields"] = fieldAttributesFromDatatype(info.Fields)
+	}
+	if len(info.PrimaryKey) > 0 {
+		attrs["primary_key"] = append([]string(nil), info.PrimaryKey...)
+	}
+	if len(info.Native) > 0 {
+		attrs["native"] = cloneInterfaceMap(info.Native)
+	}
+	if len(attrs) == 0 {
+		return nil
 	}
 	return attrs
 }
@@ -198,20 +229,23 @@ func tableAttributes(tableInfo *format.TableDescribeResult) map[string]interface
 func fieldAttributesFromDatatype(fields []datatype.FieldInfo) []map[string]interface{} {
 	fieldsData := make([]map[string]interface{}, 0, len(fields))
 	for _, f := range fields {
-		fieldsData = append(fieldsData, map[string]interface{}{
+		field := map[string]interface{}{
 			"name":     f.Name,
 			"type":     string(f.Type),
 			"nullable": f.Nullable,
-		})
+		}
+		if f.NativeType != "" {
+			field["native_type"] = f.NativeType
+		}
+		if f.PrimaryKey {
+			field["is_primary_key"] = true
+		}
+		if f.Comment != "" {
+			field["comment"] = f.Comment
+		}
+		fieldsData = append(fieldsData, field)
 	}
 	return fieldsData
-}
-
-func formatAttributesFromDescribeResult(tableInfo *format.TableDescribeResult) map[string]interface{} {
-	if tableInfo == nil || len(tableInfo.FormatInfo) == 0 {
-		return nil
-	}
-	return tableInfo.FormatInfo
 }
 
 func cloneInterfaceMap(values map[string]interface{}) map[string]interface{} {

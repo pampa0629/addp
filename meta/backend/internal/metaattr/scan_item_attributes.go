@@ -9,33 +9,42 @@ import (
 	"github.com/addp/meta/internal/models"
 )
 
-func BuildTableAttributes(schemaName string, fields []map[string]interface{}, tableMetadata map[string]interface{}, tableType, tableComment string) models.JSONMap {
+func BuildTableAttributes(schemaName string, fields []map[string]interface{}, tableMetadata map[string]interface{}, tableKind, tableComment string) models.JSONMap {
+	table := map[string]interface{}{
+		"fields":         fields,
+		"table_metadata": tableMetadata,
+	}
+	if tableKind != "" {
+		table["kind"] = tableKind
+	}
+	if tableComment != "" {
+		table["comment"] = tableComment
+	}
 	attrs := models.JSONMap{
 		"storage": map[string]interface{}{
 			"schema_name": schemaName,
 		},
 		"type_info": map[string]interface{}{
-			"table": map[string]interface{}{
-				"fields":         fields,
-				"table_metadata": tableMetadata,
-				"table_type":     tableType,
-				"table_comment":  tableComment,
-			},
+			"table": table,
 		},
 	}
 	return attrs
 }
 
-func BuildBasicTableAttributes(schemaName, tableType, tableComment string) models.JSONMap {
+func BuildBasicTableAttributes(schemaName, tableKind, tableComment string) models.JSONMap {
+	table := map[string]interface{}{}
+	if tableKind != "" {
+		table["kind"] = tableKind
+	}
+	if tableComment != "" {
+		table["comment"] = tableComment
+	}
 	return models.JSONMap{
 		"storage": map[string]interface{}{
 			"schema_name": schemaName,
 		},
 		"type_info": map[string]interface{}{
-			"table": map[string]interface{}{
-				"table_type":    tableType,
-				"table_comment": tableComment,
-			},
+			"table": table,
 		},
 	}
 }

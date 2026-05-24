@@ -389,19 +389,20 @@ func (s *DatabaseScanService) scanTableDetails(
 			attrs = existingItem.Attributes
 			metaattr.SetStorage(attrs, "schema_name", schemaName)
 			metaattr.UpsertNested(attrs, "type_info", "table", map[string]interface{}{
-				"table_type":    tableType(tableInfo),
-				"table_comment": tableComment(tableInfo),
+				"kind":    tableType(tableInfo),
+				"comment": tableComment(tableInfo),
 			})
 		} else {
 			attrs = metaattr.BuildBasicTableAttributes(schemaName, tableType(tableInfo), tableComment(tableInfo))
 		}
 	}
-	metaattr.UpsertTableNative(attrs, tableInfo.Native)
+	metaattr.UpsertNested(attrs, "type_info", "table", metaattr.TableInfoAttributes(&tableInfo))
 	metaattr.SetItem(attrs, "layout", string(dataitem.LayoutSingle))
 	metaattr.SetItem(attrs, "data_type", string(dataitem.DataTypeTable))
 	rowCount := derefInt64Ptr(tableInfo.RowCount)
 	metaattr.UpsertNested(attrs, "type_info", "table", map[string]interface{}{"row_count": rowCount})
 	metaattr.UpsertNested(attrs, "capabilities", "statistics", map[string]interface{}{"row_count": rowCount})
+	metaattr.RemoveTableInfoLegacyKeys(attrs)
 
 	return fields, attrs, nil
 }

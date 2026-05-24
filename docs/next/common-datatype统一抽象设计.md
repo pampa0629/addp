@@ -612,7 +612,7 @@ type SpatialInfo struct {
 | `TableName` | `datatype.TableInfo.Name` | table data type 的名称事实，已统一 |
 | `RowCount` | `datatype.TableInfo.RowCount` | table 类型事实，使用 `*int64` 表达未知和 0 的差异 |
 | `SizeBytes` | `datatype.TableInfo.SizeBytes` | table 类型事实，使用 `*int64` 表达未知和 0 的差异 |
-| `Comment` | `datatype.TableInfo.Comment` | 当前写入 `type_info.table.table_comment`，作为通用 table 描述事实 |
+| `Comment` | `datatype.TableInfo.Comment` | 写入 `type_info.table.comment`，作为通用 table 描述事实 |
 | `Kind` | `datatype.TableInfo.Kind` | 平台通用 table 分类，例如 `table`、`view`、`materialized_view`；PostgreSQL `table_type` / `relkind` 等来源原生分类进入 `Native` |
 | `Schema` | catalog / storage / path 事实 | 不进入 `datatype.TableInfo` |
 | `LastModified` | `datatype.TableInfo.UpdatedAt` | 表源端更新时间事实，用于增量判断和 Meta `data_updated_at` |
