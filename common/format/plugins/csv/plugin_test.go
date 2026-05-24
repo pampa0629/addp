@@ -215,12 +215,12 @@ func TestCSVPlugin_OpenTableReader(t *testing.T) {
 
 func TestCSVPlugin_OpenTableWriter(t *testing.T) {
 	plugin := NewPlugin(nil)
-	schema := &format.TableInfo{
-		TableInfo: datatype.TableInfo{Fields: []datatype.FieldInfo{
+	schema := &datatype.TableInfo{
+		Fields: []datatype.FieldInfo{
 			{Name: "id", Type: datatype.FieldTypeInt},
 			{Name: "name", Type: datatype.FieldTypeString},
 			{Name: "note", Type: datatype.FieldTypeString},
-		}},
+		},
 	}
 	var buf bytes.Buffer
 	writer, err := plugin.OpenTableWriter(context.Background(), &buf, schema, nil)
@@ -246,8 +246,8 @@ func TestCSVPlugin_OpenTableWriter(t *testing.T) {
 
 func TestCSVPlugin_OpenTableWriterWithoutHeader(t *testing.T) {
 	plugin := NewPlugin(nil)
-	schema := &format.TableInfo{
-		TableInfo: datatype.TableInfo{Fields: []datatype.FieldInfo{{Name: "id"}, {Name: "name"}}},
+	schema := &datatype.TableInfo{
+		Fields: []datatype.FieldInfo{{Name: "id"}, {Name: "name"}},
 	}
 	opts := format.DefaultWriteOptions()
 	opts.OmitHeader = true
@@ -317,8 +317,8 @@ func TestTSVPluginRegisteredAsTableInfoAndSampleProviders(t *testing.T) {
 
 func TestTSVPlugin_OpenTableWriter(t *testing.T) {
 	plugin := NewTSVPlugin(nil)
-	schema := &format.TableInfo{
-		TableInfo: datatype.TableInfo{Fields: []datatype.FieldInfo{{Name: "id"}, {Name: "name"}}},
+	schema := &datatype.TableInfo{
+		Fields: []datatype.FieldInfo{{Name: "id"}, {Name: "name"}},
 	}
 	var buf bytes.Buffer
 	writer, err := plugin.OpenTableWriter(context.Background(), &buf, schema, nil)

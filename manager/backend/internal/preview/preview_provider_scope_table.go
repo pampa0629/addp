@@ -70,7 +70,7 @@ func (p *ScopeTablePreviewProvider) Preview(ctx context.Context, req *PreviewReq
 		return nil, fmt.Errorf("no scope table sample reader for %s: %w", formatType, err)
 	}
 
-	var tableInfo *format.TableInfo
+	var tableInfo *datatype.TableInfo
 	var rows []map[string]interface{}
 
 	if req.PhysicalPath != "" {
@@ -160,7 +160,7 @@ func (p *ScopeTablePreviewProvider) Preview(ctx context.Context, req *PreviewReq
 	}, nil
 }
 
-func scopeTableInfoFromAttributes(attrs map[string]interface{}) (*format.TableInfo, error) {
+func scopeTableInfoFromAttributes(attrs map[string]interface{}) (*datatype.TableInfo, error) {
 	tableAttrs := commonJSON.Section(attrs, "type_info.table")
 	if len(tableAttrs) == 0 {
 		return nil, nil
@@ -170,12 +170,10 @@ func scopeTableInfoFromAttributes(attrs map[string]interface{}) (*format.TableIn
 	if len(fields) == 0 {
 		return nil, nil
 	}
-	info := &format.TableInfo{
-		TableInfo: datatype.TableInfo{
-			Name:   "table",
-			Fields: fields,
-			Native: cloneInterfaceMap(rawMapAttribute(tableAttrs["native"])),
-		},
+	info := &datatype.TableInfo{
+		Name:   "table",
+		Fields: fields,
+		Native: cloneInterfaceMap(rawMapAttribute(tableAttrs["native"])),
 	}
 	if rowCount > 0 {
 		info.RowCount = &rowCount

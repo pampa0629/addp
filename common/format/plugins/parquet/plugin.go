@@ -221,7 +221,7 @@ func (p *Plugin) Capabilities() format.FormatCapability {
 	}
 }
 
-func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, schema *format.TableInfo, options *format.WriteOptions) (format.TableWriter, error) {
+func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, schema *datatype.TableInfo, options *format.WriteOptions) (format.TableWriter, error) {
 	if err := contextErr(ctx); err != nil {
 		return nil, err
 	}
@@ -260,11 +260,9 @@ func (p *Plugin) OpenTableReader(ctx context.Context, input io.Reader, options *
 		return nil, fmt.Errorf("failed to open parquet file: %w", err)
 	}
 	rowCount := file.NumRows()
-	schema := &format.TableInfo{
-		TableInfo: datatype.TableInfo{
-			Fields:   extractFields(file.Schema()),
-			RowCount: &rowCount,
-		},
+	schema := &datatype.TableInfo{
+		Fields:   extractFields(file.Schema()),
+		RowCount: &rowCount,
 	}
 	schema, err = format.ApplyFieldSelectionToTableInfo(schema, fieldSelectionFromOptions(options))
 	if err != nil {
@@ -321,8 +319,8 @@ func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit
 	// 提取列名（叶子列顺序）
 	fieldNames := extractLeafColumnNames(file.Schema())
 	fieldSelection := fieldSelectionFromOptions(options)
-	if _, err := format.ApplyFieldSelectionToTableInfo(&format.TableInfo{
-		TableInfo: datatype.TableInfo{Fields: extractFields(file.Schema())},
+	if _, err := format.ApplyFieldSelectionToTableInfo(&datatype.TableInfo{
+		Fields: extractFields(file.Schema()),
 	}, fieldSelection); err != nil {
 		return nil, err
 	}
@@ -418,7 +416,7 @@ func appendRows(ctx context.Context, rows parquetgo.Rows, fieldNames []string, l
 type tableReader struct {
 	file           *parquetgo.File
 	fieldNames     []string
-	schema         *format.TableInfo
+	schema         *datatype.TableInfo
 	fieldSelection *format.FieldSelectionOptions
 	rowGroupIndex  int
 	rows           parquetgo.Rows
@@ -540,7 +538,7 @@ func (w *tableWriter) Close(ctx context.Context) error {
 	return nil
 }
 
-func parquetWriterFields(schema *format.TableInfo) []datatype.FieldInfo {
+func parquetWriterFields(schema *datatype.TableInfo) []datatype.FieldInfo {
 	if schema == nil {
 		return nil
 	}
@@ -916,7 +914,7 @@ type scopeTableReader struct {
 	partitionFields   []datatype.FieldInfo
 	parseOptions      *format.ParseOptions
 	fieldSelection    *format.FieldSelectionOptions
-	schema            *format.TableInfo
+	schema            *datatype.TableInfo
 	dataFields        []datatype.FieldInfo
 	index             int
 	currentInput      io.Closer
@@ -994,9 +992,7 @@ func (r *scopeTableReader) openNext(ctx context.Context) error {
 			_ = input.Close()
 			return fmt.Errorf("failed to open parquet table reader for %s: %w", ref.Path, err)
 		}
-		schema := &format.TableInfo{
-			TableInfo: datatype.TableInfo{Fields: tableReader.Fields()},
-		}
+		schema := &datatype.TableInfo{Fields: tableReader.Fields()}
 		if r.schema == nil {
 			r.dataFields = append([]datatype.FieldInfo(nil), schema.Fields...)
 			r.schema, err = format.ApplyFieldSelectionToTableInfo(copyTableInfoWithPartitionFields(schema, r.partitionFields), r.fieldSelection)
@@ -1188,7 +1184,7 @@ func withPartitionValues(rows []map[string]interface{}, partitions []partitionVa
 	return result
 }
 
-func copyTableInfoWithPartitionFields(info *format.TableInfo, partitions []datatype.FieldInfo) *format.TableInfo {
+func copyTableInfoWithPartitionFields(info *datatype.TableInfo, partitions []datatype.FieldInfo) *datatype.TableInfo {
 	if info == nil {
 		return nil
 	}

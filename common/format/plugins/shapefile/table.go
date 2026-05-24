@@ -26,7 +26,7 @@ func (plugin *Plugin) DescribeMultiTable(ctx context.Context, reader contentio.R
 		return nil, err
 	}
 	result := &format.TableDescribeResult{
-		Table:      format.DatatypeTableInfo(info),
+		Table:      info.Clone(),
 		Spatial:    spatialInfo.Clone(),
 		FormatInfo: formatInfo,
 	}
@@ -70,7 +70,7 @@ func (plugin *Plugin) SampleMultiTable(ctx context.Context, reader contentio.Rea
 	return format.ApplyFieldSelectionToRows(rows, opts.FieldSelection), nil
 }
 
-func (plugin *Plugin) describeTableInfoFromHeaders(basePath string, refs []format.RelatedRef, opts *format.ParseOptions) (*format.TableInfo, *datatype.SpatialInfo, map[string]interface{}, error) {
+func (plugin *Plugin) describeTableInfoFromHeaders(basePath string, refs []format.RelatedRef, opts *format.ParseOptions) (*datatype.TableInfo, *datatype.SpatialInfo, map[string]interface{}, error) {
 	encodingName := ""
 	spatialRefSys := ""
 	if opts != nil {
@@ -159,7 +159,7 @@ type shapefileTableInfoInput struct {
 	SpatialRefSys string
 }
 
-func buildShapefileTableInfo(input shapefileTableInfoInput) (*format.TableInfo, *datatype.SpatialInfo) {
+func buildShapefileTableInfo(input shapefileTableInfoInput) (*datatype.TableInfo, *datatype.SpatialInfo) {
 	if input.GeometryField == "" {
 		input.GeometryField = "geometry"
 	}
@@ -197,14 +197,12 @@ func buildShapefileTableInfo(input shapefileTableInfoInput) (*format.TableInfo, 
 		}
 	}
 	info := shapefileInfo(input)
-	return &format.TableInfo{
-		TableInfo: datatype.TableInfo{
-			Name:       "shapefile_data",
-			RowCount:   &rowCount,
-			Fields:     fields,
-			PrimaryKey: []string{},
-			Native:     info.TableNative(),
-		},
+	return &datatype.TableInfo{
+		Name:       "shapefile_data",
+		RowCount:   &rowCount,
+		Fields:     fields,
+		PrimaryKey: []string{},
+		Native:     info.TableNative(),
 	}, spatialInfo
 }
 

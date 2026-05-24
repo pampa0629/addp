@@ -98,7 +98,7 @@ func (plugin *Plugin) OpenMultiTableReader(ctx context.Context, reader contentio
 
 type indexedMultiTableReader struct {
 	source      *indexedMultiTableReadSource
-	schema      *format.TableInfo
+	schema      *datatype.TableInfo
 	spatialInfo *datatype.SpatialInfo
 	opts        *format.ParseOptions
 	offset      int64
@@ -146,7 +146,7 @@ func (r *indexedMultiTableReader) Close(context.Context) error {
 
 type sequentialMultiTableReader struct {
 	reader        *reader
-	schema        *format.TableInfo
+	schema        *datatype.TableInfo
 	spatialInfo   *datatype.SpatialInfo
 	cleanup       func()
 	geometryField string

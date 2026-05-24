@@ -145,7 +145,7 @@ type ScopeTableReaderProvider interface {
 // 调用方负责打开 io.Writer，再交给格式 writer 编码。
 type TableWriterProvider interface {
 	Provider
-	OpenTableWriter(ctx context.Context, output io.Writer, schema *TableInfo, options *WriteOptions) (TableWriter, error)
+	OpenTableWriter(ctx context.Context, output io.Writer, schema *datatype.TableInfo, options *WriteOptions) (TableWriter, error)
 }
 
 // MultiTableWriterProvider 表示格式能够把 table 数据写出为多 ref 资源。
@@ -157,7 +157,7 @@ type TableWriterProvider interface {
 type MultiTableWriterProvider interface {
 	Provider
 	RelatedRefSpecs() []RelatedRefSpec
-	OpenMultiTableWriter(ctx context.Context, writer contentio.Writer, refs []RelatedRef, schema *TableInfo, options *WriteOptions) (TableWriter, error)
+	OpenMultiTableWriter(ctx context.Context, writer contentio.Writer, refs []RelatedRef, schema *datatype.TableInfo, options *WriteOptions) (TableWriter, error)
 }
 
 type TableWriter interface {

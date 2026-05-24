@@ -76,12 +76,10 @@ func TestTableTransferExecutorPreparesNativeTargetOnce(t *testing.T) {
 }
 
 func TestTableInfoFieldsUseStandardTypes(t *testing.T) {
-	fields := tableInfoFields(&format.TableInfo{
-		TableInfo: datatype.TableInfo{
-			Fields: []datatype.FieldInfo{
-				{Name: "value", Type: datatype.FieldTypeFloat},
-				{Name: "name", Type: datatype.FieldTypeString},
-			},
+	fields := tableInfoFields(&datatype.TableInfo{
+		Fields: []datatype.FieldInfo{
+			{Name: "value", Type: datatype.FieldTypeFloat},
+			{Name: "name", Type: datatype.FieldTypeString},
 		},
 	})
 
@@ -94,11 +92,9 @@ func TestTableInfoFieldsUseStandardTypes(t *testing.T) {
 }
 
 func TestTableInfoFieldsCarriesStandardFieldFacts(t *testing.T) {
-	info := &format.TableInfo{
-		TableInfo: datatype.TableInfo{
-			Fields: []datatype.FieldInfo{
-				{Name: "geom", Type: datatype.FieldTypeGeometry},
-			},
+	info := &datatype.TableInfo{
+		Fields: []datatype.FieldInfo{
+			{Name: "geom", Type: datatype.FieldTypeGeometry},
 		},
 	}
 	fields := tableInfoFields(info)

@@ -12,8 +12,8 @@ import (
 
 const defaultBatchSize = 1000
 
-func tableInfoFromBatch(batch *engineplugin.BatchData) *format.TableInfo {
-	info := &format.TableInfo{}
+func tableInfoFromBatch(batch *engineplugin.BatchData) *datatype.TableInfo {
+	info := &datatype.TableInfo{}
 	if batch == nil {
 		return info
 	}
@@ -60,7 +60,7 @@ func contentRefFromCatalogPath(path engineplugin.CatalogPath) contentio.Ref {
 	return contentio.NewRef(stringPath, contentio.RoleMain)
 }
 
-func writeOptionsWithSpatialInfo(opts *format.WriteOptions, info *format.TableInfo, spatialInfo *datatype.SpatialInfo) *format.WriteOptions {
+func writeOptionsWithSpatialInfo(opts *format.WriteOptions, info *datatype.TableInfo, spatialInfo *datatype.SpatialInfo) *format.WriteOptions {
 	next := format.DefaultWriteOptions()
 	if opts != nil {
 		*next = *opts
@@ -69,7 +69,7 @@ func writeOptionsWithSpatialInfo(opts *format.WriteOptions, info *format.TableIn
 	return next
 }
 
-func spatialInfoForWriteOptions(opts *format.WriteOptions, info *format.TableInfo, fallback *datatype.SpatialInfo) *datatype.SpatialInfo {
+func spatialInfoForWriteOptions(opts *format.WriteOptions, info *datatype.TableInfo, fallback *datatype.SpatialInfo) *datatype.SpatialInfo {
 	var spatialInfo *datatype.SpatialInfo
 	if opts != nil && opts.SpatialInfo != nil {
 		spatialInfo = opts.SpatialInfo.Clone()

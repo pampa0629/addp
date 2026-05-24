@@ -286,19 +286,11 @@ DescribeMedia(...) (*datatype.MediaInfo, error)
 | content index | 独立 `datatype.ContentIndex`；由内容索引能力或上层编排生成 |
 | format private info | `FormatInfoProvider.DescribeFormat` 返回裸 `map[string]interface{}` |
 
-### `format.TableInfo` 过渡定位
+### `format.TableInfo` 删除结论
 
-`format.TableInfo` 当前已嵌入 `datatype.TableInfo`，且已不再承载 `FormatInfo`、`ContentIndex`、`SpatialInfo`。这些事实只通过 `format.TableDescribeResult` 同级返回并由 Meta 写入 `format_info.<format>`、`content_index.table`、`capabilities.spatial`。
+`format.TableInfo` 薄壳已删除。`common/format` reader / writer / Transfer 操作边界直接使用 `datatype.TableInfo`，避免 format 和 datatype 维护两套 table schema / table info 表达。
 
-最终方向：
-
-```go
-type TableInfo struct {
-    datatype.TableInfo
-}
-```
-
-甚至后续可以删除 `format.TableInfo`，让 reader / writer 直接使用 `datatype.TableInfo`。在删除前，必须先拆掉以下耦合：
+删除前已经拆掉以下耦合：
 
 - `FormatInfo` 已改为通过 `format.TableDescribeResult.FormatInfo` 或 `FormatInfoProvider` 获取，不再由 table operation schema 承载。
 - `SpatialInfo` 已改为独立参数或上层编排携带；format reader 使用 `TableSpatialInfoProvider`，format writer 使用 `WriteOptions.SpatialInfo`，Transfer / engine 写入链路使用 `BatchData.Spatial`、`TableWriteOptions.SpatialInfo`、`TableWriteSessionOptions.SpatialInfo`。
@@ -345,7 +337,7 @@ type TableInfo struct {
 
 > `format_info` 回答“这个文件、对象或容器的具体格式实现事实是什么”；`capabilities` 回答“这个 data item 可被平台按什么跨格式能力消费”。
 
-表级来源原生事实优先进入 `TableInfo.Native`。下面的 `format_info.<format>` 例子只表示文件、容器、资源整体或当前过渡期还没有拆出的格式事实；后续应按上一节逐步迁出表级事实。
+表级来源原生事实优先进入 `TableInfo.Native`。下面的 `format_info.<format>` 例子只表示文件、容器、资源整体或尚未明确归属到表级的格式事实；新增表级私有事实时应优先放入 `TableInfo.Native`，不要再借 `format_info` 承载。
 
 进入 `format_info.<format>` 的事实满足以下任一条件：
 
@@ -607,7 +599,7 @@ type SpatialInfo struct {
 | `format.TableDescribeResult` / `format.MediaDescribeResult` | 已迁出 `common/datatype`，作为 format provider 解析结果包存在 | Provider 一次解析自然可能得到多类事实；保留组合返回可以避免重复读取和过度设计 | 保持在 `common/format` provider 边界内，不进入 `datatype`；如后续确有必要，再按事实拆分 provider |
 | `datatype.ContentIndex` | 当前放在 `common/datatype`，被 format、Meta、Manager preview 使用 | 它不是 data type 本体，但当前是跨模块复用结构；贸然移出会引入新包或新概念 | 暂不动。后续结合 engine range reader、format content index、Meta attributes 的消费链路再决定是否移出 |
 | `common/engine/plugin.DatabaseInfo` / `CollectionInfo` | 仍是 engine catalog 层结构 | 它们更接近 catalog hierarchy / namespace 事实，不等同于 data type info | 暂不迁入 `datatype`。后续如有重复，再从 catalog/path/node 语义统一 |
-| `format.TableInfo` | 当前作为 reader / writer / Transfer 操作结构存在，已嵌入 `datatype.TableInfo` | `FormatInfo`、`ContentIndex`、`SpatialInfo` 均已拆出 | 后续评估是否完全删除这个薄壳，直接使用 `datatype.TableInfo` |
+| `format.TableInfo` | 已删除 | 原薄壳只重复 `datatype.TableInfo`，没有独立事实边界 | reader / writer / Transfer 直接使用 `datatype.TableInfo` |
 
 ### `common/engine/plugin.TableInfo` 收敛结论
 
@@ -641,7 +633,7 @@ type SpatialInfo struct {
 | `common/format/registry.DataType*` | 改为使用 `datatype.DataType` 的字符串值，不再作为事实源 |
 | `common/format.FormatDataType*` | 删除或改为临时转发，最终由 `datatype` 提供 |
 | `common/format.FieldType` | 迁到 `common/datatype.FieldType` |
-| `common/format.TableInfo` | 已嵌入 `common/datatype.TableInfo`，仅保留 format 操作补充事实 |
+| `common/format.TableInfo` | 已删除，直接使用 `common/datatype.TableInfo` |
 | `common/format.FieldInfo` | 迁到 `common/datatype.FieldInfo` |
 | `common/format.DocumentInfo` | 迁到 `common/datatype.DocumentInfo` |
 | `common/format.MediaInfo` | 迁到 `common/datatype.MediaInfo` |

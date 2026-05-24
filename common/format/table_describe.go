@@ -4,40 +4,26 @@ import "github.com/addp/common/datatype"
 
 // TableDescribeResultFromSchema converts the format operation schema into the
 // common datatype describe result used by metadata attributes.
-func TableDescribeResultFromSchema(info *TableInfo) *TableDescribeResult {
+func TableDescribeResultFromSchema(info *datatype.TableInfo) *TableDescribeResult {
 	if info == nil {
 		return nil
 	}
 	result := &TableDescribeResult{
-		Table: DatatypeTableInfo(info),
+		Table: info.Clone(),
 	}
 	return result
 }
 
 // TableSchemaFromDescribeResult converts a datatype describe result back to
 // the format operation schema needed by readers and writers.
-func TableSchemaFromDescribeResult(result *TableDescribeResult) *TableInfo {
+func TableSchemaFromDescribeResult(result *TableDescribeResult) *datatype.TableInfo {
 	if result == nil {
 		return nil
 	}
-	return FormatTableInfo(result.Table)
-}
-
-func DatatypeTableInfo(info *TableInfo) *datatype.TableInfo {
-	if info == nil {
-		return nil
+	if result.Table == nil {
+		return &datatype.TableInfo{}
 	}
-	return info.TableInfo.Clone()
-}
-
-func FormatTableInfo(info *datatype.TableInfo) *TableInfo {
-	if info == nil {
-		return &TableInfo{}
-	}
-	cloned := info.Clone()
-	return &TableInfo{
-		TableInfo: *cloned,
-	}
+	return result.Table.Clone()
 }
 
 func cloneInterfaceMap(values map[string]interface{}) map[string]interface{} {

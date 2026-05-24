@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/addp/common/datatype"
-	"github.com/addp/common/format"
 )
 
 func isCopyWriteMethod(method string) bool {
@@ -16,7 +15,7 @@ func isCopyWriteMethod(method string) bool {
 	}
 }
 
-func tableInfoFields(info *format.TableInfo) []datatype.FieldInfo {
+func tableInfoFields(info *datatype.TableInfo) []datatype.FieldInfo {
 	if info == nil {
 		return nil
 	}

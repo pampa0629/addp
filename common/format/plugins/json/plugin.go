@@ -95,7 +95,7 @@ func (p *Plugin) Capabilities() format.FormatCapability {
 //
 // 默认写出 JSON 对象数组；通过 WriteOptions.ExtraParams["json_mode"] 设置
 // lines/jsonl/ndjson 时写出 JSON Lines。
-func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, schema *format.TableInfo, options *format.WriteOptions) (format.TableWriter, error) {
+func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, schema *datatype.TableInfo, options *format.WriteOptions) (format.TableWriter, error) {
 	if err := contextErr(ctx); err != nil {
 		return nil, err
 	}
@@ -438,7 +438,7 @@ type tableReader struct {
 	iter          *iterator
 	geometryField string
 	selection     *format.FieldSelectionOptions
-	schema        *format.TableInfo
+	schema        *datatype.TableInfo
 	spatialInfo   *datatype.SpatialInfo
 	closed        bool
 }
@@ -493,7 +493,7 @@ func (r *tableReader) ReadRows(ctx context.Context, limit int) ([]map[string]int
 			result.Table = selected.Table
 			result.Spatial = selected.Spatial
 		}
-		info := format.FormatTableInfo(result.Table)
+		info := result.Table.Clone()
 		r.schema = mergeTableInfo(r.schema, info)
 		if r.spatialInfo == nil && result.Spatial != nil {
 			r.spatialInfo = result.Spatial.Clone()
@@ -741,7 +741,7 @@ func geoJSONGeometry(value interface{}) interface{} {
 	return value
 }
 
-func jsonSchemaFields(schema *format.TableInfo) []string {
+func jsonSchemaFields(schema *datatype.TableInfo) []string {
 	if schema == nil {
 		return nil
 	}
@@ -756,7 +756,7 @@ func jsonSchemaFields(schema *format.TableInfo) []string {
 	return fields
 }
 
-func mergeTableInfo(current, next *format.TableInfo) *format.TableInfo {
+func mergeTableInfo(current, next *datatype.TableInfo) *datatype.TableInfo {
 	if current == nil {
 		return next
 	}

@@ -269,7 +269,7 @@ func (p *FileTablePreviewProvider) previewStreamable(
 	}, nil
 }
 
-func (p *FileTablePreviewProvider) tableInfoFromAttributes(req *PreviewRequest) (*format.TableInfo, error) {
+func (p *FileTablePreviewProvider) tableInfoFromAttributes(req *PreviewRequest) (*datatype.TableInfo, error) {
 	attrs := map[string]interface{}(nil)
 	if req != nil {
 		attrs = req.Attributes
@@ -283,13 +283,11 @@ func (p *FileTablePreviewProvider) tableInfoFromAttributes(req *PreviewRequest) 
 	if len(fields) == 0 {
 		return nil, nil
 	}
-	info := &format.TableInfo{
-		TableInfo: datatype.TableInfo{
-			Name:       "table",
-			Fields:     fields,
-			PrimaryKey: interfaceToStringSlice(tableAttrs["primary_key"]),
-			Native:     cloneInterfaceMap(rawMapAttribute(tableAttrs["native"])),
-		},
+	info := &datatype.TableInfo{
+		Name:       "table",
+		Fields:     fields,
+		PrimaryKey: interfaceToStringSlice(tableAttrs["primary_key"]),
+		Native:     cloneInterfaceMap(rawMapAttribute(tableAttrs["native"])),
 	}
 	if rowCount > 0 {
 		info.RowCount = &rowCount
@@ -355,7 +353,7 @@ func (p *FileTablePreviewProvider) openSampleReader(
 	ctx context.Context,
 	contentReader contentio.Reader,
 	fullPath string,
-	tableInfo *format.TableInfo,
+	tableInfo *datatype.TableInfo,
 	opts *format.ParseOptions,
 	req *PreviewRequest,
 	offset int,
@@ -417,7 +415,7 @@ func contentIndexObjectKey(req *PreviewRequest, bucket string, fullPath string) 
 
 func (p *FileTablePreviewProvider) openIndexedRangeReader(
 	ctx context.Context,
-	tableInfo *format.TableInfo,
+	tableInfo *datatype.TableInfo,
 	opts *format.ParseOptions,
 	req *PreviewRequest,
 	offset int,
@@ -472,7 +470,7 @@ func (p *FileTablePreviewProvider) openIndexedRangeReader(
 	return reader, positionedTableSampleOptions(opts, tableInfo, anchor.Row), true
 }
 
-func positionedTableSampleOptions(opts *format.ParseOptions, tableInfo *format.TableInfo, row int64) *format.ParseOptions {
+func positionedTableSampleOptions(opts *format.ParseOptions, tableInfo *datatype.TableInfo, row int64) *format.ParseOptions {
 	baseOpts := format.DefaultParseOptions()
 	if opts != nil {
 		copied := *opts
@@ -936,7 +934,7 @@ func fileSystemPathFromPreviewRequest(req *PreviewRequest) string {
 }
 
 // detectGeometryColumns 检测几何列
-func (p *FileTablePreviewProvider) detectGeometryColumns(tableInfo *format.TableInfo) []string {
+func (p *FileTablePreviewProvider) detectGeometryColumns(tableInfo *datatype.TableInfo) []string {
 	var geometryColumns []string
 	for _, field := range tableInfo.Fields {
 		if field.Type == datatype.FieldTypeGeometry {

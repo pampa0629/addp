@@ -75,7 +75,7 @@ func determineShapefileDimension(shapeType shp.ShapeType) int {
 	}
 }
 
-func shapeTypeFromSchema(schema *format.TableInfo, spatialInfo *datatype.SpatialInfo) (shp.ShapeType, error) {
+func shapeTypeFromSchema(schema *datatype.TableInfo, spatialInfo *datatype.SpatialInfo) (shp.ShapeType, error) {
 	geometryType := ""
 	dimension := 0
 	if spatialInfo != nil {

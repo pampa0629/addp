@@ -223,7 +223,7 @@ func (p providerTestMultiTableWriterProvider) RelatedRefSpecs() []RelatedRefSpec
 	return []RelatedRefSpec{{Extension: ".main", Role: "main", Required: true, Primary: true}}
 }
 
-func (p providerTestMultiTableWriterProvider) OpenMultiTableWriter(context.Context, contentio.Writer, []RelatedRef, *TableInfo, *WriteOptions) (TableWriter, error) {
+func (p providerTestMultiTableWriterProvider) OpenMultiTableWriter(context.Context, contentio.Writer, []RelatedRef, *datatype.TableInfo, *WriteOptions) (TableWriter, error) {
 	return nil, nil
 }
 

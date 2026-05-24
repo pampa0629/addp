@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/addp/common/datatype"
-	"github.com/addp/common/format"
 )
 
 type tableInfoBuilder struct {
@@ -120,9 +119,12 @@ func (b *tableInfoBuilder) Build() tableInfoBuildResult {
 	return result
 }
 
-func (b *tableInfoBuilder) BuildSchema() *format.TableInfo {
+func (b *tableInfoBuilder) BuildSchema() *datatype.TableInfo {
 	result := b.Build()
-	return format.FormatTableInfo(result.Table)
+	if result.Table == nil {
+		return &datatype.TableInfo{}
+	}
+	return result.Table.Clone()
 }
 
 func (b *tableInfoBuilder) BuildTableInfo() *datatype.TableInfo {

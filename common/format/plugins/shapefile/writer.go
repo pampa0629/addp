@@ -59,7 +59,7 @@ func (w *writer) normalizeDBFFilePath() {
 
 var _ format.MultiTableWriterProvider = (*Plugin)(nil)
 
-func (plugin *Plugin) OpenMultiTableWriter(ctx context.Context, output contentio.Writer, refs []format.RelatedRef, schema *format.TableInfo, options *format.WriteOptions) (format.TableWriter, error) {
+func (plugin *Plugin) OpenMultiTableWriter(ctx context.Context, output contentio.Writer, refs []format.RelatedRef, schema *datatype.TableInfo, options *format.WriteOptions) (format.TableWriter, error) {
 	if output == nil {
 		return nil, fmt.Errorf("ref writer cannot be nil")
 	}
@@ -193,7 +193,7 @@ func (w *multiTableWriter) Close(ctx context.Context) error {
 	return nil
 }
 
-func multiWriterGeometryField(schema *format.TableInfo, opts *format.WriteOptions) string {
+func multiWriterGeometryField(schema *datatype.TableInfo, opts *format.WriteOptions) string {
 	if opts != nil {
 		if value, ok := stringWriteOption(opts, "geometry_field"); ok {
 			return strings.TrimSpace(value)

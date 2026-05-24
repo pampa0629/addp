@@ -172,13 +172,13 @@ func TestParquetPluginFieldSelectionMissingFieldPolicies(t *testing.T) {
 
 func TestParquetPluginOpenTableWriter(t *testing.T) {
 	plugin := NewPlugin()
-	schema := &format.TableInfo{
-		TableInfo: datatype.TableInfo{Fields: []datatype.FieldInfo{
+	schema := &datatype.TableInfo{
+		Fields: []datatype.FieldInfo{
 			{Name: "id", Type: datatype.FieldTypeBigInt},
 			{Name: "name", Type: datatype.FieldTypeString, Nullable: true},
 			{Name: "score", Type: datatype.FieldTypeDouble, Nullable: true},
 			{Name: "active", Type: datatype.FieldTypeBool, Nullable: true},
-		}},
+		},
 	}
 	var buf bytes.Buffer
 
@@ -214,11 +214,11 @@ func TestParquetPluginOpenTableWriter(t *testing.T) {
 
 func TestParquetPluginOpenTableWriterSerializesJSONLikeFields(t *testing.T) {
 	plugin := NewPlugin()
-	schema := &format.TableInfo{
-		TableInfo: datatype.TableInfo{Fields: []datatype.FieldInfo{
+	schema := &datatype.TableInfo{
+		Fields: []datatype.FieldInfo{
 			{Name: "id", Type: datatype.FieldTypeInt},
 			{Name: "payload", Type: datatype.FieldTypeJSON, Nullable: true},
-		}},
+		},
 	}
 	var buf bytes.Buffer
 
@@ -429,7 +429,7 @@ func TestParquetPluginOpenTableScopeReader(t *testing.T) {
 	if first[0]["dt"] != "2026-05-05" || first[1]["dt"] != "2026-05-06" || second[0]["dt"] != "2026-05-06" {
 		t.Fatalf("partition values = %#v %#v, want dt from path", first, second)
 	}
-	schema := &format.TableInfo{TableInfo: datatype.TableInfo{Fields: tableReader.Fields()}}
+	schema := &datatype.TableInfo{Fields: tableReader.Fields()}
 	if field := schema.GetField("dt"); field == nil || field.Type != datatype.FieldTypeString {
 		t.Fatalf("schema partition field dt = %#v, want string field", field)
 	}

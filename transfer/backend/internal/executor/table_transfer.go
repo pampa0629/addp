@@ -26,7 +26,7 @@ type TableSourcePlan struct {
 	Format       format.FormatType
 	Layout       format.Layout
 	ParseOptions *format.ParseOptions
-	Schema       *format.TableInfo
+	Schema       *datatype.TableInfo
 	SpatialInfo  *datatype.SpatialInfo
 	RelatedRefs  []format.RelatedRef
 }

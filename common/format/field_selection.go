@@ -6,7 +6,7 @@ import (
 	"github.com/addp/common/datatype"
 )
 
-func ApplyFieldSelectionToTableInfo(info *TableInfo, selection *FieldSelectionOptions) (*TableInfo, error) {
+func ApplyFieldSelectionToTableInfo(info *datatype.TableInfo, selection *FieldSelectionOptions) (*datatype.TableInfo, error) {
 	if info == nil || selection == nil || len(selection.Include) == 0 {
 		return info, nil
 	}

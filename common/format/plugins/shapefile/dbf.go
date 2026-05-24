@@ -62,7 +62,7 @@ type shapefileDBFSchemaInfo struct {
 	originalNames []string
 }
 
-func shapefileDBFSchema(schema *format.TableInfo, geometryField string) shapefileDBFSchemaInfo {
+func shapefileDBFSchema(schema *datatype.TableInfo, geometryField string) shapefileDBFSchemaInfo {
 	info := shapefileDBFSchemaInfo{
 		fields:        make([]shp.Field, 0, len(schema.Fields)),
 		originalNames: make([]string, 0, len(schema.Fields)),

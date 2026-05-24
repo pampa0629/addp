@@ -77,7 +77,7 @@ func newIndexedMultiTableReadSource(ctx context.Context, plugin *Plugin, refs []
 	}, true, nil
 }
 
-func (s *indexedMultiTableReadSource) describeTable(ctx context.Context, refs []format.RelatedRef, opts *format.ParseOptions) (*format.TableInfo, *datatype.SpatialInfo, error) {
+func (s *indexedMultiTableReadSource) describeTable(ctx context.Context, refs []format.RelatedRef, opts *format.ParseOptions) (*datatype.TableInfo, *datatype.SpatialInfo, error) {
 	shpHeader, err := readSHPHeaderIndexed(ctx, s.rangeReader, s.shpRef)
 	if err != nil {
 		return nil, nil, err

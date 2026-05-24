@@ -11,12 +11,12 @@ func TestTableDescribeConversionsKeepDatatypeFields(t *testing.T) {
 		{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 18, Scale: 4},
 		{Name: "name", Type: datatype.FieldTypeString, Size: 64},
 	}
-	schema := &TableInfo{TableInfo: datatype.TableInfo{
+	schema := &datatype.TableInfo{
 		Name:    "orders",
 		Kind:    "table",
 		Comment: "order facts",
 		Fields:  fields,
-	}}
+	}
 
 	result := TableDescribeResultFromSchema(schema)
 	if len(result.Table.Fields) != 2 {
@@ -37,6 +37,6 @@ func TestTableDescribeConversionsKeepDatatypeFields(t *testing.T) {
 		t.Fatalf("round trip precision/scale = %d/%d, want 18/4", roundTrip.Fields[0].Precision, roundTrip.Fields[0].Scale)
 	}
 	if roundTrip.Name != "orders" || roundTrip.Kind != "table" || roundTrip.Comment != "order facts" {
-		t.Fatalf("round trip table facts = %#v", roundTrip.TableInfo)
+		t.Fatalf("round trip table facts = %#v", roundTrip)
 	}
 }

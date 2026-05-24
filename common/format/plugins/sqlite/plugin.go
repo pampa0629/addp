@@ -210,7 +210,7 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 		spatial = applyGeoPackageSpatialInfo(ctx, db, info)
 	}
 	return &format.TableDescribeResult{
-		Table:   format.DatatypeTableInfo(info),
+		Table:   info.Clone(),
 		Spatial: spatial.Clone(),
 	}, nil
 }
@@ -276,19 +276,19 @@ func (p *Plugin) analysisOptions(options *format.ParseOptions) *Options {
 	return &result
 }
 
-func firstSQLiteTable(result *AnalysisResult) *TableInfo {
+func firstSQLiteTable(result *AnalysisResult) *datatype.TableInfo {
 	if result == nil {
 		return nil
 	}
 	for i := range result.Metadata.Tables {
 		if strings.EqualFold(result.Metadata.Tables[i].Type, "table") {
-			return &result.Metadata.Tables[i]
+			return sqliteTableInfoToFormatTable(result.Metadata.Tables[i])
 		}
 	}
 	if len(result.Metadata.Tables) == 0 {
 		return nil
 	}
-	return &result.Metadata.Tables[0]
+	return sqliteTableInfoToFormatTable(result.Metadata.Tables[0])
 }
 
 func describeSQLiteTable(ctx context.Context, db *sql.DB, tableName string) (TableInfo, error) {
@@ -308,7 +308,7 @@ func describeSQLiteTable(ctx context.Context, db *sql.DB, tableName string) (Tab
 	return analyzeTable(ctx, db, tableName, strings.ToLower(objectType), opts)
 }
 
-func sqliteTableInfoToFormatTable(table TableInfo) *format.TableInfo {
+func sqliteTableInfoToFormatTable(table TableInfo) *datatype.TableInfo {
 	fields := make([]datatype.FieldInfo, 0, len(table.Columns))
 	primaryKey := make([]string, 0)
 	for _, column := range table.Columns {
@@ -323,14 +323,12 @@ func sqliteTableInfoToFormatTable(table TableInfo) *format.TableInfo {
 			primaryKey = append(primaryKey, column.Name)
 		}
 	}
-	return &format.TableInfo{
-		TableInfo: datatype.TableInfo{
-			Name:       table.Name,
-			Kind:       sqliteTableKind(table.Type),
-			RowCount:   table.RowCount,
-			Fields:     fields,
-			PrimaryKey: primaryKey,
-		},
+	return &datatype.TableInfo{
+		Name:       table.Name,
+		Kind:       sqliteTableKind(table.Type),
+		RowCount:   table.RowCount,
+		Fields:     fields,
+		PrimaryKey: primaryKey,
 	}
 }
 

@@ -5,8 +5,6 @@ import (
 	"database/sql"
 	"github.com/addp/common/datatype"
 	"strings"
-
-	"github.com/addp/common/format"
 )
 
 type geoPackageLayer struct {
@@ -46,7 +44,7 @@ func readGeoPackageLayers(ctx context.Context, db *sql.DB) map[string]geoPackage
 	return result
 }
 
-func applyGeoPackageSpatialInfo(ctx context.Context, db *sql.DB, info *format.TableInfo) *datatype.SpatialInfo {
+func applyGeoPackageSpatialInfo(ctx context.Context, db *sql.DB, info *datatype.TableInfo) *datatype.SpatialInfo {
 	if info == nil {
 		return nil
 	}

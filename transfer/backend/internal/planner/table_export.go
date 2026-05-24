@@ -368,7 +368,7 @@ func relatedRefSpecKey(spec format.RelatedRefSpec) string {
 	return role + ":" + ext
 }
 
-func tableInfoFromMetaAttributes(attrs map[string]interface{}) *format.TableInfo {
+func tableInfoFromMetaAttributes(attrs map[string]interface{}) *datatype.TableInfo {
 	tableAttrs := commonJSON.Section(attrs, "type_info.table")
 	if len(tableAttrs) == 0 {
 		return nil
@@ -377,13 +377,11 @@ func tableInfoFromMetaAttributes(attrs map[string]interface{}) *format.TableInfo
 	if len(fields) == 0 {
 		return nil
 	}
-	info := &format.TableInfo{
-		TableInfo: datatype.TableInfo{
-			Name:       strings.TrimSpace(commonJSON.InterfaceString(tableAttrs["name"])),
-			Fields:     fields,
-			PrimaryKey: interfaceToStringSlice(tableAttrs["primary_key"]),
-			Native:     cloneInterfaceMap(rawMapAttribute(tableAttrs["native"])),
-		},
+	info := &datatype.TableInfo{
+		Name:       strings.TrimSpace(commonJSON.InterfaceString(tableAttrs["name"])),
+		Fields:     fields,
+		PrimaryKey: interfaceToStringSlice(tableAttrs["primary_key"]),
+		Native:     cloneInterfaceMap(rawMapAttribute(tableAttrs["native"])),
 	}
 	if info.Name == "" {
 		info.Name = "table"

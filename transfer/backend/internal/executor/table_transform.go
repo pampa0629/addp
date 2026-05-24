@@ -7,11 +7,10 @@ import (
 
 	"github.com/addp/common/datatype"
 	engineplugin "github.com/addp/common/engine/plugin"
-	"github.com/addp/common/format"
 )
 
 type tableTransform interface {
-	TransformSchema(schema *format.TableInfo, spatialInfo *datatype.SpatialInfo) (*format.TableInfo, *datatype.SpatialInfo, error)
+	TransformSchema(schema *datatype.TableInfo, spatialInfo *datatype.SpatialInfo) (*datatype.TableInfo, *datatype.SpatialInfo, error)
 	TransformBatch(ctx context.Context, batch *engineplugin.BatchData) (*engineplugin.BatchData, error)
 }
 
@@ -38,7 +37,7 @@ func buildTableTransforms(plans []TableTransformPlan) ([]tableTransform, error) 
 	return transforms, nil
 }
 
-func applySchemaTransforms(schema *format.TableInfo, spatialInfo *datatype.SpatialInfo, transforms []tableTransform) (*format.TableInfo, *datatype.SpatialInfo, error) {
+func applySchemaTransforms(schema *datatype.TableInfo, spatialInfo *datatype.SpatialInfo, transforms []tableTransform) (*datatype.TableInfo, *datatype.SpatialInfo, error) {
 	next := schema.Clone()
 	nextSpatial := spatialInfo.Clone()
 	for _, transform := range transforms {
@@ -49,7 +48,7 @@ func applySchemaTransforms(schema *format.TableInfo, spatialInfo *datatype.Spati
 		}
 	}
 	if next == nil {
-		next = &format.TableInfo{}
+		next = &datatype.TableInfo{}
 	}
 	return next, nextSpatial, nil
 }
@@ -96,33 +95,31 @@ func newFieldMappingTransform(plan FieldMappingTransformPlan) (*fieldMappingTran
 	return &fieldMappingTransform{mode: mode, fields: fields}, nil
 }
 
-func (t *fieldMappingTransform) TransformSchema(schema *format.TableInfo, spatialInfo *datatype.SpatialInfo) (*format.TableInfo, *datatype.SpatialInfo, error) {
+func (t *fieldMappingTransform) TransformSchema(schema *datatype.TableInfo, spatialInfo *datatype.SpatialInfo) (*datatype.TableInfo, *datatype.SpatialInfo, error) {
 	if t == nil {
 		return schema.Clone(), spatialInfo.Clone(), nil
 	}
 	source := schema.Clone()
 	if source == nil {
-		source = &format.TableInfo{}
+		source = &datatype.TableInfo{}
 	}
 
-	var next *format.TableInfo
+	var next *datatype.TableInfo
 	if t.mode == FieldMappingModePassthrough {
 		next = source.Clone()
 	} else {
 		sourceCopy := source.Clone()
-		next = &format.TableInfo{
-			TableInfo: datatype.TableInfo{
-				Name:       source.Name,
-				PrimaryKey: sourceCopy.PrimaryKey,
-				RowCount:   sourceCopy.RowCount,
-				SizeBytes:  sourceCopy.SizeBytes,
-				CreatedAt:  sourceCopy.CreatedAt,
-				UpdatedAt:  sourceCopy.UpdatedAt,
-			},
+		next = &datatype.TableInfo{
+			Name:       source.Name,
+			PrimaryKey: sourceCopy.PrimaryKey,
+			RowCount:   sourceCopy.RowCount,
+			SizeBytes:  sourceCopy.SizeBytes,
+			CreatedAt:  sourceCopy.CreatedAt,
+			UpdatedAt:  sourceCopy.UpdatedAt,
 		}
 	}
 	if next == nil {
-		next = &format.TableInfo{}
+		next = &datatype.TableInfo{}
 	}
 	var nextSpatial *datatype.SpatialInfo
 	if t.mode == FieldMappingModePassthrough {
@@ -175,7 +172,7 @@ func (t *fieldMappingTransform) TransformBatch(ctx context.Context, batch *engin
 	return next, nil
 }
 
-func fieldInfoForMapping(schema *format.TableInfo, mapping FieldMappingFieldPlan) datatype.FieldInfo {
+func fieldInfoForMapping(schema *datatype.TableInfo, mapping FieldMappingFieldPlan) datatype.FieldInfo {
 	field := findFieldInfo(schema, mapping.Source)
 	if field.Name == "" {
 		field = findFieldInfo(schema, mapping.Target)
@@ -271,7 +268,7 @@ func cloneSpatialInfoForColumn(source *datatype.SpatialInfo, columnName string) 
 	return spatial
 }
 
-func findFieldInfo(schema *format.TableInfo, name string) datatype.FieldInfo {
+func findFieldInfo(schema *datatype.TableInfo, name string) datatype.FieldInfo {
 	if schema == nil || name == "" {
 		return datatype.FieldInfo{}
 	}
@@ -295,7 +292,7 @@ func findEngineField(fields []datatype.FieldInfo, name string) datatype.FieldInf
 	return datatype.FieldInfo{}
 }
 
-func upsertFieldInfo(info *format.TableInfo, field datatype.FieldInfo) {
+func upsertFieldInfo(info *datatype.TableInfo, field datatype.FieldInfo) {
 	for i := range info.Fields {
 		if strings.EqualFold(info.Fields[i].Name, field.Name) {
 			info.Fields[i] = field

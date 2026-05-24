@@ -288,7 +288,7 @@ func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit
 	return format.ApplyFieldSelectionToRows(records, opts.FieldSelection), nil
 }
 
-func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, schema *format.TableInfo, options *format.WriteOptions) (format.TableWriter, error) {
+func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, schema *datatype.TableInfo, options *format.WriteOptions) (format.TableWriter, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -349,8 +349,9 @@ func (p *Plugin) OpenTableReader(ctx context.Context, input io.Reader, options *
 		return nil, fmt.Errorf("csv table reader requires at least one field")
 	}
 
-	schema, err := format.ApplyFieldSelectionToTableInfo(&format.TableInfo{
-		TableInfo: datatype.TableInfo{Name: "csv_data", Fields: fields},
+	schema, err := format.ApplyFieldSelectionToTableInfo(&datatype.TableInfo{
+		Name:   "csv_data",
+		Fields: fields,
 	}, opts.FieldSelection)
 	if err != nil {
 		return nil, err
@@ -369,7 +370,7 @@ type tableReader struct {
 	reader  *csv.Reader
 	plugin  *Plugin
 	headers []string
-	schema  *format.TableInfo
+	schema  *datatype.TableInfo
 	closed  bool
 }
 
@@ -492,7 +493,7 @@ func (p *Plugin) effectiveWriteOptions(options *format.WriteOptions) *format.Wri
 	return opts
 }
 
-func schemaFields(schema *format.TableInfo) []string {
+func schemaFields(schema *datatype.TableInfo) []string {
 	if schema == nil {
 		return nil
 	}
