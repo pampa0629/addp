@@ -214,8 +214,8 @@ func TestJSONPluginFieldSelection(t *testing.T) {
 	if len(readRows) != 2 || len(readRows[0]) != 2 || readRows[0]["name"] != "A" {
 		t.Fatalf("read rows = %#v, want selected rows", readRows)
 	}
-	if schema := reader.Schema(); schema == nil || len(schema.Fields) != 2 || schema.Fields[0].Name != "name" {
-		t.Fatalf("schema = %#v, want selected fields", schema)
+	if fields := reader.Fields(); len(fields) != 2 || fields[0].Name != "name" {
+		t.Fatalf("fields = %#v, want selected fields", fields)
 	}
 }
 

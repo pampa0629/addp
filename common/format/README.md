@@ -297,6 +297,16 @@ type MultiTableReaderProvider interface {
     OpenMultiTableReader(ctx context.Context, reader contentio.Reader, refs []RelatedRef, options *ParseOptions) (TableReader, error)
 }
 
+type TableReader interface {
+    Fields() []datatype.FieldInfo
+    ReadRows(ctx context.Context, limit int) ([]map[string]interface{}, error)
+    Close(ctx context.Context) error
+}
+
+type TableSpatialInfoProvider interface {
+    SpatialInfo() *datatype.SpatialInfo
+}
+
 type MultiTableWriterProvider interface {
     Provider
     RelatedRefSpecs() []RelatedRefSpec

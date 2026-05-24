@@ -389,8 +389,12 @@ func TestShapefileTableReaderUsesCallGeometryFieldOption(t *testing.T) {
 	}
 	defer tableReader.Close(context.Background())
 
-	if schema := tableReader.Schema(); schema.SpatialInfo == nil || schema.SpatialInfo.PrimaryGeometryName() != "geom" {
-		t.Fatalf("schema spatial info = %#v, want geom geometry column", schema.SpatialInfo)
+	spatialProvider, ok := tableReader.(format.TableSpatialInfoProvider)
+	if !ok {
+		t.Fatal("table reader does not provide spatial info")
+	}
+	if spatialInfo := spatialProvider.SpatialInfo(); spatialInfo == nil || spatialInfo.PrimaryGeometryName() != "geom" {
+		t.Fatalf("reader spatial info = %#v, want geom geometry column", spatialInfo)
 	}
 	rows, err := tableReader.ReadRows(context.Background(), 1)
 	if err != nil {

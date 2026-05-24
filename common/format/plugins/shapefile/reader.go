@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/addp/common/contentio"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	"github.com/jonas-p/go-shp"
 	"strings"
@@ -100,8 +101,18 @@ type indexedMultiTableReader struct {
 	done   bool
 }
 
-func (r *indexedMultiTableReader) Schema() *format.TableInfo {
-	return r.schema
+func (r *indexedMultiTableReader) Fields() []datatype.FieldInfo {
+	if r == nil || r.schema == nil {
+		return nil
+	}
+	return append([]datatype.FieldInfo(nil), r.schema.Fields...)
+}
+
+func (r *indexedMultiTableReader) SpatialInfo() *datatype.SpatialInfo {
+	if r == nil || r.schema == nil {
+		return nil
+	}
+	return r.schema.SpatialInfo.Clone()
 }
 
 func (r *indexedMultiTableReader) ReadRows(ctx context.Context, limit int) ([]map[string]interface{}, error) {
@@ -139,8 +150,18 @@ type sequentialMultiTableReader struct {
 	closed        bool
 }
 
-func (r *sequentialMultiTableReader) Schema() *format.TableInfo {
-	return r.schema
+func (r *sequentialMultiTableReader) Fields() []datatype.FieldInfo {
+	if r == nil || r.schema == nil {
+		return nil
+	}
+	return append([]datatype.FieldInfo(nil), r.schema.Fields...)
+}
+
+func (r *sequentialMultiTableReader) SpatialInfo() *datatype.SpatialInfo {
+	if r == nil || r.schema == nil {
+		return nil
+	}
+	return r.schema.SpatialInfo.Clone()
 }
 
 func (r *sequentialMultiTableReader) ReadRows(ctx context.Context, limit int) ([]map[string]interface{}, error) {

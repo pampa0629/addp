@@ -333,7 +333,7 @@ func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader,
 		}
 		schema := s.schema
 		if tableSchemaEmpty(schema) {
-			schema = tableReader.Schema()
+			schema = tableInfoFromFormatReader(tableReader)
 		}
 		return &multiTableBatchReader{
 			tableReader: tableReader,
@@ -349,7 +349,7 @@ func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader,
 		}
 		schema := s.schema
 		if tableSchemaEmpty(schema) {
-			schema = tableReader.Schema()
+			schema = tableInfoFromFormatReader(tableReader)
 		}
 		return &multiTableBatchReader{
 			tableReader: tableReader,
@@ -404,7 +404,7 @@ func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader,
 		return nil, fmt.Errorf("open encoded source table reader: %w", err)
 	}
 	if tableSchemaEmpty(schema) {
-		schema = tableReader.Schema()
+		schema = tableInfoFromFormatReader(tableReader)
 	}
 	return &encodedTableBatchReader{input: input, tableReader: tableReader, schema: schema}, nil
 }
@@ -419,7 +419,7 @@ func (r *multiTableBatchReader) Schema() *format.TableInfo {
 	if !tableSchemaEmpty(r.schema) {
 		return r.schema
 	}
-	return r.tableReader.Schema()
+	return tableInfoFromFormatReader(r.tableReader)
 }
 
 func (r *multiTableBatchReader) ReadBatch(ctx context.Context, limit int) (*engineplugin.BatchData, error) {
@@ -463,6 +463,21 @@ func (s *encodedContentTableSource) describeSchema(ctx context.Context) (*format
 	return format.TableSchemaFromDescribeResult(info), nil
 }
 
+func tableInfoFromFormatReader(reader format.TableReader) *format.TableInfo {
+	if reader == nil {
+		return nil
+	}
+	info := &format.TableInfo{
+		TableInfo: datatype.TableInfo{
+			Fields: reader.Fields(),
+		},
+	}
+	if spatialProvider, ok := reader.(format.TableSpatialInfoProvider); ok {
+		info.SpatialInfo = spatialProvider.SpatialInfo().Clone()
+	}
+	return info
+}
+
 type encodedTableBatchReader struct {
 	input       io.Closer
 	tableReader format.TableReader
@@ -474,7 +489,7 @@ func (r *encodedTableBatchReader) Schema() *format.TableInfo {
 	if !tableSchemaEmpty(r.schema) {
 		return r.schema
 	}
-	return r.tableReader.Schema()
+	return tableInfoFromFormatReader(r.tableReader)
 }
 
 func (r *encodedTableBatchReader) ReadBatch(ctx context.Context, limit int) (*engineplugin.BatchData, error) {

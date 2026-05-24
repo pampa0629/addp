@@ -106,8 +106,8 @@ func TestCSVPlugin_FieldSelection(t *testing.T) {
 		t.Fatalf("OpenTableReader failed: %v", err)
 	}
 	defer reader.Close(context.Background())
-	if schema := reader.Schema(); schema == nil || len(schema.Fields) != 2 || schema.Fields[0].Name != "name" {
-		t.Fatalf("schema = %#v, want selected fields", schema)
+	if fields := reader.Fields(); len(fields) != 2 || fields[0].Name != "name" {
+		t.Fatalf("fields = %#v, want selected fields", fields)
 	}
 	readRows, err := reader.ReadRows(context.Background(), 2)
 	if err != nil {
@@ -180,9 +180,9 @@ func TestCSVPlugin_OpenTableReader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenTableReader failed: %v", err)
 	}
-	schema := reader.Schema()
-	if schema == nil || len(schema.Fields) != 3 || schema.Fields[1].Name != "name" {
-		t.Fatalf("schema = %#v", schema)
+	fields := reader.Fields()
+	if len(fields) != 3 || fields[1].Name != "name" {
+		t.Fatalf("fields = %#v", fields)
 	}
 
 	rows, err := reader.ReadRows(context.Background(), 1)

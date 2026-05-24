@@ -425,11 +425,11 @@ type tableReader struct {
 	closed         bool
 }
 
-func (r *tableReader) Schema() *format.TableInfo {
+func (r *tableReader) Fields() []datatype.FieldInfo {
 	if r == nil || r.schema == nil {
 		return nil
 	}
-	return r.schema.Clone()
+	return append([]datatype.FieldInfo(nil), r.schema.Fields...)
 }
 
 func (r *tableReader) ReadRows(ctx context.Context, limit int) ([]map[string]interface{}, error) {
@@ -925,11 +925,11 @@ type scopeTableReader struct {
 	closed            bool
 }
 
-func (r *scopeTableReader) Schema() *format.TableInfo {
+func (r *scopeTableReader) Fields() []datatype.FieldInfo {
 	if r == nil || r.schema == nil {
 		return nil
 	}
-	return r.schema.Clone()
+	return append([]datatype.FieldInfo(nil), r.schema.Fields...)
 }
 
 func (r *scopeTableReader) ReadRows(ctx context.Context, limit int) ([]map[string]interface{}, error) {
@@ -994,11 +994,11 @@ func (r *scopeTableReader) openNext(ctx context.Context) error {
 			_ = input.Close()
 			return fmt.Errorf("failed to open parquet table reader for %s: %w", ref.Path, err)
 		}
-		schema := tableReader.Schema()
+		schema := &format.TableInfo{
+			TableInfo: datatype.TableInfo{Fields: tableReader.Fields()},
+		}
 		if r.schema == nil {
-			if schema != nil {
-				r.dataFields = append([]datatype.FieldInfo(nil), schema.Fields...)
-			}
+			r.dataFields = append([]datatype.FieldInfo(nil), schema.Fields...)
 			r.schema, err = format.ApplyFieldSelectionToTableInfo(copyTableInfoWithPartitionFields(schema, r.partitionFields), r.fieldSelection)
 			if err != nil {
 				_ = tableReader.Close(ctx)

@@ -442,11 +442,18 @@ type tableReader struct {
 	closed        bool
 }
 
-func (r *tableReader) Schema() *format.TableInfo {
+func (r *tableReader) Fields() []datatype.FieldInfo {
 	if r == nil || r.schema == nil {
 		return nil
 	}
-	return r.schema.Clone()
+	return append([]datatype.FieldInfo(nil), r.schema.Fields...)
+}
+
+func (r *tableReader) SpatialInfo() *datatype.SpatialInfo {
+	if r == nil || r.schema == nil {
+		return nil
+	}
+	return r.schema.SpatialInfo.Clone()
 }
 
 func (r *tableReader) ReadRows(ctx context.Context, limit int) ([]map[string]interface{}, error) {

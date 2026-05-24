@@ -91,9 +91,9 @@ func TestParquetPluginOpenTableReader(t *testing.T) {
 	}
 	defer reader.Close(context.Background())
 
-	schema := reader.Schema()
-	if schema == nil || schema.RowCount == nil || *schema.RowCount != 3 {
-		t.Fatalf("schema = %#v, want row count 3", schema)
+	fields := reader.Fields()
+	if len(fields) != 2 || fields[0].Name != "id" || fields[1].Name != "name" {
+		t.Fatalf("fields = %#v, want id,name", fields)
 	}
 	first, err := reader.ReadRows(context.Background(), 2)
 	if err != nil {
@@ -133,9 +133,9 @@ func TestParquetPluginOpenTableReaderAppliesFieldSelection(t *testing.T) {
 	}
 	defer reader.Close(context.Background())
 
-	schema := reader.Schema()
-	if len(schema.Fields) != 1 || schema.Fields[0].Name != "name" {
-		t.Fatalf("schema fields = %#v, want only name", schema.Fields)
+	fields := reader.Fields()
+	if len(fields) != 1 || fields[0].Name != "name" {
+		t.Fatalf("fields = %#v, want only name", fields)
 	}
 	rows, err := reader.ReadRows(context.Background(), 2)
 	if err != nil {
@@ -429,7 +429,7 @@ func TestParquetPluginOpenTableScopeReader(t *testing.T) {
 	if first[0]["dt"] != "2026-05-05" || first[1]["dt"] != "2026-05-06" || second[0]["dt"] != "2026-05-06" {
 		t.Fatalf("partition values = %#v %#v, want dt from path", first, second)
 	}
-	schema := tableReader.Schema()
+	schema := &format.TableInfo{TableInfo: datatype.TableInfo{Fields: tableReader.Fields()}}
 	if field := schema.GetField("dt"); field == nil || field.Type != datatype.FieldTypeString {
 		t.Fatalf("schema partition field dt = %#v, want string field", field)
 	}
@@ -462,9 +462,9 @@ func TestParquetPluginOpenTableScopeReaderAppliesFieldSelectionToPartitionField(
 	if err != nil {
 		t.Fatalf("ReadRows failed: %v", err)
 	}
-	schema := tableReader.Schema()
-	if len(schema.Fields) != 2 || schema.Fields[0].Name != "dt" || schema.Fields[1].Name != "name" {
-		t.Fatalf("schema fields = %#v, want dt,name", schema.Fields)
+	fields := tableReader.Fields()
+	if len(fields) != 2 || fields[0].Name != "dt" || fields[1].Name != "name" {
+		t.Fatalf("fields = %#v, want dt,name", fields)
 	}
 	if len(rows) != 2 || rows[0]["dt"] != "2026-05-05" || rows[0]["name"] != "Alice" || rows[0]["id"] != nil {
 		t.Fatalf("rows = %#v, want selected partition and data fields", rows)

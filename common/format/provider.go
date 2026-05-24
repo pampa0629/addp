@@ -81,9 +81,17 @@ type TableReaderProvider interface {
 }
 
 type TableReader interface {
-	Schema() *TableInfo
+	Fields() []datatype.FieldInfo
 	ReadRows(ctx context.Context, limit int) ([]map[string]interface{}, error)
 	Close(ctx context.Context) error
+}
+
+// TableSpatialInfoProvider 表示 table reader 可额外提供读取行对应的空间上下文。
+//
+// 这是 TableReader 的可选能力，不代表一个独立 reader。调用方通过类型断言使用：
+// provider, ok := reader.(TableSpatialInfoProvider)
+type TableSpatialInfoProvider interface {
+	SpatialInfo() *datatype.SpatialInfo
 }
 
 // MultiTableInfoProvider 表示多 ref table 格式能够提取 table 类型信息。

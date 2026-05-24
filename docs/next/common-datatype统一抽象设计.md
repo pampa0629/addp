@@ -306,6 +306,24 @@ type TableInfo struct {
 - `SpatialInfo` 改为独立参数或上层编排携带；Transfer / engine 写入链路已经有 `BatchData.Spatial`、`TableWriteOptions.SpatialInfo`、`TableWriteSessionOptions.SpatialInfo`，可以作为拆分方向参考。
 - `ContentIndex` 已改为独立内容索引事实，不由 table schema 承载。
 
+`SpatialInfo` 的拆分需要单独设计，不能像 `FormatInfo` / `ContentIndex` 一样直接从 `TableInfo` 删除。原因是它当前同时承担两类职责：
+
+- 元数据事实：由 provider describe result 返回，再写入 `attributes.capabilities.spatial`。
+- 执行期空间参数：连续 reader / writer / Transfer pipeline 用它确定几何字段、几何类型、SRID、维度，并传给 engine table write prepare / session / batch write。
+
+因此，删除 `format.TableInfo.SpatialInfo` 前必须先明确替代通道：
+
+| 场景 | 当前通道 | 后续候选 |
+|---|---|---|
+| format provider 解析空间事实 | `format.TableDescribeResult.Spatial` | 保持不变 |
+| Manager / Meta 展示空间能力 | attributes `capabilities.spatial` | 保持不变 |
+| format writer 写出 GeoJSON / Shapefile | `schema.SpatialInfo` | `WriteOptions.SpatialInfo` 或专门写出上下文 |
+| Transfer 批次传递空间事实 | `format.TableInfo.SpatialInfo` -> `BatchData.Spatial` | pipeline 单独保存 `SpatialInfo`，不放入 table schema |
+| engine 写表准备和会话 | `BatchData.Spatial` / `TableWriteOptions.SpatialInfo` | 保持 engine 侧现有独立空间参数 |
+| `TableReader` 返回读取字段和空间事实 | `Fields()` + 可选 `TableSpatialInfoProvider.SpatialInfo()` | 已不再用 `Schema() *TableInfo` 暴露完整 table operation schema |
+
+当前已先完成 reader 侧收敛：`TableReader` 只暴露实际读取 rows 对应的 `Fields()`，空间读取上下文通过可选 `TableSpatialInfoProvider` 提供。下一步应继续收敛 writer / pipeline 侧，让空间事实作为独立参数穿过写出链路，确认接口后再删除 `format.TableInfo.SpatialInfo`。
+
 ### TableInfo.Native 与 format_info 的边界
 
 `TableInfo.Native` 只承载表级来源原生事实；`format_info.<format>` 仍承载文件、容器、资源整体或格式解析层面的私有事实。二者不是同义词。
