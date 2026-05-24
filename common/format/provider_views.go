@@ -11,7 +11,7 @@ import (
 
 type tableInfoProviderView struct {
 	formatType FormatType
-	describe   func(context.Context, io.Reader, *ParseOptions) (*datatype.TableDescribeResult, error)
+	describe   func(context.Context, io.Reader, *ParseOptions) (*TableDescribeResult, error)
 }
 
 type tableSampleReaderView struct {
@@ -36,7 +36,7 @@ type documentTextReaderView struct {
 
 type mediaProviderView struct {
 	formatType FormatType
-	describe   func(context.Context, io.Reader, *ParseOptions) (*datatype.MediaDescribeResult, error)
+	describe   func(context.Context, io.Reader, *ParseOptions) (*MediaDescribeResult, error)
 }
 
 type containerProviderView struct {
@@ -80,7 +80,7 @@ func (p tableInfoProviderView) Capabilities() FormatCapability {
 	}
 }
 
-func (p tableInfoProviderView) DescribeTable(ctx context.Context, input io.Reader, options *ParseOptions) (*datatype.TableDescribeResult, error) {
+func (p tableInfoProviderView) DescribeTable(ctx context.Context, input io.Reader, options *ParseOptions) (*TableDescribeResult, error) {
 	return p.describe(ctx, input, options)
 }
 
@@ -184,7 +184,7 @@ func (p mediaProviderView) Capabilities() FormatCapability {
 	}
 }
 
-func (p mediaProviderView) DescribeMedia(ctx context.Context, input io.Reader, options *ParseOptions) (*datatype.MediaDescribeResult, error) {
+func (p mediaProviderView) DescribeMedia(ctx context.Context, input io.Reader, options *ParseOptions) (*MediaDescribeResult, error) {
 	return p.describe(ctx, input, options)
 }
 

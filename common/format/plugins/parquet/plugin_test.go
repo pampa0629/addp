@@ -349,7 +349,7 @@ func TestParquetPluginScopeRecursesPartitionDirs(t *testing.T) {
 }
 
 func TestParquetInfoFromDescribeResultReadsLegacyFormatPartitionColumns(t *testing.T) {
-	info := InfoFromDescribeResult(&datatype.TableDescribeResult{
+	info := InfoFromDescribeResult(&format.TableDescribeResult{
 		FormatInfo: map[string]interface{}{
 			"partition_columns": []interface{}{"dt"},
 		},

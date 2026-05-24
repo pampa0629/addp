@@ -7,7 +7,7 @@ import (
 )
 
 func TestApplyFieldSelectionToTableDescribeResult(t *testing.T) {
-	result := &datatype.TableDescribeResult{
+	result := &TableDescribeResult{
 		Table: &datatype.TableInfo{
 			Fields: []datatype.FieldInfo{
 				{Name: "id", Type: datatype.FieldTypeInt, PrimaryKey: true},
@@ -38,7 +38,7 @@ func TestApplyFieldSelectionToTableDescribeResult(t *testing.T) {
 }
 
 func TestApplyFieldSelectionToTableDescribeResultMissingFieldPolicies(t *testing.T) {
-	result := &datatype.TableDescribeResult{
+	result := &TableDescribeResult{
 		Table: &datatype.TableInfo{
 			Fields: []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeInt}},
 		},

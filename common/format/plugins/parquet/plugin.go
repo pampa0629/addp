@@ -53,7 +53,7 @@ func InfoFromTableInfo(tableInfo *format.TableInfo) *Info {
 	return infoFromFacts(tableInfo.FormatInfo, tableInfo.Native)
 }
 
-func InfoFromDescribeResult(result *datatype.TableDescribeResult) *Info {
+func InfoFromDescribeResult(result *format.TableDescribeResult) *Info {
 	if result == nil {
 		return nil
 	}
@@ -291,7 +291,7 @@ func (p *Plugin) OpenTableReader(ctx context.Context, input io.Reader, options *
 }
 
 // DescribeTable 从 Parquet 文件中提取 TableInfo（Schema + 行数）
-func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*datatype.TableDescribeResult, error) {
+func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableDescribeResult, error) {
 	data, err := io.ReadAll(input)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read parquet data: %w", err)
@@ -305,7 +305,7 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 	fields := extractFields(file.Schema())
 	rowCount := file.NumRows()
 
-	result := &datatype.TableDescribeResult{
+	result := &format.TableDescribeResult{
 		Table: &datatype.TableInfo{
 			Fields:   fields,
 			RowCount: &rowCount,
@@ -776,12 +776,12 @@ func jsonString(value interface{}) string {
 	}
 }
 
-func (p *Plugin) DescribeTableScope(ctx context.Context, reader contentio.Reader, scope contentio.Ref, options *format.ParseOptions) (*datatype.TableDescribeResult, error) {
+func (p *Plugin) DescribeTableScope(ctx context.Context, reader contentio.Reader, scope contentio.Ref, options *format.ParseOptions) (*format.TableDescribeResult, error) {
 	scopedRefs, err := listParquetScopeResources(ctx, reader, scope)
 	if err != nil {
 		return nil, err
 	}
-	var merged *datatype.TableDescribeResult
+	var merged *format.TableDescribeResult
 	var dataFields []datatype.FieldInfo
 	totalRows := int64(0)
 	files := make([]FileInfo, 0, len(scopedRefs))
@@ -806,7 +806,7 @@ func (p *Plugin) DescribeTableScope(ctx context.Context, reader contentio.Reader
 		info := result.Table
 		if merged == nil {
 			dataFields = append([]datatype.FieldInfo(nil), info.Fields...)
-			baseInfo := &datatype.TableDescribeResult{
+			baseInfo := &format.TableDescribeResult{
 				Table: &datatype.TableInfo{
 					Name:       contentio.BaseName(scope),
 					Fields:     appendPartitionFields(info.Fields, partitionFields),

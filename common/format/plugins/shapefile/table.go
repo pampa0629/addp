@@ -13,7 +13,7 @@ import (
 	"strings"
 )
 
-func (plugin *Plugin) DescribeMultiTable(ctx context.Context, reader contentio.Reader, refs []format.RelatedRef, options *format.ParseOptions) (*datatype.TableDescribeResult, error) {
+func (plugin *Plugin) DescribeMultiTable(ctx context.Context, reader contentio.Reader, refs []format.RelatedRef, options *format.ParseOptions) (*format.TableDescribeResult, error) {
 	_, basePath, cleanup, err := materializeRefs(ctx, reader, refs)
 	if err != nil {
 		return nil, err
@@ -25,7 +25,7 @@ func (plugin *Plugin) DescribeMultiTable(ctx context.Context, reader contentio.R
 	if err != nil {
 		return nil, err
 	}
-	result := &datatype.TableDescribeResult{
+	result := &format.TableDescribeResult{
 		Table:      format.DatatypeTableInfo(info),
 		Spatial:    info.SpatialInfo.Clone(),
 		FormatInfo: info.FormatInfo,

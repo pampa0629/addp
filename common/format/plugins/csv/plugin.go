@@ -140,7 +140,7 @@ func (p *Plugin) DescribeFormat(ctx context.Context, input io.Reader, options *f
 }
 
 // DescribeTable 从 CSV 文件中提取 table 类型信息。
-func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*datatype.TableDescribeResult, error) {
+func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableDescribeResult, error) {
 	opts := p.effectiveOptions(options)
 
 	reader := csv.NewReader(input)
@@ -206,7 +206,7 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 		LineEnding: "\n",
 	}
 
-	result := &datatype.TableDescribeResult{
+	result := &format.TableDescribeResult{
 		Table: &datatype.TableInfo{
 			Name:       "csv_data", // CSV 文件没有表名，使用默认值
 			RowCount:   &rowCount,

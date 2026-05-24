@@ -263,7 +263,7 @@ type Provider interface {
 
 type TableInfoProvider interface {
     Provider
-    DescribeTable(ctx context.Context, input io.Reader, options *ParseOptions) (*datatype.TableDescribeResult, error)
+    DescribeTable(ctx context.Context, input io.Reader, options *ParseOptions) (*format.TableDescribeResult, error)
 }
 
 type TableSampleReader interface {
@@ -278,7 +278,7 @@ type TableSampleReader interface {
 type MultiTableInfoProvider interface {
     Provider
     RelatedRefSpecs() []RelatedRefSpec
-    DescribeMultiTable(ctx context.Context, reader contentio.Reader, refs []RelatedRef, options *ParseOptions) (*datatype.TableDescribeResult, error)
+    DescribeMultiTable(ctx context.Context, reader contentio.Reader, refs []RelatedRef, options *ParseOptions) (*format.TableDescribeResult, error)
 }
 
 type MultiTableSampleReader interface {
@@ -311,7 +311,7 @@ type MultiTableWriterProvider interface {
 ```go
 type ScopeTableInfoProvider interface {
     Provider
-    DescribeTableScope(ctx context.Context, reader contentio.Reader, scope contentio.Ref, options *ParseOptions) (*datatype.TableDescribeResult, error)
+    DescribeTableScope(ctx context.Context, reader contentio.Reader, scope contentio.Ref, options *ParseOptions) (*format.TableDescribeResult, error)
 }
 
 type ScopeTableSampleReader interface {
@@ -402,7 +402,7 @@ WPS、DOCX、PPTX 这类后端不适合解析的格式，不应因为只能提�
 ```go
 type MediaInfoProvider interface {
     Provider
-    DescribeMedia(ctx context.Context, input io.Reader, options *ParseOptions) (*datatype.MediaDescribeResult, error)
+    DescribeMedia(ctx context.Context, input io.Reader, options *ParseOptions) (*format.MediaDescribeResult, error)
 }
 ```
 
@@ -445,13 +445,13 @@ type TableInfo struct {
 }
 ```
 
-Provider 对外返回 `datatype.TableDescribeResult`。其中 `Table` 只表达 `attributes.type_info.table`；同次解析得到的补充事实必须作为同级候选事实返回，由 Meta normalizer 写入对应分区：
+Provider 对外返回 `format.TableDescribeResult`。这是 format provider 的解析结果包，不是 data type 本体。其中 `Table` 只表达 `attributes.type_info.table`；同次解析得到的补充事实必须作为同级候选事实返回，由 Meta normalizer 写入对应分区：
 
 - `FormatInfo`：格式私有事实，写入 `format_info.<format>`。
 - `SpatialInfo`：空间字段、几何类型、坐标系、范围等横切事实，写入 `capabilities.spatial`。
 - `ContentIndex`：读取优化索引，例如稀疏行索引，写入 `content_index.table`。
 
-`format.TableInfo` 不应成为新的元数据事实源。只读消费方应优先使用 `datatype.TableDescribeResult`；只有 reader / writer / sample options / Transfer pipeline 等操作边界才应从 `datatype.TableInfo` 转成 `format.TableInfo`。
+`format.TableInfo` 不应成为新的元数据事实源。只读消费方应优先使用 `format.TableDescribeResult` 中的标准事实；只有 reader / writer / sample options / Transfer pipeline 等操作边界才应从 `datatype.TableInfo` 转成 `format.TableInfo`。
 
 空间判断应基于标准 `SpatialInfo` / `capabilities.spatial`，不要通过 `format=geojson` 推断。
 

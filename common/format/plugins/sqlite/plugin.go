@@ -188,7 +188,7 @@ func (p *Plugin) DescribeContainer(ctx context.Context, input io.Reader, options
 	}, nil
 }
 
-func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*datatype.TableDescribeResult, error) {
+func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableDescribeResult, error) {
 	tableName := tableNameFromOptions(options)
 	if tableName == "" {
 		return nil, fmt.Errorf("sqlite table preview requires table option")
@@ -208,7 +208,7 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 	if p.Format() == format.FormatGeoPackage {
 		applyGeoPackageSpatialInfo(ctx, db, info)
 	}
-	return &datatype.TableDescribeResult{
+	return &format.TableDescribeResult{
 		Table:   format.DatatypeTableInfo(info),
 		Spatial: info.SpatialInfo.Clone(),
 	}, nil

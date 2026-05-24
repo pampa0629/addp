@@ -135,7 +135,7 @@ func (r *metaRefReader) Stat(context.Context, contentio.Ref) (*contentio.Stat, e
 	return nil, contentio.ErrContentNotFound
 }
 
-func upsertRefTableInfo(item *DetectedItem, tableInfo *datatype.TableDescribeResult) {
+func upsertRefTableInfo(item *DetectedItem, tableInfo *format.TableDescribeResult) {
 	if item == nil || tableInfo == nil {
 		return
 	}
@@ -178,7 +178,7 @@ func EnrichKnownMultiTableItem(
 	return item, true, nil
 }
 
-func tableAttributes(tableInfo *datatype.TableDescribeResult) map[string]interface{} {
+func tableAttributes(tableInfo *format.TableDescribeResult) map[string]interface{} {
 	if tableInfo == nil || tableInfo.Table == nil {
 		return nil
 	}
@@ -207,7 +207,7 @@ func fieldAttributesFromDatatype(fields []datatype.FieldInfo) []map[string]inter
 	return fieldsData
 }
 
-func formatAttributesFromDescribeResult(tableInfo *datatype.TableDescribeResult) map[string]interface{} {
+func formatAttributesFromDescribeResult(tableInfo *format.TableDescribeResult) map[string]interface{} {
 	if tableInfo == nil || len(tableInfo.FormatInfo) == 0 {
 		return nil
 	}

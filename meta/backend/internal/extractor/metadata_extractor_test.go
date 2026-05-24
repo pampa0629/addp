@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/meta/internal/models"
 )
@@ -57,7 +58,7 @@ func TestMediaInfoAttributesWritesTypeInfoAndSpatial(t *testing.T) {
 	srid := 4326
 	hasSpatialIndex := false
 	extent := datatype.BoundingBox{100, 180, 120, 200}
-	attrs := MediaInfoAttributes(&datatype.MediaDescribeResult{
+	attrs := MediaInfoAttributes(&format.MediaDescribeResult{
 		Media: &datatype.MediaInfo{
 			Kind:       datatype.MediaKindImage,
 			MIMEType:   "image/tiff",

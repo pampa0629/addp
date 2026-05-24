@@ -1365,7 +1365,7 @@ func (p *recordingTableProvider) Capabilities() format.FormatCapability {
 	return format.FormatCapability{}
 }
 
-func (p *recordingTableProvider) DescribeTable(context.Context, io.Reader, *format.ParseOptions) (*datatype.TableDescribeResult, error) {
+func (p *recordingTableProvider) DescribeTable(context.Context, io.Reader, *format.ParseOptions) (*format.TableDescribeResult, error) {
 	p.describeCalls++
 	rowCount := int64(3)
 	return format.TableDescribeResultFromSchema(&format.TableInfo{
@@ -1405,7 +1405,7 @@ func (p *recordingMultiTableProvider) RelatedRefSpecs() []format.RelatedRefSpec 
 	}
 }
 
-func (p *recordingMultiTableProvider) DescribeMultiTable(_ context.Context, _ contentio.Reader, refs []format.RelatedRef, _ *format.ParseOptions) (*datatype.TableDescribeResult, error) {
+func (p *recordingMultiTableProvider) DescribeMultiTable(_ context.Context, _ contentio.Reader, refs []format.RelatedRef, _ *format.ParseOptions) (*format.TableDescribeResult, error) {
 	p.describeCalls++
 	p.lastRefs = append([]format.RelatedRef(nil), refs...)
 	rowCount := int64(1)

@@ -351,14 +351,14 @@ func tableFileFieldAttributes(fields []datatype.FieldInfo) []map[string]interfac
 	return metaattr.FieldAttributesFromFormat(fields)
 }
 
-func tableFieldsFromDescribeResult(tableInfo *datatype.TableDescribeResult) []datatype.FieldInfo {
+func tableFieldsFromDescribeResult(tableInfo *format.TableDescribeResult) []datatype.FieldInfo {
 	if tableInfo == nil || tableInfo.Table == nil {
 		return nil
 	}
 	return append([]datatype.FieldInfo(nil), tableInfo.Table.Fields...)
 }
 
-func tableFileAttributes(formatName string, mode string, fieldsData []map[string]interface{}, files []plugin.FileEntry, dirPath string, totalSize int64, tableInfo *datatype.TableDescribeResult, includeContentIndex bool) map[string]interface{} {
+func tableFileAttributes(formatName string, mode string, fieldsData []map[string]interface{}, files []plugin.FileEntry, dirPath string, totalSize int64, tableInfo *format.TableDescribeResult, includeContentIndex bool) map[string]interface{} {
 	attrs := map[string]interface{}{
 		"storage": map[string]interface{}{
 			"physical_path": dirPath,
@@ -439,7 +439,7 @@ func tableFileAttributes(formatName string, mode string, fieldsData []map[string
 	return attrs
 }
 
-func formatAttributesFromTableInfo(tableInfo *datatype.TableDescribeResult) map[string]interface{} {
+func formatAttributesFromTableInfo(tableInfo *format.TableDescribeResult) map[string]interface{} {
 	if tableInfo == nil || len(tableInfo.FormatInfo) == 0 {
 		return nil
 	}
@@ -637,7 +637,7 @@ func (d *tableFileItemResolver) extractTableFileInfo(
 	}, nil
 }
 
-func describeTableFileScope(ctx context.Context, formatName string, reader contentio.Reader, dirPath string) (*datatype.TableDescribeResult, error) {
+func describeTableFileScope(ctx context.Context, formatName string, reader contentio.Reader, dirPath string) (*format.TableDescribeResult, error) {
 	provider, err := format.GetScopeTableInfoProvider(format.FormatType(formatName))
 	if err != nil {
 		return nil, err
@@ -863,7 +863,7 @@ func hasTableProvider(formatName string) bool {
 	return err == nil
 }
 
-func describeTableFile(ctx context.Context, formatName string, rc io.Reader) (*datatype.TableDescribeResult, error) {
+func describeTableFile(ctx context.Context, formatName string, rc io.Reader) (*format.TableDescribeResult, error) {
 	provider, err := format.GetTableInfoProvider(format.FormatType(formatName))
 	if err != nil {
 		return nil, err

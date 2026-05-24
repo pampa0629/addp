@@ -12,9 +12,9 @@ import (
 	"github.com/addp/common/datatype"
 )
 
-func providerTestDescribe(context.Context, io.Reader, *ParseOptions) (*datatype.TableDescribeResult, error) {
+func providerTestDescribe(context.Context, io.Reader, *ParseOptions) (*TableDescribeResult, error) {
 	rowCount := int64(1)
-	return &datatype.TableDescribeResult{Table: &datatype.TableInfo{RowCount: &rowCount}}, nil
+	return &TableDescribeResult{Table: &datatype.TableInfo{RowCount: &rowCount}}, nil
 }
 
 func providerTestSample(context.Context, io.Reader, int64, int64, *ParseOptions) ([]map[string]interface{}, error) {
@@ -548,8 +548,8 @@ func TestRegisterMediaInfoProvider(t *testing.T) {
 	registry := NewProviderRegistry()
 	provider := NewMediaInfoProvider(
 		FormatType("media_test"),
-		func(context.Context, io.Reader, *ParseOptions) (*datatype.MediaDescribeResult, error) {
-			return &datatype.MediaDescribeResult{Media: &datatype.MediaInfo{Kind: datatype.MediaKindImage}}, nil
+		func(context.Context, io.Reader, *ParseOptions) (*MediaDescribeResult, error) {
+			return &MediaDescribeResult{Media: &datatype.MediaInfo{Kind: datatype.MediaKindImage}}, nil
 		},
 	)
 

@@ -4,11 +4,11 @@ import "github.com/addp/common/datatype"
 
 // TableDescribeResultFromSchema converts the format operation schema into the
 // common datatype describe result used by metadata attributes.
-func TableDescribeResultFromSchema(info *TableInfo) *datatype.TableDescribeResult {
+func TableDescribeResultFromSchema(info *TableInfo) *TableDescribeResult {
 	if info == nil {
 		return nil
 	}
-	result := &datatype.TableDescribeResult{
+	result := &TableDescribeResult{
 		Table:        DatatypeTableInfo(info),
 		Spatial:      info.SpatialInfo.Clone(),
 		ContentIndex: info.ContentIndex.Clone(),
@@ -19,7 +19,7 @@ func TableDescribeResultFromSchema(info *TableInfo) *datatype.TableDescribeResul
 
 // TableSchemaFromDescribeResult converts a datatype describe result back to
 // the format operation schema needed by readers and writers.
-func TableSchemaFromDescribeResult(result *datatype.TableDescribeResult) *TableInfo {
+func TableSchemaFromDescribeResult(result *TableDescribeResult) *TableInfo {
 	if result == nil {
 		return nil
 	}

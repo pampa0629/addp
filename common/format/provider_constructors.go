@@ -24,10 +24,10 @@ func NewFormatInfoProvider(
 
 func NewTableInfoProvider(
 	formatType FormatType,
-	describe func(context.Context, io.Reader, *ParseOptions) (*datatype.TableDescribeResult, error),
+	describe func(context.Context, io.Reader, *ParseOptions) (*TableDescribeResult, error),
 ) TableInfoProvider {
 	if describe == nil {
-		describe = func(context.Context, io.Reader, *ParseOptions) (*datatype.TableDescribeResult, error) {
+		describe = func(context.Context, io.Reader, *ParseOptions) (*TableDescribeResult, error) {
 			return nil, fmt.Errorf("table info provider %s does not implement DescribeTable", formatType)
 		}
 	}
@@ -54,10 +54,10 @@ func NewTableSampleReader(
 
 func NewMediaInfoProvider(
 	formatType FormatType,
-	describe func(context.Context, io.Reader, *ParseOptions) (*datatype.MediaDescribeResult, error),
+	describe func(context.Context, io.Reader, *ParseOptions) (*MediaDescribeResult, error),
 ) MediaInfoProvider {
 	if describe == nil {
-		describe = func(context.Context, io.Reader, *ParseOptions) (*datatype.MediaDescribeResult, error) {
+		describe = func(context.Context, io.Reader, *ParseOptions) (*MediaDescribeResult, error) {
 			return nil, fmt.Errorf("media provider %s does not implement DescribeMedia", formatType)
 		}
 	}

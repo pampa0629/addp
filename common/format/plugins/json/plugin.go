@@ -236,7 +236,7 @@ func removeUTF8BOM(data []byte) []byte {
 }
 
 // DescribeTable 从 JSON 记录集合结构中提取 TableInfo。
-func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*datatype.TableDescribeResult, error) {
+func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableDescribeResult, error) {
 	geometryField := p.geometryField
 	opts := p.options
 	if options != nil {
@@ -306,7 +306,7 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 		}
 	}
 
-	result := &datatype.TableDescribeResult{
+	result := &format.TableDescribeResult{
 		Table:   tableInfo,
 		Spatial: spatialInfo,
 	}

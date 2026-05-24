@@ -270,7 +270,7 @@ Info / facts 能力负责把原始资源转成平台能理解的类型信息、�
 
 Provider 一次解析可能同时得到多个事实。为避免污染各 data type 的 type info，应通过 describe result 或等价结构将这些事实同级返回，再由 Meta normalizer 写入各自 attributes 分区。
 
-表格描述结果的概念形态：
+表格描述结果属于 `common/format` provider 边界，不属于 `common/datatype`。概念形态：
 
 ```go
 type TableDescribeResult struct {

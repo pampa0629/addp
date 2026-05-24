@@ -42,14 +42,14 @@ func ApplyFieldSelectionToTableInfo(info *TableInfo, selection *FieldSelectionOp
 	return copied, nil
 }
 
-func ApplyFieldSelectionToTableDescribeResult(result *datatype.TableDescribeResult, selection *FieldSelectionOptions) (*datatype.TableDescribeResult, error) {
+func ApplyFieldSelectionToTableDescribeResult(result *TableDescribeResult, selection *FieldSelectionOptions) (*TableDescribeResult, error) {
 	if result == nil || selection == nil || len(selection.Include) == 0 {
 		return result, nil
 	}
 	if result.Table == nil {
 		return result, nil
 	}
-	copied := &datatype.TableDescribeResult{
+	copied := &TableDescribeResult{
 		Table:        result.Table.Clone(),
 		Spatial:      result.Spatial.Clone(),
 		ContentIndex: result.ContentIndex.Clone(),

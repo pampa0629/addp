@@ -120,7 +120,7 @@ func (e *InlineObjectMetadataExtractor) Extract(
 	return attrs
 }
 
-func MediaInfoAttributes(info *datatype.MediaDescribeResult) models.JSONMap {
+func MediaInfoAttributes(info *format.MediaDescribeResult) models.JSONMap {
 	attrs := models.JSONMap{}
 	if info == nil || info.Media == nil {
 		return attrs

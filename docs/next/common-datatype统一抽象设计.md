@@ -223,16 +223,16 @@ type TableInfo struct {
 
 Provider 一次解析可能同时得到 type info、横切事实、内容索引和格式私有事实。描述结果包是 provider / 编排层的返回组合，不是 data type 本体。
 
-进一步结论：不应长期保留 `TableDescribeResult` / `MediaDescribeResult` 这类底层组合结构。它们把本应独立的事实从 provider 边界开始绑定在一起，会导致 format / engine 两边各自形成 result envelope，重新制造重复模型。
+进一步结论：`TableDescribeResult` / `MediaDescribeResult` 不属于 `common/datatype`。它们不是平台 data type 事实结构，而是 `common/format` provider 一次解析后返回的事实组合包。
 
 当前原则：
 
 - `common/datatype` 的核心职责是统一 format 和 engine 共同需要表达的 ADDP 通用数据语义结构。
-- 描述结果包不应因为“同一次解析顺手得到多类事实”而污染 `TableInfo`、`MediaInfo` 等 type info。
+- 描述结果包不应因为“同一次解析顺手得到多类事实”而污染 `TableInfo`、`MediaInfo` 等 type info，也不应进入 `common/datatype`。
 - `FormatInfo` 是 format 私有事实，应由 `common/format.FormatInfoProvider` 提供，不进入 `datatype` 结构。
-- `SpatialInfo` 是横切空间事实，不是 table schema 本体；table provider 不应通过 table 结构夹带空间事实。需要空间事实的读取、写入或 Meta 编排，应使用独立参数、独立 provider 或上层组合函数。
-- `ContentIndex` 是内容访问索引事实，不是 table schema 本体；不应放入 `TableInfo`，也不应靠 table describe result 与 table type info 绑定。
-- 如果为了降低迁移风险暂时保留 `TableDescribeResult`、`MediaDescribeResult`，它们只能视为过渡结构，后续应由 provider 接口拆分替代，而不是从 `datatype` 平移到 `format`。
+- `SpatialInfo` 是横切空间事实，不是 table schema 本体；它可以由 format describe result 同级返回，再由 Meta 写入 `capabilities.spatial`。
+- `ContentIndex` 是内容访问索引事实，不是 table schema 本体；它可以由 format describe result 同级返回，再由 Meta 写入 `content_index.table`。
+- 当前不为拆分 describe result 引入缓存、session 或 resource handle 等复杂机制；保持 format provider 返回组合事实，Meta 负责拆写 attributes。
 
 描述结果中各类事实的映射关系必须清晰：
 
@@ -586,7 +586,7 @@ type SpatialInfo struct {
 
 | 问题 | 当前状态 | 暂缓原因 | 后续方向 |
 |---|---|---|---|
-| `datatype.TableDescribeResult` / `datatype.MediaDescribeResult` | 当前仍在 `common/datatype` 中，且代码仍有使用 | 迁移涉及 format provider、Meta enrich、Manager preview 等多条链路；先完成 format / engine 通用结构收敛 | 删除。provider 返回单一 type info，横切事实由独立 provider、参数或上层编排处理 |
+| `format.TableDescribeResult` / `format.MediaDescribeResult` | 已迁出 `common/datatype`，作为 format provider 解析结果包存在 | Provider 一次解析自然可能得到多类事实；保留组合返回可以避免重复读取和过度设计 | 保持在 `common/format` provider 边界内，不进入 `datatype`；如后续确有必要，再按事实拆分 provider |
 | `datatype.ContentIndex` | 当前放在 `common/datatype`，被 format、Meta、Manager preview 使用 | 它不是 data type 本体，但当前是跨模块复用结构；贸然移出会引入新包或新概念 | 暂不动。后续结合 engine range reader、format content index、Meta attributes 的消费链路再决定是否移出 |
 | `common/engine/plugin.DatabaseInfo` / `CollectionInfo` | 仍是 engine catalog 层结构 | 它们更接近 catalog hierarchy / namespace 事实，不等同于 data type info | 暂不迁入 `datatype`。后续如有重复，再从 catalog/path/node 语义统一 |
 | `format.TableInfo` | 当前作为 reader / writer / Transfer 操作结构存在，已嵌入 `datatype.TableInfo` | 它还临时承载 `FormatInfo`、`SpatialInfo`、`ContentIndex` 等执行期补充事实 | 继续拆分这些补充字段；最终仅保留 `datatype.TableInfo` 薄壳，或完全删除 |

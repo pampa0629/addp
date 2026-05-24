@@ -99,7 +99,7 @@ func (p *Plugin) DescribeContainer(ctx context.Context, input io.Reader, options
 }
 
 // DescribeTable 从 Excel 文件中提取 TableInfo。
-func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*datatype.TableDescribeResult, error) {
+func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableDescribeResult, error) {
 	// 使用传入的 options，如果为 nil 则使用默认的
 	opts := p.options
 	if options != nil {
@@ -116,7 +116,7 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 	if p.hasExplicitSheetSelection(opts) {
 		sheetName := p.getTargetSheetNameFromOptions(workbook, opts)
 		if sheetName == "" {
-			return &datatype.TableDescribeResult{
+			return &format.TableDescribeResult{
 				Table: &datatype.TableInfo{
 					Name:       "excel_data",
 					Fields:     []datatype.FieldInfo{},
@@ -250,9 +250,9 @@ func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit
 }
 
 // convertToTableDescribeResult 将 WorkbookAnalysis 转换为 table describe result。
-func (p *Plugin) convertToTableDescribeResult(analysis *WorkbookAnalysis, opts *format.ParseOptions) (*datatype.TableDescribeResult, error) {
+func (p *Plugin) convertToTableDescribeResult(analysis *WorkbookAnalysis, opts *format.ParseOptions) (*format.TableDescribeResult, error) {
 	if len(analysis.Sheets) == 0 {
-		return &datatype.TableDescribeResult{
+		return &format.TableDescribeResult{
 			Table: &datatype.TableInfo{
 				Name:       "excel_data",
 				Fields:     []datatype.FieldInfo{},
@@ -287,7 +287,7 @@ func (p *Plugin) convertToTableDescribeResult(analysis *WorkbookAnalysis, opts *
 	}
 
 	rowCount := int64(sheet.RowCount)
-	return &datatype.TableDescribeResult{
+	return &format.TableDescribeResult{
 		Table: &datatype.TableInfo{
 			Name:       sheet.Name, // 使用工作表名称作为表名
 			RowCount:   &rowCount,

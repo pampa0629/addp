@@ -275,16 +275,16 @@ func (p discoveryScopeTableProvider) Capabilities() FormatCapability {
 	return capability
 }
 
-func (p discoveryScopeTableProvider) DescribeTable(context.Context, io.Reader, *ParseOptions) (*datatype.TableDescribeResult, error) {
-	return &datatype.TableDescribeResult{Table: &datatype.TableInfo{}}, nil
+func (p discoveryScopeTableProvider) DescribeTable(context.Context, io.Reader, *ParseOptions) (*TableDescribeResult, error) {
+	return &TableDescribeResult{Table: &datatype.TableInfo{}}, nil
 }
 
 func (p discoveryScopeTableProvider) SampleTable(context.Context, io.Reader, int64, int64, *ParseOptions) ([]map[string]interface{}, error) {
 	return nil, nil
 }
 
-func (p discoveryScopeTableProvider) DescribeTableScope(context.Context, contentio.Reader, contentio.Ref, *ParseOptions) (*datatype.TableDescribeResult, error) {
-	return &datatype.TableDescribeResult{Table: &datatype.TableInfo{}}, nil
+func (p discoveryScopeTableProvider) DescribeTableScope(context.Context, contentio.Reader, contentio.Ref, *ParseOptions) (*TableDescribeResult, error) {
+	return &TableDescribeResult{Table: &datatype.TableInfo{}}, nil
 }
 
 func (p discoveryScopeTableProvider) SampleTableScope(context.Context, contentio.Reader, contentio.Ref, int64, int64, *ParseOptions) ([]map[string]interface{}, error) {

@@ -94,7 +94,7 @@ func (p *Plugin) Capabilities() format.FormatCapability {
 	}
 }
 
-func (p *Plugin) DescribeMedia(ctx context.Context, input io.Reader, _ *format.ParseOptions) (*datatype.MediaDescribeResult, error) {
+func (p *Plugin) DescribeMedia(ctx context.Context, input io.Reader, _ *format.ParseOptions) (*format.MediaDescribeResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -113,7 +113,7 @@ func (p *Plugin) DescribeMedia(ctx context.Context, input io.Reader, _ *format.P
 		Encoding:   formatName,
 		ColorSpace: inferColorModel(cfg),
 	}
-	result := &datatype.MediaDescribeResult{Media: info}
+	result := &format.MediaDescribeResult{Media: info}
 	if len(data) > 0 {
 		result.Spatial = extractGeoTIFFSpatial(data, cfg.Width, cfg.Height)
 	}
