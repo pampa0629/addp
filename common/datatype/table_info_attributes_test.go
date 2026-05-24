@@ -1,6 +1,9 @@
 package datatype
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestTableInfoFromAttributesRestoresCommonFacts(t *testing.T) {
 	t.Parallel()
@@ -47,5 +50,54 @@ func TestTableInfoFromAttributesRestoresCommonFacts(t *testing.T) {
 	}
 	if field.OrdinalPosition != 1 || field.DefaultExpression != "0" || !field.Generated || field.GenerationExpression != "identity" {
 		t.Fatalf("field extended facts = %#v", field)
+	}
+}
+
+func TestTableInfoAttributesUsesJSONTagsAndKeepsNativeFacts(t *testing.T) {
+	t.Parallel()
+
+	rowCount := int64(7)
+	createdAt := time.Date(2026, 5, 24, 10, 30, 0, 0, time.UTC)
+	info := &TableInfo{
+		Name:      "orders",
+		Kind:      "table",
+		RowCount:  &rowCount,
+		CreatedAt: &createdAt,
+		Fields: []FieldInfo{{
+			Name:            "id",
+			Type:            FieldTypeInt,
+			Nullable:        false,
+			PrimaryKey:      true,
+			OrdinalPosition: 1,
+		}},
+		PrimaryKey: []string{"id"},
+		Native: map[string]interface{}{
+			"engine":        "MergeTree",
+			"is_temporary":  false,
+			"partition_num": 0,
+			"empty_text":    "",
+			"nested": map[string]interface{}{
+				"enabled": false,
+				"count":   0,
+			},
+		},
+	}
+
+	attrs := TableInfoAttributes(info)
+	native := attrs["native"].(map[string]interface{})
+	if native["is_temporary"] != false || native["partition_num"] != 0 || native["empty_text"] != "" {
+		t.Fatalf("native facts lost zero values: %#v", native)
+	}
+	nested := native["nested"].(map[string]interface{})
+	if nested["enabled"] != false || nested["count"] != 0 {
+		t.Fatalf("nested native facts lost zero values: %#v", nested)
+	}
+	fields := attrs["fields"].([]interface{})
+	field := fields[0].(map[string]interface{})
+	if field["nullable"] != false || field["primary_key"] != true {
+		t.Fatalf("field attrs = %#v", field)
+	}
+	if attrs["created_at"] != createdAt {
+		t.Fatalf("created_at = %#v, want %#v", attrs["created_at"], createdAt)
 	}
 }
