@@ -282,10 +282,28 @@ const fieldOrder = [
   'fields',
   'native',
   'source',
+  'mode',
+  'encoding',
+  'line_ending',
+  'version',
+  'page_size',
+  'page_count',
+  'table_count',
+  'view_count',
+  'index_count',
+  'entry_count',
+  'directory_count',
+  'sampled_children',
+  'children_truncated',
+  'sheet_count',
+  'default_sheet',
+  'sampled_sheets',
   'geometry_columns',
   'extent',
+  'extent_srid',
   'primary_geometry_column',
   'has_spatial_index',
+  'extractor_available',
   'srid',
   'dimension',
   'geometry_type',
@@ -323,6 +341,10 @@ const groupLabelKeys = {
   json: 'manager.explorer.attributes.groups.json',
   geojson: 'manager.explorer.attributes.groups.geojson',
   parquet: 'manager.explorer.attributes.groups.parquet',
+  excel: 'manager.explorer.attributes.groups.excel',
+  sqlite: 'manager.explorer.attributes.groups.sqlite',
+  zip: 'manager.explorer.attributes.groups.zip',
+  statistics: 'manager.explorer.attributes.groups.statistics',
   native: 'manager.explorer.attributes.groups.native',
   source: 'manager.explorer.attributes.groups.source',
   refs: 'manager.explorer.attributes.groups.refs'
@@ -355,11 +377,16 @@ const fieldLabelKeys = {
   nullable: 'manager.explorer.attributes.fields.nullable',
   shape_type: 'manager.explorer.attributes.fields.shapeType',
   encoding: 'manager.explorer.attributes.fields.encoding',
+  line_ending: 'manager.explorer.attributes.fields.lineEnding',
+  mode: 'manager.explorer.attributes.fields.mode',
+  version: 'manager.explorer.attributes.fields.version',
   base_name: 'manager.explorer.attributes.fields.baseName',
   ref_extensions: 'manager.explorer.attributes.fields.refExtensions',
   dbf_version: 'manager.explorer.attributes.fields.dbfVersion',
   has_cpg: 'manager.explorer.attributes.fields.hasCpg',
   has_prj: 'manager.explorer.attributes.fields.hasPrj',
+  extent_srid: 'manager.explorer.attributes.fields.extentSrid',
+  extractor_available: 'manager.explorer.attributes.fields.extractorAvailable',
   relkind: 'manager.explorer.attributes.fields.relkind',
   table_type: 'manager.explorer.attributes.fields.tableType',
   kind: 'manager.explorer.attributes.fields.kind',
@@ -371,6 +398,19 @@ const fieldLabelKeys = {
   index_count: 'manager.explorer.attributes.fields.indexCount',
   sample_size: 'manager.explorer.attributes.fields.sampleSize',
   avg_doc_size: 'manager.explorer.attributes.fields.avgDocSize',
+  page_size: 'manager.explorer.attributes.fields.pageSize',
+  page_count: 'manager.explorer.attributes.fields.pageCount',
+  table_count: 'manager.explorer.attributes.fields.tableCount',
+  view_count: 'manager.explorer.attributes.fields.viewCount',
+  entry_count: 'manager.explorer.attributes.fields.entryCount',
+  directory_count: 'manager.explorer.attributes.fields.directoryCount',
+  sampled_children: 'manager.explorer.attributes.fields.sampledChildren',
+  children_truncated: 'manager.explorer.attributes.fields.childrenTruncated',
+  sheet_count: 'manager.explorer.attributes.fields.sheetCount',
+  default_sheet: 'manager.explorer.attributes.fields.defaultSheet',
+  sampled_sheets: 'manager.explorer.attributes.fields.sampledSheets',
+  files: 'manager.explorer.attributes.fields.files',
+  anchors: 'manager.explorer.attributes.fields.anchors',
   content_index: 'manager.explorer.attributes.fields.contentIndex',
   schema_version: 'manager.explorer.attributes.fields.schemaVersion'
 }
@@ -703,6 +743,9 @@ const formatScalar = (value) => {
   if (typeof value === 'object') return JSON.stringify(value)
   if (typeof value === 'boolean') {
     return value ? t('manager.explorer.booleanYes') : t('manager.explorer.booleanNo')
+  }
+  if (typeof value === 'string' && /[\r\n\t]/.test(value)) {
+    return JSON.stringify(value).slice(1, -1)
   }
   return String(value)
 }

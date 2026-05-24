@@ -610,6 +610,7 @@ type SpatialInfo struct {
 | `datatype.ContentIndex` | 当前放在 `common/datatype`，被 format、Meta、Manager preview 使用 | 它不是 data type 本体，但当前是跨模块复用结构；贸然移出会引入新包或新概念 | 暂不动。后续结合 engine range reader、format content index、Meta attributes 的消费链路再决定是否移出 |
 | `common/engine/plugin.DatabaseInfo` / `CollectionInfo` | 仍是 engine catalog 层结构 | 它们更接近 catalog hierarchy / namespace 事实，不等同于 data type info | 暂不迁入 `datatype`。后续如有重复，再从 catalog/path/node 语义统一 |
 | `format.TableInfo` | 已删除 | 原薄壳只重复 `datatype.TableInfo`，没有独立事实边界 | reader / writer / Transfer 直接使用 `datatype.TableInfo` |
+| Manager `Metadata.vue` 历史页面 | 已删除 | 页面未挂路由，且调用的 `managerAPI.scanDataSource/getTables/manageTable/unmanageTable` 已不存在；继续保留会误导为旧 metadata 消费入口 | Manager 元数据展示以 Data Explorer + Meta 标准 attributes 为准；`quick_view` 保留为空间快显 / MVT 预缓存任务表，不承载 table info 事实 |
 
 ### `common/engine/plugin.TableInfo` 收敛结论
 

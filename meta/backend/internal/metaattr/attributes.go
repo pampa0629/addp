@@ -17,7 +17,9 @@ func Normalize(attrs models.JSONMap) models.JSONMap {
 	normalized["schema_version"] = 1
 
 	for _, section := range []string{"storage", "item", "type_info", "format_info", "content_index", "capabilities"} {
-		normalized[section] = Section(attrs, section)
+		if sectionAttrs := cleanAttributeValue(Section(attrs, section)); sectionAttrs != nil {
+			normalized[section] = sectionAttrs
+		}
 	}
 	return normalized
 }
@@ -38,11 +40,19 @@ func UpsertSection(attrs models.JSONMap, key string, values map[string]interface
 	if attrs == nil || len(values) == 0 {
 		return
 	}
+	values = cleanAttributeMap(values)
+	if len(values) == 0 {
+		return
+	}
 	section := Section(attrs, key)
 	for k, v := range values {
 		section[k] = v
 	}
-	attrs[key] = section
+	if section = cleanAttributeMap(section); len(section) > 0 {
+		attrs[key] = section
+	} else {
+		delete(attrs, key)
+	}
 }
 
 // SetStorage 写入 storage 分区。
@@ -82,6 +92,10 @@ func UpsertNested(attrs models.JSONMap, section string, namespace string, values
 	if attrs == nil || section == "" || namespace == "" || len(values) == 0 {
 		return
 	}
+	values = cleanAttributeMap(values)
+	if len(values) == 0 {
+		return
+	}
 	sectionAttrs := Section(attrs, section)
 	namespaceAttrs := map[string]interface{}{}
 	if existing, ok := sectionAttrs[namespace].(map[string]interface{}); ok {
@@ -92,8 +106,16 @@ func UpsertNested(attrs models.JSONMap, section string, namespace string, values
 	for k, v := range values {
 		namespaceAttrs[k] = v
 	}
-	sectionAttrs[namespace] = namespaceAttrs
-	attrs[section] = sectionAttrs
+	if namespaceAttrs = cleanAttributeMap(namespaceAttrs); len(namespaceAttrs) > 0 {
+		sectionAttrs[namespace] = namespaceAttrs
+	} else {
+		delete(sectionAttrs, namespace)
+	}
+	if sectionAttrs = cleanAttributeMap(sectionAttrs); len(sectionAttrs) > 0 {
+		attrs[section] = sectionAttrs
+	} else {
+		delete(attrs, section)
+	}
 }
 
 func JSONMap(attrs map[string]interface{}) models.JSONMap {
@@ -152,4 +174,68 @@ func SetSchemaFields(attrs models.JSONMap, fields []map[string]interface{}) {
 		return
 	}
 	UpsertNested(attrs, "type_info", "table", map[string]interface{}{"fields": fields})
+}
+
+func cleanAttributeMap(values map[string]interface{}) map[string]interface{} {
+	if len(values) == 0 {
+		return nil
+	}
+	cleaned := map[string]interface{}{}
+	for key, value := range values {
+		if cleanValue := cleanAttributeValue(value); cleanValue != nil {
+			cleaned[key] = cleanValue
+		}
+	}
+	if len(cleaned) == 0 {
+		return nil
+	}
+	return cleaned
+}
+
+func cleanAttributeValue(value interface{}) interface{} {
+	switch v := value.(type) {
+	case nil:
+		return nil
+	case map[string]interface{}:
+		if cleaned := cleanAttributeMap(v); len(cleaned) > 0 {
+			return cleaned
+		}
+		return nil
+	case models.JSONMap:
+		if cleaned := cleanAttributeMap(map[string]interface{}(v)); len(cleaned) > 0 {
+			return cleaned
+		}
+		return nil
+	case []interface{}:
+		cleaned := make([]interface{}, 0, len(v))
+		for _, item := range v {
+			if cleanItem := cleanAttributeValue(item); cleanItem != nil {
+				cleaned = append(cleaned, cleanItem)
+			}
+		}
+		return cleaned
+	case []map[string]interface{}:
+		cleaned := make([]map[string]interface{}, 0, len(v))
+		for _, item := range v {
+			if cleanItem := cleanAttributeMap(item); len(cleanItem) > 0 {
+				cleaned = append(cleaned, cleanItem)
+			}
+		}
+		return cleaned
+	case []string:
+		cleaned := make([]string, 0, len(v))
+		for _, item := range v {
+			if item != "" {
+				cleaned = append(cleaned, item)
+			}
+		}
+		return cleaned
+	case string:
+		if v == "" {
+			return nil
+		}
+		return v
+	default:
+		return v
+	}
 }

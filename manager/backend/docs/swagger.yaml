@@ -43,9 +43,6 @@ definitions:
       updated_at:
         type: string
     type: object
-  github_com_addp_manager_internal_models.JSONMap:
-    additionalProperties: true
-    type: object
   github_com_addp_manager_internal_models.MetaManualScanRequest:
     properties:
       catalog_paths:
@@ -82,122 +79,6 @@ definitions:
       started_at:
         type: string
       status:
-        type: string
-    type: object
-  github_com_addp_manager_internal_models.MetaScanTask:
-    properties:
-      created_at:
-        type: string
-      created_by:
-        type: integer
-      description:
-        type: string
-      enabled:
-        type: boolean
-      engine_id:
-        type: integer
-      id:
-        type: integer
-      last_run_at:
-        type: string
-      name:
-        type: string
-      next_run_at:
-        type: string
-      parameters:
-        $ref: '#/definitions/github_com_addp_manager_internal_models.JSONMap'
-      schedule:
-        type: string
-      schedule_config:
-        $ref: '#/definitions/github_com_addp_manager_internal_models.JSONMap'
-      schedule_type:
-        type: string
-      tenant_id:
-        type: integer
-      updated_at:
-        type: string
-      updated_by:
-        type: integer
-    type: object
-  github_com_addp_manager_internal_models.MetaScanTaskRequest:
-    properties:
-      catalog_paths:
-        items:
-          type: string
-        type: array
-      description:
-        type: string
-      enabled:
-        type: boolean
-      engine_id:
-        type: integer
-      name:
-        type: string
-      scan_depth:
-        type: string
-      schedule:
-        type: string
-      schedule_time:
-        type: string
-      schedule_type:
-        type: string
-      schedule_value:
-        items:
-          type: integer
-        type: array
-    required:
-    - name
-    - schedule_type
-    type: object
-  github_com_addp_manager_internal_models.MetaScanTaskRun:
-    properties:
-      completed_at:
-        type: string
-      created_at:
-        type: string
-      engine_id:
-        type: integer
-      engine_name:
-        type: string
-      engine_type:
-        type: string
-      error_message:
-        type: string
-      id:
-        type: integer
-      name:
-        type: string
-      parameters:
-        $ref: '#/definitions/github_com_addp_manager_internal_models.JSONMap'
-      progress_current:
-        type: integer
-      progress_message:
-        type: string
-      progress_percent:
-        type: number
-      progress_total:
-        type: integer
-      result_summary:
-        $ref: '#/definitions/github_com_addp_manager_internal_models.JSONMap'
-      started_at:
-        type: string
-      status:
-        type: string
-      storage_type:
-        type: string
-      task_id:
-        type: integer
-      task_name:
-        type: string
-      task_plan_name:
-        type: string
-      tenant_id:
-        type: integer
-      trigger_type:
-        type: string
-      trigger_user_id:
-        type: integer
-      updated_at:
         type: string
     type: object
   github_com_addp_manager_internal_models.MvtTask:

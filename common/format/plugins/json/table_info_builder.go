@@ -119,14 +119,6 @@ func (b *tableInfoBuilder) Build() tableInfoBuildResult {
 	return result
 }
 
-func (b *tableInfoBuilder) BuildSchema() *datatype.TableInfo {
-	result := b.Build()
-	if result.Table == nil {
-		return &datatype.TableInfo{}
-	}
-	return result.Table.Clone()
-}
-
 func (b *tableInfoBuilder) BuildTableInfo() *datatype.TableInfo {
 	return b.Build().Table
 }

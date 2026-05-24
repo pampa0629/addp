@@ -157,7 +157,7 @@ func main() {
 
 	// 初始化 services（注意：Manager 不负责引擎管理，引擎信息通过 SystemClient 获取）
 	searchHistoryService := service.NewSearchHistoryService(searchHistoryRepo)
-	metadataService := service.NewMetadataService(metadataRepo, systemClient, metaClient, previewRegistry, contentRegistry, cfg.MetaServiceURL)
+	metadataService := service.NewMetadataService(metadataRepo, systemClient, metaClient, previewRegistry, contentRegistry)
 	searchService, err := service.NewHybridSearchService(cfg)
 	if err != nil {
 		logger.L().Error("初始化混合检索服务失败", "error", err)

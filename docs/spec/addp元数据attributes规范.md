@@ -30,6 +30,8 @@
 
 旧 attributes 字段、旧分区和平铺字段不保留兼容读取或兼容写入。旧数据应删除后重新 meta 扫描生成新结构；仍依赖旧结构的代码应尽早暴露并修正。
 
+空分区不落库：`storage`、`type_info`、`format_info`、`content_index`、`capabilities` 等标准分区只有在包含实际事实时才写入。空对象、空字符串和只包含空对象的命名空间应在 normalizer 中删除。空数组可以作为显式事实保留，例如 `type_info.container.children: []` 表示容器已解析但没有子项。
+
 ## 术语统一
 
 attributes 分区统一采用以下概念：

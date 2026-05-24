@@ -37,8 +37,8 @@ func BuildAttributes(item *metaitem.DetectedItem) map[string]interface{} {
 	if item.Size() > 0 {
 		storageAttrs["total_size"] = item.Size()
 	}
-	attrs["item"] = mergeAttributeSection(attrs["item"], itemAttrs)
-	attrs["storage"] = mergeAttributeSection(attrs["storage"], storageAttrs)
+	setMergedAttributeSection(attrs, "item", itemAttrs)
+	setMergedAttributeSection(attrs, "storage", storageAttrs)
 	return attrs
 }
 
@@ -86,23 +86,38 @@ func MergeAttributeMaps(attrs map[string]interface{}, additions map[string]inter
 		}
 		switch k {
 		case "storage", "item", "type_info", "format_info", "content_index", "capabilities":
-			attrs[k] = mergeAttributeSection(attrs[k], v)
+			setMergedAttributeSection(attrs, k, v)
 		default:
-			attrs[k] = v
+			if cleanValue := cleanAttributeValue(v); cleanValue != nil {
+				attrs[k] = cleanValue
+			}
 		}
+	}
+}
+
+func setMergedAttributeSection(attrs map[string]interface{}, key string, additions interface{}) {
+	merged := mergeAttributeSection(attrs[key], additions)
+	if len(merged) > 0 {
+		attrs[key] = merged
+	} else {
+		delete(attrs, key)
 	}
 }
 
 func mergeAttributeSection(existing interface{}, additions interface{}) map[string]interface{} {
 	merged := map[string]interface{}{}
 	for k, v := range interfaceMap(existing) {
-		merged[k] = v
+		if cleanValue := cleanAttributeValue(v); cleanValue != nil {
+			merged[k] = cleanValue
+		}
 	}
 	for k, v := range interfaceMap(additions) {
 		if isLegacyFlatStorageKey(k) {
 			continue
 		}
-		merged[k] = v
+		if cleanValue := cleanAttributeValue(v); cleanValue != nil {
+			merged[k] = cleanValue
+		}
 	}
 	return merged
 }

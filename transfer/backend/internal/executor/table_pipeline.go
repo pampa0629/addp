@@ -23,7 +23,7 @@ type TableBatchSource interface {
 }
 
 type TableBatchReader interface {
-	Schema() *datatype.TableInfo
+	TableInfo() *datatype.TableInfo
 	SpatialInfo() *datatype.SpatialInfo
 	ReadBatch(ctx context.Context, limit int) (*engineplugin.BatchData, error)
 	Close(ctx context.Context) error
@@ -112,7 +112,7 @@ func (p *TablePipeline) Execute(ctx context.Context) (*TablePipelineMetrics, err
 	}
 	defer reader.Close(ctx)
 
-	schema := reader.Schema()
+	schema := reader.TableInfo()
 	spatialInfo := reader.SpatialInfo()
 	var firstBatch *engineplugin.BatchData
 	if tableSchemaEmpty(schema) {
@@ -236,7 +236,7 @@ type nativeTableSessionBatchReader struct {
 	closed  bool
 }
 
-func (r *nativeTableSessionBatchReader) Schema() *datatype.TableInfo {
+func (r *nativeTableSessionBatchReader) TableInfo() *datatype.TableInfo {
 	return r.schema
 }
 
@@ -285,7 +285,7 @@ type nativeOffsetBatchReader struct {
 	done     bool
 }
 
-func (r *nativeOffsetBatchReader) Schema() *datatype.TableInfo {
+func (r *nativeOffsetBatchReader) TableInfo() *datatype.TableInfo {
 	return r.schema
 }
 
@@ -449,7 +449,7 @@ type multiTableBatchReader struct {
 	offset      int64
 }
 
-func (r *multiTableBatchReader) Schema() *datatype.TableInfo {
+func (r *multiTableBatchReader) TableInfo() *datatype.TableInfo {
 	if !tableSchemaEmpty(r.schema) {
 		return r.schema
 	}
@@ -470,7 +470,7 @@ func (r *multiTableBatchReader) ReadBatch(ctx context.Context, limit int) (*engi
 	}
 	batch := &engineplugin.BatchData{
 		Rows:    rows,
-		Fields:  tableInfoFields(r.Schema()),
+		Fields:  tableInfoFields(r.TableInfo()),
 		Spatial: r.SpatialInfo(),
 		Offset:  r.offset,
 	}
@@ -542,7 +542,7 @@ type encodedTableBatchReader struct {
 	offset      int64
 }
 
-func (r *encodedTableBatchReader) Schema() *datatype.TableInfo {
+func (r *encodedTableBatchReader) TableInfo() *datatype.TableInfo {
 	if !tableSchemaEmpty(r.schema) {
 		return r.schema
 	}
@@ -563,7 +563,7 @@ func (r *encodedTableBatchReader) ReadBatch(ctx context.Context, limit int) (*en
 	}
 	batch := &engineplugin.BatchData{
 		Rows:    rows,
-		Fields:  tableInfoFields(r.Schema()),
+		Fields:  tableInfoFields(r.TableInfo()),
 		Spatial: r.SpatialInfo(),
 		Offset:  r.offset,
 	}
@@ -595,7 +595,7 @@ type multiEncodedTableBatchReader struct {
 	done           bool
 }
 
-func (r *multiEncodedTableBatchReader) Schema() *datatype.TableInfo {
+func (r *multiEncodedTableBatchReader) TableInfo() *datatype.TableInfo {
 	return r.schema
 }
 
@@ -639,7 +639,7 @@ type sampleEncodedTableBatchReader struct {
 	done        bool
 }
 
-func (r *sampleEncodedTableBatchReader) Schema() *datatype.TableInfo {
+func (r *sampleEncodedTableBatchReader) TableInfo() *datatype.TableInfo {
 	return r.schema
 }
 

@@ -10,7 +10,6 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
-	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/service/internal/models"
 )
 
@@ -401,17 +400,25 @@ func needsQuoting(columnName string) bool {
 	return false
 }
 
-func columnInfosFromMetadata(metadata *plugin.ItemMetadata) []plugin.ColumnInfo {
+type metadataColumnInfo struct {
+	ColumnName   string
+	DataType     string
+	IsNullable   bool
+	IsPrimaryKey bool
+	Comment      string
+}
+
+func columnInfosFromMetadata(metadata *plugin.ItemMetadata) []metadataColumnInfo {
 	if metadata == nil {
 		return nil
 	}
-	columns := make([]plugin.ColumnInfo, 0, len(metadata.Fields))
+	columns := make([]metadataColumnInfo, 0, len(metadata.Fields))
 	for _, field := range metadata.Fields {
-		dataType := commonJSON.InterfaceString(field.Attributes["native_type"])
+		dataType := field.NativeType
 		if dataType == "" {
-			dataType = field.Type
+			dataType = string(field.Type)
 		}
-		columns = append(columns, plugin.ColumnInfo{
+		columns = append(columns, metadataColumnInfo{
 			ColumnName:   field.Name,
 			DataType:     dataType,
 			IsNullable:   field.Nullable,

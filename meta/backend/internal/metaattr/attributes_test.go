@@ -29,7 +29,6 @@ func TestNormalizeMetaItemAttributesKeepsOnlyStandardSections(t *testing.T) {
 		"item":           {},
 		"type_info":      {},
 		"format_info":    {},
-		"content_index":  {},
 		"capabilities":   {},
 	}
 	for key := range normalized {
@@ -46,6 +45,43 @@ func TestNormalizeMetaItemAttributesKeepsOnlyStandardSections(t *testing.T) {
 	}
 	if normalized["schema"] != nil || normalized["extensions"] != nil || normalized["bucket"] != nil {
 		t.Fatalf("legacy top-level fields should not survive: %#v", normalized)
+	}
+	if _, ok := normalized["content_index"]; ok {
+		t.Fatalf("empty content_index should not survive: %#v", normalized)
+	}
+}
+
+func TestNormalizePrunesEmptyStandardSections(t *testing.T) {
+	t.Parallel()
+
+	normalized := Normalize(models.JSONMap{
+		"item":          map[string]interface{}{"layout": "single", "format": ""},
+		"storage":       map[string]interface{}{},
+		"type_info":     map[string]interface{}{"table": map[string]interface{}{}},
+		"format_info":   map[string]interface{}{"csv": map[string]interface{}{}},
+		"content_index": map[string]interface{}{"table": map[string]interface{}{}},
+		"capabilities":  map[string]interface{}{"spatial": map[string]interface{}{"has_spatial_index": false}},
+	})
+
+	if _, ok := normalized["storage"]; ok {
+		t.Fatalf("empty storage should be pruned: %#v", normalized)
+	}
+	if _, ok := normalized["type_info"]; ok {
+		t.Fatalf("empty type_info should be pruned: %#v", normalized)
+	}
+	if _, ok := normalized["format_info"]; ok {
+		t.Fatalf("empty format_info should be pruned: %#v", normalized)
+	}
+	if _, ok := normalized["content_index"]; ok {
+		t.Fatalf("empty content_index should be pruned: %#v", normalized)
+	}
+	item := normalized["item"].(map[string]interface{})
+	if item["layout"] != "single" || item["format"] != nil {
+		t.Fatalf("item cleanup = %#v", item)
+	}
+	spatial := normalized["capabilities"].(map[string]interface{})["spatial"].(map[string]interface{})
+	if spatial["has_spatial_index"] != false {
+		t.Fatalf("false capability value must be kept: %#v", spatial)
 	}
 }
 
