@@ -393,12 +393,11 @@ func TestRegisterContainerInfoProvider(t *testing.T) {
 	registry := NewProviderRegistry()
 	provider := NewContainerInfoProvider(
 		FormatType("container_test"),
-		func(context.Context, io.Reader, *ParseOptions) (*ContainerInfo, error) {
-			return &ContainerInfo{
-				Format:       FormatType("container_test"),
+		func(context.Context, io.Reader, *ParseOptions) (*datatype.ContainerInfo, error) {
+			return &datatype.ContainerInfo{
 				ChildCount:   1,
 				DefaultChild: "Sheet1",
-				Children: []ContainerChildInfo{{
+				Children: []datatype.ContainerChildInfo{{
 					Name:      "Sheet1",
 					ChildKind: "sheet",
 					DataType:  datatype.DataTypeTable,
@@ -440,7 +439,7 @@ func TestRegisterContainerChildResolver(t *testing.T) {
 	registry := NewProviderRegistry()
 	resolver := NewContainerChildResolver(
 		FormatType("container_child_test"),
-		func(_ context.Context, parent contentio.Reader, parentRef contentio.Ref, child ContainerChildInfo, _ *ParseOptions) (*ContainerChildResource, error) {
+		func(_ context.Context, parent contentio.Reader, parentRef contentio.Ref, child datatype.ContainerChildInfo, _ *ParseOptions) (*ContainerChildResource, error) {
 			return NativeContainerChildResource(parent, parentRef, FormatType("container_child_test"), child, ChildTableParseOptions(child.Name, nil)), nil
 		},
 	)

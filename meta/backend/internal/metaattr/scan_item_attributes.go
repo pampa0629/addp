@@ -8,13 +8,10 @@ import (
 	"github.com/addp/meta/internal/models"
 )
 
-func BuildTableAttributes(schemaName string, fields []map[string]interface{}, tableMetadata map[string]interface{}, tableKind, tableComment string) models.JSONMap {
+func BuildTableAttributes(schemaName string, fields []map[string]interface{}, tableKind, tableComment string) models.JSONMap {
 	table := map[string]interface{}{}
 	if len(fields) > 0 {
 		table["fields"] = fields
-	}
-	if len(tableMetadata) > 0 {
-		table["table_metadata"] = tableMetadata
 	}
 	if tableKind != "" {
 		table["kind"] = tableKind

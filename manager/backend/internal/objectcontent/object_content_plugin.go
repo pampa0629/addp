@@ -774,7 +774,11 @@ func buildContainerPreviewFromAttributes(attrs map[string]interface{}, sizeBytes
 			continue
 		}
 		name := commonJSON.InterfaceString(child["name"])
-		tableName := commonJSON.InterfaceString(child["table"])
+		native := rawMapAttribute(child["native"])
+		tableName := commonJSON.InterfaceString(native["table"])
+		if tableName == "" {
+			tableName = commonJSON.InterfaceString(child["table"])
+		}
 		childKind := containerChildKindFromMap(child)
 		columnCount := commonJSON.InterfaceInt64(child["column_count"])
 		childMap := map[string]interface{}{
@@ -830,12 +834,12 @@ func normalizeContainerAttributeChildrenForPreview(formatName string, children [
 		if !containerAttributeChildIsResolved(child) {
 			return nil
 		}
-		childInfo := mapToContainerChildInfo(child)
+		childInfo := ContainerChildInfoFromMap(child)
 		if childInfo.Format == "" && formatName != "" {
-			childInfo.Format = format.FormatType(formatName)
+			childInfo.Format = formatName
 		}
 		normalized = append(normalized, containerChildPreviewMap(childInfo, index))
-		if childInfo.Layout != "" || len(childInfo.Refs) > 0 {
+		if len(childInfo.Refs) > 0 || strings.EqualFold(childInfo.ChildKind, "multi") {
 			hasResolvedChild = true
 		}
 	}
@@ -855,7 +859,7 @@ func containerAttributeChildIsResolved(child map[string]interface{}) bool {
 	if len(child) == 0 {
 		return false
 	}
-	if strings.TrimSpace(commonJSON.InterfaceString(child["layout"])) != "" {
+	if strings.EqualFold(strings.TrimSpace(commonJSON.InterfaceString(child["child_kind"])), "multi") {
 		return true
 	}
 	return len(interfaceSlice(child["refs"])) > 0
@@ -863,77 +867,6 @@ func containerAttributeChildIsResolved(child map[string]interface{}) bool {
 
 func containerChildKindFromMap(child map[string]interface{}) string {
 	return strings.TrimSpace(commonJSON.InterfaceString(child["child_kind"]))
-}
-
-func mapToContainerChildInfo(child map[string]interface{}) format.ContainerChildInfo {
-	if child == nil {
-		child = map[string]interface{}{}
-	}
-	name := strings.TrimSpace(commonJSON.InterfaceString(child["name"]))
-	childKind := containerChildKindFromMap(child)
-	dataType := datatype.ParseDataType(commonJSON.InterfaceString(child["data_type"]))
-	properties := make(map[string]interface{}, len(child))
-	for key, value := range child {
-		switch key {
-		case "name", "child_kind", "data_type", "format", "layout", "refs", "row_count", "column_count", "has_header":
-			continue
-		default:
-			properties[key] = value
-		}
-	}
-	rowCountValue := commonJSON.InterfaceInt64(child["row_count"])
-	var rowCount *int64
-	if rowCountValue > 0 {
-		rowCount = &rowCountValue
-	}
-	columnCountValue := int(commonJSON.InterfaceInt64(child["column_count"]))
-	var columnCount *int
-	if columnCountValue > 0 {
-		columnCount = &columnCountValue
-	}
-	var hasHeader *bool
-	if _, ok := child["has_header"]; ok {
-		value := commonJSON.InterfaceBool(child["has_header"])
-		hasHeader = &value
-	}
-	return format.ContainerChildInfo{
-		Name:        name,
-		ChildKind:   childKind,
-		DataType:    dataType,
-		Format:      format.FormatType(strings.TrimSpace(commonJSON.InterfaceString(child["format"]))),
-		Layout:      strings.TrimSpace(commonJSON.InterfaceString(child["layout"])),
-		Refs:        containerChildRefsFromMap(child),
-		RowCount:    rowCount,
-		ColumnCount: columnCount,
-		HasHeader:   hasHeader,
-		Properties:  properties,
-	}
-}
-
-func containerChildRefsFromMap(child map[string]interface{}) []format.ContainerChildRef {
-	values := interfaceSlice(child["refs"])
-	if len(values) == 0 {
-		return nil
-	}
-	refs := make([]format.ContainerChildRef, 0, len(values))
-	for _, value := range values {
-		ref := rawMapAttribute(value)
-		if len(ref) == 0 {
-			continue
-		}
-		path := strings.TrimSpace(commonJSON.InterfaceString(ref["path"]))
-		if path == "" {
-			continue
-		}
-		refs = append(refs, format.ContainerChildRef{
-			Role:      strings.TrimSpace(commonJSON.InterfaceString(ref["role"])),
-			Path:      path,
-			Required:  commonJSON.InterfaceBool(ref["required"]),
-			Primary:   commonJSON.InterfaceBool(ref["primary"]),
-			Extension: strings.TrimSpace(commonJSON.InterfaceString(ref["extension"])),
-		})
-	}
-	return refs
 }
 
 func resolveContainerAttributeChildrenForPreview(formatName string, children []interface{}) *containerPreviewChildren {
@@ -1018,10 +951,10 @@ func resolveContainerAttributeChildrenForPreview(formatName string, children []i
 	}
 }
 
-func containerChildPreviewMap(childInfo format.ContainerChildInfo, index int) map[string]interface{} {
-	key := containerChildKey(childInfo.Name, commonJSON.InterfaceString(childInfo.Properties["table"]), index)
-	child := make(map[string]interface{}, len(childInfo.Properties)+8)
-	for key, value := range childInfo.Properties {
+func containerChildPreviewMap(childInfo datatype.ContainerChildInfo, index int) map[string]interface{} {
+	key := containerChildKey(childInfo.Name, commonJSON.InterfaceString(childInfo.Native["table"]), index)
+	child := make(map[string]interface{}, len(childInfo.Native)+8)
+	for key, value := range childInfo.Native {
 		if isContainerChildInternalProperty(key) {
 			continue
 		}
@@ -1033,10 +966,12 @@ func containerChildPreviewMap(childInfo format.ContainerChildInfo, index int) ma
 		"label":      childInfo.Name,
 		"child_kind": childInfo.ChildKind,
 		"data_type":  childInfo.DataType,
-		"format":     string(childInfo.Format),
-		"layout":     childInfo.Layout,
+		"format":     childInfo.Format,
 	} {
 		child[key] = value
+	}
+	if layout := containerChildPreviewLayout(childInfo); layout != "" {
+		child["layout"] = layout
 	}
 	if childInfo.RowCount != nil {
 		child["row_count"] = *childInfo.RowCount
@@ -1053,6 +988,13 @@ func containerChildPreviewMap(childInfo format.ContainerChildInfo, index int) ma
 	return child
 }
 
+func containerChildPreviewLayout(childInfo datatype.ContainerChildInfo) string {
+	if len(childInfo.Refs) > 0 || strings.EqualFold(childInfo.ChildKind, "multi") {
+		return string(commondataitem.LayoutMulti)
+	}
+	return ""
+}
+
 func isContainerChildInternalProperty(key string) bool {
 	switch strings.ToLower(strings.TrimSpace(key)) {
 	case "refs", "ref_paths", "components", "component_paths", "organization":
@@ -1062,7 +1004,7 @@ func isContainerChildInternalProperty(key string) bool {
 	}
 }
 
-func containerChildRefDescriptors(childInfo format.ContainerChildInfo) []map[string]interface{} {
+func containerChildRefDescriptors(childInfo datatype.ContainerChildInfo) []map[string]interface{} {
 	refs := make([]format.RelatedRef, 0, len(childInfo.Refs))
 	for _, ref := range childInfo.Refs {
 		role := ref.Role
@@ -1072,7 +1014,7 @@ func containerChildRefDescriptors(childInfo format.ContainerChildInfo) []map[str
 		contentRef := contentio.NewRef(ref.Path, role)
 		refs = append(refs, format.NewRelatedRef(contentRef, ref.Required, ref.Primary))
 	}
-	descriptors := format.DescribeRefs(childInfo.Format, refs)
+	descriptors := format.DescribeRefs(format.FormatType(childInfo.Format), refs)
 	result := make([]map[string]interface{}, 0, len(descriptors))
 	for index, descriptor := range descriptors {
 		key := strings.TrimSpace(descriptor.Key)
@@ -1427,7 +1369,7 @@ func (h *containerContentHandler) parseContainer(ctx context.Context, tmpPath st
 	return decoratePreviewContent(content), truncated, nil
 }
 
-func buildContainerMetadataMap(info *format.ContainerInfo, req *ObjectContentRequest, formatType format.FormatType) map[string]interface{} {
+func buildContainerMetadataMap(info *datatype.ContainerInfo, req *ObjectContentRequest, formatType format.FormatType) map[string]interface{} {
 	result := map[string]interface{}{"format": string(formatType)}
 	if req != nil {
 		result["size_bytes"] = req.Size
@@ -1435,7 +1377,7 @@ func buildContainerMetadataMap(info *format.ContainerInfo, req *ObjectContentReq
 	if info == nil {
 		return result
 	}
-	for key, value := range info.FormatInfo {
+	for key, value := range info.Native {
 		result[key] = value
 	}
 	result["child_count"] = info.ChildCount
@@ -1443,7 +1385,7 @@ func buildContainerMetadataMap(info *format.ContainerInfo, req *ObjectContentReq
 	return result
 }
 
-func resolveContainerChildrenForPreview(info *format.ContainerInfo) *format.ContainerInfo {
+func resolveContainerChildrenForPreview(info *datatype.ContainerInfo) *datatype.ContainerInfo {
 	if info == nil || len(info.Children) == 0 {
 		return info
 	}
@@ -1462,16 +1404,16 @@ func resolveContainerChildrenForPreview(info *format.ContainerInfo) *format.Cont
 		if kind != "" && kind != "file" && kind != "object" && kind != "entry" && kind != "multi" {
 			continue
 		}
-		pathValue := commonJSON.InterfaceString(child.Properties["path"])
+		pathValue := commonJSON.InterfaceString(child.Native["path"])
 		if pathValue == "" {
 			pathValue = child.Name
 		}
 		var sizePtr *int64
-		if size := commonJSON.InterfaceInt64(child.Properties["uncompressed_size"]); size > 0 {
+		if size := commonJSON.InterfaceInt64(child.Native["uncompressed_size"]); size > 0 {
 			sizePtr = &size
 		}
 		props := map[string]interface{}{}
-		for key, value := range child.Properties {
+		for key, value := range child.Native {
 			props[key] = value
 		}
 		if child.Format != "" {
@@ -1498,7 +1440,8 @@ func resolveContainerChildrenForPreview(info *format.ContainerInfo) *format.Cont
 		return info
 	}
 	next := *info
-	next.Children = make([]format.ContainerChildInfo, 0, len(resolved.Items))
+	next.Children = make([]datatype.ContainerChildInfo, 0, len(resolved.Items))
+	next.Native = cloneInterfaceMap(info.Native)
 	groupedItemCount := 0
 	groupedRefCount := 0
 	for _, item := range resolved.Items {
@@ -1512,10 +1455,10 @@ func resolveContainerChildrenForPreview(info *format.ContainerInfo) *format.Cont
 	}
 	if len(next.Children) > 0 {
 		next.DefaultChild = next.Children[0].Name
-		if next.FormatInfo == nil {
-			next.FormatInfo = map[string]interface{}{}
+		if next.Native == nil {
+			next.Native = map[string]interface{}{}
 		}
-		applyContainerChildrenSummary(next.FormatInfo, &containerPreviewChildren{
+		applyContainerChildrenSummary(next.Native, &containerPreviewChildren{
 			RawCount:         rawCount,
 			VisibleCount:     len(next.Children),
 			IgnoredCount:     len(resolved.Ignored),
@@ -1528,14 +1471,11 @@ func resolveContainerChildrenForPreview(info *format.ContainerInfo) *format.Cont
 	return &next
 }
 
-func buildContainerPreviewFromContainerInfo(info *format.ContainerInfo, fallbackFormat string) map[string]interface{} {
+func buildContainerPreviewFromContainerInfo(info *datatype.ContainerInfo, fallbackFormat string) map[string]interface{} {
 	if info == nil {
 		return emptyContainerPreview(fallbackFormat)
 	}
-	formatName := string(info.Format)
-	if formatName == "" {
-		formatName = fallbackFormat
-	}
+	formatName := fallbackFormat
 	children := make([]map[string]interface{}, 0, len(info.Children))
 	for _, childInfo := range info.Children {
 		children = append(children, containerChildPreviewMap(childInfo, len(children)))
@@ -1545,7 +1485,7 @@ func buildContainerPreviewFromContainerInfo(info *format.ContainerInfo, fallback
 		"child_count":      info.ChildCount,
 		"sampled_children": len(info.Children),
 	}
-	for key, value := range info.FormatInfo {
+	for key, value := range info.Native {
 		summary[key] = value
 	}
 	applyContainerChildrenSummary(summary, &containerPreviewChildren{
@@ -1569,14 +1509,25 @@ func buildContainerPreviewFromContainerInfo(info *format.ContainerInfo, fallback
 	return buildContainerPreview(formatName, defaultChild, defaultChild, children, summary)
 }
 
-func containerInfoTruncated(info *format.ContainerInfo) bool {
+func containerInfoTruncated(info *datatype.ContainerInfo) bool {
 	if info == nil {
 		return false
 	}
 	if info.ChildCount > len(info.Children) {
 		return true
 	}
-	return commonJSON.InterfaceBool(info.FormatInfo["children_truncated"])
+	return commonJSON.InterfaceBool(info.Native["children_truncated"])
+}
+
+func cloneInterfaceMap(input map[string]interface{}) map[string]interface{} {
+	if len(input) == 0 {
+		return nil
+	}
+	output := make(map[string]interface{}, len(input))
+	for key, value := range input {
+		output[key] = value
+	}
+	return output
 }
 
 func objectContentContainerFormat(req *ObjectContentRequest) format.FormatType {

@@ -72,7 +72,7 @@ func (p *Plugin) Capabilities() format.FormatCapability {
 	}
 }
 
-func (p *Plugin) DescribeContainer(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.ContainerInfo, error) {
+func (p *Plugin) DescribeContainer(ctx context.Context, input io.Reader, options *format.ParseOptions) (*datatype.ContainerInfo, error) {
 	data, err := io.ReadAll(input)
 	if err != nil {
 		return nil, fmt.Errorf("read zip input: %w", err)
@@ -88,7 +88,7 @@ func (p *Plugin) DescribeContainer(ctx context.Context, input io.Reader, options
 	if limited && entryLimit < childCapacity {
 		childCapacity = entryLimit
 	}
-	children := make([]format.ContainerChildInfo, 0, childCapacity)
+	children := make([]datatype.ContainerChildInfo, 0, childCapacity)
 	fileCount := 0
 	dirCount := 0
 	defaultChild := ""
@@ -120,13 +120,12 @@ func (p *Plugin) DescribeContainer(ctx context.Context, input io.Reader, options
 	}
 
 	entryCount := fileCount + dirCount
-	return &format.ContainerInfo{
-		Format:        p.Format(),
+	return &datatype.ContainerInfo{
 		ChildCount:    entryCount,
 		DefaultChild:  defaultChild,
 		ResourceCount: 1,
 		Children:      children,
-		FormatInfo: map[string]interface{}{
+		Native: map[string]interface{}{
 			"entry_count":        entryCount,
 			"file_count":         fileCount,
 			"directory_count":    dirCount,
@@ -136,7 +135,7 @@ func (p *Plugin) DescribeContainer(ctx context.Context, input io.Reader, options
 	}, nil
 }
 
-func (p *Plugin) ResolveContainerChild(ctx context.Context, parent contentio.Reader, parentRef contentio.Ref, child format.ContainerChildInfo, options *format.ParseOptions) (*format.ContainerChildResource, error) {
+func (p *Plugin) ResolveContainerChild(ctx context.Context, parent contentio.Reader, parentRef contentio.Ref, child datatype.ContainerChildInfo, options *format.ParseOptions) (*format.ContainerChildResource, error) {
 	if parent == nil {
 		return nil, fmt.Errorf("zip child resolver requires parent contentio.Reader")
 	}
@@ -179,10 +178,10 @@ func (p *Plugin) ResolveContainerChild(ctx context.Context, parent contentio.Rea
 
 	entryRef := contentio.NewRef(path.Join(parentRef.Path, entryPath), contentio.RoleMain)
 	size := int64(0)
-	if rawSize, ok := child.Properties["uncompressed_size"]; ok {
+	if rawSize, ok := child.Native["uncompressed_size"]; ok {
 		size = interfaceInt64(rawSize)
 	}
-	childFormat := format.FormatType(strings.TrimSpace(formatInterfaceString(child.Properties["format"])))
+	childFormat := format.FormatType(strings.TrimSpace(child.Format))
 	if childFormat == "" {
 		childFormat = format.FormatUnknown
 	}
@@ -277,50 +276,55 @@ func sortedEntries(entries []*zip.File) []*zip.File {
 	return result
 }
 
-func zipEntryToContainerChild(entry *zip.File, isDir bool) format.ContainerChildInfo {
+func zipEntryToContainerChild(entry *zip.File, isDir bool) datatype.ContainerChildInfo {
 	name := strings.Trim(strings.TrimSpace(entry.Name), "/")
 	kind := "file"
 	dataType := datatype.DataTypeFile
+	childFormat := format.FormatUnknown
 	if isDir {
 		kind = "directory"
 		dataType = datatype.DataTypeContainer
 	}
-	properties := map[string]interface{}{
+	native := map[string]interface{}{
 		"path":              name,
 		"compressed_size":   entry.CompressedSize64,
 		"uncompressed_size": entry.UncompressedSize64,
 		"method":            entry.Method,
 	}
 	if !isDir {
-		childFormat := format.DetectFormat(filepath.Base(name), nil)
+		childFormat = format.DetectFormat(filepath.Base(name), nil)
 		if childFormat != format.FormatUnknown {
-			properties["format"] = string(childFormat)
 			if descriptor, ok := format.GetFormatDescriptor(childFormat); ok && descriptor.DataType != "" {
 				dataType = descriptor.DataType
 			}
 		}
 	}
-	return format.ContainerChildInfo{
-		Name:       name,
-		ChildKind:  kind,
-		DataType:   dataType,
-		Properties: properties,
+	formatName := ""
+	if childFormat != format.FormatUnknown {
+		formatName = string(childFormat)
+	}
+	return datatype.ContainerChildInfo{
+		Name:      name,
+		ChildKind: kind,
+		DataType:  dataType,
+		Format:    formatName,
+		Native:    native,
 	}
 }
 
-func zipChildPath(child format.ContainerChildInfo, options *format.ParseOptions) string {
+func zipChildPath(child datatype.ContainerChildInfo, options *format.ParseOptions) string {
 	if options != nil && options.ExtraParams != nil {
 		if value := strings.Trim(strings.TrimSpace(formatInterfaceString(options.ExtraParams[format.ChildNameParam])), "/"); value != "" {
 			return value
 		}
 	}
-	if value := strings.Trim(strings.TrimSpace(formatInterfaceString(child.Properties["path"])), "/"); value != "" {
+	if value := strings.Trim(strings.TrimSpace(formatInterfaceString(child.Native["path"])), "/"); value != "" {
 		return value
 	}
 	return strings.Trim(strings.TrimSpace(child.Name), "/")
 }
 
-func zipChildRefs(child format.ContainerChildInfo, basePath string) []format.RelatedRef {
+func zipChildRefs(child datatype.ContainerChildInfo, basePath string) []format.RelatedRef {
 	if len(child.Refs) == 0 {
 		return nil
 	}

@@ -25,7 +25,6 @@ type ContainerChildResource struct {
 	Kind          string
 	DataType      datatype.DataType
 	Format        FormatType
-	Layout        string
 	Refs          []RelatedRef
 	ResourceKind  string
 	Reader        contentio.Reader
@@ -34,7 +33,7 @@ type ContainerChildResource struct {
 	ParentRef     contentio.Ref
 	ParentFormat  FormatType
 	ParentOptions *ParseOptions
-	Properties    map[string]interface{}
+	Native        map[string]interface{}
 }
 
 func (r *ContainerChildResource) Open(ctx context.Context) (io.ReadCloser, error) {
@@ -63,10 +62,10 @@ func (r *ContainerChildResource) Open(ctx context.Context) (io.ReadCloser, error
 // auditing and storage-specific read behavior.
 type ContainerChildResolver interface {
 	ContentReader
-	ResolveContainerChild(ctx context.Context, parent contentio.Reader, parentRef contentio.Ref, child ContainerChildInfo, options *ParseOptions) (*ContainerChildResource, error)
+	ResolveContainerChild(ctx context.Context, parent contentio.Reader, parentRef contentio.Ref, child datatype.ContainerChildInfo, options *ParseOptions) (*ContainerChildResource, error)
 }
 
-func NativeContainerChildResource(parent contentio.Reader, parentRef contentio.Ref, parentFormat FormatType, child ContainerChildInfo, options *ParseOptions) *ContainerChildResource {
+func NativeContainerChildResource(parent contentio.Reader, parentRef contentio.Ref, parentFormat FormatType, child datatype.ContainerChildInfo, options *ParseOptions) *ContainerChildResource {
 	childFormat := childFormatOrParent(child, parentFormat)
 	return &ContainerChildResource{
 		Name:          child.Name,
@@ -78,31 +77,30 @@ func NativeContainerChildResource(parent contentio.Reader, parentRef contentio.R
 		ParentRef:     parentRef,
 		ParentFormat:  parentFormat,
 		ParentOptions: options,
-		Properties:    cloneStringInterfaceMap(child.Properties),
+		Native:        cloneStringInterfaceMap(child.Native),
 	}
 }
 
-func StreamContainerChildResource(reader contentio.Reader, ref contentio.Ref, child ContainerChildInfo) *ContainerChildResource {
+func StreamContainerChildResource(reader contentio.Reader, ref contentio.Ref, child datatype.ContainerChildInfo) *ContainerChildResource {
 	return &ContainerChildResource{
 		Name:         child.Name,
 		Kind:         child.ChildKind,
 		DataType:     child.DataType,
 		Format:       childFormatOrParent(child, FormatUnknown),
-		Layout:       child.Layout,
 		Refs:         childRelatedRefs(child),
 		ResourceKind: ContainerChildResourceStream,
 		Reader:       reader,
 		Ref:          ref,
-		Properties:   cloneStringInterfaceMap(child.Properties),
+		Native:       cloneStringInterfaceMap(child.Native),
 	}
 }
 
-func childFormatOrParent(child ContainerChildInfo, parentFormat FormatType) FormatType {
+func childFormatOrParent(child datatype.ContainerChildInfo, parentFormat FormatType) FormatType {
 	if child.Format != "" {
-		return child.Format
+		return FormatType(child.Format)
 	}
-	if child.Properties != nil {
-		if formatName := strings.TrimSpace(interfaceString(child.Properties["format"])); formatName != "" {
+	if child.Native != nil {
+		if formatName := strings.TrimSpace(interfaceString(child.Native["format"])); formatName != "" {
 			return FormatType(formatName)
 		}
 	}
@@ -112,7 +110,7 @@ func childFormatOrParent(child ContainerChildInfo, parentFormat FormatType) Form
 	return FormatUnknown
 }
 
-func childRelatedRefs(child ContainerChildInfo) []RelatedRef {
+func childRelatedRefs(child datatype.ContainerChildInfo) []RelatedRef {
 	if len(child.Refs) == 0 {
 		return nil
 	}

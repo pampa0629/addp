@@ -497,17 +497,20 @@ type ContainerInfo struct {
     DefaultChild  string
     ResourceCount int
     Children      []ContainerChildInfo
+    Native        map[string]interface{}
 }
 
 type ContainerChildInfo struct {
     Name        string
     ChildKind   string
     DataType    DataType
+    Format      string
     RowCount    *int64
     ColumnCount *int
     HasHeader   *bool
     Fields      []FieldInfo
     Refs        []ContainerChildRef
+    Native      map[string]interface{}
 }
 
 type ContainerChildRef struct {
@@ -519,7 +522,11 @@ type ContainerChildRef struct {
 }
 ```
 
-`ContainerInfo` 不依赖 `common/format.FormatType`。如果 child 需要表达格式身份，应由调用方在 attributes 或 format 层用字符串记录，不让 `datatype` 反向依赖 `format`。
+`ContainerInfo` 不依赖 `common/format.FormatType`。如果 child 需要表达格式身份，使用字符串字段 `Format`，不让 `datatype` 反向依赖 `format`。
+
+`ContainerChildInfo` 不承载 `layout`。child 只是容器内部可寻址对象摘要，不是已经确认的 data item；zip 内 shapefile 多组件归并等 layout 事实由 dataitem / Manager / Meta 编排层按上下文动态计算，不写入底层 container child info。
+
+`Native` 承载容器级或 child 级原生事实，必须由对应 format 受控写入。例如 zip entry 的 path / compressed size / method、sqlite child 的原始 table 名等。容器级文件整体事实或解析统计仍可由 `format_info.<format>` 承载，不能把所有格式私有事实都塞进 `Native`。
 
 ### GraphInfo
 
@@ -649,7 +656,7 @@ type SpatialInfo struct {
 | `common/format.FieldInfo` | 迁到 `common/datatype.FieldInfo` |
 | `common/format.DocumentInfo` | 迁到 `common/datatype.DocumentInfo` |
 | `common/format.MediaInfo` | 迁到 `common/datatype.MediaInfo` |
-| `common/format.ContainerInfo` | 迁到 `common/datatype.ContainerInfo` |
+| `common/format.ContainerInfo` | 已删除，直接使用 `common/datatype.ContainerInfo` |
 | `common/format.SpatialInfo` | 迁到 `common/datatype.SpatialInfo` |
 | `common/format.ContentIndex*` | 迁到 `common/datatype` 或后续独立 `common/contentindex`，但不能继续属于 format |
 | `common/engine/plugin.FieldInfo` | 已删除，改用 `datatype.FieldInfo` |

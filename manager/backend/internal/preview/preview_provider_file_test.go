@@ -1490,22 +1490,28 @@ func TestContentIndexObjectKeyIncludesBucketForObjectCatalog(t *testing.T) {
 	}
 }
 
-func TestMapToContainerChildInfoKeepsRefs(t *testing.T) {
-	child := mapToContainerChildInfo(map[string]interface{}{
+func TestContainerChildInfoFromMapKeepsRefsAndExplicitNative(t *testing.T) {
+	child := objectcontent.ContainerChildInfoFromMap(map[string]interface{}{
 		"name":       "roads.shp",
 		"child_kind": "multi",
 		"data_type":  "table",
 		"format":     "shapefile",
-		"layout":     "multi",
+		"unknown":    "ignored",
+		"native": map[string]interface{}{
+			"table": "roads",
+		},
 		"refs": []interface{}{
 			map[string]interface{}{"role": "main", "path": "roads.shp", "required": true, "primary": true, "extension": ".shp"},
 			map[string]interface{}{"role": "index", "path": "roads.shx", "required": true, "extension": ".shx"},
 		},
 	})
-	if child.Format != format.FormatShapefile || child.Layout != "multi" || len(child.Refs) != 2 {
+	if child.Format != string(format.FormatShapefile) || len(child.Refs) != 2 {
 		t.Fatalf("child = %#v, want shapefile multi refs", child)
 	}
 	if !child.Refs[0].Primary || child.Refs[0].Path != "roads.shp" {
 		t.Fatalf("primary ref = %#v, want roads.shp", child.Refs[0])
+	}
+	if child.Native["table"] != "roads" || child.Native["unknown"] != nil {
+		t.Fatalf("native = %#v, want explicit native only", child.Native)
 	}
 }

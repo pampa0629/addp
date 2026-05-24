@@ -41,12 +41,12 @@ type mediaProviderView struct {
 
 type containerProviderView struct {
 	formatType FormatType
-	describe   func(context.Context, io.Reader, *ParseOptions) (*ContainerInfo, error)
+	describe   func(context.Context, io.Reader, *ParseOptions) (*datatype.ContainerInfo, error)
 }
 
 type containerChildResolverView struct {
 	formatType FormatType
-	resolve    func(context.Context, contentio.Reader, contentio.Ref, ContainerChildInfo, *ParseOptions) (*ContainerChildResource, error)
+	resolve    func(context.Context, contentio.Reader, contentio.Ref, datatype.ContainerChildInfo, *ParseOptions) (*ContainerChildResource, error)
 }
 
 func (p tableInfoProviderView) Format() FormatType {
@@ -205,7 +205,7 @@ func (p containerProviderView) Capabilities() FormatCapability {
 	}
 }
 
-func (p containerProviderView) DescribeContainer(ctx context.Context, input io.Reader, options *ParseOptions) (*ContainerInfo, error) {
+func (p containerProviderView) DescribeContainer(ctx context.Context, input io.Reader, options *ParseOptions) (*datatype.ContainerInfo, error) {
 	return p.describe(ctx, input, options)
 }
 
@@ -227,7 +227,7 @@ func (p containerChildResolverView) Capabilities() FormatCapability {
 	}
 }
 
-func (p containerChildResolverView) ResolveContainerChild(ctx context.Context, parent contentio.Reader, parentRef contentio.Ref, child ContainerChildInfo, options *ParseOptions) (*ContainerChildResource, error) {
+func (p containerChildResolverView) ResolveContainerChild(ctx context.Context, parent contentio.Reader, parentRef contentio.Ref, child datatype.ContainerChildInfo, options *ParseOptions) (*ContainerChildResource, error) {
 	return p.resolve(ctx, parent, parentRef, child, options)
 }
 

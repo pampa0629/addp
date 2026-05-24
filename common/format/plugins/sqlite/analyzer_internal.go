@@ -31,27 +31,27 @@ func DefaultOptions() Options {
 
 // Metadata 表示 SQLite 数据库的元信息
 type Metadata struct {
-	Version    string      `json:"version"`
-	PageSize   int         `json:"page_size"`
-	PageCount  int64       `json:"page_count"`
-	TableCount int         `json:"table_count"`
-	ViewCount  int         `json:"view_count"`
-	IndexCount int         `json:"index_count"`
-	Tables     []TableInfo `json:"tables"`
+	Version    string          `json:"version"`
+	PageSize   int             `json:"page_size"`
+	PageCount  int64           `json:"page_count"`
+	TableCount int             `json:"table_count"`
+	ViewCount  int             `json:"view_count"`
+	IndexCount int             `json:"index_count"`
+	Tables     []AnalyzedTable `json:"tables"`
 }
 
-// TableInfo 描述一张表/视图
-type TableInfo struct {
+// AnalyzedTable describes a SQLite table or view discovered by the analyzer.
+type AnalyzedTable struct {
 	Name          string                   `json:"name"`
 	Type          string                   `json:"type"` // table/view
 	RowCount      *int64                   `json:"row_count,omitempty"`
-	Columns       []ColumnInfo             `json:"columns"`
+	Columns       []AnalyzedColumn         `json:"columns"`
 	SampleRows    []map[string]interface{} `json:"sample_rows,omitempty"`
 	RowsTruncated bool                     `json:"rows_truncated,omitempty"`
 }
 
-// ColumnInfo 描述一列属性
-type ColumnInfo struct {
+// AnalyzedColumn describes a SQLite column discovered by PRAGMA table_info.
+type AnalyzedColumn struct {
 	Name       string `json:"name"`
 	Type       string `json:"type"`
 	NotNull    bool   `json:"not_null"`
@@ -81,7 +81,7 @@ func Analyze(ctx context.Context, db *sql.DB, opts *Options) (*AnalysisResult, e
 	}
 
 	meta := Metadata{
-		Tables: make([]TableInfo, 0),
+		Tables: make([]AnalyzedTable, 0),
 	}
 
 	if err := db.QueryRowContext(ctx, "SELECT sqlite_version()").Scan(&meta.Version); err != nil {
@@ -146,11 +146,11 @@ func Analyze(ctx context.Context, db *sql.DB, opts *Options) (*AnalysisResult, e
 	return &AnalysisResult{Metadata: meta}, nil
 }
 
-func analyzeTable(ctx context.Context, db *sql.DB, name, objectType string, opts Options) (TableInfo, error) {
-	info := TableInfo{
+func analyzeTable(ctx context.Context, db *sql.DB, name, objectType string, opts Options) (AnalyzedTable, error) {
+	info := AnalyzedTable{
 		Name:    name,
 		Type:    objectType,
-		Columns: make([]ColumnInfo, 0),
+		Columns: make([]AnalyzedColumn, 0),
 	}
 
 	if err := populateColumns(ctx, db, &info); err != nil {
@@ -172,7 +172,7 @@ func analyzeTable(ctx context.Context, db *sql.DB, name, objectType string, opts
 	return info, nil
 }
 
-func populateColumns(ctx context.Context, db *sql.DB, table *TableInfo) error {
+func populateColumns(ctx context.Context, db *sql.DB, table *AnalyzedTable) error {
 	pragmaQuery := fmt.Sprintf("PRAGMA table_info(%s)", escapeIdentifier(table.Name))
 	rows, err := db.QueryContext(ctx, pragmaQuery)
 	if err != nil {
@@ -192,7 +192,7 @@ func populateColumns(ctx context.Context, db *sql.DB, table *TableInfo) error {
 		if err := rows.Scan(&cid, &colName, &colType, &notnull, &dfltValue, &pk); err != nil {
 			continue
 		}
-		table.Columns = append(table.Columns, ColumnInfo{
+		table.Columns = append(table.Columns, AnalyzedColumn{
 			Name:       colName,
 			Type:       colType,
 			NotNull:    notnull == 1,

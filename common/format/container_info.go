@@ -2,45 +2,7 @@ package format
 
 import (
 	"strings"
-
-	"github.com/addp/common/datatype"
 )
-
-// ContainerInfo 描述容器格式内部对象的结构化元数据。
-//
-// 容器本身仍是一个 data item；Children 只描述容器内部可寻址对象，
-// 不决定 Meta 是否把 child 物化为独立 item。
-type ContainerInfo struct {
-	Format        FormatType
-	ChildCount    int
-	DefaultChild  string
-	ResourceCount int
-	Children      []ContainerChildInfo
-	FormatInfo    map[string]interface{}
-}
-
-// ContainerChildInfo 描述容器内部的一个子对象，例如 Excel sheet、SQLite table。
-type ContainerChildInfo struct {
-	Name        string
-	ChildKind   string
-	DataType    datatype.DataType
-	Format      FormatType
-	Layout      string
-	RowCount    *int64
-	ColumnCount *int
-	HasHeader   *bool
-	Fields      []datatype.FieldInfo
-	Refs        []ContainerChildRef
-	Properties  map[string]interface{}
-}
-
-type ContainerChildRef struct {
-	Role      string
-	Path      string
-	Required  bool
-	Primary   bool
-	Extension string
-}
 
 const (
 	ContainerChildLimitParam = "container_child_limit"
@@ -66,6 +28,11 @@ func ChildTableParseOptions(childName string, child map[string]interface{}) *Par
 	opts := DefaultParseOptions()
 	childName = strings.TrimSpace(childName)
 	tableName := strings.TrimSpace(interfaceString(child["table"]))
+	if tableName == "" {
+		if native := interfaceMap(child["native"]); native != nil {
+			tableName = strings.TrimSpace(interfaceString(native["table"]))
+		}
+	}
 	if childName == "" {
 		childName = strings.TrimSpace(interfaceString(child["name"]))
 	}
@@ -94,4 +61,11 @@ func interfaceString(value interface{}) string {
 	default:
 		return ""
 	}
+}
+
+func interfaceMap(value interface{}) map[string]interface{} {
+	if typed, ok := value.(map[string]interface{}); ok {
+		return typed
+	}
+	return nil
 }

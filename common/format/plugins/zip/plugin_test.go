@@ -24,9 +24,6 @@ func TestDescribeContainerReturnsLightweightEntries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DescribeContainer() error = %v", err)
 	}
-	if info.Format != format.FormatZIP {
-		t.Fatalf("Format = %q, want zip", info.Format)
-	}
 	if info.ChildCount != 2 || len(info.Children) != 2 {
 		t.Fatalf("children = %#v, want 2 entries", info.Children)
 	}
@@ -37,8 +34,8 @@ func TestDescribeContainerReturnsLightweightEntries(t *testing.T) {
 	if child.Name != "data/cities.csv" || child.ChildKind != "file" || child.DataType != datatype.DataTypeTable {
 		t.Fatalf("child = %#v, want CSV table entry", child)
 	}
-	if child.Properties["format"] != string(format.FormatCSV) {
-		t.Fatalf("child format = %#v, want csv", child.Properties["format"])
+	if child.Format != string(format.FormatCSV) {
+		t.Fatalf("child format = %#v, want csv", child.Format)
 	}
 	if len(child.Fields) != 0 {
 		t.Fatalf("zip container child should not carry fields: %#v", child)
@@ -59,8 +56,8 @@ func TestDescribeContainerHonorsEntryLimit(t *testing.T) {
 	if len(info.Children) != 1 || info.ChildCount != 2 {
 		t.Fatalf("children = %#v child_count=%d, want one sampled of two", info.Children, info.ChildCount)
 	}
-	if info.FormatInfo["children_truncated"] != true {
-		t.Fatalf("children_truncated = %#v, want true", info.FormatInfo["children_truncated"])
+	if info.Native["children_truncated"] != true {
+		t.Fatalf("children_truncated = %#v, want true", info.Native["children_truncated"])
 	}
 }
 
@@ -78,8 +75,8 @@ func TestDescribeContainerZeroEntryLimitListsAllEntries(t *testing.T) {
 	if len(info.Children) != 2 || info.ChildCount != 2 {
 		t.Fatalf("children = %#v child_count=%d, want all entries", info.Children, info.ChildCount)
 	}
-	if info.FormatInfo["children_truncated"] != false {
-		t.Fatalf("children_truncated = %#v, want false", info.FormatInfo["children_truncated"])
+	if info.Native["children_truncated"] != false {
+		t.Fatalf("children_truncated = %#v, want false", info.Native["children_truncated"])
 	}
 }
 
@@ -90,13 +87,13 @@ func TestResolveContainerChildReturnsEntryReader(t *testing.T) {
 		"data/cities.csv": "id,name\n1,Hangzhou\n",
 	})
 	parentReader := singleTestContentReader{data: data}
-	child := format.ContainerChildInfo{
+	child := datatype.ContainerChildInfo{
 		Name:      "data/cities.csv",
 		ChildKind: "file",
 		DataType:  datatype.DataTypeTable,
-		Properties: map[string]interface{}{
-			"path":   "data/cities.csv",
-			"format": string(format.FormatCSV),
+		Format:    string(format.FormatCSV),
+		Native: map[string]interface{}{
+			"path": "data/cities.csv",
 		},
 	}
 	resolved, err := NewPlugin(nil).ResolveContainerChild(context.Background(), parentReader, contentio.NewRef("outer.zip", contentio.RoleMain), child, nil)
@@ -129,16 +126,15 @@ func TestResolveContainerChildRefsUseParentQualifiedRefs(t *testing.T) {
 		"roads.dbf": "attrs",
 	})
 	parentReader := singleTestContentReader{data: data}
-	child := format.ContainerChildInfo{
+	child := datatype.ContainerChildInfo{
 		Name:      "roads.shp",
 		ChildKind: "file",
 		DataType:  datatype.DataTypeTable,
-		Format:    format.FormatShapefile,
-		Properties: map[string]interface{}{
-			"path":   "roads.shp",
-			"format": string(format.FormatShapefile),
+		Format:    string(format.FormatShapefile),
+		Native: map[string]interface{}{
+			"path": "roads.shp",
 		},
-		Refs: []format.ContainerChildRef{
+		Refs: []datatype.ContainerChildRef{
 			{Role: "main", Path: "roads.shp", Primary: true, Required: true},
 			{Role: "index", Path: "roads.shx", Required: true},
 			{Role: "attributes", Path: "roads.dbf", Required: true},

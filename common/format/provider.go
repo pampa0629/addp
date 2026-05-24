@@ -167,11 +167,12 @@ type TableWriter interface {
 
 // ContainerInfoProvider 表示格式能够提供容器内部对象信息。
 //
-// 结果应由 Meta 映射到 type_info.container 和 format_info.<format>；
+// 结果应由 Meta 映射到 type_info.container；容器级和 child 级原生事实
+// 通过 datatype.ContainerInfo.Native / ContainerChildInfo.Native 承载。
 // provider 不决定 child 是否成为独立 data item，也不返回上层展示 DTO。
 type ContainerInfoProvider interface {
 	Provider
-	DescribeContainer(ctx context.Context, input io.Reader, options *ParseOptions) (*ContainerInfo, error)
+	DescribeContainer(ctx context.Context, input io.Reader, options *ParseOptions) (*datatype.ContainerInfo, error)
 }
 
 type DocumentInfoProvider interface {

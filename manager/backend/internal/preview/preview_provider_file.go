@@ -116,7 +116,7 @@ func resolvePreviewContainerChildFromResource(ctx context.Context, parent conten
 	if err != nil {
 		return nil, fmt.Errorf("no container child resolver for format %s: %w", parentFormat, err)
 	}
-	resolved, err := resolver.ResolveContainerChild(ctx, parent, parentRef, mapToContainerChildInfo(child), format.ChildTableParseOptions(req.ChildName, child))
+	resolved, err := resolver.ResolveContainerChild(ctx, parent, parentRef, objectcontent.ContainerChildInfoFromMap(child), format.ChildTableParseOptions(req.ChildName, child))
 	if err != nil {
 		return nil, err
 	}
@@ -539,59 +539,8 @@ func contentIndexAnchorsFromAttribute(value interface{}) []datatype.ContentIndex
 	return anchors
 }
 
-func fieldsFromAttribute(value interface{}) []datatype.FieldInfo {
-	items := interfaceSlice(value)
-	fields := make([]datatype.FieldInfo, 0, len(items))
-	for _, item := range items {
-		attrs := rawMapAttribute(item)
-		name := commonJSON.InterfaceString(attrs["name"])
-		if name == "" {
-			continue
-		}
-		fields = append(fields, datatype.FieldInfo{
-			Name:       name,
-			Type:       datatype.FieldType(commonJSON.InterfaceString(attrs["type"])),
-			NativeType: commonJSON.InterfaceString(attrs["native_type"]),
-			Nullable:   commonJSON.InterfaceBool(attrs["nullable"]),
-			PrimaryKey: commonJSON.InterfaceBool(attrs["primary_key"]),
-			Comment:    commonJSON.InterfaceString(attrs["comment"]),
-			Size:       int(commonJSON.InterfaceInt64(attrs["size"])),
-			Precision:  int(commonJSON.InterfaceInt64(attrs["precision"])),
-			Scale:      int(commonJSON.InterfaceInt64(attrs["scale"])),
-		})
-	}
-	return fields
-}
-
 func tableInfoFromTableAttributes(tableAttrs map[string]interface{}, fallbackName string) *datatype.TableInfo {
-	if len(tableAttrs) == 0 {
-		return nil
-	}
-	fields := fieldsFromAttribute(tableAttrs["fields"])
-	if len(fields) == 0 {
-		return nil
-	}
-	name := strings.TrimSpace(commonJSON.InterfaceString(tableAttrs["name"]))
-	if name == "" {
-		name = fallbackName
-	}
-	info := &datatype.TableInfo{
-		Name:       name,
-		Kind:       strings.TrimSpace(commonJSON.InterfaceString(tableAttrs["kind"])),
-		Comment:    strings.TrimSpace(commonJSON.InterfaceString(tableAttrs["comment"])),
-		Fields:     fields,
-		PrimaryKey: interfaceToStringSlice(tableAttrs["primary_key"]),
-		Native:     cloneInterfaceMap(rawMapAttribute(tableAttrs["native"])),
-		CreatedAt:  commonJSON.InterfaceTimePtr(tableAttrs["created_at"]),
-		UpdatedAt:  commonJSON.InterfaceTimePtr(tableAttrs["updated_at"]),
-	}
-	if rowCount := commonJSON.InterfaceInt64(tableAttrs["row_count"]); rowCount > 0 {
-		info.RowCount = &rowCount
-	}
-	if sizeBytes := commonJSON.InterfaceInt64(tableAttrs["size_bytes"]); sizeBytes > 0 {
-		info.SizeBytes = &sizeBytes
-	}
-	return info
+	return datatype.TableInfoFromTableAttributes(tableAttrs, fallbackName)
 }
 
 func interfaceSlice(value interface{}) []interface{} {
@@ -769,6 +718,9 @@ func containerChildTableNameForRequest(attrs map[string]interface{}, childName s
 	child := containerChildForRequest(attrs, childName)
 	if len(child) > 0 {
 		tableName := strings.TrimSpace(commonJSON.InterfaceString(child["table"]))
+		if tableName == "" {
+			tableName = strings.TrimSpace(commonJSON.InterfaceString(rawMapAttribute(child["native"])["table"]))
+		}
 		if tableName != "" {
 			return tableName
 		}
@@ -798,79 +750,8 @@ func containerChildForRequest(attrs map[string]interface{}, childName string) ma
 	return map[string]interface{}{"name": childName}
 }
 
-func mapToContainerChildInfo(child map[string]interface{}) format.ContainerChildInfo {
-	if child == nil {
-		child = map[string]interface{}{}
-	}
-	name := strings.TrimSpace(commonJSON.InterfaceString(child["name"]))
-	childKind := containerChildKindFromMap(child)
-	dataType := datatype.ParseDataType(commonJSON.InterfaceString(child["data_type"]))
-	properties := make(map[string]interface{}, len(child))
-	for key, value := range child {
-		switch key {
-		case "name", "child_kind", "data_type", "format", "layout", "refs", "row_count", "column_count", "has_header":
-			continue
-		default:
-			properties[key] = value
-		}
-	}
-	rowCountValue := commonJSON.InterfaceInt64(child["row_count"])
-	var rowCount *int64
-	if rowCountValue > 0 {
-		rowCount = &rowCountValue
-	}
-	columnCountValue := int(commonJSON.InterfaceInt64(child["column_count"]))
-	var columnCount *int
-	if columnCountValue > 0 {
-		columnCount = &columnCountValue
-	}
-	var hasHeader *bool
-	if _, ok := child["has_header"]; ok {
-		value := commonJSON.InterfaceBool(child["has_header"])
-		hasHeader = &value
-	}
-	return format.ContainerChildInfo{
-		Name:        name,
-		ChildKind:   childKind,
-		DataType:    dataType,
-		Format:      format.FormatType(strings.TrimSpace(commonJSON.InterfaceString(child["format"]))),
-		Layout:      strings.TrimSpace(commonJSON.InterfaceString(child["layout"])),
-		Refs:        containerChildRefsFromMap(child),
-		RowCount:    rowCount,
-		ColumnCount: columnCount,
-		HasHeader:   hasHeader,
-		Properties:  properties,
-	}
-}
-
 func containerChildKindFromMap(child map[string]interface{}) string {
 	return strings.TrimSpace(commonJSON.InterfaceString(child["child_kind"]))
-}
-
-func containerChildRefsFromMap(child map[string]interface{}) []format.ContainerChildRef {
-	values := interfaceSlice(child["refs"])
-	if len(values) == 0 {
-		return nil
-	}
-	refs := make([]format.ContainerChildRef, 0, len(values))
-	for _, value := range values {
-		ref := rawMapAttribute(value)
-		if len(ref) == 0 {
-			continue
-		}
-		path := strings.TrimSpace(commonJSON.InterfaceString(ref["path"]))
-		if path == "" {
-			continue
-		}
-		refs = append(refs, format.ContainerChildRef{
-			Role:      strings.TrimSpace(commonJSON.InterfaceString(ref["role"])),
-			Path:      path,
-			Required:  commonJSON.InterfaceBool(ref["required"]),
-			Primary:   commonJSON.InterfaceBool(ref["primary"]),
-			Extension: strings.TrimSpace(commonJSON.InterfaceString(ref["extension"])),
-		})
-	}
-	return refs
 }
 
 func (p *FileTablePreviewProvider) resolveFormat(req *PreviewRequest) format.FormatType {

@@ -507,13 +507,7 @@ function buildSelectedSourceSummary(node) {
 }
 
 function tableFieldsFromAttributes(attrs) {
-  const candidates = [
-    attrs?.type_info?.table?.fields,
-    attrs?.type_info?.fields,
-    attrs?.fields,
-    attrs?.item?.fields
-  ]
-  return candidates.find(Array.isArray) || []
+  return Array.isArray(attrs?.type_info?.table?.fields) ? attrs.type_info.table.fields : []
 }
 
 function spatialSummaryFromAttributes(attrs, fields) {

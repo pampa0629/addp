@@ -65,12 +65,12 @@ func (p *Plugin) Capabilities() format.FormatCapability {
 	}
 }
 
-func (p *Plugin) ResolveContainerChild(_ context.Context, parent contentio.Reader, parentRef contentio.Ref, child format.ContainerChildInfo, _ *format.ParseOptions) (*format.ContainerChildResource, error) {
-	return format.NativeContainerChildResource(parent, parentRef, p.Format(), child, format.ChildTableParseOptions(child.Name, child.Properties)), nil
+func (p *Plugin) ResolveContainerChild(_ context.Context, parent contentio.Reader, parentRef contentio.Ref, child datatype.ContainerChildInfo, _ *format.ParseOptions) (*format.ContainerChildResource, error) {
+	return format.NativeContainerChildResource(parent, parentRef, p.Format(), child, format.ChildTableParseOptions(child.Name, child.Native)), nil
 }
 
 // DescribeContainer 从 Excel 文件中提取 workbook / sheet 容器信息。
-func (p *Plugin) DescribeContainer(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.ContainerInfo, error) {
+func (p *Plugin) DescribeContainer(ctx context.Context, input io.Reader, options *format.ParseOptions) (*datatype.ContainerInfo, error) {
 	opts := p.options
 	if options != nil {
 		opts = options
@@ -306,22 +306,20 @@ func excelTableNative(sheetName string, sheetIndex int) map[string]interface{} {
 	}, excelTableNativeKeys)
 }
 
-func (p *Plugin) convertToContainerInfo(analysis *WorkbookAnalysis) *format.ContainerInfo {
+func (p *Plugin) convertToContainerInfo(analysis *WorkbookAnalysis) *datatype.ContainerInfo {
 	if analysis == nil {
-		return &format.ContainerInfo{
-			Format:        format.FormatExcel,
+		return &datatype.ContainerInfo{
 			ResourceCount: 1,
-			Children:      []format.ContainerChildInfo{},
-			FormatInfo:    map[string]interface{}{},
+			Children:      []datatype.ContainerChildInfo{},
 		}
 	}
 
-	children := make([]format.ContainerChildInfo, 0, len(analysis.Sheets))
+	children := make([]datatype.ContainerChildInfo, 0, len(analysis.Sheets))
 	for _, sheet := range analysis.Sheets {
 		rowCount := int64(sheet.RowCount)
 		columnCount := sheet.ColumnCount
 		hasHeader := sheet.HasHeader
-		children = append(children, format.ContainerChildInfo{
+		children = append(children, datatype.ContainerChildInfo{
 			Name:        sheet.Name,
 			ChildKind:   "sheet",
 			DataType:    datatype.DataTypeTable,
@@ -332,13 +330,12 @@ func (p *Plugin) convertToContainerInfo(analysis *WorkbookAnalysis) *format.Cont
 		})
 	}
 
-	return &format.ContainerInfo{
-		Format:        format.FormatExcel,
+	return &datatype.ContainerInfo{
 		ChildCount:    analysis.SheetCount,
 		DefaultChild:  analysis.DefaultSheet,
 		ResourceCount: 1,
 		Children:      children,
-		FormatInfo: map[string]interface{}{
+		Native: map[string]interface{}{
 			"sheet_count":        analysis.SheetCount,
 			"default_sheet":      analysis.DefaultSheet,
 			"sampled_sheets":     len(children),

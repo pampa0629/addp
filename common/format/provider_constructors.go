@@ -69,10 +69,10 @@ func NewMediaInfoProvider(
 
 func NewContainerInfoProvider(
 	formatType FormatType,
-	describe func(context.Context, io.Reader, *ParseOptions) (*ContainerInfo, error),
+	describe func(context.Context, io.Reader, *ParseOptions) (*datatype.ContainerInfo, error),
 ) ContainerInfoProvider {
 	if describe == nil {
-		describe = func(context.Context, io.Reader, *ParseOptions) (*ContainerInfo, error) {
+		describe = func(context.Context, io.Reader, *ParseOptions) (*datatype.ContainerInfo, error) {
 			return nil, fmt.Errorf("container info provider %s does not implement DescribeContainer", formatType)
 		}
 	}
@@ -84,10 +84,10 @@ func NewContainerInfoProvider(
 
 func NewContainerChildResolver(
 	formatType FormatType,
-	resolve func(context.Context, contentio.Reader, contentio.Ref, ContainerChildInfo, *ParseOptions) (*ContainerChildResource, error),
+	resolve func(context.Context, contentio.Reader, contentio.Ref, datatype.ContainerChildInfo, *ParseOptions) (*ContainerChildResource, error),
 ) ContainerChildResolver {
 	if resolve == nil {
-		resolve = func(context.Context, contentio.Reader, contentio.Ref, ContainerChildInfo, *ParseOptions) (*ContainerChildResource, error) {
+		resolve = func(context.Context, contentio.Reader, contentio.Ref, datatype.ContainerChildInfo, *ParseOptions) (*ContainerChildResource, error) {
 			return nil, fmt.Errorf("container child resolver %s does not implement ResolveContainerChild", formatType)
 		}
 	}

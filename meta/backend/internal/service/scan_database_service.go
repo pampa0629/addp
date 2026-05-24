@@ -354,17 +354,7 @@ func (s *DatabaseScanService) scanTableDetails(
 			}
 		}
 
-		// 如果有主键，查询主键约束名
-		var primaryKeyName string
-		if len(primaryKeyColumns) > 0 && db != nil {
-			primaryKeyName, _ = s.queryPrimaryKeyName(ctx, db, schemaName, tableInfo.Name)
-		}
-
-		tableMetadata := map[string]interface{}{}
-		if primaryKeyName != "" {
-			tableMetadata["primary_key_name"] = primaryKeyName
-		}
-		attrs = metaattr.BuildTableAttributes(schemaName, metaattr.FieldAttributes(fields), tableMetadata, tableType(tableInfo), tableComment(tableInfo))
+		attrs = metaattr.BuildTableAttributes(schemaName, metaattr.FieldAttributes(fields), tableType(tableInfo), tableComment(tableInfo))
 		if len(primaryKeyColumns) > 0 {
 			metaattr.UpsertNested(attrs, "type_info", "table", map[string]interface{}{
 				"primary_key": primaryKeyColumns,
@@ -568,34 +558,4 @@ func (s *DatabaseScanService) deleteRemovedTables(
 			}
 		}
 	}
-}
-
-// queryPrimaryKeyName 查询主键约束名称
-func (s *DatabaseScanService) queryPrimaryKeyName(
-	ctx context.Context,
-	db *gorm.DB,
-	schema, table string,
-) (string, error) {
-	schemaPlaceholder := "$1"
-	tablePlaceholder := "$2"
-	if db != nil && db.Dialector.Name() == "mysql" {
-		schemaPlaceholder = "?"
-		tablePlaceholder = "?"
-	}
-
-	query := `
-		SELECT constraint_name
-		FROM information_schema.table_constraints
-		WHERE table_schema = ` + schemaPlaceholder + ` AND table_name = ` + tablePlaceholder + `
-		  AND constraint_type = 'PRIMARY KEY'
-		LIMIT 1
-	`
-
-	var constraintName string
-	err := db.WithContext(ctx).Raw(query, schema, table).Scan(&constraintName).Error
-	if err != nil {
-		return "", err
-	}
-
-	return constraintName, nil
 }

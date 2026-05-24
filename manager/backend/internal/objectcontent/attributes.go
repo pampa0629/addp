@@ -3,6 +3,7 @@ package objectcontent
 import (
 	"strings"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/manager/internal/models"
@@ -83,6 +84,70 @@ func rawMapAttribute(value interface{}) map[string]interface{} {
 	}
 }
 
+func ContainerChildInfoFromMap(child map[string]interface{}) datatype.ContainerChildInfo {
+	if child == nil {
+		child = map[string]interface{}{}
+	}
+	name := strings.TrimSpace(commonJSON.InterfaceString(child["name"]))
+	childKind := strings.TrimSpace(commonJSON.InterfaceString(child["child_kind"]))
+	dataType := datatype.ParseDataType(commonJSON.InterfaceString(child["data_type"]))
+	native := cloneInterfaceMap(rawMapAttribute(child["native"]))
+
+	rowCountValue := commonJSON.InterfaceInt64(child["row_count"])
+	var rowCount *int64
+	if rowCountValue > 0 {
+		rowCount = &rowCountValue
+	}
+	columnCountValue := int(commonJSON.InterfaceInt64(child["column_count"]))
+	var columnCount *int
+	if columnCountValue > 0 {
+		columnCount = &columnCountValue
+	}
+	var hasHeader *bool
+	if _, ok := child["has_header"]; ok {
+		value := commonJSON.InterfaceBool(child["has_header"])
+		hasHeader = &value
+	}
+
+	return datatype.ContainerChildInfo{
+		Name:        name,
+		ChildKind:   childKind,
+		DataType:    dataType,
+		Format:      strings.TrimSpace(commonJSON.InterfaceString(child["format"])),
+		Refs:        containerChildRefsFromMap(child),
+		RowCount:    rowCount,
+		ColumnCount: columnCount,
+		HasHeader:   hasHeader,
+		Native:      native,
+	}
+}
+
+func containerChildRefsFromMap(child map[string]interface{}) []datatype.ContainerChildRef {
+	values := interfaceSlice(child["refs"])
+	if len(values) == 0 {
+		return nil
+	}
+	refs := make([]datatype.ContainerChildRef, 0, len(values))
+	for _, value := range values {
+		ref := rawMapAttribute(value)
+		if len(ref) == 0 {
+			continue
+		}
+		path := strings.TrimSpace(commonJSON.InterfaceString(ref["path"]))
+		if path == "" {
+			continue
+		}
+		refs = append(refs, datatype.ContainerChildRef{
+			Role:      strings.TrimSpace(commonJSON.InterfaceString(ref["role"])),
+			Path:      path,
+			Required:  commonJSON.InterfaceBool(ref["required"]),
+			Primary:   commonJSON.InterfaceBool(ref["primary"]),
+			Extension: strings.TrimSpace(commonJSON.InterfaceString(ref["extension"])),
+		})
+	}
+	return refs
+}
+
 func normalizeFileTableFormat(formatName string) format.FormatType {
 	normalized := strings.ToLower(strings.TrimSpace(formatName))
 	if normalized == "" {
@@ -130,19 +195,19 @@ func ResolveContainerAttributeChildrenForPreview(formatName string, children []i
 	return resolveContainerAttributeChildrenForPreview(formatName, children)
 }
 
-func BuildContainerPreviewFromInfo(info *format.ContainerInfo, fallbackFormat string) map[string]interface{} {
+func BuildContainerPreviewFromInfo(info *datatype.ContainerInfo, fallbackFormat string) map[string]interface{} {
 	return buildContainerPreviewFromContainerInfo(info, fallbackFormat)
 }
 
-func ResolveContainerInfoForPreview(info *format.ContainerInfo) *format.ContainerInfo {
+func ResolveContainerInfoForPreview(info *datatype.ContainerInfo) *datatype.ContainerInfo {
 	return resolveContainerChildrenForPreview(info)
 }
 
-func ContainerInfoTruncated(info *format.ContainerInfo) bool {
+func ContainerInfoTruncated(info *datatype.ContainerInfo) bool {
 	return containerInfoTruncated(info)
 }
 
-func BuildContainerMetadata(info *format.ContainerInfo, req *ObjectContentRequest, formatType format.FormatType) map[string]interface{} {
+func BuildContainerMetadata(info *datatype.ContainerInfo, req *ObjectContentRequest, formatType format.FormatType) map[string]interface{} {
 	return buildContainerMetadataMap(info, req, formatType)
 }
 

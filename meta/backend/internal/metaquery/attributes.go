@@ -10,34 +10,7 @@ import (
 )
 
 func FieldsFromMetaItem(item models.MetaItem) ([]datatype.FieldInfo, error) {
-	fieldsList, ok := sliceAttributeFromSection(item.Attributes, "type_info.table", "fields")
-	if !ok {
-		return []datatype.FieldInfo{}, nil
-	}
-
-	fieldInfos := make([]datatype.FieldInfo, 0, len(fieldsList))
-	for _, fieldData := range fieldsList {
-		fieldMap, ok := fieldData.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		fieldInfos = append(fieldInfos, datatype.FieldInfo{
-			Name:              toString(fieldMap["name"]),
-			Type:              datatype.ParseFieldType(toString(fieldMap["type"])),
-			NativeType:        toString(fieldMap["native_type"]),
-			Nullable:          toBool(fieldMap["nullable"]),
-			PrimaryKey:        toBool(fieldMap["primary_key"]),
-			Comment:           toString(fieldMap["comment"]),
-			Size:              int(toInt(fieldMap["size"])),
-			Precision:         int(toInt(fieldMap["precision"])),
-			Scale:             int(toInt(fieldMap["scale"])),
-			OrdinalPosition:   int(toInt(fieldMap["ordinal_position"])),
-			DefaultExpression: toString(fieldMap["default_expression"]),
-		})
-	}
-
-	return fieldInfos, nil
+	return datatype.FieldInfosFromAttributes(commonJSON.Value(item.Attributes, "type_info.table", "fields")), nil
 }
 
 func SpatialMetadataFromItem(item models.MetaItem) (*models.SpatialMetadataResponse, error) {
@@ -65,20 +38,7 @@ func SpatialMetadataFromItem(item models.MetaItem) (*models.SpatialMetadataRespo
 		}
 	}
 
-	if fields, ok := sliceAttributeFromSection(item.Attributes, "type_info.table", "fields"); ok {
-		for _, f := range fields {
-			if fieldMap, ok := f.(map[string]interface{}); ok {
-				spatialMeta.Fields = append(spatialMeta.Fields, datatype.FieldInfo{
-					Name:       toString(fieldMap["name"]),
-					Type:       datatype.ParseFieldType(toString(fieldMap["type"])),
-					NativeType: toString(fieldMap["native_type"]),
-					Nullable:   toBool(fieldMap["nullable"]),
-					PrimaryKey: toBool(fieldMap["primary_key"]),
-					Comment:    toString(fieldMap["comment"]),
-				})
-			}
-		}
-	}
+	spatialMeta.Fields = datatype.FieldInfosFromAttributes(commonJSON.Value(item.Attributes, "type_info.table", "fields"))
 
 	if item.RowCount != nil {
 		spatialMeta.RowCount = *item.RowCount

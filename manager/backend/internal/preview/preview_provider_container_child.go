@@ -158,16 +158,18 @@ func previewContainerChildren(ctx context.Context, parent *format.ContainerChild
 	return children, nil
 }
 
-func previewContainerChildInfoMap(child format.ContainerChildInfo) map[string]interface{} {
+func previewContainerChildInfoMap(child datatype.ContainerChildInfo) map[string]interface{} {
 	result := map[string]interface{}{}
-	for key, value := range child.Properties {
+	for key, value := range child.Native {
 		result[key] = value
 	}
 	result["name"] = child.Name
 	result["child_kind"] = child.ChildKind
 	result["data_type"] = child.DataType
-	result["format"] = string(child.Format)
-	result["layout"] = child.Layout
+	result["format"] = child.Format
+	if len(child.Refs) > 0 || strings.EqualFold(child.ChildKind, "multi") {
+		result["layout"] = string(format.LayoutMulti)
+	}
 	if len(child.Refs) > 0 {
 		refs := make([]interface{}, 0, len(child.Refs))
 		for _, ref := range child.Refs {
@@ -444,11 +446,11 @@ func (p *ContainerChildPreviewProvider) previewObjectChild(ctx context.Context, 
 		ContentType: contentTypeForChild(child),
 		Attributes:  childObjectAttributes(child),
 	}
-	if child.Properties != nil {
-		if previewFormat := strings.TrimSpace(interfaceStringForContainerChild(child.Properties["preview_format"])); previewFormat != "" {
+	if child.Native != nil {
+		if previewFormat := strings.TrimSpace(interfaceStringForContainerChild(child.Native["preview_format"])); previewFormat != "" {
 			contentReq.Format = previewFormat
 		}
-		if contentType := strings.TrimSpace(interfaceStringForContainerChild(child.Properties["content_type"])); contentType != "" {
+		if contentType := strings.TrimSpace(interfaceStringForContainerChild(child.Native["content_type"])); contentType != "" {
 			contentReq.ContentType = contentType
 		}
 	}
@@ -523,7 +525,7 @@ func contentTypeForChild(child *format.ContainerChildResource) string {
 	if child == nil {
 		return "application/octet-stream"
 	}
-	if contentType := strings.TrimSpace(interfaceStringForContainerChild(child.Properties["content_type"])); contentType != "" {
+	if contentType := strings.TrimSpace(interfaceStringForContainerChild(child.Native["content_type"])); contentType != "" {
 		return contentType
 	}
 	if mime := format.FormatToMIME(child.Format); mime != "" {
@@ -539,12 +541,12 @@ func childObjectAttributes(child *format.ContainerChildResource) map[string]inte
 			"format":    string(child.Format),
 		},
 	}
-	if len(child.Properties) > 0 {
-		attrs["container_child"] = child.Properties
-		if previewMaterial := strings.TrimSpace(interfaceStringForContainerChild(child.Properties["preview_material"])); previewMaterial != "" {
+	if len(child.Native) > 0 {
+		attrs["container_child"] = child.Native
+		if previewMaterial := strings.TrimSpace(interfaceStringForContainerChild(child.Native["preview_material"])); previewMaterial != "" {
 			attrs["preview_material"] = previewMaterial
 		}
-		if previewRenderer := strings.TrimSpace(interfaceStringForContainerChild(child.Properties["preview_renderer"])); previewRenderer != "" {
+		if previewRenderer := strings.TrimSpace(interfaceStringForContainerChild(child.Native["preview_renderer"])); previewRenderer != "" {
 			attrs["frontend_renderer"] = previewRenderer
 		}
 	}

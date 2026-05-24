@@ -369,32 +369,9 @@ func relatedRefSpecKey(spec format.RelatedRefSpec) string {
 }
 
 func tableInfoFromMetaAttributes(attrs map[string]interface{}) *datatype.TableInfo {
-	tableAttrs := commonJSON.Section(attrs, "type_info.table")
-	if len(tableAttrs) == 0 {
+	info := datatype.TableInfoFromAttributes(attrs, "table")
+	if info == nil {
 		return nil
-	}
-	fields := tableFieldsFromAttributes(tableAttrs["fields"])
-	if len(fields) == 0 {
-		return nil
-	}
-	info := &datatype.TableInfo{
-		Name:       strings.TrimSpace(commonJSON.InterfaceString(tableAttrs["name"])),
-		Kind:       strings.TrimSpace(commonJSON.InterfaceString(tableAttrs["kind"])),
-		Comment:    strings.TrimSpace(commonJSON.InterfaceString(tableAttrs["comment"])),
-		Fields:     fields,
-		PrimaryKey: interfaceToStringSlice(tableAttrs["primary_key"]),
-		Native:     cloneInterfaceMap(rawMapAttribute(tableAttrs["native"])),
-		CreatedAt:  commonJSON.InterfaceTimePtr(tableAttrs["created_at"]),
-		UpdatedAt:  commonJSON.InterfaceTimePtr(tableAttrs["updated_at"]),
-	}
-	if info.Name == "" {
-		info.Name = "table"
-	}
-	if rowCount := commonJSON.InterfaceInt64(tableAttrs["row_count"]); rowCount > 0 {
-		info.RowCount = &rowCount
-	}
-	if sizeBytes := commonJSON.InterfaceInt64(tableAttrs["size_bytes"]); sizeBytes > 0 {
-		info.SizeBytes = &sizeBytes
 	}
 	if spatialInfo := spatialInfoFromMetaAttributes(attrs); spatialInfo != nil {
 		geometryColumn := spatialInfo.PrimaryGeometryName()
@@ -406,38 +383,6 @@ func tableInfoFromMetaAttributes(attrs map[string]interface{}) *datatype.TableIn
 		}
 	}
 	return info
-}
-
-func tableFieldsFromAttributes(value interface{}) []datatype.FieldInfo {
-	items := interfaceSlice(value)
-	fields := make([]datatype.FieldInfo, 0, len(items))
-	for _, item := range items {
-		attrs := rawMapAttribute(item)
-		name := strings.TrimSpace(commonJSON.InterfaceString(attrs["name"]))
-		if name == "" {
-			continue
-		}
-		fieldType := datatype.FieldType(strings.TrimSpace(commonJSON.InterfaceString(attrs["type"])))
-		if fieldType == "" {
-			fieldType = datatype.FieldTypeUnknown
-		}
-		field := datatype.FieldInfo{
-			Name:       name,
-			Type:       fieldType,
-			NativeType: strings.TrimSpace(commonJSON.InterfaceString(attrs["native_type"])),
-			Nullable:   commonJSON.InterfaceBool(attrs["nullable"]),
-			PrimaryKey: commonJSON.InterfaceBool(attrs["primary_key"]),
-			Comment:    strings.TrimSpace(commonJSON.InterfaceString(attrs["comment"])),
-			Size:       int(commonJSON.InterfaceInt64(attrs["size"])),
-			Precision:  int(commonJSON.InterfaceInt64(attrs["precision"])),
-			Scale:      int(commonJSON.InterfaceInt64(attrs["scale"])),
-		}
-		if datatype.IsSpatialFieldType(field.Type) {
-			field.Type = datatype.FieldTypeGeometry
-		}
-		fields = append(fields, field)
-	}
-	return fields
 }
 
 func spatialInfoFromMetaAttributes(attrs map[string]interface{}) *datatype.SpatialInfo {
@@ -515,20 +460,6 @@ func cloneInterfaceMap(values map[string]interface{}) map[string]interface{} {
 		cloned[key] = value
 	}
 	return cloned
-}
-
-func interfaceToStringSlice(value interface{}) []string {
-	items := interfaceSlice(value)
-	if len(items) == 0 {
-		return nil
-	}
-	result := make([]string, 0, len(items))
-	for _, item := range items {
-		if text := strings.TrimSpace(commonJSON.InterfaceString(item)); text != "" {
-			result = append(result, text)
-		}
-	}
-	return result
 }
 
 func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding, transforms []TransformSpec) (executor.TableSourcePlan, error) {

@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 )
 
@@ -620,36 +621,35 @@ func cloneMap(input map[string]interface{}) map[string]interface{} {
 	return output
 }
 
-func ContainerChildInfoFromResolvedItem(item ResolvedItem) format.ContainerChildInfo {
+func ContainerChildInfoFromResolvedItem(item ResolvedItem) datatype.ContainerChildInfo {
 	kind := "file"
 	if item.Layout == LayoutMulti {
 		kind = "multi"
 	}
-	properties := cloneMap(item.Properties)
-	if properties == nil {
-		properties = map[string]interface{}{}
+	native := cloneMap(item.Properties)
+	if native == nil {
+		native = map[string]interface{}{}
 	}
-	delete(properties, "refs")
-	delete(properties, "ref_paths")
-	properties["path"] = item.EntryPath
-	return format.ContainerChildInfo{
-		Name:       item.Name,
-		ChildKind:  kind,
-		DataType:   item.DataType,
-		Format:     format.FormatType(item.Format),
-		Layout:     string(item.Layout),
-		Refs:       containerChildRefs(item),
-		Properties: properties,
+	delete(native, "refs")
+	delete(native, "ref_paths")
+	native["path"] = item.EntryPath
+	return datatype.ContainerChildInfo{
+		Name:      item.Name,
+		ChildKind: kind,
+		DataType:  item.DataType,
+		Format:    item.Format,
+		Refs:      containerChildRefs(item),
+		Native:    native,
 	}
 }
 
-func containerChildRefs(item ResolvedItem) []format.ContainerChildRef {
+func containerChildRefs(item ResolvedItem) []datatype.ContainerChildRef {
 	if len(item.RefList) == 0 {
 		return nil
 	}
-	refs := make([]format.ContainerChildRef, 0, len(item.RefList))
+	refs := make([]datatype.ContainerChildRef, 0, len(item.RefList))
 	for _, ref := range item.RefList {
-		refs = append(refs, format.ContainerChildRef{
+		refs = append(refs, datatype.ContainerChildRef{
 			Role:      ref.Role,
 			Path:      ref.Path,
 			Required:  ref.Required,

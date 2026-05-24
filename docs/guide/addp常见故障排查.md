@@ -332,7 +332,6 @@ SELECT "SmID" FROM test;   -- 查找 SmID 列（成功）
 - Meta 已经扫描并存储了表的主键信息
 - 存储位置：`metadata.meta_item.attributes` JSONB 字段
   - `attributes.type_info.table.primary_key` - 主键列名列表
-  - `attributes.type_info.table.table_metadata.primary_key_name` - 主键约束名（如果来源能提供）
   - `attributes.type_info.table.fields[].primary_key` - 每个字段的主键标记
 - Manager 可以通过 `metaClient.GetTableSpatialMetadata()` 获取主键信息
 

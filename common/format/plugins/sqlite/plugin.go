@@ -112,11 +112,11 @@ func (p *Plugin) DescribeFormat(ctx context.Context, input io.Reader, options *f
 	}, nil
 }
 
-func (p *Plugin) ResolveContainerChild(_ context.Context, parent contentio.Reader, parentRef contentio.Ref, child format.ContainerChildInfo, _ *format.ParseOptions) (*format.ContainerChildResource, error) {
-	return format.NativeContainerChildResource(parent, parentRef, p.Format(), child, format.ChildTableParseOptions(child.Name, child.Properties)), nil
+func (p *Plugin) ResolveContainerChild(_ context.Context, parent contentio.Reader, parentRef contentio.Ref, child datatype.ContainerChildInfo, _ *format.ParseOptions) (*format.ContainerChildResource, error) {
+	return format.NativeContainerChildResource(parent, parentRef, p.Format(), child, format.ChildTableParseOptions(child.Name, child.Native)), nil
 }
 
-func (p *Plugin) DescribeContainer(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.ContainerInfo, error) {
+func (p *Plugin) DescribeContainer(ctx context.Context, input io.Reader, options *format.ParseOptions) (*datatype.ContainerInfo, error) {
 	db, cleanup, err := p.openDatabase(input)
 	if err != nil {
 		return nil, err
@@ -133,7 +133,7 @@ func (p *Plugin) DescribeContainer(ctx context.Context, input io.Reader, options
 		layerByTable = readGeoPackageLayers(ctx, db)
 	}
 
-	children := make([]format.ContainerChildInfo, 0, len(result.Metadata.Tables))
+	children := make([]datatype.ContainerChildInfo, 0, len(result.Metadata.Tables))
 	for _, table := range result.Metadata.Tables {
 		if p.Format() == format.FormatGeoPackage && isGeoPackageSystemTable(table.Name) {
 			continue
@@ -148,13 +148,13 @@ func (p *Plugin) DescribeContainer(ctx context.Context, input io.Reader, options
 				name = table.Name
 			}
 		}
-		children = append(children, format.ContainerChildInfo{
+		children = append(children, datatype.ContainerChildInfo{
 			Name:        name,
 			ChildKind:   kind,
 			DataType:    datatype.DataTypeTable,
 			RowCount:    table.RowCount,
 			ColumnCount: &columnCount,
-			Properties: map[string]interface{}{
+			Native: map[string]interface{}{
 				"table": table.Name,
 			},
 		})
@@ -169,13 +169,12 @@ func (p *Plugin) DescribeContainer(ctx context.Context, input io.Reader, options
 		childCount = len(children)
 		childrenTruncated = false
 	}
-	return &format.ContainerInfo{
-		Format:        p.Format(),
+	return &datatype.ContainerInfo{
 		ChildCount:    childCount,
 		DefaultChild:  defaultChild,
 		ResourceCount: 1,
 		Children:      children,
-		FormatInfo: map[string]interface{}{
+		Native: map[string]interface{}{
 			"version":            result.Metadata.Version,
 			"page_size":          result.Metadata.PageSize,
 			"page_count":         result.Metadata.PageCount,
@@ -291,7 +290,7 @@ func firstSQLiteTable(result *AnalysisResult) *datatype.TableInfo {
 	return sqliteTableInfoToFormatTable(result.Metadata.Tables[0])
 }
 
-func describeSQLiteTable(ctx context.Context, db *sql.DB, tableName string) (TableInfo, error) {
+func describeSQLiteTable(ctx context.Context, db *sql.DB, tableName string) (AnalyzedTable, error) {
 	objectType := "table"
 	err := db.QueryRowContext(ctx, `
 		SELECT type
@@ -301,14 +300,14 @@ func describeSQLiteTable(ctx context.Context, db *sql.DB, tableName string) (Tab
 		  AND name NOT LIKE 'sqlite_%'
 	`, tableName).Scan(&objectType)
 	if err != nil {
-		return TableInfo{}, fmt.Errorf("sqlite table %q not found: %w", tableName, err)
+		return AnalyzedTable{}, fmt.Errorf("sqlite table %q not found: %w", tableName, err)
 	}
 	opts := DefaultOptions()
 	opts.SampleRowLimit = 0
 	return analyzeTable(ctx, db, tableName, strings.ToLower(objectType), opts)
 }
 
-func sqliteTableInfoToFormatTable(table TableInfo) *datatype.TableInfo {
+func sqliteTableInfoToFormatTable(table AnalyzedTable) *datatype.TableInfo {
 	fields := make([]datatype.FieldInfo, 0, len(table.Columns))
 	primaryKey := make([]string, 0)
 	for _, column := range table.Columns {

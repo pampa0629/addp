@@ -127,46 +127,7 @@ func JSONMap(attrs map[string]interface{}) models.JSONMap {
 }
 
 func FieldAttributes(fields []datatype.FieldInfo) []map[string]interface{} {
-	fieldsData := make([]map[string]interface{}, 0, len(fields))
-	for _, f := range fields {
-		field := map[string]interface{}{
-			"name":     f.Name,
-			"type":     string(f.Type),
-			"nullable": f.Nullable,
-		}
-		if f.NativeType != "" {
-			field["native_type"] = f.NativeType
-		}
-		if f.PrimaryKey {
-			field["primary_key"] = true
-		}
-		if f.Comment != "" {
-			field["comment"] = f.Comment
-		}
-		if f.Size > 0 {
-			field["size"] = f.Size
-		}
-		if f.Precision > 0 {
-			field["precision"] = f.Precision
-		}
-		if f.Scale > 0 {
-			field["scale"] = f.Scale
-		}
-		if f.OrdinalPosition > 0 {
-			field["ordinal_position"] = f.OrdinalPosition
-		}
-		if f.DefaultExpression != "" {
-			field["default_expression"] = f.DefaultExpression
-		}
-		if f.Generated {
-			field["generated"] = true
-		}
-		if f.GenerationExpression != "" {
-			field["generation_expression"] = f.GenerationExpression
-		}
-		fieldsData = append(fieldsData, field)
-	}
-	return fieldsData
+	return datatype.FieldInfoAttributes(fields)
 }
 
 func SetSchemaFields(attrs models.JSONMap, fields []map[string]interface{}) {

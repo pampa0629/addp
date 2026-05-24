@@ -223,6 +223,8 @@ Info provider 只返回元数据，主要服务 Meta 写入 `type_info.*`、`for
 | `RelatedRefSpecProvider` | 任意 multi 格式 | `multi` | 无内容输入 | 声明 related ref 的角色、扩展名、必需性和 primary。 | Meta item detector、Transfer multi reader/writer 构造 | Shapefile 等多 content 格式 |
 | `RefDescriptorProvider` | 任意 multi 格式 | `multi` | `[]RelatedRef` | 把 refs 解释成用户可理解的描述。 | Manager、Meta 展示 | Shapefile 相关内容展示 |
 
+Container 通用事实直接使用 `datatype.ContainerInfo` / `datatype.ContainerChildInfo`，`common/format` 不再保留平行结构或别名。child 可以用字符串 `Format` 表达内容格式，用 `Native` 承载受控的格式原生事实；不承载 `layout`。容器内多文件归并、refs 展示等 layout 事实由 dataitem / Manager / Meta 编排层动态计算。
+
 ### 实现要求
 
 所有 provider / reader 实现必须遵守以下边界：

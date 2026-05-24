@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/dataitem"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metaitem"
@@ -50,9 +51,9 @@ func enrichContainerChildrenFromProvider(
 
 	children := make([]map[string]interface{}, 0, len(info.Children))
 	for _, child := range info.Children {
-		childFormat := child.Format
+		childFormat := format.FormatType(strings.TrimSpace(child.Format))
 		if childFormat == "" {
-			childFormat = format.FormatType(strings.TrimSpace(interfaceString(child.Properties["format"])))
+			childFormat = format.FormatType(strings.TrimSpace(interfaceString(child.Native["format"])))
 		}
 		attrs := map[string]interface{}{
 			"name":       child.Name,
@@ -61,9 +62,6 @@ func enrichContainerChildrenFromProvider(
 		}
 		if childFormat != "" {
 			attrs["format"] = string(childFormat)
-		}
-		if child.Layout != "" {
-			attrs["layout"] = child.Layout
 		}
 		if len(child.Refs) > 0 {
 			attrs["refs"] = containerChildRefAttributes(child.Refs)
@@ -77,27 +75,32 @@ func enrichContainerChildrenFromProvider(
 		if child.HasHeader != nil {
 			attrs["has_header"] = *child.HasHeader
 		}
-		for key, value := range child.Properties {
+		native := map[string]interface{}{}
+		for key, value := range child.Native {
 			if isContainerChildProtocolProperty(key) {
 				continue
 			}
-			attrs[key] = value
+			native[key] = value
+		}
+		if len(native) > 0 {
+			attrs["native"] = native
 		}
 		children = append(children, attrs)
 	}
-	metaattr.UpsertNested(attrs, "type_info", "container", map[string]interface{}{
+	containerAttrs := map[string]interface{}{
 		"children":       children,
 		"child_count":    info.ChildCount,
 		"default_child":  info.DefaultChild,
 		"resource_count": info.ResourceCount,
-	})
-	if len(info.FormatInfo) > 0 {
-		metaattr.UpsertNested(attrs, "format_info", string(formatType), info.FormatInfo)
 	}
+	if len(info.Native) > 0 {
+		containerAttrs["native"] = info.Native
+	}
+	metaattr.UpsertNested(attrs, "type_info", "container", containerAttrs)
 	return nil
 }
 
-func containerChildRefAttributes(refs []format.ContainerChildRef) []map[string]interface{} {
+func containerChildRefAttributes(refs []datatype.ContainerChildRef) []map[string]interface{} {
 	if len(refs) == 0 {
 		return nil
 	}
@@ -121,7 +124,7 @@ func containerChildRefAttributes(refs []format.ContainerChildRef) []map[string]i
 
 func isContainerChildProtocolProperty(key string) bool {
 	switch strings.ToLower(strings.TrimSpace(key)) {
-	case "name", "child_kind", "data_type", "format", "layout", "refs", "ref_paths", "components", "component_paths", "organization":
+	case "name", "child_kind", "data_type", "format", "native", "refs", "ref_paths", "components", "component_paths", "organization":
 		return true
 	default:
 		return false

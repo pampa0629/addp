@@ -119,8 +119,9 @@ func TestEnrichGeoPackageContainerChildrenWritesLightweightLayers(t *testing.T) 
 	if container["child_count"] != 1 {
 		t.Fatalf("child_count = %#v, want visible layer count 1", container["child_count"])
 	}
-	if children[0]["table"] != "roads" {
-		t.Fatalf("child table = %#v, want roads", children[0]["table"])
+	native := children[0]["native"].(map[string]interface{})
+	if native["table"] != "roads" {
+		t.Fatalf("child native.table = %#v, want roads", native["table"])
 	}
 	if _, ok := children[0]["fields"]; ok {
 		t.Fatalf("container child should not carry fields: %#v", children[0])
@@ -207,9 +208,8 @@ func TestEnrichZIPContainerChildrenWritesLightweightEntries(t *testing.T) {
 	if !names["roads/roads.shp"] || !names["roads/roads.shx"] || !names["roads/roads.dbf"] {
 		t.Fatalf("children = %#v, want shapefile entry present", children)
 	}
-	formatInfo := attrs["format_info"].(map[string]interface{})[string(format.FormatZIP)].(map[string]interface{})
-	if formatInfo["resolved_children"] != nil {
-		t.Fatalf("format_info.zip = %#v, want no resolved_children flag", formatInfo)
+	if formatInfo, ok := attrs["format_info"]; ok {
+		t.Fatalf("format_info = %#v, want no container format_info", formatInfo)
 	}
 }
 

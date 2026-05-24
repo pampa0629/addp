@@ -98,24 +98,21 @@ func TestDescribeGeoPackageContainerReturnsLightweightLayers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DescribeContainer() error = %v", err)
 	}
-	if info.Format != format.FormatGeoPackage {
-		t.Fatalf("Format = %q, want geopackage", info.Format)
-	}
 	if len(info.Children) != 1 {
 		t.Fatalf("children = %#v, want one layer", info.Children)
 	}
 	if info.ChildCount != 1 {
 		t.Fatalf("ChildCount = %d, want visible layer count 1", info.ChildCount)
 	}
-	if info.FormatInfo["children_truncated"] != false {
-		t.Fatalf("children_truncated = %#v, want false for filtered gpkg system tables", info.FormatInfo["children_truncated"])
+	if info.Native["children_truncated"] != false {
+		t.Fatalf("children_truncated = %#v, want false for filtered gpkg system tables", info.Native["children_truncated"])
 	}
 	child := info.Children[0]
 	if child.Name != "Road Layer" || child.ChildKind != "layer" || child.DataType != datatype.DataTypeTable {
 		t.Fatalf("child = %#v, want Road Layer layer", child)
 	}
-	if child.Properties["table"] != "roads" {
-		t.Fatalf("child table = %#v, want roads", child.Properties["table"])
+	if child.Native["table"] != "roads" {
+		t.Fatalf("child table = %#v, want roads", child.Native["table"])
 	}
 	if len(child.Fields) != 0 {
 		t.Fatalf("container child should be lightweight: %#v", child)

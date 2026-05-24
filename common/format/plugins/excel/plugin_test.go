@@ -53,7 +53,7 @@ func TestPluginDescribeContainer(t *testing.T) {
 		t.Fatalf("len(Children) = %d, want 2", len(info.Children))
 	}
 
-	var cities *format.ContainerChildInfo
+	var cities *datatype.ContainerChildInfo
 	for i := range info.Children {
 		if info.Children[i].Name == "Cities" {
 			cities = &info.Children[i]
@@ -75,11 +75,11 @@ func TestPluginDescribeContainer(t *testing.T) {
 	if len(cities.Fields) < 2 || cities.Fields[0].Name != "id" {
 		t.Fatalf("Cities Fields = %#v", cities.Fields)
 	}
-	if info.FormatInfo["sheet_count"] != 2 {
-		t.Fatalf("sheet_count = %#v, want 2", info.FormatInfo["sheet_count"])
+	if info.Native["sheet_count"] != 2 {
+		t.Fatalf("sheet_count = %#v, want 2", info.Native["sheet_count"])
 	}
-	if info.FormatInfo["default_sheet"] != "Cities" {
-		t.Fatalf("default_sheet = %#v, want Cities", info.FormatInfo["default_sheet"])
+	if info.Native["default_sheet"] != "Cities" {
+		t.Fatalf("default_sheet = %#v, want Cities", info.Native["default_sheet"])
 	}
 }
 

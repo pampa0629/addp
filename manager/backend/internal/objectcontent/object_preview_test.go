@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
 )
@@ -632,18 +633,17 @@ func TestBuildContainerPreviewFromSQLiteAttributes(t *testing.T) {
 }
 
 func TestResolveContainerChildrenForPreviewGroupsShapefileRefs(t *testing.T) {
-	info := &format.ContainerInfo{
-		Format:       format.FormatZIP,
+	info := &datatype.ContainerInfo{
 		ChildCount:   5,
 		DefaultChild: "roads.shp",
-		Children: []format.ContainerChildInfo{
-			{Name: "roads.shp", ChildKind: "file", DataType: "table", Properties: map[string]interface{}{"path": "roads.shp", "format": "shapefile", "uncompressed_size": int64(10)}},
-			{Name: "roads.shx", ChildKind: "file", DataType: "table", Properties: map[string]interface{}{"path": "roads.shx", "format": "shapefile", "uncompressed_size": int64(10)}},
-			{Name: "roads.dbf", ChildKind: "file", DataType: "table", Properties: map[string]interface{}{"path": "roads.dbf", "format": "shapefile", "uncompressed_size": int64(10)}},
-			{Name: "roads.prj", ChildKind: "file", DataType: "table", Properties: map[string]interface{}{"path": "roads.prj", "format": "shapefile", "uncompressed_size": int64(10)}},
-			{Name: "readme.md", ChildKind: "file", DataType: "document", Properties: map[string]interface{}{"path": "readme.md", "format": "markdown"}},
+		Children: []datatype.ContainerChildInfo{
+			{Name: "roads.shp", ChildKind: "file", DataType: "table", Native: map[string]interface{}{"path": "roads.shp", "format": "shapefile", "uncompressed_size": int64(10)}},
+			{Name: "roads.shx", ChildKind: "file", DataType: "table", Native: map[string]interface{}{"path": "roads.shx", "format": "shapefile", "uncompressed_size": int64(10)}},
+			{Name: "roads.dbf", ChildKind: "file", DataType: "table", Native: map[string]interface{}{"path": "roads.dbf", "format": "shapefile", "uncompressed_size": int64(10)}},
+			{Name: "roads.prj", ChildKind: "file", DataType: "table", Native: map[string]interface{}{"path": "roads.prj", "format": "shapefile", "uncompressed_size": int64(10)}},
+			{Name: "readme.md", ChildKind: "file", DataType: "document", Native: map[string]interface{}{"path": "readme.md", "format": "markdown"}},
 		},
-		FormatInfo: map[string]interface{}{},
+		Native: map[string]interface{}{},
 	}
 
 	resolved := resolveContainerChildrenForPreview(info)
@@ -651,23 +651,22 @@ func TestResolveContainerChildrenForPreviewGroupsShapefileRefs(t *testing.T) {
 		t.Fatalf("children = %#v, want shapefile child + markdown child", resolved)
 	}
 	child := resolved.Children[0]
-	if child.Layout != "multi" || child.Format != format.FormatShapefile || len(child.Refs) != 4 {
+	if child.ChildKind != "multi" || child.Format != string(format.FormatShapefile) || len(child.Refs) != 4 {
 		t.Fatalf("first child = %#v, want multi shapefile with refs", child)
 	}
 }
 
 func TestContainerChildPreviewMapKeepsNormalizedRefs(t *testing.T) {
-	child := containerChildPreviewMap(format.ContainerChildInfo{
+	child := containerChildPreviewMap(datatype.ContainerChildInfo{
 		Name:      "roads.shp",
 		ChildKind: "file",
 		DataType:  "table",
-		Format:    format.FormatShapefile,
-		Layout:    "multi",
-		Refs: []format.ContainerChildRef{
+		Format:    string(format.FormatShapefile),
+		Refs: []datatype.ContainerChildRef{
 			{Path: "roads.shp", Role: "main", Required: true, Primary: true},
 			{Path: "roads.dbf", Role: "attributes", Required: true},
 		},
-		Properties: map[string]interface{}{
+		Native: map[string]interface{}{
 			"refs": []interface{}{
 				map[string]interface{}{"path": "raw-should-not-win.dbf"},
 			},
