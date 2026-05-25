@@ -13,6 +13,8 @@ import (
 	"github.com/addp/graph/internal/repository"
 )
 
+const internalRelationshipTypePredicate = "type(r) IN ['RTREE_METADATA', 'RTREE_REFERENCE', 'RTREE_ROOT']"
+
 // Neo4jService 提供面向知识图谱的 Neo4j 查询能力
 type Neo4jService struct {
 	graphRepo    *repository.KnowledgeGraphRepository
@@ -103,7 +105,11 @@ func (s *Neo4jService) GetSchema(ctx context.Context, graphID, tenantID uint) (*
 	relTypes := make([]string, 0, len(relResult.Rows))
 	for _, row := range relResult.Rows {
 		if v, ok := row["relationshipType"]; ok {
-			relTypes = append(relTypes, fmt.Sprintf("%v", v))
+			relType := fmt.Sprintf("%v", v)
+			if isInternalRelationshipType(relType) {
+				continue
+			}
+			relTypes = append(relTypes, relType)
 		}
 	}
 
@@ -111,6 +117,7 @@ func (s *Neo4jService) GetSchema(ctx context.Context, graphID, tenantID uint) (*
 	connResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
 		`MATCH (a)-[r]->(b)
 		WITH type(r) AS relType, labels(a)[0] AS srcLabel, labels(b)[0] AS tgtLabel
+		WHERE NOT (relType IN ['RTREE_METADATA', 'RTREE_REFERENCE', 'RTREE_ROOT'])
 		RETURN DISTINCT relType, srcLabel, tgtLabel
 		ORDER BY relType, srcLabel, tgtLabel`)
 	connections := make([]models.RelTypeConnection, 0)
@@ -148,7 +155,8 @@ func (s *Neo4jService) GetStats(ctx context.Context, graphID, tenantID uint) (*m
 		stats.NodeCount = toInt64(nodeResult.Rows[0]["total"])
 	}
 
-	edgeResult, err := dbbridge.ExecuteGraphQuery(ctx, engine, "MATCH ()-[r]->() RETURN count(r) AS total")
+	edgeResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
+		"MATCH ()-[r]->() WHERE NOT ("+internalRelationshipTypePredicate+") RETURN count(r) AS total")
 	if err != nil {
 		return nil, fmt.Errorf("failed to count edges: %w", err)
 	}
@@ -179,7 +187,7 @@ func (s *Neo4jService) GetOverview(ctx context.Context, graphID, tenantID uint) 
 	nodeColors, edgeColors := s.buildColorMaps(kg.OntologyID, tenantID)
 
 	result, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-		"MATCH (n)-[r]->(m) RETURN n, r, m LIMIT 100")
+		"MATCH (n)-[r]->(m) WHERE NOT ("+internalRelationshipTypePredicate+") RETURN n, r, m LIMIT 100")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get overview: %w", err)
 	}
@@ -230,7 +238,7 @@ func (s *Neo4jService) ExpandNode(ctx context.Context, graphID, tenantID uint, n
 		limit = 100
 	}
 	cypher := fmt.Sprintf(
-		"MATCH (n)-[r]-(m) WHERE elementId(n) = '%s' RETURN n, r, m LIMIT %d",
+		"MATCH (n)-[r]-(m) WHERE elementId(n) = '%s' AND NOT ("+internalRelationshipTypePredicate+") RETURN n, r, m LIMIT %d",
 		escapeCypher(nodeID), limit,
 	)
 	result, err := dbbridge.ExecuteGraphQuery(ctx, engine, cypher)
@@ -249,7 +257,7 @@ func (s *Neo4jService) FindPath(ctx context.Context, graphID, tenantID uint, sou
 	nodeColors, edgeColors := s.buildColorMaps(kg.OntologyID, tenantID)
 
 	cypher := fmt.Sprintf(
-		"MATCH p = shortestPath((a)-[*..10]-(b)) WHERE elementId(a) = '%s' AND elementId(b) = '%s' RETURN p",
+		"MATCH p = shortestPath((a)-[*..10]-(b)) WHERE elementId(a) = '%s' AND elementId(b) = '%s' AND NONE(rel IN relationships(p) WHERE type(rel) IN ['RTREE_METADATA', 'RTREE_REFERENCE', 'RTREE_ROOT']) RETURN p",
 		escapeCypher(sourceID), escapeCypher(targetID),
 	)
 	result, err := dbbridge.ExecuteGraphQuery(ctx, engine, cypher)
@@ -352,6 +360,9 @@ func buildSubgraph(result *plugin.GraphQueryResult, nodeColors, edgeColors map[s
 	}
 
 	for _, r := range result.GraphData.Relationships {
+		if isInternalRelationshipType(r.Type) {
+			continue
+		}
 		dto := models.GraphEdgeDTO{
 			ID:           r.ElementId,
 			Type:         r.Type,
@@ -367,6 +378,15 @@ func buildSubgraph(result *plugin.GraphQueryResult, nodeColors, edgeColors map[s
 		out.Edges = append(out.Edges, dto)
 	}
 	return out
+}
+
+func isInternalRelationshipType(relType string) bool {
+	switch strings.ToUpper(strings.TrimSpace(relType)) {
+	case "RTREE_METADATA", "RTREE_REFERENCE", "RTREE_ROOT":
+		return true
+	default:
+		return false
+	}
 }
 
 // escapeCypher 对 Cypher 字符串值进行转义，防止注入

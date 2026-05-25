@@ -14,6 +14,7 @@ const props = defineProps({
   nodes: { type: Array, default: () => [] },
   edges: { type: Array, default: () => [] },
   layout: { type: String, default: 'force' },
+  showEdgeLabels: { type: Boolean, default: false },
   loading: { type: Boolean, default: false },
   centerNodeId: { type: String, default: '' }
 })
@@ -43,32 +44,39 @@ function buildG6Data(nodes, edges) {
   const edgeColor = dark ? '#6b7280' : '#c0c4cc'
   const edgeLabelColor = dark ? '#d1d5db' : '#333'
   const edgeLabelStroke = dark ? '#1D1E1F' : '#fff'
+  const denseGraph = nodes.length > 35 || edges.length > 60
+  const veryDenseGraph = nodes.length > 60 || edges.length > 120
+  const nodeRadius = veryDenseGraph ? 18 : denseGraph ? 22 : 28
+  const centerRadius = Math.max(nodeRadius + 6, 28)
+  const labelMaxLength = veryDenseGraph ? 10 : denseGraph ? 14 : 20
+  const labelFontSize = veryDenseGraph ? 9 : denseGraph ? 10 : 11
   return {
     nodes: nodes.map(n => {
       const isCenter = props.centerNodeId && n.id === props.centerNodeId
       return {
         id: n.id,
-        label: (n.display_name || n.id).toString().substring(0, 20),
+        label: (n.display_name || n.id).toString().substring(0, labelMaxLength),
         _meta: n,
         style: {
           fill: n.color || '#5B8FF9',
           stroke: isCenter ? '#f59e0b' : (dark ? '#374151' : '#fff'),
           lineWidth: isCenter ? 4 : 2,
-          r: isCenter ? 34 : 28
+          r: isCenter ? centerRadius : nodeRadius
         },
-        size: isCenter ? 68 : 56,
-        labelCfg: { style: { fill: '#fff', fontSize: 11, fontWeight: 'bold' } }
+        size: (isCenter ? centerRadius : nodeRadius) * 2,
+        labelCfg: { style: { fill: '#fff', fontSize: labelFontSize, fontWeight: 'bold' } }
       }
     }),
     edges: edges.map((e, i) => ({
       id: e.id || `edge-${i}`,
       source: e.source,
       target: e.target,
-      label: e.type || '',
+      label: props.showEdgeLabels ? e.type || '' : '',
       style: {
         stroke: e.color || edgeColor,
-        lineWidth: 1.5,
-        endArrow: { path: G6.Arrow.triangle(8, 6, 0), fill: e.color || edgeColor }
+        lineWidth: denseGraph ? 1 : 1.5,
+        opacity: denseGraph ? 0.58 : 0.82,
+        endArrow: { path: G6.Arrow.triangle(denseGraph ? 6 : 8, denseGraph ? 4 : 6, 0), fill: e.color || edgeColor }
       },
       labelCfg: { style: { fill: edgeLabelColor, fontSize: 11, fontWeight: '600', stroke: edgeLabelStroke, lineWidth: 3 }, autoRotate: true }
     }))
@@ -78,13 +86,22 @@ function buildG6Data(nodes, edges) {
 function getLayoutConfig(layoutType) {
   switch (layoutType) {
     case 'dagre':
-      return { type: 'dagre', rankdir: 'LR', nodesep: 50, ranksep: 80 }
+      return { type: 'dagre', rankdir: 'LR', nodesep: 70, ranksep: 120 }
     case 'circular':
-      return { type: 'circular', radius: 200 }
+      return { type: 'circular', radius: 320, ordering: 'degree' }
     case 'radial':
-      return { type: 'radial', unitRadius: 100 }
+      return { type: 'radial', unitRadius: 130, preventOverlap: true, nodeSize: 56 }
     default:
-      return { type: 'force', preventOverlap: true, nodeSize: 56, linkDistance: 140, nodeStrength: -100 }
+      return {
+        type: 'force',
+        preventOverlap: true,
+        nodeSize: 48,
+        linkDistance: 180,
+        nodeStrength: -320,
+        edgeStrength: 0.12,
+        collideStrength: 0.8,
+        alphaDecay: 0.035
+      }
   }
 }
 
@@ -167,7 +184,7 @@ function updateLayout() {
   graphInstance.updateLayout(getLayoutConfig(props.layout))
 }
 
-watch(() => [props.nodes, props.edges], updateGraph, { deep: true })
+watch(() => [props.nodes, props.edges, props.showEdgeLabels], updateGraph, { deep: true })
 watch(() => props.layout, updateLayout)
 
 let resizeObserver = null

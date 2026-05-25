@@ -27,12 +27,21 @@
         </el-input>
       </div>
       <div class="toolbar-right">
-        <el-select v-model="currentLayout" style="width: 110px" @change="onLayoutChange">
+        <el-select v-model="currentLayout" class="layout-select" @change="onLayoutChange">
           <el-option :label="t('graph.browser.layoutForce')" value="force" />
           <el-option :label="t('graph.browser.layoutDagre')" value="dagre" />
           <el-option :label="t('graph.browser.layoutCircular')" value="circular" />
           <el-option :label="t('graph.browser.layoutRadial')" value="radial" />
         </el-select>
+        <el-tooltip :content="showEdgeLabels ? t('graph.browser.hideEdgeLabels') : t('graph.browser.showEdgeLabels')">
+          <el-button
+            :type="showEdgeLabels ? 'primary' : ''"
+            size="small"
+            @click="showEdgeLabels = !showEdgeLabels"
+          >
+            {{ t('graph.browser.edgeLabels') }}
+          </el-button>
+        </el-tooltip>
         <el-button :icon="Refresh" @click="loadOverview" :title="t('graph.browser.resetView')" />
         <!-- 图分析切换按钮 -->
         <el-button
@@ -47,7 +56,7 @@
           size="small"
           @click="cancelPathMode"
         >
-          {{ t('graph.browser.cancelPath') }} ({{ pathNodes.length }}/2)
+          {{ t('graph.browser.cancelPathMode', { count: pathNodes.length }) }}
         </el-button>
       </div>
     </div>
@@ -87,6 +96,7 @@
           :nodes="filteredNodes"
           :edges="filteredEdges"
           :layout="currentLayout"
+          :show-edge-labels="showEdgeLabels"
           :loading="loading"
           @node-click="handleNodeClick"
           @node-select="handleNodeSelect"
@@ -162,6 +172,7 @@ const loading = ref(false)
 const searching = ref(false)
 const searchQuery = ref('')
 const currentLayout = ref('force')
+const showEdgeLabels = ref(false)
 const selectedItem = ref(null)
 const canvasRef = ref(null)
 
@@ -293,7 +304,7 @@ async function handleSearch() {
     const result = res
     mergeSubgraph(result)
     if (!result?.nodes?.length) {
-      ElMessage.info(t('graph.browser.noNodesFound'))
+      ElMessage.info(t('graph.browser.noMatchingNodes'))
     } else {
       ElMessage.success(t('graph.browser.foundNodes', { count: result.nodes.length }))
       // 等待 Vue 响应式更新后触发定位（afterlayout 中执行高亮+居中）
@@ -462,6 +473,10 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.layout-select {
+  width: 132px;
 }
 
 .graph-name {
