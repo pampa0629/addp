@@ -108,7 +108,7 @@ common/format common/engine common/dataitem
 | `document` | `DocumentInfo` | 标题、语言、编码、页数、字数、正文提取状态 |
 | `media` | `MediaInfo` | media kind、MIME、宽高、时长、编码、颜色空间 |
 | `container` | `ContainerInfo` | child 数量、默认 child、child 摘要、child refs |
-| `graph` | `GraphInfo` | 节点 label、关系类型、属性结构、节点数、边数 |
+| `graph` | `GraphInfo` | 节点结构、关系结构、连接模式、属性结构、节点数、关系数 |
 | `file` | `FileInfo` | MIME、编码、大小、基础校验或可读性摘要 |
 
 目标代码形态使用轻量 `TypeInfo` 接口标记这些结构的 data type 归属，同时保持各 info 为独立结构，不做大 union：
@@ -532,30 +532,50 @@ type ContainerChildRef struct {
 
 `GraphInfo` 是 graph data type 的通用信息。它要同时服务文件型图数据和引擎原生图数据。
 
+graph 的核心本体是 node 和 relationship。Neo4j label、RDF class、采样推断出的结构簇等都只是 node shape 的来源或投影视角，不应把 label 作为 `GraphInfo` 的顶层本体。Meta 和 Manager 可以按 label 展示图结构，但 `common/datatype` 应先表达图整体的结构摘要。
+
 第一版目标字段：
 
 ```go
 type GraphInfo struct {
-    NodeCount         *int64
-    EdgeCount         *int64
-    NodeLabels        []GraphLabelInfo
-    RelationshipTypes []GraphRelationshipInfo
+    Model              string
+    Directed           *bool
+    NodeCount          *int64
+    RelationshipCount  *int64
+    NodeShapes         []GraphNodeShapeInfo
+    RelationshipShapes []GraphRelationshipShapeInfo
 }
 
-type GraphLabelInfo struct {
+type GraphNodeShapeInfo struct {
     Name       string
+    Kind       string
+    Labels     []string
     Properties []FieldInfo
     Count      *int64
 }
 
-type GraphRelationshipInfo struct {
-    Name       string
-    FromLabels []string
-    ToLabels   []string
+type GraphRelationshipShapeInfo struct {
+    Type       string
     Properties []FieldInfo
+    Patterns   []GraphRelationshipPatternInfo
     Count      *int64
+}
+
+type GraphRelationshipPatternInfo struct {
+    From  GraphEndpointInfo
+    To    GraphEndpointInfo
+    Count *int64
+}
+
+type GraphEndpointInfo struct {
+    ShapeName string
+    Labels    []string
 }
 ```
+
+`Model` 第一版使用 `generic`、`property_graph`、`rdf`。`GraphNodeShapeInfo.Kind` 第一版使用 `label`、`label_set`、`class`、`inferred`。
+
+`RelationshipCount` 是标准字段名，不再使用 `edge_count` 作为 `common/datatype` 字段。relationship 的 endpoint 必须用 `Patterns` 保留配对关系，不得只用顶层 `from_labels[]` / `to_labels[]` 两个集合表达。
 
 图查询语言、遍历 API、子图采样、图算法不属于 `datatype`，应留在 engine provider 或 graph 模块能力中。
 

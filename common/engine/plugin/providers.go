@@ -34,6 +34,18 @@ type DocumentMetadataSamplingProvider interface {
 	SampleDocumentMetadata(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts MetadataOptions) (*ItemMetadata, error)
 }
 
+// GraphMetadataProvider describes graph structure facts for a graph item.
+type GraphMetadataProvider interface {
+	EnginePlugin
+	DescribeGraph(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts MetadataOptions) (*datatype.GraphInfo, error)
+}
+
+// GraphSampleProvider samples graph nodes and relationships for lightweight previews.
+type GraphSampleProvider interface {
+	EnginePlugin
+	SampleGraph(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts GraphSampleOptions) (*GraphData, error)
+}
+
 // StoreProvider is a marker for item content access capabilities.
 type StoreProvider interface {
 	EnginePlugin
@@ -191,10 +203,16 @@ type MetadataOptions struct {
 	SampleSize        int
 }
 
+type GraphSampleOptions struct {
+	Limit  int
+	Filter map[string]interface{}
+}
+
 type ItemMetadata struct {
 	Path       CatalogPath            `json:"path"`
 	Kind       string                 `json:"kind"`
 	Table      *datatype.TableInfo    `json:"table,omitempty"`
+	Graph      *datatype.GraphInfo    `json:"graph,omitempty"`
 	Fields     []datatype.FieldInfo   `json:"fields,omitempty"`
 	Indexes    []IndexInfo            `json:"indexes,omitempty"`
 	Stats      map[string]interface{} `json:"stats,omitempty"`

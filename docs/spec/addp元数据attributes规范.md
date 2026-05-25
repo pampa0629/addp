@@ -161,7 +161,7 @@ attributes 分区统一采用以下概念：
 | `document` | `type_info.document` | title、language、encoding、page_count、word_count、size_bytes、text_extracted |
 | `media` | `type_info.media` | kind、mime_type、width、height、duration_ms、encoding、color_space、size_bytes |
 | `container` | `type_info.container` | children、default_child、child_count、resource_count |
-| `graph` | `type_info.graph` | labels、relationships、properties、node_count、edge_count |
+| `graph` | `type_info.graph` | model、directed、node_shapes、relationship_shapes、node_count、relationship_count |
 | `unknown` | `type_info.unknown` | detection_reason、fallback_action |
 
 表字段统一放在 `type_info.table.fields`，不得写入 attributes 顶层。`type_info.table` 是 `common/datatype.TableInfo` 的直接 JSON 投影，`type_info.table.fields[]` 是 `common/datatype.FieldInfo` 的直接 JSON 投影。字段不是 data item，字段类型只能使用 `type` 表达 ADDP 标准字段类型，不得在字段对象内写入 `data_type`。原生字段类型如需展示，只能作为只读诊断信息写入 `native_type`，不得参与执行决策；哪个字段是空间字段、SRID、extent 等属于 `capabilities.spatial`，不得塞回 `type_info.table`。

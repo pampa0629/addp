@@ -38,3 +38,25 @@ func TestItemMetadataFieldsFallsBackToFields(t *testing.T) {
 		t.Fatalf("ItemMetadataTableInfo() = %#v, want nil for field-only metadata", info)
 	}
 }
+
+func TestItemMetadataGraphInfoReturnsClone(t *testing.T) {
+	count := int64(3)
+	metadata := &ItemMetadata{
+		Kind: "graph",
+		Graph: &datatype.GraphInfo{
+			NodeShapes: []datatype.GraphNodeShapeInfo{{
+				Name:  "Person",
+				Count: &count,
+			}},
+		},
+	}
+
+	info := ItemMetadataGraphInfo(metadata)
+	if info == nil || len(info.NodeShapes) != 1 || info.NodeShapes[0].Name != "Person" {
+		t.Fatalf("ItemMetadataGraphInfo() = %#v", info)
+	}
+	info.NodeShapes[0].Name = "Changed"
+	if metadata.Graph.NodeShapes[0].Name != "Person" {
+		t.Fatalf("ItemMetadataGraphInfo returned mutable graph info")
+	}
+}

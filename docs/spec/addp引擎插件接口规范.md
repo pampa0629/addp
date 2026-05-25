@@ -135,11 +135,25 @@ type ItemMetadataProvider interface {
 }
 ```
 
-文档型数据库可额外实现 `DocumentMetadataSamplingProvider`，用于采样推断动态字段信息。
+文档型数据库可额外实现 `DocumentMetadataSamplingProvider`，用于采样推断动态字段信息。图数据库可额外实现 `GraphMetadataProvider`，用于描述图整体结构事实。
 
-`ItemMetadata` 是 engine 侧叶子 item 的统一描述结果。对于 table 型 item，必须优先填充 `Table *datatype.TableInfo`，字段、主键、行数、大小、更新时间、表类型、注释和表级 native 事实都随 `TableInfo` 传递；`Fields`、`Stats`、`Attributes` 仅作为非 table item 的通用补充或必要的 catalog 展示属性，不得成为新的 table 事实源。公共消费方需要 table 字段或 table facts 时，应使用 `ItemMetadataFields()` / `ItemMetadataTableInfo()` 这类 helper，而不是直接读 `Fields` / `Stats` 自行拼装。
+`ItemMetadata` 是 engine 侧叶子 item 的统一描述结果。对于 table 型 item，必须优先填充 `Table *datatype.TableInfo`，字段、主键、行数、大小、更新时间、表类型、注释和表级 native 事实都随 `TableInfo` 传递；对于 graph 型 item，必须优先填充 `Graph *datatype.GraphInfo`，节点结构、关系结构、连接模式、属性结构、节点数和关系数都随 `GraphInfo` 传递。`Fields`、`Stats`、`Attributes` 仅作为非 table / graph item 的通用补充或必要的 catalog 展示属性，不得成为新的 table / graph 事实源。公共消费方需要 table 字段、table facts 或 graph facts 时，应使用 `ItemMetadataFields()` / `ItemMetadataTableInfo()` / `ItemMetadataGraphInfo()` 这类 helper，而不是直接读 `Fields` / `Stats` 自行拼装。
 
 对 tabular 引擎，`CatalogProvider.ListChildren()` 和 `ItemMetadataProvider.DescribeItem()` 必须围绕同一份 `datatype.TableInfo` 事实表达。表级通用事实进入 `Name`、`Kind`、`Comment`、`RowCount`、`SizeBytes`、`UpdatedAt`、`Fields` 等标准字段；来源原生但仍属表级的事实进入 `TableInfo.Native`，再由公共层透出到 `CatalogNode.Attributes.native` 或 `ItemMetadata.Attributes.native`。不得在列表接口保留一套事实、详情接口丢失另一套事实。
+
+对 graph 引擎，长期目标是 `CatalogProvider` 暴露 graph item，label、relationship type 和 endpoint pattern 作为 `datatype.GraphInfo` 中的 schema / shape facts，而不是作为 graph data type 的主 item 本体。Neo4j label / relationship 可作为 Manager 展示投影或过渡期 catalog 入口，但新的公共事实应围绕 `GraphInfo.NodeShapes`、`GraphInfo.RelationshipShapes` 和 `GraphRelationshipPatternInfo` 表达，不得继续把 `from_labels[]` / `to_labels[]` 两个集合作为 relationship endpoint 主事实。
+
+```go
+type GraphMetadataProvider interface {
+    EnginePlugin
+    DescribeGraph(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts MetadataOptions) (*datatype.GraphInfo, error)
+}
+
+type GraphSampleProvider interface {
+    EnginePlugin
+    SampleGraph(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts GraphSampleOptions) (*GraphData, error)
+}
+```
 
 ### StoreProvider
 
@@ -204,7 +218,7 @@ type QueryRuntimeProvider interface {
 - `SQLQueryRuntimeProvider.ExecuteSQL()`
 - `DocumentQueryRuntimeProvider.ExecuteDocumentQuery()`
 
-图查询不属于普通查询的一个返回格式变体。图查询使用独立 `GraphQueryProvider`，返回 `GraphQueryResult`，面向 Graph 模块、图可视化和图算法等需要节点 / 关系结构的调用方。Neo4j 可同时实现 `QueryRuntimeProvider` 和 `GraphQueryProvider`：前者用于普通 Cypher 表格结果和 Manager 预览兜底，后者用于图结构结果。
+图查询不属于普通查询的一个返回格式变体。图查询使用独立 `GraphQueryProvider`，返回 `GraphQueryResult`，面向 Graph 模块、图可视化和图算法等需要节点 / 关系结构的调用方。Neo4j 可同时实现 `QueryRuntimeProvider` 和 `GraphQueryProvider`：前者用于普通 Cypher 表格结果和 Manager 预览兜底，后者用于图结构结果。图结构摘要由 `GraphMetadataProvider` 提供，图样本由 `GraphSampleProvider` 或 `GraphQueryProvider` 提供。
 
 ```go
 type GraphQueryProvider interface {
@@ -230,7 +244,7 @@ GORM、database/sql、Mongo driver、Neo4j driver、S3 client 都是实现 helpe
 | --- | --- |
 | PostgreSQL / MySQL / Doris / ClickHouse / Spark SQL | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `ItemMetadataProvider` + `SQLQueryRuntimeProvider` + `ConnectionPoolPlugin` |
 | MongoDB | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `ItemMetadataProvider` + `DocumentMetadataSamplingProvider` + `DocumentQueryRuntimeProvider` |
-| Neo4j | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `ItemMetadataProvider` + `QueryRuntimeProvider` + `GraphQueryProvider` |
+| Neo4j | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `ItemMetadataProvider` + `GraphMetadataProvider` + `GraphSampleProvider` + `QueryRuntimeProvider` + `GraphQueryProvider` |
 | MinIO / S3 | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `ItemMetadataProvider` + `ContentReadableProvider` |
 | NFS | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `ItemMetadataProvider` + `ContentReadableProvider` |
 | Python / Spark / Math Workflow | `EnginePlugin` + `WorkflowRuntimeProvider` |
@@ -243,8 +257,8 @@ GORM、database/sql、Mongo driver、Neo4j driver、S3 client 都是实现 helpe
 - System：通过 `EnginePlugin` 做注册、连接测试、连接信息校验和能力声明刷新；通过 `CatalogProvider.ListChildren()` 对外提供实时 catalog 浏览控制面 API：`POST /api/v1/system/engines/:id/catalog/children`。
 - Meta：使用 `CatalogProvider` 扫描目录并落库，使用 `ItemMetadataProvider` / `DocumentMetadataSamplingProvider` 获取叶子元数据；扫描编排必须先读取 `CatalogModelSpec`，再结合 provider 组合选择 catalog scan strategy。`engine_family` 只能作为粗分类或展示字段，不能单独决定 namespace 术语、item 术语、扫描层级和内容读取方式。公开 API 应聚焦扫描后元数据快照，不再新增实时浏览公共接口。
 - Meta 扫描 API 和任务参数中的路径型目标统一命名为 `catalog_paths`。它表示引擎 catalog model 下的路径。
-- Manager：使用 Meta 树构建探查树；预览由 Manager 自身 preview provider / composer 组合完成。结构化数据优先消费 `BatchReadableProvider` 或只读 sample query，图 label / relationship 可使用 `GraphQueryProvider` 采样后表格化展示，对象/文件优先消费 `ContentReadableProvider` 并结合格式解析。
-- Develop：使用 `QueryRuntimeProvider`、`WorkflowRuntimeProvider`、`ScriptRuntimeProvider`；图结构展示入口使用 `GraphQueryProvider`。
+- Manager：使用 Meta 树构建探查树；预览由 Manager 自身 preview provider / composer 组合完成。结构化数据优先消费 `BatchReadableProvider` 或只读 sample query；graph 预览优先消费 `type_info.graph` / `GraphMetadataProvider` 得到 schema 视图，并通过 `GraphSampleProvider` 或 `GraphQueryProvider` 获取轻量子图样本；对象/文件优先消费 `ContentReadableProvider` 并结合格式解析。
+- Develop：使用 `QueryRuntimeProvider`、`WorkflowRuntimeProvider`、`ScriptRuntimeProvider`；图结构展示入口使用 `GraphMetadataProvider` / `GraphQueryProvider`。
 - Service：发布普通查询服务时使用 query runtime 和 Meta item/spatial 元数据；图查询服务使用 `GraphQueryProvider`。
 - Transfer：执行面暂由 Transfer 自己负责；后续如需统一生成 Reader/Writer 配置，应在 Transfer 模块适配层中规范化。高吞吐数据搬运优先消费 batch / stream 能力，而不是 query runtime。
 
