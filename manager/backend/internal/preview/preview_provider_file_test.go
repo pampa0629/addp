@@ -1368,7 +1368,7 @@ func (p *recordingTableProvider) Capabilities() format.FormatCapability {
 func (p *recordingTableProvider) DescribeTable(context.Context, io.Reader, *format.ParseOptions) (*format.TableDescribeResult, error) {
 	p.describeCalls++
 	rowCount := int64(3)
-	return format.TableDescribeResultFromSchema(&datatype.TableInfo{
+	return format.TableDescribeResultFromTableInfo(&datatype.TableInfo{
 		Fields:   []datatype.FieldInfo{{Name: "name", Type: datatype.FieldTypeString}},
 		RowCount: &rowCount,
 	}), nil
@@ -1407,7 +1407,7 @@ func (p *recordingMultiTableProvider) DescribeMultiTable(_ context.Context, _ co
 	p.describeCalls++
 	p.lastRefs = append([]format.RelatedRef(nil), refs...)
 	rowCount := int64(1)
-	return format.TableDescribeResultFromSchema(&datatype.TableInfo{
+	return format.TableDescribeResultFromTableInfo(&datatype.TableInfo{
 		Fields:   []datatype.FieldInfo{{Name: "name", Type: datatype.FieldTypeString}},
 		RowCount: &rowCount,
 	}), nil

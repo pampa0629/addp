@@ -59,12 +59,12 @@ func (w *writer) normalizeDBFFilePath() {
 
 var _ format.MultiTableWriterProvider = (*Plugin)(nil)
 
-func (plugin *Plugin) OpenMultiTableWriter(ctx context.Context, output contentio.Writer, refs []format.RelatedRef, schema *datatype.TableInfo, options *format.WriteOptions) (format.TableWriter, error) {
+func (plugin *Plugin) OpenMultiTableWriter(ctx context.Context, output contentio.Writer, refs []format.RelatedRef, tableInfo *datatype.TableInfo, options *format.WriteOptions) (format.TableWriter, error) {
 	if output == nil {
 		return nil, fmt.Errorf("ref writer cannot be nil")
 	}
-	if schema == nil {
-		return nil, fmt.Errorf("shapefile table writer requires schema")
+	if tableInfo == nil {
+		return nil, fmt.Errorf("shapefile table writer requires table info")
 	}
 	if len(refs) == 0 {
 		return nil, fmt.Errorf("shapefile table writer requires related refs")
@@ -78,11 +78,11 @@ func (plugin *Plugin) OpenMultiTableWriter(ctx context.Context, output contentio
 	if options != nil {
 		*opts = *options
 	}
-	geometryField := multiWriterGeometryField(schema, opts)
+	geometryField := multiWriterGeometryField(tableInfo, opts)
 	if geometryField == "" {
 		return nil, fmt.Errorf("shapefile table writer requires geometry field")
 	}
-	shapeType, err := shapeTypeFromSchema(schema, opts.SpatialInfo)
+	shapeType, err := shapeTypeFromTableInfo(tableInfo, opts.SpatialInfo)
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +103,7 @@ func (plugin *Plugin) OpenMultiTableWriter(ctx context.Context, output contentio
 		_ = os.RemoveAll(tempDir)
 		return nil, fmt.Errorf("create shapefile writer: %w", err)
 	}
-	dbfSchema := shapefileDBFSchema(schema, geometryField)
+	dbfSchema := shapefileDBFSchema(tableInfo, geometryField)
 	if err := writer.setFields(dbfSchema.fields); err != nil {
 		writer.Close()
 		_ = os.RemoveAll(tempDir)
@@ -193,7 +193,7 @@ func (w *multiTableWriter) Close(ctx context.Context) error {
 	return nil
 }
 
-func multiWriterGeometryField(schema *datatype.TableInfo, opts *format.WriteOptions) string {
+func multiWriterGeometryField(tableInfo *datatype.TableInfo, opts *format.WriteOptions) string {
 	if opts != nil {
 		if value, ok := stringWriteOption(opts, "geometry_field"); ok {
 			return strings.TrimSpace(value)
@@ -202,7 +202,7 @@ func multiWriterGeometryField(schema *datatype.TableInfo, opts *format.WriteOpti
 	if opts != nil && opts.SpatialInfo != nil && strings.TrimSpace(opts.SpatialInfo.PrimaryGeometryName()) != "" {
 		return strings.TrimSpace(opts.SpatialInfo.PrimaryGeometryName())
 	}
-	for _, field := range schema.Fields {
+	for _, field := range tableInfo.Fields {
 		if datatype.IsSpatialFieldType(field.Type) {
 			return field.Name
 		}

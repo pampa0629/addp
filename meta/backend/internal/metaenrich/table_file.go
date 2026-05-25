@@ -513,7 +513,7 @@ func (d *tableFileItemResolver) extractTableFileInfo(
 		tableInfo, err = describeTableFile(ctx, fileFormatName(firstReadableFile.Name), rc)
 		closeErr := rc.Close()
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse table schema from %s: %w", firstReadableFile.Path, err)
+			return nil, fmt.Errorf("failed to parse table info from %s: %w", firstReadableFile.Path, err)
 		}
 		if closeErr != nil {
 			return nil, fmt.Errorf("failed to close table file %s: %w", firstReadableFile.Path, closeErr)

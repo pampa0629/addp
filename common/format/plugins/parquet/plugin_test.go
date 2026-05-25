@@ -172,7 +172,7 @@ func TestParquetPluginFieldSelectionMissingFieldPolicies(t *testing.T) {
 
 func TestParquetPluginOpenTableWriter(t *testing.T) {
 	plugin := NewPlugin()
-	schema := &datatype.TableInfo{
+	tableInfo := &datatype.TableInfo{
 		Fields: []datatype.FieldInfo{
 			{Name: "id", Type: datatype.FieldTypeBigInt},
 			{Name: "name", Type: datatype.FieldTypeString, Nullable: true},
@@ -182,7 +182,7 @@ func TestParquetPluginOpenTableWriter(t *testing.T) {
 	}
 	var buf bytes.Buffer
 
-	writer, err := plugin.OpenTableWriter(context.Background(), &buf, schema, nil)
+	writer, err := plugin.OpenTableWriter(context.Background(), &buf, tableInfo, nil)
 	if err != nil {
 		t.Fatalf("OpenTableWriter failed: %v", err)
 	}
@@ -214,7 +214,7 @@ func TestParquetPluginOpenTableWriter(t *testing.T) {
 
 func TestParquetPluginOpenTableWriterSerializesJSONLikeFields(t *testing.T) {
 	plugin := NewPlugin()
-	schema := &datatype.TableInfo{
+	tableInfo := &datatype.TableInfo{
 		Fields: []datatype.FieldInfo{
 			{Name: "id", Type: datatype.FieldTypeInt},
 			{Name: "payload", Type: datatype.FieldTypeJSON, Nullable: true},
@@ -222,7 +222,7 @@ func TestParquetPluginOpenTableWriterSerializesJSONLikeFields(t *testing.T) {
 	}
 	var buf bytes.Buffer
 
-	writer, err := plugin.OpenTableWriter(context.Background(), &buf, schema, nil)
+	writer, err := plugin.OpenTableWriter(context.Background(), &buf, tableInfo, nil)
 	if err != nil {
 		t.Fatalf("OpenTableWriter failed: %v", err)
 	}
@@ -418,9 +418,9 @@ func TestParquetPluginOpenTableScopeReader(t *testing.T) {
 	if first[0]["dt"] != "2026-05-05" || first[1]["dt"] != "2026-05-06" || second[0]["dt"] != "2026-05-06" {
 		t.Fatalf("partition values = %#v %#v, want dt from path", first, second)
 	}
-	schema := &datatype.TableInfo{Fields: tableReader.Fields()}
-	if field := schema.GetField("dt"); field == nil || field.Type != datatype.FieldTypeString {
-		t.Fatalf("schema partition field dt = %#v, want string field", field)
+	tableInfo := &datatype.TableInfo{Fields: tableReader.Fields()}
+	if field := tableInfo.GetField("dt"); field == nil || field.Type != datatype.FieldTypeString {
+		t.Fatalf("tableInfo partition field dt = %#v, want string field", field)
 	}
 	empty, err := tableReader.ReadRows(context.Background(), 2)
 	if err != nil {
@@ -470,7 +470,7 @@ func TestParquetPluginScopeRejectsIncompatibleSchema(t *testing.T) {
 
 	_, err := plugin.DescribeTableScope(context.Background(), reader, scope, nil)
 	if err == nil {
-		t.Fatal("expected incompatible schema error")
+		t.Fatal("expected incompatible tableInfo error")
 	}
 }
 

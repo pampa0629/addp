@@ -44,16 +44,17 @@
 
 ```go
 type DataBatch struct {
-    Rows     []map[string]interface{}  // 通用行数据
-    Schema   *Schema                   // 元数据描述
-    Metadata map[string]interface{}    // 批次元数据
-    Offset   int64                     // 偏移量
+    Rows     []map[string]interface{} // 通用行数据
+    Fields   []datatype.FieldInfo     // 字段事实
+    Spatial  *datatype.SpatialInfo    // 空间上下文
+    Metadata map[string]interface{}   // 批次元数据
+    Offset   int64                    // 偏移量
 }
 ```
 
 **关键设计**:
 - ✅ 使用 `map[string]interface{}` 表示行数据 → **完全类型无关**
-- ✅ Schema 只描述元数据，不限制数据内容
+- ✅ 字段事实统一使用 `datatype.FieldInfo`，不在 Transfer 内维护并行 schema 模型
 - ✅ 空间数据可以是 `[]byte` (WKB)、`string` (WKT)、`map` (GeoJSON)
 
 **松耦合证明**:
@@ -84,7 +85,7 @@ writer.Write(ctx, batch)     // 不关心转换逻辑
 type Reader interface {
     Open(ctx, config) error
     Read(ctx) (*DataBatch, error)
-    Schema() (*Schema, error)
+    TableInfo() *datatype.TableInfo
     Close() error
 }
 ```

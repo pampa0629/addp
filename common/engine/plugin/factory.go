@@ -208,6 +208,9 @@ func CountItemRows(ctx context.Context, resource *Engine, namespace, item string
 	if _, ok := enginePlugin.(ItemMetadataProvider); ok {
 		metadata, err := DescribeNamedItem(ctx, resource, namespace, item, MetadataOptions{IncludeStatistics: true})
 		if err == nil && metadata != nil {
+			if tableInfo := ItemMetadataTableInfo(metadata); tableInfo != nil && tableInfo.RowCount != nil && *tableInfo.RowCount > 0 {
+				return *tableInfo.RowCount, nil
+			}
 			if rowCount, ok := int64Stat(metadata.Stats, "row_count"); ok {
 				if rowCount > 0 {
 					return rowCount, nil

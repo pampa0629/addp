@@ -251,26 +251,30 @@ func isContainerChildResource(child *format.ContainerChildResource) bool {
 
 func childInfoForNestedContainerPath(refPath string) map[string]interface{} {
 	name := strings.Trim(refPath, "/")
-	preview := previewHintForRefDescriptor(nil, name)
-	result := map[string]interface{}{
-		"name":         name,
-		"key":          name,
-		"path":         name,
-		"child_kind":   "file",
-		"data_type":    preview.DataType,
-		"format":       string(preview.Format),
-		"layout":       "single",
-		"content_type": previewContentType(preview.Format, name),
-	}
-	if result["content_type"] == "application/octet-stream" {
-		delete(result, "content_type")
-	}
-	return result
+	return childInfoForPath(name, nil)
 }
 
 func childInfoForRefPath(parent *format.ContainerChildResource, refPath string) map[string]interface{} {
 	name := strings.Trim(refPath, "/")
 	descriptor := refDescriptorForPath(parent, name)
+	result := childInfoForPath(name, descriptor)
+	if descriptor != nil {
+		preview := previewHintForRefDescriptor(descriptor, name)
+		result["role"] = descriptor.Role
+		result["label"] = descriptor.Label
+		if descriptor.Extension != "" {
+			result["extension"] = descriptor.Extension
+		}
+		result["preview_material"] = preview.Material
+		result["preview_renderer"] = preview.Renderer
+		result["previewable"] = preview.Previewable
+		result["ref_preview"] = true
+	}
+	return result
+}
+
+func childInfoForPath(name string, descriptor *format.RefDescriptor) map[string]interface{} {
+	name = strings.Trim(name, "/")
 	preview := previewHintForRefDescriptor(descriptor, name)
 	result := map[string]interface{}{
 		"name":         name,
@@ -281,17 +285,6 @@ func childInfoForRefPath(parent *format.ContainerChildResource, refPath string) 
 		"format":       string(preview.Format),
 		"layout":       "single",
 		"content_type": previewContentType(preview.Format, name),
-	}
-	if descriptor != nil {
-		result["role"] = descriptor.Role
-		result["label"] = descriptor.Label
-		if descriptor.Extension != "" {
-			result["extension"] = descriptor.Extension
-		}
-		result["preview_material"] = preview.Material
-		result["preview_renderer"] = preview.Renderer
-		result["previewable"] = preview.Previewable
-		result["ref_preview"] = true
 	}
 	if result["content_type"] == "application/octet-stream" {
 		delete(result, "content_type")
@@ -387,7 +380,7 @@ func previewRequestForRef(req *PreviewRequest, child map[string]interface{}) *Pr
 func (p *ContainerChildPreviewProvider) previewTableChild(ctx context.Context, req *PreviewRequest, bucket string, child *format.ContainerChildResource) (*models.TablePreview, error) {
 	opts := child.ParentOptions
 	if opts == nil {
-		opts = format.ChildTableParseOptions(req.ChildName, containerChildForRequest(req.Attributes, req.ChildName))
+		opts = format.ChildTableParseOptions(req.ChildName, containerChildInputForRequest(req.Attributes, req.ChildName))
 	}
 	if len(child.Refs) > 0 {
 		infoProvider, err := format.GetMultiTableInfoProvider(child.Format)

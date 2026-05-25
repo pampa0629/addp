@@ -85,7 +85,7 @@ func (p *ScopeTablePreviewProvider) Preview(ctx context.Context, req *PreviewReq
 			} else {
 				result, describeErr := infoProvider.DescribeTable(ctx, input, nil)
 				if describeErr == nil {
-					tableInfo = format.TableSchemaFromDescribeResult(result)
+					tableInfo = format.TableInfoFromDescribeResult(result)
 				}
 				err = describeErr
 				input.Close()
@@ -120,7 +120,7 @@ func (p *ScopeTablePreviewProvider) Preview(ctx context.Context, req *PreviewReq
 			if tableInfo == nil {
 				result, describeErr := scopeInfoProvider.DescribeTableScope(ctx, reader, scope, nil)
 				if describeErr == nil {
-					tableInfo = format.TableSchemaFromDescribeResult(result)
+					tableInfo = format.TableInfoFromDescribeResult(result)
 				}
 				err = describeErr
 			}

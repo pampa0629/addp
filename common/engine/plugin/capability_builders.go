@@ -32,7 +32,7 @@ func NewTabularCapabilities(engineType, namespaceTerm string, opts TabularCapabi
 			},
 			Metadata: &MetadataCapability{
 				Supported:       true,
-				FieldSchema:     true,
+				FieldInfo:       true,
 				Statistics:      true,
 				Indexes:         true,
 				Constraints:     true,
@@ -173,7 +173,7 @@ func NewDocumentCapabilities(engineType string) EngineCapabilities {
 			},
 			Metadata: &MetadataCapability{
 				Supported:      true,
-				FieldSchema:    true,
+				FieldInfo:      true,
 				Statistics:     true,
 				Indexes:        true,
 				Sampling:       true,

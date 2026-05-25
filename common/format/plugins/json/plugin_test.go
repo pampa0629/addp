@@ -304,7 +304,7 @@ func TestJSONPluginOpenTableReaderLines(t *testing.T) {
 
 func TestJSONPluginOpenTableWriterArray(t *testing.T) {
 	plugin := NewPlugin(nil)
-	schema := &datatype.TableInfo{
+	tableInfo := &datatype.TableInfo{
 		Fields: []datatype.FieldInfo{
 			{Name: "id", Type: datatype.FieldTypeInt},
 			{Name: "name", Type: datatype.FieldTypeString},
@@ -312,7 +312,7 @@ func TestJSONPluginOpenTableWriterArray(t *testing.T) {
 	}
 	var buf bytes.Buffer
 
-	writer, err := plugin.OpenTableWriter(context.Background(), &buf, schema, nil)
+	writer, err := plugin.OpenTableWriter(context.Background(), &buf, tableInfo, nil)
 	if err != nil {
 		t.Fatalf("OpenTableWriter failed: %v", err)
 	}
@@ -334,7 +334,7 @@ func TestJSONPluginOpenTableWriterArray(t *testing.T) {
 		t.Fatalf("rows = %#v, want A/B", rows)
 	}
 	if _, ok := rows[0]["extra"]; ok {
-		t.Fatalf("schema field filtering failed: %#v", rows[0])
+		t.Fatalf("tableInfo field filtering failed: %#v", rows[0])
 	}
 }
 
@@ -380,7 +380,7 @@ func TestJSONPluginOpenTableWriterGeoJSON(t *testing.T) {
 		"geometry_field":          "geom",
 	}
 	opts.SpatialInfo = datatype.NewSingleGeometrySpatialInfo("geom", "Point", 4326, 0)
-	schema := &datatype.TableInfo{
+	tableInfo := &datatype.TableInfo{
 		Fields: []datatype.FieldInfo{
 			{Name: "id", Type: datatype.FieldTypeInt},
 			{Name: "name", Type: datatype.FieldTypeString},
@@ -389,7 +389,7 @@ func TestJSONPluginOpenTableWriterGeoJSON(t *testing.T) {
 	}
 	var buf bytes.Buffer
 
-	writer, err := plugin.OpenTableWriter(context.Background(), &buf, schema, opts)
+	writer, err := plugin.OpenTableWriter(context.Background(), &buf, tableInfo, opts)
 	if err != nil {
 		t.Fatalf("OpenTableWriter failed: %v", err)
 	}
@@ -640,10 +640,10 @@ func TestJSONPluginSampleGeoJSONFromPositionedReader(t *testing.T) {
 	}
 	index := info.ContentIndex
 	start := index.Anchors[1].ByteOffset
-	schema := format.TableSchemaFromDescribeResult(info)
+	tableInfo := format.TableInfoFromDescribeResult(info)
 	positioned := format.DefaultParseOptions()
 	positioned.TableSample = &format.TableSampleOptions{
-		Fields:            schema.Fields,
+		Fields:            tableInfo.Fields,
 		InputStartsAtRow:  index.Anchors[1].Row,
 		InputIsPositioned: true,
 	}
@@ -706,10 +706,10 @@ func TestJSONPluginSampleTableFromPositionedReader(t *testing.T) {
 	index := info.ContentIndex
 	start := index.Anchors[1].ByteOffset
 	fragment := data[start:]
-	schema := format.TableSchemaFromDescribeResult(info)
+	tableInfo := format.TableInfoFromDescribeResult(info)
 	positioned := format.DefaultParseOptions()
 	positioned.TableSample = &format.TableSampleOptions{
-		Fields:            schema.Fields,
+		Fields:            tableInfo.Fields,
 		InputStartsAtRow:  index.Anchors[1].Row,
 		InputIsPositioned: true,
 	}

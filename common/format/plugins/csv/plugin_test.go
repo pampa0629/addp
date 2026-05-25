@@ -215,7 +215,7 @@ func TestCSVPlugin_OpenTableReader(t *testing.T) {
 
 func TestCSVPlugin_OpenTableWriter(t *testing.T) {
 	plugin := NewPlugin(nil)
-	schema := &datatype.TableInfo{
+	tableInfo := &datatype.TableInfo{
 		Fields: []datatype.FieldInfo{
 			{Name: "id", Type: datatype.FieldTypeInt},
 			{Name: "name", Type: datatype.FieldTypeString},
@@ -223,7 +223,7 @@ func TestCSVPlugin_OpenTableWriter(t *testing.T) {
 		},
 	}
 	var buf bytes.Buffer
-	writer, err := plugin.OpenTableWriter(context.Background(), &buf, schema, nil)
+	writer, err := plugin.OpenTableWriter(context.Background(), &buf, tableInfo, nil)
 	if err != nil {
 		t.Fatalf("OpenTableWriter failed: %v", err)
 	}
@@ -246,13 +246,13 @@ func TestCSVPlugin_OpenTableWriter(t *testing.T) {
 
 func TestCSVPlugin_OpenTableWriterWithoutHeader(t *testing.T) {
 	plugin := NewPlugin(nil)
-	schema := &datatype.TableInfo{
+	tableInfo := &datatype.TableInfo{
 		Fields: []datatype.FieldInfo{{Name: "id"}, {Name: "name"}},
 	}
 	opts := format.DefaultWriteOptions()
 	opts.OmitHeader = true
 	var buf bytes.Buffer
-	writer, err := plugin.OpenTableWriter(context.Background(), &buf, schema, opts)
+	writer, err := plugin.OpenTableWriter(context.Background(), &buf, tableInfo, opts)
 	if err != nil {
 		t.Fatalf("OpenTableWriter failed: %v", err)
 	}
@@ -317,11 +317,11 @@ func TestTSVPluginRegisteredAsTableInfoAndSampleProviders(t *testing.T) {
 
 func TestTSVPlugin_OpenTableWriter(t *testing.T) {
 	plugin := NewTSVPlugin(nil)
-	schema := &datatype.TableInfo{
+	tableInfo := &datatype.TableInfo{
 		Fields: []datatype.FieldInfo{{Name: "id"}, {Name: "name"}},
 	}
 	var buf bytes.Buffer
-	writer, err := plugin.OpenTableWriter(context.Background(), &buf, schema, nil)
+	writer, err := plugin.OpenTableWriter(context.Background(), &buf, tableInfo, nil)
 	if err != nil {
 		t.Fatalf("OpenTableWriter failed: %v", err)
 	}

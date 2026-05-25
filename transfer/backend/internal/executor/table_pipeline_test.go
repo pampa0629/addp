@@ -219,7 +219,7 @@ func TestTableTransferExecutorReadsParquetWholeScopeSource(t *testing.T) {
 			Path:   engineplugin.FileDirectoryPath(7, "datasets/orders"),
 			Format: format.FormatParquet,
 			Layout: format.LayoutWhole,
-			Schema: &datatype.TableInfo{
+			TableInfo: &datatype.TableInfo{
 				Fields: []datatype.FieldInfo{
 					{Name: "id", Type: datatype.FieldTypeInt},
 					{Name: "name", Type: datatype.FieldTypeString},

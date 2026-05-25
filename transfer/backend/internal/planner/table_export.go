@@ -464,7 +464,7 @@ func cloneInterfaceMap(values map[string]interface{}) map[string]interface{} {
 
 func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding, transforms []TransformSpec) (executor.TableSourcePlan, error) {
 	itemDescriptor, hasItemAttributes := sourceItemDescriptor(endpoint.Attributes)
-	sourceSchema := tableInfoFromMetaAttributes(endpoint.Attributes)
+	sourceTableInfo := tableInfoFromMetaAttributes(endpoint.Attributes)
 	sourceSpatialInfo := spatialInfoFromMetaAttributes(endpoint.Attributes)
 	switch endpoint.Representation {
 	case representationNative:
@@ -479,7 +479,7 @@ func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding, transform
 			Path:        sourcePath,
 			ReadOptions: readOptions,
 			Layout:      itemDescriptor.Layout,
-			Schema:      sourceSchema,
+			TableInfo:   sourceTableInfo,
 			SpatialInfo: sourceSpatialInfo,
 		}, nil
 	case representationEncoded:
@@ -525,7 +525,7 @@ func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding, transform
 			Format:       sourceFormat,
 			Layout:       itemDescriptor.Layout,
 			ParseOptions: parseOptions,
-			Schema:       sourceSchema,
+			TableInfo:    sourceTableInfo,
 			SpatialInfo:  sourceSpatialInfo,
 			RelatedRefs:  relatedRefs,
 		}, nil

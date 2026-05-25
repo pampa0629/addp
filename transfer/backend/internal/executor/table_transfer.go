@@ -26,7 +26,7 @@ type TableSourcePlan struct {
 	Format       format.FormatType
 	Layout       format.Layout
 	ParseOptions *format.ParseOptions
-	Schema       *datatype.TableInfo
+	TableInfo    *datatype.TableInfo
 	SpatialInfo  *datatype.SpatialInfo
 	RelatedRefs  []format.RelatedRef
 }
@@ -193,7 +193,7 @@ func (e *TableTransferExecutor) openSource(plan TableSourcePlan) (TableBatchSour
 			path:                 plan.Path,
 			query:                plan.Query,
 			readOptions:          plan.ReadOptions,
-			schema:               plan.Schema,
+			tableInfo:            plan.TableInfo,
 		}, nil
 	case TableEndpointEncoded:
 		if e.SourceContentReader == nil {
@@ -210,7 +210,7 @@ func (e *TableTransferExecutor) openSource(plan TableSourcePlan) (TableBatchSour
 				path:                plan.Path,
 				readOptions:         plan.ContentRead,
 				parseOptions:        plan.ParseOptions,
-				schema:              plan.Schema,
+				tableInfo:           plan.TableInfo,
 				spatialInfo:         plan.SpatialInfo,
 			}, nil
 		}
@@ -229,7 +229,7 @@ func (e *TableTransferExecutor) openSource(plan TableSourcePlan) (TableBatchSour
 			path:                plan.Path,
 			readOptions:         plan.ContentRead,
 			parseOptions:        plan.ParseOptions,
-			schema:              plan.Schema,
+			tableInfo:           plan.TableInfo,
 			spatialInfo:         plan.SpatialInfo,
 			relatedRefs:         plan.RelatedRefs,
 		}, nil

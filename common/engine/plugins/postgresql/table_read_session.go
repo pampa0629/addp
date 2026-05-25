@@ -441,7 +441,7 @@ func (s *postgresTableReadSession) Close(ctx context.Context) error {
 	return closeErr
 }
 
-func scanPostgresRowsToBatch(rows *sql.Rows, schemaFields []datatype.FieldInfo, spatialInfo *datatype.SpatialInfo, offset int64) (*plugin.BatchData, error) {
+func scanPostgresRowsToBatch(rows *sql.Rows, tableFields []datatype.FieldInfo, spatialInfo *datatype.SpatialInfo, offset int64) (*plugin.BatchData, error) {
 	columns, err := rows.Columns()
 	if err != nil {
 		return nil, fmt.Errorf("get postgresql cursor columns: %w", err)
@@ -473,22 +473,22 @@ func scanPostgresRowsToBatch(rows *sql.Rows, schemaFields []datatype.FieldInfo, 
 
 	return &plugin.BatchData{
 		Rows:    resultRows,
-		Fields:  postgresReadBatchFields(columns, schemaFields),
+		Fields:  postgresReadBatchFields(columns, tableFields),
 		Spatial: spatialInfo.Clone(),
 		Offset:  offset,
 	}, nil
 }
 
-func postgresReadBatchFields(columns []string, schemaFields []datatype.FieldInfo) []datatype.FieldInfo {
+func postgresReadBatchFields(columns []string, tableFields []datatype.FieldInfo) []datatype.FieldInfo {
 	fields := make([]datatype.FieldInfo, 0, len(columns))
-	if len(schemaFields) == 0 {
+	if len(tableFields) == 0 {
 		for _, column := range columns {
 			fields = append(fields, datatype.FieldInfo{Name: column})
 		}
 		return fields
 	}
-	byName := make(map[string]datatype.FieldInfo, len(schemaFields))
-	for _, field := range schemaFields {
+	byName := make(map[string]datatype.FieldInfo, len(tableFields))
+	for _, field := range tableFields {
 		if field.Name == "" {
 			continue
 		}

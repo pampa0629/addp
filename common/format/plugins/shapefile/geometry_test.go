@@ -83,7 +83,7 @@ func TestDetermineShapefileDimension(t *testing.T) {
 	}
 }
 
-func TestShapeTypeFromSchemaUsesSpatialDimension(t *testing.T) {
+func TestShapeTypeFromTableInfoUsesSpatialDimension(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -103,9 +103,9 @@ func TestShapeTypeFromSchemaUsesSpatialDimension(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := shapeTypeFromSchema(nil, datatype.NewSingleGeometrySpatialInfo("geom", tt.geometryType, 0, tt.dimension))
+			got, err := shapeTypeFromTableInfo(nil, datatype.NewSingleGeometrySpatialInfo("geom", tt.geometryType, 0, tt.dimension))
 			if err != nil {
-				t.Fatalf("shapeTypeFromSchema() error = %v", err)
+				t.Fatalf("shapeTypeFromTableInfo() error = %v", err)
 			}
 			if got != tt.want {
 				t.Fatalf("shapeType = %v, want %v", got, tt.want)

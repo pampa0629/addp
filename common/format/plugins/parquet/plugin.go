@@ -218,16 +218,16 @@ func (p *Plugin) Capabilities() format.FormatCapability {
 	}
 }
 
-func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, schema *datatype.TableInfo, options *format.WriteOptions) (format.TableWriter, error) {
+func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, tableInfo *datatype.TableInfo, options *format.WriteOptions) (format.TableWriter, error) {
 	if err := contextErr(ctx); err != nil {
 		return nil, err
 	}
 	if output == nil {
 		return nil, fmt.Errorf("parquet table writer requires output")
 	}
-	fields := parquetWriterFields(schema)
+	fields := parquetWriterFields(tableInfo)
 	if len(fields) == 0 {
-		return nil, fmt.Errorf("parquet table writer requires schema fields")
+		return nil, fmt.Errorf("parquet table writer requires table fields")
 	}
 
 	group := parquetgo.Group{}
@@ -257,23 +257,23 @@ func (p *Plugin) OpenTableReader(ctx context.Context, input io.Reader, options *
 		return nil, fmt.Errorf("failed to open parquet file: %w", err)
 	}
 	rowCount := file.NumRows()
-	schema := &datatype.TableInfo{
+	tableInfo := &datatype.TableInfo{
 		Fields:   extractFields(file.Schema()),
 		RowCount: &rowCount,
 	}
-	schema, err = format.ApplyFieldSelectionToTableInfo(schema, fieldSelectionFromOptions(options))
+	tableInfo, err = format.ApplyFieldSelectionToTableInfo(tableInfo, fieldSelectionFromOptions(options))
 	if err != nil {
 		return nil, err
 	}
 	return &tableReader{
 		file:           file,
 		fieldNames:     extractLeafColumnNames(file.Schema()),
-		schema:         schema,
+		tableInfo:      tableInfo,
 		fieldSelection: fieldSelectionFromOptions(options),
 	}, nil
 }
 
-// DescribeTable 从 Parquet 文件中提取 TableInfo（Schema + 行数）
+// DescribeTable 从 Parquet 文件中提取 TableInfo 和行数。
 func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableDescribeResult, error) {
 	data, err := io.ReadAll(input)
 	if err != nil {
@@ -413,7 +413,7 @@ func appendRows(ctx context.Context, rows parquetgo.Rows, fieldNames []string, l
 type tableReader struct {
 	file           *parquetgo.File
 	fieldNames     []string
-	schema         *datatype.TableInfo
+	tableInfo      *datatype.TableInfo
 	fieldSelection *format.FieldSelectionOptions
 	rowGroupIndex  int
 	rows           parquetgo.Rows
@@ -421,10 +421,10 @@ type tableReader struct {
 }
 
 func (r *tableReader) Fields() []datatype.FieldInfo {
-	if r == nil || r.schema == nil {
+	if r == nil || r.tableInfo == nil {
 		return nil
 	}
-	return append([]datatype.FieldInfo(nil), r.schema.Fields...)
+	return append([]datatype.FieldInfo(nil), r.tableInfo.Fields...)
 }
 
 func (r *tableReader) ReadRows(ctx context.Context, limit int) ([]map[string]interface{}, error) {
@@ -535,13 +535,13 @@ func (w *tableWriter) Close(ctx context.Context) error {
 	return nil
 }
 
-func parquetWriterFields(schema *datatype.TableInfo) []datatype.FieldInfo {
-	if schema == nil {
+func parquetWriterFields(tableInfo *datatype.TableInfo) []datatype.FieldInfo {
+	if tableInfo == nil {
 		return nil
 	}
-	fields := make([]datatype.FieldInfo, 0, len(schema.Fields))
+	fields := make([]datatype.FieldInfo, 0, len(tableInfo.Fields))
 	seen := map[string]struct{}{}
-	for _, field := range schema.Fields {
+	for _, field := range tableInfo.Fields {
 		name := strings.TrimSpace(field.Name)
 		if name == "" {
 			continue
@@ -801,8 +801,8 @@ func (p *Plugin) DescribeTableScope(ctx context.Context, reader contentio.Reader
 			if err != nil {
 				return nil, err
 			}
-		} else if !sameFieldSchema(dataFields, info.Fields) {
-			return nil, fmt.Errorf("parquet scope %s has incompatible schema in %s", scope.Path, ref.Path)
+		} else if !sameFieldInfoList(dataFields, info.Fields) {
+			return nil, fmt.Errorf("parquet scope %s has incompatible table fields in %s", scope.Path, ref.Path)
 		}
 		if info.RowCount != nil {
 			totalRows += *info.RowCount
@@ -911,7 +911,7 @@ type scopeTableReader struct {
 	partitionFields   []datatype.FieldInfo
 	parseOptions      *format.ParseOptions
 	fieldSelection    *format.FieldSelectionOptions
-	schema            *datatype.TableInfo
+	tableInfo         *datatype.TableInfo
 	dataFields        []datatype.FieldInfo
 	index             int
 	currentInput      io.Closer
@@ -921,10 +921,10 @@ type scopeTableReader struct {
 }
 
 func (r *scopeTableReader) Fields() []datatype.FieldInfo {
-	if r == nil || r.schema == nil {
+	if r == nil || r.tableInfo == nil {
 		return nil
 	}
-	return append([]datatype.FieldInfo(nil), r.schema.Fields...)
+	return append([]datatype.FieldInfo(nil), r.tableInfo.Fields...)
 }
 
 func (r *scopeTableReader) ReadRows(ctx context.Context, limit int) ([]map[string]interface{}, error) {
@@ -989,19 +989,19 @@ func (r *scopeTableReader) openNext(ctx context.Context) error {
 			_ = input.Close()
 			return fmt.Errorf("failed to open parquet table reader for %s: %w", ref.Path, err)
 		}
-		schema := &datatype.TableInfo{Fields: tableReader.Fields()}
-		if r.schema == nil {
-			r.dataFields = append([]datatype.FieldInfo(nil), schema.Fields...)
-			r.schema, err = format.ApplyFieldSelectionToTableInfo(copyTableInfoWithPartitionFields(schema, r.partitionFields), r.fieldSelection)
+		tableInfo := &datatype.TableInfo{Fields: tableReader.Fields()}
+		if r.tableInfo == nil {
+			r.dataFields = append([]datatype.FieldInfo(nil), tableInfo.Fields...)
+			r.tableInfo, err = format.ApplyFieldSelectionToTableInfo(copyTableInfoWithPartitionFields(tableInfo, r.partitionFields), r.fieldSelection)
 			if err != nil {
 				_ = tableReader.Close(ctx)
 				_ = input.Close()
 				return err
 			}
-		} else if schema != nil && !sameFieldSchema(r.dataFields, schema.Fields) {
+		} else if tableInfo != nil && !sameFieldInfoList(r.dataFields, tableInfo.Fields) {
 			_ = tableReader.Close(ctx)
 			_ = input.Close()
-			return fmt.Errorf("parquet scope has incompatible schema in %s", ref.Path)
+			return fmt.Errorf("parquet scope has incompatible table fields in %s", ref.Path)
 		}
 		r.currentInput = input
 		r.current = tableReader
@@ -1202,7 +1202,7 @@ func contextErr(ctx context.Context) error {
 	}
 }
 
-func sameFieldSchema(left, right []datatype.FieldInfo) bool {
+func sameFieldInfoList(left, right []datatype.FieldInfo) bool {
 	if len(left) != len(right) {
 		return false
 	}

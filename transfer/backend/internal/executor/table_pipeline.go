@@ -30,7 +30,7 @@ type TableBatchReader interface {
 }
 
 type TableBatchTarget interface {
-	Open(ctx context.Context, schema *datatype.TableInfo, spatialInfo *datatype.SpatialInfo) (TableBatchWriter, error)
+	Open(ctx context.Context, tableInfo *datatype.TableInfo, spatialInfo *datatype.SpatialInfo) (TableBatchWriter, error)
 }
 
 type TableBatchWriter interface {
@@ -112,29 +112,29 @@ func (p *TablePipeline) Execute(ctx context.Context) (*TablePipelineMetrics, err
 	}
 	defer reader.Close(ctx)
 
-	schema := reader.TableInfo()
+	tableInfo := reader.TableInfo()
 	spatialInfo := reader.SpatialInfo()
 	var firstBatch *engineplugin.BatchData
-	if tableSchemaEmpty(schema) {
+	if tableInfoEmpty(tableInfo) {
 		firstBatch, err = reader.ReadBatch(ctx, batchSize)
 		if err != nil {
 			return nil, err
 		}
 		if firstBatch != nil && len(firstBatch.Rows) > 0 {
-			schema = tableInfoFromBatch(firstBatch)
+			tableInfo = tableInfoFromBatch(firstBatch)
 			if spatialInfo == nil {
 				spatialInfo = spatialInfoFromBatch(firstBatch)
 			}
 		}
 	}
-	schema, spatialInfo, err = applySchemaTransforms(schema, spatialInfo, transforms)
+	tableInfo, spatialInfo, err = applyTableInfoTransforms(tableInfo, spatialInfo, transforms)
 	if err != nil {
-		return nil, fmt.Errorf("transform table schema: %w", err)
+		return nil, fmt.Errorf("transform table info: %w", err)
 	}
-	if schema == nil {
-		schema = &datatype.TableInfo{}
+	if tableInfo == nil {
+		tableInfo = &datatype.TableInfo{}
 	}
-	writer, err := p.Target.Open(ctx, schema, spatialInfo)
+	writer, err := p.Target.Open(ctx, tableInfo, spatialInfo)
 	if err != nil {
 		return nil, fmt.Errorf("open table target: %w", err)
 	}
@@ -193,8 +193,8 @@ func (p *TablePipeline) Execute(ctx context.Context) (*TablePipelineMetrics, err
 	return metrics, nil
 }
 
-func tableSchemaEmpty(schema *datatype.TableInfo) bool {
-	return schema == nil || len(schema.Fields) == 0
+func tableInfoEmpty(tableInfo *datatype.TableInfo) bool {
+	return tableInfo == nil || len(tableInfo.Fields) == 0
 }
 
 type nativeTableBatchSource struct {
@@ -204,7 +204,7 @@ type nativeTableBatchSource struct {
 	path                 engineplugin.CatalogPath
 	query                string
 	readOptions          map[string]interface{}
-	schema               *datatype.TableInfo
+	tableInfo            *datatype.TableInfo
 }
 
 func (s *nativeTableBatchSource) Open(ctx context.Context) (TableBatchReader, error) {
@@ -216,32 +216,32 @@ func (s *nativeTableBatchSource) Open(ctx context.Context) (TableBatchReader, er
 		if err != nil {
 			return nil, fmt.Errorf("open native table read session: %w", err)
 		}
-		return &nativeTableSessionBatchReader{session: session, schema: s.schema}, nil
+		return &nativeTableSessionBatchReader{session: session, tableInfo: s.tableInfo}, nil
 	}
 	if s.reader == nil {
 		return nil, fmt.Errorf("native table source requires batch reader")
 	}
 	return &nativeOffsetBatchReader{
-		reader:   s.reader,
-		connInfo: s.connInfo,
-		path:     s.path,
-		query:    s.query,
-		schema:   s.schema,
+		reader:    s.reader,
+		connInfo:  s.connInfo,
+		path:      s.path,
+		query:     s.query,
+		tableInfo: s.tableInfo,
 	}, nil
 }
 
 type nativeTableSessionBatchReader struct {
-	session engineplugin.TableReadSession
-	schema  *datatype.TableInfo
-	closed  bool
+	session   engineplugin.TableReadSession
+	tableInfo *datatype.TableInfo
+	closed    bool
 }
 
 func (r *nativeTableSessionBatchReader) TableInfo() *datatype.TableInfo {
-	return r.schema
+	return r.tableInfo
 }
 
 func (r *nativeTableSessionBatchReader) SpatialInfo() *datatype.SpatialInfo {
-	return spatialInfoFromTableInfoOrFields(r.schema)
+	return spatialInfoFromTableInfoOrFields(r.tableInfo)
 }
 
 func (r *nativeTableSessionBatchReader) ReadBatch(ctx context.Context, limit int) (*engineplugin.BatchData, error) {
@@ -253,10 +253,10 @@ func (r *nativeTableSessionBatchReader) ReadBatch(ctx context.Context, limit int
 		_ = r.Close(ctx)
 		return nil, err
 	}
-	if tableSchemaEmpty(r.schema) && !tableSchemaEmpty(tableInfoFromBatch(batch)) {
-		r.schema = tableInfoFromBatch(batch)
+	if tableInfoEmpty(r.tableInfo) && !tableInfoEmpty(tableInfoFromBatch(batch)) {
+		r.tableInfo = tableInfoFromBatch(batch)
 	}
-	if !tableSchemaEmpty(r.schema) && batch != nil && batch.Spatial == nil {
+	if !tableInfoEmpty(r.tableInfo) && batch != nil && batch.Spatial == nil {
 		batch.Spatial = r.SpatialInfo()
 	}
 	if batch == nil || len(batch.Rows) == 0 || len(batch.Rows) < limit {
@@ -276,21 +276,21 @@ func (r *nativeTableSessionBatchReader) Close(ctx context.Context) error {
 }
 
 type nativeOffsetBatchReader struct {
-	reader   engineplugin.BatchReadableProvider
-	connInfo engineplugin.ConnectionInfo
-	path     engineplugin.CatalogPath
-	query    string
-	offset   int64
-	schema   *datatype.TableInfo
-	done     bool
+	reader    engineplugin.BatchReadableProvider
+	connInfo  engineplugin.ConnectionInfo
+	path      engineplugin.CatalogPath
+	query     string
+	offset    int64
+	tableInfo *datatype.TableInfo
+	done      bool
 }
 
 func (r *nativeOffsetBatchReader) TableInfo() *datatype.TableInfo {
-	return r.schema
+	return r.tableInfo
 }
 
 func (r *nativeOffsetBatchReader) SpatialInfo() *datatype.SpatialInfo {
-	return spatialInfoFromTableInfoOrFields(r.schema)
+	return spatialInfoFromTableInfoOrFields(r.tableInfo)
 }
 
 func (r *nativeOffsetBatchReader) ReadBatch(ctx context.Context, limit int) (*engineplugin.BatchData, error) {
@@ -307,8 +307,8 @@ func (r *nativeOffsetBatchReader) ReadBatch(ctx context.Context, limit int) (*en
 	}
 	if batch != nil {
 		r.offset += int64(len(batch.Rows))
-		if tableSchemaEmpty(r.schema) && !tableSchemaEmpty(tableInfoFromBatch(batch)) {
-			r.schema = tableInfoFromBatch(batch)
+		if tableInfoEmpty(r.tableInfo) && !tableInfoEmpty(tableInfoFromBatch(batch)) {
+			r.tableInfo = tableInfoFromBatch(batch)
 		}
 		if len(batch.Rows) < limit {
 			r.done = true
@@ -334,7 +334,7 @@ type encodedContentTableSource struct {
 	path                engineplugin.CatalogPath
 	readOptions         engineplugin.ReadOptions
 	parseOptions        *format.ParseOptions
-	schema              *datatype.TableInfo
+	tableInfo           *datatype.TableInfo
 	spatialInfo         *datatype.SpatialInfo
 	relatedRefs         []format.RelatedRef
 }
@@ -347,17 +347,17 @@ func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader,
 		if err != nil {
 			return nil, fmt.Errorf("open encoded source scope table reader: %w", err)
 		}
-		schema := s.schema
+		tableInfo := s.tableInfo
 		spatialInfo := s.spatialInfo.Clone()
-		if tableSchemaEmpty(schema) {
-			schema = tableInfoFromFormatReader(tableReader)
+		if tableInfoEmpty(tableInfo) {
+			tableInfo = tableInfoFromFormatReader(tableReader)
 		}
 		if spatialInfo == nil {
 			spatialInfo = spatialInfoFromFormatReader(tableReader)
 		}
 		return &multiTableBatchReader{
 			tableReader: tableReader,
-			schema:      schema,
+			tableInfo:   tableInfo,
 			spatialInfo: spatialInfo,
 		}, nil
 	}
@@ -368,46 +368,46 @@ func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader,
 		if err != nil {
 			return nil, fmt.Errorf("open encoded source multi table reader: %w", err)
 		}
-		schema := s.schema
+		tableInfo := s.tableInfo
 		spatialInfo := s.spatialInfo.Clone()
-		if tableSchemaEmpty(schema) {
-			schema = tableInfoFromFormatReader(tableReader)
+		if tableInfoEmpty(tableInfo) {
+			tableInfo = tableInfoFromFormatReader(tableReader)
 		}
 		if spatialInfo == nil {
 			spatialInfo = spatialInfoFromFormatReader(tableReader)
 		}
 		return &multiTableBatchReader{
 			tableReader: tableReader,
-			schema:      schema,
+			tableInfo:   tableInfo,
 			spatialInfo: spatialInfo,
 		}, nil
 	}
 
 	if s.multiInfoProvider != nil && s.multiSampleReader != nil {
 		reader, refs := s.refReader(s.multiInfoProvider.RelatedRefSpecs())
-		schema := s.schema
-		if tableSchemaEmpty(schema) {
+		tableInfo := s.tableInfo
+		if tableInfoEmpty(tableInfo) {
 			result, err := s.multiInfoProvider.DescribeMultiTable(ctx, reader, refs, s.parseOptions)
 			if err != nil {
 				return nil, fmt.Errorf("describe encoded source table refs: %w", err)
 			}
-			schema = format.TableSchemaFromDescribeResult(result)
+			tableInfo = format.TableInfoFromDescribeResult(result)
 			s.spatialInfo = result.Spatial.Clone()
 		}
 		return &multiEncodedTableBatchReader{
 			reader:         reader,
 			refs:           refs,
 			readerProvider: s.multiSampleReader,
-			schema:         schema,
+			tableInfo:      tableInfo,
 			spatialInfo:    s.spatialInfo.Clone(),
 			parseOptions:   s.parseOptions,
 		}, nil
 	}
 
-	schema := s.schema
-	if tableSchemaEmpty(schema) {
+	tableInfo := s.tableInfo
+	if tableInfoEmpty(tableInfo) {
 		var err error
-		schema, err = s.describeSchema(ctx)
+		tableInfo, err = s.describeTableInfo(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -418,7 +418,7 @@ func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader,
 		}
 		return &sampleEncodedTableBatchReader{
 			source:      s,
-			schema:      schema,
+			tableInfo:   tableInfo,
 			spatialInfo: s.spatialInfo.Clone(),
 		}, nil
 	}
@@ -432,26 +432,26 @@ func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader,
 		_ = input.Close()
 		return nil, fmt.Errorf("open encoded source table reader: %w", err)
 	}
-	if tableSchemaEmpty(schema) {
-		schema = tableInfoFromFormatReader(tableReader)
+	if tableInfoEmpty(tableInfo) {
+		tableInfo = tableInfoFromFormatReader(tableReader)
 	}
 	spatialInfo := s.spatialInfo.Clone()
 	if spatialInfo == nil {
 		spatialInfo = spatialInfoFromFormatReader(tableReader)
 	}
-	return &encodedTableBatchReader{input: input, tableReader: tableReader, schema: schema, spatialInfo: spatialInfo}, nil
+	return &encodedTableBatchReader{input: input, tableReader: tableReader, tableInfo: tableInfo, spatialInfo: spatialInfo}, nil
 }
 
 type multiTableBatchReader struct {
 	tableReader format.TableReader
-	schema      *datatype.TableInfo
+	tableInfo   *datatype.TableInfo
 	spatialInfo *datatype.SpatialInfo
 	offset      int64
 }
 
 func (r *multiTableBatchReader) TableInfo() *datatype.TableInfo {
-	if !tableSchemaEmpty(r.schema) {
-		return r.schema
+	if !tableInfoEmpty(r.tableInfo) {
+		return r.tableInfo
 	}
 	return tableInfoFromFormatReader(r.tableReader)
 }
@@ -485,7 +485,7 @@ func (r *multiTableBatchReader) Close(ctx context.Context) error {
 	return r.tableReader.Close(ctx)
 }
 
-func (s *encodedContentTableSource) describeSchema(ctx context.Context) (*datatype.TableInfo, error) {
+func (s *encodedContentTableSource) describeTableInfo(ctx context.Context) (*datatype.TableInfo, error) {
 	if s.infoProvider == nil {
 		return nil, nil
 	}
@@ -502,7 +502,7 @@ func (s *encodedContentTableSource) describeSchema(ctx context.Context) (*dataty
 		return nil, fmt.Errorf("close encoded source content after table info: %w", closeErr)
 	}
 	s.spatialInfo = info.Spatial.Clone()
-	return format.TableSchemaFromDescribeResult(info), nil
+	return format.TableInfoFromDescribeResult(info), nil
 }
 
 func tableInfoFromFormatReader(reader format.TableReader) *datatype.TableInfo {
@@ -537,14 +537,14 @@ func spatialInfoFromTableInfoOrFields(info *datatype.TableInfo) *datatype.Spatia
 type encodedTableBatchReader struct {
 	input       io.Closer
 	tableReader format.TableReader
-	schema      *datatype.TableInfo
+	tableInfo   *datatype.TableInfo
 	spatialInfo *datatype.SpatialInfo
 	offset      int64
 }
 
 func (r *encodedTableBatchReader) TableInfo() *datatype.TableInfo {
-	if !tableSchemaEmpty(r.schema) {
-		return r.schema
+	if !tableInfoEmpty(r.tableInfo) {
+		return r.tableInfo
 	}
 	return tableInfoFromFormatReader(r.tableReader)
 }
@@ -588,7 +588,7 @@ type multiEncodedTableBatchReader struct {
 	reader         contentio.Reader
 	refs           []format.RelatedRef
 	readerProvider format.MultiTableSampleReader
-	schema         *datatype.TableInfo
+	tableInfo      *datatype.TableInfo
 	spatialInfo    *datatype.SpatialInfo
 	parseOptions   *format.ParseOptions
 	offset         int64
@@ -596,14 +596,14 @@ type multiEncodedTableBatchReader struct {
 }
 
 func (r *multiEncodedTableBatchReader) TableInfo() *datatype.TableInfo {
-	return r.schema
+	return r.tableInfo
 }
 
 func (r *multiEncodedTableBatchReader) SpatialInfo() *datatype.SpatialInfo {
 	if r.spatialInfo != nil {
 		return r.spatialInfo.Clone()
 	}
-	return spatialInfoFromTableInfoOrFields(r.schema)
+	return spatialInfoFromTableInfoOrFields(r.tableInfo)
 }
 
 func (r *multiEncodedTableBatchReader) ReadBatch(ctx context.Context, limit int) (*engineplugin.BatchData, error) {
@@ -616,7 +616,7 @@ func (r *multiEncodedTableBatchReader) ReadBatch(ctx context.Context, limit int)
 	}
 	batch := &engineplugin.BatchData{
 		Rows:    rows,
-		Fields:  tableInfoFields(r.schema),
+		Fields:  tableInfoFields(r.tableInfo),
 		Spatial: r.SpatialInfo(),
 		Offset:  r.offset,
 	}
@@ -633,21 +633,21 @@ func (r *multiEncodedTableBatchReader) Close(context.Context) error {
 
 type sampleEncodedTableBatchReader struct {
 	source      *encodedContentTableSource
-	schema      *datatype.TableInfo
+	tableInfo   *datatype.TableInfo
 	spatialInfo *datatype.SpatialInfo
 	offset      int64
 	done        bool
 }
 
 func (r *sampleEncodedTableBatchReader) TableInfo() *datatype.TableInfo {
-	return r.schema
+	return r.tableInfo
 }
 
 func (r *sampleEncodedTableBatchReader) SpatialInfo() *datatype.SpatialInfo {
 	if r.spatialInfo != nil {
 		return r.spatialInfo.Clone()
 	}
-	return spatialInfoFromTableInfoOrFields(r.schema)
+	return spatialInfoFromTableInfoOrFields(r.tableInfo)
 }
 
 func (r *sampleEncodedTableBatchReader) ReadBatch(ctx context.Context, limit int) (*engineplugin.BatchData, error) {
@@ -668,7 +668,7 @@ func (r *sampleEncodedTableBatchReader) ReadBatch(ctx context.Context, limit int
 	}
 	batch := &engineplugin.BatchData{
 		Rows:    rows,
-		Fields:  tableInfoFields(r.schema),
+		Fields:  tableInfoFields(r.tableInfo),
 		Spatial: r.SpatialInfo(),
 		Offset:  r.offset,
 	}
@@ -709,16 +709,16 @@ type nativeTableBatchTarget struct {
 	writeOptions         engineplugin.BatchWriteOptions
 }
 
-func (t *nativeTableBatchTarget) Open(ctx context.Context, schema *datatype.TableInfo, spatialInfo *datatype.SpatialInfo) (TableBatchWriter, error) {
+func (t *nativeTableBatchTarget) Open(ctx context.Context, tableInfo *datatype.TableInfo, spatialInfo *datatype.SpatialInfo) (TableBatchWriter, error) {
 	if t.deleter != nil {
 		if err := t.deleter.DeleteTarget(ctx); err != nil {
 			return nil, fmt.Errorf("delete native table target before write: %w", err)
 		}
 	}
-	if err := t.prepare(ctx, schema, spatialInfo); err != nil {
+	if err := t.prepare(ctx, tableInfo, spatialInfo); err != nil {
 		return nil, err
 	}
-	fields := tableInfoFields(schema)
+	fields := tableInfoFields(tableInfo)
 	if t.tableSessionProvider != nil && isCopyWriteMethod(t.writeOptions.Method) {
 		session, err := t.tableSessionProvider.OpenTableWriteSession(ctx, t.connInfo, t.path, engineplugin.TableWriteSessionOptions{
 			Method:      t.writeOptions.Method,
@@ -743,12 +743,12 @@ func (t *nativeTableBatchTarget) Open(ctx context.Context, schema *datatype.Tabl
 	}, nil
 }
 
-func (t *nativeTableBatchTarget) prepare(ctx context.Context, schema *datatype.TableInfo, spatialInfo *datatype.SpatialInfo) error {
+func (t *nativeTableBatchTarget) prepare(ctx context.Context, tableInfo *datatype.TableInfo, spatialInfo *datatype.SpatialInfo) error {
 	if t.preparer == nil {
 		return fmt.Errorf("target engine does not implement table write prepare")
 	}
 	opts := engineplugin.TableWriteOptions{
-		Fields:      tableInfoFields(schema),
+		Fields:      tableInfoFields(tableInfo),
 		SpatialInfo: spatialInfo.Clone(),
 	}
 	if err := t.preparer.PrepareTableWrite(ctx, t.connInfo, t.path, opts); err != nil {
@@ -847,14 +847,14 @@ type encodedContentTableTarget struct {
 	formatOptions  *format.WriteOptions
 }
 
-func (t *encodedContentTableTarget) Open(ctx context.Context, schema *datatype.TableInfo, spatialInfo *datatype.SpatialInfo) (TableBatchWriter, error) {
-	formatOptions := writeOptionsWithSpatialInfo(t.formatOptions, schema, spatialInfo)
+func (t *encodedContentTableTarget) Open(ctx context.Context, tableInfo *datatype.TableInfo, spatialInfo *datatype.SpatialInfo) (TableBatchWriter, error) {
+	formatOptions := writeOptionsWithSpatialInfo(t.formatOptions, tableInfo, spatialInfo)
 	if t.deleter != nil {
 		if err := t.deleteExistingTarget(ctx); err != nil {
 			return nil, err
 		}
 	}
-	if tableSchemaEmpty(schema) && t.multiProvider == nil {
+	if tableInfoEmpty(tableInfo) && t.multiProvider == nil {
 		output, err := t.contentWriter().Create(ctx, contentRefFromCatalogPath(t.path))
 		if err != nil {
 			return nil, fmt.Errorf("create empty encoded target content: %w", err)
@@ -863,7 +863,7 @@ func (t *encodedContentTableTarget) Open(ctx context.Context, schema *datatype.T
 	}
 	if t.multiProvider != nil {
 		writer, refs := t.refWriter(t.multiProvider.RelatedRefSpecs())
-		tableWriter, err := t.multiProvider.OpenMultiTableWriter(ctx, writer, refs, schema, formatOptions)
+		tableWriter, err := t.multiProvider.OpenMultiTableWriter(ctx, writer, refs, tableInfo, formatOptions)
 		if err != nil {
 			return nil, fmt.Errorf("open encoded multi table writer: %w", err)
 		}
@@ -874,7 +874,7 @@ func (t *encodedContentTableTarget) Open(ctx context.Context, schema *datatype.T
 	if err != nil {
 		return nil, fmt.Errorf("create encoded target content: %w", err)
 	}
-	tableWriter, err := t.formatProvider.OpenTableWriter(ctx, output, schema, formatOptions)
+	tableWriter, err := t.formatProvider.OpenTableWriter(ctx, output, tableInfo, formatOptions)
 	if err != nil {
 		_ = output.Close()
 		return nil, fmt.Errorf("open encoded target table writer: %w", err)

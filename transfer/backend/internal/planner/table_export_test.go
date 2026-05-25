@@ -481,23 +481,23 @@ func TestBuildTableTransferPlanConsumesMetaSingleSourceAttributes(t *testing.T) 
 	if got := result.Plan.Source.Path.StringPath(); got != "imports/meta_roads.csv" {
 		t.Fatalf("source path = %q, want Meta storage physical path", got)
 	}
-	if result.Plan.Source.Schema == nil || len(result.Plan.Source.Schema.Fields) != 2 {
-		t.Fatalf("source schema = %#v, want fields from Meta attributes", result.Plan.Source.Schema)
+	if result.Plan.Source.TableInfo == nil || len(result.Plan.Source.TableInfo.Fields) != 2 {
+		t.Fatalf("source table info = %#v, want fields from Meta attributes", result.Plan.Source.TableInfo)
 	}
-	if result.Plan.Source.Schema.Fields[0].Type != datatype.FieldTypeBigInt || !result.Plan.Source.Schema.Fields[0].PrimaryKey {
-		t.Fatalf("first source field = %#v, want standard bigint primary key field", result.Plan.Source.Schema.Fields[0])
+	if result.Plan.Source.TableInfo.Fields[0].Type != datatype.FieldTypeBigInt || !result.Plan.Source.TableInfo.Fields[0].PrimaryKey {
+		t.Fatalf("first source field = %#v, want standard bigint primary key field", result.Plan.Source.TableInfo.Fields[0])
 	}
-	if result.Plan.Source.Schema.Name != "meta_roads" || result.Plan.Source.Schema.Kind != "view" || result.Plan.Source.Schema.Comment != "roads from meta" {
-		t.Fatalf("source schema facts = %#v, want standard table facts", result.Plan.Source.Schema)
+	if result.Plan.Source.TableInfo.Name != "meta_roads" || result.Plan.Source.TableInfo.Kind != "view" || result.Plan.Source.TableInfo.Comment != "roads from meta" {
+		t.Fatalf("source table info facts = %#v, want standard table facts", result.Plan.Source.TableInfo)
 	}
-	if result.Plan.Source.Schema.SizeBytes == nil || *result.Plan.Source.Schema.SizeBytes != 2048 {
-		t.Fatalf("source schema size = %#v, want 2048", result.Plan.Source.Schema.SizeBytes)
+	if result.Plan.Source.TableInfo.SizeBytes == nil || *result.Plan.Source.TableInfo.SizeBytes != 2048 {
+		t.Fatalf("source table info size = %#v, want 2048", result.Plan.Source.TableInfo.SizeBytes)
 	}
-	if result.Plan.Source.Schema.Fields[0].NativeType != "int8" || len(result.Plan.Source.Schema.PrimaryKey) != 1 || result.Plan.Source.Schema.PrimaryKey[0] != "id" {
-		t.Fatalf("source schema field/key facts = %#v / %#v", result.Plan.Source.Schema.Fields[0], result.Plan.Source.Schema.PrimaryKey)
+	if result.Plan.Source.TableInfo.Fields[0].NativeType != "int8" || len(result.Plan.Source.TableInfo.PrimaryKey) != 1 || result.Plan.Source.TableInfo.PrimaryKey[0] != "id" {
+		t.Fatalf("source table info field/key facts = %#v / %#v", result.Plan.Source.TableInfo.Fields[0], result.Plan.Source.TableInfo.PrimaryKey)
 	}
-	if result.Plan.Source.Schema.Native["delimiter"] != "," {
-		t.Fatalf("source schema native = %#v, want delimiter", result.Plan.Source.Schema.Native)
+	if result.Plan.Source.TableInfo.Native["delimiter"] != "," {
+		t.Fatalf("source table info native = %#v, want delimiter", result.Plan.Source.TableInfo.Native)
 	}
 }
 
@@ -538,8 +538,8 @@ func TestBuildTableTransferPlanConsumesMetaMultiSourceRefsAndSpatialAttributes(t
 	if result.Plan.Source.RelatedRefs[2].Ref.Path != "imports/roads.dbf" || !result.Plan.Source.RelatedRefs[2].Required {
 		t.Fatalf("dbf ref = %#v, want required attributes ref from Meta attributes", result.Plan.Source.RelatedRefs[2])
 	}
-	if result.Plan.Source.Schema == nil || result.Plan.Source.SpatialInfo == nil {
-		t.Fatalf("source schema = %#v, spatial = %#v, want spatial info from Meta attributes", result.Plan.Source.Schema, result.Plan.Source.SpatialInfo)
+	if result.Plan.Source.TableInfo == nil || result.Plan.Source.SpatialInfo == nil {
+		t.Fatalf("source table info = %#v, spatial = %#v, want spatial info from Meta attributes", result.Plan.Source.TableInfo, result.Plan.Source.SpatialInfo)
 	}
 	if result.Plan.Source.SpatialInfo.PrimaryGeometryName() != "shape" || result.Plan.Source.SpatialInfo.PrimaryGeometryType() != "MultiPolygon" {
 		t.Fatalf("source spatial info = %#v, want primary geometry column from capabilities.spatial", result.Plan.Source.SpatialInfo)
@@ -595,8 +595,8 @@ func TestBuildTableTransferPlanConsumesMetaWholeSourceAttributes(t *testing.T) {
 	if got := result.Plan.Source.Path.StringPath(); got != "datasets/lake_table" {
 		t.Fatalf("source path = %q, want whole scope physical path", got)
 	}
-	if result.Plan.Source.Schema == nil || len(result.Plan.Source.Schema.Fields) != 2 {
-		t.Fatalf("source schema = %#v, want fields from Meta attributes", result.Plan.Source.Schema)
+	if result.Plan.Source.TableInfo == nil || len(result.Plan.Source.TableInfo.Fields) != 2 {
+		t.Fatalf("source table info = %#v, want fields from Meta attributes", result.Plan.Source.TableInfo)
 	}
 }
 

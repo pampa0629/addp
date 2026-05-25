@@ -334,12 +334,12 @@ func (s *DatabaseScanService) scanTableDetails(
 	var attrs models.JSONMap
 
 	if isDeepScan {
-		pluginColumns, err := s.listColumns(ctx, resource, metadataProvider, schemaName, tableInfo.Name)
+		describedTable, err := s.describeTableInfo(ctx, resource, metadataProvider, schemaName, tableInfo.Name)
 		if err != nil {
 			return nil, nil, fmt.Errorf("字段扫描失败: %w", err)
 		}
-
-		fields = databaseDatatypeFieldInfo(pluginColumns)
+		tableInfo = mergeDatabaseTableInfo(tableInfo, describedTable)
+		fields = append([]datatype.FieldInfo(nil), tableInfo.Fields...)
 
 		s.log.Info("字段扫描成功",
 			"table", tableInfo.Name,
@@ -458,7 +458,70 @@ func engineSupportsSpatialMetadata(engineType string) bool {
 		capabilities.Storage.Metadata.SpatialMetadata
 }
 
-func databaseDatatypeFieldInfo(input []datatype.FieldInfo) []datatype.FieldInfo {
+func normalizedTableKind(table datatype.TableInfo) string {
+	if table.Kind != "" {
+		return table.Kind
+	}
+	return "table"
+}
+
+func (s *DatabaseScanService) describeTableInfo(
+	ctx context.Context,
+	resource *commonModels.Engine,
+	metadataProvider plugin.ItemMetadataProvider,
+	schemaName string,
+	tableName string,
+) (datatype.TableInfo, error) {
+	item, err := metadataProvider.DescribeItem(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), plugin.CatalogPath{
+		Version:  plugin.CatalogPathVersion,
+		EngineID: resource.ID,
+		Segments: []plugin.CatalogSegment{
+			{Term: namespaceTermForPlugin(metadataProvider), Kind: plugin.CatalogKindNamespace, Name: schemaName},
+			{Term: plugin.CatalogTermTable, Kind: plugin.CatalogKindTable, Name: tableName},
+		},
+	}, plugin.MetadataOptions{})
+	if err != nil {
+		return datatype.TableInfo{}, err
+	}
+	if item.Table != nil {
+		return *item.Table.Clone(), nil
+	}
+	return datatype.TableInfo{Name: tableName, Fields: normalizeDatabaseFields(plugin.ItemMetadataFields(item))}, nil
+}
+
+func mergeDatabaseTableInfo(base, described datatype.TableInfo) datatype.TableInfo {
+	if described.Name == "" {
+		described.Name = base.Name
+	}
+	if described.Kind == "" {
+		described.Kind = base.Kind
+	}
+	if described.Comment == "" {
+		described.Comment = base.Comment
+	}
+	if described.RowCount == nil {
+		described.RowCount = base.RowCount
+	}
+	if described.SizeBytes == nil {
+		described.SizeBytes = base.SizeBytes
+	}
+	if described.CreatedAt == nil {
+		described.CreatedAt = base.CreatedAt
+	}
+	if described.UpdatedAt == nil {
+		described.UpdatedAt = base.UpdatedAt
+	}
+	if len(described.Native) == 0 {
+		described.Native = base.Native
+	}
+	described.Fields = normalizeDatabaseFields(described.Fields)
+	if len(described.PrimaryKey) == 0 {
+		described.PrimaryKey = primaryKeyFieldNames(described.Fields)
+	}
+	return described
+}
+
+func normalizeDatabaseFields(input []datatype.FieldInfo) []datatype.FieldInfo {
 	fields := make([]datatype.FieldInfo, 0, len(input))
 	for _, field := range input {
 		nativeType := field.NativeType
@@ -472,32 +535,17 @@ func databaseDatatypeFieldInfo(input []datatype.FieldInfo) []datatype.FieldInfo 
 	return fields
 }
 
-func normalizedTableKind(table datatype.TableInfo) string {
-	if table.Kind != "" {
-		return table.Kind
+func primaryKeyFieldNames(fields []datatype.FieldInfo) []string {
+	if len(fields) == 0 {
+		return nil
 	}
-	return "table"
-}
-
-func (s *DatabaseScanService) listColumns(
-	ctx context.Context,
-	resource *commonModels.Engine,
-	metadataProvider plugin.ItemMetadataProvider,
-	schemaName string,
-	tableName string,
-) ([]datatype.FieldInfo, error) {
-	item, err := metadataProvider.DescribeItem(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), plugin.CatalogPath{
-		Version:  plugin.CatalogPathVersion,
-		EngineID: resource.ID,
-		Segments: []plugin.CatalogSegment{
-			{Term: namespaceTermForPlugin(metadataProvider), Kind: plugin.CatalogKindNamespace, Name: schemaName},
-			{Term: plugin.CatalogTermTable, Kind: plugin.CatalogKindTable, Name: tableName},
-		},
-	}, plugin.MetadataOptions{})
-	if err != nil {
-		return nil, err
+	names := make([]string, 0)
+	for _, field := range fields {
+		if field.PrimaryKey && field.Name != "" {
+			names = append(names, field.Name)
+		}
 	}
-	return item.Fields, nil
+	return names
 }
 
 // scanSpatialMetadata 扫描PostGIS空间元数据

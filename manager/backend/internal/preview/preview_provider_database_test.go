@@ -170,15 +170,16 @@ func TestDatabaseTablePreviewProviderPreviewUsesBatchReadAndAttributeRowCount(t 
 
 func TestDatabaseTablePreviewProviderPreviewFallsBackToItemMetadataRowCount(t *testing.T) {
 	previous, previousErr := plugin.Get("postgresql")
+	rowCount := int64(999)
 	enginePlugin := &recordingDatabasePreviewPlugin{
 		engineType: "postgresql",
 		itemMetadata: &plugin.ItemMetadata{
-			Fields: []datatype.FieldInfo{
-				{Name: "id", Type: datatype.FieldTypeBigInt, NativeType: "bigint", Nullable: false, PrimaryKey: true},
-				{Name: "name", Type: datatype.FieldTypeString, NativeType: "text", Nullable: true},
-			},
-			Stats: map[string]interface{}{
-				"row_count": int64(999),
+			Table: &datatype.TableInfo{
+				RowCount: &rowCount,
+				Fields: []datatype.FieldInfo{
+					{Name: "id", Type: datatype.FieldTypeBigInt, NativeType: "bigint", Nullable: false, PrimaryKey: true},
+					{Name: "name", Type: datatype.FieldTypeString, NativeType: "text", Nullable: true},
+				},
 			},
 		},
 		batchData: &plugin.BatchData{

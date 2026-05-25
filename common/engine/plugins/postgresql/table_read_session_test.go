@@ -30,7 +30,7 @@ func TestPostgresFieldInfoFromColumnKeepsSpatialNativeType(t *testing.T) {
 	}
 }
 
-func TestPostgresReadBatchFieldsKeepsSchemaMetadataInColumnOrder(t *testing.T) {
+func TestPostgresReadBatchFieldsKeepsTableFieldMetadataInColumnOrder(t *testing.T) {
 	fields := postgresReadBatchFields([]string{"id", "SmGeometry"}, []datatype.FieldInfo{
 		{Name: "SmGeometry", Type: "geometry", NativeType: "geometry(MultiPolygon,4326)"},
 		{Name: "id", Type: "bigint"},

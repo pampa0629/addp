@@ -135,7 +135,9 @@ type ItemMetadataProvider interface {
 }
 ```
 
-文档型数据库可额外实现 `DocumentMetadataSamplingProvider`，用于采样推断动态字段结构。
+文档型数据库可额外实现 `DocumentMetadataSamplingProvider`，用于采样推断动态字段信息。
+
+`ItemMetadata` 是 engine 侧叶子 item 的统一描述结果。对于 table 型 item，必须优先填充 `Table *datatype.TableInfo`，字段、主键、行数、大小、更新时间、表类型、注释和表级 native 事实都随 `TableInfo` 传递；`Fields`、`Stats`、`Attributes` 仅作为非 table item 的通用补充或必要的 catalog 展示属性，不得成为新的 table 事实源。公共消费方需要 table 字段或 table facts 时，应使用 `ItemMetadataFields()` / `ItemMetadataTableInfo()` 这类 helper，而不是直接读 `Fields` / `Stats` 自行拼装。
 
 对 tabular 引擎，`CatalogProvider.ListChildren()` 和 `ItemMetadataProvider.DescribeItem()` 必须围绕同一份 `datatype.TableInfo` 事实表达。表级通用事实进入 `Name`、`Kind`、`Comment`、`RowCount`、`SizeBytes`、`UpdatedAt`、`Fields` 等标准字段；来源原生但仍属表级的事实进入 `TableInfo.Native`，再由公共层透出到 `CatalogNode.Attributes.native` 或 `ItemMetadata.Attributes.native`。不得在列表接口保留一套事实、详情接口丢失另一套事实。
 

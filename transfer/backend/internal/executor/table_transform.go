@@ -10,7 +10,7 @@ import (
 )
 
 type tableTransform interface {
-	TransformSchema(schema *datatype.TableInfo, spatialInfo *datatype.SpatialInfo) (*datatype.TableInfo, *datatype.SpatialInfo, error)
+	TransformTableInfo(tableInfo *datatype.TableInfo, spatialInfo *datatype.SpatialInfo) (*datatype.TableInfo, *datatype.SpatialInfo, error)
 	TransformBatch(ctx context.Context, batch *engineplugin.BatchData) (*engineplugin.BatchData, error)
 }
 
@@ -37,12 +37,12 @@ func buildTableTransforms(plans []TableTransformPlan) ([]tableTransform, error) 
 	return transforms, nil
 }
 
-func applySchemaTransforms(schema *datatype.TableInfo, spatialInfo *datatype.SpatialInfo, transforms []tableTransform) (*datatype.TableInfo, *datatype.SpatialInfo, error) {
-	next := schema.Clone()
+func applyTableInfoTransforms(tableInfo *datatype.TableInfo, spatialInfo *datatype.SpatialInfo, transforms []tableTransform) (*datatype.TableInfo, *datatype.SpatialInfo, error) {
+	next := tableInfo.Clone()
 	nextSpatial := spatialInfo.Clone()
 	for _, transform := range transforms {
 		var err error
-		next, nextSpatial, err = transform.TransformSchema(next, nextSpatial)
+		next, nextSpatial, err = transform.TransformTableInfo(next, nextSpatial)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -95,11 +95,11 @@ func newFieldMappingTransform(plan FieldMappingTransformPlan) (*fieldMappingTran
 	return &fieldMappingTransform{mode: mode, fields: fields}, nil
 }
 
-func (t *fieldMappingTransform) TransformSchema(schema *datatype.TableInfo, spatialInfo *datatype.SpatialInfo) (*datatype.TableInfo, *datatype.SpatialInfo, error) {
+func (t *fieldMappingTransform) TransformTableInfo(tableInfo *datatype.TableInfo, spatialInfo *datatype.SpatialInfo) (*datatype.TableInfo, *datatype.SpatialInfo, error) {
 	if t == nil {
-		return schema.Clone(), spatialInfo.Clone(), nil
+		return tableInfo.Clone(), spatialInfo.Clone(), nil
 	}
-	source := schema.Clone()
+	source := tableInfo.Clone()
 	if source == nil {
 		source = &datatype.TableInfo{}
 	}
@@ -172,10 +172,10 @@ func (t *fieldMappingTransform) TransformBatch(ctx context.Context, batch *engin
 	return next, nil
 }
 
-func fieldInfoForMapping(schema *datatype.TableInfo, mapping FieldMappingFieldPlan) datatype.FieldInfo {
-	field := findFieldInfo(schema, mapping.Source)
+func fieldInfoForMapping(tableInfo *datatype.TableInfo, mapping FieldMappingFieldPlan) datatype.FieldInfo {
+	field := findFieldInfo(tableInfo, mapping.Source)
 	if field.Name == "" {
-		field = findFieldInfo(schema, mapping.Target)
+		field = findFieldInfo(tableInfo, mapping.Target)
 	}
 	field.Name = mapping.Target
 	if mapping.TargetType != "" {
@@ -268,11 +268,11 @@ func cloneSpatialInfoForColumn(source *datatype.SpatialInfo, columnName string) 
 	return spatial
 }
 
-func findFieldInfo(schema *datatype.TableInfo, name string) datatype.FieldInfo {
-	if schema == nil || name == "" {
+func findFieldInfo(tableInfo *datatype.TableInfo, name string) datatype.FieldInfo {
+	if tableInfo == nil || name == "" {
 		return datatype.FieldInfo{}
 	}
-	for _, field := range schema.Fields {
+	for _, field := range tableInfo.Fields {
 		if strings.EqualFold(field.Name, name) {
 			return field
 		}

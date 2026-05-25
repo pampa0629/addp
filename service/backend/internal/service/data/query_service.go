@@ -412,8 +412,9 @@ func columnInfosFromMetadata(metadata *plugin.ItemMetadata) []metadataColumnInfo
 	if metadata == nil {
 		return nil
 	}
-	columns := make([]metadataColumnInfo, 0, len(metadata.Fields))
-	for _, field := range metadata.Fields {
+	fields := plugin.ItemMetadataFields(metadata)
+	columns := make([]metadataColumnInfo, 0, len(fields))
+	for _, field := range fields {
 		dataType := field.NativeType
 		if dataType == "" {
 			dataType = string(field.Type)

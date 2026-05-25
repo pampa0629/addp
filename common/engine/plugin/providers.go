@@ -28,7 +28,7 @@ type ItemMetadataProvider interface {
 	DescribeItem(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts MetadataOptions) (*ItemMetadata, error)
 }
 
-// DocumentMetadataSamplingProvider samples document items to infer dynamic field schema.
+// DocumentMetadataSamplingProvider samples document items to infer dynamic field info.
 type DocumentMetadataSamplingProvider interface {
 	EnginePlugin
 	SampleDocumentMetadata(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts MetadataOptions) (*ItemMetadata, error)
@@ -194,6 +194,7 @@ type MetadataOptions struct {
 type ItemMetadata struct {
 	Path       CatalogPath            `json:"path"`
 	Kind       string                 `json:"kind"`
+	Table      *datatype.TableInfo    `json:"table,omitempty"`
 	Fields     []datatype.FieldInfo   `json:"fields,omitempty"`
 	Indexes    []IndexInfo            `json:"indexes,omitempty"`
 	Stats      map[string]interface{} `json:"stats,omitempty"`

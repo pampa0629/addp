@@ -46,14 +46,14 @@ func TestIntegrationShapefileToPostgresWritesEWKBGeometry(t *testing.T) {
 	sourcePath := engineplugin.FileItemPath(0, "imports/cities.shp")
 	contentWriter := contentadapter.NewWriter(source, nil, sourcePath, engineplugin.WriteOptions{Overwrite: true})
 	refs := format.SameBasenameRelatedRefs(sourcePath.StringPath(), shapefilePlugin.RelatedRefSpecs())
-	sourceSchema := &datatype.TableInfo{
+	sourceTableInfo := &datatype.TableInfo{
 		Fields: []datatype.FieldInfo{
 			{Name: "id", Type: datatype.FieldTypeInt},
 			{Name: "name", Type: datatype.FieldTypeString, Size: 32},
 			{Name: "geometry", Type: datatype.FieldTypeGeometry},
 		},
 	}
-	tableWriter, err := shapefilePlugin.OpenMultiTableWriter(ctx, contentWriter, refs, sourceSchema, &format.WriteOptions{
+	tableWriter, err := shapefilePlugin.OpenMultiTableWriter(ctx, contentWriter, refs, sourceTableInfo, &format.WriteOptions{
 		Encoding:    "utf-8",
 		SpatialInfo: datatype.NewSingleGeometrySpatialInfo("geometry", "Point", 4326, 0),
 		ExtraParams: map[string]interface{}{

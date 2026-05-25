@@ -417,7 +417,7 @@ func (p *DatabaseTablePreviewProvider) describeDatabaseTable(
 	if err != nil {
 		return nil, nil, err
 	}
-	return itemMetadata, itemMetadata.Fields, nil
+	return itemMetadata, plugin.ItemMetadataFields(itemMetadata), nil
 }
 
 func databaseTableCatalogPath(engineID uint, plug plugin.EnginePlugin, schema, table string) plugin.CatalogPath {
@@ -452,6 +452,9 @@ func (p *DatabaseTablePreviewProvider) resolveTableRowCount(
 		return rowCount
 	}
 	if itemMetadata != nil {
+		if tableInfo := plugin.ItemMetadataTableInfo(itemMetadata); tableInfo != nil && tableInfo.RowCount != nil && *tableInfo.RowCount > 0 {
+			return *tableInfo.RowCount
+		}
 		if rowCount, ok := databaseInt64Stat(itemMetadata.Stats, "row_count"); ok && rowCount > 0 {
 			return rowCount
 		}

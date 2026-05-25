@@ -313,11 +313,11 @@ type TableSpatialInfoProvider interface {
 type MultiTableWriterProvider interface {
     Provider
     RelatedRefSpecs() []RelatedRefSpec
-    OpenMultiTableWriter(ctx context.Context, writer contentio.Writer, refs []RelatedRef, schema *TableInfo, options *WriteOptions) (TableWriter, error)
+    OpenMultiTableWriter(ctx context.Context, writer contentio.Writer, refs []RelatedRef, tableInfo *datatype.TableInfo, options *WriteOptions) (TableWriter, error)
 }
 ```
 
-空间表的 `FieldTypeGeometry` 只表达字段语义，行值编码由 `ParseOptions.GeometryEncoding` 决定。默认编码是 `wkt`，用于 Manager sample、日志和调试；连续读取链路可显式请求 `wkb` 或 `ewkb`，此时行值为 `[]byte`。SRID / CRS 事实以 `datatype.SpatialInfo` 为准，`ewkb` 携带 SRID 只是行值编码能力，不替代 schema 事实。具体格式的 native 几何类型必须在各自 plugin 内转换，不得暴露到 format 根接口或 engine / Transfer 层。
+空间表的 `FieldTypeGeometry` 只表达字段语义，行值编码由 `ParseOptions.GeometryEncoding` 决定。默认编码是 `wkt`，用于 Manager sample、日志和调试；连续读取链路可显式请求 `wkb` 或 `ewkb`，此时行值为 `[]byte`。SRID / CRS 事实以 `datatype.SpatialInfo` 为准，`ewkb` 携带 SRID 只是行值编码能力，不替代空间参考事实。具体格式的 native 几何类型必须在各自 plugin 内转换，不得暴露到 format 根接口或 engine / Transfer 层。
 
 目录 scope 格式同样拆成 info 和 sample：
 
@@ -444,7 +444,7 @@ info, err := provider.DescribeMedia(ctx, input, nil)
 
 ## Table Operation Schema
 
-`common/datatype.TableInfo` 是 table 类型信息的通用事实源，对应 `attributes.type_info.table`。`common/format` 不再保留 `TableInfo` 薄壳；reader / writer / Transfer 的 table operation schema 也直接使用 `datatype.TableInfo`，用来表达执行期所需的字段顺序、写出 schema 和采样上下文。
+`common/datatype.TableInfo` 是 table 类型信息的通用事实源，对应 `attributes.type_info.table`。`common/format` 不再保留 `TableInfo` 薄壳；reader / writer / Transfer 的 table 执行上下文也直接使用 `datatype.TableInfo`，用来表达执行期所需的字段顺序、写出字段信息和采样上下文。
 
 Provider 对外返回 `format.TableDescribeResult`。这是 format provider 的解析结果包，不是 data type 本体。其中 `Table` 只表达 `attributes.type_info.table`；同次解析得到的补充事实必须作为同级候选事实返回，由 Meta normalizer 写入对应分区：
 
@@ -479,7 +479,7 @@ func (m *OracleTypeMapper) ToCommon(nativeType string) datatype.FieldType
 func (m *OracleTypeMapper) FromCommon(commonType datatype.FieldType) (string, int, int)
 ```
 
-原生字段类型不得作为执行链路的公共 schema 语义向外扩散。`TableInfo.Fields` 对外只表达 ADDP 标准字段事实；如 Manager / Meta 需要展示原始字段类型，应由 provider 返回标准 `native_type` 或由 Meta 写入只读 attributes，供查看和诊断使用，不得参与 Transfer、transform 或目标写入决策。
+原生字段类型不得作为执行链路的公共字段语义向外扩散。`TableInfo.Fields` 对外只表达 ADDP 标准字段事实；如 Manager / Meta 需要展示原始字段类型，应由 provider 返回标准 `native_type` 或由 Meta 写入只读 attributes，供查看和诊断使用，不得参与 Transfer、transform 或目标写入决策。
 
 ## 旧 FileMetadataExtractor 已删除
 

@@ -288,16 +288,16 @@ func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit
 	return format.ApplyFieldSelectionToRows(records, opts.FieldSelection), nil
 }
 
-func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, schema *datatype.TableInfo, options *format.WriteOptions) (format.TableWriter, error) {
+func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, tableInfo *datatype.TableInfo, options *format.WriteOptions) (format.TableWriter, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	if output == nil {
 		return nil, fmt.Errorf("csv table writer requires output")
 	}
-	fields := schemaFields(schema)
+	fields := tableInfoFields(tableInfo)
 	if len(fields) == 0 {
-		return nil, fmt.Errorf("csv table writer requires schema fields")
+		return nil, fmt.Errorf("csv table writer requires table fields")
 	}
 	opts := p.effectiveWriteOptions(options)
 	writer := csv.NewWriter(output)
@@ -349,7 +349,7 @@ func (p *Plugin) OpenTableReader(ctx context.Context, input io.Reader, options *
 		return nil, fmt.Errorf("csv table reader requires at least one field")
 	}
 
-	schema, err := format.ApplyFieldSelectionToTableInfo(&datatype.TableInfo{
+	tableInfo, err := format.ApplyFieldSelectionToTableInfo(&datatype.TableInfo{
 		Name:   "csv_data",
 		Fields: fields,
 	}, opts.FieldSelection)
@@ -357,28 +357,28 @@ func (p *Plugin) OpenTableReader(ctx context.Context, input io.Reader, options *
 		return nil, err
 	}
 	return &tableReader{
-		reader:  reader,
-		plugin:  p,
-		headers: fieldNames(fields),
-		schema:  schema,
+		reader:    reader,
+		plugin:    p,
+		headers:   fieldNames(fields),
+		tableInfo: tableInfo,
 	}, nil
 }
 
 // ============ 辅助方法 ============
 
 type tableReader struct {
-	reader  *csv.Reader
-	plugin  *Plugin
-	headers []string
-	schema  *datatype.TableInfo
-	closed  bool
+	reader    *csv.Reader
+	plugin    *Plugin
+	headers   []string
+	tableInfo *datatype.TableInfo
+	closed    bool
 }
 
 func (r *tableReader) Fields() []datatype.FieldInfo {
-	if r == nil || r.schema == nil {
+	if r == nil || r.tableInfo == nil {
 		return nil
 	}
-	return append([]datatype.FieldInfo(nil), r.schema.Fields...)
+	return append([]datatype.FieldInfo(nil), r.tableInfo.Fields...)
 }
 
 func (r *tableReader) ReadRows(ctx context.Context, limit int) ([]map[string]interface{}, error) {
@@ -413,15 +413,15 @@ func (r *tableReader) ReadRows(ctx context.Context, limit int) ([]map[string]int
 		}
 		rows = append(rows, row)
 	}
-	return format.ApplyFieldSelectionToRows(rows, r.schemaFieldSelection()), nil
+	return format.ApplyFieldSelectionToRows(rows, r.tableInfoFieldSelection()), nil
 }
 
-func (r *tableReader) schemaFieldSelection() *format.FieldSelectionOptions {
-	if r == nil || r.schema == nil || len(r.schema.Fields) == 0 {
+func (r *tableReader) tableInfoFieldSelection() *format.FieldSelectionOptions {
+	if r == nil || r.tableInfo == nil || len(r.tableInfo.Fields) == 0 {
 		return nil
 	}
-	include := make([]string, 0, len(r.schema.Fields))
-	for _, field := range r.schema.Fields {
+	include := make([]string, 0, len(r.tableInfo.Fields))
+	for _, field := range r.tableInfo.Fields {
 		include = append(include, field.Name)
 	}
 	return &format.FieldSelectionOptions{Include: include, MissingFieldPolicy: format.MissingFieldIgnore}
@@ -493,12 +493,12 @@ func (p *Plugin) effectiveWriteOptions(options *format.WriteOptions) *format.Wri
 	return opts
 }
 
-func schemaFields(schema *datatype.TableInfo) []string {
-	if schema == nil {
+func tableInfoFields(tableInfo *datatype.TableInfo) []string {
+	if tableInfo == nil {
 		return nil
 	}
-	fields := make([]string, 0, len(schema.Fields))
-	for _, field := range schema.Fields {
+	fields := make([]string, 0, len(tableInfo.Fields))
+	for _, field := range tableInfo.Fields {
 		name := strings.TrimSpace(field.Name)
 		if name == "" {
 			continue

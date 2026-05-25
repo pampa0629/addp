@@ -75,15 +75,15 @@ func determineShapefileDimension(shapeType shp.ShapeType) int {
 	}
 }
 
-func shapeTypeFromSchema(schema *datatype.TableInfo, spatialInfo *datatype.SpatialInfo) (shp.ShapeType, error) {
+func shapeTypeFromTableInfo(tableInfo *datatype.TableInfo, spatialInfo *datatype.SpatialInfo) (shp.ShapeType, error) {
 	geometryType := ""
 	dimension := 0
 	if spatialInfo != nil {
 		geometryType = spatialInfo.PrimaryGeometryType()
 		dimension = spatialInfo.PrimaryDimensionValue()
 	}
-	if geometryType == "" && schema != nil {
-		for _, field := range schema.Fields {
+	if geometryType == "" && tableInfo != nil {
+		for _, field := range tableInfo.Fields {
 			if datatype.IsSpatialFieldType(field.Type) {
 				geometryType = string(field.Type)
 				break

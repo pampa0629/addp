@@ -112,7 +112,7 @@ func resolvePreviewContainerChild(ctx context.Context, parent contentio.Reader, 
 }
 
 func resolvePreviewContainerChildFromResource(ctx context.Context, parent contentio.Reader, parentRef contentio.Ref, parentFormat format.FormatType, req *PreviewRequest) (*format.ContainerChildResource, error) {
-	child := containerChildForRequest(req.Attributes, req.ChildName)
+	child := containerChildInputForRequest(req.Attributes, req.ChildName)
 	resolver, err := format.GetContainerChildResolver(parentFormat)
 	if err != nil {
 		return nil, fmt.Errorf("no container child resolver for format %s: %w", parentFormat, err)
@@ -199,7 +199,7 @@ func (p *FileTablePreviewProvider) previewStreamable(
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse table info: %w", err)
 		}
-		tableInfo = format.TableSchemaFromDescribeResult(result)
+		tableInfo = format.TableInfoFromDescribeResult(result)
 		spatialInfo = result.Spatial.Clone()
 	}
 
@@ -578,7 +578,7 @@ func (p *FileTablePreviewProvider) previewRefs(
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse %s ref table info: %w", formatType, err)
 		}
-		tableInfo = format.TableSchemaFromDescribeResult(result)
+		tableInfo = format.TableInfoFromDescribeResult(result)
 		spatialInfo = result.Spatial.Clone()
 	}
 
@@ -727,26 +727,12 @@ func (p *FileTablePreviewProvider) buildParseOptions(formatType format.FormatTyp
 		SampleSize: 100,
 	}
 	if len(req) > 0 && req[0] != nil && strings.TrimSpace(req[0].ChildName) != "" {
-		return format.ChildTableParseOptions(req[0].ChildName, containerChildForRequest(req[0].Attributes, req[0].ChildName))
+		return format.ChildTableParseOptions(req[0].ChildName, containerChildInputForRequest(req[0].Attributes, req[0].ChildName))
 	}
 	return opts
 }
 
-func containerChildTableNameForRequest(attrs map[string]interface{}, childName string) string {
-	child := containerChildForRequest(attrs, childName)
-	if len(child) > 0 {
-		tableName := strings.TrimSpace(commonJSON.InterfaceString(child["table"]))
-		if tableName == "" {
-			tableName = strings.TrimSpace(commonJSON.InterfaceString(commonJSON.InterfaceMap(child["native"])["table"]))
-		}
-		if tableName != "" {
-			return tableName
-		}
-	}
-	return strings.TrimSpace(childName)
-}
-
-func containerChildForRequest(attrs map[string]interface{}, childName string) map[string]interface{} {
+func containerChildInputForRequest(attrs map[string]interface{}, childName string) map[string]interface{} {
 	childName = strings.TrimSpace(childName)
 	if childName == "" {
 		return nil

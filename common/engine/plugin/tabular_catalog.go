@@ -131,14 +131,7 @@ func ResolveTabularCatalogPath(ctx context.Context, callbacks TabularCatalogCall
 	if kind == "" {
 		kind = CatalogKindTable
 	}
-	return &CatalogNode{
-		Name:   last.Name,
-		Path:   path,
-		Term:   CatalogTermTable,
-		Kind:   kind,
-		IsItem: true,
-		Stats:  item.Stats,
-	}, nil
+	return tabularCatalogNodeFromItem(path, last.Name, kind, item), nil
 }
 
 // DescribeTabularItem maps tabular column callbacks and table stats to ItemMetadataProvider.
@@ -184,18 +177,112 @@ func DescribeTabularItem(ctx context.Context, callbacks TabularCatalogCallbacks,
 	if callbacks.RowCount != nil {
 		rowCount, err := callbacks.RowCount(ctx, db, namespace, table)
 		if err == nil {
-			stats["row_count"] = rowCount
+			tableInfo.RowCount = &rowCount
 		}
+	}
+	return buildTabularItemMetadata(path, namespace, table, fields, tableInfo, hasTableInfo, kind, stats, attrs, updatedAt), nil
+}
+
+func primaryKeyFields(fields []datatype.FieldInfo) []string {
+	if len(fields) == 0 {
+		return nil
+	}
+	keys := make([]string, 0)
+	for _, field := range fields {
+		if field.PrimaryKey && field.Name != "" {
+			keys = append(keys, field.Name)
+		}
+	}
+	return keys
+}
+
+func tabularCatalogNodeFromItem(path CatalogPath, name, kind string, item *ItemMetadata) *CatalogNode {
+	if kind == "" {
+		kind = CatalogKindTable
+	}
+	var stats map[string]interface{}
+	var attrs map[string]interface{}
+	if item == nil {
+		return &CatalogNode{
+			Name:   name,
+			Path:   path,
+			Term:   CatalogTermTable,
+			Kind:   kind,
+			IsItem: true,
+		}
+	}
+	if item.Table != nil {
+		stats = tableStats(*item.Table)
+		attrs = tableAttributes("", *item.Table)
+	}
+	if len(stats) == 0 {
+		stats = item.Stats
+	}
+	if len(attrs) == 0 {
+		attrs = item.Attributes
+	}
+	return &CatalogNode{
+		Name:       name,
+		Path:       path,
+		Term:       CatalogTermTable,
+		Kind:       kind,
+		IsItem:     true,
+		Stats:      stats,
+		Attributes: attrs,
+	}
+}
+
+func buildTabularItemMetadata(path CatalogPath, namespace, table string, fields []datatype.FieldInfo, tableInfo datatype.TableInfo, hasTableInfo bool, kind string, stats map[string]interface{}, attrs map[string]interface{}, updatedAt *time.Time) *ItemMetadata {
+	fields = NormalizeFieldInfos(fields)
+	if kind == "" {
+		kind = CatalogKindTable
+	}
+	if stats == nil {
+		stats = map[string]interface{}{}
+	}
+	if attrs == nil {
+		attrs = tableAttributes(namespace, tableInfo)
+	}
+	if hasTableInfo {
+		if tableInfo.Kind != "" {
+			kind = tableCatalogKind(tableInfo)
+		}
+		if len(stats) == 0 {
+			stats = tableStats(tableInfo)
+		}
+		if len(attrs) == 0 {
+			attrs = tableAttributes(namespace, tableInfo)
+		}
+		if updatedAt == nil {
+			updatedAt = tableInfo.UpdatedAt
+		}
+	}
+	tableInfo.Name = table
+	tableInfo.Kind = kind
+	tableInfo.Fields = append([]datatype.FieldInfo(nil), fields...)
+	if len(tableInfo.PrimaryKey) == 0 {
+		tableInfo.PrimaryKey = primaryKeyFields(fields)
+	}
+	if tableInfo.RowCount != nil {
+		stats["row_count"] = *tableInfo.RowCount
+	}
+	if tableInfo.SizeBytes != nil {
+		stats["size_bytes"] = *tableInfo.SizeBytes
+	}
+	if _, ok := attrs["namespace"]; !ok && namespace != "" {
+		attrs["namespace"] = namespace
+	}
+	if _, ok := attrs["table"]; !ok && table != "" {
+		attrs["table"] = table
 	}
 
 	return &ItemMetadata{
 		Path:       path,
 		Kind:       kind,
-		Fields:     fields,
-		Stats:      stats,
+		Table:      tableInfo.Clone(),
 		Attributes: attrs,
 		UpdatedAt:  updatedAt,
-	}, nil
+	}
 }
 
 func findTableInfo(ctx context.Context, callbacks TabularCatalogCallbacks, db *gorm.DB, namespace, tableName string) (datatype.TableInfo, bool) {

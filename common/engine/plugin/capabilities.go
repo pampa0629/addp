@@ -96,7 +96,7 @@ type CatalogCapability struct {
 
 type MetadataCapability struct {
 	Supported       bool `json:"supported"`
-	FieldSchema     bool `json:"field_schema,omitempty"`
+	FieldInfo       bool `json:"field_info,omitempty"`
 	Statistics      bool `json:"statistics,omitempty"`
 	Indexes         bool `json:"indexes,omitempty"`
 	Constraints     bool `json:"constraints,omitempty"`

@@ -2,9 +2,8 @@ package format
 
 import "github.com/addp/common/datatype"
 
-// TableDescribeResultFromSchema converts the format operation schema into the
-// common datatype describe result used by metadata attributes.
-func TableDescribeResultFromSchema(info *datatype.TableInfo) *TableDescribeResult {
+// TableDescribeResultFromTableInfo wraps table type facts in a format describe result.
+func TableDescribeResultFromTableInfo(info *datatype.TableInfo) *TableDescribeResult {
 	if info == nil {
 		return nil
 	}
@@ -14,9 +13,8 @@ func TableDescribeResultFromSchema(info *datatype.TableInfo) *TableDescribeResul
 	return result
 }
 
-// TableSchemaFromDescribeResult converts a datatype describe result back to
-// the format operation schema needed by readers and writers.
-func TableSchemaFromDescribeResult(result *TableDescribeResult) *datatype.TableInfo {
+// TableInfoFromDescribeResult returns the table type facts from a describe result.
+func TableInfoFromDescribeResult(result *TableDescribeResult) *datatype.TableInfo {
 	if result == nil {
 		return nil
 	}

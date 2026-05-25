@@ -62,13 +62,13 @@ type shapefileDBFSchemaInfo struct {
 	originalNames []string
 }
 
-func shapefileDBFSchema(schema *datatype.TableInfo, geometryField string) shapefileDBFSchemaInfo {
+func shapefileDBFSchema(tableInfo *datatype.TableInfo, geometryField string) shapefileDBFSchemaInfo {
 	info := shapefileDBFSchemaInfo{
-		fields:        make([]shp.Field, 0, len(schema.Fields)),
-		originalNames: make([]string, 0, len(schema.Fields)),
+		fields:        make([]shp.Field, 0, len(tableInfo.Fields)),
+		originalNames: make([]string, 0, len(tableInfo.Fields)),
 	}
 	used := map[string]int{}
-	for _, field := range schema.Fields {
+	for _, field := range tableInfo.Fields {
 		if strings.EqualFold(field.Name, geometryField) || datatype.IsSpatialFieldType(field.Type) {
 			continue
 		}

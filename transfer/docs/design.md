@@ -123,8 +123,8 @@ type Reader interface {
     // 返回 nil 表示数据读取完成
     Read(ctx context.Context) (*DataBatch, error)
     
-    // Schema 返回数据 schema (可选，用于类型推断)
-    Schema() (*Schema, error)
+    // TableInfo 返回 table 类型事实（字段、行数、空间字段等）
+    TableInfo() *datatype.TableInfo
     
     // Close 关闭连接
     Close() error
@@ -146,7 +146,8 @@ type Writer interface {
 // DataBatch 数据批次
 type DataBatch struct {
     Rows      []map[string]interface{} // 行数据
-    Schema    *Schema                  // schema 信息
+    Fields    []datatype.FieldInfo     // 字段事实
+    Spatial   *datatype.SpatialInfo    // 空间上下文
     Metadata  map[string]interface{}   // 批次元数据
     Offset    int64                    // 偏移量（用于 checkpoint）
     Timestamp time.Time                // 批次时间戳
@@ -499,7 +500,7 @@ Kafka 等流式连接器作为 Phase 5 扩展
 后续演进
 支持 CDC (Change Data Capture)
 支持更多数据源（ClickHouse、MongoDB）
-引入 Schema Registry 管理数据 schema 版本
+统一沉淀 table 字段事实，必要时在 `datatype.TableInfo` / `datatype.FieldInfo` 上扩展
 支持数据质量校验（行数校验、checksum 对比）
 User approved the plan
 感谢确认！现在我将开始实施 Transfer 模块的流批一体化设计。让我先创建任务清单来跟踪整个实施过程。

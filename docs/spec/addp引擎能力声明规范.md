@@ -158,7 +158,7 @@ type CatalogCapability struct {
 ```go
 type MetadataCapability struct {
     Supported       bool `json:"supported"`
-    FieldSchema     bool `json:"field_schema,omitempty"`
+    FieldInfo       bool `json:"field_info,omitempty"`
     Statistics      bool `json:"statistics,omitempty"`
     Indexes         bool `json:"indexes,omitempty"`
     Constraints     bool `json:"constraints,omitempty"`
@@ -171,7 +171,7 @@ type MetadataCapability struct {
 | 字段 | 说明 |
 | --- | --- |
 | `supported` | 是否能描述叶子数据项。 |
-| `field_schema` | 是否能获取字段、列或文档字段结构。 |
+| `field_info` | 是否能获取字段、列或文档字段信息。 |
 | `statistics` | 是否能获取行数、大小、采样统计等统计信息。 |
 | `indexes` | 是否能获取索引信息。 |
 | `constraints` | 是否能获取主键、唯一约束、外键等约束信息。 |
@@ -370,7 +370,7 @@ PostgreSQL 示例：
       ]
     },
     "catalog": {"supported": true, "real_time": true, "system_filtering": true},
-    "metadata": {"supported": true, "field_schema": true, "statistics": true, "indexes": true, "constraints": true, "spatial_metadata": true},
+    "metadata": {"supported": true, "field_info": true, "statistics": true, "indexes": true, "constraints": true, "spatial_metadata": true},
     "store": {"batch_read": true}
   },
   "compute": {

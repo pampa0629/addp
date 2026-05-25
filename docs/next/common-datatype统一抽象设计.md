@@ -162,7 +162,7 @@ type_info.file
 
 `TableInfo` 是 table data type 的通用信息，不属于数据库私有模型，也不属于文件格式私有模型。
 
-`TableInfo` 只表达 `attributes.type_info.table` 对应的 table 类型事实。空间能力和内容访问索引虽然常在 table 解析过程中同时得到，但它们不是 table schema 本体，不放入 `TableInfo`。
+`TableInfo` 只表达 `attributes.type_info.table` 对应的 table 类型事实。空间能力和内容访问索引虽然常在 table 解析过程中同时得到，但它们不是 table 类型事实本体，不放入 `TableInfo`。
 
 第一版目标字段：
 
@@ -230,8 +230,8 @@ Provider 一次解析可能同时得到 type info、横切事实、内容索引�
 - `common/datatype` 的核心职责是统一 format 和 engine 共同需要表达的 ADDP 通用数据语义结构。
 - 描述结果包不应因为“同一次解析顺手得到多类事实”而污染 `TableInfo`、`MediaInfo` 等 type info，也不应进入 `common/datatype`。
 - `FormatInfo` 是 format 私有事实，应由 `common/format.FormatInfoProvider` 提供，不进入 `datatype` 结构。
-- `SpatialInfo` 是横切空间事实，不是 table schema 本体；它可以由 format describe result 同级返回，再由 Meta 写入 `capabilities.spatial`。
-- `ContentIndex` 是内容访问索引事实，不是 table schema 本体；它可以由 format describe result 同级返回，再由 Meta 写入 `content_index.table`。
+- `SpatialInfo` 是横切空间事实，不是 table 类型事实本体；它可以由 format describe result 同级返回，再由 Meta 写入 `capabilities.spatial`。
+- `ContentIndex` 是内容访问索引事实，不是 table 类型事实本体；它可以由 format describe result 同级返回，再由 Meta 写入 `content_index.table`。
 - 当前不为拆分 describe result 引入缓存、session 或 resource handle 等复杂机制；保持 format provider 返回组合事实，Meta 负责拆写 attributes。
 
 描述结果中各类事实的映射关系必须清晰：
@@ -288,13 +288,13 @@ DescribeMedia(...) (*datatype.MediaInfo, error)
 
 ### `format.TableInfo` 删除结论
 
-`format.TableInfo` 薄壳已删除。`common/format` reader / writer / Transfer 操作边界直接使用 `datatype.TableInfo`，避免 format 和 datatype 维护两套 table schema / table info 表达。
+`format.TableInfo` 薄壳已删除。`common/format` reader / writer / Transfer 操作边界直接使用 `datatype.TableInfo`，避免 format 和 datatype 维护两套 table info 表达。
 
 删除前已经拆掉以下耦合：
 
-- `FormatInfo` 已改为通过 `format.TableDescribeResult.FormatInfo` 或 `FormatInfoProvider` 获取，不再由 table operation schema 承载。
+- `FormatInfo` 已改为通过 `format.TableDescribeResult.FormatInfo` 或 `FormatInfoProvider` 获取，不再由 table 执行上下文承载。
 - `SpatialInfo` 已改为独立参数或上层编排携带；format reader 使用 `TableSpatialInfoProvider`，format writer 使用 `WriteOptions.SpatialInfo`，Transfer / engine 写入链路使用 `BatchData.Spatial`、`TableWriteOptions.SpatialInfo`、`TableWriteSessionOptions.SpatialInfo`。
-- `ContentIndex` 已改为独立内容索引事实，不由 table schema 承载。
+- `ContentIndex` 已改为独立内容索引事实，不由 table info 承载。
 
 `SpatialInfo` 的拆分需要单独设计，不能像 `FormatInfo` / `ContentIndex` 一样直接从 `TableInfo` 删除。原因是它当前同时承担两类职责：
 
@@ -310,7 +310,7 @@ DescribeMedia(...) (*datatype.MediaInfo, error)
 | format writer 写出 GeoJSON / Shapefile | `WriteOptions.SpatialInfo` | 已落地 |
 | Transfer 批次传递空间事实 | pipeline 单独保存 `SpatialInfo`，再写入 `BatchData.Spatial` | 已落地 |
 | engine 写表准备和会话 | `BatchData.Spatial` / `TableWriteOptions.SpatialInfo` | 保持 engine 侧现有独立空间参数 |
-| `TableReader` 返回读取字段和空间事实 | `Fields()` + 可选 `TableSpatialInfoProvider.SpatialInfo()` | 已不再用 `Schema() *TableInfo` 暴露完整 table operation schema |
+| `TableReader` 返回读取字段和空间事实 | `Fields()` + 可选 `TableSpatialInfoProvider.SpatialInfo()` | 已不再用 `Schema() *TableInfo` 暴露完整 table info |
 
 当前已完成 reader / writer / Transfer pipeline 侧收敛：`TableReader` 只暴露实际读取 rows 对应的 `Fields()`，空间读取上下文通过可选 `TableSpatialInfoProvider` 提供，空间写出上下文通过 `WriteOptions.SpatialInfo` 提供，Transfer plan / pipeline 单独携带 `SpatialInfo`。
 
@@ -643,6 +643,7 @@ type SpatialInfo struct {
 - namespace 由 `CatalogPath` / `CatalogSegment` / `NamespaceTerm` 表达，不放入 `datatype.TableInfo`。
 - `SchemaInfo` 已改名为 `NamespaceInfo`，`ListSchemas` 已改名为 `ListNamespaces`，避免把 schema/database 作为同一个含糊概念继续扩散。
 - tabular engine 的 `CatalogProvider.ListChildren` 和 `ItemMetadataProvider.DescribeItem` 必须从同一份 `datatype.TableInfo` 派生表级事实；`Native`、`Comment`、`UpdatedAt`、`SizeBytes` 等不能只在列表入口存在而在详情入口丢失。
+- `plugin.ItemMetadata` 已增加 `Table *datatype.TableInfo`。table 型 item 的主事实应进入该字段；`Fields`、`Stats`、`Attributes` 只作为非 table item 通用信息或必要的 catalog 展示属性，不再作为 table 事实源。tabular helper 不再为 table 型 `ItemMetadata` 主动填充 `Fields` / `Stats` 投影，消费方应通过 `ItemMetadataTableInfo()` / `ItemMetadataFields()` 获取 table facts 或字段列表。
 
 ## 和现有模型的收拢关系
 

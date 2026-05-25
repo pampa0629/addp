@@ -46,7 +46,7 @@ func (p *MyPlugin) Capabilities() plugin.EngineCapabilities {
         Storage: &plugin.StorageCapabilities{
             CatalogModel: plugin.TabularCatalogModel("database"),
             Catalog:      &plugin.CatalogCapability{Supported: true, RealTime: true},
-            Metadata:     &plugin.MetadataCapability{Supported: true, FieldSchema: true},
+            Metadata:     &plugin.MetadataCapability{Supported: true, FieldInfo: true},
             Store:        &plugin.StoreCapability{BatchRead: true},
         },
     }

@@ -95,7 +95,7 @@ func (p *Plugin) Capabilities() format.FormatCapability {
 //
 // 默认写出 JSON 对象数组；通过 WriteOptions.ExtraParams["json_mode"] 设置
 // lines/jsonl/ndjson 时写出 JSON Lines。
-func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, schema *datatype.TableInfo, options *format.WriteOptions) (format.TableWriter, error) {
+func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, tableInfo *datatype.TableInfo, options *format.WriteOptions) (format.TableWriter, error) {
 	if err := contextErr(ctx); err != nil {
 		return nil, err
 	}
@@ -106,7 +106,7 @@ func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, schema *
 	opts := jsonTableWriteOptions(options)
 	writer := &tableWriter{
 		output:         output,
-		fields:         jsonSchemaFields(schema),
+		fields:         jsonWriterFields(tableInfo),
 		mode:           opts.mode,
 		pretty:         opts.pretty,
 		targetEncoding: opts.targetEncoding,
@@ -438,16 +438,16 @@ type tableReader struct {
 	iter          *iterator
 	geometryField string
 	selection     *format.FieldSelectionOptions
-	schema        *datatype.TableInfo
+	tableInfo     *datatype.TableInfo
 	spatialInfo   *datatype.SpatialInfo
 	closed        bool
 }
 
 func (r *tableReader) Fields() []datatype.FieldInfo {
-	if r == nil || r.schema == nil {
+	if r == nil || r.tableInfo == nil {
 		return nil
 	}
-	return append([]datatype.FieldInfo(nil), r.schema.Fields...)
+	return append([]datatype.FieldInfo(nil), r.tableInfo.Fields...)
 }
 
 func (r *tableReader) SpatialInfo() *datatype.SpatialInfo {
@@ -494,7 +494,7 @@ func (r *tableReader) ReadRows(ctx context.Context, limit int) ([]map[string]int
 			result.Spatial = selected.Spatial
 		}
 		info := result.Table.Clone()
-		r.schema = mergeTableInfo(r.schema, info)
+		r.tableInfo = mergeTableInfo(r.tableInfo, info)
 		if r.spatialInfo == nil && result.Spatial != nil {
 			r.spatialInfo = result.Spatial.Clone()
 		}
@@ -741,12 +741,12 @@ func geoJSONGeometry(value interface{}) interface{} {
 	return value
 }
 
-func jsonSchemaFields(schema *datatype.TableInfo) []string {
-	if schema == nil {
+func jsonWriterFields(tableInfo *datatype.TableInfo) []string {
+	if tableInfo == nil {
 		return nil
 	}
-	fields := make([]string, 0, len(schema.Fields))
-	for _, field := range schema.Fields {
+	fields := make([]string, 0, len(tableInfo.Fields))
+	for _, field := range tableInfo.Fields {
 		name := strings.TrimSpace(field.Name)
 		if name == "" {
 			continue

@@ -54,7 +54,7 @@ func TestOpenMultiTableWriterWritesReadableShapefile(t *testing.T) {
 	target := contentio.NewRef("exports/cities"+extSHP, contentio.RoleMain)
 	refs := format.SameBasenameRelatedRefs(target.Path, RelatedRefSpecs())
 	output := newMemoryRefStore()
-	schema := &datatype.TableInfo{
+	tableInfo := &datatype.TableInfo{
 		Fields: []datatype.FieldInfo{
 			{Name: "id", Type: datatype.FieldTypeInt},
 			{Name: "name", Type: datatype.FieldTypeString, Size: 32},
@@ -63,7 +63,7 @@ func TestOpenMultiTableWriterWritesReadableShapefile(t *testing.T) {
 	}
 	opts := &format.WriteOptions{SpatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", "Point", 4326, 0)}
 
-	writer, err := plugin.OpenMultiTableWriter(context.Background(), output, refs, schema, opts)
+	writer, err := plugin.OpenMultiTableWriter(context.Background(), output, refs, tableInfo, opts)
 	if err != nil {
 		t.Fatalf("OpenMultiTableWriter failed: %v", err)
 	}
@@ -100,13 +100,13 @@ func TestOpenMultiTableWriterWritesReadableShapefile(t *testing.T) {
 
 func TestOpenMultiTableWriterRequiresRefs(t *testing.T) {
 	plugin := NewPlugin(nil)
-	schema := &datatype.TableInfo{
+	tableInfo := &datatype.TableInfo{
 		Fields: []datatype.FieldInfo{
 			{Name: "geom", Type: datatype.FieldTypeGeometry},
 		},
 	}
 
-	if _, err := plugin.OpenMultiTableWriter(context.Background(), newMemoryRefStore(), nil, schema, nil); err == nil {
+	if _, err := plugin.OpenMultiTableWriter(context.Background(), newMemoryRefStore(), nil, tableInfo, nil); err == nil {
 		t.Fatal("OpenMultiTableWriter succeeded without refs")
 	}
 }
@@ -116,13 +116,13 @@ func TestOpenMultiTableWriterRequiresPrimaryRef(t *testing.T) {
 	refs := []format.RelatedRef{
 		format.NewRelatedRef(contentio.NewRef("exports/cities"+extDBF, roleAttributes), true, false),
 	}
-	schema := &datatype.TableInfo{
+	tableInfo := &datatype.TableInfo{
 		Fields: []datatype.FieldInfo{
 			{Name: "geom", Type: datatype.FieldTypeGeometry},
 		},
 	}
 
-	if _, err := plugin.OpenMultiTableWriter(context.Background(), newMemoryRefStore(), refs, schema, nil); err == nil {
+	if _, err := plugin.OpenMultiTableWriter(context.Background(), newMemoryRefStore(), refs, tableInfo, nil); err == nil {
 		t.Fatal("OpenMultiTableWriter succeeded without primary ref")
 	}
 }
