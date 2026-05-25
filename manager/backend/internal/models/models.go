@@ -109,6 +109,7 @@ type TablePreview struct {
 	Total                 int                      `json:"total"`
 	Page                  int                      `json:"page"`
 	PageSize              int                      `json:"page_size"`
+	PreviewKind           string                   `json:"preview_kind,omitempty"` // 细分预览语义，如 graph_overview
 	GeometryColumns       []string                 `json:"geometry_columns"`
 	RenderGeometryColumns map[string]string        `json:"render_geometry_columns,omitempty"` // 原几何列 -> 地图渲染列
 	Object                *ObjectPreview           `json:"object,omitempty"`

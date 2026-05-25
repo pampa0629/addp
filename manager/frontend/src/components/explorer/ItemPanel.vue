@@ -668,6 +668,12 @@ const buildFieldTable = (pathParts, rows) => {
 
 const preferredColumnsForObjectTable = (pathParts) => {
   const key = pathParts[pathParts.length - 1]
+  if (isGraphRelationshipShapesTable(pathParts)) {
+    return ['type', 'count', 'patterns', 'properties']
+  }
+  if (isGraphNodeShapesTable(pathParts)) {
+    return ['name', 'count', 'kind', 'labels', 'properties']
+  }
   switch (key) {
     case 'refs':
       return ['path', 'role', 'extension', 'required', 'primary']
@@ -703,7 +709,7 @@ const buildObjectArrayTable = (pathParts, rows, preferredColumns = [], labelProf
     rows: rowObjects.map(row => {
       const formatted = {}
       columns.forEach(column => {
-        formatted[column] = formatScalar(row[column])
+        formatted[column] = formatTableCell(row[column], pathParts, column)
       })
       return formatted
     }),
@@ -721,6 +727,50 @@ const tableColumnLabel = (profile, column) => {
     if (translated !== profileMap[column]) return translated
   }
   return translateFromMap(tableColumnLabelKeys, column, formatAttributeSegment(column))
+}
+
+const formatTableCell = (value, pathParts, column) => {
+  if (isGraphRelationshipShapesTable(pathParts) && column === 'patterns') {
+    return formatGraphPatterns(value)
+  }
+  if ((isGraphNodeShapesTable(pathParts) || isGraphRelationshipShapesTable(pathParts)) && column === 'properties') {
+    return formatGraphProperties(value)
+  }
+  return formatScalar(value)
+}
+
+const isGraphNodeShapesTable = (pathParts) => pathParts.join('.') === 'type_info.graph.node_shapes'
+const isGraphRelationshipShapesTable = (pathParts) => pathParts.join('.') === 'type_info.graph.relationship_shapes'
+
+const formatGraphPatterns = (patterns) => {
+  if (!Array.isArray(patterns) || patterns.length === 0) return '-'
+  const formatted = patterns.map(pattern => {
+    const from = formatGraphEndpoint(pattern?.from)
+    const to = formatGraphEndpoint(pattern?.to)
+    const count = Number(pattern?.count)
+    const suffix = Number.isFinite(count) ? ` (${count})` : ''
+    if (!from && !to) return suffix ? suffix.trim() : ''
+    return `${from || '-'} -> ${to || '-'}${suffix}`
+  }).filter(Boolean)
+  return formatted.length ? formatted.join('; ') : '-'
+}
+
+const formatGraphEndpoint = (endpoint) => {
+  if (!endpoint || typeof endpoint !== 'object') return ''
+  if (endpoint.shape_name) return String(endpoint.shape_name)
+  if (Array.isArray(endpoint.labels) && endpoint.labels.length > 0) {
+    return endpoint.labels.map(String).filter(Boolean).join('+')
+  }
+  return ''
+}
+
+const formatGraphProperties = (properties) => {
+  if (!Array.isArray(properties) || properties.length === 0) return '-'
+  const names = properties
+    .map(prop => isPlainObject(prop) ? prop.name : prop)
+    .map(value => String(value || '').trim())
+    .filter(Boolean)
+  return names.length ? names.join(', ') : '-'
 }
 
 const isPlainObject = (value) => {

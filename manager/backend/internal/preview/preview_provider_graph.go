@@ -36,6 +36,7 @@ func (p *GraphPreviewProvider) Preview(ctx context.Context, req *PreviewRequest)
 
 	return &models.TablePreview{
 		Mode:            PreviewModeTable,
+		PreviewKind:     "graph_overview",
 		Columns:         columns,
 		Rows:            rows,
 		Total:           len(rows),

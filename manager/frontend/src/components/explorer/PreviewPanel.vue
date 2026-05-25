@@ -22,7 +22,7 @@
             <!-- 普通表标签 -->
             <el-tag v-else size="small" class="info-badge">
               <el-icon><Collection /></el-icon>
-              {{ t('manager.explorer.dataTable') }}
+              {{ tableInfoLabel }}
             </el-tag>
             <!-- 总行数 / 预览行数 -->
             <el-tag v-if="tableTotal > 0" size="small" type="info">
@@ -782,6 +782,7 @@ const handleImportSuccess = async () => {
 
 const showDownloadControl = computed(() => {
   if (!props.previewData || !props.selectedNode) return false
+  if (isGraphOverview.value) return false
   return previewMode.value !== 'node'
 })
 
@@ -896,6 +897,14 @@ const title = computed(() => {
 // 表格信息相关计算属性
 const showTableInfo = computed(() => {
   return previewMode.value === 'table' && props.previewData
+})
+
+const isGraphOverview = computed(() => {
+  return props.previewData?.preview_kind === 'graph_overview'
+})
+
+const tableInfoLabel = computed(() => {
+  return isGraphOverview.value ? t('manager.explorer.graphOverview') : t('manager.explorer.dataTable')
 })
 
 const tableTotal = computed(() => {
