@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
@@ -208,6 +207,8 @@ func (s *ObjectStorageCatalogScanService) ScanPaths(
 	force bool,
 	reporter ScanProgressReporter,
 ) (int, int, error) {
+	metaenrich.RegisterItemResolvers()
+
 	resourceID := resource.ID
 
 	// 标准化 scanDepth
@@ -712,23 +713,11 @@ func (s *ObjectStorageCatalogScanService) persistObjectResources(
 			"objectName", itemPlan.ObjectName)
 
 		if strings.EqualFold(scanDepth, "deep") {
-			if tableAttrs, err := s.enrichObjectCatalogTableFileAttributes(context.Background(), readableProvider, connInfo, engineID, catalogResource, itemPlan.DataItem, true); err != nil {
-				s.log.Warn("提取对象 single 文件表信息失败，保留基础属性", "bucket", catalogResource.RootName, "path", catalogResource.Path, "error", err)
-			} else if tableAttrs != nil {
-				metaattr.MergeAttributeMaps(enhancedAttrs, tableAttrs)
+			if err := enrichObjectCatalogSingleResourceAttributes(context.Background(), enhancedAttrs, readableProvider, connInfo, engineID, catalogResource, itemPlan.DataItem, true); err != nil {
+				s.log.Warn("提取对象 single 资源信息失败，保留基础属性", "bucket", catalogResource.RootName, "path", catalogResource.Path, "error", err)
 			}
-		}
-		metacatalog.ApplyContainerSummary(enhancedAttrs, itemPlan.DataItem)
-		if strings.EqualFold(scanDepth, "deep") && itemPlan.DataItem != nil && itemPlan.DataItem.DataType == dataitem.DataTypeContainer && readableProvider != nil {
-			reader, err := readableProvider.OpenContent(context.Background(), connInfo, catalogResource.CatalogPath, plugin.ReadOptions{})
-			if err != nil {
-				s.log.Warn("枚举对象容器内部对象失败，保留容器摘要", "bucket", catalogResource.RootName, "path", catalogResource.Path, "error", err)
-			} else {
-				if err := metaenrich.EnrichContainerChildren(context.Background(), enhancedAttrs, itemPlan.DataItem, reader); err != nil {
-					s.log.Warn("枚举对象容器内部对象失败，保留容器摘要", "bucket", catalogResource.RootName, "path", catalogResource.Path, "error", err)
-				}
-				_ = reader.Close()
-			}
+		} else {
+			metaitem.ApplyContainerSummary(enhancedAttrs, itemPlan.DataItem)
 		}
 
 		rowCount := itemRowCountFromAttributes(enhancedAttrs)
@@ -890,33 +879,35 @@ func (s *ObjectStorageCatalogScanService) ensureObjectCatalogPrefixNodes(
 	return parentNode, nil
 }
 
-func (s *ObjectStorageCatalogScanService) enrichObjectCatalogTableFileAttributes(
+func enrichObjectCatalogSingleResourceAttributes(
 	ctx context.Context,
+	attrs models.JSONMap,
 	readableProvider plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
 	engineID uint,
 	catalogResource metacatalog.StorageResource,
 	item *metaitem.DetectedItem,
 	includeContentIndex bool,
-) (models.JSONMap, error) {
+) error {
 	if readableProvider == nil || item == nil {
-		return nil, nil
-	}
-	if item.Layout != dataitem.LayoutSingle {
-		return nil, nil
+		return nil
 	}
 	physicalPath := catalogResource.FullPath
-	enriched, ok, err := metaenrich.EnrichSingleTableFileItem(ctx, readableProvider, connInfo, engineID, item, physicalPath, catalogResource.SizeBytes, includeContentIndex, func(string) plugin.CatalogPath {
-		return catalogResource.CatalogPath
+	_, _, err := metaenrich.EnrichResourceAttributes(ctx, attrs, metaenrich.ResourceAttributesInput{
+		ContentReader:       readableProvider,
+		ConnInfo:            connInfo,
+		EngineID:            engineID,
+		Item:                item,
+		PhysicalPath:        physicalPath,
+		SizeBytes:           catalogResource.SizeBytes,
+		IncludeContentIndex: includeContentIndex,
+		CatalogPathFor: func(string) plugin.CatalogPath {
+			return catalogResource.CatalogPath
+		},
 	})
 	if err != nil {
-		return nil, err
+		return err
 	}
-	if !ok || enriched == nil {
-		return nil, nil
-	}
-	attrs := metaattr.JSONMap(enriched.Attributes)
-	metaattr.MergeDataItemAttributes(attrs, metaitem.AttributeInput(enriched))
 	metaattr.SetStorage(attrs, "bucket", catalogResource.RootName)
 	dir, name := commonModels.SplitObjectPath(catalogResource.Path)
 	metaattr.SetStorage(attrs, "path", dir)
@@ -925,5 +916,5 @@ func (s *ObjectStorageCatalogScanService) enrichObjectCatalogTableFileAttributes
 	if catalogResource.LastModified != nil {
 		metaattr.SetStorage(attrs, "last_modified_at", catalogResource.LastModified)
 	}
-	return attrs, nil
+	return nil
 }

@@ -91,19 +91,23 @@ func (s *ScanService) refreshKnownItemAttributes(
 	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
 	catalogPathFor := knownItemCatalogPathResolver(resource.ID, resource.EngineType, descriptor)
 
-	enriched := false
 	var err error
 	switch descriptor.Layout {
 	case dataitem.LayoutMulti:
-		detected, enriched, err = metaitem.EnrichKnownMultiTableItem(ctx, contentReader, connInfo, resource.ID, catalogPathFor, detected)
+		detected, _, err = metaitem.EnrichKnownMultiTableItem(ctx, contentReader, connInfo, resource.ID, catalogPathFor, detected)
 	case dataitem.LayoutSingle:
 		physicalPath := firstNonEmpty(descriptor.PhysicalPath, descriptor.EntryPath, pathFromStorage(descriptor), item.FullName)
-		detected, enriched, err = metaenrich.EnrichSingleTableFileItem(ctx, contentReader, connInfo, resource.ID, detected, physicalPath, sizeFromDescriptor(descriptor, item), true, catalogPathFor)
-		if !enriched {
-			enriched, err = enrichKnownSingleNonTableItem(ctx, contentReader, connInfo, resource.ID, catalogPathFor, detected, physicalPath)
+		if detected, err = enrichKnownResourceAttributes(ctx, attrs, contentReader, connInfo, resource.ID, catalogPathFor, detected, physicalPath, sizeFromDescriptor(descriptor, item)); err != nil {
+			return nil, 0, err
+		}
+		if detected == nil || detected.DataType != dataitem.DataTypeTable {
+			_, err = enrichKnownSingleNonTableItem(ctx, contentReader, connInfo, resource.ID, catalogPathFor, detected, physicalPath)
 		}
 	case dataitem.LayoutWhole:
-		enriched, err = enrichKnownWholeItem(ctx, contentReader, connInfo, resource.ID, catalogPathFor, detected)
+		physicalPath := firstNonEmpty(descriptor.PhysicalPath, descriptor.EntryPath, pathFromStorage(descriptor), item.FullName)
+		if detected, err = enrichKnownResourceAttributes(ctx, attrs, contentReader, connInfo, resource.ID, catalogPathFor, detected, physicalPath, sizeFromDescriptor(descriptor, item)); err != nil {
+			return nil, 0, err
+		}
 	default:
 		return metaattr.Normalize(attrs), 0, fmt.Errorf("item layout is missing or unsupported")
 	}
@@ -111,13 +115,40 @@ func (s *ScanService) refreshKnownItemAttributes(
 		return nil, 0, err
 	}
 
-	if enriched {
+	if detected != nil && len(detected.Attributes) > 0 {
 		attrs = metaattr.JSONMap(detected.Attributes)
 	}
 	clearObsoleteKnownItemAttributes(attrs, detected)
 	metaattr.MergeDataItemAttributes(attrs, metaitem.AttributeInput(detected))
 	restoreKnownItemStorage(attrs, descriptor, item)
 	return metaattr.Normalize(attrs), len(detected.Fields), nil
+}
+
+func enrichKnownResourceAttributes(
+	ctx context.Context,
+	attrs models.JSONMap,
+	contentReader plugin.ContentReadableProvider,
+	connInfo plugin.ConnectionInfo,
+	engineID uint,
+	catalogPathFor func(path string) plugin.CatalogPath,
+	item *metaitem.DetectedItem,
+	physicalPath string,
+	sizeBytes int64,
+) (*metaitem.DetectedItem, error) {
+	enriched, _, err := metaenrich.EnrichResourceAttributes(ctx, attrs, metaenrich.ResourceAttributesInput{
+		ContentReader:       contentReader,
+		ConnInfo:            connInfo,
+		EngineID:            engineID,
+		Item:                item,
+		PhysicalPath:        physicalPath,
+		SizeBytes:           sizeBytes,
+		IncludeContentIndex: true,
+		CatalogPathFor:      catalogPathFor,
+	})
+	if enriched != nil {
+		enriched.Attributes = attrs
+	}
+	return enriched, err
 }
 
 func clearObsoleteKnownItemAttributes(attrs map[string]interface{}, item *metaitem.DetectedItem) {
@@ -183,6 +214,21 @@ func enrichKnownSingleNonTableItem(
 			return false, err
 		}
 		metaattr.MergeAttributeMaps(item.Attributes, metaattr.DocumentInfoAttributes(info))
+		if formatProvider, err := format.GetFormatInfoProvider(formatType); err == nil {
+			rc, err := contentReader.OpenContent(ctx, connInfo, catalogPathFor(path), plugin.ReadOptions{})
+			if err != nil {
+				return false, err
+			}
+			formatInfo, err := formatProvider.DescribeFormat(ctx, rc, nil)
+			closeErr := rc.Close()
+			if err != nil {
+				return false, err
+			}
+			if closeErr != nil {
+				return false, closeErr
+			}
+			metaattr.MergeStandardAttributes(item.Attributes, metaattr.FormatInfoAttributes(string(formatType), formatInfo))
+		}
 		return true, nil
 	}
 	if provider, err := format.GetMediaInfoProvider(formatType); err == nil {
@@ -199,32 +245,6 @@ func enrichKnownSingleNonTableItem(
 		return true, nil
 	}
 	return false, nil
-}
-
-func enrichKnownWholeItem(
-	ctx context.Context,
-	contentReader plugin.ContentReadableProvider,
-	connInfo plugin.ConnectionInfo,
-	engineID uint,
-	catalogPathFor func(path string) plugin.CatalogPath,
-	item *metaitem.DetectedItem,
-) (bool, error) {
-	if item == nil || item.DataType != dataitem.DataTypeContainer {
-		return false, nil
-	}
-	path := firstNonEmpty(item.PhysicalPath, item.EntryPath)
-	if path == "" {
-		return false, nil
-	}
-	rc, err := contentReader.OpenContent(ctx, connInfo, catalogPathFor(path), plugin.ReadOptions{})
-	if err != nil {
-		return false, err
-	}
-	defer rc.Close()
-	if err := metaenrich.EnrichContainerChildren(ctx, item.Attributes, item, rc); err != nil {
-		return false, err
-	}
-	return true, nil
 }
 
 func knownItemCatalogPathResolver(engineID uint, engineType string, descriptor dataitem.ItemDescriptor) func(string) plugin.CatalogPath {

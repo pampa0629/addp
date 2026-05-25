@@ -12,7 +12,11 @@ func TestIndexerAttributeReadersPreferStandardTypeInfo(t *testing.T) {
 			"document": map[string]interface{}{
 				"title":      "standard title",
 				"page_count": 12,
-				"keywords":   []interface{}{"alpha", "beta"},
+			},
+		},
+		"capabilities": map[string]interface{}{
+			"extraction": map[string]interface{}{
+				"keywords": []interface{}{"alpha", "beta"},
 			},
 		},
 	}
@@ -23,9 +27,9 @@ func TestIndexerAttributeReadersPreferStandardTypeInfo(t *testing.T) {
 	if got := intFromStandardAttributes(attrs, "type_info.document", "page_count"); got != 12 {
 		t.Fatalf("page_count = %d, want 12", got)
 	}
-	keywords := stringSliceFromStandardAttributes(attrs, "type_info.document", "keywords")
+	keywords := stringSliceFromStandardAttributes(attrs, "capabilities.extraction", "keywords")
 	if len(keywords) != 2 || keywords[0] != "alpha" {
-		t.Fatalf("keywords = %#v, want type_info keywords", keywords)
+		t.Fatalf("keywords = %#v, want extraction keywords", keywords)
 	}
 
 	standardOnly := map[string]interface{}{

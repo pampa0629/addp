@@ -261,7 +261,7 @@ function treeNodeToCatalogNode(node) {
 
 function standardAttributeSections(metadata) {
   const sections = {}
-  for (const key of ['item', 'type_info', 'format_info', 'capabilities']) {
+  for (const key of ['item', 'storage', 'type_info', 'format_info', 'content_index', 'capabilities']) {
     if (metadata[key] && typeof metadata[key] === 'object') {
       sections[key] = metadata[key]
     }
@@ -423,7 +423,7 @@ function nodeFormat(node) {
 function nodeAttribute(node, key) {
   if (!node?.attributes) return ''
   const attrs = node.attributes
-  return String(attrs[key] || attrs.item?.[key] || attrs.type_info?.[key] || node?.[key] || '').trim()
+  return String(attrs.item?.[key] || node?.[key] || '').trim()
 }
 
 function buildSelectedSourceSummary(node) {
@@ -441,25 +441,16 @@ function buildSelectedSourceSummary(node) {
   )
   const rowCount = firstPresent(
     numericValue(node.row_count),
-    numericValue(attrs.row_count),
-    numericValue(attrs.item?.row_count),
-    numericValue(attrs.type_info?.row_count),
-    numericValue(attrs.type_info?.table?.row_count),
-    numericValue(attrs.capabilities?.statistics?.row_count),
-    numericValue(attrs.statistics?.row_count)
+    numericValue(attrs.type_info?.table?.row_count)
   )
   const size = firstPresent(
     numericValue(node.size),
-    numericValue(attrs.size),
-    numericValue(attrs.file_size),
-    numericValue(attrs.item?.size),
-    numericValue(attrs.format_info?.file_size)
+    numericValue(attrs.storage?.total_size),
+    numericValue(attrs.storage?.size_bytes)
   )
   const modified = firstPresent(
-    attrs.last_modified,
-    attrs.modified_at,
-    attrs.item?.last_modified,
-    attrs.item?.modified_at
+    attrs.storage?.last_modified_at,
+    attrs.storage?.modified_at
   )
   const format = selectedFormat.value
   const spatial = spatialSummaryFromAttributes(attrs, fields.length > 0 ? fields : loadedFields)
@@ -511,7 +502,7 @@ function tableFieldsFromAttributes(attrs) {
 }
 
 function spatialSummaryFromAttributes(attrs, fields) {
-  const spatial = attrs?.capabilities?.spatial || attrs?.spatial || {}
+  const spatial = attrs?.capabilities?.spatial || {}
   const geometryColumns = Array.isArray(spatial.geometry_columns)
     ? spatial.geometry_columns
     : Array.isArray(spatial.geometryColumns)
@@ -744,11 +735,19 @@ function restoreSourceNodeFromState(state) {
 }
 
 function restoreSourceAttributes(state, savedAttributes = {}) {
+  const attrs = { ...(savedAttributes || {}) }
+  const item = {
+    ...(attrs.item || {}),
+    data_type: state.sourceDataType.value || attrs.item?.data_type || attrs.data_type || 'table',
+    representation: state.sourceRepresentation.value || attrs.item?.representation || attrs.representation || 'native',
+    format: state.sourceFormat.value || attrs.item?.format || attrs.format || ''
+  }
+  delete attrs.data_type
+  delete attrs.representation
+  delete attrs.format
   return {
-    ...(savedAttributes || {}),
-    data_type: state.sourceDataType.value || savedAttributes?.data_type || 'table',
-    representation: state.sourceRepresentation.value || savedAttributes?.representation || 'native',
-    format: state.sourceFormat.value || savedAttributes?.format || ''
+    ...attrs,
+    item
   }
 }
 

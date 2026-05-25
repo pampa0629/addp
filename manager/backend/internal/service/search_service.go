@@ -748,8 +748,12 @@ func searchAttributeSectionsForKey(key string) []string {
 	switch key {
 	case "bucket", "path", "name", "content_type", "file_name":
 		return []string{"storage"}
-	case "title", "author", "document_type", "page_count", "word_count", "keywords", "created_date", "modified_date":
+	case "format", "document_type":
+		return []string{"item"}
+	case "title", "page_count", "word_count":
 		return []string{"type_info.document"}
+	case "keywords", "created_date", "modified_date":
+		return []string{"capabilities.extraction"}
 	default:
 		return nil
 	}
@@ -887,7 +891,7 @@ func mapMeilisearchHit(hit interface{}) SearchDocument {
 	if val, ok := hitMap["content_type"].(string); ok {
 		doc.ContentType = val
 	}
-	if val, ok := hitMap["file_size"].(float64); ok {
+	if val, ok := hitMap["size_bytes"].(float64); ok {
 		doc.FileSize = int64(val)
 	}
 	if val, ok := hitMap["word_count"].(float64); ok {

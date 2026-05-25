@@ -112,18 +112,33 @@ func FormatInfoAttributes(formatName string, values map[string]interface{}) map[
 	if len(values) == 0 {
 		return nil
 	}
-	for _, section := range []string{"storage", "item", "type_info", "format_info", "content_index", "capabilities"} {
-		if sectionAttrs := commonJSON.InterfaceMap(values[section]); len(sectionAttrs) > 0 {
-			return values
-		}
-	}
 	formatName = strings.ToLower(strings.TrimSpace(formatName))
 	if formatName == "" {
 		formatName = "unqualified"
 	}
+	if formatInfo := commonJSON.InterfaceMap(values["format_info"]); len(formatInfo) > 0 {
+		if scoped := commonJSON.InterfaceMap(formatInfo[formatName]); len(scoped) > 0 {
+			return map[string]interface{}{
+				"format_info": map[string]interface{}{formatName: scoped},
+			}
+		}
+		return map[string]interface{}{"format_info": formatInfo}
+	}
+	scoped := map[string]interface{}{}
+	for key, value := range values {
+		switch key {
+		case "storage", "item", "type_info", "format_info", "content_index", "capabilities":
+			continue
+		default:
+			scoped[key] = value
+		}
+	}
+	if scoped = cleanAttributeMap(scoped); len(scoped) == 0 {
+		return nil
+	}
 	return map[string]interface{}{
 		"format_info": map[string]interface{}{
-			formatName: values,
+			formatName: scoped,
 		},
 	}
 }

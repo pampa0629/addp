@@ -17,6 +17,28 @@ func TestPluginDescribeDocument(t *testing.T) {
 	if info == nil {
 		t.Fatal("DescribeDocument() returned nil")
 	}
+	if info.PageCount != 1 {
+		t.Fatalf("PageCount = %d, want 1", info.PageCount)
+	}
+}
+
+func TestPluginDescribeFormatKeepsPDFNativeFacts(t *testing.T) {
+	plugin := NewPlugin(nil)
+	input := `%PDF-1.4
+/Info 1 0 obj << /Author (Ada) /Creator (Writer) /Producer (PDFLib) >>
+1 0 obj << /Type /Page >>
+`
+
+	info, err := plugin.DescribeFormat(context.Background(), strings.NewReader(input), nil)
+	if err != nil {
+		t.Fatalf("DescribeFormat() error = %v", err)
+	}
+	if info["author"] != "Ada" || info["creator"] != "Writer" || info["producer"] != "PDFLib" {
+		t.Fatalf("DescribeFormat() native metadata = %#v", info)
+	}
+	if _, ok := info["read_limit"]; !ok {
+		t.Fatalf("DescribeFormat() missing read_limit: %#v", info)
+	}
 }
 
 func TestPluginExtractRejectsNonPDF(t *testing.T) {

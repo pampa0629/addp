@@ -1101,6 +1101,13 @@ function extractedMetadataValue(attributes = {}) {
     attributeSection(attributes, 'capabilities.extraction').extracted_metadata
 }
 
+function mediaDurationSeconds(attributes = {}) {
+  const durationMS = attributeValue(attributes, 'type_info.media', 'duration_ms')
+  if (durationMS === undefined || durationMS === null || durationMS === '') return undefined
+  const value = Number(durationMS)
+  return Number.isFinite(value) ? value / 1000 : undefined
+}
+
 const objectFileTypeLabel = computed(() => {
   const contentType = objectContentType.value
   const path = objectData.value?.path || ''
@@ -1139,8 +1146,8 @@ const objectImageDimensions = computed(() => {
   const attributes = objectData.value?.attributes || {}
   const extracted = extractedMetadataValue(attributes) || {}
 
-  const width = attributeValue(attributes, 'type_info.media', 'width', 'Width') || extracted.width || extracted.Width
-  const height = attributeValue(attributes, 'type_info.media', 'height', 'Height') || extracted.height || extracted.Height
+  const width = attributeValue(attributes, 'type_info.media', 'width') || extracted.width || extracted.Width
+  const height = attributeValue(attributes, 'type_info.media', 'height') || extracted.height || extracted.Height
 
   if (width && height) {
     return `${width} × ${height}`
@@ -1160,8 +1167,8 @@ const objectMetadataTooltip = computed(() => {
   // 图片特有信息
   if (contentType.startsWith('image/')) {
     // 图片尺寸（宽 高）
-    const width = attributeValue(attributes, 'type_info.media', 'width', 'Width') || extracted.width || extracted.Width
-    const height = attributeValue(attributes, 'type_info.media', 'height', 'Height') || extracted.height || extracted.Height
+    const width = attributeValue(attributes, 'type_info.media', 'width') || extracted.width || extracted.Width
+    const height = attributeValue(attributes, 'type_info.media', 'height') || extracted.height || extracted.Height
     if (width && height) {
       parts.push(`${t('manager.explorer.metaWidth')} ${width} ${t('manager.explorer.metaHeight')} ${height}`)
     }
@@ -1172,19 +1179,19 @@ const objectMetadataTooltip = computed(() => {
     }
 
     // 图片格式
-    const format = attributeValue(attributes, 'type_info.media', 'format', 'image_format') || extracted.format || extracted.Format
+    const format = attributeValue(attributes, 'type_info.media', 'encoding') || extracted.format || extracted.Format
     if (format && format !== contentType.split('/')[1]) {
       parts.push(`${t('manager.explorer.metaFormat')}: ${format}`)
     }
 
     // 颜色模式
-    const colorMode = attributeValue(attributes, 'type_info.media', 'color_space', 'color_mode', 'mode') || extracted.color_space || extracted.mode || extracted.Mode
+    const colorMode = attributeValue(attributes, 'type_info.media', 'color_space') || extracted.color_space || extracted.mode || extracted.Mode
     if (colorMode) {
       parts.push(`${t('manager.explorer.metaColorMode')}: ${colorMode}`)
     }
 
     // DPI
-    const dpi = attributeValue(attributes, 'type_info.media', 'dpi') || extracted.dpi || extracted.DPI
+    const dpi = extracted.dpi || extracted.DPI
     if (dpi) {
       parts.push(`DPI: ${dpi}`)
     }
@@ -1203,10 +1210,10 @@ const objectMetadataTooltip = computed(() => {
     }
 
     // 视频尺寸（宽 × 高）
-    const width = attributeValue(attributes, 'type_info.media', 'width', 'video_width', 'Width') ||
+    const width = attributeValue(attributes, 'type_info.media', 'width') ||
                   videoMeta.width || videoMeta.video_width ||
                   extracted.width || extracted.Width || extracted.video_width
-    const height = attributeValue(attributes, 'type_info.media', 'height', 'video_height', 'Height') ||
+    const height = attributeValue(attributes, 'type_info.media', 'height') ||
                    videoMeta.height || videoMeta.video_height ||
                    extracted.height || extracted.Height || extracted.video_height
     const resolution = videoMeta.resolution || videoMeta.video_resolution ||
@@ -1219,7 +1226,7 @@ const objectMetadataTooltip = computed(() => {
     }
 
     // 时长
-    const duration = attributeValue(attributes, 'type_info.media', 'duration', 'duration_seconds') ||
+    const duration = mediaDurationSeconds(attributes) ||
                      videoMeta.duration || videoMeta.duration_seconds || videoMeta.total_duration ||
                      extracted.duration || extracted.Duration
     if (duration) {
@@ -1228,7 +1235,7 @@ const objectMetadataTooltip = computed(() => {
     }
 
     // 视频编码（codec）
-    const videoCodec = attributeValue(attributes, 'type_info.media', 'codec', 'video_codec') ||
+    const videoCodec = attributeValue(attributes, 'type_info.media', 'encoding') ||
                        videoMeta.codec || videoMeta.video_codec ||
                        extracted.video_codec || extracted.VideoCodec ||
                        extracted.codec || extracted.Codec
@@ -1237,24 +1244,21 @@ const objectMetadataTooltip = computed(() => {
     }
 
     // 音频编码
-    const audioCodec = attributeValue(attributes, 'type_info.media', 'audio_codec') ||
-                       videoMeta.audio_codec || videoMeta.audio_format ||
+    const audioCodec = videoMeta.audio_codec || videoMeta.audio_format ||
                        extracted.audio_codec || extracted.AudioCodec
     if (audioCodec) {
       parts.push(`${t('manager.explorer.metaAudioCodec')}: ${audioCodec}`)
     }
 
     // 帧率
-    const fps = attributeValue(attributes, 'type_info.media', 'frame_rate', 'fps') ||
-                videoMeta.frame_rate || videoMeta.fps ||
+    const fps = videoMeta.frame_rate || videoMeta.fps ||
                 extracted.fps || extracted.FPS || extracted.frame_rate
     if (fps) {
       parts.push(`${t('manager.explorer.metaFrameRate')}: ${fps} fps`)
     }
 
     // 比特率
-    const bitrate = attributeValue(attributes, 'type_info.media', 'bitrate', 'bit_rate') ||
-                    videoMeta.bitrate || videoMeta.bit_rate ||
+    const bitrate = videoMeta.bitrate || videoMeta.bit_rate ||
                     extracted.bitrate || extracted.Bitrate
     if (bitrate) {
       const bitrateStr = formatBitrate(bitrate)
@@ -1265,14 +1269,14 @@ const objectMetadataTooltip = computed(() => {
   // 音频特有信息
   if (contentType.includes('audio')) {
     // 时长
-    const duration = attributeValue(attributes, 'type_info.media', 'duration', 'duration_seconds') || extracted.duration || extracted.Duration
+    const duration = mediaDurationSeconds(attributes) || extracted.duration || extracted.Duration
     if (duration) {
       const durationStr = formatDuration(duration)
       parts.push(`${t('manager.explorer.metaDuration')}: ${durationStr}`)
     }
 
     // 音频编码
-    const audioCodec = attributeValue(attributes, 'type_info.media', 'codec', 'audio_codec') ||
+    const audioCodec = attributeValue(attributes, 'type_info.media', 'encoding') ||
                        extracted.audio_codec || extracted.AudioCodec ||
                        extracted.codec || extracted.Codec
     if (audioCodec) {
@@ -1280,13 +1284,13 @@ const objectMetadataTooltip = computed(() => {
     }
 
     // 采样率
-    const sampleRate = attributeValue(attributes, 'type_info.media', 'sample_rate') || extracted.sample_rate || extracted.SampleRate
+    const sampleRate = extracted.sample_rate || extracted.SampleRate
     if (sampleRate) {
       parts.push(`${t('manager.explorer.metaSampleRate')}: ${sampleRate} Hz`)
     }
 
     // 比特率
-    const bitrate = attributeValue(attributes, 'type_info.media', 'bitrate', 'bit_rate') || extracted.bitrate || extracted.Bitrate
+    const bitrate = extracted.bitrate || extracted.Bitrate
     if (bitrate) {
       const bitrateStr = formatBitrate(bitrate)
       parts.push(`${t('manager.explorer.metaBitrate')}: ${bitrateStr}`)
@@ -1295,12 +1299,12 @@ const objectMetadataTooltip = computed(() => {
 
   // PDF 特有信息
   if (contentType.includes('pdf')) {
-    const pages = attributeValue(attributes, 'type_info.document', 'page_count', 'pages') || extracted.pages || extracted.Pages
+    const pages = attributeValue(attributes, 'type_info.document', 'page_count') || extracted.pages || extracted.Pages
     if (pages) {
       parts.push(t('manager.explorer.metaPdfPages', { value: pages }))
     }
 
-    const author = attributeValue(attributes, 'type_info.document', 'author') || extracted.author || extracted.Author
+    const author = attributeValue(attributes, 'format_info.pdf', 'author') || extracted.author || extracted.Author
     if (author) {
       parts.push(t('manager.explorer.metaPdfAuthor', { value: author }))
     }
@@ -1310,7 +1314,7 @@ const objectMetadataTooltip = computed(() => {
       parts.push(t('manager.explorer.metaPdfTitle', { value: title }))
     }
 
-    const creator = attributeValue(attributes, 'type_info.document', 'creator') || extracted.creator || extracted.Creator
+    const creator = attributeValue(attributes, 'format_info.pdf', 'creator') || extracted.creator || extracted.Creator
     if (creator) {
       parts.push(t('manager.explorer.metaPdfCreator', { value: creator }))
     }

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/addp/common/contentio"
 	"github.com/addp/common/dataitem"
@@ -27,8 +28,12 @@ var tableFileAuxiliaryFileNames = map[string]bool{
 // TableFileResolver 识别 common/dataitem 判定出的表格文件 item，并补充 schema 等 Meta 落库信息。
 type tableFileItemResolver struct{}
 
-func init() {
-	metaitem.RegisterResolver(&tableFileItemResolver{})
+var registerItemResolversOnce sync.Once
+
+func RegisterItemResolvers() {
+	registerItemResolversOnce.Do(func() {
+		metaitem.RegisterResolver(&tableFileItemResolver{})
+	})
 }
 
 func tableFileItemRules() []dataitem.FormatRule {

@@ -137,22 +137,18 @@ func (s *IndexerService) IndexObjectAsset(resource *commonModels.Engine, tenantI
 	if len(tags) > 0 {
 		assetRecord.Tags = tags
 	}
-	if desc := stringFromStandardAttributes(metadata, "type_info.document", "file_type_friendly"); desc != "" {
-		assetRecord.Description = desc
-	}
-
 	assetRecord.ContentType = commonJSON.String(metadata, "storage", "content_type")
 
-	if value := stringFromStandardAttributes(metadata, "type_info.document", "document_type"); value != "" {
+	if value := stringFromStandardAttributes(metadata, "item", "format"); value != "" {
 		assetRecord.DocumentType = value
 	}
 	if value := stringFromStandardAttributes(metadata, "type_info.document", "title"); value != "" {
 		assetRecord.Title = value
 	}
-	if value := stringFromStandardAttributes(metadata, "type_info.document", "author"); value != "" {
+	if value := stringFromStandardAttributes(metadata, "format_info."+assetRecord.DocumentType, "author"); value != "" {
 		assetRecord.Author = value
 	}
-	if keywords := stringSliceFromStandardAttributes(metadata, "type_info.document", "keywords"); len(keywords) > 0 {
+	if keywords := stringSliceFromStandardAttributes(metadata, "capabilities.extraction", "keywords"); len(keywords) > 0 {
 		assetRecord.Keywords = keywords
 	}
 	if wc := intFromStandardAttributes(metadata, "type_info.document", "word_count"); wc > 0 {
@@ -161,10 +157,10 @@ func (s *IndexerService) IndexObjectAsset(resource *commonModels.Engine, tenantI
 	if pc := intFromStandardAttributes(metadata, "type_info.document", "page_count"); pc > 0 {
 		assetRecord.PageCount = pc
 	}
-	if created := timeFromStandardAttributes(metadata, "type_info.document", "created_date"); created != nil {
+	if created := timeFromStandardAttributes(metadata, "capabilities.extraction", "created_date"); created != nil {
 		assetRecord.CreatedDate = created
 	}
-	if modified := timeFromStandardAttributes(metadata, "type_info.document", "modified_date"); modified != nil {
+	if modified := timeFromStandardAttributes(metadata, "capabilities.extraction", "modified_date"); modified != nil {
 		assetRecord.ModifiedDate = modified
 	}
 

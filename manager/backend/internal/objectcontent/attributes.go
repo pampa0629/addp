@@ -40,7 +40,7 @@ func ContainerChildInfoFromMap(child map[string]interface{}) datatype.ContainerC
 	name := strings.TrimSpace(commonJSON.InterfaceString(child["name"]))
 	childKind := strings.TrimSpace(commonJSON.InterfaceString(child["child_kind"]))
 	dataType := datatype.ParseDataType(commonJSON.InterfaceString(child["data_type"]))
-	native := cloneInterfaceMap(rawMapAttribute(child["native"]))
+	native := containerChildNativeFromMap(child)
 
 	rowCountValue := commonJSON.InterfaceInt64(child["row_count"])
 	var rowCount *int64
@@ -68,6 +68,32 @@ func ContainerChildInfoFromMap(child map[string]interface{}) datatype.ContainerC
 		ColumnCount: columnCount,
 		HasHeader:   hasHeader,
 		Native:      native,
+	}
+}
+
+func containerChildNativeFromMap(child map[string]interface{}) map[string]interface{} {
+	native := cloneInterfaceMap(rawMapAttribute(child["native"]))
+	if native == nil {
+		native = map[string]interface{}{}
+	}
+	for key, value := range child {
+		if !containerChildNativeKey(key) {
+			continue
+		}
+		native[key] = value
+	}
+	if len(native) == 0 {
+		return nil
+	}
+	return native
+}
+
+func containerChildNativeKey(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "table", "path", "content_type", "uncompressed_size", "compressed_size", "modified_at", "role", "extension", "preview_material", "preview_renderer", "previewable", "ref_preview":
+		return true
+	default:
+		return false
 	}
 }
 

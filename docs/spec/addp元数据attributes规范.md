@@ -158,8 +158,8 @@ attributes 分区统一采用以下概念：
 | 数据类型 | 分区 | 典型字段 |
 |---|---|---|
 | `table` | `type_info.table` | fields、primary_key、row_count、size_bytes、native |
-| `document` | `type_info.document` | title、author、page_count、word_count、language、summary |
-| `media` | `type_info.media` | kind、width、height、duration、codec、sample_rate、color_mode |
+| `document` | `type_info.document` | title、language、encoding、page_count、word_count、size_bytes、text_extracted |
+| `media` | `type_info.media` | kind、mime_type、width、height、duration_ms、encoding、color_space、size_bytes |
 | `container` | `type_info.container` | children、default_child、child_count、resource_count |
 | `graph` | `type_info.graph` | labels、relationships、properties、node_count、edge_count |
 | `unknown` | `type_info.unknown` | detection_reason、fallback_action |

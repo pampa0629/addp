@@ -515,8 +515,7 @@ const itemRowCount = computed(() => {
   const previewRowCount = Number(props.previewData?.total)
   if (Number.isFinite(previewRowCount) && previewRowCount > 0) return previewRowCount
   return pickNestedNumber(itemAttributesMap.value, [
-    ['type_info', 'table', 'row_count'],
-    ['row_count']
+    ['type_info', 'table', 'row_count']
   ])
 })
 

@@ -1985,7 +1985,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "enabled": {
-                    "description": "是否启用扫描（总开关，兼容旧版）",
+                    "description": "是否启用扫描（总开关）",
                     "type": "boolean"
                 },
                 "immediate_depth": {
@@ -2861,7 +2861,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "enabled": {
-                    "description": "是否启用扫描（总开关，兼容旧版）",
+                    "description": "是否启用扫描（总开关）",
                     "type": "boolean"
                 },
                 "immediate_depth": {

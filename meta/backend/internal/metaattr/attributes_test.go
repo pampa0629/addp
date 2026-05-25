@@ -143,14 +143,16 @@ func TestMergeStandardAttributesWritesStandardSections(t *testing.T) {
 	MergeStandardAttributes(attrs, map[string]interface{}{
 		"type_info": map[string]interface{}{
 			"document": map[string]interface{}{
-				"page_count":          12,
-				"word_count":          2400,
-				"file_type_friendly":  "PDF",
-				"extraction_encoding": "UTF-8",
+				"page_count": 12,
+				"word_count": 2400,
 			},
 		},
 		"format_info": map[string]interface{}{
-			"pdf": map[string]interface{}{"vendor_key": "kept"},
+			"pdf": map[string]interface{}{
+				"file_type_friendly":  "PDF",
+				"extraction_encoding": "UTF-8",
+				"vendor_key":          "kept",
+			},
 		},
 	})
 
@@ -163,11 +165,11 @@ func TestMergeStandardAttributesWritesStandardSections(t *testing.T) {
 		t.Fatalf("capabilities.extraction = %#v", extraction)
 	}
 	document := attrs["type_info"].(map[string]interface{})["document"].(map[string]interface{})
-	if document["page_count"] != 12 || document["word_count"] != 2400 || document["file_type_friendly"] != "PDF" {
+	if document["page_count"] != 12 || document["word_count"] != 2400 || document["file_type_friendly"] != nil {
 		t.Fatalf("type_info.document = %#v", document)
 	}
 	pdfInfo := attrs["format_info"].(map[string]interface{})["pdf"].(map[string]interface{})
-	if pdfInfo["vendor_key"] != "kept" {
+	if pdfInfo["vendor_key"] != "kept" || pdfInfo["file_type_friendly"] != "PDF" {
 		t.Fatalf("format_info.pdf = %#v", pdfInfo)
 	}
 }
@@ -183,20 +185,23 @@ func TestFormatInfoAttributesWrapsUnqualifiedProviderFacts(t *testing.T) {
 	}
 }
 
-func TestFormatInfoAttributesKeepsStandardAttributesPayload(t *testing.T) {
+func TestFormatInfoAttributesDropsStandardSections(t *testing.T) {
 	t.Parallel()
 
 	input := map[string]interface{}{
 		"type_info": map[string]interface{}{
 			"document": map[string]interface{}{"page_count": 12},
 		},
+		"producer": "demo",
 	}
 	attrs := FormatInfoAttributes("pdf", input)
-	if attrs["format_info"] != nil {
-		t.Fatalf("standard attrs should not be wrapped: %#v", attrs)
+	formatInfo := attrs["format_info"].(map[string]interface{})
+	pdf := formatInfo["pdf"].(map[string]interface{})
+	if pdf["producer"] != "demo" {
+		t.Fatalf("format_info.pdf = %#v", pdf)
 	}
-	if attrs["type_info"] == nil {
-		t.Fatalf("standard attrs lost: %#v", attrs)
+	if pdf["type_info"] != nil || attrs["type_info"] != nil {
+		t.Fatalf("standard sections should be dropped from format info attrs: %#v", attrs)
 	}
 }
 

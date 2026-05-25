@@ -22,7 +22,6 @@ import (
 func TestEnrichObjectStorageJSONTableUpdatesItemDataType(t *testing.T) {
 	t.Parallel()
 
-	svc := &ObjectStorageCatalogScanService{log: slog.Default()}
 	resource := metacatalog.StorageResource{
 		RootName:  "addp",
 		Path:      "datasets/converted.json",
@@ -32,8 +31,10 @@ func TestEnrichObjectStorageJSONTableUpdatesItemDataType(t *testing.T) {
 	}
 	item := metaitemForJSONDocument(resource)
 
-	attrs, err := svc.enrichObjectCatalogTableFileAttributes(
+	attrs := models.JSONMap{}
+	err := enrichObjectCatalogSingleResourceAttributes(
 		context.Background(),
+		attrs,
 		staticObjectContentReader{content: `[{"id":1,"name":"A"},{"id":2,"name":"B"}]`},
 		nil,
 		7,
@@ -42,7 +43,7 @@ func TestEnrichObjectStorageJSONTableUpdatesItemDataType(t *testing.T) {
 		false,
 	)
 	if err != nil {
-		t.Fatalf("enrichObjectCatalogTableFileAttributes() error = %v", err)
+		t.Fatalf("enrichObjectCatalogSingleResourceAttributes() error = %v", err)
 	}
 	itemAttrs := attrs["item"].(map[string]interface{})
 	if itemAttrs["data_type"] != string(dataitem.DataTypeTable) || itemAttrs["format"] != string(format.FormatJSON) {

@@ -167,7 +167,7 @@ func scopeTableInfoFromAttributes(attrs map[string]interface{}) (*datatype.Table
 }
 
 func scopeTableSampleOptionsFromAttributes(attrs map[string]interface{}) *format.ParseOptions {
-	formatName := strings.TrimSpace(commonJSON.InterfaceString(attrs["format"]))
+	formatName := strings.TrimSpace(catalogutil.StringAttribute(attrs, "format"))
 	if formatName == "" {
 		return nil
 	}

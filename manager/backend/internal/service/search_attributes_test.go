@@ -16,6 +16,9 @@ func TestSearchAttributeReadersPreferStandardSections(t *testing.T) {
 				"title": "standard title",
 			},
 		},
+		"item": map[string]interface{}{
+			"document_type": "pdf",
+		},
 	}
 
 	if got := getStringFromMeta(meta, "name"); got != "standard.pdf" {
@@ -29,6 +32,9 @@ func TestSearchAttributeReadersPreferStandardSections(t *testing.T) {
 	}
 	if got := getStringFromMeta(map[string]interface{}{"title": "flat title"}, "title"); got != "" {
 		t.Fatalf("flat title fallback = %q, want empty", got)
+	}
+	if got := getStringFromMeta(meta, "document_type"); got != "pdf" {
+		t.Fatalf("document_type = %q, want pdf", got)
 	}
 
 	var assigned string

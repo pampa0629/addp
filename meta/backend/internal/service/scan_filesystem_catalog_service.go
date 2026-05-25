@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/addp/common/dataitem"
-	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
@@ -55,6 +54,8 @@ func (s *FilesystemCatalogScanService) ScanPaths(
 	force bool,
 	reporter ScanProgressReporter,
 ) (int, int, error) {
+	metaenrich.RegisterItemResolvers()
+
 	p, err := plugin.Get(resource.EngineType)
 	if err != nil {
 		return 0, 0, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
@@ -274,7 +275,7 @@ func (s *FilesystemCatalogScanService) scanDirectory(
 			totalItems++
 			continue
 		}
-		if fileAttrs, fields, err := s.enrichSingleFileAttributes(ctx, contentReader, connInfo, resource, file, detected, isDeepScan); err == nil {
+		if fileAttrs, err := s.enrichSingleFileAttributes(ctx, contentReader, connInfo, resource, file, detected, isDeepScan); err == nil {
 			rowCount := itemRowCountFromAttributes(fileAttrs)
 			_, upsertErr := s.repo.UpsertItemWithDepth(
 				tenantID, resource.ID, parentNode,
@@ -286,8 +287,11 @@ func (s *FilesystemCatalogScanService) scanDirectory(
 				s.log.Warn("保存文件对象失败", "path", file.Path, "error", upsertErr)
 			} else {
 				totalItems++
-				if detected.DataType == dataitem.DataTypeTable && len(fields) > 0 {
-					s.log.Info("识别到 single 文件表", "path", file.Path, "name", itemName, "format", detected.Format, "field_count", len(fields))
+				if detected.DataType == dataitem.DataTypeTable {
+					tableFields := commonJSON.InterfaceSlice(commonJSON.Value(fileAttrs, "type_info.table", "fields"))
+					if len(tableFields) > 0 {
+						s.log.Info("识别到 single 文件表", "path", file.Path, "name", itemName, "format", detected.Format, "field_count", len(tableFields))
+					}
 				}
 			}
 		} else {
@@ -394,39 +398,27 @@ func (s *FilesystemCatalogScanService) enrichSingleFileAttributes(
 	file plugin.FileEntry,
 	detected *metaitem.DetectedItem,
 	includeContentIndex bool,
-) (models.JSONMap, []datatype.FieldInfo, error) {
+) (models.JSONMap, error) {
 	if detected == nil {
 		detected = metaitem.InferSingleResourceItem(file)
 	}
-	if detected.Layout == dataitem.LayoutSingle {
-		enriched, ok, err := metaenrich.EnrichSingleTableFileItem(ctx, contentReader, connInfo, resource.ID, detected, file.Path, file.Size, includeContentIndex, func(string) plugin.CatalogPath {
-			return file.CatalogPath
-		})
-		if err != nil {
-			s.log.Warn("提取 single 文件表信息失败，使用基础资源属性", "path", file.Path, "format", detected.Format, "error", err)
-			return metaattr.JSONMap(metaattr.BuildAttributes(metaitem.AttributeInput(detected))), nil, nil
-		}
-		if ok {
-			detected = enriched
-		}
-	}
 	attrs := metaattr.JSONMap(metaattr.BuildAttributes(metaitem.AttributeInput(detected)))
-	if len(detected.Fields) > 0 {
-		metaattr.SetTableFields(attrs, detected.Fields)
+	_, _, err := metaenrich.EnrichResourceAttributes(ctx, attrs, metaenrich.ResourceAttributesInput{
+		ContentReader:       contentReader,
+		ConnInfo:            connInfo,
+		EngineID:            resource.ID,
+		Item:                detected,
+		PhysicalPath:        file.Path,
+		SizeBytes:           file.Size,
+		IncludeContentIndex: includeContentIndex,
+		CatalogPathFor: func(string) plugin.CatalogPath {
+			return file.CatalogPath
+		},
+	})
+	if err != nil {
+		s.log.Warn("提取 single 文件深度属性失败，保留基础属性", "path", file.Path, "format", detected.Format, "error", err)
 	}
-	metacatalog.ApplyContainerSummary(attrs, detected)
-	if detected.DataType == dataitem.DataTypeContainer && contentReader != nil {
-		reader, err := contentReader.OpenContent(ctx, connInfo, file.CatalogPath, plugin.ReadOptions{})
-		if err != nil {
-			s.log.Warn("枚举容器内部对象失败，保留容器摘要", "path", file.Path, "error", err)
-			return attrs, detected.Fields, nil
-		}
-		defer reader.Close()
-		if err := metaenrich.EnrichContainerChildren(ctx, attrs, detected, reader); err != nil {
-			s.log.Warn("枚举容器内部对象失败，保留容器摘要", "path", file.Path, "error", err)
-		}
-	}
-	return attrs, detected.Fields, nil
+	return attrs, nil
 }
 
 func (s *FilesystemCatalogScanService) resolveFileCatalogDirectoryItems(

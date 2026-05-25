@@ -44,7 +44,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 			Extensions: []string{".pdf"},
 			MimeTypes:  []string{"application/pdf"},
 		},
-		Providers: format.FormatProviderDescriptor{DocumentInfo: true},
+		Providers: format.FormatProviderDescriptor{DocumentInfo: true, FormatInfo: true},
 		ContentReaders: []string{
 			string(format.ContentReaderRawContent),
 			string(format.ContentReaderRangeContent),
@@ -71,15 +71,18 @@ func (p *Plugin) Capabilities() format.FormatCapability {
 }
 
 func (p *Plugin) DescribeDocument(ctx context.Context, input io.Reader, options *format.ParseOptions) (*datatype.DocumentInfo, error) {
-	docAttrs, _, err := p.readDocumentAttributes(ctx, input, options)
+	documentInfo, _, err := p.readDocumentAttributes(ctx, input, options)
 	if err != nil {
 		return nil, err
 	}
 	info := &datatype.DocumentInfo{}
-	if title, ok := docAttrs["title"].(string); ok {
+	if title, ok := documentInfo["title"].(string); ok {
 		info.Title = title
 	}
-	if size, ok := docAttrs["size_bytes"].(int64); ok && size > 0 {
+	if pageCount, ok := documentInfo["page_count"].(int); ok && pageCount > 0 {
+		info.PageCount = pageCount
+	}
+	if size, ok := documentInfo["size_bytes"].(int64); ok && size > 0 {
 		info.SizeBytes = &size
 	}
 	return info, nil
@@ -211,31 +214,38 @@ func (p *Plugin) readDocumentAttributes(ctx context.Context, input io.Reader, op
 	docMeta := extractPDFMetadata(content)
 	pageCount := estimatePageCount(content)
 
-	docAttrs := map[string]interface{}{
-		"document_type":      "pdf",
-		"page_count":         pageCount,
-		"encrypted":          bytes.Contains(content, []byte("/Encrypt")),
-		"file_type_friendly": "PDF",
+	documentInfo := map[string]interface{}{
+		"page_count": pageCount,
+	}
+	formatAttrs := map[string]interface{}{
+		"encrypted":  bytes.Contains(content, []byte("/Encrypt")),
+		"read_limit": readLimit,
 	}
 	for _, field := range []struct {
 		key   string
 		value string
 	}{
 		{"title", docMeta["Title"]},
+	} {
+		if field.value != "" {
+			documentInfo[field.key] = field.value
+		}
+	}
+
+	for _, field := range []struct {
+		key   string
+		value string
+	}{
 		{"author", docMeta["Author"]},
 		{"subject", docMeta["Subject"]},
 		{"creator", docMeta["Creator"]},
 		{"producer", docMeta["Producer"]},
 	} {
 		if field.value != "" {
-			docAttrs[field.key] = field.value
+			formatAttrs[field.key] = field.value
 		}
 	}
-
-	formatAttrs := map[string]interface{}{
-		"read_limit": readLimit,
-	}
-	return docAttrs, formatAttrs, nil
+	return documentInfo, formatAttrs, nil
 }
 
 func pdfReadLimit(options *format.ParseOptions) int64 {

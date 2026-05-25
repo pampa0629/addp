@@ -11,7 +11,6 @@ import (
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
-	_ "github.com/addp/meta/internal/metaenrich"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
 )
@@ -238,7 +237,7 @@ func PlanObjectCatalogSingleItem(engineID uint, resource StorageResource, trimme
 		metaattr.SetStorage(attrs, "last_modified_at", resource.LastModified)
 	}
 	metaattr.MergeDataItemAttributes(attrs, metaitem.AttributeInput(dataItem))
-	ApplyContainerSummary(attrs, dataItem)
+	metaitem.ApplyContainerSummary(attrs, dataItem)
 
 	fullName := commonModels.JoinObjectPath(resource.RootName, dir, name)
 	return ObjectCatalogSingleItemPlan{

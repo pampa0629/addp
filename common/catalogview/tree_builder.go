@@ -207,9 +207,6 @@ func isWholeScopeItemNode(node *models.MetaNode) bool {
 		return false
 	}
 	layout := strings.ToLower(strings.TrimSpace(commonJSON.StringFromSections(node.Attributes, "layout", "item")))
-	if layout == "" {
-		layout = strings.ToLower(strings.TrimSpace(commonJSON.InterfaceString(node.Attributes["layout"])))
-	}
 	return layout == "whole"
 }
 

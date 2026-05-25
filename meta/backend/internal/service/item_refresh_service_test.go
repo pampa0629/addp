@@ -13,6 +13,7 @@ import (
 
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
+	_ "github.com/addp/common/format/builtin"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
 	"github.com/jonas-p/go-shp"
@@ -110,11 +111,97 @@ func TestRefreshKnownMultiItemUsesStoredRefsWithoutCatalogRediscovery(t *testing
 	}
 }
 
-type refreshContentReader struct {
-	content map[string][]byte
+func TestRefreshKnownPDFItemWritesDocumentAndFormatInfo(t *testing.T) {
+	t.Parallel()
+
+	db := openObjectCatalogScanTestDB(t)
+	tenantID := uint(1)
+	engineID := uint(78)
+	engineSvc := NewEngineService(db, "", "", nil)
+	engineSvc.engineCache[engineID] = &engineCacheEntry{
+		resource: &commonModels.Engine{
+			ID:         engineID,
+			TenantID:   &tenantID,
+			EngineType: "known-refresh-pdf-test",
+			IsActive:   true,
+		},
+		expiresAt: time.Now().Add(time.Hour),
+	}
+
+	content := []byte("%PDF-1.4\n/Info 1 0 obj << /Title (Plan) /Author (Ada) /Creator (Writer) /Producer (PDFLib) >>\n1 0 obj << /Type /Page >>\n")
+	plugin.Register(refreshContentReader{engineType: "known-refresh-pdf-test", content: map[string][]byte{"docs/plan.pdf": content}})
+
+	svc := NewScanService(db, engineSvc)
+	svc.log = slog.Default()
+	node := models.MetaNode{TenantID: tenantID, EngineID: engineID, NodeType: "bucket", Name: "docs", FullName: "docs", Depth: 0}
+	if err := db.Create(&node).Error; err != nil {
+		t.Fatalf("create node: %v", err)
+	}
+	size := int64(len(content))
+	item := models.MetaItem{
+		TenantID:    tenantID,
+		EngineID:    engineID,
+		NodeID:      node.ID,
+		ItemType:    "object",
+		Name:        "plan.pdf",
+		FullName:    "docs/plan.pdf",
+		Fingerprint: "known-refresh-pdf",
+		SizeBytes:   &size,
+		Attributes: models.JSONMap{
+			"item": map[string]interface{}{
+				"layout":    string(dataitem.LayoutSingle),
+				"data_type": string(dataitem.DataTypeDocument),
+				"format":    "pdf",
+			},
+			"storage": map[string]interface{}{
+				"bucket":     "docs",
+				"path":       "",
+				"name":       "plan.pdf",
+				"size_bytes": size,
+			},
+		},
+	}
+	if err := db.Create(&item).Error; err != nil {
+		t.Fatalf("create item: %v", err)
+	}
+
+	resp, err := svc.RefreshItem(context.Background(), engineID, tenantID, item.ID, "", true)
+	if err != nil {
+		t.Fatalf("RefreshItem() error = %v", err)
+	}
+	if resp.ItemsScanned != 1 {
+		t.Fatalf("ItemsScanned = %d, want 1", resp.ItemsScanned)
+	}
+
+	var refreshed models.MetaItem
+	if err := db.First(&refreshed, item.ID).Error; err != nil {
+		t.Fatalf("load refreshed item: %v", err)
+	}
+	typeInfo := refreshed.Attributes["type_info"].(map[string]interface{})
+	document := typeInfo["document"].(map[string]interface{})
+	if document["title"] != "Plan" || document["page_count"] != float64(1) {
+		t.Fatalf("type_info.document = %#v", document)
+	}
+	if document["author"] != nil || document["creator"] != nil {
+		t.Fatalf("type_info.document should not contain PDF native fields: %#v", document)
+	}
+	pdfInfo := refreshed.Attributes["format_info"].(map[string]interface{})["pdf"].(map[string]interface{})
+	if pdfInfo["author"] != "Ada" || pdfInfo["creator"] != "Writer" || pdfInfo["producer"] != "PDFLib" {
+		t.Fatalf("format_info.pdf = %#v", pdfInfo)
+	}
 }
 
-func (r refreshContentReader) Type() string         { return "known-refresh-test" }
+type refreshContentReader struct {
+	engineType string
+	content    map[string][]byte
+}
+
+func (r refreshContentReader) Type() string {
+	if r.engineType != "" {
+		return r.engineType
+	}
+	return "known-refresh-test"
+}
 func (r refreshContentReader) DisplayName() string  { return "known refresh test" }
 func (r refreshContentReader) EngineOrigin() string { return "general" }
 func (r refreshContentReader) TestConnection(context.Context, plugin.ConnectionInfo) error {

@@ -114,31 +114,31 @@ func TestPlanObjectCatalogSingleItemBuildsIdentityAndAttributes(t *testing.T) {
 	modifiedAt := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
 	plan := PlanObjectCatalogSingleItem(7, StorageResource{
 		RootName:     "addp",
-		Path:         "datasets/roads.geojson",
-		FullPath:     "addp/datasets/roads.geojson",
+		Path:         "datasets/profile.json",
+		FullPath:     "addp/datasets/profile.json",
 		NodeType:     "object",
 		Format:       "json",
 		SizeBytes:    128,
 		LastModified: &modifiedAt,
-	}, "datasets/roads.geojson", "object")
+	}, "datasets/profile.json", "object")
 
-	if plan.ItemType != "object" || plan.ItemName != "roads.geojson" {
+	if plan.ItemType != "object" || plan.ItemName != "profile.json" {
 		t.Fatalf("item identity = %#v", plan)
 	}
-	if plan.FullName != "addp/datasets/roads.geojson" || plan.Fingerprint == "" {
+	if plan.FullName != "addp/datasets/profile.json" || plan.Fingerprint == "" {
 		t.Fatalf("fullName/fingerprint = %q/%q", plan.FullName, plan.Fingerprint)
 	}
 	item := plan.Attributes["item"].(map[string]interface{})
-	if item["data_type"] != string(commondataitem.DataTypeDocument) || item["format"] != "json" {
+	if item["layout"] != string(commondataitem.LayoutSingle) || item["format"] != "json" {
 		t.Fatalf("item attrs = %#v", item)
 	}
 	if capabilities, ok := plan.Attributes["capabilities"].(map[string]interface{}); ok {
 		if spatial := capabilities["spatial"]; spatial != nil {
-			t.Fatalf("geojson path should not imply spatial capability: %#v", spatial)
+			t.Fatalf("json path should not imply spatial capability: %#v", spatial)
 		}
 	}
 	storage := plan.Attributes["storage"].(map[string]interface{})
-	if storage["physical_path"] != "addp/datasets/roads.geojson" || storage["total_size"] != int64(128) {
+	if storage["physical_path"] != "addp/datasets/profile.json" || storage["total_size"] != int64(128) {
 		t.Fatalf("storage attrs = %#v", storage)
 	}
 }

@@ -2,7 +2,9 @@ package metaitem
 
 import (
 	"github.com/addp/common/dataitem"
+	"github.com/addp/common/datatype"
 	"github.com/addp/meta/internal/metaattr"
+	"github.com/addp/meta/internal/models"
 )
 
 func AttributeInput(item *DetectedItem) metaattr.DataItemAttributesInput {
@@ -35,4 +37,15 @@ func refAttributeInput(refs []dataitem.ItemRef) []metaattr.ItemRefAttributesInpu
 		})
 	}
 	return result
+}
+
+func ApplyContainerSummary(attrs models.JSONMap, item *DetectedItem) {
+	if attrs == nil || item == nil || item.DataType != dataitem.DataTypeContainer {
+		return
+	}
+	metaattr.UpsertNested(attrs, "type_info", "container", metaattr.ContainerInfoAttributes(&datatype.ContainerInfo{
+		Children:      []datatype.ContainerChildInfo{},
+		ChildCount:    0,
+		ResourceCount: 1,
+	}))
 }

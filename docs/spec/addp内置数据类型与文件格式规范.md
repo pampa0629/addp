@@ -135,7 +135,7 @@ Manager 可以基于 `type_info.container.children` 展示 sheet 列表；进入
 |---|---|
 | `item` | `layout`、`data_type`、`format` |
 | `type_info.table` | records / JSON Lines / FeatureCollection 的字段、行数 |
-| `type_info.document` | 文档型 JSON 的标题、摘要、语言、文本片段等可选信息 |
+| `type_info.document` | 文档型 JSON 的标题、语言、编码、页数、字数、大小、正文提取标记等通用文档信息 |
 | `type_info.container` | 容器型 JSON 的内部对象摘要、默认入口、子对象数量 |
 | `format_info.json` | `structure`、编码、对象层级摘要、GeoJSON 原文 `bbox` / `crs` 等格式私有信息 |
 | `capabilities.spatial` | 仅空间结构 JSON 写入几何字段、SRID / CRS、extent 等空间能力 |
@@ -376,7 +376,7 @@ WebP、BMP、SVG、AVIF、HEIC / HEIF 进入内置主线前，应先明确 descr
 | 分区 | 写入内容 |
 |---|---|
 | `item` | `layout`、`data_type`、`format` |
-| `type_info.media` | `kind=image`、宽高、颜色模式、方向、编码、帧数或页数等媒体信息 |
+| `type_info.media` | `kind=image`、`mime_type`、宽高、`encoding`、`color_space`、`size_bytes` 等媒体信息 |
 | `format_info.<format>` | EXIF、TIFF tag、压缩方式等格式私有信息 |
 | `capabilities.spatial` | 图片 GPS 或 GeoTIFF 可确定空间信息 |
 
@@ -414,7 +414,7 @@ GIF、WebP、TIFF 等多帧或多页图片仍表达为 `kind=image`。动图播�
 | 分区 | 写入内容 |
 |---|---|
 | `item` | `layout`、`data_type`、`format` |
-| `type_info.media` | `kind=video`、宽高、时长、视频编码、音频编码、帧率、码率、轨道数等媒体信息 |
+| `type_info.media` | `kind=video`、`mime_type`、宽高、`duration_ms`、`encoding`、`size_bytes` 等当前通用媒体信息 |
 | `format_info.<format>` | 容器版本、轨道摘要、metadata atom、字幕轨、封面帧等格式私有信息 |
 | `capabilities.extraction` | 仅在已有明确抽帧、OCR、语音转写或字幕提取任务状态时写入 |
 
@@ -448,7 +448,7 @@ Search 或语义索引可消费 `capabilities.extraction` 或外部索引引用�
 | 分区 | 写入内容 |
 |---|---|
 | `item` | `layout`、`data_type`、`format` |
-| `type_info.media` | `kind=audio`、时长、编码、采样率、声道数、码率等媒体信息 |
+| `type_info.media` | `kind=audio`、`mime_type`、`duration_ms`、`encoding`、`size_bytes` 等当前通用媒体信息 |
 | `format_info.<format>` | ID3 / Vorbis comment / RIFF chunk / 封面图等格式私有信息 |
 | `capabilities.extraction` | 仅在已有明确语音转写、音乐识别或摘要任务状态时写入 |
 
@@ -477,8 +477,8 @@ Search 或语义索引可消费 `capabilities.extraction` 或外部索引引用�
 | 分区 | 写入内容 |
 |---|---|
 | `item` | `layout`、`data_type`、`format` |
-| `type_info.document` | 页数、标题、作者、语言、加密状态、摘要等文档元信息 |
-| `format_info.pdf` | PDF 版本、producer、字体、页面结构等格式私有信息 |
+| `type_info.document` | 页数、标题、语言、编码、字数、大小、正文提取标记等通用文档信息 |
+| `format_info.pdf` | PDF 版本、author、subject、creator、producer、加密状态、读取限制、字体、页面结构等格式私有信息 |
 | `capabilities.extraction` | 文本提取状态、OCR 状态、文本片段、摘要、外部索引引用 |
 
 ### 文档读取
@@ -508,7 +508,7 @@ DOCX / PPTX / WPS 是单资源文档文件。第一阶段内置规范只要求�
 | 分区 | 写入内容 |
 |---|---|
 | `item` | `layout`、`data_type`、`format` |
-| `type_info.document` | 仅在后端已有确定解析事实时写入页数、标题、作者、语言、加密状态等文档元信息；没有解析事实时不得写入空壳对象 |
+| `type_info.document` | 仅在后端已有确定解析事实时写入页数、标题、语言、编码、字数、大小、正文提取标记等通用文档信息；没有解析事实时不得写入空壳对象 |
 | `format_info.docx` / `format_info.pptx` / `format_info.wps` | 仅在后端已有确定解析事实时写入格式私有信息 |
 | `capabilities.extraction` | 仅在已有明确文本提取、转换、OCR、摘要或外部索引任务状态时写入 |
 

@@ -365,7 +365,7 @@ Meta attributes 是 item 事实的直接 JSON 投影，不是兼容旧实现的�
 | Excel | `sheet_count`、`default_sheet`、workbook 级摘要 |
 | Parquet | row group、压缩、schema 版本、scope 文件清单 |
 | SQLite / GeoPackage | SQLite 版本、page size、page count、内部表 / 视图 / 索引摘要 |
-| PDF | PDF 版本、producer、读取限制、格式头或对象结构摘要 |
+| PDF | PDF 版本、author、subject、creator、producer、加密状态、读取限制、格式头或对象结构摘要 |
 
 进入 `capabilities.<capability>` 的事实满足以下任一条件：
 
@@ -617,6 +617,7 @@ type SpatialInfo struct {
 | `datatype.ContentIndex` | 当前放在 `common/datatype`，被 format、Meta、Manager preview 使用 | 它不是 data type 本体，但当前是跨模块复用结构；贸然移出会引入新包或新概念 | 暂不动。后续结合 engine range reader、format content index、Meta attributes 的消费链路再决定是否移出 |
 | `capabilities.spatial` 写入 helper | 已在 Meta 侧新增专门 helper，并完成主要写入链路收敛 | 字段型与非字段型 spatial 的表达不同，不能直接用纯结构投影替代 | 后续只在新增 spatial 写入链路时复用 `metaattr.SpatialInfoAttributes`，避免重新手写 |
 | `common/engine/plugin.DatabaseInfo` / `CollectionInfo` | 仍是 engine catalog 层结构 | 它们更接近 catalog hierarchy / namespace 事实，不等同于 data type info | 暂不迁入 `datatype`。后续如有重复，再从 catalog/path/node 语义统一 |
+| `MediaInfo` 的音视频细粒度字段 | 当前只定义 `kind/mime_type/width/height/duration_ms/encoding/color_space/size_bytes` | 采样率、声道数、码率、轨道数、视频 codec / 音频 codec 等尚未形成跨格式稳定消费链路 | 暂不加入 `datatype.MediaInfo`；已有提取器事实先留在 `capabilities.extraction` 或后续受控 `format_info.<format>` |
 | `format.TableInfo` | 已删除 | 原薄壳只重复 `datatype.TableInfo`，没有独立事实边界 | reader / writer / Transfer 直接使用 `datatype.TableInfo` |
 | Manager `Metadata.vue` 历史页面 | 已删除 | 页面未挂路由，且调用的 `managerAPI.scanDataSource/getTables/manageTable/unmanageTable` 已不存在；继续保留会误导为旧 metadata 消费入口 | Manager 元数据展示以 Data Explorer + Meta 标准 attributes 为准；`quick_view` 保留为空间快显 / MVT 预缓存任务表，不承载 table info 事实 |
 

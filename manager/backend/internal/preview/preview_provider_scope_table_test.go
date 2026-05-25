@@ -136,7 +136,9 @@ func TestScopeTableSampleOptionsFromAttributesUsesParquetFileRowCounts(t *testin
 	t.Parallel()
 
 	opts := scopeTableSampleOptionsFromAttributes(map[string]interface{}{
-		"format": "parquet",
+		"item": map[string]interface{}{
+			"format": "parquet",
+		},
 		"format_info": map[string]interface{}{
 			"parquet": map[string]interface{}{
 				"files": []interface{}{

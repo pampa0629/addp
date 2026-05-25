@@ -773,35 +773,11 @@ func buildContainerPreviewFromAttributes(attrs map[string]interface{}, sizeBytes
 		if len(child) == 0 {
 			continue
 		}
-		name := commonJSON.InterfaceString(child["name"])
-		native := rawMapAttribute(child["native"])
-		tableName := commonJSON.InterfaceString(native["table"])
-		if tableName == "" {
-			tableName = commonJSON.InterfaceString(child["table"])
+		childInfo := ContainerChildInfoFromMap(child)
+		if childInfo.Format == "" && formatName != "" {
+			childInfo.Format = formatName
 		}
-		childKind := containerChildKindFromMap(child)
-		columnCount := commonJSON.InterfaceInt64(child["column_count"])
-		childMap := map[string]interface{}{
-			"key":          containerChildKey(name, tableName, index),
-			"name":         name,
-			"label":        name,
-			"table":        tableName,
-			"index":        index,
-			"child_kind":   childKind,
-			"data_type":    commonJSON.InterfaceString(child["data_type"]),
-			"row_count":    commonJSON.InterfaceInt64(child["row_count"]),
-			"column_count": columnCount,
-		}
-		if _, ok := child["has_header"]; ok {
-			childMap["has_header"] = commonJSON.InterfaceBool(child["has_header"])
-		}
-		if childMap["label"] == "" {
-			childMap["label"] = tableName
-		}
-		if childMap["data_type"] == "" {
-			childMap["data_type"] = string(datatype.DataTypeTable)
-		}
-		previewChildren = append(previewChildren, childMap)
+		previewChildren = append(previewChildren, containerChildPreviewMap(childInfo, index))
 	}
 	if len(previewChildren) == 0 {
 		return nil
