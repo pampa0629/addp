@@ -54,7 +54,7 @@ const itemCount = computed(() => {
   const root = props.treeRoot
   if (!root) return 0
 
-  const itemTypes = new Set(['table', 'view', 'collection', 'label', 'relationship', 'file', 'object'])
+  const itemTypes = new Set(['table', 'view', 'collection', 'graph', 'file', 'object'])
   let count = 0
   const walk = (node) => {
     if (!node) return

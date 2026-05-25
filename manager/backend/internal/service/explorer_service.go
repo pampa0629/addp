@@ -7,7 +7,6 @@ import (
 
 	"github.com/addp/common/catalogview"
 	commonClient "github.com/addp/common/client"
-	"github.com/addp/common/datatype"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
@@ -177,7 +176,7 @@ func refreshScanOptions(loc *catalogview.ResourceLocator) commonClient.MetaScanO
 	}
 	metaID := *loc.MetaID
 	switch loc.Type {
-	case catalogview.TypeTable, catalogview.TypeCollection, catalogview.TypeLabel, catalogview.TypeRelationship, catalogview.TypeObject, catalogview.TypeFile:
+	case catalogview.TypeTable, catalogview.TypeCollection, catalogview.TypeGraph, catalogview.TypeObject, catalogview.TypeFile:
 		if metaID >= 100000 {
 			opts.ItemID = metaID - 100000
 			return opts
@@ -509,185 +508,6 @@ func (s *ExplorerService) getMetaNodes(ctx context.Context, engineID uint, engin
 	return allNodes, nil
 }
 
-// GraphSchemaResponse 图数据库 Schema 响应
-type GraphSchemaResponse struct {
-	NodeLabels    []NodeLabelSchema    `json:"nodes"`
-	Relationships []RelationshipSchema `json:"relationships"`
-}
-
-// NodeLabelSchema 节点标签描述
-type NodeLabelSchema struct {
-	Label      string   `json:"label"`
-	Count      int64    `json:"count"`
-	Properties []string `json:"properties"`
-}
-
-// RelationshipSchema 关系类型描述
-type RelationshipSchema struct {
-	Type       string                      `json:"type"`
-	Count      int64                       `json:"count"`
-	Patterns   []RelationshipPatternSchema `json:"patterns"`
-	Properties []string                    `json:"properties"`
-}
-
-type RelationshipPatternSchema struct {
-	From  GraphEndpointSchema `json:"from"`
-	To    GraphEndpointSchema `json:"to"`
-	Count int64               `json:"count"`
-}
-
-type GraphEndpointSchema struct {
-	ShapeName string   `json:"shape_name"`
-	Labels    []string `json:"labels"`
-}
-
-// GetGraphSchema 获取图数据库的 Schema 结构（节点标签 + 关系类型）
-// 数据来自 Meta 模块的扫描结果，不重新连接数据库
-func (s *ExplorerService) GetGraphSchema(ctx context.Context, tenantID *uint, engineID uint, database string) (*GraphSchemaResponse, error) {
-	if s.metaClient == nil {
-		return nil, fmt.Errorf("meta client not available")
-	}
-
-	// 权限校验
-	if s.systemClient != nil {
-		engine, err := s.systemClient.GetEngine(engineID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get engine: %w", err)
-		}
-		if tenantID != nil && engine.TenantID != nil && *engine.TenantID != *tenantID {
-			return nil, ErrEngineAccessDenied
-		}
-	}
-
-	s.metaClient.SetTenantID(tenantID)
-
-	// 获取元数据树（包含节点和 items）
-	tree, err := s.metaClient.GetMetadataTree(engineID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get metadata tree: %w", err)
-	}
-
-	// 找到目标数据库节点
-	var dbNodeID uint
-	for _, node := range tree.TopNodes {
-		if strings.EqualFold(node.Name, database) || database == "" {
-			dbNodeID = node.ID
-			break
-		}
-	}
-	// 如果 TopNodes 没找到，再从 ChildNodes 里找
-	if dbNodeID == 0 {
-		for _, node := range tree.ChildNodes {
-			if strings.EqualFold(node.Name, database) {
-				dbNodeID = node.ID
-				break
-			}
-		}
-	}
-	// 如果仍未找到（但 database 为空），使用第一个节点
-	if dbNodeID == 0 && database == "" && len(tree.TopNodes) > 0 {
-		dbNodeID = tree.TopNodes[0].ID
-	}
-	if dbNodeID == 0 {
-		return nil, fmt.Errorf("database node not found: %s", database)
-	}
-
-	resp := &GraphSchemaResponse{
-		NodeLabels:    []NodeLabelSchema{},
-		Relationships: []RelationshipSchema{},
-	}
-
-	for _, item := range tree.Items {
-		if item.NodeID != dbNodeID {
-			continue
-		}
-		if item.ItemType != "graph" {
-			continue
-		}
-		info := datatype.GraphInfoFromAttributes(item.Attributes)
-		if info == nil {
-			continue
-		}
-		resp.NodeLabels = append(resp.NodeLabels, graphNodeSchemas(info)...)
-		resp.Relationships = append(resp.Relationships, graphRelationshipSchemas(info)...)
-	}
-
-	return resp, nil
-}
-
-func graphNodeSchemas(info *datatype.GraphInfo) []NodeLabelSchema {
-	if info == nil {
-		return nil
-	}
-	result := make([]NodeLabelSchema, 0, len(info.NodeShapes))
-	for _, shape := range info.NodeShapes {
-		label := shape.Name
-		if label == "" && len(shape.Labels) > 0 {
-			label = strings.Join(shape.Labels, "+")
-		}
-		if label == "" {
-			continue
-		}
-		item := NodeLabelSchema{
-			Label:      label,
-			Properties: graphPropertyNames(shape.Properties),
-		}
-		if shape.Count != nil {
-			item.Count = *shape.Count
-		}
-		result = append(result, item)
-	}
-	return result
-}
-
-func graphRelationshipSchemas(info *datatype.GraphInfo) []RelationshipSchema {
-	if info == nil {
-		return nil
-	}
-	result := make([]RelationshipSchema, 0, len(info.RelationshipShapes))
-	for _, shape := range info.RelationshipShapes {
-		item := RelationshipSchema{
-			Type:       shape.Type,
-			Properties: graphPropertyNames(shape.Properties),
-			Patterns:   []RelationshipPatternSchema{},
-		}
-		if shape.Count != nil {
-			item.Count = *shape.Count
-		}
-		for _, pattern := range shape.Patterns {
-			patternSchema := RelationshipPatternSchema{
-				From: GraphEndpointSchema{
-					ShapeName: pattern.From.ShapeName,
-					Labels:    append([]string(nil), pattern.From.Labels...),
-				},
-				To: GraphEndpointSchema{
-					ShapeName: pattern.To.ShapeName,
-					Labels:    append([]string(nil), pattern.To.Labels...),
-				},
-			}
-			if pattern.Count != nil {
-				patternSchema.Count = *pattern.Count
-			}
-			item.Patterns = append(item.Patterns, patternSchema)
-		}
-		result = append(result, item)
-	}
-	return result
-}
-
-func graphPropertyNames(fields []datatype.FieldInfo) []string {
-	if len(fields) == 0 {
-		return []string{}
-	}
-	result := make([]string, 0, len(fields))
-	for _, field := range fields {
-		if field.Name != "" {
-			result = append(result, field.Name)
-		}
-	}
-	return result
-}
-
 func extractStringSliceFromSection(attrs map[string]interface{}, section, key string) []string {
 	if attrs == nil {
 		return []string{}
@@ -795,8 +615,8 @@ func calculateItemDepthByEngineType(engineType, itemType, fullName string, attri
 		return len(segments)
 	}
 
-	// MongoDB 集合类型（collection）：通常是 database.collection
-	if itemType == "collection" || itemType == "label" || itemType == "relationship" {
+	// MongoDB 集合/图整体：通常是 database.collection 或 database.graph
+	if itemType == "collection" || itemType == "graph" {
 		segments := strings.Split(fullName, ".")
 		return len(segments)
 	}

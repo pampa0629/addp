@@ -46,14 +46,9 @@ func TestConvertNodeType(t *testing.T) {
 			want:         TypeCollection,
 		},
 		{
-			name:         "图节点标签",
-			metaNodeType: "label",
-			want:         TypeLabel,
-		},
-		{
-			name:         "图关系类型",
-			metaNodeType: "relationship",
-			want:         TypeRelationship,
+			name:         "图整体",
+			metaNodeType: "graph",
+			want:         TypeGraph,
 		},
 		{
 			name:         "对象",
@@ -308,9 +303,9 @@ func TestBuildFromMetaMergesWholeScopeItemWithSamePathDirectory(t *testing.T) {
 			ScanStatus:   "completed",
 			Attributes: map[string]interface{}{
 				"item": map[string]interface{}{
-					"layout": "whole",
-					"data_type":    "table",
-					"format":       "parquet",
+					"layout":    "whole",
+					"data_type": "table",
+					"format":    "parquet",
 				},
 			},
 		},

@@ -149,7 +149,6 @@ func SetupRouter(
 		api.GET("/tree/:engine_id/search", explorerHandler.SearchNodes)   // 搜索节点
 		api.POST("/tree/:engine_id/refresh", explorerHandler.RefreshNode)
 		api.POST("/engines/:id/items/refresh", metadataHandler.RefreshItem)
-		api.GET("/graph-schema/:engine_id", explorerHandler.GetGraphSchema) // 图数据库 Schema（节点标签 + 关系类型）
 		api.GET("/preview", explorerHandler.Preview)
 		api.GET("/object-stream", explorerHandler.ObjectStream)
 

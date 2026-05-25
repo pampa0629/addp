@@ -508,8 +508,8 @@ func calculateItemDepth(itemType, fullName string) int {
 		return len(segments)
 	}
 
-	// MongoDB 集合类型（collection）：通常是 database.collection
-	if itemType == "collection" || itemType == "label" || itemType == "relationship" {
+	// MongoDB 集合/图整体：通常是 database.collection 或 database.graph
+	if itemType == "collection" || itemType == "graph" {
 		segments := strings.Split(fullName, ".")
 		return len(segments)
 	}
@@ -539,8 +539,8 @@ func parsePathForEngine(engineType string, fullName string, nodeType string) []s
 			return splitSlashPath(fullName)
 		}
 		return strings.Split(fullName, ".")
-	case "collection", "label", "relationship":
-		// 关系型数据库表/MongoDB 集合/Neo4j 节点标签/关系类型: schema.table 或 database.name
+	case "collection", "graph":
+		// MongoDB 集合/图整体: database.name
 		// 使用点号分隔
 		return strings.Split(fullName, ".")
 	case "bucket", "prefix", "directory", "object", "root", "dir", "file":
@@ -574,19 +574,18 @@ func isPathSemanticEngine(engineType string) bool {
 // convertNodeType 将 MetaNode 的 NodeType 转换为 ResourceType
 func convertNodeType(metaNodeType string) ResourceType {
 	mapping := map[string]ResourceType{
-		"database":     TypeDatabase,
-		"schema":       TypeSchema,
-		"bucket":       TypeBucket,
-		"prefix":       TypeDirectory,
-		"directory":    TypeDirectory,
-		"root":         TypeRoot,
-		"dir":          TypeDir,
-		"table":        TypeTable,
-		"collection":   TypeCollection,
-		"label":        TypeLabel,
-		"relationship": TypeRelationship,
-		"object":       TypeObject,
-		"file":         TypeFile,
+		"database":   TypeDatabase,
+		"schema":     TypeSchema,
+		"bucket":     TypeBucket,
+		"prefix":     TypeDirectory,
+		"directory":  TypeDirectory,
+		"root":       TypeRoot,
+		"dir":        TypeDir,
+		"table":      TypeTable,
+		"collection": TypeCollection,
+		"graph":      TypeGraph,
+		"object":     TypeObject,
+		"file":       TypeFile,
 	}
 	if t, ok := mapping[metaNodeType]; ok {
 		return t
@@ -667,19 +666,18 @@ func engineFamily(engine *models.Engine) string {
 // getIconByType 根据节点类型返回图标
 func getIconByType(nodeType string) string {
 	icons := map[string]string{
-		"database":     "Database",
-		"schema":       "Folder",
-		"bucket":       "FolderOpen",
-		"directory":    "Folder",
-		"prefix":       "Folder",
-		"root":         "FolderOpen",
-		"dir":          "Folder",
-		"table":        "Table",
-		"collection":   "DocumentText",
-		"label":        "DocumentText",
-		"relationship": "DocumentText",
-		"object":       "Document",
-		"file":         "Document",
+		"database":   "Database",
+		"schema":     "Folder",
+		"bucket":     "FolderOpen",
+		"directory":  "Folder",
+		"prefix":     "Folder",
+		"root":       "FolderOpen",
+		"dir":        "Folder",
+		"table":      "Table",
+		"collection": "DocumentText",
+		"graph":      "Share",
+		"object":     "Document",
+		"file":       "Document",
 	}
 	if icon, ok := icons[nodeType]; ok {
 		return icon

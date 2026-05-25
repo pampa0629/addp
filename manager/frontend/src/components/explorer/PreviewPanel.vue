@@ -56,18 +56,6 @@
             {{ markdownRawMode ? t('manager.explorer.mdRendered') : t('manager.explorer.mdRaw') }}
           </el-button>
 
-          <!-- Schema 图按钮（仅图数据库引擎显示） -->
-          <el-button
-            v-if="isGraphEngine"
-            size="small"
-            :type="showGraphSchema ? 'primary' : 'default'"
-            :loading="graphSchemaLoading"
-            @click="toggleGraphSchema"
-          >
-            <el-icon><Share /></el-icon>
-            {{ t('manager.explorer.schemaGraph') }}
-          </el-button>
-
           <!-- 导入数据按钮（仅 PostgreSQL schema 节点） -->
           <el-button
             v-if="showImportButton"
@@ -122,34 +110,18 @@
       </div>
     </template>
 
-    <!-- 图 Schema 视图 -->
-    <div v-if="showGraphSchema && isGraphEngine" class="preview-content graph-schema-content">
-      <div v-if="graphSchemaLoading" class="empty-state">
-        <el-empty :description="t('manager.explorer.loadingSchemaGraph')" />
-      </div>
-      <GraphSchemaView
-        v-else-if="filteredGraphSchemaData"
-        :schema="filteredGraphSchemaData"
-        style="width: 100%; height: 100%;"
-        @node-click="handleSchemaNodeClick"
-      />
-      <div v-else class="empty-state">
-        <el-empty :description="t('manager.explorer.noSchemaData')" />
-      </div>
-    </div>
-
     <!-- 无选择节点 -->
-    <div v-if="!showGraphSchema && !selectedNode" class="empty-state">
+    <div v-if="!selectedNode" class="empty-state">
       <el-empty :description="t('manager.explorer.selectDataToPreview')" />
     </div>
 
     <!-- 无预览数据 -->
-    <div v-else-if="!showGraphSchema && !previewData" class="empty-state">
+    <div v-else-if="!previewData" class="empty-state">
       <el-empty :description="emptyDescription" />
     </div>
 
     <!-- 无可用预览组件 -->
-    <div v-else-if="!showGraphSchema && !hasPreviewComponent" class="empty-state">
+    <div v-else-if="!hasPreviewComponent" class="empty-state">
       <el-empty :description="t('manager.explorer.unsupportedFileType')">
         <template #description>
           <p>{{ t('manager.explorer.unsupportedFileTypeDetail', { ext: fileExtension || t('manager.explorer.thisType') }) }}</p>
@@ -161,7 +133,7 @@
     </div>
 
     <!-- 渲染预览组件 -->
-    <div v-else-if="!showGraphSchema" class="preview-content">
+    <div v-else class="preview-content">
       <div v-if="multiRefOptions.length" class="preview-ref-toolbar">
         <span class="preview-ref-label">{{ t('containerPreview.refs') }}</span>
         <el-select
@@ -206,10 +178,9 @@
 import { computed, ref, watch, onUnmounted } from 'vue'
 import { ElMessage, ElNotification } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { MagicStick, Download, Location, Collection, Upload, Share, Document, View } from '@element-plus/icons-vue'
+import { MagicStick, Download, Location, Collection, Upload, Document, View } from '@element-plus/icons-vue'
 import { getPreviewComponent } from '@/plugins/previews'
 import { parseLocator } from '@addp/common-frontend'
-import { GraphSchemaView } from '@addp/common-frontend/graph'
 import client from '@/api/client'
 import ImportDialog from '@/components/explorer/ImportDialog.vue'
 import { useExplorerStore } from '@/stores/explorer'
@@ -780,86 +751,10 @@ const downloadInfo = computed(() => {
 const downloading = ref(false)
 const importDialogVisible = ref(false)
 
-// 图 Schema 相关状态
-const showGraphSchema = ref(false)
-const graphSchemaData = ref(null)
-const graphSchemaLoading = ref(false)
-// 用户在 Schema 图中点击了哪个标签（用于以该节点为中心重新过滤）
-const focusedSchemaLabel = ref(null)
-
-// 是否是图数据库引擎（支持 Schema 图视图）
-const isGraphEngine = computed(() => {
-  const engineType = (props.selectedNode?.engineType || '').toLowerCase()
-  return engineType === 'neo4j'
-})
-
-// 加载图 Schema 数据
-const loadGraphSchema = async () => {
-  if (!props.selectedNode?.engineId) return
-  const engineId = props.selectedNode.engineId
-  const database = props.selectedNode.schema || ''
-  graphSchemaLoading.value = true
-  try {
-    const data = await client.get(`/manager/graph-schema/${engineId}?database=${encodeURIComponent(database)}`)
-    graphSchemaData.value = data
-  } catch (error) {
-    console.error('加载图 Schema 失败:', error)
-    ElMessage.error(t('manager.explorer.loadGraphSchemaFailed', { error: error.response?.data?.error || error.message }))
-    showGraphSchema.value = false
-  } finally {
-    graphSchemaLoading.value = false
-  }
-}
-
-// 当选中的是具体的 collection 节点时，过滤 schema 只展示该标签及其相关节点
-// 用户点击 schema 图中的节点时，以该节点为中心重新过滤（focusedSchemaLabel 优先）
-const filteredGraphSchemaData = computed(() => {
-  if (!graphSchemaData.value) return null
-
-  // 优先使用用户在 schema 图中点击的标签，否则使用树选中的 collection 标签
-  const label = focusedSchemaLabel.value || (() => {
-    const nodeType = (props.selectedNode?.type || '').toLowerCase()
-    return nodeType === 'collection' ? (props.selectedNode?.table || '') : ''
-  })()
-
-  if (!label) return graphSchemaData.value
-
-  const relevantRels = (graphSchemaData.value.relationships || []).filter(rel =>
-    (rel.from_labels || []).includes(label) ||
-    (rel.to_labels || []).includes(label)
-  )
-
-  const relatedLabels = new Set([label])
-  for (const rel of relevantRels) {
-    for (const l of (rel.from_labels || [])) relatedLabels.add(l)
-    for (const l of (rel.to_labels || [])) relatedLabels.add(l)
-  }
-
-  return {
-    nodes: (graphSchemaData.value.nodes || []).filter(n => relatedLabels.has(n.label)),
-    relationships: relevantRels
-  }
-})
-
-const toggleGraphSchema = () => {
-  showGraphSchema.value = !showGraphSchema.value
-  if (showGraphSchema.value && !graphSchemaData.value) {
-    loadGraphSchema()
-  }
-}
-
-// 处理 Schema 图中节点点击：以点击的标签为中心重新过滤
-const handleSchemaNodeClick = (label) => {
-  focusedSchemaLabel.value = label
-}
-
-// 切换节点时重置 Schema 图状态
+// 切换节点时重置预览局部状态
 watch(
   () => props.selectedNode?.id,
   () => {
-    showGraphSchema.value = false
-    graphSchemaData.value = null
-    focusedSchemaLabel.value = null
     markdownRawMode.value = false
   }
 )
@@ -1769,13 +1664,6 @@ const handleNavigate = (path) => {
 
 .preview-ref-select {
   width: min(420px, 100%);
-}
-
-.graph-schema-content {
-  flex: 1;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
 }
 
 /* 强制覆盖 Element Plus Empty 组件的背景 */

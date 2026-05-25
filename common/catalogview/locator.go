@@ -11,19 +11,18 @@ import (
 type ResourceType string
 
 const (
-	TypeTable        ResourceType = "table"
-	TypeCollection   ResourceType = "collection"
-	TypeLabel        ResourceType = "label"        // 图数据库节点标签
-	TypeRelationship ResourceType = "relationship" // 图数据库关系类型
-	TypeObject       ResourceType = "object"       // 对象存储文件
-	TypeFile         ResourceType = "file"         // 文件系统文件（NFS/本地FS）
-	TypeDirectory    ResourceType = "directory"
-	TypeDatabase     ResourceType = "database"
-	TypeSchema       ResourceType = "schema"
-	TypeBucket       ResourceType = "bucket" // 对象存储桶
-	TypeRoot         ResourceType = "root"   // 文件系统根目录
-	TypeDir          ResourceType = "dir"    // 文件系统子目录
-	TypeUnknown      ResourceType = "unknown"
+	TypeTable      ResourceType = "table"
+	TypeCollection ResourceType = "collection"
+	TypeGraph      ResourceType = "graph"  // 图数据库整体
+	TypeObject     ResourceType = "object" // 对象存储文件
+	TypeFile       ResourceType = "file"   // 文件系统文件（NFS/本地FS）
+	TypeDirectory  ResourceType = "directory"
+	TypeDatabase   ResourceType = "database"
+	TypeSchema     ResourceType = "schema"
+	TypeBucket     ResourceType = "bucket" // 对象存储桶
+	TypeRoot       ResourceType = "root"   // 文件系统根目录
+	TypeDir        ResourceType = "dir"    // 文件系统子目录
+	TypeUnknown    ResourceType = "unknown"
 )
 
 // ResourceLocator 资源定位符

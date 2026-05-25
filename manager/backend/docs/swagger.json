@@ -1545,68 +1545,6 @@
                 }
             }
         },
-        "/graph-schema/{engine_id}": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "获取图数据库的节点标签和关系类型 | Get node labels and relationship types from graph database",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Manager"
-                ],
-                "summary": "获取图数据库 Schema | Get graph database schema",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "存储引擎ID | Engine ID",
-                        "name": "engine_id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "数据库名称 | Database name",
-                        "name": "database",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "图 Schema | Graph schema",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "请求参数错误 | Bad request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "服务器内部错误 | Internal server error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
         "/import": {
             "post": {
                 "security": [

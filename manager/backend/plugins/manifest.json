@@ -13,14 +13,9 @@
       "builtin": "doc-collection"
     },
     {
-      "name": "builtin:graph-label",
+      "name": "builtin:graph",
       "type": "builtin",
-      "builtin": "graph-label"
-    },
-    {
-      "name": "builtin:graph-relationship",
-      "type": "builtin",
-      "builtin": "graph-relationship"
+      "builtin": "graph"
     },
     {
       "name": "builtin:scope-table",

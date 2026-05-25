@@ -385,46 +385,6 @@ func (h *ExplorerHandler) SearchNodes(c *gin.Context) {
 	})
 }
 
-// GetGraphSchema 获取图数据库的 Schema 结构（节点标签 + 关系类型）
-// GET /api/manager/graph-schema/:engine_id?database=graph
-// @Summary 获取图数据库 Schema | Get graph database schema
-// @Description 获取图数据库的节点标签和关系类型 | Get node labels and relationship types from graph database
-// @Tags Manager
-// @Produce json
-// @Param engine_id path int true "存储引擎ID | Engine ID"
-// @Param database query string false "数据库名称 | Database name"
-// @Success 200 {object} map[string]interface{} "图 Schema | Graph schema"
-// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
-// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /graph-schema/{engine_id} [get]
-// @Security BearerAuth
-func (h *ExplorerHandler) GetGraphSchema(c *gin.Context) {
-	tenantID := tenantIDFromContext(c)
-
-	engineIDStr := c.Param("engine_id")
-	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
-	if err != nil {
-		commonAPI.BadRequestError(c, "Invalid engine_id")
-		return
-	}
-
-	database := c.Query("database")
-
-	schema, err := h.explorerService.GetGraphSchema(c.Request.Context(), tenantID, uint(engineID), database)
-	if err != nil {
-		if err == service.ErrEngineAccessDenied || err == preview.ErrEngineAccessDenied {
-			commonAPI.ForbiddenError(c, "Access denied to this engine")
-			return
-		}
-		logger.L().Error("获取图 Schema 失败", "engine_id", engineID, "error", err)
-		commonAPI.InternalServerError(c, err.Error())
-		return
-	}
-
-	c.JSON(http.StatusOK, schema)
-}
-
 // ObjectStream 对象内容流式传输（支持 Range 请求）
 // GET /api/v1/manager/object-stream?engine_id=1&object_key=bucket/path/to/file
 // @Summary 对象内容流式传输 | Object content streaming

@@ -386,7 +386,7 @@ func isContentFileItemType(itemType string) bool {
 
 func isPreviewItemType(itemType string) bool {
 	switch itemType {
-	case "table", "view", "materialized_view", "collection", "label", "relationship", "object", "file":
+	case "table", "view", "materialized_view", "collection", "graph", "object", "file":
 		return true
 	default:
 		return false

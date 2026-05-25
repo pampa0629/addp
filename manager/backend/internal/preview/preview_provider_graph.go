@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/manager/internal/models"
 )
 
@@ -25,7 +26,11 @@ func (p *GraphPreviewProvider) Preview(ctx context.Context, req *PreviewRequest)
 	}
 	info := datatype.GraphInfoFromAttributes(req.Attributes)
 	if info == nil {
-		return nil, fmt.Errorf("graph metadata is missing")
+		var err error
+		info, err = p.describeGraph(ctx, req)
+		if err != nil {
+			return nil, err
+		}
 	}
 	columns, rows := graphOverviewRows(info)
 
@@ -44,28 +49,91 @@ func (p *GraphPreviewProvider) Preview(ctx context.Context, req *PreviewRequest)
 	}, nil
 }
 
+func (p *GraphPreviewProvider) describeGraph(ctx context.Context, req *PreviewRequest) (*datatype.GraphInfo, error) {
+	plug, err := plugin.Get(req.Engine.EngineType)
+	if err != nil {
+		return nil, fmt.Errorf("unsupported engine type: %s", req.Engine.EngineType)
+	}
+	graphProvider, ok := plug.(plugin.GraphMetadataProvider)
+	if !ok {
+		return nil, fmt.Errorf("engine %s does not implement GraphMetadataProvider", req.Engine.EngineType)
+	}
+	path, err := graphPreviewCatalogPath(req)
+	if err != nil {
+		return nil, err
+	}
+	info, err := graphProvider.DescribeGraph(ctx, plugin.ConnectionInfo(req.Engine.ConnectionInfo), path, plugin.MetadataOptions{IncludeStatistics: true})
+	if err != nil {
+		return nil, fmt.Errorf("failed to describe graph: %w", err)
+	}
+	if info == nil {
+		return nil, fmt.Errorf("graph metadata is missing")
+	}
+	return info, nil
+}
+
+func graphPreviewCatalogPath(req *PreviewRequest) (plugin.CatalogPath, error) {
+	database := strings.TrimSpace(req.Schema)
+	if database == "" {
+		database = strings.TrimSpace(plugin.GetString(plugin.ConnectionInfo(req.Engine.ConnectionInfo), "database"))
+	}
+	if database == "" {
+		return plugin.CatalogPath{}, fmt.Errorf("graph preview requires database")
+	}
+	graphName := strings.TrimSpace(req.Table)
+	if graphName == "" {
+		graphName = plugin.CatalogKindGraph
+	}
+	return plugin.CatalogPath{
+		Version:  plugin.CatalogPathVersion,
+		EngineID: req.Engine.ID,
+		Segments: []plugin.CatalogSegment{
+			{Term: plugin.CatalogTermDatabase, Kind: plugin.CatalogKindNamespace, Name: database},
+			{Term: plugin.CatalogTermGraph, Kind: plugin.CatalogKindGraph, Name: graphName},
+		},
+	}, nil
+}
+
 func graphOverviewRows(info *datatype.GraphInfo) ([]string, []map[string]interface{}) {
-	columns := []string{"kind", "name", "count", "patterns", "properties"}
+	columns := []string{"类型", "名称", "数量", "连接模式", "属性"}
 	rows := make([]map[string]interface{}, 0, len(info.NodeShapes)+len(info.RelationshipShapes))
 	for _, shape := range info.NodeShapes {
 		rows = append(rows, map[string]interface{}{
-			"kind":       "node_shape",
-			"name":       graphNodeShapeName(shape),
-			"count":      graphCountValue(shape.Count),
-			"patterns":   "",
-			"properties": strings.Join(graphFieldNames(shape.Properties), ", "),
+			"类型":   "节点",
+			"名称":   graphDisplayValue(graphNodeShapeName(shape)),
+			"数量":   graphCountDisplayValue(shape.Count),
+			"连接模式": "-",
+			"属性":   graphPropertiesDisplayValue(shape.Properties),
 		})
 	}
 	for _, shape := range info.RelationshipShapes {
-		rows = append(rows, map[string]interface{}{
-			"kind":       "relationship_shape",
-			"name":       shape.Type,
-			"count":      graphCountValue(shape.Count),
-			"patterns":   strings.Join(graphPatternLabels(shape.Patterns), "; "),
-			"properties": strings.Join(graphFieldNames(shape.Properties), ", "),
-		})
+		rows = append(rows, graphRelationshipRows(shape)...)
 	}
 	return columns, rows
+}
+
+func graphRelationshipRows(shape datatype.GraphRelationshipShapeInfo) []map[string]interface{} {
+	properties := graphPropertiesDisplayValue(shape.Properties)
+	if len(shape.Patterns) == 0 {
+		return []map[string]interface{}{{
+			"类型":   "关系",
+			"名称":   graphDisplayValue(shape.Type),
+			"数量":   graphCountDisplayValue(shape.Count),
+			"连接模式": "-",
+			"属性":   properties,
+		}}
+	}
+	rows := make([]map[string]interface{}, 0, len(shape.Patterns))
+	for _, pattern := range shape.Patterns {
+		rows = append(rows, map[string]interface{}{
+			"类型":   "关系",
+			"名称":   graphDisplayValue(shape.Type),
+			"数量":   graphCountDisplayValue(pattern.Count),
+			"连接模式": graphDisplayValue(graphPatternLabel(pattern)),
+			"属性":   properties,
+		})
+	}
+	return rows
 }
 
 func graphNodeShapeName(shape datatype.GraphNodeShapeInfo) string {
@@ -82,6 +150,13 @@ func graphCountValue(count *int64) interface{} {
 	return *count
 }
 
+func graphCountDisplayValue(count *int64) interface{} {
+	if count == nil {
+		return "-"
+	}
+	return *count
+}
+
 func graphFieldNames(fields []datatype.FieldInfo) []string {
 	result := make([]string, 0, len(fields))
 	for _, field := range fields {
@@ -92,12 +167,25 @@ func graphFieldNames(fields []datatype.FieldInfo) []string {
 	return result
 }
 
+func graphPropertiesDisplayValue(fields []datatype.FieldInfo) string {
+	return graphDisplayValue(strings.Join(graphFieldNames(fields), ", "))
+}
+
 func graphPatternLabels(patterns []datatype.GraphRelationshipPatternInfo) []string {
 	result := make([]string, 0, len(patterns))
 	for _, pattern := range patterns {
-		result = append(result, fmt.Sprintf("(%s)->(%s)", graphEndpointLabel(pattern.From), graphEndpointLabel(pattern.To)))
+		result = append(result, graphPatternLabel(pattern))
 	}
 	return result
+}
+
+func graphPatternLabel(pattern datatype.GraphRelationshipPatternInfo) string {
+	from := graphEndpointLabel(pattern.From)
+	to := graphEndpointLabel(pattern.To)
+	if from == "" && to == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s -> %s", graphDisplayValue(from), graphDisplayValue(to))
 }
 
 func graphEndpointLabel(endpoint datatype.GraphEndpointInfo) string {
@@ -105,6 +193,14 @@ func graphEndpointLabel(endpoint datatype.GraphEndpointInfo) string {
 		return endpoint.ShapeName
 	}
 	return strings.Join(endpoint.Labels, "+")
+}
+
+func graphDisplayValue(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "-"
+	}
+	return value
 }
 
 func flattenGraphEntityRows(source []map[string]interface{}, key string) ([]string, []map[string]interface{}) {

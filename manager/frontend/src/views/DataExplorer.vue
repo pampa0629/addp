@@ -78,7 +78,7 @@ const treeRef = ref(null)
 // 控制搜索显示（可选功能，暂时隐藏）
 const showSearch = ref(false)
 
-const itemTypes = new Set(['table', 'view', 'collection', 'label', 'relationship', 'file', 'object'])
+const itemTypes = new Set(['table', 'view', 'collection', 'graph', 'file', 'object'])
 const nodeTypes = new Set(['schema', 'database', 'bucket', 'prefix', 'directory', 'root', 'dir'])
 
 // 构造预览面板所需的节点上下文
