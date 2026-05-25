@@ -383,21 +383,6 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 			})
 			if extracted != nil {
 				preview.Object.ExtractedMetadata = extracted
-				if preview.Object.Attributes == nil {
-					preview.Object.Attributes = make(models.JSONMap)
-				}
-				capabilities := commonJSON.Section(preview.Object.Attributes, "capabilities")
-				if capabilities == nil {
-					capabilities = map[string]interface{}{}
-				}
-				extraction, _ := capabilities["extraction"].(map[string]interface{})
-				if extraction == nil {
-					extraction = map[string]interface{}{}
-				}
-				extraction["metadata_extracted"] = true
-				extraction["extracted_metadata"] = extracted
-				capabilities["extraction"] = extraction
-				preview.Object.Attributes["capabilities"] = capabilities
 			}
 		}
 	}

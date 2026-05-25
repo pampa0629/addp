@@ -65,9 +65,29 @@ const truncated = computed(() => {
   return objectData.value?.content?.truncated || objectData.value?.truncated || false
 })
 
+const parseMaybeJSON = (value) => {
+  if (!value || typeof value !== 'string') return value
+  try {
+    return JSON.parse(value)
+  } catch (error) {
+    return value
+  }
+}
+
+const normalizedAttributes = computed(() => {
+  const attrs = objectData.value?.attributes
+  const parsed = parseMaybeJSON(attrs)
+  if (parsed && typeof parsed === 'object') {
+    return parsed
+  }
+  return attrs && typeof attrs === 'object' ? attrs : {}
+})
+
 // 提取元数据
 const extractedMetadata = computed(() => {
-  return objectData.value?.attributes?.extensions?.extraction?.extracted_metadata || null
+  const raw = normalizedAttributes.value?.capabilities?.extraction?.extracted_metadata
+  const parsed = parseMaybeJSON(raw)
+  return parsed && typeof parsed === 'object' ? parsed : null
 })
 const hasExtractedMetadata = computed(() => Boolean(extractedMetadata.value))
 

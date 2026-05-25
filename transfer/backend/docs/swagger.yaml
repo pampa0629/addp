@@ -502,7 +502,7 @@ definitions:
         description: Cron 表达式（schedule_type=cron 时使用）
         type: string
       enabled:
-        description: 是否启用扫描（总开关，兼容旧版）
+        description: 是否启用扫描（总开关）
         type: boolean
       immediate_depth:
         description: 立即扫描深度：basic（基础）或 deep（深度）

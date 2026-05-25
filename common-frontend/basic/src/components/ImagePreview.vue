@@ -75,7 +75,24 @@ const imageLoadedDimensions = ref({ width: 0, height: 0 })
 const objectData = computed(() => props.data?.object || {})
 const content = computed(() => objectData.value?.content || {})
 const metadata = computed(() => content.value?.metadata || {})
-const attributes = computed(() => objectData.value?.attributes || {})
+
+const parseMaybeJSON = (value) => {
+  if (!value || typeof value !== 'string') return value
+  try {
+    return JSON.parse(value)
+  } catch (error) {
+    return value
+  }
+}
+
+const attributes = computed(() => {
+  const parsed = parseMaybeJSON(objectData.value?.attributes)
+  if (parsed && typeof parsed === 'object') {
+    return parsed
+  }
+  const attrs = objectData.value?.attributes
+  return attrs && typeof attrs === 'object' ? attrs : {}
+})
 
 const imageURL = computed(() => {
   return (
@@ -99,13 +116,15 @@ const imageURL = computed(() => {
 
 // 提取元数据
 const extractedMetadata = computed(() => {
-  return attributes.value?.extensions?.extraction?.extracted_metadata || null
+  const raw = attributes.value?.capabilities?.extraction?.extracted_metadata
+  const parsed = parseMaybeJSON(raw)
+  return parsed && typeof parsed === 'object' ? parsed : null
 })
 const hasExtractedMetadata = computed(() => Boolean(extractedMetadata.value))
 
-// 从标准 media 扩展获取图像元数据
+// 从标准 media 信息获取图像元数据
 const imageMetadata = computed(() => {
-  const media = attributes.value?.extensions?.media
+  const media = attributes.value?.type_info?.media
   if (!media || typeof media !== 'object') {
     return null
   }

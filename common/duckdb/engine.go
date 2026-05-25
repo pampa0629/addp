@@ -70,7 +70,7 @@ func SupportsMount(engineType string) bool {
 	return MountKindForEngine(engineType) != MountKindUnsupported
 }
 
-func IsLakeTableEngine(engineType string) bool {
+func IsObjectTableEngine(engineType string) bool {
 	return MountKindForEngine(engineType) == MountKindObject
 }
 

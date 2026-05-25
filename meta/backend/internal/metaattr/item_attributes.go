@@ -1,17 +1,25 @@
 package metaattr
 
 import (
-	"github.com/addp/common/dataitem"
+	"github.com/addp/common/datatype"
 )
 
 type DataItemAttributesInput struct {
 	Attributes   map[string]interface{}
-	Layout       dataitem.Layout
-	DataType     dataitem.DataType
+	Layout       string
+	DataType     datatype.DataType
 	Format       string
 	PhysicalPath string
-	RefList      []dataitem.ItemRef
+	RefList      []ItemRefAttributesInput
 	SizeBytes    *int64
+}
+
+type ItemRefAttributesInput struct {
+	Role      string
+	Path      string
+	Required  bool
+	Primary   bool
+	Extension string
 }
 
 // BuildAttributes 将 Meta 扫描得到的 item 语义合并为可落库 attributes。
@@ -28,7 +36,7 @@ func BuildAttributesFromInput(item DataItemAttributesInput) map[string]interface
 	itemAttrs := map[string]interface{}{}
 	storageAttrs := map[string]interface{}{}
 
-	itemAttrs["layout"] = string(item.Layout)
+	itemAttrs["layout"] = item.Layout
 	itemAttrs["data_type"] = string(item.DataType)
 	if item.Format != "" {
 		itemAttrs["format"] = item.Format
@@ -36,11 +44,11 @@ func BuildAttributesFromInput(item DataItemAttributesInput) map[string]interface
 	if item.PhysicalPath != "" {
 		storageAttrs["physical_path"] = item.PhysicalPath
 	}
-	if item.Layout == dataitem.LayoutMulti && len(item.RefList) > 0 {
+	if item.Layout == "multi" && len(item.RefList) > 0 {
 		itemAttrs["refs"] = refAttributes(item.RefList)
 		itemAttrs["file_count"] = len(item.RefList)
 	}
-	if item.Layout == dataitem.LayoutWhole {
+	if item.Layout == "whole" {
 		itemAttrs["scope_exclusive"] = true
 		itemAttrs["claim_policy"] = "whole_scope"
 	}
@@ -52,7 +60,7 @@ func BuildAttributesFromInput(item DataItemAttributesInput) map[string]interface
 	return attrs
 }
 
-func refAttributes(refs []dataitem.ItemRef) []map[string]interface{} {
+func refAttributes(refs []ItemRefAttributesInput) []map[string]interface{} {
 	if len(refs) == 0 {
 		return nil
 	}
@@ -91,7 +99,7 @@ func MergeAttributeMaps(attrs map[string]interface{}, additions map[string]inter
 		return
 	}
 	for k, v := range additions {
-		if isLegacyFlatStorageKey(k) {
+		if isFlatStorageAttributeKey(k) {
 			continue
 		}
 		switch k {
@@ -122,7 +130,7 @@ func mergeAttributeSection(existing interface{}, additions interface{}) map[stri
 		}
 	}
 	for k, v := range interfaceMap(additions) {
-		if isLegacyFlatStorageKey(k) {
+		if isFlatStorageAttributeKey(k) {
 			continue
 		}
 		if cleanValue := cleanAttributeValue(v); cleanValue != nil {
@@ -147,7 +155,7 @@ func interfaceMap(value interface{}) map[string]interface{} {
 	}
 }
 
-func isLegacyFlatStorageKey(key string) bool {
+func isFlatStorageAttributeKey(key string) bool {
 	switch key {
 	case "bucket", "path", "name", "size", "file_type", "content_type", "last_modified_at", "object_count":
 		return true

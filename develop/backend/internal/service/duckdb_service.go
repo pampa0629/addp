@@ -15,7 +15,7 @@ import (
 )
 
 // DuckDBService DuckDB 联邦查询引擎服务
-// 支持湖表（Parquet on MinIO/S3）和关系型表（PG/MySQL）跨源 JOIN
+// 支持对象存储表（Parquet/ORC/Avro on MinIO/S3）和关系型表（PG/MySQL）跨源 JOIN
 type DuckDBService struct {
 	cfg          *config.Config
 	systemClient *commonClient.SystemClient
@@ -44,10 +44,12 @@ type TableRef struct {
 	EngineName string   `json:"engine_name"`
 	Schema     string   `json:"schema,omitempty"`
 	Table      string   `json:"table"`
-	ItemType   string   `json:"item_type"` // "table" 或 "lake_table"
+	ItemType   string   `json:"item_type"` // table
 	Fields     []string `json:"fields,omitempty"`
-	// 湖表专用
+
 	PhysicalPath string `json:"physical_path,omitempty"`
+	Format       string `json:"format,omitempty"`
+	Layout       string `json:"layout,omitempty"`
 }
 
 // NewDuckDBService 创建 DuckDB 联邦查询服务
@@ -127,10 +129,10 @@ func (s *DuckDBService) GenerateSampleQuery(ctx context.Context, tenantID uint) 
 		return "SELECT version() AS duckdb_version, current_date AS today"
 	}
 
-	// 优先湖表
+	// 优先对象存储表
 	for _, src := range sources {
 		for _, t := range src.Tables {
-			if t.ItemType == "lake_table" {
+			if t.PhysicalPath != "" {
 				name := duckdb.SanitizeName(src.EngineName)
 				if t.Schema != "" {
 					return fmt.Sprintf("SELECT *\nFROM %s.%s.%s\nLIMIT 10", name, t.Schema, t.Table)
@@ -170,8 +172,8 @@ func (s *DuckDBService) GetSources(ctx context.Context, tenantID uint) ([]DataSo
 		}
 
 		switch {
-		case duckdb.IsLakeTableEngine(engine.EngineType):
-			source.Tables = s.getLakeTables(ctx, tenantID, engine)
+		case duckdb.IsObjectTableEngine(engine.EngineType):
+			source.Tables = s.getObjectTables(ctx, tenantID, engine)
 		case duckdb.IsRelationalMountEngine(engine.EngineType):
 			source.Tables = s.getRelationalTables(ctx, tenantID, engine)
 		default:
@@ -186,8 +188,8 @@ func (s *DuckDBService) GetSources(ctx context.Context, tenantID uint) ([]DataSo
 	return sources, nil
 }
 
-// getLakeTables 从 Meta 获取对象存储引擎下的湖表列表
-func (s *DuckDBService) getLakeTables(ctx context.Context, tenantID uint, engine commonModels.Engine) []TableRef {
+// getObjectTables 从 Meta 获取对象存储引擎下可被 DuckDB 查询的表格对象。
+func (s *DuckDBService) getObjectTables(ctx context.Context, tenantID uint, engine commonModels.Engine) []TableRef {
 	if s.metaClient == nil {
 		return nil
 	}
@@ -200,18 +202,24 @@ func (s *DuckDBService) getLakeTables(ctx context.Context, tenantID uint, engine
 
 	var tables []TableRef
 	for _, item := range tree.Items {
-		if item.ItemType != "lake_table" {
+		if !duckdb.IsObjectTableItem(item) {
 			continue
 		}
 		physicalPath := ""
+		formatName := ""
+		layout := ""
 		if item.Attributes != nil {
 			physicalPath = commonJSON.String(item.Attributes, "storage", "physical_path")
+			formatName = commonJSON.String(item.Attributes, "item", "format")
+			layout = commonJSON.String(item.Attributes, "item", "layout")
 		}
 		tables = append(tables, TableRef{
 			EngineName:   engine.Name,
 			Table:        item.Name,
-			ItemType:     "lake_table",
+			ItemType:     "table",
 			PhysicalPath: physicalPath,
+			Format:       formatName,
+			Layout:       layout,
 		})
 	}
 
@@ -232,7 +240,7 @@ func (s *DuckDBService) getRelationalTables(ctx context.Context, tenantID uint, 
 
 	var tables []TableRef
 	for _, item := range tree.Items {
-		if item.ItemType == "lake_table" {
+		if item.ItemType != "table" {
 			continue
 		}
 		parts := splitN(item.FullName, ".", 2)

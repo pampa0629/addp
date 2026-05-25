@@ -14,7 +14,6 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
-	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metaitem"
 )
@@ -347,76 +346,21 @@ func tableFieldsFromDescribeResult(tableInfo *format.TableDescribeResult) []data
 }
 
 func tableFileAttributes(formatName string, mode string, files []plugin.FileEntry, dirPath string, totalSize int64, tableInfo *format.TableDescribeResult, includeContentIndex bool) map[string]interface{} {
-	attrs := map[string]interface{}{
-		"storage": map[string]interface{}{
-			"physical_path": dirPath,
-			"total_size":    totalSize,
-		},
-		"format_info": map[string]interface{}{
-			formatName: map[string]interface{}{
-				"mode":       mode,
-				"file_count": len(files),
-			},
-		},
-	}
-	if tableInfo != nil && tableInfo.Table != nil {
-		if tableAttrs := metaattr.TableInfoAttributes(tableInfo.Table); len(tableAttrs) > 0 {
-			if len(tableInfo.Table.Fields) == 0 {
-				delete(tableAttrs, "fields")
-			}
-			if len(tableAttrs) > 0 {
-				attrs["type_info"] = map[string]interface{}{
-					"table": tableAttrs,
-				}
-			}
-		}
+	input := metaattr.TableFileAttributesInput{
+		FormatName:          formatName,
+		Mode:                mode,
+		FileCount:           len(files),
+		PhysicalPath:        dirPath,
+		TotalSize:           totalSize,
+		IncludeContentIndex: includeContentIndex,
 	}
 	if tableInfo != nil {
-		if formatAttrs := formatAttributesFromTableInfo(tableInfo); len(formatAttrs) > 0 {
-			attrs["format_info"].(map[string]interface{})[formatName] = mergeInterfaceMaps(
-				attrs["format_info"].(map[string]interface{})[formatName],
-				formatAttrs,
-			)
-		}
-		if spatialInfo := tableInfo.Spatial; spatialInfo != nil {
-			if spatialAttrs := metaattr.SpatialInfoAttributes(spatialInfo); len(spatialAttrs) > 0 {
-				attrs["capabilities"] = map[string]interface{}{
-					"spatial": spatialAttrs,
-				}
-			}
-		}
-		if indexInfo := tableInfo.ContentIndex; includeContentIndex && indexInfo != nil {
-			if indexInfo.Source == nil {
-				indexInfo.Source = map[string]interface{}{
-					"size_bytes": totalSize,
-				}
-			}
-			attrs["content_index"] = map[string]interface{}{
-				"table": commonJSON.MapFromStruct(indexInfo),
-			}
-		}
+		input.Table = tableInfo.Table
+		input.FormatInfo = tableInfo.FormatInfo
+		input.Spatial = tableInfo.Spatial
+		input.ContentIndex = tableInfo.ContentIndex
 	}
-	return attrs
-}
-
-func formatAttributesFromTableInfo(tableInfo *format.TableDescribeResult) map[string]interface{} {
-	if tableInfo == nil || len(tableInfo.FormatInfo) == 0 {
-		return nil
-	}
-	return tableInfo.FormatInfo
-}
-
-func mergeInterfaceMaps(existing interface{}, additions map[string]interface{}) map[string]interface{} {
-	merged := map[string]interface{}{}
-	if current, ok := existing.(map[string]interface{}); ok {
-		for k, v := range current {
-			merged[k] = v
-		}
-	}
-	for k, v := range additions {
-		merged[k] = v
-	}
-	return merged
+	return metaattr.TableFileAttributes(input)
 }
 
 func tableFileMode(files []plugin.FileEntry, subdirs []plugin.DirEntry, dirPath string) string {

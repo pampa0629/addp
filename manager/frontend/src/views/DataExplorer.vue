@@ -37,7 +37,7 @@
 
         <ItemPanel
           v-else
-          :selected-node="selectedNodeLegacy"
+          :selected-node="selectedPreviewNode"
           :preview-data="store.previewData"
           :loading="store.previewLoading || store.childPreviewLoading"
           @page-change="handlePageChange"
@@ -81,8 +81,8 @@ const showSearch = ref(false)
 const itemTypes = new Set(['table', 'view', 'collection', 'label', 'relationship', 'file', 'object'])
 const nodeTypes = new Set(['schema', 'database', 'bucket', 'prefix', 'directory', 'root', 'dir'])
 
-// 计算属性：兼容旧版 PreviewPanel 的 selectedNode 格式
-const selectedNodeLegacy = computed(() => {
+// 构造预览面板所需的节点上下文
+const selectedPreviewNode = computed(() => {
   if (!store.selectedNode) return null
 
   const loc = parseLocator(store.selectedLocator)

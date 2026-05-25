@@ -185,7 +185,7 @@ func TestUpsertTableNativeWritesTypeInfoTableNative(t *testing.T) {
 
 	attrs := models.JSONMap{
 		"type_info": map[string]interface{}{
-			"table": TableInfoAttributes(&datatype.TableInfo{
+			"table": datatype.TableInfoAttributes(&datatype.TableInfo{
 				Kind:    "table",
 				Comment: "roads",
 			}),
@@ -226,7 +226,7 @@ func TestTableInfoAttributesWritesStandardTableFacts(t *testing.T) {
 		Native:     map[string]interface{}{"relkind": "v"},
 	}
 
-	attrs := TableInfoAttributes(info)
+	attrs := datatype.TableInfoAttributes(info)
 	info.Native["relkind"] = "r"
 
 	if attrs["name"] != "orders" || attrs["kind"] != "view" || attrs["comment"] != "order view" {

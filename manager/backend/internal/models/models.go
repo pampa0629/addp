@@ -128,7 +128,8 @@ type ItemMetadata struct {
 	ItemType        string          `json:"item_type"`          // 原始类型值，如 "table", "label"
 	ItemTypeI18nKey string          `json:"item_type_i18n_key"` // i18n key，如 "engine.term.table"
 	FullName        string          `json:"full_name"`          // 在引擎内的完整路径
-	Attributes      []MetaAttribute `json:"attributes"`         // key-value 列表（字段数、行数、大小等）
+	RowCount        *int64          `json:"row_count,omitempty"`
+	Attributes      []MetaAttribute `json:"attributes"` // key-value 列表（字段数、行数、大小等）
 	ScannedAt       *time.Time      `json:"scanned_at,omitempty"`
 }
 

@@ -79,7 +79,7 @@
           <DataSourceCascader
             :api-base-url="metaApiBaseUrl"
             :engine-types="['postgresql', 'mysql', 'doris', 'clickhouse', 'minio', 's3']"
-            :selectable-node-types="['table', 'lake_table']"
+            :selectable-node-types="['table']"
             :enable-geometry-detection="true"
             :require-geometry="false"
             :show-selection-info="true"
@@ -366,6 +366,7 @@ const form = reactive({
   schema_name: '',
   table_name: '',
   sql_query: '',
+  object_table: null,
   service_name: '',
   title: '',
   description: '',
@@ -545,6 +546,7 @@ const handleTableSelection = (selection) => {
     form.engine_id = null
     form.schema_name = ''
     form.table_name = ''
+    form.object_table = null
     spatialMetadata.value = null
     return
   }
@@ -553,6 +555,7 @@ const handleTableSelection = (selection) => {
   form.engine_id = selection.engineId
   form.schema_name = selection.schema
   form.table_name = selection.tableName
+  form.object_table = objectTableConfigFromSelection(selection)
 
   // 如果检测到几何列,自动启用 OGC Features
   if (selection.hasGeometry) {
@@ -571,6 +574,24 @@ const handleTableSelection = (selection) => {
   }
 }
 
+const objectTableConfigFromSelection = (selection) => {
+  const attrs = selection?.metadata?.attributes || {}
+  const item = attrs.item || {}
+  const storage = attrs.storage || {}
+  const dataType = String(item.data_type || '').toLowerCase()
+  const format = String(item.format || '').toLowerCase()
+  const layout = String(item.layout || 'single').toLowerCase()
+  const physicalPath = String(storage.physical_path || '').trim()
+  if (dataType !== 'table' || !physicalPath || !['parquet', 'orc', 'avro'].includes(format)) {
+    return null
+  }
+  return {
+    physical_path: physicalPath,
+    layout,
+    format
+  }
+}
+
 // 方法：处理几何检测结果（DataSourceSelector 回调）
 const handleGeometryDetected = (result) => {
   console.log('[QueryServiceForm] Geometry detected:', result)
@@ -580,6 +601,7 @@ const handleGeometryDetected = (result) => {
 const onEngineChange = () => {
   form.schema_name = ''
   form.table_name = ''
+  form.object_table = null
   spatialMetadata.value = null
 }
 
@@ -649,6 +671,10 @@ const handleSubmit = async () => {
       // 可过滤字段
       if (filterableFieldsInput.value.trim()) {
         dataConfig.filterable_fields = filterableFieldsInput.value.split(',').map(f => f.trim())
+      }
+
+      if (form.object_table) {
+        dataConfig.object_table = form.object_table
       }
 
       if (Object.keys(dataConfig).length > 0) {

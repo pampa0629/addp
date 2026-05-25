@@ -131,6 +131,93 @@ func TestAttributeHelpersWriteStandardPartitions(t *testing.T) {
 	}
 }
 
+func TestMergeStandardAttributesWritesStandardSections(t *testing.T) {
+	t.Parallel()
+
+	attrs := models.JSONMap{}
+	SetExtraction(attrs, "metadata_extracted", true)
+	SetExtraction(attrs, "extractor_available", true)
+	SetExtraction(attrs, "extracted_metadata", map[string]interface{}{
+		"type_info": map[string]interface{}{"document": map[string]interface{}{"page_count": 12}},
+	})
+	MergeStandardAttributes(attrs, map[string]interface{}{
+		"type_info": map[string]interface{}{
+			"document": map[string]interface{}{
+				"page_count":          12,
+				"word_count":          2400,
+				"file_type_friendly":  "PDF",
+				"extraction_encoding": "UTF-8",
+			},
+		},
+		"format_info": map[string]interface{}{
+			"pdf": map[string]interface{}{"vendor_key": "kept"},
+		},
+	})
+
+	if attrs["extensions"] != nil || attrs["metadata_extracted"] != nil || attrs["page_count"] != nil {
+		t.Fatalf("helpers should not write flat or legacy sections: %#v", attrs)
+	}
+	capabilities := attrs["capabilities"].(map[string]interface{})
+	extraction := capabilities["extraction"].(map[string]interface{})
+	if extraction["metadata_extracted"] != true || extraction["extractor_available"] != true || extraction["extracted_metadata"] == nil {
+		t.Fatalf("capabilities.extraction = %#v", extraction)
+	}
+	document := attrs["type_info"].(map[string]interface{})["document"].(map[string]interface{})
+	if document["page_count"] != 12 || document["word_count"] != 2400 || document["file_type_friendly"] != "PDF" {
+		t.Fatalf("type_info.document = %#v", document)
+	}
+	pdfInfo := attrs["format_info"].(map[string]interface{})["pdf"].(map[string]interface{})
+	if pdfInfo["vendor_key"] != "kept" {
+		t.Fatalf("format_info.pdf = %#v", pdfInfo)
+	}
+}
+
+func TestFormatInfoAttributesWrapsUnqualifiedProviderFacts(t *testing.T) {
+	t.Parallel()
+
+	attrs := FormatInfoAttributes("pdf", map[string]interface{}{"producer": "demo"})
+	formatInfo := attrs["format_info"].(map[string]interface{})
+	pdf := formatInfo["pdf"].(map[string]interface{})
+	if pdf["producer"] != "demo" {
+		t.Fatalf("format_info.pdf = %#v", pdf)
+	}
+}
+
+func TestFormatInfoAttributesKeepsStandardAttributesPayload(t *testing.T) {
+	t.Parallel()
+
+	input := map[string]interface{}{
+		"type_info": map[string]interface{}{
+			"document": map[string]interface{}{"page_count": 12},
+		},
+	}
+	attrs := FormatInfoAttributes("pdf", input)
+	if attrs["format_info"] != nil {
+		t.Fatalf("standard attrs should not be wrapped: %#v", attrs)
+	}
+	if attrs["type_info"] == nil {
+		t.Fatalf("standard attrs lost: %#v", attrs)
+	}
+}
+
+func TestRemoveContentIndexTableKeepsOtherIndexes(t *testing.T) {
+	t.Parallel()
+
+	attrs := map[string]interface{}{
+		"content_index": map[string]interface{}{
+			"table": map[string]interface{}{"kind": "sparse_row_index"},
+			"text":  map[string]interface{}{"kind": "full_text"},
+		},
+	}
+
+	RemoveContentIndexTable(attrs)
+
+	contentIndex := attrs["content_index"].(map[string]interface{})
+	if contentIndex["table"] != nil || contentIndex["text"] == nil {
+		t.Fatalf("content_index = %#v", contentIndex)
+	}
+}
+
 func TestUpsertSectionMergesExistingSection(t *testing.T) {
 	t.Parallel()
 

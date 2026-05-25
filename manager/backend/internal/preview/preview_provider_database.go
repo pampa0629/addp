@@ -445,6 +445,9 @@ func (p *DatabaseTablePreviewProvider) resolveTableRowCount(
 	req *PreviewRequest,
 	itemMetadata *plugin.ItemMetadata,
 ) int64 {
+	if req != nil && req.ItemRowCount != nil && *req.ItemRowCount > 0 {
+		return *req.ItemRowCount
+	}
 	if rowCount, ok := previewTableRowCountFromAttributes(req.Attributes); ok {
 		return rowCount
 	}

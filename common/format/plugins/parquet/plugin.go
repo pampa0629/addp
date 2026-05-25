@@ -63,9 +63,6 @@ func infoFromFacts(formatInfo, native map[string]interface{}) *Info {
 	}
 	files := parquetFileInfos(formatInfo["files"])
 	partitionColumns := parquetPartitionColumns(native["partition_columns"])
-	if len(partitionColumns) == 0 {
-		partitionColumns = parquetPartitionColumns(formatInfo["partition_columns"])
-	}
 	if len(files) == 0 && len(partitionColumns) == 0 {
 		return nil
 	}

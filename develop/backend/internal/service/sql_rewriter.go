@@ -1,16 +1,16 @@
 package service
 
 // sql_rewriter.go - 已迁移到 common/duckdb/rewriter.go
-// 此文件保留以兼容现有调用，直接委托给 common/duckdb 包
+// 此文件保留给 develop 内部调用，直接委托给 common/duckdb 包。
 
 import (
 	"context"
 
-	"github.com/addp/common/duckdb"
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/duckdb"
 )
 
-// SQLRewriter 将 SQL 中的湖表引用改写为 read_parquet() 调用
+// SQLRewriter 将 SQL 中的对象存储表引用改写为 read_parquet() 调用
 // 委托给 common/duckdb.SQLRewriter
 type SQLRewriter = duckdb.SQLRewriter
 
@@ -35,7 +35,6 @@ func buildReadParquetExpr(physicalPath string) string {
 }
 
 // RewriteWithEngines 使用已知引擎列表改写 SQL
-// 保留此函数签名以兼容现有调用
-func rewriteWithEngines(ctx context.Context, rewriter *SQLRewriter, sql string, engineLakeTables map[string]map[string]string) (string, error) {
-	return rewriter.RewriteWithEngines(ctx, sql, engineLakeTables)
+func rewriteWithEngines(ctx context.Context, rewriter *SQLRewriter, sql string, engineObjectTables map[string]map[string]string) (string, error) {
+	return rewriter.RewriteWithEngines(ctx, sql, engineObjectTables)
 }

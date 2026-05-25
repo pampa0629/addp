@@ -94,7 +94,7 @@ func (c *ConnectionInfo) Scan(value interface{}) error {
 
 // ScanConfig 元数据扫描配置
 type ScanConfig struct {
-	Enabled        bool                 `json:"enabled"`                   // 是否启用扫描（总开关，兼容旧版）
+	Enabled        bool                 `json:"enabled"`                   // 是否启用扫描（总开关）
 	ImmediateScan  bool                 `json:"immediate_scan"`            // 注册后立即扫描
 	ImmediateDepth string               `json:"immediate_depth,omitempty"` // 立即扫描深度：basic（基础）或 deep（深度）
 	ScheduledScan  bool                 `json:"scheduled_scan"`            // 启用定时扫描

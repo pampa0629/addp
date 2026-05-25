@@ -6,7 +6,7 @@ import (
 	commonModels "github.com/addp/common/models"
 )
 
-func TestIsLakeTableItemUsesContentAttributes(t *testing.T) {
+func TestIsObjectTableItemUsesContentAttributes(t *testing.T) {
 	t.Parallel()
 
 	item := commonModels.MetaItem{
@@ -19,12 +19,12 @@ func TestIsLakeTableItemUsesContentAttributes(t *testing.T) {
 		},
 	}
 
-	if !isLakeTableItem(item) {
-		t.Fatal("object table parquet item should be recognized as lake table")
+	if !IsObjectTableItem(item) {
+		t.Fatal("object table parquet item should be recognized")
 	}
 
 	item.ItemType = "table"
-	if isLakeTableItem(item) {
-		t.Fatal("catalog table item should not be recognized as object/file lake table")
+	if IsObjectTableItem(item) {
+		t.Fatal("catalog table item should not be recognized as object/file table")
 	}
 }

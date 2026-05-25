@@ -45,7 +45,7 @@ attributes 分区统一采用以下概念：
 | `content_index` | 面向内容读取的通用访问索引是什么 | table sparse_row_index |
 | `capabilities` | 这个 item 有哪些横切能力 | spatial、temporal、statistics、extraction、semantic、partitioning、indexing |
 
-`schema` 不作为通用分区名。表格型数据的字段、主键、索引、行数应进入 `type_info.table`。
+`schema` 不作为通用分区名。表格型数据的字段、主键、行数应进入 `type_info.table`；索引摘要进入 `capabilities.indexing`。
 
 ## 唯一事实源
 

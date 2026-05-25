@@ -642,23 +642,31 @@ func attachMultiRefPreview(preview *models.TablePreview, formatType format.Forma
 	if preview == nil || preview.Object == nil || len(refs) == 0 {
 		return
 	}
+	attributeRefs := refAttributeDescriptors(formatType, refs)
+	previewRefs := refPreviewDescriptors(formatType, refs)
 	if preview.Object.Attributes == nil {
 		preview.Object.Attributes = models.JSONMap{}
 	}
-	preview.Object.Attributes["refs"] = refPreviewDescriptors(formatType, refs)
+	itemAttrs := commonJSON.InterfaceMap(preview.Object.Attributes["item"])
+	if len(itemAttrs) == 0 {
+		itemAttrs = map[string]interface{}{}
+	}
+	itemAttrs["refs"] = attributeRefs
+	preview.Object.Attributes["item"] = itemAttrs
 	if preview.Object.Content == nil {
 		preview.Object.Content = &models.ObjectPreviewContent{}
 	}
 	if preview.Object.Content.Metadata == nil {
 		preview.Object.Content.Metadata = map[string]interface{}{}
 	}
-	preview.Object.Content.Metadata["refs"] = preview.Object.Attributes["refs"]
+	preview.Object.Content.Metadata["refs"] = previewRefs
 	preview.Object.Content.Metadata["layout"] = "multi"
 }
 
-func refPreviewDescriptors(formatType format.FormatType, refs []format.RelatedRef) []map[string]interface{} {
+func refAttributeDescriptors(formatType format.FormatType, refs []format.RelatedRef) []map[string]interface{} {
 	descriptors := format.DescribeRefs(formatType, refs)
 	result := make([]map[string]interface{}, 0, len(descriptors))
+	seen := map[string]bool{}
 	for index, descriptor := range descriptors {
 		key := strings.TrimSpace(descriptor.Key)
 		if key == "" {
@@ -667,6 +675,11 @@ func refPreviewDescriptors(formatType format.FormatType, refs []format.RelatedRe
 		if key == "" {
 			key = fmt.Sprintf("%d", index)
 		}
+		identity := strings.Trim(strings.TrimSpace(descriptor.Path), "/") + "|" + strings.TrimSpace(descriptor.Role)
+		if seen[identity] {
+			continue
+		}
+		seen[identity] = true
 		item := map[string]interface{}{
 			"key":      key,
 			"path":     descriptor.Path,
@@ -684,13 +697,25 @@ func refPreviewDescriptors(formatType format.FormatType, refs []format.RelatedRe
 		if descriptor.Extension != "" {
 			item["extension"] = descriptor.Extension
 		}
+		result = append(result, item)
+	}
+	return result
+}
+
+func refPreviewDescriptors(formatType format.FormatType, refs []format.RelatedRef) []map[string]interface{} {
+	result := refAttributeDescriptors(formatType, refs)
+	descriptors := format.DescribeRefs(formatType, refs)
+	for index, descriptor := range descriptors {
+		if index >= len(result) {
+			break
+		}
+		item := result[index]
 		hint := previewHintForRefDescriptor(&descriptor, descriptor.Path)
 		item["preview_data_type"] = hint.DataType
 		item["preview_format"] = string(hint.Format)
 		item["preview_material"] = hint.Material
 		item["preview_renderer"] = hint.Renderer
 		item["previewable"] = hint.Previewable
-		result = append(result, item)
 	}
 	return result
 }

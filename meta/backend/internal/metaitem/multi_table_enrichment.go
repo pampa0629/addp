@@ -141,15 +141,18 @@ func upsertRefTableInfo(item *DetectedItem, tableInfo *format.TableDescribeResul
 	if item == nil || tableInfo == nil {
 		return
 	}
-	upsertItemSection(&item.Attributes, "type_info", "table", metaattr.TableInfoAttributes(tableInfo.Table))
-	if formatAttrs := formatAttributesFromDescribeResult(tableInfo); len(formatAttrs) > 0 {
-		upsertItemSection(&item.Attributes, "format_info", item.Format, formatAttrs)
+	if item.Attributes == nil {
+		item.Attributes = map[string]interface{}{}
+	}
+	metaattr.UpsertNested(item.Attributes, "type_info", "table", datatype.TableInfoAttributes(tableInfo.Table))
+	if len(tableInfo.FormatInfo) > 0 {
+		metaattr.UpsertNested(item.Attributes, "format_info", item.Format, tableInfo.FormatInfo)
 	}
 	if spatialAttrs := metaattr.SpatialInfoAttributes(tableInfo.Spatial); len(spatialAttrs) > 0 {
-		upsertItemSection(&item.Attributes, "capabilities", "spatial", spatialAttrs)
+		metaattr.UpsertNested(item.Attributes, "capabilities", "spatial", spatialAttrs)
 	}
 	if tableInfo.ContentIndex != nil {
-		upsertItemSection(&item.Attributes, "content_index", "table", commonJSON.MapFromStruct(tableInfo.ContentIndex))
+		metaattr.UpsertNested(item.Attributes, "content_index", "table", commonJSON.MapFromStruct(tableInfo.ContentIndex))
 	}
 }
 
@@ -178,49 +181,4 @@ func EnrichKnownMultiTableItem(
 	}
 	upsertRefTableInfo(item, tableInfo)
 	return item, true, nil
-}
-
-func formatAttributesFromDescribeResult(tableInfo *format.TableDescribeResult) map[string]interface{} {
-	if tableInfo == nil || len(tableInfo.FormatInfo) == 0 {
-		return nil
-	}
-	return tableInfo.FormatInfo
-}
-
-func cloneInterfaceMap(values map[string]interface{}) map[string]interface{} {
-	if len(values) == 0 {
-		return nil
-	}
-	cloned := make(map[string]interface{}, len(values))
-	for key, value := range values {
-		cloned[key] = value
-	}
-	return cloned
-}
-
-func upsertItemSection(attrs *map[string]interface{}, section string, namespace string, values map[string]interface{}) {
-	if len(values) == 0 {
-		return
-	}
-	if *attrs == nil {
-		*attrs = map[string]interface{}{}
-	}
-	itemAttrs := *attrs
-	sectionAttrs := map[string]interface{}{}
-	if existing, ok := itemAttrs[section].(map[string]interface{}); ok {
-		for k, v := range existing {
-			sectionAttrs[k] = v
-		}
-	}
-	namespaceAttrs := map[string]interface{}{}
-	if existing, ok := sectionAttrs[namespace].(map[string]interface{}); ok {
-		for k, v := range existing {
-			namespaceAttrs[k] = v
-		}
-	}
-	for k, v := range values {
-		namespaceAttrs[k] = v
-	}
-	sectionAttrs[namespace] = namespaceAttrs
-	itemAttrs[section] = sectionAttrs
 }

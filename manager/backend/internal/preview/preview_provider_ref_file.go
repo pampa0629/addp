@@ -39,7 +39,8 @@ func (p *RefFilePreviewProvider) Preview(ctx context.Context, req *PreviewReques
 	if !ok {
 		return nil, fmt.Errorf("ref %s not found", req.RefPath)
 	}
-	refDescriptors := refPreviewDescriptors(formatType, refs)
+	attributeRefs := refAttributeDescriptors(formatType, refs)
+	previewRefs := refPreviewDescriptors(formatType, refs)
 	descriptor := refDescriptorForRef(formatType, ref)
 	preview := previewHintForRefDescriptor(descriptor, ref.Ref.Path)
 	refName := contentio.BaseName(ref.Ref)
@@ -56,24 +57,6 @@ func (p *RefFilePreviewProvider) Preview(ctx context.Context, req *PreviewReques
 				"format":    string(preview.Format),
 			},
 		},
-	}
-	if descriptor != nil {
-		contentReq.Attributes["ref"] = map[string]interface{}{
-			"path":     descriptor.Path,
-			"role":     descriptor.Role,
-			"label":    descriptor.Label,
-			"required": descriptor.Required,
-			"primary":  descriptor.Primary,
-		}
-		if preview.Material != "" {
-			contentReq.Attributes["preview_material"] = preview.Material
-		}
-		if preview.Renderer != "" {
-			contentReq.Attributes["frontend_renderer"] = preview.Renderer
-		}
-	}
-	if len(refDescriptors) > 0 {
-		contentReq.Attributes["refs"] = refDescriptors
 	}
 	if contentReq.ContentType == "application/octet-stream" {
 		contentReq.ContentType = ""
@@ -93,7 +76,7 @@ func (p *RefFilePreviewProvider) Preview(ctx context.Context, req *PreviewReques
 					if truncated || content.Truncated {
 						content.Truncated = true
 					}
-					return p.objectPreview(req, contentCtx.bucket, ref, preview, refDescriptors, content), nil
+					return p.objectPreview(req, contentCtx.bucket, ref, preview, attributeRefs, previewRefs, content), nil
 				}
 			}
 			content, truncated, err := handler.Handle(ctx, contentReq, func(limit int64) ([]byte, bool, error) {
@@ -114,12 +97,12 @@ func (p *RefFilePreviewProvider) Preview(ctx context.Context, req *PreviewReques
 				if truncated || content.Truncated {
 					content.Truncated = true
 				}
-				return p.objectPreview(req, contentCtx.bucket, ref, preview, refDescriptors, content), nil
+				return p.objectPreview(req, contentCtx.bucket, ref, preview, attributeRefs, previewRefs, content), nil
 			}
 		}
 	}
 
-	return p.objectPreview(req, contentCtx.bucket, ref, preview, refDescriptors, &models.ObjectPreviewContent{
+	return p.objectPreview(req, contentCtx.bucket, ref, preview, attributeRefs, previewRefs, &models.ObjectPreviewContent{
 		Kind:     models.ObjectPreviewKindUnsupported,
 		Text:     "暂不支持该相关内容的在线预览，请下载后查看。",
 		Metadata: map[string]interface{}{"format": preview.Format, "data_type": preview.DataType},
@@ -158,14 +141,14 @@ func refDescriptorForRef(formatType format.FormatType, ref format.RelatedRef) *f
 	return nil
 }
 
-func (p *RefFilePreviewProvider) objectPreview(req *PreviewRequest, bucket string, ref format.RelatedRef, preview previewHint, refs []map[string]interface{}, content *models.ObjectPreviewContent) *models.TablePreview {
+func (p *RefFilePreviewProvider) objectPreview(req *PreviewRequest, bucket string, ref format.RelatedRef, preview previewHint, attributeRefs, previewRefs []map[string]interface{}, content *models.ObjectPreviewContent) *models.TablePreview {
 	if content != nil {
 		objectcontent.DecoratePreviewContent(content)
-		if len(refs) > 0 {
+		if len(previewRefs) > 0 {
 			if content.Metadata == nil {
 				content.Metadata = map[string]interface{}{}
 			}
-			content.Metadata["refs"] = refs
+			content.Metadata["refs"] = previewRefs
 			content.Metadata["layout"] = "multi"
 		}
 	}
@@ -185,8 +168,8 @@ func (p *RefFilePreviewProvider) objectPreview(req *PreviewRequest, bucket strin
 				"item": map[string]interface{}{
 					"data_type": preview.DataType,
 					"format":    string(preview.Format),
+					"refs":      attributeRefs,
 				},
-				"refs": refs,
 			},
 			Content:  content,
 			EngineID: req.Engine.ID,

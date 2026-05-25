@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/dataitem"
+	"github.com/addp/common/datatype"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metaitem"
@@ -59,11 +60,11 @@ func ApplyContainerSummary(attrs models.JSONMap, detected *metaitem.DetectedItem
 	if attrs == nil || detected == nil || detected.DataType != dataitem.DataTypeContainer {
 		return
 	}
-	metaattr.UpsertNested(attrs, "type_info", "container", map[string]interface{}{
-		"children":       []map[string]interface{}{},
-		"child_count":    0,
-		"resource_count": 1,
-	})
+	metaattr.UpsertNested(attrs, "type_info", "container", metaattr.ContainerInfoAttributes(&datatype.ContainerInfo{
+		Children:      []datatype.ContainerChildInfo{},
+		ChildCount:    0,
+		ResourceCount: 1,
+	}))
 }
 
 func inferFileCatalogItemName(dirPath string) (name, fullName string) {

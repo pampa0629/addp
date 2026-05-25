@@ -46,7 +46,7 @@ func (h *EngineHandler) ListEngines(c *gin.Context) {
 		ID:          0, // 虚拟 ID，前端用 engine_type 判断路由
 		Name:        "DuckDB 联邦查询",
 		EngineType:  "duckdb",
-		Description: "内置联邦查询引擎，支持湖表（Parquet）与关系型表跨源 JOIN",
+		Description: "内置联邦查询引擎，支持对象存储表与关系型表跨源 JOIN",
 		IsBuiltin:   true,
 		IsActive:    true,
 	}

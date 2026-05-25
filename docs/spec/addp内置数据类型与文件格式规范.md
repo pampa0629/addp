@@ -75,7 +75,7 @@ CSV / TSV 是单资源表格文件。字段名来自表头；无表头时由 par
 | 分区 | 写入内容 |
 |---|---|
 | `item` | `layout`、`data_type`、`format` |
-| `type_info.table` | `fields`、`row_count`、`primary_key`、`native.delimiter`、`native.has_header`、`native.quote_char`、`native.escape_char`、采样信息 |
+| `type_info.table` | `fields`、`row_count`、`primary_key`、`native.delimiter`、`native.has_header`、`native.quote_char`、`native.escape_char` |
 | `format_info.csv` / `format_info.tsv` | `encoding`、`line_ending`、文件级解析摘要等格式私有信息 |
 | `capabilities.statistics` | 采样统计、画像摘要、空值率等可选统计能力 |
 
@@ -134,11 +134,12 @@ Manager 可以基于 `type_info.container.children` 展示 sheet 列表；进入
 | 分区 | 写入内容 |
 |---|---|
 | `item` | `layout`、`data_type`、`format` |
-| `type_info.table` | records / JSON Lines / FeatureCollection 的字段、行数、采样信息 |
+| `type_info.table` | records / JSON Lines / FeatureCollection 的字段、行数 |
 | `type_info.document` | 文档型 JSON 的标题、摘要、语言、文本片段等可选信息 |
 | `type_info.container` | 容器型 JSON 的内部对象摘要、默认入口、子对象数量 |
 | `format_info.json` | `structure`、编码、对象层级摘要、GeoJSON 原文 `bbox` / `crs` 等格式私有信息 |
 | `capabilities.spatial` | 仅空间结构 JSON 写入几何字段、SRID / CRS、extent 等空间能力 |
+| `capabilities.statistics` | 是否采样、采样规模、动态结构推断方式等统计或画像事实 |
 
 ### 格式约束
 
@@ -167,8 +168,8 @@ Shapefile 是空间矢量表，不是单个 `.shp` 文件。ref 匹配规则是�
 | 分区 | 写入内容 |
 |---|---|
 | `item` | `layout=multi`、`data_type=table`、`format=shapefile`、`refs`、`file_count` |
-| `type_info.table` | `.dbf` 非空间字段、平台统一几何字段、`row_count`、`primary_key` |
-| `format_info.shapefile` | `base_name`、`ref_extensions`、`has_prj`、`has_cpg`、`shape_type`、DBF 私有信息 |
+| `type_info.table` | `.dbf` 非空间字段、平台统一几何字段、`row_count`、`primary_key`、`native.shape_type`、`native.dbf_version`、`native.encoding` |
+| `format_info.shapefile` | `base_name`、`ref_extensions`、`has_prj`、`has_cpg`、文件组件级摘要 |
 | `capabilities.spatial` | `geometry_columns`、`primary_geometry_column`、`srid` 或 `crs`、`extent`、`has_spatial_index` |
 
 字段规则：
@@ -272,7 +273,7 @@ Parquet、ORC、Avro 是表格型数据的文件格式，不应直接称为“�
 | 分区 | 写入内容 |
 |---|---|
 | `item` | `layout`、`data_type=table`、`format`、可选 `refs`、whole scope 的 `scope_exclusive` 和 `claim_policy` |
-| `type_info.table` | 字段、原始字段类型、行数或估算行数、`native.partition_columns`、采样信息 |
+| `type_info.table` | 字段、原始字段类型、行数或估算行数、`native.partition_columns` |
 | `format_info.<format>` | 文件 footer、编码、压缩、row group、schema 版本、manifest 摘要、scope 文件清单等格式私有信息 |
 | `capabilities.partitioning` | 分区数量、分区样例、分区范围等画像能力 |
 | `capabilities.statistics` | 可轻量获得的列统计、采样统计 |

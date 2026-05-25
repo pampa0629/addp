@@ -3,7 +3,6 @@ package metaattr
 import (
 	"strings"
 
-	"github.com/addp/common/dataitem"
 	"github.com/addp/common/datatype"
 	"github.com/addp/meta/internal/models"
 )
@@ -119,6 +118,23 @@ func ApplyDocumentCollectionStatistics(attrs models.JSONMap, documentCount, size
 	SetStorage(attrs, "total_size", sizeBytes)
 }
 
+func ApplyTableItemAttributes(attrs models.JSONMap, tableInfo *datatype.TableInfo) {
+	if attrs == nil {
+		return
+	}
+	SetItem(attrs, "layout", "single")
+	SetItem(attrs, "data_type", string(datatype.DataTypeTable))
+	if tableInfo == nil {
+		return
+	}
+	UpsertNested(attrs, "type_info", "table", datatype.TableInfoAttributes(tableInfo))
+	if tableInfo.RowCount != nil {
+		rowCount := *tableInfo.RowCount
+		UpsertNested(attrs, "type_info", "table", map[string]interface{}{"row_count": rowCount})
+		UpsertNested(attrs, "capabilities", "statistics", map[string]interface{}{"row_count": rowCount})
+	}
+}
+
 func ApplyGraphItemAttributes(attrs models.JSONMap, itemType string, count int64, sourceAttributes map[string]interface{}) {
 	if attrs == nil {
 		return
@@ -192,13 +208,13 @@ func firstPresent(primary, secondary map[string]interface{}, keys ...string) int
 }
 
 func ApplyNamespaceItemAttributes(attrs models.JSONMap, itemType string) {
-	SetItem(attrs, "layout", string(dataitem.LayoutSingle))
+	SetItem(attrs, "layout", "single")
 	switch itemType {
 	case "collection":
-		SetItem(attrs, "data_type", string(dataitem.DataTypeTable))
+		SetItem(attrs, "data_type", string(datatype.DataTypeTable))
 	case "label", "relationship":
-		SetItem(attrs, "data_type", string(dataitem.DataTypeGraph))
+		SetItem(attrs, "data_type", string(datatype.DataTypeGraph))
 	default:
-		SetItem(attrs, "data_type", string(dataitem.DataTypeUnknown))
+		SetItem(attrs, "data_type", string(datatype.DataTypeUnknown))
 	}
 }

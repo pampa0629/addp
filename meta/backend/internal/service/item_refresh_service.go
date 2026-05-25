@@ -8,11 +8,9 @@ import (
 	"time"
 
 	"github.com/addp/common/dataitem"
-	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/meta/internal/extractor"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metaenrich"
 	"github.com/addp/meta/internal/metaitem"
@@ -127,8 +125,8 @@ func clearObsoleteKnownItemAttributes(attrs map[string]interface{}, item *metait
 		return
 	}
 	if item.Format == string(format.FormatShapefile) {
-		delete(attrs, "content_index")
-		delete(item.Attributes, "content_index")
+		metaattr.RemoveContentIndexTable(attrs)
+		metaattr.RemoveContentIndexTable(item.Attributes)
 	}
 }
 
@@ -184,7 +182,7 @@ func enrichKnownSingleNonTableItem(
 		if err != nil {
 			return false, err
 		}
-		upsertDocumentInfoAttributes(&item.Attributes, info)
+		metaattr.MergeAttributeMaps(item.Attributes, metaattr.DocumentInfoAttributes(info))
 		return true, nil
 	}
 	if provider, err := format.GetMediaInfoProvider(formatType); err == nil {
@@ -197,7 +195,7 @@ func enrichKnownSingleNonTableItem(
 		if err != nil {
 			return false, err
 		}
-		metaattr.MergeAttributeMaps(item.Attributes, extractor.MediaInfoAttributes(info))
+		metaattr.MergeAttributeMaps(item.Attributes, metaattr.MediaInfoAttributes(info.Media, info.Spatial))
 		return true, nil
 	}
 	return false, nil
@@ -295,31 +293,6 @@ func clonePlainMap(input models.JSONMap) map[string]interface{} {
 		output[key] = value
 	}
 	return output
-}
-
-func upsertDocumentInfoAttributes(attrs *map[string]interface{}, info *datatype.DocumentInfo) {
-	if attrs == nil || info == nil {
-		return
-	}
-	if *attrs == nil {
-		*attrs = map[string]interface{}{}
-	}
-	document := map[string]interface{}{}
-	if info.Title != "" {
-		document["title"] = info.Title
-	}
-	if info.Language != "" {
-		document["language"] = info.Language
-	}
-	if info.Encoding != "" {
-		document["encoding"] = info.Encoding
-	}
-	if info.SizeBytes != nil {
-		document["size_bytes"] = *info.SizeBytes
-	}
-	if len(document) > 0 {
-		metaattr.UpsertNested(*attrs, "type_info", "document", document)
-	}
 }
 
 func isObjectLikeEngine(engineType string) bool {

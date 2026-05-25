@@ -531,10 +531,8 @@ const rawMultiRefs = computed(() => {
   const attrs = props.previewData?.object?.attributes || {}
   const contentMetadata = props.previewData?.object?.content?.metadata || {}
   const candidates = [
-    attrs.refs,
-    attrs.item?.refs,
-    attrs.item?.ref_descriptors,
-    contentMetadata.refs
+    contentMetadata.refs,
+    attrs.item?.refs
   ]
   for (const value of candidates) {
     if (Array.isArray(value) && value.length) {
@@ -1098,7 +1096,9 @@ function attributeValue(attributes = {}, section, key, ...fallbackKeys) {
 }
 
 function extractedMetadataValue(attributes = {}) {
-  return attributeSection(attributes, 'capabilities.extraction').extracted_metadata
+  return objectData.value?.extracted_metadata ||
+    objectData.value?.extractedMetadata ||
+    attributeSection(attributes, 'capabilities.extraction').extracted_metadata
 }
 
 const objectFileTypeLabel = computed(() => {

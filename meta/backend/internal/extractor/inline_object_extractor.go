@@ -10,7 +10,6 @@ import (
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
-	"github.com/addp/meta/internal/models"
 )
 
 type InlineObjectMetadataExtractor struct {
@@ -101,7 +100,7 @@ func (e *InlineObjectMetadataExtractor) Extract(
 		}
 		return nil
 	}
-	attrs := MediaInfoAttributes(mediaInfo)
+	attrs := metaattr.MediaInfoAttributes(mediaInfo.Media, mediaInfo.Spatial)
 	if len(attrs) == 0 {
 		return nil
 	}
@@ -118,47 +117,4 @@ func (e *InlineObjectMetadataExtractor) Extract(
 	}
 
 	return attrs
-}
-
-func MediaInfoAttributes(info *format.MediaDescribeResult) models.JSONMap {
-	attrs := models.JSONMap{}
-	if info == nil || info.Media == nil {
-		return attrs
-	}
-	media := map[string]interface{}{}
-	if info.Media.Kind != "" {
-		media["kind"] = string(info.Media.Kind)
-	}
-	if info.Media.Width > 0 {
-		media["width"] = info.Media.Width
-	}
-	if info.Media.Height > 0 {
-		media["height"] = info.Media.Height
-	}
-	if info.Media.DurationMS != nil {
-		media["duration_ms"] = *info.Media.DurationMS
-	}
-	if info.Media.Encoding != "" {
-		media["encoding"] = info.Media.Encoding
-	}
-	if info.Media.ColorSpace != "" {
-		media["color_space"] = info.Media.ColorSpace
-	}
-	if info.Media.MIMEType != "" {
-		media["mime_type"] = info.Media.MIMEType
-	}
-	if info.Media.SizeBytes != nil {
-		media["size_bytes"] = *info.Media.SizeBytes
-	}
-	if len(media) > 0 {
-		metaattr.UpsertNested(attrs, "type_info", "media", media)
-	}
-	if spatialAttrs := spatialInfoAttributes(info.Spatial); len(spatialAttrs) > 0 {
-		metaattr.UpsertNested(attrs, "capabilities", "spatial", spatialAttrs)
-	}
-	return attrs
-}
-
-func spatialInfoAttributes(info *datatype.SpatialInfo) map[string]interface{} {
-	return metaattr.SpatialInfoAttributes(info)
 }

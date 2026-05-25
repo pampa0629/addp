@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"mime"
 	pathpkg "path"
-	"reflect"
 	"strings"
 	"time"
 
@@ -44,7 +43,7 @@ func (e *MetadataExtractor) ExtractEnhancedMetadata(
 	baseAttrs models.JSONMap,
 ) models.JSONMap {
 	if len(resource.ExtractedAttributes) > 0 {
-		mergeStandardAttributes(baseAttrs, resource.ExtractedAttributes)
+		metaattr.MergeStandardAttributes(baseAttrs, resource.ExtractedAttributes)
 		return baseAttrs
 	}
 
@@ -64,57 +63,10 @@ func (e *MetadataExtractor) ExtractEnhancedMetadata(
 		return baseAttrs
 	}
 
-	setExtractionAttribute(baseAttrs, "extractor_available", true)
+	metaattr.SetExtraction(baseAttrs, "extractor_available", true)
 	metaattr.SetStorage(baseAttrs, "content_type", contentType)
 
 	return baseAttrs
-}
-
-func mergeStandardAttributes(dst models.JSONMap, src map[string]interface{}) {
-	if dst == nil || len(src) == 0 {
-		return
-	}
-	for _, section := range []string{"storage", "item", "type_info", "format_info", "content_index", "capabilities"} {
-		values := interfaceMap(src[section])
-		if len(values) == 0 {
-			continue
-		}
-		existing := metaattr.Section(dst, section)
-		for namespace, value := range values {
-			if valueMap := interfaceMap(value); len(valueMap) > 0 {
-				namespaceAttrs := map[string]interface{}{}
-				for key, existingValue := range interfaceMap(existing[namespace]) {
-					namespaceAttrs[key] = existingValue
-				}
-				for key, newValue := range valueMap {
-					namespaceAttrs[key] = newValue
-				}
-				existing[namespace] = namespaceAttrs
-				continue
-			}
-			existing[namespace] = value
-		}
-		dst[section] = existing
-	}
-}
-
-func interfaceMap(value interface{}) map[string]interface{} {
-	if value == nil {
-		return nil
-	}
-	if typed, ok := value.(map[string]interface{}); ok {
-		return typed
-	}
-	rv := reflect.ValueOf(value)
-	if rv.Kind() != reflect.Map || rv.Type().Key().Kind() != reflect.String {
-		return nil
-	}
-	result := make(map[string]interface{}, rv.Len())
-	iter := rv.MapRange()
-	for iter.Next() {
-		result[iter.Key().String()] = iter.Value().Interface()
-	}
-	return result
 }
 
 // ExtractEnhancedMetadataWithCache 带缓存检查的元数据提取。
@@ -249,8 +201,8 @@ func (e *MetadataExtractor) ExtractObjectMetadataOnDemand(
 		if enhancedAttrs == nil {
 			enhancedAttrs = make(models.JSONMap)
 		}
-		mediaAttrs := MediaInfoAttributes(mediaInfo)
-		mergeStandardAttributes(enhancedAttrs, mediaAttrs)
+		mediaAttrs := metaattr.MediaInfoAttributes(mediaInfo.Media, mediaInfo.Spatial)
+		metaattr.MergeStandardAttributes(enhancedAttrs, mediaAttrs)
 		metaattr.SetStorage(enhancedAttrs, "content_type", contentType)
 		enhancedAttrs = metaattr.Normalize(enhancedAttrs)
 		if err := e.db.Model(item).Update("attributes", enhancedAttrs).Error; err != nil {
@@ -276,7 +228,7 @@ func (e *MetadataExtractor) ExtractObjectMetadataOnDemand(
 	if len(extractedAttrs) == 0 {
 		return nil, fmt.Errorf("format %s did not return metadata", formatType)
 	}
-	standardAttrs := formatInfoProviderAttributes(formatType, extractedAttrs)
+	standardAttrs := metaattr.FormatInfoAttributes(string(formatType), extractedAttrs)
 
 	if item != nil {
 		enhancedAttrs := item.Attributes
@@ -284,9 +236,9 @@ func (e *MetadataExtractor) ExtractObjectMetadataOnDemand(
 			enhancedAttrs = make(models.JSONMap)
 		}
 
-		setExtractionAttribute(enhancedAttrs, "metadata_extracted", true)
-		setExtractionAttribute(enhancedAttrs, "extracted_metadata", standardAttrs)
-		mergeStandardAttributes(enhancedAttrs, standardAttrs)
+		metaattr.SetExtraction(enhancedAttrs, "metadata_extracted", true)
+		metaattr.SetExtraction(enhancedAttrs, "extracted_metadata", standardAttrs)
+		metaattr.MergeStandardAttributes(enhancedAttrs, standardAttrs)
 		metaattr.SetStorage(enhancedAttrs, "content_type", contentType)
 		enhancedAttrs = metaattr.Normalize(enhancedAttrs)
 
@@ -296,22 +248,6 @@ func (e *MetadataExtractor) ExtractObjectMetadataOnDemand(
 	}
 
 	return standardAttrs, nil
-}
-
-func formatInfoProviderAttributes(formatType format.FormatType, formatAttrs map[string]interface{}) map[string]interface{} {
-	if len(formatAttrs) == 0 {
-		return nil
-	}
-	for _, section := range []string{"storage", "item", "type_info", "format_info", "content_index", "capabilities"} {
-		if values := interfaceMap(formatAttrs[section]); len(values) > 0 {
-			return formatAttrs
-		}
-	}
-	return map[string]interface{}{
-		"format_info": map[string]interface{}{
-			string(formatType): formatAttrs,
-		},
-	}
 }
 
 func (e *MetadataExtractor) BuildObjectContentIndexOnDemand(
@@ -360,7 +296,7 @@ func (e *MetadataExtractor) BuildObjectContentIndexOnDemand(
 	enhancedAttrs := cloneJSONMap(item.Attributes)
 	metaattr.UpsertNested(enhancedAttrs, "content_index", "table", commonJSON.MapFromStruct(index))
 	if tableInfo.Table != nil && len(tableInfo.Table.Fields) > 0 {
-		metaattr.UpsertNested(enhancedAttrs, "type_info", "table", metaattr.TableInfoAttributes(tableInfo.Table))
+		metaattr.UpsertNested(enhancedAttrs, "type_info", "table", datatype.TableInfoAttributes(tableInfo.Table))
 	}
 	enhancedAttrs = metaattr.Normalize(enhancedAttrs)
 
@@ -387,11 +323,4 @@ func cloneInterfaceMap(attrs map[string]interface{}) map[string]interface{} {
 		cloned[key] = value
 	}
 	return cloned
-}
-
-func setExtractionAttribute(attrs models.JSONMap, key string, value interface{}) {
-	if attrs == nil || key == "" || value == nil {
-		return
-	}
-	metaattr.SetExtension(attrs, "extraction", key, value)
 }

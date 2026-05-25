@@ -11,7 +11,7 @@ import (
 	commonModels "github.com/addp/common/models"
 )
 
-// SQLRewriter 将 SQL 中的湖表引用改写为 read_parquet() 调用
+// SQLRewriter 将 SQL 中的对象存储表引用改写为 read_parquet() 调用
 type SQLRewriter struct {
 	metaClient *commonClient.MetaClient
 	tenantID   uint
@@ -82,30 +82,15 @@ func BuildReadParquetExpr(physicalPath string) string {
 	return fmt.Sprintf("read_parquet('%s')", path)
 }
 
-// BuildLakeTableS3Path 根据 bucket、schema_name、table_name 和 lake_mode 构建 S3 路径
-// lake_mode: "directory"（目录即表）或 "file"（文件即表）
-func BuildLakeTableS3Path(bucket, schemaName, tableName, lakeMode string) string {
-	if schemaName != "" {
-		if lakeMode == "file" {
-			return fmt.Sprintf("s3://%s/%s/%s.parquet", bucket, schemaName, tableName)
-		}
-		return fmt.Sprintf("s3://%s/%s/%s/*.parquet", bucket, schemaName, tableName)
-	}
-	if lakeMode == "file" {
-		return fmt.Sprintf("s3://%s/%s.parquet", bucket, tableName)
-	}
-	return fmt.Sprintf("s3://%s/%s/*.parquet", bucket, tableName)
-}
-
-// BuildLakeTableMap 构建湖表映射：engineName -> (schema.table 或 table) -> physicalPath
-func BuildLakeTableMap(ctx context.Context, tenantID uint, engines []commonModels.Engine, metaClient *commonClient.MetaClient) map[string]map[string]string {
+// BuildObjectTableMap 构建对象存储表映射：engineName -> (schema.table 或 table) -> physicalPath
+func BuildObjectTableMap(ctx context.Context, tenantID uint, engines []commonModels.Engine, metaClient *commonClient.MetaClient) map[string]map[string]string {
 	result := make(map[string]map[string]string)
 	if metaClient == nil {
 		return result
 	}
 	metaClient.SetTenantID(&tenantID)
 	for _, engine := range engines {
-		if engine.EngineType != "minio" && engine.EngineType != "s3" {
+		if !IsObjectTableEngine(engine.EngineType) {
 			continue
 		}
 		tree, err := metaClient.GetMetadataTree(engine.ID)
@@ -114,7 +99,7 @@ func BuildLakeTableMap(ctx context.Context, tenantID uint, engines []commonModel
 		}
 		tables := make(map[string]string)
 		for _, item := range tree.Items {
-			if !isLakeTableItem(item) {
+			if !IsObjectTableItem(item) {
 				continue
 			}
 			physicalPath := ""
@@ -139,7 +124,7 @@ func BuildLakeTableMap(ctx context.Context, tenantID uint, engines []commonModel
 	return result
 }
 
-func isLakeTableItem(item commonModels.MetaItem) bool {
+func IsObjectTableItem(item commonModels.MetaItem) bool {
 	switch item.ItemType {
 	case "object", "file":
 	default:
@@ -162,9 +147,9 @@ func isLakeTableItem(item commonModels.MetaItem) bool {
 }
 
 // RewriteWithEngines 使用已知引擎列表改写 SQL（避免重复查询 Meta）
-// engineLakeTables: engineName -> tableName -> physicalPath
-func (r *SQLRewriter) RewriteWithEngines(ctx context.Context, sql string, engineLakeTables map[string]map[string]string) (string, error) {
-	if len(engineLakeTables) == 0 {
+// engineObjectTables: engineName -> tableName -> physicalPath
+func (r *SQLRewriter) RewriteWithEngines(ctx context.Context, sql string, engineObjectTables map[string]map[string]string) (string, error) {
+	if len(engineObjectTables) == 0 {
 		return sql, nil
 	}
 
@@ -177,7 +162,7 @@ func (r *SQLRewriter) RewriteWithEngines(ctx context.Context, sql string, engine
 			continue
 		}
 		engineName, schema, table := parts[0], parts[1], parts[2]
-		tables, ok := engineLakeTables[engineName]
+		tables, ok := engineObjectTables[engineName]
 		if !ok {
 			continue
 		}
@@ -192,8 +177,8 @@ func (r *SQLRewriter) RewriteWithEngines(ctx context.Context, sql string, engine
 		result = strings.ReplaceAll(result, ref, parquetExpr)
 	}
 
-	// 处理两段式引用 engine.table（湖表无 schema 时）
-	for engineName, tables := range engineLakeTables {
+	// 处理两段式引用 engine.table（对象存储表无 schema 时）
+	for engineName, tables := range engineObjectTables {
 		for tableName, physicalPath := range tables {
 			if strings.Contains(tableName, ".") {
 				continue

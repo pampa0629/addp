@@ -92,9 +92,9 @@ func (s *QueryExecutorService) ExecuteQuery(
 		return s.executeDuckDBSQLQuery(ctx, service, params)
 	}
 
-	// table 模式 + MinIO/S3 引擎 → DuckDB 执行路径
-	if service.ConfigType == "table" && service.IsLakeTable() {
-		return s.executeLakeTableQuery(ctx, service, params)
+	// table 模式 + 对象存储表格资源 → DuckDB 执行路径
+	if service.ConfigType == "table" && service.IsObjectTable() {
+		return s.executeObjectTableQuery(ctx, service, params)
 	}
 
 	// 1. 获取存储引擎信息
@@ -141,8 +141,8 @@ func (s *QueryExecutorService) ExecuteQuery(
 	}, nil
 }
 
-// executeLakeTableQuery 通过 DuckDB 执行湖表查询（MinIO/S3 上的 Parquet）
-func (s *QueryExecutorService) executeLakeTableQuery(
+// executeObjectTableQuery 通过 DuckDB 执行对象存储表格查询。
+func (s *QueryExecutorService) executeObjectTableQuery(
 	ctx context.Context,
 	service *models.QueryService,
 	params *QueryParams,
@@ -160,20 +160,11 @@ func (s *QueryExecutorService) executeLakeTableQuery(
 		ConnectionInfo: commonModels.ConnectionInfo(engine.ConnectionInfo),
 	}
 
-	// 从 ConnectionInfo 中获取 bucket；MinIO 引擎没有 bucket 字段，用 schema_name 作为 bucket
-	bucket := ""
-	if b, ok := engine.ConnectionInfo["bucket"].(string); ok {
-		bucket = b
+	physicalPath := service.GetObjectTablePhysicalPath()
+	if physicalPath == "" {
+		return nil, fmt.Errorf("object table physical_path is empty")
 	}
-	schemaForPath := service.SchemaName
-	if bucket == "" && service.SchemaName != "" {
-		// MinIO 引擎：schema_name 即 bucket 名，路径中不再重复 schema
-		bucket = service.SchemaName
-		schemaForPath = ""
-	}
-
-	// 构建 S3 路径
-	s3Path := duckdb.BuildLakeTableS3Path(bucket, schemaForPath, service.TargetTable, service.GetLakeMode())
+	tableExpr := duckdb.BuildReadParquetExpr(physicalPath)
 
 	// 打开 DuckDB 连接
 	db, err := duckdb.OpenDB()
@@ -215,7 +206,7 @@ func (s *QueryExecutorService) executeLakeTableQuery(
 	}
 
 	// 获取总数
-	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM read_parquet('%s')%s", s3Path, whereClause)
+	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM %s%s", tableExpr, whereClause)
 	var total int64
 	row := conn.QueryRowContext(execCtx, countSQL)
 	if err := row.Scan(&total); err != nil {
@@ -224,8 +215,8 @@ func (s *QueryExecutorService) executeLakeTableQuery(
 
 	// 分页查询
 	offset := (params.Page - 1) * params.PageSize
-	dataSQL := fmt.Sprintf("SELECT %s FROM read_parquet('%s')%s%s LIMIT %d OFFSET %d",
-		selectFields, s3Path, whereClause, orderByClause, params.PageSize, offset)
+	dataSQL := fmt.Sprintf("SELECT %s FROM %s%s%s LIMIT %d OFFSET %d",
+		selectFields, tableExpr, whereClause, orderByClause, params.PageSize, offset)
 
 	result, err := duckdb.ExecuteQuery(execCtx, conn, dataSQL)
 	if err != nil {

@@ -26,7 +26,7 @@ type FederatedQueryRequest struct {
 
 // ExecuteFederatedQuery 执行联邦查询
 // @Summary 执行联邦查询
-// @Description 通过 DuckDB 执行跨源联邦查询（湖表 + 关系型数据库）
+// @Description 通过 DuckDB 执行跨源联邦查询（对象存储表 + 关系型数据库）
 // @Tags DuckDB
 // @Accept json
 // @Produce json
@@ -95,7 +95,7 @@ func (h *DuckDBHandler) GetSampleQuery(c *gin.Context) {
 
 // GetFederatedSources 获取可查询的数据源列表
 // @Summary 获取联邦查询数据源
-// @Description 返回当前租户下所有可通过 DuckDB 查询的数据源（湖表 + 关系型表）
+// @Description 返回当前租户下所有可通过 DuckDB 查询的数据源（对象存储表 + 关系型表）
 // @Tags DuckDB
 // @Produce json
 // @Success 200 {array} service.DataSource

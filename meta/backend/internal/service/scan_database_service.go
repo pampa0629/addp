@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/addp/common/dataitem"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
@@ -376,17 +375,13 @@ func (s *DatabaseScanService) scanTableDetails(
 			attrs = existingItem.Attributes
 			metaattr.SetStorage(attrs, "schema_name", schemaName)
 			tableInfo.Kind = normalizedTableKind(tableInfo)
-			metaattr.UpsertNested(attrs, "type_info", "table", metaattr.TableInfoAttributes(&tableInfo))
+			metaattr.ApplyTableItemAttributes(attrs, &tableInfo)
 		} else {
 			tableInfo.Kind = normalizedTableKind(tableInfo)
 			attrs = tableItemAttributes(schemaName, tableInfo)
 		}
 	}
-	metaattr.SetItem(attrs, "layout", string(dataitem.LayoutSingle))
-	metaattr.SetItem(attrs, "data_type", string(dataitem.DataTypeTable))
-	rowCount := derefInt64Ptr(tableInfo.RowCount)
-	metaattr.UpsertNested(attrs, "type_info", "table", map[string]interface{}{"row_count": rowCount})
-	metaattr.UpsertNested(attrs, "capabilities", "statistics", map[string]interface{}{"row_count": rowCount})
+	metaattr.ApplyTableItemAttributes(attrs, &tableInfo)
 
 	return fields, attrs, nil
 }
@@ -394,7 +389,7 @@ func (s *DatabaseScanService) scanTableDetails(
 func tableItemAttributes(schemaName string, tableInfo datatype.TableInfo) models.JSONMap {
 	attrs := models.JSONMap{}
 	metaattr.SetStorage(attrs, "schema_name", schemaName)
-	metaattr.UpsertNested(attrs, "type_info", "table", metaattr.TableInfoAttributes(&tableInfo))
+	metaattr.ApplyTableItemAttributes(attrs, &tableInfo)
 	return attrs
 }
 

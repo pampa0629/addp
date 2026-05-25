@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/addp/common/client"
 	commonJSON "github.com/addp/common/jsonmap"
@@ -71,14 +72,13 @@ func (s *QueryServiceService) CreateService(req *models.CreateQueryServiceReques
 		dataConfig = req.DataConfig
 	}
 
-	// 6. Table模式：自动检测空间字段 / 湖表信息
+	// 6. Table模式：自动检测空间字段 / 对象表信息
 	if req.ConfigType == "table" {
 		engineID := *req.EngineID
-		// 先尝试从 Meta 获取湖表信息（MinIO/S3 引擎）
-		lakeMode := s.detectLakeMode(tenantID, engineID, req.SchemaName, req.TableName)
-		if lakeMode != "" {
-			// 湖表：写入 lake_mode，跳过空间字段检测
-			dataConfig["lake_mode"] = lakeMode
+		// 先尝试从 Meta 获取对象存储表信息。
+		objectTable := s.detectObjectTable(tenantID, engineID, req.SchemaName, req.TableName)
+		if len(objectTable) > 0 {
+			dataConfig["object_table"] = objectTable
 		} else {
 			// 关系型表：检测空间字段
 			spatialMeta, err := s.metaClient.WithTenantID(tenantID).GetItemSpatialMetadataByCatalogPath(engineID, fmt.Sprintf("%s.%s", req.SchemaName, req.TableName))
@@ -144,40 +144,62 @@ func (s *QueryServiceService) CreateService(req *models.CreateQueryServiceReques
 	return s.convertToDTO(service), nil
 }
 
-// detectLakeMode 通过 Meta 判断是否为湖表，返回 lake_mode（"directory"/"file"）或空字符串
-func (s *QueryServiceService) detectLakeMode(tenantID, engineID uint, schemaName, tableName string) string {
+// detectObjectTable 通过 Meta 标准 attributes 判断是否为对象存储表格资源。
+func (s *QueryServiceService) detectObjectTable(tenantID, engineID uint, schemaName, tableName string) map[string]interface{} {
 	if s.metaClient == nil {
-		log.Printf("[detectLakeMode] metaClient is nil, skipping lake mode detection")
-		return ""
+		log.Printf("[detectObjectTable] metaClient is nil, skipping object table detection")
+		return nil
 	}
 	tree, err := s.metaClient.WithTenantID(tenantID).GetMetadataTree(engineID)
 	if err != nil {
-		log.Printf("[detectLakeMode] GetMetadataTree(engineID=%d) failed: %v", engineID, err)
-		return ""
+		log.Printf("[detectObjectTable] GetMetadataTree(engineID=%d) failed: %v", engineID, err)
+		return nil
 	}
-	log.Printf("[detectLakeMode] engineID=%d, got %d items", engineID, len(tree.Items))
+	log.Printf("[detectObjectTable] engineID=%d, got %d items", engineID, len(tree.Items))
 	// 构建期望的 full_name
 	expectedFullName := tableName
 	if schemaName != "" {
-		expectedFullName = schemaName + "/" + tableName
+		expectedFullName = strings.Trim(schemaName+"/"+tableName, "/")
 	}
 	for _, item := range tree.Items {
-		if item.ItemType != "lake_table" {
-			continue
-		}
 		if item.Name != tableName && item.FullName != expectedFullName {
 			continue
 		}
-		if item.Attributes != nil {
-			if mode := commonJSON.String(item.Attributes, "item", "mode"); mode != "" {
-				return mode
-			}
+		objectTable := objectTableConfigFromAttributes(item.Attributes)
+		if len(objectTable) == 0 {
+			continue
 		}
-		// 找到湖表但没有 mode 属性，默认 directory
-		return "directory"
+		return objectTable
 	}
-	return ""
+	return nil
 }
+
+func objectTableConfigFromAttributes(attrs map[string]interface{}) map[string]interface{} {
+	if attrs == nil {
+		return nil
+	}
+	dataType := strings.ToLower(strings.TrimSpace(commonJSON.String(attrs, "item", "data_type")))
+	formatName := strings.ToLower(strings.TrimSpace(commonJSON.String(attrs, "item", "format")))
+	layout := strings.ToLower(strings.TrimSpace(commonJSON.String(attrs, "item", "layout")))
+	physicalPath := strings.TrimSpace(commonJSON.String(attrs, "storage", "physical_path"))
+	if dataType != "table" || physicalPath == "" {
+		return nil
+	}
+	switch formatName {
+	case "parquet", "orc", "avro":
+	default:
+		return nil
+	}
+	if layout == "" {
+		layout = "single"
+	}
+	return map[string]interface{}{
+		"physical_path": physicalPath,
+		"layout":        layout,
+		"format":        formatName,
+	}
+}
+
 func (s *QueryServiceService) buildProtocolsConfig(userProtocols map[string]interface{}, dataConfig map[string]interface{}) models.JSONB {
 	// 默认协议配置
 	protocols := map[string]interface{}{

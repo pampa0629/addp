@@ -58,6 +58,7 @@ type PreviewResolverRequest struct {
 	Pagination      *Pagination                  // 分页参数
 	TenantID        *uint                        // 租户 ID
 	ItemType        string                       // 数据项类型（如 "table"），来自 MetaItem
+	ItemRowCount    *int64                       // 表/集合行数，来自 MetaItem.RowCount
 	PhysicalPath    string                       // 物理路径（来自 meta_item.attributes.storage.physical_path）
 	ScopePath       string                       // 范围路径（来自 meta_item.attributes.storage.physical_path）
 	ChildName       string                       // 容器内部 child 名称，例如 Excel sheet
@@ -104,11 +105,11 @@ func (r *PreviewResolver) Preview(ctx context.Context, req *PreviewResolverReque
 		return nil, ErrPreviewRequiresScannedMeta
 	}
 
-	// 3. 转换为旧的 PreviewRequest 格式（provider 接口过渡期复用）
-	legacyReq := r.convertToLegacyRequest(req)
+	// 3. 转换为Provider 执行请求
+	providerReq := r.buildProviderRequest(req)
 
 	// 4. 按 Meta 标准属性确定性选择预览插件
-	provider, err := r.resolveProviderByMeta(req, legacyReq)
+	provider, err := r.resolveProviderByMeta(req, providerReq)
 	if err != nil {
 		logger.L().Warn("未找到合适的预览插件", "locator", req.Locator.ToURI(), "error", err)
 		return &PreviewResult{
@@ -117,14 +118,14 @@ func (r *PreviewResolver) Preview(ctx context.Context, req *PreviewResolverReque
 			Metadata:    r.buildMetadata(req),
 		}, nil
 	}
-	if refProvider := r.resolveRefPreviewProvider(req, legacyReq); refProvider != nil {
+	if refProvider := r.resolveRefPreviewProvider(req, providerReq); refProvider != nil {
 		provider = refProvider
 	}
 
 	logger.L().Info("选择预览插件", "provider", provider.Name(), "locator", req.Locator.ToURI(), "item_type", req.ItemType)
 
 	// 5. 执行预览
-	tablePreview, err := provider.Preview(ctx, legacyReq)
+	tablePreview, err := provider.Preview(ctx, providerReq)
 	if err != nil {
 		return nil, fmt.Errorf("preview failed: %w", err)
 	}
@@ -133,19 +134,19 @@ func (r *PreviewResolver) Preview(ctx context.Context, req *PreviewResolverReque
 	r.attachItemMeta(tablePreview, req)
 
 	// 7. 组装新的 PreviewResult
-	result := r.convertToNewResult(tablePreview, req)
+	result := r.buildPreviewResult(tablePreview, req)
 
 	return result, nil
 }
 
-func (r *PreviewResolver) resolveRefPreviewProvider(req *PreviewResolverRequest, legacyReq *PreviewRequest) PreviewProvider {
-	if r == nil || r.registry == nil || req == nil || legacyReq == nil {
+func (r *PreviewResolver) resolveRefPreviewProvider(req *PreviewResolverRequest, providerReq *PreviewRequest) PreviewProvider {
+	if r == nil || r.registry == nil || req == nil || providerReq == nil {
 		return nil
 	}
 	if strings.TrimSpace(req.ChildName) != "" || strings.TrimSpace(req.RefPath) == "" {
 		return nil
 	}
-	if !isContentFileItemType(legacyReq.ItemType) {
+	if !isContentFileItemType(providerReq.ItemType) {
 		return nil
 	}
 	if provider, err := r.registry.GetByName("builtin:ref-file"); err == nil {
@@ -183,7 +184,7 @@ func (r *PreviewResolver) PreviewFromURIWithSelection(ctx context.Context, locat
 
 	// 3. 尝试从 Meta 获取元数据。
 	// meta_id 是最可靠的类型来源，尤其是图模型的 label/relationship 这类
-	// 旧 locator type 可能被前端树兼容层误写成 table 的数据项。
+	// 路径型 locator 的 type 可能比 Meta item 的真实类型更粗。
 	var metaNode *commonModels.MetaNode
 	var metaItem *commonModels.MetaItem
 	metaIDResolved := false
@@ -320,11 +321,7 @@ func (r *PreviewResolver) PreviewFromURIWithSelection(ctx context.Context, locat
 			sizeBytes = *metaItem.SizeBytes
 		}
 		attrs := cloneMetaAttributes(metaItem.Attributes)
-		if metaItem.RowCount != nil && *metaItem.RowCount > 0 {
-			upsertMetaNested(attrs, "type_info", "table", map[string]interface{}{
-				"row_count": *metaItem.RowCount,
-			})
-		}
+		req.ItemRowCount = metaItem.RowCount
 		req.Metadata = &commonModels.MetaNode{
 			ID:             metaItem.ID,
 			EngineID:       metaItem.EngineID,
@@ -351,31 +348,6 @@ func cloneMetaAttributes(attrs map[string]interface{}) map[string]interface{} {
 		cloned[k] = v
 	}
 	return cloned
-}
-
-func upsertMetaNested(attrs map[string]interface{}, section, namespace string, values map[string]interface{}) {
-	if attrs == nil {
-		return
-	}
-	if attrs[section] == nil {
-		attrs[section] = map[string]interface{}{}
-	}
-	sectionMap, ok := attrs[section].(map[string]interface{})
-	if !ok {
-		sectionMap = map[string]interface{}{}
-		attrs[section] = sectionMap
-	}
-	if sectionMap[namespace] == nil {
-		sectionMap[namespace] = map[string]interface{}{}
-	}
-	targetMap, ok := sectionMap[namespace].(map[string]interface{})
-	if !ok {
-		targetMap = map[string]interface{}{}
-		sectionMap[namespace] = targetMap
-	}
-	for key, value := range values {
-		targetMap[key] = value
-	}
 }
 
 func previewResourcePaths(attrs map[string]interface{}) (physicalPath string, scopePath string) {
@@ -431,9 +403,9 @@ func (r *PreviewResolver) DetectPreviewType(loc *catalogview.ResourceLocator, en
 	if loc != nil {
 		req.ItemType = strings.ToLower(strings.TrimSpace(string(loc.Type)))
 	}
-	legacyReq := r.convertToLegacyRequest(req)
+	providerReq := r.buildProviderRequest(req)
 
-	provider, err := r.resolveProviderByMeta(req, legacyReq)
+	provider, err := r.resolveProviderByMeta(req, providerReq)
 	if err != nil {
 		return "unsupported"
 	}
@@ -443,8 +415,8 @@ func (r *PreviewResolver) DetectPreviewType(loc *catalogview.ResourceLocator, en
 
 // 内部辅助方法
 
-// convertToLegacyRequest 将新的请求转换为旧的 PreviewRequest 格式（兼容现有插件）
-func (r *PreviewResolver) convertToLegacyRequest(req *PreviewResolverRequest) *PreviewRequest {
+// buildProviderRequest 根据 Resolver 请求构造 PreviewProvider 执行请求
+func (r *PreviewResolver) buildProviderRequest(req *PreviewResolverRequest) *PreviewRequest {
 	schema := ""
 	table := ""
 
@@ -511,6 +483,7 @@ func (r *PreviewResolver) convertToLegacyRequest(req *PreviewResolverRequest) *P
 		PageSize:        pageSize,
 		TenantID:        req.TenantID,
 		ItemType:        req.ItemType,
+		ItemRowCount:    req.ItemRowCount,
 		NodeType:        string(req.Locator.Type),
 		PhysicalPath:    req.PhysicalPath,
 		ScopePath:       req.ScopePath,
@@ -528,11 +501,11 @@ func (req *PreviewResolverRequest) MetadataAttributes() map[string]interface{} {
 	return req.Metadata.Attributes
 }
 
-func (r *PreviewResolver) resolveProviderByMeta(req *PreviewResolverRequest, legacyReq *PreviewRequest) (PreviewProvider, error) {
+func (r *PreviewResolver) resolveProviderByMeta(req *PreviewResolverRequest, providerReq *PreviewRequest) (PreviewProvider, error) {
 	if r == nil || r.registry == nil {
 		return nil, ErrNoPreviewProvider
 	}
-	for _, name := range providerNamesForMeta(req, legacyReq) {
+	for _, name := range providerNamesForMeta(req, providerReq) {
 		provider, err := r.registry.GetByName(name)
 		if err != nil {
 			continue
@@ -542,7 +515,7 @@ func (r *PreviewResolver) resolveProviderByMeta(req *PreviewResolverRequest, leg
 	return nil, ErrNoPreviewProvider
 }
 
-func providerNamesForMeta(req *PreviewResolverRequest, legacyReq *PreviewRequest) []string {
+func providerNamesForMeta(req *PreviewResolverRequest, providerReq *PreviewRequest) []string {
 	attrs := req.MetadataAttributes()
 	itemType := strings.ToLower(strings.TrimSpace(req.ItemType))
 	if itemType == "" && req != nil && req.Metadata != nil {
@@ -561,12 +534,12 @@ func providerNamesForMeta(req *PreviewResolverRequest, legacyReq *PreviewRequest
 		return []string{"builtin:graph-relationship"}
 	}
 
-	if isNodePreview(req, legacyReq) {
-		if legacyReq != nil {
-			if isFileSystemType(legacyReq.Engine.EngineType) {
+	if isNodePreview(req, providerReq) {
+		if providerReq != nil {
+			if isFileSystemType(providerReq.Engine.EngineType) {
 				return []string{"builtin:file-catalog"}
 			}
-			if isObjectStorageType(legacyReq.Engine.EngineType) {
+			if isObjectStorageType(providerReq.Engine.EngineType) {
 				return []string{"builtin:object-catalog"}
 			}
 		}
@@ -578,10 +551,10 @@ func providerNamesForMeta(req *PreviewResolverRequest, legacyReq *PreviewRequest
 		if layout == "whole" && hasScopeTableProvider(formatName) {
 			return []string{"builtin:scope-table"}
 		}
-		if legacyReq != nil && isFileTableFormat(formatName) && isContentFileItemType(itemType) {
+		if providerReq != nil && isFileTableFormat(formatName) && isContentFileItemType(itemType) {
 			return []string{"builtin:file-table"}
 		}
-		if legacyReq != nil && itemType == "file" {
+		if providerReq != nil && itemType == "file" {
 			return []string{"builtin:file-catalog"}
 		}
 		return []string{"builtin:database-table"}
@@ -591,15 +564,15 @@ func providerNamesForMeta(req *PreviewResolverRequest, legacyReq *PreviewRequest
 		}
 		return []string{"builtin:graph-label"}
 	case "container":
-		if legacyReq != nil && strings.TrimSpace(legacyReq.ChildName) != "" && isContentFileItemType(itemType) {
+		if providerReq != nil && strings.TrimSpace(providerReq.ChildName) != "" && isContentFileItemType(itemType) {
 			return []string{"builtin:container-child"}
 		}
-		if legacyReq != nil && itemType == "file" {
+		if providerReq != nil && itemType == "file" {
 			return []string{"builtin:file-catalog"}
 		}
 		return []string{"builtin:object-catalog"}
 	case "media", "document":
-		if legacyReq != nil && itemType == "file" {
+		if providerReq != nil && itemType == "file" {
 			return []string{"builtin:file-catalog"}
 		}
 		return []string{"builtin:object-catalog"}
@@ -617,8 +590,8 @@ func providerNamesForMeta(req *PreviewResolverRequest, legacyReq *PreviewRequest
 	return nil
 }
 
-func isNodePreview(req *PreviewResolverRequest, legacyReq *PreviewRequest) bool {
-	if legacyReq != nil && legacyReq.Table == "" {
+func isNodePreview(req *PreviewResolverRequest, providerReq *PreviewRequest) bool {
+	if providerReq != nil && providerReq.Table == "" {
 		return true
 	}
 	if req == nil || req.Metadata == nil {
@@ -655,8 +628,8 @@ func hasScopeTableProvider(formatName string) bool {
 	return err == nil
 }
 
-// convertToNewResult 将旧的 TablePreview 转换为新的 PreviewResult
-func (r *PreviewResolver) convertToNewResult(tablePreview *models.TablePreview, req *PreviewResolverRequest) *PreviewResult {
+// buildPreviewResult 将 provider 返回的预览内容包装为统一 PreviewResult。
+func (r *PreviewResolver) buildPreviewResult(tablePreview *models.TablePreview, req *PreviewResolverRequest) *PreviewResult {
 	// 直接使用完整的 TablePreview 作为 Data
 	// 前端插件需要访问 object.content.kind、object.path 等字段来选择合适的预览组件
 	result := &PreviewResult{
@@ -705,6 +678,7 @@ func (r *PreviewResolver) attachItemMeta(preview *models.TablePreview, req *Prev
 		ItemType:        itemType,
 		ItemTypeI18nKey: "engine.term." + itemType,
 		FullName:        req.Metadata.FullName,
+		RowCount:        req.ItemRowCount,
 		Attributes:      mapToMetaAttributes(req.Metadata.Attributes),
 		ScannedAt:       req.Metadata.LastScanAt,
 	}

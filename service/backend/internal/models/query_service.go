@@ -84,26 +84,26 @@ func (q *QueryService) IsTableMode() bool {
 	return q.ConfigType == "table"
 }
 
-// IsLakeTable 是否为湖表（MinIO/S3 上的 Parquet 表）
-// 通过 data_config 中是否存在 lake_mode 字段来判断
-func (q *QueryService) IsLakeTable() bool {
+// IsObjectTable 是否为对象存储中的文件/目录型表格资源。
+func (q *QueryService) IsObjectTable() bool {
 	if q.DataConfig == nil {
 		return false
 	}
-	_, hasLakeMode := q.DataConfig["lake_mode"]
-	return hasLakeMode
+	_, ok := q.DataConfig["object_table"].(map[string]interface{})
+	return ok
 }
 
-// GetLakeMode 获取湖表模式（directory 或 file）
-func (q *QueryService) GetLakeMode() string {
+// GetObjectTablePhysicalPath 获取对象表的物理路径。
+func (q *QueryService) GetObjectTablePhysicalPath() string {
 	if q.DataConfig == nil {
-		return "directory"
+		return ""
 	}
-	mode, ok := q.DataConfig["lake_mode"].(string)
-	if !ok || mode == "" {
-		return "directory"
+	objectTable, ok := q.DataConfig["object_table"].(map[string]interface{})
+	if !ok {
+		return ""
 	}
-	return mode
+	physicalPath, _ := objectTable["physical_path"].(string)
+	return physicalPath
 }
 
 // IsSQLMode 是否为SQL配置模式

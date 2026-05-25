@@ -619,7 +619,7 @@ func (s *EngineService) triggerImmediateScan(resource *commonModels.Engine) erro
 		return fmt.Errorf("资源 %d 没有扫描配置", resource.ID)
 	}
 
-	// 确定扫描深度：优先使用 ImmediateDepth，否则回退到旧版 ScanDepth
+	// 确定扫描深度：优先使用 ImmediateDepth，否则使用默认 ScanDepth。
 	scanDepth := resource.ScanConfig.ImmediateDepth
 	if scanDepth == "" {
 		scanDepth = resource.ScanConfig.ScanDepth

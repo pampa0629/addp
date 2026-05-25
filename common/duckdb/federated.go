@@ -34,7 +34,7 @@ func (s *FederatedSession) Close() {
 }
 
 // PrepareFederatedQuery 准备联邦查询：打开 DuckDB、按需挂载引擎、改写 SQL
-// 内部流程：提取引擎名 → 拉取并过滤引擎 → 打开 DuckDB → 挂载引擎 → 构建湖表映射 → 改写 SQL
+// 内部流程：提取引擎名 → 拉取并过滤引擎 → 打开 DuckDB → 挂载引擎 → 构建对象存储表映射 → 改写 SQL
 func PrepareFederatedQuery(
 	ctx context.Context,
 	tenantID uint,
@@ -66,19 +66,19 @@ func PrepareFederatedQuery(
 		return nil, fmt.Errorf("获取 DuckDB 连接失败: %w", err)
 	}
 
-	// 3. 挂载引擎 + 构建湖表映射
-	var engineLakeTables map[string]map[string]string
+	// 3. 挂载引擎 + 构建对象存储表映射
+	var engineObjectTables map[string]map[string]string
 	if len(engines) > 0 {
-		engineLakeTables = BuildLakeTableMap(ctx, tenantID, engines, metaClient)
+		engineObjectTables = BuildObjectTableMap(ctx, tenantID, engines, metaClient)
 		if err := MountEngines(ctx, conn, engines); err != nil {
 			// 挂载失败只记录警告，不中断（部分引擎可能不可用）
 			slog.Warn("部分引擎挂载失败", "error", err)
 		}
 	}
 
-	// 4. 改写 SQL（湖表三段式引用 → read_parquet）
+	// 4. 改写 SQL（对象存储表引用 → read_parquet）
 	rewriter := NewSQLRewriter(metaClient, tenantID)
-	rewrittenSQL, err := rewriter.RewriteWithEngines(ctx, sqlStr, engineLakeTables)
+	rewrittenSQL, err := rewriter.RewriteWithEngines(ctx, sqlStr, engineObjectTables)
 	if err != nil {
 		conn.Close()
 		db.Close()

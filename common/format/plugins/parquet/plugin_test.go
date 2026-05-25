@@ -348,17 +348,6 @@ func TestParquetPluginScopeRecursesPartitionDirs(t *testing.T) {
 	}
 }
 
-func TestParquetInfoFromDescribeResultReadsLegacyFormatPartitionColumns(t *testing.T) {
-	info := InfoFromDescribeResult(&format.TableDescribeResult{
-		FormatInfo: map[string]interface{}{
-			"partition_columns": []interface{}{"dt"},
-		},
-	})
-	if info == nil || strings.Join(info.PartitionColumns, ",") != "dt" {
-		t.Fatalf("InfoFromDescribeResult() = %#v, want legacy partition columns", info)
-	}
-}
-
 func TestParquetPluginSampleScopeAddsPartitionValues(t *testing.T) {
 	plugin := NewPlugin()
 	reader := parquetMemoryContentReader{data: map[string][]byte{

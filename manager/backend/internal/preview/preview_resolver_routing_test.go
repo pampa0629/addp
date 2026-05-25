@@ -348,7 +348,7 @@ func TestAttributeHelpersReadPartitionedSlicesAndNumbers(t *testing.T) {
 	}
 }
 
-func TestConvertToLegacyRequestUsesPartitionedPhysicalPath(t *testing.T) {
+func TestBuildProviderRequestUsesPartitionedPhysicalPath(t *testing.T) {
 	resolver := NewPreviewResolver(NewPreviewRegistry(), nil, nil)
 	req := &PreviewResolverRequest{
 		Locator: &catalogview.ResourceLocator{
@@ -360,13 +360,13 @@ func TestConvertToLegacyRequestUsesPartitionedPhysicalPath(t *testing.T) {
 		PhysicalPath: "bucket/table.parquet",
 	}
 
-	legacyReq := resolver.convertToLegacyRequest(req)
-	if legacyReq.PhysicalPath != "bucket/table.parquet" {
-		t.Fatalf("PhysicalPath = %q, want bucket/table.parquet", legacyReq.PhysicalPath)
+	providerReq := resolver.buildProviderRequest(req)
+	if providerReq.PhysicalPath != "bucket/table.parquet" {
+		t.Fatalf("PhysicalPath = %q, want bucket/table.parquet", providerReq.PhysicalPath)
 	}
 }
 
-func TestConvertToLegacyRequestKeepsChildName(t *testing.T) {
+func TestBuildProviderRequestKeepsChildName(t *testing.T) {
 	resolver := NewPreviewResolver(NewPreviewRegistry(), nil, nil)
 	req := &PreviewResolverRequest{
 		Locator: &catalogview.ResourceLocator{Path: []string{"bucket", "test.xlsx"}},
@@ -378,13 +378,13 @@ func TestConvertToLegacyRequestKeepsChildName(t *testing.T) {
 		ChildName: "Cities",
 	}
 
-	legacyReq := resolver.convertToLegacyRequest(req)
-	if legacyReq.ChildName != "Cities" {
-		t.Fatalf("ChildName = %q, want Cities", legacyReq.ChildName)
+	providerReq := resolver.buildProviderRequest(req)
+	if providerReq.ChildName != "Cities" {
+		t.Fatalf("ChildName = %q, want Cities", providerReq.ChildName)
 	}
 }
 
-func TestConvertToLegacyRequestUsesScopePathForWholeScopeTable(t *testing.T) {
+func TestBuildProviderRequestUsesScopePathForWholeScopeTable(t *testing.T) {
 	req := &PreviewResolverRequest{
 		Locator: &catalogview.ResourceLocator{
 			Path: []string{"bucket", "dataset"},

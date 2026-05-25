@@ -544,12 +544,6 @@ func childObjectAttributes(child *format.ContainerChildResource) map[string]inte
 	}
 	if len(child.Native) > 0 {
 		attrs["container_child"] = child.Native
-		if previewMaterial := strings.TrimSpace(interfaceStringForContainerChild(child.Native["preview_material"])); previewMaterial != "" {
-			attrs["preview_material"] = previewMaterial
-		}
-		if previewRenderer := strings.TrimSpace(interfaceStringForContainerChild(child.Native["preview_renderer"])); previewRenderer != "" {
-			attrs["frontend_renderer"] = previewRenderer
-		}
 	}
 	return attrs
 }

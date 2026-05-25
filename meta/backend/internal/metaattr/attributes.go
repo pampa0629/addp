@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/datatype"
+	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/meta/internal/models"
 )
 
@@ -87,6 +88,46 @@ func SetExtension(attrs models.JSONMap, namespace string, key string, value inte
 	}
 }
 
+func SetExtraction(attrs models.JSONMap, key string, value interface{}) {
+	if attrs == nil || key == "" || value == nil {
+		return
+	}
+	SetExtension(attrs, "extraction", key, value)
+}
+
+func MergeStandardAttributes(attrs models.JSONMap, additions map[string]interface{}) {
+	if attrs == nil || len(additions) == 0 {
+		return
+	}
+	for _, section := range []string{"storage", "item", "type_info", "format_info", "content_index", "capabilities"} {
+		values := commonJSON.InterfaceMap(additions[section])
+		if len(values) == 0 {
+			continue
+		}
+		MergeAttributeSection(attrs, section, values)
+	}
+}
+
+func FormatInfoAttributes(formatName string, values map[string]interface{}) map[string]interface{} {
+	if len(values) == 0 {
+		return nil
+	}
+	for _, section := range []string{"storage", "item", "type_info", "format_info", "content_index", "capabilities"} {
+		if sectionAttrs := commonJSON.InterfaceMap(values[section]); len(sectionAttrs) > 0 {
+			return values
+		}
+	}
+	formatName = strings.ToLower(strings.TrimSpace(formatName))
+	if formatName == "" {
+		formatName = "unqualified"
+	}
+	return map[string]interface{}{
+		"format_info": map[string]interface{}{
+			formatName: values,
+		},
+	}
+}
+
 // UpsertNested 合并写入标准分区下的命名空间。
 func UpsertNested(attrs models.JSONMap, section string, namespace string, values map[string]interface{}) {
 	if attrs == nil || section == "" || namespace == "" || len(values) == 0 {
@@ -118,6 +159,49 @@ func UpsertNested(attrs models.JSONMap, section string, namespace string, values
 	}
 }
 
+func MergeAttributeSection(attrs models.JSONMap, section string, values map[string]interface{}) {
+	if attrs == nil || section == "" || len(values) == 0 {
+		return
+	}
+	sectionAttrs := Section(attrs, section)
+	for namespace, value := range values {
+		if valueMap := commonJSON.InterfaceMap(value); len(valueMap) > 0 {
+			namespaceAttrs := map[string]interface{}{}
+			for key, existingValue := range commonJSON.InterfaceMap(sectionAttrs[namespace]) {
+				namespaceAttrs[key] = existingValue
+			}
+			for key, newValue := range valueMap {
+				namespaceAttrs[key] = newValue
+			}
+			sectionAttrs[namespace] = namespaceAttrs
+			continue
+		}
+		sectionAttrs[namespace] = value
+	}
+	if sectionAttrs = cleanAttributeMap(sectionAttrs); len(sectionAttrs) > 0 {
+		attrs[section] = sectionAttrs
+	} else {
+		delete(attrs, section)
+	}
+}
+
+func RemoveContentIndexTable(attrs map[string]interface{}) {
+	if attrs == nil {
+		return
+	}
+	contentIndex := commonJSON.InterfaceMap(attrs["content_index"])
+	if len(contentIndex) == 0 {
+		delete(attrs, "content_index")
+		return
+	}
+	delete(contentIndex, "table")
+	if cleaned := cleanAttributeMap(contentIndex); len(cleaned) > 0 {
+		attrs["content_index"] = cleaned
+	} else {
+		delete(attrs, "content_index")
+	}
+}
+
 func JSONMap(attrs map[string]interface{}) models.JSONMap {
 	result := models.JSONMap{}
 	for k, v := range attrs {
@@ -130,7 +214,7 @@ func SetTableFields(attrs models.JSONMap, fields []datatype.FieldInfo) {
 	if attrs == nil || len(fields) == 0 {
 		return
 	}
-	UpsertNested(attrs, "type_info", "table", TableInfoAttributes(&datatype.TableInfo{Fields: fields}))
+	UpsertNested(attrs, "type_info", "table", datatype.TableInfoAttributes(&datatype.TableInfo{Fields: fields}))
 }
 
 func cleanAttributeMap(values map[string]interface{}) map[string]interface{} {

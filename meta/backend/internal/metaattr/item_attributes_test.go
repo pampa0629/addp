@@ -3,7 +3,7 @@ package metaattr
 import (
 	"testing"
 
-	"github.com/addp/common/dataitem"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
 )
@@ -15,8 +15,8 @@ func int64PtrForTest(value int64) *int64 {
 func TestBuildDataItemAttributesWritesPartitionedItemAndStorage(t *testing.T) {
 	sizeBytes := int64(42)
 	item := DataItemAttributesInput{
-		Layout:       dataitem.LayoutSingle,
-		DataType:     dataitem.DataTypeTable,
+		Layout:       "single",
+		DataType:     datatype.DataTypeTable,
 		Format:       string(format.FormatParquet),
 		PhysicalPath: "bucket/roads.parquet",
 		SizeBytes:    &sizeBytes,
@@ -24,11 +24,11 @@ func TestBuildDataItemAttributesWritesPartitionedItemAndStorage(t *testing.T) {
 
 	attrs := BuildAttributes(item)
 	itemAttrs := attrs["item"].(map[string]interface{})
-	if itemAttrs["layout"] != string(dataitem.LayoutSingle) {
-		t.Fatalf("item.layout = %v, want %s", itemAttrs["layout"], dataitem.LayoutSingle)
+	if itemAttrs["layout"] != "single" {
+		t.Fatalf("item.layout = %v, want single", itemAttrs["layout"])
 	}
-	if itemAttrs["data_type"] != string(dataitem.DataTypeTable) {
-		t.Fatalf("item.data_type = %v, want %s", itemAttrs["data_type"], dataitem.DataTypeTable)
+	if itemAttrs["data_type"] != string(datatype.DataTypeTable) {
+		t.Fatalf("item.data_type = %v, want %s", itemAttrs["data_type"], datatype.DataTypeTable)
 	}
 	if itemAttrs["format"] != string(format.FormatParquet) {
 		t.Fatalf("item.format = %v, want %s", itemAttrs["format"], format.FormatParquet)
@@ -49,8 +49,8 @@ func TestBuildDataItemAttributesWritesPartitionedItemAndStorage(t *testing.T) {
 
 func TestBuildDataItemAttributesWritesWholeScopePolicy(t *testing.T) {
 	item := DataItemAttributesInput{
-		Layout:       dataitem.LayoutWhole,
-		DataType:     dataitem.DataTypeTable,
+		Layout:       "whole",
+		DataType:     datatype.DataTypeTable,
 		Format:       "parquet",
 		SizeBytes:    int64PtrForTest(128),
 		PhysicalPath: "/lake/sales",
@@ -63,10 +63,10 @@ func TestBuildDataItemAttributesWritesWholeScopePolicy(t *testing.T) {
 	}
 }
 
-func TestMergeDataItemAttributesSkipsLegacyFlatStorageFields(t *testing.T) {
+func TestMergeDataItemAttributesSkipsFlatStorageFields(t *testing.T) {
 	item := DataItemAttributesInput{
-		Layout:   dataitem.LayoutSingle,
-		DataType: dataitem.DataTypeDocument,
+		Layout:   "single",
+		DataType: datatype.DataTypeDocument,
 		Attributes: map[string]interface{}{
 			"path": "legacy/path",
 			"size": int64(10),
@@ -87,11 +87,11 @@ func TestMergeDataItemAttributesSkipsLegacyFlatStorageFields(t *testing.T) {
 	MergeDataItemAttributes(attrs, item)
 
 	if attrs["path"] != nil || attrs["size"] != nil || attrs["content_type"] != nil {
-		t.Fatalf("legacy flat storage fields should be skipped: %#v", attrs)
+		t.Fatalf("flat storage fields should be skipped: %#v", attrs)
 	}
 	storage := attrs["storage"].(map[string]interface{})
 	if storage["bucket"] != "demo" || storage["path"] != "docs/" {
-		t.Fatalf("existing storage attrs should win over detected legacy storage keys: %#v", storage)
+		t.Fatalf("existing storage attrs should win over detected flat storage keys: %#v", storage)
 	}
 	if storage["custom"] != "ok" {
 		t.Fatalf("custom storage attr = %#v", storage["custom"])

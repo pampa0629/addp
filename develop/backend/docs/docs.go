@@ -53,7 +53,7 @@ const docTemplate = `{
         },
         "/duckdb/query": {
             "post": {
-                "description": "通过 DuckDB 执行跨源联邦查询（湖表 + 关系型数据库）",
+                "description": "通过 DuckDB 执行跨源联邦查询（对象存储表 + 关系型数据库）",
                 "consumes": [
                     "application/json"
                 ],
@@ -109,7 +109,7 @@ const docTemplate = `{
         },
         "/duckdb/sources": {
             "get": {
-                "description": "返回当前租户下所有可通过 DuckDB 查询的数据源（湖表 + 关系型表）",
+                "description": "返回当前租户下所有可通过 DuckDB 查询的数据源（对象存储表 + 关系型表）",
                 "produces": [
                     "application/json"
                 ],
@@ -2526,12 +2526,17 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
+                "format": {
+                    "type": "string"
+                },
                 "item_type": {
-                    "description": "\"table\" 或 \"lake_table\"",
+                    "description": "table",
+                    "type": "string"
+                },
+                "layout": {
                     "type": "string"
                 },
                 "physical_path": {
-                    "description": "湖表专用",
                     "type": "string"
                 },
                 "schema": {
@@ -2888,7 +2893,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "enabled": {
-                    "description": "是否启用扫描（总开关，兼容旧版）",
+                    "description": "是否启用扫描（总开关）",
                     "type": "boolean"
                 },
                 "immediate_depth": {
