@@ -77,7 +77,7 @@ func (p *MyPlugin) Capabilities() plugin.EngineCapabilities {
 新增存储引擎必须先定义 Catalog Model：
 
 - 第一层术语是什么：schema、database、bucket、root 等。
-- 叶子 item 类型是什么：table、collection、label、relationship、object、file 等。
+- 叶子 item 类型是什么：table、collection、graph、object、file 等。
 - full_name 如何计算。
 - ResourceLocator 的 path segments 如何由 full_name 转换。
 

@@ -31,8 +31,7 @@ func TestLoadPreviewPluginsRegistersBuiltinDefaultsWithoutFiles(t *testing.T) {
 	for _, name := range []string{
 		"builtin:database-table",
 		"builtin:doc-collection",
-		"builtin:graph-label",
-		"builtin:graph-relationship",
+		"builtin:graph",
 		"builtin:scope-table",
 		"builtin:container-child",
 		"builtin:ref-file",

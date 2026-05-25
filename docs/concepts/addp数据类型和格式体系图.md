@@ -13,7 +13,7 @@
 
 - 一个数据类型可以由多种格式承载，例如 `table` 可以来自 CSV、TSV、Parquet、Shapefile、数据库表、JSON FeatureCollection。
 - 一个格式也可能根据内容结构落到不同数据类型，例如 JSON 可以是 table、document 或 container。
-- 数据库表、文档集合、图 label / relationship 等引擎原生 item 可以没有文件格式，但仍必须有数据类型。
+- 数据库表、文档集合、graph 等引擎原生 item 可以没有文件格式，但仍必须有数据类型。
 
 ## 数据类型
 
@@ -96,7 +96,7 @@ JSON / GeoJSON 也不默认具备空间能力。只有实际记录里发现 GeoJ
 
 典型来源：
 
-- Neo4j label / relationship。
+- Neo4j graph item。
 - RDF。
 - GraphML / GEXF。
 - 图结构 JSON。
@@ -141,7 +141,7 @@ JSON / GeoJSON 也不默认具备空间能力。只有实际记录里发现 GeoJ
 | `document` | 标题、作者、页数、语言、提取状态 |
 | `media` | kind、宽高、时长、编码、颜色模式 |
 | `container` | 内部子对象、默认入口、子对象数量 |
-| `graph` | label、relationship、属性结构、节点数、边数 |
+| `graph` | node shapes、relationship shapes、连接模式、属性结构、节点数、关系数 |
 
 每个 data type 只有一类通用 info。格式实现只负责在已确定的 `data_type + format` 下提取这类 info；Meta 负责把它写入 `meta_item.attributes.type_info`。
 

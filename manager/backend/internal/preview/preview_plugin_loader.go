@@ -19,11 +19,8 @@ var builtinProviderFactoriesWithContent = map[string]func(*repository.MetadataRe
 	"doc-collection": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *objectcontent.ObjectContentRegistry) (PreviewProvider, error) {
 		return NewDocCollectionPreviewProvider(), nil
 	},
-	"graph-label": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *objectcontent.ObjectContentRegistry) (PreviewProvider, error) {
-		return NewGraphLabelPreviewProvider(), nil
-	},
-	"graph-relationship": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *objectcontent.ObjectContentRegistry) (PreviewProvider, error) {
-		return NewGraphRelationshipPreviewProvider(), nil
+	"graph": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *objectcontent.ObjectContentRegistry) (PreviewProvider, error) {
+		return NewGraphPreviewProvider(), nil
 	},
 	"file-table": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *objectcontent.ObjectContentRegistry) (PreviewProvider, error) {
 		return NewFileTablePreviewProvider(), nil
@@ -87,8 +84,7 @@ func fallbackBuiltinPreviewPlugins() []PluginConfig {
 	return []PluginConfig{
 		{Name: "builtin:database-table", Type: "builtin", Builtin: "database-table"},
 		{Name: "builtin:doc-collection", Type: "builtin", Builtin: "doc-collection"},
-		{Name: "builtin:graph-label", Type: "builtin", Builtin: "graph-label"},
-		{Name: "builtin:graph-relationship", Type: "builtin", Builtin: "graph-relationship"},
+		{Name: "builtin:graph", Type: "builtin", Builtin: "graph"},
 		{Name: "builtin:scope-table", Type: "builtin", Builtin: "scope-table"},
 		{Name: "builtin:container-child", Type: "builtin", Builtin: "container-child"},
 		{Name: "builtin:ref-file", Type: "builtin", Builtin: "ref-file"},

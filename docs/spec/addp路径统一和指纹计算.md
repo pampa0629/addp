@@ -240,31 +240,19 @@ ResourceLocator{
 
 #### 图数据库 (Neo4j)
 
-Neo4j 的 database 作为路径第一段，label 或 relationship 作为路径第二段；locator 的 `Type` 必须保留图数据库语义，不能转换为 `collection`。
+Neo4j 的 database 作为路径第一段，graph 作为路径第二段；locator 的 `Type` 必须使用 `graph`。节点 label、relationship type 和连接模式属于 `type_info.graph`，不参与 ResourceLocator 路径。
 
-**label ResourceLocator**:
+**graph ResourceLocator**:
 ```go
 ResourceLocator{
     EngineID: 25,
-    Path:     []string{"neo4j", "Project"},  // database + label
-    Type:     "label",
+    Path:     []string{"neo4j", "graph"},  // database + graph item
+    Type:     "graph",
     MetaID:   &100578,
 }
 ```
 
-**label URI**: `addp://engine/25/path/neo4j/Project?type=label&meta_id=100578`
-
-**relationship ResourceLocator**:
-```go
-ResourceLocator{
-    EngineID: 25,
-    Path:     []string{"neo4j", "WORKS_FOR"},  // database + relationship
-    Type:     "relationship",
-    MetaID:   &100579,
-}
-```
-
-**relationship URI**: `addp://engine/25/path/neo4j/WORKS_FOR?type=relationship&meta_id=100579`
+**graph URI**: `addp://engine/25/path/neo4j/graph?type=graph&meta_id=100578`
 
 #### 文件系统
 
@@ -309,7 +297,7 @@ path := parsePath(fullName, "table")
 `parsePath` 函数根据资源类型使用不同的分隔符：
 - 对象存储：使用 `/` 分隔
 - 数据库表：使用 `.` 分隔
-- 图数据库 label/relationship：使用 `.` 分隔，ResourceLocator.Type 保持 `label` / `relationship`
+- 图数据库 graph：使用 `.` 分隔，ResourceLocator.Type 保持 `graph`
 
 ### 5.6 对比总结
 

@@ -151,20 +151,6 @@ type QueryResult struct {
 
 // ============ 图数据库插件 ============
 
-// NodeLabelInfo 图数据库节点标签信息
-type NodeLabelInfo struct {
-	Name  string `json:"name"`
-	Count int64  `json:"count"`
-}
-
-// RelationshipTypeInfo 图数据库关系类型信息
-type RelationshipTypeInfo struct {
-	Name       string   `json:"name"`
-	Count      int64    `json:"count"`
-	FromLabels []string `json:"from_labels"`
-	ToLabels   []string `json:"to_labels"`
-}
-
 // GraphNode 图节点（用于图可视化）
 type GraphNode struct {
 	ElementId  string                 `json:"element_id"`

@@ -106,7 +106,7 @@ type CatalogModelProvider interface {
 | PostgreSQL | `schema -> table/view` |
 | MySQL / Doris / ClickHouse | `database -> table/view` |
 | MongoDB | `database -> collection` |
-| Neo4j | `database -> label/relationship` |
+| Neo4j | `database -> graph` |
 | MinIO / S3 | `bucket -> prefix -> object` |
 | NFS | `root -> directory -> file` |
 
@@ -141,7 +141,7 @@ type ItemMetadataProvider interface {
 
 对 tabular 引擎，`CatalogProvider.ListChildren()` 和 `ItemMetadataProvider.DescribeItem()` 必须围绕同一份 `datatype.TableInfo` 事实表达。表级通用事实进入 `Name`、`Kind`、`Comment`、`RowCount`、`SizeBytes`、`UpdatedAt`、`Fields` 等标准字段；来源原生但仍属表级的事实进入 `TableInfo.Native`，再由公共层透出到 `CatalogNode.Attributes.native` 或 `ItemMetadata.Attributes.native`。不得在列表接口保留一套事实、详情接口丢失另一套事实。
 
-对 graph 引擎，长期目标是 `CatalogProvider` 暴露 graph item，label、relationship type 和 endpoint pattern 作为 `datatype.GraphInfo` 中的 schema / shape facts，而不是作为 graph data type 的主 item 本体。Neo4j label / relationship 可作为 Manager 展示投影或过渡期 catalog 入口，但新的公共事实应围绕 `GraphInfo.NodeShapes`、`GraphInfo.RelationshipShapes` 和 `GraphRelationshipPatternInfo` 表达，不得继续把 `from_labels[]` / `to_labels[]` 两个集合作为 relationship endpoint 主事实。
+对 graph 引擎，`CatalogProvider` 暴露 graph item，label、relationship type 和 endpoint pattern 作为 `datatype.GraphInfo` 中的 schema / shape facts，而不是作为 graph data type 的主 item 本体。Neo4j label / relationship 只作为 Manager 展示投影或查询筛选条件，不作为公共 catalog item。graph 公共事实应围绕 `GraphInfo.NodeShapes`、`GraphInfo.RelationshipShapes` 和 `GraphRelationshipPatternInfo` 表达，不得继续把 `from_labels[]` / `to_labels[]` 两个集合作为 relationship endpoint 主事实。
 
 ```go
 type GraphMetadataProvider interface {

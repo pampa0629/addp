@@ -279,22 +279,39 @@ func TestApplyDocumentCollectionStatisticsWritesStandardSections(t *testing.T) {
 func TestApplyGraphItemAttributesWritesTypeInfoGraph(t *testing.T) {
 	t.Parallel()
 
+	nodeCount := int64(3)
+	relationshipCount := int64(7)
 	attrs := models.JSONMap{}
-	ApplyGraphItemAttributes(attrs, "relationship", 7, map[string]interface{}{
-		"from_labels": []string{"Person"},
-		"to_labels":   []interface{}{"Company"},
+	ApplyGraphItemAttributes(attrs, &datatype.GraphInfo{
+		Model:             datatype.GraphModelPropertyGraph,
+		NodeCount:         &nodeCount,
+		RelationshipCount: &relationshipCount,
+		NodeShapes: []datatype.GraphNodeShapeInfo{{
+			Name:   "Person",
+			Kind:   datatype.GraphNodeShapeKindLabel,
+			Labels: []string{"Person"},
+			Count:  &nodeCount,
+		}},
+		RelationshipShapes: []datatype.GraphRelationshipShapeInfo{{
+			Type: "WORKS_FOR",
+			Patterns: []datatype.GraphRelationshipPatternInfo{{
+				From:  datatype.GraphEndpointInfo{ShapeName: "Person", Labels: []string{"Person"}},
+				To:    datatype.GraphEndpointInfo{ShapeName: "Company", Labels: []string{"Company"}},
+				Count: &relationshipCount,
+			}},
+			Count: &relationshipCount,
+		}},
 	})
 
 	graph := attrs["type_info"].(map[string]interface{})["graph"].(map[string]interface{})
-	if graph["edge_count"] != int64(7) || graph["relationship"] != true {
+	if graph["model"] != datatype.GraphModelPropertyGraph || graph["relationship_count"] != int64(7) {
 		t.Fatalf("type_info.graph relationship attrs missing: %#v", graph)
 	}
-	fromLabels := graph["from_labels"].([]string)
-	toLabels := graph["to_labels"].([]string)
-	if len(fromLabels) != 1 || fromLabels[0] != "Person" || len(toLabels) != 1 || toLabels[0] != "Company" {
-		t.Fatalf("graph labels not preserved: %#v", graph)
+	if graph["edge_count"] != nil || graph["from_labels"] != nil || graph["to_labels"] != nil {
+		t.Fatalf("legacy graph attrs should not be written: %#v", graph)
 	}
-	if attrs["count"] != nil || attrs["from_labels"] != nil || attrs["to_labels"] != nil {
-		t.Fatalf("legacy graph attrs should not be written: %#v", attrs)
+	item := attrs["item"].(map[string]interface{})
+	if item["data_type"] != "graph" || item["layout"] != "single" {
+		t.Fatalf("graph item attrs missing: %#v", item)
 	}
 }

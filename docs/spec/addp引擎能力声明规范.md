@@ -117,7 +117,7 @@ type CatalogLevelSpec struct {
 | PostgreSQL | `server -> schema -> table/view/materialized_view` |
 | MySQL / Doris / ClickHouse | `server -> database -> table/view` |
 | MongoDB | `server -> database -> collection` |
-| Neo4j | `server -> database -> label/relationship` |
+| Neo4j | `server -> database -> graph` |
 | S3 / MinIO | `service -> bucket -> prefix -> object` |
 | NFS | `root -> directory -> file` |
 

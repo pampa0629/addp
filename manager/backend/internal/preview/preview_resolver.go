@@ -183,8 +183,7 @@ func (r *PreviewResolver) PreviewFromURIWithSelection(ctx context.Context, locat
 	}
 
 	// 3. 尝试从 Meta 获取元数据。
-	// meta_id 是最可靠的类型来源，尤其是图模型的 label/relationship 这类
-	// 路径型 locator 的 type 可能比 Meta item 的真实类型更粗。
+	// meta_id 是最可靠的类型来源，路径型 locator 的 type 可能比 Meta item 的真实类型更粗。
 	var metaNode *commonModels.MetaNode
 	var metaItem *commonModels.MetaItem
 	metaIDResolved := false
@@ -528,10 +527,8 @@ func providerNamesForMeta(req *PreviewResolverRequest, providerReq *PreviewReque
 	switch itemType {
 	case "collection":
 		return []string{"builtin:doc-collection"}
-	case "label":
-		return []string{"builtin:graph-label"}
-	case "relationship":
-		return []string{"builtin:graph-relationship"}
+	case "graph":
+		return []string{"builtin:graph"}
 	}
 
 	if isNodePreview(req, providerReq) {
@@ -559,10 +556,7 @@ func providerNamesForMeta(req *PreviewResolverRequest, providerReq *PreviewReque
 		}
 		return []string{"builtin:database-table"}
 	case "graph":
-		if itemType == "relationship" {
-			return []string{"builtin:graph-relationship"}
-		}
-		return []string{"builtin:graph-label"}
+		return []string{"builtin:graph"}
 	case "container":
 		if providerReq != nil && strings.TrimSpace(providerReq.ChildName) != "" && isContentFileItemType(itemType) {
 			return []string{"builtin:container-child"}

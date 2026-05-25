@@ -3,46 +3,43 @@ package preview
 import (
 	"reflect"
 	"testing"
+
+	"github.com/addp/common/datatype"
 )
 
-func TestGraphPreviewKindFallsBackToNodeType(t *testing.T) {
+func TestGraphOverviewRowsUsesGraphInfo(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name string
-		req  *PreviewRequest
-		want string
-	}{
-		{
-			name: "item type wins",
-			req:  &PreviewRequest{ItemType: "label", NodeType: "relationship"},
-			want: "label",
-		},
-		{
-			name: "label node type fallback",
-			req:  &PreviewRequest{NodeType: "label"},
-			want: "label",
-		},
-		{
-			name: "relationship node type fallback",
-			req:  &PreviewRequest{NodeType: "relationship"},
-			want: "relationship",
-		},
-		{
-			name: "unsupported type",
-			req:  &PreviewRequest{ItemType: "collection", NodeType: "collection"},
-			want: "",
-		},
+	nodeCount := int64(3)
+	relCount := int64(2)
+	info := &datatype.GraphInfo{
+		NodeShapes: []datatype.GraphNodeShapeInfo{{
+			Name:       "Person",
+			Properties: []datatype.FieldInfo{{Name: "name"}},
+			Count:      &nodeCount,
+		}},
+		RelationshipShapes: []datatype.GraphRelationshipShapeInfo{{
+			Type: "WORKS_FOR",
+			Patterns: []datatype.GraphRelationshipPatternInfo{{
+				From: datatype.GraphEndpointInfo{ShapeName: "Person"},
+				To:   datatype.GraphEndpointInfo{ShapeName: "Company"},
+			}},
+			Count: &relCount,
+		}},
 	}
 
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			if got := graphPreviewKind(tt.req); got != tt.want {
-				t.Fatalf("graphPreviewKind() = %q, want %q", got, tt.want)
-			}
-		})
+	columns, rows := graphOverviewRows(info)
+	if !reflect.DeepEqual(columns, []string{"kind", "name", "count", "patterns", "properties"}) {
+		t.Fatalf("columns = %v", columns)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("rows = %v", rows)
+	}
+	if rows[0]["kind"] != "node_shape" || rows[0]["name"] != "Person" || rows[0]["properties"] != "name" {
+		t.Fatalf("node row = %#v", rows[0])
+	}
+	if rows[1]["kind"] != "relationship_shape" || rows[1]["patterns"] != "(Person)->(Company)" {
+		t.Fatalf("relationship row = %#v", rows[1])
 	}
 }
 

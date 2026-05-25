@@ -20,14 +20,9 @@ func TestNamespaceItemType(t *testing.T) {
 			want: "collection",
 		},
 		{
-			name: "graph label",
-			node: plugin.CatalogNode{Term: plugin.CatalogTermLabel, Kind: plugin.CatalogKindLabel, IsItem: true},
-			want: "label",
-		},
-		{
-			name: "graph relationship",
-			node: plugin.CatalogNode{Term: plugin.CatalogTermRelationship, Kind: plugin.CatalogKindRelationship, IsItem: true},
-			want: "relationship",
+			name: "graph",
+			node: plugin.CatalogNode{Term: plugin.CatalogTermGraph, Kind: plugin.CatalogKindGraph, IsItem: true},
+			want: "graph",
 		},
 		{
 			name: "container is not item",

@@ -52,7 +52,7 @@
 | NFS / 本地文件系统 | file | `file` | `data_type=table/document/media/container`，`format=csv/wps/png/excel` |
 | PostgreSQL / MySQL / Doris / ClickHouse | table / view | `table` / `view` | 通常 `data_type=table` |
 | MongoDB | collection | `collection` | 当前按表格型文档集合消费时可为 `data_type=table` |
-| Neo4j | label / relationship | `label` / `relationship` | `data_type=graph` |
+| Neo4j | graph | `graph` | `data_type=graph` |
 
 因此，同一个 `sales.csv` 在 MinIO 中是 `item_type=object`，在 NFS 中是 `item_type=file`；它们都可以同时拥有 `attributes.item.data_type=table`、`attributes.item.format=csv`。不得因为对象内容可按表格读取，就把对象存储中的 `item_type` 写成 `table`。
 
@@ -128,15 +128,14 @@ full_name 使用引擎原生术语：
 
 ### Namespace/Item 型引擎（MongoDB / Neo4j）
 
-full_name 由 `database.collection` 两段组成，使用 `.` 分隔：
+full_name 由 `database.item` 两段组成，使用 `.` 分隔：
 
 | 引擎 | 节点/数据项类型 | full_name 示例 | 说明 |
 |------|--------------|--------------|------|
 | MongoDB | database 节点 | `mydb` | MongoDB database 名 |
 | MongoDB | collection 数据项 | `mydb.orders` | database + collection 名 |
 | Neo4j | database 节点 | `neo4j` | Neo4j database 名 |
-| Neo4j | label 数据项 | `neo4j.Person` | database + label 名 |
-| Neo4j | relationship 数据项 | `neo4j.WORKS_FOR` | database + relationship 名 |
+| Neo4j | graph 数据项 | `neo4j.graph` | database + graph item 名 |
 
 ---
 
@@ -313,11 +312,10 @@ addp://engine/{engine_id}/path/{segments}?type={type}
 | NFS 根 | `""` | `[]` | `.../path/?type=root` |
 | 关系型数据库 | `public.users` | `["public","users"]` | `.../path/public/users?type=table` |
 | MongoDB collection | `mydb.orders` | `["mydb","orders"]` | `.../path/mydb/orders?type=collection` |
-| Neo4j label | `neo4j.Person` | `["neo4j","Person"]` | `.../path/neo4j/Person?type=label` |
-| Neo4j relationship | `neo4j.WORKS_FOR` | `["neo4j","WORKS_FOR"]` | `.../path/neo4j/WORKS_FOR?type=relationship` |
+| Neo4j graph | `neo4j.graph` | `["neo4j","graph"]` | `.../path/neo4j/graph?type=graph` |
 
 数据库与 namespace/item 型引擎的解析语义：`namespace = path[0]`，`item = join(path[1:])`，具体数据项类型由 locator 的 `type` 决定。
-Neo4j 的节点标签必须使用 `type=label`，关系类型必须使用 `type=relationship`，不得折叠为 `type=collection`。
+Neo4j 的 catalog item 必须使用 `type=graph`；节点 label、relationship type 和连接模式属于 `type_info.graph`，不得作为独立 catalog item。
 NFS 物理路径重建公式为 `"/" + join(path, "/")`。
 
 ---
@@ -363,9 +361,9 @@ NFS 物理路径重建公式为 `"/" + join(path, "/")`。
 
 1. 通过 `CatalogProvider.ListChildren(root)` 获取 database 列表
 2. 为每个 database 创建 `meta_node`（`node_type = database`，`full_name = database`）
-3. 通过 `CatalogProvider.ListChildren(database)` 获取 collection/label/relationship，创建 `meta_item`
-4. `meta_item.full_name` 使用 `database.collection`（Neo4j 为 `database.label` / `database.relationship`）
-5. Neo4j 节点标签使用 `item_type = label`，关系类型使用 `item_type = relationship`
+3. 通过 `CatalogProvider.ListChildren(database)` 获取 collection/graph，创建 `meta_item`
+4. `meta_item.full_name` 使用 `database.collection`（Neo4j 为 `database.graph`）
+5. Neo4j label、relationship type 和 endpoint pattern 写入 `attributes.type_info.graph`，不作为独立 `meta_item`
 
 ---
 
@@ -376,11 +374,11 @@ NFS 物理路径重建公式为 `"/" + join(path, "/")`。
 - 传入 `nil`：由系统自动计算，规则为 `parent.full_name + "." + name`（用于关系型数据库 schema/database 节点、MongoDB/Neo4j database 节点）
 - 传入具体值（含空字符串）：直接使用，不覆盖（用于对象存储和文件系统，full_name 由扫描服务显式计算）
 
-关系型数据库表和 namespace/item 型 collection/label 的 `full_name` 由扫描服务显式拼接：
+关系型数据库表和 namespace/item 型 collection/graph 的 `full_name` 由扫描服务显式拼接：
 
 - 关系型数据库：`schema + "." + table`（PostgreSQL）或 `database + "." + table`（MySQL/Doris/ClickHouse）
 - MongoDB：`database + "." + collection`
-- Neo4j：`database + "." + label`
+- Neo4j：`database + ".graph"`
 
 文件系统各节点 full_name 的计算由 `filesystem_scan_service` 负责，遵循本文第二节的规则。
 

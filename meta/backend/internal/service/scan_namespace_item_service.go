@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
@@ -54,6 +55,7 @@ func (s *NamespaceItemScanService) ScanNamespace(
 		return 0, 0, 0, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
 	}
 	samplingProvider, _ := enginePlugin.(plugin.DocumentMetadataSamplingProvider)
+	metadataProvider, _ := enginePlugin.(plugin.ItemMetadataProvider)
 
 	// 1. 创建/更新 namespace 节点
 	namespaceNode, err := s.repo.UpsertNode(tenantID, resource.ID, nil, namespaceTermForPlugin(enginePlugin), namespaceName, nil, nil)
@@ -67,7 +69,7 @@ func (s *NamespaceItemScanService) ScanNamespace(
 
 	var totalObjects, totalFields int
 
-	totalObjects, totalFields, err = s.scanCatalogItems(ctx, enginePlugin, catalogProvider, samplingProvider, connInfo, resource, tenantID, namespaceNode, namespaceName, scanDepth, force)
+	totalObjects, totalFields, err = s.scanCatalogItems(ctx, enginePlugin, catalogProvider, metadataProvider, samplingProvider, connInfo, resource, tenantID, namespaceNode, namespaceName, scanDepth, force)
 
 	if err != nil {
 		s.repo.FinalizeNodeState(namespaceNode, "pending", 0, 0, err.Error())
@@ -97,6 +99,7 @@ func (s *NamespaceItemScanService) scanCatalogItems(
 	ctx context.Context,
 	enginePlugin plugin.EnginePlugin,
 	catalogProvider plugin.CatalogProvider,
+	metadataProvider plugin.ItemMetadataProvider,
 	samplingProvider plugin.DocumentMetadataSamplingProvider,
 	connInfo plugin.ConnectionInfo,
 	resource *commonModels.Engine,
@@ -184,14 +187,38 @@ func (s *NamespaceItemScanService) scanCatalogItems(
 				totalFields += len(itemMetadata.Fields)
 			}
 		}
+		var graphInfo *datatype.GraphInfo
+		if itemType == "graph" {
+			if metadataProvider == nil {
+				s.log.Warn("图 item 缺少 metadata provider", "namespace", namespaceName, "item", collInfo.Name)
+				continue
+			}
+			itemMetadata, err := metadataProvider.DescribeItem(ctx, connInfo, node.Path, plugin.MetadataOptions{
+				IncludeStatistics: true,
+				IncludeSamples:    strings.EqualFold(scanDepth, "deep"),
+			})
+			if err != nil {
+				s.log.Warn("图结构扫描失败", "namespace", namespaceName, "item", collInfo.Name, "error", err)
+				continue
+			}
+			graphInfo = plugin.ItemMetadataGraphInfo(itemMetadata)
+			if graphInfo == nil {
+				s.log.Warn("图结构扫描未返回 GraphInfo", "namespace", namespaceName, "item", collInfo.Name)
+				continue
+			}
+			count = derefGraphNodeCount(graphInfo)
+			sizeBytes = 0
+		}
 
 		if attrs == nil {
 			attrs = models.JSONMap{}
 		}
 		if itemType == "collection" {
 			metaattr.ApplyDocumentCollectionStatistics(attrs, count, sizeBytes)
+		} else if itemType == "graph" {
+			metaattr.ApplyGraphItemAttributes(attrs, graphInfo)
 		} else {
-			metaattr.ApplyGraphItemAttributes(attrs, itemType, count, node.Attributes)
+			continue
 		}
 		metaattr.ApplyNamespaceItemAttributes(attrs, itemType)
 
@@ -292,8 +319,15 @@ func itemTypes(items []*models.MetaItem) map[string]struct{} {
 }
 
 func countStatKey(itemType string) string {
-	if itemType == "relationship" {
-		return "count"
+	if itemType == "graph" {
+		return "node_count"
 	}
 	return "document_count"
+}
+
+func derefGraphNodeCount(info *datatype.GraphInfo) int64 {
+	if info == nil || info.NodeCount == nil {
+		return 0
+	}
+	return *info.NodeCount
 }

@@ -135,29 +135,16 @@ func ApplyTableItemAttributes(attrs models.JSONMap, tableInfo *datatype.TableInf
 	}
 }
 
-func ApplyGraphItemAttributes(attrs models.JSONMap, itemType string, count int64, sourceAttributes map[string]interface{}) {
+func ApplyGraphItemAttributes(attrs models.JSONMap, graphInfo *datatype.GraphInfo) {
 	if attrs == nil {
 		return
 	}
-
-	graphAttrs := map[string]interface{}{}
-	switch itemType {
-	case "label":
-		graphAttrs["label"] = true
-		graphAttrs["node_count"] = count
-	case "relationship":
-		graphAttrs["relationship"] = true
-		graphAttrs["edge_count"] = count
-		if values := stringSliceAttribute(sourceAttributes["from_labels"]); len(values) > 0 {
-			graphAttrs["from_labels"] = values
-		}
-		if values := stringSliceAttribute(sourceAttributes["to_labels"]); len(values) > 0 {
-			graphAttrs["to_labels"] = values
-		}
-	default:
-		graphAttrs["item_count"] = count
+	SetItem(attrs, "layout", "single")
+	SetItem(attrs, "data_type", string(datatype.DataTypeGraph))
+	if graphInfo == nil {
+		return
 	}
-	UpsertNested(attrs, "type_info", "graph", graphAttrs)
+	UpsertNested(attrs, "type_info", "graph", datatype.GraphInfoAttributes(graphInfo))
 }
 
 func IndexAttributes(indexes []IndexAttributesInput) []map[string]interface{} {
@@ -212,7 +199,7 @@ func ApplyNamespaceItemAttributes(attrs models.JSONMap, itemType string) {
 	switch itemType {
 	case "collection":
 		SetItem(attrs, "data_type", string(datatype.DataTypeTable))
-	case "label", "relationship":
+	case "graph":
 		SetItem(attrs, "data_type", string(datatype.DataTypeGraph))
 	default:
 		SetItem(attrs, "data_type", string(datatype.DataTypeUnknown))

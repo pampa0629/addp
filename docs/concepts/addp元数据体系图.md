@@ -83,11 +83,11 @@ graph LR
 |---|---|---|
 | PostgreSQL / MySQL | database、schema | table、view |
 | MongoDB | database | collection |
-| Neo4j | database | label、relationship |
+| Neo4j | database | graph |
 | MinIO / S3 | bucket、prefix | object |
 | NFS / 本地文件系统 | root、dir | file |
 
-文件、对象、表、集合、label 是否成为 data item，由 Meta detector 根据引擎原生边界和格式规则裁决。`meta_item.item_type` 保留引擎原生叶子术语；表格、文档、媒体、容器、图等内容语义写入 `attributes.item.data_type`。
+文件、对象、表、集合、graph 是否成为 data item，由 Meta detector 根据引擎稳定 catalog 边界和格式规则裁决。`meta_item.item_type` 保留 catalog item 术语；表格、文档、媒体、容器、图等内容语义写入 `attributes.item.data_type`。
 
 ## Meta Scanner
 

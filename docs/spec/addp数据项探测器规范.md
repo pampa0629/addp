@@ -130,7 +130,7 @@ item refresh 只允许刷新该 item 自身的 attributes、字段、format info
 
 | 类别 | 典型来源 | 内容布局 | 独占范围 |
 |---|---|---|---|
-| Native item detector | 数据库表、文档集合、图 label / relationship | `single` 或引擎规范声明 | 由引擎原生边界决定 |
+| Native item detector | 数据库表、文档集合、图整体 | `single` 或引擎规范声明 | 由引擎稳定 catalog 边界决定 |
 | Single-resource detector | CSV、PDF、图片、SQLite、Excel、ZIP | `single` | 不独占目录 |
 | Sibling multi-resource detector | Shapefile、主文件 + 索引文件 + 元数据文件 | `multi` | 只认领匹配 ref，不独占目录 |
 | Whole-scope detector | Iceberg 表目录、OSGB 场景目录、完整数据集 prefix | `whole` | 强匹配时可独占扫描范围 |

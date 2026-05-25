@@ -205,7 +205,7 @@ func NewGraphCapabilities(engineType string) EngineCapabilities {
 			Catalog: &CatalogCapability{
 				Supported: true,
 				RealTime:  true,
-				NodeKinds: []string{"database", "label", "relationship"},
+				NodeKinds: []string{"database", "graph"},
 			},
 			Metadata: &MetadataCapability{
 				Supported:      true,
@@ -214,7 +214,7 @@ func NewGraphCapabilities(engineType string) EngineCapabilities {
 			Store: &StoreCapability{
 				BatchRead: true,
 			},
-			Semantics: []string{"database", "label", "relationship", "node", "edge"},
+			Semantics: []string{"database", "graph", "node", "relationship"},
 		},
 		Compute: &ComputeCapabilities{
 			Query: &QueryCapability{

@@ -297,7 +297,7 @@ Manager 刷新目标必须是当前选中的 engine / node / item，不能默认
 |---|---|
 | engine root | engine |
 | schema / database / bucket / prefix / root / dir | node |
-| table / collection / label / relationship / object / file | item |
+| table / collection / graph / object / file | item |
 
 对于 item 目标，Meta 内部负责从已入库 attributes 还原最小内容输入：
 

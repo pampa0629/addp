@@ -7,6 +7,7 @@ import (
 
 	"github.com/addp/common/catalogview"
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/datatype"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
@@ -523,10 +524,21 @@ type NodeLabelSchema struct {
 
 // RelationshipSchema 关系类型描述
 type RelationshipSchema struct {
-	Type       string   `json:"type"`
-	Count      int64    `json:"count"`
-	FromLabels []string `json:"from_labels"`
-	ToLabels   []string `json:"to_labels"`
+	Type       string                      `json:"type"`
+	Count      int64                       `json:"count"`
+	Patterns   []RelationshipPatternSchema `json:"patterns"`
+	Properties []string                    `json:"properties"`
+}
+
+type RelationshipPatternSchema struct {
+	From  GraphEndpointSchema `json:"from"`
+	To    GraphEndpointSchema `json:"to"`
+	Count int64               `json:"count"`
+}
+
+type GraphEndpointSchema struct {
+	ShapeName string   `json:"shape_name"`
+	Labels    []string `json:"labels"`
 }
 
 // GetGraphSchema 获取图数据库的 Schema 结构（节点标签 + 关系类型）
@@ -580,7 +592,6 @@ func (s *ExplorerService) GetGraphSchema(ctx context.Context, tenantID *uint, en
 		return nil, fmt.Errorf("database node not found: %s", database)
 	}
 
-	// 从 Items 中过滤出对应数据库的 label 和 relationship
 	resp := &GraphSchemaResponse{
 		NodeLabels:    []NodeLabelSchema{},
 		Relationships: []RelationshipSchema{},
@@ -590,34 +601,91 @@ func (s *ExplorerService) GetGraphSchema(ctx context.Context, tenantID *uint, en
 		if item.NodeID != dbNodeID {
 			continue
 		}
-		switch item.ItemType {
-		case "label":
-			label := NodeLabelSchema{
-				Label:      item.Name,
-				Properties: extractStringSliceFromSection(item.Attributes, "type_info.graph", "properties"),
-			}
-			if item.RowCount != nil {
-				label.Count = *item.RowCount
-			} else {
-				label.Count = int64AttributeFromSection(item.Attributes, "type_info.graph", "node_count")
-			}
-			resp.NodeLabels = append(resp.NodeLabels, label)
-		case "relationship":
-			rel := RelationshipSchema{
-				Type:       item.Name,
-				FromLabels: extractStringSliceFromSection(item.Attributes, "type_info.graph", "from_labels"),
-				ToLabels:   extractStringSliceFromSection(item.Attributes, "type_info.graph", "to_labels"),
-			}
-			if item.RowCount != nil {
-				rel.Count = *item.RowCount
-			} else {
-				rel.Count = int64AttributeFromSection(item.Attributes, "type_info.graph", "edge_count")
-			}
-			resp.Relationships = append(resp.Relationships, rel)
+		if item.ItemType != "graph" {
+			continue
 		}
+		info := datatype.GraphInfoFromAttributes(item.Attributes)
+		if info == nil {
+			continue
+		}
+		resp.NodeLabels = append(resp.NodeLabels, graphNodeSchemas(info)...)
+		resp.Relationships = append(resp.Relationships, graphRelationshipSchemas(info)...)
 	}
 
 	return resp, nil
+}
+
+func graphNodeSchemas(info *datatype.GraphInfo) []NodeLabelSchema {
+	if info == nil {
+		return nil
+	}
+	result := make([]NodeLabelSchema, 0, len(info.NodeShapes))
+	for _, shape := range info.NodeShapes {
+		label := shape.Name
+		if label == "" && len(shape.Labels) > 0 {
+			label = strings.Join(shape.Labels, "+")
+		}
+		if label == "" {
+			continue
+		}
+		item := NodeLabelSchema{
+			Label:      label,
+			Properties: graphPropertyNames(shape.Properties),
+		}
+		if shape.Count != nil {
+			item.Count = *shape.Count
+		}
+		result = append(result, item)
+	}
+	return result
+}
+
+func graphRelationshipSchemas(info *datatype.GraphInfo) []RelationshipSchema {
+	if info == nil {
+		return nil
+	}
+	result := make([]RelationshipSchema, 0, len(info.RelationshipShapes))
+	for _, shape := range info.RelationshipShapes {
+		item := RelationshipSchema{
+			Type:       shape.Type,
+			Properties: graphPropertyNames(shape.Properties),
+			Patterns:   []RelationshipPatternSchema{},
+		}
+		if shape.Count != nil {
+			item.Count = *shape.Count
+		}
+		for _, pattern := range shape.Patterns {
+			patternSchema := RelationshipPatternSchema{
+				From: GraphEndpointSchema{
+					ShapeName: pattern.From.ShapeName,
+					Labels:    append([]string(nil), pattern.From.Labels...),
+				},
+				To: GraphEndpointSchema{
+					ShapeName: pattern.To.ShapeName,
+					Labels:    append([]string(nil), pattern.To.Labels...),
+				},
+			}
+			if pattern.Count != nil {
+				patternSchema.Count = *pattern.Count
+			}
+			item.Patterns = append(item.Patterns, patternSchema)
+		}
+		result = append(result, item)
+	}
+	return result
+}
+
+func graphPropertyNames(fields []datatype.FieldInfo) []string {
+	if len(fields) == 0 {
+		return []string{}
+	}
+	result := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if field.Name != "" {
+			result = append(result, field.Name)
+		}
+	}
+	return result
 }
 
 func extractStringSliceFromSection(attrs map[string]interface{}, section, key string) []string {

@@ -91,7 +91,7 @@ node 的职责是组织资源树，服务浏览、扫描和定位。node 不是 
 
 data item 的身份由 `meta_item` 表字段承载，例如 `id`、`tenant_id`、`engine_id`、`node_id`、`item_type`、`name`、`full_name`、`fingerprint`。这些身份字段不应重复写入 attributes。
 
-`item_type` 是 data item 在所属引擎 catalog / 路径模型中的原生叶子术语，不是内容语义类型。例如 MinIO / S3 的叶子是 `object`，NFS / 本地文件系统的叶子是 `file`，MongoDB 的叶子是 `collection`，Neo4j 的叶子是 `label` / `relationship`。同一个 CSV 在对象存储中应是 `item_type=object`，在文件系统中应是 `item_type=file`；它们的表格语义由 `attributes.item.data_type=table` 表达。
+`item_type` 是 data item 在所属引擎 catalog / 路径模型中的稳定叶子术语，不是内容语义类型。例如 MinIO / S3 的叶子是 `object`，NFS / 本地文件系统的叶子是 `file`，MongoDB 的叶子是 `collection`，Neo4j 的叶子是 `graph`。同一个 CSV 在对象存储中应是 `item_type=object`，在文件系统中应是 `item_type=file`；它们的表格语义由 `attributes.item.data_type=table` 表达。
 
 一个 data item 内部可以包含子对象，例如 SQLite 的内部 table、Excel 的 sheet、GeoPackage 的 layer、压缩包中的文件。当前概念上这些子对象默认写入 attributes；只有当需要独立授权、检索、血缘、传输或生命周期管理时，才讨论是否升格为独立 data item。
 

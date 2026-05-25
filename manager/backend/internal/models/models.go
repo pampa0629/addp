@@ -125,7 +125,7 @@ type TablePreview struct {
 
 // ItemMetadata 数据项元数据（来自 meta 模块，附加在预览响应中）
 type ItemMetadata struct {
-	ItemType        string          `json:"item_type"`          // 原始类型值，如 "table", "label"
+	ItemType        string          `json:"item_type"`          // 原始类型值，如 "table", "graph"
 	ItemTypeI18nKey string          `json:"item_type_i18n_key"` // i18n key，如 "engine.term.table"
 	FullName        string          `json:"full_name"`          // 在引擎内的完整路径
 	RowCount        *int64          `json:"row_count,omitempty"`

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	neo4jdriver "github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
@@ -62,10 +63,9 @@ func (p *Neo4jPlugin) StoreSemantics() plugin.StoreSemantics {
 
 func (p *Neo4jPlugin) graphCatalogCallbacks() plugin.GraphCatalogCallbacks {
 	return plugin.GraphCatalogCallbacks{
-		ListDatabasesFunc:         p.listDatabases,
-		ListNodeLabelsFunc:        p.listNodeLabels,
-		ListRelationshipTypesFunc: p.listRelationshipTypes,
-		IsSystemDatabaseFunc:      p.IsSystemDatabase,
+		ListDatabasesFunc:    p.listDatabases,
+		DescribeGraphFunc:    p.describeGraph,
+		IsSystemDatabaseFunc: p.IsSystemDatabase,
 	}
 }
 
@@ -78,7 +78,14 @@ func (p *Neo4jPlugin) ResolvePath(ctx context.Context, connInfo plugin.Connectio
 }
 
 func (p *Neo4jPlugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
-	return plugin.DescribeGraphItem(ctx, path.EngineID, connInfo, path, opts)
+	return plugin.DescribeGraphItem(ctx, p.graphCatalogCallbacks(), path.EngineID, connInfo, path, opts)
+}
+
+func (p *Neo4jPlugin) DescribeGraph(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*datatype.GraphInfo, error) {
+	if len(path.Segments) == 0 {
+		return nil, fmt.Errorf("Neo4j graph path requires database segment")
+	}
+	return p.describeGraph(ctx, connInfo, path.Segments[0].Name, opts)
 }
 
 func (p *Neo4jPlugin) QueryLanguages() []string {
@@ -246,13 +253,12 @@ func (p *Neo4jPlugin) IsSystemDatabase(databaseName string) bool {
 	return false
 }
 
-// listNodeLabels 列出所有节点标签。
-func (p *Neo4jPlugin) listNodeLabels(ctx context.Context, connInfo plugin.ConnectionInfo, database string) ([]plugin.NodeLabelInfo, error) {
+func (p *Neo4jPlugin) describeGraph(ctx context.Context, connInfo plugin.ConnectionInfo, database string, opts plugin.MetadataOptions) (*datatype.GraphInfo, error) {
 	driver, err := p.createDriver(ctx, connInfo)
 	if err != nil {
 		return nil, err
 	}
-	defer driver.Close(ctx)
+	defer driver.Close(ctx) //nolint:errcheck
 
 	session := driver.NewSession(ctx, neo4jdriver.SessionConfig{
 		AccessMode:   neo4jdriver.AccessModeRead,
@@ -260,17 +266,39 @@ func (p *Neo4jPlugin) listNodeLabels(ctx context.Context, connInfo plugin.Connec
 	})
 	defer session.Close(ctx)
 
+	nodeShapes, nodeCount, err := p.describeNodeShapes(ctx, session)
+	if err != nil {
+		return nil, err
+	}
+	relationshipShapes, relationshipCount, err := p.describeRelationshipShapes(ctx, session)
+	if err != nil {
+		return nil, err
+	}
+	directed := true
+	return &datatype.GraphInfo{
+		Model:              datatype.GraphModelPropertyGraph,
+		Directed:           &directed,
+		NodeCount:          &nodeCount,
+		RelationshipCount:  &relationshipCount,
+		NodeShapes:         nodeShapes,
+		RelationshipShapes: relationshipShapes,
+	}, nil
+}
+
+// describeNodeShapes 列出所有节点标签并转为 node shape。
+func (p *Neo4jPlugin) describeNodeShapes(ctx context.Context, session neo4jdriver.SessionWithContext) ([]datatype.GraphNodeShapeInfo, int64, error) {
 	result, err := session.Run(ctx, "CALL db.labels() YIELD label RETURN label ORDER BY label", nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list Neo4j labels: %w", err)
+		return nil, 0, fmt.Errorf("failed to list Neo4j labels: %w", err)
 	}
 
 	records, err := result.Collect(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to collect Neo4j labels: %w", err)
+		return nil, 0, fmt.Errorf("failed to collect Neo4j labels: %w", err)
 	}
 
-	labels := make([]plugin.NodeLabelInfo, 0, len(records))
+	nodeShapes := make([]datatype.GraphNodeShapeInfo, 0, len(records))
+	var total int64
 	for _, record := range records {
 		labelVal, ok := record.Get("label")
 		if !ok {
@@ -295,37 +323,32 @@ func (p *Neo4jPlugin) listNodeLabels(ctx context.Context, connInfo plugin.Connec
 			}
 		}
 
-		labels = append(labels, plugin.NodeLabelInfo{Name: label, Count: count})
+		total += count
+		nodeShapes = append(nodeShapes, datatype.GraphNodeShapeInfo{
+			Name:   label,
+			Kind:   datatype.GraphNodeShapeKindLabel,
+			Labels: []string{label},
+			Count:  &count,
+		})
 	}
 
-	return labels, nil
+	return nodeShapes, total, nil
 }
 
-// listRelationshipTypes 列出所有关系类型及连接统计。
-func (p *Neo4jPlugin) listRelationshipTypes(ctx context.Context, connInfo plugin.ConnectionInfo, database string) ([]plugin.RelationshipTypeInfo, error) {
-	driver, err := p.createDriver(ctx, connInfo)
-	if err != nil {
-		return nil, err
-	}
-	defer driver.Close(ctx) //nolint:errcheck
-
-	session := driver.NewSession(ctx, neo4jdriver.SessionConfig{
-		AccessMode:   neo4jdriver.AccessModeRead,
-		DatabaseName: database,
-	})
-	defer session.Close(ctx)
-
+// describeRelationshipShapes 列出所有关系类型及连接模式。
+func (p *Neo4jPlugin) describeRelationshipShapes(ctx context.Context, session neo4jdriver.SessionWithContext) ([]datatype.GraphRelationshipShapeInfo, int64, error) {
 	result, err := session.Run(ctx, "CALL db.relationshipTypes() YIELD relationshipType RETURN relationshipType ORDER BY relationshipType", nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list Neo4j relationship types: %w", err)
+		return nil, 0, fmt.Errorf("failed to list Neo4j relationship types: %w", err)
 	}
 
 	records, err := result.Collect(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to collect Neo4j relationship types: %w", err)
+		return nil, 0, fmt.Errorf("failed to collect Neo4j relationship types: %w", err)
 	}
 
-	relTypes := make([]plugin.RelationshipTypeInfo, 0, len(records))
+	relationshipShapes := make([]datatype.GraphRelationshipShapeInfo, 0, len(records))
+	var total int64
 	for _, record := range records {
 		relTypeVal, ok := record.Get("relationshipType")
 		if !ok {
@@ -340,45 +363,40 @@ func (p *Neo4jPlugin) listRelationshipTypes(ctx context.Context, connInfo plugin
 			continue
 		}
 
-		info := plugin.RelationshipTypeInfo{Name: relType}
+		shape := datatype.GraphRelationshipShapeInfo{Type: relType}
 
-		// 查询该关系类型的起始/终止标签和总数（最多取5种组合）
+		// 查询该关系类型的起始/终止 label set 和总数（最多取 20 种组合）。
 		statsResult, err := session.Run(ctx,
 			fmt.Sprintf(`MATCH (a)-[r:%s]->(b)
-WITH labels(a)[0] AS from, labels(b)[0] AS to, count(r) AS cnt
-RETURN from, to, cnt ORDER BY cnt DESC LIMIT 5`, escapeCypherLabel(relType)),
+WITH labels(a) AS from, labels(b) AS to, count(r) AS cnt
+RETURN from, to, cnt ORDER BY cnt DESC LIMIT 20`, escapeCypherLabel(relType)),
 			nil,
 		)
 		if err == nil {
 			statsRecords, _ := statsResult.Collect(ctx)
-			fromSet := make(map[string]struct{})
-			toSet := make(map[string]struct{})
 			for _, sr := range statsRecords {
 				fromVal, _ := sr.Get("from")
 				toVal, _ := sr.Get("to")
 				cntVal, _ := sr.Get("cnt")
-				if from, ok := fromVal.(string); ok && from != "" {
-					fromSet[from] = struct{}{}
-				}
-				if to, ok := toVal.(string); ok && to != "" {
-					toSet[to] = struct{}{}
-				}
+				count, _ := cntVal.(int64)
+				fromLabels := neo4jStringSlice(fromVal)
+				toLabels := neo4jStringSlice(toVal)
+				shape.Patterns = append(shape.Patterns, datatype.GraphRelationshipPatternInfo{
+					From:  datatype.GraphEndpointInfo{ShapeName: graphEndpointShapeName(fromLabels), Labels: fromLabels},
+					To:    datatype.GraphEndpointInfo{ShapeName: graphEndpointShapeName(toLabels), Labels: toLabels},
+					Count: &count,
+				})
 				if cnt, ok := cntVal.(int64); ok {
-					info.Count += cnt
+					shape.Count = addInt64Ptr(shape.Count, cnt)
+					total += cnt
 				}
-			}
-			for from := range fromSet {
-				info.FromLabels = append(info.FromLabels, from)
-			}
-			for to := range toSet {
-				info.ToLabels = append(info.ToLabels, to)
 			}
 		}
 
-		relTypes = append(relTypes, info)
+		relationshipShapes = append(relationshipShapes, shape)
 	}
 
-	return relTypes, nil
+	return relationshipShapes, total, nil
 }
 
 // executeGraphQuery 执行 Cypher 查询并提取图数据。
@@ -618,6 +636,39 @@ func isInternalRelationshipType(relType string) bool {
 	}
 	_, ok := internalTypes[strings.ToUpper(relType)]
 	return ok
+}
+
+func neo4jStringSlice(value interface{}) []string {
+	switch values := value.(type) {
+	case []string:
+		return append([]string(nil), values...)
+	case []interface{}:
+		result := make([]string, 0, len(values))
+		for _, value := range values {
+			if str, ok := value.(string); ok && str != "" {
+				result = append(result, str)
+			}
+		}
+		return result
+	default:
+		return nil
+	}
+}
+
+func graphEndpointShapeName(labels []string) string {
+	if len(labels) == 0 {
+		return ""
+	}
+	return strings.Join(labels, "+")
+}
+
+func addInt64Ptr(value *int64, delta int64) *int64 {
+	if value == nil {
+		result := delta
+		return &result
+	}
+	*value += delta
+	return value
 }
 
 // convertNeo4jValue 将 Neo4j 值转为 JSON 友好的 Go 类型

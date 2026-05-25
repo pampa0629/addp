@@ -3,14 +3,14 @@ package plugin
 import (
 	"context"
 	"fmt"
+
+	"github.com/addp/common/datatype"
 )
 
 const (
-	CatalogTermLabel        = "label"
-	CatalogTermRelationship = "relationship"
+	CatalogTermGraph = "graph"
 
-	CatalogKindLabel        = "label"
-	CatalogKindRelationship = "relationship"
+	CatalogKindGraph = "graph"
 )
 
 func GraphCatalogModel() CatalogModelSpec {
@@ -19,16 +19,15 @@ func GraphCatalogModel() CatalogModelSpec {
 		RootTerm:    "server",
 		Levels: []CatalogLevelSpec{
 			{Term: CatalogTermDatabase, Kinds: []string{CatalogKindNamespace}, Container: true, I18nKey: CatalogTermI18nKey(CatalogTermDatabase)},
-			{Term: CatalogTermLabel, Kinds: []string{CatalogKindLabel, CatalogKindRelationship}, Item: true, I18nKey: CatalogTermI18nKey(CatalogTermLabel)},
+			{Term: CatalogTermGraph, Kinds: []string{CatalogKindGraph}, Item: true, I18nKey: CatalogTermI18nKey(CatalogTermGraph)},
 		},
 	}
 }
 
 type GraphCatalogCallbacks struct {
-	ListDatabasesFunc         func(ctx context.Context, connInfo ConnectionInfo) ([]DatabaseInfo, error)
-	ListNodeLabelsFunc        func(ctx context.Context, connInfo ConnectionInfo, database string) ([]NodeLabelInfo, error)
-	ListRelationshipTypesFunc func(ctx context.Context, connInfo ConnectionInfo, database string) ([]RelationshipTypeInfo, error)
-	IsSystemDatabaseFunc      func(databaseName string) bool
+	ListDatabasesFunc    func(ctx context.Context, connInfo ConnectionInfo) ([]DatabaseInfo, error)
+	DescribeGraphFunc    func(ctx context.Context, connInfo ConnectionInfo, database string, opts MetadataOptions) (*datatype.GraphInfo, error)
+	IsSystemDatabaseFunc func(databaseName string) bool
 }
 
 func ListGraphCatalogChildren(ctx context.Context, callbacks GraphCatalogCallbacks, engineID uint, connInfo ConnectionInfo, parent CatalogPath, opts ListOptions) ([]CatalogNode, error) {
@@ -50,29 +49,13 @@ func ListGraphCatalogChildren(ctx context.Context, callbacks GraphCatalogCallbac
 		return nodes, nil
 	}
 
-	database := parent.Segments[0].Name
-	if callbacks.ListNodeLabelsFunc == nil {
-		return nil, fmt.Errorf("graph catalog callbacks ListNodeLabelsFunc is nil")
-	}
-	labels, err := callbacks.ListNodeLabelsFunc(ctx, connInfo, database)
-	if err != nil {
-		return nil, err
-	}
-	if callbacks.ListRelationshipTypesFunc == nil {
-		return nil, fmt.Errorf("graph catalog callbacks ListRelationshipTypesFunc is nil")
-	}
-	rels, err := callbacks.ListRelationshipTypesFunc(ctx, connInfo, database)
-	if err != nil {
-		return nil, err
-	}
-	nodes := make([]CatalogNode, 0, len(labels)+len(rels))
-	for _, label := range labels {
-		nodes = append(nodes, CatalogNode{Name: label.Name, Path: appendCatalogSegment(parent, engineID, CatalogTermLabel, CatalogKindLabel, label.Name), Term: CatalogTermLabel, Kind: CatalogKindLabel, IsItem: true, Stats: map[string]interface{}{"count": label.Count}})
-	}
-	for _, rel := range rels {
-		nodes = append(nodes, CatalogNode{Name: rel.Name, Path: appendCatalogSegment(parent, engineID, CatalogTermRelationship, CatalogKindRelationship, rel.Name), Term: CatalogTermRelationship, Kind: CatalogKindRelationship, IsItem: true, Stats: map[string]interface{}{"count": rel.Count}, Attributes: map[string]interface{}{"from_labels": rel.FromLabels, "to_labels": rel.ToLabels}})
-	}
-	return nodes, nil
+	return []CatalogNode{{
+		Name:   CatalogKindGraph,
+		Path:   appendCatalogSegment(parent, engineID, CatalogTermGraph, CatalogKindGraph, CatalogKindGraph),
+		Term:   CatalogTermGraph,
+		Kind:   CatalogKindGraph,
+		IsItem: true,
+	}}, nil
 }
 
 func (a GraphCatalogCallbacks) isSystemDatabase(databaseName string) bool {
@@ -90,22 +73,29 @@ func ResolveGraphCatalogPath(ctx context.Context, callbacks GraphCatalogCallback
 	if len(path.Segments) == 1 {
 		return &CatalogNode{Name: last.Name, Path: path, Term: CatalogTermDatabase, Kind: CatalogKindNamespace, IsContainer: true}, nil
 	}
-	return &CatalogNode{Name: last.Name, Path: path, Term: last.Term, Kind: last.Kind, IsItem: true}, nil
+	return &CatalogNode{Name: last.Name, Path: path, Term: CatalogTermGraph, Kind: CatalogKindGraph, IsItem: true}, nil
 }
 
-func DescribeGraphItem(ctx context.Context, engineID uint, connInfo ConnectionInfo, path CatalogPath, opts MetadataOptions) (*ItemMetadata, error) {
+func DescribeGraphItem(ctx context.Context, callbacks GraphCatalogCallbacks, engineID uint, connInfo ConnectionInfo, path CatalogPath, opts MetadataOptions) (*ItemMetadata, error) {
 	if len(path.Segments) < 2 {
-		return nil, fmt.Errorf("graph item path requires database and label/relationship segments")
+		return nil, fmt.Errorf("graph item path requires database and graph segments")
+	}
+	if callbacks.DescribeGraphFunc == nil {
+		return nil, fmt.Errorf("graph catalog callbacks DescribeGraphFunc is nil")
 	}
 	database := path.Segments[0].Name
-	item := path.Segments[len(path.Segments)-1]
+	graph, err := callbacks.DescribeGraphFunc(ctx, connInfo, database, opts)
+	if err != nil {
+		return nil, err
+	}
 	return &ItemMetadata{
-		Path: path,
-		Kind: item.Kind,
+		Path:  path,
+		Kind:  CatalogKindGraph,
+		Graph: graph.Clone(),
 		Attributes: map[string]interface{}{
 			"database": database,
-			"name":     item.Name,
-			"term":     item.Term,
+			"name":     CatalogKindGraph,
+			"term":     CatalogTermGraph,
 		},
 	}, nil
 }
