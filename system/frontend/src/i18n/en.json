@@ -338,7 +338,7 @@
           "container": "Container",
           "item": "Item",
           "optional": "Optional",
-          "fieldSchema": "Field schema",
+          "fieldInfo": "Field schema",
           "statistics": "Statistics",
           "indexes": "Indexes",
           "constraints": "Constraints",

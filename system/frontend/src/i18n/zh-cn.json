@@ -338,7 +338,7 @@
           "container": "容器",
           "item": "数据项",
           "optional": "可选",
-          "fieldSchema": "字段结构",
+          "fieldInfo": "字段结构",
           "statistics": "统计信息",
           "indexes": "索引",
           "constraints": "约束",

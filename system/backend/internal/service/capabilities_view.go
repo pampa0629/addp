@@ -125,7 +125,7 @@ func buildStorageSection(caps *engineplugin.EngineCapabilities) *models.Capabili
 	if caps.Storage.Metadata != nil && caps.Storage.Metadata.Supported {
 		item := capabilityItem("metadata", "system.engine.capabilityView.items.metadata", capabilityStatusAvailable)
 		item.Tags = appendTrueTags(item.Tags, map[string]bool{
-			"field_schema":     caps.Storage.Metadata.FieldSchema,
+			"field_info":      caps.Storage.Metadata.FieldInfo,
 			"statistics":       caps.Storage.Metadata.Statistics,
 			"indexes":          caps.Storage.Metadata.Indexes,
 			"constraints":      caps.Storage.Metadata.Constraints,
