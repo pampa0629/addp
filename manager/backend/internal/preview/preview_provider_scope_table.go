@@ -10,6 +10,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
+	"github.com/addp/manager/internal/catalogutil"
 	"github.com/addp/manager/internal/models"
 )
 
@@ -209,7 +210,7 @@ func resolveScopeTableFormat(req *PreviewRequest) format.FormatType {
 	if req == nil {
 		return format.FormatUnknown
 	}
-	if formatName := strings.TrimSpace(stringAttribute(req.Attributes, "format")); formatName != "" {
+	if formatName := strings.TrimSpace(catalogutil.StringAttribute(req.Attributes, "format")); formatName != "" {
 		return normalizeFileTableFormat(formatName)
 	}
 	if req.PhysicalPath != "" {

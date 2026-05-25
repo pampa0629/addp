@@ -615,7 +615,7 @@ type SpatialInfo struct {
 |---|---|---|---|
 | `format.TableDescribeResult` / `format.MediaDescribeResult` | 已迁出 `common/datatype`，作为 format provider 解析结果包存在 | Provider 一次解析自然可能得到多类事实；保留组合返回可以避免重复读取和过度设计 | 保持在 `common/format` provider 边界内，不进入 `datatype`；如后续确有必要，再按事实拆分 provider |
 | `datatype.ContentIndex` | 当前放在 `common/datatype`，被 format、Meta、Manager preview 使用 | 它不是 data type 本体，但当前是跨模块复用结构；贸然移出会引入新包或新概念 | 暂不动。后续结合 engine range reader、format content index、Meta attributes 的消费链路再决定是否移出 |
-| `capabilities.spatial` 写入 helper | Meta 内仍存在多处手写转换 | 当前不只是结构投影，还夹带单几何顶层 `srid/crs`、空 geometry column 过滤、extent 表示等展示/兼容语义；直接换成 `jsonmap.MapFromStruct` 会改变 attributes 形态 | 先统一 `capabilities.spatial` schema，再决定用专门 helper 或纯 tag 转换 |
+| `capabilities.spatial` 写入 helper | 已在 Meta 侧新增专门 helper，并完成主要写入链路收敛 | 字段型与非字段型 spatial 的表达不同，不能直接用纯结构投影替代 | 后续只在新增 spatial 写入链路时复用 `metaattr.SpatialInfoAttributes`，避免重新手写 |
 | `common/engine/plugin.DatabaseInfo` / `CollectionInfo` | 仍是 engine catalog 层结构 | 它们更接近 catalog hierarchy / namespace 事实，不等同于 data type info | 暂不迁入 `datatype`。后续如有重复，再从 catalog/path/node 语义统一 |
 | `format.TableInfo` | 已删除 | 原薄壳只重复 `datatype.TableInfo`，没有独立事实边界 | reader / writer / Transfer 直接使用 `datatype.TableInfo` |
 | Manager `Metadata.vue` 历史页面 | 已删除 | 页面未挂路由，且调用的 `managerAPI.scanDataSource/getTables/manageTable/unmanageTable` 已不存在；继续保留会误导为旧 metadata 消费入口 | Manager 元数据展示以 Data Explorer + Meta 标准 attributes 为准；`quick_view` 保留为空间快显 / MVT 预缓存任务表，不承载 table info 事实 |
@@ -713,6 +713,34 @@ type SpatialInfo struct {
 
 阶段性结论：`layout` 不迁入 `common/datatype`；公开常量和 helper 先统一在 `common/format` 顶层；最终 item layout 由 dataitem / Meta item 识别层确认。
 
+### dataitem、metaitem 与 Manager container preview
+
+`common/dataitem` 是通用 data item 组织识别层。它只负责把一批候选 content 识别为 `ResolvedItem`，并确认 `layout`、`data_type`、`format`、`entry_path`、`refs`、claims 等 item 边界事实。它不负责 Meta 落库、不读取 provider 详情、不生成 Manager 展示 DTO。
+
+`meta/backend/internal/metaitem` 是 Meta 扫描阶段在 `common/dataitem` 之上的业务编排层。它把存储引擎扫描出的文件 / 对象转成 `dataitem.Candidate`，调用 `dataitem.ResolveItems`，再补充 Meta 落库需要的事实，例如 `physical_path`、字段、attributes、multi table 的 format describe 结果等。`metaitem.DetectedItem` 可以内嵌 `dataitem.ResolvedItem`，但它不是新的通用 item 事实源，只是 Meta 扫描计划。
+
+Manager 的 container preview 也复用 `common/dataitem`，但它发生在展示时。container child 本身只是容器内部可寻址对象摘要，`ContainerChildInfo` 不持久化 `layout`。当 Manager 预览 ZIP 等容器内容时，会把 children 转成 `dataitem.Candidate`，以 `ScopeKindContainer` 调用 `dataitem.ResolveItems`，再把识别出的 multi item 临时投影为 preview child。预览结果中出现的 `layout=multi` 来自当次动态归并，不是 `type_info.container.children[]` 的原始存储事实。
+
+因此三者边界如下：
+
+```text
+common/dataitem
+  -> 通用 item 组织识别，输出 ResolvedItem
+
+meta/internal/metaitem
+  -> Meta 扫描编排和 enrichment，输出 DetectedItem / attributes 写入计划
+
+manager/objectcontent
+  -> 展示时复用 dataitem 对 container children 临时分组，输出 preview DTO
+```
+
+当前约束：
+
+- `layout` 是 item 组织事实，不进入 `common/datatype`。
+- `ContainerChildInfo` 不写 `layout`，只保留 child 摘要、格式字符串和 refs 等可复用事实。
+- container 内 multi layout 的识别必须使用统一的 `common/dataitem` 规则，避免 Manager、Meta、format 各自硬编码 shapefile / sidecar 归并逻辑。
+- 如果未来 engine 侧出现“多个 table / topic / label 组成一个 item”的需求，也应复用或扩展 `common/dataitem` 的组织识别能力，而不是在 engine provider 中新增另一套 layout 事实源。
+
 ## Meta attributes 映射
 
 `datatype` 结构不等于 `meta_item.attributes` schema。Meta 仍负责 attributes normalizer 和落库。
@@ -752,7 +780,15 @@ datatype.ContentIndex
 - `TableInfo` / `FieldInfo`：由 `common/datatype` 提供专门 helper，内部复用 `common/jsonmap`，并保留 field type 归一化、空字段过滤、row count / size bytes 有效性等 table 语义。
 - `ContentIndex`：结构已具备明确 json tag，Meta 写入 `content_index.<data_type>` 时直接复用 `common/jsonmap.MapFromStruct`，不再为每个写入点手写 anchors / source / header bytes 转换。
 - `ContainerInfo`：Meta 写入 `type_info.container` 时可以复用 `common/jsonmap` 生成通用字段，但必须保留 container 语义约束：`child_count/resource_count/children` 是明确事实，即使为 0 或空列表也应写入；child 只写轻量摘要，不写 `Fields`；child `Native` 必须过滤 `format/ref_paths/components` 等协议字段。
-- `SpatialInfo`：暂不机械改成统一 tag 转换。原因是当前写入链路仍包含空间展示和兼容语义，例如单几何无字段名时的顶层 `srid/crs`、`geometry_columns` 空项过滤、`extent` 数组化等。后续应先统一 `capabilities.spatial` schema，再收口为专门 helper 或纯 `jsonmap` 转换。
+- `SpatialInfo`：`capabilities.spatial` 已确认支持字段型和非字段型两类表达。字段型空间对象写 `geometry_columns` / `primary_geometry_column`；非字段型空间对象可只写顶层 `srid` / `crs` / `extent`，不得虚构 geometry column。Meta 写入应使用专门 helper，不能在各解析链路重复手写。
+
+`metaattr` 是 Meta attributes 投影层，不是扫描编排层或 engine 适配层。它的函数输入只能是：
+
+- `models.JSONMap` / `map[string]interface{}` 这类 attributes map。
+- `common/datatype` 中的通用事实结构，例如 `TableInfo`、`FieldInfo`、`SpatialInfo`。
+- 为 attributes 投影定义的轻量输入结构，例如 data item attributes input、document collection attributes input。
+
+`metaattr` 不应接收 `metaitem.DetectedItem`、`plugin.ItemMetadata`、`plugin.IndexInfo`、`models.SpatialMetadata`、Manager DTO 等上层复杂类型。上层模块如果拿到 engine / format / query / 展示模型，应先在本层投影为轻量输入或 `datatype` 事实结构，再调用 `metaattr`。这样可以避免 attributes helper 反向依赖扫描、engine 或展示边界。
 
 ## 迁移原则
 

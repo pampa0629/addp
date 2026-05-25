@@ -160,58 +160,5 @@ func MediaInfoAttributes(info *format.MediaDescribeResult) models.JSONMap {
 }
 
 func spatialInfoAttributes(info *datatype.SpatialInfo) map[string]interface{} {
-	if info == nil {
-		return nil
-	}
-	attrs := map[string]interface{}{}
-	if len(info.GeometryColumns) > 0 {
-		geometryColumns := make([]map[string]interface{}, 0, len(info.GeometryColumns))
-		for _, column := range info.GeometryColumns {
-			columnAttrs := map[string]interface{}{}
-			if column.Name != "" {
-				columnAttrs["name"] = column.Name
-			}
-			if column.GeometryType != "" {
-				columnAttrs["geometry_type"] = column.GeometryType
-			}
-			if column.SRID != nil {
-				columnAttrs["srid"] = *column.SRID
-				if len(info.GeometryColumns) == 1 && column.Name == "" {
-					attrs["srid"] = *column.SRID
-				}
-			}
-			if column.CRS != "" {
-				columnAttrs["crs"] = column.CRS
-				if len(info.GeometryColumns) == 1 && column.Name == "" {
-					attrs["crs"] = column.CRS
-				}
-			}
-			if column.Dimension != nil {
-				columnAttrs["dimension"] = *column.Dimension
-			}
-			if column.Nullable != nil {
-				columnAttrs["nullable"] = *column.Nullable
-			}
-			if len(columnAttrs) > 0 {
-				geometryColumns = append(geometryColumns, columnAttrs)
-			}
-		}
-		if len(geometryColumns) > 0 && geometryColumns[0]["name"] != nil {
-			attrs["geometry_columns"] = geometryColumns
-		}
-	}
-	if info.PrimaryGeometryColumn != "" {
-		attrs["primary_geometry_column"] = info.PrimaryGeometryColumn
-	}
-	if info.Extent != nil {
-		bbox := *info.Extent
-		attrs["extent"] = []float64{bbox[0], bbox[1], bbox[2], bbox[3]}
-	}
-	if info.HasSpatialIndex != nil {
-		attrs["has_spatial_index"] = *info.HasSpatialIndex
-	}
-	if info.IndexName != "" {
-		attrs["index_name"] = info.IndexName
-	}
-	return attrs
+	return metaattr.SpatialInfoAttributes(info)
 }

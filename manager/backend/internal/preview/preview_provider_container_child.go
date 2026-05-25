@@ -10,6 +10,7 @@ import (
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
+	"github.com/addp/manager/internal/catalogutil"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/objectcontent"
 )
@@ -34,7 +35,7 @@ func (p *ContainerChildPreviewProvider) Preview(ctx context.Context, req *Previe
 	if err != nil {
 		return nil, err
 	}
-	parentFormat := normalizeFileTableFormat(stringAttribute(req.Attributes, "format"))
+	parentFormat := normalizeFileTableFormat(catalogutil.StringAttribute(req.Attributes, "format"))
 	child, err := resolvePreviewContainerChild(ctx, contentCtx.reader, contentCtx.path, parentFormat, req)
 	if err != nil {
 		return nil, err

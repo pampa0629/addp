@@ -117,7 +117,7 @@ func (s *ScanService) refreshKnownItemAttributes(
 		attrs = metaattr.JSONMap(detected.Attributes)
 	}
 	clearObsoleteKnownItemAttributes(attrs, detected)
-	metaattr.MergeDataItemAttributes(attrs, detected)
+	metaattr.MergeDataItemAttributes(attrs, metaitem.AttributeInput(detected))
 	restoreKnownItemStorage(attrs, descriptor, item)
 	return metaattr.Normalize(attrs), len(detected.Fields), nil
 }

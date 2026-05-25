@@ -277,9 +277,6 @@ func TestBuildFromMetadataTreeAttachesItems(t *testing.T) {
 	if got := commonJSON.Int64(item.Metadata, "type_info.table", "row_count"); got != rowCount {
 		t.Fatalf("item type_info.table.row_count = %d, want %d", got, rowCount)
 	}
-	if got := commonJSON.Int64(item.Metadata, "capabilities.statistics", "row_count"); got != rowCount {
-		t.Fatalf("item capabilities.statistics.row_count = %d, want %d", got, rowCount)
-	}
 }
 
 func TestBuildFromMetaMergesWholeScopeItemWithSamePathDirectory(t *testing.T) {

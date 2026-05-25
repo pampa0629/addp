@@ -92,11 +92,66 @@ func StringAttribute(attrs map[string]interface{}, key string) string {
 	return ""
 }
 
+func MapAttribute(attrs map[string]interface{}, key string) map[string]interface{} {
+	if attrs == nil {
+		return nil
+	}
+	for _, section := range attributeSectionsForKey(key) {
+		if sectionAttrs := commonJSON.Section(attrs, section); len(sectionAttrs) > 0 {
+			if value := commonJSON.InterfaceMap(sectionAttrs[key]); len(value) > 0 {
+				return value
+			}
+		}
+	}
+	return nil
+}
+
+func StringSliceAttribute(attrs map[string]interface{}, key string) []string {
+	if attrs == nil {
+		return nil
+	}
+	for _, section := range attributeSectionsForKey(key) {
+		if values := stringSlice(commonJSON.Value(attrs, section, key)); len(values) > 0 {
+			return values
+		}
+	}
+	return nil
+}
+
+func Int64Attribute(attrs map[string]interface{}, key string) int64 {
+	if attrs == nil {
+		return 0
+	}
+	for _, section := range attributeSectionsForKey(key) {
+		if value := commonJSON.Int64(attrs, section, key); value != 0 {
+			return value
+		}
+	}
+	return 0
+}
+
 func Int64Stat(stats map[string]interface{}, key string) int64 {
 	if stats == nil {
 		return 0
 	}
 	return commonJSON.InterfaceInt64(stats[key])
+}
+
+func stringSlice(value interface{}) []string {
+	switch typed := value.(type) {
+	case []string:
+		return typed
+	case []interface{}:
+		values := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if text := commonJSON.InterfaceString(item); text != "" {
+				values = append(values, text)
+			}
+		}
+		return values
+	default:
+		return nil
+	}
 }
 
 func attributeSectionsForKey(key string) []string {
@@ -105,7 +160,7 @@ func attributeSectionsForKey(key string) []string {
 		return []string{"item"}
 	case "bucket", "path", "name", "physical_path", "size_bytes", "size", "total_size", "content_type", "last_modified_at", "etag":
 		return []string{"storage"}
-	case "fields", "primary_key", "indexes", "row_count", "document_count":
+	case "fields", "primary_key", "row_count":
 		return []string{"type_info.table"}
 	case "width", "height", "duration", "codec", "page_count", "word_count":
 		return []string{"type_info.media", "type_info.document"}

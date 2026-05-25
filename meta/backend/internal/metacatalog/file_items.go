@@ -26,9 +26,9 @@ func PlanFileCatalogDetectedItem(engineID uint, dirPath string, item *metaitem.D
 		return FileCatalogDetectedItemPlan{}, false
 	}
 	itemName, fullName := FileCatalogDetectedItemName(dirPath, item)
-	attrs := metaattr.JSONMap(metaattr.BuildAttributes(item))
+	attrs := metaattr.JSONMap(metaattr.BuildAttributes(metaitem.AttributeInput(item)))
 	if len(item.Fields) > 0 {
-		metaattr.SetSchemaFields(attrs, metaattr.FieldAttributes(item.Fields))
+		metaattr.SetTableFields(attrs, item.Fields)
 	}
 	return FileCatalogDetectedItemPlan{
 		ItemType:    itemType,

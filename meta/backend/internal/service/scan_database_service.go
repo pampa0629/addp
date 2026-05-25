@@ -354,18 +354,16 @@ func (s *DatabaseScanService) scanTableDetails(
 			}
 		}
 
-		attrs = metaattr.BuildTableAttributes(schemaName, metaattr.FieldAttributes(fields), tableType(tableInfo), tableComment(tableInfo))
-		if len(primaryKeyColumns) > 0 {
-			metaattr.UpsertNested(attrs, "type_info", "table", map[string]interface{}{
-				"primary_key": primaryKeyColumns,
-			})
-		}
+		tableInfo.Kind = normalizedTableKind(tableInfo)
+		tableInfo.Fields = fields
+		tableInfo.PrimaryKey = primaryKeyColumns
+		attrs = tableItemAttributes(schemaName, tableInfo)
 
 		// 扫描空间元数据由引擎能力声明控制，具体实现通过连接池增强元数据。
 		if engineSupportsSpatialMetadata(resource.EngineType) && db != nil {
 			spatialMeta := s.scanSpatialMetadata(ctx, db, schemaName, tableInfo.Name)
 			if spatialMeta != nil {
-				metaattr.UpsertNested(attrs, "capabilities", "spatial", metaattr.SpatialCapabilityFromMetadata(spatialMeta))
+				metaattr.UpsertNested(attrs, "capabilities", "spatial", metaattr.SpatialInfoAttributes(spatialInfoFromMetadata(spatialMeta)))
 				s.log.Info("空间元数据扫描成功",
 					"table", tableInfo.Name,
 					"geometry_column", spatialMeta.GeometryColumn,
@@ -377,15 +375,13 @@ func (s *DatabaseScanService) scanTableDetails(
 		if existingItem != nil && existingItem.Attributes != nil {
 			attrs = existingItem.Attributes
 			metaattr.SetStorage(attrs, "schema_name", schemaName)
-			metaattr.UpsertNested(attrs, "type_info", "table", map[string]interface{}{
-				"kind":    tableType(tableInfo),
-				"comment": tableComment(tableInfo),
-			})
+			tableInfo.Kind = normalizedTableKind(tableInfo)
+			metaattr.UpsertNested(attrs, "type_info", "table", metaattr.TableInfoAttributes(&tableInfo))
 		} else {
-			attrs = metaattr.BuildBasicTableAttributes(schemaName, tableType(tableInfo), tableComment(tableInfo))
+			tableInfo.Kind = normalizedTableKind(tableInfo)
+			attrs = tableItemAttributes(schemaName, tableInfo)
 		}
 	}
-	metaattr.UpsertNested(attrs, "type_info", "table", metaattr.TableInfoAttributes(&tableInfo))
 	metaattr.SetItem(attrs, "layout", string(dataitem.LayoutSingle))
 	metaattr.SetItem(attrs, "data_type", string(dataitem.DataTypeTable))
 	rowCount := derefInt64Ptr(tableInfo.RowCount)
@@ -393,6 +389,13 @@ func (s *DatabaseScanService) scanTableDetails(
 	metaattr.UpsertNested(attrs, "capabilities", "statistics", map[string]interface{}{"row_count": rowCount})
 
 	return fields, attrs, nil
+}
+
+func tableItemAttributes(schemaName string, tableInfo datatype.TableInfo) models.JSONMap {
+	attrs := models.JSONMap{}
+	metaattr.SetStorage(attrs, "schema_name", schemaName)
+	metaattr.UpsertNested(attrs, "type_info", "table", metaattr.TableInfoAttributes(&tableInfo))
+	return attrs
 }
 
 func int64StatPtr(stats map[string]interface{}, key string) *int64 {
@@ -474,15 +477,11 @@ func databaseDatatypeFieldInfo(input []datatype.FieldInfo) []datatype.FieldInfo 
 	return fields
 }
 
-func tableType(table datatype.TableInfo) string {
+func normalizedTableKind(table datatype.TableInfo) string {
 	if table.Kind != "" {
 		return table.Kind
 	}
 	return "table"
-}
-
-func tableComment(table datatype.TableInfo) string {
-	return table.Comment
 }
 
 func (s *DatabaseScanService) listColumns(
@@ -530,6 +529,38 @@ func (s *DatabaseScanService) scanSpatialMetadata(ctx context.Context, db *gorm.
 	}
 
 	return spatialMeta
+}
+
+func spatialInfoFromMetadata(spatialMeta *models.SpatialMetadata) *datatype.SpatialInfo {
+	if spatialMeta == nil || spatialMeta.GeometryColumn == "" {
+		return nil
+	}
+	info := &datatype.SpatialInfo{
+		GeometryColumns: []datatype.GeometryColumnInfo{{
+			Name:         spatialMeta.GeometryColumn,
+			GeometryType: metaattr.NormalizeGeometryType(firstString(spatialMeta.GeometryTypes)),
+		}},
+		PrimaryGeometryColumn: spatialMeta.GeometryColumn,
+	}
+	if spatialMeta.SRID > 0 {
+		srid := spatialMeta.SRID
+		info.GeometryColumns[0].SRID = &srid
+	}
+	if len(spatialMeta.Extent) == 4 {
+		extent := datatype.NewBoundingBox(spatialMeta.Extent[0], spatialMeta.Extent[1], spatialMeta.Extent[2], spatialMeta.Extent[3])
+		info.Extent = &extent
+	}
+	hasSpatialIndex := spatialMeta.HasSpatialIndex
+	info.HasSpatialIndex = &hasSpatialIndex
+	info.IndexName = spatialMeta.IndexName
+	return info
+}
+
+func firstString(values []string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
 }
 
 // deleteRemovedTables 软删除已移除的表

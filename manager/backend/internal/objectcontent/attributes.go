@@ -6,6 +6,7 @@ import (
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
+	"github.com/addp/manager/internal/catalogutil"
 	"github.com/addp/manager/internal/models"
 )
 
@@ -21,67 +22,15 @@ const (
 )
 
 func stringAttribute(attrs map[string]interface{}, key string) string {
-	if attrs == nil {
-		return ""
-	}
-	for _, section := range attributeSectionsForKey(key) {
-		if value := sectionStringAttribute(attrs, section, key); value != "" {
-			return value
-		}
-	}
-	return ""
-}
-
-func attributeSectionsForKey(key string) []string {
-	switch key {
-	case "layout", "data_type", "format", "refs", "file_count", "scope_exclusive", "claim_policy":
-		return []string{"item"}
-	case "bucket", "path", "name", "physical_path", "size_bytes", "size", "total_size", "content_type", "last_modified_at", "etag":
-		return []string{"storage"}
-	case "fields", "primary_key", "indexes", "row_count", "document_count":
-		return []string{"type_info.table"}
-	case "width", "height", "duration", "codec", "page_count", "word_count":
-		return []string{"type_info.media", "type_info.document"}
-	case "spatial", "geometry_columns", "primary_geometry_column", "extent", "has_spatial_index":
-		return []string{"capabilities.spatial"}
-	case "metadata_extracted", "extractor_available", "extracted_metadata", "plain_text_preview":
-		return []string{"capabilities.extraction"}
-	default:
-		return nil
-	}
-}
-
-func sectionStringAttribute(attrs map[string]interface{}, section, key string) string {
-	if sectionAttrs := commonJSON.Section(attrs, section); len(sectionAttrs) > 0 {
-		return commonJSON.InterfaceString(sectionAttrs[key])
-	}
-	return ""
+	return catalogutil.StringAttribute(attrs, key)
 }
 
 func interfaceSlice(value interface{}) []interface{} {
-	switch typed := value.(type) {
-	case []interface{}:
-		return typed
-	case []map[string]interface{}:
-		result := make([]interface{}, 0, len(typed))
-		for _, item := range typed {
-			result = append(result, item)
-		}
-		return result
-	default:
-		return nil
-	}
+	return commonJSON.InterfaceSlice(value)
 }
 
 func rawMapAttribute(value interface{}) map[string]interface{} {
-	switch typed := value.(type) {
-	case map[string]interface{}:
-		return typed
-	case models.JSONMap:
-		return map[string]interface{}(typed)
-	default:
-		return nil
-	}
+	return commonJSON.InterfaceMap(value)
 }
 
 func ContainerChildInfoFromMap(child map[string]interface{}) datatype.ContainerChildInfo {

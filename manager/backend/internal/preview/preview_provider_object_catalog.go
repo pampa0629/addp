@@ -253,9 +253,9 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 			preview.Object.SizeBytes = *item.ObjectSizeBytes
 		} else if item.SizeBytes != nil {
 			preview.Object.SizeBytes = *item.SizeBytes
-		} else if sizeBytes := int64Attribute(item.Attributes, "size_bytes"); sizeBytes > 0 {
+		} else if sizeBytes := catalogutil.Int64Attribute(item.Attributes, "size_bytes"); sizeBytes > 0 {
 			preview.Object.SizeBytes = sizeBytes
-		} else if totalSize := int64Attribute(item.Attributes, "total_size"); totalSize > 0 {
+		} else if totalSize := catalogutil.Int64Attribute(item.Attributes, "total_size"); totalSize > 0 {
 			preview.Object.SizeBytes = totalSize
 		} else {
 			preview.Object.SizeBytes = stat.Size
@@ -263,7 +263,7 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 		if rowCount := item.RowCount; rowCount != nil {
 			preview.Object.ObjectCount = *rowCount
 		}
-		if v := stringAttribute(item.Attributes, "content_type"); v != "" {
+		if v := catalogutil.StringAttribute(item.Attributes, "content_type"); v != "" {
 			preview.Object.ContentType = v
 		}
 	} else {
@@ -300,7 +300,7 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 			Bucket:      bucket,
 			Path:        dir,  // 目录路径（以 / 结尾）
 			Name:        name, // 文件名
-			Format:      stringAttribute(metaItemLiteAttributes(item), "format"),
+			Format:      catalogutil.StringAttribute(metaItemLiteAttributes(item), "format"),
 			Extension:   defaultExtension(objectPath),
 			ContentType: canonicalContentType,
 			Size:        stat.Size,
@@ -488,7 +488,7 @@ func listObjectPreviewChildren(ctx context.Context, catalogProvider plugin.Catal
 			continue
 		}
 		childType := "object"
-		contentType := stringAttribute(node.Attributes, "content_type")
+		contentType := catalogutil.StringAttribute(node.Attributes, "content_type")
 		if node.IsContainer {
 			childType = "prefix"
 			contentType = "application/x-directory"

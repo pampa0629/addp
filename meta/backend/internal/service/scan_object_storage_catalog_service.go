@@ -864,9 +864,6 @@ func needsContentFormatDetection(formatName string) bool {
 func itemRowCountFromAttributes(attrs map[string]interface{}) *int64 {
 	rowCount := commonJSON.Int64(attrs, "type_info.table", "row_count")
 	if rowCount <= 0 {
-		rowCount = commonJSON.Int64(attrs, "capabilities.statistics", "row_count")
-	}
-	if rowCount <= 0 {
 		return nil
 	}
 	return &rowCount
@@ -919,7 +916,7 @@ func (s *ObjectStorageCatalogScanService) enrichObjectCatalogTableFileAttributes
 		return nil, nil
 	}
 	attrs := metaattr.JSONMap(enriched.Attributes)
-	metaattr.MergeDataItemAttributes(attrs, enriched)
+	metaattr.MergeDataItemAttributes(attrs, metaitem.AttributeInput(enriched))
 	metaattr.SetStorage(attrs, "bucket", catalogResource.RootName)
 	dir, name := commonModels.SplitObjectPath(catalogResource.Path)
 	metaattr.SetStorage(attrs, "path", dir)

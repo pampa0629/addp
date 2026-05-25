@@ -126,15 +126,11 @@ func JSONMap(attrs map[string]interface{}) models.JSONMap {
 	return result
 }
 
-func FieldAttributes(fields []datatype.FieldInfo) []map[string]interface{} {
-	return datatype.FieldInfoAttributes(fields)
-}
-
-func SetSchemaFields(attrs models.JSONMap, fields []map[string]interface{}) {
+func SetTableFields(attrs models.JSONMap, fields []datatype.FieldInfo) {
 	if attrs == nil || len(fields) == 0 {
 		return
 	}
-	UpsertNested(attrs, "type_info", "table", map[string]interface{}{"fields": fields})
+	UpsertNested(attrs, "type_info", "table", TableInfoAttributes(&datatype.TableInfo{Fields: fields}))
 }
 
 func cleanAttributeMap(values map[string]interface{}) map[string]interface{} {

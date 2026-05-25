@@ -2,14 +2,24 @@ package metaattr
 
 import (
 	"github.com/addp/common/dataitem"
-	"github.com/addp/meta/internal/metaitem"
 )
 
+type DataItemAttributesInput struct {
+	Attributes   map[string]interface{}
+	Layout       dataitem.Layout
+	DataType     dataitem.DataType
+	Format       string
+	PhysicalPath string
+	RefList      []dataitem.ItemRef
+	SizeBytes    *int64
+}
+
 // BuildAttributes 将 Meta 扫描得到的 item 语义合并为可落库 attributes。
-func BuildAttributes(item *metaitem.DetectedItem) map[string]interface{} {
-	if item == nil {
-		return map[string]interface{}{}
-	}
+func BuildAttributes(item DataItemAttributesInput) map[string]interface{} {
+	return BuildAttributesFromInput(item)
+}
+
+func BuildAttributesFromInput(item DataItemAttributesInput) map[string]interface{} {
 	attrs := make(map[string]interface{}, len(item.Attributes)+10)
 	for k, v := range item.Attributes {
 		attrs[k] = v
@@ -34,8 +44,8 @@ func BuildAttributes(item *metaitem.DetectedItem) map[string]interface{} {
 		itemAttrs["scope_exclusive"] = true
 		itemAttrs["claim_policy"] = "whole_scope"
 	}
-	if item.Size() > 0 {
-		storageAttrs["total_size"] = item.Size()
+	if item.SizeBytes != nil && *item.SizeBytes > 0 {
+		storageAttrs["total_size"] = *item.SizeBytes
 	}
 	setMergedAttributeSection(attrs, "item", itemAttrs)
 	setMergedAttributeSection(attrs, "storage", storageAttrs)
@@ -69,8 +79,8 @@ func refAttributes(refs []dataitem.ItemRef) []map[string]interface{} {
 	return items
 }
 
-func MergeDataItemAttributes(attrs map[string]interface{}, item *metaitem.DetectedItem) {
-	if attrs == nil || item == nil {
+func MergeDataItemAttributes(attrs map[string]interface{}, item DataItemAttributesInput) {
+	if attrs == nil {
 		return
 	}
 	MergeAttributeMaps(attrs, BuildAttributes(item))

@@ -14,6 +14,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
+	"github.com/addp/manager/internal/catalogutil"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/objectcontent"
 )
@@ -296,8 +297,8 @@ func spatialInfoFromAttributes(attrs map[string]interface{}) *datatype.SpatialIn
 	geometryType := ""
 	srid := 0
 	dimension := 0
-	for _, item := range interfaceSlice(spatialAttrs["geometry_columns"]) {
-		column := rawMapAttribute(item)
+	for _, item := range commonJSON.InterfaceSlice(spatialAttrs["geometry_columns"]) {
+		column := commonJSON.InterfaceMap(item)
 		if len(column) == 0 {
 			continue
 		}
@@ -411,7 +412,7 @@ func (p *FileTablePreviewProvider) openIndexedRangeReader(
 	if !usableTableContentIndex(index) {
 		return nil, nil, false
 	}
-	anchor, length := rangeForTableWindow(index, int64(offset), int64(pageSize), int64Attribute(req.Attributes, "total_size"))
+	anchor, length := rangeForTableWindow(index, int64(offset), int64(pageSize), catalogutil.Int64Attribute(req.Attributes, "total_size"))
 	if length <= 0 {
 		return nil, nil, false
 	}
@@ -517,17 +518,17 @@ func tableContentIndexFromAttributes(attrs map[string]interface{}) *datatype.Con
 		Step:        commonJSON.InterfaceInt64(indexAttrs["step"]),
 		RowCount:    commonJSON.InterfaceInt64(indexAttrs["row_count"]),
 		HeaderBytes: commonJSON.InterfaceInt64(indexAttrs["header_bytes"]),
-		Source:      rawMapAttribute(indexAttrs["source"]),
+		Source:      commonJSON.InterfaceMap(indexAttrs["source"]),
 		Anchors:     contentIndexAnchorsFromAttribute(indexAttrs["anchors"]),
 	}
 	return index
 }
 
 func contentIndexAnchorsFromAttribute(value interface{}) []datatype.ContentIndexAnchor {
-	items := interfaceSlice(value)
+	items := commonJSON.InterfaceSlice(value)
 	anchors := make([]datatype.ContentIndexAnchor, 0, len(items))
 	for _, item := range items {
-		attrs := rawMapAttribute(item)
+		attrs := commonJSON.InterfaceMap(item)
 		if len(attrs) == 0 {
 			continue
 		}
@@ -541,14 +542,6 @@ func contentIndexAnchorsFromAttribute(value interface{}) []datatype.ContentIndex
 
 func tableInfoFromTableAttributes(tableAttrs map[string]interface{}, fallbackName string) *datatype.TableInfo {
 	return datatype.TableInfoFromTableAttributes(tableAttrs, fallbackName)
-}
-
-func interfaceSlice(value interface{}) []interface{} {
-	return commonJSON.InterfaceSlice(value)
-}
-
-func rawMapAttribute(value interface{}) map[string]interface{} {
-	return commonJSON.InterfaceMap(value)
 }
 
 func cloneInterfaceMap(values map[string]interface{}) map[string]interface{} {
@@ -719,7 +712,7 @@ func containerChildTableNameForRequest(attrs map[string]interface{}, childName s
 	if len(child) > 0 {
 		tableName := strings.TrimSpace(commonJSON.InterfaceString(child["table"]))
 		if tableName == "" {
-			tableName = strings.TrimSpace(commonJSON.InterfaceString(rawMapAttribute(child["native"])["table"]))
+			tableName = strings.TrimSpace(commonJSON.InterfaceString(commonJSON.InterfaceMap(child["native"])["table"]))
 		}
 		if tableName != "" {
 			return tableName
@@ -734,15 +727,15 @@ func containerChildForRequest(attrs map[string]interface{}, childName string) ma
 		return nil
 	}
 	containerAttrs := commonJSON.Section(attrs, "type_info.container")
-	if resolved := objectcontent.ResolveContainerAttributeChildrenForPreview(stringAttribute(attrs, "format"), interfaceSlice(containerAttrs["children"])); resolved != nil && len(resolved.Children) > 0 {
+	if resolved := objectcontent.ResolveContainerAttributeChildrenForPreview(catalogutil.StringAttribute(attrs, "format"), commonJSON.InterfaceSlice(containerAttrs["children"])); resolved != nil && len(resolved.Children) > 0 {
 		for _, child := range resolved.Children {
 			if len(child) > 0 && containerChildNameMatches(child, childName) {
 				return child
 			}
 		}
 	}
-	for _, item := range interfaceSlice(containerAttrs["children"]) {
-		child := rawMapAttribute(item)
+	for _, item := range commonJSON.InterfaceSlice(containerAttrs["children"]) {
+		child := commonJSON.InterfaceMap(item)
 		if len(child) > 0 && containerChildNameMatches(child, childName) {
 			return child
 		}
@@ -758,10 +751,10 @@ func (p *FileTablePreviewProvider) resolveFormat(req *PreviewRequest) format.For
 	if req == nil {
 		return format.FormatUnknown
 	}
-	if formatName := strings.TrimSpace(stringAttribute(req.Attributes, "format")); formatName != "" {
+	if formatName := strings.TrimSpace(catalogutil.StringAttribute(req.Attributes, "format")); formatName != "" {
 		return normalizeFileTableFormat(formatName)
 	}
-	return format.MIMEToFormat(stringAttribute(req.Attributes, "content_type"))
+	return format.MIMEToFormat(catalogutil.StringAttribute(req.Attributes, "content_type"))
 }
 
 func normalizeFileTableFormat(formatName string) format.FormatType {

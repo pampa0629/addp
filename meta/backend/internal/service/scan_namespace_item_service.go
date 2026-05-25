@@ -180,7 +180,7 @@ func (s *NamespaceItemScanService) scanCatalogItems(
 			if err != nil {
 				s.log.Warn("文档集合 Schema 采样失败", "namespace", namespaceName, "collection", collInfo.Name, "error", err)
 			} else {
-				attrs = metaattr.BuildDocumentCollectionAttributes(itemMetadata)
+				attrs = metaattr.BuildDocumentCollectionAttributes(documentCollectionAttributesInput(itemMetadata))
 				totalFields += len(itemMetadata.Fields)
 			}
 		}
@@ -220,6 +220,27 @@ func (s *NamespaceItemScanService) scanCatalogItems(
 		s.softDeleteMissingItemsByType(tenantID, resource.ID, namespaceNode.ID, itemType, map[string]bool{})
 	}
 	return totalItems, totalFields, nil
+}
+
+func documentCollectionAttributesInput(itemMetadata *plugin.ItemMetadata) metaattr.DocumentCollectionAttributesInput {
+	if itemMetadata == nil {
+		return metaattr.DocumentCollectionAttributesInput{}
+	}
+	indexes := make([]metaattr.IndexAttributesInput, 0, len(itemMetadata.Indexes))
+	for _, index := range itemMetadata.Indexes {
+		indexes = append(indexes, metaattr.IndexAttributesInput{
+			Name:      index.Name,
+			Fields:    append([]string(nil), index.Fields...),
+			IsUnique:  index.IsUnique,
+			IndexType: index.IndexType,
+		})
+	}
+	return metaattr.DocumentCollectionAttributesInput{
+		Fields:     itemMetadata.Fields,
+		Indexes:    indexes,
+		Stats:      itemMetadata.Stats,
+		Attributes: itemMetadata.Attributes,
+	}
 }
 
 func itemCatalogPath(engineID uint, namespaceTerm, namespace, itemTerm, itemKind, itemName string) plugin.CatalogPath {

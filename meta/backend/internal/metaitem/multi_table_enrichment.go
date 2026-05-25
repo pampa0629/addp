@@ -11,6 +11,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
+	"github.com/addp/meta/internal/metaattr"
 )
 
 func resolveCatalogPath(engineID uint, path string, catalogPathFor func(path string) plugin.CatalogPath) plugin.CatalogPath {
@@ -140,11 +141,11 @@ func upsertRefTableInfo(item *DetectedItem, tableInfo *format.TableDescribeResul
 	if item == nil || tableInfo == nil {
 		return
 	}
-	upsertItemSection(&item.Attributes, "type_info", "table", datatype.TableInfoAttributes(tableInfo.Table))
+	upsertItemSection(&item.Attributes, "type_info", "table", metaattr.TableInfoAttributes(tableInfo.Table))
 	if formatAttrs := formatAttributesFromDescribeResult(tableInfo); len(formatAttrs) > 0 {
 		upsertItemSection(&item.Attributes, "format_info", item.Format, formatAttrs)
 	}
-	if spatialAttrs := spatialAttributes(tableInfo.Spatial); len(spatialAttrs) > 0 {
+	if spatialAttrs := metaattr.SpatialInfoAttributes(tableInfo.Spatial); len(spatialAttrs) > 0 {
 		upsertItemSection(&item.Attributes, "capabilities", "spatial", spatialAttrs)
 	}
 	if tableInfo.ContentIndex != nil {
@@ -195,41 +196,6 @@ func cloneInterfaceMap(values map[string]interface{}) map[string]interface{} {
 		cloned[key] = value
 	}
 	return cloned
-}
-
-func spatialAttributes(spatialInfo *datatype.SpatialInfo) map[string]interface{} {
-	if spatialInfo == nil {
-		return nil
-	}
-	geometryColumns := make([]map[string]interface{}, 0, len(spatialInfo.GeometryColumns))
-	for _, column := range spatialInfo.GeometryColumns {
-		columnAttrs := map[string]interface{}{
-			"name":          column.Name,
-			"geometry_type": column.GeometryType,
-		}
-		if column.SRID != nil {
-			columnAttrs["srid"] = *column.SRID
-		}
-		if column.Dimension != nil {
-			columnAttrs["dimension"] = *column.Dimension
-		}
-		if column.Nullable != nil {
-			columnAttrs["nullable"] = *column.Nullable
-		}
-		geometryColumns = append(geometryColumns, columnAttrs)
-	}
-	attrs := map[string]interface{}{
-		"geometry_columns":        geometryColumns,
-		"primary_geometry_column": spatialInfo.PrimaryGeometryColumn,
-	}
-	if spatialInfo.HasSpatialIndex != nil {
-		attrs["has_spatial_index"] = *spatialInfo.HasSpatialIndex
-	}
-	if spatialInfo.Extent != nil {
-		bbox := *spatialInfo.Extent
-		attrs["extent"] = []float64{bbox[0], bbox[1], bbox[2], bbox[3]}
-	}
-	return attrs
 }
 
 func upsertItemSection(attrs *map[string]interface{}, section string, namespace string, values map[string]interface{}) {

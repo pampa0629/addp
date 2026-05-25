@@ -56,6 +56,9 @@ func TestNewSingleGeometrySpatialInfo(t *testing.T) {
 
 func TestSpatialInfoCloneDeepCopiesPointers(t *testing.T) {
 	info := NewSingleGeometrySpatialInfo("geom", "Point", 4326, 2)
+	objectSRID := 3857
+	info.SRID = &objectSRID
+	info.CRS = "EPSG:3857"
 	hasIndex := true
 	extent := NewBoundingBox(1, 2, 3, 4)
 	info.HasSpatialIndex = &hasIndex
@@ -67,12 +70,17 @@ func TestSpatialInfoCloneDeepCopiesPointers(t *testing.T) {
 	}
 	cloned.GeometryColumns[0].Name = "shape"
 	*cloned.GeometryColumns[0].SRID = 3857
+	*cloned.SRID = 4326
+	cloned.CRS = "EPSG:4326"
 	*cloned.Extent = NewBoundingBox(5, 6, 7, 8)
 	*cloned.HasSpatialIndex = false
 
 	primary := info.PrimaryGeometry()
 	if primary.Name != "geom" || *primary.SRID != 4326 {
 		t.Fatalf("original primary changed: %#v", primary)
+	}
+	if info.SRID == nil || *info.SRID != 3857 || info.CRS != "EPSG:3857" {
+		t.Fatalf("original spatial reference changed: %#v / %q", info.SRID, info.CRS)
 	}
 	if *info.Extent != (BoundingBox{1, 2, 3, 4}) {
 		t.Fatalf("original extent changed: %#v", info.Extent)

@@ -339,10 +339,6 @@ func tableFileSize(files []plugin.FileEntry) int64 {
 	return totalSize
 }
 
-func tableFileFieldAttributes(fields []datatype.FieldInfo) []map[string]interface{} {
-	return metaattr.FieldAttributes(fields)
-}
-
 func tableFieldsFromDescribeResult(tableInfo *format.TableDescribeResult) []datatype.FieldInfo {
 	if tableInfo == nil || tableInfo.Table == nil {
 		return nil
@@ -350,7 +346,7 @@ func tableFieldsFromDescribeResult(tableInfo *format.TableDescribeResult) []data
 	return append([]datatype.FieldInfo(nil), tableInfo.Table.Fields...)
 }
 
-func tableFileAttributes(formatName string, mode string, fieldsData []map[string]interface{}, files []plugin.FileEntry, dirPath string, totalSize int64, tableInfo *format.TableDescribeResult, includeContentIndex bool) map[string]interface{} {
+func tableFileAttributes(formatName string, mode string, files []plugin.FileEntry, dirPath string, totalSize int64, tableInfo *format.TableDescribeResult, includeContentIndex bool) map[string]interface{} {
 	attrs := map[string]interface{}{
 		"storage": map[string]interface{}{
 			"physical_path": dirPath,
@@ -363,13 +359,16 @@ func tableFileAttributes(formatName string, mode string, fieldsData []map[string
 			},
 		},
 	}
-	if len(fieldsData) > 0 {
-		tableAttrs := map[string]interface{}{"fields": fieldsData}
-		if tableInfo != nil && tableInfo.Table != nil {
-			tableAttrs = mergeInterfaceMaps(tableAttrs, metaattr.TableInfoAttributes(tableInfo.Table))
-		}
-		attrs["type_info"] = map[string]interface{}{
-			"table": tableAttrs,
+	if tableInfo != nil && tableInfo.Table != nil {
+		if tableAttrs := metaattr.TableInfoAttributes(tableInfo.Table); len(tableAttrs) > 0 {
+			if len(tableInfo.Table.Fields) == 0 {
+				delete(tableAttrs, "fields")
+			}
+			if len(tableAttrs) > 0 {
+				attrs["type_info"] = map[string]interface{}{
+					"table": tableAttrs,
+				}
+			}
 		}
 	}
 	if tableInfo != nil {
@@ -380,36 +379,10 @@ func tableFileAttributes(formatName string, mode string, fieldsData []map[string
 			)
 		}
 		if spatialInfo := tableInfo.Spatial; spatialInfo != nil {
-			geometryColumns := make([]map[string]interface{}, 0, len(spatialInfo.GeometryColumns))
-			for _, column := range spatialInfo.GeometryColumns {
-				columnAttrs := map[string]interface{}{
-					"name":          column.Name,
-					"geometry_type": column.GeometryType,
+			if spatialAttrs := metaattr.SpatialInfoAttributes(spatialInfo); len(spatialAttrs) > 0 {
+				attrs["capabilities"] = map[string]interface{}{
+					"spatial": spatialAttrs,
 				}
-				if column.SRID != nil {
-					columnAttrs["srid"] = *column.SRID
-				}
-				if column.Dimension != nil {
-					columnAttrs["dimension"] = *column.Dimension
-				}
-				if column.Nullable != nil {
-					columnAttrs["nullable"] = *column.Nullable
-				}
-				geometryColumns = append(geometryColumns, columnAttrs)
-			}
-			spatialAttrs := map[string]interface{}{
-				"geometry_columns":        geometryColumns,
-				"primary_geometry_column": spatialInfo.PrimaryGeometryColumn,
-			}
-			if spatialInfo.HasSpatialIndex != nil {
-				spatialAttrs["has_spatial_index"] = *spatialInfo.HasSpatialIndex
-			}
-			if spatialInfo.Extent != nil {
-				bbox := *spatialInfo.Extent
-				spatialAttrs["extent"] = []float64{bbox[0], bbox[1], bbox[2], bbox[3]}
-			}
-			attrs["capabilities"] = map[string]interface{}{
-				"spatial": spatialAttrs,
 			}
 		}
 		if indexInfo := tableInfo.ContentIndex; includeContentIndex && indexInfo != nil {
@@ -474,7 +447,7 @@ func tableFileInfoWithoutSchema(files []plugin.FileEntry, subdirs []plugin.DirEn
 		EntryPath:  entryPath,
 		RefFiles:   filePaths(files),
 		SizeBytes:  &totalSize,
-		Attributes: tableFileAttributes(formatName, tableFileMode(files, subdirs, dirPath), nil, files, dirPath, totalSize, nil, false),
+		Attributes: tableFileAttributes(formatName, tableFileMode(files, subdirs, dirPath), files, dirPath, totalSize, nil, false),
 	}
 }
 
@@ -611,7 +584,6 @@ func (d *tableFileItemResolver) extractTableFileInfo(
 		}
 	}
 	fields := tableFieldsFromDescribeResult(tableInfo)
-	fieldsData := tableFileFieldAttributes(fields)
 	return &metaitem.CompositeItemInfo{
 		Fields:     fields,
 		Layout:     layout,
@@ -620,7 +592,7 @@ func (d *tableFileItemResolver) extractTableFileInfo(
 		EntryPath:  entryPath,
 		RefFiles:   filePaths(files),
 		SizeBytes:  &totalSize,
-		Attributes: tableFileAttributes(formatName, tableFileMode(files, subdirs, dirPath), fieldsData, files, dirPath, totalSize, tableInfo, false),
+		Attributes: tableFileAttributes(formatName, tableFileMode(files, subdirs, dirPath), files, dirPath, totalSize, tableInfo, false),
 	}, nil
 }
 
@@ -684,7 +656,7 @@ func extractTableFileSingleFileInfoWithFormat(
 			EntryPath:  filePath,
 			RefFiles:   []string{filePath},
 			SizeBytes:  &fileSize,
-			Attributes: tableFileAttributes(formatName, "single", nil, []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize, nil, false),
+			Attributes: tableFileAttributes(formatName, "single", []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize, nil, false),
 		}, nil
 	}
 
@@ -704,12 +676,11 @@ func extractTableFileSingleFileInfoWithFormat(
 			EntryPath:  filePath,
 			RefFiles:   []string{filePath},
 			SizeBytes:  &fileSize,
-			Attributes: tableFileAttributes(formatName, "single", nil, []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize, nil, false),
+			Attributes: tableFileAttributes(formatName, "single", []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize, nil, false),
 		}, nil
 	}
 
 	fields := tableFieldsFromDescribeResult(tableInfo)
-	fieldsData := tableFileFieldAttributes(fields)
 
 	return &metaitem.CompositeItemInfo{
 		Fields:     fields,
@@ -719,7 +690,7 @@ func extractTableFileSingleFileInfoWithFormat(
 		EntryPath:  filePath,
 		RefFiles:   []string{filePath},
 		SizeBytes:  &fileSize,
-		Attributes: tableFileAttributes(formatName, "single", fieldsData, []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize, tableInfo, includeContentIndex && format.SupportsContentIndex(format.FormatType(formatName))),
+		Attributes: tableFileAttributes(formatName, "single", []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize, tableInfo, includeContentIndex && format.SupportsContentIndex(format.FormatType(formatName))),
 	}, nil
 }
 
@@ -753,7 +724,6 @@ func ExtractTableFileSingleFileInfoStrict(
 	}
 
 	fields := tableFieldsFromDescribeResult(tableInfo)
-	fieldsData := tableFileFieldAttributes(fields)
 	return &metaitem.CompositeItemInfo{
 		Fields:     fields,
 		Layout:     dataitem.LayoutSingle,
@@ -762,7 +732,7 @@ func ExtractTableFileSingleFileInfoStrict(
 		EntryPath:  filePath,
 		RefFiles:   []string{filePath},
 		SizeBytes:  &fileSize,
-		Attributes: tableFileAttributes(formatName, "single", fieldsData, []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize, tableInfo, includeContentIndex && format.SupportsContentIndex(format.FormatType(formatName))),
+		Attributes: tableFileAttributes(formatName, "single", []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize, tableInfo, includeContentIndex && format.SupportsContentIndex(format.FormatType(formatName))),
 	}, nil
 }
 

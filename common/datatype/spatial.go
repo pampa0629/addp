@@ -2,6 +2,8 @@ package datatype
 
 // SpatialInfo describes spatial facts that cut across data types.
 type SpatialInfo struct {
+	SRID                  *int                 `json:"srid,omitempty"`
+	CRS                   string               `json:"crs,omitempty"`
 	GeometryColumns       []GeometryColumnInfo `json:"geometry_columns,omitempty"`
 	PrimaryGeometryColumn string               `json:"primary_geometry_column,omitempty"`
 	Extent                *BoundingBox         `json:"extent,omitempty"`
@@ -51,6 +53,8 @@ func (s *SpatialInfo) Clone() *SpatialInfo {
 		return nil
 	}
 	cloned := &SpatialInfo{
+		SRID:                  cloneIntPtr(s.SRID),
+		CRS:                   s.CRS,
 		GeometryColumns:       make([]GeometryColumnInfo, 0, len(s.GeometryColumns)),
 		PrimaryGeometryColumn: s.PrimaryGeometryColumn,
 		IndexName:             s.IndexName,
@@ -80,6 +84,14 @@ func (s *SpatialInfo) Clone() *SpatialInfo {
 		cloned.HasSpatialIndex = &hasSpatialIndex
 	}
 	return cloned
+}
+
+func cloneIntPtr(value *int) *int {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
 }
 
 // PrimaryGeometry returns the primary geometry column when it can be determined.

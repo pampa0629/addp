@@ -4,48 +4,22 @@ import (
 	"strings"
 
 	"github.com/addp/common/dataitem"
-	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/datatype"
 	"github.com/addp/meta/internal/models"
 )
 
-func BuildTableAttributes(schemaName string, fields []map[string]interface{}, tableKind, tableComment string) models.JSONMap {
-	table := map[string]interface{}{}
-	if len(fields) > 0 {
-		table["fields"] = fields
-	}
-	if tableKind != "" {
-		table["kind"] = tableKind
-	}
-	if tableComment != "" {
-		table["comment"] = tableComment
-	}
-	attrs := models.JSONMap{
-		"storage": map[string]interface{}{
-			"schema_name": schemaName,
-		},
-		"type_info": map[string]interface{}{
-			"table": table,
-		},
-	}
-	return attrs
+type DocumentCollectionAttributesInput struct {
+	Fields     []datatype.FieldInfo
+	Indexes    []IndexAttributesInput
+	Stats      map[string]interface{}
+	Attributes map[string]interface{}
 }
 
-func BuildBasicTableAttributes(schemaName, tableKind, tableComment string) models.JSONMap {
-	table := map[string]interface{}{}
-	if tableKind != "" {
-		table["kind"] = tableKind
-	}
-	if tableComment != "" {
-		table["comment"] = tableComment
-	}
-	return models.JSONMap{
-		"storage": map[string]interface{}{
-			"schema_name": schemaName,
-		},
-		"type_info": map[string]interface{}{
-			"table": table,
-		},
-	}
+type IndexAttributesInput struct {
+	Name      string
+	Fields    []string
+	IsUnique  bool
+	IndexType string
 }
 
 func UpsertTableNative(attrs models.JSONMap, native map[string]interface{}) {
@@ -64,38 +38,6 @@ func cloneInterfaceMap(values map[string]interface{}) map[string]interface{} {
 		cloned[key] = value
 	}
 	return cloned
-}
-
-func SpatialCapabilityFromMetadata(spatialMeta *models.SpatialMetadata) map[string]interface{} {
-	if spatialMeta == nil || spatialMeta.GeometryColumn == "" {
-		return map[string]interface{}{}
-	}
-
-	geometryColumn := map[string]interface{}{
-		"name":          spatialMeta.GeometryColumn,
-		"geometry_type": GeometryTypeFromSpatialMetadata(spatialMeta),
-	}
-	if spatialMeta.SRID > 0 {
-		geometryColumn["srid"] = spatialMeta.SRID
-	}
-
-	values := map[string]interface{}{
-		"geometry_columns":        []map[string]interface{}{geometryColumn},
-		"primary_geometry_column": spatialMeta.GeometryColumn,
-		"has_spatial_index":       spatialMeta.HasSpatialIndex,
-	}
-	if len(spatialMeta.Extent) == 4 {
-		values["extent"] = spatialMeta.Extent
-		values["extent_srid"] = spatialMeta.ExtentSRID
-	}
-	return values
-}
-
-func GeometryTypeFromSpatialMetadata(spatialMeta *models.SpatialMetadata) string {
-	if spatialMeta == nil || len(spatialMeta.GeometryTypes) == 0 {
-		return "Geometry"
-	}
-	return NormalizeGeometryType(spatialMeta.GeometryTypes[0])
 }
 
 func NormalizeGeometryType(value string) string {
@@ -127,45 +69,41 @@ func normalizeGeometryToken(value string) string {
 	return token
 }
 
-func BuildDocumentCollectionAttributes(itemMetadata *plugin.ItemMetadata) models.JSONMap {
+func BuildDocumentCollectionAttributes(input DocumentCollectionAttributesInput) models.JSONMap {
 	attrs := models.JSONMap{}
-	if itemMetadata == nil {
-		return attrs
+	applyDocumentCollectionMetadata(attrs, input)
+	if len(input.Indexes) > 0 {
+		UpsertNested(attrs, "capabilities", "indexing", map[string]interface{}{"indexes": IndexAttributes(input.Indexes)})
 	}
-
-	applyDocumentCollectionMetadata(attrs, itemMetadata)
-	if len(itemMetadata.Indexes) > 0 {
-		UpsertNested(attrs, "type_info", "table", map[string]interface{}{"indexes": IndexAttributes(itemMetadata.Indexes)})
-	}
-	if len(itemMetadata.Fields) > 0 {
-		UpsertNested(attrs, "type_info", "table", map[string]interface{}{"fields": FieldAttributes(itemMetadata.Fields)})
+	if len(input.Fields) > 0 {
+		SetTableFields(attrs, input.Fields)
 	}
 	return attrs
 }
 
-func applyDocumentCollectionMetadata(attrs models.JSONMap, itemMetadata *plugin.ItemMetadata) {
-	if itemMetadata == nil || attrs == nil {
+func applyDocumentCollectionMetadata(attrs models.JSONMap, input DocumentCollectionAttributesInput) {
+	if attrs == nil {
 		return
 	}
 
 	table := map[string]interface{}{}
 	statistics := map[string]interface{}{}
-	if v, ok := itemMetadata.Attributes["is_sampled"]; ok {
-		table["is_sampled"] = v
+	if v, ok := input.Attributes["is_sampled"]; ok {
+		statistics["is_sampled"] = v
 	}
-	if v, ok := itemMetadata.Attributes["schema_type"]; ok {
-		table["schema_type"] = v
+	if v, ok := input.Attributes["schema_type"]; ok {
+		statistics["schema_type"] = v
 	}
-	if v, ok := itemMetadata.Attributes["sample_size"]; ok {
+	if v, ok := input.Attributes["sample_size"]; ok {
 		statistics["sample_size"] = v
 	}
-	if count := firstPresent(itemMetadata.Stats, itemMetadata.Attributes, "document_count", "total_documents"); count != nil {
+	if count := firstPresent(input.Stats, input.Attributes, "document_count", "total_documents"); count != nil {
 		table["row_count"] = count
 	}
-	if v, ok := itemMetadata.Stats["index_count"]; ok {
+	if v, ok := input.Stats["index_count"]; ok {
 		statistics["index_count"] = v
 	}
-	if v, ok := itemMetadata.Stats["avg_doc_size"]; ok {
+	if v, ok := input.Stats["avg_doc_size"]; ok {
 		statistics["avg_doc_size"] = v
 	}
 
@@ -206,7 +144,7 @@ func ApplyGraphItemAttributes(attrs models.JSONMap, itemType string, count int64
 	UpsertNested(attrs, "type_info", "graph", graphAttrs)
 }
 
-func IndexAttributes(indexes []plugin.IndexInfo) []map[string]interface{} {
+func IndexAttributes(indexes []IndexAttributesInput) []map[string]interface{} {
 	result := make([]map[string]interface{}, 0, len(indexes))
 	for _, idx := range indexes {
 		result = append(result, map[string]interface{}{

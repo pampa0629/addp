@@ -4,41 +4,98 @@ import (
 	"testing"
 
 	"github.com/addp/common/datatype"
-	"github.com/addp/common/engine/plugin"
 	"github.com/addp/meta/internal/models"
 )
 
-func TestSpatialMetadataWritesMinimalCapabilitiesSpatial(t *testing.T) {
+func TestNormalizeGeometryType(t *testing.T) {
 	t.Parallel()
 
-	values := SpatialCapabilityFromMetadata(&models.SpatialMetadata{
-		GeometryColumn:  "geom",
-		SRID:            4326,
-		ExtentSRID:      4326,
-		Extent:          []float64{1, 2, 3, 4},
-		GeometryTypes:   []string{"ST_MultiPolygon"},
-		HasSpatialIndex: true,
+	if got := NormalizeGeometryType("ST_MultiPolygon"); got != "MultiPolygon" {
+		t.Fatalf("NormalizeGeometryType() = %q", got)
+	}
+}
+
+func TestSpatialInfoAttributesWritesObjectSpatialReferenceWithoutGeometryColumns(t *testing.T) {
+	t.Parallel()
+
+	srid := 4326
+	hasSpatialIndex := false
+	extent := datatype.NewBoundingBox(100, 180, 120, 200)
+	values := SpatialInfoAttributes(&datatype.SpatialInfo{
+		SRID:            &srid,
+		Extent:          &extent,
+		HasSpatialIndex: &hasSpatialIndex,
 	})
 
-	if values["spatial_metadata"] != nil || values["geometry_types"] != nil {
-		t.Fatalf("legacy spatial metadata should not be written: %#v", values)
+	if values["srid"] != 4326 {
+		t.Fatalf("srid = %#v, want 4326", values["srid"])
 	}
-	if values["primary_geometry_column"] != "geom" || values["has_spatial_index"] != true {
-		t.Fatalf("capabilities.spatial = %#v", values)
+	if _, ok := values["geometry_columns"]; ok {
+		t.Fatalf("non-table spatial should not write geometry_columns: %#v", values)
+	}
+	if values["has_spatial_index"] != false {
+		t.Fatalf("has_spatial_index = %#v, want false", values["has_spatial_index"])
+	}
+	extentValues := values["extent"].([]float64)
+	if len(extentValues) != 4 || extentValues[0] != 100 || extentValues[3] != 200 {
+		t.Fatalf("extent = %#v", extentValues)
+	}
+}
+
+func TestSpatialInfoAttributesPromotesUnnamedColumnReference(t *testing.T) {
+	t.Parallel()
+
+	srid := 3857
+	values := SpatialInfoAttributes(&datatype.SpatialInfo{
+		GeometryColumns: []datatype.GeometryColumnInfo{{SRID: &srid}},
+	})
+
+	if values["srid"] != 3857 {
+		t.Fatalf("srid = %#v, want 3857", values["srid"])
+	}
+	if _, ok := values["geometry_columns"]; ok {
+		t.Fatalf("unnamed geometry reference should not write geometry_columns: %#v", values)
+	}
+}
+
+func TestSpatialInfoAttributesWritesGeometryColumnsForTableSpatial(t *testing.T) {
+	t.Parallel()
+
+	srid := 4326
+	dimension := 2
+	nullable := false
+	info := &datatype.SpatialInfo{
+		GeometryColumns: []datatype.GeometryColumnInfo{{
+			Name:         "shape",
+			GeometryType: "MultiPolygon",
+			SRID:         &srid,
+			Dimension:    &dimension,
+			Nullable:     &nullable,
+		}},
+		PrimaryGeometryColumn: "shape",
+	}
+	values := SpatialInfoAttributes(info)
+
+	if values["primary_geometry_column"] != "shape" {
+		t.Fatalf("primary_geometry_column = %#v", values["primary_geometry_column"])
 	}
 	columns := values["geometry_columns"].([]map[string]interface{})
 	if len(columns) != 1 {
 		t.Fatalf("geometry_columns = %#v", columns)
 	}
-	if columns[0]["name"] != "geom" || columns[0]["geometry_type"] != "MultiPolygon" || columns[0]["srid"] != 4326 {
+	if columns[0]["name"] != "shape" || columns[0]["geometry_type"] != "MultiPolygon" || columns[0]["srid"] != 4326 {
 		t.Fatalf("geometry column = %#v", columns[0])
+	}
+	if columns[0]["nullable"] != false || columns[0]["dimension"] != 2 {
+		t.Fatalf("geometry column facts = %#v", columns[0])
 	}
 }
 
-func TestFieldAttributesWritesDatatypeFieldFacts(t *testing.T) {
+func TestSetTableFieldsWritesDatatypeFieldFacts(t *testing.T) {
 	t.Parallel()
 
-	fields := FieldAttributes([]datatype.FieldInfo{{
+	attrs := models.JSONMap{}
+	SetTableFields(attrs, []datatype.FieldInfo{{
 		Name:              "id",
 		Type:              datatype.FieldTypeInt,
 		NativeType:        "int4",
@@ -49,10 +106,12 @@ func TestFieldAttributesWritesDatatypeFieldFacts(t *testing.T) {
 		DefaultExpression: "0",
 	}})
 
+	table := attrs["type_info"].(map[string]interface{})["table"].(map[string]interface{})
+	fields := table["fields"].([]interface{})
 	if len(fields) != 1 {
 		t.Fatalf("fields = %#v, want one field", fields)
 	}
-	field := fields[0]
+	field := fields[0].(map[string]interface{})
 	if field["name"] != "id" || field["type"] != "int" || field["native_type"] != "int4" {
 		t.Fatalf("field identity = %#v", field)
 	}
@@ -70,12 +129,12 @@ func TestFieldAttributesWritesDatatypeFieldFacts(t *testing.T) {
 func TestBuildDocumentCollectionAttributesWritesTypeInfoTableSection(t *testing.T) {
 	t.Parallel()
 
-	attrs := BuildDocumentCollectionAttributes(&plugin.ItemMetadata{
+	attrs := BuildDocumentCollectionAttributes(DocumentCollectionAttributesInput{
 		Fields: []datatype.FieldInfo{{
 			Name: "name",
 			Type: datatype.FieldTypeString,
 		}},
-		Indexes: []plugin.IndexInfo{{
+		Indexes: []IndexAttributesInput{{
 			Name:      "name_idx",
 			Fields:    []string{"name"},
 			IndexType: "btree",
@@ -99,19 +158,21 @@ func TestBuildDocumentCollectionAttributesWritesTypeInfoTableSection(t *testing.
 	table := typeInfo["table"].(map[string]interface{})
 	capabilities := attrs["capabilities"].(map[string]interface{})
 	statistics := capabilities["statistics"].(map[string]interface{})
+	indexing := capabilities["indexing"].(map[string]interface{})
 	if _, ok := table["fields"]; !ok {
 		t.Fatalf("type_info.table.fields missing: %#v", table)
 	}
-	if _, ok := table["indexes"]; !ok {
-		t.Fatalf("type_info.table.indexes missing: %#v", table)
+	if table["indexes"] != nil || table["is_sampled"] != nil || table["schema_type"] != nil {
+		t.Fatalf("document collection sampling/indexing facts should not be in type_info.table: %#v", table)
 	}
-	if table["is_sampled"] != true || table["schema_type"] != "dynamic" {
-		t.Fatalf("type_info.table sampling attrs missing: %#v", table)
+	if _, ok := indexing["indexes"]; !ok {
+		t.Fatalf("capabilities.indexing.indexes missing: %#v", indexing)
 	}
 	if table["row_count"] != int64(12) {
 		t.Fatalf("type_info.table.row_count missing: %#v", table)
 	}
-	if statistics["sample_size"] != 10 || statistics["index_count"] != int64(1) || statistics["avg_doc_size"] != int64(256) {
+	if statistics["sample_size"] != 10 || statistics["index_count"] != int64(1) || statistics["avg_doc_size"] != int64(256) ||
+		statistics["is_sampled"] != true || statistics["schema_type"] != "dynamic" {
 		t.Fatalf("capabilities.statistics missing: %#v", statistics)
 	}
 	if attrs["fields"] != nil || attrs["indexes"] != nil || attrs["schema"] != nil || attrs["database"] != nil || attrs["collection"] != nil {
@@ -122,7 +183,14 @@ func TestBuildDocumentCollectionAttributesWritesTypeInfoTableSection(t *testing.
 func TestUpsertTableNativeWritesTypeInfoTableNative(t *testing.T) {
 	t.Parallel()
 
-	attrs := BuildBasicTableAttributes("public", "table", "roads")
+	attrs := models.JSONMap{
+		"type_info": map[string]interface{}{
+			"table": TableInfoAttributes(&datatype.TableInfo{
+				Kind:    "table",
+				Comment: "roads",
+			}),
+		},
+	}
 	native := map[string]interface{}{"engine": "MergeTree"}
 
 	UpsertTableNative(attrs, native)

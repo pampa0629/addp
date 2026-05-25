@@ -148,17 +148,17 @@ func refsForPreview(mainPath string, formatType format.FormatType, attrs map[str
 }
 
 func refRefsFromAttributes(attrs map[string]interface{}) []format.RelatedRef {
-	itemAttrs := sectionAttributes(attrs, "item")
+	itemAttrs := commonJSON.Section(attrs, "item")
 	if len(itemAttrs) == 0 {
 		return nil
 	}
-	values := interfaceSlice(itemAttrs["refs"])
+	values := commonJSON.InterfaceSlice(itemAttrs["refs"])
 	if len(values) == 0 {
 		return nil
 	}
 	refs := make([]format.RelatedRef, 0, len(values))
 	for _, value := range values {
-		item := rawMapAttribute(value)
+		item := commonJSON.InterfaceMap(value)
 		if len(item) == 0 {
 			continue
 		}

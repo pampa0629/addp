@@ -8,6 +8,7 @@ import (
 
 	"github.com/addp/common/catalogview"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/manager/internal/catalogutil"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/objectcontent"
 	"github.com/addp/manager/internal/repository"
@@ -310,11 +311,11 @@ func TestStringAttributeReadsPartitionedStorageOnly(t *testing.T) {
 		},
 	}
 
-	if got := stringAttribute(attrs, "physical_path"); got != "bucket/path.geojson" {
+	if got := catalogutil.StringAttribute(attrs, "physical_path"); got != "bucket/path.geojson" {
 		t.Fatalf("stringAttribute() = %q, want bucket/path.geojson", got)
 	}
 
-	if got := stringAttribute(map[string]interface{}{"physical_path": "legacy/path.geojson"}, "physical_path"); got != "" {
+	if got := catalogutil.StringAttribute(map[string]interface{}{"physical_path": "legacy/path.geojson"}, "physical_path"); got != "" {
 		t.Fatalf("stringAttribute() legacy flat = %q, want empty", got)
 	}
 }
@@ -339,7 +340,7 @@ func TestAttributeHelpersReadPartitionedSlicesAndNumbers(t *testing.T) {
 	if len(refs) != 2 || refs[0].Ref.Path != "bucket/roads/roads.shp" {
 		t.Fatalf("refs = %#v, want partitioned refs", refs)
 	}
-	if got := int64Attribute(attrs, "total_size"); got != 42 {
+	if got := catalogutil.Int64Attribute(attrs, "total_size"); got != 42 {
 		t.Fatalf("total_size = %d, want 42", got)
 	}
 	if got := refRefsFromAttributes(map[string]interface{}{"refs": []interface{}{map[string]interface{}{"path": "legacy/a.shp"}}}); len(got) != 0 {

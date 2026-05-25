@@ -57,10 +57,10 @@ func extractGeoTIFFSpatial(data []byte, width, height int) *datatype.SpatialInfo
 		hasSpatialFact = true
 	}
 	if srid, crs := geoTIFFCRS(ifd); srid > 0 {
-		spatialInfo.GeometryColumns = []datatype.GeometryColumnInfo{{SRID: &srid}}
+		spatialInfo.SRID = &srid
 		hasSpatialFact = true
 	} else if crs != "" {
-		spatialInfo.GeometryColumns = []datatype.GeometryColumnInfo{{CRS: crs}}
+		spatialInfo.CRS = crs
 		hasSpatialFact = true
 	}
 	hasSpatialIndex := false

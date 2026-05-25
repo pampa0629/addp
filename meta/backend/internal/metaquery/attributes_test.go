@@ -107,3 +107,30 @@ func TestSpatialMetadataFromItemReadsCapabilitiesSpatial(t *testing.T) {
 		t.Fatalf("fields = %#v, want partitioned fields", meta.Fields)
 	}
 }
+
+func TestSpatialMetadataFromItemReadsObjectSpatialReference(t *testing.T) {
+	t.Parallel()
+
+	meta, err := SpatialMetadataFromItem(models.MetaItem{
+		Attributes: models.JSONMap{
+			"capabilities": map[string]interface{}{
+				"spatial": map[string]interface{}{
+					"srid":   float64(4326),
+					"extent": []interface{}{120.0, 30.0, 121.0, 31.0},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("SpatialMetadataFromItem() error = %v", err)
+	}
+	if meta.SRID != 4326 {
+		t.Fatalf("srid = %d, want 4326", meta.SRID)
+	}
+	if meta.GeometryColumn != "" {
+		t.Fatalf("non-table spatial should not invent geometry column: %#v", meta)
+	}
+	if len(meta.Extent) != 4 || meta.Extent[0] != 120 || meta.Extent[3] != 31 {
+		t.Fatalf("extent = %#v", meta.Extent)
+	}
+}

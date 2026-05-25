@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/manager/internal/catalogutil"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
 )
@@ -77,7 +78,7 @@ func (p *schemaPreviewProvider) Preview(ctx context.Context, req *PreviewRequest
 			if item.ObjectSizeBytes != nil {
 				child.SizeBytes = *item.ObjectSizeBytes
 			}
-			if contentType := stringAttribute(item.Attributes, "content_type"); contentType != "" {
+			if contentType := catalogutil.StringAttribute(item.Attributes, "content_type"); contentType != "" {
 				child.ContentType = contentType
 			}
 			children = append(children, child)

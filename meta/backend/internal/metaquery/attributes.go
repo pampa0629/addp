@@ -23,6 +23,9 @@ func SpatialMetadataFromItem(item models.MetaItem) (*models.SpatialMetadataRespo
 			spatialMeta.GeometryColumn = geomCol
 		}
 		applyGeometryColumns(spatialMeta, spatialData["geometry_columns"])
+		if spatialMeta.SRID == 0 {
+			spatialMeta.SRID = int(toInt(spatialData["srid"]))
+		}
 
 		if extentSRID, ok := spatialData["extent_srid"].(float64); ok {
 			spatialMeta.ExtentSRID = int(extentSRID)

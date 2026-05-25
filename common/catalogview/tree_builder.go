@@ -304,9 +304,6 @@ func withMetaItemFacts(attrs map[string]interface{}, item *models.MetaItem) map[
 		if commonJSON.Int64(next, "type_info.table", "row_count") == 0 {
 			upsertTreeMetadataSection(next, "type_info", "table", map[string]interface{}{"row_count": *item.RowCount})
 		}
-		if commonJSON.Int64(next, "capabilities.statistics", "row_count") == 0 {
-			upsertTreeMetadataSection(next, "capabilities", "statistics", map[string]interface{}{"row_count": *item.RowCount})
-		}
 	}
 	if item.SizeBytes != nil {
 		next["size_bytes"] = *item.SizeBytes

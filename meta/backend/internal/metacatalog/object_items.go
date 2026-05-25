@@ -237,7 +237,7 @@ func PlanObjectCatalogSingleItem(engineID uint, resource StorageResource, trimme
 	if resource.LastModified != nil {
 		metaattr.SetStorage(attrs, "last_modified_at", resource.LastModified)
 	}
-	metaattr.MergeDataItemAttributes(attrs, dataItem)
+	metaattr.MergeDataItemAttributes(attrs, metaitem.AttributeInput(dataItem))
 	ApplyContainerSummary(attrs, dataItem)
 
 	fullName := commonModels.JoinObjectPath(resource.RootName, dir, name)
@@ -261,9 +261,9 @@ func PlanObjectCatalogCompositeItem(engineID uint, composite ObjectCatalogCompos
 	parentPath := ParentObjectPath(objectPath)
 	fullName := commonModels.JoinObjectPath(composite.Bucket, parentPath, itemName)
 
-	attrs := models.JSONMap(metaattr.BuildAttributes(composite.Item))
+	attrs := models.JSONMap(metaattr.BuildAttributes(metaitem.AttributeInput(composite.Item)))
 	if len(composite.Item.Fields) > 0 {
-		metaattr.SetSchemaFields(attrs, metaattr.FieldAttributes(composite.Item.Fields))
+		metaattr.SetTableFields(attrs, composite.Item.Fields)
 	}
 	metaattr.SetStorage(attrs, "bucket", composite.Bucket)
 	metaattr.SetStorage(attrs, "path", parentPath)

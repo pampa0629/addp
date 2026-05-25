@@ -3,6 +3,7 @@ package metaattr
 import (
 	"testing"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/meta/internal/models"
 )
 
@@ -95,7 +96,7 @@ func TestAttributeHelpersWriteStandardPartitions(t *testing.T) {
 	SetItem(attrs, "format", "parquet")
 	SetExtension(attrs, "media", "width", 800)
 	SetExtension(attrs, "document", "page_count", 12)
-	SetExtension(attrs, "statistics", "row_count", int64(10))
+	SetExtension(attrs, "statistics", "sample_size", int64(10))
 	SetExtension(attrs, "extraction", "metadata_extracted", true)
 	SetExtension(attrs, "unqualified", "vendor_key", "kept")
 
@@ -118,8 +119,8 @@ func TestAttributeHelpersWriteStandardPartitions(t *testing.T) {
 		t.Fatalf("type_info.document missing page_count: %#v", typeInfo)
 	}
 	capabilities := attrs["capabilities"].(map[string]interface{})
-	if capabilities["statistics"].(map[string]interface{})["row_count"] != int64(10) {
-		t.Fatalf("capabilities.statistics missing row_count: %#v", capabilities)
+	if capabilities["statistics"].(map[string]interface{})["sample_size"] != int64(10) {
+		t.Fatalf("capabilities.statistics missing sample_size: %#v", capabilities)
 	}
 	if capabilities["extraction"].(map[string]interface{})["metadata_extracted"] != true {
 		t.Fatalf("capabilities.extraction missing metadata_extracted: %#v", capabilities)
@@ -150,13 +151,12 @@ func TestUpsertSectionMergesExistingSection(t *testing.T) {
 	}
 }
 
-func TestSetSchemaFieldsWritesPartitionOnly(t *testing.T) {
+func TestSetTableFieldsWritesPartitionOnly(t *testing.T) {
 	t.Parallel()
 
-	fields := []map[string]interface{}{{"name": "id", "type": "integer"}}
 	attrs := models.JSONMap{}
 
-	SetSchemaFields(attrs, fields)
+	SetTableFields(attrs, []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeInt}})
 
 	if attrs["fields"] != nil {
 		t.Fatalf("flat fields should not be written: %#v", attrs)

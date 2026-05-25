@@ -24,8 +24,11 @@ func TestExtractGeoTIFFSpatial(t *testing.T) {
 			t.Fatalf("extent = %#v, want %#v", extent, wantExtent)
 		}
 	}
-	if len(spatial.GeometryColumns) != 1 || spatial.GeometryColumns[0].SRID == nil || *spatial.GeometryColumns[0].SRID != 4326 {
-		t.Fatalf("srid = %#v, want 4326", spatial.GeometryColumns)
+	if spatial.SRID == nil || *spatial.SRID != 4326 {
+		t.Fatalf("srid = %#v, want 4326", spatial.SRID)
+	}
+	if len(spatial.GeometryColumns) != 0 {
+		t.Fatalf("non-table spatial should not invent geometry columns: %#v", spatial.GeometryColumns)
 	}
 	if spatial.HasSpatialIndex == nil || *spatial.HasSpatialIndex {
 		t.Fatalf("has_spatial_index = %#v, want false", spatial.HasSpatialIndex)

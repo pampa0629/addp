@@ -259,6 +259,8 @@ const groupOrder = [
   'document',
   'graph',
   'spatial',
+  'indexing',
+  'statistics',
   'extraction',
   'shapefile',
   'csv',
@@ -291,6 +293,9 @@ const fieldOrder = [
   'table_count',
   'view_count',
   'index_count',
+  'indexes',
+  'is_sampled',
+  'schema_type',
   'entry_count',
   'directory_count',
   'sampled_children',
@@ -335,6 +340,7 @@ const groupLabelKeys = {
   document: 'manager.explorer.attributes.groups.document',
   graph: 'manager.explorer.attributes.groups.graph',
   spatial: 'manager.explorer.attributes.groups.spatial',
+  indexing: 'manager.explorer.attributes.groups.indexing',
   extraction: 'manager.explorer.attributes.groups.extraction',
   shapefile: 'manager.explorer.attributes.groups.shapefile',
   csv: 'manager.explorer.attributes.groups.csv',
@@ -396,6 +402,9 @@ const fieldLabelKeys = {
   offset_unit: 'manager.explorer.attributes.fields.offsetUnit',
   header_bytes: 'manager.explorer.attributes.fields.headerBytes',
   index_count: 'manager.explorer.attributes.fields.indexCount',
+  indexes: 'manager.explorer.attributes.fields.indexes',
+  is_sampled: 'manager.explorer.attributes.fields.isSampled',
+  schema_type: 'manager.explorer.attributes.fields.schemaType',
   sample_size: 'manager.explorer.attributes.fields.sampleSize',
   avg_doc_size: 'manager.explorer.attributes.fields.avgDocSize',
   page_size: 'manager.explorer.attributes.fields.pageSize',
@@ -507,7 +516,6 @@ const itemRowCount = computed(() => {
   if (Number.isFinite(previewRowCount) && previewRowCount > 0) return previewRowCount
   return pickNestedNumber(itemAttributesMap.value, [
     ['type_info', 'table', 'row_count'],
-    ['capabilities', 'statistics', 'row_count'],
     ['row_count']
   ])
 })
@@ -666,6 +674,8 @@ const preferredColumnsForObjectTable = (pathParts) => {
       return ['path', 'role', 'extension', 'required', 'primary']
     case 'geometry_columns':
       return ['name', 'type', 'geometry_type', 'srid', 'dimension', 'nullable', 'primary']
+    case 'indexes':
+      return ['name', 'fields', 'is_unique', 'index_type']
     case 'children':
       return ['name', 'child_kind', 'data_type', 'row_count', 'column_count', 'table', 'format', 'path']
     default:

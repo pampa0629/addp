@@ -404,15 +404,15 @@ func (s *FilesystemCatalogScanService) enrichSingleFileAttributes(
 		})
 		if err != nil {
 			s.log.Warn("提取 single 文件表信息失败，使用基础资源属性", "path", file.Path, "format", detected.Format, "error", err)
-			return metaattr.JSONMap(metaattr.BuildAttributes(detected)), nil, nil
+			return metaattr.JSONMap(metaattr.BuildAttributes(metaitem.AttributeInput(detected))), nil, nil
 		}
 		if ok {
 			detected = enriched
 		}
 	}
-	attrs := metaattr.JSONMap(metaattr.BuildAttributes(detected))
+	attrs := metaattr.JSONMap(metaattr.BuildAttributes(metaitem.AttributeInput(detected)))
 	if len(detected.Fields) > 0 {
-		metaattr.SetSchemaFields(attrs, metaattr.FieldAttributes(detected.Fields))
+		metaattr.SetTableFields(attrs, detected.Fields)
 	}
 	metacatalog.ApplyContainerSummary(attrs, detected)
 	if detected.DataType == dataitem.DataTypeContainer && contentReader != nil {

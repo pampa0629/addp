@@ -6,7 +6,6 @@ import (
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
-	"github.com/addp/meta/internal/metaitem"
 )
 
 func int64PtrForTest(value int64) *int64 {
@@ -14,11 +13,14 @@ func int64PtrForTest(value int64) *int64 {
 }
 
 func TestBuildDataItemAttributesWritesPartitionedItemAndStorage(t *testing.T) {
-	item := metaitem.InferSingleResource(metaitem.SingleResourceInput{
-		Name: "roads.parquet",
-		Path: "bucket/roads.parquet",
-		Size: 42,
-	})
+	sizeBytes := int64(42)
+	item := DataItemAttributesInput{
+		Layout:       dataitem.LayoutSingle,
+		DataType:     dataitem.DataTypeTable,
+		Format:       string(format.FormatParquet),
+		PhysicalPath: "bucket/roads.parquet",
+		SizeBytes:    &sizeBytes,
+	}
 
 	attrs := BuildAttributes(item)
 	itemAttrs := attrs["item"].(map[string]interface{})
@@ -46,13 +48,11 @@ func TestBuildDataItemAttributesWritesPartitionedItemAndStorage(t *testing.T) {
 }
 
 func TestBuildDataItemAttributesWritesWholeScopePolicy(t *testing.T) {
-	item := &metaitem.DetectedItem{
-		ResolvedItem: dataitem.ResolvedItem{
-			Layout:    dataitem.LayoutWhole,
-			DataType:  dataitem.DataTypeTable,
-			Format:    "parquet",
-			SizeBytes: int64PtrForTest(128),
-		},
+	item := DataItemAttributesInput{
+		Layout:       dataitem.LayoutWhole,
+		DataType:     dataitem.DataTypeTable,
+		Format:       "parquet",
+		SizeBytes:    int64PtrForTest(128),
 		PhysicalPath: "/lake/sales",
 	}
 
@@ -64,11 +64,9 @@ func TestBuildDataItemAttributesWritesWholeScopePolicy(t *testing.T) {
 }
 
 func TestMergeDataItemAttributesSkipsLegacyFlatStorageFields(t *testing.T) {
-	item := &metaitem.DetectedItem{
-		ResolvedItem: dataitem.ResolvedItem{
-			Layout:   dataitem.LayoutSingle,
-			DataType: dataitem.DataTypeDocument,
-		},
+	item := DataItemAttributesInput{
+		Layout:   dataitem.LayoutSingle,
+		DataType: dataitem.DataTypeDocument,
 		Attributes: map[string]interface{}{
 			"path": "legacy/path",
 			"size": int64(10),

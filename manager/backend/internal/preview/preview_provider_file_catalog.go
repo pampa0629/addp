@@ -145,7 +145,7 @@ func (p *fileCatalogPreviewProvider) previewFile(
 			Bucket:      rootName,
 			Path:        dir,
 			Name:        name,
-			Format:      stringAttribute(preview.Object.Attributes, "format"),
+			Format:      catalogutil.StringAttribute(preview.Object.Attributes, "format"),
 			Extension:   defaultExtension(filePath),
 			ContentType: canonicalContentType,
 			Size:        meta.Size,
@@ -219,7 +219,7 @@ func listFileCatalogPreviewChildren(ctx context.Context, catalogProvider plugin.
 	children := make([]models.ObjectPreviewChild, 0, len(nodes))
 	for _, node := range nodes {
 		childType := "object"
-		contentType := stringAttribute(node.Attributes, "content_type")
+		contentType := catalogutil.StringAttribute(node.Attributes, "content_type")
 		if node.IsContainer {
 			childType = "prefix"
 			contentType = "application/x-directory"
@@ -244,161 +244,6 @@ func getFileCatalogPreviewMetadata(ctx context.Context, metadataProvider plugin.
 		return nil, err
 	}
 	return catalogutil.ItemMetadataToFileMetadata(item, path), nil
-}
-
-func mapAttribute(attrs map[string]interface{}, key string) map[string]interface{} {
-	if attrs == nil {
-		return nil
-	}
-	for _, section := range attributeSectionsForKey(key) {
-		if sectionAttrs := sectionMapAttribute(attrs, section, key); len(sectionAttrs) > 0 {
-			return sectionAttrs
-		}
-	}
-	return nil
-}
-
-func stringSliceAttribute(attrs map[string]interface{}, key string) []string {
-	if attrs == nil {
-		return nil
-	}
-	for _, section := range attributeSectionsForKey(key) {
-		if values := sectionStringSliceAttribute(attrs, section, key); len(values) > 0 {
-			return values
-		}
-	}
-	return nil
-}
-
-func int64Attribute(attrs map[string]interface{}, key string) int64 {
-	if attrs == nil {
-		return 0
-	}
-	for _, section := range attributeSectionsForKey(key) {
-		if value := sectionInt64Attribute(attrs, section, key); value != 0 {
-			return value
-		}
-	}
-	return 0
-}
-
-func stringAttribute(attrs map[string]interface{}, key string) string {
-	if attrs == nil {
-		return ""
-	}
-	for _, section := range attributeSectionsForKey(key) {
-		if value := sectionStringAttribute(attrs, section, key); value != "" {
-			return value
-		}
-	}
-	return ""
-}
-
-func attributeSectionsForKey(key string) []string {
-	switch key {
-	case "layout", "data_type", "format", "refs", "file_count", "scope_exclusive", "claim_policy":
-		return []string{"item"}
-	case "bucket", "path", "name", "physical_path", "size_bytes", "size", "total_size", "content_type", "last_modified_at", "etag":
-		return []string{"storage"}
-	case "fields", "primary_key", "indexes", "row_count", "document_count":
-		return []string{"type_info.table"}
-	case "width", "height", "duration", "codec", "page_count", "word_count":
-		return []string{"type_info.media", "type_info.document"}
-	case "spatial", "geometry_columns", "primary_geometry_column", "extent", "has_spatial_index":
-		return []string{"capabilities.spatial"}
-	case "metadata_extracted", "extractor_available", "extracted_metadata", "plain_text_preview":
-		return []string{"capabilities.extraction"}
-	default:
-		return nil
-	}
-}
-
-func sectionStringAttribute(attrs map[string]interface{}, section, key string) string {
-	raw, ok := attrs[section]
-	if !ok {
-		return ""
-	}
-	sectionAttrs, ok := raw.(map[string]interface{})
-	if !ok {
-		return ""
-	}
-	if value, ok := sectionAttrs[key].(string); ok {
-		return value
-	}
-	return ""
-}
-
-func sectionMapAttribute(attrs map[string]interface{}, section, key string) map[string]interface{} {
-	if sectionAttrs := sectionAttributes(attrs, section); len(sectionAttrs) > 0 {
-		if value, ok := sectionAttrs[key].(map[string]interface{}); ok {
-			return value
-		}
-	}
-	return nil
-}
-
-func sectionStringSliceAttribute(attrs map[string]interface{}, section, key string) []string {
-	if sectionAttrs := sectionAttributes(attrs, section); len(sectionAttrs) > 0 {
-		return interfaceToStringSlice(sectionAttrs[key])
-	}
-	return nil
-}
-
-func sectionInt64Attribute(attrs map[string]interface{}, section, key string) int64 {
-	if sectionAttrs := sectionAttributes(attrs, section); len(sectionAttrs) > 0 {
-		return interfaceToInt64(sectionAttrs[key])
-	}
-	return 0
-}
-
-func sectionAttributes(attrs map[string]interface{}, section string) map[string]interface{} {
-	current := attrs
-	for _, part := range strings.Split(section, ".") {
-		raw, ok := current[part]
-		if !ok {
-			return nil
-		}
-		next, ok := raw.(map[string]interface{})
-		if !ok {
-			return nil
-		}
-		current = next
-	}
-	return current
-}
-
-func interfaceToStringSlice(value interface{}) []string {
-	switch typed := value.(type) {
-	case []string:
-		return typed
-	case []interface{}:
-		values := make([]string, 0, len(typed))
-		for _, item := range typed {
-			if text, ok := item.(string); ok && text != "" {
-				values = append(values, text)
-			}
-		}
-		return values
-	default:
-		return nil
-	}
-}
-
-func interfaceToInt64(value interface{}) int64 {
-	switch typed := value.(type) {
-	case int64:
-		return typed
-	case int:
-		return int64(typed)
-	case int32:
-		return int64(typed)
-	case float64:
-		return int64(typed)
-	case float32:
-		return int64(typed)
-	default:
-		return 0
-	}
 }
 
 // nfsPhysicalPath 将 locator 的 schema/table 转换为 NFS 绝对路径

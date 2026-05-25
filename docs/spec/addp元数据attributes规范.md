@@ -74,7 +74,7 @@ attributes 分区统一采用以下概念：
 |---|---|---|
 | `storage` | 引擎抽象层、catalog、对象枚举 | physical_path、bucket、path、content_type、etag、last_modified_at、total_size |
 | `item` | Meta 扫描、Meta item normalizer | layout、data_type、format、refs、file_count、scope_exclusive、claim_policy |
-| `type_info` | 数据库 metadata、format info provider、采样器、Meta item normalizer | table fields、primary_key、indexes、row_count；media kind/width/height/duration；document title/page_count；container children |
+| `type_info` | 数据库 metadata、format info provider、采样器、Meta item normalizer | table fields、primary_key、row_count；media kind/width/height/duration；document title/page_count；container children |
 | `format_info` | format plugin / provider、Meta item normalizer | CSV 分隔符、Shapefile related refs、JSON 结构类型、SQLite 版本等具体格式信息 |
 | `content_index` | format plugin / reader、Meta item normalizer | 用于按内容窗口读取的访问索引，例如 table 稀疏行号到字节偏移索引 |
 | `capabilities` | format provider、画像任务、Meta item normalizer | spatial、temporal、statistics、extraction、semantic、partitioning、indexing 等横切能力 |
@@ -157,7 +157,7 @@ attributes 分区统一采用以下概念：
 
 | 数据类型 | 分区 | 典型字段 |
 |---|---|---|
-| `table` | `type_info.table` | fields、primary_key、indexes、row_count、sample |
+| `table` | `type_info.table` | fields、primary_key、row_count、size_bytes、native |
 | `document` | `type_info.document` | title、author、page_count、word_count、language、summary |
 | `media` | `type_info.media` | kind、width、height、duration、codec、sample_rate、color_mode |
 | `container` | `type_info.container` | children、default_child、child_count、resource_count |
@@ -165,6 +165,8 @@ attributes 分区统一采用以下概念：
 | `unknown` | `type_info.unknown` | detection_reason、fallback_action |
 
 表字段统一放在 `type_info.table.fields`，不得写入 attributes 顶层。`type_info.table` 是 `common/datatype.TableInfo` 的直接 JSON 投影，`type_info.table.fields[]` 是 `common/datatype.FieldInfo` 的直接 JSON 投影。字段不是 data item，字段类型只能使用 `type` 表达 ADDP 标准字段类型，不得在字段对象内写入 `data_type`。原生字段类型如需展示，只能作为只读诊断信息写入 `native_type`，不得参与执行决策；哪个字段是空间字段、SRID、extent 等属于 `capabilities.spatial`，不得塞回 `type_info.table`。
+
+索引、采样过程、动态 schema 推断方式等不是 `common/datatype.TableInfo` 当前通用字段，不得写入 `type_info.table`。文档集合、数据库或格式解析得到的索引摘要进入 `capabilities.indexing`；采样规模、是否采样、动态 schema 类型、平均文档大小、索引数量等画像或统计事实进入 `capabilities.statistics`。
 
 Meta attributes 不维护旧字段兼容层。字段可空性只写 `nullable`，字段主键标记只写 `primary_key`；不得再写 `is_nullable`、`is_primary_key`。历史 Meta 数据如果不符合本规范，应删除后重新扫描，不在运行期做迁移或兼容读取。
 
@@ -190,11 +192,11 @@ Meta attributes 不维护旧字段兼容层。字段可空性只写 `nullable`�
 |---|---|---|
 | `spatial` | 空间能力 | geometry_columns、primary_geometry_column、extent、has_spatial_index |
 | `temporal` | 时间能力 | time_columns、time_range、granularity、timezone |
-| `statistics` | 统计和采样 | sample_size、null_count、min、max、profiled_at |
+| `statistics` | 统计和采样 | sample_size、is_sampled、schema_type、index_count、avg_doc_size、null_count、min、max、profiled_at |
 | `extraction` | 内容提取 | metadata_extracted、extractor_available、text_excerpt、summary、index_ref |
 | `semantic` | 语义能力 | embedding_model、vector_index_ref、semantic_tags |
 | `partitioning` | 分区画像能力 | partition_count、partition_sample、partition_range |
-| `indexing` | 索引能力 | spatial_indexes、fulltext_indexes、vector_indexes |
+| `indexing` | 索引能力 | indexes、spatial_indexes、fulltext_indexes、vector_indexes |
 
 横切能力不应变成顶层数据类型，也不应被塞进具体格式信息。
 
@@ -202,7 +204,7 @@ Meta attributes 不维护旧字段兼容层。字段可空性只写 `nullable`�
 
 `capabilities.spatial` 表达跨格式稳定消费的空间能力，不负责完整空间画像。meta 扫描阶段只写能够从字段声明、格式头或轻量元数据中确定的信息，不为了推断实际几何类型而扫描全量数据。
 
-建议最小结构：
+字段型空间对象建议最小结构：
 
 ```json
 {
@@ -221,18 +223,29 @@ Meta attributes 不维护旧字段兼容层。字段可空性只写 `nullable`�
 }
 ```
 
+非字段型空间对象，例如 GeoTIFF、栅格覆盖、带 GPS 或整体空间参考的媒体对象，不要求写入 `geometry_columns`，可以只写对象整体空间参考：
+
+```json
+{
+  "srid": 4326,
+  "extent": [120.0, 30.0, 121.0, 31.0],
+  "has_spatial_index": false
+}
+```
+
 字段规则：
 
 | 字段 | 规则 |
 |---|---|
-| `geometry_columns` | 支持多个 Geometry 字段。每个元素描述一个空间字段；GeoTIFF、栅格覆盖等没有字段列概念的空间媒体可只写 `srid` 或 `crs`，不虚构字段名。 |
+| `geometry_columns` | 支持多个 Geometry 字段。每个元素描述一个空间字段；非字段型空间对象不得虚构字段名，可省略该字段。 |
 | `geometry_type` | 写入声明类型或格式天然可确定的类型。PostGIS 字段声明为 `geometry` 时就写 `geometry`，不得为了得到 Point/Polygon 等具体类型扫描全表。 |
-| `srid` | 能确定 EPSG/SRID 编号时写数字，例如 `4326`。 |
-| `crs` | 不能确定编号但能获得 CRS 描述时写 `crs`，例如 WKT、PROJJSON、proj4。`srid` 和 `crs` 二选一，不同时写。 |
+| `srid` | 能确定 EPSG/SRID 编号时写数字，例如 `4326`。字段型空间对象优先写在对应 `geometry_columns[]` 内；非字段型空间对象写在 `capabilities.spatial.srid` 顶层。 |
+| `crs` | 不能确定编号但能获得 CRS 描述时写 `crs`，例如 WKT、PROJJSON、proj4。字段型空间对象优先写在对应 `geometry_columns[]` 内；非字段型空间对象写在顶层。`srid` 和 `crs` 二选一，不同时写。 |
 | `dimension` | 坐标维度，无法确定时可省略。 |
 | `nullable` | 字段是否可空，无法确定时可省略。 |
 | `primary_geometry_column` | Manager 默认空间预览使用的几何字段。多几何字段时必须明确；单几何字段时建议写入；没有字段列概念的空间媒体应省略。 |
 | `extent` | 空间范围。无法轻量获得时写 `null` 或省略，不得为了 extent 扫描全量数据。 |
+| `extent_srid` | `extent` 的坐标参考。如果与顶层 `srid` 或 primary geometry column 的 `srid` 一致可省略；不一致时必须写明。 |
 | `has_spatial_index` | 是否存在空间索引；无法确定时可省略。 |
 
 `feature_count` 不属于 spatial，表格型行数写入 `type_info.table.row_count`。如果后续画像任务采样得到实际几何类型分布，应进入 `capabilities.statistics` 或后续画像结构，不反向覆盖 meta 扫描阶段的 `geometry_type`。

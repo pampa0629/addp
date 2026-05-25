@@ -12,6 +12,7 @@ import (
 	"github.com/addp/common/format"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/manager/internal/catalogutil"
 	"github.com/addp/manager/internal/models"
 )
 
@@ -378,11 +379,11 @@ func upsertMetaNested(attrs map[string]interface{}, section, namespace string, v
 }
 
 func previewResourcePaths(attrs map[string]interface{}) (physicalPath string, scopePath string) {
-	physPath := stringAttribute(attrs, "physical_path")
+	physPath := catalogutil.StringAttribute(attrs, "physical_path")
 	if physPath == "" {
 		return "", ""
 	}
-	switch stringAttribute(attrs, "layout") {
+	switch catalogutil.StringAttribute(attrs, "layout") {
 	case "single":
 		return physPath, ""
 	case "whole":
@@ -547,9 +548,9 @@ func providerNamesForMeta(req *PreviewResolverRequest, legacyReq *PreviewRequest
 	if itemType == "" && req != nil && req.Metadata != nil {
 		itemType = strings.ToLower(strings.TrimSpace(req.Metadata.NodeType))
 	}
-	dataType := strings.ToLower(strings.TrimSpace(stringAttribute(attrs, "data_type")))
-	formatName := strings.ToLower(strings.TrimSpace(stringAttribute(attrs, "format")))
-	layout := strings.ToLower(strings.TrimSpace(stringAttribute(attrs, "layout")))
+	dataType := strings.ToLower(strings.TrimSpace(catalogutil.StringAttribute(attrs, "data_type")))
+	formatName := strings.ToLower(strings.TrimSpace(catalogutil.StringAttribute(attrs, "format")))
+	layout := strings.ToLower(strings.TrimSpace(catalogutil.StringAttribute(attrs, "layout")))
 
 	switch itemType {
 	case "collection":

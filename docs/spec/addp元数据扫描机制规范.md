@@ -98,7 +98,8 @@ Meta API 和扫描任务参数中，路径型扫描目标统一使用 `catalog_p
 
 允许写入：
 
-- `type_info.table.fields`、`row_count`、`primary_key`、`indexes`。
+- `type_info.table.fields`、`row_count`、`primary_key`。
+- `capabilities.indexing.indexes`。索引是访问/查询能力事实，不写入 `type_info.table`。
 - `type_info.container.children`，仅记录容器直接 children，例如 ZIP entry、Excel sheet、SQLite table、GeoPackage layer。
 - `type_info.document`、`type_info.media`、`type_info.graph`。
 - `format_info.<format>`。
