@@ -1577,6 +1577,27 @@ paths:
         in: query
         name: nested_child_path
         type: string
+      - description: '图样本类型：node_shape 或 relationship_shape | Graph sample kind: node_shape
+          or relationship_shape'
+        in: query
+        name: graph_sample_kind
+        type: string
+      - description: 节点 label set，逗号分隔 | Node label set, comma separated
+        in: query
+        name: graph_node_labels
+        type: string
+      - description: 关系类型 | Relationship type
+        in: query
+        name: graph_relationship_type
+        type: string
+      - description: 关系起点 label set，逗号分隔 | Relationship source label set, comma separated
+        in: query
+        name: graph_from_labels
+        type: string
+      - description: 关系终点 label set，逗号分隔 | Relationship target label set, comma separated
+        in: query
+        name: graph_to_labels
+        type: string
       produces:
       - application/json
       responses:

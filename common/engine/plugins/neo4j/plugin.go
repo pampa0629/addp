@@ -128,7 +128,7 @@ func (p *Neo4jPlugin) SampleGraph(ctx context.Context, connInfo plugin.Connectio
 	if isFilteredGraphSample(opts.Filter) {
 		return &plugin.GraphData{}, nil
 	}
-	result, err = p.executeGraphQuery(ctx, sampleConn, fmt.Sprintf("MATCH (n) RETURN n LIMIT %d", limit))
+	result, err = p.executeGraphQuery(ctx, sampleConn, sampleGraphNodeFallbackQuery(limit))
 	if err != nil {
 		return nil, err
 	}
@@ -142,6 +142,9 @@ func sampleGraphQuery(filter map[string]interface{}, limit int) string {
 	switch strings.TrimSpace(graphSampleString(filter, "kind")) {
 	case "node_shape":
 		labels := graphSampleStringSlice(filter, "labels")
+		if isInternalNodeLabelSet(labels) {
+			return fmt.Sprintf("MATCH (n) WHERE false RETURN n LIMIT %d", limit)
+		}
 		return fmt.Sprintf("MATCH (n%s) RETURN n LIMIT %d", cypherNodeLabels(labels), limit)
 	case "relationship_shape":
 		relType := graphSampleString(filter, "type")
@@ -158,6 +161,10 @@ func sampleGraphQuery(filter map[string]interface{}, limit int) string {
 	default:
 		return fmt.Sprintf("MATCH (n)-[r]->(m) WHERE NOT type(r) IN ['RTREE_METADATA', 'RTREE_REFERENCE', 'RTREE_ROOT'] RETURN n, r, m LIMIT %d", limit)
 	}
+}
+
+func sampleGraphNodeFallbackQuery(limit int) string {
+	return fmt.Sprintf("MATCH (n) WHERE NOT %s RETURN n LIMIT %d", cypherInternalNodePredicate("n"), limit)
 }
 
 func isFilteredGraphSample(filter map[string]interface{}) bool {
@@ -397,7 +404,13 @@ func (p *Neo4jPlugin) describeGraph(ctx context.Context, connInfo plugin.Connect
 
 // describeNodeShapes lists observed node label sets as node shapes.
 func (p *Neo4jPlugin) describeNodeShapes(ctx context.Context, session neo4jdriver.SessionWithContext) ([]datatype.GraphNodeShapeInfo, int64, error) {
-	result, err := session.Run(ctx, "MATCH (n) RETURN labels(n) AS labels, count(n) AS count ORDER BY count DESC LIMIT 500", nil)
+	result, err := session.Run(ctx,
+		fmt.Sprintf(`MATCH (n)
+WITH labels(n) AS labels
+WHERE NOT %s
+RETURN labels, count(*) AS count ORDER BY count DESC LIMIT 500`, cypherInternalLabelsPredicate("labels")),
+		nil,
+	)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to list Neo4j node shapes: %w", err)
 	}
@@ -415,7 +428,7 @@ func (p *Neo4jPlugin) describeNodeShapes(ctx context.Context, session neo4jdrive
 			continue
 		}
 		labels := neo4jStringSlice(labelsVal)
-		if len(labels) == 0 {
+		if len(labels) == 0 || isInternalNodeLabelSet(labels) {
 			continue
 		}
 		countVal, _ := record.Get("count")
@@ -443,7 +456,7 @@ func (p *Neo4jPlugin) describeNodeShapes(ctx context.Context, session neo4jdrive
 }
 
 func (p *Neo4jPlugin) countNodes(ctx context.Context, session neo4jdriver.SessionWithContext) (int64, error) {
-	result, err := session.Run(ctx, "MATCH (n) RETURN count(n) AS count", nil)
+	result, err := session.Run(ctx, fmt.Sprintf("MATCH (n) WHERE NOT %s RETURN count(n) AS count", cypherInternalNodePredicate("n")), nil)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count Neo4j nodes: %w", err)
 	}
@@ -829,6 +842,32 @@ func isInternalRelationshipType(relType string) bool {
 	}
 	_, ok := internalTypes[strings.ToUpper(relType)]
 	return ok
+}
+
+func isInternalNodeLabelSet(labels []string) bool {
+	for _, label := range labels {
+		if isInternalNodeLabel(label) {
+			return true
+		}
+	}
+	return false
+}
+
+func isInternalNodeLabel(label string) bool {
+	switch strings.ToUpper(strings.TrimSpace(label)) {
+	case "SPATIALLAYER":
+		return true
+	default:
+		return false
+	}
+}
+
+func cypherInternalNodePredicate(nodeAlias string) string {
+	return cypherInternalLabelsPredicate(fmt.Sprintf("labels(%s)", nodeAlias))
+}
+
+func cypherInternalLabelsPredicate(labelsExpr string) string {
+	return fmt.Sprintf("any(label IN %s WHERE toUpper(label) IN ['SPATIALLAYER'])", labelsExpr)
 }
 
 func neo4jStringSlice(value interface{}) []string {

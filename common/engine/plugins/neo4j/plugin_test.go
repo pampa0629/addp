@@ -49,3 +49,23 @@ func TestSampleGraphQueryFiltersByRelationshipShape(t *testing.T) {
 		t.Fatalf("sampleGraphQuery() = %q, want %q", got, want)
 	}
 }
+
+func TestSampleGraphQuerySkipsInternalNodeShape(t *testing.T) {
+	got := sampleGraphQuery(map[string]interface{}{
+		"kind":   "node_shape",
+		"labels": []string{"SpatialLayer"},
+	}, 10)
+	want := "MATCH (n) WHERE false RETURN n LIMIT 10"
+	if got != want {
+		t.Fatalf("sampleGraphQuery() = %q, want %q", got, want)
+	}
+}
+
+func TestInternalNodeLabelSetDetectsSpatialLayer(t *testing.T) {
+	if !isInternalNodeLabelSet([]string{"SpatialLayer"}) {
+		t.Fatal("isInternalNodeLabelSet() = false, want true")
+	}
+	if isInternalNodeLabelSet([]string{"Person"}) {
+		t.Fatal("isInternalNodeLabelSet() = true, want false")
+	}
+}

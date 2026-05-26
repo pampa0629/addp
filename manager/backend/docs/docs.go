@@ -1975,6 +1975,36 @@ const docTemplate = `{
                         "description": "嵌套容器内部 child 相对路径 | Relative child path inside a nested container",
                         "name": "nested_child_path",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "图样本类型：node_shape 或 relationship_shape | Graph sample kind: node_shape or relationship_shape",
+                        "name": "graph_sample_kind",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "节点 label set，逗号分隔 | Node label set, comma separated",
+                        "name": "graph_node_labels",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "关系类型 | Relationship type",
+                        "name": "graph_relationship_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "关系起点 label set，逗号分隔 | Relationship source label set, comma separated",
+                        "name": "graph_from_labels",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "关系终点 label set，逗号分隔 | Relationship target label set, comma separated",
+                        "name": "graph_to_labels",
+                        "in": "query"
                     }
                 ],
                 "responses": {

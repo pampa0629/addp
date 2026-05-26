@@ -150,26 +150,64 @@
           />
         </el-select>
       </div>
-      <div v-if="showGraphSample" class="graph-sample-panel">
-        <div class="graph-sample-header">
-          <span class="graph-sample-title">{{ t('manager.explorer.graphSample') }}</span>
-          <span class="graph-sample-count">
-            {{ graphSampleStatsText }}
-          </span>
-        </div>
-        <div class="graph-sample-grid">
-          <div class="graph-sample-list">
-            <div class="graph-sample-subtitle">{{ t('manager.explorer.graphSampleNodes') }}</div>
-            <div v-for="node in graphSampleNodes" :key="node.element_id" class="graph-sample-row">
-              <span class="graph-sample-name">{{ graphNodeLabel(node) }}</span>
-              <span class="graph-sample-meta">{{ graphNodeShape(node) }}</span>
-            </div>
+      <div v-if="isGraphOverview" class="graph-preview-layout">
+        <div class="graph-overview-table">
+          <div class="graph-overview-hint">{{ t('manager.explorer.graphOverviewHint') }}</div>
+          <el-table
+            :data="pagedGraphOverviewRows"
+            v-loading="loading"
+            height="100%"
+            size="small"
+            highlight-current-row
+            :row-class-name="graphOverviewRowClassName"
+            @row-click="handleGraphOverviewRowClick"
+          >
+            <el-table-column
+              v-for="col in graphOverviewColumns"
+              :key="col"
+              :prop="col"
+              :label="col"
+              show-overflow-tooltip
+            />
+          </el-table>
+          <div v-if="graphOverviewRows.length > 0" class="graph-overview-pagination">
+            <el-pagination
+              background
+              small
+              layout="total, sizes, prev, pager, next"
+              :total="graphOverviewRows.length"
+              :page-size="graphOverviewPageSize"
+              :current-page="graphOverviewPage"
+              :page-sizes="[10, 20, 50, 100]"
+              @current-change="handleGraphOverviewPageChange"
+              @size-change="handleGraphOverviewPageSizeChange"
+            />
           </div>
-          <div class="graph-sample-list">
-            <div class="graph-sample-subtitle">{{ t('manager.explorer.graphSampleRelationships') }}</div>
-            <div v-for="rel in graphSampleRelationships" :key="rel.element_id" class="graph-sample-row">
-              <span class="graph-sample-name">{{ rel.type || '-' }}</span>
-              <span class="graph-sample-meta">{{ graphRelationshipLabel(rel) }}</span>
+        </div>
+        <div v-if="showGraphSample" class="graph-sample-panel">
+          <div class="graph-sample-header">
+            <span class="graph-sample-title">{{ t('manager.explorer.graphSample') }}</span>
+            <span class="graph-sample-count">
+              {{ graphSampleStatsText }}
+            </span>
+          </div>
+          <div class="graph-sample-grid">
+            <div v-if="showGraphNodeSampleTable" class="graph-sample-table">
+              <div class="graph-sample-subtitle">{{ t('manager.explorer.graphSampleNodes') }}</div>
+              <el-table :data="graphSampleNodeRows" height="100%" size="small" empty-text="-">
+                <el-table-column prop="name" :label="t('manager.explorer.name')" min-width="160" show-overflow-tooltip />
+                <el-table-column prop="type" :label="t('manager.explorer.type')" min-width="140" show-overflow-tooltip />
+                <el-table-column prop="properties" :label="t('manager.explorer.graphSampleProperties')" min-width="220" show-overflow-tooltip />
+              </el-table>
+            </div>
+            <div v-if="showGraphRelationshipSampleTable" class="graph-sample-table">
+              <div class="graph-sample-subtitle">{{ t('manager.explorer.graphSampleRelationships') }}</div>
+              <el-table :data="graphSampleRelationshipRows" height="100%" size="small" empty-text="-">
+                <el-table-column prop="type" :label="t('manager.explorer.type')" min-width="130" show-overflow-tooltip />
+                <el-table-column prop="start" :label="t('manager.explorer.graphSampleStart')" min-width="140" show-overflow-tooltip />
+                <el-table-column prop="end" :label="t('manager.explorer.graphSampleEnd')" min-width="140" show-overflow-tooltip />
+                <el-table-column prop="properties" :label="t('manager.explorer.graphSampleProperties')" min-width="180" show-overflow-tooltip />
+              </el-table>
             </div>
           </div>
         </div>
@@ -185,26 +223,6 @@
         @navigate="handleNavigate"
         @child-change="handleChildChange"
       />
-      <div v-if="isGraphOverview" class="graph-overview-table">
-        <div class="graph-overview-hint">{{ t('manager.explorer.graphOverviewHint') }}</div>
-        <el-table
-          :data="graphOverviewRows"
-          v-loading="loading"
-          height="100%"
-          size="small"
-          highlight-current-row
-          :row-class-name="graphOverviewRowClassName"
-          @row-click="handleGraphOverviewRowClick"
-        >
-          <el-table-column
-            v-for="col in graphOverviewColumns"
-            :key="col"
-            :prop="col"
-            :label="col"
-            show-overflow-tooltip
-          />
-        </el-table>
-      </div>
     </div>
 
     <!-- 导入数据对话框 -->
@@ -250,6 +268,10 @@ const emit = defineEmits(['page-change', 'navigate', 'child-change'])
 const store = useExplorerStore()
 const activeMultiRefPath = ref('')
 const activeGraphSampleKey = ref('')
+const activeGraphSampleKind = ref('')
+const activeGraphSampleTotal = ref(null)
+const graphOverviewPage = ref(1)
+const graphOverviewPageSize = ref(20)
 
 const sanitizeBase64 = (value) => {
   if (typeof value !== 'string') return ''
@@ -639,13 +661,42 @@ const refKey = computed(() => {
 const previewMode = computed(() => (props.previewData?.mode || '').toLowerCase())
 const objectData = computed(() => props.previewData?.object || {})
 const graphSample = computed(() => props.previewData?.graph || null)
-const graphSampleNodes = computed(() => (Array.isArray(graphSample.value?.nodes) ? graphSample.value.nodes.slice(0, 6) : []))
-const graphSampleRelationships = computed(() => (Array.isArray(graphSample.value?.relationships) ? graphSample.value.relationships.slice(0, 6) : []))
+const graphSampleNodes = computed(() => (Array.isArray(graphSample.value?.nodes) ? graphSample.value.nodes : []))
+const graphSampleRelationships = computed(() => (Array.isArray(graphSample.value?.relationships) ? graphSample.value.relationships : []))
 const showGraphSample = computed(() => isGraphOverview.value && (graphSampleNodes.value.length > 0 || graphSampleRelationships.value.length > 0))
+const showGraphNodeSampleTable = computed(() => {
+  return graphSampleNodeRows.value.length > 0 && activeGraphSampleKind.value !== 'relationship_shape'
+})
+const showGraphRelationshipSampleTable = computed(() => {
+  return graphSampleRelationshipRows.value.length > 0 && activeGraphSampleKind.value !== 'node_shape'
+})
+const graphSampleNodeById = computed(() => {
+  const nodes = Array.isArray(graphSample.value?.nodes) ? graphSample.value.nodes : []
+  return new Map(nodes.map(node => [node.element_id, node]))
+})
+const graphSampleNodeRows = computed(() => graphSampleNodes.value.map((node, index) => ({
+  name: graphNodeLabel(node, index),
+  type: graphNodeShape(node),
+  properties: graphPropertiesSummary(node?.properties)
+})))
+const graphSampleRelationshipRows = computed(() => graphSampleRelationships.value.map(rel => ({
+  type: rel?.type || '-',
+  start: graphEndpointLabel(rel?.start_node_id),
+  end: graphEndpointLabel(rel?.end_node_id),
+  properties: graphPropertiesSummary(rel?.properties)
+})))
 const graphOverviewColumns = computed(() => (props.previewData?.columns || []).filter(column => !String(column).startsWith('__')))
 const graphOverviewRows = computed(() => Array.isArray(props.previewData?.rows) ? props.previewData.rows : [])
+const pagedGraphOverviewRows = computed(() => {
+  const start = (graphOverviewPage.value - 1) * graphOverviewPageSize.value
+  return graphOverviewRows.value.slice(start, start + graphOverviewPageSize.value)
+})
 const graphSampleStatsText = computed(() => {
-  const params = { nodes: graphSampleNodes.value.length, relationships: graphSampleRelationships.value.length }
+  const params = {
+    nodes: graphSampleNodes.value.length,
+    relationships: graphSampleRelationships.value.length,
+    total: activeGraphSampleTotal.value || graphSampleNodes.value.length + graphSampleRelationships.value.length
+  }
   return activeGraphSampleKey.value
     ? t('manager.explorer.graphFilteredSampleStats', params)
     : t('manager.explorer.graphSampleStats', params)
@@ -656,15 +707,49 @@ const graphNodeShape = (node) => {
   return labels.length ? labels.join('+') : '-'
 }
 
-const graphNodeLabel = (node) => {
+const graphNodeLabel = (node, index = 0) => {
   const props = node?.properties || {}
-  return String(props.name || props.title || props.label || props.id || node?.element_id || '-')
+  const readable = props.name || props.title || props.label || props.id
+  if (readable !== null && readable !== undefined && String(readable).trim()) {
+    return String(readable)
+  }
+  const type = graphNodeShape(node)
+  return type && type !== '-' ? `${type} #${index + 1}` : `#${index + 1}`
+}
+
+const graphPropertiesSummary = (properties) => {
+  if (!properties || typeof properties !== 'object') return '-'
+  const hidden = new Set(['name', 'title', 'label', 'id'])
+  const parts = Object.entries(properties)
+    .filter(([key, value]) => {
+      const normalizedKey = String(key).toLowerCase()
+      if (hidden.has(normalizedKey)) return false
+      if (normalizedKey.startsWith('_')) return false
+      if (normalizedKey.endsWith('_at') || normalizedKey.endsWith('_time')) return false
+      if (normalizedKey.includes('encoder') || normalizedKey.includes('geocoder')) return false
+      if (normalizedKey.includes('config')) return false
+      return value !== null && value !== undefined && typeof value !== 'object'
+    })
+    .slice(0, 4)
+    .map(([key, value]) => `${key}: ${value}`)
+  return parts.length ? parts.join(', ') : '-'
+}
+
+const graphEndpointLabel = (elementId) => {
+  const node = graphSampleNodeById.value.get(elementId)
+  if (!node) return shortGraphElementId(elementId)
+  const props = node.properties || {}
+  const readable = props.name || props.title || props.label || props.id
+  if (readable !== null && readable !== undefined && String(readable).trim()) {
+    return String(readable)
+  }
+  return graphNodeShape(node) || shortGraphElementId(elementId)
 }
 
 const graphRelationshipLabel = (rel) => {
-  const start = rel?.start_node_id || '-'
-  const end = rel?.end_node_id || '-'
-  return `${shortGraphElementId(start)} -> ${shortGraphElementId(end)}`
+  const start = graphEndpointLabel(rel?.start_node_id)
+  const end = graphEndpointLabel(rel?.end_node_id)
+  return `${start} -> ${end}`
 }
 
 const graphSampleKey = (filter) => {
@@ -701,6 +786,8 @@ const handleGraphOverviewRowClick = async (row) => {
   const filter = graphFilterFromOverviewRow(row)
   if (!filter || !props.selectedNode?.locator) return
   activeGraphSampleKey.value = graphSampleKey(filter)
+  activeGraphSampleKind.value = filter.kind || ''
+  activeGraphSampleTotal.value = Number(row?.数量) > 0 ? Number(row.数量) : null
   try {
     await store.loadPreview(
       props.selectedNode.locator,
@@ -713,6 +800,8 @@ const handleGraphOverviewRowClick = async (row) => {
     )
   } catch (error) {
     activeGraphSampleKey.value = ''
+    activeGraphSampleKind.value = ''
+    activeGraphSampleTotal.value = null
     ElMessage.error(t('manager.explorer.loadPreviewFailed', { error: error.message || error }))
   }
 }
@@ -720,6 +809,15 @@ const handleGraphOverviewRowClick = async (row) => {
 const graphOverviewRowClassName = ({ row }) => {
   const key = graphSampleKey(graphFilterFromOverviewRow(row))
   return key && key === activeGraphSampleKey.value ? 'active-graph-overview-row' : ''
+}
+
+const handleGraphOverviewPageChange = (page) => {
+  graphOverviewPage.value = page
+}
+
+const handleGraphOverviewPageSizeChange = (size) => {
+  graphOverviewPageSize.value = size
+  graphOverviewPage.value = 1
 }
 
 const shortGraphElementId = (value) => {
@@ -893,6 +991,16 @@ watch(
   () => {
     markdownRawMode.value = false
     activeGraphSampleKey.value = ''
+    activeGraphSampleKind.value = ''
+    activeGraphSampleTotal.value = null
+    graphOverviewPage.value = 1
+  }
+)
+
+watch(
+  () => props.previewData?.rows,
+  () => {
+    graphOverviewPage.value = 1
   }
 )
 
@@ -1812,8 +1920,20 @@ const handleNavigate = (path) => {
   width: min(420px, 100%);
 }
 
+.graph-preview-layout {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(360px, 46%) minmax(260px, 1fr);
+  gap: 12px;
+  overflow: hidden;
+}
+
 .graph-sample-panel {
-  flex: 0 0 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   border: 1px solid var(--addp-border-color);
   border-radius: 6px;
   background: var(--addp-bg-secondary);
@@ -1821,6 +1941,7 @@ const handleNavigate = (path) => {
 }
 
 .graph-sample-header {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1840,46 +1961,37 @@ const handleNavigate = (path) => {
 }
 
 .graph-sample-grid {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
   gap: 12px;
 }
 
+.graph-sample-table {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .graph-sample-subtitle {
+  flex: 0 0 auto;
   font-size: 12px;
   color: var(--addp-text-secondary);
-  margin-bottom: 4px;
 }
 
-.graph-sample-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 8px;
-  align-items: center;
-  min-height: 24px;
-  font-size: 12px;
-  border-top: 1px solid var(--addp-border-color);
-}
-
-.graph-sample-name,
-.graph-sample-meta {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.graph-sample-name {
-  color: var(--addp-text-primary);
-  font-weight: 500;
-}
-
-.graph-sample-meta {
-  color: var(--addp-text-secondary);
+.graph-sample-table :deep(.el-table) {
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--addp-border-color);
+  border-radius: 6px;
 }
 
 .graph-overview-table {
-  flex: 1;
   min-height: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1893,8 +2005,15 @@ const handleNavigate = (path) => {
 
 .graph-overview-table :deep(.el-table) {
   flex: 1;
+  min-height: 0;
   border: 1px solid var(--addp-border-color);
   border-radius: 6px;
+}
+
+.graph-overview-pagination {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: flex-end;
 }
 
 .graph-overview-table :deep(.el-table__row) {
