@@ -95,7 +95,10 @@ func (p *GraphPreviewProvider) sampleGraph(ctx context.Context, req *PreviewRequ
 	if limit > 100 {
 		limit = 100
 	}
-	sample, err := sampleProvider.SampleGraph(ctx, plugin.ConnectionInfo(req.Engine.ConnectionInfo), path, plugin.GraphSampleOptions{Limit: limit})
+	sample, err := sampleProvider.SampleGraph(ctx, plugin.ConnectionInfo(req.Engine.ConnectionInfo), path, plugin.GraphSampleOptions{
+		Limit:  limit,
+		Filter: cloneGraphSampleFilter(req.GraphSample),
+	})
 	if err != nil || sample == nil {
 		return nil
 	}
@@ -167,11 +170,13 @@ func graphOverviewRows(info *datatype.GraphInfo) ([]string, []map[string]interfa
 	rows := make([]map[string]interface{}, 0, len(info.NodeShapes)+len(info.RelationshipShapes))
 	for _, shape := range info.NodeShapes {
 		rows = append(rows, map[string]interface{}{
-			"类型":   "节点",
-			"名称":   graphDisplayValue(graphNodeShapeName(shape)),
-			"数量":   graphCountDisplayValue(shape.Count),
-			"连接模式": "-",
-			"属性":   graphPropertiesDisplayValue(shape.Properties),
+			"类型":                  "节点",
+			"名称":                  graphDisplayValue(graphNodeShapeName(shape)),
+			"数量":                  graphCountDisplayValue(shape.Count),
+			"连接模式":                "-",
+			"属性":                  graphPropertiesDisplayValue(shape.Properties),
+			"__graph_sample_kind": "node_shape",
+			"__graph_node_labels": append([]string(nil), shape.Labels...),
 		})
 	}
 	for _, shape := range info.RelationshipShapes {
@@ -184,21 +189,28 @@ func graphRelationshipRows(shape datatype.GraphRelationshipShapeInfo) []map[stri
 	properties := graphPropertiesDisplayValue(shape.Properties)
 	if len(shape.Patterns) == 0 {
 		return []map[string]interface{}{{
-			"类型":   "关系",
-			"名称":   graphDisplayValue(shape.Type),
-			"数量":   graphCountDisplayValue(shape.Count),
-			"连接模式": "-",
-			"属性":   properties,
+			"类型":                          "关系",
+			"名称":                          graphDisplayValue(shape.Type),
+			"数量":                          graphCountDisplayValue(shape.Count),
+			"连接模式":                        "-",
+			"属性":                          properties,
+			"__graph_sample_kind":         "relationship_shape",
+			"__graph_relationship_type":   shape.Type,
+			"__graph_relationship_labels": nil,
 		}}
 	}
 	rows := make([]map[string]interface{}, 0, len(shape.Patterns))
 	for _, pattern := range shape.Patterns {
 		rows = append(rows, map[string]interface{}{
-			"类型":   "关系",
-			"名称":   graphDisplayValue(shape.Type),
-			"数量":   graphCountDisplayValue(pattern.Count),
-			"连接模式": graphDisplayValue(graphPatternLabel(pattern)),
-			"属性":   properties,
+			"类型":                        "关系",
+			"名称":                        graphDisplayValue(shape.Type),
+			"数量":                        graphCountDisplayValue(pattern.Count),
+			"连接模式":                      graphDisplayValue(graphPatternLabel(pattern)),
+			"属性":                        properties,
+			"__graph_sample_kind":       "relationship_shape",
+			"__graph_relationship_type": shape.Type,
+			"__graph_from_labels":       append([]string(nil), pattern.From.Labels...),
+			"__graph_to_labels":         append([]string(nil), pattern.To.Labels...),
 		})
 	}
 	return rows

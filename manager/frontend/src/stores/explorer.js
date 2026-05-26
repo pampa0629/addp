@@ -264,7 +264,7 @@ export const useExplorerStore = defineStore('explorer', {
     /**
      * 加载预览数据
      */
-    async loadPreview(locator, page = 1, childName = '', refPath = '', nestedChildPath = '', childKey = '') {
+    async loadPreview(locator, page = 1, childName = '', refPath = '', nestedChildPath = '', childKey = '', graphSample = null) {
       const normalizedChildName = childName || ''
       const normalizedChildKey = childKey || normalizedChildName
       const normalizedRefPath = refPath || ''
@@ -303,6 +303,23 @@ export const useExplorerStore = defineStore('explorer', {
         }
         if (normalizedNestedChildPath) {
           params.nested_child_path = normalizedNestedChildPath
+        }
+        if (graphSample && typeof graphSample === 'object') {
+          if (graphSample.kind) {
+            params.graph_sample_kind = graphSample.kind
+          }
+          if (Array.isArray(graphSample.labels) && graphSample.labels.length) {
+            params.graph_node_labels = graphSample.labels.join(',')
+          }
+          if (graphSample.type) {
+            params.graph_relationship_type = graphSample.type
+          }
+          if (Array.isArray(graphSample.fromLabels) && graphSample.fromLabels.length) {
+            params.graph_from_labels = graphSample.fromLabels.join(',')
+          }
+          if (Array.isArray(graphSample.toLabels) && graphSample.toLabels.length) {
+            params.graph_to_labels = graphSample.toLabels.join(',')
+          }
         }
         const response = await client.get('/manager/preview', {
           params

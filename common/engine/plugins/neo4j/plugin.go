@@ -116,13 +116,17 @@ func (p *Neo4jPlugin) SampleGraph(ctx context.Context, connInfo plugin.Connectio
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
+	query := sampleGraphQuery(opts.Filter, limit)
 	result, err := p.executeGraphQuery(ctx, sampleConn,
-		fmt.Sprintf("MATCH (n)-[r]->(m) WHERE NOT type(r) IN ['RTREE_METADATA', 'RTREE_REFERENCE', 'RTREE_ROOT'] RETURN n, r, m LIMIT %d", limit))
+		query)
 	if err != nil {
 		return nil, err
 	}
 	if result.GraphData != nil && (len(result.GraphData.Nodes) > 0 || len(result.GraphData.Relationships) > 0) {
 		return result.GraphData, nil
+	}
+	if isFilteredGraphSample(opts.Filter) {
+		return &plugin.GraphData{}, nil
 	}
 	result, err = p.executeGraphQuery(ctx, sampleConn, fmt.Sprintf("MATCH (n) RETURN n LIMIT %d", limit))
 	if err != nil {
@@ -132,6 +136,90 @@ func (p *Neo4jPlugin) SampleGraph(ctx context.Context, connInfo plugin.Connectio
 		return &plugin.GraphData{}, nil
 	}
 	return result.GraphData, nil
+}
+
+func sampleGraphQuery(filter map[string]interface{}, limit int) string {
+	switch strings.TrimSpace(graphSampleString(filter, "kind")) {
+	case "node_shape":
+		labels := graphSampleStringSlice(filter, "labels")
+		return fmt.Sprintf("MATCH (n%s) RETURN n LIMIT %d", cypherNodeLabels(labels), limit)
+	case "relationship_shape":
+		relType := graphSampleString(filter, "type")
+		if relType == "" || isInternalRelationshipType(relType) {
+			return fmt.Sprintf("MATCH (n)-[r]->(m) WHERE false RETURN n, r, m LIMIT %d", limit)
+		}
+		fromLabels := graphSampleStringSlice(filter, "from_labels")
+		toLabels := graphSampleStringSlice(filter, "to_labels")
+		return fmt.Sprintf("MATCH (n%s)-[r:%s]->(m%s) RETURN n, r, m LIMIT %d",
+			cypherNodeLabels(fromLabels),
+			cypherIdentifier(relType),
+			cypherNodeLabels(toLabels),
+			limit)
+	default:
+		return fmt.Sprintf("MATCH (n)-[r]->(m) WHERE NOT type(r) IN ['RTREE_METADATA', 'RTREE_REFERENCE', 'RTREE_ROOT'] RETURN n, r, m LIMIT %d", limit)
+	}
+}
+
+func isFilteredGraphSample(filter map[string]interface{}) bool {
+	return strings.TrimSpace(graphSampleString(filter, "kind")) != ""
+}
+
+func cypherNodeLabels(labels []string) string {
+	if len(labels) == 0 {
+		return ""
+	}
+	return ":" + strings.Join(escapeCypherLabels(labels), ":")
+}
+
+func cypherIdentifier(name string) string {
+	return "`" + escapeCypherLabel(name) + "`"
+}
+
+func graphSampleString(filter map[string]interface{}, key string) string {
+	if len(filter) == 0 {
+		return ""
+	}
+	switch value := filter[key].(type) {
+	case string:
+		return strings.TrimSpace(value)
+	default:
+		return ""
+	}
+}
+
+func graphSampleStringSlice(filter map[string]interface{}, key string) []string {
+	if len(filter) == 0 {
+		return nil
+	}
+	switch values := filter[key].(type) {
+	case []string:
+		return cleanGraphSampleStrings(values)
+	case []interface{}:
+		result := make([]string, 0, len(values))
+		for _, value := range values {
+			if str, ok := value.(string); ok {
+				result = append(result, str)
+			}
+		}
+		return cleanGraphSampleStrings(result)
+	case string:
+		if values == "" {
+			return nil
+		}
+		return cleanGraphSampleStrings(strings.Split(values, ","))
+	default:
+		return nil
+	}
+}
+
+func cleanGraphSampleStrings(values []string) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if text := strings.TrimSpace(value); text != "" {
+			result = append(result, text)
+		}
+	}
+	return result
 }
 
 func cloneConnectionInfo(connInfo plugin.ConnectionInfo) plugin.ConnectionInfo {
@@ -466,7 +554,7 @@ func (p *Neo4jPlugin) describeRelationshipShapes(ctx context.Context, session ne
 		statsResult, err := session.Run(ctx,
 			fmt.Sprintf(`MATCH (a)-[r:%s]->(b)
 WITH labels(a) AS from, labels(b) AS to, count(r) AS cnt
-RETURN from, to, cnt ORDER BY cnt DESC LIMIT 20`, escapeCypherLabel(relType)),
+RETURN from, to, cnt ORDER BY cnt DESC LIMIT 20`, cypherIdentifier(relType)),
 			nil,
 		)
 		if err == nil {
@@ -728,7 +816,7 @@ func escapeCypherLabel(label string) string {
 func escapeCypherLabels(labels []string) []string {
 	escaped := make([]string, 0, len(labels))
 	for _, label := range labels {
-		escaped = append(escaped, escapeCypherLabel(label))
+		escaped = append(escaped, cypherIdentifier(label))
 	}
 	return escaped
 }

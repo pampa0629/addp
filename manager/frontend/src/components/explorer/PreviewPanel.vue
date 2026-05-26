@@ -154,7 +154,7 @@
         <div class="graph-sample-header">
           <span class="graph-sample-title">{{ t('manager.explorer.graphSample') }}</span>
           <span class="graph-sample-count">
-            {{ t('manager.explorer.graphSampleStats', { nodes: graphSampleNodes.length, relationships: graphSampleRelationships.length }) }}
+            {{ graphSampleStatsText }}
           </span>
         </div>
         <div class="graph-sample-grid">
@@ -175,7 +175,7 @@
         </div>
       </div>
       <component
-        v-if="previewComponent"
+        v-if="previewComponent && !isGraphOverview"
         :is="previewComponent"
         :key="refKey"
         :data="previewData"
@@ -185,6 +185,26 @@
         @navigate="handleNavigate"
         @child-change="handleChildChange"
       />
+      <div v-if="isGraphOverview" class="graph-overview-table">
+        <div class="graph-overview-hint">{{ t('manager.explorer.graphOverviewHint') }}</div>
+        <el-table
+          :data="graphOverviewRows"
+          v-loading="loading"
+          height="100%"
+          size="small"
+          highlight-current-row
+          :row-class-name="graphOverviewRowClassName"
+          @row-click="handleGraphOverviewRowClick"
+        >
+          <el-table-column
+            v-for="col in graphOverviewColumns"
+            :key="col"
+            :prop="col"
+            :label="col"
+            show-overflow-tooltip
+          />
+        </el-table>
+      </div>
     </div>
 
     <!-- 导入数据对话框 -->
@@ -229,6 +249,7 @@ const props = defineProps({
 const emit = defineEmits(['page-change', 'navigate', 'child-change'])
 const store = useExplorerStore()
 const activeMultiRefPath = ref('')
+const activeGraphSampleKey = ref('')
 
 const sanitizeBase64 = (value) => {
   if (typeof value !== 'string') return ''
@@ -594,6 +615,7 @@ const refKey = computed(() => {
     ? contentJson.children.map((child) => child?.key || child?.name || child?.table || '').filter(Boolean).join('|')
     : ''
   const pluginName = previewPluginName.value || (props.previewData?.mode || 'unknown')
+  const graphKey = isGraphOverview.value ? activeGraphSampleKey.value : ''
 
   return [
     'preview',
@@ -609,7 +631,8 @@ const refKey = computed(() => {
     contentKind,
     contentFormat,
     defaultChild,
-    childrenSignature
+    childrenSignature,
+    graphKey
   ].join('-')
 })
 
@@ -619,6 +642,14 @@ const graphSample = computed(() => props.previewData?.graph || null)
 const graphSampleNodes = computed(() => (Array.isArray(graphSample.value?.nodes) ? graphSample.value.nodes.slice(0, 6) : []))
 const graphSampleRelationships = computed(() => (Array.isArray(graphSample.value?.relationships) ? graphSample.value.relationships.slice(0, 6) : []))
 const showGraphSample = computed(() => isGraphOverview.value && (graphSampleNodes.value.length > 0 || graphSampleRelationships.value.length > 0))
+const graphOverviewColumns = computed(() => (props.previewData?.columns || []).filter(column => !String(column).startsWith('__')))
+const graphOverviewRows = computed(() => Array.isArray(props.previewData?.rows) ? props.previewData.rows : [])
+const graphSampleStatsText = computed(() => {
+  const params = { nodes: graphSampleNodes.value.length, relationships: graphSampleRelationships.value.length }
+  return activeGraphSampleKey.value
+    ? t('manager.explorer.graphFilteredSampleStats', params)
+    : t('manager.explorer.graphSampleStats', params)
+})
 
 const graphNodeShape = (node) => {
   const labels = Array.isArray(node?.labels) ? node.labels.filter(Boolean) : []
@@ -634,6 +665,61 @@ const graphRelationshipLabel = (rel) => {
   const start = rel?.start_node_id || '-'
   const end = rel?.end_node_id || '-'
   return `${shortGraphElementId(start)} -> ${shortGraphElementId(end)}`
+}
+
+const graphSampleKey = (filter) => {
+  if (!filter) return ''
+  return [
+    filter.kind || '',
+    (filter.labels || []).join('+'),
+    filter.type || '',
+    (filter.fromLabels || []).join('+'),
+    (filter.toLabels || []).join('+')
+  ].join('|')
+}
+
+const graphFilterFromOverviewRow = (row) => {
+  const kind = row?.__graph_sample_kind || ''
+  if (kind === 'node_shape') {
+    return {
+      kind,
+      labels: Array.isArray(row.__graph_node_labels) ? row.__graph_node_labels.filter(Boolean) : []
+    }
+  }
+  if (kind === 'relationship_shape') {
+    return {
+      kind,
+      type: row.__graph_relationship_type || '',
+      fromLabels: Array.isArray(row.__graph_from_labels) ? row.__graph_from_labels.filter(Boolean) : [],
+      toLabels: Array.isArray(row.__graph_to_labels) ? row.__graph_to_labels.filter(Boolean) : []
+    }
+  }
+  return null
+}
+
+const handleGraphOverviewRowClick = async (row) => {
+  const filter = graphFilterFromOverviewRow(row)
+  if (!filter || !props.selectedNode?.locator) return
+  activeGraphSampleKey.value = graphSampleKey(filter)
+  try {
+    await store.loadPreview(
+      props.selectedNode.locator,
+      1,
+      store.selectedChildName,
+      store.selectedRefPath,
+      store.selectedNestedChildPath,
+      store.selectedChildKey,
+      filter
+    )
+  } catch (error) {
+    activeGraphSampleKey.value = ''
+    ElMessage.error(t('manager.explorer.loadPreviewFailed', { error: error.message || error }))
+  }
+}
+
+const graphOverviewRowClassName = ({ row }) => {
+  const key = graphSampleKey(graphFilterFromOverviewRow(row))
+  return key && key === activeGraphSampleKey.value ? 'active-graph-overview-row' : ''
 }
 
 const shortGraphElementId = (value) => {
@@ -806,6 +892,7 @@ watch(
   () => props.selectedNode?.id,
   () => {
     markdownRawMode.value = false
+    activeGraphSampleKey.value = ''
   }
 )
 
@@ -1788,6 +1875,34 @@ const handleNavigate = (path) => {
 
 .graph-sample-meta {
   color: var(--addp-text-secondary);
+}
+
+.graph-overview-table {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.graph-overview-hint {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--addp-text-secondary);
+}
+
+.graph-overview-table :deep(.el-table) {
+  flex: 1;
+  border: 1px solid var(--addp-border-color);
+  border-radius: 6px;
+}
+
+.graph-overview-table :deep(.el-table__row) {
+  cursor: pointer;
+}
+
+.graph-overview-table :deep(.active-graph-overview-row > td.el-table__cell) {
+  background: var(--el-color-primary-light-9);
 }
 
 /* 强制覆盖 Element Plus Empty 组件的背景 */

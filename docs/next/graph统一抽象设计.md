@@ -230,3 +230,4 @@ label 和 relationship type 列表由 `GraphInfo.NodeShapes` 与 `GraphInfo.Rela
 12. 已改空间图层链路：Graph 后端统一 `SpatialLayerMapping`，能力探测返回 `entity_type`、`entity_type_label` 与 `node_labels`；前端区域节点筛选使用 `node_labels`，不再把 spatial layer name 当作 label。
 13. 已改图谱构建写入链路：实体和关系写入 Neo4j 都使用 `NodeLabels` / label set，审核内容中的执行映射统一命名为 `node_labels`、`source_node_labels`、`target_node_labels`，不再用 `ancestor_labels` 暗示概念继承就是 Neo4j label。
 14. 已改 Graph Browser 节点形状筛选：多 label node shape 必须完整匹配该 label set，不再按任一 label 命中。
+15. 已改 Graph 前端展示边界：节点详情在没有本体类型时显示完整 label set；审核修改弹窗把本体类型和 Neo4j 执行映射分开展示和编辑。

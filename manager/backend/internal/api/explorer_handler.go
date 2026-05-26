@@ -149,6 +149,11 @@ func (h *ExplorerHandler) RefreshNode(c *gin.Context) {
 // @Param child_name query string false "容器内部 child 名称，例如 Excel 工作表 | Container child name, e.g. Excel sheet"
 // @Param ref_path query string false "multi child 内的 ref 路径 | Ref path inside a multi child"
 // @Param nested_child_path query string false "嵌套容器内部 child 相对路径 | Relative child path inside a nested container"
+// @Param graph_sample_kind query string false "图样本类型：node_shape 或 relationship_shape | Graph sample kind: node_shape or relationship_shape"
+// @Param graph_node_labels query string false "节点 label set，逗号分隔 | Node label set, comma separated"
+// @Param graph_relationship_type query string false "关系类型 | Relationship type"
+// @Param graph_from_labels query string false "关系起点 label set，逗号分隔 | Relationship source label set, comma separated"
+// @Param graph_to_labels query string false "关系终点 label set，逗号分隔 | Relationship target label set, comma separated"
 // @Success 200 {object} map[string]interface{} "预览数据 | Preview data"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
@@ -184,10 +189,11 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 	childName := c.Query("child_name")
 	refPath := c.Query("ref_path")
 	nestedChildPath := c.Query("nested_child_path")
-	logger.L().Info("数据预览", "locator", locatorURI, "page", page, "page_size", pageSize, "child_name", childName, "ref_path", refPath, "nested_child_path", nestedChildPath)
+	graphSample := graphSampleFilterFromQuery(c)
+	logger.L().Info("数据预览", "locator", locatorURI, "page", page, "page_size", pageSize, "child_name", childName, "ref_path", refPath, "nested_child_path", nestedChildPath, "graph_sample", graphSample)
 
 	// 调用 PreviewResolver
-	result, err := h.previewResolver.PreviewFromURIWithSelection(c.Request.Context(), locatorURI, page, pageSize, childName, refPath, nestedChildPath, tenantID)
+	result, err := h.previewResolver.PreviewFromURIWithSelection(c.Request.Context(), locatorURI, page, pageSize, childName, refPath, nestedChildPath, graphSample, tenantID)
 	if err != nil {
 		if err == service.ErrEngineAccessDenied || err == preview.ErrEngineAccessDenied {
 			commonAPI.ForbiddenError(c, "Access denied to this engine")
@@ -215,6 +221,45 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 
 	// 根据 API 设计规范：查询单个资源直接返回对象
 	c.JSON(http.StatusOK, result)
+}
+
+func graphSampleFilterFromQuery(c *gin.Context) map[string]interface{} {
+	if c == nil {
+		return nil
+	}
+	kind := strings.TrimSpace(c.Query("graph_sample_kind"))
+	if kind == "" {
+		return nil
+	}
+	filter := map[string]interface{}{"kind": kind}
+	if values := queryCSV(c, "graph_node_labels"); len(values) > 0 {
+		filter["labels"] = values
+	}
+	if relType := strings.TrimSpace(c.Query("graph_relationship_type")); relType != "" {
+		filter["type"] = relType
+	}
+	if values := queryCSV(c, "graph_from_labels"); len(values) > 0 {
+		filter["from_labels"] = values
+	}
+	if values := queryCSV(c, "graph_to_labels"); len(values) > 0 {
+		filter["to_labels"] = values
+	}
+	return filter
+}
+
+func queryCSV(c *gin.Context, key string) []string {
+	raw := strings.TrimSpace(c.Query(key))
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	values := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if value := strings.TrimSpace(part); value != "" {
+			values = append(values, value)
+		}
+	}
+	return values
 }
 
 // ListEngines 获取可用引擎列表

@@ -41,15 +41,21 @@ func TestGraphOverviewRowsUsesGraphInfo(t *testing.T) {
 	if rows[0]["类型"] != "节点" || rows[0]["名称"] != "Person" || rows[0]["属性"] != "name" {
 		t.Fatalf("node row = %#v", rows[0])
 	}
+	if rows[0]["__graph_sample_kind"] != "node_shape" {
+		t.Fatalf("node row sample marker = %#v", rows[0])
+	}
 	if rows[1]["类型"] != "关系" || rows[1]["连接模式"] != "Person -> Company" {
 		t.Fatalf("relationship row = %#v", rows[1])
+	}
+	if rows[1]["__graph_sample_kind"] != "relationship_shape" || rows[1]["__graph_relationship_type"] != "WORKS_FOR" {
+		t.Fatalf("relationship row sample marker = %#v", rows[1])
 	}
 }
 
 func TestGraphPreviewProviderFallsBackToGraphMetadataProvider(t *testing.T) {
 	const engineType = "graph-preview-test"
 	oldPlug, hadOld := plugin.Get(engineType)
-	if hadOld == nil {
+	if hadOld == nil && oldPlug != nil {
 		defer plugin.Register(oldPlug)
 	} else {
 		defer plugin.Unregister(engineType)
@@ -57,6 +63,7 @@ func TestGraphPreviewProviderFallsBackToGraphMetadataProvider(t *testing.T) {
 
 	nodeCount := int64(1)
 	graphPlug := &recordingGraphPreviewPlugin{
+		engineType: engineType,
 		graph: &datatype.GraphInfo{
 			Model:     datatype.GraphModelPropertyGraph,
 			NodeCount: &nodeCount,
@@ -96,6 +103,52 @@ func TestGraphPreviewProviderFallsBackToGraphMetadataProvider(t *testing.T) {
 	}
 }
 
+func TestGraphPreviewProviderPassesGraphSampleFilter(t *testing.T) {
+	const engineType = "graph-preview-filter-test"
+	oldPlug, hadOld := plugin.Get(engineType)
+	if hadOld == nil && oldPlug != nil {
+		defer plugin.Register(oldPlug)
+	} else {
+		defer plugin.Unregister(engineType)
+	}
+
+	nodeCount := int64(1)
+	graphPlug := &recordingGraphPreviewPlugin{
+		engineType: engineType,
+		graph: &datatype.GraphInfo{
+			NodeShapes: []datatype.GraphNodeShapeInfo{{
+				Name:  "Person",
+				Count: &nodeCount,
+			}},
+		},
+	}
+	plugin.Register(graphPlug)
+
+	provider := NewGraphPreviewProvider()
+	_, err := provider.Preview(context.Background(), &PreviewRequest{
+		Engine: &models.Engine{
+			ID:             42,
+			EngineType:     engineType,
+			ConnectionInfo: models.ConnectionInfo{"database": "neo4j"},
+		},
+		Schema: "neo4j",
+		Table:  "graph",
+		GraphSample: map[string]interface{}{
+			"kind":   "node_shape",
+			"labels": []string{"Person"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+	if len(graphPlug.sampleOpts) != 1 {
+		t.Fatalf("SampleGraph call count = %d, want 1", len(graphPlug.sampleOpts))
+	}
+	if got := graphPlug.sampleOpts[0].Filter["kind"]; got != "node_shape" {
+		t.Fatalf("sample filter = %#v", graphPlug.sampleOpts[0].Filter)
+	}
+}
+
 func TestFlattenGraphEntityRowsIncludesEntityFields(t *testing.T) {
 	t.Parallel()
 
@@ -120,11 +173,18 @@ func TestFlattenGraphEntityRowsIncludesEntityFields(t *testing.T) {
 }
 
 type recordingGraphPreviewPlugin struct {
-	graph *datatype.GraphInfo
-	paths []plugin.CatalogPath
+	engineType string
+	graph      *datatype.GraphInfo
+	paths      []plugin.CatalogPath
+	sampleOpts []plugin.GraphSampleOptions
 }
 
-func (p *recordingGraphPreviewPlugin) Type() string         { return "graph-preview-test" }
+func (p *recordingGraphPreviewPlugin) Type() string {
+	if p.engineType != "" {
+		return p.engineType
+	}
+	return "graph-preview-test"
+}
 func (p *recordingGraphPreviewPlugin) DisplayName() string  { return "graph-preview-test" }
 func (p *recordingGraphPreviewPlugin) EngineOrigin() string { return "general" }
 func (p *recordingGraphPreviewPlugin) TestConnection(context.Context, plugin.ConnectionInfo) error {
@@ -144,7 +204,8 @@ func (p *recordingGraphPreviewPlugin) DescribeGraph(_ context.Context, _ plugin.
 	return p.graph, nil
 }
 
-func (p *recordingGraphPreviewPlugin) SampleGraph(_ context.Context, _ plugin.ConnectionInfo, _ plugin.CatalogPath, _ plugin.GraphSampleOptions) (*plugin.GraphData, error) {
+func (p *recordingGraphPreviewPlugin) SampleGraph(_ context.Context, _ plugin.ConnectionInfo, _ plugin.CatalogPath, opts plugin.GraphSampleOptions) (*plugin.GraphData, error) {
+	p.sampleOpts = append(p.sampleOpts, opts)
 	return &plugin.GraphData{
 		Nodes: []plugin.GraphNode{{
 			ElementId:  "node-1",

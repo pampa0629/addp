@@ -35,6 +35,7 @@ type PreviewRequest struct {
 	ChildName       string                 // 容器内部 child 名称，例如 Excel sheet
 	RefPath         string                 // multi child 内的单个ref 路径，指向容器内原始对象
 	NestedChildPath string                 // 当前 child 是容器时，继续寻址其内部 child 的相对路径
+	GraphSample     map[string]interface{} // 图预览样本过滤条件
 	Attributes      map[string]interface{} // 来自 meta_item/meta_node 的标准属性分区
 }
 
