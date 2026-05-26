@@ -291,7 +291,7 @@ func (s *BuildService) executeTask(ctx context.Context, task *models.BuildTask, 
 	ontologySchema := buildOntologySchema(ontology)
 	ancestorChains := buildAncestorChains(ontology)
 
-	// 构建空间图层查找表（label名 → SpatialLayerConfig，含继承关系，LayerName 为子类型自身名称）
+	// 构建空间图层查找表（实体类型名 → 空间映射，含继承关系）
 	spatialLayerLookup, _ := s.ontologySvc.BuildSpatialLayerLookup(kg.OntologyID, uint(tenantID))
 
 	// 构建前自动同步空间图层（幂等，含继承类型）
@@ -383,15 +383,15 @@ func (s *BuildService) failTask(ctx context.Context, task *models.BuildTask, ten
 }
 
 // syncSpatialLayersBeforeBuild 在构建前自动同步所有空间图层（幂等，含继承类型）
-func (s *BuildService) syncSpatialLayersBeforeBuild(ctx context.Context, graphID, tenantID uint, spatialLayerLookup map[string]*models.SpatialLayerConfig) {
-	for _, cfg := range spatialLayerLookup {
-		_ = s.neo4jSvc.SyncSpatialLayerByConfig(ctx, graphID, tenantID, cfg)
+func (s *BuildService) syncSpatialLayersBeforeBuild(ctx context.Context, graphID, tenantID uint, spatialLayerLookup map[string]SpatialLayerMapping) {
+	for _, mapping := range spatialLayerLookup {
+		_ = s.neo4jSvc.SyncSpatialLayerByConfig(ctx, graphID, tenantID, mapping.Config)
 	}
 }
 
 // processMaterial 处理单份材料（分块 + 调 Copilot + 写入/审核）
 // 返回：autoWritten, pendingReview, error
-func (s *BuildService) processMaterial(ctx context.Context, task *models.BuildTask, mat *models.BuildMaterial, ontology *ontologySchemaDTO, spatialLayerLookup map[string]*models.SpatialLayerConfig, ancestorChains map[string][]string, tenantID uint) (int, int, error) {
+func (s *BuildService) processMaterial(ctx context.Context, task *models.BuildTask, mat *models.BuildMaterial, ontology *ontologySchemaDTO, spatialLayerLookup map[string]SpatialLayerMapping, ancestorChains map[string][]string, tenantID uint) (int, int, error) {
 	// 从 MinIO 读取文件内容
 	rc, err := s.materialReader.Open(ctx, contentio.NewRef(minioBucket+"/"+mat.FilePath, contentio.RoleMain))
 	if err != nil {
@@ -452,7 +452,7 @@ func (s *BuildService) processChunkResult(
 	mat *models.BuildMaterial,
 	result *copilotExtractResponse,
 	ontology *ontologySchemaDTO,
-	spatialLayerLookup map[string]*models.SpatialLayerConfig,
+	spatialLayerLookup map[string]SpatialLayerMapping,
 	ancestorChains map[string][]string,
 	seenEntities map[string]string,
 	tenantID uint,
@@ -479,11 +479,8 @@ func (s *BuildService) processChunkResult(
 				autoWritten++
 				// 注册到空间图层（若该 label 或其祖先有空间图层配置）
 				if neo4jID != "" && spatialLayerLookup != nil {
-					for _, lbl := range labels {
-						if cfg, ok := spatialLayerLookup[lbl]; ok {
-							_ = s.neo4jSvc.AddNodeToSpatialLayer(ctx, task.GraphID, tenantID, neo4jID, cfg.LayerName)
-							break
-						}
+					if mapping, ok := spatialLayerLookup[entity.Type]; ok && mapping.Config != nil {
+						_ = s.neo4jSvc.AddNodeToSpatialLayer(ctx, task.GraphID, tenantID, neo4jID, mapping.Config.LayerName)
 					}
 				}
 			}
@@ -542,10 +539,12 @@ func (s *BuildService) processChunkResult(
 			if seenEntities[tgtKey] == "" || seenEntities[tgtKey] == "queued" {
 				continue
 			}
+			srcLabels := nodeLabelsForEntityType(srcEntity.Type, ancestorChains)
+			tgtLabels := nodeLabelsForEntityType(tgtEntity.Type, ancestorChains)
 			_, err := s.neo4jSvc.MergeRelation(ctx, task.GraphID, tenantID,
 				rel.Type,
-				srcEntity.Type, srcUniqueField, srcVal,
-				tgtEntity.Type, tgtUniqueField, tgtVal,
+				srcLabels, srcUniqueField, srcVal,
+				tgtLabels, tgtUniqueField, tgtVal,
 				rel.Properties)
 			if err == nil {
 				autoWritten++
@@ -560,9 +559,11 @@ func (s *BuildService) processChunkResult(
 			content := map[string]interface{}{
 				"type":                rel.Type,
 				"source_type":         srcTypeName,
+				"source_node_labels":  nodeLabelsForEntityType(srcEntity.Type, ancestorChains),
 				"source_unique_field": srcUniqueField,
 				"source_unique_value": srcVal,
 				"target_type":         tgtTypeName,
+				"target_node_labels":  nodeLabelsForEntityType(tgtEntity.Type, ancestorChains),
 				"target_unique_field": tgtUniqueField,
 				"target_unique_value": tgtVal,
 				"properties":          rel.Properties,
@@ -686,12 +687,7 @@ func (s *BuildService) writeReviewItemToNeo4j(ctx context.Context, item *models.
 func (s *BuildService) writeReviewItemToNeo4jWithContent(ctx context.Context, item *models.ReviewItem, content map[string]interface{}) (string, error) {
 	if item.ItemType == models.ReviewItemEntity {
 		entityType, _ := content["type"].(string)
-		var labels []string
-		if raw, ok := content["ancestor_labels"].([]interface{}); ok {
-			for _, v := range raw {
-				labels = append(labels, fmt.Sprint(v))
-			}
-		}
+		labels := jsonStringSlice(content["node_labels"])
 		if len(labels) == 0 {
 			labels = []string{entityType}
 		}
@@ -708,9 +704,17 @@ func (s *BuildService) writeReviewItemToNeo4jWithContent(ctx context.Context, it
 	// relation
 	relType, _ := content["type"].(string)
 	srcType, _ := content["source_type"].(string)
+	srcLabels := jsonStringSlice(content["source_node_labels"])
+	if len(srcLabels) == 0 {
+		srcLabels = []string{srcType}
+	}
 	srcField, _ := content["source_unique_field"].(string)
 	srcVal := content["source_unique_value"]
 	tgtType, _ := content["target_type"].(string)
+	tgtLabels := jsonStringSlice(content["target_node_labels"])
+	if len(tgtLabels) == 0 {
+		tgtLabels = []string{tgtType}
+	}
 	tgtField, _ := content["target_unique_field"].(string)
 	tgtVal := content["target_unique_value"]
 	props, _ := content["properties"].(map[string]interface{})
@@ -719,8 +723,8 @@ func (s *BuildService) writeReviewItemToNeo4jWithContent(ctx context.Context, it
 	}
 	return s.neo4jSvc.MergeRelation(ctx, item.GraphID, item.TenantID,
 		relType,
-		srcType, srcField, srcVal,
-		tgtType, tgtField, tgtVal,
+		srcLabels, srcField, srcVal,
+		tgtLabels, tgtField, tgtVal,
 		props)
 }
 
@@ -799,6 +803,7 @@ type ontologySchemaDTO struct {
 type entityTypeDTO struct {
 	Name        string        `json:"name"`
 	Label       string        `json:"label"`
+	NodeLabels  []string      `json:"node_labels,omitempty"`
 	ParentName  string        `json:"parent_name,omitempty"`
 	Description string        `json:"description"`
 	Properties  []propertyDTO `json:"properties"`
@@ -846,6 +851,7 @@ func buildOntologySchema(ontology *models.Ontology) *ontologySchemaDTO {
 		etDTO := entityTypeDTO{
 			Name:        et.Name,
 			Label:       et.Label,
+			NodeLabels:  effectiveNodeLabels(&et, byID),
 			Description: et.Description,
 		}
 		if et.ParentID != nil {
@@ -912,7 +918,7 @@ func collectInheritedProperties(et *models.EntityType, byID map[uint]*models.Ent
 	return result
 }
 
-// buildAncestorChains 为本体中每个实体类型构建完整祖先 label 链
+// buildAncestorChains 为本体中每个实体类型构建 Neo4j 节点标签执行映射
 // 返回 map[entityTypeName][]string，例如：
 //
 //	"City"    → ["City", "AOI"]
@@ -925,17 +931,7 @@ func buildAncestorChains(ontology *models.Ontology) map[string][]string {
 	}
 	result := make(map[string][]string, len(ontology.EntityTypes))
 	for _, et := range ontology.EntityTypes {
-		chain := []string{et.Name}
-		cur := &et
-		for cur.ParentID != nil {
-			parent, ok := byID[*cur.ParentID]
-			if !ok {
-				break
-			}
-			chain = append(chain, parent.Name)
-			cur = parent
-		}
-		result[et.Name] = chain
+		result[et.Name] = effectiveNodeLabels(&et, byID)
 	}
 	return result
 }
@@ -1035,13 +1031,40 @@ func getPropertyValue(props map[string]interface{}, field string) interface{} {
 	return ""
 }
 
-func buildEntityReviewContent(entity extractedEntity, uniqueField string, uniqueValue interface{}, ancestorLabels []string) map[string]interface{} {
+func buildEntityReviewContent(entity extractedEntity, uniqueField string, uniqueValue interface{}, nodeLabels []string) map[string]interface{} {
 	return map[string]interface{}{
 		"type":             entity.Type,
 		"unique_key_field": uniqueField,
 		"unique_key_value": uniqueValue,
 		"properties":       entity.Properties,
-		"ancestor_labels":  ancestorLabels,
+		"node_labels":      nodeLabels,
+	}
+}
+
+func nodeLabelsForEntityType(entityType string, byEntityType map[string][]string) []string {
+	if labels := byEntityType[entityType]; len(labels) > 0 {
+		return labels
+	}
+	if strings.TrimSpace(entityType) == "" {
+		return nil
+	}
+	return []string{entityType}
+}
+
+func jsonStringSlice(value interface{}) []string {
+	switch values := value.(type) {
+	case []string:
+		return normalizedStringSet(values)
+	case []interface{}:
+		result := make([]string, 0, len(values))
+		for _, value := range values {
+			if str := strings.TrimSpace(fmt.Sprint(value)); str != "" {
+				result = append(result, str)
+			}
+		}
+		return normalizedStringSet(result)
+	default:
+		return nil
 	}
 }
 

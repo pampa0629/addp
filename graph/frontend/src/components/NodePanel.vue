@@ -3,7 +3,7 @@
     <div class="panel-header">
       <span class="panel-title">
         <el-tag v-if="selected.type === 'node'" :style="{ backgroundColor: selected.color, borderColor: selected.color }" effect="dark" size="small">
-          {{ selected.entity_type || (selected.labels && selected.labels[0]) || t('graph.nodePanel.node') }}
+          {{ nodeTypeLabel }}
         </el-tag>
         <el-tag v-else type="info" size="small">{{ t('graph.nodePanel.relation') }}</el-tag>
         <span class="panel-name">{{ displayName }}</span>
@@ -63,6 +63,15 @@ const displayName = computed(() => {
 
 const hasProperties = computed(() => {
   return props.selected?.properties && Object.keys(props.selected.properties).length > 0
+})
+
+const nodeTypeLabel = computed(() => {
+  if (!props.selected || props.selected.type !== 'node') return ''
+  if (props.selected.entity_type) return props.selected.entity_type
+  if (Array.isArray(props.selected.labels) && props.selected.labels.length > 0) {
+    return props.selected.labels.join('+')
+  }
+  return t('graph.nodePanel.node')
 })
 
 function formatValue(val) {

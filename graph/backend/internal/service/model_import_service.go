@@ -36,8 +36,8 @@ type ModelImportPreview struct {
 
 type ModelEntityPreview struct {
 	ModelID    uint                        `json:"model_id"`
-	Name       string                      `json:"name"`  // 将成为 EntityType.name (code)
-	Label      string                      `json:"label"` // 将成为 EntityType.label (name)
+	Name       string                      `json:"name"`  // 将成为本体 EntityType.name 概念标识
+	Label      string                      `json:"label"` // 将成为 EntityType.label 显示名称
 	Properties []models.PropertyDefinition `json:"properties"`
 	Exists     bool                        `json:"exists"` // 本体中已存在同名实体类型
 }
@@ -82,8 +82,8 @@ func (s *ModelImportService) GetImportPreview(tenantID uint) (*ModelImportPrevie
 		}
 		ep := ModelEntityPreview{
 			ModelID:    e.ID,
-			Name:       e.Code, // code 作为 EntityType.name（图数据库中的标签名）
-			Label:      e.Name, // name 作为 EntityType.label（显示名）
+			Name:       e.Code, // code 作为本体概念标识
+			Label:      e.Name, // name 作为显示名称
 			Properties: mapModelAttributes(detailed.Attributes),
 		}
 		preview.Entities = append(preview.Entities, ep)

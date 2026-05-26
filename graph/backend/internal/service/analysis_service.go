@@ -50,6 +50,11 @@ type AnalysisService struct {
 	spatialCacheMu sync.RWMutex
 }
 
+type analysisNodeShapeFilter struct {
+	Name   string
+	Labels []string
+}
+
 func NewAnalysisService(
 	graphRepo *repository.KnowledgeGraphRepository,
 	ontologyRepo *repository.OntologyRepository,
@@ -60,6 +65,50 @@ func NewAnalysisService(
 		ontologyRepo: ontologyRepo,
 		systemClient: systemClient,
 	}
+}
+
+func analysisNodeShapeFilters(req *models.AlgorithmRunRequest) []analysisNodeShapeFilter {
+	if req == nil {
+		return nil
+	}
+	filters := make([]analysisNodeShapeFilter, 0, len(req.NodeShapes))
+	for _, shape := range req.NodeShapes {
+		labels := normalizedStringSet(shape.Labels)
+		if len(labels) == 0 && strings.TrimSpace(shape.Name) != "" {
+			labels = entityTypeLabels(shape.Name)
+		}
+		if len(labels) == 0 {
+			continue
+		}
+		name := strings.TrimSpace(shape.Name)
+		if name == "" {
+			name = endpointShapeName(labels)
+		}
+		filters = append(filters, analysisNodeShapeFilter{Name: name, Labels: labels})
+	}
+	if len(filters) > 0 {
+		return filters
+	}
+	return nil
+}
+
+func nodeShapeWhereClause(nodeVar string, filters []analysisNodeShapeFilter) string {
+	if len(filters) == 0 {
+		return ""
+	}
+	clauses := make([]string, 0, len(filters))
+	for _, filter := range filters {
+		clauses = append(clauses, fmt.Sprintf("all(label IN %s WHERE label IN labels(%s))", cypherStringList(filter.Labels), nodeVar))
+	}
+	return "(" + strings.Join(clauses, " OR ") + ")"
+}
+
+func nodeShapeQueryPredicate(nodeVar string, filters []analysisNodeShapeFilter) string {
+	clause := nodeShapeWhereClause(nodeVar, filters)
+	if clause == "" {
+		return "true"
+	}
+	return clause
 }
 
 // getGraphAndEngine 与 Neo4jService 复用相同逻辑
@@ -147,43 +196,12 @@ func (s *AnalysisService) checkSpatial(ctx context.Context, engine *commonmodels
 }
 
 // getAllEffectiveSpatialTypes 从本体中获取所有有效空间实体类型（含继承）
-// 返回 map[entityTypeName] -> SpatialLayerConfig（LayerName 已设为该实体类型的名称）
-func getAllEffectiveSpatialTypes(ontology *models.Ontology) map[string]*models.SpatialLayerConfig {
+// 返回 map[layerName] -> SpatialLayerMapping。
+func getAllEffectiveSpatialTypes(ontology *models.Ontology) map[string]SpatialLayerMapping {
 	if ontology == nil {
-		return map[string]*models.SpatialLayerConfig{}
+		return map[string]SpatialLayerMapping{}
 	}
-	// 构建 ID -> EntityType 索引
-	etByID := make(map[uint]*models.EntityType)
-	for i := range ontology.EntityTypes {
-		etByID[ontology.EntityTypes[i].ID] = &ontology.EntityTypes[i]
-	}
-	result := make(map[string]*models.SpatialLayerConfig)
-	for _, et := range ontology.EntityTypes {
-		cfg := resolveInheritedSpatialCfg(&et, etByID, 0)
-		if cfg != nil {
-			// 每个实体类型使用自身的名称作为 Neo4j 空间图层名
-			c := *cfg
-			c.LayerName = et.Name
-			result[et.Name] = &c
-		}
-	}
-	return result
-}
-
-// resolveInheritedSpatialCfg 递归向上查找空间图层配置（直接定义或继承自父类型）
-func resolveInheritedSpatialCfg(et *models.EntityType, etByID map[uint]*models.EntityType, depth int) *models.SpatialLayerConfig {
-	if depth > 8 {
-		return nil // 防止循环
-	}
-	if et.IsSpatialLayer {
-		return et.ParsedSpatialLayerConfig()
-	}
-	if et.ParentID != nil {
-		if parent, ok := etByID[*et.ParentID]; ok {
-			return resolveInheritedSpatialCfg(parent, etByID, depth+1)
-		}
-	}
-	return nil
+	return buildSpatialLayerMappingsByLayerName(ontology.EntityTypes)
 }
 
 // CheckCapabilities 探测算法能力
@@ -225,8 +243,8 @@ func (s *AnalysisService) CheckCapabilities(ctx context.Context, graphID, tenant
 				}
 				existingLayerNames[name] = true
 				info := models.SpatialLayerInfo{Name: name}
-				if cfg, ok := allSpatialTypes[name]; ok {
-					info.Config = cfg
+				if spatialType, ok := allSpatialTypes[name]; ok {
+					info = spatialLayerInfoFromMapping(name, spatialType)
 				}
 				caps.SpatialLayers = append(caps.SpatialLayers, info)
 			}
@@ -272,8 +290,12 @@ func (s *AnalysisService) SyncAllSpatialLayers(ctx context.Context, graphID, ten
 	}
 
 	var synced []string
-	for entityTypeName, cfg := range allSpatialTypes {
-		layerName := cfg.LayerName // == entityTypeName
+	for _, spatialType := range allSpatialTypes {
+		cfg := spatialType.Config
+		if cfg == nil {
+			continue
+		}
+		layerName := cfg.LayerName
 
 		// 1. 创建图层（若不存在）
 		if !existingLayers[layerName] {
@@ -300,16 +322,16 @@ func (s *AnalysisService) SyncAllSpatialLayers(ctx context.Context, graphID, ten
 		switch cfg.GeometryType {
 		case "wkt":
 			addNodesCypher = fmt.Sprintf(
-				"MATCH (n:`%s`) WHERE n.`%s` IS NOT NULL "+
+				"MATCH (n%s) WHERE n.`%s` IS NOT NULL "+
 					"CALL spatial.addNode('%s', n) YIELD node RETURN count(node) AS cnt",
-				escapeCypher(entityTypeName), escapeCypher(cfg.GeomField),
+				nodeLabelsPattern(spatialType.NodeLabels), escapeCypher(cfg.GeomField),
 				escapeCypher(layerName),
 			)
 		default:
 			addNodesCypher = fmt.Sprintf(
-				"MATCH (n:`%s`) WHERE n.`%s` IS NOT NULL AND n.`%s` IS NOT NULL "+
+				"MATCH (n%s) WHERE n.`%s` IS NOT NULL AND n.`%s` IS NOT NULL "+
 					"CALL spatial.addNode('%s', n) YIELD node RETURN count(node) AS cnt",
-				escapeCypher(entityTypeName), escapeCypher(cfg.LonField), escapeCypher(cfg.LatField),
+				nodeLabelsPattern(spatialType.NodeLabels), escapeCypher(cfg.LonField), escapeCypher(cfg.LatField),
 				escapeCypher(layerName),
 			)
 		}
@@ -392,12 +414,8 @@ func (s *AnalysisService) runDegreeCentrality(ctx context.Context, engine *commo
 	start := time.Now()
 
 	labelFilter := ""
-	if len(req.NodeLabels) > 0 {
-		quoted := make([]string, len(req.NodeLabels))
-		for i, l := range req.NodeLabels {
-			quoted[i] = fmt.Sprintf("'%s'", escapeCypher(l))
-		}
-		labelFilter = fmt.Sprintf("WHERE any(lbl IN labels(n) WHERE lbl IN [%s])", strings.Join(quoted, ","))
+	if clause := nodeShapeWhereClause("n", analysisNodeShapeFilters(req)); clause != "" {
+		labelFilter = "WHERE " + clause
 	}
 
 	cypher := fmt.Sprintf(`
@@ -410,7 +428,7 @@ CALL {
 }
 RETURN elementId(n) AS node_id,
        coalesce(n.name, n.title, n.label, elementId(n)) AS display_name,
-       labels(n)[0] AS entity_type,
+       labels(n) AS node_labels,
        toFloat(degree) AS score
 ORDER BY degree DESC
 LIMIT %d`, labelFilter, req.Limit)
@@ -570,25 +588,18 @@ func (s *AnalysisService) runGDSAlgo(ctx context.Context, engine *commonmodels.E
 
 	projName := fmt.Sprintf("addp_tmp_%d_%d_%d", graphID, tenantID, time.Now().UnixMilli())
 
-	// 构建投影参数
-	nodeLabels := "'*'"
-	if len(req.NodeLabels) > 0 {
-		quoted := make([]string, len(req.NodeLabels))
-		for i, l := range req.NodeLabels {
-			quoted[i] = fmt.Sprintf("'%s'", escapeCypher(l))
-		}
-		nodeLabels = "[" + strings.Join(quoted, ",") + "]"
-	}
 	relTypes, err := businessRelationshipProjection(ctx, engine)
 	if err != nil {
 		return nil, err
 	}
+	selectedRelTypes := make([]string, 0, len(req.RelTypes))
 	if len(req.RelTypes) > 0 {
 		quoted := make([]string, 0, len(req.RelTypes))
 		for _, r := range req.RelTypes {
 			if isInternalRelationshipType(r) {
 				continue
 			}
+			selectedRelTypes = append(selectedRelTypes, r)
 			quoted = append(quoted, fmt.Sprintf("'%s'", escapeCypher(r)))
 		}
 		if len(quoted) == 0 {
@@ -597,9 +608,8 @@ func (s *AnalysisService) runGDSAlgo(ctx context.Context, engine *commonmodels.E
 		relTypes = "[" + strings.Join(quoted, ",") + "]"
 	}
 
-	// 创建投影
-	projCypher := fmt.Sprintf("CALL gds.graph.project('%s', %s, %s) YIELD graphName, nodeCount, relationshipCount",
-		projName, nodeLabels, relTypes)
+	filters := analysisNodeShapeFilters(req)
+	projCypher := buildGDSProjectionCypher(projName, relTypes, selectedRelTypes, filters)
 	_, err = dbbridge.ExecuteGraphQuery(ctx, engine, projCypher)
 	if err != nil {
 		return nil, fmt.Errorf("GDS projection failed: %w", err)
@@ -623,7 +633,7 @@ YIELD nodeId, score
 MATCH (n) WHERE id(n) = nodeId
 RETURN elementId(n) AS node_id,
        coalesce(n.name, n.title, n.label, toString(id(n))) AS display_name,
-       labels(n)[0] AS entity_type,
+       labels(n) AS node_labels,
        score,
        0 AS community_id
 ORDER BY score DESC
@@ -636,7 +646,7 @@ YIELD nodeId, score
 MATCH (n) WHERE id(n) = nodeId
 RETURN elementId(n) AS node_id,
        coalesce(n.name, n.title, n.label, toString(id(n))) AS display_name,
-       labels(n)[0] AS entity_type,
+       labels(n) AS node_labels,
        score,
        0 AS community_id
 ORDER BY score DESC
@@ -649,7 +659,7 @@ YIELD nodeId, communityId
 MATCH (n) WHERE id(n) = nodeId
 RETURN elementId(n) AS node_id,
        coalesce(n.name, n.title, n.label, toString(id(n))) AS display_name,
-       labels(n)[0] AS entity_type,
+       labels(n) AS node_labels,
        toFloat(communityId) AS score,
        communityId AS community_id
 ORDER BY communityId ASC
@@ -662,7 +672,7 @@ YIELD nodeId, componentId
 MATCH (n) WHERE id(n) = nodeId
 RETURN elementId(n) AS node_id,
        coalesce(n.name, n.title, n.label, toString(id(n))) AS display_name,
-       labels(n)[0] AS entity_type,
+       labels(n) AS node_labels,
        toFloat(componentId) AS score,
        componentId AS community_id
 ORDER BY componentId ASC
@@ -697,6 +707,28 @@ LIMIT %d`, projName, req.Limit)
 	}, nil
 }
 
+func buildGDSProjectionCypher(projName, relTypesProjection string, selectedRelTypes []string, filters []analysisNodeShapeFilter) string {
+	if len(filters) == 0 {
+		return fmt.Sprintf("CALL gds.graph.project('%s', '*', %s) YIELD graphName, nodeCount, relationshipCount",
+			escapeCypher(projName), relTypesProjection)
+	}
+	nodeWhere := nodeShapeQueryPredicate("n", filters)
+	sourceWhere := nodeShapeQueryPredicate("source", filters)
+	targetWhere := nodeShapeQueryPredicate("target", filters)
+	relWhereParts := []string{"NOT (" + internalRelationshipTypePredicate + ")"}
+	if len(selectedRelTypes) > 0 {
+		relWhereParts = append(relWhereParts, fmt.Sprintf("type(r) IN %s", cypherStringList(selectedRelTypes)))
+	}
+	return fmt.Sprintf(
+		"CALL gds.graph.project.cypher('%s', 'MATCH (n) WHERE %s RETURN id(n) AS id', 'MATCH (source)-[r]->(target) WHERE %s AND %s AND %s RETURN id(source) AS source, id(target) AS target') YIELD graphName, nodeCount, relationshipCount",
+		escapeCypher(projName),
+		escapeCypher(nodeWhere),
+		escapeCypher(strings.Join(relWhereParts, " AND ")),
+		escapeCypher(sourceWhere),
+		escapeCypher(targetWhere),
+	)
+}
+
 // runNearbyNodes 邻近节点查询（Spatial 插件：spatial.withinDistance）
 // params: lon(float), lat(float), radius_km(float, 默认10), layer(string, 必须指定)
 func (s *AnalysisService) runNearbyNodes(ctx context.Context, graphID, tenantID uint, engine *commonmodels.Engine, req *models.AlgorithmRunRequest) (*models.AlgorithmResult, error) {
@@ -715,7 +747,7 @@ func (s *AnalysisService) runNearbyNodes(ctx context.Context, graphID, tenantID 
 CALL spatial.withinDistance('%s', {lon:%s, lat:%s}, %s) YIELD node AS n, distance
 RETURN elementId(n) AS node_id,
        coalesce(n.name, n.title, n.label, elementId(n)) AS display_name,
-       labels(n)[0] AS entity_type,
+       labels(n) AS node_labels,
        distance AS score
 ORDER BY distance ASC
 LIMIT %d`,
@@ -774,7 +806,7 @@ func (s *AnalysisService) runWithinArea(ctx context.Context, graphID, tenantID u
 			"CALL spatial.intersects('%s', areaGeom) YIELD node AS n\n"+
 			"RETURN elementId(n) AS node_id,\n"+
 			"       coalesce(n.name, n.title, n.label, elementId(n)) AS display_name,\n"+
-			"       labels(n)[0] AS entity_type,\n"+
+			"       labels(n) AS node_labels,\n"+
 			"       0.0 AS score\n"+
 			"LIMIT %d",
 		escapeCypher(areaNodeID),
@@ -819,6 +851,11 @@ func rowsToNodeScores(rows []map[string]interface{}) []models.NodeScore {
 		if v, ok := row["entity_type"]; ok && v != nil {
 			ns.EntityType = fmt.Sprintf("%v", v)
 		}
+		if v, ok := row["node_labels"]; ok && v != nil {
+			if labels := interfaceToStringSlice(v); len(labels) > 0 {
+				ns.EntityType = endpointShapeName(labels)
+			}
+		}
 		if v, ok := row["score"]; ok {
 			switch sv := v.(type) {
 			case float64:
@@ -853,9 +890,13 @@ func buildColorMapsFromOntology(ontologyRepo *repository.OntologyRepository, ont
 	if err != nil {
 		return
 	}
+	byID := entityTypeByID(ontology.EntityTypes)
 	for _, et := range ontology.EntityTypes {
 		if et.Color != "" {
 			nodeColors[et.Name] = et.Color
+			if labels := effectiveNodeLabels(&et, byID); len(labels) > 0 {
+				nodeColors[endpointShapeName(labels)] = et.Color
+			}
 		}
 	}
 	for _, rt := range ontology.RelationTypes {

@@ -140,20 +140,24 @@ GET  /api/v1/graph/graphs/:id/constraints   // 查询当前 Neo4j 已有约束
 **后端实现**（`neo4j_service.go` 新增）：
 ```go
 func (s *Neo4jService) SyncConstraints(ctx context.Context, graphID int64,
-    tenantID int64, entityTypeName string, props []models.PropertyDefinition) error {
+    tenantID int64, entityTypeName string, nodeLabels []string, props []models.PropertyDefinition) error {
+    if len(nodeLabels) == 0 {
+        nodeLabels = []string{entityTypeName}
+    }
     for _, prop := range props {
         if !prop.Unique { continue }
         constraintName := fmt.Sprintf("graph_%d_%s_%s_unique",
             graphID, entityTypeName, prop.Name)
+        // Neo4j 约束 DDL 只支持单 label；label-set 映射取第一个执行 label。
         cypher := fmt.Sprintf(
             "CREATE CONSTRAINT %s IF NOT EXISTS FOR (n:%s) REQUIRE n.%s IS UNIQUE",
-            constraintName, entityTypeName, prop.Name)
+            constraintName, nodeLabels[0], prop.Name)
         // 执行 Cypher（注意：DDL 需确认 dbbridge 是否支持，如不支持需走 Neo4j driver 直接调用）
     }
 }
 ```
 
-约束命名规则：`graph_{graphID}_{entityTypeName}_{fieldName}_unique`（幂等，使用 `IF NOT EXISTS`）
+约束命名规则：`graph_{graphID}_{entityTypeName}_{fieldName}_unique`（幂等，使用 `IF NOT EXISTS`）。`entityTypeName` 是本体概念标识；Neo4j 执行 label 来自 `EntityType.NodeLabels` 或默认继承链映射。
 
 **注意**：唯一性约束 Neo4j 社区版支持；存在性约束（NOT NULL）需企业版，UI 中需标注区分。
 
@@ -231,8 +235,8 @@ Body: {
 **字段映射规则**：
 | Model 字段 | Graph 字段 |
 |-----------|-----------|
-| `Entity.code` | `EntityType.name` |
-| `Entity.name` | `EntityType.label` |
+| `Entity.code` | `EntityType.name`（本体概念标识） |
+| `Entity.name` | `EntityType.label`（显示名称） |
 | `EntityAttribute.name` | `PropertyDefinition.name` |
 | `EntityAttribute.data_type` | `PropertyDefinition.data_type` |
 | `EntityAttribute.nullable=false` | `PropertyDefinition.required=true` |

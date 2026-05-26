@@ -75,9 +75,14 @@ type AlgorithmCapabilities struct {
 type AlgorithmRunRequest struct {
     Algorithm  string                 `json:"algorithm"   binding:"required"`
     Params     map[string]interface{} `json:"params"`
-    NodeLabels []string               `json:"node_labels"` // GDS 投影过滤（空=全部）
-    RelTypes   []string               `json:"rel_types"`   // GDS 投影过滤（空=全部）
+    NodeShapes []AnalysisNodeShape    `json:"node_shapes"` // 节点形状过滤（空=全部）
+    RelTypes   []string               `json:"rel_types"`   // 关系类型过滤（空=全部）
     Limit      int                    `json:"limit"`       // Top-N，默认50，最大200
+}
+
+type AnalysisNodeShape struct {
+    Name   string   `json:"name"`
+    Labels []string `json:"labels"`
 }
 
 type NodeScore struct {
@@ -116,7 +121,10 @@ POST /api/v1/graph/graphs/:id/analysis/run           → AlgorithmResult（HTTP 
 ```json
 {
   "algorithm": "pagerank",
-  "node_labels": ["Person", "Organization"],
+  "node_shapes": [
+    {"name": "Person", "labels": ["Person"]},
+    {"name": "Organization", "labels": ["Organization"]}
+  ],
   "rel_types": [],
   "limit": 50
 }
@@ -161,7 +169,7 @@ WITH n, count(r) AS degree
 RETURN elementId(n) AS node_id, degree AS score
 ORDER BY degree DESC LIMIT $limit
 ```
-可选加 `WHERE n:$label` 过滤。
+可选按 `node_shapes` 生成完整 label set 过滤条件。
 
 **K跳邻居（khop_neighbors）**：
 ```cypher
@@ -185,10 +193,10 @@ RETURN p LIMIT 5
 
 **创建投影**（算法开始）：
 ```cypher
-CALL gds.graph.project($proj_name, $node_labels, $rel_types)
+CALL gds.graph.project($proj_name, '*', $rel_types)
 YIELD graphName, nodeCount, relationshipCount
 ```
-`node_labels`/`rel_types` 为空时传 `['*']`。
+未选择节点形状时使用原生 label/type 投影；选择 `node_shapes` 时使用 Cypher projection，并按完整 label set 过滤节点和关系端点，避免把多 label node shape 退化成宽松 label 匹配。
 
 **defer 清理**（异常路径安全）：
 ```cypher
@@ -241,11 +249,11 @@ export const runAlgorithm = (graphId, params) =>
 - 选中算法后显示一行简短描述
 
 **区域二（中部）：参数配置（v-if 按算法切换）**
-- `degree_centrality`：可选节点标签多选
+- `degree_centrality`：可选节点形状多选
 - `khop_neighbors`：起始节点 ID 输入（从 `selectedNodeId` prop 自动填入）+ 跳数步进器（1-4）
 - `multi_path`：最多5行 source-target 对，动态增删
-- `pagerank`/`betweenness`：标签/关系类型过滤 + Top-N 数量
-- `louvain`/`wcc`：标签/关系类型过滤
+- `pagerank`/`betweenness`：节点形状/关系类型过滤 + Top-N 数量
+- `louvain`/`wcc`：节点形状/关系类型过滤
 - 「执行」按钮（loading 防重复提交）
 
 **区域三（底部）：结果**

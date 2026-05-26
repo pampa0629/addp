@@ -81,6 +81,44 @@ Graph 模块的浏览、知识服务、推导和图算法必须使用同一套�
 - 第一批过滤的 Neo4j spatial 内部关系为 `RTREE_METADATA`、`RTREE_REFERENCE`、`RTREE_ROOT`。
 - 过滤规则归属于 Graph 模块服务层；`common/datatype.GraphInfo` 不携带具体引擎内部规则。
 
+### 本体类型与引擎执行映射
+
+Graph 模块里的本体 `EntityType` 是概念层定义，`EntityType.Name` 是本体概念标识，不应继续被硬性等同为 Neo4j label。Neo4j label 或 label set 是该概念在具体图引擎中的执行映射。
+
+因此 Graph 模块本体层增加实体类型执行映射：
+
+```go
+type EntityType struct {
+    Name       string
+    Label      string
+    NodeLabels []string
+}
+```
+
+规则：
+
+1. `Name`：本体概念标识，用于本体关系、模型导入、LLM schema、前端展示和 API 语义。
+2. `NodeLabels`：Neo4j 执行映射，允许单 label 或 label set，例如 `["Person"]`、`["Employee","Person"]`。
+3. 未显式设置 `NodeLabels` 时，Graph 模块可按实体类型继承链生成默认 Neo4j labels，例如 `City -> POI` 生成 `["City","POI"]`。
+4. 从已有 Neo4j 数据推导本体时，推导结果写入 `EntityType.NodeLabels`，`Name` 可使用 node shape 名作为初始概念名，但后续用户可重命名概念而不改变执行映射。
+5. `RelationType.SourceTypeID` / `TargetTypeID` 继续指向本体 `EntityType`；运行时查询、构建、空间图层、算法过滤需要 Neo4j label 时必须通过 `NodeLabels` 或默认映射解析，不直接把 `EntityType.Name` 当作唯一 label。
+6. Neo4j 约束同步受 Cypher DDL 限制，只能作用于单个 label。当前策略是使用 `NodeLabels[0]`，未显式配置时使用默认映射中的第一个 label。复合 label set 的唯一性约束后续如需更严格，需要在 Graph 模块单独定义约束策略。
+
+### 空间图层与节点映射
+
+空间图层属于 Graph 模块的本体配置和 Neo4j spatial 运行时能力，不进入 `common/datatype.GraphInfo`。它需要同时区分三类概念：
+
+1. `EntityType.Name`：本体实体类型概念标识。
+2. `EntityType.NodeLabels`：该实体类型落到 Neo4j 节点时使用的 label set。
+3. `SpatialLayerConfig.LayerName`：Neo4j spatial layer 标识，用于 `spatial.addPointLayerXY`、`spatial.addWKTLayer`、`spatial.addNode`、`spatial.withinDistance`、`spatial.intersects` 等过程调用。
+
+规则：
+
+1. 空间图层选择、同步和算法执行传递的是 `LayerName`，不能把 `LayerName` 当作 Neo4j label。
+2. 节点注册到空间图层时，节点匹配必须使用 `NodeLabels` 或继承链默认映射。
+3. 继承空间配置时，子类型可以复用父类型的几何字段配置，但默认生成独立的 layer name，避免多个实体类型写入同一个 spatial layer 后失去本体边界。
+4. Manager 只消费 graph metadata 的通用结构摘要；空间图层能力、Neo4j spatial 内部关系过滤和运行时注册逻辑留在 Graph 模块。
+
 ## Common Datatype 目标结构
 
 第一版 `GraphInfo` 只表达结构摘要：
@@ -187,3 +225,8 @@ label 和 relationship type 列表由 `GraphInfo.NodeShapes` 与 `GraphInfo.Rela
 7. 已改 Manager graph preview：从 GraphInfo 投影通用概览。
 8. 已改 Graph 模块浏览 schema 为 `node_shapes` / `relationship_shapes` / `patterns`，Browse schema 和 schema inference 均按完整 label set 生成 node shape，知识服务、schema 推导和图算法入口统一过滤 Neo4j 内部关系。
 9. 已改 Service 图查询服务：入门向导从旧 `label` 模式调整为 `node shape` 模式，前端选择项来自 graph item 的 `type_info.graph.node_shapes`；服务保存 `node_shape` 与执行所需的 `node_labels` 映射，不再从 Meta 树读取 label item。
+10. 已改 Graph 本体层：`EntityType.Name` 回到本体概念标识，新增 `EntityType.NodeLabels` 作为 Neo4j 执行映射，构建、知识服务、空间和算法查询统一通过映射解析 label set。
+11. 已改 Graph Analysis：算法筛选请求使用 `node_shapes`，后端按完整 label set 过滤节点；GDS 在选择 node shape 时使用 Cypher projection，避免把多 label node shape 退化为宽松 label 匹配。
+12. 已改空间图层链路：Graph 后端统一 `SpatialLayerMapping`，能力探测返回 `entity_type`、`entity_type_label` 与 `node_labels`；前端区域节点筛选使用 `node_labels`，不再把 spatial layer name 当作 label。
+13. 已改图谱构建写入链路：实体和关系写入 Neo4j 都使用 `NodeLabels` / label set，审核内容中的执行映射统一命名为 `node_labels`、`source_node_labels`、`target_node_labels`，不再用 `ancestor_labels` 暗示概念继承就是 Neo4j label。
+14. 已改 Graph Browser 节点形状筛选：多 label node shape 必须完整匹配该 label set，不再按任一 label 命中。

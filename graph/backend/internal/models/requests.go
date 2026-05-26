@@ -27,6 +27,7 @@ type CreateEntityTypeRequest struct {
 	Name               string                 `json:"name" binding:"required"`
 	Label              string                 `json:"label"`
 	Description        string                 `json:"description"`
+	NodeLabels         []string               `json:"node_labels"`
 	Color              string                 `json:"color"`
 	Icon               string                 `json:"icon"`
 	ParentID           *uint                  `json:"parent_id"`
@@ -42,6 +43,7 @@ type UpdateEntityTypeRequest struct {
 	Name               string                 `json:"name"`
 	Label              string                 `json:"label"`
 	Description        string                 `json:"description"`
+	NodeLabels         []string               `json:"node_labels"`
 	Color              string                 `json:"color"`
 	Icon               string                 `json:"icon"`
 	ParentID           *uint                  `json:"parent_id"`
@@ -132,8 +134,8 @@ type SyncSpatialLayersRequest struct {
 
 // ConstraintInfo Neo4j 已有约束信息
 type ConstraintInfo struct {
-	Name        string `json:"name"`
-	Type        string `json:"type"`
-	EntityType  string `json:"entity_type"`
-	Field       string `json:"field"`
+	Name       string `json:"name"`
+	Type       string `json:"type"`
+	EntityType string `json:"entity_type"`
+	Field      string `json:"field"`
 }

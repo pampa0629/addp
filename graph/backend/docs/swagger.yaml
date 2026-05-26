@@ -64,21 +64,30 @@ definitions:
       limit:
         description: Top-N，默认50，最大200
         type: integer
-      node_labels:
-        description: GDS 投影过滤（空=全部）
+      node_shapes:
+        description: 节点形状过滤（空=全部）
         items:
-          type: string
+          $ref: '#/definitions/github_com_addp_graph_internal_models.AnalysisNodeShape'
         type: array
       params:
         additionalProperties: true
         type: object
       rel_types:
-        description: GDS 投影过滤（空=全部）
+        description: 关系类型过滤（空=全部）
         items:
           type: string
         type: array
     required:
     - algorithm
+    type: object
+  github_com_addp_graph_internal_models.AnalysisNodeShape:
+    properties:
+      labels:
+        items:
+          type: string
+        type: array
+      name:
+        type: string
     type: object
   github_com_addp_graph_internal_models.BrowseSchema:
     properties:
@@ -230,6 +239,10 @@ definitions:
         type: string
       name:
         type: string
+      node_labels:
+        items:
+          type: string
+        type: array
       parent_id:
         type: integer
       properties:
@@ -337,11 +350,16 @@ definitions:
         description: 是否为空间图层类型
         type: boolean
       label:
-        description: 显示名称 (中文)
+        description: 显示名称
         type: string
       name:
-        description: 内部标识符 (英文)
+        description: 本体概念标识
         type: string
+      node_labels:
+        description: Neo4j 节点标签执行映射
+        items:
+          type: integer
+        type: array
       ontology_id:
         type: integer
       parent:
@@ -707,7 +725,7 @@ definitions:
         description: 纬度字段名，默认 "lat"（point 类型）
         type: string
       layer_name:
-        description: Neo4j layer name，默认 = EntityType.Name
+        description: Neo4j spatial layer name，默认使用实体类型名
         type: string
       lon_field:
         description: 经度字段名，默认 "lon"（point 类型）
@@ -719,9 +737,20 @@ definitions:
         allOf:
         - $ref: '#/definitions/github_com_addp_graph_internal_models.SpatialLayerConfig'
         description: 含 geometry_type / lon_field / lat_field / geom_field
+      entity_type:
+        description: 本体实体类型 name
+        type: string
+      entity_type_label:
+        description: 本体实体类型显示名称
+        type: string
       name:
         description: Neo4j layer name
         type: string
+      node_labels:
+        description: Neo4j 节点标签执行映射
+        items:
+          type: string
+        type: array
     type: object
   github_com_addp_graph_internal_models.SubgraphResult:
     properties:
@@ -772,6 +801,10 @@ definitions:
         type: string
       name:
         type: string
+      node_labels:
+        items:
+          type: string
+        type: array
       parent_id:
         type: integer
       properties:

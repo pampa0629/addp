@@ -25,6 +25,11 @@
         <el-table :data="entityTypes" border size="small">
           <el-table-column prop="name" :label="t('graph.ontology.identifier')" width="150" />
           <el-table-column prop="label" :label="t('graph.ontology.displayName')" width="150" />
+          <el-table-column :label="t('graph.ontology.nodeLabels')" width="180" show-overflow-tooltip>
+            <template #default="{ row }">
+              {{ formatNodeLabels(row) }}
+            </template>
+          </el-table-column>
           <el-table-column prop="description" :label="t('graph.common.description')" show-overflow-tooltip />
           <el-table-column :label="t('graph.ontology.spatialLayer')" width="120">
             <template #default="{ row }">
@@ -116,6 +121,13 @@
         </el-form-item>
         <el-form-item :label="t('graph.common.description')">
           <el-input v-model="entityForm.description" type="textarea" :rows="2" />
+        </el-form-item>
+        <el-form-item :label="t('graph.ontology.nodeLabels')">
+          <el-input
+            v-model="entityNodeLabelsText"
+            :placeholder="t('graph.ontology.nodeLabelsPlaceholder')"
+          />
+          <div class="form-help">{{ t('graph.ontology.nodeLabelsHelp') }}</div>
         </el-form-item>
         <el-form-item :label="t('graph.ontology.parentType')">
           <el-select v-model="entityForm.parent_id" :placeholder="t('graph.ontology.noParent')" clearable style="width:100%">
@@ -345,9 +357,11 @@ const editingEntity = ref(null)
 const entityFormRef = ref(null)
 const entityForm = ref({
   name: '', label: '', description: '', color: '#5B8FF9', properties: [],
+  node_labels: [],
   is_spatial_layer: false,
   spatial_layer_config: { geometry_type: '', layer_name: '', lon_field: 'lon', lat_field: 'lat', geom_field: 'wkt' }
 })
+const entityNodeLabelsText = ref('')
 const entityRules = computed(() => ({ name: [{ required: true, message: t('graph.ontology.identifierRequired'), trigger: 'blur' }] }))
 
 // relation form
@@ -409,6 +423,7 @@ const showEntityForm = (row) => {
     const slc = row.spatial_layer_config || {}
     entityForm.value = {
       name: row.name, label: row.label || '', description: row.description || '',
+      node_labels: Array.isArray(row.node_labels) ? [...row.node_labels] : [],
       color: row.color || '#5B8FF9',
       parent_id: row.parent_id || null,
       properties: Array.isArray(row.properties) ? row.properties.map(p => ({ ...p })) : [],
@@ -424,12 +439,14 @@ const showEntityForm = (row) => {
   } else {
     entityForm.value = {
       name: '', label: '', description: '', color: '#5B8FF9',
+      node_labels: [],
       parent_id: null,
       properties: [],
       is_spatial_layer: false,
       spatial_layer_config: { geometry_type: '', layer_name: '', lon_field: 'lon', lat_field: 'lat', geom_field: 'wkt' }
     }
   }
+  entityNodeLabelsText.value = (entityForm.value.node_labels || []).join(', ')
   entityDialogVisible.value = true
 }
 
@@ -484,6 +501,7 @@ const submitEntityType = async () => {
   saving.value = true
   try {
     const payload = { ...entityForm.value }
+    payload.node_labels = parseNodeLabels(entityNodeLabelsText.value)
     if (!payload.is_spatial_layer) {
       payload.spatial_layer_config = null
     }
@@ -500,6 +518,34 @@ const submitEntityType = async () => {
   } finally {
     saving.value = false
   }
+}
+
+const parseNodeLabels = (value) => {
+  return String(value || '')
+    .split(',')
+    .map(item => item.trim())
+    .filter(Boolean)
+}
+
+const formatNodeLabels = (row) => {
+  if (Array.isArray(row.node_labels) && row.node_labels.length) {
+    return row.node_labels.join(', ')
+  }
+  return `${t('graph.ontology.defaultNodeLabels')}: ${defaultNodeLabels(row).join(', ')}`
+}
+
+const defaultNodeLabels = (row) => {
+  if (!row?.name) return []
+  const labels = [row.name]
+  let current = row
+  let depth = 0
+  while (current?.parent_id && depth < 10) {
+    current = entityTypes.value.find(et => et.id === current.parent_id)
+    if (!current?.name) break
+    labels.push(current.name)
+    depth++
+  }
+  return labels
 }
 const deleteEntityType = async (row) => {
   await ElMessageBox.confirm(t('graph.ontology.confirmDeleteEntity', { name: row.name }), t('graph.common.confirmDelete'), { type: 'warning' })

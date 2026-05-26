@@ -434,7 +434,7 @@ func (h *OntologyHandler) SyncEntityTypeConstraints(c *gin.Context) {
 		return
 	}
 
-	if err := h.neo4jSvc.SyncConstraints(c.Request.Context(), req.GraphID, tenantID, et.Name, props); err != nil {
+	if err := h.neo4jSvc.SyncConstraints(c.Request.Context(), req.GraphID, tenantID, et.Name, h.svc.EntityTypeNodeLabels(ontologyID, tenantID, et.Name), props); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

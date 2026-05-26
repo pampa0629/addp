@@ -197,22 +197,22 @@ const relationshipTypes = computed(() => {
   return (schema.value.relationship_shapes || []).map(shape => shape.type).filter(Boolean)
 })
 
-const selectedNodeShapeLabels = computed(() => {
+const selectedNodeShapeFilters = computed(() => {
   if (visibleNodeShapes.value.length === 0) return []
   const selected = new Set(visibleNodeShapes.value)
   return nodeShapes.value
     .filter(shape => selected.has(shape.name))
-    .flatMap(shape => shape.labels?.length ? shape.labels : [shape.name])
+    .map(shape => shape.labels?.length ? shape.labels : [shape.name])
 })
 
 // 过滤后的节点/边
 const filteredNodes = computed(() => {
   if (visibleNodeShapes.value.length === 0) return allNodes.value
-  const labels = selectedNodeShapeLabels.value
-  if (labels.length === 0) return allNodes.value
+  const filters = selectedNodeShapeFilters.value
+  if (filters.length === 0) return allNodes.value
   return allNodes.value.filter(n => {
     if (!n.labels || n.labels.length === 0) return true
-    return n.labels.some(l => labels.includes(l))
+    return filters.some(labels => labels.every(label => n.labels.includes(label)))
   })
 })
 
@@ -224,7 +224,7 @@ const filteredEdges = computed(() => {
   })
 })
 
-// label → color 映射（从已有节点数据提取）
+// Neo4j label → color 映射（仅用于给 node shape 图例取色）
 const labelColorMap = computed(() => {
   const map = {}
   allNodes.value.forEach(n => {

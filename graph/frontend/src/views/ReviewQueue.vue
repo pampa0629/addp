@@ -104,6 +104,9 @@
           <el-form-item :label="t('graph.review.entityType')">
             <el-input v-model="modifyContent.type" />
           </el-form-item>
+          <el-form-item :label="t('graph.review.nodeLabels')">
+            <el-input v-model="modifyContent.node_labels_text" :placeholder="t('graph.review.nodeLabelsPlaceholder')" />
+          </el-form-item>
           <el-form-item :label="t('graph.review.uniqueKeyField')">
             <el-input v-model="modifyContent.unique_key_field" />
           </el-form-item>
@@ -117,8 +120,10 @@
         <template v-else>
           <el-form-item :label="t('graph.review.relationType')"><el-input v-model="modifyContent.type" /></el-form-item>
           <el-form-item :label="t('graph.review.sourceType')"><el-input v-model="modifyContent.source_type" /></el-form-item>
+          <el-form-item :label="t('graph.review.sourceNodeLabels')"><el-input v-model="modifyContent.source_node_labels_text" :placeholder="t('graph.review.nodeLabelsPlaceholder')" /></el-form-item>
           <el-form-item :label="t('graph.review.sourceUniqueValue')"><el-input v-model="modifyContent.source_unique_value" /></el-form-item>
           <el-form-item :label="t('graph.review.targetType')"><el-input v-model="modifyContent.target_type" /></el-form-item>
+          <el-form-item :label="t('graph.review.targetNodeLabels')"><el-input v-model="modifyContent.target_node_labels_text" :placeholder="t('graph.review.nodeLabelsPlaceholder')" /></el-form-item>
           <el-form-item :label="t('graph.review.targetUniqueValue')"><el-input v-model="modifyContent.target_unique_value" /></el-form-item>
         </template>
       </el-form>
@@ -224,13 +229,20 @@ async function handleBatchReject() {
 function openModifyDialog(row) {
   modifyItem.value = row
   modifyContent.value = JSON.parse(JSON.stringify(row.content || {}))
+  if (row.item_type === 'entity') {
+    modifyContent.value.node_labels_text = formatNodeLabels(modifyContent.value.node_labels)
+  } else {
+    modifyContent.value.source_node_labels_text = formatNodeLabels(modifyContent.value.source_node_labels)
+    modifyContent.value.target_node_labels_text = formatNodeLabels(modifyContent.value.target_node_labels)
+  }
   showModifyDialog.value = true
 }
 
 async function handleModify() {
   saving.value = true
   try {
-    await buildAPI.modifyItem(graphId, modifyItem.value.id, modifyContent.value)
+    const payload = normalizeReviewPayload(modifyItem.value.item_type, modifyContent.value)
+    await buildAPI.modifyItem(graphId, modifyItem.value.id, payload)
     ElMessage.success(t('graph.review.modifiedAndWritten'))
     showModifyDialog.value = false
     await loadItems()
@@ -245,9 +257,34 @@ function getContentSummary(row) {
   const c = row.content || {}
   if (row.item_type === 'entity') {
     const name = c.properties?.name || c.unique_key_value || '-'
-    return `[${c.type}] ${name}`
+    return `[${c.type}] ${name}${formatNodeLabels(c.node_labels) ? ` · ${formatNodeLabels(c.node_labels)}` : ''}`
   }
   return `${c.source_unique_value || '?'} --[${c.type}]--> ${c.target_unique_value || '?'}`
+}
+
+function formatNodeLabels(labels) {
+  return Array.isArray(labels) ? labels.filter(Boolean).join(', ') : ''
+}
+
+function parseNodeLabels(value) {
+  return String(value || '')
+    .split(',')
+    .map(v => v.trim())
+    .filter(Boolean)
+}
+
+function normalizeReviewPayload(itemType, content) {
+  const payload = JSON.parse(JSON.stringify(content || {}))
+  if (itemType === 'entity') {
+    payload.node_labels = parseNodeLabels(payload.node_labels_text)
+    delete payload.node_labels_text
+    return payload
+  }
+  payload.source_node_labels = parseNodeLabels(payload.source_node_labels_text)
+  payload.target_node_labels = parseNodeLabels(payload.target_node_labels_text)
+  delete payload.source_node_labels_text
+  delete payload.target_node_labels_text
+  return payload
 }
 
 function truncate(str, len) {

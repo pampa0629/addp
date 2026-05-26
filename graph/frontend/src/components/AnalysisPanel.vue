@@ -250,12 +250,15 @@ const selectedAlgo = ref('')
 const running = ref(false)
 const result = ref(null)
 
-const selectedNodeLabels = computed(() => {
+const selectedNodeShapeFilters = computed(() => {
   if (!params.value.node_shapes?.length) return []
   const selected = new Set(params.value.node_shapes)
   return props.nodeShapes
     .filter(shape => selected.has(shape.name))
-    .flatMap(shape => shape.labels?.length ? shape.labels : [shape.name])
+    .map(shape => ({
+      name: shape.name,
+      labels: shape.labels?.length ? shape.labels : [shape.name],
+    }))
 })
 
 // 算法参数（按算法类型复用）
@@ -293,7 +296,7 @@ async function runAlgorithm() {
   try {
     const body = {
       algorithm: selectedAlgo.value,
-      node_labels: selectedNodeLabels.value,
+      node_shapes: selectedNodeShapeFilters.value,
       rel_types: params.value.rel_types,
       limit: params.value.limit,
       params: {}

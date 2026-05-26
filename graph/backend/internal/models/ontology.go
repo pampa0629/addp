@@ -2,6 +2,7 @@ package models
 
 import (
 	"encoding/json"
+	"strings"
 	"time"
 
 	"gorm.io/datatypes"
@@ -18,8 +19,8 @@ type Ontology struct {
 	CreatedAt   time.Time      `json:"created_at"`
 	UpdatedAt   time.Time      `json:"updated_at"`
 
-	EntityTypes   []EntityType   `gorm:"foreignKey:OntologyID" json:"entity_types,omitempty"`
-	RelationTypes []RelationType `gorm:"foreignKey:OntologyID" json:"relation_types,omitempty"`
+	EntityTypes   []EntityType      `gorm:"foreignKey:OntologyID" json:"entity_types,omitempty"`
+	RelationTypes []RelationType    `gorm:"foreignKey:OntologyID" json:"relation_types,omitempty"`
 	Versions      []OntologyVersion `gorm:"foreignKey:OntologyID" json:"versions,omitempty"`
 }
 
@@ -28,15 +29,16 @@ type EntityType struct {
 	ID                 uint           `gorm:"primaryKey" json:"id"`
 	OntologyID         uint           `gorm:"not null;index" json:"ontology_id"`
 	TenantID           uint           `gorm:"not null;index" json:"tenant_id"`
-	Name               string         `gorm:"not null" json:"name"`        // 内部标识符 (英文)
-	Label              string         `json:"label"`                        // 显示名称 (中文)
+	Name               string         `gorm:"not null" json:"name"` // 本体概念标识
+	Label              string         `json:"label"`                // 显示名称
 	Description        string         `json:"description"`
-	Color              string         `gorm:"default:'#5B8FF9'" json:"color"` // 可视化颜色
+	NodeLabels         datatypes.JSON `gorm:"type:jsonb;default:'[]'" json:"node_labels,omitempty"` // Neo4j 节点标签执行映射
+	Color              string         `gorm:"default:'#5B8FF9'" json:"color"`                       // 可视化颜色
 	Icon               string         `json:"icon"`
-	ParentID           *uint          `json:"parent_id"` // 继承关系 (subClassOf)
-	Properties         datatypes.JSON `gorm:"type:jsonb;default:'[]'" json:"properties"`   // 属性定义列表
-	Constraints        datatypes.JSON `gorm:"type:jsonb;default:'[]'" json:"constraints"`  // 约束规则列表
-	IsSpatialLayer     bool           `gorm:"default:false" json:"is_spatial_layer"`       // 是否为空间图层类型
+	ParentID           *uint          `json:"parent_id"`                                                     // 继承关系 (subClassOf)
+	Properties         datatypes.JSON `gorm:"type:jsonb;default:'[]'" json:"properties"`                     // 属性定义列表
+	Constraints        datatypes.JSON `gorm:"type:jsonb;default:'[]'" json:"constraints"`                    // 约束规则列表
+	IsSpatialLayer     bool           `gorm:"default:false" json:"is_spatial_layer"`                         // 是否为空间图层类型
 	SpatialLayerConfig datatypes.JSON `gorm:"type:jsonb;default:'{}'" json:"spatial_layer_config,omitempty"` // 空间图层配置
 	SortOrder          int            `gorm:"default:0" json:"sort_order"`
 	CreatedAt          time.Time      `json:"created_at"`
@@ -51,7 +53,7 @@ type EntityType struct {
 // GeometryType == "wkt":   使用 GeomField（WKT 字符串，WGS-84）
 type SpatialLayerConfig struct {
 	GeometryType string `json:"geometry_type"` // "point" | "wkt"
-	LayerName    string `json:"layer_name"`    // Neo4j layer name，默认 = EntityType.Name
+	LayerName    string `json:"layer_name"`    // Neo4j spatial layer name，默认使用实体类型名
 	LonField     string `json:"lon_field"`     // 经度字段名，默认 "lon"（point 类型）
 	LatField     string `json:"lat_field"`     // 纬度字段名，默认 "lat"（point 类型）
 	GeomField    string `json:"geom_field"`    // WKT 属性名，默认 "wkt"（wkt 类型）
@@ -99,16 +101,45 @@ func (et *EntityType) ParsedProperties() ([]PropertyDefinition, error) {
 	return props, nil
 }
 
+// ParsedNodeLabels returns the explicit Neo4j node label mapping for this entity type.
+func (et *EntityType) ParsedNodeLabels() []string {
+	if len(et.NodeLabels) == 0 {
+		return nil
+	}
+	var labels []string
+	if err := json.Unmarshal(et.NodeLabels, &labels); err != nil {
+		return nil
+	}
+	return normalizeStringList(labels)
+}
+
+func normalizeStringList(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
+}
+
 // RelationType 关系类型定义
 type RelationType struct {
 	ID           uint           `gorm:"primaryKey" json:"id"`
 	OntologyID   uint           `gorm:"not null;index" json:"ontology_id"`
 	TenantID     uint           `gorm:"not null;index" json:"tenant_id"`
-	Name         string         `gorm:"not null" json:"name"`   // 内部标识符 (英文)
-	Label        string         `json:"label"`                   // 显示名称 (中文)
+	Name         string         `gorm:"not null" json:"name"` // 内部标识符 (英文)
+	Label        string         `json:"label"`                // 显示名称 (中文)
 	Description  string         `json:"description"`
-	SourceTypeID *uint          `json:"source_type_id"` // 来源实体类型 (nil=任意)
-	TargetTypeID *uint          `json:"target_type_id"` // 目标实体类型 (nil=任意)
+	SourceTypeID *uint          `json:"source_type_id"`               // 来源实体类型 (nil=任意)
+	TargetTypeID *uint          `json:"target_type_id"`               // 目标实体类型 (nil=任意)
 	Directed     bool           `gorm:"default:true" json:"directed"` // 是否有向
 	Color        string         `gorm:"default:'#8B8B8B'" json:"color"`
 	Properties   datatypes.JSON `gorm:"type:jsonb;default:'[]'" json:"properties"`
@@ -139,7 +170,7 @@ type KnowledgeGraph struct {
 	TenantID    uint           `gorm:"not null;index" json:"tenant_id"`
 	OntologyID  uint           `gorm:"not null;index" json:"ontology_id"`
 	EngineID    uint           `gorm:"not null" json:"engine_id"` // Neo4j 引擎 ID (来自 System)
-	Database    string         `gorm:"not null" json:"database"`   // Neo4j database 名称
+	Database    string         `gorm:"not null" json:"database"`  // Neo4j database 名称
 	Name        string         `gorm:"not null" json:"name"`
 	Description string         `json:"description"`
 	Status      string         `gorm:"default:'active'" json:"status"` // active, building, error, archived

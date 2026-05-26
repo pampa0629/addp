@@ -2963,11 +2963,11 @@ const docTemplate = `{
                     "description": "Top-N，默认50，最大200",
                     "type": "integer"
                 },
-                "node_labels": {
-                    "description": "GDS 投影过滤（空=全部）",
+                "node_shapes": {
+                    "description": "节点形状过滤（空=全部）",
                     "type": "array",
                     "items": {
-                        "type": "string"
+                        "$ref": "#/definitions/github_com_addp_graph_internal_models.AnalysisNodeShape"
                     }
                 },
                 "params": {
@@ -2975,11 +2975,25 @@ const docTemplate = `{
                     "additionalProperties": true
                 },
                 "rel_types": {
-                    "description": "GDS 投影过滤（空=全部）",
+                    "description": "关系类型过滤（空=全部）",
                     "type": "array",
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "github_com_addp_graph_internal_models.AnalysisNodeShape": {
+            "type": "object",
+            "properties": {
+                "labels": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
                 }
             }
         },
@@ -3203,6 +3217,12 @@ const docTemplate = `{
                 "name": {
                     "type": "string"
                 },
+                "node_labels": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "parent_id": {
                     "type": "integer"
                 },
@@ -3359,12 +3379,19 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "label": {
-                    "description": "显示名称 (中文)",
+                    "description": "显示名称",
                     "type": "string"
                 },
                 "name": {
-                    "description": "内部标识符 (英文)",
+                    "description": "本体概念标识",
                     "type": "string"
+                },
+                "node_labels": {
+                    "description": "Neo4j 节点标签执行映射",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
                 },
                 "ontology_id": {
                     "type": "integer"
@@ -3903,7 +3930,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "layer_name": {
-                    "description": "Neo4j layer name，默认 = EntityType.Name",
+                    "description": "Neo4j spatial layer name，默认使用实体类型名",
                     "type": "string"
                 },
                 "lon_field": {
@@ -3923,9 +3950,24 @@ const docTemplate = `{
                         }
                     ]
                 },
+                "entity_type": {
+                    "description": "本体实体类型 name",
+                    "type": "string"
+                },
+                "entity_type_label": {
+                    "description": "本体实体类型显示名称",
+                    "type": "string"
+                },
                 "name": {
                     "description": "Neo4j layer name",
                     "type": "string"
+                },
+                "node_labels": {
+                    "description": "Neo4j 节点标签执行映射",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -4003,6 +4045,12 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                },
+                "node_labels": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "parent_id": {
                     "type": "integer"

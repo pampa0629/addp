@@ -64,9 +64,13 @@ func (s *Neo4jService) buildColorMaps(ontologyID, tenantID uint) (nodeColors, ed
 	if err != nil {
 		return
 	}
+	byID := entityTypeByID(ontology.EntityTypes)
 	for _, et := range ontology.EntityTypes {
 		if et.Color != "" {
 			nodeColors[et.Name] = et.Color
+			if labels := effectiveNodeLabels(&et, byID); len(labels) > 0 {
+				nodeColors[endpointShapeName(labels)] = et.Color
+			}
 		}
 	}
 	for _, rt := range ontology.RelationTypes {
@@ -275,20 +279,25 @@ func (s *Neo4jService) FindPath(ctx context.Context, graphID, tenantID uint, sou
 
 // SyncConstraints 将实体类型的唯一属性约束同步到 Neo4j（幂等，使用 IF NOT EXISTS）
 // 约束命名规则：graph_{graphID}_{entityTypeName}_{fieldName}_unique
+// entityTypeName 是本体概念标识；Neo4j 执行 label 来自 nodeLabels。
 // 注意：NOT NULL 约束需 Neo4j 企业版，此处仅同步 UNIQUE 约束
-func (s *Neo4jService) SyncConstraints(ctx context.Context, graphID, tenantID uint, entityTypeName string, props []models.PropertyDefinition) error {
+func (s *Neo4jService) SyncConstraints(ctx context.Context, graphID, tenantID uint, entityTypeName string, nodeLabels []string, props []models.PropertyDefinition) error {
 	_, engine, err := s.getGraphAndEngine(graphID, tenantID)
 	if err != nil {
 		return err
+	}
+	if len(nodeLabels) == 0 {
+		nodeLabels = []string{entityTypeName}
 	}
 	for _, prop := range props {
 		if !prop.Unique {
 			continue
 		}
 		constraintName := fmt.Sprintf("graph_%d_%s_%s_unique", graphID, entityTypeName, prop.Name)
+		// Neo4j 约束语法只支持单 label；label-set 类型取第一个执行 label 创建约束。
 		cypher := fmt.Sprintf(
 			"CREATE CONSTRAINT %s IF NOT EXISTS FOR (n:%s) REQUIRE n.%s IS UNIQUE",
-			constraintName, entityTypeName, prop.Name,
+			constraintName, escapeCypherIdentifier(nodeLabels[0]), escapeCypherIdentifier(prop.Name),
 		)
 		if _, err := dbbridge.ExecuteGraphQuery(ctx, engine, cypher); err != nil {
 			return fmt.Errorf("failed to create constraint %s: %w", constraintName, err)
@@ -491,7 +500,7 @@ func buildSetClause(alias string, props map[string]interface{}) string {
 }
 
 // MergeEntity 将实体写入 Neo4j（MERGE 幂等写入）
-// entityLabels: Neo4j 标签列表，第一个为具体类型，后续为祖先类型（如 ["Company", "POI"]）
+// entityLabels: Neo4j 节点标签执行映射（如 ["Company", "POI"]）
 // uniqueField: 唯一标识属性名（来自本体 PropertyDefinition.Unique=true）
 // uniqueValue: 唯一标识属性值
 // properties: 所有属性
@@ -502,8 +511,8 @@ func (s *Neo4jService) MergeEntity(ctx context.Context, graphID, tenantID uint, 
 		return "", err
 	}
 
-	labelStr := strings.Join(entityLabels, ":")
-	if labelStr == "" {
+	labelSelector := nodeLabelsPattern(entityLabels)
+	if labelSelector == "" {
 		return "", fmt.Errorf("entityLabels must not be empty")
 	}
 
@@ -516,8 +525,8 @@ func (s *Neo4jService) MergeEntity(ctx context.Context, graphID, tenantID uint, 
 	}
 
 	cypher := fmt.Sprintf(
-		"MERGE (n:%s {%s: %s})\n%s\nRETURN elementId(n) AS eid",
-		labelStr, escapeCypher(uniqueField), cypherValue(uniqueValue), setPart,
+		"MERGE (n%s {%s: %s})\n%s\nRETURN elementId(n) AS eid",
+		labelSelector, escapeCypher(uniqueField), cypherValue(uniqueValue), setPart,
 	)
 
 	result, err := dbbridge.ExecuteGraphQuery(ctx, engine, cypher)
@@ -534,7 +543,7 @@ func (s *Neo4jService) MergeEntity(ctx context.Context, graphID, tenantID uint, 
 
 // MergeRelation 将关系写入 Neo4j（MERGE 幂等写入）
 // relType: 关系类型名
-// srcType/tgtType: 源/目标节点的 Neo4j 标签
+// srcLabels/tgtLabels: 源/目标节点的 Neo4j 节点标签执行映射
 // srcUniqueField/tgtUniqueField: 源/目标节点的唯一标识属性名
 // srcUniqueVal/tgtUniqueVal: 源/目标节点的唯一标识属性值
 // properties: 关系属性
@@ -543,8 +552,8 @@ func (s *Neo4jService) MergeRelation(
 	ctx context.Context,
 	graphID, tenantID uint,
 	relType string,
-	srcType, srcUniqueField string, srcUniqueVal interface{},
-	tgtType, tgtUniqueField string, tgtUniqueVal interface{},
+	srcLabels []string, srcUniqueField string, srcUniqueVal interface{},
+	tgtLabels []string, tgtUniqueField string, tgtUniqueVal interface{},
 	properties map[string]interface{},
 ) (string, error) {
 	_, engine, err := s.getGraphAndEngine(graphID, tenantID)
@@ -557,10 +566,16 @@ func (s *Neo4jService) MergeRelation(
 		setPart = fmt.Sprintf("ON CREATE SET %s", propSet)
 	}
 
+	srcSelector := nodeLabelsPattern(srcLabels)
+	tgtSelector := nodeLabelsPattern(tgtLabels)
+	if srcSelector == "" || tgtSelector == "" {
+		return "", fmt.Errorf("source and target labels must not be empty")
+	}
+
 	cypher := fmt.Sprintf(
-		"MATCH (a:%s {%s: %s}), (b:%s {%s: %s})\nMERGE (a)-[r:%s]->(b)\n%s\nRETURN elementId(r) AS eid",
-		srcType, escapeCypher(srcUniqueField), cypherValue(srcUniqueVal),
-		tgtType, escapeCypher(tgtUniqueField), cypherValue(tgtUniqueVal),
+		"MATCH (a%s {%s: %s}), (b%s {%s: %s})\nMERGE (a)-[r:%s]->(b)\n%s\nRETURN elementId(r) AS eid",
+		srcSelector, escapeCypher(srcUniqueField), cypherValue(srcUniqueVal),
+		tgtSelector, escapeCypher(tgtUniqueField), cypherValue(tgtUniqueVal),
 		relType, setPart,
 	)
 

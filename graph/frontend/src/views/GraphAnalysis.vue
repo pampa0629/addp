@@ -237,9 +237,9 @@
               <el-select v-model="params.layer" :placeholder="t('graph.analysis.selectSpatialLayer')" style="width:100%" @change="onLayerChange('nearby')">
                 <el-option
                   v-for="l in capabilities.spatial_layers"
-                  :key="l.name" :label="l.name" :value="l.name"
+                  :key="l.name" :label="spatialLayerLabel(l)" :value="l.name"
                 >
-                  <span>{{ l.name }}</span>
+                  <span>{{ spatialLayerLabel(l) }}</span>
                   <span class="node-type-tag">{{ l.config?.geometry_type === 'wkt' ? t('graph.ontology.linePolygon') : t('graph.ontology.point') }}</span>
                 </el-option>
               </el-select>
@@ -286,7 +286,7 @@
           <el-form v-else label-width="80px" size="small">
             <el-form-item :label="t('graph.analysis.areaLayer')">
               <el-select v-model="params.areaLayer" :placeholder="t('graph.analysis.selectAreaLayer')" style="width:100%" @change="onAreaLayerChange">
-                <el-option v-for="l in wktLayers" :key="l.name" :label="l.name" :value="l.name" />
+                <el-option v-for="l in wktLayers" :key="l.name" :label="spatialLayerLabel(l)" :value="l.name" />
               </el-select>
             </el-form-item>
             <el-form-item :label="t('graph.analysis.areaNode')">
@@ -300,7 +300,7 @@
                 :disabled="!params.areaLayer"
               >
                 <el-option
-                  v-for="n in (nodeSearch.area?.options || []).filter(n => (n.labels || []).includes(params.areaLayer) || n.entity_type === params.areaLayer)"
+                  v-for="n in (nodeSearch.area?.options || []).filter(n => nodeMatchesSpatialLayer(n, params.areaLayer))"
                   :key="n.id" :label="n.display_name" :value="n.id"
                 >
                   <span>{{ n.display_name }}</span>
@@ -310,7 +310,7 @@
             </el-form-item>
             <el-form-item :label="t('graph.analysis.pointLayer')">
               <el-select v-model="params.pointLayer" :placeholder="t('graph.analysis.selectPointLayer')" style="width:100%">
-                <el-option v-for="l in pointLayers" :key="l.name" :label="l.name" :value="l.name" />
+                <el-option v-for="l in pointLayers" :key="l.name" :label="spatialLayerLabel(l)" :value="l.name" />
               </el-select>
             </el-form-item>
             <el-form-item :label="t('graph.analysis.resultLimit')">
@@ -431,12 +431,15 @@ const nodeShapes = computed(() => {
   return schema.value.node_shapes || []
 })
 
-const selectedNodeLabels = computed(() => {
+const selectedNodeShapeFilters = computed(() => {
   if (!params.nodeShapes?.length) return []
   const selected = new Set(params.nodeShapes)
   return nodeShapes.value
     .filter(shape => selected.has(shape.name))
-    .flatMap(shape => shape.labels?.length ? shape.labels : [shape.name])
+    .map(shape => ({
+      name: shape.name,
+      labels: shape.labels?.length ? shape.labels : [shape.name],
+    }))
 })
 
 const relationshipShapes = computed(() => schema.value.relationship_shapes || [])
@@ -445,22 +448,27 @@ const relationshipTypes = computed(() => relationshipShapes.value.map(shape => s
 
 // 根据已选节点形状动态过滤可用关系类型
 const availableRelTypes = computed(() => {
-  const selected = selectedNodeLabels.value
+  const selected = selectedNodeShapeFilters.value
   if (!selected || selected.length === 0) return relationshipTypes.value
   if (relationshipShapes.value.length === 0) return relationshipTypes.value
-  const selectedSet = new Set(selected)
   const validRelTypes = new Set()
   for (const shape of relationshipShapes.value) {
     for (const pattern of shape.patterns || []) {
       const fromLabels = pattern.from?.labels || []
       const toLabels = pattern.to?.labels || []
-      if (fromLabels.some(label => selectedSet.has(label)) && toLabels.some(label => selectedSet.has(label))) {
+      if (selected.some(item => sameLabelSet(fromLabels, item.labels)) && selected.some(item => sameLabelSet(toLabels, item.labels))) {
         validRelTypes.add(shape.type)
       }
     }
   }
   return relationshipTypes.value.filter(r => validRelTypes.has(r))
 })
+
+const sameLabelSet = (a, b) => {
+  const left = [...new Set((a || []).filter(Boolean))].sort()
+  const right = [...new Set((b || []).filter(Boolean))].sort()
+  return left.length === right.length && left.every((value, index) => value === right[index])
+}
 
 // 面图层（WKT 几何类型）用于 within_area 的区域选择
 const wktLayers = computed(() =>
@@ -470,6 +478,20 @@ const wktLayers = computed(() =>
 const pointLayers = computed(() =>
   (capabilities.value?.spatial_layers || []).filter(l => l.config?.geometry_type !== 'wkt')
 )
+
+const spatialLayerLabel = (layer) => {
+  if (!layer) return ''
+  const parts = [layer.name]
+  const typeLabel = layer.entity_type_label || layer.entity_type
+  if (typeLabel) parts.push(typeLabel)
+  return parts.join(' · ')
+}
+
+const nodeMatchesSpatialLayer = (node, layerName) => {
+  const layerInfo = capabilities.value?.spatial_layers?.find(l => l.name === layerName)
+  const labels = layerInfo?.node_labels || []
+  return labels.length > 0 && (node.labels || []).some(label => labels.includes(label))
+}
 
 const selectedAlgo = ref('')
 const running = ref(false)
@@ -651,7 +673,7 @@ const runAlgorithm = async () => {
   const req = {
     algorithm: selectedAlgo.value,
     limit: params.limit,
-    node_labels: selectedNodeLabels.value,
+    node_shapes: selectedNodeShapeFilters.value,
     rel_types: params.relTypes,
     params: {},
   }

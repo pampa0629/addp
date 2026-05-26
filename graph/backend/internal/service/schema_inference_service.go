@@ -39,7 +39,7 @@ func NewSchemaInferenceService(
 
 // InferredEntityType 推导出的实体类型预览
 type InferredEntityType struct {
-	Name       string                      `json:"name"`       // 节点形状/实体类型名
+	Name       string                      `json:"name"`       // 节点形状名，应用后作为初始本体概念标识
 	Labels     []string                    `json:"labels"`     // Neo4j 标签映射
 	Properties []models.PropertyDefinition `json:"properties"` // 采样的属性
 	Count      int64                       `json:"count"`      // 节点数量
@@ -249,6 +249,7 @@ func (s *SchemaInferenceService) applyPreview(tenantID, ontologyID uint, preview
 			}
 			updateReq := &models.UpdateEntityTypeRequest{
 				Label:      et.Name,
+				NodeLabels: et.Labels,
 				Properties: et.Properties,
 			}
 			if _, err := s.ontologySvc.UpdateEntityType(existing.ID, ontologyID, tenantID, updateReq); err != nil {
@@ -260,6 +261,7 @@ func (s *SchemaInferenceService) applyPreview(tenantID, ontologyID uint, preview
 			createReq := &models.CreateEntityTypeRequest{
 				Name:       et.Name,
 				Label:      et.Name,
+				NodeLabels: et.Labels,
 				Properties: et.Properties,
 			}
 			if _, err := s.ontologySvc.CreateEntityType(ontologyID, tenantID, createReq); err != nil {
@@ -270,11 +272,14 @@ func (s *SchemaInferenceService) applyPreview(tenantID, ontologyID uint, preview
 		}
 	}
 
-	// 重新获取实体类型 name→ID 映射（用于关系导入）
+	// 重新获取实体类型映射（用于关系导入）
 	updatedEntityTypes, _ := s.ontologySvc.ListEntityTypes(ontologyID, tenantID)
 	entityNameToID := make(map[string]uint)
+	entityLabelsToID := make(map[string]uint)
+	entityTypesByID := entityTypeByID(updatedEntityTypes)
 	for _, et := range updatedEntityTypes {
 		entityNameToID[et.Name] = et.ID
+		entityLabelsToID[nodeLabelsKey(effectiveNodeLabels(&et, entityTypesByID))] = et.ID
 	}
 
 	// 已有关系类型
@@ -289,8 +294,14 @@ func (s *SchemaInferenceService) applyPreview(tenantID, ontologyID uint, preview
 		if !selectedRels[rt.Key] {
 			continue
 		}
-		sourceID := entityNameToID[rt.SourceShapeName]
-		targetID := entityNameToID[rt.TargetShapeName]
+		sourceID := entityLabelsToID[nodeLabelsKey(rt.SourceLabels)]
+		if sourceID == 0 {
+			sourceID = entityNameToID[rt.SourceShapeName]
+		}
+		targetID := entityLabelsToID[nodeLabelsKey(rt.TargetLabels)]
+		if targetID == 0 {
+			targetID = entityNameToID[rt.TargetShapeName]
+		}
 
 		if existing, exists := existingRelNames[rt.Name]; exists {
 			if conflict == "skip" {
@@ -350,4 +361,8 @@ func nodeLabelsPattern(labels []string) string {
 		parts = append(parts, fmt.Sprintf("`%s`", escapeCypherIdentifier(label)))
 	}
 	return ":" + strings.Join(parts, ":")
+}
+
+func nodeLabelsKey(labels []string) string {
+	return strings.Join(normalizedStringSet(labels), "\x00")
 }

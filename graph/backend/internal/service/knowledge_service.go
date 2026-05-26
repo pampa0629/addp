@@ -3,9 +3,9 @@ package service
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/addp/common/dbbridge"
+	commonmodels "github.com/addp/common/models"
 	"github.com/addp/graph/internal/models"
 	"github.com/addp/graph/internal/repository"
 )
@@ -51,7 +51,8 @@ func (s *KnowledgeService) ListEntitiesByType(
 		return nil, 0, err
 	}
 
-	entityLabels := entityTypeLabels(entityTypeName)
+	ontology, _ := s.ontologyRepo.GetDetail(kg.OntologyID, tenantID)
+	entityLabels := entityTypeNodeLabels(ontology, entityTypeName)
 	countResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
 		fmt.Sprintf("MATCH (n%s) RETURN count(n) AS total", nodeLabelsPattern(entityLabels)))
 	if err != nil {
@@ -218,7 +219,8 @@ func (s *KnowledgeService) SearchEntities(
 
 	typeFilter := ""
 	if entityType != "" {
-		typeFilter = fmt.Sprintf(" AND all(label IN %s WHERE label IN labels(n))", cypherStringList(entityTypeLabels(entityType)))
+		ontology, _ := s.ontologyRepo.GetDetail(kg.OntologyID, tenantID)
+		typeFilter = fmt.Sprintf(" AND all(label IN %s WHERE label IN labels(n))", cypherStringList(entityTypeNodeLabels(ontology, entityType)))
 	}
 
 	countCypher := fmt.Sprintf(
@@ -330,20 +332,6 @@ func (s *KnowledgeService) GetOntologyDescription(
 		return nil, fmt.Errorf("get ontology failed: %w", err)
 	}
 
-	// 各 label 节点数量
-	labelCounts := make(map[string]int64)
-	labelCountResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-		"MATCH (n) UNWIND labels(n) AS lbl RETURN lbl, count(n) AS cnt")
-	if err == nil {
-		for _, row := range labelCountResult.Rows {
-			if lbl, ok := row["lbl"]; ok {
-				if cnt, ok2 := row["cnt"]; ok2 {
-					labelCounts[fmt.Sprintf("%v", lbl)] = toInt64(cnt)
-				}
-			}
-		}
-	}
-
 	// 各关系类型数量
 	relCounts := make(map[string]int64)
 	relCountResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
@@ -358,6 +346,7 @@ func (s *KnowledgeService) GetOntologyDescription(
 		}
 	}
 
+	entityTypesByID := entityTypeByID(ontology.EntityTypes)
 	entityTypes := make([]models.KSEntityType, 0, len(ontology.EntityTypes))
 	for _, et := range ontology.EntityTypes {
 		props := make([]models.KSPropertyInfo, 0)
@@ -375,7 +364,7 @@ func (s *KnowledgeService) GetOntologyDescription(
 			Name:       et.Name,
 			Label:      et.Label,
 			Properties: props,
-			Count:      labelCounts[et.Name],
+			Count:      s.countNodesByLabels(ctx, engine, effectiveNodeLabels(&et, entityTypesByID)),
 		})
 	}
 
@@ -406,6 +395,18 @@ func (s *KnowledgeService) GetOntologyDescription(
 	}, nil
 }
 
+func (s *KnowledgeService) countNodesByLabels(ctx context.Context, engine *commonmodels.Engine, labels []string) int64 {
+	if engine == nil || len(labels) == 0 {
+		return 0
+	}
+	result, err := dbbridge.ExecuteGraphQuery(ctx, engine,
+		fmt.Sprintf("MATCH (n%s) RETURN count(n) AS cnt", nodeLabelsPattern(labels)))
+	if err != nil || len(result.Rows) == 0 {
+		return 0
+	}
+	return toInt64(result.Rows[0]["cnt"])
+}
+
 // GetStats 复用 neo4jSvc.GetStats
 func (s *KnowledgeService) GetStats(ctx context.Context, graphID, tenantID uint) (*models.BrowseStats, error) {
 	return s.neo4jSvc.GetStats(ctx, graphID, tenantID)
@@ -417,13 +418,14 @@ func (s *KnowledgeService) enrichEntityType(ontologyID, tenantID uint, labels []
 	if len(labels) == 0 {
 		return "", ""
 	}
-	shapeName := endpointShapeName(labels)
 	ontology, err := s.ontologyRepo.GetDetail(ontologyID, tenantID)
 	if err != nil {
+		shapeName := endpointShapeName(labels)
 		return shapeName, shapeName
 	}
+	byID := entityTypeByID(ontology.EntityTypes)
 	for _, et := range ontology.EntityTypes {
-		if et.Name == shapeName {
+		if sameStringSet(effectiveNodeLabels(&et, byID), labels) {
 			label := et.Label
 			if label == "" {
 				label = et.Name
@@ -442,6 +444,7 @@ func (s *KnowledgeService) enrichEntityType(ontologyID, tenantID uint, labels []
 			}
 		}
 	}
+	shapeName := endpointShapeName(labels)
 	return shapeName, shapeName
 }
 
@@ -475,30 +478,4 @@ func (s *KnowledgeService) resolveRelationTypeLabels(ontologyID, tenantID uint) 
 		m[rt.Name] = label
 	}
 	return m
-}
-
-func entityTypeLabels(entityTypeName string) []string {
-	parts := strings.Split(entityTypeName, "+")
-	labels := make([]string, 0, len(parts))
-	for _, part := range parts {
-		label := strings.TrimSpace(part)
-		if label != "" {
-			labels = append(labels, label)
-		}
-	}
-	if len(labels) == 0 && strings.TrimSpace(entityTypeName) != "" {
-		labels = append(labels, strings.TrimSpace(entityTypeName))
-	}
-	return labels
-}
-
-func cypherStringList(values []string) string {
-	if len(values) == 0 {
-		return "[]"
-	}
-	quoted := make([]string, 0, len(values))
-	for _, value := range values {
-		quoted = append(quoted, fmt.Sprintf("'%s'", escapeCypher(value)))
-	}
-	return "[" + strings.Join(quoted, ",") + "]"
 }
