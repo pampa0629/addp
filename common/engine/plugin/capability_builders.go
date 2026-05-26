@@ -211,9 +211,6 @@ func NewGraphCapabilities(engineType string) EngineCapabilities {
 				Supported:      true,
 				NativeMetadata: true,
 			},
-			Store: &StoreCapability{
-				BatchRead: true,
-			},
 			Semantics: []string{"database", "graph"},
 		},
 		Compute: &ComputeCapabilities{

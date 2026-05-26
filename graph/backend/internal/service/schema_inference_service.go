@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dbbridge"
@@ -38,7 +39,8 @@ func NewSchemaInferenceService(
 
 // InferredEntityType 推导出的实体类型预览
 type InferredEntityType struct {
-	Label      string                      `json:"label"`      // Neo4j 标签名
+	Name       string                      `json:"name"`       // 节点形状/实体类型名
+	Labels     []string                    `json:"labels"`     // Neo4j 标签映射
 	Properties []models.PropertyDefinition `json:"properties"` // 采样的属性
 	Count      int64                       `json:"count"`      // 节点数量
 	Exists     bool                        `json:"exists"`     // 本体中是否已存在
@@ -46,11 +48,14 @@ type InferredEntityType struct {
 
 // InferredRelationType 推导出的关系类型预览
 type InferredRelationType struct {
-	Name        string `json:"name"`         // 关系类型名
-	SourceLabel string `json:"source_label"` // 来源标签
-	TargetLabel string `json:"target_label"` // 目标标签
-	Count       int64  `json:"count"`
-	Exists      bool   `json:"exists"`
+	Key             string   `json:"key"`                         // 关系类型 + 端点 pattern 唯一键
+	Name            string   `json:"name"`                        // 关系类型名
+	SourceShapeName string   `json:"source_shape_name,omitempty"` // 来源节点形状
+	TargetShapeName string   `json:"target_shape_name,omitempty"` // 目标节点形状
+	SourceLabels    []string `json:"source_labels,omitempty"`     // 来源 Neo4j 标签映射
+	TargetLabels    []string `json:"target_labels,omitempty"`     // 目标 Neo4j 标签映射
+	Count           int64    `json:"count"`
+	Exists          bool     `json:"exists"`
 }
 
 // SchemaInferencePreview 推导结果预览
@@ -61,18 +66,18 @@ type SchemaInferencePreview struct {
 
 // ApplyInferredSchemaRequest 应用推导结果到本体（从 graph_id）
 type ApplyInferredSchemaRequest struct {
-	OntologyID        uint     `json:"ontology_id" binding:"required"`
-	EntityTypeLabels  []string `json:"entity_type_names"`
-	RelationTypeNames []string `json:"relation_type_names"`
-	Conflict          string   `json:"conflict"` // "skip" | "overwrite"
+	OntologyID       uint     `json:"ontology_id" binding:"required"`
+	EntityTypeNames  []string `json:"entity_type_names"`
+	RelationTypeKeys []string `json:"relation_type_keys"`
+	Conflict         string   `json:"conflict"` // "skip" | "overwrite"
 }
 
 // ApplyInferredSchemaFromEngineRequest 应用推导结果到本体（从 engine_id）
 type ApplyInferredSchemaFromEngineRequest struct {
-	EngineID          uint     `json:"engine_id" binding:"required"`
-	EntityTypeLabels  []string `json:"entity_type_names"`
-	RelationTypeNames []string `json:"relation_type_names"`
-	Conflict          string   `json:"conflict"` // "skip" | "overwrite"
+	EngineID         uint     `json:"engine_id" binding:"required"`
+	EntityTypeNames  []string `json:"entity_type_names"`
+	RelationTypeKeys []string `json:"relation_type_keys"`
+	Conflict         string   `json:"conflict"` // "skip" | "overwrite"
 }
 
 // ListNeo4jEngines 返回当前租户下所有 Neo4j 引擎
@@ -120,36 +125,31 @@ func (s *SchemaInferenceService) inferWithEngine(ctx context.Context, engine *co
 		}
 	}
 
-	// 获取所有标签
-	labelsResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-		"CALL db.labels() YIELD label RETURN label ORDER BY label")
+	// 获取所有节点形状。Neo4j 节点可以有多个 label，因此这里按完整 label set 推导 ADDP node shape。
+	nodeShapeResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
+		"MATCH (n) RETURN labels(n) AS labels, count(n) AS cnt ORDER BY cnt DESC LIMIT 500")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get labels: %w", err)
+		return nil, fmt.Errorf("failed to get node shapes: %w", err)
 	}
 
-	// 对每个标签提取属性和节点数
-	for _, row := range labelsResult.Rows {
-		labelVal, ok := row["label"]
-		if !ok {
+	// 对每个节点形状提取属性和节点数
+	for _, row := range nodeShapeResult.Rows {
+		labels := interfaceToStringSlice(row["labels"])
+		if len(labels) == 0 {
 			continue
 		}
-		label := fmt.Sprintf("%v", labelVal)
+		name := endpointShapeName(labels)
 
 		et := InferredEntityType{
-			Label:  label,
-			Exists: existingEntityNames[label],
-		}
-
-		// 采样节点数
-		countResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-			fmt.Sprintf("MATCH (n:`%s`) RETURN count(n) AS cnt", label))
-		if err == nil && len(countResult.Rows) > 0 {
-			et.Count = toInt64(countResult.Rows[0]["cnt"])
+			Name:   name,
+			Labels: labels,
+			Count:  toInt64(row["cnt"]),
+			Exists: existingEntityNames[name],
 		}
 
 		// 采样属性 key（LIMIT 1000 防止大库慢查询）
 		propResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-			fmt.Sprintf("MATCH (n:`%s`) UNWIND keys(n) AS k RETURN DISTINCT k LIMIT 1000", label))
+			fmt.Sprintf("MATCH (n%s) UNWIND keys(n) AS k RETURN DISTINCT k LIMIT 1000", nodeLabelsPattern(labels)))
 		if err == nil {
 			for _, r := range propResult.Rows {
 				if k, ok := r["k"]; ok {
@@ -165,9 +165,9 @@ func (s *SchemaInferenceService) inferWithEngine(ctx context.Context, engine *co
 		preview.EntityTypes = append(preview.EntityTypes, et)
 	}
 
-	// 提取关系模式（来源标签 + 关系类型 + 目标标签）
+	// 提取关系模式（来源节点形状 + 关系类型 + 目标节点形状）
 	relResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-		"MATCH (a)-[r]->(b) WHERE NOT ("+internalRelationshipTypePredicate+") RETURN DISTINCT labels(a)[0] AS src, type(r) AS rel, labels(b)[0] AS tgt, count(r) AS cnt LIMIT 500")
+		"MATCH (a)-[r]->(b) WHERE NOT ("+internalRelationshipTypePredicate+") RETURN labels(a) AS src, type(r) AS rel, labels(b) AS tgt, count(r) AS cnt ORDER BY rel, cnt DESC LIMIT 500")
 	if err != nil {
 		return preview, nil // 关系推导失败不影响实体推导结果
 	}
@@ -176,12 +176,19 @@ func (s *SchemaInferenceService) inferWithEngine(ctx context.Context, engine *co
 		if isInternalRelationshipType(relName) {
 			continue
 		}
+		sourceLabels := interfaceToStringSlice(row["src"])
+		targetLabels := interfaceToStringSlice(row["tgt"])
+		sourceShapeName := endpointShapeName(sourceLabels)
+		targetShapeName := endpointShapeName(targetLabels)
 		rt := InferredRelationType{
-			Name:        relName,
-			SourceLabel: fmt.Sprintf("%v", row["src"]),
-			TargetLabel: fmt.Sprintf("%v", row["tgt"]),
-			Count:       toInt64(row["cnt"]),
-			Exists:      existingRelNames[relName],
+			Key:             inferredRelationKey(relName, sourceShapeName, targetShapeName),
+			Name:            relName,
+			SourceShapeName: sourceShapeName,
+			TargetShapeName: targetShapeName,
+			SourceLabels:    sourceLabels,
+			TargetLabels:    targetLabels,
+			Count:           toInt64(row["cnt"]),
+			Exists:          existingRelNames[relName],
 		}
 		preview.RelationTypes = append(preview.RelationTypes, rt)
 	}
@@ -195,7 +202,7 @@ func (s *SchemaInferenceService) ApplyInferredSchema(ctx context.Context, graphI
 	if err != nil {
 		return nil, err
 	}
-	return s.applyPreview(tenantID, req.OntologyID, preview, req.EntityTypeLabels, req.RelationTypeNames, req.Conflict)
+	return s.applyPreview(tenantID, req.OntologyID, preview, req.EntityTypeNames, req.RelationTypeKeys, req.Conflict)
 }
 
 // ApplyInferredSchemaFromEngine 将选中的推导结果（来自引擎）应用到指定本体
@@ -204,17 +211,17 @@ func (s *SchemaInferenceService) ApplyInferredSchemaFromEngine(ctx context.Conte
 	if err != nil {
 		return nil, err
 	}
-	return s.applyPreview(tenantID, ontologyID, preview, req.EntityTypeLabels, req.RelationTypeNames, req.Conflict)
+	return s.applyPreview(tenantID, ontologyID, preview, req.EntityTypeNames, req.RelationTypeKeys, req.Conflict)
 }
 
 // applyPreview 将推导预览中选中的实体/关系类型写入本体（共享逻辑）
-func (s *SchemaInferenceService) applyPreview(tenantID, ontologyID uint, preview *SchemaInferencePreview, entityLabels, relNames []string, conflict string) (*ImportResult, error) {
-	selectedLabels := make(map[string]bool)
-	for _, l := range entityLabels {
-		selectedLabels[l] = true
+func (s *SchemaInferenceService) applyPreview(tenantID, ontologyID uint, preview *SchemaInferencePreview, entityNames, relKeys []string, conflict string) (*ImportResult, error) {
+	selectedEntities := make(map[string]bool)
+	for _, name := range entityNames {
+		selectedEntities[name] = true
 	}
 	selectedRels := make(map[string]bool)
-	for _, r := range relNames {
+	for _, r := range relKeys {
 		selectedRels[r] = true
 	}
 
@@ -232,16 +239,16 @@ func (s *SchemaInferenceService) applyPreview(tenantID, ontologyID uint, preview
 
 	// 导入实体类型
 	for _, et := range preview.EntityTypes {
-		if !selectedLabels[et.Label] {
+		if !selectedEntities[et.Name] {
 			continue
 		}
-		if existing, exists := existingNames[et.Label]; exists {
+		if existing, exists := existingNames[et.Name]; exists {
 			if conflict == "skip" {
 				result.Skipped++
 				continue
 			}
 			updateReq := &models.UpdateEntityTypeRequest{
-				Label:      et.Label,
+				Label:      et.Name,
 				Properties: et.Properties,
 			}
 			if _, err := s.ontologySvc.UpdateEntityType(existing.ID, ontologyID, tenantID, updateReq); err != nil {
@@ -251,8 +258,8 @@ func (s *SchemaInferenceService) applyPreview(tenantID, ontologyID uint, preview
 			result.Updated++
 		} else {
 			createReq := &models.CreateEntityTypeRequest{
-				Name:       et.Label,
-				Label:      et.Label,
+				Name:       et.Name,
+				Label:      et.Name,
 				Properties: et.Properties,
 			}
 			if _, err := s.ontologySvc.CreateEntityType(ontologyID, tenantID, createReq); err != nil {
@@ -279,11 +286,11 @@ func (s *SchemaInferenceService) applyPreview(tenantID, ontologyID uint, preview
 
 	// 导入关系类型
 	for _, rt := range preview.RelationTypes {
-		if !selectedRels[rt.Name] {
+		if !selectedRels[rt.Key] {
 			continue
 		}
-		sourceID := entityNameToID[rt.SourceLabel]
-		targetID := entityNameToID[rt.TargetLabel]
+		sourceID := entityNameToID[rt.SourceShapeName]
+		targetID := entityNameToID[rt.TargetShapeName]
 
 		if existing, exists := existingRelNames[rt.Name]; exists {
 			if conflict == "skip" {
@@ -328,4 +335,19 @@ func (s *SchemaInferenceService) applyPreview(tenantID, ontologyID uint, preview
 	}
 
 	return result, nil
+}
+
+func inferredRelationKey(name, sourceShapeName, targetShapeName string) string {
+	return strings.Join([]string{name, sourceShapeName, targetShapeName}, "|")
+}
+
+func nodeLabelsPattern(labels []string) string {
+	if len(labels) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(labels))
+	for _, label := range labels {
+		parts = append(parts, fmt.Sprintf("`%s`", escapeCypherIdentifier(label)))
+	}
+	return ":" + strings.Join(parts, ":")
 }

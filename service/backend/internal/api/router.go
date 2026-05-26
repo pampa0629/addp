@@ -201,6 +201,7 @@ func SetupRouter(
 		api.GET("/engines", dataSourceHandler.GetEngines)
 		api.GET("/engines/:engine_id/tree", dataSourceHandler.GetEngineTree)
 		api.GET("/nodes/:node_id/children", dataSourceHandler.GetNodeChildren)
+		api.GET("/graphs/node-shapes", dataSourceHandler.GetGraphNodeShapes)
 		api.GET("/tables/metadata", dataSourceHandler.GetTableMetadata)
 		api.GET("/tables/spatial-metadata", dataSourceHandler.GetTableSpatialMetadata)
 		api.POST("/sql/spatial-metadata", dataSourceHandler.GetSQLSpatialMetadata)

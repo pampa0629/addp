@@ -1491,7 +1491,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取知识图谱的节点标签和关系类型 Schema | Get node labels and relation type schema of a knowledge graph",
+                "description": "获取知识图谱的节点形状、关系形状和连接模式 Schema | Get node shape, relationship shape and pattern schema of a knowledge graph",
                 "produces": [
                     "application/json"
                 ],
@@ -2986,25 +2986,18 @@ const docTemplate = `{
         "github_com_addp_graph_internal_models.BrowseSchema": {
             "type": "object",
             "properties": {
-                "connections": {
-                    "description": "关系类型的端点连通信息",
+                "node_shapes": {
+                    "description": "所有节点形状",
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_addp_graph_internal_models.RelTypeConnection"
+                        "$ref": "#/definitions/github_com_addp_graph_internal_models.NodeShapeDTO"
                     }
                 },
-                "labels": {
-                    "description": "所有节点标签",
+                "relationship_shapes": {
+                    "description": "所有关系形状",
                     "type": "array",
                     "items": {
-                        "type": "string"
-                    }
-                },
-                "rel_types": {
-                    "description": "所有关系类型",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
+                        "$ref": "#/definitions/github_com_addp_graph_internal_models.RelationshipShapeDTO"
                     }
                 }
             }
@@ -3464,6 +3457,20 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_graph_internal_models.GraphEndpointDTO": {
+            "type": "object",
+            "properties": {
+                "labels": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "shape_name": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_graph_internal_models.GraphNodeDTO": {
             "type": "object",
             "properties": {
@@ -3569,6 +3576,26 @@ const docTemplate = `{
                 },
                 "score": {
                     "type": "number"
+                }
+            }
+        },
+        "github_com_addp_graph_internal_models.NodeShapeDTO": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "labels": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
                 }
             }
         },
@@ -3748,23 +3775,6 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_graph_internal_models.RelTypeConnection": {
-            "type": "object",
-            "properties": {
-                "rel_type": {
-                    "description": "关系类型名称",
-                    "type": "string"
-                },
-                "source_label": {
-                    "description": "起点节点标签",
-                    "type": "string"
-                },
-                "target_label": {
-                    "description": "终点节点标签",
-                    "type": "string"
-                }
-            }
-        },
         "github_com_addp_graph_internal_models.RelationType": {
             "type": "object",
             "properties": {
@@ -3828,6 +3838,37 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_graph_internal_models.RelationshipPatternDTO": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "from": {
+                    "$ref": "#/definitions/github_com_addp_graph_internal_models.GraphEndpointDTO"
+                },
+                "to": {
+                    "$ref": "#/definitions/github_com_addp_graph_internal_models.GraphEndpointDTO"
+                }
+            }
+        },
+        "github_com_addp_graph_internal_models.RelationshipShapeDTO": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "patterns": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_graph_internal_models.RelationshipPatternDTO"
+                    }
+                },
+                "type": {
                     "type": "string"
                 }
             }
@@ -4072,7 +4113,7 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
-                "relation_type_names": {
+                "relation_type_keys": {
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -4099,7 +4140,7 @@ const docTemplate = `{
                 "ontology_id": {
                     "type": "integer"
                 },
-                "relation_type_names": {
+                "relation_type_keys": {
                     "type": "array",
                     "items": {
                         "type": "string"

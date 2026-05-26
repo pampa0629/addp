@@ -21,24 +21,44 @@ type GraphEdgeDTO struct {
 	Properties   map[string]interface{} `json:"properties"`
 }
 
+// NodeShapeDTO 节点结构形状，labels 是具体图引擎的执行映射。
+type NodeShapeDTO struct {
+	Name   string   `json:"name"`
+	Kind   string   `json:"kind,omitempty"`
+	Labels []string `json:"labels,omitempty"`
+	Count  *int64   `json:"count,omitempty"`
+}
+
+// RelationshipShapeDTO 关系结构形状。
+type RelationshipShapeDTO struct {
+	Type     string                   `json:"type"`
+	Patterns []RelationshipPatternDTO `json:"patterns,omitempty"`
+	Count    *int64                   `json:"count,omitempty"`
+}
+
+// RelationshipPatternDTO 关系端点模式。
+type RelationshipPatternDTO struct {
+	From  GraphEndpointDTO `json:"from"`
+	To    GraphEndpointDTO `json:"to"`
+	Count *int64           `json:"count,omitempty"`
+}
+
+// GraphEndpointDTO 图关系端点。
+type GraphEndpointDTO struct {
+	ShapeName string   `json:"shape_name,omitempty"`
+	Labels    []string `json:"labels,omitempty"`
+}
+
 // SubgraphResult 子图查询结果
 type SubgraphResult struct {
 	Nodes []GraphNodeDTO `json:"nodes"`
 	Edges []GraphEdgeDTO `json:"edges"`
 }
 
-// RelTypeConnection 关系类型的端点标签信息
-type RelTypeConnection struct {
-	RelType     string `json:"rel_type"`    // 关系类型名称
-	SourceLabel string `json:"source_label"` // 起点节点标签
-	TargetLabel string `json:"target_label"` // 终点节点标签
-}
-
-// GraphSchema 图谱 Schema（标签 + 关系类型）
+// GraphSchema 图谱 Schema（节点形状 + 关系形状）
 type BrowseSchema struct {
-	Labels      []string            `json:"labels"`       // 所有节点标签
-	RelTypes    []string            `json:"rel_types"`    // 所有关系类型
-	Connections []RelTypeConnection `json:"connections"`  // 关系类型的端点连通信息
+	NodeShapes         []NodeShapeDTO         `json:"node_shapes"`         // 所有节点形状
+	RelationshipShapes []RelationshipShapeDTO `json:"relationship_shapes"` // 所有关系形状
 }
 
 // GraphStats 图谱统计信息

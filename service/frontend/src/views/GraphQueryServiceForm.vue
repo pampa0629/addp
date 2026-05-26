@@ -17,12 +17,12 @@
       <el-card>
         <template #header><span>{{ t('service.graph.selectConfigType') }}</span></template>
         <el-radio-group v-model="form.config_type" class="config-radio-group">
-          <div class="config-card" :class="{ selected: form.config_type === 'label' }" @click="form.config_type = 'label'">
-            <el-radio value="label">
+          <div class="config-card" :class="{ selected: form.config_type === 'shape' }" @click="form.config_type = 'shape'">
+            <el-radio value="shape">
               <div class="config-content">
-                <h3>{{ t('service.graph.labelModeTitle') }}</h3>
-                <p>{{ t('service.graph.labelModeDesc') }}</p>
-                <p class="tips">{{ t('service.graph.labelModeTips') }}</p>
+                <h3>{{ t('service.graph.shapeModeTitle') }}</h3>
+                <p>{{ t('service.graph.shapeModeDesc') }}</p>
+                <p class="tips">{{ t('service.graph.shapeModeTips') }}</p>
               </div>
             </el-radio>
           </div>
@@ -56,26 +56,31 @@
             <el-input v-model="form.database_name" :placeholder="t('service.graph.databaseNamePlaceholder')" style="width: 200px" />
           </el-form-item>
 
-          <!-- Label 模式 -->
-          <template v-if="form.config_type === 'label'">
+          <!-- Node Shape 模式 -->
+          <template v-if="form.config_type === 'shape'">
             <el-divider content-position="left">{{ t('service.graph.nodeConfigTitle') }}</el-divider>
-            <el-form-item :label="t('service.graph.nodeLabelLabel')" required>
+            <el-form-item :label="t('service.graph.nodeShapeLabel')" required>
               <el-select
-                v-model="form.node_label"
-                :placeholder="t('service.graph.nodeLabelPlaceholder')"
+                v-model="form.node_shape"
+                :placeholder="t('service.graph.nodeShapePlaceholder')"
                 style="width: 240px"
-                :loading="labelsLoading"
+                :loading="shapesLoading"
                 :disabled="!form.engine_id"
                 filterable
-                allow-create
+                @change="handleNodeShapeChange"
               >
-                <el-option v-for="label in nodeLabels" :key="label" :label="label" :value="label" />
+                <el-option
+                  v-for="shape in nodeShapes"
+                  :key="shape.name"
+                  :label="graphShapeLabel(shape)"
+                  :value="shape.name"
+                />
               </el-select>
-              <el-button link @click="loadNodeLabels" :disabled="!form.engine_id" style="margin-left: 8px">{{ t('service.common.refresh') }}</el-button>
-              <span class="form-hint" style="display:block;margin-top:4px">{{ t('service.graph.nodeLabelHelp') }}</span>
+              <el-button link @click="loadNodeShapes" :disabled="!form.engine_id" style="margin-left: 8px">{{ t('service.common.refresh') }}</el-button>
+              <span class="form-hint" style="display:block;margin-top:4px">{{ t('service.graph.nodeShapeHelp') }}</span>
             </el-form-item>
             <el-form-item :label="t('service.graph.returnPropertiesLabel')">
-              <el-input v-model="labelPropertiesInput" :placeholder="t('service.graph.returnPropertiesPlaceholder')" style="width: 100%" />
+              <el-input v-model="shapePropertiesInput" :placeholder="t('service.graph.returnPropertiesPlaceholder')" style="width: 100%" />
               <span class="form-hint">{{ t('service.graph.returnPropertiesHelp') }}</span>
             </el-form-item>
             <el-form-item :label="t('service.graph.filterablePropertiesLabel')">
@@ -192,9 +197,9 @@ const step = ref(0)
 const loading = ref(false)
 const saving = ref(false)
 const enginesLoading = ref(false)
-const labelsLoading = ref(false)
+const shapesLoading = ref(false)
 const neo4jEngines = ref([])
-const nodeLabels = ref([])
+const nodeShapes = ref([])
 const formRef = ref(null)
 
 const form = ref({
@@ -204,8 +209,9 @@ const form = ref({
   keywords: [],
   engine_id: null,
   database_name: '',
-  config_type: 'label',
-  node_label: '',
+  config_type: 'shape',
+  node_shape: '',
+  node_labels: [],
   cypher_query: '',
   public_access: false,
   max_records: 500,
@@ -214,7 +220,7 @@ const form = ref({
 })
 
 // 辅助输入字段
-const labelPropertiesInput = ref('')
+const shapePropertiesInput = ref('')
 const filterablePropertiesInput = ref('')
 const cypherResultType = ref('table')
 const keywordsInput = ref('')
@@ -250,22 +256,41 @@ const loadEngines = async () => {
   }
 }
 
-const loadNodeLabels = async () => {
+const loadNodeShapes = async () => {
   if (!form.value.engine_id) return
-  labelsLoading.value = true
+  shapesLoading.value = true
   try {
-    nodeLabels.value = await graphApi.getNodeLabels(form.value.engine_id, form.value.database_name || 'neo4j')
+    nodeShapes.value = await graphApi.getNodeShapes(form.value.engine_id, form.value.database_name || 'neo4j')
+    if (form.value.node_shape) handleNodeShapeChange(form.value.node_shape, false)
   } catch {
-    nodeLabels.value = []
+    nodeShapes.value = []
   } finally {
-    labelsLoading.value = false
+    shapesLoading.value = false
   }
 }
 
-// 切换引擎时自动加载节点标签
+const graphShapeLabel = (shape) => {
+  if (!shape) return ''
+  const labels = Array.isArray(shape.labels) && shape.labels.length ? `:${shape.labels.join(':')}` : ''
+  const count = shape.count != null ? ` (${shape.count})` : ''
+  return `${shape.name || labels || '-'}${labels && labels !== `:${shape.name}` ? ` ${labels}` : ''}${count}`
+}
+
+const handleNodeShapeChange = (shapeName, fillProperties = true) => {
+  const shape = nodeShapes.value.find(item => item.name === shapeName)
+  form.value.node_shape = shapeName || ''
+  form.value.node_labels = Array.isArray(shape?.labels) ? [...shape.labels] : []
+  if (fillProperties && Array.isArray(shape?.properties) && shape.properties.length) {
+    const props = shape.properties.map(prop => prop.name).filter(Boolean)
+    shapePropertiesInput.value = props.join(', ')
+    filterablePropertiesInput.value = props.join(', ')
+  }
+}
+
+// 切换引擎时自动加载节点形状
 watch(() => form.value.engine_id, (newId) => {
-  if (newId && form.value.config_type === 'label') {
-    loadNodeLabels()
+  if (newId && form.value.config_type === 'shape') {
+    loadNodeShapes()
   }
 })
 
@@ -277,7 +302,7 @@ const nextStep = async () => {
   }
   if (step.value === 1) {
     if (!form.value.engine_id) { ElMessage.warning(t('service.graph.selectEngineWarning')); return }
-    if (form.value.config_type === 'label' && !form.value.node_label) { ElMessage.warning(t('service.graph.selectNodeLabelWarning')); return }
+    if (form.value.config_type === 'shape' && !form.value.node_shape) { ElMessage.warning(t('service.graph.selectNodeShapeWarning')); return }
     if (form.value.config_type === 'cypher' && !form.value.cypher_query) { ElMessage.warning(t('service.graph.enterCypherWarning')); return }
     step.value = 2
   }
@@ -285,8 +310,9 @@ const nextStep = async () => {
 
 const buildPayload = () => {
   const data_config = {}
-  if (form.value.config_type === 'label') {
-    const props = labelPropertiesInput.value.split(',').map(s => s.trim()).filter(Boolean)
+  if (form.value.config_type === 'shape') {
+    handleNodeShapeChange(form.value.node_shape, false)
+    const props = shapePropertiesInput.value.split(',').map(s => s.trim()).filter(Boolean)
     const filterable = filterablePropertiesInput.value.split(',').map(s => s.trim()).filter(Boolean)
     if (props.length) data_config.properties = props
     if (filterable.length) data_config.filterable_properties = filterable
@@ -346,9 +372,9 @@ onMounted(async () => {
       const data = await graphApi.getService(id)
       Object.assign(form.value, data)
       keywordsInput.value = (data.keywords || []).join(', ')
-      if (data.config_type === 'label') {
+      if (data.config_type === 'shape') {
         const dc = data.data_config || {}
-        labelPropertiesInput.value = (dc.properties || []).join(', ')
+        shapePropertiesInput.value = (dc.properties || []).join(', ')
         filterablePropertiesInput.value = (dc.filterable_properties || []).join(', ')
       } else {
         cypherResultType.value = data.data_config?.result_type || 'table'

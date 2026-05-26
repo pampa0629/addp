@@ -490,18 +490,17 @@ Meta 默认只做父容器识别和一层 children 轻量索引，不递归扫�
 - stream child：返回 child 自己的 `Reader` / `Ref`，例如 ZIP entry、目录文件；后续按 child 的 `data_type` / `format` 调对应 reader。
 - native child：复用父资源和 child 定位 options，例如 SQLite table、Excel sheet、GeoPackage layer；后续按父格式的 table reader 读取指定 child。
 
-### GraphInfoProvider / GraphSampleReader
+### GraphMetadataProvider / GraphSampleProvider
 
-`GraphInfoProvider` 和 `GraphSampleReader` 面向图数据库查询结果、图结构抽样、节点-关系模型等图型 data item。
+`GraphMetadataProvider` 和 `GraphSampleProvider` 面向引擎原生图的结构描述和轻量样本。图结构事实进入 `datatype.GraphInfo`，图样本只用于预览或浏览，不作为 Meta 主事实源。
 
 它提供：
 
-- 节点样本。
-- 关系样本。
-- 图统计信息。
-- 可选的图查询结果归一结构。
+- 节点形状、关系形状、连接模式和图统计信息。
+- 轻量节点样本。
+- 轻量关系样本。
 
-它不直接包装某个前端图组件 DTO。
+它不直接包装某个前端图组件 DTO，也不替代 `GraphQueryProvider` 的图查询结果能力。
 
 ## Provider 输入边界
 

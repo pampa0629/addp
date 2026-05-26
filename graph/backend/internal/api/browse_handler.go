@@ -20,7 +20,7 @@ func NewBrowseHandler(neo4jSvc *service.Neo4jService, schemaInference *service.S
 
 // GetSchema godoc
 // @Summary      图谱 Schema | Get graph schema
-// @Description  获取知识图谱的节点标签和关系类型 Schema | Get node labels and relation type schema of a knowledge graph
+// @Description  获取知识图谱的节点形状、关系形状和连接模式 Schema | Get node shape, relationship shape and pattern schema of a knowledge graph
 // @Tags         图谱浏览 | Graph Browse
 // @Produce      json
 // @Security     BearerAuth

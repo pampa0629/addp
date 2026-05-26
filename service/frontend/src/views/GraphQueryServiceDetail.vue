@@ -17,8 +17,8 @@
           <el-descriptions-item :label="t('service.graph.serviceNameLabel')">{{ service.service_name }}</el-descriptions-item>
           <el-descriptions-item :label="t('service.graph.titleLabel')">{{ service.title }}</el-descriptions-item>
           <el-descriptions-item :label="t('service.graph.colConfigType')">
-            <el-tag :type="service.config_type === 'label' ? 'success' : 'warning'">
-              {{ service.config_type === 'label' ? t('service.graph.labelMode') : t('service.graph.cypherMode') }}
+            <el-tag :type="service.config_type === 'shape' ? 'success' : 'warning'">
+              {{ service.config_type === 'shape' ? t('service.graph.shapeMode') : t('service.graph.cypherMode') }}
             </el-tag>
           </el-descriptions-item>
           <el-descriptions-item :label="t('service.graph.colAccess')">
@@ -38,11 +38,14 @@
       <!-- 配置详情 -->
       <el-card class="info-card">
         <template #header>
-          <span>{{ service.config_type === 'label' ? t('service.graph.nodeConfigTitle') : t('service.graph.cypherConfigTitle') }}</span>
+          <span>{{ service.config_type === 'shape' ? t('service.graph.nodeConfigTitle') : t('service.graph.cypherConfigTitle') }}</span>
         </template>
-        <el-descriptions v-if="service.config_type === 'label'" :column="1" border>
-          <el-descriptions-item :label="t('service.graph.nodeLabelLabel')">
-            <code>{{ service.node_label }}</code>
+        <el-descriptions v-if="service.config_type === 'shape'" :column="1" border>
+          <el-descriptions-item :label="t('service.graph.nodeShapeLabel')">
+            <code>{{ service.node_shape }}</code>
+          </el-descriptions-item>
+          <el-descriptions-item v-if="service.node_labels?.length" :label="t('service.graph.nodeLabelsLabel')">
+            {{ service.node_labels.join(', ') }}
           </el-descriptions-item>
           <el-descriptions-item v-if="service.data_config?.properties?.length" :label="t('service.graph.returnPropertiesLabel')">
             {{ service.data_config.properties.join(', ') }}
@@ -100,7 +103,7 @@
             </el-form-item>
           </el-form>
         </div>
-        <div v-if="service.config_type === 'label' && service.data_config?.filterable_properties?.length">
+        <div v-if="service.config_type === 'shape' && service.data_config?.filterable_properties?.length">
           <el-form label-width="120px" style="margin-bottom:16px">
             <el-form-item v-for="prop in service.data_config.filterable_properties" :key="prop" :label="prop">
               <el-input v-model="testParams[prop]" :placeholder="t('service.graph.filterPlaceholder', { prop })" style="width:300px" />

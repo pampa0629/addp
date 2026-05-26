@@ -82,7 +82,8 @@ mindmap
         DocumentTextReader
         MediaInfoProvider
         ContainerChildResolver
-        GraphSampleReader
+        GraphMetadataProvider
+        GraphSampleProvider
         Spatial 横切能力
     数据开发
       开发方式（capabilities.compute）

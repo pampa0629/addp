@@ -286,23 +286,22 @@ POST /api/v1/graph/ontologies/:id/infer-schema/from-engine/apply    // 应用到
 Body: {
   "engine_id": 1,
   "entity_type_names": ["Person","Company"],
-  "relation_type_names": ["WORKS_AT"],
+  "relation_type_keys": ["WORKS_AT|Person|Company"],
   "conflict": "skip"
 }
 ```
 
 **推导 Cypher**（`schema_inference_service.go` 的 `inferWithEngine`）：
 ```cypher
--- 获取所有标签
-CALL db.labels() YIELD label RETURN label ORDER BY label
+-- 获取所有节点形状
+MATCH (n) RETURN labels(n) AS labels, count(n) AS cnt ORDER BY cnt DESC LIMIT 500
 
--- 对每个标签采样节点数和属性 key
-MATCH (n:`Person`) RETURN count(n) AS cnt
+-- 对每个节点形状采样属性 key
 MATCH (n:`Person`) UNWIND keys(n) AS k RETURN DISTINCT k LIMIT 1000
 
--- 提取关系模式（来源标签 + 关系类型 + 目标标签）
+-- 提取关系模式（来源节点形状 + 关系类型 + 目标节点形状）
 MATCH (a)-[r]->(b)
-RETURN DISTINCT labels(a)[0] AS src, type(r) AS rel, labels(b)[0] AS tgt, count(r) AS cnt
+RETURN labels(a) AS src, type(r) AS rel, labels(b) AS tgt, count(r) AS cnt
 LIMIT 500
 ```
 
@@ -312,11 +311,11 @@ LIMIT 500
 [Engine A ▼]  [开始推导]
 
 第二步：推导结果预览
-发现 5 个实体类型，12 种关系类型
+发现 5 个节点形状，12 个关系模式
 ┌──────────────────────────────────────────────────────┐
-│ 实体类型：☑ Person (新增) count=1203 props: name/age │
+│ 节点形状：☑ Person (新增) count=1203 props: name/age │
 │          ☐ Company (已存在)                          │
-│ 关系类型：☑ WORKS_AT Person→Company (新增)           │
+│ 关系模式：☑ WORKS_AT Person→Company (新增)           │
 └──────────────────────────────────────────────────────┘
 冲突策略：○ 跳过已存在  ○ 覆盖已存在
 [应用选中项 (1实体 + 1关系)]
@@ -401,5 +400,5 @@ type ConstraintDefinition struct {
 2. 在"图形视图"Tab 中可看到实体类型节点（带颜色）、关系类型有向边和继承虚线边
 3. 为属性设置唯一后点击"同步约束"，在 Neo4j 执行 `SHOW CONSTRAINTS` 可见对应约束（格式：`graph_{id}_{type}_{field}_unique`）
 4. 从 Model 模块选择 2 个实体导入，本体中出现对应实体类型（含属性映射正确）
-5. 对有数据的 Neo4j 图谱执行推导（F5a），展示标签和关系类型预览，选择后应用成功
+5. 对有数据的 Neo4j 图谱执行推导（F5a），展示节点形状和关系模式预览，选择后应用成功
 6. 在本体详情页点击"从 Neo4j 推导"（F5b），直接选择已注册的 Neo4j 引擎，无需图谱即可完成本体推导和应用

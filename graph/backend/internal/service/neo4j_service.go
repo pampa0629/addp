@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	commonClient "github.com/addp/common/client"
@@ -55,7 +56,7 @@ func (s *Neo4jService) getGraphAndEngine(graphID, tenantID uint) (*models.Knowle
 	return kg, &engineCopy, nil
 }
 
-// buildColorMaps 从本体中构建 label→颜色 和 relType→颜色 的映射
+// buildColorMaps 从本体中构建 node shape→颜色 和 relType→颜色 的映射
 func (s *Neo4jService) buildColorMaps(ontologyID, tenantID uint) (nodeColors, edgeColors map[string]string) {
 	nodeColors = make(map[string]string)
 	edgeColors = make(map[string]string)
@@ -76,65 +77,72 @@ func (s *Neo4jService) buildColorMaps(ontologyID, tenantID uint) (nodeColors, ed
 	return
 }
 
-// GetSchema 获取图谱的 Schema（节点标签 + 关系类型）
+// GetSchema 获取图谱的 Schema（节点形状 + 关系类型）
 func (s *Neo4jService) GetSchema(ctx context.Context, graphID, tenantID uint) (*models.BrowseSchema, error) {
 	_, engine, err := s.getGraphAndEngine(graphID, tenantID)
 	if err != nil {
 		return nil, err
 	}
 
-	labelsResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-		"CALL db.labels() YIELD label RETURN label ORDER BY label")
+	nodeShapeResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
+		"MATCH (n) RETURN labels(n) AS labels, count(n) AS cnt ORDER BY cnt DESC LIMIT 500")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get labels: %w", err)
+		return nil, fmt.Errorf("failed to get node shapes: %w", err)
 	}
-	labels := make([]string, 0, len(labelsResult.Rows))
-	for _, row := range labelsResult.Rows {
-		if v, ok := row["label"]; ok {
-			labels = append(labels, fmt.Sprintf("%v", v))
+	nodeShapes := make([]models.NodeShapeDTO, 0, len(nodeShapeResult.Rows))
+	for _, row := range nodeShapeResult.Rows {
+		labels := interfaceToStringSlice(row["labels"])
+		if len(labels) == 0 {
+			continue
 		}
+		count := toInt64(row["cnt"])
+		nodeShapes = append(nodeShapes, models.NodeShapeDTO{
+			Name:   endpointShapeName(labels),
+			Kind:   "label_set",
+			Labels: labels,
+			Count:  &count,
+		})
 	}
 
 	relResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-		"CALL db.relationshipTypes() YIELD relationshipType RETURN relationshipType ORDER BY relationshipType")
+		`MATCH (a)-[r]->(b)
+		WITH type(r) AS relType, labels(a) AS fromLabels, labels(b) AS toLabels, count(r) AS cnt
+		WHERE NOT (relType IN `+internalRelationshipTypeList+`)
+		RETURN relType, fromLabels, toLabels, cnt
+		ORDER BY relType, cnt DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get relationship types: %w", err)
 	}
-	relTypes := make([]string, 0, len(relResult.Rows))
+	relationshipShapes := make([]models.RelationshipShapeDTO, 0)
+	relationshipShapeByType := make(map[string]int)
 	for _, row := range relResult.Rows {
-		if v, ok := row["relationshipType"]; ok {
-			relType := fmt.Sprintf("%v", v)
-			if isInternalRelationshipType(relType) {
-				continue
-			}
-			relTypes = append(relTypes, relType)
+		relType := fmt.Sprintf("%v", row["relType"])
+		if relType == "" || relType == "<nil>" || isInternalRelationshipType(relType) {
+			continue
+		}
+		index, ok := relationshipShapeByType[relType]
+		if !ok {
+			index = len(relationshipShapes)
+			relationshipShapes = append(relationshipShapes, models.RelationshipShapeDTO{Type: relType})
+			relationshipShapeByType[relType] = index
+		}
+		count := toInt64(row["cnt"])
+		relationshipShapes[index].Count = addInt64Ptr(relationshipShapes[index].Count, count)
+		fromLabels := interfaceToStringSlice(row["fromLabels"])
+		toLabels := interfaceToStringSlice(row["toLabels"])
+		if len(fromLabels) > 0 || len(toLabels) > 0 {
+			relationshipShapes[index].Patterns = append(relationshipShapes[index].Patterns, models.RelationshipPatternDTO{
+				From:  models.GraphEndpointDTO{ShapeName: endpointShapeName(fromLabels), Labels: fromLabels},
+				To:    models.GraphEndpointDTO{ShapeName: endpointShapeName(toLabels), Labels: toLabels},
+				Count: &count,
+			})
 		}
 	}
 
-	// 查询关系类型的端点标签连通信息
-	connResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-		`MATCH (a)-[r]->(b)
-		WITH type(r) AS relType, labels(a)[0] AS srcLabel, labels(b)[0] AS tgtLabel
-		WHERE NOT (relType IN `+internalRelationshipTypeList+`)
-		RETURN DISTINCT relType, srcLabel, tgtLabel
-		ORDER BY relType, srcLabel, tgtLabel`)
-	connections := make([]models.RelTypeConnection, 0)
-	if err == nil {
-		for _, row := range connResult.Rows {
-			rt := fmt.Sprintf("%v", row["relType"])
-			src := fmt.Sprintf("%v", row["srcLabel"])
-			tgt := fmt.Sprintf("%v", row["tgtLabel"])
-			if rt != "" && src != "<nil>" && tgt != "<nil>" {
-				connections = append(connections, models.RelTypeConnection{
-					RelType:     rt,
-					SourceLabel: src,
-					TargetLabel: tgt,
-				})
-			}
-		}
-	}
-
-	return &models.BrowseSchema{Labels: labels, RelTypes: relTypes, Connections: connections}, nil
+	return &models.BrowseSchema{
+		NodeShapes:         nodeShapes,
+		RelationshipShapes: relationshipShapes,
+	}, nil
 }
 
 // GetStats 获取图谱统计（总节点数、总关系数、按标签分组节点数）
@@ -337,10 +345,13 @@ func buildSubgraph(result *plugin.GraphQueryResult, nodeColors, edgeColors map[s
 			Color:      "#5B8FF9", // default
 			Properties: n.Properties,
 		}
-		// 取第一个 label 的显示名作为节点标签
+		// 优先使用完整 label set 对应的 node shape，单 label 作为兼容兜底。
 		if len(n.Labels) > 0 {
-			dto.EntityType = n.Labels[0]
-			if color, ok := nodeColors[n.Labels[0]]; ok {
+			shapeName := endpointShapeName(n.Labels)
+			dto.EntityType = shapeName
+			if color, ok := nodeColors[shapeName]; ok {
+				dto.Color = color
+			} else if color, ok := nodeColors[n.Labels[0]]; ok {
 				dto.Color = color
 			}
 		}
@@ -385,6 +396,11 @@ func escapeCypher(s string) string {
 	return s
 }
 
+// escapeCypherIdentifier 转义 Cypher label/type/property 标识符中的反引号。
+func escapeCypherIdentifier(s string) string {
+	return strings.ReplaceAll(s, "`", "``")
+}
+
 // toInt64 将 interface{} 转换为 int64
 func toInt64(v interface{}) int64 {
 	switch n := v.(type) {
@@ -396,6 +412,41 @@ func toInt64(v interface{}) int64 {
 		return int64(n)
 	}
 	return 0
+}
+
+func interfaceToStringSlice(value interface{}) []string {
+	switch values := value.(type) {
+	case []string:
+		return append([]string(nil), values...)
+	case []interface{}:
+		result := make([]string, 0, len(values))
+		for _, value := range values {
+			if str, ok := value.(string); ok && str != "" {
+				result = append(result, str)
+			}
+		}
+		return result
+	default:
+		return nil
+	}
+}
+
+func endpointShapeName(labels []string) string {
+	if len(labels) == 0 {
+		return ""
+	}
+	normalized := append([]string(nil), labels...)
+	sort.Strings(normalized)
+	return strings.Join(normalized, "+")
+}
+
+func addInt64Ptr(value *int64, delta int64) *int64 {
+	if value == nil {
+		result := delta
+		return &result
+	}
+	*value += delta
+	return value
 }
 
 // cypherValue 将 Go 值序列化为 Cypher 字面量

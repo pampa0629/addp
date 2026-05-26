@@ -13,17 +13,18 @@ CREATE TABLE IF NOT EXISTS service.graph_query_services (
     engine_id       BIGINT NOT NULL,
     database_name   VARCHAR(255) NOT NULL DEFAULT 'neo4j',
 
-    -- 配置类型: 'label'（节点标签向导）| 'cypher'（手写参数化查询）
+    -- 配置类型: 'shape'（节点形状向导）| 'cypher'（手写参数化查询）
     config_type     VARCHAR(50) NOT NULL,
 
-    -- label 模式：选择节点标签
-    node_label      VARCHAR(255),
+    -- shape 模式：选择节点形状，并保存其对应标签集合
+    node_shape      VARCHAR(255),
+    node_labels     TEXT[],
 
     -- cypher 模式：手写参数化 Cypher
     cypher_query    TEXT,
 
     -- 数据配置（同时存储参数定义和模式特定配置）
-    -- label 模式: {
+    -- shape 模式: {
     --   "properties":["id","name","age"],
     --   "filterable_properties":["name","age"]
     -- }
@@ -47,7 +48,7 @@ CREATE TABLE IF NOT EXISTS service.graph_query_services (
     updated_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
 
     CONSTRAINT unique_graph_service_name UNIQUE (tenant_id, service_name),
-    CONSTRAINT chk_graph_config_type CHECK (config_type IN ('label', 'cypher')),
+    CONSTRAINT chk_graph_config_type CHECK (config_type IN ('shape', 'cypher')),
     CONSTRAINT chk_graph_status CHECK (status IN ('active', 'inactive', 'error'))
 );
 

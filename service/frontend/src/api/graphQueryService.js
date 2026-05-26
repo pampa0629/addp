@@ -40,13 +40,12 @@ export default {
     })
   },
 
-  // 获取 Neo4j 引擎的节点标签列表（通过 meta 模块）
-  getNodeLabels(engineId, database = 'neo4j') {
-    return client.get(`/meta/engines/${engineId}/items`, {
-      params: { namespace: database }
+  // 获取 graph item 的节点形状列表（通过 service 后端代理读取 meta type_info.graph）
+  getNodeShapes(engineId, database = 'neo4j') {
+    return client.get('/service/graphs/node-shapes', {
+      params: { engine_id: engineId, database }
     }).then(res => {
-      const items = Array.isArray(res) ? res : (res?.items || res?.data || [])
-      return items.map(t => (typeof t === 'string' ? t : t.name || t))
+      return Array.isArray(res) ? res : (res?.data || res?.items || [])
     })
   }
 }

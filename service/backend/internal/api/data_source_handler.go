@@ -8,11 +8,31 @@ import (
 
 	"github.com/addp/common/catalogview"
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/models"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
+
+type graphNodeShapeOption struct {
+	Name       string               `json:"name"`
+	Kind       string               `json:"kind,omitempty"`
+	Labels     []string             `json:"labels,omitempty"`
+	Count      *int64               `json:"count,omitempty"`
+	Properties []datatype.FieldInfo `json:"properties,omitempty"`
+}
+
+func authTokenFromContext(c *gin.Context) string {
+	authToken := c.GetString("jwt_token")
+	if authToken != "" {
+		return authToken
+	}
+	if header := c.GetHeader("Authorization"); len(header) > 7 && header[:7] == "Bearer " {
+		return header[7:]
+	}
+	return ""
+}
 
 // DataSourceHandler 处理数据源相关的代理请求
 // 为 Service 前端提供统一的数据源访问接口，内部调用 System 和 Meta 模块
@@ -202,6 +222,62 @@ func (h *DataSourceHandler) GetNodeChildren(c *gin.Context) {
 
 	// 根据 API 规范：查询列表（无分页）直接返回数组
 	c.JSON(http.StatusOK, treeNodes)
+}
+
+// GetGraphNodeShapes 获取 graph item 的节点形状列表。
+// @Summary 获取图节点形状 | Get graph node shapes
+// @Tags 数据源 | Data Sources
+// @Produce json
+// @Param engine_id query int true "引擎ID | Engine ID"
+// @Param database query string false "数据库名 | Database name"
+// @Success 200 {array} graphNodeShapeOption
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /graphs/node-shapes [get]
+// @Security BearerAuth
+func (h *DataSourceHandler) GetGraphNodeShapes(c *gin.Context) {
+	engineIDStr := c.Query("engine_id")
+	if engineIDStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing engine_id parameter"})
+		return
+	}
+
+	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid engine_id"})
+		return
+	}
+
+	database := c.Query("database")
+	if database == "" {
+		database = "neo4j"
+	}
+
+	metaClient := commonClient.NewMetaClient(h.metaBaseURL, authTokenFromContext(c))
+	item, err := metaClient.GetItemByCatalogPath(uint(engineID), fmt.Sprintf("%s.graph", database))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get graph item: " + err.Error()})
+		return
+	}
+
+	graphInfo := datatype.GraphInfoFromAttributes(item.Attributes)
+	if graphInfo == nil {
+		c.JSON(http.StatusOK, []graphNodeShapeOption{})
+		return
+	}
+
+	shapes := make([]graphNodeShapeOption, 0, len(graphInfo.NodeShapes))
+	for _, shape := range graphInfo.NodeShapes {
+		shapes = append(shapes, graphNodeShapeOption{
+			Name:       shape.Name,
+			Kind:       shape.Kind,
+			Labels:     append([]string(nil), shape.Labels...),
+			Count:      shape.Count,
+			Properties: append([]datatype.FieldInfo(nil), shape.Properties...),
+		})
+	}
+
+	c.JSON(http.StatusOK, shapes)
 }
 
 // GetTableMetadata 获取表的元数据（用于检测几何列）

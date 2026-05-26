@@ -63,11 +63,11 @@
           @selection-change="handleEntitySelectionChange"
           ref="entityTableRef"
           max-height="220"
-          row-key="label"
+          row-key="name"
           size="small"
         >
           <el-table-column type="selection" width="50" />
-          <el-table-column :label="t('graph.inferFromEngine.labelName')" prop="label" min-width="120" />
+          <el-table-column :label="t('graph.inferFromEngine.labelName')" prop="name" min-width="120" />
           <el-table-column :label="t('graph.inferFromEngine.nodeCount')" prop="count" min-width="80" />
           <el-table-column :label="t('graph.inferFromEngine.sampledProps')" min-width="200">
             <template #default="{ row }">
@@ -97,13 +97,13 @@
           @selection-change="handleRelationSelectionChange"
           ref="relationTableRef"
           max-height="180"
-          row-key="name"
+          row-key="key"
           size="small"
         >
           <el-table-column type="selection" width="50" />
           <el-table-column :label="t('graph.inferFromEngine.relType')" prop="name" min-width="140" />
-          <el-table-column :label="t('graph.inferFromEngine.source')" prop="source_label" min-width="100" />
-          <el-table-column :label="t('graph.inferFromEngine.target')" prop="target_label" min-width="100" />
+          <el-table-column :label="t('graph.inferFromEngine.source')" prop="source_shape_name" min-width="100" />
+          <el-table-column :label="t('graph.inferFromEngine.target')" prop="target_shape_name" min-width="100" />
           <el-table-column :label="t('graph.inferFromEngine.count')" prop="count" min-width="80" />
           <el-table-column :label="t('graph.inferFromEngine.status')" min-width="90">
             <template #default="{ row }">
@@ -132,7 +132,7 @@
         :disabled="!canApply"
         @click="handleApply"
       >
-        {{ t('graph.inferFromEngine.applyBtn', { entities: selectedEntityLabels.length, relations: selectedRelationNames.length }) }}
+        {{ t('graph.inferFromEngine.applyBtn', { entities: selectedEntityNames.length, relations: selectedRelationKeys.length }) }}
       </el-button>
     </template>
   </el-dialog>
@@ -160,13 +160,13 @@ const engines = ref([])
 const selectedEngineId = ref(null)
 const preview = ref(null)
 const conflict = ref('skip')
-const selectedEntityLabels = ref([])
-const selectedRelationNames = ref([])
+const selectedEntityNames = ref([])
+const selectedRelationKeys = ref([])
 const entityTableRef = ref(null)
 const relationTableRef = ref(null)
 
 const canApply = computed(() =>
-  selectedEntityLabels.value.length > 0 || selectedRelationNames.value.length > 0
+  selectedEntityNames.value.length > 0 || selectedRelationKeys.value.length > 0
 )
 
 function open() {
@@ -176,8 +176,8 @@ function open() {
 async function handleOpen() {
   preview.value = null
   selectedEngineId.value = null
-  selectedEntityLabels.value = []
-  selectedRelationNames.value = []
+  selectedEntityNames.value = []
+  selectedRelationKeys.value = []
   loadingEngines.value = true
   try {
     const res = await ontologyAPI.listNeo4jEngines()
@@ -192,8 +192,8 @@ async function handleOpen() {
 async function runInference() {
   loading.value = true
   preview.value = null
-  selectedEntityLabels.value = []
-  selectedRelationNames.value = []
+  selectedEntityNames.value = []
+  selectedRelationKeys.value = []
   try {
     preview.value = await ontologyAPI.inferSchemaFromEngine(selectedEngineId.value, props.ontologyId)
   } catch (e) {
@@ -205,16 +205,16 @@ async function runInference() {
 
 function resetPreview() {
   preview.value = null
-  selectedEntityLabels.value = []
-  selectedRelationNames.value = []
+  selectedEntityNames.value = []
+  selectedRelationKeys.value = []
 }
 
 function handleEntitySelectionChange(rows) {
-  selectedEntityLabels.value = rows.map(r => r.label)
+  selectedEntityNames.value = rows.map(r => r.name)
 }
 
 function handleRelationSelectionChange(rows) {
-  selectedRelationNames.value = rows.map(r => r.name)
+  selectedRelationKeys.value = rows.map(r => r.key)
 }
 
 async function handleApply() {
@@ -222,8 +222,8 @@ async function handleApply() {
   try {
     const result = await ontologyAPI.applyInferredSchemaFromEngine(props.ontologyId, {
       engine_id: selectedEngineId.value,
-      entity_type_names: selectedEntityLabels.value,
-      relation_type_names: selectedRelationNames.value,
+      entity_type_names: selectedEntityNames.value,
+      relation_type_keys: selectedRelationKeys.value,
       conflict: conflict.value
     })
     const msg = t('graph.inferFromEngine.applySuccess', { created: result.created, updated: result.updated, skipped: result.skipped })

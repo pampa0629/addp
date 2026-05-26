@@ -107,9 +107,9 @@
             <el-form-item :label="t('graph.analysis.resultCount')">
               <el-input-number v-model="params.limit" :min="5" :max="200" style="width:100%" />
             </el-form-item>
-            <el-form-item :label="t('graph.analysis.entityType')">
-              <el-select v-model="params.nodeLabels" multiple :placeholder="t('graph.analysis.allTypes')" style="width:100%">
-                <el-option v-for="l in schema.labels" :key="l" :label="l" :value="l" />
+            <el-form-item :label="t('graph.analysis.nodeShape')">
+              <el-select v-model="params.nodeShapes" multiple :placeholder="t('graph.analysis.allNodeShapes')" style="width:100%">
+                <el-option v-for="shape in nodeShapes" :key="shape.name" :label="shape.name" :value="shape.name" />
               </el-select>
             </el-form-item>
           </el-form>
@@ -208,19 +208,19 @@
             <el-form-item :label="t('graph.analysis.resultCount')">
               <el-input-number v-model="params.limit" :min="5" :max="200" style="width:100%" />
             </el-form-item>
-            <el-form-item :label="t('graph.analysis.entityType')">
-              <el-select v-model="params.nodeLabels" multiple :placeholder="t('graph.analysis.allTypes')" style="width:100%">
-                <el-option v-for="l in schema.labels" :key="l" :label="l" :value="l" />
+            <el-form-item :label="t('graph.analysis.nodeShape')">
+              <el-select v-model="params.nodeShapes" multiple :placeholder="t('graph.analysis.allNodeShapes')" style="width:100%">
+                <el-option v-for="shape in nodeShapes" :key="shape.name" :label="shape.name" :value="shape.name" />
               </el-select>
             </el-form-item>
             <el-form-item :label="t('graph.analysis.relationType')">
               <el-select v-model="params.relTypes" multiple :placeholder="t('graph.analysis.allRelations')" style="width:100%">
                 <el-option v-for="r in availableRelTypes" :key="r" :label="r" :value="r" />
               </el-select>
-              <div v-if="params.nodeLabels.length > 0 && availableRelTypes.length === 0" style="font-size:11px;color:var(--el-color-warning);margin-top:4px">
+              <div v-if="params.nodeShapes.length > 0 && availableRelTypes.length === 0" style="font-size:11px;color:var(--el-color-warning);margin-top:4px">
                 {{ t('graph.analysis.noRelsBetweenTypes') }}
               </div>
-              <div v-else-if="params.nodeLabels.length > 0" style="font-size:11px;color:var(--el-text-color-secondary);margin-top:4px">
+              <div v-else-if="params.nodeShapes.length > 0" style="font-size:11px;color:var(--el-text-color-secondary);margin-top:4px">
                 {{ t('graph.analysis.filteredByNodeType') }}
               </div>
             </el-form-item>
@@ -421,26 +421,45 @@ const { t } = useI18n()
 const graphs = ref([])
 const selectedGraphId = ref(null)
 const capabilities = ref(null)
-const schema = ref({ labels: [], rel_types: [], connections: [] })
+const schema = ref({ node_shapes: [], relationship_shapes: [] })
 const syncing = ref(false)
 
 // 默认展开基础算法分组
 const openGroups = ref(['cypher'])
 
-// 根据已选节点类型动态过滤可用关系类型
+const nodeShapes = computed(() => {
+  return schema.value.node_shapes || []
+})
+
+const selectedNodeLabels = computed(() => {
+  if (!params.nodeShapes?.length) return []
+  const selected = new Set(params.nodeShapes)
+  return nodeShapes.value
+    .filter(shape => selected.has(shape.name))
+    .flatMap(shape => shape.labels?.length ? shape.labels : [shape.name])
+})
+
+const relationshipShapes = computed(() => schema.value.relationship_shapes || [])
+
+const relationshipTypes = computed(() => relationshipShapes.value.map(shape => shape.type).filter(Boolean))
+
+// 根据已选节点形状动态过滤可用关系类型
 const availableRelTypes = computed(() => {
-  const selected = params.nodeLabels
-  if (!selected || selected.length === 0) return schema.value.rel_types || []
-  const connections = schema.value.connections || []
-  if (connections.length === 0) return schema.value.rel_types || []
+  const selected = selectedNodeLabels.value
+  if (!selected || selected.length === 0) return relationshipTypes.value
+  if (relationshipShapes.value.length === 0) return relationshipTypes.value
   const selectedSet = new Set(selected)
   const validRelTypes = new Set()
-  for (const conn of connections) {
-    if (selectedSet.has(conn.source_label) && selectedSet.has(conn.target_label)) {
-      validRelTypes.add(conn.rel_type)
+  for (const shape of relationshipShapes.value) {
+    for (const pattern of shape.patterns || []) {
+      const fromLabels = pattern.from?.labels || []
+      const toLabels = pattern.to?.labels || []
+      if (fromLabels.some(label => selectedSet.has(label)) && toLabels.some(label => selectedSet.has(label))) {
+        validRelTypes.add(shape.type)
+      }
     }
   }
-  return (schema.value.rel_types || []).filter(r => validRelTypes.has(r))
+  return relationshipTypes.value.filter(r => validRelTypes.has(r))
 })
 
 // 面图层（WKT 几何类型）用于 within_area 的区域选择
@@ -465,7 +484,7 @@ const nodeSearch = reactive({
 
 const params = reactive({
   limit: 50,
-  nodeLabels: [],
+  nodeShapes: [],
   relTypes: [],
   nodeId: '',
   hops: 2,
@@ -606,7 +625,7 @@ const syncSpatialLayers = async () => {
 
 const onGraphChange = async (id) => {
   capabilities.value = null
-  schema.value = { labels: [], rel_types: [], connections: [] }
+  schema.value = { node_shapes: [], relationship_shapes: [] }
   result.value = null
   selectedAlgo.value = ''
   if (!id) return
@@ -632,7 +651,7 @@ const runAlgorithm = async () => {
   const req = {
     algorithm: selectedAlgo.value,
     limit: params.limit,
-    node_labels: params.nodeLabels,
+    node_labels: selectedNodeLabels.value,
     rel_types: params.relTypes,
     params: {},
   }
@@ -681,7 +700,7 @@ const runAlgorithm = async () => {
 
 watch(selectedAlgo, () => {
   params.limit = 50
-  params.nodeLabels = []
+  params.nodeShapes = []
   params.relTypes = []
   params.nodeId = ''
   params.hops = 2
@@ -699,8 +718,8 @@ watch(selectedAlgo, () => {
   nodeSearch.area = { loading: false, options: [] }
 })
 
-// 节点类型变化时，自动清除不再有效的关系类型选择
-watch(() => params.nodeLabels, () => {
+// 节点形状变化时，自动清除不再有效的关系类型选择
+watch(() => params.nodeShapes, () => {
   const valid = new Set(availableRelTypes.value)
   params.relTypes = params.relTypes.filter(r => valid.has(r))
 })

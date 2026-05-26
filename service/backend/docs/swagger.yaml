@@ -1,5 +1,80 @@
 basePath: /api/v1/service
 definitions:
+  datatype.FieldInfo:
+    properties:
+      comment:
+        type: string
+      default_expression:
+        type: string
+      generated:
+        type: boolean
+      generation_expression:
+        type: string
+      name:
+        type: string
+      native_type:
+        type: string
+      nullable:
+        type: boolean
+      ordinal_position:
+        type: integer
+      precision:
+        type: integer
+      primary_key:
+        type: boolean
+      scale:
+        type: integer
+      size:
+        type: integer
+      type:
+        $ref: '#/definitions/datatype.FieldType'
+    type: object
+  datatype.FieldType:
+    enum:
+    - unknown
+    - string
+    - bool
+    - bytes
+    - mixed
+    - int
+    - bigint
+    - float
+    - double
+    - decimal
+    - date
+    - time
+    - timestamp
+    - json
+    - array
+    - uuid
+    - geometry
+    - point
+    - linestring
+    - polygon
+    - multipoint
+    type: string
+    x-enum-varnames:
+    - FieldTypeUnknown
+    - FieldTypeString
+    - FieldTypeBool
+    - FieldTypeBytes
+    - FieldTypeMixed
+    - FieldTypeInt
+    - FieldTypeBigInt
+    - FieldTypeFloat
+    - FieldTypeDouble
+    - FieldTypeDecimal
+    - FieldTypeDate
+    - FieldTypeTime
+    - FieldTypeTimestamp
+    - FieldTypeJSON
+    - FieldTypeArray
+    - FieldTypeUUID
+    - FieldTypeGeometry
+    - FieldTypePoint
+    - FieldTypeLineString
+    - FieldTypePolygon
+    - FieldTypeMultiPoint
   encoding_xml.Name:
     properties:
       local:
@@ -90,7 +165,7 @@ definitions:
     properties:
       config_type:
         enum:
-        - label
+        - shape
         - cypher
         type: string
       cypher_query:
@@ -112,7 +187,11 @@ definitions:
         maximum: 5000
         minimum: 1
         type: integer
-      node_label:
+      node_labels:
+        items:
+          type: string
+        type: array
+      node_shape:
         type: string
       parameters:
         description: cypher 模式下的参数定义（可选，不传则自动从 Cypher 中提取）
@@ -344,7 +423,7 @@ definitions:
         additionalProperties: true
         description: |-
           Cypher 模式：用户提供的参数值（对应 $paramName 占位符）
-          Label 模式：用于过滤的属性条件（属性名 → 值）
+          Shape 模式：用于过滤的属性条件（属性名 → 值）
         type: object
     type: object
   github_com_addp_service_internal_models.GraphQueryResponse:
@@ -371,7 +450,7 @@ definitions:
         description: 通用
         type: integer
       total_count:
-        description: 分页（label 模式提供）
+        description: 分页（shape 模式提供）
         type: integer
     type: object
   github_com_addp_service_internal_models.HealthCheckResult:
@@ -842,6 +921,23 @@ definitions:
         type: string
       upperCorner:
         type: string
+    type: object
+  internal_api.graphNodeShapeOption:
+    properties:
+      count:
+        type: integer
+      kind:
+        type: string
+      labels:
+        items:
+          type: string
+        type: array
+      name:
+        type: string
+      properties:
+        items:
+          $ref: '#/definitions/datatype.FieldInfo'
+        type: array
     type: object
   internal_api.serviceEndpointResp:
     properties:
@@ -1314,6 +1410,44 @@ paths:
       summary: 更新图查询服务 | Update graph query service
       tags:
       - GraphQueryService
+  /graphs/node-shapes:
+    get:
+      parameters:
+      - description: 引擎ID | Engine ID
+        in: query
+        name: engine_id
+        required: true
+        type: integer
+      - description: 数据库名 | Database name
+        in: query
+        name: database
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api.graphNodeShapeOption'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取图节点形状 | Get graph node shapes
+      tags:
+      - 数据源 | Data Sources
   /nodes/{node_id}/children:
     get:
       parameters:

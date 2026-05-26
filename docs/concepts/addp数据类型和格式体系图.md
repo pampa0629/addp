@@ -207,7 +207,7 @@ Shapefile 这类 multi 格式尤其要区分：单个 `.shp/.dbf/.shx` 的识别
 | `document` | `DocumentInfoProvider` | `DocumentTextReader` | raw / range content 由 `contentio` 或后续 reader 表达 |
 | `media` | `MediaInfoProvider` | 后续 `MediaThumbnailReader` | raw / range content 由 `contentio` 或后续 reader 表达 |
 | `container` | `ContainerInfoProvider` | `ContainerChildResolver`、内部对象读取 | child 解析后继续进入对应 data type provider |
-| `graph` | 后续 `GraphInfoProvider` | 后续 `GraphSampleReader` | 图查询读取由 graph / engine 能力表达 |
+| `graph` | `GraphMetadataProvider` / `datatype.GraphInfo` | `GraphSampleProvider` | 图查询读取由 graph / engine 能力表达 |
 | 横切能力 | spatial 等横切事实进入对应 data type info | 不替代 data type reader | 不替代 data type reader / writer |
 
 新实现应按 info、sample、continuous reader、writer 拆开设计，不新增同时表达多种消费意图的组合 provider。

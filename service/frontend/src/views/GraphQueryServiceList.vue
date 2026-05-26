@@ -35,7 +35,7 @@
           <th>{{ t('service.graph.colServiceName') }}</th>
           <th>{{ t('service.graph.colTitle') }}</th>
           <th>{{ t('service.graph.colConfigType') }}</th>
-          <th>{{ t('service.graph.colNodeLabel') }}</th>
+          <th>{{ t('service.graph.colNodeShape') }}</th>
           <th>{{ t('service.graph.colAccess') }}</th>
           <th>{{ t('service.graph.colStatus') }}</th>
           <th>{{ t('service.graph.colCreatedAt') }}</th>
@@ -47,12 +47,12 @@
           <td><strong>{{ svc.service_name }}</strong></td>
           <td>{{ svc.title }}</td>
           <td>
-            <el-tag :type="svc.config_type === 'label' ? 'success' : 'warning'" size="small">
-              {{ svc.config_type === 'label' ? t('service.graph.labelMode') : t('service.graph.cypherMode') }}
+            <el-tag :type="svc.config_type === 'shape' ? 'success' : 'warning'" size="small">
+              {{ svc.config_type === 'shape' ? t('service.graph.shapeMode') : t('service.graph.cypherMode') }}
             </el-tag>
           </td>
           <td class="ellipsis">
-            <span v-if="svc.config_type === 'label'">{{ svc.node_label }}</span>
+            <span v-if="svc.config_type === 'shape'">{{ svc.node_shape }}</span>
             <span v-else class="cypher-preview">{{ svc.cypher_query }}</span>
           </td>
           <td>

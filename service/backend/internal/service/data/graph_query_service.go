@@ -95,12 +95,12 @@ func (e *GraphQueryExecutor) Execute(
 	}
 
 	var cypher string
-	var isLabelMode bool
+	var isShapeMode bool
 
 	switch service.ConfigType {
-	case "label":
-		isLabelMode = true
-		cypher = buildLabelCypher(service, params, offset, pageSize)
+	case "shape":
+		isShapeMode = true
+		cypher = buildShapeCypher(service, params, offset, pageSize)
 	case "cypher":
 		cypher, err = bindCypherParams(service.CypherQuery, params, offset, pageSize)
 		if err != nil {
@@ -134,9 +134,9 @@ func (e *GraphQueryExecutor) Execute(
 		resp.GraphData = result.GraphData
 	}
 
-	// label 模式提供分页信息
-	if isLabelMode {
-		total, countErr := e.countLabelNodes(ctx, engine, service, params)
+	// shape 模式提供分页信息
+	if isShapeMode {
+		total, countErr := e.countShapeNodes(ctx, engine, service, params)
 		if countErr != nil {
 			log.Printf("[GraphQueryExecutor] count query failed (non-fatal): %v", countErr)
 		} else {
@@ -154,14 +154,14 @@ func (e *GraphQueryExecutor) Execute(
 	return resp, nil
 }
 
-// countLabelNodes 查询 label 模式下满足过滤条件的节点总数
-func (e *GraphQueryExecutor) countLabelNodes(
+// countShapeNodes 查询 shape 模式下满足过滤条件的节点总数
+func (e *GraphQueryExecutor) countShapeNodes(
 	ctx context.Context,
 	engine *commonmodels.Engine,
 	service *models.GraphQueryService,
 	filters map[string]interface{},
 ) (int64, error) {
-	countCypher := buildLabelCountCypher(service, filters)
+	countCypher := buildShapeCountCypher(service, filters)
 	result, err := dbbridge.ExecuteGraphQuery(ctx, engine, countCypher)
 	if err != nil {
 		return 0, err
@@ -179,9 +179,8 @@ func (e *GraphQueryExecutor) countLabelNodes(
 	return 0, nil
 }
 
-// buildLabelCypher 根据节点标签和过滤参数生成 Cypher
-func buildLabelCypher(service *models.GraphQueryService, filters map[string]interface{}, offset, limit int) string {
-	label := service.NodeLabel
+// buildShapeCypher 根据节点形状和过滤参数生成 Cypher。
+func buildShapeCypher(service *models.GraphQueryService, filters map[string]interface{}, offset, limit int) string {
 	filterableProps := service.GetFilterableProperties()
 	returnProps := service.GetProperties()
 
@@ -198,7 +197,7 @@ func buildLabelCypher(service *models.GraphQueryService, filters map[string]inte
 		whereParts = append(whereParts, fmt.Sprintf("n.`%s` = %s", k, formatCypherValue(v)))
 	}
 
-	cypher := fmt.Sprintf("MATCH (n:`%s`)", escapeCypherLabel(label))
+	cypher := fmt.Sprintf("MATCH (n%s)", shapeLabelSelector(service.NodeLabels))
 	if len(whereParts) > 0 {
 		cypher += " WHERE " + strings.Join(whereParts, " AND ")
 	}
@@ -217,9 +216,8 @@ func buildLabelCypher(service *models.GraphQueryService, filters map[string]inte
 	return cypher
 }
 
-// buildLabelCountCypher 生成计数 Cypher
-func buildLabelCountCypher(service *models.GraphQueryService, filters map[string]interface{}) string {
-	label := service.NodeLabel
+// buildShapeCountCypher 生成计数 Cypher。
+func buildShapeCountCypher(service *models.GraphQueryService, filters map[string]interface{}) string {
 	filterableProps := service.GetFilterableProperties()
 
 	filterableSet := make(map[string]bool)
@@ -235,12 +233,27 @@ func buildLabelCountCypher(service *models.GraphQueryService, filters map[string
 		whereParts = append(whereParts, fmt.Sprintf("n.`%s` = %s", k, formatCypherValue(v)))
 	}
 
-	cypher := fmt.Sprintf("MATCH (n:`%s`)", escapeCypherLabel(label))
+	cypher := fmt.Sprintf("MATCH (n%s)", shapeLabelSelector(service.NodeLabels))
 	if len(whereParts) > 0 {
 		cypher += " WHERE " + strings.Join(whereParts, " AND ")
 	}
 	cypher += " RETURN count(n) AS total"
 	return cypher
+}
+
+func shapeLabelSelector(labels []string) string {
+	if len(labels) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(labels))
+	for _, label := range labels {
+		label = strings.TrimSpace(label)
+		if label == "" {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf(":`%s`", escapeCypherLabel(label)))
+	}
+	return strings.Join(parts, "")
 }
 
 // bindCypherParams 将用户参数安全地绑定到 Cypher 模板中

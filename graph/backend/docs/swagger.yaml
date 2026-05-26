@@ -82,20 +82,15 @@ definitions:
     type: object
   github_com_addp_graph_internal_models.BrowseSchema:
     properties:
-      connections:
-        description: 关系类型的端点连通信息
+      node_shapes:
+        description: 所有节点形状
         items:
-          $ref: '#/definitions/github_com_addp_graph_internal_models.RelTypeConnection'
+          $ref: '#/definitions/github_com_addp_graph_internal_models.NodeShapeDTO'
         type: array
-      labels:
-        description: 所有节点标签
+      relationship_shapes:
+        description: 所有关系形状
         items:
-          type: string
-        type: array
-      rel_types:
-        description: 所有关系类型
-        items:
-          type: string
+          $ref: '#/definitions/github_com_addp_graph_internal_models.RelationshipShapeDTO'
         type: array
     type: object
   github_com_addp_graph_internal_models.BrowseStats:
@@ -410,6 +405,15 @@ definitions:
         description: 关系类型名称（大写）
         type: string
     type: object
+  github_com_addp_graph_internal_models.GraphEndpointDTO:
+    properties:
+      labels:
+        items:
+          type: string
+        type: array
+      shape_name:
+        type: string
+    type: object
   github_com_addp_graph_internal_models.GraphNodeDTO:
     properties:
       color:
@@ -484,6 +488,19 @@ definitions:
         type: integer
       score:
         type: number
+    type: object
+  github_com_addp_graph_internal_models.NodeShapeDTO:
+    properties:
+      count:
+        type: integer
+      kind:
+        type: string
+      labels:
+        items:
+          type: string
+        type: array
+      name:
+        type: string
     type: object
   github_com_addp_graph_internal_models.Ontology:
     properties:
@@ -603,18 +620,6 @@ definitions:
       unique:
         type: boolean
     type: object
-  github_com_addp_graph_internal_models.RelTypeConnection:
-    properties:
-      rel_type:
-        description: 关系类型名称
-        type: string
-      source_label:
-        description: 起点节点标签
-        type: string
-      target_label:
-        description: 终点节点标签
-        type: string
-    type: object
   github_com_addp_graph_internal_models.RelationType:
     properties:
       color:
@@ -659,6 +664,26 @@ definitions:
       tenant_id:
         type: integer
       updated_at:
+        type: string
+    type: object
+  github_com_addp_graph_internal_models.RelationshipPatternDTO:
+    properties:
+      count:
+        type: integer
+      from:
+        $ref: '#/definitions/github_com_addp_graph_internal_models.GraphEndpointDTO'
+      to:
+        $ref: '#/definitions/github_com_addp_graph_internal_models.GraphEndpointDTO'
+    type: object
+  github_com_addp_graph_internal_models.RelationshipShapeDTO:
+    properties:
+      count:
+        type: integer
+      patterns:
+        items:
+          $ref: '#/definitions/github_com_addp_graph_internal_models.RelationshipPatternDTO'
+        type: array
+      type:
         type: string
     type: object
   github_com_addp_graph_internal_models.SearchRequest:
@@ -817,7 +842,7 @@ definitions:
         items:
           type: string
         type: array
-      relation_type_names:
+      relation_type_keys:
         items:
           type: string
         type: array
@@ -835,7 +860,7 @@ definitions:
         type: array
       ontology_id:
         type: integer
-      relation_type_names:
+      relation_type_keys:
         items:
           type: string
         type: array
@@ -1809,8 +1834,8 @@ paths:
       - 图谱构建 | Graph Build
   /graphs/{id}/schema:
     get:
-      description: 获取知识图谱的节点标签和关系类型 Schema | Get node labels and relation type schema
-        of a knowledge graph
+      description: 获取知识图谱的节点形状、关系形状和连接模式 Schema | Get node shape, relationship shape
+        and pattern schema of a knowledge graph
       parameters:
       - description: 知识图谱 ID | Knowledge graph ID
         in: path

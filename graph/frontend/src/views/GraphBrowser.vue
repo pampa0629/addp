@@ -66,13 +66,13 @@
       <!-- 左侧过滤面板 -->
       <div class="filter-panel">
         <div class="filter-section">
-          <div class="filter-title">{{ t('graph.browser.entityTypes') }}</div>
-          <div v-if="schema.labels.length === 0" class="filter-empty">—</div>
-          <el-checkbox-group v-else v-model="visibleLabels" @change="applyFilter">
-            <div v-for="label in schema.labels" :key="label" class="filter-item">
-              <el-checkbox :label="label" :value="label">
-                <span class="label-dot" :style="{ background: getLabelColor(label) }"></span>
-                {{ label }}
+          <div class="filter-title">{{ t('graph.browser.nodeShapes') }}</div>
+          <div v-if="nodeShapes.length === 0" class="filter-empty">—</div>
+          <el-checkbox-group v-else v-model="visibleNodeShapes" @change="applyFilter">
+            <div v-for="shape in nodeShapes" :key="shape.name" class="filter-item">
+              <el-checkbox :label="shape.name" :value="shape.name">
+                <span class="label-dot" :style="{ background: getNodeShapeColor(shape) }"></span>
+                {{ shape.name }}
               </el-checkbox>
             </div>
           </el-checkbox-group>
@@ -80,9 +80,9 @@
         <el-divider />
         <div class="filter-section">
           <div class="filter-title">{{ t('graph.browser.relationTypes') }}</div>
-          <div v-if="schema.rel_types.length === 0" class="filter-empty">—</div>
+          <div v-if="relationshipTypes.length === 0" class="filter-empty">—</div>
           <el-checkbox-group v-else v-model="visibleRelTypes" @change="applyFilter">
-            <div v-for="rt in schema.rel_types" :key="rt" class="filter-item">
+            <div v-for="rt in relationshipTypes" :key="rt" class="filter-item">
               <el-checkbox :label="rt" :value="rt">{{ rt }}</el-checkbox>
             </div>
           </el-checkbox-group>
@@ -120,8 +120,8 @@
           <AnalysisPanel
             :graph-id="Number(graphId)"
             :selected-node-id="selectedNode"
-            :schema-labels="schema.labels"
-            :schema-rel-types="schema.rel_types"
+            :node-shapes="nodeShapes"
+            :schema-rel-types="relationshipTypes"
             :capabilities="capabilities"
             @apply-scores="handleApplyScores"
             @clear-scores="handleClearScores"
@@ -155,7 +155,7 @@ const graphId = computed(() => route.params.id)
 // 图谱基本信息
 const graphName = ref('')
 const stats = ref(null)
-const schema = ref({ labels: [], rel_types: [] })
+const schema = ref({ node_shapes: [], relationship_shapes: [] })
 
 // 图数据
 const allNodes = ref([])
@@ -164,7 +164,7 @@ const nodeMap = ref({})  // id → node，用于快速查找和去重
 const edgeMap = ref({})  // id → edge
 
 // 过滤状态
-const visibleLabels = ref([])
+const visibleNodeShapes = ref([])
 const visibleRelTypes = ref([])
 
 // UI 状态
@@ -189,12 +189,30 @@ const capabilities = ref({ gds_available: false, cypher_algos: [], gds_algos: []
 const pathMode = ref(false)
 const pathNodes = ref([])
 
+const nodeShapes = computed(() => {
+  return schema.value.node_shapes || []
+})
+
+const relationshipTypes = computed(() => {
+  return (schema.value.relationship_shapes || []).map(shape => shape.type).filter(Boolean)
+})
+
+const selectedNodeShapeLabels = computed(() => {
+  if (visibleNodeShapes.value.length === 0) return []
+  const selected = new Set(visibleNodeShapes.value)
+  return nodeShapes.value
+    .filter(shape => selected.has(shape.name))
+    .flatMap(shape => shape.labels?.length ? shape.labels : [shape.name])
+})
+
 // 过滤后的节点/边
 const filteredNodes = computed(() => {
-  if (visibleLabels.value.length === 0) return allNodes.value
+  if (visibleNodeShapes.value.length === 0) return allNodes.value
+  const labels = selectedNodeShapeLabels.value
+  if (labels.length === 0) return allNodes.value
   return allNodes.value.filter(n => {
     if (!n.labels || n.labels.length === 0) return true
-    return n.labels.some(l => visibleLabels.value.includes(l))
+    return n.labels.some(l => labels.includes(l))
   })
 })
 
@@ -217,8 +235,9 @@ const labelColorMap = computed(() => {
   return map
 })
 
-function getLabelColor(label) {
-  return labelColorMap.value[label] || '#5B8FF9'
+function getNodeShapeColor(shape) {
+  const labels = shape.labels?.length ? shape.labels : [shape.name]
+  return labels.map(label => labelColorMap.value[label]).find(Boolean) || '#5B8FF9'
 }
 
 // 合并新节点/边到画布（去重）
@@ -249,8 +268,8 @@ async function loadOverview() {
     const res = await browseAPI.getOverview(graphId.value)
     mergeSubgraph(res)
     // 初始化过滤器为全选
-    visibleLabels.value = [...schema.value.labels]
-    visibleRelTypes.value = [...schema.value.rel_types]
+    visibleNodeShapes.value = nodeShapes.value.map(shape => shape.name)
+    visibleRelTypes.value = [...relationshipTypes.value]
   } catch (e) {
     ElMessage.error(t('graph.browser.loadOverviewFailed') + ': ' + e.message)
   } finally {
@@ -261,9 +280,9 @@ async function loadOverview() {
 async function loadSchema() {
   try {
     const res = await browseAPI.getSchema(graphId.value)
-    schema.value = res || { labels: [], rel_types: [] }
-    visibleLabels.value = [...schema.value.labels]
-    visibleRelTypes.value = [...schema.value.rel_types]
+    schema.value = res || { node_shapes: [], relationship_shapes: [] }
+    visibleNodeShapes.value = nodeShapes.value.map(shape => shape.name)
+    visibleRelTypes.value = [...relationshipTypes.value]
   } catch (e) {
     // schema 加载失败不影响主流程
   }

@@ -150,6 +150,30 @@
           />
         </el-select>
       </div>
+      <div v-if="showGraphSample" class="graph-sample-panel">
+        <div class="graph-sample-header">
+          <span class="graph-sample-title">{{ t('manager.explorer.graphSample') }}</span>
+          <span class="graph-sample-count">
+            {{ t('manager.explorer.graphSampleStats', { nodes: graphSampleNodes.length, relationships: graphSampleRelationships.length }) }}
+          </span>
+        </div>
+        <div class="graph-sample-grid">
+          <div class="graph-sample-list">
+            <div class="graph-sample-subtitle">{{ t('manager.explorer.graphSampleNodes') }}</div>
+            <div v-for="node in graphSampleNodes" :key="node.element_id" class="graph-sample-row">
+              <span class="graph-sample-name">{{ graphNodeLabel(node) }}</span>
+              <span class="graph-sample-meta">{{ graphNodeShape(node) }}</span>
+            </div>
+          </div>
+          <div class="graph-sample-list">
+            <div class="graph-sample-subtitle">{{ t('manager.explorer.graphSampleRelationships') }}</div>
+            <div v-for="rel in graphSampleRelationships" :key="rel.element_id" class="graph-sample-row">
+              <span class="graph-sample-name">{{ rel.type || '-' }}</span>
+              <span class="graph-sample-meta">{{ graphRelationshipLabel(rel) }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
       <component
         v-if="previewComponent"
         :is="previewComponent"
@@ -591,6 +615,32 @@ const refKey = computed(() => {
 
 const previewMode = computed(() => (props.previewData?.mode || '').toLowerCase())
 const objectData = computed(() => props.previewData?.object || {})
+const graphSample = computed(() => props.previewData?.graph || null)
+const graphSampleNodes = computed(() => (Array.isArray(graphSample.value?.nodes) ? graphSample.value.nodes.slice(0, 6) : []))
+const graphSampleRelationships = computed(() => (Array.isArray(graphSample.value?.relationships) ? graphSample.value.relationships.slice(0, 6) : []))
+const showGraphSample = computed(() => isGraphOverview.value && (graphSampleNodes.value.length > 0 || graphSampleRelationships.value.length > 0))
+
+const graphNodeShape = (node) => {
+  const labels = Array.isArray(node?.labels) ? node.labels.filter(Boolean) : []
+  return labels.length ? labels.join('+') : '-'
+}
+
+const graphNodeLabel = (node) => {
+  const props = node?.properties || {}
+  return String(props.name || props.title || props.label || props.id || node?.element_id || '-')
+}
+
+const graphRelationshipLabel = (rel) => {
+  const start = rel?.start_node_id || '-'
+  const end = rel?.end_node_id || '-'
+  return `${shortGraphElementId(start)} -> ${shortGraphElementId(end)}`
+}
+
+const shortGraphElementId = (value) => {
+  const text = String(value || '')
+  if (text.length <= 18) return text
+  return `${text.slice(0, 8)}...${text.slice(-6)}`
+}
 
 const engineId = computed(() => {
   return (
@@ -1673,6 +1723,71 @@ const handleNavigate = (path) => {
 
 .preview-ref-select {
   width: min(420px, 100%);
+}
+
+.graph-sample-panel {
+  flex: 0 0 auto;
+  border: 1px solid var(--addp-border-color);
+  border-radius: 6px;
+  background: var(--addp-bg-secondary);
+  padding: 10px 12px;
+}
+
+.graph-sample-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.graph-sample-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--addp-text-primary);
+}
+
+.graph-sample-count {
+  font-size: 12px;
+  color: var(--addp-text-secondary);
+}
+
+.graph-sample-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.graph-sample-subtitle {
+  font-size: 12px;
+  color: var(--addp-text-secondary);
+  margin-bottom: 4px;
+}
+
+.graph-sample-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  min-height: 24px;
+  font-size: 12px;
+  border-top: 1px solid var(--addp-border-color);
+}
+
+.graph-sample-name,
+.graph-sample-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.graph-sample-name {
+  color: var(--addp-text-primary);
+  font-weight: 500;
+}
+
+.graph-sample-meta {
+  color: var(--addp-text-secondary);
 }
 
 /* 强制覆盖 Element Plus Empty 组件的背景 */

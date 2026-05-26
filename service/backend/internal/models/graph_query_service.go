@@ -15,13 +15,14 @@ type GraphQueryService struct {
 	EngineID     uint   `gorm:"not null;index:idx_graph_query_services_engine" json:"engine_id"`
 	DatabaseName string `gorm:"size:255;not null;default:'neo4j'" json:"database_name"`
 
-	// 配置类型: 'label' | 'cypher'
-	ConfigType  string `gorm:"size:50;not null;check:config_type IN ('label', 'cypher')" json:"config_type"`
-	NodeLabel   string `gorm:"size:255" json:"node_label,omitempty"`
-	CypherQuery string `gorm:"type:text" json:"cypher_query,omitempty"`
+	// 配置类型: 'shape' | 'cypher'
+	ConfigType  string      `gorm:"size:50;not null;check:config_type IN ('shape', 'cypher')" json:"config_type"`
+	NodeShape   string      `gorm:"size:255" json:"node_shape,omitempty"`
+	NodeLabels  StringArray `gorm:"type:text[]" json:"node_labels,omitempty"`
+	CypherQuery string      `gorm:"type:text" json:"cypher_query,omitempty"`
 
 	// 数据配置（JSONB）— 同时存储模式特定配置和参数定义
-	// label 模式: {"properties":["id","name"],"filterable_properties":["name"]}
+	// shape 模式: {"properties":["id","name"],"filterable_properties":["name"]}
 	// cypher 模式: {"result_type":"table|graph|both","parameters":[{"name":"city","type":"string","required":true}]}
 	DataConfig JSONB `gorm:"type:jsonb;not null;default:'{}'" json:"data_config"`
 
@@ -40,9 +41,9 @@ func (GraphQueryService) TableName() string {
 	return "service.graph_query_services"
 }
 
-// IsLabelMode 是否为节点标签模式
-func (g *GraphQueryService) IsLabelMode() bool {
-	return g.ConfigType == "label"
+// IsShapeMode 是否为节点形状模式
+func (g *GraphQueryService) IsShapeMode() bool {
+	return g.ConfigType == "shape"
 }
 
 // IsCypherMode 是否为 Cypher 模式
@@ -73,12 +74,12 @@ func (g *GraphQueryService) IsTableResult() bool {
 	return rt == "table" || rt == "both"
 }
 
-// GetProperties label 模式下可返回的属性列表
+// GetProperties shape 模式下可返回的属性列表
 func (g *GraphQueryService) GetProperties() []string {
 	return getStringSlice(g.DataConfig, "properties")
 }
 
-// GetFilterableProperties label 模式下可过滤的属性列表
+// GetFilterableProperties shape 模式下可过滤的属性列表
 func (g *GraphQueryService) GetFilterableProperties() []string {
 	return getStringSlice(g.DataConfig, "filterable_properties")
 }
@@ -120,9 +121,10 @@ type CreateGraphQueryServiceRequest struct {
 	EngineID     uint     `json:"engine_id" binding:"required"`
 	DatabaseName string   `json:"database_name"`
 
-	ConfigType  string `json:"config_type" binding:"required,oneof=label cypher"`
-	NodeLabel   string `json:"node_label"`
-	CypherQuery string `json:"cypher_query"`
+	ConfigType  string   `json:"config_type" binding:"required,oneof=shape cypher"`
+	NodeShape   string   `json:"node_shape"`
+	NodeLabels  []string `json:"node_labels"`
+	CypherQuery string   `json:"cypher_query"`
 
 	// cypher 模式下的参数定义（可选，不传则自动从 Cypher 中提取）
 	Parameters []ParameterDef         `json:"parameters"`
@@ -134,14 +136,14 @@ type CreateGraphQueryServiceRequest struct {
 
 // UpdateGraphQueryServiceRequest 更新图查询服务请求（所有字段均可选）
 type UpdateGraphQueryServiceRequest struct {
-	Title        *string  `json:"title,omitempty"`
-	Description  *string  `json:"description,omitempty"`
-	Keywords     []string `json:"keywords,omitempty"`
-	CypherQuery  *string  `json:"cypher_query,omitempty"`
+	Title        *string                `json:"title,omitempty"`
+	Description  *string                `json:"description,omitempty"`
+	Keywords     []string               `json:"keywords,omitempty"`
+	CypherQuery  *string                `json:"cypher_query,omitempty"`
 	DataConfig   map[string]interface{} `json:"data_config,omitempty"`
-	PublicAccess *bool    `json:"public_access,omitempty"`
-	MaxRecords   *int     `json:"max_records,omitempty" binding:"omitempty,gte=1,lte=5000"`
-	Status       *string  `json:"status,omitempty" binding:"omitempty,oneof=active inactive error"`
+	PublicAccess *bool                  `json:"public_access,omitempty"`
+	MaxRecords   *int                   `json:"max_records,omitempty" binding:"omitempty,gte=1,lte=5000"`
+	Status       *string                `json:"status,omitempty" binding:"omitempty,oneof=active inactive error"`
 }
 
 // GraphQueryServiceDTO 图查询服务 DTO（对外响应）
@@ -157,9 +159,10 @@ type GraphQueryServiceDTO struct {
 	EngineID     uint   `json:"engine_id"`
 	DatabaseName string `json:"database_name"`
 
-	ConfigType  string `json:"config_type"`
-	NodeLabel   string `json:"node_label,omitempty"`
-	CypherQuery string `json:"cypher_query,omitempty"`
+	ConfigType  string   `json:"config_type"`
+	NodeShape   string   `json:"node_shape,omitempty"`
+	NodeLabels  []string `json:"node_labels,omitempty"`
+	CypherQuery string   `json:"cypher_query,omitempty"`
 
 	Parameters []ParameterDef         `json:"parameters"`
 	DataConfig map[string]interface{} `json:"data_config"`
@@ -181,7 +184,7 @@ type GraphQueryServiceDTO struct {
 // GraphQueryExecuteRequest 图查询执行请求
 type GraphQueryExecuteRequest struct {
 	// Cypher 模式：用户提供的参数值（对应 $paramName 占位符）
-	// Label 模式：用于过滤的属性条件（属性名 → 值）
+	// Shape 模式：用于过滤的属性条件（属性名 → 值）
 	Parameters map[string]interface{} `json:"parameters"`
 
 	// 分页（两种模式均支持）
@@ -195,7 +198,7 @@ type GraphQueryResponse struct {
 	Columns []string                 `json:"columns,omitempty"`
 	Rows    []map[string]interface{} `json:"rows,omitempty"`
 
-	// 分页（label 模式提供）
+	// 分页（shape 模式提供）
 	TotalCount *int64 `json:"total_count,omitempty"`
 	Page       *int   `json:"page,omitempty"`
 	PageSize   *int   `json:"page_size,omitempty"`

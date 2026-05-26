@@ -109,7 +109,7 @@ const getServiceTypeColor = (type) => {
   const colors = {
     wms: 'success', wfs: 'primary', wmts: 'warning', ogc_api: 'info',
     ogc_features: 'info', rest_api: 'danger', rest: 'danger',
-    xyz: 'warning', tms: 'warning', label: 'success', cypher: 'warning', unknown: ''
+    xyz: 'warning', tms: 'warning', shape: 'success', cypher: 'warning', unknown: ''
   }
   return colors[type] || 'info'
 }

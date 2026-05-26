@@ -718,6 +718,66 @@ const docTemplate = `{
                 }
             }
         },
+        "/graphs/node-shapes": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "数据源 | Data Sources"
+                ],
+                "summary": "获取图节点形状 | Get graph node shapes",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "引擎ID | Engine ID",
+                        "name": "engine_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据库名 | Database name",
+                        "name": "database",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_api.graphNodeShapeOption"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/nodes/{node_id}/children": {
             "get": {
                 "security": [
@@ -2700,6 +2760,99 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "datatype.FieldInfo": {
+            "type": "object",
+            "properties": {
+                "comment": {
+                    "type": "string"
+                },
+                "default_expression": {
+                    "type": "string"
+                },
+                "generated": {
+                    "type": "boolean"
+                },
+                "generation_expression": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "native_type": {
+                    "type": "string"
+                },
+                "nullable": {
+                    "type": "boolean"
+                },
+                "ordinal_position": {
+                    "type": "integer"
+                },
+                "precision": {
+                    "type": "integer"
+                },
+                "primary_key": {
+                    "type": "boolean"
+                },
+                "scale": {
+                    "type": "integer"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "type": {
+                    "$ref": "#/definitions/datatype.FieldType"
+                }
+            }
+        },
+        "datatype.FieldType": {
+            "type": "string",
+            "enum": [
+                "unknown",
+                "string",
+                "bool",
+                "bytes",
+                "mixed",
+                "int",
+                "bigint",
+                "float",
+                "double",
+                "decimal",
+                "date",
+                "time",
+                "timestamp",
+                "json",
+                "array",
+                "uuid",
+                "geometry",
+                "point",
+                "linestring",
+                "polygon",
+                "multipoint"
+            ],
+            "x-enum-varnames": [
+                "FieldTypeUnknown",
+                "FieldTypeString",
+                "FieldTypeBool",
+                "FieldTypeBytes",
+                "FieldTypeMixed",
+                "FieldTypeInt",
+                "FieldTypeBigInt",
+                "FieldTypeFloat",
+                "FieldTypeDouble",
+                "FieldTypeDecimal",
+                "FieldTypeDate",
+                "FieldTypeTime",
+                "FieldTypeTimestamp",
+                "FieldTypeJSON",
+                "FieldTypeArray",
+                "FieldTypeUUID",
+                "FieldTypeGeometry",
+                "FieldTypePoint",
+                "FieldTypeLineString",
+                "FieldTypePolygon",
+                "FieldTypeMultiPoint"
+            ]
+        },
         "encoding_xml.Name": {
             "type": "object",
             "properties": {
@@ -2835,7 +2988,7 @@ const docTemplate = `{
                 "config_type": {
                     "type": "string",
                     "enum": [
-                        "label",
+                        "shape",
                         "cypher"
                     ]
                 },
@@ -2866,7 +3019,13 @@ const docTemplate = `{
                     "maximum": 5000,
                     "minimum": 1
                 },
-                "node_label": {
+                "node_labels": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "node_shape": {
                     "type": "string"
                 },
                 "parameters": {
@@ -3181,7 +3340,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "parameters": {
-                    "description": "Cypher 模式：用户提供的参数值（对应 $paramName 占位符）\nLabel 模式：用于过滤的属性条件（属性名 → 值）",
+                    "description": "Cypher 模式：用户提供的参数值（对应 $paramName 占位符）\nShape 模式：用于过滤的属性条件（属性名 → 值）",
                     "type": "object",
                     "additionalProperties": true
                 }
@@ -3221,7 +3380,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "total_count": {
-                    "description": "分页（label 模式提供）",
+                    "description": "分页（shape 模式提供）",
                     "type": "integer"
                 }
             }
@@ -3918,6 +4077,32 @@ const docTemplate = `{
                 },
                 "upperCorner": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_api.graphNodeShapeOption": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "labels": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "properties": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/datatype.FieldInfo"
+                    }
                 }
             }
         },

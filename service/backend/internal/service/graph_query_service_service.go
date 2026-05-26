@@ -30,9 +30,12 @@ func (s *GraphQueryServiceService) CreateService(
 ) (*models.GraphQueryServiceDTO, error) {
 	// 1. 按配置类型校验
 	switch req.ConfigType {
-	case "label":
-		if req.NodeLabel == "" {
-			return nil, errors.New("node_label is required for label mode")
+	case "shape":
+		if req.NodeShape == "" {
+			return nil, errors.New("node_shape is required for shape mode")
+		}
+		if len(req.NodeLabels) == 0 {
+			return nil, errors.New("node_labels is required for shape mode")
 		}
 	case "cypher":
 		if req.CypherQuery == "" {
@@ -101,7 +104,8 @@ func (s *GraphQueryServiceService) CreateService(
 		EngineID:     req.EngineID,
 		DatabaseName: dbName,
 		ConfigType:   req.ConfigType,
-		NodeLabel:    req.NodeLabel,
+		NodeShape:    req.NodeShape,
+		NodeLabels:   models.StringArray(req.NodeLabels),
 		CypherQuery:  req.CypherQuery,
 		DataConfig:   dataConfig,
 		PublicAccess: req.PublicAccess,
@@ -233,7 +237,8 @@ func (s *GraphQueryServiceService) toDTO(service *models.GraphQueryService) *mod
 		EngineID:     service.EngineID,
 		DatabaseName: service.DatabaseName,
 		ConfigType:   service.ConfigType,
-		NodeLabel:    service.NodeLabel,
+		NodeShape:    service.NodeShape,
+		NodeLabels:   []string(service.NodeLabels),
 		CypherQuery:  service.CypherQuery,
 		DataConfig:   service.DataConfig,
 		PublicAccess: service.PublicAccess,

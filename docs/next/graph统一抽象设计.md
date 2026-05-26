@@ -182,7 +182,8 @@ label 和 relationship type 列表由 `GraphInfo.NodeShapes` 与 `GraphInfo.Rela
 2. 已补充 `GraphInfo.Clone()`、`GraphInfoAttributes()`、`GraphInfoFromAttributes()` 等 helper。
 3. 已同步 `docs/next/common-datatype统一抽象设计.md` 和 attributes 规范中的 graph 字段命名。
 4. 已在 `common/engine/plugin` 增加 `ItemMetadata.Graph` 与 graph metadata provider。
-5. 已改 Neo4j provider：以 database 下 graph item 作为主 item，GraphInfo 承载 label/type/pattern 事实。
+5. 已改 Neo4j provider：以 database 下 graph item 作为主 item，GraphInfo 承载 label-set node shape、relationship shape 和 endpoint pattern 事实。
 6. 已改 Meta namespace scan：graph item 落库，label / relationship type 进入 `type_info.graph`。
 7. 已改 Manager graph preview：从 GraphInfo 投影通用概览。
-8. 已改 Graph 模块浏览、知识服务、schema 推导和图算法入口，统一过滤 Neo4j 内部关系。
+8. 已改 Graph 模块浏览 schema 为 `node_shapes` / `relationship_shapes` / `patterns`，Browse schema 和 schema inference 均按完整 label set 生成 node shape，知识服务、schema 推导和图算法入口统一过滤 Neo4j 内部关系。
+9. 已改 Service 图查询服务：入门向导从旧 `label` 模式调整为 `node shape` 模式，前端选择项来自 graph item 的 `type_info.graph.node_shapes`；服务保存 `node_shape` 与执行所需的 `node_labels` 映射，不再从 Meta 树读取 label item。

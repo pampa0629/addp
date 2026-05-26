@@ -201,7 +201,7 @@ type StoreCapability struct {
 | `stream_write` | 顺序流式创建或覆盖单个对象、文件内容。 | `ContentWritableProvider` |
 | `range_read` | 从指定 byte range 读取内容。 | `RangeReadableProvider`，或 `OpenContent()` 明确支持 offset / length |
 | `range_write` | 向指定 byte range / offset 写入内容。 | `RangeWritableProvider` |
-| `batch_read` | 按批次读取结构化 item，如表、集合、图数据。 | `BatchReadableProvider` |
+| `batch_read` | 按批次读取结构化 item，如表、集合数据。图数据使用 `GraphSampleProvider` / `GraphQueryProvider`。 | `BatchReadableProvider` |
 | `table_read_session` | 打开一次表读取会话并连续读取批次，避免大表 `LIMIT/OFFSET` 翻页退化。 | `TableReadSessionProvider` |
 | `batch_write` | 按批次写入结构化 item。 | `BatchWritableProvider` |
 | `table_write_session` | 打开一次表写入会话并连续写入批次，避免每批重复建立 COPY / bulk load 会话。 | `TableWriteSessionProvider` |

@@ -45,8 +45,8 @@
       <template v-if="selectedAlgo === 'degree_centrality'">
         <div class="param-item">
           <div class="param-label">{{ t('graph.analysis.nodeTypeFilter') }}</div>
-          <el-select v-model="params.node_labels" multiple collapse-tags style="width: 100%" :placeholder="t('graph.analysis.allTypes')">
-            <el-option v-for="l in schemaLabels" :key="l" :label="l" :value="l" />
+          <el-select v-model="params.node_shapes" multiple collapse-tags style="width: 100%" :placeholder="t('graph.analysis.allNodeShapes')">
+            <el-option v-for="shape in nodeShapes" :key="shape.name" :label="shape.name" :value="shape.name" />
           </el-select>
         </div>
         <div class="param-item">
@@ -105,8 +105,8 @@
       <template v-else-if="selectedAlgo === 'pagerank' || selectedAlgo === 'betweenness'">
         <div class="param-item">
           <div class="param-label">{{ t('graph.analysis.nodeTypeFilter') }}</div>
-          <el-select v-model="params.node_labels" multiple collapse-tags style="width: 100%" :placeholder="t('graph.analysis.allTypes')">
-            <el-option v-for="l in schemaLabels" :key="l" :label="l" :value="l" />
+          <el-select v-model="params.node_shapes" multiple collapse-tags style="width: 100%" :placeholder="t('graph.analysis.allNodeShapes')">
+            <el-option v-for="shape in nodeShapes" :key="shape.name" :label="shape.name" :value="shape.name" />
           </el-select>
         </div>
         <div class="param-item">
@@ -125,8 +125,8 @@
       <template v-else-if="selectedAlgo === 'louvain' || selectedAlgo === 'wcc'">
         <div class="param-item">
           <div class="param-label">{{ t('graph.analysis.nodeTypeFilter') }}</div>
-          <el-select v-model="params.node_labels" multiple collapse-tags style="width: 100%" :placeholder="t('graph.analysis.allTypes')">
-            <el-option v-for="l in schemaLabels" :key="l" :label="l" :value="l" />
+          <el-select v-model="params.node_shapes" multiple collapse-tags style="width: 100%" :placeholder="t('graph.analysis.allNodeShapes')">
+            <el-option v-for="shape in nodeShapes" :key="shape.name" :label="shape.name" :value="shape.name" />
           </el-select>
         </div>
         <div class="param-item">
@@ -215,7 +215,7 @@ const { t } = useI18n()
 const props = defineProps({
   graphId: { type: [Number, String], required: true },
   selectedNodeId: { type: String, default: '' },
-  schemaLabels: { type: Array, default: () => [] },
+  nodeShapes: { type: Array, default: () => [] },
   schemaRelTypes: { type: Array, default: () => [] },
   capabilities: {
     type: Object,
@@ -250,9 +250,17 @@ const selectedAlgo = ref('')
 const running = ref(false)
 const result = ref(null)
 
+const selectedNodeLabels = computed(() => {
+  if (!params.value.node_shapes?.length) return []
+  const selected = new Set(params.value.node_shapes)
+  return props.nodeShapes
+    .filter(shape => selected.has(shape.name))
+    .flatMap(shape => shape.labels?.length ? shape.labels : [shape.name])
+})
+
 // 算法参数（按算法类型复用）
 const params = ref({
-  node_labels: [],
+  node_shapes: [],
   rel_types: [],
   limit: 50,
   node_id: '',
@@ -270,7 +278,7 @@ watch(() => props.selectedNodeId, (val) => {
 function onAlgoChange() {
   result.value = null
   params.value = {
-    node_labels: [],
+    node_shapes: [],
     rel_types: [],
     limit: 50,
     node_id: props.selectedNodeId || '',
@@ -285,7 +293,7 @@ async function runAlgorithm() {
   try {
     const body = {
       algorithm: selectedAlgo.value,
-      node_labels: params.value.node_labels,
+      node_labels: selectedNodeLabels.value,
       rel_types: params.value.rel_types,
       limit: params.value.limit,
       params: {}

@@ -23,7 +23,7 @@
 | --- | --- | --- |
 | 关系型 / SQL 表格型 | `EnginePlugin`、`CatalogModelProvider`、`CatalogProvider`、`ItemMetadataProvider`、`SQLQueryRuntimeProvider` | `ConnectionPoolPlugin` |
 | 文档型 | `EnginePlugin`、`CatalogModelProvider`、`CatalogProvider`、`ItemMetadataProvider` | `DocumentMetadataSamplingProvider`、`DocumentQueryRuntimeProvider` |
-| 图数据库 | `EnginePlugin`、`CatalogModelProvider`、`CatalogProvider`、`ItemMetadataProvider`、`QueryRuntimeProvider` | `GraphQueryProvider` |
+| 图数据库 | `EnginePlugin`、`CatalogModelProvider`、`CatalogProvider`、`ItemMetadataProvider`、`GraphMetadataProvider`、`QueryRuntimeProvider` | `GraphSampleProvider`、`GraphQueryProvider` |
 | 对象存储 | `EnginePlugin`、`CatalogModelProvider`、`CatalogProvider`、`ItemMetadataProvider` | `ContentReadableProvider`、`ContentWritableProvider` |
 | 文件系统 | `EnginePlugin`、`CatalogModelProvider`、`CatalogProvider`、`ItemMetadataProvider` | `ContentReadableProvider`、`ContentWritableProvider` |
 | 工作流 | `EnginePlugin` | `WorkflowRuntimeProvider` |

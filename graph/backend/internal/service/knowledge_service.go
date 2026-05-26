@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/graph/internal/models"
@@ -50,8 +51,9 @@ func (s *KnowledgeService) ListEntitiesByType(
 		return nil, 0, err
 	}
 
+	entityLabels := entityTypeLabels(entityTypeName)
 	countResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-		fmt.Sprintf("MATCH (n:`%s`) RETURN count(n) AS total", escapeCypher(entityTypeName)))
+		fmt.Sprintf("MATCH (n%s) RETURN count(n) AS total", nodeLabelsPattern(entityLabels)))
 	if err != nil {
 		return nil, 0, fmt.Errorf("count failed: %w", err)
 	}
@@ -65,8 +67,8 @@ func (s *KnowledgeService) ListEntitiesByType(
 
 	skip := (page - 1) * pageSize
 	result, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-		fmt.Sprintf("MATCH (n:`%s`) RETURN n SKIP %d LIMIT %d",
-			escapeCypher(entityTypeName), skip, pageSize))
+		fmt.Sprintf("MATCH (n%s) RETURN n SKIP %d LIMIT %d",
+			nodeLabelsPattern(entityLabels), skip, pageSize))
 	if err != nil {
 		return nil, 0, fmt.Errorf("list failed: %w", err)
 	}
@@ -216,7 +218,7 @@ func (s *KnowledgeService) SearchEntities(
 
 	typeFilter := ""
 	if entityType != "" {
-		typeFilter = fmt.Sprintf(" AND '%s' IN labels(n)", escapeCypher(entityType))
+		typeFilter = fmt.Sprintf(" AND all(label IN %s WHERE label IN labels(n))", cypherStringList(entityTypeLabels(entityType)))
 	}
 
 	countCypher := fmt.Sprintf(
@@ -415,9 +417,19 @@ func (s *KnowledgeService) enrichEntityType(ontologyID, tenantID uint, labels []
 	if len(labels) == 0 {
 		return "", ""
 	}
+	shapeName := endpointShapeName(labels)
 	ontology, err := s.ontologyRepo.GetDetail(ontologyID, tenantID)
 	if err != nil {
-		return labels[0], labels[0]
+		return shapeName, shapeName
+	}
+	for _, et := range ontology.EntityTypes {
+		if et.Name == shapeName {
+			label := et.Label
+			if label == "" {
+				label = et.Name
+			}
+			return et.Name, label
+		}
 	}
 	for _, lbl := range labels {
 		for _, et := range ontology.EntityTypes {
@@ -430,7 +442,7 @@ func (s *KnowledgeService) enrichEntityType(ontologyID, tenantID uint, labels []
 			}
 		}
 	}
-	return labels[0], labels[0]
+	return shapeName, shapeName
 }
 
 func (s *KnowledgeService) resolveEntityTypeLabel(ontologyID, tenantID uint, entityTypeName string) string {
@@ -463,4 +475,30 @@ func (s *KnowledgeService) resolveRelationTypeLabels(ontologyID, tenantID uint) 
 		m[rt.Name] = label
 	}
 	return m
+}
+
+func entityTypeLabels(entityTypeName string) []string {
+	parts := strings.Split(entityTypeName, "+")
+	labels := make([]string, 0, len(parts))
+	for _, part := range parts {
+		label := strings.TrimSpace(part)
+		if label != "" {
+			labels = append(labels, label)
+		}
+	}
+	if len(labels) == 0 && strings.TrimSpace(entityTypeName) != "" {
+		labels = append(labels, strings.TrimSpace(entityTypeName))
+	}
+	return labels
+}
+
+func cypherStringList(values []string) string {
+	if len(values) == 0 {
+		return "[]"
+	}
+	quoted := make([]string, 0, len(values))
+	for _, value := range values {
+		quoted = append(quoted, fmt.Sprintf("'%s'", escapeCypher(value)))
+	}
+	return "[" + strings.Join(quoted, ",") + "]"
 }

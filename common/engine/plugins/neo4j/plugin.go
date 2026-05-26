@@ -3,6 +3,7 @@ package neo4j
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -131,26 +132,6 @@ func (p *Neo4jPlugin) SampleGraph(ctx context.Context, connInfo plugin.Connectio
 		return &plugin.GraphData{}, nil
 	}
 	return result.GraphData, nil
-}
-
-func (p *Neo4jPlugin) ReadBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
-	query := opts.Query
-	if query == "" {
-		if len(path.Segments) == 0 {
-			return nil, fmt.Errorf("Neo4j batch read requires item path or query")
-		}
-		label := escapeCypherLabel(path.Segments[len(path.Segments)-1].Name)
-		limit := opts.Limit
-		if limit <= 0 {
-			limit = 1000
-		}
-		query = fmt.Sprintf("MATCH (n:`%s`) RETURN n LIMIT %d", label, limit)
-	}
-	result, err := p.executeQuery(ctx, connInfo, query)
-	if err != nil {
-		return nil, err
-	}
-	return plugin.QueryResultToBatchData(result, opts.Offset), nil
 }
 
 func cloneConnectionInfo(connInfo plugin.ConnectionInfo) plugin.ConnectionInfo {
@@ -307,6 +288,10 @@ func (p *Neo4jPlugin) describeGraph(ctx context.Context, connInfo plugin.Connect
 	if err != nil {
 		return nil, err
 	}
+	nodeCount, err = p.countNodes(ctx, session)
+	if err != nil {
+		return nil, err
+	}
 	relationshipShapes, relationshipCount, err := p.describeRelationshipShapes(ctx, session)
 	if err != nil {
 		return nil, err
@@ -322,54 +307,129 @@ func (p *Neo4jPlugin) describeGraph(ctx context.Context, connInfo plugin.Connect
 	}, nil
 }
 
-// describeNodeShapes 列出所有节点标签并转为 node shape。
+// describeNodeShapes lists observed node label sets as node shapes.
 func (p *Neo4jPlugin) describeNodeShapes(ctx context.Context, session neo4jdriver.SessionWithContext) ([]datatype.GraphNodeShapeInfo, int64, error) {
-	result, err := session.Run(ctx, "CALL db.labels() YIELD label RETURN label ORDER BY label", nil)
+	result, err := session.Run(ctx, "MATCH (n) RETURN labels(n) AS labels, count(n) AS count ORDER BY count DESC LIMIT 500", nil)
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to list Neo4j labels: %w", err)
+		return nil, 0, fmt.Errorf("failed to list Neo4j node shapes: %w", err)
 	}
 
 	records, err := result.Collect(ctx)
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to collect Neo4j labels: %w", err)
+		return nil, 0, fmt.Errorf("failed to collect Neo4j node shapes: %w", err)
 	}
 
 	nodeShapes := make([]datatype.GraphNodeShapeInfo, 0, len(records))
 	var total int64
 	for _, record := range records {
-		labelVal, ok := record.Get("label")
+		labelsVal, ok := record.Get("labels")
 		if !ok {
 			continue
 		}
-		label, ok := labelVal.(string)
-		if !ok {
+		labels := neo4jStringSlice(labelsVal)
+		if len(labels) == 0 {
 			continue
+		}
+		countVal, _ := record.Get("count")
+		var count int64
+		if v, ok := countVal.(int64); ok {
+			count = v
 		}
 
-		// 统计该 label 的节点数量
-		countResult, err := session.Run(ctx,
-			fmt.Sprintf("MATCH (n:`%s`) RETURN count(n) AS count", escapeCypherLabel(label)),
-			nil,
-		)
-		var count int64
-		if err == nil {
-			if rec, err := countResult.Single(ctx); err == nil {
-				if v, ok := rec.Get("count"); ok {
-					count, _ = v.(int64)
-				}
-			}
+		properties, err := p.describeNodeShapeProperties(ctx, session, labels)
+		if err != nil {
+			return nil, 0, err
 		}
 
 		total += count
 		nodeShapes = append(nodeShapes, datatype.GraphNodeShapeInfo{
-			Name:   label,
-			Kind:   datatype.GraphNodeShapeKindLabel,
-			Labels: []string{label},
-			Count:  &count,
+			Name:       graphEndpointShapeName(labels),
+			Kind:       datatype.GraphNodeShapeKindLabelSet,
+			Labels:     labels,
+			Properties: properties,
+			Count:      &count,
 		})
 	}
 
 	return nodeShapes, total, nil
+}
+
+func (p *Neo4jPlugin) countNodes(ctx context.Context, session neo4jdriver.SessionWithContext) (int64, error) {
+	result, err := session.Run(ctx, "MATCH (n) RETURN count(n) AS count", nil)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count Neo4j nodes: %w", err)
+	}
+	record, err := result.Single(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to collect Neo4j node count: %w", err)
+	}
+	countVal, _ := record.Get("count")
+	count, _ := countVal.(int64)
+	return count, nil
+}
+
+func (p *Neo4jPlugin) describeNodeShapeProperties(ctx context.Context, session neo4jdriver.SessionWithContext, labels []string) ([]datatype.FieldInfo, error) {
+	result, err := session.Run(ctx,
+		fmt.Sprintf(`MATCH (n:%s)
+UNWIND keys(n) AS property
+WITH property, head([value IN collect(n[property]) WHERE value IS NOT NULL]) AS sample
+RETURN property, valueType(sample) AS native_type
+ORDER BY property`, strings.Join(escapeCypherLabels(labels), ":")),
+		nil,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list Neo4j node properties for shape %s: %w", graphEndpointShapeName(labels), err)
+	}
+	records, err := result.Collect(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to collect Neo4j node properties for shape %s: %w", graphEndpointShapeName(labels), err)
+	}
+	properties := make([]datatype.FieldInfo, 0, len(records))
+	for i, record := range records {
+		nameVal, _ := record.Get("property")
+		name, _ := nameVal.(string)
+		if name == "" {
+			continue
+		}
+		nativeVal, _ := record.Get("native_type")
+		nativeType, _ := nativeVal.(string)
+		properties = append(properties, datatype.FieldInfo{
+			Name:            name,
+			Type:            neo4jValueTypeToFieldType(nativeType),
+			NativeType:      nativeType,
+			OrdinalPosition: i + 1,
+		})
+	}
+	return properties, nil
+}
+
+func neo4jValueTypeToFieldType(nativeType string) datatype.FieldType {
+	switch strings.ToUpper(strings.TrimSpace(nativeType)) {
+	case "BOOLEAN":
+		return datatype.FieldTypeBool
+	case "INTEGER":
+		return datatype.FieldTypeBigInt
+	case "FLOAT":
+		return datatype.FieldTypeDouble
+	case "STRING":
+		return datatype.FieldTypeString
+	case "BYTES":
+		return datatype.FieldTypeBytes
+	case "DATE":
+		return datatype.FieldTypeDate
+	case "LOCAL TIME", "ZONED TIME":
+		return datatype.FieldTypeTime
+	case "LOCAL DATETIME", "ZONED DATETIME":
+		return datatype.FieldTypeTimestamp
+	case "LIST":
+		return datatype.FieldTypeArray
+	case "MAP":
+		return datatype.FieldTypeJSON
+	case "POINT":
+		return datatype.FieldTypePoint
+	default:
+		return datatype.FieldTypeUnknown
+	}
 }
 
 // describeRelationshipShapes 列出所有关系类型及连接模式。
@@ -665,6 +725,14 @@ func escapeCypherLabel(label string) string {
 	return strings.ReplaceAll(label, "`", "``")
 }
 
+func escapeCypherLabels(labels []string) []string {
+	escaped := make([]string, 0, len(labels))
+	for _, label := range labels {
+		escaped = append(escaped, escapeCypherLabel(label))
+	}
+	return escaped
+}
+
 func isInternalRelationshipType(relType string) bool {
 	internalTypes := map[string]struct{}{
 		"RTREE_METADATA":  {},
@@ -696,7 +764,9 @@ func graphEndpointShapeName(labels []string) string {
 	if len(labels) == 0 {
 		return ""
 	}
-	return strings.Join(labels, "+")
+	normalized := append([]string(nil), labels...)
+	sort.Strings(normalized)
+	return strings.Join(normalized, "+")
 }
 
 func addInt64Ptr(value *int64, delta int64) *int64 {
