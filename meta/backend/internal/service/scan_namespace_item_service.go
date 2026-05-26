@@ -38,7 +38,7 @@ func NewNamespaceItemScanService(db *gorm.DB, log *slog.Logger, indexer *search.
 }
 
 // ScanNamespace 扫描 namespace 及其所有 item。
-// CatalogProvider 负责列出真实数据库、集合、标签和关系；DocumentMetadataSamplingProvider 用于文档 schema 深度推断。
+// CatalogProvider 负责列出真实数据库、集合或 graph item；DocumentMetadataSamplingProvider 用于文档 schema 深度推断。
 func (s *NamespaceItemScanService) ScanNamespace(
 	ctx context.Context,
 	enginePlugin plugin.EnginePlugin,

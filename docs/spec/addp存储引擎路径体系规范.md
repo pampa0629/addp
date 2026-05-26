@@ -286,8 +286,7 @@ Engine (MongoDB)
 ```
 Engine (Neo4j)
   └── database: neo4j        ← full_name="neo4j"
-        ├── item: Person     ← full_name="neo4j.Person"     (label)
-        └── item: Company    ← full_name="neo4j.Company"    (label)
+        └── item: graph      ← full_name="neo4j.graph"      (graph)
 ```
 
 database 作为独立节点展示，用户可以按 database 触发扫描。

@@ -173,7 +173,7 @@ type ResourceLocator struct {
 |--------|---------|---------------------|
 | 对象存储 | bucket + path + name | `["bucket", "path_segment", ..., "name"]` |
 | 数据库表 | schema + table | `["schema", "table"]` |
-| 图数据库 label/relationship | database + label/relationship | `["database", "label_or_relationship"]` |
+| 图数据库 graph | database + graph item | `["database", "graph"]` |
 | 文件系统 | path + name | `["path_segment", ..., "name"]` |
 
 ### 5.3 为什么 Path 包含 bucket/schema？

@@ -402,8 +402,12 @@ func (s *AnalysisService) runDegreeCentrality(ctx context.Context, engine *commo
 
 	cypher := fmt.Sprintf(`
 MATCH (n) %s
-OPTIONAL MATCH (n)-[r]-()
-WITH n, count(r) AS degree
+CALL {
+  WITH n
+  OPTIONAL MATCH (n)-[r]-()
+  WHERE NOT (`+internalRelationshipTypePredicate+`)
+  RETURN count(r) AS degree
+}
 RETURN elementId(n) AS node_id,
        coalesce(n.name, n.title, n.label, elementId(n)) AS display_name,
        labels(n)[0] AS entity_type,
@@ -454,7 +458,7 @@ func (s *AnalysisService) runKhopNeighbors(ctx context.Context, graphID, tenantI
 	}
 
 	cypher := fmt.Sprintf(
-		"MATCH path = (start)-[*1..%d]-(n) WHERE elementId(start) = '%s' RETURN path LIMIT %d",
+		"MATCH path = (start)-[*1..%d]-(n) WHERE elementId(start) = '%s' AND NONE(rel IN relationships(path) WHERE type(rel) IN "+internalRelationshipTypeList+") RETURN path LIMIT %d",
 		hops, escapeCypher(nodeID), req.Limit,
 	)
 	result, err := dbbridge.ExecuteGraphQuery(ctx, engine, cypher)
@@ -524,7 +528,7 @@ func (s *AnalysisService) runMultiPath(ctx context.Context, graphID, tenantID ui
 
 	for _, pair := range pairs {
 		cypher := fmt.Sprintf(
-			"MATCH p = allShortestPaths((a)-[*..10]-(b)) WHERE elementId(a) = '%s' AND elementId(b) = '%s' RETURN p LIMIT 5",
+			"MATCH p = allShortestPaths((a)-[*..10]-(b)) WHERE elementId(a) = '%s' AND elementId(b) = '%s' AND NONE(rel IN relationships(p) WHERE type(rel) IN "+internalRelationshipTypeList+") RETURN p LIMIT 5",
 			escapeCypher(pair[0]), escapeCypher(pair[1]),
 		)
 		result, err := dbbridge.ExecuteGraphQuery(ctx, engine, cypher)
@@ -575,11 +579,20 @@ func (s *AnalysisService) runGDSAlgo(ctx context.Context, engine *commonmodels.E
 		}
 		nodeLabels = "[" + strings.Join(quoted, ",") + "]"
 	}
-	relTypes := "'*'"
+	relTypes, err := businessRelationshipProjection(ctx, engine)
+	if err != nil {
+		return nil, err
+	}
 	if len(req.RelTypes) > 0 {
-		quoted := make([]string, len(req.RelTypes))
-		for i, r := range req.RelTypes {
-			quoted[i] = fmt.Sprintf("'%s'", escapeCypher(r))
+		quoted := make([]string, 0, len(req.RelTypes))
+		for _, r := range req.RelTypes {
+			if isInternalRelationshipType(r) {
+				continue
+			}
+			quoted = append(quoted, fmt.Sprintf("'%s'", escapeCypher(r)))
+		}
+		if len(quoted) == 0 {
+			return nil, fmt.Errorf("no business relationship types selected")
 		}
 		relTypes = "[" + strings.Join(quoted, ",") + "]"
 	}
@@ -587,7 +600,7 @@ func (s *AnalysisService) runGDSAlgo(ctx context.Context, engine *commonmodels.E
 	// 创建投影
 	projCypher := fmt.Sprintf("CALL gds.graph.project('%s', %s, %s) YIELD graphName, nodeCount, relationshipCount",
 		projName, nodeLabels, relTypes)
-	_, err := dbbridge.ExecuteGraphQuery(ctx, engine, projCypher)
+	_, err = dbbridge.ExecuteGraphQuery(ctx, engine, projCypher)
 	if err != nil {
 		return nil, fmt.Errorf("GDS projection failed: %w", err)
 	}

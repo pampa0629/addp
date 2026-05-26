@@ -104,6 +104,35 @@ func (p *Neo4jPlugin) ExecuteGraphQuery(ctx context.Context, connInfo plugin.Con
 	return p.executeGraphQuery(ctx, connInfo, cypher)
 }
 
+func (p *Neo4jPlugin) SampleGraph(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.GraphSampleOptions) (*plugin.GraphData, error) {
+	database := getDatabase(connInfo)
+	if len(path.Segments) > 0 && path.Segments[0].Name != "" {
+		database = path.Segments[0].Name
+	}
+	sampleConn := cloneConnectionInfo(connInfo)
+	sampleConn["database"] = database
+	limit := opts.Limit
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	result, err := p.executeGraphQuery(ctx, sampleConn,
+		fmt.Sprintf("MATCH (n)-[r]->(m) WHERE NOT type(r) IN ['RTREE_METADATA', 'RTREE_REFERENCE', 'RTREE_ROOT'] RETURN n, r, m LIMIT %d", limit))
+	if err != nil {
+		return nil, err
+	}
+	if result.GraphData != nil && (len(result.GraphData.Nodes) > 0 || len(result.GraphData.Relationships) > 0) {
+		return result.GraphData, nil
+	}
+	result, err = p.executeGraphQuery(ctx, sampleConn, fmt.Sprintf("MATCH (n) RETURN n LIMIT %d", limit))
+	if err != nil {
+		return nil, err
+	}
+	if result.GraphData == nil {
+		return &plugin.GraphData{}, nil
+	}
+	return result.GraphData, nil
+}
+
 func (p *Neo4jPlugin) ReadBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
 	query := opts.Query
 	if query == "" {
@@ -122,6 +151,14 @@ func (p *Neo4jPlugin) ReadBatch(ctx context.Context, connInfo plugin.ConnectionI
 		return nil, err
 	}
 	return plugin.QueryResultToBatchData(result, opts.Offset), nil
+}
+
+func cloneConnectionInfo(connInfo plugin.ConnectionInfo) plugin.ConnectionInfo {
+	cloned := make(plugin.ConnectionInfo, len(connInfo))
+	for key, value := range connInfo {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 // ValidateConnectionInfo 验证连接信息

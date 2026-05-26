@@ -91,6 +91,9 @@ func TestGraphPreviewProviderFallsBackToGraphMetadataProvider(t *testing.T) {
 	if path.EngineID != 42 || len(path.Segments) != 2 || path.Segments[0].Name != "neo4j" || path.Segments[1].Term != plugin.CatalogTermGraph {
 		t.Fatalf("DescribeGraph path = %#v", path)
 	}
+	if preview.Graph == nil || len(preview.Graph.Nodes) != 1 {
+		t.Fatalf("preview graph sample = %#v", preview.Graph)
+	}
 }
 
 func TestFlattenGraphEntityRowsIncludesEntityFields(t *testing.T) {
@@ -141,4 +144,15 @@ func (p *recordingGraphPreviewPlugin) DescribeGraph(_ context.Context, _ plugin.
 	return p.graph, nil
 }
 
+func (p *recordingGraphPreviewPlugin) SampleGraph(_ context.Context, _ plugin.ConnectionInfo, _ plugin.CatalogPath, _ plugin.GraphSampleOptions) (*plugin.GraphData, error) {
+	return &plugin.GraphData{
+		Nodes: []plugin.GraphNode{{
+			ElementId:  "node-1",
+			Labels:     []string{"Person"},
+			Properties: map[string]interface{}{"name": "Ada"},
+		}},
+	}, nil
+}
+
 var _ plugin.GraphMetadataProvider = (*recordingGraphPreviewPlugin)(nil)
+var _ plugin.GraphSampleProvider = (*recordingGraphPreviewPlugin)(nil)

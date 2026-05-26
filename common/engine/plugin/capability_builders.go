@@ -214,7 +214,7 @@ func NewGraphCapabilities(engineType string) EngineCapabilities {
 			Store: &StoreCapability{
 				BatchRead: true,
 			},
-			Semantics: []string{"database", "graph", "node", "relationship"},
+			Semantics: []string{"database", "graph"},
 		},
 		Compute: &ComputeCapabilities{
 			Query: &QueryCapability{

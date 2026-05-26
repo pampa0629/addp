@@ -167,12 +167,15 @@ func (s *SchemaInferenceService) inferWithEngine(ctx context.Context, engine *co
 
 	// 提取关系模式（来源标签 + 关系类型 + 目标标签）
 	relResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-		"MATCH (a)-[r]->(b) RETURN DISTINCT labels(a)[0] AS src, type(r) AS rel, labels(b)[0] AS tgt, count(r) AS cnt LIMIT 500")
+		"MATCH (a)-[r]->(b) WHERE NOT ("+internalRelationshipTypePredicate+") RETURN DISTINCT labels(a)[0] AS src, type(r) AS rel, labels(b)[0] AS tgt, count(r) AS cnt LIMIT 500")
 	if err != nil {
 		return preview, nil // 关系推导失败不影响实体推导结果
 	}
 	for _, row := range relResult.Rows {
 		relName := fmt.Sprintf("%v", row["rel"])
+		if isInternalRelationshipType(relName) {
+			continue
+		}
 		rt := InferredRelationType{
 			Name:        relName,
 			SourceLabel: fmt.Sprintf("%v", row["src"]),

@@ -510,7 +510,7 @@ func scanTargetFromLocator(locator string) []string {
 	path = strings.ReplaceAll(path, "%2F", "/")
 	path = strings.ReplaceAll(path, "%2f", "/")
 	switch targetType {
-	case "table", "collection", "label", "relationship":
+	case "table", "collection", "graph":
 		parts := strings.Split(path, "/")
 		if len(parts) > 1 {
 			return []string{parts[0]}

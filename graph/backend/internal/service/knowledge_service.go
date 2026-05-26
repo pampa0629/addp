@@ -148,7 +148,7 @@ func (s *KnowledgeService) GetEntityNeighbors(
 
 	// 查询邻居：显式返回 elementId(m) 以便对齐
 	cypher := fmt.Sprintf(
-		"MATCH (n)-[r]-(m) WHERE elementId(n) = '%s' "+
+		"MATCH (n)-[r]-(m) WHERE elementId(n) = '%s' AND NOT ("+internalRelationshipTypePredicate+") "+
 			"RETURN m, type(r) AS rel_type, (startNode(r) = n) AS is_out, elementId(m) AS m_eid "+
 			"LIMIT %d",
 		escapeCypher(nodeID), limit,
@@ -301,6 +301,7 @@ func (s *KnowledgeService) GetSubgraph(
 	// 收集 N 跳范围内节点，再查边
 	cypher := fmt.Sprintf(
 		"MATCH (n)-[r*1..%d]-(m) WHERE elementId(n) = '%s' "+
+			"AND NONE(rel IN r WHERE type(rel) IN "+internalRelationshipTypeList+") "+
 			"RETURN DISTINCT n, r, m LIMIT %d",
 		depth, escapeCypher(req.NodeID), limit,
 	)
@@ -344,7 +345,7 @@ func (s *KnowledgeService) GetOntologyDescription(
 	// 各关系类型数量
 	relCounts := make(map[string]int64)
 	relCountResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-		"MATCH ()-[r]->() RETURN type(r) AS rel_type, count(r) AS cnt")
+		"MATCH ()-[r]->() WHERE NOT ("+internalRelationshipTypePredicate+") RETURN type(r) AS rel_type, count(r) AS cnt")
 	if err == nil {
 		for _, row := range relCountResult.Rows {
 			if rt, ok := row["rel_type"]; ok {

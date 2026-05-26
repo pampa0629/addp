@@ -5,12 +5,12 @@
 
 ## 背景
 
-ADDP 已将 table 型事实收敛到 `datatype.TableInfo`，并明确 table item 的主事实进入 `plugin.ItemMetadata.Table`。graph 当前仍存在概念混用：
+ADDP 已将 table 型事实收敛到 `datatype.TableInfo`，并明确 table item 的主事实进入 `plugin.ItemMetadata.Table`。graph 重构前存在过概念混用：
 
-- Neo4j catalog 以 `label` / `relationship` 作为叶子 item。
-- Meta 扫描把 `label` / `relationship` 写成独立 `meta_item`。
-- `type_info.graph` 仍使用 `node_count`、`edge_count`、`from_labels`、`to_labels` 等扁平事实。
-- Manager 当前按 label / relationship 展示图结构，这只是 UI 投影视角，不应反向定义 `common/datatype`。
+- Neo4j catalog 曾以 `label` / `relationship` 作为叶子 item。
+- Meta 扫描曾把 `label` / `relationship` 写成独立 `meta_item`。
+- `type_info.graph` 曾使用 `node_count`、`edge_count`、`from_labels`、`to_labels` 等扁平事实。
+- Manager 曾按 label / relationship 展示图结构，这只是 UI 投影视角，不应反向定义 `common/datatype`。
 
 graph 的统一抽象需要先回到本体：图的核心是 node 和 relationship；label 只是节点分类或展示分组方式，不能作为 graph data type 的一等本体。
 
@@ -18,7 +18,7 @@ graph 的统一抽象需要先回到本体：图的核心是 node 和 relationsh
 
 1. `graph` 的 data item 应表示一个可被查询、采样、预览和治理的图整体。
 2. `label`、`relationship type`、属性结构和连接模式属于 graph schema / shape facts，不应作为 graph data type 的核心 item 本体。
-3. Neo4j 的 `label` / `relationship` 可以作为 Manager 展示中的虚拟节点或筛选入口，但不应长期作为 Meta 主数据项。
+3. Neo4j 的 `label` / `relationship type` 可以作为 Graph 模块和 Manager 展示中的筛选、分组或投影视角，但不能作为 Meta 主数据项。
 4. `common/datatype.GraphInfo` 描述图结构摘要，不承载实际节点、边样本或前端图组件 DTO。
 5. 图查询语言、路径探索、图算法和可视化交互属于 graph 模块或 engine provider 能力，不进入 `common/datatype`。
 
@@ -39,7 +39,7 @@ meta_node: database = neo4j
 - relationship type 依赖 endpoint node shape，不是独立图数据集。
 - label / relationship type 更适合作为 `GraphInfo` 中的 schema shape。
 
-过渡期可以保留现有 catalog 展示能力，但新的事实模型应朝 graph item 收敛，不新增兼容别名或第二套 graph facts。
+当前不保留旧 label / relationship item 兼容层；历史数据通过重新扫描生成 graph item 和 `type_info.graph`。
 
 ## Manager 预览建议
 
@@ -74,6 +74,12 @@ Graph 模块应承接真正的图领域能力：
 - 图算法入口：最短路径、中心性、社区发现等后续能力。
 
 Manager 可复用 graph 模块或 engine graph provider 的能力，但不应自行维护独立图领域模型。
+
+Graph 模块的浏览、知识服务、推导和图算法必须使用同一套业务图视角：
+
+- Neo4j 插件或扩展生成的内部关系不进入业务图 schema、统计、预览、路径和算法投影。
+- 第一批过滤的 Neo4j spatial 内部关系为 `RTREE_METADATA`、`RTREE_REFERENCE`、`RTREE_ROOT`。
+- 过滤规则归属于 Graph 模块服务层；`common/datatype.GraphInfo` 不携带具体引擎内部规则。
 
 ## Common Datatype 目标结构
 
@@ -153,7 +159,7 @@ ItemMetadata{
 }
 ```
 
-Neo4j catalog 的目标层级应从：
+Neo4j catalog 已从：
 
 ```text
 database
@@ -172,10 +178,11 @@ label 和 relationship type 列表由 `GraphInfo.NodeShapes` 与 `GraphInfo.Rela
 
 ## 推进顺序
 
-1. 更新 `common/datatype.GraphInfo` 为 node / relationship shape 模型。
-2. 补充 `GraphInfo.Clone()`、`GraphInfoAttributes()`、`GraphInfoFromAttributes()` 等 helper。
-3. 同步 `docs/next/common-datatype统一抽象设计.md` 和 attributes 规范中的 graph 字段命名。
-4. 在 `common/engine/plugin` 增加 `ItemMetadata.Graph` 与 graph metadata provider。
-5. 改 Neo4j provider：以 database 下 graph item 作为主 item，GraphInfo 承载 label/type/pattern 事实。
-6. 改 Meta namespace scan：graph item 落库，label / relationship type 进入 `type_info.graph`。
-7. 改 Manager graph preview：从 GraphInfo 投影 schema/sample/properties 视图。
+1. 已更新 `common/datatype.GraphInfo` 为 node / relationship shape 模型。
+2. 已补充 `GraphInfo.Clone()`、`GraphInfoAttributes()`、`GraphInfoFromAttributes()` 等 helper。
+3. 已同步 `docs/next/common-datatype统一抽象设计.md` 和 attributes 规范中的 graph 字段命名。
+4. 已在 `common/engine/plugin` 增加 `ItemMetadata.Graph` 与 graph metadata provider。
+5. 已改 Neo4j provider：以 database 下 graph item 作为主 item，GraphInfo 承载 label/type/pattern 事实。
+6. 已改 Meta namespace scan：graph item 落库，label / relationship type 进入 `type_info.graph`。
+7. 已改 Manager graph preview：从 GraphInfo 投影通用概览。
+8. 已改 Graph 模块浏览、知识服务、schema 推导和图算法入口，统一过滤 Neo4j 内部关系。

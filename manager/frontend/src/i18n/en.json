@@ -396,8 +396,7 @@
       "table": "Table",
       "view": "View",
       "collection": "Collection",
-      "label": "Label",
-      "relationship": "Relationship",
+      "graph": "Graph",
       "file": "File",
       "object": "Object"
     }

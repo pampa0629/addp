@@ -33,6 +33,7 @@ func (p *GraphPreviewProvider) Preview(ctx context.Context, req *PreviewRequest)
 		}
 	}
 	columns, rows := graphOverviewRows(info)
+	sample := p.sampleGraph(ctx, req)
 
 	return &models.TablePreview{
 		Mode:            PreviewModeTable,
@@ -43,6 +44,7 @@ func (p *GraphPreviewProvider) Preview(ctx context.Context, req *PreviewRequest)
 		Page:            maxInt(req.Page, 1),
 		PageSize:        normalizePageSize(req.PageSize),
 		GeometryColumns: []string{},
+		Graph:           sample,
 		EngineID:        req.Engine.ID,
 		Schema:          req.Schema,
 		Table:           req.Table,
@@ -71,6 +73,71 @@ func (p *GraphPreviewProvider) describeGraph(ctx context.Context, req *PreviewRe
 		return nil, fmt.Errorf("graph metadata is missing")
 	}
 	return info, nil
+}
+
+func (p *GraphPreviewProvider) sampleGraph(ctx context.Context, req *PreviewRequest) *models.GraphPreviewData {
+	plug, err := plugin.Get(req.Engine.EngineType)
+	if err != nil {
+		return nil
+	}
+	sampleProvider, ok := plug.(plugin.GraphSampleProvider)
+	if !ok {
+		return nil
+	}
+	path, err := graphPreviewCatalogPath(req)
+	if err != nil {
+		return nil
+	}
+	limit := req.PageSize
+	if limit <= 0 {
+		limit = 30
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	sample, err := sampleProvider.SampleGraph(ctx, plugin.ConnectionInfo(req.Engine.ConnectionInfo), path, plugin.GraphSampleOptions{Limit: limit})
+	if err != nil || sample == nil {
+		return nil
+	}
+	return graphPreviewData(sample)
+}
+
+func graphPreviewData(sample *plugin.GraphData) *models.GraphPreviewData {
+	if sample == nil {
+		return nil
+	}
+	data := &models.GraphPreviewData{
+		Nodes:         make([]models.GraphPreviewNode, 0, len(sample.Nodes)),
+		Relationships: make([]models.GraphPreviewRelationship, 0, len(sample.Relationships)),
+	}
+	for _, node := range sample.Nodes {
+		data.Nodes = append(data.Nodes, models.GraphPreviewNode{
+			ElementID:  node.ElementId,
+			Labels:     append([]string(nil), node.Labels...),
+			Properties: clonePreviewMap(node.Properties),
+		})
+	}
+	for _, rel := range sample.Relationships {
+		data.Relationships = append(data.Relationships, models.GraphPreviewRelationship{
+			ElementID:   rel.ElementId,
+			Type:        rel.Type,
+			StartNodeID: rel.StartNodeId,
+			EndNodeID:   rel.EndNodeId,
+			Properties:  clonePreviewMap(rel.Properties),
+		})
+	}
+	return data
+}
+
+func clonePreviewMap(values map[string]interface{}) map[string]interface{} {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string]interface{}, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 func graphPreviewCatalogPath(req *PreviewRequest) (plugin.CatalogPath, error) {

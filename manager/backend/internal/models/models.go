@@ -113,6 +113,7 @@ type TablePreview struct {
 	GeometryColumns       []string                 `json:"geometry_columns"`
 	RenderGeometryColumns map[string]string        `json:"render_geometry_columns,omitempty"` // 原几何列 -> 地图渲染列
 	Object                *ObjectPreview           `json:"object,omitempty"`
+	Graph                 *GraphPreviewData        `json:"graph,omitempty"`
 	ItemMeta              *ItemMetadata            `json:"item_meta,omitempty"` // 数据项元数据（来自 meta 模块）
 	// MVT preview metadata (for frontend to switch between GeoJSON and MVT rendering)
 	EngineID   uint   `json:"engineId,omitempty"`   // Engine ID for MVT API
@@ -122,6 +123,26 @@ type TablePreview struct {
 	// Spatial metadata (for spatial data preview)
 	SRID   int       `json:"srid,omitempty"`   // 空间参考系统 ID
 	Extent []float64 `json:"extent,omitempty"` // 空间范围 [minX, minY, maxX, maxY]
+}
+
+// GraphPreviewData 图数据轻量样本，供通用预览按需展示。
+type GraphPreviewData struct {
+	Nodes         []GraphPreviewNode         `json:"nodes"`
+	Relationships []GraphPreviewRelationship `json:"relationships"`
+}
+
+type GraphPreviewNode struct {
+	ElementID  string                 `json:"element_id"`
+	Labels     []string               `json:"labels"`
+	Properties map[string]interface{} `json:"properties"`
+}
+
+type GraphPreviewRelationship struct {
+	ElementID   string                 `json:"element_id"`
+	Type        string                 `json:"type"`
+	StartNodeID string                 `json:"start_node_id"`
+	EndNodeID   string                 `json:"end_node_id"`
+	Properties  map[string]interface{} `json:"properties"`
 }
 
 // ItemMetadata 数据项元数据（来自 meta 模块，附加在预览响应中）

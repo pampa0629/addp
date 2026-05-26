@@ -397,8 +397,7 @@
       "table": "表",
       "view": "视图",
       "collection": "Collection",
-      "label": "Label",
-      "relationship": "Relationship",
+      "graph": "图",
       "file": "文件",
       "object": "对象"
       }
