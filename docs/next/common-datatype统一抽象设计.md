@@ -901,6 +901,7 @@ datatype.ContentIndex
 2. `FileInfo`：确认低语义文件 item 是否需要主事实字段，避免 storage facts、format facts 和 file type info 混写。
 3. `MediaInfo`：确认 image/audio/video 当前通用字段是否足以作为 `ItemMetadata.Media` 主事实；音视频 codec、bitrate、sample rate 等继续暂留 format/extraction，除非有明确消费方。
 4. `ContainerInfo`：已在 datatype 层定义，但下一步要确认 engine / format / Meta 是否需要 `ItemMetadata.Container` 主事实字段，尤其是 ZIP、Excel、SQLite、GeoPackage 这类 native child 场景。
+5. 文档全文检索：DOCX / PPTX / WPS 的全文不进入 `DocumentInfo`。Meta 深度扫描或 extraction 任务负责调用 `DocumentTextReader` / 外部 extractor 抽取正文并写入 Meilisearch；attributes 只记录 `type_info.document`、`capabilities.extraction` 状态、预览或外部索引引用；Manager 只提供检索入口和结果展示，不解析文档。
 
 ## 不做事项
 

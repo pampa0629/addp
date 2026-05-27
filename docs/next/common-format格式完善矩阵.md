@@ -28,7 +28,7 @@
 | Text / Markdown | 还要核实编码识别、大文件截断、Markdown 渲染安全、链接、代码块和前端性能。 |
 | Image / JPEG / PNG / GIF / TIFF | 还要补 EXIF / orientation / 多帧或多页元信息，设计 MediaThumbnailReader 或 raw / range URL 预览策略，并核实大图、GeoTIFF、多页 TIFF、动图体验。 |
 | PDF | 还要核实真实 PDF metadata、加密提示、raw / range 预览和大文件传输；如需正文提取，再另行定义 `DocumentTextReader` / extraction 任务边界。 |
-| DOCX / PPTX / WPS | 还要核实 raw / range 预览、大文件传输和浏览器兼容性；后端解析能力暂不进入第一阶段，后续如需全文索引或摘要再补 `DocumentInfoProvider` / `DocumentTextReader`。 |
+| DOCX / PPTX / WPS | 还要核实 raw / range 预览、大文件传输和浏览器兼容性；平台内全文检索应由 Meta 深度扫描或后续 extraction 任务抽取正文并写入 Meilisearch，Manager 只提供检索入口，不解析文档。DOCX / PPTX 可优先补 `DocumentTextReader` 和轻量 `DocumentInfoProvider`；WPS 格式变体较多，优先保留 raw / range，后续通过外部 extractor 或转换服务接入全文。 |
 
 ## 后续待研发格式
 
