@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
@@ -18,6 +19,7 @@ import (
 	"github.com/addp/meta/internal/metaenrich"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/metapath"
+	"github.com/addp/meta/internal/metatext"
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/scanchange"
@@ -719,6 +721,10 @@ func (s *ObjectStorageCatalogScanService) persistObjectResources(
 		} else {
 			metaitem.ApplyContainerSummary(enhancedAttrs, itemPlan.DataItem)
 		}
+		extractedText := ""
+		if strings.EqualFold(scanDepth, "deep") {
+			extractedText = extractObjectCatalogDocumentText(context.Background(), enhancedAttrs, readableProvider, connInfo, engineID, catalogResource, itemPlan.DataItem)
+		}
 
 		rowCount := itemRowCountFromAttributes(enhancedAttrs)
 		item, err := s.repo.UpsertItemWithDepth(tenantID, engineID, currentParent, itemPlan.ItemType, itemPlan.ItemName, itemPlan.FullName, enhancedAttrs, rowCount, &sizeVal, catalogResource.LastModified, scanDepth)
@@ -728,7 +734,7 @@ func (s *ObjectStorageCatalogScanService) persistObjectResources(
 
 		// 只在deep扫描时索引（basic扫描的数据不完整）
 		if scanDepth == "deep" {
-			s.indexer.IndexObjectAsset(resource, tenantID, engineID, catalogResource, trimmed, itemPlan.FullName, item)
+			s.indexer.IndexObjectAsset(resource, tenantID, engineID, catalogResource, trimmed, itemPlan.FullName, item, extractedText)
 		}
 
 		objects++
@@ -856,6 +862,63 @@ func itemRowCountFromAttributes(attrs map[string]interface{}) *int64 {
 		return nil
 	}
 	return &rowCount
+}
+
+func extractObjectCatalogDocumentText(
+	ctx context.Context,
+	attrs models.JSONMap,
+	readableProvider plugin.ContentReadableProvider,
+	connInfo plugin.ConnectionInfo,
+	engineID uint,
+	catalogResource metacatalog.StorageResource,
+	item *metaitem.DetectedItem,
+) string {
+	if attrs == nil || readableProvider == nil || item == nil || item.DataType != datatype.DataTypeDocument {
+		return ""
+	}
+	formatName := strings.TrimSpace(item.Format)
+	if formatName == "" {
+		formatName = commonJSON.String(attrs, "item", "format")
+	}
+	if formatName == "" {
+		return ""
+	}
+	reader, err := format.GetDocumentTextReader(format.FormatType(strings.ToLower(formatName)))
+	if err != nil {
+		return ""
+	}
+	rc, err := readableProvider.OpenContent(ctx, connInfo, catalogResource.CatalogPath, plugin.ReadOptions{})
+	if err != nil {
+		metaattr.SetExtraction(attrs, "text_extracted", false)
+		metaattr.SetExtraction(attrs, "extractor_available", true)
+		return ""
+	}
+	defer rc.Close()
+
+	limit := int64(metatext.DocumentContentRuneLimit)
+	text, truncated, err := reader.ReadDocumentText(ctx, rc, limit, nil)
+	if err != nil {
+		metaattr.SetExtraction(attrs, "text_extracted", false)
+		metaattr.SetExtraction(attrs, "extractor_available", true)
+		return ""
+	}
+	preview := metatext.PreviewText(text, metatext.DocumentPreviewRuneLimit)
+	metaattr.SetExtraction(attrs, "extractor_available", true)
+	metaattr.SetExtraction(attrs, "text_extracted", true)
+	metaattr.SetExtraction(attrs, "extractor", "common_format:"+strings.ToLower(formatName))
+	metaattr.SetExtraction(attrs, "plain_text_preview", preview)
+	metaattr.SetExtraction(attrs, "text_truncated", truncated)
+	metaattr.SetExtraction(attrs, "index_ref", "meilisearch:assets:"+itemFingerprintForExtraction(engineID, catalogResource))
+	metaattr.MergeAttributeMaps(attrs, metaattr.DocumentInfoAttributes(&datatype.DocumentInfo{TextExtracted: true}))
+	return text
+}
+
+func itemFingerprintForExtraction(engineID uint, catalogResource metacatalog.StorageResource) string {
+	fullName := catalogResource.FullPath
+	if fullName == "" {
+		fullName = commonModels.JoinObjectPath(catalogResource.RootName, "", catalogResource.Path)
+	}
+	return commonModels.GenerateItemFingerprint(engineID, fullName)
 }
 
 func (s *ObjectStorageCatalogScanService) ensureObjectCatalogPrefixNodes(

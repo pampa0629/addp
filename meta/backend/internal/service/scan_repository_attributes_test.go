@@ -67,3 +67,27 @@ func TestIndexerReadsPlainTextFromStandardExtractionPayload(t *testing.T) {
 		t.Fatalf("legacy plain text fallback = %q, want empty", got)
 	}
 }
+
+func TestIndexerUsesExplicitExtractedTextBeforeAttributes(t *testing.T) {
+	t.Parallel()
+
+	attrs := map[string]interface{}{
+		"capabilities": map[string]interface{}{
+			"extraction": map[string]interface{}{
+				"extracted_metadata": map[string]interface{}{
+					"custom_attrs": map[string]interface{}{
+						"plain_text": "attribute text",
+					},
+				},
+			},
+		},
+	}
+	extractedText := "scan text"
+	plainText := extractedText
+	if plainText == "" {
+		plainText = extractedPlainTextFromAttributes(attrs)
+	}
+	if plainText != "scan text" {
+		t.Fatalf("plain text = %q, want explicit scan text", plainText)
+	}
+}

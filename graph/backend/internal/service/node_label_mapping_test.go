@@ -69,3 +69,16 @@ func TestBusinessRelationshipPredicateFiltersInternalEndpoints(t *testing.T) {
 		t.Fatalf("unexpected predicate:\nwant: %s\n got: %s", want, got)
 	}
 }
+
+func TestDisplayGraphPropertiesFiltersTechnicalFields(t *testing.T) {
+	got := displayGraphProperties(map[string]interface{}{
+		"_created_at": int64(1775635237141),
+		"_updated_at": int64(1775655573528),
+		"name":        "刘洋",
+		"role":        "CTO",
+	})
+
+	if len(got) != 2 || got["name"] != "刘洋" || got["role"] != "CTO" {
+		t.Fatalf("unexpected display properties: %#v", got)
+	}
+}

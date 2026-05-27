@@ -360,7 +360,7 @@ func buildSubgraph(result *plugin.GraphQueryResult, nodeColors, edgeColors map[s
 			ID:         n.ElementId,
 			Labels:     n.Labels,
 			Color:      "#5B8FF9", // default
-			Properties: n.Properties,
+			Properties: displayGraphProperties(n.Properties),
 		}
 		// 优先使用完整 label set 对应的 node shape，单 label 作为兼容兜底。
 		if len(n.Labels) > 0 {
@@ -396,7 +396,7 @@ func buildSubgraph(result *plugin.GraphQueryResult, nodeColors, edgeColors map[s
 			Color:        "#C0C0C0", // default
 			Source:       r.StartNodeId,
 			Target:       r.EndNodeId,
-			Properties:   r.Properties,
+			Properties:   displayGraphProperties(r.Properties),
 		}
 		if color, ok := edgeColors[r.Type]; ok {
 			dto.Color = color
@@ -404,6 +404,32 @@ func buildSubgraph(result *plugin.GraphQueryResult, nodeColors, edgeColors map[s
 		out.Edges = append(out.Edges, dto)
 	}
 	return out
+}
+
+func displayGraphProperties(input map[string]interface{}) map[string]interface{} {
+	if len(input) == 0 {
+		return nil
+	}
+	out := make(map[string]interface{}, len(input))
+	for key, value := range input {
+		if isTechnicalGraphProperty(key) {
+			continue
+		}
+		out[key] = value
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func isTechnicalGraphProperty(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "_created_at", "_updated_at", "_update_at", "_deleted_at":
+		return true
+	default:
+		return false
+	}
 }
 
 // escapeCypher 对 Cypher 字符串值进行转义，防止注入

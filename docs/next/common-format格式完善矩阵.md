@@ -28,7 +28,9 @@
 | Text / Markdown | 还要核实编码识别、大文件截断、Markdown 渲染安全、链接、代码块和前端性能。 |
 | Image / JPEG / PNG / GIF / TIFF | 还要补 EXIF / orientation / 多帧或多页元信息，设计 MediaThumbnailReader 或 raw / range URL 预览策略，并核实大图、GeoTIFF、多页 TIFF、动图体验。 |
 | PDF | 还要核实真实 PDF metadata、加密提示、raw / range 预览和大文件传输；如需正文提取，再另行定义 `DocumentTextReader` / extraction 任务边界。 |
-| DOCX / PPTX / WPS | 还要核实 raw / range 预览、大文件传输和浏览器兼容性；平台内全文检索应由 Meta 深度扫描或后续 extraction 任务抽取正文并写入 Meilisearch，Manager 只提供检索入口，不解析文档。DOCX / PPTX 可优先补 `DocumentTextReader` 和轻量 `DocumentInfoProvider`；WPS 格式变体较多，优先保留 raw / range，后续通过外部 extractor 或转换服务接入全文。 |
+| DOCX / PPTX / WPS | DOCX 已有基础 `DocumentTextReader`，从 `word/document.xml` 提取正文，可进入 Meta deep scan 全文链路；还要补真实样例、页眉页脚/脚注/批注等覆盖、轻量 `DocumentInfoProvider` 和大文件上限策略。PPTX 可后续补 `DocumentTextReader` 和轻量 `DocumentInfoProvider`；WPS 格式变体较多，优先保留 raw / range，后续通过外部 extractor 或转换服务接入全文。 |
+
+当前 Meta object deep scan 已能对实现了 `DocumentTextReader` 的 document 格式抽取正文：attributes 只写 `capabilities.extraction` 状态、预览和 Meilisearch `index_ref`，完整正文仅作为本次扫描输入写入 Meilisearch。DOCX / PPTX / WPS 仍需先补 reader 或外部 extractor，才会进入这条全文链路。
 
 ## 后续待研发格式
 

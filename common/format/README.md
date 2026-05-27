@@ -216,7 +216,7 @@ Info provider 只返回元数据，主要服务 Meta 写入 `type_info.*`、`for
 | `ScopeTableSampleReader` | `table` | `whole` | `contentio.Reader` + scope | 目录 / prefix / scope 级 table 样本读取。 | Manager、Transfer 探查 | Parquet dataset、未来 lake table |
 | `ScopeTableReaderProvider` | `table` | `whole` | `contentio.Reader` + scope -> `TableReader` | 目录 / prefix / scope 级 table 连续全量读取会话。 | Transfer 主链路 | Parquet dataset、未来 lake table |
 | `DocumentInfoProvider` | `document` | 通常 `single` | `io.Reader` | 返回文档标题、语言、编码、大小等文档类型信息。 | Meta、Manager、Search | text、markdown、json、pdf；未来 DOCX/PPTX/WPS 解析 |
-| `DocumentTextReader` | `document` | 通常 `single` | `io.Reader` | 读取正文片段，可标记 truncated。 | Manager、Search、AI / 摘要 | text、markdown、json；未来 PDF/DOCX/PPTX/WPS 解析 |
+| `DocumentTextReader` | `document` | 通常 `single` | `io.Reader` | 读取正文片段，可标记 truncated。 | Manager、Search、AI / 摘要 | text、markdown、json、docx；未来 PDF/PPTX/WPS 解析 |
 | `MediaInfoProvider` | `media` | 通常 `single` | `io.Reader` | 返回宽高、时长、编码、MIME、颜色空间、可选空间事实。 | Meta、Manager | image、jpeg、png、gif、tiff |
 | `ContainerInfoProvider` | `container` | 通常 `single` | `io.Reader` | 描述容器内部 child 列表和默认入口。 | Meta、Manager | zip、excel、sqlite、geopackage |
 | `ContainerChildResolver` | `container` 子内容 | `single` 父容器内部 | parent `contentio.Reader` + parent ref + child locator | 把容器 child 解析成可继续交给 format/provider 的 content。 | Manager、Transfer 后续 child 读取 | zip entry、Excel sheet、SQLite table |
@@ -396,7 +396,7 @@ type DocumentTextReader interface {
 | `markdown` | `document` | 是 | 是 | 复用 text provider，当前不在 `DocumentInfo` 中提取标题或字数。 |
 | `json` | `document` 默认，内容严格匹配记录集合时可升级为 `table` | 是 | 是 | `DocumentInfo` 当前只写 `encoding=utf-8`；同一格式也提供 table / spatial provider。 |
 | `pdf` | `document` | 是 | 否 | 只提供轻量 metadata，例如 title、page_count、size_bytes；author / creator / producer 等 PDF 原生事实进入 `format_info.pdf`。 |
-| `docx` | `document` | 否 | 否 | 仅声明 raw / range content；后端解析边界尚未定义。 |
+| `docx` | `document` | 否 | 是 | 从 `word/document.xml` 提取基础正文；暂不解析页眉页脚、脚注、批注或文档属性。 |
 | `pptx` | `document` | 否 | 否 | 仅声明 raw / range content；后端解析边界尚未定义。 |
 | `wps` | `document` | 否 | 否 | 仅声明 raw / range content；后端解析边界尚未定义。 |
 

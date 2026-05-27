@@ -8,8 +8,10 @@ import (
 	"testing"
 
 	"github.com/addp/common/dataitem"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
+	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/metaitem"
@@ -79,6 +81,49 @@ func TestDetectObjectCatalogResourceFormatUsesCommonFormatSniffing(t *testing.T)
 	}
 	if detected != string(format.FormatParquet) {
 		t.Fatalf("detected format = %q, want parquet", detected)
+	}
+}
+
+func TestExtractObjectCatalogDocumentTextWritesExtractionFacts(t *testing.T) {
+	t.Parallel()
+
+	resource := metacatalog.StorageResource{
+		RootName:    "addp",
+		Path:        "docs/readme.txt",
+		FullPath:    "addp/docs/readme.txt",
+		SizeBytes:   64,
+		Format:      string(format.FormatText),
+		CatalogPath: plugin.ObjectItemPath(7, "addp", "docs/readme.txt"),
+	}
+	item := &metaitem.DetectedItem{
+		ResolvedItem: dataitem.ResolvedItem{
+			DataType: datatype.DataTypeDocument,
+			Format:   string(format.FormatText),
+		},
+	}
+	attrs := models.JSONMap{"item": map[string]interface{}{"format": string(format.FormatText)}}
+
+	text := extractObjectCatalogDocumentText(
+		context.Background(),
+		attrs,
+		staticObjectContentReader{content: "hello document search"},
+		nil,
+		7,
+		resource,
+		item,
+	)
+
+	if text != "hello document search" {
+		t.Fatalf("extracted text = %q", text)
+	}
+	if !commonJSON.Bool(attrs, "capabilities.extraction", "text_extracted") {
+		t.Fatalf("capabilities.extraction = %#v", attrs["capabilities"])
+	}
+	if got := commonJSON.String(attrs, "capabilities.extraction", "plain_text_preview"); got != "hello document search" {
+		t.Fatalf("plain_text_preview = %q", got)
+	}
+	if !commonJSON.Bool(attrs, "type_info.document", "text_extracted") {
+		t.Fatalf("type_info.document = %#v", attrs["type_info"])
 	}
 }
 

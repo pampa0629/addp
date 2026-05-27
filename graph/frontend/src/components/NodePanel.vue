@@ -18,9 +18,9 @@
       <div class="section-title">{{ t('graph.nodePanel.properties') }}</div>
       <el-empty v-if="!hasProperties" :description="t('graph.nodePanel.noProperties')" :image-size="40" />
       <div v-else class="props-table">
-        <div v-for="(val, key) in selected.properties" :key="key" class="prop-row">
-          <span class="prop-key">{{ key }}</span>
-          <span class="prop-val">{{ formatValue(val) }}</span>
+        <div v-for="property in visibleProperties" :key="property.key" class="prop-row">
+          <span class="prop-key">{{ property.key }}</span>
+          <span class="prop-val">{{ formatValue(property.value) }}</span>
         </div>
       </div>
     </div>
@@ -62,7 +62,14 @@ const displayName = computed(() => {
 })
 
 const hasProperties = computed(() => {
-  return props.selected?.properties && Object.keys(props.selected.properties).length > 0
+  return visibleProperties.value.length > 0
+})
+
+const visibleProperties = computed(() => {
+  const source = props.selected?.properties || {}
+  return Object.entries(source)
+    .filter(([key]) => !isTechnicalProperty(key))
+    .map(([key, value]) => ({ key, value }))
 })
 
 const nodeTypeLabel = computed(() => {
@@ -78,6 +85,10 @@ function formatValue(val) {
   if (val === null || val === undefined) return '—'
   if (typeof val === 'object') return JSON.stringify(val)
   return String(val)
+}
+
+function isTechnicalProperty(key) {
+  return ['_created_at', '_updated_at', '_update_at', '_deleted_at'].includes(String(key || '').trim().toLowerCase())
 }
 </script>
 

@@ -88,7 +88,7 @@ func tableKindForIndex(tableInfo datatype.TableInfo) string {
 }
 
 // IndexObjectAsset 索引对象资产到 Meilisearch（统一索引）
-func (s *IndexerService) IndexObjectAsset(resource *commonModels.Engine, tenantID, engineID uint, catalogResource metacatalog.StorageResource, relativePath, fullName string, item *models.MetaItem) {
+func (s *IndexerService) IndexObjectAsset(resource *commonModels.Engine, tenantID, engineID uint, catalogResource metacatalog.StorageResource, relativePath, fullName string, item *models.MetaItem, extractedText string) {
 	if s.indexer == nil || !s.indexer.Enabled() || resource == nil || item == nil {
 		return
 	}
@@ -105,7 +105,11 @@ func (s *IndexerService) IndexObjectAsset(resource *commonModels.Engine, tenantI
 	}
 
 	plainText := ""
-	plainText = extractedPlainTextFromAttributes(metadata)
+	if extractedText != "" {
+		plainText = extractedText
+	} else {
+		plainText = extractedPlainTextFromAttributes(metadata)
+	}
 	delete(metadata, "plain_text")
 
 	// 准备文档内容字段

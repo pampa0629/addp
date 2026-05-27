@@ -8,13 +8,14 @@ import (
 
 func TestDocumentFormatCapabilityViewsReflectBackendParsingBoundary(t *testing.T) {
 	tests := []struct {
-		formatType       format.FormatType
-		wantInfoProvider bool
+		formatType     format.FormatType
+		wantInfo       bool
+		wantTextReader bool
 	}{
-		{format.FormatPDF, true},
-		{format.FormatDOCX, false},
-		{format.FormatPPTX, false},
-		{format.FormatWPS, false},
+		{formatType: format.FormatPDF, wantInfo: true},
+		{formatType: format.FormatDOCX, wantTextReader: true},
+		{formatType: format.FormatPPTX},
+		{formatType: format.FormatWPS},
 	}
 
 	for _, tt := range tests {
@@ -26,11 +27,11 @@ func TestDocumentFormatCapabilityViewsReflectBackendParsingBoundary(t *testing.T
 			if !view.Implementations.FormatPlugin {
 				t.Fatalf("%s implementations = %#v, want format plugin", tt.formatType, view.Implementations)
 			}
-			if view.Implementations.DocumentInfoProvider != tt.wantInfoProvider {
-				t.Fatalf("%s document info provider = %v, want %v", tt.formatType, view.Implementations.DocumentInfoProvider, tt.wantInfoProvider)
+			if view.Implementations.DocumentInfoProvider != tt.wantInfo {
+				t.Fatalf("%s document info provider = %v, want %v", tt.formatType, view.Implementations.DocumentInfoProvider, tt.wantInfo)
 			}
-			if view.Implementations.DocumentTextReader {
-				t.Fatalf("%s should not claim backend document text reader", tt.formatType)
+			if view.Implementations.DocumentTextReader != tt.wantTextReader {
+				t.Fatalf("%s document text reader = %v, want %v", tt.formatType, view.Implementations.DocumentTextReader, tt.wantTextReader)
 			}
 		})
 	}
