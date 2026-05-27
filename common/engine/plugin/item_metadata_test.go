@@ -60,6 +60,66 @@ func TestItemMetadataDocumentInfoReturnsClone(t *testing.T) {
 	}
 }
 
+func TestItemMetadataMediaInfoReturnsClone(t *testing.T) {
+	durationMS := int64(1234)
+	sizeBytes := int64(4096)
+	metadata := &ItemMetadata{
+		Kind: "media",
+		Media: &datatype.MediaInfo{
+			Kind:       datatype.MediaKindImage,
+			Width:      800,
+			Height:     600,
+			DurationMS: &durationMS,
+			SizeBytes:  &sizeBytes,
+		},
+	}
+
+	info := ItemMetadataMediaInfo(metadata)
+	if info == nil || info.Kind != datatype.MediaKindImage || info.Width != 800 || info.Height != 600 {
+		t.Fatalf("ItemMetadataMediaInfo() = %#v", info)
+	}
+	*info.DurationMS = 5678
+	*info.SizeBytes = 8192
+	if *metadata.Media.DurationMS != 1234 || *metadata.Media.SizeBytes != 4096 {
+		t.Fatalf("ItemMetadataMediaInfo returned mutable media info")
+	}
+}
+
+func TestItemMetadataContainerInfoReturnsClone(t *testing.T) {
+	rowCount := int64(9)
+	columnCount := 2
+	metadata := &ItemMetadata{
+		Kind: "container",
+		Container: &datatype.ContainerInfo{
+			ChildCount:    1,
+			ResourceCount: 1,
+			Children: []datatype.ContainerChildInfo{{
+				Name:        "Sheet1",
+				ChildKind:   "sheet",
+				DataType:    datatype.DataTypeTable,
+				RowCount:    &rowCount,
+				ColumnCount: &columnCount,
+				Fields:      []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeInt}},
+				Native:      map[string]interface{}{"sheet_index": 0},
+			}},
+		},
+	}
+
+	info := ItemMetadataContainerInfo(metadata)
+	if info == nil || info.ChildCount != 1 || len(info.Children) != 1 || info.Children[0].Name != "Sheet1" {
+		t.Fatalf("ItemMetadataContainerInfo() = %#v", info)
+	}
+	info.Children[0].Name = "Changed"
+	*info.Children[0].RowCount = 10
+	info.Children[0].Native["sheet_index"] = 1
+	if metadata.Container.Children[0].Name != "Sheet1" || *metadata.Container.Children[0].RowCount != 9 {
+		t.Fatalf("ItemMetadataContainerInfo returned mutable child")
+	}
+	if metadata.Container.Children[0].Native["sheet_index"] != 0 {
+		t.Fatalf("ItemMetadataContainerInfo returned mutable native")
+	}
+}
+
 func TestItemMetadataGraphInfoReturnsClone(t *testing.T) {
 	count := int64(3)
 	metadata := &ItemMetadata{

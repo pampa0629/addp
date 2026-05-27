@@ -43,11 +43,14 @@ func ApplyContainerSummary(attrs models.JSONMap, item *DetectedItem) {
 	if attrs == nil || item == nil || item.DataType != dataitem.DataTypeContainer {
 		return
 	}
-	metaattr.UpsertNested(attrs, "type_info", "container", metaattr.ContainerInfoAttributes(&datatype.ContainerInfo{
-		Children:      []datatype.ContainerChildInfo{},
-		ChildCount:    0,
-		ResourceCount: 1,
-	}))
+	if item.Container == nil {
+		item.Container = &datatype.ContainerInfo{
+			Children:      []datatype.ContainerChildInfo{},
+			ChildCount:    0,
+			ResourceCount: 1,
+		}
+	}
+	ApplyContainerInfo(attrs, item)
 }
 
 func ApplyDocumentInfo(attrs models.JSONMap, item *DetectedItem) {
@@ -55,4 +58,18 @@ func ApplyDocumentInfo(attrs models.JSONMap, item *DetectedItem) {
 		return
 	}
 	metaattr.MergeAttributeMaps(attrs, metaattr.DocumentInfoAttributes(item.Document))
+}
+
+func ApplyMediaInfo(attrs models.JSONMap, item *DetectedItem, spatialInfo *datatype.SpatialInfo) {
+	if attrs == nil || item == nil || item.Media == nil {
+		return
+	}
+	metaattr.MergeAttributeMaps(attrs, metaattr.MediaInfoAttributes(item.Media, spatialInfo))
+}
+
+func ApplyContainerInfo(attrs models.JSONMap, item *DetectedItem) {
+	if attrs == nil || item == nil || item.Container == nil {
+		return
+	}
+	metaattr.UpsertNested(attrs, "type_info", "container", metaattr.ContainerInfoAttributes(item.Container))
 }

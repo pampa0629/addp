@@ -10,9 +10,10 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
-      '@common-ui': resolve(__dirname, '../../common-frontend/basic/src')
+      '@common-ui': resolve(__dirname, '../../common-frontend/basic/src'),
+      'geotiff': resolve(__dirname, 'node_modules/geotiff')
     },
-    dedupe: ['vue', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'axios']
+    dedupe: ['vue', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'geotiff', 'axios']
   },
   server: {
     port: 5170,

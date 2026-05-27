@@ -20,6 +20,3 @@ func (*ContainerInfo) TypeInfoDataType() DataType { return DataTypeContainer }
 
 // TypeInfoDataType reports that GraphInfo maps to attributes.type_info.graph.
 func (*GraphInfo) TypeInfoDataType() DataType { return DataTypeGraph }
-
-// TypeInfoDataType reports that FileInfo maps to attributes.type_info.file.
-func (*FileInfo) TypeInfoDataType() DataType { return DataTypeFile }

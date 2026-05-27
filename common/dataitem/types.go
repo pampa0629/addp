@@ -29,7 +29,6 @@ const (
 	DataTypeMedia     DataType = datatype.DataTypeMedia
 	DataTypeContainer DataType = datatype.DataTypeContainer
 	DataTypeGraph     DataType = datatype.DataTypeGraph
-	DataTypeFile      DataType = datatype.DataTypeFile
 	DataTypeUnknown   DataType = datatype.DataTypeUnknown
 )
 

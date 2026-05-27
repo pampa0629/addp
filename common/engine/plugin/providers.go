@@ -241,16 +241,18 @@ type GraphSampleOptions struct {
 }
 
 type ItemMetadata struct {
-	Path       CatalogPath            `json:"path"`
-	Kind       string                 `json:"kind"`
-	Table      *datatype.TableInfo    `json:"table,omitempty"`
-	Document   *datatype.DocumentInfo `json:"document,omitempty"`
-	Graph      *datatype.GraphInfo    `json:"graph,omitempty"`
-	Fields     []datatype.FieldInfo   `json:"fields,omitempty"`
-	Indexes    []IndexInfo            `json:"indexes,omitempty"`
-	Stats      map[string]interface{} `json:"stats,omitempty"`
-	Attributes map[string]interface{} `json:"attributes,omitempty"`
-	UpdatedAt  *time.Time             `json:"updated_at,omitempty"`
+	Path       CatalogPath             `json:"path"`
+	Kind       string                  `json:"kind"`
+	Table      *datatype.TableInfo     `json:"table,omitempty"`
+	Document   *datatype.DocumentInfo  `json:"document,omitempty"`
+	Media      *datatype.MediaInfo     `json:"media,omitempty"`
+	Container  *datatype.ContainerInfo `json:"container,omitempty"`
+	Graph      *datatype.GraphInfo     `json:"graph,omitempty"`
+	Fields     []datatype.FieldInfo    `json:"fields,omitempty"`
+	Indexes    []IndexInfo             `json:"indexes,omitempty"`
+	Stats      map[string]interface{}  `json:"stats,omitempty"`
+	Attributes map[string]interface{}  `json:"attributes,omitempty"`
+	UpdatedAt  *time.Time              `json:"updated_at,omitempty"`
 }
 
 func cleanGraphSampleFilterStrings(values []string) []string {

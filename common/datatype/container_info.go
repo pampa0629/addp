@@ -9,6 +9,17 @@ type ContainerInfo struct {
 	Native        map[string]interface{} `json:"native,omitempty"`
 }
 
+// Clone returns a deep copy of ContainerInfo.
+func (c *ContainerInfo) Clone() *ContainerInfo {
+	if c == nil {
+		return nil
+	}
+	cloned := *c
+	cloned.Children = cloneContainerChildren(c.Children)
+	cloned.Native = cloneInterfaceMap(c.Native)
+	return &cloned
+}
+
 // ContainerChildInfo describes an addressable child inside a container.
 type ContainerChildInfo struct {
 	Name        string                 `json:"name,omitempty"`
@@ -30,4 +41,30 @@ type ContainerChildRef struct {
 	Required  bool   `json:"required,omitempty"`
 	Primary   bool   `json:"primary,omitempty"`
 	Extension string `json:"extension,omitempty"`
+}
+
+func cloneContainerChildren(input []ContainerChildInfo) []ContainerChildInfo {
+	if len(input) == 0 {
+		return nil
+	}
+	output := make([]ContainerChildInfo, len(input))
+	for i, child := range input {
+		output[i] = child
+		if child.RowCount != nil {
+			rowCount := *child.RowCount
+			output[i].RowCount = &rowCount
+		}
+		if child.ColumnCount != nil {
+			columnCount := *child.ColumnCount
+			output[i].ColumnCount = &columnCount
+		}
+		if child.HasHeader != nil {
+			hasHeader := *child.HasHeader
+			output[i].HasHeader = &hasHeader
+		}
+		output[i].Fields = append([]FieldInfo(nil), child.Fields...)
+		output[i].Refs = append([]ContainerChildRef(nil), child.Refs...)
+		output[i].Native = cloneInterfaceMap(child.Native)
+	}
+	return output
 }

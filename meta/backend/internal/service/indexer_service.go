@@ -121,6 +121,7 @@ func (s *IndexerService) IndexObjectAsset(resource *commonModels.Engine, tenantI
 	// 构建统一的资产记录（包含文档内容字段）
 	assetRecord := &search.AssetRecord{
 		AssetID:       item.Fingerprint,
+		DocumentID:    stringFromStandardAttributes(metadata, "storage", "content_hash"),
 		TenantID:      tenantID,
 		EngineID:      engineID,
 		EngineName:    resource.Name,

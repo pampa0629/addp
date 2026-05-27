@@ -9,7 +9,7 @@ func TestParseDataType(t *testing.T) {
 		want DataType
 	}{
 		{name: "normalizes", in: " Table ", want: DataTypeTable},
-		{name: "file is concrete", in: "file", want: DataTypeFile},
+		{name: "file is no longer a data type", in: "file", want: DataTypeUnknown},
 		{name: "unknown value", in: "dataset", want: DataTypeUnknown},
 		{name: "empty", in: "", want: DataTypeUnknown},
 	}
@@ -22,9 +22,6 @@ func TestParseDataType(t *testing.T) {
 		})
 	}
 
-	if !IsConcreteDataType(DataTypeFile) {
-		t.Fatalf("file should be a concrete data type")
-	}
 	if IsConcreteDataType(DataTypeUnknown) {
 		t.Fatalf("unknown should not be a concrete data type")
 	}

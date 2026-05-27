@@ -38,7 +38,7 @@ func defaultRefDescriptors(refs []RelatedRef) []RefDescriptor {
 			Label:     label,
 			Required:  ref.Required,
 			Primary:   ref.Primary,
-			DataType:  datatype.DataTypeFile,
+			DataType:  datatype.DataTypeUnknown,
 			Format:    FormatUnknown,
 			Extension: extension,
 		})

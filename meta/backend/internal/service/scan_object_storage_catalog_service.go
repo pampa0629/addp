@@ -723,6 +723,11 @@ func (s *ObjectStorageCatalogScanService) persistObjectResources(
 		}
 		extractedText := ""
 		if strings.EqualFold(scanDepth, "deep") {
+			if contentHash, err := computeContentSHA256(context.Background(), readableProvider, connInfo, catalogResource.CatalogPath); err != nil {
+				s.log.Warn("计算对象内容指纹失败", "bucket", catalogResource.RootName, "path", catalogResource.Path, "error", err)
+			} else {
+				setStorageContentHash(enhancedAttrs, contentHash)
+			}
 			extractedText = extractObjectCatalogDocumentText(context.Background(), enhancedAttrs, readableProvider, connInfo, engineID, catalogResource, itemPlan.DataItem)
 		}
 

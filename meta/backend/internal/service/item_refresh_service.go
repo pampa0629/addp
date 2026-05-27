@@ -76,6 +76,11 @@ func (s *ScanService) RefreshItem(ctx context.Context, engineID, tenantID, itemI
 	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
 	catalogPathFor := knownItemCatalogPathResolver(resource.ID, resource.EngineType, descriptor)
 	physicalPath := firstNonEmpty(descriptor.PhysicalPath, descriptor.EntryPath, pathFromStorage(descriptor), item.FullName)
+	if contentHash, err := computeContentSHA256(ctx, contentReader, connInfo, catalogPathFor(physicalPath)); err != nil {
+		return nil, err
+	} else {
+		setStorageContentHash(item.Attributes, contentHash)
+	}
 	extractedText, err := extractKnownItemDocumentText(ctx, item.Attributes, contentReader, connInfo, resource.ID, catalogPathFor, &item, descriptor, physicalPath)
 	if err != nil {
 		return nil, err
@@ -318,7 +323,13 @@ func enrichKnownSingleNonTableItem(
 		if err != nil {
 			return false, err
 		}
-		metaattr.MergeAttributeMaps(item.Attributes, metaattr.MediaInfoAttributes(info.Media, info.Spatial))
+		metadata := &plugin.ItemMetadata{
+			Path:  catalogPathFor(path),
+			Kind:  item.ItemType,
+			Media: info.Media,
+		}
+		item.Media = plugin.ItemMetadataMediaInfo(metadata)
+		metaitem.ApplyMediaInfo(item.Attributes, item, info.Spatial)
 		return true, nil
 	}
 	return false, nil

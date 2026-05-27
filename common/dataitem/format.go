@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 )
 
@@ -101,7 +100,7 @@ func singleResourceRuleFromCapability(formatName string) (FormatRule, bool) {
 		return FormatRule{}, false
 	}
 	dataType := capability.DataType
-	if dataType == DataTypeUnknown && capability.DataType != datatype.DataTypeFile {
+	if dataType == DataTypeUnknown {
 		return FormatRule{}, false
 	}
 	rule := FormatRule{

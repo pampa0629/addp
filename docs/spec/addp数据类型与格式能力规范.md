@@ -35,9 +35,9 @@ item 归并见 [ADDP 数据项探测器规范](addp数据项探测器规范.md)�
 
 | 类型 | 归属 | 说明 |
 |---|---|---|
-| `DataType` | `common/datatype` | `table`、`document`、`media`、`container`、`graph`、`file`、`unknown` |
+| `DataType` | `common/datatype` | `table`、`document`、`media`、`container`、`graph`、`unknown` |
 | `FieldType` / `FieldInfo` | `common/datatype` | 平台通用字段类型和字段语义 |
-| `TableInfo` / `DocumentInfo` / `MediaInfo` / `ContainerInfo` / `GraphInfo` / `FileInfo` | `common/datatype` | 各 data type 的通用 type info |
+| `TableInfo` / `DocumentInfo` / `MediaInfo` / `ContainerInfo` / `GraphInfo` | `common/datatype` | 各 data type 的通用 type info |
 | `SpatialInfo` | `common/datatype` | 空间横切事实，落点是 `attributes.capabilities.spatial` |
 | `ContentIndex` | `common/datatype` | 内容读取索引，落点是 `attributes.content_index.<data_type>` |
 

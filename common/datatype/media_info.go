@@ -20,3 +20,20 @@ type MediaInfo struct {
 	ColorSpace string    `json:"color_space,omitempty"`
 	SizeBytes  *int64    `json:"size_bytes,omitempty"`
 }
+
+// Clone returns a deep copy of MediaInfo.
+func (m *MediaInfo) Clone() *MediaInfo {
+	if m == nil {
+		return nil
+	}
+	cloned := *m
+	if m.DurationMS != nil {
+		durationMS := *m.DurationMS
+		cloned.DurationMS = &durationMS
+	}
+	if m.SizeBytes != nil {
+		sizeBytes := *m.SizeBytes
+		cloned.SizeBytes = &sizeBytes
+	}
+	return &cloned
+}

@@ -12,7 +12,6 @@ const (
 	DataTypeMedia     DataType = "media"
 	DataTypeContainer DataType = "container"
 	DataTypeGraph     DataType = "graph"
-	DataTypeFile      DataType = "file"
 )
 
 var knownDataTypes = map[DataType]struct{}{
@@ -22,7 +21,6 @@ var knownDataTypes = map[DataType]struct{}{
 	DataTypeMedia:     {},
 	DataTypeContainer: {},
 	DataTypeGraph:     {},
-	DataTypeFile:      {},
 }
 
 // ParseDataType normalizes a string into a known ADDP data type.

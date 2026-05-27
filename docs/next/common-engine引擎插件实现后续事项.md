@@ -6,7 +6,7 @@
 
 ## 未决事项
 
-1. Common datatype 统一抽象仍需继续推进其他 datatype，见 [Common Datatype 统一抽象设计](common-datatype统一抽象设计.md)。table 与 graph 主事实字段已完成；下一阶段建议从 `DocumentInfo` / `FileInfo` / `MediaInfo` / `ContainerInfo` 是否进入 `plugin.ItemMetadata` 主事实字段开始。
+1. Common datatype 统一抽象仍需继续推进其他 datatype，见 [Common Datatype 统一抽象设计](common-datatype统一抽象设计.md)。table、graph、document、media、container 主事实字段已完成；`file` / `FileInfo` 已删除，未识别内容统一使用 `unknown`，文件 / 对象形态归 catalog / storage facts。
 2. SQL metadata provider 实现还需继续收敛：先维护 PostgreSQL、MySQL/Doris、ClickHouse、Spark SQL 的元数据来源和差异矩阵，再只对真实复用点抽 provider 内部 helper。
 3. ClickHouse 字段原生属性是否进入 metadata 结果需要单独设计：`system.columns` 可提供主键、排序键、分区键、默认表达式、codec、TTL 等，但不应为单一引擎直接扩张 `datatype.FieldInfo`；后续应先走 `common/datatype.FieldInfo` 的通用属性审定。
 4. Doris 表级 `Native.engine` 暂不启用。虽然 Doris 复用 MySQL-compatible metadata helper，但需要先确认目标 Doris 版本的 `information_schema.tables.engine` 字段是否稳定存在；未确认前不打开 `IncludeEngine`，避免列表 SQL 因原生列差异失败。
@@ -23,12 +23,12 @@
 - Metadata helper 只在多个引擎共享同一类事实来源时抽取，例如 MySQL/Doris 共享 `information_schema`；PostgreSQL、ClickHouse、Spark SQL 等差异较大的实现可以继续保留在插件内。
 - GORM 只作为连接池、driver 和 raw SQL 执行工具，不承担 ADDP 的 catalog path、item metadata、系统库过滤、row count 策略等平台元数据语义。
 - `plugin.ColumnInfo` 已删除，不再作为 tabular provider 过渡 DTO；通用字段属性统一围绕 `common/datatype.FieldInfo` 收敛。
-- `plugin.ItemMetadata.Table` 和 `plugin.ItemMetadata.Graph` 已是 table / graph item 主事实字段。后续新增 document / media / container / file 主事实字段时，应遵循同一模式：主事实进入强类型字段，`Attributes` 只承载必要补充和 catalog 展示属性，不作为主事实源。
+- `plugin.ItemMetadata.Table`、`plugin.ItemMetadata.Graph`、`plugin.ItemMetadata.Document`、`plugin.ItemMetadata.Media`、`plugin.ItemMetadata.Container` 已是对应 data type item 主事实字段。`Attributes` 只承载必要补充和 catalog 展示属性，不作为主事实源。
 - 对 graph 引擎，Catalog 只暴露 graph item；label、relationship type 和 endpoint pattern 属于 `datatype.GraphInfo` 的 shape facts。Neo4j Spatial 等内部节点/关系必须在 provider 或 Graph 模块服务层过滤，不进入业务图视图。
 
 ## 推进顺序
 
-1. 继续推进其他 datatype 主事实字段设计：优先 `DocumentInfo` / `FileInfo` / `MediaInfo` / `ContainerInfo`。
+1. 继续推进其他 datatype 主事实字段设计时，先确认是否存在独立于 storage / format / capabilities 的通用事实和真实消费方；没有明确价值时不新增 data type。
 2. 补齐 SQL metadata provider 差异矩阵，标明 namespace 术语、元数据来源、表类型映射、字段信息来源、row count 策略、系统库过滤规则。
 3. 只对确认共享同一元数据来源和语义的引擎抽公共 helper；不做大一统 `SQLMetadataDialect`。
 4. 清理各插件中的真实问题，例如列表阶段触发重查询、标识符引用不一致、系统库过滤散落等。

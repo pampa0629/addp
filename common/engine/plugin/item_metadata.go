@@ -24,6 +24,28 @@ func ItemMetadataDocumentInfo(metadata *ItemMetadata) *datatype.DocumentInfo {
 	return nil
 }
 
+// ItemMetadataMediaInfo returns media facts for a media-shaped item metadata.
+func ItemMetadataMediaInfo(metadata *ItemMetadata) *datatype.MediaInfo {
+	if metadata == nil {
+		return nil
+	}
+	if metadata.Media != nil {
+		return metadata.Media.Clone()
+	}
+	return nil
+}
+
+// ItemMetadataContainerInfo returns container facts for a container-shaped item metadata.
+func ItemMetadataContainerInfo(metadata *ItemMetadata) *datatype.ContainerInfo {
+	if metadata == nil {
+		return nil
+	}
+	if metadata.Container != nil {
+		return metadata.Container.Clone()
+	}
+	return nil
+}
+
 // ItemMetadataGraphInfo returns graph facts for a graph-shaped item metadata.
 func ItemMetadataGraphInfo(metadata *ItemMetadata) *datatype.GraphInfo {
 	if metadata == nil {

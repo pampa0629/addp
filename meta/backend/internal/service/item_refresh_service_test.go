@@ -272,6 +272,12 @@ func TestRefreshKnownDOCXItemExtractsTextFacts(t *testing.T) {
 	if !commonJSON.Bool(refreshed.Attributes, "type_info.document", "text_extracted") {
 		t.Fatalf("type_info.document = %#v", refreshed.Attributes["type_info"])
 	}
+	if got := commonJSON.String(refreshed.Attributes, "storage", "content_hash"); got == "" {
+		t.Fatal("storage.content_hash missing")
+	}
+	if got := commonJSON.String(refreshed.Attributes, "storage", "content_hash_algorithm"); got != "sha256" {
+		t.Fatalf("storage.content_hash_algorithm = %q", got)
+	}
 }
 
 type refreshContentReader struct {

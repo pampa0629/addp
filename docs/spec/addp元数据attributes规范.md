@@ -88,7 +88,6 @@ attributes 分区统一采用以下概念：
 | `datatype.MediaInfo` | `attributes.type_info.media` |
 | `datatype.ContainerInfo` | `attributes.type_info.container` |
 | `datatype.GraphInfo` | `attributes.type_info.graph` |
-| `datatype.FileInfo` | `attributes.type_info.file` |
 | `datatype.SpatialInfo` | `attributes.capabilities.spatial` |
 | `datatype.ContentIndex` | `attributes.content_index.<data_type>` |
 

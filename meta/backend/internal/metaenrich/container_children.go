@@ -5,8 +5,8 @@ import (
 	"io"
 
 	"github.com/addp/common/dataitem"
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
-	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
 )
@@ -25,16 +25,20 @@ func EnrichContainerChildren(ctx context.Context, attrs models.JSONMap, detected
 	if _, err := format.GetContainerInfoProvider(formatType); err != nil {
 		return nil
 	}
-	return enrichContainerChildrenFromProvider(ctx, attrs, formatType, reader, format.ContainerParseOptions(containerChildLimit, 0))
+	return enrichContainerChildrenFromProvider(ctx, attrs, detected, formatType, reader, format.ContainerParseOptions(containerChildLimit, 0))
 }
 
 func enrichContainerChildrenFromProvider(
 	ctx context.Context,
 	attrs models.JSONMap,
+	detected *metaitem.DetectedItem,
 	formatType format.FormatType,
 	reader io.Reader,
 	options *format.ParseOptions,
 ) error {
+	if detected == nil {
+		return nil
+	}
 	provider, err := format.GetContainerInfoProvider(formatType)
 	if err != nil {
 		return err
@@ -47,6 +51,11 @@ func enrichContainerChildrenFromProvider(
 		return nil
 	}
 
-	metaattr.UpsertNested(attrs, "type_info", "container", metaattr.ContainerInfoAttributes(info))
+	metadata := &plugin.ItemMetadata{
+		Kind:      detected.ItemType,
+		Container: info,
+	}
+	detected.Container = plugin.ItemMetadataContainerInfo(metadata)
+	metaitem.ApplyContainerInfo(attrs, detected)
 	return nil
 }

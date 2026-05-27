@@ -63,7 +63,7 @@ func (p *ContainerChildPreviewProvider) Preview(ctx context.Context, req *Previe
 		return p.previewTableChild(ctx, req, contentCtx.bucket, child)
 	case datatype.DataTypeContainer:
 		return p.previewContainerChild(ctx, req, contentCtx.bucket, child)
-	case datatype.DataTypeDocument, datatype.DataTypeMedia, datatype.DataTypeFile, "":
+	case datatype.DataTypeDocument, datatype.DataTypeMedia, datatype.DataTypeUnknown, "":
 		return p.previewObjectChild(ctx, req, contentCtx.bucket, child)
 	default:
 		return p.previewObjectChild(ctx, req, contentCtx.bucket, child)

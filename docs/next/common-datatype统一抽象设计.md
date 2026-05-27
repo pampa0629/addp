@@ -13,8 +13,11 @@
 - graph 业务图视图已明确过滤引擎内部结构：Neo4j Spatial 的 `SpatialLayer` 节点和 `RTREE_METADATA`、`RTREE_REFERENCE`、`RTREE_ROOT` 关系不进入 GraphInfo、计数、样本、Graph Browser、Schema 推导、知识服务或 GDS 投影。
 - graph shape facts 已补稳定化：label set 去空、去重、排序，空 shape name 可由 label set 派生；单 label node shape 使用 `kind=label`，多 label node shape 使用 `kind=label_set`；graph sample provider 过滤条件使用 `plugin.GraphSampleFilter` 强类型传递。
 - document：`plugin.ItemMetadata.Document *datatype.DocumentInfo` 已落地，作为 document item 主事实字段；`ItemMetadataDocumentInfo()` 是公共消费 helper。当前仅确立 document 主事实承载位置，MongoDB collection 的动态字段画像仍按既有 table facts 口径保留，是否调整为 document item 需要单独审定。
+- media：`plugin.ItemMetadata.Media *datatype.MediaInfo` 已落地，作为 media item 主事实字段；`ItemMetadataMediaInfo()` 是公共消费 helper。Meta 已在 known single media item refresh 链路中通过 `MediaInfoProvider` 写入 `type_info.media`，GeoTIFF 等空间事实继续通过同一次 `MediaDescribeResult` 写入 `capabilities.spatial`，不塞进 `MediaInfo`。
+- container：`plugin.ItemMetadata.Container *datatype.ContainerInfo` 已落地，作为 container item 主事实字段；`ItemMetadataContainerInfo()` 是公共消费 helper。Meta container summary 和 deep children enrich 已通过 `DetectedItem.Container` 写入 `type_info.container`，ZIP、Excel、SQLite、GeoPackage 等 child 仍只保存轻量摘要，不展开内容样本或完整字段。
+- file：`DataTypeFile` / `FileInfo` 已删除。文件、对象、目录等是 catalog / storage 形态；未识别内容统一使用 `unknown`。
 
-下一阶段建议优先处理 `FileInfo` / `MediaInfo` / `ContainerInfo` 是否进入 `plugin.ItemMetadata` 主事实字段，并同步迁移 Meta attributes、Manager 属性页和预览消费链路。不要先新增兼容 DTO；先确认每类 data type 的主事实边界，再动代码。
+下一阶段不再推进新的 data type 主事实字段；后续只有出现独立于 storage / format / capabilities 的通用事实和真实消费方时，才重新讨论新增 data type 或横切能力。
 
 ## 核心目标
 
@@ -101,12 +104,8 @@ common/format common/engine common/dataitem
 | `media` | 图片、视频、音频等可感知媒体 |
 | `container` | 内部包含子对象或子资源的数据 |
 | `graph` | 节点、边、关系结构数据 |
-| `file` | 已知为普通文件但暂不归入更具体 data type 的低语义兜底 |
 
-`file` 和 `unknown` 的边界需要保持清晰：
-
-- `unknown` 表示平台尚不能稳定判断内容语义。
-- `file` 表示平台知道它是普通文件型 item，但没有更高层处理语义。
+`file` 不作为基础 data type。文件、对象、目录等是 catalog / storage 形态；当平台尚不能稳定判断内容语义时，data type 统一为 `unknown`。
 
 空间、时间、统计、提取、语义、分区、索引等不新增为基础 data type，而是横切事实。
 
@@ -121,7 +120,6 @@ common/format common/engine common/dataitem
 | `media` | `MediaInfo` | media kind、MIME、宽高、时长、编码、颜色空间 |
 | `container` | `ContainerInfo` | child 数量、默认 child、child 摘要、child refs |
 | `graph` | `GraphInfo` | 节点结构、关系结构、连接模式、属性结构、节点数、关系数 |
-| `file` | `FileInfo` | MIME、编码、大小、基础校验或可读性摘要 |
 
 目标代码形态使用轻量 `TypeInfo` 接口标记这些结构的 data type 归属，同时保持各 info 为独立结构，不做大 union：
 
@@ -137,7 +135,6 @@ type DocumentInfo struct { ... }
 type MediaInfo struct { ... }
 type ContainerInfo struct { ... }
 type GraphInfo struct { ... }
-type FileInfo struct { ... }
 ```
 
 `TypeInfo` 只回答“该结构写入哪个 `type_info.<data_type>` 分区”，不承载空间、内容索引、格式私有信息或运行时业务逻辑。
@@ -150,7 +147,6 @@ type_info.document
 type_info.media
 type_info.container
 type_info.graph
-type_info.file
 ```
 
 ### FieldType
@@ -591,21 +587,11 @@ type GraphEndpointInfo struct {
 
 图查询语言、遍历 API、子图采样、图算法不属于 `datatype`，应留在 engine provider 或 graph 模块能力中。
 
-### FileInfo
+### FileInfo 删除结论
 
-`FileInfo` 是低语义文件型 data item 的通用信息。它不替代 storage attributes。
+`FileInfo` 不作为 ADDP data type 主事实结构保留。当前能想到的字段（MIME、编码、大小）要么已有更明确的 storage / document / format 落点，要么缺少独立消费方。为避免 `type_info.file` 与 `storage` 双写同一事实，本轮删除 `DataTypeFile` / `FileInfo`。
 
-第一版目标字段保持克制：
-
-```go
-type FileInfo struct {
-    MIMEType  string
-    Encoding  string
-    SizeBytes *int64
-}
-```
-
-对象路径、bucket、etag、last_modified、storage class 等仍属于 storage / item attributes，不进入 `FileInfo`。
+后续如果出现明确需求，例如低语义文件的通用安全扫描摘要、可读性状态或通用二进制画像，应先确认这些事实不属于 `storage`、`format_info` 或 `capabilities`，再重新讨论是否新增 data type 或横切能力。
 
 ## 横切结构
 
@@ -797,9 +783,6 @@ datatype.ContainerInfo
 datatype.GraphInfo
   -> attributes.type_info.graph
 
-datatype.FileInfo
-  -> attributes.type_info.file
-
 datatype.SpatialInfo
   -> attributes.capabilities.spatial
 
@@ -841,12 +824,12 @@ datatype.ContentIndex
 
 1. 审定本文对 `DataType`、`TypeInfo`、`FieldType`、横切结构和 Layout 边界的定义。
 2. 同步更新 `docs/concepts/addp数据类型和格式体系图.md`、`docs/spec/addp数据类型与格式能力规范.md`、`docs/spec/addp元数据attributes规范.md`。
-3. 明确 `file` 是否作为长期基础 data type 保留。
+3. `file` 已确认不作为长期基础 data type 保留；文件 / 对象形态归 catalog / storage facts。
 
 ### 阶段 1：新增 `common/datatype`
 
 1. 新建 `common/datatype`。
-2. 定义 `DataType`、`FieldType`、`TableInfo`、`FieldInfo`、`DocumentInfo`、`MediaInfo`、`ContainerInfo`、`GraphInfo`、`FileInfo`、`SpatialInfo`、`ContentIndex`。
+2. 定义 `DataType`、`FieldType`、`TableInfo`、`FieldInfo`、`DocumentInfo`、`MediaInfo`、`ContainerInfo`、`GraphInfo`、`SpatialInfo`、`ContentIndex`。
 3. 补类型常量和 helper 测试。
 
 ### 阶段 2：format 依赖 datatype
@@ -872,7 +855,9 @@ datatype.ContentIndex
 - `plugin.ItemMetadata.Table *datatype.TableInfo` 已落地，table facts 不再由 `Fields` / `Stats` / `Attributes` 拼装。
 - `plugin.ItemMetadata.Graph *datatype.GraphInfo` 已落地，graph facts 不再由 label item、relationship item 或扁平 `from_labels` / `to_labels` 拼装。
 - `plugin.ItemMetadata.Document *datatype.DocumentInfo` 已落地，document facts 不再需要由 `Attributes` 拼装。
-- `ItemMetadataTableInfo()`、`ItemMetadataFields()`、`ItemMetadataDocumentInfo()`、`ItemMetadataGraphInfo()` 是公共消费 helper。后续新增 Media / Container / File 主事实字段时，也应同步补对应 helper，避免消费方直接读 `Attributes`。
+- `plugin.ItemMetadata.Media *datatype.MediaInfo` 已落地，media facts 不再需要由 `Attributes` 拼装。
+- `plugin.ItemMetadata.Container *datatype.ContainerInfo` 已落地，container facts 不再需要由 `Attributes` 拼装。
+- `ItemMetadataTableInfo()`、`ItemMetadataFields()`、`ItemMetadataDocumentInfo()`、`ItemMetadataMediaInfo()`、`ItemMetadataContainerInfo()`、`ItemMetadataGraphInfo()` 是公共消费 helper，避免消费方直接读 `Attributes`。
 - `DocumentMetadataSamplingProvider` 当前仍返回 `*ItemMetadata`。MongoDB collection 动态字段画像继续按既有 table facts 口径保留，是否调整为 document 专用事实需要先统一 collection 的 data type 归属和字段画像消费链路。
 
 ### 阶段 4：dataitem 与 Meta 收拢
@@ -894,14 +879,15 @@ datatype.ContentIndex
 - Manager 已按 `ItemMetadataTableInfo` / `ItemMetadataFields` / `type_info.graph` 消费 table 和 graph facts；graph 预览与属性页只展示轻量结构摘要，不维护 Graph 模块领域模型。
 - Transfer pipeline 已迁移到统一 table facts。
 - Service 图查询服务已从旧 label item 口径迁移为读取 graph item 的 `type_info.graph.node_shapes`。
+- Meta known single media item refresh 已按 `ItemMetadataMediaInfo` / `type_info.media` 消费 media facts；Manager 媒体预览仍基于标准 attributes 与 raw / range content。
+- Meta container summary 和 deep children enrich 已按 `ItemMetadataContainerInfo` / `type_info.container` 消费 container facts；Manager 容器预览继续基于标准 attributes 与按需 child resolver。
 
 下一阶段候选：
 
 1. MongoDB collection：确认文档集合的 data type 归属，以及动态字段画像继续走 table facts 还是 document 专用事实。
-2. `FileInfo`：确认低语义文件 item 是否需要主事实字段，避免 storage facts、format facts 和 file type info 混写。
-3. `MediaInfo`：确认 image/audio/video 当前通用字段是否足以作为 `ItemMetadata.Media` 主事实；音视频 codec、bitrate、sample rate 等继续暂留 format/extraction，除非有明确消费方。
-4. `ContainerInfo`：已在 datatype 层定义，但下一步要确认 engine / format / Meta 是否需要 `ItemMetadata.Container` 主事实字段，尤其是 ZIP、Excel、SQLite、GeoPackage 这类 native child 场景。
-5. 文档全文检索：DOCX / PPTX / WPS 的全文不进入 `DocumentInfo`。Meta 深度扫描或 extraction 任务负责调用 `DocumentTextReader` / 外部 extractor 抽取正文并写入 Meilisearch；attributes 只记录 `type_info.document`、`capabilities.extraction` 状态、预览或外部索引引用；Manager 只提供检索入口和结果展示，不解析文档。
+2. container 后续增强：ZIP、Excel、SQLite、GeoPackage 这类 native child 场景已具备主事实承载点；后续继续核实真实样例和 Manager child resolver 体验，不把 child 样本或完整字段塞回父 `ContainerInfo`。
+3. media 后续增强：image/audio/video 当前通用字段已足以作为 `ItemMetadata.Media` 主事实；音视频 codec、bitrate、sample rate 等继续暂留 format/extraction，除非有明确消费方。
+4. 文档全文检索：DOCX / PPTX / WPS 的全文不进入 `DocumentInfo`。Meta 深度扫描或 extraction 任务负责调用 `DocumentTextReader` / 外部 extractor 抽取正文并写入 Meilisearch；attributes 只记录 `type_info.document`、`capabilities.extraction` 状态、预览或外部索引引用；Manager 只提供检索入口和结果展示，不解析文档。
 
 ## 不做事项
 

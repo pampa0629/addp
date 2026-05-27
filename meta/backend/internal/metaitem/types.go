@@ -12,6 +12,8 @@ import (
 type CompositeItemInfo struct {
 	Fields     []datatype.FieldInfo
 	Document   *datatype.DocumentInfo
+	Media      *datatype.MediaInfo
+	Container  *datatype.ContainerInfo
 	Attributes map[string]interface{}
 	Layout     dataitem.Layout
 	DataType   dataitem.DataType
@@ -37,6 +39,8 @@ type DetectedItem struct {
 	PhysicalPath string
 	Fields       []datatype.FieldInfo
 	Document     *datatype.DocumentInfo
+	Media        *datatype.MediaInfo
+	Container    *datatype.ContainerInfo
 	Attributes   map[string]interface{}
 }
 
@@ -80,6 +84,8 @@ func DetectedItemFromCompositeInfo(info *CompositeItemInfo, physicalPath string,
 		PhysicalPath: physicalPath,
 		Fields:       info.Fields,
 		Document:     info.Document.Clone(),
+		Media:        info.Media.Clone(),
+		Container:    info.Container.Clone(),
 		Attributes:   info.Attributes,
 	}
 }

@@ -135,7 +135,7 @@ func refTypeForRole(role string) (datatype.DataType, format.FormatType) {
 	case roleProjection, roleEncoding:
 		return datatype.DataTypeDocument, format.FormatText
 	default:
-		return datatype.DataTypeFile, format.FormatUnknown
+		return datatype.DataTypeUnknown, format.FormatUnknown
 	}
 }
 

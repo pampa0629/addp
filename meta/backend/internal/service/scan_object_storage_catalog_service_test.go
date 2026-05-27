@@ -182,6 +182,29 @@ func TestExtractObjectCatalogDocumentTextReadsDOCX(t *testing.T) {
 	}
 }
 
+func TestComputeContentSHA256WritesStorageContentHash(t *testing.T) {
+	t.Parallel()
+
+	attrs := models.JSONMap{}
+	hash, err := computeContentSHA256(
+		context.Background(),
+		staticObjectContentReader{content: "binary content"},
+		nil,
+		plugin.ObjectItemPath(7, "addp", "docs/raw.wps"),
+	)
+	if err != nil {
+		t.Fatalf("computeContentSHA256() error = %v", err)
+	}
+	setStorageContentHash(attrs, hash)
+
+	if got := commonJSON.String(attrs, "storage", "content_hash"); got != "93a0b24644f2e0fd11d6b422c90275c482b0cc20be4a4e3f62148ed2932b4792" {
+		t.Fatalf("storage.content_hash = %q", got)
+	}
+	if got := commonJSON.String(attrs, "storage", "content_hash_algorithm"); got != "sha256" {
+		t.Fatalf("storage.content_hash_algorithm = %q", got)
+	}
+}
+
 func TestEnsureObjectCatalogPrefixNodesUsesCompositeItemParentPath(t *testing.T) {
 	db := openObjectCatalogScanTestDB(t)
 	repo := metaRepo.NewScanRepository(db)

@@ -95,7 +95,7 @@ func previewHintDataType(formatType format.FormatType, contentType string) strin
 	case strings.HasPrefix(contentType, "text/"):
 		return string(datatype.DataTypeDocument)
 	default:
-		return string(datatype.DataTypeFile)
+		return string(datatype.DataTypeUnknown)
 	}
 }
 
