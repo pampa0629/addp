@@ -1,7 +1,19 @@
 <template>
   <div class="image-preview-container">
     <div class="image-preview">
-      <div v-if="imageSrc" class="image-wrapper">
+      <div v-if="isTiffImage" class="image-wrapper">
+        <div v-if="tiffLoading || tiffError" class="placeholder">
+          <p class="message">{{ tiffLoading ? '正在解析 TIFF 图片...' : contentMessage }}</p>
+          <p v-if="tiffError" class="download-hint">如需下载原始文件，请使用右上角的下载按钮</p>
+        </div>
+        <canvas
+          v-show="!tiffLoading && !tiffError"
+          ref="tiffCanvasRef"
+          class="tiff-canvas"
+          :aria-label="fileName"
+        />
+      </div>
+      <div v-else-if="imageSrc" class="image-wrapper">
         <img :src="imageSrc" :alt="fileName" @load="onImageLoad" />
       </div>
       <div v-else class="placeholder">
@@ -59,7 +71,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { formatBytes } from '../utils/formatters'
 import ExtractedMetadata from './ExtractedMetadata.vue'
 
@@ -71,6 +83,9 @@ const props = defineProps({
 })
 
 const imageLoadedDimensions = ref({ width: 0, height: 0 })
+const tiffCanvasRef = ref(null)
+const tiffLoading = ref(false)
+const tiffError = ref('')
 
 const objectData = computed(() => props.data?.object || {})
 const content = computed(() => objectData.value?.content || {})
@@ -159,6 +174,30 @@ const contentType = computed(() => {
 
 const fileName = computed(() => objectData.value?.path || objectData.value?.name || 'image')
 
+const contentFormat = computed(() => {
+  return String(
+    metadata.value?.format ||
+      attributes.value?.item?.format ||
+      objectData.value?.format ||
+      ''
+  ).toLowerCase()
+})
+
+const fileExtension = computed(() => {
+  const name = fileName.value || ''
+  const dot = name.lastIndexOf('.')
+  return dot >= 0 ? name.slice(dot).toLowerCase() : ''
+})
+
+const isTiffImage = computed(() => {
+  const type = String(contentType.value || '').toLowerCase()
+  return (
+    contentFormat.value === 'tiff' ||
+    type.includes('image/tiff') ||
+    ['.tif', '.tiff'].includes(fileExtension.value)
+  )
+})
+
 const withAuthToken = (url) => {
   if (!url || typeof url !== 'string') return ''
   if (!url.startsWith('/api/v1/manager/object-stream')) return url
@@ -177,7 +216,7 @@ const imageSrc = computed(() => {
   return withAuthToken(imageURL.value)
 })
 
-const contentMessage = computed(() => content.value?.text || '图片超出预览限制，无法在线展示')
+const contentMessage = computed(() => tiffError.value || content.value?.text || '图片超出预览限制，无法在线展示')
 
 const formattedSize = computed(() => {
   if (!sizeBytes.value) return ''
@@ -202,6 +241,118 @@ const onImageLoad = (event) => {
     height: img.naturalHeight
   }
 }
+
+const dataURLToArrayBuffer = (dataURL) => {
+  const base64 = dataURL.split(',', 2)[1] || ''
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+  return bytes.buffer
+}
+
+const fetchImageArrayBuffer = async (src) => {
+  if (!src) {
+    throw new Error('缺少 TIFF 图片地址')
+  }
+  if (src.startsWith('data:')) {
+    return dataURLToArrayBuffer(src)
+  }
+  const response = await fetch(src)
+  if (!response.ok) {
+    throw new Error(`读取 TIFF 图片失败: ${response.status}`)
+  }
+  return response.arrayBuffer()
+}
+
+const normalizeSample = (value, min, max) => {
+  if (!Number.isFinite(value)) return 0
+  if (max <= min) return 0
+  return Math.max(0, Math.min(255, Math.round(((value - min) / (max - min)) * 255)))
+}
+
+const rasterStats = (raster) => {
+  let min = Infinity
+  let max = -Infinity
+  for (let i = 0; i < raster.length; i += 1) {
+    const value = Number(raster[i])
+    if (!Number.isFinite(value)) continue
+    if (value < min) min = value
+    if (value > max) max = value
+  }
+  if (!Number.isFinite(min) || !Number.isFinite(max)) {
+    return { min: 0, max: 0 }
+  }
+  return { min, max }
+}
+
+const rgbaFromRaster = (raster, width, height, samplesPerPixel) => {
+  const output = new Uint8ClampedArray(width * height * 4)
+  const hasRGB = samplesPerPixel >= 3
+  const stats = hasRGB ? null : rasterStats(raster)
+  for (let pixel = 0; pixel < width * height; pixel += 1) {
+    const src = pixel * samplesPerPixel
+    const dest = pixel * 4
+    if (hasRGB) {
+      output[dest] = Number(raster[src]) || 0
+      output[dest + 1] = Number(raster[src + 1]) || 0
+      output[dest + 2] = Number(raster[src + 2]) || 0
+      output[dest + 3] = samplesPerPixel >= 4 ? Number(raster[src + 3]) || 255 : 255
+    } else {
+      const gray = normalizeSample(Number(raster[src]), stats.min, stats.max)
+      output[dest] = gray
+      output[dest + 1] = gray
+      output[dest + 2] = gray
+      output[dest + 3] = 255
+    }
+  }
+  return output
+}
+
+const renderTiff = async () => {
+  if (!isTiffImage.value || !imageSrc.value) return
+  tiffLoading.value = true
+  tiffError.value = ''
+  await nextTick()
+  try {
+    const [{ fromArrayBuffer }, arrayBuffer] = await Promise.all([
+      import('geotiff'),
+      fetchImageArrayBuffer(imageSrc.value)
+    ])
+    const tiff = await fromArrayBuffer(arrayBuffer)
+    const image = await tiff.getImage()
+    const width = image.getWidth()
+    const height = image.getHeight()
+    const samplesPerPixel = image.getSamplesPerPixel()
+    const raster = await image.readRasters({ interleave: true })
+    const canvas = tiffCanvasRef.value
+    if (!canvas) return
+    canvas.width = width
+    canvas.height = height
+    const ctx = canvas.getContext('2d')
+    const imageData = new ImageData(rgbaFromRaster(raster, width, height, samplesPerPixel), width, height)
+    ctx.putImageData(imageData, 0, 0)
+    imageLoadedDimensions.value = { width, height }
+  } catch (error) {
+    tiffError.value = error?.message || 'TIFF 图片解析失败，请下载后查看'
+  } finally {
+    tiffLoading.value = false
+  }
+}
+
+watch(
+  () => [isTiffImage.value, imageSrc.value],
+  () => {
+    if (isTiffImage.value) {
+      renderTiff()
+    } else {
+      tiffError.value = ''
+      tiffLoading.value = false
+    }
+  },
+  { immediate: true }
+)
 </script>
 
 <style scoped>
@@ -229,7 +380,8 @@ const onImageLoad = (event) => {
   width: 100%;
 }
 
-.image-wrapper img {
+.image-wrapper img,
+.tiff-canvas {
   max-width: 100%;
   max-height: 500px;
   border-radius: 4px;

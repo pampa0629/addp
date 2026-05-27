@@ -1,6 +1,8 @@
 package service
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"io"
 	"log/slog"
@@ -121,6 +123,59 @@ func TestExtractObjectCatalogDocumentTextWritesExtractionFacts(t *testing.T) {
 	}
 	if got := commonJSON.String(attrs, "capabilities.extraction", "plain_text_preview"); got != "hello document search" {
 		t.Fatalf("plain_text_preview = %q", got)
+	}
+	if !commonJSON.Bool(attrs, "type_info.document", "text_extracted") {
+		t.Fatalf("type_info.document = %#v", attrs["type_info"])
+	}
+}
+
+func TestExtractObjectCatalogDocumentTextReadsDOCX(t *testing.T) {
+	t.Parallel()
+
+	docxContent := minimalObjectCatalogDOCX(t, `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Hello</w:t></w:r><w:r><w:t> DOCX</w:t></w:r></w:p><w:p><w:r><w:t>Search body</w:t></w:r></w:p></w:body></w:document>`)
+	resource := metacatalog.StorageResource{
+		RootName:    "addp",
+		Path:        "docs/search.docx",
+		FullPath:    "addp/docs/search.docx",
+		SizeBytes:   int64(len(docxContent)),
+		Format:      string(format.FormatDOCX),
+		CatalogPath: plugin.ObjectItemPath(7, "addp", "docs/search.docx"),
+	}
+	item := &metaitem.DetectedItem{
+		ResolvedItem: dataitem.ResolvedItem{
+			DataType: datatype.DataTypeDocument,
+			Format:   string(format.FormatDOCX),
+		},
+	}
+	attrs := models.JSONMap{"item": map[string]interface{}{"format": string(format.FormatDOCX)}}
+
+	text := extractObjectCatalogDocumentText(
+		context.Background(),
+		attrs,
+		staticObjectContentReader{content: string(docxContent)},
+		nil,
+		7,
+		resource,
+		item,
+	)
+
+	if text != "Hello DOCX\nSearch body" {
+		t.Fatalf("extracted text = %q", text)
+	}
+	if !commonJSON.Bool(attrs, "capabilities.extraction", "text_extracted") {
+		t.Fatalf("capabilities.extraction = %#v", attrs["capabilities"])
+	}
+	if got := commonJSON.String(attrs, "capabilities.extraction", "extractor"); got != "common_format:docx" {
+		t.Fatalf("extractor = %q", got)
+	}
+	if got := commonJSON.String(attrs, "capabilities.extraction", "plain_text_preview"); got != "Hello DOCX\nSearch body" {
+		t.Fatalf("plain_text_preview = %q", got)
+	}
+	if got := commonJSON.String(attrs, "capabilities.extraction", "index_ref"); !strings.HasPrefix(got, "meilisearch:assets:") {
+		t.Fatalf("index_ref = %q", got)
+	}
+	if commonJSON.Bool(attrs, "capabilities.extraction", "text_truncated") {
+		t.Fatalf("text_truncated = true, want false")
 	}
 	if !commonJSON.Bool(attrs, "type_info.document", "text_extracted") {
 		t.Fatalf("type_info.document = %#v", attrs["type_info"])
@@ -258,6 +313,23 @@ func openObjectCatalogScanTestDB(t *testing.T) *gorm.DB {
 
 func strPtr(s string) *string {
 	return &s
+}
+
+func minimalObjectCatalogDOCX(t *testing.T, documentXML string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	writer := zip.NewWriter(&buf)
+	file, err := writer.Create("word/document.xml")
+	if err != nil {
+		t.Fatalf("create document.xml: %v", err)
+	}
+	if _, err := file.Write([]byte(documentXML)); err != nil {
+		t.Fatalf("write document.xml: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close zip: %v", err)
+	}
+	return buf.Bytes()
 }
 
 type staticObjectContentReader struct {

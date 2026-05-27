@@ -12,6 +12,7 @@ import (
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
+	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/metaenrich"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/metapath"
@@ -68,6 +69,47 @@ func (s *ScanService) RefreshItem(ctx context.Context, engineID, tenantID, itemI
 		return nil, err
 	}
 
+	item.Attributes = metaattr.Normalize(refreshed)
+	item.RowCount = rowCount
+	item.SizeBytes = sizeBytes
+	descriptor := dataitem.DescriptorFromAttributes(item.Attributes)
+	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
+	catalogPathFor := knownItemCatalogPathResolver(resource.ID, resource.EngineType, descriptor)
+	physicalPath := firstNonEmpty(descriptor.PhysicalPath, descriptor.EntryPath, pathFromStorage(descriptor), item.FullName)
+	extractedText, err := extractKnownItemDocumentText(ctx, item.Attributes, contentReader, connInfo, resource.ID, catalogPathFor, &item, descriptor, physicalPath)
+	if err != nil {
+		return nil, err
+	}
+	item.Attributes = metaattr.Normalize(item.Attributes)
+	if err := s.db.Model(&item).Updates(map[string]interface{}{
+		"attributes": item.Attributes,
+	}).Error; err != nil {
+		return nil, err
+	}
+	if s.indexerService != nil && isObjectLikeEngine(resource.EngineType) && descriptor.StorageBucket != "" {
+		objectPath := pathFromStorage(descriptor)
+		if objectPath == "" {
+			objectPath = physicalPath
+			if bucket, parsedPath := metapath.SplitObjectPath(objectPath); bucket == descriptor.StorageBucket && parsedPath != "" {
+				objectPath = parsedPath
+			}
+		}
+		if objectPath != "" {
+			catalogResource := metacatalog.StorageResource{
+				RootName:     descriptor.StorageBucket,
+				Path:         objectPath,
+				FullPath:     item.FullName,
+				NodeType:     item.ItemType,
+				Format:       descriptor.Format,
+				SizeBytes:    sizeFromDescriptor(descriptor, &item),
+				ObjectCount:  1,
+				LastModified: item.DataUpdatedAt,
+				CatalogPath:  catalogPathFor(objectPath),
+			}
+			s.indexerService.IndexObjectAsset(resource, tenantID, resource.ID, catalogResource, objectPath, item.FullName, &item, extractedText)
+		}
+	}
+
 	return &models.ScanResponse{
 		Status:        "success",
 		Message:       "item refreshed",
@@ -122,6 +164,35 @@ func (s *ScanService) refreshKnownItemAttributes(
 	metaattr.MergeDataItemAttributes(attrs, metaitem.AttributeInput(detected))
 	restoreKnownItemStorage(attrs, descriptor, item)
 	return metaattr.Normalize(attrs), len(detected.Fields), nil
+}
+
+func extractKnownItemDocumentText(
+	ctx context.Context,
+	attrs models.JSONMap,
+	contentReader plugin.ContentReadableProvider,
+	connInfo plugin.ConnectionInfo,
+	engineID uint,
+	catalogPathFor func(path string) plugin.CatalogPath,
+	item *models.MetaItem,
+	descriptor dataitem.ItemDescriptor,
+	physicalPath string,
+) (string, error) {
+	if attrs == nil || contentReader == nil || catalogPathFor == nil || item == nil || descriptor.DataType != dataitem.DataTypeDocument || physicalPath == "" {
+		return "", nil
+	}
+	detected := detectedItemFromDescriptor(item, descriptor)
+	resource := metacatalog.StorageResource{
+		RootName:     descriptor.StorageBucket,
+		Path:         physicalPath,
+		FullPath:     item.FullName,
+		NodeType:     item.ItemType,
+		Format:       descriptor.Format,
+		SizeBytes:    sizeFromDescriptor(descriptor, item),
+		ObjectCount:  1,
+		LastModified: item.DataUpdatedAt,
+		CatalogPath:  catalogPathFor(physicalPath),
+	}
+	return extractObjectCatalogDocumentText(ctx, attrs, contentReader, connInfo, engineID, resource, detected), nil
 }
 
 func enrichKnownResourceAttributes(

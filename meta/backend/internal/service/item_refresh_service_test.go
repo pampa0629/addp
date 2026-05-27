@@ -1,6 +1,7 @@
 package service
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"io"
@@ -14,6 +15,7 @@ import (
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 	_ "github.com/addp/common/format/builtin"
+	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
 	"github.com/jonas-p/go-shp"
@@ -191,6 +193,87 @@ func TestRefreshKnownPDFItemWritesDocumentAndFormatInfo(t *testing.T) {
 	}
 }
 
+func TestRefreshKnownDOCXItemExtractsTextFacts(t *testing.T) {
+	t.Parallel()
+
+	db := openObjectCatalogScanTestDB(t)
+	tenantID := uint(1)
+	engineID := uint(79)
+	engineSvc := NewEngineService(db, "", "", nil)
+	engineSvc.engineCache[engineID] = &engineCacheEntry{
+		resource: &commonModels.Engine{
+			ID:         engineID,
+			TenantID:   &tenantID,
+			EngineType: "known-refresh-docx-test",
+			IsActive:   true,
+		},
+		expiresAt: time.Now().Add(time.Hour),
+	}
+
+	content := minimalRefreshDOCX(t, `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>行业赛道</w:t></w:r><w:r><w:t>分析</w:t></w:r></w:p></w:body></w:document>`)
+	plugin.Register(refreshContentReader{engineType: "known-refresh-docx-test", content: map[string][]byte{"addp/doc/关于时空底座.docx": content}})
+
+	svc := NewScanService(db, engineSvc)
+	svc.log = slog.Default()
+	node := models.MetaNode{TenantID: tenantID, EngineID: engineID, NodeType: "bucket", Name: "addp", FullName: "addp", Depth: 0}
+	if err := db.Create(&node).Error; err != nil {
+		t.Fatalf("create node: %v", err)
+	}
+	size := int64(len(content))
+	item := models.MetaItem{
+		TenantID:    tenantID,
+		EngineID:    engineID,
+		NodeID:      node.ID,
+		ItemType:    "object",
+		Name:        "关于时空底座.docx",
+		FullName:    "addp/doc/关于时空底座.docx",
+		Fingerprint: "known-refresh-docx",
+		SizeBytes:   &size,
+		Attributes: models.JSONMap{
+			"item": map[string]interface{}{
+				"layout":    string(dataitem.LayoutSingle),
+				"data_type": string(dataitem.DataTypeDocument),
+				"format":    "docx",
+			},
+			"storage": map[string]interface{}{
+				"bucket":        "addp",
+				"path":          "doc/",
+				"name":          "关于时空底座.docx",
+				"physical_path": "addp/doc/关于时空底座.docx",
+				"size_bytes":    size,
+			},
+		},
+	}
+	if err := db.Create(&item).Error; err != nil {
+		t.Fatalf("create item: %v", err)
+	}
+
+	resp, err := svc.RefreshItem(context.Background(), engineID, tenantID, item.ID, "", true)
+	if err != nil {
+		t.Fatalf("RefreshItem() error = %v", err)
+	}
+	if resp.ItemsScanned != 1 {
+		t.Fatalf("ItemsScanned = %d, want 1", resp.ItemsScanned)
+	}
+
+	var refreshed models.MetaItem
+	if err := db.First(&refreshed, item.ID).Error; err != nil {
+		t.Fatalf("load refreshed item: %v", err)
+	}
+	if !commonJSON.Bool(refreshed.Attributes, "capabilities.extraction", "text_extracted") {
+		t.Fatalf("capabilities.extraction = %#v", refreshed.Attributes["capabilities"])
+	}
+	if got := commonJSON.String(refreshed.Attributes, "capabilities.extraction", "plain_text_preview"); got != "行业赛道分析" {
+		t.Fatalf("plain_text_preview = %q", got)
+	}
+	if got := commonJSON.String(refreshed.Attributes, "capabilities.extraction", "extractor"); got != "common_format:docx" {
+		t.Fatalf("extractor = %q", got)
+	}
+	if !commonJSON.Bool(refreshed.Attributes, "type_info.document", "text_extracted") {
+		t.Fatalf("type_info.document = %#v", refreshed.Attributes["type_info"])
+	}
+}
+
 type refreshContentReader struct {
 	engineType string
 	content    map[string][]byte
@@ -246,4 +329,21 @@ func createRefreshTestShapefile(t *testing.T) string {
 		}
 	}
 	return base
+}
+
+func minimalRefreshDOCX(t *testing.T, documentXML string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	writer := zip.NewWriter(&buf)
+	file, err := writer.Create("word/document.xml")
+	if err != nil {
+		t.Fatalf("create document.xml: %v", err)
+	}
+	if _, err := file.Write([]byte(documentXML)); err != nil {
+		t.Fatalf("write document.xml: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close zip: %v", err)
+	}
+	return buf.Bytes()
 }
