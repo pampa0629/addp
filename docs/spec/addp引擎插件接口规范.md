@@ -157,6 +157,27 @@ type GraphSampleProvider interface {
 }
 ```
 
+`GraphSampleOptions.Filter` 使用强类型过滤条件，不得在 provider 边界继续透传松散 map：
+
+```go
+const (
+    GraphSampleKindNodeShape         = "node_shape"
+    GraphSampleKindRelationshipShape = "relationship_shape"
+)
+
+type GraphSampleFilter struct {
+    Kind             string
+    Labels           []string
+    RelationshipType string
+    FromLabels       []string
+    ToLabels         []string
+}
+```
+
+`Labels`、`FromLabels`、`ToLabels` 是采样执行时使用的完整 label set。它们只属于 sample provider 的过滤参数，不是 `GraphInfo` 的独立 relationship endpoint 主事实；持久化结构事实仍必须使用 `GraphRelationshipPatternInfo` 表达 from/to 配对模式。
+
+`GraphData` 是 graph sample / graph query 返回的运行时图形数据，由节点和关系组成。它不属于 `common/datatype`，也不得写入 `type_info.graph`。
+
 ### StoreProvider
 
 表达 item 内容访问能力。Catalog 回答“有什么”，Metadata 回答“它是什么样”，Store 回答“如何读写内容”。

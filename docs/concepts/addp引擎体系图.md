@@ -11,7 +11,7 @@
 | Engine Instance | System 中的一条引擎实例，保存租户、名称、类型、连接配置、能力声明和连接状态。 |
 | Engine Plugin | `common/engine/plugins/<engine_type>` 下的插件实现，负责连接、校验、测试和能力暴露。 |
 | Capability | 插件返回的结构化能力声明，版本为 `engine.capabilities/v1`。 |
-| Catalog | 引擎中的真实目录层级，如 schema/table、bucket/object、database/label。 |
+| Catalog | 引擎中的真实目录层级，如 schema/table、bucket/object、database/graph。 |
 | Item | 可被描述、预览、读取或写入的叶子数据项。 |
 
 ### 实时 Catalog、元数据快照和数据预览的边界

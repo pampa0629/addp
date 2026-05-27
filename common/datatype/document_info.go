@@ -10,3 +10,16 @@ type DocumentInfo struct {
 	SizeBytes     *int64 `json:"size_bytes,omitempty"`
 	TextExtracted bool   `json:"text_extracted"`
 }
+
+// Clone returns a deep copy of DocumentInfo.
+func (d *DocumentInfo) Clone() *DocumentInfo {
+	if d == nil {
+		return nil
+	}
+	cloned := *d
+	if d.SizeBytes != nil {
+		sizeBytes := *d.SizeBytes
+		cloned.SizeBytes = &sizeBytes
+	}
+	return &cloned
+}

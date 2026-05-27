@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	commonAPI "github.com/addp/common/api"
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/logger"
 	"github.com/addp/manager/internal/preview"
 	"github.com/addp/manager/internal/service"
@@ -223,28 +224,21 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-func graphSampleFilterFromQuery(c *gin.Context) map[string]interface{} {
+func graphSampleFilterFromQuery(c *gin.Context) plugin.GraphSampleFilter {
 	if c == nil {
-		return nil
+		return plugin.GraphSampleFilter{}
 	}
 	kind := strings.TrimSpace(c.Query("graph_sample_kind"))
 	if kind == "" {
-		return nil
+		return plugin.GraphSampleFilter{}
 	}
-	filter := map[string]interface{}{"kind": kind}
-	if values := queryCSV(c, "graph_node_labels"); len(values) > 0 {
-		filter["labels"] = values
-	}
-	if relType := strings.TrimSpace(c.Query("graph_relationship_type")); relType != "" {
-		filter["type"] = relType
-	}
-	if values := queryCSV(c, "graph_from_labels"); len(values) > 0 {
-		filter["from_labels"] = values
-	}
-	if values := queryCSV(c, "graph_to_labels"); len(values) > 0 {
-		filter["to_labels"] = values
-	}
-	return filter
+	return plugin.GraphSampleFilter{
+		Kind:             kind,
+		Labels:           queryCSV(c, "graph_node_labels"),
+		RelationshipType: strings.TrimSpace(c.Query("graph_relationship_type")),
+		FromLabels:       queryCSV(c, "graph_from_labels"),
+		ToLabels:         queryCSV(c, "graph_to_labels"),
+	}.Clone()
 }
 
 func queryCSV(c *gin.Context, key string) []string {

@@ -166,6 +166,20 @@ attributes 分区统一采用以下概念：
 
 `type_info.graph` 必须是业务图视图的 JSON 投影。引擎插件、扩展、索引或空间能力产生的内部节点和内部关系不得写入 `node_shapes`、`relationship_shapes` 或计数字段；例如 Neo4j Spatial 的 `SpatialLayer` 节点和 `RTREE_*` 关系应在 provider 或 Graph 模块服务层过滤。
 
+`type_info.graph` 使用 `common/datatype.GraphInfo` 的 JSON 投影：
+
+| 字段 | 规则 |
+|---|---|
+| `model` | 图模型，第一版取值为 `property_graph`、`rdf`、`generic`。 |
+| `directed` | 是否按有向图描述关系。 |
+| `node_count` | 业务图视图中的节点总数，不包含引擎内部节点。 |
+| `relationship_count` | 业务图视图中的关系总数，不使用旧字段名 `edge_count`。 |
+| `node_shapes` | 节点结构形状。Neo4j 单 label 节点形状使用 `kind=label`，多 label set 使用 `kind=label_set`。 |
+| `relationship_shapes` | 关系结构形状，按 relationship type 和属性结构表达。 |
+| `relationship_shapes[].patterns` | 关系起点和终点的配对模式，必须保留 from/to 配对关系。不得使用顶层 `from_labels[]` / `to_labels[]` 两个集合替代。 |
+
+label set 必须标准化为去空、去重、排序后的稳定集合；当 node shape 或 endpoint 的 `name` / `shape_name` 为空时，可以由 label set 使用 `+` 连接派生。历史 Meta 数据如果仍使用 `edge_count`、顶层 `from_labels` / `to_labels`、独立 label item 或 relationship item，应删除后重新扫描，不在运行期保留兼容读取。
+
 表字段统一放在 `type_info.table.fields`，不得写入 attributes 顶层。`type_info.table` 是 `common/datatype.TableInfo` 的直接 JSON 投影，`type_info.table.fields[]` 是 `common/datatype.FieldInfo` 的直接 JSON 投影。字段不是 data item，字段类型只能使用 `type` 表达 ADDP 标准字段类型，不得在字段对象内写入 `data_type`。原生字段类型如需展示，只能作为只读诊断信息写入 `native_type`，不得参与执行决策；哪个字段是空间字段、SRID、extent 等属于 `capabilities.spatial`，不得塞回 `type_info.table`。
 
 索引、采样过程、动态 schema 推断方式等不是 `common/datatype.TableInfo` 当前通用字段，不得写入 `type_info.table`。文档集合、数据库或格式解析得到的索引摘要进入 `capabilities.indexing`；采样规模、是否采样、动态 schema 类型、平均文档大小、索引数量等画像或统计事实进入 `capabilities.statistics`。

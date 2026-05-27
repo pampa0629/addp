@@ -26,6 +26,49 @@ ADDP 已具备完整的 Neo4j 基础设施层（引擎注册、元数据扫描�
 
 ---
 
+## 与 ADDP Graph Data Type 的边界
+
+ADDP 平台层的 `graph` data type 表示一个图整体。Neo4j label、relationship type 和 endpoint pattern 是 graph item 的结构事实，进入 Meta 的 `attributes.type_info.graph`，不作为独立 meta item。
+
+Graph 模块负责真正的图领域能力：
+
+- 图谱本体建模。
+- 图谱构建和审核。
+- 图浏览、路径探索、属性面板。
+- 图查询、知识服务和 Graph RAG。
+- 图算法和结果可视化。
+
+Manager 只做通用资源浏览和轻量预览，不维护 Graph 模块的领域模型。Graph 模块可以消费 Meta 中的 graph schema 摘要，但本体、执行映射、图算法参数、图可视化状态和知识服务 DTO 都属于 Graph 模块自己的边界，不写回 `common/datatype.GraphInfo`。
+
+### 本体类型与 Neo4j 执行映射
+
+Graph 模块里的本体 `EntityType` 是概念层定义，`EntityType.Name` 是本体概念标识，不应等同为 Neo4j label。Neo4j label 或 label set 是该概念在具体图引擎中的执行映射。
+
+实体类型执行映射规则：
+
+1. `Name`：本体概念标识，用于本体关系、模型导入、LLM schema、前端展示和 API 语义。
+2. `NodeLabels`：Neo4j 执行映射，允许单 label 或 label set，例如 `["Person"]`、`["Employee","Person"]`。
+3. 未显式设置 `NodeLabels` 时，Graph 模块可按实体类型继承链生成默认 Neo4j labels。
+4. 从已有 Neo4j 数据推导本体时，推导结果写入 `EntityType.NodeLabels`，初始概念名可来自 node shape 名；后续用户重命名概念不应改变执行映射。
+5. `RelationType.SourceTypeID` / `TargetTypeID` 指向本体实体类型；运行时查询、构建、空间图层和算法过滤需要 Neo4j label 时，必须通过 `NodeLabels` 或默认映射解析。
+6. Neo4j 约束同步受 Cypher DDL 限制，只能作用于单个 label。当前策略使用 `NodeLabels[0]`；复合 label set 的约束策略如需增强，应在 Graph 模块单独设计。
+
+### 空间图层与业务图视图
+
+Neo4j Spatial 图层属于 Graph 模块的本体配置和运行时能力，不进入 `common/datatype.GraphInfo`。空间图层链路必须区分：
+
+| 概念 | 含义 |
+|---|---|
+| `EntityType.Name` | 本体实体类型概念标识 |
+| `EntityType.NodeLabels` | 该实体类型落到 Neo4j 节点时使用的 label set |
+| `SpatialLayerConfig.LayerName` | Neo4j spatial layer 标识，用于 spatial procedure 调用 |
+
+空间图层选择、同步和算法执行传递的是 `LayerName`，不能把 `LayerName` 当作 Neo4j label。节点注册到空间图层时，节点匹配必须使用 `NodeLabels` 或继承链默认映射。
+
+Graph 模块的浏览、知识服务、Schema 推导和图算法必须使用同一套业务图视角：Neo4j 插件、扩展或索引生成的内部节点和内部关系不进入业务图 schema、统计、预览、路径和算法投影。当前第一批过滤的 Neo4j Spatial 内部节点为 `SpatialLayer`，内部关系为 `RTREE_METADATA`、`RTREE_REFERENCE`、`RTREE_ROOT`。
+
+---
+
 ## 模块功能划分
 
 ### 1. Ontology — 本体建模

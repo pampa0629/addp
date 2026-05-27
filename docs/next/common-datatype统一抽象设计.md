@@ -11,8 +11,10 @@
 - table：`format.TableInfo` / `format.FieldInfo` 薄壳已删除，reader / writer / Transfer / engine tabular catalog 统一使用 `datatype.TableInfo` / `datatype.FieldInfo`；`plugin.ItemMetadata.Table *datatype.TableInfo` 是 table item 主事实，`Fields` / `Stats` / `Attributes` 不再作为 table 事实源。
 - graph：`datatype.GraphInfo` 已按 node shape、relationship shape、relationship pattern 定义；`plugin.ItemMetadata.Graph *datatype.GraphInfo` 是 graph item 主事实；Neo4j catalog / Meta 扫描 / Manager 预览和属性页 / Graph 模块 / Service 图查询服务已迁移到 graph item + `type_info.graph` 口径。
 - graph 业务图视图已明确过滤引擎内部结构：Neo4j Spatial 的 `SpatialLayer` 节点和 `RTREE_METADATA`、`RTREE_REFERENCE`、`RTREE_ROOT` 关系不进入 GraphInfo、计数、样本、Graph Browser、Schema 推导、知识服务或 GDS 投影。
+- graph shape facts 已补稳定化：label set 去空、去重、排序，空 shape name 可由 label set 派生；单 label node shape 使用 `kind=label`，多 label node shape 使用 `kind=label_set`；graph sample provider 过滤条件使用 `plugin.GraphSampleFilter` 强类型传递。
+- document：`plugin.ItemMetadata.Document *datatype.DocumentInfo` 已落地，作为 document item 主事实字段；`ItemMetadataDocumentInfo()` 是公共消费 helper。当前仅确立 document 主事实承载位置，MongoDB collection 的动态字段画像仍按既有 table facts 口径保留，是否调整为 document item 需要单独审定。
 
-下一阶段建议优先处理 `DocumentInfo` / `FileInfo` / `MediaInfo` 是否进入 `plugin.ItemMetadata` 主事实字段，并同步迁移 Meta attributes、Manager 属性页和预览消费链路。不要先新增兼容 DTO；先确认每类 data type 的主事实边界，再动代码。
+下一阶段建议优先处理 `FileInfo` / `MediaInfo` / `ContainerInfo` 是否进入 `plugin.ItemMetadata` 主事实字段，并同步迁移 Meta attributes、Manager 属性页和预览消费链路。不要先新增兼容 DTO；先确认每类 data type 的主事实边界，再动代码。
 
 ## 核心目标
 
@@ -869,8 +871,9 @@ datatype.ContentIndex
 
 - `plugin.ItemMetadata.Table *datatype.TableInfo` 已落地，table facts 不再由 `Fields` / `Stats` / `Attributes` 拼装。
 - `plugin.ItemMetadata.Graph *datatype.GraphInfo` 已落地，graph facts 不再由 label item、relationship item 或扁平 `from_labels` / `to_labels` 拼装。
-- `ItemMetadataTableInfo()`、`ItemMetadataFields()`、`ItemMetadataGraphInfo()` 是公共消费 helper。后续新增 Document / Media / Container / File 主事实字段时，也应同步补对应 helper，避免消费方直接读 `Attributes`。
-- `DocumentMetadataSamplingProvider` 当前仍返回 `*ItemMetadata`，下一阶段需要判断 document 主事实是否应进入 `ItemMetadata.Document *datatype.DocumentInfo`，以及动态字段画像继续走 table facts 还是 document 专用事实。
+- `plugin.ItemMetadata.Document *datatype.DocumentInfo` 已落地，document facts 不再需要由 `Attributes` 拼装。
+- `ItemMetadataTableInfo()`、`ItemMetadataFields()`、`ItemMetadataDocumentInfo()`、`ItemMetadataGraphInfo()` 是公共消费 helper。后续新增 Media / Container / File 主事实字段时，也应同步补对应 helper，避免消费方直接读 `Attributes`。
+- `DocumentMetadataSamplingProvider` 当前仍返回 `*ItemMetadata`。MongoDB collection 动态字段画像继续按既有 table facts 口径保留，是否调整为 document 专用事实需要先统一 collection 的 data type 归属和字段画像消费链路。
 
 ### 阶段 4：dataitem 与 Meta 收拢
 
@@ -894,7 +897,7 @@ datatype.ContentIndex
 
 下一阶段候选：
 
-1. `DocumentInfo`：确认文档集合、PDF/DOCX/WPS/Markdown/Text 等文件型 document 的主事实边界；判断 `ItemMetadata.Document` 是否必要。
+1. MongoDB collection：确认文档集合的 data type 归属，以及动态字段画像继续走 table facts 还是 document 专用事实。
 2. `FileInfo`：确认低语义文件 item 是否需要主事实字段，避免 storage facts、format facts 和 file type info 混写。
 3. `MediaInfo`：确认 image/audio/video 当前通用字段是否足以作为 `ItemMetadata.Media` 主事实；音视频 codec、bitrate、sample rate 等继续暂留 format/extraction，除非有明确消费方。
 4. `ContainerInfo`：已在 datatype 层定义，但下一步要确认 engine / format / Meta 是否需要 `ItemMetadata.Container` 主事实字段，尤其是 ZIP、Excel、SQLite、GeoPackage 这类 native child 场景。

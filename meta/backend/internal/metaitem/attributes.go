@@ -49,3 +49,10 @@ func ApplyContainerSummary(attrs models.JSONMap, item *DetectedItem) {
 		ResourceCount: 1,
 	}))
 }
+
+func ApplyDocumentInfo(attrs models.JSONMap, item *DetectedItem) {
+	if attrs == nil || item == nil || item.Document == nil {
+		return
+	}
+	metaattr.MergeAttributeMaps(attrs, metaattr.DocumentInfoAttributes(item.Document))
+}

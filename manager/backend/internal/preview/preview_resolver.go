@@ -9,6 +9,7 @@ import (
 
 	"github.com/addp/common/catalogview"
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
@@ -64,7 +65,7 @@ type PreviewResolverRequest struct {
 	ChildName       string                       // 容器内部 child 名称，例如 Excel sheet
 	RefPath         string                       // multi child 内的单个ref 路径，指向容器内原始对象
 	NestedChildPath string                       // 当前 child 是容器时，继续寻址其内部 child 的相对路径
-	GraphSample     map[string]interface{}       // 图预览样本过滤条件
+	GraphSample     plugin.GraphSampleFilter     // 图预览样本过滤条件
 }
 
 // Pagination 分页参数
@@ -158,10 +159,10 @@ func (r *PreviewResolver) resolveRefPreviewProvider(req *PreviewResolverRequest,
 
 // PreviewFromURI 从 URI 执行预览（便捷方法）
 func (r *PreviewResolver) PreviewFromURI(ctx context.Context, locatorURI string, page, pageSize int, childName string, tenantID *uint) (*PreviewResult, error) {
-	return r.PreviewFromURIWithSelection(ctx, locatorURI, page, pageSize, childName, "", "", nil, tenantID)
+	return r.PreviewFromURIWithSelection(ctx, locatorURI, page, pageSize, childName, "", "", plugin.GraphSampleFilter{}, tenantID)
 }
 
-func (r *PreviewResolver) PreviewFromURIWithSelection(ctx context.Context, locatorURI string, page, pageSize int, childName, refPath, nestedChildPath string, graphSample map[string]interface{}, tenantID *uint) (*PreviewResult, error) {
+func (r *PreviewResolver) PreviewFromURIWithSelection(ctx context.Context, locatorURI string, page, pageSize int, childName, refPath, nestedChildPath string, graphSample plugin.GraphSampleFilter, tenantID *uint) (*PreviewResult, error) {
 	// 1. 解析 Locator
 	loc, err := catalogview.ParseURI(locatorURI)
 	if err != nil {
@@ -300,7 +301,7 @@ func (r *PreviewResolver) PreviewFromURIWithSelection(ctx context.Context, locat
 		ChildName:       strings.TrimSpace(childName),
 		RefPath:         strings.Trim(strings.TrimSpace(refPath), "/"),
 		NestedChildPath: strings.Trim(strings.TrimSpace(nestedChildPath), "/"),
-		GraphSample:     cloneGraphSampleFilter(graphSample),
+		GraphSample:     graphSample.Clone(),
 	}
 
 	locatorType := strings.ToLower(strings.TrimSpace(string(loc.Type)))
@@ -491,27 +492,9 @@ func (r *PreviewResolver) buildProviderRequest(req *PreviewResolverRequest) *Pre
 		ChildName:       req.ChildName,
 		RefPath:         req.RefPath,
 		NestedChildPath: req.NestedChildPath,
-		GraphSample:     cloneGraphSampleFilter(req.GraphSample),
+		GraphSample:     req.GraphSample.Clone(),
 		Attributes:      req.MetadataAttributes(),
 	}
-}
-
-func cloneGraphSampleFilter(filter map[string]interface{}) map[string]interface{} {
-	if len(filter) == 0 {
-		return nil
-	}
-	cloned := make(map[string]interface{}, len(filter))
-	for key, value := range filter {
-		switch values := value.(type) {
-		case []string:
-			cloned[key] = append([]string(nil), values...)
-		case []interface{}:
-			cloned[key] = append([]interface{}(nil), values...)
-		default:
-			cloned[key] = value
-		}
-	}
-	return cloned
 }
 
 func (req *PreviewResolverRequest) MetadataAttributes() map[string]interface{} {

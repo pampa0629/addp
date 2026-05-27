@@ -3,6 +3,9 @@ package neo4j
 import (
 	"reflect"
 	"testing"
+
+	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/plugin"
 )
 
 func TestGraphEndpointShapeNameUsesStableLabelSetName(t *testing.T) {
@@ -27,9 +30,9 @@ func TestEscapeCypherLabelsEscapesEachLabel(t *testing.T) {
 }
 
 func TestSampleGraphQueryFiltersByNodeShape(t *testing.T) {
-	got := sampleGraphQuery(map[string]interface{}{
-		"kind":   "node_shape",
-		"labels": []string{"Employee", "Person"},
+	got := sampleGraphQuery(plugin.GraphSampleFilter{
+		Kind:   plugin.GraphSampleKindNodeShape,
+		Labels: []string{"Employee", "Person"},
 	}, 10)
 	want := "MATCH (n:`Employee`:`Person`) RETURN n LIMIT 10"
 	if got != want {
@@ -38,11 +41,11 @@ func TestSampleGraphQueryFiltersByNodeShape(t *testing.T) {
 }
 
 func TestSampleGraphQueryFiltersByRelationshipShape(t *testing.T) {
-	got := sampleGraphQuery(map[string]interface{}{
-		"kind":        "relationship_shape",
-		"type":        "WORKS_AT",
-		"from_labels": []string{"Person"},
-		"to_labels":   []string{"Company"},
+	got := sampleGraphQuery(plugin.GraphSampleFilter{
+		Kind:             plugin.GraphSampleKindRelationshipShape,
+		RelationshipType: "WORKS_AT",
+		FromLabels:       []string{"Person"},
+		ToLabels:         []string{"Company"},
 	}, 10)
 	want := "MATCH (n:`Person`)-[r:`WORKS_AT`]->(m:`Company`) RETURN n, r, m LIMIT 10"
 	if got != want {
@@ -51,9 +54,9 @@ func TestSampleGraphQueryFiltersByRelationshipShape(t *testing.T) {
 }
 
 func TestSampleGraphQuerySkipsInternalNodeShape(t *testing.T) {
-	got := sampleGraphQuery(map[string]interface{}{
-		"kind":   "node_shape",
-		"labels": []string{"SpatialLayer"},
+	got := sampleGraphQuery(plugin.GraphSampleFilter{
+		Kind:   plugin.GraphSampleKindNodeShape,
+		Labels: []string{"SpatialLayer"},
 	}, 10)
 	want := "MATCH (n) WHERE false RETURN n LIMIT 10"
 	if got != want {
@@ -67,5 +70,14 @@ func TestInternalNodeLabelSetDetectsSpatialLayer(t *testing.T) {
 	}
 	if isInternalNodeLabelSet([]string{"Person"}) {
 		t.Fatal("isInternalNodeLabelSet() = true, want false")
+	}
+}
+
+func TestGraphNodeShapeKindDistinguishesSingleLabel(t *testing.T) {
+	if got := graphNodeShapeKind([]string{"Person"}); got != datatype.GraphNodeShapeKindLabel {
+		t.Fatalf("graphNodeShapeKind(single) = %q, want %q", got, datatype.GraphNodeShapeKindLabel)
+	}
+	if got := graphNodeShapeKind([]string{"Employee", "Person"}); got != datatype.GraphNodeShapeKindLabelSet {
+		t.Fatalf("graphNodeShapeKind(label set) = %q, want %q", got, datatype.GraphNodeShapeKindLabelSet)
 	}
 }

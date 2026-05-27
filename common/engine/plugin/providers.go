@@ -203,21 +203,67 @@ type MetadataOptions struct {
 	SampleSize        int
 }
 
+const (
+	GraphSampleKindNodeShape         = "node_shape"
+	GraphSampleKindRelationshipShape = "relationship_shape"
+)
+
+// GraphSampleFilter describes the graph shape selected for sampling.
+type GraphSampleFilter struct {
+	Kind             string
+	Labels           []string
+	RelationshipType string
+	FromLabels       []string
+	ToLabels         []string
+}
+
+func (f GraphSampleFilter) IsZero() bool {
+	return strings.TrimSpace(f.Kind) == "" &&
+		len(cleanGraphSampleFilterStrings(f.Labels)) == 0 &&
+		strings.TrimSpace(f.RelationshipType) == "" &&
+		len(cleanGraphSampleFilterStrings(f.FromLabels)) == 0 &&
+		len(cleanGraphSampleFilterStrings(f.ToLabels)) == 0
+}
+
+func (f GraphSampleFilter) Clone() GraphSampleFilter {
+	return GraphSampleFilter{
+		Kind:             strings.TrimSpace(f.Kind),
+		Labels:           cleanGraphSampleFilterStrings(f.Labels),
+		RelationshipType: strings.TrimSpace(f.RelationshipType),
+		FromLabels:       cleanGraphSampleFilterStrings(f.FromLabels),
+		ToLabels:         cleanGraphSampleFilterStrings(f.ToLabels),
+	}
+}
+
 type GraphSampleOptions struct {
 	Limit  int
-	Filter map[string]interface{}
+	Filter GraphSampleFilter
 }
 
 type ItemMetadata struct {
 	Path       CatalogPath            `json:"path"`
 	Kind       string                 `json:"kind"`
 	Table      *datatype.TableInfo    `json:"table,omitempty"`
+	Document   *datatype.DocumentInfo `json:"document,omitempty"`
 	Graph      *datatype.GraphInfo    `json:"graph,omitempty"`
 	Fields     []datatype.FieldInfo   `json:"fields,omitempty"`
 	Indexes    []IndexInfo            `json:"indexes,omitempty"`
 	Stats      map[string]interface{} `json:"stats,omitempty"`
 	Attributes map[string]interface{} `json:"attributes,omitempty"`
 	UpdatedAt  *time.Time             `json:"updated_at,omitempty"`
+}
+
+func cleanGraphSampleFilterStrings(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if text := strings.TrimSpace(value); text != "" {
+			result = append(result, text)
+		}
+	}
+	return result
 }
 
 type StoreSemantics struct {

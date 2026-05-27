@@ -504,6 +504,8 @@ Meta 默认只做父容器识别和一层 children 轻量索引，不递归扫�
 
 它不直接包装某个前端图组件 DTO，也不替代 `GraphQueryProvider` 的图查询结果能力。
 
+`GraphSampleProvider` 的过滤参数应使用 `plugin.GraphSampleFilter`，按 node shape 或 relationship shape 采样。采样过滤中的 label set 是执行条件，不是持久化 schema 事实；Meta 主事实仍以 `datatype.GraphInfo.NodeShapes`、`RelationshipShapes` 和 `Patterns` 为准。
+
 ## Provider 输入边界
 
 provider 输入应该尽量轻，不要堆成过重的 `EngineID + ItemID + Locator + Attributes + Options`。

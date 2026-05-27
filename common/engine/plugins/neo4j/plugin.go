@@ -138,25 +138,24 @@ func (p *Neo4jPlugin) SampleGraph(ctx context.Context, connInfo plugin.Connectio
 	return result.GraphData, nil
 }
 
-func sampleGraphQuery(filter map[string]interface{}, limit int) string {
-	switch strings.TrimSpace(graphSampleString(filter, "kind")) {
-	case "node_shape":
-		labels := graphSampleStringSlice(filter, "labels")
+func sampleGraphQuery(filter plugin.GraphSampleFilter, limit int) string {
+	filter = filter.Clone()
+	switch filter.Kind {
+	case plugin.GraphSampleKindNodeShape:
+		labels := filter.Labels
 		if isInternalNodeLabelSet(labels) {
 			return fmt.Sprintf("MATCH (n) WHERE false RETURN n LIMIT %d", limit)
 		}
 		return fmt.Sprintf("MATCH (n%s) RETURN n LIMIT %d", cypherNodeLabels(labels), limit)
-	case "relationship_shape":
-		relType := graphSampleString(filter, "type")
+	case plugin.GraphSampleKindRelationshipShape:
+		relType := filter.RelationshipType
 		if relType == "" || isInternalRelationshipType(relType) {
 			return fmt.Sprintf("MATCH (n)-[r]->(m) WHERE false RETURN n, r, m LIMIT %d", limit)
 		}
-		fromLabels := graphSampleStringSlice(filter, "from_labels")
-		toLabels := graphSampleStringSlice(filter, "to_labels")
 		return fmt.Sprintf("MATCH (n%s)-[r:%s]->(m%s) RETURN n, r, m LIMIT %d",
-			cypherNodeLabels(fromLabels),
+			cypherNodeLabels(filter.FromLabels),
 			cypherIdentifier(relType),
-			cypherNodeLabels(toLabels),
+			cypherNodeLabels(filter.ToLabels),
 			limit)
 	default:
 		return fmt.Sprintf("MATCH (n)-[r]->(m) WHERE NOT type(r) IN ['RTREE_METADATA', 'RTREE_REFERENCE', 'RTREE_ROOT'] RETURN n, r, m LIMIT %d", limit)
@@ -167,8 +166,8 @@ func sampleGraphNodeFallbackQuery(limit int) string {
 	return fmt.Sprintf("MATCH (n) WHERE NOT %s RETURN n LIMIT %d", cypherInternalNodePredicate("n"), limit)
 }
 
-func isFilteredGraphSample(filter map[string]interface{}) bool {
-	return strings.TrimSpace(graphSampleString(filter, "kind")) != ""
+func isFilteredGraphSample(filter plugin.GraphSampleFilter) bool {
+	return !filter.IsZero()
 }
 
 func cypherNodeLabels(labels []string) string {
@@ -180,53 +179,6 @@ func cypherNodeLabels(labels []string) string {
 
 func cypherIdentifier(name string) string {
 	return "`" + escapeCypherLabel(name) + "`"
-}
-
-func graphSampleString(filter map[string]interface{}, key string) string {
-	if len(filter) == 0 {
-		return ""
-	}
-	switch value := filter[key].(type) {
-	case string:
-		return strings.TrimSpace(value)
-	default:
-		return ""
-	}
-}
-
-func graphSampleStringSlice(filter map[string]interface{}, key string) []string {
-	if len(filter) == 0 {
-		return nil
-	}
-	switch values := filter[key].(type) {
-	case []string:
-		return cleanGraphSampleStrings(values)
-	case []interface{}:
-		result := make([]string, 0, len(values))
-		for _, value := range values {
-			if str, ok := value.(string); ok {
-				result = append(result, str)
-			}
-		}
-		return cleanGraphSampleStrings(result)
-	case string:
-		if values == "" {
-			return nil
-		}
-		return cleanGraphSampleStrings(strings.Split(values, ","))
-	default:
-		return nil
-	}
-}
-
-func cleanGraphSampleStrings(values []string) []string {
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		if text := strings.TrimSpace(value); text != "" {
-			result = append(result, text)
-		}
-	}
-	return result
 }
 
 func cloneConnectionInfo(connInfo plugin.ConnectionInfo) plugin.ConnectionInfo {
@@ -387,7 +339,11 @@ func (p *Neo4jPlugin) describeGraph(ctx context.Context, connInfo plugin.Connect
 	if err != nil {
 		return nil, err
 	}
-	relationshipShapes, relationshipCount, err := p.describeRelationshipShapes(ctx, session)
+	relationshipShapes, err := p.describeRelationshipShapes(ctx, session)
+	if err != nil {
+		return nil, err
+	}
+	relationshipCount, err := p.countRelationships(ctx, session)
 	if err != nil {
 		return nil, err
 	}
@@ -445,7 +401,7 @@ RETURN labels, count(*) AS count ORDER BY count DESC LIMIT 500`, cypherInternalL
 		total += count
 		nodeShapes = append(nodeShapes, datatype.GraphNodeShapeInfo{
 			Name:       graphEndpointShapeName(labels),
-			Kind:       datatype.GraphNodeShapeKindLabelSet,
+			Kind:       graphNodeShapeKind(labels),
 			Labels:     labels,
 			Properties: properties,
 			Count:      &count,
@@ -453,6 +409,13 @@ RETURN labels, count(*) AS count ORDER BY count DESC LIMIT 500`, cypherInternalL
 	}
 
 	return nodeShapes, total, nil
+}
+
+func graphNodeShapeKind(labels []string) string {
+	if len(labels) == 1 {
+		return datatype.GraphNodeShapeKindLabel
+	}
+	return datatype.GraphNodeShapeKindLabelSet
 }
 
 func (p *Neo4jPlugin) countNodes(ctx context.Context, session neo4jdriver.SessionWithContext) (int64, error) {
@@ -534,19 +497,18 @@ func neo4jValueTypeToFieldType(nativeType string) datatype.FieldType {
 }
 
 // describeRelationshipShapes 列出所有关系类型及连接模式。
-func (p *Neo4jPlugin) describeRelationshipShapes(ctx context.Context, session neo4jdriver.SessionWithContext) ([]datatype.GraphRelationshipShapeInfo, int64, error) {
+func (p *Neo4jPlugin) describeRelationshipShapes(ctx context.Context, session neo4jdriver.SessionWithContext) ([]datatype.GraphRelationshipShapeInfo, error) {
 	result, err := session.Run(ctx, "CALL db.relationshipTypes() YIELD relationshipType RETURN relationshipType ORDER BY relationshipType", nil)
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to list Neo4j relationship types: %w", err)
+		return nil, fmt.Errorf("failed to list Neo4j relationship types: %w", err)
 	}
 
 	records, err := result.Collect(ctx)
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to collect Neo4j relationship types: %w", err)
+		return nil, fmt.Errorf("failed to collect Neo4j relationship types: %w", err)
 	}
 
 	relationshipShapes := make([]datatype.GraphRelationshipShapeInfo, 0, len(records))
-	var total int64
 	for _, record := range records {
 		relTypeVal, ok := record.Get("relationshipType")
 		if !ok {
@@ -562,8 +524,13 @@ func (p *Neo4jPlugin) describeRelationshipShapes(ctx context.Context, session ne
 		}
 
 		shape := datatype.GraphRelationshipShapeInfo{Type: relType}
+		shapeCount, err := p.countRelationshipType(ctx, session, relType)
+		if err != nil {
+			return nil, err
+		}
+		shape.Count = &shapeCount
 
-		// 查询该关系类型的起始/终止 label set 和总数（最多取 20 种组合）。
+		// 查询该关系类型的起始/终止 label set 组合（最多取 20 种组合）。
 		statsResult, err := session.Run(ctx,
 			fmt.Sprintf(`MATCH (a)-[r:%s]->(b)
 WITH labels(a) AS from, labels(b) AS to, count(r) AS cnt
@@ -584,17 +551,41 @@ RETURN from, to, cnt ORDER BY cnt DESC LIMIT 20`, cypherIdentifier(relType)),
 					To:    datatype.GraphEndpointInfo{ShapeName: graphEndpointShapeName(toLabels), Labels: toLabels},
 					Count: &count,
 				})
-				if cnt, ok := cntVal.(int64); ok {
-					shape.Count = addInt64Ptr(shape.Count, cnt)
-					total += cnt
-				}
 			}
 		}
 
 		relationshipShapes = append(relationshipShapes, shape)
 	}
 
-	return relationshipShapes, total, nil
+	return relationshipShapes, nil
+}
+
+func (p *Neo4jPlugin) countRelationships(ctx context.Context, session neo4jdriver.SessionWithContext) (int64, error) {
+	result, err := session.Run(ctx, "MATCH ()-[r]->() WHERE NOT type(r) IN ['RTREE_METADATA', 'RTREE_REFERENCE', 'RTREE_ROOT'] RETURN count(r) AS count", nil)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count Neo4j relationships: %w", err)
+	}
+	record, err := result.Single(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to collect Neo4j relationship count: %w", err)
+	}
+	countVal, _ := record.Get("count")
+	count, _ := countVal.(int64)
+	return count, nil
+}
+
+func (p *Neo4jPlugin) countRelationshipType(ctx context.Context, session neo4jdriver.SessionWithContext, relType string) (int64, error) {
+	result, err := session.Run(ctx, fmt.Sprintf("MATCH ()-[r:%s]->() RETURN count(r) AS count", cypherIdentifier(relType)), nil)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count Neo4j relationship type %s: %w", relType, err)
+	}
+	record, err := result.Single(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to collect Neo4j relationship type %s count: %w", relType, err)
+	}
+	countVal, _ := record.Get("count")
+	count, _ := countVal.(int64)
+	return count, nil
 }
 
 // executeGraphQuery 执行 Cypher 查询并提取图数据。
@@ -894,15 +885,6 @@ func graphEndpointShapeName(labels []string) string {
 	normalized := append([]string(nil), labels...)
 	sort.Strings(normalized)
 	return strings.Join(normalized, "+")
-}
-
-func addInt64Ptr(value *int64, delta int64) *int64 {
-	if value == nil {
-		result := delta
-		return &result
-	}
-	*value += delta
-	return value
 }
 
 // convertNeo4jValue 将 Neo4j 值转为 JSON 友好的 Go 类型

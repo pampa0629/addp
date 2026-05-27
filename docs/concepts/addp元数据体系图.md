@@ -89,6 +89,8 @@ graph LR
 
 文件、对象、表、集合、graph 是否成为 data item，由 Meta detector 根据引擎稳定 catalog 边界和格式规则裁决。`meta_item.item_type` 保留 catalog item 术语；表格、文档、媒体、容器、图等内容语义写入 `attributes.item.data_type`。
 
+对图数据库，Meta 以 graph 整体作为 data item。Neo4j label、relationship type 和连接模式属于 graph item 的结构事实，不作为独立 `meta_item`。这样可以避免多 label 节点被重复归属，也让图的预览、查询、资产治理围绕同一个 graph item 展开。
+
 ## Meta Scanner
 
 Meta Scanner 负责调度扫描，不直接定义格式语义。

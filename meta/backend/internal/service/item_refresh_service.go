@@ -213,7 +213,13 @@ func enrichKnownSingleNonTableItem(
 		if err != nil {
 			return false, err
 		}
-		metaattr.MergeAttributeMaps(item.Attributes, metaattr.DocumentInfoAttributes(info))
+		metadata := &plugin.ItemMetadata{
+			Path:     catalogPathFor(path),
+			Kind:     item.ItemType,
+			Document: info,
+		}
+		item.Document = plugin.ItemMetadataDocumentInfo(metadata)
+		metaitem.ApplyDocumentInfo(item.Attributes, item)
 		if formatProvider, err := format.GetFormatInfoProvider(formatType); err == nil {
 			rc, err := contentReader.OpenContent(ctx, connInfo, catalogPathFor(path), plugin.ReadOptions{})
 			if err != nil {

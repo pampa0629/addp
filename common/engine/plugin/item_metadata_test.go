@@ -39,6 +39,27 @@ func TestItemMetadataFieldsFallsBackToFields(t *testing.T) {
 	}
 }
 
+func TestItemMetadataDocumentInfoReturnsClone(t *testing.T) {
+	sizeBytes := int64(128)
+	metadata := &ItemMetadata{
+		Kind: "document",
+		Document: &datatype.DocumentInfo{
+			Title:     "Plan",
+			SizeBytes: &sizeBytes,
+		},
+	}
+
+	info := ItemMetadataDocumentInfo(metadata)
+	if info == nil || info.Title != "Plan" || info.SizeBytes == nil || *info.SizeBytes != 128 {
+		t.Fatalf("ItemMetadataDocumentInfo() = %#v", info)
+	}
+	info.Title = "Changed"
+	*info.SizeBytes = 256
+	if metadata.Document.Title != "Plan" || *metadata.Document.SizeBytes != 128 {
+		t.Fatalf("ItemMetadataDocumentInfo returned mutable document info")
+	}
+}
+
 func TestItemMetadataGraphInfoReturnsClone(t *testing.T) {
 	count := int64(3)
 	metadata := &ItemMetadata{

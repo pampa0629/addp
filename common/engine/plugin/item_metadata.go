@@ -13,6 +13,17 @@ func ItemMetadataTableInfo(metadata *ItemMetadata) *datatype.TableInfo {
 	return nil
 }
 
+// ItemMetadataDocumentInfo returns document facts for a document-shaped item metadata.
+func ItemMetadataDocumentInfo(metadata *ItemMetadata) *datatype.DocumentInfo {
+	if metadata == nil {
+		return nil
+	}
+	if metadata.Document != nil {
+		return metadata.Document.Clone()
+	}
+	return nil
+}
+
 // ItemMetadataGraphInfo returns graph facts for a graph-shaped item metadata.
 func ItemMetadataGraphInfo(metadata *ItemMetadata) *datatype.GraphInfo {
 	if metadata == nil {

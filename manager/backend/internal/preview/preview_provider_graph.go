@@ -97,7 +97,7 @@ func (p *GraphPreviewProvider) sampleGraph(ctx context.Context, req *PreviewRequ
 	}
 	sample, err := sampleProvider.SampleGraph(ctx, plugin.ConnectionInfo(req.Engine.ConnectionInfo), path, plugin.GraphSampleOptions{
 		Limit:  limit,
-		Filter: cloneGraphSampleFilter(req.GraphSample),
+		Filter: req.GraphSample.Clone(),
 	})
 	if err != nil || sample == nil {
 		return nil

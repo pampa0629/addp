@@ -133,9 +133,9 @@ func TestGraphPreviewProviderPassesGraphSampleFilter(t *testing.T) {
 		},
 		Schema: "neo4j",
 		Table:  "graph",
-		GraphSample: map[string]interface{}{
-			"kind":   "node_shape",
-			"labels": []string{"Person"},
+		GraphSample: plugin.GraphSampleFilter{
+			Kind:   plugin.GraphSampleKindNodeShape,
+			Labels: []string{"Person"},
 		},
 	})
 	if err != nil {
@@ -144,8 +144,11 @@ func TestGraphPreviewProviderPassesGraphSampleFilter(t *testing.T) {
 	if len(graphPlug.sampleOpts) != 1 {
 		t.Fatalf("SampleGraph call count = %d, want 1", len(graphPlug.sampleOpts))
 	}
-	if got := graphPlug.sampleOpts[0].Filter["kind"]; got != "node_shape" {
+	if got := graphPlug.sampleOpts[0].Filter.Kind; got != plugin.GraphSampleKindNodeShape {
 		t.Fatalf("sample filter = %#v", graphPlug.sampleOpts[0].Filter)
+	}
+	if got := graphPlug.sampleOpts[0].Filter.Labels; !reflect.DeepEqual(got, []string{"Person"}) {
+		t.Fatalf("sample filter labels = %#v", got)
 	}
 }
 

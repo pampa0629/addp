@@ -1,6 +1,7 @@
 package datatype
 
 import (
+	"sort"
 	"strings"
 
 	commonJSON "github.com/addp/common/jsonmap"
@@ -39,7 +40,17 @@ func GraphInfoFromGraphAttributes(graphAttrs map[string]interface{}) *GraphInfo 
 
 // GraphInfoAttributes converts common graph facts to attributes.type_info.graph.
 func GraphInfoAttributes(info *GraphInfo) map[string]interface{} {
-	return commonJSON.MapFromStruct(info)
+	normalized := NormalizeGraphInfo(info)
+	return commonJSON.MapFromStruct(normalized)
+}
+
+// NormalizeGraphInfo returns a normalized copy of graph facts.
+func NormalizeGraphInfo(info *GraphInfo) *GraphInfo {
+	if info == nil {
+		return nil
+	}
+	attrs := commonJSON.MapFromStruct(info)
+	return GraphInfoFromGraphAttributes(attrs)
 }
 
 func normalizeGraphNodeShapes(input []GraphNodeShapeInfo) []GraphNodeShapeInfo {
@@ -50,7 +61,10 @@ func normalizeGraphNodeShapes(input []GraphNodeShapeInfo) []GraphNodeShapeInfo {
 	for _, shape := range input {
 		shape.Name = strings.TrimSpace(shape.Name)
 		shape.Kind = strings.TrimSpace(shape.Kind)
-		shape.Labels = normalizeStringSlice(shape.Labels)
+		shape.Labels = normalizeGraphLabelSet(shape.Labels)
+		if shape.Name == "" {
+			shape.Name = graphLabelSetName(shape.Labels)
+		}
 		shape.Properties = normalizeGraphProperties(shape.Properties)
 		if shape.Count != nil && *shape.Count < 0 {
 			shape.Count = nil
@@ -104,7 +118,10 @@ func normalizeGraphRelationshipPatterns(input []GraphRelationshipPatternInfo) []
 
 func normalizeGraphEndpoint(endpoint GraphEndpointInfo) GraphEndpointInfo {
 	endpoint.ShapeName = strings.TrimSpace(endpoint.ShapeName)
-	endpoint.Labels = normalizeStringSlice(endpoint.Labels)
+	endpoint.Labels = normalizeGraphLabelSet(endpoint.Labels)
+	if endpoint.ShapeName == "" {
+		endpoint.ShapeName = graphLabelSetName(endpoint.Labels)
+	}
 	return endpoint
 }
 
@@ -127,17 +144,30 @@ func normalizeGraphProperties(input []FieldInfo) []FieldInfo {
 	return output
 }
 
-func normalizeStringSlice(input []string) []string {
+func normalizeGraphLabelSet(input []string) []string {
 	if len(input) == 0 {
 		return nil
 	}
+	seen := make(map[string]struct{}, len(input))
 	output := make([]string, 0, len(input))
 	for _, value := range input {
 		value = strings.TrimSpace(value)
 		if value == "" {
 			continue
 		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
 		output = append(output, value)
 	}
+	sort.Strings(output)
 	return output
+}
+
+func graphLabelSetName(labels []string) string {
+	if len(labels) == 0 {
+		return ""
+	}
+	return strings.Join(labels, "+")
 }

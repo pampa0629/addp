@@ -11,6 +11,7 @@ import (
 // CompositeItemInfo 是 Meta resolver 提取出的 data item 元信息。
 type CompositeItemInfo struct {
 	Fields     []datatype.FieldInfo
+	Document   *datatype.DocumentInfo
 	Attributes map[string]interface{}
 	Layout     dataitem.Layout
 	DataType   dataitem.DataType
@@ -35,6 +36,7 @@ type DetectedItem struct {
 	dataitem.ResolvedItem
 	PhysicalPath string
 	Fields       []datatype.FieldInfo
+	Document     *datatype.DocumentInfo
 	Attributes   map[string]interface{}
 }
 
@@ -77,6 +79,7 @@ func DetectedItemFromCompositeInfo(info *CompositeItemInfo, physicalPath string,
 		},
 		PhysicalPath: physicalPath,
 		Fields:       info.Fields,
+		Document:     info.Document.Clone(),
 		Attributes:   info.Attributes,
 	}
 }

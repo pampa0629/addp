@@ -57,21 +57,20 @@ func TestGraphInfoAttributesUsesStandardShapeModel(t *testing.T) {
 	relationshipCount := int64(7)
 	directed := true
 	info := &GraphInfo{
-		Model:             GraphModelPropertyGraph,
+		Model:             " " + GraphModelPropertyGraph + " ",
 		Directed:          &directed,
 		NodeCount:         &nodeCount,
 		RelationshipCount: &relationshipCount,
 		NodeShapes: []GraphNodeShapeInfo{{
-			Name:       "Person",
-			Kind:       GraphNodeShapeKindLabel,
-			Labels:     []string{"Person"},
+			Kind:       " " + GraphNodeShapeKindLabelSet + " ",
+			Labels:     []string{" Person ", "Employee", "Person"},
 			Properties: []FieldInfo{{Name: "name", Type: FieldTypeString}},
 			Count:      &nodeCount,
 		}},
 		RelationshipShapes: []GraphRelationshipShapeInfo{{
 			Type: "WORKS_FOR",
 			Patterns: []GraphRelationshipPatternInfo{{
-				From:  GraphEndpointInfo{ShapeName: "Person", Labels: []string{"Person"}},
+				From:  GraphEndpointInfo{Labels: []string{"Person", "Employee"}},
 				To:    GraphEndpointInfo{ShapeName: "Company", Labels: []string{"Company"}},
 				Count: &relationshipCount,
 			}},
@@ -88,15 +87,19 @@ func TestGraphInfoAttributesUsesStandardShapeModel(t *testing.T) {
 	}
 	nodeShapes := attrs["node_shapes"].([]interface{})
 	nodeShape := nodeShapes[0].(map[string]interface{})
-	if nodeShape["kind"] != GraphNodeShapeKindLabel {
+	if nodeShape["kind"] != GraphNodeShapeKindLabelSet || nodeShape["name"] != "Employee+Person" {
 		t.Fatalf("node shape attrs = %#v", nodeShape)
+	}
+	labels := nodeShape["labels"].([]interface{})
+	if len(labels) != 2 || labels[0] != "Employee" || labels[1] != "Person" {
+		t.Fatalf("node shape labels = %#v", labels)
 	}
 	relationshipShapes := attrs["relationship_shapes"].([]interface{})
 	relationshipShape := relationshipShapes[0].(map[string]interface{})
 	patterns := relationshipShape["patterns"].([]interface{})
 	pattern := patterns[0].(map[string]interface{})
 	from := pattern["from"].(map[string]interface{})
-	if from["shape_name"] != "Person" {
+	if from["shape_name"] != "Employee+Person" {
 		t.Fatalf("relationship pattern attrs = %#v", pattern)
 	}
 }
@@ -112,9 +115,8 @@ func TestGraphInfoFromAttributesRestoresAndNormalizesGraphFacts(t *testing.T) {
 				"relationship_count": int64(7),
 				"node_shapes": []interface{}{
 					map[string]interface{}{
-						"name":   " Person ",
-						"kind":   " label ",
-						"labels": []interface{}{" Person ", ""},
+						"kind":   " label_set ",
+						"labels": []interface{}{" Person ", "Employee", "Person", ""},
 						"properties": []interface{}{
 							map[string]interface{}{"name": " name ", "type": "string"},
 						},
@@ -126,7 +128,7 @@ func TestGraphInfoFromAttributesRestoresAndNormalizesGraphFacts(t *testing.T) {
 						"type": " WORKS_FOR ",
 						"patterns": []interface{}{
 							map[string]interface{}{
-								"from":  map[string]interface{}{"shape_name": " Person ", "labels": []interface{}{"Person"}},
+								"from":  map[string]interface{}{"labels": []interface{}{"Person", "Employee"}},
 								"to":    map[string]interface{}{"shape_name": " Company ", "labels": []interface{}{"Company"}},
 								"count": int64(7),
 							},
@@ -146,14 +148,14 @@ func TestGraphInfoFromAttributesRestoresAndNormalizesGraphFacts(t *testing.T) {
 		t.Fatalf("graph counts = %#v / %#v", info.NodeCount, info.RelationshipCount)
 	}
 	nodeShape := info.NodeShapes[0]
-	if nodeShape.Name != "Person" || nodeShape.Kind != GraphNodeShapeKindLabel || len(nodeShape.Labels) != 1 || nodeShape.Labels[0] != "Person" {
+	if nodeShape.Name != "Employee+Person" || nodeShape.Kind != GraphNodeShapeKindLabelSet || len(nodeShape.Labels) != 2 || nodeShape.Labels[0] != "Employee" || nodeShape.Labels[1] != "Person" {
 		t.Fatalf("node shape = %#v", nodeShape)
 	}
 	if nodeShape.Properties[0].Name != "name" || nodeShape.Properties[0].Type != FieldTypeString {
 		t.Fatalf("node properties = %#v", nodeShape.Properties)
 	}
 	pattern := info.RelationshipShapes[0].Patterns[0]
-	if pattern.From.ShapeName != "Person" || pattern.To.ShapeName != "Company" {
+	if pattern.From.ShapeName != "Employee+Person" || pattern.To.ShapeName != "Company" {
 		t.Fatalf("relationship pattern = %#v", pattern)
 	}
 }

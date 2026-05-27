@@ -151,14 +151,14 @@ type QueryResult struct {
 
 // ============ 图数据库插件 ============
 
-// GraphNode 图节点（用于图可视化）
+// GraphNode is a graph result node returned by graph sample/query providers.
 type GraphNode struct {
 	ElementId  string                 `json:"element_id"`
 	Labels     []string               `json:"labels"`
 	Properties map[string]interface{} `json:"properties"`
 }
 
-// GraphRelationship 图关系（用于图可视化）
+// GraphRelationship is a graph result relationship returned by graph sample/query providers.
 type GraphRelationship struct {
 	ElementId   string                 `json:"element_id"`
 	Type        string                 `json:"type"`
@@ -167,7 +167,7 @@ type GraphRelationship struct {
 	Properties  map[string]interface{} `json:"properties"`
 }
 
-// GraphData 图数据（节点 + 关系，用于前端图可视化渲染）
+// GraphData is graph-shaped runtime data made of nodes and relationships.
 type GraphData struct {
 	Nodes         []GraphNode         `json:"nodes"`
 	Relationships []GraphRelationship `json:"relationships"`
