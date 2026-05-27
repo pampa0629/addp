@@ -4,6 +4,16 @@
 
 本文是一次较大重构前的设计讨论文档，不是已落地规范。目标是在动代码前统一 `common/datatype` 的职责、数据类型边界和迁移顺序，避免继续在 `common/format`、`common/engine`、`common/dataitem`、Meta、Manager、Transfer 之间形成多套 data type / type info / field type 模型。
 
+## 接力状态
+
+截至 2026-05-27，本轮已完成 table 与 graph 两条主线：
+
+- table：`format.TableInfo` / `format.FieldInfo` 薄壳已删除，reader / writer / Transfer / engine tabular catalog 统一使用 `datatype.TableInfo` / `datatype.FieldInfo`；`plugin.ItemMetadata.Table *datatype.TableInfo` 是 table item 主事实，`Fields` / `Stats` / `Attributes` 不再作为 table 事实源。
+- graph：`datatype.GraphInfo` 已按 node shape、relationship shape、relationship pattern 定义；`plugin.ItemMetadata.Graph *datatype.GraphInfo` 是 graph item 主事实；Neo4j catalog / Meta 扫描 / Manager 预览和属性页 / Graph 模块 / Service 图查询服务已迁移到 graph item + `type_info.graph` 口径。
+- graph 业务图视图已明确过滤引擎内部结构：Neo4j Spatial 的 `SpatialLayer` 节点和 `RTREE_METADATA`、`RTREE_REFERENCE`、`RTREE_ROOT` 关系不进入 GraphInfo、计数、样本、Graph Browser、Schema 推导、知识服务或 GDS 投影。
+
+下一阶段建议优先处理 `DocumentInfo` / `FileInfo` / `MediaInfo` 是否进入 `plugin.ItemMetadata` 主事实字段，并同步迁移 Meta attributes、Manager 属性页和预览消费链路。不要先新增兼容 DTO；先确认每类 data type 的主事实边界，再动代码。
+
 ## 核心目标
 
 `common/datatype` 要收拢 ADDP 所有 data type 的基础语义，而不限于 table 或字段模型。
@@ -855,6 +865,13 @@ datatype.ContentIndex
 3. `ColumnInfo` 不再作为公共模型；SQL 插件直接产出 `datatype.FieldInfo` 或插件内部结构后立即转换。
 4. `ItemMetadata`、tabular catalog helper、graph metadata 等统一使用 datatype。
 
+当前进展：
+
+- `plugin.ItemMetadata.Table *datatype.TableInfo` 已落地，table facts 不再由 `Fields` / `Stats` / `Attributes` 拼装。
+- `plugin.ItemMetadata.Graph *datatype.GraphInfo` 已落地，graph facts 不再由 label item、relationship item 或扁平 `from_labels` / `to_labels` 拼装。
+- `ItemMetadataTableInfo()`、`ItemMetadataFields()`、`ItemMetadataGraphInfo()` 是公共消费 helper。后续新增 Document / Media / Container / File 主事实字段时，也应同步补对应 helper，避免消费方直接读 `Attributes`。
+- `DocumentMetadataSamplingProvider` 当前仍返回 `*ItemMetadata`，下一阶段需要判断 document 主事实是否应进入 `ItemMetadata.Document *datatype.DocumentInfo`，以及动态字段画像继续走 table facts 还是 document 专用事实。
+
 ### 阶段 4：dataitem 与 Meta 收拢
 
 1. `common/dataitem` 已使用 `datatype.DataType`。
@@ -868,6 +885,19 @@ datatype.ContentIndex
 1. Manager 只消费标准 attributes 和必要的 `datatype` 派生 DTO，不按 format / engine 重猜字段类型。
 2. Transfer 读写规划统一基于 `datatype.TableInfo` 等标准结构。
 3. Asset、Search、Quality、Model、Copilot 等模块统一使用 `datatype` 和 Meta attributes，不再引入本地字段模型。
+
+当前进展：
+
+- Manager 已按 `ItemMetadataTableInfo` / `ItemMetadataFields` / `type_info.graph` 消费 table 和 graph facts；graph 预览与属性页只展示轻量结构摘要，不维护 Graph 模块领域模型。
+- Transfer pipeline 已迁移到统一 table facts。
+- Service 图查询服务已从旧 label item 口径迁移为读取 graph item 的 `type_info.graph.node_shapes`。
+
+下一阶段候选：
+
+1. `DocumentInfo`：确认文档集合、PDF/DOCX/WPS/Markdown/Text 等文件型 document 的主事实边界；判断 `ItemMetadata.Document` 是否必要。
+2. `FileInfo`：确认低语义文件 item 是否需要主事实字段，避免 storage facts、format facts 和 file type info 混写。
+3. `MediaInfo`：确认 image/audio/video 当前通用字段是否足以作为 `ItemMetadata.Media` 主事实；音视频 codec、bitrate、sample rate 等继续暂留 format/extraction，除非有明确消费方。
+4. `ContainerInfo`：已在 datatype 层定义，但下一步要确认 engine / format / Meta 是否需要 `ItemMetadata.Container` 主事实字段，尤其是 ZIP、Excel、SQLite、GeoPackage 这类 native child 场景。
 
 ## 不做事项
 

@@ -348,8 +348,8 @@
               <el-tag v-if="result.metadata?.node_count !== undefined" size="small" type="success">
                 {{ result.metadata.node_count }} {{ t('graph.analysis.nodeCount') }}
               </el-tag>
-              <el-tag v-if="result.metadata?.edge_count !== undefined" size="small" type="success">
-                {{ result.metadata.edge_count }} {{ t('graph.analysis.edgeCount') }}
+              <el-tag v-if="result.metadata?.relationship_count !== undefined" size="small" type="success">
+                {{ result.metadata.relationship_count }} {{ t('graph.analysis.edgeCount') }}
               </el-tag>
               <el-tag v-if="result.metadata?.community_count !== undefined" size="small" type="warning">
                 {{ result.metadata.community_count }} {{ t('graph.analysis.communityCount') }}

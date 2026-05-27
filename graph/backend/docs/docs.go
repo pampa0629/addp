@@ -1030,7 +1030,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_graph_internal_service.ApplyInferredSchemaRequest"
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ApplyInferredSchemaRequest"
                         }
                     }
                 ],
@@ -2522,7 +2522,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_graph_internal_service.ApplyInferredSchemaFromEngineRequest"
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ApplyInferredSchemaFromEngineRequest"
                         }
                     }
                 ],
@@ -2997,6 +2997,60 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_graph_internal_models.ApplyInferredSchemaFromEngineRequest": {
+            "type": "object",
+            "required": [
+                "engine_id"
+            ],
+            "properties": {
+                "conflict": {
+                    "description": "\"skip\" | \"overwrite\"",
+                    "type": "string"
+                },
+                "engine_id": {
+                    "type": "integer"
+                },
+                "entity_type_names": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "relation_type_keys": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_addp_graph_internal_models.ApplyInferredSchemaRequest": {
+            "type": "object",
+            "required": [
+                "ontology_id"
+            ],
+            "properties": {
+                "conflict": {
+                    "description": "\"skip\" | \"overwrite\"",
+                    "type": "string"
+                },
+                "entity_type_names": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "ontology_id": {
+                    "type": "integer"
+                },
+                "relation_type_keys": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "github_com_addp_graph_internal_models.BrowseSchema": {
             "type": "object",
             "properties": {
@@ -3027,12 +3081,12 @@ const docTemplate = `{
                         "format": "int64"
                     }
                 },
-                "edge_count": {
-                    "description": "总关系数",
-                    "type": "integer"
-                },
                 "node_count": {
                     "description": "总节点数",
+                    "type": "integer"
+                },
+                "relationship_count": {
+                    "description": "总关系数",
                     "type": "integer"
                 }
             }
@@ -4139,60 +4193,6 @@ const docTemplate = `{
                 },
                 "target_type_id": {
                     "type": "integer"
-                }
-            }
-        },
-        "github_com_addp_graph_internal_service.ApplyInferredSchemaFromEngineRequest": {
-            "type": "object",
-            "required": [
-                "engine_id"
-            ],
-            "properties": {
-                "conflict": {
-                    "description": "\"skip\" | \"overwrite\"",
-                    "type": "string"
-                },
-                "engine_id": {
-                    "type": "integer"
-                },
-                "entity_type_names": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "relation_type_keys": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
-        "github_com_addp_graph_internal_service.ApplyInferredSchemaRequest": {
-            "type": "object",
-            "required": [
-                "ontology_id"
-            ],
-            "properties": {
-                "conflict": {
-                    "description": "\"skip\" | \"overwrite\"",
-                    "type": "string"
-                },
-                "entity_type_names": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "ontology_id": {
-                    "type": "integer"
-                },
-                "relation_type_keys": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
                 }
             }
         },

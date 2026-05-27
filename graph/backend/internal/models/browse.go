@@ -63,9 +63,9 @@ type BrowseSchema struct {
 
 // GraphStats 图谱统计信息
 type BrowseStats struct {
-	NodeCount int64            `json:"node_count"` // 总节点数
-	EdgeCount int64            `json:"edge_count"` // 总关系数
-	ByLabel   map[string]int64 `json:"by_label"`   // 按标签分组的节点数
+	NodeCount         int64            `json:"node_count"`         // 总节点数
+	RelationshipCount int64            `json:"relationship_count"` // 总关系数
+	ByLabel           map[string]int64 `json:"by_label"`           // 按标签分组的节点数
 }
 
 // SearchRequest 全文搜索请求
@@ -84,4 +84,20 @@ type ExpandRequest struct {
 type PathRequest struct {
 	SourceID string `json:"source_id" binding:"required"`
 	TargetID string `json:"target_id" binding:"required"`
+}
+
+// ApplyInferredSchemaRequest 应用推导结果到本体（从 graph_id）
+type ApplyInferredSchemaRequest struct {
+	OntologyID       uint     `json:"ontology_id" binding:"required"`
+	EntityTypeNames  []string `json:"entity_type_names"`
+	RelationTypeKeys []string `json:"relation_type_keys"`
+	Conflict         string   `json:"conflict"` // "skip" | "overwrite"
+}
+
+// ApplyInferredSchemaFromEngineRequest 应用推导结果到本体（从 engine_id）
+type ApplyInferredSchemaFromEngineRequest struct {
+	EngineID         uint     `json:"engine_id" binding:"required"`
+	EntityTypeNames  []string `json:"entity_type_names"`
+	RelationTypeKeys []string `json:"relation_type_keys"`
+	Conflict         string   `json:"conflict"` // "skip" | "overwrite"
 }

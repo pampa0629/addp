@@ -494,6 +494,8 @@ Meta 默认只做父容器识别和一层 children 轻量索引，不递归扫�
 
 `GraphMetadataProvider` 和 `GraphSampleProvider` 面向引擎原生图的结构描述和轻量样本。图结构事实进入 `datatype.GraphInfo`，图样本只用于预览或浏览，不作为 Meta 主事实源。
 
+这两个 provider 必须返回业务图视图，而不是引擎内部实现图。插件、扩展、索引或空间能力产生的内部节点和内部关系应在 provider 或 Graph 模块服务层过滤；`datatype.GraphInfo` 只描述通用 graph facts，不承载 Neo4j Spatial、R-tree 等具体实现规则。
+
 它提供：
 
 - 节点形状、关系形状、连接模式和图统计信息。

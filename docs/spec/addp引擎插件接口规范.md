@@ -143,6 +143,8 @@ type ItemMetadataProvider interface {
 
 对 graph 引擎，`CatalogProvider` 暴露 graph item，label、relationship type 和 endpoint pattern 作为 `datatype.GraphInfo` 中的 schema / shape facts，而不是作为 graph data type 的主 item 本体。Neo4j label / relationship 只作为 Manager 展示投影或查询筛选条件，不作为公共 catalog item。graph 公共事实应围绕 `GraphInfo.NodeShapes`、`GraphInfo.RelationshipShapes` 和 `GraphRelationshipPatternInfo` 表达，不得继续把 `from_labels[]` / `to_labels[]` 两个集合作为 relationship endpoint 主事实。
 
+`GraphMetadataProvider` / `GraphSampleProvider` 返回的是面向 ADDP 用户的业务图视图。Neo4j 插件、扩展或索引产生的内部节点和内部关系不得进入 graph schema、计数、样本、路径和上层算法投影；例如 Neo4j Spatial 的 `SpatialLayer` 节点以及 `RTREE_METADATA`、`RTREE_REFERENCE`、`RTREE_ROOT` 关系应由 provider 或 Graph 模块服务层过滤，不能要求 `common/datatype.GraphInfo` 携带具体引擎内部规则。
+
 ```go
 type GraphMetadataProvider interface {
     EnginePlugin

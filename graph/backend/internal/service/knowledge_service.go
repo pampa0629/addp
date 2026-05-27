@@ -54,7 +54,7 @@ func (s *KnowledgeService) ListEntitiesByType(
 	ontology, _ := s.ontologyRepo.GetDetail(kg.OntologyID, tenantID)
 	entityLabels := entityTypeNodeLabels(ontology, entityTypeName)
 	countResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-		fmt.Sprintf("MATCH (n%s) RETURN count(n) AS total", nodeLabelsPattern(entityLabels)))
+		fmt.Sprintf("MATCH (n%s) WHERE %s RETURN count(n) AS total", nodeLabelsPattern(entityLabels), businessNodePredicate("n")))
 	if err != nil {
 		return nil, 0, fmt.Errorf("count failed: %w", err)
 	}
@@ -68,8 +68,8 @@ func (s *KnowledgeService) ListEntitiesByType(
 
 	skip := (page - 1) * pageSize
 	result, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-		fmt.Sprintf("MATCH (n%s) RETURN n SKIP %d LIMIT %d",
-			nodeLabelsPattern(entityLabels), skip, pageSize))
+		fmt.Sprintf("MATCH (n%s) WHERE %s RETURN n SKIP %d LIMIT %d",
+			nodeLabelsPattern(entityLabels), businessNodePredicate("n"), skip, pageSize))
 	if err != nil {
 		return nil, 0, fmt.Errorf("list failed: %w", err)
 	}
@@ -101,7 +101,7 @@ func (s *KnowledgeService) GetEntityDetail(
 	}
 
 	result, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-		fmt.Sprintf("MATCH (n) WHERE elementId(n) = '%s' RETURN n", escapeCypher(nodeID)))
+		fmt.Sprintf("MATCH (n) WHERE elementId(n) = '%s' AND %s RETURN n", escapeCypher(nodeID), businessNodePredicate("n")))
 	if err != nil {
 		return nil, fmt.Errorf("get entity failed: %w", err)
 	}
@@ -136,7 +136,7 @@ func (s *KnowledgeService) GetEntityNeighbors(
 
 	// 获取中心节点
 	nodeResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-		fmt.Sprintf("MATCH (n) WHERE elementId(n) = '%s' RETURN n", escapeCypher(nodeID)))
+		fmt.Sprintf("MATCH (n) WHERE elementId(n) = '%s' AND %s RETURN n", escapeCypher(nodeID), businessNodePredicate("n")))
 	if err != nil || nodeResult.GraphData == nil || len(nodeResult.GraphData.Nodes) == 0 {
 		return nil, fmt.Errorf("node not found: %s", nodeID)
 	}
@@ -151,7 +151,7 @@ func (s *KnowledgeService) GetEntityNeighbors(
 
 	// 查询邻居：显式返回 elementId(m) 以便对齐
 	cypher := fmt.Sprintf(
-		"MATCH (n)-[r]-(m) WHERE elementId(n) = '%s' AND NOT ("+internalRelationshipTypePredicate+") "+
+		"MATCH (n)-[r]-(m) WHERE elementId(n) = '%s' AND "+businessRelationshipPredicate("r", "n", "m")+" "+
 			"RETURN m, type(r) AS rel_type, (startNode(r) = n) AS is_out, elementId(m) AS m_eid "+
 			"LIMIT %d",
 		escapeCypher(nodeID), limit,
@@ -224,7 +224,7 @@ func (s *KnowledgeService) SearchEntities(
 	}
 
 	countCypher := fmt.Sprintf(
-		"MATCH (n) WHERE any(key IN keys(n) WHERE toLower(toString(n[key])) CONTAINS toLower('%s'))%s "+
+		"MATCH (n) WHERE "+businessNodePredicate("n")+" AND any(key IN keys(n) WHERE toLower(toString(n[key])) CONTAINS toLower('%s'))%s "+
 			"RETURN count(n) AS total",
 		escapeCypher(query), typeFilter,
 	)
@@ -242,7 +242,7 @@ func (s *KnowledgeService) SearchEntities(
 
 	skip := (page - 1) * pageSize
 	cypher := fmt.Sprintf(
-		"MATCH (n) WHERE any(key IN keys(n) WHERE toLower(toString(n[key])) CONTAINS toLower('%s'))%s "+
+		"MATCH (n) WHERE "+businessNodePredicate("n")+" AND any(key IN keys(n) WHERE toLower(toString(n[key])) CONTAINS toLower('%s'))%s "+
 			"RETURN n SKIP %d LIMIT %d",
 		escapeCypher(query), typeFilter, skip, pageSize,
 	)
@@ -306,6 +306,7 @@ func (s *KnowledgeService) GetSubgraph(
 	cypher := fmt.Sprintf(
 		"MATCH (n)-[r*1..%d]-(m) WHERE elementId(n) = '%s' "+
 			"AND NONE(rel IN r WHERE type(rel) IN "+internalRelationshipTypeList+") "+
+			"AND "+businessNodePredicate("n")+" AND "+businessNodePredicate("m")+" "+
 			"RETURN DISTINCT n, r, m LIMIT %d",
 		depth, escapeCypher(req.NodeID), limit,
 	)
@@ -335,7 +336,7 @@ func (s *KnowledgeService) GetOntologyDescription(
 	// 各关系类型数量
 	relCounts := make(map[string]int64)
 	relCountResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-		"MATCH ()-[r]->() WHERE NOT ("+internalRelationshipTypePredicate+") RETURN type(r) AS rel_type, count(r) AS cnt")
+		"MATCH (a)-[r]->(b) WHERE "+businessRelationshipPredicate("r", "a", "b")+" RETURN type(r) AS rel_type, count(r) AS cnt")
 	if err == nil {
 		for _, row := range relCountResult.Rows {
 			if rt, ok := row["rel_type"]; ok {
@@ -400,7 +401,7 @@ func (s *KnowledgeService) countNodesByLabels(ctx context.Context, engine *commo
 		return 0
 	}
 	result, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-		fmt.Sprintf("MATCH (n%s) RETURN count(n) AS cnt", nodeLabelsPattern(labels)))
+		fmt.Sprintf("MATCH (n%s) WHERE %s RETURN count(n) AS cnt", nodeLabelsPattern(labels), businessNodePredicate("n")))
 	if err != nil || len(result.Rows) == 0 {
 		return 0
 	}

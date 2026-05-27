@@ -89,6 +89,42 @@ definitions:
       name:
         type: string
     type: object
+  github_com_addp_graph_internal_models.ApplyInferredSchemaFromEngineRequest:
+    properties:
+      conflict:
+        description: '"skip" | "overwrite"'
+        type: string
+      engine_id:
+        type: integer
+      entity_type_names:
+        items:
+          type: string
+        type: array
+      relation_type_keys:
+        items:
+          type: string
+        type: array
+    required:
+    - engine_id
+    type: object
+  github_com_addp_graph_internal_models.ApplyInferredSchemaRequest:
+    properties:
+      conflict:
+        description: '"skip" | "overwrite"'
+        type: string
+      entity_type_names:
+        items:
+          type: string
+        type: array
+      ontology_id:
+        type: integer
+      relation_type_keys:
+        items:
+          type: string
+        type: array
+    required:
+    - ontology_id
+    type: object
   github_com_addp_graph_internal_models.BrowseSchema:
     properties:
       node_shapes:
@@ -110,11 +146,11 @@ definitions:
           type: integer
         description: 按标签分组的节点数
         type: object
-      edge_count:
-        description: 总关系数
-        type: integer
       node_count:
         description: 总节点数
+        type: integer
+      relationship_count:
+        description: 总关系数
         type: integer
     type: object
   github_com_addp_graph_internal_models.BuildMaterial:
@@ -864,42 +900,6 @@ definitions:
       target_type_id:
         type: integer
     type: object
-  github_com_addp_graph_internal_service.ApplyInferredSchemaFromEngineRequest:
-    properties:
-      conflict:
-        description: '"skip" | "overwrite"'
-        type: string
-      engine_id:
-        type: integer
-      entity_type_names:
-        items:
-          type: string
-        type: array
-      relation_type_keys:
-        items:
-          type: string
-        type: array
-    required:
-    - engine_id
-    type: object
-  github_com_addp_graph_internal_service.ApplyInferredSchemaRequest:
-    properties:
-      conflict:
-        description: '"skip" | "overwrite"'
-        type: string
-      entity_type_names:
-        items:
-          type: string
-        type: array
-      ontology_id:
-        type: integer
-      relation_type_keys:
-        items:
-          type: string
-        type: array
-    required:
-    - ontology_id
-    type: object
   github_com_addp_graph_internal_service.ImportFromModelRequest:
     properties:
       conflict:
@@ -1570,7 +1570,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_addp_graph_internal_service.ApplyInferredSchemaRequest'
+          $ref: '#/definitions/github_com_addp_graph_internal_models.ApplyInferredSchemaRequest'
       produces:
       - application/json
       responses:
@@ -2445,7 +2445,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_addp_graph_internal_service.ApplyInferredSchemaFromEngineRequest'
+          $ref: '#/definitions/github_com_addp_graph_internal_models.ApplyInferredSchemaFromEngineRequest'
       produces:
       - application/json
       responses:

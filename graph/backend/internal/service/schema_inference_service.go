@@ -64,22 +64,6 @@ type SchemaInferencePreview struct {
 	RelationTypes []InferredRelationType `json:"relation_types"`
 }
 
-// ApplyInferredSchemaRequest 应用推导结果到本体（从 graph_id）
-type ApplyInferredSchemaRequest struct {
-	OntologyID       uint     `json:"ontology_id" binding:"required"`
-	EntityTypeNames  []string `json:"entity_type_names"`
-	RelationTypeKeys []string `json:"relation_type_keys"`
-	Conflict         string   `json:"conflict"` // "skip" | "overwrite"
-}
-
-// ApplyInferredSchemaFromEngineRequest 应用推导结果到本体（从 engine_id）
-type ApplyInferredSchemaFromEngineRequest struct {
-	EngineID         uint     `json:"engine_id" binding:"required"`
-	EntityTypeNames  []string `json:"entity_type_names"`
-	RelationTypeKeys []string `json:"relation_type_keys"`
-	Conflict         string   `json:"conflict"` // "skip" | "overwrite"
-}
-
 // ListNeo4jEngines 返回当前租户下所有 Neo4j 引擎
 func (s *SchemaInferenceService) ListNeo4jEngines(tenantID uint) ([]commonModels.Engine, error) {
 	engines, err := s.systemClient.ListEngines("neo4j", tenantID)
@@ -127,7 +111,7 @@ func (s *SchemaInferenceService) inferWithEngine(ctx context.Context, engine *co
 
 	// 获取所有节点形状。Neo4j 节点可以有多个 label，因此这里按完整 label set 推导 ADDP node shape。
 	nodeShapeResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-		"MATCH (n) RETURN labels(n) AS labels, count(n) AS cnt ORDER BY cnt DESC LIMIT 500")
+		"MATCH (n) WHERE "+businessNodePredicate("n")+" RETURN labels(n) AS labels, count(n) AS cnt ORDER BY cnt DESC LIMIT 500")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get node shapes: %w", err)
 	}
@@ -135,7 +119,7 @@ func (s *SchemaInferenceService) inferWithEngine(ctx context.Context, engine *co
 	// 对每个节点形状提取属性和节点数
 	for _, row := range nodeShapeResult.Rows {
 		labels := interfaceToStringSlice(row["labels"])
-		if len(labels) == 0 {
+		if len(labels) == 0 || isInternalNodeLabelSet(labels) {
 			continue
 		}
 		name := endpointShapeName(labels)
@@ -149,7 +133,7 @@ func (s *SchemaInferenceService) inferWithEngine(ctx context.Context, engine *co
 
 		// 采样属性 key（LIMIT 1000 防止大库慢查询）
 		propResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-			fmt.Sprintf("MATCH (n%s) UNWIND keys(n) AS k RETURN DISTINCT k LIMIT 1000", nodeLabelsPattern(labels)))
+			fmt.Sprintf("MATCH (n%s) WHERE %s UNWIND keys(n) AS k RETURN DISTINCT k LIMIT 1000", nodeLabelsPattern(labels), businessNodePredicate("n")))
 		if err == nil {
 			for _, r := range propResult.Rows {
 				if k, ok := r["k"]; ok {
@@ -167,7 +151,7 @@ func (s *SchemaInferenceService) inferWithEngine(ctx context.Context, engine *co
 
 	// 提取关系模式（来源节点形状 + 关系类型 + 目标节点形状）
 	relResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-		"MATCH (a)-[r]->(b) WHERE NOT ("+internalRelationshipTypePredicate+") RETURN labels(a) AS src, type(r) AS rel, labels(b) AS tgt, count(r) AS cnt ORDER BY rel, cnt DESC LIMIT 500")
+		"MATCH (a)-[r]->(b) WHERE "+businessRelationshipPredicate("r", "a", "b")+" RETURN labels(a) AS src, type(r) AS rel, labels(b) AS tgt, count(r) AS cnt ORDER BY rel, cnt DESC LIMIT 500")
 	if err != nil {
 		return preview, nil // 关系推导失败不影响实体推导结果
 	}
@@ -178,6 +162,9 @@ func (s *SchemaInferenceService) inferWithEngine(ctx context.Context, engine *co
 		}
 		sourceLabels := interfaceToStringSlice(row["src"])
 		targetLabels := interfaceToStringSlice(row["tgt"])
+		if isInternalNodeLabelSet(sourceLabels) || isInternalNodeLabelSet(targetLabels) {
+			continue
+		}
 		sourceShapeName := endpointShapeName(sourceLabels)
 		targetShapeName := endpointShapeName(targetLabels)
 		rt := InferredRelationType{
@@ -197,7 +184,7 @@ func (s *SchemaInferenceService) inferWithEngine(ctx context.Context, engine *co
 }
 
 // ApplyInferredSchema 将选中的推导结果（来自图谱）应用到本体
-func (s *SchemaInferenceService) ApplyInferredSchema(ctx context.Context, graphID, tenantID uint, req *ApplyInferredSchemaRequest) (*ImportResult, error) {
+func (s *SchemaInferenceService) ApplyInferredSchema(ctx context.Context, graphID, tenantID uint, req *models.ApplyInferredSchemaRequest) (*ImportResult, error) {
 	preview, err := s.InferSchema(ctx, graphID, tenantID, &req.OntologyID)
 	if err != nil {
 		return nil, err
@@ -206,7 +193,7 @@ func (s *SchemaInferenceService) ApplyInferredSchema(ctx context.Context, graphI
 }
 
 // ApplyInferredSchemaFromEngine 将选中的推导结果（来自引擎）应用到指定本体
-func (s *SchemaInferenceService) ApplyInferredSchemaFromEngine(ctx context.Context, engineID, ontologyID, tenantID uint, req *ApplyInferredSchemaFromEngineRequest) (*ImportResult, error) {
+func (s *SchemaInferenceService) ApplyInferredSchemaFromEngine(ctx context.Context, engineID, ontologyID, tenantID uint, req *models.ApplyInferredSchemaFromEngineRequest) (*ImportResult, error) {
 	preview, err := s.InferSchemaFromEngine(ctx, engineID, tenantID, &ontologyID)
 	if err != nil {
 		return nil, err

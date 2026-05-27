@@ -351,7 +351,15 @@
           "files": "Files",
           "anchors": "Anchors",
           "contentIndex": "Content Index",
-          "schemaVersion": "Schema Version"
+          "schemaVersion": "Schema Version",
+          "graphModel": "Graph Model",
+          "graphDirected": "Directed",
+          "graphNodeCount": "Nodes",
+          "graphRelationshipCount": "Relationships"
+        },
+        "tables": {
+          "graphNodeShapes": "Node Types",
+          "graphRelationshipShapes": "Relationship Types"
         },
         "tableColumns": {
           "name": "Name",
@@ -372,6 +380,12 @@
           "primary": "Primary",
           "rowCount": "Row Count",
           "columnCount": "Column Count",
+          "count": "Count",
+          "labels": "Labels",
+          "patterns": "Patterns",
+          "properties": "Properties",
+          "nodeShape": "Node Type",
+          "relationshipType": "Relationship Type",
           "geometryType": "Geometry Type",
           "srid": "SRID",
           "dimension": "Dimension",

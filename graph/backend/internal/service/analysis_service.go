@@ -104,11 +104,12 @@ func nodeShapeWhereClause(nodeVar string, filters []analysisNodeShapeFilter) str
 }
 
 func nodeShapeQueryPredicate(nodeVar string, filters []analysisNodeShapeFilter) string {
+	businessPredicate := businessNodePredicate(nodeVar)
 	clause := nodeShapeWhereClause(nodeVar, filters)
 	if clause == "" {
-		return "true"
+		return businessPredicate
 	}
-	return clause
+	return businessPredicate + " AND " + clause
 }
 
 // getGraphAndEngine 与 Neo4jService 复用相同逻辑
@@ -414,7 +415,7 @@ func (s *AnalysisService) runDegreeCentrality(ctx context.Context, engine *commo
 	start := time.Now()
 
 	labelFilter := ""
-	if clause := nodeShapeWhereClause("n", analysisNodeShapeFilters(req)); clause != "" {
+	if clause := nodeShapeQueryPredicate("n", analysisNodeShapeFilters(req)); clause != "" {
 		labelFilter = "WHERE " + clause
 	}
 
@@ -497,11 +498,11 @@ func (s *AnalysisService) runKhopNeighbors(ctx context.Context, graphID, tenantI
 		NodeScores:    []models.NodeScore{},
 		Subgraph:      subgraph,
 		Metadata: map[string]interface{}{
-			"elapsed_ms":     time.Since(start).Milliseconds(),
-			"node_count":     len(subgraph.Nodes),
-			"edge_count":     len(subgraph.Edges),
-			"hops":           hops,
-			"center_node_id": nodeID,
+			"elapsed_ms":         time.Since(start).Milliseconds(),
+			"node_count":         len(subgraph.Nodes),
+			"relationship_count": len(subgraph.Edges),
+			"hops":               hops,
+			"center_node_id":     nodeID,
 		},
 	}, nil
 }
@@ -574,10 +575,10 @@ func (s *AnalysisService) runMultiPath(ctx context.Context, graphID, tenantID ui
 		NodeScores:    []models.NodeScore{},
 		Subgraph:      merged,
 		Metadata: map[string]interface{}{
-			"elapsed_ms": time.Since(start).Milliseconds(),
-			"node_count": len(merged.Nodes),
-			"edge_count": len(merged.Edges),
-			"pair_count": len(pairs),
+			"elapsed_ms":         time.Since(start).Milliseconds(),
+			"node_count":         len(merged.Nodes),
+			"relationship_count": len(merged.Edges),
+			"pair_count":         len(pairs),
 		},
 	}, nil
 }
@@ -588,29 +589,22 @@ func (s *AnalysisService) runGDSAlgo(ctx context.Context, engine *commonmodels.E
 
 	projName := fmt.Sprintf("addp_tmp_%d_%d_%d", graphID, tenantID, time.Now().UnixMilli())
 
-	relTypes, err := businessRelationshipProjection(ctx, engine)
-	if err != nil {
-		return nil, err
-	}
 	selectedRelTypes := make([]string, 0, len(req.RelTypes))
 	if len(req.RelTypes) > 0 {
-		quoted := make([]string, 0, len(req.RelTypes))
 		for _, r := range req.RelTypes {
 			if isInternalRelationshipType(r) {
 				continue
 			}
 			selectedRelTypes = append(selectedRelTypes, r)
-			quoted = append(quoted, fmt.Sprintf("'%s'", escapeCypher(r)))
 		}
-		if len(quoted) == 0 {
+		if len(selectedRelTypes) == 0 {
 			return nil, fmt.Errorf("no business relationship types selected")
 		}
-		relTypes = "[" + strings.Join(quoted, ",") + "]"
 	}
 
 	filters := analysisNodeShapeFilters(req)
-	projCypher := buildGDSProjectionCypher(projName, relTypes, selectedRelTypes, filters)
-	_, err = dbbridge.ExecuteGraphQuery(ctx, engine, projCypher)
+	projCypher := buildGDSProjectionCypher(projName, selectedRelTypes, filters)
+	_, err := dbbridge.ExecuteGraphQuery(ctx, engine, projCypher)
 	if err != nil {
 		return nil, fmt.Errorf("GDS projection failed: %w", err)
 	}
@@ -707,23 +701,28 @@ LIMIT %d`, projName, req.Limit)
 	}, nil
 }
 
-func buildGDSProjectionCypher(projName, relTypesProjection string, selectedRelTypes []string, filters []analysisNodeShapeFilter) string {
+func buildGDSProjectionCypher(projName string, selectedRelTypes []string, filters []analysisNodeShapeFilter) string {
+	relWhereParts := []string{businessRelationshipPredicate("r", "source", "target")}
+	if len(selectedRelTypes) > 0 {
+		relWhereParts = append(relWhereParts, fmt.Sprintf("type(r) IN %s", cypherStringList(selectedRelTypes)))
+	}
+	relWhere := strings.Join(relWhereParts, " AND ")
 	if len(filters) == 0 {
-		return fmt.Sprintf("CALL gds.graph.project('%s', '*', %s) YIELD graphName, nodeCount, relationshipCount",
-			escapeCypher(projName), relTypesProjection)
+		return fmt.Sprintf(
+			"CALL gds.graph.project.cypher('%s', 'MATCH (n) WHERE %s RETURN id(n) AS id', 'MATCH (source)-[r]->(target) WHERE %s RETURN id(source) AS source, id(target) AS target') YIELD graphName, nodeCount, relationshipCount",
+			escapeCypher(projName),
+			escapeCypher(businessNodePredicate("n")),
+			escapeCypher(relWhere),
+		)
 	}
 	nodeWhere := nodeShapeQueryPredicate("n", filters)
 	sourceWhere := nodeShapeQueryPredicate("source", filters)
 	targetWhere := nodeShapeQueryPredicate("target", filters)
-	relWhereParts := []string{"NOT (" + internalRelationshipTypePredicate + ")"}
-	if len(selectedRelTypes) > 0 {
-		relWhereParts = append(relWhereParts, fmt.Sprintf("type(r) IN %s", cypherStringList(selectedRelTypes)))
-	}
 	return fmt.Sprintf(
 		"CALL gds.graph.project.cypher('%s', 'MATCH (n) WHERE %s RETURN id(n) AS id', 'MATCH (source)-[r]->(target) WHERE %s AND %s AND %s RETURN id(source) AS source, id(target) AS target') YIELD graphName, nodeCount, relationshipCount",
 		escapeCypher(projName),
 		escapeCypher(nodeWhere),
-		escapeCypher(strings.Join(relWhereParts, " AND ")),
+		escapeCypher(relWhere),
 		escapeCypher(sourceWhere),
 		escapeCypher(targetWhere),
 	)

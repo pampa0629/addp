@@ -1,6 +1,6 @@
 # ADDP Graph 统一抽象设计
 
-> 状态：讨论后推进  
+> 状态：Graph 统一抽象第一轮已完成，后续进入其他 datatype 接力
 > 创建日期：2026-05-25
 
 ## 背景
@@ -21,6 +21,18 @@ graph 的统一抽象需要先回到本体：图的核心是 node 和 relationsh
 3. Neo4j 的 `label` / `relationship type` 可以作为 Graph 模块和 Manager 展示中的筛选、分组或投影视角，但不能作为 Meta 主数据项。
 4. `common/datatype.GraphInfo` 描述图结构摘要，不承载实际节点、边样本或前端图组件 DTO。
 5. 图查询语言、路径探索、图算法和可视化交互属于 graph 模块或 engine provider 能力，不进入 `common/datatype`。
+
+## 接力摘要
+
+本轮 graph 重构已经完成“概念对齐、主事实字段、Meta/Manager/Graph/Service 上层迁移、内部图过滤、文档同步”这一闭环。新会话继续推进其他 datatype 时，不应回退以下口径：
+
+- `graph` 是 Meta item；Neo4j label、relationship type 和 endpoint pattern 是 `type_info.graph` 中的 shape facts，不是独立主 item。
+- graph 主事实进入 `plugin.ItemMetadata.Graph *datatype.GraphInfo`；公共消费方通过 `ItemMetadataGraphInfo()` 或 `attributes.type_info.graph` 获取 graph facts。
+- Manager 是通用资源浏览和轻量预览，不承担专业图可视化；Graph 模块负责图浏览、图查询、图算法和本体执行映射。
+- Neo4j Spatial 等插件产生的内部节点/关系属于引擎实现图，不进入 ADDP 业务图视图。当前第一批过滤为节点 `SpatialLayer`，关系 `RTREE_METADATA`、`RTREE_REFERENCE`、`RTREE_ROOT`。
+- 不保留旧 label item / relationship item 兼容层；历史 Meta 数据通过重新扫描生成新 graph item 和 `type_info.graph`。
+
+后续若继续扩展 graph provider，只能扩展业务图视图或 Graph 模块专用能力，不应把图查询结果、图算法参数、前端图组件 DTO 塞进 `common/datatype.GraphInfo`。
 
 ## Meta Item 建议
 
@@ -77,9 +89,10 @@ Manager 可复用 graph 模块或 engine graph provider 的能力，但不应自
 
 Graph 模块的浏览、知识服务、推导和图算法必须使用同一套业务图视角：
 
-- Neo4j 插件或扩展生成的内部关系不进入业务图 schema、统计、预览、路径和算法投影。
+- Neo4j 插件或扩展生成的内部节点和内部关系不进入业务图 schema、统计、预览、路径和算法投影。
+- 第一批过滤的 Neo4j spatial 内部节点为 `SpatialLayer`，它是 Neo4j spatial 的图层/索引元数据，不是 ADDP 业务图节点类型。
 - 第一批过滤的 Neo4j spatial 内部关系为 `RTREE_METADATA`、`RTREE_REFERENCE`、`RTREE_ROOT`。
-- 过滤规则归属于 Graph 模块服务层；`common/datatype.GraphInfo` 不携带具体引擎内部规则。
+- 过滤规则归属于具体 engine provider 或 Graph 模块服务层的用户图视图投影；`common/datatype.GraphInfo` 不携带具体引擎内部规则。
 
 ### 本体类型与引擎执行映射
 
@@ -117,7 +130,7 @@ type EntityType struct {
 1. 空间图层选择、同步和算法执行传递的是 `LayerName`，不能把 `LayerName` 当作 Neo4j label。
 2. 节点注册到空间图层时，节点匹配必须使用 `NodeLabels` 或继承链默认映射。
 3. 继承空间配置时，子类型可以复用父类型的几何字段配置，但默认生成独立的 layer name，避免多个实体类型写入同一个 spatial layer 后失去本体边界。
-4. Manager 只消费 graph metadata 的通用结构摘要；空间图层能力、Neo4j spatial 内部关系过滤和运行时注册逻辑留在 Graph 模块。
+4. Manager 只消费 graph metadata 的通用结构摘要；空间图层能力、Neo4j spatial 内部节点/关系过滤和运行时注册逻辑留在 engine provider 与 Graph 模块。
 
 ## Common Datatype 目标结构
 
@@ -223,7 +236,7 @@ label 和 relationship type 列表由 `GraphInfo.NodeShapes` 与 `GraphInfo.Rela
 5. 已改 Neo4j provider：以 database 下 graph item 作为主 item，GraphInfo 承载 label-set node shape、relationship shape 和 endpoint pattern 事实。
 6. 已改 Meta namespace scan：graph item 落库，label / relationship type 进入 `type_info.graph`。
 7. 已改 Manager graph preview：从 GraphInfo 投影通用概览。
-8. 已改 Graph 模块浏览 schema 为 `node_shapes` / `relationship_shapes` / `patterns`，Browse schema 和 schema inference 均按完整 label set 生成 node shape，知识服务、schema 推导和图算法入口统一过滤 Neo4j 内部关系。
+8. 已改 Graph 模块浏览 schema 为 `node_shapes` / `relationship_shapes` / `patterns`，Browse schema 和 schema inference 均按完整 label set 生成 node shape，知识服务、schema 推导和图算法入口统一过滤 Neo4j 内部节点和内部关系。
 9. 已改 Service 图查询服务：入门向导从旧 `label` 模式调整为 `node shape` 模式，前端选择项来自 graph item 的 `type_info.graph.node_shapes`；服务保存 `node_shape` 与执行所需的 `node_labels` 映射，不再从 Meta 树读取 label item。
 10. 已改 Graph 本体层：`EntityType.Name` 回到本体概念标识，新增 `EntityType.NodeLabels` 作为 Neo4j 执行映射，构建、知识服务、空间和算法查询统一通过映射解析 label set。
 11. 已改 Graph Analysis：算法筛选请求使用 `node_shapes`，后端按完整 label set 过滤节点；GDS 在选择 node shape 时使用 Cypher projection，避免把多 label node shape 退化为宽松 label 匹配。
@@ -231,3 +244,7 @@ label 和 relationship type 列表由 `GraphInfo.NodeShapes` 与 `GraphInfo.Rela
 13. 已改图谱构建写入链路：实体和关系写入 Neo4j 都使用 `NodeLabels` / label set，审核内容中的执行映射统一命名为 `node_labels`、`source_node_labels`、`target_node_labels`，不再用 `ancestor_labels` 暗示概念继承就是 Neo4j label。
 14. 已改 Graph Browser 节点形状筛选：多 label node shape 必须完整匹配该 label set，不再按任一 label 命中。
 15. 已改 Graph 前端展示边界：节点详情在没有本体类型时显示完整 label set；审核修改弹窗把本体类型和 Neo4j 执行映射分开展示和编辑。
+16. 已改 Manager graph 轻量预览：类型概览与样本区分离，类型表分页，样本区按当前选择只展示节点样本或关系样本；样本属性默认过滤内部字段和技术字段。
+17. 已改 Neo4j provider 用户图投影：Neo4j spatial 内部节点 `SpatialLayer` 与内部关系 `RTREE_METADATA`、`RTREE_REFERENCE`、`RTREE_ROOT` 不进入 GraphInfo、计数和默认样本。
+18. 已改 Graph 模块服务层用户图投影：Graph Browser、统计、搜索、Schema 推导、知识服务和 GDS 投影统一使用业务图过滤 helper，内部节点和内部关系不进入上层浏览、推导和算法视图。
+19. 已改 Manager graph 属性页：`type_info.graph` 使用专用结构摘要展示，只呈现图模型、方向性、节点数、关系数、节点类型和关系类型；属性列过滤内部字段和技术字段，避免把 Neo4j/空间扩展运行时属性作为业务属性展示。

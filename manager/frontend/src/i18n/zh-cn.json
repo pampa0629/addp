@@ -351,7 +351,15 @@
           "files": "文件",
           "anchors": "锚点",
           "contentIndex": "内容索引",
-          "schemaVersion": "规范版本"
+          "schemaVersion": "规范版本",
+          "graphModel": "图模型",
+          "graphDirected": "有向图",
+          "graphNodeCount": "节点数",
+          "graphRelationshipCount": "关系数"
+        },
+        "tables": {
+          "graphNodeShapes": "节点类型",
+          "graphRelationshipShapes": "关系类型"
         },
         "tableColumns": {
           "name": "名称",
@@ -373,6 +381,12 @@
           "primary": "主文件",
           "rowCount": "行数",
           "columnCount": "字段数",
+          "count": "数量",
+          "labels": "Labels",
+          "patterns": "连接模式",
+          "properties": "属性",
+          "nodeShape": "节点类型",
+          "relationshipType": "关系类型",
           "geometryType": "几何类型",
           "srid": "SRID",
           "dimension": "维度",

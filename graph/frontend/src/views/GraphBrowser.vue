@@ -5,7 +5,7 @@
       <div class="toolbar-left">
         <span class="graph-name">{{ graphName }}</span>
         <el-tag v-if="stats" size="small" type="info">
-          {{ stats.node_count }} {{ t('graph.browser.nodes') }} / {{ stats.edge_count }} {{ t('graph.browser.relations') }}
+          {{ stats.node_count }} {{ t('graph.browser.nodes') }} / {{ stats.relationship_count }} {{ t('graph.browser.relations') }}
         </el-tag>
         <!-- 着色状态标签 -->
         <el-tag v-if="analysisActive" size="small" type="warning" closable @close="handleClearScores">

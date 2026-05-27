@@ -158,7 +158,8 @@
                             :key="column.key"
                             :prop="column.key"
                             :label="column.label"
-                            min-width="120"
+                            :min-width="column.minWidth"
+                            :class-name="column.className"
                             show-overflow-tooltip
                           />
                         </el-table>
@@ -178,14 +179,15 @@
                       border
                       class="attribute-table"
                     >
-                      <el-table-column
-                        v-for="column in table.columns"
-                        :key="column.key"
-                        :prop="column.key"
-                        :label="column.label"
-                        min-width="120"
-                        show-overflow-tooltip
-                      />
+                        <el-table-column
+                          v-for="column in table.columns"
+                          :key="column.key"
+                          :prop="column.key"
+                          :label="column.label"
+                          :min-width="column.minWidth"
+                          :class-name="column.className"
+                          show-overflow-tooltip
+                        />
                     </el-table>
                   </div>
                 </div>
@@ -421,7 +423,11 @@ const fieldLabelKeys = {
   files: 'manager.explorer.attributes.fields.files',
   anchors: 'manager.explorer.attributes.fields.anchors',
   content_index: 'manager.explorer.attributes.fields.contentIndex',
-  schema_version: 'manager.explorer.attributes.fields.schemaVersion'
+  schema_version: 'manager.explorer.attributes.fields.schemaVersion',
+  model: 'manager.explorer.attributes.fields.graphModel',
+  directed: 'manager.explorer.attributes.fields.graphDirected',
+  node_count: 'manager.explorer.attributes.fields.graphNodeCount',
+  relationship_count: 'manager.explorer.attributes.fields.graphRelationshipCount'
 }
 
 const boxedNestedGroupKeys = new Set(['native', 'source'])
@@ -440,6 +446,10 @@ const tableColumnLabelKeys = {
   primary: 'manager.explorer.attributes.tableColumns.primary',
   row_count: 'manager.explorer.attributes.tableColumns.rowCount',
   column_count: 'manager.explorer.attributes.tableColumns.columnCount',
+  count: 'manager.explorer.attributes.tableColumns.count',
+  labels: 'manager.explorer.attributes.tableColumns.labels',
+  patterns: 'manager.explorer.attributes.tableColumns.patterns',
+  properties: 'manager.explorer.attributes.tableColumns.properties',
   geometry_type: 'manager.explorer.attributes.tableColumns.geometryType',
   srid: 'manager.explorer.attributes.tableColumns.srid',
   dimension: 'manager.explorer.attributes.tableColumns.dimension',
@@ -459,7 +469,24 @@ const tableColumnLabelProfiles = {
     child_kind: 'manager.explorer.attributes.tableColumns.childKind',
     data_type: 'manager.explorer.attributes.tableColumns.childDataType',
     table: 'manager.explorer.attributes.tableColumns.tableName'
+  },
+  graphNodeShapes: {
+    name: 'manager.explorer.attributes.tableColumns.nodeShape',
+    count: 'manager.explorer.attributes.tableColumns.count',
+    labels: 'manager.explorer.attributes.tableColumns.labels',
+    properties: 'manager.explorer.attributes.tableColumns.properties'
+  },
+  graphRelationshipShapes: {
+    type: 'manager.explorer.attributes.tableColumns.relationshipType',
+    count: 'manager.explorer.attributes.tableColumns.count',
+    patterns: 'manager.explorer.attributes.tableColumns.patterns',
+    properties: 'manager.explorer.attributes.tableColumns.properties'
   }
+}
+
+const tableTitleLabelKeys = {
+  'type_info.graph.node_shapes': 'manager.explorer.attributes.tables.graphNodeShapes',
+  'type_info.graph.relationship_shapes': 'manager.explorer.attributes.tables.graphRelationshipShapes'
 }
 
 const itemTypeLabel = computed(() => {
@@ -568,6 +595,10 @@ const buildAttributeSection = (attr) => {
 }
 
 const buildAttributeGroup = (pathParts, value) => {
+  if (isGraphInfoGroup(pathParts, value)) {
+    return buildGraphAttributeGroup(pathParts, value)
+  }
+
   const tables = []
   const subgroups = []
   let groupValue = value
@@ -614,6 +645,66 @@ const buildAttributeGroup = (pathParts, value) => {
     entries,
     tables,
     subgroups
+  }
+}
+
+const buildGraphAttributeGroup = (pathParts, value) => {
+  const entries = ['model', 'directed', 'node_count', 'relationship_count']
+    .filter(key => !isEmptyAttributeValue(value[key]))
+    .map(key => buildEntry([...pathParts, key], value[key], pathParts))
+
+  const tables = []
+  const nodeShapes = Array.isArray(value.node_shapes)
+    ? value.node_shapes.map(normalizeGraphNodeShapeRow).filter(isPlainObject)
+    : []
+  if (nodeShapes.length) {
+    tables.push(buildObjectArrayTable(
+      [...pathParts, 'node_shapes'],
+      nodeShapes,
+      preferredColumnsForObjectTable([...pathParts, 'node_shapes'])
+    ))
+  }
+
+  const relationshipShapes = Array.isArray(value.relationship_shapes)
+    ? value.relationship_shapes.map(normalizeGraphRelationshipShapeRow).filter(isPlainObject)
+    : []
+  if (relationshipShapes.length) {
+    tables.push(buildObjectArrayTable(
+      [...pathParts, 'relationship_shapes'],
+      relationshipShapes,
+      preferredColumnsForObjectTable([...pathParts, 'relationship_shapes'])
+    ))
+  }
+
+  const tableCount = tables.reduce((total, table) => total + table.rows.length, 0)
+  return {
+    key: pathParts.join('.'),
+    path: pathParts.join('.'),
+    title: translateFromMap(groupLabelKeys, 'graph', humanizeKey('graph')),
+    count: entries.length + tableCount,
+    entries,
+    tables,
+    subgroups: []
+  }
+}
+
+const normalizeGraphNodeShapeRow = (shape) => {
+  if (!isPlainObject(shape)) return null
+  return {
+    name: shape.name,
+    count: shape.count,
+    labels: shape.labels,
+    properties: visibleGraphShapeProperties(shape.properties)
+  }
+}
+
+const normalizeGraphRelationshipShapeRow = (shape) => {
+  if (!isPlainObject(shape)) return null
+  return {
+    type: shape.type,
+    count: shape.count,
+    patterns: shape.patterns,
+    properties: visibleGraphShapeProperties(shape.properties)
   }
 }
 
@@ -672,7 +763,7 @@ const preferredColumnsForObjectTable = (pathParts) => {
     return ['type', 'count', 'patterns', 'properties']
   }
   if (isGraphNodeShapesTable(pathParts)) {
-    return ['name', 'count', 'kind', 'labels', 'properties']
+    return ['name', 'count', 'labels', 'properties']
   }
   switch (key) {
     case 'refs':
@@ -689,6 +780,8 @@ const preferredColumnsForObjectTable = (pathParts) => {
 }
 
 const tableLabelProfileForPath = (pathParts) => {
+  if (isGraphNodeShapesTable(pathParts)) return 'graphNodeShapes'
+  if (isGraphRelationshipShapesTable(pathParts)) return 'graphRelationshipShapes'
   const key = pathParts[pathParts.length - 1]
   if (key === 'fields') return 'fields'
   if (key === 'children') return 'children'
@@ -705,7 +798,7 @@ const buildObjectArrayTable = (pathParts, rows, preferredColumns = [], labelProf
 
   return {
     path: pathParts.join('.'),
-    title: formatAttributeSegment(pathParts[pathParts.length - 1]),
+    title: tableTitleForPath(pathParts),
     rows: rowObjects.map(row => {
       const formatted = {}
       columns.forEach(column => {
@@ -715,9 +808,21 @@ const buildObjectArrayTable = (pathParts, rows, preferredColumns = [], labelProf
     }),
     columns: columns.map(column => ({
       key: column,
-      label: tableColumnLabel(labelProfile, column)
+      label: tableColumnLabel(labelProfile, column),
+      minWidth: tableColumnMinWidth(pathParts, column),
+      className: tableColumnClassName(pathParts, column)
     }))
   }
+}
+
+const tableTitleForPath = (pathParts) => {
+  const path = pathParts.join('.')
+  const i18nKey = tableTitleLabelKeys[path]
+  if (i18nKey) {
+    const translated = t(i18nKey)
+    if (translated !== i18nKey) return translated
+  }
+  return formatAttributeSegment(pathParts[pathParts.length - 1])
 }
 
 const tableColumnLabel = (profile, column) => {
@@ -729,9 +834,42 @@ const tableColumnLabel = (profile, column) => {
   return translateFromMap(tableColumnLabelKeys, column, formatAttributeSegment(column))
 }
 
+const tableColumnMinWidth = (pathParts, column) => {
+  if (isGraphNodeShapesTable(pathParts)) {
+    return ({
+      name: 180,
+      count: 96,
+      labels: 180,
+      properties: 260
+    })[column] || 140
+  }
+  if (isGraphRelationshipShapesTable(pathParts)) {
+    return ({
+      type: 170,
+      count: 96,
+      patterns: 320,
+      properties: 260
+    })[column] || 140
+  }
+  return 120
+}
+
+const tableColumnClassName = (pathParts, column) => {
+  if ((isGraphNodeShapesTable(pathParts) || isGraphRelationshipShapesTable(pathParts)) && ['properties', 'patterns'].includes(column)) {
+    return 'attribute-table-cell-muted'
+  }
+  return ''
+}
+
 const formatTableCell = (value, pathParts, column) => {
   if (isGraphRelationshipShapesTable(pathParts) && column === 'patterns') {
     return formatGraphPatterns(value)
+  }
+  if (isGraphNodeShapesTable(pathParts) && column === 'name') {
+    return formatScalar(value)
+  }
+  if (isGraphNodeShapesTable(pathParts) && column === 'labels') {
+    return formatGraphLabels(value)
   }
   if ((isGraphNodeShapesTable(pathParts) || isGraphRelationshipShapesTable(pathParts)) && column === 'properties') {
     return formatGraphProperties(value)
@@ -739,8 +877,18 @@ const formatTableCell = (value, pathParts, column) => {
   return formatScalar(value)
 }
 
+const isGraphInfoGroup = (pathParts, value) => {
+  return pathParts.join('.') === 'type_info.graph' && isPlainObject(value)
+}
+
 const isGraphNodeShapesTable = (pathParts) => pathParts.join('.') === 'type_info.graph.node_shapes'
 const isGraphRelationshipShapesTable = (pathParts) => pathParts.join('.') === 'type_info.graph.relationship_shapes'
+
+const formatGraphLabels = (labels) => {
+  if (!Array.isArray(labels) || labels.length === 0) return '-'
+  const values = labels.map(value => String(value || '').trim()).filter(Boolean)
+  return values.length ? values.join('+') : '-'
+}
 
 const formatGraphPatterns = (patterns) => {
   if (!Array.isArray(patterns) || patterns.length === 0) return '-'
@@ -752,7 +900,9 @@ const formatGraphPatterns = (patterns) => {
     if (!from && !to) return suffix ? suffix.trim() : ''
     return `${from || '-'} -> ${to || '-'}${suffix}`
   }).filter(Boolean)
-  return formatted.length ? formatted.join('; ') : '-'
+  if (formatted.length === 0) return '-'
+  if (formatted.length <= 3) return formatted.join('; ')
+  return `${formatted.slice(0, 3).join('; ')} ... +${formatted.length - 3}`
 }
 
 const formatGraphEndpoint = (endpoint) => {
@@ -769,8 +919,31 @@ const formatGraphProperties = (properties) => {
   const names = properties
     .map(prop => isPlainObject(prop) ? prop.name : prop)
     .map(value => String(value || '').trim())
-    .filter(Boolean)
-  return names.length ? names.join(', ') : '-'
+    .filter(value => value && isVisibleGraphPropertyName(value))
+  if (names.length === 0) return '-'
+  if (names.length <= 8) return names.join(', ')
+  return `${names.slice(0, 8).join(', ')} ... +${names.length - 8}`
+}
+
+const visibleGraphShapeProperties = (properties) => {
+  if (!Array.isArray(properties)) return []
+  return properties
+    .filter(prop => {
+      const name = isPlainObject(prop) ? prop.name : prop
+      return isVisibleGraphPropertyName(name)
+    })
+    .map(prop => isPlainObject(prop) ? prop : { name: String(prop) })
+}
+
+const isVisibleGraphPropertyName = (name) => {
+  const normalized = String(name || '').trim().toLowerCase()
+  if (!normalized) return false
+  if (['name', 'title', 'label', 'id'].includes(normalized)) return false
+  if (normalized.startsWith('_')) return false
+  if (normalized.endsWith('_at') || normalized.endsWith('_time')) return false
+  if (normalized.includes('encoder') || normalized.includes('geocoder')) return false
+  if (normalized.includes('config')) return false
+  return true
 }
 
 const isPlainObject = (value) => {
@@ -1069,6 +1242,10 @@ const pickNestedNumber = (source, paths) => {
 
 .attribute-table :deep(.el-table__body tr:hover > td) {
   background: var(--addp-bg-secondary);
+}
+
+.attribute-table :deep(.attribute-table-cell-muted) {
+  color: var(--addp-text-secondary);
 }
 
 .attribute-group-header {

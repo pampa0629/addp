@@ -228,7 +228,7 @@ func (h *BrowseHandler) InferSchema(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        id      path int true "知识图谱 ID | Knowledge graph ID"
-// @Param        request body service.ApplyInferredSchemaRequest true "应用请求 | Apply request"
+// @Param        request body models.ApplyInferredSchemaRequest true "应用请求 | Apply request"
 // @Success      200 {object} map[string]interface{}
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
@@ -237,7 +237,7 @@ func (h *BrowseHandler) ApplyInferredSchema(c *gin.Context) {
 	graphID := parseUintParam(c, "id")
 	tenantID := getTenantID(c)
 
-	var req service.ApplyInferredSchemaRequest
+	var req models.ApplyInferredSchemaRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

@@ -89,14 +89,14 @@ func (s *Neo4jService) GetSchema(ctx context.Context, graphID, tenantID uint) (*
 	}
 
 	nodeShapeResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-		"MATCH (n) RETURN labels(n) AS labels, count(n) AS cnt ORDER BY cnt DESC LIMIT 500")
+		"MATCH (n) WHERE "+businessNodePredicate("n")+" RETURN labels(n) AS labels, count(n) AS cnt ORDER BY cnt DESC LIMIT 500")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get node shapes: %w", err)
 	}
 	nodeShapes := make([]models.NodeShapeDTO, 0, len(nodeShapeResult.Rows))
 	for _, row := range nodeShapeResult.Rows {
 		labels := interfaceToStringSlice(row["labels"])
-		if len(labels) == 0 {
+		if len(labels) == 0 || isInternalNodeLabelSet(labels) {
 			continue
 		}
 		count := toInt64(row["cnt"])
@@ -112,6 +112,8 @@ func (s *Neo4jService) GetSchema(ctx context.Context, graphID, tenantID uint) (*
 		`MATCH (a)-[r]->(b)
 		WITH type(r) AS relType, labels(a) AS fromLabels, labels(b) AS toLabels, count(r) AS cnt
 		WHERE NOT (relType IN `+internalRelationshipTypeList+`)
+		  AND none(label IN fromLabels WHERE label IN `+internalNodeLabelList+`)
+		  AND none(label IN toLabels WHERE label IN `+internalNodeLabelList+`)
 		RETURN relType, fromLabels, toLabels, cnt
 		ORDER BY relType, cnt DESC`)
 	if err != nil {
@@ -124,6 +126,11 @@ func (s *Neo4jService) GetSchema(ctx context.Context, graphID, tenantID uint) (*
 		if relType == "" || relType == "<nil>" || isInternalRelationshipType(relType) {
 			continue
 		}
+		fromLabels := interfaceToStringSlice(row["fromLabels"])
+		toLabels := interfaceToStringSlice(row["toLabels"])
+		if isInternalNodeLabelSet(fromLabels) || isInternalNodeLabelSet(toLabels) {
+			continue
+		}
 		index, ok := relationshipShapeByType[relType]
 		if !ok {
 			index = len(relationshipShapes)
@@ -132,8 +139,6 @@ func (s *Neo4jService) GetSchema(ctx context.Context, graphID, tenantID uint) (*
 		}
 		count := toInt64(row["cnt"])
 		relationshipShapes[index].Count = addInt64Ptr(relationshipShapes[index].Count, count)
-		fromLabels := interfaceToStringSlice(row["fromLabels"])
-		toLabels := interfaceToStringSlice(row["toLabels"])
 		if len(fromLabels) > 0 || len(toLabels) > 0 {
 			relationshipShapes[index].Patterns = append(relationshipShapes[index].Patterns, models.RelationshipPatternDTO{
 				From:  models.GraphEndpointDTO{ShapeName: endpointShapeName(fromLabels), Labels: fromLabels},
@@ -157,7 +162,7 @@ func (s *Neo4jService) GetStats(ctx context.Context, graphID, tenantID uint) (*m
 	}
 	stats := &models.BrowseStats{ByLabel: make(map[string]int64)}
 
-	nodeResult, err := dbbridge.ExecuteGraphQuery(ctx, engine, "MATCH (n) RETURN count(n) AS total")
+	nodeResult, err := dbbridge.ExecuteGraphQuery(ctx, engine, "MATCH (n) WHERE "+businessNodePredicate("n")+" RETURN count(n) AS total")
 	if err != nil {
 		return nil, fmt.Errorf("failed to count nodes: %w", err)
 	}
@@ -166,19 +171,22 @@ func (s *Neo4jService) GetStats(ctx context.Context, graphID, tenantID uint) (*m
 	}
 
 	edgeResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-		"MATCH ()-[r]->() WHERE NOT ("+internalRelationshipTypePredicate+") RETURN count(r) AS total")
+		"MATCH (a)-[r]->(b) WHERE "+businessRelationshipPredicate("r", "a", "b")+" RETURN count(r) AS total")
 	if err != nil {
 		return nil, fmt.Errorf("failed to count edges: %w", err)
 	}
 	if len(edgeResult.Rows) > 0 {
-		stats.EdgeCount = toInt64(edgeResult.Rows[0]["total"])
+		stats.RelationshipCount = toInt64(edgeResult.Rows[0]["total"])
 	}
 
 	labelResult, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-		"MATCH (n) UNWIND labels(n) AS lbl RETURN lbl, count(n) AS cnt")
+		"MATCH (n) WHERE "+businessNodePredicate("n")+" UNWIND labels(n) AS lbl RETURN lbl, count(n) AS cnt")
 	if err == nil {
 		for _, row := range labelResult.Rows {
 			if lbl, ok := row["lbl"]; ok {
+				if isInternalNodeLabel(fmt.Sprintf("%v", lbl)) {
+					continue
+				}
 				if cnt, ok2 := row["cnt"]; ok2 {
 					stats.ByLabel[fmt.Sprintf("%v", lbl)] = toInt64(cnt)
 				}
@@ -197,14 +205,14 @@ func (s *Neo4jService) GetOverview(ctx context.Context, graphID, tenantID uint) 
 	nodeColors, edgeColors := s.buildColorMaps(kg.OntologyID, tenantID)
 
 	result, err := dbbridge.ExecuteGraphQuery(ctx, engine,
-		"MATCH (n)-[r]->(m) WHERE NOT ("+internalRelationshipTypePredicate+") RETURN n, r, m LIMIT 100")
+		"MATCH (n)-[r]->(m) WHERE "+businessRelationshipPredicate("r", "n", "m")+" RETURN n, r, m LIMIT 100")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get overview: %w", err)
 	}
 
 	// 无关系则退回到仅节点
 	if result.GraphData == nil || len(result.GraphData.Nodes) == 0 {
-		result, err = dbbridge.ExecuteGraphQuery(ctx, engine, "MATCH (n) RETURN n LIMIT 50")
+		result, err = dbbridge.ExecuteGraphQuery(ctx, engine, "MATCH (n) WHERE "+businessNodePredicate("n")+" RETURN n LIMIT 50")
 		if err != nil {
 			return nil, fmt.Errorf("failed to get overview nodes: %w", err)
 		}
@@ -226,7 +234,7 @@ func (s *Neo4jService) SearchNodes(ctx context.Context, graphID, tenantID uint, 
 	}
 	// 只对字符串属性搜索，避免数组类型传入 toString 时触发 Neo4j TypeError
 	cypher := fmt.Sprintf(
-		"MATCH (n) WHERE ANY(key IN keys(n) WHERE valueType(n[key]) STARTS WITH 'STRING' AND n[key] CONTAINS '%s') RETURN n LIMIT %d",
+		"MATCH (n) WHERE "+businessNodePredicate("n")+" AND ANY(key IN keys(n) WHERE valueType(n[key]) STARTS WITH 'STRING' AND n[key] CONTAINS '%s') RETURN n LIMIT %d",
 		escapeCypher(query), limit,
 	)
 	result, err := dbbridge.ExecuteGraphQuery(ctx, engine, cypher)
@@ -248,7 +256,7 @@ func (s *Neo4jService) ExpandNode(ctx context.Context, graphID, tenantID uint, n
 		limit = 100
 	}
 	cypher := fmt.Sprintf(
-		"MATCH (n)-[r]-(m) WHERE elementId(n) = '%s' AND NOT ("+internalRelationshipTypePredicate+") RETURN n, r, m LIMIT %d",
+		"MATCH (n)-[r]-(m) WHERE elementId(n) = '%s' AND "+businessRelationshipPredicate("r", "n", "m")+" RETURN n, r, m LIMIT %d",
 		escapeCypher(nodeID), limit,
 	)
 	result, err := dbbridge.ExecuteGraphQuery(ctx, engine, cypher)

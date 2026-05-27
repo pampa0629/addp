@@ -164,6 +164,8 @@ attributes 分区统一采用以下概念：
 | `graph` | `type_info.graph` | model、directed、node_shapes、relationship_shapes、node_count、relationship_count |
 | `unknown` | `type_info.unknown` | detection_reason、fallback_action |
 
+`type_info.graph` 必须是业务图视图的 JSON 投影。引擎插件、扩展、索引或空间能力产生的内部节点和内部关系不得写入 `node_shapes`、`relationship_shapes` 或计数字段；例如 Neo4j Spatial 的 `SpatialLayer` 节点和 `RTREE_*` 关系应在 provider 或 Graph 模块服务层过滤。
+
 表字段统一放在 `type_info.table.fields`，不得写入 attributes 顶层。`type_info.table` 是 `common/datatype.TableInfo` 的直接 JSON 投影，`type_info.table.fields[]` 是 `common/datatype.FieldInfo` 的直接 JSON 投影。字段不是 data item，字段类型只能使用 `type` 表达 ADDP 标准字段类型，不得在字段对象内写入 `data_type`。原生字段类型如需展示，只能作为只读诊断信息写入 `native_type`，不得参与执行决策；哪个字段是空间字段、SRID、extent 等属于 `capabilities.spatial`，不得塞回 `type_info.table`。
 
 索引、采样过程、动态 schema 推断方式等不是 `common/datatype.TableInfo` 当前通用字段，不得写入 `type_info.table`。文档集合、数据库或格式解析得到的索引摘要进入 `capabilities.indexing`；采样规模、是否采样、动态 schema 类型、平均文档大小、索引数量等画像或统计事实进入 `capabilities.statistics`。
