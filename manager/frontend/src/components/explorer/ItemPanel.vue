@@ -86,7 +86,7 @@
                   :key="entry.path"
                   class="attribute-item"
                 >
-                  <span class="attribute-key">{{ entry.label }}</span>
+                  <span class="attribute-key" :title="entry.labelTitle || entry.label">{{ entry.label }}</span>
                   <span class="attribute-value" :title="entry.title">
                     {{ entry.display }}
                   </span>
@@ -110,7 +110,7 @@
                       :key="entry.path"
                       class="attribute-item"
                     >
-                      <span class="attribute-key">{{ entry.label }}</span>
+                      <span class="attribute-key" :title="entry.labelTitle || entry.label">{{ entry.label }}</span>
                       <span class="attribute-value" :title="entry.title">
                         {{ entry.display }}
                       </span>
@@ -134,7 +134,7 @@
                           :key="entry.path"
                           class="attribute-item"
                         >
-                          <span class="attribute-key">{{ entry.label }}</span>
+                          <span class="attribute-key" :title="entry.labelTitle || entry.label">{{ entry.label }}</span>
                           <span class="attribute-value" :title="entry.title">
                             {{ entry.display }}
                           </span>
@@ -310,7 +310,14 @@ const fieldOrder = [
   'extent_srid',
   'primary_geometry_column',
   'has_spatial_index',
+  'status',
+  'reason',
   'extractor_available',
+  'extractor',
+  'text_extracted',
+  'text_truncated',
+  'plain_text_preview',
+  'index_ref',
   'srid',
   'dimension',
   'geometry_type',
@@ -394,7 +401,13 @@ const fieldLabelKeys = {
   has_cpg: 'manager.explorer.attributes.fields.hasCpg',
   has_prj: 'manager.explorer.attributes.fields.hasPrj',
   extent_srid: 'manager.explorer.attributes.fields.extentSrid',
+  status: 'manager.explorer.attributes.fields.status',
+  reason: 'manager.explorer.attributes.fields.reason',
   extractor_available: 'manager.explorer.attributes.fields.extractorAvailable',
+  extractor: 'manager.explorer.attributes.fields.extractor',
+  text_extracted: 'manager.explorer.attributes.fields.textExtracted',
+  text_truncated: 'manager.explorer.attributes.fields.textTruncated',
+  plain_text_preview: 'manager.explorer.attributes.fields.plainTextPreview',
   relkind: 'manager.explorer.attributes.fields.relkind',
   table_type: 'manager.explorer.attributes.fields.tableType',
   kind: 'manager.explorer.attributes.fields.kind',
@@ -423,11 +436,18 @@ const fieldLabelKeys = {
   files: 'manager.explorer.attributes.fields.files',
   anchors: 'manager.explorer.attributes.fields.anchors',
   content_index: 'manager.explorer.attributes.fields.contentIndex',
+  content_hash: 'manager.explorer.attributes.fields.contentHash',
+  index_ref: 'manager.explorer.attributes.fields.indexRef',
   schema_version: 'manager.explorer.attributes.fields.schemaVersion',
   model: 'manager.explorer.attributes.fields.graphModel',
   directed: 'manager.explorer.attributes.fields.graphDirected',
   node_count: 'manager.explorer.attributes.fields.graphNodeCount',
   relationship_count: 'manager.explorer.attributes.fields.graphRelationshipCount'
+}
+
+const fieldTooltipKeys = {
+  content_hash: 'manager.explorer.attributes.fieldTooltips.contentHash',
+  index_ref: 'manager.explorer.attributes.fieldTooltips.indexRef'
 }
 
 const boxedNestedGroupKeys = new Set(['native', 'source'])
@@ -742,11 +762,12 @@ const flattenAttributeValue = (value, pathParts = [], groupRoot = []) => {
 }
 
 const buildEntry = (pathParts, value, groupRoot = []) => {
-  const display = formatScalar(value)
+  const display = formatAttributeDisplay(pathParts, value)
   const relativeParts = trimPathPrefix(pathParts, groupRoot)
   return {
     path: pathParts.join('.'),
     label: formatAttributePath(relativeParts.length ? relativeParts : pathParts),
+    labelTitle: attributeFieldTooltip(pathParts),
     display,
     title: display
   }
@@ -982,6 +1003,27 @@ const formatScalar = (value) => {
   return String(value)
 }
 
+const formatAttributeDisplay = (pathParts, value) => {
+  const path = pathParts.join('.')
+  if (path === 'capabilities.extraction.status') {
+    return formatMappedValue('manager.explorer.attributes.extractionStatus', value)
+  }
+  if (path === 'capabilities.extraction.reason') {
+    return formatMappedValue('manager.explorer.attributes.extractionReason', value)
+  }
+  return formatScalar(value)
+}
+
+const formatMappedValue = (baseKey, value) => {
+  const raw = formatScalar(value)
+  if (raw === '-') return raw
+  const normalized = String(value || '').trim()
+  if (!normalized) return raw
+  const i18nKey = `${baseKey}.${normalized}`
+  const translated = t(i18nKey)
+  return translated === i18nKey ? raw : translated
+}
+
 const trimPathPrefix = (pathParts, prefixParts) => {
   if (!prefixParts.length) return pathParts
   const matches = prefixParts.every((part, index) => pathParts[index] === part)
@@ -1007,6 +1049,14 @@ const translateFromMap = (map, key, fallback) => {
   if (!i18nKey) return fallback
   const translated = t(i18nKey)
   return translated === i18nKey ? fallback : translated
+}
+
+const attributeFieldTooltip = (pathParts) => {
+  const key = pathParts[pathParts.length - 1]
+  const i18nKey = fieldTooltipKeys[key]
+  if (!i18nKey) return ''
+  const translated = t(i18nKey)
+  return translated === i18nKey ? '' : translated
 }
 
 const humanizeKey = (key) => {

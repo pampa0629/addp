@@ -204,13 +204,14 @@ export const useExplorerStore = defineStore('explorer', {
 
       try {
         const loc = parseLocator(locator)
-        await client.post(`/manager/tree/${loc.engineId}/refresh`, null, {
+        const response = await client.post(`/manager/tree/${loc.engineId}/refresh`, null, {
           params: { locator }
         })
 
         // 清除缓存并重新加载
         delete this.engineTrees[loc.engineId]
         await this.loadTree(loc.engineId)
+        return response?.data || response
       } catch (error) {
         console.error('刷新节点失败:', error)
         throw error
@@ -223,7 +224,7 @@ export const useExplorerStore = defineStore('explorer', {
      * 刷新节点（仅重载树，不重新拉取预览）
      */
     async refreshNode(locator) {
-      await this.refreshTree(locator)
+      return await this.refreshTree(locator)
     },
 
     /**
@@ -234,7 +235,7 @@ export const useExplorerStore = defineStore('explorer', {
 
       try {
         const loc = parseLocator(locator)
-        await client.post(`/manager/engines/${loc.engineId}/items/refresh`, null, {
+        const response = await client.post(`/manager/engines/${loc.engineId}/items/refresh`, null, {
           params: { locator }
         })
 
@@ -242,7 +243,7 @@ export const useExplorerStore = defineStore('explorer', {
         await this.loadTree(loc.engineId)
 
         if (this.selectedLocator !== locator) {
-          return
+          return response
         }
 
         await this.loadPreview(
@@ -253,6 +254,7 @@ export const useExplorerStore = defineStore('explorer', {
           this.selectedNestedChildPath,
           this.selectedChildKey
         )
+        return response
       } catch (error) {
         console.error('刷新数据项失败:', error)
         throw error

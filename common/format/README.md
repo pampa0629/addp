@@ -216,7 +216,8 @@ Info provider 只返回元数据，主要服务 Meta 写入 `type_info.*`、`for
 | `ScopeTableSampleReader` | `table` | `whole` | `contentio.Reader` + scope | 目录 / prefix / scope 级 table 样本读取。 | Manager、Transfer 探查 | Parquet dataset、未来 lake table |
 | `ScopeTableReaderProvider` | `table` | `whole` | `contentio.Reader` + scope -> `TableReader` | 目录 / prefix / scope 级 table 连续全量读取会话。 | Transfer 主链路 | Parquet dataset、未来 lake table |
 | `DocumentInfoProvider` | `document` | 通常 `single` | `io.Reader` | 返回文档标题、语言、编码、大小等文档类型信息。 | Meta、Manager、Search | text、markdown、json、pdf；未来 DOCX/PPTX/WPS 解析 |
-| `DocumentTextReader` | `document` | 通常 `single` | `io.Reader` | 读取正文片段，可标记 truncated。 | Manager、Search、AI / 摘要 | text、markdown、json、docx；未来 PDF/PPTX/WPS 解析 |
+| `DocumentTextReader` | `document` | 通常 `single` | `io.Reader` | 读取正文片段，可标记 truncated。 | Manager、Search、AI / 摘要 | text、markdown、json、docx、pptx；未来 PDF/WPS 解析 |
+| `BinaryContentReader` | `unknown` | 通常 `single` | `io.Reader` | 对已判定为 unknown 且非文本的内容读取原始字节片段，可标记 truncated。 | Manager、Transfer 探查 | unknown |
 | `MediaInfoProvider` | `media` | 通常 `single` | `io.Reader` | 返回宽高、时长、编码、MIME、颜色空间、可选空间事实。 | Meta、Manager | image、jpeg、png、gif、tiff |
 | `ContainerInfoProvider` | `container` | 通常 `single` | `io.Reader` | 描述容器内部 child 列表和默认入口。 | Meta、Manager | zip、excel、sqlite、geopackage |
 | `ContainerChildResolver` | `container` 子内容 | `single` 父容器内部 | parent `contentio.Reader` + parent ref + child locator | 把容器 child 解析成可继续交给 format/provider 的 content。 | Manager、Transfer 后续 child 读取 | zip entry、Excel sheet、SQLite table |
@@ -396,8 +397,8 @@ type DocumentTextReader interface {
 | `markdown` | `document` | 是 | 是 | 复用 text provider，当前不在 `DocumentInfo` 中提取标题或字数。 |
 | `json` | `document` 默认，内容严格匹配记录集合时可升级为 `table` | 是 | 是 | `DocumentInfo` 当前只写 `encoding=utf-8`；同一格式也提供 table / spatial provider。 |
 | `pdf` | `document` | 是 | 否 | 只提供轻量 metadata，例如 title、page_count、size_bytes；author / creator / producer 等 PDF 原生事实进入 `format_info.pdf`。 |
-| `docx` | `document` | 否 | 是 | 从 `word/document.xml` 提取基础正文；暂不解析页眉页脚、脚注、批注或文档属性。 |
-| `pptx` | `document` | 否 | 否 | 仅声明 raw / range content；后端解析边界尚未定义。 |
+| `docx` | `document` | 否 | 是 | 从 `word/document.xml` 提取正文，并追加页眉、页脚、脚注、尾注和批注文本；暂不解析文档属性、修订语义或复杂版面关系。 |
+| `pptx` | `document` | 否 | 是 | 从 `ppt/slides/slide*.xml` 按页提取基础文本，并追加对应备注页与批注文本；暂不解析母版、隐藏页策略或文档属性。 |
 | `wps` | `document` | 否 | 否 | 仅声明 raw / range content；后端解析边界尚未定义。 |
 
 `DocumentInfoProvider` 必须返回 `datatype.DocumentInfo`。文档正文、片段、摘要、OCR 结果、embedding 不写入 `DocumentInfo`；正文片段只通过 `DocumentTextReader` 或后续 extraction / semantic 链路表达。
@@ -415,7 +416,17 @@ if err != nil {
 text, truncated, err := reader.ReadDocumentText(ctx, input, 16*1024, nil)
 ```
 
-WPS、DOCX、PPTX 这类后端不适合解析的格式，不应因为只能提供 raw / range content reader 就降级为二进制格式；后续如需全文索引、摘要或服务端转换，再补对应 DocumentInfoProvider / DocumentTextReader。
+WPS、DOCX、PPTX 这类复杂文档格式，不应因为只能提供 raw / range content reader 就降级为二进制格式；后续如需更完整的全文索引、摘要或服务端转换，再补对应 DocumentInfoProvider / DocumentTextReader 或外部 extraction 服务。
+
+## Binary Content Reader
+
+`unknown` 是一个内置 format identity，默认 data type 为 `unknown`，只注册 `BinaryContentReader`。它服务“不认识且非文本”的内容兜底：调用方已经完成文本判断或格式识别后，才通过 `format.GetBinaryContentReader(format.FormatUnknown)` 获取 reader 读取原始字节片段。
+
+`DetectFormat` 在扩展名、MIME、内容签名、plugin sniffer 和 magic bytes 都无法识别时，会使用 `LooksLikeTextContent` 做轻量文本兜底；可读文本返回 `FormatText`，剩余 unknown 非文本才进入 `BinaryContentReader`。
+
+`BinaryContentReader` 不做文本判断，不把 binary 声明为 data type 或独立 format，也不写 `type_info.binary`。Manager 可以把结果投影为 `preview_material=raw_binary` 的不支持预览提示；其他模块需要原始字节探查时复用同一 reader。
+
+`raw_content` / `range_content` 是 descriptor / capability 中的内容读取方式声明，表示调用编排层可以通过 engine / contentio 提供完整流或范围流。它们不是 `ProviderRegistry` 中的可调用 Go reader；上层可用 `DescriptorHasContentReader` / `SupportsContentReader` 判断声明，再通过自身已有的 `contentio.Reader`、`contentio.RangeReader`、预签名 URL 或模块 fetcher 打开内容。
 
 ## Media Info Provider
 

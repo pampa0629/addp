@@ -152,6 +152,30 @@ func TestDetectFormat(t *testing.T) {
 			peek:     nil,
 			want:     FormatUnknown,
 		},
+		{
+			name:     "Unknown extension text content falls back to text",
+			filename: "README",
+			peek:     []byte("hello\nworld\n"),
+			want:     FormatText,
+		},
+		{
+			name:     "YAML extension alone stays unknown",
+			filename: "docker-compose.yml",
+			peek:     nil,
+			want:     FormatUnknown,
+		},
+		{
+			name:     "YAML text content falls back to text by content",
+			filename: "docker-compose.yml",
+			peek:     []byte("services:\n  app:\n    image: alpine\n"),
+			want:     FormatText,
+		},
+		{
+			name:     "Unknown extension binary content stays unknown",
+			filename: "blob.binx",
+			peek:     []byte{0x00, 0x01, 0x02},
+			want:     FormatUnknown,
+		},
 	}
 
 	for _, tt := range tests {

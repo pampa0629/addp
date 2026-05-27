@@ -35,6 +35,23 @@ func TestFileTablePreviewProviderResolveFormatUsesMetaFormat(t *testing.T) {
 	}
 }
 
+func TestFileTablePreviewProviderResolveFormatUnknownMetaFormat(t *testing.T) {
+	provider := &FileTablePreviewProvider{}
+	req := &PreviewRequest{
+		Table: "fallback.bin",
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"format": "yml",
+			},
+		},
+	}
+
+	got := provider.resolveFormat(req)
+	if got != format.FormatUnknown {
+		t.Fatalf("resolveFormat() = %q, want %q", got, format.FormatUnknown)
+	}
+}
+
 func TestFileTablePreviewProviderResolveFormatUsesContentType(t *testing.T) {
 	provider := &FileTablePreviewProvider{}
 	req := &PreviewRequest{

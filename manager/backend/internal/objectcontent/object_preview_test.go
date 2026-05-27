@@ -10,6 +10,7 @@ import (
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
+	"github.com/addp/manager/internal/models"
 )
 
 func TestInferContentType(t *testing.T) {
@@ -777,6 +778,23 @@ func TestObjectContentMatcherIgnoresUnknownFormat(t *testing.T) {
 	}
 }
 
+func TestObjectContentMatcherIgnoresUnqualifiedFormat(t *testing.T) {
+	t.Parallel()
+	matcher := newObjectContentMatcher(
+		[]string{"pdf"},
+		[]string{".pdf"},
+		[]string{"application/pdf"},
+	)
+	req := &ObjectContentRequest{
+		Format:      "yml",
+		Extension:   ".pdf",
+		ContentType: "application/pdf",
+	}
+	if !matcher.matches(req) {
+		t.Fatalf("expected matcher to ignore unqualified format and fall back to extension/content type")
+	}
+}
+
 func TestTextContentHandlerUsesExplicitTextMatcher(t *testing.T) {
 	t.Parallel()
 	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "text", Builtin: "text"})
@@ -823,7 +841,7 @@ func TestTextContentHandlerUsesDocumentTextReader(t *testing.T) {
 	}
 }
 
-func TestUnsupportedContentHandlerProbesText(t *testing.T) {
+func TestUnsupportedContentHandlerTreatsUnknownTextAsBinary(t *testing.T) {
 	t.Parallel()
 	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "unsupported", Builtin: "unsupported"})
 	if err != nil {
@@ -843,14 +861,14 @@ func TestUnsupportedContentHandlerProbesText(t *testing.T) {
 	if truncated {
 		t.Fatalf("unexpected truncation")
 	}
-	if content.Kind != "text" {
-		t.Fatalf("expected text fallback for UTF-8 content, got %q", content.Kind)
+	if content.Kind != "unsupported" {
+		t.Fatalf("expected unsupported fallback for unknown content, got %q", content.Kind)
 	}
-	if content.PreviewMaterial != "text" {
-		t.Fatalf("PreviewMaterial = %q, want text", content.PreviewMaterial)
+	if content.PreviewMaterial != "raw_binary" {
+		t.Fatalf("PreviewMaterial = %q, want raw_binary", content.PreviewMaterial)
 	}
-	if content.Text != "hello\nworld\n" {
-		t.Fatalf("unexpected text content: %q", content.Text)
+	if content.Text == "hello\nworld\n" {
+		t.Fatalf("unknown content must not be promoted to text preview")
 	}
 }
 
@@ -956,6 +974,24 @@ func TestRawDocumentContentHandlerDeclaresRawBinaryMaterialAndRendererWithoutURL
 	}
 	if content.Encoding != "base64" || content.Data == "" {
 		t.Fatalf("expected base64 data, encoding=%q data=%q", content.Encoding, content.Data)
+	}
+}
+
+func TestDecoratePreviewContentIgnoresFormatContentReaderAsPreviewMaterial(t *testing.T) {
+	t.Parallel()
+
+	content := DecoratePreviewContent(&models.ObjectPreviewContent{
+		Kind: models.ObjectPreviewKindUnsupported,
+		Metadata: map[string]interface{}{
+			"preview_material": "raw_content",
+		},
+	})
+
+	if content.PreviewMaterial != "" {
+		t.Fatalf("PreviewMaterial = %q, want empty for format content reader value", content.PreviewMaterial)
+	}
+	if got := content.Metadata["preview_material"]; got != "raw_content" {
+		t.Fatalf("metadata preview_material = %#v, want original raw_content", got)
 	}
 }
 

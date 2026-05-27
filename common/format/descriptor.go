@@ -16,6 +16,7 @@ const (
 	ContentReaderMultiTableSample FormatContentReader = formatregistry.ContentReaderMultiTableSample
 	ContentReaderScopeTableSample FormatContentReader = formatregistry.ContentReaderScopeTableSample
 	ContentReaderDocumentText     FormatContentReader = formatregistry.ContentReaderDocumentText
+	ContentReaderBinaryContent    FormatContentReader = formatregistry.ContentReaderBinaryContent
 	ContentReaderRawContent       FormatContentReader = formatregistry.ContentReaderRawContent
 	ContentReaderRangeContent     FormatContentReader = formatregistry.ContentReaderRangeContent
 	ContentReaderMediaThumbnail   FormatContentReader = formatregistry.ContentReaderMediaThumbnail

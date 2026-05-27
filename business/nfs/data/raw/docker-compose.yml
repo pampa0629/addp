@@ -1,0 +1,327 @@
+# Business Database Services
+# 业务库服务 - 存储用户业务数据
+#
+# 包含服务:
+# - postgres: 业务数据库（PostGIS 支持空间数据）
+# - minio: 业务对象存储（用户文件）
+# - doris-fe: Apache Doris Frontend（OLAP 分析引擎）
+# - clickhouse: ClickHouse（高性能列式存储 OLAP）
+# - mongodb: MongoDB（文档型 NoSQL 数据库）
+# - neo4j: Neo4j Community Edition（图数据库，知识图谱）
+# - spark-master/workers: Apache Spark 分布式计算引擎
+#
+# 使用方法:
+#   docker-compose up -d    # 启动
+#   docker-compose down     # 停止
+#   docker-compose logs -f  # 查看日志
+
+name: business
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-imresamu/postgis-arm64:15-3.4}
+    container_name: business-postgres
+    # 优化 PostgreSQL 内存配置，支持 MVT 瓦片生成
+    # macOS 优化：增加 shm_size 到 2GB 避免共享内存段分配失败
+    shm_size: 2g
+    command:
+      - postgres
+      - -c
+      - config_file=/etc/postgresql/postgresql.conf
+      - -c
+      - timezone=Asia/Shanghai
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-business}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-business_password}
+      POSTGRES_DB: ${POSTGRES_DB:-business}
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init.sh:/docker-entrypoint-initdb.d/init.sh:ro,cached
+      - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro,cached
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-business}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - business-network
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    container_name: business-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "${MINIO_API_PORT:-9002}:9000"
+      - "${MINIO_CONSOLE_PORT:-9003}:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - business-network
+    restart: unless-stopped
+
+  # Apache Doris FE (Frontend)
+  doris-fe:
+    image: apache/doris:doris-all-in-one-2.1.0
+    container_name: business-doris-fe
+    environment:
+      - FE_SERVERS=fe1:127.0.0.1:9010
+      - FE_ID=1
+      - BUILD_TYPE=production
+    ports:
+      - "${DORIS_FE_PORT:-9030}:9030"       # MySQL 协议
+      - "${DORIS_FE_HTTP_PORT:-8030}:8030"  # HTTP API
+      - "9050:9050"                          # BE heartbeat 端口
+    volumes:
+      - doris_fe_data:/opt/apache-doris/fe/doris-meta
+      - doris_fe_log:/opt/apache-doris/fe/log
+      - doris_be_data:/opt/apache-doris/be/storage
+    networks:
+      - business-network
+    healthcheck:
+      test: ["CMD-SHELL", "mysql -h127.0.0.1 -P9030 -uroot --connect-timeout=5 -e 'SHOW FRONTENDS;' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+    restart: unless-stopped
+
+  # 注意: doris-all-in-one 镜像包含 FE+BE，无需单独的 BE 和 init 容器
+
+  # ClickHouse (高性能列式存储 OLAP 引擎)
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: business-clickhouse
+    environment:
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-business}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ports:
+      - "${CLICKHOUSE_PORT:-9000}:9000"       # Native 协议
+      - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"  # HTTP 接口
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - clickhouse_log:/var/log/clickhouse-server
+      - ./clickhouse/init.sh:/docker-entrypoint-initdb.d/init.sh:ro
+    networks:
+      - business-network
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --query 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+
+  # MongoDB (文档型 NoSQL 数据库)
+  mongodb:
+    image: mongo:7.0
+    container_name: business-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-admin_password}
+      MONGO_INITDB_DATABASE: ${MONGO_DB:-business}
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+      - ./mongodb/init.sh:/docker-entrypoint-initdb.d/init.sh:ro
+    networks:
+      - business-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    command: --wiredTigerCacheSizeGB 1
+
+  # MySQL (关系型数据库)
+  mysql:
+    image: docker.m.daocloud.io/library/mysql:8.0
+    container_name: business-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-password}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-business}
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - business-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-password}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # Neo4j Community Edition (图数据库，支持知识图谱)
+  neo4j:
+    image: neo4j:5-community
+    container_name: business-neo4j
+    environment:
+      NEO4J_AUTH: ${NEO4J_AUTH:-neo4j/neo4j_password}
+      # JVM 内存调优，将基础占用控制在 ~400MB
+      NEO4J_server_memory_heap_initial__size: ${NEO4J_HEAP_INITIAL:-256m}
+      NEO4J_server_memory_heap_max__size: ${NEO4J_HEAP_MAX:-512m}
+      NEO4J_server_memory_pagecache_size: ${NEO4J_PAGECACHE:-128m}
+      NEO4J_dbms_security_procedures_unrestricted: "gds.*,apoc.*,spatial.*"
+      # APOC: jar 已内置于镜像 labs 目录，无需联网
+      # GDS:  jar 预下载到 ./neo4j/plugins/，直接挂载到 plugins 目录，无需联网
+      NEO4J_PLUGINS: '["apoc"]'
+    ports:
+      - "${NEO4J_HTTP_PORT:-7474}:7474"   # Browser UI
+      - "${NEO4J_BOLT_PORT:-7687}:7687"   # Bolt 协议（Go driver 使用）
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - ./neo4j/plugins:/plugins
+    networks:
+      - business-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7474 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+
+  # Apache Spark Master + Thrift Server
+  spark-master:
+    image: apache/spark:3.5.0-scala2.12-java11-python3-ubuntu
+    container_name: business-spark-master
+    user: root
+    environment:
+      - SPARK_MODE=master
+      - SPARK_MASTER_HOST=0.0.0.0
+      - SPARK_MASTER_PORT=7077
+    ports:
+      - "7077:7077"   # Spark 集群通信
+      - "8088:8080"   # Spark Master Web UI (避免与 System 8180 冲突)
+      - "10000:10000" # Thrift Server (SQL 接口)
+    volumes:
+      - ./spark:/opt/spark/conf
+    command: >
+      bash -c "
+        /opt/spark/sbin/start-master.sh &&
+        /opt/spark/sbin/start-thriftserver.sh --master spark://spark-master:7077 &&
+        tail -f /dev/null
+      "
+    networks:
+      - business-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080 > /dev/null"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+
+  # Spark Worker 1
+  spark-worker-1:
+    image: apache/spark:3.5.0-scala2.12-java11-python3-ubuntu
+    container_name: business-spark-worker-1
+    user: root
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=2G
+      - SPARK_WORKER_CORES=2
+    command: >
+      bash -c "
+        /opt/spark/sbin/start-worker.sh spark://spark-master:7077 &&
+        tail -f /dev/null
+      "
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    networks:
+      - business-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+
+  # Spark Worker 2 (可选，通过 --profile full 启用)
+  spark-worker-2:
+    image: apache/spark:3.5.0-scala2.12-java11-python3-ubuntu
+    container_name: business-spark-worker-2
+    user: root
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=2G
+      - SPARK_WORKER_CORES=2
+    command: >
+      bash -c "
+        /opt/spark/sbin/start-worker.sh spark://spark-master:7077 &&
+        tail -f /dev/null
+      "
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    networks:
+      - business-network
+    restart: unless-stopped
+    profiles:
+      - full  # 默认不启动，通过 docker-compose --profile full up 启用
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+
+volumes:
+  postgres_data:
+  minio_data:
+  mysql_data:
+    driver: local
+  doris_fe_data:
+    driver: local
+  doris_fe_log:
+    driver: local
+  doris_be_data:
+    driver: local
+  clickhouse_data:
+    driver: local
+  clickhouse_log:
+    driver: local
+  mongodb_data:
+    driver: local
+  mongodb_config:
+    driver: local
+  neo4j_data:
+    driver: local
+  neo4j_logs:
+    driver: local
+networks:
+  business-network:
+    driver: bridge

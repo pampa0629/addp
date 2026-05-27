@@ -9,6 +9,7 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/models"
+	"github.com/addp/meta/internal/scantask"
 	"gorm.io/gorm"
 )
 
@@ -34,6 +35,7 @@ type scanDispatchResult struct {
 	CatalogNodes int
 	Items        int
 	Fields       int
+	Extraction   scantask.ExtractionCounts
 }
 
 type scanDispatchFunc func(context.Context, plugin.EnginePlugin, scanDispatchRequest) (scanDispatchResult, error)
@@ -99,7 +101,7 @@ func (s *ScanService) dispatchNamespaceItemScan(ctx context.Context, enginePlugi
 func (s *ScanService) dispatchObjectCatalogScan(ctx context.Context, enginePlugin plugin.EnginePlugin, req scanDispatchRequest) (scanDispatchResult, error) {
 	_ = ctx
 	_ = enginePlugin
-	namespaces, items, fields, err := s.scanObjectStorageCatalogResourceWithReporter(
+	return s.scanObjectStorageCatalogResourceResultWithReporter(
 		req.Resource,
 		req.TenantID,
 		req.CatalogPaths,
@@ -107,7 +109,6 @@ func (s *ScanService) dispatchObjectCatalogScan(ctx context.Context, enginePlugi
 		req.Force,
 		req.Reporter,
 	)
-	return scanDispatchResult{CatalogNodes: namespaces, Items: items, Fields: fields}, err
 }
 
 func (s *ScanService) dispatchFileCatalogScan(ctx context.Context, enginePlugin plugin.EnginePlugin, req scanDispatchRequest) (scanDispatchResult, error) {
@@ -126,7 +127,7 @@ func (s *ScanService) dispatchFileCatalogScan(ctx context.Context, enginePlugin 
 		s.log.Info("文件 catalog 资源扫描开始", "root_count", len(paths), "roots", paths)
 	}
 
-	roots, items, fields, err := s.scanFilesystemCatalogResourceWithReporter(
+	return s.scanFilesystemCatalogResourceResultWithReporter(
 		req.Resource,
 		req.TenantID,
 		paths,
@@ -134,7 +135,6 @@ func (s *ScanService) dispatchFileCatalogScan(ctx context.Context, enginePlugin 
 		req.Force,
 		req.Reporter,
 	)
-	return scanDispatchResult{CatalogNodes: roots, Items: items, Fields: fields}, err
 }
 
 func (s *ScanService) dispatchTabularScan(ctx context.Context, enginePlugin plugin.EnginePlugin, req scanDispatchRequest) (scanDispatchResult, error) {

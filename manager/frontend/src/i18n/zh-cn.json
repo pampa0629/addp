@@ -132,10 +132,14 @@
     "explorer": {
       "storageEngines": "存储引擎",
       "countText": "共 {count} 个",
-      "refresh": "刷新",
+      "refresh": "深度扫描",
       "vectorize": "向量化",
       "batchVectorize": "批量向量化",
       "refreshSuccess": "刷新成功",
+      "refreshTooltip": "重扫元数据并刷新全文索引",
+      "deepScanSuccess": "深度扫描完成",
+      "deepScanSuccessWithStats": "深度扫描完成：节点 {nodes}，数据项 {items}，字段 {fields}",
+      "deepScanSuccessWithExtractionStats": "深度扫描完成：节点 {nodes}，数据项 {items}，字段 {fields}；文档 {documents}，抽取 {extracted}，不支持 {unsupported}，失败 {failed}，索引 {indexed}，索引失败 {indexFailed}",
       "refreshFailed": "刷新失败：{error}",
       "loadEngineFailed": "加载引擎内容失败：{error}",
       "loadChildrenFailed": "加载子节点失败：{error}",
@@ -322,7 +326,13 @@
           "hasCpg": "包含 CPG",
           "hasPrj": "包含 PRJ",
           "extentSrid": "范围 SRID",
+          "status": "状态",
+          "reason": "原因",
           "extractorAvailable": "可抽取",
+          "extractor": "抽取器",
+          "textExtracted": "已抽取全文",
+          "textTruncated": "全文已截断",
+          "plainTextPreview": "文本预览",
           "relkind": "Relkind",
           "tableType": "表类型",
           "kind": "类型",
@@ -351,11 +361,27 @@
           "files": "文件",
           "anchors": "锚点",
           "contentIndex": "内容索引",
+          "contentHash": "内容哈希",
+          "indexRef": "搜索索引引用",
           "schemaVersion": "规范版本",
           "graphModel": "图模型",
           "graphDirected": "有向图",
           "graphNodeCount": "节点数",
           "graphRelationshipCount": "关系数"
+        },
+        "fieldTooltips": {
+          "contentHash": "基于文件二进制内容计算的 SHA256；内容相同则哈希相同。",
+          "indexRef": "指向 Meilisearch assets 索引中的 item 记录；后缀是 item 指纹，不是内容哈希。"
+        },
+        "extractionStatus": {
+          "completed": "已完成",
+          "unsupported": "不支持",
+          "failed": "失败"
+        },
+        "extractionReason": {
+          "document_text_reader_unavailable": "当前格式缺少全文读取器",
+          "content_open_failed": "文件内容打开失败",
+          "document_text_read_failed": "全文读取失败"
         },
         "tables": {
           "graphNodeShapes": "节点类型",

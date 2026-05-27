@@ -47,6 +47,31 @@ func TestPluginReadDocumentText(t *testing.T) {
 	}
 }
 
+func TestPluginReadDocumentTextIncludesRelatedParts(t *testing.T) {
+	plugin := NewPlugin()
+	data := minimalDOCXWithFiles(t, map[string]string{
+		"word/document.xml":  `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Main body</w:t></w:r></w:p></w:body></w:document>`,
+		"word/header2.xml":   `<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>Header two</w:t></w:r></w:p></w:hdr>`,
+		"word/header1.xml":   `<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>Header one</w:t></w:r></w:p></w:hdr>`,
+		"word/footer1.xml":   `<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>Footer one</w:t></w:r></w:p></w:ftr>`,
+		"word/footnotes.xml": `<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="2"><w:p><w:r><w:t>Footnote text</w:t></w:r></w:p></w:footnote></w:footnotes>`,
+		"word/endnotes.xml":  `<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="3"><w:p><w:r><w:t>Endnote text</w:t></w:r></w:p></w:endnote></w:endnotes>`,
+		"word/comments.xml":  `<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:comment w:id="0"><w:p><w:r><w:t>Comment text</w:t></w:r></w:p></w:comment></w:comments>`,
+	})
+
+	text, truncated, err := plugin.ReadDocumentText(context.Background(), bytes.NewReader(data), 1024, nil)
+	if err != nil {
+		t.Fatalf("ReadDocumentText() error = %v", err)
+	}
+	if truncated {
+		t.Fatal("ReadDocumentText() truncated = true, want false")
+	}
+	want := "Main body\nHeader one\nHeader two\nFooter one\nFootnote text\nEndnote text\nComment text"
+	if text != want {
+		t.Fatalf("ReadDocumentText() = %q, want %q", text, want)
+	}
+}
+
 func TestPluginReadDocumentTextTruncates(t *testing.T) {
 	plugin := NewPlugin()
 	data := minimalDOCX(t, `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>abcdef</w:t></w:r></w:p></w:body></w:document>`)
@@ -65,14 +90,21 @@ func TestPluginReadDocumentTextTruncates(t *testing.T) {
 
 func minimalDOCX(t *testing.T, documentXML string) []byte {
 	t.Helper()
+	return minimalDOCXWithFiles(t, map[string]string{"word/document.xml": documentXML})
+}
+
+func minimalDOCXWithFiles(t *testing.T, files map[string]string) []byte {
+	t.Helper()
 	var buf bytes.Buffer
 	writer := zip.NewWriter(&buf)
-	file, err := writer.Create("word/document.xml")
-	if err != nil {
-		t.Fatalf("create document.xml: %v", err)
-	}
-	if _, err := file.Write([]byte(documentXML)); err != nil {
-		t.Fatalf("write document.xml: %v", err)
+	for name, content := range files {
+		file, err := writer.Create(name)
+		if err != nil {
+			t.Fatalf("create %s: %v", name, err)
+		}
+		if _, err := file.Write([]byte(content)); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
 	}
 	if err := writer.Close(); err != nil {
 		t.Fatalf("close zip: %v", err)

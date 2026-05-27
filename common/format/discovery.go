@@ -36,6 +36,7 @@ type FormatImplementationStatus struct {
 	MultiTableWriter       bool `json:"multi_table_writer_provider,omitempty"`
 	DocumentInfoProvider   bool `json:"document_info_provider,omitempty"`
 	DocumentTextReader     bool `json:"document_text_reader,omitempty"`
+	BinaryContentReader    bool `json:"binary_content_reader,omitempty"`
 	MediaInfoProvider      bool `json:"media_info_provider,omitempty"`
 	ContainerInfoProvider  bool `json:"container_info_provider,omitempty"`
 	ContainerChildResolver bool `json:"container_child_resolver,omitempty"`
@@ -130,6 +131,9 @@ func implementationStatusForFormat(formatType FormatType, identification FormatI
 	}
 	if _, err := GetDocumentTextReader(formatType); err == nil {
 		status.DocumentTextReader = true
+	}
+	if _, err := GetBinaryContentReader(formatType); err == nil {
+		status.BinaryContentReader = true
 	}
 	if _, err := GetMediaInfoProvider(formatType); err == nil {
 		status.MediaInfoProvider = true

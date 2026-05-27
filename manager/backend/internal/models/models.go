@@ -228,6 +228,9 @@ const (
 )
 
 const (
+	// PreviewMaterial* values describe the material Manager sends to the frontend
+	// renderer. They are presentation-layer values, not common/format content
+	// reader capability names such as raw_content, range_content, or binary_content.
 	PreviewMaterialText      = "text"
 	PreviewMaterialMarkdown  = "markdown"
 	PreviewMaterialHTML      = "html"
@@ -237,6 +240,22 @@ const (
 	PreviewMaterialTable     = "table"
 	PreviewMaterialURL       = "url"
 )
+
+func IsKnownPreviewMaterial(material string) bool {
+	switch material {
+	case PreviewMaterialText,
+		PreviewMaterialMarkdown,
+		PreviewMaterialHTML,
+		PreviewMaterialJSON,
+		PreviewMaterialGeoJSON,
+		PreviewMaterialRawBinary,
+		PreviewMaterialTable,
+		PreviewMaterialURL:
+		return true
+	default:
+		return false
+	}
+}
 
 // MetaManualScanRequest 发起即时扫描的请求体
 type MetaManualScanRequest struct {
@@ -251,11 +270,21 @@ type MetaManualScanRequest struct {
 
 // MetaScanResponse 元数据扫描响应
 type MetaScanResponse struct {
-	Status              string `json:"status"`
-	Message             string `json:"message"`
-	CatalogNodesScanned int    `json:"catalog_nodes_scanned"`
-	ItemsScanned        int    `json:"items_scanned"`
-	FieldsScanned       int    `json:"fields_scanned"`
-	DurationMs          int64  `json:"duration_ms"`
-	StartedAt           string `json:"started_at"`
+	Status              string                   `json:"status"`
+	Message             string                   `json:"message"`
+	CatalogNodesScanned int                      `json:"catalog_nodes_scanned"`
+	ItemsScanned        int                      `json:"items_scanned"`
+	FieldsScanned       int                      `json:"fields_scanned"`
+	DurationMs          int64                    `json:"duration_ms"`
+	StartedAt           string                   `json:"started_at"`
+	Extraction          *MetaExtractionScanStats `json:"extraction,omitempty"`
+}
+
+type MetaExtractionScanStats struct {
+	Documents   int `json:"documents"`
+	Extracted   int `json:"extracted"`
+	Unsupported int `json:"unsupported"`
+	Failed      int `json:"failed"`
+	Indexed     int `json:"indexed"`
+	IndexFailed int `json:"index_failed"`
 }

@@ -95,7 +95,7 @@ func buildBuiltinContentHandler(cfg ObjectContentPluginConfig) (ObjectContentHan
 			return buildVideoContentHandler(cfg, string(descriptor.Format)), nil
 		}
 	}
-	if descriptor.DataType == commondatatype.DataTypeDocument && descriptorHasContentReader(descriptor, commonformat.ContentReaderRawContent) {
+	if descriptor.DataType == commondatatype.DataTypeDocument && commonformat.DescriptorHasContentReader(descriptor, commonformat.ContentReaderRawContent) {
 		return buildRawDocumentContentHandler(cfg, descriptor.Format), nil
 	}
 	return nil, fmt.Errorf("内置内容插件 %q 没有对应的对象内容处理器", cfg.Builtin)
@@ -283,16 +283,6 @@ func defaultRawDocumentMaxBytes(formatType commonformat.FormatType) int64 {
 	default:
 		return maxTextPreviewBytes
 	}
-}
-
-func descriptorHasContentReader(descriptor commonformat.FormatDescriptor, reader commonformat.FormatContentReader) bool {
-	target := string(reader)
-	for _, candidate := range descriptor.ContentReaders {
-		if strings.TrimSpace(candidate) == target {
-			return true
-		}
-	}
-	return false
 }
 
 func mediaKindFromDescriptor(descriptor commonformat.FormatDescriptor) string {

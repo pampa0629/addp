@@ -95,7 +95,7 @@ func (h *ExplorerHandler) GetTree(c *gin.Context) {
 // RefreshNode 刷新指定节点
 // POST /api/explorer/tree/:engine_id/refresh?locator=addp://engine/1/path/public?type=schema
 // @Summary 刷新资源节点 | Refresh resource node
-// @Description 刷新指定资源节点的元数据信息 | Refresh metadata for a specific resource node
+// @Description 对指定资源节点发起深度扫描，刷新元数据与全文索引 | Run a deep scan for a resource node and refresh metadata and full-text index
 // @Tags Manager
 // @Produce json
 // @Param locator query string true "资源定位符URI | Resource locator URI"
@@ -117,7 +117,7 @@ func (h *ExplorerHandler) RefreshNode(c *gin.Context) {
 	logger.L().Info("刷新节点", "locator", locatorURI)
 
 	// 调用 ExplorerService
-	node, err := h.explorerService.RefreshNode(c.Request.Context(), tenantID, locatorURI)
+	result, err := h.explorerService.RefreshNode(c.Request.Context(), tenantID, locatorURI)
 	if err != nil {
 		if err == service.ErrEngineAccessDenied || err == preview.ErrEngineAccessDenied {
 			commonAPI.ForbiddenError(c, "Access denied to this engine")
@@ -130,11 +130,19 @@ func (h *ExplorerHandler) RefreshNode(c *gin.Context) {
 
 	logger.L().Info("刷新节点成功", "locator", locatorURI)
 
+	data := gin.H{
+		"node":    result.Node,
+		"locator": locatorURI,
+	}
+	if result.Scan != nil {
+		data["scan"] = result.Scan
+	}
+	if result.ScanError != "" {
+		data["scan_error"] = result.ScanError
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"data": gin.H{
-			"node":    node,
-			"locator": locatorURI,
-		},
+		"data": data,
 	})
 }
 

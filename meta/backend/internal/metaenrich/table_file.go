@@ -751,14 +751,7 @@ func detectFormat(files []plugin.FileEntry) string {
 }
 
 func fileFormatName(fileName string) string {
-	formatType := format.DetectFormat(fileName, nil)
-	if formatType == format.FormatUnknown {
-		ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(fileName)), ".")
-		if ext != "" {
-			return ext
-		}
-	}
-	return string(formatType)
+	return string(format.NormalizeFormat(fileName))
 }
 
 func hasTableProvider(formatName string) bool {

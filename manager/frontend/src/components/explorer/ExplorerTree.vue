@@ -77,6 +77,7 @@ const nodeActions = computed(() => {
       id: 'refresh',
       name: 'refresh',
       label: t('manager.explorer.refresh'),
+      tooltip: t('manager.explorer.refreshTooltip'),
       icon: 'Refresh',
       visible: () => true
     },
@@ -148,6 +149,43 @@ const handleRefresh = async () => {
   }
 }
 
+const formatScanMessage = (result) => {
+  const scan = result?.scan || result?.data?.scan || result
+  if (!scan || typeof scan !== 'object') {
+    return t('manager.explorer.refreshSuccess')
+  }
+
+  const nodes = Number(scan.catalog_nodes_scanned || 0)
+  const items = Number(scan.items_scanned || 0)
+  const fields = Number(scan.fields_scanned || 0)
+  const extraction = scan.extraction || null
+  const hasStats = nodes > 0 || items > 0 || fields > 0
+
+  if (!hasStats) {
+    return t('manager.explorer.deepScanSuccess')
+  }
+
+  if (extraction && Number(extraction.documents || 0) > 0) {
+    return t('manager.explorer.deepScanSuccessWithExtractionStats', {
+      nodes,
+      items,
+      fields,
+      documents: Number(extraction.documents || 0),
+      extracted: Number(extraction.extracted || 0),
+      unsupported: Number(extraction.unsupported || 0),
+      failed: Number(extraction.failed || 0),
+      indexed: Number(extraction.indexed || 0),
+      indexFailed: Number(extraction.index_failed || 0)
+    })
+  }
+
+  return t('manager.explorer.deepScanSuccessWithStats', {
+    nodes,
+    items,
+    fields
+  })
+}
+
 // 事件处理：节点点击
 const handleNodeClick = async (node) => {
   const locator = node.locator || node.id
@@ -204,12 +242,13 @@ const handleNodeAction = async ({ node, action }) => {
 
   if (action === 'refresh') {
     try {
+      let result
       if (node.type === 'engine' || ['schema', 'database', 'bucket', 'prefix', 'directory', 'root', 'dir'].includes(node.type)) {
-        await store.refreshNode(locator)
+        result = await store.refreshNode(locator)
       } else {
-        await store.refreshItem(locator)
+        result = await store.refreshItem(locator)
       }
-      ElMessage.success(t('manager.explorer.refreshSuccess'))
+      ElMessage.success(formatScanMessage(result))
     } catch (error) {
       ElMessage.error(t('manager.explorer.refreshFailed', { error: error.message }))
     }

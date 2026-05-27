@@ -101,6 +101,16 @@ func SuccessfulExecutionFields(resp *metaModels.ScanResponse, storageType string
 		metadata["catalog_nodes_scanned"] = resp.CatalogNodesScanned
 		metadata["items_scanned"] = resp.ItemsScanned
 		metadata["fields_scanned"] = resp.FieldsScanned
+		if resp.Extraction != nil {
+			metadata["extraction"] = commonModels.JSONMap{
+				"documents":    resp.Extraction.Documents,
+				"extracted":    resp.Extraction.Extracted,
+				"unsupported":  resp.Extraction.Unsupported,
+				"failed":       resp.Extraction.Failed,
+				"indexed":      resp.Extraction.Indexed,
+				"index_failed": resp.Extraction.IndexFailed,
+			}
+		}
 	}
 	return map[string]interface{}{
 		"status":            commonModels.ExecutionStatusSuccess,

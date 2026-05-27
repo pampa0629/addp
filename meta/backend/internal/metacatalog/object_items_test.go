@@ -6,6 +6,7 @@ import (
 
 	commondataitem "github.com/addp/common/dataitem"
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/meta/internal/metaitem"
 )
 
@@ -23,6 +24,86 @@ func TestObjectResourcesByParentPrefixDoesNotAddCrossLayerCompositeCandidates(t 
 	}
 	if got := len(groups["addp\x00datasets/roads/attributes"]); got != 1 {
 		t.Fatalf("direct child candidate size = %d, want 1", got)
+	}
+}
+
+func TestObjectStorageResourceFromNodeDoesNotUseUnknownExtensionAsFormat(t *testing.T) {
+	t.Parallel()
+
+	resource := ObjectStorageResourceFromNode("addp", plugin.CatalogNode{
+		Name:   "docker-compose.yml",
+		Kind:   plugin.CatalogKindObject,
+		IsItem: true,
+		Path: plugin.CatalogPath{
+			Version:  plugin.CatalogPathVersion,
+			EngineID: 7,
+			Segments: []plugin.CatalogSegment{
+				{Term: plugin.CatalogTermBucket, Kind: plugin.CatalogKindBucket, Name: "addp"},
+				{Term: plugin.CatalogTermPrefix, Kind: plugin.CatalogKindPrefix, Name: "raw"},
+				{Term: plugin.CatalogTermObject, Kind: plugin.CatalogKindObject, Name: "docker-compose.yml"},
+			},
+		},
+		Attributes: map[string]interface{}{
+			"path":         "raw/docker-compose.yml",
+			"content_type": "application/octet-stream",
+		},
+	})
+
+	if resource.Format != "" {
+		t.Fatalf("Format = %q, want empty unknown before content sniffing", resource.Format)
+	}
+}
+
+func TestObjectStorageResourceFromNodeKeepsUnknownForUnregisteredExtension(t *testing.T) {
+	t.Parallel()
+
+	resource := ObjectStorageResourceFromNode("addp", plugin.CatalogNode{
+		Name:   "yanshi.udbx",
+		Kind:   plugin.CatalogKindObject,
+		IsItem: true,
+		Path: plugin.CatalogPath{
+			Version:  plugin.CatalogPathVersion,
+			EngineID: 7,
+			Segments: []plugin.CatalogSegment{
+				{Term: plugin.CatalogTermBucket, Kind: plugin.CatalogKindBucket, Name: "addp"},
+				{Term: plugin.CatalogTermPrefix, Kind: plugin.CatalogKindPrefix, Name: "raw"},
+				{Term: plugin.CatalogTermObject, Kind: plugin.CatalogKindObject, Name: "yanshi.udbx"},
+			},
+		},
+		Attributes: map[string]interface{}{
+			"path":         "raw/yanshi.udbx",
+			"content_type": "application/octet-stream",
+		},
+	})
+
+	if resource.Format != "" {
+		t.Fatalf("Format = %q, want empty unknown", resource.Format)
+	}
+}
+
+func TestObjectStorageResourceFromNodeUsesKnownMIMEWhenExtensionUnknown(t *testing.T) {
+	t.Parallel()
+
+	resource := ObjectStorageResourceFromNode("addp", plugin.CatalogNode{
+		Name:   "config",
+		Kind:   plugin.CatalogKindObject,
+		IsItem: true,
+		Path: plugin.CatalogPath{
+			Version:  plugin.CatalogPathVersion,
+			EngineID: 7,
+			Segments: []plugin.CatalogSegment{
+				{Term: plugin.CatalogTermBucket, Kind: plugin.CatalogKindBucket, Name: "addp"},
+				{Term: plugin.CatalogTermObject, Kind: plugin.CatalogKindObject, Name: "config"},
+			},
+		},
+		Attributes: map[string]interface{}{
+			"path":         "config",
+			"content_type": "text/plain",
+		},
+	})
+
+	if resource.Format != "text" {
+		t.Fatalf("Format = %q, want text", resource.Format)
 	}
 }
 

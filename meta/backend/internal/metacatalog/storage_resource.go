@@ -3,7 +3,6 @@ package metacatalog
 import (
 	"fmt"
 	"path"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -34,11 +33,11 @@ func ObjectStorageResourceFromNode(bucket string, node plugin.CatalogNode) Stora
 	contentType := catalogNodeStringAttribute(node.Attributes, "content_type")
 	lastModified := catalogNodeTimeAttribute(node.Attributes, "modified_at")
 	etag := catalogNodeStringAttribute(node.Attributes, "etag")
-	formatName := strings.TrimPrefix(strings.ToLower(filepath.Ext(itemPath)), ".")
-	if formatName == "" {
-		if detected := format.MIMEToFormat(contentType); detected != format.FormatUnknown {
-			formatName = string(detected)
-		}
+	formatName := ""
+	if detected := format.DetectFormat(itemPath, nil); detected != format.FormatUnknown {
+		formatName = string(detected)
+	} else if detected := format.MIMEToFormat(contentType); detected != format.FormatUnknown {
+		formatName = string(detected)
 	}
 	return StorageResource{
 		RootName:     bucket,

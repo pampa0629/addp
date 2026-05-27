@@ -3,7 +3,6 @@ package preview
 import (
 	"path/filepath"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
@@ -75,7 +74,7 @@ func normalizePreviewHintFormat(input previewHintInput) format.FormatType {
 			return detected
 		}
 	}
-	if isTextPreviewContentType(input.ContentType) || looksLikeText(input.Peek) {
+	if isTextPreviewContentType(input.ContentType) || format.LooksLikeTextContent(input.Peek) {
 		return format.FormatText
 	}
 	return format.FormatUnknown
@@ -109,7 +108,7 @@ func previewHintSemantics(formatType format.FormatType, dataType, contentType st
 	if format.IsImageFormat(formatType) || strings.HasPrefix(strings.ToLower(strings.TrimSpace(contentType)), "image/") {
 		return previewMaterialRawBinary, "image", true, false
 	}
-	if isTextPreviewFormat(formatType) || isTextPreviewContentType(contentType) || looksLikeText(peek) {
+	if isTextPreviewFormat(formatType) || isTextPreviewContentType(contentType) || format.LooksLikeTextContent(peek) {
 		return previewMaterialText, "text", true, true
 	}
 	switch strings.TrimSpace(dataType) {
@@ -149,22 +148,4 @@ func isTextPreviewContentType(contentType string) bool {
 	default:
 		return false
 	}
-}
-
-func looksLikeText(peek []byte) bool {
-	if len(peek) == 0 {
-		return false
-	}
-	if !utf8.Valid(peek) {
-		return false
-	}
-	for _, b := range peek {
-		if b == 0 {
-			return false
-		}
-		if b < 0x20 && b != '\n' && b != '\r' && b != '\t' && b != '\f' {
-			return false
-		}
-	}
-	return true
 }

@@ -81,7 +81,7 @@ func (s *MetadataService) RefreshItem(ctx context.Context, tenantID *uint, engin
 	if err != nil {
 		return nil, err
 	}
-	return &models.MetaScanResponse{
+	resp := &models.MetaScanResponse{
 		Status:              result.Status,
 		Message:             result.Message,
 		CatalogNodesScanned: result.CatalogNodesScanned,
@@ -89,7 +89,18 @@ func (s *MetadataService) RefreshItem(ctx context.Context, tenantID *uint, engin
 		FieldsScanned:       result.FieldsScanned,
 		DurationMs:          result.DurationMs,
 		StartedAt:           result.StartedAt,
-	}, nil
+	}
+	if result.Extraction != nil {
+		resp.Extraction = &models.MetaExtractionScanStats{
+			Documents:   result.Extraction.Documents,
+			Extracted:   result.Extraction.Extracted,
+			Unsupported: result.Extraction.Unsupported,
+			Failed:      result.Extraction.Failed,
+			Indexed:     result.Extraction.Indexed,
+			IndexFailed: result.Extraction.IndexFailed,
+		}
+	}
+	return resp, nil
 }
 
 func resourceAccessible(resource *models.Engine, tenantID *uint) bool {

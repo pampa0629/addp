@@ -23,6 +23,7 @@ type ProviderRegistry struct {
 	multiTableWriters       map[FormatType]MultiTableWriterProvider
 	documentInfoProviders   map[FormatType]DocumentInfoProvider
 	documentTextReaders     map[FormatType]DocumentTextReader
+	binaryContentReaders    map[FormatType]BinaryContentReader
 	mediaInfoProviders      map[FormatType]MediaInfoProvider
 	containerInfoProviders  map[FormatType]ContainerInfoProvider
 	containerChildResolvers map[FormatType]ContainerChildResolver
@@ -47,6 +48,7 @@ func NewProviderRegistry() *ProviderRegistry {
 		multiTableWriters:       make(map[FormatType]MultiTableWriterProvider),
 		documentInfoProviders:   make(map[FormatType]DocumentInfoProvider),
 		documentTextReaders:     make(map[FormatType]DocumentTextReader),
+		binaryContentReaders:    make(map[FormatType]BinaryContentReader),
 		mediaInfoProviders:      make(map[FormatType]MediaInfoProvider),
 		containerInfoProviders:  make(map[FormatType]ContainerInfoProvider),
 		containerChildResolvers: make(map[FormatType]ContainerChildResolver),
@@ -171,6 +173,14 @@ func GetDocumentTextReader(formatType FormatType) (DocumentTextReader, error) {
 
 func (r *ProviderRegistry) GetDocumentTextReader(formatType FormatType) (DocumentTextReader, error) {
 	return providerFromMap(r, r.documentTextReaders, formatType, "document text reader")
+}
+
+func GetBinaryContentReader(formatType FormatType) (BinaryContentReader, error) {
+	return globalProviderRegistry.GetBinaryContentReader(formatType)
+}
+
+func (r *ProviderRegistry) GetBinaryContentReader(formatType FormatType) (BinaryContentReader, error) {
+	return providerFromMap(r, r.binaryContentReaders, formatType, "binary content reader")
 }
 
 func GetMediaInfoProvider(formatType FormatType) (MediaInfoProvider, error) {
@@ -327,6 +337,14 @@ func ListDocumentTextReaderFormats() []FormatType {
 
 func (r *ProviderRegistry) ListDocumentTextReaderFormats() []FormatType {
 	return sortedMapKeys(r, r.documentTextReaders)
+}
+
+func ListBinaryContentReaderFormats() []FormatType {
+	return globalProviderRegistry.ListBinaryContentReaderFormats()
+}
+
+func (r *ProviderRegistry) ListBinaryContentReaderFormats() []FormatType {
+	return sortedMapKeys(r, r.binaryContentReaders)
 }
 
 func ListMediaInfoProviderFormats() []FormatType {

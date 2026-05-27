@@ -769,17 +769,7 @@ func (p *FileTablePreviewProvider) resolveFormat(req *PreviewRequest) format.For
 }
 
 func normalizeFileTableFormat(formatName string) format.FormatType {
-	normalized := strings.ToLower(strings.TrimSpace(formatName))
-	if normalized == "" {
-		return format.FormatUnknown
-	}
-	if byExt := format.DetectFormat("file."+strings.TrimPrefix(normalized, "."), nil); byExt != format.FormatUnknown {
-		return byExt
-	}
-	if byMime := format.MIMEToFormat(normalized); byMime != format.FormatUnknown {
-		return byMime
-	}
-	return format.FormatType(normalized)
+	return format.NormalizeFormat(formatName)
 }
 
 func objectKeyFromPreviewRequest(req *PreviewRequest, bucket string) string {

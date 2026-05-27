@@ -501,7 +501,7 @@ Manager 文档内容读取消费 `type_info.document` 和 `capabilities.extracti
 | `format` | `docx` | `pptx` | `wps` |
 | 主资源 | `meta_item.full_name` 指向 DOCX 文件 | `meta_item.full_name` 指向 PPTX 文件 | `meta_item.full_name` 指向 WPS 文件 |
 
-DOCX / PPTX / WPS 是单资源文档文件。第一阶段内置规范只要求稳定识别格式、声明 raw / range 内容读取能力，并让 Manager 通过文档预览组件消费原始文件流；后端不承诺内置 `DocumentInfoProvider` 或 `DocumentTextReader`。
+DOCX / PPTX / WPS 是单资源文档文件。内置规范要求稳定识别格式、声明 raw / range 内容读取能力，并让 Manager 通过文档预览组件消费原始文件流。DOCX / PPTX 可以实现轻量 `DocumentTextReader` 进入全文检索链路；WPS 格式变体较多，未实现可靠 reader 时只声明 raw / range，并在 deep scan 中记录不可抽取状态。
 
 ### attributes 写入
 
@@ -510,11 +510,13 @@ DOCX / PPTX / WPS 是单资源文档文件。第一阶段内置规范只要求�
 | `item` | `layout`、`data_type`、`format` |
 | `type_info.document` | 仅在后端已有确定解析事实时写入页数、标题、语言、编码、字数、大小、正文提取标记等通用文档信息；没有解析事实时不得写入空壳对象 |
 | `format_info.docx` / `format_info.pptx` / `format_info.wps` | 仅在后端已有确定解析事实时写入格式私有信息 |
-| `capabilities.extraction` | 仅在已有明确文本提取、转换、OCR、摘要或外部索引任务状态时写入 |
+| `capabilities.extraction` | 写入文本提取、转换、OCR、摘要或外部索引任务状态；没有后端 reader 时应明确记录 `status=unsupported` 和原因 |
 
 ### 预览读取
 
 Manager 文档预览应优先消费 `frontend_renderer`、`preview_material`、`content.kind` 等后端语义字段，并优先使用 raw / range / object-stream URL 读取原始文件；扩展名和 MIME 只作为兜底识别依据。没有 URL 时才允许在受限大小内使用 `raw_binary` + base64 兜底。
+
+`preview_material` 是 Manager 面向前端的展示材料协议，取值如 `url`、`raw_binary`、`text`、`json`、`markdown`、`geojson`、`table`。它不等同于 `common/format` 的 `content_readers` 声明；不得把 `raw_content`、`range_content`、`binary_content` 等 format capability 名称写入 `preview_material`。
 
 Transfer、Search 等模块不得因为 `data_type=document` 就假设存在可搜索全文；全文、缩略图、转换产物和摘要必须来自后续提取或转换任务，并通过 `capabilities.extraction` 或外部索引引用管理。
 

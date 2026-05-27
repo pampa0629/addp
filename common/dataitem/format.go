@@ -49,7 +49,7 @@ func InferFormat(fileName, contentType, explicitFormat string) string {
 	if detected := format.DetectFormat(fileName, nil); detected != format.FormatUnknown {
 		return string(detected)
 	}
-	return normalizeFormat(filepath.Ext(fileName))
+	return string(format.FormatUnknown)
 }
 
 func InferDataType(formatName, contentType string) DataType {
@@ -302,17 +302,7 @@ func refRuleFromSpecs(specs []format.RelatedRefSpec) *RefRule {
 }
 
 func normalizeFormat(value string) string {
-	value = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(value)), ".")
-	if value == "" {
-		return string(format.FormatUnknown)
-	}
-	if detected := format.DetectFormat("file."+value, nil); detected != format.FormatUnknown {
-		return string(detected)
-	}
-	if detected := format.MIMEToFormat(value); detected != format.FormatUnknown {
-		return string(detected)
-	}
-	return value
+	return string(format.NormalizeFormat(value))
 }
 
 func containsString(values []string, target string) bool {

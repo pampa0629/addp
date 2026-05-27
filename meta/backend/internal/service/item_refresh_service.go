@@ -17,6 +17,7 @@ import (
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/metapath"
 	"github.com/addp/meta/internal/models"
+	"github.com/addp/meta/internal/scantask"
 )
 
 func (s *ScanService) RefreshItem(ctx context.Context, engineID, tenantID, itemID uint, token string, force bool) (*models.ScanResponse, error) {
@@ -81,10 +82,11 @@ func (s *ScanService) RefreshItem(ctx context.Context, engineID, tenantID, itemI
 	} else {
 		setStorageContentHash(item.Attributes, contentHash)
 	}
-	extractedText, err := extractKnownItemDocumentText(ctx, item.Attributes, contentReader, connInfo, resource.ID, catalogPathFor, &item, descriptor, physicalPath)
+	extraction, err := extractKnownItemDocumentText(ctx, item.Attributes, contentReader, connInfo, resource.ID, catalogPathFor, &item, descriptor, physicalPath)
 	if err != nil {
 		return nil, err
 	}
+	extractedText := extraction.Text
 	item.Attributes = metaattr.Normalize(item.Attributes)
 	if err := s.db.Model(&item).Updates(map[string]interface{}{
 		"attributes": item.Attributes,
@@ -111,7 +113,13 @@ func (s *ScanService) RefreshItem(ctx context.Context, engineID, tenantID, itemI
 				LastModified: item.DataUpdatedAt,
 				CatalogPath:  catalogPathFor(objectPath),
 			}
-			s.indexerService.IndexObjectAsset(resource, tenantID, resource.ID, catalogResource, objectPath, item.FullName, &item, extractedText)
+			if s.indexerService.IndexCatalogAsset(resource, tenantID, resource.ID, catalogResource, objectPath, item.FullName, &item, extractedText) {
+				if extractedText != "" {
+					extraction.Counts.Indexed++
+				}
+			} else if extractedText != "" {
+				extraction.Counts.IndexFailed++
+			}
 		}
 	}
 
@@ -122,7 +130,22 @@ func (s *ScanService) RefreshItem(ctx context.Context, engineID, tenantID, itemI
 		FieldsScanned: fields,
 		DurationMs:    time.Since(start).Milliseconds(),
 		StartedAt:     start.Format(time.RFC3339),
+		Extraction:    extractionStatsModel(extraction.Counts),
 	}, nil
+}
+
+func extractionStatsModel(counts scantask.ExtractionCounts) *models.ExtractionScanStats {
+	if counts.Empty() {
+		return nil
+	}
+	return &models.ExtractionScanStats{
+		Documents:   counts.Documents,
+		Extracted:   counts.Extracted,
+		Unsupported: counts.Unsupported,
+		Failed:      counts.Failed,
+		Indexed:     counts.Indexed,
+		IndexFailed: counts.IndexFailed,
+	}
 }
 
 func (s *ScanService) refreshKnownItemAttributes(
@@ -181,9 +204,9 @@ func extractKnownItemDocumentText(
 	item *models.MetaItem,
 	descriptor dataitem.ItemDescriptor,
 	physicalPath string,
-) (string, error) {
+) (documentExtractionResult, error) {
 	if attrs == nil || contentReader == nil || catalogPathFor == nil || item == nil || descriptor.DataType != dataitem.DataTypeDocument || physicalPath == "" {
-		return "", nil
+		return documentExtractionResult{}, nil
 	}
 	detected := detectedItemFromDescriptor(item, descriptor)
 	resource := metacatalog.StorageResource{
@@ -197,7 +220,7 @@ func extractKnownItemDocumentText(
 		LastModified: item.DataUpdatedAt,
 		CatalogPath:  catalogPathFor(physicalPath),
 	}
-	return extractObjectCatalogDocumentText(ctx, attrs, contentReader, connInfo, engineID, resource, detected), nil
+	return extractCatalogDocumentText(ctx, attrs, contentReader, connInfo, engineID, resource, detected), nil
 }
 
 func enrichKnownResourceAttributes(

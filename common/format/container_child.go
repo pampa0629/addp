@@ -97,11 +97,15 @@ func StreamContainerChildResource(reader contentio.Reader, ref contentio.Ref, ch
 
 func childFormatOrParent(child datatype.ContainerChildInfo, parentFormat FormatType) FormatType {
 	if child.Format != "" {
-		return FormatType(child.Format)
+		if normalized := NormalizeFormat(child.Format); normalized != FormatUnknown {
+			return normalized
+		}
 	}
 	if child.Native != nil {
 		if formatName := strings.TrimSpace(interfaceString(child.Native["format"])); formatName != "" {
-			return FormatType(formatName)
+			if normalized := NormalizeFormat(formatName); normalized != FormatUnknown {
+				return normalized
+			}
 		}
 	}
 	if parentFormat != "" {

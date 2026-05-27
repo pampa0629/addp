@@ -26,29 +26,49 @@ import (
 func TestEnrichObjectStorageJSONTableUpdatesItemDataType(t *testing.T) {
 	t.Parallel()
 
+	db := openObjectCatalogScanTestDB(t)
+	repo := metaRepo.NewScanRepository(db)
+	parentNode, err := repo.UpsertNode(1, 7, nil, "bucket", "addp", strPtr("addp"), models.JSONMap{"bucket": "addp"})
+	if err != nil {
+		t.Fatalf("create parent node: %v", err)
+	}
 	resource := metacatalog.StorageResource{
-		RootName:  "addp",
-		Path:      "datasets/converted.json",
-		FullPath:  "addp/datasets/converted.json",
-		SizeBytes: 64,
-		Format:    string(format.FormatJSON),
+		RootName:    "addp",
+		Path:        "datasets/converted.json",
+		FullPath:    "addp/datasets/converted.json",
+		SizeBytes:   64,
+		Format:      string(format.FormatJSON),
+		CatalogPath: plugin.ObjectItemPath(7, "addp", "datasets/converted.json"),
 	}
 	item := metaitemForJSONDocument(resource)
 
-	attrs := models.JSONMap{}
-	err := enrichObjectCatalogSingleResourceAttributes(
-		context.Background(),
-		attrs,
-		staticObjectContentReader{content: `[{"id":1,"name":"A"},{"id":2,"name":"B"}]`},
-		nil,
-		7,
-		resource,
-		item,
-		false,
-	)
+	result, err := catalogItemProcessor(repo, nil, slog.New(slog.NewTextHandler(io.Discard, nil))).Process(context.Background(), catalogSingleItemInput{
+		Resource:      &commonModels.Engine{ID: 7, EngineType: "static"},
+		TenantID:      1,
+		EngineID:      7,
+		ParentNode:    parentNode,
+		ItemType:      "object",
+		ItemName:      "converted.json",
+		FullName:      resource.FullPath,
+		Attributes:    models.JSONMap{},
+		Detected:      item,
+		ContentReader: staticObjectContentReader{content: `[{"id":1,"name":"A"},{"id":2,"name":"B"}]`},
+		CatalogPath:   resource.CatalogPath,
+		CatalogPathFor: func(string) plugin.CatalogPath {
+			return resource.CatalogPath
+		},
+		PhysicalPath:        resource.FullPath,
+		IndexRootName:       resource.RootName,
+		IndexPath:           resource.Path,
+		IndexRelativePath:   resource.Path,
+		SizeBytes:           resource.SizeBytes,
+		ScanDepth:           models.ScannedDepthDeep,
+		IncludeContentIndex: false,
+	})
 	if err != nil {
-		t.Fatalf("enrichObjectCatalogSingleResourceAttributes() error = %v", err)
+		t.Fatalf("catalogSingleItemProcessor.Process() error = %v", err)
 	}
+	attrs := result.Item.Attributes
 	itemAttrs := attrs["item"].(map[string]interface{})
 	if itemAttrs["data_type"] != string(dataitem.DataTypeTable) || itemAttrs["format"] != string(format.FormatJSON) {
 		t.Fatalf("item attrs = %#v, want json table", itemAttrs)
@@ -86,7 +106,59 @@ func TestDetectObjectCatalogResourceFormatUsesCommonFormatSniffing(t *testing.T)
 	}
 }
 
-func TestExtractObjectCatalogDocumentTextWritesExtractionFacts(t *testing.T) {
+func TestDetectObjectCatalogResourceFormatPromotesUnknownText(t *testing.T) {
+	t.Parallel()
+
+	resource := metacatalog.StorageResource{
+		RootName:    "addp",
+		Path:        "docs/README",
+		FullPath:    "addp/docs/README",
+		NodeType:    "object",
+		SizeBytes:   12,
+		CatalogPath: plugin.ObjectItemPath(7, "addp", "docs/README"),
+	}
+
+	detected, err := detectObjectCatalogResourceFormat(
+		context.Background(),
+		staticObjectContentReader{content: "hello\nworld\n"},
+		nil,
+		resource,
+	)
+	if err != nil {
+		t.Fatalf("detectObjectCatalogResourceFormat() error = %v", err)
+	}
+	if detected != string(format.FormatText) {
+		t.Fatalf("detected format = %q, want text", detected)
+	}
+}
+
+func TestDetectObjectCatalogResourceFormatKeepsUnknownBinary(t *testing.T) {
+	t.Parallel()
+
+	resource := metacatalog.StorageResource{
+		RootName:    "addp",
+		Path:        "docs/blob.binx",
+		FullPath:    "addp/docs/blob.binx",
+		NodeType:    "object",
+		SizeBytes:   3,
+		CatalogPath: plugin.ObjectItemPath(7, "addp", "docs/blob.binx"),
+	}
+
+	detected, err := detectObjectCatalogResourceFormat(
+		context.Background(),
+		staticObjectContentReader{content: string([]byte{0x00, 0x01, 0x02})},
+		nil,
+		resource,
+	)
+	if err != nil {
+		t.Fatalf("detectObjectCatalogResourceFormat() error = %v", err)
+	}
+	if detected != "" {
+		t.Fatalf("detected format = %q, want empty unknown", detected)
+	}
+}
+
+func TestExtractCatalogDocumentTextWritesExtractionFacts(t *testing.T) {
 	t.Parallel()
 
 	resource := metacatalog.StorageResource{
@@ -105,7 +177,7 @@ func TestExtractObjectCatalogDocumentTextWritesExtractionFacts(t *testing.T) {
 	}
 	attrs := models.JSONMap{"item": map[string]interface{}{"format": string(format.FormatText)}}
 
-	text := extractObjectCatalogDocumentText(
+	result := extractCatalogDocumentText(
 		context.Background(),
 		attrs,
 		staticObjectContentReader{content: "hello document search"},
@@ -115,8 +187,11 @@ func TestExtractObjectCatalogDocumentTextWritesExtractionFacts(t *testing.T) {
 		item,
 	)
 
-	if text != "hello document search" {
-		t.Fatalf("extracted text = %q", text)
+	if result.Text != "hello document search" {
+		t.Fatalf("extracted text = %q", result.Text)
+	}
+	if result.Counts.Documents != 1 || result.Counts.Extracted != 1 {
+		t.Fatalf("counts = %#v", result.Counts)
 	}
 	if !commonJSON.Bool(attrs, "capabilities.extraction", "text_extracted") {
 		t.Fatalf("capabilities.extraction = %#v", attrs["capabilities"])
@@ -129,7 +204,7 @@ func TestExtractObjectCatalogDocumentTextWritesExtractionFacts(t *testing.T) {
 	}
 }
 
-func TestExtractObjectCatalogDocumentTextReadsDOCX(t *testing.T) {
+func TestExtractCatalogDocumentTextReadsDOCX(t *testing.T) {
 	t.Parallel()
 
 	docxContent := minimalObjectCatalogDOCX(t, `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Hello</w:t></w:r><w:r><w:t> DOCX</w:t></w:r></w:p><w:p><w:r><w:t>Search body</w:t></w:r></w:p></w:body></w:document>`)
@@ -149,7 +224,7 @@ func TestExtractObjectCatalogDocumentTextReadsDOCX(t *testing.T) {
 	}
 	attrs := models.JSONMap{"item": map[string]interface{}{"format": string(format.FormatDOCX)}}
 
-	text := extractObjectCatalogDocumentText(
+	result := extractCatalogDocumentText(
 		context.Background(),
 		attrs,
 		staticObjectContentReader{content: string(docxContent)},
@@ -159,8 +234,11 @@ func TestExtractObjectCatalogDocumentTextReadsDOCX(t *testing.T) {
 		item,
 	)
 
-	if text != "Hello DOCX\nSearch body" {
-		t.Fatalf("extracted text = %q", text)
+	if result.Text != "Hello DOCX\nSearch body" {
+		t.Fatalf("extracted text = %q", result.Text)
+	}
+	if result.Counts.Documents != 1 || result.Counts.Extracted != 1 {
+		t.Fatalf("counts = %#v", result.Counts)
 	}
 	if !commonJSON.Bool(attrs, "capabilities.extraction", "text_extracted") {
 		t.Fatalf("capabilities.extraction = %#v", attrs["capabilities"])
@@ -179,6 +257,102 @@ func TestExtractObjectCatalogDocumentTextReadsDOCX(t *testing.T) {
 	}
 	if !commonJSON.Bool(attrs, "type_info.document", "text_extracted") {
 		t.Fatalf("type_info.document = %#v", attrs["type_info"])
+	}
+}
+
+func TestExtractCatalogDocumentTextReadsPPTX(t *testing.T) {
+	t.Parallel()
+
+	pptxContent := minimalObjectCatalogPPTX(t, map[string]string{
+		"ppt/slides/slide1.xml": `<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>行业赛道</a:t></a:r><a:r><a:t>分析</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>`,
+		"ppt/slides/slide2.xml": `<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>第二页</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>`,
+	})
+	resource := metacatalog.StorageResource{
+		RootName:    "addp",
+		Path:        "docs/search.pptx",
+		FullPath:    "addp/docs/search.pptx",
+		SizeBytes:   int64(len(pptxContent)),
+		Format:      string(format.FormatPPTX),
+		CatalogPath: plugin.ObjectItemPath(7, "addp", "docs/search.pptx"),
+	}
+	item := &metaitem.DetectedItem{
+		ResolvedItem: dataitem.ResolvedItem{
+			DataType: datatype.DataTypeDocument,
+			Format:   string(format.FormatPPTX),
+		},
+	}
+	attrs := models.JSONMap{"item": map[string]interface{}{"format": string(format.FormatPPTX)}}
+
+	result := extractCatalogDocumentText(
+		context.Background(),
+		attrs,
+		staticObjectContentReader{content: string(pptxContent)},
+		nil,
+		7,
+		resource,
+		item,
+	)
+
+	if result.Text != "行业赛道分析\n第二页" {
+		t.Fatalf("extracted text = %q", result.Text)
+	}
+	if result.Counts.Documents != 1 || result.Counts.Extracted != 1 {
+		t.Fatalf("counts = %#v", result.Counts)
+	}
+	if got := commonJSON.String(attrs, "capabilities.extraction", "extractor"); got != "common_format:pptx" {
+		t.Fatalf("extractor = %q", got)
+	}
+	if got := commonJSON.String(attrs, "capabilities.extraction", "status"); got != "completed" {
+		t.Fatalf("status = %q", got)
+	}
+}
+
+func TestExtractCatalogDocumentTextMarksUnsupportedWithoutReader(t *testing.T) {
+	t.Parallel()
+
+	resource := metacatalog.StorageResource{
+		RootName:    "addp",
+		Path:        "docs/raw.wps",
+		FullPath:    "addp/docs/raw.wps",
+		SizeBytes:   16,
+		Format:      string(format.FormatWPS),
+		CatalogPath: plugin.ObjectItemPath(7, "addp", "docs/raw.wps"),
+	}
+	item := &metaitem.DetectedItem{
+		ResolvedItem: dataitem.ResolvedItem{
+			DataType: datatype.DataTypeDocument,
+			Format:   string(format.FormatWPS),
+		},
+	}
+	attrs := models.JSONMap{"item": map[string]interface{}{"format": string(format.FormatWPS)}}
+
+	result := extractCatalogDocumentText(
+		context.Background(),
+		attrs,
+		staticObjectContentReader{content: "binary content"},
+		nil,
+		7,
+		resource,
+		item,
+	)
+
+	if result.Text != "" {
+		t.Fatalf("extracted text = %q, want empty", result.Text)
+	}
+	if result.Counts.Documents != 1 || result.Counts.Unsupported != 1 {
+		t.Fatalf("counts = %#v", result.Counts)
+	}
+	if commonJSON.Bool(attrs, "capabilities.extraction", "extractor_available") {
+		t.Fatalf("extractor_available = true, want false")
+	}
+	if commonJSON.Bool(attrs, "capabilities.extraction", "text_extracted") {
+		t.Fatalf("text_extracted = true, want false")
+	}
+	if got := commonJSON.String(attrs, "capabilities.extraction", "status"); got != "unsupported" {
+		t.Fatalf("status = %q", got)
+	}
+	if got := commonJSON.String(attrs, "capabilities.extraction", "reason"); got != "document_text_reader_unavailable" {
+		t.Fatalf("reason = %q", got)
 	}
 }
 
@@ -348,6 +522,25 @@ func minimalObjectCatalogDOCX(t *testing.T, documentXML string) []byte {
 	}
 	if _, err := file.Write([]byte(documentXML)); err != nil {
 		t.Fatalf("write document.xml: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close zip: %v", err)
+	}
+	return buf.Bytes()
+}
+
+func minimalObjectCatalogPPTX(t *testing.T, files map[string]string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	writer := zip.NewWriter(&buf)
+	for name, content := range files {
+		file, err := writer.Create(name)
+		if err != nil {
+			t.Fatalf("create %s: %v", name, err)
+		}
+		if _, err := file.Write([]byte(content)); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
 	}
 	if err := writer.Close(); err != nil {
 		t.Fatalf("close zip: %v", err)

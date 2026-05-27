@@ -27,6 +27,12 @@ type ExplorerService struct {
 	previewResolver *preview.PreviewResolver
 }
 
+type RefreshNodeResult struct {
+	Node      *catalogview.TreeNode          `json:"node"`
+	Scan      *commonClient.MetaScanResponse `json:"scan,omitempty"`
+	ScanError string                         `json:"scan_error,omitempty"`
+}
+
 // NewExplorerService 创建数据探查服务
 func NewExplorerService(
 	systemClient *commonClient.SystemClient,
@@ -92,7 +98,7 @@ func (s *ExplorerService) GetTree(ctx context.Context, tenantID *uint, engineID 
 //   - locator: ResourceLocator URI
 //
 // 返回: 刷新后的节点信息
-func (s *ExplorerService) RefreshNode(ctx context.Context, tenantID *uint, locatorURI string) (*catalogview.TreeNode, error) {
+func (s *ExplorerService) RefreshNode(ctx context.Context, tenantID *uint, locatorURI string) (*RefreshNodeResult, error) {
 	// 1. 解析 Locator
 	loc, err := catalogview.ParseURI(locatorURI)
 	if err != nil {
@@ -113,19 +119,23 @@ func (s *ExplorerService) RefreshNode(ctx context.Context, tenantID *uint, locat
 		return nil, ErrEngineAccessDenied
 	}
 
-	// 3. 触发 Meta 扫描（异步）
+	// 3. 触发 Meta 深度扫描，并保留统计结果用于前端反馈。
+	var scanResult *commonClient.MetaScanResponse
+	var scanError string
 	if s.metaClient != nil {
 		// 设置租户 ID（用于服务间调用时的租户隔离）
 		s.metaClient.SetTenantID(tenantID)
 
 		opts := refreshScanOptions(loc)
-		logger.L().Info("触发 Meta 刷新", "engine_id", loc.EngineID, "type", loc.Type, "node_id", opts.NodeID, "item_id", opts.ItemID, "targets", opts.Targets)
+		logger.L().Info("触发 Meta 深度扫描", "engine_id", loc.EngineID, "type", loc.Type, "node_id", opts.NodeID, "item_id", opts.ItemID, "targets", opts.Targets)
 
-		if err := s.metaClient.TriggerScan(opts); err != nil {
+		scanResult, err = s.metaClient.ScanEngine(opts)
+		if err != nil {
 			// 扫描失败不中断流程，只记录警告
-			logger.L().Warn("触发 Meta 扫描失败", "error", err)
+			scanError = err.Error()
+			logger.L().Warn("触发 Meta 深度扫描失败", "error", err)
 		} else {
-			logger.L().Info("Meta 扫描已触发", "engine_id", loc.EngineID)
+			logger.L().Info("Meta 深度扫描完成", "engine_id", loc.EngineID, "items_scanned", scanResult.ItemsScanned, "fields_scanned", scanResult.FieldsScanned, "catalog_nodes_scanned", scanResult.CatalogNodesScanned)
 		}
 	}
 
@@ -146,7 +156,7 @@ func (s *ExplorerService) RefreshNode(ctx context.Context, tenantID *uint, locat
 		if err != nil {
 			return nil, fmt.Errorf("failed to build engine tree: %w", err)
 		}
-		return tree, nil
+		return &RefreshNodeResult{Node: tree, Scan: scanResult, ScanError: scanError}, nil
 	}
 
 	// 查找具体的节点（有 meta_id）
@@ -157,7 +167,7 @@ func (s *ExplorerService) RefreshNode(ctx context.Context, tenantID *uint, locat
 			if err != nil {
 				return nil, fmt.Errorf("failed to build node tree: %w", err)
 			}
-			return tree, nil
+			return &RefreshNodeResult{Node: tree, Scan: scanResult, ScanError: scanError}, nil
 		}
 	}
 

@@ -27,7 +27,7 @@ func TestMetadataServiceRefreshItemUsesMetaClient(t *testing.T) {
 		gotTenant = r.Header.Get("X-Tenant-ID")
 		decodeErr = json.NewDecoder(r.Body).Decode(&gotPayload)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"status":"success","message":"ok","catalog_nodes_scanned":2,"items_scanned":1,"fields_scanned":7,"duration_ms":33,"started_at":"2026-05-20T00:00:00Z"}`))
+		_, _ = w.Write([]byte(`{"status":"success","message":"ok","catalog_nodes_scanned":2,"items_scanned":1,"fields_scanned":7,"duration_ms":33,"started_at":"2026-05-20T00:00:00Z","extraction":{"documents":1,"extracted":1,"unsupported":0,"failed":0,"indexed":1,"index_failed":0}}`))
 	}))
 	defer metaServer.Close()
 
@@ -58,6 +58,9 @@ func TestMetadataServiceRefreshItemUsesMetaClient(t *testing.T) {
 	}
 	if resp.ItemsScanned != 1 || resp.FieldsScanned != 7 || resp.Status != "success" {
 		t.Fatalf("resp = %#v", resp)
+	}
+	if resp.Extraction == nil || resp.Extraction.Documents != 1 || resp.Extraction.Indexed != 1 {
+		t.Fatalf("extraction = %#v", resp.Extraction)
 	}
 }
 
@@ -155,5 +158,63 @@ func TestGetTreeDeniedForOtherTenant(t *testing.T) {
 	_, err := service.GetTree(t.Context(), &tenantOne, 2, 1)
 	if !errors.Is(err, ErrEngineAccessDenied) {
 		t.Fatalf("GetTree should deny cross-tenant access, got err=%v", err)
+	}
+}
+
+func TestRefreshNodeReturnsDeepScanStats(t *testing.T) {
+	t.Parallel()
+
+	capabilities, err := plugin.MarshalEngineCapabilities(plugin.NewObjectCapabilities("s3"))
+	if err != nil {
+		t.Fatalf("failed to marshal capabilities: %v", err)
+	}
+
+	var gotScanPayload map[string]interface{}
+	metaServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/system/engines/9":
+			fmt.Fprintf(w, `{"id":9,"name":"Business MinIO","engine_type":"s3","connection_info":{},"tenant_id":1,"is_active":true,"capabilities":%q}`, capabilities)
+		case "/api/v1/meta/scan/engine":
+			if err := json.NewDecoder(r.Body).Decode(&gotScanPayload); err != nil {
+				t.Fatalf("decode scan payload: %v", err)
+			}
+			_, _ = w.Write([]byte(`{"status":"success","message":"ok","catalog_nodes_scanned":1,"items_scanned":8,"fields_scanned":0,"duration_ms":42,"started_at":"2026-05-27T00:00:00Z","extraction":{"documents":2,"extracted":1,"unsupported":1,"failed":0,"indexed":1,"index_failed":0}}`))
+		case "/api/v1/meta/engines/9/tree":
+			_, _ = w.Write([]byte(`{
+				"top_nodes":[{"id":8,"tenant_id":1,"engine_id":9,"node_type":"bucket","name":"addp","full_name":"addp","depth":1,"path":"addp","scan_status":"completed","item_count":8}],
+				"child_nodes":[],
+				"items":[]
+			}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer metaServer.Close()
+
+	svc := NewExplorerService(
+		client.NewSystemClient(metaServer.URL, "test-token"),
+		client.NewMetaClientWithInternalKey(metaServer.URL, "internal-key"),
+		nil,
+	)
+	tenantID := uint(1)
+	result, err := svc.RefreshNode(t.Context(), &tenantID, "addp://engine/9/path/addp?type=bucket&meta_id=8")
+	if err != nil {
+		t.Fatalf("RefreshNode() error = %v", err)
+	}
+	if result.Node == nil || len(result.Node.Children) != 1 || result.Node.Children[0].Label != "addp" {
+		t.Fatalf("node = %#v, want engine tree with addp bucket child", result.Node)
+	}
+	if result.Scan == nil || result.Scan.ItemsScanned != 8 || result.Scan.CatalogNodesScanned != 1 {
+		t.Fatalf("scan = %#v", result.Scan)
+	}
+	if result.Scan.Extraction == nil || result.Scan.Extraction.Documents != 2 || result.Scan.Extraction.Unsupported != 1 {
+		t.Fatalf("scan extraction = %#v", result.Scan.Extraction)
+	}
+	if gotScanPayload["scan_depth"] != "deep" || gotScanPayload["force"] != true {
+		t.Fatalf("scan payload = %#v", gotScanPayload)
+	}
+	if gotScanPayload["node_id"] != float64(8) {
+		t.Fatalf("scan payload node_id = %#v, want 8", gotScanPayload["node_id"])
 	}
 }

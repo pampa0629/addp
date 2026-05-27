@@ -47,7 +47,12 @@ func TestExecutionStatusFields(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
-	resp := &models.ScanResponse{CatalogNodesScanned: 1, ItemsScanned: 2, FieldsScanned: 3}
+	resp := &models.ScanResponse{
+		CatalogNodesScanned: 1,
+		ItemsScanned:        2,
+		FieldsScanned:       3,
+		Extraction:          &models.ExtractionScanStats{Documents: 1, Extracted: 1, Indexed: 1},
+	}
 
 	success := SuccessfulExecutionFields(resp, "postgres", now, 123, now)
 	if success["status"] != commonModels.ExecutionStatusSuccess || success["progress"] != 100 {
@@ -56,6 +61,10 @@ func TestExecutionStatusFields(t *testing.T) {
 	metadata := success["metadata"].(commonModels.JSONMap)
 	if metadata["items_scanned"] != 2 || metadata["storage_type"] != "postgres" {
 		t.Fatalf("metadata = %#v", metadata)
+	}
+	extraction := metadata["extraction"].(commonModels.JSONMap)
+	if extraction["documents"] != 1 || extraction["indexed"] != 1 {
+		t.Fatalf("extraction metadata = %#v", extraction)
 	}
 
 	next := now.Add(time.Hour)

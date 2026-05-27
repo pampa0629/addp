@@ -23,7 +23,12 @@ func DetectFormat(filename string, peek []byte) FormatType {
 		if format := detectByPluginSniffer(peek); format != FormatUnknown {
 			return format
 		}
-		return detectByMagic(peek)
+		if format := detectByMagic(peek); format != FormatUnknown {
+			return format
+		}
+		if LooksLikeTextContent(peek) {
+			return FormatText
+		}
 	}
 	return FormatUnknown
 }

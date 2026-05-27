@@ -22,13 +22,23 @@ type ScanRequest struct {
 
 // ScanResponse 扫描响应
 type ScanResponse struct {
-	Status              string `json:"status"` // success/failed
-	Message             string `json:"message"`
-	CatalogNodesScanned int    `json:"catalog_nodes_scanned"`
-	ItemsScanned        int    `json:"items_scanned"`
-	FieldsScanned       int    `json:"fields_scanned"`
-	DurationMs          int64  `json:"duration_ms"`
-	StartedAt           string `json:"started_at"`
+	Status              string               `json:"status"` // success/failed
+	Message             string               `json:"message"`
+	CatalogNodesScanned int                  `json:"catalog_nodes_scanned"`
+	ItemsScanned        int                  `json:"items_scanned"`
+	FieldsScanned       int                  `json:"fields_scanned"`
+	DurationMs          int64                `json:"duration_ms"`
+	StartedAt           string               `json:"started_at"`
+	Extraction          *ExtractionScanStats `json:"extraction,omitempty"`
+}
+
+type ExtractionScanStats struct {
+	Documents   int `json:"documents"`
+	Extracted   int `json:"extracted"`
+	Unsupported int `json:"unsupported"`
+	Failed      int `json:"failed"`
+	Indexed     int `json:"indexed"`
+	IndexFailed int `json:"index_failed"`
 }
 
 // ResourceWithStats 资源及其扫描统计

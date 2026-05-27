@@ -185,6 +185,16 @@ type DocumentTextReader interface {
 	ReadDocumentText(ctx context.Context, input io.Reader, limit int64, options *ParseOptions) (string, bool, error)
 }
 
+// BinaryContentReader 表示格式层通用二进制内容读取能力。
+//
+// 该 reader 只消费调用方传入的内容流并按 limit 返回原始字节，不参与格式识别，
+// 不把 binary 声明为 format identity，也不返回 Manager 等上层模块的展示 DTO。
+// 调用方应仅在资源已经被判定为 unknown 且非文本时，把结果投影为自己的预览对象。
+type BinaryContentReader interface {
+	ContentReader
+	ReadBinaryContent(ctx context.Context, input io.Reader, limit int64, options *ParseOptions) (*BinaryContent, error)
+}
+
 type MediaInfoProvider interface {
 	Provider
 	DescribeMedia(ctx context.Context, input io.Reader, options *ParseOptions) (*MediaDescribeResult, error)

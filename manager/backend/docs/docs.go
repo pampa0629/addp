@@ -2619,7 +2619,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "刷新指定资源节点的元数据信息 | Refresh metadata for a specific resource node",
+                "description": "对指定资源节点发起深度扫描，刷新元数据与全文索引 | Run a deep scan for a resource node and refresh metadata and full-text index",
                 "produces": [
                     "application/json"
                 ],
@@ -2793,6 +2793,29 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_manager_internal_models.MetaExtractionScanStats": {
+            "type": "object",
+            "properties": {
+                "documents": {
+                    "type": "integer"
+                },
+                "extracted": {
+                    "type": "integer"
+                },
+                "failed": {
+                    "type": "integer"
+                },
+                "index_failed": {
+                    "type": "integer"
+                },
+                "indexed": {
+                    "type": "integer"
+                },
+                "unsupported": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_manager_internal_models.MetaManualScanRequest": {
             "type": "object",
             "properties": {
@@ -2833,6 +2856,9 @@ const docTemplate = `{
                 },
                 "duration_ms": {
                     "type": "integer"
+                },
+                "extraction": {
+                    "$ref": "#/definitions/github_com_addp_manager_internal_models.MetaExtractionScanStats"
                 },
                 "fields_scanned": {
                     "type": "integer"

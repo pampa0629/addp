@@ -209,6 +209,7 @@ Shapefile 这类 multi 格式尤其要区分：单个 `.shp/.dbf/.shx` 的识别
 | `table` + `multi` | `MultiTableInfoProvider` | `MultiTableSampleReader` | `MultiTableReaderProvider`、`MultiTableWriterProvider` |
 | `table` + `whole` | `ScopeTableInfoProvider` | `ScopeTableSampleReader` | 后续按需补 `ScopeTableReaderProvider` / `ScopeTableWriterProvider` |
 | `document` | `DocumentInfoProvider` | `DocumentTextReader` | raw / range content 由 `contentio` 或后续 reader 表达 |
+| `unknown` | 无 | `BinaryContentReader` | 仅用于 unknown 非文本内容的 raw binary 兜底，不引入 binary data type |
 | `media` | `MediaInfoProvider` | 后续 `MediaThumbnailReader` | raw / range content 由 `contentio` 或后续 reader 表达 |
 | `container` | `ContainerInfoProvider` | `ContainerChildResolver`、内部对象读取 | child 解析后继续进入对应 data type provider |
 | `graph` | `GraphMetadataProvider` / `datatype.GraphInfo` | `GraphSampleProvider` | 图查询读取由 graph / engine 能力表达 |

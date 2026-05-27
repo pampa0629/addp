@@ -21,7 +21,7 @@ func TestMetaClientScanEngineUsesV1PathAndPreciseItemPayload(t *testing.T) {
 		gotTenant = r.Header.Get("X-Tenant-ID")
 		decodeErr = json.NewDecoder(r.Body).Decode(&gotPayload)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"status":"success","message":"ok","items_scanned":1,"fields_scanned":3}`))
+		_, _ = w.Write([]byte(`{"status":"success","message":"ok","items_scanned":1,"fields_scanned":3,"extraction":{"documents":1,"extracted":1,"unsupported":0,"failed":0,"indexed":1,"index_failed":0}}`))
 	}))
 	defer server.Close()
 
@@ -63,6 +63,9 @@ func TestMetaClientScanEngineUsesV1PathAndPreciseItemPayload(t *testing.T) {
 	if result.ItemsScanned != 1 || result.FieldsScanned != 3 {
 		t.Fatalf("result = %#v", result)
 	}
+	if result.Extraction == nil || result.Extraction.Documents != 1 || result.Extraction.Indexed != 1 {
+		t.Fatalf("extraction = %#v", result.Extraction)
+	}
 }
 
 func TestMetaClientRefreshItemUsesItemRefreshPath(t *testing.T) {
@@ -79,7 +82,7 @@ func TestMetaClientRefreshItemUsesItemRefreshPath(t *testing.T) {
 		gotTenant = r.Header.Get("X-Tenant-ID")
 		decodeErr = json.NewDecoder(r.Body).Decode(&gotPayload)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"status":"success","message":"ok","items_scanned":1,"fields_scanned":5}`))
+		_, _ = w.Write([]byte(`{"status":"success","message":"ok","items_scanned":1,"fields_scanned":5,"extraction":{"documents":1,"extracted":0,"unsupported":1,"failed":0,"indexed":0,"index_failed":0}}`))
 	}))
 	defer server.Close()
 
@@ -108,5 +111,8 @@ func TestMetaClientRefreshItemUsesItemRefreshPath(t *testing.T) {
 	}
 	if result.ItemsScanned != 1 || result.FieldsScanned != 5 {
 		t.Fatalf("result = %#v", result)
+	}
+	if result.Extraction == nil || result.Extraction.Unsupported != 1 {
+		t.Fatalf("extraction = %#v", result.Extraction)
 	}
 }

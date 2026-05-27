@@ -12,7 +12,6 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/addp/common/contentio"
 	commondataitem "github.com/addp/common/dataitem"
@@ -183,6 +182,7 @@ func buildPreviewMetadata(req *ObjectContentRequest, limit int64) map[string]int
 }
 
 func setPreviewMaterial(content *models.ObjectPreviewContent, material string) {
+	material = normalizePreviewMaterial(material)
 	if content == nil || material == "" {
 		return
 	}
@@ -213,7 +213,7 @@ func decoratePreviewContent(content *models.ObjectPreviewContent) *models.Object
 		return nil
 	}
 	if content.PreviewMaterial == "" {
-		content.PreviewMaterial = metadataString(content.Metadata, "preview_material")
+		content.PreviewMaterial = normalizePreviewMaterial(metadataString(content.Metadata, "preview_material"))
 	}
 	if content.FrontendRenderer == "" {
 		content.FrontendRenderer = metadataString(content.Metadata, "frontend_renderer")
@@ -279,6 +279,14 @@ func defaultPreviewMaterial(content *models.ObjectPreviewContent) string {
 		}
 	}
 	return ""
+}
+
+func normalizePreviewMaterial(material string) string {
+	material = strings.ToLower(strings.TrimSpace(material))
+	if !models.IsKnownPreviewMaterial(material) {
+		return ""
+	}
+	return material
 }
 
 func defaultFrontendRenderer(kind string) string {
@@ -438,15 +446,12 @@ func (m objectContentMatcher) matches(req *ObjectContentRequest) bool {
 }
 
 func normalizeContentFormat(formatName string) string {
-	normalized := strings.ToLower(strings.TrimSpace(formatName))
+	normalized := format.NormalizeFormat(formatName)
 	switch normalized {
-	case "", "unknown":
+	case "", format.FormatUnknown:
 		return ""
 	default:
-		if formatType := format.DetectFormat("value."+normalized, nil); formatType != format.FormatUnknown {
-			return string(formatType)
-		}
-		return normalized
+		return string(normalized)
 	}
 }
 
@@ -1156,9 +1161,32 @@ func (h *unsupportedContentHandler) Handle(ctx context.Context, req *ObjectConte
 	if err != nil {
 		return nil, false, err
 	}
+	binaryReader, err := format.GetBinaryContentReader(format.FormatUnknown)
+	if err != nil {
+		return nil, false, err
+	}
+	var sizeBytes int64
+	var mimeType string
+	if req != nil {
+		sizeBytes = req.Size
+		mimeType = req.ContentType
+	}
+	binaryContent, err := binaryReader.ReadBinaryContent(ctx, bytes.NewReader(data), h.maxBytes, &format.ParseOptions{
+		ExtraParams: map[string]interface{}{
+			"size_bytes": sizeBytes,
+			"mime_type":  mimeType,
+		},
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	if binaryContent != nil {
+		truncated = truncated || binaryContent.Truncated
+		data = binaryContent.Bytes
+	}
 
 	metadata := buildPreviewMetadata(req, h.maxBytes)
-	metadata["preview_material"] = "raw_binary"
+	metadata["preview_material"] = models.PreviewMaterialRawBinary
 	metadata["probe_truncated"] = truncated
 
 	if len(data) == 0 {
@@ -1169,56 +1197,12 @@ func (h *unsupportedContentHandler) Handle(ctx context.Context, req *ObjectConte
 		}), false, nil
 	}
 
-	if isLikelyTextContent(data) {
-		metadata["preview_material"] = models.ObjectPreviewKindText
-		return decoratePreviewContent(&models.ObjectPreviewContent{
-			Kind:      models.ObjectPreviewKindText,
-			Text:      string(removeUTF8BOM(data)),
-			Truncated: truncated,
-			Metadata:  metadata,
-		}), truncated, nil
-	}
-
 	return decoratePreviewContent(&models.ObjectPreviewContent{
-		Kind:     models.ObjectPreviewKindUnsupported,
-		Text:     "暂不支持该文件类型的在线预览，请下载后查看。",
-		Metadata: metadata,
-	}), false, nil
-}
-
-func isLikelyTextContent(data []byte) bool {
-	data = removeUTF8BOM(data)
-	if len(data) == 0 {
-		return true
-	}
-	if bytes.IndexByte(data, 0) >= 0 {
-		return false
-	}
-	if !utf8.Valid(data) {
-		return false
-	}
-
-	controlCount := 0
-	runeCount := 0
-	for len(data) > 0 {
-		r, size := utf8.DecodeRune(data)
-		if r == utf8.RuneError && size == 1 {
-			return false
-		}
-		runeCount++
-		if r < 0x20 {
-			switch r {
-			case '\t', '\n', '\r', '\f':
-			default:
-				controlCount++
-			}
-		}
-		data = data[size:]
-	}
-	if runeCount == 0 {
-		return true
-	}
-	return controlCount*100 <= runeCount
+		Kind:      models.ObjectPreviewKindUnsupported,
+		Text:      "暂不支持该文件类型的在线预览，请下载后查看。",
+		Truncated: truncated,
+		Metadata:  metadata,
+	}), truncated, nil
 }
 
 type containerContentHandler struct {

@@ -178,3 +178,6 @@ business/nfs/data/container/shapefile.zip
 *.shp
 *.shx
 *.zip
+*.udbx
+*.docx
+*.epub

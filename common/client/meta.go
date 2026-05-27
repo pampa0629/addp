@@ -38,13 +38,23 @@ type MetaScanOptions struct {
 
 // MetaScanResponse 元数据扫描响应
 type MetaScanResponse struct {
-	Status              string `json:"status"`
-	Message             string `json:"message"`
-	CatalogNodesScanned int    `json:"catalog_nodes_scanned"`
-	ItemsScanned        int    `json:"items_scanned"`
-	FieldsScanned       int    `json:"fields_scanned"`
-	DurationMs          int64  `json:"duration_ms"`
-	StartedAt           string `json:"started_at"`
+	Status              string                   `json:"status"`
+	Message             string                   `json:"message"`
+	CatalogNodesScanned int                      `json:"catalog_nodes_scanned"`
+	ItemsScanned        int                      `json:"items_scanned"`
+	FieldsScanned       int                      `json:"fields_scanned"`
+	DurationMs          int64                    `json:"duration_ms"`
+	StartedAt           string                   `json:"started_at"`
+	Extraction          *MetaExtractionScanStats `json:"extraction,omitempty"`
+}
+
+type MetaExtractionScanStats struct {
+	Documents   int `json:"documents"`
+	Extracted   int `json:"extracted"`
+	Unsupported int `json:"unsupported"`
+	Failed      int `json:"failed"`
+	Indexed     int `json:"indexed"`
+	IndexFailed int `json:"index_failed"`
 }
 
 // NewMetaClient 创建 Meta 客户端（用户认证方式）

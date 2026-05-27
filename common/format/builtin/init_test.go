@@ -1,6 +1,7 @@
 package builtin
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/addp/common/format"
@@ -14,7 +15,7 @@ func TestDocumentFormatCapabilityViewsReflectBackendParsingBoundary(t *testing.T
 	}{
 		{formatType: format.FormatPDF, wantInfo: true},
 		{formatType: format.FormatDOCX, wantTextReader: true},
-		{formatType: format.FormatPPTX},
+		{formatType: format.FormatPPTX, wantTextReader: true},
 		{formatType: format.FormatWPS},
 	}
 
@@ -34,5 +35,33 @@ func TestDocumentFormatCapabilityViewsReflectBackendParsingBoundary(t *testing.T
 				t.Fatalf("%s document text reader = %v, want %v", tt.formatType, view.Implementations.DocumentTextReader, tt.wantTextReader)
 			}
 		})
+	}
+}
+
+func TestUnknownFormatCapabilityViewRegistersBinaryReader(t *testing.T) {
+	reader, err := format.GetBinaryContentReader(format.FormatUnknown)
+	if err != nil {
+		t.Fatalf("GetBinaryContentReader(unknown) error = %v", err)
+	}
+	content, err := reader.ReadBinaryContent(t.Context(), strings.NewReader("abc"), 2, nil)
+	if err != nil {
+		t.Fatalf("ReadBinaryContent() error = %v", err)
+	}
+	if string(content.Bytes) != "ab" || !content.Truncated {
+		t.Fatalf("content = %#v, want truncated ab", content)
+	}
+
+	view, ok := format.GetFormatCapabilityView(format.FormatUnknown)
+	if !ok {
+		t.Fatal("expected unknown capability view")
+	}
+	if !view.Implementations.FormatPlugin {
+		t.Fatalf("unknown implementations = %#v, want format plugin", view.Implementations)
+	}
+	if !view.Implementations.BinaryContentReader {
+		t.Fatalf("unknown implementations = %#v, want binary content reader", view.Implementations)
+	}
+	if len(view.ContentReaders) != 1 || view.ContentReaders[0] != string(format.ContentReaderBinaryContent) {
+		t.Fatalf("unknown content readers = %#v, want binary_content only", view.ContentReaders)
 	}
 }

@@ -11,7 +11,7 @@ func (r *ProviderRegistry) RegisterFormatPlugin(plugin FormatPlugin) error {
 		return fmt.Errorf("format plugin cannot be nil")
 	}
 	formatType := plugin.Format()
-	if err := validateProviderFormat(formatType, "format plugin"); err != nil {
+	if err := validatePluginFormat(formatType); err != nil {
 		return err
 	}
 	descriptor := plugin.Descriptor()
@@ -37,6 +37,13 @@ func (r *ProviderRegistry) RegisterFormatPlugin(plugin FormatPlugin) error {
 func shouldRegisterPluginDescriptor(formatType FormatType) bool {
 	_, ok := GetFormatDescriptor(formatType)
 	return !ok
+}
+
+func validatePluginFormat(formatType FormatType) error {
+	if formatType == "" {
+		return fmt.Errorf("format plugin must define format")
+	}
+	return nil
 }
 
 func (r *ProviderRegistry) registerPluginImplementedProviders(plugin FormatPlugin) error {
@@ -107,6 +114,11 @@ func (r *ProviderRegistry) registerPluginImplementedProviders(plugin FormatPlugi
 	}
 	if reader, ok := plugin.(DocumentTextReader); ok {
 		if err := r.RegisterDocumentTextReader(reader); err != nil {
+			return err
+		}
+	}
+	if reader, ok := plugin.(BinaryContentReader); ok {
+		if err := r.RegisterBinaryContentReader(reader); err != nil {
 			return err
 		}
 	}

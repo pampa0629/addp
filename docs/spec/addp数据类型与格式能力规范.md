@@ -191,13 +191,15 @@ import _ "github.com/addp/common/format/builtin"
 | Transfer | 能否参与批量读写和 multi ref 提交 | batch read / write、multi read / write、commit policy | Transfer |
 | Provider hints | 实现了哪些 provider 家族 | table / document / media / container / graph / spatial | Registry、上层调用方 |
 
-当前代码中 `FormatCapability` 是能力声明；`FormatPlugin` 是格式包的代码入口；`FormatInfoProvider`、`TableInfoProvider`、`TableSampleReader`、`MultiTableInfoProvider`、`MultiTableSampleReader`、`ScopeTableInfoProvider`、`ScopeTableSampleReader`、`TableReaderProvider`、`TableWriterProvider`、`MultiTableReaderProvider`、`MultiTableWriterProvider`、`DocumentInfoProvider`、`DocumentTextReader`、`MediaInfoProvider`、`ContainerInfoProvider`、`ContainerChildResolver`、type mapper 等是具体实现能力。能力声明可以先于 plugin / provider 完整实现存在，因此文档必须区分“声明支持”和“已有实现”。
+当前代码中 `FormatCapability` 是能力声明；`FormatPlugin` 是格式包的代码入口；`FormatInfoProvider`、`TableInfoProvider`、`TableSampleReader`、`MultiTableInfoProvider`、`MultiTableSampleReader`、`ScopeTableInfoProvider`、`ScopeTableSampleReader`、`TableReaderProvider`、`TableWriterProvider`、`MultiTableReaderProvider`、`MultiTableWriterProvider`、`DocumentInfoProvider`、`DocumentTextReader`、`BinaryContentReader`、`MediaInfoProvider`、`ContainerInfoProvider`、`ContainerChildResolver`、type mapper 等是具体实现能力。能力声明可以先于 plugin / provider 完整实现存在，因此文档必须区分“声明支持”和“已有实现”。
 
 ### Format Identity 与 Format Detection
 
 `format identity` 定义“平台支持的这个格式是谁”，通常由 `FormatDescriptor` 表达；当该格式已有代码实现时，由 `FormatPlugin` 作为格式包主入口承载。它包含稳定格式 ID、默认 data type、布局、info provider、content reader、transfer 和横切能力声明。
 
 `format detection` 是“给定一个 content，判断它像哪个格式”的动态过程。它输入文件名、MIME、magic bytes、内容签名或 ref 上下文，输出指向某个 format identity 的识别结果。
+
+当扩展名、MIME、内容签名、plugin sniffer 和 magic bytes 都不能识别格式时，轻量文本探测属于 format detection 的最后兜底：若内容前缀可判定为 UTF-8 文本，则返回 `format=text`，上层再据此落为 `data_type=document`；否则继续保持 `format=unknown`，由 unknown 的 `BinaryContentReader` 处理非文本 raw binary 兜底。
 
 二者边界如下：
 
@@ -373,6 +375,10 @@ Format writer 负责编码格式，Engine writer 负责提交到目标存储。�
 
 上层模块做格式路由时，应优先依据 `format`、`data_type`、`providers`、`content_readers` 判断语义，再根据 `implementations` 决定能否直接调用后端实现。不能把 `providers.document_info=true` 理解为一定已经有 `DocumentTextReader`；例如 DOCX / WPS 当前声明为文档格式和 raw/range content reader，但后端正文解析实现尚未稳定。
 
+`raw_content` / `range_content` 是内容读取方式声明，不对应 `ProviderRegistry` 中的可调用 Go reader。它们表示编排层可以基于 engine capability、`common/contentio`、预签名 URL 或模块 fetcher 提供完整流 / 范围流；format 层只提供 `DescriptorHasContentReader` / `SupportsContentReader` 这类声明判断 helper。需要实际解码或抽取时，仍应使用 `DocumentTextReader`、`TableSampleReader`、`BinaryContentReader` 等已注册实现能力。
+
+Manager 的 `preview_material` 是前端展示材料协议，和 `content_readers` 不同层。`preview_material=raw_binary` 表示响应体里携带 base64 原始字节或展示层按原始二进制处理；它不是 `raw_content`、`range_content` 或 `binary_content` capability。format capability 名称不得写入 `preview_material`。
+
 能力发现视图不替代内置格式规范，也不作为实现进度清单。首批内置格式的确定性落地规则见 [ADDP 内置数据类型与文件格式规范](addp内置数据类型与文件格式规范.md)；当前代码实现状态以 `common/format/README.md` 和测试为准；未完成事项进入 `docs/next/common-format格式完善矩阵.md`。
 
 新增或调整格式后，应检查能力发现视图：
@@ -380,7 +386,7 @@ Format writer 负责编码格式，Engine writer 负责提交到目标存储。�
 1. `providers` 是否表达规范上的目标能力。
 2. `implementations` 是否只反映当前已注册的 Go 实现。
 3. `content_readers` 是否只描述内容读取方式，不包含前端渲染器或展示策略。
-4. 对未知二进制对象，能力发现视图不应新增普通 `binary` format；兜底展示只属于 Manager / Frontend 协议。
+4. 对未知二进制对象，能力发现视图不应新增普通 `binary` format；应通过内置 `unknown` format 的 `BinaryContentReader` 表达非文本 raw binary 兜底，上层再投影成自身展示或传输协议。
 
 ## 旧 FileMetadataExtractor 退出说明
 
@@ -458,6 +464,12 @@ info provider 只回答对应 data type 的元数据语义；sample / text reade
 `DocumentTextReader` 提供正文片段。raw content / range content 由对应 content reader 表达。二者都不负责 Manager 的最终前端 DTO。
 
 文档格式不要求都必须在后端完成解析。对于 WPS、DOCX、PPTX 这类后端不适合解析的格式，可以先只声明 raw content / range content reader；后续如需全文索引、摘要、脱敏或服务端导出，再补后端文本提取能力。
+
+### BinaryContentReader
+
+`unknown` 是内置 format identity，默认 data type 为 `unknown`。它只提供 `BinaryContentReader`，用于“不认识且非文本”的 raw binary 内容兜底。
+
+`BinaryContentReader` 接收调用方传入的 `io.Reader`，按 limit 返回原始字节片段和截断状态。它不做文本判断，不生成 `type_info.binary`，不把 binary 定义为新的 data type 或 format，也不返回 Manager DTO。上层模块应先把文本内容识别为 `data_type=document, format=text` 并走 `DocumentTextReader`；只有剩余 unknown 非文本内容才走 `format.GetBinaryContentReader(format.FormatUnknown)`。
 
 ### MediaInfoProvider
 

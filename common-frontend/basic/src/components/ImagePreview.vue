@@ -310,6 +310,11 @@ const rgbaFromRaster = (raster, width, height, samplesPerPixel) => {
   return output
 }
 
+const loadGeoTiff = () => {
+  const moduleName = 'geotiff'
+  return import(/* @vite-ignore */ moduleName)
+}
+
 const renderTiff = async () => {
   if (!isTiffImage.value || !imageSrc.value) return
   tiffLoading.value = true
@@ -317,7 +322,7 @@ const renderTiff = async () => {
   await nextTick()
   try {
     const [{ fromArrayBuffer }, arrayBuffer] = await Promise.all([
-      import('geotiff'),
+      loadGeoTiff(),
       fetchImageArrayBuffer(imageSrc.value)
     ])
     const tiff = await fromArrayBuffer(arrayBuffer)

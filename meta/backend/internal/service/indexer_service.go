@@ -87,10 +87,10 @@ func tableKindForIndex(tableInfo datatype.TableInfo) string {
 	return "table"
 }
 
-// IndexObjectAsset 索引对象资产到 Meilisearch（统一索引）
-func (s *IndexerService) IndexObjectAsset(resource *commonModels.Engine, tenantID, engineID uint, catalogResource metacatalog.StorageResource, relativePath, fullName string, item *models.MetaItem, extractedText string) {
+// IndexCatalogAsset 索引 catalog single item 资产到 Meilisearch（统一索引）。
+func (s *IndexerService) IndexCatalogAsset(resource *commonModels.Engine, tenantID, engineID uint, catalogResource metacatalog.StorageResource, relativePath, fullName string, item *models.MetaItem, extractedText string) bool {
 	if s.indexer == nil || !s.indexer.Enabled() || resource == nil || item == nil {
-		return
+		return false
 	}
 
 	attributes := copyJSONMap(item.Attributes)
@@ -171,8 +171,10 @@ func (s *IndexerService) IndexObjectAsset(resource *commonModels.Engine, tenantI
 
 	// 统一索引（包含基础资产信息和文档内容）
 	if err := s.indexer.IndexAsset(context.Background(), assetRecord); err != nil {
-		s.log.Warn("索引对象资产失败", "fingerprint", item.Fingerprint, "bucket", catalogResource.RootName, "path", catalogResource.Path, "error", err)
+		s.log.Warn("索引 catalog 资产失败", "fingerprint", item.Fingerprint, "root", catalogResource.RootName, "path", catalogResource.Path, "error", err)
+		return false
 	}
+	return true
 }
 
 // DeleteTablesFromIndex 从索引中删除表

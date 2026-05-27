@@ -18,6 +18,7 @@ import (
 	"github.com/addp/meta/internal/metapath"
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
+	"github.com/addp/meta/internal/scantask"
 	"gorm.io/gorm"
 )
 
@@ -53,28 +54,28 @@ func (s *FilesystemCatalogScanService) ScanPaths(
 	scanDepth string,
 	force bool,
 	reporter ScanProgressReporter,
-) (int, int, error) {
+) (int, int, scantask.ExtractionCounts, error) {
 	metaenrich.RegisterItemResolvers()
 
 	p, err := plugin.Get(resource.EngineType)
 	if err != nil {
-		return 0, 0, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
+		return 0, 0, scantask.ExtractionCounts{}, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
 	}
 
 	catalogProvider, ok := p.(plugin.CatalogProvider)
 	if !ok {
-		return 0, 0, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
+		return 0, 0, scantask.ExtractionCounts{}, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
 	}
 	itemTerm := catalogItemTermForPlugin(p, plugin.CatalogTermFile)
 	contentReader, ok := p.(plugin.ContentReadableProvider)
 	if !ok {
-		return 0, 0, fmt.Errorf("engine %s does not implement ContentReadableProvider", resource.EngineType)
+		return 0, 0, scantask.ExtractionCounts{}, fmt.Errorf("engine %s does not implement ContentReadableProvider", resource.EngineType)
 	}
 
 	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
 	allRoots, err := s.listRoots(context.Background(), resource, catalogProvider, connInfo)
 	if err != nil {
-		return 0, 0, fmt.Errorf("failed to list roots: %w", err)
+		return 0, 0, scantask.ExtractionCounts{}, fmt.Errorf("failed to list roots: %w", err)
 	}
 	pathToName := make(map[string]string, len(allRoots))
 	for _, r := range allRoots {
@@ -90,12 +91,13 @@ func (s *FilesystemCatalogScanService) ScanPaths(
 
 	resolvedPaths, err := resolveCatalogScanPaths(context.Background(), "未检测到可扫描的路径", paths, nil, nil, reporter)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, scantask.ExtractionCounts{}, err
 	}
 	paths = resolvedPaths
 
 	totalRoots := 0
 	totalItems := 0
+	extractionStats := scantask.ExtractionCounts{}
 
 	for i, rootPath := range paths {
 		rootPath = metapath.SanitizeFSPath(rootPath)
@@ -121,7 +123,8 @@ func (s *FilesystemCatalogScanService) ScanPaths(
 		totalRoots++
 
 		// 递归扫描目录
-		items, scanErr := s.scanDirectory(context.Background(), contentReader, catalogProvider, connInfo, resource, tenantID, rootPath, scanNode, rootPath == "", itemTerm, scanDepth, force)
+		items, pathExtractionStats, scanErr := s.scanDirectory(context.Background(), contentReader, catalogProvider, connInfo, resource, tenantID, rootPath, scanNode, rootPath == "", itemTerm, scanDepth, force)
+		extractionStats = mergeExtractionCounts(extractionStats, pathExtractionStats)
 		if scanErr != nil {
 			s.log.Warn("扫描目录失败", "path", rootPath, "error", scanErr)
 			_ = s.repo.FinalizeNodeState(rootNode, "failed", items, 0, scanErr.Error())
@@ -135,7 +138,7 @@ func (s *FilesystemCatalogScanService) ScanPaths(
 		}
 	}
 
-	return totalRoots, totalItems, nil
+	return totalRoots, totalItems, extractionStats, nil
 }
 
 func (s *FilesystemCatalogScanService) ensureFilesystemScanRoot(tenantID, engineID uint, rootName, scanPath string) (*models.MetaNode, *models.MetaNode, error) {
@@ -195,13 +198,14 @@ func (s *FilesystemCatalogScanService) scanDirectory(
 	itemTerm string,
 	scanDepth string,
 	force bool,
-) (int, error) {
+) (int, scantask.ExtractionCounts, error) {
 	files, subdirs, err := s.listDirectory(ctx, resource, catalogProvider, connInfo, dirPath)
 	if err != nil {
-		return 0, fmt.Errorf("failed to list directory %s: %w", dirPath, err)
+		return 0, scantask.ExtractionCounts{}, fmt.Errorf("failed to list directory %s: %w", dirPath, err)
 	}
 
 	totalItems := 0
+	extractionStats := scantask.ExtractionCounts{}
 
 	claimedPaths := metaitem.ResourceClaimSet{}
 
@@ -254,7 +258,7 @@ func (s *FilesystemCatalogScanService) scanDirectory(
 				}
 			}
 			if detection.Exclusive {
-				return totalItems, nil
+				return totalItems, extractionStats, nil
 			}
 		}
 	}
@@ -275,27 +279,39 @@ func (s *FilesystemCatalogScanService) scanDirectory(
 			totalItems++
 			continue
 		}
-		if fileAttrs, err := s.enrichSingleFileAttributes(ctx, contentReader, connInfo, resource, file, detected, isDeepScan); err == nil {
-			rowCount := itemRowCountFromAttributes(fileAttrs)
-			_, upsertErr := s.repo.UpsertItemWithDepth(
-				tenantID, resource.ID, parentNode,
-				itemTerm, itemName, fullName,
-				fileAttrs, rowCount, &file.Size, fileModifiedAtPtr(file.ModifiedAt),
-				scanDepth,
-			)
-			if upsertErr != nil {
-				s.log.Warn("保存文件对象失败", "path", file.Path, "error", upsertErr)
-			} else {
-				totalItems++
-				if detected.DataType == dataitem.DataTypeTable {
-					tableFields := commonJSON.InterfaceSlice(commonJSON.Value(fileAttrs, "type_info.table", "fields"))
-					if len(tableFields) > 0 {
-						s.log.Info("识别到 single 文件表", "path", file.Path, "name", itemName, "format", detected.Format, "field_count", len(tableFields))
-					}
-				}
+		result, err := catalogItemProcessor(s.repo, s.indexer, s.log).Process(ctx, catalogSingleItemInput{
+			Resource:            resource,
+			TenantID:            tenantID,
+			EngineID:            resource.ID,
+			ParentNode:          parentNode,
+			ItemType:            itemTerm,
+			ItemName:            itemName,
+			FullName:            fullName,
+			Attributes:          metaattr.JSONMap(metaattr.BuildAttributes(metaitem.AttributeInput(detected))),
+			Detected:            detected,
+			ContentReader:       contentReader,
+			ConnInfo:            connInfo,
+			CatalogPath:         file.CatalogPath,
+			CatalogPathFor:      func(string) plugin.CatalogPath { return file.CatalogPath },
+			PhysicalPath:        file.Path,
+			IndexPath:           file.Path,
+			IndexRelativePath:   file.Path,
+			SizeBytes:           file.Size,
+			DataUpdatedAt:       fileModifiedAtPtr(file.ModifiedAt),
+			ScanDepth:           scanDepth,
+			IncludeContentIndex: true,
+		})
+		if err != nil {
+			s.log.Warn("保存 single 文件对象失败", "path", file.Path, "error", err)
+			continue
+		}
+		extractionStats = mergeExtractionCounts(extractionStats, result.Extraction)
+		totalItems++
+		if detected.DataType == dataitem.DataTypeTable && result.Item != nil {
+			tableFields := commonJSON.InterfaceSlice(commonJSON.Value(result.Item.Attributes, "type_info.table", "fields"))
+			if len(tableFields) > 0 {
+				s.log.Info("识别到 single 文件表", "path", file.Path, "name", itemName, "format", detected.Format, "field_count", len(tableFields))
 			}
-		} else {
-			s.log.Warn("提取 single 资源属性失败", "path", file.Path, "error", err)
 		}
 	}
 
@@ -311,7 +327,8 @@ func (s *FilesystemCatalogScanService) scanDirectory(
 		}
 
 		_ = s.repo.ResetNodeState(subdirNode, "running")
-		items, scanErr := s.scanDirectory(ctx, contentReader, catalogProvider, connInfo, resource, tenantID, subdir.Path, subdirNode, false, itemTerm, scanDepth, force)
+		items, subdirExtractionStats, scanErr := s.scanDirectory(ctx, contentReader, catalogProvider, connInfo, resource, tenantID, subdir.Path, subdirNode, false, itemTerm, scanDepth, force)
+		extractionStats = mergeExtractionCounts(extractionStats, subdirExtractionStats)
 		if scanErr != nil {
 			s.log.Warn("递归扫描子目录失败", "path", subdir.Path, "error", scanErr)
 			_ = s.repo.FinalizeNodeState(subdirNode, "failed", items, 0, scanErr.Error())
@@ -321,7 +338,7 @@ func (s *FilesystemCatalogScanService) scanDirectory(
 		totalItems += items
 	}
 
-	return totalItems, nil
+	return totalItems, extractionStats, nil
 }
 
 func fileModifiedAtPtr(value time.Time) *time.Time {
@@ -388,37 +405,6 @@ func (s *FilesystemCatalogScanService) persistFileCatalogDetectedItem(
 		"name", itemPlan.ItemName,
 	)
 	return true
-}
-
-func (s *FilesystemCatalogScanService) enrichSingleFileAttributes(
-	ctx context.Context,
-	contentReader plugin.ContentReadableProvider,
-	connInfo plugin.ConnectionInfo,
-	resource *commonModels.Engine,
-	file plugin.FileEntry,
-	detected *metaitem.DetectedItem,
-	includeContentIndex bool,
-) (models.JSONMap, error) {
-	if detected == nil {
-		detected = metaitem.InferSingleResourceItem(file)
-	}
-	attrs := metaattr.JSONMap(metaattr.BuildAttributes(metaitem.AttributeInput(detected)))
-	_, _, err := metaenrich.EnrichResourceAttributes(ctx, attrs, metaenrich.ResourceAttributesInput{
-		ContentReader:       contentReader,
-		ConnInfo:            connInfo,
-		EngineID:            resource.ID,
-		Item:                detected,
-		PhysicalPath:        file.Path,
-		SizeBytes:           file.Size,
-		IncludeContentIndex: includeContentIndex,
-		CatalogPathFor: func(string) plugin.CatalogPath {
-			return file.CatalogPath
-		},
-	})
-	if err != nil {
-		s.log.Warn("提取 single 文件深度属性失败，保留基础属性", "path", file.Path, "format", detected.Format, "error", err)
-	}
-	return attrs, nil
 }
 
 func (s *FilesystemCatalogScanService) resolveFileCatalogDirectoryItems(

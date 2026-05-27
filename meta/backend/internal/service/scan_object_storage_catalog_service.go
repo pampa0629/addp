@@ -8,21 +8,18 @@ import (
 	"strings"
 	"time"
 
-	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/extractor"
-	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/metaenrich"
-	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/metapath"
-	"github.com/addp/meta/internal/metatext"
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/scanchange"
+	"github.com/addp/meta/internal/scantask"
 	"gorm.io/gorm"
 )
 
@@ -41,6 +38,12 @@ type objectCatalogPathTarget struct {
 	Bucket string
 	Prefix string
 	Object string
+}
+
+type ObjectCatalogScanResult struct {
+	CatalogNodes int
+	Items        int
+	Extraction   scantask.ExtractionCounts
 }
 
 func ensureObjectCatalogNodeAggregate(stats map[uint]*objectCatalogNodeAggregate, node *models.MetaNode) *objectCatalogNodeAggregate {
@@ -208,7 +211,7 @@ func (s *ObjectStorageCatalogScanService) ScanPaths(
 	scanDepth string,
 	force bool,
 	reporter ScanProgressReporter,
-) (int, int, error) {
+) (ObjectCatalogScanResult, error) {
 	metaenrich.RegisterItemResolvers()
 
 	resourceID := resource.ID
@@ -218,12 +221,12 @@ func (s *ObjectStorageCatalogScanService) ScanPaths(
 
 	p, err := plugin.Get(resource.EngineType)
 	if err != nil {
-		return 0, 0, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
+		return ObjectCatalogScanResult{}, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
 	}
 
 	catalogProvider, ok := p.(plugin.CatalogProvider)
 	if !ok {
-		return 0, 0, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
+		return ObjectCatalogScanResult{}, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
 	}
 	itemTerm := catalogItemTermForPlugin(p, plugin.CatalogTermObject)
 
@@ -246,15 +249,10 @@ func (s *ObjectStorageCatalogScanService) ScanPaths(
 		reporter,
 	)
 	if err != nil {
-		return 0, 0, err
+		return ObjectCatalogScanResult{}, err
 	}
 
-	buckets, objects, err := s.scanObjectCatalogPaths(resource, tenantID, resourceID, catalogProvider, paths, scanDepth, force, reporter, itemTerm)
-	if err != nil {
-		return 0, 0, err
-	}
-
-	return buckets, objects, nil
+	return s.scanObjectCatalogPaths(resource, tenantID, resourceID, catalogProvider, paths, scanDepth, force, reporter, itemTerm)
 }
 
 // ============================================================================
@@ -271,7 +269,7 @@ func (s *ObjectStorageCatalogScanService) scanObjectCatalogPaths(
 	force bool,
 	reporter ScanProgressReporter,
 	itemTerm string,
-) (int, int, error) {
+) (ObjectCatalogScanResult, error) {
 	s.log.Info("进入 scanObjectCatalogPaths",
 		"engine_id", engineID,
 		"tenant_id", tenantID,
@@ -287,6 +285,7 @@ func (s *ObjectStorageCatalogScanService) scanObjectCatalogPaths(
 
 	totalBuckets := 0
 	totalObjects := 0
+	extractionStats := scantask.ExtractionCounts{}
 	total := len(paths)
 	completed := 0
 
@@ -357,7 +356,7 @@ func (s *ObjectStorageCatalogScanService) scanObjectCatalogPaths(
 			attrs := models.JSONMap{"bucket": bucketName}
 			bucketNode, err = s.repo.UpsertNode(tenantID, engineID, nil, "bucket", bucketName, &bucketName, attrs)
 			if err != nil {
-				return totalBuckets, totalObjects, err
+				return ObjectCatalogScanResult{CatalogNodes: totalBuckets, Items: totalObjects, Extraction: extractionStats}, err
 			}
 			bucketNodes[bucketName] = bucketNode
 			totalBuckets++
@@ -367,7 +366,7 @@ func (s *ObjectStorageCatalogScanService) scanObjectCatalogPaths(
 		if fullBucket {
 			if !processedBuckets[bucketName] {
 				if err := s.repo.ResetNodeState(bucketNode, "running"); err != nil {
-					return totalBuckets, totalObjects, err
+					return ObjectCatalogScanResult{CatalogNodes: totalBuckets, Items: totalObjects, Extraction: extractionStats}, err
 				}
 			}
 			processedBuckets[bucketName] = true
@@ -400,7 +399,7 @@ func (s *ObjectStorageCatalogScanService) scanObjectCatalogPaths(
 			"fullBucket", fullBucket,
 			"resourceCount", len(resources),
 			"scanDepth", scanDepth)
-		objectCount, err := s.persistObjectResources(resource, tenantID, engineID, bucketNode, resources, nodeStats, fullBucket, scanDepth, force, scanPathPrefix, scannedFingerprints, itemTerm)
+		objectCount, pathExtractionStats, err := s.persistObjectResources(resource, tenantID, engineID, bucketNode, resources, nodeStats, fullBucket, scanDepth, force, scanPathPrefix, scannedFingerprints, itemTerm)
 		if err != nil {
 			s.log.Error("对象 catalog 元数据持久化失败",
 				"engine_id", engineID,
@@ -411,6 +410,7 @@ func (s *ObjectStorageCatalogScanService) scanObjectCatalogPaths(
 			continue
 		}
 		totalObjects += objectCount
+		extractionStats = mergeExtractionCounts(extractionStats, pathExtractionStats)
 		completed++
 		if reporter != nil {
 			reporter.Advance(rawPath, completed, total, map[string]interface{}{"objects": objectCount})
@@ -491,7 +491,7 @@ func (s *ObjectStorageCatalogScanService) scanObjectCatalogPaths(
 		"objects", totalObjects,
 	)
 
-	return totalBuckets, totalObjects, nil
+	return ObjectCatalogScanResult{CatalogNodes: totalBuckets, Items: totalObjects, Extraction: extractionStats}, nil
 }
 
 // persistObjectResources 持久化对象 catalog item 到数据库
@@ -515,7 +515,7 @@ func (s *ObjectStorageCatalogScanService) scanObjectCatalogPaths(
 //   - scanPathPrefix: 扫描路径前缀
 //   - scannedFingerprints: 已扫描对象的指纹集合
 //
-// 返回：(持久化对象数量, error)
+// 返回：(持久化对象数量, 文档抽取统计, error)
 func (s *ObjectStorageCatalogScanService) persistObjectResources(
 	resource *commonModels.Engine,
 	tenantID, engineID uint,
@@ -528,15 +528,16 @@ func (s *ObjectStorageCatalogScanService) persistObjectResources(
 	scanPathPrefix string,
 	scannedFingerprints map[string]bool,
 	itemTerm string,
-) (int, error) {
+) (int, scantask.ExtractionCounts, error) {
 	objects := 0
+	extractionStats := scantask.ExtractionCounts{}
 	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
 	enginePlugin, err := plugin.Get(resource.EngineType)
 	if err != nil {
-		return 0, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
+		return 0, extractionStats, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
 	}
 	readableProvider, _ := enginePlugin.(plugin.ContentReadableProvider)
-	if strings.EqualFold(scanDepth, "deep") && readableProvider != nil {
+	if readableProvider != nil {
 		s.detectObjectCatalogResourceFormats(context.Background(), readableProvider, connInfo, resources)
 	}
 
@@ -550,7 +551,7 @@ func (s *ObjectStorageCatalogScanService) persistObjectResources(
 			"bucket", bucketNode.Name)
 		node, err := s.repo.EnsureObjectCatalogPrefixPath(tenantID, engineID, bucketNode, scanPathPrefix)
 		if err != nil {
-			return objects, err
+			return objects, extractionStats, err
 		}
 		if node != nil && node != bucketNode {
 			basePrefixNode = node
@@ -573,7 +574,7 @@ func (s *ObjectStorageCatalogScanService) persistObjectResources(
 	}
 	compositeCount, err := s.persistObjectCatalogCompositeItems(tenantID, engineID, bucketNode, basePrefixNode, compositeItems, stats, includeBucketAggregate, scanPathPrefix, scannedFingerprints, itemTerm)
 	if err != nil {
-		return objects, err
+		return objects, extractionStats, err
 	}
 	objects += compositeCount
 
@@ -634,7 +635,7 @@ func (s *ObjectStorageCatalogScanService) persistObjectResources(
 				}
 				childNode, err := s.repo.UpsertNode(tenantID, engineID, currentParent, "prefix", segment, &fullName, attrs)
 				if err != nil {
-					return objects, err
+					return objects, extractionStats, err
 				}
 				currentParent = childNode
 				parentChain = append(parentChain, childNode)
@@ -657,7 +658,7 @@ func (s *ObjectStorageCatalogScanService) persistObjectResources(
 		// 检查记录是否已存在（包括软删除的记录）
 		existingItem, itemExists, err := s.repo.FindItemByFingerprintUnscoped(itemPlan.Fingerprint)
 		if err != nil {
-			return objects, err
+			return objects, extractionStats, err
 		}
 		needsUpdate := force || scanchange.ShouldUpdateStorageResource(existingItem, catalogResource) || !itemExists
 		if strings.EqualFold(scanDepth, "deep") && existingItem != nil && existingItem.ScannedDepth != models.ScannedDepthDeep {
@@ -699,8 +700,6 @@ func (s *ObjectStorageCatalogScanService) persistObjectResources(
 			enhancedAttrs = itemPlan.Attributes
 		}
 
-		sizeVal := catalogResource.SizeBytes
-
 		// fullName 已在上方通过 JoinObjectPath(bucket, dir, name) 计算，直接复用
 		// 不再基于 scanPathPrefix 重新拼接，避免前缀重复（如 bucket/prefix/prefix/file）
 
@@ -714,33 +713,33 @@ func (s *ObjectStorageCatalogScanService) persistObjectResources(
 			"currentParent_name", currentParent.Name,
 			"objectName", itemPlan.ObjectName)
 
-		if strings.EqualFold(scanDepth, "deep") {
-			if err := enrichObjectCatalogSingleResourceAttributes(context.Background(), enhancedAttrs, readableProvider, connInfo, engineID, catalogResource, itemPlan.DataItem, true); err != nil {
-				s.log.Warn("提取对象 single 资源信息失败，保留基础属性", "bucket", catalogResource.RootName, "path", catalogResource.Path, "error", err)
-			}
-		} else {
-			metaitem.ApplyContainerSummary(enhancedAttrs, itemPlan.DataItem)
-		}
-		extractedText := ""
-		if strings.EqualFold(scanDepth, "deep") {
-			if contentHash, err := computeContentSHA256(context.Background(), readableProvider, connInfo, catalogResource.CatalogPath); err != nil {
-				s.log.Warn("计算对象内容指纹失败", "bucket", catalogResource.RootName, "path", catalogResource.Path, "error", err)
-			} else {
-				setStorageContentHash(enhancedAttrs, contentHash)
-			}
-			extractedText = extractObjectCatalogDocumentText(context.Background(), enhancedAttrs, readableProvider, connInfo, engineID, catalogResource, itemPlan.DataItem)
-		}
-
-		rowCount := itemRowCountFromAttributes(enhancedAttrs)
-		item, err := s.repo.UpsertItemWithDepth(tenantID, engineID, currentParent, itemPlan.ItemType, itemPlan.ItemName, itemPlan.FullName, enhancedAttrs, rowCount, &sizeVal, catalogResource.LastModified, scanDepth)
+		result, err := catalogItemProcessor(s.repo, s.indexer, s.log).Process(context.Background(), catalogSingleItemInput{
+			Resource:            resource,
+			TenantID:            tenantID,
+			EngineID:            engineID,
+			ParentNode:          currentParent,
+			ItemType:            itemPlan.ItemType,
+			ItemName:            itemPlan.ItemName,
+			FullName:            itemPlan.FullName,
+			Attributes:          enhancedAttrs,
+			Detected:            itemPlan.DataItem,
+			ContentReader:       readableProvider,
+			ConnInfo:            connInfo,
+			CatalogPath:         catalogResource.CatalogPath,
+			CatalogPathFor:      func(string) plugin.CatalogPath { return catalogResource.CatalogPath },
+			PhysicalPath:        catalogResource.FullPath,
+			IndexRootName:       catalogResource.RootName,
+			IndexPath:           catalogResource.Path,
+			IndexRelativePath:   trimmed,
+			SizeBytes:           catalogResource.SizeBytes,
+			DataUpdatedAt:       catalogResource.LastModified,
+			ScanDepth:           scanDepth,
+			IncludeContentIndex: true,
+		})
 		if err != nil {
-			return objects, err
+			return objects, extractionStats, err
 		}
-
-		// 只在deep扫描时索引（basic扫描的数据不完整）
-		if scanDepth == "deep" {
-			s.indexer.IndexObjectAsset(resource, tenantID, engineID, catalogResource, trimmed, itemPlan.FullName, item, extractedText)
-		}
+		extractionStats = mergeExtractionCounts(extractionStats, result.Extraction)
 
 		objects++
 		for idx, node := range parentChain {
@@ -756,7 +755,7 @@ func (s *ObjectStorageCatalogScanService) persistObjectResources(
 	if includeBucketAggregate {
 		ensureObjectCatalogNodeAggregate(stats, bucketNode)
 	}
-	return objects, nil
+	return objects, extractionStats, nil
 }
 
 func (s *ObjectStorageCatalogScanService) persistObjectCatalogCompositeItems(
@@ -869,55 +868,6 @@ func itemRowCountFromAttributes(attrs map[string]interface{}) *int64 {
 	return &rowCount
 }
 
-func extractObjectCatalogDocumentText(
-	ctx context.Context,
-	attrs models.JSONMap,
-	readableProvider plugin.ContentReadableProvider,
-	connInfo plugin.ConnectionInfo,
-	engineID uint,
-	catalogResource metacatalog.StorageResource,
-	item *metaitem.DetectedItem,
-) string {
-	if attrs == nil || readableProvider == nil || item == nil || item.DataType != datatype.DataTypeDocument {
-		return ""
-	}
-	formatName := strings.TrimSpace(item.Format)
-	if formatName == "" {
-		formatName = commonJSON.String(attrs, "item", "format")
-	}
-	if formatName == "" {
-		return ""
-	}
-	reader, err := format.GetDocumentTextReader(format.FormatType(strings.ToLower(formatName)))
-	if err != nil {
-		return ""
-	}
-	rc, err := readableProvider.OpenContent(ctx, connInfo, catalogResource.CatalogPath, plugin.ReadOptions{})
-	if err != nil {
-		metaattr.SetExtraction(attrs, "text_extracted", false)
-		metaattr.SetExtraction(attrs, "extractor_available", true)
-		return ""
-	}
-	defer rc.Close()
-
-	limit := int64(metatext.DocumentContentRuneLimit)
-	text, truncated, err := reader.ReadDocumentText(ctx, rc, limit, nil)
-	if err != nil {
-		metaattr.SetExtraction(attrs, "text_extracted", false)
-		metaattr.SetExtraction(attrs, "extractor_available", true)
-		return ""
-	}
-	preview := metatext.PreviewText(text, metatext.DocumentPreviewRuneLimit)
-	metaattr.SetExtraction(attrs, "extractor_available", true)
-	metaattr.SetExtraction(attrs, "text_extracted", true)
-	metaattr.SetExtraction(attrs, "extractor", "common_format:"+strings.ToLower(formatName))
-	metaattr.SetExtraction(attrs, "plain_text_preview", preview)
-	metaattr.SetExtraction(attrs, "text_truncated", truncated)
-	metaattr.SetExtraction(attrs, "index_ref", "meilisearch:assets:"+itemFingerprintForExtraction(engineID, catalogResource))
-	metaattr.MergeAttributeMaps(attrs, metaattr.DocumentInfoAttributes(&datatype.DocumentInfo{TextExtracted: true}))
-	return text
-}
-
 func itemFingerprintForExtraction(engineID uint, catalogResource metacatalog.StorageResource) string {
 	fullName := catalogResource.FullPath
 	if fullName == "" {
@@ -945,44 +895,4 @@ func (s *ObjectStorageCatalogScanService) ensureObjectCatalogPrefixNodes(
 		ensureObjectCatalogNodeAggregate(stats, node)
 	}
 	return parentNode, nil
-}
-
-func enrichObjectCatalogSingleResourceAttributes(
-	ctx context.Context,
-	attrs models.JSONMap,
-	readableProvider plugin.ContentReadableProvider,
-	connInfo plugin.ConnectionInfo,
-	engineID uint,
-	catalogResource metacatalog.StorageResource,
-	item *metaitem.DetectedItem,
-	includeContentIndex bool,
-) error {
-	if readableProvider == nil || item == nil {
-		return nil
-	}
-	physicalPath := catalogResource.FullPath
-	_, _, err := metaenrich.EnrichResourceAttributes(ctx, attrs, metaenrich.ResourceAttributesInput{
-		ContentReader:       readableProvider,
-		ConnInfo:            connInfo,
-		EngineID:            engineID,
-		Item:                item,
-		PhysicalPath:        physicalPath,
-		SizeBytes:           catalogResource.SizeBytes,
-		IncludeContentIndex: includeContentIndex,
-		CatalogPathFor: func(string) plugin.CatalogPath {
-			return catalogResource.CatalogPath
-		},
-	})
-	if err != nil {
-		return err
-	}
-	metaattr.SetStorage(attrs, "bucket", catalogResource.RootName)
-	dir, name := commonModels.SplitObjectPath(catalogResource.Path)
-	metaattr.SetStorage(attrs, "path", dir)
-	metaattr.SetStorage(attrs, "name", name)
-	metaattr.SetStorage(attrs, "physical_path", physicalPath)
-	if catalogResource.LastModified != nil {
-		metaattr.SetStorage(attrs, "last_modified_at", catalogResource.LastModified)
-	}
-	return nil
 }

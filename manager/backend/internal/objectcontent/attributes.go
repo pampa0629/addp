@@ -124,17 +124,7 @@ func containerChildRefsFromMap(child map[string]interface{}) []datatype.Containe
 }
 
 func normalizeFileTableFormat(formatName string) format.FormatType {
-	normalized := strings.ToLower(strings.TrimSpace(formatName))
-	if normalized == "" {
-		return format.FormatUnknown
-	}
-	if byExt := format.DetectFormat("file."+strings.TrimPrefix(normalized, "."), nil); byExt != format.FormatUnknown {
-		return byExt
-	}
-	if byMime := format.MIMEToFormat(normalized); byMime != format.FormatUnknown {
-		return byMime
-	}
-	return format.FormatType(normalized)
+	return format.NormalizeFormat(formatName)
 }
 
 func isGenericContentType(contentType string) bool {

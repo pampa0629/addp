@@ -90,6 +90,7 @@ const (
 	ContentReaderMultiTableSample = "multi_table_sample"
 	ContentReaderScopeTableSample = "scope_table_sample"
 	ContentReaderDocumentText     = "document_text"
+	ContentReaderBinaryContent    = "binary_content"
 	ContentReaderRawContent       = "raw_content"
 	ContentReaderRangeContent     = "range_content"
 	ContentReaderMediaThumbnail   = "media_thumbnail"

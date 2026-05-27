@@ -10,13 +10,21 @@ func TestNewScanResponse(t *testing.T) {
 
 	start := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
 	completed := start.Add(250 * time.Millisecond)
-	resp := NewScanResponse("success", "done", ScanCounts{CatalogNodes: 1, Items: 2, Fields: 3}, start, completed)
+	resp := NewScanResponse("success", "done", ScanCounts{
+		CatalogNodes: 1,
+		Items:        2,
+		Fields:       3,
+		Extraction:   ExtractionCounts{Documents: 1, Extracted: 1, Indexed: 1},
+	}, start, completed)
 
 	if resp.DurationMs != 250 || resp.StartedAt != "2026-05-07 12:00:00" {
 		t.Fatalf("response timing = %#v", resp)
 	}
 	if resp.CatalogNodesScanned != 1 || resp.ItemsScanned != 2 || resp.FieldsScanned != 3 {
 		t.Fatalf("response counts = %#v", resp)
+	}
+	if resp.Extraction == nil || resp.Extraction.Documents != 1 || resp.Extraction.Indexed != 1 {
+		t.Fatalf("response extraction = %#v", resp.Extraction)
 	}
 }
 

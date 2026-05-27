@@ -1680,6 +1680,29 @@ const docTemplate = `{
                 "FieldTypeMultiPoint"
             ]
         },
+        "github_com_addp_meta_internal_models.ExtractionScanStats": {
+            "type": "object",
+            "properties": {
+                "documents": {
+                    "type": "integer"
+                },
+                "extracted": {
+                    "type": "integer"
+                },
+                "failed": {
+                    "type": "integer"
+                },
+                "index_failed": {
+                    "type": "integer"
+                },
+                "indexed": {
+                    "type": "integer"
+                },
+                "unsupported": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_meta_internal_models.MetaItemLite": {
             "type": "object",
             "properties": {
@@ -1908,6 +1931,9 @@ const docTemplate = `{
                 },
                 "duration_ms": {
                     "type": "integer"
+                },
+                "extraction": {
+                    "$ref": "#/definitions/github_com_addp_meta_internal_models.ExtractionScanStats"
                 },
                 "fields_scanned": {
                     "type": "integer"

@@ -132,10 +132,14 @@
     "explorer": {
       "storageEngines": "Storage Engines",
       "countText": "{count} items",
-      "refresh": "Refresh",
+      "refresh": "Deep Scan",
       "vectorize": "Vectorize",
       "batchVectorize": "Batch Vectorize",
       "refreshSuccess": "Refreshed successfully",
+      "refreshTooltip": "Rescan metadata and refresh the full-text index",
+      "deepScanSuccess": "Deep scan completed",
+      "deepScanSuccessWithStats": "Deep scan completed: {nodes} nodes, {items} items, {fields} fields",
+      "deepScanSuccessWithExtractionStats": "Deep scan completed: {nodes} nodes, {items} items, {fields} fields; documents {documents}, extracted {extracted}, unsupported {unsupported}, failed {failed}, indexed {indexed}, index failed {indexFailed}",
       "refreshFailed": "Refresh failed: {error}",
       "loadEngineFailed": "Failed to load engine content: {error}",
       "loadChildrenFailed": "Failed to load children: {error}",
@@ -322,7 +326,13 @@
           "hasCpg": "Has CPG",
           "hasPrj": "Has PRJ",
           "extentSrid": "Extent SRID",
+          "status": "Status",
+          "reason": "Reason",
           "extractorAvailable": "Extractor Available",
+          "extractor": "Extractor",
+          "textExtracted": "Full Text Extracted",
+          "textTruncated": "Full Text Truncated",
+          "plainTextPreview": "Text Preview",
           "relkind": "Relkind",
           "tableType": "Table Type",
           "kind": "Kind",
@@ -351,11 +361,27 @@
           "files": "Files",
           "anchors": "Anchors",
           "contentIndex": "Content Index",
+          "contentHash": "Content Hash",
+          "indexRef": "Search Index Reference",
           "schemaVersion": "Schema Version",
           "graphModel": "Graph Model",
           "graphDirected": "Directed",
           "graphNodeCount": "Nodes",
           "graphRelationshipCount": "Relationships"
+        },
+        "fieldTooltips": {
+          "contentHash": "SHA256 calculated from the file binary content; identical content has the same hash.",
+          "indexRef": "Reference to the item record in the Meilisearch assets index; the suffix is the item fingerprint, not the content hash."
+        },
+        "extractionStatus": {
+          "completed": "Completed",
+          "unsupported": "Unsupported",
+          "failed": "Failed"
+        },
+        "extractionReason": {
+          "document_text_reader_unavailable": "No full-text reader is available for this format",
+          "content_open_failed": "Failed to open file content",
+          "document_text_read_failed": "Failed to read full text"
         },
         "tables": {
           "graphNodeShapes": "Node Types",
