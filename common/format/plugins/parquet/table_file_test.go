@@ -15,16 +15,16 @@ func TestIsTableFileExt(t *testing.T) {
 	}
 }
 
-func TestIsTableFileType(t *testing.T) {
+func TestIsTableFileFormat(t *testing.T) {
 	t.Parallel()
 
 	for _, fileType := range []string{"parquet", "orc", "avro", " Parquet "} {
-		if !IsTableFileType(fileType) {
-			t.Fatalf("IsTableFileType(%q) = false, want true", fileType)
+		if !IsTableFileFormat(fileType) {
+			t.Fatalf("IsTableFileFormat(%q) = false, want true", fileType)
 		}
 	}
-	if IsTableFileType("json") {
-		t.Fatal("IsTableFileType(json) = true, want false")
+	if IsTableFileFormat("json") {
+		t.Fatal("IsTableFileFormat(json) = true, want false")
 	}
 }
 

@@ -3,7 +3,7 @@ package models
 // DataLocation 数据位置定义（输入/输出统一使用）
 // 用于在 Orchestrator → Develop → Python Workflow 的数据流中传递数据位置信息
 type DataLocation struct {
-	// 数据源类型
+	// 数据源位置类型；"file" 表示存储路径位置，不是 ADDP data_type=file。
 	SourceType string `json:"source_type"` // "table"|"file"|"geojson"|"reference"
 
 	// 存储引擎 ID（除了 geojson 和 reference）
@@ -37,7 +37,7 @@ func NewTableLocation(engineID uint, table string, schema string) *DataLocation 
 	}
 }
 
-// NewFileLocation 创建文件类型的数据位置
+// NewFileLocation 创建存储路径型数据位置；这里的 file 是位置类型，不是 ADDP DataType。
 func NewFileLocation(engineID uint, path string, format string) *DataLocation {
 	return &DataLocation{
 		SourceType: "file",
@@ -130,7 +130,7 @@ func (d *DataLocation) Validate() error {
 		}
 
 	case "file":
-		// 文件类型必须有 engine_id 和 path
+		// 存储路径位置必须有 engine_id 和 path
 		if d.EngineID == nil {
 			return ErrInvalidDataLocation("engine_id is required for file source")
 		}

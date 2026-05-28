@@ -129,7 +129,7 @@ func (p *fileCatalogPreviewProvider) previewFile(
 	}
 
 	preview.Object.SizeBytes = meta.Size
-	preview.Object.ObjectKey = filePath
+	preview.Object.StorageRef = filePath
 	if !meta.ModifiedAt.IsZero() {
 		mod := meta.ModifiedAt
 		preview.Object.LastModified = &mod

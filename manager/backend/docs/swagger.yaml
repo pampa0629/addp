@@ -1526,43 +1526,6 @@ paths:
       summary: 更新MVT生成任务配置 | Update MVT generation task configuration
       tags:
       - Manager
-  /object-stream:
-    get:
-      description: 支持 Range 请求的对象内容流式传输，用于图片、视频等媒体在线预览 | Object content streaming
-        with Range request support for media preview
-      parameters:
-      - description: 存储引擎ID | Engine ID
-        in: query
-        name: engine_id
-        required: true
-        type: integer
-      - description: 对象存储路径 | Object storage path
-        in: query
-        name: object_key
-        required: true
-        type: string
-      produces:
-      - application/octet-stream
-      responses:
-        "200":
-          description: 对象内容流 | Object content stream
-        "206":
-          description: 部分对象内容流 | Partial object content stream
-        "400":
-          description: 请求参数错误 | Bad request
-          schema:
-            additionalProperties: true
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 对象内容流式传输 | Object content streaming
-      tags:
-      - Manager
   /preview:
     get:
       description: 根据资源定位符预览数据内容，支持表格、文件等多种格式 | Preview data content by resource locator,
@@ -1824,6 +1787,44 @@ paths:
       security:
       - BearerAuth: []
       summary: 删除搜索历史记录 | Delete search history item
+      tags:
+      - Manager
+  /storage-stream:
+    get:
+      description: 支持 Range 请求的存储叶子内容流式传输，用于图片、视频、下载等内容访问；storage_ref 在对象存储中为 bucket/path，在文件系统中为文件路径
+        | Storage leaf content streaming with Range request support; storage_ref is
+        bucket/path for object catalogs and file path for file catalogs
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: query
+        name: engine_id
+        required: true
+        type: integer
+      - description: 存储内容引用 | Storage content reference
+        in: query
+        name: storage_ref
+        required: true
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: 存储内容流 | Storage content stream
+        "206":
+          description: 部分存储内容流 | Partial storage content stream
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 存储内容流式传输 | Storage content streaming
       tags:
       - Manager
   /tasks:

@@ -150,7 +150,7 @@ func SetupRouter(
 		api.POST("/tree/:engine_id/refresh", explorerHandler.RefreshNode)
 		api.POST("/engines/:id/items/refresh", metadataHandler.RefreshItem)
 		api.GET("/preview", explorerHandler.Preview)
-		api.GET("/object-stream", explorerHandler.ObjectStream)
+		api.GET("/storage-stream", explorerHandler.StorageStream)
 
 		// ============================================================
 		// 空间数据服务路由组

@@ -133,10 +133,10 @@ const imageMetadata = computed(() => {
   const height = Number(media.height)
   return {
     ...media,
-    resolution: media.resolution || (width && height ? `${width} × ${height}` : ''),
-    megapixels: media.megapixels || (width && height ? (width * height) / 1000000 : 0),
-    aspect_ratio: media.aspect_ratio || (width && height ? (width / height).toFixed(2) : ''),
-    color_space: media.color_space || media.color_mode || media.mode || ''
+    resolution: width && height ? `${width} × ${height}` : '',
+    megapixels: width && height ? (width * height) / 1000000 : 0,
+    aspect_ratio: width && height ? (width / height).toFixed(2) : '',
+    color_space: media.color_space || ''
   }
 })
 
@@ -186,7 +186,7 @@ const isTiffImage = computed(() => {
 
 const withAuthToken = (url) => {
   if (!url || typeof url !== 'string') return ''
-  if (!url.startsWith('/api/v1/manager/object-stream')) return url
+  if (!url.startsWith('/api/v1/manager/storage-stream')) return url
   const token = localStorage.getItem('token')
   if (!token) return url
   const separator = url.includes('?') ? '&' : '?'

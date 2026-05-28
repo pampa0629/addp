@@ -98,6 +98,21 @@ func TestObjectContentMatcherGenericContentType(t *testing.T) {
 	}
 }
 
+func TestNormalizeFormatsKeepsOnlyCanonicalKnownFormats(t *testing.T) {
+	t.Parallel()
+
+	got := normalizeFormats([]string{"pdf", ".csv", "application/json", "yml", "unknown"})
+	want := []string{"pdf", "csv", "json"}
+	if len(got) != len(want) {
+		t.Fatalf("normalizeFormats() = %#v, want %#v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("normalizeFormats()[%d] = %q, want %q; got %#v", i, got[i], want[i], got)
+		}
+	}
+}
+
 func TestObjectContentMatcherWPS(t *testing.T) {
 	t.Parallel()
 	matcher := newObjectContentMatcher(
@@ -345,7 +360,7 @@ func TestVideoContentHandlerReturnsURLMaterial(t *testing.T) {
 			Name:        "clip.mp4",
 			Extension:   ".mp4",
 			ContentType: "video/mp4",
-			PreviewURL:  "/api/v1/manager/object-stream?engine_id=1&object_key=bucket/clip.mp4",
+			PreviewURL:  "/api/v1/manager/storage-stream?engine_id=1&storage_ref=bucket/clip.mp4",
 		},
 		func(limit int64) ([]byte, bool, error) {
 			t.Fatalf("video handler must not read video bytes")
@@ -437,7 +452,7 @@ func TestImageContentHandlerReturnsURLMaterial(t *testing.T) {
 			Extension:   ".avif",
 			ContentType: "image/avif",
 			Size:        1024,
-			PreviewURL:  "/api/v1/manager/object-stream?engine_id=1&object_key=bucket/photo.avif",
+			PreviewURL:  "/api/v1/manager/storage-stream?engine_id=1&storage_ref=bucket/photo.avif",
 		},
 		func(limit int64) ([]byte, bool, error) {
 			t.Fatalf("image handler must not read image bytes")
@@ -582,6 +597,68 @@ func TestBuildContainerPreviewFromExcelAttributes(t *testing.T) {
 	summary, ok := preview["summary"].(map[string]interface{})
 	if !ok || summary["size_bytes"] != int64(1024) {
 		t.Fatalf("summary = %#v, want size_bytes 1024", preview["summary"])
+	}
+}
+
+func TestBuildContainerPreviewFromAttributesNormalizesParentFormat(t *testing.T) {
+	preview := buildContainerPreviewFromAttributes(map[string]interface{}{
+		"item": map[string]interface{}{
+			"format": ".zip",
+		},
+		"type_info": map[string]interface{}{
+			"container": map[string]interface{}{
+				"children": []interface{}{
+					map[string]interface{}{
+						"name":       "readme.txt",
+						"child_kind": "file",
+						"data_type":  "document",
+						"format":     "text",
+					},
+				},
+			},
+		},
+		"format_info": map[string]interface{}{
+			"zip": map[string]interface{}{
+				"default_child": "readme.txt",
+			},
+		},
+	}, 0)
+
+	if preview == nil {
+		t.Fatal("buildContainerPreviewFromAttributes() returned nil")
+	}
+	if preview["format"] != string(format.FormatZIP) {
+		t.Fatalf("preview format = %#v, want zip", preview["format"])
+	}
+	if preview["default_child"] != "readme.txt" {
+		t.Fatalf("default_child = %#v, want readme.txt from canonical format_info.zip", preview["default_child"])
+	}
+}
+
+func TestBuildContainerPreviewFromAttributesDropsUnknownParentFormat(t *testing.T) {
+	preview := buildContainerPreviewFromAttributes(map[string]interface{}{
+		"item": map[string]interface{}{
+			"format": "yml",
+		},
+		"type_info": map[string]interface{}{
+			"container": map[string]interface{}{
+				"children": []interface{}{
+					map[string]interface{}{
+						"name":       "readme.txt",
+						"child_kind": "file",
+						"data_type":  "document",
+						"format":     "text",
+					},
+				},
+			},
+		},
+	}, 0)
+
+	if preview == nil {
+		t.Fatal("buildContainerPreviewFromAttributes() returned nil")
+	}
+	if preview["format"] != "" {
+		t.Fatalf("preview format = %#v, want empty for unknown parent format", preview["format"])
 	}
 }
 
@@ -941,7 +1018,7 @@ func TestRawDocumentContentHandlerReturnsURLMaterialWhenAvailable(t *testing.T) 
 			Name:       "report.pdf",
 			Format:     "pdf",
 			Size:       1024,
-			PreviewURL: "/api/v1/manager/object-stream?engine_id=1&object_key=bucket/report.pdf",
+			PreviewURL: "/api/v1/manager/storage-stream?engine_id=1&storage_ref=bucket/report.pdf",
 		},
 		func(limit int64) ([]byte, bool, error) {
 			t.Fatalf("document URL preview should not read bytes")

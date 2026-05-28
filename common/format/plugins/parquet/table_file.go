@@ -15,9 +15,9 @@ func IsTableFileExt(ext string) bool {
 	}
 }
 
-// IsTableFileType 判断文件类型字符串（如 "parquet"）是否为表格文件格式。
-func IsTableFileType(fileType string) bool {
-	switch strings.ToLower(strings.TrimSpace(fileType)) {
+// IsTableFileFormat 判断格式字符串（如 "parquet"）是否为表格文件格式。
+func IsTableFileFormat(formatName string) bool {
+	switch strings.ToLower(strings.TrimSpace(formatName)) {
 	case "parquet", "orc", "avro":
 		return true
 	default:

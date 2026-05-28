@@ -142,9 +142,14 @@ Meta 可以调用 `common/format` 的能力，但必须保持职责边界：
 | TableInfoProvider | 获取表字段、行数、主键等类型信息 | `attributes.type_info.table` |
 | DocumentInfoProvider | 获取文档标题、页数、语言、提取状态等 | `attributes.type_info.document` |
 | MediaInfoProvider | 获取媒体宽高、编码、时长等 | `attributes.type_info.media` |
+| ContainerInfoProvider | 获取容器 child 摘要、默认入口、child refs 等 | `attributes.type_info.container` |
+| GraphMetadataProvider | 获取 graph node shapes、relationship shapes、连接模式和计数 | `attributes.type_info.graph` |
+| DocumentTextReader | 获取文档正文片段，用于全文索引或预览摘要 | `capabilities.extraction` 状态、外部索引；正文不写入 `type_info.document` |
 | Content reader | 获取内容片段、样本或读取索引需要的事实 | 通常不直接落内容；必要索引写入 `content_index` |
 
 内容样本、原始内容、Manager 前端 DTO 不属于元数据属性，不能塞进 `type_info` 或 `format_info`。
+
+`type_info` 的事实源是 `common/datatype` 中的 `TableInfo`、`DocumentInfo`、`MediaInfo`、`ContainerInfo`、`GraphInfo` 等通用结构。Meta 可以消费 engine `ItemMetadata` 或 format info provider，但最终落库必须通过统一 normalizer 写入标准分区，Manager / Transfer / Search 不应再自行拼装这些主事实。
 
 ## Attributes 分区
 
@@ -172,6 +177,8 @@ Meta normalizer 是 attributes 标准分区的最终裁决点。
 | `capabilities` | spatial、temporal、statistics、extraction 等横切事实 |
 
 `meta_item` 表字段是 item 身份事实源，不重复写入 attributes。
+
+`attributes.type_info.file` 不存在。文件、对象、目录、bucket、prefix、root 等只表示 catalog / storage 形态；路径、名称、大小、MIME、etag、hash、last_modified 等基础事实写入 `storage` 或 catalog node/item 标准字段。内容语义无法识别时，`item.data_type=unknown`。
 
 ## 扫描流程
 
@@ -207,6 +214,8 @@ sequenceDiagram
 | 深度扫描 | 补充类型信息和横切事实 | table fields、row_count、container children、media info、document info、spatial、statistics、content_index |
 
 基础扫描和深度扫描都必须遵守同一套 data item 与 attributes 规范。深度扫描只是补充事实，不改变 item 身份规则。
+
+文档全文检索属于深度扫描或提取任务的内容处理结果，不改变 `DocumentInfo` 主事实边界。Meta 负责调用 `DocumentTextReader` 或外部 extractor，把正文送入搜索索引，并在 attributes 中记录提取状态、预览和索引引用；Manager 只提供检索入口和结果展示，不解析文档正文。
 
 `scanned_depth` 表示 node / item 当前已经达到的扫描深度，`scan_status` 表示扫描任务过程状态。二者不能混用：一个 item 可以历史上已经 deep 完成，同时最近一次扫描任务失败。
 

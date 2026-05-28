@@ -74,7 +74,7 @@ attributes 分区统一采用以下概念：
 |---|---|---|
 | `storage` | 引擎抽象层、catalog、对象枚举 | physical_path、bucket、path、content_type、etag、last_modified_at、total_size |
 | `item` | Meta 扫描、Meta item normalizer | layout、data_type、format、refs、file_count、scope_exclusive、claim_policy |
-| `type_info` | 数据库 metadata、format info provider、采样器、Meta item normalizer | table fields、primary_key、row_count；media kind/width/height/duration；document title/page_count；container children |
+| `type_info` | 数据库 metadata、format info provider、采样器、Meta item normalizer | table fields、primary_key、row_count；media kind/width/height/duration_ms；document title/page_count；container children；graph shapes |
 | `format_info` | format plugin / provider、Meta item normalizer | CSV 分隔符、Shapefile related refs、JSON 结构类型、SQLite 版本等具体格式信息 |
 | `content_index` | format plugin / reader、Meta item normalizer | 用于按内容窗口读取的访问索引，例如 table 稀疏行号到字节偏移索引 |
 | `capabilities` | format provider、画像任务、Meta item normalizer | spatial、temporal、statistics、extraction、semantic、partitioning、indexing 等横切能力 |
@@ -90,6 +90,8 @@ attributes 分区统一采用以下概念：
 | `datatype.GraphInfo` | `attributes.type_info.graph` |
 | `datatype.SpatialInfo` | `attributes.capabilities.spatial` |
 | `datatype.ContentIndex` | `attributes.content_index.<data_type>` |
+
+`attributes.type_info.file` 不存在，也不得新增。文件、对象和目录是 catalog / storage 形态，不是 data type 主事实；对应路径、名称、大小、MIME、etag、hash、last_modified 等事实只能写入 `attributes.storage` 或 catalog node/item 的标准字段。无法识别内容语义时，`attributes.item.data_type` 必须为 `unknown`。
 
 ## 写入规则
 
@@ -162,6 +164,8 @@ attributes 分区统一采用以下概念：
 | `container` | `type_info.container` | children、default_child、child_count、resource_count |
 | `graph` | `type_info.graph` | model、directed、node_shapes、relationship_shapes、node_count、relationship_count |
 | `unknown` | `type_info.unknown` | detection_reason、fallback_action |
+
+`type_info.media` 只承载 `datatype.MediaInfo` 中跨图片、音频、视频稳定通用的字段。EXIF、视频 codec、音频 codec、帧率、采样率、码率、轨道数等细粒度事实暂不作为 media 主事实；如需持久化，应进入受控 `format_info.<format>`、`capabilities.extraction` 或后续另行规范的横切能力命名空间。
 
 `type_info.graph` 必须是业务图视图的 JSON 投影。引擎插件、扩展、索引或空间能力产生的内部节点和内部关系不得写入 `node_shapes`、`relationship_shapes` 或计数字段；例如 Neo4j Spatial 的 `SpatialLayer` 节点和 `RTREE_*` 关系应在 provider 或 Graph 模块服务层过滤。
 

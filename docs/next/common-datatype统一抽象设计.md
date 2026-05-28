@@ -2,7 +2,15 @@
 
 更新时间：2026-05-28
 
-本文是一次较大重构前的设计讨论文档，不是已落地规范。目标是在动代码前统一 `common/datatype` 的职责、数据类型边界和迁移顺序，避免继续在 `common/format`、`common/engine`、`common/dataitem`、Meta、Manager、Transfer 之间形成多套 data type / type info / field type 模型。
+本文保留为本轮 `common/datatype` 统一抽象重构的迁移记录，不再作为正式规范事实源。正式口径以以下文档为准：
+
+- [ADDP 数据类型和格式体系图](../concepts/addp数据类型和格式体系图.md)
+- [ADDP 元数据体系图](../concepts/addp元数据体系图.md)
+- [ADDP 数据类型与格式能力规范](../spec/addp数据类型与格式能力规范.md)
+- [ADDP 元数据 attributes 规范](../spec/addp元数据attributes规范.md)
+- [ADDP 引擎插件接口规范](../spec/addp引擎插件接口规范.md)
+
+本文记录重构前后的判断、迁移顺序和历史上下文；若与正式 concepts / spec 文档冲突，以正式文档为准。
 
 ## 接力状态
 

@@ -241,7 +241,7 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 	if objectPath == "" {
 		return nil, fmt.Errorf("object path is empty")
 	}
-	preview.Object.ObjectKey = fmt.Sprintf("%s/%s", bucket, objectPath)
+	preview.Object.StorageRef = fmt.Sprintf("%s/%s", bucket, objectPath)
 
 	stat, err := catalogutil.ObjectMetadata(ctx, metadataProvider, connInfo, resource.ID, bucket, objectPath)
 	if err != nil {
@@ -302,7 +302,7 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 			Size:        stat.Size,
 			Attributes:  preview.Object.Attributes,
 		}
-		if url := buildObjectStreamURL(resource.ID, preview.Object.ObjectKey); url != "" {
+		if url := buildStorageStreamURL(resource.ID, preview.Object.StorageRef); url != "" {
 			req.PreviewURL = url
 			preview.Object.URL = url
 		}
@@ -509,15 +509,15 @@ func listObjectPreviewChildren(ctx context.Context, catalogProvider plugin.Catal
 	return children, nil
 }
 
-func buildObjectStreamURL(engineID uint, objectKey string) string {
-	objectKey = strings.Trim(objectKey, "/")
-	if engineID == 0 || objectKey == "" {
+func buildStorageStreamURL(engineID uint, storageRef string) string {
+	storageRef = strings.Trim(storageRef, "/")
+	if engineID == 0 || storageRef == "" {
 		return ""
 	}
 	values := url.Values{}
 	values.Set("engine_id", strconv.FormatUint(uint64(engineID), 10))
-	values.Set("object_key", objectKey)
-	return "/api/v1/manager/object-stream?" + values.Encode()
+	values.Set("storage_ref", storageRef)
+	return "/api/v1/manager/storage-stream?" + values.Encode()
 }
 
 func readObjectWithLimit(reader io.Reader, limit int64) ([]byte, bool, error) {

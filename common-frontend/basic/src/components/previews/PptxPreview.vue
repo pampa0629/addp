@@ -4,7 +4,7 @@
     <div v-if="loading" class="loading-container">
       <el-icon class="is-loading"><Loading /></el-icon>
       <div class="loading-info">
-        <span>正在解析文件信息...</span>
+        <span>正在解析演示文稿信息...</span>
       </div>
     </div>
 
@@ -14,8 +14,8 @@
       <div class="error-info">
         <p class="error-message">{{ error }}</p>
         <div v-if="showLimitInfo" class="limit-info">
-          <p>文件类型：{{ displayContentType }}</p>
-          <p v-if="fileSize">文件大小：{{ formatFileSize(fileSize) }}</p>
+          <p>内容类型：{{ displayContentType }}</p>
+          <p v-if="fileSize">存储大小：{{ formatFileSize(fileSize) }}</p>
           <p v-if="formattedLimit">预览限制：{{ formattedLimit }}</p>
         </div>
         <div class="error-actions">
@@ -24,9 +24,9 @@
       </div>
     </div>
 
-    <!-- PPTX 文件信息展示 -->
+    <!-- PPTX 演示文稿信息展示 -->
     <div v-else class="pptx-info-container">
-      <!-- 文件基本信息 -->
+      <!-- 演示文稿基本信息 -->
       <div class="file-card">
         <div class="file-info">
           <div class="file-header">
@@ -70,16 +70,16 @@
         </template>
       </el-alert>
 
-      <!-- 文件详细信息 -->
+      <!-- 演示文稿详细信息 -->
       <div class="detail-card" v-if="pptxMetadata">
-        <h3>文件详细信息</h3>
+        <h3>演示文稿详细信息</h3>
         <div class="detail-grid">
           <div class="detail-item">
-            <span class="label">文件名称</span>
+            <span class="label">对象名称</span>
             <span class="value">{{ fileName }}</span>
           </div>
           <div class="detail-item">
-            <span class="label">文件大小</span>
+            <span class="label">存储大小</span>
             <span class="value">{{ formatFileSize(fileSize) }}</span>
           </div>
           <div class="detail-item" v-if="slideCount > 0">

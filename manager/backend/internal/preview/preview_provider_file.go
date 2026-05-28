@@ -388,6 +388,10 @@ func (p *FileTablePreviewProvider) ensureContentIndex(
 }
 
 func contentIndexObjectKey(req *PreviewRequest, bucket string, fullPath string) string {
+	return storageRefForPreview(req, bucket, fullPath)
+}
+
+func storageRefForPreview(req *PreviewRequest, bucket string, fullPath string) string {
 	if previewRequestCatalogItemTerm(req) == "object" {
 		if strings.HasPrefix(fullPath, bucket+"/") {
 			return fullPath

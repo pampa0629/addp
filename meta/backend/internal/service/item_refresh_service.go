@@ -75,7 +75,7 @@ func (s *ScanService) RefreshItem(ctx context.Context, engineID, tenantID, itemI
 	item.SizeBytes = sizeBytes
 	descriptor := dataitem.DescriptorFromAttributes(item.Attributes)
 	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
-	catalogPathFor := knownItemCatalogPathResolver(resource.ID, resource.EngineType, descriptor)
+	catalogPathFor := knownItemCatalogPathResolver(resource.ID, p, descriptor)
 	physicalPath := firstNonEmpty(descriptor.PhysicalPath, descriptor.EntryPath, pathFromStorage(descriptor), item.FullName)
 	if contentHash, err := computeContentSHA256(ctx, contentReader, connInfo, catalogPathFor(physicalPath)); err != nil {
 		return nil, err
@@ -93,7 +93,7 @@ func (s *ScanService) RefreshItem(ctx context.Context, engineID, tenantID, itemI
 	}).Error; err != nil {
 		return nil, err
 	}
-	if s.indexerService != nil && isObjectLikeEngine(resource.EngineType) && descriptor.StorageBucket != "" {
+	if s.indexerService != nil && catalogModelItemTerm(p) == plugin.CatalogTermObject && descriptor.StorageBucket != "" {
 		objectPath := pathFromStorage(descriptor)
 		if objectPath == "" {
 			objectPath = physicalPath
@@ -159,7 +159,7 @@ func (s *ScanService) refreshKnownItemAttributes(
 	descriptor := dataitem.DescriptorFromAttributes(attrs)
 	detected := detectedItemFromDescriptor(item, descriptor)
 	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
-	catalogPathFor := knownItemCatalogPathResolver(resource.ID, resource.EngineType, descriptor)
+	catalogPathFor := knownItemCatalogPathResolver(resource.ID, contentReader, descriptor)
 
 	var err error
 	switch descriptor.Layout {
@@ -276,8 +276,9 @@ func detectedItemFromDescriptor(item *models.MetaItem, descriptor dataitem.ItemD
 	}
 }
 
-func knownItemCatalogPathResolver(engineID uint, engineType string, descriptor dataitem.ItemDescriptor) func(string) plugin.CatalogPath {
+func knownItemCatalogPathResolver(engineID uint, provider plugin.EnginePlugin, descriptor dataitem.ItemDescriptor) func(string) plugin.CatalogPath {
 	bucket := descriptor.StorageBucket
+	itemTerm := catalogModelItemTerm(provider)
 	return func(rawPath string) plugin.CatalogPath {
 		path := strings.Trim(rawPath, "/")
 		if bucket != "" {
@@ -286,11 +287,19 @@ func knownItemCatalogPathResolver(engineID uint, engineType string, descriptor d
 			}
 			return plugin.ObjectItemPath(engineID, bucket, path)
 		}
-		if b, objectPath := metapath.SplitObjectPath(path); b != "" && objectPath != "" && isObjectLikeEngine(engineType) {
+		if b, objectPath := metapath.SplitObjectPath(path); b != "" && objectPath != "" && itemTerm == plugin.CatalogTermObject {
 			return plugin.ObjectItemPath(engineID, b, objectPath)
 		}
 		return plugin.FileItemPath(engineID, path)
 	}
+}
+
+func catalogModelItemTerm(provider plugin.EnginePlugin) string {
+	modelProvider, ok := provider.(plugin.CatalogModelProvider)
+	if !ok {
+		return ""
+	}
+	return plugin.CatalogItemTerm(modelProvider.CatalogModel())
 }
 
 func restoreKnownItemStorage(attrs models.JSONMap, descriptor dataitem.ItemDescriptor, item *models.MetaItem) {
@@ -342,13 +351,4 @@ func clonePlainMap(input models.JSONMap) map[string]interface{} {
 		output[key] = value
 	}
 	return output
-}
-
-func isObjectLikeEngine(engineType string) bool {
-	switch strings.ToLower(strings.TrimSpace(engineType)) {
-	case "minio", "s3", "object_storage":
-		return true
-	default:
-		return false
-	}
 }

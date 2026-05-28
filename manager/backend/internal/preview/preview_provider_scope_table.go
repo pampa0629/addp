@@ -217,8 +217,5 @@ func resolveScopeTableFormat(req *PreviewRequest) format.FormatType {
 	if formatName := strings.TrimSpace(catalogutil.StringAttribute(req.Attributes, "format")); formatName != "" {
 		return normalizeFileTableFormat(formatName)
 	}
-	if req.PhysicalPath != "" {
-		return format.DetectFormat(req.PhysicalPath, nil)
-	}
 	return format.FormatUnknown
 }

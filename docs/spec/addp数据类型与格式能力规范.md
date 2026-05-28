@@ -41,6 +41,8 @@ item 归并见 [ADDP 数据项探测器规范](addp数据项探测器规范.md)�
 | `SpatialInfo` | `common/datatype` | 空间横切事实，落点是 `attributes.capabilities.spatial` |
 | `ContentIndex` | `common/datatype` | 内容读取索引，落点是 `attributes.content_index.<data_type>` |
 
+`file` 不是 ADDP 基础 `DataType`，不得新增 `DataTypeFile`、`FileInfo` 或 `attributes.type_info.file`。文件、对象、目录、bucket、prefix、root 等是 catalog / storage 形态；当内容语义无法识别时，`item.data_type` 统一写为 `unknown`，存储事实写入 `attributes.storage`，格式身份写入 `attributes.item.format`，格式私有事实写入 `attributes.format_info.<format>`。
+
 `common/format` 负责格式侧能力：
 
 - format identity、descriptor、capability 和 detection。
@@ -272,7 +274,7 @@ Info / facts 能力负责把原始资源转成平台能理解的类型信息、�
 - `capabilities.statistics`
 - `content_index.<data_type>`
 
-表格解析能力应说明字段名、原始字段类型、行数、主键等 table info 是否可得。文档提取能力应说明标题、作者、页数、语言和提取状态等 info 是否可得。媒体提取能力应说明宽高、时长、编码、颜色模式和 EXIF 等 info 是否可得。容器能力应说明内部对象、默认入口和对象摘要是否可得。空间能力应说明 geometry columns、primary geometry column、SRID / CRS、extent 和 spatial index 是否可得。内容索引能力应说明索引类型、定位单位、锚点和失效判断来源是否可得。
+表格解析能力应说明字段名、原始字段类型、行数、主键等 table info 是否可得。文档提取能力应说明标题、作者、页数、语言和提取状态等 info 是否可得。媒体提取能力应说明宽高、时长、基础编码、颜色模式等通用 media info 是否可得；EXIF、视频 codec、音频 codec、帧率、采样率、码率、轨道数等细粒度事实暂不进入 `datatype.MediaInfo`，需要保留时进入受控 `format_info.<format>` 或 `capabilities.extraction`。容器能力应说明内部对象、默认入口和对象摘要是否可得。空间能力应说明 geometry columns、primary geometry column、SRID / CRS、extent 和 spatial index 是否可得。内容索引能力应说明索引类型、定位单位、锚点和失效判断来源是否可得。
 
 Provider 一次解析可能同时得到多个事实。为避免污染各 data type 的 type info，应通过 describe result 或等价结构将这些事实同级返回，再由 Meta normalizer 写入各自 attributes 分区。
 

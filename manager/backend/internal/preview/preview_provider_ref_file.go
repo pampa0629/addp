@@ -161,7 +161,7 @@ func (p *RefFilePreviewProvider) objectPreview(req *PreviewRequest, bucket strin
 		Object: &models.ObjectPreview{
 			Bucket:      bucket,
 			Path:        ref.Ref.Path,
-			ObjectKey:   ref.Ref.Path,
+			StorageRef:  storageRefForPreview(req, bucket, ref.Ref.Path),
 			NodeType:    "object",
 			ContentType: previewContentType(preview.Format, contentio.BaseName(ref.Ref)),
 			Attributes: models.JSONMap{

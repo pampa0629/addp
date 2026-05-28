@@ -525,7 +525,7 @@ func providerNamesForMeta(req *PreviewResolverRequest, providerReq *PreviewReque
 		itemType = strings.ToLower(strings.TrimSpace(req.Metadata.NodeType))
 	}
 	dataType := strings.ToLower(strings.TrimSpace(catalogutil.StringAttribute(attrs, "data_type")))
-	formatName := strings.ToLower(strings.TrimSpace(catalogutil.StringAttribute(attrs, "format")))
+	formatType := format.NormalizeFormat(catalogutil.StringAttribute(attrs, "format"))
 	layout := strings.ToLower(strings.TrimSpace(catalogutil.StringAttribute(attrs, "layout")))
 
 	switch itemType {
@@ -549,10 +549,10 @@ func providerNamesForMeta(req *PreviewResolverRequest, providerReq *PreviewReque
 
 	switch dataType {
 	case "table":
-		if layout == "whole" && hasScopeTableProvider(formatName) {
+		if layout == "whole" && hasScopeTableProvider(formatType) {
 			return []string{"builtin:scope-table"}
 		}
-		if providerReq != nil && isFileTableFormat(formatName) && isContentFileItemType(itemType) {
+		if providerReq != nil && isFileTableFormat(formatType) && isContentFileItemType(itemType) {
 			return []string{"builtin:file-table"}
 		}
 		if providerReq != nil && itemType == "file" {
@@ -603,8 +603,7 @@ func isNodePreview(req *PreviewResolverRequest, providerReq *PreviewRequest) boo
 	}
 }
 
-func isFileTableFormat(formatName string) bool {
-	formatType := normalizeFileTableFormat(formatName)
+func isFileTableFormat(formatType format.FormatType) bool {
 	if formatType == "" || formatType == format.FormatUnknown {
 		return false
 	}
@@ -617,8 +616,7 @@ func isFileTableFormat(formatName string) bool {
 	return false
 }
 
-func hasScopeTableProvider(formatName string) bool {
-	formatType := normalizeFileTableFormat(formatName)
+func hasScopeTableProvider(formatType format.FormatType) bool {
 	if formatType == "" || formatType == format.FormatUnknown {
 		return false
 	}

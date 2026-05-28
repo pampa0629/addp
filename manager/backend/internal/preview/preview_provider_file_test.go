@@ -1404,8 +1404,8 @@ func TestRefFilePreviewProviderOpensSelectedRelatedRef(t *testing.T) {
 	if preview.Mode != PreviewModeObject || preview.Object == nil || preview.Object.Content == nil {
 		t.Fatalf("preview = %#v, want object preview with content", preview)
 	}
-	if preview.Object.Path != "bucket/roads/roads.prj" || preview.Object.ObjectKey != "bucket/roads/roads.prj" {
-		t.Fatalf("object path/key = %q/%q, want selected ref path", preview.Object.Path, preview.Object.ObjectKey)
+	if preview.Object.Path != "bucket/roads/roads.prj" || preview.Object.StorageRef != "bucket/roads/roads.prj" {
+		t.Fatalf("object path/storage_ref = %q/%q, want selected ref path", preview.Object.Path, preview.Object.StorageRef)
 	}
 	if preview.Object.Content.Kind != models.ObjectPreviewKindText || preview.Object.Content.Text != "EPSG:4326" {
 		t.Fatalf("content = %#v, want text projection content", preview.Object.Content)
@@ -1567,6 +1567,17 @@ func TestContentIndexObjectKeyIncludesBucketForObjectCatalog(t *testing.T) {
 	}
 	if got := contentIndexObjectKey(req, "bucket", "bucket/dir/sample.csv"); got != "bucket/dir/sample.csv" {
 		t.Fatalf("object key = %q, want bucket/dir/sample.csv", got)
+	}
+}
+
+func TestStorageRefForPreviewIncludesBucketForObjectCatalogRef(t *testing.T) {
+	req := &PreviewRequest{Engine: &models.Engine{EngineType: "minio"}, ItemType: "object"}
+
+	if got := storageRefForPreview(req, "gischain", "data/farmland.prj"); got != "gischain/data/farmland.prj" {
+		t.Fatalf("storage ref = %q, want gischain/data/farmland.prj", got)
+	}
+	if got := storageRefForPreview(req, "gischain", "gischain/data/farmland.prj"); got != "gischain/data/farmland.prj" {
+		t.Fatalf("storage ref = %q, want gischain/data/farmland.prj", got)
 	}
 }
 

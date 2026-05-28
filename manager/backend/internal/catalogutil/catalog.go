@@ -162,8 +162,10 @@ func attributeSectionsForKey(key string) []string {
 		return []string{"storage"}
 	case "fields", "primary_key", "row_count":
 		return []string{"type_info.table"}
-	case "width", "height", "duration", "codec", "page_count", "word_count":
-		return []string{"type_info.media", "type_info.document"}
+	case "width", "height", "duration_ms", "mime_type", "color_space":
+		return []string{"type_info.media"}
+	case "page_count", "word_count", "encoding":
+		return []string{"type_info.document"}
 	case "spatial", "geometry_columns", "primary_geometry_column", "extent", "has_spatial_index":
 		return []string{"capabilities.spatial"}
 	case "metadata_extracted", "extractor_available", "plain_text_preview":

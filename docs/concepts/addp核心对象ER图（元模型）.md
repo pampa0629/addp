@@ -433,7 +433,7 @@ erDiagram
         string prefix "路径前缀（空=整个 bucket）"
         bool recursive "是否递归子目录"
         string model "向量模型名称"
-        string file_types "text[]，指定文件类型（空=全部）"
+        string file_types "text[]，文件扩展名过滤（空=全部，不表示 data_type=file）"
         string modality "text | image | audio | video | document | auto"
         string schedule "Cron 表达式"
         bool enabled
@@ -536,7 +536,7 @@ erDiagram
         string prefix
         bool recursive
         string model
-        string file_types "text[]"
+        string file_types "text[]，文件扩展名过滤"
         string modality "text|image|audio|video|document|auto"
         string schedule
         bool enabled

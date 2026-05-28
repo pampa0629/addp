@@ -2,7 +2,7 @@
 
 ## 表结构概览
 
-`metadata.meta_item` 表是数据项表，存储表、文件、对象等具体数据项的元数据。
+`metadata.meta_item` 表是数据项表，存储表、对象、文件系统叶子资源等具体数据项的元数据。文件 / 对象 / 目录只表示 catalog 或 storage 形态，不是 `data_type=file`。
 
 ### 核心字段
 
@@ -20,7 +20,7 @@
 | `size_bytes` | BIGINT | 数据大小（字节），nullable |
 | `data_updated_at` | TIMESTAMP | 被扫描数据的最后更新时间，nullable |
 | `scanned_at` | TIMESTAMP | 数据项的扫描时间，nullable |
-| `attributes` | JSONB | 项属性（列信息、文件类型等） |
+| `attributes` | JSONB | 项属性（`storage`、`item`、`type_info.*`、`format_info.*`、`capabilities` 等标准分区） |
 | `created_at` | TIMESTAMP | 创建时间 |
 | `deleted_at` | TIMESTAMP | 软删除时间（GORM 软删除），nullable |
 

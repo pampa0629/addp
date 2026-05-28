@@ -51,9 +51,9 @@
               <span class="meta-label">时长</span>
               <span class="meta-value">{{ formatDuration(videoMetadata.duration) }}</span>
             </div>
-            <div v-if="videoMetadata.codec" class="meta-row">
+            <div v-if="videoMetadata.encoding" class="meta-row">
               <span class="meta-label">编码</span>
-              <span class="meta-value">{{ videoMetadata.codec }}</span>
+              <span class="meta-value">{{ videoMetadata.encoding }}</span>
             </div>
             <div v-if="videoMetadata.container" class="meta-row">
               <span class="meta-label">容器</span>
@@ -117,7 +117,7 @@ const videoMetadata = computed(() => {
   return {
     duration: Number.isFinite(durationMS) && durationMS > 0 ? durationMS / 1000 : undefined,
     resolution: width && height ? `${width}x${height}` : undefined,
-    codec: raw.encoding,
+    encoding: raw.encoding,
     container: raw.mime_type || normalizedAttributes.value?.item?.format
   }
 })
@@ -148,32 +148,28 @@ const engineId = computed(() => {
   )
 })
 
-const objectKey = computed(() => {
-  if (objectData.value?.object_key) {
-    return objectData.value.object_key
-  }
-  const bucket = objectData.value?.bucket
-  const path = objectData.value?.path || ''
-  if (!bucket || !path) return ''
-  const cleanedPath = String(path).replace(/^\/+/, '')
-  if (!cleanedPath) return bucket
-  return `${bucket}/${cleanedPath}`
+const storageRef = computed(() => {
+  return (
+    objectData.value?.storage_ref ||
+    objectData.value?.storageRef ||
+    ''
+  )
 })
 
 // 构建视频URL
 const videoSrc = computed(() => {
   if (videoError.value) return ''
-  if (!engineId.value || !objectKey.value) return ''
+  if (!engineId.value || !storageRef.value) return ''
 
   const params = new URLSearchParams()
   params.set('engine_id', String(engineId.value))
-  params.set('object_key', objectKey.value)
+  params.set('storage_ref', storageRef.value)
 
   const token = localStorage.getItem('token')
   if (token) {
     params.set('token', token)
   }
-  return `/api/v1/manager/object-stream?${params.toString()}`
+  return `/api/v1/manager/storage-stream?${params.toString()}`
 })
 
 const contentMessage = computed(() => {

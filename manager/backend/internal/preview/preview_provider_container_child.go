@@ -529,7 +529,6 @@ func (p *ContainerChildPreviewProvider) objectPreview(req *PreviewRequest, bucke
 		Object: &models.ObjectPreview{
 			Bucket:      bucket,
 			Path:        child.Ref.Path,
-			ObjectKey:   child.Ref.Path,
 			NodeType:    "object",
 			ContentType: contentTypeForChild(child),
 			Attributes:  childObjectAttributes(child),

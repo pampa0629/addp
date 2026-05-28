@@ -7,6 +7,7 @@ import (
 
 	"github.com/addp/common/contentio"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
 	"github.com/addp/manager/internal/models"
 )
@@ -71,6 +72,23 @@ func TestScopeTableContentReaderUsesFileCatalogReader(t *testing.T) {
 	}
 	if _, ok := reader.(*fileCatalogContentReader); !ok {
 		t.Fatalf("reader = %T, want *fileCatalogContentReader", reader)
+	}
+}
+
+func TestResolveScopeTableFormatDoesNotInferFromPhysicalPath(t *testing.T) {
+	t.Parallel()
+
+	got := resolveScopeTableFormat(&PreviewRequest{
+		PhysicalPath: "bucket/dataset/part-000.parquet",
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"data_type": "table",
+				"layout":    "whole",
+			},
+		},
+	})
+	if got != format.FormatUnknown {
+		t.Fatalf("resolveScopeTableFormat() = %s, want unknown without standard item.format", got)
 	}
 }
 

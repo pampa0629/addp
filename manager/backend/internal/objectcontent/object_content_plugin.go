@@ -753,7 +753,7 @@ func buildContainerPreviewFromAttributes(attrs map[string]interface{}, sizeBytes
 	if len(containerAttrs) == 0 {
 		return nil
 	}
-	formatName := strings.ToLower(strings.TrimSpace(stringAttribute(attrs, "format")))
+	formatName := canonicalContainerPreviewFormat(stringAttribute(attrs, "format"))
 	formatAttrs := commonJSON.Section(attrs, "format_info."+formatName)
 
 	children := interfaceSlice(containerAttrs["children"])
@@ -797,6 +797,14 @@ func buildContainerPreviewFromAttributes(attrs map[string]interface{}, sizeBytes
 	})
 	defaultChild := containerDefaultChild(formatName, formatAttrs, previewChildren)
 	return buildContainerPreview(formatName, defaultChild, defaultChild, previewChildren, summary)
+}
+
+func canonicalContainerPreviewFormat(formatName string) string {
+	normalized := format.NormalizeFormat(formatName)
+	if normalized == "" || normalized == format.FormatUnknown {
+		return ""
+	}
+	return string(normalized)
 }
 
 func normalizeContainerAttributeChildrenForPreview(formatName string, children []interface{}) *containerPreviewChildren {

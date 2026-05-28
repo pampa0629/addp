@@ -182,7 +182,7 @@ type ObjectPreview struct {
 	Metadata     map[string]string     `json:"metadata,omitempty"`
 	Attributes   JSONMap               `json:"attributes,omitempty"`
 	EngineID     uint                  `json:"engine_id,omitempty"`
-	ObjectKey    string                `json:"object_key,omitempty"`
+	StorageRef   string                `json:"storage_ref,omitempty"`
 	Children     []ObjectPreviewChild  `json:"children,omitempty"`
 	Content      *ObjectPreviewContent `json:"content,omitempty"`
 	Truncated    bool                  `json:"truncated,omitempty"`

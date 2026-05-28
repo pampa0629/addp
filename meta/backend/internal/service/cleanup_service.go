@@ -382,14 +382,14 @@ func (s *CleanupService) ScanGarbage(ctx context.Context, tenantID uint) (*model
 			s.log.Error("扫描 MinIO 垃圾失败", "error", err)
 			// 不中断整体扫描流程
 		} else {
-			stats.MinIOFiles.Count = minioStats.TotalCount
-			stats.MinIOFiles.TotalSizeBytes = minioStats.TotalSizeBytes
-			stats.MinIOFiles.TotalSizeMB = minioStats.TotalSizeMB
-			stats.MinIOFiles.ByBucket = minioStats.ByBucket
+			stats.MinIOObjects.Count = minioStats.TotalCount
+			stats.MinIOObjects.TotalSizeBytes = minioStats.TotalSizeBytes
+			stats.MinIOObjects.TotalSizeMB = minioStats.TotalSizeMB
+			stats.MinIOObjects.ByBucket = minioStats.ByBucket
 			if len(minioStats.Samples) > 10 {
-				stats.MinIOFiles.Sample = minioStats.Samples[:10]
+				stats.MinIOObjects.Sample = minioStats.Samples[:10]
 			} else {
-				stats.MinIOFiles.Sample = minioStats.Samples
+				stats.MinIOObjects.Sample = minioStats.Samples
 			}
 		}
 	}
@@ -443,9 +443,9 @@ func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, dele
 			result.Errors = append(result.Errors, fmt.Sprintf("清理 MinIO 失败: %v", err))
 			s.log.Error("清理 MinIO 失败", "error", err)
 		} else {
-			result.DeletedMinIOFiles = minioResult.DeletedFiles
+			result.DeletedMinIOObjects = minioResult.DeletedObjects
 			result.FreedSpaceMB = minioResult.FreedSpaceMB
-			s.log.Info("MinIO 清理完成", "deleted_files", minioResult.DeletedFiles, "freed_mb", minioResult.FreedSpaceMB)
+			s.log.Info("MinIO 清理完成", "deleted_objects", minioResult.DeletedObjects, "freed_mb", minioResult.FreedSpaceMB)
 		}
 	}
 

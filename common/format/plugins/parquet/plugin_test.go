@@ -266,7 +266,7 @@ func TestParquetPluginDescribeAndSampleScopeAcrossFiles(t *testing.T) {
 		t.Fatalf("parquet info = %#v, want two files", parquetInfo)
 	}
 	if parquetInfo.Files[0].Path != "dataset/part-000.parquet" || parquetInfo.Files[0].RowCount != 2 {
-		t.Fatalf("first parquet file info = %#v, want path and row count", parquetInfo.Files[0])
+		t.Fatalf("first parquet object info = %#v, want path and row count", parquetInfo.Files[0])
 	}
 
 	rows, err := plugin.SampleTableScope(context.Background(), reader, scope, 1, 3, nil)

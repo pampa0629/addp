@@ -628,7 +628,7 @@ const refKey = computed(() => {
 
   const nodeId = props.selectedNode.id || ''
   const nodePath = props.selectedNode.path || props.selectedNode.table || ''
-  const objectPath = props.previewData?.object?.path || props.previewData?.object?.object_key || ''
+  const objectPath = props.previewData?.object?.path || props.previewData?.object?.storage_ref || ''
   const contentType = props.previewData?.object?.content_type || ''
   const content = props.previewData?.object?.content || {}
   const contentKind = content.kind || ''
@@ -839,15 +839,14 @@ const engineId = computed(() => {
 })
 
 const fallbackDownloadUrl = computed(() => {
-  const objectKey =
-    objectData.value?.object_key ||
-    objectData.value?.objectKey ||
-    objectData.value?.path ||
+  const storageRef =
+    objectData.value?.storage_ref ||
+    objectData.value?.storageRef ||
     ''
-  if (!objectKey || !engineId.value) {
+  if (!storageRef || !engineId.value) {
     return ''
   }
-  return `/manager/object-stream?engine_id=${encodeURIComponent(engineId.value)}&object_key=${encodeURIComponent(objectKey)}`
+  return `/manager/storage-stream?engine_id=${encodeURIComponent(engineId.value)}&storage_ref=${encodeURIComponent(storageRef)}`
 })
 
 const downloadInfo = computed(() => {
@@ -1368,10 +1367,9 @@ const objectMetadataTooltip = computed(() => {
       parts.push(`${t('manager.explorer.metaDuration')}: ${durationStr}`)
     }
 
-    // 视频编码（codec）
-    const videoCodec = attributeValue(attributes, 'type_info.media', 'encoding')
-    if (videoCodec) {
-      parts.push(`${t('manager.explorer.metaVideoCodec')}: ${videoCodec}`)
+    const encoding = attributeValue(attributes, 'type_info.media', 'encoding')
+    if (encoding) {
+      parts.push(`${t('manager.explorer.metaEncoding')}: ${encoding}`)
     }
   }
 
@@ -1384,10 +1382,9 @@ const objectMetadataTooltip = computed(() => {
       parts.push(`${t('manager.explorer.metaDuration')}: ${durationStr}`)
     }
 
-    // 音频编码
-    const audioCodec = attributeValue(attributes, 'type_info.media', 'encoding')
-    if (audioCodec) {
-      parts.push(`${t('manager.explorer.metaAudioCodec')}: ${audioCodec}`)
+    const encoding = attributeValue(attributes, 'type_info.media', 'encoding')
+    if (encoding) {
+      parts.push(`${t('manager.explorer.metaEncoding')}: ${encoding}`)
     }
   }
 

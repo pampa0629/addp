@@ -313,9 +313,9 @@ func normalizeExtensions(values []string) []string {
 func normalizeFormats(values []string) []string {
 	normalized := make([]string, 0, len(values))
 	for _, formatName := range values {
-		trimmed := strings.ToLower(strings.TrimSpace(formatName))
-		if trimmed != "" {
-			normalized = append(normalized, trimmed)
+		formatType := commonformat.NormalizeFormat(formatName)
+		if formatType != "" && formatType != commonformat.FormatUnknown {
+			normalized = append(normalized, string(formatType))
 		}
 	}
 	return normalized

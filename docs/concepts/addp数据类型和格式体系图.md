@@ -19,6 +19,8 @@
 
 数据类型是对一类 data item 的高层抽象。它们通常具备相似的数据特征、内容读取方式、处理手段和治理方式。
 
+`common/datatype` 是 ADDP data type 与 type info 的代码事实源。各模块不得在 `common/format`、`common/engine`、Meta、Manager 或 Transfer 中重新定义平行的 data type / type info 公共模型。
+
 第一版基础数据类型如下：
 
 | 数据类型 | 含义 | 典型处理方式 |
@@ -75,7 +77,7 @@ JSON / GeoJSON 也不默认具备空间能力。只有实际记录里发现 GeoJ
 
 图片、视频、音频之间的差异可通过 `type_info.media.kind=image|video|audio` 或类似字段表达，不新增基础数据类型。
 
-媒体文件的容器格式、编码格式和横切能力应分层表达：`format` 优先表达文件或容器格式，视频编码、音频编码、帧率、采样率、码率等进入 `type_info.media` 或 `format_info.<format>`；GeoTIFF、带 GPS 的图片等空间语义进入 `capabilities.spatial`，不新增“空间图片”或“视频数据”数据类型。
+媒体文件的容器格式、编码格式和横切能力应分层表达：`format` 优先表达文件或容器格式，`type_info.media` 只承载跨图片、音频、视频稳定通用且已有消费方的字段。视频编码、音频编码、帧率、采样率、码率、轨道数等细粒度事实暂不作为 `MediaInfo` 主事实；需要保留时进入受控 `format_info.<format>` 或 `capabilities.extraction`。GeoTIFF、带 GPS 的图片等空间语义进入 `capabilities.spatial`，不新增“空间图片”或“视频数据”数据类型。
 
 ### container
 
@@ -113,6 +115,8 @@ graph 的核心是节点和关系。Neo4j label、relationship type、RDF class 
 
 `unknown` 不是失败状态，而是平台对资源保持可管理、可检索、可下载的兜底语义。后续探测能力增强后，可以重新扫描并升级为更具体的数据类型。
 
+`file` 不是基础数据类型。文件、对象、目录、bucket、prefix、root 等只表示 catalog / storage 形态；路径、名称、大小、MIME、etag、hash、last_modified 等事实属于 storage 或 catalog 标准字段。无法判断内容语义时，data item 使用 `data_type=unknown`，不得新增 `data_type=file` 或 `type_info.file`。
+
 ## 文件格式
 
 文件格式回答 item 或资源的编码方式，例如：
@@ -137,15 +141,17 @@ graph 的核心是节点和关系。Neo4j label、relationship type、RDF class 
 
 ## 类型信息与格式信息
 
-`xxx info` 是对应数据类型的通用元数据。例如：
+`xxx info` 是对应数据类型的通用元数据，代码结构定义在 `common/datatype`。每个 data type 只有一类通用 type info，Meta 写入 `attributes.type_info.<data_type>`：
 
 | 数据类型 | 类型信息示例 |
 |---|---|
-| `table` | 字段列表、字段类型、主键、索引、行数 |
-| `document` | 标题、作者、页数、语言、提取状态 |
-| `media` | kind、宽高、时长、编码、颜色模式 |
-| `container` | 内部子对象、默认入口、子对象数量 |
-| `graph` | node shapes、relationship shapes、连接模式、属性结构、节点数、关系数 |
+| `table` / `datatype.TableInfo` | 字段列表、字段类型、主键、行数、大小、表级 native 事实 |
+| `document` / `datatype.DocumentInfo` | 标题、语言、编码、页数、字数、正文提取状态 |
+| `media` / `datatype.MediaInfo` | kind、MIME、宽高、时长、编码、颜色空间 |
+| `container` / `datatype.ContainerInfo` | child 数量、默认 child、child 轻量摘要、child refs |
+| `graph` / `datatype.GraphInfo` | node shapes、relationship shapes、连接模式、属性结构、节点数、关系数 |
+
+这些 type info 是结构事实，不是内容数据，也不是格式私有信息。文档正文、表格样本、图片缩略图、原始二进制、视频流、图节点样本等必须通过 content reader、sample reader、query provider 或业务模块结果表达，不写入 `type_info`。
 
 每个 data type 只有一类通用 info。格式实现只负责在已确定的 `data_type + format` 下提取这类 info；Meta 负责把它写入 `meta_item.attributes.type_info`。
 
@@ -159,7 +165,9 @@ graph 的核心是节点和关系。Neo4j label、relationship type、RDF class 
 | `sqlite` | sqlite_version、table_count、tables |
 | `zip` | compression_method、entry_count、encrypted |
 
-类型信息不等于内容数据。`table info` 描述字段、行数、主键、空间字段等元数据；表格样本、文档原文片段、图片缩略图、原始二进制内容等属于内容读取能力。
+类型信息不等于内容数据。`table info` 描述字段、行数、主键等元数据；表格样本、文档原文片段、图片缩略图、原始二进制内容等属于内容读取能力。
+
+空间、时间、统计、提取、语义、分区、索引等是横切事实，不新增为基础 data type，也不塞进某个 type info。典型落点是 `attributes.capabilities.*` 或 `attributes.content_index.*`。
 
 ## FormatPlugin
 
@@ -217,7 +225,7 @@ Shapefile 这类 multi 格式尤其要区分：单个 `.shp/.dbf/.shx` 的识别
 | `media` | `MediaInfoProvider` | 后续 `MediaThumbnailReader` | raw / range content 由 `contentio` 或后续 reader 表达 |
 | `container` | `ContainerInfoProvider` | `ContainerChildResolver`、内部对象读取 | child 解析后继续进入对应 data type provider |
 | `graph` | `GraphMetadataProvider` / `datatype.GraphInfo` | `GraphSampleProvider` | 图查询读取由 graph / engine 能力表达 |
-| 横切能力 | spatial 等横切事实进入对应 data type info | 不替代 data type reader | 不替代 data type reader / writer |
+| 横切能力 | spatial 等横切事实进入 `capabilities.*` | 不替代 data type reader | 不替代 data type reader / writer |
 
 新实现应按 info、sample、continuous reader、writer 拆开设计，不新增同时表达多种消费意图的组合 provider。
 
@@ -272,6 +280,8 @@ Shapefile 这类 multi 格式尤其要区分：单个 `.shp/.dbf/.shx` 的识别
 | `capabilities` | 这个 item 有哪些横切能力 | spatial、temporal、statistics、extraction |
 
 `meta_item` 表字段仍是 item 身份和归属的事实源。attributes 不重复保存 `id`、`tenant_id`、`engine_id`、`node_id`、`name`、`full_name`、`fingerprint` 等表字段。
+
+`attributes.type_info.file` 不存在。文件 / 对象 / 目录的基础事实应写入 `storage`，内容语义写入 `item.data_type` 与对应 `type_info.<data_type>`。
 
 ## 后续阅读
 

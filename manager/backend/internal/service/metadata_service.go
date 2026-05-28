@@ -170,11 +170,11 @@ func convertResource(src *commonModels.Engine) *models.Engine {
 	}
 }
 
-// StreamObject 对象内容流式传输，支持 HTTP Range 请求。
-func (s *MetadataService) StreamObject(
+// StreamStorageContent 对存储叶子内容做流式传输，支持 HTTP Range 请求。
+func (s *MetadataService) StreamStorageContent(
 	ctx context.Context,
 	resourceID uint,
-	objectKey string,
+	storageRef string,
 	rangeHeader string,
 	tenantID *uint,
 ) (io.ReadCloser, int64, string, string, error) {
@@ -197,14 +197,14 @@ func (s *MetadataService) StreamObject(
 
 	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
 
-	itemPath, displayPath, err := streamCatalogItemPath(resource.EngineType, resource.ID, objectKey)
+	itemPath, displayPath, err := streamStorageRefPath(resource.EngineType, resource.ID, storageRef)
 	if err != nil {
 		return nil, 0, "", "", err
 	}
 
 	meta, err := streamItemMetadata(ctx, metadataProvider, connInfo, itemPath, displayPath)
 	if err != nil {
-		return nil, 0, "", "", fmt.Errorf("failed to stat object: %w", err)
+		return nil, 0, "", "", fmt.Errorf("failed to stat storage content: %w", err)
 	}
 
 	contentType := objectcontent.InferContentType(displayPath, meta.ContentType)
@@ -266,28 +266,28 @@ func (s *MetadataService) StreamObject(
 		reader, err = contentReader.OpenContent(ctx, connInfo, itemPath, readOptions)
 	}
 	if err != nil {
-		return nil, 0, "", "", fmt.Errorf("failed to get object: %w", err)
+		return nil, 0, "", "", fmt.Errorf("failed to get storage content: %w", err)
 	}
 
 	return reader, contentLength, contentRange, contentType, nil
 }
 
-func streamCatalogItemPath(engineType string, engineID uint, objectKey string) (plugin.CatalogPath, string, error) {
-	objectKey = strings.Trim(objectKey, "/")
-	if objectKey == "" {
-		return plugin.CatalogPath{}, "", fmt.Errorf("object key is empty")
+func streamStorageRefPath(engineType string, engineID uint, storageRef string) (plugin.CatalogPath, string, error) {
+	storageRef = strings.Trim(storageRef, "/")
+	if storageRef == "" {
+		return plugin.CatalogPath{}, "", fmt.Errorf("storage ref is empty")
 	}
 	if catalogutil.ItemTermMatches(engineType, plugin.CatalogTermObject) {
-		parts := strings.SplitN(objectKey, "/", 2)
+		parts := strings.SplitN(storageRef, "/", 2)
 		if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
-			return plugin.CatalogPath{}, "", fmt.Errorf("invalid object key format: %s", objectKey)
+			return plugin.CatalogPath{}, "", fmt.Errorf("invalid storage ref for object catalog: %s", storageRef)
 		}
-		return plugin.ObjectItemPath(engineID, parts[0], parts[1]), objectKey, nil
+		return plugin.ObjectItemPath(engineID, parts[0], parts[1]), storageRef, nil
 	}
 	if catalogutil.ItemTermMatches(engineType, plugin.CatalogTermFile) {
-		return plugin.FileItemPath(engineID, objectKey), objectKey, nil
+		return plugin.FileItemPath(engineID, storageRef), storageRef, nil
 	}
-	return plugin.CatalogPath{}, "", fmt.Errorf("resource type %s does not support object streaming", engineType)
+	return plugin.CatalogPath{}, "", fmt.Errorf("resource type %s does not support storage streaming", engineType)
 }
 
 func streamItemMetadata(ctx context.Context, metadataProvider plugin.ItemMetadataProvider, connInfo plugin.ConnectionInfo, itemPath plugin.CatalogPath, fallbackPath string) (*plugin.FileMetadata, error) {

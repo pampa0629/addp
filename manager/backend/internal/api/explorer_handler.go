@@ -432,29 +432,29 @@ func (h *ExplorerHandler) SearchNodes(c *gin.Context) {
 	})
 }
 
-// ObjectStream 对象内容流式传输（支持 Range 请求）
-// GET /api/v1/manager/object-stream?engine_id=1&object_key=bucket/path/to/file
-// @Summary 对象内容流式传输 | Object content streaming
-// @Description 支持 Range 请求的对象内容流式传输，用于图片、视频等媒体在线预览 | Object content streaming with Range request support for media preview
+// StorageStream 存储叶子内容流式传输（支持 Range 请求）
+// GET /api/v1/manager/storage-stream?engine_id=1&storage_ref=bucket/path/to/file
+// @Summary 存储内容流式传输 | Storage content streaming
+// @Description 支持 Range 请求的存储叶子内容流式传输，用于图片、视频、下载等内容访问；storage_ref 在对象存储中为 bucket/path，在文件系统中为文件路径 | Storage leaf content streaming with Range request support; storage_ref is bucket/path for object catalogs and file path for file catalogs
 // @Tags Manager
 // @Produce octet-stream
 // @Param engine_id query int true "存储引擎ID | Engine ID"
-// @Param object_key query string true "对象存储路径 | Object storage path"
-// @Success 200 "对象内容流 | Object content stream"
-// @Success 206 "部分对象内容流 | Partial object content stream"
+// @Param storage_ref query string true "存储内容引用 | Storage content reference"
+// @Success 200 "存储内容流 | Storage content stream"
+// @Success 206 "部分存储内容流 | Partial storage content stream"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
-// @Router /object-stream [get]
+// @Router /storage-stream [get]
 // @Security BearerAuth
-func (h *ExplorerHandler) ObjectStream(c *gin.Context) {
+func (h *ExplorerHandler) StorageStream(c *gin.Context) {
 	tenantID := tenantIDFromContext(c)
 
 	// 解析参数
 	engineIDStr := c.Query("engine_id")
-	objectKey := c.Query("object_key")
+	storageRef := c.Query("storage_ref")
 
-	if engineIDStr == "" || objectKey == "" {
-		commonAPI.BadRequestError(c, "Missing engine_id or object_key")
+	if engineIDStr == "" || storageRef == "" {
+		commonAPI.BadRequestError(c, "Missing engine_id or storage_ref")
 		return
 	}
 
@@ -467,12 +467,12 @@ func (h *ExplorerHandler) ObjectStream(c *gin.Context) {
 	// 获取 Range header
 	rangeHeader := c.GetHeader("Range")
 
-	logger.L().Info("对象流请求", "engine_id", engineID, "object_key", objectKey, "range", rangeHeader)
+	logger.L().Info("存储内容流请求", "engine_id", engineID, "storage_ref", storageRef, "range", rangeHeader)
 
-	reader, contentLength, contentRange, contentType, err := h.metadataService.StreamObject(
+	reader, contentLength, contentRange, contentType, err := h.metadataService.StreamStorageContent(
 		c.Request.Context(),
 		uint(engineID),
-		objectKey,
+		storageRef,
 		rangeHeader,
 		tenantID,
 	)
@@ -481,11 +481,11 @@ func (h *ExplorerHandler) ObjectStream(c *gin.Context) {
 			commonAPI.ForbiddenError(c, "Access denied to this engine")
 			return
 		}
-		if strings.Contains(err.Error(), "does not support object streaming") {
+		if strings.Contains(err.Error(), "does not support storage streaming") {
 			commonAPI.BadRequestError(c, err.Error())
 			return
 		}
-		logger.L().Error("对象流失败", "error", err)
+		logger.L().Error("存储内容流失败", "error", err)
 		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
@@ -494,7 +494,7 @@ func (h *ExplorerHandler) ObjectStream(c *gin.Context) {
 	// 设置响应头
 	c.Header("Content-Type", contentType)
 	c.Header("Accept-Ranges", "bytes")
-	c.Header("Content-Disposition", objectStreamContentDisposition(objectKey, contentType))
+	c.Header("Content-Disposition", storageStreamContentDisposition(storageRef, contentType))
 
 	if contentRange != "" {
 		// Range 请求返回 206 Partial Content
@@ -510,12 +510,12 @@ func (h *ExplorerHandler) ObjectStream(c *gin.Context) {
 	// 流式传输
 	_, err = io.Copy(c.Writer, reader)
 	if err != nil {
-		logger.L().Error("对象流传输失败", "error", err)
+		logger.L().Error("存储内容流传输失败", "error", err)
 	}
 }
 
-func objectStreamContentDisposition(objectKey, contentType string) string {
-	filename := path.Base(strings.TrimSpace(objectKey))
+func storageStreamContentDisposition(storageRef, contentType string) string {
+	filename := path.Base(strings.TrimSpace(storageRef))
 	if filename == "." || filename == "/" || filename == "" {
 		filename = "download"
 	}

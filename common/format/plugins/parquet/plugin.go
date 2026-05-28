@@ -28,11 +28,11 @@ const FileRowCountsOption = "parquet_file_row_counts"
 type Plugin struct{}
 
 type Info struct {
-	Files            []PartFileInfo
+	Files            []PartResourceInfo
 	PartitionColumns []string
 }
 
-type PartFileInfo struct {
+type PartResourceInfo struct {
 	Path     string `json:"path"`
 	RowCount int64  `json:"row_count"`
 }
@@ -61,7 +61,7 @@ func infoFromFacts(formatInfo, native map[string]interface{}) *Info {
 	if len(formatInfo) == 0 && len(native) == 0 {
 		return nil
 	}
-	files := parquetFileInfos(formatInfo["files"])
+	files := parquetResourceInfos(formatInfo["files"])
 	partitionColumns := parquetPartitionColumns(native["partition_columns"])
 	if len(files) == 0 && len(partitionColumns) == 0 {
 		return nil
@@ -83,12 +83,12 @@ func parquetTableNative(partitionColumns []string) map[string]interface{} {
 	}, tableNativeKeys)
 }
 
-func parquetFileInfos(value interface{}) []PartFileInfo {
+func parquetResourceInfos(value interface{}) []PartResourceInfo {
 	switch files := value.(type) {
-	case []PartFileInfo:
-		return append([]PartFileInfo(nil), files...)
+	case []PartResourceInfo:
+		return append([]PartResourceInfo(nil), files...)
 	case []interface{}:
-		result := make([]PartFileInfo, 0, len(files))
+		result := make([]PartResourceInfo, 0, len(files))
 		for _, item := range files {
 			attrs, ok := item.(map[string]interface{})
 			if !ok {
@@ -98,7 +98,7 @@ func parquetFileInfos(value interface{}) []PartFileInfo {
 			if path == "" {
 				continue
 			}
-			result = append(result, PartFileInfo{
+			result = append(result, PartResourceInfo{
 				Path:     path,
 				RowCount: commonJSON.InterfaceInt64(attrs["row_count"]),
 			})
@@ -144,7 +144,7 @@ func FileRowCountsFromAttributes(attrs map[string]interface{}) map[string]int64 
 	if len(parquetAttrs) == 0 {
 		return nil
 	}
-	files, ok := parquetAttrs["files"].([]PartFileInfo)
+	files, ok := parquetAttrs["files"].([]PartResourceInfo)
 	if ok {
 		counts := make(map[string]int64, len(files))
 		for _, file := range files {
@@ -767,7 +767,7 @@ func (p *Plugin) DescribeTableScope(ctx context.Context, reader contentio.Reader
 	var merged *format.TableDescribeResult
 	var dataFields []datatype.FieldInfo
 	totalRows := int64(0)
-	files := make([]PartFileInfo, 0, len(scopedRefs))
+	files := make([]PartResourceInfo, 0, len(scopedRefs))
 	partitionFields := partitionFieldsFromScopedRefs(scopedRefs)
 	for _, scopedRef := range scopedRefs {
 		if err := contextErr(ctx); err != nil {
@@ -806,7 +806,7 @@ func (p *Plugin) DescribeTableScope(ctx context.Context, reader contentio.Reader
 		}
 		if info.RowCount != nil {
 			totalRows += *info.RowCount
-			files = append(files, PartFileInfo{
+			files = append(files, PartResourceInfo{
 				Path:     normalizeParquetPath(ref.Path),
 				RowCount: *info.RowCount,
 			})

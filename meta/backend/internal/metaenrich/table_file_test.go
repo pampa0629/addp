@@ -202,10 +202,10 @@ func TestTableFileResolverRejectsSiblingIndependentParquetFiles(t *testing.T) {
 	}
 }
 
-func TestExtractJSONSingleFileInfoStrictRequiresRecordCollection(t *testing.T) {
+func TestExtractJSONSingleTableFileItemStrictRequiresRecordCollection(t *testing.T) {
 	reader := staticContentReader{content: `{"name":"plain"}`}
 
-	_, err := ExtractTableFileSingleFileInfoStrict(context.Background(), reader, nil, 1, "plain.json", 10, false)
+	_, err := ExtractSingleTableFileItemStrict(context.Background(), reader, nil, 1, "plain.json", 10, false)
 	if err == nil {
 		t.Fatal("expected plain JSON document to be rejected as table")
 	}
@@ -256,15 +256,15 @@ func TestEnrichSingleTableFileItemDetectsFormatFromContent(t *testing.T) {
 	}
 }
 
-func TestExtractJSONSingleFileInfoStrictAcceptsObjectArray(t *testing.T) {
+func TestExtractJSONSingleTableFileItemStrictAcceptsObjectArray(t *testing.T) {
 	reader := staticContentReader{content: `[
 		{"id":"1","name":"A","area":"356.16704388138885"},
 		{"id":"2","name":"B","area":"129.1114944814742"}
 	]`}
 
-	info, err := ExtractTableFileSingleFileInfoStrict(context.Background(), reader, nil, 1, "converted-data.json", 10, false)
+	info, err := ExtractSingleTableFileItemStrict(context.Background(), reader, nil, 1, "converted-data.json", 10, false)
 	if err != nil {
-		t.Fatalf("ExtractTableFileSingleFileInfoStrict() error = %v", err)
+		t.Fatalf("ExtractSingleTableFileItemStrict() error = %v", err)
 	}
 	if info.DataType != dataitem.DataTypeTable || info.Format != string(format.FormatJSON) {
 		t.Fatalf("info = %#v", info)
@@ -278,7 +278,7 @@ func TestExtractJSONSingleFileInfoStrictAcceptsObjectArray(t *testing.T) {
 	}
 }
 
-func TestExtractJSONSingleFileInfoStrictWritesSpatialOnlyWhenGeometryExists(t *testing.T) {
+func TestExtractJSONSingleTableFileItemStrictWritesSpatialOnlyWhenGeometryExists(t *testing.T) {
 	reader := staticContentReader{content: `{
 		"type": "FeatureCollection",
 		"bbox": [1, 2, 3, 4],
@@ -287,9 +287,9 @@ func TestExtractJSONSingleFileInfoStrictWritesSpatialOnlyWhenGeometryExists(t *t
 		]
 	}`}
 
-	info, err := ExtractTableFileSingleFileInfoStrict(context.Background(), reader, nil, 1, "roads.geojson", 10, false)
+	info, err := ExtractSingleTableFileItemStrict(context.Background(), reader, nil, 1, "roads.geojson", 10, false)
 	if err != nil {
-		t.Fatalf("ExtractTableFileSingleFileInfoStrict() error = %v", err)
+		t.Fatalf("ExtractSingleTableFileItemStrict() error = %v", err)
 	}
 	if info.DataType != dataitem.DataTypeTable || info.Format != string(format.FormatJSON) {
 		t.Fatalf("info = %#v", info)
@@ -303,7 +303,7 @@ func TestExtractJSONSingleFileInfoStrictWritesSpatialOnlyWhenGeometryExists(t *t
 	}
 }
 
-func TestExtractJSONSingleFileInfoStrictDoesNotWriteSpatialWithoutGeometry(t *testing.T) {
+func TestExtractJSONSingleTableFileItemStrictDoesNotWriteSpatialWithoutGeometry(t *testing.T) {
 	reader := staticContentReader{content: `{
 		"type": "FeatureCollection",
 		"features": [
@@ -311,9 +311,9 @@ func TestExtractJSONSingleFileInfoStrictDoesNotWriteSpatialWithoutGeometry(t *te
 		]
 	}`}
 
-	info, err := ExtractTableFileSingleFileInfoStrict(context.Background(), reader, nil, 1, "rows.geojson", 10, false)
+	info, err := ExtractSingleTableFileItemStrict(context.Background(), reader, nil, 1, "rows.geojson", 10, false)
 	if err != nil {
-		t.Fatalf("ExtractTableFileSingleFileInfoStrict() error = %v", err)
+		t.Fatalf("ExtractSingleTableFileItemStrict() error = %v", err)
 	}
 	if spatial := commonJSON.Section(info.Attributes, "capabilities.spatial"); len(spatial) != 0 {
 		t.Fatalf("spatial should be empty: %#v", spatial)

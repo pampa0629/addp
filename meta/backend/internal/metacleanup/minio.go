@@ -16,12 +16,12 @@ type MinIOGarbageStats struct {
 	TotalSizeBytes int64
 	TotalSizeMB    float64
 	ByBucket       map[string]int
-	Samples        []models.MinIOFileInfo
+	Samples        []models.MinIOObjectInfo
 }
 
 type MinIOCleanupResult struct {
-	DeletedFiles int
-	FreedSpaceMB float64
+	DeletedObjects int
+	FreedSpaceMB   float64
 }
 
 type MinIOCleaner struct {
@@ -40,7 +40,7 @@ func (c *MinIOCleaner) Enabled() bool {
 func (c *MinIOCleaner) ScanGarbage(ctx context.Context, invalidFingerprints []string) (*MinIOGarbageStats, error) {
 	stats := &MinIOGarbageStats{
 		ByBucket: make(map[string]int),
-		Samples:  []models.MinIOFileInfo{},
+		Samples:  []models.MinIOObjectInfo{},
 	}
 	if !c.Enabled() {
 		if c.log != nil {
@@ -89,7 +89,7 @@ func (c *MinIOCleaner) ExecuteCleanup(ctx context.Context, invalidFingerprints [
 	systemDeleted, systemFreed := c.deleteBucketObjects(ctx, "system", func(key string, size int64, modified time.Time) bool {
 		return strings.HasPrefix(key, "audit-logs/") && time.Since(modified) > 30*24*time.Hour
 	})
-	result.DeletedFiles += systemDeleted
+	result.DeletedObjects += systemDeleted
 	totalFreedBytes += systemFreed
 
 	managerDeleted, managerFreed := c.deleteBucketObjects(ctx, "manager", func(key string, size int64, modified time.Time) bool {
@@ -99,7 +99,7 @@ func (c *MinIOCleaner) ExecuteCleanup(ctx context.Context, invalidFingerprints [
 		}
 		return false
 	})
-	result.DeletedFiles += managerDeleted
+	result.DeletedObjects += managerDeleted
 	totalFreedBytes += managerFreed
 	result.FreedSpaceMB = float64(totalFreedBytes) / (1024 * 1024)
 
@@ -126,7 +126,7 @@ func (c *MinIOCleaner) DeleteMVTByFingerprints(ctx context.Context, engineID uin
 	if c.log != nil {
 		c.log.Info("引擎 MVT 瓦片清理完成",
 			"engine_id", engineID,
-			"deleted_files", totalDeleted,
+			"deleted_objects", totalDeleted,
 			"freed_mb", float64(totalFreedBytes)/(1024*1024))
 	}
 	return totalDeleted, totalFreedBytes
@@ -135,7 +135,7 @@ func (c *MinIOCleaner) DeleteMVTByFingerprints(ctx context.Context, engineID uin
 func (c *MinIOCleaner) scanBucket(ctx context.Context, bucket string, isGarbage func(key string, size int64, modified time.Time) (bool, string)) *MinIOGarbageStats {
 	stats := &MinIOGarbageStats{
 		ByBucket: make(map[string]int),
-		Samples:  []models.MinIOFileInfo{},
+		Samples:  []models.MinIOObjectInfo{},
 	}
 
 	objectCh := c.client.ListObjects(ctx, bucket, minio.ListObjectsOptions{Recursive: true})
@@ -150,7 +150,7 @@ func (c *MinIOCleaner) scanBucket(ctx context.Context, bucket string, isGarbage 
 			stats.TotalCount++
 			stats.TotalSizeBytes += object.Size
 			if len(stats.Samples) < 10 {
-				stats.Samples = append(stats.Samples, models.MinIOFileInfo{
+				stats.Samples = append(stats.Samples, models.MinIOObjectInfo{
 					Bucket:   bucket,
 					Key:      object.Key,
 					Size:     object.Size,

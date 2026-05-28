@@ -169,7 +169,7 @@ func (d *tableFileItemResolver) ResolveItems(
 	if !d.Detect(ctx, files, subdirs) {
 		return nil, nil
 	}
-	info, err := d.extractTableFileInfo(ctx, input.ContentReader, input.ConnInfo, input.EngineID, input.DirPath, files, subdirs, input.CatalogPathFor)
+	info, err := d.extractTableDatasetInfo(ctx, input.ContentReader, input.ConnInfo, input.EngineID, input.DirPath, files, subdirs, input.CatalogPathFor)
 	if err != nil {
 		return nil, err
 	}
@@ -375,7 +375,7 @@ func tableFileMode(files []plugin.FileEntry, subdirs []plugin.DirEntry, dirPath 
 	return "single"
 }
 
-func tableFileInfoWithoutSchema(files []plugin.FileEntry, subdirs []plugin.DirEntry, dirPath string) *metaitem.CompositeItemInfo {
+func tableDatasetInfoWithoutSchema(files []plugin.FileEntry, subdirs []plugin.DirEntry, dirPath string) *metaitem.CompositeItemInfo {
 	resolved, _, _ := resolveTableFileDataItem(dirPath, files)
 	totalSize := tableFileSize(files)
 	formatName := detectFormat(files)
@@ -472,7 +472,7 @@ func isImmediateChildPath(scopePath string, childPath string) bool {
 	return rest != "" && !strings.Contains(rest, "/")
 }
 
-func (d *tableFileItemResolver) extractTableFileInfo(
+func (d *tableFileItemResolver) extractTableDatasetInfo(
 	ctx context.Context,
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
@@ -489,10 +489,10 @@ func (d *tableFileItemResolver) extractTableFileInfo(
 
 	firstReadableFile := firstReadableTableFile(files, dirPath)
 	if firstReadableFile == nil {
-		return tableFileInfoWithoutSchema(files, subdirs, dirPath), nil
+		return tableDatasetInfoWithoutSchema(files, subdirs, dirPath), nil
 	}
 	if contentReader == nil {
-		return tableFileInfoWithoutSchema(files, subdirs, dirPath), nil
+		return tableDatasetInfoWithoutSchema(files, subdirs, dirPath), nil
 	}
 
 	formatName := detectFormat(files)
@@ -567,11 +567,11 @@ func extractTableFileWholeScopeInfo(
 	if !resolver.Detect(ctx, files, subdirs) {
 		return nil, fmt.Errorf("directory is not a table file dataset: %s", dirPath)
 	}
-	return resolver.extractTableFileInfo(ctx, contentReader, connInfo, engineID, dirPath, files, subdirs, firstCatalogPathResolver(catalogPathFor))
+	return resolver.extractTableDatasetInfo(ctx, contentReader, connInfo, engineID, dirPath, files, subdirs, firstCatalogPathResolver(catalogPathFor))
 }
 
-// ExtractTableFileSingleFileInfo 提取单个表格文件的元信息（模式 B：文件即表）。
-func ExtractTableFileSingleFileInfo(
+// ExtractSingleTableFileItem 提取单个表格文件 item 主事实（模式 B：文件即表）。
+func ExtractSingleTableFileItem(
 	ctx context.Context,
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
@@ -582,10 +582,10 @@ func ExtractTableFileSingleFileInfo(
 	catalogPathFor ...func(path string) plugin.CatalogPath,
 ) (*metaitem.CompositeItemInfo, error) {
 	formatName := fileFormatName(filePath)
-	return extractTableFileSingleFileInfoWithFormat(ctx, contentReader, connInfo, engineID, filePath, fileSize, includeContentIndex, formatName, catalogPathFor...)
+	return extractSingleTableFileItemWithFormat(ctx, contentReader, connInfo, engineID, filePath, fileSize, includeContentIndex, formatName, catalogPathFor...)
 }
 
-func extractTableFileSingleFileInfoWithFormat(
+func extractSingleTableFileItemWithFormat(
 	ctx context.Context,
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
@@ -644,9 +644,9 @@ func extractTableFileSingleFileInfoWithFormat(
 	}, nil
 }
 
-// ExtractTableFileSingleFileInfoStrict 仅在格式 provider 成功解析出表结构时返回结果。
+// ExtractSingleTableFileItemStrict 仅在格式 provider 成功解析出表结构时返回 item 主事实。
 // 适用于 JSON 这类默认是 document、只有特定内容结构才应升级为 table 的格式。
-func ExtractTableFileSingleFileInfoStrict(
+func ExtractSingleTableFileItemStrict(
 	ctx context.Context,
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
@@ -717,13 +717,13 @@ func EnrichSingleTableFileItem(
 		item.DataType = dataitem.DetectDataType(item.Format)
 	}
 	if item.DataType != dataitem.DataTypeTable {
-		info, err := ExtractTableFileSingleFileInfoStrict(ctx, contentReader, connInfo, engineID, filePath, fileSize, includeContentIndex, firstCatalogPathResolver(catalogPathFor))
+		info, err := ExtractSingleTableFileItemStrict(ctx, contentReader, connInfo, engineID, filePath, fileSize, includeContentIndex, firstCatalogPathResolver(catalogPathFor))
 		if err != nil || info == nil {
 			return item, false, err
 		}
 		return metaitem.DetectedItemFromCompositeInfo(info, filePath, fileSize), true, nil
 	}
-	info, err := extractTableFileSingleFileInfoWithFormat(ctx, contentReader, connInfo, engineID, filePath, fileSize, includeContentIndex, item.Format, firstCatalogPathResolver(catalogPathFor))
+	info, err := extractSingleTableFileItemWithFormat(ctx, contentReader, connInfo, engineID, filePath, fileSize, includeContentIndex, item.Format, firstCatalogPathResolver(catalogPathFor))
 	if err != nil || info == nil {
 		return item, false, err
 	}

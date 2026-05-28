@@ -66,10 +66,10 @@ func TestMetadataServiceRefreshItemUsesMetaClient(t *testing.T) {
 	}
 }
 
-func TestStreamCatalogItemPathSupportsFileAndObjectCatalogs(t *testing.T) {
+func TestStreamStorageRefPathSupportsFileAndObjectCatalogs(t *testing.T) {
 	t.Parallel()
 
-	filePath, displayPath, err := streamCatalogItemPath("nfs", 26, "raw/book.epub")
+	filePath, displayPath, err := streamStorageRefPath("nfs", 26, "raw/book.epub")
 	if err != nil {
 		t.Fatalf("file stream path error = %v", err)
 	}
@@ -77,7 +77,7 @@ func TestStreamCatalogItemPathSupportsFileAndObjectCatalogs(t *testing.T) {
 		t.Fatalf("file path/display = %q/%q, want raw/book.epub", got, displayPath)
 	}
 
-	objectPath, displayPath, err := streamCatalogItemPath("minio", 9, "addp/raw/book.epub")
+	objectPath, displayPath, err := streamStorageRefPath("minio", 9, "addp/raw/book.epub")
 	if err != nil {
 		t.Fatalf("object stream path error = %v", err)
 	}
