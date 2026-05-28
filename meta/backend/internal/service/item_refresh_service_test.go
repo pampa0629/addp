@@ -280,6 +280,97 @@ func TestRefreshKnownDOCXItemExtractsTextFacts(t *testing.T) {
 	}
 }
 
+func TestRefreshKnownZIPItemWritesContainerInfo(t *testing.T) {
+	t.Parallel()
+
+	db := openObjectCatalogScanTestDB(t)
+	tenantID := uint(1)
+	engineID := uint(80)
+	engineSvc := NewEngineService(db, "", "", nil)
+	engineSvc.engineCache[engineID] = &engineCacheEntry{
+		resource: &commonModels.Engine{
+			ID:         engineID,
+			TenantID:   &tenantID,
+			EngineType: "known-refresh-zip-test",
+			IsActive:   true,
+		},
+		expiresAt: time.Now().Add(time.Hour),
+	}
+
+	content := minimalRefreshZIP(t, map[string]string{
+		"data/cities.csv":  "id,name\n1,Hangzhou\n",
+		"notes/readme.txt": "hello",
+	})
+	plugin.Register(refreshContentReader{engineType: "known-refresh-zip-test", content: map[string][]byte{"addp/archive.zip": content}})
+
+	svc := NewScanService(db, engineSvc)
+	svc.log = slog.Default()
+	node := models.MetaNode{TenantID: tenantID, EngineID: engineID, NodeType: "bucket", Name: "addp", FullName: "addp", Depth: 0}
+	if err := db.Create(&node).Error; err != nil {
+		t.Fatalf("create node: %v", err)
+	}
+	size := int64(len(content))
+	item := models.MetaItem{
+		TenantID:    tenantID,
+		EngineID:    engineID,
+		NodeID:      node.ID,
+		ItemType:    "object",
+		Name:        "archive.zip",
+		FullName:    "addp/archive.zip",
+		Fingerprint: "known-refresh-zip",
+		SizeBytes:   &size,
+		Attributes: models.JSONMap{
+			"item": map[string]interface{}{
+				"layout":    string(dataitem.LayoutSingle),
+				"data_type": string(dataitem.DataTypeContainer),
+				"format":    "zip",
+			},
+			"storage": map[string]interface{}{
+				"bucket":        "addp",
+				"path":          "",
+				"name":          "archive.zip",
+				"physical_path": "addp/archive.zip",
+				"size_bytes":    size,
+			},
+		},
+	}
+	if err := db.Create(&item).Error; err != nil {
+		t.Fatalf("create item: %v", err)
+	}
+
+	resp, err := svc.RefreshItem(context.Background(), engineID, tenantID, item.ID, "", true)
+	if err != nil {
+		t.Fatalf("RefreshItem() error = %v", err)
+	}
+	if resp.ItemsScanned != 1 {
+		t.Fatalf("ItemsScanned = %d, want 1", resp.ItemsScanned)
+	}
+
+	var refreshed models.MetaItem
+	if err := db.First(&refreshed, item.ID).Error; err != nil {
+		t.Fatalf("load refreshed item: %v", err)
+	}
+	if got := commonJSON.String(refreshed.Attributes, "item", "data_type"); got != string(dataitem.DataTypeContainer) {
+		t.Fatalf("item.data_type = %q, want container", got)
+	}
+	if got := commonJSON.String(refreshed.Attributes, "item", "format"); got != "zip" {
+		t.Fatalf("item.format = %q, want zip", got)
+	}
+	container := commonJSON.Section(refreshed.Attributes, "type_info.container")
+	if commonJSON.InterfaceInt64(container["child_count"]) != 2 {
+		t.Fatalf("type_info.container = %#v, want child_count 2", container)
+	}
+	if children, ok := container["children"].([]interface{}); !ok || len(children) != 2 {
+		t.Fatalf("type_info.container.children = %#v, want 2 entries", container["children"])
+	}
+	if got := commonJSON.String(refreshed.Attributes, "storage", "content_hash"); got == "" {
+		t.Fatal("storage.content_hash missing")
+	}
+	if got := commonJSON.String(refreshed.Attributes, "storage", "content_hash_algorithm"); got != "sha256" {
+		t.Fatalf("storage.content_hash_algorithm = %q", got)
+	}
+}
+
 type refreshContentReader struct {
 	engineType string
 	content    map[string][]byte
@@ -347,6 +438,25 @@ func minimalRefreshDOCX(t *testing.T, documentXML string) []byte {
 	}
 	if _, err := file.Write([]byte(documentXML)); err != nil {
 		t.Fatalf("write document.xml: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close zip: %v", err)
+	}
+	return buf.Bytes()
+}
+
+func minimalRefreshZIP(t *testing.T, files map[string]string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	writer := zip.NewWriter(&buf)
+	for name, body := range files {
+		file, err := writer.Create(name)
+		if err != nil {
+			t.Fatalf("create zip entry %s: %v", name, err)
+		}
+		if _, err := file.Write([]byte(body)); err != nil {
+			t.Fatalf("write zip entry %s: %v", name, err)
+		}
 	}
 	if err := writer.Close(); err != nil {
 		t.Fatalf("close zip: %v", err)

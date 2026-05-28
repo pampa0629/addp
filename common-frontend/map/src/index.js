@@ -5,7 +5,6 @@ export { default as TilePreview } from './components/TilePreview.vue'
 export { default as MapContainer } from './components/map/MapContainer.vue'
 export { default as GaodeMapRenderer } from './components/map/GaodeMapRenderer.vue'
 export { default as OpenLayersRenderer } from './components/map/OpenLayersRenderer.vue'
-export { default as ExtractedMetadata } from './components/ExtractedMetadata.vue'
 export { default as MapPopup } from './components/MapPopup.vue'
 
 // Map Composables

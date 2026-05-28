@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/addp/common/datatype"
-	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/models"
 )
 
@@ -686,7 +685,7 @@ func (c *MetaClient) BuildObjectContentIndex(req *ObjectMetadataRequest) (map[st
 	return result.Data.Attributes, nil
 }
 
-// GetObjectMetadata 获取已存储的对象提取元数据。
+// GetObjectMetadata 获取已存储的对象标准 attributes。
 func (c *MetaClient) GetObjectMetadata(engineID uint, objectKey string) (map[string]interface{}, error) {
 	endpoint := fmt.Sprintf("%s/api/v1/meta/metadata/object?engine_id=%d&object_key=%s",
 		c.baseURL, engineID, url.QueryEscape(objectKey))
@@ -717,28 +716,8 @@ func (c *MetaClient) GetObjectMetadata(engineID uint, objectKey string) (map[str
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
-	if extracted, ok := commonJSON.Value(result, "capabilities.extraction", "extracted_metadata").(map[string]interface{}); ok {
-		return extracted, nil
+	if attrs, ok := result["attributes"].(map[string]interface{}); ok {
+		return attrs, nil
 	}
 	return nil, nil
-}
-
-// TryExtractMetadata 先读取已有对象元数据，缺失时再按需提取。
-func (c *MetaClient) TryExtractMetadata(engineID uint, objectKey string, objectDataProvider func() (io.Reader, error)) (map[string]interface{}, error) {
-	existing, err := c.GetObjectMetadata(engineID, objectKey)
-	if err == nil && existing != nil {
-		return existing, nil
-	}
-	if objectDataProvider == nil {
-		return nil, fmt.Errorf("no object data provider for extraction")
-	}
-	objectData, err := objectDataProvider()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get object data: %w", err)
-	}
-	return c.ExtractObjectMetadata(&ObjectMetadataRequest{
-		EngineID:   engineID,
-		ObjectKey:  objectKey,
-		ObjectData: objectData,
-	})
 }

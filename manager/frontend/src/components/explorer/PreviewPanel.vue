@@ -445,17 +445,19 @@ const downloadBlob = (blob, fileName) => {
   URL.revokeObjectURL(url)
 }
 
-const triggerUrlDownload = (url, fileName) => {
-  const link = document.createElement('a')
-  link.href = url
-  if (fileName) {
-    link.download = fileName
+const normalizeClientURL = (url) => {
+  if (!url || /^https?:\/\//i.test(url)) {
+    return url
   }
-  link.rel = 'noopener'
-  link.target = '_blank'
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
+  if (url.startsWith('/api/v1/')) {
+    return url.slice('/api/v1'.length)
+  }
+  return url
+}
+
+const downloadFromUrl = async (url, fileName) => {
+  const blob = await client.get(normalizeClientURL(url), { responseType: 'blob' })
+  downloadBlob(blob, fileName)
 }
 
 const stringifyJson = (value) => {
@@ -837,11 +839,15 @@ const engineId = computed(() => {
 })
 
 const fallbackDownloadUrl = computed(() => {
-  const path = objectData.value?.path || props.selectedNode?.path || props.selectedNode?.table || ''
-  if (!path || !engineId.value) {
+  const objectKey =
+    objectData.value?.object_key ||
+    objectData.value?.objectKey ||
+    objectData.value?.path ||
+    ''
+  if (!objectKey || !engineId.value) {
     return ''
   }
-  return `/api/preview/download?engine_id=${engineId.value}&path=${encodeURIComponent(path)}`
+  return `/manager/object-stream?engine_id=${encodeURIComponent(engineId.value)}&object_key=${encodeURIComponent(objectKey)}`
 })
 
 const downloadInfo = computed(() => {
@@ -902,10 +908,6 @@ const downloadInfo = computed(() => {
   collectUrl(content?.download)
   collectUrl(metadata)
 
-  if (fallbackDownloadUrl.value) {
-    urlCandidates.push(fallbackDownloadUrl.value)
-  }
-
   if (urlCandidates.length > 0) {
     const ext = extractExtension(baseName)
     const inferredExt = ext || guessExtensionFromMime(contentType) || guessExtensionFromKind(content.kind)
@@ -915,6 +917,18 @@ const downloadInfo = computed(() => {
       kind: 'url',
       fileName: filename,
       url: urlCandidates[0]
+    }
+  }
+
+  if (fallbackDownloadUrl.value) {
+    const ext = extractExtension(baseName)
+    const inferredExt = ext || guessExtensionFromMime(contentType) || guessExtensionFromKind(content.kind)
+    const filename = inferredExt ? ensureExtension(baseName, `.${inferredExt}`) : baseName
+    return {
+      available: true,
+      kind: 'url',
+      fileName: filename,
+      url: fallbackDownloadUrl.value
     }
   }
 
@@ -1045,7 +1059,7 @@ const handleDownload = async () => {
     const info = downloadInfo.value
     switch (info.kind) {
       case 'url':
-        triggerUrlDownload(info.url, info.fileName)
+        await downloadFromUrl(info.url, info.fileName)
         break
       case 'base64': {
         const blob = toBlobFromBase64(info.base64, info.mime)
@@ -1244,12 +1258,6 @@ function attributeValue(attributes = {}, section, key, ...fallbackKeys) {
   return undefined
 }
 
-function extractedMetadataValue(attributes = {}) {
-  return objectData.value?.extracted_metadata ||
-    objectData.value?.extractedMetadata ||
-    attributeSection(attributes, 'capabilities.extraction').extracted_metadata
-}
-
 function mediaDurationSeconds(attributes = {}) {
   const durationMS = attributeValue(attributes, 'type_info.media', 'duration_ms')
   if (durationMS === undefined || durationMS === null || durationMS === '') return undefined
@@ -1293,10 +1301,9 @@ const objectImageDimensions = computed(() => {
   }
 
   const attributes = objectData.value?.attributes || {}
-  const extracted = extractedMetadataValue(attributes) || {}
 
-  const width = attributeValue(attributes, 'type_info.media', 'width') || extracted.width || extracted.Width
-  const height = attributeValue(attributes, 'type_info.media', 'height') || extracted.height || extracted.Height
+  const width = attributeValue(attributes, 'type_info.media', 'width')
+  const height = attributeValue(attributes, 'type_info.media', 'height')
 
   if (width && height) {
     return `${width} × ${height}`
@@ -1311,13 +1318,12 @@ const objectMetadataTooltip = computed(() => {
   const contentType = objectContentType.value
   const path = objectData.value?.path || ''
   const attributes = objectData.value?.attributes || {}
-  const extracted = extractedMetadataValue(attributes) || {}
 
   // 图片特有信息
   if (contentType.startsWith('image/')) {
     // 图片尺寸（宽 高）
-    const width = attributeValue(attributes, 'type_info.media', 'width') || extracted.width || extracted.Width
-    const height = attributeValue(attributes, 'type_info.media', 'height') || extracted.height || extracted.Height
+    const width = attributeValue(attributes, 'type_info.media', 'width')
+    const height = attributeValue(attributes, 'type_info.media', 'height')
     if (width && height) {
       parts.push(`${t('manager.explorer.metaWidth')} ${width} ${t('manager.explorer.metaHeight')} ${height}`)
     }
@@ -1328,142 +1334,81 @@ const objectMetadataTooltip = computed(() => {
     }
 
     // 图片格式
-    const format = attributeValue(attributes, 'type_info.media', 'encoding') || extracted.format || extracted.Format
+    const format = attributeValue(attributes, 'type_info.media', 'encoding')
     if (format && format !== contentType.split('/')[1]) {
       parts.push(`${t('manager.explorer.metaFormat')}: ${format}`)
     }
 
     // 颜色模式
-    const colorMode = attributeValue(attributes, 'type_info.media', 'color_space') || extracted.color_space || extracted.mode || extracted.Mode
+    const colorMode = attributeValue(attributes, 'type_info.media', 'color_space')
     if (colorMode) {
       parts.push(`${t('manager.explorer.metaColorMode')}: ${colorMode}`)
-    }
-
-    // DPI
-    const dpi = extracted.dpi || extracted.DPI
-    if (dpi) {
-      parts.push(`DPI: ${dpi}`)
     }
   }
 
   // 视频特有信息
   if (contentType.includes('video')) {
-    // 兼容提取 payload 内部结构，但入口只来自标准 extraction 扩展。
-    const videoMeta = extracted.custom_attrs?.video_metadata?.data ||
-                      extracted.custom_attrs?.video_metadata ||
-                      {}
-
     // 文件大小
     if (objectSizeBytes.value > 0) {
       parts.push(`${t('manager.explorer.metaFileSize')}: ${formatFileSize(objectSizeBytes.value)}`)
     }
 
     // 视频尺寸（宽 × 高）
-    const width = attributeValue(attributes, 'type_info.media', 'width') ||
-                  videoMeta.width || videoMeta.video_width ||
-                  extracted.width || extracted.Width || extracted.video_width
-    const height = attributeValue(attributes, 'type_info.media', 'height') ||
-                   videoMeta.height || videoMeta.video_height ||
-                   extracted.height || extracted.Height || extracted.video_height
-    const resolution = videoMeta.resolution || videoMeta.video_resolution ||
-                       extracted.resolution || extracted.Resolution
+    const width = attributeValue(attributes, 'type_info.media', 'width')
+    const height = attributeValue(attributes, 'type_info.media', 'height')
 
     if (width && height) {
       parts.push(`${t('manager.explorer.metaResolution')}: ${width} × ${height}`)
-    } else if (resolution && typeof resolution === 'string') {
-      parts.push(`${t('manager.explorer.metaResolution')}: ${resolution}`)
     }
 
     // 时长
-    const duration = mediaDurationSeconds(attributes) ||
-                     videoMeta.duration || videoMeta.duration_seconds || videoMeta.total_duration ||
-                     extracted.duration || extracted.Duration
+    const duration = mediaDurationSeconds(attributes)
     if (duration) {
       const durationStr = formatDuration(duration)
       parts.push(`${t('manager.explorer.metaDuration')}: ${durationStr}`)
     }
 
     // 视频编码（codec）
-    const videoCodec = attributeValue(attributes, 'type_info.media', 'encoding') ||
-                       videoMeta.codec || videoMeta.video_codec ||
-                       extracted.video_codec || extracted.VideoCodec ||
-                       extracted.codec || extracted.Codec
+    const videoCodec = attributeValue(attributes, 'type_info.media', 'encoding')
     if (videoCodec) {
       parts.push(`${t('manager.explorer.metaVideoCodec')}: ${videoCodec}`)
-    }
-
-    // 音频编码
-    const audioCodec = videoMeta.audio_codec || videoMeta.audio_format ||
-                       extracted.audio_codec || extracted.AudioCodec
-    if (audioCodec) {
-      parts.push(`${t('manager.explorer.metaAudioCodec')}: ${audioCodec}`)
-    }
-
-    // 帧率
-    const fps = videoMeta.frame_rate || videoMeta.fps ||
-                extracted.fps || extracted.FPS || extracted.frame_rate
-    if (fps) {
-      parts.push(`${t('manager.explorer.metaFrameRate')}: ${fps} fps`)
-    }
-
-    // 比特率
-    const bitrate = videoMeta.bitrate || videoMeta.bit_rate ||
-                    extracted.bitrate || extracted.Bitrate
-    if (bitrate) {
-      const bitrateStr = formatBitrate(bitrate)
-      parts.push(`${t('manager.explorer.metaBitrate')}: ${bitrateStr}`)
     }
   }
 
   // 音频特有信息
   if (contentType.includes('audio')) {
     // 时长
-    const duration = mediaDurationSeconds(attributes) || extracted.duration || extracted.Duration
+    const duration = mediaDurationSeconds(attributes)
     if (duration) {
       const durationStr = formatDuration(duration)
       parts.push(`${t('manager.explorer.metaDuration')}: ${durationStr}`)
     }
 
     // 音频编码
-    const audioCodec = attributeValue(attributes, 'type_info.media', 'encoding') ||
-                       extracted.audio_codec || extracted.AudioCodec ||
-                       extracted.codec || extracted.Codec
+    const audioCodec = attributeValue(attributes, 'type_info.media', 'encoding')
     if (audioCodec) {
       parts.push(`${t('manager.explorer.metaAudioCodec')}: ${audioCodec}`)
-    }
-
-    // 采样率
-    const sampleRate = extracted.sample_rate || extracted.SampleRate
-    if (sampleRate) {
-      parts.push(`${t('manager.explorer.metaSampleRate')}: ${sampleRate} Hz`)
-    }
-
-    // 比特率
-    const bitrate = extracted.bitrate || extracted.Bitrate
-    if (bitrate) {
-      const bitrateStr = formatBitrate(bitrate)
-      parts.push(`${t('manager.explorer.metaBitrate')}: ${bitrateStr}`)
     }
   }
 
   // PDF 特有信息
   if (contentType.includes('pdf')) {
-    const pages = attributeValue(attributes, 'type_info.document', 'page_count') || extracted.pages || extracted.Pages
+    const pages = attributeValue(attributes, 'type_info.document', 'page_count')
     if (pages) {
       parts.push(t('manager.explorer.metaPdfPages', { value: pages }))
     }
 
-    const author = attributeValue(attributes, 'format_info.pdf', 'author') || extracted.author || extracted.Author
+    const author = attributeValue(attributes, 'format_info.pdf', 'author')
     if (author) {
       parts.push(t('manager.explorer.metaPdfAuthor', { value: author }))
     }
 
-    const title = attributeValue(attributes, 'type_info.document', 'title') || extracted.title || extracted.Title
+    const title = attributeValue(attributes, 'type_info.document', 'title')
     if (title) {
       parts.push(t('manager.explorer.metaPdfTitle', { value: title }))
     }
 
-    const creator = attributeValue(attributes, 'format_info.pdf', 'creator') || extracted.creator || extracted.Creator
+    const creator = attributeValue(attributes, 'format_info.pdf', 'creator')
     if (creator) {
       parts.push(t('manager.explorer.metaPdfCreator', { value: creator }))
     }
@@ -1494,25 +1439,6 @@ const formatDuration = (seconds) => {
     return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
   } else {
     return `${minutes}:${String(secs).padStart(2, '0')}`
-  }
-}
-
-// 格式化比特率（转为 Kbps 或 Mbps）
-const formatBitrate = (bitrate) => {
-  if (typeof bitrate === 'string') {
-    bitrate = parseFloat(bitrate)
-  }
-  if (isNaN(bitrate) || bitrate < 0) {
-    return t('manager.explorer.metaUnknown')
-  }
-
-  const k = 1000 // 使用 1000 而不是 1024
-  if (bitrate < k) {
-    return `${bitrate.toFixed(0)} bps`
-  } else if (bitrate < k * k) {
-    return `${(bitrate / k).toFixed(2)} Kbps`
-  } else {
-    return `${(bitrate / (k * k)).toFixed(2)} Mbps`
   }
 }
 

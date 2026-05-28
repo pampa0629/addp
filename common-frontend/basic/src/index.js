@@ -6,7 +6,6 @@
 export { default as StorageEngineForm } from './components/StorageEngineForm.vue'
 export { default as EngineForm } from './components/EngineForm.vue'
 export { default as ImagePreview } from './components/ImagePreview.vue'
-export { default as ExtractedMetadata } from './components/ExtractedMetadata.vue'
 export { default as ResourceTree } from './components/ResourceTree.vue'
 
 // Data Source Selector Components

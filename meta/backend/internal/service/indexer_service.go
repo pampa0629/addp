@@ -105,12 +105,7 @@ func (s *IndexerService) IndexCatalogAsset(resource *commonModels.Engine, tenant
 		delete(metadata, "tags")
 	}
 
-	plainText := ""
-	if extractedText != "" {
-		plainText = extractedText
-	} else {
-		plainText = extractedPlainTextFromAttributes(metadata)
-	}
+	plainText := extractedText
 	delete(metadata, "plain_text")
 
 	// 准备文档内容字段
@@ -311,23 +306,6 @@ func intFromStandardAttributes(metadata map[string]interface{}, sectionPath, key
 
 func timeFromStandardAttributes(metadata map[string]interface{}, sectionPath, key string) *time.Time {
 	return extractTimePtr(valueFromStandardAttributes(metadata, sectionPath, key))
-}
-
-func extractedPlainTextFromAttributes(metadata map[string]interface{}) string {
-	extraction := commonJSON.Section(metadata, "capabilities.extraction")
-	if extraction == nil {
-		return ""
-	}
-	extracted, ok := extraction["extracted_metadata"].(map[string]interface{})
-	if !ok {
-		return ""
-	}
-	customAttrs, ok := extracted["custom_attrs"].(map[string]interface{})
-	if !ok {
-		return ""
-	}
-	text, _ := customAttrs["plain_text"].(string)
-	return text
 }
 
 func valueFromStandardAttributes(metadata map[string]interface{}, sectionPath, key string) interface{} {

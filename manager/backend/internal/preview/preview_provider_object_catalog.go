@@ -282,10 +282,6 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 		preview.Object.Metadata = metadata
 	}
 
-	if item != nil && len(item.Attributes) > 0 {
-		preview.Object.Attributes = item.Attributes
-	}
-
 	rawContentType := stat.ContentType
 	if preview.Object.ContentType != "" {
 		rawContentType = preview.Object.ContentType
@@ -374,15 +370,15 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 
 	// 针对对象尝试触发提取
 	if item != nil && objectPath != "" {
-		extractorAvailable := commonJSON.Bool(combinedAttributes, "capabilities.extraction", "extractor_available")
-		hasExtracted := preview.Object.ExtractedMetadata != nil
+		extractorAvailable := commonJSON.Bool(preview.Object.Attributes, "capabilities.extraction", "extractor_available")
+		hasExtracted := hasStandardDeepMetadata(preview.Object.Attributes)
 
 		if extractorAvailable && !hasExtracted {
 			extracted := p.tryExtractMetadataFromMeta(ctx, resource.ID, bucket, objectPath, func() (io.ReadCloser, error) {
 				return catalogutil.OpenObjectContent(ctx, contentReader, connInfo, resource.ID, bucket, objectPath)
 			})
 			if extracted != nil {
-				preview.Object.ExtractedMetadata = extracted
+				preview.Object.Attributes = mergeJSONMaps(preview.Object.Attributes, models.JSONMap(extracted))
 			}
 		}
 	}
@@ -429,6 +425,18 @@ func (p *objectCatalogPreviewProvider) tryExtractMetadataFromMeta(
 	}
 
 	return extracted
+}
+
+func hasStandardDeepMetadata(attrs map[string]interface{}) bool {
+	if len(attrs) == 0 {
+		return false
+	}
+	for _, section := range []string{"type_info.document", "type_info.media", "type_info.container", "format_info"} {
+		if values := commonJSON.Section(attrs, section); len(values) > 0 {
+			return true
+		}
+	}
+	return commonJSON.Bool(attrs, "capabilities.extraction", "metadata_extracted")
 }
 
 func getEnvOrDefault(key, defaultValue string) string {

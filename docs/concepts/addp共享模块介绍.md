@@ -56,7 +56,7 @@ connInfo := engine.ConnectionInfo
 common-frontend/
 ├── basic/          # 基础 UI 组件 (无地图依赖)
 │   └── src/
-│       ├── components/  - EngineForm, ImagePreview, ExtractedMetadata
+│       ├── components/  - EngineForm, ImagePreview, ResourceTree
 │       ├── utils/       - 格式化器, 类型工具
 │       ├── types/       - FieldType, FormatType, EngineType
 │       └── index.js
@@ -125,7 +125,7 @@ import { TablePreview, GeoJsonPreview } from '@common-ui-map'
 
 - **System Frontend**: 使用 `basic` (引擎配置的 EngineForm)
 - **Manager Frontend**: 使用 `map` (数据预览的 GeoJsonPreview, TablePreview)
-- **Meta Frontend**: 使用 `basic` (元数据显示的 ExtractedMetadata)
+- **Meta Frontend**: 使用 `basic` (通用资源树和基础 UI)
 - **Transfer Frontend**: 使用 `basic` (映射 UI 的字段类型工具)
 - **Console Frontend**: 使用 `basic` (通用 UI 元素)
 

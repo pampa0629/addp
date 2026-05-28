@@ -903,6 +903,31 @@ func TestUnsupportedContentHandlerKeepsBinaryUnsupported(t *testing.T) {
 	}
 }
 
+func TestUnsupportedContentHandlerDoesNotReportProbeTruncationAsPreviewTruncation(t *testing.T) {
+	t.Parallel()
+	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "unsupported", Builtin: "unsupported"})
+	if err != nil {
+		t.Fatalf("build unsupported handler: %v", err)
+	}
+
+	content, truncated, err := handler.Handle(
+		nil,
+		&ObjectContentRequest{Name: "book.epub", Extension: ".epub", ContentType: "application/epub+zip", Size: 1024},
+		func(limit int64) ([]byte, bool, error) {
+			return []byte("probe"), true, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("handle binary fallback: %v", err)
+	}
+	if truncated || content.Truncated {
+		t.Fatalf("truncated = %v content.Truncated = %v, want false because no original content is previewed", truncated, content.Truncated)
+	}
+	if content.Metadata["probe_truncated"] != true {
+		t.Fatalf("metadata = %#v, want probe_truncated", content.Metadata)
+	}
+}
+
 func TestRawDocumentContentHandlerReturnsURLMaterialWhenAvailable(t *testing.T) {
 	t.Parallel()
 	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "pdf", Builtin: "pdf"})

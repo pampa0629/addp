@@ -1,21 +1,22 @@
 # Common Datatype 统一抽象设计
 
-更新时间：2026-05-24
+更新时间：2026-05-28
 
 本文是一次较大重构前的设计讨论文档，不是已落地规范。目标是在动代码前统一 `common/datatype` 的职责、数据类型边界和迁移顺序，避免继续在 `common/format`、`common/engine`、`common/dataitem`、Meta、Manager、Transfer 之间形成多套 data type / type info / field type 模型。
 
 ## 接力状态
 
-截至 2026-05-27，本轮已完成 table 与 graph 两条主线：
+截至 2026-05-28，本轮已完成 table、graph、document、media、container 主事实收口：
 
 - table：`format.TableInfo` / `format.FieldInfo` 薄壳已删除，reader / writer / Transfer / engine tabular catalog 统一使用 `datatype.TableInfo` / `datatype.FieldInfo`；`plugin.ItemMetadata.Table *datatype.TableInfo` 是 table item 主事实，`Fields` / `Stats` / `Attributes` 不再作为 table 事实源。
 - graph：`datatype.GraphInfo` 已按 node shape、relationship shape、relationship pattern 定义；`plugin.ItemMetadata.Graph *datatype.GraphInfo` 是 graph item 主事实；Neo4j catalog / Meta 扫描 / Manager 预览和属性页 / Graph 模块 / Service 图查询服务已迁移到 graph item + `type_info.graph` 口径。
 - graph 业务图视图已明确过滤引擎内部结构：Neo4j Spatial 的 `SpatialLayer` 节点和 `RTREE_METADATA`、`RTREE_REFERENCE`、`RTREE_ROOT` 关系不进入 GraphInfo、计数、样本、Graph Browser、Schema 推导、知识服务或 GDS 投影。
 - graph shape facts 已补稳定化：label set 去空、去重、排序，空 shape name 可由 label set 派生；单 label node shape 使用 `kind=label`，多 label node shape 使用 `kind=label_set`；graph sample provider 过滤条件使用 `plugin.GraphSampleFilter` 强类型传递。
-- document：`plugin.ItemMetadata.Document *datatype.DocumentInfo` 已落地，作为 document item 主事实字段；`ItemMetadataDocumentInfo()` 是公共消费 helper。当前仅确立 document 主事实承载位置，MongoDB collection 的动态字段画像仍按既有 table facts 口径保留，是否调整为 document item 需要单独审定。
-- media：`plugin.ItemMetadata.Media *datatype.MediaInfo` 已落地，作为 media item 主事实字段；`ItemMetadataMediaInfo()` 是公共消费 helper。Meta 已在 known single media item refresh 链路中通过 `MediaInfoProvider` 写入 `type_info.media`，GeoTIFF 等空间事实继续通过同一次 `MediaDescribeResult` 写入 `capabilities.spatial`，不塞进 `MediaInfo`。
-- container：`plugin.ItemMetadata.Container *datatype.ContainerInfo` 已落地，作为 container item 主事实字段；`ItemMetadataContainerInfo()` 是公共消费 helper。Meta container summary 和 deep children enrich 已通过 `DetectedItem.Container` 写入 `type_info.container`，ZIP、Excel、SQLite、GeoPackage 等 child 仍只保存轻量摘要，不展开内容样本或完整字段。
+- document：`plugin.ItemMetadata.Document *datatype.DocumentInfo` 已落地，作为 document item 主事实字段；`ItemMetadataDocumentInfo()` 是公共消费 helper。Meta single resource deep scan、refresh 和对象按需元数据入口已统一通过 `metaenrich.EnrichResourceAttributes` 消费 `DocumentInfoProvider` 并写入 `type_info.document`。DOCX / PPTX 已有轻量 `DocumentInfoProvider`，DOCX 正文抽取已覆盖正文、页眉、页脚、脚注、尾注和批注文本。
+- media：`plugin.ItemMetadata.Media *datatype.MediaInfo` 已落地，作为 media item 主事实字段；`ItemMetadataMediaInfo()` 是公共消费 helper。Meta single resource deep scan、refresh 和对象按需元数据入口已统一通过 `metaenrich.EnrichResourceAttributes` 消费 `MediaInfoProvider` 并写入 `type_info.media`；对象存储扫描中的 inline media extractor 旁路已删除。GeoTIFF 等空间事实继续通过同一次 `MediaDescribeResult` 写入 `capabilities.spatial`，不塞进 `MediaInfo`。
+- container：`plugin.ItemMetadata.Container *datatype.ContainerInfo` 已落地，作为 container item 主事实字段；`ItemMetadataContainerInfo()` 是公共消费 helper。Meta container summary、deep children enrich、对象按需元数据入口和已知 item refresh 均通过 `DetectedItem.Container` / `metaenrich.EnrichResourceAttributes` 写入 `type_info.container`，ZIP、Excel、SQLite、GeoPackage 等 child 仍只保存轻量摘要，不展开内容样本或完整字段。
 - file：`DataTypeFile` / `FileInfo` 已删除。文件、对象、目录等是 catalog / storage 形态；未识别内容统一使用 `unknown`。
+- Manager / common client：对象预览按需元数据触发已改为判断标准 attributes 是否已有 `type_info.*` / `format_info` 主事实，提取结果只合并回 `ObjectPreview.attributes`；`common/client.MetaClient.GetObjectMetadata` 返回标准 attributes；`ObjectPreview.extracted_metadata`、共享前端 `ExtractedMetadata` 旧展示组件、旧 payload 展示入口和未使用的旧 `TryExtractMetadata` helper 已删除。
 
 下一阶段不再推进新的 data type 主事实字段；后续只有出现独立于 storage / format / capabilities 的通用事实和真实消费方时，才重新讨论新增 data type 或横切能力。
 

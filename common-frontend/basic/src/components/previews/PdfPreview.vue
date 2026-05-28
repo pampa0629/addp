@@ -100,10 +100,6 @@
         </div>
       </div>
 
-      <!-- PDF 元数据展示区域 -->
-      <div v-if="hasExtractedMetadata" class="metadata-section">
-        <ExtractedMetadata :metadata="extractedMetadata" />
-      </div>
     </div>
   </div>
 </template>
@@ -113,7 +109,6 @@ import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { ArrowLeft, ArrowRight, ZoomIn, ZoomOut } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { formatBytes } from '../../utils/formatters'
-import ExtractedMetadata from '../ExtractedMetadata.vue'
 
 const props = defineProps({
   data: {
@@ -157,12 +152,6 @@ const contentTypeLabel = computed(() => {
     'application/pdf'
   )
 })
-
-// 提取元数据
-const extractedMetadata = computed(() => {
-  return objectData.value?.attributes?.capabilities?.extraction?.extracted_metadata || null
-})
-const hasExtractedMetadata = computed(() => Boolean(extractedMetadata.value))
 
 // 状态
 const loading = ref(false)

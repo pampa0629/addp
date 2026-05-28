@@ -10,7 +10,6 @@ import (
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/meta/internal/extractor"
 	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/metaenrich"
 	"github.com/addp/meta/internal/metapath"
@@ -140,11 +139,10 @@ func objectCatalogNodesToStorageResources(
 // ObjectStorageCatalogScanService 对象存储 catalog 扫描服务。
 // 职责：按插件 catalog model 扫描 bucket/prefix/object 层级。
 type ObjectStorageCatalogScanService struct {
-	db                *gorm.DB
-	log               *slog.Logger
-	repo              *metaRepo.ScanRepository     // 数据访问层
-	metadataExtractor *extractor.MetadataExtractor // 元数据提取器
-	indexer           *IndexerService              // 索引服务
+	db      *gorm.DB
+	log     *slog.Logger
+	repo    *metaRepo.ScanRepository // 数据访问层
+	indexer *IndexerService          // 索引服务
 }
 
 // NewObjectStorageCatalogScanService 创建对象存储 catalog 扫描服务。
@@ -152,15 +150,13 @@ func NewObjectStorageCatalogScanService(
 	db *gorm.DB,
 	log *slog.Logger,
 	repo *metaRepo.ScanRepository,
-	metadataExtractor *extractor.MetadataExtractor,
 	indexer *IndexerService,
 ) *ObjectStorageCatalogScanService {
 	service := &ObjectStorageCatalogScanService{
-		db:                db,
-		log:               log,
-		repo:              repo,
-		metadataExtractor: metadataExtractor,
-		indexer:           indexer,
+		db:      db,
+		log:     log,
+		repo:    repo,
+		indexer: indexer,
 	}
 	return service
 }
@@ -652,8 +648,8 @@ func (s *ObjectStorageCatalogScanService) persistObjectResources(
 		// 根据扫描深度决定是否提取深度元数据
 		var enhancedAttrs models.JSONMap
 		if strings.EqualFold(scanDepth, "deep") {
-			// 深度扫描：提取详细元数据（用于文件预览/搜索）
-			enhancedAttrs = s.metadataExtractor.ExtractEnhancedMetadataWithCache(engineID, catalogResource, itemPlan.Attributes, catalogResource.Path)
+			// 深度扫描的主事实统一由 catalogSingleItemProcessor 通过 metaenrich.EnrichResourceAttributes 写入。
+			enhancedAttrs = itemPlan.Attributes
 		} else if itemExists {
 			// 浅层扫描 + 记录已存在：保留原有attributes，只更新基础字段
 			// 但仍需要更新node_id（文件可能移动到了不同的目录）

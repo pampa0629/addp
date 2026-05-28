@@ -171,22 +171,21 @@ type ColumnMetadata struct {
 }
 
 type ObjectPreview struct {
-	Bucket            string                 `json:"bucket"`
-	Path              string                 `json:"path"`
-	NodeType          string                 `json:"node_type"`
-	SizeBytes         int64                  `json:"size_bytes"`
-	ObjectCount       int64                  `json:"object_count,omitempty"`
-	LastModified      *time.Time             `json:"last_modified,omitempty"`
-	ContentType       string                 `json:"content_type,omitempty"`
-	URL               string                 `json:"url,omitempty"`
-	Metadata          map[string]string      `json:"metadata,omitempty"`
-	Attributes        JSONMap                `json:"attributes,omitempty"`
-	EngineID          uint                   `json:"engine_id,omitempty"`
-	ObjectKey         string                 `json:"object_key,omitempty"`
-	Children          []ObjectPreviewChild   `json:"children,omitempty"`
-	Content           *ObjectPreviewContent  `json:"content,omitempty"`
-	Truncated         bool                   `json:"truncated,omitempty"`
-	ExtractedMetadata map[string]interface{} `json:"extracted_metadata,omitempty"` // 从Meta模块提取的深度元数据
+	Bucket       string                `json:"bucket"`
+	Path         string                `json:"path"`
+	NodeType     string                `json:"node_type"`
+	SizeBytes    int64                 `json:"size_bytes"`
+	ObjectCount  int64                 `json:"object_count,omitempty"`
+	LastModified *time.Time            `json:"last_modified,omitempty"`
+	ContentType  string                `json:"content_type,omitempty"`
+	URL          string                `json:"url,omitempty"`
+	Metadata     map[string]string     `json:"metadata,omitempty"`
+	Attributes   JSONMap               `json:"attributes,omitempty"`
+	EngineID     uint                  `json:"engine_id,omitempty"`
+	ObjectKey    string                `json:"object_key,omitempty"`
+	Children     []ObjectPreviewChild  `json:"children,omitempty"`
+	Content      *ObjectPreviewContent `json:"content,omitempty"`
+	Truncated    bool                  `json:"truncated,omitempty"`
 }
 
 type ObjectPreviewChild struct {

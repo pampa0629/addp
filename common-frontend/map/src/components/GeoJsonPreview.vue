@@ -26,10 +26,6 @@
 
     <div v-if="truncated" class="truncate-tip">{{ t('map.truncated') }}</div>
 
-    <!-- 元数据展示区域 -->
-    <div v-if="hasExtractedMetadata" class="metadata-section">
-      <ExtractedMetadata :metadata="extractedMetadata" />
-    </div>
   </div>
 </template>
 
@@ -39,7 +35,6 @@ import { useI18n } from 'vue-i18n'
 import { useMapConfig } from '../composables/useMapConfig'
 import MapContainer from './map/MapContainer.vue'
 import { safeStringify } from '../utils/formatters'
-import ExtractedMetadata from './ExtractedMetadata.vue'
 
 const { t } = useI18n()
 
@@ -64,32 +59,6 @@ const geojsonData = computed(() => {
 const truncated = computed(() => {
   return objectData.value?.content?.truncated || objectData.value?.truncated || false
 })
-
-const parseMaybeJSON = (value) => {
-  if (!value || typeof value !== 'string') return value
-  try {
-    return JSON.parse(value)
-  } catch (error) {
-    return value
-  }
-}
-
-const normalizedAttributes = computed(() => {
-  const attrs = objectData.value?.attributes
-  const parsed = parseMaybeJSON(attrs)
-  if (parsed && typeof parsed === 'object') {
-    return parsed
-  }
-  return attrs && typeof attrs === 'object' ? attrs : {}
-})
-
-// 提取元数据
-const extractedMetadata = computed(() => {
-  const raw = normalizedAttributes.value?.capabilities?.extraction?.extracted_metadata
-  const parsed = parseMaybeJSON(raw)
-  return parsed && typeof parsed === 'object' ? parsed : null
-})
-const hasExtractedMetadata = computed(() => Boolean(extractedMetadata.value))
 
 const geoFeatures = computed(() => {
   if (!geojsonData.value) return []

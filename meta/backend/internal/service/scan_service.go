@@ -83,7 +83,7 @@ func NewScanService(db *gorm.DB, engineService *EngineService) *ScanService {
 	s.namespaceItemScanService = NewNamespaceItemScanService(db, log, nil, repo, indexerService)
 
 	// 创建 ObjectStorageCatalogScanService（使用独立服务，无循环依赖）
-	s.objectStorageCatalogScanService = NewObjectStorageCatalogScanService(db, log, repo, metadataExtractor, indexerService)
+	s.objectStorageCatalogScanService = NewObjectStorageCatalogScanService(db, log, repo, indexerService)
 
 	// 创建 FilesystemCatalogScanService
 	s.filesystemCatalogScanService = NewFilesystemCatalogScanService(db, log, repo, indexerService)

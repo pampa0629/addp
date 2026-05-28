@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path"
 	"strconv"
 	"strings"
 
@@ -187,9 +188,6 @@ func (s *MetadataService) StreamObject(
 	if err != nil {
 		return nil, 0, "", "", fmt.Errorf("unsupported engine type: %s", resource.EngineType)
 	}
-	if !catalogutil.ItemTermMatches(resource.EngineType, plugin.CatalogTermObject) {
-		return nil, 0, "", "", fmt.Errorf("resource type %s does not support object streaming", resource.EngineType)
-	}
 	metadataProvider, _ := pl.(plugin.ItemMetadataProvider)
 	contentReader, _ := pl.(plugin.ContentReadableProvider)
 	rangeReader, _ := pl.(plugin.RangeReadableProvider)
@@ -197,22 +195,19 @@ func (s *MetadataService) StreamObject(
 		return nil, 0, "", "", fmt.Errorf("engine %s does not implement ContentReadableProvider", resource.EngineType)
 	}
 
-	// 解析objectKey（格式：bucket/path/to/file.mp4）
-	parts := strings.SplitN(objectKey, "/", 2)
-	if len(parts) != 2 {
-		return nil, 0, "", "", fmt.Errorf("invalid object key format: %s", objectKey)
-	}
-	bucket := parts[0]
-	objectPath := parts[1]
 	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
 
-	// 获取对象信息
-	meta, err := catalogutil.ObjectMetadata(ctx, metadataProvider, connInfo, resource.ID, bucket, objectPath)
+	itemPath, displayPath, err := streamCatalogItemPath(resource.EngineType, resource.ID, objectKey)
+	if err != nil {
+		return nil, 0, "", "", err
+	}
+
+	meta, err := streamItemMetadata(ctx, metadataProvider, connInfo, itemPath, displayPath)
 	if err != nil {
 		return nil, 0, "", "", fmt.Errorf("failed to stat object: %w", err)
 	}
 
-	contentType := objectcontent.InferContentType(objectPath, meta.ContentType)
+	contentType := objectcontent.InferContentType(displayPath, meta.ContentType)
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
@@ -266,13 +261,42 @@ func (s *MetadataService) StreamObject(
 	// 获取对象流
 	var reader io.ReadCloser
 	if readOptions.Length > 0 && rangeReader != nil {
-		reader, err = rangeReader.OpenRange(ctx, connInfo, plugin.ObjectItemPath(resource.ID, bucket, objectPath), readOptions)
+		reader, err = rangeReader.OpenRange(ctx, connInfo, itemPath, readOptions)
 	} else {
-		reader, err = contentReader.OpenContent(ctx, connInfo, plugin.ObjectItemPath(resource.ID, bucket, objectPath), readOptions)
+		reader, err = contentReader.OpenContent(ctx, connInfo, itemPath, readOptions)
 	}
 	if err != nil {
 		return nil, 0, "", "", fmt.Errorf("failed to get object: %w", err)
 	}
 
 	return reader, contentLength, contentRange, contentType, nil
+}
+
+func streamCatalogItemPath(engineType string, engineID uint, objectKey string) (plugin.CatalogPath, string, error) {
+	objectKey = strings.Trim(objectKey, "/")
+	if objectKey == "" {
+		return plugin.CatalogPath{}, "", fmt.Errorf("object key is empty")
+	}
+	if catalogutil.ItemTermMatches(engineType, plugin.CatalogTermObject) {
+		parts := strings.SplitN(objectKey, "/", 2)
+		if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+			return plugin.CatalogPath{}, "", fmt.Errorf("invalid object key format: %s", objectKey)
+		}
+		return plugin.ObjectItemPath(engineID, parts[0], parts[1]), objectKey, nil
+	}
+	if catalogutil.ItemTermMatches(engineType, plugin.CatalogTermFile) {
+		return plugin.FileItemPath(engineID, objectKey), objectKey, nil
+	}
+	return plugin.CatalogPath{}, "", fmt.Errorf("resource type %s does not support object streaming", engineType)
+}
+
+func streamItemMetadata(ctx context.Context, metadataProvider plugin.ItemMetadataProvider, connInfo plugin.ConnectionInfo, itemPath plugin.CatalogPath, fallbackPath string) (*plugin.FileMetadata, error) {
+	if metadataProvider == nil {
+		return &plugin.FileMetadata{Name: path.Base(fallbackPath), Path: fallbackPath}, nil
+	}
+	item, err := metadataProvider.DescribeItem(ctx, connInfo, itemPath, plugin.MetadataOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return catalogutil.ItemMetadataToFileMetadata(item, fallbackPath), nil
 }

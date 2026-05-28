@@ -46,12 +46,6 @@
           </div>
         </div>
       </div>
-      <div v-if="hasExtractedMetadata" class="meta-row meta-extracted">
-        <span class="meta-label">{{ t('objectStorage.extractedMetadata') }}</span>
-        <div class="meta-value extracted-wrapper">
-          <ExtractedMetadata :metadata="extractedMetadata" />
-        </div>
-      </div>
     </div>
 
     <!-- 可拖拽分隔器 -->
@@ -110,7 +104,6 @@ import ImagePreview from '../ImagePreview.vue'
 import JsonPreview from './JsonPreview.vue'
 import TextPreview from './TextPreview.vue'
 import MarkdownPreview from './MarkdownPreview.vue'
-import ExtractedMetadata from '../ExtractedMetadata.vue'
 
 const props = defineProps({
   data: {
@@ -127,18 +120,6 @@ const emit = defineEmits(['navigate'])
 
 const { t } = useI18n()
 const { size: metaHeight, startResize } = useResizable(140, 80, 300, 'vertical')
-
-const parseMaybeJSON = (value) => {
-  if (typeof value === 'string') {
-    try {
-      return JSON.parse(value)
-    } catch (error) {
-      console.warn('对象 catalog预览: JSON 解析失败', error)
-      return null
-    }
-  }
-  return value
-}
 
 const objectData = computed(() => props.data?.object || {})
 
@@ -177,21 +158,6 @@ const children = computed(() => {
 
 const metadataEntries = computed(() => {
   return Object.entries(objectData.value.metadata || {})
-})
-
-const extractedMetadata = computed(() => {
-  const attrs = parseMaybeJSON(objectData.value?.attributes) || objectData.value?.attributes
-  if (!attrs || typeof attrs !== 'object') {
-    return null
-  }
-
-  const nested = parseMaybeJSON(attrs.capabilities?.extraction?.extracted_metadata)
-  return nested && typeof nested === 'object' ? nested : null
-})
-
-const hasExtractedMetadata = computed(() => {
-  if (!extractedMetadata.value) return false
-  return Object.keys(extractedMetadata.value || {}).length > 0
 })
 
 const contentPreview = computed(() => {

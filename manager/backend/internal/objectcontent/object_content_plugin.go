@@ -1181,28 +1181,40 @@ func (h *unsupportedContentHandler) Handle(ctx context.Context, req *ObjectConte
 		return nil, false, err
 	}
 	if binaryContent != nil {
-		truncated = truncated || binaryContent.Truncated
+		probeTruncated := truncated || binaryContent.Truncated
 		data = binaryContent.Bytes
-	}
+		truncated = false
 
-	metadata := buildPreviewMetadata(req, h.maxBytes)
-	metadata["preview_material"] = models.PreviewMaterialRawBinary
-	metadata["probe_truncated"] = truncated
+		metadata := buildPreviewMetadata(req, h.maxBytes)
+		metadata["preview_material"] = models.PreviewMaterialRawBinary
+		metadata["probe_truncated"] = probeTruncated
 
-	if len(data) == 0 {
+		if len(data) == 0 {
+			return decoratePreviewContent(&models.ObjectPreviewContent{
+				Kind:     models.ObjectPreviewKindUnsupported,
+				Text:     "文件内容为空或无法读取",
+				Metadata: metadata,
+			}), false, nil
+		}
+
 		return decoratePreviewContent(&models.ObjectPreviewContent{
 			Kind:     models.ObjectPreviewKindUnsupported,
-			Text:     "文件内容为空或无法读取",
+			Text:     "暂不支持该文件类型的在线预览，请下载后查看。",
 			Metadata: metadata,
 		}), false, nil
 	}
 
+	if len(data) == 0 {
+		return decoratePreviewContent(&models.ObjectPreviewContent{
+			Kind: models.ObjectPreviewKindUnsupported,
+			Text: "文件内容为空或无法读取",
+		}), false, nil
+	}
+
 	return decoratePreviewContent(&models.ObjectPreviewContent{
-		Kind:      models.ObjectPreviewKindUnsupported,
-		Text:      "暂不支持该文件类型的在线预览，请下载后查看。",
-		Truncated: truncated,
-		Metadata:  metadata,
-	}), truncated, nil
+		Kind: models.ObjectPreviewKindUnsupported,
+		Text: "暂不支持该文件类型的在线预览，请下载后查看。",
+	}), false, nil
 }
 
 type containerContentHandler struct {

@@ -137,9 +137,6 @@ func TestMergeStandardAttributesWritesStandardSections(t *testing.T) {
 	attrs := models.JSONMap{}
 	SetExtraction(attrs, "metadata_extracted", true)
 	SetExtraction(attrs, "extractor_available", true)
-	SetExtraction(attrs, "extracted_metadata", map[string]interface{}{
-		"type_info": map[string]interface{}{"document": map[string]interface{}{"page_count": 12}},
-	})
 	MergeStandardAttributes(attrs, map[string]interface{}{
 		"type_info": map[string]interface{}{
 			"document": map[string]interface{}{
@@ -161,7 +158,7 @@ func TestMergeStandardAttributesWritesStandardSections(t *testing.T) {
 	}
 	capabilities := attrs["capabilities"].(map[string]interface{})
 	extraction := capabilities["extraction"].(map[string]interface{})
-	if extraction["metadata_extracted"] != true || extraction["extractor_available"] != true || extraction["extracted_metadata"] == nil {
+	if extraction["metadata_extracted"] != true || extraction["extractor_available"] != true {
 		t.Fatalf("capabilities.extraction = %#v", extraction)
 	}
 	document := attrs["type_info"].(map[string]interface{})["document"].(map[string]interface{})

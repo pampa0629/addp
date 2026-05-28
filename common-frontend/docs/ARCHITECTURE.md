@@ -11,7 +11,7 @@ common-frontend/
 │       ├── components/
 │       │   ├── StorageEngineForm.vue
 │       │   ├── ImagePreview.vue
-│       │   └── ExtractedMetadata.vue
+│       │   └── ResourceTree.vue
 │       ├── utils/
 │       │   └── formatters.js
 │       ├── types/
@@ -27,7 +27,7 @@ common-frontend/
         │   │   └── OpenLayersRenderer.vue
         │   ├── GeoJsonPreview.vue
         │   ├── TablePreview.vue
-        │   └── ExtractedMetadata.vue
+        │   └── TilePreview.vue
         ├── composables/
         │   ├── useMapConfig.js
         │   ├── useGaodeMap.js

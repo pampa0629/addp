@@ -1,6 +1,7 @@
 package extractor
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -8,15 +9,16 @@ import (
 	"mime"
 	pathpkg "path"
 	"strings"
-	"time"
 
+	"github.com/addp/common/dataitem"
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/logger"
-	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
-	"github.com/addp/meta/internal/metacatalog"
+	"github.com/addp/meta/internal/metaenrich"
+	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/metapath"
 	"github.com/addp/meta/internal/models"
 	"gorm.io/gorm"
@@ -34,79 +36,6 @@ func NewMetadataExtractor(db *gorm.DB) *MetadataExtractor {
 		db:  db,
 		log: logger.With("component", "metadata_extractor"),
 	}
-}
-
-// ExtractEnhancedMetadata 使用插件提取增强的元数据。
-func (e *MetadataExtractor) ExtractEnhancedMetadata(
-	engineID uint,
-	resource metacatalog.StorageResource,
-	baseAttrs models.JSONMap,
-) models.JSONMap {
-	if len(resource.ExtractedAttributes) > 0 {
-		metaattr.MergeStandardAttributes(baseAttrs, resource.ExtractedAttributes)
-		return baseAttrs
-	}
-
-	contentType := resource.ContentType
-	if contentType == "" {
-		contentType = mime.TypeByExtension(pathpkg.Ext(resource.Path))
-	}
-	if contentType == "" {
-		contentType = "application/octet-stream"
-	}
-
-	formatType := format.MIMEToFormat(contentType)
-	if formatType == format.FormatUnknown {
-		formatType = format.DetectFormat(resource.Path, nil)
-	}
-	if _, err := format.GetFormatInfoProvider(formatType); err != nil {
-		return baseAttrs
-	}
-
-	metaattr.SetExtraction(baseAttrs, "extractor_available", true)
-	metaattr.SetStorage(baseAttrs, "content_type", contentType)
-
-	return baseAttrs
-}
-
-// ExtractEnhancedMetadataWithCache 带缓存检查的元数据提取。
-// 如果文件未修改（基于 last_modified 时间），跳过重新提取。
-// fullPath: 文件在 bucket 中的完整路径（用于 fingerprint 生成）。
-func (e *MetadataExtractor) ExtractEnhancedMetadataWithCache(
-	engineID uint,
-	resource metacatalog.StorageResource,
-	baseAttrs models.JSONMap,
-	fullPath string,
-) models.JSONMap {
-	bucket := commonJSON.String(baseAttrs, "storage", "bucket")
-	dir, name := commonModels.SplitObjectPath(fullPath)
-	fullName := commonModels.JoinObjectPath(bucket, dir, name)
-	fingerprint := commonModels.GenerateItemFingerprint(engineID, fullName)
-
-	var existingItem models.MetaItem
-	err := e.db.Where("fingerprint = ?", fingerprint).First(&existingItem).Error
-
-	if err == nil && existingItem.DataUpdatedAt != nil && resource.LastModified != nil {
-		existingTime := existingItem.DataUpdatedAt.Truncate(time.Second)
-		newTime := resource.LastModified.Truncate(time.Second)
-
-		if existingTime.Equal(newTime) {
-			if existingItem.Attributes != nil && len(existingItem.Attributes) > 0 {
-				if commonJSON.Bool(existingItem.Attributes, "capabilities.extraction", "metadata_extracted") {
-					e.log.Debug("复用缓存的元数据",
-						"fingerprint", fingerprint,
-						"fullPath", fullPath,
-						"last_modified", existingTime)
-					for key, value := range existingItem.Attributes {
-						baseAttrs[key] = value
-					}
-					return baseAttrs
-				}
-			}
-		}
-	}
-
-	return e.ExtractEnhancedMetadata(engineID, resource, baseAttrs)
 }
 
 // GetObjectMetadata 获取指定对象的元数据。
@@ -175,79 +104,59 @@ func (e *MetadataExtractor) ExtractObjectMetadataOnDemand(
 	token string,
 	objectReader io.Reader,
 ) (map[string]interface{}, error) {
+	item, err := e.GetObjectMetadata(tenantID, engineID, objectKey)
+	if err != nil {
+		return nil, err
+	}
+
+	content, err := io.ReadAll(objectReader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read object content: %w", err)
+	}
 	contentType := mime.TypeByExtension(pathpkg.Ext(objectKey))
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
-
-	formatType := format.MIMEToFormat(contentType)
-	if formatType == format.FormatUnknown {
-		formatType = format.DetectFormat(objectKey, nil)
-	}
-	if capability, ok := format.GetFormatCapability(formatType); ok && capability.DataType == datatype.DataTypeMedia {
-		provider, err := format.GetMediaInfoProvider(formatType)
-		if err != nil {
-			return nil, fmt.Errorf("format %s has no media info provider: %w", formatType, err)
-		}
-		mediaInfo, err := provider.DescribeMedia(context.Background(), objectReader, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to describe media: %w", err)
-		}
-		item, err := e.GetObjectMetadata(tenantID, engineID, objectKey)
-		if err != nil {
-			return nil, err
-		}
-		enhancedAttrs := item.Attributes
-		if enhancedAttrs == nil {
-			enhancedAttrs = make(models.JSONMap)
-		}
-		mediaAttrs := metaattr.MediaInfoAttributes(mediaInfo.Media, mediaInfo.Spatial)
-		metaattr.MergeStandardAttributes(enhancedAttrs, mediaAttrs)
-		metaattr.SetStorage(enhancedAttrs, "content_type", contentType)
-		enhancedAttrs = metaattr.Normalize(enhancedAttrs)
-		if err := e.db.Model(item).Update("attributes", enhancedAttrs).Error; err != nil {
-			return nil, err
-		}
-		return mediaAttrs, nil
+	bucket, objectPath := metapath.SplitObjectPath(objectKey)
+	if objectPath == "" {
+		objectPath = objectKey
 	}
 
-	provider, err := format.GetFormatInfoProvider(formatType)
+	enhancedAttrs := item.Attributes
+	if enhancedAttrs == nil {
+		enhancedAttrs = make(models.JSONMap)
+	}
+	if bucket != "" {
+		metaattr.SetStorage(enhancedAttrs, "bucket", bucket)
+	}
+	metaattr.SetStorage(enhancedAttrs, "content_type", contentType)
+	physicalPath := objectPath
+	if descriptor := dataitem.DescriptorFromAttributes(enhancedAttrs); descriptor.PhysicalPath != "" {
+		physicalPath = descriptor.PhysicalPath
+	}
+	sizeBytes := int64(len(content))
+	detected := onDemandDetectedItemFromAttributes(enhancedAttrs, physicalPath, sizeBytes)
+
+	_, _, err = metaenrich.EnrichResourceAttributes(context.Background(), enhancedAttrs, metaenrich.ResourceAttributesInput{
+		ContentReader:  onDemandContentReader{content: content},
+		EngineID:       engineID,
+		Item:           detected,
+		PhysicalPath:   physicalPath,
+		SizeBytes:      sizeBytes,
+		CatalogPathFor: plugin.ObjectItemPathForBucket(engineID, bucket),
+	})
 	if err != nil {
-		return nil, fmt.Errorf("format %s cannot extract metadata: %w", formatType, err)
+		return nil, fmt.Errorf("failed to enrich object metadata: %w", err)
+	}
+	metaattr.SetExtraction(enhancedAttrs, "metadata_extracted", true)
+	enhancedAttrs = metaattr.Normalize(enhancedAttrs)
+
+	if err := e.db.Model(item).Update("attributes", enhancedAttrs).Error; err != nil {
+		e.log.Warn("更新元数据失败", "item_id", item.ID, "error", err)
+		return nil, err
 	}
 
-	item, err := e.GetObjectMetadata(tenantID, engineID, objectKey)
-	if err != nil {
-		logger.L().Warn("对象元数据不存在，使用默认值", "object_key", objectKey, "error", err)
-	}
-
-	extractedAttrs, err := provider.DescribeFormat(context.Background(), objectReader, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to extract metadata: %w", err)
-	}
-	if len(extractedAttrs) == 0 {
-		return nil, fmt.Errorf("format %s did not return metadata", formatType)
-	}
-	standardAttrs := metaattr.FormatInfoAttributes(string(formatType), extractedAttrs)
-
-	if item != nil {
-		enhancedAttrs := item.Attributes
-		if enhancedAttrs == nil {
-			enhancedAttrs = make(models.JSONMap)
-		}
-
-		metaattr.SetExtraction(enhancedAttrs, "metadata_extracted", true)
-		metaattr.SetExtraction(enhancedAttrs, "extracted_metadata", standardAttrs)
-		metaattr.MergeStandardAttributes(enhancedAttrs, standardAttrs)
-		metaattr.SetStorage(enhancedAttrs, "content_type", contentType)
-		enhancedAttrs = metaattr.Normalize(enhancedAttrs)
-
-		if err := e.db.Model(item).Update("attributes", enhancedAttrs).Error; err != nil {
-			e.log.Warn("更新元数据失败", "item_id", item.ID, "error", err)
-		}
-	}
-
-	return standardAttrs, nil
+	return enhancedAttrs, nil
 }
 
 func (e *MetadataExtractor) BuildObjectContentIndexOnDemand(
@@ -317,13 +226,45 @@ func cloneJSONMap(attrs models.JSONMap) models.JSONMap {
 	return cloned
 }
 
-func cloneInterfaceMap(attrs map[string]interface{}) map[string]interface{} {
-	if len(attrs) == 0 {
-		return nil
+func onDemandDetectedItemFromAttributes(attrs models.JSONMap, physicalPath string, sizeBytes int64) *metaitem.DetectedItem {
+	descriptor := dataitem.DescriptorFromAttributes(attrs)
+	if descriptor.SizeBytes != nil {
+		sizeBytes = *descriptor.SizeBytes
 	}
-	cloned := make(map[string]interface{}, len(attrs))
-	for key, value := range attrs {
-		cloned[key] = value
+	if physicalPath == "" {
+		physicalPath = descriptor.PhysicalPath
 	}
-	return cloned
+	return &metaitem.DetectedItem{
+		ResolvedItem: dataitem.ResolvedItem{
+			Layout:    descriptor.Layout,
+			DataType:  descriptor.DataType,
+			Format:    descriptor.Format,
+			EntryPath: descriptor.EntryPath,
+			SizeBytes: &sizeBytes,
+			RefList:   descriptor.Refs,
+		},
+		PhysicalPath: physicalPath,
+	}
+}
+
+type onDemandContentReader struct {
+	content []byte
+}
+
+func (r onDemandContentReader) Type() string         { return "on-demand" }
+func (r onDemandContentReader) DisplayName() string  { return "on-demand" }
+func (r onDemandContentReader) EngineOrigin() string { return "general" }
+func (r onDemandContentReader) TestConnection(context.Context, plugin.ConnectionInfo) error {
+	return nil
+}
+func (r onDemandContentReader) ValidateConnectionInfo(plugin.ConnectionInfo) error { return nil }
+func (r onDemandContentReader) DefaultPort() int                                   { return 0 }
+func (r onDemandContentReader) RequiredFields() []string                           { return nil }
+func (r onDemandContentReader) SensitiveFields() []string                          { return nil }
+func (r onDemandContentReader) Capabilities() plugin.EngineCapabilities {
+	return plugin.EngineCapabilities{}
+}
+func (r onDemandContentReader) StoreSemantics() plugin.StoreSemantics { return plugin.StoreSemantics{} }
+func (r onDemandContentReader) OpenContent(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
+	return io.NopCloser(bytes.NewReader(r.content)), nil
 }

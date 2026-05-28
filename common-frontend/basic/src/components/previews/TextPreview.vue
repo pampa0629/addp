@@ -24,7 +24,11 @@ const textContent = computed(() => {
 })
 
 const truncated = computed(() => {
-  return props.data?.object?.content?.truncated || props.data?.object?.truncated || false
+  const kind = (props.data?.object?.content?.kind || '').toLowerCase()
+  if (kind === 'unsupported') {
+    return false
+  }
+  return Boolean(props.data?.object?.content?.text && (props.data?.object?.content?.truncated || props.data?.object?.truncated))
 })
 </script>
 

@@ -39,7 +39,7 @@ const rawText = computed(() => {
 })
 
 const truncated = computed(() => {
-  return props.data?.object?.content?.truncated || props.data?.object?.truncated || false
+  return Boolean(rawText.value && (props.data?.object?.content?.truncated || props.data?.object?.truncated))
 })
 
 const mermaidInitialized = ref(false)

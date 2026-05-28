@@ -36,13 +36,8 @@
       </div>
     </div>
 
-    <!-- 元数据展示区域 -->
-    <div v-if="hasExtractedMetadata" class="metadata-section">
-      <ExtractedMetadata :metadata="extractedMetadata" />
-    </div>
-
     <!-- 图像标准扩展信息 -->
-    <div v-else-if="hasImageMetadata" class="quick-metadata">
+    <div v-if="hasImageMetadata" class="quick-metadata">
       <h4><i class="el-icon-picture"></i> 图像信息</h4>
       <div class="quick-meta-grid">
         <div v-if="imageMetadata.resolution" class="quick-meta-item">
@@ -73,7 +68,6 @@
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue'
 import { formatBytes } from '../utils/formatters'
-import ExtractedMetadata from './ExtractedMetadata.vue'
 
 const props = defineProps({
   data: {
@@ -128,14 +122,6 @@ const imageURL = computed(() => {
     ''
   )
 })
-
-// 提取元数据
-const extractedMetadata = computed(() => {
-  const raw = attributes.value?.capabilities?.extraction?.extracted_metadata
-  const parsed = parseMaybeJSON(raw)
-  return parsed && typeof parsed === 'object' ? parsed : null
-})
-const hasExtractedMetadata = computed(() => Boolean(extractedMetadata.value))
 
 // 从标准 media 信息获取图像元数据
 const imageMetadata = computed(() => {

@@ -10,6 +10,8 @@ import (
 
 	"github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
+	_ "github.com/addp/common/engine/plugins/minio"
+	_ "github.com/addp/common/engine/plugins/nfs"
 	"github.com/addp/manager/internal/models"
 )
 
@@ -61,6 +63,26 @@ func TestMetadataServiceRefreshItemUsesMetaClient(t *testing.T) {
 	}
 	if resp.Extraction == nil || resp.Extraction.Documents != 1 || resp.Extraction.Indexed != 1 {
 		t.Fatalf("extraction = %#v", resp.Extraction)
+	}
+}
+
+func TestStreamCatalogItemPathSupportsFileAndObjectCatalogs(t *testing.T) {
+	t.Parallel()
+
+	filePath, displayPath, err := streamCatalogItemPath("nfs", 26, "raw/book.epub")
+	if err != nil {
+		t.Fatalf("file stream path error = %v", err)
+	}
+	if got := filePath.StringPath(); got != "raw/book.epub" || displayPath != "raw/book.epub" {
+		t.Fatalf("file path/display = %q/%q, want raw/book.epub", got, displayPath)
+	}
+
+	objectPath, displayPath, err := streamCatalogItemPath("minio", 9, "addp/raw/book.epub")
+	if err != nil {
+		t.Fatalf("object stream path error = %v", err)
+	}
+	if got := objectPath.StringPath(); got != "addp/raw/book.epub" || displayPath != "addp/raw/book.epub" {
+		t.Fatalf("object path/display = %q/%q, want addp/raw/book.epub", got, displayPath)
 	}
 }
 
