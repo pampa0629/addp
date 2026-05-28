@@ -22,12 +22,12 @@ const FieldSelectionOptionKey = "field_selection"
 
 // ParseOptions 解析选项。
 type ParseOptions struct {
-	Encoding         string
-	SkipRows         int
-	MaxRows          int64
-	SampleSize       int
-	ExtraParams      map[string]interface{}
-	ContentIndexStep int64
+	Encoding        string
+	SkipRows        int
+	MaxRows         int64
+	SampleSize      int
+	ExtraParams     map[string]interface{}
+	AccessIndexStep int64
 
 	Delimiter rune
 	HasHeader bool
@@ -89,7 +89,7 @@ func DefaultParseOptions() *ParseOptions {
 		Delimiter:        ',',
 		HasHeader:        true,
 		SheetIndex:       0,
-		ContentIndexStep: 5000,
+		AccessIndexStep:  5000,
 		GeometryEncoding: GeometryEncodingWKT,
 	}
 }

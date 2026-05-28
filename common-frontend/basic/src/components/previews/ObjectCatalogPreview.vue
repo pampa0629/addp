@@ -84,11 +84,27 @@
     </div>
 
     <!-- 文件内容预览 -->
+    <div v-else-if="isTableMaterial" class="object-table-material">
+      <el-table :data="tableRows" height="100%">
+        <el-table-column
+          v-for="column in tableColumns"
+          :key="column"
+          :prop="column"
+          :label="column"
+          show-overflow-tooltip
+        >
+          <template #default="{ row }">
+            {{ formatTableCell(row[column]) }}
+          </template>
+        </el-table-column>
+      </el-table>
+    </div>
     <div v-else class="object-content">
       <component
         :is="contentPreview"
         v-if="contentPreview && objectData.content"
         :data="data"
+        v-bind="contentComponentProps"
       />
       <div v-else class="placeholder">{{ t('objectStorage.noContent') }}</div>
     </div>
@@ -104,6 +120,8 @@ import ImagePreview from '../ImagePreview.vue'
 import JsonPreview from './JsonPreview.vue'
 import TextPreview from './TextPreview.vue'
 import MarkdownPreview from './MarkdownPreview.vue'
+import ContainerPreview from './ContainerPreview.vue'
+import UnsupportedPreview from './UnsupportedPreview.vue'
 
 const props = defineProps({
   data: {
@@ -160,24 +178,164 @@ const metadataEntries = computed(() => {
   return Object.entries(objectData.value.metadata || {})
 })
 
+const contentJSON = computed(() => {
+  const content = objectData.value.content || {}
+  return content.json || content.JSON || null
+})
+
+const contentSemantic = computed(() => {
+  const content = objectData.value.content || {}
+  const metadata = content.metadata || {}
+  return {
+    kind: String(content.kind || '').toLowerCase(),
+    material: String(
+      content.preview_material ||
+        content.previewMaterial ||
+        metadata.preview_material ||
+        metadata.previewMaterial ||
+        ''
+    ).toLowerCase(),
+    renderer: String(
+      content.frontend_renderer ||
+        content.frontendRenderer ||
+        metadata.frontend_renderer ||
+        metadata.frontendRenderer ||
+        ''
+    ).toLowerCase()
+  }
+})
+
+const isTableMaterial = computed(() => {
+  const { kind, material, renderer } = contentSemantic.value
+  return (renderer || material || kind) === 'table'
+})
+
+const isContainerMaterial = computed(() => {
+  const { kind, material, renderer } = contentSemantic.value
+  return (renderer || material || kind) === 'container'
+})
+
+const tableRows = computed(() => {
+  const value = contentJSON.value
+  return Array.isArray(value?.rows) ? value.rows : []
+})
+
+const tableColumns = computed(() => {
+  const value = contentJSON.value
+  const columns = Array.isArray(value?.columns) ? value.columns : []
+  const names = columns
+    .map((column) => {
+      if (typeof column === 'string') return column
+      return column?.name || column?.field || column?.key || ''
+    })
+    .filter(Boolean)
+  if (names.length > 0) {
+    return names
+  }
+  const firstRow = tableRows.value[0]
+  return firstRow && typeof firstRow === 'object' ? Object.keys(firstRow) : []
+})
+
 const contentPreview = computed(() => {
   if (!objectData.value.content) return null
 
-  const kind = (objectData.value.content.kind || '').toLowerCase()
+  const { kind, material, renderer } = contentSemantic.value
 
-  switch (kind) {
+  switch (renderer || material || kind) {
+    case 'container':
+      return ContainerPreview
+    case 'unsupported':
+      return UnsupportedPreview
     case 'image':
       return ImagePreview
+    case 'map':
     case 'geojson':
       return props.geojsonPreviewComponent || JsonPreview
     case 'json':
       return JsonPreview
     case 'markdown':
       return MarkdownPreview
+    case 'table':
+      return null
     default:
       return TextPreview
   }
 })
+
+const containerSummaryItems = computed(() => {
+  const summary = contentJSON.value?.summary || {}
+  const items = []
+  const pushNumber = (label, value) => {
+    const number = Number(value)
+    if (Number.isFinite(number)) {
+      items.push({ label, value: new Intl.NumberFormat().format(number) })
+    }
+  }
+  pushNumber(t('containerPreview.rawEntries'), summary.raw_child_count ?? summary.child_count)
+  pushNumber(t('containerPreview.previewableChildren'), summary.visible_child_count ?? summary.sampled_children)
+  pushNumber(t('containerPreview.filtered'), summary.filtered_child_count ?? summary.ignored_child_count)
+  const size = Number(summary.size_bytes ?? objectData.value.size_bytes ?? objectData.value.sizeBytes)
+  if (Number.isFinite(size) && size >= 0) {
+    items.push({ label: t('objectStorage.size'), value: formatBytes(size) })
+  }
+  return items
+})
+
+const containerChildren = computed(() => {
+  const list = Array.isArray(contentJSON.value?.children) ? contentJSON.value.children : []
+  return list.map((child, index) => {
+    const columns = Array.isArray(child?.columns)
+      ? child.columns
+      : Array.isArray(child?.headers)
+        ? child.headers
+        : []
+    return {
+      key: child?.key || child?.name || child?.table || String(index),
+      name: child?.name || child?.key || String(index),
+      label: child?.label || child?.name || child?.table || child?.key || String(index),
+      childKind: child?.child_kind || child?.childKind || 'child',
+      dataType: child?.data_type || child?.dataType || 'unknown',
+      format: child?.format || '',
+      layout: child?.layout || '',
+      rowCount: Number(child?.row_count ?? child?.rowCount) || undefined,
+      columnCount: Number(child?.column_count ?? child?.columnCount ?? columns.length) || undefined,
+      hasHeader: child?.has_header ?? child?.hasHeader,
+      refs: Array.isArray(child?.refs) ? child.refs : [],
+      columns,
+      columnTypes: Array.isArray(child?.column_types) ? child.column_types : child?.columnTypes || [],
+      rows: Array.isArray(child?.rows) ? child.rows : []
+    }
+  })
+})
+
+const containerDefaultChildKey = computed(() => {
+  return contentJSON.value?.active_child || contentJSON.value?.default_child || containerChildren.value[0]?.key || ''
+})
+
+const containerTruncated = computed(() => {
+  const summary = contentJSON.value?.summary || {}
+  return Boolean(objectData.value.content?.truncated || summary.children_truncated)
+})
+
+const contentComponentProps = computed(() => {
+  if (isContainerMaterial.value) {
+    return {
+      summaryItems: containerSummaryItems.value,
+      children: containerChildren.value,
+      defaultChildKey: containerDefaultChildKey.value,
+      selectorLabel: t('containerPreview.childSelector'),
+      truncated: containerTruncated.value,
+      emptyText: t('containerPreview.empty')
+    }
+  }
+  return {}
+})
+
+const formatTableCell = (value) => {
+  if (value === null || value === undefined) return ''
+  if (typeof value === 'object') return JSON.stringify(value)
+  return String(value)
+}
 
 const handleRowDblclick = (row) => {
   emit('navigate', row)
@@ -316,6 +474,13 @@ body.is-v-resizing .meta-splitter::after {
   background: var(--el-fill-color-lighter);
   overflow: auto;
   position: relative;
+}
+
+.object-table-material {
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 6px;
+  min-height: 220px;
+  overflow: hidden;
 }
 
 .placeholder {

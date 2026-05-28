@@ -103,7 +103,7 @@ func MergeAttributeMaps(attrs map[string]interface{}, additions map[string]inter
 			continue
 		}
 		switch k {
-		case "storage", "item", "type_info", "format_info", "content_index", "capabilities":
+		case "storage", "item", "type_info", "format_info", "access_index", "capabilities":
 			setMergedAttributeSection(attrs, k, v)
 		default:
 			if cleanValue := cleanAttributeValue(v); cleanValue != nil {
@@ -157,7 +157,7 @@ func interfaceMap(value interface{}) map[string]interface{} {
 
 func isFlatStorageAttributeKey(key string) bool {
 	switch key {
-	case "bucket", "path", "name", "size", "file_type", "content_type", "last_modified_at", "object_count":
+	case "bucket", "path", "name", "size", "content_type", "last_modified_at", "object_count":
 		return true
 	default:
 		return false

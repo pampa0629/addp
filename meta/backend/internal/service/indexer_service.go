@@ -59,6 +59,7 @@ func (s *IndexerService) IndexTableAsset(resource *commonModels.Engine, tenantID
 
 	record := &search.AssetRecord{
 		AssetID:       item.Fingerprint,
+		DocumentID:    item.Fingerprint,
 		TenantID:      tenantID,
 		EngineID:      resource.ID,
 		EngineName:    resource.Name,
@@ -121,7 +122,8 @@ func (s *IndexerService) IndexCatalogAsset(resource *commonModels.Engine, tenant
 	// 构建统一的资产记录（包含文档内容字段）
 	assetRecord := &search.AssetRecord{
 		AssetID:       item.Fingerprint,
-		DocumentID:    stringFromStandardAttributes(metadata, "storage", "content_hash"),
+		DocumentID:    item.Fingerprint,
+		ContentHash:   stringFromStandardAttributes(metadata, "storage", "content_hash"),
 		TenantID:      tenantID,
 		EngineID:      engineID,
 		EngineName:    resource.Name,

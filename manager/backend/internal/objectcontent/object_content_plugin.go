@@ -212,6 +212,7 @@ func decoratePreviewContent(content *models.ObjectPreviewContent) *models.Object
 	if content == nil {
 		return nil
 	}
+	normalizeEmptyTruncatedPreview(content)
 	if content.PreviewMaterial == "" {
 		content.PreviewMaterial = normalizePreviewMaterial(metadataString(content.Metadata, "preview_material"))
 	}
@@ -240,6 +241,24 @@ func decoratePreviewContent(content *models.ObjectPreviewContent) *models.Object
 	return content
 }
 
+func normalizeEmptyTruncatedPreview(content *models.ObjectPreviewContent) {
+	if content == nil || !content.Truncated || previewContentHasMaterial(content) {
+		return
+	}
+	content.Truncated = false
+}
+
+func previewContentHasMaterial(content *models.ObjectPreviewContent) bool {
+	if content == nil {
+		return false
+	}
+	return strings.TrimSpace(content.Text) != "" ||
+		content.JSON != nil ||
+		content.GeoJSON != nil ||
+		strings.TrimSpace(content.Data) != "" ||
+		strings.TrimSpace(content.URL) != ""
+}
+
 func metadataString(metadata map[string]interface{}, key string) string {
 	if metadata == nil {
 		return ""
@@ -258,6 +277,9 @@ func defaultPreviewMaterial(content *models.ObjectPreviewContent) string {
 	if content == nil {
 		return ""
 	}
+	if strings.ToLower(strings.TrimSpace(content.Kind)) == models.ObjectPreviewKindUnsupported {
+		return models.PreviewMaterialUnsupported
+	}
 	if content.URL != "" {
 		return models.PreviewMaterialURL
 	}
@@ -266,6 +288,12 @@ func defaultPreviewMaterial(content *models.ObjectPreviewContent) string {
 	}
 	if content.GeoJSON != nil {
 		return models.PreviewMaterialGeoJSON
+	}
+	if content.JSON != nil && strings.ToLower(strings.TrimSpace(content.Kind)) == models.ObjectPreviewKindContainer {
+		return models.PreviewMaterialContainer
+	}
+	if content.JSON != nil && strings.ToLower(strings.TrimSpace(content.Kind)) == models.ObjectPreviewKindTable {
+		return models.PreviewMaterialTable
 	}
 	if content.JSON != nil {
 		return models.PreviewMaterialJSON
@@ -312,8 +340,10 @@ func defaultFrontendRenderer(kind string) string {
 		return models.ObjectPreviewKindMarkdown
 	case models.ObjectPreviewKindTable:
 		return models.ObjectPreviewKindTable
-	case models.ObjectPreviewKindText, models.ObjectPreviewKindUnsupported:
+	case models.ObjectPreviewKindText:
 		return models.ObjectPreviewKindText
+	case models.ObjectPreviewKindUnsupported:
+		return models.ObjectPreviewKindUnsupported
 	default:
 		return ""
 	}
@@ -1194,20 +1224,18 @@ func (h *unsupportedContentHandler) Handle(ctx context.Context, req *ObjectConte
 		truncated = false
 
 		metadata := buildPreviewMetadata(req, h.maxBytes)
-		metadata["preview_material"] = models.PreviewMaterialRawBinary
+		metadata["binary_probe"] = true
 		metadata["probe_truncated"] = probeTruncated
 
 		if len(data) == 0 {
 			return decoratePreviewContent(&models.ObjectPreviewContent{
 				Kind:     models.ObjectPreviewKindUnsupported,
-				Text:     "文件内容为空或无法读取",
 				Metadata: metadata,
 			}), false, nil
 		}
 
 		return decoratePreviewContent(&models.ObjectPreviewContent{
 			Kind:     models.ObjectPreviewKindUnsupported,
-			Text:     "暂不支持该文件类型的在线预览，请下载后查看。",
 			Metadata: metadata,
 		}), false, nil
 	}
@@ -1215,13 +1243,11 @@ func (h *unsupportedContentHandler) Handle(ctx context.Context, req *ObjectConte
 	if len(data) == 0 {
 		return decoratePreviewContent(&models.ObjectPreviewContent{
 			Kind: models.ObjectPreviewKindUnsupported,
-			Text: "文件内容为空或无法读取",
 		}), false, nil
 	}
 
 	return decoratePreviewContent(&models.ObjectPreviewContent{
 		Kind: models.ObjectPreviewKindUnsupported,
-		Text: "暂不支持该文件类型的在线预览，请下载后查看。",
 	}), false, nil
 }
 
@@ -1335,8 +1361,8 @@ func (h *containerContentHandler) parseContainer(ctx context.Context, tmpPath st
 	}
 
 	metadata := buildContainerMetadataMap(info, req, formatType)
-	info = resolveContainerChildrenForPreview(info)
-	preview := buildContainerPreviewFromContainerInfo(info, string(formatType))
+	info, resolvedSummary := resolveContainerChildrenForPreview(info)
+	preview := buildContainerPreviewFromContainerInfo(info, string(formatType), resolvedSummary)
 	truncated := containerInfoTruncated(info)
 
 	content := &models.ObjectPreviewContent{
@@ -1357,17 +1383,14 @@ func buildContainerMetadataMap(info *datatype.ContainerInfo, req *ObjectContentR
 	if info == nil {
 		return result
 	}
-	for key, value := range info.Native {
-		result[key] = value
-	}
 	result["child_count"] = info.ChildCount
 	result["sampled_children"] = len(info.Children)
 	return result
 }
 
-func resolveContainerChildrenForPreview(info *datatype.ContainerInfo) *datatype.ContainerInfo {
+func resolveContainerChildrenForPreview(info *datatype.ContainerInfo) (*datatype.ContainerInfo, *containerPreviewChildren) {
 	if info == nil || len(info.Children) == 0 {
-		return info
+		return info, nil
 	}
 	candidates := make([]commondataitem.Candidate, 0, len(info.Children))
 	rawCount := info.ChildCount
@@ -1407,7 +1430,7 @@ func resolveContainerChildrenForPreview(info *datatype.ContainerInfo) *datatype.
 		})
 	}
 	if len(candidates) == 0 {
-		return info
+		return info, nil
 	}
 	resolved, err := commondataitem.ResolveItems(commondataitem.ResolveInput{
 		ScopeKind:  commondataitem.ScopeKindContainer,
@@ -1417,11 +1440,10 @@ func resolveContainerChildrenForPreview(info *datatype.ContainerInfo) *datatype.
 		},
 	})
 	if err != nil || resolved == nil {
-		return info
+		return info, nil
 	}
 	next := *info
 	next.Children = make([]datatype.ContainerChildInfo, 0, len(resolved.Items))
-	next.Native = cloneInterfaceMap(info.Native)
 	groupedItemCount := 0
 	groupedRefCount := 0
 	for _, item := range resolved.Items {
@@ -1433,12 +1455,10 @@ func resolveContainerChildrenForPreview(info *datatype.ContainerInfo) *datatype.
 		}
 		next.Children = append(next.Children, commondataitem.ContainerChildInfoFromResolvedItem(item))
 	}
+	var summary *containerPreviewChildren
 	if len(next.Children) > 0 {
 		next.DefaultChild = next.Children[0].Name
-		if next.Native == nil {
-			next.Native = map[string]interface{}{}
-		}
-		applyContainerChildrenSummary(next.Native, &containerPreviewChildren{
+		summary = &containerPreviewChildren{
 			RawCount:         rawCount,
 			VisibleCount:     len(next.Children),
 			IgnoredCount:     len(resolved.Ignored),
@@ -1446,12 +1466,12 @@ func resolveContainerChildrenForPreview(info *datatype.ContainerInfo) *datatype.
 			GroupedRefCount:  groupedRefCount,
 			FilteredCount:    skippedCount + len(resolved.Ignored),
 			Resolved:         true,
-		})
+		}
 	}
-	return &next
+	return &next, summary
 }
 
-func buildContainerPreviewFromContainerInfo(info *datatype.ContainerInfo, fallbackFormat string) map[string]interface{} {
+func buildContainerPreviewFromContainerInfo(info *datatype.ContainerInfo, fallbackFormat string, resolvedSummary *containerPreviewChildren) map[string]interface{} {
 	if info == nil {
 		return emptyContainerPreview(fallbackFormat)
 	}
@@ -1465,9 +1485,6 @@ func buildContainerPreviewFromContainerInfo(info *datatype.ContainerInfo, fallba
 		"child_count":      info.ChildCount,
 		"sampled_children": len(info.Children),
 	}
-	for key, value := range info.Native {
-		summary[key] = value
-	}
 	applyContainerChildrenSummary(summary, &containerPreviewChildren{
 		RawCount:     info.ChildCount,
 		VisibleCount: len(info.Children),
@@ -1478,6 +1495,7 @@ func buildContainerPreviewFromContainerInfo(info *datatype.ContainerInfo, fallba
 			return 0
 		}(),
 	})
+	applyContainerChildrenSummary(summary, resolvedSummary)
 	if info.ChildCount > 0 && len(info.Children) >= info.ChildCount {
 		summary["children_truncated"] = false
 	}
@@ -1496,7 +1514,7 @@ func containerInfoTruncated(info *datatype.ContainerInfo) bool {
 	if info.ChildCount > len(info.Children) {
 		return true
 	}
-	return commonJSON.InterfaceBool(info.Native["children_truncated"])
+	return false
 }
 
 func cloneInterfaceMap(input map[string]interface{}) map[string]interface{} {

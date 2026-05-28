@@ -15,7 +15,6 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
-	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/catalogutil"
 	"github.com/addp/manager/internal/models"
@@ -242,6 +241,7 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 		return nil, fmt.Errorf("object path is empty")
 	}
 	preview.Object.StorageRef = fmt.Sprintf("%s/%s", bucket, objectPath)
+	preview.Object.Download = previewDownloadPlan(resource.ID, preview.Object.StorageRef, objectPath, "")
 
 	stat, err := catalogutil.ObjectMetadata(ctx, metadataProvider, connInfo, resource.ID, bucket, objectPath)
 	if err != nil {
@@ -368,75 +368,7 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 	// Manager不做任何元数据解析，只负责原样传递Meta存储的attributes
 	// 前端会根据attributes中的内容自动识别和显示元数据
 
-	// 针对对象尝试触发提取
-	if item != nil && objectPath != "" {
-		extractorAvailable := commonJSON.Bool(preview.Object.Attributes, "capabilities.extraction", "extractor_available")
-		hasExtracted := hasStandardDeepMetadata(preview.Object.Attributes)
-
-		if extractorAvailable && !hasExtracted {
-			extracted := p.tryExtractMetadataFromMeta(ctx, resource.ID, bucket, objectPath, func() (io.ReadCloser, error) {
-				return catalogutil.OpenObjectContent(ctx, contentReader, connInfo, resource.ID, bucket, objectPath)
-			})
-			if extracted != nil {
-				preview.Object.Attributes = mergeJSONMaps(preview.Object.Attributes, models.JSONMap(extracted))
-			}
-		}
-	}
-
 	return preview, nil
-}
-
-// tryExtractMetadataFromMeta 尝试从Meta模块提取元数据
-func (p *objectCatalogPreviewProvider) tryExtractMetadataFromMeta(
-	ctx context.Context,
-	resourceID uint,
-	bucket, objectPath string,
-	openContent func() (io.ReadCloser, error),
-) map[string]interface{} {
-	// 获取Meta服务URL和token（从环境变量或配置）
-	metaURL := getEnvOrDefault("META_URL", "http://localhost:8082")
-	token := getTokenFromContext(ctx) // 从context获取JWT token
-
-	if token == "" {
-		// 没有token，无法调用Meta API
-		return nil
-	}
-
-	// 创建Meta客户端
-	metaClient := commonClient.NewMetaClient(metaURL, token)
-
-	// 下载对象内容（用于提取元数据）
-	objectKey := bucket + "/" + objectPath
-	objReader, err := openContent()
-	if err != nil {
-		return nil
-	}
-	defer objReader.Close()
-
-	// 调用Meta提取
-	extracted, err := metaClient.ExtractObjectMetadata(&commonClient.ObjectMetadataRequest{
-		EngineID:   resourceID,
-		ObjectKey:  objectKey,
-		ObjectData: objReader,
-	})
-	if err != nil {
-		// 提取失败，记录但不影响预览
-		return nil
-	}
-
-	return extracted
-}
-
-func hasStandardDeepMetadata(attrs map[string]interface{}) bool {
-	if len(attrs) == 0 {
-		return false
-	}
-	for _, section := range []string{"type_info.document", "type_info.media", "type_info.container", "format_info"} {
-		if values := commonJSON.Section(attrs, section); len(values) > 0 {
-			return true
-		}
-	}
-	return commonJSON.Bool(attrs, "capabilities.extraction", "metadata_extracted")
 }
 
 func getEnvOrDefault(key, defaultValue string) string {

@@ -1,13 +1,14 @@
 package datatype
 
 const (
-	ContentIndexKindSparseRow = "sparse_row_index"
-	ContentIndexUnitRow       = "row"
-	ContentIndexOffsetByte    = "byte"
+	AccessIndexKindSparseRow = "sparse_row_index"
+	AccessIndexUnitRow       = "row"
+	AccessIndexOffsetByte    = "byte"
 )
 
-// ContentIndex describes a generic access index for reading content windows.
-type ContentIndex struct {
+// AccessIndex describes a generic access index for reading content windows.
+// It is shared here for cross-module reuse; it is not a data type or type info.
+type AccessIndex struct {
 	Kind        string                 `json:"kind"`
 	DataType    DataType               `json:"data_type,omitempty"`
 	Format      string                 `json:"format,omitempty"`
@@ -17,42 +18,42 @@ type ContentIndex struct {
 	RowCount    int64                  `json:"row_count,omitempty"`
 	HeaderBytes int64                  `json:"header_bytes,omitempty"`
 	Source      map[string]interface{} `json:"source,omitempty"`
-	Anchors     []ContentIndexAnchor   `json:"anchors,omitempty"`
+	Anchors     []AccessIndexAnchor    `json:"anchors,omitempty"`
 }
 
-// ContentIndexAnchor maps a logical row to a physical byte offset.
-type ContentIndexAnchor struct {
+// AccessIndexAnchor maps a logical row to a physical byte offset.
+type AccessIndexAnchor struct {
 	Row        int64 `json:"row"`
 	ByteOffset int64 `json:"byte_offset"`
 }
 
-// NewSparseRowContentIndex builds the standard table sparse row index shape.
-func NewSparseRowContentIndex(format string, step int64, headerBytes int64) *ContentIndex {
-	return &ContentIndex{
-		Kind:        ContentIndexKindSparseRow,
+// NewSparseRowAccessIndex builds the standard table sparse row index shape.
+func NewSparseRowAccessIndex(format string, step int64, headerBytes int64) *AccessIndex {
+	return &AccessIndex{
+		Kind:        AccessIndexKindSparseRow,
 		DataType:    DataTypeTable,
 		Format:      format,
-		Unit:        ContentIndexUnitRow,
-		OffsetUnit:  ContentIndexOffsetByte,
+		Unit:        AccessIndexUnitRow,
+		OffsetUnit:  AccessIndexOffsetByte,
 		Step:        step,
 		HeaderBytes: headerBytes,
 	}
 }
 
 // AddAnchor appends a sparse row anchor.
-func (c *ContentIndex) AddAnchor(row, byteOffset int64) {
+func (c *AccessIndex) AddAnchor(row, byteOffset int64) {
 	if c == nil {
 		return
 	}
-	c.Anchors = append(c.Anchors, ContentIndexAnchor{Row: row, ByteOffset: byteOffset})
+	c.Anchors = append(c.Anchors, AccessIndexAnchor{Row: row, ByteOffset: byteOffset})
 }
 
-// Clone returns a deep copy of ContentIndex.
-func (c *ContentIndex) Clone() *ContentIndex {
+// Clone returns a deep copy of AccessIndex.
+func (c *AccessIndex) Clone() *AccessIndex {
 	if c == nil {
 		return nil
 	}
-	cloned := &ContentIndex{
+	cloned := &AccessIndex{
 		Kind:        c.Kind,
 		DataType:    c.DataType,
 		Format:      c.Format,
@@ -62,18 +63,18 @@ func (c *ContentIndex) Clone() *ContentIndex {
 		RowCount:    c.RowCount,
 		HeaderBytes: c.HeaderBytes,
 		Source:      cloneInterfaceMap(c.Source),
-		Anchors:     append([]ContentIndexAnchor(nil), c.Anchors...),
+		Anchors:     append([]AccessIndexAnchor(nil), c.Anchors...),
 	}
 	return cloned
 }
 
 // IsSparseRowIndex reports whether the index is the standard table sparse row index.
-func (c *ContentIndex) IsSparseRowIndex() bool {
+func (c *AccessIndex) IsSparseRowIndex() bool {
 	return c != nil &&
-		c.Kind == ContentIndexKindSparseRow &&
+		c.Kind == AccessIndexKindSparseRow &&
 		c.DataType == DataTypeTable &&
-		c.Unit == ContentIndexUnitRow &&
-		c.OffsetUnit == ContentIndexOffsetByte
+		c.Unit == AccessIndexUnitRow &&
+		c.OffsetUnit == AccessIndexOffsetByte
 }
 
 func cloneInterfaceMap(values map[string]interface{}) map[string]interface{} {

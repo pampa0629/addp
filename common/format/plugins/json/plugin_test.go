@@ -602,18 +602,18 @@ func TestJSONPluginDescribeTableBuildsSparseRowIndex(t *testing.T) {
 	]`
 	plugin := NewPlugin(nil)
 	opts := format.DefaultParseOptions()
-	opts.ContentIndexStep = 2
+	opts.AccessIndexStep = 2
 
 	info, err := plugin.DescribeTable(context.Background(), strings.NewReader(data), opts)
 	if err != nil {
 		t.Fatalf("DescribeTable failed: %v", err)
 	}
-	indexInfo := info.ContentIndex
+	indexInfo := info.AccessIndex
 	if indexInfo == nil {
-		t.Fatalf("content index missing")
+		t.Fatalf("access index missing")
 	}
 	index := indexInfo
-	if index.Kind != datatype.ContentIndexKindSparseRow || index.RowCount != 4 || len(index.Anchors) != 3 {
+	if index.Kind != datatype.AccessIndexKindSparseRow || index.RowCount != 4 || len(index.Anchors) != 3 {
 		t.Fatalf("index = %#v", index)
 	}
 	if index.Anchors[1].Row != 2 || index.Anchors[1].ByteOffset <= index.Anchors[0].ByteOffset {
@@ -632,13 +632,13 @@ func TestJSONPluginSampleGeoJSONFromPositionedReader(t *testing.T) {
 	}`
 	plugin := NewPlugin(nil)
 	opts := format.DefaultParseOptions()
-	opts.ContentIndexStep = 1
+	opts.AccessIndexStep = 1
 
 	info, err := plugin.DescribeTable(context.Background(), strings.NewReader(data), opts)
 	if err != nil {
 		t.Fatalf("DescribeTable failed: %v", err)
 	}
-	index := info.ContentIndex
+	index := info.AccessIndex
 	start := index.Anchors[1].ByteOffset
 	tableInfo := format.TableInfoFromDescribeResult(info)
 	positioned := format.DefaultParseOptions()
@@ -697,13 +697,13 @@ func TestJSONPluginSampleTableFromPositionedReader(t *testing.T) {
 	]`
 	plugin := NewPlugin(nil)
 	opts := format.DefaultParseOptions()
-	opts.ContentIndexStep = 2
+	opts.AccessIndexStep = 2
 
 	info, err := plugin.DescribeTable(context.Background(), strings.NewReader(data), opts)
 	if err != nil {
 		t.Fatalf("DescribeTable failed: %v", err)
 	}
-	index := info.ContentIndex
+	index := info.AccessIndex
 	start := index.Anchors[1].ByteOffset
 	fragment := data[start:]
 	tableInfo := format.TableInfoFromDescribeResult(info)

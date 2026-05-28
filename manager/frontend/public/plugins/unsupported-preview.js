@@ -1,11 +1,11 @@
 (function () {
-  const COMPONENT_KEY = 'GeoJsonPreview'
+  const COMPONENT_KEY = 'UnsupportedPreview'
 
   const components = window.DataExplorerPluginComponents || {}
   const component = components[COMPONENT_KEY]
 
   if (!component) {
-    console.warn(`DataExplorer: 内置预览组件 ${COMPONENT_KEY} 未注入，跳过 map 注册`)
+    console.warn(`DataExplorer: 内置预览组件 ${COMPONENT_KEY} 未注入，跳过 unsupported 注册`)
     return
   }
 
@@ -37,14 +37,13 @@
   }
 
   register({
-    name: 'map',
+    name: 'unsupported',
     component,
     canHandle: (data = {}) => {
-      const target = previewTarget(data)
-      return target === 'map' || target === 'geojson'
+      return previewTarget(data) === 'unsupported'
     },
-    priority: 80
+    priority: 62
   })
 
-  console.log('📦 Map 预览插件已注册')
+  console.log('📦 Unsupported 预览插件已注册')
 })()

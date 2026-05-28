@@ -1789,6 +1789,47 @@ paths:
       summary: 删除搜索历史记录 | Delete search history item
       tags:
       - Manager
+  /storage-download:
+    get:
+      description: 基于 DownloadPlan 自动处理单叶子下载和 multi refs ZIP 打包下载；storage-stream 仍只用于单存储叶子
+        Range 流 | Resolve DownloadPlan and download a logical storage object as a
+        single stream or ZIP bundle
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: query
+        name: engine_id
+        required: true
+        type: integer
+      - description: 存储内容引用 | Storage content reference
+        in: query
+        name: storage_ref
+        required: true
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: 下载内容流 | Download content stream
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 逻辑存储对象下载 | Logical storage object download
+      tags:
+      - Manager
   /storage-stream:
     get:
       description: 支持 Range 请求的存储叶子内容流式传输，用于图片、视频、下载等内容访问；storage_ref 在对象存储中为 bucket/path，在文件系统中为文件路径
@@ -1819,6 +1860,11 @@ paths:
             type: object
         "403":
           description: 无权访问 | Access denied
+          schema:
+            additionalProperties: true
+            type: object
+        "416":
+          description: Range 不可满足 | Range not satisfiable
           schema:
             additionalProperties: true
             type: object

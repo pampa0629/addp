@@ -17,7 +17,7 @@ func Normalize(attrs models.JSONMap) models.JSONMap {
 	normalized := models.JSONMap{}
 	normalized["schema_version"] = 1
 
-	for _, section := range []string{"storage", "item", "type_info", "format_info", "content_index", "capabilities"} {
+	for _, section := range []string{"storage", "item", "type_info", "format_info", "access_index", "capabilities"} {
 		if sectionAttrs := cleanAttributeValue(Section(attrs, section)); sectionAttrs != nil {
 			normalized[section] = sectionAttrs
 		}
@@ -99,7 +99,7 @@ func MergeStandardAttributes(attrs models.JSONMap, additions map[string]interfac
 	if attrs == nil || len(additions) == 0 {
 		return
 	}
-	for _, section := range []string{"storage", "item", "type_info", "format_info", "content_index", "capabilities"} {
+	for _, section := range []string{"storage", "item", "type_info", "format_info", "access_index", "capabilities"} {
 		values := commonJSON.InterfaceMap(additions[section])
 		if len(values) == 0 {
 			continue
@@ -127,7 +127,7 @@ func FormatInfoAttributes(formatName string, values map[string]interface{}) map[
 	scoped := map[string]interface{}{}
 	for key, value := range values {
 		switch key {
-		case "storage", "item", "type_info", "format_info", "content_index", "capabilities":
+		case "storage", "item", "type_info", "format_info", "access_index", "capabilities":
 			continue
 		default:
 			scoped[key] = value
@@ -200,20 +200,20 @@ func MergeAttributeSection(attrs models.JSONMap, section string, values map[stri
 	}
 }
 
-func RemoveContentIndexTable(attrs map[string]interface{}) {
+func RemoveAccessIndexTable(attrs map[string]interface{}) {
 	if attrs == nil {
 		return
 	}
-	contentIndex := commonJSON.InterfaceMap(attrs["content_index"])
-	if len(contentIndex) == 0 {
-		delete(attrs, "content_index")
+	accessIndex := commonJSON.InterfaceMap(attrs["access_index"])
+	if len(accessIndex) == 0 {
+		delete(attrs, "access_index")
 		return
 	}
-	delete(contentIndex, "table")
-	if cleaned := cleanAttributeMap(contentIndex); len(cleaned) > 0 {
-		attrs["content_index"] = cleaned
+	delete(accessIndex, "table")
+	if cleaned := cleanAttributeMap(accessIndex); len(cleaned) > 0 {
+		attrs["access_index"] = cleaned
 	} else {
-		delete(attrs, "content_index")
+		delete(attrs, "access_index")
 	}
 }
 

@@ -222,6 +222,9 @@ func TestPlanObjectCatalogSingleItemBuildsIdentityAndAttributes(t *testing.T) {
 	if storage["physical_path"] != "addp/datasets/profile.json" || storage["total_size"] != int64(128) {
 		t.Fatalf("storage attrs = %#v", storage)
 	}
+	if storage["file_type"] != nil {
+		t.Fatalf("storage.file_type should not duplicate item.format: %#v", storage)
+	}
 }
 
 func TestPlanObjectCatalogCompositeItemBuildsStandardAttributes(t *testing.T) {

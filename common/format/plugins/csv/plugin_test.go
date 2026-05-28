@@ -169,8 +169,8 @@ func TestCSVPlugin_ImplementsTargetInterfaces(t *testing.T) {
 	var _ format.TableSampleReader = plugin
 	var _ format.TableReaderProvider = plugin
 	var _ format.TableWriterProvider = plugin
-	if !format.SupportsContentIndex(plugin.Format()) {
-		t.Fatalf("SupportsContentIndex(%q) = false, want true", plugin.Format())
+	if !format.SupportsAccessIndex(plugin.Format()) {
+		t.Fatalf("SupportsAccessIndex(%q) = false, want true", plugin.Format())
 	}
 }
 
@@ -365,19 +365,19 @@ func TestCSVPlugin_DescribeTableBuildsSparseRowIndex(t *testing.T) {
 	reader := strings.NewReader(csvData)
 	plugin := NewPlugin(nil)
 	opts := format.DefaultParseOptions()
-	opts.ContentIndexStep = 2
+	opts.AccessIndexStep = 2
 
 	tableInfo, err := plugin.DescribeTable(context.Background(), reader, opts)
 	if err != nil {
 		t.Fatalf("DescribeTable failed: %v", err)
 	}
 
-	indexInfo := tableInfo.ContentIndex
+	indexInfo := tableInfo.AccessIndex
 	if indexInfo == nil {
-		t.Fatalf("content index extension missing")
+		t.Fatalf("access index extension missing")
 	}
 	index := indexInfo
-	if index.Kind != datatype.ContentIndexKindSparseRow {
+	if index.Kind != datatype.AccessIndexKindSparseRow {
 		t.Fatalf("index kind = %q, want sparse row", index.Kind)
 	}
 	if index.RowCount != 4 {

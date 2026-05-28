@@ -185,7 +185,7 @@
     "immediateDepth": "立即扫描深度",
     "basicScan": "基础扫描（推荐）",
     "deepScan": "深度扫描",
-    "scanDepthHint": "基础扫描只发现资源目录和数据项身份，不读取文件或对象内部内容\n深度扫描会补充字段、行数、容器子项和内容索引等元数据",
+    "scanDepthHint": "基础扫描只发现资源目录和数据项身份，不读取文件或对象内部内容\n深度扫描会补充字段、行数、容器子项和访问定位索引等元数据",
     "scheduledScan": "定时自动扫描",
     "scheduledScanHint": "按设定的频率自动扫描，保持元数据最新",
     "scanFrequency": "扫描频率",
@@ -292,6 +292,10 @@
     "hasHeader": "包含表头",
     "noColumns": "该子项暂无可展示的列",
     "empty": "暂无可预览的子项",
+    "rawEntries": "原始条目",
+    "previewableChildren": "可预览子项",
+    "filtered": "已过滤",
+    "childSelector": "子项",
     "rowCount": "{count} 行",
     "components": "组件",
     "refs": "相关内容",
@@ -301,6 +305,10 @@
     "componentPath": "路径",
     "noPreview": "该子项暂无可用预览",
     "noPreviewForType": "该 {type} 子项暂无可用预览"
+  },
+  "unsupportedPreview": {
+    "title": "暂不支持在线预览",
+    "description": "当前文件类型暂不支持在线预览，请下载后使用合适的工具查看。"
   },
   "objectStorage": {
     "bucket": "Bucket",

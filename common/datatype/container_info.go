@@ -2,11 +2,10 @@ package datatype
 
 // ContainerInfo is the common type info for container data items.
 type ContainerInfo struct {
-	ChildCount    int                    `json:"child_count,omitempty"`
-	DefaultChild  string                 `json:"default_child,omitempty"`
-	ResourceCount int                    `json:"resource_count,omitempty"`
-	Children      []ContainerChildInfo   `json:"children,omitempty"`
-	Native        map[string]interface{} `json:"native,omitempty"`
+	ChildCount    int                  `json:"child_count,omitempty"`
+	DefaultChild  string               `json:"default_child,omitempty"`
+	ResourceCount int                  `json:"resource_count,omitempty"`
+	Children      []ContainerChildInfo `json:"children,omitempty"`
 }
 
 // Clone returns a deep copy of ContainerInfo.
@@ -16,7 +15,6 @@ func (c *ContainerInfo) Clone() *ContainerInfo {
 	}
 	cloned := *c
 	cloned.Children = cloneContainerChildren(c.Children)
-	cloned.Native = cloneInterfaceMap(c.Native)
 	return &cloned
 }
 

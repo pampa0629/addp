@@ -64,7 +64,7 @@ type ContentReader interface {
 // 样本数据是面向 Manager 内容查看、Transfer 探查等消费场景的数据能力，
 // 和 TableInfoProvider 并列注册，避免把“类型信息”和“内容数据”绑死。
 // offset / limit 是逻辑数据行窗口，不是字节偏移。input 默认从资源起点开始；
-// 如果调用方基于 content_index 传入局部流，必须通过 ParseOptions.TableSample
+// 如果调用方基于 access_index 传入局部流，必须通过 ParseOptions.TableSample
 // 提供定位上下文。
 type TableSampleReader interface {
 	ContentReader
@@ -167,8 +167,9 @@ type TableWriter interface {
 
 // ContainerInfoProvider 表示格式能够提供容器内部对象信息。
 //
-// 结果应由 Meta 映射到 type_info.container；容器级和 child 级原生事实
-// 通过 datatype.ContainerInfo.Native / ContainerChildInfo.Native 承载。
+// 结果应由 Meta 映射到 type_info.container。父容器级格式统计应由
+// FormatInfoProvider 写入 format_info.<format>；child 级定位或受控原生摘要
+// 可通过 datatype.ContainerChildInfo.Native 承载。
 // provider 不决定 child 是否成为独立 data item，也不返回上层展示 DTO。
 type ContainerInfoProvider interface {
 	Provider

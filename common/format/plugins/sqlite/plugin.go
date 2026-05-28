@@ -164,26 +164,14 @@ func (p *Plugin) DescribeContainer(ctx context.Context, input io.Reader, options
 		defaultChild = children[0].Name
 	}
 	childCount := result.Metadata.TableCount + result.Metadata.ViewCount
-	childrenTruncated := childCount > len(children)
 	if p.Format() == format.FormatGeoPackage {
 		childCount = len(children)
-		childrenTruncated = false
 	}
 	return &datatype.ContainerInfo{
 		ChildCount:    childCount,
 		DefaultChild:  defaultChild,
 		ResourceCount: 1,
 		Children:      children,
-		Native: map[string]interface{}{
-			"version":            result.Metadata.Version,
-			"page_size":          result.Metadata.PageSize,
-			"page_count":         result.Metadata.PageCount,
-			"table_count":        result.Metadata.TableCount,
-			"view_count":         result.Metadata.ViewCount,
-			"index_count":        result.Metadata.IndexCount,
-			"sampled_children":   len(children),
-			"children_truncated": childrenTruncated,
-		},
 	}, nil
 }
 

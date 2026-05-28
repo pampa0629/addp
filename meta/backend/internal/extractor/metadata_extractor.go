@@ -148,7 +148,6 @@ func (e *MetadataExtractor) ExtractObjectMetadataOnDemand(
 	if err != nil {
 		return nil, fmt.Errorf("failed to enrich object metadata: %w", err)
 	}
-	metaattr.SetExtraction(enhancedAttrs, "metadata_extracted", true)
 	enhancedAttrs = metaattr.Normalize(enhancedAttrs)
 
 	if err := e.db.Model(item).Update("attributes", enhancedAttrs).Error; err != nil {
@@ -159,7 +158,7 @@ func (e *MetadataExtractor) ExtractObjectMetadataOnDemand(
 	return enhancedAttrs, nil
 }
 
-func (e *MetadataExtractor) BuildObjectContentIndexOnDemand(
+func (e *MetadataExtractor) BuildObjectAccessIndexOnDemand(
 	tenantID, engineID uint,
 	objectKey string,
 	objectReader io.Reader,
@@ -176,21 +175,21 @@ func (e *MetadataExtractor) BuildObjectContentIndexOnDemand(
 	if formatType == format.FormatUnknown {
 		return nil, fmt.Errorf("item format is unknown: %s", objectKey)
 	}
-	if !format.SupportsContentIndex(formatType) {
-		return nil, fmt.Errorf("format %s does not support content index", formatType)
+	if !format.SupportsAccessIndex(formatType) {
+		return nil, fmt.Errorf("format %s does not support access index", formatType)
 	}
 	provider, err := format.GetTableInfoProvider(formatType)
 	if err != nil {
-		return nil, fmt.Errorf("format %s cannot build content index: %w", formatType, err)
+		return nil, fmt.Errorf("format %s cannot build access index: %w", formatType, err)
 	}
 
 	tableInfo, err := provider.DescribeTable(context.Background(), objectReader, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build content index for %s: %w", objectKey, err)
+		return nil, fmt.Errorf("failed to build access index for %s: %w", objectKey, err)
 	}
-	index := tableInfo.ContentIndex
+	index := tableInfo.AccessIndex
 	if index == nil {
-		return nil, fmt.Errorf("format %s did not return content index", formatType)
+		return nil, fmt.Errorf("format %s did not return access index", formatType)
 	}
 	if index.Source == nil {
 		index.Source = map[string]interface{}{}
@@ -206,7 +205,7 @@ func (e *MetadataExtractor) BuildObjectContentIndexOnDemand(
 	}
 
 	enhancedAttrs := cloneJSONMap(item.Attributes)
-	metaattr.UpsertNested(enhancedAttrs, "content_index", "table", commonJSON.MapFromStruct(index))
+	metaattr.UpsertNested(enhancedAttrs, "access_index", "table", commonJSON.MapFromStruct(index))
 	if tableInfo.Table != nil && len(tableInfo.Table.Fields) > 0 {
 		metaattr.UpsertNested(enhancedAttrs, "type_info", "table", datatype.TableInfoAttributes(tableInfo.Table))
 	}

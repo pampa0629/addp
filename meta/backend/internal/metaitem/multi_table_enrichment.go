@@ -155,8 +155,8 @@ func upsertRefTableInfo(item *DetectedItem, tableInfo *format.TableDescribeResul
 	if spatialAttrs := metaattr.SpatialInfoAttributes(tableInfo.Spatial); len(spatialAttrs) > 0 {
 		metaattr.UpsertNested(item.Attributes, "capabilities", "spatial", spatialAttrs)
 	}
-	if tableInfo.ContentIndex != nil {
-		metaattr.UpsertNested(item.Attributes, "content_index", "table", commonJSON.MapFromStruct(tableInfo.ContentIndex))
+	if tableInfo.AccessIndex != nil {
+		metaattr.UpsertNested(item.Attributes, "access_index", "table", commonJSON.MapFromStruct(tableInfo.AccessIndex))
 	}
 }
 

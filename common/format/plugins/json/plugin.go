@@ -66,7 +66,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		Layouts:        []string{format.LayoutSingle},
 		ProviderHints:  []string{format.FormatProviderDocument, format.FormatProviderTable, format.FormatProviderSpatial},
 		Identification: format.FormatIdentification{Extensions: []string{".json", ".geojson"}, MimeTypes: []string{"application/json", "application/geo+json", "application/vnd.geo+json"}},
-		Providers:      format.FormatProviderDescriptor{DocumentInfo: true, FormatInfo: true, TableInfo: true, TableSample: true, Table: true, ContentIndex: true},
+		Providers:      format.FormatProviderDescriptor{DocumentInfo: true, FormatInfo: true, TableInfo: true, TableSample: true, Table: true, AccessIndex: true},
 		ContentReaders: []string{string(format.ContentReaderDocumentText), string(format.ContentReaderTableSample), string(format.ContentReaderRawContent)},
 		TransferRead:   true,
 		TransferWrite:  true,
@@ -311,7 +311,7 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 		Spatial: spatialInfo,
 	}
 	if len(index.Anchors) > 0 {
-		result.ContentIndex = index
+		result.AccessIndex = index
 	}
 
 	selected, err := format.ApplyFieldSelectionToTableDescribeResult(result, opts.FieldSelection)
@@ -850,27 +850,27 @@ func jsonObjectFragments(data []byte) [][]byte {
 	return fragments
 }
 
-func (p *Plugin) newSparseRowIndex(opts *format.ParseOptions, headerBytes int64) *datatype.ContentIndex {
+func (p *Plugin) newSparseRowIndex(opts *format.ParseOptions, headerBytes int64) *datatype.AccessIndex {
 	step := int64(5000)
-	if opts != nil && opts.ContentIndexStep > 0 {
-		step = opts.ContentIndexStep
+	if opts != nil && opts.AccessIndexStep > 0 {
+		step = opts.AccessIndexStep
 	}
-	return &datatype.ContentIndex{
-		Kind:        datatype.ContentIndexKindSparseRow,
+	return &datatype.AccessIndex{
+		Kind:        datatype.AccessIndexKindSparseRow,
 		DataType:    datatype.DataTypeTable,
 		Format:      string(format.FormatJSON),
-		Unit:        datatype.ContentIndexUnitRow,
-		OffsetUnit:  datatype.ContentIndexOffsetByte,
+		Unit:        datatype.AccessIndexUnitRow,
+		OffsetUnit:  datatype.AccessIndexOffsetByte,
 		Step:        step,
 		HeaderBytes: headerBytes,
-		Anchors: []datatype.ContentIndexAnchor{{
+		Anchors: []datatype.AccessIndexAnchor{{
 			Row:        0,
 			ByteOffset: headerBytes,
 		}},
 	}
 }
 
-func (p *Plugin) recordSparseRowAnchor(index *datatype.ContentIndex, nextRow int64, byteOffset int64) {
+func (p *Plugin) recordSparseRowAnchor(index *datatype.AccessIndex, nextRow int64, byteOffset int64) {
 	if index == nil || index.Step <= 0 || nextRow <= 0 || nextRow%index.Step != 0 {
 		return
 	}
@@ -879,7 +879,7 @@ func (p *Plugin) recordSparseRowAnchor(index *datatype.ContentIndex, nextRow int
 		index.Anchors[len(anchors)-1].ByteOffset = byteOffset
 		return
 	}
-	index.Anchors = append(index.Anchors, datatype.ContentIndexAnchor{
+	index.Anchors = append(index.Anchors, datatype.AccessIndexAnchor{
 		Row:        nextRow,
 		ByteOffset: byteOffset,
 	})

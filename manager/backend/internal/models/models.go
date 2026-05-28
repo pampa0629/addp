@@ -183,9 +183,32 @@ type ObjectPreview struct {
 	Attributes   JSONMap               `json:"attributes,omitempty"`
 	EngineID     uint                  `json:"engine_id,omitempty"`
 	StorageRef   string                `json:"storage_ref,omitempty"`
+	Download     *DownloadPlan         `json:"download,omitempty"`
 	Children     []ObjectPreviewChild  `json:"children,omitempty"`
 	Content      *ObjectPreviewContent `json:"content,omitempty"`
 	Truncated    bool                  `json:"truncated,omitempty"`
+}
+
+const (
+	DownloadKindStream = "stream"
+	DownloadKindBundle = "bundle"
+	DownloadKindExport = "export"
+)
+
+type DownloadPlan struct {
+	Kind        string        `json:"kind"`
+	URL         string        `json:"url,omitempty"`
+	FileName    string        `json:"filename,omitempty"`
+	ContentType string        `json:"content_type,omitempty"`
+	Refs        []DownloadRef `json:"refs,omitempty"`
+}
+
+type DownloadRef struct {
+	StorageRef string `json:"storage_ref"`
+	Role       string `json:"role,omitempty"`
+	Required   bool   `json:"required,omitempty"`
+	Primary    bool   `json:"primary,omitempty"`
+	FileName   string `json:"filename,omitempty"`
 }
 
 type ObjectPreviewChild struct {
@@ -230,14 +253,16 @@ const (
 	// PreviewMaterial* values describe the material Manager sends to the frontend
 	// renderer. They are presentation-layer values, not common/format content
 	// reader capability names such as raw_content, range_content, or binary_content.
-	PreviewMaterialText      = "text"
-	PreviewMaterialMarkdown  = "markdown"
-	PreviewMaterialHTML      = "html"
-	PreviewMaterialJSON      = "json"
-	PreviewMaterialGeoJSON   = "geojson"
-	PreviewMaterialRawBinary = "raw_binary"
-	PreviewMaterialTable     = "table"
-	PreviewMaterialURL       = "url"
+	PreviewMaterialText        = "text"
+	PreviewMaterialMarkdown    = "markdown"
+	PreviewMaterialHTML        = "html"
+	PreviewMaterialJSON        = "json"
+	PreviewMaterialGeoJSON     = "geojson"
+	PreviewMaterialRawBinary   = "raw_binary"
+	PreviewMaterialTable       = "table"
+	PreviewMaterialContainer   = "container"
+	PreviewMaterialUnsupported = "unsupported"
+	PreviewMaterialURL         = "url"
 )
 
 func IsKnownPreviewMaterial(material string) bool {
@@ -249,6 +274,8 @@ func IsKnownPreviewMaterial(material string) bool {
 		PreviewMaterialGeoJSON,
 		PreviewMaterialRawBinary,
 		PreviewMaterialTable,
+		PreviewMaterialContainer,
+		PreviewMaterialUnsupported,
 		PreviewMaterialURL:
 		return true
 	default:

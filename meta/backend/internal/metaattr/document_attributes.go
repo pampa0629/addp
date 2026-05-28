@@ -29,8 +29,8 @@ func DocumentInfoAttributes(info *datatype.DocumentInfo) models.JSONMap {
 	if info.SizeBytes != nil {
 		document["size_bytes"] = *info.SizeBytes
 	}
-	if info.TextExtracted {
-		document["text_extracted"] = true
+	if len(document) == 0 {
+		return attrs
 	}
 	UpsertNested(attrs, "type_info", "document", document)
 	return attrs

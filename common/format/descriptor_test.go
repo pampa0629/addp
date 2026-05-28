@@ -166,18 +166,18 @@ func TestRegisterFormatDescriptorUpdatesCapability(t *testing.T) {
 	}
 }
 
-func TestSupportsContentIndexUsesDescriptorProviderCapability(t *testing.T) {
-	if !SupportsContentIndex(FormatCSV) {
-		t.Fatalf("SupportsContentIndex(csv) = false, want true")
+func TestSupportsAccessIndexUsesDescriptorProviderCapability(t *testing.T) {
+	if !SupportsAccessIndex(FormatCSV) {
+		t.Fatalf("SupportsAccessIndex(csv) = false, want true")
 	}
-	if !SupportsContentIndex(FormatTSV) {
-		t.Fatalf("SupportsContentIndex(tsv) = false, want true")
+	if !SupportsAccessIndex(FormatTSV) {
+		t.Fatalf("SupportsAccessIndex(tsv) = false, want true")
 	}
-	if !SupportsContentIndex(FormatJSON) {
-		t.Fatalf("SupportsContentIndex(json) = false, want true")
+	if !SupportsAccessIndex(FormatJSON) {
+		t.Fatalf("SupportsAccessIndex(json) = false, want true")
 	}
-	if SupportsContentIndex(FormatParquet) {
-		t.Fatalf("SupportsContentIndex(parquet) = true, want false")
+	if SupportsAccessIndex(FormatParquet) {
+		t.Fatalf("SupportsAccessIndex(parquet) = true, want false")
 	}
 }
 

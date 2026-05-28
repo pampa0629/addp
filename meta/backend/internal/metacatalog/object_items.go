@@ -230,9 +230,6 @@ func PlanObjectCatalogSingleItem(engineID uint, resource StorageResource, trimme
 			"object_count": resource.ObjectCount,
 		},
 	}
-	if resource.Format != "" {
-		metaattr.SetStorage(attrs, "file_type", resource.Format)
-	}
 	if resource.LastModified != nil {
 		metaattr.SetStorage(attrs, "last_modified_at", resource.LastModified)
 	}

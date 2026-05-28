@@ -958,9 +958,9 @@ func (s *ScanService) ExtractObjectMetadataOnDemand(tenantID, engineID uint, obj
 	return s.metadataExtractor.ExtractObjectMetadataOnDemand(tenantID, engineID, objectKey, token, objectReader)
 }
 
-// BuildObjectContentIndexOnDemand 按需建立对象内容索引。
-func (s *ScanService) BuildObjectContentIndexOnDemand(tenantID, engineID uint, objectKey string, objectReader io.Reader) (models.JSONMap, error) {
-	return s.metadataExtractor.BuildObjectContentIndexOnDemand(tenantID, engineID, objectKey, objectReader)
+// BuildObjectAccessIndexOnDemand 按需建立对象访问索引。
+func (s *ScanService) BuildObjectAccessIndexOnDemand(tenantID, engineID uint, objectKey string, objectReader io.Reader) (models.JSONMap, error) {
+	return s.metadataExtractor.BuildObjectAccessIndexOnDemand(tenantID, engineID, objectKey, objectReader)
 }
 
 // ============================================================================

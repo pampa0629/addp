@@ -15,20 +15,32 @@
       ? window.registerDataExplorerPlugin
       : (plugin) => queue.push(plugin)
 
-  const frontendRenderer = (data = {}) =>
-    (
-      data.object?.content?.frontend_renderer ||
-      data.object?.content?.frontendRenderer ||
-      data.object?.content?.metadata?.frontend_renderer ||
-      data.object?.content?.metadata?.frontendRenderer ||
+  const previewTarget = (data = {}) => {
+    const content = data.object?.content || {}
+    const metadata = content.metadata || {}
+    const renderer = (
+      content.frontend_renderer ||
+      content.frontendRenderer ||
+      metadata.frontend_renderer ||
+      metadata.frontendRenderer ||
       ''
     ).toString().toLowerCase()
+    const material = (
+      content.preview_material ||
+      content.previewMaterial ||
+      metadata.preview_material ||
+      metadata.previewMaterial ||
+      ''
+    ).toString().toLowerCase()
+    const kind = (content.kind || content.Kind || '').toString().toLowerCase()
+    return renderer || (material === 'url' || material === 'raw_binary' ? '' : material) || kind
+  }
 
   register({
     name: 'docx',
     component,
     canHandle: (data = {}) => {
-      return frontendRenderer(data) === 'docx'
+      return previewTarget(data) === 'docx'
     },
     priority: 64
   })

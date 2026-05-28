@@ -111,7 +111,7 @@ type ProviderDescriptor struct {
 	Table         bool `json:"table,omitempty"`
 	MultiTable    bool `json:"multi_table,omitempty"`
 	ScopeTable    bool `json:"scope_table,omitempty"`
-	ContentIndex  bool `json:"content_index,omitempty"`
+	AccessIndex   bool `json:"access_index,omitempty"`
 	DocumentInfo  bool `json:"document_info,omitempty"`
 	MediaInfo     bool `json:"media_info,omitempty"`
 	ContainerInfo bool `json:"container_info,omitempty"`

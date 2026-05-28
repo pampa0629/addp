@@ -140,12 +140,12 @@ Meta 可以调用 `common/format` 的能力，但必须保持职责边界：
 | FormatPlugin descriptor / capability | 判断格式身份、默认 data type、布局和可用能力 | `attributes.item` 的候选来源 |
 | FormatInfoProvider | 获取格式私有元信息 | `attributes.format_info.<format>` |
 | TableInfoProvider | 获取表字段、行数、主键等类型信息 | `attributes.type_info.table` |
-| DocumentInfoProvider | 获取文档标题、页数、语言、提取状态等 | `attributes.type_info.document` |
+| DocumentInfoProvider | 获取文档标题、页数、语言、编码、字数等结构元信息 | `attributes.type_info.document` |
 | MediaInfoProvider | 获取媒体宽高、编码、时长等 | `attributes.type_info.media` |
 | ContainerInfoProvider | 获取容器 child 摘要、默认入口、child refs 等 | `attributes.type_info.container` |
 | GraphMetadataProvider | 获取 graph node shapes、relationship shapes、连接模式和计数 | `attributes.type_info.graph` |
 | DocumentTextReader | 获取文档正文片段，用于全文索引或预览摘要 | `capabilities.extraction` 状态、外部索引；正文不写入 `type_info.document` |
-| Content reader | 获取内容片段、样本或读取索引需要的事实 | 通常不直接落内容；必要索引写入 `content_index` |
+| Content reader | 获取内容片段、样本或读取索引需要的事实 | 通常不直接落内容；必要索引写入 `access_index` |
 
 内容样本、原始内容、Manager 前端 DTO 不属于元数据属性，不能塞进 `type_info` 或 `format_info`。
 
@@ -162,7 +162,7 @@ Meta normalizer 是 attributes 标准分区的最终裁决点。
   "item": {},
   "type_info": {},
   "format_info": {},
-  "content_index": {},
+  "access_index": {},
   "capabilities": {}
 }
 ```
@@ -173,7 +173,7 @@ Meta normalizer 是 attributes 标准分区的最终裁决点。
 | `item` | layout、data_type、format、refs、scope_exclusive |
 | `type_info` | data type 通用元数据，例如 table fields、document page_count、media width |
 | `format_info` | 文件、容器或格式解析层面的私有信息，例如 csv encoding、shapefile refs |
-| `content_index` | 内容读取索引，例如 table sparse row index |
+| `access_index` | 内容读取索引，例如 table sparse row index |
 | `capabilities` | spatial、temporal、statistics、extraction 等横切事实 |
 
 `meta_item` 表字段是 item 身份事实源，不重复写入 attributes。
@@ -211,13 +211,15 @@ sequenceDiagram
 | 扫描类型 | 目标 | 典型内容 |
 |---|---|---|
 | 基础扫描 | 快速发现资源树和 data item | node、item 身份、storage、item 分区、轻量格式判断；原则上不读取 file/object 内容 |
-| 深度扫描 | 补充类型信息和横切事实 | table fields、row_count、container children、media info、document info、spatial、statistics、content_index |
+| 深度扫描 | 补充类型信息和横切事实 | table fields、row_count、container children、media info、document info、spatial、statistics、access_index |
 
 基础扫描和深度扫描都必须遵守同一套 data item 与 attributes 规范。深度扫描只是补充事实，不改变 item 身份规则。
 
 文档全文检索属于深度扫描或提取任务的内容处理结果，不改变 `DocumentInfo` 主事实边界。Meta 负责调用 `DocumentTextReader` 或外部 extractor，把正文送入搜索索引，并在 attributes 中记录提取状态、预览和索引引用；Manager 只提供检索入口和结果展示，不解析文档正文。
 
 `scanned_depth` 表示 node / item 当前已经达到的扫描深度，`scan_status` 表示扫描任务过程状态。二者不能混用：一个 item 可以历史上已经 deep 完成，同时最近一次扫描任务失败。
+
+`attributes` 只表达被扫描对象的事实，不表达扫描流程是否已经完成。deep scan 是否完成只能看 `scanned_depth` 或扫描任务结果，不能通过 `metadata_extracted` 之类 attributes 标记，也不能通过检查某个格式字段是否存在来推断。
 
 Manager 刷新和预览补齐只能要求 Meta 对目标 engine / node / item 执行相应深度扫描，不应判断 Shapefile、CSV、Excel 等格式内部 attributes 是否齐全。
 
@@ -236,7 +238,7 @@ Manager 刷新和预览补齐只能要求 Meta 对目标 engine / node / item �
 2. FormatPlugin 只提供格式身份、能力和解析实现，不裁决最终 item。
 3. Info provider 提供元数据，content reader 提供内容数据，二者不能混用。
 4. 旧 `FileMetadataExtractor` 旁路机制已删除；新增格式必须通过 FormatPlugin、info provider 和 content reader 进入主线。
-5. `TableInfo` 不再通过开放式扩展接口承载补充事实；格式私有事实进入 `format_info`，横切事实进入 `capabilities`，内容读取索引进入 `content_index`。
+5. `TableInfo` 不再通过开放式扩展接口承载补充事实；格式私有事实进入 `format_info`，横切事实进入 `capabilities`，内容读取索引进入 `access_index`。
 6. Manager / Transfer / Asset / Search 只能消费已入库 data item，不复刻 Meta detector。
 
 ## 相关文档

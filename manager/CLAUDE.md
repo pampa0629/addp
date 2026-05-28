@@ -70,6 +70,7 @@ curl http://localhost:8081/health
 - `manager/docs/数据库架构.md`
 - `manager/docs/addp-mvt瓦片两阶段及配置说明.md`
 - `manager/docs/数据预览API重构方案.md`
+- `manager/docs/数据预览语义协议.md`
 - `manager/docs/tables/quick_view表.md`
 - `manager/docs/tables/search_history表.md`
 - `common-frontend/CLAUDE.md`

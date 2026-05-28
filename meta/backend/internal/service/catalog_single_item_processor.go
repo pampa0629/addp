@@ -29,27 +29,27 @@ type catalogSingleItemProcessor struct {
 }
 
 type catalogSingleItemInput struct {
-	Resource            *commonModels.Engine
-	TenantID            uint
-	EngineID            uint
-	ParentNode          *models.MetaNode
-	ItemType            string
-	ItemName            string
-	FullName            string
-	Attributes          models.JSONMap
-	Detected            *metaitem.DetectedItem
-	ContentReader       plugin.ContentReadableProvider
-	ConnInfo            plugin.ConnectionInfo
-	CatalogPath         plugin.CatalogPath
-	CatalogPathFor      func(string) plugin.CatalogPath
-	PhysicalPath        string
-	IndexRootName       string
-	IndexPath           string
-	IndexRelativePath   string
-	SizeBytes           int64
-	DataUpdatedAt       *time.Time
-	ScanDepth           string
-	IncludeContentIndex bool
+	Resource           *commonModels.Engine
+	TenantID           uint
+	EngineID           uint
+	ParentNode         *models.MetaNode
+	ItemType           string
+	ItemName           string
+	FullName           string
+	Attributes         models.JSONMap
+	Detected           *metaitem.DetectedItem
+	ContentReader      plugin.ContentReadableProvider
+	ConnInfo           plugin.ConnectionInfo
+	CatalogPath        plugin.CatalogPath
+	CatalogPathFor     func(string) plugin.CatalogPath
+	PhysicalPath       string
+	IndexRootName      string
+	IndexPath          string
+	IndexRelativePath  string
+	SizeBytes          int64
+	DataUpdatedAt      *time.Time
+	ScanDepth          string
+	IncludeAccessIndex bool
 }
 
 type catalogSingleItemResult struct {
@@ -109,14 +109,14 @@ func (p catalogSingleItemProcessor) Process(ctx context.Context, input catalogSi
 	isDeepScan := strings.EqualFold(input.ScanDepth, "deep")
 	if isDeepScan {
 		_, _, err := metaenrich.EnrichResourceAttributes(ctx, attrs, metaenrich.ResourceAttributesInput{
-			ContentReader:       input.ContentReader,
-			ConnInfo:            input.ConnInfo,
-			EngineID:            input.EngineID,
-			Item:                input.Detected,
-			PhysicalPath:        input.PhysicalPath,
-			SizeBytes:           input.SizeBytes,
-			IncludeContentIndex: input.IncludeContentIndex,
-			CatalogPathFor:      input.CatalogPathFor,
+			ContentReader:      input.ContentReader,
+			ConnInfo:           input.ConnInfo,
+			EngineID:           input.EngineID,
+			Item:               input.Detected,
+			PhysicalPath:       input.PhysicalPath,
+			SizeBytes:          input.SizeBytes,
+			IncludeAccessIndex: input.IncludeAccessIndex,
+			CatalogPathFor:     input.CatalogPathFor,
 		})
 		if err != nil && p.log != nil {
 			p.log.Warn("提取 single 资源深度属性失败，保留基础属性", "path", input.PhysicalPath, "format", input.Detected.Format, "error", err)
@@ -275,7 +275,6 @@ func extractCatalogDocumentText(
 	metaattr.SetExtraction(attrs, "plain_text_preview", preview)
 	metaattr.SetExtraction(attrs, "text_truncated", truncated)
 	metaattr.SetExtraction(attrs, "index_ref", "meilisearch:assets:"+itemFingerprintForExtraction(engineID, catalogResource))
-	metaattr.UpsertNested(attrs, "type_info", "document", map[string]interface{}{"text_extracted": true})
 	result.Text = text
 	result.Counts.Extracted = 1
 	return result

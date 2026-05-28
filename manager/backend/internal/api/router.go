@@ -150,6 +150,7 @@ func SetupRouter(
 		api.POST("/tree/:engine_id/refresh", explorerHandler.RefreshNode)
 		api.POST("/engines/:id/items/refresh", metadataHandler.RefreshItem)
 		api.GET("/preview", explorerHandler.Preview)
+		api.GET("/storage-download", explorerHandler.StorageDownload)
 		api.GET("/storage-stream", explorerHandler.StorageStream)
 
 		// ============================================================

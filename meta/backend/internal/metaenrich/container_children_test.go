@@ -11,6 +11,7 @@ import (
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
+	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
 	_ "github.com/mattn/go-sqlite3"
@@ -208,8 +209,12 @@ func TestEnrichZIPContainerChildrenWritesLightweightEntries(t *testing.T) {
 	if !names["roads/roads.shp"] || !names["roads/roads.shx"] || !names["roads/roads.dbf"] {
 		t.Fatalf("children = %#v, want shapefile entry present", children)
 	}
-	if formatInfo, ok := attrs["format_info"]; ok {
-		t.Fatalf("format_info = %#v, want no container format_info", formatInfo)
+	if native := container["native"]; native != nil {
+		t.Fatalf("type_info.container.native = %#v, want no format statistics in type_info", native)
+	}
+	formatInfo := commonJSON.Section(attrs, "format_info.zip")
+	if formatInfo["entry_count"] != 5 || formatInfo["file_count"] != 5 {
+		t.Fatalf("format_info.zip = %#v, want zip entry statistics", formatInfo)
 	}
 }
 

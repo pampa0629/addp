@@ -52,6 +52,116 @@ func TestFileTablePreviewProviderResolveFormatUnknownMetaFormat(t *testing.T) {
 	}
 }
 
+func TestPreviewHintUsesContainerMaterialForContainerDataType(t *testing.T) {
+	t.Parallel()
+
+	hint := inferPreviewHint(previewHintInput{
+		Name:     "sample.sqlite",
+		Format:   format.FormatSQLite,
+		DataType: string(datatype.DataTypeContainer),
+	})
+
+	if hint.Material != "container" {
+		t.Fatalf("Material = %q, want container", hint.Material)
+	}
+	if hint.Renderer != "container" {
+		t.Fatalf("Renderer = %q, want container", hint.Renderer)
+	}
+	if !hint.Previewable {
+		t.Fatalf("Previewable = false, want true")
+	}
+}
+
+func TestPreviewHintSemanticMatrix(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		input           previewHintInput
+		wantMaterial    string
+		wantRenderer    string
+		wantPreviewable bool
+		wantTextLike    bool
+	}{
+		{
+			name: "known_pdf_document",
+			input: previewHintInput{
+				Name:     "report.pdf",
+				Format:   format.FormatPDF,
+				DataType: string(datatype.DataTypeDocument),
+			},
+			wantMaterial:    "raw_binary",
+			wantRenderer:    "pdf",
+			wantPreviewable: true,
+		},
+		{
+			name: "unknown_document_is_unsupported",
+			input: previewHintInput{
+				Name:     "book.epub",
+				Format:   format.FormatUnknown,
+				DataType: string(datatype.DataTypeDocument),
+			},
+			wantMaterial:    "unsupported",
+			wantRenderer:    "unsupported",
+			wantPreviewable: false,
+		},
+		{
+			name: "unknown_media_is_unsupported",
+			input: previewHintInput{
+				Name:     "clip.bin",
+				Format:   format.FormatUnknown,
+				DataType: string(datatype.DataTypeMedia),
+			},
+			wantMaterial:    "unsupported",
+			wantRenderer:    "unsupported",
+			wantPreviewable: false,
+		},
+		{
+			name: "known_video",
+			input: previewHintInput{
+				Name:     "clip.mp4",
+				Format:   format.FormatMP4,
+				DataType: string(datatype.DataTypeMedia),
+			},
+			wantMaterial:    "raw_binary",
+			wantRenderer:    "video",
+			wantPreviewable: true,
+		},
+		{
+			name: "text_peek",
+			input: previewHintInput{
+				Name: "README",
+				Peek: []byte("hello\nworld\n"),
+			},
+			wantMaterial:    "text",
+			wantRenderer:    "text",
+			wantPreviewable: true,
+			wantTextLike:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			hint := inferPreviewHint(tt.input)
+			if hint.Material != tt.wantMaterial {
+				t.Fatalf("Material = %q, want %q", hint.Material, tt.wantMaterial)
+			}
+			if hint.Renderer != tt.wantRenderer {
+				t.Fatalf("Renderer = %q, want %q", hint.Renderer, tt.wantRenderer)
+			}
+			if hint.Previewable != tt.wantPreviewable {
+				t.Fatalf("Previewable = %v, want %v", hint.Previewable, tt.wantPreviewable)
+			}
+			if hint.TextLike != tt.wantTextLike {
+				t.Fatalf("TextLike = %v, want %v", hint.TextLike, tt.wantTextLike)
+			}
+		})
+	}
+}
+
 func TestFileTablePreviewProviderResolveFormatUsesContentType(t *testing.T) {
 	provider := &FileTablePreviewProvider{}
 	req := &PreviewRequest{
@@ -825,6 +935,77 @@ func TestContainerChildPreviewProviderPreviewsZIPMultiTableChildRefs(t *testing.
 	}
 }
 
+func TestFileTablePreviewProviderMultiPreviewKeepsNFSFullStorageRef(t *testing.T) {
+	previousEngine, previousEngineErr := plugin.Get("nfs")
+	enginePlugin := &recordingContentPlugin{engineType: "nfs"}
+	plugin.Register(enginePlugin)
+	defer func() {
+		if previousEngineErr == nil {
+			plugin.Register(previousEngine)
+			return
+		}
+		plugin.Unregister(enginePlugin.Type())
+	}()
+
+	previousInfoProvider, previousInfoErr := format.GetMultiTableInfoProvider(format.FormatShapefile)
+	previousSampleReader, previousSampleErr := format.GetMultiTableSampleReader(format.FormatShapefile)
+	refProvider := &recordingMultiTableProvider{}
+	if err := format.RegisterMultiTableInfoProvider(refProvider); err != nil {
+		t.Fatalf("RegisterMultiTableInfoProvider() error = %v", err)
+	}
+	if err := format.RegisterMultiTableSampleReader(refProvider); err != nil {
+		t.Fatalf("RegisterMultiTableSampleReader() error = %v", err)
+	}
+	defer func() {
+		if previousInfoErr == nil {
+			_ = format.RegisterMultiTableInfoProvider(previousInfoProvider)
+		}
+		if previousSampleErr == nil {
+			_ = format.RegisterMultiTableSampleReader(previousSampleReader)
+		}
+	}()
+
+	provider := &FileTablePreviewProvider{}
+	req := &PreviewRequest{
+		Engine:       &models.Engine{EngineType: enginePlugin.Type(), ID: 26},
+		ItemType:     "file",
+		Schema:       "shp",
+		Table:        "farmland.shp",
+		PhysicalPath: "shp/farmland.shp",
+		Page:         1,
+		PageSize:     20,
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"format":    string(format.FormatShapefile),
+				"data_type": "table",
+				"layout":    "multi",
+				"refs": []interface{}{
+					map[string]interface{}{"path": "shp/farmland.shp", "role": "main", "required": true, "primary": true},
+					map[string]interface{}{"path": "shp/farmland.shx", "role": "index", "required": true},
+					map[string]interface{}{"path": "shp/farmland.dbf", "role": "attributes", "required": true},
+				},
+			},
+		},
+	}
+
+	preview, err := provider.Preview(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+	if preview.Object == nil || preview.Object.Download == nil {
+		t.Fatalf("preview object/download = %#v", preview.Object)
+	}
+	if preview.Object.Path != "shp/farmland.shp" || preview.Object.StorageRef != "shp/farmland.shp" {
+		t.Fatalf("object path/storage_ref = %q/%q, want full NFS path", preview.Object.Path, preview.Object.StorageRef)
+	}
+	if got := preview.Object.Download.URL; !strings.Contains(got, "storage_ref=shp%2Ffarmland.shp") {
+		t.Fatalf("download url = %q, want full NFS storage_ref", got)
+	}
+	if preview.Object.Download.FileName != "farmland.shapefile.zip" {
+		t.Fatalf("download filename = %q, want farmland.shapefile.zip", preview.Object.Download.FileName)
+	}
+}
+
 func TestContainerChildPreviewProviderResolvesNestedZIPEntry(t *testing.T) {
 	previous, previousErr := plugin.Get("nfs")
 	enginePlugin := &recordingContentPlugin{engineType: "nfs"}
@@ -1214,6 +1395,7 @@ func TestFileTablePreviewProviderPreviewShapefileReturnsTableModeAndFirstPage(t 
 		context.Background(),
 		emptyRefReader{},
 		nil,
+		"gis/roads.shp",
 		"bucket",
 		format.FormatShapefile,
 		refProvider,
@@ -1258,6 +1440,7 @@ func TestFileTablePreviewProviderPreviewRefsUsesAttributesTableInfo(t *testing.T
 		context.Background(),
 		emptyRefReader{},
 		nil,
+		"gis/roads.shp",
 		"bucket",
 		format.FormatShapefile,
 		refProvider,
@@ -1559,13 +1742,13 @@ func (p *recordingContentPlugin) OpenRange(_ context.Context, _ plugin.Connectio
 	return io.NopCloser(strings.NewReader("range")), nil
 }
 
-func TestContentIndexObjectKeyIncludesBucketForObjectCatalog(t *testing.T) {
+func TestAccessIndexObjectKeyIncludesBucketForObjectCatalog(t *testing.T) {
 	req := &PreviewRequest{Engine: &models.Engine{EngineType: "minio"}, ItemType: "object"}
 
-	if got := contentIndexObjectKey(req, "bucket", "dir/sample.csv"); got != "bucket/dir/sample.csv" {
+	if got := accessIndexObjectKey(req, "bucket", "dir/sample.csv"); got != "bucket/dir/sample.csv" {
 		t.Fatalf("object key = %q, want bucket/dir/sample.csv", got)
 	}
-	if got := contentIndexObjectKey(req, "bucket", "bucket/dir/sample.csv"); got != "bucket/dir/sample.csv" {
+	if got := accessIndexObjectKey(req, "bucket", "bucket/dir/sample.csv"); got != "bucket/dir/sample.csv" {
 		t.Fatalf("object key = %q, want bucket/dir/sample.csv", got)
 	}
 }
@@ -1638,15 +1821,15 @@ func TestNormalizeObjectContentRequestFormatDropsUnknownLegacyFormat(t *testing.
 	}
 }
 
-func TestTableContentIndexFromAttributesNormalizesFormat(t *testing.T) {
-	index := tableContentIndexFromAttributes(map[string]interface{}{
-		"content_index": map[string]interface{}{
+func TestTableAccessIndexFromAttributesNormalizesFormat(t *testing.T) {
+	index := tableAccessIndexFromAttributes(map[string]interface{}{
+		"access_index": map[string]interface{}{
 			"table": map[string]interface{}{
-				"kind":        datatype.ContentIndexKindSparseRow,
+				"kind":        datatype.AccessIndexKindSparseRow,
 				"data_type":   string(datatype.DataTypeTable),
 				"format":      "yml",
-				"unit":        datatype.ContentIndexUnitRow,
-				"offset_unit": datatype.ContentIndexOffsetByte,
+				"unit":        datatype.AccessIndexUnitRow,
+				"offset_unit": datatype.AccessIndexOffsetByte,
 				"anchors": []interface{}{
 					map[string]interface{}{"row": 0, "byte_offset": 0},
 				},

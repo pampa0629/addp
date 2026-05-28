@@ -6,16 +6,16 @@ import (
 )
 
 type TableFileAttributesInput struct {
-	FormatName          string
-	Mode                string
-	FileCount           int
-	PhysicalPath        string
-	TotalSize           int64
-	Table               *datatype.TableInfo
-	FormatInfo          map[string]interface{}
-	Spatial             *datatype.SpatialInfo
-	ContentIndex        *datatype.ContentIndex
-	IncludeContentIndex bool
+	FormatName         string
+	Mode               string
+	FileCount          int
+	PhysicalPath       string
+	TotalSize          int64
+	Table              *datatype.TableInfo
+	FormatInfo         map[string]interface{}
+	Spatial            *datatype.SpatialInfo
+	AccessIndex        *datatype.AccessIndex
+	IncludeAccessIndex bool
 }
 
 func TableFileAttributes(input TableFileAttributesInput) map[string]interface{} {
@@ -59,14 +59,14 @@ func TableFileAttributes(input TableFileAttributesInput) map[string]interface{} 
 		UpsertNested(attrs, "capabilities", "spatial", spatialAttrs)
 	}
 
-	if input.IncludeContentIndex && input.ContentIndex != nil {
-		indexInfo := input.ContentIndex.Clone()
+	if input.IncludeAccessIndex && input.AccessIndex != nil {
+		indexInfo := input.AccessIndex.Clone()
 		if indexInfo.Source == nil {
 			indexInfo.Source = map[string]interface{}{
 				"size_bytes": input.TotalSize,
 			}
 		}
-		UpsertNested(attrs, "content_index", "table", commonJSON.MapFromStruct(indexInfo))
+		UpsertNested(attrs, "access_index", "table", commonJSON.MapFromStruct(indexInfo))
 	}
 
 	return attrs

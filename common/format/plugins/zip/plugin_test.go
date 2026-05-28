@@ -75,8 +75,12 @@ func TestDescribeContainerHonorsEntryLimit(t *testing.T) {
 	if len(info.Children) != 1 || info.ChildCount != 2 {
 		t.Fatalf("children = %#v child_count=%d, want one sampled of two", info.Children, info.ChildCount)
 	}
-	if info.Native["children_truncated"] != true {
-		t.Fatalf("children_truncated = %#v, want true", info.Native["children_truncated"])
+	formatInfo, err := NewPlugin(nil).DescribeFormat(context.Background(), bytes.NewReader(data), format.ContainerParseOptions(1, 0))
+	if err != nil {
+		t.Fatalf("DescribeFormat() error = %v", err)
+	}
+	if formatInfo["children_truncated"] != true {
+		t.Fatalf("children_truncated = %#v, want true", formatInfo["children_truncated"])
 	}
 }
 
@@ -94,8 +98,12 @@ func TestDescribeContainerZeroEntryLimitListsAllEntries(t *testing.T) {
 	if len(info.Children) != 2 || info.ChildCount != 2 {
 		t.Fatalf("children = %#v child_count=%d, want all entries", info.Children, info.ChildCount)
 	}
-	if info.Native["children_truncated"] != false {
-		t.Fatalf("children_truncated = %#v, want false", info.Native["children_truncated"])
+	formatInfo, err := NewPlugin(nil).DescribeFormat(context.Background(), bytes.NewReader(data), format.ContainerParseOptions(0, 0))
+	if err != nil {
+		t.Fatalf("DescribeFormat() error = %v", err)
+	}
+	if formatInfo["children_truncated"] != false {
+		t.Fatalf("children_truncated = %#v, want false", formatInfo["children_truncated"])
 	}
 }
 

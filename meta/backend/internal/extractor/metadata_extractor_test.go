@@ -79,8 +79,8 @@ func TestExtractObjectMetadataOnDemandUsesUnifiedMediaEnrichment(t *testing.T) {
 	if media["kind"] != "image" || commonJSON.InterfaceInt64(media["width"]) != 2 || commonJSON.InterfaceInt64(media["height"]) != 3 {
 		t.Fatalf("type_info.media = %#v, want image 2x3", media)
 	}
-	if !commonJSON.Bool(updated, "capabilities.extraction", "metadata_extracted") {
-		t.Fatalf("capabilities.extraction = %#v, want metadata_extracted", commonJSON.Section(updated, "capabilities.extraction"))
+	if commonJSON.Bool(updated, "capabilities.extraction", "metadata_extracted") {
+		t.Fatalf("capabilities.extraction should not carry deep-scan process marker: %#v", commonJSON.Section(updated, "capabilities.extraction"))
 	}
 
 	var stored models.MetaItem
@@ -159,8 +159,8 @@ func TestExtractObjectMetadataOnDemandUsesUnifiedContainerEnrichment(t *testing.
 	if !ok || len(children) != 2 {
 		t.Fatalf("type_info.container.children = %#v, want 2 entries", container["children"])
 	}
-	if !commonJSON.Bool(updated, "capabilities.extraction", "metadata_extracted") {
-		t.Fatalf("capabilities.extraction = %#v, want metadata_extracted", commonJSON.Section(updated, "capabilities.extraction"))
+	if commonJSON.Bool(updated, "capabilities.extraction", "metadata_extracted") {
+		t.Fatalf("capabilities.extraction should not carry deep-scan process marker: %#v", commonJSON.Section(updated, "capabilities.extraction"))
 	}
 
 	var stored models.MetaItem

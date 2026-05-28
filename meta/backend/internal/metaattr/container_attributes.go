@@ -14,7 +14,6 @@ func ContainerInfoAttributes(info *datatype.ContainerInfo) map[string]interface{
 	}
 	attrs := commonJSON.MapFromStruct(containerAttributes{
 		DefaultChild: info.DefaultChild,
-		Native:       info.Native,
 	})
 	if attrs == nil {
 		attrs = map[string]interface{}{}
@@ -32,8 +31,7 @@ func ContainerInfoAttributes(info *datatype.ContainerInfo) map[string]interface{
 }
 
 type containerAttributes struct {
-	DefaultChild string                 `json:"default_child,omitempty"`
-	Native       map[string]interface{} `json:"native,omitempty"`
+	DefaultChild string `json:"default_child,omitempty"`
 }
 
 type containerChildAttributesData struct {

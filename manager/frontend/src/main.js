@@ -22,7 +22,7 @@ import { loadRuntimePlugins } from '@/plugins/previews/manifestLoader'
 import { ImagePreview } from '@common-ui'
 import {
   ObjectCatalogPreview, JsonPreview, PdfPreview, ContainerPreview,
-  DocxPreview, PptxPreview, TextPreview, MarkdownPreview, VideoPreview
+  DocxPreview, PptxPreview, TextPreview, UnsupportedPreview, MarkdownPreview, VideoPreview
 } from '@common-ui/previews'
 import {
   TablePreview, GeoJsonPreview,
@@ -90,6 +90,7 @@ if (typeof window !== 'undefined') {
     DocxPreview,
     PptxPreview,
     TextPreview,
+    UnsupportedPreview,
     MarkdownPreview,
     VideoPreview
   }

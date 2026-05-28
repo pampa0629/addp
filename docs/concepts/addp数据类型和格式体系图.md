@@ -146,7 +146,7 @@ graph 的核心是节点和关系。Neo4j label、relationship type、RDF class 
 | 数据类型 | 类型信息示例 |
 |---|---|
 | `table` / `datatype.TableInfo` | 字段列表、字段类型、主键、行数、大小、表级 native 事实 |
-| `document` / `datatype.DocumentInfo` | 标题、语言、编码、页数、字数、正文提取状态 |
+| `document` / `datatype.DocumentInfo` | 标题、语言、编码、页数、字数、大小 |
 | `media` / `datatype.MediaInfo` | kind、MIME、宽高、时长、编码、颜色空间 |
 | `container` / `datatype.ContainerInfo` | child 数量、默认 child、child 轻量摘要、child refs |
 | `graph` / `datatype.GraphInfo` | node shapes、relationship shapes、连接模式、属性结构、节点数、关系数 |
@@ -167,7 +167,9 @@ graph 的核心是节点和关系。Neo4j label、relationship type、RDF class 
 
 类型信息不等于内容数据。`table info` 描述字段、行数、主键等元数据；表格样本、文档原文片段、图片缩略图、原始二进制内容等属于内容读取能力。
 
-空间、时间、统计、提取、语义、分区、索引等是横切事实，不新增为基础 data type，也不塞进某个 type info。典型落点是 `attributes.capabilities.*` 或 `attributes.content_index.*`。
+空间、时间、统计、提取、语义、分区、索引等是横切事实，不新增为基础 data type，也不塞进某个 type info。典型落点是 `attributes.capabilities.*` 或 `attributes.access_index.*`。
+
+`AccessIndex` 虽然当前代码结构暂居 `common/datatype`，但它不是 data type、本体类型信息或格式私有信息。它描述内容读取访问索引，例如表格稀疏行索引；规范落点始终是 `attributes.access_index.<data_type>`。
 
 ## FormatPlugin
 
@@ -265,7 +267,7 @@ Shapefile 这类 multi 格式尤其要区分：单个 `.shp/.dbf/.shx` 的识别
   },
   "type_info": {},
   "format_info": {},
-  "content_index": {},
+  "access_index": {},
   "capabilities": {}
 }
 ```
@@ -276,7 +278,7 @@ Shapefile 这类 multi 格式尤其要区分：单个 `.shp/.dbf/.shx` 的识别
 | `item` | 这个 data item 的核心语义是什么 | layout、data_type、format、refs、scope_exclusive |
 | `type_info` | 对应数据类型的通用元数据是什么 | table fields、media width/height、document page_count、container children |
 | `format_info` | 对应文件、容器或格式解析层面的私有信息是什么 | CSV encoding、Shapefile refs、SQLite version |
-| `content_index` | 面向内容读取的通用访问索引是什么 | table sparse_row_index |
+| `access_index` | 面向内容读取的通用访问索引是什么 | table sparse_row_index |
 | `capabilities` | 这个 item 有哪些横切能力 | spatial、temporal、statistics、extraction |
 
 `meta_item` 表字段仍是 item 身份和归属的事实源。attributes 不重复保存 `id`、`tenant_id`、`engine_id`、`node_id`、`name`、`full_name`、`fingerprint` 等表字段。

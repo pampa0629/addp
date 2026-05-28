@@ -266,7 +266,7 @@
           "typeInfo": "类型结构",
           "capabilities": "能力",
           "formatInfo": "格式信息",
-          "contentIndex": "内容索引",
+          "accessIndex": "访问定位索引",
           "schemaVersion": "规范版本"
         },
         "groups": {
@@ -359,7 +359,7 @@
           "sampledSheets": "已采样 Sheet",
           "files": "文件",
           "anchors": "锚点",
-          "contentIndex": "内容索引",
+          "accessIndex": "访问定位索引",
           "contentHash": "内容哈希",
           "indexRef": "搜索索引引用",
           "schemaVersion": "规范版本",

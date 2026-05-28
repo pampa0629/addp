@@ -658,9 +658,9 @@ func (h *Handler) ExtractObjectMetadata(c *gin.Context) {
 	c.JSON(http.StatusOK, metadata)
 }
 
-// BuildObjectContentIndex 按需建立对象内容索引
-// @Summary 建立对象内容索引 | Build object content index
-// @Description 按需读取请求体内容并建立对象内容索引 | Build object content index from request body
+// BuildObjectAccessIndex 按需建立对象访问索引
+// @Summary 建立对象访问索引 | Build object access index
+// @Description 按需读取请求体内容并建立对象访问索引 | Build object access index from request body
 // @Tags Meta
 // @Accept octet-stream
 // @Produce json
@@ -670,9 +670,9 @@ func (h *Handler) ExtractObjectMetadata(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /metadata/content-index [post]
+// @Router /metadata/access-index [post]
 // @Security BearerAuth
-func (h *Handler) BuildObjectContentIndex(c *gin.Context) {
+func (h *Handler) BuildObjectAccessIndex(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 
 	engineIDStr := c.Query("engine_id")
@@ -694,7 +694,7 @@ func (h *Handler) BuildObjectContentIndex(c *gin.Context) {
 		return
 	}
 
-	attrs, err := h.scanService.BuildObjectContentIndexOnDemand(tenantID, uint(engineID), objectKey, c.Request.Body)
+	attrs, err := h.scanService.BuildObjectAccessIndexOnDemand(tenantID, uint(engineID), objectKey, c.Request.Body)
 	_ = c.Request.Body.Close()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

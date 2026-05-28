@@ -36,7 +36,7 @@
 
 只有以上数据类型无法表达用户理解方式、内容读取方式和治理方式时，才新增 data type。新增 data type 必须先修订概念文档和能力规范。
 
-通用 data type、type info、field type、空间信息和内容索引的事实源是 `common/datatype`。新增格式或 provider 不得在格式包内新增平行的 `FieldType`、`TableInfo`、`DocumentInfo`、`MediaInfo`、`ContainerInfo` 等公共模型；确有新增通用字段时，先修订 `common/datatype` 设计和相关规范。
+通用 data type、type info、field type、空间信息和访问索引的事实源是 `common/datatype`。新增格式或 provider 不得在格式包内新增平行的 `FieldType`、`TableInfo`、`DocumentInfo`、`MediaInfo`、`ContainerInfo` 等公共模型；确有新增通用字段时，先修订 `common/datatype` 设计和相关规范。
 
 ## 2. 判断内容布局
 
@@ -120,7 +120,7 @@ func (p *Plugin) Capabilities() format.FormatCapability
 | 容器内部对象信息 | `ContainerInfoProvider` | Meta、Manager |
 | 容器 child 解析 | `ContainerChildResolver` | Manager、Transfer 后续 child 读取 |
 | 空间横切事实 | 通过 describe result 或等价结构提供 `datatype.SpatialInfo`，由 Meta 写入 `capabilities.spatial` | Meta、Manager、Search |
-| 内容访问索引 | 通过 describe result 或等价结构提供 `datatype.ContentIndex`，由 Meta 写入 `content_index.<data_type>` | Meta、Manager、Transfer |
+| 访问定位索引 | 通过 describe result 或等价结构提供 `datatype.AccessIndex`，由 Meta 写入 `access_index.<data_type>`；`AccessIndex` 不是 data type 或 type info | Meta、Manager、Transfer |
 
 新增实现必须直接使用拆分后的接口。multi / scope 的 info、sample、连续全量读取必须分别使用对应接口；后续如果 scope 表格进入 Transfer 主链路，再新增明确的 `ScopeTableReaderProvider`，不得引入组合 provider。
 
@@ -130,10 +130,12 @@ Info provider 一次解析可能同时得到多类事实。以 table 为例：
 |---|---|
 | `datatype.TableInfo` | `attributes.type_info.table` |
 | `datatype.SpatialInfo` | `attributes.capabilities.spatial` |
-| `datatype.ContentIndex` | `attributes.content_index.table` |
+| `datatype.AccessIndex` | `attributes.access_index.table` |
 | `format_info.<format>` 候选事实 | `attributes.format_info.<format>` |
 
-这些事实应作为同级结果交给 Meta normalizer，不得为了调用方便把 `SpatialInfo`、`ContentIndex` 或 `format_info` 塞进 `TableInfo`。
+这些事实应作为同级结果交给 Meta normalizer，不得为了调用方便把 `SpatialInfo`、`AccessIndex` 或 `format_info` 塞进 `TableInfo`。
+
+`datatype.AccessIndex` 当前只是跨 format、Meta、Manager 复用的访问索引结构暂存位置。新增格式不得因为需要内容定位索引而扩展 `TableInfo` 或新增 data type；索引事实只进入 `attributes.access_index.<data_type>`。
 
 ## 5. 注册方式
 
@@ -197,15 +199,15 @@ FormatPlugin 不生成最终 data item，但新增格式不必然修改 Meta。�
 |---|---|---|
 | item 识别 | 现有 single / multi / whole 通用规则可表达 | 新组件规则、manifest 规则、whole scope 规则无法表达 |
 | data type / format | descriptor 能给出默认 `data_type` / `format`，或现有内容探测规则可判断 | 需要内容探测后动态决定 data type，且现有 detector 不支持 |
-| attributes 映射 | provider 结果已能进入现有 `type_info`、`format_info`、`capabilities` 或 `content_index` | 需要新增标准字段、分区或 normalizer 映射 |
-| content index | 不需要索引，或已有通用索引结构可复用 | 需要新增索引结构、锚点语义或失效规则 |
+| attributes 映射 | provider 结果已能进入现有 `type_info`、`format_info`、`capabilities` 或 `access_index` | 需要新增标准字段、分区或 normalizer 映射 |
+| access index | 不需要索引，或已有通用索引结构可复用 | 需要新增索引结构、锚点语义或失效规则 |
 | 容器内部对象 | 现有 `type_info.container.children` 可表达 | 需要新增内部对象模型、默认入口规则或独立子 item 规则 |
 
 如果以上检查都能复用现有通用链路，新增格式应只改 `common/format` 和必要测试，不应修改 Meta、Manager 或 Transfer。
 
 只有突破现有 data item 识别或 attributes 标准映射能力时，才补 Meta detector / normalizer。即便需要补 Meta，也只补通用规则或明确的格式规则，不在 Manager 中按后缀硬编码新格式。
 
-同一事实只能写一个位置。内容样本、原始内容、前端渲染器、Manager DTO 不得写入 `type_info` 或 `format_info`。`SpatialInfo` 不写入 `type_info.table`；`ContentIndex` 不写入 `type_info.table` 或 `format_info`。
+同一事实只能写一个位置。内容样本、原始内容、前端渲染器、Manager DTO 不得写入 `type_info` 或 `format_info`。`SpatialInfo` 不写入 `type_info.table`；`AccessIndex` 不写入 `type_info.table` 或 `format_info`。
 
 ## 7. 验证清单
 
@@ -215,7 +217,7 @@ FormatPlugin 不生成最终 data item，但新增格式不必然修改 Meta。�
 2. `RegisterFormatPlugin` 后，`ListFormatCapabilityViews()` 能看到声明能力和实现状态。
 3. Meta 扫描生成正确数量的 data item。
 4. `meta_item.name/full_name/item_type/node_id` 符合探测器规范。
-5. `attributes.item/type_info/format_info/content_index/capabilities` 没有重复事实源。
+5. `attributes.item/type_info/format_info/access_index/capabilities` 没有重复事实源。
 6. multi / whole 场景没有重复落库。
 7. Manager 只消费已入库 data item，不按引擎类型或后缀硬编码新格式。
 8. Transfer 不重复推断字段类型、组件或内容布局。

@@ -75,11 +75,15 @@ func TestPluginDescribeContainer(t *testing.T) {
 	if len(cities.Fields) < 2 || cities.Fields[0].Name != "id" {
 		t.Fatalf("Cities Fields = %#v", cities.Fields)
 	}
-	if info.Native["sheet_count"] != 2 {
-		t.Fatalf("sheet_count = %#v, want 2", info.Native["sheet_count"])
+	formatInfo, err := NewPlugin(nil).DescribeFormat(context.Background(), bytes.NewReader(buf.Bytes()), opts)
+	if err != nil {
+		t.Fatalf("DescribeFormat() error = %v", err)
 	}
-	if info.Native["default_sheet"] != "Cities" {
-		t.Fatalf("default_sheet = %#v, want Cities", info.Native["default_sheet"])
+	if formatInfo["sheet_count"] != 2 {
+		t.Fatalf("format_info.sheet_count = %#v, want 2", formatInfo["sheet_count"])
+	}
+	if formatInfo["default_sheet"] != "Cities" {
+		t.Fatalf("format_info.default_sheet = %#v, want Cities", formatInfo["default_sheet"])
 	}
 }
 

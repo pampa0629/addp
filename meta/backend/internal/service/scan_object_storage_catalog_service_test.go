@@ -57,13 +57,13 @@ func TestEnrichObjectStorageJSONTableUpdatesItemDataType(t *testing.T) {
 		CatalogPathFor: func(string) plugin.CatalogPath {
 			return resource.CatalogPath
 		},
-		PhysicalPath:        resource.FullPath,
-		IndexRootName:       resource.RootName,
-		IndexPath:           resource.Path,
-		IndexRelativePath:   resource.Path,
-		SizeBytes:           resource.SizeBytes,
-		ScanDepth:           models.ScannedDepthDeep,
-		IncludeContentIndex: false,
+		PhysicalPath:       resource.FullPath,
+		IndexRootName:      resource.RootName,
+		IndexPath:          resource.Path,
+		IndexRelativePath:  resource.Path,
+		SizeBytes:          resource.SizeBytes,
+		ScanDepth:          models.ScannedDepthDeep,
+		IncludeAccessIndex: false,
 	})
 	if err != nil {
 		t.Fatalf("catalogSingleItemProcessor.Process() error = %v", err)
@@ -199,8 +199,8 @@ func TestExtractCatalogDocumentTextWritesExtractionFacts(t *testing.T) {
 	if got := commonJSON.String(attrs, "capabilities.extraction", "plain_text_preview"); got != "hello document search" {
 		t.Fatalf("plain_text_preview = %q", got)
 	}
-	if !commonJSON.Bool(attrs, "type_info.document", "text_extracted") {
-		t.Fatalf("type_info.document = %#v", attrs["type_info"])
+	if commonJSON.Bool(attrs, "type_info.document", "text_extracted") {
+		t.Fatalf("type_info.document should not carry extraction status: %#v", attrs["type_info"])
 	}
 }
 
@@ -255,8 +255,8 @@ func TestExtractCatalogDocumentTextReadsDOCX(t *testing.T) {
 	if commonJSON.Bool(attrs, "capabilities.extraction", "text_truncated") {
 		t.Fatalf("text_truncated = true, want false")
 	}
-	if !commonJSON.Bool(attrs, "type_info.document", "text_extracted") {
-		t.Fatalf("type_info.document = %#v", attrs["type_info"])
+	if commonJSON.Bool(attrs, "type_info.document", "text_extracted") {
+		t.Fatalf("type_info.document should not carry extraction status: %#v", attrs["type_info"])
 	}
 }
 

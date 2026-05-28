@@ -143,8 +143,8 @@ func TestCommonDataItemResolverEnrichesRefTableViaFormatProvider(t *testing.T) {
 	if formatInfo["shape_type"] != nil {
 		t.Fatalf("format_info.shapefile should not contain table native facts: %#v", formatInfo)
 	}
-	if contentIndex := commonJSON.Section(attrs, "content_index.table"); len(contentIndex) != 0 {
-		t.Fatalf("content_index.table = %#v, want no shapefile content index metadata", contentIndex)
+	if accessIndex := commonJSON.Section(attrs, "access_index.table"); len(accessIndex) != 0 {
+		t.Fatalf("access_index.table = %#v, want no shapefile access index metadata", accessIndex)
 	}
 }
 

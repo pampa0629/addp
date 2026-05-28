@@ -350,20 +350,20 @@ func tableFieldsFromDescribeResult(tableInfo *format.TableDescribeResult) []data
 	return append([]datatype.FieldInfo(nil), tableInfo.Table.Fields...)
 }
 
-func tableFileAttributes(formatName string, mode string, files []plugin.FileEntry, dirPath string, totalSize int64, tableInfo *format.TableDescribeResult, includeContentIndex bool) map[string]interface{} {
+func tableFileAttributes(formatName string, mode string, files []plugin.FileEntry, dirPath string, totalSize int64, tableInfo *format.TableDescribeResult, includeAccessIndex bool) map[string]interface{} {
 	input := metaattr.TableFileAttributesInput{
-		FormatName:          formatName,
-		Mode:                mode,
-		FileCount:           len(files),
-		PhysicalPath:        dirPath,
-		TotalSize:           totalSize,
-		IncludeContentIndex: includeContentIndex,
+		FormatName:         formatName,
+		Mode:               mode,
+		FileCount:          len(files),
+		PhysicalPath:       dirPath,
+		TotalSize:          totalSize,
+		IncludeAccessIndex: includeAccessIndex,
 	}
 	if tableInfo != nil {
 		input.Table = tableInfo.Table
 		input.FormatInfo = tableInfo.FormatInfo
 		input.Spatial = tableInfo.Spatial
-		input.ContentIndex = tableInfo.ContentIndex
+		input.AccessIndex = tableInfo.AccessIndex
 	}
 	return metaattr.TableFileAttributes(input)
 }
@@ -578,11 +578,11 @@ func ExtractSingleTableFileItem(
 	engineID uint,
 	filePath string,
 	fileSize int64,
-	includeContentIndex bool,
+	includeAccessIndex bool,
 	catalogPathFor ...func(path string) plugin.CatalogPath,
 ) (*metaitem.CompositeItemInfo, error) {
 	formatName := fileFormatName(filePath)
-	return extractSingleTableFileItemWithFormat(ctx, contentReader, connInfo, engineID, filePath, fileSize, includeContentIndex, formatName, catalogPathFor...)
+	return extractSingleTableFileItemWithFormat(ctx, contentReader, connInfo, engineID, filePath, fileSize, includeAccessIndex, formatName, catalogPathFor...)
 }
 
 func extractSingleTableFileItemWithFormat(
@@ -592,7 +592,7 @@ func extractSingleTableFileItemWithFormat(
 	engineID uint,
 	filePath string,
 	fileSize int64,
-	includeContentIndex bool,
+	includeAccessIndex bool,
 	formatName string,
 	catalogPathFor ...func(path string) plugin.CatalogPath,
 ) (*metaitem.CompositeItemInfo, error) {
@@ -640,7 +640,7 @@ func extractSingleTableFileItemWithFormat(
 		EntryPath:  filePath,
 		RefFiles:   []string{filePath},
 		SizeBytes:  &fileSize,
-		Attributes: tableFileAttributes(formatName, "single", []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize, tableInfo, includeContentIndex && format.SupportsContentIndex(formatType)),
+		Attributes: tableFileAttributes(formatName, "single", []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize, tableInfo, includeAccessIndex && format.SupportsAccessIndex(formatType)),
 	}, nil
 }
 
@@ -653,7 +653,7 @@ func ExtractSingleTableFileItemStrict(
 	engineID uint,
 	filePath string,
 	fileSize int64,
-	includeContentIndex bool,
+	includeAccessIndex bool,
 	catalogPathFor ...func(path string) plugin.CatalogPath,
 ) (*metaitem.CompositeItemInfo, error) {
 	formatName := fileFormatName(filePath)
@@ -683,7 +683,7 @@ func ExtractSingleTableFileItemStrict(
 		EntryPath:  filePath,
 		RefFiles:   []string{filePath},
 		SizeBytes:  &fileSize,
-		Attributes: tableFileAttributes(formatName, "single", []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize, tableInfo, includeContentIndex && format.SupportsContentIndex(formatType)),
+		Attributes: tableFileAttributes(formatName, "single", []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize, tableInfo, includeAccessIndex && format.SupportsAccessIndex(formatType)),
 	}, nil
 }
 
@@ -695,7 +695,7 @@ func EnrichSingleTableFileItem(
 	item *metaitem.DetectedItem,
 	filePath string,
 	fileSize int64,
-	includeContentIndex bool,
+	includeAccessIndex bool,
 	catalogPathFor ...func(path string) plugin.CatalogPath,
 ) (*metaitem.DetectedItem, bool, error) {
 	if item == nil || item.Layout != dataitem.LayoutSingle {
@@ -717,13 +717,13 @@ func EnrichSingleTableFileItem(
 		item.DataType = dataitem.DetectDataType(item.Format)
 	}
 	if item.DataType != dataitem.DataTypeTable {
-		info, err := ExtractSingleTableFileItemStrict(ctx, contentReader, connInfo, engineID, filePath, fileSize, includeContentIndex, firstCatalogPathResolver(catalogPathFor))
+		info, err := ExtractSingleTableFileItemStrict(ctx, contentReader, connInfo, engineID, filePath, fileSize, includeAccessIndex, firstCatalogPathResolver(catalogPathFor))
 		if err != nil || info == nil {
 			return item, false, err
 		}
 		return metaitem.DetectedItemFromCompositeInfo(info, filePath, fileSize), true, nil
 	}
-	info, err := extractSingleTableFileItemWithFormat(ctx, contentReader, connInfo, engineID, filePath, fileSize, includeContentIndex, item.Format, firstCatalogPathResolver(catalogPathFor))
+	info, err := extractSingleTableFileItemWithFormat(ctx, contentReader, connInfo, engineID, filePath, fileSize, includeAccessIndex, item.Format, firstCatalogPathResolver(catalogPathFor))
 	if err != nil || info == nil {
 		return item, false, err
 	}

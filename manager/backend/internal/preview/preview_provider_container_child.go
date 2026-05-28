@@ -391,7 +391,7 @@ func (p *ContainerChildPreviewProvider) previewTableChild(ctx context.Context, r
 		if err != nil {
 			return nil, fmt.Errorf("no multi table sample reader for child format %s: %w", child.Format, err)
 		}
-		return (&FileTablePreviewProvider{}).previewRefs(ctx, child.Reader, child.Refs, bucket, child.Format, infoProvider, sampleReader, opts, req)
+		return (&FileTablePreviewProvider{}).previewRefs(ctx, child.Reader, child.Refs, child.Ref.Path, bucket, child.Format, infoProvider, sampleReader, opts, req)
 	}
 	infoProvider, _ := format.GetTableInfoProvider(child.Format)
 	sampleReader, err := format.GetTableSampleReader(child.Format)

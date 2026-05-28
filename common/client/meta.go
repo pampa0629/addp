@@ -647,12 +647,12 @@ func (c *MetaClient) ExtractObjectMetadata(req *ObjectMetadataRequest) (map[stri
 	return result, nil
 }
 
-// BuildObjectContentIndex 按需调用 Meta 建立对象内容索引。
-func (c *MetaClient) BuildObjectContentIndex(req *ObjectMetadataRequest) (map[string]interface{}, error) {
+// BuildObjectAccessIndex 按需调用 Meta 建立对象访问索引。
+func (c *MetaClient) BuildObjectAccessIndex(req *ObjectMetadataRequest) (map[string]interface{}, error) {
 	if req == nil {
 		return nil, fmt.Errorf("object metadata request is required")
 	}
-	endpoint := fmt.Sprintf("%s/api/v1/meta/metadata/content-index?engine_id=%d&object_key=%s",
+	endpoint := fmt.Sprintf("%s/api/v1/meta/metadata/access-index?engine_id=%d&object_key=%s",
 		c.baseURL, req.EngineID, url.QueryEscape(req.ObjectKey))
 
 	httpReq, err := http.NewRequest("POST", endpoint, req.ObjectData)

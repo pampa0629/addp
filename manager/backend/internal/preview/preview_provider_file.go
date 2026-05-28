@@ -3,14 +3,16 @@ package preview
 import (
 	"context"
 	"fmt"
-	"github.com/addp/common/datatype"
 	"io"
+	"net/url"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/contentio"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
@@ -87,7 +89,7 @@ func (p *FileTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequ
 			return nil, fmt.Errorf("no multi table sample reader for format %s: %w", formatType, err)
 		}
 		refs := refsForPreview(fullPath, formatType, req.Attributes)
-		preview, err := p.previewRefs(ctx, contentReader, refs, contentCtx.bucket, formatType, refInfoProvider, refSampleReader, opts, req)
+		preview, err := p.previewRefs(ctx, contentReader, refs, fullPath, contentCtx.bucket, formatType, refInfoProvider, refSampleReader, opts, req)
 		if err != nil {
 			return nil, err
 		}
@@ -101,7 +103,7 @@ func (p *FileTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequ
 		return nil, fmt.Errorf("no table sample reader for format %s: %w", formatType, err)
 	}
 
-	p.ensureContentIndex(ctx, req, contentReader, contentCtx.bucket, fullPath, formatType)
+	p.ensureAccessIndex(ctx, req, contentReader, contentCtx.bucket, fullPath, formatType)
 
 	// 其他格式：流式处理
 	return p.previewStreamable(ctx, contentReader, contentCtx.bucket, fullPath, formatType, infoProvider, sampleReader, opts, req)
@@ -261,8 +263,11 @@ func (p *FileTablePreviewProvider) previewStreamable(
 		SRID:            srid,
 		Object: &models.ObjectPreview{
 			Bucket:      bucket,
-			Path:        req.Table,
+			Path:        fullPath,
 			ContentType: p.getContentType(formatType),
+			EngineID:    previewRequestEngineID(req),
+			StorageRef:  storageRefForPreview(req, bucket, fullPath),
+			Download:    previewDownloadPlan(previewRequestEngineID(req), storageRefForPreview(req, bucket, fullPath), fullPath, p.getContentType(formatType)),
 			Content: &models.ObjectPreviewContent{
 				Kind: string(formatType),
 			},
@@ -350,7 +355,7 @@ func (p *FileTablePreviewProvider) openSampleReader(
 	return reader, opts, err
 }
 
-func (p *FileTablePreviewProvider) ensureContentIndex(
+func (p *FileTablePreviewProvider) ensureAccessIndex(
 	ctx context.Context,
 	req *PreviewRequest,
 	contentReader contentio.Reader,
@@ -358,10 +363,10 @@ func (p *FileTablePreviewProvider) ensureContentIndex(
 	fullPath string,
 	formatType format.FormatType,
 ) {
-	if req == nil || req.Engine == nil || contentReader == nil || tableContentIndexFromAttributes(req.Attributes) != nil {
+	if req == nil || req.Engine == nil || contentReader == nil || tableAccessIndexFromAttributes(req.Attributes) != nil {
 		return
 	}
-	if !format.SupportsContentIndex(formatType) {
+	if !format.SupportsAccessIndex(formatType) {
 		return
 	}
 	token := getTokenFromContext(ctx)
@@ -376,9 +381,9 @@ func (p *FileTablePreviewProvider) ensureContentIndex(
 
 	metaURL := getEnvOrDefault("META_URL", "http://localhost:8082")
 	metaClient := commonClient.NewMetaClient(metaURL, token)
-	attrs, err := metaClient.BuildObjectContentIndex(&commonClient.ObjectMetadataRequest{
+	attrs, err := metaClient.BuildObjectAccessIndex(&commonClient.ObjectMetadataRequest{
 		EngineID:   req.Engine.ID,
-		ObjectKey:  contentIndexObjectKey(req, bucket, fullPath),
+		ObjectKey:  accessIndexObjectKey(req, bucket, fullPath),
 		ObjectData: object,
 	})
 	if err != nil || len(attrs) == 0 {
@@ -387,7 +392,7 @@ func (p *FileTablePreviewProvider) ensureContentIndex(
 	req.Attributes = attrs
 }
 
-func contentIndexObjectKey(req *PreviewRequest, bucket string, fullPath string) string {
+func accessIndexObjectKey(req *PreviewRequest, bucket string, fullPath string) string {
 	return storageRefForPreview(req, bucket, fullPath)
 }
 
@@ -412,8 +417,8 @@ func (p *FileTablePreviewProvider) openIndexedRangeReader(
 	if req == nil || req.Engine == nil || tableInfo == nil {
 		return nil, nil, false
 	}
-	index := tableContentIndexFromAttributes(req.Attributes)
-	if !usableTableContentIndex(index) {
+	index := tableAccessIndexFromAttributes(req.Attributes)
+	if !usableTableAccessIndex(index) {
 		return nil, nil, false
 	}
 	anchor, length := rangeForTableWindow(index, int64(offset), int64(pageSize), catalogutil.Int64Attribute(req.Attributes, "total_size"))
@@ -473,16 +478,16 @@ func positionedTableSampleOptions(opts *format.ParseOptions, tableInfo *datatype
 	return &sampleOpts
 }
 
-func usableTableContentIndex(index *datatype.ContentIndex) bool {
+func usableTableAccessIndex(index *datatype.AccessIndex) bool {
 	return index != nil &&
-		index.Kind == datatype.ContentIndexKindSparseRow &&
-		index.Unit == datatype.ContentIndexUnitRow &&
-		index.OffsetUnit == datatype.ContentIndexOffsetByte &&
+		index.Kind == datatype.AccessIndexKindSparseRow &&
+		index.Unit == datatype.AccessIndexUnitRow &&
+		index.OffsetUnit == datatype.AccessIndexOffsetByte &&
 		len(index.Anchors) > 0
 }
 
-func rangeForTableWindow(index *datatype.ContentIndex, offset, limit, totalSize int64) (datatype.ContentIndexAnchor, int64) {
-	anchors := append([]datatype.ContentIndexAnchor(nil), index.Anchors...)
+func rangeForTableWindow(index *datatype.AccessIndex, offset, limit, totalSize int64) (datatype.AccessIndexAnchor, int64) {
+	anchors := append([]datatype.AccessIndexAnchor(nil), index.Anchors...)
 	sort.Slice(anchors, func(i, j int) bool {
 		return anchors[i].Row < anchors[j].Row
 	})
@@ -508,12 +513,12 @@ func rangeForTableWindow(index *datatype.ContentIndex, offset, limit, totalSize 
 	return anchor, endByte - anchor.ByteOffset
 }
 
-func tableContentIndexFromAttributes(attrs map[string]interface{}) *datatype.ContentIndex {
-	indexAttrs := commonJSON.Section(attrs, "content_index.table")
+func tableAccessIndexFromAttributes(attrs map[string]interface{}) *datatype.AccessIndex {
+	indexAttrs := commonJSON.Section(attrs, "access_index.table")
 	if len(indexAttrs) == 0 {
 		return nil
 	}
-	index := &datatype.ContentIndex{
+	index := &datatype.AccessIndex{
 		Kind:        commonJSON.InterfaceString(indexAttrs["kind"]),
 		DataType:    datatype.DataType(commonJSON.InterfaceString(indexAttrs["data_type"])),
 		Format:      normalizeObjectContentRequestFormat(commonJSON.InterfaceString(indexAttrs["format"])),
@@ -523,20 +528,20 @@ func tableContentIndexFromAttributes(attrs map[string]interface{}) *datatype.Con
 		RowCount:    commonJSON.InterfaceInt64(indexAttrs["row_count"]),
 		HeaderBytes: commonJSON.InterfaceInt64(indexAttrs["header_bytes"]),
 		Source:      commonJSON.InterfaceMap(indexAttrs["source"]),
-		Anchors:     contentIndexAnchorsFromAttribute(indexAttrs["anchors"]),
+		Anchors:     accessIndexAnchorsFromAttribute(indexAttrs["anchors"]),
 	}
 	return index
 }
 
-func contentIndexAnchorsFromAttribute(value interface{}) []datatype.ContentIndexAnchor {
+func accessIndexAnchorsFromAttribute(value interface{}) []datatype.AccessIndexAnchor {
 	items := commonJSON.InterfaceSlice(value)
-	anchors := make([]datatype.ContentIndexAnchor, 0, len(items))
+	anchors := make([]datatype.AccessIndexAnchor, 0, len(items))
 	for _, item := range items {
 		attrs := commonJSON.InterfaceMap(item)
 		if len(attrs) == 0 {
 			continue
 		}
-		anchors = append(anchors, datatype.ContentIndexAnchor{
+		anchors = append(anchors, datatype.AccessIndexAnchor{
 			Row:        commonJSON.InterfaceInt64(attrs["row"]),
 			ByteOffset: commonJSON.InterfaceInt64(attrs["byte_offset"]),
 		})
@@ -564,6 +569,7 @@ func (p *FileTablePreviewProvider) previewRefs(
 	ctx context.Context,
 	reader contentio.Reader,
 	refs []format.RelatedRef,
+	fullPath string,
 	bucket string,
 	formatType format.FormatType,
 	infoProvider format.MultiTableInfoProvider,
@@ -622,6 +628,12 @@ func (p *FileTablePreviewProvider) previewRefs(
 		srid = spatialInfo.PrimarySRIDValue()
 	}
 
+	objectPath := strings.Trim(fullPath, "/")
+	if objectPath == "" {
+		objectPath = strings.Trim(req.Table, "/")
+	}
+	storageRef := storageRefForPreview(req, bucket, objectPath)
+
 	return &models.TablePreview{
 		Mode:            PreviewModeTable,
 		Columns:         columns,
@@ -633,8 +645,11 @@ func (p *FileTablePreviewProvider) previewRefs(
 		SRID:            srid,
 		Object: &models.ObjectPreview{
 			Bucket:      bucket,
-			Path:        req.Table,
+			Path:        objectPath,
 			ContentType: p.getContentType(formatType),
+			EngineID:    previewRequestEngineID(req),
+			StorageRef:  storageRef,
+			Download:    previewDownloadPlan(previewRequestEngineID(req), storageRef, objectPath, "application/zip"),
 			Content: &models.ObjectPreviewContent{
 				Kind: string(formatType),
 			},
@@ -665,6 +680,54 @@ func attachMultiRefPreview(preview *models.TablePreview, formatType format.Forma
 	}
 	preview.Object.Content.Metadata["refs"] = previewRefs
 	preview.Object.Content.Metadata["layout"] = "multi"
+	if preview.Object.Download != nil {
+		preview.Object.Download.Kind = models.DownloadKindBundle
+		preview.Object.Download.ContentType = "application/zip"
+		preview.Object.Download.FileName = bundlePreviewFileName(preview.Object.StorageRef, formatType)
+	}
+}
+
+func previewDownloadPlan(engineID uint, storageRef, fileName, contentType string) *models.DownloadPlan {
+	storageRef = strings.Trim(storageRef, "/")
+	if engineID == 0 || storageRef == "" {
+		return nil
+	}
+	fileName = path.Base(strings.Trim(fileName, "/"))
+	if fileName == "." || fileName == "/" || fileName == "" {
+		fileName = path.Base(storageRef)
+	}
+	return &models.DownloadPlan{
+		Kind:        models.DownloadKindStream,
+		URL:         "/api/v1/manager/storage-download?engine_id=" + fmt.Sprintf("%d", engineID) + "&storage_ref=" + url.QueryEscape(storageRef),
+		FileName:    fileName,
+		ContentType: contentType,
+		Refs: []models.DownloadRef{{
+			StorageRef: storageRef,
+			Role:       "main",
+			Required:   true,
+			Primary:    true,
+			FileName:   fileName,
+		}},
+	}
+}
+
+func previewRequestEngineID(req *PreviewRequest) uint {
+	if req == nil || req.Engine == nil {
+		return 0
+	}
+	return req.Engine.ID
+}
+
+func bundlePreviewFileName(storageRef string, formatType format.FormatType) string {
+	base := strings.TrimSuffix(path.Base(storageRef), path.Ext(storageRef))
+	formatName := string(formatType)
+	if formatName != "" && formatType != format.FormatUnknown && !strings.Contains(strings.ToLower(base), strings.ToLower(formatName)) {
+		base += "." + formatName
+	}
+	if base == "" {
+		base = "download"
+	}
+	return base + ".zip"
 }
 
 func refAttributeDescriptors(formatType format.FormatType, refs []format.RelatedRef) []map[string]interface{} {

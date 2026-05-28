@@ -215,7 +215,7 @@ const response = await dataExplorerAPI.getPreview(params)
 #### 问题现象
 
 - 点击 Manager 的“刷新数据项”按钮后，接口提示成功。
-- 但 item 的属性仍然缺少新的能力或索引信息，例如 `content_index` 仍为空。
+- 但 item 的属性仍然缺少新的能力或索引信息，例如 `access_index` 仍为空。
 - 现象在 Shapefile 这类 multi-ref item 上最容易暴露，但根因不局限于某一种格式。
 
 #### 根本原因

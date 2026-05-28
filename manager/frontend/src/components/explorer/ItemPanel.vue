@@ -250,7 +250,7 @@ const sectionOrder = [
   'type_info',
   'capabilities',
   'format_info',
-  'content_index',
+  'access_index',
   'schema_version'
 ]
 
@@ -338,7 +338,7 @@ const sectionLabelKeys = {
   type_info: 'manager.explorer.attributes.sections.typeInfo',
   capabilities: 'manager.explorer.attributes.sections.capabilities',
   format_info: 'manager.explorer.attributes.sections.formatInfo',
-  content_index: 'manager.explorer.attributes.sections.contentIndex',
+  access_index: 'manager.explorer.attributes.sections.accessIndex',
   schema_version: 'manager.explorer.attributes.sections.schemaVersion'
 }
 
@@ -435,7 +435,7 @@ const fieldLabelKeys = {
   sampled_sheets: 'manager.explorer.attributes.fields.sampledSheets',
   files: 'manager.explorer.attributes.fields.files',
   anchors: 'manager.explorer.attributes.fields.anchors',
-  content_index: 'manager.explorer.attributes.fields.contentIndex',
+  access_index: 'manager.explorer.attributes.fields.accessIndex',
   content_hash: 'manager.explorer.attributes.fields.contentHash',
   index_ref: 'manager.explorer.attributes.fields.indexRef',
   schema_version: 'manager.explorer.attributes.fields.schemaVersion',

@@ -2257,6 +2257,65 @@
                 }
             }
         },
+        "/storage-download": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "基于 DownloadPlan 自动处理单叶子下载和 multi refs ZIP 打包下载；storage-stream 仍只用于单存储叶子 Range 流 | Resolve DownloadPlan and download a logical storage object as a single stream or ZIP bundle",
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "逻辑存储对象下载 | Logical storage object download",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "存储引擎ID | Engine ID",
+                        "name": "engine_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "存储内容引用 | Storage content reference",
+                        "name": "storage_ref",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "下载内容流 | Download content stream"
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "无权访问 | Access denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/storage-stream": {
             "get": {
                 "security": [
@@ -2304,6 +2363,13 @@
                     },
                     "403": {
                         "description": "无权访问 | Access denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "416": {
+                        "description": "Range 不可满足 | Range not satisfiable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true

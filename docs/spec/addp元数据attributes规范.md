@@ -13,7 +13,7 @@
   "item": {},
   "type_info": {},
   "format_info": {},
-  "content_index": {},
+  "access_index": {},
   "capabilities": {}
 }
 ```
@@ -25,12 +25,12 @@
 - `item`
 - `type_info`
 - `format_info`
-- `content_index`
+- `access_index`
 - `capabilities`
 
 旧 attributes 字段、旧分区和平铺字段不保留兼容读取或兼容写入。旧数据应删除后重新 meta 扫描生成新结构；仍依赖旧结构的代码应尽早暴露并修正。
 
-空分区不落库：`storage`、`type_info`、`format_info`、`content_index`、`capabilities` 等标准分区只有在包含实际事实时才写入。空对象、空字符串和只包含空对象的命名空间应在 normalizer 中删除。空数组可以作为显式事实保留，例如 `type_info.container.children: []` 表示容器已解析但没有子项。
+空分区不落库：`storage`、`type_info`、`format_info`、`access_index`、`capabilities` 等标准分区只有在包含实际事实时才写入。空对象、空字符串和只包含空对象的命名空间应在 normalizer 中删除。空数组可以作为显式事实保留，例如 `type_info.container.children: []` 表示容器已解析但没有子项。
 
 ## 术语统一
 
@@ -42,7 +42,7 @@ attributes 分区统一采用以下概念：
 | `item` | 这个 data item 的核心语义是什么 | layout、data_type、format、refs、file_count、scope_exclusive |
 | `type_info` | 对应数据类型的通用元数据是什么 | table fields、media width/height、document page_count、container children |
 | `format_info` | 对应文件、容器或格式解析层面的私有信息是什么 | csv encoding、shapefile refs、sqlite version |
-| `content_index` | 面向内容读取的通用访问索引是什么 | table sparse_row_index |
+| `access_index` | 面向内容读取的通用访问索引是什么 | table sparse_row_index |
 | `capabilities` | 这个 item 有哪些横切能力 | spatial、temporal、statistics、extraction、semantic、partitioning、indexing |
 
 `schema` 不作为通用分区名。表格型数据的字段、主键、行数应进入 `type_info.table`；索引摘要进入 `capabilities.indexing`。
@@ -61,7 +61,7 @@ attributes 分区统一采用以下概念：
 | data item 核心语义 | `attributes.item` | layout、data_type、format、refs、file_count、scope_exclusive、claim_policy |
 | 类型信息 | `attributes.type_info.<data_type>` | table、document、media、container、graph 等通用类型信息 |
 | 格式信息 | `attributes.format_info.<format>` | 具体文件格式私有信息 |
-| 内容访问索引 | `attributes.content_index.<data_type>` | 面向内容读取优化的索引，例如 table 稀疏行索引 |
+| 访问定位索引 | `attributes.access_index.<data_type>` | 面向内容读取优化的索引，例如 table 稀疏行索引 |
 | 横切能力 | `attributes.capabilities.<capability>` | spatial、temporal、statistics、extraction、semantic、partitioning、indexing |
 
 同一事实只能有一个规范存储点，不允许双写旧字段和新字段。
@@ -76,10 +76,10 @@ attributes 分区统一采用以下概念：
 | `item` | Meta 扫描、Meta item normalizer | layout、data_type、format、refs、file_count、scope_exclusive、claim_policy |
 | `type_info` | 数据库 metadata、format info provider、采样器、Meta item normalizer | table fields、primary_key、row_count；media kind/width/height/duration_ms；document title/page_count；container children；graph shapes |
 | `format_info` | format plugin / provider、Meta item normalizer | CSV 分隔符、Shapefile related refs、JSON 结构类型、SQLite 版本等具体格式信息 |
-| `content_index` | format plugin / reader、Meta item normalizer | 用于按内容窗口读取的访问索引，例如 table 稀疏行号到字节偏移索引 |
+| `access_index` | format plugin / reader、Meta item normalizer | 用于按内容窗口读取的访问索引，例如 table 稀疏行号到字节偏移索引 |
 | `capabilities` | format provider、画像任务、Meta item normalizer | spatial、temporal、statistics、extraction、semantic、partitioning、indexing 等横切能力 |
 
-`common/datatype` 是 type info、field type、空间横切事实和内容索引结构的代码事实源；attributes 是这些事实的落库模型。Meta normalizer 负责将 provider 返回的 `datatype.*` 结构写入对应 attributes 分区。
+`common/datatype` 是 type info、field type、空间横切事实和访问索引结构的代码事实源；attributes 是这些事实的落库模型。Meta normalizer 负责将 provider 返回的 `datatype.*` 结构写入对应 attributes 分区。
 
 | 输入结构 | attributes 落点 |
 |---|---|
@@ -89,7 +89,9 @@ attributes 分区统一采用以下概念：
 | `datatype.ContainerInfo` | `attributes.type_info.container` |
 | `datatype.GraphInfo` | `attributes.type_info.graph` |
 | `datatype.SpatialInfo` | `attributes.capabilities.spatial` |
-| `datatype.ContentIndex` | `attributes.content_index.<data_type>` |
+| `datatype.AccessIndex` | `attributes.access_index.<data_type>` |
+
+`datatype.AccessIndex` 只是当前代码中的共享结构归属，不表示访问索引属于 data type 或 type info。`access_index` 是独立 attributes 分区，服务内容窗口读取、range 读取和索引失效判断；不得写入 `type_info.table`、`format_info` 或 `capabilities.indexing`。
 
 `attributes.type_info.file` 不存在，也不得新增。文件、对象和目录是 catalog / storage 形态，不是 data type 主事实；对应路径、名称、大小、MIME、etag、hash、last_modified 等事实只能写入 `attributes.storage` 或 catalog node/item 的标准字段。无法识别内容语义时，`attributes.item.data_type` 必须为 `unknown`。
 
@@ -106,17 +108,17 @@ attributes 分区统一采用以下概念：
 9. `meta_item.full_name` 是 data item 在引擎内的唯一逻辑标识和定位事实源。attributes 不再定义通用 `entry_path` 字段。
 10. 对 `layout=multi` 的 item，primary content 应直接作为 `meta_item.full_name`，related refs 写入 `item.refs`。
 11. 对 `layout=whole` 的 item，whole scope 根范围应直接作为 `meta_item.full_name`，并在 `item.scope_exclusive=true`、`item.claim_policy=whole_scope` 中表达独占语义。
-12. `content_index` 是读取优化信息，不是 data type info，也不是 format 私有信息。索引必须能通过源对象大小、etag、mtime 或 fingerprint 等事实判断是否仍适用于当前资源；资源变化后应重建，不得继续复用旧索引。对于 multi-ref 格式，`content_index.source` 允许记录 ref 级事实（如 `refs`、`ref_count`、`index_format`），用于重建、失效判断和调试，但不应把格式私有语义写成新的顶层分区。
-13. `SpatialInfo`、`ContentIndex`、`format_info` 不是 `TableInfo` 的组成部分。provider 如果一次解析同时得到这些事实，应作为同级结果交给 Meta normalizer，分别写入 `capabilities.spatial`、`content_index.<data_type>` 和 `format_info.<format>`。
-14. attributes 写入受 `scan_depth` 约束。`basic` 只写不读取 file/object 内容即可获得的身份、存储和轻量 item 事实；字段、行数、容器 children、`content_index`、需要读取内容的 `format_info` 和横切能力应由 `deep` 写入。
+12. `access_index` 是读取优化信息，不是 data type info，也不是 format 私有信息。索引必须能通过源对象大小、etag、mtime 或 fingerprint 等事实判断是否仍适用于当前资源；资源变化后应重建，不得继续复用旧索引。对于 multi-ref 格式，`access_index.source` 允许记录 ref 级事实（如 `refs`、`ref_count`、`index_format`），用于重建、失效判断和调试，但不应把格式私有语义写成新的顶层分区。
+13. `SpatialInfo`、`AccessIndex`、`format_info` 不是 `TableInfo` 的组成部分。provider 如果一次解析同时得到这些事实，应作为同级结果交给 Meta normalizer，分别写入 `capabilities.spatial`、`access_index.<data_type>` 和 `format_info.<format>`。
+14. attributes 写入受 `scan_depth` 约束。`basic` 只写不读取 file/object 内容即可获得的身份、存储和轻量 item 事实；字段、行数、容器 children、`access_index`、需要读取内容的 `format_info` 和横切能力应由 `deep` 写入。
 
-## content_index 结构约定
+## access_index 结构约定
 
-`content_index` 按数据类型分区。当前标准化 `table` 的稀疏行索引：
+`access_index` 按数据类型分区。当前标准化 `table` 的稀疏行索引：
 
 ```json
 {
-  "content_index": {
+  "access_index": {
     "table": {
       "kind": "sparse_row_index",
       "data_type": "table",
@@ -150,7 +152,7 @@ attributes 分区统一采用以下概念：
 | `header_bytes` | 表头结束后的字节偏移；对 CSV 等有表头格式，通常也是 row 0 的 byte offset。 |
 | `source` | 索引绑定的源对象事实。能获取 size、etag、last_modified_at、fingerprint 时应写入。 |
 
-`content_index` 只描述如何更快定位内容窗口，不描述字段、行数等类型事实。字段和总行数仍写入 `type_info.table.fields` 与 `type_info.table.row_count`。
+`access_index` 只描述如何更快定位内容窗口，不描述字段、行数等类型事实。字段和总行数仍写入 `type_info.table.fields` 与 `type_info.table.row_count`。
 
 ## type_info 结构约定
 
@@ -159,13 +161,17 @@ attributes 分区统一采用以下概念：
 | 数据类型 | 分区 | 典型字段 |
 |---|---|---|
 | `table` | `type_info.table` | fields、primary_key、row_count、size_bytes、native |
-| `document` | `type_info.document` | title、language、encoding、page_count、word_count、size_bytes、text_extracted |
+| `document` | `type_info.document` | title、language、encoding、page_count、word_count、size_bytes |
 | `media` | `type_info.media` | kind、mime_type、width、height、duration_ms、encoding、color_space、size_bytes |
 | `container` | `type_info.container` | children、default_child、child_count、resource_count |
 | `graph` | `type_info.graph` | model、directed、node_shapes、relationship_shapes、node_count、relationship_count |
 | `unknown` | `type_info.unknown` | detection_reason、fallback_action |
 
 `type_info.media` 只承载 `datatype.MediaInfo` 中跨图片、音频、视频稳定通用的字段。EXIF、视频 codec、音频 codec、帧率、采样率、码率、轨道数等细粒度事实暂不作为 media 主事实；如需持久化，应进入受控 `format_info.<format>`、`capabilities.extraction` 或后续另行规范的横切能力命名空间。
+
+`type_info.document` 只承载文档结构元信息。正文是否已抽取、抽取器、预览文本、截断状态和外部索引引用属于 `capabilities.extraction`，不得在 `type_info.document.text_extracted` 中重复写入。
+
+`type_info.container` 只承载容器结构事实和 child 轻量摘要，例如 `children`、`default_child`、`child_count`、`resource_count`。父容器级解析统计、采样上限和截断状态不得写入 `type_info.container.native`，应进入 `format_info.<format>`；child 级 `native` 只保留 child 定位或受控原生摘要，例如 SQLite 表原名、ZIP entry 定位事实。
 
 `type_info.graph` 必须是业务图视图的 JSON 投影。引擎插件、扩展、索引或空间能力产生的内部节点和内部关系不得写入 `node_shapes`、`relationship_shapes` 或计数字段；例如 Neo4j Spatial 的 `SpatialLayer` 节点和 `RTREE_*` 关系应在 provider 或 Graph 模块服务层过滤。
 
@@ -212,12 +218,29 @@ Meta attributes 不维护旧字段兼容层。字段可空性只写 `nullable`�
 | `spatial` | 空间能力 | geometry_columns、primary_geometry_column、extent、has_spatial_index |
 | `temporal` | 时间能力 | time_columns、time_range、granularity、timezone |
 | `statistics` | 统计和采样 | sample_size、is_sampled、schema_type、index_count、avg_doc_size、null_count、min、max、profiled_at |
-| `extraction` | 内容提取 | metadata_extracted、extractor_available、text_excerpt、summary、index_ref |
+| `extraction` | 内容提取 | extractor_available、text_extracted、status、reason、extractor、plain_text_preview、text_truncated、summary、index_ref |
 | `semantic` | 语义能力 | embedding_model、vector_index_ref、semantic_tags |
 | `partitioning` | 分区画像能力 | partition_count、partition_sample、partition_range |
 | `indexing` | 索引能力 | indexes、spatial_indexes、fulltext_indexes、vector_indexes |
 
 横切能力不应变成顶层数据类型，也不应被塞进具体格式信息。
+
+`capabilities.extraction` 只记录提取过程状态、轻量预览和外部结果引用，不保存完整正文、OCR 全文、字幕全文或 embedding。字段语义：
+
+| 字段 | 语义 |
+|---|---|
+| `extractor_available` | 当前 format / item 是否存在可调用的后端提取器或 reader |
+| `text_extracted` | 文档正文是否已成功抽取；只用于正文抽取状态 |
+| `status` | 提取状态，例如 `completed`、`unsupported`、`failed` |
+| `reason` | `unsupported` 或 `failed` 的稳定原因码，例如 `document_text_reader_unavailable` |
+| `extractor` | 实际使用的提取器标识，例如 `common_format:docx` |
+| `plain_text_preview` | 从正文生成的短预览，不是全文事实源 |
+| `text_truncated` | 正文抽取是否因限制被截断 |
+| `index_ref` | 外部全文索引或提取结果引用，例如 `meilisearch:assets:<item_fingerprint>`；引用的是 item 指纹对应的索引记录，不是内容哈希 |
+
+历史或第三方字段如 `text_excerpt` 可以在隔离数据中出现，但平台标准文档正文预览字段统一使用 `plain_text_preview`。新增实现不得同时写入 `text_excerpt` 和 `plain_text_preview` 表达同一事实。
+
+`metadata_extracted` 不是标准 attributes 字段。deep scan 是否完成应看 `meta_item.scanned_depth`、`scan_status` 或 scan run 结果；Manager 不应通过 attributes 判断是否需要补齐元数据。
 
 ### capabilities.spatial 最小结构
 

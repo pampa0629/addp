@@ -1,12 +1,14 @@
 package metaenrich
 
 import (
+	"bytes"
 	"context"
 	"io"
 
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
+	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
 )
@@ -28,7 +30,18 @@ func EnrichContainerChildren(ctx context.Context, attrs models.JSONMap, detected
 	if _, err := format.GetContainerInfoProvider(formatType); err != nil {
 		return nil
 	}
-	return enrichContainerChildrenFromProvider(ctx, attrs, detected, formatType, reader, format.ContainerParseOptions(containerChildLimit, 0))
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return err
+	}
+	if formatProvider, err := format.GetFormatInfoProvider(formatType); err == nil {
+		formatInfo, err := formatProvider.DescribeFormat(ctx, bytes.NewReader(data), format.ContainerParseOptions(containerChildLimit, 0))
+		if err != nil {
+			return err
+		}
+		metaattr.MergeStandardAttributes(attrs, metaattr.FormatInfoAttributes(string(formatType), formatInfo))
+	}
+	return enrichContainerChildrenFromProvider(ctx, attrs, detected, formatType, bytes.NewReader(data), format.ContainerParseOptions(containerChildLimit, 0))
 }
 
 func enrichContainerChildrenFromProvider(
@@ -53,7 +66,6 @@ func enrichContainerChildrenFromProvider(
 	if info == nil {
 		return nil
 	}
-
 	metadata := &plugin.ItemMetadata{
 		Kind:      detected.ItemType,
 		Container: info,

@@ -109,7 +109,7 @@ CSV / TSV 是单资源表格文件。字段名来自表头；无表头时由 par
 
 Manager 可以基于 `type_info.container.children` 展示 sheet 列表；进入某个 sheet 的表格内容读取时，应由容器读取能力定位内部对象，再交给 `TableInfoProvider` / `TableSampleReader` 归一为表语义。
 
-当某个 sheet 被归一为 table item 或 table describe 结果时，`sheet_name`、`sheet_index` 等当前表级来源原生事实写入 `type_info.table.native`，不得写入 `format_info.excel`。外层工作簿的 `sheet_count`、`default_sheet` 等仍留在 `format_info.excel` 或 `type_info.container`。
+当某个 sheet 被归一为 table item 或 table describe 结果时，`sheet_name`、`sheet_index` 等当前表级来源原生事实写入 `type_info.table.native`，不得写入 `format_info.excel`。外层工作簿的 `sheet_count`、`default_sheet` 等工作簿级事实只写入 `format_info.excel`，不得重复写入 `type_info.container.native`。
 
 ### 格式约束
 
@@ -135,7 +135,7 @@ Manager 可以基于 `type_info.container.children` 展示 sheet 列表；进入
 |---|---|
 | `item` | `layout`、`data_type`、`format` |
 | `type_info.table` | records / JSON Lines / FeatureCollection 的字段、行数 |
-| `type_info.document` | 文档型 JSON 的标题、语言、编码、页数、字数、大小、正文提取标记等通用文档信息 |
+| `type_info.document` | 文档型 JSON 的标题、语言、编码、页数、字数、大小等通用文档结构信息 |
 | `type_info.container` | 容器型 JSON 的内部对象摘要、默认入口、子对象数量 |
 | `format_info.json` | `structure`、编码、对象层级摘要、GeoJSON 原文 `bbox` / `crs` 等格式私有信息 |
 | `capabilities.spatial` | 仅空间结构 JSON 写入几何字段、SRID / CRS、extent 等空间能力 |
@@ -405,7 +405,7 @@ GIF、WebP、TIFF 等多帧或多页图片仍表达为 `kind=image`。动图播�
 | `format` | `mp4`、`mov`、`mkv`、`avi`、`webm`、`video` |
 | 主资源 | `meta_item.full_name` 指向视频文件 |
 
-`format` 表达视频文件或容器格式。H.264、H.265、AV1、VP9、AAC、Opus 等编码不作为基础 `format`，应进入 `type_info.media` 或 `format_info.<format>`。
+`format` 表达视频文件或容器格式。H.264、H.265、AV1、VP9、AAC、Opus 等编码不作为基础 `format`，也不作为当前 `MediaInfo` 主事实；如需保留，应进入受控 `format_info.<format>` 或后续媒体提取结果。
 
 `video` 是兜底格式，只在无法稳定识别具体视频容器时使用。第一阶段视频格式目标是稳定识别、记录轻量元信息，并支持 raw / range / stream 播放链路，不要求后端转码。
 
@@ -477,7 +477,7 @@ Search 或语义索引可消费 `capabilities.extraction` 或外部索引引用�
 | 分区 | 写入内容 |
 |---|---|
 | `item` | `layout`、`data_type`、`format` |
-| `type_info.document` | 页数、标题、语言、编码、字数、大小、正文提取标记等通用文档信息 |
+| `type_info.document` | 页数、标题、语言、编码、字数、大小等通用文档结构信息 |
 | `format_info.pdf` | PDF 版本、author、subject、creator、producer、加密状态、读取限制、字体、页面结构等格式私有信息 |
 | `capabilities.extraction` | 文本提取状态、OCR 状态、文本片段、摘要、外部索引引用 |
 
@@ -508,7 +508,7 @@ DOCX / PPTX / WPS 是单资源文档文件。内置规范要求稳定识别格�
 | 分区 | 写入内容 |
 |---|---|
 | `item` | `layout`、`data_type`、`format` |
-| `type_info.document` | 仅在后端已有确定解析事实时写入页数、标题、语言、编码、字数、大小、正文提取标记等通用文档信息；没有解析事实时不得写入空壳对象 |
+| `type_info.document` | 仅在后端已有确定解析事实时写入页数、标题、语言、编码、字数、大小等通用文档结构信息；没有解析事实时不得写入空壳对象 |
 | `format_info.docx` / `format_info.pptx` / `format_info.wps` | 仅在后端已有确定解析事实时写入格式私有信息 |
 | `capabilities.extraction` | 写入文本提取、转换、OCR、摘要或外部索引任务状态；没有后端 reader 时应明确记录 `status=unsupported` 和原因 |
 
@@ -516,7 +516,31 @@ DOCX / PPTX / WPS 是单资源文档文件。内置规范要求稳定识别格�
 
 Manager 文档预览应优先消费 `frontend_renderer`、`preview_material`、`content.kind` 等后端语义字段，并优先使用 raw / range / storage-stream URL 读取存储叶子内容；扩展名和 MIME 只作为兜底识别依据。没有 URL 时才允许在受限大小内使用 `raw_binary` + base64 兜底。
 
-`preview_material` 是 Manager 面向前端的展示材料协议，取值如 `url`、`raw_binary`、`text`、`json`、`markdown`、`geojson`、`table`。它不等同于 `common/format` 的 `content_readers` 声明；不得把 `raw_content`、`range_content`、`binary_content` 等 format capability 名称写入 `preview_material`。
+`preview_material` 是 Manager 面向前端的展示材料或展示状态协议，取值如 `url`、`raw_binary`、`text`、`json`、`markdown`、`geojson`、`table`、`container`、`unsupported`。它不等同于 `common/format` 的 `content_readers` 声明；不得把 `raw_content`、`range_content`、`binary_content` 等 format capability 名称写入 `preview_material`。
+
+`frontend_renderer` 是 Manager 对前端渲染组件的建议，前端选择预览组件时应按 `frontend_renderer`、`preview_material`、`content.kind` 的顺序兜底。`content.kind` 表示内容的大类，不能替代展示材料协议；例如 `content.kind=json` 且 `preview_material=geojson`、`frontend_renderer=map` 时，应按地图预览处理。
+
+推荐组合如下：
+
+| 内容语义 | `content.kind` | `preview_material` | `frontend_renderer` |
+|---|---|---|---|
+| 普通文本 | `text` | `text` | `text` |
+| Markdown | `markdown` | `markdown` | `markdown` |
+| 普通 JSON | `json` | `json` | `json` |
+| GeoJSON / 空间 JSON | `json` | `geojson` | `map` |
+| 图片 URL 预览 | `image` | `url` | `image` |
+| 视频 URL 预览 | `video` | `url` | `video` |
+| PDF / DOCX / PPTX / WPS URL 预览 | 对应格式名 | `url` | 对应格式名 |
+| 小体积原始二进制兜底 | 对应格式名 | `raw_binary` | 对应格式名 |
+| 表格材料 | `table` | `table` | `table` |
+| 容器索引 / 子对象导航 | `container` | `container` | `container` |
+| 不支持在线预览状态 | `unsupported` | `unsupported` | `unsupported` |
+
+当后端没有任何可展示材料（无 `text`、`json`、`geojson`、`data`、`url` 等）时，不应返回 `truncated=true`，避免前端提示“仅展示部分”但实际没有内容。若格式不可在线预览，应返回明确说明文本，并让用户通过下载查看。
+
+unknown 二进制仍应保留底层 binary 读取能力，供后续计算端或专业解析引擎使用；但 Manager 不认识该格式时，不应把二进制探测样本当作前端预览材料，也不应把“不支持在线预览”的提示文案伪装成 text 材料。此时应返回 `preview_material=unsupported`、`frontend_renderer=unsupported`，并可在 metadata 中记录 `binary_probe`、`probe_truncated` 等探测事实。
+
+容器子项、组合文件相关文件和 ref preview hint 同样不得把未知 document / media 标记为 `raw_binary`。只有 Manager 已有明确 renderer 的格式（如 PDF、DOCX、PPTX、WPS、图片、视频）才能用 `raw_binary` 作为预览材料提示；未知格式应使用 `unsupported`。
 
 Transfer、Search 等模块不得因为 `data_type=document` 就假设存在可搜索全文；全文、缩略图、转换产物和摘要必须来自后续提取或转换任务，并通过 `capabilities.extraction` 或外部索引引用管理。
 

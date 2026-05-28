@@ -652,11 +652,11 @@ paths:
       summary: 按 catalog path 查询数据项 | Query item by catalog path
       tags:
       - Meta Query
-  /metadata/content-index:
+  /metadata/access-index:
     post:
       consumes:
       - application/octet-stream
-      description: 按需读取请求体内容并建立对象内容索引 | Build object content index from request body
+      description: 按需读取请求体内容并建立对象访问索引 | Build object access index from request body
       parameters:
       - description: 存储引擎ID | Engine ID
         in: query
@@ -693,7 +693,7 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 建立对象内容索引 | Build object content index
+      summary: 建立对象访问索引 | Build object access index
       tags:
       - Meta
   /metadata/extract:

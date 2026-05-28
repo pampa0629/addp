@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-func TestContentIndexHelpers(t *testing.T) {
-	index := NewSparseRowContentIndex("csv", 5000, 27)
+func TestAccessIndexHelpers(t *testing.T) {
+	index := NewSparseRowAccessIndex("csv", 5000, 27)
 	index.RowCount = 10000
 	index.AddAnchor(0, 27)
 	index.AddAnchor(5000, 570122)
@@ -27,8 +27,8 @@ func TestContentIndexHelpers(t *testing.T) {
 	}
 }
 
-func TestContentIndexCloneDeepCopiesSlicesAndMaps(t *testing.T) {
-	index := NewSparseRowContentIndex("csv", 5000, 27)
+func TestAccessIndexCloneDeepCopiesSlicesAndMaps(t *testing.T) {
+	index := NewSparseRowAccessIndex("csv", 5000, 27)
 	index.Source = map[string]interface{}{"etag": "v1"}
 	index.AddAnchor(0, 27)
 

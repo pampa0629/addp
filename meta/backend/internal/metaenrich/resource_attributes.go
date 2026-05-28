@@ -18,7 +18,7 @@ type ResourceAttributesInput struct {
 	Item                *metaitem.DetectedItem
 	PhysicalPath        string
 	SizeBytes           int64
-	IncludeContentIndex bool
+	IncludeAccessIndex bool
 	CatalogPathFor      func(string) plugin.CatalogPath
 }
 
@@ -40,7 +40,7 @@ func EnrichResourceAttributes(ctx context.Context, attrs models.JSONMap, input R
 			item,
 			input.PhysicalPath,
 			input.SizeBytes,
-			input.IncludeContentIndex,
+			input.IncludeAccessIndex,
 			input.CatalogPathFor,
 		)
 		if err != nil {

@@ -88,7 +88,7 @@ Meta API 和扫描任务参数中，路径型扫描目标统一使用 `catalog_p
 - 表字段、行数、主键、索引。
 - Shapefile / CSV / Parquet 等文件内部 schema。
 - 容器 children，例如 Excel sheet、SQLite table、GeoPackage layer、ZIP entry。
-- `content_index`。
+- `access_index`。
 - 文档正文、媒体宽高、图片 EXIF、全文摘要、向量索引引用。
 - 为了获取 extent、真实 geometry 类型分布而扫描全量数据。
 
@@ -104,7 +104,7 @@ Meta API 和扫描任务参数中，路径型扫描目标统一使用 `catalog_p
 - `type_info.document`、`type_info.media`、`type_info.graph`。
 - `format_info.<format>`。
 - `capabilities.spatial`、`statistics`、`extraction`、`semantic`、`partitioning`、`indexing`。
-- `content_index`，例如 CSV 稀疏行索引。
+- `access_index`，例如 CSV 稀疏行索引。
 
 Deep 扫描可以读取内容，但仍应遵守 provider / reader 边界：
 
@@ -113,7 +113,9 @@ Deep 扫描可以读取内容，但仍应遵守 provider / reader 边界：
 - 大文件 deep 扫描应由 provider 自己控制成本和阈值，不能无边界全量读取。
 - Meta deep 扫描不得继续识别并持久化容器 children 的下一层 data item。比如 ZIP 中的 Shapefile 组件应作为 ZIP 的直接 entry 写入 children；把这些 entry 临时组合成 Shapefile 预览项属于 Manager 动态预览职责，不写回 Meta。
 
-`content_index` 纳入 deep 的默认目标。具体格式是否生成、是否因为文件过大而跳过，由对应 provider 决定；跳过不应阻断 deep 扫描完成。
+`access_index` 纳入 deep 的默认目标。具体格式是否生成、是否因为文件过大而跳过，由对应 provider 决定；跳过不应阻断 deep 扫描完成。
+
+Deep 扫描完成状态不写入 `attributes`。`attributes` 只表达从数据源抽取出的稳定事实，例如字段、children、文档结构、媒体信息、空间能力、正文抽取状态和索引引用；不表达“本次 deep scan 已经补齐完成”这类扫描过程状态。不得新增或继续使用 `metadata_extracted`、`deep_metadata_ready` 等 attributes 标记判断 deep 是否完成。
 
 ## Scanned Depth
 
@@ -127,6 +129,8 @@ Deep 扫描可以读取内容，但仍应遵守 provider / reader 边界：
 `scan_status` 继续表达过程状态，例如 `pending`、`running`、`completed`、`failed`。不要把 `basic` / `deep` 混入 `scan_status`，否则“正在扫描”和“已扫深度”两个维度会互相覆盖。
 
 `scanned_at` 表示最近一次扫描完成时间。第一阶段不新增 `basic_scanned_at` / `deep_scanned_at`，避免状态膨胀。
+
+`scanned_depth` 是 Manager、Asset、Search 等上层模块判断 item / node 是否已经完成 basic 或 deep 扫描的唯一标准字段。上层模块不得通过检查 `attributes` 中某个 provider 字段是否存在来推断 deep 扫描是否完成。
 
 `scanned_depth` 更新规则：
 
@@ -240,7 +244,7 @@ item 已入库后的 refresh 不等同于 catalog scan。它的输入必须来�
 - Manager 对 item 的刷新。
 - Transfer 或其他模块需要把 meta item 转换为内容读取计划。
 
-node 扫描仍由 detector 从 catalog 范围重新发现 item 并落库。item refresh 只更新当前已知 item 的 attributes、字段、format info、content index 和横切能力，不负责重新裁决 item 身份。如果 item 的 layout、refs 或 full_name 本身已经错误，item refresh 不应扩大范围去“顺便修正” item 边界；应由用户从 node 层重新扫描，让 detector 重新识别 item。
+node 扫描仍由 detector 从 catalog 范围重新发现 item 并落库。item refresh 只更新当前已知 item 的 attributes、字段、format info、access index 和横切能力，不负责重新裁决 item 身份。如果 item 的 layout、refs 或 full_name 本身已经错误，item refresh 不应扩大范围去“顺便修正” item 边界；应由用户从 node 层重新扫描，让 detector 重新识别 item。
 
 ## 默认组合
 
@@ -271,6 +275,8 @@ Manager 预览 item 前的 deep 补齐流程：
 
 如果 `item.scanned_depth=deep`，Manager 直接预览，不检查 Shapefile、CSV、Excel 等具体 attributes。
 
+Manager 不检查 `attributes.capabilities.extraction.metadata_extracted`，也不检查 `format_info`、`type_info`、`access_index` 中的格式专有字段来判断是否需要补齐。具体 provider 是否能抽取某类事实、是否因为格式不支持或成本限制而跳过，只由 Meta deep scan 结果表达。
+
 Manager 刷新按钮固定：
 
 ```json
@@ -290,6 +296,8 @@ Manager 的刷新行为必须区分 node 和 item：
 item 刷新只刷新 item 本身，但必须包含该 item 的所有 content。对于 Shapefile 这类 `layout=multi` 的 item，刷新时必须使用已入库 `attributes.item.refs` 的完整 refs 集合作为 provider 输入；只读取 `.shp` 主文件会导致字段或空间信息被错误覆盖或丢失。`refs` 不是 catalog scan target，Manager 也不得把它展开后自行发起目录扫描。
 
 Manager 预览前的 deep 补齐与刷新按钮不同：补齐使用 `force=false`，只在 item 未达到 deep 或源数据过期时扫描；刷新按钮使用 `force=true`，用于用户明确要求重建当前 item 元数据。
+
+刷新按钮的语义是强制 Meta 重新生成当前目标范围内的元数据事实。是否重建全文索引、content hash、access index 等派生事实由 Meta 和对应 provider 根据 deep scan 规则统一处理，Manager 不应绕过 Meta 直接写搜索索引或局部 attributes。
 
 Manager 刷新目标必须是当前选中的 engine / node / item，不能默认全 engine。
 

@@ -44,10 +44,10 @@ func ApplyFieldSelectionToTableDescribeResult(result *TableDescribeResult, selec
 		return result, nil
 	}
 	copied := &TableDescribeResult{
-		Table:        result.Table.Clone(),
-		Spatial:      result.Spatial.Clone(),
-		ContentIndex: result.ContentIndex.Clone(),
-		FormatInfo:   cloneInterfaceMap(result.FormatInfo),
+		Table:       result.Table.Clone(),
+		Spatial:     result.Spatial.Clone(),
+		AccessIndex: result.AccessIndex.Clone(),
+		FormatInfo:  cloneInterfaceMap(result.FormatInfo),
 	}
 	fieldByName := make(map[string]datatype.FieldInfo, len(result.Table.Fields))
 	for _, field := range result.Table.Fields {

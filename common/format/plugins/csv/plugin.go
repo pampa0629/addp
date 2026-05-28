@@ -64,7 +64,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		Layouts:        []string{format.LayoutSingle},
 		ProviderHints:  []string{format.FormatProviderTable},
 		Identification: format.FormatIdentification{Extensions: extensions, MimeTypes: mimeTypes},
-		Providers:      format.FormatProviderDescriptor{FormatInfo: true, TableInfo: true, TableSample: true, Table: true, ContentIndex: true},
+		Providers:      format.FormatProviderDescriptor{FormatInfo: true, TableInfo: true, TableSample: true, Table: true, AccessIndex: true},
 		ContentReaders: []string{string(format.ContentReaderTableSample), string(format.ContentReaderRawContent)},
 		TransferRead:   true,
 		TransferWrite:  true,
@@ -105,7 +105,7 @@ func (p *Plugin) effectiveOptions(options *format.ParseOptions) *format.ParseOpt
 	copied.MaxRows = options.MaxRows
 	copied.SampleSize = options.SampleSize
 	copied.ExtraParams = options.ExtraParams
-	copied.ContentIndexStep = options.ContentIndexStep
+	copied.AccessIndexStep = options.AccessIndexStep
 	copied.HasHeader = options.HasHeader
 	copied.SpatialRefSys = options.SpatialRefSys
 	copied.GeometryEncoding = options.GeometryEncoding
@@ -217,7 +217,7 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 		FormatInfo: csvInfo.FormatAttributes(),
 	}
 	if len(index.Anchors) > 0 {
-		result.ContentIndex = index
+		result.AccessIndex = index
 	}
 
 	selected, err := format.ApplyFieldSelectionToTableDescribeResult(result, opts.FieldSelection)
@@ -559,27 +559,27 @@ func (p *Plugin) sampleHeadersAndLocalSkip(reader *csv.Reader, offset int64, opt
 	return normalizedHeaders(headers), offset, nil
 }
 
-func (p *Plugin) newSparseRowIndex(opts *format.ParseOptions, headerBytes int64) *datatype.ContentIndex {
+func (p *Plugin) newSparseRowIndex(opts *format.ParseOptions, headerBytes int64) *datatype.AccessIndex {
 	step := int64(5000)
-	if opts != nil && opts.ContentIndexStep > 0 {
-		step = opts.ContentIndexStep
+	if opts != nil && opts.AccessIndexStep > 0 {
+		step = opts.AccessIndexStep
 	}
-	return &datatype.ContentIndex{
-		Kind:        datatype.ContentIndexKindSparseRow,
+	return &datatype.AccessIndex{
+		Kind:        datatype.AccessIndexKindSparseRow,
 		DataType:    datatype.DataTypeTable,
 		Format:      string(p.formatType),
-		Unit:        datatype.ContentIndexUnitRow,
-		OffsetUnit:  datatype.ContentIndexOffsetByte,
+		Unit:        datatype.AccessIndexUnitRow,
+		OffsetUnit:  datatype.AccessIndexOffsetByte,
 		Step:        step,
 		HeaderBytes: headerBytes,
-		Anchors: []datatype.ContentIndexAnchor{{
+		Anchors: []datatype.AccessIndexAnchor{{
 			Row:        0,
 			ByteOffset: headerBytes,
 		}},
 	}
 }
 
-func (p *Plugin) recordSparseRowAnchor(index *datatype.ContentIndex, nextRow int64, byteOffset int64) {
+func (p *Plugin) recordSparseRowAnchor(index *datatype.AccessIndex, nextRow int64, byteOffset int64) {
 	if index == nil || index.Step <= 0 || nextRow <= 0 || nextRow%index.Step != 0 {
 		return
 	}
@@ -588,7 +588,7 @@ func (p *Plugin) recordSparseRowAnchor(index *datatype.ContentIndex, nextRow int
 		index.Anchors[len(anchors)-1].ByteOffset = byteOffset
 		return
 	}
-	index.Anchors = append(index.Anchors, datatype.ContentIndexAnchor{
+	index.Anchors = append(index.Anchors, datatype.AccessIndexAnchor{
 		Row:        nextRow,
 		ByteOffset: byteOffset,
 	})

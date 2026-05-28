@@ -24,15 +24,19 @@ const textData = computed(() => {
   return props.data?.object?.content?.text || ''
 })
 
-const truncated = computed(() => {
-  return props.data?.object?.content?.truncated || props.data?.object?.truncated || false
-})
-
-const formattedJson = computed(() => {
+const actualContent = computed(() => {
   if (jsonData.value) {
     return safeStringify(jsonData.value)
   }
   return textData.value
+})
+
+const truncated = computed(() => {
+  return Boolean(actualContent.value && (props.data?.object?.content?.truncated || props.data?.object?.truncated))
+})
+
+const formattedJson = computed(() => {
+  return actualContent.value || '暂无可用内容'
 })
 </script>
 

@@ -292,6 +292,10 @@
     "hasHeader": "Has Header",
     "noColumns": "No displayable columns in this child",
     "empty": "No previewable children",
+    "rawEntries": "Raw entries",
+    "previewableChildren": "Previewable children",
+    "filtered": "Filtered",
+    "childSelector": "Child",
     "rowCount": "{count} rows",
     "components": "Components",
     "refs": "Related Content",
@@ -301,6 +305,10 @@
     "componentPath": "Path",
     "noPreview": "No preview available for this child",
     "noPreviewForType": "No preview available for this {type} child"
+  },
+  "unsupportedPreview": {
+    "title": "Online preview is not supported",
+    "description": "This file type is not supported for online preview. Download it and open it with a suitable tool."
   },
   "objectStorage": {
     "bucket": "Bucket",

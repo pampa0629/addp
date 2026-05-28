@@ -50,7 +50,7 @@ Meta 扫描链路按“通用规则、Meta 编排、Catalog 规划、内容增�
 - `internal/metaitem/`：Meta item 识别编排层。负责 resolver 注册、排序、claims 去重，并把 `dataitem.ResolvedItem` 转换成 Meta 可继续增强和落库的 `DetectedItem`。典型文件：`resolver.go`、`single_resource.go`、`multi_table_enrichment.go`。
 - `internal/metacatalog/`：Catalog 资源规划层。负责把对象存储或文件系统 catalog entry 规范化为 `StorageResource`，规划 single/composite item 的路径、父节点、fingerprint 和基础 attributes。典型文件：`storage_resource.go`、`object_items.go`。
 - `internal/metaenrich/`：内容增强层。凡是需要打开内容、读取 schema、读取容器内部、读取文件前缀来确认格式的逻辑，都应在这里或通过这里统一提供。典型文件：`table_file.go`、`container_children.go`、`single_format.go`。
-- `internal/metaattr/`：Attributes 规范写入层。负责把 `DetectedItem` 和增强结果合并成标准落库结构：`item`、`storage`、`type_info`、`format_info`、`content_index`、`capabilities`。典型文件：`item_attributes.go`、`attributes.go`。
+- `internal/metaattr/`：Attributes 规范写入层。负责把 `DetectedItem` 和增强结果合并成标准落库结构：`item`、`storage`、`type_info`、`format_info`、`access_index`、`capabilities`。典型文件：`item_attributes.go`、`attributes.go`。
 - `internal/metapath/`：路径语义工具层。负责 bucket、object、prefix、filesystem path 的切分、规范化和拼接，扫描逻辑不要重复手写路径规则。
 
 ### 主要扫描链路

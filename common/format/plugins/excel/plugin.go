@@ -65,6 +65,35 @@ func (p *Plugin) Capabilities() format.FormatCapability {
 	}
 }
 
+func (p *Plugin) DescribeFormat(ctx context.Context, input io.Reader, options *format.ParseOptions) (map[string]interface{}, error) {
+	workbook, err := excelize.OpenReader(input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open excel file: %w", err)
+	}
+	defer workbook.Close()
+
+	opts := p.options
+	if options != nil {
+		opts = options
+	}
+	analyzeOpts := p.buildAnalyzeOptionsFromParseOptions(opts)
+	if opts == nil || opts.ExtraParams == nil || opts.ExtraParams[format.ContainerChildLimitParam] == nil {
+		analyzeOpts.SheetLimit = defaultSheetLimit
+	}
+	analysis, err := Analyze(ctx, workbook, analyzeOpts)
+	if err != nil {
+		return nil, err
+	}
+	info := &Info{
+		SheetCount:      analysis.SheetCount,
+		DefaultSheet:    analysis.DefaultSheet,
+		SampledSheets:   len(analysis.Sheets),
+		SheetsTruncated: boolFromSummary(analysis.Summary, "sheets_truncated"),
+		RowsTruncated:   boolFromSummary(analysis.Summary, "rows_truncated"),
+	}
+	return info.FormatAttributes(), nil
+}
+
 func (p *Plugin) ResolveContainerChild(_ context.Context, parent contentio.Reader, parentRef contentio.Ref, child datatype.ContainerChildInfo, _ *format.ParseOptions) (*format.ContainerChildResource, error) {
 	return format.NativeContainerChildResource(parent, parentRef, p.Format(), child, format.ChildTableParseOptions(child.Name, child.Native)), nil
 }
@@ -335,12 +364,6 @@ func (p *Plugin) convertToContainerInfo(analysis *WorkbookAnalysis) *datatype.Co
 		DefaultChild:  analysis.DefaultSheet,
 		ResourceCount: 1,
 		Children:      children,
-		Native: map[string]interface{}{
-			"sheet_count":        analysis.SheetCount,
-			"default_sheet":      analysis.DefaultSheet,
-			"sampled_sheets":     len(children),
-			"children_truncated": analysis.SheetCount > len(children),
-		},
 	}
 }
 
@@ -458,6 +481,14 @@ func trimValue(s string) interface{} {
 		return nil
 	}
 	return trimmed
+}
+
+func boolFromSummary(summary map[string]interface{}, key string) bool {
+	if len(summary) == 0 {
+		return false
+	}
+	value, _ := summary[key].(bool)
+	return value
 }
 
 func init() {

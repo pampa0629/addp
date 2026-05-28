@@ -525,14 +525,14 @@ const docTemplate = `{
                 }
             }
         },
-        "/metadata/content-index": {
+        "/metadata/access-index": {
             "post": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "按需读取请求体内容并建立对象内容索引 | Build object content index from request body",
+                "description": "按需读取请求体内容并建立对象访问索引 | Build object access index from request body",
                 "consumes": [
                     "application/octet-stream"
                 ],
@@ -542,7 +542,7 @@ const docTemplate = `{
                 "tags": [
                     "Meta"
                 ],
-                "summary": "建立对象内容索引 | Build object content index",
+                "summary": "建立对象访问索引 | Build object access index",
                 "parameters": [
                     {
                         "type": "integer",

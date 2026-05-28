@@ -267,6 +267,7 @@ const props = defineProps({
 const emit = defineEmits(['page-change', 'navigate', 'child-change'])
 const store = useExplorerStore()
 const activeMultiRefPath = ref('')
+const combinedMultiRefValue = '__combined__'
 const activeGraphSampleKey = ref('')
 const activeGraphSampleKind = ref('')
 const activeGraphSampleTotal = ref(null)
@@ -296,6 +297,24 @@ const pickUrl = (target) => {
     }
   }
   return ''
+}
+
+const isStorageManagedDownloadUrl = (url) => {
+  if (!url || typeof url !== 'string') return false
+  try {
+    const parsed = new URL(url, window.location.origin)
+    return [
+      '/api/v1/manager/storage-download',
+      '/manager/storage-download',
+      '/api/v1/manager/storage-stream',
+      '/manager/storage-stream'
+    ].includes(parsed.pathname)
+  } catch {
+    return url.startsWith('/api/v1/manager/storage-download') ||
+      url.startsWith('/manager/storage-download') ||
+      url.startsWith('/api/v1/manager/storage-stream') ||
+      url.startsWith('/manager/storage-stream')
+  }
 }
 
 const guessExtensionFromMime = (mime) => {
@@ -374,6 +393,16 @@ const extractExtension = (name) => {
   return match ? match[1].toLowerCase() : ''
 }
 
+const pickDownloadFileName = (target) => {
+  if (!target || typeof target !== 'object') return ''
+  const value = target.filename || target.fileName || target.name || ''
+  if (typeof value !== 'string') return ''
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  const parts = trimmed.split('/').filter(Boolean)
+  return parts.pop() || trimmed
+}
+
 const guessMimeFromKind = (kind, fallbackMime = '') => {
   const normalized = (kind || '').toLowerCase()
   switch (normalized) {
@@ -399,7 +428,7 @@ const guessMimeFromKind = (kind, fallbackMime = '') => {
 }
 
 const deriveBaseFileName = (data, node) => {
-  const objectPath = data?.object?.path || ''
+  const objectPath = data?.object?.path || data?.object?.storage_ref || data?.object?.storageRef || ''
   if (objectPath) {
     const parts = objectPath.split('/').filter(Boolean)
     const last = parts.pop()
@@ -445,19 +474,46 @@ const downloadBlob = (blob, fileName) => {
   URL.revokeObjectURL(url)
 }
 
+const withAuthToken = (url) => {
+  if (!url || typeof url !== 'string') return ''
+  if (!url.startsWith('/api/') && !url.startsWith('/manager/')) return url
+  const token = localStorage.getItem('token')
+  if (!token) return url
+  try {
+    const parsed = new URL(url, window.location.origin)
+    if (!parsed.searchParams.has('token')) {
+      parsed.searchParams.set('token', token)
+    }
+    return parsed.origin === window.location.origin
+      ? `${parsed.pathname}${parsed.search}${parsed.hash}`
+      : parsed.toString()
+  } catch {
+    const separator = url.includes('?') ? '&' : '?'
+    return `${url}${separator}token=${encodeURIComponent(token)}`
+  }
+}
+
+const downloadFromUrl = (url, fileName) => {
+  const link = document.createElement('a')
+  link.href = withAuthToken(normalizeClientURL(url))
+  link.download = fileName || 'download'
+  link.rel = 'noopener'
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+}
+
 const normalizeClientURL = (url) => {
   if (!url || /^https?:\/\//i.test(url)) {
     return url
   }
+  if (url.startsWith('/manager/')) {
+    return `/api/v1${url}`
+  }
   if (url.startsWith('/api/v1/')) {
-    return url.slice('/api/v1'.length)
+    return url
   }
   return url
-}
-
-const downloadFromUrl = async (url, fileName) => {
-  const blob = await client.get(normalizeClientURL(url), { responseType: 'blob' })
-  downloadBlob(blob, fileName)
 }
 
 const stringifyJson = (value) => {
@@ -605,7 +661,7 @@ const multiRefOptions = computed(() => {
   return [
     {
       key: '__combined__',
-      path: '',
+      path: combinedMultiRefValue,
       label: t('containerPreview.combinedPreview')
     },
     ...refs
@@ -613,9 +669,15 @@ const multiRefOptions = computed(() => {
 })
 
 watch(
-  () => props.previewData?.object?.path,
+  () => [
+    props.previewData?.object?.path,
+    store.selectedRefPath,
+    multiRefOptions.value.length
+  ],
   () => {
-    activeMultiRefPath.value = store.selectedRefPath || ''
+    activeMultiRefPath.value = multiRefOptions.value.length
+      ? (store.selectedRefPath || combinedMultiRefValue)
+      : ''
   },
   { immediate: true }
 )
@@ -838,7 +900,7 @@ const engineId = computed(() => {
   )
 })
 
-const fallbackDownloadUrl = computed(() => {
+const storageDownloadUrl = computed(() => {
   const storageRef =
     objectData.value?.storage_ref ||
     objectData.value?.storageRef ||
@@ -846,7 +908,7 @@ const fallbackDownloadUrl = computed(() => {
   if (!storageRef || !engineId.value) {
     return ''
   }
-  return `/manager/storage-stream?engine_id=${encodeURIComponent(engineId.value)}&storage_ref=${encodeURIComponent(storageRef)}`
+  return `/manager/storage-download?engine_id=${encodeURIComponent(engineId.value)}&storage_ref=${encodeURIComponent(storageRef)}`
 })
 
 const downloadInfo = computed(() => {
@@ -859,6 +921,39 @@ const downloadInfo = computed(() => {
   }
 
   const baseName = deriveBaseFileName(props.previewData, props.selectedNode)
+
+  const content = objectData.value?.content || {}
+  const metadata = content.metadata || {}
+  const material = contentPreviewMaterial(content)
+  const contentType =
+    metadata.content_type ||
+    metadata.contentType ||
+    objectData.value?.content_type ||
+    objectData.value?.contentType ||
+    props.previewData?.content_type ||
+    ''
+  const ext = extractExtension(baseName)
+  const inferredExt = ext || guessExtensionFromMime(contentType) || guessExtensionFromKind(content.kind)
+  const fileName = inferredExt ? ensureExtension(baseName, `.${inferredExt}`) : baseName
+
+  const objectDownloadUrl = pickUrl(objectData.value?.download)
+  if (objectDownloadUrl) {
+    return {
+      available: true,
+      kind: 'url',
+      fileName: pickDownloadFileName(objectData.value?.download) || fileName,
+      url: objectDownloadUrl
+    }
+  }
+
+  if (storageDownloadUrl.value) {
+    return {
+      available: true,
+      kind: 'url',
+      fileName,
+      url: storageDownloadUrl.value
+    }
+  }
 
   if (previewMode.value === 'table') {
     const columns = Array.isArray(props.previewData.columns) ? props.previewData.columns : []
@@ -881,16 +976,6 @@ const downloadInfo = computed(() => {
     return { available: false, reason: t('manager.explorer.dirNodeNoDownload') }
   }
 
-  const content = objectData.value?.content || {}
-  const metadata = content.metadata || {}
-  const contentType =
-    metadata.content_type ||
-    metadata.contentType ||
-    objectData.value?.content_type ||
-    objectData.value?.contentType ||
-    props.previewData?.content_type ||
-    ''
-
   const urlCandidates = []
   const collectUrl = (target) => {
     const url = pickUrl(target)
@@ -907,27 +992,34 @@ const downloadInfo = computed(() => {
   collectUrl(content?.download)
   collectUrl(metadata)
 
-  if (urlCandidates.length > 0) {
-    const ext = extractExtension(baseName)
-    const inferredExt = ext || guessExtensionFromMime(contentType) || guessExtensionFromKind(content.kind)
-    const filename = inferredExt ? ensureExtension(baseName, `.${inferredExt}`) : baseName
+  const managedDownloadUrlCandidate = urlCandidates.find(isStorageManagedDownloadUrl)
+  if (managedDownloadUrlCandidate) {
     return {
       available: true,
       kind: 'url',
-      fileName: filename,
-      url: urlCandidates[0]
+      fileName,
+      url: managedDownloadUrlCandidate
     }
   }
 
-  if (fallbackDownloadUrl.value) {
-    const ext = extractExtension(baseName)
-    const inferredExt = ext || guessExtensionFromMime(contentType) || guessExtensionFromKind(content.kind)
-    const filename = inferredExt ? ensureExtension(baseName, `.${inferredExt}`) : baseName
+  const renderer = (
+    content.frontend_renderer ||
+    content.frontendRenderer ||
+    metadata.frontend_renderer ||
+    metadata.frontendRenderer ||
+    ''
+  ).toString().toLowerCase()
+  const kind = (content.kind || '').toLowerCase()
+  if (renderer === 'unsupported' || material === 'unsupported' || kind === 'unsupported') {
+    return { available: false, reason: t('manager.explorer.noDownloadSource') }
+  }
+
+  if (urlCandidates.length > 0) {
     return {
       available: true,
       kind: 'url',
-      fileName: filename,
-      url: fallbackDownloadUrl.value
+      fileName,
+      url: urlCandidates[0]
     }
   }
 
@@ -941,8 +1033,6 @@ const downloadInfo = computed(() => {
     )
 
   if (base64Data) {
-    const inferredExt = extractExtension(baseName) || guessExtensionFromMime(contentType) || guessExtensionFromKind(content.kind)
-    const fileName = inferredExt ? ensureExtension(baseName, `.${inferredExt}`) : baseName
     const mime = contentType || guessMimeFromKind(content.kind, 'application/octet-stream')
     return {
       available: true,
@@ -954,8 +1044,6 @@ const downloadInfo = computed(() => {
   }
 
   if (content.text) {
-    const kind = (content.kind || '').toLowerCase()
-    const material = contentPreviewMaterial(content)
     let mime = 'text/plain;charset=utf-8'
     let extension = '.txt'
     if (material === 'geojson') {
@@ -1719,10 +1807,11 @@ const handleChildChange = (payload) => {
 }
 
 const handleMultiRefChange = (path) => {
-  activeMultiRefPath.value = path || ''
+  const refPath = path === combinedMultiRefValue ? '' : (path || '')
+  activeMultiRefPath.value = path || combinedMultiRefValue
   emit('child-change', {
     childName: '',
-    refPath: path || '',
+    refPath,
     refSwitch: true
   })
 }

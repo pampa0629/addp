@@ -721,10 +721,9 @@ func TestResolveContainerChildrenForPreviewGroupsShapefileRefs(t *testing.T) {
 			{Name: "roads.prj", ChildKind: "file", DataType: "table", Native: map[string]interface{}{"path": "roads.prj", "format": "shapefile", "uncompressed_size": int64(10)}},
 			{Name: "readme.md", ChildKind: "file", DataType: "document", Native: map[string]interface{}{"path": "readme.md", "format": "markdown"}},
 		},
-		Native: map[string]interface{}{},
 	}
 
-	resolved := resolveContainerChildrenForPreview(info)
+	resolved, _ := resolveContainerChildrenForPreview(info)
 	if resolved == nil || len(resolved.Children) != 2 {
 		t.Fatalf("children = %#v, want shapefile child + markdown child", resolved)
 	}
@@ -941,8 +940,11 @@ func TestUnsupportedContentHandlerTreatsUnknownTextAsBinary(t *testing.T) {
 	if content.Kind != "unsupported" {
 		t.Fatalf("expected unsupported fallback for unknown content, got %q", content.Kind)
 	}
-	if content.PreviewMaterial != "raw_binary" {
-		t.Fatalf("PreviewMaterial = %q, want raw_binary", content.PreviewMaterial)
+	if content.PreviewMaterial != "unsupported" {
+		t.Fatalf("PreviewMaterial = %q, want unsupported", content.PreviewMaterial)
+	}
+	if content.FrontendRenderer != "unsupported" {
+		t.Fatalf("FrontendRenderer = %q, want unsupported", content.FrontendRenderer)
 	}
 	if content.Text == "hello\nworld\n" {
 		t.Fatalf("unknown content must not be promoted to text preview")
@@ -972,11 +974,14 @@ func TestUnsupportedContentHandlerKeepsBinaryUnsupported(t *testing.T) {
 	if content.Kind != "unsupported" {
 		t.Fatalf("expected unsupported fallback, got %q", content.Kind)
 	}
-	if content.PreviewMaterial != "raw_binary" {
-		t.Fatalf("PreviewMaterial = %q, want raw_binary", content.PreviewMaterial)
+	if content.PreviewMaterial != "unsupported" {
+		t.Fatalf("PreviewMaterial = %q, want unsupported", content.PreviewMaterial)
 	}
-	if content.Text == "" {
-		t.Fatalf("expected unsupported preview message")
+	if content.FrontendRenderer != "unsupported" {
+		t.Fatalf("FrontendRenderer = %q, want unsupported", content.FrontendRenderer)
+	}
+	if content.Text != "" {
+		t.Fatalf("Text = %q, want empty because unsupported is a preview state", content.Text)
 	}
 }
 
@@ -1002,6 +1007,9 @@ func TestUnsupportedContentHandlerDoesNotReportProbeTruncationAsPreviewTruncatio
 	}
 	if content.Metadata["probe_truncated"] != true {
 		t.Fatalf("metadata = %#v, want probe_truncated", content.Metadata)
+	}
+	if content.Metadata["binary_probe"] != true {
+		t.Fatalf("metadata = %#v, want binary_probe", content.Metadata)
 	}
 }
 
@@ -1089,11 +1097,183 @@ func TestDecoratePreviewContentIgnoresFormatContentReaderAsPreviewMaterial(t *te
 		},
 	})
 
-	if content.PreviewMaterial != "" {
-		t.Fatalf("PreviewMaterial = %q, want empty for format content reader value", content.PreviewMaterial)
+	if content.PreviewMaterial != models.PreviewMaterialUnsupported {
+		t.Fatalf("PreviewMaterial = %q, want unsupported for invalid format content reader value", content.PreviewMaterial)
 	}
 	if got := content.Metadata["preview_material"]; got != "raw_content" {
 		t.Fatalf("metadata preview_material = %#v, want original raw_content", got)
+	}
+}
+
+func TestDecoratePreviewContentClearsTruncatedWhenNoPreviewMaterial(t *testing.T) {
+	t.Parallel()
+
+	content := DecoratePreviewContent(&models.ObjectPreviewContent{
+		Kind:      models.ObjectPreviewKindJSON,
+		Truncated: true,
+	})
+
+	if content.Truncated {
+		t.Fatalf("Truncated = true, want false when no preview material exists")
+	}
+}
+
+func TestDecoratePreviewContentKeepsTruncatedWithText(t *testing.T) {
+	t.Parallel()
+
+	content := DecoratePreviewContent(&models.ObjectPreviewContent{
+		Kind:      models.ObjectPreviewKindText,
+		Text:      "partial",
+		Truncated: true,
+	})
+
+	if !content.Truncated {
+		t.Fatalf("Truncated = false, want true when preview text exists")
+	}
+}
+
+func TestDecoratePreviewContentSemanticMatrix(t *testing.T) {
+	t.Parallel()
+
+	testcases := []struct {
+		name              string
+		content           models.ObjectPreviewContent
+		wantMaterial      string
+		wantRenderer      string
+		wantMetadata      string
+		wantNoTopMaterial bool
+	}{
+		{
+			name: "text",
+			content: models.ObjectPreviewContent{
+				Kind: models.ObjectPreviewKindText,
+				Text: "hello",
+			},
+			wantMaterial: models.PreviewMaterialText,
+			wantRenderer: models.ObjectPreviewKindText,
+			wantMetadata: models.PreviewMaterialText,
+		},
+		{
+			name: "markdown",
+			content: models.ObjectPreviewContent{
+				Kind: models.ObjectPreviewKindMarkdown,
+				Text: "# title",
+			},
+			wantMaterial: models.PreviewMaterialMarkdown,
+			wantRenderer: models.ObjectPreviewKindMarkdown,
+			wantMetadata: models.PreviewMaterialMarkdown,
+		},
+		{
+			name: "json",
+			content: models.ObjectPreviewContent{
+				Kind: models.ObjectPreviewKindJSON,
+				JSON: map[string]interface{}{"name": "ADDP"},
+			},
+			wantMaterial: models.PreviewMaterialJSON,
+			wantRenderer: models.ObjectPreviewKindJSON,
+			wantMetadata: models.PreviewMaterialJSON,
+		},
+		{
+			name: "geojson_map_renderer",
+			content: models.ObjectPreviewContent{
+				Kind:             models.ObjectPreviewKindJSON,
+				PreviewMaterial:  models.PreviewMaterialGeoJSON,
+				FrontendRenderer: "map",
+				GeoJSON:          map[string]interface{}{"type": "FeatureCollection"},
+			},
+			wantMaterial: models.PreviewMaterialGeoJSON,
+			wantRenderer: "map",
+			wantMetadata: models.PreviewMaterialGeoJSON,
+		},
+		{
+			name: "table",
+			content: models.ObjectPreviewContent{
+				Kind: models.ObjectPreviewKindTable,
+				JSON: map[string]interface{}{
+					"columns": []map[string]interface{}{{"name": "id", "type": "int"}},
+					"rows":    []map[string]interface{}{{"id": 1}},
+				},
+			},
+			wantMaterial: models.PreviewMaterialTable,
+			wantRenderer: models.ObjectPreviewKindTable,
+			wantMetadata: models.PreviewMaterialTable,
+		},
+		{
+			name: "container",
+			content: models.ObjectPreviewContent{
+				Kind: models.ObjectPreviewKindContainer,
+				JSON: map[string]interface{}{
+					"format":   "zip",
+					"children": []map[string]interface{}{{"key": "a.csv", "name": "a.csv"}},
+				},
+			},
+			wantMaterial: models.PreviewMaterialContainer,
+			wantRenderer: models.ObjectPreviewKindContainer,
+			wantMetadata: models.PreviewMaterialContainer,
+		},
+		{
+			name: "raw_binary",
+			content: models.ObjectPreviewContent{
+				Kind:     models.ObjectPreviewKindImage,
+				Data:     "aGVsbG8=",
+				Encoding: "base64",
+			},
+			wantMaterial: models.PreviewMaterialRawBinary,
+			wantRenderer: models.ObjectPreviewKindImage,
+			wantMetadata: models.PreviewMaterialRawBinary,
+		},
+		{
+			name: "url",
+			content: models.ObjectPreviewContent{
+				Kind: models.ObjectPreviewKindPDF,
+				URL:  "/api/v1/manager/storage-stream?engine_id=1&storage_ref=bucket/report.pdf",
+			},
+			wantMaterial: models.PreviewMaterialURL,
+			wantRenderer: models.ObjectPreviewKindPDF,
+			wantMetadata: models.PreviewMaterialURL,
+		},
+		{
+			name: "unsupported",
+			content: models.ObjectPreviewContent{
+				Kind: models.ObjectPreviewKindUnsupported,
+			},
+			wantMaterial: models.PreviewMaterialUnsupported,
+			wantRenderer: models.ObjectPreviewKindUnsupported,
+			wantMetadata: models.PreviewMaterialUnsupported,
+		},
+		{
+			name: "invalid_material_from_metadata",
+			content: models.ObjectPreviewContent{
+				Kind: models.ObjectPreviewKindUnsupported,
+				Metadata: map[string]interface{}{
+					"preview_material": "raw_content",
+				},
+			},
+			wantMaterial:      models.PreviewMaterialUnsupported,
+			wantRenderer:      models.ObjectPreviewKindUnsupported,
+			wantMetadata:      "raw_content",
+		},
+	}
+
+	for _, tc := range testcases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			content := DecoratePreviewContent(&tc.content)
+			if content.PreviewMaterial != tc.wantMaterial {
+				t.Fatalf("PreviewMaterial = %q, want %q", content.PreviewMaterial, tc.wantMaterial)
+			}
+			if tc.wantNoTopMaterial && content.PreviewMaterial != "" {
+				t.Fatalf("PreviewMaterial = %q, want empty", content.PreviewMaterial)
+			}
+			if content.FrontendRenderer != tc.wantRenderer {
+				t.Fatalf("FrontendRenderer = %q, want %q", content.FrontendRenderer, tc.wantRenderer)
+			}
+			if tc.wantMetadata != "" && content.Metadata["preview_material"] != tc.wantMetadata {
+				t.Fatalf("metadata preview_material = %#v, want %q", content.Metadata["preview_material"], tc.wantMetadata)
+			}
+		})
 	}
 }
 

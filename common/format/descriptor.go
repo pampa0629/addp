@@ -60,9 +60,9 @@ func GetFormatDescriptor(formatType FormatType) (FormatDescriptor, bool) {
 	return fromRegistryDescriptor(descriptor), true
 }
 
-func SupportsContentIndex(formatType FormatType) bool {
+func SupportsAccessIndex(formatType FormatType) bool {
 	descriptor, ok := GetFormatDescriptor(formatType)
-	return ok && descriptor.Providers.ContentIndex
+	return ok && descriptor.Providers.AccessIndex
 }
 
 func RegisterFormatDescriptor(descriptor FormatDescriptor) error {

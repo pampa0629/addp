@@ -47,8 +47,8 @@ func TestNormalizeMetaItemAttributesKeepsOnlyStandardSections(t *testing.T) {
 	if normalized["schema"] != nil || normalized["extensions"] != nil || normalized["bucket"] != nil {
 		t.Fatalf("legacy top-level fields should not survive: %#v", normalized)
 	}
-	if _, ok := normalized["content_index"]; ok {
-		t.Fatalf("empty content_index should not survive: %#v", normalized)
+	if _, ok := normalized["access_index"]; ok {
+		t.Fatalf("empty access_index should not survive: %#v", normalized)
 	}
 }
 
@@ -56,12 +56,12 @@ func TestNormalizePrunesEmptyStandardSections(t *testing.T) {
 	t.Parallel()
 
 	normalized := Normalize(models.JSONMap{
-		"item":          map[string]interface{}{"layout": "single", "format": ""},
-		"storage":       map[string]interface{}{},
-		"type_info":     map[string]interface{}{"table": map[string]interface{}{}},
-		"format_info":   map[string]interface{}{"csv": map[string]interface{}{}},
-		"content_index": map[string]interface{}{"table": map[string]interface{}{}},
-		"capabilities":  map[string]interface{}{"spatial": map[string]interface{}{"has_spatial_index": false}},
+		"item":         map[string]interface{}{"layout": "single", "format": ""},
+		"storage":      map[string]interface{}{},
+		"type_info":    map[string]interface{}{"table": map[string]interface{}{}},
+		"format_info":  map[string]interface{}{"csv": map[string]interface{}{}},
+		"access_index": map[string]interface{}{"table": map[string]interface{}{}},
+		"capabilities": map[string]interface{}{"spatial": map[string]interface{}{"has_spatial_index": false}},
 	})
 
 	if _, ok := normalized["storage"]; ok {
@@ -73,8 +73,8 @@ func TestNormalizePrunesEmptyStandardSections(t *testing.T) {
 	if _, ok := normalized["format_info"]; ok {
 		t.Fatalf("empty format_info should be pruned: %#v", normalized)
 	}
-	if _, ok := normalized["content_index"]; ok {
-		t.Fatalf("empty content_index should be pruned: %#v", normalized)
+	if _, ok := normalized["access_index"]; ok {
+		t.Fatalf("empty access_index should be pruned: %#v", normalized)
 	}
 	item := normalized["item"].(map[string]interface{})
 	if item["layout"] != "single" || item["format"] != nil {
@@ -97,7 +97,7 @@ func TestAttributeHelpersWriteStandardPartitions(t *testing.T) {
 	SetExtension(attrs, "media", "width", 800)
 	SetExtension(attrs, "document", "page_count", 12)
 	SetExtension(attrs, "statistics", "sample_size", int64(10))
-	SetExtension(attrs, "extraction", "metadata_extracted", true)
+	SetExtension(attrs, "extraction", "extractor_available", true)
 	SetExtension(attrs, "unqualified", "vendor_key", "kept")
 
 	if attrs["physical_path"] != nil || attrs["format"] != nil || attrs["extensions"] != nil {
@@ -122,8 +122,8 @@ func TestAttributeHelpersWriteStandardPartitions(t *testing.T) {
 	if capabilities["statistics"].(map[string]interface{})["sample_size"] != int64(10) {
 		t.Fatalf("capabilities.statistics missing sample_size: %#v", capabilities)
 	}
-	if capabilities["extraction"].(map[string]interface{})["metadata_extracted"] != true {
-		t.Fatalf("capabilities.extraction missing metadata_extracted: %#v", capabilities)
+	if capabilities["extraction"].(map[string]interface{})["extractor_available"] != true {
+		t.Fatalf("capabilities.extraction missing extractor_available: %#v", capabilities)
 	}
 	formatInfo := attrs["format_info"].(map[string]interface{})
 	if formatInfo["unqualified"].(map[string]interface{})["vendor_key"] != "kept" {
@@ -135,7 +135,6 @@ func TestMergeStandardAttributesWritesStandardSections(t *testing.T) {
 	t.Parallel()
 
 	attrs := models.JSONMap{}
-	SetExtraction(attrs, "metadata_extracted", true)
 	SetExtraction(attrs, "extractor_available", true)
 	MergeStandardAttributes(attrs, map[string]interface{}{
 		"type_info": map[string]interface{}{
@@ -158,7 +157,7 @@ func TestMergeStandardAttributesWritesStandardSections(t *testing.T) {
 	}
 	capabilities := attrs["capabilities"].(map[string]interface{})
 	extraction := capabilities["extraction"].(map[string]interface{})
-	if extraction["metadata_extracted"] != true || extraction["extractor_available"] != true {
+	if extraction["metadata_extracted"] != nil || extraction["extractor_available"] != true {
 		t.Fatalf("capabilities.extraction = %#v", extraction)
 	}
 	document := attrs["type_info"].(map[string]interface{})["document"].(map[string]interface{})
@@ -202,21 +201,21 @@ func TestFormatInfoAttributesDropsStandardSections(t *testing.T) {
 	}
 }
 
-func TestRemoveContentIndexTableKeepsOtherIndexes(t *testing.T) {
+func TestRemoveAccessIndexTableKeepsOtherIndexes(t *testing.T) {
 	t.Parallel()
 
 	attrs := map[string]interface{}{
-		"content_index": map[string]interface{}{
+		"access_index": map[string]interface{}{
 			"table": map[string]interface{}{"kind": "sparse_row_index"},
 			"text":  map[string]interface{}{"kind": "full_text"},
 		},
 	}
 
-	RemoveContentIndexTable(attrs)
+	RemoveAccessIndexTable(attrs)
 
-	contentIndex := attrs["content_index"].(map[string]interface{})
-	if contentIndex["table"] != nil || contentIndex["text"] == nil {
-		t.Fatalf("content_index = %#v", contentIndex)
+	accessIndex := attrs["access_index"].(map[string]interface{})
+	if accessIndex["table"] != nil || accessIndex["text"] == nil {
+		t.Fatalf("access_index = %#v", accessIndex)
 	}
 }
 

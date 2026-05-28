@@ -83,7 +83,7 @@ func TestRefreshKnownMultiItemUsesStoredRefsWithoutCatalogRediscovery(t *testing
 				"name":       "roads.shp",
 				"total_size": total,
 			},
-			"content_index": map[string]interface{}{
+			"access_index": map[string]interface{}{
 				"table": map[string]interface{}{
 					"kind": "sparse_row_index",
 				},
@@ -106,9 +106,9 @@ func TestRefreshKnownMultiItemUsesStoredRefsWithoutCatalogRediscovery(t *testing
 	if err := db.First(&refreshed, item.ID).Error; err != nil {
 		t.Fatalf("load refreshed item: %v", err)
 	}
-	if contentIndex, ok := refreshed.Attributes["content_index"].(map[string]interface{}); ok {
-		if tableIndex, exists := contentIndex["table"]; exists {
-			t.Fatalf("content_index.table = %#v, want stale shapefile table index removed", tableIndex)
+	if accessIndex, ok := refreshed.Attributes["access_index"].(map[string]interface{}); ok {
+		if tableIndex, exists := accessIndex["table"]; exists {
+			t.Fatalf("access_index.table = %#v, want stale shapefile table index removed", tableIndex)
 		}
 	}
 }
@@ -269,8 +269,8 @@ func TestRefreshKnownDOCXItemExtractsTextFacts(t *testing.T) {
 	if got := commonJSON.String(refreshed.Attributes, "capabilities.extraction", "extractor"); got != "common_format:docx" {
 		t.Fatalf("extractor = %q", got)
 	}
-	if !commonJSON.Bool(refreshed.Attributes, "type_info.document", "text_extracted") {
-		t.Fatalf("type_info.document = %#v", refreshed.Attributes["type_info"])
+	if commonJSON.Bool(refreshed.Attributes, "type_info.document", "text_extracted") {
+		t.Fatalf("type_info.document should not carry extraction status: %#v", refreshed.Attributes["type_info"])
 	}
 	if got := commonJSON.String(refreshed.Attributes, "storage", "content_hash"); got == "" {
 		t.Fatal("storage.content_hash missing")

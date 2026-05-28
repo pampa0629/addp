@@ -178,14 +178,24 @@
     component,
     canHandle: (data = {}) => {
       const content = data.object?.content || {}
+      const metadata = content.metadata || {}
       const renderer = (
         content.frontend_renderer ||
         content.frontendRenderer ||
-        content.metadata?.frontend_renderer ||
-        content.metadata?.frontendRenderer ||
+        metadata.frontend_renderer ||
+        metadata.frontendRenderer ||
         ''
       ).toString().toLowerCase()
-      return renderer === 'container'
+      const material = (
+        content.preview_material ||
+        content.previewMaterial ||
+        metadata.preview_material ||
+        metadata.previewMaterial ||
+        ''
+      ).toString().toLowerCase()
+      const kind = (content.kind || content.Kind || '').toString().toLowerCase()
+      const target = renderer || (material === 'url' || material === 'raw_binary' ? '' : material) || kind
+      return target === 'container'
     },
     priority: 64
   })

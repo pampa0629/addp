@@ -14,6 +14,8 @@ const (
 	previewMaterialJSON      = "json"
 	previewMaterialRawBinary = "raw_binary"
 	previewMaterialTable     = "table"
+	previewMaterialContainer = "container"
+	previewMaterialUnsupported = "unsupported"
 )
 
 type previewHintInput struct {
@@ -105,6 +107,12 @@ func previewHintSemantics(formatType format.FormatType, dataType, contentType st
 	if formatType == format.FormatJSON {
 		return previewMaterialJSON, "json", true, true
 	}
+	if documentRenderer := documentPreviewRenderer(formatType); documentRenderer != "" {
+		return previewMaterialRawBinary, documentRenderer, true, false
+	}
+	if videoPreviewFormat(formatType, contentType) {
+		return previewMaterialRawBinary, "video", true, false
+	}
 	if format.IsImageFormat(formatType) || strings.HasPrefix(strings.ToLower(strings.TrimSpace(contentType)), "image/") {
 		return previewMaterialRawBinary, "image", true, false
 	}
@@ -115,14 +123,37 @@ func previewHintSemantics(formatType format.FormatType, dataType, contentType st
 	case string(datatype.DataTypeTable):
 		return previewMaterialTable, "table", true, false
 	case string(datatype.DataTypeContainer):
-		return previewMaterialJSON, "container", true, false
+		return previewMaterialContainer, "container", true, false
 	case string(datatype.DataTypeDocument):
-		return previewMaterialRawBinary, "text", true, false
+		return previewMaterialUnsupported, "unsupported", false, false
 	case string(datatype.DataTypeMedia):
-		return previewMaterialRawBinary, "", true, false
+		return previewMaterialUnsupported, "unsupported", false, false
 	default:
-		return previewMaterialRawBinary, "text", false, false
+		return previewMaterialUnsupported, "unsupported", false, false
 	}
+}
+
+func documentPreviewRenderer(formatType format.FormatType) string {
+	switch formatType {
+	case format.FormatPDF:
+		return "pdf"
+	case format.FormatDOCX:
+		return "docx"
+	case format.FormatPPTX:
+		return "pptx"
+	case format.FormatWPS:
+		return "wps"
+	default:
+		return ""
+	}
+}
+
+func videoPreviewFormat(formatType format.FormatType, contentType string) bool {
+	if formatType == format.FormatVideo || formatType == format.FormatMP4 {
+		return true
+	}
+	contentType = strings.ToLower(strings.TrimSpace(contentType))
+	return strings.HasPrefix(contentType, "video/")
 }
 
 func isTextPreviewFormat(formatType format.FormatType) bool {

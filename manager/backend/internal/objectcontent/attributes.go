@@ -168,11 +168,12 @@ func ResolveContainerAttributeChildrenForPreview(formatName string, children []i
 }
 
 func BuildContainerPreviewFromInfo(info *datatype.ContainerInfo, fallbackFormat string) map[string]interface{} {
-	return buildContainerPreviewFromContainerInfo(info, fallbackFormat)
+	return buildContainerPreviewFromContainerInfo(info, fallbackFormat, nil)
 }
 
 func ResolveContainerInfoForPreview(info *datatype.ContainerInfo) *datatype.ContainerInfo {
-	return resolveContainerChildrenForPreview(info)
+	resolved, _ := resolveContainerChildrenForPreview(info)
+	return resolved
 }
 
 func ContainerInfoTruncated(info *datatype.ContainerInfo) bool {

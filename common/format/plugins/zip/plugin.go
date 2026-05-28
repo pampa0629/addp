@@ -45,7 +45,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 			Extensions: []string{".zip"},
 			MimeTypes:  []string{"application/zip", "application/x-zip-compressed"},
 		},
-		Providers: format.FormatProviderDescriptor{ContainerInfo: true},
+		Providers: format.FormatProviderDescriptor{ContainerInfo: true, FormatInfo: true},
 		ContentReaders: []string{
 			string(format.ContentReaderRawContent),
 			string(format.ContentReaderContainerEntry),
@@ -72,7 +72,38 @@ func (p *Plugin) Capabilities() format.FormatCapability {
 	}
 }
 
+func (p *Plugin) DescribeFormat(ctx context.Context, input io.Reader, options *format.ParseOptions) (map[string]interface{}, error) {
+	info, err := p.describeContainer(ctx, input, options)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{
+		"entry_count":        info.entryCount,
+		"file_count":         info.fileCount,
+		"directory_count":    info.dirCount,
+		"sampled_children":   info.sampledChildren,
+		"children_truncated": info.childrenTruncated,
+	}, nil
+}
+
 func (p *Plugin) DescribeContainer(ctx context.Context, input io.Reader, options *format.ParseOptions) (*datatype.ContainerInfo, error) {
+	info, err := p.describeContainer(ctx, input, options)
+	if err != nil {
+		return nil, err
+	}
+	return info.container, nil
+}
+
+type containerDescribeResult struct {
+	container         *datatype.ContainerInfo
+	entryCount        int
+	fileCount         int
+	dirCount          int
+	sampledChildren   int
+	childrenTruncated bool
+}
+
+func (p *Plugin) describeContainer(ctx context.Context, input io.Reader, options *format.ParseOptions) (*containerDescribeResult, error) {
 	data, err := io.ReadAll(input)
 	if err != nil {
 		return nil, fmt.Errorf("read zip input: %w", err)
@@ -120,18 +151,18 @@ func (p *Plugin) DescribeContainer(ctx context.Context, input io.Reader, options
 	}
 
 	entryCount := fileCount + dirCount
-	return &datatype.ContainerInfo{
-		ChildCount:    entryCount,
-		DefaultChild:  defaultChild,
-		ResourceCount: 1,
-		Children:      children,
-		Native: map[string]interface{}{
-			"entry_count":        entryCount,
-			"file_count":         fileCount,
-			"directory_count":    dirCount,
-			"sampled_children":   len(children),
-			"children_truncated": limited && entryCount > len(children),
+	return &containerDescribeResult{
+		container: &datatype.ContainerInfo{
+			ChildCount:    entryCount,
+			DefaultChild:  defaultChild,
+			ResourceCount: 1,
+			Children:      children,
 		},
+		entryCount:        entryCount,
+		fileCount:         fileCount,
+		dirCount:          dirCount,
+		sampledChildren:   len(children),
+		childrenTruncated: limited && entryCount > len(children),
 	}, nil
 }
 

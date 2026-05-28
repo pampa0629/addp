@@ -41,7 +41,8 @@ type FieldRecord struct {
 type AssetRecord struct {
 	// ===== 基础字段（所有资产，基础扫描即写） =====
 	AssetID     string   `json:"asset_id"`
-	DocumentID  string   `json:"document_id,omitempty"` // 内容 SHA256 指纹
+	DocumentID  string   `json:"document_id,omitempty"`  // item fingerprint，用于全文/向量检索结果合并
+	ContentHash string   `json:"content_hash,omitempty"` // storage.content_hash，用于判断内容是否变化
 	TenantID    uint     `json:"tenant_id"`
 	EngineID    uint     `json:"engine_id"`
 	EngineName  string   `json:"engine_name,omitempty"`
@@ -207,7 +208,8 @@ func (i *Indexer) IndexAsset(ctx context.Context, record *AssetRecord) error {
 	doc := map[string]interface{}{
 		"id":              record.AssetID, // Meilisearch 主键
 		"asset_id":        record.AssetID,
-		"document_id":     record.DocumentID, // 文件指纹（用于混合检索去重）
+		"document_id":     record.DocumentID,
+		"content_hash":    record.ContentHash,
 		"tenant_id":       record.TenantID,
 		"engine_id":       record.EngineID,
 		"engine_name":     record.EngineName,

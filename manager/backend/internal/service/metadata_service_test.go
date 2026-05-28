@@ -1,12 +1,19 @@
 package service
 
 import (
+	"archive/zip"
+	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"sort"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
@@ -84,6 +91,424 @@ func TestStreamStorageRefPathSupportsFileAndObjectCatalogs(t *testing.T) {
 	if got := objectPath.StringPath(); got != "addp/raw/book.epub" || displayPath != "addp/raw/book.epub" {
 		t.Fatalf("object path/display = %q/%q, want addp/raw/book.epub", got, displayPath)
 	}
+}
+
+func TestStreamStorageRefPathRejectsInvalidStorageRefs(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name       string
+		engineType string
+		storageRef string
+	}{
+		{name: "empty", engineType: "nfs", storageRef: "///"},
+		{name: "object without key", engineType: "minio", storageRef: "bucket"},
+		{name: "object without bucket", engineType: "minio", storageRef: "/file.txt"},
+		{name: "unsupported engine", engineType: "postgresql", storageRef: "schema/table"},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if _, _, err := streamStorageRefPath(tc.engineType, 1, tc.storageRef); err == nil {
+				t.Fatalf("streamStorageRefPath(%q, %q) expected error", tc.engineType, tc.storageRef)
+			}
+		})
+	}
+}
+
+func TestParseStorageRange(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name        string
+		header      string
+		size        int64
+		wantOffset  int64
+		wantLength  int64
+		wantRange   string
+		wantNoRange bool
+	}{
+		{name: "full content", header: "", size: 100, wantLength: 100, wantNoRange: true},
+		{name: "closed range", header: "bytes=10-19", size: 100, wantOffset: 10, wantLength: 10, wantRange: "bytes 10-19/100"},
+		{name: "open ended range", header: "bytes=95-", size: 100, wantOffset: 95, wantLength: 5, wantRange: "bytes 95-99/100"},
+		{name: "suffix range", header: "bytes=-7", size: 100, wantOffset: 93, wantLength: 7, wantRange: "bytes 93-99/100"},
+		{name: "range clipped to size", header: "bytes=90-999", size: 100, wantOffset: 90, wantLength: 10, wantRange: "bytes 90-99/100"},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			opts, length, contentRange, err := parseStorageRange(tc.header, tc.size)
+			if err != nil {
+				t.Fatalf("parseStorageRange() error = %v", err)
+			}
+			if tc.wantNoRange {
+				if opts.Offset != 0 || opts.Length != 0 {
+					t.Fatalf("full content options = %#v, want zero read options", opts)
+				}
+				if length != tc.wantLength || contentRange != "" {
+					t.Fatalf("full content length/range = %d/%q, want %d/empty", length, contentRange, tc.wantLength)
+				}
+				return
+			}
+			if opts.Offset != tc.wantOffset || opts.Length != tc.wantLength {
+				t.Fatalf("read options = %#v, want offset=%d length=%d", opts, tc.wantOffset, tc.wantLength)
+			}
+			if length != tc.wantLength || contentRange != tc.wantRange {
+				t.Fatalf("length/range = %d/%q, want %d/%q", length, contentRange, tc.wantLength, tc.wantRange)
+			}
+		})
+	}
+}
+
+func TestParseStorageRangeRejectsInvalidHeaders(t *testing.T) {
+	t.Parallel()
+
+	for _, header := range []string{
+		"items=0-1",
+		"bytes=",
+		"bytes=10",
+		"bytes=10-1",
+		"bytes=100-101",
+		"bytes=0-1,5-6",
+		"bytes=-0",
+		"bytes=a-b",
+	} {
+		header := header
+		t.Run(header, func(t *testing.T) {
+			t.Parallel()
+			_, _, _, err := parseStorageRange(header, 100)
+			if !errors.Is(err, ErrInvalidRange) {
+				t.Fatalf("parseStorageRange(%q) err = %v, want ErrInvalidRange", header, err)
+			}
+		})
+	}
+}
+
+func TestResolveStorageDownloadPlanUsesSingleStorageRef(t *testing.T) {
+	t.Parallel()
+
+	svc := &MetadataService{
+		systemClient: testSystemClient(t, 9, "nfs", nil),
+	}
+	plan, err := svc.ResolveStorageDownloadPlan(t.Context(), 9, "raw/test.parquet", nil)
+	if err != nil {
+		t.Fatalf("ResolveStorageDownloadPlan() error = %v", err)
+	}
+	if plan.Kind != models.DownloadKindStream || plan.FileName != "test.parquet" || len(plan.Refs) != 1 {
+		t.Fatalf("plan = %#v, want stream test.parquet with one ref", plan)
+	}
+	if plan.Refs[0].StorageRef != "raw/test.parquet" {
+		t.Fatalf("ref = %#v", plan.Refs[0])
+	}
+}
+
+func TestResolveStorageDownloadPlanRejectsKnownMultiFormatWithoutMetaItem(t *testing.T) {
+	t.Parallel()
+
+	svc := &MetadataService{
+		systemClient: testSystemClient(t, 9, "nfs", nil),
+	}
+	_, err := svc.ResolveStorageDownloadPlan(t.Context(), 9, "shp/farmland.shp", nil)
+	if !errors.Is(err, ErrDownloadNotSupported) {
+		t.Fatalf("ResolveStorageDownloadPlan() error = %v, want ErrDownloadNotSupported", err)
+	}
+}
+
+func TestResolveStorageDownloadPlanUsesMetaMultiRefs(t *testing.T) {
+	t.Parallel()
+
+	svc := &MetadataService{
+		systemClient: testSystemClient(t, 9, "minio", nil),
+		metaClient: testMetaItemClient(t, `{
+			"id": 1,
+			"engine_id": 9,
+			"item_type": "object",
+			"name": "roads.shp",
+			"full_name": "bucket/roads/roads.shp",
+			"attributes": {
+				"item": {
+					"layout": "multi",
+					"format": "shapefile",
+					"refs": [
+						{"path":"bucket/roads/roads.shp","role":"main","required":true,"primary":true},
+						{"path":"bucket/roads/roads.shx","role":"index","required":true},
+						{"path":"bucket/roads/roads.dbf","role":"attributes","required":true},
+						{"path":"bucket/roads/roads.prj","role":"projection"}
+					]
+				}
+			}
+		}`),
+	}
+	tenantID := uint(11)
+	plan, err := svc.ResolveStorageDownloadPlan(t.Context(), 9, "bucket/roads/roads.shp", &tenantID)
+	if err != nil {
+		t.Fatalf("ResolveStorageDownloadPlan() error = %v", err)
+	}
+	if plan.Kind != models.DownloadKindBundle || plan.FileName != "roads.shapefile.zip" || plan.ContentType != "application/zip" {
+		t.Fatalf("plan = %#v, want shapefile bundle", plan)
+	}
+	if len(plan.Refs) != 4 {
+		t.Fatalf("refs = %#v, want 4 refs", plan.Refs)
+	}
+	if plan.Refs[2].StorageRef != "bucket/roads/roads.dbf" || !plan.Refs[2].Required {
+		t.Fatalf("dbf ref = %#v", plan.Refs[2])
+	}
+}
+
+func TestOpenStorageDownloadPlanBundlesNFSShapefileRefs(t *testing.T) {
+	t.Parallel()
+
+	engineType := "download_test_nfs_bundle"
+	plugin.Register(newDownloadTestFilePlugin(engineType, map[string]string{
+		"shp/farmland.shp": "shape",
+		"shp/farmland.shx": "index",
+		"shp/farmland.dbf": "attrs",
+	}))
+	t.Cleanup(func() { plugin.Unregister(engineType) })
+
+	svc := &MetadataService{
+		systemClient: testSystemClient(t, 26, engineType, nil),
+		metaClient: testMetaItemClient(t, `{
+			"id": 1,
+			"engine_id": 26,
+			"item_type": "file",
+			"name": "farmland.shp",
+			"full_name": "shp/farmland.shp",
+			"attributes": {
+				"item": {
+					"layout": "multi",
+					"format": "shapefile",
+					"refs": [
+						{"path":"shp/farmland.shp","role":"main","required":true,"primary":true},
+						{"path":"shp/farmland.shx","role":"index","required":true},
+						{"path":"shp/farmland.dbf","role":"attributes","required":true}
+					]
+				}
+			}
+		}`),
+	}
+
+	plan, err := svc.ResolveStorageDownloadPlan(t.Context(), 26, "shp/farmland.shp", nil)
+	if err != nil {
+		t.Fatalf("ResolveStorageDownloadPlan() error = %v", err)
+	}
+	if plan.Kind != models.DownloadKindBundle || plan.FileName != "farmland.shapefile.zip" || plan.ContentType != "application/zip" {
+		t.Fatalf("plan = %#v, want NFS shapefile zip bundle", plan)
+	}
+
+	reader, err := svc.OpenStorageDownloadPlan(t.Context(), 26, plan, nil)
+	if err != nil {
+		t.Fatalf("OpenStorageDownloadPlan() error = %v", err)
+	}
+	data, err := io.ReadAll(reader)
+	if closeErr := reader.Close(); closeErr != nil && err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		t.Fatalf("read zip: %v", err)
+	}
+	if len(data) == 0 {
+		t.Fatal("zip data is empty")
+	}
+
+	zipReader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatalf("zip.NewReader() error = %v", err)
+	}
+	names := make([]string, 0, len(zipReader.File))
+	for _, file := range zipReader.File {
+		names = append(names, file.Name)
+	}
+	sort.Strings(names)
+	want := []string{"farmland.dbf", "farmland.shp", "farmland.shx"}
+	if strings.Join(names, ",") != strings.Join(want, ",") {
+		t.Fatalf("zip entries = %#v, want %#v", names, want)
+	}
+}
+
+func TestOpenStorageDownloadPlanFailsBeforeWritingWhenRequiredRefMissing(t *testing.T) {
+	t.Parallel()
+
+	engineType := "download_test_nfs_missing"
+	plugin.Register(newDownloadTestFilePlugin(engineType, map[string]string{
+		"shp/farmland.shp": "shape",
+	}))
+	t.Cleanup(func() { plugin.Unregister(engineType) })
+
+	svc := &MetadataService{
+		systemClient: testSystemClient(t, 26, engineType, nil),
+		metaClient: testMetaItemClient(t, `{
+			"id": 1,
+			"engine_id": 26,
+			"item_type": "file",
+			"name": "farmland.shp",
+			"full_name": "shp/farmland.shp",
+			"attributes": {
+				"item": {
+					"layout": "multi",
+					"format": "shapefile",
+					"refs": [
+						{"path":"shp/farmland.shp","role":"main","required":true,"primary":true},
+						{"path":"shp/farmland.dbf","role":"attributes","required":true}
+					]
+				}
+			}
+		}`),
+	}
+
+	plan, err := svc.ResolveStorageDownloadPlan(t.Context(), 26, "shp/farmland.shp", nil)
+	if err != nil {
+		t.Fatalf("ResolveStorageDownloadPlan() error = %v", err)
+	}
+	if _, err := svc.OpenStorageDownloadPlan(t.Context(), 26, plan, nil); err == nil {
+		t.Fatal("OpenStorageDownloadPlan() succeeded with missing required ref")
+	}
+}
+
+func TestResolveStorageDownloadPlanRejectsMultiItemWithoutRefs(t *testing.T) {
+	t.Parallel()
+
+	svc := &MetadataService{
+		systemClient: testSystemClient(t, 9, "minio", nil),
+		metaClient: testMetaItemClient(t, `{
+			"id": 1,
+			"engine_id": 9,
+			"item_type": "object",
+			"name": "roads.shp",
+			"full_name": "bucket/roads/roads.shp",
+			"attributes": {"item": {"layout": "multi", "format": "shapefile"}}
+		}`),
+	}
+	_, err := svc.ResolveStorageDownloadPlan(t.Context(), 9, "bucket/roads/roads.shp", nil)
+	if !errors.Is(err, ErrDownloadNotSupported) {
+		t.Fatalf("ResolveStorageDownloadPlan() error = %v, want ErrDownloadNotSupported", err)
+	}
+}
+
+func TestResolveStorageDownloadPlanRejectsMultiRefsWithoutPrimary(t *testing.T) {
+	t.Parallel()
+
+	svc := &MetadataService{
+		systemClient: testSystemClient(t, 9, "minio", nil),
+		metaClient: testMetaItemClient(t, `{
+			"id": 1,
+			"engine_id": 9,
+			"item_type": "object",
+			"name": "roads.shp",
+			"full_name": "bucket/roads/roads.shp",
+			"attributes": {
+				"item": {
+					"layout": "multi",
+					"format": "shapefile",
+					"refs": [
+						{"path":"bucket/roads/roads.shp","role":"main","required":true},
+						{"path":"bucket/roads/roads.dbf","role":"attributes","required":true}
+					]
+				}
+			}
+		}`),
+	}
+	_, err := svc.ResolveStorageDownloadPlan(t.Context(), 9, "bucket/roads/roads.shp", nil)
+	if !errors.Is(err, ErrDownloadNotSupported) {
+		t.Fatalf("ResolveStorageDownloadPlan() error = %v, want ErrDownloadNotSupported", err)
+	}
+}
+
+func testSystemClient(t *testing.T, engineID uint, engineType string, connInfo map[string]interface{}) *client.SystemClient {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != fmt.Sprintf("/api/v1/system/engines/%d", engineID) {
+			http.NotFound(w, r)
+			return
+		}
+		payload := map[string]interface{}{
+			"id":              engineID,
+			"name":            "engine",
+			"engine_type":     engineType,
+			"connection_info": connInfo,
+			"tenant_id":       11,
+			"is_active":       true,
+		}
+		_ = json.NewEncoder(w).Encode(payload)
+	}))
+	t.Cleanup(server.Close)
+	return client.NewSystemClient(server.URL, "test-token")
+}
+
+func testMetaItemClient(t *testing.T, itemJSON string) *client.MetaClient {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/meta/items/by-catalog-path" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(itemJSON))
+	}))
+	t.Cleanup(server.Close)
+	return client.NewMetaClientWithInternalKey(server.URL, "internal-key")
+}
+
+type downloadTestFilePlugin struct {
+	engineType string
+	files      map[string]string
+}
+
+func newDownloadTestFilePlugin(engineType string, files map[string]string) *downloadTestFilePlugin {
+	copied := map[string]string{}
+	for path, content := range files {
+		copied[strings.Trim(path, "/")] = content
+	}
+	return &downloadTestFilePlugin{engineType: engineType, files: copied}
+}
+
+func (p *downloadTestFilePlugin) Type() string         { return p.engineType }
+func (p *downloadTestFilePlugin) DisplayName() string  { return p.engineType }
+func (p *downloadTestFilePlugin) EngineOrigin() string { return "general" }
+func (p *downloadTestFilePlugin) TestConnection(context.Context, plugin.ConnectionInfo) error {
+	return nil
+}
+func (p *downloadTestFilePlugin) ValidateConnectionInfo(plugin.ConnectionInfo) error {
+	return nil
+}
+func (p *downloadTestFilePlugin) DefaultPort() int          { return 0 }
+func (p *downloadTestFilePlugin) RequiredFields() []string  { return nil }
+func (p *downloadTestFilePlugin) SensitiveFields() []string { return nil }
+func (p *downloadTestFilePlugin) Capabilities() plugin.EngineCapabilities {
+	return plugin.NewFileCapabilities(p.engineType)
+}
+func (p *downloadTestFilePlugin) StoreSemantics() plugin.StoreSemantics {
+	return plugin.StoreSemanticsFromCapabilities(p.Capabilities())
+}
+func (p *downloadTestFilePlugin) DescribeItem(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
+	filePath := strings.Trim(path.StringPath(), "/")
+	content, ok := p.files[filePath]
+	if !ok {
+		return nil, fmt.Errorf("file not found: %s", filePath)
+	}
+	now := time.Unix(0, 0)
+	return &plugin.ItemMetadata{
+		Path: path,
+		Kind: plugin.CatalogKindFile,
+		Stats: map[string]interface{}{
+			"size_bytes": int64(len(content)),
+		},
+		Attributes: map[string]interface{}{
+			"name": filePath,
+			"path": filePath,
+		},
+		UpdatedAt: &now,
+	}, nil
+}
+func (p *downloadTestFilePlugin) OpenContent(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
+	filePath := strings.Trim(path.StringPath(), "/")
+	content, ok := p.files[filePath]
+	if !ok {
+		return nil, fmt.Errorf("file not found: %s", filePath)
+	}
+	return io.NopCloser(strings.NewReader(content)), nil
 }
 
 func setupExplorerService(t *testing.T) (*ExplorerService, func()) {

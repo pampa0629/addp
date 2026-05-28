@@ -118,7 +118,7 @@ detector 必须先确定 data item 边界，再提取类型信息、格式信息
 
 如果 `layout=multi` 的 item 缺失 refs、缺少唯一 primary、或 required refs 不完整，调用方不应尝试在 format provider 内部重新枚举 sibling content 来“修复”。正确做法是回到 node 层重新扫描，让 detector 重新裁决 item 边界和 refs。
 
-item refresh 只允许刷新该 item 自身的 attributes、字段、format info、content index 和横切能力。若 item 本身识别错误，例如 Shapefile 的多个 ref 没有被归并为一个 item，应由 node 扫描重新识别，而不是 item refresh 扩大范围。
+item refresh 只允许刷新该 item 自身的 attributes、字段、format info、access index 和横切能力。若 item 本身识别错误，例如 Shapefile 的多个 ref 没有被归并为一个 item，应由 node 扫描重新识别，而不是 item refresh 扩大范围。
 
 ## 递归观察资源
 

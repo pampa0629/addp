@@ -266,7 +266,7 @@
           "typeInfo": "Type Structure",
           "capabilities": "Capabilities",
           "formatInfo": "Format Info",
-          "contentIndex": "Content Index",
+          "accessIndex": "Access Index",
           "schemaVersion": "Schema Version"
         },
         "groups": {
@@ -359,7 +359,7 @@
           "sampledSheets": "Sampled Sheets",
           "files": "Files",
           "anchors": "Anchors",
-          "contentIndex": "Content Index",
+          "accessIndex": "Access Index",
           "contentHash": "Content Hash",
           "indexRef": "Search Index Reference",
           "schemaVersion": "Schema Version",

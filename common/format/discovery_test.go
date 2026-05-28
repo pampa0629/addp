@@ -46,8 +46,8 @@ func TestGetFormatCapabilityView(t *testing.T) {
 	if !view.Providers.MultiTable {
 		t.Fatal("shapefile capability view should declare multi table provider")
 	}
-	if view.Providers.ContentIndex {
-		t.Fatal("shapefile capability view should not declare content index provider; .shx is native format indexing")
+	if view.Providers.AccessIndex {
+		t.Fatal("shapefile capability view should not declare access index provider; .shx is native format indexing")
 	}
 }
 
@@ -90,13 +90,13 @@ func TestFormatCapabilityViewSeparatesDeclaredProvidersAndImplementations(t *tes
 	}
 }
 
-func TestFormatCapabilityViewReportsContentIndexProviderCapability(t *testing.T) {
+func TestFormatCapabilityViewReportsAccessIndexProviderCapability(t *testing.T) {
 	view, ok := GetFormatCapabilityView(FormatCSV)
 	if !ok {
 		t.Fatal("expected csv capability view")
 	}
-	if !view.Providers.ContentIndex {
-		t.Fatalf("providers = %#v, want content_index", view.Providers)
+	if !view.Providers.AccessIndex {
+		t.Fatalf("providers = %#v, want access_index", view.Providers)
 	}
 }
 

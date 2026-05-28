@@ -36,7 +36,7 @@
 
 - ADDP 支持哪些基础 data type。
 - 每类 data type 的通用 type info 是什么。
-- 字段类型、空间信息、内容索引等横切结构的公共定义在哪里。
+- 字段类型、空间信息、访问索引等横切结构的公共定义在哪里。
 - engine、format、Meta、Manager、Transfer 应围绕哪一个事实源理解数据类型。
 
 它不回答：
@@ -55,7 +55,7 @@
 |---|---|---|
 | `common/dataitem` | 定义 item 组织规则、layout、候选归并 | 当前仍依赖 `common/format` 获取格式能力和 layout 常量；长期应拆分 core 与 format 规则适配 |
 | `common/format/registry` | 定义 descriptor 的 layout、provider、reader 常量 | registry 不应成为跨 engine / format 的 item layout 事实源 |
-| `common/format` | 定义 `FieldType`、`TableInfo`、`DocumentInfo`、`MediaInfo`、`ContainerInfo`、`SpatialInfo`、`ContentIndex` | 这些 info 不是 format 私有语义，而是 ADDP 通用 data type info |
+| `common/format` | 曾定义 `FieldType`、`TableInfo`、`DocumentInfo`、`MediaInfo`、`ContainerInfo`、`SpatialInfo`、`AccessIndex` | data type / type info 不应属于 format；`SpatialInfo` 和 `AccessIndex` 是横切结构，不是 format 私有语义，也不是 data type 本体 |
 | `common/engine/plugin` | 曾定义 `FieldInfo`、`ColumnInfo`、`TableInfo`、`SchemaInfo`、`CollectionInfo`、图相关 info 和 provider 接口 | engine 侧形成与 format 平行的字段和元数据模型；其中公共 `FieldInfo`、`ColumnInfo`、`TableInfo` 已收敛到 `datatype`，`SchemaInfo` 已更名为 `NamespaceInfo` |
 | `common/models` | 定义 Meta API / client DTO，例如 `FieldInfo`、`SpatialMetadata` | API DTO 又定义了一套字段语义 |
 | Meta 内部 | 将 engine / format 结果转换为 `meta_item.attributes` | 历史上数据库扫描链路存在 `ColumnInfo` / `FieldInfo` / `format.FieldInfo` 来回转换；当前已先收敛公共 `ColumnInfo` 和 `format.FieldInfo` |
@@ -125,7 +125,7 @@ common/format common/engine common/dataitem
 | DataType | 通用 info | 典型内容 |
 |---|---|---|
 | `table` | `TableInfo` | 字段、主键、行数、大小 |
-| `document` | `DocumentInfo` | 标题、语言、编码、页数、字数、正文提取状态 |
+| `document` | `DocumentInfo` | 标题、语言、编码、页数、字数、大小 |
 | `media` | `MediaInfo` | media kind、MIME、宽高、时长、编码、颜色空间 |
 | `container` | `ContainerInfo` | child 数量、默认 child、child 摘要、child refs |
 | `graph` | `GraphInfo` | 节点结构、关系结构、连接模式、属性结构、节点数、关系数 |
@@ -146,7 +146,7 @@ type ContainerInfo struct { ... }
 type GraphInfo struct { ... }
 ```
 
-`TypeInfo` 只回答“该结构写入哪个 `type_info.<data_type>` 分区”，不承载空间、内容索引、格式私有信息或运行时业务逻辑。
+`TypeInfo` 只回答“该结构写入哪个 `type_info.<data_type>` 分区”，不承载空间、访问索引、格式私有信息或运行时业务逻辑。
 
 Meta attributes 仍负责将这些结构写入：
 
@@ -179,7 +179,7 @@ type_info.graph
 
 `TableInfo` 是 table data type 的通用信息，不属于数据库私有模型，也不属于文件格式私有模型。
 
-`TableInfo` 只表达 `attributes.type_info.table` 对应的 table 类型事实。空间能力和内容访问索引虽然常在 table 解析过程中同时得到，但它们不是 table 类型事实本体，不放入 `TableInfo`。
+`TableInfo` 只表达 `attributes.type_info.table` 对应的 table 类型事实。空间能力和访问定位索引虽然常在 table 解析过程中同时得到，但它们不是 table 类型事实本体，不放入 `TableInfo`。
 
 第一版目标字段：
 
@@ -218,7 +218,7 @@ type TableInfo struct {
 
 - 已标准化字段，例如 `row_count`、`size_bytes`、`created_at`、`updated_at`、`comment`、`kind`、`fields`、`primary_key`。
 - 空间事实，应进入 `SpatialInfo` / `capabilities.spatial`。
-- 内容访问索引，应进入 `ContentIndex` / `content_index`。
+- 访问定位索引，应进入 `AccessIndex` / `access_index`。
 - storage、path、etag、last_modified 等资源定位或存储事实。
 - 容器、文件集合、资源整体事实，例如 ZIP entry 数、SQLite page size、Shapefile sidecar 列表、Parquet scope 文件清单。
 
@@ -238,7 +238,7 @@ type TableInfo struct {
 
 ### 描述结果包
 
-Provider 一次解析可能同时得到 type info、横切事实、内容索引和格式私有事实。描述结果包是 provider / 编排层的返回组合，不是 data type 本体。
+Provider 一次解析可能同时得到 type info、横切事实、访问索引和格式私有事实。描述结果包是 provider / 编排层的返回组合，不是 data type 本体。
 
 进一步结论：`TableDescribeResult` / `MediaDescribeResult` 不属于 `common/datatype`。它们不是平台 data type 事实结构，而是 `common/format` provider 一次解析后返回的事实组合包。
 
@@ -248,7 +248,7 @@ Provider 一次解析可能同时得到 type info、横切事实、内容索引�
 - 描述结果包不应因为“同一次解析顺手得到多类事实”而污染 `TableInfo`、`MediaInfo` 等 type info，也不应进入 `common/datatype`。
 - `FormatInfo` 是 format 私有事实，应由 `common/format.FormatInfoProvider` 提供，不进入 `datatype` 结构。
 - `SpatialInfo` 是横切空间事实，不是 table 类型事实本体；它可以由 format describe result 同级返回，再由 Meta 写入 `capabilities.spatial`。
-- `ContentIndex` 是内容访问索引事实，不是 table 类型事实本体；它可以由 format describe result 同级返回，再由 Meta 写入 `content_index.table`。
+- `AccessIndex` 是访问定位索引事实，不是 table 类型事实本体；它可以由 format describe result 同级返回，再由 Meta 写入 `access_index.table`。
 - 当前不为拆分 describe result 引入缓存、session 或 resource handle 等复杂机制；保持 format provider 返回组合事实，Meta 负责拆写 attributes。
 
 描述结果中各类事实的映射关系必须清晰：
@@ -257,7 +257,7 @@ Provider 一次解析可能同时得到 type info、横切事实、内容索引�
 |---|---|
 | `Table` | `attributes.type_info.table` |
 | `Spatial` | `attributes.capabilities.spatial` |
-| `ContentIndex` | `attributes.content_index.table` |
+| `AccessIndex` | `attributes.access_index.table` |
 | format 私有事实 | `attributes.format_info.<format>`，由 `FormatInfoProvider` 独立提供 |
 
 `FormatInfo` 的语义是“当前格式的裸格式私有事实”，不是 attributes 中已经命名空间化的 `format_info` 结构。Provider 自身和调用编排层已经知道当前格式，因此 `FormatInfoProvider` 不得再套一层格式名。例如 Shapefile format info 应返回：
@@ -300,7 +300,7 @@ DescribeMedia(...) (*datatype.MediaInfo, error)
 | table type info | `datatype.TableInfo` |
 | media type info | `datatype.MediaInfo` |
 | spatial facts | 独立 `datatype.SpatialInfo`；由专门 provider、读取/写入参数或上层编排携带 |
-| content index | 独立 `datatype.ContentIndex`；由内容索引能力或上层编排生成 |
+| access index | 独立 `datatype.AccessIndex`；由访问索引能力或上层编排生成 |
 | format private info | `FormatInfoProvider.DescribeFormat` 返回裸 `map[string]interface{}` |
 
 ### `format.TableInfo` 删除结论
@@ -311,9 +311,9 @@ DescribeMedia(...) (*datatype.MediaInfo, error)
 
 - `FormatInfo` 已改为通过 `format.TableDescribeResult.FormatInfo` 或 `FormatInfoProvider` 获取，不再由 table 执行上下文承载。
 - `SpatialInfo` 已改为独立参数或上层编排携带；format reader 使用 `TableSpatialInfoProvider`，format writer 使用 `WriteOptions.SpatialInfo`，Transfer / engine 写入链路使用 `BatchData.Spatial`、`TableWriteOptions.SpatialInfo`、`TableWriteSessionOptions.SpatialInfo`。
-- `ContentIndex` 已改为独立内容索引事实，不由 table info 承载。
+- `AccessIndex` 已改为独立访问索引事实，不由 table info 承载。
 
-`SpatialInfo` 的拆分需要单独设计，不能像 `FormatInfo` / `ContentIndex` 一样直接从 `TableInfo` 删除。原因是它当前同时承担两类职责：
+`SpatialInfo` 的拆分需要单独设计，不能像 `FormatInfo` / `AccessIndex` 一样直接从 `TableInfo` 删除。原因是它当前同时承担两类职责：
 
 - 元数据事实：由 provider describe result 返回，再写入 `attributes.capabilities.spatial`。
 - 执行期空间参数：连续 reader / writer / Transfer pipeline 用它确定几何字段、几何类型、SRID、维度，并传给 engine table write prepare / session / batch write。
@@ -417,7 +417,7 @@ Meta attributes 是 item 事实的直接 JSON 投影，不是兼容旧实现的�
 - 格式怎么编码、封装、组织：`format_info`
 - 数据能被平台如何通用消费：`capabilities`
 - 数据类型本体事实：`type_info`
-- 内容定位索引：`content_index`
+- 内容定位索引：`access_index`
 
 后续如果 document、media、container、graph 也存在同类“一次解析产出多个事实”的情况，可以继续定义对应 describe result，或者抽出更通用的 `DescribeResult`。但不应为省事把横切事实塞进各自 `TypeInfo`。
 
@@ -455,7 +455,7 @@ type FieldInfo struct {
 
 ### DocumentInfo
 
-`DocumentInfo` 是 document data type 的通用信息。它描述文档结构和可提取性，不承载正文内容。
+`DocumentInfo` 是 document data type 的通用信息。它只描述文档结构元信息，不承载正文内容、提取能力或提取状态。
 
 第一版目标字段：
 
@@ -467,11 +467,10 @@ type DocumentInfo struct {
     PageCount    int
     WordCount    int
     SizeBytes    *int64
-    TextExtracted bool
 }
 ```
 
-文档正文、片段、摘要、OCR 结果、embedding 不写入 `DocumentInfo`；它们分别属于 content reader、extraction 结果或语义索引。
+文档正文、片段、摘要、OCR 结果、embedding 和提取状态不写入 `DocumentInfo`；它们分别属于 content reader、extraction 结果或语义索引。
 
 ### MediaInfo
 
@@ -514,7 +513,6 @@ type ContainerInfo struct {
     DefaultChild  string
     ResourceCount int
     Children      []ContainerChildInfo
-    Native        map[string]interface{}
 }
 
 type ContainerChildInfo struct {
@@ -543,7 +541,7 @@ type ContainerChildRef struct {
 
 `ContainerChildInfo` 不承载 `layout`。child 只是容器内部可寻址对象摘要，不是已经确认的 data item；zip 内 shapefile 多组件归并等 layout 事实由 dataitem / Manager / Meta 编排层按上下文动态计算，不写入底层 container child info。
 
-`Native` 承载容器级或 child 级原生事实，必须由对应 format 受控写入。例如 zip entry 的 path / compressed size / method、sqlite child 的原始 table 名等。容器级文件整体事实或解析统计仍可由 `format_info.<format>` 承载，不能把所有格式私有事实都塞进 `Native`。
+父容器级 `Native` 不作为标准落库入口。容器级文件整体事实、解析统计、采样上限和截断状态写入 `format_info.<format>`；child 级 `Native` 只保留 child 定位或受控原生摘要，例如 ZIP entry 定位事实、SQLite child 的原始 table 名等。
 
 ### GraphInfo
 
@@ -624,15 +622,15 @@ type SpatialInfo struct {
 
 空间不是 data type；它是横切能力事实。
 
-### ContentIndex
+### AccessIndex
 
-`ContentIndex` 描述面向内容读取的通用访问索引，例如大文件稀疏行索引。它不是 data type identity，不是 type info，也不是 format 私有信息。
+`AccessIndex` 描述面向内容读取的通用访问索引，例如大文件稀疏行索引。它不是 data type identity，不是 type info，也不是 format 私有信息。
 
 目标口径：
 
-- 如果 provider 在解析某类 type info 时同时生成内容索引，应通过 describe result 的同级字段返回，再由 Meta 写入 `attributes.content_index`。
-- `ContentIndex` 的结构可以放在 `common/datatype`，但不应被理解为“数据类型”本身。
-- `ContentIndex` 当前暂不调整。后续是否留在 `common/datatype`，取决于它是否成为 format 和 engine 都需要消费的通用访问索引结构；如果它长期只服务内容读取优化，应考虑移出 `datatype`，但不为此提前新增含糊概念。
+- 如果 provider 在解析某类 type info 时同时生成访问索引，应通过 describe result 的同级字段返回，再由 Meta 写入 `attributes.access_index`。
+- `AccessIndex` 的结构可以放在 `common/datatype`，但不应被理解为“数据类型”本身。
+- `AccessIndex` 当前暂不调整。后续是否留在 `common/datatype`，取决于它是否成为 format 和 engine 都需要消费的通用访问索引结构；如果它长期只服务内容读取优化，应考虑移出 `datatype`，但不为此提前新增含糊概念。
 
 ## 已识别但暂缓处理的问题
 
@@ -641,7 +639,7 @@ type SpatialInfo struct {
 | 问题 | 当前状态 | 暂缓原因 | 后续方向 |
 |---|---|---|---|
 | `format.TableDescribeResult` / `format.MediaDescribeResult` | 已迁出 `common/datatype`，作为 format provider 解析结果包存在 | Provider 一次解析自然可能得到多类事实；保留组合返回可以避免重复读取和过度设计 | 保持在 `common/format` provider 边界内，不进入 `datatype`；如后续确有必要，再按事实拆分 provider |
-| `datatype.ContentIndex` | 当前放在 `common/datatype`，被 format、Meta、Manager preview 使用 | 它不是 data type 本体，但当前是跨模块复用结构；贸然移出会引入新包或新概念 | 暂不动。后续结合 engine range reader、format content index、Meta attributes 的消费链路再决定是否移出 |
+| `datatype.AccessIndex` | 当前放在 `common/datatype`，被 format、Meta、Manager preview 使用 | 它不是 data type 本体，但当前是跨模块复用结构；贸然移出会引入新包或新概念 | 暂不动。后续结合 engine range reader、format access index、Meta attributes 的消费链路再决定是否移出 |
 | `capabilities.spatial` 写入 helper | 已在 Meta 侧新增专门 helper，并完成主要写入链路收敛 | 字段型与非字段型 spatial 的表达不同，不能直接用纯结构投影替代 | 后续只在新增 spatial 写入链路时复用 `metaattr.SpatialInfoAttributes`，避免重新手写 |
 | `common/engine/plugin.DatabaseInfo` / `CollectionInfo` | 仍是 engine catalog 层结构 | 它们更接近 catalog hierarchy / namespace 事实，不等同于 data type info | 暂不迁入 `datatype`。后续如有重复，再从 catalog/path/node 语义统一 |
 | `MediaInfo` 的音视频细粒度字段 | 当前只定义 `kind/mime_type/width/height/duration_ms/encoding/color_space/size_bytes` | 采样率、声道数、码率、轨道数、视频 codec / 音频 codec 等尚未形成跨格式稳定消费链路 | 暂不加入 `datatype.MediaInfo`；已有提取器事实先留在 `capabilities.extraction` 或后续受控 `format_info.<format>` |
@@ -688,7 +686,7 @@ type SpatialInfo struct {
 | `common/format.MediaInfo` | 迁到 `common/datatype.MediaInfo` |
 | `common/format.ContainerInfo` | 已删除，直接使用 `common/datatype.ContainerInfo` |
 | `common/format.SpatialInfo` | 迁到 `common/datatype.SpatialInfo` |
-| `common/format.ContentIndex*` | 迁到 `common/datatype` 或后续独立 `common/contentindex`，但不能继续属于 format |
+| `common/format.AccessIndex*` | 迁到 `common/datatype` 或后续独立 `common/contentindex`，但不能继续属于 format |
 | `common/engine/plugin.FieldInfo` | 已删除，改用 `datatype.FieldInfo` |
 | `common/engine/plugin.ColumnInfo` | 已删除；provider 对外使用 `datatype.FieldInfo` |
 | `common/models.FieldInfo` | 已删除；Meta fields API / common MetaClient 直接返回 `datatype.FieldInfo` |
@@ -795,8 +793,8 @@ datatype.GraphInfo
 datatype.SpatialInfo
   -> attributes.capabilities.spatial
 
-datatype.ContentIndex
-  -> attributes.content_index.<data_type>
+datatype.AccessIndex
+  -> attributes.access_index.<data_type>
 ```
 
 转换规则必须集中在 Meta，不允许 Manager / Transfer 自己重复解释字段属性和 type info。通用的 `struct` / `map[string]interface{}` 转换能力放在 `common/jsonmap`，不放入 `common/datatype`；`datatype` 只定义事实结构和必要的语义 helper。
@@ -804,7 +802,7 @@ datatype.ContentIndex
 当前转换收敛口径：
 
 - `TableInfo` / `FieldInfo`：由 `common/datatype` 提供专门 helper，内部复用 `common/jsonmap`，并保留 field type 归一化、空字段过滤、row count / size bytes 有效性等 table 语义。
-- `ContentIndex`：结构已具备明确 json tag，Meta 写入 `content_index.<data_type>` 时直接复用 `common/jsonmap.MapFromStruct`，不再为每个写入点手写 anchors / source / header bytes 转换。
+- `AccessIndex`：结构已具备明确 json tag，Meta 写入 `access_index.<data_type>` 时直接复用 `common/jsonmap.MapFromStruct`，不再为每个写入点手写 anchors / source / header bytes 转换。
 - `ContainerInfo`：Meta 写入 `type_info.container` 时可以复用 `common/jsonmap` 生成通用字段，但必须保留 container 语义约束：`child_count/resource_count/children` 是明确事实，即使为 0 或空列表也应写入；child 只写轻量摘要，不写 `Fields`；child `Native` 必须过滤 `format/ref_paths/components` 等协议字段。
 - `SpatialInfo`：`capabilities.spatial` 已确认支持字段型和非字段型两类表达。字段型空间对象写 `geometry_columns` / `primary_geometry_column`；非字段型空间对象可只写顶层 `srid` / `crs` / `extent`，不得虚构 geometry column。Meta 写入应使用专门 helper，不能在各解析链路重复手写。
 
@@ -838,7 +836,7 @@ datatype.ContentIndex
 ### 阶段 1：新增 `common/datatype`
 
 1. 新建 `common/datatype`。
-2. 定义 `DataType`、`FieldType`、`TableInfo`、`FieldInfo`、`DocumentInfo`、`MediaInfo`、`ContainerInfo`、`GraphInfo`、`SpatialInfo`、`ContentIndex`。
+2. 定义 `DataType`、`FieldType`、`TableInfo`、`FieldInfo`、`DocumentInfo`、`MediaInfo`、`ContainerInfo`、`GraphInfo`、`SpatialInfo`、`AccessIndex`。
 3. 补类型常量和 helper 测试。
 
 ### 阶段 2：format 依赖 datatype

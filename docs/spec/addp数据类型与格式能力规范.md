@@ -39,7 +39,9 @@ item 归并见 [ADDP 数据项探测器规范](addp数据项探测器规范.md)�
 | `FieldType` / `FieldInfo` | `common/datatype` | 平台通用字段类型和字段语义 |
 | `TableInfo` / `DocumentInfo` / `MediaInfo` / `ContainerInfo` / `GraphInfo` | `common/datatype` | 各 data type 的通用 type info |
 | `SpatialInfo` | `common/datatype` | 空间横切事实，落点是 `attributes.capabilities.spatial` |
-| `ContentIndex` | `common/datatype` | 内容读取索引，落点是 `attributes.content_index.<data_type>` |
+| `AccessIndex` | 暂居 `common/datatype` | 内容读取索引，落点是 `attributes.access_index.<data_type>`；不是 data type，也不是 type info |
+
+`AccessIndex` 当前放在 `common/datatype` 只是因为 format、Meta 和 Manager preview 都需要复用同一 JSON 结构。它不属于 data type identity 或 `type_info` 主事实，不应作为新增 datatype 的依据。后续只有在 engine range reader、format access index 和 Meta attributes 的边界稳定后，才考虑把它迁到独立的访问索引包。
 
 `file` 不是 ADDP 基础 `DataType`，不得新增 `DataTypeFile`、`FileInfo` 或 `attributes.type_info.file`。文件、对象、目录、bucket、prefix、root 等是 catalog / storage 形态；当内容语义无法识别时，`item.data_type` 统一写为 `unknown`，存储事实写入 `attributes.storage`，格式身份写入 `attributes.item.format`，格式私有事实写入 `attributes.format_info.<format>`。
 
@@ -190,7 +192,7 @@ import _ "github.com/addp/common/format/builtin"
 |---|---|---|---|
 | Identification | 如何识别格式 | 扩展名、MIME、magic bytes、内容签名 | Meta、Registry |
 | Layout | 格式自身如何组织 content | single / multi / whole、primary ref、related refs 规则、manifest 规则 | Meta |
-| Info / Facts | 能提取什么 data type info、横切事实和 format info | table / document / media / container info、spatial facts、content index、format_info | Meta、Manager、Transfer |
+| Info / Facts | 能提取什么 data type info、横切事实和 format info | table / document / media / container info、spatial facts、access index、format_info | Meta、Manager、Transfer |
 | Content Reader | 能否提供按 data type 组织后的内容数据 | 行样本、文本片段、缩略图、容器树、raw content、range content | Manager、Transfer |
 | Transfer | 能否参与批量读写和 multi ref 提交 | batch read / write、multi read / write、commit policy | Transfer |
 | Provider hints | 实现了哪些 provider 家族 | table / document / media / container / graph / spatial | Registry、上层调用方 |
@@ -260,7 +262,7 @@ Shapefile 这类 multi 格式尤其要区分：单个 `.shp/.dbf/.shx` 的识别
 
 ### Info / Facts
 
-Info / facts 能力负责把原始资源转成平台能理解的类型信息、横切事实、内容索引和格式私有事实。
+Info / facts 能力负责把原始资源转成平台能理解的类型信息、横切事实、访问索引和格式私有事实。
 
 常见产出：
 
@@ -272,9 +274,9 @@ Info / facts 能力负责把原始资源转成平台能理解的类型信息、�
 - `capabilities.spatial`
 - `capabilities.extraction`
 - `capabilities.statistics`
-- `content_index.<data_type>`
+- `access_index.<data_type>`
 
-表格解析能力应说明字段名、原始字段类型、行数、主键等 table info 是否可得。文档提取能力应说明标题、作者、页数、语言和提取状态等 info 是否可得。媒体提取能力应说明宽高、时长、基础编码、颜色模式等通用 media info 是否可得；EXIF、视频 codec、音频 codec、帧率、采样率、码率、轨道数等细粒度事实暂不进入 `datatype.MediaInfo`，需要保留时进入受控 `format_info.<format>` 或 `capabilities.extraction`。容器能力应说明内部对象、默认入口和对象摘要是否可得。空间能力应说明 geometry columns、primary geometry column、SRID / CRS、extent 和 spatial index 是否可得。内容索引能力应说明索引类型、定位单位、锚点和失效判断来源是否可得。
+表格解析能力应说明字段名、原始字段类型、行数、主键等 table info 是否可得。文档解析能力应说明标题、页数、语言、字数等 document info 是否可得；正文抽取状态属于 `capabilities.extraction`，不属于 `DocumentInfo`。媒体提取能力应说明宽高、时长、基础编码、颜色模式等通用 media info 是否可得；EXIF、视频 codec、音频 codec、帧率、采样率、码率、轨道数等细粒度事实暂不进入 `datatype.MediaInfo`，需要保留时进入受控 `format_info.<format>` 或 `capabilities.extraction`。容器能力应说明内部对象、默认入口和对象摘要是否可得。空间能力应说明 geometry columns、primary geometry column、SRID / CRS、extent 和 spatial index 是否可得。访问索引能力应说明索引类型、定位单位、锚点和失效判断来源是否可得。
 
 Provider 一次解析可能同时得到多个事实。为避免污染各 data type 的 type info，应通过 describe result 或等价结构将这些事实同级返回，再由 Meta normalizer 写入各自 attributes 分区。
 
@@ -284,7 +286,7 @@ Provider 一次解析可能同时得到多个事实。为避免污染各 data ty
 type TableDescribeResult struct {
     Table        *datatype.TableInfo
     Spatial      *datatype.SpatialInfo
-    ContentIndex *datatype.ContentIndex
+    AccessIndex *datatype.AccessIndex
     FormatInfo   map[string]interface{}
 }
 ```
@@ -295,10 +297,10 @@ type TableDescribeResult struct {
 |---|---|
 | `Table` | `attributes.type_info.table` |
 | `Spatial` | `attributes.capabilities.spatial` |
-| `ContentIndex` | `attributes.content_index.table` |
+| `AccessIndex` | `attributes.access_index.table` |
 | `FormatInfo` | `attributes.format_info.<format>` |
 
-后续 document、media、container、graph 如果也存在“一次解析产出多个事实”的场景，应使用相同原则定义对应 describe result，不能把横切事实或内容索引塞进各自 `TypeInfo`。
+后续 document、media、container、graph 如果也存在“一次解析产出多个事实”的场景，应使用相同原则定义对应 describe result，不能把横切事实或访问索引塞进各自 `TypeInfo`。
 
 空间表的几何字段遵循以下规则：
 
@@ -311,7 +313,7 @@ type TableDescribeResult struct {
 - 各格式 native 几何类型必须在对应 format plugin 内转换为 ADDP 通用几何值，不得把 `shp.Shape` 等 native 类型暴露到 format 根接口、engine 或 Transfer 执行层。
 - 格式写出空间数据时，应根据 `SpatialInfo.GeometryType` 和 `SpatialInfo.Dimension` 选择自身 native 表达。例如 Shapefile writer 在 `dimension >= 3` 时写出 `PointZ`、`PolyLineZ`、`PolygonZ` 或 `MultiPointZ`；M / measure 不属于 ADDP 当前标准空间维度，除非后续有明确 measure 规范，否则不得伪装为 Z 坐标。
 
-注意：`type_info.*` 只保存对应 data type 的元数据。内容样本、原始内容、缩略图、文本片段不是 info，不能为了上层使用方便塞进 `table info`、`document info` 或 `media info`。空间、时间、统计、提取、语义等横切事实进入 `capabilities`；内容读取索引进入 `content_index`；格式私有事实进入 `format_info`。
+注意：`type_info.*` 只保存对应 data type 的元数据。内容样本、原始内容、缩略图、文本片段不是 info，不能为了上层使用方便塞进 `table info`、`document info` 或 `media info`。空间、时间、统计、提取、语义等横切事实进入 `capabilities`；内容读取索引进入 `access_index`；格式私有事实进入 `format_info`。
 
 容器型 data item 的父级 `type_info.container.children` 只保存轻量子对象索引，例如 child 名称、真实入口名、类型、行数、列数和默认入口。子对象的完整字段信息、行样本和分页内容属于该 child 自身，应在指定 child 后继续调用对应 table / document / media info provider 或 content reader 获取；父容器不能把所有 child 的 `fields`、`rows` 等内容展开塞进自身 attributes。
 
@@ -383,7 +385,7 @@ Format writer 负责编码格式，Engine writer 负责提交到目标存储。�
 
 `raw_content` / `range_content` 是内容读取方式声明，不对应 `ProviderRegistry` 中的可调用 Go reader。它们表示编排层可以基于 engine capability、`common/contentio`、预签名 URL 或模块 fetcher 提供完整流 / 范围流；format 层只提供 `DescriptorHasContentReader` / `SupportsContentReader` 这类声明判断 helper。需要实际解码或抽取时，仍应使用 `DocumentTextReader`、`TableSampleReader`、`BinaryContentReader` 等已注册实现能力。
 
-Manager 的 `preview_material` 是前端展示材料协议，和 `content_readers` 不同层。`preview_material=raw_binary` 表示响应体里携带 base64 原始字节或展示层按原始二进制处理；它不是 `raw_content`、`range_content` 或 `binary_content` capability。format capability 名称不得写入 `preview_material`。
+Manager 的 `preview_material` 是前端展示材料或展示状态协议，和 `content_readers` 不同层。`preview_material=raw_binary` 表示响应体里携带 base64 原始字节或展示层按原始二进制处理；`preview_material=unsupported` 表示 Manager 不支持该内容在线预览。它们都不是 `raw_content`、`range_content` 或 `binary_content` capability。format capability 名称不得写入 `preview_material`。
 
 能力发现视图不替代内置格式规范，也不作为实现进度清单。首批内置格式的确定性落地规则见 [ADDP 内置数据类型与文件格式规范](addp内置数据类型与文件格式规范.md)；当前代码实现状态以 `common/format/README.md` 和测试为准；未完成事项进入 `docs/next/common-format格式完善矩阵.md`。
 
@@ -426,7 +428,7 @@ info provider 只回答对应 data type 的元数据语义；sample / text reade
 
 表格能力按消费意图拆成四类：
 
-- `TableInfoProvider`：返回表结构与字段元数据，是 `type_info.table` 的主来源；如果同次解析得到空间事实、内容索引或格式私有事实，应通过 describe result 同级返回。
+- `TableInfoProvider`：返回表结构与字段元数据，是 `type_info.table` 的主来源；如果同次解析得到空间事实、访问索引或格式私有事实，应通过 describe result 同级返回。
 - `TableSampleReader`：返回分页或采样样本，是 Manager 表格探查和 Transfer 探查的主来源。
 - `TableReaderProvider`：打开单资源 table 的连续读取会话，是 Transfer 读取 encoded table 的主入口。
 - `TableWriterProvider`：打开单资源 table 的连续写出会话，是 Transfer 写出 encoded table 的主入口。
@@ -465,7 +467,6 @@ info provider 只回答对应 data type 的元数据语义；sample / text reade
 
 - 文档元信息。
 - 页码或范围上下文。
-- 提取状态。
 
 `DocumentTextReader` 提供正文片段。raw content / range content 由对应 content reader 表达。二者都不负责 Manager 的最终前端 DTO。
 

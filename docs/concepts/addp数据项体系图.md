@@ -41,7 +41,7 @@ graph LR
     Attributes --> ItemAttrs[item]
     Attributes --> TypeInfo[type_info]
     Attributes --> FormatInfo[format_info]
-    Attributes --> ContentIndex[content_index]
+    Attributes --> AccessIndex[access_index]
     Attributes --> Capabilities[capabilities]
 
     Capabilities --> Spatial[spatial]

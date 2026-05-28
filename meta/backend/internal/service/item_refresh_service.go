@@ -232,14 +232,14 @@ func enrichKnownResourceAttributes(
 	sizeBytes int64,
 ) (*metaitem.DetectedItem, error) {
 	enriched, _, err := metaenrich.EnrichResourceAttributes(ctx, attrs, metaenrich.ResourceAttributesInput{
-		ContentReader:       contentReader,
-		ConnInfo:            connInfo,
-		EngineID:            engineID,
-		Item:                item,
-		PhysicalPath:        physicalPath,
-		SizeBytes:           sizeBytes,
-		IncludeContentIndex: true,
-		CatalogPathFor:      catalogPathFor,
+		ContentReader:      contentReader,
+		ConnInfo:           connInfo,
+		EngineID:           engineID,
+		Item:               item,
+		PhysicalPath:       physicalPath,
+		SizeBytes:          sizeBytes,
+		IncludeAccessIndex: true,
+		CatalogPathFor:     catalogPathFor,
 	})
 	if enriched != nil {
 		enriched.Attributes = attrs
@@ -252,8 +252,8 @@ func clearObsoleteKnownItemAttributes(attrs map[string]interface{}, item *metait
 		return
 	}
 	if item.Format == string(format.FormatShapefile) {
-		metaattr.RemoveContentIndexTable(attrs)
-		metaattr.RemoveContentIndexTable(item.Attributes)
+		metaattr.RemoveAccessIndexTable(attrs)
+		metaattr.RemoveAccessIndexTable(item.Attributes)
 	}
 }
 
