@@ -21,7 +21,10 @@ func EnrichContainerChildren(ctx context.Context, attrs models.JSONMap, detected
 	if attrs == nil || detected == nil || reader == nil || detected.DataType != dataitem.DataTypeContainer {
 		return nil
 	}
-	formatType := format.FormatType(detected.Format)
+	formatType := format.NormalizeFormat(detected.Format)
+	if formatType == format.FormatUnknown {
+		return nil
+	}
 	if _, err := format.GetContainerInfoProvider(formatType); err != nil {
 		return nil
 	}

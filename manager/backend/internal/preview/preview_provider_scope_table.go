@@ -171,7 +171,11 @@ func scopeTableSampleOptionsFromAttributes(attrs map[string]interface{}) *format
 	if formatName == "" {
 		return nil
 	}
-	plugin, err := format.GetFormatPlugin(format.FormatType(formatName))
+	formatType := normalizeFileTableFormat(formatName)
+	if formatType == format.FormatUnknown {
+		return nil
+	}
+	plugin, err := format.GetFormatPlugin(formatType)
 	if err == nil {
 		if optionsProvider, ok := plugin.(interface {
 			SampleOptionsFromAttributes(map[string]interface{}) *format.ParseOptions
@@ -179,7 +183,7 @@ func scopeTableSampleOptionsFromAttributes(attrs map[string]interface{}) *format
 			return optionsProvider.SampleOptionsFromAttributes(attrs)
 		}
 	}
-	infoProvider, err := format.GetScopeTableInfoProvider(format.FormatType(formatName))
+	infoProvider, err := format.GetScopeTableInfoProvider(formatType)
 	if err != nil {
 		return nil
 	}

@@ -189,6 +189,8 @@ FormatPlugin 不负责：
 
 `format detection` 是“给定一个 content，判断它像哪个格式”的动态过程。它输入文件名、MIME、magic bytes、内容签名或 ref 上下文，输出指向某个 format identity 的识别结果。
 
+`format normalization` 是消费已有 format-like 字符串时的归一化过程。上层模块必须通过 `common/format.NormalizeFormat` 把 attributes、扩展名、MIME 或文件名转换为 canonical format；识别不到就是 `unknown`，不能把裸后缀或未知字符串当作 format 写入系统语义字段。
+
 | 维度 | Format Identity | Format Detection |
 |---|---|---|
 | 回答的问题 | 平台支持哪些格式以及这些格式能做什么 | 当前 content 看起来是什么格式 |
@@ -198,6 +200,8 @@ FormatPlugin 不负责：
 | 是否决定 item | 不决定 | 不最终决定，只给 Meta detector 提供格式候选 |
 
 Shapefile 这类 multi 格式尤其要区分：单个 `.shp/.dbf/.shx` 的识别不等于 data item 归并；最终 item 边界由 Meta detector 根据 format layout 和候选 content 上下文决定。
+
+未知扩展名文本文件不需要预先注册一个具体 format。`DetectFormat(filename, peek)` 在扩展名、MIME、内容签名、sniffer 和 magic bytes 都失败后，可以根据内容前缀的 UTF-8 文本特征返回 `format=text`；没有内容证据时保持 `unknown`。剩余 unknown 非文本内容由 `BinaryContentReader` 提供 raw binary 兜底，不引入 `binary` data type 或 `binary` format。
 
 ## Provider 与 Reader 矩阵
 

@@ -995,7 +995,7 @@ func containerChildRefDescriptors(childInfo datatype.ContainerChildInfo) []map[s
 		contentRef := contentio.NewRef(ref.Path, role)
 		refs = append(refs, format.NewRelatedRef(contentRef, ref.Required, ref.Primary))
 	}
-	descriptors := format.DescribeRefs(format.FormatType(childInfo.Format), refs)
+	descriptors := format.DescribeRefs(format.NormalizeFormat(childInfo.Format), refs)
 	result := make([]map[string]interface{}, 0, len(descriptors))
 	for index, descriptor := range descriptors {
 		key := strings.TrimSpace(descriptor.Key)

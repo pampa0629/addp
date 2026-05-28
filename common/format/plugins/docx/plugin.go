@@ -35,6 +35,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		DataType:      datatype.DataTypeDocument,
 		Layouts:       []string{format.LayoutSingle},
 		ProviderHints: []string{format.FormatProviderDocument},
+		Providers:     format.FormatProviderDescriptor{DocumentInfo: true},
 		Identification: format.FormatIdentification{
 			Extensions: []string{".docx"},
 			MimeTypes:  []string{"application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
@@ -64,6 +65,37 @@ func (p *Plugin) Capabilities() format.FormatCapability {
 			string(format.ContentReaderRangeContent),
 		},
 	}
+}
+
+func (p *Plugin) DescribeDocument(ctx context.Context, input io.Reader, options *format.ParseOptions) (*datatype.DocumentInfo, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	data, err := io.ReadAll(input)
+	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return nil, err
+	}
+	info := &datatype.DocumentInfo{}
+	for _, file := range reader.File {
+		switch file.Name {
+		case "docProps/core.xml":
+			if err := readDocxCoreProperties(ctx, file, info); err != nil {
+				return nil, err
+			}
+		case "docProps/app.xml":
+			if err := readDocxAppProperties(ctx, file, info); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return info, nil
 }
 
 func (p *Plugin) ReadDocumentText(ctx context.Context, input io.Reader, limit int64, options *format.ParseOptions) (string, bool, error) {
@@ -173,6 +205,92 @@ func (p *Plugin) ReadDocumentText(ctx context.Context, input io.Reader, limit in
 		}
 	}
 	return strings.TrimSpace(builder.String()), truncated, nil
+}
+
+func readDocxCoreProperties(ctx context.Context, file *zip.File, info *datatype.DocumentInfo) error {
+	rc, err := file.Open()
+	if err != nil {
+		return err
+	}
+	defer rc.Close()
+	decoder := xml.NewDecoder(rc)
+	var current string
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		token, err := decoder.Token()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		switch t := token.(type) {
+		case xml.StartElement:
+			current = t.Name.Local
+		case xml.EndElement:
+			if current == t.Name.Local {
+				current = ""
+			}
+		case xml.CharData:
+			value := strings.TrimSpace(string([]byte(t)))
+			if value == "" {
+				continue
+			}
+			switch current {
+			case "title":
+				info.Title = value
+			case "language":
+				info.Language = value
+			}
+		}
+	}
+}
+
+func readDocxAppProperties(ctx context.Context, file *zip.File, info *datatype.DocumentInfo) error {
+	rc, err := file.Open()
+	if err != nil {
+		return err
+	}
+	defer rc.Close()
+	decoder := xml.NewDecoder(rc)
+	var current string
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		token, err := decoder.Token()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		switch t := token.(type) {
+		case xml.StartElement:
+			current = t.Name.Local
+		case xml.EndElement:
+			if current == t.Name.Local {
+				current = ""
+			}
+		case xml.CharData:
+			value := strings.TrimSpace(string([]byte(t)))
+			if value == "" {
+				continue
+			}
+			switch current {
+			case "Pages":
+				if n, err := strconv.Atoi(value); err == nil {
+					info.PageCount = n
+				}
+			case "Words":
+				if n, err := strconv.Atoi(value); err == nil {
+					info.WordCount = n
+				}
+			}
+		}
+	}
 }
 
 func readWordDocumentText(ctx context.Context, input io.Reader, limit int64) (string, bool, error) {

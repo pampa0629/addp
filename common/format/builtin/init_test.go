@@ -14,8 +14,8 @@ func TestDocumentFormatCapabilityViewsReflectBackendParsingBoundary(t *testing.T
 		wantTextReader bool
 	}{
 		{formatType: format.FormatPDF, wantInfo: true},
-		{formatType: format.FormatDOCX, wantTextReader: true},
-		{formatType: format.FormatPPTX, wantTextReader: true},
+		{formatType: format.FormatDOCX, wantInfo: true, wantTextReader: true},
+		{formatType: format.FormatPPTX, wantInfo: true, wantTextReader: true},
 		{formatType: format.FormatWPS},
 	}
 

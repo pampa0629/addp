@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/addp/common/datatype"
@@ -116,7 +117,11 @@ func (s *IndexerService) IndexCatalogAsset(resource *commonModels.Engine, tenant
 	truncatedContent := metatext.TruncateRunes(plainText, metatext.DocumentContentRuneLimit)
 	contentPreview := metatext.PreviewText(truncatedContent, metatext.DocumentPreviewRuneLimit)
 
-	dir, _ := commonModels.SplitObjectPath(catalogResource.Path)
+	dir, _ := splitCatalogItemPath(catalogResource.Path)
+	assetType := strings.TrimSpace(item.ItemType)
+	if assetType == "" {
+		assetType = "item"
+	}
 
 	// 构建统一的资产记录（包含文档内容字段）
 	assetRecord := &search.AssetRecord{
@@ -126,11 +131,11 @@ func (s *IndexerService) IndexCatalogAsset(resource *commonModels.Engine, tenant
 		EngineID:      engineID,
 		EngineName:    resource.Name,
 		EngineType:    resource.EngineType,
-		AssetType:     "object",
+		AssetType:     assetType,
 		Name:          item.Name,
 		FullName:      fullName,
 		Bucket:        catalogResource.RootName,
-		Path:          dir, // 只存储目录路径（如 "image/"）
+		Path:          dir,
 		Metadata:      metadata,
 		SizeBytes:     item.SizeBytes,
 		DataUpdatedAt: catalogResource.LastModified,

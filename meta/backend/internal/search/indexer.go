@@ -36,17 +36,17 @@ type FieldRecord struct {
 	IsUniqueKey     bool   `json:"is_unique_key,omitempty"`
 }
 
-// AssetRecord 统一资产记录（包含表、对象、文档内容）
+// AssetRecord 统一资产记录（包含表、catalog item、文档内容）
 // 基础扫描只填充基本字段，深度扫描填充完整内容
 type AssetRecord struct {
 	// ===== 基础字段（所有资产，基础扫描即写） =====
 	AssetID     string   `json:"asset_id"`
-	DocumentID  string   `json:"document_id,omitempty"` // 文件SHA256指纹（对象特有）
+	DocumentID  string   `json:"document_id,omitempty"` // 内容 SHA256 指纹
 	TenantID    uint     `json:"tenant_id"`
 	EngineID    uint     `json:"engine_id"`
 	EngineName  string   `json:"engine_name,omitempty"`
 	EngineType  string   `json:"engine_type,omitempty"`
-	AssetType   string   `json:"asset_type"` // "table" | "object"
+	AssetType   string   `json:"asset_type"` // "table" | catalog item type, e.g. "object" or "file"
 	Name        string   `json:"name"`
 	FullName    string   `json:"full_name,omitempty"`
 	Description string   `json:"description,omitempty"`
@@ -58,7 +58,7 @@ type AssetRecord struct {
 	Fields    []FieldRecord `json:"fields,omitempty"`
 	RowCount  *int64        `json:"row_count,omitempty"`
 
-	// ===== 对象特有字段 =====
+	// ===== 内容资源字段 =====
 	Bucket        string     `json:"bucket,omitempty"`
 	Path          string     `json:"path,omitempty"` // 目录路径（如 "image/"）
 	SizeBytes     *int64     `json:"size_bytes,omitempty"`

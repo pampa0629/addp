@@ -300,7 +300,7 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 			Bucket:      bucket,
 			Path:        dir,  // 目录路径（以 / 结尾）
 			Name:        name, // 文件名
-			Format:      catalogutil.StringAttribute(metaItemLiteAttributes(item), "format"),
+			Format:      normalizeObjectContentRequestFormat(catalogutil.StringAttribute(metaItemLiteAttributes(item), "format")),
 			Extension:   defaultExtension(objectPath),
 			ContentType: canonicalContentType,
 			Size:        stat.Size,

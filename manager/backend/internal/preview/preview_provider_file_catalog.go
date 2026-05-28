@@ -145,7 +145,7 @@ func (p *fileCatalogPreviewProvider) previewFile(
 			Bucket:      rootName,
 			Path:        dir,
 			Name:        name,
-			Format:      catalogutil.StringAttribute(preview.Object.Attributes, "format"),
+			Format:      normalizeObjectContentRequestFormat(catalogutil.StringAttribute(preview.Object.Attributes, "format")),
 			Extension:   defaultExtension(filePath),
 			ContentType: canonicalContentType,
 			Size:        meta.Size,

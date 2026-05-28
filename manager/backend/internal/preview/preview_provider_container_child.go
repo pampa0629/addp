@@ -448,6 +448,9 @@ func (p *ContainerChildPreviewProvider) previewObjectChild(ctx context.Context, 
 			contentReq.ContentType = contentType
 		}
 	}
+	if err := detectContainerChildPreviewFormat(ctx, child, contentReq); err != nil {
+		return nil, err
+	}
 	if p.content != nil {
 		handler := p.content.Resolve(contentReq)
 		if handler != nil {
@@ -492,6 +495,28 @@ func (p *ContainerChildPreviewProvider) previewObjectChild(ctx context.Context, 
 		Text:     "暂不支持该容器子对象的在线预览，请下载后查看。",
 		Metadata: map[string]interface{}{"format": child.Format, "data_type": child.DataType},
 	}), nil
+}
+
+func detectContainerChildPreviewFormat(ctx context.Context, child *format.ContainerChildResource, req *objectcontent.ObjectContentRequest) error {
+	if child == nil || req == nil || format.NormalizeFormat(req.Format) != format.FormatUnknown {
+		return nil
+	}
+	reader, err := child.Open(ctx)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+	peek, _, err := readObjectWithLimit(reader, 4096)
+	if err != nil {
+		return err
+	}
+	detected := format.DetectFormat(req.Name, peek)
+	if detected == format.FormatUnknown {
+		return nil
+	}
+	req.Format = string(detected)
+	req.ContentType = format.FormatToMIME(detected)
+	return nil
 }
 
 func (p *ContainerChildPreviewProvider) objectPreview(req *PreviewRequest, bucket string, child *format.ContainerChildResource, content *models.ObjectPreviewContent) *models.TablePreview {

@@ -3,10 +3,8 @@ package service
 import (
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"strings"
-	"time"
 
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
@@ -22,11 +20,6 @@ import (
 	"github.com/addp/meta/internal/scantask"
 	"gorm.io/gorm"
 )
-
-type objectCatalogInlineMetadataExtractor interface {
-	ShouldExtract(key, contentType string, sizeBytes int64) bool
-	Extract(ctx context.Context, resource *commonModels.Engine, bucket, key, contentType string, size int64, lastModified time.Time, etag string, openContent func() (io.ReadCloser, error)) map[string]interface{}
-}
 
 type objectCatalogNodeAggregate struct {
 	Node      *models.MetaNode
@@ -134,39 +127,14 @@ func readObjectCatalogItem(
 }
 
 func objectCatalogNodesToStorageResources(
-	ctx context.Context,
 	objects []plugin.CatalogNode,
 	bucket string,
-	deepScan bool,
-	resource *commonModels.Engine,
-	inlineExtractor objectCatalogInlineMetadataExtractor,
 ) []metacatalog.StorageResource {
 	resources := make([]metacatalog.StorageResource, 0, len(objects))
 	for _, obj := range objects {
-		catalogResource := metacatalog.ObjectStorageResourceFromNode(bucket, obj)
-		if deepScan && inlineExtractor != nil && catalogResource.LastModified != nil && inlineExtractor.ShouldExtract(catalogResource.Path, catalogResource.ContentType, catalogResource.SizeBytes) {
-			catalogResource.ExtractedAttributes = inlineExtractor.Extract(ctx, resource, bucket, catalogResource.Path, catalogResource.ContentType, catalogResource.SizeBytes, *catalogResource.LastModified, catalogResource.ETag, func() (io.ReadCloser, error) {
-				return openObjectCatalogContent(ctx, resource, bucket, catalogResource.Path)
-			})
-		}
-		resources = append(resources, catalogResource)
+		resources = append(resources, metacatalog.ObjectStorageResourceFromNode(bucket, obj))
 	}
 	return resources
-}
-
-func openObjectCatalogContent(ctx context.Context, resource *commonModels.Engine, bucket, key string) (io.ReadCloser, error) {
-	if resource == nil {
-		return nil, fmt.Errorf("resource is nil")
-	}
-	enginePlugin, err := plugin.Get(resource.EngineType)
-	if err != nil {
-		return nil, err
-	}
-	contentReader, ok := enginePlugin.(plugin.ContentReadableProvider)
-	if !ok {
-		return nil, fmt.Errorf("engine %s does not implement ContentReadableProvider", resource.EngineType)
-	}
-	return contentReader.OpenContent(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), plugin.ObjectItemPath(resource.ID, bucket, key), plugin.ReadOptions{})
 }
 
 // ObjectStorageCatalogScanService 对象存储 catalog 扫描服务。
@@ -177,7 +145,6 @@ type ObjectStorageCatalogScanService struct {
 	repo              *metaRepo.ScanRepository     // 数据访问层
 	metadataExtractor *extractor.MetadataExtractor // 元数据提取器
 	indexer           *IndexerService              // 索引服务
-	inlineExtractor   *extractor.InlineObjectMetadataExtractor
 }
 
 // NewObjectStorageCatalogScanService 创建对象存储 catalog 扫描服务。
@@ -195,7 +162,6 @@ func NewObjectStorageCatalogScanService(
 		metadataExtractor: metadataExtractor,
 		indexer:           indexer,
 	}
-	service.inlineExtractor = extractor.NewInlineObjectMetadataExtractor(log)
 	return service
 }
 
@@ -349,7 +315,7 @@ func (s *ObjectStorageCatalogScanService) scanObjectCatalogPaths(
 			continue
 		}
 
-		resources := objectCatalogNodesToStorageResources(context.Background(), objects, bucketName, isDeepScan, resource, s.inlineExtractor)
+		resources := objectCatalogNodesToStorageResources(objects, bucketName)
 
 		bucketNode, ok := bucketNodes[bucketName]
 		if !ok {
@@ -852,12 +818,7 @@ func detectObjectCatalogResourceFormat(
 }
 
 func needsContentFormatDetection(formatName string) bool {
-	formatName = strings.ToLower(strings.TrimSpace(formatName))
-	if formatName == "" || formatName == string(format.FormatUnknown) {
-		return true
-	}
-	_, ok := format.GetFormatDescriptor(format.FormatType(formatName))
-	return !ok
+	return format.NormalizeFormat(formatName) == format.FormatUnknown
 }
 
 func itemRowCountFromAttributes(attrs map[string]interface{}) *int64 {

@@ -42,6 +42,25 @@ func TestDescribeContainerReturnsLightweightEntries(t *testing.T) {
 	}
 }
 
+func TestDescribeContainerKeepsUnknownTextExtensionUnqualified(t *testing.T) {
+	t.Parallel()
+
+	data := zipBytes(t, map[string]string{
+		"config/docker-compose.yml": "services:\n  app:\n    image: alpine\n",
+	})
+	info, err := NewPlugin(nil).DescribeContainer(context.Background(), bytes.NewReader(data), format.ContainerParseOptions(100, 0))
+	if err != nil {
+		t.Fatalf("DescribeContainer() error = %v", err)
+	}
+	if len(info.Children) != 1 {
+		t.Fatalf("children = %#v, want one entry", info.Children)
+	}
+	child := info.Children[0]
+	if child.Name != "config/docker-compose.yml" || child.Format != "" || child.DataType != datatype.DataTypeUnknown {
+		t.Fatalf("child = %#v, want unknown unqualified YAML entry", child)
+	}
+}
+
 func TestDescribeContainerHonorsEntryLimit(t *testing.T) {
 	t.Parallel()
 

@@ -68,7 +68,7 @@ func DescriptorFromAttributes(attrs map[string]interface{}) ItemDescriptor {
 	return ItemDescriptor{
 		Layout:        Layout(strings.ToLower(strings.TrimSpace(asString(itemAttrs["layout"])))),
 		DataType:      DataType(strings.ToLower(strings.TrimSpace(asString(itemAttrs["data_type"])))),
-		Format:        strings.ToLower(strings.TrimSpace(asString(itemAttrs["format"]))),
+		Format:        string(format.NormalizeFormat(asString(itemAttrs["format"]))),
 		EntryPath:     normalizeTargetPath(asString(itemAttrs["entry_path"])),
 		PhysicalPath:  normalizeTargetPath(asString(storageAttrs["physical_path"])),
 		StoragePath:   normalizeStoragePath(asString(storageAttrs["path"])),

@@ -98,7 +98,11 @@ func enrichRefTableInfo(
 	if contentReader == nil || detected == nil || item.Format == "" {
 		return
 	}
-	refProvider, err := format.GetMultiTableInfoProvider(format.FormatType(item.Format))
+	formatType := format.NormalizeFormat(item.Format)
+	if formatType == format.FormatUnknown {
+		return
+	}
+	refProvider, err := format.GetMultiTableInfoProvider(formatType)
 	if err != nil {
 		return
 	}
@@ -167,7 +171,11 @@ func EnrichKnownMultiTableItem(
 	if contentReader == nil || item == nil || item.Layout != dataitem.LayoutMulti || item.Format == "" || len(item.RefList) == 0 {
 		return item, false, nil
 	}
-	refProvider, err := format.GetMultiTableInfoProvider(format.FormatType(item.Format))
+	formatType := format.NormalizeFormat(item.Format)
+	if formatType == format.FormatUnknown {
+		return item, false, nil
+	}
+	refProvider, err := format.GetMultiTableInfoProvider(formatType)
 	if err != nil {
 		return item, false, nil
 	}

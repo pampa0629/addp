@@ -30,6 +30,8 @@ func EnrichResourceAttributes(ctx context.Context, attrs models.JSONMap, input R
 
 	canReadContent := input.ContentReader != nil && input.CatalogPathFor != nil && input.PhysicalPath != ""
 	if item.Layout == dataitem.LayoutSingle && canReadContent {
+		beforeDataType := item.DataType
+		beforeFormat := item.Format
 		enriched, ok, err := EnrichSingleTableFileItem(
 			ctx,
 			input.ContentReader,
@@ -47,13 +49,22 @@ func EnrichResourceAttributes(ctx context.Context, attrs models.JSONMap, input R
 		if ok && enriched != nil {
 			item = enriched
 			metaattr.MergeDataItemAttributes(attrs, metaitem.AttributeInput(enriched))
+		} else if item.DataType != beforeDataType || item.Format != beforeFormat {
+			metaattr.MergeDataItemAttributes(attrs, metaitem.AttributeInput(item))
 		}
 	}
-
 	if len(item.Fields) > 0 {
 		metaattr.SetTableFields(attrs, item.Fields)
 	}
 
+	if item.Layout == dataitem.LayoutSingle && canReadContent {
+		if err := EnrichSingleDocumentItem(ctx, attrs, input.ContentReader, input.ConnInfo, input.EngineID, item, input.PhysicalPath, input.CatalogPathFor); err != nil {
+			return item, item.Fields, err
+		}
+		if err := EnrichSingleMediaItem(ctx, attrs, input.ContentReader, input.ConnInfo, input.EngineID, item, input.PhysicalPath, input.CatalogPathFor); err != nil {
+			return item, item.Fields, err
+		}
+	}
 	metaitem.ApplyContainerSummary(attrs, item)
 	if item.DataType == dataitem.DataTypeContainer && canReadContent {
 		reader, err := input.ContentReader.OpenContent(ctx, input.ConnInfo, input.CatalogPathFor(input.PhysicalPath), plugin.ReadOptions{})

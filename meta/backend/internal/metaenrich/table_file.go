@@ -546,7 +546,7 @@ func (d *tableFileItemResolver) extractTableFileInfo(
 }
 
 func describeTableFileScope(ctx context.Context, formatName string, reader contentio.Reader, dirPath string) (*format.TableDescribeResult, error) {
-	provider, err := format.GetScopeTableInfoProvider(format.FormatType(formatName))
+	provider, err := format.GetScopeTableInfoProvider(format.NormalizeFormat(formatName))
 	if err != nil {
 		return nil, err
 	}
@@ -596,7 +596,8 @@ func extractTableFileSingleFileInfoWithFormat(
 	formatName string,
 	catalogPathFor ...func(path string) plugin.CatalogPath,
 ) (*metaitem.CompositeItemInfo, error) {
-	provider, providerErr := format.GetTableInfoProvider(format.FormatType(formatName))
+	formatType := format.NormalizeFormat(formatName)
+	provider, providerErr := format.GetTableInfoProvider(formatType)
 	if providerErr != nil {
 		return &metaitem.CompositeItemInfo{
 			Layout:     dataitem.LayoutSingle,
@@ -639,7 +640,7 @@ func extractTableFileSingleFileInfoWithFormat(
 		EntryPath:  filePath,
 		RefFiles:   []string{filePath},
 		SizeBytes:  &fileSize,
-		Attributes: tableFileAttributes(formatName, "single", []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize, tableInfo, includeContentIndex && format.SupportsContentIndex(format.FormatType(formatName))),
+		Attributes: tableFileAttributes(formatName, "single", []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize, tableInfo, includeContentIndex && format.SupportsContentIndex(formatType)),
 	}, nil
 }
 
@@ -656,7 +657,8 @@ func ExtractTableFileSingleFileInfoStrict(
 	catalogPathFor ...func(path string) plugin.CatalogPath,
 ) (*metaitem.CompositeItemInfo, error) {
 	formatName := fileFormatName(filePath)
-	provider, providerErr := format.GetTableInfoProvider(format.FormatType(formatName))
+	formatType := format.NormalizeFormat(formatName)
+	provider, providerErr := format.GetTableInfoProvider(formatType)
 	if providerErr != nil {
 		return nil, providerErr
 	}
@@ -681,7 +683,7 @@ func ExtractTableFileSingleFileInfoStrict(
 		EntryPath:  filePath,
 		RefFiles:   []string{filePath},
 		SizeBytes:  &fileSize,
-		Attributes: tableFileAttributes(formatName, "single", []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize, tableInfo, includeContentIndex && format.SupportsContentIndex(format.FormatType(formatName))),
+		Attributes: tableFileAttributes(formatName, "single", []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize, tableInfo, includeContentIndex && format.SupportsContentIndex(formatType)),
 	}, nil
 }
 
@@ -755,15 +757,16 @@ func fileFormatName(fileName string) string {
 }
 
 func hasTableProvider(formatName string) bool {
-	if strings.TrimSpace(formatName) == "" {
+	formatType := format.NormalizeFormat(formatName)
+	if formatType == format.FormatUnknown {
 		return false
 	}
-	_, err := format.GetTableInfoProvider(format.FormatType(strings.ToLower(strings.TrimSpace(formatName))))
+	_, err := format.GetTableInfoProvider(formatType)
 	return err == nil
 }
 
 func describeTableFile(ctx context.Context, formatName string, rc io.Reader) (*format.TableDescribeResult, error) {
-	provider, err := format.GetTableInfoProvider(format.FormatType(formatName))
+	provider, err := format.GetTableInfoProvider(format.NormalizeFormat(formatName))
 	if err != nil {
 		return nil, err
 	}

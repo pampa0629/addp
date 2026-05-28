@@ -112,6 +112,8 @@ FormatPlugin 是静态格式身份和实现入口，不是 detector：
 
 扩展名、MIME、content signature 等格式识别事实优先来自 `FormatDescriptor.Identification`。`common/format` 根包中的 detection fallback 只服务“内置 descriptor 尚未加载时仍可做最低限度识别”和 magic bytes 等算法性判断，不是第二套格式规范清单。新增或调整格式时，必须先更新对应格式包的 `Descriptor()`；只有能说明独立价值的通用兜底，才允许进入 fallback。
 
+上层模块不得自行把文件扩展名、MIME 或自由字符串转换成 format ID。消费已有 attributes、用户输入、插件返回值或文件名时，必须通过 `format.NormalizeFormat` 得到 canonical format；识别不到必须保留为 `format=unknown`。禁止把裸后缀或未知字符串写入 `meta_item.attributes.item.format`、container child format、Manager preview request format 或 Transfer planner format 字段。
+
 ### 注册方式
 
 格式实现注册有两层：
@@ -200,6 +202,8 @@ import _ "github.com/addp/common/format/builtin"
 `format detection` 是“给定一个 content，判断它像哪个格式”的动态过程。它输入文件名、MIME、magic bytes、内容签名或 ref 上下文，输出指向某个 format identity 的识别结果。
 
 当扩展名、MIME、内容签名、plugin sniffer 和 magic bytes 都不能识别格式时，轻量文本探测属于 format detection 的最后兜底：若内容前缀可判定为 UTF-8 文本，则返回 `format=text`，上层再据此落为 `data_type=document`；否则继续保持 `format=unknown`，由 unknown 的 `BinaryContentReader` 处理非文本 raw binary 兜底。
+
+`NormalizeFormat` 是 format-like 字符串的归一化入口。它可以接受 canonical format、扩展名、MIME 或文件名，但输出只能是已知 format identity 或 `unknown`。它不读取内容，因此不会把 `.yml`、`.conf` 等未知扩展名直接判为 `text`；这类资源只有在调用方传入内容前缀并经过 `DetectFormat(filename, peek)` 的文本兜底后，才可以升级为 `format=text`。
 
 二者边界如下：
 

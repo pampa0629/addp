@@ -181,10 +181,6 @@ func (p *Plugin) ResolveContainerChild(ctx context.Context, parent contentio.Rea
 	if rawSize, ok := child.Native["uncompressed_size"]; ok {
 		size = interfaceInt64(rawSize)
 	}
-	childFormat := format.FormatType(strings.TrimSpace(child.Format))
-	if childFormat == "" {
-		childFormat = format.FormatUnknown
-	}
 	refs := zipChildRefs(child, parentRef.Path)
 	if len(refs) > 0 {
 		entryPath = zipPrimaryRefPath(refs, entryPath)

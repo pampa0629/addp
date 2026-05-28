@@ -19,8 +19,8 @@ func TestPluginDescriptorDeclaresDocumentTextReader(t *testing.T) {
 	if descriptor.DataType != datatype.DataTypeDocument {
 		t.Fatalf("descriptor data type = %q, want document", descriptor.DataType)
 	}
-	if descriptor.Providers.DocumentInfo {
-		t.Fatalf("pptx should not declare document info provider before backend parsing is defined")
+	if !descriptor.Providers.DocumentInfo {
+		t.Fatalf("pptx should declare document info provider")
 	}
 	if !contains(descriptor.ContentReaders, string(format.ContentReaderDocumentText)) {
 		t.Fatalf("content readers = %#v, want document text", descriptor.ContentReaders)
@@ -28,6 +28,23 @@ func TestPluginDescriptorDeclaresDocumentTextReader(t *testing.T) {
 	if !contains(descriptor.ContentReaders, string(format.ContentReaderRawContent)) ||
 		!contains(descriptor.ContentReaders, string(format.ContentReaderRangeContent)) {
 		t.Fatalf("content readers = %#v, want raw and range", descriptor.ContentReaders)
+	}
+}
+
+func TestPluginDescribeDocument(t *testing.T) {
+	plugin := NewPlugin()
+	data := minimalPPTX(t, map[string]string{
+		"ppt/slides/slide1.xml": `<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>Slide</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>`,
+		"docProps/core.xml":     `<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>AI4Science</dc:title><dc:language>zh-CN</dc:language></cp:coreProperties>`,
+		"docProps/app.xml":      `<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Slides>8</Slides><Words>300</Words></Properties>`,
+	})
+
+	info, err := plugin.DescribeDocument(context.Background(), bytes.NewReader(data), nil)
+	if err != nil {
+		t.Fatalf("DescribeDocument() error = %v", err)
+	}
+	if info.Title != "AI4Science" || info.Language != "zh-CN" || info.PageCount != 8 || info.WordCount != 300 {
+		t.Fatalf("DescribeDocument() = %#v", info)
 	}
 }
 

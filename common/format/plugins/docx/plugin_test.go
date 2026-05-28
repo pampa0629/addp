@@ -19,8 +19,8 @@ func TestPluginDescriptorDeclaresDocumentTextReader(t *testing.T) {
 	if descriptor.DataType != datatype.DataTypeDocument {
 		t.Fatalf("descriptor data type = %q, want document", descriptor.DataType)
 	}
-	if descriptor.Providers.DocumentInfo {
-		t.Fatalf("docx should not declare document info provider before backend parsing is defined")
+	if !descriptor.Providers.DocumentInfo {
+		t.Fatalf("docx should declare document info provider")
 	}
 	if !contains(descriptor.ContentReaders, string(format.ContentReaderDocumentText)) {
 		t.Fatalf("content readers = %#v, want document text", descriptor.ContentReaders)
@@ -28,6 +28,23 @@ func TestPluginDescriptorDeclaresDocumentTextReader(t *testing.T) {
 	if !contains(descriptor.ContentReaders, string(format.ContentReaderRawContent)) ||
 		!contains(descriptor.ContentReaders, string(format.ContentReaderRangeContent)) {
 		t.Fatalf("content readers = %#v, want raw and range", descriptor.ContentReaders)
+	}
+}
+
+func TestPluginDescribeDocument(t *testing.T) {
+	plugin := NewPlugin()
+	data := minimalDOCXWithFiles(t, map[string]string{
+		"word/document.xml": `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Hello</w:t></w:r></w:p></w:body></w:document>`,
+		"docProps/core.xml": `<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>Design Doc</dc:title><dc:language>zh-CN</dc:language></cp:coreProperties>`,
+		"docProps/app.xml":  `<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Pages>3</Pages><Words>42</Words></Properties>`,
+	})
+
+	info, err := plugin.DescribeDocument(context.Background(), bytes.NewReader(data), nil)
+	if err != nil {
+		t.Fatalf("DescribeDocument() error = %v", err)
+	}
+	if info.Title != "Design Doc" || info.Language != "zh-CN" || info.PageCount != 3 || info.WordCount != 42 {
+		t.Fatalf("DescribeDocument() = %#v", info)
 	}
 }
 

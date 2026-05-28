@@ -62,13 +62,20 @@ func ContainerChildInfoFromMap(child map[string]interface{}) datatype.ContainerC
 		Name:        name,
 		ChildKind:   childKind,
 		DataType:    dataType,
-		Format:      strings.TrimSpace(commonJSON.InterfaceString(child["format"])),
+		Format:      canonicalContainerChildFormat(commonJSON.InterfaceString(child["format"])),
 		Refs:        containerChildRefsFromMap(child),
 		RowCount:    rowCount,
 		ColumnCount: columnCount,
 		HasHeader:   hasHeader,
 		Native:      native,
 	}
+}
+
+func canonicalContainerChildFormat(formatName string) string {
+	if normalized := format.NormalizeFormat(formatName); normalized != format.FormatUnknown {
+		return string(normalized)
+	}
+	return ""
 }
 
 func containerChildNativeFromMap(child map[string]interface{}) map[string]interface{} {

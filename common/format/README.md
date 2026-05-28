@@ -79,10 +79,13 @@ formatType = format.MIMEToFormat("application/geo+json")
 
 ```go
 func DetectFormat(filename string, peek []byte) FormatType
+func NormalizeFormat(value string) FormatType
 func MIMEToFormat(mimeType string) FormatType
 func FormatToMIME(format FormatType) string
 func GuessContentType(filename string, peek []byte) string
 ```
+
+`NormalizeFormat` 是上层消费 format 字段、扩展名、MIME 或文件名时的统一归一化入口。它只返回已注册或可识别的 canonical format；识别不到时返回 `FormatUnknown`，不得把裸扩展名或任意字符串作为 format 写入 Meta / Manager / Transfer 语义字段。
 
 当前约定：
 
@@ -90,12 +93,15 @@ func GuessContentType(filename string, peek []byte) string
 - `application/json`、`application/geo+json`、`application/vnd.geo+json` 都返回 `FormatJSON`。
 - Shapefile 只有 primary content `.shp` 识别为 `FormatShapefile`；`.shx`、`.dbf`、`.prj`、`.cpg` 等 related content 不单独代表完整 Shapefile，ref 归并由上层基于 format capability 和 item 组织规则完成。
 - Parquet 既可以是单文件表，也可以作为目录 scope 下的表文件；`common/format/plugins/parquet` 只提供格式判断和 provider，不表达 lake table item type。
+- 未知扩展名不能仅凭后缀成为 format。`.yml`、`.conf` 等没有已注册 format identity 的资源，只有在内容前缀可判定为文本时才由 `DetectFormat(filename, peek)` 归为 `FormatText`；没有内容证据时保持 `FormatUnknown`。
 
 ## Format Identity 与 Detection
 
 `format identity` 定义平台支持的格式是谁，以及它默认属于什么 data type、支持什么 layout、info provider 和 content reader。它由 `FormatPlugin` / `FormatDescriptor` 表达。
 
 `format detection` 是给定文件名、MIME、magic bytes 或内容签名后，判断某个 content 看起来是什么格式。Detection 输出 format identity 的引用，不决定 data item 边界。
+
+调用方已经持有一个可能来自用户输入、attributes 或插件返回的 format-like 字符串时，应先调用 `NormalizeFormat`，不能在上层维护扩展名映射表，也不能在识别失败时返回原始字符串。只有 `common/format` 能把扩展名、MIME、文件名或内容探测结果提升为 canonical format。
 
 Shapefile 这类 multi 格式需要特别区分：`.shp/.dbf/.shx` 的识别不等于 item 归并；归并属于 Meta item detector。
 
@@ -215,7 +221,7 @@ Info provider 只返回元数据，主要服务 Meta 写入 `type_info.*`、`for
 | `ScopeTableInfoProvider` | `table` | `whole` | `contentio.Reader` + scope | 目录 / prefix / scope 级 table 类型信息。 | Meta、Manager、Transfer 探查 | Parquet dataset、未来 lake table |
 | `ScopeTableSampleReader` | `table` | `whole` | `contentio.Reader` + scope | 目录 / prefix / scope 级 table 样本读取。 | Manager、Transfer 探查 | Parquet dataset、未来 lake table |
 | `ScopeTableReaderProvider` | `table` | `whole` | `contentio.Reader` + scope -> `TableReader` | 目录 / prefix / scope 级 table 连续全量读取会话。 | Transfer 主链路 | Parquet dataset、未来 lake table |
-| `DocumentInfoProvider` | `document` | 通常 `single` | `io.Reader` | 返回文档标题、语言、编码、大小等文档类型信息。 | Meta、Manager、Search | text、markdown、json、pdf；未来 DOCX/PPTX/WPS 解析 |
+| `DocumentInfoProvider` | `document` | 通常 `single` | `io.Reader` | 返回文档标题、语言、编码、大小等文档类型信息。 | Meta、Manager、Search | text、markdown、json、pdf、docx、pptx；未来 WPS 解析 |
 | `DocumentTextReader` | `document` | 通常 `single` | `io.Reader` | 读取正文片段，可标记 truncated。 | Manager、Search、AI / 摘要 | text、markdown、json、docx、pptx；未来 PDF/WPS 解析 |
 | `BinaryContentReader` | `unknown` | 通常 `single` | `io.Reader` | 对已判定为 unknown 且非文本的内容读取原始字节片段，可标记 truncated。 | Manager、Transfer 探查 | unknown |
 | `MediaInfoProvider` | `media` | 通常 `single` | `io.Reader` | 返回宽高、时长、编码、MIME、颜色空间、可选空间事实。 | Meta、Manager | image、jpeg、png、gif、tiff |
@@ -397,8 +403,8 @@ type DocumentTextReader interface {
 | `markdown` | `document` | 是 | 是 | 复用 text provider，当前不在 `DocumentInfo` 中提取标题或字数。 |
 | `json` | `document` 默认，内容严格匹配记录集合时可升级为 `table` | 是 | 是 | `DocumentInfo` 当前只写 `encoding=utf-8`；同一格式也提供 table / spatial provider。 |
 | `pdf` | `document` | 是 | 否 | 只提供轻量 metadata，例如 title、page_count、size_bytes；author / creator / producer 等 PDF 原生事实进入 `format_info.pdf`。 |
-| `docx` | `document` | 否 | 是 | 从 `word/document.xml` 提取正文，并追加页眉、页脚、脚注、尾注和批注文本；暂不解析文档属性、修订语义或复杂版面关系。 |
-| `pptx` | `document` | 否 | 是 | 从 `ppt/slides/slide*.xml` 按页提取基础文本，并追加对应备注页与批注文本；暂不解析母版、隐藏页策略或文档属性。 |
+| `docx` | `document` | 是 | 是 | 轻量读取 `docProps` 中的 title、language、pages、words；正文从 `word/document.xml` 提取，并追加页眉、页脚、脚注、尾注和批注文本；暂不解析修订语义或复杂版面关系。 |
+| `pptx` | `document` | 是 | 是 | 轻量读取 `docProps` 中的 title、language、slides、words；正文从 `ppt/slides/slide*.xml` 按页提取，并追加对应备注页与批注文本；暂不解析母版或隐藏页策略。 |
 | `wps` | `document` | 否 | 否 | 仅声明 raw / range content；后端解析边界尚未定义。 |
 
 `DocumentInfoProvider` 必须返回 `datatype.DocumentInfo`。文档正文、片段、摘要、OCR 结果、embedding 不写入 `DocumentInfo`；正文片段只通过 `DocumentTextReader` 或后续 extraction / semantic 链路表达。
@@ -416,7 +422,7 @@ if err != nil {
 text, truncated, err := reader.ReadDocumentText(ctx, input, 16*1024, nil)
 ```
 
-WPS、DOCX、PPTX 这类复杂文档格式，不应因为只能提供 raw / range content reader 就降级为二进制格式；后续如需更完整的全文索引、摘要或服务端转换，再补对应 DocumentInfoProvider / DocumentTextReader 或外部 extraction 服务。
+WPS 这类复杂且变体较多的文档格式，不应因为只能提供 raw / range content reader 就降级为二进制格式；后续如需更完整的全文索引、摘要或服务端转换，再补对应 DocumentInfoProvider / DocumentTextReader 或外部 extraction 服务。
 
 ## Binary Content Reader
 

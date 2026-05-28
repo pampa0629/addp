@@ -263,7 +263,10 @@ func (e *MetadataExtractor) BuildObjectContentIndexOnDemand(
 	if strings.TrimSpace(formatName) == "" {
 		return nil, fmt.Errorf("item format is empty: %s", objectKey)
 	}
-	formatType := format.FormatType(strings.ToLower(strings.TrimSpace(formatName)))
+	formatType := format.NormalizeFormat(formatName)
+	if formatType == format.FormatUnknown {
+		return nil, fmt.Errorf("item format is unknown: %s", objectKey)
+	}
 	if !format.SupportsContentIndex(formatType) {
 		return nil, fmt.Errorf("format %s does not support content index", formatType)
 	}

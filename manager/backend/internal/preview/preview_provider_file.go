@@ -512,7 +512,7 @@ func tableContentIndexFromAttributes(attrs map[string]interface{}) *datatype.Con
 	index := &datatype.ContentIndex{
 		Kind:        commonJSON.InterfaceString(indexAttrs["kind"]),
 		DataType:    datatype.DataType(commonJSON.InterfaceString(indexAttrs["data_type"])),
-		Format:      commonJSON.InterfaceString(indexAttrs["format"]),
+		Format:      normalizeObjectContentRequestFormat(commonJSON.InterfaceString(indexAttrs["format"])),
 		Unit:        commonJSON.InterfaceString(indexAttrs["unit"]),
 		OffsetUnit:  commonJSON.InterfaceString(indexAttrs["offset_unit"]),
 		Step:        commonJSON.InterfaceInt64(indexAttrs["step"]),
@@ -770,6 +770,14 @@ func (p *FileTablePreviewProvider) resolveFormat(req *PreviewRequest) format.For
 
 func normalizeFileTableFormat(formatName string) format.FormatType {
 	return format.NormalizeFormat(formatName)
+}
+
+func normalizeObjectContentRequestFormat(formatName string) string {
+	normalized := format.NormalizeFormat(formatName)
+	if normalized == "" || normalized == format.FormatUnknown {
+		return ""
+	}
+	return string(normalized)
 }
 
 func objectKeyFromPreviewRequest(req *PreviewRequest, bucket string) string {

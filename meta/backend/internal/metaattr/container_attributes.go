@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
 )
 
@@ -48,10 +49,7 @@ type containerChildAttributesData struct {
 }
 
 func containerChildAttributes(child datatype.ContainerChildInfo) containerChildAttributesData {
-	childFormat := strings.TrimSpace(child.Format)
-	if childFormat == "" {
-		childFormat = strings.TrimSpace(commonJSON.InterfaceString(child.Native["format"]))
-	}
+	childFormat := canonicalContainerChildFormat(child)
 	return containerChildAttributesData{
 		Name:        child.Name,
 		ChildKind:   child.ChildKind,
@@ -63,6 +61,18 @@ func containerChildAttributes(child datatype.ContainerChildInfo) containerChildA
 		Refs:        child.Refs,
 		Native:      filteredContainerChildNative(child.Native),
 	}
+}
+
+func canonicalContainerChildFormat(child datatype.ContainerChildInfo) string {
+	for _, candidate := range []string{
+		child.Format,
+		commonJSON.InterfaceString(child.Native["format"]),
+	} {
+		if normalized := format.NormalizeFormat(candidate); normalized != format.FormatUnknown {
+			return string(normalized)
+		}
+	}
+	return ""
 }
 
 func filteredContainerChildNative(values map[string]interface{}) map[string]interface{} {

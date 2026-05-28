@@ -28,7 +28,7 @@ func DetectFormat(candidate Candidate) string {
 }
 
 func DetectDataType(formatName string) DataType {
-	capability, ok := format.GetFormatCapability(format.FormatType(formatName))
+	capability, ok := format.GetFormatCapability(format.NormalizeFormat(formatName))
 	if !ok {
 		return DataTypeUnknown
 	}

@@ -234,3 +234,25 @@ func TestDescriptorFromAttributesRestoresRelatedRefs(t *testing.T) {
 		t.Fatalf("secondary ref = %#v, want extension-derived role", refs[1])
 	}
 }
+
+func TestDescriptorFromAttributesNormalizesFormat(t *testing.T) {
+	t.Parallel()
+
+	unknown := DescriptorFromAttributes(map[string]interface{}{
+		"item": map[string]interface{}{
+			"format": "yml",
+		},
+	})
+	if unknown.Format != string(format.FormatUnknown) {
+		t.Fatalf("legacy yml format = %q, want unknown", unknown.Format)
+	}
+
+	csv := DescriptorFromAttributes(map[string]interface{}{
+		"item": map[string]interface{}{
+			"format": ".csv",
+		},
+	})
+	if csv.Format != string(format.FormatCSV) {
+		t.Fatalf("csv format = %q, want csv", csv.Format)
+	}
+}

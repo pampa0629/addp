@@ -170,9 +170,6 @@ func (s *ScanService) refreshKnownItemAttributes(
 		if detected, err = enrichKnownResourceAttributes(ctx, attrs, contentReader, connInfo, resource.ID, catalogPathFor, detected, physicalPath, sizeFromDescriptor(descriptor, item)); err != nil {
 			return nil, 0, err
 		}
-		if detected == nil || detected.DataType != dataitem.DataTypeTable {
-			_, err = enrichKnownSingleNonTableItem(ctx, contentReader, connInfo, resource.ID, catalogPathFor, detected, physicalPath)
-		}
 	case dataitem.LayoutWhole:
 		physicalPath := firstNonEmpty(descriptor.PhysicalPath, descriptor.EntryPath, pathFromStorage(descriptor), item.FullName)
 		if detected, err = enrichKnownResourceAttributes(ctx, attrs, contentReader, connInfo, resource.ID, catalogPathFor, detected, physicalPath, sizeFromDescriptor(descriptor, item)); err != nil {
@@ -277,85 +274,6 @@ func detectedItemFromDescriptor(item *models.MetaItem, descriptor dataitem.ItemD
 		PhysicalPath: firstNonEmpty(descriptor.PhysicalPath, pathFromStorage(descriptor), item.FullName),
 		Attributes:   clonePlainMap(item.Attributes),
 	}
-}
-
-func enrichKnownSingleNonTableItem(
-	ctx context.Context,
-	contentReader plugin.ContentReadableProvider,
-	connInfo plugin.ConnectionInfo,
-	engineID uint,
-	catalogPathFor func(path string) plugin.CatalogPath,
-	item *metaitem.DetectedItem,
-	path string,
-) (bool, error) {
-	if item == nil || path == "" {
-		return false, nil
-	}
-	if metaenrich.IsUnknownFormatName(item.Format) && catalogPathFor != nil {
-		detectedFormat, err := metaenrich.DetectSingleFileFormat(ctx, contentReader, connInfo, catalogPathFor(path), path)
-		if err != nil {
-			return false, err
-		}
-		metaenrich.ApplySingleFileFormat(item, detectedFormat)
-	}
-	if metaenrich.IsUnknownFormatName(item.Format) {
-		return false, nil
-	}
-	formatType := format.FormatType(item.Format)
-	if provider, err := format.GetDocumentInfoProvider(formatType); err == nil {
-		rc, err := contentReader.OpenContent(ctx, connInfo, catalogPathFor(path), plugin.ReadOptions{})
-		if err != nil {
-			return false, err
-		}
-		defer rc.Close()
-		info, err := provider.DescribeDocument(ctx, rc, nil)
-		if err != nil {
-			return false, err
-		}
-		metadata := &plugin.ItemMetadata{
-			Path:     catalogPathFor(path),
-			Kind:     item.ItemType,
-			Document: info,
-		}
-		item.Document = plugin.ItemMetadataDocumentInfo(metadata)
-		metaitem.ApplyDocumentInfo(item.Attributes, item)
-		if formatProvider, err := format.GetFormatInfoProvider(formatType); err == nil {
-			rc, err := contentReader.OpenContent(ctx, connInfo, catalogPathFor(path), plugin.ReadOptions{})
-			if err != nil {
-				return false, err
-			}
-			formatInfo, err := formatProvider.DescribeFormat(ctx, rc, nil)
-			closeErr := rc.Close()
-			if err != nil {
-				return false, err
-			}
-			if closeErr != nil {
-				return false, closeErr
-			}
-			metaattr.MergeStandardAttributes(item.Attributes, metaattr.FormatInfoAttributes(string(formatType), formatInfo))
-		}
-		return true, nil
-	}
-	if provider, err := format.GetMediaInfoProvider(formatType); err == nil {
-		rc, err := contentReader.OpenContent(ctx, connInfo, catalogPathFor(path), plugin.ReadOptions{})
-		if err != nil {
-			return false, err
-		}
-		defer rc.Close()
-		info, err := provider.DescribeMedia(ctx, rc, nil)
-		if err != nil {
-			return false, err
-		}
-		metadata := &plugin.ItemMetadata{
-			Path:  catalogPathFor(path),
-			Kind:  item.ItemType,
-			Media: info.Media,
-		}
-		item.Media = plugin.ItemMetadataMediaInfo(metadata)
-		metaitem.ApplyMediaInfo(item.Attributes, item, info.Spatial)
-		return true, nil
-	}
-	return false, nil
 }
 
 func knownItemCatalogPathResolver(engineID uint, engineType string, descriptor dataitem.ItemDescriptor) func(string) plugin.CatalogPath {

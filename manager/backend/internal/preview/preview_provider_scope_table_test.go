@@ -162,3 +162,23 @@ func TestScopeTableSampleOptionsFromAttributesUsesParquetFileRowCounts(t *testin
 		t.Fatalf("counts = %#v", counts)
 	}
 }
+
+func TestScopeTableSampleOptionsFromAttributesIgnoresUnknownFormat(t *testing.T) {
+	t.Parallel()
+
+	opts := scopeTableSampleOptionsFromAttributes(map[string]interface{}{
+		"item": map[string]interface{}{
+			"format": "yml",
+		},
+		"format_info": map[string]interface{}{
+			"parquet": map[string]interface{}{
+				"files": []interface{}{
+					map[string]interface{}{"path": "dataset/part-000.parquet", "row_count": 2},
+				},
+			},
+		},
+	})
+	if opts != nil {
+		t.Fatalf("options = %#v, want nil for unknown legacy format", opts)
+	}
+}

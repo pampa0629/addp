@@ -619,6 +619,69 @@ func TestContainerChildPreviewProviderResolvesZIPTextEntry(t *testing.T) {
 	}
 }
 
+func TestContainerChildPreviewProviderDetectsUnknownZIPTextEntryForPreviewOnly(t *testing.T) {
+	previous, previousErr := plugin.Get("nfs")
+	enginePlugin := &recordingContentPlugin{engineType: "nfs"}
+	plugin.Register(enginePlugin)
+	defer func() {
+		if previousErr == nil {
+			plugin.Register(previous)
+			return
+		}
+		plugin.Unregister(enginePlugin.Type())
+	}()
+
+	enginePlugin.content = zipBytesForFilePreviewTest(t, map[string]string{
+		"config/docker-compose.yml": "services:\n  app:\n    image: alpine\n",
+	})
+	provider := NewContainerChildPreviewProvider(objectcontent.NewObjectContentRegistry())
+	objectcontent.LoadObjectContentPlugins(provider.(*ContainerChildPreviewProvider).content, "../../plugins/manifest.json")
+	req := &PreviewRequest{
+		Engine:       &models.Engine{EngineType: enginePlugin.Type(), ID: 7},
+		ItemType:     "file",
+		Schema:       "datasets",
+		Table:        "outer.zip",
+		PhysicalPath: "/datasets/outer.zip",
+		ChildName:    "config/docker-compose.yml",
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"format":    string(format.FormatZIP),
+				"data_type": "container",
+			},
+			"type_info": map[string]interface{}{
+				"container": map[string]interface{}{
+					"children": []interface{}{
+						map[string]interface{}{
+							"name":       "config/docker-compose.yml",
+							"child_kind": "file",
+							"data_type":  "unknown",
+							"path":       "config/docker-compose.yml",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	preview, err := provider.Preview(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+	if preview.Mode != PreviewModeObject || preview.Object == nil || preview.Object.Content == nil {
+		t.Fatalf("preview = %#v, want object content", preview)
+	}
+	if preview.Object.Content.Kind != models.ObjectPreviewKindText {
+		t.Fatalf("content = %#v, want text entry", preview.Object.Content)
+	}
+	if preview.Object.Content.Text != "services:\n  app:\n    image: alpine\n" {
+		t.Fatalf("text = %q", preview.Object.Content.Text)
+	}
+	itemAttrs := preview.Object.Attributes["item"].(map[string]interface{})
+	if itemAttrs["format"] == string(format.FormatText) {
+		t.Fatalf("child attributes were promoted to text: %#v", itemAttrs)
+	}
+}
+
 func TestContainerChildPreviewProviderResolvesZIPChinesePDFEntry(t *testing.T) {
 	previous, previousErr := plugin.Get("nfs")
 	enginePlugin := &recordingContentPlugin{engineType: "nfs"}
@@ -1530,5 +1593,59 @@ func TestContainerChildInfoFromMapKeepsRefsAndExplicitNative(t *testing.T) {
 	}
 	if child.Native["table"] != "roads" || child.Native["unknown"] != nil {
 		t.Fatalf("native = %#v, want explicit native only", child.Native)
+	}
+}
+
+func TestContainerChildInfoFromMapNormalizesFormat(t *testing.T) {
+	unknown := objectcontent.ContainerChildInfoFromMap(map[string]interface{}{
+		"name":       "config/docker-compose.yml",
+		"child_kind": "file",
+		"data_type":  "unknown",
+		"format":     "yml",
+	})
+	if unknown.Format != "" {
+		t.Fatalf("unknown child format = %q, want empty", unknown.Format)
+	}
+
+	csv := objectcontent.ContainerChildInfoFromMap(map[string]interface{}{
+		"name":       "data/table.data",
+		"child_kind": "file",
+		"data_type":  "table",
+		"format":     ".csv",
+	})
+	if csv.Format != string(format.FormatCSV) {
+		t.Fatalf("csv child format = %q, want csv", csv.Format)
+	}
+}
+
+func TestNormalizeObjectContentRequestFormatDropsUnknownLegacyFormat(t *testing.T) {
+	if got := normalizeObjectContentRequestFormat("yml"); got != "" {
+		t.Fatalf("normalized legacy yml format = %q, want empty", got)
+	}
+	if got := normalizeObjectContentRequestFormat(".csv"); got != string(format.FormatCSV) {
+		t.Fatalf("normalized csv format = %q, want csv", got)
+	}
+}
+
+func TestTableContentIndexFromAttributesNormalizesFormat(t *testing.T) {
+	index := tableContentIndexFromAttributes(map[string]interface{}{
+		"content_index": map[string]interface{}{
+			"table": map[string]interface{}{
+				"kind":        datatype.ContentIndexKindSparseRow,
+				"data_type":   string(datatype.DataTypeTable),
+				"format":      "yml",
+				"unit":        datatype.ContentIndexUnitRow,
+				"offset_unit": datatype.ContentIndexOffsetByte,
+				"anchors": []interface{}{
+					map[string]interface{}{"row": 0, "byte_offset": 0},
+				},
+			},
+		},
+	})
+	if index == nil {
+		t.Fatal("index is nil")
+	}
+	if index.Format != "" {
+		t.Fatalf("index format = %q, want empty for unknown legacy format", index.Format)
 	}
 }

@@ -90,7 +90,7 @@ func (p catalogSingleItemProcessor) Process(ctx context.Context, input catalogSi
 	if input.IndexRootName != "" {
 		metaattr.SetStorage(attrs, "bucket", input.IndexRootName)
 	}
-	dir, name := commonModels.SplitObjectPath(input.IndexPath)
+	dir, name := splitCatalogItemPath(input.IndexPath)
 	if dir != "" {
 		metaattr.SetStorage(attrs, "path", dir)
 	}
@@ -194,6 +194,18 @@ func catalogItemProcessor(repo *metaRepo.ScanRepository, indexer *IndexerService
 	return catalogSingleItemProcessor{repo: repo, indexer: indexer, log: log}
 }
 
+func splitCatalogItemPath(value string) (dir, name string) {
+	value = strings.Trim(value, "/")
+	if value == "" {
+		return "", ""
+	}
+	idx := strings.LastIndex(value, "/")
+	if idx < 0 {
+		return "", value
+	}
+	return value[:idx+1], value[idx+1:]
+}
+
 func extractCatalogDocumentText(
 	ctx context.Context,
 	attrs models.JSONMap,
@@ -216,7 +228,16 @@ func extractCatalogDocumentText(
 		result.Counts.Unsupported = 1
 		return result
 	}
-	reader, err := format.GetDocumentTextReader(format.FormatType(strings.ToLower(formatName)))
+	formatType := format.NormalizeFormat(formatName)
+	if formatType == format.FormatUnknown {
+		metaattr.SetExtraction(attrs, "extractor_available", false)
+		metaattr.SetExtraction(attrs, "text_extracted", false)
+		metaattr.SetExtraction(attrs, "status", "unsupported")
+		metaattr.SetExtraction(attrs, "reason", "document_format_unknown")
+		result.Counts.Unsupported = 1
+		return result
+	}
+	reader, err := format.GetDocumentTextReader(formatType)
 	if err != nil {
 		metaattr.SetExtraction(attrs, "extractor_available", false)
 		metaattr.SetExtraction(attrs, "text_extracted", false)
@@ -250,11 +271,11 @@ func extractCatalogDocumentText(
 	metaattr.SetExtraction(attrs, "extractor_available", true)
 	metaattr.SetExtraction(attrs, "text_extracted", true)
 	metaattr.SetExtraction(attrs, "status", "completed")
-	metaattr.SetExtraction(attrs, "extractor", "common_format:"+strings.ToLower(formatName))
+	metaattr.SetExtraction(attrs, "extractor", "common_format:"+string(formatType))
 	metaattr.SetExtraction(attrs, "plain_text_preview", preview)
 	metaattr.SetExtraction(attrs, "text_truncated", truncated)
 	metaattr.SetExtraction(attrs, "index_ref", "meilisearch:assets:"+itemFingerprintForExtraction(engineID, catalogResource))
-	metaattr.MergeAttributeMaps(attrs, metaattr.DocumentInfoAttributes(&datatype.DocumentInfo{TextExtracted: true}))
+	metaattr.UpsertNested(attrs, "type_info", "document", map[string]interface{}{"text_extracted": true})
 	result.Text = text
 	result.Counts.Extracted = 1
 	return result

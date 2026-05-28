@@ -3,7 +3,6 @@ package metaenrich
 import (
 	"context"
 	"io"
-	"strings"
 
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
@@ -60,6 +59,5 @@ func openSingleFilePeekReader(
 }
 
 func IsUnknownFormatName(formatName string) bool {
-	formatName = strings.ToLower(strings.TrimSpace(formatName))
-	return formatName == "" || formatName == string(format.FormatUnknown)
+	return format.NormalizeFormat(formatName) == format.FormatUnknown
 }
