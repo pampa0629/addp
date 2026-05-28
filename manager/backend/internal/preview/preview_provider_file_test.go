@@ -1006,6 +1006,71 @@ func TestFileTablePreviewProviderMultiPreviewKeepsNFSFullStorageRef(t *testing.T
 	}
 }
 
+func TestFileTablePreviewProviderMultiPreviewKeepsObjectStorageRef(t *testing.T) {
+	engineType := "preview_test_object_bundle"
+	enginePlugin := &recordingContentPlugin{engineType: engineType}
+	plugin.Register(enginePlugin)
+	defer plugin.Unregister(engineType)
+
+	previousInfoProvider, previousInfoErr := format.GetMultiTableInfoProvider(format.FormatShapefile)
+	previousSampleReader, previousSampleErr := format.GetMultiTableSampleReader(format.FormatShapefile)
+	refProvider := &recordingMultiTableProvider{}
+	if err := format.RegisterMultiTableInfoProvider(refProvider); err != nil {
+		t.Fatalf("RegisterMultiTableInfoProvider() error = %v", err)
+	}
+	if err := format.RegisterMultiTableSampleReader(refProvider); err != nil {
+		t.Fatalf("RegisterMultiTableSampleReader() error = %v", err)
+	}
+	defer func() {
+		if previousInfoErr == nil {
+			_ = format.RegisterMultiTableInfoProvider(previousInfoProvider)
+		}
+		if previousSampleErr == nil {
+			_ = format.RegisterMultiTableSampleReader(previousSampleReader)
+		}
+	}()
+
+	provider := &FileTablePreviewProvider{}
+	req := &PreviewRequest{
+		Engine:       &models.Engine{EngineType: enginePlugin.Type(), ID: 9},
+		ItemType:     "object",
+		Schema:       "gischain",
+		Table:        "data/farmland.shp",
+		PhysicalPath: "gischain/data/farmland.shp",
+		Page:         1,
+		PageSize:     20,
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"format":    string(format.FormatShapefile),
+				"data_type": "table",
+				"layout":    "multi",
+				"refs": []interface{}{
+					map[string]interface{}{"path": "gischain/data/farmland.shp", "role": "main", "required": true, "primary": true},
+					map[string]interface{}{"path": "gischain/data/farmland.shx", "role": "index", "required": true},
+					map[string]interface{}{"path": "gischain/data/farmland.dbf", "role": "attributes", "required": true},
+				},
+			},
+		},
+	}
+
+	preview, err := provider.Preview(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+	if preview.Object == nil || preview.Object.Download == nil {
+		t.Fatalf("preview object/download = %#v", preview.Object)
+	}
+	if preview.Object.Path != "data/farmland.shp" || preview.Object.StorageRef != "gischain/data/farmland.shp" {
+		t.Fatalf("object path/storage_ref = %q/%q, want object storage ref with bucket", preview.Object.Path, preview.Object.StorageRef)
+	}
+	if got := preview.Object.Download.URL; !strings.Contains(got, "storage_ref=gischain%2Fdata%2Ffarmland.shp") {
+		t.Fatalf("download url = %q, want object storage_ref with bucket", got)
+	}
+	if preview.Object.Download.FileName != "farmland.shapefile.zip" {
+		t.Fatalf("download filename = %q, want farmland.shapefile.zip", preview.Object.Download.FileName)
+	}
+}
+
 func TestContainerChildPreviewProviderResolvesNestedZIPEntry(t *testing.T) {
 	previous, previousErr := plugin.Get("nfs")
 	enginePlugin := &recordingContentPlugin{engineType: "nfs"}

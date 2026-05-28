@@ -435,7 +435,7 @@ func (h *ExplorerHandler) SearchNodes(c *gin.Context) {
 // StorageStream 存储叶子内容流式传输（支持 Range 请求）
 // GET /api/v1/manager/storage-stream?engine_id=1&storage_ref=bucket/path/to/file
 // @Summary 存储内容流式传输 | Storage content streaming
-// @Description 支持 Range 请求的存储叶子内容流式传输，用于图片、视频、下载等内容访问；storage_ref 在对象存储中为 bucket/path，在文件系统中为文件路径 | Storage leaf content streaming with Range request support; storage_ref is bucket/path for object catalogs and file path for file catalogs
+// @Description 支持 Range 请求的单存储叶子内容流式传输，用于图片、PDF、视频等在线预览；原始下载请使用 storage-download。storage_ref 在对象存储中为 bucket/path，在文件系统中为文件路径 | Storage leaf content streaming with Range request support for online previews such as images, PDF, and video; use storage-download for original downloads. storage_ref is bucket/path for object catalogs and file path for file catalogs
 // @Tags Manager
 // @Produce octet-stream
 // @Param engine_id query int true "存储引擎ID | Engine ID"

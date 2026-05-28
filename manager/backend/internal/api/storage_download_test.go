@@ -89,6 +89,75 @@ func TestStorageDownloadBundlesNFSShapefile(t *testing.T) {
 	}
 }
 
+func TestStorageDownloadBundlesObjectShapefile(t *testing.T) {
+	t.Parallel()
+
+	engineType := "api_download_test_object_bundle"
+	plugin.Register(newAPIDownloadTestObjectPlugin(engineType, map[string]string{
+		"gischain/data/farmland.shp": "shape",
+		"gischain/data/farmland.shx": "index",
+		"gischain/data/farmland.dbf": "attrs",
+	}))
+	t.Cleanup(func() { plugin.Unregister(engineType) })
+
+	systemClient := apiDownloadTestSystemClient(t, 9, engineType)
+	metaClient := apiDownloadTestMetaItemClient(t, `{
+		"id": 1,
+		"engine_id": 9,
+		"item_type": "object",
+		"name": "farmland.shp",
+		"full_name": "gischain/data/farmland.shp",
+		"attributes": {
+			"item": {
+				"layout": "multi",
+				"format": "shapefile",
+				"refs": [
+					{"path":"data/farmland.shp","role":"main","required":true,"primary":true},
+					{"path":"data/farmland.shx","role":"index","required":true},
+					{"path":"data/farmland.dbf","role":"attributes","required":true}
+				]
+			}
+		}
+	}`)
+	metadataService := service.NewMetadataService(nil, systemClient, metaClient, nil, nil)
+	handler := NewExplorerHandler(nil, nil, metadataService)
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/storage-download", handler.StorageDownload)
+
+	req := httptest.NewRequest(http.MethodGet, "/storage-download?engine_id=9&storage_ref=gischain%2Fdata%2Ffarmland.shp", nil)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+	if got := resp.Header().Get("Content-Type"); got != "application/zip" {
+		t.Fatalf("Content-Type = %q, want application/zip", got)
+	}
+	if got := resp.Header().Get("Content-Disposition"); got != `attachment; filename="farmland.shapefile.zip"` {
+		t.Fatalf("Content-Disposition = %q", got)
+	}
+	if resp.Body.Len() == 0 {
+		t.Fatal("download body is empty")
+	}
+
+	zipReader, err := zip.NewReader(bytes.NewReader(resp.Body.Bytes()), int64(resp.Body.Len()))
+	if err != nil {
+		t.Fatalf("zip.NewReader() error = %v", err)
+	}
+	names := make([]string, 0, len(zipReader.File))
+	for _, file := range zipReader.File {
+		names = append(names, file.Name)
+	}
+	sort.Strings(names)
+	want := []string{"farmland.dbf", "farmland.shp", "farmland.shx"}
+	if strings.Join(names, ",") != strings.Join(want, ",") {
+		t.Fatalf("zip entries = %#v, want %#v", names, want)
+	}
+}
+
 func apiDownloadTestSystemClient(t *testing.T, engineID uint, engineType string) *client.SystemClient {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -124,8 +193,9 @@ func apiDownloadTestMetaItemClient(t *testing.T, itemJSON string) *client.MetaCl
 }
 
 type apiDownloadTestFilePlugin struct {
-	engineType string
-	files      map[string]string
+	engineType    string
+	files         map[string]string
+	objectCatalog bool
 }
 
 func newAPIDownloadTestFilePlugin(engineType string, files map[string]string) *apiDownloadTestFilePlugin {
@@ -134,6 +204,12 @@ func newAPIDownloadTestFilePlugin(engineType string, files map[string]string) *a
 		copied[strings.Trim(path, "/")] = content
 	}
 	return &apiDownloadTestFilePlugin{engineType: engineType, files: copied}
+}
+
+func newAPIDownloadTestObjectPlugin(engineType string, files map[string]string) *apiDownloadTestFilePlugin {
+	p := newAPIDownloadTestFilePlugin(engineType, files)
+	p.objectCatalog = true
+	return p
 }
 
 func (p *apiDownloadTestFilePlugin) Type() string         { return p.engineType }
@@ -149,6 +225,9 @@ func (p *apiDownloadTestFilePlugin) DefaultPort() int          { return 0 }
 func (p *apiDownloadTestFilePlugin) RequiredFields() []string  { return nil }
 func (p *apiDownloadTestFilePlugin) SensitiveFields() []string { return nil }
 func (p *apiDownloadTestFilePlugin) Capabilities() plugin.EngineCapabilities {
+	if p.objectCatalog {
+		return plugin.NewObjectCapabilities(p.engineType)
+	}
 	return plugin.NewFileCapabilities(p.engineType)
 }
 func (p *apiDownloadTestFilePlugin) StoreSemantics() plugin.StoreSemantics {
@@ -163,7 +242,7 @@ func (p *apiDownloadTestFilePlugin) DescribeItem(_ context.Context, _ plugin.Con
 	now := time.Unix(0, 0)
 	return &plugin.ItemMetadata{
 		Path: itemPath,
-		Kind: plugin.CatalogKindFile,
+		Kind: p.itemKind(),
 		Stats: map[string]interface{}{
 			"size_bytes": int64(len(content)),
 		},
@@ -173,6 +252,13 @@ func (p *apiDownloadTestFilePlugin) DescribeItem(_ context.Context, _ plugin.Con
 		},
 		UpdatedAt: &now,
 	}, nil
+}
+
+func (p *apiDownloadTestFilePlugin) itemKind() string {
+	if p.objectCatalog {
+		return plugin.CatalogKindObject
+	}
+	return plugin.CatalogKindFile
 }
 func (p *apiDownloadTestFilePlugin) OpenContent(_ context.Context, _ plugin.ConnectionInfo, itemPath plugin.CatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
 	filePath := strings.Trim(itemPath.StringPath(), "/")

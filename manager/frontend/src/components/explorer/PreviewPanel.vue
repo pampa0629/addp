@@ -305,15 +305,11 @@ const isStorageManagedDownloadUrl = (url) => {
     const parsed = new URL(url, window.location.origin)
     return [
       '/api/v1/manager/storage-download',
-      '/manager/storage-download',
-      '/api/v1/manager/storage-stream',
-      '/manager/storage-stream'
+      '/manager/storage-download'
     ].includes(parsed.pathname)
   } catch {
     return url.startsWith('/api/v1/manager/storage-download') ||
-      url.startsWith('/manager/storage-download') ||
-      url.startsWith('/api/v1/manager/storage-stream') ||
-      url.startsWith('/manager/storage-stream')
+      url.startsWith('/manager/storage-download')
   }
 }
 

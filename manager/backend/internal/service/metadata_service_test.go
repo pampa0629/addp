@@ -328,6 +328,80 @@ func TestOpenStorageDownloadPlanBundlesNFSShapefileRefs(t *testing.T) {
 	}
 }
 
+func TestOpenStorageDownloadPlanBundlesObjectShapefileRefs(t *testing.T) {
+	t.Parallel()
+
+	engineType := "download_test_object_bundle"
+	plugin.Register(newDownloadTestObjectPlugin(engineType, map[string]string{
+		"gischain/data/farmland.shp": "shape",
+		"gischain/data/farmland.shx": "index",
+		"gischain/data/farmland.dbf": "attrs",
+	}))
+	t.Cleanup(func() { plugin.Unregister(engineType) })
+
+	svc := &MetadataService{
+		systemClient: testSystemClient(t, 9, engineType, nil),
+		metaClient: testMetaItemClient(t, `{
+			"id": 1,
+			"engine_id": 9,
+			"item_type": "object",
+			"name": "farmland.shp",
+			"full_name": "gischain/data/farmland.shp",
+			"attributes": {
+				"item": {
+					"layout": "multi",
+					"format": "shapefile",
+					"refs": [
+						{"path":"data/farmland.shp","role":"main","required":true,"primary":true},
+						{"path":"data/farmland.shx","role":"index","required":true},
+						{"path":"data/farmland.dbf","role":"attributes","required":true}
+					]
+				}
+			}
+		}`),
+	}
+
+	plan, err := svc.ResolveStorageDownloadPlan(t.Context(), 9, "gischain/data/farmland.shp", nil)
+	if err != nil {
+		t.Fatalf("ResolveStorageDownloadPlan() error = %v", err)
+	}
+	if plan.Kind != models.DownloadKindBundle || plan.FileName != "farmland.shapefile.zip" || plan.ContentType != "application/zip" {
+		t.Fatalf("plan = %#v, want object shapefile zip bundle", plan)
+	}
+	if plan.Refs[0].StorageRef != "gischain/data/farmland.shp" || plan.Refs[1].StorageRef != "gischain/data/farmland.shx" {
+		t.Fatalf("normalized refs = %#v, want bucket-prefixed object refs", plan.Refs)
+	}
+
+	reader, err := svc.OpenStorageDownloadPlan(t.Context(), 9, plan, nil)
+	if err != nil {
+		t.Fatalf("OpenStorageDownloadPlan() error = %v", err)
+	}
+	data, err := io.ReadAll(reader)
+	if closeErr := reader.Close(); closeErr != nil && err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		t.Fatalf("read zip: %v", err)
+	}
+	if len(data) == 0 {
+		t.Fatal("zip data is empty")
+	}
+
+	zipReader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatalf("zip.NewReader() error = %v", err)
+	}
+	names := make([]string, 0, len(zipReader.File))
+	for _, file := range zipReader.File {
+		names = append(names, file.Name)
+	}
+	sort.Strings(names)
+	want := []string{"farmland.dbf", "farmland.shp", "farmland.shx"}
+	if strings.Join(names, ",") != strings.Join(want, ",") {
+		t.Fatalf("zip entries = %#v, want %#v", names, want)
+	}
+}
+
 func TestOpenStorageDownloadPlanFailsBeforeWritingWhenRequiredRefMissing(t *testing.T) {
 	t.Parallel()
 
@@ -452,8 +526,9 @@ func testMetaItemClient(t *testing.T, itemJSON string) *client.MetaClient {
 }
 
 type downloadTestFilePlugin struct {
-	engineType string
-	files      map[string]string
+	engineType    string
+	files         map[string]string
+	objectCatalog bool
 }
 
 func newDownloadTestFilePlugin(engineType string, files map[string]string) *downloadTestFilePlugin {
@@ -462,6 +537,12 @@ func newDownloadTestFilePlugin(engineType string, files map[string]string) *down
 		copied[strings.Trim(path, "/")] = content
 	}
 	return &downloadTestFilePlugin{engineType: engineType, files: copied}
+}
+
+func newDownloadTestObjectPlugin(engineType string, files map[string]string) *downloadTestFilePlugin {
+	p := newDownloadTestFilePlugin(engineType, files)
+	p.objectCatalog = true
+	return p
 }
 
 func (p *downloadTestFilePlugin) Type() string         { return p.engineType }
@@ -477,6 +558,9 @@ func (p *downloadTestFilePlugin) DefaultPort() int          { return 0 }
 func (p *downloadTestFilePlugin) RequiredFields() []string  { return nil }
 func (p *downloadTestFilePlugin) SensitiveFields() []string { return nil }
 func (p *downloadTestFilePlugin) Capabilities() plugin.EngineCapabilities {
+	if p.objectCatalog {
+		return plugin.NewObjectCapabilities(p.engineType)
+	}
 	return plugin.NewFileCapabilities(p.engineType)
 }
 func (p *downloadTestFilePlugin) StoreSemantics() plugin.StoreSemantics {
@@ -491,7 +575,7 @@ func (p *downloadTestFilePlugin) DescribeItem(_ context.Context, _ plugin.Connec
 	now := time.Unix(0, 0)
 	return &plugin.ItemMetadata{
 		Path: path,
-		Kind: plugin.CatalogKindFile,
+		Kind: p.itemKind(),
 		Stats: map[string]interface{}{
 			"size_bytes": int64(len(content)),
 		},
@@ -501,6 +585,13 @@ func (p *downloadTestFilePlugin) DescribeItem(_ context.Context, _ plugin.Connec
 		},
 		UpdatedAt: &now,
 	}, nil
+}
+
+func (p *downloadTestFilePlugin) itemKind() string {
+	if p.objectCatalog {
+		return plugin.CatalogKindObject
+	}
+	return plugin.CatalogKindFile
 }
 func (p *downloadTestFilePlugin) OpenContent(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
 	filePath := strings.Trim(path.StringPath(), "/")
