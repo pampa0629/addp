@@ -56,6 +56,19 @@
 
 因此，同一个 `sales.csv` 在 MinIO 中是 `item_type=object`，在 NFS 中是 `item_type=file`；它们都可以同时拥有 `attributes.item.data_type=table`、`attributes.item.format=csv`。不得因为对象内容可按表格读取，就把对象存储中的 `item_type` 写成 `table`。
 
+### storage_ref
+
+`storage_ref` 是后端可打开的存储叶子内容引用，用于 Manager 预览流、原始下载和其他需要直接读取存储内容的链路。它必须遵守所属引擎的 catalog 路径模型：
+
+| 引擎路径模型 | `storage_ref` 示例 | 说明 |
+|---|---|---|
+| 对象存储（MinIO / S3） | `addp/image/photo.jpg` | 以 bucket 开头，后接 object key |
+| 文件系统（NFS） | `gis-data/sample.csv` | 挂载根内相对路径，不包含 NFS `export_path` |
+
+`storage_ref` 指向的是存储叶子，不是任意可预览对象。ZIP entry、Excel sheet、SQLite table 等容器内部 child 不是独立存储叶子，不能伪造 `storage_ref`。数据库 table、SQL 查询结果和计算结果也不是存储叶子，它们的完整下载属于导出语义。
+
+对于 `layout=multi` 的 data item，primary content 可以作为入口 `storage_ref`，完整读取或下载必须再消费 Meta 已确认的 `attributes.item.refs`。`storage_ref` 本身不替代 multi refs 集合。
+
 ---
 
 ## 二、full_name 规则
