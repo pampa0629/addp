@@ -9,7 +9,7 @@ import (
 
 // CapabilityFilter 能力过滤器
 type CapabilityFilter struct {
-	StorageTypes []string // 存储能力族：tabular, document, graph, object, file
+	StorageTypes []string // 存储能力族：tabular, dynamic_schema, graph, object, file
 	RequireBoth  bool     // 预留字段，当前仅支持存储能力过滤
 }
 

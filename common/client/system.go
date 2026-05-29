@@ -387,14 +387,14 @@ func (c *SystemClient) ListObjectStorages(tenantID uint) ([]models.Engine, error
 
 // ListScannableResources 快捷方法：获取所有可扫描的资源（元数据模块使用）
 func (c *SystemClient) ListScannableResources(tenantID uint) ([]models.Engine, error) {
-	return c.ListEnginesByCapability(tenantID, []string{"tabular", "document", "graph", "object", "file"})
+	return c.ListEnginesByCapability(tenantID, []string{"tabular", "dynamic_schema", "graph", "object", "file"})
 }
 
 // ListSQLQueryEngines 快捷方法：获取所有支持查询开发的引擎（开发模块使用）
-// 包含表格型、文档型、图数据库
+// 包含表格型、动态 schema 型、图数据库
 func (c *SystemClient) ListSQLQueryEngines(tenantID uint) ([]models.Engine, error) {
 	// 获取所有支持查询的存储引擎类型
-	allEngines, err := c.ListEnginesByCapability(tenantID, []string{"tabular", "document", "graph"})
+	allEngines, err := c.ListEnginesByCapability(tenantID, []string{"tabular", "dynamic_schema", "graph"})
 	if err != nil {
 		return nil, err
 	}

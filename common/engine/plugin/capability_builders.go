@@ -159,13 +159,13 @@ func NewFileCapabilities(engineType string) EngineCapabilities {
 	}
 }
 
-func NewDocumentCapabilities(engineType string) EngineCapabilities {
+func NewDynamicSchemaCapabilities(engineType string) EngineCapabilities {
 	return EngineCapabilities{
 		SchemaVersion: CapabilitiesSchemaVersion,
 		EngineType:    engineType,
-		EngineFamily:  "document",
+		EngineFamily:  "dynamic_schema",
 		Storage: &StorageCapabilities{
-			CatalogModel: PtrCatalogModel(DocumentCatalogModel()),
+			CatalogModel: PtrCatalogModel(DynamicSchemaCatalogModel()),
 			Catalog: &CatalogCapability{
 				Supported: true,
 				RealTime:  true,
@@ -182,7 +182,7 @@ func NewDocumentCapabilities(engineType string) EngineCapabilities {
 			Store: &StoreCapability{
 				BatchRead: true,
 			},
-			Semantics: []string{"database", "collection", "document"},
+			Semantics: []string{"database", "collection", "dynamic_schema"},
 		},
 		Compute: &ComputeCapabilities{
 			Query: &QueryCapability{

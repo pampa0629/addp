@@ -8,9 +8,9 @@
       "builtin": "database-table"
     },
     {
-      "name": "builtin:doc-collection",
+      "name": "builtin:dynamic-schema-collection",
       "type": "builtin",
-      "builtin": "doc-collection"
+      "builtin": "dynamic-schema-collection"
     },
     {
       "name": "builtin:graph",

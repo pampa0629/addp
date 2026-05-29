@@ -30,7 +30,7 @@ func TestLoadPreviewPluginsRegistersBuiltinDefaultsWithoutFiles(t *testing.T) {
 
 	for _, name := range []string{
 		"builtin:database-table",
-		"builtin:doc-collection",
+		"builtin:dynamic-schema-collection",
 		"builtin:graph",
 		"builtin:scope-table",
 		"builtin:container-child",
@@ -183,6 +183,31 @@ func TestResolveProviderByMetaUsesFileTableForFileCatalogTableFormat(t *testing.
 	}
 	if provider.Name() != "builtin:file-table" {
 		t.Fatalf("provider = %q, want builtin:file-table", provider.Name())
+	}
+}
+
+func TestResolveProviderByMetaUsesDynamicSchemaCollectionForCollectionItem(t *testing.T) {
+	registry := NewPreviewRegistry()
+	registry.Register(namedPreviewProvider{name: "builtin:dynamic-schema-collection"})
+	resolver := NewPreviewResolver(registry, nil, nil)
+
+	req := &PreviewResolverRequest{
+		Locator: &catalogview.ResourceLocator{},
+		Engine:  &commonModels.Engine{EngineType: "mongodb"},
+		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"data_type": "table",
+				"layout":    "single",
+			},
+		}},
+		ItemType: "collection",
+	}
+	provider, err := resolver.resolveProviderByMeta(req, &PreviewRequest{Engine: &models.Engine{EngineType: "mongodb"}, Schema: "business", Table: "orders"})
+	if err != nil {
+		t.Fatalf("resolveProviderByMeta() error = %v", err)
+	}
+	if provider.Name() != "builtin:dynamic-schema-collection" {
+		t.Fatalf("provider = %q, want builtin:dynamic-schema-collection", provider.Name())
 	}
 }
 

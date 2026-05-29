@@ -140,9 +140,9 @@ func TestBuildDynamicSchemaAttributesWritesTypeInfoTableSection(t *testing.T) {
 			IndexType: "btree",
 		}},
 		Stats: map[string]interface{}{
-			"document_count": int64(12),
-			"index_count":    int64(1),
-			"avg_doc_size":   int64(256),
+			"document_count":  int64(12),
+			"index_count":     int64(1),
+			"avg_record_size": int64(256),
 		},
 		Attributes: map[string]interface{}{
 			"database":        "db1",
@@ -174,7 +174,7 @@ func TestBuildDynamicSchemaAttributesWritesTypeInfoTableSection(t *testing.T) {
 	if table["row_count"] != int64(12) {
 		t.Fatalf("type_info.table.row_count missing: %#v", table)
 	}
-	if statistics["sample_size"] != 10 || statistics["index_count"] != int64(1) || statistics["avg_doc_size"] != int64(256) ||
+	if statistics["sample_size"] != 10 || statistics["index_count"] != int64(1) || statistics["avg_record_size"] != int64(256) ||
 		statistics["is_sampled"] != true || statistics["schema_type"] != "dynamic" {
 		t.Fatalf("capabilities.statistics missing: %#v", statistics)
 	}

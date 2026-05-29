@@ -777,7 +777,7 @@ const getCapabilityFamilyLabel = (family) => {
   if (!family) {
     return '-'
   }
-  if (['tabular', 'object', 'file', 'document', 'graph'].includes(family)) {
+  if (['tabular', 'object', 'file', 'dynamic_schema', 'document', 'graph'].includes(family)) {
     return getStorageTypeLabel(family)
   }
   return getComputeTypeLabel(family)

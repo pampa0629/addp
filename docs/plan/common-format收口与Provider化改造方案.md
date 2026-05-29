@@ -34,7 +34,7 @@
 已删除的历史接口包括：
 
 - 数据库表 parser：直接收 `*gorm.DB` 和 `enginePlugin`。
-- 文档集合 parser：直接收 `client interface{}`。
+- 动态 schema 记录集合 parser：直接收 `client interface{}`。
 - 文件表 parser：直接吃 `io.Reader` 并通过旧 registry 暴露。
 
 这些接口更像历史过渡产物，不像稳定的格式能力边界。
@@ -159,7 +159,7 @@ Manager provider 选择也已经改为看标准 attributes：
 
 - `DBTableParser`
 - `FileTableParser`
-- `DocCollectionParser`
+- `DynamicSchemaCollectionParser`
 
 它们不再作为平台主抽象存在，也不再提供注册或获取入口。
 

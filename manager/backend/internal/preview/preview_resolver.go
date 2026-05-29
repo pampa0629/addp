@@ -525,7 +525,7 @@ func providerNamesForMeta(req *PreviewResolverRequest, providerReq *PreviewReque
 
 	switch itemType {
 	case "collection":
-		return []string{"builtin:doc-collection"}
+		return []string{"builtin:dynamic-schema-collection"}
 	case "graph":
 		return []string{"builtin:graph"}
 	}

@@ -131,7 +131,7 @@ type CollectionStats struct {
 	DocumentCount int64       // 文档数量
 	SizeBytes     int64       // 存储大小（字节）
 	IndexCount    int         // 索引数量
-	AvgDocSize    int64       // 平均文档大小（字节）
+	AvgRecordSize int64       // 平均记录大小（字节）
 	Indexes       []IndexInfo // 索引列表
 }
 

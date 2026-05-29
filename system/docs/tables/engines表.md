@@ -238,7 +238,7 @@ type ComputeCapabilities struct {
 |---|---|
 | `schema_version` | 固定为 `engine.capabilities/v1` |
 | `engine_type` | 引擎类型，如 `postgresql`、`mysql`、`python_workflow` |
-| `engine_family` | 粗粒度引擎族，如 `tabular`、`object`、`file`、`document`、`graph`、`workflow`、`script` |
+| `engine_family` | 粗粒度引擎族，如 `tabular`、`object`、`file`、`dynamic_schema`、`graph`、`workflow`、`script` |
 | `storage` | 存储、目录、元数据、内容访问能力 |
 | `compute` | 查询、工作流、脚本或 Notebook 运行能力 |
 | `limits` | 跨能力限制，有真实调用方时使用 |

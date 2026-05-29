@@ -13,7 +13,7 @@ func (p *dynamicSchemaOnlyPlugin) Capabilities() EngineCapabilities {
 	return EngineCapabilities{
 		SchemaVersion: CapabilitiesSchemaVersion,
 		EngineType:    p.Type(),
-		EngineFamily:  "document",
+		EngineFamily:  "dynamic_schema",
 		Storage: &StorageCapabilities{
 			Metadata: &MetadataCapability{
 				Supported:  true,

@@ -136,7 +136,7 @@
 | Item Type | 预览方式 | Provider |
 |-----------|---------|---------|
 | `table` / `view` | 分页表格（列名 + 数据行） | DatabasePreviewProvider |
-| `collection` | 分页表格（推断 Schema + 文档数据） | DocCollectionPreviewProvider |
+| `collection` | 分页表格（动态 schema 字段画像 + 记录数据） | DynamicSchemaCollectionPreviewProvider |
 | `label` | 图节点属性表格（采样节点的属性键值） | **新增** GraphLabelPreviewProvider |
 | `relationship` | 图关系属性表格（采样关系的属性键值） | **新增** GraphRelationshipPreviewProvider |
 | `file` | 文件内容预览（文本/图片/空间数据等） | FileSystemPreviewProvider |

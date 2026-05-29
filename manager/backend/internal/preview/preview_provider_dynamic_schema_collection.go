@@ -11,24 +11,24 @@ import (
 	"github.com/addp/manager/internal/models"
 )
 
-type docCollectionPreviewProvider struct{}
+type dynamicSchemaCollectionPreviewProvider struct{}
 
-func NewDocCollectionPreviewProvider() PreviewProvider {
-	return &docCollectionPreviewProvider{}
+func NewDynamicSchemaCollectionPreviewProvider() PreviewProvider {
+	return &dynamicSchemaCollectionPreviewProvider{}
 }
 
-func (p *docCollectionPreviewProvider) Name() string {
-	return "builtin:doc-collection"
+func (p *dynamicSchemaCollectionPreviewProvider) Name() string {
+	return "builtin:dynamic-schema-collection"
 }
 
-func (p *docCollectionPreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
+func (p *dynamicSchemaCollectionPreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
 	// 1. 获取插件
 	p_, err := plugin.Get(req.Engine.EngineType)
 	if err != nil {
 		return nil, fmt.Errorf("unsupported engine type: %s", req.Engine.EngineType)
 	}
 
-	documentRuntime, ok := p_.(plugin.DocumentQueryRuntimeProvider)
+	queryRuntime, ok := p_.(plugin.DocumentQueryRuntimeProvider)
 	if !ok {
 		return nil, fmt.Errorf("engine %s does not implement DocumentQueryRuntimeProvider", req.Engine.EngineType)
 	}
@@ -66,11 +66,11 @@ func (p *docCollectionPreviewProvider) Preview(ctx context.Context, req *Preview
 	connInfo := plugin.ConnectionInfo(req.Engine.ConnectionInfo)
 	runtimeConnInfo := cloneConnectionInfo(connInfo)
 	runtimeConnInfo["database"] = database
-	command, err := buildDocumentFindCommand(collectionName, skip, limit)
+	command, err := buildDynamicSchemaFindCommand(collectionName, skip, limit)
 	if err != nil {
 		return nil, err
 	}
-	queryResult, err := documentRuntime.ExecuteDocumentQuery(ctx, runtimeConnInfo, command, plugin.QueryOptions{
+	queryResult, err := queryRuntime.ExecuteDocumentQuery(ctx, runtimeConnInfo, command, plugin.QueryOptions{
 		EngineID:   req.Engine.ID,
 		EngineType: req.Engine.EngineType,
 		Limit:      limit,
@@ -99,14 +99,14 @@ func (p *docCollectionPreviewProvider) Preview(ctx context.Context, req *Preview
 	// 6. 获取集合统计信息。失败不阻断预览。
 	total := int64(len(rows))
 	if metadataProvider != nil {
-		if item, err := metadataProvider.DescribeItem(ctx, connInfo, documentCollectionCatalogPath(req.Engine.ID, database, collectionName), plugin.MetadataOptions{IncludeStatistics: true}); err == nil {
+		if item, err := metadataProvider.DescribeItem(ctx, connInfo, dynamicSchemaCollectionCatalogPath(req.Engine.ID, database, collectionName), plugin.MetadataOptions{IncludeStatistics: true}); err == nil {
 			if count := catalogutil.Int64Stat(item.Stats, "document_count"); count > 0 {
 				total = count
 			}
 		}
 	}
 
-	columnMetadata := buildDocumentColumnMetadata(columns, rows)
+	columnMetadata := buildDynamicSchemaColumnMetadata(columns, rows)
 
 	// 7. 构建预览结果
 	preview := &models.TablePreview{
@@ -134,7 +134,7 @@ func cloneConnectionInfo(connInfo plugin.ConnectionInfo) plugin.ConnectionInfo {
 	return cloned
 }
 
-func buildDocumentFindCommand(collection string, skip, limit int) (string, error) {
+func buildDynamicSchemaFindCommand(collection string, skip, limit int) (string, error) {
 	command := map[string]interface{}{
 		"find":   collection,
 		"filter": map[string]interface{}{},
@@ -143,12 +143,12 @@ func buildDocumentFindCommand(collection string, skip, limit int) (string, error
 	}
 	bytes, err := json.Marshal(command)
 	if err != nil {
-		return "", fmt.Errorf("failed to build document preview query: %w", err)
+		return "", fmt.Errorf("failed to build dynamic schema collection preview query: %w", err)
 	}
 	return string(bytes), nil
 }
 
-func documentCollectionCatalogPath(engineID uint, database, collection string) plugin.CatalogPath {
+func dynamicSchemaCollectionCatalogPath(engineID uint, database, collection string) plugin.CatalogPath {
 	return plugin.CatalogPath{
 		Version:  plugin.CatalogPathVersion,
 		EngineID: engineID,
@@ -159,12 +159,12 @@ func documentCollectionCatalogPath(engineID uint, database, collection string) p
 	}
 }
 
-func buildDocumentColumnMetadata(columns []string, rows []map[string]interface{}) []models.ColumnMetadata {
+func buildDynamicSchemaColumnMetadata(columns []string, rows []map[string]interface{}) []models.ColumnMetadata {
 	metadata := make([]models.ColumnMetadata, 0, len(columns))
 	for _, column := range columns {
 		metadata = append(metadata, models.ColumnMetadata{
 			ColumnName:   column,
-			Type:         inferDocumentColumnType(column, rows),
+			Type:         inferDynamicSchemaColumnType(column, rows),
 			IsNullable:   true,
 			IsPrimaryKey: column == "_id",
 		})
@@ -172,7 +172,7 @@ func buildDocumentColumnMetadata(columns []string, rows []map[string]interface{}
 	return metadata
 }
 
-func inferDocumentColumnType(column string, rows []map[string]interface{}) string {
+func inferDynamicSchemaColumnType(column string, rows []map[string]interface{}) string {
 	for _, row := range rows {
 		value, ok := row[column]
 		if !ok || value == nil {

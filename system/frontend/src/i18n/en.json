@@ -369,6 +369,7 @@
           "tabular": "Tabular",
           "object": "Object Storage",
           "file": "File System",
+          "dynamicSchema": "Dynamic Schema Data",
           "document": "Document",
           "graph": "Graph DB",
           "workflow": "Workflow Engine",

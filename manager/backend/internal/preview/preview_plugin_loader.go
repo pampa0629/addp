@@ -16,8 +16,8 @@ var builtinProviderFactoriesWithContent = map[string]func(*repository.MetadataRe
 	"database-table": func(repo *repository.MetadataRepository, metaClient *commonClient.MetaClient, _ string, _ *objectcontent.ObjectContentRegistry) (PreviewProvider, error) {
 		return NewDatabaseTablePreviewProvider(repo, metaClient), nil
 	},
-	"doc-collection": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *objectcontent.ObjectContentRegistry) (PreviewProvider, error) {
-		return NewDocCollectionPreviewProvider(), nil
+	"dynamic-schema-collection": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *objectcontent.ObjectContentRegistry) (PreviewProvider, error) {
+		return NewDynamicSchemaCollectionPreviewProvider(), nil
 	},
 	"graph": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *objectcontent.ObjectContentRegistry) (PreviewProvider, error) {
 		return NewGraphPreviewProvider(), nil
@@ -83,7 +83,7 @@ func registerBuiltinPreviewProviders(registry *PreviewRegistry, metadataRepo *re
 func fallbackBuiltinPreviewPlugins() []PluginConfig {
 	return []PluginConfig{
 		{Name: "builtin:database-table", Type: "builtin", Builtin: "database-table"},
-		{Name: "builtin:doc-collection", Type: "builtin", Builtin: "doc-collection"},
+		{Name: "builtin:dynamic-schema-collection", Type: "builtin", Builtin: "dynamic-schema-collection"},
 		{Name: "builtin:graph", Type: "builtin", Builtin: "graph"},
 		{Name: "builtin:scope-table", Type: "builtin", Builtin: "scope-table"},
 		{Name: "builtin:container-child", Type: "builtin", Builtin: "container-child"},

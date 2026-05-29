@@ -369,6 +369,7 @@
           "tabular": "表格数据",
           "object": "对象存储",
           "file": "文件系统",
+          "dynamicSchema": "动态 Schema 数据",
           "document": "文档数据",
           "graph": "图数据库",
           "workflow": "工作流引擎",

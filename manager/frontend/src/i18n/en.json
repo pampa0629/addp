@@ -354,7 +354,7 @@
           "isSampled": "Sampled",
           "schemaType": "Schema Type",
           "sampleSize": "Sample Size",
-          "avgDocSize": "Avg Doc Size",
+          "avgRecordSize": "Avg Record Size",
           "pageSize": "Page Size",
           "pageCount": "Page Count",
           "tableCount": "Table Count",

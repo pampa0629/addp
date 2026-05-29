@@ -169,7 +169,7 @@ classDiagram
 | 引擎族 | 引擎 |
 | --- | --- |
 | 表格型 | PostgreSQL、MySQL、Doris、ClickHouse、Spark SQL |
-| 文档型 | MongoDB |
+| 动态 schema 记录集合型 | MongoDB |
 | 图数据库 | Neo4j |
 | 对象存储 | MinIO、S3 |
 | 文件系统 | NFS |

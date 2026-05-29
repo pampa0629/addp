@@ -354,7 +354,7 @@
           "isSampled": "采样",
           "schemaType": "结构类型",
           "sampleSize": "样本数",
-          "avgDocSize": "平均文档大小",
+          "avgRecordSize": "平均记录大小",
           "pageSize": "页大小",
           "pageCount": "页数",
           "tableCount": "表数量",

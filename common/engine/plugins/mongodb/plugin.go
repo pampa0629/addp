@@ -53,19 +53,19 @@ func (p *MongoDBPlugin) SensitiveFields() []string {
 }
 
 func (p *MongoDBPlugin) Capabilities() plugin.EngineCapabilities {
-	return plugin.NewDocumentCapabilities(p.Type())
+	return plugin.NewDynamicSchemaCapabilities(p.Type())
 }
 
 func (p *MongoDBPlugin) CatalogModel() plugin.CatalogModelSpec {
-	return plugin.DocumentCatalogModel()
+	return plugin.DynamicSchemaCatalogModel()
 }
 
 func (p *MongoDBPlugin) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemanticsFromCapabilities(p.Capabilities())
 }
 
-func (p *MongoDBPlugin) documentCatalogCallbacks() plugin.DocumentCatalogCallbacks {
-	return plugin.DocumentCatalogCallbacks{
+func (p *MongoDBPlugin) dynamicSchemaCatalogCallbacks() plugin.DynamicSchemaCatalogCallbacks {
+	return plugin.DynamicSchemaCatalogCallbacks{
 		ListDatabasesFunc:      p.listDatabases,
 		ListCollectionsFunc:    p.listCollections,
 		GetCollectionStatsFunc: p.getCollectionStats,
@@ -74,15 +74,15 @@ func (p *MongoDBPlugin) documentCatalogCallbacks() plugin.DocumentCatalogCallbac
 }
 
 func (p *MongoDBPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
-	return plugin.ListDocumentCatalogChildren(ctx, p.documentCatalogCallbacks(), parent.EngineID, connInfo, parent, opts)
+	return plugin.ListDynamicSchemaCatalogChildren(ctx, p.dynamicSchemaCatalogCallbacks(), parent.EngineID, connInfo, parent, opts)
 }
 
 func (p *MongoDBPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
-	return plugin.ResolveDocumentCatalogPath(ctx, p.documentCatalogCallbacks(), path.EngineID, connInfo, path)
+	return plugin.ResolveDynamicSchemaCatalogPath(ctx, p.dynamicSchemaCatalogCallbacks(), path.EngineID, connInfo, path)
 }
 
 func (p *MongoDBPlugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
-	return plugin.DescribeDocumentItem(ctx, p.documentCatalogCallbacks(), path.EngineID, connInfo, path, opts)
+	return plugin.DescribeDynamicSchemaItem(ctx, p.dynamicSchemaCatalogCallbacks(), path.EngineID, connInfo, path, opts)
 }
 
 func (p *MongoDBPlugin) QueryLanguages() []string {

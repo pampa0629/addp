@@ -42,7 +42,7 @@ func BuildNotebookConnection(engine *models.Engine, opts ExportOptions) (map[str
 		addObjectConnectionFields(result, connInfo)
 	case "file":
 		addFileConnectionFields(result, connInfo)
-	case "document", "graph":
+	case "dynamic_schema", "graph":
 		addDSNConnectionFields(result, connInfo, p)
 	default:
 		if !addDSNConnectionFields(result, connInfo, p) {

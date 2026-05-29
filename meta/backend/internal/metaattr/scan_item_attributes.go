@@ -102,8 +102,8 @@ func applyDynamicSchemaMetadata(attrs models.JSONMap, input DynamicSchemaAttribu
 	if v, ok := input.Stats["index_count"]; ok {
 		statistics["index_count"] = v
 	}
-	if v, ok := input.Stats["avg_doc_size"]; ok {
-		statistics["avg_doc_size"] = v
+	if v, ok := input.Stats["avg_record_size"]; ok {
+		statistics["avg_record_size"] = v
 	}
 
 	UpsertNested(attrs, "type_info", "table", table)

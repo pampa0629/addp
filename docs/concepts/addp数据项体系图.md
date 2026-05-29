@@ -136,25 +136,25 @@ data item 的身份由 `meta_item` 表字段承载，例如 `id`、`tenant_id`�
 
 ## 模块职责边界
 
-数据项体系跨越 Meta、Manager、Transfer、common/format、common/contentio 和 engine plugin。为了避免重复推断和事实源分裂，模块职责按以下顺序分层：
+数据项体系跨越 Meta、Manager、Transfer、格式能力、内容 I/O 抽象和引擎能力。为了避免重复推断和事实源分裂，模块职责按以下顺序分层：
 
 ```text
 engine capability
   -> Meta detector 确定 data item
   -> Meta normalizer 写 attributes
-  -> common/contentio 提供内容 I/O 抽象
-  -> common/format 提供格式和数据类型能力
+  -> 内容 I/O 抽象提供读取边界
+  -> 格式和数据类型能力提供解析边界
   -> Manager / Transfer / Asset / Search 消费
 ```
 
 | 模块 / 层级 | 负责 | 不负责 |
 |---|---|---|
-| engine plugin | 连接、catalog、元数据、内容读写、批次读写等 engine capability | 判断最终 `data_type`、归并 multi / whole item、写最终 attributes |
+| engine | 连接、catalog、元数据、内容读写、批次读写等 engine capability | 判断最终 `data_type`、归并 multi / whole item、写最终 attributes |
 | `meta` | 资源树扫描、detector 调度、data item 识别、claims / exclusive 合并、attributes normalizer、落库 | Manager 面向前端的 DTO、Transfer 执行计划、format plugin 内部解析细节 |
-| `common/contentio` | `Ref`、`Reader`、`Writer`、`Lister`、`RangeReader`、`Stat` 等内容 I/O 抽象 | 连接凭据管理、格式解析、multi item 组织规则、面向前端的 DTO |
-| `common/format` | 文件格式枚举、FormatPlugin、格式身份、格式能力、info provider、content reader | 构造 engine reader、决定最终 item 边界、直接写 `meta_item.attributes`、定义展示策略 |
-| `manager` | 消费已入库 data item 和标准 attributes，基于 reader / provider 组装管理端内容结果 | 重新判断 layout、重新猜 format、重新枚举 sibling related refs |
-| `transfer` | 基于 data item、engine capability、contentio 抽象和 format 能力规划读写 | 重复推断字段类型、重复识别 related refs、绕过 provider 硬编码格式 |
+| 内容 I/O 抽象 | 提供统一的 ref、reader、writer、range reader、stat 等内容访问边界 | 连接凭据管理、格式解析、multi item 组织规则、面向前端的 DTO |
+| 格式能力 | 提供格式身份、格式探测、类型信息、内容读取和写出能力 | 构造 engine reader、决定最终 item 边界、直接写 `meta_item.attributes`、定义展示策略 |
+| `manager` | 消费已入库 data item 和标准 attributes，组装管理端内容结果 | 重新判断 layout、重新猜 format、重新枚举 sibling related refs |
+| `transfer` | 基于 data item、engine capability、内容 I/O 抽象和 format 能力规划读写 | 重复推断字段类型、重复识别 related refs、绕过统一能力硬编码格式 |
 | `asset` / `search` | 消费标准 attributes 做资产治理、索引和检索 | 自行识别 data item 或重写格式解析规则 |
 | frontend | 基于后端 DTO 展示内容和交互 | 决定 data item 边界、直接访问 engine、复刻后端格式解析规则 |
 
@@ -165,7 +165,7 @@ engine capability
 | 术语定义 | [ADDP 术语表](addp术语表.md) |
 | data item 边界、primary content / ref、related refs、whole scope、claims / exclusive | [ADDP 数据项探测器规范](../spec/addp数据项探测器规范.md) |
 | attributes 分区和字段归属 | [ADDP 元数据 attributes 规范](../spec/addp元数据attributes规范.md) |
-| 数据类型、文件格式、FormatPlugin、info provider、content reader | [ADDP 数据类型与格式能力规范](../spec/addp数据类型与格式能力规范.md) |
+| 数据类型、文件格式和格式能力接口 | [ADDP 数据类型与格式能力规范](../spec/addp数据类型与格式能力规范.md) |
 | 内容定位和 I/O 抽象 | [ADDP 内容 I/O 抽象规范](../spec/addp内容IO抽象规范.md) |
 | 内置数据类型与文件格式落地规则 | [ADDP 内置数据类型与文件格式规范](../spec/addp内置数据类型与文件格式规范.md) |
 | 新增数据类型或文件格式步骤 | [ADDP 数据类型与文件格式扩展指南](../spec/addp数据类型与文件格式扩展指南.md) |
@@ -177,7 +177,7 @@ engine capability
 ```text
 engine catalog / metadata / content read
   -> Meta detector
-  -> format plugin 提供候选事实
+  -> 格式能力提供候选事实
   -> Meta normalizer
   -> meta_item + attributes
 ```
@@ -189,7 +189,7 @@ Meta 可以调用格式能力，但最终 item 边界和 attributes 核心字段
 ```text
 meta item + attributes
   -> Manager 根据 engine capability 构造 contentio.Reader
-  -> FormatPlugin / info provider / content reader
+  -> 格式能力 / 类型信息能力 / 内容读取能力
   -> Manager 组装管理端 DTO
 ```
 
@@ -201,8 +201,8 @@ Manager 不重新识别 item。multi 读取使用 `attributes.item.refs`；whole
 source / target data item
   -> TransferPlan(engine, resource, data_type, format, capabilities, policy)
   -> contentio.Reader / Writer
-  -> format plugin
-  -> content reader / writer
+  -> 格式能力
+  -> 内容 reader / writer
   -> pipeline reader / writer
 ```
 
@@ -214,5 +214,5 @@ Transfer 可以根据目标能力选择编码格式，但不能绕过标准字�
 2. `manager`、`transfer`、`asset`、`search` 只消费已入库 data item，不复刻 Meta detector。
 3. `common/format` 可以声明 layout 能力，但不直接决定最终 `layout` 和 claims。
 4. `common/contentio` 不进入格式语义，也不承载面向前端的 DTO。
-5. FormatPlugin 不接 `engine_id`，不反向构造 engine reader。
+5. 格式能力不反向访问 engine，也不构造 engine reader。
 6. 私有格式字段必须进入命名空间，不能覆盖平台标准字段。

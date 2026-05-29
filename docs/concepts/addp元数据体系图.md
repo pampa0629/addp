@@ -17,7 +17,7 @@ Meta 不负责：
 
 - Manager 面向前端的 DTO。
 - Transfer 执行计划。
-- FormatPlugin 内部解析细节。
+- 格式能力内部解析细节。
 - Frontend 展示策略。
 
 元数据主链路是：
@@ -26,7 +26,7 @@ Meta 不负责：
 engine catalog / metadata
   -> Meta scanner
   -> Meta detector
-  -> FormatPlugin / info provider / content reader 提供候选事实
+  -> 格式、数据类型和内容读取能力提供候选事实
   -> Meta normalizer
   -> meta_node / meta_item / attributes
   -> search / asset / manager / transfer 消费
@@ -36,9 +36,9 @@ engine catalog / metadata
 
 ```mermaid
 graph LR
-    Engine[Engine Plugin] --> Catalog[CatalogProvider]
-    Engine --> Metadata[ItemMetadataProvider]
-    Engine --> Read[Content / Range / Batch Read]
+    Engine["Engine"] --> Catalog["Catalog Facts"]
+    Engine --> Metadata["Item Metadata Facts"]
+    Engine --> Read["Content / Range / Batch Read"]
 
     Catalog --> Scanner[Meta Scanner]
     Metadata --> Scanner
@@ -47,9 +47,9 @@ graph LR
     Scanner --> Detector[Meta Detector]
     Detector --> Item[Detected Data Item]
 
-    Item --> Format[FormatPlugin]
-    Format --> Info[Info Provider]
-    Format --> Reader[Content Reader]
+    Item --> Format["Format Capability"]
+    Format --> Info["Type / Format Facts"]
+    Format --> Reader["Content Facts"]
 
     Info --> Normalizer[Meta Normalizer]
     Detector --> Normalizer
@@ -57,7 +57,7 @@ graph LR
 
     Normalizer --> NodeTable[meta_node]
     Normalizer --> ItemTable[meta_item]
-    Normalizer --> Attrs[meta_item.attributes]
+    Normalizer --> Attrs["meta_item.attributes"]
 
     Attrs --> Search[Search / Asset]
     ItemTable --> Manager[Manager]
@@ -97,11 +97,11 @@ Meta Scanner 负责调度扫描，不直接定义格式语义。
 
 它主要做：
 
-1. 读取 engine 的 `CatalogModelSpec`，结合 provider 组合选择扫描策略。
-2. 调用 engine capability 获取资源树和基础元信息。
+1. 读取引擎 catalog model，结合能力声明选择扫描策略。
+2. 调用引擎能力获取资源树和基础元信息。
 3. 把扫描范围交给 Meta detector。
 4. 根据 detector 结果构造必要的读取抽象。
-5. 调用 FormatPlugin、info provider 或 content reader 获取候选事实。
+5. 调用格式、类型信息或内容读取能力获取候选事实。
 6. 调用 normalizer 生成 `meta_item` 和标准 attributes。
 7. 写入数据库，并触发搜索或资产侧消费。
 
@@ -112,7 +112,7 @@ Scanner 不应：
 - 绕过 detector 自行拼装 multi / whole item。
 - 只根据 `engine_family` 推断 catalog 层级、item 术语或读取路径。
 
-`engine_family` 只适合做粗分类。Meta 对引擎的统一，不是把 MinIO / S3 和 NFS 视为同一种“文件树”，而是把它们都视为“具备 `CatalogModelSpec` 的存储层级”：差异留在 catalog model 与插件实现里，Meta 只按 `CatalogNode`、`CatalogPath`、`ItemMetadata` 和 provider 契约消费。
+`engine_family` 只适合做粗分类。Meta 对引擎的统一，不是把 MinIO / S3 和 NFS 视为同一种“文件树”，而是要求每类引擎提供稳定 catalog 层级和 item 术语；差异留在 catalog model 与插件实现里，Meta 只消费稳定契约。
 
 Scanner 的扫描深度、覆盖和刷新语义由 `scan_depth`、`scanned_depth`、`force` 和扫描目标共同决定。详细规则见 [ADDP 元数据扫描机制规范](../spec/addp元数据扫描机制规范.md)。
 
@@ -129,27 +129,23 @@ Meta Detector 是 data item 识别的唯一入口。
 - 哪些资源已被 claims 认领。
 - 当前范围是否 exclusive。
 
-Detector 可以使用 FormatPlugin 的布局声明和格式探测结果，但最终 data item 边界由 Meta 裁决。详细规则见 [ADDP 数据项探测器规范](../spec/addp数据项探测器规范.md)。
+Detector 可以使用格式布局声明和格式探测结果，但最终 data item 边界由 Meta 裁决。详细规则见 [ADDP 数据项探测器规范](../spec/addp数据项探测器规范.md)。
 
-## FormatPlugin 与 provider / reader
+## 事实来源与内容读取
 
-Meta 可以调用 `common/format` 的能力，但必须保持职责边界：
+Meta 可以消费引擎、格式和内容读取能力，但必须保持职责边界：
 
-| 能力 | Meta 如何使用 | 写入位置 |
+| 来源类别 | Meta 如何使用 | 边界 |
 |---|---|---|
-| FormatPlugin descriptor / capability | 判断格式身份、默认 data type、布局和可用能力 | `attributes.item` 的候选来源 |
-| FormatInfoProvider | 获取格式私有元信息 | `attributes.format_info.<format>` |
-| TableInfoProvider | 获取表字段、行数、主键等类型信息 | `attributes.type_info.table` |
-| DocumentInfoProvider | 获取文档标题、页数、语言、编码、字数等结构元信息 | `attributes.type_info.document` |
-| MediaInfoProvider | 获取媒体宽高、编码、时长等 | `attributes.type_info.media` |
-| ContainerInfoProvider | 获取容器 child 摘要、默认入口、child refs 等 | `attributes.type_info.container` |
-| GraphMetadataProvider | 获取 graph node shapes、relationship shapes、连接模式和计数 | `attributes.type_info.graph` |
-| DocumentTextReader | 获取文档正文片段，用于全文索引或预览摘要 | `capabilities.extraction` 状态、外部索引；正文不写入 `type_info.document` |
-| Content reader | 获取内容片段、样本或读取索引需要的事实 | 通常不直接落内容；必要索引写入 `access_index` |
+| 引擎 catalog 和 item metadata | 获取资源层级、原生 item、基础结构事实 | 不按 `engine_family` 猜测 catalog 层级，不把展示需求写回引擎模型 |
+| 格式身份和布局能力 | 辅助判断格式、默认数据类型、multi / whole 归并候选 | 不裁决最终 data item 边界 |
+| 类型信息能力 | 获取 table、document、media、container、graph 等结构事实 | 只提供元数据，不返回内容样本或前端 DTO |
+| 格式私有信息能力 | 获取某个格式内部的私有事实 | 不替代通用 type info，也不承载横切能力 |
+| 内容读取能力 | 获取内容片段、表格样本、正文片段或访问索引所需事实 | 内容本身通常不直接落 attributes；全文和索引引用进入相应能力分区 |
 
 内容样本、原始内容、Manager 前端 DTO 不属于元数据属性，不能塞进 `type_info` 或 `format_info`。
 
-`type_info` 的事实源是 `common/datatype` 中的 `TableInfo`、`DocumentInfo`、`MediaInfo`、`ContainerInfo`、`GraphInfo` 等通用结构。Meta 可以消费 engine `ItemMetadata` 或 format info provider，但最终落库必须通过统一 normalizer 写入标准分区，Manager / Transfer / Search 不应再自行拼装这些主事实。
+type info 是 data type 的通用结构事实。Meta 可以消费引擎或格式侧提供的事实，但最终落库必须通过统一 normalizer 写入标准分区，Manager / Transfer / Search 不应再自行拼装这些主事实。具体 provider 和 reader 接口见规范层文档。
 
 ## Attributes 分区
 
@@ -185,20 +181,20 @@ Meta normalizer 是 attributes 标准分区的最终裁决点。
 ```mermaid
 sequenceDiagram
     participant Meta as Meta Scanner
-    participant Engine as Engine Plugin
+    participant Engine as Engine
     participant Detector as Meta Detector
-    participant Format as FormatPlugin
+    participant Format as Format Capability
     participant Normalizer as Meta Normalizer
     participant DB as PostgreSQL
     participant Search as Search / Asset
 
-    Meta->>Engine: CatalogProvider.ListChildren(scope)
+    Meta->>Engine: List catalog children
     Engine-->>Meta: nodes / resource candidates
-    Meta->>Engine: ItemMetadataProvider / read capability
+    Meta->>Engine: item metadata / read capability
     Engine-->>Meta: storage facts / content readers
     Meta->>Detector: ResolveItems(scope, candidates)
     Detector-->>Meta: detected items / claims / exclusive
-    Meta->>Format: descriptor / info provider / content reader
+    Meta->>Format: format / type / content capability
     Format-->>Meta: type info / format info / capability facts
     Meta->>Normalizer: normalize item + facts
     Normalizer-->>Meta: meta_node / meta_item / attributes
@@ -215,7 +211,7 @@ sequenceDiagram
 
 基础扫描和深度扫描都必须遵守同一套 data item 与 attributes 规范。深度扫描只是补充事实，不改变 item 身份规则。
 
-文档全文检索属于深度扫描或提取任务的内容处理结果，不改变 `DocumentInfo` 主事实边界。Meta 负责调用 `DocumentTextReader` 或外部 extractor，把正文送入搜索索引，并在 attributes 中记录提取状态、预览和索引引用；Manager 只提供检索入口和结果展示，不解析文档正文。
+文档全文检索属于深度扫描或提取任务的内容处理结果，不改变 document 主事实边界。Meta 负责把正文送入搜索索引，并在 attributes 中记录提取状态、预览和索引引用；Manager 只提供检索入口和结果展示，不解析文档正文。
 
 `scanned_depth` 表示 node / item 当前已经达到的扫描深度，`scan_status` 表示扫描任务过程状态。二者不能混用：一个 item 可以历史上已经 deep 完成，同时最近一次扫描任务失败。
 
@@ -228,17 +224,17 @@ Manager 刷新和预览补齐只能要求 Meta 对目标 engine / node / item �
 | 模块 | 消费方式 | 不应做的事 |
 |---|---|---|
 | Manager | 读取已入库 data item 和 attributes，构造内容读取和前端 DTO | 重新探测 item、重新猜组件 |
-| Transfer | 基于 data item、engine capability、contentio 抽象和 format 能力规划读写 | 重复推断字段类型、绕过 provider 硬编码格式 |
+| Transfer | 基于 data item、engine capability、内容读取抽象和 format 能力规划读写 | 重复推断字段类型、绕过统一能力硬编码格式 |
 | Asset / Search | 索引标准 attributes 和必要私有命名空间 | 自行解析文件格式 |
 | Frontend | 展示后端 DTO | 直接访问 engine 或裁决 data item 边界 |
 
 ## 设计约束
 
 1. Meta 是 data item 识别和 attributes normalizer 的所有者。
-2. FormatPlugin 只提供格式身份、能力和解析实现，不裁决最终 item。
-3. Info provider 提供元数据，content reader 提供内容数据，二者不能混用。
-4. 旧 `FileMetadataExtractor` 旁路机制已删除；新增格式必须通过 FormatPlugin、info provider 和 content reader 进入主线。
-5. `TableInfo` 不再通过开放式扩展接口承载补充事实；格式私有事实进入 `format_info`，横切事实进入 `capabilities`，内容读取索引进入 `access_index`。
+2. 格式能力只提供格式身份、能力和解析实现，不裁决最终 item。
+3. 类型信息能力提供元数据，内容读取能力提供内容数据，二者不能混用。
+4. 旧文件元数据提取旁路机制已删除；新增格式必须通过正式格式能力、类型信息能力和内容读取能力进入主线。
+5. table 主事实不再通过开放式扩展接口承载补充事实；格式私有事实、横切事实和内容读取索引各自进入对应分区。
 6. Manager / Transfer / Asset / Search 只能消费已入库 data item，不复刻 Meta detector。
 
 ## 相关文档

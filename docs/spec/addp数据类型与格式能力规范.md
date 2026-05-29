@@ -461,7 +461,7 @@ info provider 只回答对应 data type 的元数据语义；sample / text reade
 
 ### DocumentInfoProvider / DocumentTextReader
 
-`DocumentInfoProvider` 和 `DocumentTextReader` 面向 PDF、Word、Markdown、纯文本、富文本集合、文档型数据库记录等文档型 data item。
+`DocumentInfoProvider` 和 `DocumentTextReader` 面向 PDF、Word、Markdown、纯文本、富文本对象、文档型数据库中的单条阅读型记录等 document data item。MongoDB collection 这类动态 schema 记录集合不属于该 provider 边界。
 
 `DocumentInfoProvider` 提供：
 
@@ -491,7 +491,7 @@ info provider 只回答对应 data type 的元数据语义；sample / text reade
 
 ### ContainerInfoProvider / ContainerChildResolver
 
-`ContainerInfoProvider` 和 `ContainerChildResolver` 面向目录、压缩包、Excel 工作簿、SQLite / GeoPackage、文档集合等容器型 data item。
+`ContainerInfoProvider` 和 `ContainerChildResolver` 面向目录、压缩包、Excel 工作簿、SQLite / GeoPackage、文档归档包等容器型 data item。MongoDB collection 这类动态 schema 记录集合不属于 container provider 边界。
 
 它提供：
 

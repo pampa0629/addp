@@ -51,12 +51,12 @@
 | MinIO / S3 | object | `object` | `data_type=table/document/media/container`，`format=csv/wps/png/excel` |
 | NFS / 本地文件系统 | file | `file` | `data_type=table/document/media/container`，`format=csv/wps/png/excel` |
 | PostgreSQL / MySQL / Doris / ClickHouse | table / view | `table` / `view` | 通常 `data_type=table` |
-| MongoDB | collection | `collection` | 动态 schema 的 JSON/BSON 文档集合按记录集合消费，固定为 `data_type=table` |
+| MongoDB | collection | `collection` | 原生 JSON/BSON document 组成的动态 schema 记录集合，固定为 `data_type=table` |
 | Neo4j | graph | `graph` | `data_type=graph` |
 
 因此，同一个 `sales.csv` 在 MinIO 中是 `item_type=object`，在 NFS 中是 `item_type=file`；它们都可以同时拥有 `attributes.item.data_type=table`、`attributes.item.format=csv`。不得因为对象内容可按表格读取，就把对象存储中的 `item_type` 写成 `table`。
 
-MongoDB collection 是 JSON/BSON 文档集合容器，不是关系型数据库表，也不是 DOCX / PDF 这类阅读型 `document`。在当前 ADDP 能力中，collection 作为动态 schema 记录集合消费：`meta_item.item_type=collection` 保留 MongoDB 原生 catalog 术语，`attributes.item.data_type=table` 用于预览、查询、字段画像和传输等平台能力选择。不得为 MongoDB collection 写入 `type_info.document` 或新增 `type_info.collection`。
+MongoDB collection 由 JSON/BSON document 记录组成，不是关系型数据库表，也不是 DOCX / PDF 这类阅读型 `document`。在当前 ADDP 能力中，collection 作为动态 schema 记录集合消费：`meta_item.item_type=collection` 保留 MongoDB 原生 catalog 术语，`attributes.item.data_type=table` 用于预览、查询、字段画像和传输等平台能力选择。不得为 MongoDB collection 写入 `type_info.document` 或新增 `type_info.collection`。
 
 ### storage_ref
 

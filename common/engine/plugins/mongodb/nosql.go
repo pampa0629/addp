@@ -129,7 +129,7 @@ func (p *MongoDBPlugin) getCollectionStats(ctx context.Context, connInfo plugin.
 			DocumentCount: int64(count),
 			SizeBytes:     0,
 			IndexCount:    0,
-			AvgDocSize:    0,
+			AvgRecordSize: 0,
 			Indexes:       []plugin.IndexInfo{},
 		}, nil
 	}
@@ -145,7 +145,7 @@ func (p *MongoDBPlugin) getCollectionStats(ctx context.Context, connInfo plugin.
 		DocumentCount: statsDoc.StorageStats.Count,
 		SizeBytes:     statsDoc.StorageStats.Size,
 		IndexCount:    statsDoc.StorageStats.NIndexes,
-		AvgDocSize:    statsDoc.StorageStats.AvgObjSize,
+		AvgRecordSize: statsDoc.StorageStats.AvgObjSize,
 		Indexes:       indexes,
 	}, nil
 }
@@ -235,10 +235,10 @@ func (p *MongoDBPlugin) SampleDynamicSchema(ctx context.Context, connInfo plugin
 		Fields:  fields,
 		Indexes: append([]plugin.IndexInfo{}, stats.Indexes...),
 		Stats: map[string]interface{}{
-			"document_count": stats.DocumentCount,
-			"size_bytes":     stats.SizeBytes,
-			"index_count":    stats.IndexCount,
-			"avg_doc_size":   stats.AvgDocSize,
+			"document_count":  stats.DocumentCount,
+			"size_bytes":      stats.SizeBytes,
+			"index_count":     stats.IndexCount,
+			"avg_record_size": stats.AvgRecordSize,
 		},
 		Attributes: attrs,
 	}, nil

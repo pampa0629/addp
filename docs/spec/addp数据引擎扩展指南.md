@@ -22,7 +22,7 @@
 | 引擎类型 | 必选接口 | 常用可选接口 |
 | --- | --- | --- |
 | 关系型 / SQL 表格型 | `EnginePlugin`、`CatalogModelProvider`、`CatalogProvider`、`ItemMetadataProvider`、`SQLQueryRuntimeProvider` | `ConnectionPoolPlugin` |
-| 动态 schema / 文档集合型 | `EnginePlugin`、`CatalogModelProvider`、`CatalogProvider`、`ItemMetadataProvider` | `DynamicSchemaSamplingProvider`、`DocumentQueryRuntimeProvider` |
+| 动态 schema 记录集合型 | `EnginePlugin`、`CatalogModelProvider`、`CatalogProvider`、`ItemMetadataProvider` | `DynamicSchemaSamplingProvider`、`DocumentQueryRuntimeProvider` |
 | 图数据库 | `EnginePlugin`、`CatalogModelProvider`、`CatalogProvider`、`ItemMetadataProvider`、`GraphMetadataProvider`、`QueryRuntimeProvider` | `GraphSampleProvider`、`GraphQueryProvider` |
 | 对象存储 | `EnginePlugin`、`CatalogModelProvider`、`CatalogProvider`、`ItemMetadataProvider` | `ContentReadableProvider`、`ContentWritableProvider` |
 | 文件系统 | `EnginePlugin`、`CatalogModelProvider`、`CatalogProvider`、`ItemMetadataProvider` | `ContentReadableProvider`、`ContentWritableProvider` |

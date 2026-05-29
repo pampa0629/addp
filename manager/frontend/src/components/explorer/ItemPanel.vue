@@ -425,7 +425,7 @@ const fieldLabelKeys = {
   is_sampled: 'manager.explorer.attributes.fields.isSampled',
   schema_type: 'manager.explorer.attributes.fields.schemaType',
   sample_size: 'manager.explorer.attributes.fields.sampleSize',
-  avg_doc_size: 'manager.explorer.attributes.fields.avgDocSize',
+  avg_record_size: 'manager.explorer.attributes.fields.avgRecordSize',
   page_size: 'manager.explorer.attributes.fields.pageSize',
   page_count: 'manager.explorer.attributes.fields.pageCount',
   table_count: 'manager.explorer.attributes.fields.tableCount',

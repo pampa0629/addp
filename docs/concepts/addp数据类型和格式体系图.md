@@ -13,13 +13,13 @@
 
 - 一个数据类型可以由多种格式承载，例如 `table` 可以来自 CSV、TSV、Parquet、Shapefile、数据库表、JSON FeatureCollection。
 - 一个格式也可能根据内容结构落到不同数据类型，例如 JSON 可以是 table、document 或 container。
-- 数据库表、文档集合、graph 等引擎原生 item 可以没有文件格式，但仍必须有数据类型。
+- 数据库表、动态 schema 记录集合、graph 等引擎原生 item 可以没有文件格式，但仍必须有数据类型。
 
 ## 数据类型
 
 数据类型是对一类 data item 的高层抽象。它们通常具备相似的数据特征、内容读取方式、处理手段和治理方式。
 
-`common/datatype` 是 ADDP data type 与 type info 的代码事实源。各模块不得在 `common/format`、`common/engine`、Meta、Manager 或 Transfer 中重新定义平行的 data type / type info 公共模型。
+ADDP 只维护一套稳定的数据类型和类型信息语义。各模块不得按自己的展示、扫描或读写习惯重新发明平行的数据类型边界；具体代码结构、接口契约和字段落点见规范层文档。
 
 第一版基础数据类型如下：
 
@@ -45,11 +45,11 @@
 - Shapefile。
 - Parquet / ORC / Avro。
 - Iceberg 等目录型表格式。
-- MongoDB collection 等动态 schema 的 JSON/BSON 文档集合。
+- MongoDB collection 等动态 schema 的 JSON/BSON 记录集合。
 
 CSV 和 JSON 虽然有文本属性，但只要平台把它们作为行列数据处理，就应归为 `table`。文本属性属于文件格式或读取方式，不应把 CSV 放进 `document`。
 
-MongoDB collection 的 `meta_item.item_type` 仍是 `collection`，表示引擎原生 catalog 叶子术语；在 ADDP 当前能力中，它作为动态 schema 记录集合消费，`attributes.item.data_type` 固定为 `table`。`type_info.table.fields` 表示采样推断出的字段画像，不是关系型数据库强 schema；采样规模、动态 schema 类型、平均文档大小等画像事实进入 `capabilities.statistics`，索引摘要进入 `capabilities.indexing`。collection 不写 `type_info.document`，也不新增独立 `document_collection` data type。
+MongoDB collection 是动态 schema 的 JSON/BSON 记录集合容器。它既不是关系型数据库表，也不是 PDF / DOCX 这类以阅读和正文提取为主的 document；在 ADDP 当前语义中，它按记录集合归入 `table`，同时保留 collection 作为引擎原生 catalog 术语。具体 attributes 落点、采样画像和索引事实归属见规范层文档。
 
 JSON 默认按 `document` 兜底；只有内容事实能严格证明它是记录集合时才升级为 `table`。当前明确支持两类 JSON table：顶层对象数组和 GeoJSON `FeatureCollection.features`。`{"data":[...]}`、`{"rows":[...]}`、NDJSON 等结构是否作为 table，需要先补规范再实现，不能用字段名或习惯做隐式猜测。
 
@@ -64,7 +64,7 @@ JSON / GeoJSON 也不默认具备空间能力。只有实际记录里发现 GeoJ
 - PDF。
 - Word / WPS / RTF / Markdown / 纯文本。
 - 配置文件或嵌套 JSON 文档。
-- 文档型数据库记录。
+- 文档型数据库中的单条阅读型记录。
 
 `document` 只说明用户如何理解和消费该 item，不等于后端已经能完整解析正文。WPS 可以表达为 `data_type=document + format=wps`，即使当前后端只提供 raw content 或 range content。
 
@@ -78,9 +78,9 @@ JSON / GeoJSON 也不默认具备空间能力。只有实际记录里发现 GeoJ
 - 视频：MP4 / MOV / MKV / AVI / WebM 等容器格式。
 - 音频：MP3 / WAV / FLAC / AAC / OGG 等音频格式。
 
-图片、视频、音频之间的差异可通过 `type_info.media.kind=image|video|audio` 或类似字段表达，不新增基础数据类型。
+图片、视频、音频之间的差异属于媒体类型信息，不新增基础数据类型。
 
-媒体文件的容器格式、编码格式和横切能力应分层表达：`format` 优先表达文件或容器格式，`type_info.media` 只承载跨图片、音频、视频稳定通用且已有消费方的字段。视频编码、音频编码、帧率、采样率、码率、轨道数等细粒度事实暂不作为 `MediaInfo` 主事实；需要保留时进入受控 `format_info.<format>` 或 `capabilities.extraction`。GeoTIFF、带 GPS 的图片等空间语义进入 `capabilities.spatial`，不新增“空间图片”或“视频数据”数据类型。
+媒体文件的容器格式、编码格式和横切能力应分层表达。视频编码、音频编码、帧率、采样率、码率、轨道数等细粒度事实暂不作为媒体主事实；GeoTIFF、带 GPS 的图片等空间语义也不新增“空间图片”或“视频数据”数据类型。具体字段归属见规范层文档。
 
 ### container
 
@@ -93,7 +93,7 @@ JSON / GeoJSON 也不默认具备空间能力。只有实际记录里发现 GeoJ
 - GeoPackage。
 - ZIP / RAR / TAR。
 
-容器是数据类型，不是内容布局。大多数容器文件外层仍是 `layout=single`，内部对象默认写入 `type_info.container.children`。
+容器是数据类型，不是内容布局。大多数容器文件外层仍是单资源 item，内部对象作为容器 child 摘要表达。
 
 ### graph
 
@@ -144,19 +144,19 @@ graph 的核心是节点和关系。Neo4j label、relationship type、RDF class 
 
 ## 类型信息与格式信息
 
-`xxx info` 是对应数据类型的通用元数据，代码结构定义在 `common/datatype`。每个 data type 只有一类通用 type info，Meta 写入 `attributes.type_info.<data_type>`：
+`xxx info` 是对应数据类型的通用元数据。每个 data type 只有一类通用 type info：
 
 | 数据类型 | 类型信息示例 |
 |---|---|
-| `table` / `datatype.TableInfo` | 字段列表、字段类型、主键、行数、大小、表级 native 事实 |
-| `document` / `datatype.DocumentInfo` | 标题、语言、编码、页数、字数、大小 |
-| `media` / `datatype.MediaInfo` | kind、MIME、宽高、时长、编码、颜色空间 |
-| `container` / `datatype.ContainerInfo` | child 数量、默认 child、child 轻量摘要、child refs |
-| `graph` / `datatype.GraphInfo` | node shapes、relationship shapes、连接模式、属性结构、节点数、关系数 |
+| `table` | 字段列表、字段类型、主键、行数、大小、表级原生摘要 |
+| `document` | 标题、语言、编码、页数、字数、大小 |
+| `media` | 媒体种类、MIME、宽高、时长、编码、颜色空间 |
+| `container` | child 数量、默认 child、child 轻量摘要、child refs |
+| `graph` | node shapes、relationship shapes、连接模式、属性结构、节点数、关系数 |
 
 这些 type info 是结构事实，不是内容数据，也不是格式私有信息。文档正文、表格样本、图片缩略图、原始二进制、视频流、图节点样本等必须通过 content reader、sample reader、query provider 或业务模块结果表达，不写入 `type_info`。
 
-每个 data type 只有一类通用 info。格式实现只负责在已确定的 `data_type + format` 下提取这类 info；Meta 负责把它写入 `meta_item.attributes.type_info`。
+每个 data type 只有一类通用 info。格式、引擎和扫描实现只负责提供事实；具体如何写入 attributes 由规范层定义。
 
 格式信息是某个具体文件格式才有的描述：
 
@@ -170,25 +170,25 @@ graph 的核心是节点和关系。Neo4j label、relationship type、RDF class 
 
 类型信息不等于内容数据。`table info` 描述字段、行数、主键等元数据；表格样本、文档原文片段、图片缩略图、原始二进制内容等属于内容读取能力。
 
-空间、时间、统计、提取、语义、分区、索引等是横切事实，不新增为基础 data type，也不塞进某个 type info。典型落点是 `attributes.capabilities.*` 或 `attributes.access_index.*`。
+空间、时间、统计、提取、语义、分区、索引等是横切事实，不新增为基础 data type，也不塞进某个 type info。具体落点见元数据 attributes 规范。
 
-`AccessIndex` 虽然当前代码结构暂居 `common/datatype`，但它不是 data type、本体类型信息或格式私有信息。它描述内容读取访问索引，例如表格稀疏行索引；规范落点始终是 `attributes.access_index.<data_type>`。
+内容读取访问索引不是 data type、本体类型信息或格式私有信息；它只描述如何更快定位内容窗口，例如表格稀疏行索引。
 
-## FormatPlugin
+## 格式能力
 
-`FormatPlugin` 是一个文件格式在 `common/format` 中的主入口。它承载格式身份、能力声明和具体实现。
+格式能力描述平台能否识别某种内容编码、能否获取对应数据类型信息、能否读取样本或连续内容，以及能否执行写出或传输。格式能力不决定最终 data item 边界；最终 item 由数据项识别和 Meta 扫描上下文共同确认。
 
-FormatPlugin 可以声明或提供：
+格式能力可以覆盖：
 
 - 格式身份：稳定格式 ID、名称、默认数据类型。
 - 格式探测：扩展名、MIME、magic bytes、内容签名。
 - 布局能力：single / multi / whole、primary ref、related refs 规则、manifest 规则。
-- info provider：数据类型信息和格式信息。
-- content reader：样本、文本片段、缩略图、原始内容、范围内容。
+- 元信息能力：数据类型信息和格式信息。
+- 内容读取能力：样本、文本片段、缩略图、原始内容、范围内容。
 - 横切能力事实：spatial、temporal、statistics、extraction 等候选事实。
 - transfer 相关能力：批量读写、related refs 写入、提交边界。
 
-FormatPlugin 不负责：
+格式能力不负责：
 
 - 构造 engine reader。
 - 接收 `engine_id` 后反向访问存储。
@@ -196,43 +196,25 @@ FormatPlugin 不负责：
 - 直接写 `meta_item.attributes`。
 - 返回 Manager 或 Frontend 专用展示协议。
 
-## Format Identity 与 Format Detection
+## 格式身份与格式识别
 
-`format identity` 定义“平台支持的这个格式是谁”。它是静态注册事实，通常由 `FormatDescriptor` 或 `FormatPlugin` 表达。
+`format identity` 定义“平台支持的这个格式是谁”。它是静态注册事实。
 
 `format detection` 是“给定一个 content，判断它像哪个格式”的动态过程。它输入文件名、MIME、magic bytes、内容签名或 ref 上下文，输出指向某个 format identity 的识别结果。
 
-`format normalization` 是消费已有 format-like 字符串时的归一化过程。上层模块必须通过 `common/format.NormalizeFormat` 把 attributes、扩展名、MIME 或文件名转换为 canonical format；识别不到就是 `unknown`，不能把裸后缀或未知字符串当作 format 写入系统语义字段。
+`format normalization` 是消费已有 format-like 字符串时的归一化过程。识别不到就是 `unknown`，不能把裸后缀或未知字符串当作 format 写入系统语义字段。
 
 | 维度 | Format Identity | Format Detection |
 |---|---|---|
 | 回答的问题 | 平台支持哪些格式以及这些格式能做什么 | 当前 content 看起来是什么格式 |
 | 性质 | 静态注册事实 | 动态识别过程 |
-| 输入 | plugin / descriptor 注册信息 | 文件名、MIME、magic bytes、内容片段、ref 上下文 |
-| 输出 | format descriptor / capability | detection result，指向某个 format |
+| 输入 | 格式注册信息 | 文件名、MIME、magic bytes、内容片段、ref 上下文 |
+| 输出 | 格式身份和能力 | 指向某个 format 的识别结果 |
 | 是否决定 item | 不决定 | 不最终决定，只给 Meta detector 提供格式候选 |
 
 Shapefile 这类 multi 格式尤其要区分：单个 `.shp/.dbf/.shx` 的识别不等于 data item 归并；最终 item 边界由 Meta detector 根据 format layout 和候选 content 上下文决定。
 
-未知扩展名文本文件不需要预先注册一个具体 format。`DetectFormat(filename, peek)` 在扩展名、MIME、内容签名、sniffer 和 magic bytes 都失败后，可以根据内容前缀的 UTF-8 文本特征返回 `format=text`；没有内容证据时保持 `unknown`。剩余 unknown 非文本内容由 `BinaryContentReader` 提供 raw binary 兜底，不引入 `binary` data type 或 `binary` format。
-
-## Provider 与 Reader 矩阵
-
-`provider` / `reader` 的命名跟随消费意图：info provider 提供元信息，sample / text reader 提供轻量内容，reader provider 打开连续读取会话，writer provider 打开连续写出会话。它们不应混用。
-
-| 数据类型 / 内容布局 | info provider | sample / text reader | continuous reader / writer |
-|---|---|---|---|
-| `table` + `single` | `TableInfoProvider` | `TableSampleReader` | `TableReaderProvider`、`TableWriterProvider` |
-| `table` + `multi` | `MultiTableInfoProvider` | `MultiTableSampleReader` | `MultiTableReaderProvider`、`MultiTableWriterProvider` |
-| `table` + `whole` | `ScopeTableInfoProvider` | `ScopeTableSampleReader` | 后续按需补 `ScopeTableReaderProvider` / `ScopeTableWriterProvider` |
-| `document` | `DocumentInfoProvider` | `DocumentTextReader` | raw / range content 由 `contentio` 或后续 reader 表达 |
-| `unknown` | 无 | `BinaryContentReader` | 仅用于 unknown 非文本内容的 raw binary 兜底，不引入 binary data type |
-| `media` | `MediaInfoProvider` | 后续 `MediaThumbnailReader` | raw / range content 由 `contentio` 或后续 reader 表达 |
-| `container` | `ContainerInfoProvider` | `ContainerChildResolver`、内部对象读取 | child 解析后继续进入对应 data type provider |
-| `graph` | `GraphMetadataProvider` / `datatype.GraphInfo` | `GraphSampleProvider` | 图查询读取由 graph / engine 能力表达 |
-| 横切能力 | spatial 等横切事实进入 `capabilities.*` | 不替代 data type reader | 不替代 data type reader / writer |
-
-新实现应按 info、sample、continuous reader、writer 拆开设计，不新增同时表达多种消费意图的组合 provider。
+未知扩展名文本文件不需要预先注册一个具体 format。当扩展名、MIME、内容签名和 magic bytes 都失败后，可以根据内容前缀的文本特征识别为 `format=text`；没有内容证据时保持 `unknown`。剩余 unknown 非文本内容只能作为 raw binary 兜底，不引入 `binary` data type 或 `binary` format。
 
 ## 横切能力
 
@@ -258,22 +240,7 @@ Shapefile 这类 multi 格式尤其要区分：单个 `.shp/.dbf/.shx` 的识别
 
 ## attributes 分层
 
-基于上述概念，data item attributes 应表达：
-
-```json
-{
-  "storage": {},
-  "item": {
-    "layout": "single|multi|whole",
-    "data_type": "table|document|media|container|graph|unknown",
-    "format": "..."
-  },
-  "type_info": {},
-  "format_info": {},
-  "access_index": {},
-  "capabilities": {}
-}
-```
+基于上述概念，data item attributes 分层表达。具体 JSON 字段和写入规则见元数据 attributes 规范。
 
 | 分区 | 回答的问题 | 示例 |
 |---|---|---|
@@ -286,7 +253,7 @@ Shapefile 这类 multi 格式尤其要区分：单个 `.shp/.dbf/.shx` 的识别
 
 `meta_item` 表字段仍是 item 身份和归属的事实源。attributes 不重复保存 `id`、`tenant_id`、`engine_id`、`node_id`、`name`、`full_name`、`fingerprint` 等表字段。
 
-`attributes.type_info.file` 不存在。文件 / 对象 / 目录的基础事实应写入 `storage`，内容语义写入 `item.data_type` 与对应 `type_info.<data_type>`。
+文件 / 对象 / 目录没有独立的 file type info；基础事实属于 storage，内容语义属于对应 data type。
 
 ## 后续阅读
 
