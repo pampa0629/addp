@@ -824,7 +824,7 @@ func vectorDocumentToSearchDocument(v VectorDocument) SearchDocument {
 		EngineID:       v.EngineID,
 		EngineName:     v.EngineName,
 		EngineType:     v.EngineType,
-		AssetType:      string(catalogview.TypeObject),
+		AssetType:      "object",
 		Bucket:         bucket,
 		Path:           path,
 		Name:           name,
@@ -841,7 +841,7 @@ func vectorDocumentToSearchDocument(v VectorDocument) SearchDocument {
 	if doc.Title == "" {
 		doc.Title = getStringFromMeta(meta, "title")
 	}
-	doc.Locator = buildSearchDocumentLocator(doc)
+	doc.Locator = searchResultLocatorFromMetadata(meta)
 	return doc
 }
 
@@ -862,7 +862,7 @@ func mapMeilisearchHit(hit interface{}) SearchDocument {
 		doc.AssetID = val
 	}
 	if val, ok := hitMap["locator"].(string); ok {
-		doc.Locator = val
+		doc.Locator = normalizeSearchResultLocator(val)
 	}
 	if val, ok := hitMap["engine_id"].(float64); ok {
 		doc.EngineID = uint(val)
@@ -963,73 +963,36 @@ func mapMeilisearchHit(hit interface{}) SearchDocument {
 		doc.Score = score
 	}
 
-	if strings.TrimSpace(doc.Locator) == "" {
-		doc.Locator = buildSearchDocumentLocator(doc)
-	}
 	return doc
 }
 
-func buildSearchDocumentLocator(doc SearchDocument) string {
-	if doc.EngineID == 0 {
+func searchResultLocatorFromMetadata(meta map[string]interface{}) string {
+	if len(meta) == 0 {
 		return ""
 	}
-
-	resourceType := strings.TrimSpace(doc.AssetType)
-	if resourceType == "" {
-		resourceType = getStringFromMeta(doc.Metadata, "type")
+	if locator := normalizeSearchResultLocator(meta["locator"]); locator != "" {
+		return locator
 	}
-	if resourceType == "" {
-		return ""
-	}
-
-	path := searchDocumentPath(doc, resourceType)
-	if len(path) == 0 {
-		return ""
-	}
-
-	return (&catalogview.ResourceLocator{
-		EngineID: doc.EngineID,
-		Path:     path,
-		Type:     catalogview.ResourceType(resourceType),
-	}).ToURI()
-}
-
-func searchDocumentPath(doc SearchDocument, resourceType string) []string {
-	if fullName := searchDocumentFullName(doc); fullName != "" {
-		return catalogview.ParseFullNamePath(doc.EngineType, resourceType, fullName)
-	}
-
-	switch strings.ToLower(strings.TrimSpace(resourceType)) {
-	case "table", "view", "collection", "graph":
-		parts := []string{}
-		if doc.Schema != "" {
-			parts = append(parts, doc.Schema)
-		} else if doc.Bucket != "" {
-			parts = append(parts, doc.Bucket)
-		}
-		if doc.Name != "" {
-			parts = append(parts, doc.Name)
-		}
-		return parts
-	default:
-		joined := strings.Trim(strings.Join([]string{doc.Bucket, doc.Path, doc.Name}, "/"), "/")
-		if joined == "" {
-			return nil
-		}
-		return catalogview.ParseFullNamePath(doc.EngineType, resourceType, joined)
-	}
-}
-
-func searchDocumentFullName(doc SearchDocument) string {
-	if strings.TrimSpace(doc.FullName) != "" {
-		return strings.TrimSpace(doc.FullName)
-	}
-	if doc.Metadata != nil {
-		if val, ok := doc.Metadata["full_name"].(string); ok && strings.TrimSpace(val) != "" {
-			return strings.TrimSpace(val)
-		}
+	if resource, ok := meta["resource"].(map[string]interface{}); ok {
+		return normalizeSearchResultLocator(resource["locator"])
 	}
 	return ""
+}
+
+func normalizeSearchResultLocator(raw interface{}) string {
+	locator, ok := raw.(string)
+	if !ok {
+		return ""
+	}
+	locator = strings.TrimSpace(locator)
+	if locator == "" {
+		return ""
+	}
+	parsed, err := catalogview.ParseURI(locator)
+	if err != nil || parsed == nil || parsed.ItemID == nil || *parsed.ItemID == 0 {
+		return ""
+	}
+	return locator
 }
 
 // --- 内部辅助结构 ---

@@ -7,7 +7,7 @@ import (
 	"github.com/addp/meta/internal/models"
 )
 
-type DocumentCollectionAttributesInput struct {
+type DynamicSchemaAttributesInput struct {
 	Fields     []datatype.FieldInfo
 	Indexes    []IndexAttributesInput
 	Stats      map[string]interface{}
@@ -68,9 +68,9 @@ func normalizeGeometryToken(value string) string {
 	return token
 }
 
-func BuildDocumentCollectionAttributes(input DocumentCollectionAttributesInput) models.JSONMap {
+func BuildDynamicSchemaAttributes(input DynamicSchemaAttributesInput) models.JSONMap {
 	attrs := models.JSONMap{}
-	applyDocumentCollectionMetadata(attrs, input)
+	applyDynamicSchemaMetadata(attrs, input)
 	if len(input.Indexes) > 0 {
 		UpsertNested(attrs, "capabilities", "indexing", map[string]interface{}{"indexes": IndexAttributes(input.Indexes)})
 	}
@@ -80,7 +80,7 @@ func BuildDocumentCollectionAttributes(input DocumentCollectionAttributesInput) 
 	return attrs
 }
 
-func applyDocumentCollectionMetadata(attrs models.JSONMap, input DocumentCollectionAttributesInput) {
+func applyDynamicSchemaMetadata(attrs models.JSONMap, input DynamicSchemaAttributesInput) {
 	if attrs == nil {
 		return
 	}
@@ -110,7 +110,7 @@ func applyDocumentCollectionMetadata(attrs models.JSONMap, input DocumentCollect
 	UpsertNested(attrs, "capabilities", "statistics", statistics)
 }
 
-func ApplyDocumentCollectionStatistics(attrs models.JSONMap, documentCount, sizeBytes int64) {
+func ApplyDynamicSchemaStatistics(attrs models.JSONMap, documentCount, sizeBytes int64) {
 	if attrs == nil {
 		return
 	}

@@ -61,17 +61,15 @@ func (h *MetadataHandler) RefreshItem(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "locator engine_id does not match path engine_id"})
 			return
 		}
-		if loc.MetaID != nil && *loc.MetaID > 0 {
-			if *loc.MetaID >= 100000 {
-				req.ItemID = *loc.MetaID - 100000
-			} else {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "item refresh requires item locator"})
-				return
-			}
+		if loc.ItemID != nil && *loc.ItemID > 0 {
+			req.ItemID = *loc.ItemID
+		} else if loc.NodeID != nil && *loc.NodeID > 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "item refresh requires item locator"})
+			return
 		}
 	}
 	if req.ItemID == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "locator with item meta_id or body item_id is required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "locator with item_id or body item_id is required"})
 		return
 	}
 	req.ScanDepth = "deep"

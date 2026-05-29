@@ -190,14 +190,14 @@ func TestBuildFromMeta(t *testing.T) {
 		}
 
 		// 验证 Locator
-		expectedLocator := "addp://engine/1/path/public?type=schema&meta_id=100"
+		expectedLocator := "addp://engine/1/path/public?type=schema&node_id=100"
 		if child.Locator != expectedLocator {
 			t.Errorf("child.Locator = %s, want %s", child.Locator, expectedLocator)
 		}
 
 		// 验证元数据
-		if metaID, ok := child.Metadata["meta_id"].(uint); !ok || metaID != 100 {
-			t.Errorf("child.Metadata[meta_id] = %v, want 100", child.Metadata["meta_id"])
+		if nodeID, ok := child.Metadata["node_id"].(uint); !ok || nodeID != 100 {
+			t.Errorf("child.Metadata[node_id] = %v, want 100", child.Metadata["node_id"])
 		}
 		if itemCount, ok := child.Metadata["item_count"].(int); !ok || itemCount != 10 {
 			t.Errorf("child.Metadata[item_count] = %v, want 10", child.Metadata["item_count"])
@@ -260,7 +260,7 @@ func TestBuildFromMetadataTreeAttachesItems(t *testing.T) {
 	if item.Label != "roads" || item.Type != "table" {
 		t.Fatalf("item = %s/%s, want roads/table", item.Label, item.Type)
 	}
-	if !strings.Contains(item.Locator, "public/roads") || !strings.Contains(item.Locator, "meta_id=100021") {
+	if !strings.Contains(item.Locator, "public/roads") || !strings.Contains(item.Locator, "item_id=21") {
 		t.Fatalf("item locator = %q, want virtual item locator", item.Locator)
 	}
 	if got := item.Metadata["size_bytes"]; got != sizeBytes {
@@ -302,6 +302,8 @@ func TestBuildFromMetaMergesWholeScopeItemWithSamePathDirectory(t *testing.T) {
 			Path:         "lake",
 			ScanStatus:   "completed",
 			Attributes: map[string]interface{}{
+				"item_id":      uint(975),
+				"is_meta_item": true,
 				"item": map[string]interface{}{
 					"layout":    "whole",
 					"data_type": "table",
@@ -322,7 +324,7 @@ func TestBuildFromMetaMergesWholeScopeItemWithSamePathDirectory(t *testing.T) {
 	if child.Label != "lake" || child.Type != "file" {
 		t.Fatalf("child = %s/%s, want lake/file", child.Label, child.Type)
 	}
-	if strings.Contains(child.Locator, "meta_id=95") || !strings.Contains(child.Locator, "meta_id=100975") {
+	if strings.Contains(child.Locator, "node_id=95") || !strings.Contains(child.Locator, "item_id=975") {
 		t.Fatalf("locator = %q, want whole-scope item locator", child.Locator)
 	}
 }
@@ -334,11 +336,11 @@ func TestConvertNodeToTree(t *testing.T) {
 		EngineID: 1,
 		Path:     []string{"public", "users"},
 		Type:     TypeTable,
-		MetaID:   uintPtr(100),
+		ItemID:   uintPtr(100),
 	}
 
 	metadata := map[string]interface{}{
-		"meta_id":    uint(100),
+		"item_id":    uint(100),
 		"item_count": 1000,
 		"size_bytes": int64(1048576),
 	}
@@ -354,14 +356,14 @@ func TestConvertNodeToTree(t *testing.T) {
 	}
 
 	// 验证 Locator
-	expectedLocator := "addp://engine/1/path/public/users?type=table&meta_id=100"
+	expectedLocator := "addp://engine/1/path/public/users?type=table&item_id=100"
 	if node.Locator != expectedLocator {
 		t.Errorf("node.Locator = %s, want %s", node.Locator, expectedLocator)
 	}
 
 	// 验证元数据
-	if metaID, ok := node.Metadata["meta_id"].(uint); !ok || metaID != 100 {
-		t.Errorf("node.Metadata[meta_id] = %v, want 100", node.Metadata["meta_id"])
+	if itemID, ok := node.Metadata["item_id"].(uint); !ok || itemID != 100 {
+		t.Errorf("node.Metadata[item_id] = %v, want 100", node.Metadata["item_id"])
 	}
 }
 

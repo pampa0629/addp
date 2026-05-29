@@ -16,10 +16,12 @@ export const useExplorerStore = defineStore('explorer', {
     engineTrees: {},
     // 记录每个引擎已加载的深度
     engineTreeDepths: {},
-    loadingEngineId: null,
+    engineTreeRequestSeq: {},
+    loadingEngineIds: {},
 
     // 节点选择
     selectedLocator: null,
+    selectedNodeContext: null,
     selectedChildName: '',
     selectedChildKey: '',
     selectedRefPath: '',
@@ -76,7 +78,7 @@ export const useExplorerStore = defineStore('explorer', {
           // 标记是否已加载
           loaded: !!tree,
           // 标记是否正在加载
-          loading: state.loadingEngineId === engine.id
+          loading: Number(state.loadingEngineIds[engine.id] || 0) > 0
         }
       })
     },
@@ -92,6 +94,10 @@ export const useExplorerStore = defineStore('explorer', {
         const tree = state.engineTrees[engineId]
         const found = findNodeByLocator(tree, state.selectedLocator)
         if (found) return found
+      }
+
+      if (state.selectedNodeContext?.locator === state.selectedLocator) {
+        return state.selectedNodeContext
       }
 
       // 检查是否选中的是引擎节点本身
@@ -128,7 +134,7 @@ export const useExplorerStore = defineStore('explorer', {
      * 检查是否正在加载某个引擎
      */
     isLoadingEngine: (state) => {
-      return (engineId) => state.loadingEngineId === engineId
+      return (engineId) => Number(state.loadingEngineIds[engineId] || 0) > 0
     }
   },
 
@@ -163,20 +169,25 @@ export const useExplorerStore = defineStore('explorer', {
       const cachedDepth = this.engineTreeDepths[engineId] || 0
 
       // 如果已经加载过，且当前缓存深度 >= 需要的深度，直接返回缓存
-      const cacheDepthMatches = cachedDepth === -1 || (expandDepth !== -1 && cachedDepth >= expandDepth)
+      const cacheDepthMatches = depthCovers(cachedDepth, expandDepth)
       if (!forceRefresh && this.engineTrees[engineId] && cacheDepthMatches) {
-        console.log(`[ExplorerStore] 使用缓存（引擎 ${engineId}，已缓存深度 ${cachedDepth}）`)
         return this.engineTrees[engineId]
       }
 
-      this.loadingEngineId = engineId
+      this.loadingEngineIds = {
+        ...this.loadingEngineIds,
+        [engineId]: Number(this.loadingEngineIds[engineId] || 0) + 1
+      }
+      const requestSeq = (this.engineTreeRequestSeq[engineId] || 0) + 1
+      this.engineTreeRequestSeq = {
+        ...this.engineTreeRequestSeq,
+        [engineId]: requestSeq
+      }
 
       try {
-        console.log(`[ExplorerStore] 加载引擎树（引擎 ${engineId}，深度 ${expandDepth}）`)
         const response = await client.get(`/manager/tree/${engineId}`, {
           params: { expand_depth: expandDepth }
         })
-        console.log('[ExplorerStore] API 响应:', response)
         // 后端直接返回 tree 对象（符合 API 规范）
         // API 客户端的 extractData 已提取了 response.data
         const tree = response
@@ -185,6 +196,15 @@ export const useExplorerStore = defineStore('explorer', {
         const engine = this.engines.find(e => e.id === engineId)
         if (engine && tree) {
           this.addEngineTypeToTree(tree, engine.engine_type)
+        }
+
+        const latestSeq = this.engineTreeRequestSeq[engineId]
+        const currentDepth = this.engineTreeDepths[engineId] || 0
+        const responseIsStale = requestSeq !== latestSeq
+        const responseImprovesCache = depthRank(expandDepth) > depthRank(currentDepth)
+        const responseDowngradesCache = !forceRefresh && this.engineTrees[engineId] && depthCovers(currentDepth, expandDepth) && !responseImprovesCache
+        if ((responseIsStale && !responseImprovesCache) || responseDowngradesCache) {
+          return this.engineTrees[engineId] || tree
         }
 
         // 存储到引擎树缓存中
@@ -196,7 +216,16 @@ export const useExplorerStore = defineStore('explorer', {
         console.error('加载资源树失败:', error)
         throw error
       } finally {
-        this.loadingEngineId = null
+        const count = Number(this.loadingEngineIds[engineId] || 0) - 1
+        if (count > 0) {
+          this.loadingEngineIds = {
+            ...this.loadingEngineIds,
+            [engineId]: count
+          }
+        } else {
+          const { [engineId]: _done, ...rest } = this.loadingEngineIds
+          this.loadingEngineIds = rest
+        }
       }
     },
 
@@ -209,9 +238,11 @@ export const useExplorerStore = defineStore('explorer', {
           params: { locator }
         })
 
-        // 清除缓存并重新加载
+        const previousDepth = this.engineTreeDepths[loc.engineId] || 2
+        // 清除缓存并按原有深度重新加载，避免刷新把全量树降级为浅层树。
         delete this.engineTrees[loc.engineId]
-        await this.loadTree(loc.engineId)
+        delete this.engineTreeDepths[loc.engineId]
+        await this.loadTree(loc.engineId, previousDepth)
         return response?.data || response
       } catch (error) {
         console.error('刷新节点失败:', error)
@@ -240,8 +271,10 @@ export const useExplorerStore = defineStore('explorer', {
           params: { locator }
         })
 
+        const previousDepth = this.engineTreeDepths[loc.engineId] || 2
         delete this.engineTrees[loc.engineId]
-        await this.loadTree(loc.engineId)
+        delete this.engineTreeDepths[loc.engineId]
+        await this.loadTree(loc.engineId, previousDepth)
 
         if (this.selectedLocator !== locator) {
           return response
@@ -396,6 +429,19 @@ export const useExplorerStore = defineStore('explorer', {
      */
     selectNode(locator) {
       this.selectedLocator = locator
+      this.selectedNodeContext = null
+    },
+
+    selectNodeContext(node, locator = '') {
+      const nodeLocator = locator || node?.locator || node?.id || ''
+      this.selectedLocator = nodeLocator || null
+      this.selectedNodeContext = node && nodeLocator
+        ? {
+            ...node,
+            id: node.id || nodeLocator,
+            locator: nodeLocator
+          }
+        : null
     },
 
     /**
@@ -452,6 +498,7 @@ export const useExplorerStore = defineStore('explorer', {
      */
     reset() {
       this.selectedLocator = null
+      this.selectedNodeContext = null
       this.selectedChildName = ''
       this.selectedChildKey = ''
       this.selectedRefPath = ''
@@ -476,7 +523,6 @@ export const useExplorerStore = defineStore('explorer', {
       if (!forceRefresh && this.nodeChildrenCache[locator]) {
         const cache = this.nodeChildrenCache[locator]
         if (Date.now() - cache.timestamp < this.cacheConfig.maxAge) {
-          console.log(`[ExplorerStore] 使用节点缓存: ${locator}`)
           return cache.children
         }
       }
@@ -485,8 +531,6 @@ export const useExplorerStore = defineStore('explorer', {
       const loc = parseLocator(locator)
 
       try {
-        console.log(`[ExplorerStore] 增量加载子节点: ${locator}, 深度: ${expandDepth}`)
-
         // 3. 调用后端 API
         const response = await client.get(`/manager/tree/${loc.engineId}/node`, {
           params: { locator, expand_depth: expandDepth }
@@ -523,11 +567,9 @@ export const useExplorerStore = defineStore('explorer', {
               ...this.engineTrees,
               [loc.engineId]: deepCloneTree(this.engineTrees[loc.engineId])
             }
-            console.log(`[ExplorerStore] 已触发响应式更新`)
           }
         }
 
-        console.log(`[ExplorerStore] 增量加载成功: ${children.length} 个子节点`)
         return children
       } catch (error) {
         console.error('增量加载子节点失败:', error)
@@ -554,14 +596,11 @@ export const useExplorerStore = defineStore('explorer', {
       if (this.searchResultsCache[cacheKey]) {
         const cache = this.searchResultsCache[cacheKey]
         if (Date.now() - cache.timestamp < this.cacheConfig.maxAge) {
-          console.log(`[ExplorerStore] 使用搜索缓存: ${cacheKey}`)
           return cache.results
         }
       }
 
       try {
-        console.log(`[ExplorerStore] 搜索节点: 引擎 ${engineId}, 关键词 "${keyword}"`)
-
         const params = { q: keyword, limit }
         if (nodeTypes) {
           params.node_types = Array.isArray(nodeTypes) ? nodeTypes.join(',') : nodeTypes
@@ -581,7 +620,6 @@ export const useExplorerStore = defineStore('explorer', {
           timestamp: Date.now()
         }
 
-        console.log(`[ExplorerStore] 搜索成功: 找到 ${results.length}/${total} 个结果`)
         return results
       } catch (error) {
         console.error('搜索节点失败:', error)
@@ -706,6 +744,14 @@ function deepCloneTree(node) {
     ...node,
     children: node.children ? node.children.map(deepCloneTree) : []
   }
+}
+
+function depthRank(depth) {
+  return depth === -1 ? Number.MAX_SAFE_INTEGER : Number(depth || 0)
+}
+
+function depthCovers(cachedDepth, requiredDepth) {
+  return cachedDepth === -1 || (requiredDepth !== -1 && Number(cachedDepth || 0) >= Number(requiredDepth || 0))
 }
 
 /**

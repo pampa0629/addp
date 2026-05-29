@@ -28,7 +28,7 @@ const (
 // ResourceLocator 资源定位符
 // 使用 addp:// 协议的 URI 系统来唯一标识平台中的任何资源
 //
-// URI 格式: addp://engine/{engine_id}/path/{resource_path}?type={type}&meta_id={meta_id}
+// URI 格式: addp://engine/{engine_id}/path/{resource_path}?type={type}&node_id={node_id}&item_id={item_id}
 //
 // 示例:
 //   - PostgreSQL 表: addp://engine/1/path/public/users?type=table
@@ -38,12 +38,13 @@ const (
 type ResourceLocator struct {
 	EngineID uint         `json:"engine_id"`
 	Path     []string     `json:"path"`              // 资源路径，如 ["public", "users"]
-	Type     ResourceType `json:"type"`              // 资源类型
-	MetaID   *uint        `json:"meta_id,omitempty"` // 可选：Meta 模块的节点 ID
+	Type     ResourceType `json:"type"`              // catalog 术语，不表示内容语义
+	NodeID   *uint        `json:"node_id,omitempty"` // 可选：MetaNode ID
+	ItemID   *uint        `json:"item_id,omitempty"` // 可选：MetaItem ID
 }
 
 // LocatorFromFullName 根据 catalog 的 full_name 与资源类型构造标准 ResourceLocator。
-func LocatorFromFullName(engineID uint, engineType, resourceType, fullName string, metaID *uint) *ResourceLocator {
+func LocatorFromFullName(engineID uint, engineType, resourceType, fullName string, itemID *uint) *ResourceLocator {
 	resourceType = strings.TrimSpace(resourceType)
 	fullName = strings.TrimSpace(fullName)
 	if engineID == 0 || resourceType == "" || fullName == "" {
@@ -53,8 +54,13 @@ func LocatorFromFullName(engineID uint, engineType, resourceType, fullName strin
 		EngineID: engineID,
 		Path:     ParseFullNamePath(engineType, resourceType, fullName),
 		Type:     ResourceType(resourceType),
-		MetaID:   metaID,
+		ItemID:   itemID,
 	}
+}
+
+// EngineRootLocator 构建引擎根节点的 ResourceLocator URI。
+func EngineRootLocator(engineID uint) string {
+	return fmt.Sprintf("addp://engine/%d/path/?type=%s", engineID, TypeDatabase)
 }
 
 // ParseFullNamePath 按 ResourceLocator 规范将 full_name 拆为 path segments。
@@ -164,20 +170,34 @@ func ParseURI(uri string) (*ResourceLocator, error) {
 		return nil, fmt.Errorf("missing required parameter: type")
 	}
 
-	var metaID *uint
-	if metaIDStr := query.Get("meta_id"); metaIDStr != "" {
-		mid, err := strconv.ParseUint(metaIDStr, 10, 32)
-		if err == nil {
-			metaIDUint := uint(mid)
-			metaID = &metaIDUint
+	var nodeID *uint
+	if nodeIDStr := query.Get("node_id"); nodeIDStr != "" {
+		nid, err := strconv.ParseUint(nodeIDStr, 10, 32)
+		if err != nil || nid == 0 {
+			return nil, fmt.Errorf("invalid node_id: %s", nodeIDStr)
 		}
+		nodeIDUint := uint(nid)
+		nodeID = &nodeIDUint
+	}
+	var itemID *uint
+	if itemIDStr := query.Get("item_id"); itemIDStr != "" {
+		iid, err := strconv.ParseUint(itemIDStr, 10, 32)
+		if err != nil || iid == 0 {
+			return nil, fmt.Errorf("invalid item_id: %s", itemIDStr)
+		}
+		itemIDUint := uint(iid)
+		itemID = &itemIDUint
+	}
+	if nodeID != nil && itemID != nil {
+		return nil, fmt.Errorf("node_id and item_id are mutually exclusive")
 	}
 
 	return &ResourceLocator{
 		EngineID: uint(engineID),
 		Path:     path,
 		Type:     resType,
-		MetaID:   metaID,
+		NodeID:   nodeID,
+		ItemID:   itemID,
 	}, nil
 }
 
@@ -193,8 +213,11 @@ func (r *ResourceLocator) ToURI() string {
 
 	// 构建 URI
 	uri := fmt.Sprintf("addp://engine/%d/path/%s?type=%s", r.EngineID, pathStr, r.Type)
-	if r.MetaID != nil {
-		uri += fmt.Sprintf("&meta_id=%d", *r.MetaID)
+	if r.NodeID != nil {
+		uri += fmt.Sprintf("&node_id=%d", *r.NodeID)
+	}
+	if r.ItemID != nil {
+		uri += fmt.Sprintf("&item_id=%d", *r.ItemID)
 	}
 	return uri
 }
@@ -262,7 +285,6 @@ func (r *ResourceLocator) ParentPath() *ResourceLocator {
 		EngineID: r.EngineID,
 		Path:     parentPath,
 		Type:     parentType,
-		MetaID:   nil, // 父节点的 MetaID 需要单独查询
 	}
 }
 
@@ -271,16 +293,22 @@ func (r *ResourceLocator) Clone() *ResourceLocator {
 	path := make([]string, len(r.Path))
 	copy(path, r.Path)
 
-	var metaID *uint
-	if r.MetaID != nil {
-		mid := *r.MetaID
-		metaID = &mid
+	var nodeID *uint
+	if r.NodeID != nil {
+		nid := *r.NodeID
+		nodeID = &nid
+	}
+	var itemID *uint
+	if r.ItemID != nil {
+		iid := *r.ItemID
+		itemID = &iid
 	}
 
 	return &ResourceLocator{
 		EngineID: r.EngineID,
 		Path:     path,
 		Type:     r.Type,
-		MetaID:   metaID,
+		NodeID:   nodeID,
+		ItemID:   itemID,
 	}
 }

@@ -28,10 +28,10 @@ type ItemMetadataProvider interface {
 	DescribeItem(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts MetadataOptions) (*ItemMetadata, error)
 }
 
-// DocumentMetadataSamplingProvider samples document items to infer dynamic field info.
-type DocumentMetadataSamplingProvider interface {
+// DynamicSchemaSamplingProvider samples schema-flexible items to infer dynamic field info.
+type DynamicSchemaSamplingProvider interface {
 	EnginePlugin
-	SampleDocumentMetadata(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts MetadataOptions) (*ItemMetadata, error)
+	SampleDynamicSchema(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts MetadataOptions) (*ItemMetadata, error)
 }
 
 // GraphMetadataProvider describes graph structure facts for a graph item.

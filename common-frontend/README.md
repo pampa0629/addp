@@ -63,7 +63,7 @@ console.log(FormatType.SHAPEFILE) // "shapefile"
 
 统一的资源定位符 URI 系统，支持跨存储引擎的资源标识。
 
-**URI 格式**: `addp://engine/{engine_id}/path/{resource_path}?type={type}`
+**URI 格式**: `addp://engine/{engine_id}/path/{resource_path}?type={type}&node_id={node_id}` 或 `...&item_id={item_id}`
 
 **支持的资源类型**:
 - `table` - 关系型数据库表
@@ -92,9 +92,10 @@ const locator = parseLocator('addp://engine/1/path/public/users?type=table')
 const uri = buildLocator({
   engineId: 1,
   path: ['public', 'users'],
-  type: 'table'
+  type: 'table',
+  itemId: 100
 })
-// 'addp://engine/1/path/public/users?type=table'
+// 'addp://engine/1/path/public/users?type=table&item_id=100'
 ```
 
 ### 数据源选择器

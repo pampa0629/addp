@@ -147,9 +147,9 @@ func (s *ExplorerService) RefreshNode(ctx context.Context, tenantID *uint, locat
 		return nil, fmt.Errorf("failed to refresh node: %w", err)
 	}
 
-	// 5. 查找对应的节点
-	// 如果是 engine 根节点（没有 meta_id），返回整个树
-	if loc.MetaID == nil {
+	// 5. 查找对应的节点。
+	// 如果是 engine 根节点（没有 node_id/item_id），返回整个树。
+	if loc.NodeID == nil && loc.ItemID == nil {
 		logger.L().Info("刷新引擎根节点", "engine_id", loc.EngineID)
 		// 构建完整的树结构
 		tree, err := s.treeBuilder.BuildFromMeta(engine, metaNodes, 2)
@@ -159,19 +159,34 @@ func (s *ExplorerService) RefreshNode(ctx context.Context, tenantID *uint, locat
 		return &RefreshNodeResult{Node: tree, Scan: scanResult, ScanError: scanError}, nil
 	}
 
-	// 查找具体的节点（有 meta_id）
-	for _, node := range metaNodes {
-		if node.ID == *loc.MetaID {
-			// 构建树节点并返回（只构建该节点及其直接子节点）
-			tree, err := s.treeBuilder.BuildFromMeta(engine, []*commonModels.MetaNode{node}, 1)
-			if err != nil {
-				return nil, fmt.Errorf("failed to build node tree: %w", err)
+	if loc.NodeID != nil {
+		for _, node := range metaNodes {
+			if node.ID == *loc.NodeID {
+				// 构建树节点并返回（只构建该节点及其直接子节点）
+				tree, err := s.treeBuilder.BuildFromMeta(engine, []*commonModels.MetaNode{node}, 1)
+				if err != nil {
+					return nil, fmt.Errorf("failed to build node tree: %w", err)
+				}
+				return &RefreshNodeResult{Node: tree, Scan: scanResult, ScanError: scanError}, nil
 			}
-			return &RefreshNodeResult{Node: tree, Scan: scanResult, ScanError: scanError}, nil
 		}
+		return nil, fmt.Errorf("node not found: %s", locatorURI)
 	}
 
-	return nil, fmt.Errorf("node not found: %s", locatorURI)
+	if loc.ItemID != nil {
+		for _, node := range metaNodes {
+			if metaItemIDFromTreeMetaNode(node) == *loc.ItemID {
+				tree, err := s.treeBuilder.BuildFromMeta(engine, []*commonModels.MetaNode{node}, 1)
+				if err != nil {
+					return nil, fmt.Errorf("failed to build item tree: %w", err)
+				}
+				return &RefreshNodeResult{Node: tree, Scan: scanResult, ScanError: scanError}, nil
+			}
+		}
+		return nil, fmt.Errorf("item not found: %s", locatorURI)
+	}
+
+	return nil, fmt.Errorf("resource not found: %s", locatorURI)
 }
 
 func refreshScanOptions(loc *catalogview.ResourceLocator) commonClient.MetaScanOptions {
@@ -181,22 +196,38 @@ func refreshScanOptions(loc *catalogview.ResourceLocator) commonClient.MetaScanO
 		Force:       true,
 		TriggerType: "manual",
 	}
-	if loc.MetaID == nil {
+	if loc.ItemID != nil && *loc.ItemID > 0 {
+		opts.ItemID = *loc.ItemID
 		return opts
 	}
-	metaID := *loc.MetaID
-	switch loc.Type {
-	case catalogview.TypeTable, catalogview.TypeCollection, catalogview.TypeGraph, catalogview.TypeObject, catalogview.TypeFile:
-		if metaID >= 100000 {
-			opts.ItemID = metaID - 100000
-			return opts
-		}
-	case catalogview.TypeSchema, catalogview.TypeDatabase, catalogview.TypeBucket, catalogview.TypeDirectory, catalogview.TypeRoot, catalogview.TypeDir:
-		opts.NodeID = metaID
+	if loc.NodeID != nil && *loc.NodeID > 0 {
+		opts.NodeID = *loc.NodeID
 		return opts
 	}
-	opts.Targets = []string{loc.ToURI()}
 	return opts
+}
+
+func metaItemIDFromTreeMetaNode(node *commonModels.MetaNode) uint {
+	if node == nil || node.Attributes == nil {
+		return 0
+	}
+	switch value := node.Attributes["item_id"].(type) {
+	case uint:
+		return value
+	case int:
+		if value > 0 {
+			return uint(value)
+		}
+	case int64:
+		if value > 0 {
+			return uint(value)
+		}
+	case float64:
+		if value > 0 {
+			return uint(value)
+		}
+	}
+	return 0
 }
 
 // ListEngines 获取引擎列表（用于前端显示）
@@ -500,6 +531,7 @@ func (s *ExplorerService) getMetaNodes(ctx context.Context, engineID uint, engin
 				TotalSizeBytes: 0,
 				Attributes:     item.Attributes,
 			}
+			node.Attributes = withMetaItemIdentity(node.Attributes, item.ID)
 			if item.SizeBytes != nil {
 				node.TotalSizeBytes = *item.SizeBytes
 			}
@@ -516,6 +548,16 @@ func (s *ExplorerService) getMetaNodes(ctx context.Context, engineID uint, engin
 		"filtered_nodes", len(allNodes))
 
 	return allNodes, nil
+}
+
+func withMetaItemIdentity(attrs map[string]interface{}, itemID uint) map[string]interface{} {
+	next := make(map[string]interface{}, len(attrs)+2)
+	for key, value := range attrs {
+		next[key] = value
+	}
+	next["item_id"] = itemID
+	next["is_meta_item"] = true
+	return next
 }
 
 func extractStringSliceFromSection(attrs map[string]interface{}, section, key string) []string {
@@ -587,7 +629,7 @@ func toInt64(v interface{}) int64 {
 
 // buildEngineRootNode 构建引擎根节点（降级方案）
 func (s *ExplorerService) buildEngineRootNode(engine *commonModels.Engine) *catalogview.TreeNode {
-	locator := fmt.Sprintf("addp://engine/%d/path/?type=database", engine.ID)
+	locator := catalogview.EngineRootLocator(engine.ID)
 	return &catalogview.TreeNode{
 		ID:      locator,
 		Locator: locator,

@@ -56,7 +56,8 @@ const normalizeTreeNodes = (nodes) => {
       type: node.type || node.node_type || 'unknown',
       icon: getNodeIcon(node.type || node.node_type),
       metadata: {
-        meta_id: node.metadata?.meta_id || node.id, // 保存原始 ID 用于后续 API 调用
+        node_id: node.metadata?.node_id || (typeof node.id === 'number' ? node.id : undefined),
+        item_id: node.metadata?.item_id || node.item_id,
         engine_id: node.metadata?.engine_id || node.engine_id,
         tenant_id: node.metadata?.tenant_id || node.tenant_id,
         full_name: node.metadata?.full_name || node.full_name,
@@ -202,7 +203,7 @@ export async function getEngineTree(apiBaseUrl, engineId, options = {}) {
 
         // 将 items 添加到对应的 top_nodes 下
         topNodes.forEach(node => {
-          const metaId = node.metadata.meta_id
+          const nodeId = node.metadata.node_id
           const schemaName = node.label
 
           // 为 schema 节点构建 locator
@@ -210,18 +211,18 @@ export async function getEngineTree(apiBaseUrl, engineId, options = {}) {
             engineId,
             path: [schemaName],
             type: node.type,
-            metaId: metaId
+            nodeId
           })
 
-          if (itemsByNodeId[metaId]) {
+          if (itemsByNodeId[nodeId]) {
             // 转换 items 为规范化节点
-            node.children = itemsByNodeId[metaId].map(item => {
+            node.children = itemsByNodeId[nodeId].map(item => {
               const tableName = item.name || 'Unnamed'
               const locator = buildLocator({
                 engineId,
                 path: [schemaName, tableName],
                 type: item.item_type || 'table',
-                metaId: item.id
+                itemId: item.id
               })
 
               return {
@@ -231,7 +232,6 @@ export async function getEngineTree(apiBaseUrl, engineId, options = {}) {
                 icon: getNodeIcon(item.item_type || 'table'),
                 locator: locator,
                 metadata: {
-                  meta_id: item.id,
                   item_id: item.id,
                   engine_id: item.engine_id,
                   node_id: item.node_id,

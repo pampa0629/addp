@@ -116,6 +116,7 @@
               <el-button
                 size="small"
                 type="primary"
+                :disabled="!hasLocator(item)"
                 @click="navigateToDocument(item)"
               >
                 {{ t('manager.retrieval.locating') }}
@@ -165,6 +166,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document, Clock, Search } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
+import { parseLocator } from '@addp/common-frontend'
 import searchAPI from '@/api/search'
 
 const { t } = useI18n()
@@ -429,12 +431,15 @@ const hasVectorMatch = (item = {}) => {
   return isVectorMatch(item) && item.vector_distance !== undefined && item.vector_distance !== null
 }
 
+const hasItemLocator = (parsed) => !!parsed?.itemId
+
 const navigateToDocument = (item = {}) => {
   const fileName = item.file_name || t('manager.retrieval.unnamed')
   const locator = String(item.locator || '').trim()
-  if (!locator) {
+  const parsed = locator ? parseLocator(locator) : null
+  if (!locator || !hasItemLocator(parsed)) {
     ElMessage.warning({
-      message: t('manager.retrieval.missingPath', { name: fileName }),
+      message: t('manager.explorer.missingLocator', { name: fileName }),
       duration: 5000
     })
     return
@@ -442,6 +447,17 @@ const navigateToDocument = (item = {}) => {
 
   console.log('[DataRetrieval] 定位到对象:', { locator })
   router.push({ path: '/data-explorer', query: { locator } })
+}
+
+const hasLocator = (item = {}) => {
+  const locator = String(item.locator || '').trim()
+  if (!locator) return false
+  try {
+    const parsed = parseLocator(locator)
+    return hasItemLocator(parsed)
+  } catch {
+    return false
+  }
 }
 </script>
 

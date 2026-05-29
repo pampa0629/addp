@@ -51,7 +51,7 @@ func validateStorageCapabilities(p EnginePlugin, storage *StorageCapabilities) e
 	}
 	if storage.Metadata != nil && storage.Metadata.Supported {
 		if _, ok := p.(ItemMetadataProvider); !ok {
-			if _, ok := p.(DocumentMetadataSamplingProvider); !ok {
+			if _, ok := p.(DynamicSchemaSamplingProvider); !ok {
 				return fmt.Errorf("%s declares metadata support but does not implement metadata provider", p.Type())
 			}
 		}

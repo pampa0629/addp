@@ -107,7 +107,7 @@ func ResolveDocumentCatalogPath(ctx context.Context, callbacks DocumentCatalogCa
 
 func DescribeDocumentItem(ctx context.Context, callbacks DocumentCatalogCallbacks, engineID uint, connInfo ConnectionInfo, path CatalogPath, opts MetadataOptions) (*ItemMetadata, error) {
 	if len(path.Segments) < 2 {
-		return nil, fmt.Errorf("document item path requires database and collection segments")
+		return nil, fmt.Errorf("collection item path requires database and collection segments")
 	}
 	if callbacks.GetCollectionStatsFunc == nil {
 		return nil, fmt.Errorf("document catalog callbacks GetCollectionStatsFunc is nil")

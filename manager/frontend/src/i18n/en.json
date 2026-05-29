@@ -215,7 +215,9 @@
       "metaBitrate": "Bitrate",
       "metaSampleRate": "Sample Rate",
       "locateSuccess": "Located target object",
+      "locateFailed": "Unable to locate target object",
       "loadPreviewFailed": "Failed to load preview: {error}",
+      "missingLocator": "Document \"{name}\" is missing a locatable locator and cannot be opened",
       "initFailed": "Initialization failed: {error}",
       "engineNotFound": "Engine {engineId} not found",
       "vectorizeInProgress": "Vectorization in progress",
@@ -259,6 +261,13 @@
       "booleanNo": "No",
       "viewAttributeJson": "View JSON",
       "attributeJsonTitle": "Full Attributes JSON",
+      "dynamicSchemaNotice": "Dynamic schema collection: previewed as records; fields are sampled profiles, not a strict schema.",
+      "emptyPreview": {
+        "database": "Expand the database and select a collection to preview data",
+        "schema": "Expand the schema and select a table to preview data",
+        "directory": "Expand the directory and select an object to preview data",
+        "noData": "No preview data available"
+      },
       "attributes": {
         "sections": {
           "item": "Item",

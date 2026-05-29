@@ -597,26 +597,26 @@ const fileExtension = computed(() => {
 
 // Generate appropriate empty data message based on node type
 const emptyDescription = computed(() => {
-  if (!props.selectedNode) return 'No data available'
+  if (!props.selectedNode) return t('manager.explorer.emptyPreview.noData')
 
   const nodeType = (props.selectedNode.type || '').toLowerCase()
 
   // MongoDB Database node
   if (nodeType === 'database') {
-    return 'Expand database and select a collection to view data'
+    return t('manager.explorer.emptyPreview.database')
   }
 
   // Relational database Schema node
   if (nodeType === 'schema') {
-    return 'Expand schema and select a table to view data'
+    return t('manager.explorer.emptyPreview.schema')
   }
 
   // Object storage Bucket/Prefix node
   if (nodeType === 'bucket' || nodeType === 'directory' || nodeType === 'prefix') {
-    return 'Expand directory and select an object to view data'
+    return t('manager.explorer.emptyPreview.directory')
   }
 
-  return 'No data available'
+  return t('manager.explorer.emptyPreview.noData')
 })
 
 const rawMultiRefs = computed(() => {
@@ -1184,23 +1184,6 @@ const handleDownload = async () => {
     downloading.value = false
   }
 }
-
-// 监听数据变化，输出调试信息
-watch(
-  () => props.previewData,
-  (newData) => {
-    if (newData) {
-      console.log('📦 PreviewPanel 收到新数据:', {
-        mode: newData.mode,
-        contentKind: newData.object?.content?.kind,
-        contentType: newData.object?.content_type,
-        plugin: previewPluginName.value,
-        hasComponent: hasPreviewComponent.value
-      })
-    }
-  },
-  { immediate: true, deep: true }
-)
 
 watch(
   () => props.previewData,

@@ -150,10 +150,10 @@ func (p *MongoDBPlugin) getCollectionStats(ctx context.Context, connInfo plugin.
 	}, nil
 }
 
-// SampleDocumentMetadata samples a collection and returns inferred dynamic field info.
-func (p *MongoDBPlugin) SampleDocumentMetadata(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
+// SampleDynamicSchema samples a collection and returns inferred dynamic field info.
+func (p *MongoDBPlugin) SampleDynamicSchema(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
 	if len(path.Segments) < 2 {
-		return nil, fmt.Errorf("document item path requires database and collection segments")
+		return nil, fmt.Errorf("dynamic schema item path requires database and collection segments")
 	}
 	database := path.Segments[0].Name
 	collection := path.Segments[len(path.Segments)-1].Name

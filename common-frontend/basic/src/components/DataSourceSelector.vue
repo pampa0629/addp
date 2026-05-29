@@ -532,10 +532,10 @@ const loadNode = async (node, resolve) => {
     return
   }
 
-  // 从节点 metadata 中获取 meta_id
-  const metaId = node.data?.metadata?.meta_id
-  if (!metaId) {
-    console.warn('[DataSourceSelector] No meta_id in node:', {
+  // 从节点 metadata 中获取 node_id，Meta 的 children API 只接受 MetaNode ID。
+  const nodeId = node.data?.metadata?.node_id
+  if (!nodeId) {
+    console.warn('[DataSourceSelector] No node_id in node:', {
       nodeId: node.id,
       level: node.level,
       type: node.data?.type,
@@ -549,8 +549,8 @@ const loadNode = async (node, resolve) => {
 
   try {
     // 调用 API 获取子节点
-    console.log('[DataSourceSelector] Loading children for meta_id:', metaId)
-    const children = await DataSourceAPI.getNodeChildren(props.apiBaseUrl, metaId)
+    console.log('[DataSourceSelector] Loading children for node_id:', nodeId)
+    const children = await DataSourceAPI.getNodeChildren(props.apiBaseUrl, nodeId)
     console.log('[DataSourceSelector] Loaded children:', children?.length || 0, 'items')
 
     // 返回子节点

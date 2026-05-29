@@ -185,56 +185,51 @@ func (r *PreviewResolver) PreviewFromURIWithSelection(ctx context.Context, locat
 	}
 
 	// 3. 尝试从 Meta 获取元数据。
-	// meta_id 是最可靠的类型来源，路径型 locator 的 type 可能比 Meta item 的真实类型更粗。
+	// ResourceLocator 中的真实 node_id / item_id 是最可靠的身份来源；路径型 locator 的 type 只作为路由提示。
 	var metaNode *commonModels.MetaNode
 	var metaItem *commonModels.MetaItem
-	metaIDResolved := false
+	identityResolved := false
 	if r.metaClient != nil {
 		// 设置租户 ID，确保服务间调用时正确过滤
 		r.metaClient.SetTenantID(tenantID)
 
-		// 优先通过 meta_id 直接获取节点（更精确，避免路径歧义）
-		// 注意：虚拟 ID（>= 100000）对应 MetaItem，需要解码为真实 item ID
-		if loc.MetaID != nil {
-			metaID := *loc.MetaID
-			if metaID >= 100000 {
-				// 虚拟 ID：MetaItem 的 ID + 100000
-				realItemID := metaID - 100000
-				item, err := r.metaClient.GetMetaItemByID(realItemID)
-				if err == nil && item != nil {
-					if item.ScannedDepth != "deep" {
-						if ensureErr := r.metaClient.EnsureItemDeepScanned(realItemID); ensureErr != nil {
-							logger.L().Warn("触发 Meta item deep 补齐失败", "item_id", realItemID, "error", ensureErr)
-						} else if refreshed, refreshErr := r.metaClient.GetMetaItemByID(realItemID); refreshErr == nil && refreshed != nil {
-							item = refreshed
-						}
+		if loc.ItemID != nil && *loc.ItemID > 0 {
+			itemID := *loc.ItemID
+			item, err := r.metaClient.GetMetaItemByID(itemID)
+			if err == nil && item != nil {
+				if item.ScannedDepth != "deep" {
+					if ensureErr := r.metaClient.EnsureItemDeepScanned(itemID); ensureErr != nil {
+						logger.L().Warn("触发 Meta item deep 补齐失败", "item_id", itemID, "error", ensureErr)
+					} else if refreshed, refreshErr := r.metaClient.GetMetaItemByID(itemID); refreshErr == nil && refreshed != nil {
+						item = refreshed
 					}
-					metaItem = item
-					metaIDResolved = true
-					logger.L().Debug("从 Meta 通过虚拟 ID 获取到 MetaItem",
-						"virtual_meta_id", metaID,
-						"real_item_id", realItemID,
-						"item_type", item.ItemType)
-				} else {
-					logger.L().Debug("未从 Meta 通过虚拟 ID 获取到 MetaItem",
-						"virtual_meta_id", metaID,
-						"real_item_id", realItemID,
-						"error", err)
 				}
+				metaItem = item
+				identityResolved = true
+				logger.L().Debug("从 Meta 通过 item_id 获取到 MetaItem",
+					"item_id", itemID,
+					"item_type", item.ItemType)
 			} else {
-				node, err := r.metaClient.GetMetaNode(metaID)
-				if err == nil && node != nil {
-					metaNode = node
-					metaIDResolved = true
-					logger.L().Debug("从 Meta 通过 ID 获取到节点元数据",
-						"meta_id", metaID,
-						"node_type", node.NodeType,
-						"total_size_bytes", node.TotalSizeBytes)
-				} else {
-					logger.L().Debug("未从 Meta 通过 ID 获取到节点元数据",
-						"meta_id", metaID,
-						"error", err)
-				}
+				logger.L().Debug("未从 Meta 通过 item_id 获取到 MetaItem",
+					"item_id", itemID,
+					"error", err)
+				return nil, ErrPreviewRequiresScannedMeta
+			}
+		} else if loc.NodeID != nil && *loc.NodeID > 0 {
+			nodeID := *loc.NodeID
+			node, err := r.metaClient.GetMetaNode(nodeID)
+			if err == nil && node != nil {
+				metaNode = node
+				identityResolved = true
+				logger.L().Debug("从 Meta 通过 node_id 获取到节点元数据",
+					"node_id", nodeID,
+					"node_type", node.NodeType,
+					"total_size_bytes", node.TotalSizeBytes)
+			} else {
+				logger.L().Debug("未从 Meta 通过 node_id 获取到节点元数据",
+					"node_id", nodeID,
+					"error", err)
+				return nil, ErrPreviewRequiresScannedMeta
 			}
 		}
 	}
@@ -243,7 +238,7 @@ func (r *PreviewResolver) PreviewFromURIWithSelection(ctx context.Context, locat
 		// 设置租户 ID，确保服务间调用时正确过滤
 		r.metaClient.SetTenantID(tenantID)
 
-		if !metaIDResolved && len(loc.Path) > 0 {
+		if !identityResolved && len(loc.Path) > 0 {
 			catalogPath := strings.Join(loc.Path, "/")
 			if isPreviewItemLocator(loc) {
 				item, err := r.metaClient.GetItemByCatalogPath(loc.EngineID, catalogPath)

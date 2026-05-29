@@ -81,14 +81,14 @@
 
 ### 1. ResourceLocator URI 系统
 
-**格式**: `addp://engine/{engine_id}/path/{resource_path}?type={type}&meta_id={meta_id}`
+**格式**: `addp://engine/{engine_id}/path/{resource_path}?type={type}&node_id={node_id}` 或 `...&item_id={item_id}`
 
 **示例**:
 ```
-addp://engine/1/path/?type=database                    # 根节点
-addp://engine/1/path/public?type=schema                # Schema 节点
-addp://engine/1/path/public/users?type=table           # Table 节点
-addp://engine/1/path/bucket/folder/file.txt?type=object  # 对象存储
+addp://engine/1/path/?type=database&node_id=10                    # 根节点
+addp://engine/1/path/public?type=schema&node_id=11                # Schema 节点
+addp://engine/1/path/public/users?type=table&item_id=100          # Table 数据项
+addp://engine/1/path/bucket/folder/file.txt?type=object&item_id=101  # 对象存储数据项
 ```
 
 **优势**:
@@ -285,24 +285,15 @@ func (c *EngineConnector) GetConnection(engineID uint) (*gorm.DB, error)
 - `manager/frontend/src/views/DataExplorer.vue` - 重写 (710→204 行)
 - `common-frontend/basic/src/types/resourceLocator.js` - 前端工具
 
-## 🗑️ 已删除/废弃
+## 🗑️ 已删除/退出
 
 ### 删除的代码
 - ✅ `manager/frontend/src/utils/treeTransform.js` - 旧的树转换逻辑
 - ✅ `common-frontend/basic/src/types/tree.js` 中的 `makeNodeId()` 和 `sanitizeNodeId()`
 
-### 标记为 Deprecated 的 API
-以下旧 API 端点已标记为废弃，但保留以维持向后兼容：
+### 旧 API 端点
 
-```
-GET  /api/data-explorer/engines              → /api/explorer/engines
-GET  /api/data-explorer/tree                 → /api/explorer/tree/:engine_id
-GET  /api/data-explorer/engines/:id/tree     → /api/explorer/tree/:engine_id
-POST /api/data-explorer/engines/:id/refresh  → /api/explorer/tree/:engine_id/refresh
-GET  /api/data-explorer/preview              → /api/explorer/preview?locator=...
-```
-
-**日志警告**: 调用旧 API 时会输出 `[DEPRECATED]` 日志，提示使用新端点。
+旧的 `engine_id/schema/table` 参数式端点不作为当前契约保留。Manager 预览、资源树刷新和跳转统一以标准 ResourceLocator 作为定位入口；如仍有旧端点或旧 Swagger path 残留，应直接删除或迁移到 locator 契约。
 
 ## 🚀 迁移指南
 
@@ -333,9 +324,10 @@ const store = useExplorerStore()
 const locator = buildLocator({
   engineId,
   path: [schema, table],
-  type: 'table'
+  type: 'table',
+  itemId
 })
-// 结果: addp://engine/1/path/public/users?type=table
+// 结果: addp://engine/1/path/public/users?type=table&item_id=100
 
 await store.loadPreview(locator, 1)
 ```
@@ -348,8 +340,10 @@ import (
     commonModels "github.com/addp/common/models"
 )
 
+itemID := uint(100)
+
 // 解析 locator URI
-loc, err := catalogview.ParseURI("addp://engine/1/path/public/users?type=table")
+loc, err := catalogview.ParseURI("addp://engine/1/path/public/users?type=table&item_id=100")
 // loc.EngineID = 1
 // loc.Path = ["public", "users"]
 // loc.Type = "table"
@@ -359,9 +353,10 @@ loc := &catalogview.ResourceLocator{
     EngineID: 1,
     Path:     []string{"public", "users"},
     Type:     catalogview.TypeTable,
+    ItemID:   &itemID,
 }
 uri := loc.ToURI()
-// 结果: addp://engine/1/path/public/users?type=table
+// 结果: addp://engine/1/path/public/users?type=table&item_id=100
 ```
 
 ## 📊 性能对比
@@ -377,7 +372,7 @@ uri := loc.ToURI()
 ## 🔍 常见问题
 
 ### Q1: 旧 API 什么时候删除？
-A: 旧 API 会保留至少 3 个月，确保所有客户端完成迁移。删除前会提前通知。
+A: 旧 API 不作为当前契约保留。发现旧入口、旧 Swagger path 或旧参数式调用时，应迁移到标准 ResourceLocator 并清理旧实现。
 
 ### Q2: 如何处理中文路径？
 A: ResourceLocator 自动进行 URL 编码，支持中文、空格等特殊字符：
@@ -394,8 +389,8 @@ treeBuilder := catalogview.NewTreeBuilder(metaClient)
 tree, err := treeBuilder.BuildFromMeta(engine, metaNodes, expandDepth)
 ```
 
-### Q4: Preview 如何兼容旧代码？
-A: PreviewResolver 内部自动转换，旧 `engine_id, schema, table` 参数会转为 locator URI。
+### Q4: Preview 的定位入口是什么？
+A: Preview 只接受标准 ResourceLocator URI。调用方应先基于 Meta item / node 事实获得 locator，不应继续传递 `engine_id, schema, table` 这类拆散的定位参数。
 
 ## 📚 相关文档
 

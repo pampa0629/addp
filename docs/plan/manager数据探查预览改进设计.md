@@ -278,7 +278,7 @@ GET /api/manager/tree/:engine_id/node?locator=...
 
 ### 6.4 ItemPanel 数据来源
 
-元数据区：从树节点的 `metadata` 字段读取（meta_id → 调用 Meta API 获取详情）。
+元数据区：从树节点的 `metadata` 字段读取。资源树节点使用 `node_id`，数据项使用 `item_id`；如需详情，通过标准 locator 或对应真实 ID 调用后端接口。
 预览区：调用现有预览 API：
 ```
 GET /api/manager/preview?engineId=...&schema=...&table=...&itemType=...

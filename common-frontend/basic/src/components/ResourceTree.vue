@@ -58,15 +58,14 @@
         :filter-node-method="currentFilterMethod"
         :lazy="lazy"
         :load="load"
+        :node-class-name="resolveNodeClassName"
         @node-click="handleNodeClick"
         @node-expand="handleNodeExpand"
         @node-collapse="handleNodeCollapse"
         @current-change="handleCurrentChange"
       >
         <template #default="{ data, node }">
-          <!-- 哨兵节点：仅用于让 el-tree 显示展开箭头，不渲染内容 -->
-          <span v-if="data.type === '__sentinel__'" style="display:none" />
-          <slot v-else name="node" :node="node" :data="data">
+          <slot name="node" :node="node" :data="data">
             <span
               class="tree-node-wrapper"
               @dblclick="enableDblclickToggle ? handleNodeDblclick($event, node, data) : null"
@@ -325,6 +324,10 @@ const props = defineProps({
   cardShadow: {
     type: String,
     default: 'never'
+  },
+  nodeClassName: {
+    type: [String, Function],
+    default: ''
   }
 })
 
@@ -409,27 +412,26 @@ const currentFilterMethod = computed(() => {
   return props.filterMethod || defaultFilterMethod
 })
 
-// 为 hasChildren=true 但 children=[] 的节点注入哨兵子节点
-// el-tree 在非懒加载模式下只根据 children 数组长度判断是否显示展开箭头，忽略 isLeaf
-// 注入哨兵后 el-tree 会显示展开箭头，展开时哨兵节点被隐藏（通过 type='__sentinel__' 过滤）
-const SENTINEL_ID = '__sentinel__'
-const injectSentinels = (nodes) => {
-  if (!nodes) return nodes
-  return nodes.map(node => {
-    const hasEmptyChildren = (!node.children || node.children.length === 0) && node.hasChildren
-    const children = hasEmptyChildren
-      ? [{ id: SENTINEL_ID + node.id, type: SENTINEL_ID, label: '', hasChildren: false, children: [] }]
-      : node.children?.length
-        ? injectSentinels(node.children)
-        : node.children
-    return children === node.children ? node : { ...node, children }
-  })
+const resolveNodeClassName = (data, node) => {
+  const classes = []
+  if (typeof props.nodeClassName === 'function') {
+    const customClass = props.nodeClassName(data, node)
+    if (customClass) classes.push(customClass)
+  } else if (props.nodeClassName) {
+    classes.push(props.nodeClassName)
+  }
+
+  if (data?.hasChildren && (!data.children || data.children.length === 0)) {
+    classes.push('resource-tree-unloaded-children')
+  }
+
+  return classes.join(' ')
 }
 
 // 过滤后的树数据
 const filteredTreeData = computed(() => {
   if (!props.filterText) {
-    return injectSentinels(props.treeData)
+    return props.treeData
   }
 
   if (!props.highlightMatch) {
@@ -514,7 +516,9 @@ const updateTreeState = () => {
 
 onMounted(() => {
   if (hasTreeData.value) {
-    nextTick(updateTreeState)
+    nextTick(() => {
+      updateTreeState()
+    })
   }
 })
 
@@ -523,7 +527,9 @@ watch(
   () => props.treeData,
   () => {
     if (hasTreeData.value) {
-      nextTick(updateTreeState)
+      nextTick(() => {
+        updateTreeState()
+      })
     }
   },
   { deep: true }
@@ -534,37 +540,52 @@ watch(
   () => props.expandedKeys,
   () => {
     if (hasTreeData.value) {
-      nextTick(updateExpandState)
+      nextTick(() => {
+        updateExpandState()
+      })
     }
   },
   { deep: true }
 )
+
+const scrollToCurrentNode = (block = 'center', behavior = 'smooth') => {
+  const tree = treeRef.value
+  const el = tree?.$el?.querySelector('.is-current')
+  if (el) {
+    el.scrollIntoView({ behavior, block })
+    return true
+  }
+  return false
+}
+
+const selectAndScrollToNode = async (key, options = {}) => {
+  if (!key) return false
+  const tree = treeRef.value
+  if (!tree || typeof tree.setCurrentKey !== 'function') return false
+  tree.setCurrentKey(key)
+  await nextTick()
+  return scrollToCurrentNode(options.block || 'center', options.behavior || 'smooth')
+}
 
 // 选中节点变化时单独处理：更新高亮，滚动到可见区域
 watch(
   () => props.currentNodeKey,
   (key) => {
     nextTick(() => {
-      const tree = treeRef.value
-      if (!tree || typeof tree.setCurrentKey !== 'function' || !key) return
-      tree.setCurrentKey(key)
-      const el = tree.$el?.querySelector('.is-current')
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-      }
+      selectAndScrollToNode(key, { block: 'nearest' })
     })
   }
 )
 
 // 节点点击
 const handleNodeClick = (nodeData) => {
-  if (!nodeData || nodeData.type === SENTINEL_ID) return
+  if (!nodeData) return
   emit('node-click', nodeData)
 }
 
 // 当前节点变化
 const handleCurrentChange = (data, node) => {
-  if (data && data.type !== SENTINEL_ID) {
+  if (data) {
     emit('update:current-node-key', data.id)
     emit('current-change', data, node)
   }
@@ -572,7 +593,7 @@ const handleCurrentChange = (data, node) => {
 
 // 节点展开
 const handleNodeExpand = (data) => {
-  if (!data || data.type === SENTINEL_ID) return
+  if (!data) return
   const keys = new Set(props.expandedKeys)
   keys.add(data.id)
   emit('update:expanded-keys', Array.from(keys))
@@ -581,7 +602,7 @@ const handleNodeExpand = (data) => {
 
 // 节点折叠
 const handleNodeCollapse = (data) => {
-  if (!data || data.type === SENTINEL_ID) return
+  if (!data) return
   const keys = props.expandedKeys.filter((id) => id !== data.id)
   emit('update:expanded-keys', keys)
   emit('node-collapse', data)
@@ -660,6 +681,10 @@ const handleNodeAction = (action, node) => {
   if (isActionDisabled(action, node)) return
   emit('node-action', { action: action.name, node })
 }
+
+defineExpose({
+  scrollToNode: selectAndScrollToNode
+})
 </script>
 
 <style scoped>
@@ -726,6 +751,22 @@ const handleNodeAction = (action, node) => {
 .tree-container :deep(.el-tree-node__content) {
   border-radius: 4px;
   transition: background-color 0.18s ease, box-shadow 0.18s ease, color 0.18s ease;
+}
+
+.tree-container :deep(.el-tree-node.resource-tree-unloaded-children > .el-tree-node__content .el-tree-node__expand-icon.is-leaf) {
+  visibility: visible;
+  color: var(--el-text-color-secondary);
+  pointer-events: none;
+}
+
+.tree-container :deep(.el-tree-node.resource-tree-unloaded-children > .el-tree-node__content .el-tree-node__expand-icon.is-leaf::before) {
+  content: "";
+  display: inline-block;
+  width: 0;
+  height: 0;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 6px solid currentColor;
 }
 
 .tree-container :deep(.el-tree-node.is-current > .el-tree-node__content) {

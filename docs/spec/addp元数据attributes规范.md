@@ -193,6 +193,8 @@ label set 必须标准化为去空、去重、排序后的稳定集合；当 nod
 
 表字段统一放在 `type_info.table.fields`，不得写入 attributes 顶层。`type_info.table` 是 `common/datatype.TableInfo` 的直接 JSON 投影，`type_info.table.fields[]` 是 `common/datatype.FieldInfo` 的直接 JSON 投影。字段不是 data item，字段类型只能使用 `type` 表达 ADDP 标准字段类型，不得在字段对象内写入 `data_type`。原生字段类型如需展示，只能作为只读诊断信息写入 `native_type`，不得参与执行决策；哪个字段是空间字段、SRID、extent 等属于 `capabilities.spatial`，不得塞回 `type_info.table`。
 
+MongoDB collection 等动态 schema 文档集合在当前 ADDP 能力中按记录集合消费，`meta_item.item_type=collection`，`attributes.item.data_type=table`。其 `type_info.table.fields` 是采样推断字段画像，不是强 schema；文档数写入 `type_info.table.row_count`，不得写入 `type_info.document` 或新增 `type_info.collection`。
+
 索引、采样过程、动态 schema 推断方式等不是 `common/datatype.TableInfo` 当前通用字段，不得写入 `type_info.table`。文档集合、数据库或格式解析得到的索引摘要进入 `capabilities.indexing`；采样规模、是否采样、动态 schema 类型、平均文档大小、索引数量等画像或统计事实进入 `capabilities.statistics`。
 
 Meta attributes 不维护旧字段兼容层。字段可空性只写 `nullable`，字段主键标记只写 `primary_key`；不得再写 `is_nullable`、`is_primary_key`。历史 Meta 数据如果不符合本规范，应删除后重新扫描，不在运行期做迁移或兼容读取。

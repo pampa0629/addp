@@ -18,18 +18,17 @@ func TestParseURI(t *testing.T) {
 				EngineID: 1,
 				Path:     []string{"public", "users"},
 				Type:     TypeTable,
-				MetaID:   nil,
 			},
 			wantError: false,
 		},
 		{
-			name: "PostgreSQL 表 with meta_id",
-			uri:  "addp://engine/1/path/public/users?type=table&meta_id=100",
+			name: "PostgreSQL 表 with item_id",
+			uri:  "addp://engine/1/path/public/users?type=table&item_id=100",
 			want: &ResourceLocator{
 				EngineID: 1,
 				Path:     []string{"public", "users"},
 				Type:     TypeTable,
-				MetaID:   uintPtr(100),
+				ItemID:   uintPtr(100),
 			},
 			wantError: false,
 		},
@@ -40,7 +39,6 @@ func TestParseURI(t *testing.T) {
 				EngineID: 2,
 				Path:     []string{"business", "orders"},
 				Type:     TypeCollection,
-				MetaID:   nil,
 			},
 			wantError: false,
 		},
@@ -51,7 +49,6 @@ func TestParseURI(t *testing.T) {
 				EngineID: 3,
 				Path:     []string{"uploads", "2024", "geo", "data.shp"},
 				Type:     TypeObject,
-				MetaID:   nil,
 			},
 			wantError: false,
 		},
@@ -62,7 +59,6 @@ func TestParseURI(t *testing.T) {
 				EngineID: 3,
 				Path:     []string{"uploads", "2024"},
 				Type:     TypeDirectory,
-				MetaID:   nil,
 			},
 			wantError: false,
 		},
@@ -73,7 +69,6 @@ func TestParseURI(t *testing.T) {
 				EngineID: 1,
 				Path:     []string{},
 				Type:     TypeDatabase,
-				MetaID:   nil,
 			},
 			wantError: false,
 		},
@@ -84,7 +79,6 @@ func TestParseURI(t *testing.T) {
 				EngineID: 1,
 				Path:     []string{"public", "user files"},
 				Type:     TypeTable,
-				MetaID:   nil,
 			},
 			wantError: false,
 		},
@@ -95,7 +89,6 @@ func TestParseURI(t *testing.T) {
 				EngineID: 1,
 				Path:     []string{"数据库", "用户表"},
 				Type:     TypeTable,
-				MetaID:   nil,
 			},
 			wantError: false,
 		},
@@ -120,6 +113,24 @@ func TestParseURI(t *testing.T) {
 		{
 			name:      "错误的路径格式",
 			uri:       "addp://engine/1/invalid/public/users?type=table",
+			want:      nil,
+			wantError: true,
+		},
+		{
+			name:      "node_id 和 item_id 互斥",
+			uri:       "addp://engine/1/path/public/users?type=table&node_id=10&item_id=100",
+			want:      nil,
+			wantError: true,
+		},
+		{
+			name:      "非法 item_id",
+			uri:       "addp://engine/1/path/public/users?type=table&item_id=abc",
+			want:      nil,
+			wantError: true,
+		},
+		{
+			name:      "非法 node_id",
+			uri:       "addp://engine/1/path/public?type=schema&node_id=0",
 			want:      nil,
 			wantError: true,
 		},
@@ -158,14 +169,14 @@ func TestToURI(t *testing.T) {
 			want: "addp://engine/1/path/public/users?type=table",
 		},
 		{
-			name: "PostgreSQL 表 with meta_id",
+			name: "PostgreSQL 表 with item_id",
 			loc: &ResourceLocator{
 				EngineID: 1,
 				Path:     []string{"public", "users"},
 				Type:     TypeTable,
-				MetaID:   uintPtr(100),
+				ItemID:   uintPtr(100),
 			},
-			want: "addp://engine/1/path/public/users?type=table&meta_id=100",
+			want: "addp://engine/1/path/public/users?type=table&item_id=100",
 		},
 		{
 			name: "MinIO 深层路径",
@@ -193,6 +204,16 @@ func TestToURI(t *testing.T) {
 				Type:     TypeDatabase,
 			},
 			want: "addp://engine/1/path/?type=database",
+		},
+		{
+			name: "Schema 节点 with node_id",
+			loc: &ResourceLocator{
+				EngineID: 1,
+				Path:     []string{"public"},
+				Type:     TypeSchema,
+				NodeID:   uintPtr(10),
+			},
+			want: "addp://engine/1/path/public?type=schema&node_id=10",
 		},
 	}
 
@@ -359,7 +380,6 @@ func TestParentPath(t *testing.T) {
 				EngineID: 1,
 				Path:     []string{"public"},
 				Type:     TypeSchema,
-				MetaID:   nil,
 			},
 		},
 		{
@@ -373,7 +393,6 @@ func TestParentPath(t *testing.T) {
 				EngineID: 2,
 				Path:     []string{"business"},
 				Type:     TypeDatabase,
-				MetaID:   nil,
 			},
 		},
 		{
@@ -387,7 +406,6 @@ func TestParentPath(t *testing.T) {
 				EngineID: 3,
 				Path:     []string{"uploads", "2024"},
 				Type:     TypeDirectory,
-				MetaID:   nil,
 			},
 		},
 		{
@@ -416,7 +434,7 @@ func TestClone(t *testing.T) {
 		EngineID: 1,
 		Path:     []string{"public", "users"},
 		Type:     TypeTable,
-		MetaID:   uintPtr(100),
+		ItemID:   uintPtr(100),
 	}
 
 	cloned := original.Clone()
@@ -432,9 +450,28 @@ func TestClone(t *testing.T) {
 		t.Error("Clone() should create a deep copy, but modifying clone affected original")
 	}
 
-	*cloned.MetaID = 200
-	if *original.MetaID == 200 {
-		t.Error("Clone() should create a deep copy of MetaID, but modifying clone affected original")
+	*cloned.ItemID = 200
+	if *original.ItemID == 200 {
+		t.Error("Clone() should create a deep copy of ItemID, but modifying clone affected original")
+	}
+}
+
+func TestCloneNodeID(t *testing.T) {
+	original := &ResourceLocator{
+		EngineID: 1,
+		Path:     []string{"public"},
+		Type:     TypeSchema,
+		NodeID:   uintPtr(10),
+	}
+
+	cloned := original.Clone()
+	if !equalResourceLocator(original, cloned) {
+		t.Errorf("Clone() = %+v, want %+v", cloned, original)
+	}
+
+	*cloned.NodeID = 20
+	if *original.NodeID == 20 {
+		t.Error("Clone() should create a deep copy of NodeID, but modifying clone affected original")
 	}
 }
 
@@ -450,7 +487,7 @@ func TestRoundTrip(t *testing.T) {
 			EngineID: 2,
 			Path:     []string{"business", "orders"},
 			Type:     TypeCollection,
-			MetaID:   uintPtr(100),
+			ItemID:   uintPtr(100),
 		},
 		{
 			EngineID: 3,
@@ -505,10 +542,16 @@ func equalResourceLocator(a, b *ResourceLocator) bool {
 		}
 	}
 
-	if (a.MetaID == nil) != (b.MetaID == nil) {
+	if (a.ItemID == nil) != (b.ItemID == nil) {
 		return false
 	}
-	if a.MetaID != nil && *a.MetaID != *b.MetaID {
+	if a.ItemID != nil && *a.ItemID != *b.ItemID {
+		return false
+	}
+	if (a.NodeID == nil) != (b.NodeID == nil) {
+		return false
+	}
+	if a.NodeID != nil && *a.NodeID != *b.NodeID {
 		return false
 	}
 

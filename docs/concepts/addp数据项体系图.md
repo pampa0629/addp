@@ -97,6 +97,14 @@ data item 的身份由 `meta_item` 表字段承载，例如 `id`、`tenant_id`�
 
 一个 data item 内部可以包含子对象，例如 SQLite 的内部 table、Excel 的 sheet、GeoPackage 的 layer、压缩包中的文件。当前概念上这些子对象默认写入 attributes；只有当需要独立授权、检索、血缘、传输或生命周期管理时，才讨论是否升格为独立 data item。
 
+### 资源树、定位与检索消费边界
+
+资源树是 `engine -> node -> data item` 的展示和操作视图，不是新的身份层。目录、bucket、prefix、schema 等组织结构主要对应 `node`；表、collection、object、file、graph 等可管理对象对应 `data item`。
+
+浏览、展开、刷新和按名称定位资源时，资源树以 `node` 和 `data item` 的既有身份为基础。资源树内搜索只是浏览辅助能力，用于帮助用户在树中找到节点或数据项；它不承担文档正文、字段内容或向量语义检索。
+
+检索、预览、授权、传输和资产治理等平台能力以 `data item` 为核心对象。检索结果如果需要回到资源树展示，应通过标准 ResourceLocator 定位到对应的 `node` 或 `data item`；消费方不应根据 engine type、bucket、path、name 等字段自行拼接定位身份。
+
 ## 内容布局
 
 内容布局回答：**引擎中的文件、目录、表、prefix 等资源如何组织成一个 data item。**

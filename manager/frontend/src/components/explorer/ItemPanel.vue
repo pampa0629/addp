@@ -59,6 +59,10 @@
             </div>
           </section>
 
+          <div v-if="showDynamicSchemaNotice" class="dynamic-schema-notice">
+            {{ t('manager.explorer.dynamicSchemaNotice') }}
+          </div>
+
           <el-empty
             v-if="attributeSections.length === 0"
             :description="t('manager.explorer.noAdditionalAttributes')"
@@ -554,6 +558,13 @@ const itemAttributesMap = computed(() => {
     attrs[attr.key] = attr.value
   }
   return attrs
+})
+
+const itemDataType = computed(() => String(itemAttributesMap.value?.item?.data_type || '').toLowerCase())
+
+const showDynamicSchemaNotice = computed(() => {
+  return String(itemMeta.value?.item_type || '').toLowerCase() === 'collection' &&
+    itemDataType.value === 'table'
 })
 
 const itemRowCount = computed(() => {
@@ -1186,6 +1197,16 @@ const pickNestedNumber = (source, paths) => {
   font-weight: 600;
   line-height: 1.5;
   word-break: break-word;
+}
+
+.dynamic-schema-notice {
+  padding: 10px 12px;
+  border: 1px solid var(--addp-border-color-light);
+  border-radius: 8px;
+  background: var(--addp-bg-secondary);
+  color: var(--addp-text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .attribute-sections {

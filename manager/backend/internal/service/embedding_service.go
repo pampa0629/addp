@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/addp/common/catalogview"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/embedding"
 	commonModels "github.com/addp/common/models"
@@ -33,6 +34,7 @@ import (
 type EmbeddingService struct {
 	vectorRepo      *repository.EmbeddingRepository
 	systemClient    *commonClient.SystemClient
+	metaClient      *commonClient.MetaClient
 	embeddingClient embedding.MultiModalEmbedder
 	taskExecRepo    *commonRepo.TaskExecutionRepository
 	cfg             *config.Config
@@ -43,6 +45,7 @@ type EmbeddingService struct {
 func NewEmbeddingService(
 	vectorRepo *repository.EmbeddingRepository,
 	systemClient *commonClient.SystemClient,
+	metaClient *commonClient.MetaClient,
 	taskExecRepo *commonRepo.TaskExecutionRepository,
 	cfg *config.Config,
 	log *slog.Logger,
@@ -68,6 +71,7 @@ func NewEmbeddingService(
 	return &EmbeddingService{
 		vectorRepo:      vectorRepo,
 		systemClient:    systemClient,
+		metaClient:      metaClient,
 		embeddingClient: embeddingClient,
 		taskExecRepo:    taskExecRepo,
 		cfg:             cfg,
@@ -155,7 +159,7 @@ func (s *EmbeddingService) EmbedObject(ctx context.Context, req EmbedObjectReque
 	}
 
 	// 7. 构建 metadata（用于搜索展示）
-	metadata, err := s.buildMetadata(ctx, req.EngineID, req.Bucket, fullPath, objectInfo)
+	metadata, err := s.buildMetadata(ctx, req.EngineID, req.Bucket, fullPath, objectInfo, req.TenantID)
 	if err != nil {
 		s.log.Warn("Failed to build metadata, continuing without it", "error", err)
 		metadata = nil
@@ -612,7 +616,7 @@ func (s *EmbeddingService) createMinioClient(engine *commonModels.Engine) (*mini
 }
 
 // buildMetadata 构建向量的 metadata（用于搜索展示和定位）
-func (s *EmbeddingService) buildMetadata(ctx context.Context, engineID uint, bucket, objectKey string, objInfo *ObjectStorageInfo) (datatypes.JSON, error) {
+func (s *EmbeddingService) buildMetadata(ctx context.Context, engineID uint, bucket, objectKey string, objInfo *ObjectStorageInfo, tenantID *uint) (datatypes.JSON, error) {
 	// 通过 SystemClient 获取引擎信息
 	if s.systemClient == nil {
 		return nil, fmt.Errorf("system client not available")
@@ -640,6 +644,17 @@ func (s *EmbeddingService) buildMetadata(ctx context.Context, engineID uint, buc
 		},
 	}
 
+	if s.metaClient != nil {
+		if item, err := s.lookupMetaItem(ctx, engineID, bucket, objectKey, tenantID); err == nil && item != nil {
+			metadata["item_id"] = item.ID
+			metadata["item_type"] = item.ItemType
+			metadata["full_name"] = item.FullName
+			if locator := catalogview.LocatorFromFullName(engineID, engine.EngineType, item.ItemType, item.FullName, &item.ID); locator != nil {
+				metadata["locator"] = locator.ToURI()
+			}
+		}
+	}
+
 	// 转换为 JSON
 	jsonData, err := json.Marshal(metadata)
 	if err != nil {
@@ -647,4 +662,20 @@ func (s *EmbeddingService) buildMetadata(ctx context.Context, engineID uint, buc
 	}
 
 	return jsonData, nil
+}
+
+func (s *EmbeddingService) lookupMetaItem(ctx context.Context, engineID uint, bucket, objectKey string, tenantID *uint) (*commonModels.MetaItem, error) {
+	if s.metaClient == nil {
+		return nil, fmt.Errorf("meta client not available")
+	}
+	dir, name := commonModels.SplitObjectPath(objectKey)
+	fullName := commonModels.JoinObjectPath(bucket, dir, name)
+	if strings.TrimSpace(fullName) == "" {
+		return nil, fmt.Errorf("empty catalog path")
+	}
+	client := s.metaClient
+	if tenantID != nil {
+		client = s.metaClient.WithTenantID(*tenantID)
+	}
+	return client.GetItemByCatalogPath(engineID, fullName)
 }

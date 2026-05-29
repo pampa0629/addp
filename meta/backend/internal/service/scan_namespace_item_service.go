@@ -38,7 +38,7 @@ func NewNamespaceItemScanService(db *gorm.DB, log *slog.Logger, indexer *search.
 }
 
 // ScanNamespace 扫描 namespace 及其所有 item。
-// CatalogProvider 负责列出真实数据库、集合或 graph item；DocumentMetadataSamplingProvider 用于文档 schema 深度推断。
+// CatalogProvider 负责列出真实数据库、集合或 graph item；DynamicSchemaSamplingProvider 用于动态 schema 深度推断。
 func (s *NamespaceItemScanService) ScanNamespace(
 	ctx context.Context,
 	enginePlugin plugin.EnginePlugin,
@@ -54,7 +54,7 @@ func (s *NamespaceItemScanService) ScanNamespace(
 	if !ok {
 		return 0, 0, 0, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
 	}
-	samplingProvider, _ := enginePlugin.(plugin.DocumentMetadataSamplingProvider)
+	samplingProvider, _ := enginePlugin.(plugin.DynamicSchemaSamplingProvider)
 	metadataProvider, _ := enginePlugin.(plugin.ItemMetadataProvider)
 
 	// 1. 创建/更新 namespace 节点
@@ -100,7 +100,7 @@ func (s *NamespaceItemScanService) scanCatalogItems(
 	enginePlugin plugin.EnginePlugin,
 	catalogProvider plugin.CatalogProvider,
 	metadataProvider plugin.ItemMetadataProvider,
-	samplingProvider plugin.DocumentMetadataSamplingProvider,
+	samplingProvider plugin.DynamicSchemaSamplingProvider,
 	connInfo plugin.ConnectionInfo,
 	resource *commonModels.Engine,
 	tenantID uint,
@@ -174,16 +174,16 @@ func (s *NamespaceItemScanService) scanCatalogItems(
 		var attrs models.JSONMap
 
 		if itemType == "collection" && strings.EqualFold(scanDepth, "deep") && samplingProvider != nil {
-			itemMetadata, err := samplingProvider.SampleDocumentMetadata(ctx, connInfo, itemCatalogPath(resource.ID, namespaceTermForPlugin(enginePlugin), namespaceName, node.Term, node.Kind, collInfo.Name), plugin.MetadataOptions{
+			itemMetadata, err := samplingProvider.SampleDynamicSchema(ctx, connInfo, itemCatalogPath(resource.ID, namespaceTermForPlugin(enginePlugin), namespaceName, node.Term, node.Kind, collInfo.Name), plugin.MetadataOptions{
 				IncludeSamples:    true,
 				IncludeStatistics: true,
 				IncludeIndexes:    true,
 				SampleSize:        100,
 			})
 			if err != nil {
-				s.log.Warn("文档集合 Schema 采样失败", "namespace", namespaceName, "collection", collInfo.Name, "error", err)
+				s.log.Warn("动态 schema 采样失败", "namespace", namespaceName, "collection", collInfo.Name, "error", err)
 			} else {
-				attrs = metaattr.BuildDocumentCollectionAttributes(documentCollectionAttributesInput(itemMetadata))
+				attrs = metaattr.BuildDynamicSchemaAttributes(dynamicSchemaAttributesInput(itemMetadata))
 				totalFields += len(itemMetadata.Fields)
 			}
 		}
@@ -214,7 +214,7 @@ func (s *NamespaceItemScanService) scanCatalogItems(
 			attrs = models.JSONMap{}
 		}
 		if itemType == "collection" {
-			metaattr.ApplyDocumentCollectionStatistics(attrs, count, sizeBytes)
+			metaattr.ApplyDynamicSchemaStatistics(attrs, count, sizeBytes)
 		} else if itemType == "graph" {
 			metaattr.ApplyGraphItemAttributes(attrs, graphInfo)
 		} else {
@@ -249,9 +249,9 @@ func (s *NamespaceItemScanService) scanCatalogItems(
 	return totalItems, totalFields, nil
 }
 
-func documentCollectionAttributesInput(itemMetadata *plugin.ItemMetadata) metaattr.DocumentCollectionAttributesInput {
+func dynamicSchemaAttributesInput(itemMetadata *plugin.ItemMetadata) metaattr.DynamicSchemaAttributesInput {
 	if itemMetadata == nil {
-		return metaattr.DocumentCollectionAttributesInput{}
+		return metaattr.DynamicSchemaAttributesInput{}
 	}
 	indexes := make([]metaattr.IndexAttributesInput, 0, len(itemMetadata.Indexes))
 	for _, index := range itemMetadata.Indexes {
@@ -262,7 +262,7 @@ func documentCollectionAttributesInput(itemMetadata *plugin.ItemMetadata) metaat
 			IndexType: index.IndexType,
 		})
 	}
-	return metaattr.DocumentCollectionAttributesInput{
+	return metaattr.DynamicSchemaAttributesInput{
 		Fields:     itemMetadata.Fields,
 		Indexes:    indexes,
 		Stats:      itemMetadata.Stats,

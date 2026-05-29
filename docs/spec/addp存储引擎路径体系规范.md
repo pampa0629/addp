@@ -51,10 +51,12 @@
 | MinIO / S3 | object | `object` | `data_type=table/document/media/container`，`format=csv/wps/png/excel` |
 | NFS / 本地文件系统 | file | `file` | `data_type=table/document/media/container`，`format=csv/wps/png/excel` |
 | PostgreSQL / MySQL / Doris / ClickHouse | table / view | `table` / `view` | 通常 `data_type=table` |
-| MongoDB | collection | `collection` | 当前按表格型文档集合消费时可为 `data_type=table` |
+| MongoDB | collection | `collection` | 动态 schema 的 JSON/BSON 文档集合按记录集合消费，固定为 `data_type=table` |
 | Neo4j | graph | `graph` | `data_type=graph` |
 
 因此，同一个 `sales.csv` 在 MinIO 中是 `item_type=object`，在 NFS 中是 `item_type=file`；它们都可以同时拥有 `attributes.item.data_type=table`、`attributes.item.format=csv`。不得因为对象内容可按表格读取，就把对象存储中的 `item_type` 写成 `table`。
+
+MongoDB collection 是 JSON/BSON 文档集合容器，不是关系型数据库表，也不是 DOCX / PDF 这类阅读型 `document`。在当前 ADDP 能力中，collection 作为动态 schema 记录集合消费：`meta_item.item_type=collection` 保留 MongoDB 原生 catalog 术语，`attributes.item.data_type=table` 用于预览、查询、字段画像和传输等平台能力选择。不得为 MongoDB collection 写入 `type_info.document` 或新增 `type_info.collection`。
 
 ### storage_ref
 
@@ -310,8 +312,12 @@ database 作为独立节点展示，用户可以按 database 触发扫描。
 
 Locator URI 格式：
 ```
-addp://engine/{engine_id}/path/{segments}?type={type}
+addp://engine/{engine_id}/path/{segments}?type={type}&node_id={node_id}&item_id={item_id}
 ```
+
+`node_id` 与 `item_id` 互斥，分别表示 MetaNode 与 MetaItem 的真实 ID。不得使用 `meta_id` 混合表达两类 ID，也不得把前端虚拟 ID 编码进 locator。
+
+`type` 表达 catalog / 路径模型中的稳定术语，用于路径语义、路由提示和展示，不表示内容数据类型，也不负责区分 node / item。ID 对应的 Meta 事实优先于 `type`。
 
 `path segments` 由 `full_name` 按 `/` 分割得到。
 注意：数据库与 namespace/item 型引擎的 `full_name` 使用 `.` 分隔（如 `public.users`、`mydb.orders`），
@@ -319,12 +325,12 @@ addp://engine/{engine_id}/path/{segments}?type={type}
 
 | 引擎类型 | full_name | path segments | 示例 URI |
 |---------|-----------|---------------|---------|
-| 对象存储 | `addp/image/data.jpg` | `["addp","image","data.jpg"]` | `.../path/addp/image/data.jpg?type=object` |
-| NFS | `gis-data/sample.csv` | `["gis-data","sample.csv"]` | `.../path/gis-data/sample.csv?type=file` |
-| NFS 根 | `""` | `[]` | `.../path/?type=root` |
-| 关系型数据库 | `public.users` | `["public","users"]` | `.../path/public/users?type=table` |
-| MongoDB collection | `mydb.orders` | `["mydb","orders"]` | `.../path/mydb/orders?type=collection` |
-| Neo4j graph | `neo4j.graph` | `["neo4j","graph"]` | `.../path/neo4j/graph?type=graph` |
+| 对象存储 | `addp/image/data.jpg` | `["addp","image","data.jpg"]` | `.../path/addp/image/data.jpg?type=object&item_id=456` |
+| NFS | `gis-data/sample.csv` | `["gis-data","sample.csv"]` | `.../path/gis-data/sample.csv?type=file&item_id=789` |
+| NFS 根 | `""` | `[]` | `.../path/?type=root&node_id=12` |
+| 关系型数据库 | `public.users` | `["public","users"]` | `.../path/public/users?type=table&item_id=123` |
+| MongoDB collection | `mydb.orders` | `["mydb","orders"]` | `.../path/mydb/orders?type=collection&item_id=234` |
+| Neo4j graph | `neo4j.graph` | `["neo4j","graph"]` | `.../path/neo4j/graph?type=graph&item_id=578` |
 
 数据库与 namespace/item 型引擎的解析语义：`namespace = path[0]`，`item = join(path[1:])`，具体数据项类型由 locator 的 `type` 决定。
 Neo4j 的 catalog item 必须使用 `type=graph`；节点 label、relationship type 和连接模式属于 `type_info.graph`，不得作为独立 catalog item。

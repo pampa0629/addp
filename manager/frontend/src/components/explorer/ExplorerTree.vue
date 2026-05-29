@@ -26,6 +26,7 @@
 
     <!-- 正常状态：显示树 -->
     <ResourceTree
+      ref="resourceTreeRef"
       v-else
       :tree-data="treeData"
       :loading="false"
@@ -46,7 +47,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { ResourceTree } from '@addp/common-frontend'
@@ -68,6 +69,7 @@ const props = defineProps({
 const emit = defineEmits(['node-select'])
 
 const store = useExplorerStore()
+const resourceTreeRef = ref(null)
 
 // 节点操作（根据节点类型动态生成）
 const nodeActions = computed(() => {
@@ -133,6 +135,8 @@ const handleRefresh = async () => {
     // 清空引擎树缓存
     store.engineTrees = {}
     store.engineTreeDepths = {}
+    store.engineTreeRequestSeq = {}
+    store.loadingEngineIds = {}
     // 重新加载引擎列表
     await store.loadEngines()
 
@@ -218,8 +222,7 @@ const handleNodeClick = async (node) => {
   // 注意：不使用 !node.loaded 判断，避免已有子节点的节点在折叠后点击时被重新展开
   const isDirLike = ['directory', 'bucket', 'prefix', 'schema', 'database'].includes(node.type)
   if (isDirLike) {
-    const realChildren = (node.children || []).filter(c => c.type !== '__sentinel__')
-    const needsLoading = realChildren.length === 0 && node.hasChildren
+    const needsLoading = (node.children || []).length === 0 && node.hasChildren
     if (!isCurrentlyExpanded && needsLoading) {
       // 首次展开：el-tree 因暂无子节点可能不会自动展开，需要强制 store 记录展开状态
       store.expandNode(locator)
@@ -298,20 +301,17 @@ const handleNodeAction = async ({ node, action }) => {
       }
 
       // 调用后端 API
-      const response = await client.post('/manager/embedding', {
+      await client.post('/manager/embedding', {
         operator_name: 'embedding',
         params: params,
         execute_now: true
       })
 
-      // 显示成功消息
       if (action === 'embedding') {
         ElMessage.success(t('manager.explorer.vectorizeSubmitted', { key: params.object_key }))
       } else {
         ElMessage.success(t('manager.explorer.batchVectorizeSubmitted', { label: node.label }))
       }
-
-      console.log('向量化任务响应:', response.data)
     } catch (error) {
       console.error('向量化失败:', error)
       ElMessage.error(t('manager.explorer.vectorizeFailed', { error: error.response?.data?.error || error.message }))
@@ -324,15 +324,6 @@ const handleNodeExpand = async (node) => {
   const locator = node.locator || node.id
   store.expandNode(locator)
 
-  console.log('[ExplorerTree] 节点展开:', {
-    label: node.label,
-    type: node.type,
-    locator: locator,
-    hasChildren: !!node.children,
-    childrenCount: node.children?.length || 0,
-    loaded: node.loaded
-  })
-
   // 如果是引擎节点且未加载过，懒加载其内容
   if (node.type === 'engine' && node.engineId && !node.loaded) {
     try {
@@ -344,31 +335,18 @@ const handleNodeExpand = async (node) => {
     return
   }
 
-  // 🚀 优化：使用增量加载替代全量重载
-  // 如果是容器节点且子节点为空，使用增量加载
-  // 注意：过滤哨兵节点（__sentinel__）后再判断是否需要加载
+  // 使用增量加载替代全量重载：容器节点展开且子节点为空时，只加载该节点的直接子节点。
   const isDirLike = ['directory', 'bucket', 'prefix', 'schema', 'database'].includes(node.type)
-  const realChildren = (node.children || []).filter(c => c.type !== '__sentinel__')
-  const needsLoading = isDirLike && realChildren.length === 0
-
-  console.log('[ExplorerTree] 增量加载检查:', {
-    isDirLike,
-    needsLoading,
-    shouldLoad: needsLoading && locator
-  })
+  const needsLoading = isDirLike && (node.children || []).length === 0
 
   if (needsLoading && locator) {
     try {
       // 从 locator 解析出 engineId
       const loc = parseLocator(locator)
       if (loc && loc.engineId) {
-        console.log('[ExplorerTree] 增量加载子节点:', node.label, 'engine:', loc.engineId)
-
-        // ⚡ 关键改进：只加载该节点的子节点，不重新加载整个树
+        // 只加载该节点的子节点，不重新加载整个树。
         // 强制刷新，绕过缓存，确保从后端加载数据
         await store.loadNodeChildren(locator, 1, true)
-
-        console.log('[ExplorerTree] 增量加载完成')
       }
     } catch (error) {
       console.error('增量加载子节点失败:', error)
@@ -387,7 +365,7 @@ const handleNodeCollapse = (node) => {
 defineExpose({
   expandNode: (locator) => store.expandNode(locator),
   collapseNode: (locator) => store.collapseNode(locator),
-  selectNode: (locator) => store.selectNode(locator)
+  scrollToNode: (locator, options) => resourceTreeRef.value?.scrollToNode(locator, options)
 })
 </script>
 

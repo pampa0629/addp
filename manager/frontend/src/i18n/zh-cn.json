@@ -215,7 +215,9 @@
       "metaBitrate": "比特率",
       "metaSampleRate": "采样率",
       "locateSuccess": "已定位到目标对象",
+      "locateFailed": "未能定位到目标对象",
       "loadPreviewFailed": "加载预览失败：{error}",
+      "missingLocator": "文档 \"{name}\" 缺少可定位的 locator，无法跳转",
       "initFailed": "初始化失败：{error}",
       "engineNotFound": "引擎 {engineId} 未找到",
       "vectorizeInProgress": "向量化进行中",
@@ -259,6 +261,13 @@
       "booleanNo": "否",
       "viewAttributeJson": "查看 JSON",
       "attributeJsonTitle": "完整属性 JSON",
+      "dynamicSchemaNotice": "动态 schema 集合：按记录集合预览，字段为采样画像，不代表强 schema。",
+      "emptyPreview": {
+        "database": "展开数据库并选择集合查看数据",
+        "schema": "展开 Schema 并选择表查看数据",
+        "directory": "展开目录并选择对象查看数据",
+        "noData": "暂无可预览数据"
+      },
       "attributes": {
         "sections": {
           "item": "数据项",
@@ -444,7 +453,7 @@
       "root": "根目录",
       "table": "表",
       "view": "视图",
-      "collection": "Collection",
+      "collection": "集合",
       "graph": "图",
       "file": "文件",
       "object": "对象"

@@ -126,10 +126,10 @@ func TestSetTableFieldsWritesDatatypeFieldFacts(t *testing.T) {
 	}
 }
 
-func TestBuildDocumentCollectionAttributesWritesTypeInfoTableSection(t *testing.T) {
+func TestBuildDynamicSchemaAttributesWritesTypeInfoTableSection(t *testing.T) {
 	t.Parallel()
 
-	attrs := BuildDocumentCollectionAttributes(DocumentCollectionAttributesInput{
+	attrs := BuildDynamicSchemaAttributes(DynamicSchemaAttributesInput{
 		Fields: []datatype.FieldInfo{{
 			Name: "name",
 			Type: datatype.FieldTypeString,
@@ -159,11 +159,14 @@ func TestBuildDocumentCollectionAttributesWritesTypeInfoTableSection(t *testing.
 	capabilities := attrs["capabilities"].(map[string]interface{})
 	statistics := capabilities["statistics"].(map[string]interface{})
 	indexing := capabilities["indexing"].(map[string]interface{})
+	if typeInfo["document"] != nil || typeInfo["collection"] != nil {
+		t.Fatalf("dynamic schema item must only write table type_info: %#v", typeInfo)
+	}
 	if _, ok := table["fields"]; !ok {
 		t.Fatalf("type_info.table.fields missing: %#v", table)
 	}
 	if table["indexes"] != nil || table["is_sampled"] != nil || table["schema_type"] != nil {
-		t.Fatalf("document collection sampling/indexing facts should not be in type_info.table: %#v", table)
+		t.Fatalf("dynamic schema sampling/indexing facts should not be in type_info.table: %#v", table)
 	}
 	if _, ok := indexing["indexes"]; !ok {
 		t.Fatalf("capabilities.indexing.indexes missing: %#v", indexing)
@@ -256,20 +259,20 @@ func TestApplyNamespaceItemAttributesDoesNotWriteEngineFormat(t *testing.T) {
 	}
 }
 
-func TestApplyDocumentCollectionStatisticsWritesStandardSections(t *testing.T) {
+func TestApplyDynamicSchemaStatisticsWritesStandardSections(t *testing.T) {
 	t.Parallel()
 
 	attrs := models.JSONMap{}
-	ApplyDocumentCollectionStatistics(attrs, 42, 2048)
+	ApplyDynamicSchemaStatistics(attrs, 42, 2048)
 
 	typeInfo := attrs["type_info"].(map[string]interface{})
 	table := typeInfo["table"].(map[string]interface{})
 	storage := attrs["storage"].(map[string]interface{})
 	if table["row_count"] != int64(42) {
-		t.Fatalf("document collection counts not standardized: %#v", attrs)
+		t.Fatalf("dynamic schema counts not standardized: %#v", attrs)
 	}
-	if typeInfo["document"] != nil {
-		t.Fatalf("document collection count should not be duplicated in type_info.document: %#v", typeInfo)
+	if typeInfo["document"] != nil || typeInfo["collection"] != nil {
+		t.Fatalf("dynamic schema count should not be duplicated outside type_info.table: %#v", typeInfo)
 	}
 	if storage["total_size"] != int64(2048) {
 		t.Fatalf("storage.total_size missing: %#v", storage)

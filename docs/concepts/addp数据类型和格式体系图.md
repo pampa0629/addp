@@ -45,8 +45,11 @@
 - Shapefile。
 - Parquet / ORC / Avro。
 - Iceberg 等目录型表格式。
+- MongoDB collection 等动态 schema 的 JSON/BSON 文档集合。
 
 CSV 和 JSON 虽然有文本属性，但只要平台把它们作为行列数据处理，就应归为 `table`。文本属性属于文件格式或读取方式，不应把 CSV 放进 `document`。
+
+MongoDB collection 的 `meta_item.item_type` 仍是 `collection`，表示引擎原生 catalog 叶子术语；在 ADDP 当前能力中，它作为动态 schema 记录集合消费，`attributes.item.data_type` 固定为 `table`。`type_info.table.fields` 表示采样推断出的字段画像，不是关系型数据库强 schema；采样规模、动态 schema 类型、平均文档大小等画像事实进入 `capabilities.statistics`，索引摘要进入 `capabilities.indexing`。collection 不写 `type_info.document`，也不新增独立 `document_collection` data type。
 
 JSON 默认按 `document` 兜底；只有内容事实能严格证明它是记录集合时才升级为 `table`。当前明确支持两类 JSON table：顶层对象数组和 GeoJSON `FeatureCollection.features`。`{"data":[...]}`、`{"rows":[...]}`、NDJSON 等结构是否作为 table，需要先补规范再实现，不能用字段名或习惯做隐式猜测。
 

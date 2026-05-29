@@ -3,7 +3,7 @@
  *
  * 使用 addp:// 协议的 URI 系统来唯一标识平台中的任何资源
  *
- * URI 格式: addp://engine/{engine_id}/path/{resource_path}?type={type}&meta_id={meta_id}
+ * URI 格式: addp://engine/{engine_id}/path/{resource_path}?type={type}&node_id={node_id}&item_id={item_id}
  *
  * 示例:
  *   - PostgreSQL 表: addp://engine/1/path/public/users?type=table
@@ -32,7 +32,8 @@ export const ResourceType = {
  * @property {number} engineId - 引擎 ID
  * @property {string[]} path - 资源路径（如 ["public", "users"]）
  * @property {string} type - 资源类型（table/collection/object/directory等）
- * @property {number} [metaId] - 可选：Meta 模块的节点 ID
+ * @property {number} [nodeId] - 可选：MetaNode ID
+ * @property {number} [itemId] - 可选：MetaItem ID
  */
 
 /**
@@ -87,14 +88,26 @@ export function parseLocator(uri) {
       throw new Error('Missing required parameter: type')
     }
 
-    const metaIdStr = url.searchParams.get('meta_id')
-    const metaId = metaIdStr ? parseInt(metaIdStr) : undefined
+    const nodeIdStr = url.searchParams.get('node_id')
+    const itemIdStr = url.searchParams.get('item_id')
+    const nodeId = nodeIdStr ? parseInt(nodeIdStr) : undefined
+    const itemId = itemIdStr ? parseInt(itemIdStr) : undefined
+    if (nodeIdStr && (isNaN(nodeId) || nodeId <= 0)) {
+      throw new Error(`Invalid node_id: ${nodeIdStr}`)
+    }
+    if (itemIdStr && (isNaN(itemId) || itemId <= 0)) {
+      throw new Error(`Invalid item_id: ${itemIdStr}`)
+    }
+    if (nodeId !== undefined && itemId !== undefined) {
+      throw new Error('node_id and item_id are mutually exclusive')
+    }
 
     return {
       engineId,
       path,
       type,
-      metaId
+      nodeId,
+      itemId
     }
   } catch (error) {
     if (error instanceof TypeError && error.message.includes('Invalid URL')) {
@@ -115,9 +128,9 @@ export function parseLocator(uri) {
  *   engineId: 1,
  *   path: ['public', 'users'],
  *   type: 'table',
- *   metaId: 100
+ *   itemId: 100
  * })
- * // 'addp://engine/1/path/public/users?type=table&meta_id=100'
+ * // 'addp://engine/1/path/public/users?type=table&item_id=100'
  */
 export function buildLocator(locator) {
   // 编码路径
@@ -126,8 +139,15 @@ export function buildLocator(locator) {
   // 构建 URI
   let uri = `addp://engine/${locator.engineId}/path/${encodedPath}?type=${locator.type}`
 
-  if (locator.metaId !== undefined && locator.metaId !== null) {
-    uri += `&meta_id=${locator.metaId}`
+  if (locator.nodeId !== undefined && locator.nodeId !== null && locator.itemId !== undefined && locator.itemId !== null) {
+    throw new Error('nodeId and itemId are mutually exclusive')
+  }
+
+  if (locator.nodeId !== undefined && locator.nodeId !== null) {
+    uri += `&node_id=${locator.nodeId}`
+  }
+  if (locator.itemId !== undefined && locator.itemId !== null) {
+    uri += `&item_id=${locator.itemId}`
   }
 
   return uri
@@ -241,7 +261,7 @@ export function getParentLocator(locator) {
     engineId: locator.engineId,
     path: parentPath,
     type: parentType
-    // 父节点的 metaId 需要单独查询
+    // 父节点的 nodeId 需要单独查询
   }
 }
 
@@ -279,7 +299,8 @@ export function cloneLocator(locator) {
     engineId: locator.engineId,
     path: [...locator.path],
     type: locator.type,
-    metaId: locator.metaId
+    nodeId: locator.nodeId,
+    itemId: locator.itemId
   }
 }
 

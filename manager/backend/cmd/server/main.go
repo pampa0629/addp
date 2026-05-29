@@ -195,7 +195,7 @@ func main() {
 	quickViewService := service.NewQuickViewService(db, taskQueue, systemClient, metaClient, minioClient, minioBucket, redisClient, cfg)
 
 	// 初始化向量化服务（Manager 模块的按需向量化）
-	embeddingService, err := service.NewEmbeddingService(embeddingRepo, systemClient, taskExecRepo, cfg, logger.L())
+	embeddingService, err := service.NewEmbeddingService(embeddingRepo, systemClient, metaClient, taskExecRepo, cfg, logger.L())
 	if err != nil {
 		logger.L().Warn("向量化服务初始化失败（功能将不可用）", "error", err)
 		embeddingService = nil // 设置为 nil，允许服务继续启动

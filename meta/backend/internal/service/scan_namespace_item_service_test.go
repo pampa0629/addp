@@ -15,7 +15,7 @@ func TestNamespaceItemType(t *testing.T) {
 		want string
 	}{
 		{
-			name: "document collection",
+			name: "dynamic schema collection",
 			node: plugin.CatalogNode{Term: plugin.CatalogTermCollection, Kind: plugin.CatalogKindCollection, IsItem: true},
 			want: "collection",
 		},

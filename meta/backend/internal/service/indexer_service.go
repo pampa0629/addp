@@ -182,8 +182,8 @@ func (s *IndexerService) IndexCatalogAsset(resource *commonModels.Engine, tenant
 	return true
 }
 
-func catalogItemLocator(engineID uint, engineType, itemType, fullName string, metaID *uint) string {
-	loc := catalogview.LocatorFromFullName(engineID, engineType, itemType, fullName, metaID)
+func catalogItemLocator(engineID uint, engineType, itemType, fullName string, itemID *uint) string {
+	loc := catalogview.LocatorFromFullName(engineID, engineType, itemType, fullName, itemID)
 	if loc == nil {
 		return ""
 	}

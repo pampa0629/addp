@@ -2,7 +2,6 @@ package catalogview
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 	"time"
 
@@ -20,7 +19,7 @@ type TreeNode struct {
 	Type        string                 `json:"type"`        // 节点类型 (schema/table/bucket/directory/object)
 	TypeLabel   string                 `json:"typeLabel"`   // 类型的 i18n key，如 "engine.term.schema"（前端查 i18n 字典展示）
 	Icon        string                 `json:"icon"`        // 图标名称
-	Metadata    map[string]interface{} `json:"metadata"`    // 元数据（meta_id、item_count、scanned_at 等）
+	Metadata    map[string]interface{} `json:"metadata"`    // 元数据（node_id、item_id、item_count、scanned_at 等）
 	Children    []*TreeNode            `json:"children"`    // 子节点
 	HasChildren bool                   `json:"hasChildren"` // 是否有子节点（用于显示展开图标）
 }
@@ -246,7 +245,7 @@ func (b *TreeBuilder) ConvertMetaNodes(engine *models.Engine, metaNodes []*model
 // 参数:
 //   - items: Meta 模块的 Item 列表
 //
-// 返回: MetaNode 列表（使用虚拟 ID 避免冲突）
+// 返回: MetaNode 列表。ID 仍保留树内虚拟 ID，locator 使用真实 item_id。
 func (b *TreeBuilder) ConvertMetaItems(items []models.MetaItem) []*models.MetaNode {
 	nodes := make([]*models.MetaNode, 0, len(items))
 
@@ -296,6 +295,7 @@ func withMetaItemFacts(attrs map[string]interface{}, item *models.MetaItem) map[
 		next[key] = value
 	}
 	next["item_id"] = item.ID
+	next["is_meta_item"] = true
 	if item.RowCount != nil {
 		next["row_count"] = *item.RowCount
 		if commonJSON.Int64(next, "type_info.table", "row_count") == 0 {
@@ -308,6 +308,29 @@ func withMetaItemFacts(attrs map[string]interface{}, item *models.MetaItem) map[
 		next["object_size_bytes"] = *item.ObjectSizeBytes
 	}
 	return next
+}
+
+func metaItemIDFromNode(node *models.MetaNode) uint {
+	if node == nil || node.Attributes == nil {
+		return 0
+	}
+	switch value := node.Attributes["item_id"].(type) {
+	case uint:
+		return value
+	case int:
+		if value > 0 {
+			return uint(value)
+		}
+	case int64:
+		if value > 0 {
+			return uint(value)
+		}
+	case float64:
+		if value > 0 {
+			return uint(value)
+		}
+	}
+	return 0
 }
 
 func upsertTreeMetadataSection(attrs map[string]interface{}, section, namespace string, values map[string]interface{}) {
@@ -423,12 +446,16 @@ func (b *TreeBuilder) convertMetaNode(engine *models.Engine, node *models.MetaNo
 		EngineID: engine.ID,
 		Path:     path,
 		Type:     convertNodeType(node.NodeType),
-		MetaID:   &node.ID,
+	}
+	if itemID := metaItemIDFromNode(node); itemID > 0 {
+		loc.ItemID = &itemID
+	} else {
+		loc.NodeID = &node.ID
 	}
 
 	// 构建元数据
 	metadata := map[string]interface{}{
-		"meta_id":     node.ID,
+		"node_id":     node.ID,
 		"full_name":   node.FullName,
 		"item_count":  node.ItemCount,
 		"size_bytes":  node.TotalSizeBytes,
@@ -440,12 +467,14 @@ func (b *TreeBuilder) convertMetaNode(engine *models.Engine, node *models.MetaNo
 
 	// 合并自定义属性（保留规范字段，避免被 attributes 覆盖）
 	protectedKeys := map[string]bool{
-		"meta_id":     true,
-		"full_name":   true,
-		"item_count":  true,
-		"size_bytes":  true,
-		"scan_status": true,
-		"scanned_at":  true,
+		"node_id":      true,
+		"item_id":      true,
+		"is_meta_item": true,
+		"full_name":    true,
+		"item_count":   true,
+		"size_bytes":   true,
+		"scan_status":  true,
+		"scanned_at":   true,
 	}
 	for k, v := range node.Attributes {
 		if protectedKeys[k] {
@@ -583,7 +612,7 @@ func convertNodeType(metaNodeType string) ResourceType {
 
 // buildEngineRootLocator 构建引擎根节点的 Locator
 func buildEngineRootLocator(engineID uint) string {
-	return fmt.Sprintf("addp://engine/%d/path/?type=database", engineID)
+	return EngineRootLocator(engineID)
 }
 
 func EngineIcon(engine *models.Engine) string {
@@ -682,7 +711,7 @@ func getIconByType(nodeType string) string {
 //
 // 返回: 更新后的树
 func (b *TreeBuilder) MergeMetadata(tree *TreeNode, metaNodes []*models.MetaNode) *TreeNode {
-	// 构建 meta_id 到 MetaNode 的映射
+	// 构建 node_id 到 MetaNode 的映射
 	metaMap := make(map[uint]*models.MetaNode)
 	for _, node := range metaNodes {
 		metaMap[node.ID] = node
@@ -696,9 +725,9 @@ func (b *TreeBuilder) MergeMetadata(tree *TreeNode, metaNodes []*models.MetaNode
 // mergeNodeMetadata 递归合并节点元数据
 func (b *TreeBuilder) mergeNodeMetadata(node *TreeNode, metaMap map[uint]*models.MetaNode) {
 	// 更新当前节点
-	if metaIDVal, ok := node.Metadata["meta_id"]; ok {
-		if metaID, ok := metaIDVal.(uint); ok {
-			if metaNode, exists := metaMap[metaID]; exists {
+	if nodeIDVal, ok := node.Metadata["node_id"]; ok {
+		if nodeID, ok := nodeIDVal.(uint); ok {
+			if metaNode, exists := metaMap[nodeID]; exists {
 				node.Metadata["item_count"] = metaNode.ItemCount
 				node.Metadata["size_bytes"] = metaNode.TotalSizeBytes
 				node.Metadata["scan_status"] = metaNode.ScanStatus

@@ -41,7 +41,6 @@
           :preview-data="store.previewData"
           :loading="store.previewLoading || store.childPreviewLoading"
           @page-change="handlePageChange"
-          @navigate="handleNavigate"
           @child-change="handleChildChange"
         />
       </div>
@@ -80,6 +79,26 @@ const showSearch = ref(true)
 
 const itemTypes = new Set(['table', 'view', 'collection', 'graph', 'file', 'object'])
 const nodeTypes = new Set(['schema', 'database', 'bucket', 'prefix', 'directory', 'root', 'dir'])
+const hasLocatorIdentity = (loc) => !!(loc?.itemId || loc?.nodeId)
+
+const nodeContextFromLocator = (locator, baseNode = {}) => {
+  const loc = parseLocator(locator)
+  const engine = store.engines.find(e => e.id === loc.engineId)
+  const label = baseNode.label || loc.path[loc.path.length - 1] || engine?.name || ''
+  return {
+    ...baseNode,
+    id: baseNode.id || locator,
+    locator,
+    type: baseNode.type || loc.type,
+    label,
+    engineId: loc.engineId,
+    engineType: baseNode.engineType || engine?.engine_type || '',
+    engineName: baseNode.engineName || engine?.name || t('manager.explorer.engineNotFound', { engineId: loc.engineId }),
+    path: loc.path.join('/'),
+    schema: loc.path[0] || '',
+    table: loc.path.slice(1).join('/')
+  }
+}
 
 // 构造预览面板所需的节点上下文
 const selectedPreviewNode = computed(() => {
@@ -129,13 +148,11 @@ const panelType = computed(() => {
 const currentNodeChildren = computed(() => {
   const node = store.selectedNode
   if (!node || panelType.value !== 'node') return []
-  return (node.children || []).filter(child => child.type !== '__sentinel__')
+  return node.children || []
 })
 
 // 事件处理：节点选择（从 ExplorerTree 组件触发）
 const handleNodeSelect = async ({ node, locator }) => {
-  console.log('[DataExplorer] 节点选择:', { label: node.label, locator })
-
   try {
     if (node.type !== 'engine' && nodeTypes.has(node.type)) {
       await store.loadNodeChildren(locator, 1)
@@ -153,8 +170,6 @@ const handleNodeSelect = async ({ node, locator }) => {
 
 // 事件处理：搜索结果选择
 const handleSearchResultSelect = async (result) => {
-  console.log('[DataExplorer] 搜索结果选择:', result)
-
   const resultNode = result?.node || result
   const locator = resultNode?.locator || resultNode?.id
   if (!locator) {
@@ -162,6 +177,10 @@ const handleSearchResultSelect = async (result) => {
   }
 
   const loc = parseLocator(locator)
+  if (!hasLocatorIdentity(loc) && loc?.type !== 'database') {
+    ElMessage.warning(t('manager.explorer.locateFailed'))
+    return
+  }
   if (loc?.engineId) {
     await store.loadTree(loc.engineId, -1)
   }
@@ -177,9 +196,8 @@ const handleSearchResultSelect = async (result) => {
 
   const node = path[path.length - 1] || resultNode
 
-  // 选中目标节点
-  treeRef.value?.selectNode(locator)
-  store.selectNode(locator)
+  store.selectNodeContext(nodeContextFromLocator(locator, node), locator)
+  await scrollToLocatedNode(path, locator)
 
   try {
     await handleNodeSelect({ node, locator })
@@ -220,15 +238,9 @@ const handleChildChange = async (payload) => {
   }
 }
 
-// 事件处理：导航（预留接口）
-const handleNavigate = (params) => {
-  console.log('导航:', params)
-  // TODO: 实现导航逻辑
-}
-
 const handleOpenNode = async (locator) => {
   if (!locator) return
-  store.selectNode(locator)
+  store.selectNodeContext(nodeContextFromLocator(locator), locator)
   const node = store.selectedNode
   if (!node) return
   await handleNodeSelect({ node, locator })
@@ -247,6 +259,20 @@ const findNodePathByLocator = (node, locator, parents = []) => {
     }
   }
   return []
+}
+
+const scrollToLocatedNode = async (path, locator) => {
+  await nextTick()
+  if (await treeRef.value?.scrollToNode(locator, { block: 'center' })) {
+    return true
+  }
+  for (let i = path.length - 1; i >= 0; i -= 1) {
+    const fallbackLocator = path[i]?.locator || path[i]?.id
+    if (fallbackLocator && await treeRef.value?.scrollToNode(fallbackLocator, { block: 'center' })) {
+      return true
+    }
+  }
+  return false
 }
 
 // 初始化
@@ -272,53 +298,6 @@ onMounted(async () => {
       // 设置展开状态
       store.expandedLocators = new Set(engineLocators)
 
-      // 暴露一个临时检查函数到 window，便于在浏览器控制台对所有引擎执行折叠校验
-      // 用法（在浏览器控制台执行）：window.__checkExplorerCollapse()
-      try {
-        // eslint-disable-next-line no-undef
-        window.__checkExplorerCollapse = async () => {
-          const results = []
-          // 遍历每个已加载的引擎
-          for (const engine of store.engines) {
-            const engineLocator = `addp://engine/${engine.id}/path/?type=database`
-
-            // 收集该引擎树所有节点的 locator（用于模拟深度展开）
-            const tree = store.engineTrees[engine.id]
-            const collect = (node, acc, depth = 0) => {
-              if (!node) return
-              if (node.locator) acc.push({ locator: node.locator, depth })
-              if (node.children && node.children.length > 0) {
-                for (const c of node.children) collect(c, acc, depth + 1)
-              }
-            }
-
-            const allNodes = []
-            collect(tree, allNodes)
-
-            // 人为设置：将 engine 本身和其深度>=2 的节点设为展开
-            const toExpand = new Set([engineLocator])
-            for (const n of allNodes) {
-              if (n.depth >= 2) toExpand.add(n.locator)
-            }
-
-            store.expandedLocators = new Set([...store.expandedLocators, ...toExpand])
-
-            // 调用 collapseNode 折叠引擎节点
-            store.collapseNode(engineLocator)
-
-            // 检查是否仍有以 engineLocator 为前缀的展开键残留
-            const leftover = Array.from(store.expandedLocators).filter(k => typeof k === 'string' && k.startsWith(engineLocator))
-
-            results.push({ engineId: engine.id, engineName: engine.name, leftOverCount: leftover.length, leftover })
-          }
-
-          // 输出并返回结果
-          console.table(results.map(r => ({ engineId: r.engineId, engineName: r.engineName, leftOverCount: r.leftOverCount })))
-          return results
-        }
-      } catch (e) {
-        // ignore
-      }
     }
   } catch (error) {
     ElMessage.error(t('manager.explorer.initFailed', { error: error.message }))
@@ -327,8 +306,6 @@ onMounted(async () => {
 
 // 监听路由变化，根据参数自动定位和选中对象
 watch(() => route.query, async (query) => {
-  console.log('[DataExplorer] 路由参数变化:', query)
-
   const targetLocator = String(query.locator || '').trim()
   if (!targetLocator) {
     return
@@ -340,10 +317,14 @@ watch(() => route.query, async (query) => {
       console.warn('[DataExplorer] 无效 locator:', targetLocator)
       return
     }
+    if (!hasLocatorIdentity(loc) && loc.type !== 'database') {
+      console.warn('[DataExplorer] locator 缺少 node_id/item_id，拒绝定位:', targetLocator)
+      ElMessage.warning(t('manager.explorer.locateFailed'))
+      return
+    }
     const engineId = loc.engineId
 
     if (store.engines.length === 0) {
-      console.log('[DataExplorer] 等待引擎列表加载...')
       await store.loadEngines()
     }
 
@@ -354,7 +335,6 @@ watch(() => route.query, async (query) => {
       return
     }
 
-    console.log('[DataExplorer] 找到引擎:', engine.name)
     await store.loadTree(engineId, -1)
 
     const engineTree = store.engineTrees[engineId]
@@ -369,13 +349,11 @@ watch(() => route.query, async (query) => {
       }
     }
 
-    const targetNode = path[path.length - 1] || { id: targetLocator, locator: targetLocator, type: loc.type }
-    store.selectNode(targetLocator)
-    treeRef.value?.selectNode(targetLocator)
+    const targetNode = path[path.length - 1] || nodeContextFromLocator(targetLocator, { type: loc.type })
+    store.selectNodeContext(nodeContextFromLocator(targetLocator, targetNode), targetLocator)
+    await scrollToLocatedNode(path, targetLocator)
     await handleNodeSelect({ node: targetNode, locator: targetLocator })
 
-    await nextTick()
-    console.log('[DataExplorer] 成功定位到对象')
     ElMessage.success(t('manager.explorer.locateSuccess'))
   } catch (error) {
     console.error('[DataExplorer] 定位失败:', error)

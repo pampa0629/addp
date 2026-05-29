@@ -135,7 +135,7 @@ type ItemMetadataProvider interface {
 }
 ```
 
-文档型数据库可额外实现 `DocumentMetadataSamplingProvider`，用于采样推断动态字段信息。图数据库可额外实现 `GraphMetadataProvider`，用于描述图整体结构事实。
+动态 schema 数据库可额外实现 `DynamicSchemaSamplingProvider`，用于采样推断字段画像。该 provider 表达的是字段画像能力，不表示 item 的 data type 是 `document`。图数据库可额外实现 `GraphMetadataProvider`，用于描述图整体结构事实。
 
 `ItemMetadata` 是 engine 侧叶子 item 的统一描述结果。对于 table 型 item，必须优先填充 `Table *datatype.TableInfo`，字段、主键、行数、大小、更新时间、表类型、注释和表级 native 事实都随 `TableInfo` 传递；对于 document 型 item，必须优先填充 `Document *datatype.DocumentInfo`；对于 media 型 item，必须优先填充 `Media *datatype.MediaInfo`；对于 container 型 item，必须优先填充 `Container *datatype.ContainerInfo`，内部 child 只保存轻量摘要；对于 graph 型 item，必须优先填充 `Graph *datatype.GraphInfo`，节点结构、关系结构、连接模式、属性结构、节点数和关系数都随 `GraphInfo` 传递。`Fields`、`Stats`、`Attributes` 仅作为尚未收口 data type 的通用补充或必要的 catalog 展示属性，不得成为新的 table / document / media / container / graph 事实源。公共消费方需要 table 字段或各 data type facts 时，应使用 `ItemMetadataFields()` / `ItemMetadataTableInfo()` / `ItemMetadataDocumentInfo()` / `ItemMetadataMediaInfo()` / `ItemMetadataContainerInfo()` / `ItemMetadataGraphInfo()` 这类 helper，而不是直接读 `Fields` / `Stats` / `Attributes` 自行拼装。
 
@@ -268,7 +268,7 @@ GORM、database/sql、Mongo driver、Neo4j driver、S3 client 都是实现 helpe
 | 引擎 | 推荐接口组合 |
 | --- | --- |
 | PostgreSQL / MySQL / Doris / ClickHouse / Spark SQL | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `ItemMetadataProvider` + `SQLQueryRuntimeProvider` + `ConnectionPoolPlugin` |
-| MongoDB | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `ItemMetadataProvider` + `DocumentMetadataSamplingProvider` + `DocumentQueryRuntimeProvider` |
+| MongoDB | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `ItemMetadataProvider` + `DynamicSchemaSamplingProvider` + `DocumentQueryRuntimeProvider` |
 | Neo4j | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `ItemMetadataProvider` + `GraphMetadataProvider` + `GraphSampleProvider` + `QueryRuntimeProvider` + `GraphQueryProvider` |
 | MinIO / S3 | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `ItemMetadataProvider` + `ContentReadableProvider` |
 | NFS | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `ItemMetadataProvider` + `ContentReadableProvider` |
@@ -280,7 +280,7 @@ GORM、database/sql、Mongo driver、Neo4j driver、S3 client 都是实现 helpe
 ## 五、上层消费规则
 
 - System：通过 `EnginePlugin` 做注册、连接测试、连接信息校验和能力声明刷新；通过 `CatalogProvider.ListChildren()` 对外提供实时 catalog 浏览控制面 API：`POST /api/v1/system/engines/:id/catalog/children`。
-- Meta：使用 `CatalogProvider` 扫描目录并落库，使用 `ItemMetadataProvider` / `DocumentMetadataSamplingProvider` 获取叶子元数据；扫描编排必须先读取 `CatalogModelSpec`，再结合 provider 组合选择 catalog scan strategy。`engine_family` 只能作为粗分类或展示字段，不能单独决定 namespace 术语、item 术语、扫描层级和内容读取方式。公开 API 应聚焦扫描后元数据快照，不再新增实时浏览公共接口。
+- Meta：使用 `CatalogProvider` 扫描目录并落库，使用 `ItemMetadataProvider` / `DynamicSchemaSamplingProvider` 获取叶子元数据；扫描编排必须先读取 `CatalogModelSpec`，再结合 provider 组合选择 catalog scan strategy。`engine_family` 只能作为粗分类或展示字段，不能单独决定 namespace 术语、item 术语、扫描层级和内容读取方式。公开 API 应聚焦扫描后元数据快照，不再新增实时浏览公共接口。
 - Meta 扫描 API 和任务参数中的路径型目标统一命名为 `catalog_paths`。它表示引擎 catalog model 下的路径。
 - Manager：使用 Meta 树构建探查树；预览由 Manager 自身 preview provider / composer 组合完成。结构化数据优先消费 `BatchReadableProvider` 或只读 sample query；graph 预览优先消费 `type_info.graph` / `GraphMetadataProvider` 得到 schema 视图，并通过 `GraphSampleProvider` 或 `GraphQueryProvider` 获取轻量子图样本；对象/文件优先消费 `ContentReadableProvider` 并结合格式解析。
 - Develop：使用 `QueryRuntimeProvider`、`WorkflowRuntimeProvider`、`ScriptRuntimeProvider`；图结构展示入口使用 `GraphMetadataProvider` / `GraphQueryProvider`。

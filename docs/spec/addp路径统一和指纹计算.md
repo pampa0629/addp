@@ -158,12 +158,19 @@ ResourceLocator 是 ADDP 平台中用于唯一标识任何资源的统一定位�
 type ResourceLocator struct {
     EngineID uint         `json:"engine_id"`          // 引擎 ID
     Path     []string     `json:"path"`               // 资源路径（数组）
-    Type     ResourceType `json:"type"`               // 资源类型
-    MetaID   *uint        `json:"meta_id,omitempty"`  // 可选：Meta 节点 ID
+    Type     ResourceType `json:"type"`               // catalog 术语，不表示内容语义
+    NodeID   *uint        `json:"node_id,omitempty"`  // 可选：MetaNode ID
+    ItemID   *uint        `json:"item_id,omitempty"`  // 可选：MetaItem ID
 }
 ```
 
-**URI 格式**: `addp://engine/{engine_id}/path/{resource_path}?type={type}&meta_id={meta_id}`
+**URI 格式**: `addp://engine/{engine_id}/path/{resource_path}?type={type}&node_id={node_id}&item_id={item_id}`
+
+`node_id` 和 `item_id` 互斥。`node_id` 表示定位到资源树节点，`item_id` 表示定位到 data item。不得再使用 `meta_id` 同时表达两类 ID，也不得使用 `item_id + 偏移量` 的虚拟 ID 进入 locator。
+
+`type` 保留为 catalog / 路径模型中的稳定术语，用于路径语义、预览路由、树展示和无 ID locator 的辅助解析。`type` 不负责区分 node / item；当 `node_id` 或 `item_id` 存在时，ID 对应的 Meta 事实优先，`type` 只作为校验和路由提示。
+
+搜索结果、预览入口和资源树跳转都应只消费标准 ResourceLocator。前端和跨模块调用方不得根据 engine type、bucket、path、name 等字段自行拼接定位身份；缺少稳定 locator 所需事实的数据应通过重新扫描或重建索引修复。
 
 ### 5.2 Path 字段语义
 
@@ -210,11 +217,11 @@ ResourceLocator{
     EngineID: 9,
     Path:     []string{"addp", "image", "开会.jpg"},  // 包含 bucket
     Type:     "object",
-    MetaID:   &456,
+    ItemID:   &456,
 }
 ```
 
-**URI**: `addp://engine/9/path/addp/image/开会.jpg?type=object&meta_id=456`
+**URI**: `addp://engine/9/path/addp/image/开会.jpg?type=object&item_id=456`
 
 #### 数据库表 (PostgreSQL)
 
@@ -232,11 +239,11 @@ ResourceLocator{
     EngineID: 8,
     Path:     []string{"public", "users"},  // schema + table
     Type:     "table",
-    MetaID:   &123,
+    ItemID:   &123,
 }
 ```
 
-**URI**: `addp://engine/8/path/public/users?type=table&meta_id=123`
+**URI**: `addp://engine/8/path/public/users?type=table&item_id=123`
 
 #### 图数据库 (Neo4j)
 
@@ -248,11 +255,11 @@ ResourceLocator{
     EngineID: 25,
     Path:     []string{"neo4j", "graph"},  // database + graph item
     Type:     "graph",
-    MetaID:   &100578,
+    ItemID:   &578,
 }
 ```
 
-**graph URI**: `addp://engine/25/path/neo4j/graph?type=graph&meta_id=100578`
+**graph URI**: `addp://engine/25/path/neo4j/graph?type=graph&item_id=578`
 
 #### 文件系统
 
@@ -274,11 +281,11 @@ ResourceLocator{
     EngineID: 3,
     Path:     []string{"data", "image", "users.csv"},  // 完整路径
     Type:     "file",
-    MetaID:   &789,
+    ItemID:   &789,
 }
 ```
 
-**URI**: `addp://engine/3/path/data/image/users.csv?type=file&meta_id=789`
+**URI**: `addp://engine/3/path/data/image/users.csv?type=file&item_id=789`
 
 ### 5.5 Path 构建规则
 

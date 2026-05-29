@@ -205,7 +205,7 @@ Basic 重新发现资源时不能把已有 deep 状态降级。
 ```json
 {
   "targets": [
-    "addp://engine/1/path/addp/shp/farmland.shp?type=object&meta_id=100"
+    "addp://engine/1/path/addp/shp/farmland.shp?type=object&item_id=100"
   ],
   "scan_depth": "deep",
   "force": false
@@ -224,7 +224,7 @@ Basic 重新发现资源时不能把已有 deep 状态降级。
 
 接口层可以支持 `engine_id`、`node_id`、`item_id` 或 `targets`，但进入扫描服务内部后统一转换为 locator 或内部 target 对象。
 
-不需要 `target_type`。locator 已经包含 engine、path、type、meta_id；ID 字段本身也能区分 node / item。
+不需要 `target_type`。locator 已经包含 engine、path、type，以及互斥的 `node_id` / `item_id`。`type` 表达 catalog 术语，ID 字段负责区分 node / item。
 
 ### 已入库 item 的刷新输入
 

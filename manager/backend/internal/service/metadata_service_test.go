@@ -736,7 +736,7 @@ func TestRefreshNodeReturnsDeepScanStats(t *testing.T) {
 		nil,
 	)
 	tenantID := uint(1)
-	result, err := svc.RefreshNode(t.Context(), &tenantID, "addp://engine/9/path/addp?type=bucket&meta_id=8")
+	result, err := svc.RefreshNode(t.Context(), &tenantID, "addp://engine/9/path/addp?type=bucket&node_id=8")
 	if err != nil {
 		t.Fatalf("RefreshNode() error = %v", err)
 	}

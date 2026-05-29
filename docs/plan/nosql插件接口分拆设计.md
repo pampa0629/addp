@@ -11,7 +11,7 @@
 - 上层模块不再通过统一的 NoSQL `ListCollections` 语义处理 MongoDB 与 Neo4j。
 - 目录发现统一走 `CatalogProvider.ListChildren`。
 - 叶子元数据统一走 `ItemMetadataProvider.DescribeItem`。
-- MongoDB 动态字段推断可使用 `DocumentMetadataSamplingProvider`。
+- MongoDB 动态字段推断可使用 `DynamicSchemaSamplingProvider`。
 - Neo4j 图查询和预览走 `GraphQueryProvider`。
 
 ## 落库语义

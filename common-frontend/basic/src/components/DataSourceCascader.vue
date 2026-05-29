@@ -330,10 +330,10 @@ const loadNextLevel = async (currentLevel) => {
         label: tableName,
         locator: locator,
         metadata: {
-          meta_id: null,  // 新表还没有 meta_id
+          item_id: null,  // 新表还没有 item_id
           name: tableName,
           engine_id: engineId,
-          parent_id: parentNode.metadata?.meta_id,
+          parent_id: parentNode.metadata?.node_id,
           is_virtual: true  // 标记为虚拟节点
         }
       }
@@ -387,12 +387,12 @@ const loadNextLevel = async (currentLevel) => {
       children = tree.children || []
     } else {
       // 加载子节点
-      const metaId = node.metadata.meta_id
-      if (!metaId) {
-        console.error('[DataSourceCascader] No meta_id in node:', node)
+      const nodeId = node.metadata.node_id
+      if (!nodeId) {
+        console.error('[DataSourceCascader] No node_id in node:', node)
         return
       }
-      children = await DataSourceAPI.getNodeChildren(props.apiBaseUrl, metaId)
+      children = await DataSourceAPI.getNodeChildren(props.apiBaseUrl, nodeId)
     }
 
     // 缓存子节点
