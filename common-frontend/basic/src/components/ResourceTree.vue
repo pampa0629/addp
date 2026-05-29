@@ -723,6 +723,27 @@ const handleNodeAction = (action, node) => {
   padding: 0 16px 16px;
 }
 
+.tree-container :deep(.el-tree-node__content) {
+  border-radius: 4px;
+  transition: background-color 0.18s ease, box-shadow 0.18s ease, color 0.18s ease;
+}
+
+.tree-container :deep(.el-tree-node.is-current > .el-tree-node__content) {
+  background: color-mix(in srgb, var(--el-color-primary) 18%, transparent);
+  box-shadow:
+    inset 3px 0 0 var(--el-color-primary),
+    inset 0 0 0 1px color-mix(in srgb, var(--el-color-primary) 42%, transparent);
+}
+
+.tree-container :deep(.el-tree-node.is-current > .el-tree-node__content .tree-node .label),
+.tree-container :deep(.el-tree-node.is-current > .el-tree-node__content .tree-node .el-icon) {
+  color: var(--el-color-primary);
+}
+
+.tree-container :deep(.el-tree-node.is-current > .el-tree-node__content .tree-node .label) {
+  font-weight: 600;
+}
+
 .tree-node-wrapper {
   display: flex;
   align-items: center;

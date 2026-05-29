@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/addp/common/catalogview"
 	"github.com/addp/common/datatype"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
@@ -60,6 +61,7 @@ func (s *IndexerService) IndexTableAsset(resource *commonModels.Engine, tenantID
 	record := &search.AssetRecord{
 		AssetID:       item.Fingerprint,
 		DocumentID:    item.Fingerprint,
+		Locator:       catalogItemLocator(resource.ID, resource.EngineType, "table", item.FullName, &item.ID),
 		TenantID:      tenantID,
 		EngineID:      resource.ID,
 		EngineName:    resource.Name,
@@ -124,6 +126,7 @@ func (s *IndexerService) IndexCatalogAsset(resource *commonModels.Engine, tenant
 		AssetID:       item.Fingerprint,
 		DocumentID:    item.Fingerprint,
 		ContentHash:   stringFromStandardAttributes(metadata, "storage", "content_hash"),
+		Locator:       catalogItemLocator(engineID, resource.EngineType, assetType, fullName, &item.ID),
 		TenantID:      tenantID,
 		EngineID:      engineID,
 		EngineName:    resource.Name,
@@ -177,6 +180,14 @@ func (s *IndexerService) IndexCatalogAsset(resource *commonModels.Engine, tenant
 		return false
 	}
 	return true
+}
+
+func catalogItemLocator(engineID uint, engineType, itemType, fullName string, metaID *uint) string {
+	loc := catalogview.LocatorFromFullName(engineID, engineType, itemType, fullName, metaID)
+	if loc == nil {
+		return ""
+	}
+	return loc.ToURI()
 }
 
 // DeleteTablesFromIndex 从索引中删除表

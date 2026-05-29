@@ -42,6 +42,73 @@ type ResourceLocator struct {
 	MetaID   *uint        `json:"meta_id,omitempty"` // 可选：Meta 模块的节点 ID
 }
 
+// LocatorFromFullName 根据 catalog 的 full_name 与资源类型构造标准 ResourceLocator。
+func LocatorFromFullName(engineID uint, engineType, resourceType, fullName string, metaID *uint) *ResourceLocator {
+	resourceType = strings.TrimSpace(resourceType)
+	fullName = strings.TrimSpace(fullName)
+	if engineID == 0 || resourceType == "" || fullName == "" {
+		return nil
+	}
+	return &ResourceLocator{
+		EngineID: engineID,
+		Path:     ParseFullNamePath(engineType, resourceType, fullName),
+		Type:     ResourceType(resourceType),
+		MetaID:   metaID,
+	}
+}
+
+// ParseFullNamePath 按 ResourceLocator 规范将 full_name 拆为 path segments。
+func ParseFullNamePath(engineType, resourceType, fullName string) []string {
+	fullName = strings.TrimSpace(fullName)
+	if fullName == "" {
+		return []string{}
+	}
+	if UsesSlashFullName(engineType, resourceType) {
+		return splitLocatorSlashPath(fullName)
+	}
+	return splitLocatorDotPath(fullName)
+}
+
+// UsesSlashFullName 判断 catalog full_name 是否使用 slash 路径语义。
+func UsesSlashFullName(engineType, resourceType string) bool {
+	switch strings.ToLower(strings.TrimSpace(resourceType)) {
+	case string(TypeBucket), "prefix", string(TypeDirectory), string(TypeObject), string(TypeRoot), string(TypeDir), string(TypeFile):
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(engineType)) {
+	case "minio", "s3", "nfs", "nas":
+		return true
+	default:
+		return false
+	}
+}
+
+func splitLocatorSlashPath(value string) []string {
+	trimmed := strings.Trim(value, "/")
+	if trimmed == "" {
+		return []string{}
+	}
+	parts := strings.Split(trimmed, "/")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+func splitLocatorDotPath(value string) []string {
+	parts := strings.Split(value, ".")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
 // ParseURI 解析 ResourceLocator URI
 // 参数:
 //   - uri: ResourceLocator URI 字符串，如 "addp://engine/1/path/public/users?type=table"

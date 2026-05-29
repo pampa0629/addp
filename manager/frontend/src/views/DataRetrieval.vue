@@ -125,8 +125,8 @@
 
           <div class="result-meta">
             <span>{{ t('manager.retrieval.engineLabel') }}{{ formatResource(item) }}</span>
-            <span v-if="item.schema">{{ t('manager.retrieval.bucketLabel') }}{{ item.schema }}</span>
-            <span v-if="item.relative_path">{{ t('manager.retrieval.pathLabel') }}{{ item.relative_path }}</span>
+            <span v-if="item.schema || item.bucket">{{ t('manager.retrieval.bucketLabel') }}{{ item.schema || item.bucket }}</span>
+            <span v-if="formatResultPath(item)">{{ t('manager.retrieval.pathLabel') }}{{ formatResultPath(item) }}</span>
             <span v-if="item.last_modified">{{ t('manager.retrieval.updatedLabel') }}{{ formatDate(item.last_modified) }}</span>
             <span v-if="item.file_size">{{ t('manager.retrieval.sizeLabel') }}{{ formatSize(item.file_size) }}</span>
             <span v-if="hasVectorMatch(item)" class="vector-score">
@@ -371,6 +371,10 @@ const formatResource = (item = {}) => {
   return t('manager.retrieval.unknownEngine')
 }
 
+const formatResultPath = (item = {}) => {
+  return item.full_name || item.path || item.relative_path || ''
+}
+
 const formatDate = (value) => {
   if (!value) return ''
   const date = new Date(value)
@@ -427,37 +431,8 @@ const hasVectorMatch = (item = {}) => {
 
 const navigateToDocument = (item = {}) => {
   const fileName = item.file_name || t('manager.retrieval.unnamed')
-  // 检查必需字段
-  const engineId = item.engine_id || item.resource_id
-  if (!engineId) {
-    ElMessage.warning({
-      message: t('manager.retrieval.missingEngine', { name: fileName }),
-      duration: 5000
-    })
-    return
-  }
-
-  // 获取存储桶
-  const bucket = item.schema || item.bucket || ''
-  if (!bucket) {
-    ElMessage.warning({
-      message: t('manager.retrieval.missingBucket', { name: fileName }),
-      duration: 5000
-    })
-    return
-  }
-
-  let objectPath = item.relative_path || item.object_key || ''
-
-  if (objectPath && item.file_name && !objectPath.endsWith(item.file_name)) {
-    objectPath = `${objectPath}/${item.file_name}`.replace(/\/+/g, '/')
-  }
-
-  if (!objectPath && item.asset_id && item.asset_id.length < 100) {
-    objectPath = item.asset_id
-  }
-
-  if (!objectPath) {
+  const locator = String(item.locator || '').trim()
+  if (!locator) {
     ElMessage.warning({
       message: t('manager.retrieval.missingPath', { name: fileName }),
       duration: 5000
@@ -465,14 +440,8 @@ const navigateToDocument = (item = {}) => {
     return
   }
 
-  const query = {
-    engineId: String(engineId),
-    bucket: bucket,
-    objectKey: objectPath
-  }
-
-  console.log('[DataRetrieval] 定位到对象:', query)
-  router.push({ path: '/data-explorer', query })
+  console.log('[DataRetrieval] 定位到对象:', { locator })
+  router.push({ path: '/data-explorer', query: { locator } })
 }
 </script>
 

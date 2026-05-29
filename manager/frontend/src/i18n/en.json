@@ -151,7 +151,7 @@
       "vectorizeFailed": "Vectorization failed: {error}",
       "searchPlaceholder": "Search resources...",
       "searching": "Searching...",
-      "noMatchingDataSources": "No matching data sources found",
+      "noMatchingDataSources": "No matching resources found",
       "clear": "Clear",
       "score": "Score",
       "matchExact": "Exact Match",

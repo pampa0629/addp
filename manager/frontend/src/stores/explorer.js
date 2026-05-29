@@ -163,7 +163,8 @@ export const useExplorerStore = defineStore('explorer', {
       const cachedDepth = this.engineTreeDepths[engineId] || 0
 
       // 如果已经加载过，且当前缓存深度 >= 需要的深度，直接返回缓存
-      if (!forceRefresh && this.engineTrees[engineId] && cachedDepth >= expandDepth) {
+      const cacheDepthMatches = cachedDepth === -1 || (expandDepth !== -1 && cachedDepth >= expandDepth)
+      if (!forceRefresh && this.engineTrees[engineId] && cacheDepthMatches) {
         console.log(`[ExplorerStore] 使用缓存（引擎 ${engineId}，已缓存深度 ${cachedDepth}）`)
         return this.engineTrees[engineId]
       }
@@ -547,7 +548,7 @@ export const useExplorerStore = defineStore('explorer', {
       }
 
       // 生成缓存 key
-      const cacheKey = `${engineId}:${keyword}:${nodeTypes?.join(',') || ''}`
+      const cacheKey = `${engineId}:${keyword}:${nodeTypes?.join(',') || ''}:${limit}`
 
       // 检查缓存
       if (this.searchResultsCache[cacheKey]) {
@@ -569,7 +570,8 @@ export const useExplorerStore = defineStore('explorer', {
         const response = await client.get(`/manager/tree/${engineId}/search`, { params })
         // API 客户端已经通过 extractData 提取了 response.data
         // 后端返回 { keyword: ..., total: ..., results: [...] }
-        const results = response.results || []
+        const rawResults = response.results || []
+        const results = rawResults.map((node) => this.toSearchResult(node, keyword))
         const total = response.total || 0
 
         // 更新缓存
@@ -585,6 +587,59 @@ export const useExplorerStore = defineStore('explorer', {
         console.error('搜索节点失败:', error)
         throw error
       }
+    },
+
+    toSearchResult(node, keyword = '') {
+      if (node?.node) {
+        return node
+      }
+
+      const path = this.buildSearchResultPath(node)
+      return {
+        node,
+        path,
+        match_type: this.getSearchMatchType(node?.label, keyword),
+        score: this.getSearchScore(node?.label, keyword)
+      }
+    },
+
+    buildSearchResultPath(node) {
+      const loc = parseLocator(node?.locator || node?.id)
+      if (loc?.path?.length) {
+        return loc.path.map(label => ({ label }))
+      }
+
+      const fullName = node?.metadata?.full_name
+      if (typeof fullName === 'string' && fullName.trim()) {
+        return fullName
+          .split(/[/.]/)
+          .filter(Boolean)
+          .map(label => ({ label }))
+      }
+
+      return node?.label ? [{ label: node.label }] : []
+    },
+
+    getSearchMatchType(label = '', keyword = '') {
+      const normalizedLabel = String(label || '').toLowerCase()
+      const normalizedKeyword = String(keyword || '').toLowerCase()
+      if (!normalizedLabel || !normalizedKeyword) {
+        return 'contains'
+      }
+      if (normalizedLabel === normalizedKeyword) {
+        return 'exact'
+      }
+      if (normalizedLabel.startsWith(normalizedKeyword)) {
+        return 'prefix'
+      }
+      return 'contains'
+    },
+
+    getSearchScore(label = '', keyword = '') {
+      const matchType = this.getSearchMatchType(label, keyword)
+      if (matchType === 'exact') return 1
+      if (matchType === 'prefix') return 0.9
+      return 0.75
     },
 
     /**

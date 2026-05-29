@@ -43,6 +43,7 @@ type AssetRecord struct {
 	AssetID     string   `json:"asset_id"`
 	DocumentID  string   `json:"document_id,omitempty"`  // item fingerprint，用于全文/向量检索结果合并
 	ContentHash string   `json:"content_hash,omitempty"` // storage.content_hash，用于判断内容是否变化
+	Locator     string   `json:"locator,omitempty"`      // 标准 ResourceLocator URI
 	TenantID    uint     `json:"tenant_id"`
 	EngineID    uint     `json:"engine_id"`
 	EngineName  string   `json:"engine_name,omitempty"`
@@ -170,6 +171,7 @@ func (i *Indexer) ensureIndexes() error {
 		"engine_id",
 		"engine_type",
 		"asset_type", // 可过滤表/对象
+		"locator",
 		"schema",
 		"bucket",
 		"table_kind",
@@ -210,6 +212,7 @@ func (i *Indexer) IndexAsset(ctx context.Context, record *AssetRecord) error {
 		"asset_id":        record.AssetID,
 		"document_id":     record.DocumentID,
 		"content_hash":    record.ContentHash,
+		"locator":         record.Locator,
 		"tenant_id":       record.TenantID,
 		"engine_id":       record.EngineID,
 		"engine_name":     record.EngineName,

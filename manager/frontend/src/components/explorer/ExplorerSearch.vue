@@ -38,7 +38,7 @@
         <el-scrollbar max-height="400px">
           <div
             v-for="(result, index) in results"
-            :key="index"
+            :key="result.node?.locator || result.node?.id || index"
             class="result-item"
             @click="handleSelectResult(result)"
           >

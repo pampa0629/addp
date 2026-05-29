@@ -75,8 +75,8 @@ const store = useExplorerStore()
 // 引用
 const treeRef = ref(null)
 
-// 控制搜索显示（可选功能，暂时隐藏）
-const showSearch = ref(false)
+// 控制搜索显示：资源树搜索只用于数据探查页内的资源定位
+const showSearch = ref(true)
 
 const itemTypes = new Set(['table', 'view', 'collection', 'graph', 'file', 'object'])
 const nodeTypes = new Set(['schema', 'database', 'bucket', 'prefix', 'directory', 'root', 'dir'])
@@ -155,23 +155,34 @@ const handleNodeSelect = async ({ node, locator }) => {
 const handleSearchResultSelect = async (result) => {
   console.log('[DataExplorer] 搜索结果选择:', result)
 
-  const locator = result.node.locator || result.node.id
+  const resultNode = result?.node || result
+  const locator = resultNode?.locator || resultNode?.id
+  if (!locator) {
+    return
+  }
 
-  // 1. 展开路径上的所有节点
-  for (const segment of result.path) {
-    const segmentLocator = segment.locator
+  const loc = parseLocator(locator)
+  if (loc?.engineId) {
+    await store.loadTree(loc.engineId, -1)
+  }
+
+  const tree = loc?.engineId ? store.engineTrees[loc.engineId] : null
+  const path = findNodePathByLocator(tree, locator)
+  for (const segment of path.slice(0, -1)) {
+    const segmentLocator = segment.locator || segment.id
     if (segmentLocator) {
       treeRef.value?.expandNode(segmentLocator)
     }
   }
 
-  // 2. 选中目标节点
+  const node = path[path.length - 1] || resultNode
+
+  // 选中目标节点
   treeRef.value?.selectNode(locator)
   store.selectNode(locator)
 
-  // 3. 加载预览
   try {
-    await store.loadPreview(locator, 1)
+    await handleNodeSelect({ node, locator })
     ElMessage.success(t('manager.explorer.locateSuccess'))
   } catch (error) {
     console.error('加载预览失败:', error)
@@ -221,6 +232,21 @@ const handleOpenNode = async (locator) => {
   const node = store.selectedNode
   if (!node) return
   await handleNodeSelect({ node, locator })
+}
+
+const findNodePathByLocator = (node, locator, parents = []) => {
+  if (!node || !locator) return []
+  const current = [...parents, node]
+  if ((node.locator || node.id) === locator) {
+    return current
+  }
+  for (const child of node.children || []) {
+    const found = findNodePathByLocator(child, locator, current)
+    if (found.length > 0) {
+      return found
+    }
+  }
+  return []
 }
 
 // 初始化
@@ -303,22 +329,24 @@ onMounted(async () => {
 watch(() => route.query, async (query) => {
   console.log('[DataExplorer] 路由参数变化:', query)
 
-  if (!query.engineId || !query.bucket) {
+  const targetLocator = String(query.locator || '').trim()
+  if (!targetLocator) {
     return
   }
 
   try {
-    const engineId = parseInt(query.engineId)
-    const bucket = query.bucket
-    const objectKey = query.objectKey || ''
+    const loc = parseLocator(targetLocator)
+    if (!loc?.engineId) {
+      console.warn('[DataExplorer] 无效 locator:', targetLocator)
+      return
+    }
+    const engineId = loc.engineId
 
-    // 1. 等待引擎列表加载完成
     if (store.engines.length === 0) {
       console.log('[DataExplorer] 等待引擎列表加载...')
       await store.loadEngines()
     }
 
-    // 2. 确保引擎存在
     const engine = store.engines.find(e => e.id === engineId)
     if (!engine) {
       console.warn('[DataExplorer] 引擎未找到:', engineId)
@@ -327,86 +355,24 @@ watch(() => route.query, async (query) => {
     }
 
     console.log('[DataExplorer] 找到引擎:', engine.name)
+    await store.loadTree(engineId, -1)
 
-    // 3. 构建目标节点的 locator
-    let targetLocator
-    if (objectKey) {
-      // 定位到具体对象
-      targetLocator = `addp://engine/${engineId}/path/${bucket}/${objectKey}?type=file`
-    } else {
-      // 只定位到 bucket
-      targetLocator = `addp://engine/${engineId}/path/${bucket}?type=bucket`
-    }
-
-    console.log('[DataExplorer] 目标 locator:', targetLocator)
-
-    // 4. 直接选中并加载预览
-    console.log('[DataExplorer] 选中节点并加载预览...')
-    store.selectNode(targetLocator)
-    await store.loadPreview(targetLocator, 1)
-
-    // 5. 计算目标路径深度，加载足够深的树
-    const pathParts = objectKey.split('/').filter(p => p)
-    const requiredDepth = 1 + pathParts.length
-    console.log('[DataExplorer] 目标路径深度:', requiredDepth, '路径:', objectKey)
-
-    // 加载引擎树（确保深度足够）
-    await store.loadTree(engineId, requiredDepth)
-
-    // 6. 展开路径上的所有节点
     const engineTree = store.engineTrees[engineId]
-    const expandKeys = []
-
-    if (engineTree) {
-      // 添加引擎节点
-      expandKeys.push(engineTree.id)
-
-      // 查找并展开路径上的节点
-      const bucketNode = engineTree.children?.find(c => c.label === bucket)
-      if (bucketNode) {
-        expandKeys.push(bucketNode.id)
-
-        // 展开中间目录
-        if (pathParts.length > 1) {
-          let currentNode = bucketNode
-          for (let i = 0; i < pathParts.length - 1; i++) {
-            const dirName = pathParts[i]
-            const dirNode = currentNode.children?.find(c => c.label === dirName)
-            if (dirNode) {
-              expandKeys.push(dirNode.id)
-              currentNode = dirNode
-            } else {
-              break
-            }
-          }
-        }
+    const path = findNodePathByLocator(engineTree, targetLocator)
+    if (path.length === 0) {
+      console.warn('[DataExplorer] 资源树中未找到 locator:', targetLocator)
+    }
+    for (const segment of path.slice(0, -1)) {
+      const segmentLocator = segment.locator || segment.id
+      if (segmentLocator) {
+        treeRef.value?.expandNode(segmentLocator)
       }
     }
 
-    // 7. 更新展开状态
-    store.expandedLocators = new Set([...store.expandedLocators, ...expandKeys])
-
-    // 8. 找到目标文件节点的实际 ID
-    if (objectKey && pathParts.length > 0) {
-      const bucketNode = engineTree?.children?.find(c => c.label === bucket)
-      if (bucketNode) {
-        let currentNode = bucketNode
-        for (let i = 0; i < pathParts.length - 1; i++) {
-          const dirName = pathParts[i]
-          const dirNode = currentNode.children?.find(c => c.label === dirName)
-          if (dirNode) {
-            currentNode = dirNode
-          } else {
-            break
-          }
-        }
-        const fileName = pathParts[pathParts.length - 1]
-        const fileNode = currentNode.children?.find(c => c.label === fileName)
-        if (fileNode) {
-          store.selectNode(fileNode.id)
-        }
-      }
-    }
+    const targetNode = path[path.length - 1] || { id: targetLocator, locator: targetLocator, type: loc.type }
+    store.selectNode(targetLocator)
+    treeRef.value?.selectNode(targetLocator)
+    await handleNodeSelect({ node: targetNode, locator: targetLocator })
 
     await nextTick()
     console.log('[DataExplorer] 成功定位到对象')

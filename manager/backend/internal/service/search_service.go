@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/addp/common/catalogview"
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/embedding"
 	"github.com/addp/common/logger"
@@ -44,12 +45,15 @@ type HybridSearchService struct {
 type SearchDocument struct {
 	DocumentID     string                 `json:"document_id"`
 	AssetID        string                 `json:"asset_id"`
+	Locator        string                 `json:"locator,omitempty"`
 	Score          float64                `json:"score"`
 	MatchMethods   []string               `json:"match_methods,omitempty"`   // 检索方式: ["keyword", "vector", "hybrid"]
 	VectorDistance float64                `json:"vector_distance,omitempty"` // 向量距离（如果有向量匹配）
 	EngineID       uint                   `json:"engine_id"`
 	EngineName     string                 `json:"engine_name,omitempty"`
 	EngineType     string                 `json:"engine_type,omitempty"`
+	AssetType      string                 `json:"asset_type,omitempty"`
+	FullName       string                 `json:"full_name,omitempty"`
 	Bucket         string                 `json:"bucket,omitempty"`
 	Schema         string                 `json:"schema,omitempty"`
 	Path           string                 `json:"path,omitempty"` // 目录路径（以 / 结尾）
@@ -260,6 +264,7 @@ func (s *HybridSearchService) initIndexes() error {
 		"engine_id",
 		"engine_type",
 		"asset_type", // 可过滤表/对象
+		"locator",
 		"schema",
 		"bucket",
 		"table_kind",
@@ -748,7 +753,7 @@ func searchAttributeSectionsForKey(key string) []string {
 	switch key {
 	case "bucket", "path", "name", "content_type", "file_name":
 		return []string{"storage"}
-	case "format", "document_type":
+	case "format", "document_type", "type":
 		return []string{"item"}
 	case "title", "page_count", "word_count":
 		return []string{"type_info.document"}
@@ -819,6 +824,7 @@ func vectorDocumentToSearchDocument(v VectorDocument) SearchDocument {
 		EngineID:       v.EngineID,
 		EngineName:     v.EngineName,
 		EngineType:     v.EngineType,
+		AssetType:      string(catalogview.TypeObject),
 		Bucket:         bucket,
 		Path:           path,
 		Name:           name,
@@ -835,6 +841,7 @@ func vectorDocumentToSearchDocument(v VectorDocument) SearchDocument {
 	if doc.Title == "" {
 		doc.Title = getStringFromMeta(meta, "title")
 	}
+	doc.Locator = buildSearchDocumentLocator(doc)
 	return doc
 }
 
@@ -854,6 +861,9 @@ func mapMeilisearchHit(hit interface{}) SearchDocument {
 	if val, ok := hitMap["asset_id"].(string); ok {
 		doc.AssetID = val
 	}
+	if val, ok := hitMap["locator"].(string); ok {
+		doc.Locator = val
+	}
 	if val, ok := hitMap["engine_id"].(float64); ok {
 		doc.EngineID = uint(val)
 	}
@@ -863,9 +873,17 @@ func mapMeilisearchHit(hit interface{}) SearchDocument {
 	if val, ok := hitMap["engine_type"].(string); ok {
 		doc.EngineType = val
 	}
+	if val, ok := hitMap["asset_type"].(string); ok {
+		doc.AssetType = val
+	}
+	if val, ok := hitMap["schema"].(string); ok {
+		doc.Schema = val
+	}
 	if val, ok := hitMap["bucket"].(string); ok {
 		doc.Bucket = val
-		doc.Schema = val // bucket 等价于 schema
+		if doc.Schema == "" {
+			doc.Schema = val
+		}
 	}
 	// 读取目录路径（以 / 结尾）
 	if val, ok := hitMap["path"].(string); ok {
@@ -875,6 +893,9 @@ func mapMeilisearchHit(hit interface{}) SearchDocument {
 	if val, ok := hitMap["name"].(string); ok {
 		doc.Name = val
 		doc.FileName = val
+	}
+	if val, ok := hitMap["full_name"].(string); ok {
+		doc.FullName = val
 	}
 	if val, ok := hitMap["document_type"].(string); ok {
 		doc.DocumentType = val
@@ -942,7 +963,73 @@ func mapMeilisearchHit(hit interface{}) SearchDocument {
 		doc.Score = score
 	}
 
+	if strings.TrimSpace(doc.Locator) == "" {
+		doc.Locator = buildSearchDocumentLocator(doc)
+	}
 	return doc
+}
+
+func buildSearchDocumentLocator(doc SearchDocument) string {
+	if doc.EngineID == 0 {
+		return ""
+	}
+
+	resourceType := strings.TrimSpace(doc.AssetType)
+	if resourceType == "" {
+		resourceType = getStringFromMeta(doc.Metadata, "type")
+	}
+	if resourceType == "" {
+		return ""
+	}
+
+	path := searchDocumentPath(doc, resourceType)
+	if len(path) == 0 {
+		return ""
+	}
+
+	return (&catalogview.ResourceLocator{
+		EngineID: doc.EngineID,
+		Path:     path,
+		Type:     catalogview.ResourceType(resourceType),
+	}).ToURI()
+}
+
+func searchDocumentPath(doc SearchDocument, resourceType string) []string {
+	if fullName := searchDocumentFullName(doc); fullName != "" {
+		return catalogview.ParseFullNamePath(doc.EngineType, resourceType, fullName)
+	}
+
+	switch strings.ToLower(strings.TrimSpace(resourceType)) {
+	case "table", "view", "collection", "graph":
+		parts := []string{}
+		if doc.Schema != "" {
+			parts = append(parts, doc.Schema)
+		} else if doc.Bucket != "" {
+			parts = append(parts, doc.Bucket)
+		}
+		if doc.Name != "" {
+			parts = append(parts, doc.Name)
+		}
+		return parts
+	default:
+		joined := strings.Trim(strings.Join([]string{doc.Bucket, doc.Path, doc.Name}, "/"), "/")
+		if joined == "" {
+			return nil
+		}
+		return catalogview.ParseFullNamePath(doc.EngineType, resourceType, joined)
+	}
+}
+
+func searchDocumentFullName(doc SearchDocument) string {
+	if strings.TrimSpace(doc.FullName) != "" {
+		return strings.TrimSpace(doc.FullName)
+	}
+	if doc.Metadata != nil {
+		if val, ok := doc.Metadata["full_name"].(string); ok && strings.TrimSpace(val) != "" {
+			return strings.TrimSpace(val)
+		}
+	}
+	return ""
 }
 
 // --- 内部辅助结构 ---

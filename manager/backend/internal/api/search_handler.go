@@ -32,7 +32,7 @@ func NewSearchHandler(searchService *service.HybridSearchService, historyService
 // @Param q query string true "搜索关键词 | Search query"
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认10 | Page size, default 10"
-// @Success 200 {object} map[string]interface{} "搜索结果 | Search results"
+// @Success 200 {object} service.SearchResult "搜索结果，results[].locator 为跨引擎资源定位符 | Search results; results[].locator is the cross-engine resource locator"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 503 {object} map[string]interface{} "搜索服务不可用 | Search service unavailable"
 // @Router /search [get]

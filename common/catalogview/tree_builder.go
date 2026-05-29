@@ -535,22 +535,19 @@ func parsePathForEngine(engineType string, fullName string, nodeType string) []s
 		// MongoDB: database 只有一级路径
 		return []string{fullName}
 	case "table":
-		if isPathSemanticEngine(engineType) {
-			return splitSlashPath(fullName)
-		}
-		return strings.Split(fullName, ".")
+		return ParseFullNamePath(engineType, nodeType, fullName)
 	case "collection", "graph":
 		// MongoDB 集合/图整体: database.name
 		// 使用点号分隔
-		return strings.Split(fullName, ".")
+		return ParseFullNamePath(engineType, nodeType, fullName)
 	case "bucket", "prefix", "directory", "object", "root", "dir", "file":
 		// MinIO/S3: bucket/prefix/object 使用斜杠分隔
 		// 文件系统: root/dir/file 使用斜杠分隔
 		// 注意：文件系统 full_name 可能以 "/" 开头，需去掉首尾斜杠，避免产生空路径段
-		return splitSlashPath(fullName)
+		return ParseFullNamePath(engineType, nodeType, fullName)
 	default:
 		// 默认：尝试斜杠分隔
-		return strings.Split(fullName, "/")
+		return splitSlashPath(fullName)
 	}
 }
 
@@ -560,15 +557,6 @@ func splitSlashPath(fullName string) []string {
 		return []string{}
 	}
 	return strings.Split(trimmed, "/")
-}
-
-func isPathSemanticEngine(engineType string) bool {
-	switch strings.ToLower(engineType) {
-	case "minio", "s3", "nfs", "nas":
-		return true
-	default:
-		return false
-	}
 }
 
 // convertNodeType 将 MetaNode 的 NodeType 转换为 ResourceType
