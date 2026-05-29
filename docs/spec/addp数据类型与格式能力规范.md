@@ -300,7 +300,7 @@ type TableDescribeResult struct {
 | `AccessIndex` | `attributes.access_index.table` |
 | `FormatInfo` | `attributes.format_info.<format>` |
 
-后续 document、media、container、graph 如果也存在“一次解析产出多个事实”的场景，应使用相同原则定义对应 describe result，不能把横切事实或访问索引塞进各自 `TypeInfo`。
+media 已使用同一原则：`MediaDescribeResult.Media` 写入 `type_info.media`，`MediaDescribeResult.Spatial` 写入 `capabilities.spatial`，`MediaDescribeResult.FormatInfo` 写入 `format_info.<format>`。后续 document、container、graph 如果也存在“一次解析产出多个事实”的场景，应继续按同级结果表达，不能把横切事实或访问索引塞进各自 `TypeInfo`。
 
 空间表的几何字段遵循以下规则：
 
@@ -381,7 +381,7 @@ Format writer 负责编码格式，Engine writer 负责提交到目标存储。�
 | `content_readers` | descriptor / capability 的内容读取能力声明，表示该格式当前可提供哪些内容数据读取方式 |
 | `implementations` | 当前进程内已经注册的实际实现状态，表示 `FormatInfoProvider`、`TableInfoProvider`、`TableSampleReader`、`MultiTableInfoProvider`、`MultiTableSampleReader`、`ScopeTableInfoProvider`、`ScopeTableSampleReader`、`TableReaderProvider`、`TableWriterProvider`、`MultiTableReaderProvider`、`MultiTableWriterProvider`、`DocumentInfoProvider`、`DocumentTextReader`、`MediaInfoProvider`、`ContainerInfoProvider`、`ContainerChildResolver` 等是否已经可调用 |
 
-上层模块做格式路由时，应优先依据 `format`、`data_type`、`providers`、`content_readers` 判断语义，再根据 `implementations` 决定能否直接调用后端实现。不能把 `providers.document_info=true` 理解为一定已经有 `DocumentTextReader`；例如 DOCX / WPS 当前声明为文档格式和 raw/range content reader，但后端正文解析实现尚未稳定。
+上层模块做格式路由时，应优先依据 `format`、`data_type`、`providers`、`content_readers` 判断语义，再根据 `implementations` 决定能否直接调用后端实现。不能把 `providers.document_info=true` 理解为一定已经有 `DocumentTextReader`；例如 DOCX / PPTX 当前已有内置 `DocumentTextReader`，WPS 当前只声明 raw/range content reader。
 
 `raw_content` / `range_content` 是内容读取方式声明，不对应 `ProviderRegistry` 中的可调用 Go reader。它们表示编排层可以基于 engine capability、`common/contentio`、预签名 URL 或模块 fetcher 提供完整流 / 范围流；format 层只提供 `DescriptorHasContentReader` / `SupportsContentReader` 这类声明判断 helper。需要实际解码或抽取时，仍应使用 `DocumentTextReader`、`TableSampleReader`、`BinaryContentReader` 等已注册实现能力。
 
@@ -470,7 +470,7 @@ info provider 只回答对应 data type 的元数据语义；sample / text reade
 
 `DocumentTextReader` 提供正文片段。raw content / range content 由对应 content reader 表达。二者都不负责 Manager 的最终前端 DTO。
 
-文档格式不要求都必须在后端完成解析。对于 WPS、DOCX、PPTX 这类后端不适合解析的格式，可以先只声明 raw content / range content reader；后续如需全文索引、摘要、脱敏或服务端导出，再补后端文本提取能力。
+文档格式不要求都必须在后端完成解析。DOCX / PPTX 当前可以通过内置 `DocumentTextReader` 提取正文片段；WPS 当前只声明 raw content / range content reader。后续如需 WPS、PDF OCR、摘要、脱敏或服务端导出，再补对应文本提取或外部 extraction 能力，不能扩展 `DocumentInfo` 承载正文状态或正文内容。
 
 ### BinaryContentReader
 
@@ -484,10 +484,10 @@ info provider 只回答对应 data type 的元数据语义；sample / text reade
 
 它提供：
 
-- 媒体元信息。
-- 可选的编码 / 解码辅助信息。
+- 媒体元信息，例如 `kind`、`mime_type`、宽高、时长、`encoding`、`color_space`、`size_bytes`。
+- 可选的同级横切事实，例如 GeoTIFF / GPS 解析得到的 `SpatialInfo`。
 
-缩略图、raw content、range content 或可流式 URL 应由对应 content reader / engine 能力表达。`MediaInfoProvider` 只返回已经确认的事实，不硬凑完整展示对象。
+缩略图、raw content、range content 或可流式 URL 应由对应 content reader / engine 能力表达。`MediaInfoProvider` 只返回已经确认的事实，不硬凑完整展示对象。EXIF、视频 codec、音频 codec、帧率、采样率、码率、轨道数等细粒度事实不进入 `datatype.MediaInfo`；如需持久化，先补 `format_info.<format>`、`capabilities.extraction` 或新的横切能力规范。
 
 ### ContainerInfoProvider / ContainerChildResolver
 

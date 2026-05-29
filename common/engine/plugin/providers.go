@@ -126,11 +126,6 @@ type SQLQueryRuntimeProvider interface {
 	ExecuteSQL(ctx context.Context, connInfo ConnectionInfo, sql string, opts QueryOptions) (*QueryResult, error)
 }
 
-type DocumentQueryRuntimeProvider interface {
-	QueryRuntimeProvider
-	ExecuteDocumentQuery(ctx context.Context, connInfo ConnectionInfo, command string, opts QueryOptions) (*QueryResult, error)
-}
-
 // GraphQueryProvider is a dedicated runtime for graph-shaped queries and results.
 // It is intentionally separate from QueryRuntimeProvider so graph modules can
 // consume graph-specific results without coupling ordinary table-oriented query flows.

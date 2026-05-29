@@ -99,7 +99,6 @@ func TestItemMetadataContainerInfoReturnsClone(t *testing.T) {
 				DataType:    datatype.DataTypeTable,
 				RowCount:    &rowCount,
 				ColumnCount: &columnCount,
-				Fields:      []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeInt}},
 				Native:      map[string]interface{}{"sheet_index": 0},
 			}},
 		},

@@ -53,7 +53,7 @@ MongoDB collection 是动态 schema 的 JSON/BSON 记录集合容器。它既不
 
 JSON 默认按 `document` 兜底；只有内容事实能严格证明它是记录集合时才升级为 `table`。当前明确支持两类 JSON table：顶层对象数组和 GeoJSON `FeatureCollection.features`。`{"data":[...]}`、`{"rows":[...]}`、NDJSON 等结构是否作为 table，需要先补规范再实现，不能用字段名或习惯做隐式猜测。
 
-JSON / GeoJSON 也不默认具备空间能力。只有实际记录里发现 GeoJSON geometry 结构，或字段值可被严格解析为 WKB / EWKB 几何时，才写入 `capabilities.spatial`。后端只表达 `table + spatial` 这样的横切能力组合，不新增“空间表”数据类型；Manager 前端可以据此选择“表格 + 空间”的渲染方式。
+JSON / GeoJSON 也不默认具备空间能力。只有实际记录里发现 GeoJSON geometry 结构，或字段值可被严格解析为 WKB / EWKB 几何时，才写入 `capabilities.spatial`。后端只表达 `data_type=table + capabilities.spatial` 这样的横切能力组合，不新增“空间表”数据类型；Manager 前端可以据此选择“表格 + 空间”的渲染方式。
 
 ### document
 
@@ -136,9 +136,9 @@ graph 的核心是节点和关系。Neo4j label、relationship type、RDF class 
 
 文件格式不等于数据类型，也不等于内容布局：
 
-- Shapefile = `data_type=table` + `layout=multi` + `format=shapefile` + `spatial`。
-- GeoJSON = `data_type=table` + `layout=single` + `format=json`，当 feature 实际包含 geometry 时再附加 `spatial`。
-- GeoTIFF = `data_type=media` + `layout=single` + `format=tiff` + `spatial`。
+- Shapefile = `data_type=table` + `layout=multi` + `format=shapefile` + `capabilities.spatial`。
+- GeoJSON = `data_type=table` + `layout=single` + `format=json`，当 feature 实际包含 geometry 时再附加 `capabilities.spatial`。
+- GeoTIFF = `data_type=media` + `layout=single` + `format=tiff` + `capabilities.spatial`。
 - Excel = `data_type=container` + `layout=single` + `format=excel`。
 - Iceberg = `data_type=table` + `layout=whole` + `format=iceberg`。
 
@@ -232,9 +232,9 @@ Shapefile 这类 multi 格式尤其要区分：单个 `.shp/.dbf/.shx` 的识别
 
 `spatial` 是典型横切能力：
 
-- PostGIS 表 = `data_type=table` + `spatial`。
-- Shapefile = `data_type=table` + `format=shapefile` + `spatial`。
-- GeoTIFF = `data_type=media` + `format=tiff` + `spatial`。
+- PostGIS 表 = `data_type=table` + `capabilities.spatial`。
+- Shapefile = `data_type=table` + `format=shapefile` + `capabilities.spatial`。
+- GeoTIFF = `data_type=media` + `format=tiff` + `capabilities.spatial`。
 
 空间能力不应新增为 data type，也不应塞进某个格式私有字段。
 

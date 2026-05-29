@@ -305,6 +305,9 @@ func TestExtractCatalogDocumentTextReadsPPTX(t *testing.T) {
 	if got := commonJSON.String(attrs, "capabilities.extraction", "status"); got != "completed" {
 		t.Fatalf("status = %q", got)
 	}
+	if commonJSON.Bool(attrs, "type_info.document", "text_extracted") {
+		t.Fatalf("type_info.document should not carry extraction status: %#v", attrs["type_info"])
+	}
 }
 
 func TestExtractCatalogDocumentTextMarksUnsupportedWithoutReader(t *testing.T) {
@@ -353,6 +356,9 @@ func TestExtractCatalogDocumentTextMarksUnsupportedWithoutReader(t *testing.T) {
 	}
 	if got := commonJSON.String(attrs, "capabilities.extraction", "reason"); got != "document_text_reader_unavailable" {
 		t.Fatalf("reason = %q", got)
+	}
+	if commonJSON.Bool(attrs, "type_info.document", "text_extracted") {
+		t.Fatalf("type_info.document should not carry extraction status: %#v", attrs["type_info"])
 	}
 }
 

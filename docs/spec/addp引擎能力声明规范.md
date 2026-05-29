@@ -252,12 +252,14 @@ type QueryCapability struct {
 | 字段 | 说明 |
 | --- | --- |
 | `supported` | 是否可作为查询运行时。 |
-| `languages` | 支持的查询语言，如 `sql`、`mql`、`cypher`。 |
+| `languages` | 支持的查询语言，如 `sql`、`mql`、`cypher`、`opensearch_dsl`、`mango`。 |
 | `default_language` | 默认编辑器语言和样例查询语言。 |
 | `result_kinds` | 查询结果形态，如 `table`、`document`、`graph`、`scalar`。 |
 | `read_only` | 运行时是否只允许只读查询。 |
 | `supports_explain` | 是否支持查询计划 / 性能诊断。 |
 | `supports_cancel` | 是否支持取消运行中的查询。 |
+
+查询语言差异只通过 `languages` / `default_language` 和 `QueryRequest.Language` 表达，不新增按数据库类别拆分的 query provider。`result_kinds=document` 只表示原生查询结果可能是 JSON document / record 形态，不表示 data item 的 `data_type=document`。图结构查询如果需要节点 / 关系结构结果，仍使用 `GraphQueryProvider`。
 
 ### 4.2 WorkflowCapability
 

@@ -6,7 +6,7 @@
 
 ## 未决事项
 
-1. Common datatype 统一抽象仍需继续推进其他 datatype，见 [Common Datatype 统一抽象设计](common-datatype统一抽象设计.md)。table、graph、document、media、container 主事实字段已完成；`file` / `FileInfo` 已删除，未识别内容统一使用 `unknown`，文件 / 对象形态归 catalog / storage facts。
+1. Common datatype 主线已收口，正式口径见 [ADDP 数据类型和格式体系图](../concepts/addp数据类型和格式体系图.md)、[ADDP 数据类型与格式能力规范](../spec/addp数据类型与格式能力规范.md) 和 [ADDP 元数据 attributes 规范](../spec/addp元数据attributes规范.md)。table、graph、document、media、container 主事实字段已完成；`file` / `FileInfo` 已删除，未识别内容统一使用 `unknown`，文件 / 对象形态归 catalog / storage facts。
 2. SQL metadata provider 实现还需继续收敛：先维护 PostgreSQL、MySQL/Doris、ClickHouse、Spark SQL 的元数据来源和差异矩阵，再只对真实复用点抽 provider 内部 helper。
 3. ClickHouse 字段原生属性是否进入 metadata 结果需要单独设计：`system.columns` 可提供主键、排序键、分区键、默认表达式、codec、TTL 等，但不应为单一引擎直接扩张 `datatype.FieldInfo`；后续应先走 `common/datatype.FieldInfo` 的通用属性审定。
 4. Doris 表级 `Native.engine` 暂不启用。虽然 Doris 复用 MySQL-compatible metadata helper，但需要先确认目标 Doris 版本的 `information_schema.tables.engine` 字段是否稳定存在；未确认前不打开 `IncludeEngine`，避免列表 SQL 因原生列差异失败。

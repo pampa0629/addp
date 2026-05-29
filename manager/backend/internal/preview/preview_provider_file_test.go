@@ -4,18 +4,21 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
-	"github.com/addp/common/datatype"
+	"database/sql"
 	"io"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/addp/common/contentio"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/objectcontent"
+	"github.com/xuri/excelize/v2"
 )
 
 func TestFileTablePreviewProviderResolveFormatUsesMetaFormat(t *testing.T) {
@@ -935,6 +938,183 @@ func TestContainerChildPreviewProviderPreviewsZIPMultiTableChildRefs(t *testing.
 	}
 }
 
+func TestContainerChildPreviewProviderPreviewsExcelSheet(t *testing.T) {
+	previous, previousErr := plugin.Get("nfs")
+	enginePlugin := &recordingContentPlugin{engineType: "nfs", content: excelWorkbookBytesForPreviewTest(t)}
+	plugin.Register(enginePlugin)
+	defer func() {
+		if previousErr == nil {
+			plugin.Register(previous)
+			return
+		}
+		plugin.Unregister(enginePlugin.Type())
+	}()
+
+	provider := NewContainerChildPreviewProvider(objectcontent.NewObjectContentRegistry())
+	req := &PreviewRequest{
+		Engine:       &models.Engine{EngineType: enginePlugin.Type(), ID: 7},
+		ItemType:     "file",
+		Schema:       "datasets",
+		Table:        "cities.xlsx",
+		PhysicalPath: "/datasets/cities.xlsx",
+		ChildName:    "Cities",
+		Page:         1,
+		PageSize:     10,
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"format":    string(format.FormatExcel),
+				"data_type": "container",
+			},
+			"type_info": map[string]interface{}{
+				"container": map[string]interface{}{
+					"children": []interface{}{
+						map[string]interface{}{
+							"name":         "Cities",
+							"child_kind":   "sheet",
+							"data_type":    "table",
+							"row_count":    int64(2),
+							"column_count": int64(2),
+							"has_header":   true,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	preview, err := provider.Preview(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+	if preview.Mode != PreviewModeTable {
+		t.Fatalf("Mode = %q, want %q", preview.Mode, PreviewModeTable)
+	}
+	if !reflect.DeepEqual(preview.Columns, []string{"id", "name"}) {
+		t.Fatalf("Columns = %#v, want id/name", preview.Columns)
+	}
+	if len(preview.Rows) != 2 || preview.Rows[0]["name"] != "Hangzhou" {
+		t.Fatalf("Rows = %#v, want Excel sheet rows", preview.Rows)
+	}
+}
+
+func TestContainerChildPreviewProviderPreviewsSQLiteTable(t *testing.T) {
+	previous, previousErr := plugin.Get("nfs")
+	enginePlugin := &recordingContentPlugin{engineType: "nfs", content: sqliteDatabaseBytesForPreviewTest(t)}
+	plugin.Register(enginePlugin)
+	defer func() {
+		if previousErr == nil {
+			plugin.Register(previous)
+			return
+		}
+		plugin.Unregister(enginePlugin.Type())
+	}()
+
+	provider := NewContainerChildPreviewProvider(objectcontent.NewObjectContentRegistry())
+	req := &PreviewRequest{
+		Engine:       &models.Engine{EngineType: enginePlugin.Type(), ID: 7},
+		ItemType:     "file",
+		Schema:       "datasets",
+		Table:        "cities.sqlite",
+		PhysicalPath: "/datasets/cities.sqlite",
+		ChildName:    "Cities",
+		Page:         1,
+		PageSize:     10,
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"format":    string(format.FormatSQLite),
+				"data_type": "container",
+			},
+			"type_info": map[string]interface{}{
+				"container": map[string]interface{}{
+					"children": []interface{}{
+						map[string]interface{}{
+							"name":         "Cities",
+							"table":        "cities",
+							"child_kind":   "table",
+							"data_type":    "table",
+							"row_count":    int64(2),
+							"column_count": int64(2),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	preview, err := provider.Preview(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+	if preview.Mode != PreviewModeTable {
+		t.Fatalf("Mode = %q, want %q", preview.Mode, PreviewModeTable)
+	}
+	if !reflect.DeepEqual(preview.Columns, []string{"id", "name"}) {
+		t.Fatalf("Columns = %#v, want id/name", preview.Columns)
+	}
+	if len(preview.Rows) != 2 || preview.Rows[1]["name"] != "Shanghai" {
+		t.Fatalf("Rows = %#v, want SQLite table rows", preview.Rows)
+	}
+}
+
+func TestContainerChildPreviewProviderPreviewsGeoPackageLayerSpatialInfo(t *testing.T) {
+	previous, previousErr := plugin.Get("nfs")
+	enginePlugin := &recordingContentPlugin{engineType: "nfs", content: geoPackageBytesForPreviewTest(t)}
+	plugin.Register(enginePlugin)
+	defer func() {
+		if previousErr == nil {
+			plugin.Register(previous)
+			return
+		}
+		plugin.Unregister(enginePlugin.Type())
+	}()
+
+	provider := NewContainerChildPreviewProvider(objectcontent.NewObjectContentRegistry())
+	req := &PreviewRequest{
+		Engine:       &models.Engine{EngineType: enginePlugin.Type(), ID: 7},
+		ItemType:     "file",
+		Schema:       "datasets",
+		Table:        "roads.gpkg",
+		PhysicalPath: "/datasets/roads.gpkg",
+		ChildName:    "Road Layer",
+		Page:         1,
+		PageSize:     10,
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"format":    string(format.FormatGeoPackage),
+				"data_type": "container",
+			},
+			"type_info": map[string]interface{}{
+				"container": map[string]interface{}{
+					"children": []interface{}{
+						map[string]interface{}{
+							"name":         "Road Layer",
+							"table":        "roads",
+							"child_kind":   "layer",
+							"data_type":    "table",
+							"row_count":    int64(1),
+							"column_count": int64(3),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	preview, err := provider.Preview(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+	if preview.Mode != PreviewModeTable {
+		t.Fatalf("Mode = %q, want %q", preview.Mode, PreviewModeTable)
+	}
+	if !reflect.DeepEqual(preview.Columns, []string{"id", "geom", "name"}) {
+		t.Fatalf("Columns = %#v, want id/geom/name", preview.Columns)
+	}
+	if len(preview.GeometryColumns) != 1 || preview.GeometryColumns[0] != "geom" || preview.SRID != 4326 {
+		t.Fatalf("spatial = columns %#v srid %d, want geom EPSG:4326", preview.GeometryColumns, preview.SRID)
+	}
+}
+
 func TestFileTablePreviewProviderMultiPreviewKeepsNFSFullStorageRef(t *testing.T) {
 	previousEngine, previousEngineErr := plugin.Get("nfs")
 	enginePlugin := &recordingContentPlugin{engineType: "nfs"}
@@ -1805,6 +1985,88 @@ func (p *recordingContentPlugin) OpenRange(_ context.Context, _ plugin.Connectio
 	p.rangeOpenedPath = path
 	p.rangeOptions = opts
 	return io.NopCloser(strings.NewReader("range")), nil
+}
+
+func excelWorkbookBytesForPreviewTest(t *testing.T) []byte {
+	t.Helper()
+
+	workbook := excelize.NewFile()
+	defer workbook.Close()
+	index, err := workbook.NewSheet("Cities")
+	if err != nil {
+		t.Fatalf("new sheet: %v", err)
+	}
+	workbook.SetActiveSheet(index)
+	if err := workbook.SetSheetRow("Cities", "A1", &[]interface{}{"id", "name"}); err != nil {
+		t.Fatalf("set header: %v", err)
+	}
+	if err := workbook.SetSheetRow("Cities", "A2", &[]interface{}{1, "Hangzhou"}); err != nil {
+		t.Fatalf("set row: %v", err)
+	}
+	if err := workbook.SetSheetRow("Cities", "A3", &[]interface{}{2, "Shanghai"}); err != nil {
+		t.Fatalf("set row: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := workbook.Write(&buf); err != nil {
+		t.Fatalf("write workbook: %v", err)
+	}
+	return buf.Bytes()
+}
+
+func sqliteDatabaseBytesForPreviewTest(t *testing.T) []byte {
+	t.Helper()
+
+	return sqliteFileBytesForPreviewTest(t, "sqlite-preview-*.db", []string{
+		`CREATE TABLE cities (id INTEGER PRIMARY KEY, name TEXT NOT NULL)`,
+		`INSERT INTO cities(id, name) VALUES (1, 'Hangzhou'), (2, 'Shanghai')`,
+	})
+}
+
+func geoPackageBytesForPreviewTest(t *testing.T) []byte {
+	t.Helper()
+
+	return sqliteFileBytesForPreviewTest(t, "gpkg-preview-*.gpkg", []string{
+		`CREATE TABLE gpkg_contents (table_name TEXT PRIMARY KEY, data_type TEXT NOT NULL, identifier TEXT, srs_id INTEGER, min_x DOUBLE, min_y DOUBLE, max_x DOUBLE, max_y DOUBLE)`,
+		`CREATE TABLE gpkg_geometry_columns (table_name TEXT, column_name TEXT, geometry_type_name TEXT, srs_id INTEGER)`,
+		`CREATE TABLE roads (id INTEGER PRIMARY KEY, geom BLOB, name TEXT)`,
+		`CREATE VIRTUAL TABLE rtree_roads_geom USING rtree(id, minx, maxx, miny, maxy)`,
+		`INSERT INTO gpkg_contents(table_name, data_type, identifier, srs_id, min_x, min_y, max_x, max_y) VALUES ('roads', 'features', 'Road Layer', 4326, 120.0, 30.0, 121.0, 31.0)`,
+		`INSERT INTO gpkg_geometry_columns(table_name, column_name, geometry_type_name, srs_id) VALUES ('roads', 'geom', 'LINESTRING', 4326)`,
+		`INSERT INTO roads(id, geom, name) VALUES (1, X'00', 'Main Road')`,
+	})
+}
+
+func sqliteFileBytesForPreviewTest(t *testing.T, pattern string, statements []string) []byte {
+	t.Helper()
+
+	tmp, err := os.CreateTemp("", pattern)
+	if err != nil {
+		t.Fatalf("create temp sqlite file: %v", err)
+	}
+	path := tmp.Name()
+	if err := tmp.Close(); err != nil {
+		t.Fatalf("close temp sqlite file: %v", err)
+	}
+	defer os.Remove(path)
+
+	db, err := sql.Open("sqlite3", path)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	for _, stmt := range statements {
+		if _, err := db.Exec(stmt); err != nil {
+			_ = db.Close()
+			t.Fatalf("exec %q: %v", stmt, err)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close sqlite: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read sqlite file: %v", err)
+	}
+	return data
 }
 
 func TestAccessIndexObjectKeyIncludesBucketForObjectCatalog(t *testing.T) {

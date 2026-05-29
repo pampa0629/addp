@@ -72,9 +72,6 @@ func TestPluginDescribeContainer(t *testing.T) {
 	if cities.ColumnCount == nil || *cities.ColumnCount <= 0 {
 		t.Fatalf("Cities ColumnCount = %#v, want positive column count", cities.ColumnCount)
 	}
-	if len(cities.Fields) < 2 || cities.Fields[0].Name != "id" {
-		t.Fatalf("Cities Fields = %#v", cities.Fields)
-	}
 	formatInfo, err := NewPlugin(nil).DescribeFormat(context.Background(), bytes.NewReader(buf.Bytes()), opts)
 	if err != nil {
 		t.Fatalf("DescribeFormat() error = %v", err)
@@ -123,6 +120,9 @@ func TestPluginDescribeTableWritesSheetFactsToNative(t *testing.T) {
 	}
 	if info.Table.Native["sheet_index"] != index {
 		t.Fatalf("native.sheet_index = %#v, want %d", info.Table.Native["sheet_index"], index)
+	}
+	if len(info.Table.Fields) != 2 || info.Table.Fields[0].Name != "id" || info.Table.Fields[1].Name != "name" {
+		t.Fatalf("fields = %#v, want id/name only", info.Table.Fields)
 	}
 	if info.FormatInfo["sheet_name"] != nil || info.FormatInfo["sheet_index"] != nil {
 		t.Fatalf("format info should not contain table native facts: %#v", info.FormatInfo)

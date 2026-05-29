@@ -27,7 +27,6 @@ type ContainerChildInfo struct {
 	RowCount    *int64                 `json:"row_count,omitempty"`
 	ColumnCount *int                   `json:"column_count,omitempty"`
 	HasHeader   *bool                  `json:"has_header,omitempty"`
-	Fields      []FieldInfo            `json:"fields,omitempty"`
 	Refs        []ContainerChildRef    `json:"refs,omitempty"`
 	Native      map[string]interface{} `json:"native,omitempty"`
 }
@@ -60,7 +59,6 @@ func cloneContainerChildren(input []ContainerChildInfo) []ContainerChildInfo {
 			hasHeader := *child.HasHeader
 			output[i].HasHeader = &hasHeader
 		}
-		output[i].Fields = append([]FieldInfo(nil), child.Fields...)
 		output[i].Refs = append([]ContainerChildRef(nil), child.Refs...)
 		output[i].Native = cloneInterfaceMap(child.Native)
 	}

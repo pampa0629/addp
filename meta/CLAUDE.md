@@ -39,6 +39,7 @@ Meta 扫描链路按“通用规则、Meta 编排、Catalog 规划、内容增�
 
 `common/dataitem` 是跨模块的 data item 规则层，只处理纯事实输入，不打开引擎资源、不读取对象内容、不依赖 Meta 落库模型。
 
+- `common/dataitem` 复用 `common/datatype` 的 `DataType` 和 `common/format` 的 format / layout 规则，不定义新的 data type、type info 或 attributes 分区。
 - `common/dataitem/types.go` 定义 `Candidate`、`ResolveInput`、`FormatRule`、`ResolvedItem`、`ItemDescriptor`。
 - `common/dataitem/resolve.go` 负责 `ResolveItems`、multi/whole/single 布局识别、`DescriptorFromAttributes`。
 - `common/dataitem/format.go` 负责基于显式 format、MIME、名称、路径做基础格式和数据类型推断。
@@ -52,6 +53,8 @@ Meta 扫描链路按“通用规则、Meta 编排、Catalog 规划、内容增�
 - `internal/metaenrich/`：内容增强层。凡是需要打开内容、读取 schema、读取容器内部、读取文件前缀来确认格式的逻辑，都应在这里或通过这里统一提供。典型文件：`table_file.go`、`container_children.go`、`single_format.go`。
 - `internal/metaattr/`：Attributes 规范写入层。负责把 `DetectedItem` 和增强结果合并成标准落库结构：`item`、`storage`、`type_info`、`format_info`、`access_index`、`capabilities`。典型文件：`item_attributes.go`、`attributes.go`。
 - `internal/metapath/`：路径语义工具层。负责 bucket、object、prefix、filesystem path 的切分、规范化和拼接，扫描逻辑不要重复手写路径规则。
+
+Meta 只负责把正式规范中的 data type、type info 和横切事实投影到落库 attributes。新增 `data_type`、`type_info.*` 字段或 `capabilities.*` 命名空间前，必须先更新平台概念和规范文档，不得只在 Meta helper 中新增自由字段。
 
 ### metaattr 输入边界
 

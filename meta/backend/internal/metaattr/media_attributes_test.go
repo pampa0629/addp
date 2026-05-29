@@ -37,6 +37,12 @@ func TestMediaInfoAttributesWritesTypeInfoAndSpatial(t *testing.T) {
 	if media["duration_ms"] != duration || media["encoding"] != "tiff" || media["mime_type"] != "image/tiff" {
 		t.Fatalf("type_info.media = %#v", media)
 	}
+	if _, ok := media["srid"]; ok {
+		t.Fatalf("type_info.media should not contain spatial facts: %#v", media)
+	}
+	if _, ok := media["extent"]; ok {
+		t.Fatalf("type_info.media should not contain spatial facts: %#v", media)
+	}
 	capabilities := attrs["capabilities"].(map[string]interface{})
 	spatial := capabilities["spatial"].(map[string]interface{})
 	if spatial["srid"] != 4326 || spatial["has_spatial_index"] != false {

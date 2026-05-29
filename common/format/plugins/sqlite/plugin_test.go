@@ -77,9 +77,6 @@ func TestDescribeContainerReturnsLightweightChildren(t *testing.T) {
 	if info.ChildCount != 2 || len(info.Children) != 2 {
 		t.Fatalf("container children = %#v, want 2", info.Children)
 	}
-	if len(info.Children[0].Fields) != 0 {
-		t.Fatalf("container child fields = %#v, want none", info.Children[0].Fields)
-	}
 	if info.Children[0].ColumnCount == nil {
 		t.Fatalf("container child column_count missing: %#v", info.Children[0])
 	}
@@ -110,9 +107,6 @@ func TestDescribeGeoPackageContainerReturnsLightweightLayers(t *testing.T) {
 	}
 	if child.Native["table"] != "roads" {
 		t.Fatalf("child table = %#v, want roads", child.Native["table"])
-	}
-	if len(child.Fields) != 0 {
-		t.Fatalf("container child should be lightweight: %#v", child)
 	}
 	if child.ColumnCount == nil || *child.ColumnCount != 3 {
 		t.Fatalf("column_count = %#v, want 3", child.ColumnCount)

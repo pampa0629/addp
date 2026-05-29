@@ -11,7 +11,7 @@
 | `mysql` | MySQL | CatalogProvider + ItemMetadataProvider + SQLQueryRuntimeProvider |
 | `doris` | Apache Doris | CatalogProvider + ItemMetadataProvider + SQLQueryRuntimeProvider |
 | `clickhouse` | ClickHouse | CatalogProvider + ItemMetadataProvider + SQLQueryRuntimeProvider |
-| `mongodb` | MongoDB | CatalogProvider + ItemMetadataProvider + DocumentQueryRuntimeProvider |
+| `mongodb` | MongoDB | CatalogProvider + ItemMetadataProvider + QueryRuntimeProvider |
 | `neo4j` | Neo4j | CatalogProvider + QueryRuntimeProvider + GraphQueryProvider |
 | `minio` | MinIO | CatalogProvider + ContentReadableProvider |
 | `s3` | Amazon S3 | CatalogProvider + ContentReadableProvider |

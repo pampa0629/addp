@@ -227,7 +227,7 @@ type RangeWritableProvider interface {
 
 ### QueryRuntimeProvider
 
-普通查询是计算能力，不等于表格型存储目录能力。普通查询返回 `QueryResult`，面向表格化、文档化或标量结果消费方，例如 Develop 查询编辑器、Manager 表格预览和查询服务。
+普通查询是计算能力，不等于表格型存储目录能力。普通查询返回 `QueryResult`，面向表格化、记录集或标量结果消费方，例如 Develop 查询编辑器、Manager 表格预览和查询服务。
 
 ```go
 type QueryRuntimeProvider interface {
@@ -238,10 +238,9 @@ type QueryRuntimeProvider interface {
 }
 ```
 
-按语言族细分：
+查询语言差异由 `QueryRequest.Language` 与 `capabilities.compute.query.languages` 表达，不按数据库类别新增查询入口。`QueryRuntimeProvider` 是普通查询主路径，适用于 SQL、MQL、Cypher 表格结果、OpenSearch DSL、Mango Query 等能返回 `QueryResult` 的查询。
 
-- `SQLQueryRuntimeProvider.ExecuteSQL()`
-- `DocumentQueryRuntimeProvider.ExecuteDocumentQuery()`
+`SQLQueryRuntimeProvider.ExecuteSQL()` 是 SQL 执行 helper 和 SQL dialect 适配层，当前仍可保留给 SQL 引擎和 batch read 适配使用；新增非 SQL 查询语言不得仿照它继续新增按数据库类别拆分的 provider。旧 `DocumentQueryRuntimeProvider` 已删除，不得恢复。
 
 图查询不属于普通查询的一个返回格式变体。图查询使用独立 `GraphQueryProvider`，返回 `GraphQueryResult`，面向 Graph 模块、图可视化和图算法等需要节点 / 关系结构的调用方。Neo4j 可同时实现 `QueryRuntimeProvider` 和 `GraphQueryProvider`：前者用于普通 Cypher 表格结果和 Manager 预览兜底，后者用于图结构结果。图结构摘要由 `GraphMetadataProvider` 提供，图样本由 `GraphSampleProvider` 或 `GraphQueryProvider` 提供。
 
@@ -268,7 +267,7 @@ GORM、database/sql、Mongo driver、Neo4j driver、S3 client 都是实现 helpe
 | 引擎 | 推荐接口组合 |
 | --- | --- |
 | PostgreSQL / MySQL / Doris / ClickHouse / Spark SQL | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `ItemMetadataProvider` + `SQLQueryRuntimeProvider` + `ConnectionPoolPlugin` |
-| MongoDB | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `ItemMetadataProvider` + `DynamicSchemaSamplingProvider` + `DocumentQueryRuntimeProvider` |
+| MongoDB | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `ItemMetadataProvider` + `DynamicSchemaSamplingProvider` + `QueryRuntimeProvider` |
 | Neo4j | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `ItemMetadataProvider` + `GraphMetadataProvider` + `GraphSampleProvider` + `QueryRuntimeProvider` + `GraphQueryProvider` |
 | MinIO / S3 | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `ItemMetadataProvider` + `ContentReadableProvider` |
 | NFS | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `ItemMetadataProvider` + `ContentReadableProvider` |

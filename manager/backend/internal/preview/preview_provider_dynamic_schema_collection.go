@@ -28,9 +28,9 @@ func (p *dynamicSchemaCollectionPreviewProvider) Preview(ctx context.Context, re
 		return nil, fmt.Errorf("unsupported engine type: %s", req.Engine.EngineType)
 	}
 
-	queryRuntime, ok := p_.(plugin.DocumentQueryRuntimeProvider)
+	queryRuntime, ok := p_.(plugin.QueryRuntimeProvider)
 	if !ok {
-		return nil, fmt.Errorf("engine %s does not implement DocumentQueryRuntimeProvider", req.Engine.EngineType)
+		return nil, fmt.Errorf("engine %s does not implement QueryRuntimeProvider", req.Engine.EngineType)
 	}
 	metadataProvider, _ := p_.(plugin.ItemMetadataProvider)
 
@@ -70,11 +70,16 @@ func (p *dynamicSchemaCollectionPreviewProvider) Preview(ctx context.Context, re
 	if err != nil {
 		return nil, err
 	}
-	queryResult, err := queryRuntime.ExecuteDocumentQuery(ctx, runtimeConnInfo, command, plugin.QueryOptions{
-		EngineID:   req.Engine.ID,
-		EngineType: req.Engine.EngineType,
-		Limit:      limit,
-		ReadOnly:   true,
+	queryResult, err := queryRuntime.ExecuteRuntimeQuery(ctx, runtimeConnInfo, plugin.QueryRequest{
+		EngineID: req.Engine.ID,
+		Language: "mql",
+		Query:    command,
+		Options: plugin.QueryOptions{
+			EngineID:   req.Engine.ID,
+			EngineType: req.Engine.EngineType,
+			Limit:      limit,
+			ReadOnly:   true,
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to read preview: %w", err)

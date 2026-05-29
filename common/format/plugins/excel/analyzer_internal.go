@@ -182,7 +182,7 @@ func analyzeSheet(workbook *excelize.File, sheetName string, index int, opts Opt
 
 	headerCandidate := []string{}
 	rawRows := make([][]string, 0, minInt(rowLimit, sampleRowsFallback))
-	maxColumns := maxInt(dimCols, opts.ColumnLimit)
+	maxColumns := dimCols
 	rowIndex := 0
 
 	for rowsIter.Next() {

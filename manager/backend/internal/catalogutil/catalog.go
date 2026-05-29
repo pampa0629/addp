@@ -158,17 +158,21 @@ func attributeSectionsForKey(key string) []string {
 	switch key {
 	case "layout", "data_type", "format", "refs", "file_count", "scope_exclusive", "claim_policy":
 		return []string{"item"}
-	case "bucket", "path", "name", "physical_path", "size_bytes", "size", "total_size", "content_type", "last_modified_at", "etag":
+	case "bucket", "path", "name", "physical_path", "size", "total_size", "content_type", "last_modified_at", "etag":
 		return []string{"storage"}
 	case "fields", "primary_key", "row_count":
 		return []string{"type_info.table"}
-	case "width", "height", "duration_ms", "mime_type", "color_space":
+	case "kind", "width", "height", "duration_ms", "mime_type", "color_space":
 		return []string{"type_info.media"}
-	case "page_count", "word_count", "encoding":
+	case "size_bytes":
+		return []string{"storage", "type_info.media"}
+	case "encoding":
+		return []string{"type_info.document", "type_info.media"}
+	case "page_count", "word_count":
 		return []string{"type_info.document"}
 	case "spatial", "geometry_columns", "primary_geometry_column", "extent", "has_spatial_index":
 		return []string{"capabilities.spatial"}
-	case "extractor_available", "plain_text_preview":
+	case "extractor_available", "text_extracted", "status", "reason", "extractor", "plain_text_preview", "text_truncated", "index_ref":
 		return []string{"capabilities.extraction"}
 	default:
 		return nil

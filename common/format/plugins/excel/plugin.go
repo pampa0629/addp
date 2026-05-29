@@ -355,7 +355,6 @@ func (p *Plugin) convertToContainerInfo(analysis *WorkbookAnalysis) *datatype.Co
 			RowCount:    &rowCount,
 			ColumnCount: &columnCount,
 			HasHeader:   &hasHeader,
-			Fields:      excelSheetFields(sheet),
 		})
 	}
 
@@ -365,24 +364,6 @@ func (p *Plugin) convertToContainerInfo(analysis *WorkbookAnalysis) *datatype.Co
 		ResourceCount: 1,
 		Children:      children,
 	}
-}
-
-func excelSheetFields(sheet SheetSummary) []datatype.FieldInfo {
-	fields := make([]datatype.FieldInfo, 0, len(sheet.Headers))
-	for i, header := range sheet.Headers {
-		fieldType := datatype.FieldTypeString
-		originalType := ""
-		if i < len(sheet.ColumnTypes) {
-			originalType = sheet.ColumnTypes[i]
-			fieldType = mapExcelTypeToFieldType(originalType)
-		}
-		fields = append(fields, datatype.FieldInfo{
-			Name:     header,
-			Type:     fieldType,
-			Nullable: true,
-		})
-	}
-	return fields
 }
 
 // buildAnalyzeOptionsFromParseOptions 根据通用 ParseOptions 构建 Analyze 选项。

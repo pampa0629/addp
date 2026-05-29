@@ -10,7 +10,7 @@
 
 - 根据文件名、MIME、magic bytes 识别 `FormatType`。
 - 声明格式 capability，例如 data type、layout、info provider、content reader、是否可 parse、是否支持 transfer read/write。
-- 提供 format identity、FormatPlugin、provider / reader 注册与发现；通用 `DataType`、`FieldType`、`TableInfo` 等结构化语义模型目标归属 `common/datatype`。
+- 提供 format identity、FormatPlugin、provider / reader 注册与发现；通用 `DataType`、`FieldType`、`TableInfo` 等结构化语义模型归属 `common/datatype`。
 - 注册和获取 format plugin、info provider / content reader，例如 `FormatPlugin`、`FormatInfoProvider`、`TableInfoProvider`、`TableSampleReader`、`MultiTableInfoProvider`、`MultiTableSampleReader`、`ScopeTableInfoProvider`、`ScopeTableSampleReader`、`TableReaderProvider`、`MultiTableReaderProvider`、`TableWriterProvider`、`MultiTableWriterProvider`、`DocumentInfoProvider`、`DocumentTextReader`、`MediaInfoProvider`、`ContainerInfoProvider`、`ContainerChildResolver`。
 - 提供 `TypeMapper` 注册机制，供 engine / format 在自身边界内把原生类型映射到 ADDP 通用字段类型；上层执行链路不读取原生字段类型。
 - 不再保留 `FileMetadataExtractor` 旁路注册表；新增格式必须通过 FormatPlugin、info provider 和 content reader 进入主线。
@@ -37,7 +37,7 @@
 | 格式检测 | `detection.go`、`detection_mime.go`、`detection_magic.go` | 基于扩展名、MIME、magic bytes 和 descriptor 识别 format candidate，不决定 data item 边界；根包保留稳定 facade。 |
 | FormatPlugin、info provider、content reader 接口 | `provider.go` | 只定义格式层能力接口，不接 engine id，不返回 Manager DTO。 |
 | provider / reader 注册表 | `provider_registry.go`、`provider_register*.go`、`provider_constructors.go`、`provider_views.go` | 注册和获取当前进程已加载的 plugin、info provider、content reader 和 writer。 |
-| data type 通用 info 模型 | 目标归属 `common/datatype`；当前迁移前仍可见于 `data_info.go`、`field_type.go`、`container_info.go`、`container_child.go` | 表、字段类型、容器、访问索引等跨模块结构最终不属于 `common/format`。内容样本不进入这些 info。 |
+| data type 通用 info 模型 | `common/datatype` | `common/format` 只通过 provider 返回 `datatype.TableInfo`、`datatype.DocumentInfo`、`datatype.MediaInfo`、`datatype.ContainerInfo` 等通用事实，不再保留平行结构。内容样本不进入这些 info。 |
 | 格式私有 info 与横切事实候选 | `plugins/<format>/`，目标通过 describe result 或等价结构返回 | 具体格式私有结构留在对应插件目录；`SpatialInfo`、`AccessIndex`、`FormatInfo` 与 `TableInfo` 同级返回，由 Meta 映射到 `capabilities.*`、`access_index.*`、`format_info.*`。 |
 | 解析选项和 manifest | `options.go`、`manifest.go` | provider / reader 调用选项，以及第三方 descriptor manifest 加载。 |
 | 类型映射注册机制 | `type_mapper.go`、`mappers/`、`plugins/<format>/` | 根包只提供注册表和通用接口；数据库 engine 映射位于 `mappers/`，格式私有映射留在对应 `plugins/<format>/` 目录内。 |

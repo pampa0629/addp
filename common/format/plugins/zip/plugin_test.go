@@ -37,9 +37,6 @@ func TestDescribeContainerReturnsLightweightEntries(t *testing.T) {
 	if child.Format != string(format.FormatCSV) {
 		t.Fatalf("child format = %#v, want csv", child.Format)
 	}
-	if len(child.Fields) != 0 {
-		t.Fatalf("zip container child should not carry fields: %#v", child)
-	}
 }
 
 func TestDescribeContainerKeepsUnknownTextExtensionUnqualified(t *testing.T) {

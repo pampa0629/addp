@@ -97,10 +97,6 @@ func (p *MongoDBPlugin) ExecuteRuntimeQuery(ctx context.Context, connInfo plugin
 	return p.executeQuery(ctx, connInfo, req.Query)
 }
 
-func (p *MongoDBPlugin) ExecuteDocumentQuery(ctx context.Context, connInfo plugin.ConnectionInfo, command string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {
-	return p.executeQuery(ctx, connInfo, command)
-}
-
 func (p *MongoDBPlugin) ReadBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
 	query := opts.Query
 	if query == "" {
@@ -117,7 +113,11 @@ func (p *MongoDBPlugin) ReadBatch(ctx context.Context, connInfo plugin.Connectio
 		}
 		query = fmt.Sprintf(`{"find": "%s", "filter": {}, "limit": %d}`, collection, limit)
 	}
-	result, err := p.ExecuteDocumentQuery(ctx, connInfo, query, plugin.QueryOptions{Limit: opts.Limit})
+	result, err := p.ExecuteRuntimeQuery(ctx, connInfo, plugin.QueryRequest{
+		Language: "mql",
+		Query:    query,
+		Options:  plugin.QueryOptions{Limit: opts.Limit},
+	})
 	if err != nil {
 		return nil, err
 	}

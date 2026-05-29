@@ -320,8 +320,10 @@ func SupportsDirectQuery(engineType string) bool {
 	if _, ok := p.(plugin.SQLQueryRuntimeProvider); ok {
 		return false
 	}
-	if _, ok := p.(plugin.DocumentQueryRuntimeProvider); ok {
-		return true
+	if qp, ok := p.(plugin.QueryRuntimeProvider); ok {
+		if _, isSQLRuntime := qp.(plugin.SQLQueryRuntimeProvider); !isSQLRuntime {
+			return true
+		}
 	}
 	if _, ok := p.(plugin.GraphQueryProvider); ok {
 		return true
