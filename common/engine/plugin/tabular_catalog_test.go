@@ -1,10 +1,12 @@
 package plugin
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/addp/common/datatype"
+	"gorm.io/gorm"
 )
 
 func TestTableAttributesCarriesTableNativeFacts(t *testing.T) {
@@ -103,4 +105,76 @@ func TestTabularCatalogNodeFromItemCarriesAttributes(t *testing.T) {
 	if node.Attributes["comment"] != "orders" || !ok || native["engine"] != "MergeTree" {
 		t.Fatalf("Attributes = %#v", node.Attributes)
 	}
+}
+
+func TestDescribeTabularItemOnlyRunsRowCountWhenStatisticsRequested(t *testing.T) {
+	rowCountCalls := 0
+	callbacks := TabularCatalogCallbacks{
+		ListNamespaces: func(context.Context, *gorm.DB) ([]NamespaceInfo, error) {
+			return nil, nil
+		},
+		ListTables: func(context.Context, *gorm.DB, string) ([]datatype.TableInfo, error) {
+			return []datatype.TableInfo{{Name: "orders", Kind: CatalogKindTable}}, nil
+		},
+		ListColumns: func(context.Context, *gorm.DB, string, string) ([]datatype.FieldInfo, error) {
+			return []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeInt}}, nil
+		},
+		RowCount: func(context.Context, *gorm.DB, string, string) (int64, error) {
+			rowCountCalls++
+			return 42, nil
+		},
+	}
+	engine := &Engine{ID: 7001, EngineType: "tabular_catalog_test"}
+	path := CatalogPath{
+		Version:  CatalogPathVersion,
+		EngineID: engine.ID,
+		Segments: []CatalogSegment{
+			{Term: CatalogTermDatabase, Kind: CatalogKindNamespace, Name: "analytics"},
+			{Term: CatalogTermTable, Kind: CatalogKindTable, Name: "orders"},
+		},
+	}
+
+	Register(&tabularCatalogTestPlugin{})
+	t.Cleanup(func() {
+		Unregister("tabular_catalog_test")
+		ClosePool(engine.ID)
+	})
+
+	item, err := DescribeTabularItem(context.Background(), callbacks, engine, path, MetadataOptions{})
+	if err != nil {
+		t.Fatalf("DescribeTabularItem() error = %v", err)
+	}
+	if rowCountCalls != 0 {
+		t.Fatalf("row count calls = %d, want 0 without IncludeStatistics", rowCountCalls)
+	}
+	if item.Table.RowCount != nil {
+		t.Fatalf("Table.RowCount = %#v, want nil without IncludeStatistics", item.Table.RowCount)
+	}
+
+	item, err = DescribeTabularItem(context.Background(), callbacks, engine, path, MetadataOptions{IncludeStatistics: true})
+	if err != nil {
+		t.Fatalf("DescribeTabularItem(IncludeStatistics) error = %v", err)
+	}
+	if rowCountCalls != 1 {
+		t.Fatalf("row count calls = %d, want 1 with IncludeStatistics", rowCountCalls)
+	}
+	if item.Table.RowCount == nil || *item.Table.RowCount != 42 {
+		t.Fatalf("Table.RowCount = %#v, want 42", item.Table.RowCount)
+	}
+}
+
+type tabularCatalogTestPlugin struct{}
+
+func (*tabularCatalogTestPlugin) Type() string                                         { return "tabular_catalog_test" }
+func (*tabularCatalogTestPlugin) DisplayName() string                                  { return "Tabular Catalog Test" }
+func (*tabularCatalogTestPlugin) EngineOrigin() string                                 { return "general" }
+func (*tabularCatalogTestPlugin) DefaultPort() int                                     { return 0 }
+func (*tabularCatalogTestPlugin) RequiredFields() []string                             { return nil }
+func (*tabularCatalogTestPlugin) SensitiveFields() []string                            { return nil }
+func (*tabularCatalogTestPlugin) ValidateConnectionInfo(ConnectionInfo) error          { return nil }
+func (*tabularCatalogTestPlugin) TestConnection(context.Context, ConnectionInfo) error { return nil }
+func (*tabularCatalogTestPlugin) Capabilities() EngineCapabilities                     { return EngineCapabilities{} }
+func (*tabularCatalogTestPlugin) GetDialect() string                                   { return "test" }
+func (*tabularCatalogTestPlugin) CreateConnectionPool(ConnectionInfo, *PoolConfig) (*gorm.DB, error) {
+	return &gorm.DB{}, nil
 }

@@ -373,19 +373,17 @@ func (p *SparkSQLPlugin) listTables(ctx context.Context, db *gorm.DB, schema str
 			continue
 		}
 
-		rowCount := int64(0)
-		sizeBytes := int64(0)
-		tableInfo := datatype.TableInfo{
-			Name:      tableName,
-			Kind:      plugin.CatalogKindTable,
-			RowCount:  &rowCount,
-			SizeBytes: &sizeBytes,
-		}
-
-		tables = append(tables, tableInfo)
+		tables = append(tables, sparkSQLTableInfo(tableName))
 	}
 
 	return tables, nil
+}
+
+func sparkSQLTableInfo(tableName string) datatype.TableInfo {
+	return datatype.TableInfo{
+		Name: tableName,
+		Kind: plugin.CatalogKindTable,
+	}
 }
 
 // ListColumns 列出指定表的所有列

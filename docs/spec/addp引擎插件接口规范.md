@@ -143,6 +143,25 @@ type ItemMetadataProvider interface {
 
 对 tabular 引擎，`CatalogProvider.ListChildren()` 和 `ItemMetadataProvider.DescribeItem()` 必须围绕同一份 `datatype.TableInfo` 事实表达。表级通用事实进入 `Name`、`Kind`、`Comment`、`RowCount`、`SizeBytes`、`UpdatedAt`、`Fields` 等标准字段；来源原生但仍属表级的事实进入 `TableInfo.Native`，再由公共层透出到 `CatalogNode.Attributes.native` 或 `ItemMetadata.Attributes.native`。不得在列表接口保留一套事实、详情接口丢失另一套事实。
 
+Tabular provider 默认不执行高成本真实 row count。只有调用方显式传入 `MetadataOptions.IncludeStatistics=true` 或走专用计数入口时，才允许调用 `RowCount` callback；列表和路径解析阶段只能使用元数据来源中已有的统计值。PostgreSQL、MySQL/Doris、ClickHouse 这类能从 catalog / system table 获得统计估算的引擎可以在列表和 metadata 中返回该统计值；Spark SQL 这类需要执行 `COUNT(*)` 的引擎必须把真实计数限制在显式统计请求中，未知 `row_count` / `size_bytes` 保持为空，不得写成 `0`。
+
+SQL metadata provider 的实现边界：
+
+- Common Engine 的 provider 是对上层模块的稳定能力契约；SQL metadata helper 只是 provider 内部实现复用工具，不作为新的对外抽象层。
+- `common/sqldialect` 当前定位为查询 SQL helper，负责标识符引用、表名限定、分页、count/sample SQL 等；不得混入 catalog metadata 探测逻辑。
+- Metadata helper 只在多个引擎共享同一类事实来源时抽取，例如 MySQL/Doris 共享 `information_schema`；PostgreSQL、ClickHouse、Spark SQL 等差异较大的实现应保留在插件内，不做大一统 `SQLMetadataDialect`。
+- GORM 只作为连接池、driver 和 raw SQL 执行工具，不承担 ADDP 的 catalog path、item metadata、系统库过滤、row count 策略等平台元数据语义。
+
+SQL metadata provider 差异矩阵：
+
+| 引擎 | namespace 术语 | 元数据来源 | 表类型映射 | 字段信息来源 | row count 策略 | 系统 namespace 过滤 | 当前复用边界 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| PostgreSQL | schema | `information_schema.schemata/tables/columns` + `pg_class` + `pg_stat_user_tables` | `BASE TABLE` -> `table`，`VIEW` -> `view`，其他 `table_type` 转小写下划线 | `information_schema.columns`，主键来自约束表，注释来自 `col_description` | 列表和单表 metadata 均使用 `pg_class.reltuples` 统计估算，不主动 `ANALYZE`，不做真实 count | `pg_catalog`、`information_schema`、`pg_toast`、`pg_temp_*`、`pg_toast_*` | 暂留插件内；PostgreSQL 原生 catalog 语义较强，不与 MySQL/Doris 合并 |
+| MySQL | database | `information_schema.schemata/tables/columns` | `BASE TABLE` -> `table`，`VIEW` -> `view`，其他 `table_type` 转小写下划线 | `information_schema.columns`，主键来自 `column_key`，注释来自 `column_comment` | 使用 `information_schema.tables.table_rows` 统计值 | `information_schema`、`mysql`、`performance_schema`、`sys` | 与 Doris 共享 `MySQLCompatibleMetadataDialect`；可启用表级 `Native.engine` |
+| Doris | database | MySQL 兼容 `information_schema.schemata/tables/columns` | 同 MySQL 兼容逻辑 | 同 MySQL 兼容逻辑，注释能力按引擎实际返回 | 使用 `information_schema.tables.table_rows` 统计值 | MySQL 系统库 + `__internal_schema` | 与 MySQL 共享 `MySQLCompatibleMetadataDialect`；`Native.engine` 待确认 `information_schema.tables.engine` 稳定性后再启用 |
+| ClickHouse | database | `system.databases`、`system.tables`、`system.columns` | `MaterializedView` -> `materialized_view`，`View`/其他包含 `View` 的 engine -> `view`，其他 -> `table` | `system.columns`，nullable 从类型字符串推断，`DEFAULT` / `MATERIALIZED` / `ALIAS` 映射到通用默认值和生成列字段，当前不表达主键 | 使用 `system.tables.total_rows` 统计值 | `system`、`information_schema`、`INFORMATION_SCHEMA` | 暂留插件内；ClickHouse `system.*` 语义独立 |
+| Spark SQL | database | `SHOW DATABASES`、`SHOW TABLES`、`DESCRIBE`，部分环境可查询 `information_schema` | 当前 `SHOW TABLES` 结果统一映射为 `table` | `DESCRIBE table` | 列表阶段不做真实 count，未知 `row_count` / `size_bytes` 保持为空；单表 metadata 显式请求统计时才执行 `COUNT(*)` | `information_schema`、`sys` | 暂留插件内；Spark metadata 更偏命令式接口 |
+
 对 graph 引擎，`CatalogProvider` 暴露 graph item，label、relationship type 和 endpoint pattern 作为 `datatype.GraphInfo` 中的 schema / shape facts，而不是作为 graph data type 的主 item 本体。Neo4j label / relationship 只作为 Manager 展示投影或查询筛选条件，不作为公共 catalog item。graph 公共事实应围绕 `GraphInfo.NodeShapes`、`GraphInfo.RelationshipShapes` 和 `GraphRelationshipPatternInfo` 表达，不得继续把 `from_labels[]` / `to_labels[]` 两个集合作为 relationship endpoint 主事实。
 
 `GraphMetadataProvider` / `GraphSampleProvider` 返回的是面向 ADDP 用户的业务图视图。Neo4j 插件、扩展或索引产生的内部节点和内部关系不得进入 graph schema、计数、样本、路径和上层算法投影；例如 Neo4j Spatial 的 `SpatialLayer` 节点以及 `RTREE_METADATA`、`RTREE_REFERENCE`、`RTREE_ROOT` 关系应由 provider 或 Graph 模块服务层过滤，不能要求 `common/datatype.GraphInfo` 携带具体引擎内部规则。

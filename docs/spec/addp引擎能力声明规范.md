@@ -24,6 +24,8 @@ engine.capabilities/v1
 
 能力详情页不得直接平铺原始 JSON 字段。System 后端应生成 `capabilities_view` 供前端渲染；完整 JSON 仅作为技术查看入口保留。
 
+调整 `engine.capabilities/v1` 字段、能力展示 API 或 System 引擎能力展示模型时，必须同步检查并更新本规范、[ADDP 引擎插件接口规范](addp引擎插件接口规范.md)、`system/docs/tables/engines表.md`，以及依赖能力展示或预览能力判断的 Manager 设计文档。
+
 ---
 
 ## 二、顶层结构

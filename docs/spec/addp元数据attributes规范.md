@@ -193,6 +193,21 @@ label set 必须标准化为去空、去重、排序后的稳定集合；当 nod
 
 表字段统一放在 `type_info.table.fields`，不得写入 attributes 顶层。`type_info.table` 是 `common/datatype.TableInfo` 的直接 JSON 投影，`type_info.table.fields[]` 是 `common/datatype.FieldInfo` 的直接 JSON 投影。字段不是 data item，字段类型只能使用 `type` 表达 ADDP 标准字段类型，不得在字段对象内写入 `data_type`。原生字段类型如需展示，只能作为只读诊断信息写入 `native_type`，不得参与执行决策；哪个字段是空间字段、SRID、extent 等属于 `capabilities.spatial`，不得塞回 `type_info.table`。
 
+字段属性只有能影响扫描、展示、查询建议、质量检测、传输写入、建模标准化或智能生成中的至少一个决策，才进入 ADDP metadata 链路；仅因引擎能查到而没有明确消费方的原生细节，不进入公共模型。
+
+| 字段属性 | 典型来源 | 语义层级 | 主要消费方 | 作用 | 规范归属 |
+| --- | --- | --- | --- | --- | --- |
+| `native_type` | 各 SQL/文件格式 provider | 通用基础属性 | Meta、Manager、Transfer、Model、Copilot | 保留原生类型，辅助 schema 展示、类型映射、导入导出和代码生成 | `datatype.FieldInfo.NativeType` |
+| `nullable` | `information_schema.columns`、`system.columns`、文件格式 schema | 通用结构语义 | Meta、Manager、Quality、Transfer | 展示字段约束，推荐非空质量规则，辅助写入校验 | `FieldInfo.Nullable` |
+| `primary_key` | PostgreSQL 约束表、MySQL `column_key`、部分引擎原生 metadata | 通用结构语义 | Meta、Manager、Quality、Model、Standard | 唯一性识别、主键规则推荐、模型字段识别 | `FieldInfo.PrimaryKey`；ClickHouse primary key 偏稀疏索引 / 排序表达式语义，暂不映射为 ADDP 通用主键 |
+| `comment` | `col_description`、`column_comment`、`system.columns.comment` | 通用描述语义 | Meta、Manager、Model、Standard、Copilot | 字段理解、数据元匹配、智能生成上下文 | `FieldInfo.Comment` |
+| `default_expression` | SQL 默认值、ClickHouse `default_expression` | 半通用结构语义 | Manager、Transfer、Model、Copilot | schema 还原、写入避让、生成建表语句 | `FieldInfo.DefaultExpression`；ClickHouse 仅在 `default_kind=DEFAULT` 时写入 |
+| `generated_expression` | SQL generated column、ClickHouse `MATERIALIZED` / `ALIAS` | 半通用生成列语义 | Manager、Transfer、Model、Copilot | 避免直接写入生成列，解释字段生成方式 | `FieldInfo.Generated` + `FieldInfo.GenerationExpression`；不保留 `default_kind` 原生枚举 |
+| `partition_key` | ClickHouse、Spark/Hive、分区表 metadata | 半通用布局语义 | Manager、Develop、Transfer、Monitor、Copilot | 查询过滤建议、写入分区提示、性能诊断 | 暂不进入 `FieldInfo`；后续如需展示，应先统一跨引擎语义并定义受控 `capabilities.partitioning` 或 native 归属 |
+| `sorting_key` | ClickHouse `system.columns` / 表定义 | 引擎原生优化语义 | Develop、Monitor、Copilot | 查询条件和排序建议，解释 ClickHouse 表性能特征 | 暂不进入 `FieldInfo`；需要消费前先定义受控 native 字段归属 |
+| `codec` | ClickHouse `compression_codec` | 引擎原生存储语义 | Manager、Monitor | 存储诊断、压缩策略展示 | 暂放受控 native；无明确消费前不展示为通用字段 |
+| `ttl` | ClickHouse TTL metadata | 引擎原生生命周期语义 | Manager、Monitor、Governance | 生命周期展示、过期策略诊断 | 暂放受控 native；需确认治理模块消费方式 |
+
 MongoDB collection 等动态 schema 记录集合在当前 ADDP 能力中按记录集合消费，`meta_item.item_type=collection`，`attributes.item.data_type=table`。其 `type_info.table.fields` 是采样推断字段画像，不是强 schema；记录数写入 `type_info.table.row_count`，不得写入 `type_info.document` 或新增 `type_info.collection`。
 
 索引、采样过程、动态 schema 推断方式等不是 `common/datatype.TableInfo` 当前通用字段，不得写入 `type_info.table`。动态 schema 记录集合、数据库或格式解析得到的索引摘要进入 `capabilities.indexing`；采样规模、是否采样、动态 schema 类型、平均记录大小、索引数量等画像或统计事实进入 `capabilities.statistics`。

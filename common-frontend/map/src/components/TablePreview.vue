@@ -36,6 +36,27 @@
 
     <!-- 表格区域 -->
     <div class="table-wrapper">
+      <div v-if="isDynamicSchemaRecordSet" class="record-preview-toolbar">
+        <span class="record-preview-toolbar__summary">
+          {{ t('map.recordVisibleColumns', { visible: displayColumns.length, total: columns.length }) }}
+        </span>
+        <el-select
+          v-model="selectedRecordColumns"
+          multiple
+          collapse-tags
+          collapse-tags-tooltip
+          size="small"
+          class="record-column-select"
+          :placeholder="t('map.selectColumns')"
+        >
+          <el-option
+            v-for="col in columns"
+            :key="col"
+            :label="col"
+            :value="col"
+          />
+        </el-select>
+      </div>
       <el-table
         ref="tableRef"
         :data="tableData"
@@ -50,14 +71,33 @@
           v-for="col in displayColumns"
           :key="col"
           :label="col"
-          show-overflow-tooltip
+          :show-overflow-tooltip="!hasStructuredColumnValues(col)"
         >
           <template #default="{ row }">
-            {{ formatCellValue(row[col]) }}
+            <button
+              v-if="isStructuredCellValue(row[col])"
+              class="structured-cell"
+              type="button"
+              @click.stop="openStructuredCell(row, col)"
+            >
+              <span class="structured-cell__kind">{{ structuredValueKind(row[col]) }}</span>
+              <span class="structured-cell__summary">{{ structuredValueSummary(row[col]) }}</span>
+            </button>
+            <span v-else class="scalar-cell">{{ formatCellValue(row[col]) }}</span>
           </template>
         </el-table-column>
       </el-table>
     </div>
+
+    <el-dialog
+      v-model="structuredDialogVisible"
+      :title="structuredDialogTitle"
+      width="720px"
+      class="structured-value-dialog"
+      destroy-on-close
+    >
+      <pre class="structured-value-json">{{ structuredDialogJSON }}</pre>
+    </el-dialog>
 
     <!-- 分页 -->
     <div v-if="total > 0" ref="paginationRef" class="pagination">
@@ -228,6 +268,10 @@ const currentPage = ref(1)
 const pageSize = ref(10)
 const shapefileMetaExpanded = ref(false)
 const hasManualMapResize = ref(false)
+const structuredDialogVisible = ref(false)
+const structuredDialogTitle = ref('')
+const structuredDialogJSON = ref('')
+const selectedRecordColumns = ref([])
 
 let resizeObserver = null
 
@@ -280,6 +324,7 @@ const total = computed(() => props.data?.total || 0)
 const geometryColumns = computed(() => props.data?.geometry_columns || [])
 const renderGeometryColumns = computed(() => props.data?.render_geometry_columns || {})
 const previewSRID = computed(() => Number(props.data?.srid || 0))
+const isDynamicSchemaRecordSet = computed(() => props.data?.preview_kind === 'dynamic_schema_record_set')
 
 const hiddenMetadataKeys = new Set([
   'components',
@@ -376,6 +421,58 @@ const escapeHtml = (value) => {
     .replace(/'/g, '&#39;')
 }
 
+const isStructuredCellValue = (value) => {
+  return value !== null && typeof value === 'object'
+}
+
+const hasStructuredColumnValues = (column) => {
+  return rows.value.some((row) => isStructuredCellValue(row?.[column]))
+}
+
+const hasScalarColumnValues = (column) => {
+  return rows.value.some((row) => {
+    const value = row?.[column]
+    return value !== null && value !== undefined && typeof value !== 'object'
+  })
+}
+
+const structuredValueKind = (value) => {
+  return Array.isArray(value) ? t('map.structuredArray') : t('map.structuredObject')
+}
+
+const structuredValueSummary = (value) => {
+  if (Array.isArray(value)) {
+    if (value.length === 0) return t('map.emptyArray')
+    const first = value.find((item) => item !== null && item !== undefined)
+    const itemKind = first && typeof first === 'object'
+      ? (Array.isArray(first) ? t('map.structuredArray') : t('map.structuredObject'))
+      : ''
+    return itemKind
+      ? t('map.arraySummaryWithKind', { count: value.length, kind: itemKind })
+      : t('map.arraySummary', { count: value.length })
+  }
+  const keys = Object.keys(value || {})
+  if (keys.length === 0) return t('map.emptyObject')
+  const previewKeys = keys.slice(0, 3).join(', ')
+  return keys.length > 3
+    ? t('map.objectSummaryMore', { count: keys.length, keys: previewKeys })
+    : t('map.objectSummary', { count: keys.length, keys: previewKeys })
+}
+
+const safeStructuredJSON = (value) => {
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch (_error) {
+    return formatCellValue(value)
+  }
+}
+
+const openStructuredCell = (row, column) => {
+  structuredDialogTitle.value = column
+  structuredDialogJSON.value = safeStructuredJSON(row?.[column])
+  structuredDialogVisible.value = true
+}
+
 const formatCellValue = (value) => {
   if (value === null || value === undefined) return ''
   if (typeof value === 'object') {
@@ -405,10 +502,23 @@ const buildPopupContent = (row) => {
 // 过滤掉几何列后的显示列
 const displayColumns = computed(() => {
   if (!columns.value || columns.value.length === 0) return []
+  if (isDynamicSchemaRecordSet.value) {
+    const selected = selectedRecordColumns.value.filter((col) => columns.value.includes(col))
+    return selected.length > 0 ? selected : columns.value
+  }
   const geometrySet = new Set(geometryColumns.value || [])
   const renderGeometrySet = new Set(Object.values(renderGeometryColumns.value || {}))
   const filtered = columns.value.filter((col) => !geometrySet.has(col) && !renderGeometrySet.has(col))
   return filtered.length > 0 ? filtered : columns.value
+})
+
+const defaultRecordColumns = computed(() => {
+  if (!isDynamicSchemaRecordSet.value || columns.value.length === 0) return []
+  const identityColumns = columns.value.filter((col) => col === '_id' || col.toLowerCase() === 'id')
+  const scalarColumns = columns.value.filter((col) => !identityColumns.includes(col) && hasScalarColumnValues(col))
+  const preferred = [...identityColumns, ...scalarColumns]
+  const fallback = preferred.length > 0 ? preferred : columns.value.slice(0, 6)
+  return fallback.slice(0, 8)
 })
 
 // 生成行键
@@ -528,6 +638,19 @@ watch(
   (size) => {
     const parsedSize = Number(size)
     pageSize.value = parsedSize > 0 ? parsedSize : Math.max(rows.value.length, 10)
+  },
+  { immediate: true }
+)
+
+watch(
+  () => [props.data?.preview_kind, columns.value.join('\u0000'), rows.value.length],
+  () => {
+    if (!isDynamicSchemaRecordSet.value) {
+      selectedRecordColumns.value = []
+      return
+    }
+    const validSelected = selectedRecordColumns.value.filter((col) => columns.value.includes(col))
+    selectedRecordColumns.value = validSelected.length > 0 ? validSelected : defaultRecordColumns.value
   },
   { immediate: true }
 )
@@ -700,10 +823,91 @@ body.is-v-resizing .map-splitter::before {
   min-height: 80px;
   display: flex;
   flex-direction: column;
+  gap: 8px;
 }
 
 .table-wrapper :deep(.el-table) {
   flex: 1;
+}
+
+.record-preview-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex: 0 0 auto;
+}
+
+.record-preview-toolbar__summary {
+  flex: 0 0 auto;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+
+.record-column-select {
+  width: min(420px, 60%);
+}
+
+.scalar-cell {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+}
+
+.structured-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 4px;
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-regular);
+  cursor: pointer;
+  font: inherit;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.structured-cell:hover {
+  border-color: var(--el-color-primary-light-5);
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+}
+
+.structured-cell__kind {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--el-color-primary);
+}
+
+.structured-cell__summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.structured-value-json {
+  max-height: min(62vh, 620px);
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 4px;
+  background: var(--el-fill-color-lighter);
+  color: var(--el-text-color-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .pagination {

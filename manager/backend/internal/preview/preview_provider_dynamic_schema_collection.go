@@ -116,6 +116,7 @@ func (p *dynamicSchemaCollectionPreviewProvider) Preview(ctx context.Context, re
 	// 7. 构建预览结果
 	preview := &models.TablePreview{
 		Mode:           PreviewModeTable,
+		PreviewKind:    "dynamic_schema_record_set",
 		Columns:        columns,
 		ColumnMetadata: columnMetadata,
 		Rows:           rows,

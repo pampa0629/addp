@@ -21,3 +21,13 @@ func TestQuoteSparkIdentifier(t *testing.T) {
 		})
 	}
 }
+
+func TestSparkSQLTableInfoLeavesUnknownStatisticsEmpty(t *testing.T) {
+	info := sparkSQLTableInfo("orders")
+	if info.Name != "orders" || info.Kind != "table" {
+		t.Fatalf("sparkSQLTableInfo() = %#v", info)
+	}
+	if info.RowCount != nil || info.SizeBytes != nil {
+		t.Fatalf("Spark SQL list table stats = row:%#v size:%#v, want nil unknown stats", info.RowCount, info.SizeBytes)
+	}
+}

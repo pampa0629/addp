@@ -174,7 +174,7 @@ func DescribeTabularItem(ctx context.Context, callbacks TabularCatalogCallbacks,
 		}
 		updatedAt = tableInfo.UpdatedAt
 	}
-	if callbacks.RowCount != nil {
+	if opts.IncludeStatistics && callbacks.RowCount != nil {
 		rowCount, err := callbacks.RowCount(ctx, db, namespace, table)
 		if err == nil {
 			tableInfo.RowCount = &rowCount

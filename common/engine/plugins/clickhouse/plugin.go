@@ -246,27 +246,57 @@ func clickhouseTableNative(native map[string]interface{}, engine string) map[str
 
 // ListColumns 列出指定表的所有列
 func (p *ClickHousePlugin) listColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]datatype.FieldInfo, error) {
-	var fields []datatype.FieldInfo
+	var rows []clickhouseColumnRow
 
 	query := `
 		SELECT
 			name,
 			type as native_type,
-			IF(type LIKE '%Nullable%', 1, 0) as nullable,
-			0 as primary_key,
-			comment
+			position(type, 'Nullable(') > 0 as nullable,
+			comment,
+			default_kind,
+			default_expression
 		FROM system.columns
 		WHERE database = ?
 		  AND table = ?
 		ORDER BY position
 	`
 
-	err := db.WithContext(ctx).Raw(query, schema, table).Scan(&fields).Error
+	err := db.WithContext(ctx).Raw(query, schema, table).Scan(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to list columns: %w", err)
 	}
 
+	fields := make([]datatype.FieldInfo, 0, len(rows))
+	for _, row := range rows {
+		fields = append(fields, clickhouseFieldInfo(row))
+	}
 	return plugin.NormalizeFieldInfos(fields), nil
+}
+
+type clickhouseColumnRow struct {
+	Name              string
+	NativeType        string
+	Nullable          bool
+	Comment           string
+	DefaultKind       string
+	DefaultExpression string
+}
+
+func clickhouseFieldInfo(row clickhouseColumnRow) datatype.FieldInfo {
+	field := plugin.FieldInfoFromNative(row.Name, row.NativeType, row.Nullable, false, row.Comment)
+	expression := strings.TrimSpace(row.DefaultExpression)
+	if expression == "" {
+		return field
+	}
+	switch strings.ToUpper(strings.TrimSpace(row.DefaultKind)) {
+	case "MATERIALIZED", "ALIAS":
+		field.Generated = true
+		field.GenerationExpression = expression
+	default:
+		field.DefaultExpression = expression
+	}
+	return field
 }
 
 // GetTableRowCount 获取表的行数

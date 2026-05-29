@@ -187,3 +187,6 @@ classDiagram
 - 叶子元数据统一走 `ItemMetadataProvider.DescribeItem`。
 - 查询统一走对应 runtime provider。
 - 旧 `ListSchemas/ListTables/ListColumns/ListBuckets/ListCollections` 只能作为插件内部 helper，不作为上层契约。
+- 引擎能力只表达引擎自身 native 能力与 common/engine provider 能力；Transfer、Manager 预览等模块适配状态不进入 `engine.capabilities/v1`。
+- 工作流算子发现和执行通过 `WorkflowRuntimeProvider`；算子列表、参数、端口等动态能力不写入 capabilities。
+- SQL metadata 复用只允许在事实来源和语义一致的引擎家族内发生，例如 MySQL/Doris 共享 `information_schema` helper；PostgreSQL、ClickHouse、Spark SQL 等差异较大的实现保留在各自插件内。
