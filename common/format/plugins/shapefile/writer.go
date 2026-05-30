@@ -6,6 +6,7 @@ import (
 	"github.com/addp/common/contentio"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
+	"github.com/addp/common/resume"
 	"github.com/jonas-p/go-shp"
 	"io"
 	"os"
@@ -77,6 +78,9 @@ func (plugin *Plugin) OpenMultiTableWriter(ctx context.Context, output contentio
 	opts := format.DefaultWriteOptions()
 	if options != nil {
 		*opts = *options
+	}
+	if err := resume.RejectUnsupported(opts.ResumeMarker, "shapefile.multi_table_writer"); err != nil {
+		return nil, err
 	}
 	geometryField := multiWriterGeometryField(tableInfo, opts)
 	if geometryField == "" {

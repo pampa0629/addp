@@ -15,82 +15,6 @@ func TestNormalizeGeometryType(t *testing.T) {
 	}
 }
 
-func TestSpatialInfoAttributesWritesObjectSpatialReferenceWithoutGeometryColumns(t *testing.T) {
-	t.Parallel()
-
-	srid := 4326
-	hasSpatialIndex := false
-	extent := datatype.NewBoundingBox(100, 180, 120, 200)
-	values := SpatialInfoAttributes(&datatype.SpatialInfo{
-		SRID:            &srid,
-		Extent:          &extent,
-		HasSpatialIndex: &hasSpatialIndex,
-	})
-
-	if values["srid"] != 4326 {
-		t.Fatalf("srid = %#v, want 4326", values["srid"])
-	}
-	if _, ok := values["geometry_columns"]; ok {
-		t.Fatalf("non-table spatial should not write geometry_columns: %#v", values)
-	}
-	if values["has_spatial_index"] != false {
-		t.Fatalf("has_spatial_index = %#v, want false", values["has_spatial_index"])
-	}
-	extentValues := values["extent"].([]float64)
-	if len(extentValues) != 4 || extentValues[0] != 100 || extentValues[3] != 200 {
-		t.Fatalf("extent = %#v", extentValues)
-	}
-}
-
-func TestSpatialInfoAttributesPromotesUnnamedColumnReference(t *testing.T) {
-	t.Parallel()
-
-	srid := 3857
-	values := SpatialInfoAttributes(&datatype.SpatialInfo{
-		GeometryColumns: []datatype.GeometryColumnInfo{{SRID: &srid}},
-	})
-
-	if values["srid"] != 3857 {
-		t.Fatalf("srid = %#v, want 3857", values["srid"])
-	}
-	if _, ok := values["geometry_columns"]; ok {
-		t.Fatalf("unnamed geometry reference should not write geometry_columns: %#v", values)
-	}
-}
-
-func TestSpatialInfoAttributesWritesGeometryColumnsForTableSpatial(t *testing.T) {
-	t.Parallel()
-
-	srid := 4326
-	dimension := 2
-	nullable := false
-	info := &datatype.SpatialInfo{
-		GeometryColumns: []datatype.GeometryColumnInfo{{
-			Name:         "shape",
-			GeometryType: "MultiPolygon",
-			SRID:         &srid,
-			Dimension:    &dimension,
-			Nullable:     &nullable,
-		}},
-		PrimaryGeometryColumn: "shape",
-	}
-	values := SpatialInfoAttributes(info)
-
-	if values["primary_geometry_column"] != "shape" {
-		t.Fatalf("primary_geometry_column = %#v", values["primary_geometry_column"])
-	}
-	columns := values["geometry_columns"].([]map[string]interface{})
-	if len(columns) != 1 {
-		t.Fatalf("geometry_columns = %#v", columns)
-	}
-	if columns[0]["name"] != "shape" || columns[0]["geometry_type"] != "MultiPolygon" || columns[0]["srid"] != 4326 {
-		t.Fatalf("geometry column = %#v", columns[0])
-	}
-	if columns[0]["nullable"] != false || columns[0]["dimension"] != 2 {
-		t.Fatalf("geometry column facts = %#v", columns[0])
-	}
-}
-
 func TestSetTableFieldsWritesDatatypeFieldFacts(t *testing.T) {
 	t.Parallel()
 
@@ -188,7 +112,7 @@ func TestUpsertTableNativeWritesTypeInfoTableNative(t *testing.T) {
 
 	attrs := models.JSONMap{
 		"type_info": map[string]interface{}{
-			"table": datatype.TableInfoAttributes(&datatype.TableInfo{
+			"table": datatype.TableInfoPayload(&datatype.TableInfo{
 				Kind:    "table",
 				Comment: "roads",
 			}),
@@ -209,7 +133,7 @@ func TestUpsertTableNativeWritesTypeInfoTableNative(t *testing.T) {
 	}
 }
 
-func TestTableInfoAttributesWritesStandardTableFacts(t *testing.T) {
+func TestTableInfoPayloadWritesStandardTableFacts(t *testing.T) {
 	t.Parallel()
 
 	rowCount := int64(7)
@@ -229,7 +153,7 @@ func TestTableInfoAttributesWritesStandardTableFacts(t *testing.T) {
 		Native:     map[string]interface{}{"relkind": "v"},
 	}
 
-	attrs := datatype.TableInfoAttributes(info)
+	attrs := datatype.TableInfoPayload(info)
 	info.Native["relkind"] = "r"
 
 	if attrs["name"] != "orders" || attrs["kind"] != "view" || attrs["comment"] != "order view" {

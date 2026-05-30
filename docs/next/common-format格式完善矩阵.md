@@ -8,7 +8,7 @@
 
 1. 需要用真实样例继续核实 CSV / TSV、JSON / GeoJSON、Parquet、Shapefile、Excel、SQLite、GeoPackage、ZIP、text / markdown、image、PDF、DOCX、PPTX、WPS 的扫描、attributes、Manager 预览、分页和异常提示。
 2. `ListFormatCapabilityViews()` 仍要定期校验 descriptor 声明能力与当前进程实现状态。
-3. Manager 后端匹配逻辑还要继续从独立扩展名清单收口到 descriptor、data item attributes、contentio 抽象和 provider / reader 能力。
+3. Manager 后端插件配置已拆为 `preview.json` 和 `content.json`，只表达 Manager 预览行为策略；格式事实仍以 `common/format` descriptor 为准。`capabilities.spatial` 到 `SpatialInfo` 的恢复已上收到 `common/datatype`。后续还要继续将容器 child、component / scope table 读取等剩余分支收口到 descriptor、data item attributes、contentio 抽象和 provider / reader 能力。
 4. 容器 children、特殊空间识别、component / scope table 读取中可通用化的部分还要继续上移到 `common/format` provider / reader 或 `common/dataitem` 组织规则，不能恢复旧 extractor 旁路。
 5. 仅 raw / range 的文档和媒体格式还要明确使用体验目标，避免写成“后端可解析”；raw / range 目前只作为内容读取方式声明，由 engine / contentio / URL / fetcher 提供真实内容流，不作为 ProviderRegistry 中的 Go reader。
 6. 每完成一个格式，都要同步收掉 Meta、Manager、Transfer 中对应的 `engine_type`、format 后缀或 format ID 分支。
@@ -37,8 +37,8 @@
 
 | 格式 | 当前状态 | 后续研发要点 |
 |---|---|---|
-| ORC | descriptor 已有 raw 和 single / whole 声明；可被表格文件规则识别，但尚无 `common/format/plugins/orc/` 实现，也没有 table info / sample reader。 | 评估 Go ORC 依赖，补 `FormatPlugin`、schema 读取、stripe 级样本读取、whole scope 合并、空间字段识别和 Manager 表格预览链路。 |
-| Avro | descriptor 已有 raw 和 single / whole 声明；可被表格文件规则识别，但尚无 `common/format/plugins/avro/` 实现，也没有 table info / sample reader。 | 评估 Go Avro container file 依赖，补 `FormatPlugin`、schema 读取、block 级样本读取、whole scope 合并、逻辑类型映射和 Manager 表格预览链路。 |
-| WebP / BMP / SVG / AVIF / HEIC | 部分格式可能被 image MIME 兜底或前端扩展名清单识别，但缺稳定 format identity、MediaInfoProvider 覆盖和端到端样例。 | 明确 format ID、扩展名、MIME、magic bytes、预览策略和后端解析边界；SVG 需定义安全渲染策略，AVIF / HEIC 需评估 Go 解码依赖和前端兼容。 |
-| Video 通用 / MP4 / MOV / MKV / AVI / WebM | common/format 只有粗粒度检测和 MIME 兜底；具体 format ID、descriptor、plugin 和媒体元信息主线仍缺。 | 补 video 兜底 descriptor 和具体容器格式 descriptor，`type_info.media` 只输出 kind、宽高、时长、基础编码等通用字段；帧率、码率、轨道数等细粒度事实进入受控 `format_info.<format>` 或 `capabilities.extraction`，前端通过 range / stream URL 播放。 |
-| Audio 通用 / MP3 / WAV / FLAC / AAC / OGG | common/format 只有粗粒度检测和 MIME 兜底；缺 provider 和 Manager 通用音频预览主线。 | 补 audio 兜底 descriptor 和具体音频格式 descriptor，`type_info.media` 只输出 kind、时长、基础编码等通用字段；采样率、声道数、码率、ID3 / Vorbis comment 等细粒度事实进入受控 `format_info.<format>` 或 `capabilities.extraction`，并核实 range 播放和封面图边界。 |
+| ORC | 已有 `common/format/plugins/orc/` descriptor 壳，声明 raw、single / whole、table provider hint 和 Transfer 读写意图；可被表格文件规则识别，但尚无 table info / sample / reader / writer 实现。 | 评估 Go ORC 依赖，补 schema 读取、stripe 级样本读取、连续 reader / writer、whole scope 合并、空间字段识别和 Manager 表格预览链路；能力对外展示必须同时看 descriptor 声明和 provider 实现状态。 |
+| Avro | 已有 `common/format/plugins/avro/` descriptor 壳，声明 raw、single / whole、table provider hint 和 Transfer 读写意图；可被表格文件规则识别，但尚无 table info / sample / reader / writer 实现。 | 评估 Go Avro container file 依赖，补 schema 读取、block 级样本读取、连续 reader / writer、whole scope 合并、逻辑类型映射和 Manager 表格预览链路；能力对外展示必须同时看 descriptor 声明和 provider 实现状态。 |
+| WebP / BMP / SVG / AVIF / HEIC | 已有稳定 format identity、扩展名、MIME 和 raw / range descriptor；尚无 MediaInfoProvider 覆盖和端到端样例。 | 明确预览策略和后端解析边界；SVG 需定义安全渲染策略，AVIF / HEIC 需评估 Go 解码依赖和前端兼容；`raw_content` / `range_content` 只表示内容读取能力，不等于后端已解析媒体元信息。 |
+| Video 通用 / MP4 / MOV / MKV / AVI / WebM | 已有通用 video 和具体容器 format identity、扩展名、MIME、raw / range descriptor；尚无 MediaInfoProvider 和媒体元信息主线。 | `type_info.media` 只输出 kind、宽高、时长、基础编码等通用字段；帧率、码率、轨道数等细粒度事实进入受控 `format_info.<format>` 或 `capabilities.extraction`，前端通过 range / stream URL 播放。 |
+| Audio 通用 / MP3 / WAV / FLAC / AAC / OGG | 已有通用 audio 和具体音频 format identity、扩展名、MIME、raw / range descriptor；Manager 已有通用音频 URL 预览 kind，尚无 MediaInfoProvider 和端到端真实样例验收。 | `type_info.media` 只输出 kind、时长、基础编码等通用字段；采样率、声道数、码率、ID3 / Vorbis comment 等细粒度事实进入受控 `format_info.<format>` 或 `capabilities.extraction`，并核实 range 播放和封面图边界。 |

@@ -38,8 +38,8 @@ func MediaInfoAttributes(mediaInfo *datatype.MediaInfo, spatialInfo *datatype.Sp
 	if len(media) > 0 {
 		UpsertNested(attrs, "type_info", "media", media)
 	}
-	if spatialAttrs := SpatialInfoAttributes(spatialInfo); len(spatialAttrs) > 0 {
-		UpsertNested(attrs, "capabilities", "spatial", spatialAttrs)
+	if spatialPayload := datatype.SpatialInfoPayload(spatialInfo); len(spatialPayload) > 0 {
+		UpsertNested(attrs, "capabilities", "spatial", spatialPayload)
 	}
 	return attrs
 }

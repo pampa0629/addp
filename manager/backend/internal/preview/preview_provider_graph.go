@@ -24,7 +24,7 @@ func (p *GraphPreviewProvider) Preview(ctx context.Context, req *PreviewRequest)
 	if req == nil || req.Engine == nil {
 		return nil, fmt.Errorf("invalid preview request")
 	}
-	info := datatype.GraphInfoFromAttributes(req.Attributes)
+	info := graphInfoFromMetaAttributes(req.Attributes)
 	if info == nil {
 		var err error
 		info, err = p.describeGraph(ctx, req)

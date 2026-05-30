@@ -6,6 +6,7 @@ import (
 	"io"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/addp/common/contentio"
 	engineplugin "github.com/addp/common/engine/plugin"
@@ -78,8 +79,31 @@ func (r *engineContentReader) Open(ctx context.Context, ref contentio.Ref) (io.R
 	return r.provider.OpenContent(ctx, r.connInfo, path, r.readOptions)
 }
 
-func (r *engineContentReader) Stat(context.Context, contentio.Ref) (*contentio.Stat, error) {
-	return nil, contentio.ErrContentNotFound
+func (r *engineContentReader) Stat(ctx context.Context, ref contentio.Ref) (*contentio.Stat, error) {
+	if r == nil || r.catalog == nil {
+		return nil, contentio.ErrContentNotFound
+	}
+	path, err := r.catalogPath(ref)
+	if err != nil {
+		return nil, err
+	}
+	node, err := r.catalog.ResolvePath(ctx, r.connInfo, path)
+	if err != nil {
+		return nil, err
+	}
+	if node == nil || !node.IsItem {
+		return nil, contentio.ErrContentNotFound
+	}
+	stat := &contentio.Stat{
+		Ref:         ref,
+		Size:        catalogNodeInt64Stat(node.Stats, "size_bytes"),
+		ContentType: catalogNodeStringAttribute(node.Attributes, "content_type"),
+		Exists:      true,
+	}
+	if modifiedAt := catalogNodeTimeAttribute(node.Attributes, "modified_at"); !modifiedAt.IsZero() {
+		stat.ModifiedAt = &modifiedAt
+	}
+	return stat, nil
 }
 
 func (r *engineContentReader) List(ctx context.Context, scope contentio.Ref) ([]contentio.Ref, error) {
@@ -173,6 +197,57 @@ func (w *engineContentWriter) catalogPath(ref contentio.Ref) (engineplugin.Catal
 		return w.mapRef(ref)
 	}
 	return CatalogPath(w.basePath, ref)
+}
+
+func catalogNodeStringAttribute(attrs map[string]interface{}, key string) string {
+	if attrs == nil {
+		return ""
+	}
+	if storage, ok := attrs["storage"].(map[string]interface{}); ok {
+		if value := catalogNodeStringAttribute(storage, key); value != "" {
+			return value
+		}
+	}
+	value, _ := attrs[key].(string)
+	return value
+}
+
+func catalogNodeTimeAttribute(attrs map[string]interface{}, key string) time.Time {
+	if attrs == nil {
+		return time.Time{}
+	}
+	if storage, ok := attrs["storage"].(map[string]interface{}); ok {
+		if value := catalogNodeTimeAttribute(storage, key); !value.IsZero() {
+			return value
+		}
+	}
+	switch value := attrs[key].(type) {
+	case time.Time:
+		return value
+	case *time.Time:
+		if value != nil {
+			return *value
+		}
+	}
+	return time.Time{}
+}
+
+func catalogNodeInt64Stat(stats map[string]interface{}, key string) int64 {
+	if stats == nil {
+		return 0
+	}
+	switch value := stats[key].(type) {
+	case int64:
+		return value
+	case int:
+		return int64(value)
+	case uint:
+		return int64(value)
+	case float64:
+		return int64(value)
+	default:
+		return 0
+	}
 }
 
 func CatalogPath(base engineplugin.CatalogPath, ref contentio.Ref) (engineplugin.CatalogPath, error) {

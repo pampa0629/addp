@@ -2,7 +2,6 @@ package preview
 
 import (
 	"context"
-	"github.com/addp/common/datatype"
 	"testing"
 
 	"github.com/addp/common/contentio"
@@ -105,55 +104,10 @@ func TestObjectCatalogContentReaderListTrimsBucketFromScope(t *testing.T) {
 	}
 }
 
-func TestScopeTableInfoFromAttributes(t *testing.T) {
+func TestScopeTableSampleOptionsFromMetaAttributesUsesParquetFileRowCounts(t *testing.T) {
 	t.Parallel()
 
-	rowCount := int64(42)
-	sizeBytes := int64(4096)
-	info, err := scopeTableInfoFromAttributes(map[string]interface{}{
-		"type_info": map[string]interface{}{
-			"table": map[string]interface{}{
-				"name":       "orders",
-				"kind":       "view",
-				"comment":    "order view",
-				"row_count":  rowCount,
-				"size_bytes": sizeBytes,
-				"native":     map[string]interface{}{"partition_columns": []interface{}{"ds"}},
-				"fields": []interface{}{
-					map[string]interface{}{
-						"name":        "id",
-						"type":        "bigint",
-						"native_type": "int64",
-						"nullable":    false,
-					},
-				},
-			},
-		},
-	})
-	if err != nil {
-		t.Fatalf("scopeTableInfoFromAttributes() error = %v", err)
-	}
-	if info == nil || info.RowCount == nil || *info.RowCount != rowCount {
-		t.Fatalf("table info row count = %#v, want %d", info, rowCount)
-	}
-	if info.Name != "orders" || info.Kind != "view" || info.Comment != "order view" {
-		t.Fatalf("table facts = %#v, want standard name/kind/comment", info)
-	}
-	if info.SizeBytes == nil || *info.SizeBytes != sizeBytes {
-		t.Fatalf("table size = %#v, want %d", info.SizeBytes, sizeBytes)
-	}
-	if len(info.Fields) != 1 || info.Fields[0].Name != "id" || info.Fields[0].Type != datatype.FieldTypeBigInt {
-		t.Fatalf("fields = %#v", info.Fields)
-	}
-	if info.Native["partition_columns"] == nil {
-		t.Fatalf("native = %#v, want partition_columns", info.Native)
-	}
-}
-
-func TestScopeTableSampleOptionsFromAttributesUsesParquetFileRowCounts(t *testing.T) {
-	t.Parallel()
-
-	opts := scopeTableSampleOptionsFromAttributes(map[string]interface{}{
+	opts := scopeTableSampleOptionsFromMetaAttributes(map[string]interface{}{
 		"item": map[string]interface{}{
 			"format": "parquet",
 		},
@@ -181,10 +135,10 @@ func TestScopeTableSampleOptionsFromAttributesUsesParquetFileRowCounts(t *testin
 	}
 }
 
-func TestScopeTableSampleOptionsFromAttributesIgnoresUnknownFormat(t *testing.T) {
+func TestScopeTableSampleOptionsFromMetaAttributesIgnoresUnknownFormat(t *testing.T) {
 	t.Parallel()
 
-	opts := scopeTableSampleOptionsFromAttributes(map[string]interface{}{
+	opts := scopeTableSampleOptionsFromMetaAttributes(map[string]interface{}{
 		"item": map[string]interface{}{
 			"format": "yml",
 		},

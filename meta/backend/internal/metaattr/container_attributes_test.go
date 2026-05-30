@@ -20,8 +20,13 @@ func TestContainerInfoAttributesKeepsOnlyCanonicalChildFormat(t *testing.T) {
 				ChildKind: "file",
 				DataType:  datatype.DataTypeUnknown,
 				Native: map[string]interface{}{
-					"format": "yml",
-					"vendor": "kept",
+					"format":     "yml",
+					"vendor":     "kept",
+					"columns":    []interface{}{map[string]interface{}{"name": "stale"}},
+					"fields":     []interface{}{"stale"},
+					"schema":     map[string]interface{}{"fields": []interface{}{"stale"}},
+					"table_info": map[string]interface{}{"fields": []interface{}{"stale"}},
+					"type_info":  map[string]interface{}{"table": map[string]interface{}{"fields": []interface{}{"stale"}}},
 				},
 			},
 			{
@@ -54,6 +59,11 @@ func TestContainerInfoAttributesKeepsOnlyCanonicalChildFormat(t *testing.T) {
 	native := children[0]["native"].(map[string]interface{})
 	if native["format"] != nil || native["vendor"] != "kept" {
 		t.Fatalf("native cleanup = %#v, want vendor only", native)
+	}
+	for _, key := range []string{"columns", "fields", "schema", "table_info", "type_info"} {
+		if native[key] != nil {
+			t.Fatalf("schema-like native key %q should not be written: %#v", key, native)
+		}
 	}
 	if children[1]["format"] != string(format.FormatCSV) {
 		t.Fatalf("native canonical format = %#v, want csv", children[1]["format"])

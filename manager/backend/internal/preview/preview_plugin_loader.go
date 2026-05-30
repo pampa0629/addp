@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/logger"
 	"github.com/addp/manager/internal/objectcontent"
+	"github.com/addp/manager/internal/pluginmanifest"
 	"github.com/addp/manager/internal/repository"
 )
 
@@ -45,23 +47,23 @@ var builtinProviderFactoriesWithContent = map[string]func(*repository.MetadataRe
 	},
 }
 
-type PluginManifest struct {
-	DefaultProviders []PluginConfig `json:"default_providers,omitempty"`
-	Providers        []PluginConfig `json:"providers,omitempty"`
+type PreviewPluginConfigFile struct {
+	Providers []PluginConfig `json:"providers,omitempty"`
 }
 
-func LoadPreviewPlugins(registry *PreviewRegistry, metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, contentRegistry *objectcontent.ObjectContentRegistry, metaServiceURL string, manifestSpec string) {
+func LoadPreviewPlugins(registry *PreviewRegistry, metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, contentRegistry *objectcontent.ObjectContentRegistry, metaServiceURL string, pluginDirSpec string) {
 	if registry == nil || metadataRepo == nil {
 		return
 	}
 
-	paths := splitManifestPaths(manifestSpec)
-	if len(paths) == 0 {
+	dirs := splitPluginDirSpec(pluginDirSpec)
+	if len(dirs) == 0 {
 		registerDefaultBuiltinPreviewProviders(registry, metadataRepo, metaClient, metaServiceURL, contentRegistry)
 		return
 	}
-	for _, path := range paths {
-		loadPluginsFromManifest(registry, metadataRepo, metaClient, metaServiceURL, contentRegistry, path)
+	for _, dir := range dirs {
+		path := filepath.Join(dir, "preview.json")
+		loadPluginsFromPreviewConfig(registry, metadataRepo, metaClient, metaServiceURL, contentRegistry, path)
 	}
 }
 
@@ -95,7 +97,7 @@ func fallbackBuiltinPreviewPlugins() []PluginConfig {
 	}
 }
 
-func splitManifestPaths(spec string) []string {
+func splitPluginDirSpec(spec string) []string {
 	spec = strings.TrimSpace(spec)
 	if spec == "" {
 		return nil
@@ -111,25 +113,25 @@ func splitManifestPaths(spec string) []string {
 	return paths
 }
 
-func loadPluginsFromManifest(registry *PreviewRegistry, metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, contentRegistry *objectcontent.ObjectContentRegistry, path string) {
+func loadPluginsFromPreviewConfig(registry *PreviewRegistry, metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, contentRegistry *objectcontent.ObjectContentRegistry, path string) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		logger.L().Warn("数据预览: 读取插件清单失败", "path", path, "error", err)
+		logger.L().Warn("数据预览: 读取插件配置失败", "path", path, "error", err)
+		return
+	}
+	if err := pluginmanifest.ValidateTopLevelFields(raw, "version", "description", "providers", "notes"); err != nil {
+		logger.L().Warn("数据预览: 插件配置字段不受支持", "path", path, "error", err)
 		return
 	}
 
-	var manifest PluginManifest
-	if err := json.Unmarshal(raw, &manifest); err != nil {
-		logger.L().Warn("数据预览: 解析插件清单失败", "path", path, "error", err)
+	var configFile PreviewPluginConfigFile
+	if err := json.Unmarshal(raw, &configFile); err != nil {
+		logger.L().Warn("数据预览: 解析插件配置失败", "path", path, "error", err)
 		return
 	}
 
-	defaultConfigs := manifest.DefaultProviders
-	if len(defaultConfigs) == 0 {
-		defaultConfigs = fallbackBuiltinPreviewPlugins()
-	}
-	registerBuiltinPreviewProviders(registry, metadataRepo, metaClient, metaServiceURL, contentRegistry, defaultConfigs)
-	for _, cfg := range manifest.Providers {
+	registerDefaultBuiltinPreviewProviders(registry, metadataRepo, metaClient, metaServiceURL, contentRegistry)
+	for _, cfg := range configFile.Providers {
 		loadPluginConfig(registry, metadataRepo, metaClient, metaServiceURL, contentRegistry, cfg, path)
 	}
 }
@@ -209,5 +211,5 @@ func RegisterBuiltinPluginFactory(name string, factory builtinProviderFactory) e
 }
 
 func ParsePluginDirSpec(spec string) []string {
-	return splitManifestPaths(spec)
+	return splitPluginDirSpec(spec)
 }

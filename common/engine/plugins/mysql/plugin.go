@@ -56,10 +56,15 @@ func (p *MySQLPlugin) SensitiveFields() []string {
 
 func (p *MySQLPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewTabularCapabilities(p.Type(), "database", plugin.TabularCapabilityOptions{
-		Write:           true,
-		SupportsExplain: true,
-		SupportsCancel:  true,
-		WriterConnector: "jdbc",
+		Write:             true,
+		BulkWrite:         true,
+		BatchWrite:        true,
+		TableWriteSession: true,
+		TableWritePrepare: true,
+		Delete:            true,
+		SupportsExplain:   true,
+		SupportsCancel:    true,
+		WriterConnector:   "mysql_insert",
 	})
 }
 

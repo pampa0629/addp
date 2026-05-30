@@ -140,14 +140,14 @@ func (r *fileCatalogContentReader) List(ctx context.Context, scope contentio.Ref
 
 func refsForPreview(mainPath string, formatType format.FormatType, attrs map[string]interface{}) []format.RelatedRef {
 	specs := refSpecsForPreviewFormat(formatType)
-	refs := refRefsFromAttributes(attrs)
+	refs := refRefsFromMetaAttributes(attrs)
 	if len(refs) == 0 || format.ValidateRelatedRefs(refs) != nil {
 		return format.SameBasenameRelatedRefs(mainPath, specs)
 	}
 	return refs
 }
 
-func refRefsFromAttributes(attrs map[string]interface{}) []format.RelatedRef {
+func refRefsFromMetaAttributes(attrs map[string]interface{}) []format.RelatedRef {
 	itemAttrs := commonJSON.Section(attrs, "item")
 	if len(itemAttrs) == 0 {
 		return nil

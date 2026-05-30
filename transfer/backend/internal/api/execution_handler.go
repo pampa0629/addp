@@ -154,6 +154,7 @@ func (h *ExecutionHandler) CancelExecution(c *gin.Context) {
 
 // RetryExecution 重试失败的执行
 // @Summary 重试执行 | Retry execution
+// @Description 为失败执行创建新的 retry 执行记录，并按 restartable 语义从头重新入队执行 | Create a new retry execution for a failed execution and enqueue it from the beginning with restartable semantics
 // @Tags 执行管理 | Execution Management
 // @Produce json
 // @Param id path int true "执行ID | Execution ID"

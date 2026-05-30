@@ -10,6 +10,7 @@ import (
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	csvformat "github.com/addp/common/format/plugins/csv"
+	"github.com/addp/common/resume"
 )
 
 func TestTableTransferExecutorWritesEncodedCSVToNativeTable(t *testing.T) {
@@ -177,6 +178,74 @@ func TestTableTransferExecutorPrefersNativeTableWriteSessionForCopy(t *testing.T
 	}
 	if len(writer.sessionOptions.Fields) != 2 || writer.sessionOptions.Fields[0].Name != "id" {
 		t.Fatalf("session fields = %#v, want prepared fields", writer.sessionOptions.Fields)
+	}
+}
+
+func TestTableTransferExecutorPassesResumeMarkerToNativeWriteSession(t *testing.T) {
+	marker := &resume.Marker{Version: resume.MarkerVersionV1, Provider: "test.target"}
+	reader := &fakeContentReader{content: "id,name\n1,Alice\n"}
+	writer := &fakeBatchWriter{}
+	preparer := &fakeTableWritePreparer{}
+	exec := &TableTransferExecutor{
+		SourceContentReader:        reader,
+		SourceFormatProvider:       csvformat.NewPlugin(nil),
+		SourceInfoProvider:         csvformat.NewPlugin(nil),
+		SourceTableReadProvider:    csvformat.NewPlugin(nil),
+		TargetNativePreparer:       preparer,
+		TargetNativeWriter:         writer,
+		TargetTableSessionProvider: writer,
+	}
+
+	_, err := exec.Execute(context.Background(), TableTransferPlan{
+		Source: TableSourcePlan{Kind: TableEndpointEncoded, Format: format.FormatCSV},
+		Target: TableTargetPlan{
+			Kind:         TableEndpointNative,
+			TableWrite:   engineplugin.BatchWriteOptions{Method: "copy"},
+			ResumeMarker: marker,
+		},
+		BatchSize: 1,
+	})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if writer.sessionOptions.ResumeMarker == nil || writer.sessionOptions.ResumeMarker.Provider != "test.target" {
+		t.Fatalf("session resume marker = %#v, want test.target marker", writer.sessionOptions.ResumeMarker)
+	}
+	if writer.sessionOptions.ResumeMarker == marker {
+		t.Fatal("session resume marker reused original pointer, want cloned marker")
+	}
+}
+
+func TestTableTransferExecutorPassesResumeMarkerToEncodedWriter(t *testing.T) {
+	reader := &fakeContentReader{content: "id\n1\n"}
+	writer := &fakeContentWriter{}
+	exec := &TableTransferExecutor{
+		SourceContentReader:     reader,
+		SourceTableReadProvider: csvformat.NewPlugin(nil),
+		TargetContentWriter:     writer,
+		TargetFormatProvider:    csvformat.NewPlugin(nil),
+	}
+
+	_, err := exec.Execute(context.Background(), TableTransferPlan{
+		Source: TableSourcePlan{
+			Kind:   TableEndpointEncoded,
+			Format: format.FormatCSV,
+			TableInfo: &datatype.TableInfo{
+				Fields: []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeString}},
+			},
+		},
+		Target: TableTargetPlan{
+			Kind:         TableEndpointEncoded,
+			Format:       format.FormatCSV,
+			ResumeMarker: &resume.Marker{Version: resume.MarkerVersionV1, Provider: "test.target"},
+		},
+		BatchSize: 1,
+	})
+	if err == nil {
+		t.Fatal("Execute succeeded with encoded target resume marker, want provider unsupported error")
+	}
+	if !strings.Contains(err.Error(), "csv.table_writer") {
+		t.Fatalf("error = %q, want csv.table_writer unsupported error", err)
 	}
 }
 

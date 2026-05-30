@@ -25,7 +25,7 @@ func NewTaskHandler(taskService *service.TaskService) *TaskHandler {
 
 // CreateTask 创建任务
 // @Summary 创建数据传输任务 | Create data transfer task
-// @Description 创建一个新的数据导入/导出/同步任务。新任务 config 使用 source/target endpoint；source 指向已入库 Meta item 时可携带 source.attributes，Transfer planner 将消费其中的 item.layout、item.format、item.refs、type_info.table.fields 和 capabilities.spatial。| Create a new data import/export/sync task. New config uses source/target endpoints; source.attributes may carry Meta item attributes consumed by the planner.
+// @Description 创建一个新的数据导入/导出/同步任务。新任务 config 使用 source/target endpoint；source 指向已入库 Meta item 时使用 source.meta_item_id，Transfer 后端会通过 MetaClient 读取标准 attributes。| Create a new data import/export/sync task. New config uses source/target endpoints; use source.meta_item_id for persisted Meta items, and Transfer backend loads standard attributes through MetaClient.
 // @Tags         任务管理 | Task Management
 // @Accept json
 // @Produce json
@@ -129,7 +129,7 @@ func (h *TaskHandler) ListTasks(c *gin.Context) {
 
 // UpdateTask 更新任务
 // @Summary 更新任务 | Update task
-// @Description 更新任务的配置信息。config.source.attributes 会按 JSONB 原样保存，用于 planner 消费已入库 Meta item 标准 attributes。| Update task configuration. config.source.attributes is preserved as JSONB for planner consumption.
+// @Description 更新任务的配置信息。source 指向已入库 Meta item 时使用 config.source.meta_item_id；不支持在任务配置中直接传递 endpoint attributes。| Update task configuration. Use config.source.meta_item_id for persisted Meta items; endpoint attributes are not accepted in task config.
 // @Tags         任务管理 | Task Management
 // @Accept json
 // @Produce json

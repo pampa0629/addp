@@ -898,7 +898,7 @@ func TestParseTableExportTaskSpecAppliesFallbackBatchSize(t *testing.T) {
 	}
 }
 
-func TestParseTableExportTaskSpecPreservesSourceAttributes(t *testing.T) {
+func TestParseTableExportTaskSpecPreservesSourceMetaItemID(t *testing.T) {
 	spec, err := ParseTableExportTaskSpec(map[string]interface{}{
 		"mode": "batch",
 		"source": map[string]interface{}{
@@ -906,16 +906,7 @@ func TestParseTableExportTaskSpecPreservesSourceAttributes(t *testing.T) {
 			"resource":       map[string]interface{}{"kind": "file", "path": map[string]interface{}{"path": "imports/roads.shp"}},
 			"data_type":      "table",
 			"representation": "encoded",
-			"attributes": tableSourceAttributes("multi", "shapefile", "imports/roads.shp", []map[string]interface{}{
-				{"path": "imports/roads.shp", "role": "main", "extension": ".shp", "required": true, "primary": true},
-				{"path": "imports/roads.shx", "role": "index", "extension": ".shx", "required": true},
-				{"path": "imports/roads.dbf", "role": "attributes", "extension": ".dbf", "required": true},
-			}, []map[string]interface{}{
-				{"name": "shape", "type": "geometry"},
-			}, map[string]interface{}{
-				"primary_geometry_column": "shape",
-				"geometry_columns":        []map[string]interface{}{{"name": "shape", "geometry_type": "Point", "srid": 4326}},
-			}),
+			"meta_item_id":   12,
 		},
 		"target": map[string]interface{}{
 			"engine":         map[string]interface{}{"scope": "system", "id": 2},
@@ -927,15 +918,36 @@ func TestParseTableExportTaskSpecPreservesSourceAttributes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseTableExportTaskSpec failed: %v", err)
 	}
-	if spec.Source.Format != "" {
-		t.Fatalf("source format = %q, want format restored later from attributes", spec.Source.Format)
+	if spec.Source.MetaItemID != 12 {
+		t.Fatalf("source meta item id = %d, want 12", spec.Source.MetaItemID)
 	}
-	if spec.Source.Attributes == nil {
-		t.Fatal("source attributes are nil")
+	if spec.Source.Attributes != nil {
+		t.Fatalf("source attributes = %#v, want nil before MetaClient loading", spec.Source.Attributes)
 	}
-	itemAttrs, ok := spec.Source.Attributes["item"].(map[string]interface{})
-	if !ok || itemAttrs["format"] != "shapefile" {
-		t.Fatalf("source item attrs = %#v, want shapefile attributes preserved", spec.Source.Attributes["item"])
+}
+
+func TestParseTableExportTaskSpecRejectsEndpointAttributes(t *testing.T) {
+	_, err := ParseTableExportTaskSpec(map[string]interface{}{
+		"mode": "batch",
+		"source": map[string]interface{}{
+			"engine":         map[string]interface{}{"scope": "system", "id": 1},
+			"resource":       map[string]interface{}{"kind": "file", "path": map[string]interface{}{"path": "imports/roads.shp"}},
+			"data_type":      "table",
+			"representation": "encoded",
+			"attributes":     map[string]interface{}{"item": map[string]interface{}{"format": "shapefile"}},
+		},
+		"target": map[string]interface{}{
+			"engine":         map[string]interface{}{"scope": "system", "id": 2},
+			"resource":       map[string]interface{}{"kind": "native_table", "path": map[string]interface{}{"schema": "public", "table": "roads"}},
+			"data_type":      "table",
+			"representation": "native",
+		},
+	}, 1000)
+	if err == nil {
+		t.Fatal("ParseTableExportTaskSpec succeeded, want endpoint attributes error")
+	}
+	if !strings.Contains(err.Error(), "source.meta_item_id") {
+		t.Fatalf("error = %q, want source.meta_item_id guidance", err)
 	}
 }
 

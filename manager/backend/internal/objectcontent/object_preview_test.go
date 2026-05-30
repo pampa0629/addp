@@ -63,6 +63,30 @@ func TestInferContentType(t *testing.T) {
 			expect:      "text/markdown",
 		},
 		{
+			name:        "avif_extension_generic_type",
+			objectPath:  "bucket/images/photo.avif",
+			contentType: "application/octet-stream",
+			expect:      "image/avif",
+		},
+		{
+			name:        "heic_extension_generic_type",
+			objectPath:  "bucket/images/photo.heic",
+			contentType: "application/octet-stream",
+			expect:      "image/heic",
+		},
+		{
+			name:        "avro_extension_generic_type",
+			objectPath:  "bucket/data/events.avro",
+			contentType: "application/octet-stream",
+			expect:      "application/avro",
+		},
+		{
+			name:        "orc_extension_generic_type",
+			objectPath:  "bucket/data/events.orc",
+			contentType: "application/octet-stream",
+			expect:      "application/orc",
+		},
+		{
 			name:        "binary_octet_stream_treated_as_generic",
 			objectPath:  "bucket/slides/demo.pptx",
 			contentType: "binary/octet-stream",
@@ -163,11 +187,19 @@ func TestBuiltinContentMatcherUsesFormatDescriptorDefaults(t *testing.T) {
 	if !image.Matches(&ObjectContentRequest{Format: "jpg", Extension: ".jpg", ContentType: "image/jpeg"}) {
 		t.Fatalf("expected image handler to normalize jpg format alias to jpeg")
 	}
+
+	audio, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "audio", Builtin: "audio"})
+	if err != nil {
+		t.Fatalf("build audio handler: %v", err)
+	}
+	if !audio.Matches(&ObjectContentRequest{Extension: ".flac", ContentType: "audio/flac"}) {
+		t.Fatalf("expected audio handler to match media descriptor extension and MIME")
+	}
 }
 
 func TestLoadObjectContentPluginsUsesDescriptorDefaults(t *testing.T) {
 	registry := NewObjectContentRegistry()
-	LoadObjectContentPlugins(registry, "../../plugins/manifest.json")
+	LoadObjectContentPlugins(registry, "../../plugins")
 
 	tests := []struct {
 		name string
@@ -198,6 +230,11 @@ func TestLoadObjectContentPluginsUsesDescriptorDefaults(t *testing.T) {
 			name: "video",
 			req:  ObjectContentRequest{Extension: ".mp4", ContentType: "video/mp4"},
 			want: "builtin:content-video",
+		},
+		{
+			name: "audio",
+			req:  ObjectContentRequest{Extension: ".mp3", ContentType: "audio/mpeg"},
+			want: "builtin:content-audio",
 		},
 		{
 			name: "parquet",
@@ -253,6 +290,11 @@ func TestLoadObjectContentPluginsRegistersBuiltinDefaultsWithoutFiles(t *testing
 			req:  ObjectContentRequest{Extension: ".mp4", ContentType: "video/mp4"},
 			want: "builtin:content-video",
 		},
+		{
+			name: "audio",
+			req:  ObjectContentRequest{Extension: ".wav", ContentType: "audio/wav"},
+			want: "builtin:content-audio",
+		},
 	}
 
 	for _, tt := range tests {
@@ -269,22 +311,20 @@ func TestLoadObjectContentPluginsRegistersBuiltinDefaultsWithoutFiles(t *testing
 	}
 }
 
-func TestLoadObjectContentPluginsUsesManifestDefaultContentPlugins(t *testing.T) {
-	dir := t.TempDir()
-	manifestPath := filepath.Join(dir, "manifest.json")
-	config := []byte(`{"default_content_plugins":[{"name":"builtin:content-json","type":"builtin","builtin":"json"}]}`)
-	if err := os.WriteFile(manifestPath, config, 0o600); err != nil {
-		t.Fatalf("write content manifest: %v", err)
+func TestFallbackBuiltinContentPluginsCoverMediaDescriptorKinds(t *testing.T) {
+	plugins := fallbackBuiltinContentPlugins()
+	seen := make(map[string]bool, len(plugins))
+	for _, plugin := range plugins {
+		seen[plugin.Builtin] = true
 	}
-
-	registry := NewObjectContentRegistry()
-	LoadObjectContentPlugins(registry, manifestPath)
-
-	if handler := registry.Resolve(&ObjectContentRequest{Format: "json"}); handler == nil || handler.Name() != "builtin:content-json" {
-		t.Fatalf("json handler = %#v, want builtin:content-json", handler)
-	}
-	if handler := registry.Resolve(&ObjectContentRequest{Format: "pdf"}); handler != nil {
-		t.Fatalf("pdf handler = %q, want nil because manifest defaults only contain json", handler.Name())
+	for _, kind := range []string{
+		models.ObjectPreviewKindImage,
+		models.ObjectPreviewKindVideo,
+		models.ObjectPreviewKindAudio,
+	} {
+		if !seen[kind] {
+			t.Fatalf("fallback builtin content plugins missing media kind %q: %#v", kind, plugins)
+		}
 	}
 }
 
@@ -315,16 +355,20 @@ func TestObjectContentRegistryReplacesHandlerWithSameName(t *testing.T) {
 	}
 }
 
-func TestLoadObjectContentPluginsUsesManifestOverrides(t *testing.T) {
+func TestLoadObjectContentPluginsUsesFallbackDefaultsAndContentConfigOverrides(t *testing.T) {
 	dir := t.TempDir()
-	manifestPath := filepath.Join(dir, "manifest.json")
+	configPath := filepath.Join(dir, "content.json")
 	config := []byte(`{"content_plugins":[{"name":"builtin:content-image","type":"builtin","builtin":"image","max_bytes":4}]}`)
-	if err := os.WriteFile(manifestPath, config, 0o600); err != nil {
-		t.Fatalf("write content manifest: %v", err)
+	if err := os.WriteFile(configPath, config, 0o600); err != nil {
+		t.Fatalf("write content config: %v", err)
 	}
 
 	registry := NewObjectContentRegistry()
-	LoadObjectContentPlugins(registry, manifestPath)
+	LoadObjectContentPlugins(registry, dir)
+
+	if handler := registry.Resolve(&ObjectContentRequest{Format: "pdf"}); handler == nil || handler.Name() != "builtin:content-pdf" {
+		t.Fatalf("pdf handler = %#v, want fallback builtin:content-pdf", handler)
+	}
 
 	handler := registry.Resolve(&ObjectContentRequest{Extension: ".png", ContentType: "image/png", Size: 8})
 	if handler == nil {
@@ -335,7 +379,7 @@ func TestLoadObjectContentPluginsUsesManifestOverrides(t *testing.T) {
 		&ObjectContentRequest{Name: "photo.png", Extension: ".png", ContentType: "image/png", Size: 8},
 		func(limit int64) ([]byte, bool, error) {
 			if limit != 4 {
-				t.Fatalf("limit = %d, want manifest override 4", limit)
+				t.Fatalf("limit = %d, want content config override 4", limit)
 			}
 			return []byte{0x89, 0x50, 0x4E, 0x47}, false, nil
 		},
@@ -345,6 +389,38 @@ func TestLoadObjectContentPluginsUsesManifestOverrides(t *testing.T) {
 	}
 	if truncated || content.Kind != "image" {
 		t.Fatalf("content = %#v truncated=%v, want image without truncation", content, truncated)
+	}
+}
+
+func TestLoadObjectContentPluginsRejectsLegacyDefaultContentPluginsField(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "content.json")
+	config := []byte(`{"default_content_plugins":[{"name":"builtin:content-json","type":"builtin","builtin":"json"}]}`)
+	if err := os.WriteFile(configPath, config, 0o600); err != nil {
+		t.Fatalf("write content config: %v", err)
+	}
+
+	registry := NewObjectContentRegistry()
+	LoadObjectContentPlugins(registry, dir)
+
+	if handler := registry.Resolve(&ObjectContentRequest{Format: "json"}); handler != nil {
+		t.Fatalf("legacy default_content_plugins config should not load fallback or requested handler, got %q", handler.Name())
+	}
+}
+
+func TestLoadObjectContentPluginsRejectsProvidersField(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "content.json")
+	config := []byte(`{"providers":[]}`)
+	if err := os.WriteFile(configPath, config, 0o600); err != nil {
+		t.Fatalf("write content config: %v", err)
+	}
+
+	registry := NewObjectContentRegistry()
+	LoadObjectContentPlugins(registry, dir)
+
+	if handler := registry.Resolve(&ObjectContentRequest{Format: "json"}); handler != nil {
+		t.Fatalf("content config with providers should not load fallback handlers, got %q", handler.Name())
 	}
 }
 
@@ -375,6 +451,40 @@ func TestVideoContentHandlerReturnsURLMaterial(t *testing.T) {
 	}
 	if content.Kind != "video" || content.PreviewMaterial != "url" || content.FrontendRenderer != "video" || content.URL == "" {
 		t.Fatalf("content = %#v, want URL material with video renderer", content)
+	}
+}
+
+func TestAudioContentHandlerReturnsURLMaterial(t *testing.T) {
+	t.Parallel()
+	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "audio", Builtin: "audio"})
+	if err != nil {
+		t.Fatalf("build audio handler: %v", err)
+	}
+	req := &ObjectContentRequest{
+		Name:        "song.flac",
+		Extension:   ".flac",
+		ContentType: "audio/flac",
+		PreviewURL:  "/api/v1/manager/storage-stream?engine_id=1&storage_ref=bucket/song.flac",
+	}
+	if !handler.Matches(req) {
+		t.Fatalf("expected audio handler to match FLAC descriptor")
+	}
+	content, truncated, err := handler.Handle(
+		context.Background(),
+		req,
+		func(limit int64) ([]byte, bool, error) {
+			t.Fatalf("audio handler must not read audio bytes")
+			return nil, false, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if truncated {
+		t.Fatalf("truncated = true, want false")
+	}
+	if content.Kind != "audio" || content.PreviewMaterial != "url" || content.FrontendRenderer != "audio" || content.URL == "" {
+		t.Fatalf("content = %#v, want URL material with audio renderer", content)
 	}
 }
 
@@ -550,7 +660,7 @@ func TestObjectContentTableFormatUsesExplicitFormat(t *testing.T) {
 }
 
 func TestBuildContainerPreviewFromExcelAttributes(t *testing.T) {
-	preview := buildContainerPreviewFromAttributes(map[string]interface{}{
+	preview := buildContainerPreviewFromMetaAttributes(map[string]interface{}{
 		"item": map[string]interface{}{
 			"format": "excel",
 		},
@@ -576,7 +686,7 @@ func TestBuildContainerPreviewFromExcelAttributes(t *testing.T) {
 	}, 1024)
 
 	if preview == nil {
-		t.Fatal("buildContainerPreviewFromAttributes() returned nil")
+		t.Fatal("buildContainerPreviewFromMetaAttributes() returned nil")
 	}
 	if preview["format"] != "excel" || preview["default_child"] != "Cities" || preview["active_child"] != "Cities" {
 		t.Fatalf("container header = %#v, want excel/Cities", preview)
@@ -600,8 +710,8 @@ func TestBuildContainerPreviewFromExcelAttributes(t *testing.T) {
 	}
 }
 
-func TestBuildContainerPreviewFromAttributesNormalizesParentFormat(t *testing.T) {
-	preview := buildContainerPreviewFromAttributes(map[string]interface{}{
+func TestBuildContainerPreviewFromMetaAttributesNormalizesParentFormat(t *testing.T) {
+	preview := buildContainerPreviewFromMetaAttributes(map[string]interface{}{
 		"item": map[string]interface{}{
 			"format": ".zip",
 		},
@@ -625,7 +735,7 @@ func TestBuildContainerPreviewFromAttributesNormalizesParentFormat(t *testing.T)
 	}, 0)
 
 	if preview == nil {
-		t.Fatal("buildContainerPreviewFromAttributes() returned nil")
+		t.Fatal("buildContainerPreviewFromMetaAttributes() returned nil")
 	}
 	if preview["format"] != string(format.FormatZIP) {
 		t.Fatalf("preview format = %#v, want zip", preview["format"])
@@ -635,8 +745,8 @@ func TestBuildContainerPreviewFromAttributesNormalizesParentFormat(t *testing.T)
 	}
 }
 
-func TestBuildContainerPreviewFromAttributesDropsUnknownParentFormat(t *testing.T) {
-	preview := buildContainerPreviewFromAttributes(map[string]interface{}{
+func TestBuildContainerPreviewFromMetaAttributesDropsUnknownParentFormat(t *testing.T) {
+	preview := buildContainerPreviewFromMetaAttributes(map[string]interface{}{
 		"item": map[string]interface{}{
 			"format": "yml",
 		},
@@ -655,7 +765,7 @@ func TestBuildContainerPreviewFromAttributesDropsUnknownParentFormat(t *testing.
 	}, 0)
 
 	if preview == nil {
-		t.Fatal("buildContainerPreviewFromAttributes() returned nil")
+		t.Fatal("buildContainerPreviewFromMetaAttributes() returned nil")
 	}
 	if preview["format"] != "" {
 		t.Fatalf("preview format = %#v, want empty for unknown parent format", preview["format"])
@@ -663,7 +773,7 @@ func TestBuildContainerPreviewFromAttributesDropsUnknownParentFormat(t *testing.
 }
 
 func TestBuildContainerPreviewFromSQLiteAttributes(t *testing.T) {
-	preview := buildContainerPreviewFromAttributes(map[string]interface{}{
+	preview := buildContainerPreviewFromMetaAttributes(map[string]interface{}{
 		"item": map[string]interface{}{
 			"format": "sqlite",
 		},
@@ -690,7 +800,7 @@ func TestBuildContainerPreviewFromSQLiteAttributes(t *testing.T) {
 	}, 2048)
 
 	if preview == nil {
-		t.Fatal("buildContainerPreviewFromAttributes() returned nil")
+		t.Fatal("buildContainerPreviewFromMetaAttributes() returned nil")
 	}
 	if preview["format"] != "sqlite" || preview["default_child"] != "Cities" {
 		t.Fatalf("container header = %#v, want sqlite/Cities", preview)
@@ -762,8 +872,8 @@ func TestContainerChildPreviewMapKeepsNormalizedRefs(t *testing.T) {
 	}
 }
 
-func TestBuildContainerPreviewFromAttributesKeepsResolvedMultiChild(t *testing.T) {
-	preview := buildContainerPreviewFromAttributes(map[string]interface{}{
+func TestBuildContainerPreviewFromMetaAttributesKeepsResolvedMultiChild(t *testing.T) {
+	preview := buildContainerPreviewFromMetaAttributes(map[string]interface{}{
 		"format": "zip",
 		"type_info": map[string]interface{}{
 			"container": map[string]interface{}{
@@ -805,7 +915,7 @@ func TestBuildContainerPreviewFromAttributesKeepsResolvedMultiChild(t *testing.T
 
 func TestObjectContentRegistryDoesNotResolveCSV(t *testing.T) {
 	registry := NewObjectContentRegistry()
-	LoadObjectContentPlugins(registry, "../../plugins/manifest.json")
+	LoadObjectContentPlugins(registry, "../../plugins")
 
 	for _, req := range []ObjectContentRequest{
 		{Format: "csv"},
@@ -1249,9 +1359,9 @@ func TestDecoratePreviewContentSemanticMatrix(t *testing.T) {
 					"preview_material": "raw_content",
 				},
 			},
-			wantMaterial:      models.PreviewMaterialUnsupported,
-			wantRenderer:      models.ObjectPreviewKindUnsupported,
-			wantMetadata:      "raw_content",
+			wantMaterial: models.PreviewMaterialUnsupported,
+			wantRenderer: models.ObjectPreviewKindUnsupported,
+			wantMetadata: "raw_content",
 		},
 	}
 

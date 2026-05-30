@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/resume"
 )
 
 // CatalogModelProvider declares an engine's catalog shape and terminology.
@@ -92,6 +93,12 @@ type TableReadSession interface {
 	Close(ctx context.Context) error
 }
 
+// ResumeMarkerProvider is an optional capability implemented by read sessions
+// that can expose a stable read marker after successful reads.
+type ResumeMarkerProvider interface {
+	ResumeMarker() *resume.Marker
+}
+
 type BatchWritableProvider interface {
 	StoreProvider
 	WriteBatch(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, batch *BatchData, opts BatchWriteOptions) error
@@ -106,6 +113,12 @@ type TableWriteSession interface {
 	WriteBatch(ctx context.Context, batch *BatchData) error
 	Close(ctx context.Context) error
 	Abort(ctx context.Context) error
+}
+
+// CommitMarkerProvider is an optional capability implemented by write sessions
+// that can expose a stable commit marker after successful commits.
+type CommitMarkerProvider interface {
+	CommitMarker() *resume.Marker
 }
 
 type TableWritePreparer interface {
@@ -286,8 +299,9 @@ type BatchReadOptions struct {
 }
 
 type TableReadSessionOptions struct {
-	Query    string
-	Metadata map[string]interface{}
+	Query        string
+	Metadata     map[string]interface{}
+	ResumeMarker *resume.Marker
 }
 
 type BatchWriteOptions struct {
@@ -295,9 +309,10 @@ type BatchWriteOptions struct {
 }
 
 type TableWriteSessionOptions struct {
-	Method      string
-	Fields      []datatype.FieldInfo
-	SpatialInfo *datatype.SpatialInfo
+	Method       string
+	Fields       []datatype.FieldInfo
+	SpatialInfo  *datatype.SpatialInfo
+	ResumeMarker *resume.Marker
 }
 
 type TableWriteOptions struct {

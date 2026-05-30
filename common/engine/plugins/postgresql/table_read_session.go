@@ -11,10 +11,14 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/mappers/postgresql"
+	"github.com/addp/common/resume"
 	"github.com/addp/common/sqldialect"
 )
 
 func (p *PostgreSQLPlugin) OpenTableReadSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.TableReadSessionOptions) (plugin.TableReadSession, error) {
+	if err := resume.RejectUnsupported(opts.ResumeMarker, "postgresql.table_read_session"); err != nil {
+		return nil, err
+	}
 	connStr, err := p.BuildDSN(connInfo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build postgresql dsn: %w", err)

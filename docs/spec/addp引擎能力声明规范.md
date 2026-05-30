@@ -211,6 +211,20 @@ type StoreCapability struct {
 
 `read` / `write` 总开关无独立调用价值，不进入 Store 能力声明。`atomic_rename`、`transactions`、`formats` 不作为 Store 顶层字段；如有真实调用方，应在对应 Provider 或更具体能力中声明。
 
+### Checkpoint / Resume 能力
+
+`table_read_session`、`batch_read`、`range_read` 只说明引擎能连续读取、批量读取或按 byte range 读取，不等于支持 checkpoint resume。是否可以从失败点继续执行，必须另行声明恢复语义。
+
+第一版规则：
+
+1. 可恢复读取必须能返回 provider 可解释的 `resume_marker`，并能用该 marker 重新打开读取会话。当前 Go 草案使用 `common/resume.Marker`，引擎表读取侧通过 `TableReadSessionOptions.ResumeMarker` 输入恢复标记，通过 `ResumeMarkerProvider` 输出读取标记。
+2. 可恢复 marker 必须携带或关联 `fingerprint`，用于校验源资源、schema、排序、查询条件、读取选项和快照语义未变化。
+3. PostgreSQL cursor session 这类进程内 / 事务内 cursor 只属于连续读取优化；进程失败后 cursor 不存在，不能声明 checkpoint resumable。
+4. `LIMIT/OFFSET` 可作为 restartable 的从头重跑实现细节，但在没有稳定排序键、快照或版本标记前，不得声明 checkpoint resumable。
+5. 写侧 resumable 必须声明提交边界和幂等语义。普通 batch insert、COPY session、对象流式写入或文件流式写入都不能仅凭 provider 存在就推导为可断点续写。当前 Go 草案通过 `TableWriteSessionOptions.ResumeMarker` 输入恢复标记，通过 `CommitMarkerProvider` 暴露提交标记。
+6. provider 暂未实现 marker 消费时，收到 `TableReadSessionOptions.ResumeMarker` 或 `TableWriteSessionOptions.ResumeMarker` 必须显式返回 unsupported error，不得静默忽略后从头读取或重新写入。
+7. 若后续需要在 `engine.capabilities/v1` 中正式表达该能力，优先放在具体 store 能力的扩展段，而不是新增与 Provider 无关的顶层布尔字段。
+
 对象存储通常声明 `stream_read`、`range_read`，是否声明 `stream_write` 必须取决于是否提供对应写 Provider；对象存储通常不声明 `range_write`。文件系统是否支持 `range_write` 必须按真实能力和 Provider 实现声明。
 
 ---

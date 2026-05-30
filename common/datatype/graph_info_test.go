@@ -50,7 +50,7 @@ func TestGraphInfoCloneDeepCopiesShapes(t *testing.T) {
 	}
 }
 
-func TestGraphInfoAttributesUsesStandardShapeModel(t *testing.T) {
+func TestGraphInfoPayloadUsesStandardShapeModel(t *testing.T) {
 	t.Parallel()
 
 	nodeCount := int64(12)
@@ -78,69 +78,65 @@ func TestGraphInfoAttributesUsesStandardShapeModel(t *testing.T) {
 		}},
 	}
 
-	attrs := GraphInfoAttributes(info)
-	if attrs["edge_count"] != nil || attrs["node_labels"] != nil || attrs["relationship_types"] != nil {
-		t.Fatalf("legacy graph attrs should not be written: %#v", attrs)
+	payload := GraphInfoPayload(info)
+	if payload["edge_count"] != nil || payload["node_labels"] != nil || payload["relationship_types"] != nil {
+		t.Fatalf("legacy graph payload should not be written: %#v", payload)
 	}
-	if attrs["model"] != GraphModelPropertyGraph || attrs["directed"] != true || attrs["relationship_count"] != relationshipCount {
-		t.Fatalf("graph standard attrs missing: %#v", attrs)
+	if payload["model"] != GraphModelPropertyGraph || payload["directed"] != true || payload["relationship_count"] != relationshipCount {
+		t.Fatalf("graph standard payload missing: %#v", payload)
 	}
-	nodeShapes := attrs["node_shapes"].([]interface{})
+	nodeShapes := payload["node_shapes"].([]interface{})
 	nodeShape := nodeShapes[0].(map[string]interface{})
 	if nodeShape["kind"] != GraphNodeShapeKindLabelSet || nodeShape["name"] != "Employee+Person" {
-		t.Fatalf("node shape attrs = %#v", nodeShape)
+		t.Fatalf("node shape payload = %#v", nodeShape)
 	}
 	labels := nodeShape["labels"].([]interface{})
 	if len(labels) != 2 || labels[0] != "Employee" || labels[1] != "Person" {
 		t.Fatalf("node shape labels = %#v", labels)
 	}
-	relationshipShapes := attrs["relationship_shapes"].([]interface{})
+	relationshipShapes := payload["relationship_shapes"].([]interface{})
 	relationshipShape := relationshipShapes[0].(map[string]interface{})
 	patterns := relationshipShape["patterns"].([]interface{})
 	pattern := patterns[0].(map[string]interface{})
 	from := pattern["from"].(map[string]interface{})
 	if from["shape_name"] != "Employee+Person" {
-		t.Fatalf("relationship pattern attrs = %#v", pattern)
+		t.Fatalf("relationship pattern payload = %#v", pattern)
 	}
 }
 
-func TestGraphInfoFromAttributesRestoresAndNormalizesGraphFacts(t *testing.T) {
+func TestGraphInfoFromPayloadRestoresAndNormalizesGraphFacts(t *testing.T) {
 	t.Parallel()
 
-	attrs := map[string]interface{}{
-		"type_info": map[string]interface{}{
-			"graph": map[string]interface{}{
-				"model":              " property_graph ",
-				"node_count":         int64(12),
-				"relationship_count": int64(7),
-				"node_shapes": []interface{}{
-					map[string]interface{}{
-						"kind":   " label_set ",
-						"labels": []interface{}{" Person ", "Employee", "Person", ""},
-						"properties": []interface{}{
-							map[string]interface{}{"name": " name ", "type": "string"},
-						},
-						"count": int64(12),
-					},
+	payload := map[string]interface{}{
+		"model":              " property_graph ",
+		"node_count":         int64(12),
+		"relationship_count": int64(7),
+		"node_shapes": []interface{}{
+			map[string]interface{}{
+				"kind":   " label_set ",
+				"labels": []interface{}{" Person ", "Employee", "Person", ""},
+				"properties": []interface{}{
+					map[string]interface{}{"name": " name ", "type": "string"},
 				},
-				"relationship_shapes": []interface{}{
+				"count": int64(12),
+			},
+		},
+		"relationship_shapes": []interface{}{
+			map[string]interface{}{
+				"type": " WORKS_FOR ",
+				"patterns": []interface{}{
 					map[string]interface{}{
-						"type": " WORKS_FOR ",
-						"patterns": []interface{}{
-							map[string]interface{}{
-								"from":  map[string]interface{}{"labels": []interface{}{"Person", "Employee"}},
-								"to":    map[string]interface{}{"shape_name": " Company ", "labels": []interface{}{"Company"}},
-								"count": int64(7),
-							},
-						},
+						"from":  map[string]interface{}{"labels": []interface{}{"Person", "Employee"}},
+						"to":    map[string]interface{}{"shape_name": " Company ", "labels": []interface{}{"Company"}},
 						"count": int64(7),
 					},
 				},
+				"count": int64(7),
 			},
 		},
 	}
 
-	info := GraphInfoFromAttributes(attrs)
+	info := GraphInfoFromPayload(payload)
 	if info == nil || info.Model != GraphModelPropertyGraph {
 		t.Fatalf("graph info = %#v", info)
 	}

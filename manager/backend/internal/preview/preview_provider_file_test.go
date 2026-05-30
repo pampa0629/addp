@@ -691,7 +691,7 @@ func TestContainerChildPreviewProviderResolvesZIPTextEntry(t *testing.T) {
 		"docs/readme.txt": "hello nested document",
 	})
 	provider := NewContainerChildPreviewProvider(objectcontent.NewObjectContentRegistry())
-	objectcontent.LoadObjectContentPlugins(provider.(*ContainerChildPreviewProvider).content, "../../plugins/manifest.json")
+	objectcontent.LoadObjectContentPlugins(provider.(*ContainerChildPreviewProvider).content, "../../plugins")
 	req := &PreviewRequest{
 		Engine:       &models.Engine{EngineType: enginePlugin.Type(), ID: 7},
 		ItemType:     "file",
@@ -748,7 +748,7 @@ func TestContainerChildPreviewProviderDetectsUnknownZIPTextEntryForPreviewOnly(t
 		"config/docker-compose.yml": "services:\n  app:\n    image: alpine\n",
 	})
 	provider := NewContainerChildPreviewProvider(objectcontent.NewObjectContentRegistry())
-	objectcontent.LoadObjectContentPlugins(provider.(*ContainerChildPreviewProvider).content, "../../plugins/manifest.json")
+	objectcontent.LoadObjectContentPlugins(provider.(*ContainerChildPreviewProvider).content, "../../plugins")
 	req := &PreviewRequest{
 		Engine:       &models.Engine{EngineType: enginePlugin.Type(), ID: 7},
 		ItemType:     "file",
@@ -812,7 +812,7 @@ func TestContainerChildPreviewProviderResolvesZIPChinesePDFEntry(t *testing.T) {
 		childName: []byte("%PDF-1.4\n"),
 	})
 	provider := NewContainerChildPreviewProvider(objectcontent.NewObjectContentRegistry())
-	objectcontent.LoadObjectContentPlugins(provider.(*ContainerChildPreviewProvider).content, "../../plugins/manifest.json")
+	objectcontent.LoadObjectContentPlugins(provider.(*ContainerChildPreviewProvider).content, "../../plugins")
 	req := &PreviewRequest{
 		Engine:       &models.Engine{EngineType: enginePlugin.Type(), ID: 7},
 		ItemType:     "file",
@@ -1270,7 +1270,7 @@ func TestContainerChildPreviewProviderResolvesNestedZIPEntry(t *testing.T) {
 		"inner.zip": inner,
 	})
 	provider := NewContainerChildPreviewProvider(objectcontent.NewObjectContentRegistry())
-	objectcontent.LoadObjectContentPlugins(provider.(*ContainerChildPreviewProvider).content, "../../plugins/manifest.json")
+	objectcontent.LoadObjectContentPlugins(provider.(*ContainerChildPreviewProvider).content, "../../plugins")
 	req := &PreviewRequest{
 		Engine:       &models.Engine{EngineType: enginePlugin.Type(), ID: 7},
 		ItemType:     "file",
@@ -1342,7 +1342,7 @@ func TestContainerChildPreviewProviderPreviewsNestedZIPEntryByNestedChildPath(t 
 		"inner.zip": inner,
 	})
 	provider := NewContainerChildPreviewProvider(objectcontent.NewObjectContentRegistry())
-	objectcontent.LoadObjectContentPlugins(provider.(*ContainerChildPreviewProvider).content, "../../plugins/manifest.json")
+	objectcontent.LoadObjectContentPlugins(provider.(*ContainerChildPreviewProvider).content, "../../plugins")
 	req := &PreviewRequest{
 		Engine:          &models.Engine{EngineType: enginePlugin.Type(), ID: 7},
 		ItemType:        "file",
@@ -1411,7 +1411,7 @@ func TestContainerChildPreviewProviderPreviewsDeepNestedZIPEntryByNestedChildPat
 		"inner.zip": inner,
 	})
 	provider := NewContainerChildPreviewProvider(objectcontent.NewObjectContentRegistry())
-	objectcontent.LoadObjectContentPlugins(provider.(*ContainerChildPreviewProvider).content, "../../plugins/manifest.json")
+	objectcontent.LoadObjectContentPlugins(provider.(*ContainerChildPreviewProvider).content, "../../plugins")
 	req := &PreviewRequest{
 		Engine:          &models.Engine{EngineType: enginePlugin.Type(), ID: 7},
 		ItemType:        "file",
@@ -1541,7 +1541,7 @@ func TestContainerChildPreviewProviderPreviewsNestedZIPMultiTableChildRefs(t *te
 	}
 }
 
-func TestFileTablePreviewProviderRestoresSpatialInfoFromAttributes(t *testing.T) {
+func TestFileTablePreviewProviderRestoresSpatialInfoFromMetaAttributes(t *testing.T) {
 	t.Parallel()
 
 	provider := &FileTablePreviewProvider{}
@@ -2099,7 +2099,11 @@ func TestContainerChildInfoFromMapKeepsRefsAndExplicitNative(t *testing.T) {
 		"format":     "shapefile",
 		"unknown":    "ignored",
 		"native": map[string]interface{}{
-			"table": "roads",
+			"table":     "roads",
+			"columns":   []interface{}{map[string]interface{}{"name": "stale"}},
+			"fields":    []interface{}{"stale"},
+			"schema":    map[string]interface{}{"fields": []interface{}{"stale"}},
+			"type_info": map[string]interface{}{"table": map[string]interface{}{"fields": []interface{}{"stale"}}},
 		},
 		"refs": []interface{}{
 			map[string]interface{}{"role": "main", "path": "roads.shp", "required": true, "primary": true, "extension": ".shp"},
@@ -2114,6 +2118,11 @@ func TestContainerChildInfoFromMapKeepsRefsAndExplicitNative(t *testing.T) {
 	}
 	if child.Native["table"] != "roads" || child.Native["unknown"] != nil {
 		t.Fatalf("native = %#v, want explicit native only", child.Native)
+	}
+	for _, key := range []string{"columns", "fields", "schema", "type_info"} {
+		if child.Native[key] != nil {
+			t.Fatalf("schema-like native key %q should not survive: %#v", key, child.Native)
+		}
 	}
 }
 
@@ -2149,7 +2158,7 @@ func TestNormalizeObjectContentRequestFormatDropsUnknownLegacyFormat(t *testing.
 }
 
 func TestTableAccessIndexFromAttributesNormalizesFormat(t *testing.T) {
-	index := tableAccessIndexFromAttributes(map[string]interface{}{
+	index := tableAccessIndexFromMetaAttributes(map[string]interface{}{
 		"access_index": map[string]interface{}{
 			"table": map[string]interface{}{
 				"kind":        datatype.AccessIndexKindSparseRow,

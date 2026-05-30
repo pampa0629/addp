@@ -356,6 +356,8 @@ function syncSource(node) {
       format: nodeFormat(node),
       resource: endpointResource,
       sourceItem: {
+        meta_id: node.meta_id,
+        full_name: node.full_name,
         name: node.name,
         kind: node.kind,
         term: node.term,
@@ -430,7 +432,7 @@ function buildSelectedSourceSummary(node) {
   if (!node) return null
 
   const attrs = node.attributes || {}
-  const fields = tableFieldsFromAttributes(attrs)
+  const fields = tableFieldsFromMetaAttributes(attrs)
   const loadedFields = props.wizardState.sourceFields?.value || []
   const fieldCount = firstPresent(
     numericValue(attrs.field_count),
@@ -453,7 +455,7 @@ function buildSelectedSourceSummary(node) {
     attrs.storage?.modified_at
   )
   const format = selectedFormat.value
-  const spatial = spatialSummaryFromAttributes(attrs, fields.length > 0 ? fields : loadedFields)
+  const spatial = spatialSummaryFromMetaAttributes(attrs, fields.length > 0 ? fields : loadedFields)
 
   const items = []
 
@@ -497,11 +499,11 @@ function buildSelectedSourceSummary(node) {
   }
 }
 
-function tableFieldsFromAttributes(attrs) {
+function tableFieldsFromMetaAttributes(attrs) {
   return Array.isArray(attrs?.type_info?.table?.fields) ? attrs.type_info.table.fields : []
 }
 
-function spatialSummaryFromAttributes(attrs, fields) {
+function spatialSummaryFromMetaAttributes(attrs, fields) {
   const spatial = attrs?.capabilities?.spatial || {}
   const geometryColumns = Array.isArray(spatial.geometry_columns)
     ? spatial.geometry_columns
@@ -682,7 +684,7 @@ function restoreSourceNodeFromState(state) {
           table ? { name: table, kind: 'table', term: 'table' } : null
         ].filter(Boolean)
       },
-      attributes: restoreSourceAttributes(state, config.attributes)
+      attributes: restoreSourceAttributes(state)
     }
   }
 
@@ -707,7 +709,7 @@ function restoreSourceNodeFromState(state) {
           }))
         ].filter(Boolean)
       },
-      attributes: restoreSourceAttributes(state, config.attributes)
+      attributes: restoreSourceAttributes(state)
     }
   }
 
@@ -727,7 +729,7 @@ function restoreSourceNodeFromState(state) {
           term: index === parts.length - 1 ? 'file' : 'directory'
         }))
       },
-      attributes: restoreSourceAttributes(state, config.attributes)
+      attributes: restoreSourceAttributes(state)
     }
   }
 

@@ -547,14 +547,14 @@ func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID *uint, 
 			}
 			if meta := item.Record.Metadata; meta != nil {
 				// 从 metadata 中提取展示信息（字段名与 embedding_service.buildMetadata 对应）
-				assignStringFromAttributes(meta, "storage", "name", &doc.Name) // 文件名
-				assignString(meta, "engine_name", &doc.EngineName)             // 引擎名称
-				assignString(meta, "engine_type", &doc.EngineType)             // 引擎类型
-				assignStringFromAttributes(meta, "storage", "bucket", &doc.Bucket)
-				assignStringFromAttributes(meta, "storage", "path", &doc.Path) // 目录路径
+				assignStringFromMetaAttributes(meta, "storage", "name", &doc.Name) // 文件名
+				assignString(meta, "engine_name", &doc.EngineName)                 // 引擎名称
+				assignString(meta, "engine_type", &doc.EngineType)                 // 引擎类型
+				assignStringFromMetaAttributes(meta, "storage", "bucket", &doc.Bucket)
+				assignStringFromMetaAttributes(meta, "storage", "path", &doc.Path) // 目录路径
 
 				// 如果有标题字段也读取（用于未来扩展）
-				assignStringFromAttributes(meta, "type_info.document", "title", &doc.Title)
+				assignStringFromMetaAttributes(meta, "type_info.document", "title", &doc.Title)
 				assignString(meta, "content_preview", &doc.ContentPreview)
 
 				doc.Metadata = meta
@@ -678,7 +678,7 @@ func assignString(meta map[string]interface{}, key string, target *string) {
 	assignStringValue(meta[key], target)
 }
 
-func assignStringFromAttributes(meta map[string]interface{}, section, key string, target *string) {
+func assignStringFromMetaAttributes(meta map[string]interface{}, section, key string, target *string) {
 	if target == nil || meta == nil {
 		return
 	}

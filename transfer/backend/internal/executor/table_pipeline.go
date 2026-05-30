@@ -10,6 +10,7 @@ import (
 	"github.com/addp/common/engine/contentadapter"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
+	"github.com/addp/common/resume"
 )
 
 type TablePipelineMetrics struct {
@@ -27,6 +28,7 @@ type TableBatchReader interface {
 	SpatialInfo() *datatype.SpatialInfo
 	ReadBatch(ctx context.Context, limit int) (*engineplugin.BatchData, error)
 	Close(ctx context.Context) error
+	ResumeMarker() *resume.Marker
 }
 
 type TableBatchTarget interface {
@@ -37,6 +39,7 @@ type TableBatchWriter interface {
 	WriteBatch(ctx context.Context, batch *engineplugin.BatchData) error
 	Close(ctx context.Context) error
 	Abort(ctx context.Context) error
+	CommitMarker() *resume.Marker
 }
 
 type targetResourceDeleter interface {
@@ -146,6 +149,7 @@ func (p *TablePipeline) Execute(ctx context.Context) (*TablePipelineMetrics, err
 	}()
 
 	metrics := &TablePipelineMetrics{}
+	var lastSourceOffset int64
 	for {
 		batch := firstBatch
 		if firstBatch != nil {
@@ -161,6 +165,7 @@ func (p *TablePipeline) Execute(ctx context.Context) (*TablePipelineMetrics, err
 			break
 		}
 		sourceOffset := batch.Offset
+		lastSourceOffset = sourceOffset
 		if len(transforms) > 0 {
 			batch, err = applyBatchTransforms(ctx, batch, transforms)
 			if err != nil {
@@ -181,6 +186,8 @@ func (p *TablePipeline) Execute(ctx context.Context) (*TablePipelineMetrics, err
 				BatchRows:      rowCount,
 				RecordsRead:    metrics.RecordsRead,
 				RecordsWritten: metrics.RecordsWritten,
+				ResumeMarker:   cloneResumeMarker(reader.ResumeMarker()),
+				CommitMarker:   cloneResumeMarker(writer.CommitMarker()),
 			}); err != nil {
 				return metrics, fmt.Errorf("update table transfer progress at batch %d: %w", metrics.Batches, err)
 			}
@@ -190,6 +197,19 @@ func (p *TablePipeline) Execute(ctx context.Context) (*TablePipelineMetrics, err
 		return metrics, err
 	}
 	writerClosed = true
+	if p.ProgressCallback != nil {
+		if err := p.ProgressCallback(ctx, TableProgressEvent{
+			BatchIndex:     metrics.Batches,
+			SourceOffset:   lastSourceOffset,
+			RecordsRead:    metrics.RecordsRead,
+			RecordsWritten: metrics.RecordsWritten,
+			ResumeMarker:   cloneResumeMarker(reader.ResumeMarker()),
+			CommitMarker:   cloneResumeMarker(writer.CommitMarker()),
+			Final:          true,
+		}); err != nil {
+			return metrics, fmt.Errorf("update final table transfer checkpoint: %w", err)
+		}
+	}
 	return metrics, nil
 }
 
@@ -204,14 +224,16 @@ type nativeTableBatchSource struct {
 	path                 engineplugin.CatalogPath
 	query                string
 	readOptions          map[string]interface{}
+	resumeMarker         *resume.Marker
 	tableInfo            *datatype.TableInfo
 }
 
 func (s *nativeTableBatchSource) Open(ctx context.Context) (TableBatchReader, error) {
 	if s.tableSessionProvider != nil {
 		session, err := s.tableSessionProvider.OpenTableReadSession(ctx, s.connInfo, s.path, engineplugin.TableReadSessionOptions{
-			Query:    s.query,
-			Metadata: s.readOptions,
+			Query:        s.query,
+			Metadata:     s.readOptions,
+			ResumeMarker: cloneResumeMarker(s.resumeMarker),
 		})
 		if err != nil {
 			return nil, fmt.Errorf("open native table read session: %w", err)
@@ -275,6 +297,13 @@ func (r *nativeTableSessionBatchReader) Close(ctx context.Context) error {
 	return r.session.Close(ctx)
 }
 
+func (r *nativeTableSessionBatchReader) ResumeMarker() *resume.Marker {
+	if markerProvider, ok := r.session.(engineplugin.ResumeMarkerProvider); ok {
+		return markerProvider.ResumeMarker()
+	}
+	return nil
+}
+
 type nativeOffsetBatchReader struct {
 	reader    engineplugin.BatchReadableProvider
 	connInfo  engineplugin.ConnectionInfo
@@ -321,6 +350,10 @@ func (r *nativeOffsetBatchReader) Close(context.Context) error {
 	return nil
 }
 
+func (r *nativeOffsetBatchReader) ResumeMarker() *resume.Marker {
+	return nil
+}
+
 type encodedContentTableSource struct {
 	reader              engineplugin.ContentReadableProvider
 	tableProvider       format.TableReaderProvider
@@ -334,16 +367,18 @@ type encodedContentTableSource struct {
 	path                engineplugin.CatalogPath
 	readOptions         engineplugin.ReadOptions
 	parseOptions        *format.ParseOptions
+	resumeMarker        *resume.Marker
 	tableInfo           *datatype.TableInfo
 	spatialInfo         *datatype.SpatialInfo
 	relatedRefs         []format.RelatedRef
 }
 
 func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader, error) {
+	parseOptions := parseOptionsWithResumeMarker(s.parseOptions, s.resumeMarker)
 	if s.scopeReaderProvider != nil {
 		scope := contentRefFromCatalogPath(s.path)
 		scope.Role = contentio.RoleScope
-		tableReader, err := s.scopeReaderProvider.OpenTableScopeReader(ctx, s.scopeReader(), scope, s.parseOptions)
+		tableReader, err := s.scopeReaderProvider.OpenTableScopeReader(ctx, s.scopeReader(), scope, parseOptions)
 		if err != nil {
 			return nil, fmt.Errorf("open encoded source scope table reader: %w", err)
 		}
@@ -364,7 +399,7 @@ func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader,
 
 	if s.multiReaderProvider != nil {
 		reader, refs := s.refReader(s.multiReaderProvider.RelatedRefSpecs())
-		tableReader, err := s.multiReaderProvider.OpenMultiTableReader(ctx, reader, refs, s.parseOptions)
+		tableReader, err := s.multiReaderProvider.OpenMultiTableReader(ctx, reader, refs, parseOptions)
 		if err != nil {
 			return nil, fmt.Errorf("open encoded source multi table reader: %w", err)
 		}
@@ -387,7 +422,7 @@ func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader,
 		reader, refs := s.refReader(s.multiInfoProvider.RelatedRefSpecs())
 		tableInfo := s.tableInfo
 		if tableInfoEmpty(tableInfo) {
-			result, err := s.multiInfoProvider.DescribeMultiTable(ctx, reader, refs, s.parseOptions)
+			result, err := s.multiInfoProvider.DescribeMultiTable(ctx, reader, refs, parseOptions)
 			if err != nil {
 				return nil, fmt.Errorf("describe encoded source table refs: %w", err)
 			}
@@ -400,7 +435,7 @@ func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader,
 			readerProvider: s.multiSampleReader,
 			tableInfo:      tableInfo,
 			spatialInfo:    s.spatialInfo.Clone(),
-			parseOptions:   s.parseOptions,
+			parseOptions:   parseOptions,
 		}, nil
 	}
 
@@ -427,7 +462,7 @@ func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader,
 	if err != nil {
 		return nil, fmt.Errorf("open encoded source content: %w", err)
 	}
-	tableReader, err := s.tableProvider.OpenTableReader(ctx, input, s.parseOptions)
+	tableReader, err := s.tableProvider.OpenTableReader(ctx, input, parseOptions)
 	if err != nil {
 		_ = input.Close()
 		return nil, fmt.Errorf("open encoded source table reader: %w", err)
@@ -440,6 +475,25 @@ func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader,
 		spatialInfo = spatialInfoFromFormatReader(tableReader)
 	}
 	return &encodedTableBatchReader{input: input, tableReader: tableReader, tableInfo: tableInfo, spatialInfo: spatialInfo}, nil
+}
+
+func parseOptionsWithResumeMarker(options *format.ParseOptions, marker *resume.Marker) *format.ParseOptions {
+	if marker == nil {
+		return options
+	}
+	if options == nil {
+		options = format.DefaultParseOptions()
+	}
+	copied := *options
+	copied.ResumeMarker = marker.Clone()
+	return &copied
+}
+
+func cloneResumeMarker(marker *resume.Marker) *resume.Marker {
+	if marker == nil {
+		return nil
+	}
+	return marker.Clone()
 }
 
 type multiTableBatchReader struct {
@@ -483,6 +537,13 @@ func (r *multiTableBatchReader) Close(ctx context.Context) error {
 		return nil
 	}
 	return r.tableReader.Close(ctx)
+}
+
+func (r *multiTableBatchReader) ResumeMarker() *resume.Marker {
+	if markerProvider, ok := r.tableReader.(format.ResumeMarkerProvider); ok {
+		return markerProvider.ResumeMarker()
+	}
+	return nil
 }
 
 func (s *encodedContentTableSource) describeTableInfo(ctx context.Context) (*datatype.TableInfo, error) {
@@ -584,6 +645,13 @@ func (r *encodedTableBatchReader) Close(ctx context.Context) error {
 	return firstErr
 }
 
+func (r *encodedTableBatchReader) ResumeMarker() *resume.Marker {
+	if markerProvider, ok := r.tableReader.(format.ResumeMarkerProvider); ok {
+		return markerProvider.ResumeMarker()
+	}
+	return nil
+}
+
 type multiEncodedTableBatchReader struct {
 	reader         contentio.Reader
 	refs           []format.RelatedRef
@@ -628,6 +696,10 @@ func (r *multiEncodedTableBatchReader) ReadBatch(ctx context.Context, limit int)
 }
 
 func (r *multiEncodedTableBatchReader) Close(context.Context) error {
+	return nil
+}
+
+func (r *multiEncodedTableBatchReader) ResumeMarker() *resume.Marker {
 	return nil
 }
 
@@ -683,6 +755,10 @@ func (r *sampleEncodedTableBatchReader) Close(context.Context) error {
 	return nil
 }
 
+func (r *sampleEncodedTableBatchReader) ResumeMarker() *resume.Marker {
+	return nil
+}
+
 func (s *encodedContentTableSource) contentReader() contentio.Reader {
 	return contentadapter.NewMappedReader(s.reader, s.connInfo, contentadapter.FixedPathMapper(s.path), s.readOptions)
 }
@@ -707,6 +783,7 @@ type nativeTableBatchTarget struct {
 	path                 engineplugin.CatalogPath
 	prepareOptions       engineplugin.TableWriteOptions
 	writeOptions         engineplugin.BatchWriteOptions
+	resumeMarker         *resume.Marker
 }
 
 func (t *nativeTableBatchTarget) Open(ctx context.Context, tableInfo *datatype.TableInfo, spatialInfo *datatype.SpatialInfo) (TableBatchWriter, error) {
@@ -721,9 +798,10 @@ func (t *nativeTableBatchTarget) Open(ctx context.Context, tableInfo *datatype.T
 	fields := tableInfoFields(tableInfo)
 	if t.tableSessionProvider != nil && isCopyWriteMethod(t.writeOptions.Method) {
 		session, err := t.tableSessionProvider.OpenTableWriteSession(ctx, t.connInfo, t.path, engineplugin.TableWriteSessionOptions{
-			Method:      t.writeOptions.Method,
-			Fields:      fields,
-			SpatialInfo: spatialInfo,
+			Method:       t.writeOptions.Method,
+			Fields:       fields,
+			SpatialInfo:  spatialInfo,
+			ResumeMarker: cloneResumeMarker(t.resumeMarker),
 		})
 		if err != nil {
 			return nil, fmt.Errorf("open native table write session: %w", err)
@@ -785,6 +863,10 @@ func (w *nativeDirectBatchWriter) Abort(context.Context) error {
 	return nil
 }
 
+func (w *nativeDirectBatchWriter) CommitMarker() *resume.Marker {
+	return nil
+}
+
 func batchWithTargetFields(batch *engineplugin.BatchData, fields []datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) *engineplugin.BatchData {
 	if batch == nil || (len(fields) == 0 && spatialInfo == nil) {
 		return batch
@@ -836,6 +918,13 @@ func (w *nativeTableSessionBatchWriter) Abort(ctx context.Context) error {
 	return w.session.Abort(ctx)
 }
 
+func (w *nativeTableSessionBatchWriter) CommitMarker() *resume.Marker {
+	if markerProvider, ok := w.session.(engineplugin.CommitMarkerProvider); ok {
+		return markerProvider.CommitMarker()
+	}
+	return nil
+}
+
 type encodedContentTableTarget struct {
 	writer         engineplugin.ContentWritableProvider
 	deleter        *engineTargetResourceDeleter
@@ -845,10 +934,11 @@ type encodedContentTableTarget struct {
 	path           engineplugin.CatalogPath
 	writeOptions   engineplugin.WriteOptions
 	formatOptions  *format.WriteOptions
+	resumeMarker   *resume.Marker
 }
 
 func (t *encodedContentTableTarget) Open(ctx context.Context, tableInfo *datatype.TableInfo, spatialInfo *datatype.SpatialInfo) (TableBatchWriter, error) {
-	formatOptions := writeOptionsWithSpatialInfo(t.formatOptions, tableInfo, spatialInfo)
+	formatOptions := writeOptionsWithResumeMarker(writeOptionsWithSpatialInfo(t.formatOptions, tableInfo, spatialInfo), t.resumeMarker)
 	if t.deleter != nil {
 		if err := t.deleteExistingTarget(ctx); err != nil {
 			return nil, err
@@ -880,6 +970,18 @@ func (t *encodedContentTableTarget) Open(ctx context.Context, tableInfo *datatyp
 		return nil, fmt.Errorf("open encoded target table writer: %w", err)
 	}
 	return &contentTableBatchWriter{output: output, tableWriter: tableWriter}, nil
+}
+
+func writeOptionsWithResumeMarker(options *format.WriteOptions, marker *resume.Marker) *format.WriteOptions {
+	if marker == nil {
+		return options
+	}
+	if options == nil {
+		options = format.DefaultWriteOptions()
+	}
+	copied := *options
+	copied.ResumeMarker = marker.Clone()
+	return &copied
 }
 
 func (t *encodedContentTableTarget) deleteExistingTarget(ctx context.Context) error {
@@ -937,6 +1039,10 @@ func (w *emptyContentBatchWriter) Abort(context.Context) error {
 	return w.output.Close()
 }
 
+func (w *emptyContentBatchWriter) CommitMarker() *resume.Marker {
+	return nil
+}
+
 type contentTableBatchWriter struct {
 	output      io.Closer
 	tableWriter format.TableWriter
@@ -975,6 +1081,13 @@ func (w *contentTableBatchWriter) Abort(context.Context) error {
 	return w.output.Close()
 }
 
+func (w *contentTableBatchWriter) CommitMarker() *resume.Marker {
+	if markerProvider, ok := w.tableWriter.(format.CommitMarkerProvider); ok {
+		return markerProvider.CommitMarker()
+	}
+	return nil
+}
+
 type multiTableBatchWriter struct {
 	tableWriter format.TableWriter
 	closed      bool
@@ -1005,6 +1118,13 @@ func (w *multiTableBatchWriter) Abort(ctx context.Context) error {
 	w.closed = true
 	if w.tableWriter != nil {
 		return w.tableWriter.Close(ctx)
+	}
+	return nil
+}
+
+func (w *multiTableBatchWriter) CommitMarker() *resume.Marker {
+	if markerProvider, ok := w.tableWriter.(format.CommitMarkerProvider); ok {
+		return markerProvider.CommitMarker()
 	}
 	return nil
 }

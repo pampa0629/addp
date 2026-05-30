@@ -6,6 +6,7 @@ import (
 	"github.com/addp/common/contentio"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
+	"github.com/addp/common/resume"
 	"github.com/jonas-p/go-shp"
 	"strings"
 )
@@ -45,6 +46,9 @@ var _ format.MultiTableReaderProvider = (*Plugin)(nil)
 
 func (plugin *Plugin) OpenMultiTableReader(ctx context.Context, reader contentio.Reader, refs []format.RelatedRef, options *format.ParseOptions) (format.TableReader, error) {
 	opts := plugin.resolveOptions(options)
+	if err := resume.RejectUnsupported(opts.ResumeMarker, "shapefile.multi_table_reader"); err != nil {
+		return nil, err
+	}
 
 	if rangeReader, ok := reader.(contentio.RangeReader); ok {
 		source, indexed, err := newIndexedMultiTableReadSource(ctx, plugin, refs, rangeReader, opts)

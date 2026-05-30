@@ -6,26 +6,17 @@ import (
 	commonJSON "github.com/addp/common/jsonmap"
 )
 
-// TableInfoFromAttributes restores common table facts from attributes.type_info.table.
-func TableInfoFromAttributes(attrs map[string]interface{}, fallbackName string) *TableInfo {
-	tableAttrs := commonJSON.Section(attrs, "type_info.table")
-	return TableInfoFromTableAttributes(tableAttrs, fallbackName)
-}
-
-// TableInfoFromTableAttributes restores common table facts from a table attribute map.
-func TableInfoFromTableAttributes(tableAttrs map[string]interface{}, fallbackName string) *TableInfo {
-	if len(tableAttrs) == 0 {
+// TableInfoFromPayload restores common table facts from a table JSON payload.
+func TableInfoFromPayload(payload map[string]interface{}, fallbackName string) *TableInfo {
+	if len(payload) == 0 {
 		return nil
 	}
 	var info TableInfo
-	if err := commonJSON.DecodeStruct(tableAttrs, &info); err != nil {
+	if err := commonJSON.DecodeStruct(payload, &info); err != nil {
 		return nil
 	}
 	for i := range info.Fields {
 		info.Fields[i] = normalizeFieldInfo(info.Fields[i])
-	}
-	if len(info.Fields) == 0 {
-		return nil
 	}
 	info.Name = strings.TrimSpace(info.Name)
 	if info.Name == "" {
@@ -40,16 +31,19 @@ func TableInfoFromTableAttributes(tableAttrs map[string]interface{}, fallbackNam
 	if info.SizeBytes != nil && *info.SizeBytes <= 0 {
 		info.SizeBytes = nil
 	}
+	if !hasTableInfoFacts(info) {
+		return nil
+	}
 	return &info
 }
 
-// TableInfoAttributes converts common table facts to attributes.type_info.table.
-func TableInfoAttributes(info *TableInfo) map[string]interface{} {
+// TableInfoPayload converts common table facts to a JSON payload.
+func TableInfoPayload(info *TableInfo) map[string]interface{} {
 	return commonJSON.MapFromStruct(info)
 }
 
-// FieldInfosFromAttributes restores common field facts from attributes arrays.
-func FieldInfosFromAttributes(value interface{}) []FieldInfo {
+// FieldInfosFromPayload restores common field facts from a JSON payload array.
+func FieldInfosFromPayload(value interface{}) []FieldInfo {
 	items := commonJSON.InterfaceSlice(value)
 	fields := make([]FieldInfo, 0, len(items))
 	for _, item := range items {
@@ -66,15 +60,28 @@ func FieldInfosFromAttributes(value interface{}) []FieldInfo {
 	return fields
 }
 
-// FieldInfoAttributes converts common field facts to attributes arrays.
-func FieldInfoAttributes(fields []FieldInfo) []map[string]interface{} {
+// FieldInfoPayload converts common field facts to JSON payload arrays.
+func FieldInfoPayload(fields []FieldInfo) []map[string]interface{} {
 	fieldsData := make([]map[string]interface{}, 0, len(fields))
 	for _, f := range fields {
-		if attrs := commonJSON.MapFromStruct(f); len(attrs) > 0 {
-			fieldsData = append(fieldsData, attrs)
+		if payload := commonJSON.MapFromStruct(f); len(payload) > 0 {
+			fieldsData = append(fieldsData, payload)
 		}
 	}
 	return fieldsData
+}
+
+func hasTableInfoFacts(info TableInfo) bool {
+	return info.Name != "" ||
+		info.Kind != "" ||
+		info.Comment != "" ||
+		info.RowCount != nil ||
+		info.SizeBytes != nil ||
+		info.CreatedAt != nil ||
+		info.UpdatedAt != nil ||
+		len(info.Fields) > 0 ||
+		len(info.PrimaryKey) > 0 ||
+		len(info.Native) > 0
 }
 
 func normalizeFieldInfo(field FieldInfo) FieldInfo {

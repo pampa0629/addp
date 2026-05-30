@@ -6,7 +6,7 @@ import (
 )
 
 func containerPreviewContentFromMetaAttributes(attrs map[string]interface{}, sizeBytes int64, path, name string) *models.ObjectPreviewContent {
-	previewJSON := objectcontent.BuildContainerPreviewFromAttributes(attrs, sizeBytes)
+	previewJSON := objectcontent.BuildContainerPreviewFromMetaAttributes(attrs, sizeBytes)
 	if previewJSON == nil {
 		return nil
 	}

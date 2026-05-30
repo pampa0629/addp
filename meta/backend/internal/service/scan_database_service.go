@@ -362,7 +362,7 @@ func (s *DatabaseScanService) scanTableDetails(
 		if engineSupportsSpatialMetadata(resource.EngineType) && db != nil {
 			spatialMeta := s.scanSpatialMetadata(ctx, db, schemaName, tableInfo.Name)
 			if spatialMeta != nil {
-				metaattr.UpsertNested(attrs, "capabilities", "spatial", metaattr.SpatialInfoAttributes(spatialInfoFromMetadata(spatialMeta)))
+				metaattr.UpsertNested(attrs, "capabilities", "spatial", datatype.SpatialInfoPayload(spatialInfoFromMetadata(spatialMeta)))
 				s.log.Info("空间元数据扫描成功",
 					"table", tableInfo.Name,
 					"geometry_column", spatialMeta.GeometryColumn,

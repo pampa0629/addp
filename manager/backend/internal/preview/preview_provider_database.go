@@ -10,7 +10,6 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
-	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/spatial"
 	"github.com/addp/common/sqldialect"
 	"github.com/addp/manager/internal/models"
@@ -448,8 +447,11 @@ func (p *DatabaseTablePreviewProvider) resolveTableRowCount(
 	if req != nil && req.ItemRowCount != nil && *req.ItemRowCount > 0 {
 		return *req.ItemRowCount
 	}
-	if rowCount, ok := previewTableRowCountFromAttributes(req.Attributes); ok {
-		return rowCount
+	if req != nil {
+		tableInfo := tableInfoFromMetaAttributes(req.Attributes, "")
+		if tableInfo != nil && tableInfo.RowCount != nil && *tableInfo.RowCount > 0 {
+			return *tableInfo.RowCount
+		}
 	}
 	if itemMetadata != nil {
 		if tableInfo := plugin.ItemMetadataTableInfo(itemMetadata); tableInfo != nil && tableInfo.RowCount != nil && *tableInfo.RowCount > 0 {
@@ -510,18 +512,6 @@ func numericToInt64(value interface{}) int64 {
 		}
 	}
 	return 0
-}
-
-func previewTableRowCountFromAttributes(attrs map[string]interface{}) (int64, bool) {
-	tableAttrs := commonJSON.Section(attrs, "type_info.table")
-	if len(tableAttrs) == 0 {
-		return 0, false
-	}
-	rowCount, ok := databaseInt64Stat(tableAttrs, "row_count")
-	if !ok || rowCount <= 0 {
-		return 0, false
-	}
-	return rowCount, true
 }
 
 // getColumnMetadataFromMeta 从 Meta 服务获取列元数据（包含准确的几何类型）

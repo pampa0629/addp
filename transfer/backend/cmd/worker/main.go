@@ -76,6 +76,7 @@ func main() {
 	// 创建统一执行服务
 	taskExecutionRepo := commonRepo.NewTaskExecutionRepository(db)
 	executionService := service.NewExecutionService(db, taskExecutionRepo)
+	executionService.SetTaskQueue(taskQueue)
 
 	// 创建 SystemClient（用于执行引擎）
 	var systemClient *commonClient.SystemClient

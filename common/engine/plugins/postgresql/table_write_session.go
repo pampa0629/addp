@@ -8,10 +8,17 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/resume"
 	"github.com/lib/pq"
 )
 
+const postgresTableWriteSessionMarkerProvider = "postgresql.table_write_session"
+const postgresTableWriteSessionMarkerPositionUnit = "session_commit"
+
 func (p *PostgreSQLPlugin) OpenTableWriteSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.TableWriteSessionOptions) (plugin.TableWriteSession, error) {
+	if err := resume.RejectUnsupported(opts.ResumeMarker, "postgresql.table_write_session"); err != nil {
+		return nil, err
+	}
 	if !shouldUseCopyWriteMethod(opts.Method) {
 		return nil, fmt.Errorf("postgresql table write session only supports copy method")
 	}
@@ -49,6 +56,8 @@ func (p *PostgreSQLPlugin) OpenTableWriteSession(ctx context.Context, connInfo p
 		db:              db,
 		tx:              tx,
 		stmt:            stmt,
+		schema:          schema,
+		table:           table,
 		columns:         columns,
 		geometryColumns: postgresGeometryColumns(opts.Fields),
 	}, nil
@@ -84,8 +93,13 @@ type postgresTableWriteSession struct {
 	db              *sql.DB
 	tx              *sql.Tx
 	stmt            *sql.Stmt
+	schema          string
+	table           string
 	columns         []string
 	geometryColumns map[string]struct{}
+	batchesWritten  int64
+	rowsWritten     int64
+	commitMarker    *resume.Marker
 	closed          bool
 }
 
@@ -109,6 +123,8 @@ func (s *postgresTableWriteSession) WriteBatch(ctx context.Context, batch *plugi
 			return fmt.Errorf("copy postgresql row: %w", err)
 		}
 	}
+	s.batchesWritten++
+	s.rowsWritten += int64(len(batch.Rows))
 	return nil
 }
 
@@ -130,10 +146,18 @@ func (s *postgresTableWriteSession) Close(ctx context.Context) error {
 		_ = s.db.Close()
 		return fmt.Errorf("commit postgresql copy session: %w", err)
 	}
+	s.commitMarker = s.buildCommitMarker()
 	if err := s.db.Close(); err != nil {
 		return fmt.Errorf("close postgresql copy session connection: %w", err)
 	}
 	return nil
+}
+
+func (s *postgresTableWriteSession) CommitMarker() *resume.Marker {
+	if s == nil {
+		return nil
+	}
+	return s.commitMarker.Clone()
 }
 
 func (s *postgresTableWriteSession) Abort(ctx context.Context) error {
@@ -162,4 +186,23 @@ func (s *postgresTableWriteSession) abort() error {
 		}
 	}
 	return abortErr
+}
+
+func (s *postgresTableWriteSession) buildCommitMarker() *resume.Marker {
+	return &resume.Marker{
+		Version:      resume.MarkerVersionV1,
+		Provider:     postgresTableWriteSessionMarkerProvider,
+		PositionUnit: postgresTableWriteSessionMarkerPositionUnit,
+		CommitPosition: map[string]interface{}{
+			"rows_committed":    s.rowsWritten,
+			"batches_committed": s.batchesWritten,
+		},
+		Fingerprint: map[string]interface{}{
+			"target":  strings.Trim(s.schema+"/"+s.table, "/"),
+			"schema":  s.schema,
+			"table":   s.table,
+			"columns": append([]string(nil), s.columns...),
+			"method":  "postgres_copy",
+		},
+	}
 }

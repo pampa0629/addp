@@ -10,6 +10,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/dbbridge"
+	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/models"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -260,7 +261,7 @@ func (h *DataSourceHandler) GetGraphNodeShapes(c *gin.Context) {
 		return
 	}
 
-	graphInfo := datatype.GraphInfoFromAttributes(item.Attributes)
+	graphInfo := datatype.GraphInfoFromPayload(commonJSON.Section(item.Attributes, "type_info.graph"))
 	if graphInfo == nil {
 		c.JSON(http.StatusOK, []graphNodeShapeOption{})
 		return

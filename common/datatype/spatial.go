@@ -1,5 +1,7 @@
 package datatype
 
+import commonJSON "github.com/addp/common/jsonmap"
+
 // SpatialInfo describes spatial facts that cut across data types.
 type SpatialInfo struct {
 	SRID                  *int                 `json:"srid,omitempty"`
@@ -45,6 +47,157 @@ func NewSingleGeometrySpatialInfo(columnName, geometryType string, srid int, dim
 // NewBoundingBox returns a bounding box using [min_x, min_y, max_x, max_y] order.
 func NewBoundingBox(minX, minY, maxX, maxY float64) BoundingBox {
 	return BoundingBox{minX, minY, maxX, maxY}
+}
+
+// SpatialInfoFromPayload restores common spatial facts from a spatial JSON payload.
+func SpatialInfoFromPayload(payload map[string]interface{}) *SpatialInfo {
+	if len(payload) == 0 {
+		return nil
+	}
+
+	geometryColumns := geometryColumnsFromPayload(payload)
+	primaryName := commonJSON.InterfaceString(payload["primary_geometry_column"])
+	if primaryName == "" && len(geometryColumns) == 1 {
+		primaryName = geometryColumns[0].Name
+	}
+
+	info := &SpatialInfo{
+		GeometryColumns:       geometryColumns,
+		PrimaryGeometryColumn: primaryName,
+		CRS:                   commonJSON.InterfaceString(payload["crs"]),
+		IndexName:             commonJSON.InterfaceString(payload["index_name"]),
+	}
+	if srid := int(commonJSON.InterfaceInt64(payload["srid"])); srid > 0 {
+		info.SRID = &srid
+	}
+	if _, ok := payload["has_spatial_index"]; ok {
+		hasSpatialIndex := commonJSON.InterfaceBool(payload["has_spatial_index"])
+		info.HasSpatialIndex = &hasSpatialIndex
+	}
+	if extent := commonJSON.InterfaceFloat64Slice(payload["extent"]); len(extent) == 4 {
+		boundingBox := BoundingBox{extent[0], extent[1], extent[2], extent[3]}
+		info.Extent = &boundingBox
+	}
+	if primaryName == "" && len(geometryColumns) == 0 && info.SRID == nil && info.CRS == "" && info.Extent == nil && info.HasSpatialIndex == nil && info.IndexName == "" {
+		return nil
+	}
+	return info
+}
+
+// SpatialInfoPayload converts common spatial facts to a JSON payload.
+func SpatialInfoPayload(info *SpatialInfo) map[string]interface{} {
+	if info == nil {
+		return nil
+	}
+	srid := info.SRID
+	crs := info.CRS
+	if len(info.GeometryColumns) == 1 && info.GeometryColumns[0].Name == "" {
+		if srid == nil {
+			srid = info.GeometryColumns[0].SRID
+		}
+		if crs == "" {
+			crs = info.GeometryColumns[0].CRS
+		}
+	}
+	if srid != nil {
+		crs = ""
+	}
+	payload := commonJSON.MapFromStruct(spatialInfoPayload{
+		SRID:                  srid,
+		CRS:                   crs,
+		PrimaryGeometryColumn: info.PrimaryGeometryColumn,
+		HasSpatialIndex:       info.HasSpatialIndex,
+		IndexName:             info.IndexName,
+	})
+	if payload == nil {
+		payload = map[string]interface{}{}
+	}
+	if len(info.GeometryColumns) > 0 {
+		geometryColumns := geometryColumnPayloads(info.GeometryColumns)
+		if len(geometryColumns) > 0 {
+			payload["geometry_columns"] = geometryColumns
+		}
+	}
+	if info.Extent != nil {
+		bbox := *info.Extent
+		payload["extent"] = []float64{bbox[0], bbox[1], bbox[2], bbox[3]}
+	}
+	if len(payload) == 0 {
+		return nil
+	}
+	return payload
+}
+
+type spatialInfoPayload struct {
+	SRID                  *int   `json:"srid,omitempty"`
+	CRS                   string `json:"crs,omitempty"`
+	PrimaryGeometryColumn string `json:"primary_geometry_column,omitempty"`
+	HasSpatialIndex       *bool  `json:"has_spatial_index,omitempty"`
+	IndexName             string `json:"index_name,omitempty"`
+}
+
+type geometryColumnPayload struct {
+	Name         string `json:"name,omitempty"`
+	GeometryType string `json:"geometry_type,omitempty"`
+	SRID         *int   `json:"srid,omitempty"`
+	CRS          string `json:"crs,omitempty"`
+	Dimension    *int   `json:"dimension,omitempty"`
+	Nullable     *bool  `json:"nullable,omitempty"`
+}
+
+func geometryColumnsFromPayload(payload map[string]interface{}) []GeometryColumnInfo {
+	items := commonJSON.InterfaceSlice(payload["geometry_columns"])
+	columns := make([]GeometryColumnInfo, 0, len(items))
+	for _, item := range items {
+		columnPayload := commonJSON.InterfaceMap(item)
+		name := commonJSON.InterfaceString(columnPayload["name"])
+		if name == "" {
+			continue
+		}
+		column := GeometryColumnInfo{
+			Name:         name,
+			GeometryType: commonJSON.InterfaceString(columnPayload["geometry_type"]),
+			CRS:          commonJSON.InterfaceString(columnPayload["crs"]),
+		}
+		if srid := int(commonJSON.InterfaceInt64(columnPayload["srid"])); srid > 0 {
+			column.SRID = &srid
+		}
+		if dimension := int(commonJSON.InterfaceInt64(columnPayload["dimension"])); dimension > 0 {
+			column.Dimension = &dimension
+		}
+		if _, ok := columnPayload["nullable"]; ok {
+			nullable := commonJSON.InterfaceBool(columnPayload["nullable"])
+			column.Nullable = &nullable
+		}
+		columns = append(columns, column)
+	}
+	return columns
+}
+
+func geometryColumnPayloads(columns []GeometryColumnInfo) []map[string]interface{} {
+	result := make([]map[string]interface{}, 0, len(columns))
+	for _, column := range columns {
+		if column.Name == "" {
+			continue
+		}
+		crs := column.CRS
+		if column.SRID != nil {
+			crs = ""
+		}
+		payload := commonJSON.MapFromStruct(geometryColumnPayload{
+			Name:         column.Name,
+			GeometryType: column.GeometryType,
+			SRID:         column.SRID,
+			CRS:          crs,
+			Dimension:    column.Dimension,
+			Nullable:     column.Nullable,
+		})
+		if len(payload) == 0 {
+			continue
+		}
+		result = append(result, payload)
+	}
+	return result
 }
 
 // Clone returns a deep copy of SpatialInfo.

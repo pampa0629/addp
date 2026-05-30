@@ -54,19 +54,21 @@ Meta 扫描链路按“通用规则、Meta 编排、Catalog 规划、内容增�
 - `internal/metaattr/`：Attributes 规范写入层。负责把 `DetectedItem` 和增强结果合并成标准落库结构：`item`、`storage`、`type_info`、`format_info`、`access_index`、`capabilities`。典型文件：`item_attributes.go`、`attributes.go`。
 - `internal/metapath/`：路径语义工具层。负责 bucket、object、prefix、filesystem path 的切分、规范化和拼接，扫描逻辑不要重复手写路径规则。
 
-Meta 只负责把正式规范中的 data type、type info 和横切事实投影到落库 attributes。新增 `data_type`、`type_info.*` 字段或 `capabilities.*` 命名空间前，必须先更新平台概念和规范文档，不得只在 Meta helper 中新增自由字段。
+Meta 只负责把正式规范中的 data type、type info 和横切事实写入落库 attributes。新增 `data_type`、`type_info.*` 字段或 `capabilities.*` 命名空间前，必须先更新平台概念和规范文档，不得只在 Meta helper 中新增自由字段。
+
+`common/datatype` 只处理自身结构和 JSON payload 的相互转换，不承载 attributes 路径语义。Meta 或其他 MetaClient 消费方需要先取出 `type_info.*`、`capabilities.*` 等标准分区，再调用 `datatype.*FromPayload`；写入 attributes 时也由 `metaattr` 决定分区路径。
 
 ### metaattr 输入边界
 
-`internal/metaattr/` 是 Meta 模块内部的 attributes 投影层，不是扫描编排层、engine 适配层或展示 DTO 层。新增 helper 时只接收三类输入：
+`internal/metaattr/` 是 Meta 模块内部的 attributes 写入和规范化层，不是扫描编排层、engine 适配层或展示 DTO 层。新增 helper 时只接收三类输入：
 
 - `models.JSONMap` / `map[string]interface{}` 这类 attributes map。
 - `common/datatype` 中的通用事实结构，例如 `TableInfo`、`FieldInfo`、`SpatialInfo`。
-- 为 attributes 投影定义的轻量输入结构，例如 data item attributes input、dynamic schema attributes input。
+- 为 attributes 写入定义的轻量输入结构，例如 data item attributes input、dynamic schema attributes input。
 
-`metaattr` 不应接收 `metaitem.DetectedItem`、`plugin.ItemMetadata`、`plugin.IndexInfo`、`models.SpatialMetadata`、Manager DTO 等上层复杂类型。上层模块如果拿到 engine / format / query / 展示模型，应先在本层投影为轻量输入或 `datatype` 事实结构，再调用 `metaattr`，避免 attributes helper 反向依赖扫描、engine 或展示边界。
+`metaattr` 不应接收 `metaitem.DetectedItem`、`plugin.ItemMetadata`、`plugin.IndexInfo`、`models.SpatialMetadata`、Manager DTO 等上层复杂类型。上层模块如果拿到 engine / format / query / 展示模型，应先在本层转换为轻量输入或 `datatype` 事实结构，再调用 `metaattr`，避免 attributes helper 反向依赖扫描、engine 或展示边界。
 
-动态 schema 记录集合的 attributes 投影使用 `BuildDynamicSchemaAttributes` / `ApplyDynamicSchemaStatistics` 这条路径；字段画像写入 `type_info.table.fields`，采样和索引事实分别写入 `capabilities.statistics` / `capabilities.indexing`，不得写入 `type_info.document` 或新增 `type_info.collection`。
+动态 schema 记录集合的 attributes 写入使用 `BuildDynamicSchemaAttributes` / `ApplyDynamicSchemaStatistics` 这条路径；字段画像写入 `type_info.table.fields`，采样和索引事实分别写入 `capabilities.statistics` / `capabilities.indexing`，不得写入 `type_info.document` 或新增 `type_info.collection`。
 
 ### 主要扫描链路
 

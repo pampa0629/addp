@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/addp/common/format"
+	"github.com/addp/common/resume"
 )
 
 func TestCSVPlugin_DescribeTable(t *testing.T) {
@@ -210,6 +211,23 @@ func TestCSVPlugin_OpenTableReader(t *testing.T) {
 	}
 	if err := reader.Close(context.Background()); err != nil {
 		t.Fatalf("Close failed: %v", err)
+	}
+}
+
+func TestCSVPluginRejectsResumeMarker(t *testing.T) {
+	plugin := NewPlugin(nil)
+	parseOpts := format.DefaultParseOptions()
+	parseOpts.ResumeMarker = &resume.Marker{Version: resume.MarkerVersionV1}
+	if _, err := plugin.OpenTableReader(context.Background(), strings.NewReader("id\n1\n"), parseOpts); err == nil {
+		t.Fatal("OpenTableReader succeeded with resume marker, want explicit unsupported error")
+	}
+
+	writeOpts := format.DefaultWriteOptions()
+	writeOpts.ResumeMarker = &resume.Marker{Version: resume.MarkerVersionV1}
+	if _, err := plugin.OpenTableWriter(context.Background(), &bytes.Buffer{}, &datatype.TableInfo{
+		Fields: []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeInt}},
+	}, writeOpts); err == nil {
+		t.Fatal("OpenTableWriter succeeded with resume marker, want explicit unsupported error")
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"github.com/addp/common/datatype"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
+	"github.com/addp/common/resume"
 )
 
 type TableEndpointKind string
@@ -26,6 +27,7 @@ type TableSourcePlan struct {
 	Format       format.FormatType
 	Layout       format.Layout
 	ParseOptions *format.ParseOptions
+	ResumeMarker *resume.Marker
 	TableInfo    *datatype.TableInfo
 	SpatialInfo  *datatype.SpatialInfo
 	RelatedRefs  []format.RelatedRef
@@ -41,6 +43,7 @@ type TableTargetPlan struct {
 	TableWrite        engineplugin.BatchWriteOptions
 	Format            format.FormatType
 	FormatOptions     *format.WriteOptions
+	ResumeMarker      *resume.Marker
 }
 
 type TableTransferPlan struct {
@@ -59,6 +62,9 @@ type TableProgressEvent struct {
 	BatchRows      int64
 	RecordsRead    int64
 	RecordsWritten int64
+	ResumeMarker   *resume.Marker
+	CommitMarker   *resume.Marker
+	Final          bool
 }
 
 type TableTransformPlan struct {
@@ -193,6 +199,7 @@ func (e *TableTransferExecutor) openSource(plan TableSourcePlan) (TableBatchSour
 			path:                 plan.Path,
 			query:                plan.Query,
 			readOptions:          plan.ReadOptions,
+			resumeMarker:         plan.ResumeMarker,
 			tableInfo:            plan.TableInfo,
 		}, nil
 	case TableEndpointEncoded:
@@ -210,6 +217,7 @@ func (e *TableTransferExecutor) openSource(plan TableSourcePlan) (TableBatchSour
 				path:                plan.Path,
 				readOptions:         plan.ContentRead,
 				parseOptions:        plan.ParseOptions,
+				resumeMarker:        plan.ResumeMarker,
 				tableInfo:           plan.TableInfo,
 				spatialInfo:         plan.SpatialInfo,
 			}, nil
@@ -229,6 +237,7 @@ func (e *TableTransferExecutor) openSource(plan TableSourcePlan) (TableBatchSour
 			path:                plan.Path,
 			readOptions:         plan.ContentRead,
 			parseOptions:        plan.ParseOptions,
+			resumeMarker:        plan.ResumeMarker,
 			tableInfo:           plan.TableInfo,
 			spatialInfo:         plan.SpatialInfo,
 			relatedRefs:         plan.RelatedRefs,
@@ -260,6 +269,7 @@ func (e *TableTransferExecutor) openTarget(plan TableTargetPlan) (TableBatchTarg
 			path:           plan.Path,
 			writeOptions:   plan.ContentWrite,
 			formatOptions:  plan.FormatOptions,
+			resumeMarker:   plan.ResumeMarker,
 		}, nil
 	case TableEndpointNative:
 		if e.TargetNativeWriter == nil {
@@ -277,6 +287,7 @@ func (e *TableTransferExecutor) openTarget(plan TableTargetPlan) (TableBatchTarg
 			path:                 plan.Path,
 			prepareOptions:       plan.TablePrepare,
 			writeOptions:         plan.TableWrite,
+			resumeMarker:         plan.ResumeMarker,
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported table target kind %q", plan.Kind)

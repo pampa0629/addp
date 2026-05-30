@@ -53,10 +53,10 @@ type TransferEndpointDoc struct {
 	Resource       TransferEndpointResourceDoc `json:"resource"`
 	DataType       string                      `json:"data_type" example:"table"`
 	Representation string                      `json:"representation" example:"encoded" enums:"native,encoded"`
+	MetaItemID     uint                        `json:"meta_item_id,omitempty" example:"12" description:"Meta item ID；source 指向已入库 Meta item 时由 Transfer 后端通过 MetaClient 读取标准 attributes。"`
 	Format         string                      `json:"format,omitempty" example:"shapefile"`
 	Options        map[string]interface{}      `json:"options,omitempty"`
 	Policy         map[string]interface{}      `json:"policy,omitempty"`
-	Attributes     map[string]interface{}      `json:"attributes,omitempty" swaggertype:"object" description:"Meta item 标准 attributes；source 指向已入库 Meta item 时用于还原 layout/data_type/format/refs/type_info/capabilities，尤其 layout=multi 必须提供 item.refs。"`
 }
 
 type TransferEngineRefDoc struct {

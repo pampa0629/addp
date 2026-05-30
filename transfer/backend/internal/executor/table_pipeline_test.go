@@ -15,6 +15,7 @@ import (
 	jsonformat "github.com/addp/common/format/plugins/json"
 	parquetformat "github.com/addp/common/format/plugins/parquet"
 	shapefileformat "github.com/addp/common/format/plugins/shapefile"
+	"github.com/addp/common/resume"
 )
 
 func TestTableTransferExecutorConvertsEncodedCSVToJSONL(t *testing.T) {
@@ -60,6 +61,56 @@ func TestTableTransferExecutorConvertsEncodedCSVToJSONL(t *testing.T) {
 	}
 	if !writer.closed {
 		t.Fatal("target content writer was not closed")
+	}
+}
+
+func TestTablePipelineProgressCarriesResumeAndCommitMarkers(t *testing.T) {
+	sourceMarker := &resume.Marker{
+		Version:      resume.MarkerVersionV1,
+		Provider:     "test.source",
+		PositionUnit: "row",
+		ReadPosition: map[string]interface{}{"row_offset": int64(2)},
+	}
+	commitMarker := &resume.Marker{
+		Version:        resume.MarkerVersionV1,
+		Provider:       "test.target",
+		PositionUnit:   "session_commit",
+		CommitPosition: map[string]interface{}{"rows_committed": int64(2)},
+	}
+	source := &markerTableBatchSource{marker: sourceMarker}
+	target := &markerTableBatchTarget{marker: commitMarker}
+	events := make([]TableProgressEvent, 0)
+	pipeline := &TablePipeline{
+		Source:    source,
+		Target:    target,
+		BatchSize: 2,
+		ProgressCallback: func(_ context.Context, event TableProgressEvent) error {
+			events = append(events, event)
+			return nil
+		},
+	}
+
+	metrics, err := pipeline.Execute(context.Background())
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if metrics.RecordsRead != 2 || metrics.RecordsWritten != 2 || metrics.Batches != 1 {
+		t.Fatalf("metrics = %#v, want one batch of two rows", metrics)
+	}
+	if len(events) != 2 {
+		t.Fatalf("events = %#v, want batch event and final event", events)
+	}
+	if events[0].Final || events[0].ResumeMarker == nil || events[0].CommitMarker != nil {
+		t.Fatalf("batch event markers = %#v, want resume marker only", events[0])
+	}
+	if !events[1].Final || events[1].ResumeMarker == nil || events[1].CommitMarker == nil {
+		t.Fatalf("final event markers = %#v, want both resume and commit markers", events[1])
+	}
+	if events[1].CommitMarker.Provider != "test.target" {
+		t.Fatalf("final commit marker = %#v, want test.target", events[1].CommitMarker)
+	}
+	if events[0].ResumeMarker == sourceMarker || events[1].CommitMarker == commitMarker {
+		t.Fatal("progress event reused provider marker pointer, want cloned markers")
 	}
 }
 
@@ -197,7 +248,13 @@ func TestTableTransferExecutorRejectsEncodedWholeScopeSourceWithoutProvider(t *t
 
 func TestTableTransferExecutorReadsParquetWholeScopeSource(t *testing.T) {
 	parquetPlugin := parquetformat.NewPlugin()
-	source := &fakeContentWriter{files: map[string][]byte{}}
+	openCounts := map[string]int{}
+	rangeOpenCounts := map[string]int{}
+	source := &fakeContentWriter{
+		files:           map[string][]byte{},
+		openCounts:      openCounts,
+		rangeOpenCounts: rangeOpenCounts,
+	}
 	writeParquetTestFile(t, source, engineplugin.FileItemPath(7, "datasets/orders/part-000.parquet"), parquetPlugin, []map[string]interface{}{
 		{"id": 1, "name": "Alice"},
 		{"id": 2, "name": "Bob"},
@@ -239,6 +296,14 @@ func TestTableTransferExecutorReadsParquetWholeScopeSource(t *testing.T) {
 	for _, want := range []string{"Alice", "Bob", "Carol"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("csv output = %q, missing %q", got, want)
+		}
+	}
+	for _, path := range []string{"datasets/orders/part-000.parquet", "datasets/orders/dt=2026-05-21/part-001.parquet"} {
+		if openCounts[path] != 0 {
+			t.Fatalf("regular open count for %s = %d, want 0 for range-backed whole scope read", path, openCounts[path])
+		}
+		if rangeOpenCounts[path] == 0 {
+			t.Fatalf("range open count for %s = %d, want > 0", path, rangeOpenCounts[path])
 		}
 	}
 }
@@ -361,6 +426,107 @@ func TestTableTransferExecutorCopiesShapefileRefsPreservingSpatialInfo(t *testin
 	}
 }
 
+func TestTableTransferExecutorCopiesShapefileRefsAcrossStoragePathModels(t *testing.T) {
+	tests := []struct {
+		name       string
+		sourcePath engineplugin.CatalogPath
+		targetPath engineplugin.CatalogPath
+	}{
+		{
+			name:       "file_to_object",
+			sourcePath: engineplugin.FileItemPath(7, "imports/roads_z.shp"),
+			targetPath: engineplugin.ObjectItemPath(8, "addp", "gis/roads_z.shp"),
+		},
+		{
+			name:       "object_to_file",
+			sourcePath: engineplugin.ObjectItemPath(8, "addp", "imports/cities_z.shp"),
+			targetPath: engineplugin.FileItemPath(7, "exports/cities_z.shp"),
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			source := &fakeContentWriter{files: map[string][]byte{}}
+			target := &fakeContentWriter{files: map[string][]byte{}}
+			shapefilePlugin := shapefileformat.NewPlugin(nil)
+			writeShapefilePointZTestContent(t, source, tt.sourcePath, shapefilePlugin)
+
+			exec := &TableTransferExecutor{
+				SourceContentReader:     source,
+				TargetContentWriter:     target,
+				SourceMultiReadProvider: shapefilePlugin,
+				TargetMultiProvider:     shapefilePlugin,
+			}
+			metrics, err := exec.Execute(context.Background(), TableTransferPlan{
+				Source:    TableSourcePlan{Kind: TableEndpointEncoded, Path: tt.sourcePath, Format: format.FormatShapefile},
+				Target:    TableTargetPlan{Kind: TableEndpointEncoded, Path: tt.targetPath, Format: format.FormatShapefile},
+				BatchSize: 1,
+			})
+			if err != nil {
+				t.Fatalf("Execute failed: %v", err)
+			}
+			if metrics.RecordsRead != 1 || metrics.RecordsWritten != 1 || metrics.Batches != 1 {
+				t.Fatalf("metrics = %#v, want 1 read/written and 1 batch", metrics)
+			}
+
+			targetRefs := format.SameBasenameRelatedRefs(tt.targetPath.StringPath(), shapefilePlugin.RelatedRefSpecs())
+			for _, ref := range targetRefs {
+				if ref.Required && len(target.files[ref.Ref.Path]) == 0 {
+					t.Fatalf("target required ref %s was not written", ref.Ref.Path)
+				}
+			}
+			targetReader := contentadapter.NewReader(target, nil, tt.targetPath, engineplugin.ReadOptions{})
+			info, err := shapefilePlugin.DescribeMultiTable(context.Background(), targetReader, targetRefs, format.DefaultParseOptions())
+			if err != nil {
+				t.Fatalf("DescribeMultiTable failed: %v", err)
+			}
+			spatialInfo := info.Spatial
+			if spatialInfo == nil || spatialInfo.PrimaryDimensionValue() != 3 || spatialInfo.PrimaryGeometryType() != "Point" {
+				t.Fatalf("spatial info = %#v, want Point dimension 3", spatialInfo)
+			}
+			rows, err := shapefilePlugin.SampleMultiTable(context.Background(), targetReader, targetRefs, 0, 1, format.DefaultParseOptions())
+			if err != nil {
+				t.Fatalf("SampleMultiTable failed: %v", err)
+			}
+			geometryColumn := spatialInfo.PrimaryGeometryName()
+			if len(rows) != 1 || rows[0][geometryColumn] != "POINT Z (120 30 99.5)" {
+				t.Fatalf("rows = %#v, want copied point z geometry", rows)
+			}
+		})
+	}
+}
+
+func writeShapefilePointZTestContent(t *testing.T, storage *fakeContentWriter, path engineplugin.CatalogPath, shapefilePlugin *shapefileformat.Plugin) {
+	t.Helper()
+	writer := contentadapter.NewWriter(storage, nil, path, engineplugin.WriteOptions{Overwrite: true})
+	refs := format.SameBasenameRelatedRefs(path.StringPath(), shapefilePlugin.RelatedRefSpecs())
+	tableWriter, err := shapefilePlugin.OpenMultiTableWriter(context.Background(), writer, refs, &datatype.TableInfo{
+		Fields: []datatype.FieldInfo{
+			{Name: "id", Type: datatype.FieldTypeInt},
+			{Name: "name", Type: datatype.FieldTypeString, Size: 32},
+			{Name: "geometry", Type: datatype.FieldTypeGeometry},
+		},
+	}, &format.WriteOptions{
+		Encoding:    "utf-8",
+		SpatialInfo: datatype.NewSingleGeometrySpatialInfo("geometry", "Point", 4326, 3),
+		ExtraParams: map[string]interface{}{
+			"spatial_ref_sys": "EPSG:4326",
+		},
+	})
+	if err != nil {
+		t.Fatalf("OpenMultiTableWriter failed: %v", err)
+	}
+	if err := tableWriter.WriteRows(context.Background(), []map[string]interface{}{
+		{"id": 1, "name": "Alpha", "geometry": "POINT Z (120 30 99.5)"},
+	}); err != nil {
+		t.Fatalf("WriteRows failed: %v", err)
+	}
+	if err := tableWriter.Close(context.Background()); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+}
+
 func TestTableTransferExecutorPrefersMultiTableProvider(t *testing.T) {
 	source := &fakeContentWriter{files: map[string][]byte{}}
 	shapefilePlugin := shapefileformat.NewPlugin(nil)
@@ -463,4 +629,88 @@ func (p *failingMultiTableProvider) RelatedRefSpecs() []format.RelatedRefSpec {
 func (p *failingMultiTableProvider) SampleMultiTable(context.Context, contentio.Reader, []format.RelatedRef, int64, int64, *format.ParseOptions) ([]map[string]interface{}, error) {
 	p.sampleCalled = true
 	return nil, fmt.Errorf("sample multi provider should not be called")
+}
+
+type markerTableBatchSource struct {
+	marker *resume.Marker
+}
+
+func (s *markerTableBatchSource) Open(context.Context) (TableBatchReader, error) {
+	return &markerTableBatchReader{
+		marker: s.marker,
+		batches: []*engineplugin.BatchData{
+			{
+				Rows: []map[string]interface{}{
+					{"id": 1},
+					{"id": 2},
+				},
+				Fields: []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeInt}},
+				Offset: 0,
+			},
+			{},
+		},
+	}, nil
+}
+
+type markerTableBatchReader struct {
+	marker  *resume.Marker
+	batches []*engineplugin.BatchData
+}
+
+func (r *markerTableBatchReader) TableInfo() *datatype.TableInfo {
+	return &datatype.TableInfo{Fields: []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeInt}}}
+}
+
+func (r *markerTableBatchReader) SpatialInfo() *datatype.SpatialInfo {
+	return nil
+}
+
+func (r *markerTableBatchReader) ReadBatch(context.Context, int) (*engineplugin.BatchData, error) {
+	if len(r.batches) == 0 {
+		return &engineplugin.BatchData{}, nil
+	}
+	batch := r.batches[0]
+	r.batches = r.batches[1:]
+	return batch, nil
+}
+
+func (r *markerTableBatchReader) Close(context.Context) error {
+	return nil
+}
+
+func (r *markerTableBatchReader) ResumeMarker() *resume.Marker {
+	return r.marker
+}
+
+type markerTableBatchTarget struct {
+	marker *resume.Marker
+}
+
+func (t *markerTableBatchTarget) Open(context.Context, *datatype.TableInfo, *datatype.SpatialInfo) (TableBatchWriter, error) {
+	return &markerTableBatchWriter{marker: t.marker}, nil
+}
+
+type markerTableBatchWriter struct {
+	marker *resume.Marker
+	closed bool
+}
+
+func (w *markerTableBatchWriter) WriteBatch(context.Context, *engineplugin.BatchData) error {
+	return nil
+}
+
+func (w *markerTableBatchWriter) Close(context.Context) error {
+	w.closed = true
+	return nil
+}
+
+func (w *markerTableBatchWriter) Abort(context.Context) error {
+	return nil
+}
+
+func (w *markerTableBatchWriter) CommitMarker() *resume.Marker {
+	if !w.closed {
+		return nil
+	}
+	return w.marker
 }

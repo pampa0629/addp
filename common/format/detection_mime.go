@@ -56,8 +56,38 @@ func descriptorFormatByMIME(mimeType string) FormatType {
 // GuessContentType 结合文件名和内容猜测 MIME 类型。
 func GuessContentType(filename string, peek []byte) string {
 	ext := filepath.Ext(filename)
+	descriptorFormat := descriptorFormatByExtension(ext)
+	descriptorMIME := descriptorMIMEByExtension(ext)
+	if mimeType := mime.TypeByExtension(ext); mimeType != "" && !isGenericMIMEGuess(mimeType) {
+		if descriptorFormat == FormatUnknown || MIMEToFormat(mimeType) == descriptorFormat {
+			return mimeType
+		}
+	}
+	if descriptorMIME != "" {
+		return descriptorMIME
+	}
 	if mimeType := mime.TypeByExtension(ext); mimeType != "" {
 		return mimeType
 	}
 	return FormatToMIME(DetectFormat(filename, peek))
+}
+
+func descriptorMIMEByExtension(ext string) string {
+	if formatType := descriptorFormatByExtension(ext); formatType != FormatUnknown {
+		return FormatToMIME(formatType)
+	}
+	return ""
+}
+
+func isGenericMIMEGuess(mimeType string) bool {
+	mimeType = strings.ToLower(strings.TrimSpace(mimeType))
+	if idx := strings.Index(mimeType, ";"); idx > 0 {
+		mimeType = strings.TrimSpace(mimeType[:idx])
+	}
+	switch mimeType {
+	case "", "application/octet-stream", "binary/octet-stream", "application/download", "application/force-download":
+		return true
+	default:
+		return false
+	}
 }

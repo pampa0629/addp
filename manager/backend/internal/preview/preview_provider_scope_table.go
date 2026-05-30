@@ -3,14 +3,11 @@ package preview
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/addp/common/contentio"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
-	commonJSON "github.com/addp/common/jsonmap"
-	"github.com/addp/manager/internal/catalogutil"
 	"github.com/addp/manager/internal/models"
 )
 
@@ -112,11 +109,8 @@ func (p *ScopeTablePreviewProvider) Preview(ctx context.Context, req *PreviewReq
 			err = fmt.Errorf("engine %s does not implement CatalogProvider and ContentReadableProvider", req.Engine.EngineType)
 		} else {
 			scope := contentio.NewRef(dirPath, contentio.RoleScope)
-			tableInfo, err = scopeTableInfoFromAttributes(req.Attributes)
-			if err != nil {
-				return nil, fmt.Errorf("failed to read scope table attributes: %w", err)
-			}
-			sampleOptions := scopeTableSampleOptionsFromAttributes(req.Attributes)
+			tableInfo = tableInfoFromMetaAttributes(req.Attributes, "table")
+			sampleOptions := scopeTableSampleOptionsFromMetaAttributes(req.Attributes)
 			if tableInfo == nil {
 				result, describeErr := scopeInfoProvider.DescribeTableScope(ctx, reader, scope, nil)
 				if describeErr == nil {
@@ -161,17 +155,8 @@ func (p *ScopeTablePreviewProvider) Preview(ctx context.Context, req *PreviewReq
 	}, nil
 }
 
-func scopeTableInfoFromAttributes(attrs map[string]interface{}) (*datatype.TableInfo, error) {
-	tableAttrs := commonJSON.Section(attrs, "type_info.table")
-	return tableInfoFromTableAttributes(tableAttrs, "table"), nil
-}
-
-func scopeTableSampleOptionsFromAttributes(attrs map[string]interface{}) *format.ParseOptions {
-	formatName := strings.TrimSpace(catalogutil.StringAttribute(attrs, "format"))
-	if formatName == "" {
-		return nil
-	}
-	formatType := normalizeFileTableFormat(formatName)
+func scopeTableSampleOptionsFromMetaAttributes(attrs map[string]interface{}) *format.ParseOptions {
+	formatType := formatTypeFromMetaAttributes(attrs)
 	if formatType == format.FormatUnknown {
 		return nil
 	}
@@ -214,8 +199,5 @@ func resolveScopeTableFormat(req *PreviewRequest) format.FormatType {
 	if req == nil {
 		return format.FormatUnknown
 	}
-	if formatName := strings.TrimSpace(catalogutil.StringAttribute(req.Attributes, "format")); formatName != "" {
-		return normalizeFileTableFormat(formatName)
-	}
-	return format.FormatUnknown
+	return formatTypeFromMetaAttributes(req.Attributes)
 }

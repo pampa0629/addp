@@ -5,6 +5,7 @@ import (
 	"log"
 	"strings"
 
+	"github.com/addp/common/datatype"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/models"
 )
@@ -242,39 +243,32 @@ func (s *DataSourceService) DetectTableMetadata(engineID uint, schema, table str
 		}, nil
 	}
 
-	// 从 attributes 中提取几何列信息
+	// 从标准 attributes section 中提取几何列信息
 	metadata := &TableMetadata{
 		HasGeometry: false,
 	}
 
 	if tableItem.Attributes != nil {
-		spatial := commonJSON.Section(tableItem.Attributes, "capabilities.spatial")
-		if spatial != nil {
-			metadata.GeometryColumn = commonJSON.InterfaceString(spatial["primary_geometry_column"])
-			if columns, ok := spatial["geometry_columns"].([]interface{}); ok && len(columns) > 0 {
-				if column, ok := columns[0].(map[string]interface{}); ok {
-					if metadata.GeometryColumn == "" {
-						metadata.GeometryColumn = commonJSON.InterfaceString(column["name"])
-					}
-					metadata.GeometryType = commonJSON.InterfaceString(column["geometry_type"])
-					if srid := commonJSON.InterfaceInt64(column["srid"]); srid > 0 {
-						sridInt := int(srid)
-						metadata.SRID = &sridInt
-					}
+		spatialInfo := datatype.SpatialInfoFromPayload(commonJSON.Section(tableItem.Attributes, "capabilities.spatial"))
+		if spatialInfo != nil {
+			primary := spatialInfo.PrimaryGeometry()
+			metadata.GeometryColumn = spatialInfo.PrimaryGeometryName()
+			if primary != nil {
+				metadata.GeometryType = primary.GeometryType
+				if primary.SRID != nil {
+					srid := *primary.SRID
+					metadata.SRID = &srid
 				}
 			}
-			if columns, ok := spatial["geometry_columns"].([]map[string]interface{}); ok && len(columns) > 0 {
-				if metadata.GeometryColumn == "" {
-					metadata.GeometryColumn = commonJSON.InterfaceString(columns[0]["name"])
-				}
-				metadata.GeometryType = commonJSON.InterfaceString(columns[0]["geometry_type"])
-				if srid := commonJSON.InterfaceInt64(columns[0]["srid"]); srid > 0 {
-					sridInt := int(srid)
-					metadata.SRID = &sridInt
-				}
+			if metadata.SRID == nil && spatialInfo.SRID != nil {
+				srid := *spatialInfo.SRID
+				metadata.SRID = &srid
 			}
 			metadata.HasGeometry = metadata.GeometryColumn != ""
-			metadata.Extent = commonJSON.InterfaceFloat64Slice(spatial["extent"])
+			if spatialInfo.Extent != nil {
+				extent := *spatialInfo.Extent
+				metadata.Extent = []float64{extent[0], extent[1], extent[2], extent[3]}
+			}
 		}
 	}
 

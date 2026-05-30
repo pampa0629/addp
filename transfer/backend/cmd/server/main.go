@@ -110,7 +110,8 @@ func main() {
 	// 初始化 Service 层（传入 taskQueue 和 redisClient）
 	taskService := service.NewTaskService(db, nil, cfg, taskQueue)         // engine 传 nil（暂不执行任务）
 	executionService := service.NewExecutionService(db, taskExecutionRepo) // 使用统一执行表
-	taskService.SetExecutionService(executionService)                      // 注入执行服务（避免循环依赖）
+	executionService.SetTaskQueue(taskQueue)
+	taskService.SetExecutionService(executionService) // 注入执行服务（避免循环依赖）
 
 	// 初始化 System 客户端（用于审计日志和服务间调用）
 	var systemClient *commonClient.SystemClient

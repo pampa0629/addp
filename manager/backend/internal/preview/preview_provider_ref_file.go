@@ -8,7 +8,6 @@ import (
 
 	"github.com/addp/common/contentio"
 	"github.com/addp/common/format"
-	"github.com/addp/manager/internal/catalogutil"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/objectcontent"
 )
@@ -33,7 +32,7 @@ func (p *RefFilePreviewProvider) Preview(ctx context.Context, req *PreviewReques
 	if err != nil {
 		return nil, err
 	}
-	formatType := normalizeFileTableFormat(catalogutil.StringAttribute(req.Attributes, "format"))
+	formatType := formatTypeFromMetaAttributes(req.Attributes)
 	refs := refsForPreview(contentCtx.path, formatType, req.Attributes)
 	ref, ok := refForPreviewPath(formatType, refs, req.RefPath)
 	if !ok {

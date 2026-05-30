@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/addp/common/datatype"
 	"io"
 	"math"
 	"strconv"
@@ -16,13 +15,26 @@ import (
 	"time"
 
 	"github.com/addp/common/contentio"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
+	"github.com/addp/common/resume"
 	parquetgo "github.com/parquet-go/parquet-go"
+	"github.com/parquet-go/parquet-go/compress"
+	parquetbrotli "github.com/parquet-go/parquet-go/compress/brotli"
+	parquetgzip "github.com/parquet-go/parquet-go/compress/gzip"
+	parquetlz4 "github.com/parquet-go/parquet-go/compress/lz4"
+	parquetsnappy "github.com/parquet-go/parquet-go/compress/snappy"
+	parquetuncompressed "github.com/parquet-go/parquet-go/compress/uncompressed"
+	parquetzstd "github.com/parquet-go/parquet-go/compress/zstd"
 	parquetfmt "github.com/parquet-go/parquet-go/format"
 )
 
 const FileRowCountsOption = "parquet_file_row_counts"
+const ParquetWriterMaxRowsPerRowGroupOption = "max_rows_per_row_group"
+const ParquetWriterCompressionOption = "compression"
+const parquetScopeReaderMarkerProvider = "parquet.scope_table_reader"
+const parquetScopeReaderMarkerPositionUnit = "ref_row"
 
 // Plugin 实现 Parquet 格式 plugin。
 type Plugin struct{}
@@ -222,6 +234,11 @@ func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, tableInf
 	if err := contextErr(ctx); err != nil {
 		return nil, err
 	}
+	if options != nil {
+		if err := resume.RejectUnsupported(options.ResumeMarker, "parquet.table_writer"); err != nil {
+			return nil, err
+		}
+	}
 	if output == nil {
 		return nil, fmt.Errorf("parquet table writer requires output")
 	}
@@ -234,16 +251,29 @@ func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, tableInf
 	for _, field := range fields {
 		group[field.Name] = parquetNodeForField(field)
 	}
-	writer := parquetgo.NewGenericWriter[any](output, parquetgo.NewSchema("", group))
+	schema := parquetgo.NewSchema("", group)
+	writerOptionSet, err := parquetWriterOptions(options)
+	if err != nil {
+		return nil, err
+	}
+	writerOptions := append([]parquetgo.WriterOption{schema}, writerOptionSet.options...)
+	writer := parquetgo.NewGenericWriter[any](output, writerOptions...)
 	return &tableWriter{
-		writer: writer,
-		fields: fields,
+		writer:          writer,
+		schema:          schema,
+		fields:          fields,
+		maxRowsPerWrite: writerOptionSet.maxRowsPerRowGroup,
 	}, nil
 }
 
 func (p *Plugin) OpenTableReader(ctx context.Context, input io.Reader, options *format.ParseOptions) (format.TableReader, error) {
 	if err := contextErr(ctx); err != nil {
 		return nil, err
+	}
+	if options != nil {
+		if err := resume.RejectUnsupported(options.ResumeMarker, "parquet.table_reader"); err != nil {
+			return nil, err
+		}
 	}
 	if input == nil {
 		return nil, fmt.Errorf("parquet table reader requires input")
@@ -256,21 +286,102 @@ func (p *Plugin) OpenTableReader(ctx context.Context, input io.Reader, options *
 	if err != nil {
 		return nil, fmt.Errorf("failed to open parquet file: %w", err)
 	}
+	return p.openTableReaderFromFile(ctx, file, options)
+}
+
+func (p *Plugin) openTableReaderFromContent(ctx context.Context, reader contentio.Reader, ref contentio.Ref, options *format.ParseOptions) (format.TableReader, io.Closer, error) {
+	if err := contextErr(ctx); err != nil {
+		return nil, nil, err
+	}
+	if rangeReader, ok := reader.(contentio.RangeReader); ok {
+		stat, err := reader.Stat(ctx, ref)
+		if err == nil && stat != nil && stat.Exists && stat.Size > 0 {
+			file, openErr := parquetgo.OpenFile(rangeContentReaderAt{
+				ctx:    ctx,
+				reader: rangeReader,
+				ref:    ref,
+			}, stat.Size)
+			if openErr != nil {
+				return nil, nil, fmt.Errorf("failed to open parquet file with range reader: %w", openErr)
+			}
+			tableReader, tableErr := p.openTableReaderFromFile(ctx, file, options)
+			return tableReader, nil, tableErr
+		}
+	}
+	input, err := reader.Open(ctx, ref)
+	if err != nil {
+		return nil, nil, err
+	}
+	tableReader, err := p.OpenTableReader(ctx, input, options)
+	if err != nil {
+		_ = input.Close()
+		return nil, nil, err
+	}
+	return tableReader, input, nil
+}
+
+func (p *Plugin) openTableReaderFromFile(ctx context.Context, file *parquetgo.File, options *format.ParseOptions) (format.TableReader, error) {
+	if err := contextErr(ctx); err != nil {
+		return nil, err
+	}
 	rowCount := file.NumRows()
+	sourceFields := extractFields(file.Schema())
 	tableInfo := &datatype.TableInfo{
-		Fields:   extractFields(file.Schema()),
+		Fields:   sourceFields,
 		RowCount: &rowCount,
 	}
-	tableInfo, err = format.ApplyFieldSelectionToTableInfo(tableInfo, fieldSelectionFromOptions(options))
+	tableInfo, err := format.ApplyFieldSelectionToTableInfo(tableInfo, fieldSelectionFromOptions(options))
 	if err != nil {
 		return nil, err
 	}
+	projectionSchema, projectionFieldNames, err := parquetProjectionForFieldSelection(file.Schema(), tableInfo.Fields, sourceFields, fieldSelectionFromOptions(options))
+	if err != nil {
+		return nil, err
+	}
+	var projectionConversion parquetgo.Conversion
+	if projectionSchema != nil {
+		projectionConversion, err = parquetgo.Convert(projectionSchema, file.Schema())
+		if err != nil {
+			return nil, fmt.Errorf("failed to create parquet field projection: %w", err)
+		}
+	}
+	fieldNames := extractLeafColumnNames(file.Schema())
+	if projectionSchema != nil {
+		fieldNames = projectionFieldNames
+	}
 	return &tableReader{
-		file:           file,
-		fieldNames:     extractLeafColumnNames(file.Schema()),
-		tableInfo:      tableInfo,
-		fieldSelection: fieldSelectionFromOptions(options),
+		file:                 file,
+		fieldNames:           fieldNames,
+		tableInfo:            tableInfo,
+		fieldSelection:       fieldSelectionFromOptions(options),
+		projectionSchema:     projectionSchema,
+		projectionConversion: projectionConversion,
 	}, nil
+}
+
+type rangeContentReaderAt struct {
+	ctx    context.Context
+	reader contentio.RangeReader
+	ref    contentio.Ref
+}
+
+func (r rangeContentReaderAt) ReadAt(p []byte, off int64) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	if off < 0 {
+		return 0, fmt.Errorf("parquet range read offset cannot be negative")
+	}
+	rc, err := r.reader.OpenRange(r.ctx, r.ref, off, int64(len(p)))
+	if err != nil {
+		return 0, err
+	}
+	defer rc.Close()
+	n, readErr := io.ReadFull(rc, p)
+	if readErr == io.ErrUnexpectedEOF {
+		return n, io.EOF
+	}
+	return n, readErr
 }
 
 // DescribeTable 从 Parquet 文件中提取 TableInfo 和行数。
@@ -411,13 +522,15 @@ func appendRows(ctx context.Context, rows parquetgo.Rows, fieldNames []string, l
 }
 
 type tableReader struct {
-	file           *parquetgo.File
-	fieldNames     []string
-	tableInfo      *datatype.TableInfo
-	fieldSelection *format.FieldSelectionOptions
-	rowGroupIndex  int
-	rows           parquetgo.Rows
-	closed         bool
+	file                 *parquetgo.File
+	fieldNames           []string
+	tableInfo            *datatype.TableInfo
+	fieldSelection       *format.FieldSelectionOptions
+	projectionSchema     *parquetgo.Schema
+	projectionConversion parquetgo.Conversion
+	rowGroupIndex        int
+	rows                 parquetgo.Rows
+	closed               bool
 }
 
 func (r *tableReader) Fields() []datatype.FieldInfo {
@@ -478,7 +591,11 @@ func (r *tableReader) openNextRowGroup() bool {
 	if r.file == nil || r.rowGroupIndex >= len(r.file.RowGroups()) {
 		return false
 	}
-	r.rows = r.file.RowGroups()[r.rowGroupIndex].Rows()
+	rowGroup := r.file.RowGroups()[r.rowGroupIndex]
+	if r.projectionConversion != nil {
+		rowGroup = parquetgo.ConvertRowGroup(rowGroup, r.projectionConversion)
+	}
+	r.rows = rowGroup.Rows()
 	r.rowGroupIndex++
 	return true
 }
@@ -496,9 +613,11 @@ func (r *tableReader) closeCurrentRows() error {
 }
 
 type tableWriter struct {
-	writer *parquetgo.GenericWriter[any]
-	fields []datatype.FieldInfo
-	closed bool
+	writer          *parquetgo.GenericWriter[any]
+	schema          *parquetgo.Schema
+	fields          []datatype.FieldInfo
+	maxRowsPerWrite int64
+	closed          bool
 }
 
 func (w *tableWriter) WriteRows(ctx context.Context, rows []map[string]interface{}) error {
@@ -508,15 +627,25 @@ func (w *tableWriter) WriteRows(ctx context.Context, rows []map[string]interface
 	if len(rows) == 0 {
 		return nil
 	}
-	values := make([]any, 0, len(rows))
+	parquetRows := make([]parquetgo.Row, 0, len(rows))
 	for _, row := range rows {
 		if err := contextErr(ctx); err != nil {
 			return err
 		}
-		values = append(values, parquetWriterRow(row, w.fields))
+		parquetRows = append(parquetRows, w.schema.Deconstruct(nil, parquetWriterRow(row, w.fields)))
 	}
-	if _, err := w.writer.Write(values); err != nil {
-		return fmt.Errorf("failed to write parquet rows: %w", err)
+	for start := 0; start < len(parquetRows); {
+		end := len(parquetRows)
+		if w.maxRowsPerWrite > 0 {
+			chunkEnd := int64(start) + w.maxRowsPerWrite
+			if chunkEnd < int64(end) {
+				end = int(chunkEnd)
+			}
+		}
+		if _, err := w.writer.WriteRows(parquetRows[start:end]); err != nil {
+			return fmt.Errorf("failed to write parquet rows: %w", err)
+		}
+		start = end
 	}
 	return nil
 }
@@ -554,6 +683,59 @@ func parquetWriterFields(tableInfo *datatype.TableInfo) []datatype.FieldInfo {
 		fields = append(fields, field)
 	}
 	return fields
+}
+
+type parquetWriterOptionSet struct {
+	options            []parquetgo.WriterOption
+	maxRowsPerRowGroup int64
+}
+
+func parquetWriterOptions(options *format.WriteOptions) (parquetWriterOptionSet, error) {
+	if options == nil || len(options.ExtraParams) == 0 {
+		return parquetWriterOptionSet{}, nil
+	}
+	optionSet := parquetWriterOptionSet{}
+	writerOptions := make([]parquetgo.WriterOption, 0, 2)
+	if value, ok := options.ExtraParams[ParquetWriterMaxRowsPerRowGroupOption]; ok {
+		rows := commonJSON.InterfaceInt64(value)
+		if rows <= 0 {
+			return parquetWriterOptionSet{}, fmt.Errorf("parquet %s must be positive", ParquetWriterMaxRowsPerRowGroupOption)
+		}
+		writerOptions = append(writerOptions, parquetgo.MaxRowsPerRowGroup(rows))
+		optionSet.maxRowsPerRowGroup = rows
+	}
+	if value, ok := options.ExtraParams[ParquetWriterCompressionOption]; ok {
+		codecName := strings.ToLower(strings.TrimSpace(commonJSON.InterfaceString(value)))
+		if codecName == "" {
+			return parquetWriterOptionSet{}, fmt.Errorf("parquet %s must not be empty", ParquetWriterCompressionOption)
+		}
+		codec, err := parquetCompressionCodec(codecName)
+		if err != nil {
+			return parquetWriterOptionSet{}, err
+		}
+		writerOptions = append(writerOptions, parquetgo.Compression(codec))
+	}
+	optionSet.options = writerOptions
+	return optionSet, nil
+}
+
+func parquetCompressionCodec(name string) (compress.Codec, error) {
+	switch strings.ReplaceAll(name, "-", "_") {
+	case "none", "uncompressed":
+		return &parquetuncompressed.Codec{}, nil
+	case "snappy":
+		return &parquetsnappy.Codec{}, nil
+	case "gzip":
+		return &parquetgzip.Codec{}, nil
+	case "zstd":
+		return &parquetzstd.Codec{}, nil
+	case "lz4", "lz4_raw":
+		return &parquetlz4.Codec{}, nil
+	case "brotli":
+		return &parquetbrotli.Codec{}, nil
+	default:
+		return nil, fmt.Errorf("unsupported parquet compression %q", name)
+	}
 }
 
 func parquetNodeForField(field datatype.FieldInfo) parquetgo.Node {
@@ -887,6 +1069,11 @@ func (p *Plugin) SampleTableScope(ctx context.Context, reader contentio.Reader, 
 }
 
 func (p *Plugin) OpenTableScopeReader(ctx context.Context, reader contentio.Reader, scope contentio.Ref, options *format.ParseOptions) (format.TableReader, error) {
+	if options != nil {
+		if err := resume.RejectUnsupported(options.ResumeMarker, "parquet.scope_table_reader"); err != nil {
+			return nil, err
+		}
+	}
 	scopedRefs, err := listParquetScopeResources(ctx, reader, scope)
 	if err != nil {
 		return nil, err
@@ -905,19 +1092,24 @@ func (p *Plugin) OpenTableScopeReader(ctx context.Context, reader contentio.Read
 }
 
 type scopeTableReader struct {
-	plugin            *Plugin
-	reader            contentio.Reader
-	refs              []scopedParquetRef
-	partitionFields   []datatype.FieldInfo
-	parseOptions      *format.ParseOptions
-	fieldSelection    *format.FieldSelectionOptions
-	tableInfo         *datatype.TableInfo
-	dataFields        []datatype.FieldInfo
-	index             int
-	currentInput      io.Closer
-	current           format.TableReader
-	currentPartitions []partitionValue
-	closed            bool
+	plugin             *Plugin
+	reader             contentio.Reader
+	refs               []scopedParquetRef
+	partitionFields    []datatype.FieldInfo
+	parseOptions       *format.ParseOptions
+	fieldSelection     *format.FieldSelectionOptions
+	tableInfo          *datatype.TableInfo
+	dataFields         []datatype.FieldInfo
+	index              int
+	currentInput       io.Closer
+	current            format.TableReader
+	currentPartitions  []partitionValue
+	currentRefPath     string
+	currentRefIndex    int
+	currentRefRowsRead int64
+	totalRowsRead      int64
+	lastMarker         *resume.Marker
+	closed             bool
 }
 
 func (r *scopeTableReader) Fields() []datatype.FieldInfo {
@@ -955,6 +1147,9 @@ func (r *scopeTableReader) ReadRows(ctx context.Context, limit int) ([]map[strin
 			return result, err
 		}
 		result = append(result, format.ApplyFieldSelectionToRows(withPartitionValues(rows, r.currentPartitions), r.fieldSelection)...)
+		if len(rows) > 0 {
+			r.updateResumeMarker(len(rows))
+		}
 		if len(rows) == 0 {
 			if err := r.closeCurrent(ctx); err != nil {
 				return result, err
@@ -962,6 +1157,13 @@ func (r *scopeTableReader) ReadRows(ctx context.Context, limit int) ([]map[strin
 		}
 	}
 	return result, nil
+}
+
+func (r *scopeTableReader) ResumeMarker() *resume.Marker {
+	if r == nil {
+		return nil
+	}
+	return r.lastMarker.Clone()
 }
 
 func (r *scopeTableReader) Close(ctx context.Context) error {
@@ -977,16 +1179,12 @@ func (r *scopeTableReader) Close(ctx context.Context) error {
 
 func (r *scopeTableReader) openNext(ctx context.Context) error {
 	for r.index < len(r.refs) {
-		scopedRef := r.refs[r.index]
+		refIndex := r.index
+		scopedRef := r.refs[refIndex]
 		r.index++
 		ref := scopedRef.Ref
-		input, err := r.reader.Open(ctx, ref)
+		tableReader, closer, err := r.plugin.openTableReaderFromContent(ctx, r.reader, ref, parquetDataFieldParseOptions(r.parseOptions, scopedRef.Partitions))
 		if err != nil {
-			return fmt.Errorf("failed to open parquet file %s: %w", ref.Path, err)
-		}
-		tableReader, err := r.plugin.OpenTableReader(ctx, input, parseOptionsWithoutFieldSelection(r.parseOptions))
-		if err != nil {
-			_ = input.Close()
 			return fmt.Errorf("failed to open parquet table reader for %s: %w", ref.Path, err)
 		}
 		tableInfo := &datatype.TableInfo{Fields: tableReader.Fields()}
@@ -995,17 +1193,24 @@ func (r *scopeTableReader) openNext(ctx context.Context) error {
 			r.tableInfo, err = format.ApplyFieldSelectionToTableInfo(copyTableInfoWithPartitionFields(tableInfo, r.partitionFields), r.fieldSelection)
 			if err != nil {
 				_ = tableReader.Close(ctx)
-				_ = input.Close()
+				if closer != nil {
+					_ = closer.Close()
+				}
 				return err
 			}
 		} else if tableInfo != nil && !sameFieldInfoList(r.dataFields, tableInfo.Fields) {
 			_ = tableReader.Close(ctx)
-			_ = input.Close()
+			if closer != nil {
+				_ = closer.Close()
+			}
 			return fmt.Errorf("parquet scope has incompatible table fields in %s", ref.Path)
 		}
-		r.currentInput = input
+		r.currentInput = closer
 		r.current = tableReader
 		r.currentPartitions = scopedRef.Partitions
+		r.currentRefPath = ref.Path
+		r.currentRefIndex = refIndex
+		r.currentRefRowsRead = 0
 		return nil
 	}
 	return nil
@@ -1024,7 +1229,41 @@ func (r *scopeTableReader) closeCurrent(ctx context.Context) error {
 		r.currentInput = nil
 	}
 	r.currentPartitions = nil
+	r.currentRefPath = ""
+	r.currentRefIndex = 0
+	r.currentRefRowsRead = 0
 	return firstErr
+}
+
+func (r *scopeTableReader) updateResumeMarker(rowsRead int) {
+	if rowsRead <= 0 {
+		return
+	}
+	r.currentRefRowsRead += int64(rowsRead)
+	r.totalRowsRead += int64(rowsRead)
+	r.lastMarker = &resume.Marker{
+		Version:      resume.MarkerVersionV1,
+		Provider:     parquetScopeReaderMarkerProvider,
+		PositionUnit: parquetScopeReaderMarkerPositionUnit,
+		ReadPosition: map[string]interface{}{
+			"ref":        r.currentRefPath,
+			"ref_index":  r.currentRefIndex,
+			"row_offset": r.currentRefRowsRead,
+			"rows_read":  r.totalRowsRead,
+		},
+		Fingerprint: map[string]interface{}{
+			"ref_count": len(r.refs),
+			"refs":      parquetScopeReaderRefPaths(r.refs),
+		},
+	}
+}
+
+func parquetScopeReaderRefPaths(refs []scopedParquetRef) []string {
+	paths := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		paths = append(paths, ref.Ref.Path)
+	}
+	return paths
 }
 
 func parquetFileRowCountsFromOptions(options *format.ParseOptions) map[string]int64 {
@@ -1110,12 +1349,64 @@ func fieldSelectionFromOptions(options *format.ParseOptions) *format.FieldSelect
 	return options.FieldSelection
 }
 
+func parquetProjectionForFieldSelection(schema *parquetgo.Schema, selectedFields, sourceFields []datatype.FieldInfo, selection *format.FieldSelectionOptions) (*parquetgo.Schema, []string, error) {
+	if schema == nil || selection == nil || len(selection.Include) == 0 {
+		return nil, nil, nil
+	}
+	if len(selectedFields) == 0 || len(selectedFields) >= len(sourceFields) {
+		return nil, nil, nil
+	}
+	group := parquetgo.Group{}
+	for _, field := range selectedFields {
+		leaf, ok := schema.Lookup(field.Name)
+		if !ok {
+			if selection.EffectiveMissingFieldPolicy() == format.MissingFieldIgnore {
+				continue
+			}
+			return nil, nil, fmt.Errorf("field selection references missing parquet field %q", field.Name)
+		}
+		group[field.Name] = leaf.Node
+	}
+	if len(group) == 0 {
+		return nil, nil, nil
+	}
+	projected := parquetgo.NewSchema(schema.Name(), group)
+	return projected, extractLeafColumnNames(projected), nil
+}
+
 func parseOptionsWithoutFieldSelection(options *format.ParseOptions) *format.ParseOptions {
 	if options == nil || options.FieldSelection == nil {
 		return options
 	}
 	copied := *options
 	copied.FieldSelection = nil
+	return &copied
+}
+
+func parquetDataFieldParseOptions(options *format.ParseOptions, partitions []partitionValue) *format.ParseOptions {
+	selection := fieldSelectionFromOptions(options)
+	if selection == nil || len(selection.Include) == 0 {
+		return parseOptionsWithoutFieldSelection(options)
+	}
+	partitionNames := make(map[string]bool, len(partitions))
+	for _, partition := range partitions {
+		partitionNames[partition.Name] = true
+	}
+	include := make([]string, 0, len(selection.Include))
+	for _, name := range selection.Include {
+		if name == "" || partitionNames[name] {
+			continue
+		}
+		include = append(include, name)
+	}
+	copied := *options
+	if len(include) == 0 {
+		copied.FieldSelection = nil
+		return &copied
+	}
+	fieldSelection := *selection
+	fieldSelection.Include = include
+	copied.FieldSelection = &fieldSelection
 	return &copied
 }
 

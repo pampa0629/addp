@@ -46,43 +46,77 @@ func TestLoadPreviewPluginsRegistersBuiltinDefaultsWithoutFiles(t *testing.T) {
 	}
 }
 
-func TestLoadPreviewPluginsUsesManifestDefaultProviders(t *testing.T) {
-	dir := t.TempDir()
-	manifestPath := filepath.Join(dir, "manifest.json")
-	config := []byte(`{"default_providers":[{"name":"builtin:file-table","type":"builtin","builtin":"file-table"}]}`)
-	if err := os.WriteFile(manifestPath, config, 0o600); err != nil {
-		t.Fatalf("write provider manifest: %v", err)
-	}
-
-	registry := NewPreviewRegistry()
-	repo := repository.NewMetadataRepository(nil, nil)
-	LoadPreviewPlugins(registry, repo, nil, objectcontent.NewObjectContentRegistry(), "", manifestPath)
-
-	if _, err := registry.GetByName("builtin:file-table"); err != nil {
-		t.Fatalf("expected manifest default file-table: %v", err)
-	}
-	if _, err := registry.GetByName("builtin:file-catalog"); err == nil {
-		t.Fatal("expected file-catalog to be absent because manifest defaults only contain file-table")
-	}
-}
-
 func TestLoadPreviewPluginsCanDisableDefaultProvider(t *testing.T) {
 	dir := t.TempDir()
-	manifestPath := filepath.Join(dir, "manifest.json")
+	configPath := filepath.Join(dir, "preview.json")
 	config := []byte(`{"providers":[{"name":"builtin:file-catalog","type":"builtin","builtin":"file-catalog","enabled":false}]}`)
-	if err := os.WriteFile(manifestPath, config, 0o600); err != nil {
-		t.Fatalf("write provider manifest: %v", err)
+	if err := os.WriteFile(configPath, config, 0o600); err != nil {
+		t.Fatalf("write provider config: %v", err)
 	}
 
 	registry := NewPreviewRegistry()
 	repo := repository.NewMetadataRepository(nil, nil)
-	LoadPreviewPlugins(registry, repo, nil, objectcontent.NewObjectContentRegistry(), "", manifestPath)
+	LoadPreviewPlugins(registry, repo, nil, objectcontent.NewObjectContentRegistry(), "", dir)
 
 	if _, err := registry.GetByName("builtin:file-catalog"); err == nil {
 		t.Fatal("expected builtin:file-catalog to be disabled")
 	}
 	if _, err := registry.GetByName("builtin:file-table"); err != nil {
 		t.Fatalf("expected other default providers to remain registered: %v", err)
+	}
+}
+
+func TestLoadPreviewPluginsUsesFallbackDefaultsWithPreviewConfig(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "preview.json")
+	config := []byte(`{"providers":[]}`)
+	if err := os.WriteFile(configPath, config, 0o600); err != nil {
+		t.Fatalf("write provider config: %v", err)
+	}
+
+	registry := NewPreviewRegistry()
+	repo := repository.NewMetadataRepository(nil, nil)
+	LoadPreviewPlugins(registry, repo, nil, objectcontent.NewObjectContentRegistry(), "", dir)
+
+	if _, err := registry.GetByName("builtin:file-table"); err != nil {
+		t.Fatalf("expected fallback builtin:file-table: %v", err)
+	}
+	if _, err := registry.GetByName("builtin:object-catalog"); err != nil {
+		t.Fatalf("expected fallback builtin:object-catalog: %v", err)
+	}
+}
+
+func TestLoadPreviewPluginsRejectsLegacyDefaultProvidersField(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "preview.json")
+	config := []byte(`{"default_providers":[{"name":"builtin:file-table","type":"builtin","builtin":"file-table"}]}`)
+	if err := os.WriteFile(configPath, config, 0o600); err != nil {
+		t.Fatalf("write provider config: %v", err)
+	}
+
+	registry := NewPreviewRegistry()
+	repo := repository.NewMetadataRepository(nil, nil)
+	LoadPreviewPlugins(registry, repo, nil, objectcontent.NewObjectContentRegistry(), "", dir)
+
+	if _, err := registry.GetByName("builtin:file-table"); err == nil {
+		t.Fatal("legacy default_providers config should not load fallback or requested provider")
+	}
+}
+
+func TestLoadPreviewPluginsRejectsContentPluginField(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "preview.json")
+	config := []byte(`{"content_plugins":[]}`)
+	if err := os.WriteFile(configPath, config, 0o600); err != nil {
+		t.Fatalf("write provider config: %v", err)
+	}
+
+	registry := NewPreviewRegistry()
+	repo := repository.NewMetadataRepository(nil, nil)
+	LoadPreviewPlugins(registry, repo, nil, objectcontent.NewObjectContentRegistry(), "", dir)
+
+	if _, err := registry.GetByName("builtin:file-table"); err == nil {
+		t.Fatal("preview config with content_plugins should not load fallback providers")
 	}
 }
 
@@ -360,14 +394,14 @@ func TestAttributeHelpersReadPartitionedSlicesAndNumbers(t *testing.T) {
 		},
 	}
 
-	refs := refRefsFromAttributes(attrs)
+	refs := refRefsFromMetaAttributes(attrs)
 	if len(refs) != 2 || refs[0].Ref.Path != "bucket/roads/roads.shp" {
 		t.Fatalf("refs = %#v, want partitioned refs", refs)
 	}
 	if got := catalogutil.Int64Attribute(attrs, "total_size"); got != 42 {
 		t.Fatalf("total_size = %d, want 42", got)
 	}
-	if got := refRefsFromAttributes(map[string]interface{}{"refs": []interface{}{map[string]interface{}{"path": "legacy/a.shp"}}}); len(got) != 0 {
+	if got := refRefsFromMetaAttributes(map[string]interface{}{"refs": []interface{}{map[string]interface{}{"path": "legacy/a.shp"}}}); len(got) != 0 {
 		t.Fatalf("legacy flat refs = %#v, want empty", got)
 	}
 }

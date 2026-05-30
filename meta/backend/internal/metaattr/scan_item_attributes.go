@@ -127,7 +127,7 @@ func ApplyTableItemAttributes(attrs models.JSONMap, tableInfo *datatype.TableInf
 	if tableInfo == nil {
 		return
 	}
-	UpsertNested(attrs, "type_info", "table", datatype.TableInfoAttributes(tableInfo))
+	UpsertNested(attrs, "type_info", "table", datatype.TableInfoPayload(tableInfo))
 	if tableInfo.RowCount != nil {
 		rowCount := *tableInfo.RowCount
 		UpsertNested(attrs, "type_info", "table", map[string]interface{}{"row_count": rowCount})
@@ -144,7 +144,7 @@ func ApplyGraphItemAttributes(attrs models.JSONMap, graphInfo *datatype.GraphInf
 	if graphInfo == nil {
 		return
 	}
-	UpsertNested(attrs, "type_info", "graph", datatype.GraphInfoAttributes(graphInfo))
+	UpsertNested(attrs, "type_info", "graph", datatype.GraphInfoPayload(graphInfo))
 }
 
 func IndexAttributes(indexes []IndexAttributesInput) []map[string]interface{} {

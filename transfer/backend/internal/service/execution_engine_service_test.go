@@ -1,9 +1,15 @@
 package service
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"testing"
 
+	commonClient "github.com/addp/common/client"
+	commonModels "github.com/addp/common/models"
+	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
 )
 
@@ -97,5 +103,84 @@ func TestRunningProgressCapsAtNinetyNine(t *testing.T) {
 		if got := runningProgress(tt.batchIndex); got != tt.want {
 			t.Fatalf("runningProgress(%d) = %v, want %v", tt.batchIndex, got, tt.want)
 		}
+	}
+}
+
+func TestAttachSourceMetaAttributesLoadsMetaItem(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/meta/items/12" {
+			t.Fatalf("path = %q, want /api/v1/meta/items/12", r.URL.Path)
+		}
+		if got := r.Header.Get("X-Tenant-ID"); got != "7" {
+			t.Fatalf("X-Tenant-ID = %q, want 7", got)
+		}
+		if got := r.Header.Get("X-Internal-API-Key"); got != "internal-key" {
+			t.Fatalf("X-Internal-API-Key = %q, want internal-key", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(commonModels.MetaItem{
+			ID:       12,
+			EngineID: 3,
+			Attributes: map[string]interface{}{
+				"item": map[string]interface{}{
+					"format": "parquet",
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	service := &ExecutionEngineService{
+		metaClient: commonClient.NewMetaClientWithInternalKey(server.URL, "internal-key"),
+	}
+	spec := &planner.TableExportTaskSpec{
+		Source: planner.EndpointSpec{
+			Engine:     planner.EngineRef{ID: 3},
+			MetaItemID: 12,
+		},
+	}
+	task := &models.TransferTask{
+		TenantID: 7,
+	}
+
+	if err := service.attachSourceMetaAttributes(task, spec); err != nil {
+		t.Fatalf("attachSourceMetaAttributes() error = %v", err)
+	}
+	itemAttrs, ok := spec.Source.Attributes["item"].(map[string]interface{})
+	if !ok || itemAttrs["format"] != "parquet" {
+		t.Fatalf("source attributes = %#v, want Meta item attributes", spec.Source.Attributes)
+	}
+}
+
+func TestAttachSourceMetaAttributesRejectsEngineMismatch(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(commonModels.MetaItem{
+			ID:         12,
+			EngineID:   4,
+			Attributes: map[string]interface{}{"item": map[string]interface{}{"format": "parquet"}},
+		})
+	}))
+	defer server.Close()
+
+	service := &ExecutionEngineService{
+		metaClient: commonClient.NewMetaClientWithInternalKey(server.URL, "internal-key"),
+	}
+	spec := &planner.TableExportTaskSpec{
+		Source: planner.EndpointSpec{
+			Engine:     planner.EngineRef{ID: 3},
+			MetaItemID: 12,
+		},
+	}
+	task := &models.TransferTask{
+		TenantID: 7,
+	}
+
+	if err := service.attachSourceMetaAttributes(task, spec); err == nil {
+		t.Fatal("attachSourceMetaAttributes() succeeded, want engine mismatch error")
 	}
 }

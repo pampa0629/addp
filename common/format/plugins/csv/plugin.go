@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/format"
+	"github.com/addp/common/resume"
 )
 
 // Plugin 实现分隔文本表格格式。
@@ -113,6 +114,7 @@ func (p *Plugin) effectiveOptions(options *format.ParseOptions) *format.ParseOpt
 	copied.SheetIndex = options.SheetIndex
 	copied.TableSample = options.TableSample
 	copied.FieldSelection = options.FieldSelection
+	copied.ResumeMarker = options.ResumeMarker
 	if options.Delimiter != 0 {
 		copied.Delimiter = options.Delimiter
 	}
@@ -292,6 +294,11 @@ func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, tableInf
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if options != nil {
+		if err := resume.RejectUnsupported(options.ResumeMarker, "csv.table_writer"); err != nil {
+			return nil, err
+		}
+	}
 	if output == nil {
 		return nil, fmt.Errorf("csv table writer requires output")
 	}
@@ -321,6 +328,11 @@ func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, tableInf
 func (p *Plugin) OpenTableReader(ctx context.Context, input io.Reader, options *format.ParseOptions) (format.TableReader, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	if options != nil {
+		if err := resume.RejectUnsupported(options.ResumeMarker, "csv.table_reader"); err != nil {
+			return nil, err
+		}
 	}
 	if input == nil {
 		return nil, fmt.Errorf("csv table reader requires input")
@@ -487,6 +499,7 @@ func (p *Plugin) effectiveWriteOptions(options *format.WriteOptions) *format.Wri
 	opts.Encoding = options.Encoding
 	opts.ExtraParams = options.ExtraParams
 	opts.OmitHeader = options.OmitHeader
+	opts.ResumeMarker = options.ResumeMarker
 	if options.Delimiter != 0 {
 		opts.Delimiter = options.Delimiter
 	}

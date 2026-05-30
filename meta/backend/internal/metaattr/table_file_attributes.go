@@ -45,7 +45,7 @@ func TableFileAttributes(input TableFileAttributesInput) map[string]interface{} 
 	}
 
 	if input.Table != nil {
-		if tableAttrs := datatype.TableInfoAttributes(input.Table); len(tableAttrs) > 0 {
+		if tableAttrs := datatype.TableInfoPayload(input.Table); len(tableAttrs) > 0 {
 			if len(input.Table.Fields) == 0 {
 				delete(tableAttrs, "fields")
 			}
@@ -55,8 +55,8 @@ func TableFileAttributes(input TableFileAttributesInput) map[string]interface{} 
 		}
 	}
 
-	if spatialAttrs := SpatialInfoAttributes(input.Spatial); len(spatialAttrs) > 0 {
-		UpsertNested(attrs, "capabilities", "spatial", spatialAttrs)
+	if spatialPayload := datatype.SpatialInfoPayload(input.Spatial); len(spatialPayload) > 0 {
+		UpsertNested(attrs, "capabilities", "spatial", spatialPayload)
 	}
 
 	if input.IncludeAccessIndex && input.AccessIndex != nil {

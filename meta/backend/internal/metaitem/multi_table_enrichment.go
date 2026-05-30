@@ -148,12 +148,12 @@ func upsertRefTableInfo(item *DetectedItem, tableInfo *format.TableDescribeResul
 	if item.Attributes == nil {
 		item.Attributes = map[string]interface{}{}
 	}
-	metaattr.UpsertNested(item.Attributes, "type_info", "table", datatype.TableInfoAttributes(tableInfo.Table))
+	metaattr.UpsertNested(item.Attributes, "type_info", "table", datatype.TableInfoPayload(tableInfo.Table))
 	if len(tableInfo.FormatInfo) > 0 {
 		metaattr.UpsertNested(item.Attributes, "format_info", item.Format, tableInfo.FormatInfo)
 	}
-	if spatialAttrs := metaattr.SpatialInfoAttributes(tableInfo.Spatial); len(spatialAttrs) > 0 {
-		metaattr.UpsertNested(item.Attributes, "capabilities", "spatial", spatialAttrs)
+	if spatialPayload := datatype.SpatialInfoPayload(tableInfo.Spatial); len(spatialPayload) > 0 {
+		metaattr.UpsertNested(item.Attributes, "capabilities", "spatial", spatialPayload)
 	}
 	if tableInfo.AccessIndex != nil {
 		metaattr.UpsertNested(item.Attributes, "access_index", "table", commonJSON.MapFromStruct(tableInfo.AccessIndex))

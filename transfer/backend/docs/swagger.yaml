@@ -217,8 +217,6 @@ definitions:
     - TaskStatusRunning
   github_com_addp_transfer_internal_models.TransferEndpointDoc:
     properties:
-      attributes:
-        type: object
       data_type:
         example: table
         type: string
@@ -227,6 +225,11 @@ definitions:
       format:
         example: shapefile
         type: string
+      meta_item_id:
+        description: Meta item ID；source 指向已入库 Meta item 时由 Transfer 后端通过 MetaClient 读取标准
+          attributes。
+        example: 12
+        type: integer
       options:
         additionalProperties: true
         type: object
@@ -793,6 +796,9 @@ paths:
       - 执行管理 | Execution Management
   /executions/{id}/retry:
     post:
+      description: 为失败执行创建新的 retry 执行记录，并按 restartable 语义从头重新入队执行 | Create a new retry
+        execution for a failed execution and enqueue it from the beginning with restartable
+        semantics
       parameters:
       - description: 执行ID | Execution ID
         in: path
@@ -1157,10 +1163,10 @@ paths:
       consumes:
       - application/json
       description: 创建一个新的数据导入/导出/同步任务。新任务 config 使用 source/target endpoint；source
-        指向已入库 Meta item 时可携带 source.attributes，Transfer planner 将消费其中的 item.layout、item.format、item.refs、type_info.table.fields
-        和 capabilities.spatial。| Create a new data import/export/sync task. New config
-        uses source/target endpoints; source.attributes may carry Meta item attributes
-        consumed by the planner.
+        指向已入库 Meta item 时使用 source.meta_item_id，Transfer 后端会通过 MetaClient 读取标准 attributes。|
+        Create a new data import/export/sync task. New config uses source/target
+        endpoints; use source.meta_item_id for persisted Meta items, and Transfer
+        backend loads standard attributes through MetaClient.
       parameters:
       - description: 任务创建请求 | Task creation request
         in: body
@@ -1278,9 +1284,9 @@ paths:
     put:
       consumes:
       - application/json
-      description: 更新任务的配置信息。config.source.attributes 会按 JSONB 原样保存，用于 planner 消费已入库
-        Meta item 标准 attributes。| Update task configuration. config.source.attributes
-        is preserved as JSONB for planner consumption.
+      description: 更新任务的配置信息。source 指向已入库 Meta item 时使用 config.source.meta_item_id；不支持在任务配置中直接传递
+        endpoint attributes。| Update task configuration. Use config.source.meta_item_id
+        for persisted Meta items; endpoint attributes are not accepted in task config.
       parameters:
       - description: 任务ID | Task ID
         in: path

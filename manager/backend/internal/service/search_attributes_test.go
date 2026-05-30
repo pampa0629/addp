@@ -38,12 +38,12 @@ func TestSearchAttributeReadersPreferStandardSections(t *testing.T) {
 	}
 
 	var assigned string
-	assignStringFromAttributes(meta, "type_info.document", "title", &assigned)
+	assignStringFromMetaAttributes(meta, "type_info.document", "title", &assigned)
 	if assigned != "standard title" {
 		t.Fatalf("assigned title = %q, want standard title", assigned)
 	}
 	assigned = ""
-	assignStringFromAttributes(map[string]interface{}{"title": "flat title"}, "type_info.document", "title", &assigned)
+	assignStringFromMetaAttributes(map[string]interface{}{"title": "flat title"}, "type_info.document", "title", &assigned)
 	if assigned != "" {
 		t.Fatalf("flat assigned title fallback = %q, want empty", assigned)
 	}

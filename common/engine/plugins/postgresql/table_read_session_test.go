@@ -4,8 +4,20 @@ import (
 	"testing"
 
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
+	"github.com/addp/common/resume"
 )
+
+func TestPostgresOpenTableReadSessionRejectsResumeMarker(t *testing.T) {
+	postgresPlugin := &PostgreSQLPlugin{}
+	_, err := postgresPlugin.OpenTableReadSession(nil, nil, plugin.CatalogPath{}, plugin.TableReadSessionOptions{
+		ResumeMarker: &resume.Marker{Version: resume.MarkerVersionV1},
+	})
+	if err == nil {
+		t.Fatal("OpenTableReadSession succeeded with resume marker, want explicit unsupported error")
+	}
+}
 
 func TestPostgresFieldInfoFromColumnKeepsSpatialNativeType(t *testing.T) {
 	field := postgresFieldInfoFromColumn(postgresColumnInfo{

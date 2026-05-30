@@ -12,6 +12,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
+	"github.com/addp/common/resume"
 )
 
 func TestJSONPluginImplementsTargetInterfaces(t *testing.T) {
@@ -299,6 +300,23 @@ func TestJSONPluginOpenTableReaderLines(t *testing.T) {
 	}
 	if len(rows) != 2 || rows[0]["name"] != "A" || rows[1]["name"] != "B" {
 		t.Fatalf("rows = %#v, want A/B", rows)
+	}
+}
+
+func TestJSONPluginRejectsResumeMarker(t *testing.T) {
+	plugin := NewPlugin(nil)
+	parseOpts := format.DefaultParseOptions()
+	parseOpts.ResumeMarker = &resume.Marker{Version: resume.MarkerVersionV1}
+	if _, err := plugin.OpenTableReader(context.Background(), strings.NewReader(`[{"id":1}]`), parseOpts); err == nil {
+		t.Fatal("OpenTableReader succeeded with resume marker, want explicit unsupported error")
+	}
+
+	writeOpts := format.DefaultWriteOptions()
+	writeOpts.ResumeMarker = &resume.Marker{Version: resume.MarkerVersionV1}
+	if _, err := plugin.OpenTableWriter(context.Background(), &bytes.Buffer{}, &datatype.TableInfo{
+		Fields: []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeInt}},
+	}, writeOpts); err == nil {
+		t.Fatal("OpenTableWriter succeeded with resume marker, want explicit unsupported error")
 	}
 }
 

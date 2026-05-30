@@ -13,7 +13,6 @@ import (
 	"github.com/addp/common/format"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/manager/internal/catalogutil"
 	"github.com/addp/manager/internal/models"
 )
 
@@ -348,11 +347,11 @@ func cloneMetaAttributes(attrs map[string]interface{}) map[string]interface{} {
 }
 
 func previewResourcePaths(attrs map[string]interface{}) (physicalPath string, scopePath string) {
-	physPath := catalogutil.StringAttribute(attrs, "physical_path")
+	physPath := physicalPathFromMetaAttributes(attrs)
 	if physPath == "" {
 		return "", ""
 	}
-	switch catalogutil.StringAttribute(attrs, "layout") {
+	switch itemLayoutFromMetaAttributes(attrs) {
 	case "single":
 		return physPath, ""
 	case "whole":
@@ -519,9 +518,9 @@ func providerNamesForMeta(req *PreviewResolverRequest, providerReq *PreviewReque
 	if itemType == "" && req != nil && req.Metadata != nil {
 		itemType = strings.ToLower(strings.TrimSpace(req.Metadata.NodeType))
 	}
-	dataType := strings.ToLower(strings.TrimSpace(catalogutil.StringAttribute(attrs, "data_type")))
-	formatType := format.NormalizeFormat(catalogutil.StringAttribute(attrs, "format"))
-	layout := strings.ToLower(strings.TrimSpace(catalogutil.StringAttribute(attrs, "layout")))
+	dataType := itemDataTypeFromMetaAttributes(attrs)
+	formatType := formatTypeFromMetaAttributes(attrs)
+	layout := itemLayoutFromMetaAttributes(attrs)
 
 	switch itemType {
 	case "collection":

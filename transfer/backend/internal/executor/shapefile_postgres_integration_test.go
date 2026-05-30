@@ -279,6 +279,110 @@ func TestIntegrationShapefileComplexZToPostgresPreservesZ(t *testing.T) {
 	}
 }
 
+func TestIntegrationPostgresSpatialTableToShapefilePreservesSpatialMetadata(t *testing.T) {
+	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
+		t.Skip("set ADDP_POSTGRES_INTEGRATION=1 to run PostgreSQL/PostGIS integration test")
+	}
+
+	ctx := context.Background()
+	connInfo := integrationPostgresConnInfo()
+	pg := &postgresql.PostgreSQLPlugin{}
+	db := openIntegrationPostgres(t, ctx, pg, connInfo)
+	defer db.Close()
+
+	schemaName := "transfer_it"
+	tableName := fmt.Sprintf("pg_to_shp_%d", time.Now().UnixNano())
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS "%s"`, schemaName)); err != nil {
+		t.Fatalf("create schema failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), fmt.Sprintf(`DROP TABLE IF EXISTS "%s"."%s"`, schemaName, tableName))
+	})
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(`
+		CREATE TABLE "%s"."%s" (
+			id integer PRIMARY KEY,
+			name text,
+			geometry geometry(PointZ,4326)
+		)
+	`, schemaName, tableName)); err != nil {
+		t.Fatalf("create source table failed: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(`
+		INSERT INTO "%s"."%s" (id, name, geometry)
+		VALUES
+			(1, 'Alpha', ST_GeomFromEWKT('SRID=4326;POINT Z (120 30 99.5)')),
+			(2, 'Beta', ST_GeomFromEWKT('SRID=4326;POINT Z (121 31 88.25)'))
+	`, schemaName, tableName)); err != nil {
+		t.Fatalf("insert source rows failed: %v", err)
+	}
+
+	target := &fakeContentWriter{files: map[string][]byte{}}
+	shapefilePlugin := shapefileformat.NewPlugin(nil)
+	sourcePath := integrationPostgresTablePath(schemaName, tableName)
+	targetPath := engineplugin.FileItemPath(0, "exports/"+tableName+".shp")
+	exec := &TableTransferExecutor{
+		SourceNativeReader:         pg,
+		SourceTableSessionProvider: pg,
+		TargetContentWriter:        target,
+		TargetMultiProvider:        shapefilePlugin,
+	}
+	metrics, err := exec.Execute(ctx, TableTransferPlan{
+		Source: TableSourcePlan{
+			Kind:     TableEndpointNative,
+			ConnInfo: connInfo,
+			Path:     sourcePath,
+		},
+		Target: TableTargetPlan{
+			Kind:   TableEndpointEncoded,
+			Path:   targetPath,
+			Format: format.FormatShapefile,
+			FormatOptions: &format.WriteOptions{
+				Encoding: "utf-8",
+				ExtraParams: map[string]interface{}{
+					"spatial_ref_sys": "EPSG:4326",
+				},
+			},
+		},
+		BatchSize: 1,
+	})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if metrics.RecordsRead != 2 || metrics.RecordsWritten != 2 || metrics.Batches != 2 {
+		t.Fatalf("metrics = %#v, want 2 read/written and 2 batches", metrics)
+	}
+
+	targetRefs := format.SameBasenameRelatedRefs(targetPath.StringPath(), shapefilePlugin.RelatedRefSpecs())
+	for _, ref := range targetRefs {
+		if ref.Required && len(target.files[ref.Ref.Path]) == 0 {
+			t.Fatalf("target required ref %s was not written", ref.Ref.Path)
+		}
+	}
+	targetReader := contentadapter.NewReader(target, nil, targetPath, engineplugin.ReadOptions{})
+	info, err := shapefilePlugin.DescribeMultiTable(ctx, targetReader, targetRefs, format.DefaultParseOptions())
+	if err != nil {
+		t.Fatalf("DescribeMultiTable failed: %v", err)
+	}
+	spatialInfo := info.Spatial
+	if spatialInfo == nil || spatialInfo.PrimaryGeometryType() != "Point" || spatialInfo.PrimaryDimensionValue() != 3 || spatialInfo.PrimarySRIDValue() != 4326 {
+		t.Fatalf("spatial info = %#v, want PointZ SRID 4326", spatialInfo)
+	}
+	rows, err := shapefilePlugin.SampleMultiTable(ctx, targetReader, targetRefs, 0, 2, format.DefaultParseOptions())
+	if err != nil {
+		t.Fatalf("SampleMultiTable failed: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("rows = %#v, want two rows", rows)
+	}
+	geometryColumn := spatialInfo.PrimaryGeometryName()
+	if got := rows[0][geometryColumn]; got != "POINT Z (120 30 99.5)" {
+		t.Fatalf("first geometry = %#v, want POINT Z (120 30 99.5)", got)
+	}
+	if got := rows[1][geometryColumn]; got != "POINT Z (121 31 88.25)" {
+		t.Fatalf("second geometry = %#v, want POINT Z (121 31 88.25)", got)
+	}
+}
+
 func integrationPostgresConnInfo() engineplugin.ConnectionInfo {
 	return engineplugin.ConnectionInfo{
 		"host":     integrationEnv("ADDP_TEST_POSTGRES_HOST", "localhost"),

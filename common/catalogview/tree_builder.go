@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/addp/common/datatype"
 	enginePlugin "github.com/addp/common/engine/plugin"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/models"
@@ -298,7 +299,8 @@ func withMetaItemFacts(attrs map[string]interface{}, item *models.MetaItem) map[
 	next["is_meta_item"] = true
 	if item.RowCount != nil {
 		next["row_count"] = *item.RowCount
-		if commonJSON.Int64(next, "type_info.table", "row_count") == 0 {
+		tableInfo := datatype.TableInfoFromPayload(commonJSON.Section(next, "type_info.table"), "")
+		if tableInfo == nil || tableInfo.RowCount == nil || *tableInfo.RowCount <= 0 {
 			upsertTreeMetadataSection(next, "type_info", "table", map[string]interface{}{"row_count": *item.RowCount})
 		}
 	}

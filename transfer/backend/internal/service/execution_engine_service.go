@@ -68,9 +68,32 @@ func (s *ExecutionEngineService) executeCommonTableExportTask(ctx context.Contex
 		s.updateExecutionError(task, executionID, wrapped)
 		return wrapped
 	}
+	if err := s.attachSourceMetaAttributes(task, &spec); err != nil {
+		wrapped := fmt.Errorf("load source meta item attributes: %w", err)
+		s.updateExecutionError(task, executionID, wrapped)
+		return wrapped
+	}
 
 	resolver := planner.NewSystemEngineResolver(s.systemClient)
 	return s.executeCommonTableTransferTask(ctx, task, executionID, spec, resolver)
+}
+
+func (s *ExecutionEngineService) attachSourceMetaAttributes(task *models.TransferTask, spec *planner.TableExportTaskSpec) error {
+	if task == nil || spec == nil || spec.Source.MetaItemID == 0 {
+		return nil
+	}
+	if s.metaClient == nil {
+		return fmt.Errorf("meta client is required when source meta_item_id is set")
+	}
+	item, err := s.metaClient.WithTenantID(task.TenantID).GetMetaItemByID(spec.Source.MetaItemID)
+	if err != nil {
+		return err
+	}
+	if item.EngineID != spec.Source.Engine.ID {
+		return fmt.Errorf("source meta item engine_id %d does not match source engine id %d", item.EngineID, spec.Source.Engine.ID)
+	}
+	spec.Source.Attributes = item.Attributes
+	return nil
 }
 
 func (s *ExecutionEngineService) executeCommonTableTransferTask(ctx context.Context, task *models.TransferTask, executionID uint, spec planner.TableExportTaskSpec, resolver planner.EngineResolver) error {
@@ -180,6 +203,15 @@ func (s *ExecutionEngineService) tableProgressCallback(task *models.TransferTask
 			"target_committed": true,
 			"updated_at":       time.Now().Format(time.RFC3339),
 		}
+		if event.ResumeMarker != nil {
+			checkpointState["resume_marker"] = event.ResumeMarker.Clone()
+		}
+		if event.CommitMarker != nil {
+			checkpointState["commit_marker"] = event.CommitMarker.Clone()
+		}
+		if event.Final {
+			checkpointState["final"] = true
+		}
 		if err := s.executionService.UpdateExecution(ctx, executionID, map[string]interface{}{
 			"checkpoint_offset": event.RecordsRead,
 			"checkpoint_state":  checkpointState,
@@ -193,13 +225,16 @@ func (s *ExecutionEngineService) tableProgressCallback(task *models.TransferTask
 			}
 		}
 		logLine := fmt.Sprintf(
-			"%s batch=%d source_offset=%d batch_rows=%d records_read=%d records_written=%d target_committed=true",
+			"%s batch=%d source_offset=%d batch_rows=%d records_read=%d records_written=%d target_committed=true final=%t resume_marker=%t commit_marker=%t",
 			time.Now().Format(time.RFC3339),
 			event.BatchIndex,
 			event.SourceOffset,
 			event.BatchRows,
 			event.RecordsRead,
 			event.RecordsWritten,
+			event.Final,
+			event.ResumeMarker != nil,
+			event.CommitMarker != nil,
 		)
 		if err := s.executionService.AppendLog(ctx, executionID, logLine); err != nil {
 			return fmt.Errorf("append progress log: %w", err)

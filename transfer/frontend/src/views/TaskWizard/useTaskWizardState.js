@@ -147,8 +147,11 @@ export function useTaskWizardState() {
         }
       },
       data_type: sourceDataType.value || 'table',
-      representation: sourceRepresentation.value || 'native',
-      attributes: config.sourceItem?.attributes || config.attributes || {}
+      representation: sourceRepresentation.value || 'native'
+    }
+    const metaItemID = Number(config.sourceItem?.meta_id || config.meta_item_id || 0)
+    if (metaItemID > 0) {
+      endpoint.meta_item_id = metaItemID
     }
 
     const format = sourceBackendFormat(sourceFormat.value || config.format)
@@ -595,7 +598,7 @@ export function useTaskWizardState() {
       representation: source.representation || 'native',
       format: targetUiFormat(source.format, source.options || {}),
       resource: endpointResource,
-      attributes: source.attributes || {}
+      meta_item_id: source.meta_item_id || 0
     }
   }
 

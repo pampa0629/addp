@@ -82,6 +82,8 @@ attributes 分区统一采用以下概念：
 
 `common/datatype` 是 type info、field type、空间横切事实和访问索引结构的代码事实源；attributes 是这些事实的落库模型。Meta normalizer 负责将 provider 返回的 `datatype.*` 结构写入对应 attributes 分区。
 
+`common/datatype` 只处理自身结构和 JSON payload 的相互转换，不承载 `attributes` 分区路径语义，也不提供从完整 `meta_item.attributes` 读取标准分区的入口。读取或写入 `type_info.*`、`capabilities.*`、`access_index.*` 等路径是 Meta normalizer、MetaClient 消费方或上层模块的职责；它们取出对应分区后，才可调用 `datatype.*FromPayload` 等通用转换函数。
+
 | 输入结构 | attributes 落点 |
 |---|---|
 | `datatype.TableInfo` | `attributes.type_info.table` |
@@ -175,9 +177,9 @@ attributes 分区统一采用以下概念：
 
 `type_info.container` 只承载容器结构事实和 child 轻量摘要，例如 `children`、`default_child`、`child_count`、`resource_count`。父容器级解析统计、采样上限和截断状态不得写入 `type_info.container.native`，应进入 `format_info.<format>`；child 级 `native` 只保留 child 定位或受控原生摘要，例如 SQLite 表原名、ZIP entry 定位事实。
 
-`type_info.graph` 必须是业务图视图的 JSON 投影。引擎插件、扩展、索引或空间能力产生的内部节点和内部关系不得写入 `node_shapes`、`relationship_shapes` 或计数字段；例如 Neo4j Spatial 的 `SpatialLayer` 节点和 `RTREE_*` 关系应在 provider 或 Graph 模块服务层过滤。
+`type_info.graph` 必须是业务图视图的 JSON payload。引擎插件、扩展、索引或空间能力产生的内部节点和内部关系不得写入 `node_shapes`、`relationship_shapes` 或计数字段；例如 Neo4j Spatial 的 `SpatialLayer` 节点和 `RTREE_*` 关系应在 provider 或 Graph 模块服务层过滤。
 
-`type_info.graph` 使用 `common/datatype.GraphInfo` 的 JSON 投影：
+`type_info.graph` 使用 `common/datatype.GraphInfo` 的 JSON payload：
 
 | 字段 | 规则 |
 |---|---|
@@ -191,7 +193,7 @@ attributes 分区统一采用以下概念：
 
 label set 必须标准化为去空、去重、排序后的稳定集合；当 node shape 或 endpoint 的 `name` / `shape_name` 为空时，可以由 label set 使用 `+` 连接派生。历史 Meta 数据如果仍使用 `edge_count`、顶层 `from_labels` / `to_labels`、独立 label item 或 relationship item，应删除后重新扫描，不在运行期保留兼容读取。
 
-表字段统一放在 `type_info.table.fields`，不得写入 attributes 顶层。`type_info.table` 是 `common/datatype.TableInfo` 的直接 JSON 投影，`type_info.table.fields[]` 是 `common/datatype.FieldInfo` 的直接 JSON 投影。字段不是 data item，字段类型只能使用 `type` 表达 ADDP 标准字段类型，不得在字段对象内写入 `data_type`。原生字段类型如需展示，只能作为只读诊断信息写入 `native_type`，不得参与执行决策；哪个字段是空间字段、SRID、extent 等属于 `capabilities.spatial`，不得塞回 `type_info.table`。
+表字段统一放在 `type_info.table.fields`，不得写入 attributes 顶层。`type_info.table` 是 `common/datatype.TableInfo` 的直接 JSON payload，`type_info.table.fields[]` 是 `common/datatype.FieldInfo` 的直接 JSON payload。字段不是 data item，字段类型只能使用 `type` 表达 ADDP 标准字段类型，不得在字段对象内写入 `data_type`。原生字段类型如需展示，只能作为只读诊断信息写入 `native_type`，不得参与执行决策；哪个字段是空间字段、SRID、extent 等属于 `capabilities.spatial`，不得塞回 `type_info.table`。
 
 字段属性只有能影响扫描、展示、查询建议、质量检测、传输写入、建模标准化或智能生成中的至少一个决策，才进入 ADDP metadata 链路；仅因引擎能查到而没有明确消费方的原生细节，不进入公共模型。
 

@@ -76,7 +76,7 @@ func canonicalContainerChildFormat(child datatype.ContainerChildInfo) string {
 func filteredContainerChildNative(values map[string]interface{}) map[string]interface{} {
 	native := map[string]interface{}{}
 	for key, value := range values {
-		if isContainerChildProtocolProperty(key) {
+		if isContainerChildProtocolProperty(key) || isContainerChildSchemaProperty(key) {
 			continue
 		}
 		native[key] = value
@@ -90,6 +90,15 @@ func filteredContainerChildNative(values map[string]interface{}) map[string]inte
 func isContainerChildProtocolProperty(key string) bool {
 	switch strings.ToLower(strings.TrimSpace(key)) {
 	case "name", "child_kind", "data_type", "format", "native", "refs", "ref_paths", "components", "component_paths", "organization":
+		return true
+	default:
+		return false
+	}
+}
+
+func isContainerChildSchemaProperty(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "columns", "fields", "schema", "table_info", "type_info":
 		return true
 	default:
 		return false

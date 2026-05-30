@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
@@ -749,7 +750,7 @@ func (s *ObjectStorageCatalogScanService) persistObjectCatalogCompositeItems(
 		}
 
 		sizeVal := itemPlan.SizeBytes
-		rowCount := itemRowCountFromAttributes(itemPlan.Attributes)
+		rowCount := itemRowCountFromMetaAttributes(itemPlan.Attributes)
 		if _, err := s.repo.UpsertItemWithDepth(tenantID, engineID, parentNode, itemPlan.ItemType, itemPlan.ItemName, itemPlan.FullName, itemPlan.Attributes, rowCount, &sizeVal, nil, models.ScannedDepthDeep); err != nil {
 			return count, err
 		}
@@ -817,11 +818,12 @@ func needsContentFormatDetection(formatName string) bool {
 	return format.NormalizeFormat(formatName) == format.FormatUnknown
 }
 
-func itemRowCountFromAttributes(attrs map[string]interface{}) *int64 {
-	rowCount := commonJSON.Int64(attrs, "type_info.table", "row_count")
-	if rowCount <= 0 {
+func itemRowCountFromMetaAttributes(attrs map[string]interface{}) *int64 {
+	tableInfo := datatype.TableInfoFromPayload(commonJSON.Section(attrs, "type_info.table"), "")
+	if tableInfo == nil || tableInfo.RowCount == nil || *tableInfo.RowCount <= 0 {
 		return nil
 	}
+	rowCount := *tableInfo.RowCount
 	return &rowCount
 }
 

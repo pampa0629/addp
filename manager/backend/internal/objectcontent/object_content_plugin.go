@@ -332,6 +332,8 @@ func defaultFrontendRenderer(kind string) string {
 		return models.ObjectPreviewKindImage
 	case models.ObjectPreviewKindVideo:
 		return models.ObjectPreviewKindVideo
+	case models.ObjectPreviewKindAudio:
+		return models.ObjectPreviewKindAudio
 	case models.ObjectPreviewKindJSON:
 		return models.ObjectPreviewKindJSON
 	case models.ObjectPreviewKindContainer:
@@ -364,6 +366,7 @@ func contentKindLabel(kind string) string {
 		models.ObjectPreviewKindPPTX:        "PPTX",
 		models.ObjectPreviewKindImage:       "图片",
 		models.ObjectPreviewKindVideo:       "视频",
+		models.ObjectPreviewKindAudio:       "音频",
 		models.ObjectPreviewKindJSON:        "JSON",
 		models.ObjectPreviewKindContainer:   "容器",
 		models.ObjectPreviewKindText:        "文本",
@@ -778,7 +781,7 @@ type containerPreviewChildren struct {
 	Resolved         bool
 }
 
-func buildContainerPreviewFromAttributes(attrs map[string]interface{}, sizeBytes int64) map[string]interface{} {
+func buildContainerPreviewFromMetaAttributes(attrs map[string]interface{}, sizeBytes int64) map[string]interface{} {
 	containerAttrs := commonJSON.Section(attrs, "type_info.container")
 	if len(containerAttrs) == 0 {
 		return nil
@@ -974,7 +977,7 @@ func containerChildPreviewMap(childInfo datatype.ContainerChildInfo, index int) 
 	key := containerChildKey(childInfo.Name, commonJSON.InterfaceString(childInfo.Native["table"]), index)
 	child := make(map[string]interface{}, len(childInfo.Native)+8)
 	for key, value := range childInfo.Native {
-		if isContainerChildInternalProperty(key) {
+		if isContainerChildInternalProperty(key) || isContainerChildSchemaProperty(key) {
 			continue
 		}
 		child[key] = value

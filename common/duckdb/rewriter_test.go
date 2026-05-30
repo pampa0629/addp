@@ -1,8 +1,12 @@
 package duckdb
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
 )
 
@@ -14,7 +18,7 @@ func TestIsObjectTableItemUsesContentAttributes(t *testing.T) {
 		Attributes: map[string]interface{}{
 			"item": map[string]interface{}{
 				"data_type": "table",
-				"format":    "parquet",
+				"format":    ".parquet",
 			},
 		},
 	}
@@ -26,5 +30,52 @@ func TestIsObjectTableItemUsesContentAttributes(t *testing.T) {
 	item.ItemType = "table"
 	if IsObjectTableItem(item) {
 		t.Fatal("catalog table item should not be recognized as object/file table")
+	}
+}
+
+func TestBuildObjectTableMapUsesMetaItemList(t *testing.T) {
+	t.Parallel()
+
+	var requestedPath string
+	var requestedTenant string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestedPath = r.URL.Path
+		requestedTenant = r.Header.Get("X-Tenant-ID")
+		if r.URL.RawQuery != "" {
+			t.Fatalf("query = %q, want empty namespace query", r.URL.RawQuery)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode([]commonModels.MetaItem{{
+			ItemType: "object",
+			Name:     "sales",
+			FullName: "lake/sales",
+			Attributes: map[string]interface{}{
+				"item": map[string]interface{}{
+					"data_type": "table",
+					"format":    "parquet",
+				},
+				"storage": map[string]interface{}{
+					"physical_path": "bucket/lake/sales",
+				},
+			},
+		}})
+	}))
+	defer server.Close()
+
+	metaClient := commonClient.NewMetaClientWithInternalKey(server.URL, "internal-key")
+	tables := BuildObjectTableMap(nil, 7, []commonModels.Engine{{
+		ID:         3,
+		Name:       "lake",
+		EngineType: "minio",
+	}}, metaClient)
+
+	if requestedPath != "/api/v1/meta/engines/3/items" {
+		t.Fatalf("requested path = %q, want item list endpoint", requestedPath)
+	}
+	if requestedTenant != "7" {
+		t.Fatalf("X-Tenant-ID = %q, want 7", requestedTenant)
+	}
+	if tables["lake"]["sales"] != "bucket/lake/sales" || tables["lake"]["lake/sales"] != "bucket/lake/sales" {
+		t.Fatalf("tables = %#v", tables)
 	}
 }

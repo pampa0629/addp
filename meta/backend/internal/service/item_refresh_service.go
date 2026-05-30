@@ -54,13 +54,15 @@ func (s *ScanService) RefreshItem(ctx context.Context, engineID, tenantID, itemI
 	if err != nil {
 		return nil, err
 	}
-	rowCount := itemRowCountFromAttributes(refreshed)
+	refreshed = metaattr.Normalize(refreshed)
+	descriptor := knownItemDescriptorFromMetaAttributes(refreshed)
+	rowCount := itemRowCountFromMetaAttributes(refreshed)
 	sizeBytes := item.SizeBytes
 	if sizeBytes == nil {
-		sizeBytes = dataitem.DescriptorFromAttributes(refreshed).SizeBytes
+		sizeBytes = descriptor.SizeBytes
 	}
 	if err := s.db.Model(&item).Updates(map[string]interface{}{
-		"attributes":      metaattr.Normalize(refreshed),
+		"attributes":      refreshed,
 		"row_count":       rowCount,
 		"size_bytes":      sizeBytes,
 		"scanned_at":      time.Now(),
@@ -70,13 +72,12 @@ func (s *ScanService) RefreshItem(ctx context.Context, engineID, tenantID, itemI
 		return nil, err
 	}
 
-	item.Attributes = metaattr.Normalize(refreshed)
+	item.Attributes = refreshed
 	item.RowCount = rowCount
 	item.SizeBytes = sizeBytes
-	descriptor := dataitem.DescriptorFromAttributes(item.Attributes)
 	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
 	catalogPathFor := knownItemCatalogPathResolver(resource.ID, p, descriptor)
-	physicalPath := firstNonEmpty(descriptor.PhysicalPath, descriptor.EntryPath, pathFromStorage(descriptor), item.FullName)
+	physicalPath := knownItemPhysicalPath(descriptor, &item)
 	if contentHash, err := computeContentSHA256(ctx, contentReader, connInfo, catalogPathFor(physicalPath)); err != nil {
 		return nil, err
 	} else {
@@ -94,13 +95,7 @@ func (s *ScanService) RefreshItem(ctx context.Context, engineID, tenantID, itemI
 		return nil, err
 	}
 	if s.indexerService != nil && catalogModelItemTerm(p) == plugin.CatalogTermObject && descriptor.StorageBucket != "" {
-		objectPath := pathFromStorage(descriptor)
-		if objectPath == "" {
-			objectPath = physicalPath
-			if bucket, parsedPath := metapath.SplitObjectPath(objectPath); bucket == descriptor.StorageBucket && parsedPath != "" {
-				objectPath = parsedPath
-			}
-		}
+		objectPath := knownItemObjectPath(descriptor, physicalPath)
 		if objectPath != "" {
 			catalogResource := metacatalog.StorageResource{
 				RootName:     descriptor.StorageBucket,
@@ -156,7 +151,7 @@ func (s *ScanService) refreshKnownItemAttributes(
 	force bool,
 ) (models.JSONMap, int, error) {
 	attrs := cloneJSONMap(item.Attributes)
-	descriptor := dataitem.DescriptorFromAttributes(attrs)
+	descriptor := knownItemDescriptorFromMetaAttributes(attrs)
 	detected := detectedItemFromDescriptor(item, descriptor)
 	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
 	catalogPathFor := knownItemCatalogPathResolver(resource.ID, contentReader, descriptor)
@@ -165,13 +160,8 @@ func (s *ScanService) refreshKnownItemAttributes(
 	switch descriptor.Layout {
 	case dataitem.LayoutMulti:
 		detected, _, err = metaitem.EnrichKnownMultiTableItem(ctx, contentReader, connInfo, resource.ID, catalogPathFor, detected)
-	case dataitem.LayoutSingle:
-		physicalPath := firstNonEmpty(descriptor.PhysicalPath, descriptor.EntryPath, pathFromStorage(descriptor), item.FullName)
-		if detected, err = enrichKnownResourceAttributes(ctx, attrs, contentReader, connInfo, resource.ID, catalogPathFor, detected, physicalPath, sizeFromDescriptor(descriptor, item)); err != nil {
-			return nil, 0, err
-		}
-	case dataitem.LayoutWhole:
-		physicalPath := firstNonEmpty(descriptor.PhysicalPath, descriptor.EntryPath, pathFromStorage(descriptor), item.FullName)
+	case dataitem.LayoutSingle, dataitem.LayoutWhole:
+		physicalPath := knownItemPhysicalPath(descriptor, item)
 		if detected, err = enrichKnownResourceAttributes(ctx, attrs, contentReader, connInfo, resource.ID, catalogPathFor, detected, physicalPath, sizeFromDescriptor(descriptor, item)); err != nil {
 			return nil, 0, err
 		}
@@ -267,13 +257,44 @@ func detectedItemFromDescriptor(item *models.MetaItem, descriptor dataitem.ItemD
 			Layout:    descriptor.Layout,
 			DataType:  descriptor.DataType,
 			Format:    descriptor.Format,
-			EntryPath: firstNonEmpty(descriptor.EntryPath, descriptor.PhysicalPath, pathFromStorage(descriptor), item.FullName),
+			EntryPath: knownItemEntryPath(descriptor, item),
 			RefList:   descriptor.Refs,
 			SizeBytes: &size,
 		},
-		PhysicalPath: firstNonEmpty(descriptor.PhysicalPath, pathFromStorage(descriptor), item.FullName),
+		PhysicalPath: knownItemPhysicalPath(descriptor, item),
 		Attributes:   clonePlainMap(item.Attributes),
 	}
+}
+
+func knownItemDescriptorFromMetaAttributes(attrs map[string]interface{}) dataitem.ItemDescriptor {
+	return dataitem.DescriptorFromAttributes(attrs)
+}
+
+func knownItemEntryPath(descriptor dataitem.ItemDescriptor, item *models.MetaItem) string {
+	return firstNonEmpty(descriptor.EntryPath, descriptor.PhysicalPath, pathFromStorage(descriptor), knownItemFullName(item))
+}
+
+func knownItemPhysicalPath(descriptor dataitem.ItemDescriptor, item *models.MetaItem) string {
+	return firstNonEmpty(descriptor.PhysicalPath, descriptor.EntryPath, pathFromStorage(descriptor), knownItemFullName(item))
+}
+
+func knownItemObjectPath(descriptor dataitem.ItemDescriptor, physicalPath string) string {
+	objectPath := pathFromStorage(descriptor)
+	if objectPath != "" {
+		return objectPath
+	}
+	objectPath = strings.Trim(physicalPath, "/")
+	if bucket, parsedPath := metapath.SplitObjectPath(objectPath); bucket == descriptor.StorageBucket && parsedPath != "" {
+		return parsedPath
+	}
+	return objectPath
+}
+
+func knownItemFullName(item *models.MetaItem) string {
+	if item == nil {
+		return ""
+	}
+	return item.FullName
 }
 
 func knownItemCatalogPathResolver(engineID uint, provider plugin.EnginePlugin, descriptor dataitem.ItemDescriptor) func(string) plugin.CatalogPath {

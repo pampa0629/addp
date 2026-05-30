@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/addp/common/dataitem"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/events"
-	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/config"
@@ -472,13 +472,30 @@ func scanTargetFromNode(node models.MetaNode) []string {
 }
 
 func scanTargetFromItem(item models.MetaItem) []string {
-	physicalPath := strings.Trim(strings.TrimSpace(commonJSON.String(item.Attributes, "storage", "physical_path")), "/")
-	if physicalPath != "" {
-		return []string{physicalPath}
+	if targets := scanTargetPathsFromMetaAttributes(item.Attributes); len(targets) > 0 {
+		return targets
 	}
 	fullName := strings.Trim(strings.TrimSpace(item.FullName), "/")
 	if fullName != "" {
 		return []string{fullName}
+	}
+	return nil
+}
+
+func scanTargetPathsFromMetaAttributes(attrs map[string]interface{}) []string {
+	if targets := dataitem.ScanTargetsFromAttributes(attrs); len(targets) > 0 {
+		result := make([]string, 0, len(targets))
+		for _, target := range targets {
+			if path := strings.Trim(strings.TrimSpace(target.Path), "/"); path != "" {
+				result = append(result, path)
+			}
+		}
+		if len(result) > 0 {
+			return result
+		}
+	}
+	if physicalPath := dataitem.DescriptorFromAttributes(attrs).PhysicalPath; physicalPath != "" {
+		return []string{strings.Trim(physicalPath, "/")}
 	}
 	return nil
 }

@@ -38,25 +38,13 @@ func createPostgresTableIfNotExists(ctx context.Context, db *sql.DB, schema, tab
 		return fmt.Errorf("create postgresql schema %s: %w", schema, err)
 	}
 
-	definitions := make([]string, 0, len(fields))
+	writeFields := postgresWriteFields(fields)
+	definitions := make([]string, 0, len(writeFields))
 	primaryKeys := make([]string, 0)
-	seen := map[string]struct{}{}
-	for _, field := range fields {
-		name := strings.TrimSpace(field.Name)
-		if name == "" {
-			continue
-		}
-		if _, ok := seen[name]; ok {
-			continue
-		}
-		seen[name] = struct{}{}
-		definition := dialect.QuoteIdentifier(name) + " " + postgresSQLTypeForField(field, spatialInfo)
-		if !field.Nullable {
-			definition += " NOT NULL"
-		}
-		definitions = append(definitions, definition)
+	for _, field := range writeFields {
+		definitions = append(definitions, postgresColumnDefinition(field, spatialInfo))
 		if field.PrimaryKey {
-			primaryKeys = append(primaryKeys, dialect.QuoteIdentifier(name))
+			primaryKeys = append(primaryKeys, dialect.QuoteIdentifier(field.Name))
 		}
 	}
 	if len(definitions) == 0 {
@@ -70,7 +58,136 @@ func createPostgresTableIfNotExists(ctx context.Context, db *sql.DB, schema, tab
 	if _, err := db.ExecContext(ctx, createSQL); err != nil {
 		return fmt.Errorf("create postgresql table %s.%s: %w", schema, table, err)
 	}
+	if err := evolvePostgresTableSchema(ctx, db, schema, table, writeFields, spatialInfo); err != nil {
+		return err
+	}
 	return nil
+}
+
+func evolvePostgresTableSchema(ctx context.Context, db *sql.DB, schema, table string, fields []datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) error {
+	columns, err := postgresTableColumns(ctx, db, schema, table)
+	if err != nil {
+		return err
+	}
+	statements, err := postgresSchemaEvolutionStatements(schema, table, fields, spatialInfo, columns)
+	if err != nil {
+		return err
+	}
+	for _, statement := range statements {
+		if _, err := db.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("evolve postgresql table %s.%s schema: %w", schema, table, err)
+		}
+	}
+	return nil
+}
+
+func postgresSchemaEvolutionStatements(schema, table string, fields []datatype.FieldInfo, spatialInfo *datatype.SpatialInfo, existingColumns []postgresColumnInfo) ([]string, error) {
+	dialect := sqldialect.ForEngine("postgresql")
+	existingByName := make(map[string]postgresColumnInfo, len(existingColumns))
+	for _, column := range existingColumns {
+		existingByName[column.Name] = column
+	}
+
+	statements := make([]string, 0)
+	for _, field := range postgresWriteFields(fields) {
+		column, exists := existingByName[field.Name]
+		if exists {
+			if !postgresColumnCompatibleWithField(column, field, spatialInfo) {
+				return nil, fmt.Errorf("postgresql target column %q has type %q, expected %q", field.Name, postgresColumnNativeType(column), postgresSQLTypeForField(field, spatialInfo))
+			}
+			continue
+		}
+		if field.PrimaryKey {
+			return nil, fmt.Errorf("postgresql schema evolution cannot add primary key column %q to existing table", field.Name)
+		}
+		if !postgresMissingColumnCanBeAdded(field) {
+			return nil, fmt.Errorf("postgresql schema evolution cannot add non-null column %q without default expression", field.Name)
+		}
+		statements = append(statements, "ALTER TABLE "+dialect.QualifiedTable(schema, table)+" ADD COLUMN "+postgresColumnDefinition(field, spatialInfo))
+	}
+	return statements, nil
+}
+
+func postgresWriteFields(fields []datatype.FieldInfo) []datatype.FieldInfo {
+	result := make([]datatype.FieldInfo, 0, len(fields))
+	seen := map[string]struct{}{}
+	for _, field := range fields {
+		name := strings.TrimSpace(field.Name)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		field.Name = name
+		result = append(result, field)
+	}
+	return result
+}
+
+func postgresColumnDefinition(field datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) string {
+	definition := sqldialect.ForEngine("postgresql").QuoteIdentifier(field.Name) + " " + postgresSQLTypeForField(field, spatialInfo)
+	if strings.TrimSpace(field.DefaultExpression) != "" {
+		definition += " DEFAULT " + strings.TrimSpace(field.DefaultExpression)
+	}
+	if !field.Nullable {
+		definition += " NOT NULL"
+	}
+	return definition
+}
+
+func postgresMissingColumnCanBeAdded(field datatype.FieldInfo) bool {
+	return field.Nullable || strings.TrimSpace(field.DefaultExpression) != ""
+}
+
+func postgresColumnCompatibleWithField(column postgresColumnInfo, field datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) bool {
+	expected := datatype.ParseFieldType(string(field.Type))
+	existing := postgresCommonFieldType(column, postgresColumnNativeType(column))
+	if expected == datatype.FieldTypeUnknown {
+		return existing == datatype.FieldTypeString || existing == datatype.FieldTypeUnknown
+	}
+	if datatype.IsSpatialFieldType(expected) {
+		return postgresSpatialColumnCompatibleWithField(column, field, spatialInfo)
+	}
+	return expected == existing
+}
+
+func postgresSpatialColumnCompatibleWithField(column postgresColumnInfo, field datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) bool {
+	if !column.IsSpatial() {
+		return false
+	}
+	expectedGeometryType, expectedSRID, expectedDimension := postgresExpectedSpatialFactsForField(field, spatialInfo)
+	existingGeometryType, existingSRID, existingDimension := parsePostgresSpatialType(postgresColumnNativeType(column))
+	if expectedGeometryType != "" && existingGeometryType != "" && !strings.EqualFold(expectedGeometryType, existingGeometryType) {
+		return false
+	}
+	if expectedSRID > 0 && existingSRID > 0 && expectedSRID != existingSRID {
+		return false
+	}
+	if expectedDimension > 0 && existingDimension > 0 && expectedDimension != existingDimension {
+		return false
+	}
+	return true
+}
+
+func postgresExpectedSpatialFactsForField(field datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) (geometryType string, srid int, dimension int) {
+	if column := postgresSpatialColumnForField(spatialInfo, field.Name); column != nil {
+		geometryType, dimension = normalizePostgresGeometryType(column.GeometryType)
+		if geometryType == "" {
+			geometryType = strings.TrimSpace(column.GeometryType)
+		}
+		if column.SRID != nil {
+			srid = *column.SRID
+		}
+		if column.Dimension != nil {
+			dimension = *column.Dimension
+		}
+	}
+	if geometryType == "" {
+		geometryType = postgresGeometryTypeForFieldType(field.Type)
+	}
+	return geometryType, srid, dimension
 }
 
 func (p *PostgreSQLPlugin) DeleteResource(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) error {

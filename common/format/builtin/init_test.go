@@ -65,3 +65,27 @@ func TestUnknownFormatCapabilityViewRegistersBinaryReader(t *testing.T) {
 		t.Fatalf("unknown content readers = %#v, want binary_content only", view.ContentReaders)
 	}
 }
+
+func TestDescriptorOnlyTableFormatsExposeMissingProviders(t *testing.T) {
+	for _, formatType := range []format.FormatType{format.FormatAvro, format.FormatORC} {
+		t.Run(string(formatType), func(t *testing.T) {
+			view, ok := format.GetFormatCapabilityView(formatType)
+			if !ok {
+				t.Fatalf("expected capability view for %s", formatType)
+			}
+			if !view.Implementations.FormatPlugin {
+				t.Fatalf("%s implementations = %#v, want descriptor plugin", formatType, view.Implementations)
+			}
+			if !view.Transfer.Read || !view.Transfer.Write {
+				t.Fatalf("%s transfer declaration = %#v, want read/write intent", formatType, view.Transfer)
+			}
+			if view.Implementations.TableInfoProvider ||
+				view.Implementations.TableSampleReader ||
+				view.Implementations.TableReaderProvider ||
+				view.Implementations.TableWriterProvider ||
+				view.Implementations.ScopeTableReader {
+				t.Fatalf("%s should expose missing table providers until implemented: %#v", formatType, view.Implementations)
+			}
+		})
+	}
+}

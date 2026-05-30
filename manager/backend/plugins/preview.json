@@ -1,0 +1,11 @@
+{
+  "version": "1.0.0",
+  "description": "Manager 模块主预览 Provider 配置",
+  "providers": [],
+  "notes": [
+    "主预览 provider 按 Meta 标准属性确定性路由",
+    "默认 PreviewProvider 由 Go fallback 注册；providers 只保留禁用、覆盖或外部 command 扩展",
+    "builtin 类型插件使用内置实现",
+    "command 类型插件调用外部命令"
+  ]
+}

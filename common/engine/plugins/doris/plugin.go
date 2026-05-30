@@ -57,10 +57,14 @@ func (p *DorisPlugin) SensitiveFields() []string {
 
 func (p *DorisPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewTabularCapabilities(p.Type(), "database", plugin.TabularCapabilityOptions{
-		Write:           true,
-		BulkWrite:       true,
-		SupportsExplain: true,
-		WriterConnector: "jdbc",
+		Write:             true,
+		BulkWrite:         true,
+		BatchWrite:        true,
+		TableWriteSession: true,
+		TableWritePrepare: true,
+		Delete:            true,
+		SupportsExplain:   true,
+		WriterConnector:   "doris_insert",
 	})
 }
 

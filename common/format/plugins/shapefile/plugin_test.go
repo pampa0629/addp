@@ -7,6 +7,7 @@ import (
 	"github.com/addp/common/contentio"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
+	"github.com/addp/common/resume"
 	"github.com/jonas-p/go-shp"
 	"golang.org/x/text/encoding/simplifiedchinese"
 	"io"
@@ -95,6 +96,31 @@ func TestOpenMultiTableWriterWritesReadableShapefile(t *testing.T) {
 	}
 	if got := rows[1]["ID"]; got != int64(2) {
 		t.Fatalf("second ID = %#v, want int64(2)", got)
+	}
+}
+
+func TestOpenMultiTableReaderAndWriterRejectResumeMarker(t *testing.T) {
+	plugin := NewPlugin(nil)
+	target := contentio.NewRef("exports/cities"+extSHP, contentio.RoleMain)
+	refs := format.SameBasenameRelatedRefs(target.Path, RelatedRefSpecs())
+	tableInfo := &datatype.TableInfo{
+		Fields: []datatype.FieldInfo{
+			{Name: "id", Type: datatype.FieldTypeInt},
+			{Name: "geom", Type: datatype.FieldTypeGeometry},
+		},
+	}
+
+	parseOpts := format.DefaultParseOptions()
+	parseOpts.ResumeMarker = &resume.Marker{Version: resume.MarkerVersionV1}
+	if _, err := plugin.OpenMultiTableReader(context.Background(), newMemoryRefStore(), refs, parseOpts); err == nil {
+		t.Fatal("OpenMultiTableReader succeeded with resume marker, want explicit unsupported error")
+	}
+
+	writeOpts := format.DefaultWriteOptions()
+	writeOpts.ResumeMarker = &resume.Marker{Version: resume.MarkerVersionV1}
+	writeOpts.SpatialInfo = datatype.NewSingleGeometrySpatialInfo("geom", "Point", 4326, 0)
+	if _, err := plugin.OpenMultiTableWriter(context.Background(), newMemoryRefStore(), refs, tableInfo, writeOpts); err == nil {
+		t.Fatal("OpenMultiTableWriter succeeded with resume marker, want explicit unsupported error")
 	}
 }
 

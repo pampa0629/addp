@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/client"
-	commonJSON "github.com/addp/common/jsonmap"
+	"github.com/addp/common/dataitem"
 	"github.com/addp/service/internal/models"
 	"github.com/addp/service/internal/repository"
 )
@@ -150,53 +150,48 @@ func (s *QueryServiceService) detectObjectTable(tenantID, engineID uint, schemaN
 		log.Printf("[detectObjectTable] metaClient is nil, skipping object table detection")
 		return nil
 	}
-	tree, err := s.metaClient.WithTenantID(tenantID).GetMetadataTree(engineID)
+	catalogPath := tableName
+	if schemaName != "" {
+		catalogPath = strings.Trim(schemaName+"."+tableName, ".")
+	}
+	item, err := s.metaClient.WithTenantID(tenantID).GetItemByCatalogPath(engineID, catalogPath)
 	if err != nil {
-		log.Printf("[detectObjectTable] GetMetadataTree(engineID=%d) failed: %v", engineID, err)
+		log.Printf("[detectObjectTable] GetItemByCatalogPath(engineID=%d, catalogPath=%s) failed: %v", engineID, catalogPath, err)
 		return nil
 	}
-	log.Printf("[detectObjectTable] engineID=%d, got %d items", engineID, len(tree.Items))
-	// 构建期望的 full_name
-	expectedFullName := tableName
-	if schemaName != "" {
-		expectedFullName = strings.Trim(schemaName+"/"+tableName, "/")
+	objectTable := objectTableConfigFromMetaAttributes(item.Attributes)
+	if len(objectTable) == 0 {
+		return nil
 	}
-	for _, item := range tree.Items {
-		if item.Name != tableName && item.FullName != expectedFullName {
-			continue
-		}
-		objectTable := objectTableConfigFromAttributes(item.Attributes)
-		if len(objectTable) == 0 {
-			continue
-		}
-		return objectTable
-	}
-	return nil
+	return objectTable
 }
 
-func objectTableConfigFromAttributes(attrs map[string]interface{}) map[string]interface{} {
-	if attrs == nil {
+func objectTableConfigFromMetaAttributes(attrs map[string]interface{}) map[string]interface{} {
+	descriptor, ok := objectTableDescriptorFromMetaAttributes(attrs)
+	if !ok || descriptor.PhysicalPath == "" {
 		return nil
 	}
-	dataType := strings.ToLower(strings.TrimSpace(commonJSON.String(attrs, "item", "data_type")))
-	formatName := strings.ToLower(strings.TrimSpace(commonJSON.String(attrs, "item", "format")))
-	layout := strings.ToLower(strings.TrimSpace(commonJSON.String(attrs, "item", "layout")))
-	physicalPath := strings.TrimSpace(commonJSON.String(attrs, "storage", "physical_path"))
-	if dataType != "table" || physicalPath == "" {
-		return nil
-	}
-	switch formatName {
-	case "parquet", "orc", "avro":
-	default:
-		return nil
-	}
+	layout := descriptor.Layout
 	if layout == "" {
-		layout = "single"
+		layout = dataitem.LayoutSingle
 	}
 	return map[string]interface{}{
-		"physical_path": physicalPath,
-		"layout":        layout,
-		"format":        formatName,
+		"physical_path": descriptor.PhysicalPath,
+		"layout":        string(layout),
+		"format":        descriptor.Format,
+	}
+}
+
+func objectTableDescriptorFromMetaAttributes(attrs map[string]interface{}) (dataitem.ItemDescriptor, bool) {
+	descriptor := dataitem.DescriptorFromAttributes(attrs)
+	if descriptor.DataType != dataitem.DataTypeTable {
+		return dataitem.ItemDescriptor{}, false
+	}
+	switch descriptor.Format {
+	case "parquet", "orc", "avro":
+		return descriptor, true
+	default:
+		return dataitem.ItemDescriptor{}, false
 	}
 }
 

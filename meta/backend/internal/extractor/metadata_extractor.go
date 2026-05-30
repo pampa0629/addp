@@ -130,12 +130,10 @@ func (e *MetadataExtractor) ExtractObjectMetadataOnDemand(
 		metaattr.SetStorage(enhancedAttrs, "bucket", bucket)
 	}
 	metaattr.SetStorage(enhancedAttrs, "content_type", contentType)
-	physicalPath := objectPath
-	if descriptor := dataitem.DescriptorFromAttributes(enhancedAttrs); descriptor.PhysicalPath != "" {
-		physicalPath = descriptor.PhysicalPath
-	}
+	descriptor := onDemandItemDescriptorFromMetaAttributes(enhancedAttrs)
+	physicalPath := onDemandPhysicalPath(descriptor, objectPath)
 	sizeBytes := int64(len(content))
-	detected := onDemandDetectedItemFromAttributes(enhancedAttrs, physicalPath, sizeBytes)
+	detected := onDemandDetectedItemFromDescriptor(descriptor, physicalPath, sizeBytes)
 
 	_, _, err = metaenrich.EnrichResourceAttributes(context.Background(), enhancedAttrs, metaenrich.ResourceAttributesInput{
 		ContentReader:  onDemandContentReader{content: content},
@@ -167,7 +165,8 @@ func (e *MetadataExtractor) BuildObjectAccessIndexOnDemand(
 	if err != nil {
 		return nil, err
 	}
-	formatName := commonJSON.String(item.Attributes, "item", "format")
+	descriptor := onDemandItemDescriptorFromMetaAttributes(item.Attributes)
+	formatName := descriptor.Format
 	if strings.TrimSpace(formatName) == "" {
 		return nil, fmt.Errorf("item format is empty: %s", objectKey)
 	}
@@ -207,7 +206,7 @@ func (e *MetadataExtractor) BuildObjectAccessIndexOnDemand(
 	enhancedAttrs := cloneJSONMap(item.Attributes)
 	metaattr.UpsertNested(enhancedAttrs, "access_index", "table", commonJSON.MapFromStruct(index))
 	if tableInfo.Table != nil && len(tableInfo.Table.Fields) > 0 {
-		metaattr.UpsertNested(enhancedAttrs, "type_info", "table", datatype.TableInfoAttributes(tableInfo.Table))
+		metaattr.UpsertNested(enhancedAttrs, "type_info", "table", datatype.TableInfoPayload(tableInfo.Table))
 	}
 	enhancedAttrs = metaattr.Normalize(enhancedAttrs)
 
@@ -225,8 +224,18 @@ func cloneJSONMap(attrs models.JSONMap) models.JSONMap {
 	return cloned
 }
 
-func onDemandDetectedItemFromAttributes(attrs models.JSONMap, physicalPath string, sizeBytes int64) *metaitem.DetectedItem {
-	descriptor := dataitem.DescriptorFromAttributes(attrs)
+func onDemandItemDescriptorFromMetaAttributes(attrs map[string]interface{}) dataitem.ItemDescriptor {
+	return dataitem.DescriptorFromAttributes(attrs)
+}
+
+func onDemandPhysicalPath(descriptor dataitem.ItemDescriptor, fallback string) string {
+	if descriptor.PhysicalPath != "" {
+		return descriptor.PhysicalPath
+	}
+	return fallback
+}
+
+func onDemandDetectedItemFromDescriptor(descriptor dataitem.ItemDescriptor, physicalPath string, sizeBytes int64) *metaitem.DetectedItem {
 	if descriptor.SizeBytes != nil {
 		sizeBytes = *descriptor.SizeBytes
 	}

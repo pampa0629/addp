@@ -14,6 +14,7 @@ import (
 	"github.com/addp/common/format"
 	csvformat "github.com/addp/common/format/plugins/csv"
 	shapefileformat "github.com/addp/common/format/plugins/shapefile"
+	"github.com/addp/common/resume"
 )
 
 func TestTableTransferExecutorWritesNativeTableToCSV(t *testing.T) {
@@ -152,14 +153,79 @@ func TestTableTransferExecutorReportsBatchProgress(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
 	}
-	if len(events) != 2 {
-		t.Fatalf("progress events = %#v, want 2 events", events)
+	if len(events) != 3 {
+		t.Fatalf("progress events = %#v, want 2 batch events and final event", events)
 	}
 	if events[0].BatchIndex != 1 || events[0].SourceOffset != 0 || events[0].BatchRows != 2 || events[0].RecordsRead != 2 || events[0].RecordsWritten != 2 {
 		t.Fatalf("first progress event = %#v, want batch 1 offset 0 rows/read/written 2", events[0])
 	}
 	if events[1].BatchIndex != 2 || events[1].SourceOffset != 2 || events[1].BatchRows != 1 || events[1].RecordsRead != 3 || events[1].RecordsWritten != 3 {
 		t.Fatalf("second progress event = %#v, want batch 2 offset 2 rows 1 read/written 3", events[1])
+	}
+	if !events[2].Final || events[2].BatchIndex != 2 || events[2].SourceOffset != 2 || events[2].RecordsRead != 3 || events[2].RecordsWritten != 3 {
+		t.Fatalf("final progress event = %#v, want final checkpoint after batch 2", events[2])
+	}
+}
+
+func TestTableTransferExecutorPassesResumeMarkerToNativeReadSession(t *testing.T) {
+	marker := &resume.Marker{Version: resume.MarkerVersionV1, Provider: "test.source"}
+	reader := &fakeBatchReader{
+		batches: []*engineplugin.BatchData{
+			{
+				Fields: []datatype.FieldInfo{{Name: "id", Type: "int"}},
+				Rows:   []map[string]interface{}{{"id": 1}},
+			},
+		},
+	}
+	writer := &fakeContentWriter{}
+	exec := &TableTransferExecutor{
+		SourceNativeReader:         reader,
+		SourceTableSessionProvider: reader,
+		TargetContentWriter:        writer,
+		TargetFormatProvider:       csvformat.NewPlugin(nil),
+	}
+
+	_, err := exec.Execute(context.Background(), TableTransferPlan{
+		Source:    TableSourcePlan{Kind: TableEndpointNative, ResumeMarker: marker},
+		Target:    TableTargetPlan{Kind: TableEndpointEncoded, Format: format.FormatCSV},
+		BatchSize: 1,
+	})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if reader.sessionOptions.ResumeMarker == nil || reader.sessionOptions.ResumeMarker.Provider != "test.source" {
+		t.Fatalf("session resume marker = %#v, want test.source marker", reader.sessionOptions.ResumeMarker)
+	}
+	if reader.sessionOptions.ResumeMarker == marker {
+		t.Fatal("session resume marker reused original pointer, want cloned marker")
+	}
+}
+
+func TestTableTransferExecutorPassesResumeMarkerToEncodedReader(t *testing.T) {
+	reader := &fakeContentReader{content: "id\n1\n"}
+	writer := &fakeContentWriter{}
+	exec := &TableTransferExecutor{
+		SourceContentReader:     reader,
+		SourceTableReadProvider: csvformat.NewPlugin(nil),
+		TargetContentWriter:     writer,
+		TargetFormatProvider:    csvformat.NewPlugin(nil),
+	}
+
+	_, err := exec.Execute(context.Background(), TableTransferPlan{
+		Source: TableSourcePlan{
+			Kind:         TableEndpointEncoded,
+			Format:       format.FormatCSV,
+			ResumeMarker: &resume.Marker{Version: resume.MarkerVersionV1, Provider: "test.source"},
+			TableInfo:    &datatype.TableInfo{Fields: []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeString}}},
+		},
+		Target:    TableTargetPlan{Kind: TableEndpointEncoded, Format: format.FormatCSV},
+		BatchSize: 1,
+	})
+	if err == nil {
+		t.Fatal("Execute succeeded with encoded source resume marker, want provider unsupported error")
+	}
+	if !strings.Contains(err.Error(), "csv.table_reader") {
+		t.Fatalf("error = %q, want csv.table_reader unsupported error", err)
 	}
 }
 
@@ -616,10 +682,12 @@ func (s *fakeTableReadSession) Close(context.Context) error {
 }
 
 type fakeContentWriter struct {
-	engineType string
-	buf        bytes.Buffer
-	files      map[string][]byte
-	closed     bool
+	engineType      string
+	buf             bytes.Buffer
+	files           map[string][]byte
+	closed          bool
+	openCounts      map[string]int
+	rangeOpenCounts map[string]int
 }
 
 type fakeNativeTableWriter struct {
@@ -744,11 +812,17 @@ func (w *fakeContentWriter) CreateContent(_ context.Context, _ engineplugin.Conn
 
 func (w *fakeContentWriter) OpenContent(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.CatalogPath, _ engineplugin.ReadOptions) (io.ReadCloser, error) {
 	if w.files == nil {
+		if w.openCounts != nil {
+			w.openCounts[path.StringPath()]++
+		}
 		return io.NopCloser(bytes.NewReader(w.buf.Bytes())), nil
 	}
 	data, ok := w.files[path.StringPath()]
 	if !ok {
 		return nil, fmt.Errorf("fake content %s not found", path.StringPath())
+	}
+	if w.openCounts != nil {
+		w.openCounts[path.StringPath()]++
 	}
 	return io.NopCloser(bytes.NewReader(data)), nil
 }
@@ -760,6 +834,9 @@ func (w *fakeContentWriter) OpenRange(_ context.Context, _ engineplugin.Connecti
 		if end > int64(len(data)) {
 			end = int64(len(data))
 		}
+		if w.rangeOpenCounts != nil {
+			w.rangeOpenCounts[path.StringPath()]++
+		}
 		return io.NopCloser(bytes.NewReader(data[opts.Offset:end])), nil
 	}
 	data, ok := w.files[path.StringPath()]
@@ -769,6 +846,9 @@ func (w *fakeContentWriter) OpenRange(_ context.Context, _ engineplugin.Connecti
 	end := opts.Offset + opts.Length
 	if end > int64(len(data)) {
 		end = int64(len(data))
+	}
+	if w.rangeOpenCounts != nil {
+		w.rangeOpenCounts[path.StringPath()]++
 	}
 	return io.NopCloser(bytes.NewReader(data[opts.Offset:end])), nil
 }
@@ -822,12 +902,30 @@ func (w *fakeContentWriter) ListChildren(_ context.Context, _ engineplugin.Conne
 			Term:   engineplugin.CatalogTermFile,
 			Kind:   engineplugin.CatalogKindFile,
 			IsItem: true,
+			Stats: map[string]interface{}{
+				"size_bytes": int64(len(w.files[filePath])),
+			},
 		})
 	}
 	return nodes, nil
 }
 
 func (w *fakeContentWriter) ResolvePath(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.CatalogPath) (*engineplugin.CatalogNode, error) {
+	pathString := path.StringPath()
+	if w.files != nil {
+		if data, ok := w.files[pathString]; ok {
+			return &engineplugin.CatalogNode{
+				Name:   pathString,
+				Path:   path,
+				Term:   engineplugin.CatalogTermFile,
+				Kind:   engineplugin.CatalogKindFile,
+				IsItem: true,
+				Stats: map[string]interface{}{
+					"size_bytes": int64(len(data)),
+				},
+			}, nil
+		}
+	}
 	return &engineplugin.CatalogNode{
 		Name:        path.StringPath(),
 		Path:        path,

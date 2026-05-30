@@ -457,6 +457,30 @@ info provider 只回答对应 data type 的元数据语义；sample / text reade
 
 这些名称是能力分组，不要求直接成为最终 Go 方法名。只用于元数据和预览的实现可以只实现 `Describe` / `Sample`；不参与 Transfer 写侧的实现不必实现 `WriteSession`。
 
+### Checkpoint / Resume 契约
+
+checkpoint / resume 属于批量执行的恢复契约，不是 sample offset，也不是简单的行号分页。格式层只负责表达“如何把格式内部读取位置稳定地保存并重新打开”，Transfer 只负责保存 marker、校验任务语义未变化并在恢复时传回 provider。
+
+第一版统一术语：
+
+| 术语 | 说明 |
+|---|---|
+| `resume_marker` | provider 生成并消费的不透明恢复标记，必须可 JSON 序列化。Transfer 不解析其中字段，只保存、回传和用于日志展示。 |
+| `position_unit` | marker 的位置单位，例如 `row`、`byte`、`ref_row`、`row_group`。它只用于能力说明和诊断，不作为 Transfer 分支条件。 |
+| `read_position` | reader 已经稳定消费到的位置，表示下次恢复应从其后继续。 |
+| `commit_position` | writer 已经稳定提交到的位置。encoded writer 通常只有 `Close()` 成功后才产生可恢复提交点。 |
+| `fingerprint` | 由 provider 生成的输入结构指纹，用于判断 marker 是否仍适用于当前资源，例如文件大小、mtime、ETag、ref 列表、schema 摘要或 row group 元信息。 |
+
+规则：
+
+1. `TableSampleReader.SampleTable(offset, limit)` 的 `offset` 是样本窗口，不是 resume marker。
+2. `TableReaderProvider` / `MultiTableReaderProvider` / `ScopeTableReaderProvider` 如要支持 checkpoint resume，必须通过 `ParseOptions.ResumeMarker` 消费恢复标记；不得让 Transfer 通过类型判断具体格式后自行 seek。当前 Go 草案使用 `common/resume.Marker` 和 `ResumeMarkerProvider`。
+3. `resume_marker` 必须由 provider 解释。Parquet 可以表达 `{part_ref,row_group,row_offset}`，Shapefile 可以表达 `{primary_ref,row_offset}`，CSV 可以表达 `{byte_offset,row_offset}`；这些都是格式私有 marker 内容，不进入 Transfer 决策。
+4. provider 必须在 marker 中或旁路返回 `fingerprint`。资源变化、schema 变化、refs 变化或读取选项变化时，provider 必须拒绝恢复，而不是静默从错误位置继续。
+5. provider 暂未实现 marker 消费时，收到 `ParseOptions.ResumeMarker` 或 `WriteOptions.ResumeMarker` 必须显式返回 unsupported error，不得静默忽略后从头读取或覆盖写入。
+6. writer 支持 resumable 的前提是能证明目标提交边界幂等。普通 encoded 文件写出会话通常不支持中途恢复；multi ref writer 也不能只恢复某个 ref 的局部状态。当前 Go 草案通过 `WriteOptions.ResumeMarker` 消费恢复标记，并通过 `CommitMarkerProvider` 暴露提交标记。
+7. Transfer checkpoint 中的 `checkpoint_offset` 仍只表示观测进度；真正恢复必须使用 provider 生成的 `common/resume.Marker`。
+
 `SpatialProvider` 不是另一个表类型，而是横切 provider。表格内容查看没有空间细节时仍应可用，只是空间信息更少。
 
 ### DocumentInfoProvider / DocumentTextReader

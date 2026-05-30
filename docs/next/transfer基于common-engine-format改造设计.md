@@ -1,6 +1,6 @@
 # Transfer 基于 common engine / format 的改造进展
 
-更新时间：2026-05-21
+更新时间：2026-05-30
 
 本文记录 Transfer 模块基于 `common/engine`、`common/format`、`common/contentio` 重构后的当前状态和后续路线。当前口径采用 clean break：不兼容旧任务 JSON，不保留 Transfer 私有 reader / writer 插件体系，不为历史 pipeline 做兼容分支。
 
@@ -223,7 +223,10 @@ Manager 的上传导入入口目前用于“用户上传一个 Shapefile ZIP，�
 | PostgreSQL `TableReadSessionProvider` | 已补 cursor session，Transfer export 优先使用，避免大表 `LIMIT/OFFSET` 翻页退化。 |
 | PostgreSQL `BatchWritableProvider` | 已补普通 batch insert、单批 COPY。 |
 | PostgreSQL `TableWriteSessionProvider` | 已补跨批次 COPY session。 |
-| PostgreSQL `TableWritePreparer` | 已收敛为 ensure / create table，不承载追加 / 覆盖策略。 |
+| PostgreSQL `TableWritePreparer` | 已收敛为 ensure / create table / schema evolution，不承载追加 / 覆盖策略；目标表已存在时只自动追加安全缺失字段，非空无默认字段、已有字段类型不匹配、空间 geometry type / SRID / dimension 已知冲突时严格报错。 |
+| MySQL `TableWritePreparer` / `TableWriteSessionProvider` / `BatchWritableProvider` | 已补第一版 native table 写侧：prepare 负责 create database / create table / 安全缺失字段追加；写入使用事务内批量 `INSERT`，支持跨批次 session 和 commit marker；缺失字段追加沿用 nullable 或 default expression 才允许的安全规则，已有字段类型冲突严格报错。 |
+| Doris `TableWritePreparer` / `TableWriteSessionProvider` / `BatchWritableProvider` | 已补第一版 native table 写侧：prepare 使用 Doris `DUPLICATE KEY` 明细模型创建普通表，显式选择 key 字段并放在表定义前列，distribution 使用 key 字段 hash；写入走 MySQL 协议批量 `INSERT`，支持跨批次 session 和 commit marker；空间字段暂显式拒绝，避免静默降级写坏语义。 |
+| ClickHouse `TableWritePreparer` / `TableWriteSessionProvider` / `BatchWritableProvider` | 已补第一版 native table 写侧：prepare 使用 `MergeTree ORDER BY tuple()` 创建普通表，字段类型按 ClickHouse 原生类型映射，nullable 写入类型本身；写入使用批量 `INSERT INTO`，支持跨批次 session 和 commit marker；生成列写入时跳过，空间字段暂显式拒绝。 |
 | PostgreSQL 空间字段元数据 | 已从 catalog 读取字段类型，可保留 `geometry(MultiPolygon,4326)` 等类型。 |
 | PostgreSQL 空间写入 | 已支持 geometry 字段写入 WKT 以及 WKB / EWKB `[]byte`；Transfer 对 encoded 空间表导入 PostgreSQL 时可请求 `ewkb`。 |
 | Shapefile 空间写出 | 已根据 `SpatialInfo.GeometryType` / `SpatialInfo.Dimension` 选择二维或 Z shape type；writer 内部负责 `geom.T` 到 Shapefile native geometry 的转换。 |
@@ -239,7 +242,7 @@ Manager 的上传导入入口目前用于“用户上传一个 Shapefile ZIP，�
 | CSV / TSV | `TableReaderProvider` 已有 | `TableWriterProvider` 已有 | table transfer 主链路已使用。 |
 | JSON / JSONL | `TableReaderProvider` 已有 | `TableWriterProvider` 已有 | 支持 JSON array、JSON Lines。 |
 | GeoJSON encoding | 复用 JSON table reader / writer | JSON writer 支持 `spatial.target_encoding=geojson` | GeoJSON 不是顶层独立格式，而是 JSON 的空间编码策略。 |
-| Parquet | `TableReaderProvider` 已有；`ScopeTableReaderProvider` 已支持 dataset / partitioned table 连续读取，并可从 Hive-style `key=value` 路径补充分区字段 | 最小 `TableWriterProvider` 已有 | 单文件和 whole scope table transfer 已有主链路；已支持通用 `field_selection`，row group 性能仍待增强，`row_filter` / predicate 暂缓。 |
+| Parquet | `TableReaderProvider` 已有；`ScopeTableReaderProvider` 已支持 dataset / partitioned table 连续读取，并可从 Hive-style `key=value` 路径补充分区字段；NFS / S3 / MinIO 等 range-capable scope source 优先走 range-backed `io.ReaderAt`，避免 whole scope Transfer 打开单个 part 时整文件读入内存 | `TableWriterProvider` 已支持私有写出参数 `max_rows_per_row_group` 和 `compression` | 单文件和 whole scope table transfer 已有主链路；已支持通用 `field_selection` 并对 Parquet 数据列做 row group 读取侧投影，scope 级分区字段仍由 scope reader 合并；sample offset / limit 可按 row group 行数跳过整组并在组内 seek；`row_filter` / predicate 仍暂缓。 |
 | Shapefile | `MultiTableReaderProvider` 已有，Transfer 主链路优先使用；info / sample 保留给 Meta / Manager / 探查 | `MultiTableWriterProvider` 已有 | multi ref 读写已可用于 Transfer；range source 下按 `.shx` 读取索引窗口、`.dbf` 连续属性块和 `.shp` 记录窗口；非 range source materialize 到本地后也继续使用本地 `.shx` 索引，只有缺索引或不支持 shape 类型时才回退顺序读取。 |
 
 ### 4.3 Transfer
@@ -266,11 +269,11 @@ Manager 的上传导入入口目前用于“用户上传一个 Shapefile ZIP，�
 | CSV / TSV file/object -> PostgreSQL table | 已接入第一版 import | PostgreSQL 目标默认优先 COPY session。 |
 | PostgreSQL table -> PostgreSQL table | 已收敛到统一 table reader / writer 链路 | 不保留 native-to-native 专用通道；空间字段类型已修复。 |
 | PostgreSQL spatial table -> PostgreSQL spatial table | 已修复空间字段类型保真 | 旧目标表可直接删除后重建，不做兼容迁移。 |
-| PostgreSQL spatial table -> NFS Shapefile | 已真实验收通过 | NFS root / Meta 扫描闭环已验证，item node、字段、行数和空间能力可被 Manager 看到；native source 的 `dimension=3` 可驱动 Shapefile writer 写出 Z shape 并读回三维 WKT。 |
+| PostgreSQL spatial table -> NFS Shapefile | 已真实验收通过，并已补 PostGIS -> Shapefile 可重复集成测试 | NFS root / Meta 扫描闭环已验证，item node、字段、行数和空间能力可被 Manager 看到；native source 的 `dimension=3` 可驱动 Shapefile writer 写出 Z shape 并读回三维 WKT；`ADDP_POSTGRES_INTEGRATION=1 go test ./internal/executor -run TestIntegrationPostgresSpatialTableToShapefilePreservesSpatialMetadata -count=1` 已覆盖 PostgreSQL `geometry(PointZ,4326)` 导出 Shapefile multi refs，并读回校验 `SpatialInfo`、SRID、维度和 Z WKT。 |
 | PostgreSQL spatial table -> MinIO Shapefile | 已真实验收通过 | 覆盖 geometry type、SRID、字段类型、相关内容、Meta scan 和 Manager preview；同一套 schema / row value 协议适用于对象存储目标。 |
 | NFS Shapefile -> PostgreSQL table | 已真实验收通过 | Shapefile multi ref 读侧可进入统一 table reader / writer 链路，PostgreSQL 目标优先 COPY session；空间行值可走 EWKB；已补默认跳过的 PostGIS 集成测试，覆盖二维 Point 以及 PointZ / PolylineZ / PolygonZ / MultiPointZ。 |
 | MinIO Shapefile -> PostgreSQL table | 已真实验收通过 | 对象存储 multi ref 读侧可导入 native table；空间行值可走 EWKB。 |
-| NFS Shapefile -> MinIO Shapefile | 已手动验证通过，默认测试已覆盖核心 format 链路 | multi ref 正确生成；Meta deep scan 后可得到字段、行数、format info、spatial capabilities；executor 半集成测试已覆盖 Shapefile encoded source -> Shapefile encoded target，并校验 refs、`SpatialInfo.Dimension=3` 和 Z WKT。 |
+| NFS Shapefile -> MinIO Shapefile | 已手动验证通过，默认测试已覆盖核心 format 链路和 file/object 路径模型矩阵 | multi ref 正确生成；Meta deep scan 后可得到字段、行数、format info、spatial capabilities；executor 半集成测试已覆盖 Shapefile encoded source -> Shapefile encoded target，并校验 refs、`SpatialInfo.Dimension=3` 和 Z WKT；默认测试已补 file -> object、object -> file 两种路径模型，确保 Transfer 不按具体存储引擎组合分叉。 |
 | Parquet dataset / partitioned table -> CSV | 已通过 executor 单元链路验证 | `layout=whole` source 通过 `ScopeTableReaderProvider` 递归读取 scope 下 `.parquet` 文件，不使用 sample reader 冒充全量读取。 |
 | MinIO Parquet dataset -> NFS Parquet | 已真实验收通过 | 2026-05-21 手动回归，读取分区 Parquet dataset 146180 行，目标路径自动补齐为 `.parquet`，写后 deep scan 生成 NFS meta item。 |
 | NFS Parquet dataset -> MinIO Parquet | 已真实验收通过 | 2026-05-21 手动回归，源 3 个 part 文件完整递归读取 219270 行，目标对象自动补齐为 `.parquet`，写后 deep scan 生成 MinIO meta item。 |
@@ -318,7 +321,27 @@ batch checkpoint 最小结构：
     "source_offset": 10000,
     "records_read": 20000,
     "records_written": 20000,
-    "target_committed": true
+    "target_committed": true,
+    "resume_marker": {
+      "version": "resume.marker/v1",
+      "provider": "parquet.scope_table_reader",
+      "position_unit": "ref_row",
+      "read_position": {
+        "ref": "dataset/part-001.parquet",
+        "ref_index": 1,
+        "row_offset": 10000,
+        "rows_read": 20000
+      }
+    },
+    "commit_marker": {
+      "version": "resume.marker/v1",
+      "provider": "postgresql.table_write_session",
+      "position_unit": "session_commit",
+      "commit_position": {
+        "rows_committed": 20000,
+        "batches_committed": 2
+      }
+    }
   }
 }
 ```
@@ -331,6 +354,50 @@ batch checkpoint 最小结构：
 4. `batch_index` 从 1 开始递增。
 5. 当前版本只记录进度和故障定位信息，不承诺从 checkpoint 自动恢复。
 6. 进度百分比在无法预知总行数时只表示执行活跃度：运行中从 0 递增但不超过 99，成功后统一置为 100。
+7. 若 reader / writer 暴露 `ResumeMarkerProvider` / `CommitMarkerProvider`，Transfer 会把 marker 原样保存到 `checkpoint_state`；保存 marker 仍只属于观测闭环，不表示启用 checkpoint resumable。
+
+### 7.1 checkpoint 恢复语义契约
+
+当前 checkpoint 是“目标 batch 写入调用成功后的观测点”，不是“可恢复提交点”。后续若要支持自动恢复，必须先把 source seek 能力、target 幂等提交能力和 Transfer 写入策略同时满足，不能只凭 `checkpoint_offset` 重新启动。
+
+恢复能力分为三档：
+
+| 等级 | 语义 | 可进入恢复主链路的条件 |
+|---|---|---|
+| observable | 只用于进度展示、故障定位和人工判断。 | 当前所有 table Transfer 均满足。 |
+| restartable | 失败后可清理目标并从头重跑。 | target 支持 overwrite 清理，或资源可安全重建。 |
+| resumable | 失败后可从 checkpoint 后继续写。 | source 支持稳定 seek / cursor；target 支持按 checkpoint 幂等续写或事务性提交；schema / transform / write options 未变化。 |
+
+第一版自动恢复只允许进入 `restartable`，即恢复执行时重新规划并按 overwrite 策略清理目标后从头执行。`resumable` 不进入主链路，直到 source / target 均提供明确能力声明和 executor 验收。
+
+source 侧初步判断：
+
+| source 类型 | 当前读取方式 | 恢复判断 |
+|---|---|---|
+| PostgreSQL native table cursor session | 单次事务内 cursor 连续读。 | observable；进程失败后 cursor 不存在，不可仅凭 offset 恢复。若未来按稳定排序键 / 快照标记设计，可升级。 |
+| native table offset reader | `LIMIT/OFFSET` 批读取。 | restartable；offset 可定位但大表性能和并发变更语义不稳定，暂不作为 resumable。 |
+| encoded single content `TableReader` | 打开一次连续 decode。 | observable；多数格式 reader 无 seek 契约。 |
+| encoded sample fallback | 每批重新打开并按逻辑 offset sample。 | restartable；性能和格式覆盖不适合作为恢复主路径。 |
+| encoded multi table reader | 打开一次连续 decode。 | observable；除非 provider 明确声明 seek。 |
+| Shapefile indexed multi reader | `.shx` / `.dbf` 可按逻辑行窗口读取。 | 具备 source seek 基础，但 target 未满足前仍不进入 resumable。 |
+| Parquet scope reader | 文件 / row group 顺序读取，可 range 打开 part。 | 具备进一步设计 row group checkpoint 的基础；当前只记录逻辑行 offset，不足以稳定恢复到 part / row group。 |
+
+target 侧初步判断：
+
+| target 类型 | 当前提交边界 | 恢复判断 |
+|---|---|---|
+| PostgreSQL native write session / COPY | session close / transaction commit；Go 草案已在 commit 成功后通过 `CommitMarkerProvider` 暴露 `position_unit=session_commit` 的 `commit_position`。 | restartable；该 marker 只证明整次 COPY session 已提交，不表示支持中途追加续写。 |
+| PostgreSQL direct batch insert | 每批 insert 调用成功即可能已提交。 | 不作为 resumable；若继续追加会有重复风险，除非目标表具备明确业务幂等键和写入策略。 |
+| encoded single content writer | writer close 后资源才完整。 | restartable；batch 写入成功不代表文件格式已可被消费。 |
+| encoded multi writer | multi writer close 后 refs 才完整。 | restartable；不可从某个 ref 的中间状态续写。 |
+
+因此后续实现顺序应为：
+
+1. 保持现有 checkpoint 只表达 progress / diagnostics。
+2. 失败执行 retry 已实现 restartable：创建新的 retry execution 并重新入队从头执行；append 写入模式会被拒绝，避免重复写。
+3. 如需 `resume_mode=checkpoint`，先在 `common/engine` / `common/format` 增加能力声明和 reader / writer 契约，再补 executor 验收；不允许在 Transfer 内按具体格式或引擎写临时分支。
+4. checkpoint_state 需要从逻辑行 offset 扩展为 provider 可解释的位置。规范术语统一为 `resume_marker`、`position_unit`、`read_position`、`commit_position` 和 `fingerprint`；Go 草案已新增 `common/resume.Marker` 作为统一 marker 载体；扩展前旧 `checkpoint_offset` 仍只用于展示。
+5. `resume_marker` 是 provider 生成和消费的不透明 JSON 标记。Transfer 只保存、回传和日志展示，不解析其中的 Parquet part / row group、Shapefile ref row、CSV byte offset 或数据库排序键。
 
 ## 八、职责边界
 
@@ -355,11 +422,11 @@ batch checkpoint 最小结构：
 | 方向 | 当前不足 |
 |---|---|
 | whole scope table 全量读取 | `ScopeTableReaderProvider` 和 Parquet dataset 链路已接入；真实 NFS / MinIO dataset 已验收；Hive-style 分区字段已能进入 schema 和 row。 |
-| checkpoint / progress | 已有 batch-level metrics / checkpoint / logs 最小闭环；尚未实现从 checkpoint 恢复执行。 |
-| schema evolution | PostgreSQL 写侧可 ensure/create table，但字段变化、类型演进和目标表差异处理仍未完善。 |
+| checkpoint / progress | 已有 batch-level metrics / checkpoint / logs 最小闭环；checkpoint 当前只作为观测点；失败执行 retry 已按 restartable 语义重新入队从头执行，且仅允许 overwrite / 默认写入模式，不做 checkpoint resumable；`resume_marker` / `commit_marker` 的保存、传递和不支持消费时显式拒绝已完成聚焦验证。 |
+| schema evolution | PostgreSQL 写侧已支持 ensure/create table 和目标表安全缺失字段追加；缺失字段仅在 nullable 或有默认表达式时自动追加；已有字段类型冲突、空间 geometry type / SRID / dimension 已知冲突会在 prepare 阶段严格报错，不做隐式 `ALTER TYPE`；已补真实 PostgreSQL 集成测试覆盖安全缺字段追加、非空无默认拒绝、空间 SRID / geometry type 冲突拒绝；主键、索引、nullable 收紧和复杂类型演进仍待策略确认。 |
 | 并行读取 | PostgreSQL cursor session 已有，但分区并行读取、稳定快照和多 worker 协调仍未补。 |
-| 其他数据库写侧 | MySQL、Doris、ClickHouse 等 common writer 仍待按真实需求补。 |
-| Parquet 高性能 | 当前是最小 reader / writer，已支持通用 `field_selection`；row group reader 仍待补；`row_filter` / predicate 暂缓。 |
+| 其他数据库写侧 | MySQL、Doris、ClickHouse native table 写侧第一版已补；后续主键、排序键、分区键、Doris Stream Load、ClickHouse 原生批量接口等性能/建模能力需按明确策略再进入。 |
+| Parquet 高性能 | whole scope reader 已在 range-capable content source 上使用 range-backed `io.ReaderAt` 和 row group 顺序读取，避免单个 part 整文件读入内存；`field_selection` 已下推到 Parquet row group 数据列投影；writer 已支持 `max_rows_per_row_group` 和 `compression`；sample offset / limit 已支持按 row group 行数跳过整组并在组内 seek；单文件 `TableReaderProvider` 仍受 `io.Reader` 接口边界限制；基于列统计 min/max 的 predicate row group pruning 仍待通用过滤语义确认后再进入。 |
 | Shapefile 读取 | 连续 `MultiTableReaderProvider` 已接入 Transfer 主链路；indexed reader 支持 range source 和本地 materialized fallback，当前覆盖 Point / Polyline / Polygon / MultiPoint，Z 类型已完成主要链路验收。 |
 | non-table data type | document / media / container / graph 还未形成 Transfer 主链路。 |
 | stream / CDC | common engine 尚无稳定 `StreamReadableProvider`、`CDCReadableProvider`、change event / offset 标准。 |
@@ -370,7 +437,7 @@ batch checkpoint 最小结构：
 ### 近期优先级
 
 1. **增强 Parquet whole scope 读取能力**
-   真实 NFS / MinIO Parquet dataset 的 `layout=whole` Transfer 链路已验收通过，Hive-style 分区字段已能进入 schema 和 row。下一步可以在现有 `ScopeTableReaderProvider` 基础上继续补 row group 读取能力。
+   真实 NFS / MinIO Parquet dataset 的 `layout=whole` Transfer 链路已验收通过，Hive-style 分区字段已能进入 schema 和 row。`ScopeTableReaderProvider` 已在 range-capable content source 上使用 range-backed `io.ReaderAt` 打开 Parquet 文件，并沿用 parquet-go row group 顺序读取，避免 whole scope Transfer 对每个 part 先 `ReadAll`。`field_selection` 已进一步下推到 Parquet row group 数据列投影；writer 已支持 `max_rows_per_row_group` 和 `compression`；sample offset / limit 已能按 row group 行数跳过整组，并在命中的 row group 内 seek。基于列统计 min/max 的 predicate row group pruning 不单独推进，等通用 `row_filter` / predicate 语义确认后再进入。
 
    `field_selection` 是 table data type 的通用读取选项，表达调用方希望输出哪些字段。它不是某个格式的私有能力，也不是 GIS projection / CRS 投影。当前接口已落到 `common/format.ParseOptions.FieldSelection`；Parquet、CSV、JSON、Shapefile reader 已消费该通用选项；Transfer planner 已能从 `field_mapping` 的 `project` 模式推导 source `FieldSelectionOptions`，并分别传给 encoded source parse options 与 native source read options。
 
@@ -415,6 +482,8 @@ batch checkpoint 最小结构：
    - 2026-05-21 已完成真实 Transfer 手动回归：`field_mapping mode=project` 能触发 source 侧 `field_selection`，目标输出只包含映射后的字段。
    - `mode=passthrough` 不下推 `field_selection`，保持源 row 全字段，避免隐式丢字段。
    - 已覆盖 NFS / MinIO encoded source 场景；CSV、JSON、Shapefile、Parquet reader 均已消费通用 `field_selection`。
+   - Transfer executor 单元链路已断言 Parquet whole scope source 在 range-capable content reader 上使用 range-backed 读取，避免回退到整文件 `OpenContent`。
+   - Parquet reader 已将 `field_selection` 中的真实数据列转换为 parquet-go projection schema，在 row group 读取时屏蔽未选数据列；scope 级分区字段不会传入单文件 reader，而是在 scope reader 合并分区值后再统一裁剪。
 
    `row_filter` 暂缓：
 
@@ -423,21 +492,19 @@ batch checkpoint 最小结构：
    - 后续只有在出现明确的按条件 Transfer、增量同步、Manager 条件预览或质量规则复用需求时，再重新拉起设计。
 
 2. **补 Transfer 验收用例沉淀**
-   将已通过的 PostgreSQL spatial table -> NFS / MinIO Shapefile、MinIO Shapefile -> PostgreSQL table、NFS Shapefile -> MinIO Shapefile 继续形成可重复的集成测试或操作清单。
+   Shapefile encoded -> encoded 已补默认 executor 矩阵测试，覆盖 file -> object、object -> file 两种路径模型，并校验 multi refs、空间维度和 Z WKT。Shapefile -> PostgreSQL 已有 `ADDP_POSTGRES_INTEGRATION=1` 控制的 PostGIS 集成测试，覆盖二维 Point、PointZ、PolylineZ、PolygonZ、MultiPointZ 和 EWKB 写入。PostgreSQL spatial table -> Shapefile 已补 `TestIntegrationPostgresSpatialTableToShapefilePreservesSpatialMetadata`，覆盖 PostgreSQL `geometry(PointZ,4326)` native source 经 Transfer 导出为 Shapefile multi refs，并读回校验 `SpatialInfo`、SRID、维度和 Z WKT。
 
-3. **设计 checkpoint 恢复语义**
-   明确哪些 source reader 支持 seek / cursor 恢复、哪些 target writer 可幂等续写，再决定恢复执行是否进入主链路。
-
-4. **设计下一批 transform 类型**
+3. **设计下一批 transform 类型**
    在 `field_mapping` 稳定后，再讨论过滤、派生字段、简单表达式、空间坐标转换等 ETL 能力边界。
+
+4. **checkpoint resumable marker 暂不进入主链路**
+   restartable 已落到失败执行 retry；规范已明确 `resume_marker`、`position_unit`、`read_position`、`commit_position` 和 `fingerprint`，并已新增 `common/resume.Marker`、`options.ResumeMarker`、`ResumeMarkerProvider` 和 `CommitMarkerProvider` 的最小实现。Parquet scope reader 已能产出 `position_unit=ref_row` 的读侧 marker；PostgreSQL COPY table write session 已能在事务提交成功后产出 `position_unit=session_commit` 的写侧 marker；Transfer pipeline 已能把读写 marker 保存到 `checkpoint_state`。当前只完成 marker 观测和持久化闭环，不接入 Transfer 执行恢复主链路；CSV、JSON、Parquet、Shapefile 和 PostgreSQL session provider 已在收到未支持消费的 marker 时显式拒绝，避免静默从头读写。后续只有在 source / target 能力声明和 executor 验收同时补齐后，才重新讨论 `resume_mode=checkpoint`。
 
 ### 中期优先级
 
-1. Parquet row group reader / writer 增强，优先解决大文件读取性能；`row_filter` / predicate 另行讨论。
-2. PostgreSQL schema evolution：字段新增、类型映射、目标表差异处理。
-3. MySQL / Doris / ClickHouse 写侧 common writer，按真实链路逐个补，不一次性铺开。
-4. document / media raw copy：先走 content reader / writer，不做格式转换。
-5. container child table transfer：Excel sheet、SQLite table、GeoPackage layer 等按 child table 转出。
+1. document / media raw copy：先走 content reader / writer，不做格式转换，把 non-table data type 的 Transfer 主链路补起来。
+2. container child table transfer：Excel sheet、SQLite table、GeoPackage layer 等按 child table 转出。
+3. 数据库写侧后续策略：PostgreSQL 主键 / 索引 / nullable 收紧 / 复杂类型演进，Doris Stream Load，ClickHouse 排序键 / 分区键 / 原生批量接口，只在有明确数据安全和性能策略后再进入实现。
 
 ### 长期方向
 

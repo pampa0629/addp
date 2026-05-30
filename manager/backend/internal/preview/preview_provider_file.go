@@ -180,11 +180,8 @@ func (p *FileTablePreviewProvider) previewStreamable(
 	opts *format.ParseOptions,
 	req *PreviewRequest,
 ) (*models.TablePreview, error) {
-	tableInfo, err := p.tableInfoFromAttributes(req)
-	if err != nil {
-		return nil, err
-	}
-	spatialInfo := spatialInfoFromAttributes(req.Attributes)
+	tableInfo := tableInfoFromMetaAttributes(req.Attributes, "table")
+	spatialInfo := spatialInfoFromMetaAttributes(req.Attributes)
 	if tableInfo == nil {
 		if infoProvider == nil {
 			return nil, fmt.Errorf("no table info provider for format %s", formatType)
@@ -275,15 +272,6 @@ func (p *FileTablePreviewProvider) previewStreamable(
 	}, nil
 }
 
-func (p *FileTablePreviewProvider) tableInfoFromAttributes(req *PreviewRequest) (*datatype.TableInfo, error) {
-	attrs := map[string]interface{}(nil)
-	if req != nil {
-		attrs = req.Attributes
-	}
-	tableAttrs := commonJSON.Section(attrs, "type_info.table")
-	return tableInfoFromTableAttributes(tableAttrs, "table"), nil
-}
-
 func containerChildNameMatches(child map[string]interface{}, childName string) bool {
 	for _, key := range []string{"name", "table", "key", "path"} {
 		if strings.EqualFold(strings.TrimSpace(commonJSON.InterfaceString(child[key])), childName) {
@@ -291,51 +279,6 @@ func containerChildNameMatches(child map[string]interface{}, childName string) b
 		}
 	}
 	return false
-}
-
-func spatialInfoFromAttributes(attrs map[string]interface{}) *datatype.SpatialInfo {
-	spatialAttrs := commonJSON.Section(attrs, "capabilities.spatial")
-	if len(spatialAttrs) == 0 {
-		return nil
-	}
-	geometryColumn := commonJSON.InterfaceString(spatialAttrs["primary_geometry_column"])
-	geometryType := ""
-	srid := 0
-	dimension := 0
-	for _, item := range commonJSON.InterfaceSlice(spatialAttrs["geometry_columns"]) {
-		column := commonJSON.InterfaceMap(item)
-		if len(column) == 0 {
-			continue
-		}
-		name := commonJSON.InterfaceString(column["name"])
-		if geometryColumn == "" || name == geometryColumn {
-			if geometryColumn == "" {
-				geometryColumn = name
-			}
-			geometryType = commonJSON.InterfaceString(column["geometry_type"])
-			srid = int(commonJSON.InterfaceInt64(column["srid"]))
-			dimension = int(commonJSON.InterfaceInt64(column["dimension"]))
-			break
-		}
-	}
-	if geometryColumn == "" {
-		return nil
-	}
-	if dimension == 0 {
-		dimension = int(commonJSON.InterfaceInt64(spatialAttrs["dimension"]))
-	}
-	if dimension == 0 {
-		dimension = 2
-	}
-	spatialInfo := datatype.NewSingleGeometrySpatialInfo(geometryColumn, geometryType, srid, dimension)
-	hasSpatialIndex := commonJSON.InterfaceBool(spatialAttrs["has_spatial_index"])
-	spatialInfo.HasSpatialIndex = &hasSpatialIndex
-	spatialInfo.IndexName = commonJSON.InterfaceString(spatialAttrs["index_name"])
-	if extent := commonJSON.InterfaceFloat64Slice(spatialAttrs["extent"]); len(extent) == 4 {
-		boundingBox := datatype.BoundingBox{extent[0], extent[1], extent[2], extent[3]}
-		spatialInfo.Extent = &boundingBox
-	}
-	return spatialInfo
 }
 
 func (p *FileTablePreviewProvider) openSampleReader(
@@ -363,7 +306,7 @@ func (p *FileTablePreviewProvider) ensureAccessIndex(
 	fullPath string,
 	formatType format.FormatType,
 ) {
-	if req == nil || req.Engine == nil || contentReader == nil || tableAccessIndexFromAttributes(req.Attributes) != nil {
+	if req == nil || req.Engine == nil || contentReader == nil || tableAccessIndexFromMetaAttributes(req.Attributes) != nil {
 		return
 	}
 	if !format.SupportsAccessIndex(formatType) {
@@ -417,7 +360,7 @@ func (p *FileTablePreviewProvider) openIndexedRangeReader(
 	if req == nil || req.Engine == nil || tableInfo == nil {
 		return nil, nil, false
 	}
-	index := tableAccessIndexFromAttributes(req.Attributes)
+	index := tableAccessIndexFromMetaAttributes(req.Attributes)
 	if !usableTableAccessIndex(index) {
 		return nil, nil, false
 	}
@@ -513,7 +456,7 @@ func rangeForTableWindow(index *datatype.AccessIndex, offset, limit, totalSize i
 	return anchor, endByte - anchor.ByteOffset
 }
 
-func tableAccessIndexFromAttributes(attrs map[string]interface{}) *datatype.AccessIndex {
+func tableAccessIndexFromMetaAttributes(attrs map[string]interface{}) *datatype.AccessIndex {
 	indexAttrs := commonJSON.Section(attrs, "access_index.table")
 	if len(indexAttrs) == 0 {
 		return nil
@@ -549,10 +492,6 @@ func accessIndexAnchorsFromAttribute(value interface{}) []datatype.AccessIndexAn
 	return anchors
 }
 
-func tableInfoFromTableAttributes(tableAttrs map[string]interface{}, fallbackName string) *datatype.TableInfo {
-	return datatype.TableInfoFromTableAttributes(tableAttrs, fallbackName)
-}
-
 func cloneInterfaceMap(values map[string]interface{}) map[string]interface{} {
 	if len(values) == 0 {
 		return nil
@@ -578,11 +517,8 @@ func (p *FileTablePreviewProvider) previewRefs(
 	req *PreviewRequest,
 ) (*models.TablePreview, error) {
 	// 解析 TableInfo
-	tableInfo, err := p.tableInfoFromAttributes(req)
-	if err != nil {
-		return nil, err
-	}
-	spatialInfo := spatialInfoFromAttributes(req.Attributes)
+	tableInfo := tableInfoFromMetaAttributes(req.Attributes, "table")
+	spatialInfo := spatialInfoFromMetaAttributes(req.Attributes)
 	if tableInfo == nil {
 		result, err := infoProvider.DescribeMultiTable(ctx, reader, refs, opts)
 		if err != nil {
@@ -805,7 +741,7 @@ func containerChildInputForRequest(attrs map[string]interface{}, childName strin
 		return nil
 	}
 	containerAttrs := commonJSON.Section(attrs, "type_info.container")
-	if resolved := objectcontent.ResolveContainerAttributeChildrenForPreview(catalogutil.StringAttribute(attrs, "format"), commonJSON.InterfaceSlice(containerAttrs["children"])); resolved != nil && len(resolved.Children) > 0 {
+	if resolved := objectcontent.ResolveContainerAttributeChildrenForPreview(formatNameFromMetaAttributes(attrs), commonJSON.InterfaceSlice(containerAttrs["children"])); resolved != nil && len(resolved.Children) > 0 {
 		for _, child := range resolved.Children {
 			if len(child) > 0 && containerChildNameMatches(child, childName) {
 				return child
@@ -829,10 +765,7 @@ func (p *FileTablePreviewProvider) resolveFormat(req *PreviewRequest) format.For
 	if req == nil {
 		return format.FormatUnknown
 	}
-	if formatName := strings.TrimSpace(catalogutil.StringAttribute(req.Attributes, "format")); formatName != "" {
-		return normalizeFileTableFormat(formatName)
-	}
-	return format.MIMEToFormat(catalogutil.StringAttribute(req.Attributes, "content_type"))
+	return fileFormatTypeFromMetaAttributes(req.Attributes)
 }
 
 func normalizeFileTableFormat(formatName string) format.FormatType {

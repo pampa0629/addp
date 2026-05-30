@@ -7,19 +7,13 @@ import (
 	commonJSON "github.com/addp/common/jsonmap"
 )
 
-// GraphInfoFromAttributes restores common graph facts from attributes.type_info.graph.
-func GraphInfoFromAttributes(attrs map[string]interface{}) *GraphInfo {
-	graphAttrs := commonJSON.Section(attrs, "type_info.graph")
-	return GraphInfoFromGraphAttributes(graphAttrs)
-}
-
-// GraphInfoFromGraphAttributes restores common graph facts from a graph attribute map.
-func GraphInfoFromGraphAttributes(graphAttrs map[string]interface{}) *GraphInfo {
-	if len(graphAttrs) == 0 {
+// GraphInfoFromPayload restores common graph facts from a graph JSON payload.
+func GraphInfoFromPayload(payload map[string]interface{}) *GraphInfo {
+	if len(payload) == 0 {
 		return nil
 	}
 	var info GraphInfo
-	if err := commonJSON.DecodeStruct(graphAttrs, &info); err != nil {
+	if err := commonJSON.DecodeStruct(payload, &info); err != nil {
 		return nil
 	}
 	info.Model = strings.TrimSpace(info.Model)
@@ -38,8 +32,8 @@ func GraphInfoFromGraphAttributes(graphAttrs map[string]interface{}) *GraphInfo 
 	return &info
 }
 
-// GraphInfoAttributes converts common graph facts to attributes.type_info.graph.
-func GraphInfoAttributes(info *GraphInfo) map[string]interface{} {
+// GraphInfoPayload converts common graph facts to a JSON payload.
+func GraphInfoPayload(info *GraphInfo) map[string]interface{} {
 	normalized := NormalizeGraphInfo(info)
 	return commonJSON.MapFromStruct(normalized)
 }
@@ -49,8 +43,8 @@ func NormalizeGraphInfo(info *GraphInfo) *GraphInfo {
 	if info == nil {
 		return nil
 	}
-	attrs := commonJSON.MapFromStruct(info)
-	return GraphInfoFromGraphAttributes(attrs)
+	payload := commonJSON.MapFromStruct(info)
+	return GraphInfoFromPayload(payload)
 }
 
 func normalizeGraphNodeShapes(input []GraphNodeShapeInfo) []GraphNodeShapeInfo {

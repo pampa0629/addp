@@ -5,36 +5,32 @@ import (
 	"time"
 )
 
-func TestTableInfoFromAttributesRestoresCommonFacts(t *testing.T) {
+func TestTableInfoFromPayloadRestoresCommonFacts(t *testing.T) {
 	t.Parallel()
 
-	attrs := map[string]interface{}{
-		"type_info": map[string]interface{}{
-			"table": map[string]interface{}{
-				"kind":        "view",
-				"comment":     "orders view",
-				"row_count":   int64(12),
-				"size_bytes":  int64(2048),
-				"primary_key": []interface{}{"id"},
-				"native":      map[string]interface{}{"engine": "MergeTree"},
-				"fields": []interface{}{
-					map[string]interface{}{
-						"name":                  "id",
-						"type":                  "int",
-						"native_type":           "int4",
-						"nullable":              false,
-						"primary_key":           true,
-						"ordinal_position":      int64(1),
-						"default_expression":    "0",
-						"generated":             true,
-						"generation_expression": "identity",
-					},
-				},
+	payload := map[string]interface{}{
+		"kind":        "view",
+		"comment":     "orders view",
+		"row_count":   int64(12),
+		"size_bytes":  int64(2048),
+		"primary_key": []interface{}{"id"},
+		"native":      map[string]interface{}{"engine": "MergeTree"},
+		"fields": []interface{}{
+			map[string]interface{}{
+				"name":                  "id",
+				"type":                  "int",
+				"native_type":           "int4",
+				"nullable":              false,
+				"primary_key":           true,
+				"ordinal_position":      int64(1),
+				"default_expression":    "0",
+				"generated":             true,
+				"generation_expression": "identity",
 			},
 		},
 	}
 
-	info := TableInfoFromAttributes(attrs, "orders")
+	info := TableInfoFromPayload(payload, "orders")
 	if info == nil || info.Name != "orders" || info.Kind != "view" || info.Comment != "orders view" {
 		t.Fatalf("table info = %#v", info)
 	}
@@ -53,7 +49,20 @@ func TestTableInfoFromAttributesRestoresCommonFacts(t *testing.T) {
 	}
 }
 
-func TestTableInfoAttributesUsesJSONTagsAndKeepsNativeFacts(t *testing.T) {
+func TestTableInfoFromPayloadRestoresRowCountOnlyFacts(t *testing.T) {
+	t.Parallel()
+
+	info := TableInfoFromPayload(map[string]interface{}{"row_count": int64(12)}, "")
+	if info == nil || info.RowCount == nil || *info.RowCount != 12 {
+		t.Fatalf("TableInfoFromPayload() = %#v, want row count", info)
+	}
+
+	if empty := TableInfoFromPayload(map[string]interface{}{"row_count": int64(0)}, ""); empty != nil {
+		t.Fatalf("TableInfoFromPayload() = %#v, want nil for no stable table facts", empty)
+	}
+}
+
+func TestTableInfoPayloadUsesJSONTagsAndKeepsNativeFacts(t *testing.T) {
 	t.Parallel()
 
 	rowCount := int64(7)
@@ -83,8 +92,8 @@ func TestTableInfoAttributesUsesJSONTagsAndKeepsNativeFacts(t *testing.T) {
 		},
 	}
 
-	attrs := TableInfoAttributes(info)
-	native := attrs["native"].(map[string]interface{})
+	payload := TableInfoPayload(info)
+	native := payload["native"].(map[string]interface{})
 	if native["is_temporary"] != false || native["partition_num"] != 0 || native["empty_text"] != "" {
 		t.Fatalf("native facts lost zero values: %#v", native)
 	}
@@ -92,12 +101,12 @@ func TestTableInfoAttributesUsesJSONTagsAndKeepsNativeFacts(t *testing.T) {
 	if nested["enabled"] != false || nested["count"] != 0 {
 		t.Fatalf("nested native facts lost zero values: %#v", nested)
 	}
-	fields := attrs["fields"].([]interface{})
+	fields := payload["fields"].([]interface{})
 	field := fields[0].(map[string]interface{})
 	if field["nullable"] != false || field["primary_key"] != true {
-		t.Fatalf("field attrs = %#v", field)
+		t.Fatalf("field payload = %#v", field)
 	}
-	if attrs["created_at"] != createdAt {
-		t.Fatalf("created_at = %#v, want %#v", attrs["created_at"], createdAt)
+	if payload["created_at"] != createdAt {
+		t.Fatalf("created_at = %#v, want %#v", payload["created_at"], createdAt)
 	}
 }

@@ -13,6 +13,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
+	"github.com/addp/common/resume"
 	commonSpatial "github.com/addp/common/spatial"
 )
 
@@ -99,6 +100,11 @@ func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, tableInf
 	if err := contextErr(ctx); err != nil {
 		return nil, err
 	}
+	if options != nil {
+		if err := resume.RejectUnsupported(options.ResumeMarker, "json.table_writer"); err != nil {
+			return nil, err
+		}
+	}
 	if output == nil {
 		return nil, fmt.Errorf("json table writer requires output")
 	}
@@ -136,6 +142,11 @@ func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, tableInf
 func (p *Plugin) OpenTableReader(ctx context.Context, input io.Reader, options *format.ParseOptions) (format.TableReader, error) {
 	if err := contextErr(ctx); err != nil {
 		return nil, err
+	}
+	if options != nil {
+		if err := resume.RejectUnsupported(options.ResumeMarker, "json.table_reader"); err != nil {
+			return nil, err
+		}
 	}
 	if input == nil {
 		return nil, fmt.Errorf("json table reader requires input")

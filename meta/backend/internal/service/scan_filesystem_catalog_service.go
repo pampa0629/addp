@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/addp/common/dataitem"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
@@ -308,9 +309,9 @@ func (s *FilesystemCatalogScanService) scanDirectory(
 		extractionStats = mergeExtractionCounts(extractionStats, result.Extraction)
 		totalItems++
 		if detected.DataType == dataitem.DataTypeTable && result.Item != nil {
-			tableFields := commonJSON.InterfaceSlice(commonJSON.Value(result.Item.Attributes, "type_info.table", "fields"))
-			if len(tableFields) > 0 {
-				s.log.Info("识别到 single 文件表", "path", file.Path, "name", itemName, "format", detected.Format, "field_count", len(tableFields))
+			tableInfo := datatype.TableInfoFromPayload(commonJSON.Section(result.Item.Attributes, "type_info.table"), "")
+			if tableInfo != nil && len(tableInfo.Fields) > 0 {
+				s.log.Info("识别到 single 文件表", "path", file.Path, "name", itemName, "format", detected.Format, "field_count", len(tableInfo.Fields))
 			}
 		}
 	}
@@ -380,7 +381,7 @@ func (s *FilesystemCatalogScanService) persistFileCatalogDetectedItem(
 		return false
 	}
 	sizeVal := itemPlan.SizeBytes
-	rowCount := itemRowCountFromAttributes(itemPlan.Attributes)
+	rowCount := itemRowCountFromMetaAttributes(itemPlan.Attributes)
 	_, upsertErr := s.repo.UpsertItemWithDepth(
 		tenantID, resource.ID, parentNode,
 		itemPlan.ItemType, itemPlan.ItemName, itemPlan.FullName,

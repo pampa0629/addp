@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	commonClient "github.com/addp/common/client"
-	commonJSON "github.com/addp/common/jsonmap"
+	"github.com/addp/common/dataitem"
 	commonModels "github.com/addp/common/models"
 )
 
@@ -93,25 +93,19 @@ func BuildObjectTableMap(ctx context.Context, tenantID uint, engines []commonMod
 		if !IsObjectTableEngine(engine.EngineType) {
 			continue
 		}
-		tree, err := metaClient.GetMetadataTree(engine.ID)
+		items, err := metaClient.ListItems(engine.ID, "")
 		if err != nil {
 			continue
 		}
 		tables := make(map[string]string)
-		for _, item := range tree.Items {
-			if !IsObjectTableItem(item) {
+		for _, item := range items {
+			descriptor, ok := objectTableDescriptorFromMetaItem(item)
+			if !ok || descriptor.PhysicalPath == "" {
 				continue
 			}
-			physicalPath := ""
-			if item.Attributes != nil {
-				physicalPath = commonJSON.String(item.Attributes, "storage", "physical_path")
-			}
-			if physicalPath == "" {
-				continue
-			}
-			tables[item.Name] = physicalPath
+			tables[item.Name] = descriptor.PhysicalPath
 			if item.FullName != "" && item.FullName != item.Name {
-				tables[item.FullName] = physicalPath
+				tables[item.FullName] = descriptor.PhysicalPath
 			}
 		}
 		if len(tables) > 0 {
@@ -125,24 +119,25 @@ func BuildObjectTableMap(ctx context.Context, tenantID uint, engines []commonMod
 }
 
 func IsObjectTableItem(item commonModels.MetaItem) bool {
+	_, ok := objectTableDescriptorFromMetaItem(item)
+	return ok
+}
+
+func objectTableDescriptorFromMetaItem(item commonModels.MetaItem) (dataitem.ItemDescriptor, bool) {
 	switch item.ItemType {
 	case "object", "file":
 	default:
-		return false
+		return dataitem.ItemDescriptor{}, false
 	}
-	if item.Attributes == nil {
-		return false
+	descriptor := dataitem.DescriptorFromAttributes(item.Attributes)
+	if descriptor.DataType != dataitem.DataTypeTable {
+		return dataitem.ItemDescriptor{}, false
 	}
-	dataType := strings.ToLower(strings.TrimSpace(commonJSON.String(item.Attributes, "item", "data_type")))
-	formatName := strings.ToLower(strings.TrimSpace(commonJSON.String(item.Attributes, "item", "format")))
-	if dataType != "table" {
-		return false
-	}
-	switch formatName {
+	switch descriptor.Format {
 	case "parquet", "orc", "avro":
-		return true
+		return descriptor, true
 	default:
-		return false
+		return dataitem.ItemDescriptor{}, false
 	}
 }
 

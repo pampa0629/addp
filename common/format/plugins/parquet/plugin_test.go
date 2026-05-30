@@ -11,7 +11,9 @@ import (
 
 	"github.com/addp/common/contentio"
 	"github.com/addp/common/format"
+	"github.com/addp/common/resume"
 	parquetgo "github.com/parquet-go/parquet-go"
+	parquetfmt "github.com/parquet-go/parquet-go/format"
 )
 
 type testParquetRow struct {
@@ -74,6 +76,53 @@ func TestParquetPluginSampleTableSeeksDeepOffset(t *testing.T) {
 	}
 	if len(rows) != 2 || rows[0]["id"] != int64(200) || rows[1]["id"] != int64(201) {
 		t.Fatalf("rows = %#v, want ids 200 and 201", rows)
+	}
+}
+
+func TestParquetPluginSampleTableSkipsRowGroupsByOffset(t *testing.T) {
+	plugin := NewPlugin()
+	data := buildParquetRowsWithMaxRowsPerRowGroup(t, 2,
+		testParquetRow{ID: 1, Name: "Alice"},
+		testParquetRow{ID: 2, Name: "Bob"},
+		testParquetRow{ID: 3, Name: "Carol"},
+		testParquetRow{ID: 4, Name: "Dan"},
+		testParquetRow{ID: 5, Name: "Eve"},
+		testParquetRow{ID: 6, Name: "Frank"},
+	)
+	file, err := parquetgo.OpenFile(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatalf("OpenFile failed: %v", err)
+	}
+	if len(file.RowGroups()) != 3 {
+		t.Fatalf("row groups = %d, want 3", len(file.RowGroups()))
+	}
+
+	rows, err := plugin.SampleTable(context.Background(), bytes.NewReader(data), 4, 2, nil)
+	if err != nil {
+		t.Fatalf("SampleTable failed: %v", err)
+	}
+	if got, want := rowNames(rows), []string{"Eve", "Frank"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("rows = %#v, want names %v", rows, want)
+	}
+}
+
+func TestParquetPluginSampleTableSeeksWithinRowGroupAndReadsNextGroup(t *testing.T) {
+	plugin := NewPlugin()
+	data := buildParquetRowsWithMaxRowsPerRowGroup(t, 2,
+		testParquetRow{ID: 1, Name: "Alice"},
+		testParquetRow{ID: 2, Name: "Bob"},
+		testParquetRow{ID: 3, Name: "Carol"},
+		testParquetRow{ID: 4, Name: "Dan"},
+		testParquetRow{ID: 5, Name: "Eve"},
+		testParquetRow{ID: 6, Name: "Frank"},
+	)
+
+	rows, err := plugin.SampleTable(context.Background(), bytes.NewReader(data), 3, 2, nil)
+	if err != nil {
+		t.Fatalf("SampleTable failed: %v", err)
+	}
+	if got, want := rowNames(rows), []string{"Dan", "Eve"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("rows = %#v, want names %v", rows, want)
 	}
 }
 
@@ -146,6 +195,31 @@ func TestParquetPluginOpenTableReaderAppliesFieldSelection(t *testing.T) {
 	}
 }
 
+func TestParquetPluginRejectsResumeMarker(t *testing.T) {
+	plugin := NewPlugin()
+	data := buildParquetRows(t, testParquetRow{ID: 1, Name: "Alice"})
+	parseOpts := format.DefaultParseOptions()
+	parseOpts.ResumeMarker = &resume.Marker{Version: resume.MarkerVersionV1}
+	if _, err := plugin.OpenTableReader(context.Background(), bytes.NewReader(data), parseOpts); err == nil {
+		t.Fatal("OpenTableReader succeeded with resume marker, want explicit unsupported error")
+	}
+
+	writeOpts := format.DefaultWriteOptions()
+	writeOpts.ResumeMarker = &resume.Marker{Version: resume.MarkerVersionV1}
+	if _, err := plugin.OpenTableWriter(context.Background(), &bytes.Buffer{}, &datatype.TableInfo{
+		Fields: []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeInt}},
+	}, writeOpts); err == nil {
+		t.Fatal("OpenTableWriter succeeded with resume marker, want explicit unsupported error")
+	}
+
+	reader := parquetMemoryContentReader{data: map[string][]byte{
+		"dataset/part-000.parquet": data,
+	}}
+	if _, err := plugin.OpenTableScopeReader(context.Background(), reader, contentio.NewRef("dataset", contentio.RoleScope), parseOpts); err == nil {
+		t.Fatal("OpenTableScopeReader succeeded with resume marker, want explicit unsupported error")
+	}
+}
+
 func TestParquetPluginFieldSelectionMissingFieldPolicies(t *testing.T) {
 	plugin := NewPlugin()
 	data := buildParquetRows(t, testParquetRow{ID: 1, Name: "Alice"})
@@ -209,6 +283,66 @@ func TestParquetPluginOpenTableWriter(t *testing.T) {
 	}
 	if len(rows) != 2 || rows[0]["name"] != "Alice" || rows[1]["active"] != false {
 		t.Fatalf("rows = %#v, want Alice/Bob", rows)
+	}
+}
+
+func TestParquetPluginOpenTableWriterUsesWriterOptions(t *testing.T) {
+	plugin := NewPlugin()
+	tableInfo := &datatype.TableInfo{
+		Fields: []datatype.FieldInfo{
+			{Name: "id", Type: datatype.FieldTypeBigInt},
+			{Name: "name", Type: datatype.FieldTypeString, Nullable: true},
+		},
+	}
+	opts := format.DefaultWriteOptions()
+	opts.ExtraParams = map[string]interface{}{
+		ParquetWriterMaxRowsPerRowGroupOption: int64(1),
+		ParquetWriterCompressionOption:        "snappy",
+	}
+	var buf bytes.Buffer
+
+	writer, err := plugin.OpenTableWriter(context.Background(), &buf, tableInfo, opts)
+	if err != nil {
+		t.Fatalf("OpenTableWriter failed: %v", err)
+	}
+	if err := writer.WriteRows(context.Background(), []map[string]interface{}{
+		{"id": int64(1), "name": "Alice"},
+		{"id": int64(2), "name": "Bob"},
+	}); err != nil {
+		t.Fatalf("WriteRows failed: %v", err)
+	}
+	if err := writer.Close(context.Background()); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	file, err := parquetgo.OpenFile(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if err != nil {
+		t.Fatalf("OpenFile failed: %v", err)
+	}
+	if len(file.RowGroups()) != 2 {
+		t.Fatalf("row groups = %d, want 2", len(file.RowGroups()))
+	}
+	if got := file.Metadata().RowGroups[0].Columns[0].MetaData.Codec; got != parquetfmt.Snappy {
+		t.Fatalf("compression codec = %v, want snappy", got)
+	}
+}
+
+func TestParquetPluginOpenTableWriterRejectsInvalidWriterOptions(t *testing.T) {
+	plugin := NewPlugin()
+	tableInfo := &datatype.TableInfo{Fields: []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeBigInt}}}
+	opts := format.DefaultWriteOptions()
+	opts.ExtraParams = map[string]interface{}{
+		ParquetWriterMaxRowsPerRowGroupOption: int64(0),
+	}
+	if _, err := plugin.OpenTableWriter(context.Background(), &bytes.Buffer{}, tableInfo, opts); err == nil {
+		t.Fatal("OpenTableWriter succeeded with invalid row group size, want error")
+	}
+
+	opts.ExtraParams = map[string]interface{}{
+		ParquetWriterCompressionOption: "made-up",
+	}
+	if _, err := plugin.OpenTableWriter(context.Background(), &bytes.Buffer{}, tableInfo, opts); err == nil {
+		t.Fatal("OpenTableWriter succeeded with invalid compression, want error")
 	}
 }
 
@@ -401,14 +535,44 @@ func TestParquetPluginOpenTableScopeReader(t *testing.T) {
 		t.Fatalf("OpenTableScopeReader failed: %v", err)
 	}
 	defer tableReader.Close(context.Background())
+	markerProvider, ok := tableReader.(format.ResumeMarkerProvider)
+	if !ok {
+		t.Fatal("scope table reader should expose resume markers")
+	}
+	if marker := markerProvider.ResumeMarker(); marker != nil {
+		t.Fatalf("initial resume marker = %#v, want nil before reading rows", marker)
+	}
 
 	first, err := tableReader.ReadRows(context.Background(), 2)
 	if err != nil {
 		t.Fatalf("ReadRows first batch failed: %v", err)
 	}
+	firstMarker := markerProvider.ResumeMarker()
+	if firstMarker == nil {
+		t.Fatal("resume marker after first batch is nil")
+	}
+	if firstMarker.Version != resume.MarkerVersionV1 || firstMarker.Provider != "parquet.scope_table_reader" || firstMarker.PositionUnit != "ref_row" {
+		t.Fatalf("first marker identity = %#v, want parquet scope ref_row marker", firstMarker)
+	}
+	if firstMarker.ReadPosition["ref"] != "dataset/dt=2026-05-06/part-000.parquet" ||
+		firstMarker.ReadPosition["ref_index"] != 1 ||
+		firstMarker.ReadPosition["row_offset"] != int64(1) ||
+		firstMarker.ReadPosition["rows_read"] != int64(2) {
+		t.Fatalf("first marker read position = %#v, want second ref row offset 1 and total rows 2", firstMarker.ReadPosition)
+	}
+	if firstMarker.Fingerprint["ref_count"] != 2 {
+		t.Fatalf("first marker fingerprint = %#v, want ref_count 2", firstMarker.Fingerprint)
+	}
 	second, err := tableReader.ReadRows(context.Background(), 2)
 	if err != nil {
 		t.Fatalf("ReadRows second batch failed: %v", err)
+	}
+	secondMarker := markerProvider.ResumeMarker()
+	if secondMarker.ReadPosition["ref"] != "dataset/dt=2026-05-06/part-000.parquet" ||
+		secondMarker.ReadPosition["ref_index"] != 1 ||
+		secondMarker.ReadPosition["row_offset"] != int64(2) ||
+		secondMarker.ReadPosition["rows_read"] != int64(3) {
+		t.Fatalf("second marker read position = %#v, want second ref row offset 2 and total rows 3", secondMarker.ReadPosition)
 	}
 	got := append(rowNames(first), rowNames(second)...)
 	want := []string{"Alice", "Bob", "Carol"}
@@ -428,6 +592,75 @@ func TestParquetPluginOpenTableScopeReader(t *testing.T) {
 	}
 	if len(empty) != 0 {
 		t.Fatalf("EOF rows = %#v, want empty", empty)
+	}
+}
+
+func TestParquetPluginOpenTableScopeReaderUsesRangeReaderWhenSizeIsKnown(t *testing.T) {
+	plugin := NewPlugin()
+	openCounts := map[string]int{}
+	rangeOpenCounts := map[string]int{}
+	reader := parquetMemoryContentReader{
+		data: map[string][]byte{
+			"dataset/part-000.parquet": buildParquetRows(t, testParquetRow{ID: 1, Name: "Alice"}, testParquetRow{ID: 2, Name: "Bob"}),
+		},
+		openCounts:      openCounts,
+		rangeOpenCounts: rangeOpenCounts,
+	}
+	scope := contentio.NewRef("dataset", contentio.RoleScope)
+
+	tableReader, err := plugin.OpenTableScopeReader(context.Background(), reader, scope, nil)
+	if err != nil {
+		t.Fatalf("OpenTableScopeReader failed: %v", err)
+	}
+	defer tableReader.Close(context.Background())
+
+	rows, err := tableReader.ReadRows(context.Background(), 2)
+	if err != nil {
+		t.Fatalf("ReadRows failed: %v", err)
+	}
+	if len(rows) != 2 || rows[0]["name"] != "Alice" || rows[1]["name"] != "Bob" {
+		t.Fatalf("rows = %#v, want Alice/Bob", rows)
+	}
+	if openCounts["dataset/part-000.parquet"] != 0 {
+		t.Fatalf("regular open count = %d, want 0 when range reader is usable", openCounts["dataset/part-000.parquet"])
+	}
+	if rangeOpenCounts["dataset/part-000.parquet"] == 0 {
+		t.Fatalf("range open count = %d, want > 0", rangeOpenCounts["dataset/part-000.parquet"])
+	}
+}
+
+func TestParquetPluginOpenTableScopeReaderFallsBackWhenSizeIsUnknown(t *testing.T) {
+	plugin := NewPlugin()
+	openCounts := map[string]int{}
+	rangeOpenCounts := map[string]int{}
+	reader := parquetMemoryContentReader{
+		data: map[string][]byte{
+			"dataset/part-000.parquet": buildParquetRows(t, testParquetRow{ID: 1, Name: "Alice"}),
+		},
+		openCounts:      openCounts,
+		rangeOpenCounts: rangeOpenCounts,
+		unknownSize:     true,
+	}
+	scope := contentio.NewRef("dataset", contentio.RoleScope)
+
+	tableReader, err := plugin.OpenTableScopeReader(context.Background(), reader, scope, nil)
+	if err != nil {
+		t.Fatalf("OpenTableScopeReader failed: %v", err)
+	}
+	defer tableReader.Close(context.Background())
+
+	rows, err := tableReader.ReadRows(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("ReadRows failed: %v", err)
+	}
+	if len(rows) != 1 || rows[0]["name"] != "Alice" {
+		t.Fatalf("rows = %#v, want Alice", rows)
+	}
+	if openCounts["dataset/part-000.parquet"] != 1 {
+		t.Fatalf("regular open count = %d, want fallback open", openCounts["dataset/part-000.parquet"])
+	}
+	if rangeOpenCounts["dataset/part-000.parquet"] != 0 {
+		t.Fatalf("range open count = %d, want 0 when size is unknown", rangeOpenCounts["dataset/part-000.parquet"])
 	}
 }
 
@@ -492,6 +725,19 @@ func buildParquetRows(t *testing.T, rows ...testParquetRow) []byte {
 	return buf.Bytes()
 }
 
+func buildParquetRowsWithMaxRowsPerRowGroup(t *testing.T, maxRowsPerRowGroup int64, rows ...testParquetRow) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	writer := parquetgo.NewGenericWriter[testParquetRow](&buf, parquetgo.MaxRowsPerRowGroup(maxRowsPerRowGroup))
+	if _, err := writer.Write(rows); err != nil {
+		t.Fatalf("write parquet rows: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close parquet writer: %v", err)
+	}
+	return buf.Bytes()
+}
+
 type alternateParquetRow struct {
 	ID    int64  `parquet:"id"`
 	Title string `parquet:"title"`
@@ -532,8 +778,10 @@ func rowNames(rows []map[string]interface{}) []string {
 }
 
 type parquetMemoryContentReader struct {
-	data       map[string][]byte
-	openCounts map[string]int
+	data            map[string][]byte
+	openCounts      map[string]int
+	rangeOpenCounts map[string]int
+	unknownSize     bool
 }
 
 func (r parquetMemoryContentReader) Open(_ context.Context, ref contentio.Ref) (io.ReadCloser, error) {
@@ -548,8 +796,30 @@ func (r parquetMemoryContentReader) Open(_ context.Context, ref contentio.Ref) (
 }
 
 func (r parquetMemoryContentReader) Stat(_ context.Context, ref contentio.Ref) (*contentio.Stat, error) {
-	_, ok := r.data[ref.Path]
-	return &contentio.Stat{Ref: ref, Exists: ok}, nil
+	data, ok := r.data[ref.Path]
+	size := int64(len(data))
+	if r.unknownSize {
+		size = 0
+	}
+	return &contentio.Stat{Ref: ref, Exists: ok, Size: size}, nil
+}
+
+func (r parquetMemoryContentReader) OpenRange(_ context.Context, ref contentio.Ref, offset, length int64) (io.ReadCloser, error) {
+	data, ok := r.data[ref.Path]
+	if !ok {
+		return nil, contentio.ErrContentNotFound
+	}
+	if r.rangeOpenCounts != nil {
+		r.rangeOpenCounts[ref.Path]++
+	}
+	end := offset + length
+	if offset < 0 || length < 0 || offset > int64(len(data)) {
+		return nil, contentio.ErrContentNotFound
+	}
+	if end > int64(len(data)) {
+		end = int64(len(data))
+	}
+	return io.NopCloser(bytes.NewReader(data[offset:end])), nil
 }
 
 func (r parquetMemoryContentReader) List(_ context.Context, scope contentio.Ref) ([]contentio.Ref, error) {
@@ -581,3 +851,4 @@ func (r parquetMemoryContentReader) List(_ context.Context, scope contentio.Ref)
 
 var _ contentio.Reader = parquetMemoryContentReader{}
 var _ contentio.Lister = parquetMemoryContentReader{}
+var _ contentio.RangeReader = parquetMemoryContentReader{}

@@ -147,7 +147,7 @@ func (p catalogSingleItemProcessor) Process(ctx context.Context, input catalogSi
 		}, input.Detected)
 	}
 
-	rowCount := itemRowCountFromAttributes(attrs)
+	rowCount := itemRowCountFromMetaAttributes(attrs)
 	item, err := p.repo.UpsertItemWithDepth(
 		input.TenantID,
 		input.EngineID,

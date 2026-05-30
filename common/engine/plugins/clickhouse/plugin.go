@@ -52,10 +52,14 @@ func (p *ClickHousePlugin) SensitiveFields() []string {
 
 func (p *ClickHousePlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewTabularCapabilities(p.Type(), "database", plugin.TabularCapabilityOptions{
-		Write:           true,
-		BulkWrite:       true,
-		SupportsExplain: true,
-		WriterConnector: "jdbc",
+		Write:             true,
+		BulkWrite:         true,
+		BatchWrite:        true,
+		TableWriteSession: true,
+		TableWritePrepare: true,
+		Delete:            true,
+		SupportsExplain:   true,
+		WriterConnector:   "clickhouse_insert",
 	})
 }
 

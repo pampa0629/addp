@@ -12,9 +12,9 @@ import (
 	"strings"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
-	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/catalogutil"
 	"github.com/addp/manager/internal/models"
@@ -422,25 +422,21 @@ func (s *MetadataService) downloadMetaItem(engineID uint, storageRef string, ten
 }
 
 func downloadRefsFromMetaItem(item *commonModels.MetaItem) []models.DownloadRef {
-	if item == nil || len(item.Attributes) == 0 {
+	descriptor := metaItemDescriptor(item)
+	if len(descriptor.Refs) == 0 {
 		return nil
 	}
-	values := commonJSON.InterfaceSlice(commonJSON.Value(item.Attributes, "item", "refs"))
-	if len(values) == 0 {
-		return nil
-	}
-	refs := make([]models.DownloadRef, 0, len(values))
-	for _, value := range values {
-		refMap := commonJSON.InterfaceMap(value)
-		storageRef := strings.Trim(strings.TrimSpace(commonJSON.InterfaceString(refMap["path"])), "/")
+	refs := make([]models.DownloadRef, 0, len(descriptor.Refs))
+	for _, itemRef := range descriptor.Refs {
+		storageRef := strings.Trim(strings.TrimSpace(itemRef.Path), "/")
 		if storageRef == "" {
 			continue
 		}
 		refs = append(refs, models.DownloadRef{
 			StorageRef: storageRef,
-			Role:       strings.TrimSpace(commonJSON.InterfaceString(refMap["role"])),
-			Required:   commonJSON.InterfaceBool(refMap["required"]),
-			Primary:    commonJSON.InterfaceBool(refMap["primary"]),
+			Role:       strings.TrimSpace(itemRef.Role),
+			Required:   itemRef.Required,
+			Primary:    itemRef.Primary,
 			FileName:   path.Base(storageRef),
 		})
 	}
@@ -457,10 +453,14 @@ func storageRefRequiresMetaRefs(storageRef string) bool {
 }
 
 func metaItemLayout(item *commonModels.MetaItem) string {
-	if item == nil || len(item.Attributes) == 0 {
-		return ""
+	return string(metaItemDescriptor(item).Layout)
+}
+
+func metaItemDescriptor(item *commonModels.MetaItem) dataitem.ItemDescriptor {
+	if item == nil {
+		return dataitem.ItemDescriptor{}
 	}
-	return strings.ToLower(strings.TrimSpace(commonJSON.String(item.Attributes, "item", "layout")))
+	return dataitem.DescriptorFromAttributes(item.Attributes)
 }
 
 func normalizeDownloadRefs(engineType, primaryStorageRef string, refs []models.DownloadRef) []models.DownloadRef {
@@ -536,10 +536,7 @@ func validateDownloadRefs(engineType string, engineID uint, refs []models.Downlo
 
 func bundleFileName(storageRef string, item *commonModels.MetaItem) string {
 	base := strings.TrimSuffix(path.Base(storageRef), path.Ext(storageRef))
-	formatName := ""
-	if item != nil {
-		formatName = strings.TrimSpace(commonJSON.String(item.Attributes, "item", "format"))
-	}
+	formatName := metaItemDescriptor(item).Format
 	if formatName != "" && !strings.Contains(strings.ToLower(base), strings.ToLower(formatName)) {
 		base = base + "." + formatName
 	}

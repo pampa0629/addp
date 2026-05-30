@@ -472,6 +472,24 @@ func TestGuessContentType(t *testing.T) {
 			peek:     nil,
 			want:     "text/markdown",
 		},
+		{
+			name:     "Avro descriptor MIME",
+			filename: "events.avro",
+			peek:     nil,
+			want:     "application/avro",
+		},
+		{
+			name:     "HEIC descriptor MIME",
+			filename: "photo.heic",
+			peek:     nil,
+			want:     "image/heic",
+		},
+		{
+			name:     "AAC descriptor MIME wins over extension conflict",
+			filename: "audio.aac",
+			peek:     nil,
+			want:     "audio/aac",
+		},
 	}
 
 	for _, tt := range tests {

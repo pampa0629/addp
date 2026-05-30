@@ -241,6 +241,7 @@ const (
 	ObjectPreviewKindPPTX        = "pptx"
 	ObjectPreviewKindImage       = "image"
 	ObjectPreviewKindVideo       = "video"
+	ObjectPreviewKindAudio       = "audio"
 	ObjectPreviewKindJSON        = "json"
 	ObjectPreviewKindContainer   = "container"
 	ObjectPreviewKindText        = "text"

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -11,6 +12,7 @@ import (
 	commonformat "github.com/addp/common/format"
 	"github.com/addp/common/logger"
 	"github.com/addp/manager/internal/models"
+	"github.com/addp/manager/internal/pluginmanifest"
 )
 
 type ObjectContentPluginConfig struct {
@@ -32,9 +34,8 @@ type ObjectContentMatcherConfig struct {
 	ContentTypes []string `json:"content_types,omitempty"`
 }
 
-type ObjectContentPluginManifest struct {
-	DefaultContentPlugins []ObjectContentPluginConfig `json:"default_content_plugins,omitempty"`
-	ContentPlugins        []ObjectContentPluginConfig `json:"content_plugins,omitempty"`
+type ObjectContentPluginConfigFile struct {
+	ContentPlugins []ObjectContentPluginConfig `json:"content_plugins,omitempty"`
 }
 
 func (c *ObjectContentPluginConfig) isEnabled() bool {
@@ -71,6 +72,8 @@ func buildBuiltinContentHandler(cfg ObjectContentPluginConfig) (ObjectContentHan
 		return buildImageContentHandler(cfg, "image"), nil
 	case models.ObjectPreviewKindVideo:
 		return buildVideoContentHandler(cfg, "video"), nil
+	case models.ObjectPreviewKindAudio:
+		return buildAudioContentHandler(cfg, "audio"), nil
 	case models.ObjectPreviewKindJSON:
 		return buildJSONContentHandler(cfg), nil
 	case string(commonformat.FormatParquet):
@@ -93,6 +96,8 @@ func buildBuiltinContentHandler(cfg ObjectContentPluginConfig) (ObjectContentHan
 			return buildImageContentHandler(cfg, string(descriptor.Format)), nil
 		case "video":
 			return buildVideoContentHandler(cfg, string(descriptor.Format)), nil
+		case "audio":
+			return buildAudioContentHandler(cfg, string(descriptor.Format)), nil
 		}
 	}
 	if descriptor.DataType == commondatatype.DataTypeDocument && commonformat.DescriptorHasContentReader(descriptor, commonformat.ContentReaderRawContent) {
@@ -117,20 +122,44 @@ func registerBuiltinContentHandlers(registry *ObjectContentRegistry, configs []O
 }
 
 func fallbackBuiltinContentPlugins() []ObjectContentPluginConfig {
-	return []ObjectContentPluginConfig{
+	plugins := []ObjectContentPluginConfig{
 		{Name: "builtin:content-pdf", Type: "builtin", Builtin: models.ObjectPreviewKindPDF},
 		{Name: "builtin:content-docx", Type: "builtin", Builtin: models.ObjectPreviewKindDOCX},
 		{Name: "builtin:content-pptx", Type: "builtin", Builtin: models.ObjectPreviewKindPPTX},
 		{Name: "builtin:content-wps", Type: "builtin", Builtin: models.ObjectPreviewKindWPS},
-		{Name: "builtin:content-image", Type: "builtin", Builtin: models.ObjectPreviewKindImage},
-		{Name: "builtin:content-video", Type: "builtin", Builtin: models.ObjectPreviewKindVideo},
-		{Name: "builtin:content-parquet", Type: "builtin", Builtin: string(commonformat.FormatParquet), Metadata: map[string]interface{}{"row_limit": defaultParquetRowLimit}},
-		{Name: "builtin:content-json", Type: "builtin", Builtin: models.ObjectPreviewKindJSON},
-		{Name: "builtin:content-container", Type: "builtin", Builtin: models.ObjectPreviewKindContainer},
-		{Name: "builtin:content-markdown", Type: "builtin", Builtin: models.ObjectPreviewKindMarkdown},
-		{Name: "builtin:content-text", Type: "builtin", Builtin: models.ObjectPreviewKindText},
-		{Name: "builtin:content-unsupported", Type: "builtin", Builtin: models.ObjectPreviewKindUnsupported},
 	}
+	plugins = append(plugins, defaultMediaContentPlugins()...)
+	plugins = append(plugins,
+		ObjectContentPluginConfig{
+			Name:     "builtin:content-parquet",
+			Type:     "builtin",
+			Builtin:  string(commonformat.FormatParquet),
+			Metadata: map[string]interface{}{"row_limit": defaultParquetRowLimit},
+		},
+		ObjectContentPluginConfig{Name: "builtin:content-json", Type: "builtin", Builtin: models.ObjectPreviewKindJSON},
+		ObjectContentPluginConfig{Name: "builtin:content-container", Type: "builtin", Builtin: models.ObjectPreviewKindContainer},
+		ObjectContentPluginConfig{Name: "builtin:content-markdown", Type: "builtin", Builtin: models.ObjectPreviewKindMarkdown},
+		ObjectContentPluginConfig{Name: "builtin:content-text", Type: "builtin", Builtin: models.ObjectPreviewKindText},
+		ObjectContentPluginConfig{Name: "builtin:content-unsupported", Type: "builtin", Builtin: models.ObjectPreviewKindUnsupported},
+	)
+	return plugins
+}
+
+func defaultMediaContentPlugins() []ObjectContentPluginConfig {
+	kinds := []string{
+		models.ObjectPreviewKindImage,
+		models.ObjectPreviewKindVideo,
+		models.ObjectPreviewKindAudio,
+	}
+	plugins := make([]ObjectContentPluginConfig, 0, len(kinds))
+	for _, kind := range kinds {
+		plugins = append(plugins, ObjectContentPluginConfig{
+			Name:    "builtin:content-" + kind,
+			Type:    "builtin",
+			Builtin: kind,
+		})
+	}
+	return plugins
 }
 
 func normalizeBuiltinContentName(name string) string {
@@ -170,6 +199,17 @@ func buildVideoContentHandler(cfg ObjectContentPluginConfig, mediaKind string) O
 			matcher:  mediaObjectContentMatcher(cfg.Match, mediaKind),
 		},
 		kind: models.ObjectPreviewKindVideo,
+	}
+}
+
+func buildAudioContentHandler(cfg ObjectContentPluginConfig, mediaKind string) ObjectContentHandler {
+	return &mediaStreamContentHandler{
+		baseContentHandler: baseContentHandler{
+			name:     cfg.Name,
+			priority: cfg.priorityOr(defaultBuiltinContentPriority(models.ObjectPreviewKindAudio)),
+			matcher:  mediaObjectContentMatcher(cfg.Match, mediaKind),
+		},
+		kind: models.ObjectPreviewKindAudio,
 	}
 }
 
@@ -255,6 +295,8 @@ func defaultBuiltinContentPriority(kind string) int {
 		return 70
 	case models.ObjectPreviewKindVideo:
 		return 68
+	case models.ObjectPreviewKindAudio:
+		return 67
 	case string(commonformat.FormatParquet):
 		return 63
 	case models.ObjectPreviewKindJSON:
@@ -291,6 +333,9 @@ func mediaKindFromDescriptor(descriptor commonformat.FormatDescriptor) string {
 	}
 	if formatDescriptorMatchesMediaKind(descriptor, "video") {
 		return "video"
+	}
+	if formatDescriptorMatchesMediaKind(descriptor, "audio") {
+		return "audio"
 	}
 	return ""
 }
@@ -475,22 +520,23 @@ func metadataInt(meta map[string]interface{}, key string, fallback int) int {
 	return fallback
 }
 
-// LoadObjectContentPlugins 从 manifest 文件加载对象内容插件配置。
-func LoadObjectContentPlugins(registry *ObjectContentRegistry, manifestSpec string) {
+// LoadObjectContentPlugins 从插件目录下的 content.json 加载对象内容插件配置。
+func LoadObjectContentPlugins(registry *ObjectContentRegistry, pluginDirSpec string) {
 	if registry == nil {
 		return
 	}
-	paths := splitManifestPaths(manifestSpec)
-	if len(paths) == 0 {
+	dirs := splitPluginDirSpec(pluginDirSpec)
+	if len(dirs) == 0 {
 		registerDefaultBuiltinContentHandlers(registry)
 		return
 	}
-	for _, path := range paths {
-		loadContentPluginsFromManifest(registry, path)
+	for _, dir := range dirs {
+		path := filepath.Join(dir, "content.json")
+		loadContentPluginsFromConfig(registry, path)
 	}
 }
 
-func splitManifestPaths(spec string) []string {
+func splitPluginDirSpec(spec string) []string {
 	spec = strings.TrimSpace(spec)
 	if spec == "" {
 		return nil
@@ -506,25 +552,25 @@ func splitManifestPaths(spec string) []string {
 	return paths
 }
 
-func loadContentPluginsFromManifest(registry *ObjectContentRegistry, path string) {
+func loadContentPluginsFromConfig(registry *ObjectContentRegistry, path string) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		logger.L().Warn("数据预览: 读取插件清单失败", "path", path, "error", err)
+		logger.L().Warn("数据预览: 读取插件配置失败", "path", path, "error", err)
+		return
+	}
+	if err := pluginmanifest.ValidateTopLevelFields(raw, "version", "description", "content_plugins", "notes"); err != nil {
+		logger.L().Warn("数据预览: 内容插件配置字段不受支持", "path", path, "error", err)
 		return
 	}
 
-	var manifest ObjectContentPluginManifest
-	if err := json.Unmarshal(raw, &manifest); err != nil {
-		logger.L().Warn("数据预览: 解析插件清单失败", "path", path, "error", err)
+	var configFile ObjectContentPluginConfigFile
+	if err := json.Unmarshal(raw, &configFile); err != nil {
+		logger.L().Warn("数据预览: 解析插件配置失败", "path", path, "error", err)
 		return
 	}
 
-	defaultConfigs := manifest.DefaultContentPlugins
-	if len(defaultConfigs) == 0 {
-		defaultConfigs = fallbackBuiltinContentPlugins()
-	}
-	registerBuiltinContentHandlers(registry, defaultConfigs)
-	for _, cfg := range manifest.ContentPlugins {
+	registerDefaultBuiltinContentHandlers(registry)
+	for _, cfg := range configFile.ContentPlugins {
 		loadContentPluginConfig(registry, cfg, path)
 	}
 }

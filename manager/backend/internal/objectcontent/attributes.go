@@ -79,7 +79,7 @@ func canonicalContainerChildFormat(formatName string) string {
 }
 
 func containerChildNativeFromMap(child map[string]interface{}) map[string]interface{} {
-	native := cloneInterfaceMap(rawMapAttribute(child["native"]))
+	native := filterContainerChildNativeMap(rawMapAttribute(child["native"]))
 	if native == nil {
 		native = map[string]interface{}{}
 	}
@@ -95,9 +95,32 @@ func containerChildNativeFromMap(child map[string]interface{}) map[string]interf
 	return native
 }
 
+func filterContainerChildNativeMap(values map[string]interface{}) map[string]interface{} {
+	filtered := map[string]interface{}{}
+	for key, value := range values {
+		if isContainerChildSchemaProperty(key) {
+			continue
+		}
+		filtered[key] = value
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	return filtered
+}
+
 func containerChildNativeKey(key string) bool {
 	switch strings.ToLower(strings.TrimSpace(key)) {
 	case "table", "path", "content_type", "uncompressed_size", "compressed_size", "modified_at", "role", "extension", "preview_material", "preview_renderer", "previewable", "ref_preview":
+		return true
+	default:
+		return false
+	}
+}
+
+func isContainerChildSchemaProperty(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "columns", "fields", "schema", "table_info", "type_info":
 		return true
 	default:
 		return false
@@ -156,8 +179,8 @@ func DecoratePreviewContent(content *models.ObjectPreviewContent) *models.Object
 	return decoratePreviewContent(content)
 }
 
-func BuildContainerPreviewFromAttributes(attrs map[string]interface{}, sizeBytes int64) map[string]interface{} {
-	return buildContainerPreviewFromAttributes(attrs, sizeBytes)
+func BuildContainerPreviewFromMetaAttributes(attrs map[string]interface{}, sizeBytes int64) map[string]interface{} {
+	return buildContainerPreviewFromMetaAttributes(attrs, sizeBytes)
 }
 
 func ResolveContainerAttributeChildrenForPreview(formatName string, children []interface{}) *containerPreviewChildren {

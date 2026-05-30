@@ -47,10 +47,11 @@ type EndpointSpec struct {
 	EndpointResource EndpointResourceSpec   `json:"resource"`
 	DataType         string                 `json:"data_type"`
 	Representation   string                 `json:"representation"`
+	MetaItemID       uint                   `json:"meta_item_id,omitempty"`
 	Format           format.FormatType      `json:"format,omitempty"`
 	Options          map[string]interface{} `json:"options,omitempty"`
 	Policy           map[string]interface{} `json:"policy,omitempty"`
-	Attributes       map[string]interface{} `json:"attributes,omitempty"`
+	Attributes       map[string]interface{} `json:"-"`
 }
 
 type TableExportTaskSpec struct {
@@ -117,6 +118,9 @@ func ParseTableExportTaskSpec(config map[string]interface{}, fallbackBatchSize i
 	}
 	if hasLegacyTaskConfigFields(config) {
 		return TableExportTaskSpec{}, fmt.Errorf("legacy transfer task config is not supported; use source/target endpoint config")
+	}
+	if hasUnsupportedEndpointAttributes(config) {
+		return TableExportTaskSpec{}, fmt.Errorf("endpoint attributes are not supported in transfer task config; use source.meta_item_id to reference Meta item attributes")
 	}
 
 	var spec TableExportTaskSpec
@@ -215,7 +219,7 @@ func formatHasSpatialRows(formatType format.FormatType) bool {
 	return ok && descriptor.Spatial
 }
 
-func sourceItemDescriptor(attrs map[string]interface{}) (dataitem.ItemDescriptor, bool) {
+func sourceItemDescriptorFromMetaAttributes(attrs map[string]interface{}) (dataitem.ItemDescriptor, bool) {
 	descriptor := dataitem.DescriptorFromAttributes(attrs)
 	if descriptor.Layout == "" && descriptor.DataType == "" && descriptor.Format == "" && descriptor.PhysicalPath == "" && descriptor.StoragePath == "" && len(descriptor.Refs) == 0 {
 		return dataitem.ItemDescriptor{}, false
@@ -368,12 +372,12 @@ func relatedRefSpecKey(spec format.RelatedRefSpec) string {
 	return role + ":" + ext
 }
 
-func tableInfoFromMetaAttributes(attrs map[string]interface{}) *datatype.TableInfo {
-	info := datatype.TableInfoFromAttributes(attrs, "table")
+func sourceTableInfoFromMetaAttributes(attrs map[string]interface{}) *datatype.TableInfo {
+	info := datatype.TableInfoFromPayload(commonJSON.Section(attrs, "type_info.table"), "table")
 	if info == nil {
 		return nil
 	}
-	if spatialInfo := spatialInfoFromMetaAttributes(attrs); spatialInfo != nil {
+	if spatialInfo := sourceSpatialInfoFromMetaAttributes(attrs); spatialInfo != nil {
 		geometryColumn := spatialInfo.PrimaryGeometryName()
 		for i := range info.Fields {
 			if strings.EqualFold(info.Fields[i].Name, geometryColumn) {
@@ -385,50 +389,8 @@ func tableInfoFromMetaAttributes(attrs map[string]interface{}) *datatype.TableIn
 	return info
 }
 
-func spatialInfoFromMetaAttributes(attrs map[string]interface{}) *datatype.SpatialInfo {
-	spatialAttrs := commonJSON.Section(attrs, "capabilities.spatial")
-	if len(spatialAttrs) == 0 {
-		return nil
-	}
-	geometryColumn := commonJSON.InterfaceString(spatialAttrs["primary_geometry_column"])
-	var geometryType string
-	var srid int
-	var dimension int
-	for _, item := range interfaceSlice(spatialAttrs["geometry_columns"]) {
-		column := rawMapAttribute(item)
-		if len(column) == 0 {
-			continue
-		}
-		name := strings.TrimSpace(commonJSON.InterfaceString(column["name"]))
-		if geometryColumn != "" && !strings.EqualFold(name, geometryColumn) {
-			continue
-		}
-		if geometryColumn == "" {
-			geometryColumn = name
-		}
-		geometryType = strings.TrimSpace(commonJSON.InterfaceString(column["geometry_type"]))
-		srid = int(commonJSON.InterfaceInt64(column["srid"]))
-		dimension = int(commonJSON.InterfaceInt64(column["dimension"]))
-		break
-	}
-	if geometryColumn == "" {
-		return nil
-	}
-	if dimension == 0 {
-		dimension = int(commonJSON.InterfaceInt64(spatialAttrs["dimension"]))
-	}
-	if dimension == 0 {
-		dimension = 2
-	}
-	spatialInfo := datatype.NewSingleGeometrySpatialInfo(geometryColumn, geometryType, srid, dimension)
-	hasSpatialIndex := commonJSON.InterfaceBool(spatialAttrs["has_spatial_index"])
-	spatialInfo.HasSpatialIndex = &hasSpatialIndex
-	spatialInfo.IndexName = commonJSON.InterfaceString(spatialAttrs["index_name"])
-	if extent := commonJSON.InterfaceFloat64Slice(spatialAttrs["extent"]); len(extent) == 4 {
-		boundingBox := datatype.BoundingBox{extent[0], extent[1], extent[2], extent[3]}
-		spatialInfo.Extent = &boundingBox
-	}
-	return spatialInfo
+func sourceSpatialInfoFromMetaAttributes(attrs map[string]interface{}) *datatype.SpatialInfo {
+	return datatype.SpatialInfoFromPayload(commonJSON.Section(attrs, "capabilities.spatial"))
 }
 
 func applyMetaSpatialParseOptions(opts *format.ParseOptions, spatialInfo *datatype.SpatialInfo) {
@@ -443,14 +405,6 @@ func applyMetaSpatialParseOptions(opts *format.ParseOptions, spatialInfo *dataty
 	}
 }
 
-func interfaceSlice(value interface{}) []interface{} {
-	return commonJSON.InterfaceSlice(value)
-}
-
-func rawMapAttribute(value interface{}) map[string]interface{} {
-	return commonJSON.InterfaceMap(value)
-}
-
 func cloneInterfaceMap(values map[string]interface{}) map[string]interface{} {
 	if len(values) == 0 {
 		return nil
@@ -463,9 +417,9 @@ func cloneInterfaceMap(values map[string]interface{}) map[string]interface{} {
 }
 
 func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding, transforms []TransformSpec) (executor.TableSourcePlan, error) {
-	itemDescriptor, hasItemAttributes := sourceItemDescriptor(endpoint.Attributes)
-	sourceTableInfo := tableInfoFromMetaAttributes(endpoint.Attributes)
-	sourceSpatialInfo := spatialInfoFromMetaAttributes(endpoint.Attributes)
+	itemDescriptor, hasItemAttributes := sourceItemDescriptorFromMetaAttributes(endpoint.Attributes)
+	sourceTableInfo := sourceTableInfoFromMetaAttributes(endpoint.Attributes)
+	sourceSpatialInfo := sourceSpatialInfoFromMetaAttributes(endpoint.Attributes)
 	switch endpoint.Representation {
 	case representationNative:
 		sourcePath, err := nativeTablePath(engine.EngineID, endpoint.EndpointResource.Path)
@@ -811,6 +765,19 @@ func hasLegacyTaskConfigFields(config map[string]interface{}) bool {
 		}
 	}
 	return endpointHasLegacyFields(config["source"]) || endpointHasLegacyFields(config["target"])
+}
+
+func hasUnsupportedEndpointAttributes(config map[string]interface{}) bool {
+	return endpointHasAttributes(config["source"]) || endpointHasAttributes(config["target"])
+}
+
+func endpointHasAttributes(raw interface{}) bool {
+	endpoint, ok := raw.(map[string]interface{})
+	if !ok {
+		return false
+	}
+	_, ok = endpoint["attributes"]
+	return ok
 }
 
 func endpointHasLegacyFields(raw interface{}) bool {

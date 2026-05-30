@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/addp/common/logger"
@@ -19,6 +20,7 @@ import (
 type ExecutionService struct {
 	taskExecutionRepo *commonRepo.TaskExecutionRepository // 统一执行记录仓库
 	taskRepo          *repository.TaskRepository
+	taskQueue         TaskQueue
 	logger            *slog.Logger
 }
 
@@ -29,6 +31,11 @@ func NewExecutionService(db *gorm.DB, taskExecutionRepo *commonRepo.TaskExecutio
 		taskRepo:          repository.NewTaskRepository(db),
 		logger:            logger.With("component", "execution_service"),
 	}
+}
+
+// SetTaskQueue 设置执行重试使用的任务队列。
+func (s *ExecutionService) SetTaskQueue(taskQueue TaskQueue) {
+	s.taskQueue = taskQueue
 }
 
 // convertToTransferExecution 将统一执行记录转换为 Transfer 执行记录格式（API 兼容层）
@@ -425,17 +432,71 @@ func (s *ExecutionService) RetryExecution(ctx context.Context, id, tenantID, use
 
 	s.logger.Info("retrying execution", "execution_id", id, "task_id", oldExecution.TaskID)
 
+	task, err := s.taskRepo.GetByID(oldExecution.TaskID)
+	if err != nil {
+		return nil, fmt.Errorf("task not found: %w", err)
+	}
+	if mode := taskWriteMode(task); mode != "" && mode != "overwrite" {
+		return nil, fmt.Errorf("retry execution only supports restartable overwrite tasks; got write_mode %q", mode)
+	}
+
 	// 创建新的执行记录
 	newExecution, err := s.CreateExecution(ctx, oldExecution.TaskID, "retry", &userID)
 	if err != nil {
 		return nil, err
 	}
 
-	// 更新任务状态为 running
-	s.taskRepo.UpdateStatus(oldExecution.TaskID, models.TaskStatusRunning)
+	if err := s.taskRepo.UpdateFields(oldExecution.TaskID, map[string]interface{}{
+		"status":   models.TaskStatusRunning,
+		"progress": 0,
+	}); err != nil {
+		return nil, fmt.Errorf("failed to update task state for retry: %w", err)
+	}
 
-	s.logger.Info("execution retry created", "new_execution_id", newExecution.ID)
+	if s.taskQueue == nil {
+		if finishErr := s.FinishExecution(ctx, newExecution.ID, models.ExecutionStatusFailed, "task queue is not available"); finishErr != nil {
+			s.logger.Warn("failed to mark retry execution as failed after missing queue", "error", finishErr, "execution_id", newExecution.ID)
+		}
+		if updateErr := s.taskRepo.UpdateFields(oldExecution.TaskID, map[string]interface{}{
+			"status":   models.TaskStatusIdle,
+			"progress": 0,
+		}); updateErr != nil {
+			s.logger.Warn("failed to rollback task state after missing retry queue", "error", updateErr, "task_id", oldExecution.TaskID)
+		}
+		return nil, fmt.Errorf("task queue is not available")
+	}
+
+	if err := s.taskQueue.EnqueueExecuteTask(ctx, oldExecution.TaskID, newExecution.ID, tenantID); err != nil {
+		if finishErr := s.FinishExecution(ctx, newExecution.ID, models.ExecutionStatusFailed, err.Error()); finishErr != nil {
+			s.logger.Warn("failed to mark retry execution as failed after enqueue failure", "error", finishErr, "execution_id", newExecution.ID)
+		}
+		if updateErr := s.taskRepo.UpdateFields(oldExecution.TaskID, map[string]interface{}{
+			"status":   models.TaskStatusIdle,
+			"progress": 0,
+		}); updateErr != nil {
+			s.logger.Warn("failed to rollback task state after retry enqueue failure", "error", updateErr, "task_id", oldExecution.TaskID)
+		}
+		return nil, fmt.Errorf("failed to enqueue retry execution: %w", err)
+	}
+
+	s.logger.Info("execution retry enqueued", "old_execution_id", id, "new_execution_id", newExecution.ID, "task_id", oldExecution.TaskID)
 	return newExecution, nil
+}
+
+func taskWriteMode(task *models.TransferTask) string {
+	if task == nil {
+		return ""
+	}
+	target, ok := task.Config["target"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	policy, ok := target["policy"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	mode, _ := policy["write_mode"].(string)
+	return strings.ToLower(strings.TrimSpace(mode))
 }
 
 // CancelExecution 取消正在运行的执行

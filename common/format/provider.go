@@ -6,6 +6,7 @@ import (
 
 	"github.com/addp/common/contentio"
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/resume"
 )
 
 // Provider 是格式层能力实现的基础接口。
@@ -86,6 +87,12 @@ type TableReader interface {
 	Close(ctx context.Context) error
 }
 
+// ResumeMarkerProvider is an optional capability implemented by readers that
+// can expose a stable read marker after successful reads.
+type ResumeMarkerProvider interface {
+	ResumeMarker() *resume.Marker
+}
+
 // TableSpatialInfoProvider 表示 table reader 可额外提供读取行对应的空间上下文。
 //
 // 这是 TableReader 的可选能力，不代表一个独立 reader。调用方通过类型断言使用：
@@ -163,6 +170,12 @@ type MultiTableWriterProvider interface {
 type TableWriter interface {
 	WriteRows(ctx context.Context, rows []map[string]interface{}) error
 	Close(ctx context.Context) error
+}
+
+// CommitMarkerProvider is an optional capability implemented by writers that
+// can expose a stable commit marker after successful commits.
+type CommitMarkerProvider interface {
+	CommitMarker() *resume.Marker
 }
 
 // ContainerInfoProvider 表示格式能够提供容器内部对象信息。

@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"testing"
+	"time"
 
 	"github.com/addp/common/contentio"
 	engineplugin "github.com/addp/common/engine/plugin"
@@ -41,6 +42,26 @@ func TestEngineContentReaderOpenRange(t *testing.T) {
 	data, _ := io.ReadAll(rc)
 	if string(data) != "3456" {
 		t.Fatalf("OpenRange() data = %q, want 3456", data)
+	}
+}
+
+func TestEngineContentReaderStatUsesCatalog(t *testing.T) {
+	modifiedAt := time.Date(2026, 5, 29, 10, 0, 0, 0, time.UTC)
+	provider := &contentProviderStub{
+		data:       map[string]string{"bucket/result.parquet": "PAR1data"},
+		modifiedAt: modifiedAt,
+	}
+	reader := NewReader(provider, nil, baseCatalogPath(), engineplugin.ReadOptions{})
+
+	stat, err := reader.Stat(context.Background(), contentio.NewRef("elsewhere/result.parquet", contentio.RoleMain))
+	if err != nil {
+		t.Fatalf("Stat() error = %v", err)
+	}
+	if !stat.Exists || stat.Size != int64(len("PAR1data")) || stat.ContentType != "application/octet-stream" {
+		t.Fatalf("stat = %#v, want existing size/content type", stat)
+	}
+	if stat.ModifiedAt == nil || !stat.ModifiedAt.Equal(modifiedAt) {
+		t.Fatalf("modified_at = %v, want %v", stat.ModifiedAt, modifiedAt)
 	}
 }
 
@@ -130,7 +151,8 @@ func TestFixedPathMapperReturnsIndependentCatalogPath(t *testing.T) {
 }
 
 type contentProviderStub struct {
-	data map[string]string
+	data       map[string]string
+	modifiedAt time.Time
 }
 
 func (p *contentProviderStub) OpenContent(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.CatalogPath, _ engineplugin.ReadOptions) (io.ReadCloser, error) {
@@ -171,6 +193,32 @@ func (p *contentProviderStub) OpenRange(_ context.Context, _ engineplugin.Connec
 		end = int64(len(value))
 	}
 	return io.NopCloser(bytes.NewBufferString(value[opts.Offset:end])), nil
+}
+
+func (p *contentProviderStub) ListChildren(context.Context, engineplugin.ConnectionInfo, engineplugin.CatalogPath, engineplugin.ListOptions) ([]engineplugin.CatalogNode, error) {
+	return nil, nil
+}
+
+func (p *contentProviderStub) ResolvePath(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.CatalogPath) (*engineplugin.CatalogNode, error) {
+	value, ok := p.data[path.StringPath()]
+	if !ok {
+		return nil, contentio.ErrContentNotFound
+	}
+	attrs := map[string]interface{}{
+		"content_type": "application/octet-stream",
+	}
+	if !p.modifiedAt.IsZero() {
+		attrs["modified_at"] = p.modifiedAt
+	}
+	return &engineplugin.CatalogNode{
+		Name:   path.StringPath(),
+		Path:   path,
+		IsItem: true,
+		Stats: map[string]interface{}{
+			"size_bytes": int64(len(value)),
+		},
+		Attributes: attrs,
+	}, nil
 }
 
 func (p *contentProviderStub) CreateContent(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.CatalogPath, _ engineplugin.WriteOptions) (io.WriteCloser, error) {

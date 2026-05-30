@@ -473,6 +473,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "为失败执行创建新的 retry 执行记录，并按 restartable 语义从头重新入队执行 | Create a new retry execution for a failed execution and enqueue it from the beginning with restartable semantics",
                 "produces": [
                     "application/json"
                 ],
@@ -986,7 +987,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "创建一个新的数据导入/导出/同步任务。新任务 config 使用 source/target endpoint；source 指向已入库 Meta item 时可携带 source.attributes，Transfer planner 将消费其中的 item.layout、item.format、item.refs、type_info.table.fields 和 capabilities.spatial。| Create a new data import/export/sync task. New config uses source/target endpoints; source.attributes may carry Meta item attributes consumed by the planner.",
+                "description": "创建一个新的数据导入/导出/同步任务。新任务 config 使用 source/target endpoint；source 指向已入库 Meta item 时使用 source.meta_item_id，Transfer 后端会通过 MetaClient 读取标准 attributes。| Create a new data import/export/sync task. New config uses source/target endpoints; use source.meta_item_id for persisted Meta items, and Transfer backend loads standard attributes through MetaClient.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1151,7 +1152,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "更新任务的配置信息。config.source.attributes 会按 JSONB 原样保存，用于 planner 消费已入库 Meta item 标准 attributes。| Update task configuration. config.source.attributes is preserved as JSONB for planner consumption.",
+                "description": "更新任务的配置信息。source 指向已入库 Meta item 时使用 config.source.meta_item_id；不支持在任务配置中直接传递 endpoint attributes。| Update task configuration. Use config.source.meta_item_id for persisted Meta items; endpoint attributes are not accepted in task config.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1949,9 +1950,6 @@ const docTemplate = `{
         "github_com_addp_transfer_internal_models.TransferEndpointDoc": {
             "type": "object",
             "properties": {
-                "attributes": {
-                    "type": "object"
-                },
                 "data_type": {
                     "type": "string",
                     "example": "table"
@@ -1962,6 +1960,11 @@ const docTemplate = `{
                 "format": {
                     "type": "string",
                     "example": "shapefile"
+                },
+                "meta_item_id": {
+                    "description": "Meta item ID；source 指向已入库 Meta item 时由 Transfer 后端通过 MetaClient 读取标准 attributes。",
+                    "type": "integer",
+                    "example": 12
                 },
                 "options": {
                     "type": "object",

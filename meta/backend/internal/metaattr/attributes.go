@@ -229,7 +229,7 @@ func SetTableFields(attrs models.JSONMap, fields []datatype.FieldInfo) {
 	if attrs == nil || len(fields) == 0 {
 		return
 	}
-	UpsertNested(attrs, "type_info", "table", datatype.TableInfoAttributes(&datatype.TableInfo{Fields: fields}))
+	UpsertNested(attrs, "type_info", "table", datatype.TableInfoPayload(&datatype.TableInfo{Fields: fields}))
 }
 
 func cleanAttributeMap(values map[string]interface{}) map[string]interface{} {

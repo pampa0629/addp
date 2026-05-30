@@ -5,7 +5,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -144,15 +143,13 @@ func main() {
 
 	contentRegistry := objectcontent.NewObjectContentRegistry()
 	pluginDirs := preview.ParsePluginDirSpec(cfg.PreviewPluginDir)
-	pluginManifestSpec := buildPluginManifestSpec(pluginDirs)
-	if pluginManifestSpec != "" {
-		objectcontent.LoadObjectContentPlugins(contentRegistry, pluginManifestSpec)
-	}
+	contentPluginSpec := buildPluginDirSpec(pluginDirs)
+	objectcontent.LoadObjectContentPlugins(contentRegistry, contentPluginSpec)
 	logger.L().Info("数据预览: 已激活内容插件")
 
 	previewRegistry := preview.NewPreviewRegistry()
 
-	preview.LoadPreviewPlugins(previewRegistry, metadataRepo, metaClient, contentRegistry, cfg.MetaServiceURL, pluginManifestSpec)
+	preview.LoadPreviewPlugins(previewRegistry, metadataRepo, metaClient, contentRegistry, cfg.MetaServiceURL, buildPluginDirSpec(pluginDirs))
 	logger.L().Info("数据预览: 已激活预览插件", "providers", previewRegistry.Providers())
 
 	// 初始化 services（注意：Manager 不负责引擎管理，引擎信息通过 SystemClient 获取）
@@ -303,17 +300,17 @@ func main() {
 	}
 }
 
-func buildPluginManifestSpec(dirs []string) string {
+func buildPluginDirSpec(dirs []string) string {
 	if len(dirs) == 0 {
 		return ""
 	}
-	manifestPaths := make([]string, 0, len(dirs))
+	cleanDirs := make([]string, 0, len(dirs))
 	for _, dir := range dirs {
 		trimmed := strings.TrimSpace(dir)
 		if trimmed == "" {
 			continue
 		}
-		manifestPaths = append(manifestPaths, filepath.Join(trimmed, "manifest.json"))
+		cleanDirs = append(cleanDirs, trimmed)
 	}
-	return strings.Join(manifestPaths, ",")
+	return strings.Join(cleanDirs, ",")
 }

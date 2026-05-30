@@ -1,6 +1,9 @@
 package format
 
-import "github.com/addp/common/datatype"
+import (
+	"github.com/addp/common/datatype"
+	"github.com/addp/common/resume"
+)
 
 // GeometryEncoding 描述表格行值中 geometry 字段的编码形式。
 type GeometryEncoding string
@@ -40,6 +43,7 @@ type ParseOptions struct {
 	TableSample *TableSampleOptions
 
 	FieldSelection *FieldSelectionOptions
+	ResumeMarker   *resume.Marker
 }
 
 type FieldSelectionOptions struct {
@@ -69,6 +73,8 @@ type WriteOptions struct {
 	Delimiter   rune
 	OmitHeader  bool
 	SpatialInfo *datatype.SpatialInfo
+
+	ResumeMarker *resume.Marker
 }
 
 // DefaultWriteOptions 返回默认写出选项。

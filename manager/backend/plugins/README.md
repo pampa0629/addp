@@ -1,125 +1,115 @@
-# Manager 插件系统
+# Manager 插件配置
 
-本目录包含 Manager 模块的数据预览插件配置。运行时只读取 `manifest.json`。
+本目录只描述 Manager 的数据预览行为策略，不描述文件格式事实。格式名称、扩展名、MIME、数据类型和能力声明统一来自 `common/format` descriptor。
 
-`manifest.json` 负责表达产品策略：默认启用哪些内置 provider/content handler、优先级、读取限制、禁用/覆盖和 command 扩展。Go 代码仍负责实现绑定：例如 `builtin:content-image` 对应哪个 handler、`builtin:file-table` 对应哪个 provider，这类构造逻辑不放进 JSON。
+运行时读取两个固定配置文件：
 
-## 目录结构
-
-```
+```text
 plugins/
-├── README.md                    # 本文件
-└── manifest.json                # 预览 Provider 和内容处理器覆盖配置
+├── README.md
+├── preview.json   # 主预览 Provider 的禁用、覆盖和 command 扩展
+└── content.json   # 对象内容 Handler 的禁用、覆盖和 command 扩展
 ```
 
-## 两类插件
+默认 PreviewProvider 和 ObjectContentHandler 均由 Go fallback 注册。配置文件只用于禁用默认实现、覆盖少量策略参数，或接入外部 command 扩展；同名配置会替换默认实现，不形成并行分支。
 
-### 1. PreviewProvider（预览提供程序）
+## preview.json
 
-**位置**: `providers/` 目录
-**职责**: 决定**能不能预览**某种数据源/节点类型
-**处理层级**: 数据源级别（数据库表、对象 catalog、Schema 节点等）
+`preview.json` 只支持顶层字段 `version`、`description`、`providers`、`notes`。未知字段会被拒绝加载。
 
-默认启用的 PreviewProvider 写在 `manifest.json` 的 `default_providers`。需要禁用、覆盖默认 provider 或扩展 command provider 时，修改 `providers`。
+PreviewProvider 负责选择数据源或节点层级的预览方式，例如数据库表、对象 catalog、schema 节点、容器子项等。主链路由 Meta 标准属性确定性选择 provider，配置不参与格式语义判断。
 
-**配置示例**:
+禁用内置 provider 示例：
+
 ```json
 {
-  "name": "builtin:file-catalog",
-  "type": "builtin",
-  "builtin": "file-catalog",
-  "enabled": false
+  "providers": [
+    {
+      "name": "builtin:file-catalog",
+      "type": "builtin",
+      "builtin": "file-catalog",
+      "enabled": false
+    }
+  ]
 }
 ```
 
-**特点**:
-- 处理的是"数据源类型"而非"文件类型"
-- 主链路由 Meta 标准属性确定性选择 provider，配置不参与语义路由
-- `default_providers` 配置默认启用列表
-- `providers` 配置禁用/覆盖内置 provider 或声明 command 扩展
-- 通过 `LoadPreviewPlugins()` 加载
+接入外部 command provider 示例：
 
-### 2. ObjectContentHandler（对象内容处理器）
-
-**位置**: `content/` 目录
-**职责**: 决定**怎么预览**具体的文件内容
-**处理层级**: 文件级别（PDF、Excel、JSON、图片、视频等）
-
-默认启用的内容处理器写在 `manifest.json` 的 `default_content_plugins`。需要覆盖默认策略或扩展 command 处理器时，修改 `content_plugins`。
-
-**配置示例**:
 ```json
 {
-  "name": "builtin:content-container",
-  "type": "builtin",
-  "builtin": "container",
-  "max_bytes": 1073741824
+  "providers": [
+    {
+      "name": "command:custom-provider",
+      "type": "command",
+      "command": "/opt/addp/preview/custom-provider",
+      "timeout": 15
+    }
+  ]
 }
 ```
 
-**特点**:
-- 内置处理器的匹配规则来自 `common/format` descriptor
-- `default_content_plugins` 配置默认启用列表、优先级和读取限制
-- `content_plugins` 配置禁用/覆盖默认大小限制、少量处理器参数，或声明 command 扩展
-- 根据 Meta 标准 format 优先选择处理器，扩展名和 MIME 只作为 format 缺失时的兜底
-- 通过 `LoadObjectContentPlugins()` 加载
+## content.json
+
+`content.json` 只支持顶层字段 `version`、`description`、`content_plugins`、`notes`。未知字段会被拒绝加载。
+
+ObjectContentHandler 负责具体文件内容的展示策略，例如图片、视频、音频、PDF、Office 文档、JSON、文本和容器文件。内置处理器的匹配规则来自 `common/format` descriptor；例如 WebP、AVIF、MP4、FLAC 等具体格式不在 Manager 配置中重复维护。
+
+覆盖内置 handler 策略示例：
+
+```json
+{
+  "content_plugins": [
+    {
+      "name": "builtin:content-container",
+      "type": "builtin",
+      "builtin": "container",
+      "max_bytes": 1073741824
+    }
+  ]
+}
+```
+
+接入外部 command content handler 示例：
+
+```json
+{
+  "content_plugins": [
+    {
+      "name": "command:content-custom",
+      "type": "command",
+      "command": "/opt/addp/preview/custom-preview",
+      "match": {
+        "formats": ["custom"]
+      },
+      "max_bytes": 10485760
+    }
+  ]
+}
+```
+
+## 扩展原则
+
+新增格式的事实优先加入 `common/format`。如果新格式能落到已有通用处理器，例如 media、text、raw document、container 或 parquet table，Manager 不需要新增配置。
+
+只有新增 Manager 展示行为时，才修改本目录配置；如果行为需要新的 Go 实现，先实现 handler/provider/factory，再在 `content.json` 或 `preview.json` 中启用、覆盖或禁用。
 
 ## 调用链
 
-```
+```text
 用户请求预览
   ↓
-PreviewResolver 根据 Meta 标准属性选择代码默认注册的 Provider
+PreviewResolver 根据 Meta 标准属性选择默认注册的 Provider
   ↓
 Provider 执行对应预览
   ↓
-如果是对象 catalog，调用 `manager/internal/objectcontent.ObjectContentRegistry`
+如果是对象内容预览，调用 ObjectContentRegistry
   ↓
 ContentHandler 优先根据 Meta 标准 format 匹配，必要时再使用扩展名和 Content-Type
 ```
 
-## 如何扩展
+## 参考代码
 
-### 新增数据库支持
-
-通用关系型表预览由内置 `builtin:database-table` 默认注册。新增数据库支持优先扩展引擎能力和共享连接能力；只有接入外部 command provider 时，才在 `manifest.json` 的 `providers` 添加配置，例如：
-```json
-{
-  "name": "command:custom-provider",
-  "type": "command",
-  "command": "/opt/addp/preview/custom-provider",
-  "timeout": 15
-}
-```
-
-### 新增文件格式支持
-
-多数内置格式不需要配置。只有需要覆盖默认策略或接入外部 command 时，才在 `manifest.json` 的 `content_plugins` 添加配置，例如：
-```json
-{
-  "name": "command:content-custom",
-  "type": "command",
-  "command": "/opt/addp/preview/custom-preview",
-  "match": {
-    "formats": ["custom"]
-  },
-  "max_bytes": 10485760
-}
-```
-
-如果要新增一个已有 Go handler 支持的内置渲染类型，把它加入 `default_content_plugins` 或 `content_plugins` 即可。如果需要一种全新的处理方式，先实现 Go handler/factory，再在 manifest 中启用或覆盖它。
-
-## 架构演进
-
-系统从早期的"每种数据库/格式一个独立实现"演进到现在的"通用实现 + 默认内置注册 + 轻量覆盖配置"：
-
-- **旧方式**: `preview_provider_postgres.go`、`preview_provider_mysql.go` 等独立文件
-- **新方式**: `manager/internal/preview/preview_provider_database.go` 统一实现，内置 provider 默认注册，manifest 只保留覆盖和外部扩展
-
-这种架构避免为默认能力维护空壳配置，同时保留必要的扩展入口。
-
-## 参考文档
-
-- 通用数据库预览: [internal/preview/preview_provider_database.go](../internal/preview/preview_provider_database.go)
-- 预览插件加载器: [internal/preview/preview_plugin_loader.go](../internal/preview/preview_plugin_loader.go)
-- 内容插件加载器: [internal/objectcontent/object_content_plugin_loader.go](../internal/objectcontent/object_content_plugin_loader.go)
+- 主预览加载器: [internal/preview/preview_plugin_loader.go](../internal/preview/preview_plugin_loader.go)
+- 内容加载器: [internal/objectcontent/object_content_plugin_loader.go](../internal/objectcontent/object_content_plugin_loader.go)
+- 配置字段校验: [internal/pluginmanifest/manifest.go](../internal/pluginmanifest/manifest.go)
