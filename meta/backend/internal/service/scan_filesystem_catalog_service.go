@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/addp/common/dataitem"
-	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
@@ -309,7 +308,7 @@ func (s *FilesystemCatalogScanService) scanDirectory(
 		extractionStats = mergeExtractionCounts(extractionStats, result.Extraction)
 		totalItems++
 		if detected.DataType == dataitem.DataTypeTable && result.Item != nil {
-			tableInfo := datatype.TableInfoFromPayload(commonJSON.Section(result.Item.Attributes, "type_info.table"), "")
+			tableInfo := tableInfoFromMetaAttributes(result.Item.Attributes)
 			if tableInfo != nil && len(tableInfo.Fields) > 0 {
 				s.log.Info("识别到 single 文件表", "path", file.Path, "name", itemName, "format", detected.Format, "field_count", len(tableInfo.Fields))
 			}

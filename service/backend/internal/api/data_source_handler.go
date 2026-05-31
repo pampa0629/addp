@@ -205,7 +205,7 @@ func (h *DataSourceHandler) GetNodeChildren(c *gin.Context) {
 
 	// 5. 使用 TreeBuilder 的统一方法转换 Items 为 MetaNodes
 	treeBuilder := catalogview.NewTreeBuilder(nil)
-	itemNodes := treeBuilder.ConvertMetaItems(items)
+	itemNodes := treeBuilder.ConvertMetaItemsForEngine(engine.EngineType, items)
 
 	// 6. 合并子节点和转换后的 Item 节点
 	allNodes := make([]*models.MetaNode, 0, len(children)+len(itemNodes))
@@ -261,7 +261,7 @@ func (h *DataSourceHandler) GetGraphNodeShapes(c *gin.Context) {
 		return
 	}
 
-	graphInfo := datatype.GraphInfoFromPayload(commonJSON.Section(item.Attributes, "type_info.graph"))
+	graphInfo := graphInfoFromMetaAttributes(item.Attributes)
 	if graphInfo == nil {
 		c.JSON(http.StatusOK, []graphNodeShapeOption{})
 		return
@@ -279,6 +279,10 @@ func (h *DataSourceHandler) GetGraphNodeShapes(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, shapes)
+}
+
+func graphInfoFromMetaAttributes(attrs map[string]interface{}) *datatype.GraphInfo {
+	return datatype.GraphInfoFromPayload(commonJSON.Section(attrs, "type_info.graph"))
 }
 
 // GetTableMetadata 获取表的元数据（用于检测几何列）

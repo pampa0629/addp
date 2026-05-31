@@ -7,7 +7,7 @@ import (
 )
 
 func FieldsFromMetaItem(item models.MetaItem) ([]datatype.FieldInfo, error) {
-	info := datatype.TableInfoFromPayload(commonJSON.Section(item.Attributes, "type_info.table"), "")
+	info := tableInfoFromMetaAttributes(item.Attributes)
 	if info == nil {
 		return nil, nil
 	}
@@ -19,14 +19,22 @@ func SpatialMetadataFromItem(item models.MetaItem) (*models.SpatialMetadataRespo
 		Fields: []datatype.FieldInfo{},
 	}
 
-	applySpatialInfo(spatialMeta, datatype.SpatialInfoFromPayload(commonJSON.Section(item.Attributes, "capabilities.spatial")))
-	applyTableInfo(spatialMeta, datatype.TableInfoFromPayload(commonJSON.Section(item.Attributes, "type_info.table"), ""))
+	applySpatialInfo(spatialMeta, spatialInfoFromMetaAttributes(item.Attributes))
+	applyTableInfo(spatialMeta, tableInfoFromMetaAttributes(item.Attributes))
 
 	if item.RowCount != nil {
 		spatialMeta.RowCount = *item.RowCount
 	}
 
 	return spatialMeta, nil
+}
+
+func tableInfoFromMetaAttributes(attrs map[string]interface{}) *datatype.TableInfo {
+	return datatype.TableInfoFromPayload(commonJSON.Section(attrs, "type_info.table"), "")
+}
+
+func spatialInfoFromMetaAttributes(attrs map[string]interface{}) *datatype.SpatialInfo {
+	return datatype.SpatialInfoFromPayload(commonJSON.Section(attrs, "capabilities.spatial"))
 }
 
 func applySpatialInfo(spatialMeta *models.SpatialMetadataResponse, spatialInfo *datatype.SpatialInfo) {

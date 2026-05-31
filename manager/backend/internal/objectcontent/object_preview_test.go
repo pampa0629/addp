@@ -1163,6 +1163,44 @@ func TestRawDocumentContentHandlerReturnsURLMaterialWhenAvailable(t *testing.T) 
 	}
 }
 
+func TestPreviewMetadataIncludesDisplayFactsFromAttributes(t *testing.T) {
+	t.Parallel()
+	metadata := buildPreviewMetadata(&ObjectContentRequest{
+		Name: "report.pdf",
+		Attributes: map[string]interface{}{
+			"type_info": map[string]interface{}{
+				"media": map[string]interface{}{
+					"width":       1920,
+					"height":      1080,
+					"duration_ms": 4500,
+					"encoding":    "h264",
+					"color_space": "yuv420p",
+				},
+				"document": map[string]interface{}{
+					"page_count": 12,
+					"title":      "Annual Report",
+				},
+			},
+			"format_info": map[string]interface{}{
+				"pdf": map[string]interface{}{
+					"author":  "ADDP",
+					"creator": "manager",
+				},
+			},
+		},
+	}, 0)
+
+	if metadata["width"] != 1920 || metadata["height"] != 1080 || metadata["duration_ms"] != 4500 {
+		t.Fatalf("media metadata = %#v", metadata)
+	}
+	if metadata["page_count"] != 12 || metadata["title"] != "Annual Report" {
+		t.Fatalf("document metadata = %#v", metadata)
+	}
+	if metadata["author"] != "ADDP" || metadata["creator"] != "manager" {
+		t.Fatalf("pdf metadata = %#v", metadata)
+	}
+}
+
 func TestRawDocumentContentHandlerDeclaresRawBinaryMaterialAndRendererWithoutURL(t *testing.T) {
 	t.Parallel()
 	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "wps", Builtin: "wps"})

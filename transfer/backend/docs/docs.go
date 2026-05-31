@@ -1962,7 +1962,6 @@ const docTemplate = `{
                     "example": "shapefile"
                 },
                 "meta_item_id": {
-                    "description": "Meta item ID；source 指向已入库 Meta item 时由 Transfer 后端通过 MetaClient 读取标准 attributes。",
                     "type": "integer",
                     "example": 12
                 },

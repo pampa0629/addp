@@ -11,6 +11,7 @@ import (
 	"github.com/addp/common/catalogview"
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/embedding"
+	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/vectorstore"
 	"github.com/addp/manager/internal/config"
@@ -682,13 +683,8 @@ func assignStringFromMetaAttributes(meta map[string]interface{}, section, key st
 	if target == nil || meta == nil {
 		return
 	}
-	if sectionAttrs := searchAttributeSection(meta, section); sectionAttrs != nil {
-		if value, ok := sectionAttrs[key]; ok {
-			assignStringValue(value, target)
-			if *target != "" {
-				return
-			}
-		}
+	if value := commonJSON.String(meta, section, key); value != "" {
+		*target = value
 	}
 }
 
@@ -724,26 +720,8 @@ func getStringFromMeta(meta map[string]interface{}, key string) string {
 		return ""
 	}
 	for _, section := range searchAttributeSectionsForKey(key) {
-		if value := getStringFromSection(meta, section, key); value != "" {
+		if value := commonJSON.String(meta, section, key); value != "" {
 			return value
-		}
-	}
-	return ""
-}
-
-func getStringFromSection(meta map[string]interface{}, section, key string) string {
-	if sectionAttrs := searchAttributeSection(meta, section); sectionAttrs != nil {
-		if value, ok := sectionAttrs[key]; ok {
-			switch v := value.(type) {
-			case string:
-				return v
-			case fmt.Stringer:
-				return v.String()
-			case []byte:
-				return string(v)
-			default:
-				return fmt.Sprintf("%v", v)
-			}
 		}
 	}
 	return ""
@@ -762,22 +740,6 @@ func searchAttributeSectionsForKey(key string) []string {
 	default:
 		return nil
 	}
-}
-
-func searchAttributeSection(meta map[string]interface{}, section string) map[string]interface{} {
-	current := meta
-	for _, part := range strings.Split(section, ".") {
-		raw, ok := current[part]
-		if !ok {
-			return nil
-		}
-		next, ok := raw.(map[string]interface{})
-		if !ok {
-			return nil
-		}
-		current = next
-	}
-	return current
 }
 
 func vectorDocumentToSearchDocument(v VectorDocument) SearchDocument {

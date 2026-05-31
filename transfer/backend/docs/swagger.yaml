@@ -226,8 +226,6 @@ definitions:
         example: shapefile
         type: string
       meta_item_id:
-        description: Meta item ID；source 指向已入库 Meta item 时由 Transfer 后端通过 MetaClient 读取标准
-          attributes。
         example: 12
         type: integer
       options:
@@ -1164,9 +1162,9 @@ paths:
       - application/json
       description: 创建一个新的数据导入/导出/同步任务。新任务 config 使用 source/target endpoint；source
         指向已入库 Meta item 时使用 source.meta_item_id，Transfer 后端会通过 MetaClient 读取标准 attributes。|
-        Create a new data import/export/sync task. New config uses source/target
-        endpoints; use source.meta_item_id for persisted Meta items, and Transfer
-        backend loads standard attributes through MetaClient.
+        Create a new data import/export/sync task. New config uses source/target endpoints;
+        use source.meta_item_id for persisted Meta items, and Transfer backend loads
+        standard attributes through MetaClient.
       parameters:
       - description: 任务创建请求 | Task creation request
         in: body

@@ -620,18 +620,8 @@ const emptyDescription = computed(() => {
 })
 
 const rawMultiRefs = computed(() => {
-  const attrs = props.previewData?.object?.attributes || {}
   const contentMetadata = props.previewData?.object?.content?.metadata || {}
-  const candidates = [
-    contentMetadata.refs,
-    attrs.item?.refs
-  ]
-  for (const value of candidates) {
-    if (Array.isArray(value) && value.length) {
-      return value
-    }
-  }
-  return []
+  return Array.isArray(contentMetadata.refs) ? contentMetadata.refs : []
 })
 
 const refDisplayName = (path) => {
@@ -1303,29 +1293,17 @@ const objectContentType = computed(() => {
   return objectData.value?.content_type || ''
 })
 
-function attributeSection(attributes = {}, section) {
-  if (!attributes || !section) return {}
+const objectContentMetadata = computed(() => {
+  return objectData.value?.content?.metadata || {}
+})
 
-  const current = section.split('.').reduce((target, key) => {
-    if (!target || typeof target !== 'object') return undefined
-    return target[key]
-  }, attributes)
-
-  return current && typeof current === 'object' ? current : {}
+function metadataValue(key) {
+  const value = objectContentMetadata.value?.[key]
+  return value !== undefined && value !== null && value !== '' ? value : undefined
 }
 
-function attributeValue(attributes = {}, section, key, ...fallbackKeys) {
-  const standard = attributeSection(attributes, section)
-  const keys = [key, ...fallbackKeys]
-  for (const currentKey of keys) {
-    const value = standard?.[currentKey]
-    if (value !== undefined && value !== null && value !== '') return value
-  }
-  return undefined
-}
-
-function mediaDurationSeconds(attributes = {}) {
-  const durationMS = attributeValue(attributes, 'type_info.media', 'duration_ms')
+function mediaDurationSeconds() {
+  const durationMS = metadataValue('duration_ms')
   if (durationMS === undefined || durationMS === null || durationMS === '') return undefined
   const value = Number(durationMS)
   return Number.isFinite(value) ? value / 1000 : undefined
@@ -1360,16 +1338,14 @@ const objectFileTypeLabel = computed(() => {
   return t('manager.explorer.fileTypeGeneric')
 })
 
-// 图片尺寸信息（优先从标准 attributes 分区读取）
+// 图片尺寸信息
 const objectImageDimensions = computed(() => {
   if (!objectContentType.value.startsWith('image/')) {
     return null
   }
 
-  const attributes = objectData.value?.attributes || {}
-
-  const width = attributeValue(attributes, 'type_info.media', 'width')
-  const height = attributeValue(attributes, 'type_info.media', 'height')
+  const width = metadataValue('width')
+  const height = metadataValue('height')
 
   if (width && height) {
     return `${width} × ${height}`
@@ -1383,13 +1359,12 @@ const objectMetadataTooltip = computed(() => {
   const parts = []
   const contentType = objectContentType.value
   const path = objectData.value?.path || ''
-  const attributes = objectData.value?.attributes || {}
 
   // 图片特有信息
   if (contentType.startsWith('image/')) {
     // 图片尺寸（宽 高）
-    const width = attributeValue(attributes, 'type_info.media', 'width')
-    const height = attributeValue(attributes, 'type_info.media', 'height')
+    const width = metadataValue('width')
+    const height = metadataValue('height')
     if (width && height) {
       parts.push(`${t('manager.explorer.metaWidth')} ${width} ${t('manager.explorer.metaHeight')} ${height}`)
     }
@@ -1400,13 +1375,13 @@ const objectMetadataTooltip = computed(() => {
     }
 
     // 图片格式
-    const format = attributeValue(attributes, 'type_info.media', 'encoding')
+    const format = metadataValue('encoding')
     if (format && format !== contentType.split('/')[1]) {
       parts.push(`${t('manager.explorer.metaFormat')}: ${format}`)
     }
 
     // 颜色模式
-    const colorMode = attributeValue(attributes, 'type_info.media', 'color_space')
+    const colorMode = metadataValue('color_space')
     if (colorMode) {
       parts.push(`${t('manager.explorer.metaColorMode')}: ${colorMode}`)
     }
@@ -1420,21 +1395,21 @@ const objectMetadataTooltip = computed(() => {
     }
 
     // 视频尺寸（宽 × 高）
-    const width = attributeValue(attributes, 'type_info.media', 'width')
-    const height = attributeValue(attributes, 'type_info.media', 'height')
+    const width = metadataValue('width')
+    const height = metadataValue('height')
 
     if (width && height) {
       parts.push(`${t('manager.explorer.metaResolution')}: ${width} × ${height}`)
     }
 
     // 时长
-    const duration = mediaDurationSeconds(attributes)
+    const duration = mediaDurationSeconds()
     if (duration) {
       const durationStr = formatDuration(duration)
       parts.push(`${t('manager.explorer.metaDuration')}: ${durationStr}`)
     }
 
-    const encoding = attributeValue(attributes, 'type_info.media', 'encoding')
+    const encoding = metadataValue('encoding')
     if (encoding) {
       parts.push(`${t('manager.explorer.metaEncoding')}: ${encoding}`)
     }
@@ -1443,13 +1418,13 @@ const objectMetadataTooltip = computed(() => {
   // 音频特有信息
   if (contentType.includes('audio')) {
     // 时长
-    const duration = mediaDurationSeconds(attributes)
+    const duration = mediaDurationSeconds()
     if (duration) {
       const durationStr = formatDuration(duration)
       parts.push(`${t('manager.explorer.metaDuration')}: ${durationStr}`)
     }
 
-    const encoding = attributeValue(attributes, 'type_info.media', 'encoding')
+    const encoding = metadataValue('encoding')
     if (encoding) {
       parts.push(`${t('manager.explorer.metaEncoding')}: ${encoding}`)
     }
@@ -1457,22 +1432,22 @@ const objectMetadataTooltip = computed(() => {
 
   // PDF 特有信息
   if (contentType.includes('pdf')) {
-    const pages = attributeValue(attributes, 'type_info.document', 'page_count')
+    const pages = metadataValue('page_count')
     if (pages) {
       parts.push(t('manager.explorer.metaPdfPages', { value: pages }))
     }
 
-    const author = attributeValue(attributes, 'format_info.pdf', 'author')
+    const author = metadataValue('author')
     if (author) {
       parts.push(t('manager.explorer.metaPdfAuthor', { value: author }))
     }
 
-    const title = attributeValue(attributes, 'type_info.document', 'title')
+    const title = metadataValue('title')
     if (title) {
       parts.push(t('manager.explorer.metaPdfTitle', { value: title }))
     }
 
-    const creator = attributeValue(attributes, 'format_info.pdf', 'creator')
+    const creator = metadataValue('creator')
     if (creator) {
       parts.push(t('manager.explorer.metaPdfCreator', { value: creator }))
     }

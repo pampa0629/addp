@@ -5,9 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/addp/common/datatype"
 	enginePlugin "github.com/addp/common/engine/plugin"
-	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/models"
 )
 
@@ -83,7 +81,11 @@ func (b *TreeBuilder) BuildFromMetadataTree(engine *models.Engine, metadataTree 
 	for i := range metadataTree.ChildNodes {
 		allNodes = append(allNodes, &metadataTree.ChildNodes[i])
 	}
-	itemNodes := b.ConvertMetaItems(metadataTree.Items)
+	engineType := ""
+	if engine != nil {
+		engineType = engine.EngineType
+	}
+	itemNodes := b.ConvertMetaItemsForEngine(engineType, metadataTree.Items)
 	allNodes = append(allNodes, itemNodes...)
 
 	// 使用现有的 BuildFromMeta 方法
@@ -206,8 +208,7 @@ func isWholeScopeItemNode(node *models.MetaNode) bool {
 	if node == nil {
 		return false
 	}
-	layout := strings.ToLower(strings.TrimSpace(commonJSON.StringFromSections(node.Attributes, "layout", "item")))
-	return layout == "whole"
+	return itemLayoutFromMetaAttributes(node.Attributes) == "whole"
 }
 
 func sameResourceFullName(left, right string) bool {
@@ -240,21 +241,22 @@ func (b *TreeBuilder) ConvertMetaNodes(engine *models.Engine, metaNodes []*model
 	return treeNodes
 }
 
-// ConvertMetaItems 将 MetaItem 列表转换为 MetaNode 列表
+// ConvertMetaItemsForEngine 将 MetaItem 列表转换为 MetaNode 列表
 // 适用场景：从 Meta API 获取叶子项目（表、对象等）后，转换为节点格式
 //
 // 参数:
+//   - engineType: 引擎类型，用于识别 slash 路径语义的数据项
 //   - items: Meta 模块的 Item 列表
 //
 // 返回: MetaNode 列表。ID 仍保留树内虚拟 ID，locator 使用真实 item_id。
-func (b *TreeBuilder) ConvertMetaItems(items []models.MetaItem) []*models.MetaNode {
+func (b *TreeBuilder) ConvertMetaItemsForEngine(engineType string, items []models.MetaItem) []*models.MetaNode {
 	nodes := make([]*models.MetaNode, 0, len(items))
 
 	for i := range items {
 		item := &items[i]
 
 		// 动态计算 Depth：根据 ItemType 和 FullName
-		depth := calculateItemDepth(item.ItemType, item.FullName)
+		depth := calculateItemDepthForEngine(engineType, item.ItemType, item.FullName, item.Attributes)
 
 		// 使用虚拟 ID (item.ID + 100000) 避免与 meta_node 的 ID 冲突
 		virtualID := item.ID + 100000
@@ -299,7 +301,7 @@ func withMetaItemFacts(attrs map[string]interface{}, item *models.MetaItem) map[
 	next["is_meta_item"] = true
 	if item.RowCount != nil {
 		next["row_count"] = *item.RowCount
-		tableInfo := datatype.TableInfoFromPayload(commonJSON.Section(next, "type_info.table"), "")
+		tableInfo := tableInfoFromMetaAttributes(next, "")
 		if tableInfo == nil || tableInfo.RowCount == nil || *tableInfo.RowCount <= 0 {
 			upsertTreeMetadataSection(next, "type_info", "table", map[string]interface{}{"row_count": *item.RowCount})
 		}
@@ -308,6 +310,9 @@ func withMetaItemFacts(attrs map[string]interface{}, item *models.MetaItem) map[
 		next["size_bytes"] = *item.SizeBytes
 	} else if item.ObjectSizeBytes != nil {
 		next["object_size_bytes"] = *item.ObjectSizeBytes
+	}
+	if item.LastModifiedAt != nil {
+		next["last_modified_at"] = item.LastModifiedAt.Format(time.RFC3339)
 	}
 	return next
 }
@@ -424,7 +429,7 @@ func calculateItemCount(itemType string, attributes map[string]interface{}) int 
 	// 对象存储的 directory/prefix 可能包含子对象
 	if itemType == "directory" || itemType == "prefix" {
 		// 从标准 storage 分区中提取 object_count。
-		if objCount := commonJSON.Int64(attributes, "storage", "object_count"); objCount > 0 {
+		if objCount := objectCountFromMetaAttributes(attributes); objCount > 0 {
 			return int(objCount)
 		}
 		// 如果没有 object_count，返回 0（后续懒加载时会尝试获取子节点）
@@ -484,6 +489,7 @@ func (b *TreeBuilder) convertMetaNode(engine *models.Engine, node *models.MetaNo
 		}
 		metadata[k] = v
 	}
+	addItemMetadataFacts(metadata, node.Attributes)
 
 	locatorURI := loc.ToURI()
 
@@ -512,6 +518,33 @@ func (b *TreeBuilder) convertMetaNode(engine *models.Engine, node *models.MetaNo
 	return treeNode
 }
 
+func addItemMetadataFacts(metadata map[string]interface{}, attrs map[string]interface{}) {
+	if metadata == nil || len(attrs) == 0 {
+		return
+	}
+	if dataType := dataTypeFromMetaAttributes(attrs); dataType != "" {
+		metadata["data_type"] = dataType
+	}
+	if formatName := formatNameFromMetaAttributes(attrs); formatName != "" {
+		metadata["format"] = formatName
+	}
+	if layout := itemLayoutFromMetaAttributes(attrs); layout != "" {
+		metadata["layout"] = layout
+	}
+	if physicalPath := physicalPathFromMetaAttributes(attrs); physicalPath != "" {
+		metadata["physical_path"] = physicalPath
+	}
+	if rowCount := tableRowCountFromMetaAttributes(attrs); rowCount > 0 {
+		metadata["row_count"] = rowCount
+	}
+	if fieldCount := tableFieldCountFromMetaAttributes(attrs); fieldCount > 0 {
+		metadata["field_count"] = fieldCount
+	}
+	if spatial := spatialSummaryFromMetaAttributes(attrs); len(spatial) > 0 {
+		metadata["spatial"] = spatial
+	}
+}
+
 func catalogTypeLabel(engine *models.Engine, nodeType string) string {
 	if engine == nil || engine.Capabilities == nil {
 		return enginePlugin.CatalogTermI18nKey(nodeType)
@@ -526,8 +559,12 @@ func catalogTypeLabel(engine *models.Engine, nodeType string) string {
 // calculateItemDepth 动态计算 Item 的深度
 // 根据 ItemType 和 FullName 计算节点在树中的深度
 func calculateItemDepth(itemType, fullName string) int {
+	return calculateItemDepthForEngine("", itemType, fullName, nil)
+}
+
+func calculateItemDepthForEngine(engineType, itemType, fullName string, attributes map[string]interface{}) int {
 	// 对象存储类型（object）：根据路径中的斜杠数量计算
-	if itemType == "object" {
+	if itemType == "object" || isPathSemanticMetaItem(engineType, itemType, fullName, attributes) {
 		segments := strings.Split(strings.Trim(fullName, "/"), "/")
 		return len(segments)
 	}
@@ -547,6 +584,19 @@ func calculateItemDepth(itemType, fullName string) int {
 
 	// 默认深度为 2（大多数情况下 Items 在第二层）
 	return 2
+}
+
+func isPathSemanticMetaItem(engineType, itemType, fullName string, attributes map[string]interface{}) bool {
+	if itemType != "table" {
+		return false
+	}
+	if strings.Contains(fullName, "/") {
+		return true
+	}
+	if UsesSlashFullName(engineType, itemType) {
+		return true
+	}
+	return formatNameFromMetaAttributes(attributes) != "" && itemLayoutFromMetaAttributes(attributes) != ""
 }
 
 // parsePath 从 FullName 解析路径

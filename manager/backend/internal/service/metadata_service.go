@@ -251,8 +251,9 @@ func (s *MetadataService) ResolveStorageDownloadPlan(ctx context.Context, resour
 	if item == nil && storageRefRequiresMetaRefs(displayPath) {
 		return nil, fmt.Errorf("%w: multi-ref storage item requires scanned meta item refs", ErrDownloadNotSupported)
 	}
-	refs := downloadRefsFromMetaItem(item)
-	if metaItemLayout(item) == "multi" && len(refs) == 0 {
+	descriptor := downloadItemDescriptor(item)
+	refs := downloadRefsFromDescriptor(descriptor)
+	if descriptor.Layout == dataitem.LayoutMulti && len(refs) == 0 {
 		return nil, fmt.Errorf("%w: multi item is missing item.refs; rescan the node to rebuild related refs", ErrDownloadNotSupported)
 	}
 	refs = normalizeDownloadRefs(resource.EngineType, displayPath, refs)
@@ -277,7 +278,7 @@ func (s *MetadataService) ResolveStorageDownloadPlan(ctx context.Context, resour
 	contentType := objectcontent.InferContentType(displayPath, "")
 	if len(refs) > 1 {
 		kind = models.DownloadKindBundle
-		fileName = bundleFileName(displayPath, item)
+		fileName = bundleFileName(displayPath, descriptor)
 		contentType = "application/zip"
 	} else if refs[0].FileName != "" {
 		fileName = refs[0].FileName
@@ -421,8 +422,7 @@ func (s *MetadataService) downloadMetaItem(engineID uint, storageRef string, ten
 	return nil
 }
 
-func downloadRefsFromMetaItem(item *commonModels.MetaItem) []models.DownloadRef {
-	descriptor := metaItemDescriptor(item)
+func downloadRefsFromDescriptor(descriptor dataitem.ItemDescriptor) []models.DownloadRef {
 	if len(descriptor.Refs) == 0 {
 		return nil
 	}
@@ -452,11 +452,7 @@ func storageRefRequiresMetaRefs(storageRef string) bool {
 	return ok && format.HasLayout(capability.Layouts, format.LayoutMulti)
 }
 
-func metaItemLayout(item *commonModels.MetaItem) string {
-	return string(metaItemDescriptor(item).Layout)
-}
-
-func metaItemDescriptor(item *commonModels.MetaItem) dataitem.ItemDescriptor {
+func downloadItemDescriptor(item *commonModels.MetaItem) dataitem.ItemDescriptor {
 	if item == nil {
 		return dataitem.ItemDescriptor{}
 	}
@@ -534,9 +530,9 @@ func validateDownloadRefs(engineType string, engineID uint, refs []models.Downlo
 	return nil
 }
 
-func bundleFileName(storageRef string, item *commonModels.MetaItem) string {
+func bundleFileName(storageRef string, descriptor dataitem.ItemDescriptor) string {
 	base := strings.TrimSuffix(path.Base(storageRef), path.Ext(storageRef))
-	formatName := metaItemDescriptor(item).Format
+	formatName := descriptor.Format
 	if formatName != "" && !strings.Contains(strings.ToLower(base), strings.ToLower(formatName)) {
 		base = base + "." + formatName
 	}

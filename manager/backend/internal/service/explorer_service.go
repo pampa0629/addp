@@ -7,7 +7,6 @@ import (
 
 	"github.com/addp/common/catalogview"
 	commonClient "github.com/addp/common/client"
-	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	commonUtils "github.com/addp/common/utils"
@@ -496,44 +495,10 @@ func (s *ExplorerService) getMetaNodes(ctx context.Context, engineID uint, engin
 	// 修正阈值：数据库表在 depth=2，对象存储对象在 depth=3
 	includeItems := expandDepth == -1 || expandDepth >= 2
 	if includeItems {
-		for i := range tree.Items {
-			item := &tree.Items[i]
-
-			// 动态计算 Depth：根据 full_name 中的分隔符数量
-			// - 对象存储: bucket/dir/file → depth=3
-			// - 数据库表: schema.table → depth=2
-			depth := calculateItemDepthByEngineType(engineType, item.ItemType, item.FullName, item.Attributes)
-
-			// 再次检查深度
-			if expandDepth != -1 && depth > expandDepth {
+		itemNodes := s.treeBuilder.ConvertMetaItemsForEngine(engineType, tree.Items)
+		for _, node := range itemNodes {
+			if expandDepth != -1 && node.Depth > expandDepth {
 				continue
-			}
-
-			// 将 MetaItem 转换为 MetaNode
-			// 为了避免 ID 冲突，使用虚拟 ID: 使用 node_id 作为实际的"虚拟"标识
-			// 这样所有 Items 的虚拟 ID 都会是其 parent_node_id (1-100 之间的某个值)
-			// 但为了保证唯一性,我们使用一个特殊的转换方法:
-			// 对于 Items,使用 meta_item.ID + 100000 作为虚拟 ID
-			virtualID := item.ID + 100000
-
-			node := &commonModels.MetaNode{
-				ID:             virtualID, // 使用虚拟 ID 避免与 meta_node 冲突
-				TenantID:       item.TenantID,
-				EngineID:       item.EngineID,
-				ParentNodeID:   &item.NodeID, // Item 的 NodeID 是其父节点
-				NodeType:       item.ItemType,
-				Name:           item.Name,
-				FullName:       item.FullName,
-				Depth:          depth, // 动态计算深度，不再硬编码
-				Path:           item.FullName,
-				ScanStatus:     "completed",
-				ItemCount:      0, // 叶子节点没有子树节点（RowCount 是数据行数，不是子节点数）
-				TotalSizeBytes: 0,
-				Attributes:     item.Attributes,
-			}
-			node.Attributes = withMetaItemIdentity(node.Attributes, item.ID)
-			if item.SizeBytes != nil {
-				node.TotalSizeBytes = *item.SizeBytes
 			}
 			allNodes = append(allNodes, node)
 		}
@@ -548,83 +513,6 @@ func (s *ExplorerService) getMetaNodes(ctx context.Context, engineID uint, engin
 		"filtered_nodes", len(allNodes))
 
 	return allNodes, nil
-}
-
-func withMetaItemIdentity(attrs map[string]interface{}, itemID uint) map[string]interface{} {
-	next := make(map[string]interface{}, len(attrs)+2)
-	for key, value := range attrs {
-		next[key] = value
-	}
-	next["item_id"] = itemID
-	next["is_meta_item"] = true
-	return next
-}
-
-func extractStringSliceFromSection(attrs map[string]interface{}, section, key string) []string {
-	if attrs == nil {
-		return []string{}
-	}
-	if sectionAttrs := explorerAttributeSection(attrs, section); sectionAttrs != nil {
-		return interfaceToExplorerStringSlice(sectionAttrs[key])
-	}
-	return []string{}
-}
-
-func interfaceToExplorerStringSlice(raw interface{}) []string {
-	switch v := raw.(type) {
-	case []string:
-		return v
-	case []interface{}:
-		result := make([]string, 0, len(v))
-		for _, item := range v {
-			if s, ok := item.(string); ok {
-				result = append(result, s)
-			}
-		}
-		return result
-	}
-	return []string{}
-}
-
-func int64AttributeFromSection(attrs map[string]interface{}, section, key string) int64 {
-	if attrs == nil {
-		return 0
-	}
-	if sectionAttrs := explorerAttributeSection(attrs, section); sectionAttrs != nil {
-		return toInt64(sectionAttrs[key])
-	}
-	return 0
-}
-
-func explorerAttributeSection(attrs map[string]interface{}, section string) map[string]interface{} {
-	current := attrs
-	for _, part := range strings.Split(section, ".") {
-		raw, ok := current[part]
-		if !ok {
-			return nil
-		}
-		next, ok := raw.(map[string]interface{})
-		if !ok {
-			return nil
-		}
-		current = next
-	}
-	return current
-}
-
-// toInt64 将 interface{} 转为 int64
-func toInt64(v interface{}) int64 {
-	switch n := v.(type) {
-	case int64:
-		return n
-	case float64:
-		return int64(n)
-	case int:
-		return int64(n)
-	case int32:
-		return int64(n)
-	}
-	return 0
 }
 
 // buildEngineRootNode 构建引擎根节点（降级方案）
@@ -644,52 +532,6 @@ func (s *ExplorerService) buildEngineRootNode(engine *commonModels.Engine) *cata
 		},
 		Children: []*catalogview.TreeNode{},
 	}
-}
-
-// calculateItemDepth 动态计算 Item 的深度
-// 根据 ItemType 和 FullName 计算节点在树中的深度
-func calculateItemDepth(itemType, fullName string, attributes commonModels.JSONMap) int {
-	return calculateItemDepthByEngineType("", itemType, fullName, attributes)
-}
-
-func calculateItemDepthByEngineType(engineType, itemType, fullName string, attributes commonModels.JSONMap) int {
-	// 对象存储类型（object）：根据路径中的斜杠数量计算
-	// 例如: "addp/image/file.jpg" → depth=3 (bucket=1, directory=2, object=3)
-	if itemType == "object" || isPathSemanticMetaItem(itemType, fullName, attributes, engineType) {
-		segments := strings.Split(strings.Trim(fullName, "/"), "/")
-		return len(segments)
-	}
-
-	// 数据库表类型（table）：根据点号数量计算
-	// 例如: "public.users" → depth=2 (schema=1, table=2)
-	if itemType == "table" {
-		segments := strings.Split(fullName, ".")
-		return len(segments)
-	}
-
-	// MongoDB 集合/图整体：通常是 database.collection 或 database.graph
-	if itemType == "collection" || itemType == "graph" {
-		segments := strings.Split(fullName, ".")
-		return len(segments)
-	}
-
-	// 默认深度为 2（大多数情况下 Items 在第二层）
-	return 2
-}
-
-func isPathSemanticMetaItem(itemType, fullName string, attributes commonModels.JSONMap, engineType string) bool {
-	if itemType != "table" {
-		return false
-	}
-	if strings.Contains(fullName, "/") {
-		return true
-	}
-	if preview.IsContentCatalogEngine(engineType) {
-		return true
-	}
-	formatName := strings.ToLower(strings.TrimSpace(commonJSON.StringFromSections(attributes, "format", "item")))
-	layout := strings.ToLower(strings.TrimSpace(commonJSON.StringFromSections(attributes, "layout", "item")))
-	return formatName != "" && layout != ""
 }
 
 // convertManagerEngineToCommon 将 Manager 的 Engine 转换为 Common 的 Engine

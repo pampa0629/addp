@@ -207,7 +207,7 @@ type StoreCapability struct {
 | `table_read_session` | 打开一次表读取会话并连续读取批次，避免大表 `LIMIT/OFFSET` 翻页退化。 | `TableReadSessionProvider` |
 | `batch_write` | 按批次写入结构化 item。 | `BatchWritableProvider` |
 | `table_write_session` | 打开一次表写入会话并连续写入批次，避免每批重复建立 COPY / bulk load 会话。 | `TableWriteSessionProvider` |
-| `table_write_prepare` | 执行表级写入前准备动作，如 `truncate_insert` 的清表。该能力不写入数据行。 | `TableWritePreparer` |
+| `table_write_prepare` | 执行表级写入前准备动作，如 ensure database / schema、create table、目标表结构校验和安全 schema evolution。该能力不写入数据行，也不承载 overwrite / append 策略。 | `TableWritePreparer` |
 
 `read` / `write` 总开关无独立调用价值，不进入 Store 能力声明。`atomic_rename`、`transactions`、`formats` 不作为 Store 顶层字段；如有真实调用方，应在对应 Provider 或更具体能力中声明。
 

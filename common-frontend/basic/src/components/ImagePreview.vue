@@ -85,24 +85,6 @@ const objectData = computed(() => props.data?.object || {})
 const content = computed(() => objectData.value?.content || {})
 const metadata = computed(() => content.value?.metadata || {})
 
-const parseMaybeJSON = (value) => {
-  if (!value || typeof value !== 'string') return value
-  try {
-    return JSON.parse(value)
-  } catch (error) {
-    return value
-  }
-}
-
-const attributes = computed(() => {
-  const parsed = parseMaybeJSON(objectData.value?.attributes)
-  if (parsed && typeof parsed === 'object') {
-    return parsed
-  }
-  const attrs = objectData.value?.attributes
-  return attrs && typeof attrs === 'object' ? attrs : {}
-})
-
 const imageURL = computed(() => {
   return (
     content.value?.url ||
@@ -123,20 +105,20 @@ const imageURL = computed(() => {
   )
 })
 
-// 从标准 media 信息获取图像元数据
 const imageMetadata = computed(() => {
-  const media = attributes.value?.type_info?.media
-  if (!media || typeof media !== 'object') {
-    return null
-  }
-  const width = Number(media.width)
-  const height = Number(media.height)
+  const width = Number(metadata.value?.width || imageLoadedDimensions.value.width)
+  const height = Number(metadata.value?.height || imageLoadedDimensions.value.height)
+  const format = metadata.value?.format || objectData.value?.format || ''
+  const colorSpace = metadata.value?.color_space || ''
+  if (!width && !height && !format && !colorSpace) return null
   return {
-    ...media,
+    width,
+    height,
+    format,
     resolution: width && height ? `${width} × ${height}` : '',
     megapixels: width && height ? (width * height) / 1000000 : 0,
     aspect_ratio: width && height ? (width / height).toFixed(2) : '',
-    color_space: media.color_space || ''
+    color_space: colorSpace
   }
 })
 
@@ -163,7 +145,6 @@ const fileName = computed(() => objectData.value?.path || objectData.value?.name
 const contentFormat = computed(() => {
   return String(
     metadata.value?.format ||
-      attributes.value?.item?.format ||
       objectData.value?.format ||
       ''
   ).toLowerCase()

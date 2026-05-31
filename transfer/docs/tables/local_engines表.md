@@ -1,35 +1,28 @@
-# local_engines 表结构和 API 说明
+# local_engines 旧表说明
 
-## 一、表结构概览
+更新时间：2026-05-30
 
-`transfer.local_engines` 表存储 Transfer 模块私有的存储引擎配置，用于不希望在 System 模块中共享的临时数据源。
+`transfer.local_engines` 是旧 Transfer 私有引擎配置路线。当前新主路径以 System engine 为唯一引擎身份来源，不再为 Transfer 新功能使用本地引擎。
 
-### 核心功能
+## 当前规则
 
-- **私有引擎配置**：存储 Transfer 模块独立的数据源配置
-- **临时数据源**：支持一次性或临时使用的数据源
-- **完整连接信息**：存储加密的连接信息
+- 新任务 endpoint 使用 `engine.scope=system` 和 `engine.id`。
+- Transfer 通过 System engine resolver 获取 engine type、connection info 和 plugin binding。
+- 不得在新 planner / executor 中重新引入 local engine 分支。
+- 如果旧 API 或旧表仍存在，只能视为历史数据或过渡管理入口。
 
----
+## 新 endpoint 示例
 
-## 二、表结构定义
+```json
+{
+  "engine": {"scope": "system", "id": 1},
+  "resource": {
+    "kind": "native_table",
+    "path": {"schema": "public", "table": "roads"}
+  },
+  "data_type": "table",
+  "representation": "native"
+}
+```
 
-### 2.1 核心字段
-
-| 字段名 | 类型 | 约束 | 说明 |
-|--------|------|------|------|
-| `id` | SERIAL | PRIMARY KEY | 引擎唯一标识 |
-| `tenant_id` | INTEGER | NOT NULL, INDEXED | 租户 ID |
-| `name` | VARCHAR(255) | NOT NULL | 引擎名称 |
-| `engine_type` | VARCHAR(50) | NOT NULL | 引擎类型 |
-| `description` | TEXT | | 描述 |
-| `is_active` | BOOLEAN | DEFAULT true | 是否激活 |
-| `connection_info` | JSONB | NOT NULL | 连接信息（加密存储） |
-| `created_at` | TIMESTAMP | DEFAULT NOW() | 创建时间 |
-
----
-
-## 三、相关文档
-
-- [tasks表](./tasks表.md) - 任务定义表
-- [数据库架构](../数据库架构.md) - Transfer 模块架构
+相关主文档见 [Transfer 模块基本概念及配置说明](../transfer-基本概念及配置说明.md)。

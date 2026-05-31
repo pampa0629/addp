@@ -2157,7 +2157,7 @@ func TestNormalizeObjectContentRequestFormatDropsUnknownLegacyFormat(t *testing.
 	}
 }
 
-func TestTableAccessIndexFromAttributesNormalizesFormat(t *testing.T) {
+func TestTableAccessIndexFromMetaAttributesNormalizesFormat(t *testing.T) {
 	index := tableAccessIndexFromMetaAttributes(map[string]interface{}{
 		"access_index": map[string]interface{}{
 			"table": map[string]interface{}{

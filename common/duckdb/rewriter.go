@@ -99,7 +99,7 @@ func BuildObjectTableMap(ctx context.Context, tenantID uint, engines []commonMod
 		}
 		tables := make(map[string]string)
 		for _, item := range items {
-			descriptor, ok := objectTableDescriptorFromMetaItem(item)
+			descriptor, ok := ObjectTableDescriptorFromMetaItem(item)
 			if !ok || descriptor.PhysicalPath == "" {
 				continue
 			}
@@ -119,11 +119,12 @@ func BuildObjectTableMap(ctx context.Context, tenantID uint, engines []commonMod
 }
 
 func IsObjectTableItem(item commonModels.MetaItem) bool {
-	_, ok := objectTableDescriptorFromMetaItem(item)
+	_, ok := ObjectTableDescriptorFromMetaItem(item)
 	return ok
 }
 
-func objectTableDescriptorFromMetaItem(item commonModels.MetaItem) (dataitem.ItemDescriptor, bool) {
+// ObjectTableDescriptorFromMetaItem returns the table descriptor for file/object catalog items DuckDB can read directly.
+func ObjectTableDescriptorFromMetaItem(item commonModels.MetaItem) (dataitem.ItemDescriptor, bool) {
 	switch item.ItemType {
 	case "object", "file":
 	default:

@@ -575,13 +575,11 @@ const handleTableSelection = (selection) => {
 }
 
 const objectTableConfigFromSelection = (selection) => {
-  const attrs = selection?.metadata?.attributes || {}
-  const item = attrs.item || {}
-  const storage = attrs.storage || {}
-  const dataType = String(item.data_type || '').toLowerCase()
-  const format = String(item.format || '').toLowerCase()
-  const layout = String(item.layout || 'single').toLowerCase()
-  const physicalPath = String(storage.physical_path || '').trim()
+  const metadata = selection?.metadata || {}
+  const dataType = String(metadata.data_type || '').toLowerCase()
+  const format = String(metadata.format || '').toLowerCase()
+  const layout = String(metadata.layout || 'single').toLowerCase()
+  const physicalPath = String(metadata.physical_path || '').trim()
   if (dataType !== 'table' || !physicalPath || !['parquet', 'orc', 'avro'].includes(format)) {
     return null
   }

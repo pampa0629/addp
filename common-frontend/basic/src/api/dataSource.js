@@ -6,7 +6,7 @@
  */
 
 import axios from 'axios'
-import { parseLocator as parseResourceLocator, buildLocator } from '../types/resourceLocator.js'
+import { parseLocator as parseResourceLocator } from '../types/resourceLocator.js'
 export { getEngineIconName } from '../utils/engineDisplay.js'
 
 /**
@@ -36,7 +36,7 @@ const authenticatedAxios = createAuthenticatedAxios()
 
 /**
  * 规范化树节点格式
- * 将 Meta API 返回的节点格式转换为组件期望的格式
+ * 将标准 TreeNode 转换为组件期望的格式
  *
  * @param {Array|Object} nodes - 节点或节点数组
  * @returns {Array} 规范化的节点数组
@@ -46,25 +46,23 @@ const normalizeTreeNodes = (nodes) => {
   const nodeArray = Array.isArray(nodes) ? nodes : [nodes]
 
   return nodeArray.map(node => {
-    // 基础字段转换
-    // 兼容两种格式：
-    // 1. Meta API 返回的 MetaNode: name, node_type, id
-    // 2. Service API 返回的 TreeNode: label, type, id (已是 locator URI)
+    const metadata = node.metadata || {}
     const normalized = {
       id: (typeof node.id === 'string' && node.id.startsWith('addp://')) ? node.id : `node-${node.id}`, // TreeNode 的 id 已经是 locator URI
       label: node.label || node.name || node.full_name || 'Unnamed',
       type: node.type || node.node_type || 'unknown',
       icon: getNodeIcon(node.type || node.node_type),
       metadata: {
-        node_id: node.metadata?.node_id || (typeof node.id === 'number' ? node.id : undefined),
-        item_id: node.metadata?.item_id || node.item_id,
-        engine_id: node.metadata?.engine_id || node.engine_id,
-        tenant_id: node.metadata?.tenant_id || node.tenant_id,
-        full_name: node.metadata?.full_name || node.full_name,
-        scan_status: node.metadata?.scan_status || node.scan_status,
-        scanned_at: node.metadata?.scanned_at || node.scanned_at,
-        item_count: node.metadata?.item_count || node.item_count,
-        total_size_bytes: node.metadata?.total_size_bytes || node.total_size_bytes
+        ...metadata,
+        node_id: metadata.node_id || (typeof node.id === 'number' ? node.id : undefined),
+        item_id: metadata.item_id || node.item_id,
+        engine_id: metadata.engine_id || node.engine_id,
+        tenant_id: metadata.tenant_id || node.tenant_id,
+        full_name: metadata.full_name || node.full_name,
+        scan_status: metadata.scan_status || node.scan_status,
+        scanned_at: metadata.scanned_at || node.scanned_at,
+        item_count: metadata.item_count || node.item_count,
+        total_size_bytes: metadata.total_size_bytes || node.total_size_bytes
       },
       // 判断是否有子节点
       hasChildren: node.hasChildren || ['schema', 'database', 'bucket', 'directory'].includes(node.type || node.node_type),
@@ -184,77 +182,6 @@ export async function getEngineTree(apiBaseUrl, engineId, options = {}) {
     // 按照 ADDP API 规范,响应格式为 { data: {...} }
     const data = response.data.data || response.data
 
-    // 兼容性处理：Meta 模块返回 top_nodes 和 items
-    if (data.top_nodes) {
-      const topNodes = normalizeTreeNodes(data.top_nodes)
-
-      // 如果有 items（表数据），需要将它们添加到对应的父节点下
-      if (data.items && data.items.length > 0) {
-        const itemsByNodeId = {}
-
-        // 按 node_id 分组
-        data.items.forEach(item => {
-          const nodeId = item.node_id
-          if (!itemsByNodeId[nodeId]) {
-            itemsByNodeId[nodeId] = []
-          }
-          itemsByNodeId[nodeId].push(item)
-        })
-
-        // 将 items 添加到对应的 top_nodes 下
-        topNodes.forEach(node => {
-          const nodeId = node.metadata.node_id
-          const schemaName = node.label
-
-          // 为 schema 节点构建 locator
-          node.locator = buildLocator({
-            engineId,
-            path: [schemaName],
-            type: node.type,
-            nodeId
-          })
-
-          if (itemsByNodeId[nodeId]) {
-            // 转换 items 为规范化节点
-            node.children = itemsByNodeId[nodeId].map(item => {
-              const tableName = item.name || 'Unnamed'
-              const locator = buildLocator({
-                engineId,
-                path: [schemaName, tableName],
-                type: item.item_type || 'table',
-                itemId: item.id
-              })
-
-              return {
-                id: `item-${item.id}`,
-                label: tableName,
-                type: item.item_type || 'table',
-                icon: getNodeIcon(item.item_type || 'table'),
-                locator: locator,
-                metadata: {
-                  item_id: item.id,
-                  engine_id: item.engine_id,
-                  node_id: item.node_id,
-                  tenant_id: item.tenant_id,
-                  full_name: item.full_name,
-                  row_count: item.row_count,
-                  size_bytes: item.size_bytes,
-                  attributes: item.attributes
-                },
-                hasChildren: false
-              }
-            })
-          }
-        })
-      }
-
-      return {
-        children: topNodes
-      }
-    }
-
-    // Service 模块返回 TreeNode 格式（直接是 children 数组）
-    // 需要经过 normalizeTreeNodes 处理以统一格式
     if (data.children) {
       const normalizedChildren = normalizeTreeNodes(data.children)
       return {

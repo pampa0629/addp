@@ -372,12 +372,12 @@ func relatedRefSpecKey(spec format.RelatedRefSpec) string {
 	return role + ":" + ext
 }
 
-func sourceTableInfoFromMetaAttributes(attrs map[string]interface{}) *datatype.TableInfo {
+func sourceTableInfoFromMetaAttributes(attrs map[string]interface{}, spatialInfo *datatype.SpatialInfo) *datatype.TableInfo {
 	info := datatype.TableInfoFromPayload(commonJSON.Section(attrs, "type_info.table"), "table")
 	if info == nil {
 		return nil
 	}
-	if spatialInfo := sourceSpatialInfoFromMetaAttributes(attrs); spatialInfo != nil {
+	if spatialInfo != nil {
 		geometryColumn := spatialInfo.PrimaryGeometryName()
 		for i := range info.Fields {
 			if strings.EqualFold(info.Fields[i].Name, geometryColumn) {
@@ -418,8 +418,8 @@ func cloneInterfaceMap(values map[string]interface{}) map[string]interface{} {
 
 func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding, transforms []TransformSpec) (executor.TableSourcePlan, error) {
 	itemDescriptor, hasItemAttributes := sourceItemDescriptorFromMetaAttributes(endpoint.Attributes)
-	sourceTableInfo := sourceTableInfoFromMetaAttributes(endpoint.Attributes)
 	sourceSpatialInfo := sourceSpatialInfoFromMetaAttributes(endpoint.Attributes)
+	sourceTableInfo := sourceTableInfoFromMetaAttributes(endpoint.Attributes, sourceSpatialInfo)
 	switch endpoint.Representation {
 	case representationNative:
 		sourcePath, err := nativeTablePath(engine.EngineID, endpoint.EndpointResource.Path)

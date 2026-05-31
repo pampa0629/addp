@@ -8,6 +8,8 @@ import (
 
 	"github.com/addp/common/client"
 	"github.com/addp/common/dataitem"
+	"github.com/addp/common/duckdb"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/service/internal/models"
 	"github.com/addp/service/internal/repository"
 )
@@ -159,15 +161,18 @@ func (s *QueryServiceService) detectObjectTable(tenantID, engineID uint, schemaN
 		log.Printf("[detectObjectTable] GetItemByCatalogPath(engineID=%d, catalogPath=%s) failed: %v", engineID, catalogPath, err)
 		return nil
 	}
-	objectTable := objectTableConfigFromMetaAttributes(item.Attributes)
+	objectTable := objectTableConfigFromMetaItem(item)
 	if len(objectTable) == 0 {
 		return nil
 	}
 	return objectTable
 }
 
-func objectTableConfigFromMetaAttributes(attrs map[string]interface{}) map[string]interface{} {
-	descriptor, ok := objectTableDescriptorFromMetaAttributes(attrs)
+func objectTableConfigFromMetaItem(item *commonModels.MetaItem) map[string]interface{} {
+	if item == nil {
+		return nil
+	}
+	descriptor, ok := duckdb.ObjectTableDescriptorFromMetaItem(*item)
 	if !ok || descriptor.PhysicalPath == "" {
 		return nil
 	}
@@ -179,19 +184,6 @@ func objectTableConfigFromMetaAttributes(attrs map[string]interface{}) map[strin
 		"physical_path": descriptor.PhysicalPath,
 		"layout":        string(layout),
 		"format":        descriptor.Format,
-	}
-}
-
-func objectTableDescriptorFromMetaAttributes(attrs map[string]interface{}) (dataitem.ItemDescriptor, bool) {
-	descriptor := dataitem.DescriptorFromAttributes(attrs)
-	if descriptor.DataType != dataitem.DataTypeTable {
-		return dataitem.ItemDescriptor{}, false
-	}
-	switch descriptor.Format {
-	case "parquet", "orc", "avro":
-		return descriptor, true
-	default:
-		return dataitem.ItemDescriptor{}, false
 	}
 }
 

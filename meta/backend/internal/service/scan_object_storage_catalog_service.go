@@ -819,12 +819,16 @@ func needsContentFormatDetection(formatName string) bool {
 }
 
 func itemRowCountFromMetaAttributes(attrs map[string]interface{}) *int64 {
-	tableInfo := datatype.TableInfoFromPayload(commonJSON.Section(attrs, "type_info.table"), "")
+	tableInfo := tableInfoFromMetaAttributes(attrs)
 	if tableInfo == nil || tableInfo.RowCount == nil || *tableInfo.RowCount <= 0 {
 		return nil
 	}
 	rowCount := *tableInfo.RowCount
 	return &rowCount
+}
+
+func tableInfoFromMetaAttributes(attrs map[string]interface{}) *datatype.TableInfo {
+	return datatype.TableInfoFromPayload(commonJSON.Section(attrs, "type_info.table"), "")
 }
 
 func itemFingerprintForExtraction(engineID uint, catalogResource metacatalog.StorageResource) string {

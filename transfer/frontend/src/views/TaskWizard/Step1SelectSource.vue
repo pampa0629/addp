@@ -255,7 +255,17 @@ function treeNodeToCatalogNode(node) {
     },
     attributes,
     meta_id: metadata.meta_id,
-    full_name: metadata.full_name
+    full_name: metadata.full_name,
+    data_type: metadata.data_type,
+    representation: metadata.representation,
+    format: metadata.format,
+    layout: metadata.layout,
+    physical_path: metadata.physical_path,
+    size_bytes: metadata.size_bytes,
+    last_modified_at: metadata.last_modified_at,
+    row_count: metadata.row_count,
+    field_count: metadata.field_count,
+    spatial: metadata.spatial
   }
 }
 
@@ -362,6 +372,11 @@ function syncSource(node) {
         kind: node.kind,
         term: node.term,
         path: node.path,
+        data_type: nodeDataType(node),
+        representation: representationForSelection(node),
+        format: nodeFormat(node),
+        layout: node.layout,
+        physical_path: node.physical_path,
         attributes: node.attributes || {}
       }
     }
@@ -423,39 +438,28 @@ function nodeFormat(node) {
 }
 
 function nodeAttribute(node, key) {
-  if (!node?.attributes) return ''
-  const attrs = node.attributes
-  return String(attrs.item?.[key] || node?.[key] || '').trim()
+  return String(node?.[key] || '').trim()
 }
 
 function buildSelectedSourceSummary(node) {
   if (!node) return null
 
-  const attrs = node.attributes || {}
-  const fields = tableFieldsFromMetaAttributes(attrs)
   const loadedFields = props.wizardState.sourceFields?.value || []
   const fieldCount = firstPresent(
-    numericValue(attrs.field_count),
-    numericValue(attrs.type_info?.table?.field_count),
-    numericValue(attrs.type_info?.table?.column_count),
-    fields.length || null,
+    numericValue(node.field_count),
     loadedFields.length || null
   )
   const rowCount = firstPresent(
-    numericValue(node.row_count),
-    numericValue(attrs.type_info?.table?.row_count)
+    numericValue(node.row_count)
   )
   const size = firstPresent(
-    numericValue(node.size),
-    numericValue(attrs.storage?.total_size),
-    numericValue(attrs.storage?.size_bytes)
+    numericValue(node.size_bytes)
   )
   const modified = firstPresent(
-    attrs.storage?.last_modified_at,
-    attrs.storage?.modified_at
+    node.last_modified_at
   )
   const format = selectedFormat.value
-  const spatial = spatialSummaryFromMetaAttributes(attrs, fields.length > 0 ? fields : loadedFields)
+  const spatial = node.spatial || spatialSummaryFromFields(loadedFields)
 
   const items = []
 
@@ -499,24 +503,14 @@ function buildSelectedSourceSummary(node) {
   }
 }
 
-function tableFieldsFromMetaAttributes(attrs) {
-  return Array.isArray(attrs?.type_info?.table?.fields) ? attrs.type_info.table.fields : []
-}
-
-function spatialSummaryFromMetaAttributes(attrs, fields) {
-  const spatial = attrs?.capabilities?.spatial || {}
-  const geometryColumns = Array.isArray(spatial.geometry_columns)
-    ? spatial.geometry_columns
-    : Array.isArray(spatial.geometryColumns)
-      ? spatial.geometryColumns
-      : []
-  const geometryField = geometryColumns[0] || geometryFieldFromFields(fields)
+function spatialSummaryFromFields(fields) {
+  const geometryField = geometryFieldFromFields(fields)
   if (!geometryField) return null
 
   return {
-    geometry: geometryField.name || spatial.primary_geometry_column || spatial.primaryGeometryColumn || t('transfer.taskWizard.sourceItemUnknown'),
-    geometryType: geometryField.geometry_type || geometryField.geometryType || spatial.geometry_type || spatial.geometryType || '',
-    srid: firstPresent(geometryField.srid, spatial.srid)
+    geometry: geometryField.name || t('transfer.taskWizard.sourceItemUnknown'),
+    geometryType: geometryField.geometry_type || geometryField.geometryType || '',
+    srid: geometryField.srid
   }
 }
 
@@ -662,6 +656,9 @@ function restoreSourceNodeFromState(state) {
       ...savedItem,
       is_item: savedItem.is_item !== false,
       is_container: false,
+      data_type: state.sourceDataType.value || savedItem.data_type || 'table',
+      representation: state.sourceRepresentation.value || savedItem.representation || 'native',
+      format: state.sourceFormat.value || savedItem.format || '',
       attributes: restoreSourceAttributes(state, savedItem.attributes)
     }
   }
@@ -684,6 +681,9 @@ function restoreSourceNodeFromState(state) {
           table ? { name: table, kind: 'table', term: 'table' } : null
         ].filter(Boolean)
       },
+      data_type: state.sourceDataType.value || 'table',
+      representation: state.sourceRepresentation.value || 'native',
+      format: state.sourceFormat.value || '',
       attributes: restoreSourceAttributes(state)
     }
   }
@@ -709,6 +709,9 @@ function restoreSourceNodeFromState(state) {
           }))
         ].filter(Boolean)
       },
+      data_type: state.sourceDataType.value || 'table',
+      representation: state.sourceRepresentation.value || 'encoded',
+      format: state.sourceFormat.value || '',
       attributes: restoreSourceAttributes(state)
     }
   }
@@ -729,6 +732,9 @@ function restoreSourceNodeFromState(state) {
           term: index === parts.length - 1 ? 'file' : 'directory'
         }))
       },
+      data_type: state.sourceDataType.value || 'table',
+      representation: state.sourceRepresentation.value || 'encoded',
+      format: state.sourceFormat.value || '',
       attributes: restoreSourceAttributes(state)
     }
   }
@@ -739,10 +745,9 @@ function restoreSourceNodeFromState(state) {
 function restoreSourceAttributes(state, savedAttributes = {}) {
   const attrs = { ...(savedAttributes || {}) }
   const item = {
-    ...(attrs.item || {}),
-    data_type: state.sourceDataType.value || attrs.item?.data_type || attrs.data_type || 'table',
-    representation: state.sourceRepresentation.value || attrs.item?.representation || attrs.representation || 'native',
-    format: state.sourceFormat.value || attrs.item?.format || attrs.format || ''
+    data_type: state.sourceDataType.value || 'table',
+    representation: state.sourceRepresentation.value || 'native',
+    format: state.sourceFormat.value || ''
   }
   delete attrs.data_type
   delete attrs.representation

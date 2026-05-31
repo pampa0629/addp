@@ -597,17 +597,7 @@ func attachMultiRefPreview(preview *models.TablePreview, formatType format.Forma
 	if preview == nil || preview.Object == nil || len(refs) == 0 {
 		return
 	}
-	attributeRefs := refAttributeDescriptors(formatType, refs)
 	previewRefs := refPreviewDescriptors(formatType, refs)
-	if preview.Object.Attributes == nil {
-		preview.Object.Attributes = models.JSONMap{}
-	}
-	itemAttrs := commonJSON.InterfaceMap(preview.Object.Attributes["item"])
-	if len(itemAttrs) == 0 {
-		itemAttrs = map[string]interface{}{}
-	}
-	itemAttrs["refs"] = attributeRefs
-	preview.Object.Attributes["item"] = itemAttrs
 	if preview.Object.Content == nil {
 		preview.Object.Content = &models.ObjectPreviewContent{}
 	}

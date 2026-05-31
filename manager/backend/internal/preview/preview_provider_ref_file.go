@@ -38,7 +38,6 @@ func (p *RefFilePreviewProvider) Preview(ctx context.Context, req *PreviewReques
 	if !ok {
 		return nil, fmt.Errorf("ref %s not found", req.RefPath)
 	}
-	attributeRefs := refAttributeDescriptors(formatType, refs)
 	previewRefs := refPreviewDescriptors(formatType, refs)
 	descriptor := refDescriptorForRef(formatType, ref)
 	preview := previewHintForRefDescriptor(descriptor, ref.Ref.Path)
@@ -75,7 +74,7 @@ func (p *RefFilePreviewProvider) Preview(ctx context.Context, req *PreviewReques
 					if truncated || content.Truncated {
 						content.Truncated = true
 					}
-					return p.objectPreview(req, contentCtx.bucket, ref, preview, attributeRefs, previewRefs, content), nil
+					return p.objectPreview(req, contentCtx.bucket, ref, preview, previewRefs, content), nil
 				}
 			}
 			content, truncated, err := handler.Handle(ctx, contentReq, func(limit int64) ([]byte, bool, error) {
@@ -96,12 +95,12 @@ func (p *RefFilePreviewProvider) Preview(ctx context.Context, req *PreviewReques
 				if truncated || content.Truncated {
 					content.Truncated = true
 				}
-				return p.objectPreview(req, contentCtx.bucket, ref, preview, attributeRefs, previewRefs, content), nil
+				return p.objectPreview(req, contentCtx.bucket, ref, preview, previewRefs, content), nil
 			}
 		}
 	}
 
-	return p.objectPreview(req, contentCtx.bucket, ref, preview, attributeRefs, previewRefs, &models.ObjectPreviewContent{
+	return p.objectPreview(req, contentCtx.bucket, ref, preview, previewRefs, &models.ObjectPreviewContent{
 		Kind:     models.ObjectPreviewKindUnsupported,
 		Text:     "暂不支持该相关内容的在线预览，请下载后查看。",
 		Metadata: map[string]interface{}{"format": preview.Format, "data_type": preview.DataType},
@@ -140,7 +139,7 @@ func refDescriptorForRef(formatType format.FormatType, ref format.RelatedRef) *f
 	return nil
 }
 
-func (p *RefFilePreviewProvider) objectPreview(req *PreviewRequest, bucket string, ref format.RelatedRef, preview previewHint, attributeRefs, previewRefs []map[string]interface{}, content *models.ObjectPreviewContent) *models.TablePreview {
+func (p *RefFilePreviewProvider) objectPreview(req *PreviewRequest, bucket string, ref format.RelatedRef, preview previewHint, previewRefs []map[string]interface{}, content *models.ObjectPreviewContent) *models.TablePreview {
 	if content != nil {
 		objectcontent.DecoratePreviewContent(content)
 		if len(previewRefs) > 0 {
@@ -167,7 +166,6 @@ func (p *RefFilePreviewProvider) objectPreview(req *PreviewRequest, bucket strin
 				"item": map[string]interface{}{
 					"data_type": preview.DataType,
 					"format":    string(preview.Format),
-					"refs":      attributeRefs,
 				},
 			},
 			Content:  content,

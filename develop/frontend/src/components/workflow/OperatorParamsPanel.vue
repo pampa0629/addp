@@ -41,7 +41,7 @@
                   </p>
 
                   <DataSourceCascader
-                    :api-base-url="param.ui_config?.api_base_url || '/api/v1/meta'"
+                    :api-base-url="param.ui_config?.api_base_url || '/api/v1/service'"
                     :engine-types="param.ui_config?.engine_types || ['postgresql', 'mysql', 'doris', 'clickhouse']"
                     :selectable-node-types="param.ui_config?.selectable_node_types || ['table']"
                     :enable-geometry-detection="param.ui_config?.enable_geometry_detection !== false"

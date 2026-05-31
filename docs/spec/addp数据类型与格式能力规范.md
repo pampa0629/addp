@@ -417,7 +417,7 @@ info provider 和 content reader 是上层消费者面向数据类型能力的�
 |---|---|---|
 | info provider | 提供对应 data type 的元数据，供 Meta 写入 `type_info.*` | `TableInfoProvider`、`DocumentInfoProvider`、`MediaInfoProvider`、`ContainerInfoProvider` |
 | sample / text reader | 提供按 data type 组织后的轻量内容数据，供 Manager / Search / Transfer 探查消费 | `TableSampleReader`、`DocumentTextReader`、`MediaThumbnailReader` |
-| continuous reader provider | 打开一次连续读取会话，供 Transfer 等批处理消费 | `TableReaderProvider`、`MultiTableReaderProvider` |
+| continuous reader provider | 打开一次连续读取会话，供 Transfer 等批处理消费 | `TableReaderProvider`、`MultiTableReaderProvider`、`ScopeTableReaderProvider` |
 | writer provider | 打开一次连续写出会话，供 Transfer 写侧消费 | `TableWriterProvider`、`MultiTableWriterProvider` |
 
 info provider 只回答对应 data type 的元数据语义；sample / text reader 只回答预览、探查和轻量片段读取；continuous reader provider / writer provider 面向全量批处理。它们都不回答格式识别，也不回答 item 归并。
@@ -435,10 +435,21 @@ info provider 只回答对应 data type 的元数据语义；sample / text reade
 - `MultiTableInfoProvider` / `MultiTableSampleReader`：面向 Shapefile 等 multi table 的类型信息与样本读取。
 - `MultiTableReaderProvider` / `MultiTableWriterProvider`：面向 Shapefile 等 multi table 的连续读写。
 - `ScopeTableInfoProvider` / `ScopeTableSampleReader`：面向 Parquet dataset 等 whole scope table 的类型信息与样本读取。
+- `ScopeTableReaderProvider`：面向 Parquet dataset 等 whole scope table 的连续读取。Transfer 读取 whole scope table 时必须使用连续 reader，不得用 sample reader 冒充全量读取。
 
 这些能力可以由同一个格式实现同时提供，也可以分别提供。新增能力必须按 info、sample、continuous reader、writer 明确拆分，不再新增同时表达多种消费意图的组合 provider。
 
 字段选择属于 table data type 的通用读取语义，不得作为某个格式的私有能力；术语使用 `field_selection`，不得使用容易与 GIS 坐标投影混淆的 projection。
+
+Transfer 消费 encoded table 时按 layout 选择 provider：
+
+| layout | 读取 / 写出入口 | 规则 |
+|---|---|---|
+| `single` | `TableReaderProvider` / `TableWriterProvider` | 单个 file/object 通过 contentio Reader / Writer 进入格式 reader / writer。 |
+| `multi` | `MultiTableReaderProvider` / `MultiTableWriterProvider` | Shapefile 等多 ref table 必须显式传入 `[]format.RelatedRef`；读取时优先使用 Meta 已确认 refs。 |
+| `whole` | `ScopeTableReaderProvider` | Parquet dataset 等 whole scope table 从已确认 scope ref 出发，并结合 contentio Lister 递归读取；第一版不定义通用 whole scope writer。 |
+
+Transfer planner 只根据 data type、representation、layout 和 format capability 选择上述通用入口，不得为 NFS -> MinIO、PostgreSQL -> PostgreSQL、Shapefile -> PostgreSQL 等具体组合建立专用格式路径。
 
 后续完整表格能力至少要覆盖：
 

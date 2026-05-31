@@ -5,8 +5,6 @@ import (
 	"log"
 	"strings"
 
-	"github.com/addp/common/datatype"
-	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/models"
 )
 
@@ -201,7 +199,7 @@ func (s *DataSourceService) GetNodeChildren(nodeID uint) ([]*TreeNode, error) {
 	children = append(children, s.treeBuilder.ConvertMetaNodes(engine, metaNodePtrs)...)
 
 	// 4.2 转换 MetaItem（将 Item 转换为 Node，再转换为 TreeNode）
-	virtualNodes := s.treeBuilder.ConvertMetaItems(metaItems)
+	virtualNodes := s.treeBuilder.ConvertMetaItemsForEngine(engine.EngineType, metaItems)
 	virtualNodePtrs := make([]*models.MetaNode, len(virtualNodes))
 	for i := range virtualNodes {
 		virtualNodePtrs[i] = virtualNodes[i]
@@ -249,7 +247,7 @@ func (s *DataSourceService) DetectTableMetadata(engineID uint, schema, table str
 	}
 
 	if tableItem.Attributes != nil {
-		spatialInfo := datatype.SpatialInfoFromPayload(commonJSON.Section(tableItem.Attributes, "capabilities.spatial"))
+		spatialInfo := spatialInfoFromMetaAttributes(tableItem.Attributes)
 		if spatialInfo != nil {
 			primary := spatialInfo.PrimaryGeometry()
 			metadata.GeometryColumn = spatialInfo.PrimaryGeometryName()

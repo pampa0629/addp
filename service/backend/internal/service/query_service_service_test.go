@@ -10,16 +10,19 @@ import (
 	commonModels "github.com/addp/common/models"
 )
 
-func TestObjectTableConfigFromAttributesUsesDataItemDescriptor(t *testing.T) {
+func TestObjectTableConfigFromMetaItemUsesCommonDuckDBDescriptor(t *testing.T) {
 	t.Parallel()
 
-	config := objectTableConfigFromMetaAttributes(map[string]interface{}{
-		"item": map[string]interface{}{
-			"data_type": "table",
-			"format":    ".parquet",
-		},
-		"storage": map[string]interface{}{
-			"physical_path": "/lake/sales",
+	config := objectTableConfigFromMetaItem(&commonModels.MetaItem{
+		ItemType: "object",
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"data_type": "table",
+				"format":    ".parquet",
+			},
+			"storage": map[string]interface{}{
+				"physical_path": "/lake/sales",
+			},
 		},
 	})
 
@@ -28,17 +31,20 @@ func TestObjectTableConfigFromAttributesUsesDataItemDescriptor(t *testing.T) {
 	}
 }
 
-func TestObjectTableConfigFromAttributesRejectsUnsupportedFormat(t *testing.T) {
+func TestObjectTableConfigFromMetaItemRejectsUnsupportedFormat(t *testing.T) {
 	t.Parallel()
 
-	config := objectTableConfigFromMetaAttributes(map[string]interface{}{
-		"item": map[string]interface{}{
-			"data_type": "table",
-			"format":    "csv",
-			"layout":    "single",
-		},
-		"storage": map[string]interface{}{
-			"physical_path": "/lake/sales.csv",
+	config := objectTableConfigFromMetaItem(&commonModels.MetaItem{
+		ItemType: "object",
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"data_type": "table",
+				"format":    "csv",
+				"layout":    "single",
+			},
+			"storage": map[string]interface{}{
+				"physical_path": "/lake/sales.csv",
+			},
 		},
 	})
 

@@ -215,6 +215,7 @@ func TestBuildFromMetadataTreeAttachesItems(t *testing.T) {
 	schemaID := uint(11)
 	rowCount := int64(42)
 	sizeBytes := int64(2048)
+	lastModified := time.Date(2026, 5, 31, 9, 30, 0, 0, time.UTC)
 	tree, err := builder.BuildFromMetadataTree(engine, &models.MetadataTree{
 		TopNodes: []models.MetaNode{
 			{
@@ -230,17 +231,37 @@ func TestBuildFromMetadataTreeAttachesItems(t *testing.T) {
 		},
 		Items: []models.MetaItem{
 			{
-				ID:        21,
-				EngineID:  7,
-				NodeID:    schemaID,
-				ItemType:  "table",
-				Name:      "roads",
-				FullName:  "public.roads",
-				RowCount:  &rowCount,
-				SizeBytes: &sizeBytes,
+				ID:             21,
+				EngineID:       7,
+				NodeID:         schemaID,
+				ItemType:       "table",
+				Name:           "roads",
+				FullName:       "public.roads",
+				RowCount:       &rowCount,
+				SizeBytes:      &sizeBytes,
+				LastModifiedAt: &lastModified,
 				Attributes: map[string]interface{}{
 					"item": map[string]interface{}{
 						"data_type": "table",
+					},
+					"storage": map[string]interface{}{
+						"physical_path": "warehouse/roads.parquet",
+					},
+					"type_info": map[string]interface{}{
+						"table": map[string]interface{}{
+							"fields": []interface{}{
+								map[string]interface{}{"name": "id", "type": "integer"},
+								map[string]interface{}{"name": "geom", "type": "geometry"},
+							},
+						},
+					},
+					"capabilities": map[string]interface{}{
+						"spatial": map[string]interface{}{
+							"geometry_columns": []interface{}{
+								map[string]interface{}{"name": "geom", "geometry_type": "Polygon", "srid": 4326},
+							},
+							"primary_geometry_column": "geom",
+						},
 					},
 				},
 			},
@@ -271,6 +292,25 @@ func TestBuildFromMetadataTreeAttachesItems(t *testing.T) {
 	}
 	if got := commonJSON.Int64(item.Metadata, "type_info.table", "row_count"); got != rowCount {
 		t.Fatalf("item type_info.table.row_count = %d, want %d", got, rowCount)
+	}
+	if got := item.Metadata["data_type"]; got != "table" {
+		t.Fatalf("item data_type metadata = %#v, want table", got)
+	}
+	if got := item.Metadata["physical_path"]; got != "warehouse/roads.parquet" {
+		t.Fatalf("item physical_path metadata = %#v, want warehouse/roads.parquet", got)
+	}
+	if got := item.Metadata["last_modified_at"]; got != lastModified.Format(time.RFC3339) {
+		t.Fatalf("item last_modified_at metadata = %#v, want %s", got, lastModified.Format(time.RFC3339))
+	}
+	if got := item.Metadata["field_count"]; got != 2 {
+		t.Fatalf("item field_count metadata = %#v, want 2", got)
+	}
+	spatial, ok := item.Metadata["spatial"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("item spatial metadata = %#v, want map", item.Metadata["spatial"])
+	}
+	if spatial["geometry"] != "geom" || spatial["geometry_type"] != "Polygon" || spatial["srid"] != 4326 {
+		t.Fatalf("item spatial metadata = %#v, want geom Polygon SRID 4326", spatial)
 	}
 }
 
@@ -309,6 +349,9 @@ func TestBuildFromMetaMergesWholeScopeItemWithSamePathDirectory(t *testing.T) {
 					"data_type": "table",
 					"format":    "parquet",
 				},
+				"storage": map[string]interface{}{
+					"physical_path": "lake",
+				},
 			},
 		},
 	}
@@ -326,6 +369,51 @@ func TestBuildFromMetaMergesWholeScopeItemWithSamePathDirectory(t *testing.T) {
 	}
 	if strings.Contains(child.Locator, "node_id=95") || !strings.Contains(child.Locator, "item_id=975") {
 		t.Fatalf("locator = %q, want whole-scope item locator", child.Locator)
+	}
+	if got := child.Metadata["data_type"]; got != "table" {
+		t.Fatalf("child data_type metadata = %#v, want table", got)
+	}
+	if got := child.Metadata["format"]; got != "parquet" {
+		t.Fatalf("child format metadata = %#v, want parquet", got)
+	}
+	if got := child.Metadata["layout"]; got != "whole" {
+		t.Fatalf("child layout metadata = %#v, want whole", got)
+	}
+	if got := child.Metadata["physical_path"]; got != "lake" {
+		t.Fatalf("child physical_path metadata = %#v, want lake", got)
+	}
+}
+
+func TestConvertMetaItemsForEngineUsesPathSemanticTableDepth(t *testing.T) {
+	builder := NewTreeBuilder(nil)
+	items := []models.MetaItem{
+		{
+			ID:       42,
+			EngineID: 26,
+			NodeID:   7,
+			ItemType: "table",
+			Name:     "orders",
+			FullName: "lake/warehouse/orders",
+			Attributes: map[string]interface{}{
+				"item": map[string]interface{}{
+					"layout":    "whole",
+					"data_type": "table",
+					"format":    "parquet",
+				},
+			},
+		},
+	}
+
+	nodes := builder.ConvertMetaItemsForEngine("nfs", items)
+	if len(nodes) != 1 {
+		t.Fatalf("len(nodes) = %d, want 1", len(nodes))
+	}
+	node := nodes[0]
+	if node.Depth != 3 {
+		t.Fatalf("node.Depth = %d, want 3", node.Depth)
+	}
+	if node.Attributes["item_id"] != uint(42) || node.Attributes["is_meta_item"] != true {
+		t.Fatalf("node attributes missing meta item identity: %#v", node.Attributes)
 	}
 }
 

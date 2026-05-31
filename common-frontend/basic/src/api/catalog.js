@@ -55,12 +55,8 @@ export function catalogNodesFromResponse(response) {
   return []
 }
 
-function catalogAttributeValue(attributes = {}, section, key) {
-  return attributes?.[section]?.[key] || attributes?.[key]
-}
-
 export function toCatalogBrowserNode(node) {
-  const nodePath = catalogAttributeValue(node.attributes, 'storage', 'path') || catalogPathToString(node.path) || node.name
+  const nodePath = catalogPathToString(node.path) || node.name
   const type = catalogNodeBrowserType(node)
   return {
     name: node.name,

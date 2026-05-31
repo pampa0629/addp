@@ -86,39 +86,16 @@ const objectData = computed(() => props.data?.object || {})
 const content = computed(() => objectData.value?.content || {})
 const metadata = computed(() => content.value?.metadata || {})
 
-const parseMaybeJSON = (value) => {
-  if (typeof value === 'string') {
-    try {
-      return JSON.parse(value)
-    } catch (error) {
-      console.warn('视频预览: JSON 解析失败', error)
-      return null
-    }
-  }
-  return value
-}
-
-const normalizedAttributes = computed(() => {
-  const attrs = objectData.value?.attributes
-  const parsed = parseMaybeJSON(attrs)
-  if (parsed && typeof parsed === 'object') {
-    return parsed
-  }
-  return attrs && typeof attrs === 'object' ? attrs : {}
-})
-
 const videoMetadata = computed(() => {
-  const media = normalizedAttributes.value?.type_info?.media
-  const raw = media && typeof media === 'object' ? media : {}
-  const width = raw.width
-  const height = raw.height
-  const durationMS = Number(raw.duration_ms)
+  const width = metadata.value?.width
+  const height = metadata.value?.height
+  const durationMS = Number(metadata.value?.duration_ms)
 
   return {
     duration: Number.isFinite(durationMS) && durationMS > 0 ? durationMS / 1000 : undefined,
     resolution: width && height ? `${width}x${height}` : undefined,
-    encoding: raw.encoding,
-    container: raw.mime_type || normalizedAttributes.value?.item?.format
+    encoding: metadata.value?.encoding,
+    container: metadata.value?.content_type || metadata.value?.format || objectData.value?.format
   }
 })
 

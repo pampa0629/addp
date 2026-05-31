@@ -13,7 +13,7 @@ Engine Plugin 是 ADDP 对外部数据系统和内部运行时的控制面入口
 - Meta 负责扫描任务和元数据落库。
 - Manager 负责页面树、预览组合和缓存。
 - Develop 负责编辑器、执行历史和交互体验。
-- Transfer 保留自己的 Reader / Writer / DataBatch 执行面；后续如需统一配置来源，应先形成 Transfer 模块适配层规范，再进入 common engine 稳定接口。
+- Transfer 负责任务配置、planner、policy、transform、worker、checkpoint、日志、指标和写后 Meta 扫描触发；具体 engine-native 读写必须消费 `common/engine` provider，不在 Transfer 内恢复私有 Reader / Writer 插件体系。
 
 ---
 
@@ -220,6 +220,7 @@ type StoreProvider interface {
 - `TableReadSessionProvider.OpenTableReadSession()`：打开表读取会话，连续读取批次；适合 PostgreSQL cursor、JDBC cursor、Parquet row group reader 等避免 offset 翻页退化的实现。
 - `BatchWritableProvider.WriteBatch()`：批量写入表或集合数据；图写入应由图模块或专用 graph provider 明确建模。
 - `TableWriteSessionProvider.OpenTableWriteSession()`：打开表写入会话，连续写入批次；适合 PostgreSQL COPY、JDBC bulk load 等避免每批重复建立写入会话的实现。
+- `TableWritePreparer.PrepareTableWrite()`：执行表级写入前准备动作，例如 ensure database / schema、create table、校验目标表结构和安全 schema evolution。该能力不写入数据行，也不承载 Transfer 的 overwrite / append policy。
 
 对象存储和文件系统不得互相继承，不共享 CatalogModel 或 catalog 拼装实现；二者最多共享内容流读写接口、MIME 推断、格式解析等底层 helper。
 
@@ -303,7 +304,7 @@ GORM、database/sql、Mongo driver、Neo4j driver、S3 client 都是实现 helpe
 - Manager：使用 Meta 树构建探查树；预览由 Manager 自身 preview provider / composer 组合完成。结构化数据优先消费 `BatchReadableProvider` 或只读 sample query；graph 预览优先消费 `type_info.graph` / `GraphMetadataProvider` 得到 schema 视图，并通过 `GraphSampleProvider` 或 `GraphQueryProvider` 获取轻量子图样本；对象/文件优先消费 `ContentReadableProvider` 并结合格式解析。
 - Develop：使用 `QueryRuntimeProvider`、`WorkflowRuntimeProvider`、`ScriptRuntimeProvider`；图结构展示入口使用 `GraphMetadataProvider` / `GraphQueryProvider`。
 - Service：发布普通查询服务时使用 query runtime 和 Meta item/spatial 元数据；图查询服务使用 `GraphQueryProvider`。图查询服务的易用向导应消费 graph item 的 `type_info.graph.node_shapes`，不得再从 Meta 树读取 Neo4j label item。
-- Transfer：执行面暂由 Transfer 自己负责；后续如需统一生成 Reader/Writer 配置，应在 Transfer 模块适配层中规范化。高吞吐数据搬运优先消费 batch / stream 能力，而不是 query runtime。
+- Transfer：使用 source / target endpoint 生成执行计划。native table 读写消费 `TableReadSessionProvider`、`BatchReadableProvider`、`TableWritePreparer`、`TableWriteSessionProvider`、`BatchWritableProvider`；encoded file/object 读写先通过 engine content provider 和 `common/engine/contentadapter` 构造 `common/contentio` 抽象，再交给 `common/format` provider。高吞吐数据搬运优先消费 batch / table session / content stream 能力，而不是 query runtime。
 
 ---
 

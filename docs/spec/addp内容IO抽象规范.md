@@ -209,6 +209,8 @@ Meta 已确认 refs
 
 multi 读取必须优先使用 Meta 已确认的 refs。Manager 和 Transfer 不得按扩展名重新枚举 sibling content 后猜 refs。
 
+Transfer 读取 multi table 时，必须把 `contentio.Reader` 和已确认的 `[]format.RelatedRef` 一起交给 `MultiTableReaderProvider`。Transfer 写出 multi table 时，由 planner 根据 format `RelatedRefSpec` 生成目标 refs，再把 `contentio.Writer` 和目标 refs 交给 `MultiTableWriterProvider`。`contentio` 不提供 multi writer 原语，也不负责提交一组 refs 的业务策略。
+
 ### scope
 
 ```text
@@ -219,6 +221,8 @@ Meta 已确认 scope ref
 ```
 
 scope 读取必须从 Meta 已确认的 whole scope 根范围出发。
+
+Transfer 读取 whole scope table 时，必须从已确认 scope ref 构造 `contentio.Reader` / `contentio.Lister`，再交给 `ScopeTableReaderProvider` 连续读取。不得使用 `ScopeTableSampleReader` 或分页 sample 能力冒充全量 Transfer 读取。
 
 ### engine-native
 

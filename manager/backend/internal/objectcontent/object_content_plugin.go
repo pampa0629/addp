@@ -178,7 +178,34 @@ func buildPreviewMetadata(req *ObjectContentRequest, limit int64) map[string]int
 	if req.ContentType != "" {
 		metadata["content_type"] = req.ContentType
 	}
+	appendAttributePreviewMetadata(metadata, req.Attributes)
 	return metadata
+}
+
+func appendAttributePreviewMetadata(metadata map[string]interface{}, attrs map[string]interface{}) {
+	if metadata == nil || len(attrs) == 0 {
+		return
+	}
+	copyMetadataValue(metadata, attrs, "width", "type_info.media", "width")
+	copyMetadataValue(metadata, attrs, "height", "type_info.media", "height")
+	copyMetadataValue(metadata, attrs, "duration_ms", "type_info.media", "duration_ms")
+	copyMetadataValue(metadata, attrs, "encoding", "type_info.media", "encoding")
+	copyMetadataValue(metadata, attrs, "color_space", "type_info.media", "color_space")
+	copyMetadataValue(metadata, attrs, "page_count", "type_info.document", "page_count")
+	copyMetadataValue(metadata, attrs, "title", "type_info.document", "title")
+	copyMetadataValue(metadata, attrs, "author", "format_info.pdf", "author")
+	copyMetadataValue(metadata, attrs, "creator", "format_info.pdf", "creator")
+}
+
+func copyMetadataValue(metadata map[string]interface{}, attrs map[string]interface{}, targetKey, section, sourceKey string) {
+	if _, exists := metadata[targetKey]; exists {
+		return
+	}
+	value := commonJSON.Value(attrs, section, sourceKey)
+	if value == nil || commonJSON.InterfaceString(value) == "" {
+		return
+	}
+	metadata[targetKey] = value
 }
 
 func setPreviewMaterial(content *models.ObjectPreviewContent, material string) {
