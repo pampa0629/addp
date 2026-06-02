@@ -2,6 +2,7 @@ package metaitem
 
 import (
 	"context"
+	"time"
 
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/datatype"
@@ -10,21 +11,41 @@ import (
 
 // CompositeItemInfo 是 Meta resolver 提取出的 data item 元信息。
 type CompositeItemInfo struct {
-	Fields     []datatype.FieldInfo
-	Document   *datatype.DocumentInfo
-	Media      *datatype.MediaInfo
-	Container  *datatype.ContainerInfo
-	Attributes map[string]interface{}
-	Layout     dataitem.Layout
-	DataType   dataitem.DataType
-	Format     string
-	EntryPath  string
-	RefFiles   []string
-	SizeBytes  *int64
+	Fields             []datatype.FieldInfo
+	Document           *datatype.DocumentInfo
+	Media              *datatype.MediaInfo
+	Container          *datatype.ContainerInfo
+	Attributes         map[string]interface{}
+	Layout             dataitem.Layout
+	DataType           dataitem.DataType
+	Format             string
+	PrimaryContentPath string
+	ScopePath          string
+	RefFiles           []string
+	SizeBytes          *int64
 }
 
 // ResourceClaimSet 记录 Meta resolver 已认领的源资源路径。
 type ResourceClaimSet map[string]bool
+
+// StorageFileRef 是 Meta item resolver 使用的扫描期文件资源引用。
+// 它不是 engine catalog 主模型；catalog 结构应由 plugin.CatalogEntry 表达。
+type StorageFileRef struct {
+	Name        string
+	Path        string
+	CatalogPath plugin.CatalogPath
+	Size        int64
+	ModifiedAt  time.Time
+	ContentType string
+}
+
+// StorageDirectoryRef 是 Meta item resolver 使用的扫描期目录资源引用。
+// 它不是 engine catalog 主模型；catalog 结构应由 plugin.CatalogEntry 表达。
+type StorageDirectoryRef struct {
+	Name        string
+	Path        string
+	CatalogPath plugin.CatalogPath
+}
 
 // DetectionResult 是 Meta 统一识别入口在一个扫描范围内产出的 item 集合。
 type DetectionResult struct {
@@ -74,12 +95,13 @@ func DetectedItemFromCompositeInfo(info *CompositeItemInfo, physicalPath string,
 	}
 	return &DetectedItem{
 		ResolvedItem: dataitem.ResolvedItem{
-			Layout:    info.Layout,
-			DataType:  info.DataType,
-			Format:    info.Format,
-			EntryPath: info.EntryPath,
-			SizeBytes: &sizeBytes,
-			RefList:   ItemRefsFromPaths(info.RefFiles),
+			Layout:             info.Layout,
+			DataType:           info.DataType,
+			Format:             info.Format,
+			PrimaryContentPath: info.PrimaryContentPath,
+			ScopePath:          info.ScopePath,
+			SizeBytes:          &sizeBytes,
+			RefList:            ItemRefsFromPaths(info.RefFiles),
 		},
 		PhysicalPath: physicalPath,
 		Fields:       info.Fields,
@@ -111,12 +133,12 @@ type DirectoryResolveInput struct {
 	EngineID       uint
 	CatalogPathFor func(path string) plugin.CatalogPath
 	DirPath        string
-	Files          []plugin.FileEntry
-	Subdirs        []plugin.DirEntry
+	Files          []StorageFileRef
+	Subdirs        []StorageDirectoryRef
 	// RecursiveFiles/RecursiveSubdirs 由扫描入口在需要识别 whole scope 时提供。
 	// resolver 只消费观察资源，不自行遍历存储引擎。
-	RecursiveFiles   []plugin.FileEntry
-	RecursiveSubdirs []plugin.DirEntry
+	RecursiveFiles   []StorageFileRef
+	RecursiveSubdirs []StorageDirectoryRef
 }
 
 // ItemResolver 是 Meta item 识别器的最小公共接口。

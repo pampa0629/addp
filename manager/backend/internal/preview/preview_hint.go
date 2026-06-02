@@ -9,12 +9,12 @@ import (
 )
 
 const (
-	previewMaterialText      = "text"
-	previewMaterialMarkdown  = "markdown"
-	previewMaterialJSON      = "json"
-	previewMaterialRawBinary = "raw_binary"
-	previewMaterialTable     = "table"
-	previewMaterialContainer = "container"
+	previewMaterialText        = "text"
+	previewMaterialMarkdown    = "markdown"
+	previewMaterialJSON        = "json"
+	previewMaterialRawBinary   = "raw_binary"
+	previewMaterialTable       = "table"
+	previewMaterialContainer   = "container"
 	previewMaterialUnsupported = "unsupported"
 )
 
@@ -85,9 +85,6 @@ func normalizePreviewHintFormat(input previewHintInput) format.FormatType {
 func previewHintDataType(formatType format.FormatType, contentType string) string {
 	if descriptor, ok := format.GetFormatDescriptor(formatType); ok && descriptor.DataType != "" {
 		return string(descriptor.DataType)
-	}
-	if capability, ok := format.GetFormatCapability(formatType); ok && capability.DataType != "" {
-		return string(capability.DataType)
 	}
 	contentType = strings.ToLower(strings.TrimSpace(contentType))
 	switch {

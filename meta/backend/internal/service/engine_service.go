@@ -16,6 +16,7 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/utils"
 	"github.com/addp/meta/internal/models"
+	metaRepo "github.com/addp/meta/internal/repository"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
@@ -37,6 +38,7 @@ type EngineService struct {
 	log             *slog.Logger
 	eventSubscriber *events.EngineEventSubscriber // Redis 事件订阅器
 	taskService     ScanTaskServiceInterface      // 扫描任务服务（用于处理 ScanConfig）
+	cleanupService  *CleanupService
 }
 
 // ScanTaskServiceInterface 扫描任务服务接口（避免循环依赖）
@@ -97,6 +99,11 @@ func (s *EngineService) SetTaskService(taskService ScanTaskServiceInterface) {
 	s.log.Info("扫描任务服务已注入到资源服务")
 }
 
+func (s *EngineService) SetCleanupService(cleanupService *CleanupService) {
+	s.cleanupService = cleanupService
+	s.log.Info("清理服务已注入到资源服务")
+}
+
 // ensureInternalClient 尝试按需初始化内部客户端（用于本地脚本未显式传入密钥的情况）
 func (s *EngineService) ensureInternalClient() {
 	if s.internalClient != nil {
@@ -122,12 +129,16 @@ func (s *EngineService) PreloadResources() error {
 
 	cache := make(map[uint]*engineCacheEntry, len(engines))
 	expiresAt := time.Now().Add(s.cacheTTL)
+	rootReconciled := 0
 	for i := range engines {
 		res := engines[i]
 		if !res.IsActive {
 			continue
 		}
 		engineCopy := res
+		if s.reconcileCatalogRoot(&engineCopy) {
+			rootReconciled++
+		}
 		cache[engineCopy.ID] = &engineCacheEntry{
 			resource:  &engineCopy,
 			expiresAt: expiresAt,
@@ -138,8 +149,27 @@ func (s *EngineService) PreloadResources() error {
 	s.engineCache = cache
 	s.cacheMu.Unlock()
 
-	s.log.Info("引擎缓存预加载完成", "active_engines", len(cache), "system_url", s.systemURL, "ttl_minutes", s.cacheTTL.Minutes())
+	s.log.Info("引擎缓存预加载完成", "active_engines", len(cache), "root_reconciled", rootReconciled, "system_url", s.systemURL, "ttl_minutes", s.cacheTTL.Minutes())
 	return nil
+}
+
+func (s *EngineService) reconcileCatalogRoot(resource *commonModels.Engine) bool {
+	if resource == nil || !resource.IsActive || resource.TenantID == nil {
+		return false
+	}
+	enginePlugin, err := plugin.Get(resource.EngineType)
+	if err != nil {
+		s.log.Debug("跳过 root reconcile，插件不存在", "engine_id", resource.ID, "engine_type", resource.EngineType, "error", err)
+		return false
+	}
+	if catalogModelForPlugin(enginePlugin) == nil {
+		return false
+	}
+	if _, err := ensureCatalogRootNode(metaRepo.NewScanRepository(s.db), *resource.TenantID, resource, enginePlugin); err != nil {
+		s.log.Warn("同步 catalog root 失败", "engine_id", resource.ID, "engine_type", resource.EngineType, "error", err)
+		return false
+	}
+	return true
 }
 
 func containsMaskedSensitive(info commonModels.ConnectionInfo) bool {
@@ -402,8 +432,11 @@ func (s *EngineService) GetEnginesWithStats(tenantID uint) ([]*models.ResourceWi
 	}
 	var totals []countRow
 	if err := s.db.Table("metadata.meta_node").
-		Where("engine_id IN ?", engineIDs).
-		Where("parent_node_id IS NULL").
+		Where("engine_id IN ? AND parent_node_id IN (?)", engineIDs,
+			s.db.Table("metadata.meta_node").
+				Select("id").
+				Where("engine_id IN ? AND parent_node_id IS NULL AND full_name = ?", engineIDs, ""),
+		).
 		Select("engine_id, COUNT(*) AS count").
 		Group("engine_id").
 		Scan(&totals).Error; err != nil {
@@ -415,8 +448,11 @@ func (s *EngineService) GetEnginesWithStats(tenantID uint) ([]*models.ResourceWi
 
 	var scanned []countRow
 	if err := s.db.Table("metadata.meta_node").
-		Where("engine_id IN ?", engineIDs).
-		Where("parent_node_id IS NULL AND scan_status = ?", "completed").
+		Where("engine_id IN ? AND scan_status = ? AND parent_node_id IN (?)", engineIDs, "completed",
+			s.db.Table("metadata.meta_node").
+				Select("id").
+				Where("engine_id IN ? AND parent_node_id IS NULL AND full_name = ?", engineIDs, ""),
+		).
 		Select("engine_id, COUNT(*) AS count").
 		Group("engine_id").
 		Scan(&scanned).Error; err != nil {
@@ -452,8 +488,8 @@ func (s *EngineService) GetEnginesWithStats(tenantID uint) ([]*models.ResourceWi
 		catalogRootTerm := ""
 		catalogTopTerm := ""
 		catalogTopI18nKey := ""
-		catalogItemTerm := ""
-		catalogItemI18nKey := ""
+		catalogLeafTerm := ""
+		catalogLeafI18nKey := ""
 
 		if cnt, ok := totalCount[res.ID]; ok {
 			totalCatalogNodes = int(cnt)
@@ -482,8 +518,8 @@ func (s *EngineService) GetEnginesWithStats(tenantID uint) ([]*models.ResourceWi
 						catalogTopI18nKey = plugin.CatalogLevelI18nKey(*model, level.Term)
 					}
 				}
-				catalogItemTerm = plugin.CatalogItemTerm(*model)
-				catalogItemI18nKey = plugin.CatalogLevelI18nKey(*model, catalogItemTerm)
+				catalogLeafTerm = plugin.CatalogLeafTerm(*model)
+				catalogLeafI18nKey = plugin.CatalogLevelI18nKey(*model, catalogLeafTerm)
 			}
 		}
 
@@ -495,8 +531,8 @@ func (s *EngineService) GetEnginesWithStats(tenantID uint) ([]*models.ResourceWi
 			CatalogRootTerm:       catalogRootTerm,
 			CatalogTopTerm:        catalogTopTerm,
 			CatalogTopI18nKey:     catalogTopI18nKey,
-			CatalogItemTerm:       catalogItemTerm,
-			CatalogItemI18nKey:    catalogItemI18nKey,
+			CatalogLeafTerm:       catalogLeafTerm,
+			CatalogLeafI18nKey:    catalogLeafI18nKey,
 			TotalCatalogNodes:     totalCatalogNodes,
 			ScannedCatalogNodes:   scannedCatalogNodes,
 			UnscannedCatalogNodes: totalCatalogNodes - scannedCatalogNodes,
@@ -523,7 +559,7 @@ func (s *EngineService) handleEngineChangeEvent(event events.EngineChangeEvent) 
 		s.ClearEngineCache(event.EngineID)
 
 		// 如果配置了 taskService，尝试处理扫描配置
-		if s.taskService != nil && s.internalClient != nil {
+		if s.internalClient != nil {
 			// 获取资源详情（包含 ScanConfig）
 			resource, err := s.internalClient.GetEngine(event.EngineID)
 			if err != nil {
@@ -532,9 +568,10 @@ func (s *EngineService) handleEngineChangeEvent(event events.EngineChangeEvent) 
 					"error", err)
 				return nil // 不阻塞事件处理
 			}
+			s.reconcileCatalogRoot(resource)
 
 			// 检查是否有扫描配置
-			if resource.ScanConfig != nil && (resource.ScanConfig.ImmediateScan || resource.ScanConfig.ScheduledScan) {
+			if s.taskService != nil && resource.ScanConfig != nil && (resource.ScanConfig.ImmediateScan || resource.ScanConfig.ScheduledScan) {
 				// 1. 处理立即扫描
 				if resource.ScanConfig.ImmediateScan {
 					s.log.Info("检测到立即扫描配置，准备触发扫描", "engine_id", event.EngineID)
@@ -562,7 +599,7 @@ func (s *EngineService) handleEngineChangeEvent(event events.EngineChangeEvent) 
 					}
 					s.log.Info("定时扫描任务已创建", "engine_id", event.EngineID)
 				}
-			} else {
+			} else if s.taskService != nil {
 				// 如果扫描配置被禁用或删除，删除对应的自动任务
 				if err := s.taskService.DeleteTaskByResourceID(event.EngineID); err != nil {
 					s.log.Warn("删除自动扫描任务失败",
@@ -592,6 +629,9 @@ func (s *EngineService) handleEngineChangeEvent(event events.EngineChangeEvent) 
 			} else {
 				s.log.Info("资源已删除，关联任务已清理", "engine_id", event.EngineID)
 			}
+		}
+		if s.cleanupService != nil {
+			s.cleanupService.CleanupEngineDeleted(context.Background(), event.EngineID, 0)
 		}
 
 	default:

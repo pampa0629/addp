@@ -516,7 +516,7 @@ DOCX / PPTX / WPS 是单资源文档文件。内置规范要求稳定识别格�
 
 Manager 文档预览应优先消费 `frontend_renderer`、`preview_material`、`content.kind` 等后端语义字段，并优先使用 raw / range / storage-stream URL 读取存储叶子内容；扩展名和 MIME 只作为兜底识别依据。没有 URL 时才允许在受限大小内使用 `raw_binary` + base64 兜底。
 
-`preview_material` 是 Manager 面向前端的展示材料或展示状态协议，取值如 `url`、`raw_binary`、`text`、`json`、`markdown`、`geojson`、`table`、`container`、`unsupported`。它不等同于 `common/format` 的 `content_readers` 声明；不得把 `raw_content`、`range_content`、`binary_content` 等 format capability 名称写入 `preview_material`。
+`preview_material` 是 Manager 面向前端的展示材料或展示状态协议，取值如 `url`、`raw_binary`、`text`、`json`、`markdown`、`geojson`、`table`、`container`、`unsupported`。它不等同于 `common/format` 的 `content_readers` 声明；不得把 `raw_content`、`range_content`、`binary_content` 等 descriptor 能力名称写入 `preview_material`。
 
 `frontend_renderer` 是 Manager 对前端渲染组件的建议，前端选择预览组件时应按 `frontend_renderer`、`preview_material`、`content.kind` 的顺序兜底。`content.kind` 表示内容的大类，不能替代展示材料协议；例如 `content.kind=json` 且 `preview_material=geojson`、`frontend_renderer=map` 时，应按地图预览处理。
 

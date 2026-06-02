@@ -66,7 +66,7 @@ Meta 只负责把正式规范中的 data type、type info 和横切事实写入�
 - `common/datatype` 中的通用事实结构，例如 `TableInfo`、`FieldInfo`、`SpatialInfo`。
 - 为 attributes 写入定义的轻量输入结构，例如 data item attributes input、dynamic schema attributes input。
 
-`metaattr` 不应接收 `metaitem.DetectedItem`、`plugin.ItemMetadata`、`plugin.IndexInfo`、`models.SpatialMetadata`、Manager DTO 等上层复杂类型。上层模块如果拿到 engine / format / query / 展示模型，应先在本层转换为轻量输入或 `datatype` 事实结构，再调用 `metaattr`，避免 attributes helper 反向依赖扫描、engine 或展示边界。
+`metaattr` 不应接收 `metaitem.DetectedItem`、`plugin.CatalogFacts`、`plugin.IndexFacts`、`models.SpatialMetadata`、Manager DTO 等上层复杂类型。上层模块如果拿到 engine / format / query / 展示模型，应先在本层转换为轻量输入或 `datatype` 事实结构，再调用 `metaattr`，避免 attributes helper 反向依赖扫描、engine 或展示边界。
 
 动态 schema 记录集合的 attributes 写入使用 `BuildDynamicSchemaAttributes` / `ApplyDynamicSchemaStatistics` 这条路径；字段画像写入 `type_info.table.fields`，采样和索引事实分别写入 `capabilities.statistics` / `capabilities.indexing`，不得写入 `type_info.document` 或新增 `type_info.collection`。
 
@@ -90,7 +90,7 @@ service/scan_object_storage_catalog_service.go
 
 ```text
 service/scan_filesystem_catalog_service.go
-  -> plugin.FileEntry
+  -> metaitem.StorageFileRef
   -> metaitem.ResolveItems                   # multi / whole / table resolver
   -> metaitem.InferSingleResourceItem        # 单文件兜底
   -> metaenrich.EnrichSingleTableFileItem    # deep enrich，必要时基于内容前缀修正格式
@@ -121,7 +121,7 @@ Manager 预览不会重新识别格式，只消费已落库 Meta attributes 中�
 
 - 资产发现：`GET /assets/discoverable`。
 - 引擎：`GET /engines`。
-- 扫描：`POST /scan/auto`、`POST /scan/engine`、`POST /scan/run/manual`。
+- 扫描：`POST /scan/auto`、`POST /scan/run/manual`。
 - 扫描运行：`GET /scan/runs`、`GET /scan/runs/:run_id`、`POST /scan/runs/:run_id/cancel`。
 - 扫描任务：`GET /scan/tasks`、`POST /scan/tasks`、`PUT /scan/tasks/:task_id`、`DELETE /scan/tasks/:task_id`、`POST /scan/tasks/:task_id/trigger`。
 - 元数据对象：`GET /metadata/object`、`POST /metadata/extract`。

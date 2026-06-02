@@ -66,7 +66,6 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 
 		// 扫描相关
 		api.POST("/scan/auto", handler.AutoScan)
-		api.POST("/scan/engine", handler.ScanEngine)
 		api.POST("/scan/run/manual", handler.CreateManualScanRun)
 		api.GET("/scan/runs", handler.ListScanRuns)
 		api.GET("/scan/runs/:run_id", handler.GetScanRun)

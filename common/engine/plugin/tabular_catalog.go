@@ -27,15 +27,15 @@ func TabularCatalogModel(namespaceTerm string) CatalogModelSpec {
 		PathVersion: CatalogPathVersion,
 		RootTerm:    "server",
 		Levels: []CatalogLevelSpec{
-			{Term: namespaceTerm, Kinds: []string{CatalogKindNamespace}, Container: true, I18nKey: CatalogTermI18nKey(namespaceTerm)},
-			{Term: CatalogTermTable, Kinds: []string{CatalogKindTable, "view", "materialized_view", "external_table"}, Item: true, I18nKey: CatalogTermI18nKey(CatalogTermTable)},
+			{Term: namespaceTerm, Kinds: []string{CatalogKindNamespace}, Role: CatalogRoleBranch, I18nKey: CatalogTermI18nKey(namespaceTerm)},
+			{Term: CatalogTermTable, Kinds: []string{CatalogKindTable, "view", "materialized_view", "external_table"}, Role: CatalogRoleLeaf, I18nKey: CatalogTermI18nKey(CatalogTermTable)},
 		},
 	}
 }
 
 type TabularCatalogCallbacks struct {
 	NamespaceTerm         string
-	ListNamespaces        func(ctx context.Context, db *gorm.DB) ([]NamespaceInfo, error)
+	ListNamespaces        func(ctx context.Context, db *gorm.DB, root CatalogPath) ([]CatalogEntry, error)
 	ListTables            func(ctx context.Context, db *gorm.DB, namespace string) ([]datatype.TableInfo, error)
 	ListColumns           func(ctx context.Context, db *gorm.DB, namespace, table string) ([]datatype.FieldInfo, error)
 	RowCount              func(ctx context.Context, db *gorm.DB, namespace, table string) (int64, error)
@@ -43,7 +43,7 @@ type TabularCatalogCallbacks struct {
 }
 
 // ListTabularCatalogChildren maps tabular callbacks to CatalogProvider.
-func ListTabularCatalogChildren(ctx context.Context, callbacks TabularCatalogCallbacks, engine *Engine, parent CatalogPath, opts ListOptions) ([]CatalogNode, error) {
+func ListTabularCatalogChildren(ctx context.Context, callbacks TabularCatalogCallbacks, engine *Engine, parent CatalogPath, opts ListOptions) ([]CatalogEntry, error) {
 	if err := callbacks.validate(); err != nil {
 		return nil, err
 	}
@@ -53,93 +53,100 @@ func ListTabularCatalogChildren(ctx context.Context, callbacks TabularCatalogCal
 	}
 
 	namespaceTerm := callbacks.namespaceTerm()
-	if len(parent.Segments) == 0 {
-		namespaces, err := callbacks.ListNamespaces(ctx, db)
+	model := TabularCatalogModel(namespaceTerm)
+	if IsCatalogRootPath(parent) {
+		if err := requireCatalogRootPath(parent, model); err != nil {
+			return nil, err
+		}
+		namespaces, err := callbacks.ListNamespaces(ctx, db, parent)
 		if err != nil {
 			return nil, err
 		}
-		nodes := make([]CatalogNode, 0, len(namespaces))
+		nodes := make([]CatalogEntry, 0, len(namespaces))
 		for _, namespace := range namespaces {
 			if callbacks.isSystemNamespace(namespace.Name) {
 				continue
 			}
-			nodes = append(nodes, CatalogNode{
-				Name:        namespace.Name,
-				Path:        appendCatalogSegment(parent, engine.ID, namespaceTerm, CatalogKindNamespace, namespace.Name),
-				Term:        namespaceTerm,
-				Kind:        CatalogKindNamespace,
-				IsContainer: true,
-				Stats: map[string]interface{}{
-					"table_count": namespace.TableCount,
-				},
-			})
+			nodes = append(nodes, namespace)
 		}
 		return nodes, nil
 	}
 
-	namespace := parent.Segments[0].Name
+	segments, err := requireCatalogBusinessPath(parent, model)
+	if err != nil {
+		return nil, err
+	}
+	namespace := segments[0].Name
 	tables, err := callbacks.ListTables(ctx, db, namespace)
 	if err != nil {
 		return nil, err
 	}
-	nodes := make([]CatalogNode, 0, len(tables))
+	nodes := make([]CatalogEntry, 0, len(tables))
 	for _, table := range tables {
-		nodes = append(nodes, CatalogNode{
-			Name:       table.Name,
-			Path:       appendCatalogSegment(parent, engine.ID, CatalogTermTable, CatalogKindTable, table.Name),
-			Term:       CatalogTermTable,
-			Kind:       tableCatalogKind(table),
-			IsItem:     true,
-			Stats:      tableStats(table),
-			Attributes: tableAttributes(namespace, table),
+		tableInfo := table.Clone()
+		nodes = append(nodes, CatalogEntry{
+			Name:      table.Name,
+			Path:      appendCatalogSegment(parent, engine.ID, CatalogTermTable, CatalogKindTable, table.Name),
+			Term:      CatalogTermTable,
+			Kind:      tableCatalogKind(table),
+			Role:      CatalogRoleLeaf,
+			Table:     tableInfo,
+			UpdatedAt: table.UpdatedAt,
 		})
 	}
 	return nodes, nil
 }
 
 // ResolveTabularCatalogPath resolves a namespace or table node.
-func ResolveTabularCatalogPath(ctx context.Context, callbacks TabularCatalogCallbacks, engine *Engine, path CatalogPath) (*CatalogNode, error) {
+func ResolveTabularCatalogPath(ctx context.Context, callbacks TabularCatalogCallbacks, engine *Engine, path CatalogPath) (*CatalogEntry, error) {
 	if err := callbacks.validate(); err != nil {
 		return nil, err
 	}
-	if len(path.Segments) == 0 {
-		return &CatalogNode{
-			Name:        "",
-			Path:        CatalogPath{Version: CatalogPathVersion, EngineID: engine.ID},
-			Term:        "server",
-			Kind:        "server",
-			IsContainer: true,
-		}, nil
+	namespaceTerm := callbacks.namespaceTerm()
+	model := TabularCatalogModel(namespaceTerm)
+	if IsCatalogRootPath(path) {
+		if err := requireCatalogRootPath(path, model); err != nil {
+			return nil, err
+		}
+		return &CatalogEntry{Name: "", Path: path, Term: model.RootTerm, Kind: model.RootTerm, Role: CatalogRoleBranch}, nil
 	}
 
-	last := path.Segments[len(path.Segments)-1]
-	if len(path.Segments) == 1 {
-		return &CatalogNode{
-			Name:        last.Name,
-			Path:        path,
-			Term:        callbacks.namespaceTerm(),
-			Kind:        CatalogKindNamespace,
-			IsContainer: true,
-		}, nil
-	}
-
-	item, err := DescribeTabularItem(ctx, callbacks, engine, path, MetadataOptions{})
+	segments, err := requireCatalogBusinessPath(path, model)
 	if err != nil {
 		return nil, err
 	}
-	kind := item.Kind
+	last := segments[len(segments)-1]
+	if len(segments) == 1 {
+		return &CatalogEntry{
+			Name: last.Name,
+			Path: path,
+			Term: namespaceTerm,
+			Kind: CatalogKindNamespace,
+			Role: CatalogRoleBranch,
+		}, nil
+	}
+
+	facts, err := DescribeTabularCatalogFacts(ctx, callbacks, engine, path, CatalogFactsOptions{})
+	if err != nil {
+		return nil, err
+	}
+	kind := facts.Kind
 	if kind == "" {
 		kind = CatalogKindTable
 	}
-	return tabularCatalogNodeFromItem(path, last.Name, kind, item), nil
+	return tabularCatalogEntryFromFacts(path, last.Name, kind, facts), nil
 }
 
-// DescribeTabularItem maps tabular column callbacks and table stats to ItemMetadataProvider.
-func DescribeTabularItem(ctx context.Context, callbacks TabularCatalogCallbacks, engine *Engine, path CatalogPath, opts MetadataOptions) (*ItemMetadata, error) {
+// DescribeTabularCatalogFacts maps tabular column callbacks and table stats to CatalogFactsProvider.
+func DescribeTabularCatalogFacts(ctx context.Context, callbacks TabularCatalogCallbacks, engine *Engine, path CatalogPath, opts CatalogFactsOptions) (*CatalogFacts, error) {
 	if err := callbacks.validate(); err != nil {
 		return nil, err
 	}
-	if len(path.Segments) < 2 {
+	segments, err := requireCatalogBusinessPath(path, TabularCatalogModel(callbacks.namespaceTerm()))
+	if err != nil {
+		return nil, err
+	}
+	if len(segments) < 2 {
 		return nil, fmt.Errorf("tabular item path requires namespace and table segments")
 	}
 
@@ -148,8 +155,8 @@ func DescribeTabularItem(ctx context.Context, callbacks TabularCatalogCallbacks,
 		return nil, fmt.Errorf("获取连接池失败：%w", err)
 	}
 
-	namespace := path.Segments[0].Name
-	table := path.Segments[len(path.Segments)-1].Name
+	namespace := segments[0].Name
+	table := segments[len(segments)-1].Name
 	columns, err := callbacks.ListColumns(ctx, db, namespace, table)
 	if err != nil {
 		return nil, err
@@ -158,20 +165,10 @@ func DescribeTabularItem(ctx context.Context, callbacks TabularCatalogCallbacks,
 	fields := NormalizeFieldInfos(columns)
 
 	tableInfo, hasTableInfo := findTableInfo(ctx, callbacks, db, namespace, table)
-	stats := map[string]interface{}{}
 	kind := CatalogKindTable
-	attrs := map[string]interface{}{
-		"namespace": namespace,
-		"table":     table,
-	}
 	var updatedAt *time.Time
 	if hasTableInfo {
 		kind = tableCatalogKind(tableInfo)
-		stats = tableStats(tableInfo)
-		attrs = tableAttributes(namespace, tableInfo)
-		if _, ok := attrs["table"]; !ok {
-			attrs["table"] = table
-		}
 		updatedAt = tableInfo.UpdatedAt
 	}
 	if opts.IncludeStatistics && callbacks.RowCount != nil {
@@ -180,7 +177,7 @@ func DescribeTabularItem(ctx context.Context, callbacks TabularCatalogCallbacks,
 			tableInfo.RowCount = &rowCount
 		}
 	}
-	return buildTabularItemMetadata(path, namespace, table, fields, tableInfo, hasTableInfo, kind, stats, attrs, updatedAt), nil
+	return buildTabularCatalogFacts(path, namespace, table, fields, tableInfo, hasTableInfo, kind, updatedAt), nil
 }
 
 func primaryKeyFields(fields []datatype.FieldInfo) []string {
@@ -196,62 +193,38 @@ func primaryKeyFields(fields []datatype.FieldInfo) []string {
 	return keys
 }
 
-func tabularCatalogNodeFromItem(path CatalogPath, name, kind string, item *ItemMetadata) *CatalogNode {
+func tabularCatalogEntryFromFacts(path CatalogPath, name, kind string, facts *CatalogFacts) *CatalogEntry {
 	if kind == "" {
 		kind = CatalogKindTable
 	}
-	var stats map[string]interface{}
-	var attrs map[string]interface{}
-	if item == nil {
-		return &CatalogNode{
-			Name:   name,
-			Path:   path,
-			Term:   CatalogTermTable,
-			Kind:   kind,
-			IsItem: true,
+	if facts == nil {
+		return &CatalogEntry{
+			Name: name,
+			Path: path,
+			Term: CatalogTermTable,
+			Kind: kind,
+			Role: CatalogRoleLeaf,
 		}
 	}
-	if item.Table != nil {
-		stats = tableStats(*item.Table)
-		attrs = tableAttributes("", *item.Table)
-	}
-	if len(stats) == 0 {
-		stats = item.Stats
-	}
-	if len(attrs) == 0 {
-		attrs = item.Attributes
-	}
-	return &CatalogNode{
-		Name:       name,
-		Path:       path,
-		Term:       CatalogTermTable,
-		Kind:       kind,
-		IsItem:     true,
-		Stats:      stats,
-		Attributes: attrs,
+	return &CatalogEntry{
+		Name:      name,
+		Path:      path,
+		Term:      CatalogTermTable,
+		Kind:      kind,
+		Role:      CatalogRoleLeaf,
+		Table:     CatalogFactsTableInfo(facts),
+		UpdatedAt: facts.UpdatedAt,
 	}
 }
 
-func buildTabularItemMetadata(path CatalogPath, namespace, table string, fields []datatype.FieldInfo, tableInfo datatype.TableInfo, hasTableInfo bool, kind string, stats map[string]interface{}, attrs map[string]interface{}, updatedAt *time.Time) *ItemMetadata {
+func buildTabularCatalogFacts(path CatalogPath, namespace, table string, fields []datatype.FieldInfo, tableInfo datatype.TableInfo, hasTableInfo bool, kind string, updatedAt *time.Time) *CatalogFacts {
 	fields = NormalizeFieldInfos(fields)
 	if kind == "" {
 		kind = CatalogKindTable
 	}
-	if stats == nil {
-		stats = map[string]interface{}{}
-	}
-	if attrs == nil {
-		attrs = tableAttributes(namespace, tableInfo)
-	}
 	if hasTableInfo {
 		if tableInfo.Kind != "" {
 			kind = tableCatalogKind(tableInfo)
-		}
-		if len(stats) == 0 {
-			stats = tableStats(tableInfo)
-		}
-		if len(attrs) == 0 {
-			attrs = tableAttributes(namespace, tableInfo)
 		}
 		if updatedAt == nil {
 			updatedAt = tableInfo.UpdatedAt
@@ -263,25 +236,32 @@ func buildTabularItemMetadata(path CatalogPath, namespace, table string, fields 
 	if len(tableInfo.PrimaryKey) == 0 {
 		tableInfo.PrimaryKey = primaryKeyFields(fields)
 	}
-	if tableInfo.RowCount != nil {
-		stats["row_count"] = *tableInfo.RowCount
+	if len(tableInfo.Native) == 0 {
+		tableInfo.Native = map[string]interface{}{}
 	}
-	if tableInfo.SizeBytes != nil {
-		stats["size_bytes"] = *tableInfo.SizeBytes
-	}
-	if _, ok := attrs["namespace"]; !ok && namespace != "" {
-		attrs["namespace"] = namespace
-	}
-	if _, ok := attrs["table"]; !ok && table != "" {
-		attrs["table"] = table
+	if namespace != "" {
+		tableInfo.Native["namespace"] = namespace
 	}
 
-	return &ItemMetadata{
-		Path:       path,
-		Kind:       kind,
-		Table:      tableInfo.Clone(),
-		Attributes: attrs,
-		UpdatedAt:  updatedAt,
+	return &CatalogFacts{
+		Path:      path,
+		Kind:      kind,
+		Table:     tableInfo.Clone(),
+		UpdatedAt: updatedAt,
+	}
+}
+
+func TabularNamespaceCatalogEntry(root CatalogPath, namespaceTerm, name string, leafCount int) CatalogEntry {
+	if namespaceTerm == "" {
+		namespaceTerm = CatalogTermDatabase
+	}
+	return CatalogEntry{
+		Name:      name,
+		Path:      appendCatalogSegment(root, root.EngineID, namespaceTerm, CatalogKindNamespace, name),
+		Term:      namespaceTerm,
+		Kind:      CatalogKindNamespace,
+		Role:      CatalogRoleBranch,
+		LeafCount: &leafCount,
 	}
 }
 
@@ -307,47 +287,6 @@ func tableCatalogKind(table datatype.TableInfo) string {
 		kind = CatalogKindTable
 	}
 	return kind
-}
-
-func tableStats(table datatype.TableInfo) map[string]interface{} {
-	stats := map[string]interface{}{}
-	if table.RowCount != nil {
-		stats["row_count"] = *table.RowCount
-	}
-	if table.SizeBytes != nil {
-		stats["size_bytes"] = *table.SizeBytes
-	}
-	return stats
-}
-
-func tableAttributes(namespace string, table datatype.TableInfo) map[string]interface{} {
-	attrs := map[string]interface{}{
-		"namespace": namespace,
-	}
-	if table.Name != "" {
-		attrs["table"] = table.Name
-	}
-	if table.Comment != "" {
-		attrs["comment"] = table.Comment
-	}
-	if table.UpdatedAt != nil {
-		attrs["updated_at"] = table.UpdatedAt
-	}
-	if len(table.Native) > 0 {
-		attrs["native"] = cloneInterfaceMap(table.Native)
-	}
-	return attrs
-}
-
-func cloneInterfaceMap(values map[string]interface{}) map[string]interface{} {
-	if len(values) == 0 {
-		return nil
-	}
-	cloned := make(map[string]interface{}, len(values))
-	for key, value := range values {
-		cloned[key] = value
-	}
-	return cloned
 }
 
 func (a TabularCatalogCallbacks) validate() error {

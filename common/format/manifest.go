@@ -1,8 +1,10 @@
 package format
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,8 +20,13 @@ func LoadFormatPluginManifest(path string) (FormatPluginManifest, error) {
 		return FormatPluginManifest{}, err
 	}
 	var manifest FormatPluginManifest
-	if err := json.Unmarshal(data, &manifest); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&manifest); err != nil {
 		return FormatPluginManifest{}, fmt.Errorf("parse format plugin manifest %s: %w", path, err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return FormatPluginManifest{}, fmt.Errorf("parse format plugin manifest %s: multiple JSON values", path)
 	}
 	return manifest, nil
 }

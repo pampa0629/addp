@@ -25,21 +25,5 @@ func SupportsContentReader(formatType FormatType, reader FormatContentReader) bo
 	if descriptor, ok := GetFormatDescriptor(formatType); ok {
 		return DescriptorHasContentReader(descriptor, reader)
 	}
-	if capability, ok := GetFormatCapability(formatType); ok {
-		return capabilityHasContentReader(capability, reader)
-	}
-	return false
-}
-
-func capabilityHasContentReader(capability FormatCapability, reader FormatContentReader) bool {
-	target := strings.ToLower(strings.TrimSpace(string(reader)))
-	if target == "" {
-		return false
-	}
-	for _, candidate := range capability.ContentReaders {
-		if strings.ToLower(strings.TrimSpace(candidate)) == target {
-			return true
-		}
-	}
 	return false
 }

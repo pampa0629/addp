@@ -617,11 +617,6 @@ func (p *failingMultiTableProvider) Format() format.FormatType {
 	return p.formatType
 }
 
-func (p *failingMultiTableProvider) Capabilities() format.FormatCapability {
-	capability, _ := format.GetFormatCapability(p.formatType)
-	return capability
-}
-
 func (p *failingMultiTableProvider) RelatedRefSpecs() []format.RelatedRefSpec {
 	return append([]format.RelatedRefSpec(nil), p.specs...)
 }

@@ -20,8 +20,6 @@ PostGIS 相关工具包括：
    仅处理 `EPSG:4326 <-> EPSG:3857`
 2. `proj`
    通过 `libproj` 处理通用 `EPSG/WKT -> EPSG:4326`
-3. `duckdb`
-   作为过渡 fallback 保留
 
 ## 默认构建
 
@@ -29,7 +27,9 @@ PostGIS 相关工具包括：
 
 - 不带 build tag 时：
   - `proj` executor 会编译为 stub
-  - 通用 CRS 转换会继续回落到 `duckdb`
+  - 超出 `pure_go` 范围的通用 CRS 转换返回 `unsupported_crs`
+
+`common/spatial` 不依赖 `common/duckdb`。DuckDB spatial 扩展属于 DuckDB 自身能力，不作为通用空间转换 facade 的 fallback。
 
 ## 启用 PROJ
 

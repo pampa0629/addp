@@ -5,102 +5,58 @@ import (
 	"fmt"
 
 	"github.com/addp/common/engine/plugin"
-	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 )
 
-func FileCatalogRootPaths(ctx context.Context, resource *commonModels.Engine, p plugin.EnginePlugin) ([]string, error) {
+func NamespaceEntriesForPlugin(ctx context.Context, resource *commonModels.Engine, p plugin.EnginePlugin) ([]plugin.CatalogEntry, error) {
 	catalogProvider, ok := p.(plugin.CatalogProvider)
 	if !ok {
 		return nil, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
 	}
 
-	nodes, err := catalogProvider.ListChildren(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), rootCatalogPath(resource.ID), plugin.ListOptions{})
+	rootPath, err := rootCatalogPath(resource.ID, p)
+	if err != nil {
+		return nil, err
+	}
+	nodes, err := catalogProvider.ListChildren(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), rootPath, plugin.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
 
-	paths := make([]string, 0, len(nodes))
+	namespaces := make([]plugin.CatalogEntry, 0, len(nodes))
 	for _, node := range nodes {
-		if raw := commonJSON.String(node.Attributes, "storage", "path"); raw != "" {
-			paths = append(paths, raw)
+		if node.Role != plugin.CatalogRoleBranch {
 			continue
 		}
-		paths = append(paths, node.Path.StringPath())
-	}
-	return paths, nil
-}
-
-func NamespaceInfos(ctx context.Context, resource *commonModels.Engine, p plugin.EnginePlugin) ([]plugin.NamespaceInfo, error) {
-	catalogProvider, ok := p.(plugin.CatalogProvider)
-	if !ok {
-		return nil, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
-	}
-
-	nodes, err := catalogProvider.ListChildren(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), rootCatalogPath(resource.ID), plugin.ListOptions{})
-	if err != nil {
-		return nil, err
-	}
-
-	namespaces := make([]plugin.NamespaceInfo, 0, len(nodes))
-	for _, node := range nodes {
-		tableCount := 0
-		if count, ok := int64Stat(node.Stats, "table_count"); ok {
-			tableCount = int(count)
-		}
-		namespaces = append(namespaces, plugin.NamespaceInfo{
-			Name:       node.Name,
-			TableCount: tableCount,
-		})
+		namespaces = append(namespaces, node)
 	}
 	return namespaces, nil
 }
 
-func NamespaceDatabaseInfos(ctx context.Context, resource *commonModels.Engine, catalogProvider plugin.CatalogProvider) ([]plugin.DatabaseInfo, error) {
-	nodes, err := catalogProvider.ListChildren(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), rootCatalogPath(resource.ID), plugin.ListOptions{})
+func NamespaceEntries(ctx context.Context, resource *commonModels.Engine, catalogProvider plugin.CatalogProvider) ([]plugin.CatalogEntry, error) {
+	rootPath, err := rootCatalogPath(resource.ID, catalogProvider)
+	if err != nil {
+		return nil, err
+	}
+	nodes, err := catalogProvider.ListChildren(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), rootPath, plugin.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
 
-	databases := make([]plugin.DatabaseInfo, 0, len(nodes))
+	namespaces := make([]plugin.CatalogEntry, 0, len(nodes))
 	for _, node := range nodes {
-		if !node.IsContainer {
+		if node.Role != plugin.CatalogRoleBranch {
 			continue
 		}
-		sizeBytes, _ := int64Stat(node.Stats, "size_bytes")
-		databases = append(databases, plugin.DatabaseInfo{
-			Name:      node.Name,
-			SizeBytes: sizeBytes,
-		})
+		namespaces = append(namespaces, node)
 	}
-	return databases, nil
+	return namespaces, nil
 }
 
-func rootCatalogPath(engineID uint) plugin.CatalogPath {
-	return plugin.CatalogPath{
-		Version:  plugin.CatalogPathVersion,
-		EngineID: engineID,
-	}
-}
-
-func int64Stat(stats map[string]interface{}, key string) (int64, bool) {
-	if stats == nil {
-		return 0, false
-	}
-	raw, ok := stats[key]
+func rootCatalogPath(engineID uint, p plugin.EnginePlugin) (plugin.CatalogPath, error) {
+	modelProvider, ok := p.(plugin.CatalogModelProvider)
 	if !ok {
-		return 0, false
+		return plugin.CatalogPath{}, fmt.Errorf("engine %s does not implement CatalogModelProvider", p.Type())
 	}
-	switch v := raw.(type) {
-	case int64:
-		return v, true
-	case int:
-		return int64(v), true
-	case uint:
-		return int64(v), true
-	case float64:
-		return int64(v), true
-	default:
-		return 0, false
-	}
+	return plugin.CatalogRootPath(modelProvider.CatalogModel(), engineID), nil
 }

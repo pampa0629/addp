@@ -30,10 +30,10 @@ func TestObjectResourcesByParentPrefixDoesNotAddCrossLayerCompositeCandidates(t 
 func TestObjectStorageResourceFromNodeDoesNotUseUnknownExtensionAsFormat(t *testing.T) {
 	t.Parallel()
 
-	resource := ObjectStorageResourceFromNode("addp", plugin.CatalogNode{
-		Name:   "docker-compose.yml",
-		Kind:   plugin.CatalogKindObject,
-		IsItem: true,
+	resource := ObjectStorageResourceFromNode("addp", plugin.CatalogEntry{
+		Name: "docker-compose.yml",
+		Kind: plugin.CatalogKindObject,
+		Role: plugin.CatalogRoleLeaf,
 		Path: plugin.CatalogPath{
 			Version:  plugin.CatalogPathVersion,
 			EngineID: 7,
@@ -43,9 +43,9 @@ func TestObjectStorageResourceFromNodeDoesNotUseUnknownExtensionAsFormat(t *test
 				{Term: plugin.CatalogTermObject, Kind: plugin.CatalogKindObject, Name: "docker-compose.yml"},
 			},
 		},
-		Attributes: map[string]interface{}{
-			"path":         "raw/docker-compose.yml",
-			"content_type": "application/octet-stream",
+		Storage: &plugin.CatalogStorageFacts{
+			Path:        "raw/docker-compose.yml",
+			ContentType: "application/octet-stream",
 		},
 	})
 
@@ -57,10 +57,10 @@ func TestObjectStorageResourceFromNodeDoesNotUseUnknownExtensionAsFormat(t *test
 func TestObjectStorageResourceFromNodeKeepsUnknownForUnregisteredExtension(t *testing.T) {
 	t.Parallel()
 
-	resource := ObjectStorageResourceFromNode("addp", plugin.CatalogNode{
-		Name:   "yanshi.udbx",
-		Kind:   plugin.CatalogKindObject,
-		IsItem: true,
+	resource := ObjectStorageResourceFromNode("addp", plugin.CatalogEntry{
+		Name: "yanshi.udbx",
+		Kind: plugin.CatalogKindObject,
+		Role: plugin.CatalogRoleLeaf,
 		Path: plugin.CatalogPath{
 			Version:  plugin.CatalogPathVersion,
 			EngineID: 7,
@@ -70,9 +70,9 @@ func TestObjectStorageResourceFromNodeKeepsUnknownForUnregisteredExtension(t *te
 				{Term: plugin.CatalogTermObject, Kind: plugin.CatalogKindObject, Name: "yanshi.udbx"},
 			},
 		},
-		Attributes: map[string]interface{}{
-			"path":         "raw/yanshi.udbx",
-			"content_type": "application/octet-stream",
+		Storage: &plugin.CatalogStorageFacts{
+			Path:        "raw/yanshi.udbx",
+			ContentType: "application/octet-stream",
 		},
 	})
 
@@ -84,10 +84,10 @@ func TestObjectStorageResourceFromNodeKeepsUnknownForUnregisteredExtension(t *te
 func TestObjectStorageResourceFromNodeUsesKnownMIMEWhenExtensionUnknown(t *testing.T) {
 	t.Parallel()
 
-	resource := ObjectStorageResourceFromNode("addp", plugin.CatalogNode{
-		Name:   "config",
-		Kind:   plugin.CatalogKindObject,
-		IsItem: true,
+	resource := ObjectStorageResourceFromNode("addp", plugin.CatalogEntry{
+		Name: "config",
+		Kind: plugin.CatalogKindObject,
+		Role: plugin.CatalogRoleLeaf,
 		Path: plugin.CatalogPath{
 			Version:  plugin.CatalogPathVersion,
 			EngineID: 7,
@@ -96,9 +96,9 @@ func TestObjectStorageResourceFromNodeUsesKnownMIMEWhenExtensionUnknown(t *testi
 				{Term: plugin.CatalogTermObject, Kind: plugin.CatalogKindObject, Name: "config"},
 			},
 		},
-		Attributes: map[string]interface{}{
-			"path":         "config",
-			"content_type": "text/plain",
+		Storage: &plugin.CatalogStorageFacts{
+			Path:        "config",
+			ContentType: "text/plain",
 		},
 	})
 
@@ -143,7 +143,7 @@ func TestUnclaimedObjectResourcesFiltersAlreadyClaimedComponents(t *testing.T) {
 	}
 }
 
-func TestObjectCatalogCompositeNameUsesSingleFileEntryPath(t *testing.T) {
+func TestObjectCatalogCompositeNameUsesSingleFilePrimaryContentPath(t *testing.T) {
 	t.Parallel()
 
 	name, objectPath := ObjectCatalogCompositeName(ObjectCatalogCompositeItem{
@@ -151,8 +151,8 @@ func TestObjectCatalogCompositeNameUsesSingleFileEntryPath(t *testing.T) {
 		Prefix: "lake",
 		Item: &metaitem.DetectedItem{
 			ResolvedItem: commondataitem.ResolvedItem{
-				Layout:    commondataitem.LayoutSingle,
-				EntryPath: "addp/lake/sales.parquet",
+				Layout:             commondataitem.LayoutSingle,
+				PrimaryContentPath: "addp/lake/sales.parquet",
 			},
 		},
 	})
@@ -235,10 +235,10 @@ func TestPlanObjectCatalogCompositeItemBuildsStandardAttributes(t *testing.T) {
 		Prefix: "datasets/roads",
 		Item: &metaitem.DetectedItem{
 			ResolvedItem: commondataitem.ResolvedItem{
-				DataType:  commondataitem.DataTypeTable,
-				Layout:    commondataitem.LayoutMulti,
-				EntryPath: "addp/datasets/roads/roads.shp",
-				SizeBytes: int64PtrForTest(256),
+				DataType:           commondataitem.DataTypeTable,
+				Layout:             commondataitem.LayoutMulti,
+				PrimaryContentPath: "addp/datasets/roads/roads.shp",
+				SizeBytes:          int64PtrForTest(256),
 			},
 			Fields: []datatype.FieldInfo{{
 				Name: "id",
@@ -272,7 +272,7 @@ func TestPlanObjectCatalogCompositeItemBuildsStandardAttributes(t *testing.T) {
 func TestStorageResourcesToFileEntriesUsesBucketRelativeObjectPath(t *testing.T) {
 	t.Parallel()
 
-	files := storageResourcesToFileEntries([]StorageResource{{
+	files := storageResourcesToFileRefs([]StorageResource{{
 		RootName: "addp",
 		Path:     "gis/roads.shp",
 		FullPath: "addp/gis/roads.shp",

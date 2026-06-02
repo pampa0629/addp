@@ -17,7 +17,7 @@ func catalogScanStrategyForPlugin(p plugin.EnginePlugin) (catalogScanStrategy, b
 		return "", false
 	}
 
-	switch plugin.CatalogItemTerm(*model) {
+	switch plugin.CatalogLeafTerm(*model) {
 	case plugin.CatalogTermTable:
 		return catalogScanTabular, true
 	case plugin.CatalogTermCollection, plugin.CatalogTermGraph:

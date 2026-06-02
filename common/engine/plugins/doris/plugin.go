@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-var dorisMetadataDialect = shared.MySQLCompatibleMetadataDialect{
+var dorisCatalogFactsDialect = shared.MySQLCompatibleCatalogFactsDialect{
 	SystemSchemas: map[string]bool{
 		"information_schema": true,
 		"mysql":              true,
@@ -87,16 +87,16 @@ func (p *DorisPlugin) tabularCatalogCallbacks() plugin.TabularCatalogCallbacks {
 	}
 }
 
-func (p *DorisPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
+func (p *DorisPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogEntry, error) {
 	return plugin.ListTabularCatalogChildren(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: parent.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, parent, opts)
 }
 
-func (p *DorisPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
+func (p *DorisPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogEntry, error) {
 	return plugin.ResolveTabularCatalogPath(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path)
 }
 
-func (p *DorisPlugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
-	return plugin.DescribeTabularItem(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path, opts)
+func (p *DorisPlugin) DescribeCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+	return plugin.DescribeTabularCatalogFacts(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path, opts)
 }
 
 func (p *DorisPlugin) QueryLanguages() []string {
@@ -159,30 +159,30 @@ func (p *DorisPlugin) GetDialect() string {
 	return "mysql" // Doris 兼容 MySQL 协议
 }
 
-// === MetadataPlugin 接口实现 ===
+// === CatalogProvider / CatalogFactsProvider 回调实现 ===
 
 // listNamespaces 列出所有 Database。
-func (p *DorisPlugin) listNamespaces(ctx context.Context, db *gorm.DB) ([]plugin.NamespaceInfo, error) {
-	return dorisMetadataDialect.ListNamespaces(ctx, db)
+func (p *DorisPlugin) listNamespaces(ctx context.Context, db *gorm.DB, root plugin.CatalogPath) ([]plugin.CatalogEntry, error) {
+	return dorisCatalogFactsDialect.ListNamespaces(ctx, db, root, "database")
 }
 
 // ListTables 列出指定Schema下的所有表
 func (p *DorisPlugin) listTables(ctx context.Context, db *gorm.DB, schema string) ([]datatype.TableInfo, error) {
-	return dorisMetadataDialect.ListTables(ctx, db, schema)
+	return dorisCatalogFactsDialect.ListTables(ctx, db, schema)
 }
 
 // ListColumns 列出指定表的所有列
 func (p *DorisPlugin) listColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]datatype.FieldInfo, error) {
-	return dorisMetadataDialect.ListColumns(ctx, db, schema, table)
+	return dorisCatalogFactsDialect.ListColumns(ctx, db, schema, table)
 }
 
 // GetTableRowCount 获取表的行数
 func (p *DorisPlugin) getTableRowCount(ctx context.Context, db *gorm.DB, schema, table string) (int64, error) {
-	return dorisMetadataDialect.RowCount(ctx, db, schema, table)
+	return dorisCatalogFactsDialect.RowCount(ctx, db, schema, table)
 }
 
 // isSystemSchema 判断是否为系统 Schema
 // Doris 兼容 MySQL 协议，系统 schema 同 MySQL
 func (p *DorisPlugin) isSystemSchema(schemaName string) bool {
-	return dorisMetadataDialect.IsSystemSchema(schemaName)
+	return dorisCatalogFactsDialect.IsSystemSchema(schemaName)
 }

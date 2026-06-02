@@ -121,7 +121,7 @@ export const engineAPI = {
     }).then(res => {
       const nodes = Array.isArray(res?.nodes) ? res.nodes : (Array.isArray(res?.data?.nodes) ? res.data.nodes : [])
       return nodes
-        .filter(node => node.is_container)
+        .filter(node => node.role === 'branch')
         .map(node => node.name)
     })
   }

@@ -44,8 +44,8 @@ func FileCatalogDetectedItemName(dirPath string, item *metaitem.DetectedItem) (n
 	if item == nil {
 		return inferFileCatalogItemName(dirPath)
 	}
-	if item.Layout != dataitem.LayoutWhole && item.EntryPath != "" {
-		cleaned := strings.Trim(item.EntryPath, "/")
+	if item.Layout != dataitem.LayoutWhole && item.PrimaryContentPath != "" {
+		cleaned := strings.Trim(item.PrimaryContentPath, "/")
 		return filepath.Base(cleaned), cleaned
 	}
 	if item.PhysicalPath != "" && item.Layout != dataitem.LayoutWhole {

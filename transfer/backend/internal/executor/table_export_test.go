@@ -853,13 +853,13 @@ func (w *fakeContentWriter) OpenRange(_ context.Context, _ engineplugin.Connecti
 	return io.NopCloser(bytes.NewReader(data[opts.Offset:end])), nil
 }
 
-func (w *fakeContentWriter) ListChildren(_ context.Context, _ engineplugin.ConnectionInfo, parent engineplugin.CatalogPath, _ engineplugin.ListOptions) ([]engineplugin.CatalogNode, error) {
+func (w *fakeContentWriter) ListChildren(_ context.Context, _ engineplugin.ConnectionInfo, parent engineplugin.CatalogPath, _ engineplugin.ListOptions) ([]engineplugin.CatalogEntry, error) {
 	if w.files == nil {
 		return nil, nil
 	}
 	parentPath := strings.Trim(parent.StringPath(), "/")
 	dirs := map[string]bool{}
-	nodes := make([]engineplugin.CatalogNode, 0)
+	nodes := make([]engineplugin.CatalogEntry, 0)
 	for path := range w.files {
 		trimmed := strings.Trim(path, "/")
 		if parentPath != "" {
@@ -882,12 +882,12 @@ func (w *fakeContentWriter) ListChildren(_ context.Context, _ engineplugin.Conne
 				dirPath += "/"
 			}
 			dirPath += name
-			nodes = append(nodes, engineplugin.CatalogNode{
-				Name:        name,
-				Path:        engineplugin.FileDirectoryPath(parent.EngineID, dirPath),
-				Term:        engineplugin.CatalogTermDirectory,
-				Kind:        engineplugin.CatalogKindDirectory,
-				IsContainer: true,
+			nodes = append(nodes, engineplugin.CatalogEntry{
+				Name: name,
+				Path: engineplugin.FileDirectoryPath(parent.EngineID, dirPath),
+				Term: engineplugin.CatalogTermDirectory,
+				Kind: engineplugin.CatalogKindDirectory,
+				Role: engineplugin.CatalogRoleBranch,
 			})
 			continue
 		}
@@ -896,42 +896,46 @@ func (w *fakeContentWriter) ListChildren(_ context.Context, _ engineplugin.Conne
 			filePath += "/"
 		}
 		filePath += trimmed
-		nodes = append(nodes, engineplugin.CatalogNode{
-			Name:   trimmed,
-			Path:   engineplugin.FileItemPath(parent.EngineID, filePath),
-			Term:   engineplugin.CatalogTermFile,
-			Kind:   engineplugin.CatalogKindFile,
-			IsItem: true,
-			Stats: map[string]interface{}{
-				"size_bytes": int64(len(w.files[filePath])),
+		sizeBytes := int64(len(w.files[filePath]))
+		nodes = append(nodes, engineplugin.CatalogEntry{
+			Name: trimmed,
+			Path: engineplugin.FileItemPath(parent.EngineID, filePath),
+			Term: engineplugin.CatalogTermFile,
+			Kind: engineplugin.CatalogKindFile,
+			Role: engineplugin.CatalogRoleLeaf,
+			Storage: &engineplugin.CatalogStorageFacts{
+				Path:      filePath,
+				SizeBytes: &sizeBytes,
 			},
 		})
 	}
 	return nodes, nil
 }
 
-func (w *fakeContentWriter) ResolvePath(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.CatalogPath) (*engineplugin.CatalogNode, error) {
+func (w *fakeContentWriter) ResolvePath(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.CatalogPath) (*engineplugin.CatalogEntry, error) {
 	pathString := path.StringPath()
 	if w.files != nil {
 		if data, ok := w.files[pathString]; ok {
-			return &engineplugin.CatalogNode{
-				Name:   pathString,
-				Path:   path,
-				Term:   engineplugin.CatalogTermFile,
-				Kind:   engineplugin.CatalogKindFile,
-				IsItem: true,
-				Stats: map[string]interface{}{
-					"size_bytes": int64(len(data)),
+			sizeBytes := int64(len(data))
+			return &engineplugin.CatalogEntry{
+				Name: pathString,
+				Path: path,
+				Term: engineplugin.CatalogTermFile,
+				Kind: engineplugin.CatalogKindFile,
+				Role: engineplugin.CatalogRoleLeaf,
+				Storage: &engineplugin.CatalogStorageFacts{
+					Path:      pathString,
+					SizeBytes: &sizeBytes,
 				},
 			}, nil
 		}
 	}
-	return &engineplugin.CatalogNode{
-		Name:        path.StringPath(),
-		Path:        path,
-		Term:        engineplugin.CatalogTermDirectory,
-		Kind:        engineplugin.CatalogKindDirectory,
-		IsContainer: true,
+	return &engineplugin.CatalogEntry{
+		Name: path.StringPath(),
+		Path: path,
+		Term: engineplugin.CatalogTermDirectory,
+		Kind: engineplugin.CatalogKindDirectory,
+		Role: engineplugin.CatalogRoleBranch,
 	}, nil
 }
 

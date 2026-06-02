@@ -7,7 +7,7 @@ import (
 	"github.com/addp/common/format"
 )
 
-func TestDocumentFormatCapabilityViewsReflectBackendParsingBoundary(t *testing.T) {
+func TestDocumentFormatSupportViewsReflectBackendParsingBoundary(t *testing.T) {
 	tests := []struct {
 		formatType     format.FormatType
 		wantInfo       bool
@@ -21,7 +21,7 @@ func TestDocumentFormatCapabilityViewsReflectBackendParsingBoundary(t *testing.T
 
 	for _, tt := range tests {
 		t.Run(string(tt.formatType), func(t *testing.T) {
-			view, ok := format.GetFormatCapabilityView(tt.formatType)
+			view, ok := format.GetFormatSupportView(tt.formatType)
 			if !ok {
 				t.Fatalf("expected capability view for %s", tt.formatType)
 			}
@@ -38,7 +38,7 @@ func TestDocumentFormatCapabilityViewsReflectBackendParsingBoundary(t *testing.T
 	}
 }
 
-func TestUnknownFormatCapabilityViewRegistersBinaryReader(t *testing.T) {
+func TestUnknownFormatSupportViewRegistersBinaryReader(t *testing.T) {
 	reader, err := format.GetBinaryContentReader(format.FormatUnknown)
 	if err != nil {
 		t.Fatalf("GetBinaryContentReader(unknown) error = %v", err)
@@ -51,7 +51,7 @@ func TestUnknownFormatCapabilityViewRegistersBinaryReader(t *testing.T) {
 		t.Fatalf("content = %#v, want truncated ab", content)
 	}
 
-	view, ok := format.GetFormatCapabilityView(format.FormatUnknown)
+	view, ok := format.GetFormatSupportView(format.FormatUnknown)
 	if !ok {
 		t.Fatal("expected unknown capability view")
 	}
@@ -69,15 +69,12 @@ func TestUnknownFormatCapabilityViewRegistersBinaryReader(t *testing.T) {
 func TestDescriptorOnlyTableFormatsExposeMissingProviders(t *testing.T) {
 	for _, formatType := range []format.FormatType{format.FormatAvro, format.FormatORC} {
 		t.Run(string(formatType), func(t *testing.T) {
-			view, ok := format.GetFormatCapabilityView(formatType)
+			view, ok := format.GetFormatSupportView(formatType)
 			if !ok {
 				t.Fatalf("expected capability view for %s", formatType)
 			}
 			if !view.Implementations.FormatPlugin {
 				t.Fatalf("%s implementations = %#v, want descriptor plugin", formatType, view.Implementations)
-			}
-			if !view.Transfer.Read || !view.Transfer.Write {
-				t.Fatalf("%s transfer declaration = %#v, want read/write intent", formatType, view.Transfer)
 			}
 			if view.Implementations.TableInfoProvider ||
 				view.Implementations.TableSampleReader ||

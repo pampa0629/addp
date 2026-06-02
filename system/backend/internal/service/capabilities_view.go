@@ -122,16 +122,16 @@ func buildStorageSection(caps *engineplugin.EngineCapabilities) *models.Capabili
 		section.Items = append(section.Items, item)
 	}
 
-	if caps.Storage.Metadata != nil && caps.Storage.Metadata.Supported {
-		item := capabilityItem("metadata", "system.engine.capabilityView.items.metadata", capabilityStatusAvailable)
+	if caps.Storage.Facts != nil && caps.Storage.Facts.Supported {
+		item := capabilityItem("facts", "system.engine.capabilityView.items.facts", capabilityStatusAvailable)
 		item.Tags = appendTrueTags(item.Tags, map[string]bool{
-			"field_info":      caps.Storage.Metadata.FieldInfo,
-			"statistics":       caps.Storage.Metadata.Statistics,
-			"indexes":          caps.Storage.Metadata.Indexes,
-			"constraints":      caps.Storage.Metadata.Constraints,
-			"spatial_metadata": caps.Storage.Metadata.SpatialMetadata,
-			"sampling":         caps.Storage.Metadata.Sampling,
-			"native_metadata":  caps.Storage.Metadata.NativeMetadata,
+			"field_info":    caps.Storage.Facts.FieldInfo,
+			"statistics":    caps.Storage.Facts.Statistics,
+			"indexes":       caps.Storage.Facts.Indexes,
+			"constraints":   caps.Storage.Facts.Constraints,
+			"spatial_facts": caps.Storage.Facts.SpatialFacts,
+			"sampling":      caps.Storage.Facts.Sampling,
+			"native_facts":  caps.Storage.Facts.NativeFacts,
 		})
 		section.Items = append(section.Items, item)
 	}
@@ -192,11 +192,11 @@ func buildCatalogPath(model *engineplugin.CatalogModelSpec) []models.CapabilityP
 			LabelKey: capabilityValueKey("catalog", level.Term),
 			Value:    level.Term,
 		}
-		if level.Container {
-			node.Tags = append(node.Tags, capabilityValueTag("container", "system.engine.capabilityView.values.container"))
-		}
-		if level.Item {
-			node.Tags = append(node.Tags, capabilityValueTag("item", "system.engine.capabilityView.values.item"))
+		switch level.Role {
+		case engineplugin.CatalogRoleBranch:
+			node.Tags = append(node.Tags, capabilityValueTag("branch", "system.engine.capabilityView.values.branch"))
+		case engineplugin.CatalogRoleLeaf:
+			node.Tags = append(node.Tags, capabilityValueTag("leaf", "system.engine.capabilityView.values.leaf"))
 		}
 		if level.Optional {
 			node.Tags = append(node.Tags, capabilityValueTag("optional", "system.engine.capabilityView.values.optional"))

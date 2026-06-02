@@ -89,11 +89,12 @@ func ExecuteSQLWithConnectionPool(ctx context.Context, poolPlugin ConnectionPool
 func ReadSQLBatch(ctx context.Context, provider SQLQueryRuntimeProvider, connInfo ConnectionInfo, path CatalogPath, opts BatchReadOptions) (*BatchData, error) {
 	query := strings.TrimSpace(opts.Query)
 	if query == "" {
-		if len(path.Segments) < 2 {
+		segments := CatalogPathWithoutRoot(path).Segments
+		if len(segments) < 2 {
 			return nil, fmt.Errorf("SQL batch read requires item path or query")
 		}
-		namespace := path.Segments[len(path.Segments)-2].Name
-		item := path.Segments[len(path.Segments)-1].Name
+		namespace := segments[len(segments)-2].Name
+		item := segments[len(segments)-1].Name
 		query = sampleSQLForEngine(provider.Type(), namespace, item, opts.Limit, opts.Offset)
 	} else if opts.Limit > 0 {
 		query = sqldialect.PaginateQuerySQL(query, opts.Limit, int(opts.Offset))

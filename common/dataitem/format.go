@@ -28,11 +28,11 @@ func DetectFormat(candidate Candidate) string {
 }
 
 func DetectDataType(formatName string) DataType {
-	capability, ok := format.GetFormatCapability(format.NormalizeFormat(formatName))
+	descriptor, ok := format.GetFormatDescriptor(format.NormalizeFormat(formatName))
 	if !ok {
 		return DataTypeUnknown
 	}
-	return capability.DataType
+	return descriptor.DataType
 }
 
 func InferFormat(fileName, contentType, explicitFormat string) string {
@@ -68,14 +68,14 @@ func InferDataType(formatName, contentType string) DataType {
 }
 
 func MatchBuiltinSingleResourceRule(formatName string) (FormatRule, bool) {
-	return singleResourceRuleFromCapability(formatName)
+	return singleResourceRuleFromDescriptor(formatName)
 }
 
 func BuiltinSingleResourceRules() []FormatRule {
 	rules := []FormatRule{}
 	seen := map[string]struct{}{}
-	for _, capability := range format.ListFormatCapabilities() {
-		rule, ok := singleResourceRuleFromCapability(string(capability.Format))
+	for _, descriptor := range format.ListFormatDescriptors() {
+		rule, ok := singleResourceRuleFromDescriptor(string(descriptor.Format))
 		if !ok {
 			continue
 		}
@@ -94,21 +94,21 @@ func BuiltinSingleResourceRules() []FormatRule {
 	return rules
 }
 
-func singleResourceRuleFromCapability(formatName string) (FormatRule, bool) {
-	capability, ok := format.GetFormatCapability(format.FormatType(normalizeFormat(formatName)))
-	if !ok || !format.HasLayout(capability.Layouts, format.LayoutSingle) || len(capability.Extensions) == 0 {
+func singleResourceRuleFromDescriptor(formatName string) (FormatRule, bool) {
+	descriptor, ok := format.GetFormatDescriptor(format.FormatType(normalizeFormat(formatName)))
+	if !ok || !format.HasLayout(descriptor.Layouts, format.LayoutSingle) || len(descriptor.Identification.Extensions) == 0 {
 		return FormatRule{}, false
 	}
-	dataType := capability.DataType
+	dataType := descriptor.DataType
 	if dataType == DataTypeUnknown {
 		return FormatRule{}, false
 	}
 	rule := FormatRule{
-		Format:   string(capability.Format),
+		Format:   string(descriptor.Format),
 		DataType: dataType,
 		Layout:   LayoutSingle,
 		Priority: 10,
-		Entry:    EntryRule{Extensions: append([]string(nil), capability.Extensions...)},
+		Entry:    EntryRule{Extensions: append([]string(nil), descriptor.Identification.Extensions...)},
 	}
 	if dataType == DataTypeContainer {
 		rule.Priority = 20
@@ -119,20 +119,20 @@ func singleResourceRuleFromCapability(formatName string) (FormatRule, bool) {
 
 func BuiltinMultiRules() []FormatRule {
 	rules := []FormatRule{}
-	for _, capability := range format.ListFormatCapabilities() {
-		if !format.HasLayout(capability.Layouts, format.LayoutMulti) {
+	for _, descriptor := range format.ListFormatDescriptors() {
+		if !format.HasLayout(descriptor.Layouts, format.LayoutMulti) {
 			continue
 		}
-		specs := RelatedRefSpecs(format.FormatType(capability.Format))
+		specs := RelatedRefSpecs(format.FormatType(descriptor.Format))
 		if len(specs) == 0 {
 			continue
 		}
 		rules = append(rules, FormatRule{
-			Format:          string(capability.Format),
-			DataType:        capability.DataType,
+			Format:          string(descriptor.Format),
+			DataType:        descriptor.DataType,
 			Layout:          LayoutMulti,
 			Priority:        100,
-			Entry:           EntryRule{Extensions: append([]string(nil), capability.Extensions...)},
+			Entry:           EntryRule{Extensions: append([]string(nil), descriptor.Identification.Extensions...)},
 			Refs:            refRuleFromSpecs(specs),
 			RelatedRefSpecs: specs,
 		})
@@ -148,20 +148,20 @@ func BuiltinMultiRules() []FormatRule {
 
 func BuiltinWholeScopeRules() []FormatRule {
 	rules := []FormatRule{}
-	for _, capability := range format.ListFormatCapabilities() {
-		if !format.HasLayout(capability.Layouts, format.LayoutWhole) || len(capability.Extensions) == 0 {
+	for _, descriptor := range format.ListFormatDescriptors() {
+		if !format.HasLayout(descriptor.Layouts, format.LayoutWhole) || len(descriptor.Identification.Extensions) == 0 {
 			continue
 		}
-		dataType := capability.DataType
+		dataType := descriptor.DataType
 		if dataType == DataTypeUnknown {
 			continue
 		}
 		rules = append(rules, FormatRule{
-			Format:   string(capability.Format),
+			Format:   string(descriptor.Format),
 			DataType: dataType,
 			Layout:   LayoutWhole,
 			Priority: 80,
-			Entry:    EntryRule{Extensions: append([]string(nil), capability.Extensions...)},
+			Entry:    EntryRule{Extensions: append([]string(nil), descriptor.Identification.Extensions...)},
 			WholeScope: &WholeScopeRule{
 				AllowRecursive:       true,
 				IgnoredFileNames:     []string{"_SUCCESS", "_metadata", "_common_metadata"},

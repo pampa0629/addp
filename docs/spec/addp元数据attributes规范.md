@@ -67,7 +67,7 @@ attributes 分区统一采用以下概念：
 
 同一事实只能有一个规范存储点，不允许双写旧字段和新字段。
 
-`meta_item.item_type` 必须跟随所属引擎的稳定 catalog item 术语：对象存储为 `object`，文件系统为 `file`，关系型数据库为 `table` / `view`，MongoDB 为 `collection`，Neo4j 为 `graph`。内容可读成表格、文档、媒体或容器时，只更新 `attributes.item.data_type`、`attributes.item.format`、`type_info`、`format_info` 和 `capabilities`，不得反向改写 `meta_item.item_type`。
+`meta_item.item_type` 必须跟随所属引擎的稳定 catalog leaf 术语：对象存储为 `object`，文件系统为 `file`，关系型数据库为 `table` / `view`，MongoDB 为 `collection`，Neo4j 为 `graph`。内容可读成表格、文档、媒体或容器时，只更新 `attributes.item.data_type`、`attributes.item.format`、`type_info`、`format_info` 和 `capabilities`，不得反向改写 `meta_item.item_type`。
 
 ## 分区职责
 
@@ -96,7 +96,7 @@ attributes 分区统一采用以下概念：
 
 `datatype.AccessIndex` 只是当前代码中的共享结构归属，不表示访问索引属于 data type 或 type info。`access_index` 是独立 attributes 分区，服务内容窗口读取、range 读取和索引失效判断；不得写入 `type_info.table`、`format_info` 或 `capabilities.indexing`。
 
-`attributes.type_info.file` 不存在，也不得新增。文件、对象和目录是 catalog / storage 形态，不是 data type 主事实；对应路径、名称、大小、MIME、etag、hash、last_modified 等事实只能写入 `attributes.storage` 或 catalog node/item 的标准字段。无法识别内容语义时，`attributes.item.data_type` 必须为 `unknown`。
+`attributes.type_info.file` 不存在，也不得新增。文件、对象和目录是 catalog / storage 形态，不是 data type 主事实；对应路径、名称、大小、MIME、etag、hash、last_modified 等事实只能写入 `attributes.storage`，或进入 `CatalogEntry` / Meta item 的标准字段。无法识别内容语义时，`attributes.item.data_type` 必须为 `unknown`。
 
 ## 写入规则
 

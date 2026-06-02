@@ -221,45 +221,6 @@ func (s *ScanService) publishScanCompletedEvent(engineID, tenantID uint, summary
 	}()
 }
 
-// AutoScanUnscanned 自动扫描所有未扫描的资源
-func (s *ScanService) AutoScanUnscanned(tenantID uint) (*models.ScanResponse, error) {
-	startTime := time.Now()
-
-	// 获取所有数据库资源
-	engines, err := s.engineService.GetEnginesByTenant(tenantID)
-	if err != nil {
-		return nil, err
-	}
-
-	totalNamespaces := 0
-	totalTables := 0
-	totalFields := 0
-	scannedResourceIDs := []uint{}
-
-	// 对每个资源进行扫描
-	for _, engine := range engines {
-		effectiveTenantID := tenantIDForResource(engine, tenantID)
-		schemas, tables, fields, err := s.scanResource(engine, effectiveTenantID, 0)
-		if err != nil {
-			s.log.Warn("资源扫描失败",
-				"engine_id", engine.ID,
-				"resource_name", engine.Name,
-				"tenant_id", effectiveTenantID,
-				"error", err,
-			)
-			continue
-		}
-
-		totalNamespaces += schemas
-		totalTables += tables
-		totalFields += fields
-		scannedResourceIDs = append(scannedResourceIDs, engine.ID)
-	}
-
-	counts := scantask.ScanCounts{CatalogNodes: totalNamespaces, Items: totalTables, Fields: totalFields}
-	return scantask.AutoScanResponse(len(scannedResourceIDs), counts, startTime, time.Now()), nil
-}
-
 type ScanOptions struct {
 	EngineID     uint
 	TenantID     uint
@@ -271,41 +232,6 @@ type ScanOptions struct {
 	NodeID       uint
 	ItemID       uint
 	Targets      []string
-}
-
-// ScanEngine 扫描指定引擎
-func (s *ScanService) ScanEngine(engineID, tenantID uint, catalogPaths []string, token string) (*models.ScanResponse, error) {
-	return s.ScanEngineWithOptions(ScanOptions{
-		EngineID:     engineID,
-		TenantID:     tenantID,
-		CatalogPaths: catalogPaths,
-		Token:        token,
-		ScanDepth:    "basic",
-	})
-}
-
-// ScanEngineWithProgress 扫描指定引擎，并通过 reporter 汇报进度
-func (s *ScanService) ScanEngineWithProgress(engineID, tenantID uint, catalogPaths []string, token string, reporter ScanProgressReporter) (*models.ScanResponse, error) {
-	return s.ScanEngineWithOptions(ScanOptions{
-		EngineID:     engineID,
-		TenantID:     tenantID,
-		CatalogPaths: catalogPaths,
-		Token:        token,
-		ScanDepth:    "basic",
-		Reporter:     reporter,
-	})
-}
-
-// ScanEngineWithDepth 扫描指定引擎，支持指定扫描深度
-func (s *ScanService) ScanEngineWithDepth(engineID, tenantID uint, catalogPaths []string, token string, scanDepth string, reporter ScanProgressReporter) (*models.ScanResponse, error) {
-	return s.ScanEngineWithOptions(ScanOptions{
-		EngineID:     engineID,
-		TenantID:     tenantID,
-		CatalogPaths: catalogPaths,
-		Token:        token,
-		ScanDepth:    scanDepth,
-		Reporter:     reporter,
-	})
 }
 
 func (s *ScanService) ScanEngineWithOptions(opts ScanOptions) (*models.ScanResponse, error) {
@@ -465,7 +391,13 @@ func (s *ScanService) resolveScanTargets(tenantID uint, opts ScanOptions) ([]str
 }
 
 func scanTargetFromNode(node models.MetaNode) []string {
-	if target := firstNonEmpty(node.FullName, node.Name); target != "" {
+	if node.ParentNodeID == nil && strings.TrimSpace(node.FullName) == "" {
+		return nil
+	}
+	if target := strings.Trim(strings.TrimSpace(node.FullName), "/"); target != "" {
+		return []string{target}
+	}
+	if target := strings.Trim(strings.TrimSpace(node.Name), "/"); target != "" {
 		return []string{target}
 	}
 	return nil
@@ -605,35 +537,6 @@ func tenantIDForResource(resource *commonModels.Engine, fallback uint) uint {
 	return fallback
 }
 
-// scanResource 扫描单个资源的所有未扫描Schema
-func (s *ScanService) scanResource(resource *commonModels.Engine, tenantID uint, scanLogID uint) (int, int, int, error) {
-	tenantID = tenantIDForResource(resource, tenantID)
-	startFields := append(connectionLogFields(resource),
-		"scan_log_id", scanLogID,
-		"mode", "auto",
-	)
-	s.log.Info("开始扫描资源", startFields...)
-
-	result, err := s.dispatchScan(scanDispatchRequest{
-		Resource:  resource,
-		TenantID:  tenantID,
-		ScanDepth: "deep",
-		Force:     false,
-		ScanLogID: scanLogID,
-		Mode:      scanDispatchAuto,
-	})
-	if err != nil {
-		return 0, 0, 0, err
-	}
-
-	s.log.Info("资源扫描完成", cloneLogFields(startFields,
-		"catalog_nodes_scanned", result.CatalogNodes,
-		"items_scanned", result.Items,
-		"fields_scanned", result.Fields,
-	)...)
-	return result.CatalogNodes, result.Items, result.Fields, nil
-}
-
 func (s *ScanService) scanResourceNamespacesWithReporter(resource *commonModels.Engine, tenantID uint, namespaces []string, scanLogID uint, scanDepth string, force bool, reporter ScanProgressReporter) (int, int, int, error) {
 	resourceID := resource.ID
 
@@ -658,13 +561,13 @@ func (s *ScanService) scanResourceNamespacesWithReporter(resource *commonModels.
 			return 0, 0, 0, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
 		}
 
-		schemasInfo, err := metacatalog.NamespaceInfos(context.Background(), resource, p)
+		namespaceEntries, err := metacatalog.NamespaceEntriesForPlugin(context.Background(), resource, p)
 		if err != nil {
 			return 0, 0, 0, err
 		}
 
-		for _, info := range schemasInfo {
-			namespaces = append(namespaces, info.Name)
+		for _, entry := range namespaceEntries {
+			namespaces = append(namespaces, entry.Name)
 		}
 
 		if reporter != nil {
@@ -796,13 +699,13 @@ func (s *ScanService) scanNamespaceItemsWithReporter(
 			reporter.Message("列出所有命名空间...")
 		}
 
-		databasesInfo, err := metacatalog.NamespaceDatabaseInfos(ctx, resource, catalogProvider)
+		namespaceEntries, err := metacatalog.NamespaceEntries(ctx, resource, catalogProvider)
 		if err != nil {
 			return 0, 0, 0, err
 		}
 
-		for _, info := range databasesInfo {
-			namespaceNames = append(namespaceNames, info.Name)
+		for _, entry := range namespaceEntries {
+			namespaceNames = append(namespaceNames, entry.Name)
 		}
 
 		if reporter != nil {
@@ -958,6 +861,7 @@ func (s *ScanService) scanObjectStorageCatalogResourceResultWithReporter(resourc
 	if err != nil {
 		return scanDispatchResult{}, err
 	}
+	s.finalizeCatalogRootAfterScan(resource, tenantID, result.Items, scanDepth)
 	return scanDispatchResult{
 		CatalogNodes: result.CatalogNodes,
 		Items:        result.Items,

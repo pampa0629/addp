@@ -56,13 +56,13 @@ func (s *LogService) GetByID(id uint) (*models.AuditLog, error) {
 
 // LogStatsResponse 日志统计响应
 type LogStatsResponse struct {
-	TodayCount         int64                          `json:"today_count"`          // 今日日志数
-	WeekCount          int64                          `json:"week_count"`           // 7日日志数
-	MonthCount         int64                          `json:"month_count"`          // 30日日志数
-	ErrorCount         int64                          `json:"error_count"`          // 今日错误数
-	TopUsers           []repository.UserStats         `json:"top_users"`            // TOP 5 活跃用户
-	TopModules         []repository.ModuleStats       `json:"top_modules"`          // TOP 5 活跃模块
-	ActionDistribution []repository.ActionStats       `json:"action_distribution"`  // 操作类型分布
+	TodayCount         int64                    `json:"today_count"`         // 今日日志数
+	WeekCount          int64                    `json:"week_count"`          // 7日日志数
+	MonthCount         int64                    `json:"month_count"`         // 30日日志数
+	ErrorCount         int64                    `json:"error_count"`         // 今日错误数
+	TopUsers           []repository.UserStats   `json:"top_users"`           // TOP 5 活跃用户
+	TopModules         []repository.ModuleStats `json:"top_modules"`         // TOP 5 活跃模块
+	ActionDistribution []repository.ActionStats `json:"action_distribution"` // 操作类型分布
 }
 
 // TrendsResponse 时间趋势响应
@@ -201,8 +201,8 @@ func (s *LogService) GetTrends(currentUserID uint) (*TrendsResponse, error) {
 
 	// 并发查询
 	var (
-		daily  []repository.TrendDataPoint
-		hourly []repository.TrendDataPoint
+		daily   []repository.TrendDataPoint
+		hourly  []repository.TrendDataPoint
 		errChan = make(chan error, 2)
 	)
 

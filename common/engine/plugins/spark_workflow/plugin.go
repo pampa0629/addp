@@ -52,7 +52,7 @@ func (p *SparkWorkflowPlugin) RuntimeEndpoint(ctx context.Context, connInfo plug
 	return plugin.RuntimeBaseURL(connInfo)
 }
 
-func (p *SparkWorkflowPlugin) ListOperators(ctx context.Context, connInfo plugin.ConnectionInfo) ([]plugin.OperatorMetadata, error) {
+func (p *SparkWorkflowPlugin) ListOperators(ctx context.Context, connInfo plugin.ConnectionInfo) ([]plugin.OperatorDescriptor, error) {
 	return plugin.HTTPListOperators(ctx, connInfo)
 }
 

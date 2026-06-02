@@ -36,7 +36,7 @@ type FieldRecord struct {
 	IsUniqueKey     bool   `json:"is_unique_key,omitempty"`
 }
 
-// AssetRecord 统一资产记录（包含表、catalog item、文档内容）
+// AssetRecord 统一资产记录（包含表、catalog leaf、文档内容）
 // 基础扫描只填充基本字段，深度扫描填充完整内容
 type AssetRecord struct {
 	// ===== 基础字段（所有资产，基础扫描即写） =====
@@ -48,7 +48,7 @@ type AssetRecord struct {
 	EngineID    uint     `json:"engine_id"`
 	EngineName  string   `json:"engine_name,omitempty"`
 	EngineType  string   `json:"engine_type,omitempty"`
-	AssetType   string   `json:"asset_type"` // "table" | catalog item type, e.g. "object" or "file"
+	AssetType   string   `json:"asset_type"` // "table" | catalog leaf type, e.g. "object" or "file"
 	Name        string   `json:"name"`
 	FullName    string   `json:"full_name,omitempty"`
 	Description string   `json:"description,omitempty"`

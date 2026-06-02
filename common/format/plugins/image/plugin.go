@@ -66,7 +66,6 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 			string(format.ContentReaderRawContent),
 			string(format.ContentReaderRangeContent),
 		},
-		EngineFamilies: []string{format.EngineFamilyObject, format.EngineFamilyFile},
 	}
 	switch p.Format() {
 	case format.FormatJPEG:
@@ -79,19 +78,6 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		descriptor.Identification = format.FormatIdentification{Extensions: []string{".tif", ".tiff"}, MimeTypes: []string{"image/tiff"}}
 	}
 	return descriptor
-}
-
-func (p *Plugin) Capabilities() format.FormatCapability {
-	capability, ok := format.GetFormatCapability(p.Format())
-	if ok {
-		return capability
-	}
-	return format.FormatCapability{
-		Format:        p.Format(),
-		DataType:      datatype.DataTypeMedia,
-		Layouts:       []string{format.LayoutSingle},
-		ProviderHints: []string{format.FormatProviderMedia},
-	}
 }
 
 func (p *Plugin) DescribeMedia(ctx context.Context, input io.Reader, _ *format.ParseOptions) (*format.MediaDescribeResult, error) {

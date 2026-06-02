@@ -90,4 +90,3 @@ curl http://localhost:8083/health
 - `transfer/docs/transfer高性能分析.md`
 - `transfer/docs/tables/tasks表.md`
 - `transfer/docs/tables/task_executions表.md`
-- `docs/next/transfer基于common-engine-format改造设计.md`

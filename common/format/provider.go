@@ -9,23 +9,22 @@ import (
 	"github.com/addp/common/resume"
 )
 
-// Provider 是格式层能力实现的基础接口。
+// Provider 是格式层具体能力实现的基础接口。
 //
 // Provider 不接 engine id，不创建资源读取器，也不返回上层模块专用 DTO。
 // 调用方应先基于 engine capability 构造读取抽象或内容流，再交给 Provider 解码。
 type Provider interface {
 	Format() FormatType
-	Capabilities() FormatCapability
 }
 
 // FormatPlugin 表示一个格式实现的稳定身份入口。
 //
-// Plugin 只声明格式身份、descriptor 和 capability，不负责识别某个资源、
-// 不决定 data item 边界，也不替代具体 InfoProvider / ContentReader。
+// Plugin 只声明格式身份和 descriptor，不负责识别某个资源、不决定 data item
+// 边界，也不替代具体 InfoProvider / Reader / Writer。当前进程实际加载了哪些
+// provider / reader / writer，由 ProviderRegistry 和 FormatSupportView 派生表达。
 type FormatPlugin interface {
 	Format() FormatType
 	Descriptor() FormatDescriptor
-	Capabilities() FormatCapability
 }
 
 // ContentSniffer 表示格式 plugin 可以基于内容前缀自行判断是否认领资源。

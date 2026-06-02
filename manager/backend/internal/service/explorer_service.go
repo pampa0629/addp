@@ -27,9 +27,8 @@ type ExplorerService struct {
 }
 
 type RefreshNodeResult struct {
-	Node      *catalogview.TreeNode          `json:"node"`
-	Scan      *commonClient.MetaScanResponse `json:"scan,omitempty"`
-	ScanError string                         `json:"scan_error,omitempty"`
+	Node *catalogview.TreeNode       `json:"node"`
+	Run  *commonModels.TaskExecution `json:"run,omitempty"`
 }
 
 // NewExplorerService 创建数据探查服务
@@ -73,7 +72,8 @@ func (s *ExplorerService) GetTree(ctx context.Context, tenantID *uint, engineID 
 	}
 
 	// 2. 尝试从 Meta 获取资源树（可选，失败不影响功能）
-	metaNodes, err := s.getMetaNodes(ctx, engineID, engine.EngineType, expandDepth, tenantID)
+	metaDepth := metadataExpandDepth(nil, expandDepth)
+	metaNodes, err := s.getMetaNodes(ctx, engineID, engine.EngineType, metaDepth, tenantID)
 	if err != nil {
 		logger.L().Warn("获取 Meta 节点失败，使用降级方案", "engine_id", engineID, "error", err)
 		// Meta 不可用时的降级方案：返回引擎根节点
@@ -81,7 +81,7 @@ func (s *ExplorerService) GetTree(ctx context.Context, tenantID *uint, engineID 
 	}
 
 	// 3. 使用 TreeBuilder 构建树
-	tree, err := s.treeBuilder.BuildFromMeta(engine, metaNodes, expandDepth)
+	tree, err := s.treeBuilder.BuildFromMeta(engine, metaNodes, metaDepth)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build tree: %w", err)
 	}
@@ -97,7 +97,7 @@ func (s *ExplorerService) GetTree(ctx context.Context, tenantID *uint, engineID 
 //   - locator: ResourceLocator URI
 //
 // 返回: 刷新后的节点信息
-func (s *ExplorerService) RefreshNode(ctx context.Context, tenantID *uint, locatorURI string) (*RefreshNodeResult, error) {
+func (s *ExplorerService) RefreshNode(ctx context.Context, tenantID *uint, locatorURI string, authToken string) (*RefreshNodeResult, error) {
 	// 1. 解析 Locator
 	loc, err := catalogview.ParseURI(locatorURI)
 	if err != nil {
@@ -118,23 +118,24 @@ func (s *ExplorerService) RefreshNode(ctx context.Context, tenantID *uint, locat
 		return nil, ErrEngineAccessDenied
 	}
 
-	// 3. 触发 Meta 深度扫描，并保留统计结果用于前端反馈。
-	var scanResult *commonClient.MetaScanResponse
-	var scanError string
+	// 3. 提交 Meta 后台深度扫描运行，并保留运行记录用于前端反馈。
+	var scanRun *commonModels.TaskExecution
 	if s.metaClient != nil {
-		// 设置租户 ID（用于服务间调用时的租户隔离）
-		s.metaClient.SetTenantID(tenantID)
-
+		authToken = strings.TrimSpace(authToken)
+		if authToken == "" {
+			return nil, fmt.Errorf("metadata scan requires authorization token")
+		}
 		opts := refreshScanOptions(loc)
-		logger.L().Info("触发 Meta 深度扫描", "engine_id", loc.EngineID, "type", loc.Type, "node_id", opts.NodeID, "item_id", opts.ItemID, "targets", opts.Targets)
+		logger.L().Info("提交 Meta 后台深度扫描", "engine_id", loc.EngineID, "type", loc.Type, "node_id", opts.NodeID, "item_id", opts.ItemID, "targets", opts.Targets)
 
-		scanResult, err = s.metaClient.ScanEngine(opts)
+		metaClient := s.metaClient.WithAuthToken(authToken)
+
+		scanRun, err = metaClient.CreateManualScanRun(opts)
 		if err != nil {
-			// 扫描失败不中断流程，只记录警告
-			scanError = err.Error()
-			logger.L().Warn("触发 Meta 深度扫描失败", "error", err)
+			logger.L().Warn("提交 Meta 后台深度扫描失败", "error", err)
+			return nil, fmt.Errorf("failed to submit metadata scan: %w", err)
 		} else {
-			logger.L().Info("Meta 深度扫描完成", "engine_id", loc.EngineID, "items_scanned", scanResult.ItemsScanned, "fields_scanned", scanResult.FieldsScanned, "catalog_nodes_scanned", scanResult.CatalogNodesScanned)
+			logger.L().Info("Meta 后台深度扫描已提交", "engine_id", loc.EngineID, "execution_id", scanRun.ExecutionID)
 		}
 	}
 
@@ -155,7 +156,7 @@ func (s *ExplorerService) RefreshNode(ctx context.Context, tenantID *uint, locat
 		if err != nil {
 			return nil, fmt.Errorf("failed to build engine tree: %w", err)
 		}
-		return &RefreshNodeResult{Node: tree, Scan: scanResult, ScanError: scanError}, nil
+		return &RefreshNodeResult{Node: tree, Run: scanRun}, nil
 	}
 
 	if loc.NodeID != nil {
@@ -166,7 +167,7 @@ func (s *ExplorerService) RefreshNode(ctx context.Context, tenantID *uint, locat
 				if err != nil {
 					return nil, fmt.Errorf("failed to build node tree: %w", err)
 				}
-				return &RefreshNodeResult{Node: tree, Scan: scanResult, ScanError: scanError}, nil
+				return &RefreshNodeResult{Node: tree, Run: scanRun}, nil
 			}
 		}
 		return nil, fmt.Errorf("node not found: %s", locatorURI)
@@ -179,7 +180,7 @@ func (s *ExplorerService) RefreshNode(ctx context.Context, tenantID *uint, locat
 				if err != nil {
 					return nil, fmt.Errorf("failed to build item tree: %w", err)
 				}
-				return &RefreshNodeResult{Node: tree, Scan: scanResult, ScanError: scanError}, nil
+				return &RefreshNodeResult{Node: tree, Run: scanRun}, nil
 			}
 		}
 		return nil, fmt.Errorf("item not found: %s", locatorURI)
@@ -327,15 +328,15 @@ func (s *ExplorerService) GetNodeChildren(ctx context.Context, tenantID *uint, e
 	// 3. 从 Meta 获取元数据节点
 	// 这里我们获取所有节点，然后在内存中过滤出目标节点的子节点
 	// TODO: 优化为直接从 Meta 获取指定节点的子节点
-	nodeDepth := len(loc.Path) // 节点深度 = 路径段数
-	metaNodes, err := s.getMetaNodes(ctx, engineID, engine.EngineType, expandDepth+nodeDepth, tenantID)
+	metaDepth := metadataExpandDepth(loc, expandDepth)
+	metaNodes, err := s.getMetaNodes(ctx, engineID, engine.EngineType, metaDepth, tenantID)
 	if err != nil {
 		logger.L().Warn("获取 Meta 节点失败", "locator", locatorURI, "error", err)
 		return nil, fmt.Errorf("failed to get meta nodes: %w", err)
 	}
 
 	// 4. 使用 TreeBuilder 构建完整树
-	tree, err := s.treeBuilder.BuildFromMeta(engine, metaNodes, expandDepth+nodeDepth)
+	tree, err := s.treeBuilder.BuildFromMeta(engine, metaNodes, metaDepth)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build tree: %w", err)
 	}
@@ -352,6 +353,17 @@ func (s *ExplorerService) GetNodeChildren(ctx context.Context, tenantID *uint, e
 		"children_count", len(targetNode.Children))
 
 	return targetNode, nil
+}
+
+func metadataExpandDepth(loc *catalogview.ResourceLocator, expandDepth int) int {
+	if expandDepth < 0 {
+		return -1
+	}
+	// Locator.Path 不包含显式 catalog root，MetaNode.Depth 包含。
+	if loc == nil {
+		return 1 + expandDepth
+	}
+	return len(loc.Path) + 1 + expandDepth
 }
 
 // SearchNodes 搜索资源树节点

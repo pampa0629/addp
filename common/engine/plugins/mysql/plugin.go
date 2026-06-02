@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-var mysqlMetadataDialect = shared.MySQLCompatibleMetadataDialect{
+var mysqlCatalogFactsDialect = shared.MySQLCompatibleCatalogFactsDialect{
 	SystemSchemas: map[string]bool{
 		"information_schema": true,
 		"mysql":              true,
@@ -87,16 +87,16 @@ func (p *MySQLPlugin) tabularCatalogCallbacks() plugin.TabularCatalogCallbacks {
 	}
 }
 
-func (p *MySQLPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
+func (p *MySQLPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogEntry, error) {
 	return plugin.ListTabularCatalogChildren(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: parent.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, parent, opts)
 }
 
-func (p *MySQLPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
+func (p *MySQLPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogEntry, error) {
 	return plugin.ResolveTabularCatalogPath(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path)
 }
 
-func (p *MySQLPlugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
-	return plugin.DescribeTabularItem(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path, opts)
+func (p *MySQLPlugin) DescribeCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+	return plugin.DescribeTabularCatalogFacts(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path, opts)
 }
 
 func (p *MySQLPlugin) QueryLanguages() []string {
@@ -161,29 +161,29 @@ func (p *MySQLPlugin) GetDialect() string {
 	return "mysql"
 }
 
-// === MetadataPlugin 接口实现 ===
+// === CatalogProvider / CatalogFactsProvider 回调实现 ===
 
 // listNamespaces 列出所有 Database。
-func (p *MySQLPlugin) listNamespaces(ctx context.Context, db *gorm.DB) ([]plugin.NamespaceInfo, error) {
-	return mysqlMetadataDialect.ListNamespaces(ctx, db)
+func (p *MySQLPlugin) listNamespaces(ctx context.Context, db *gorm.DB, root plugin.CatalogPath) ([]plugin.CatalogEntry, error) {
+	return mysqlCatalogFactsDialect.ListNamespaces(ctx, db, root, "database")
 }
 
 // ListTables 列出指定Schema下的所有表
 func (p *MySQLPlugin) listTables(ctx context.Context, db *gorm.DB, schema string) ([]datatype.TableInfo, error) {
-	return mysqlMetadataDialect.ListTables(ctx, db, schema)
+	return mysqlCatalogFactsDialect.ListTables(ctx, db, schema)
 }
 
 // ListColumns 列出指定表的所有列
 func (p *MySQLPlugin) listColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]datatype.FieldInfo, error) {
-	return mysqlMetadataDialect.ListColumns(ctx, db, schema, table)
+	return mysqlCatalogFactsDialect.ListColumns(ctx, db, schema, table)
 }
 
 // GetTableRowCount 获取表的行数
 func (p *MySQLPlugin) getTableRowCount(ctx context.Context, db *gorm.DB, schema, table string) (int64, error) {
-	return mysqlMetadataDialect.RowCount(ctx, db, schema, table)
+	return mysqlCatalogFactsDialect.RowCount(ctx, db, schema, table)
 }
 
 // isSystemSchema 判断是否为系统 Schema
 func (p *MySQLPlugin) isSystemSchema(schemaName string) bool {
-	return mysqlMetadataDialect.IsSystemSchema(schemaName)
+	return mysqlCatalogFactsDialect.IsSystemSchema(schemaName)
 }

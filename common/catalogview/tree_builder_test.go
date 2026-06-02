@@ -131,11 +131,23 @@ func TestBuildFromMeta(t *testing.T) {
 	}
 
 	now := time.Now()
+	rootID := uint(99)
 	metaNodes := []*models.MetaNode{
+		{
+			ID:           rootID,
+			EngineID:     1,
+			ParentNodeID: nil,
+			NodeType:     "server",
+			Name:         "PostgreSQL 主库",
+			FullName:     "",
+			Depth:        0,
+			ScanStatus:   "completed",
+			ItemCount:    2,
+		},
 		{
 			ID:             100,
 			EngineID:       1,
-			ParentNodeID:   nil,
+			ParentNodeID:   &rootID,
 			NodeType:       "schema",
 			Name:           "public",
 			FullName:       "public",
@@ -149,7 +161,7 @@ func TestBuildFromMeta(t *testing.T) {
 		{
 			ID:             101,
 			EngineID:       1,
-			ParentNodeID:   nil,
+			ParentNodeID:   &rootID,
 			NodeType:       "schema",
 			Name:           "private",
 			FullName:       "private",
@@ -170,8 +182,11 @@ func TestBuildFromMeta(t *testing.T) {
 	if tree.Label != "PostgreSQL 主库" {
 		t.Errorf("tree.Label = %s, want %s", tree.Label, "PostgreSQL 主库")
 	}
-	if tree.Type != "engine" {
-		t.Errorf("tree.Type = %s, want %s", tree.Type, "engine")
+	if tree.Type != "server" {
+		t.Errorf("tree.Type = %s, want %s", tree.Type, "server")
+	}
+	if tree.Locator != "addp://engine/1/path/?type=root&node_id=99" {
+		t.Errorf("tree.Locator = %s, want explicit catalog root locator", tree.Locator)
 	}
 
 	// 验证子节点数量
@@ -213,20 +228,34 @@ func TestBuildFromMetadataTreeAttachesItems(t *testing.T) {
 		EngineType: "postgresql",
 	}
 	schemaID := uint(11)
+	rootID := uint(10)
 	rowCount := int64(42)
 	sizeBytes := int64(2048)
 	lastModified := time.Date(2026, 5, 31, 9, 30, 0, 0, time.UTC)
 	tree, err := builder.BuildFromMetadataTree(engine, &models.MetadataTree{
 		TopNodes: []models.MetaNode{
 			{
-				ID:         schemaID,
+				ID:         rootID,
 				EngineID:   7,
-				NodeType:   "schema",
-				Name:       "public",
-				FullName:   "public",
-				Depth:      1,
+				NodeType:   "server",
+				Name:       "PostgreSQL 主库",
+				FullName:   "",
+				Depth:      0,
 				ItemCount:  1,
 				ScanStatus: "completed",
+			},
+		},
+		ChildNodes: []models.MetaNode{
+			{
+				ID:           schemaID,
+				EngineID:     7,
+				ParentNodeID: &rootID,
+				NodeType:     "schema",
+				Name:         "public",
+				FullName:     "public",
+				Depth:        1,
+				ItemCount:    1,
+				ScanStatus:   "completed",
 			},
 		},
 		Items: []models.MetaItem{
@@ -458,7 +487,7 @@ func TestConvertNodeToTree(t *testing.T) {
 func TestGetNodeByLocator(t *testing.T) {
 	// 构建测试树
 	tree := &TreeNode{
-		Locator: "addp://engine/1/path/?type=database",
+		Locator: "addp://engine/1/path/?type=root",
 		Label:   "Root",
 		Type:    "engine",
 		Children: []*TreeNode{
@@ -485,7 +514,7 @@ func TestGetNodeByLocator(t *testing.T) {
 	}{
 		{
 			name:     "查找根节点",
-			locator:  "addp://engine/1/path/?type=database",
+			locator:  "addp://engine/1/path/?type=root",
 			wantNil:  false,
 			wantType: "engine",
 		},
@@ -526,7 +555,7 @@ func TestGetNodeByLocator(t *testing.T) {
 func TestFilterTreeByType(t *testing.T) {
 	// 构建测试树
 	tree := &TreeNode{
-		Locator: "addp://engine/1/path/?type=database",
+		Locator: "addp://engine/1/path/?type=root",
 		Label:   "Root",
 		Type:    "engine",
 		Children: []*TreeNode{

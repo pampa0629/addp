@@ -38,14 +38,14 @@ func NewJupyterInstanceService(cfg *config.Config) (*JupyterInstanceService, err
 
 // JupyterInstance Jupyter 实例信息
 type JupyterInstance struct {
-	TenantID     uint      `json:"tenant_id"`
-	ContainerID  string    `json:"container_id"`
-	ContainerName string   `json:"container_name"`
-	Status       string    `json:"status"`      // running, stopped, starting
-	JupyterURL   string    `json:"jupyter_url"` // Jupyter Lab 访问 URL
-	JupyterPort  int       `json:"jupyter_port"`
-	CreatedAt    time.Time `json:"created_at"`
-	StartedAt    time.Time `json:"started_at,omitempty"`
+	TenantID      uint      `json:"tenant_id"`
+	ContainerID   string    `json:"container_id"`
+	ContainerName string    `json:"container_name"`
+	Status        string    `json:"status"`      // running, stopped, starting
+	JupyterURL    string    `json:"jupyter_url"` // Jupyter Lab 访问 URL
+	JupyterPort   int       `json:"jupyter_port"`
+	CreatedAt     time.Time `json:"created_at"`
+	StartedAt     time.Time `json:"started_at,omitempty"`
 }
 
 // StartInstance 启动租户的 Jupyter 实例
@@ -91,10 +91,10 @@ func (s *JupyterInstanceService) StartInstance(ctx context.Context, tenantID uin
 		Image: "addp/jupyter-engine:latest", // 使用本地构建的镜像
 		Env:   env,
 		Labels: map[string]string{
-			"app":           "addp",
-			"service":       "jupyter",
-			"tenant_id":     fmt.Sprintf("%d", tenantID),
-			"managed_by":    "addp-develop",
+			"app":        "addp",
+			"service":    "jupyter",
+			"tenant_id":  fmt.Sprintf("%d", tenantID),
+			"managed_by": "addp-develop",
 		},
 	}
 
@@ -107,7 +107,7 @@ func (s *JupyterInstanceService) StartInstance(ctx context.Context, tenantID uin
 		Resources: container.Resources{
 			// 资源限制
 			Memory:   4 * 1024 * 1024 * 1024, // 4GB
-			NanoCPUs: 2 * 1e9,                 // 2 核
+			NanoCPUs: 2 * 1e9,                // 2 核
 		},
 	}
 

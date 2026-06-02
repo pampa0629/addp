@@ -42,7 +42,7 @@ func TestEnrichObjectStorageJSONTableUpdatesItemDataType(t *testing.T) {
 	}
 	item := metaitemForJSONDocument(resource)
 
-	result, err := catalogItemProcessor(repo, nil, slog.New(slog.NewTextHandler(io.Discard, nil))).Process(context.Background(), catalogSingleItemInput{
+	result, err := catalogDataItemProcessor(repo, nil, slog.New(slog.NewTextHandler(io.Discard, nil))).Process(context.Background(), catalogSingleItemInput{
 		Resource:      &commonModels.Engine{ID: 7, EngineType: "static"},
 		TenantID:      1,
 		EngineID:      7,
@@ -418,17 +418,18 @@ func TestEnsureObjectCatalogPrefixNodesUsesCompositeItemParentPath(t *testing.T)
 func TestResolveObjectCatalogTargetDistinguishesObjectAndPrefix(t *testing.T) {
 	t.Parallel()
 
+	sizeBytes := int64(100)
 	provider := objectScanTargetProvider{
-		items: map[string]plugin.CatalogNode{
+		items: map[string]plugin.CatalogEntry{
 			"addp/contain/shapefile.zip": {
-				Name:   "shapefile.zip",
-				Path:   plugin.ObjectItemPath(9, "addp", "contain/shapefile.zip"),
-				Kind:   plugin.CatalogKindObject,
-				Term:   plugin.CatalogTermObject,
-				IsItem: true,
-				Stats:  map[string]interface{}{"size_bytes": int64(100)},
-				Attributes: map[string]interface{}{
-					"path": "addp/contain/shapefile.zip",
+				Name: "shapefile.zip",
+				Path: plugin.ObjectItemPath(9, "addp", "contain/shapefile.zip"),
+				Kind: plugin.CatalogKindObject,
+				Term: plugin.CatalogTermObject,
+				Role: plugin.CatalogRoleLeaf,
+				Storage: &plugin.CatalogStorageFacts{
+					Path:      "addp/contain/shapefile.zip",
+					SizeBytes: &sizeBytes,
 				},
 			},
 		},
@@ -449,6 +450,80 @@ func TestResolveObjectCatalogTargetDistinguishesObjectAndPrefix(t *testing.T) {
 	}
 	if prefixTarget.Bucket != "addp" || prefixTarget.Prefix != "contain" || prefixTarget.Object != "" {
 		t.Fatalf("prefix target = %#v, want prefix", prefixTarget)
+	}
+}
+
+func TestObjectCatalogScanFinalizesCatalogRoot(t *testing.T) {
+	db := openObjectCatalogScanTestDB(t)
+	repo := metaRepo.NewScanRepository(db)
+	svc := NewScanService(db, nil)
+	svc.repo = repo
+	svc.objectStorageCatalogScanService = NewObjectStorageCatalogScanService(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
+	svc.log = slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	sizeBytes := int64(12)
+	provider := objectScanTargetProvider{
+		items: map[string]plugin.CatalogEntry{
+			"addp/test2.csv": {
+				Name: "test2.csv",
+				Path: plugin.ObjectItemPath(9, "addp", "test2.csv"),
+				Kind: plugin.CatalogKindObject,
+				Term: plugin.CatalogTermObject,
+				Role: plugin.CatalogRoleLeaf,
+				Storage: &plugin.CatalogStorageFacts{
+					Path:      "addp/test2.csv",
+					SizeBytes: &sizeBytes,
+				},
+			},
+		},
+		listChildren: map[string][]plugin.CatalogEntry{
+			plugin.ObjectRootPath(9).StringPath(): {
+				{
+					Name: "addp",
+					Path: plugin.ObjectDirectoryPath(9, "addp", ""),
+					Kind: plugin.CatalogKindBucket,
+					Term: plugin.CatalogTermBucket,
+					Role: plugin.CatalogRoleBranch,
+				},
+			},
+			plugin.ObjectDirectoryPath(9, "addp", "").StringPath(): {
+				{
+					Name: "test2.csv",
+					Path: plugin.ObjectItemPath(9, "addp", "test2.csv"),
+					Kind: plugin.CatalogKindObject,
+					Term: plugin.CatalogTermObject,
+					Role: plugin.CatalogRoleLeaf,
+					Storage: &plugin.CatalogStorageFacts{
+						Path:      "addp/test2.csv",
+						SizeBytes: &sizeBytes,
+					},
+				},
+			},
+		},
+	}
+	plugin.Register(provider)
+	t.Cleanup(func() {
+		plugin.Unregister(provider.Type())
+	})
+
+	resource := &commonModels.Engine{ID: 9, Name: "Business MinIO", EngineType: provider.Type()}
+	result, err := svc.scanObjectStorageCatalogResourceResultWithReporter(resource, 1, nil, models.ScannedDepthDeep, true, nil)
+	if err != nil {
+		t.Fatalf("scan object catalog: %v", err)
+	}
+	if result.Items != 1 {
+		t.Fatalf("result.Items = %d, want 1", result.Items)
+	}
+
+	var root models.MetaNode
+	if err := db.Where("tenant_id = ? AND engine_id = ? AND parent_node_id IS NULL", 1, 9).First(&root).Error; err != nil {
+		t.Fatalf("query root node: %v", err)
+	}
+	if root.ScanStatus != "completed" || root.ScannedDepth != models.ScannedDepthDeep {
+		t.Fatalf("root scan status/depth = %q/%q, want completed/deep", root.ScanStatus, root.ScannedDepth)
+	}
+	if root.ItemCount != 1 {
+		t.Fatalf("root item_count = %d, want 1", root.ItemCount)
 	}
 }
 
@@ -579,7 +654,8 @@ func (r staticObjectContentReader) OpenContent(context.Context, plugin.Connectio
 }
 
 type objectScanTargetProvider struct {
-	items map[string]plugin.CatalogNode
+	items        map[string]plugin.CatalogEntry
+	listChildren map[string][]plugin.CatalogEntry
 }
 
 func (p objectScanTargetProvider) Type() string         { return "object-scan-target-test" }
@@ -593,15 +669,19 @@ func (p objectScanTargetProvider) DefaultPort() int                             
 func (p objectScanTargetProvider) RequiredFields() []string                           { return nil }
 func (p objectScanTargetProvider) SensitiveFields() []string                          { return nil }
 func (p objectScanTargetProvider) Capabilities() plugin.EngineCapabilities {
-	return plugin.EngineCapabilities{}
+	return plugin.NewObjectCapabilities(p.Type())
 }
 func (p objectScanTargetProvider) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemantics{}
 }
-func (p objectScanTargetProvider) ListChildren(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.ListOptions) ([]plugin.CatalogNode, error) {
-	return nil, nil
+func (p objectScanTargetProvider) CatalogModel() plugin.CatalogModelSpec {
+	return plugin.ObjectCatalogModel()
 }
-func (p objectScanTargetProvider) ResolvePath(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
+func (p objectScanTargetProvider) ListChildren(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.ListOptions) ([]plugin.CatalogEntry, error) {
+	nodes := p.listChildren[path.StringPath()]
+	return nodes, nil
+}
+func (p objectScanTargetProvider) ResolvePath(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogEntry, error) {
 	node, ok := p.items[path.StringPath()]
 	if !ok {
 		return nil, nil

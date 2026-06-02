@@ -7,11 +7,11 @@
 
 | 引擎类型标识 | 显示名称 | 主要 Provider |
 |------------|---------|---------|
-| `postgresql` | PostgreSQL | CatalogProvider + ItemMetadataProvider + SQLQueryRuntimeProvider |
-| `mysql` | MySQL | CatalogProvider + ItemMetadataProvider + SQLQueryRuntimeProvider |
-| `doris` | Apache Doris | CatalogProvider + ItemMetadataProvider + SQLQueryRuntimeProvider |
-| `clickhouse` | ClickHouse | CatalogProvider + ItemMetadataProvider + SQLQueryRuntimeProvider |
-| `mongodb` | MongoDB | CatalogProvider + ItemMetadataProvider + QueryRuntimeProvider |
+| `postgresql` | PostgreSQL | CatalogProvider + CatalogFactsProvider + SQLQueryRuntimeProvider |
+| `mysql` | MySQL | CatalogProvider + CatalogFactsProvider + SQLQueryRuntimeProvider |
+| `doris` | Apache Doris | CatalogProvider + CatalogFactsProvider + SQLQueryRuntimeProvider |
+| `clickhouse` | ClickHouse | CatalogProvider + CatalogFactsProvider + SQLQueryRuntimeProvider |
+| `mongodb` | MongoDB | CatalogProvider + CatalogFactsProvider + QueryRuntimeProvider |
 | `neo4j` | Neo4j | CatalogProvider + QueryRuntimeProvider + GraphQueryProvider |
 | `minio` | MinIO | CatalogProvider + ContentReadableProvider |
 | `s3` | Amazon S3 | CatalogProvider + ContentReadableProvider |
@@ -26,21 +26,27 @@
 **关键原则**：存储引擎的连接参数（如 NFS 的 `export_path`、MinIO 的 `endpoint`）是**配置**，
 不是数据路径的一部分，不得出现在 full_name、ResourceLocator 或任何对用户可见的路径中。
 
-| 引擎 | 连接参数（配置层，不进入路径） | 数据路径的起点 |
-|------|--------------------------|-------------|
-| MinIO/S3 | endpoint、access_key | bucket |
-| NFS | server、export_path | 挂载点内的 `/` |
-| PostgreSQL | host、port、user | schema |
-| MySQL/Doris/ClickHouse | host、port、user | database |
-| MongoDB/Neo4j | host、port | database |
+| 引擎 | 连接参数（配置层，不进入路径） | 引擎目录根 | 第一层业务 branch |
+|------|--------------------------|-------------|-------------|
+| MinIO/S3 | endpoint、access_key | `service`，标题使用引擎实例名称，`full_name=""` | bucket |
+| NFS | server、export_path | `root`，标题使用引擎实例名称，`full_name=""` | directory；根目录下 file 可直接挂到 root |
+| PostgreSQL | host、port、user | `server`，标题使用引擎实例名称，`full_name=""` | schema |
+| MySQL/Doris/ClickHouse | host、port、user | `server`，标题使用引擎实例名称，`full_name=""` | database |
+| MongoDB/Neo4j | host、port | `server`，标题使用引擎实例名称，`full_name=""` | database |
 
-### 根节点的性质差异
+### 引擎目录根与业务路径
 
-| | 对象存储（MinIO/S3） | 文件系统（NFS） | 关系型数据库 | Namespace/Item 型引擎（MongoDB/Neo4j） |
-|---|---------|--------------|------------|----------------|
-| 根的名称 | bucket 名（有业务含义） | 无（挂载点透明） | PostgreSQL 为 schema 名；MySQL/Doris/ClickHouse 为 database 名 | database 名 |
-| 根的数量 | 多个（一个引擎多个 bucket） | 一个（一个引擎一个挂载点） | 多个（一个引擎多个 schema/database） | 多个（一个引擎多个 database） |
-| 根是否对用户可见 | 是 | 否 | 是 | 是 |
+所有存储引擎都有显性引擎目录根。引擎目录根是资源树和 Meta 树的结构入口，不是业务路径段：
+
+- root `meta_node.parent_node_id` 为 `NULL`。
+- root `meta_node.name` 使用引擎实例名称，展示层直接显示为存储引擎。
+- root `meta_node.full_name` 固定为空字符串 `""`。
+- root 的 ResourceLocator path 为空，但必须和普通 node 一样携带 `type` 与 `node_id`，例如 `addp://engine/8/path/?type=server&node_id=99`。
+- root 不进入 `CatalogPath.StringPath()`、`full_name`、`storage_ref`、ResourceLocator 业务 path 或指纹输入。
+- root 原生名称如有实际价值，写入 `attributes.catalog.native_name`；例如 NFS 挂载根为 `/`。
+- Provider 枚举第一层业务 branch 时必须使用 `ListChildren(rootPath)`，不得用 empty path 表达业务第一层。
+
+bucket、schema、database、directory 是 root 下第一层业务 branch。它们可以对用户可见，也可以作为扫描目标，但不再被称为引擎根。
 
 ### item_type 与 data_type 分工
 
@@ -160,26 +166,26 @@ full_name 由 `database.item` 两段组成，使用 `.` 分隔：
 
 ```
 Engine (MinIO)
-  └── bucket: addp          ← full_name="addp"
-        ├── prefix: image   ← full_name="addp/image"
-        │     └── item: photo.jpg
-        └── item: data.csv
+  └── service: Business MinIO ← full_name=""
+        └── bucket: addp      ← full_name="addp"
+              ├── prefix: image   ← full_name="addp/image"
+              │     └── item: photo.jpg
+              └── item: data.csv
 ```
 
-bucket 作为独立节点展示，用户可以按 bucket 触发扫描。
+service root 作为结构入口展示，引擎实例名称作为标题。bucket 作为独立业务节点展示，用户可以按 bucket 触发扫描。
 
 ### 文件系统（NFS）
 
 ```
-meta_node 存储结构：        用户看到的树：
-  root (full_name="")        Engine (Business NFS)
-    ├── dir: gis-data          ├── gis-data/
-    │     └── ...              │     └── ...
-    └── file: README.md        └── README.md
+Engine (Business NFS)
+  └── root: Business NFS      ← full_name=""
+        ├── dir: gis-data
+        │     └── ...
+        └── file: README.md
 ```
 
-root 节点在数据库中存在（作为顶层子节点的父节点），但在 Manager 等资源树展示层透明化——
-其子节点直接挂到引擎节点下，用户不感知 root 这一层。目录选择器等需要让用户选择挂载根时，可以把该结构性根显示为 `/`。
+root 节点在数据库和 Manager 资源树中都显式存在，标题使用引擎实例名称。目录选择器等需要表达挂载根原生语义时，可以读取 `attributes.catalog.native_name="/"`。
 
 #### NFS root、name 与 full_name 的语义定位
 
@@ -202,15 +208,16 @@ schema.full_name = "public"
 NFS 不同。NFS root 是“挂载点内的结构性根”，不是业务路径本身：
 
 ```text
-root.name = "/"
+root.name = "Business NFS"
 root.full_name = ""
+root.attributes.catalog.native_name = "/"
 ```
 
 因此，NFS 在 ADDP 中要按四层语义分别处理：
 
 | 层次 | 字段 / 概念 | NFS root 取值 | 用途 |
 |---|---|---|---|
-| 展示名 | `meta_node.name` | `/` | 节点标题、目录选择器中的根目录显示 |
+| 展示名 | `meta_node.name` | 引擎实例名称 | 资源树结构 root 的标题 |
 | 语义路径 | `meta_node.full_name` | `""` | 资源定位、指纹、扫描、预览、Transfer meta 扫描 |
 | Meta 树结构 | `meta_node.path` | node id 链 | 表达父子节点关系，不是存储路径 |
 | 底层物理路径 | NFS plugin 内部路径 | `/` | 传给 NFS client 的真实文件系统路径 |
@@ -219,7 +226,7 @@ root.full_name = ""
 
 ```text
 Engine 实例
-  └── root: /              ← 结构性 root，不进入 full_name
+  └── root: Business NFS   ← 结构性 root，不进入 full_name
         ├── file: README.md
         ├── dir: shp
         │     └── file: shp/a3.shp
@@ -227,26 +234,15 @@ Engine 实例
               └── file: exports/a.csv
 ```
 
-资源树展示可以透明化 root：
-
-```text
-NFS 引擎
-  ├── README.md
-  ├── shp
-  │   └── a3.shp
-  └── exports
-      └── a.csv
-```
-
-但透明化只属于展示层，不得改变 Meta 中的父子关系。根目录文件的 `node_id` 指向 root node；`shp/a3.shp` 的 `node_id` 必须指向 `shp` dir node，不能因为 `full_name` 已包含 `shp/` 就挂到 root node 下。
+root 不透明化。根目录文件的 `node_id` 指向 root node；`shp/a3.shp` 的 `node_id` 必须指向 `shp` dir node，不能因为 `full_name` 已包含 `shp/` 就挂到 root node 下。
 
 一句话原则：
 
 ```text
-NFS root 是结构上必须存在、语义路径上为空、展示上可透明的节点。
+NFS root 是结构上必须存在、语义路径上为空、展示标题使用引擎实例名称的节点。
 ```
 
-NFS 必须创建 root meta_node，且 root 的 `name` 必须为 `/`。这是文件系统路径模型的结构性要求：
+NFS 必须创建 root meta_node，且 root 的 `name` 必须使用引擎实例名称。这是统一显性 catalog root 的结构性要求：
 
 - NFS 的 `export_path` 属于连接配置，不得暴露为数据路径，也不得进入 `full_name`。
 - 挂载根目录下直接存在的文件必须有父 node 容纳；该父 node 就是 root meta_node。
@@ -257,14 +253,14 @@ root 节点字段规范：
 
 | 字段 | 值 |
 |------|-----|
-| `name` | `/` |
+| `name` | 引擎实例名称 |
 | `full_name` | `""` |
 | `node_type` | `root` |
-| `attributes.path` | `""` |
+| `attributes.catalog.native_name` | `/` |
 
 这里三个字段含义不同，不能互相替代：
 
-- `name` 是节点名 / 展示名；NFS 根显示为 `/`。
+- `name` 是节点名 / 展示名；统一使用引擎实例名称。
 - `full_name` 是引擎内资源语义路径；NFS 根路径为空字符串。
 - `path` 是 Meta 内部节点层级路径，由 node id 组成，不表达存储路径。
 
@@ -272,39 +268,43 @@ root 节点字段规范：
 
 ```
 Engine (PostgreSQL)
-  ├── schema: public         ← full_name="public"
-  │     ├── item: users      ← full_name="public.users"
-  │     └── item: orders     ← full_name="public.orders"
-  └── schema: gis            ← full_name="gis"
-        └── item: regions    ← full_name="gis.regions"
+  └── server: Business PG    ← full_name=""
+        ├── schema: public         ← full_name="public"
+        │     ├── item: users      ← full_name="public.users"
+        │     └── item: orders     ← full_name="public.orders"
+        └── schema: gis            ← full_name="gis"
+              └── item: regions    ← full_name="gis.regions"
 ```
 
 ```
 Engine (MySQL)
-  └── database: analytics    ← full_name="analytics"
-        ├── item: users      ← full_name="analytics.users"
-        └── item: orders     ← full_name="analytics.orders"
+  └── server: Business MySQL ← full_name=""
+        └── database: analytics    ← full_name="analytics"
+              ├── item: users      ← full_name="analytics.users"
+              └── item: orders     ← full_name="analytics.orders"
 ```
 
-schema/database 节点对用户可见；术语按引擎原生语义展示。
+server root 是结构入口，标题使用引擎实例名称。schema/database 节点对用户可见；术语按引擎原生语义展示。
 系统 schema/database（如 `pg_catalog`、`information_schema`、`mysql`）由插件过滤，不进入元数据树。
 
 ### Namespace/Item 型引擎（MongoDB / Neo4j）
 
 ```
 Engine (MongoDB)
-  └── database: mydb         ← full_name="mydb"
-        ├── item: orders     ← full_name="mydb.orders"      (collection)
-        └── item: users      ← full_name="mydb.users"       (collection)
+  └── server: Business Mongo ← full_name=""
+        └── database: mydb         ← full_name="mydb"
+              ├── item: orders     ← full_name="mydb.orders"      (collection)
+              └── item: users      ← full_name="mydb.users"       (collection)
 ```
 
 ```
 Engine (Neo4j)
-  └── database: neo4j        ← full_name="neo4j"
-        └── item: graph      ← full_name="neo4j.graph"      (graph)
+  └── server: Business Neo4j ← full_name=""
+        └── database: neo4j        ← full_name="neo4j"
+              └── item: graph      ← full_name="neo4j.graph"      (graph)
 ```
 
-database 作为独立节点展示，用户可以按 database 触发扫描。
+server root 是结构入口，标题使用引擎实例名称。database 作为独立节点展示，用户可以按 database 触发扫描。
 
 ---
 
@@ -325,15 +325,15 @@ addp://engine/{engine_id}/path/{segments}?type={type}&node_id={node_id}&item_id=
 
 | 引擎类型 | full_name | path segments | 示例 URI |
 |---------|-----------|---------------|---------|
+| 引擎目录根 | `""` | `[]` | `.../path/?type=server&node_id=12` / `.../path/?type=service&node_id=12` / `.../path/?type=root&node_id=12` |
 | 对象存储 | `addp/image/data.jpg` | `["addp","image","data.jpg"]` | `.../path/addp/image/data.jpg?type=object&item_id=456` |
 | NFS | `gis-data/sample.csv` | `["gis-data","sample.csv"]` | `.../path/gis-data/sample.csv?type=file&item_id=789` |
-| NFS 根 | `""` | `[]` | `.../path/?type=root&node_id=12` |
 | 关系型数据库 | `public.users` | `["public","users"]` | `.../path/public/users?type=table&item_id=123` |
 | MongoDB collection | `mydb.orders` | `["mydb","orders"]` | `.../path/mydb/orders?type=collection&item_id=234` |
 | Neo4j graph | `neo4j.graph` | `["neo4j","graph"]` | `.../path/neo4j/graph?type=graph&item_id=578` |
 
 数据库与 namespace/item 型引擎的解析语义：`namespace = path[0]`，`item = join(path[1:])`，具体数据项类型由 locator 的 `type` 决定。
-Neo4j 的 catalog item 必须使用 `type=graph`；节点 label、relationship type 和连接模式属于 `type_info.graph`，不得作为独立 catalog item。
+Neo4j 的 catalog leaf 必须使用 `type=graph`；节点 label、relationship type 和连接模式属于 `type_info.graph`，不得作为独立 catalog leaf。
 NFS 物理路径重建公式为 `"/" + join(path, "/")`。
 
 ---
@@ -351,8 +351,8 @@ NFS 物理路径重建公式为 `"/" + join(path, "/")`。
 
 ### NFS 扫描流程
 
-1. 通过 `CatalogProvider.ListChildren(root)` 返回唯一根节点，`Name = "/"`，CatalogPath 包含 root segment，但其 `StringPath()` 为空。
-2. 创建 root `meta_node`，`name = "/"`，`full_name = ""`。
+1. 通过 `CatalogRootEntry(model, engineID, engineName)` 获取结构 root，CatalogPath 包含 root segment，但其 `StringPath()` 为空。
+2. 创建 root `meta_node`，`name = engine.name`，`full_name = ""`，`attributes.catalog.native_name="/"`。
 3. 扫描根目录时，递归扫描 `/` 下的所有目录和文件。
 4. 扫描非根目录时，先按 `catalog_paths` 确保从 root 到目标目录的 `dir meta_node` 链存在，再把扫描上下文切换到该目录 node。
 5. 子目录创建 dir `meta_node`，`full_name = 目录相对路径`。
@@ -361,7 +361,7 @@ NFS 物理路径重建公式为 `"/" + join(path, "/")`。
 
 ### 对象存储扫描流程
 
-1. 通过 `CatalogProvider.ListChildren(root)` 获取 bucket 列表，创建 bucket `meta_node`
+1. upsert service root `meta_node`，再通过 `CatalogProvider.ListChildren(root)` 获取 bucket 列表，创建 bucket `meta_node`
 2. 通过 `CatalogProvider.ListChildren(bucket/prefix)` 获取 prefix 和 object
 3. prefix 创建 `meta_node`（`node_type = prefix`），`full_name = bucket + "/" + prefix`
 4. object 创建 `meta_item`（`item_type = object`），`full_name = bucket + "/" + object_key`
@@ -371,14 +371,14 @@ NFS 物理路径重建公式为 `"/" + join(path, "/")`。
 
 1. 通过 `CatalogProvider.ListChildren(root)` 获取 namespace 列表（PostgreSQL 为 schema；MySQL/Doris/ClickHouse 为 database）
 2. 插件负责过滤系统 schema/database，或通过 `CatalogCapability.system_filtering` 声明过滤能力
-3. 为每个 schema 或 database 创建 `meta_node`
+3. upsert server root `meta_node`，为每个 schema 或 database 创建子 `meta_node`
 4. 通过 `CatalogProvider.ListChildren(namespace)` 获取表/视图，创建 `meta_item`（`item_type = table/view`）
 5. `meta_item.full_name` 使用 `<schema|database>.<table>`
 
 ### MongoDB / Neo4j 扫描流程
 
 1. 通过 `CatalogProvider.ListChildren(root)` 获取 database 列表
-2. 为每个 database 创建 `meta_node`（`node_type = database`，`full_name = database`）
+2. upsert server root `meta_node`，为每个 database 创建子 `meta_node`（`node_type = database`，`full_name = database`）
 3. 通过 `CatalogProvider.ListChildren(database)` 获取 collection/graph，创建 `meta_item`
 4. `meta_item.full_name` 使用 `database.collection`（Neo4j 为 `database.graph`）
 5. Neo4j label、relationship type 和 endpoint pattern 写入 `attributes.type_info.graph`，不作为独立 `meta_item`

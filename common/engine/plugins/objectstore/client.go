@@ -212,7 +212,7 @@ func CreateContent(ctx context.Context, client *miniogo.Client, path string, opt
 	go func() {
 		_, err := client.PutObject(ctx, bucket, key, reader, -1, miniogo.PutObjectOptions{
 			ContentType:  contentType,
-			UserMetadata: opts.Metadata,
+			UserMetadata: opts.UserMetadata,
 		})
 		if err != nil {
 			uploadDone <- fmt.Errorf("write object %s: %w", path, err)

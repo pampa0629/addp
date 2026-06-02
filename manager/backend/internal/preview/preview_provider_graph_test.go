@@ -52,7 +52,7 @@ func TestGraphOverviewRowsUsesGraphInfo(t *testing.T) {
 	}
 }
 
-func TestGraphPreviewProviderFallsBackToGraphMetadataProvider(t *testing.T) {
+func TestGraphPreviewProviderFallsBackToCatalogFactsProvider(t *testing.T) {
 	const engineType = "graph-preview-test"
 	oldPlug, hadOld := plugin.Get(engineType)
 	if hadOld == nil && oldPlug != nil {
@@ -84,6 +84,15 @@ func TestGraphPreviewProviderFallsBackToGraphMetadataProvider(t *testing.T) {
 		},
 		Schema: "neo4j",
 		Table:  "graph",
+		ProviderPath: plugin.CatalogPath{
+			Version:  plugin.CatalogPathVersion,
+			EngineID: 42,
+			Segments: []plugin.CatalogSegment{
+				{Term: plugin.CatalogTermServer, Kind: plugin.CatalogTermServer},
+				{Term: plugin.CatalogTermDatabase, Kind: plugin.CatalogKindNamespace, Name: "neo4j"},
+				{Term: plugin.CatalogTermGraph, Kind: plugin.CatalogKindGraph, Name: "graph"},
+			},
+		},
 	})
 	if err != nil {
 		t.Fatalf("Preview() error = %v", err)
@@ -92,11 +101,11 @@ func TestGraphPreviewProviderFallsBackToGraphMetadataProvider(t *testing.T) {
 		t.Fatalf("preview rows = %#v", preview)
 	}
 	if len(graphPlug.paths) != 1 {
-		t.Fatalf("DescribeGraph call count = %d, want 1", len(graphPlug.paths))
+		t.Fatalf("DescribeCatalogFacts call count = %d, want 1", len(graphPlug.paths))
 	}
 	path := graphPlug.paths[0]
-	if path.EngineID != 42 || len(path.Segments) != 2 || path.Segments[0].Name != "neo4j" || path.Segments[1].Term != plugin.CatalogTermGraph {
-		t.Fatalf("DescribeGraph path = %#v", path)
+	if path.EngineID != 42 || len(path.Segments) != 3 || !plugin.IsCatalogRootSegment(path.Segments[0]) || path.Segments[1].Name != "neo4j" || path.Segments[2].Term != plugin.CatalogTermGraph {
+		t.Fatalf("DescribeCatalogFacts path = %#v", path)
 	}
 	if preview.Graph == nil || len(preview.Graph.Nodes) != 1 {
 		t.Fatalf("preview graph sample = %#v", preview.Graph)
@@ -133,6 +142,15 @@ func TestGraphPreviewProviderPassesGraphSampleFilter(t *testing.T) {
 		},
 		Schema: "neo4j",
 		Table:  "graph",
+		ProviderPath: plugin.CatalogPath{
+			Version:  plugin.CatalogPathVersion,
+			EngineID: 42,
+			Segments: []plugin.CatalogSegment{
+				{Term: plugin.CatalogTermServer, Kind: plugin.CatalogTermServer},
+				{Term: plugin.CatalogTermDatabase, Kind: plugin.CatalogKindNamespace, Name: "neo4j"},
+				{Term: plugin.CatalogTermGraph, Kind: plugin.CatalogKindGraph, Name: "graph"},
+			},
+		},
 		GraphSample: plugin.GraphSampleFilter{
 			Kind:   plugin.GraphSampleKindNodeShape,
 			Labels: []string{"Person"},
@@ -202,9 +220,13 @@ func (p *recordingGraphPreviewPlugin) SensitiveFields() []string { return nil }
 func (p *recordingGraphPreviewPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewGraphCapabilities(p.Type())
 }
-func (p *recordingGraphPreviewPlugin) DescribeGraph(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.MetadataOptions) (*datatype.GraphInfo, error) {
+func (p *recordingGraphPreviewPlugin) DescribeCatalogFacts(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
 	p.paths = append(p.paths, path)
-	return p.graph, nil
+	return &plugin.CatalogFacts{
+		Path:  path,
+		Kind:  plugin.CatalogKindGraph,
+		Graph: p.graph,
+	}, nil
 }
 
 func (p *recordingGraphPreviewPlugin) SampleGraph(_ context.Context, _ plugin.ConnectionInfo, _ plugin.CatalogPath, opts plugin.GraphSampleOptions) (*plugin.GraphData, error) {
@@ -218,5 +240,5 @@ func (p *recordingGraphPreviewPlugin) SampleGraph(_ context.Context, _ plugin.Co
 	}, nil
 }
 
-var _ plugin.GraphMetadataProvider = (*recordingGraphPreviewPlugin)(nil)
+var _ plugin.CatalogFactsProvider = (*recordingGraphPreviewPlugin)(nil)
 var _ plugin.GraphSampleProvider = (*recordingGraphPreviewPlugin)(nil)

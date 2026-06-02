@@ -95,11 +95,11 @@ func (h *ExplorerHandler) GetTree(c *gin.Context) {
 // RefreshNode 刷新指定节点
 // POST /api/explorer/tree/:engine_id/refresh?locator=addp://engine/1/path/public?type=schema
 // @Summary 刷新资源节点 | Refresh resource node
-// @Description 对指定资源节点发起深度扫描，刷新元数据与全文索引 | Run a deep scan for a resource node and refresh metadata and full-text index
+// @Description 对指定资源节点提交后台深度扫描，返回当前树节点与扫描运行记录 | Submit a background deep scan for a resource node and return current node plus scan run
 // @Tags Manager
 // @Produce json
 // @Param locator query string true "资源定位符URI | Resource locator URI"
-// @Success 200 {object} map[string]interface{} "刷新后的节点信息 | Refreshed node info"
+// @Success 202 {object} map[string]interface{} "已提交的刷新运行 | Submitted refresh run"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
 // @Router /tree/{engine_id}/refresh [post]
@@ -117,7 +117,7 @@ func (h *ExplorerHandler) RefreshNode(c *gin.Context) {
 	logger.L().Info("刷新节点", "locator", locatorURI)
 
 	// 调用 ExplorerService
-	result, err := h.explorerService.RefreshNode(c.Request.Context(), tenantID, locatorURI)
+	result, err := h.explorerService.RefreshNode(c.Request.Context(), tenantID, locatorURI, bearerToken(c))
 	if err != nil {
 		if err == service.ErrEngineAccessDenied || err == preview.ErrEngineAccessDenied {
 			commonAPI.ForbiddenError(c, "Access denied to this engine")
@@ -134,16 +134,22 @@ func (h *ExplorerHandler) RefreshNode(c *gin.Context) {
 		"node":    result.Node,
 		"locator": locatorURI,
 	}
-	if result.Scan != nil {
-		data["scan"] = result.Scan
-	}
-	if result.ScanError != "" {
-		data["scan_error"] = result.ScanError
+	if result.Run != nil {
+		data["run"] = result.Run
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	c.JSON(http.StatusAccepted, gin.H{
 		"data": data,
 	})
+}
+
+func bearerToken(c *gin.Context) string {
+	authHeader := c.GetHeader("Authorization")
+	parts := strings.SplitN(authHeader, " ", 2)
+	if len(parts) != 2 || !strings.EqualFold(strings.TrimSpace(parts[0]), "Bearer") {
+		return ""
+	}
+	return strings.TrimSpace(parts[1])
 }
 
 // Preview 数据预览

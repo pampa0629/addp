@@ -2157,15 +2157,44 @@
         "internal_api.TransferCapabilitiesResponse": {
             "type": "object",
             "properties": {
+                "raw_copy_formats": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.TransferRawCopyFormatSupport"
+                    }
+                },
                 "table_formats": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/internal_api.TransferTableFormatCapability"
+                        "$ref": "#/definitions/internal_api.TransferTableFormatSupport"
                     }
                 }
             }
         },
-        "internal_api.TransferTableFormatCapability": {
+        "internal_api.TransferRawCopyFormatSupport": {
+            "type": "object",
+            "properties": {
+                "data_type": {
+                    "type": "string"
+                },
+                "extension": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "layouts": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "value": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.TransferTableFormatSupport": {
             "type": "object",
             "properties": {
                 "backend_type": {

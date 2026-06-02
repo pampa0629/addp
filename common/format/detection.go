@@ -56,8 +56,8 @@ func descriptorFormatByExtension(ext string) FormatType {
 }
 
 func IsGeospatialFormat(format FormatType) bool {
-	if capability, ok := GetFormatCapability(format); ok {
-		return capability.Spatial
+	if descriptor, ok := GetFormatDescriptor(format); ok {
+		return descriptor.Spatial
 	}
 	switch format {
 	case FormatShapefile, FormatGeoPackage, FormatKML, FormatKMZ:
@@ -68,8 +68,8 @@ func IsGeospatialFormat(format FormatType) bool {
 }
 
 func IsDocumentFormat(format FormatType) bool {
-	if capability, ok := GetFormatCapability(format); ok {
-		return capability.DataType == datatype.DataTypeDocument
+	if descriptor, ok := GetFormatDescriptor(format); ok {
+		return descriptor.DataType == datatype.DataTypeDocument
 	}
 	switch format {
 	case FormatPDF, FormatDOCX, FormatPPTX, FormatWPS, FormatText, FormatMarkdown:
@@ -89,7 +89,7 @@ func IsImageFormat(format FormatType) bool {
 }
 
 func IsTableFormat(format FormatType) bool {
-	if capability, ok := GetFormatCapability(format); ok && capability.DataType == datatype.DataTypeTable {
+	if descriptor, ok := GetFormatDescriptor(format); ok && descriptor.DataType == datatype.DataTypeTable {
 		return true
 	}
 	switch format {

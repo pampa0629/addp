@@ -106,9 +106,9 @@ const nodeActions = computed(() => {
   ]
 })
 
-// 计算属性：树的根节点（引擎列表）
+// 计算属性：树的顶层节点（catalog root 列表）
 const treeData = computed(() => {
-  return store.engineNodes
+  return store.catalogRootNodes
 })
 
 // 计算属性：展开的节点 keys
@@ -153,43 +153,6 @@ const handleRefresh = async () => {
   }
 }
 
-const formatScanMessage = (result) => {
-  const scan = result?.scan || result?.data?.scan || result
-  if (!scan || typeof scan !== 'object') {
-    return t('manager.explorer.refreshSuccess')
-  }
-
-  const nodes = Number(scan.catalog_nodes_scanned || 0)
-  const items = Number(scan.items_scanned || 0)
-  const fields = Number(scan.fields_scanned || 0)
-  const extraction = scan.extraction || null
-  const hasStats = nodes > 0 || items > 0 || fields > 0
-
-  if (!hasStats) {
-    return t('manager.explorer.deepScanSuccess')
-  }
-
-  if (extraction && Number(extraction.documents || 0) > 0) {
-    return t('manager.explorer.deepScanSuccessWithExtractionStats', {
-      nodes,
-      items,
-      fields,
-      documents: Number(extraction.documents || 0),
-      extracted: Number(extraction.extracted || 0),
-      unsupported: Number(extraction.unsupported || 0),
-      failed: Number(extraction.failed || 0),
-      indexed: Number(extraction.indexed || 0),
-      indexFailed: Number(extraction.index_failed || 0)
-    })
-  }
-
-  return t('manager.explorer.deepScanSuccessWithStats', {
-    nodes,
-    items,
-    fields
-  })
-}
-
 // 事件处理：节点点击
 const handleNodeClick = async (node) => {
   const locator = node.locator || node.id
@@ -204,8 +167,8 @@ const handleNodeClick = async (node) => {
   // 对于已加载的节点，expand-on-click-node 和 handleNodeExpand/Collapse 已经处理好了。
   const isCurrentlyExpanded = store.expandedLocators.has(locator)
 
-  // 引擎节点：仅首次展开（未加载）时强制展开并加载数据
-  if (node.type === 'engine' && node.engineId) {
+  // Catalog root 节点：仅首次展开（未加载）时强制展开并加载数据
+  if (isCatalogRootNode(node) && node.engineId) {
     if (!isCurrentlyExpanded && !node.loaded) {
       store.expandNode(locator)
       try {
@@ -220,7 +183,7 @@ const handleNodeClick = async (node) => {
 
   // 仅在需要首次加载子节点时介入，避免与 el-tree 的 expand-on-click-node 冲突
   // 注意：不使用 !node.loaded 判断，避免已有子节点的节点在折叠后点击时被重新展开
-  const isDirLike = ['directory', 'bucket', 'prefix', 'schema', 'database'].includes(node.type)
+  const isDirLike = isBranchNode(node)
   if (isDirLike) {
     const needsLoading = (node.children || []).length === 0 && node.hasChildren
     if (!isCurrentlyExpanded && needsLoading) {
@@ -245,13 +208,13 @@ const handleNodeAction = async ({ node, action }) => {
 
   if (action === 'refresh') {
     try {
-      let result
-      if (node.type === 'engine' || ['schema', 'database', 'bucket', 'prefix', 'directory', 'root', 'dir'].includes(node.type)) {
-        result = await store.refreshNode(locator)
+      ElMessage.info(t('manager.explorer.scanStarted'))
+      if (isBranchNode(node)) {
+        await store.refreshNode(locator)
       } else {
-        result = await store.refreshItem(locator)
+        await store.refreshItem(locator)
       }
-      ElMessage.success(formatScanMessage(result))
+      ElMessage.success(t('manager.explorer.scanCompleted'))
     } catch (error) {
       ElMessage.error(t('manager.explorer.refreshFailed', { error: error.message }))
     }
@@ -324,8 +287,8 @@ const handleNodeExpand = async (node) => {
   const locator = node.locator || node.id
   store.expandNode(locator)
 
-  // 如果是引擎节点且未加载过，懒加载其内容
-  if (node.type === 'engine' && node.engineId && !node.loaded) {
+  // 如果是 catalog root 节点且未加载过，懒加载其内容
+  if (isCatalogRootNode(node) && node.engineId && !node.loaded) {
     try {
       await store.loadTree(node.engineId)
     } catch (error) {
@@ -336,8 +299,7 @@ const handleNodeExpand = async (node) => {
   }
 
   // 使用增量加载替代全量重载：容器节点展开且子节点为空时，只加载该节点的直接子节点。
-  const isDirLike = ['directory', 'bucket', 'prefix', 'schema', 'database'].includes(node.type)
-  const needsLoading = isDirLike && (node.children || []).length === 0
+  const needsLoading = isBranchNode(node) && (node.children || []).length === 0
 
   if (needsLoading && locator) {
     try {
@@ -360,6 +322,16 @@ const handleNodeCollapse = (node) => {
   const locator = node.locator || node.id
   store.collapseNode(locator)
 }
+
+const rootTypes = new Set(['root', 'server', 'service'])
+const branchTypes = new Set(['directory', 'bucket', 'prefix', 'schema', 'database', 'dir', 'root', 'server', 'service'])
+
+const isCatalogRootNode = (node) => {
+  const fullName = node?.metadata?.full_name
+  return !!node && rootTypes.has(node.type) && (fullName === '' || (node.locator || node.id || '').includes('/path/?'))
+}
+
+const isBranchNode = (node) => !!node && branchTypes.has(node.type)
 
 // 暴露方法供父组件调用
 defineExpose({

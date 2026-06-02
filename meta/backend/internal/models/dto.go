@@ -49,8 +49,8 @@ type ResourceWithStats struct {
 	EngineFamily          string `json:"engine_family,omitempty"`
 	CatalogTopTerm        string `json:"catalog_top_term,omitempty"`
 	CatalogTopI18nKey     string `json:"catalog_top_i18n_key,omitempty"`
-	CatalogItemTerm       string `json:"catalog_item_term,omitempty"`
-	CatalogItemI18nKey    string `json:"catalog_item_i18n_key,omitempty"`
+	CatalogLeafTerm       string `json:"catalog_leaf_term,omitempty"`
+	CatalogLeafI18nKey    string `json:"catalog_leaf_i18n_key,omitempty"`
 	CatalogRootTerm       string `json:"catalog_root_term,omitempty"`
 	TotalCatalogNodes     int    `json:"total_catalog_nodes"`
 	ScannedCatalogNodes   int    `json:"scanned_catalog_nodes"`

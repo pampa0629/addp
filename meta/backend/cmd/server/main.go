@@ -172,6 +172,7 @@ func main() {
 		os.Exit(1)
 	}
 	defer cleanupService.Stop(context.Background())
+	engineService.SetCleanupService(cleanupService)
 	logger.L().Info("清理服务已启动", "retention_days", 90)
 
 	// 订阅清理事件（如果 Redis 可用）
@@ -180,12 +181,6 @@ func main() {
 			logger.L().Warn("订阅清理事件失败", "error", err)
 		} else {
 			logger.L().Info("已订阅垃圾数据清理事件")
-		}
-
-		if err := cleanupService.SubscribeEngineDeletedEvent(context.Background()); err != nil {
-			logger.L().Warn("订阅引擎删除事件失败", "error", err)
-		} else {
-			logger.L().Info("已订阅引擎删除事件")
 		}
 	}
 	// ===================================

@@ -10,9 +10,6 @@ func NormalizeFormat(value string) FormatType {
 	if normalized == "" || normalized == string(FormatUnknown) {
 		return FormatUnknown
 	}
-	if _, ok := GetFormatCapability(FormatType(normalized)); ok {
-		return FormatType(normalized)
-	}
 	if _, ok := GetFormatDescriptor(FormatType(normalized)); ok {
 		return FormatType(normalized)
 	}

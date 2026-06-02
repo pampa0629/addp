@@ -6,7 +6,6 @@ import (
 	"io"
 
 	"github.com/addp/common/dataitem"
-	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metaitem"
@@ -66,11 +65,7 @@ func enrichContainerChildrenFromProvider(
 	if info == nil {
 		return nil
 	}
-	metadata := &plugin.ItemMetadata{
-		Kind:      detected.ItemType,
-		Container: info,
-	}
-	detected.Container = plugin.ItemMetadataContainerInfo(metadata)
+	detected.Container = info.Clone()
 	metaitem.ApplyContainerInfo(attrs, detected)
 	return nil
 }

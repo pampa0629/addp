@@ -299,6 +299,38 @@ func (s *ScanTaskService) CreateManualRun(ctx context.Context, tenantID, userID 
 	return execution, nil
 }
 
+func (s *ScanTaskService) CreateAutoRuns(ctx context.Context, tenantID, userID uint, token string) ([]*commonModels.TaskExecution, error) {
+	resources, err := s.engineService.GetEnginesWithStats(tenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	runs := make([]*commonModels.TaskExecution, 0, len(resources))
+	for _, resource := range resources {
+		if resource == nil {
+			continue
+		}
+		if resource.ScannedAt != "" && resource.UnscannedCatalogNodes <= 0 {
+			continue
+		}
+		run, err := s.CreateManualRun(ctx, tenantID, userID, token, &models.ScanRequest{
+			EngineID:  resource.EngineID,
+			ScanDepth: "deep",
+			Force:     false,
+		})
+		if err != nil {
+			s.log.Warn("自动扫描运行创建失败，跳过该引擎",
+				"engine_id", resource.EngineID,
+				"engine_name", resource.ResourceName,
+				"error", err,
+			)
+			continue
+		}
+		runs = append(runs, run)
+	}
+	return runs, nil
+}
+
 // ExecuteScanRun 执行扫描（供 Worker 调用）
 func (s *ScanTaskService) ExecuteScanRun(ctx context.Context, executionID string) error {
 	return s.executeRun(ctx, executionID)

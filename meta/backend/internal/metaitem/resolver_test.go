@@ -5,11 +5,10 @@ import (
 	"testing"
 
 	"github.com/addp/common/dataitem"
-	"github.com/addp/common/engine/plugin"
 )
 
 func TestUnclaimedFileEntriesFiltersClaimedPaths(t *testing.T) {
-	files := []plugin.FileEntry{
+	files := []StorageFileRef{
 		{Name: "roads.shp", Path: "/shp/roads.shp"},
 		{Name: "roads.shx", Path: "/shp/roads.shx"},
 		{Name: "readme.pdf", Path: "/shp/readme.pdf"},
@@ -30,8 +29,8 @@ func TestResolveMetaItemsPassesOnlyUnclaimedFilesToNextResolver(t *testing.T) {
 		priority: 20,
 		result: &DetectionResult{
 			Items: []*DetectedItem{detectedItemForTest(dataitem.ResolvedItem{
-				Layout:    dataitem.LayoutMulti,
-				EntryPath: "/shp/roads.shp",
+				Layout:             dataitem.LayoutMulti,
+				PrimaryContentPath: "/shp/roads.shp",
 			})},
 			Claims: ResourceClaimSet{"/shp/roads.shp": true},
 		},
@@ -42,7 +41,7 @@ func TestResolveMetaItemsPassesOnlyUnclaimedFilesToNextResolver(t *testing.T) {
 	defer func() { itemResolvers = old }()
 
 	_, err := ResolveItems(context.Background(), DirectoryResolveInput{
-		Files: []plugin.FileEntry{
+		Files: []StorageFileRef{
 			{Name: "roads.shp", Path: "/shp/roads.shp"},
 			{Name: "readme.pdf", Path: "/shp/readme.pdf"},
 		},
@@ -58,7 +57,7 @@ func TestResolveMetaItemsPassesOnlyUnclaimedFilesToNextResolver(t *testing.T) {
 type testScopeResolver struct {
 	priority  int
 	result    *DetectionResult
-	seenFiles []plugin.FileEntry
+	seenFiles []StorageFileRef
 }
 
 func (d *testScopeResolver) Priority() int { return d.priority }

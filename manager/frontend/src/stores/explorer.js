@@ -2,6 +2,12 @@ import { defineStore } from 'pinia'
 import { parseLocator } from '@addp/common-frontend'
 import client from '@/api/client'
 
+const SCAN_RUN_POLL_INTERVAL_MS = 2000
+const SCAN_RUN_TIMEOUT_MS = 30 * 60 * 1000
+const ACTIVE_SCAN_STATUSES = new Set(['pending', 'running'])
+const SUCCESS_SCAN_STATUSES = new Set(['success'])
+const FAILED_SCAN_STATUSES = new Set(['failed', 'timeout', 'cancelled', 'canceled'])
+
 /**
  * explorerStore - 数据探查状态管理
  * 基于 ResourceLocator URI 系统
@@ -57,27 +63,33 @@ export const useExplorerStore = defineStore('explorer', {
   }),
 
   getters: {
-    /**
-     * 将引擎列表转换为树节点格式
-     * 这是资源树的根节点列表
-     */
-    engineNodes: (state) => {
+    catalogRootNodes: (state) => {
       return state.engines.map(engine => {
-        const locator = `addp://engine/${engine.id}/path/?type=database`
+        const locator = `addp://engine/${engine.id}/path/?type=root`
         const tree = state.engineTrees[engine.id]
+
+        if (tree) {
+          return {
+            ...tree,
+            engineId: tree.engineId || engine.id,
+            engineType: tree.engineType || engine.engine_type,
+            engineName: tree.engineName || engine.name,
+            loaded: true,
+            loading: Number(state.loadingEngineIds[engine.id] || 0) > 0
+          }
+        }
 
         return {
           id: locator,
           locator: locator,
           label: engine.name,
-          type: 'engine',
+          type: 'root',
           engineId: engine.id,
           engineType: engine.engine_type,
-          // 如果已加载树数据，使用树的子节点；否则返回空数组（懒加载）
-          children: tree ? tree.children : [],
-          // 标记是否已加载
-          loaded: !!tree,
-          // 标记是否正在加载
+          engineName: engine.name,
+          children: [],
+          hasChildren: true,
+          loaded: false,
           loading: Number(state.loadingEngineIds[engine.id] || 0) > 0
         }
       })
@@ -100,16 +112,19 @@ export const useExplorerStore = defineStore('explorer', {
         return state.selectedNodeContext
       }
 
-      // 检查是否选中的是引擎节点本身
+      // 未加载树时，仍允许选中 catalog root 占位节点。
       const engine = state.engines.find(e =>
-        state.selectedLocator === `addp://engine/${e.id}/path/?type=database`
+        state.selectedLocator === `addp://engine/${e.id}/path/?type=root`
       )
       if (engine) {
         return {
           id: state.selectedLocator,
           locator: state.selectedLocator,
           label: engine.name,
-          type: 'engine'
+          type: 'root',
+          engineId: engine.id,
+          engineType: engine.engine_type,
+          engineName: engine.name
         }
       }
 
@@ -196,6 +211,9 @@ export const useExplorerStore = defineStore('explorer', {
         const engine = this.engines.find(e => e.id === engineId)
         if (engine && tree) {
           this.addEngineTypeToTree(tree, engine.engine_type)
+          tree.engineId = tree.engineId || engine.id
+          tree.engineName = tree.engineName || engine.name
+          tree.loaded = true
         }
 
         const latestSeq = this.engineTreeRequestSeq[engineId]
@@ -234,16 +252,22 @@ export const useExplorerStore = defineStore('explorer', {
 
       try {
         const loc = parseLocator(locator)
+        const previousDepth = this.engineTreeDepths[loc.engineId] || 2
         const response = await client.post(`/manager/tree/${loc.engineId}/refresh`, null, {
           params: { locator }
         })
+        const result = response?.data || response
+        const run = result?.run || result?.data?.run
+        if (run) {
+          result.run = await waitForScanRun(run)
+        }
 
-        const previousDepth = this.engineTreeDepths[loc.engineId] || 2
-        // 清除缓存并按原有深度重新加载，避免刷新把全量树降级为浅层树。
+        this.clearEngineNodeCache(loc.engineId)
         delete this.engineTrees[loc.engineId]
         delete this.engineTreeDepths[loc.engineId]
-        await this.loadTree(loc.engineId, previousDepth)
-        return response?.data || response
+        await this.loadTree(loc.engineId, previousDepth, true)
+
+        return result
       } catch (error) {
         console.error('刷新节点失败:', error)
         throw error
@@ -519,16 +543,21 @@ export const useExplorerStore = defineStore('explorer', {
      * @param {boolean} forceRefresh - 是否强制刷新（忽略缓存）
      */
     async loadNodeChildren(locator, expandDepth = 1, forceRefresh = false) {
+      const loc = parseLocator(locator)
+      const existingNode = this.engineTrees[loc.engineId]
+        ? findNodeByLocator(this.engineTrees[loc.engineId], locator)
+        : null
+
       // 1. 检查缓存
       if (!forceRefresh && this.nodeChildrenCache[locator]) {
         const cache = this.nodeChildrenCache[locator]
         if (Date.now() - cache.timestamp < this.cacheConfig.maxAge) {
+          if (cache.children.length === 0 && existingNode?.children?.length) {
+            return existingNode.children
+          }
           return cache.children
         }
       }
-
-      // 2. 解析 locator
-      const loc = parseLocator(locator)
 
       try {
         // 3. 调用后端 API
@@ -538,6 +567,9 @@ export const useExplorerStore = defineStore('explorer', {
         // API 客户端已经通过 extractData 提取了 response.data
         // 后端返回 { parent_locator: ..., children: [...] }
         const children = response.children || []
+        if (children.length === 0 && existingNode?.children?.length) {
+          return existingNode.children
+        }
 
         // 获取引擎类型并为子节点添加 engineType
         const engine = this.engines.find(e => e.id === loc.engineId)
@@ -558,7 +590,7 @@ export const useExplorerStore = defineStore('explorer', {
           const updated = this.updateTreeNode(this.engineTrees[loc.engineId], locator, {
             children,
             loaded: true,
-            hasChildren: children.length > 0
+            hasChildren: children.length > 0 || existingNode?.hasChildren === true
           })
 
           if (updated) {
@@ -731,6 +763,21 @@ export const useExplorerStore = defineStore('explorer', {
           this.addEngineTypeToTree(child, engineType)
         }
       }
+    },
+
+    clearEngineNodeCache(engineId) {
+      const next = {}
+      for (const [locator, cache] of Object.entries(this.nodeChildrenCache)) {
+        try {
+          const loc = parseLocator(locator)
+          if (loc.engineId !== engineId) {
+            next[locator] = cache
+          }
+        } catch {
+          next[locator] = cache
+        }
+      }
+      this.nodeChildrenCache = next
     }
   }
 })
@@ -772,5 +819,41 @@ function findNodeByLocator(tree, locator) {
   }
 
   return null
+}
+
+function delay(ms) {
+  return new Promise(resolve => window.setTimeout(resolve, ms))
+}
+
+function scanRunIDOf(run) {
+  return run?.execution_id || run?.executionId || run?.id || ''
+}
+
+async function waitForScanRun(run) {
+  const runID = scanRunIDOf(run)
+  if (!runID) {
+    return run
+  }
+
+  const startedAt = Date.now()
+  let latest = run
+  while (true) {
+    latest = await client.get(`/meta/scan/runs/${runID}`)
+    const status = String(latest?.status || '').toLowerCase()
+    if (SUCCESS_SCAN_STATUSES.has(status)) {
+      return latest
+    }
+    if (FAILED_SCAN_STATUSES.has(status)) {
+      const message = latest?.error_message || latest?.error || latest?.progress_message || latest?.current_step || status
+      throw new Error(message)
+    }
+    if (!ACTIVE_SCAN_STATUSES.has(status) && status) {
+      return latest
+    }
+    if (Date.now() - startedAt > SCAN_RUN_TIMEOUT_MS) {
+      throw new Error('scan is still running in the background')
+    }
+    await delay(SCAN_RUN_POLL_INTERVAL_MS)
+  }
 }
  

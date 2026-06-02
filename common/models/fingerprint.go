@@ -13,8 +13,9 @@ import (
 // 公式: SHA256(fmt.Sprintf("%d:%s:%s", tenantID, sourceModule, sourceReference))
 //
 // 示例:
-//   fingerprint := GenerateAssetFingerprint(42, "meta", "1:public.buildings")
-//   fingerprint := GenerateAssetFingerprint(42, "service", "123")
+//
+//	fingerprint := GenerateAssetFingerprint(42, "meta", "1:public.buildings")
+//	fingerprint := GenerateAssetFingerprint(42, "service", "123")
 func GenerateAssetFingerprint(tenantID int64, sourceModule, sourceReference string) string {
 	data := fmt.Sprintf("%d:%s:%s", tenantID, sourceModule, sourceReference)
 	hash := sha256.Sum256([]byte(data))
@@ -26,25 +27,27 @@ func GenerateAssetFingerprint(tenantID int64, sourceModule, sourceReference stri
 // 这是ADDP平台唯一的指纹计算函数，所有存储类型统一使用此函数。
 //
 // 指纹计算规则（两步计算）:
-//   步骤1: 计算 full_name (identifier)
-//     - 对象存储: bucket/path+name (如 "addp/image/开会.jpg")
-//     - 数据库表: schema.table (如 "public.buildings")
-//     - 文件系统: path+name (如 "/data/image/users.csv")
-//   步骤2: 基于 engineID + identifier 的 SHA256 哈希
-//     - 公式: SHA256(fmt.Sprintf("%d:%s", engineID, identifier))
+//
+//	步骤1: 计算 full_name (identifier)
+//	  - 对象存储: bucket/path+name (如 "addp/image/开会.jpg")
+//	  - 数据库表: schema.table (如 "public.buildings")
+//	  - 文件系统: path+name (如 "/data/image/users.csv")
+//	步骤2: 基于 engineID + identifier 的 SHA256 哈希
+//	  - 公式: SHA256(fmt.Sprintf("%d:%s", engineID, identifier))
 //
 // 推荐用法:
-//   // 对象存储
-//   fullName := JoinObjectPath(bucket, path, name)
-//   fingerprint := GenerateItemFingerprint(engineID, fullName)
 //
-//   // 数据库表
-//   fullName := fmt.Sprintf("%s.%s", schema, table)
-//   fingerprint := GenerateItemFingerprint(engineID, fullName)
+//	// 对象存储
+//	fullName := JoinObjectPath(bucket, path, name)
+//	fingerprint := GenerateItemFingerprint(engineID, fullName)
 //
-//   // 文件系统
-//   fullName := path + name
-//   fingerprint := GenerateItemFingerprint(engineID, fullName)
+//	// 数据库表
+//	fullName := fmt.Sprintf("%s.%s", schema, table)
+//	fingerprint := GenerateItemFingerprint(engineID, fullName)
+//
+//	// 文件系统
+//	fullName := path + name
+//	fingerprint := GenerateItemFingerprint(engineID, fullName)
 //
 // 特性:
 //   - 同一数据项的指纹始终不变，无论数据内容如何变化
@@ -96,8 +99,9 @@ func ValidateDirectoryPath(path string, isObjectStorage bool) error {
 //   - name: 文件名（如 "开会.jpg"）
 //
 // 示例:
-//   dir, name := SplitObjectPath("image/sub/开会.jpg")  // "image/sub/", "开会.jpg"
-//   dir, name := SplitObjectPath("开会.jpg")           // "", "开会.jpg"
+//
+//	dir, name := SplitObjectPath("image/sub/开会.jpg")  // "image/sub/", "开会.jpg"
+//	dir, name := SplitObjectPath("开会.jpg")           // "", "开会.jpg"
 func SplitObjectPath(fullPath string) (dir, name string) {
 	idx := strings.LastIndex(fullPath, "/")
 	if idx == -1 {
@@ -119,8 +123,9 @@ func SplitObjectPath(fullPath string) (dir, name string) {
 //   - fullName: 完整路径（如 "addp/image/开会.jpg"）
 //
 // 示例:
-//   fullName := JoinObjectPath("addp", "image/", "开会.jpg")  // "addp/image/开会.jpg"
-//   fullName := JoinObjectPath("addp", "", "开会.jpg")        // "addp/开会.jpg"
+//
+//	fullName := JoinObjectPath("addp", "image/", "开会.jpg")  // "addp/image/开会.jpg"
+//	fullName := JoinObjectPath("addp", "", "开会.jpg")        // "addp/开会.jpg"
 func JoinObjectPath(bucket, path, name string) string {
 	return fmt.Sprintf("%s/%s%s", bucket, path, name)
 }

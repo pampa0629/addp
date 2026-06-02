@@ -48,10 +48,10 @@ func (s *ExecutionEngineService) ExecuteTask(ctx context.Context, taskID, execut
 		return fmt.Errorf("failed to get task: %w", err)
 	}
 
-	return s.executeCommonTableExportTask(ctx, task, executionID)
+	return s.executeCommonTransferTask(ctx, task, executionID)
 }
 
-func (s *ExecutionEngineService) executeCommonTableExportTask(ctx context.Context, task *models.TransferTask, executionID uint) error {
+func (s *ExecutionEngineService) executeCommonTransferTask(ctx context.Context, task *models.TransferTask, executionID uint) error {
 	if s.systemClient == nil {
 		err := fmt.Errorf("system client is required for common engine/format transfer task")
 		s.updateExecutionError(task, executionID, err)
@@ -62,9 +62,20 @@ func (s *ExecutionEngineService) executeCommonTableExportTask(ctx context.Contex
 		s.logger.Warn("failed to update execution status", "error", err)
 	}
 
+	rawSpec, rawErr := planner.ParseRawCopyTaskSpec(task.Config)
+	if rawErr == nil {
+		if err := s.attachRawCopySourceMetaAttributes(task, &rawSpec); err != nil {
+			wrapped := fmt.Errorf("load source meta item attributes: %w", err)
+			s.updateExecutionError(task, executionID, wrapped)
+			return wrapped
+		}
+		resolver := planner.NewSystemEngineResolver(s.systemClient)
+		return s.executeCommonRawCopyTask(ctx, task, executionID, rawSpec, resolver)
+	}
+
 	spec, err := planner.ParseTableExportTaskSpec(task.Config, task.BatchSize)
 	if err != nil {
-		wrapped := fmt.Errorf("parse common transfer task config: %w", err)
+		wrapped := fmt.Errorf("parse common transfer task config: table=%v; raw_copy=%v", err, rawErr)
 		s.updateExecutionError(task, executionID, wrapped)
 		return wrapped
 	}
@@ -76,6 +87,24 @@ func (s *ExecutionEngineService) executeCommonTableExportTask(ctx context.Contex
 
 	resolver := planner.NewSystemEngineResolver(s.systemClient)
 	return s.executeCommonTableTransferTask(ctx, task, executionID, spec, resolver)
+}
+
+func (s *ExecutionEngineService) attachRawCopySourceMetaAttributes(task *models.TransferTask, spec *planner.RawCopyTaskSpec) error {
+	if task == nil || spec == nil || spec.Source.MetaItemID == 0 {
+		return nil
+	}
+	if s.metaClient == nil {
+		return fmt.Errorf("meta client is required when source meta_item_id is set")
+	}
+	item, err := s.metaClient.WithTenantID(task.TenantID).GetMetaItemByID(spec.Source.MetaItemID)
+	if err != nil {
+		return err
+	}
+	if item.EngineID != spec.Source.Engine.ID {
+		return fmt.Errorf("source meta item engine_id %d does not match source engine id %d", item.EngineID, spec.Source.Engine.ID)
+	}
+	spec.Source.Attributes = item.Attributes
+	return nil
 }
 
 func (s *ExecutionEngineService) attachSourceMetaAttributes(task *models.TransferTask, spec *planner.TableExportTaskSpec) error {
@@ -143,6 +172,48 @@ func (s *ExecutionEngineService) executeCommonTableTransferTask(ctx context.Cont
 	return nil
 }
 
+func (s *ExecutionEngineService) executeCommonRawCopyTask(ctx context.Context, task *models.TransferTask, executionID uint, spec planner.RawCopyTaskSpec, resolver planner.EngineResolver) error {
+	buildResult, err := planner.BuildRawCopyPlan(spec, resolver)
+	if err != nil {
+		wrapped := fmt.Errorf("build common raw copy plan: %w", err)
+		s.updateExecutionError(task, executionID, wrapped)
+		return wrapped
+	}
+	buildResult.Plan.ProgressCallback = s.rawCopyProgressCallback(task, executionID)
+
+	rawCopyExecutor, err := executor.NewRawCopyExecutor(buildResult.SourceEngineType, buildResult.TargetEngineType)
+	if err != nil {
+		wrapped := fmt.Errorf("create common raw copy executor: %w", err)
+		s.updateExecutionError(task, executionID, wrapped)
+		return wrapped
+	}
+
+	metrics, err := rawCopyExecutor.Execute(ctx, buildResult.Plan)
+	if err != nil {
+		wrapped := fmt.Errorf("execute common raw copy plan: %w", err)
+		if metrics != nil {
+			s.updateRawCopyMetrics(executionID, metrics)
+		}
+		s.updateExecutionError(task, executionID, wrapped)
+		return wrapped
+	}
+	s.updateRawCopyMetrics(executionID, metrics)
+
+	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, ""); err != nil {
+		s.logger.Warn("failed to finish execution", "error", err)
+	}
+	if err := s.taskRepo.UpdateFields(task.ID, map[string]interface{}{
+		"status":   models.TaskStatusIdle,
+		"progress": 100.0,
+	}); err != nil {
+		s.logger.Warn("failed to update task after successful raw copy", "error", err, "task_id", task.ID)
+	}
+	if task.AutoScanMetadata {
+		s.triggerMetadataScan(task, planner.TableExportTaskSpec{Target: spec.Target})
+	}
+	return nil
+}
+
 func (s *ExecutionEngineService) updateExecutionError(task *models.TransferTask, executionID uint, execErr error) {
 	if execErr == nil {
 		return
@@ -180,6 +251,21 @@ func (s *ExecutionEngineService) updateTableTransferMetrics(executionID uint, re
 		"records_written": recordsWritten,
 	}); err != nil {
 		s.logger.Error("failed to update common transfer execution metrics", "error", err, "execution_id", executionID)
+	}
+}
+
+func (s *ExecutionEngineService) updateRawCopyMetrics(executionID uint, metrics *executor.RawCopyMetrics) {
+	if metrics == nil {
+		return
+	}
+	ctx := context.Background()
+	if err := s.executionService.UpdateMetrics(ctx, executionID, map[string]interface{}{
+		"records_read":    metrics.RecordsRead,
+		"records_written": metrics.RecordsWritten,
+		"bytes_read":      metrics.BytesRead,
+		"bytes_written":   metrics.BytesWritten,
+	}); err != nil {
+		s.logger.Error("failed to update raw copy execution metrics", "error", err, "execution_id", executionID)
 	}
 }
 
@@ -243,6 +329,62 @@ func (s *ExecutionEngineService) tableProgressCallback(task *models.TransferTask
 	}
 }
 
+func (s *ExecutionEngineService) rawCopyProgressCallback(task *models.TransferTask, executionID uint) executor.RawCopyProgressCallback {
+	return func(ctx context.Context, event executor.RawCopyProgressEvent) error {
+		if s.executionService == nil {
+			return nil
+		}
+		if err := s.executionService.UpdateMetrics(ctx, executionID, map[string]interface{}{
+			"records_read":    event.RecordsRead,
+			"records_written": event.RecordsWritten,
+			"bytes_read":      event.BytesRead,
+			"bytes_written":   event.BytesWritten,
+		}); err != nil {
+			return fmt.Errorf("update raw copy metrics: %w", err)
+		}
+		checkpointState := map[string]interface{}{
+			"version":          "v1",
+			"records_read":     event.RecordsRead,
+			"records_written":  event.RecordsWritten,
+			"bytes_read":       event.BytesRead,
+			"bytes_written":    event.BytesWritten,
+			"target_committed": true,
+			"updated_at":       time.Now().Format(time.RFC3339),
+		}
+		if event.Final {
+			checkpointState["final"] = true
+		}
+		if err := s.executionService.UpdateExecution(ctx, executionID, map[string]interface{}{
+			"checkpoint_offset": event.RecordsRead,
+			"checkpoint_state":  checkpointState,
+		}); err != nil {
+			return fmt.Errorf("update raw copy checkpoint: %w", err)
+		}
+		if task != nil {
+			progress := 99.0
+			if event.Final {
+				progress = 100.0
+			}
+			if err := s.taskRepo.UpdateFields(task.ID, map[string]interface{}{"progress": progress}); err != nil {
+				s.logger.Warn("failed to update raw copy task progress", "error", err, "task_id", task.ID, "progress", progress)
+			}
+		}
+		logLine := fmt.Sprintf(
+			"%s raw_copy bytes_read=%d bytes_written=%d records_read=%d records_written=%d target_committed=true final=%t",
+			time.Now().Format(time.RFC3339),
+			event.BytesRead,
+			event.BytesWritten,
+			event.RecordsRead,
+			event.RecordsWritten,
+			event.Final,
+		)
+		if err := s.executionService.AppendLog(ctx, executionID, logLine); err != nil {
+			return fmt.Errorf("append raw copy progress log: %w", err)
+		}
+		return nil
+	}
+}
+
 func runningProgress(batchIndex int64) float64 {
 	if batchIndex <= 0 {
 		return 0
@@ -274,13 +416,14 @@ func (s *ExecutionEngineService) triggerMetadataScan(task *models.TransferTask, 
 		"engine_id", targetEngineID,
 		"catalog_paths", catalogPaths)
 
-	if err := metaClient.TriggerScan(commonClient.MetaScanOptions{
+	run, err := metaClient.CreateManualScanRun(commonClient.MetaScanOptions{
 		EngineID:     targetEngineID,
 		CatalogPaths: catalogPaths,
 		ScanDepth:    "deep",
 		Force:        true,
 		TriggerType:  "transfer",
-	}); err != nil {
+	})
+	if err != nil {
 		s.logger.Error("failed to trigger metadata scan",
 			"error", err,
 			"task_id", task.ID,
@@ -289,7 +432,8 @@ func (s *ExecutionEngineService) triggerMetadataScan(task *models.TransferTask, 
 	}
 	s.logger.Info("metadata scan triggered successfully",
 		"task_id", task.ID,
-		"engine_id", targetEngineID)
+		"engine_id", targetEngineID,
+		"execution_id", run.ExecutionID)
 }
 
 func targetCatalogPaths(endpoint planner.EndpointSpec) []string {

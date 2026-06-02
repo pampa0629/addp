@@ -175,7 +175,7 @@ engine capability
 ### Meta 扫描
 
 ```text
-engine catalog / metadata / content read
+engine catalog / facts / content read
   -> Meta detector
   -> 格式能力提供候选事实
   -> Meta normalizer

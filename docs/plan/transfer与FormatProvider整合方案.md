@@ -2,6 +2,9 @@
 
 更新时间：2026-05-09
 
+> 状态：历史目标设计，table 类型主链路已落地并归档。
+> 当前稳定架构见 [Transfer 当前架构设计](../../transfer/docs/design.md)；本文只作为背景记录，不再作为实施清单。
+
 本文定义 Transfer 后续如何组合 engine capability、`common/contentio`、FormatPlugin、info provider 和 content reader。它是目标设计文档，不描述具体迁移进度。
 
 > 注：本文早期使用过旧的 provider 统称。后续阅读时统一按正式规范理解为 FormatPlugin、info provider 和 content reader。
@@ -23,7 +26,7 @@ TransferTask
   -> TransferPlanner
   -> SourceEndpoint
       -> EngineProvider / contentio.Reader / NativeCursor
-      -> FormatProvider(optional)
+      -> format reader provider(optional)
       -> info provider / content reader
   -> pipeline.Reader
   -> Transform[]
@@ -36,7 +39,7 @@ Transform[]
   -> pipeline.Writer
   -> TargetEndpoint
       -> info provider / content reader
-      -> FormatProvider(optional)
+      -> format writer provider(optional)
       -> contentio.Writer / EngineProvider / NativeBatchWriter
   -> CommitPolicy
 ```

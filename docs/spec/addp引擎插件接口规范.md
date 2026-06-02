@@ -103,75 +103,80 @@ type CatalogModelProvider interface {
 
 | 引擎 | Catalog Model |
 | --- | --- |
-| PostgreSQL | `schema -> table/view` |
-| MySQL / Doris / ClickHouse | `database -> table/view` |
-| MongoDB | `database -> collection` |
-| Neo4j | `database -> graph` |
-| MinIO / S3 | `bucket -> prefix -> object` |
+| PostgreSQL | `server(root) -> schema -> table/view` |
+| MySQL / Doris / ClickHouse | `server(root) -> database -> table/view` |
+| MongoDB | `server(root) -> database -> collection` |
+| Neo4j | `server(root) -> database -> graph` |
+| MinIO / S3 | `service(root) -> bucket -> prefix -> object` |
 | NFS | `root -> directory -> file` |
+
+`CatalogModelSpec.RootTerm` 表达结构 root，`Levels` 只描述 root 下的业务层级，不包含 root。所有 catalog path 必须以显性 root segment 开始；`CatalogPath.StringPath()` 与 ResourceLocator 业务路径会跳过该 root segment。
 
 ### CatalogProvider
 
-连接真实引擎，列出真实 node/item。
+连接真实引擎，列出真实 catalog entry。
 
 ```go
 type CatalogProvider interface {
     EnginePlugin
-    ListChildren(ctx context.Context, connInfo ConnectionInfo, parent CatalogPath, opts ListOptions) ([]CatalogNode, error)
-    ResolvePath(ctx context.Context, connInfo ConnectionInfo, path CatalogPath) (*CatalogNode, error)
+    ListChildren(ctx context.Context, connInfo ConnectionInfo, parent CatalogPath, opts ListOptions) ([]CatalogEntry, error)
+    ResolvePath(ctx context.Context, connInfo ConnectionInfo, path CatalogPath) (*CatalogEntry, error)
 }
 ```
 
 公共调用方必须优先使用该统一入口，不再调用 `ListSchemas`、`ListTables`、`ListBuckets`、`ListCollections` 等旧上层接口。
 
-### ItemMetadataProvider
+`ListChildren` 不接受 empty path 作为业务枚举入口。实时浏览需要展示根层时，由上层通过 `CatalogRootEntry(model, engineID, engineName)` 返回结构 root；枚举第一层业务节点时必须调用 `ListChildren(rootPath)`。provider 收到 empty path 应视为调用错误。
 
-描述叶子 item 的字段、统计、索引、空间信息和原生属性。
+`CatalogEntry.Role` 只允许 `branch` / `leaf`，表达 catalog 结构角色；`CatalogEntry.Term` 表达引擎原生术语，例如 `schema`、`table`、`bucket`、`prefix`、`object`、`file`、`collection`、`graph`。Engine 层不得用 `item` 表达 ADDP data item，也不得用 `is_item` / `is_container` 这类布尔字段作为主路径。
+
+`CatalogEntry` 是实时列表和路径解析用的轻量 catalog 条目，`Entry` 表达“目录条目 / 列表项”，不是“入口”。它回答“当前位置下面有什么、结构上怎么走”，不回答完整详情。稳定列表摘要必须使用显式字段：表格型 leaf 摘要进入 `Table *datatype.TableInfo`，branch 下直接 leaf 数量摘要进入 `LeafCount`，文件 / 对象列表事实进入 `Storage *CatalogStorageFacts` 和 `UpdatedAt`。`CatalogEntry.Table` 只能承载 `Name`、`Kind`、`Comment`、`RowCount`、`SizeBytes`、`UpdatedAt`、`Native` 等列表级表摘要，不应填充 `Fields` / `PrimaryKey`；字段、主键、索引、graph schema、采样等详情事实必须通过 `CatalogFactsProvider` 返回。`CatalogEntry` 不保留 `Attributes` 或 `Stats` 兜底口袋；Meta item attributes 和展示统计是扫描落库后的上层语义，不应回流为 engine listing 字段。
+
+### CatalogFactsProvider
+
+描述 catalog entry 或 leaf 的字段、统计、索引、空间信息和原生属性。
 
 ```go
-type ItemMetadataProvider interface {
+type CatalogFactsProvider interface {
     EnginePlugin
-    DescribeItem(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts MetadataOptions) (*ItemMetadata, error)
+    DescribeCatalogFacts(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts CatalogFactsOptions) (*CatalogFacts, error)
 }
 ```
 
-动态 schema 数据库可额外实现 `DynamicSchemaSamplingProvider`，用于采样推断字段画像。该 provider 表达的是字段画像能力，不表示 item 的 data type 是 `document`。图数据库可额外实现 `GraphMetadataProvider`，用于描述图整体结构事实。
+动态 schema 数据库可额外实现 `DynamicSchemaSamplingProvider`，用于采样推断字段画像。该 provider 表达的是字段画像能力，不表示 catalog leaf 的 data type 是 `document`。图数据库的整体结构事实必须通过 `CatalogFactsProvider` 返回到 `CatalogFacts.Graph`，不再另设 graph facts provider。
 
-`ItemMetadata` 是 engine 侧叶子 item 的统一描述结果。对于 table 型 item，必须优先填充 `Table *datatype.TableInfo`，字段、主键、行数、大小、更新时间、表类型、注释和表级 native 事实都随 `TableInfo` 传递；对于 document 型 item，必须优先填充 `Document *datatype.DocumentInfo`；对于 media 型 item，必须优先填充 `Media *datatype.MediaInfo`；对于 container 型 item，必须优先填充 `Container *datatype.ContainerInfo`，内部 child 只保存轻量摘要；对于 graph 型 item，必须优先填充 `Graph *datatype.GraphInfo`，节点结构、关系结构、连接模式、属性结构、节点数和关系数都随 `GraphInfo` 传递。`Fields`、`Stats`、`Attributes` 仅作为尚未收口 data type 的通用补充或必要的 catalog 展示属性，不得成为新的 table / document / media / container / graph 事实源。公共消费方需要 table 字段或各 data type facts 时，应使用 `ItemMetadataFields()` / `ItemMetadataTableInfo()` / `ItemMetadataDocumentInfo()` / `ItemMetadataMediaInfo()` / `ItemMetadataContainerInfo()` / `ItemMetadataGraphInfo()` 这类 helper，而不是直接读 `Fields` / `Stats` / `Attributes` 自行拼装。
+`CatalogFacts` 是 engine 侧 catalog entry 的统一事实详情结果。它回答“这个条目自身有哪些 engine 直接知道的事实”，不同于 `CatalogEntry` 的实时列表结构。对于 table 型 leaf，必须优先填充 `Table *datatype.TableInfo`，字段、主键、行数、大小、更新时间、表类型、注释和表级 native 事实都随 `TableInfo` 传递；对于 graph 型 leaf，必须优先填充 `Graph *datatype.GraphInfo`，节点结构、关系结构、连接模式、属性结构、节点数和关系数都随 `GraphInfo` 传递；对于 file / object leaf，必须优先填充 `Storage *CatalogStorageFacts` 表达路径、大小、MIME、etag、扩展名等存储事实。`CatalogFacts` 不保留 `Stats` 兜底口袋；公共消费方需要 table 字段或 graph facts 时，应使用 `CatalogFactsTableInfo()` / `CatalogFactsGraphInfo()` 这类 helper。
 
-`ItemMetadata` 不定义 `FileInfo`。file、object、directory、bucket、prefix、root 等只表达 catalog / storage 形态，不是 data type 主事实；引擎插件不得返回 `DataTypeFile`、`FileInfo` 或 `type_info.file`。路径、名称、大小、MIME、etag、hash、修改时间等存储事实应放在 catalog node/item 标准字段或 `Attributes.storage` 对应事实中；内容语义无法识别时使用 `datatype.DataTypeUnknown`。
+`CatalogFacts` 不承载 `DocumentInfo`、`MediaInfo` 或 `ContainerInfo`。文档、图片、音视频、压缩包、Excel、SQLite / GeoPackage 等 encoded content 的标题、语言、页数、宽高、时长、编码、颜色空间、内部 child 列表、默认入口等信息，必须由 Meta / Manager / Transfer 等编排层先通过 StoreProvider 构造内容读取抽象，再交给 `common/format` 的 `DocumentInfoProvider`、`MediaInfoProvider`、`ContainerInfoProvider` 或对应 content reader 提取。Engine 只提供 catalog / storage 事实和内容访问能力，不读取内容后裁决 format 语义。
 
-对 tabular 引擎，`CatalogProvider.ListChildren()` 和 `ItemMetadataProvider.DescribeItem()` 必须围绕同一份 `datatype.TableInfo` 事实表达。表级通用事实进入 `Name`、`Kind`、`Comment`、`RowCount`、`SizeBytes`、`UpdatedAt`、`Fields` 等标准字段；来源原生但仍属表级的事实进入 `TableInfo.Native`，再由公共层透出到 `CatalogNode.Attributes.native` 或 `ItemMetadata.Attributes.native`。不得在列表接口保留一套事实、详情接口丢失另一套事实。
+`CatalogFacts` 不定义 `FileInfo`。file、object、directory、bucket、prefix、root 等只表达 catalog / storage 形态，不是 data type 主事实；引擎插件不得返回 `DataTypeFile`、`FileInfo` 或 `type_info.file`。路径、名称、大小、MIME、etag、hash、修改时间等存储事实应放在 `CatalogEntry` / `CatalogFacts.Storage` / `CatalogFacts.UpdatedAt` 标准字段中；内容语义无法识别时使用 `datatype.DataTypeUnknown`。
 
-Tabular provider 默认不执行高成本真实 row count。只有调用方显式传入 `MetadataOptions.IncludeStatistics=true` 或走专用计数入口时，才允许调用 `RowCount` callback；列表和路径解析阶段只能使用元数据来源中已有的统计值。PostgreSQL、MySQL/Doris、ClickHouse 这类能从 catalog / system table 获得统计估算的引擎可以在列表和 metadata 中返回该统计值；Spark SQL 这类需要执行 `COUNT(*)` 的引擎必须把真实计数限制在显式统计请求中，未知 `row_count` / `size_bytes` 保持为空，不得写成 `0`。
+对 tabular 引擎，`CatalogProvider.ListChildren()` 和 `CatalogFactsProvider.DescribeCatalogFacts()` 必须围绕同一份 `datatype.TableInfo` 事实表达。表级通用事实进入 `Name`、`Kind`、`Comment`、`RowCount`、`SizeBytes`、`UpdatedAt`、`Fields` 等标准字段；来源原生但仍属表级的事实进入 `TableInfo.Native`，列表接口通过 `CatalogEntry.Table.Native` 透出，详情接口通过 `CatalogFacts.Table.Native` 透出。`CatalogFacts` 不保留 `Attributes` 兜底口袋。不得在列表接口保留一套事实、详情接口丢失另一套事实。
 
-SQL metadata provider 的实现边界：
+Tabular provider 默认不执行高成本真实 row count。只有调用方显式传入 `CatalogFactsOptions.IncludeStatistics=true` 或走专用计数入口时，才允许调用 `RowCount` callback；列表和路径解析阶段只能使用元数据来源中已有的统计值。PostgreSQL、MySQL/Doris、ClickHouse 这类能从 catalog / system table 获得统计估算的引擎可以在列表和 catalog facts 中返回该统计值；Spark SQL 这类需要执行 `COUNT(*)` 的引擎必须把真实计数限制在显式统计请求中，未知 `row_count` / `size_bytes` 保持为空，不得写成 `0`。
 
-- Common Engine 的 provider 是对上层模块的稳定能力契约；SQL metadata helper 只是 provider 内部实现复用工具，不作为新的对外抽象层。
-- `common/sqldialect` 当前定位为查询 SQL helper，负责标识符引用、表名限定、分页、count/sample SQL 等；不得混入 catalog metadata 探测逻辑。
-- Metadata helper 只在多个引擎共享同一类事实来源时抽取，例如 MySQL/Doris 共享 `information_schema`；PostgreSQL、ClickHouse、Spark SQL 等差异较大的实现应保留在插件内，不做大一统 `SQLMetadataDialect`。
-- GORM 只作为连接池、driver 和 raw SQL 执行工具，不承担 ADDP 的 catalog path、item metadata、系统库过滤、row count 策略等平台元数据语义。
+SQL catalog facts provider 的实现边界：
 
-SQL metadata provider 差异矩阵：
+- Common Engine 的 provider 是对上层模块的稳定能力契约；SQL catalog facts helper 只是 provider 内部实现复用工具，不作为新的对外抽象层。
+- `common/sqldialect` 当前定位为查询 SQL helper，负责标识符引用、表名限定、分页、count/sample SQL 等；不得混入 catalog facts 探测逻辑。
+- Catalog facts helper 只在多个引擎共享同一类事实来源时抽取，例如 MySQL/Doris 共享 `information_schema`；PostgreSQL、ClickHouse、Spark SQL 等差异较大的实现应保留在插件内，不做大一统 `SQLCatalogFactsDialect`。
+- GORM 只作为连接池、driver 和 raw SQL 执行工具，不承担 ADDP 的 catalog path、catalog facts、系统库过滤、row count 策略等平台元数据语义。
 
-| 引擎 | namespace 术语 | 元数据来源 | 表类型映射 | 字段信息来源 | row count 策略 | 系统 namespace 过滤 | 当前复用边界 |
+SQL catalog facts provider 差异矩阵：
+
+| 引擎 | namespace 术语 | catalog facts 来源 | 表类型映射 | 字段信息来源 | row count 策略 | 系统 namespace 过滤 | 当前复用边界 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| PostgreSQL | schema | `information_schema.schemata/tables/columns` + `pg_class` + `pg_stat_user_tables` | `BASE TABLE` -> `table`，`VIEW` -> `view`，其他 `table_type` 转小写下划线 | `information_schema.columns`，主键来自约束表，注释来自 `col_description` | 列表和单表 metadata 均使用 `pg_class.reltuples` 统计估算，不主动 `ANALYZE`，不做真实 count | `pg_catalog`、`information_schema`、`pg_toast`、`pg_temp_*`、`pg_toast_*` | 暂留插件内；PostgreSQL 原生 catalog 语义较强，不与 MySQL/Doris 合并 |
-| MySQL | database | `information_schema.schemata/tables/columns` | `BASE TABLE` -> `table`，`VIEW` -> `view`，其他 `table_type` 转小写下划线 | `information_schema.columns`，主键来自 `column_key`，注释来自 `column_comment` | 使用 `information_schema.tables.table_rows` 统计值 | `information_schema`、`mysql`、`performance_schema`、`sys` | 与 Doris 共享 `MySQLCompatibleMetadataDialect`；可启用表级 `Native.engine` |
-| Doris | database | MySQL 兼容 `information_schema.schemata/tables/columns` | 同 MySQL 兼容逻辑 | 同 MySQL 兼容逻辑，注释能力按引擎实际返回 | 使用 `information_schema.tables.table_rows` 统计值 | MySQL 系统库 + `__internal_schema` | 与 MySQL 共享 `MySQLCompatibleMetadataDialect`；`Native.engine` 待确认 `information_schema.tables.engine` 稳定性后再启用 |
+| PostgreSQL | schema | `information_schema.schemata/tables/columns` + `pg_class` + `pg_stat_user_tables` | `BASE TABLE` -> `table`，`VIEW` -> `view`，其他 `table_type` 转小写下划线 | `information_schema.columns`，主键来自约束表，注释来自 `col_description` | 列表和单表 catalog facts 均使用 `pg_class.reltuples` 统计估算，不主动 `ANALYZE`，不做真实 count | `pg_catalog`、`information_schema`、`pg_toast`、`pg_temp_*`、`pg_toast_*` | 暂留插件内；PostgreSQL 原生 catalog 语义较强，不与 MySQL/Doris 合并 |
+| MySQL | database | `information_schema.schemata/tables/columns` | `BASE TABLE` -> `table`，`VIEW` -> `view`，其他 `table_type` 转小写下划线 | `information_schema.columns`，主键来自 `column_key`，注释来自 `column_comment` | 使用 `information_schema.tables.table_rows` 统计值 | `information_schema`、`mysql`、`performance_schema`、`sys` | 与 Doris 共享 `MySQLCompatibleCatalogFactsDialect`；可启用表级 `Native.engine` |
+| Doris | database | MySQL 兼容 `information_schema.schemata/tables/columns` | 同 MySQL 兼容逻辑 | 同 MySQL 兼容逻辑，注释能力按引擎实际返回 | 使用 `information_schema.tables.table_rows` 统计值 | MySQL 系统库 + `__internal_schema` | 与 MySQL 共享 `MySQLCompatibleCatalogFactsDialect`；`Native.engine` 待确认 `information_schema.tables.engine` 稳定性后再启用 |
 | ClickHouse | database | `system.databases`、`system.tables`、`system.columns` | `MaterializedView` -> `materialized_view`，`View`/其他包含 `View` 的 engine -> `view`，其他 -> `table` | `system.columns`，nullable 从类型字符串推断，`DEFAULT` / `MATERIALIZED` / `ALIAS` 映射到通用默认值和生成列字段，当前不表达主键 | 使用 `system.tables.total_rows` 统计值 | `system`、`information_schema`、`INFORMATION_SCHEMA` | 暂留插件内；ClickHouse `system.*` 语义独立 |
-| Spark SQL | database | `SHOW DATABASES`、`SHOW TABLES`、`DESCRIBE`，部分环境可查询 `information_schema` | 当前 `SHOW TABLES` 结果统一映射为 `table` | `DESCRIBE table` | 列表阶段不做真实 count，未知 `row_count` / `size_bytes` 保持为空；单表 metadata 显式请求统计时才执行 `COUNT(*)` | `information_schema`、`sys` | 暂留插件内；Spark metadata 更偏命令式接口 |
+| Spark SQL | database | `SHOW DATABASES`、`SHOW TABLES`、`DESCRIBE`，部分环境可查询 `information_schema` | 当前 `SHOW TABLES` 结果统一映射为 `table` | `DESCRIBE table` | 列表阶段不做真实 count，未知 `row_count` / `size_bytes` 保持为空；单表 catalog facts 显式请求统计时才执行 `COUNT(*)` | `information_schema`、`sys` | 暂留插件内；Spark catalog facts 更偏命令式接口 |
 
-对 graph 引擎，`CatalogProvider` 暴露 graph item，label、relationship type 和 endpoint pattern 作为 `datatype.GraphInfo` 中的 schema / shape facts，而不是作为 graph data type 的主 item 本体。Neo4j label / relationship 只作为 Manager 展示投影或查询筛选条件，不作为公共 catalog item。graph 公共事实应围绕 `GraphInfo.NodeShapes`、`GraphInfo.RelationshipShapes` 和 `GraphRelationshipPatternInfo` 表达，不得继续把 `from_labels[]` / `to_labels[]` 两个集合作为 relationship endpoint 主事实。
+对 graph 引擎，`CatalogProvider` 暴露 graph catalog leaf，label、relationship type 和 endpoint pattern 作为 `datatype.GraphInfo` 中的 schema / shape facts，而不是作为 graph data type 的主 catalog leaf 本体。Neo4j label / relationship 只作为 Manager 展示投影或查询筛选条件，不作为公共 catalog leaf。graph 公共事实应围绕 `GraphInfo.NodeShapes`、`GraphInfo.RelationshipShapes` 和 `GraphRelationshipPatternInfo` 表达，不得继续把 `from_labels[]` / `to_labels[]` 两个集合作为 relationship endpoint 主事实。
 
-`GraphMetadataProvider` / `GraphSampleProvider` 返回的是面向 ADDP 用户的业务图视图。Neo4j 插件、扩展或索引产生的内部节点和内部关系不得进入 graph schema、计数、样本、路径和上层算法投影；例如 Neo4j Spatial 的 `SpatialLayer` 节点以及 `RTREE_METADATA`、`RTREE_REFERENCE`、`RTREE_ROOT` 关系应由 provider 或 Graph 模块服务层过滤，不能要求 `common/datatype.GraphInfo` 携带具体引擎内部规则。
+`CatalogFactsProvider` / `GraphSampleProvider` 返回的是面向 ADDP 用户的业务图视图。Neo4j 插件、扩展或索引产生的内部节点和内部关系不得进入 graph schema、计数、样本、路径和上层算法投影；例如 Neo4j Spatial 的 `SpatialLayer` 节点以及 `RTREE_METADATA`、`RTREE_REFERENCE`、`RTREE_ROOT` 关系应由 provider 或 Graph 模块服务层过滤，不能要求 `common/datatype.GraphInfo` 携带具体引擎内部规则。
 
 ```go
-type GraphMetadataProvider interface {
-    EnginePlugin
-    DescribeGraph(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts MetadataOptions) (*datatype.GraphInfo, error)
-}
-
 type GraphSampleProvider interface {
     EnginePlugin
     SampleGraph(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts GraphSampleOptions) (*GraphData, error)
@@ -201,7 +206,7 @@ type GraphSampleFilter struct {
 
 ### StoreProvider
 
-表达 item 内容访问能力。Catalog 回答“有什么”，Metadata 回答“它是什么样”，Store 回答“如何读写内容”。
+表达 item 内容访问能力。Catalog 回答“有什么”，Facts 回答“engine 直接知道什么”，Store 回答“如何读写内容”。
 
 ```go
 type StoreProvider interface {
@@ -222,9 +227,13 @@ type StoreProvider interface {
 - `TableWriteSessionProvider.OpenTableWriteSession()`：打开表写入会话，连续写入批次；适合 PostgreSQL COPY、JDBC bulk load 等避免每批重复建立写入会话的实现。
 - `TableWritePreparer.PrepareTableWrite()`：执行表级写入前准备动作，例如 ensure database / schema、create table、校验目标表结构和安全 schema evolution。该能力不写入数据行，也不承载 Transfer 的 overwrite / append policy。
 
+`TableReadSessionOptions.Hints` 和 `BatchData.Hints` 只用于同一次运行时读写链路中的控制提示，例如字段选择、空间字段输出编码、批大小或写入方法。Hints 不是 catalog facts，不得写入 `CatalogFacts`，也不得作为 Meta item attributes 的兜底口袋。
+
+`WriteOptions.UserMetadata` 只表达对象 / 文件写入时需要传给底层存储的用户自定义 metadata，例如 S3 / MinIO user metadata。它不是 engine catalog facts，也不用于表格读写控制；表格读写控制必须使用 Hints 或强类型 options 字段。
+
 对象存储和文件系统不得互相继承，不共享 CatalogModel 或 catalog 拼装实现；二者最多共享内容流读写接口、MIME 推断、格式解析等底层 helper。
 
-`OpenContent()`、`OpenRange()`、`CreateContent()` 等 store 能力接收的仍是**引擎自身 catalog model 下的 item `CatalogPath`**，不是另起一套只为底层 IO 服务的“物理路径 DTO”。调用方不得自行伪造脱离 `CatalogModelSpec` 的快捷路径；如果从物理路径、对象 key 或扫描候选重新定位 item，应使用 engine 公共层提供的路径构造规则，或直接复用 `CatalogNode.Path` / `FileEntry.CatalogPath`。物理路径可作为 node/item attribute 暴露给底层实现，但不能替代统一 catalog path 契约。
+`OpenContent()`、`OpenRange()`、`CreateContent()` 等 store 能力接收的仍是**引擎自身 catalog model 下的 leaf `CatalogPath`**，不是另起一套只为底层 IO 服务的“物理路径 DTO”。调用方不得自行伪造脱离 `CatalogModelSpec` 的快捷路径；如果从物理路径、对象 key 或扫描候选重新定位 leaf，应使用 engine 公共层提供的路径构造规则，或直接复用 `CatalogEntry.Path`。物理路径可作为 Meta node/item attribute 暴露给底层实现，但不能替代统一 catalog path 契约。
 
 ```go
 type RangeReadableProvider interface {
@@ -262,7 +271,7 @@ type QueryRuntimeProvider interface {
 
 `SQLQueryRuntimeProvider.ExecuteSQL()` 是 SQL 执行 helper 和 SQL dialect 适配层，当前仍可保留给 SQL 引擎和 batch read 适配使用；新增非 SQL 查询语言不得仿照它继续新增按数据库类别拆分的 provider。旧 `DocumentQueryRuntimeProvider` 已删除，不得恢复。
 
-图查询不属于普通查询的一个返回格式变体。图查询使用独立 `GraphQueryProvider`，返回 `GraphQueryResult`，面向 Graph 模块、图可视化和图算法等需要节点 / 关系结构的调用方。Neo4j 可同时实现 `QueryRuntimeProvider` 和 `GraphQueryProvider`：前者用于普通 Cypher 表格结果和 Manager 预览兜底，后者用于图结构结果。图结构摘要由 `GraphMetadataProvider` 提供，图样本由 `GraphSampleProvider` 或 `GraphQueryProvider` 提供。
+图查询不属于普通查询的一个返回格式变体。图查询使用独立 `GraphQueryProvider`，返回 `GraphQueryResult`，面向 Graph 模块、图可视化和图算法等需要节点 / 关系结构的调用方。Neo4j 可同时实现 `QueryRuntimeProvider` 和 `GraphQueryProvider`：前者用于普通 Cypher 表格结果和 Manager 预览兜底，后者用于图结构结果。图结构摘要由 `CatalogFactsProvider` 的 `CatalogFacts.Graph` 提供，图样本由 `GraphSampleProvider` 或 `GraphQueryProvider` 提供。
 
 ```go
 type GraphQueryProvider interface {
@@ -277,8 +286,8 @@ GORM、database/sql、Mongo driver、Neo4j driver、S3 client 都是实现 helpe
 
 工作流和脚本运行时使用独立 provider：
 
-- `WorkflowRuntimeProvider`：工作流端点、算子发现、工作流执行。
-- `ScriptRuntimeProvider`：Notebook/脚本端点和会话。
+- `WorkflowRuntimeProvider`：工作流端点、算子描述发现、工作流执行。`ListOperators()` 返回 `OperatorDescriptor`，其中参数和输出端口分别使用 `ParameterDescriptor` / `OutputPortDescriptor`；这些结构只描述运行时算子接口，不是 Meta 模块元数据。
+- `ScriptRuntimeProvider`：Notebook/脚本端点和会话。`ScriptSession.Info` 返回会话描述信息，例如 mode、language；它不是 catalog facts，也不是调用方 hints。
 
 ---
 
@@ -286,11 +295,11 @@ GORM、database/sql、Mongo driver、Neo4j driver、S3 client 都是实现 helpe
 
 | 引擎 | 推荐接口组合 |
 | --- | --- |
-| PostgreSQL / MySQL / Doris / ClickHouse / Spark SQL | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `ItemMetadataProvider` + `SQLQueryRuntimeProvider` + `ConnectionPoolPlugin` |
-| MongoDB | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `ItemMetadataProvider` + `DynamicSchemaSamplingProvider` + `QueryRuntimeProvider` |
-| Neo4j | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `ItemMetadataProvider` + `GraphMetadataProvider` + `GraphSampleProvider` + `QueryRuntimeProvider` + `GraphQueryProvider` |
-| MinIO / S3 | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `ItemMetadataProvider` + `ContentReadableProvider` |
-| NFS | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `ItemMetadataProvider` + `ContentReadableProvider` |
+| PostgreSQL / MySQL / Doris / ClickHouse / Spark SQL | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `CatalogFactsProvider` + `SQLQueryRuntimeProvider` + `ConnectionPoolPlugin` |
+| MongoDB | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `CatalogFactsProvider` + `DynamicSchemaSamplingProvider` + `QueryRuntimeProvider` |
+| Neo4j | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `CatalogFactsProvider` + `GraphSampleProvider` + `QueryRuntimeProvider` + `GraphQueryProvider` |
+| MinIO / S3 | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `CatalogFactsProvider` + `ContentReadableProvider` |
+| NFS | `EnginePlugin` + `CatalogModelProvider` + `CatalogProvider` + `CatalogFactsProvider` + `ContentReadableProvider` |
 | Python / Spark / Math Workflow | `EnginePlugin` + `WorkflowRuntimeProvider` |
 | Jupyter | `EnginePlugin` + `ScriptRuntimeProvider` |
 
@@ -299,10 +308,10 @@ GORM、database/sql、Mongo driver、Neo4j driver、S3 client 都是实现 helpe
 ## 五、上层消费规则
 
 - System：通过 `EnginePlugin` 做注册、连接测试、连接信息校验和能力声明刷新；通过 `CatalogProvider.ListChildren()` 对外提供实时 catalog 浏览控制面 API：`POST /api/v1/system/engines/:id/catalog/children`。
-- Meta：使用 `CatalogProvider` 扫描目录并落库，使用 `ItemMetadataProvider` / `DynamicSchemaSamplingProvider` 获取叶子元数据；扫描编排必须先读取 `CatalogModelSpec`，再结合 provider 组合选择 catalog scan strategy。`engine_family` 只能作为粗分类或展示字段，不能单独决定 namespace 术语、item 术语、扫描层级和内容读取方式。公开 API 应聚焦扫描后元数据快照，不再新增实时浏览公共接口。
+- Meta：使用 `CatalogProvider` 扫描目录并落库，使用 `CatalogFactsProvider` / `DynamicSchemaSamplingProvider` 获取 catalog leaf facts；扫描编排必须先读取 `CatalogModelSpec`，再结合 provider 组合选择 catalog scan strategy。`engine_family` 只能作为粗分类或展示字段，不能单独决定 namespace 术语、leaf 术语、扫描层级和内容读取方式。公开 API 应聚焦扫描后元数据快照，不再新增实时浏览公共接口。
 - Meta 扫描 API 和任务参数中的路径型目标统一命名为 `catalog_paths`。它表示引擎 catalog model 下的路径。
-- Manager：使用 Meta 树构建探查树；预览由 Manager 自身 preview provider / composer 组合完成。结构化数据优先消费 `BatchReadableProvider` 或只读 sample query；graph 预览优先消费 `type_info.graph` / `GraphMetadataProvider` 得到 schema 视图，并通过 `GraphSampleProvider` 或 `GraphQueryProvider` 获取轻量子图样本；对象/文件优先消费 `ContentReadableProvider` 并结合格式解析。
-- Develop：使用 `QueryRuntimeProvider`、`WorkflowRuntimeProvider`、`ScriptRuntimeProvider`；图结构展示入口使用 `GraphMetadataProvider` / `GraphQueryProvider`。
+- Manager：使用 Meta 树构建探查树；预览由 Manager 自身 preview provider / composer 组合完成。结构化数据优先消费 `BatchReadableProvider` 或只读 sample query；graph 预览优先消费 `type_info.graph` / `CatalogFactsProvider` 得到 schema 视图，并通过 `GraphSampleProvider` 或 `GraphQueryProvider` 获取轻量子图样本；对象/文件优先消费 `ContentReadableProvider` 并结合格式解析。
+- Develop：使用 `QueryRuntimeProvider`、`WorkflowRuntimeProvider`、`ScriptRuntimeProvider`；图结构展示入口使用 `CatalogFactsProvider` / `GraphQueryProvider`。
 - Service：发布普通查询服务时使用 query runtime 和 Meta item/spatial 元数据；图查询服务使用 `GraphQueryProvider`。图查询服务的易用向导应消费 graph item 的 `type_info.graph.node_shapes`，不得再从 Meta 树读取 Neo4j label item。
 - Transfer：使用 source / target endpoint 生成执行计划。native table 读写消费 `TableReadSessionProvider`、`BatchReadableProvider`、`TableWritePreparer`、`TableWriteSessionProvider`、`BatchWritableProvider`；encoded file/object 读写先通过 engine content provider 和 `common/engine/contentadapter` 构造 `common/contentio` 抽象，再交给 `common/format` provider。高吞吐数据搬运优先消费 batch / table session / content stream 能力，而不是 query runtime。
 
@@ -316,4 +325,4 @@ GORM、database/sql、Mongo driver、Neo4j driver、S3 client 都是实现 helpe
 - 不得让插件返回 JSON 字符串形式的 capabilities。
 - 不得让非 DSN 引擎返回 JSON 字符串冒充 connection string。
 - 不得在 capabilities 中保存任务级运行参数。
-- 不得在 `CatalogProvider` / `ItemMetadataProvider` 中执行写入、DDL、统计刷新等有外部副作用的操作；连接测试也必须保持只读。
+- 不得在 `CatalogProvider` / `CatalogFactsProvider` 中执行写入、DDL、统计刷新等有外部副作用的操作；连接测试也必须保持只读。

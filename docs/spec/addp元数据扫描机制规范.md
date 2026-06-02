@@ -41,8 +41,8 @@ Meta 的扫描编排必须分开回答三类问题：
 
 | 问题 | 事实源 |
 |---|---|
-| 目录层级如何组织、各层叫什么、哪一层是 item | `CatalogModelSpec` |
-| 能否列目录、描述 item、采样字段、读取内容 | 已实现的 provider 组合 |
+| 目录层级如何组织、各层叫什么、哪一层是 leaf | `CatalogModelSpec` |
+| 能否列目录、描述 catalog facts、采样字段、读取内容 | 已实现的 provider 组合 |
 | Meta 需要怎样执行和落库 | Meta 自己的 scan strategy |
 
 `engine_family` 只保留粗分类意义，不能单独决定扫描流程。Meta 可以因为执行语义不同而保留多种 strategy，例如：
@@ -189,6 +189,8 @@ Basic 重新发现资源时不能把已有 deep 状态降级。
 ## 扫描目标
 
 扫描目标只保留 engine、node、item 三种抽象。
+
+engine 目标表示从该存储引擎的显性结构 root 开始扫描。node 目标表示从指定 `meta_node` 范围开始扫描；当该 node 是 root node 时，语义与 engine 目标一致，扫描服务不得把 root node 的展示名当作业务路径。root node 的 ResourceLocator path 为空，但仍按普通 node 规则携带 `type` 和 `node_id`。
 
 请求可以使用 engine_id：
 
@@ -338,4 +340,4 @@ Manager 刷新目标必须是当前选中的 engine / node / item，不能默认
 - 扫描请求语义只区分 `manual` / `scheduled`。公共 `task_executions.trigger_type` 现阶段仍沿用 common 的既有枚举和值，后续再统一收敛。
 - `engine_id`、`node_id`、`item_id`、`targets` 至少提供一种。
 - 不保留 `full` / `shallow`。
-- 第一阶段继续使用现有 `POST /scan/engine` 入口，但不保留旧 depth 和旧响应兼容语义；后续可以再收敛为更准确的路径命名。
+- 所有手动扫描请求统一通过 `POST /scan/run/manual` 创建后台扫描运行；调用方通过任务监控查询进度和结果，不保留同步扫描入口。

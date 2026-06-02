@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	"github.com/gin-gonic/gin"
 )
@@ -12,10 +13,11 @@ import (
 type TransferCapabilityHandler struct{}
 
 type TransferCapabilitiesResponse struct {
-	TableFormats []TransferTableFormatCapability `json:"table_formats"`
+	TableFormats   []TransferTableFormatSupport   `json:"table_formats"`
+	RawCopyFormats []TransferRawCopyFormatSupport `json:"raw_copy_formats"`
 }
 
-type TransferTableFormatCapability struct {
+type TransferTableFormatSupport struct {
 	Value        string         `json:"value"`
 	BackendType  string         `json:"backend_type"`
 	Label        string         `json:"label"`
@@ -28,6 +30,14 @@ type TransferTableFormatCapability struct {
 	Layouts      []string       `json:"layouts,omitempty"`
 	MultiFile    bool           `json:"multi_file,omitempty"`
 	ProviderKind string         `json:"provider_kind,omitempty"`
+}
+
+type TransferRawCopyFormatSupport struct {
+	Value     string   `json:"value"`
+	Label     string   `json:"label"`
+	DataType  string   `json:"data_type"`
+	Extension string   `json:"extension,omitempty"`
+	Layouts   []string `json:"layouts,omitempty"`
 }
 
 func NewTransferCapabilityHandler() *TransferCapabilityHandler {
@@ -44,12 +54,13 @@ func NewTransferCapabilityHandler() *TransferCapabilityHandler {
 // @Security BearerAuth
 func (h *TransferCapabilityHandler) Get(c *gin.Context) {
 	c.JSON(http.StatusOK, TransferCapabilitiesResponse{
-		TableFormats: buildTableFormatCapabilities(),
+		TableFormats:   buildTableFormatCapabilities(),
+		RawCopyFormats: buildRawCopyFormatCapabilities(),
 	})
 }
 
-func buildTableFormatCapabilities() []TransferTableFormatCapability {
-	formats := []TransferTableFormatCapability{
+func buildTableFormatCapabilities() []TransferTableFormatSupport {
+	formats := []TransferTableFormatSupport{
 		tableCapabilityFromFormat(format.FormatCSV, "csv", nil),
 		tableCapabilityFromFormat(format.FormatTSV, "tsv", nil),
 		tableCapabilityFromFormat(format.FormatJSON, "json", map[string]any{"json_mode": "array"}),
@@ -59,7 +70,7 @@ func buildTableFormatCapabilities() []TransferTableFormatCapability {
 		tableCapabilityFromFormat(format.FormatShapefile, "shapefile", nil),
 	}
 
-	result := make([]TransferTableFormatCapability, 0, len(formats))
+	result := make([]TransferTableFormatSupport, 0, len(formats))
 	for _, item := range formats {
 		if item.Read || item.Write {
 			result = append(result, item)
@@ -71,13 +82,13 @@ func buildTableFormatCapabilities() []TransferTableFormatCapability {
 	return result
 }
 
-func tableCapabilityFromFormat(backendType format.FormatType, value string, options map[string]any) TransferTableFormatCapability {
+func tableCapabilityFromFormat(backendType format.FormatType, value string, options map[string]any) TransferTableFormatSupport {
 	descriptor, ok := format.GetFormatDescriptor(backendType)
-	read := ok && descriptor.TransferRead && hasTableReader(backendType)
+	read := ok && hasTableReader(backendType)
 	write, providerKind := transferWritable(backendType)
-	write = ok && descriptor.TransferWrite && write
+	write = ok && write
 	spatial := descriptor.Spatial || value == "geojson" || value == "shapefile"
-	return TransferTableFormatCapability{
+	return TransferTableFormatSupport{
 		Value:        value,
 		BackendType:  string(backendType),
 		Label:        tableFormatLabel(value),
@@ -172,4 +183,130 @@ func containsString(values []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func buildRawCopyFormatCapabilities() []TransferRawCopyFormatSupport {
+	descriptors := format.ListFormatDescriptors()
+	result := make([]TransferRawCopyFormatSupport, 0, len(descriptors))
+	seen := make(map[string]struct{}, len(descriptors))
+	for _, descriptor := range descriptors {
+		if !isRawCopyDataType(descriptor.DataType) || !containsString(descriptor.Layouts, format.LayoutSingle) {
+			continue
+		}
+		value := string(descriptor.Format)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, TransferRawCopyFormatSupport{
+			Value:     value,
+			Label:     rawCopyFormatLabel(value),
+			DataType:  string(descriptor.DataType),
+			Extension: firstDescriptorExtension(descriptor),
+			Layouts:   append([]string(nil), descriptor.Layouts...),
+		})
+	}
+	sort.SliceStable(result, func(i, j int) bool {
+		leftRank := rawCopyDataTypeRank(result[i].DataType)
+		rightRank := rawCopyDataTypeRank(result[j].DataType)
+		if leftRank != rightRank {
+			return leftRank < rightRank
+		}
+		return result[i].Value < result[j].Value
+	})
+	return result
+}
+
+func isRawCopyDataType(dataType datatype.DataType) bool {
+	switch dataType {
+	case datatype.DataTypeDocument, datatype.DataTypeMedia, datatype.DataTypeUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+func firstDescriptorExtension(descriptor format.FormatDescriptor) string {
+	for _, extension := range descriptor.Identification.Extensions {
+		normalized := strings.TrimPrefix(strings.TrimSpace(extension), ".")
+		if normalized != "" {
+			return normalized
+		}
+	}
+	return ""
+}
+
+func rawCopyDataTypeRank(dataType string) int {
+	switch dataType {
+	case string(datatype.DataTypeDocument):
+		return 10
+	case string(datatype.DataTypeMedia):
+		return 20
+	case string(datatype.DataTypeUnknown):
+		return 30
+	default:
+		return 1000
+	}
+}
+
+func rawCopyFormatLabel(value string) string {
+	switch value {
+	case "pdf":
+		return "PDF"
+	case "docx":
+		return "DOCX"
+	case "pptx":
+		return "PPTX"
+	case "wps":
+		return "WPS"
+	case "text":
+		return "Text"
+	case "markdown":
+		return "Markdown"
+	case "jpeg":
+		return "JPEG"
+	case "png":
+		return "PNG"
+	case "gif":
+		return "GIF"
+	case "tiff":
+		return "TIFF"
+	case "webp":
+		return "WebP"
+	case "bmp":
+		return "BMP"
+	case "svg":
+		return "SVG"
+	case "avif":
+		return "AVIF"
+	case "heic":
+		return "HEIC"
+	case "mp4":
+		return "MP4"
+	case "mov":
+		return "MOV"
+	case "mkv":
+		return "MKV"
+	case "avi":
+		return "AVI"
+	case "webm":
+		return "WebM"
+	case "mp3":
+		return "MP3"
+	case "wav":
+		return "WAV"
+	case "flac":
+		return "FLAC"
+	case "aac":
+		return "AAC"
+	case "ogg":
+		return "OGG"
+	case "unknown":
+		return "Unknown"
+	default:
+		return value
+	}
 }

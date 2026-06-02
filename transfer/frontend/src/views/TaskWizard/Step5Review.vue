@@ -43,7 +43,7 @@
     </el-card>
 
     <!-- 数据源配置 -->
-    <el-card class="config-card">
+    <el-card v-if="!wizardState.isRawCopyTask.value" class="config-card">
       <template #header>
         <div class="card-header">
           <span>{{ t('transfer.taskWizard.reviewSourceConfig') }}</span>
@@ -189,6 +189,9 @@ const warnings = computed(() => {
   const warns = []
 
   if (props.wizardState.fieldMappings.value.length === 0) {
+    if (props.wizardState.isRawCopyTask.value) {
+      return warns
+    }
     warns.push(t('transfer.taskWizard.warningNoMapping'))
   }
 

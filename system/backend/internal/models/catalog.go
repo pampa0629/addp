@@ -1,15 +1,21 @@
 package models
 
+import (
+	"time"
+
+	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/plugin"
+)
+
 // CatalogListChildrenRequest 实时 catalog 子节点浏览请求。
 type CatalogListChildrenRequest struct {
-	Path    CatalogPath            `json:"path"`
-	Options CatalogListOptions     `json:"options,omitempty"`
-	Filter  map[string]interface{} `json:"filter,omitempty"`
+	Path    CatalogPath        `json:"path"`
+	Options CatalogListOptions `json:"options,omitempty"`
 }
 
 // CatalogListChildrenResponse 实时 catalog 子节点浏览响应。
 type CatalogListChildrenResponse struct {
-	Nodes []CatalogNode `json:"nodes"`
+	Nodes []CatalogEntry `json:"nodes"`
 }
 
 // CatalogPath 表达跨引擎的结构化 catalog 路径。
@@ -26,17 +32,17 @@ type CatalogSegment struct {
 	Name string `json:"name" example:"public"`
 }
 
-// CatalogNode 表达实时 catalog 浏览返回的中性节点。
-type CatalogNode struct {
-	Name        string                 `json:"name" example:"public"`
-	Path        CatalogPath            `json:"path"`
-	Term        string                 `json:"term" example:"schema"`
-	Kind        string                 `json:"kind" example:"namespace"`
-	IsContainer bool                   `json:"is_container" example:"true"`
-	IsItem      bool                   `json:"is_item" example:"false"`
-	Stats       map[string]interface{} `json:"stats,omitempty"`
-	Attributes  map[string]interface{} `json:"attributes,omitempty"`
-	Actions     []string               `json:"actions,omitempty"`
+// CatalogEntry 表达实时 catalog 浏览返回的中性条目。
+type CatalogEntry struct {
+	Name      string                      `json:"name" example:"public"`
+	Path      CatalogPath                 `json:"path"`
+	Term      string                      `json:"term" example:"schema"`
+	Kind      string                      `json:"kind" example:"namespace"`
+	Role      string                      `json:"role" example:"branch"`
+	Table     *datatype.TableInfo         `json:"table,omitempty"`
+	Storage   *plugin.CatalogStorageFacts `json:"storage,omitempty"`
+	LeafCount *int                        `json:"leaf_count,omitempty"`
+	UpdatedAt *time.Time                  `json:"updated_at,omitempty"`
 }
 
 // CatalogListOptions 实时 catalog 列表选项。

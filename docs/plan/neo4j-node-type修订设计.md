@@ -1,8 +1,8 @@
-# Neo4j Node Type 修订设计（后实施）
+# Neo4j Node Type 修订设计（历史废弃）
 
-> 状态：待评审  
-> 创建日期：2026-04-24  
-> 前置条件：已完成《nosql插件接口分拆设计》并合入主干。
+> 状态：历史方案，已废弃
+> 创建日期：2026-04-24
+> 当前准则：Neo4j catalog leaf 统一为 `graph`；label、relationship type 和 endpoint pattern 进入 `attributes.type_info.graph`，不作为独立 `meta_item`。
 
 ---
 
@@ -13,9 +13,7 @@
 1. Node Label 被存为 `item_type = "collection"`（MongoDB 术语）
 2. Relationship Type 被存为 `item_type = "relationship_type"`
 
-你已明确目标术语：
-- Node type 用 `label`
-- Relationship 用 `relationship`（不要 `relationship_type`）
+该文档曾计划把 Neo4j label / relationship type 落为独立 `meta_item`。当前架构已经收敛：Neo4j 的 ADDP data item 是 graph 整体，label / relationship type 只是图结构事实。
 
 此外，Neo4j 的 `RTREE_*` 关系属于内部空间索引实现细节，不应暴露给业务元数据层。
 
@@ -23,12 +21,10 @@
 
 ## 二、设计目标
 
-1. Neo4j 元数据术语与业界主流保持一致：
-   - `label`
-   - `relationship`
-2. 过滤 Neo4j 内部关系类型（`RTREE_*`）
-3. 保证 Meta、Manager、System 等支持 Neo4j 引擎的模块行为一致
-4. 完成历史数据迁移，避免新老 `item_type` 混杂
+1. Neo4j catalog model 使用 `database -> graph`。
+2. Neo4j label、relationship type 和 endpoint pattern 写入 `type_info.graph`。
+3. 过滤 Neo4j 内部关系类型（`RTREE_*`），避免进入 graph schema / sample 事实。
+4. Meta、Manager、Graph、Service 等模块围绕 graph item 消费图结构事实。
 
 ---
 
@@ -38,15 +34,17 @@
 
 - 集合：`item_type = "collection"`
 
-### 3.2 Neo4j（变更）
+### 3.2 Neo4j（当前）
 
-- 节点标签：`item_type = "label"`
-- 关系类型：`item_type = "relationship"`
+- 图整体：`item_type = "graph"`
+- 节点标签：`type_info.graph.node_shapes`
+- 关系类型：`type_info.graph.relationship_shapes`
 
 ### 3.3 禁止值（Neo4j 场景）
 
 - `collection`（用于 Neo4j 时）
-- `relationship_type`
+- `label`（作为独立 `meta_item.item_type`）
+- `relationship` / `relationship_type`（作为独立 `meta_item.item_type`）
 
 ---
 
@@ -54,15 +52,10 @@
 
 ### 4.1 Meta 扫描服务
 
-文件：
-- `meta/backend/internal/service/scan_nosql_service.go`
-
 改造点：
-1. Neo4j label 持久化时，`UpsertItem(..., "label", ...)`
-2. Neo4j relationship 持久化时，`UpsertItem(..., "relationship", ...)`
-3. 软删除查询条件同步改为新值：
-   - `item_type = 'label'`
-   - `item_type = 'relationship'`
+1. Neo4j database 下只落 graph item。
+2. label / relationship type 不进入 `meta_item.item_type`。
+3. 图结构事实进入 `attributes.type_info.graph`。
 
 ### 4.2 Neo4j 插件
 
@@ -79,9 +72,9 @@
 ### 4.3 Manager 读取与展示
 
 重点检查所有基于 `item_type` 的分支/过滤：
-- 读取 Neo4j label 的逻辑改为匹配 `label`
-- 读取 Neo4j relationship 的逻辑改为匹配 `relationship`
-- 避免与 MongoDB 的 `collection` 规则冲突
+- Neo4j 只匹配 `graph`。
+- label / relationship type 作为图结构筛选条件，不作为 item 类型。
+- 避免与 MongoDB 的 `collection` 规则冲突。
 
 ### 4.4 文档规范同步
 
@@ -97,29 +90,19 @@
 
 ### 5.1 迁移目标
 
-在 `metadata.meta_item` 中，针对 Neo4j 引擎记录执行：
+在 `metadata.meta_item` 中，针对 Neo4j 引擎历史记录执行清理或重扫：
 
-- `collection` → `label`
-- `relationship_type` → `relationship`
+- `collection`、`label`、`relationship`、`relationship_type` 等历史拆分值不再作为最终主路径。
+- 推荐在开发阶段直接清理 Neo4j 历史扫描结果并重新扫描，生成 `item_type='graph'`。
 
 ### 5.2 迁移 SQL（示意）
 
 ```sql
--- 1) Neo4j label: collection -> label
-UPDATE metadata.meta_item mi
-SET item_type = 'label', updated_at = NOW()
-FROM system.engines e
+DELETE FROM metadata.meta_item mi
+USING system.engines e
 WHERE mi.engine_id = e.id
   AND e.engine_type = 'neo4j'
-  AND mi.item_type = 'collection';
-
--- 2) Neo4j relationship: relationship_type -> relationship
-UPDATE metadata.meta_item mi
-SET item_type = 'relationship', updated_at = NOW()
-FROM system.engines e
-WHERE mi.engine_id = e.id
-  AND e.engine_type = 'neo4j'
-  AND mi.item_type = 'relationship_type';
+  AND mi.item_type IN ('collection', 'label', 'relationship', 'relationship_type');
 ```
 
 ### 5.3 清理与校验
@@ -130,7 +113,7 @@ SELECT mi.id, mi.engine_id, mi.item_type, mi.name
 FROM metadata.meta_item mi
 JOIN system.engines e ON mi.engine_id = e.id
 WHERE e.engine_type = 'neo4j'
-  AND mi.item_type IN ('collection', 'relationship_type');
+  AND mi.item_type IN ('collection', 'label', 'relationship', 'relationship_type');
 ```
 
 结果应为 0 行。
@@ -139,11 +122,11 @@ WHERE e.engine_type = 'neo4j'
 
 ## 六、实施顺序（本阶段）
 
-1. 合入接口分拆改造（前置）
-2. 修改 Neo4j 插件过滤 `RTREE_*`
-3. 修改 Meta Neo4j 落库 item_type（label/relationship）
-4. 修改 Manager 读取逻辑
-5. 执行数据迁移 SQL
+1. 确认 Neo4j catalog model 为 `database -> graph`
+2. 确认 Neo4j 插件过滤 `RTREE_*`
+3. 确认 Meta Neo4j 落库 `item_type=graph`
+4. 确认 Manager / Graph 读取 `type_info.graph`
+5. 清理或重扫历史 Neo4j 数据
 6. 更新规范文档
 7. 完成回归测试
 
@@ -153,8 +136,8 @@ WHERE e.engine_type = 'neo4j'
 
 ### 7.1 Neo4j 扫描
 
-- 扫描后应出现 `item_type='label'`
-- 扫描后应出现 `item_type='relationship'`
+- 扫描后应出现 `item_type='graph'`
+- label / relationship type 进入 `type_info.graph`
 - 不应出现 `RTREE_*` 关系
 
 ### 7.2 MongoDB 扫描
@@ -164,8 +147,8 @@ WHERE e.engine_type = 'neo4j'
 
 ### 7.3 Manager 展示
 
-- Neo4j label 列表可见
-- Neo4j relationship 列表可见
+- Neo4j graph item 可见
+- Neo4j label / relationship type 可作为图结构视角展示
 - 分类与筛选正确
 
 ### 7.4 文档一致性
@@ -193,8 +176,8 @@ WHERE e.engine_type = 'neo4j'
 
 ## 九、验收标准
 
-1. Neo4j 新扫描数据只出现：`label`、`relationship`
-2. Neo4j 数据中不再出现：`collection`、`relationship_type`
+1. Neo4j 新扫描数据只出现：`graph`
+2. Neo4j 数据中不再出现：`collection`、`label`、`relationship`、`relationship_type` 作为 item type
 3. `RTREE_*` 不再进入元数据
 4. MongoDB 行为不变
 5. 文档、代码、数据库三者术语一致

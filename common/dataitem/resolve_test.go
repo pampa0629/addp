@@ -28,7 +28,7 @@ func TestResolveItemsGroupsShapefileRefs(t *testing.T) {
 		t.Fatalf("items = %#v, want shapefile + markdown", result.Items)
 	}
 	item := result.Items[0]
-	if item.Layout != LayoutMulti || item.Format != "shapefile" || item.EntryPath != "roads.shp" {
+	if item.Layout != LayoutMulti || item.Format != "shapefile" || item.PrimaryContentPath != "roads.shp" {
 		t.Fatalf("first item = %#v, want multi shapefile", item)
 	}
 	if len(item.RefList) != 4 {
@@ -85,7 +85,7 @@ func TestResolveItemsDetectsWholeScopePartitionedTable(t *testing.T) {
 		t.Fatalf("items = %#v, want one whole scope item", result.Items)
 	}
 	item := result.Items[0]
-	if item.Layout != LayoutWhole || item.Format != string(format.FormatParquet) || item.EntryPath != "dataset" {
+	if item.Layout != LayoutWhole || item.Format != string(format.FormatParquet) || item.ScopePath != "dataset" {
 		t.Fatalf("item = %#v, want parquet whole scope", item)
 	}
 	if !result.Exclusive {

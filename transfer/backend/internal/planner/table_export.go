@@ -916,9 +916,6 @@ func validateTransferReadableTableFormat(formatType format.FormatType) error {
 			return fmt.Errorf("format %q has no table reader provider: %w", formatType, err)
 		}
 	}
-	if !descriptor.TransferRead {
-		return fmt.Errorf("format %q is not declared as transfer readable", formatType)
-	}
 	if !hasTableTransferReader(formatType) {
 		_, err := format.GetTableReaderProvider(formatType)
 		return fmt.Errorf("format %q has no table reader provider: %w", formatType, err)
@@ -946,9 +943,6 @@ func validateTransferWritableTableFormat(formatType format.FormatType) error {
 			_, err := format.GetTableWriterProvider(formatType)
 			return fmt.Errorf("format %q has no table writer provider: %w", formatType, err)
 		}
-	}
-	if !descriptor.TransferWrite {
-		return fmt.Errorf("format %q is not declared as transfer writable", formatType)
 	}
 	if !hasTableExportWriter(formatType) {
 		_, err := format.GetTableWriterProvider(formatType)

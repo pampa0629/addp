@@ -42,7 +42,7 @@ func TestPostgresFieldInfoFromColumnKeepsSpatialNativeType(t *testing.T) {
 	}
 }
 
-func TestPostgresReadBatchFieldsKeepsTableFieldMetadataInColumnOrder(t *testing.T) {
+func TestPostgresReadBatchFieldsKeepsTableFieldFactsInColumnOrder(t *testing.T) {
 	fields := postgresReadBatchFields([]string{"id", "SmGeometry"}, []datatype.FieldInfo{
 		{Name: "SmGeometry", Type: "geometry", NativeType: "geometry(MultiPolygon,4326)"},
 		{Name: "id", Type: "bigint"},
@@ -55,7 +55,7 @@ func TestPostgresReadBatchFieldsKeepsTableFieldMetadataInColumnOrder(t *testing.
 		t.Fatalf("first field = %#v, want id bigint", fields[0])
 	}
 	if fields[1].Name != "SmGeometry" || fields[1].Type != "geometry" || fields[1].NativeType != "geometry(MultiPolygon,4326)" {
-		t.Fatalf("second field = %#v, want spatial field metadata", fields[1])
+		t.Fatalf("second field = %#v, want spatial field facts", fields[1])
 	}
 }
 

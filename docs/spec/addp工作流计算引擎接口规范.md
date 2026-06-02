@@ -288,12 +288,12 @@ GET /api/executions/uuid-1234-5678
 
 ## 3. 算子模块规范
 
-### 3.1 算子元数据结构
+### 3.1 算子描述结构
 
-每个算子必须提供完整的元数据定义（参考 `operators/base.py`）：
+每个算子必须提供完整的描述定义（参考 `operators/base.py`）：
 
 ```python
-class OperatorMetadata:
+class OperatorDescriptor:
     id: str                  # 唯一标识
     name: str                # 算子名称（API 调用时使用）
     display_name: str        # 显示名称（UI 显示）
@@ -301,8 +301,8 @@ class OperatorMetadata:
     description: str         # 详细描述
     brief_description: str   # 简短描述
     module: str              # 所属引擎模块名
-    parameters: List[ParameterMetadata]     # 输入参数
-    output_ports: List[OutputPortMetadata]  # 输出端口
+    parameters: List[ParameterDescriptor]     # 输入参数
+    output_ports: List[OutputPortDescriptor]  # 输出端口
     use_cases: List[str]     # 应用场景（可选）
     notes: List[str]         # 使用说明（可选）
 ```
@@ -362,7 +362,7 @@ def add(a: float, b: float) -> float:
     """加法算子"""
     return a + b
 
-ADD_METADATA = OperatorMetadata(
+ADD_DESCRIPTOR = OperatorDescriptor(
     id="add",
     name="add",
     display_name="加法",
@@ -371,14 +371,14 @@ ADD_METADATA = OperatorMetadata(
     brief_description="计算两个数的和",
     module="math-workflow",
     parameters=[
-        ParameterMetadata(
+        ParameterDescriptor(
             name="a",
             type="float",
             required=True,
             description="加数1",
             default=0.0
         ),
-        ParameterMetadata(
+        ParameterDescriptor(
             name="b",
             type="float",
             required=True,
@@ -387,7 +387,7 @@ ADD_METADATA = OperatorMetadata(
         )
     ],
     output_ports=[
-        OutputPortMetadata(
+        OutputPortDescriptor(
             name="default",
             type="float",
             description="和",
@@ -400,7 +400,7 @@ ADD_METADATA = OperatorMetadata(
 OPERATORS = {
     "add": {
         "function": add,
-        "metadata": ADD_METADATA.to_dict()
+        "descriptor": ADD_DESCRIPTOR.to_dict()
     }
 }
 ```
@@ -527,10 +527,10 @@ def median(values: List[float]) -> float:
         return (sorted_values[n//2-1] + sorted_values[n//2]) / 2
     return sorted_values[n//2]
 
-# 定义元数据...
+# 定义算子描述...
 OPERATORS = {
-    "mean": {"function": mean, "metadata": MEAN_METADATA.to_dict()},
-    "median": {"function": median, "metadata": MEDIAN_METADATA.to_dict()}
+    "mean": {"function": mean, "descriptor": MEAN_DESCRIPTOR.to_dict()},
+    "median": {"function": median, "descriptor": MEDIAN_DESCRIPTOR.to_dict()}
 }
 ```
 

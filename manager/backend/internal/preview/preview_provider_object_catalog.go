@@ -173,7 +173,7 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 		return nil, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
 	}
 	catalogProvider, _ := pl.(plugin.CatalogProvider)
-	metadataProvider, _ := pl.(plugin.ItemMetadataProvider)
+	factsProvider, _ := pl.(plugin.CatalogFactsProvider)
 	contentReader, _ := pl.(plugin.ContentReadableProvider)
 	if catalogProvider == nil {
 		return nil, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
@@ -209,10 +209,7 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 		GeometryColumns: []string{},
 	}
 
-	attributeSources := make([]models.JSONMap, 0, 2)
-	if node != nil && len(node.Attributes) > 0 {
-		attributeSources = append(attributeSources, node.Attributes)
-	}
+	attributeSources := make([]models.JSONMap, 0, 1)
 	if item != nil && len(item.Attributes) > 0 {
 		attributeSources = append(attributeSources, item.Attributes)
 	}
@@ -243,7 +240,7 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 	preview.Object.StorageRef = fmt.Sprintf("%s/%s", bucket, objectPath)
 	preview.Object.Download = previewDownloadPlan(resource.ID, preview.Object.StorageRef, objectPath, "")
 
-	stat, err := catalogutil.ObjectMetadata(ctx, metadataProvider, connInfo, resource.ID, bucket, objectPath)
+	stat, err := catalogutil.ObjectStorageFacts(ctx, factsProvider, connInfo, resource.ID, bucket, objectPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat object %s: %w", objectPath, err)
 	}
@@ -413,8 +410,8 @@ func listObjectPreviewChildren(ctx context.Context, catalogProvider plugin.Catal
 			continue
 		}
 		childType := "object"
-		contentType := catalogutil.StringAttribute(node.Attributes, "content_type")
-		if node.IsContainer {
+		contentType := catalogEntryContentType(node)
+		if node.Role == plugin.CatalogRoleBranch {
 			childType = "prefix"
 			contentType = "application/x-directory"
 		}
@@ -426,11 +423,11 @@ func listObjectPreviewChildren(ctx context.Context, catalogProvider plugin.Catal
 			Name:        node.Name,
 			Path:        childPath,
 			Type:        childType,
-			SizeBytes:   catalogutil.Int64Stat(node.Stats, "size_bytes"),
+			SizeBytes:   catalogEntrySizeBytes(node),
 			ContentType: objectcontent.InferContentType(childPath, contentType),
 		}
-		if modifiedAt, ok := node.Attributes["modified_at"].(time.Time); ok && !modifiedAt.IsZero() {
-			mod := modifiedAt
+		if node.UpdatedAt != nil {
+			mod := *node.UpdatedAt
 			child.LastModified = &mod
 		}
 		children = append(children, child)
@@ -439,6 +436,20 @@ func listObjectPreviewChildren(ctx context.Context, catalogProvider plugin.Catal
 		return strings.ToLower(children[i].Name) < strings.ToLower(children[j].Name)
 	})
 	return children, nil
+}
+
+func catalogEntryContentType(node plugin.CatalogEntry) string {
+	if node.Storage == nil {
+		return ""
+	}
+	return node.Storage.ContentType
+}
+
+func catalogEntrySizeBytes(node plugin.CatalogEntry) int64 {
+	if node.Storage == nil || node.Storage.SizeBytes == nil {
+		return 0
+	}
+	return *node.Storage.SizeBytes
 }
 
 func buildStorageStreamURL(engineID uint, storageRef string) string {

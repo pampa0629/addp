@@ -11,8 +11,8 @@ import (
 	_ "github.com/addp/common/format/builtin"
 )
 
-func TestListFormatCapabilityViewsIncludesMarkdown(t *testing.T) {
-	views := ListFormatCapabilityViews()
+func TestListFormatSupportViewsIncludesMarkdown(t *testing.T) {
+	views := ListFormatSupportViews()
 	if len(views) == 0 {
 		t.Fatal("expected builtin format capability views")
 	}
@@ -35,8 +35,8 @@ func TestListFormatCapabilityViewsIncludesMarkdown(t *testing.T) {
 	t.Fatal("markdown capability view not found")
 }
 
-func TestGetFormatCapabilityView(t *testing.T) {
-	view, ok := GetFormatCapabilityView(FormatShapefile)
+func TestGetFormatSupportView(t *testing.T) {
+	view, ok := GetFormatSupportView(FormatShapefile)
 	if !ok {
 		t.Fatal("expected shapefile capability view")
 	}
@@ -58,7 +58,7 @@ func TestListFormatConflictDiagnosticsIsAvailable(t *testing.T) {
 	}
 }
 
-func TestFormatCapabilityViewSeparatesDeclaredProvidersAndImplementations(t *testing.T) {
+func TestFormatSupportViewSeparatesDeclaredProvidersAndImplementations(t *testing.T) {
 	formatType := FormatType("discovery_declared_document")
 	if err := RegisterFormatDescriptor(FormatDescriptor{
 		ID:       "discovery-declared-document",
@@ -78,7 +78,7 @@ func TestFormatCapabilityViewSeparatesDeclaredProvidersAndImplementations(t *tes
 		t.Fatalf("RegisterFormatDescriptor() error = %v", err)
 	}
 
-	view, ok := GetFormatCapabilityView(formatType)
+	view, ok := GetFormatSupportView(formatType)
 	if !ok {
 		t.Fatal("expected capability view")
 	}
@@ -90,8 +90,8 @@ func TestFormatCapabilityViewSeparatesDeclaredProvidersAndImplementations(t *tes
 	}
 }
 
-func TestFormatCapabilityViewReportsAccessIndexProviderCapability(t *testing.T) {
-	view, ok := GetFormatCapabilityView(FormatCSV)
+func TestFormatSupportViewReportsAccessIndexProviderCapability(t *testing.T) {
+	view, ok := GetFormatSupportView(FormatCSV)
 	if !ok {
 		t.Fatal("expected csv capability view")
 	}
@@ -100,20 +100,17 @@ func TestFormatCapabilityViewReportsAccessIndexProviderCapability(t *testing.T) 
 	}
 }
 
-func TestFormatCapabilityViewReportsTableWriterProvider(t *testing.T) {
-	view, ok := GetFormatCapabilityView(FormatCSV)
+func TestFormatSupportViewReportsTableWriterProvider(t *testing.T) {
+	view, ok := GetFormatSupportView(FormatCSV)
 	if !ok {
 		t.Fatal("expected csv capability view")
-	}
-	if !view.Transfer.Write {
-		t.Fatalf("transfer = %#v, want write declared", view.Transfer)
 	}
 	if !view.Implementations.TableWriterProvider {
 		t.Fatalf("implementations = %#v, want table writer provider", view.Implementations)
 	}
 }
 
-func TestFormatCapabilityViewReportsRegisteredImplementations(t *testing.T) {
+func TestFormatSupportViewReportsRegisteredImplementations(t *testing.T) {
 	formatType := FormatType("discovery_implemented_document")
 	if err := RegisterFormatDescriptor(FormatDescriptor{
 		ID:       "discovery-implemented-document",
@@ -142,7 +139,7 @@ func TestFormatCapabilityViewReportsRegisteredImplementations(t *testing.T) {
 		t.Fatalf("RegisterFormatPlugin() error = %v", err)
 	}
 
-	view, ok := GetFormatCapabilityView(formatType)
+	view, ok := GetFormatSupportView(formatType)
 	if !ok {
 		t.Fatal("expected capability view")
 	}
@@ -154,7 +151,7 @@ func TestFormatCapabilityViewReportsRegisteredImplementations(t *testing.T) {
 	}
 }
 
-func TestFormatCapabilityViewReportsTableProviderSpecializations(t *testing.T) {
+func TestFormatSupportViewReportsTableProviderSpecializations(t *testing.T) {
 	formatType := FormatType("discovery_scope_table")
 	if err := RegisterFormatDescriptor(FormatDescriptor{
 		ID:       "discovery-scope-table",
@@ -188,7 +185,7 @@ func TestFormatCapabilityViewReportsTableProviderSpecializations(t *testing.T) {
 		t.Fatalf("RegisterScopeTableReaderProvider() error = %v", err)
 	}
 
-	view, ok := GetFormatCapabilityView(formatType)
+	view, ok := GetFormatSupportView(formatType)
 	if !ok {
 		t.Fatal("expected capability view")
 	}
@@ -203,8 +200,8 @@ func TestFormatCapabilityViewReportsTableProviderSpecializations(t *testing.T) {
 	}
 }
 
-func TestFormatCapabilityViewReportsMultiTableReaderProvider(t *testing.T) {
-	view, ok := GetFormatCapabilityView(FormatShapefile)
+func TestFormatSupportViewReportsMultiTableReaderProvider(t *testing.T) {
+	view, ok := GetFormatSupportView(FormatShapefile)
 	if !ok {
 		t.Fatal("expected shapefile capability view")
 	}
@@ -213,7 +210,7 @@ func TestFormatCapabilityViewReportsMultiTableReaderProvider(t *testing.T) {
 	}
 }
 
-func TestFormatCapabilityViewReportsMediaInfoProvider(t *testing.T) {
+func TestFormatSupportViewReportsMediaInfoProvider(t *testing.T) {
 	formatType := FormatType("discovery_media")
 	if err := RegisterFormatDescriptor(FormatDescriptor{
 		ID:       "discovery-media",
@@ -231,7 +228,7 @@ func TestFormatCapabilityViewReportsMediaInfoProvider(t *testing.T) {
 		t.Fatalf("RegisterMediaInfoProvider() error = %v", err)
 	}
 
-	view, ok := GetFormatCapabilityView(formatType)
+	view, ok := GetFormatSupportView(formatType)
 	if !ok {
 		t.Fatal("expected capability view")
 	}
@@ -257,22 +254,12 @@ func (p discoveryDocumentPlugin) Descriptor() FormatDescriptor {
 	}
 }
 
-func (p discoveryDocumentPlugin) Capabilities() FormatCapability {
-	capability, _ := GetFormatCapability(p.formatType)
-	return capability
-}
-
 type discoveryScopeTableProvider struct {
 	formatType FormatType
 }
 
 func (p discoveryScopeTableProvider) Format() FormatType {
 	return p.formatType
-}
-
-func (p discoveryScopeTableProvider) Capabilities() FormatCapability {
-	capability, _ := GetFormatCapability(p.formatType)
-	return capability
 }
 
 func (p discoveryScopeTableProvider) DescribeTable(context.Context, io.Reader, *ParseOptions) (*TableDescribeResult, error) {

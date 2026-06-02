@@ -95,16 +95,17 @@ func TestDatabasePreviewPostgreSQLPrimaryKeyPageQueryOrdersFirstPage(t *testing.
 
 func TestDatabaseTablePreviewProviderPreviewUsesBatchReadAndAttributeRowCount(t *testing.T) {
 	previous, previousErr := plugin.Get("postgresql")
+	rowCount := int64(999)
 	enginePlugin := &recordingDatabasePreviewPlugin{
 		engineType: "postgresql",
-		itemMetadata: &plugin.ItemMetadata{
-			Fields: []datatype.FieldInfo{
-				{Name: "SmID", Type: datatype.FieldTypeBigInt, NativeType: "bigint", Nullable: false, PrimaryKey: true},
-				{Name: "SmGeometry", Type: datatype.FieldTypeGeometry, NativeType: "geometry(MultiPolygon,2360)", Nullable: true},
-				{Name: "DLMC", Type: datatype.FieldTypeString, NativeType: "text", Nullable: true},
-			},
-			Stats: map[string]interface{}{
-				"row_count": int64(999),
+		catalogFacts: &plugin.CatalogFacts{
+			Table: &datatype.TableInfo{
+				RowCount: &rowCount,
+				Fields: []datatype.FieldInfo{
+					{Name: "SmID", Type: datatype.FieldTypeBigInt, NativeType: "bigint", Nullable: false, PrimaryKey: true},
+					{Name: "SmGeometry", Type: datatype.FieldTypeGeometry, NativeType: "geometry(MultiPolygon,2360)", Nullable: true},
+					{Name: "DLMC", Type: datatype.FieldTypeString, NativeType: "text", Nullable: true},
+				},
 			},
 		},
 		batchData: &plugin.BatchData{
@@ -137,6 +138,15 @@ func TestDatabaseTablePreviewProviderPreviewUsesBatchReadAndAttributeRowCount(t 
 		Table:    "public.dltb",
 		Page:     3,
 		PageSize: 2,
+		ProviderPath: plugin.CatalogPath{
+			Version:  plugin.CatalogPathVersion,
+			EngineID: 7,
+			Segments: []plugin.CatalogSegment{
+				{Term: plugin.CatalogTermServer, Kind: plugin.CatalogTermServer},
+				{Term: plugin.CatalogTermSchema, Kind: plugin.CatalogKindNamespace, Name: "public"},
+				{Term: plugin.CatalogTermTable, Kind: plugin.CatalogKindTable, Name: "dltb"},
+			},
+		},
 		Attributes: map[string]interface{}{
 			"type_info": map[string]interface{}{
 				"table": map[string]interface{}{
@@ -157,6 +167,12 @@ func TestDatabaseTablePreviewProviderPreviewUsesBatchReadAndAttributeRowCount(t 
 	if len(enginePlugin.readBatchCalls) != 1 {
 		t.Fatalf("ReadBatch call count = %d, want 1", len(enginePlugin.readBatchCalls))
 	}
+	if len(enginePlugin.readBatchPaths) != 1 || !plugin.IsCatalogRootSegment(enginePlugin.readBatchPaths[0].Segments[0]) {
+		t.Fatalf("ReadBatch path = %#v, want explicit root segment", enginePlugin.readBatchPaths)
+	}
+	if len(enginePlugin.describePaths) != 1 || !plugin.IsCatalogRootSegment(enginePlugin.describePaths[0].Segments[0]) {
+		t.Fatalf("DescribeCatalogFacts path = %#v, want explicit root segment", enginePlugin.describePaths)
+	}
 	if got := enginePlugin.readBatchCalls[0].Query; !strings.Contains(got, `WITH "__addp_page_keys"`) {
 		t.Fatalf("ReadBatch query does not use page-key CTE:\n%s", got)
 	}
@@ -168,12 +184,12 @@ func TestDatabaseTablePreviewProviderPreviewUsesBatchReadAndAttributeRowCount(t 
 	}
 }
 
-func TestDatabaseTablePreviewProviderPreviewFallsBackToItemMetadataRowCount(t *testing.T) {
+func TestDatabaseTablePreviewProviderPreviewFallsBackToCatalogFactsRowCount(t *testing.T) {
 	previous, previousErr := plugin.Get("postgresql")
 	rowCount := int64(999)
 	enginePlugin := &recordingDatabasePreviewPlugin{
 		engineType: "postgresql",
-		itemMetadata: &plugin.ItemMetadata{
+		catalogFacts: &plugin.CatalogFacts{
 			Table: &datatype.TableInfo{
 				RowCount: &rowCount,
 				Fields: []datatype.FieldInfo{
@@ -207,6 +223,15 @@ func TestDatabaseTablePreviewProviderPreviewFallsBackToItemMetadataRowCount(t *t
 		Table:    "public.people",
 		Page:     1,
 		PageSize: 10,
+		ProviderPath: plugin.CatalogPath{
+			Version:  plugin.CatalogPathVersion,
+			EngineID: 8,
+			Segments: []plugin.CatalogSegment{
+				{Term: plugin.CatalogTermServer, Kind: plugin.CatalogTermServer},
+				{Term: plugin.CatalogTermSchema, Kind: plugin.CatalogKindNamespace, Name: "public"},
+				{Term: plugin.CatalogTermTable, Kind: plugin.CatalogKindTable, Name: "people"},
+			},
+		},
 	}
 
 	preview, err := provider.Preview(context.Background(), req)
@@ -215,7 +240,7 @@ func TestDatabaseTablePreviewProviderPreviewFallsBackToItemMetadataRowCount(t *t
 	}
 
 	if preview.Total != 999 {
-		t.Fatalf("Total = %d, want 999 from item metadata", preview.Total)
+		t.Fatalf("Total = %d, want 999 from catalog facts", preview.Total)
 	}
 	if len(enginePlugin.readBatchCalls) != 1 {
 		t.Fatalf("ReadBatch call count = %d, want 1", len(enginePlugin.readBatchCalls))
@@ -227,8 +252,10 @@ func TestDatabaseTablePreviewProviderPreviewFallsBackToItemMetadataRowCount(t *t
 
 type recordingDatabasePreviewPlugin struct {
 	engineType     string
-	itemMetadata   *plugin.ItemMetadata
+	catalogFacts   *plugin.CatalogFacts
 	batchData      *plugin.BatchData
+	describePaths  []plugin.CatalogPath
+	readBatchPaths []plugin.CatalogPath
 	readBatchCalls []plugin.BatchReadOptions
 }
 
@@ -257,13 +284,15 @@ func (p *recordingDatabasePreviewPlugin) Capabilities() plugin.EngineCapabilitie
 func (p *recordingDatabasePreviewPlugin) CatalogModel() plugin.CatalogModelSpec {
 	return plugin.TabularCatalogModel("schema")
 }
-func (p *recordingDatabasePreviewPlugin) DescribeItem(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
-	if p.itemMetadata == nil {
+func (p *recordingDatabasePreviewPlugin) DescribeCatalogFacts(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+	p.describePaths = append(p.describePaths, path)
+	if p.catalogFacts == nil {
 		return nil, nil
 	}
-	return p.itemMetadata, nil
+	return p.catalogFacts, nil
 }
-func (p *recordingDatabasePreviewPlugin) ReadBatch(_ context.Context, _ plugin.ConnectionInfo, _ plugin.CatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
+func (p *recordingDatabasePreviewPlugin) ReadBatch(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
+	p.readBatchPaths = append(p.readBatchPaths, path)
 	p.readBatchCalls = append(p.readBatchCalls, opts)
 	if p.batchData == nil {
 		return &plugin.BatchData{}, nil
@@ -273,5 +302,5 @@ func (p *recordingDatabasePreviewPlugin) ReadBatch(_ context.Context, _ plugin.C
 
 var _ plugin.EnginePlugin = (*recordingDatabasePreviewPlugin)(nil)
 var _ plugin.CatalogModelProvider = (*recordingDatabasePreviewPlugin)(nil)
-var _ plugin.ItemMetadataProvider = (*recordingDatabasePreviewPlugin)(nil)
+var _ plugin.CatalogFactsProvider = (*recordingDatabasePreviewPlugin)(nil)
 var _ plugin.BatchReadableProvider = (*recordingDatabasePreviewPlugin)(nil)

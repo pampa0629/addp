@@ -1,8 +1,8 @@
 # Manager 数据探查预览改进设计
 
-> 状态：待评审
+> 状态：历史方案，已被当前 catalog leaf / graph facts 主路径取代
 > 创建日期：2026-04-25
-> 前置条件：《nosql插件接口分拆设计》《neo4j-node-type修订设计》已完成合入
+> 当前准则：Neo4j catalog leaf 统一为 `graph`；label、relationship type 和连接模式进入 `type_info.graph`，不作为独立 Meta item 或 catalog leaf。
 
 ---
 
@@ -14,7 +14,7 @@
 2. **节点层展示粗糙**：节点只显示名称，缺少 node_type、full_name、元数据（item 数量、扫描时间等）。
 3. **数据项层缺少元数据前置**：直接跳到数据预览，没有先展示 item 的类型、full_name、字段数、行数等元数据。
 4. **术语不符合引擎原生语义**：前端硬编码了"表"、"集合"等词，没有根据引擎类型动态展示正确术语。
-5. **Neo4j 无专属预览**：没有图数据预览 Provider，点击 label/relationship 无法预览。
+5. **Neo4j 图预览已收敛为 graph leaf 预览**：不再以 label 或 relationship type 作为独立预览对象。
 6. **部分引擎预览为空**：NFS 目录节点、对象存储 prefix 节点点击后无有效展示。
 
 ---
@@ -30,12 +30,12 @@
 | Doris | Catalog/Metadata/SQLRuntime | `database` | `table` / `view` |
 | ClickHouse | Catalog/Metadata/SQLRuntime | `database` | `table` / `view` |
 | MongoDB | Catalog/MetadataSampling/DocumentRuntime | `database` | `collection` |
-| Neo4j | Catalog/Metadata/GraphRuntime | `database` | `label` / `relationship` |
+| Neo4j | Catalog/Facts/GraphRuntime | `database` | `graph` |
 | MinIO | Catalog/Metadata/ContentReadable | `bucket` / `prefix` | `object` / `table` |
 | S3 | Catalog/Metadata/ContentReadable | `bucket` / `prefix` | `object` / `table` |
 | NFS | Catalog/Metadata/ContentReadable | `root`（透明）/ `dir` | `file` / `table` |
 
-代码与规范已对齐（NoSQL 接口分拆 + Neo4j node type 修订均已完成）。
+代码与规范已对齐：Neo4j label / relationship type 是 graph item 的结构视角，不参与 catalog leaf 身份划分。
 
 ---
 
@@ -109,7 +109,7 @@
 
 ### 3.3 数据项层（Item Level）
 
-**触发时机**：用户点击树中的 item（table/collection/label/relationship/file/object）。
+**触发时机**：用户点击树中的 item（table/collection/graph/file/object）。
 
 **展示分两部分，元数据区默认展开，支持收拢以节省空间**：
 
@@ -137,8 +137,7 @@
 |-----------|---------|---------|
 | `table` / `view` | 分页表格（列名 + 数据行） | DatabasePreviewProvider |
 | `collection` | 分页表格（动态 schema 字段画像 + 记录数据） | DynamicSchemaCollectionPreviewProvider |
-| `label` | 图节点属性表格（采样节点的属性键值） | **新增** GraphLabelPreviewProvider |
-| `relationship` | 图关系属性表格（采样关系的属性键值） | **新增** GraphRelationshipPreviewProvider |
+| `graph` | 图结构视图、节点 / 关系采样、按 node shape / relationship shape 筛选 | GraphPreviewProvider |
 | `file` | 文件内容预览（文本/图片/空间数据等） | FileSystemPreviewProvider |
 | `object` | 对象内容预览（同上） | ObjectStoragePreviewProvider |
 | `table` | Parquet/ORC 表格预览 | ScopeTablePreviewProvider |
@@ -170,8 +169,7 @@ i18n 字典（前端 `locales/zh-CN.json` 等）统一维护 `engine.term.*` 命
       "table": "Table",
       "view": "View",
       "collection": "Collection",
-      "label": "Node Label",
-      "relationship": "Relationship",
+      "graph": "Graph",
       "file": "File",
       "object": "Object",
       "table": "Table"
@@ -196,15 +194,15 @@ type TreeNode struct {
 
 ### 4.3 预览 API 响应增强
 
-预览响应中增加 `itemMeta` 结构，包含从 meta 模块读取的元数据，attributes 以 key-value 列表形式返回：
+预览响应中附加来自 Meta 的 item facts，attributes 以 key-value 列表形式返回。当前实现中该结构属于 Manager 预览 DTO，不是 engine `CatalogFacts`：
 
 ```go
 type TablePreview struct {
     // 现有字段...
-    ItemMeta *ItemMetadata `json:"itemMeta,omitempty"` // 新增
+    ItemMeta *PreviewItemFacts `json:"itemMeta,omitempty"` // 来自 Meta 模块
 }
 
-type ItemMetadata struct {
+type PreviewItemFacts struct {
     ItemType      string            `json:"itemType"`      // 原始类型值
     ItemTypeI18nKey string          `json:"itemTypeI18nKey"` // i18n key
     FullName      string            `json:"fullName"`
@@ -220,27 +218,19 @@ type MetaAttribute struct {
 
 ---
 
-## 五、新增 Neo4j 图预览 Provider
+## 五、Neo4j 图预览 Provider
 
-Neo4j 的 label 和 relationship 目前没有预览 Provider，需新增：
+本节为历史设计记录。当前不再新增 label / relationship 专属 preview provider；Neo4j 预览应围绕 `graph` leaf 和 `type_info.graph` 结构事实展开。
 
-### GraphLabelPreviewProvider
+### GraphPreviewProvider
 
-- **优先级**：92（高于 DatabasePreviewProvider 的 90）
-- **支持条件**：引擎类型为 neo4j，item_type 为 `label`
-- **实现**：
-  1. 通过 `GraphQueryProvider.ExecuteGraphQuery()` 采样该 label 的节点（`MATCH (n:LabelName) RETURN n LIMIT 50`）
-  2. 提取节点属性键值，构建列式表格
-  3. 返回 TablePreview（Mode="table"）
+当前唯一主路径是 graph item 预览。Provider 消费 `type_info.graph.node_shapes`、`type_info.graph.relationship_shapes` 和 graph sample provider，支持按 node shape / relationship shape 作为展示筛选条件。
 
-### GraphRelationshipPreviewProvider
+禁止事项：
 
-- **优先级**：92
-- **支持条件**：引擎类型为 neo4j，item_type 为 `relationship`
-- **实现**：
-  1. 采样该关系类型（`MATCH ()-[r:REL_TYPE]->() RETURN r LIMIT 50`）
-  2. 提取关系属性键值，构建列式表格
-  3. 返回 TablePreview（Mode="table"）
+- 不新增 `item_type=label`、`item_type=relationship` 或 `item_type=relationship_type`。
+- 不把 Neo4j label / relationship type 注册成独立 catalog leaf。
+- 不为 label / relationship type 新增独立 preview provider。
 
 ---
 
@@ -305,8 +295,8 @@ GET /api/manager/preview?engineId=...&schema=...&table=...&itemType=...
 4. 预览响应增加 `ItemMeta` 结构（含 i18n key + key-value attributes），`PreviewResolver` 从 meta 模块读取并填充
 
 ### 阶段三：Neo4j 图预览
-5. 新增 `GraphLabelPreviewProvider`
-6. 新增 `GraphRelationshipPreviewProvider`
+5. 完善 `GraphPreviewProvider`，围绕 graph item 消费 `type_info.graph`
+6. 在 graph 预览中提供 node shape / relationship shape 展示与筛选
 7. 注册到 PreviewRegistry
 
 ### 阶段四：前端改造
@@ -328,7 +318,7 @@ GET /api/manager/preview?engineId=...&schema=...&table=...&itemType=...
 2. 点击任意 node，右侧显示节点类型标签（i18n 翻译）、full_name、元数据、分页子节点/数据项列表。
 3. 点击任意 item，右侧先显示可收拢的元数据卡片（默认展开），再显示数据预览。
 4. 所有引擎的类型标签均通过 i18n key 机制展示，前后端均无硬编码中文字符串。
-5. Neo4j label 和 relationship 均有可用的数据预览（采样属性表格）。
+5. Neo4j graph leaf 有可用的数据预览，label / relationship type 可作为图结构视角展示或筛选。
 6. NFS dir 节点和对象存储 prefix 节点点击后有有效展示（分页子目录/子对象列表）。
 7. 所有 9 种引擎均通过全路径测试。
 

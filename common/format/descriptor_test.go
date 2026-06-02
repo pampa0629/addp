@@ -54,39 +54,7 @@ func TestDescriptorsDeclareContentReadersForManagerHandledFormats(t *testing.T) 
 			if !containsStringForTest(descriptor.ContentReaders, tt.reader) {
 				t.Fatalf("content readers = %#v, want %q", descriptor.ContentReaders, tt.reader)
 			}
-			if descriptor.TransferRead || descriptor.TransferWrite {
-				t.Fatalf("%s should not claim transfer capability yet: read=%v write=%v", tt.formatType, descriptor.TransferRead, descriptor.TransferWrite)
-			}
 		})
-	}
-}
-
-func TestFormatDescriptorMatchesCapabilityCoreFields(t *testing.T) {
-	for _, descriptor := range ListFormatDescriptors() {
-		capability, ok := GetFormatCapability(descriptor.Format)
-		if !ok {
-			t.Fatalf("descriptor %s has no matching capability", descriptor.Format)
-		}
-		assertCapabilityEqual(t, descriptor.Format, FormatCapabilityFromDescriptor(descriptor), capability)
-	}
-}
-
-func TestFormatCapabilityFromDescriptorReturnsDetachedSlices(t *testing.T) {
-	descriptor, ok := GetFormatDescriptor(FormatMarkdown)
-	if !ok {
-		t.Fatal("markdown descriptor not found")
-	}
-
-	capability := FormatCapabilityFromDescriptor(descriptor)
-	capability.Extensions[0] = ".changed"
-	capability.Layouts[0] = "changed"
-	capability.ProviderHints[0] = "changed"
-	capability.ContentReaders[0] = "changed"
-	capability.EngineFamilies[0] = "changed"
-
-	next := FormatCapabilityFromDescriptor(descriptor)
-	if next.Extensions[0] == ".changed" || next.Layouts[0] == "changed" || next.ProviderHints[0] == "changed" || next.ContentReaders[0] == "changed" || next.EngineFamilies[0] == "changed" {
-		t.Fatal("FormatCapabilityFromDescriptor returned mutable descriptor slices")
 	}
 }
 
@@ -125,7 +93,7 @@ func TestGetFormatDescriptorReturnsCopy(t *testing.T) {
 	}
 }
 
-func TestRegisterFormatDescriptorUpdatesCapability(t *testing.T) {
+func TestRegisterFormatDescriptorStoresDescriptor(t *testing.T) {
 	formatType := FormatType("plugin_test_doc")
 	err := RegisterFormatDescriptor(FormatDescriptor{
 		ID:       "plugin-test-doc",
@@ -150,19 +118,14 @@ func TestRegisterFormatDescriptorUpdatesCapability(t *testing.T) {
 	if descriptor.ID != "plugin-test-doc" {
 		t.Fatalf("descriptor ID = %q, want plugin-test-doc", descriptor.ID)
 	}
-
-	capability, ok := GetFormatCapability(formatType)
-	if !ok {
-		t.Fatal("registered descriptor did not update capability registry")
+	if descriptor.DataType != datatype.DataTypeDocument {
+		t.Fatalf("descriptor data type = %q, want document", descriptor.DataType)
 	}
-	if capability.DataType != datatype.DataTypeDocument {
-		t.Fatalf("capability data type = %q, want document", capability.DataType)
+	if !sameStrings(descriptor.Identification.Extensions, []string{".ptd"}) {
+		t.Fatalf("descriptor extensions = %#v, want .ptd", descriptor.Identification.Extensions)
 	}
-	if !sameStrings(capability.Extensions, []string{".ptd"}) {
-		t.Fatalf("capability extensions = %#v, want .ptd", capability.Extensions)
-	}
-	if !sameStrings(capability.ContentReaders, []string{string(ContentReaderDocumentText)}) {
-		t.Fatalf("capability content readers = %#v, want document_text", capability.ContentReaders)
+	if !sameStrings(descriptor.ContentReaders, []string{string(ContentReaderDocumentText)}) {
+		t.Fatalf("descriptor content readers = %#v, want document_text", descriptor.ContentReaders)
 	}
 }
 
@@ -178,47 +141,6 @@ func TestSupportsAccessIndexUsesDescriptorProviderCapability(t *testing.T) {
 	}
 	if SupportsAccessIndex(FormatParquet) {
 		t.Fatalf("SupportsAccessIndex(parquet) = true, want false")
-	}
-}
-
-func assertCapabilityEqual(t *testing.T, formatType FormatType, left, right FormatCapability) {
-	t.Helper()
-
-	if left.Format != right.Format {
-		t.Fatalf("%s format = %q, capability = %q", formatType, left.Format, right.Format)
-	}
-	if left.I18nKey != right.I18nKey {
-		t.Fatalf("%s i18n key = %q, capability = %q", formatType, left.I18nKey, right.I18nKey)
-	}
-	if left.DataType != right.DataType {
-		t.Fatalf("%s data type = %q, capability = %q", formatType, left.DataType, right.DataType)
-	}
-	if !sameStrings(left.Layouts, right.Layouts) {
-		t.Fatalf("%s layouts = %#v, capability = %#v", formatType, left.Layouts, right.Layouts)
-	}
-	if !sameStrings(left.ProviderHints, right.ProviderHints) {
-		t.Fatalf("%s provider hints = %#v, capability = %#v", formatType, left.ProviderHints, right.ProviderHints)
-	}
-	if !sameStrings(left.ContentReaders, right.ContentReaders) {
-		t.Fatalf("%s content readers = %#v, capability = %#v", formatType, left.ContentReaders, right.ContentReaders)
-	}
-	if !sameStrings(left.Extensions, right.Extensions) {
-		t.Fatalf("%s extensions = %#v, capability = %#v", formatType, left.Extensions, right.Extensions)
-	}
-	if left.Spatial != right.Spatial {
-		t.Fatalf("%s spatial = %v, capability = %v", formatType, left.Spatial, right.Spatial)
-	}
-	if left.TransferRead != right.TransferRead {
-		t.Fatalf("%s transfer read = %v, capability = %v", formatType, left.TransferRead, right.TransferRead)
-	}
-	if left.TransferWrite != right.TransferWrite {
-		t.Fatalf("%s transfer write = %v, capability = %v", formatType, left.TransferWrite, right.TransferWrite)
-	}
-	if left.Parse != right.Parse {
-		t.Fatalf("%s parse = %v, capability = %v", formatType, left.Parse, right.Parse)
-	}
-	if !sameStrings(left.EngineFamilies, right.EngineFamilies) {
-		t.Fatalf("%s engine families = %#v, capability = %#v", formatType, left.EngineFamilies, right.EngineFamilies)
 	}
 }
 

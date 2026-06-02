@@ -38,9 +38,9 @@ func (p *workflowOperatorProvider) RuntimeEndpoint(ctx context.Context, connInfo
 	return "http://localhost:1", nil
 }
 
-func (p *workflowOperatorProvider) ListOperators(ctx context.Context, connInfo plugin.ConnectionInfo) ([]plugin.OperatorMetadata, error) {
+func (p *workflowOperatorProvider) ListOperators(ctx context.Context, connInfo plugin.ConnectionInfo) ([]plugin.OperatorDescriptor, error) {
 	min := 1.0
-	return []plugin.OperatorMetadata{
+	return []plugin.OperatorDescriptor{
 		{
 			ID:               "buffer",
 			Name:             "buffer",
@@ -52,14 +52,14 @@ func (p *workflowOperatorProvider) ListOperators(ctx context.Context, connInfo p
 			DetailedDescription: map[string]interface{}{
 				"overview": "缓冲区分析",
 			},
-			Parameters: []plugin.ParameterMetadata{
+			Parameters: []plugin.ParameterDescriptor{
 				{
 					Name:        "distance",
 					Type:        "float",
 					Required:    true,
 					Description: "缓冲距离",
 					Min:         &min,
-					Properties: map[string]plugin.ParameterMetadata{
+					Properties: map[string]plugin.ParameterDescriptor{
 						"unit": {
 							Name:        "unit",
 							Type:        "string",
@@ -72,7 +72,7 @@ func (p *workflowOperatorProvider) ListOperators(ctx context.Context, connInfo p
 				"geodataframe",
 				map[string]interface{}{"type": "dataframe"},
 			},
-			OutputPorts: []plugin.OutputPortMetadata{
+			OutputPorts: []plugin.OutputPortDescriptor{
 				{
 					Name:        "default",
 					Type:        "geodataframe",
@@ -88,7 +88,7 @@ func (p *workflowOperatorProvider) ExecuteWorkflow(ctx context.Context, connInfo
 	return &plugin.WorkflowExecuteResult{Status: "success"}, nil
 }
 
-func TestListWorkflowOperatorsPreservesOperatorMetadata(t *testing.T) {
+func TestListWorkflowOperatorsPreservesOperatorDescriptor(t *testing.T) {
 	provider := &workflowOperatorProvider{}
 	plugin.Register(provider)
 	defer plugin.Unregister(provider.Type())

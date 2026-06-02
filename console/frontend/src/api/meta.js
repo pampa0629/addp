@@ -16,7 +16,7 @@ export const getSchemas = engineId =>
       path: node.path || node.full_name || node.name,
       scan_status: node.scan_status,
       scanned_at: node.scanned_at,
-      table_count: node.item_count || 0,
+      item_count: node.item_count || 0,
       total_size_bytes: node.total_size_bytes || 0
     }))
   })
@@ -32,14 +32,6 @@ export const listAvailableSchemas = engineId =>
   })
 
 export const autoScan = () => client.post('/meta/scan/auto').then(res => res.data)
-
-export const scanEngine = (engineId, namespaces) =>
-  client
-    .post('/meta/scan/engine', {
-      engine_id: engineId,
-      namespaces
-    })
-    .then(res => res.data)
 
 export const getScanTasks = async engineId => {
   const tasks = await unwrap(client.get('/meta/scan/tasks'), [])
@@ -98,7 +90,6 @@ export default {
   getSchemas,
   listAvailableSchemas,
   autoScan,
-  scanEngine,
   getScanTasks,
   createScanTask,
   updateScanTask,

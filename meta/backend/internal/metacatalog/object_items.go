@@ -67,7 +67,7 @@ func DetectObjectCatalogCompositeItems(
 		if prefix == "" {
 			continue
 		}
-		files := storageResourcesToFileEntries(group)
+		files := storageResourcesToFileRefs(group)
 		detection, err := metaitem.ResolveItems(ctx, metaitem.DirectoryResolveInput{
 			ContentReader:  contentReader,
 			ConnInfo:       connInfo,
@@ -121,8 +121,8 @@ func ObjectCatalogCompositeName(composite ObjectCatalogCompositeItem) (name, obj
 	if composite.Item != nil {
 		switch composite.Item.Layout {
 		case dataitem.LayoutSingle, dataitem.LayoutMulti:
-			if composite.Item.EntryPath != "" {
-				objectPath = ObjectPathFromClaim(composite.Bucket, composite.Item.EntryPath)
+			if composite.Item.PrimaryContentPath != "" {
+				objectPath = ObjectPathFromClaim(composite.Bucket, composite.Item.PrimaryContentPath)
 				if objectPath != "" {
 					return path.Base(objectPath), objectPath
 				}
@@ -375,13 +375,13 @@ func unclaimedObjectResources(group []StorageResource, skipPaths map[string]bool
 	return filtered
 }
 
-func storageResourcesToFileEntries(resources []StorageResource) []plugin.FileEntry {
+func storageResourcesToFileRefs(resources []StorageResource) []metaitem.StorageFileRef {
 	sort.Slice(resources, func(i, j int) bool {
 		return resources[i].Path < resources[j].Path
 	})
-	files := make([]plugin.FileEntry, 0, len(resources))
+	files := make([]metaitem.StorageFileRef, 0, len(resources))
 	for _, resource := range resources {
-		entry := resource.FileEntry()
+		entry := resource.StorageFileRef()
 		entry.Path = strings.Trim(resource.Path, "/")
 		files = append(files, entry)
 	}

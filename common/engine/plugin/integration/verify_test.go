@@ -47,7 +47,7 @@ func TestPluginInterfaceImplementation(t *testing.T) {
 				}
 
 				// 如果支持元数据，验证 provider 能力。
-				if capabilities.Storage.Metadata != nil && capabilities.Storage.Metadata.Supported {
+				if capabilities.Storage.Facts != nil && capabilities.Storage.Facts.Supported {
 					if capabilities.Storage.Catalog != nil && capabilities.Storage.Catalog.Supported {
 						if _, ok := p.(plugin.CatalogProvider); !ok {
 							t.Errorf("%s declares catalog but doesn't implement CatalogProvider", dbType)
@@ -56,8 +56,8 @@ func TestPluginInterfaceImplementation(t *testing.T) {
 							t.Errorf("%s declares catalog but doesn't implement CatalogModelProvider", dbType)
 						}
 					}
-					if _, ok := p.(plugin.ItemMetadataProvider); !ok {
-						t.Errorf("%s declares metadata but doesn't implement ItemMetadataProvider", dbType)
+					if _, ok := p.(plugin.CatalogFactsProvider); !ok {
+						t.Errorf("%s declares catalog facts but doesn't implement CatalogFactsProvider", dbType)
 					}
 					if capabilities.Storage.Store != nil && capabilities.Storage.Store.StreamRead {
 						if _, ok := p.(plugin.ContentReadableProvider); !ok {
@@ -98,15 +98,15 @@ func TestTabularDBPlugins(t *testing.T) {
 			}
 
 			capabilities := p.Capabilities()
-			if capabilities.Storage == nil || capabilities.Storage.Metadata == nil || !capabilities.Storage.Metadata.Supported {
-				t.Errorf("%s should support metadata query", dbType)
+			if capabilities.Storage == nil || capabilities.Storage.Facts == nil || !capabilities.Storage.Facts.Supported {
+				t.Errorf("%s should support catalog facts query", dbType)
 			}
 
 			if _, ok := p.(plugin.CatalogProvider); !ok {
 				t.Fatalf("%s should implement CatalogProvider", dbType)
 			}
-			if _, ok := p.(plugin.ItemMetadataProvider); !ok {
-				t.Fatalf("%s should implement ItemMetadataProvider", dbType)
+			if _, ok := p.(plugin.CatalogFactsProvider); !ok {
+				t.Fatalf("%s should implement CatalogFactsProvider", dbType)
 			}
 			if _, ok := p.(plugin.SQLQueryRuntimeProvider); !ok {
 				t.Fatalf("%s should implement SQLQueryRuntimeProvider", dbType)
@@ -142,8 +142,8 @@ func TestObjectStoragePlugins(t *testing.T) {
 			}
 
 			capabilities := p.Capabilities()
-			if capabilities.Storage == nil || capabilities.Storage.Metadata == nil || !capabilities.Storage.Metadata.Supported {
-				t.Errorf("%s should support metadata query", storageType)
+			if capabilities.Storage == nil || capabilities.Storage.Facts == nil || !capabilities.Storage.Facts.Supported {
+				t.Errorf("%s should support catalog facts query", storageType)
 			}
 
 			catalogProvider, ok := p.(plugin.CatalogProvider)

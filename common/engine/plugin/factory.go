@@ -145,10 +145,10 @@ func GetOrCreatePoolFromFactory(engine *Engine, config *PoolConfig) (*gorm.DB, e
 	return db, nil
 }
 
-// === Catalog / metadata 查询相关方法 ===
+// === Catalog facts 查询相关方法 ===
 
-// DescribeItem 描述 catalog 叶子数据项。
-func DescribeItem(ctx context.Context, resource *Engine, path CatalogPath, opts MetadataOptions) (*ItemMetadata, error) {
+// DescribeCatalogFacts 描述 catalog leaf 的 engine-native facts。
+func DescribeCatalogFacts(ctx context.Context, resource *Engine, path CatalogPath, opts CatalogFactsOptions) (*CatalogFacts, error) {
 	if resource == nil {
 		return nil, fmt.Errorf("resource cannot be nil")
 	}
@@ -158,9 +158,9 @@ func DescribeItem(ctx context.Context, resource *Engine, path CatalogPath, opts 
 		return nil, err
 	}
 
-	metadataProvider, ok := enginePlugin.(ItemMetadataProvider)
+	factsProvider, ok := enginePlugin.(CatalogFactsProvider)
 	if !ok {
-		return nil, fmt.Errorf("plugin %s does not implement ItemMetadataProvider", resource.EngineType)
+		return nil, fmt.Errorf("plugin %s does not implement CatalogFactsProvider", resource.EngineType)
 	}
 
 	if path.Version == "" {
@@ -170,11 +170,11 @@ func DescribeItem(ctx context.Context, resource *Engine, path CatalogPath, opts 
 		path.EngineID = resource.ID
 	}
 
-	return metadataProvider.DescribeItem(ctx, resource.ConnectionInfo, path, opts)
+	return factsProvider.DescribeCatalogFacts(ctx, resource.ConnectionInfo, path, opts)
 }
 
-// DescribeNamedItem 描述指定命名空间下的具名 tabular 数据项。
-func DescribeNamedItem(ctx context.Context, resource *Engine, namespace, item string, opts MetadataOptions) (*ItemMetadata, error) {
+// DescribeNamedCatalogFacts 描述指定命名空间下的具名 tabular catalog leaf facts。
+func DescribeNamedCatalogFacts(ctx context.Context, resource *Engine, namespace, item string, opts CatalogFactsOptions) (*CatalogFacts, error) {
 	if resource == nil {
 		return nil, fmt.Errorf("resource cannot be nil")
 	}
@@ -184,10 +184,11 @@ func DescribeNamedItem(ctx context.Context, resource *Engine, namespace, item st
 		return nil, err
 	}
 
-	return DescribeItem(ctx, resource, CatalogPath{
+	return DescribeCatalogFacts(ctx, resource, CatalogPath{
 		Version:  CatalogPathVersion,
 		EngineID: resource.ID,
 		Segments: []CatalogSegment{
+			{Term: rootTermForPlugin(enginePlugin), Kind: rootTermForPlugin(enginePlugin)},
 			{Term: namespaceTermForPlugin(enginePlugin), Kind: CatalogKindNamespace, Name: namespace},
 			{Term: CatalogTermTable, Kind: CatalogKindTable, Name: item},
 		},
@@ -205,16 +206,11 @@ func CountItemRows(ctx context.Context, resource *Engine, namespace, item string
 		return 0, err
 	}
 
-	if _, ok := enginePlugin.(ItemMetadataProvider); ok {
-		metadata, err := DescribeNamedItem(ctx, resource, namespace, item, MetadataOptions{IncludeStatistics: true})
-		if err == nil && metadata != nil {
-			if tableInfo := ItemMetadataTableInfo(metadata); tableInfo != nil && tableInfo.RowCount != nil && *tableInfo.RowCount > 0 {
+	if _, ok := enginePlugin.(CatalogFactsProvider); ok {
+		facts, err := DescribeNamedCatalogFacts(ctx, resource, namespace, item, CatalogFactsOptions{IncludeStatistics: true})
+		if err == nil && facts != nil {
+			if tableInfo := CatalogFactsTableInfo(facts); tableInfo != nil && tableInfo.RowCount != nil && *tableInfo.RowCount > 0 {
 				return *tableInfo.RowCount, nil
-			}
-			if rowCount, ok := int64Stat(metadata.Stats, "row_count"); ok {
-				if rowCount > 0 {
-					return rowCount, nil
-				}
 			}
 		}
 	}
@@ -255,15 +251,18 @@ func namespaceTermForPlugin(p EnginePlugin) string {
 	return CatalogTermDatabase
 }
 
-func countSQLForEngine(engineType, schema, table string) string {
-	return sqldialect.ForEngine(engineType).CountTableSQL(schema, table, "")
+func rootTermForPlugin(p EnginePlugin) string {
+	if modelProvider, ok := p.(CatalogModelProvider); ok {
+		model := modelProvider.CatalogModel()
+		if model.RootTerm != "" {
+			return model.RootTerm
+		}
+	}
+	return CatalogTermServer
 }
 
-func int64Stat(stats map[string]interface{}, key string) (int64, bool) {
-	if stats == nil {
-		return 0, false
-	}
-	return int64Value(stats[key])
+func countSQLForEngine(engineType, schema, table string) string {
+	return sqldialect.ForEngine(engineType).CountTableSQL(schema, table, "")
 }
 
 func int64Value(value interface{}) (int64, bool) {

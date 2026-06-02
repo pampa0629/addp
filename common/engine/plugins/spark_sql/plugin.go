@@ -72,16 +72,16 @@ func (p *SparkSQLPlugin) tabularCatalogCallbacks() plugin.TabularCatalogCallback
 	}
 }
 
-func (p *SparkSQLPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
+func (p *SparkSQLPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogEntry, error) {
 	return plugin.ListTabularCatalogChildren(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: parent.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, parent, opts)
 }
 
-func (p *SparkSQLPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
+func (p *SparkSQLPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogEntry, error) {
 	return plugin.ResolveTabularCatalogPath(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path)
 }
 
-func (p *SparkSQLPlugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
-	return plugin.DescribeTabularItem(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path, opts)
+func (p *SparkSQLPlugin) DescribeCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+	return plugin.DescribeTabularCatalogFacts(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path, opts)
 }
 
 func (p *SparkSQLPlugin) QueryLanguages() []string {
@@ -315,11 +315,11 @@ func executeSparkSQL(ctx context.Context, connInfo plugin.ConnectionInfo, query 
 	return &plugin.QueryResult{Columns: columns, Rows: resultRows}, nil
 }
 
-// === MetadataPlugin 接口实现 ===
+// === CatalogProvider / CatalogFactsProvider 回调实现 ===
 
 // listNamespaces 列出所有 Database。
-func (p *SparkSQLPlugin) listNamespaces(ctx context.Context, db *gorm.DB) ([]plugin.NamespaceInfo, error) {
-	var namespaces []plugin.NamespaceInfo
+func (p *SparkSQLPlugin) listNamespaces(ctx context.Context, db *gorm.DB, root plugin.CatalogPath) ([]plugin.CatalogEntry, error) {
+	var namespaces []plugin.CatalogEntry
 
 	// Apache Spark 使用 SHOW DATABASES 命令
 	rows, err := db.WithContext(ctx).Raw("SHOW DATABASES").Rows()
@@ -335,16 +335,13 @@ func (p *SparkSQLPlugin) listNamespaces(ctx context.Context, db *gorm.DB) ([]plu
 		}
 
 		// 获取每个数据库的表数量
-		var tableCount int
+		var leafCount int
 		// 重要：使用 quoteSparkIdentifier 保留标识符大小写
 		countQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s.information_schema.tables WHERE table_schema = ?",
 			quoteSparkIdentifier(dbName))
-		db.WithContext(ctx).Raw(countQuery, dbName).Scan(&tableCount)
+		db.WithContext(ctx).Raw(countQuery, dbName).Scan(&leafCount)
 
-		namespaces = append(namespaces, plugin.NamespaceInfo{
-			Name:       dbName,
-			TableCount: tableCount,
-		})
+		namespaces = append(namespaces, plugin.TabularNamespaceCatalogEntry(root, "database", dbName, leafCount))
 	}
 
 	return namespaces, nil

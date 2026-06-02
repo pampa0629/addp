@@ -6,7 +6,6 @@ import (
 	"sort"
 
 	"github.com/addp/common/dataitem"
-	"github.com/addp/common/engine/plugin"
 )
 
 var itemResolvers = []ItemResolver{
@@ -135,11 +134,11 @@ func ResolveNonExclusiveItems(ctx context.Context, input DirectoryResolveInput) 
 	return result, nil
 }
 
-func unclaimedFileEntries(files []plugin.FileEntry, claims ResourceClaimSet) []plugin.FileEntry {
+func unclaimedFileEntries(files []StorageFileRef, claims ResourceClaimSet) []StorageFileRef {
 	if len(files) == 0 || len(claims) == 0 {
 		return files
 	}
-	filtered := make([]plugin.FileEntry, 0, len(files))
+	filtered := make([]StorageFileRef, 0, len(files))
 	for _, file := range files {
 		if claims[file.Path] {
 			continue

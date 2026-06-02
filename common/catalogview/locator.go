@@ -17,6 +17,7 @@ const (
 	TypeObject     ResourceType = "object" // 对象存储文件
 	TypeFile       ResourceType = "file"   // 文件系统文件（NFS/本地FS）
 	TypeDirectory  ResourceType = "directory"
+	TypePrefix     ResourceType = "prefix"
 	TypeDatabase   ResourceType = "database"
 	TypeSchema     ResourceType = "schema"
 	TypeBucket     ResourceType = "bucket" // 对象存储桶
@@ -60,7 +61,7 @@ func LocatorFromFullName(engineID uint, engineType, resourceType, fullName strin
 
 // EngineRootLocator 构建引擎根节点的 ResourceLocator URI。
 func EngineRootLocator(engineID uint) string {
-	return fmt.Sprintf("addp://engine/%d/path/?type=%s", engineID, TypeDatabase)
+	return fmt.Sprintf("addp://engine/%d/path/?type=%s", engineID, TypeRoot)
 }
 
 // ParseFullNamePath 按 ResourceLocator 规范将 full_name 拆为 path segments。

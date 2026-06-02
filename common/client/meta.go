@@ -47,6 +47,11 @@ type MetaScanResponse struct {
 	Extraction          *MetaExtractionScanStats `json:"extraction,omitempty"`
 }
 
+type MetaAutoScanRunsResponse struct {
+	Runs      []models.TaskExecution `json:"runs"`
+	Submitted int                    `json:"submitted"`
+}
+
 type MetaExtractionScanStats struct {
 	Documents   int `json:"documents"`
 	Extracted   int `json:"extracted"`
@@ -75,6 +80,14 @@ func NewMetaClientWithInternalKey(baseURL, internalKey string) *MetaClient {
 			Timeout: 60 * time.Second,
 		},
 		internalKey: internalKey,
+	}
+}
+
+func (c *MetaClient) WithAuthToken(authToken string) *MetaClient {
+	return &MetaClient{
+		baseURL:    c.baseURL,
+		httpClient: c.httpClient,
+		authToken:  authToken,
 	}
 }
 
@@ -328,8 +341,8 @@ func (c *MetaClient) GetMetaItemByID(itemID uint) (*models.MetaItem, error) {
 	return &result, nil
 }
 
-func (c *MetaClient) ScanEngine(opts MetaScanOptions) (*MetaScanResponse, error) {
-	urlStr := fmt.Sprintf("%s/api/v1/meta/scan/engine", c.baseURL)
+func (c *MetaClient) CreateManualScanRun(opts MetaScanOptions) (*models.TaskExecution, error) {
+	urlStr := fmt.Sprintf("%s/api/v1/meta/scan/run/manual", c.baseURL)
 
 	scanReq := map[string]interface{}{}
 	if opts.EngineID > 0 {
@@ -350,7 +363,7 @@ func (c *MetaClient) ScanEngine(opts MetaScanOptions) (*MetaScanResponse, error)
 	if depth := strings.TrimSpace(opts.ScanDepth); depth != "" {
 		scanReq["scan_depth"] = depth
 	} else {
-		scanReq["scan_depth"] = "basic"
+		scanReq["scan_depth"] = "deep"
 	}
 	if opts.Force {
 		scanReq["force"] = true
@@ -363,7 +376,7 @@ func (c *MetaClient) ScanEngine(opts MetaScanOptions) (*MetaScanResponse, error)
 
 	body, err := json.Marshal(scanReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal scan request: %w", err)
+		return nil, fmt.Errorf("failed to marshal scan run request: %w", err)
 	}
 
 	req, err := http.NewRequest("POST", urlStr, bytes.NewReader(body))
@@ -385,11 +398,11 @@ func (c *MetaClient) ScanEngine(opts MetaScanOptions) (*MetaScanResponse, error)
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("meta api returned status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
-	var result MetaScanResponse
+	var result models.TaskExecution
 	if len(bodyBytes) > 0 {
 		if err := json.Unmarshal(bodyBytes, &result); err != nil {
 			return nil, fmt.Errorf("failed to decode response: %w", err)
@@ -446,43 +459,9 @@ func (c *MetaClient) RefreshItem(itemID uint, opts MetaScanOptions) (*MetaScanRe
 	return &result, nil
 }
 
-func (c *MetaClient) TriggerScan(opts MetaScanOptions) error {
-	_, err := c.ScanEngine(opts)
-	return err
-}
-
-// TriggerScanEngine 触发引擎元数据扫描。
-func (c *MetaClient) TriggerScanEngine(engineID uint, catalogPaths []string) error {
-	return c.TriggerScan(MetaScanOptions{
-		EngineID:     engineID,
-		CatalogPaths: catalogPaths,
-		ScanDepth:    "basic",
-		Force:        false,
-		TriggerType:  "manual",
-	})
-}
-
-func (c *MetaClient) EnsureItemDeepScanned(itemID uint) error {
-	return c.TriggerScan(MetaScanOptions{
-		ItemID:      itemID,
-		ScanDepth:   "deep",
-		Force:       false,
-		TriggerType: "manual",
-	})
-}
-
 func (c *MetaClient) ForceRefreshItem(itemID uint) error {
 	_, err := c.RefreshItem(itemID, MetaScanOptions{Force: true})
 	return err
-}
-
-func (c *MetaClient) ForceRefreshNode(nodeID uint) error {
-	return c.TriggerScan(MetaScanOptions{
-		NodeID:      nodeID,
-		ScanDepth:   "deep",
-		Force:       true,
-		TriggerType: "manual",
-	})
 }
 
 // ListItems 获取引擎的已扫描数据项列表，支持按命名空间过滤。

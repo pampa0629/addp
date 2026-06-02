@@ -43,7 +43,7 @@ mindmap
       Provider 化引擎插件接口
         EnginePlugin 基础
         CatalogProvider
-        ItemMetadataProvider
+        CatalogFactsProvider
         QueryRuntimeProvider
       引擎分类
         按功能: 存储/计算/兼备
@@ -73,7 +73,7 @@ mindmap
         csv/json/parquet/shapefile/sqlite/geopackage/pdf/image
       capability 分层
         engine capability
-        format capability
+        format descriptor/provider status
         item capabilities
       provider / reader 体系
         TableInfoProvider
@@ -82,7 +82,7 @@ mindmap
         DocumentTextReader
         MediaInfoProvider
         ContainerChildResolver
-        GraphMetadataProvider
+        CatalogFactsProvider
         GraphSampleProvider
         Spatial 横切能力
     数据开发
@@ -147,7 +147,7 @@ mindmap
 
 **引擎系统架构、分类体系和能力声明机制**
 
-- Provider 化引擎插件架构 (EnginePlugin、CatalogProvider、ItemMetadataProvider、StoreProvider、QueryRuntimeProvider)
+- Provider 化引擎插件架构 (EnginePlugin、CatalogProvider、CatalogFactsProvider、StoreProvider、QueryRuntimeProvider)
 - 引擎分类体系 (按功能、按来源、按注册方式)
 - 当前支持的引擎列表
 - 结构化能力声明 (`engine.capabilities/v1`)
@@ -190,7 +190,7 @@ mindmap
 
 - 数据类型分类 (table、document、media、container、graph、unknown)
 - 文件格式体系 (csv、json、parquet、shapefile、sqlite/geopackage、pdf、图片等)
-- capability 分层 (engine capability、format capability、item capabilities)
+- capability 分层 (engine capability、format descriptor / provider status、item capabilities)
 - provider / reader 矩阵与跨模块边界 (TableInfoProvider、TableSampleReader、DocumentInfoProvider、DocumentTextReader、MediaInfoProvider 等)
 
 📄 **[阅读完整文档 →](addp数据类型和格式体系图.md)**

@@ -1,8 +1,8 @@
 # Transfer 模块基本概念及配置说明
 
-更新时间：2026-05-30
+更新时间：2026-05-31
 
-本文档定义 Transfer 当前任务配置、执行状态和 table Transfer 主链路规则。旧版 `connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等字段不再兼容。
+本文档定义 Transfer 当前任务配置、执行状态、table Transfer 主链路和 non-table raw copy 最小闭环规则。旧版 `connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等字段不再兼容。
 
 ## 一、核心对象
 
@@ -33,9 +33,9 @@ Transfer 执行记录使用统一表 `common.task_executions`。Transfer API 会
 
 | 字段 | 当前语义 |
 |---|---|
-| `records_read` / `records_written` | table Transfer 的行数指标。 |
-| `bytes_read` / `bytes_written` | 字节指标；table Transfer 当前通常不作为主指标。 |
-| `checkpoint_offset` | 从 execution metadata 投影出来的观测偏移，table Transfer 当前为累计读取记录数。 |
+| `records_read` / `records_written` | table Transfer 的行数指标；raw copy 第一版固定为 `1/1`。 |
+| `bytes_read` / `bytes_written` | 字节指标；table Transfer 当前通常不作为主指标，raw copy 第一版会写入。 |
+| `checkpoint_offset` | 从 execution metadata 投影出来的观测偏移，table Transfer 当前为累计读取记录数，raw copy 第一版完成后为 `1`。 |
 | `checkpoint_state` | 从 execution metadata 投影出来的 checkpoint JSON，包含 batch、进度和 provider marker。 |
 | `logs` | 从 error details 中投影出来的简短执行日志。 |
 
@@ -93,7 +93,7 @@ checkpoint 当前用于 progress / diagnostics，不表示可从 checkpoint 自�
 | `engine.type` | 否 | 仅用于测试或诊断一致性校验；生产链路由 System engine resolver 获取真实类型。 |
 | `resource.kind` | 是 | `native_table`、`file`、`object`。 |
 | `resource.path` | 是 | 对应 engine catalog path 的业务描述。 |
-| `data_type` | 是 | 当前 table 主链路使用 `table`。 |
+| `data_type` | 是 | table Transfer 使用 `table`；raw copy 第一版支持 `document`、`media`、`unknown`。 |
 | `representation` | 是 | `native` 或 `encoded`。 |
 | `meta_item_id` | 否 | source 可引用已入库 Meta item，Transfer 后端通过 Meta client 读取标准 attributes。 |
 | `format` | encoded 必填 | encoded endpoint 的格式，如 `csv`、`json`、`parquet`、`shapefile`。 |
@@ -141,7 +141,54 @@ Transfer 不为 PostgreSQL -> PostgreSQL、NFS -> MinIO、MinIO -> NFS 等具体
 | Doris | DUPLICATE KEY 明细模型、MySQL 协议批量 insert；空间字段暂拒绝。 |
 | ClickHouse | MergeTree 普通表、批量 insert；生成列写入跳过，空间字段暂拒绝。 |
 
-## 四、field_mapping transform
+## 四、raw copy 支持范围
+
+raw copy 是 non-table encoded single content 的原始字节复制。它不调用 `common/format` 的 table reader / writer，不解析文档、不抽取媒体元数据，也不做格式转换。
+
+第一版只支持以下 endpoint：
+
+| 维度 | 支持范围 |
+|---|---|
+| source / target `data_type` | `document`、`media`、`unknown` |
+| source / target `representation` | `encoded` |
+| source / target `resource.kind` | `file`、`object` |
+| source format layout | `single` |
+| target `data_type` / `format` | 可省略并继承 source；显式声明时必须一致 |
+| target path | 必须是完整 file / object 路径 |
+| target `policy.write_mode` | 只支持 `overwrite` |
+
+配置示例：
+
+```json
+{
+  "mode": "batch",
+  "source": {
+    "engine": {"scope": "system", "id": 1},
+    "resource": {
+      "kind": "object",
+      "path": {"bucket": "raw", "path": "docs/report.pdf"}
+    },
+    "data_type": "document",
+    "representation": "encoded",
+    "format": "pdf"
+  },
+  "target": {
+    "engine": {"scope": "system", "id": 2},
+    "resource": {
+      "kind": "file",
+      "path": {"path": "archive/report.pdf"}
+    },
+    "data_type": "document",
+    "representation": "encoded",
+    "format": "pdf",
+    "policy": {"write_mode": "overwrite"}
+  },
+  "transforms": [],
+  "batch_size": 1
+}
+```
+
+## 五、field_mapping transform
 
 字段映射写入 `config.transforms[]`：
 
@@ -176,7 +223,7 @@ Transfer 不为 PostgreSQL -> PostgreSQL、NFS -> MinIO、MinIO -> NFS 等具体
 
 旧任务外层 `mappings` / `field_mappings` 不作为新执行主链路输入。相关 API 如仍存在，只能视为过渡管理入口，不能成为新的配置来源。
 
-## 五、写入策略
+## 六、写入策略
 
 `policy.write_mode`：
 
@@ -185,14 +232,14 @@ Transfer 不为 PostgreSQL -> PostgreSQL、NFS -> MinIO、MinIO -> NFS 等具体
 | `overwrite` | 默认策略。Transfer 写入前清理目标资源或让 prepare 重建目标。 |
 | `append` | 追加写入；失败 retry 当前拒绝 append，避免重复写入。 |
 
-overwrite / append 是 Transfer policy，不进入 common engine。`TableWritePreparer` 只负责 ensure / create table / schema evolution。
+overwrite / append 是 Transfer policy，不进入 common engine。`TableWritePreparer` 只负责 ensure / create table / schema evolution。raw copy 第一版只支持 `overwrite`，并要求目标 engine 提供删除资源能力。
 
-## 六、Checkpoint、进度和重试
+## 七、Checkpoint、进度和重试
 
 当前 checkpoint 语义：
 
 - 每个成功写入 batch 后更新执行进度。
-- `checkpoint_offset` 等于累计 `records_read`。
+- `checkpoint_offset` 等于累计 `records_read`；raw copy 第一版完成后为 `1`。
 - `checkpoint_state` 可包含 `batch_index`、`source_offset`、`records_read`、`records_written`、`resume_marker`、`commit_marker` 等。
 - marker 由 provider 生成并解释；Transfer 只保存和展示，不解析 marker 内部字段。
 
@@ -204,7 +251,7 @@ overwrite / append 是 Transfer policy，不进入 common engine。`TableWritePr
 | restartable | 已支持 retry 从头重跑；append 拒绝。 |
 | resumable | 尚未进入主链路。 |
 
-## 七、写后 Meta 扫描
+## 八、写后 Meta 扫描
 
 成功写入后，如果 `auto_scan_metadata=true`，Transfer 触发 Meta deep scan。
 

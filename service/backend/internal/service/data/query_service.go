@@ -42,7 +42,7 @@ func (s *QueryService) Query(ctx context.Context, req *models.DataQueryRequest) 
 	}
 
 	// 3. 获取列信息
-	metadata, err := dbbridge.DescribeNamedItem(ctx, engine, req.Schema, req.Table, plugin.MetadataOptions{})
+	metadata, err := dbbridge.DescribeNamedCatalogFacts(ctx, engine, req.Schema, req.Table, plugin.CatalogFactsOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list columns: %w", err)
 	}
@@ -360,8 +360,8 @@ func (s *QueryService) GetTableStructure(ctx context.Context, engineID uint, sch
 		return nil, fmt.Errorf("获取引擎失败: %w", err)
 	}
 
-	// 2. 获取列信息：dbbridge 内部走 ItemMetadataProvider。
-	metadata, err := dbbridge.DescribeNamedItem(ctx, engine, schema, table, plugin.MetadataOptions{})
+	// 2. 获取列信息：dbbridge 内部走 CatalogFactsProvider。
+	metadata, err := dbbridge.DescribeNamedCatalogFacts(ctx, engine, schema, table, plugin.CatalogFactsOptions{})
 	if err != nil {
 		if strings.Contains(err.Error(), "does not exist") || strings.Contains(err.Error(), "not found") {
 			return nil, fmt.Errorf("表 %s.%s 不存在", schema, table)
@@ -408,11 +408,15 @@ type metadataColumnInfo struct {
 	Comment      string
 }
 
-func columnInfosFromMetadata(metadata *plugin.ItemMetadata) []metadataColumnInfo {
+func columnInfosFromMetadata(metadata *plugin.CatalogFacts) []metadataColumnInfo {
 	if metadata == nil {
 		return nil
 	}
-	fields := plugin.ItemMetadataFields(metadata)
+	tableInfo := plugin.CatalogFactsTableInfo(metadata)
+	if tableInfo == nil {
+		return nil
+	}
+	fields := tableInfo.Fields
 	columns := make([]metadataColumnInfo, 0, len(fields))
 	for _, field := range fields {
 		dataType := field.NativeType

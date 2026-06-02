@@ -48,12 +48,12 @@
                   <!-- 第三行：catalog 顶层节点统计（tooltip显示） -->
                   <el-tooltip placement="top">
                     <template #content>
-                      {{ t('meta.scan.totalCount', { term: getCatalogNodeTerminology(row), n: row.total_catalog_nodes || 0 }) }}<br>
-                      {{ t('meta.scan.scannedCount', { term: getCatalogNodeTerminology(row), n: row.scanned_catalog_nodes || 0 }) }}<br>
-                      {{ t('meta.scan.unscannedCount', { term: getCatalogNodeTerminology(row), n: row.unscanned_catalog_nodes || 0 }) }}
+                      {{ t('meta.scan.totalCount', { term: getCatalogEntryTerminology(row), n: row.total_catalog_nodes || 0 }) }}<br>
+                      {{ t('meta.scan.scannedCount', { term: getCatalogEntryTerminology(row), n: row.scanned_catalog_nodes || 0 }) }}<br>
+                      {{ t('meta.scan.unscannedCount', { term: getCatalogEntryTerminology(row), n: row.unscanned_catalog_nodes || 0 }) }}
                     </template>
                     <div class="engine-stats">
-                      {{ row.total_catalog_nodes || 0 }}{{ getCatalogNodeTerminology(row) }}
+                      {{ row.total_catalog_nodes || 0 }}{{ getCatalogEntryTerminology(row) }}
                       <span class="stat-scanned" v-if="row.scanned_catalog_nodes">({{ row.scanned_catalog_nodes }}{{ t('meta.scan.scannedSuffix', { n: '' }).replace('{n}', '') }})</span>
                       <span class="stat-unscanned" v-if="row.unscanned_catalog_nodes">/{{ row.unscanned_catalog_nodes }}{{ t('meta.scan.unscannedSuffix', { n: '' }).replace('{n}', '') }}</span>
                     </div>
@@ -122,8 +122,8 @@
             <h3>{{ rightPanelTitle }}</h3>
             <div v-if="selectedResource" class="catalogNode-actions-bar">
               <!-- 选中提示 -->
-              <div v-if="selectedCatalogNodes.length" class="selection-info">
-                {{ t('meta.scan.selectedCount', { n: selectedCatalogNodes.length, term: getCatalogNodeTerminology(selectedResource) }) }}
+              <div v-if="selectedCatalogEntries.length" class="selection-info">
+                {{ t('meta.scan.selectedCount', { n: selectedCatalogEntries.length, term: getCatalogEntryTerminology(selectedResource) }) }}
               </div>
 
               <!-- 批量操作按钮 -->
@@ -131,7 +131,7 @@
                 type="primary"
                 size="default"
                 @click="handleBatchScan"
-                :disabled="!selectedCatalogNodes.length"
+                :disabled="!selectedCatalogEntries.length"
                 :loading="scanning"
               >
                 <el-icon><Search /></el-icon>
@@ -140,8 +140,8 @@
 
               <!-- 刷新按钮 -->
               <el-button
-                @click="loadCatalogNodes"
-                :loading="loadingCatalogNodes"
+                @click="loadCatalogEntries"
+                :loading="loadingCatalogEntries"
                 size="default"
               >
                 <el-icon><Refresh /></el-icon>
@@ -158,9 +158,9 @@
             <el-table
               class="catalogNode-table"
               :data="catalogNodes"
-              v-loading="loadingCatalogNodes"
+              v-loading="loadingCatalogEntries"
               height="600"
-              @selection-change="handleCatalogNodeSelectionChange"
+              @selection-change="handleCatalogEntrySelectionChange"
               style="min-width: 720px"
             >
               <el-table-column type="selection" width="55" />
@@ -179,8 +179,8 @@
 
                       <!-- 调度状态图标 -->
                       <el-tooltip
-                        v-if="getCatalogNodePlan(row)"
-                        :content="t('meta.scan.independentScheduleTooltip', { desc: getCatalogNodePlan(row).description, next: getCatalogNodePlan(row).nextRun })"
+                        v-if="getCatalogEntryPlan(row)"
+                        :content="t('meta.scan.independentScheduleTooltip', { desc: getCatalogEntryPlan(row).description, next: getCatalogEntryPlan(row).nextRun })"
                         placement="top"
                       >
                         <el-icon color="var(--el-color-primary)" :size="16" class="schedule-icon">
@@ -200,9 +200,9 @@
 
                     <!-- 第二行：次要信息（小字灰色） -->
                     <div class="catalogNode-details">
-                      <span v-if="row.table_count !== undefined">
+                      <span v-if="row.leaf_count !== undefined">
                         <el-icon :size="12"><Document /></el-icon>
-                        {{ row.table_count }}{{ t('meta.scan.tables') }}
+                        {{ row.leaf_count }}{{ t('meta.scan.tables') }}
                       </span>
                       <span v-if="row.scanned_at" class="detail-separator">·</span>
                       <span v-if="row.scanned_at">
@@ -218,8 +218,8 @@
                     <el-button
                       type="primary"
                       size="default"
-                      @click.stop="handleScanCatalogNode(row)"
-                      :loading="scanningCatalogNodes[row.id ?? catalogNodeNameOf(row)]"
+                      @click.stop="handleScanCatalogEntry(row)"
+                      :loading="scanningCatalogEntries[row.id ?? catalogNodeNameOf(row)]"
                     >
                       <el-icon><Search /></el-icon>
                       {{ row.scan_status === 'completed' ? t('meta.scan.rescan') : t('meta.scan.scan') }}
@@ -228,7 +228,7 @@
                       type="success"
                       size="default"
                       plain
-                      @click.stop="handleCatalogNodeSchedule(row)"
+                      @click.stop="handleCatalogEntrySchedule(row)"
                     >
                       <el-icon><Clock /></el-icon>
                       {{ t('meta.scan.schedule') }}
@@ -241,30 +241,6 @@
         </div>
       </div>
     </el-card>
-
-    <!-- 扫描进度对话框 -->
-    <el-dialog v-model="showScanDialog" :title="t('meta.scan.scanProgressTitle')" width="500px" :close-on-click-modal="false">
-      <div v-if="scanning">
-        <el-progress :percentage="scanProgress" :status="scanProgress === 100 ? 'success' : undefined" />
-        <p style="margin-top: 20px; text-align: center; color: #999">{{ scanMessage }}</p>
-      </div>
-      <div v-else-if="scanResult">
-        <el-result
-          :icon="scanResult.status === 'success' ? 'success' : 'error'"
-          :title="scanResult.status === 'success' ? t('meta.scan.scanComplete') : t('meta.scan.scanFailed')"
-        >
-          <template #sub-title>
-            <div>{{ t('meta.scan.scannedCatalogNodes', { n: scanResult.catalog_nodes_scanned }) }}</div>
-            <div>{{ t('meta.scan.foundItems', { n: scanResult.items_scanned }) }}</div>
-            <div>{{ t('meta.scan.scannedFields', { n: scanResult.fields_scanned }) }}</div>
-            <div>{{ t('meta.scan.duration', { n: scanResult.duration_ms }) }}</div>
-          </template>
-        </el-result>
-      </div>
-      <template #footer>
-        <el-button @click="closeScanDialog">{{ t('meta.scan.close') }}</el-button>
-      </template>
-    </el-dialog>
 
     <el-dialog
       v-model="scheduleDialogVisible"
@@ -279,13 +255,13 @@
         :closable="false"
         style="margin-bottom: 16px"
       >
-        {{ t('meta.scan.engineSchemaCount', { n: inheritanceInfo.total, term: getCatalogNodeTerminology(selectedResource) }) }}
+        {{ t('meta.scan.engineSchemaCount', { n: inheritanceInfo.total, term: getCatalogEntryTerminology(selectedResource) }) }}
         <ul style="margin: 8px 0 0 20px">
           <li>{{ inheritanceInfo.independent }}{{ t('meta.scan.withIndependentSchedule') }}</li>
           <li>{{ inheritanceInfo.inherited }}{{ t('meta.scan.willInheritSchedule') }}</li>
         </ul>
         <div style="margin-top: 8px; color: var(--addp-text-tertiary)">
-          {{ t('meta.scan.engineScheduleNote', { term: getCatalogNodeTerminology(selectedResource) }) }}
+          {{ t('meta.scan.engineScheduleNote', { term: getCatalogEntryTerminology(selectedResource) }) }}
         </div>
       </el-alert>
 
@@ -310,12 +286,12 @@
     <!-- 命名空间调度设置对话框 -->
     <el-dialog
       v-model="catalogNodeScheduleDialogVisible"
-      :title="`${currentCatalogNode?.name || ''}${t('meta.scan.schemaScheduleTitle')}`"
+      :title="`${currentCatalogEntry?.name || ''}${t('meta.scan.schemaScheduleTitle')}`"
       width="600px"
     >
       <!-- 继承说明 -->
       <el-alert
-        v-if="hasEngineSchedule && !currentCatalogNodeTask"
+        v-if="hasEngineSchedule && !currentCatalogEntryTask"
         type="info"
         :closable="false"
         style="margin-bottom: 16px"
@@ -344,7 +320,7 @@
         <el-button @click="catalogNodeScheduleDialogVisible = false">{{ t('meta.scan.cancel') }}</el-button>
         <el-button
           type="primary"
-          @click="submitCatalogNodeSchedule"
+          @click="submitCatalogEntrySchedule"
           :loading="savingSchedule"
         >
           {{ t('meta.scan.save') }}
@@ -365,6 +341,11 @@ import metaApi from '../api/meta'
 const { t } = useI18n()
 
 const AUTO_SCHEDULE_DESC_MARK = '[PortalAutoSchedule]'
+const SCAN_RUN_POLL_INTERVAL_MS = 2000
+const SCAN_RUN_TIMEOUT_MS = 30 * 60 * 1000
+const ACTIVE_SCAN_STATUSES = new Set(['pending', 'running'])
+const SUCCESS_SCAN_STATUSES = new Set(['success'])
+const FAILED_SCAN_STATUSES = new Set(['failed', 'timeout', 'cancelled', 'canceled'])
 
 // 引擎列表
 const engines = ref([])
@@ -375,17 +356,13 @@ const containerRef = ref(null)
 
 // 命名空间 / Catalog 顶层节点列表
 const catalogNodes = ref([])
-const loadingCatalogNodes = ref(false)
-const selectedCatalogNodes = ref([])
+const loadingCatalogEntries = ref(false)
+const selectedCatalogEntries = ref([])
 
 // 扫描状态
 const autoScanning = ref(false)
 const scanning = ref(false)
-const scanningCatalogNodes = reactive({})
-const showScanDialog = ref(false)
-const scanProgress = ref(0)
-const scanMessage = ref('')
-const scanResult = ref(null)
+const scanningCatalogEntries = reactive({})
 
 const allScanTasks = ref([])
 const scheduleDialogVisible = ref(false)
@@ -395,8 +372,8 @@ const scheduleEnabled = ref(true) // 是否启用
 
 // 命名空间调度相关
 const catalogNodeScheduleDialogVisible = ref(false)
-const currentCatalogNode = ref(null)
-const currentCatalogNodeTask = ref(null)
+const currentCatalogEntry = ref(null)
+const currentCatalogEntryTask = ref(null)
 const catalogNodeScheduleCron = ref('')
 const catalogNodeScheduleDepth = ref('deep')
 const catalogNodeScheduleEnabled = ref(true)
@@ -407,6 +384,7 @@ const minLeftPanelWidth = 440
 const minRightPanelWidth = 240
 let resizeStartX = 0
 let resizeStartWidth = leftPanelWidth.value
+let disposed = false
 
 // 计算属性：过滤后的引擎列表（当前不进行筛选，直接返回所有引擎）
 const filteredEngines = computed(() => {
@@ -450,7 +428,7 @@ const catalogNodeTargetOf = (catalogNode) => {
   return catalogNodeNameOf(catalogNode)
 }
 
-const getCatalogNodePlan = (catalogNode) => {
+const getCatalogEntryPlan = (catalogNode) => {
   const catalogNodeName = catalogNodeNameOf(catalogNode)
   const task = allScanTasks.value.find(task => {
     if (task.engine_id !== selectedResource.value.id) return false
@@ -484,7 +462,7 @@ const inheritanceInfo = computed(() => {
   if (!selectedResource.value || !catalogNodes.value.length) return null
 
   const allSchemas = catalogNodes.value.length
-  const withOwnSchedule = catalogNodes.value.filter(s => getCatalogNodePlan(s)).length
+  const withOwnSchedule = catalogNodes.value.filter(s => getCatalogEntryPlan(s)).length
   const inheritedCount = allSchemas - withOwnSchedule
 
   return {
@@ -498,14 +476,14 @@ const inheritanceInfo = computed(() => {
 // 计算右侧面板标题（根据引擎类型显示命名空间、Collection、Bucket 或目录）
 const rightPanelTitle = computed(() => {
   if (!selectedResource.value) return t('meta.scan.catalogNodeList')
-  const terminology = getCatalogNodeTerminology(selectedResource.value)
+  const terminology = getCatalogEntryTerminology(selectedResource.value)
   return `${terminology}${t('meta.scan.catalogListSuffix')} - ${selectedResource.value.name}`
 })
 
 // 计算表格列标题（根据引擎类型显示命名空间、Collection、Bucket 或目录信息）
 const catalogNodeColumnLabel = computed(() => {
   if (!selectedResource.value) return t('meta.scan.catalogNodeInfo')
-  const terminology = getCatalogNodeTerminology(selectedResource.value)
+  const terminology = getCatalogEntryTerminology(selectedResource.value)
   return `${terminology}${t('meta.scan.namespaceInfoSuffix')}`
 })
 
@@ -520,7 +498,7 @@ const loadEngines = async () => {
       selectedResource.value = engines.value[0]
       await nextTick()
       resourceTableRef.value?.setCurrentRow(selectedResource.value)
-      await Promise.all([loadCatalogNodes(), loadScanTasks()])
+      await Promise.all([loadCatalogEntries(), loadScanTasks()])
     }
     if (!engines.value.length) {
       selectedResource.value = null
@@ -543,7 +521,7 @@ const handleSelectResource = async (row) => {
   selectedResource.value = row
   await nextTick()
   resourceTableRef.value?.setCurrentRow(row)
-  await loadCatalogNodes()
+  await loadCatalogEntries()
   enforceBounds()
 }
 
@@ -598,9 +576,9 @@ const stopResizing = () => {
   enforceBounds()
 }
 
-// 判断扫描目标是否使用 catalog_paths。依据 catalog item 术语，不列举具体引擎 type。
+// 判断扫描目标是否使用 catalog_paths。依据 catalog leaf 术语，不列举具体引擎 type。
 const usesCatalogPathTargets = (resource) => {
-  const itemTerm = String(resource?.catalog_item_term || '').toLowerCase()
+  const itemTerm = String(resource?.catalog_leaf_term || '').toLowerCase()
   return itemTerm === 'object' || itemTerm === 'file'
 }
 
@@ -612,7 +590,7 @@ const isNoSQLType = (resourceType) => {
 }
 
 // 获取引擎原生的顶层 catalog 术语，避免把内部 catalog node 抽象暴露给用户。
-const getCatalogNodeTerminology = (resource, plural = false) => {
+const getCatalogEntryTerminology = (resource, plural = false) => {
   if (!resource) return t('meta.scan.defaultNamespaceTerm')
   if (typeof resource === 'string') {
     resource = { resource_type: resource }
@@ -625,7 +603,7 @@ const getCatalogNodeTerminology = (resource, plural = false) => {
       return translated
     }
   }
-  const itemTerm = String(resource.catalog_item_term || '').toLowerCase()
+  const itemTerm = String(resource.catalog_leaf_term || '').toLowerCase()
   const rootTerm = String(resource.catalog_root_term || '').toLowerCase()
   switch (topTerm) {
     case 'schema':
@@ -653,10 +631,10 @@ const getCatalogNodeTerminology = (resource, plural = false) => {
 }
 
 // 加载命名空间 / Catalog 顶层节点列表
-const loadCatalogNodes = async () => {
+const loadCatalogEntries = async () => {
   if (!selectedResource.value) return
 
-  loadingCatalogNodes.value = true
+  loadingCatalogEntries.value = true
   let availableSchemas = []
   let connectionError = null
 
@@ -696,14 +674,16 @@ const loadCatalogNodes = async () => {
         id: scanned.id,
         name: catalogNodeNameOf(scanned),
         scan_status: t('meta.scan.connectionFailed', { status: scanned.scan_status }),
-        table_count: scanned.table_count || 0,
+        item_count: scanned.item_count || 0,
         scanned_at: scanned.scanned_at || '',
         total_size_bytes: scanned.total_size_bytes || 0
       }))
       // 已通过左侧连接状态图标显示，无需额外提示
     } else {
       // 正常情况：合并两个列表
-      catalogNodes.value = availableSchemas.map(available => {
+      catalogNodes.value = availableSchemas
+        .filter(available => available?.role === 'branch')
+        .map(available => {
         const availableName = catalogNodeNameOf(available)
         const scanned = scannedSchemas.find(s => catalogNodeNameOf(s) === availableName)
         return {
@@ -711,23 +691,24 @@ const loadCatalogNodes = async () => {
           name: availableName,
           id: scanned?.id,
           scan_status: scanned?.scan_status || 'pending',
-          table_count: scanned?.table_count || 0,
+          leaf_count: available.leaf_count,
+          item_count: scanned?.item_count || 0,
           scanned_at: scanned?.scanned_at || '',
           total_size_bytes: scanned?.total_size_bytes || 0
         }
       })
     }
   } catch (error) {
-    ElMessage.error(t('meta.scan.loadCatalogNodesFailed', { msg: error.response?.data?.error || error.message }))
+    ElMessage.error(t('meta.scan.loadCatalogEntriesFailed', { msg: error.response?.data?.error || error.message }))
     catalogNodes.value = []
   } finally {
-    loadingCatalogNodes.value = false
+    loadingCatalogEntries.value = false
   }
 }
 
 // 命名空间选择变化
-const handleCatalogNodeSelectionChange = (selection) => {
-  selectedCatalogNodes.value = selection
+const handleCatalogEntrySelectionChange = (selection) => {
+  selectedCatalogEntries.value = selection
 }
 
 const loadScanTasks = async () => {
@@ -822,6 +803,47 @@ const prefillScheduleForm = task => {
   scheduleEnabled.value = !!task.enabled
 }
 
+const delay = ms => new Promise(resolve => window.setTimeout(resolve, ms))
+
+const scanRunIDOf = run => run?.execution_id || run?.executionId || run?.id || ''
+
+const waitForScanRun = async (run) => {
+  const runID = scanRunIDOf(run)
+  if (!runID) {
+    return run
+  }
+
+  const startedAt = Date.now()
+  let latest = run
+  while (!disposed) {
+    latest = await metaApi.getScanRun(runID)
+    const status = String(latest?.status || '').toLowerCase()
+    if (SUCCESS_SCAN_STATUSES.has(status)) {
+      return latest
+    }
+    if (FAILED_SCAN_STATUSES.has(status)) {
+      const message = latest?.error_message || latest?.error || latest?.progress_message || status
+      throw new Error(message)
+    }
+    if (!ACTIVE_SCAN_STATUSES.has(status) && status) {
+      return latest
+    }
+    if (Date.now() - startedAt > SCAN_RUN_TIMEOUT_MS) {
+      throw new Error(t('meta.scan.scanWaitTimeout'))
+    }
+    await delay(SCAN_RUN_POLL_INTERVAL_MS)
+  }
+  return latest
+}
+
+const waitForScanRuns = async (runs = []) => {
+  const validRuns = runs.filter(scanRunIDOf)
+  for (const run of validRuns) {
+    await waitForScanRun(run)
+  }
+  return validRuns.length
+}
+
 // 一键自动扫描
 const handleAutoScan = async () => {
   try {
@@ -832,30 +854,17 @@ const handleAutoScan = async () => {
     )
 
     autoScanning.value = true
-    showScanDialog.value = true
-    scanProgress.value = 0
-    scanMessage.value = t('meta.scan.scanningMsg')
-    scanResult.value = null
-
-    // 模拟进度
-    const progressInterval = setInterval(() => {
-      if (scanProgress.value < 90) {
-        scanProgress.value += 10
-      }
-    }, 500)
-
     const res = await metaApi.autoScan()
-    clearInterval(progressInterval)
-    scanProgress.value = 100
-
-    scanResult.value = res
-    ElMessage.success(t('meta.scan.autoScanComplete'))
-
-    // 刷新引擎列表
-    await loadEngines()
-    if (selectedResource.value) {
-      await loadCatalogNodes()
+    const runs = Array.isArray(res?.runs) ? res.runs : []
+    const submitted = Number(res?.submitted || runs.length || 0)
+    if (submitted === 0) {
+      ElMessage.success(t('meta.scan.autoScanNoRuns'))
+      return
     }
+    ElMessage.info(t('meta.scan.autoScanSubmitted', { n: submitted }))
+    await waitForScanRuns(runs)
+    ElMessage.success(t('meta.scan.autoScanCompleted', { n: submitted }))
+    await Promise.all([loadEngines(), loadScanTasks()])
   } catch (error) {
     if (error !== 'cancel') {
       ElMessage.error(t('meta.scan.autoScanFailed', { msg: error.response?.data?.error || error.message }))
@@ -867,42 +876,25 @@ const handleAutoScan = async () => {
 
 // 批量扫描命名空间或 catalog 路径
 const handleBatchScan = async () => {
-  if (!selectedCatalogNodes.value.length) return
+  if (!selectedCatalogEntries.value.length) return
 
-  const terminology = getCatalogNodeTerminology(selectedResource.value)
+  const terminology = getCatalogEntryTerminology(selectedResource.value)
 
   try {
     await ElMessageBox.confirm(
-      t('meta.scan.batchScanConfirmMsg', { n: selectedCatalogNodes.value.length, term: terminology }),
+      t('meta.scan.batchScanConfirmMsg', { n: selectedCatalogEntries.value.length, term: terminology }),
       t('meta.scan.batchScanConfirmTitle'),
       { type: 'warning' }
     )
 
     scanning.value = true
-    showScanDialog.value = true
-    scanProgress.value = 0
-    scanMessage.value = t('meta.scan.scanningMsg')
-    scanResult.value = null
 
-    const catalogPaths = selectedCatalogNodes.value.map(item => catalogNodeTargetOf(item)).filter(Boolean)
-
-    // 模拟进度
-    const progressInterval = setInterval(() => {
-      if (scanProgress.value < 90) {
-        scanProgress.value += 10
-      }
-    }, 500)
-
-    const res = await metaApi.scanEngine(selectedResource.value.id, catalogPaths, { scan_depth: 'deep', force: false })
-    clearInterval(progressInterval)
-    scanProgress.value = 100
-
-    scanResult.value = res
-    ElMessage.success(t('meta.scan.batchScanComplete'))
-
-    // 刷新命名空间列表
-    await loadCatalogNodes()
-    await loadEngines()
+    const catalogPaths = selectedCatalogEntries.value.map(item => catalogNodeTargetOf(item)).filter(Boolean)
+    const run = await metaApi.createManualScanRun(selectedResource.value.id, catalogPaths, { scan_depth: 'deep', force: false })
+    ElMessage.info(t('meta.scan.batchScanSubmitted'))
+    await waitForScanRun(run)
+    ElMessage.success(t('meta.scan.batchScanCompleted'))
+    await loadCatalogEntries(selectedResource.value)
   } catch (error) {
     if (error !== 'cancel') {
       ElMessage.error(t('meta.scan.batchScanFailed', { msg: error.response?.data?.error || error.message }))
@@ -956,32 +948,31 @@ const submitScheduleForm = async () => {
 }
 
 // 扫描单个命名空间或 catalog 路径
-const handleScanCatalogNode = async (catalogNode) => {
+const handleScanCatalogEntry = async (catalogNode) => {
   const catalogNodeName = catalogNodeNameOf(catalogNode)
   const key = catalogNode.id ?? catalogNodeName
-  scanningCatalogNodes[key] = true
+  scanningCatalogEntries[key] = true
 
   try {
     const target = catalogNodeTargetOf(catalogNode) || catalogNodeName
-    await metaApi.scanEngine(selectedResource.value.id, [target], { scan_depth: 'deep', force: false })
-    ElMessage.success(t('meta.scan.schemaScanComplete', { name: catalogNodeName }))
-
-    // 刷新列表
-    await loadCatalogNodes()
-    await loadEngines()
+    const run = await metaApi.createManualScanRun(selectedResource.value.id, [target], { scan_depth: 'deep', force: false })
+    ElMessage.info(t('meta.scan.catalogScanSubmitted', { name: catalogNodeName }))
+    await waitForScanRun(run)
+    ElMessage.success(t('meta.scan.catalogScanCompleted', { name: catalogNodeName }))
+    await loadCatalogEntries(selectedResource.value)
   } catch (error) {
     ElMessage.error(t('meta.scan.scanError', { msg: error.response?.data?.error || error.message }))
   } finally {
-    scanningCatalogNodes[key] = false
+    scanningCatalogEntries[key] = false
   }
 }
 
 // 命名空间调度相关方法
-const handleCatalogNodeSchedule = async (catalogNode) => {
-  currentCatalogNode.value = catalogNode
+const handleCatalogEntrySchedule = async (catalogNode) => {
+  currentCatalogEntry.value = catalogNode
   const catalogNodeName = catalogNodeNameOf(catalogNode)
   // 查找该命名空间或 catalog 路径的调度任务
-  currentCatalogNodeTask.value = allScanTasks.value.find(task => {
+  currentCatalogEntryTask.value = allScanTasks.value.find(task => {
     if (task.engine_id !== selectedResource.value.id) return false
     const params = task.parameters || {}
     const paths = params.catalog_paths || []
@@ -990,10 +981,10 @@ const handleCatalogNodeSchedule = async (catalogNode) => {
   })
 
   // 预填表单
-  if (currentCatalogNodeTask.value) {
-    catalogNodeScheduleCron.value = currentCatalogNodeTask.value.schedule || ''
-    catalogNodeScheduleDepth.value = currentCatalogNodeTask.value.parameters?.scan_depth || 'deep'
-    catalogNodeScheduleEnabled.value = currentCatalogNodeTask.value.enabled
+  if (currentCatalogEntryTask.value) {
+    catalogNodeScheduleCron.value = currentCatalogEntryTask.value.schedule || ''
+    catalogNodeScheduleDepth.value = currentCatalogEntryTask.value.parameters?.scan_depth || 'deep'
+    catalogNodeScheduleEnabled.value = currentCatalogEntryTask.value.enabled
   } else {
     // 默认继承引擎设置或使用默认值
     catalogNodeScheduleCron.value = autoScheduleTask.value?.schedule || '0 2 * * *'
@@ -1004,15 +995,15 @@ const handleCatalogNodeSchedule = async (catalogNode) => {
   catalogNodeScheduleDialogVisible.value = true
 }
 
-const submitCatalogNodeSchedule = async () => {
-  if (!currentCatalogNode.value) return
+const submitCatalogEntrySchedule = async () => {
+  if (!currentCatalogEntry.value) return
 
-  const catalogNodeName = catalogNodeNameOf(currentCatalogNode.value)
-  const catalogPath = catalogNodeTargetOf(currentCatalogNode.value) || catalogNodeName
+  const catalogNodeName = catalogNodeNameOf(currentCatalogEntry.value)
+  const catalogPath = catalogNodeTargetOf(currentCatalogEntry.value) || catalogNodeName
 
   savingSchedule.value = true
   try {
-    const terminology = getCatalogNodeTerminology(selectedResource.value)
+    const terminology = getCatalogEntryTerminology(selectedResource.value)
     const payload = {
       name: `${selectedResource.value.name} - ${catalogNodeName}`,
       description: `${terminology} ${catalogNodeName} 的定时扫描`,
@@ -1024,11 +1015,11 @@ const submitCatalogNodeSchedule = async () => {
       enabled: catalogNodeScheduleEnabled.value
     }
 
-    if (currentCatalogNodeTask.value) {
+    if (currentCatalogEntryTask.value) {
       // 更新现有任务
       await metaApi.updateScanTask(
         selectedResource.value.id,
-        currentCatalogNodeTask.value.id,
+        currentCatalogEntryTask.value.id,
         payload
       )
       ElMessage.success(t('meta.scan.scheduleUpdated'))
@@ -1045,14 +1036,6 @@ const submitCatalogNodeSchedule = async () => {
   } finally {
     savingSchedule.value = false
   }
-}
-
-// 关闭扫描对话框
-const closeScanDialog = () => {
-  showScanDialog.value = false
-  scanProgress.value = 0
-  scanMessage.value = ''
-  scanResult.value = null
 }
 
 function formatScheduleDescription(task) {
@@ -1085,7 +1068,7 @@ function formatShortTime(datetime) {
 }
 
 watch(selectedResource, () => {
-  selectedCatalogNodes.value = []
+  selectedCatalogEntries.value = []
   scheduleDialogVisible.value = false
   resetScheduleForm()
 })
@@ -1096,6 +1079,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  disposed = true
   stopResizing()
   window.removeEventListener('resize', enforceBounds)
 })
@@ -1208,7 +1192,7 @@ onBeforeUnmount(() => {
   gap: 8px;
 }
 
-/* ========== CatalogNode信息列 ========== */
+/* ========== CatalogEntry信息列 ========== */
 .catalogNode-info {
   display: flex;
   flex-direction: column;
@@ -1245,7 +1229,7 @@ onBeforeUnmount(() => {
   color: var(--addp-border-color);
 }
 
-/* ========== CatalogNode操作列 ========== */
+/* ========== CatalogEntry操作列 ========== */
 .catalogNode-actions {
   display: flex;
   gap: 8px;

@@ -232,7 +232,7 @@ func (s *nativeTableBatchSource) Open(ctx context.Context) (TableBatchReader, er
 	if s.tableSessionProvider != nil {
 		session, err := s.tableSessionProvider.OpenTableReadSession(ctx, s.connInfo, s.path, engineplugin.TableReadSessionOptions{
 			Query:        s.query,
-			Metadata:     s.readOptions,
+			Hints:        s.readOptions,
 			ResumeMarker: cloneResumeMarker(s.resumeMarker),
 		})
 		if err != nil {

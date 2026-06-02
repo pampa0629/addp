@@ -127,6 +127,10 @@ async function loadSourceFieldsForEdit(task) {
   if (!task.config?.source) return
 
   const source = task.config.source
+  if (source.data_type && source.data_type !== 'table') {
+    wizardState.loadSourceFields([])
+    return
+  }
   const engineId = source.engine?.id
   const path = source.resource?.path || {}
 

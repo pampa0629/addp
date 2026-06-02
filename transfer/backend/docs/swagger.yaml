@@ -363,12 +363,31 @@ definitions:
     type: object
   internal_api.TransferCapabilitiesResponse:
     properties:
+      raw_copy_formats:
+        items:
+          $ref: '#/definitions/internal_api.TransferRawCopyFormatSupport'
+        type: array
       table_formats:
         items:
-          $ref: '#/definitions/internal_api.TransferTableFormatCapability'
+          $ref: '#/definitions/internal_api.TransferTableFormatSupport'
         type: array
     type: object
-  internal_api.TransferTableFormatCapability:
+  internal_api.TransferRawCopyFormatSupport:
+    properties:
+      data_type:
+        type: string
+      extension:
+        type: string
+      label:
+        type: string
+      layouts:
+        items:
+          type: string
+        type: array
+      value:
+        type: string
+    type: object
+  internal_api.TransferTableFormatSupport:
     properties:
       backend_type:
         type: string

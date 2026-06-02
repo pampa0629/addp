@@ -15,7 +15,7 @@
 
 - 目录发现：`CatalogProvider.ListChildren`
 - 路径解析：`CatalogProvider.ResolvePath`
-- 文件元数据：`ItemMetadataProvider.DescribeItem`
+- 文件 catalog leaf facts：`CatalogFactsProvider.DescribeCatalogFacts`
 - 内容读取：`ContentReadableProvider.OpenContent`
 
 旧的专用文件系统接口方案不再作为上层接口边界。

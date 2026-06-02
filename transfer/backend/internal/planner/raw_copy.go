@@ -1,0 +1,195 @@
+package planner
+
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+
+	"github.com/addp/common/dataitem"
+	"github.com/addp/common/datatype"
+	engineplugin "github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
+	"github.com/addp/transfer/internal/executor"
+)
+
+type RawCopyTaskSpec struct {
+	Mode   string       `json:"mode"`
+	Source EndpointSpec `json:"source"`
+	Target EndpointSpec `json:"target"`
+}
+
+type RawCopyBuildResult struct {
+	SourceEngineType string
+	TargetEngineType string
+	Plan             executor.RawCopyPlan
+}
+
+func ParseRawCopyTaskSpec(config map[string]interface{}) (RawCopyTaskSpec, error) {
+	if config == nil {
+		return RawCopyTaskSpec{}, fmt.Errorf("transfer task config is required")
+	}
+	if hasLegacyTaskConfigFields(config) {
+		return RawCopyTaskSpec{}, fmt.Errorf("legacy transfer task config is not supported; use source/target endpoint config")
+	}
+	if hasUnsupportedEndpointAttributes(config) {
+		return RawCopyTaskSpec{}, fmt.Errorf("endpoint attributes are not supported in transfer task config; use source.meta_item_id to reference Meta item attributes")
+	}
+	var spec RawCopyTaskSpec
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		return RawCopyTaskSpec{}, fmt.Errorf("marshal raw copy task config: %w", err)
+	}
+	if err := json.Unmarshal(configBytes, &spec); err != nil {
+		return RawCopyTaskSpec{}, fmt.Errorf("parse raw copy task config: %w", err)
+	}
+	if err := validateRawCopySpec(&spec); err != nil {
+		return RawCopyTaskSpec{}, err
+	}
+	return spec, nil
+}
+
+func BuildRawCopyPlan(spec RawCopyTaskSpec, resolver EngineResolver) (*RawCopyBuildResult, error) {
+	if resolver == nil {
+		return nil, fmt.Errorf("engine resolver is required")
+	}
+	if err := validateRawCopySpec(&spec); err != nil {
+		return nil, err
+	}
+	sourceEngine, err := resolver.ResolveEngine(spec.Source.Engine)
+	if err != nil {
+		return nil, fmt.Errorf("resolve source engine: %w", err)
+	}
+	targetEngine, err := resolver.ResolveEngine(spec.Target.Engine)
+	if err != nil {
+		return nil, fmt.Errorf("resolve target engine: %w", err)
+	}
+	sourceType := effectiveEngineType(sourceEngine, spec.Source.Engine)
+	targetType := effectiveEngineType(targetEngine, spec.Target.Engine)
+	if sourceType == "" {
+		return nil, fmt.Errorf("source engine type is required")
+	}
+	if targetType == "" {
+		return nil, fmt.Errorf("target engine type is required")
+	}
+	sourceDescriptor, _ := sourceItemDescriptorFromMetaAttributes(spec.Source.Attributes)
+	sourcePath, err := sourceEndpointContentCatalogPath(sourceEngine.EngineID, spec.Source.EndpointResource, sourceDescriptor)
+	if err != nil {
+		return nil, fmt.Errorf("build raw copy source path: %w", err)
+	}
+	targetPath, err := endpointContentCatalogPath(targetEngine.EngineID, spec.Target.EndpointResource, "target")
+	if err != nil {
+		return nil, fmt.Errorf("build raw copy target path: %w", err)
+	}
+	return &RawCopyBuildResult{
+		SourceEngineType: sourceType,
+		TargetEngineType: targetType,
+		Plan: executor.RawCopyPlan{
+			Source: executor.RawCopyEndpointPlan{
+				ConnInfo: sourceEngine.ConnInfo,
+				Path:     sourcePath,
+			},
+			Target: executor.RawCopyEndpointPlan{
+				ConnInfo:          targetEngine.ConnInfo,
+				Path:              targetPath,
+				ContentWrite:      engineWriteOptionsForRawCopy(spec.Target.Policy),
+				DeleteBeforeWrite: writeMode(spec.Target.Policy) == defaultWriteMode,
+			},
+			DataType: spec.Source.DataType,
+			Format:   spec.Source.Format,
+		},
+	}, nil
+}
+
+func validateRawCopySpec(spec *RawCopyTaskSpec) error {
+	if spec == nil {
+		return fmt.Errorf("raw copy spec is required")
+	}
+	if spec.Mode == "" {
+		return fmt.Errorf("transfer task mode is required")
+	}
+	if spec.Mode != modeBatch {
+		return fmt.Errorf("only batch mode is supported by raw copy planner, got %q", spec.Mode)
+	}
+	if err := validateRawCopyEndpoint(spec.Source, "source"); err != nil {
+		return err
+	}
+	normalizeRawCopyTarget(&spec.Target, spec.Source)
+	if err := validateRawCopyEndpoint(spec.Target, "target"); err != nil {
+		return err
+	}
+	if spec.Source.DataType != spec.Target.DataType {
+		return fmt.Errorf("raw copy target data type %q must match source data type %q", spec.Target.DataType, spec.Source.DataType)
+	}
+	if spec.Source.Format != spec.Target.Format {
+		return fmt.Errorf("raw copy target format %q must match source format %q", spec.Target.Format, spec.Source.Format)
+	}
+	if writeMode(spec.Target.Policy) != defaultWriteMode {
+		return fmt.Errorf("raw copy only supports overwrite write mode")
+	}
+	if len(spec.Source.Attributes) > 0 {
+		descriptor, ok := sourceItemDescriptorFromMetaAttributes(spec.Source.Attributes)
+		if !ok {
+			return fmt.Errorf("source meta item attributes do not contain item descriptor")
+		}
+		if descriptor.DataType != "" && string(descriptor.DataType) != spec.Source.DataType {
+			return fmt.Errorf("source data type %q conflicts with Meta item data type %q", spec.Source.DataType, descriptor.DataType)
+		}
+		if descriptor.Format != "" && format.FormatType(descriptor.Format) != spec.Source.Format {
+			return fmt.Errorf("source format %q conflicts with Meta item format %q", spec.Source.Format, descriptor.Format)
+		}
+		if descriptor.Layout != "" && descriptor.Layout != dataitem.LayoutSingle {
+			return fmt.Errorf("raw copy requires source layout=%q, got %q", dataitem.LayoutSingle, descriptor.Layout)
+		}
+	}
+	return nil
+}
+
+func normalizeRawCopyTarget(target *EndpointSpec, source EndpointSpec) {
+	if target == nil {
+		return
+	}
+	if strings.TrimSpace(target.DataType) == "" {
+		target.DataType = source.DataType
+	}
+	if target.Format == "" {
+		target.Format = source.Format
+	}
+}
+
+func validateRawCopyEndpoint(endpoint EndpointSpec, role string) error {
+	if err := validateEndpointCommon(endpoint, role, strings.TrimSpace(endpoint.DataType)); err != nil {
+		return err
+	}
+	if endpoint.Representation != representationEncoded {
+		return fmt.Errorf("%s raw copy endpoint representation must be %q, got %q", role, representationEncoded, endpoint.Representation)
+	}
+	if !isRawCopyDataType(endpoint.DataType) {
+		return fmt.Errorf("%s raw copy data type must be document, media, or unknown, got %q", role, endpoint.DataType)
+	}
+	if endpoint.Format == "" {
+		return fmt.Errorf("%s raw copy format is required", role)
+	}
+	if endpoint.Format != format.FormatUnknown {
+		descriptor, ok := format.GetFormatDescriptor(endpoint.Format)
+		if !ok {
+			return fmt.Errorf("%s raw copy format %q is not registered", role, endpoint.Format)
+		}
+		if descriptor.DataType != "" && string(descriptor.DataType) != endpoint.DataType && descriptor.DataType != datatype.DataTypeUnknown {
+			return fmt.Errorf("%s raw copy format %q default data type %q conflicts with endpoint data type %q", role, endpoint.Format, descriptor.DataType, endpoint.DataType)
+		}
+	}
+	return nil
+}
+
+func isRawCopyDataType(dataType string) bool {
+	switch strings.TrimSpace(dataType) {
+	case string(datatype.DataTypeDocument), string(datatype.DataTypeMedia), string(datatype.DataTypeUnknown):
+		return true
+	default:
+		return false
+	}
+}
+
+func engineWriteOptionsForRawCopy(policy map[string]interface{}) engineplugin.WriteOptions {
+	return engineplugin.WriteOptions{Overwrite: false}
+}

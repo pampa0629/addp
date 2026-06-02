@@ -30,16 +30,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		ContentReaders: []string{
 			string(format.ContentReaderBinaryContent),
 		},
-		EngineFamilies: []string{format.EngineFamilyObject, format.EngineFamilyFile},
 	}
-}
-
-func (p *Plugin) Capabilities() format.FormatCapability {
-	capability, ok := format.GetFormatCapability(p.Format())
-	if ok {
-		return capability
-	}
-	return format.FormatCapabilityFromDescriptor(p.Descriptor())
 }
 
 func (p *Plugin) ReadBinaryContent(ctx context.Context, input io.Reader, limit int64, options *format.ParseOptions) (*format.BinaryContent, error) {

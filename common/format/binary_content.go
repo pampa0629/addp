@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-
-	"github.com/addp/common/datatype"
 )
 
 const DefaultBinaryContentReadLimit int64 = 16 * 1024
@@ -34,15 +32,6 @@ func ReadBinaryContent(ctx context.Context, input io.Reader, limit int64, option
 
 func (defaultBinaryContentReader) Format() FormatType {
 	return FormatUnknown
-}
-
-func (defaultBinaryContentReader) Capabilities() FormatCapability {
-	return FormatCapability{
-		Format:         FormatUnknown,
-		DataType:       datatype.DataTypeUnknown,
-		Layouts:        []string{LayoutSingle},
-		ContentReaders: []string{string(ContentReaderBinaryContent)},
-	}
 }
 
 func (defaultBinaryContentReader) ReadBinaryContent(ctx context.Context, input io.Reader, limit int64, options *ParseOptions) (*BinaryContent, error) {

@@ -12,14 +12,14 @@ import (
 )
 
 type ResourceAttributesInput struct {
-	ContentReader       plugin.ContentReadableProvider
-	ConnInfo            plugin.ConnectionInfo
-	EngineID            uint
-	Item                *metaitem.DetectedItem
-	PhysicalPath        string
-	SizeBytes           int64
+	ContentReader      plugin.ContentReadableProvider
+	ConnInfo           plugin.ConnectionInfo
+	EngineID           uint
+	Item               *metaitem.DetectedItem
+	PhysicalPath       string
+	SizeBytes          int64
 	IncludeAccessIndex bool
-	CatalogPathFor      func(string) plugin.CatalogPath
+	CatalogPathFor     func(string) plugin.CatalogPath
 }
 
 func EnrichResourceAttributes(ctx context.Context, attrs models.JSONMap, input ResourceAttributesInput) (*metaitem.DetectedItem, []datatype.FieldInfo, error) {

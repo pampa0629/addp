@@ -16,11 +16,11 @@ import (
 // JupyterVenvService 租户虚拟环境管理服务
 // 管理租户级别的 Python 虚拟环境和 Jupyter Kernel
 type JupyterVenvService struct {
-	cfg               *config.Config
-	projectRoot       string // 项目根目录
-	tenantsDataPath   string // 租户数据目录
-	initScriptPath    string // 初始化脚本路径
-	jupyterServerURL  string // Jupyter Server URL
+	cfg              *config.Config
+	projectRoot      string // 项目根目录
+	tenantsDataPath  string // 租户数据目录
+	initScriptPath   string // 初始化脚本路径
+	jupyterServerURL string // Jupyter Server URL
 }
 
 // NewJupyterVenvService 创建租户虚拟环境管理服务
@@ -54,13 +54,13 @@ func NewJupyterVenvService(cfg *config.Config) (*JupyterVenvService, error) {
 
 // TenantVenvInfo 租户虚拟环境信息
 type TenantVenvInfo struct {
-	TenantID         uint      `json:"tenant_id"`
-	VenvPath         string    `json:"venv_path"`
-	KernelName       string    `json:"kernel_name"`
-	KernelDisplayName string   `json:"kernel_display_name"`
-	Exists           bool      `json:"exists"`
-	JupyterURL       string    `json:"jupyter_url"` // Jupyter Lab 访问 URL
-	CreatedAt        time.Time `json:"created_at,omitempty"`
+	TenantID          uint      `json:"tenant_id"`
+	VenvPath          string    `json:"venv_path"`
+	KernelName        string    `json:"kernel_name"`
+	KernelDisplayName string    `json:"kernel_display_name"`
+	Exists            bool      `json:"exists"`
+	JupyterURL        string    `json:"jupyter_url"` // Jupyter Lab 访问 URL
+	CreatedAt         time.Time `json:"created_at,omitempty"`
 }
 
 // InitTenantVenv 初始化租户虚拟环境

@@ -20,24 +20,24 @@ func ItemTermMatches(engineType, term string) bool {
 		return false
 	}
 	if modelProvider, ok := p.(plugin.CatalogModelProvider); ok {
-		return plugin.CatalogItemTerm(modelProvider.CatalogModel()) == term
+		return plugin.CatalogLeafTerm(modelProvider.CatalogModel()) == term
 	}
 	capabilities := p.Capabilities()
 	if capabilities.Storage == nil || capabilities.Storage.CatalogModel == nil {
 		return false
 	}
-	return plugin.CatalogItemTerm(*capabilities.Storage.CatalogModel) == term
+	return plugin.CatalogLeafTerm(*capabilities.Storage.CatalogModel) == term
 }
 
-func ObjectMetadata(ctx context.Context, metadataProvider plugin.ItemMetadataProvider, connInfo plugin.ConnectionInfo, engineID uint, bucket, objectPath string) (*plugin.FileMetadata, error) {
-	if metadataProvider == nil {
+func ObjectStorageFacts(ctx context.Context, factsProvider plugin.CatalogFactsProvider, connInfo plugin.ConnectionInfo, engineID uint, bucket, objectPath string) (*plugin.StorageObjectFacts, error) {
+	if factsProvider == nil {
 		return nil, fs.ErrNotExist
 	}
-	item, err := metadataProvider.DescribeItem(ctx, connInfo, plugin.ObjectItemPath(engineID, bucket, objectPath), plugin.MetadataOptions{})
+	item, err := factsProvider.DescribeCatalogFacts(ctx, connInfo, plugin.ObjectItemPath(engineID, bucket, objectPath), plugin.CatalogFactsOptions{})
 	if err != nil {
 		return nil, err
 	}
-	return ItemMetadataToFileMetadata(item, bucket+"/"+strings.Trim(objectPath, "/")), nil
+	return CatalogFactsToStorageObjectFacts(item, bucket+"/"+strings.Trim(objectPath, "/")), nil
 }
 
 func OpenObjectContent(ctx context.Context, contentReader plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, engineID uint, bucket, objectPath string) (io.ReadCloser, error) {
@@ -47,22 +47,29 @@ func OpenObjectContent(ctx context.Context, contentReader plugin.ContentReadable
 	return contentReader.OpenContent(ctx, connInfo, plugin.ObjectItemPath(engineID, bucket, objectPath), plugin.ReadOptions{})
 }
 
-func NodePhysicalPath(node plugin.CatalogNode) string {
-	if path := StringAttribute(node.Attributes, "path"); path != "" {
-		return path
+func NodePhysicalPath(node plugin.CatalogEntry) string {
+	if node.Storage != nil && node.Storage.Path != "" {
+		return node.Storage.Path
 	}
 	return node.Path.StringPath()
 }
 
-func ItemMetadataToFileMetadata(item *plugin.ItemMetadata, fallbackPath string) *plugin.FileMetadata {
+func CatalogFactsToStorageObjectFacts(item *plugin.CatalogFacts, fallbackPath string) *plugin.StorageObjectFacts {
 	if item == nil {
-		return &plugin.FileMetadata{Name: pathBase(fallbackPath), Path: fallbackPath}
+		return &plugin.StorageObjectFacts{Name: pathBase(fallbackPath), Path: fallbackPath}
 	}
-	name := StringAttribute(item.Attributes, "name")
+	storage := item.Storage
+	name := ""
+	if storage != nil {
+		name = storage.Name
+	}
 	if name == "" {
 		name = pathBase(fallbackPath)
 	}
-	path := StringAttribute(item.Attributes, "path")
+	path := ""
+	if storage != nil {
+		path = storage.Path
+	}
 	if path == "" {
 		path = fallbackPath
 	}
@@ -70,14 +77,35 @@ func ItemMetadataToFileMetadata(item *plugin.ItemMetadata, fallbackPath string) 
 	if item.UpdatedAt != nil {
 		updatedAt = *item.UpdatedAt
 	}
-	return &plugin.FileMetadata{
+	return &plugin.StorageObjectFacts{
 		Name:        name,
 		Path:        path,
-		Size:        Int64Stat(item.Stats, "size_bytes"),
+		Size:        catalogStorageSizeBytes(storage),
 		ModifiedAt:  updatedAt,
-		ContentType: StringAttribute(item.Attributes, "content_type"),
-		ETag:        StringAttribute(item.Attributes, "etag"),
+		ContentType: catalogStorageContentType(storage),
+		ETag:        catalogStorageETag(storage),
 	}
+}
+
+func catalogStorageSizeBytes(storage *plugin.CatalogStorageFacts) int64 {
+	if storage == nil || storage.SizeBytes == nil {
+		return 0
+	}
+	return *storage.SizeBytes
+}
+
+func catalogStorageContentType(storage *plugin.CatalogStorageFacts) string {
+	if storage == nil {
+		return ""
+	}
+	return storage.ContentType
+}
+
+func catalogStorageETag(storage *plugin.CatalogStorageFacts) string {
+	if storage == nil {
+		return ""
+	}
+	return storage.ETag
 }
 
 func StringAttribute(attrs map[string]interface{}, key string) string {
@@ -128,13 +156,6 @@ func Int64Attribute(attrs map[string]interface{}, key string) int64 {
 		}
 	}
 	return 0
-}
-
-func Int64Stat(stats map[string]interface{}, key string) int64 {
-	if stats == nil {
-		return 0
-	}
-	return commonJSON.InterfaceInt64(stats[key])
 }
 
 func stringSlice(value interface{}) []string {

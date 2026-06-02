@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"sort"
 
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
@@ -76,13 +75,13 @@ func (s *ScanService) dispatchNamespaceItemScan(ctx context.Context, enginePlugi
 		if !ok {
 			return scanDispatchResult{}, fmt.Errorf("engine %s does not implement CatalogProvider", req.Resource.EngineType)
 		}
-		databasesInfo, err := metacatalog.NamespaceDatabaseInfos(ctx, req.Resource, catalogProvider)
+		namespaceEntries, err := metacatalog.NamespaceEntries(ctx, req.Resource, catalogProvider)
 		if err != nil {
 			return scanDispatchResult{}, fmt.Errorf("failed to list namespaces: %w", err)
 		}
-		namespaceNames = make([]string, 0, len(databasesInfo))
-		for _, info := range databasesInfo {
-			namespaceNames = append(namespaceNames, info.Name)
+		namespaceNames = make([]string, 0, len(namespaceEntries))
+		for _, entry := range namespaceEntries {
+			namespaceNames = append(namespaceNames, entry.Name)
 		}
 	}
 
@@ -95,6 +94,9 @@ func (s *ScanService) dispatchNamespaceItemScan(ctx context.Context, enginePlugi
 		req.Force,
 		req.Reporter,
 	)
+	if err == nil {
+		s.finalizeCatalogRootAfterScan(req.Resource, req.TenantID, items, req.ScanDepth)
+	}
 	return scanDispatchResult{CatalogNodes: namespaces, Items: items, Fields: fields}, err
 }
 
@@ -112,19 +114,11 @@ func (s *ScanService) dispatchObjectCatalogScan(ctx context.Context, enginePlugi
 }
 
 func (s *ScanService) dispatchFileCatalogScan(ctx context.Context, enginePlugin plugin.EnginePlugin, req scanDispatchRequest) (scanDispatchResult, error) {
+	_ = ctx
 	paths := req.CatalogPaths
 	if req.Mode == scanDispatchAuto && len(paths) == 0 {
-		var err error
-		paths, err = metacatalog.FileCatalogRootPaths(ctx, req.Resource, enginePlugin)
-		if err != nil {
-			return scanDispatchResult{}, fmt.Errorf("failed to list roots: %w", err)
-		}
-		if len(paths) == 0 {
-			s.log.Info("文件 catalog 资源无可扫描根节点，跳过扫描")
-			return scanDispatchResult{}, nil
-		}
-		sort.Strings(paths)
-		s.log.Info("文件 catalog 资源扫描开始", "root_count", len(paths), "roots", paths)
+		paths = []string{""}
+		s.log.Info("文件 catalog 资源从结构 root 开始扫描")
 	}
 
 	return s.scanFilesystemCatalogResourceResultWithReporter(
@@ -151,38 +145,38 @@ func (s *ScanService) dispatchTabularScan(ctx context.Context, enginePlugin plug
 		return scanDispatchResult{CatalogNodes: namespaces, Items: items, Fields: fields}, err
 	}
 
-	namespaceInfos, err := metacatalog.NamespaceInfos(ctx, req.Resource, enginePlugin)
+	namespaceEntries, err := metacatalog.NamespaceEntriesForPlugin(ctx, req.Resource, enginePlugin)
 	if err != nil {
 		return scanDispatchResult{}, fmt.Errorf("failed to list namespaces: %w", err)
 	}
 
 	namespaceTerm := namespaceTermForPlugin(enginePlugin)
-	s.log.Info("数据库资源扫描开始", "namespace_total", len(namespaceInfos), "namespace_term", namespaceTerm)
+	s.log.Info("数据库资源扫描开始", "namespace_total", len(namespaceEntries), "namespace_term", namespaceTerm)
 	scannedNamespaces := make(map[string]bool)
 	result := scanDispatchResult{}
 
-	for _, namespaceInfo := range namespaceInfos {
-		scannedNamespaces[namespaceInfo.Name] = true
+	for _, namespaceEntry := range namespaceEntries {
+		scannedNamespaces[namespaceEntry.Name] = true
 
 		var node models.MetaNode
 		err := s.db.Where("tenant_id = ? AND engine_id = ? AND node_type = ? AND name = ?",
-			req.TenantID, req.Resource.ID, namespaceTerm, namespaceInfo.Name).First(&node).Error
+			req.TenantID, req.Resource.ID, namespaceTerm, namespaceEntry.Name).First(&node).Error
 		if err != gorm.ErrRecordNotFound && err != nil {
 			s.log.Warn("查询 namespace 节点失败",
 				"engine_id", req.Resource.ID,
 				"tenant_id", req.TenantID,
-				"namespace", namespaceInfo.Name,
+				"namespace", namespaceEntry.Name,
 				"error", err,
 			)
 			continue
 		}
 
-		namespaces, items, fields, err := s.dbScanService.ScanNamespace(ctx, req.Resource, req.TenantID, req.Resource.ID, namespaceInfo.Name, req.ScanDepth, req.Force)
+		namespaces, items, fields, err := s.dbScanService.ScanNamespace(ctx, req.Resource, req.TenantID, req.Resource.ID, namespaceEntry.Name, req.ScanDepth, req.Force)
 		if err != nil {
 			s.log.Warn("namespace 扫描失败",
 				"engine_id", req.Resource.ID,
 				"tenant_id", req.TenantID,
-				"namespace", namespaceInfo.Name,
+				"namespace", namespaceEntry.Name,
 				"error", err,
 			)
 			continue
@@ -193,7 +187,24 @@ func (s *ScanService) dispatchTabularScan(ctx context.Context, enginePlugin plug
 	}
 
 	s.softDeleteMissingTabularNamespaces(req.Resource, req.TenantID, namespaceTerm, scannedNamespaces)
+	s.finalizeCatalogRootAfterScan(req.Resource, req.TenantID, result.Items, req.ScanDepth)
 	return result, nil
+}
+
+func (s *ScanService) finalizeCatalogRootAfterScan(resource *commonModels.Engine, tenantID uint, items int, scanDepth string) {
+	enginePlugin, err := plugin.Get(resource.EngineType)
+	if err != nil {
+		s.log.Warn("获取插件失败，跳过 root 扫描状态更新", "engine_type", resource.EngineType, "error", err)
+		return
+	}
+	rootNode, err := ensureCatalogRootNode(s.repo, tenantID, resource, enginePlugin)
+	if err != nil {
+		s.log.Warn("同步 root 节点失败，跳过 root 扫描状态更新", "engine_id", resource.ID, "error", err)
+		return
+	}
+	if err := s.repo.FinalizeNodeStateWithDepth(rootNode, "completed", items, 0, "", scanDepth); err != nil {
+		s.log.Warn("更新 root 扫描状态失败", "engine_id", resource.ID, "node_id", rootNode.ID, "error", err)
+	}
 }
 
 func (s *ScanService) softDeleteMissingTabularNamespaces(resource *commonModels.Engine, tenantID uint, namespaceTerm string, scannedNamespaces map[string]bool) {

@@ -3,6 +3,15 @@
     <h3>{{ t('transfer.taskWizard.fieldMappingPage') }}</h3>
     <p class="step-description">{{ t('transfer.taskWizard.fieldMappingPageDesc') }}</p>
 
+    <el-alert
+      v-if="wizardState.isRawCopyTask.value"
+      type="info"
+      :closable="false"
+      :title="t('transfer.taskWizard.rawCopyNoMappingTitle')"
+      :description="t('transfer.taskWizard.rawCopyNoMappingDesc')"
+    />
+
+    <template v-else>
     <div class="mapping-controls">
       <el-button type="primary" @click="autoMap">{{ t('transfer.taskWizard.autoMap') }}</el-button>
       <el-button @click="addMapping">{{ t('transfer.taskWizard.addMapping') }}</el-button>
@@ -120,6 +129,7 @@
     <div v-if="wizardState.fieldMappings.value.length === 0" class="empty-hint">
       <el-empty :description="t('transfer.taskWizard.emptyMappingHint')" />
     </div>
+    </template>
   </div>
 </template>
 

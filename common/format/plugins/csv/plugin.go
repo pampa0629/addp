@@ -67,26 +67,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		Identification: format.FormatIdentification{Extensions: extensions, MimeTypes: mimeTypes},
 		Providers:      format.FormatProviderDescriptor{FormatInfo: true, TableInfo: true, TableSample: true, Table: true, AccessIndex: true},
 		ContentReaders: []string{string(format.ContentReaderTableSample), string(format.ContentReaderRawContent)},
-		TransferRead:   true,
-		TransferWrite:  true,
 		Parse:          true,
-		EngineFamilies: []string{format.EngineFamilyObject, format.EngineFamilyFile},
-	}
-}
-
-func (p *Plugin) Capabilities() format.FormatCapability {
-	capability, ok := format.GetFormatCapability(p.formatType)
-	if ok {
-		return capability
-	}
-	return format.FormatCapability{
-		Format:        p.formatType,
-		DataType:      datatype.DataTypeTable,
-		Layouts:       []string{format.LayoutSingle},
-		ProviderHints: []string{format.FormatProviderTable},
-		TransferRead:  true,
-		TransferWrite: true,
-		Parse:         true,
 	}
 }
 

@@ -22,7 +22,7 @@ export function hasStorageCapability(engine) {
     const store = storage.store || {}
     return Boolean(
       storage.catalog?.supported ||
-      storage.metadata?.supported ||
+      storage.facts?.supported ||
       Object.values(store).some(Boolean)
     )
   }
@@ -97,6 +97,8 @@ export function dataTypeLabel(value) {
   const labels = {
     table: '表格数据',
     document: '文档数据',
+    media: '媒体数据',
+    unknown: '未知数据',
     graph: '图数据',
     file: '文件',
     object: '对象'
@@ -122,7 +124,34 @@ export function formatLabel(value) {
     jsonl: 'JSON Lines',
     parquet: 'Parquet',
     geojson: 'GeoJSON',
-    shapefile: 'Shapefile'
+    shapefile: 'Shapefile',
+    pdf: 'PDF',
+    docx: 'DOCX',
+    pptx: 'PPTX',
+    wps: 'WPS',
+    text: 'Text',
+    markdown: 'Markdown',
+    jpeg: 'JPEG',
+    jpg: 'JPEG',
+    png: 'PNG',
+    gif: 'GIF',
+    tiff: 'TIFF',
+    webp: 'WebP',
+    bmp: 'BMP',
+    svg: 'SVG',
+    avif: 'AVIF',
+    heic: 'HEIC',
+    mp4: 'MP4',
+    mov: 'MOV',
+    mkv: 'MKV',
+    avi: 'AVI',
+    webm: 'WebM',
+    mp3: 'MP3',
+    wav: 'WAV',
+    flac: 'FLAC',
+    aac: 'AAC',
+    ogg: 'OGG',
+    unknown: 'Unknown'
   }
   return labels[key] || value || '-'
 }

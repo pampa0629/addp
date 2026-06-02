@@ -68,20 +68,19 @@ func maskString(value interface{}) string {
 }
 
 // ListCatalogChildren 列出指定 catalog 路径下的实时子节点。
-func (s *StorageEngineService) ListCatalogChildren(resource *models.Engine, req models.CatalogListChildrenRequest) ([]models.CatalogNode, error) {
+func (s *StorageEngineService) ListCatalogChildren(resource *models.Engine, req models.CatalogListChildrenRequest) ([]models.CatalogEntry, error) {
 	nodes, err := dbbridge.ListCatalogChildren(context.Background(), resource, toPluginCatalogPath(req.Path), plugin.ListOptions{
 		Recursive: req.Options.Recursive,
 		Limit:     req.Options.Limit,
 		Offset:    req.Options.Offset,
-		Filter:    req.Filter,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	result := make([]models.CatalogNode, 0, len(nodes))
+	result := make([]models.CatalogEntry, 0, len(nodes))
 	for _, node := range nodes {
-		result = append(result, fromPluginCatalogNode(node))
+		result = append(result, fromPluginCatalogEntry(node))
 	}
 	return result, nil
 }
@@ -102,17 +101,17 @@ func toPluginCatalogPath(path models.CatalogPath) plugin.CatalogPath {
 	}
 }
 
-func fromPluginCatalogNode(node plugin.CatalogNode) models.CatalogNode {
-	return models.CatalogNode{
-		Name:        node.Name,
-		Path:        fromPluginCatalogPath(node.Path),
-		Term:        node.Term,
-		Kind:        node.Kind,
-		IsContainer: node.IsContainer,
-		IsItem:      node.IsItem,
-		Stats:       node.Stats,
-		Attributes:  node.Attributes,
-		Actions:     node.Actions,
+func fromPluginCatalogEntry(node plugin.CatalogEntry) models.CatalogEntry {
+	return models.CatalogEntry{
+		Name:      node.Name,
+		Path:      fromPluginCatalogPath(node.Path),
+		Term:      node.Term,
+		Kind:      node.Kind,
+		Role:      node.Role,
+		Table:     node.Table,
+		Storage:   node.Storage,
+		LeafCount: node.LeafCount,
+		UpdatedAt: node.UpdatedAt,
 	}
 }
 

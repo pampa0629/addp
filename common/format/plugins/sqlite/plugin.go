@@ -55,7 +55,6 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 			Providers:      format.FormatProviderDescriptor{ContainerInfo: true, TableInfo: true, TableSample: true, Table: true},
 			ContentReaders: []string{string(format.ContentReaderTableSample), string(format.ContentReaderRawContent), string(format.ContentReaderContainerEntry)},
 			Spatial:        true,
-			EngineFamilies: []string{format.EngineFamilyObject, format.EngineFamilyFile},
 		}
 	}
 	return format.FormatDescriptor{
@@ -68,26 +67,6 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		Identification: format.FormatIdentification{Extensions: []string{".sqlite", ".sqlite3", ".db"}, MimeTypes: []string{"application/x-sqlite3", "application/vnd.sqlite3", "application/sqlite"}},
 		Providers:      format.FormatProviderDescriptor{ContainerInfo: true, TableInfo: true, TableSample: true, Table: true},
 		ContentReaders: []string{string(format.ContentReaderTableSample), string(format.ContentReaderRawContent), string(format.ContentReaderContainerEntry)},
-		EngineFamilies: []string{format.EngineFamilyObject, format.EngineFamilyFile},
-	}
-}
-
-func (p *Plugin) Capabilities() format.FormatCapability {
-	capability, ok := format.GetFormatCapability(p.Format())
-	if ok {
-		return capability
-	}
-	return format.FormatCapability{
-		Format:        p.Format(),
-		DataType:      datatype.DataTypeContainer,
-		Layouts:       []string{format.LayoutSingle},
-		ProviderHints: []string{format.FormatProviderContainer, format.FormatProviderTable},
-		ContentReaders: []string{
-			string(format.ContentReaderTableSample),
-			string(format.ContentReaderRawContent),
-			string(format.ContentReaderContainerEntry),
-		},
-		Parse: true,
 	}
 }
 

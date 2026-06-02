@@ -49,10 +49,10 @@ func validateStorageCapabilities(p EnginePlugin, storage *StorageCapabilities) e
 			return fmt.Errorf("%s declares catalog support but does not implement CatalogProvider", p.Type())
 		}
 	}
-	if storage.Metadata != nil && storage.Metadata.Supported {
-		if _, ok := p.(ItemMetadataProvider); !ok {
+	if storage.Facts != nil && storage.Facts.Supported {
+		if _, ok := p.(CatalogFactsProvider); !ok {
 			if _, ok := p.(DynamicSchemaSamplingProvider); !ok {
-				return fmt.Errorf("%s declares metadata support but does not implement metadata provider", p.Type())
+				return fmt.Errorf("%s declares facts support but does not implement CatalogFactsProvider or DynamicSchemaSamplingProvider", p.Type())
 			}
 		}
 	}

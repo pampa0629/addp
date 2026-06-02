@@ -25,7 +25,7 @@ type OperatorDiscoveryService struct {
 	httpClient         *http.Client
 
 	// 缓存
-	cachedOperators []commonModels.OperatorMetadata
+	cachedOperators []commonModels.OperatorDescriptor
 	cacheTime       time.Time
 	cacheTTL        time.Duration
 	mu              sync.RWMutex
@@ -51,7 +51,7 @@ func NewOperatorDiscoveryService(
 }
 
 // DiscoverAllOperators 发现所有模块的算子
-func (s *OperatorDiscoveryService) DiscoverAllOperators(ctx context.Context) ([]commonModels.OperatorMetadata, error) {
+func (s *OperatorDiscoveryService) DiscoverAllOperators(ctx context.Context) ([]commonModels.OperatorDescriptor, error) {
 	// 检查缓存
 	s.mu.RLock()
 	if time.Since(s.cacheTime) < s.cacheTTL && len(s.cachedOperators) > 0 {
@@ -77,7 +77,7 @@ func (s *OperatorDiscoveryService) DiscoverAllOperators(ctx context.Context) ([]
 	// ✅ 第2步：并发获取所有引擎的算子
 	totalModules := len(workflowEngines) + 3 // workflow 引擎 + Meta + Transfer + Manager
 	var wg sync.WaitGroup
-	results := make(chan []commonModels.OperatorMetadata, totalModules)
+	results := make(chan []commonModels.OperatorDescriptor, totalModules)
 	errors := make(chan error, totalModules)
 
 	// 遍历所有工作流引擎
@@ -142,7 +142,7 @@ func (s *OperatorDiscoveryService) DiscoverAllOperators(ctx context.Context) ([]
 	close(errors)
 
 	// 合并所有算子
-	var allOperators []commonModels.OperatorMetadata
+	var allOperators []commonModels.OperatorDescriptor
 	for operators := range results {
 		allOperators = append(allOperators, operators...)
 	}
@@ -170,7 +170,7 @@ func (s *OperatorDiscoveryService) DiscoverAllOperators(ctx context.Context) ([]
 }
 
 // GetOperatorsByEngineType 根据引擎类型过滤算子（动态查询 System Backend）
-func (s *OperatorDiscoveryService) GetOperatorsByEngineType(ctx context.Context, engineType string) ([]commonModels.OperatorMetadata, error) {
+func (s *OperatorDiscoveryService) GetOperatorsByEngineType(ctx context.Context, engineType string) ([]commonModels.OperatorDescriptor, error) {
 	// 从 System Backend 查询指定类型的引擎
 	engines, err := s.systemClient.ListEngines(engineType, 1) // tenantID=1
 	if err != nil {
@@ -203,7 +203,7 @@ func (s *OperatorDiscoveryService) GetOperatorsByEngineType(ctx context.Context,
 }
 
 // GetOperatorsByModule 获取指定模块的算子（兼容旧接口，支持静态模块和动态引擎）
-func (s *OperatorDiscoveryService) GetOperatorsByModule(ctx context.Context, module string) ([]commonModels.OperatorMetadata, error) {
+func (s *OperatorDiscoveryService) GetOperatorsByModule(ctx context.Context, module string) ([]commonModels.OperatorDescriptor, error) {
 	// 静态模块（任务提供者）
 	staticModules := map[string]string{
 		"meta":     s.metaServiceURL,
@@ -224,7 +224,7 @@ func (s *OperatorDiscoveryService) GetOperatorsByModule(ctx context.Context, mod
 	}
 
 	// 按 module 字段过滤
-	var filteredOperators []commonModels.OperatorMetadata
+	var filteredOperators []commonModels.OperatorDescriptor
 	for _, op := range allOperators {
 		if op.Module == module {
 			filteredOperators = append(filteredOperators, op)
@@ -239,7 +239,7 @@ func (s *OperatorDiscoveryService) GetOperatorsByModule(ctx context.Context, mod
 }
 
 // GetOperatorDetail 获取算子详情（从缓存中查找）
-func (s *OperatorDiscoveryService) GetOperatorDetail(ctx context.Context, operatorName string) (*commonModels.OperatorMetadata, error) {
+func (s *OperatorDiscoveryService) GetOperatorDetail(ctx context.Context, operatorName string) (*commonModels.OperatorDescriptor, error) {
 	// 先获取所有算子（会使用缓存）
 	operators, err := s.DiscoverAllOperators(ctx)
 	if err != nil {
@@ -257,7 +257,7 @@ func (s *OperatorDiscoveryService) GetOperatorDetail(ctx context.Context, operat
 }
 
 // fetchOperatorsFromModule 从指定模块获取算子列表
-func (s *OperatorDiscoveryService) fetchOperatorsFromModule(ctx context.Context, module string, baseURL string) ([]commonModels.OperatorMetadata, error) {
+func (s *OperatorDiscoveryService) fetchOperatorsFromModule(ctx context.Context, module string, baseURL string) ([]commonModels.OperatorDescriptor, error) {
 	// 构建URL
 	url := fmt.Sprintf("%s/api/operators", baseURL)
 
@@ -279,7 +279,7 @@ func (s *OperatorDiscoveryService) fetchOperatorsFromModule(ctx context.Context,
 		// 如果是404或503，说明模块不支持算子API，返回空列表而不是错误
 		if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusServiceUnavailable {
 			log.Printf("ℹ️ [OperatorDiscovery] %s 模块不支持算子API", module)
-			return []commonModels.OperatorMetadata{}, nil
+			return []commonModels.OperatorDescriptor{}, nil
 		}
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}

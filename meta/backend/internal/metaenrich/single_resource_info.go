@@ -66,12 +66,7 @@ func EnrichSingleDocumentItem(
 	if err != nil {
 		return err
 	}
-	metadata := &plugin.ItemMetadata{
-		Path:     catalogPathFor(path),
-		Kind:     item.ItemType,
-		Document: info,
-	}
-	item.Document = plugin.ItemMetadataDocumentInfo(metadata)
+	item.Document = info.Clone()
 	metaitem.ApplyDocumentInfo(attrs, item)
 
 	if formatProvider, err := format.GetFormatInfoProvider(formatType); err == nil {
@@ -147,12 +142,7 @@ func EnrichSingleMediaItem(
 	if err != nil {
 		return err
 	}
-	metadata := &plugin.ItemMetadata{
-		Path:  catalogPathFor(path),
-		Kind:  item.ItemType,
-		Media: info.Media,
-	}
-	item.Media = plugin.ItemMetadataMediaInfo(metadata)
+	item.Media = info.Media.Clone()
 	metaitem.ApplyMediaInfo(attrs, item, info.Spatial)
 	return nil
 }

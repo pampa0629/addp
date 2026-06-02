@@ -194,7 +194,7 @@ func (s *MetadataService) StreamStorageContent(
 	if err != nil {
 		return nil, 0, "", "", fmt.Errorf("unsupported engine type: %s", resource.EngineType)
 	}
-	metadataProvider, _ := pl.(plugin.ItemMetadataProvider)
+	factsProvider, _ := pl.(plugin.CatalogFactsProvider)
 	contentReader, _ := pl.(plugin.ContentReadableProvider)
 	rangeReader, _ := pl.(plugin.RangeReadableProvider)
 	if contentReader == nil {
@@ -208,7 +208,7 @@ func (s *MetadataService) StreamStorageContent(
 		return nil, 0, "", "", err
 	}
 
-	meta, err := streamItemMetadata(ctx, metadataProvider, connInfo, itemPath, displayPath)
+	meta, err := streamCatalogFacts(ctx, factsProvider, connInfo, itemPath, displayPath)
 	if err != nil {
 		return nil, 0, "", "", fmt.Errorf("failed to stat storage content: %w", err)
 	}
@@ -448,8 +448,8 @@ func storageRefRequiresMetaRefs(storageRef string) bool {
 	if formatType == "" || formatType == format.FormatUnknown {
 		return false
 	}
-	capability, ok := format.GetFormatCapability(formatType)
-	return ok && format.HasLayout(capability.Layouts, format.LayoutMulti)
+	descriptor, ok := format.GetFormatDescriptor(formatType)
+	return ok && format.HasLayout(descriptor.Layouts, format.LayoutMulti)
 }
 
 func downloadItemDescriptor(item *commonModels.MetaItem) dataitem.ItemDescriptor {
@@ -647,13 +647,13 @@ func streamStorageRefPath(engineType string, engineID uint, storageRef string) (
 	return plugin.CatalogPath{}, "", fmt.Errorf("resource type %s does not support storage streaming", engineType)
 }
 
-func streamItemMetadata(ctx context.Context, metadataProvider plugin.ItemMetadataProvider, connInfo plugin.ConnectionInfo, itemPath plugin.CatalogPath, fallbackPath string) (*plugin.FileMetadata, error) {
-	if metadataProvider == nil {
-		return &plugin.FileMetadata{Name: path.Base(fallbackPath), Path: fallbackPath}, nil
+func streamCatalogFacts(ctx context.Context, factsProvider plugin.CatalogFactsProvider, connInfo plugin.ConnectionInfo, itemPath plugin.CatalogPath, fallbackPath string) (*plugin.StorageObjectFacts, error) {
+	if factsProvider == nil {
+		return &plugin.StorageObjectFacts{Name: path.Base(fallbackPath), Path: fallbackPath}, nil
 	}
-	item, err := metadataProvider.DescribeItem(ctx, connInfo, itemPath, plugin.MetadataOptions{})
+	item, err := factsProvider.DescribeCatalogFacts(ctx, connInfo, itemPath, plugin.CatalogFactsOptions{})
 	if err != nil {
 		return nil, err
 	}
-	return catalogutil.ItemMetadataToFileMetadata(item, fallbackPath), nil
+	return catalogutil.CatalogFactsToStorageObjectFacts(item, fallbackPath), nil
 }

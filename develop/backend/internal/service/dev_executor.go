@@ -7,10 +7,10 @@ import (
 	"log"
 	"time"
 
-	"github.com/addp/develop/backend/internal/models"
-	"github.com/addp/develop/backend/internal/repository"
 	commonModels "github.com/addp/common/models"
 	commonRepo "github.com/addp/common/repository"
+	"github.com/addp/develop/backend/internal/models"
+	"github.com/addp/develop/backend/internal/repository"
 	"github.com/google/uuid"
 )
 
@@ -154,14 +154,14 @@ func (e *DevExecutor) ExecuteContent(
 	}
 
 	execution := &commonModels.TaskExecution{
-		TenantID:      int(tenantID),
-		ExecutionID:   executionID,
-		Module:        commonModels.ModuleDevelop,
-		TaskType:      devType,
-		Status:        commonModels.ExecutionStatusPending,
-		Progress:      0,
-		TriggerType:   commonModels.TriggerTypeManual,
-		TriggeredBy:   &userIDInt,
+		TenantID:    int(tenantID),
+		ExecutionID: executionID,
+		Module:      commonModels.ModuleDevelop,
+		TaskType:    devType,
+		Status:      commonModels.ExecutionStatusPending,
+		Progress:    0,
+		TriggerType: commonModels.TriggerTypeManual,
+		TriggeredBy: &userIDInt,
 		ExecutionConfig: commonModels.JSONMap{
 			"engine_id": resourceIDInt,
 			"content":   content,
@@ -368,7 +368,7 @@ func (e *DevExecutor) executeWorkflow(ctx context.Context, devItem *models.DevTa
 		"logs":         resp.Logs,
 		"traceback":    resp.Traceback,
 		"summary": map[string]interface{}{
-			"has_result":      resp.FinalResult != "",
+			"has_result":        resp.FinalResult != "",
 			"result_size_bytes": len(resp.FinalResult),
 		},
 	}

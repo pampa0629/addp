@@ -36,11 +36,8 @@ type FormatDescriptor struct {
 	Identification FormatIdentification     `json:"identification,omitempty"`
 	Providers      FormatProviderDescriptor `json:"providers,omitempty"`
 	ContentReaders []string                 `json:"content_readers,omitempty"`
-	TransferRead   bool                     `json:"transfer_read,omitempty"`
-	TransferWrite  bool                     `json:"transfer_write,omitempty"`
 	Parse          bool                     `json:"parse,omitempty"`
 	Spatial        bool                     `json:"spatial,omitempty"`
-	EngineFamilies []string                 `json:"engine_families,omitempty"`
 }
 
 func ListFormatDescriptors() []FormatDescriptor {
@@ -67,10 +64,7 @@ func SupportsAccessIndex(formatType FormatType) bool {
 
 func RegisterFormatDescriptor(descriptor FormatDescriptor) error {
 	registryDescriptor := toRegistryDescriptor(descriptor)
-	if err := formatregistry.RegisterDescriptor(registryDescriptor); err != nil {
-		return err
-	}
-	return RegisterFormatCapability(FormatCapabilityFromDescriptor(fromRegistryDescriptor(registryDescriptor)))
+	return formatregistry.RegisterDescriptor(registryDescriptor)
 }
 
 func toRegistryDescriptor(descriptor FormatDescriptor) formatregistry.Descriptor {
@@ -86,11 +80,8 @@ func toRegistryDescriptor(descriptor FormatDescriptor) formatregistry.Descriptor
 		Identification: descriptor.Identification,
 		Providers:      descriptor.Providers,
 		ContentReaders: descriptor.ContentReaders,
-		TransferRead:   descriptor.TransferRead,
-		TransferWrite:  descriptor.TransferWrite,
 		Parse:          descriptor.Parse,
 		Spatial:        descriptor.Spatial,
-		EngineFamilies: descriptor.EngineFamilies,
 	}
 }
 
@@ -107,10 +98,7 @@ func fromRegistryDescriptor(descriptor formatregistry.Descriptor) FormatDescript
 		Identification: descriptor.Identification,
 		Providers:      descriptor.Providers,
 		ContentReaders: descriptor.ContentReaders,
-		TransferRead:   descriptor.TransferRead,
-		TransferWrite:  descriptor.TransferWrite,
 		Parse:          descriptor.Parse,
 		Spatial:        descriptor.Spatial,
-		EngineFamilies: descriptor.EngineFamilies,
 	}
 }

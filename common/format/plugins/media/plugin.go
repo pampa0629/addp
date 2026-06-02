@@ -6,20 +6,18 @@ import (
 )
 
 type Plugin struct {
-	formatType     format.FormatType
-	i18nKey        string
-	extensions     []string
-	mimeTypes      []string
-	engineFamilies []string
+	formatType format.FormatType
+	i18nKey    string
+	extensions []string
+	mimeTypes  []string
 }
 
 func NewPlugin(formatType format.FormatType, i18nKey string, extensions, mimeTypes []string) *Plugin {
 	return &Plugin{
-		formatType:     formatType,
-		i18nKey:        i18nKey,
-		extensions:     extensions,
-		mimeTypes:      mimeTypes,
-		engineFamilies: []string{format.EngineFamilyObject, format.EngineFamilyFile},
+		formatType: formatType,
+		i18nKey:    i18nKey,
+		extensions: extensions,
+		mimeTypes:  mimeTypes,
 	}
 }
 
@@ -43,16 +41,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 			string(format.ContentReaderRawContent),
 			string(format.ContentReaderRangeContent),
 		},
-		EngineFamilies: p.engineFamilies,
 	}
-}
-
-func (p *Plugin) Capabilities() format.FormatCapability {
-	capability, ok := format.GetFormatCapability(p.Format())
-	if ok {
-		return capability
-	}
-	return format.FormatCapabilityFromDescriptor(p.Descriptor())
 }
 
 func init() {

@@ -20,8 +20,8 @@ func NewTabularCapabilities(engineType, namespaceTerm string, opts TabularCapabi
 				PathVersion: CatalogPathVersion,
 				RootTerm:    "server",
 				Levels: []CatalogLevelSpec{
-					{Term: namespaceTerm, Kinds: []string{"namespace"}, Container: true, I18nKey: CatalogTermI18nKey(namespaceTerm)},
-					{Term: "table", Kinds: []string{"table", "view", "materialized_view", "external_table"}, Item: true, I18nKey: CatalogTermI18nKey("table")},
+					{Term: namespaceTerm, Kinds: []string{"namespace"}, Role: CatalogRoleBranch, I18nKey: CatalogTermI18nKey(namespaceTerm)},
+					{Term: "table", Kinds: []string{"table", "view", "materialized_view", "external_table"}, Role: CatalogRoleLeaf, I18nKey: CatalogTermI18nKey("table")},
 				},
 			},
 			Catalog: &CatalogCapability{
@@ -30,14 +30,14 @@ func NewTabularCapabilities(engineType, namespaceTerm string, opts TabularCapabi
 				SystemFiltering: true,
 				NodeKinds:       []string{"namespace", "table", "view", "materialized_view", "external_table"},
 			},
-			Metadata: &MetadataCapability{
-				Supported:       true,
-				FieldInfo:       true,
-				Statistics:      true,
-				Indexes:         true,
-				Constraints:     true,
-				SpatialMetadata: opts.SpatialMetadata,
-				NativeMetadata:  true,
+			Facts: &CatalogFactsCapability{
+				Supported:    true,
+				FieldInfo:    true,
+				Statistics:   true,
+				Indexes:      true,
+				Constraints:  true,
+				SpatialFacts: opts.SpatialFacts,
+				NativeFacts:  true,
 			},
 			Store: &StoreCapability{
 				BatchRead:        true,
@@ -81,7 +81,7 @@ type TabularCapabilityOptions struct {
 	TableWriteSession bool
 	TableWritePrepare bool
 	Delete            bool
-	SpatialMetadata   bool
+	SpatialFacts      bool
 	SupportsExplain   bool
 	SupportsCancel    bool
 	DefaultLanguage   string
@@ -99,9 +99,9 @@ func NewObjectCapabilities(engineType string) EngineCapabilities {
 				PathVersion: CatalogPathVersion,
 				RootTerm:    "service",
 				Levels: []CatalogLevelSpec{
-					{Term: "bucket", Kinds: []string{"bucket"}, Container: true, I18nKey: CatalogTermI18nKey("bucket")},
-					{Term: "prefix", Kinds: []string{"prefix"}, Container: true, Optional: true, I18nKey: CatalogTermI18nKey("prefix")},
-					{Term: "object", Kinds: []string{"object"}, Item: true, I18nKey: CatalogTermI18nKey("object")},
+					{Term: "bucket", Kinds: []string{"bucket"}, Role: CatalogRoleBranch, I18nKey: CatalogTermI18nKey("bucket")},
+					{Term: "prefix", Kinds: []string{"prefix"}, Role: CatalogRoleBranch, Optional: true, I18nKey: CatalogTermI18nKey("prefix")},
+					{Term: "object", Kinds: []string{"object"}, Role: CatalogRoleLeaf, I18nKey: CatalogTermI18nKey("object")},
 				},
 			},
 			Catalog: &CatalogCapability{
@@ -109,9 +109,9 @@ func NewObjectCapabilities(engineType string) EngineCapabilities {
 				RealTime:  true,
 				NodeKinds: []string{"bucket", "prefix", "object"},
 			},
-			Metadata: &MetadataCapability{
-				Supported:      true,
-				NativeMetadata: true,
+			Facts: &CatalogFactsCapability{
+				Supported:   true,
+				NativeFacts: true,
 			},
 			Store: &StoreCapability{
 				StreamRead:  true,
@@ -135,8 +135,8 @@ func NewFileCapabilities(engineType string) EngineCapabilities {
 				PathVersion: CatalogPathVersion,
 				RootTerm:    "root",
 				Levels: []CatalogLevelSpec{
-					{Term: "directory", Kinds: []string{"directory"}, Container: true, Optional: true, I18nKey: CatalogTermI18nKey("directory")},
-					{Term: "file", Kinds: []string{"file"}, Item: true, I18nKey: CatalogTermI18nKey("file")},
+					{Term: "directory", Kinds: []string{"directory"}, Role: CatalogRoleBranch, Optional: true, I18nKey: CatalogTermI18nKey("directory")},
+					{Term: "file", Kinds: []string{"file"}, Role: CatalogRoleLeaf, I18nKey: CatalogTermI18nKey("file")},
 				},
 			},
 			Catalog: &CatalogCapability{
@@ -144,9 +144,9 @@ func NewFileCapabilities(engineType string) EngineCapabilities {
 				RealTime:  true,
 				NodeKinds: []string{"root", "directory", "file"},
 			},
-			Metadata: &MetadataCapability{
-				Supported:      true,
-				NativeMetadata: true,
+			Facts: &CatalogFactsCapability{
+				Supported:   true,
+				NativeFacts: true,
 			},
 			Store: &StoreCapability{
 				StreamRead:  true,
@@ -171,13 +171,13 @@ func NewDynamicSchemaCapabilities(engineType string) EngineCapabilities {
 				RealTime:  true,
 				NodeKinds: []string{"database", "collection"},
 			},
-			Metadata: &MetadataCapability{
-				Supported:      true,
-				FieldInfo:      true,
-				Statistics:     true,
-				Indexes:        true,
-				Sampling:       true,
-				NativeMetadata: true,
+			Facts: &CatalogFactsCapability{
+				Supported:   true,
+				FieldInfo:   true,
+				Statistics:  true,
+				Indexes:     true,
+				Sampling:    true,
+				NativeFacts: true,
 			},
 			Store: &StoreCapability{
 				BatchRead: true,
@@ -207,9 +207,9 @@ func NewGraphCapabilities(engineType string) EngineCapabilities {
 				RealTime:  true,
 				NodeKinds: []string{"database", "graph"},
 			},
-			Metadata: &MetadataCapability{
-				Supported:      true,
-				NativeMetadata: true,
+			Facts: &CatalogFactsCapability{
+				Supported:   true,
+				NativeFacts: true,
 			},
 			Semantics: []string{"database", "graph"},
 		},

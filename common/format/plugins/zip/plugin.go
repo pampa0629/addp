@@ -50,25 +50,6 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 			string(format.ContentReaderRawContent),
 			string(format.ContentReaderContainerEntry),
 		},
-		EngineFamilies: []string{format.EngineFamilyObject, format.EngineFamilyFile},
-	}
-}
-
-func (p *Plugin) Capabilities() format.FormatCapability {
-	capability, ok := format.GetFormatCapability(p.Format())
-	if ok {
-		return capability
-	}
-	return format.FormatCapability{
-		Format:        p.Format(),
-		DataType:      datatype.DataTypeContainer,
-		Layouts:       []string{format.LayoutSingle},
-		ProviderHints: []string{format.FormatProviderContainer},
-		ContentReaders: []string{
-			string(format.ContentReaderRawContent),
-			string(format.ContentReaderContainerEntry),
-		},
-		Parse: true,
 	}
 }
 

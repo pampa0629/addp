@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/models"
 	commonutils "github.com/addp/common/utils"
 )
@@ -475,12 +477,11 @@ func (c *SystemClient) GetTaskProvider(moduleName string) (*models.TaskProvider,
 type EngineCatalogListChildrenRequest struct {
 	Path    EngineCatalogPath        `json:"path"`
 	Options EngineCatalogListOptions `json:"options,omitempty"`
-	Filter  map[string]interface{}   `json:"filter,omitempty"`
 }
 
 // EngineCatalogListChildrenResponse 表示实时 catalog 子节点浏览响应。
 type EngineCatalogListChildrenResponse struct {
-	Nodes []EngineCatalogNode `json:"nodes"`
+	Nodes []EngineCatalogEntry `json:"nodes"`
 }
 
 // EngineCatalogPath 表示跨引擎结构化 catalog 路径。
@@ -497,17 +498,17 @@ type EngineCatalogSegment struct {
 	Name string `json:"name"`
 }
 
-// EngineCatalogNode 表示实时 catalog 浏览返回的中性节点。
-type EngineCatalogNode struct {
-	Name        string                 `json:"name"`
-	Path        EngineCatalogPath      `json:"path"`
-	Term        string                 `json:"term"`
-	Kind        string                 `json:"kind"`
-	IsContainer bool                   `json:"is_container"`
-	IsItem      bool                   `json:"is_item"`
-	Stats       map[string]interface{} `json:"stats,omitempty"`
-	Attributes  map[string]interface{} `json:"attributes,omitempty"`
-	Actions     []string               `json:"actions,omitempty"`
+// EngineCatalogEntry 表示实时 catalog 浏览返回的中性条目。
+type EngineCatalogEntry struct {
+	Name      string                      `json:"name"`
+	Path      EngineCatalogPath           `json:"path"`
+	Term      string                      `json:"term"`
+	Kind      string                      `json:"kind"`
+	Role      string                      `json:"role"`
+	Table     *datatype.TableInfo         `json:"table,omitempty"`
+	Storage   *plugin.CatalogStorageFacts `json:"storage,omitempty"`
+	LeafCount *int                        `json:"leaf_count,omitempty"`
+	UpdatedAt *time.Time                  `json:"updated_at,omitempty"`
 }
 
 // EngineCatalogListOptions 表示实时 catalog 列表选项。
@@ -518,13 +519,13 @@ type EngineCatalogListOptions struct {
 }
 
 // ListCatalogChildren 列出指定引擎的实时 catalog 子节点。
-func (c *SystemClient) ListCatalogChildren(engineID uint, req EngineCatalogListChildrenRequest) ([]EngineCatalogNode, error) {
+func (c *SystemClient) ListCatalogChildren(engineID uint, req EngineCatalogListChildrenRequest) ([]EngineCatalogEntry, error) {
 	return c.ListCatalogChildrenWithToken(engineID, req, "")
 }
 
 // ListCatalogChildrenWithToken 使用指定用户 JWT 列出实时 catalog 子节点。
 // token 为空时使用客户端自身认证配置。
-func (c *SystemClient) ListCatalogChildrenWithToken(engineID uint, req EngineCatalogListChildrenRequest, token string) ([]EngineCatalogNode, error) {
+func (c *SystemClient) ListCatalogChildrenWithToken(engineID uint, req EngineCatalogListChildrenRequest, token string) ([]EngineCatalogEntry, error) {
 	endpoint := fmt.Sprintf("%s/api/v1/system/engines/%d/catalog/children", c.baseURL, engineID)
 	body, err := json.Marshal(req)
 	if err != nil {

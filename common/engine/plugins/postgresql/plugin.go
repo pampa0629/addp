@@ -60,7 +60,7 @@ func (p *PostgreSQLPlugin) Capabilities() plugin.EngineCapabilities {
 		TableWriteSession: true,
 		TableWritePrepare: true,
 		Delete:            true,
-		SpatialMetadata:   true,
+		SpatialFacts:      true,
 		SupportsExplain:   true,
 		SupportsCancel:    true,
 		WriterConnector:   "postgres_copy",
@@ -86,16 +86,16 @@ func (p *PostgreSQLPlugin) tabularCatalogCallbacks() plugin.TabularCatalogCallba
 	}
 }
 
-func (p *PostgreSQLPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
+func (p *PostgreSQLPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogEntry, error) {
 	return plugin.ListTabularCatalogChildren(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: parent.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, parent, opts)
 }
 
-func (p *PostgreSQLPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
+func (p *PostgreSQLPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogEntry, error) {
 	return plugin.ResolveTabularCatalogPath(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path)
 }
 
-func (p *PostgreSQLPlugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
-	return plugin.DescribeTabularItem(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path, opts)
+func (p *PostgreSQLPlugin) DescribeCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+	return plugin.DescribeTabularCatalogFacts(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path, opts)
 }
 
 func (p *PostgreSQLPlugin) QueryLanguages() []string {
@@ -158,11 +158,11 @@ func (p *PostgreSQLPlugin) GetDialect() string {
 	return "postgres"
 }
 
-// === MetadataPlugin 接口实现 ===
+// === CatalogProvider / CatalogFactsProvider 回调实现 ===
 
 // listNamespaces 列出所有 Schema。
-func (p *PostgreSQLPlugin) listNamespaces(ctx context.Context, db *gorm.DB) ([]plugin.NamespaceInfo, error) {
-	var namespaces []plugin.NamespaceInfo
+func (p *PostgreSQLPlugin) listNamespaces(ctx context.Context, db *gorm.DB, root plugin.CatalogPath) ([]plugin.CatalogEntry, error) {
+	var rows []postgresNamespaceRow
 
 	query := `
 		SELECT
@@ -170,18 +170,27 @@ func (p *PostgreSQLPlugin) listNamespaces(ctx context.Context, db *gorm.DB) ([]p
 			(SELECT COUNT(*)
 			 FROM information_schema.tables
 			 WHERE table_schema = s.schema_name
-			   AND table_type = 'BASE TABLE') as table_count
+			   AND table_type = 'BASE TABLE') as leaf_count
 		FROM information_schema.schemata s
 		WHERE schema_name NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
 		ORDER BY schema_name
 	`
 
-	err := db.WithContext(ctx).Raw(query).Scan(&namespaces).Error
+	err := db.WithContext(ctx).Raw(query).Scan(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to list namespaces: %w", err)
 	}
 
+	namespaces := make([]plugin.CatalogEntry, 0, len(rows))
+	for _, row := range rows {
+		namespaces = append(namespaces, plugin.TabularNamespaceCatalogEntry(root, "schema", row.Name, row.LeafCount))
+	}
 	return namespaces, nil
+}
+
+type postgresNamespaceRow struct {
+	Name      string
+	LeafCount int
 }
 
 // ListTables 列出指定Schema下的所有表

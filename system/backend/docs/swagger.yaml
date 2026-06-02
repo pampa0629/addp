@@ -1,5 +1,108 @@
 basePath: /api/v1/system
 definitions:
+  datatype.FieldInfo:
+    properties:
+      comment:
+        type: string
+      default_expression:
+        type: string
+      generated:
+        type: boolean
+      generation_expression:
+        type: string
+      name:
+        type: string
+      native_type:
+        type: string
+      nullable:
+        type: boolean
+      ordinal_position:
+        type: integer
+      precision:
+        type: integer
+      primary_key:
+        type: boolean
+      scale:
+        type: integer
+      size:
+        type: integer
+      type:
+        $ref: '#/definitions/datatype.FieldType'
+    type: object
+  datatype.FieldType:
+    enum:
+    - unknown
+    - string
+    - bool
+    - bytes
+    - mixed
+    - int
+    - bigint
+    - float
+    - double
+    - decimal
+    - date
+    - time
+    - timestamp
+    - json
+    - array
+    - uuid
+    - geometry
+    - point
+    - linestring
+    - polygon
+    - multipoint
+    type: string
+    x-enum-varnames:
+    - FieldTypeUnknown
+    - FieldTypeString
+    - FieldTypeBool
+    - FieldTypeBytes
+    - FieldTypeMixed
+    - FieldTypeInt
+    - FieldTypeBigInt
+    - FieldTypeFloat
+    - FieldTypeDouble
+    - FieldTypeDecimal
+    - FieldTypeDate
+    - FieldTypeTime
+    - FieldTypeTimestamp
+    - FieldTypeJSON
+    - FieldTypeArray
+    - FieldTypeUUID
+    - FieldTypeGeometry
+    - FieldTypePoint
+    - FieldTypeLineString
+    - FieldTypePolygon
+    - FieldTypeMultiPoint
+  datatype.TableInfo:
+    properties:
+      comment:
+        type: string
+      created_at:
+        type: string
+      fields:
+        items:
+          $ref: '#/definitions/datatype.FieldInfo'
+        type: array
+      kind:
+        type: string
+      name:
+        type: string
+      native:
+        additionalProperties: true
+        type: object
+      primary_key:
+        items:
+          type: string
+        type: array
+      row_count:
+        type: integer
+      size_bytes:
+        type: integer
+      updated_at:
+        type: string
+    type: object
   github_com_addp_common_models.ConnectionInfo:
     additionalProperties: true
     type: object
@@ -284,11 +387,33 @@ definitions:
       value:
         type: string
     type: object
+  github_com_addp_system_internal_models.CatalogEntry:
+    properties:
+      kind:
+        example: namespace
+        type: string
+      leaf_count:
+        type: integer
+      name:
+        example: public
+        type: string
+      path:
+        $ref: '#/definitions/github_com_addp_system_internal_models.CatalogPath'
+      role:
+        example: branch
+        type: string
+      storage:
+        $ref: '#/definitions/plugin.CatalogStorageFacts'
+      table:
+        $ref: '#/definitions/datatype.TableInfo'
+      term:
+        example: schema
+        type: string
+      updated_at:
+        type: string
+    type: object
   github_com_addp_system_internal_models.CatalogListChildrenRequest:
     properties:
-      filter:
-        additionalProperties: true
-        type: object
       options:
         $ref: '#/definitions/github_com_addp_system_internal_models.CatalogListOptions'
       path:
@@ -298,7 +423,7 @@ definitions:
     properties:
       nodes:
         items:
-          $ref: '#/definitions/github_com_addp_system_internal_models.CatalogNode'
+          $ref: '#/definitions/github_com_addp_system_internal_models.CatalogEntry'
         type: array
     type: object
   github_com_addp_system_internal_models.CatalogListOptions:
@@ -312,36 +437,6 @@ definitions:
       recursive:
         example: false
         type: boolean
-    type: object
-  github_com_addp_system_internal_models.CatalogNode:
-    properties:
-      actions:
-        items:
-          type: string
-        type: array
-      attributes:
-        additionalProperties: true
-        type: object
-      is_container:
-        example: true
-        type: boolean
-      is_item:
-        example: false
-        type: boolean
-      kind:
-        example: namespace
-        type: string
-      name:
-        example: public
-        type: string
-      path:
-        $ref: '#/definitions/github_com_addp_system_internal_models.CatalogPath'
-      stats:
-        additionalProperties: true
-        type: object
-      term:
-        example: schema
-        type: string
     type: object
   github_com_addp_system_internal_models.CatalogPath:
     properties:
@@ -888,6 +983,21 @@ definitions:
           type: string
         type: array
     type: object
+  plugin.CatalogStorageFacts:
+    properties:
+      content_type:
+        type: string
+      etag:
+        type: string
+      extension:
+        type: string
+      name:
+        type: string
+      path:
+        type: string
+      size_bytes:
+        type: integer
+    type: object
 host: localhost:8180
 info:
   contact: {}
@@ -1419,8 +1529,10 @@ paths:
     post:
       consumes:
       - application/json
-      description: 基于 System 管理的引擎连接信息实时浏览真实引擎 catalog，适用于扫描前选择 schema、bucket、prefix、collection、label
-        等范围。| Browse live engine catalog using System-managed connection information.
+      description: 基于 System 管理的引擎连接信息实时浏览真实引擎 catalog。请求空 path 返回显性结构 root；请求 root
+        path 返回 schema、bucket、database、directory 等第一层业务节点。| Browse live engine catalog
+        using System-managed connection information. Empty path returns the explicit
+        structural root; root path returns first business branches.
       parameters:
       - description: 引擎ID | Engine ID
         in: path

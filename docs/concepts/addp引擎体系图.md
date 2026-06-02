@@ -86,8 +86,8 @@ classDiagram
         +ResolvePath()
     }
 
-    class ItemMetadataProvider {
-        +DescribeItem()
+    class CatalogFactsProvider {
+        +DescribeCatalogFacts()
     }
 
     class StoreProvider {
@@ -135,7 +135,7 @@ classDiagram
 
     EnginePlugin <|-- CatalogModelProvider
     EnginePlugin <|-- CatalogProvider
-    EnginePlugin <|-- ItemMetadataProvider
+    EnginePlugin <|-- CatalogFactsProvider
     EnginePlugin <|-- DSNProvider
     EnginePlugin <|-- StoreProvider
     StoreProvider <|-- ContentReadableProvider
@@ -156,7 +156,7 @@ classDiagram
 | 模块 | 消费方式 |
 | --- | --- |
 | System | 调用 `EnginePlugin` 做连接测试、连接信息校验和 capabilities 刷新；连接信息统一保存为 `connection_info` map。 |
-| Meta | 调用 `CatalogProvider` 和 `ItemMetadataProvider` 扫描真实目录与叶子元数据；先按 `CatalogModelSpec` 理解目录层级，再结合 provider 组合选择扫描策略。 |
+| Meta | 调用 `CatalogProvider` 和 `CatalogFactsProvider` 扫描真实目录与 catalog leaf facts；先按 `CatalogModelSpec` 理解目录层级，再结合 provider 组合选择扫描策略。 |
 | Manager | 使用 Meta 树展示探查目录；预览结构化数据优先使用 preview / batch read，预览对象或文件优先使用 preview / content read。 |
 | Develop | 根据 `capabilities.compute` 选择查询、工作流或 Notebook 引擎。 |
 | Service | 使用 query runtime 和 Meta item/spatial 元数据发布数据服务。 |
@@ -181,10 +181,10 @@ classDiagram
 ## 六、调用原则
 
 - 上层模块优先按 capabilities 判断可用性，不按 `engine_type` 硬编码功能入口。
-- `engine_family` 只保留粗分类意义；涉及 catalog 层级、item 术语和 Meta 扫描编排时，统一以 `CatalogModelSpec` 与 provider 组合为准。
+- `engine_family` 只保留粗分类意义；涉及 catalog 层级、leaf 术语和 Meta 扫描编排时，统一以 `CatalogModelSpec` 与 provider 组合为准。
 - Meta 的扫描目标字段使用 `catalog_paths` 表达文件系统、对象存储等 catalog model 下的路径。
 - 目录发现统一走 `CatalogProvider.ListChildren`。
-- 叶子元数据统一走 `ItemMetadataProvider.DescribeItem`。
+- Catalog leaf facts 统一走 `CatalogFactsProvider.DescribeCatalogFacts`。
 - 查询统一走对应 runtime provider。
 - 旧 `ListSchemas/ListTables/ListColumns/ListBuckets/ListCollections` 只能作为插件内部 helper，不作为上层契约。
 - 引擎能力只表达引擎自身 native 能力与 common/engine provider 能力；Transfer、Manager 预览等模块适配状态不进入 `engine.capabilities/v1`。

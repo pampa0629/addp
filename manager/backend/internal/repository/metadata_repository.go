@@ -79,7 +79,7 @@ func (r *MetadataRepository) GetObjectMetadataItem(engineID uint, bucketName, ob
 	catalogPath := catalogPathFromParts(bucketName, objectPath)
 	item, err := metaClient.GetItemByCatalogPath(engineID, catalogPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get item metadata from Meta API: %w", err)
+		return nil, fmt.Errorf("failed to get metadata snapshot from Meta API: %w", err)
 	}
 	if item == nil {
 		return nil, gorm.ErrRecordNotFound

@@ -190,11 +190,16 @@ func (s *TaskService) UpdateTask(ctx context.Context, id, tenantID uint, req *mo
 }
 
 func validateNewTaskConfig(config map[string]interface{}, batchSize int) error {
-	_, err := planner.ParseTableExportTaskSpec(config, batchSize)
-	if err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidTaskConfig, err)
+	if _, err := planner.ParseRawCopyTaskSpec(config); err == nil {
+		return nil
+	} else {
+		rawErr := err
+		if _, tableErr := planner.ParseTableExportTaskSpec(config, batchSize); tableErr == nil {
+			return nil
+		} else {
+			return fmt.Errorf("%w: table=%v; raw_copy=%v", ErrInvalidTaskConfig, tableErr, rawErr)
+		}
 	}
-	return nil
 }
 
 // DeleteTask 删除任务

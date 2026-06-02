@@ -470,94 +470,35 @@ func (s *CleanupService) writeResult(ctx context.Context, taskID string, result 
 	}
 }
 
-// SubscribeEngineDeletedEvent 订阅Engine删除事件
-func (s *CleanupService) SubscribeEngineDeletedEvent(ctx context.Context) error {
-	if s.redis == nil {
-		s.log.Warn("Redis 未配置，跳过Engine删除事件订阅")
-		return nil
-	}
-
-	go s.consumeEngineDeletedEvents(ctx)
-	s.log.Info("Engine删除事件订阅已启动")
-	return nil
-}
-
-// consumeEngineDeletedEvents 消费Engine删除事件
-func (s *CleanupService) consumeEngineDeletedEvents(ctx context.Context) {
-	groupName := "meta-engine-cleanup-consumer"
-	consumerName := "meta-worker"
-
-	// 创建 Consumer Group（如果不存在）
-	s.redis.XGroupCreateMkStream(ctx, events.EventEngineDeleted, groupName, "$")
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-s.stopCh:
-			return
-		default:
-			streams, err := s.redis.XReadGroup(ctx, &redis.XReadGroupArgs{
-				Group:    groupName,
-				Consumer: consumerName,
-				Streams:  []string{events.EventEngineDeleted, ">"},
-				Count:    1,
-				Block:    5 * time.Second,
-			}).Result()
-
-			if err != nil {
-				if err != redis.Nil {
-					s.log.Error("读取Engine删除事件失败", "error", err)
-				}
-				continue
-			}
-
-			for _, stream := range streams {
-				for _, message := range stream.Messages {
-					s.handleEngineDeleted(ctx, message)
-					s.redis.XAck(ctx, events.EventEngineDeleted, groupName, message.ID)
-				}
-			}
-		}
-	}
-}
-
-// handleEngineDeleted 处理Engine删除事件
-func (s *CleanupService) handleEngineDeleted(ctx context.Context, message redis.XMessage) {
-	event, err := metacleanup.ParseEngineDeleted(message.Values)
-	if err != nil {
-		s.log.Error("解析Engine删除事件失败", "error", err)
-		return
-	}
-
-	s.log.Info("收到Engine删除事件", "engine_id", event.EngineID, "tenant_id", event.TenantID)
+func (s *CleanupService) CleanupEngineDeleted(ctx context.Context, engineID uint, tenantID uint) {
+	s.log.Info("收到Engine删除清理请求", "engine_id", engineID, "tenant_id", tenantID)
 
 	// 1. 软删除关联的MetaNode
-	nodeResult := s.db.Where("engine_id = ?", event.EngineID).Delete(&models.MetaNode{})
+	nodeResult := s.db.Where("engine_id = ?", engineID).Delete(&models.MetaNode{})
 	if nodeResult.Error != nil {
-		s.log.Error("软删除MetaNode失败", "error", nodeResult.Error, "engine_id", event.EngineID)
+		s.log.Error("软删除MetaNode失败", "error", nodeResult.Error, "engine_id", engineID)
 	} else {
-		s.log.Info("软删除MetaNode完成", "engine_id", event.EngineID, "count", nodeResult.RowsAffected)
+		s.log.Info("软删除MetaNode完成", "engine_id", engineID, "count", nodeResult.RowsAffected)
 	}
 
 	// 2. 软删除关联的MetaItem
-	itemResult := s.db.Where("engine_id = ?", event.EngineID).Delete(&models.MetaItem{})
+	itemResult := s.db.Where("engine_id = ?", engineID).Delete(&models.MetaItem{})
 	if itemResult.Error != nil {
-		s.log.Error("软删除MetaItem失败", "error", itemResult.Error, "engine_id", event.EngineID)
+		s.log.Error("软删除MetaItem失败", "error", itemResult.Error, "engine_id", engineID)
 	} else {
-		s.log.Info("软删除MetaItem完成", "engine_id", event.EngineID, "count", itemResult.RowsAffected)
+		s.log.Info("软删除MetaItem完成", "engine_id", engineID, "count", itemResult.RowsAffected)
 	}
 
 	// 3. 删除 Meilisearch 索引（新增）
 	if s.searchCleaner != nil && s.searchCleaner.Enabled() {
-		if err := s.searchCleaner.DeleteByEngine(ctx, event.TenantID, event.EngineID); err != nil {
-			s.log.Error("删除 Meilisearch 索引失败", "engine_id", event.EngineID, "error", err)
+		if err := s.searchCleaner.DeleteByEngine(ctx, tenantID, engineID); err != nil {
+			s.log.Error("删除 Meilisearch 索引失败", "engine_id", engineID, "error", err)
 		}
 	}
 
 	// 4. 删除 MinIO MVT 瓦片（新增）
 	if s.minioCleaner != nil && s.minioCleaner.Enabled() {
-		s.deleteMinIOMVTByEngine(ctx, event.TenantID, event.EngineID)
+		s.deleteMinIOMVTByEngine(ctx, tenantID, engineID)
 	}
 }
 

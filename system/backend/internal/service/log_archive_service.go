@@ -64,9 +64,9 @@ func (s *LogArchiveService) ArchiveOldLogsToCSV(retentionDays int) error {
 			writer.Write([]string{
 				fmt.Sprintf("%d", logItem.ID),
 				logItem.CreatedAt.Format("2006-01-02 15:04:05"),
-				formatPtr(logItem.UserID),      // NULL处理
+				formatPtr(logItem.UserID), // NULL处理
 				logItem.Username,
-				formatPtr(logItem.TenantID),    // NULL处理
+				formatPtr(logItem.TenantID), // NULL处理
 				logItem.HTTPMethod,
 				logItem.ResourcePath,
 				fmt.Sprintf("%d", logItem.HTTPStatus),

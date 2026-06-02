@@ -123,7 +123,7 @@ func IsObjectTableItem(item commonModels.MetaItem) bool {
 	return ok
 }
 
-// ObjectTableDescriptorFromMetaItem returns the table descriptor for file/object catalog items DuckDB can read directly.
+// ObjectTableDescriptorFromMetaItem returns the table descriptor for file/object catalog leaves DuckDB can read directly.
 func ObjectTableDescriptorFromMetaItem(item commonModels.MetaItem) (dataitem.ItemDescriptor, bool) {
 	switch item.ItemType {
 	case "object", "file":

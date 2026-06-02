@@ -1,6 +1,74 @@
 package plugin
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
+
+// CatalogRootEntry returns the structural root of an engine catalog.
+// The root is part of CatalogPath but never part of the business path string.
+func CatalogRootEntry(model CatalogModelSpec, engineID uint, engineName string) CatalogEntry {
+	return CatalogEntry{
+		Name: engineName,
+		Path: CatalogRootPath(model, engineID),
+		Term: model.RootTerm,
+		Kind: model.RootTerm,
+		Role: CatalogRoleBranch,
+	}
+}
+
+// CatalogRootPath returns the explicit structural root path of an engine catalog.
+func CatalogRootPath(model CatalogModelSpec, engineID uint) CatalogPath {
+	return CatalogPath{
+		Version:  CatalogPathVersion,
+		EngineID: engineID,
+		Segments: []CatalogSegment{{
+			Term: model.RootTerm,
+			Kind: model.RootTerm,
+		}},
+	}
+}
+
+// IsCatalogRootSegment reports whether a segment is a structural catalog root.
+func IsCatalogRootSegment(segment CatalogSegment) bool {
+	switch segment.Term {
+	case CatalogTermServer, CatalogTermService, CatalogTermRoot:
+		return segment.Kind == "" || segment.Kind == segment.Term
+	default:
+		return false
+	}
+}
+
+// IsCatalogRootPath reports whether path points at one explicit structural root.
+func IsCatalogRootPath(path CatalogPath) bool {
+	return len(path.Segments) == 1 && IsCatalogRootSegment(path.Segments[0])
+}
+
+// CatalogPathWithoutRoot returns the business path without the structural root.
+func CatalogPathWithoutRoot(path CatalogPath) CatalogPath {
+	if len(path.Segments) == 0 || !IsCatalogRootSegment(path.Segments[0]) {
+		return path
+	}
+	path.Segments = append([]CatalogSegment(nil), path.Segments[1:]...)
+	return path
+}
+
+func requireCatalogRootPath(path CatalogPath, model CatalogModelSpec) error {
+	if !IsCatalogRootPath(path) || path.Segments[0].Term != model.RootTerm {
+		return fmt.Errorf("catalog root path requires explicit %s root segment", model.RootTerm)
+	}
+	return nil
+}
+
+func requireCatalogBusinessPath(path CatalogPath, model CatalogModelSpec) ([]CatalogSegment, error) {
+	if len(path.Segments) == 0 || !IsCatalogRootSegment(path.Segments[0]) || path.Segments[0].Term != model.RootTerm {
+		return nil, fmt.Errorf("catalog path requires explicit %s root segment", model.RootTerm)
+	}
+	if len(path.Segments) == 1 {
+		return nil, fmt.Errorf("catalog business path requires segments below %s root", model.RootTerm)
+	}
+	return path.Segments[1:], nil
+}
 
 // NormalizeFileCatalogPath maps filesystem catalog paths to ADDP semantic paths.
 // The storage root is represented by an empty path; "." and "/" are only
@@ -74,10 +142,7 @@ func appendCatalogSegment(parent CatalogPath, engineID uint, term, kind, name st
 
 // FileRootPath returns the catalog root for a filesystem-like engine.
 func FileRootPath(engineID uint) CatalogPath {
-	return appendCatalogSegment(CatalogPath{
-		Version:  CatalogPathVersion,
-		EngineID: engineID,
-	}, engineID, CatalogTermRoot, CatalogKindRoot, "/")
+	return CatalogRootPath(FileCatalogModel(), engineID)
 }
 
 // FileDirectoryPath maps an engine-relative filesystem path to root -> directory segments.
@@ -142,10 +207,7 @@ func ObjectItemPathForBucket(engineID uint, bucket string) func(path string) Cat
 }
 
 func buildObjectPath(engineID uint, bucket, objectPath string, isContainer bool) CatalogPath {
-	path := CatalogPath{
-		Version:  CatalogPathVersion,
-		EngineID: engineID,
-	}
+	path := CatalogRootPath(ObjectCatalogModel(), engineID)
 	bucket = strings.Trim(bucket, "/")
 	if bucket == "" {
 		return path
@@ -169,4 +231,19 @@ func buildObjectPath(engineID uint, bucket, objectPath string, isContainer bool)
 		path = appendCatalogSegment(path, engineID, term, kind, part)
 	}
 	return path
+}
+
+// ObjectRootPath returns the structural service root for object storage.
+func ObjectRootPath(engineID uint) CatalogPath {
+	return CatalogRootPath(ObjectCatalogModel(), engineID)
+}
+
+// TabularNamespacePath returns server -> namespace for a tabular engine.
+func TabularNamespacePath(engineID uint, namespaceTerm, namespace string) CatalogPath {
+	return appendCatalogSegment(CatalogRootPath(TabularCatalogModel(namespaceTerm), engineID), engineID, namespaceTerm, CatalogKindNamespace, namespace)
+}
+
+// NamespaceCatalogPath returns root -> namespace for namespace/item engines.
+func NamespaceCatalogPath(model CatalogModelSpec, engineID uint, namespaceTerm, namespace string) CatalogPath {
+	return appendCatalogSegment(CatalogRootPath(model, engineID), engineID, namespaceTerm, CatalogKindNamespace, namespace)
 }

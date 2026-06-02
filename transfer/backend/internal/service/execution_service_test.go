@@ -273,6 +273,68 @@ func TestTableProgressCallbackStoresResumeAndCommitMarkers(t *testing.T) {
 	}
 }
 
+func TestRawCopyProgressCallbackStoresByteMetricsAndContentCheckpoint(t *testing.T) {
+	ctx := context.Background()
+	db := newExecutionServiceTestDB(t)
+	task := createExecutionServiceTestTask(t, db)
+	execution := createExecutionServiceTestExecution(t, db, task, commonModels.ExecutionStatusRunning)
+	executionService := NewExecutionService(db, commonRepo.NewTaskExecutionRepository(db))
+	engineService := &ExecutionEngineService{
+		taskRepo:         repositoryForExecutionServiceTest(db),
+		executionService: executionService,
+	}
+
+	callback := engineService.rawCopyProgressCallback(&task, uint(execution.ID))
+	err := callback(ctx, executor.RawCopyProgressEvent{
+		RecordsRead:    1,
+		RecordsWritten: 1,
+		BytesRead:      9,
+		BytesWritten:   9,
+		Final:          true,
+	})
+	if err != nil {
+		t.Fatalf("raw copy progress callback failed: %v", err)
+	}
+
+	var stored commonModels.TaskExecution
+	if err := db.First(&stored, execution.ID).Error; err != nil {
+		t.Fatalf("load execution: %v", err)
+	}
+	if stored.RecordsRead == nil || *stored.RecordsRead != 1 {
+		t.Fatalf("records_read = %#v, want 1", stored.RecordsRead)
+	}
+	if stored.RecordsWritten == nil || *stored.RecordsWritten != 1 {
+		t.Fatalf("records_written = %#v, want 1", stored.RecordsWritten)
+	}
+	if stored.BytesRead == nil || *stored.BytesRead != 9 {
+		t.Fatalf("bytes_read = %#v, want 9", stored.BytesRead)
+	}
+	if stored.BytesWritten == nil || *stored.BytesWritten != 9 {
+		t.Fatalf("bytes_written = %#v, want 9", stored.BytesWritten)
+	}
+	if got := stored.Metadata["checkpoint_offset"]; got != float64(1) {
+		t.Fatalf("checkpoint_offset = %#v, want 1", got)
+	}
+	state, ok := stored.Metadata["checkpoint_state"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("checkpoint_state = %#v, want map", stored.Metadata["checkpoint_state"])
+	}
+	if state["final"] != true || state["target_committed"] != true {
+		t.Fatalf("checkpoint state = %#v, want final target_committed", state)
+	}
+	if state["bytes_read"] != float64(9) || state["bytes_written"] != float64(9) {
+		t.Fatalf("checkpoint bytes = %#v, want 9/9", state)
+	}
+
+	var storedTask models.TransferTask
+	if err := db.First(&storedTask, task.ID).Error; err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if storedTask.Progress != 100 {
+		t.Fatalf("task progress = %v, want 100", storedTask.Progress)
+	}
+}
+
 func repositoryForExecutionServiceTest(db *gorm.DB) *repository.TaskRepository {
 	return repository.NewTaskRepository(db)
 }

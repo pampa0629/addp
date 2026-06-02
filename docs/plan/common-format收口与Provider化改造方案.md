@@ -27,7 +27,7 @@
 - 独立 capability 子包
 - 旧 parser 接口
 
-这会导致“这个格式长什么样”和“这个格式能提供什么能力”混在一起。当前旧 parser 接口和独立 capability 子包已经删除，后续继续以 `common/format` 根包 capability registry 和 provider registry 为事实源。
+这会导致“这个格式长什么样”和“当前进程实际加载了什么实现”混在一起。当前旧 parser 接口和独立 capability 子包已经删除，后续继续以 `FormatDescriptor` 和 provider registry 为事实源。
 
 ### 2. parser 接口曾经直接绑定 engine
 
@@ -43,7 +43,7 @@
 
 从上层模型看，`geo` 更适合落成 `json + spatial`，而不是单独再维持一套独立顶层格式口径。
 
-### 4. 旧 registry 曾经是 parser registry，不是 capability registry
+### 4. 旧 registry 曾经是 parser registry，不是 descriptor / provider registry
 
 已删除的旧 registry 曾经按 parser 类型注册：
 
@@ -51,17 +51,17 @@
 - db table parser
 - doc collection parser
 
-这和 `FormatCapability` / `FormatProvider` 方向不一致，因此已经删除。
+这和 `FormatDescriptor` / provider registry 方向不一致，因此已经删除。
 
 ## 目标形态
 
 `common/format` 后续应分成三层：
 
-1. **FormatCapability**
-   - 说明格式能提供什么
-   - 例如识别、布局、解析、写出、批量读写、空间能力
+1. **FormatDescriptor**
+   - 说明格式身份和静态事实
+   - 例如识别、默认 data type、layout、provider hints、content reader 声明
 
-2. **Format Provider / Adapter**
+2. **Format Provider / Reader / Writer**
    - 说明具体格式如何完成解析或写出
    - 尽量不再直接感知上层业务模型
 
@@ -80,7 +80,7 @@
 - `common/format.FormatGeoJSON` 不再存在。
 - `.geojson` 扩展名和 `application/geo+json` MIME 统一识别为 `FormatJSON`。
 - 旧 `common/format/geojson` 包已删除，JSON 表格 provider 统一放到 `common/format/plugins/json`。
-- `common/format` 根包 capability registry 中只保留 `json` 格式能力，并通过 `ProviderSpatial` 表达 JSON 的空间扩展可能性。
+- `common/format` descriptor 中只保留 `json` 格式事实，并通过 `ProviderSpatial` 表达 JSON 的空间扩展可能性。
 - Meta 对 `.geojson` 资源的落库语义调整为 `item.format=json`、`item.data_type=table`、`capabilities.spatial`。
 - 普通 `.json` 仍默认为 `item.data_type=document`。
 
@@ -143,13 +143,13 @@ Manager provider 选择也已经改为看标准 attributes：
 
 新扫描结果不再产出 `item_type=lake_table`。Parquet / ORC / Avro 这类表格文件或目录型表格 scope 只是 `item_type=table + item.format=parquet/orc/avro + item.layout=single/whole` 的组合语义。
 
-### 第一阶段：能力声明收口
+### 第一阶段：descriptor 与 provider 边界收口
 
-先把 `common/format` 根包 capability registry 作为事实源收稳：
+先把 `common/format` 根包 descriptor 与 provider registry 作为事实源收稳：
 
-- 保留 `FormatCapability`
-- 明确 `Format`、`DataType`、`EngineFamily`
-- 让它成为上层消费的统一格式能力视图
+- `FormatDescriptor` 作为唯一静态声明事实源。
+- provider / reader / writer registry 表达当前 Go 进程实际实现状态。
+- `FormatSupportView` 只作为 descriptor + implementation status 的只读派生视图。
 
 这一层先不要再长出新的 parser 依赖。
 
@@ -194,22 +194,22 @@ Manager FileTablePreviewProvider
 
 当前目录结构已按以下边界收口：
 
-- 根包：稳定 facade、格式识别、capability registry、provider / reader 接口与注册表、通用 info 模型。
-- `registry/`：format descriptor 的运行时注册、查询、能力发现和冲突诊断。
+- 根包：稳定 facade、格式识别、descriptor facade、provider / reader / writer 接口与注册表、通用 info 模型。
+- `registry/`：format descriptor 的运行时注册、查询、派生视图和冲突诊断。
 - `plugins/`：具体格式实现。descriptor、provider、reader 和测试尽量在格式目录内闭合。
 - `mappers/`：数据库或格式原生类型到 ADDP 通用字段类型的映射。
 - `builtin/`：内置格式插件和 type mapper 的统一加载入口。
 
-不再恢复独立 capability 子包；格式能力由 descriptor 派生并在根包提供统一消费入口。
+不再恢复独立 capability 子包；格式静态事实由 descriptor 表达，运行时实现状态由 provider registry 派生并在根包提供统一消费入口。
 
 ## 关键改造点
 
-### 1. provider registry 与 capability registry
+### 1. descriptor 与 provider registry
 
 parser registry 已删除。当前保留两类事实源：
 
-- capability registry：描述格式事实和能力。
-- provider registry：注册格式 provider 实现。
+- descriptor registry：描述格式身份、识别、layout、默认 data type 等静态事实。
+- provider registry：注册格式 provider / reader / writer 实现。
 
 后续改造应继续围绕这两类 registry 进行，不再引入 parser registry。
 

@@ -287,14 +287,14 @@ func (s *CleanupOrchestratorService) publishEvent(ctx context.Context, event eve
 
 	// 将事件转换为 map，注意 Redis Stream 不支持嵌套结构，所以需要序列化复杂字段
 	eventMap := map[string]interface{}{
-		"task_id":           event.TaskID,
-		"action":            event.Action,
-		"tenant_id":         event.TenantID,
-		"delete_type":       event.DeleteType,
-		"expected_modules":  string(modulesJSON),
-		"based_on_scan":     event.BasedOnScan,
-		"requested_by":      event.RequestedBy,
-		"requested_at":      event.RequestedAt.Format(time.RFC3339),
+		"task_id":          event.TaskID,
+		"action":           event.Action,
+		"tenant_id":        event.TenantID,
+		"delete_type":      event.DeleteType,
+		"expected_modules": string(modulesJSON),
+		"based_on_scan":    event.BasedOnScan,
+		"requested_by":     event.RequestedBy,
+		"requested_at":     event.RequestedAt.Format(time.RFC3339),
 	}
 
 	// 发布到 Redis Stream

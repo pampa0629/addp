@@ -8,7 +8,7 @@ import (
 
 func TestBuildTableFormatCapabilitiesExposeUserFacingFormats(t *testing.T) {
 	capabilities := buildTableFormatCapabilities()
-	byValue := make(map[string]TransferTableFormatCapability, len(capabilities))
+	byValue := make(map[string]TransferTableFormatSupport, len(capabilities))
 	for _, capability := range capabilities {
 		byValue[capability.Value] = capability
 	}
@@ -32,6 +32,9 @@ func TestBuildTableFormatCapabilitiesExposeUserFacingFormats(t *testing.T) {
 	if jsonl.Extension != "jsonl" {
 		t.Fatalf("jsonl extension = %q, want jsonl", jsonl.Extension)
 	}
+	if jsonl.ProviderKind != "table" {
+		t.Fatalf("jsonl provider_kind = %q, want table", jsonl.ProviderKind)
+	}
 
 	geojson := byValue["geojson"]
 	if geojson.BackendType != "json" {
@@ -45,6 +48,9 @@ func TestBuildTableFormatCapabilitiesExposeUserFacingFormats(t *testing.T) {
 	}
 	if geojson.Extension != "geojson" {
 		t.Fatalf("geojson extension = %q, want geojson", geojson.Extension)
+	}
+	if !geojson.Read || !geojson.Write {
+		t.Fatalf("geojson read/write = %v/%v, want true/true from json provider implementations", geojson.Read, geojson.Write)
 	}
 
 	for value, want := range map[string]string{
@@ -68,5 +74,40 @@ func TestBuildTableFormatCapabilitiesExposeUserFacingFormats(t *testing.T) {
 	}
 	if !shapefile.Spatial {
 		t.Fatal("shapefile spatial = false, want true")
+	}
+}
+
+func TestBuildRawCopyFormatCapabilitiesExposeNonTableSingleFormats(t *testing.T) {
+	capabilities := buildRawCopyFormatCapabilities()
+	byValue := make(map[string]TransferRawCopyFormatSupport, len(capabilities))
+	for _, capability := range capabilities {
+		byValue[capability.Value] = capability
+	}
+
+	for value, dataType := range map[string]string{
+		"pdf":     "document",
+		"docx":    "document",
+		"png":     "media",
+		"jpeg":    "media",
+		"mp4":     "media",
+		"unknown": "unknown",
+	} {
+		capability, ok := byValue[value]
+		if !ok {
+			t.Fatalf("missing raw copy format capability %q; got %#v", value, capabilities)
+		}
+		if capability.DataType != dataType {
+			t.Fatalf("%s data_type = %q, want %q", value, capability.DataType, dataType)
+		}
+		if !containsString(capability.Layouts, "single") {
+			t.Fatalf("%s layouts = %#v, want single", value, capability.Layouts)
+		}
+	}
+
+	if _, ok := byValue["csv"]; ok {
+		t.Fatalf("raw copy capabilities include table format csv: %#v", byValue["csv"])
+	}
+	if byValue["pdf"].Extension != "pdf" {
+		t.Fatalf("pdf extension = %q, want pdf", byValue["pdf"].Extension)
 	}
 }

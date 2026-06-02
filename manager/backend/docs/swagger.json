@@ -2677,7 +2677,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "对指定资源节点发起深度扫描，刷新元数据与全文索引 | Run a deep scan for a resource node and refresh metadata and full-text index",
+                "description": "对指定资源节点提交后台深度扫描，返回当前树节点与扫描运行记录 | Submit a background deep scan for a resource node and return current node plus scan run",
                 "produces": [
                     "application/json"
                 ],
@@ -2695,8 +2695,8 @@
                     }
                 ],
                 "responses": {
-                    "200": {
-                        "description": "刷新后的节点信息 | Refreshed node info",
+                    "202": {
+                        "description": "已提交的刷新运行 | Submitted refresh run",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true

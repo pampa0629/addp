@@ -25,18 +25,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		ProviderHints:  []string{format.FormatProviderTable},
 		Identification: format.FormatIdentification{Extensions: []string{".avro"}, MimeTypes: []string{"application/avro", "application/x-avro-binary"}},
 		ContentReaders: []string{string(format.ContentReaderRawContent)},
-		TransferRead:   true,
-		TransferWrite:  true,
-		EngineFamilies: []string{format.EngineFamilyObject, format.EngineFamilyFile},
 	}
-}
-
-func (p *Plugin) Capabilities() format.FormatCapability {
-	capability, ok := format.GetFormatCapability(p.Format())
-	if ok {
-		return capability
-	}
-	return format.FormatCapabilityFromDescriptor(p.Descriptor())
 }
 
 func init() {

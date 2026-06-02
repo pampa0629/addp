@@ -71,14 +71,14 @@ func tableFileItemRules() []dataitem.FormatRule {
 
 func tableFileFormatsByExtension() map[string]string {
 	formats := map[string]string{}
-	for _, capability := range format.ListFormatCapabilities() {
-		if capability.DataType != datatype.DataTypeTable {
+	for _, descriptor := range format.ListFormatDescriptors() {
+		if descriptor.DataType != datatype.DataTypeTable {
 			continue
 		}
-		if !format.HasLayout(capability.Layouts, format.LayoutWhole) {
+		if !format.HasLayout(descriptor.Layouts, format.LayoutWhole) {
 			continue
 		}
-		for _, ext := range capability.Extensions {
+		for _, ext := range descriptor.Identification.Extensions {
 			normalized := strings.ToLower(strings.TrimSpace(ext))
 			if normalized == "" {
 				continue
@@ -86,7 +86,7 @@ func tableFileFormatsByExtension() map[string]string {
 			if !strings.HasPrefix(normalized, ".") {
 				normalized = "." + normalized
 			}
-			formats[normalized] = string(capability.Format)
+			formats[normalized] = string(descriptor.Format)
 		}
 	}
 	return formats
@@ -120,7 +120,7 @@ func (d *tableFileItemResolver) Rules() []dataitem.FormatRule {
 	return tableFileItemRules()
 }
 
-func resolveTableFileDataItem(dirPath string, files []plugin.FileEntry) (*dataitem.ResolvedItem, bool, error) {
+func resolveTableFileDataItem(dirPath string, files []metaitem.StorageFileRef) (*dataitem.ResolvedItem, bool, error) {
 	resolved, err := dataitem.ResolveItems(dataitem.ResolveInput{
 		ScopeKind:  dataitem.ScopeKindDirectory,
 		ScopePath:  dirPath,
@@ -142,7 +142,7 @@ func resolveTableFileDataItem(dirPath string, files []plugin.FileEntry) (*datait
 	return &item, item.Layout == dataitem.LayoutWhole && resolved.Exclusive, nil
 }
 
-func tableFileCandidates(files []plugin.FileEntry) []dataitem.Candidate {
+func tableFileCandidates(files []metaitem.StorageFileRef) []dataitem.Candidate {
 	candidates := make([]dataitem.Candidate, 0, len(files))
 	for _, file := range files {
 		size := file.Size
@@ -182,12 +182,13 @@ func (d *tableFileItemResolver) ResolveItems(
 	}
 	item := &metaitem.DetectedItem{
 		ResolvedItem: dataitem.ResolvedItem{
-			Layout:    info.Layout,
-			DataType:  info.DataType,
-			Format:    info.Format,
-			EntryPath: info.EntryPath,
-			RefList:   metaitem.ItemRefsFromPaths(info.RefFiles),
-			SizeBytes: &totalSize,
+			Layout:             info.Layout,
+			DataType:           info.DataType,
+			Format:             info.Format,
+			PrimaryContentPath: info.PrimaryContentPath,
+			ScopePath:          info.ScopePath,
+			RefList:            metaitem.ItemRefsFromPaths(info.RefFiles),
+			SizeBytes:          &totalSize,
 		},
 		PhysicalPath: input.DirPath,
 		Fields:       info.Fields,
@@ -204,12 +205,12 @@ func (d *tableFileItemResolver) ResolveItems(
 	}, nil
 }
 
-func (d *tableFileItemResolver) Detect(ctx context.Context, files []plugin.FileEntry, subdirs []plugin.DirEntry) bool {
+func (d *tableFileItemResolver) Detect(ctx context.Context, files []metaitem.StorageFileRef, subdirs []metaitem.StorageDirectoryRef) bool {
 	_, ok, err := resolveTableFileDataItem(inferScopePath(files, subdirs), files)
 	return err == nil && ok
 }
 
-func inferScopePath(files []plugin.FileEntry, subdirs []plugin.DirEntry) string {
+func inferScopePath(files []metaitem.StorageFileRef, subdirs []metaitem.StorageDirectoryRef) string {
 	for _, subdir := range subdirs {
 		if path := strings.Trim(subdir.Path, "/"); path != "" {
 			parent := strings.Trim(filepath.ToSlash(filepath.Dir(path)), "/")
@@ -237,9 +238,9 @@ func inferScopePath(files []plugin.FileEntry, subdirs []plugin.DirEntry) string 
 	return parent
 }
 
-func tableFiles(files []plugin.FileEntry) []plugin.FileEntry {
+func tableFiles(files []metaitem.StorageFileRef) []metaitem.StorageFileRef {
 	formats := tableFileFormatsByExtension()
-	filtered := make([]plugin.FileEntry, 0, len(files))
+	filtered := make([]metaitem.StorageFileRef, 0, len(files))
 	for _, f := range files {
 		ext := strings.ToLower(filepath.Ext(f.Name))
 		if formats[ext] != "" {
@@ -263,9 +264,9 @@ func isTableFileAuxiliaryFile(name string) bool {
 	return strings.HasSuffix(normalized, ".crc")
 }
 
-func directTableFiles(files []plugin.FileEntry, dirPath string) []plugin.FileEntry {
+func directTableFiles(files []metaitem.StorageFileRef, dirPath string) []metaitem.StorageFileRef {
 	trimmedDir := strings.Trim(dirPath, "/")
-	filtered := make([]plugin.FileEntry, 0, len(files))
+	filtered := make([]metaitem.StorageFileRef, 0, len(files))
 	for _, f := range tableFiles(files) {
 		parent := strings.Trim(filepath.ToSlash(filepath.Dir(strings.Trim(f.Path, "/"))), "/")
 		if parent == "." {
@@ -278,7 +279,7 @@ func directTableFiles(files []plugin.FileEntry, dirPath string) []plugin.FileEnt
 	return filtered
 }
 
-func firstReadableTableFile(files []plugin.FileEntry, dirPath string) *plugin.FileEntry {
+func firstReadableTableFile(files []metaitem.StorageFileRef, dirPath string) *metaitem.StorageFileRef {
 	candidates := directTableFiles(files, dirPath)
 	for i := range candidates {
 		if hasTableProvider(fileFormatName(candidates[i].Name)) {
@@ -293,9 +294,9 @@ func firstReadableTableFile(files []plugin.FileEntry, dirPath string) *plugin.Fi
 	return nil
 }
 
-func tableFileEntryPath(files []plugin.FileEntry, subdirs []plugin.DirEntry, dirPath string) string {
-	if item, _, err := resolveTableFileDataItem(dirPath, files); err == nil && item != nil && item.EntryPath != "" {
-		return item.EntryPath
+func tableFilePrimaryContentPath(files []metaitem.StorageFileRef, subdirs []metaitem.StorageDirectoryRef, dirPath string) string {
+	if item, _, err := resolveTableFileDataItem(dirPath, files); err == nil && item != nil && item.PrimaryContentPath != "" {
+		return item.PrimaryContentPath
 	}
 	if len(subdirs) > 0 {
 		return dirPath
@@ -311,7 +312,7 @@ func tableFileEntryPath(files []plugin.FileEntry, subdirs []plugin.DirEntry, dir
 	return dirPath
 }
 
-func tableFileLayout(files []plugin.FileEntry, subdirs []plugin.DirEntry, dirPath string) dataitem.Layout {
+func tableFileLayout(files []metaitem.StorageFileRef, subdirs []metaitem.StorageDirectoryRef, dirPath string) dataitem.Layout {
 	if item, ok, err := resolveTableFileDataItem(dirPath, files); err == nil && item != nil && ok {
 		return item.Layout
 	}
@@ -324,7 +325,7 @@ func tableFileLayout(files []plugin.FileEntry, subdirs []plugin.DirEntry, dirPat
 	return dataitem.LayoutSingle
 }
 
-func validateTableFiles(files []plugin.FileEntry, dirPath string) ([]plugin.FileEntry, error) {
+func validateTableFiles(files []metaitem.StorageFileRef, dirPath string) ([]metaitem.StorageFileRef, error) {
 	filtered := tableFiles(files)
 	if len(filtered) == 0 {
 		return nil, fmt.Errorf("no table file files in directory: %s", dirPath)
@@ -335,7 +336,7 @@ func validateTableFiles(files []plugin.FileEntry, dirPath string) ([]plugin.File
 	return filtered, nil
 }
 
-func tableFileSize(files []plugin.FileEntry) int64 {
+func tableFileSize(files []metaitem.StorageFileRef) int64 {
 	var totalSize int64
 	for _, f := range files {
 		totalSize += f.Size
@@ -350,7 +351,7 @@ func tableFieldsFromDescribeResult(tableInfo *format.TableDescribeResult) []data
 	return append([]datatype.FieldInfo(nil), tableInfo.Table.Fields...)
 }
 
-func tableFileAttributes(formatName string, mode string, files []plugin.FileEntry, dirPath string, totalSize int64, tableInfo *format.TableDescribeResult, includeAccessIndex bool) map[string]interface{} {
+func tableFileAttributes(formatName string, mode string, files []metaitem.StorageFileRef, dirPath string, totalSize int64, tableInfo *format.TableDescribeResult, includeAccessIndex bool) map[string]interface{} {
 	input := metaattr.TableFileAttributesInput{
 		FormatName:         formatName,
 		Mode:               mode,
@@ -368,35 +369,41 @@ func tableFileAttributes(formatName string, mode string, files []plugin.FileEntr
 	return metaattr.TableFileAttributes(input)
 }
 
-func tableFileMode(files []plugin.FileEntry, subdirs []plugin.DirEntry, dirPath string) string {
+func tableFileMode(files []metaitem.StorageFileRef, subdirs []metaitem.StorageDirectoryRef, dirPath string) string {
 	if tableFileLayout(files, subdirs, dirPath) == dataitem.LayoutWhole {
 		return "whole"
 	}
 	return "single"
 }
 
-func tableDatasetInfoWithoutSchema(files []plugin.FileEntry, subdirs []plugin.DirEntry, dirPath string) *metaitem.CompositeItemInfo {
+func tableDatasetInfoWithoutSchema(files []metaitem.StorageFileRef, subdirs []metaitem.StorageDirectoryRef, dirPath string) *metaitem.CompositeItemInfo {
 	resolved, _, _ := resolveTableFileDataItem(dirPath, files)
 	totalSize := tableFileSize(files)
 	formatName := detectFormat(files)
 	layout := tableFileLayout(files, subdirs, dirPath)
-	entryPath := tableFileEntryPath(files, subdirs, dirPath)
+	primaryContentPath := tableFilePrimaryContentPath(files, subdirs, dirPath)
+	scopePath := ""
 	if resolved != nil {
 		formatName = resolved.Format
 		layout = resolved.Layout
-		entryPath = resolved.EntryPath
+		primaryContentPath = resolved.PrimaryContentPath
+		scopePath = resolved.ScopePath
 		if resolved.SizeBytes != nil {
 			totalSize = *resolved.SizeBytes
 		}
 	}
+	if layout == dataitem.LayoutWhole && scopePath == "" {
+		scopePath = dirPath
+	}
 	return &metaitem.CompositeItemInfo{
-		Layout:     layout,
-		DataType:   dataitem.DataTypeTable,
-		Format:     formatName,
-		EntryPath:  entryPath,
-		RefFiles:   filePaths(files),
-		SizeBytes:  &totalSize,
-		Attributes: tableFileAttributes(formatName, tableFileMode(files, subdirs, dirPath), files, dirPath, totalSize, nil, false),
+		Layout:             layout,
+		DataType:           dataitem.DataTypeTable,
+		Format:             formatName,
+		PrimaryContentPath: primaryContentPath,
+		ScopePath:          scopePath,
+		RefFiles:           filePaths(files),
+		SizeBytes:          &totalSize,
+		Attributes:         tableFileAttributes(formatName, tableFileMode(files, subdirs, dirPath), files, dirPath, totalSize, nil, false),
 	}
 }
 
@@ -405,8 +412,8 @@ type tableFileContentReader struct {
 	connInfo       plugin.ConnectionInfo
 	engineID       uint
 	catalogPathFor func(path string) plugin.CatalogPath
-	files          []plugin.FileEntry
-	subdirs        []plugin.DirEntry
+	files          []metaitem.StorageFileRef
+	subdirs        []metaitem.StorageDirectoryRef
 }
 
 func (r tableFileContentReader) Open(ctx context.Context, ref contentio.Ref) (io.ReadCloser, error) {
@@ -478,8 +485,8 @@ func (d *tableFileItemResolver) extractTableDatasetInfo(
 	connInfo plugin.ConnectionInfo,
 	engineID uint,
 	dirPath string,
-	files []plugin.FileEntry,
-	subdirs []plugin.DirEntry,
+	files []metaitem.StorageFileRef,
+	subdirs []metaitem.StorageDirectoryRef,
 	catalogPathFor func(path string) plugin.CatalogPath,
 ) (*metaitem.CompositeItemInfo, error) {
 	files, err := validateTableFiles(files, dirPath)
@@ -523,25 +530,31 @@ func (d *tableFileItemResolver) extractTableDatasetInfo(
 	resolved, _, _ := resolveTableFileDataItem(dirPath, files)
 	totalSize := tableFileSize(files)
 	layout := tableFileLayout(files, subdirs, dirPath)
-	entryPath := tableFileEntryPath(files, subdirs, dirPath)
+	primaryContentPath := tableFilePrimaryContentPath(files, subdirs, dirPath)
+	scopePath := ""
 	if resolved != nil {
 		formatName = resolved.Format
 		layout = resolved.Layout
-		entryPath = resolved.EntryPath
+		primaryContentPath = resolved.PrimaryContentPath
+		scopePath = resolved.ScopePath
 		if resolved.SizeBytes != nil {
 			totalSize = *resolved.SizeBytes
 		}
 	}
+	if layout == dataitem.LayoutWhole && scopePath == "" {
+		scopePath = dirPath
+	}
 	fields := tableFieldsFromDescribeResult(tableInfo)
 	return &metaitem.CompositeItemInfo{
-		Fields:     fields,
-		Layout:     layout,
-		DataType:   dataitem.DataTypeTable,
-		Format:     formatName,
-		EntryPath:  entryPath,
-		RefFiles:   filePaths(files),
-		SizeBytes:  &totalSize,
-		Attributes: tableFileAttributes(formatName, tableFileMode(files, subdirs, dirPath), files, dirPath, totalSize, tableInfo, false),
+		Fields:             fields,
+		Layout:             layout,
+		DataType:           dataitem.DataTypeTable,
+		Format:             formatName,
+		PrimaryContentPath: primaryContentPath,
+		ScopePath:          scopePath,
+		RefFiles:           filePaths(files),
+		SizeBytes:          &totalSize,
+		Attributes:         tableFileAttributes(formatName, tableFileMode(files, subdirs, dirPath), files, dirPath, totalSize, tableInfo, false),
 	}, nil
 }
 
@@ -559,8 +572,8 @@ func extractTableFileWholeScopeInfo(
 	connInfo plugin.ConnectionInfo,
 	engineID uint,
 	dirPath string,
-	files []plugin.FileEntry,
-	subdirs []plugin.DirEntry,
+	files []metaitem.StorageFileRef,
+	subdirs []metaitem.StorageDirectoryRef,
 	catalogPathFor ...func(path string) plugin.CatalogPath,
 ) (*metaitem.CompositeItemInfo, error) {
 	resolver := &tableFileItemResolver{}
@@ -600,13 +613,13 @@ func extractSingleTableFileItemWithFormat(
 	provider, providerErr := format.GetTableInfoProvider(formatType)
 	if providerErr != nil {
 		return &metaitem.CompositeItemInfo{
-			Layout:     dataitem.LayoutSingle,
-			DataType:   dataitem.DataTypeTable,
-			Format:     formatName,
-			EntryPath:  filePath,
-			RefFiles:   []string{filePath},
-			SizeBytes:  &fileSize,
-			Attributes: tableFileAttributes(formatName, "single", []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize, nil, false),
+			Layout:             dataitem.LayoutSingle,
+			DataType:           dataitem.DataTypeTable,
+			Format:             formatName,
+			PrimaryContentPath: filePath,
+			RefFiles:           []string{filePath},
+			SizeBytes:          &fileSize,
+			Attributes:         tableFileAttributes(formatName, "single", []metaitem.StorageFileRef{{Path: filePath, Size: fileSize}}, filePath, fileSize, nil, false),
 		}, nil
 	}
 
@@ -620,27 +633,27 @@ func extractSingleTableFileItemWithFormat(
 	if err != nil {
 		// Schema 解析失败时返回基础信息，不阻断扫描
 		return &metaitem.CompositeItemInfo{
-			Layout:     dataitem.LayoutSingle,
-			DataType:   dataitem.DataTypeTable,
-			Format:     formatName,
-			EntryPath:  filePath,
-			RefFiles:   []string{filePath},
-			SizeBytes:  &fileSize,
-			Attributes: tableFileAttributes(formatName, "single", []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize, nil, false),
+			Layout:             dataitem.LayoutSingle,
+			DataType:           dataitem.DataTypeTable,
+			Format:             formatName,
+			PrimaryContentPath: filePath,
+			RefFiles:           []string{filePath},
+			SizeBytes:          &fileSize,
+			Attributes:         tableFileAttributes(formatName, "single", []metaitem.StorageFileRef{{Path: filePath, Size: fileSize}}, filePath, fileSize, nil, false),
 		}, nil
 	}
 
 	fields := tableFieldsFromDescribeResult(tableInfo)
 
 	return &metaitem.CompositeItemInfo{
-		Fields:     fields,
-		Layout:     dataitem.LayoutSingle,
-		DataType:   dataitem.DataTypeTable,
-		Format:     formatName,
-		EntryPath:  filePath,
-		RefFiles:   []string{filePath},
-		SizeBytes:  &fileSize,
-		Attributes: tableFileAttributes(formatName, "single", []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize, tableInfo, includeAccessIndex && format.SupportsAccessIndex(formatType)),
+		Fields:             fields,
+		Layout:             dataitem.LayoutSingle,
+		DataType:           dataitem.DataTypeTable,
+		Format:             formatName,
+		PrimaryContentPath: filePath,
+		RefFiles:           []string{filePath},
+		SizeBytes:          &fileSize,
+		Attributes:         tableFileAttributes(formatName, "single", []metaitem.StorageFileRef{{Path: filePath, Size: fileSize}}, filePath, fileSize, tableInfo, includeAccessIndex && format.SupportsAccessIndex(formatType)),
 	}, nil
 }
 
@@ -676,14 +689,14 @@ func ExtractSingleTableFileItemStrict(
 
 	fields := tableFieldsFromDescribeResult(tableInfo)
 	return &metaitem.CompositeItemInfo{
-		Fields:     fields,
-		Layout:     dataitem.LayoutSingle,
-		DataType:   dataitem.DataTypeTable,
-		Format:     formatName,
-		EntryPath:  filePath,
-		RefFiles:   []string{filePath},
-		SizeBytes:  &fileSize,
-		Attributes: tableFileAttributes(formatName, "single", []plugin.FileEntry{{Path: filePath, Size: fileSize}}, filePath, fileSize, tableInfo, includeAccessIndex && format.SupportsAccessIndex(formatType)),
+		Fields:             fields,
+		Layout:             dataitem.LayoutSingle,
+		DataType:           dataitem.DataTypeTable,
+		Format:             formatName,
+		PrimaryContentPath: filePath,
+		RefFiles:           []string{filePath},
+		SizeBytes:          &fileSize,
+		Attributes:         tableFileAttributes(formatName, "single", []metaitem.StorageFileRef{{Path: filePath, Size: fileSize}}, filePath, fileSize, tableInfo, includeAccessIndex && format.SupportsAccessIndex(formatType)),
 	}, nil
 }
 
@@ -731,7 +744,7 @@ func EnrichSingleTableFileItem(
 }
 
 // detectFormat 根据文件列表检测主要格式
-func detectFormat(files []plugin.FileEntry) string {
+func detectFormat(files []metaitem.StorageFileRef) string {
 	counts := map[string]int{}
 	for _, f := range files {
 		formatName := fileFormatName(f.Name)
@@ -773,7 +786,7 @@ func describeTableFile(ctx context.Context, formatName string, rc io.Reader) (*f
 	return provider.DescribeTable(ctx, rc, nil)
 }
 
-func filePaths(files []plugin.FileEntry) []string {
+func filePaths(files []metaitem.StorageFileRef) []string {
 	paths := make([]string, 0, len(files))
 	for _, f := range files {
 		paths = append(paths, f.Path)

@@ -17,7 +17,7 @@ import (
 )
 
 // fileCatalogPreviewProvider 文件系统类存储引擎预览插件（NFS/对象存储等）
-// 使用 CatalogProvider / ItemMetadataProvider / ContentReadableProvider 读取，不依赖具体客户端。
+// 使用 CatalogProvider / CatalogFactsProvider / ContentReadableProvider 读取，不依赖具体客户端。
 type fileCatalogPreviewProvider struct {
 	metadataRepo *repository.MetadataRepository
 	content      *objectcontent.ObjectContentRegistry
@@ -46,7 +46,7 @@ func (p *fileCatalogPreviewProvider) Preview(ctx context.Context, req *PreviewRe
 		return nil, fmt.Errorf("unsupported engine type: %s", engine.EngineType)
 	}
 	catalogProvider, _ := pl.(plugin.CatalogProvider)
-	metadataProvider, _ := pl.(plugin.ItemMetadataProvider)
+	factsProvider, _ := pl.(plugin.CatalogFactsProvider)
 	contentReader, _ := pl.(plugin.ContentReadableProvider)
 	if catalogProvider == nil {
 		return nil, fmt.Errorf("engine %s does not implement CatalogProvider", engine.EngineType)
@@ -84,7 +84,7 @@ func (p *fileCatalogPreviewProvider) Preview(ctx context.Context, req *PreviewRe
 	}
 
 	// 文件预览
-	return p.previewFile(ctx, metadataProvider, contentReader, connInfo, engine, rootName, fullPath, preview)
+	return p.previewFile(ctx, factsProvider, contentReader, connInfo, engine, rootName, fullPath, preview)
 }
 
 func (p *fileCatalogPreviewProvider) previewDirectory(
@@ -113,7 +113,7 @@ func (p *fileCatalogPreviewProvider) previewDirectory(
 
 func (p *fileCatalogPreviewProvider) previewFile(
 	ctx context.Context,
-	metadataProvider plugin.ItemMetadataProvider,
+	factsProvider plugin.CatalogFactsProvider,
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
 	engine *commonModels.Engine,
@@ -123,7 +123,7 @@ func (p *fileCatalogPreviewProvider) previewFile(
 	ctxTimeout, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	meta, err := getFileCatalogPreviewMetadata(ctxTimeout, metadataProvider, connInfo, engine, filePath)
+	meta, err := getFileCatalogPreviewStorageFacts(ctxTimeout, factsProvider, connInfo, engine, filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat file: %w", err)
 	}
@@ -219,8 +219,8 @@ func listFileCatalogPreviewChildren(ctx context.Context, catalogProvider plugin.
 	children := make([]models.ObjectPreviewChild, 0, len(nodes))
 	for _, node := range nodes {
 		childType := "object"
-		contentType := catalogutil.StringAttribute(node.Attributes, "content_type")
-		if node.IsContainer {
+		contentType := catalogEntryContentType(node)
+		if node.Role == plugin.CatalogRoleBranch {
 			childType = "prefix"
 			contentType = "application/x-directory"
 		}
@@ -228,22 +228,22 @@ func listFileCatalogPreviewChildren(ctx context.Context, catalogProvider plugin.
 			Name:        node.Name,
 			Path:        catalogutil.NodePhysicalPath(node),
 			Type:        childType,
-			SizeBytes:   catalogutil.Int64Stat(node.Stats, "size_bytes"),
+			SizeBytes:   catalogEntrySizeBytes(node),
 			ContentType: contentType,
 		})
 	}
 	return children, nil
 }
 
-func getFileCatalogPreviewMetadata(ctx context.Context, metadataProvider plugin.ItemMetadataProvider, connInfo plugin.ConnectionInfo, engine *commonModels.Engine, path string) (*plugin.FileMetadata, error) {
-	if metadataProvider == nil {
+func getFileCatalogPreviewStorageFacts(ctx context.Context, factsProvider plugin.CatalogFactsProvider, connInfo plugin.ConnectionInfo, engine *commonModels.Engine, path string) (*plugin.StorageObjectFacts, error) {
+	if factsProvider == nil {
 		return nil, fs.ErrNotExist
 	}
-	item, err := metadataProvider.DescribeItem(ctx, connInfo, plugin.FileItemPath(engine.ID, path), plugin.MetadataOptions{})
+	item, err := factsProvider.DescribeCatalogFacts(ctx, connInfo, plugin.FileItemPath(engine.ID, path), plugin.CatalogFactsOptions{})
 	if err != nil {
 		return nil, err
 	}
-	return catalogutil.ItemMetadataToFileMetadata(item, path), nil
+	return catalogutil.CatalogFactsToStorageObjectFacts(item, path), nil
 }
 
 // nfsPhysicalPath 将 locator 的 schema/table 转换为 NFS 绝对路径

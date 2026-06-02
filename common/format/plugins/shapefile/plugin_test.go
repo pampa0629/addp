@@ -216,10 +216,10 @@ func TestShapefileRegistersOnlyMultiTableProviders(t *testing.T) {
 	}
 }
 
-func TestShapefileCapabilityViewMatchesMultiTableContract(t *testing.T) {
+func TestShapefileSupportViewMatchesMultiTableContract(t *testing.T) {
 	t.Parallel()
 
-	view, ok := format.GetFormatCapabilityView(format.FormatShapefile)
+	view, ok := format.GetFormatSupportView(format.FormatShapefile)
 	if !ok {
 		t.Fatal("expected shapefile capability view")
 	}

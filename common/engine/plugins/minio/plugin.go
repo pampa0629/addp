@@ -61,22 +61,22 @@ func (p *MinIOPlugin) CatalogModel() plugin.CatalogModelSpec {
 
 func (p *MinIOPlugin) objectCatalogCallbacks() plugin.ObjectCatalogCallbacks {
 	return plugin.ObjectCatalogCallbacks{
-		ListRootsFunc:         p.listRoots,
-		ListDirectoryFunc:     p.listDirectory,
-		GetObjectMetadataFunc: p.getFileMetadata,
+		ListBucketsFunc:           p.listBuckets,
+		ListDirectoryFunc:         p.listDirectory,
+		GetObjectStorageFactsFunc: p.getStorageObjectFacts,
 	}
 }
 
-func (p *MinIOPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
+func (p *MinIOPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogEntry, error) {
 	return plugin.ListObjectCatalogChildren(ctx, p.objectCatalogCallbacks(), connInfo, parent.EngineID, parent, opts)
 }
 
-func (p *MinIOPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
+func (p *MinIOPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogEntry, error) {
 	return plugin.ResolveObjectCatalogPath(ctx, p.objectCatalogCallbacks(), connInfo, path.EngineID, path)
 }
 
-func (p *MinIOPlugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
-	return plugin.DescribeObjectItem(ctx, p.objectCatalogCallbacks(), connInfo, path.EngineID, path)
+func (p *MinIOPlugin) DescribeCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+	return plugin.DescribeObjectCatalogFacts(ctx, p.objectCatalogCallbacks(), connInfo, path.EngineID, path)
 }
 
 func (p *MinIOPlugin) OpenContent(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
@@ -136,16 +136,17 @@ func (p *MinIOPlugin) createClient(connInfo plugin.ConnectionInfo) (*miniogo.Cli
 
 // listDirectory 列出路径下的直接子内容（非递归）
 // path 格式：bucket/prefix/
-func (p *MinIOPlugin) listDirectory(ctx context.Context, connInfo plugin.ConnectionInfo, path string) ([]plugin.FileEntry, []plugin.DirEntry, error) {
+func (p *MinIOPlugin) listDirectory(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath) ([]plugin.CatalogEntry, error) {
 	client, err := p.createClient(connInfo)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// 解析 bucket 和 prefix
+	path := parent.StringPath()
 	bucket, prefix := objectstore.SplitBucketDirectory(path)
 	if bucket == "" {
-		return nil, nil, fmt.Errorf("invalid path: %s (expected bucket/prefix/)", path)
+		return nil, fmt.Errorf("invalid path: %s (expected bucket/prefix/)", path)
 	}
 
 	objectCh := client.ListObjects(ctx, bucket, miniogo.ListObjectsOptions{
@@ -153,12 +154,11 @@ func (p *MinIOPlugin) listDirectory(ctx context.Context, connInfo plugin.Connect
 		Recursive: false,
 	})
 
-	var files []plugin.FileEntry
-	var dirs []plugin.DirEntry
+	var nodes []plugin.CatalogEntry
 
 	for obj := range objectCh {
 		if obj.Err != nil {
-			return nil, nil, fmt.Errorf("failed to list directory: %w", obj.Err)
+			return nil, fmt.Errorf("failed to list directory: %w", obj.Err)
 		}
 		// 以 "/" 结尾的是目录前缀
 		if strings.HasSuffix(obj.Key, "/") {
@@ -166,26 +166,23 @@ func (p *MinIOPlugin) listDirectory(ctx context.Context, connInfo plugin.Connect
 			if name == "" {
 				continue
 			}
-			dirs = append(dirs, plugin.DirEntry{
-				Name: name,
-				Path: bucket + "/" + obj.Key,
-			})
+			nodes = append(nodes, plugin.ObjectPrefixCatalogEntry(parent, name, bucket+"/"+obj.Key))
 		} else {
 			name := strings.TrimPrefix(obj.Key, prefix)
 			if name == "" || strings.Contains(name, "/") {
 				continue
 			}
-			files = append(files, plugin.FileEntry{
+			nodes = append(nodes, plugin.ObjectLeafCatalogEntry(parent, plugin.StorageObjectFacts{
 				Name:        name,
 				Path:        bucket + "/" + obj.Key,
 				Size:        obj.Size,
 				ModifiedAt:  obj.LastModified,
 				ContentType: p.inferContentType(obj.Key),
-			})
+			}))
 		}
 	}
 
-	return files, dirs, nil
+	return nodes, nil
 }
 
 // readFile 流式读取文件内容
@@ -219,9 +216,9 @@ func (p *MinIOPlugin) readFile(ctx context.Context, connInfo plugin.ConnectionIn
 	return obj, nil
 }
 
-// getFileMetadata 获取文件元数据
+// getStorageObjectFacts 获取存储对象事实
 // path 格式：bucket/key
-func (p *MinIOPlugin) getFileMetadata(ctx context.Context, connInfo plugin.ConnectionInfo, path string) (*plugin.FileMetadata, error) {
+func (p *MinIOPlugin) getStorageObjectFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path string) (*plugin.StorageObjectFacts, error) {
 	client, err := p.createClient(connInfo)
 	if err != nil {
 		return nil, err
@@ -234,10 +231,10 @@ func (p *MinIOPlugin) getFileMetadata(ctx context.Context, connInfo plugin.Conne
 
 	info, err := client.StatObject(ctx, bucket, key, miniogo.StatObjectOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get file metadata %s: %w", path, err)
+		return nil, fmt.Errorf("failed to get storage object facts %s: %w", path, err)
 	}
 
-	return &plugin.FileMetadata{
+	return &plugin.StorageObjectFacts{
 		Name:        filepath.Base(key),
 		Path:        path,
 		Size:        info.Size,
@@ -247,8 +244,8 @@ func (p *MinIOPlugin) getFileMetadata(ctx context.Context, connInfo plugin.Conne
 	}, nil
 }
 
-// listRoots 列出根节点（对象存储 = Bucket 列表）
-func (p *MinIOPlugin) listRoots(ctx context.Context, connInfo plugin.ConnectionInfo) ([]plugin.RootEntry, error) {
+// listBuckets 列出 service root 下的第一层业务 bucket。
+func (p *MinIOPlugin) listBuckets(ctx context.Context, connInfo plugin.ConnectionInfo, root plugin.CatalogPath) ([]plugin.CatalogEntry, error) {
 	client, err := p.createClient(connInfo)
 	if err != nil {
 		return nil, err
@@ -259,12 +256,9 @@ func (p *MinIOPlugin) listRoots(ctx context.Context, connInfo plugin.ConnectionI
 		return nil, fmt.Errorf("failed to list buckets: %w", err)
 	}
 
-	result := make([]plugin.RootEntry, len(buckets))
+	result := make([]plugin.CatalogEntry, len(buckets))
 	for i, b := range buckets {
-		result[i] = plugin.RootEntry{
-			Name: b.Name,
-			Path: b.Name + "/",
-		}
+		result[i] = plugin.ObjectBucketCatalogEntry(root, b.Name)
 	}
 	return result, nil
 }

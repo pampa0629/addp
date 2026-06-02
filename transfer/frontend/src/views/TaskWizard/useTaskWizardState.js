@@ -47,6 +47,15 @@ export function useTaskWizardState() {
   const transforms = ref([])
 
   // ===== 计算属性 =====
+  const isRawCopyTask = computed(() => {
+    return isRawCopyShape({
+      dataType: sourceDataType.value,
+      representation: sourceRepresentation.value,
+      format: sourceFormat.value,
+      resource: sourceEndpointResource.value
+    })
+  })
+
   const canGoNext = computed(() => {
     switch (currentStep.value) {
       case 0: // 选择Source
@@ -62,6 +71,7 @@ export function useTaskWizardState() {
           (targetType.value !== 's3' || targetConfig.value?.resourcePath)
         )
       case 2: // 字段映射
+        if (isRawCopyTask.value) return true
         return fieldMappings.value.length > 0 || sourceFields.value.length === 0
       case 3: // 配置
         return taskName.value.trim() !== ''
@@ -95,6 +105,7 @@ export function useTaskWizardState() {
   })
 
   function buildTransformsConfig() {
+    if (isRawCopyTask.value) return []
     const result = []
     const fieldMapping = buildFieldMappingTransform()
     if (fieldMapping) {
@@ -182,18 +193,20 @@ export function useTaskWizardState() {
   }
 
   function taskTypeForShape(sourceEndpoint, targetEndpoint) {
+    if (isRawCopyEndpoint(sourceEndpoint) && targetEndpoint?.representation === 'encoded') return 'transfer'
     if (sourceEndpoint?.representation === 'encoded' && targetEndpoint?.representation === 'native') return 'import'
     if (sourceEndpoint?.representation === 'native' && targetEndpoint?.representation === 'encoded') return 'export'
     return 'transfer'
   }
 
   function isSupportedSourceShape() {
-    if (sourceDataType.value !== 'table') return false
-    if (sourceRepresentation.value === 'native') return true
-    if (sourceRepresentation.value === 'encoded') {
-      return supportedEncodedSourceFormat(sourceFormat.value)
+    if (sourceDataType.value === 'table') {
+      if (sourceRepresentation.value === 'native') return true
+      if (sourceRepresentation.value === 'encoded') {
+        return supportedEncodedSourceFormat(sourceFormat.value)
+      }
     }
-    return false
+    return isRawCopyTask.value
   }
 
   function supportedEncodedSourceFormat(format) {
@@ -225,6 +238,7 @@ export function useTaskWizardState() {
     }
 
     const format = targetBackendFormat(fileConfig)
+    const dataType = isRawCopyTask.value ? sourceDataType.value : 'table'
     const endpoint = {
       engine: {
         scope: 'system',
@@ -232,7 +246,7 @@ export function useTaskWizardState() {
         type: targetEngineType.value || targetType.value
       },
       resource: buildEncodedTargetResource(fileConfig),
-      data_type: 'table',
+      data_type: dataType,
       representation: 'encoded',
       format,
       policy: {
@@ -244,6 +258,9 @@ export function useTaskWizardState() {
   }
 
   function targetBackendFormat(fileConfig) {
+    if (isRawCopyTask.value) {
+      return String(fileConfig.backendFormat || fileConfig.format || sourceFormat.value || '').toLowerCase()
+    }
     if (fileConfig.backendFormat) {
       return String(fileConfig.backendFormat).toLowerCase()
     }
@@ -253,6 +270,7 @@ export function useTaskWizardState() {
   }
 
   function targetBackendOptions(fileConfig) {
+    if (isRawCopyTask.value) return {}
     const backendOptions = compactOptions(fileConfig.backendOptions || {})
     const uiFormat = String(fileConfig.format || 'csv').toLowerCase()
     switch (uiFormat) {
@@ -382,7 +400,7 @@ export function useTaskWizardState() {
       targetSchema.value = ''
       targetTable.value = ''
       targetConfig.value = {}
-      targetRepresentation.value = sourceRepresentation.value === 'encoded' ? 'native' : 'encoded'
+      targetRepresentation.value = isRawCopyTask.value ? 'encoded' : (sourceRepresentation.value === 'encoded' ? 'native' : 'encoded')
     }
   }
 
@@ -629,6 +647,26 @@ export function useTaskWizardState() {
     return 'overwrite'
   }
 
+  function isRawCopyShape(shape) {
+    const dataType = String(shape?.dataType || '').toLowerCase()
+    const representation = String(shape?.representation || '').toLowerCase()
+    const format = String(shape?.format || '').toLowerCase()
+    const resourceKind = String(shape?.resource?.kind || '').toLowerCase()
+    return ['document', 'media', 'unknown'].includes(dataType) &&
+      representation === 'encoded' &&
+      !!format &&
+      ['file', 'object'].includes(resourceKind)
+  }
+
+  function isRawCopyEndpoint(endpoint) {
+    return isRawCopyShape({
+      dataType: endpoint?.data_type,
+      representation: endpoint?.representation,
+      format: endpoint?.format,
+      resource: endpoint?.resource
+    })
+  }
+
   // 更新任务
   async function updateTask(taskId) {
     try {
@@ -703,6 +741,7 @@ export function useTaskWizardState() {
     sourceFields,
     targetFields,
     transforms,
+    isRawCopyTask,
 
     // 计算属性
     canGoNext,

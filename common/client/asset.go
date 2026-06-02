@@ -57,9 +57,9 @@ func (c *AssetClient) addAuth(req *http.Request) {
 type AssetStatus = string
 
 const (
-	AssetStatusDraft     AssetStatus = "draft"      // 草稿（自动发现后默认状态）
-	AssetStatusPublished AssetStatus = "published"  // 已上架（管理员直接上架）
-	AssetStatusOffline   AssetStatus = "offline"    // 已下架
+	AssetStatusDraft     AssetStatus = "draft"     // 草稿（自动发现后默认状态）
+	AssetStatusPublished AssetStatus = "published" // 已上架（管理员直接上架）
+	AssetStatusOffline   AssetStatus = "offline"   // 已下架
 )
 
 // ApplicationStatus 申请状态
@@ -74,20 +74,20 @@ const (
 
 // AssetSummary 资产摘要（用于列表展示）
 type AssetSummary struct {
-	ID           int64       `json:"id"`
-	TenantID     int64       `json:"tenant_id"`
-	Name         string      `json:"name"`
-	Description  string      `json:"description"`
-	TypeID       int64       `json:"type_id"`
-	TypeName     string      `json:"type_name"`
-	CatalogID    *int64      `json:"catalog_id,omitempty"`
-	CatalogName  string      `json:"catalog_name,omitempty"`
-	Tags         []string    `json:"tags"`
-	Status       AssetStatus `json:"status"`
-	OwnerID      int64       `json:"owner_id"`
-	OwnerName    string      `json:"owner_name"`
-	CreatedAt    string      `json:"created_at"`
-	UpdatedAt    string      `json:"updated_at"`
+	ID          int64       `json:"id"`
+	TenantID    int64       `json:"tenant_id"`
+	Name        string      `json:"name"`
+	Description string      `json:"description"`
+	TypeID      int64       `json:"type_id"`
+	TypeName    string      `json:"type_name"`
+	CatalogID   *int64      `json:"catalog_id,omitempty"`
+	CatalogName string      `json:"catalog_name,omitempty"`
+	Tags        []string    `json:"tags"`
+	Status      AssetStatus `json:"status"`
+	OwnerID     int64       `json:"owner_id"`
+	OwnerName   string      `json:"owner_name"`
+	CreatedAt   string      `json:"created_at"`
+	UpdatedAt   string      `json:"updated_at"`
 }
 
 // AssetDetail 资产详情（含扩展字段）
@@ -158,23 +158,23 @@ type CreateApplicationRequest struct {
 
 // Authorization 授权记录
 type Authorization struct {
-	ID          int64  `json:"id"`
-	TenantID    int64  `json:"tenant_id"`
-	AssetID     int64  `json:"asset_id"`
-	AssetName   string `json:"asset_name"`
-	UserID      int64  `json:"user_id"`
-	Credential  string `json:"credential"`
-	ExpiresAt   string `json:"expires_at"`
-	IsActive    bool   `json:"is_active"`
-	CreatedAt   string `json:"created_at"`
+	ID         int64  `json:"id"`
+	TenantID   int64  `json:"tenant_id"`
+	AssetID    int64  `json:"asset_id"`
+	AssetName  string `json:"asset_name"`
+	UserID     int64  `json:"user_id"`
+	Credential string `json:"credential"`
+	ExpiresAt  string `json:"expires_at"`
+	IsActive   bool   `json:"is_active"`
+	CreatedAt  string `json:"created_at"`
 }
 
-// CatalogNode 目录树节点
-type CatalogNode struct {
+// CatalogEntry 目录树节点
+type CatalogEntry struct {
 	ID       int64          `json:"id"`
 	Name     string         `json:"name"`
 	ParentID *int64         `json:"parent_id,omitempty"`
-	Children []CatalogNode `json:"children,omitempty"`
+	Children []CatalogEntry `json:"children,omitempty"`
 	Count    int64          `json:"count"` // 该分类下资产数量
 }
 
@@ -265,7 +265,7 @@ func (c *AssetClient) GetAssetDetail(assetID int64, tenantID int64) (*AssetDetai
 }
 
 // GetCatalogs 获取目录树
-func (c *AssetClient) GetCatalogs(tenantID int64) ([]CatalogNode, error) {
+func (c *AssetClient) GetCatalogs(tenantID int64) ([]CatalogEntry, error) {
 	url := fmt.Sprintf("%s/api/v1/asset/catalogs/tree", c.baseURL)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -287,7 +287,7 @@ func (c *AssetClient) GetCatalogs(tenantID int64) ([]CatalogNode, error) {
 	}
 
 	var wrapper struct {
-		Data []CatalogNode `json:"data"`
+		Data []CatalogEntry `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&wrapper); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)

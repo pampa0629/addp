@@ -12,20 +12,20 @@ var (
 	ErrEngineAccessDenied = errors.New("engine access denied: tenant mismatch")
 
 	// 租户相关错误
-	ErrInvalidTenantID      = errors.New("invalid tenant ID")
-	ErrTenantMismatch       = errors.New("tenant mismatch")
+	ErrInvalidTenantID = errors.New("invalid tenant ID")
+	ErrTenantMismatch  = errors.New("tenant mismatch")
 
 	// 节点相关错误
-	ErrNodeNotFound         = errors.New("node not found")
-	ErrNodeAccessDenied     = errors.New("node access denied: tenant mismatch")
+	ErrNodeNotFound     = errors.New("node not found")
+	ErrNodeAccessDenied = errors.New("node access denied: tenant mismatch")
 
 	// 条目相关错误
-	ErrItemNotFound         = errors.New("item not found")
-	ErrItemAccessDenied     = errors.New("item access denied: tenant mismatch")
+	ErrItemNotFound     = errors.New("item not found")
+	ErrItemAccessDenied = errors.New("item access denied: tenant mismatch")
 
 	// 扫描相关错误
-	ErrScanNotFound         = errors.New("scan task not found")
-	ErrScanAccessDenied     = errors.New("scan access denied: tenant mismatch")
+	ErrScanNotFound     = errors.New("scan task not found")
+	ErrScanAccessDenied = errors.New("scan access denied: tenant mismatch")
 )
 
 // HTTPStatusCode 根据错误返回对应的 HTTP 状态码

@@ -11,15 +11,15 @@ import (
 	"gorm.io/gorm"
 )
 
-// MySQLCompatibleMetadataDialect provides information_schema helpers for MySQL-compatible engines.
-type MySQLCompatibleMetadataDialect struct {
+// MySQLCompatibleCatalogFactsDialect provides information_schema helpers for MySQL-compatible engines.
+type MySQLCompatibleCatalogFactsDialect struct {
 	SystemSchemas  map[string]bool
 	IncludeComment bool
 	IncludeEngine  bool
 }
 
-func (d MySQLCompatibleMetadataDialect) ListNamespaces(ctx context.Context, db *gorm.DB) ([]plugin.NamespaceInfo, error) {
-	var namespaces []plugin.NamespaceInfo
+func (d MySQLCompatibleCatalogFactsDialect) ListNamespaces(ctx context.Context, db *gorm.DB, root plugin.CatalogPath, namespaceTerm string) ([]plugin.CatalogEntry, error) {
+	var rows []mysqlCompatibleNamespaceRow
 	systemSchemas := d.systemSchemaNames()
 	query := fmt.Sprintf(`
 		SELECT
@@ -27,7 +27,7 @@ func (d MySQLCompatibleMetadataDialect) ListNamespaces(ctx context.Context, db *
 			(SELECT COUNT(*)
 			 FROM information_schema.tables
 			 WHERE table_schema = s.schema_name
-			   AND table_type = 'BASE TABLE') as table_count
+			   AND table_type = 'BASE TABLE') as leaf_count
 		FROM information_schema.schemata s
 		WHERE schema_name NOT IN (%s)
 		ORDER BY schema_name
@@ -38,13 +38,22 @@ func (d MySQLCompatibleMetadataDialect) ListNamespaces(ctx context.Context, db *
 		args = append(args, name)
 	}
 
-	if err := db.WithContext(ctx).Raw(query, args...).Scan(&namespaces).Error; err != nil {
+	if err := db.WithContext(ctx).Raw(query, args...).Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("failed to list namespaces: %w", err)
+	}
+	namespaces := make([]plugin.CatalogEntry, 0, len(rows))
+	for _, row := range rows {
+		namespaces = append(namespaces, plugin.TabularNamespaceCatalogEntry(root, namespaceTerm, row.Name, row.LeafCount))
 	}
 	return namespaces, nil
 }
 
-func (d MySQLCompatibleMetadataDialect) ListTables(ctx context.Context, db *gorm.DB, schema string) ([]datatype.TableInfo, error) {
+type mysqlCompatibleNamespaceRow struct {
+	Name      string
+	LeafCount int
+}
+
+func (d MySQLCompatibleCatalogFactsDialect) ListTables(ctx context.Context, db *gorm.DB, schema string) ([]datatype.TableInfo, error) {
 	var rows []mysqlCompatibleTableRow
 	commentExpr := "'' as comment"
 	if d.IncludeComment {
@@ -100,7 +109,7 @@ type mysqlCompatibleTableRow struct {
 
 var mysqlCompatibleTableNativeKeys = datatype.NewNativeAllowedKeys("engine")
 
-func (d MySQLCompatibleMetadataDialect) tableNative(engine string) map[string]interface{} {
+func (d MySQLCompatibleCatalogFactsDialect) tableNative(engine string) map[string]interface{} {
 	if !d.IncludeEngine {
 		return nil
 	}
@@ -111,7 +120,7 @@ func (d MySQLCompatibleMetadataDialect) tableNative(engine string) map[string]in
 	return datatype.FilterTableNative(map[string]interface{}{"engine": engine}, mysqlCompatibleTableNativeKeys)
 }
 
-func (d MySQLCompatibleMetadataDialect) ListColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]datatype.FieldInfo, error) {
+func (d MySQLCompatibleCatalogFactsDialect) ListColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]datatype.FieldInfo, error) {
 	var fields []datatype.FieldInfo
 	query := `
 		SELECT
@@ -132,7 +141,7 @@ func (d MySQLCompatibleMetadataDialect) ListColumns(ctx context.Context, db *gor
 	return plugin.NormalizeFieldInfos(fields), nil
 }
 
-func (d MySQLCompatibleMetadataDialect) RowCount(ctx context.Context, db *gorm.DB, schema, table string) (int64, error) {
+func (d MySQLCompatibleCatalogFactsDialect) RowCount(ctx context.Context, db *gorm.DB, schema, table string) (int64, error) {
 	var count int64
 	query := `
 		SELECT COALESCE(table_rows, 0)
@@ -146,11 +155,11 @@ func (d MySQLCompatibleMetadataDialect) RowCount(ctx context.Context, db *gorm.D
 	return count, nil
 }
 
-func (d MySQLCompatibleMetadataDialect) IsSystemSchema(schemaName string) bool {
+func (d MySQLCompatibleCatalogFactsDialect) IsSystemSchema(schemaName string) bool {
 	return d.SystemSchemas[strings.ToLower(schemaName)]
 }
 
-func (d MySQLCompatibleMetadataDialect) systemSchemaNames() []string {
+func (d MySQLCompatibleCatalogFactsDialect) systemSchemaNames() []string {
 	names := make([]string, 0, len(d.SystemSchemas))
 	for name := range d.SystemSchemas {
 		names = append(names, name)

@@ -82,16 +82,16 @@ func (p *ClickHousePlugin) tabularCatalogCallbacks() plugin.TabularCatalogCallba
 	}
 }
 
-func (p *ClickHousePlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
+func (p *ClickHousePlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogEntry, error) {
 	return plugin.ListTabularCatalogChildren(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: parent.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, parent, opts)
 }
 
-func (p *ClickHousePlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
+func (p *ClickHousePlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogEntry, error) {
 	return plugin.ResolveTabularCatalogPath(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path)
 }
 
-func (p *ClickHousePlugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
-	return plugin.DescribeTabularItem(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path, opts)
+func (p *ClickHousePlugin) DescribeCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+	return plugin.DescribeTabularCatalogFacts(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path, opts)
 }
 
 func (p *ClickHousePlugin) QueryLanguages() []string {
@@ -157,11 +157,11 @@ func (p *ClickHousePlugin) GetDialect() string {
 	return "clickhouse"
 }
 
-// === MetadataPlugin 接口实现 ===
+// === CatalogProvider / CatalogFactsProvider 回调实现 ===
 
 // listNamespaces 列出所有 Database。
-func (p *ClickHousePlugin) listNamespaces(ctx context.Context, db *gorm.DB) ([]plugin.NamespaceInfo, error) {
-	var namespaces []plugin.NamespaceInfo
+func (p *ClickHousePlugin) listNamespaces(ctx context.Context, db *gorm.DB, root plugin.CatalogPath) ([]plugin.CatalogEntry, error) {
+	var rows []clickhouseNamespaceRow
 
 	// ClickHouse 使用 system.databases 获取 database 列表和表数量统计。
 	query := `
@@ -169,18 +169,27 @@ func (p *ClickHousePlugin) listNamespaces(ctx context.Context, db *gorm.DB) ([]p
 			name,
 			(SELECT COUNT(*)
 			 FROM system.tables
-			 WHERE database = d.name) as table_count
+			 WHERE database = d.name) as leaf_count
 		FROM system.databases d
 		WHERE name NOT IN ('system', 'information_schema', 'INFORMATION_SCHEMA')
 		ORDER BY name
 	`
 
-	err := db.WithContext(ctx).Raw(query).Scan(&namespaces).Error
+	err := db.WithContext(ctx).Raw(query).Scan(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to list namespaces: %w", err)
 	}
 
+	namespaces := make([]plugin.CatalogEntry, 0, len(rows))
+	for _, row := range rows {
+		namespaces = append(namespaces, plugin.TabularNamespaceCatalogEntry(root, "database", row.Name, row.LeafCount))
+	}
 	return namespaces, nil
+}
+
+type clickhouseNamespaceRow struct {
+	Name      string
+	LeafCount int
 }
 
 // ListTables 列出指定Database下的所有表

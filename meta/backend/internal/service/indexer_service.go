@@ -61,7 +61,7 @@ func (s *IndexerService) IndexTableAsset(resource *commonModels.Engine, tenantID
 	record := &search.AssetRecord{
 		AssetID:       item.Fingerprint,
 		DocumentID:    item.Fingerprint,
-		Locator:       catalogItemLocator(resource.ID, resource.EngineType, "table", item.FullName, &item.ID),
+		Locator:       metaItemLocator(resource.ID, resource.EngineType, "table", item.FullName, &item.ID),
 		TenantID:      tenantID,
 		EngineID:      resource.ID,
 		EngineName:    resource.Name,
@@ -115,7 +115,7 @@ func (s *IndexerService) IndexCatalogAsset(resource *commonModels.Engine, tenant
 	truncatedContent := metatext.TruncateRunes(plainText, metatext.DocumentContentRuneLimit)
 	contentPreview := metatext.PreviewText(truncatedContent, metatext.DocumentPreviewRuneLimit)
 
-	dir, _ := splitCatalogItemPath(catalogResource.Path)
+	dir, _ := splitCatalogResourcePath(catalogResource.Path)
 	assetType := strings.TrimSpace(item.ItemType)
 	if assetType == "" {
 		assetType = "item"
@@ -126,7 +126,7 @@ func (s *IndexerService) IndexCatalogAsset(resource *commonModels.Engine, tenant
 		AssetID:       item.Fingerprint,
 		DocumentID:    item.Fingerprint,
 		ContentHash:   stringFromStandardAttributes(metadata, "storage", "content_hash"),
-		Locator:       catalogItemLocator(engineID, resource.EngineType, assetType, fullName, &item.ID),
+		Locator:       metaItemLocator(engineID, resource.EngineType, assetType, fullName, &item.ID),
 		TenantID:      tenantID,
 		EngineID:      engineID,
 		EngineName:    resource.Name,
@@ -182,7 +182,7 @@ func (s *IndexerService) IndexCatalogAsset(resource *commonModels.Engine, tenant
 	return true
 }
 
-func catalogItemLocator(engineID uint, engineType, itemType, fullName string, itemID *uint) string {
+func metaItemLocator(engineID uint, engineType, itemType, fullName string, itemID *uint) string {
 	loc := catalogview.LocatorFromFullName(engineID, engineType, itemType, fullName, itemID)
 	if loc == nil {
 		return ""

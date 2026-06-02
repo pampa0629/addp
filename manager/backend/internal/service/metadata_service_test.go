@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/addp/common/catalogview"
 	"github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
 	_ "github.com/addp/common/engine/plugins/minio"
@@ -566,22 +567,21 @@ func (p *downloadTestFilePlugin) Capabilities() plugin.EngineCapabilities {
 func (p *downloadTestFilePlugin) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemanticsFromCapabilities(p.Capabilities())
 }
-func (p *downloadTestFilePlugin) DescribeItem(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
+func (p *downloadTestFilePlugin) DescribeCatalogFacts(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
 	filePath := strings.Trim(path.StringPath(), "/")
 	content, ok := p.files[filePath]
 	if !ok {
 		return nil, fmt.Errorf("file not found: %s", filePath)
 	}
 	now := time.Unix(0, 0)
-	return &plugin.ItemMetadata{
+	sizeBytes := int64(len(content))
+	return &plugin.CatalogFacts{
 		Path: path,
 		Kind: p.itemKind(),
-		Stats: map[string]interface{}{
-			"size_bytes": int64(len(content)),
-		},
-		Attributes: map[string]interface{}{
-			"name": filePath,
-			"path": filePath,
+		Storage: &plugin.CatalogStorageFacts{
+			Name:      filePath,
+			Path:      filePath,
+			SizeBytes: &sizeBytes,
 		},
 		UpdatedAt: &now,
 	}, nil
@@ -699,7 +699,65 @@ func TestGetTreeDeniedForOtherTenant(t *testing.T) {
 	}
 }
 
-func TestRefreshNodeReturnsDeepScanStats(t *testing.T) {
+func TestGetTreeIncludesObjectStoragePrefixesAtDefaultDepth(t *testing.T) {
+	t.Parallel()
+
+	capabilities, err := plugin.MarshalEngineCapabilities(plugin.NewObjectCapabilities("s3"))
+	if err != nil {
+		t.Fatalf("failed to marshal capabilities: %v", err)
+	}
+
+	metaServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/system/engines/9":
+			fmt.Fprintf(w, `{"id":9,"name":"Business MinIO","engine_type":"s3","connection_info":{},"tenant_id":1,"is_active":true,"capabilities":%q}`, capabilities)
+		case "/api/v1/meta/engines/9/tree":
+			_, _ = w.Write([]byte(`{
+				"top_nodes":[{"id":6,"tenant_id":1,"engine_id":9,"node_type":"service","name":"Business MinIO","full_name":"","depth":1,"path":"6","scan_status":"completed","item_count":7}],
+				"child_nodes":[
+					{"id":23,"tenant_id":1,"engine_id":9,"parent_node_id":6,"node_type":"bucket","name":"addp","full_name":"addp","depth":2,"path":"6/23","scan_status":"completed","item_count":6},
+					{"id":24,"tenant_id":1,"engine_id":9,"parent_node_id":23,"node_type":"prefix","name":"gis","full_name":"addp/gis","depth":3,"path":"6/23/24","scan_status":"completed","item_count":1},
+					{"id":25,"tenant_id":1,"engine_id":9,"parent_node_id":23,"node_type":"prefix","name":"gischain","full_name":"addp/gischain","depth":3,"path":"6/23/25","scan_status":"completed","item_count":1},
+					{"id":31,"tenant_id":1,"engine_id":9,"parent_node_id":6,"node_type":"bucket","name":"manager","full_name":"manager","depth":2,"path":"6/31","scan_status":"completed","item_count":1}
+				],
+				"items":[
+					{"id":168,"tenant_id":1,"engine_id":9,"node_id":23,"item_type":"object","name":"test2.csv","full_name":"addp/test2.csv","attributes":{"item":{"layout":"single"},"storage":{"physical_path":"addp/test2.csv"}}},
+					{"id":169,"tenant_id":1,"engine_id":9,"node_id":31,"item_type":"object","name":"lake2","full_name":"manager/lake2","attributes":{"item":{"layout":"single"},"storage":{"physical_path":"manager/lake2"}}}
+				]
+			}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer metaServer.Close()
+
+	svc := NewExplorerService(
+		client.NewSystemClient(metaServer.URL, "test-token"),
+		client.NewMetaClientWithInternalKey(metaServer.URL, "internal-key"),
+		nil,
+	)
+	tenantID := uint(1)
+	tree, err := svc.GetTree(t.Context(), &tenantID, 9, 2)
+	if err != nil {
+		t.Fatalf("GetTree() error = %v", err)
+	}
+
+	addp := findChildByLabel(tree, "addp")
+	if addp == nil {
+		t.Fatalf("addp bucket not found in children: %#v", tree.Children)
+	}
+	labels := make([]string, 0, len(addp.Children))
+	for _, child := range addp.Children {
+		labels = append(labels, child.Label)
+	}
+	sort.Strings(labels)
+	if strings.Join(labels, ",") != "gis,gischain,test2.csv" {
+		t.Fatalf("addp children labels = %#v, want gis, gischain and test2.csv", labels)
+	}
+}
+
+func TestRefreshNodeSubmitsDeepScanRun(t *testing.T) {
 	t.Parallel()
 
 	capabilities, err := plugin.MarshalEngineCapabilities(plugin.NewObjectCapabilities("s3"))
@@ -708,16 +766,19 @@ func TestRefreshNodeReturnsDeepScanStats(t *testing.T) {
 	}
 
 	var gotScanPayload map[string]interface{}
+	var gotScanAuth string
 	metaServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/api/v1/system/engines/9":
 			fmt.Fprintf(w, `{"id":9,"name":"Business MinIO","engine_type":"s3","connection_info":{},"tenant_id":1,"is_active":true,"capabilities":%q}`, capabilities)
-		case "/api/v1/meta/scan/engine":
+		case "/api/v1/meta/scan/run/manual":
+			gotScanAuth = r.Header.Get("Authorization")
 			if err := json.NewDecoder(r.Body).Decode(&gotScanPayload); err != nil {
 				t.Fatalf("decode scan payload: %v", err)
 			}
-			_, _ = w.Write([]byte(`{"status":"success","message":"ok","catalog_nodes_scanned":1,"items_scanned":8,"fields_scanned":0,"duration_ms":42,"started_at":"2026-05-27T00:00:00Z","extraction":{"documents":2,"extracted":1,"unsupported":1,"failed":0,"indexed":1,"index_failed":0}}`))
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id":11,"tenant_id":1,"execution_id":"run-1","module":"meta","task_type":"scan","status":"pending","trigger_type":"manual"}`))
 		case "/api/v1/meta/engines/9/tree":
 			_, _ = w.Write([]byte(`{
 				"top_nodes":[{"id":8,"tenant_id":1,"engine_id":9,"node_type":"bucket","name":"addp","full_name":"addp","depth":1,"path":"addp","scan_status":"completed","item_count":8}],
@@ -736,23 +797,140 @@ func TestRefreshNodeReturnsDeepScanStats(t *testing.T) {
 		nil,
 	)
 	tenantID := uint(1)
-	result, err := svc.RefreshNode(t.Context(), &tenantID, "addp://engine/9/path/addp?type=bucket&node_id=8")
+	result, err := svc.RefreshNode(t.Context(), &tenantID, "addp://engine/9/path/addp?type=bucket&node_id=8", "user-token")
 	if err != nil {
 		t.Fatalf("RefreshNode() error = %v", err)
 	}
 	if result.Node == nil || len(result.Node.Children) != 1 || result.Node.Children[0].Label != "addp" {
 		t.Fatalf("node = %#v, want engine tree with addp bucket child", result.Node)
 	}
-	if result.Scan == nil || result.Scan.ItemsScanned != 8 || result.Scan.CatalogNodesScanned != 1 {
-		t.Fatalf("scan = %#v", result.Scan)
+	if result.Run == nil || result.Run.ExecutionID != "run-1" || result.Run.Status != "pending" {
+		t.Fatalf("run = %#v", result.Run)
 	}
-	if result.Scan.Extraction == nil || result.Scan.Extraction.Documents != 2 || result.Scan.Extraction.Unsupported != 1 {
-		t.Fatalf("scan extraction = %#v", result.Scan.Extraction)
+	if gotScanAuth != "Bearer user-token" {
+		t.Fatalf("scan auth = %q, want user bearer token", gotScanAuth)
 	}
 	if gotScanPayload["scan_depth"] != "deep" || gotScanPayload["force"] != true {
 		t.Fatalf("scan payload = %#v", gotScanPayload)
 	}
 	if gotScanPayload["node_id"] != float64(8) {
 		t.Fatalf("scan payload node_id = %#v, want 8", gotScanPayload["node_id"])
+	}
+}
+
+func TestRefreshNodeRequiresAuthTokenBeforeSubmittingScan(t *testing.T) {
+	t.Parallel()
+
+	capabilities, err := plugin.MarshalEngineCapabilities(plugin.NewObjectCapabilities("s3"))
+	if err != nil {
+		t.Fatalf("failed to marshal capabilities: %v", err)
+	}
+
+	scanRequests := 0
+	metaServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/system/engines/9":
+			fmt.Fprintf(w, `{"id":9,"name":"Business MinIO","engine_type":"s3","connection_info":{},"tenant_id":1,"is_active":true,"capabilities":%q}`, capabilities)
+		case "/api/v1/meta/scan/run/manual":
+			scanRequests++
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id":11,"execution_id":"run-1","status":"pending"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer metaServer.Close()
+
+	svc := NewExplorerService(
+		client.NewSystemClient(metaServer.URL, "test-token"),
+		client.NewMetaClientWithInternalKey(metaServer.URL, "internal-key"),
+		nil,
+	)
+	tenantID := uint(1)
+	_, err = svc.RefreshNode(t.Context(), &tenantID, "addp://engine/9/path/?type=root", "")
+	if err == nil || !strings.Contains(err.Error(), "metadata scan requires authorization token") {
+		t.Fatalf("RefreshNode() error = %v, want missing authorization token", err)
+	}
+	if scanRequests != 0 {
+		t.Fatalf("scanRequests = %d, want 0", scanRequests)
+	}
+}
+
+func findChildByLabel(node *catalogview.TreeNode, label string) *catalogview.TreeNode {
+	if node == nil {
+		return nil
+	}
+	for _, child := range node.Children {
+		if child.Label == label {
+			return child
+		}
+	}
+	return nil
+}
+
+func TestGetNodeChildrenIncludesObjectStoragePrefixBelowBucket(t *testing.T) {
+	t.Parallel()
+
+	capabilities, err := plugin.MarshalEngineCapabilities(plugin.NewObjectCapabilities("s3"))
+	if err != nil {
+		t.Fatalf("failed to marshal capabilities: %v", err)
+	}
+
+	metaServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/system/engines/9":
+			fmt.Fprintf(w, `{"id":9,"name":"Business MinIO","engine_type":"s3","connection_info":{},"tenant_id":1,"is_active":true,"capabilities":%q}`, capabilities)
+		case "/api/v1/meta/engines/9/tree":
+			_, _ = w.Write([]byte(`{
+				"top_nodes":[{"id":6,"tenant_id":1,"engine_id":9,"node_type":"service","name":"Business MinIO","full_name":"","depth":1,"path":"6","scan_status":"completed","item_count":0}],
+				"child_nodes":[
+					{"id":31,"tenant_id":1,"engine_id":9,"parent_node_id":6,"node_type":"bucket","name":"manager","full_name":"manager","depth":2,"path":"6/31","scan_status":"completed","item_count":7},
+					{"id":32,"tenant_id":1,"engine_id":9,"parent_node_id":31,"node_type":"prefix","name":"regression","full_name":"manager/regression","depth":3,"path":"6/31/32","scan_status":"completed","item_count":2}
+				],
+				"items":[
+					{"id":168,"tenant_id":1,"engine_id":9,"node_id":31,"item_type":"object","name":"lake2","full_name":"manager/lake2","attributes":{"item":{"layout":"single"},"storage":{"physical_path":"manager/lake2"}}},
+					{"id":167,"tenant_id":1,"engine_id":9,"node_id":32,"item_type":"object","name":"codex-nfs-whole-to-minio-20260521.parquet","full_name":"manager/regression/codex-nfs-whole-to-minio-20260521.parquet","attributes":{"item":{"layout":"single"},"storage":{"physical_path":"manager/regression/codex-nfs-whole-to-minio-20260521.parquet"}}}
+				]
+			}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer metaServer.Close()
+
+	svc := NewExplorerService(
+		client.NewSystemClient(metaServer.URL, "test-token"),
+		client.NewMetaClientWithInternalKey(metaServer.URL, "internal-key"),
+		nil,
+	)
+	tenantID := uint(1)
+	node, err := svc.GetNodeChildren(t.Context(), &tenantID, 9, "addp://engine/9/path/manager?type=bucket&node_id=31", 1)
+	if err != nil {
+		t.Fatalf("GetNodeChildren() error = %v", err)
+	}
+
+	labels := make([]string, 0, len(node.Children))
+	for _, child := range node.Children {
+		labels = append(labels, child.Label)
+	}
+	sort.Strings(labels)
+	if strings.Join(labels, ",") != "lake2,regression" {
+		t.Fatalf("children labels = %#v, want lake2 and regression", labels)
+	}
+
+	var regression *catalogview.TreeNode
+	for _, child := range node.Children {
+		if child.Label == "regression" {
+			regression = child
+			break
+		}
+	}
+	if regression == nil {
+		t.Fatal("regression prefix child not found")
+	}
+	if regression.Type != "prefix" || !regression.HasChildren {
+		t.Fatalf("regression node = %#v, want prefix with children", regression)
 	}
 }

@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/addp/common/datatype"
-	"github.com/addp/common/engine/plugin"
 	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/models"
 )
@@ -23,15 +22,15 @@ func TestShouldUpdateTableUsesUpdatedAt(t *testing.T) {
 	}
 }
 
-func TestShouldUpdateCollectionSizeThreshold(t *testing.T) {
+func TestShouldUpdateDynamicSchemaItemSizeThreshold(t *testing.T) {
 	t.Parallel()
 
 	oldSize := int64(100)
 	item := &models.MetaItem{SizeBytes: &oldSize}
-	if ShouldUpdateCollection(item, plugin.CollectionInfo{SizeBytes: 105}) {
+	if ShouldUpdateDynamicSchemaItem(item, 0, 105) {
 		t.Fatal("5 percent size change should not update")
 	}
-	if !ShouldUpdateCollection(item, plugin.CollectionInfo{SizeBytes: 120}) {
+	if !ShouldUpdateDynamicSchemaItem(item, 0, 120) {
 		t.Fatal("20 percent size change should update")
 	}
 }

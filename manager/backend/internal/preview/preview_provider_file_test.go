@@ -285,6 +285,7 @@ func TestFileTablePreviewProviderContentContextUsesFileCatalogReader(t *testing.
 		Schema:       "gis-data",
 		Table:        "sample.csv",
 		PhysicalPath: "/gis-data/sample.csv",
+		ProviderPath: plugin.FileItemPath(7, "gis-data/sample.csv"),
 	}
 
 	contentCtx, err := provider.contentContextForPreview(req)
@@ -338,10 +339,11 @@ func TestObjectCatalogContentReaderStripsBucketPrefixFromRefPath(t *testing.T) {
 	if got := enginePlugin.openedPath.StringPath(); got != "addp/gis/规划用地.dbf" {
 		t.Fatalf("opened path = %q, want catalog path with bucket plus object key", got)
 	}
-	if len(enginePlugin.openedPath.Segments) != 3 {
+	segments := plugin.CatalogPathWithoutRoot(enginePlugin.openedPath).Segments
+	if len(segments) != 3 {
 		t.Fatalf("segments = %#v, want bucket + prefix + object", enginePlugin.openedPath.Segments)
 	}
-	objectSegment := enginePlugin.openedPath.Segments[2]
+	objectSegment := segments[2]
 	if objectSegment.Name != "规划用地.dbf" {
 		t.Fatalf("object segment = %#v, want key without duplicated bucket", objectSegment)
 	}
@@ -361,10 +363,11 @@ func TestObjectCatalogContentReaderOpenRangeStripsBucketPrefixFromRefPath(t *tes
 	if got := enginePlugin.rangeOpenedPath.StringPath(); got != "addp/gis/规划用地.shx" {
 		t.Fatalf("range opened path = %q, want catalog path with bucket plus object key", got)
 	}
-	if len(enginePlugin.rangeOpenedPath.Segments) != 3 {
+	segments := plugin.CatalogPathWithoutRoot(enginePlugin.rangeOpenedPath).Segments
+	if len(segments) != 3 {
 		t.Fatalf("segments = %#v, want bucket + prefix + object", enginePlugin.rangeOpenedPath.Segments)
 	}
-	objectSegment := enginePlugin.rangeOpenedPath.Segments[2]
+	objectSegment := segments[2]
 	if objectSegment.Name != "规划用地.shx" {
 		t.Fatalf("object segment = %#v, want key without duplicated bucket", objectSegment)
 	}
@@ -1867,10 +1870,6 @@ type recordingTableProvider struct {
 
 func (p *recordingTableProvider) Format() format.FormatType {
 	return format.FormatParquet
-}
-
-func (p *recordingTableProvider) Capabilities() format.FormatCapability {
-	return format.FormatCapability{}
 }
 
 func (p *recordingTableProvider) DescribeTable(context.Context, io.Reader, *format.ParseOptions) (*format.TableDescribeResult, error) {

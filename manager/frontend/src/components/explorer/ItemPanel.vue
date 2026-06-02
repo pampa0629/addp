@@ -664,9 +664,9 @@ const buildAttributeGroup = (pathParts, value) => {
   }
 
   const entries = flattenAttributeValue(groupValue, pathParts, pathParts)
-  const tableCount = tables.reduce((total, table) => total + table.rows.length, 0)
+  const leafCount = tables.reduce((total, table) => total + table.rows.length, 0)
   const subgroupCount = subgroups.reduce((total, subgroup) => total + subgroup.count, 0)
-  const count = entries.length + tableCount + subgroupCount
+  const count = entries.length + leafCount + subgroupCount
 
   return {
     key: pathParts.join('.'),
@@ -707,12 +707,12 @@ const buildGraphAttributeGroup = (pathParts, value) => {
     ))
   }
 
-  const tableCount = tables.reduce((total, table) => total + table.rows.length, 0)
+  const leafCount = tables.reduce((total, table) => total + table.rows.length, 0)
   return {
     key: pathParts.join('.'),
     path: pathParts.join('.'),
     title: translateFromMap(groupLabelKeys, 'graph', humanizeKey('graph')),
-    count: entries.length + tableCount,
+    count: entries.length + leafCount,
     entries,
     tables,
     subgroups: []

@@ -18,12 +18,12 @@ type EngineCapabilities struct {
 }
 
 type StorageCapabilities struct {
-	CatalogModel *CatalogModelSpec   `json:"catalog_model,omitempty"`
-	Catalog      *CatalogCapability  `json:"catalog,omitempty"`
-	Metadata     *MetadataCapability `json:"metadata,omitempty"`
-	Store        *StoreCapability    `json:"store,omitempty"`
-	Semantics    []string            `json:"semantics,omitempty"`
-	NotSupported []string            `json:"not_supported,omitempty"`
+	CatalogModel *CatalogModelSpec       `json:"catalog_model,omitempty"`
+	Catalog      *CatalogCapability      `json:"catalog,omitempty"`
+	Facts        *CatalogFactsCapability `json:"facts,omitempty"`
+	Store        *StoreCapability        `json:"store,omitempty"`
+	Semantics    []string                `json:"semantics,omitempty"`
+	NotSupported []string                `json:"not_supported,omitempty"`
 }
 
 type CatalogModelSpec struct {
@@ -33,13 +33,16 @@ type CatalogModelSpec struct {
 }
 
 type CatalogLevelSpec struct {
-	Term      string   `json:"term"`
-	Kinds     []string `json:"kinds"`
-	Container bool     `json:"container"`
-	Item      bool     `json:"item,omitempty"`
-	Optional  bool     `json:"optional,omitempty"`
-	I18nKey   string   `json:"i18n_key,omitempty"`
+	Term     string   `json:"term"`
+	Kinds    []string `json:"kinds"`
+	Role     string   `json:"role"`
+	Optional bool     `json:"optional,omitempty"`
+	I18nKey  string   `json:"i18n_key,omitempty"`
 }
+
+const (
+	CatalogTermServer = "server"
+)
 
 func CatalogTermI18nKey(term string) string {
 	if term == "" {
@@ -65,20 +68,30 @@ func CatalogLevelI18nKey(model CatalogModelSpec, term string) string {
 	return CatalogTermI18nKey(term)
 }
 
-// CatalogNamespaceLevel 返回 catalog model 中第一层可展开的 namespace/container 定义。
+// CatalogNamespaceLevel 返回 catalog model 中第一层可展开的 branch 定义。
 func CatalogNamespaceLevel(model CatalogModelSpec) (CatalogLevelSpec, bool) {
 	for _, level := range model.Levels {
-		if level.Container {
+		if level.Role == CatalogRoleBranch {
 			return level, true
 		}
 	}
 	return CatalogLevelSpec{}, false
 }
 
-// CatalogItemTerm 返回 catalog model 中声明的 item 层术语。
-func CatalogItemTerm(model CatalogModelSpec) string {
+// CatalogBusinessLevels 返回 root 下的业务层级定义。
+func CatalogBusinessLevels(model CatalogModelSpec) []CatalogLevelSpec {
+	return append([]CatalogLevelSpec(nil), model.Levels...)
+}
+
+// CatalogFirstBusinessBranch 返回 root 下第一层可展开的业务 branch。
+func CatalogFirstBusinessBranch(model CatalogModelSpec) (CatalogLevelSpec, bool) {
+	return CatalogNamespaceLevel(model)
+}
+
+// CatalogLeafTerm 返回 catalog model 中声明的 leaf 层术语。
+func CatalogLeafTerm(model CatalogModelSpec) string {
 	for _, level := range model.Levels {
-		if level.Item && level.Term != "" {
+		if level.Role == CatalogRoleLeaf && level.Term != "" {
 			return level.Term
 		}
 	}
@@ -94,15 +107,15 @@ type CatalogCapability struct {
 	NodeKinds       []string `json:"node_kinds,omitempty"`
 }
 
-type MetadataCapability struct {
-	Supported       bool `json:"supported"`
-	FieldInfo       bool `json:"field_info,omitempty"`
-	Statistics      bool `json:"statistics,omitempty"`
-	Indexes         bool `json:"indexes,omitempty"`
-	Constraints     bool `json:"constraints,omitempty"`
-	SpatialMetadata bool `json:"spatial_metadata,omitempty"`
-	Sampling        bool `json:"sampling,omitempty"`
-	NativeMetadata  bool `json:"native_metadata,omitempty"`
+type CatalogFactsCapability struct {
+	Supported    bool `json:"supported"`
+	FieldInfo    bool `json:"field_info,omitempty"`
+	Statistics   bool `json:"statistics,omitempty"`
+	Indexes      bool `json:"indexes,omitempty"`
+	Constraints  bool `json:"constraints,omitempty"`
+	SpatialFacts bool `json:"spatial_facts,omitempty"`
+	Sampling     bool `json:"sampling,omitempty"`
+	NativeFacts  bool `json:"native_facts,omitempty"`
 }
 
 type StoreCapability struct {

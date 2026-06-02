@@ -118,22 +118,21 @@ func (p *NFSPlugin) CatalogModel() plugin.CatalogModelSpec {
 
 func (p *NFSPlugin) fileCatalogCallbacks() plugin.FileCatalogCallbacks {
 	return plugin.FileCatalogCallbacks{
-		ListRootsFunc:       p.listRoots,
-		ListDirectoryFunc:   p.listDirectory,
-		GetFileMetadataFunc: p.getFileMetadata,
+		ListDirectoryFunc:       p.listDirectory,
+		GetFileStorageFactsFunc: p.getStorageObjectFacts,
 	}
 }
 
-func (p *NFSPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
+func (p *NFSPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogEntry, error) {
 	return plugin.ListFileCatalogChildren(ctx, p.fileCatalogCallbacks(), connInfo, parent.EngineID, parent, opts)
 }
 
-func (p *NFSPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
+func (p *NFSPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogEntry, error) {
 	return plugin.ResolveFileCatalogPath(ctx, p.fileCatalogCallbacks(), connInfo, path.EngineID, path)
 }
 
-func (p *NFSPlugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
-	return plugin.DescribeFileItem(ctx, p.fileCatalogCallbacks(), connInfo, path.EngineID, path)
+func (p *NFSPlugin) DescribeCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+	return plugin.DescribeFileCatalogFacts(ctx, p.fileCatalogCallbacks(), connInfo, path.EngineID, path)
 }
 
 func (p *NFSPlugin) OpenContent(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
@@ -164,57 +163,43 @@ func (p *NFSPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error
 
 // TestConnection 通过 listRoots 验证连通性
 func (p *NFSPlugin) TestConnection(ctx context.Context, connInfo plugin.ConnectionInfo) error {
-	_, err := p.listRoots(ctx, connInfo)
+	server, exportPath, err := p.parseConnInfo(connInfo)
+	if err != nil {
+		return err
+	}
+	_, err = getOrCreateMount(server, exportPath)
+	if err != nil {
+		invalidatePool(server, exportPath)
+		return fmt.Errorf("NFS connection failed: %w", err)
+	}
 	return err
 }
 
-// === 文件系统底层 helper ===
-
-// listRoots 返回 NFS 唯一根节点，挂载点透明，不暴露 export_path。
-func (p *NFSPlugin) listRoots(ctx context.Context, connInfo plugin.ConnectionInfo) ([]plugin.RootEntry, error) {
+// listDirectory 列出目录内容（非递归）
+func (p *NFSPlugin) listDirectory(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath) ([]plugin.CatalogEntry, error) {
 	server, exportPath, err := p.parseConnInfo(connInfo)
 	if err != nil {
 		return nil, err
 	}
 
-	_, err = getOrCreateMount(server, exportPath)
+	entry, err := getOrCreateMount(server, exportPath)
 	if err != nil {
 		invalidatePool(server, exportPath)
 		return nil, fmt.Errorf("NFS connection failed: %w", err)
 	}
 
-	return []plugin.RootEntry{{
-		Name: "/",
-		Path: "",
-	}}, nil
-}
-
-// listDirectory 列出目录内容（非递归）
-func (p *NFSPlugin) listDirectory(ctx context.Context, connInfo plugin.ConnectionInfo, path string) ([]plugin.FileEntry, []plugin.DirEntry, error) {
-	server, exportPath, err := p.parseConnInfo(connInfo)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	entry, err := getOrCreateMount(server, exportPath)
-	if err != nil {
-		invalidatePool(server, exportPath)
-		return nil, nil, fmt.Errorf("NFS connection failed: %w", err)
-	}
-
 	// 规范化路径
-	dirPath := normalizePath(path)
+	dirPath := normalizePath(parent.StringPath())
 
 	entry.mu.Lock()
 	entries, err := entry.target.ReadDirPlus(dirPath)
 	entry.mu.Unlock()
 	if err != nil {
 		invalidatePool(server, exportPath)
-		return nil, nil, fmt.Errorf("failed to list directory %s: %w", dirPath, err)
+		return nil, fmt.Errorf("failed to list directory %s: %w", dirPath, err)
 	}
 
-	var files []plugin.FileEntry
-	var dirs []plugin.DirEntry
+	var nodes []plugin.CatalogEntry
 
 	for _, entry := range entries {
 		name := entry.FileName
@@ -224,22 +209,19 @@ func (p *NFSPlugin) listDirectory(ctx context.Context, connInfo plugin.Connectio
 		fullPath := joinPath(dirPath, name)
 
 		if entry.IsDir() {
-			dirs = append(dirs, plugin.DirEntry{
-				Name: name,
-				Path: fullPath + "/",
-			})
+			nodes = append(nodes, plugin.FileDirectoryCatalogEntry(parent, name, fullPath+"/"))
 		} else {
-			files = append(files, plugin.FileEntry{
+			nodes = append(nodes, plugin.FileLeafCatalogEntry(parent, plugin.StorageObjectFacts{
 				Name:        name,
 				Path:        fullPath,
 				Size:        entry.Size(),
 				ModifiedAt:  entry.ModTime(),
 				ContentType: inferContentType(name),
-			})
+			}))
 		}
 	}
 
-	return files, dirs, nil
+	return nodes, nil
 }
 
 // readFile 流式读取文件内容
@@ -286,8 +268,8 @@ func (p *NFSPlugin) readFileRange(ctx context.Context, connInfo plugin.Connectio
 	}, nil
 }
 
-// getFileMetadata 获取文件元数据
-func (p *NFSPlugin) getFileMetadata(ctx context.Context, connInfo plugin.ConnectionInfo, path string) (*plugin.FileMetadata, error) {
+// getStorageObjectFacts 获取存储对象事实
+func (p *NFSPlugin) getStorageObjectFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path string) (*plugin.StorageObjectFacts, error) {
 	server, exportPath, err := p.parseConnInfo(connInfo)
 	if err != nil {
 		return nil, err
@@ -308,7 +290,7 @@ func (p *NFSPlugin) getFileMetadata(ctx context.Context, connInfo plugin.Connect
 		return nil, fmt.Errorf("failed to stat NFS file %s: %w", filePath, err)
 	}
 
-	return &plugin.FileMetadata{
+	return &plugin.StorageObjectFacts{
 		Name:        filepath.Base(filePath),
 		Path:        path,
 		Size:        info.Size(),

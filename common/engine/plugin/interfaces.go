@@ -106,41 +106,21 @@ func DefaultPoolConfig() *PoolConfig {
 	}
 }
 
-// NamespaceInfo describes a tabular namespace, such as a schema or database.
-type NamespaceInfo struct {
-	Name       string // Schema 或 Database 名称
-	TableCount int    // 包含的表数量
+// DynamicCollectionFacts describes engine-native facts for a schema-flexible collection.
+type DynamicCollectionFacts struct {
+	DocumentCount int64
+	SizeBytes     int64
+	IndexCount    int
+	AvgRecordSize int64
+	Indexes       []IndexFacts
 }
 
-// DatabaseInfo Database 信息（NoSQL）
-type DatabaseInfo struct {
-	Name      string // 数据库名称
-	SizeBytes int64  // 存储大小（字节）
-}
-
-// CollectionInfo Collection 信息（NoSQL）
-type CollectionInfo struct {
-	Database      string // 所属数据库
-	Name          string // 集合名称
-	DocumentCount int64  // 文档数量
-	SizeBytes     int64  // 存储大小（字节）
-}
-
-// CollectionStats Collection 统计信息（NoSQL）
-type CollectionStats struct {
-	DocumentCount int64       // 文档数量
-	SizeBytes     int64       // 存储大小（字节）
-	IndexCount    int         // 索引数量
-	AvgRecordSize int64       // 平均记录大小（字节）
-	Indexes       []IndexInfo // 索引列表
-}
-
-// IndexInfo 索引信息（NoSQL）
-type IndexInfo struct {
-	Name      string   // 索引名称
-	Fields    []string // 索引字段
-	IsUnique  bool     // 是否唯一索引
-	IndexType string   // 索引类型（如 "btree", "hash", "text"）
+// IndexFacts describes engine-native index facts.
+type IndexFacts struct {
+	Name      string
+	Fields    []string
+	IsUnique  bool
+	IndexType string
 }
 
 // QueryResult 通用查询结果（SQL/MQL/Cypher 统一格式）

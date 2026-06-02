@@ -102,35 +102,10 @@ func (b *TreeBuilder) BuildFromMetadataTree(engine *models.Engine, metadataTree 
 //
 // 返回: 树的根节点
 func (b *TreeBuilder) BuildFromMeta(engine *models.Engine, metaNodes []*models.MetaNode, expandDepth int) (*TreeNode, error) {
-	// 创建引擎根节点
-	rootLocator := buildEngineRootLocator(engine.ID)
-
-	// 引擎根节点的 Children 处理：
-	// - 如果有 metaNodes，初始化为空数组（后续会填充）
-	// - 如果没有 metaNodes，设置为空数组表示确实没有子节点
-	hasChildren := len(metaNodes) > 0
-	children := []*TreeNode{} // 引擎根节点在构建时会立即填充子节点，所以这里初始化为空数组
-
-	root := &TreeNode{
-		ID:        rootLocator,
-		Locator:   rootLocator,
-		Label:     engine.Name,
-		Type:      "engine",
-		TypeLabel: "engine.term.engine",
-		Icon:      EngineIcon(engine),
-		Metadata: map[string]interface{}{
-			"engine_id":     engine.ID,
-			"engine_type":   engine.EngineType,
-			"engine_family": engineFamily(engine),
-			"capabilities":  engine.Capabilities,
-		},
-		Children:    children,
-		HasChildren: hasChildren,
-	}
-
 	// 构建节点 ID 到 TreeNode 的映射
 	nodeMap := make(map[uint]*TreeNode)
 	skipNodeIDs, parentOverrides := wholeScopePresentationOverrides(metaNodes)
+	var catalogRoot *TreeNode
 
 	// 第一遍：创建所有节点
 	for _, node := range metaNodes {
@@ -139,6 +114,13 @@ func (b *TreeBuilder) BuildFromMeta(engine *models.Engine, metaNodes []*models.M
 		}
 		treeNode := b.convertMetaNode(engine, node)
 		nodeMap[node.ID] = treeNode
+		if isCatalogRootMetaNode(node) {
+			catalogRoot = treeNode
+		}
+	}
+
+	if catalogRoot == nil {
+		catalogRoot = buildFallbackCatalogRootTreeNode(engine, len(metaNodes) > 0)
 	}
 
 	// 第二遍：建立父子关系
@@ -148,37 +130,46 @@ func (b *TreeBuilder) BuildFromMeta(engine *models.Engine, metaNodes []*models.M
 		}
 		treeNode := nodeMap[node.ID]
 
-		// root 节点透明化：仅对 NFS/NAS 生效（挂载点不显示为独立层级）
-		// 对象存储（minio/s3）的 root 节点不透明化，保留其层级
-		isNFSRoot := node.NodeType == "root" && isNFSEngine(engine.EngineType)
-		if isNFSRoot {
-			continue
-		}
-
 		parentNodeID := node.ParentNodeID
 		if override, ok := parentOverrides[node.ID]; ok {
 			parentNodeID = override
 		}
 
-		if parentNodeID == nil || node.Depth == 1 {
-			// 顶层节点，添加到引擎根节点
-			root.Children = append(root.Children, treeNode)
-		} else {
-			// 子节点，添加到父节点的 children
-			parentTreeNode, exists := nodeMap[*parentNodeID]
-			if !exists {
-				// 父节点不存在（可能是被透明化的 NFS root），直接挂到引擎根节点
-				root.Children = append(root.Children, treeNode)
-			} else if parentTreeNode.Type == "root" && isNFSEngine(engine.EngineType) {
-				// 父节点是 NFS root（透明化），直接挂到引擎根节点
-				root.Children = append(root.Children, treeNode)
-			} else {
-				parentTreeNode.Children = append(parentTreeNode.Children, treeNode)
+		if parentNodeID == nil {
+			if treeNode != catalogRoot {
+				catalogRoot.Children = append(catalogRoot.Children, treeNode)
 			}
+		} else if parentTreeNode, exists := nodeMap[*parentNodeID]; exists {
+			parentTreeNode.Children = append(parentTreeNode.Children, treeNode)
+		} else {
+			catalogRoot.Children = append(catalogRoot.Children, treeNode)
 		}
 	}
 
-	return root, nil
+	catalogRoot.HasChildren = catalogRoot.HasChildren || len(catalogRoot.Children) > 0
+	return catalogRoot, nil
+}
+
+func isCatalogRootMetaNode(node *models.MetaNode) bool {
+	if node == nil {
+		return false
+	}
+	return node.ParentNodeID == nil && strings.TrimSpace(node.FullName) == ""
+}
+
+func buildFallbackCatalogRootTreeNode(engine *models.Engine, hasChildren bool) *TreeNode {
+	rootLocator := buildEngineRootLocator(engine.ID)
+	return &TreeNode{
+		ID:          rootLocator,
+		Locator:     rootLocator,
+		Label:       engine.Name,
+		Type:        "root",
+		TypeLabel:   "engine.term.root",
+		Icon:        EngineIcon(engine),
+		Metadata:    engineTreeMetadata(engine, 0, "", 0, "", nil),
+		Children:    []*TreeNode{},
+		HasChildren: hasChildren,
+	}
 }
 
 func wholeScopePresentationOverrides(metaNodes []*models.MetaNode) (map[uint]bool, map[uint]*uint) {
@@ -461,16 +452,8 @@ func (b *TreeBuilder) convertMetaNode(engine *models.Engine, node *models.MetaNo
 	}
 
 	// 构建元数据
-	metadata := map[string]interface{}{
-		"node_id":     node.ID,
-		"full_name":   node.FullName,
-		"item_count":  node.ItemCount,
-		"size_bytes":  node.TotalSizeBytes,
-		"scan_status": node.ScanStatus,
-	}
-	if node.LastScanAt != nil {
-		metadata["scanned_at"] = node.LastScanAt.Format(time.RFC3339)
-	}
+	metadata := engineTreeMetadata(engine, node.ID, node.FullName, node.ItemCount, node.ScanStatus, node.LastScanAt)
+	metadata["size_bytes"] = node.TotalSizeBytes
 
 	// 合并自定义属性（保留规范字段，避免被 attributes 覆盖）
 	protectedKeys := map[string]bool{
@@ -489,7 +472,7 @@ func (b *TreeBuilder) convertMetaNode(engine *models.Engine, node *models.MetaNo
 		}
 		metadata[k] = v
 	}
-	addItemMetadataFacts(metadata, node.Attributes)
+	addMetaItemFacts(metadata, node.Attributes)
 
 	locatorURI := loc.ToURI()
 
@@ -518,7 +501,26 @@ func (b *TreeBuilder) convertMetaNode(engine *models.Engine, node *models.MetaNo
 	return treeNode
 }
 
-func addItemMetadataFacts(metadata map[string]interface{}, attrs map[string]interface{}) {
+func engineTreeMetadata(engine *models.Engine, nodeID uint, fullName string, itemCount int, scanStatus string, scannedAt *time.Time) map[string]interface{} {
+	metadata := map[string]interface{}{
+		"engine_id":     engine.ID,
+		"engine_type":   engine.EngineType,
+		"engine_family": engineFamily(engine),
+		"capabilities":  engine.Capabilities,
+		"full_name":     fullName,
+		"item_count":    itemCount,
+		"scan_status":   scanStatus,
+	}
+	if nodeID > 0 {
+		metadata["node_id"] = nodeID
+	}
+	if scannedAt != nil {
+		metadata["scanned_at"] = scannedAt.Format(time.RFC3339)
+	}
+	return metadata
+}
+
+func addMetaItemFacts(metadata map[string]interface{}, attrs map[string]interface{}) {
 	if metadata == nil || len(attrs) == 0 {
 		return
 	}
@@ -649,6 +651,8 @@ func convertNodeType(metaNodeType string) ResourceType {
 		"prefix":     TypeDirectory,
 		"directory":  TypeDirectory,
 		"root":       TypeRoot,
+		"server":     TypeRoot,
+		"service":    TypeRoot,
 		"dir":        TypeDir,
 		"table":      TypeTable,
 		"collection": TypeCollection,
@@ -858,12 +862,4 @@ func filterNode(node *TreeNode, typeSet map[string]bool) *TreeNode {
 		Metadata: node.Metadata,
 		Children: filteredChildren,
 	}
-}
-
-func isNFSEngine(engineType string) bool {
-	switch strings.ToLower(engineType) {
-	case "nfs", "nas":
-		return true
-	}
-	return false
 }

@@ -58,6 +58,9 @@ export function catalogNodesFromResponse(response) {
 export function toCatalogBrowserNode(node) {
   const nodePath = catalogPathToString(node.path) || node.name
   const type = catalogNodeBrowserType(node)
+  const isContainer = node.role === 'branch'
+  const isItem = node.role === 'leaf'
+  const sizeBytes = node.storage?.size_bytes ?? node.table?.size_bytes
   return {
     name: node.name,
     schema_name: node.name,
@@ -65,13 +68,16 @@ export function toCatalogBrowserNode(node) {
     catalog_path: node.path,
     term: node.term,
     kind: node.kind,
+    role: node.role,
     type,
     node_type: type,
-    is_container: !!node.is_container,
-    is_item: !!node.is_item,
-    size_bytes: node.stats?.size_bytes,
-    stats: node.stats || {},
-    attributes: node.attributes || {},
+    is_container: isContainer,
+    is_item: isItem,
+    size_bytes: sizeBytes,
+    table: node.table,
+    storage: node.storage,
+    leaf_count: node.leaf_count,
+    updated_at: node.updated_at,
     file_type: type === 'file' || type === 'object' ? fileExtension(node.name) : ''
   }
 }
@@ -83,7 +89,10 @@ export function catalogNodeBrowserType(node) {
   if (node.kind === 'namespace') {
     return node.term || 'namespace'
   }
-  return node.is_container ? (node.term || 'prefix') : (node.term || 'object')
+  if (node.role === 'branch') {
+    return node.term || 'prefix'
+  }
+  return node.term || 'object'
 }
 
 function fileExtension(name = '') {

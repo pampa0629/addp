@@ -53,53 +53,12 @@ func (p tableInfoProviderView) Format() FormatType {
 	return p.formatType
 }
 
-func (p tableInfoProviderView) Descriptor() FormatDescriptor {
-	descriptor, ok := GetFormatDescriptor(p.formatType)
-	if ok {
-		return descriptor
-	}
-	return FormatDescriptor{
-		ID:       "inline-" + string(p.formatType),
-		Format:   p.formatType,
-		DataType: datatype.DataTypeTable,
-		Layouts:  []string{LayoutSingle},
-	}
-}
-
-func (p tableInfoProviderView) Capabilities() FormatCapability {
-	capability, ok := GetFormatCapability(p.formatType)
-	if ok {
-		return capability
-	}
-	return FormatCapability{
-		Format:        p.formatType,
-		DataType:      datatype.DataTypeTable,
-		Layouts:       []string{LayoutSingle},
-		ProviderHints: []string{FormatProviderTable},
-		Parse:         true,
-	}
-}
-
 func (p tableInfoProviderView) DescribeTable(ctx context.Context, input io.Reader, options *ParseOptions) (*TableDescribeResult, error) {
 	return p.describe(ctx, input, options)
 }
 
 func (p tableSampleReaderView) Format() FormatType {
 	return p.formatType
-}
-
-func (p tableSampleReaderView) Capabilities() FormatCapability {
-	capability, ok := GetFormatCapability(p.formatType)
-	if ok {
-		return capability
-	}
-	return FormatCapability{
-		Format:        p.formatType,
-		DataType:      datatype.DataTypeTable,
-		Layouts:       []string{LayoutSingle},
-		ProviderHints: []string{FormatProviderTable},
-		Parse:         true,
-	}
 }
 
 func (p tableSampleReaderView) SampleTable(ctx context.Context, input io.Reader, offset, limit int64, options *ParseOptions) ([]map[string]interface{}, error) {
@@ -110,36 +69,12 @@ func (p formatInfoProviderView) Format() FormatType {
 	return p.formatType
 }
 
-func (p formatInfoProviderView) Capabilities() FormatCapability {
-	capability, ok := GetFormatCapability(p.formatType)
-	if ok {
-		return capability
-	}
-	return FormatCapability{
-		Format:  p.formatType,
-		Layouts: []string{LayoutSingle},
-	}
-}
-
 func (p formatInfoProviderView) DescribeFormat(ctx context.Context, input io.Reader, options *ParseOptions) (map[string]interface{}, error) {
 	return p.describe(ctx, input, options)
 }
 
 func (p documentInfoProviderView) Format() FormatType {
 	return p.formatType
-}
-
-func (p documentInfoProviderView) Capabilities() FormatCapability {
-	capability, ok := GetFormatCapability(p.formatType)
-	if ok {
-		return capability
-	}
-	return FormatCapability{
-		Format:        p.formatType,
-		DataType:      datatype.DataTypeDocument,
-		Layouts:       []string{LayoutSingle},
-		ProviderHints: []string{FormatProviderDocument},
-	}
 }
 
 func (p documentInfoProviderView) DescribeDocument(ctx context.Context, input io.Reader, options *ParseOptions) (*datatype.DocumentInfo, error) {
@@ -150,38 +85,12 @@ func (p documentTextReaderView) Format() FormatType {
 	return p.formatType
 }
 
-func (p documentTextReaderView) Capabilities() FormatCapability {
-	capability, ok := GetFormatCapability(p.formatType)
-	if ok {
-		return capability
-	}
-	return FormatCapability{
-		Format:        p.formatType,
-		DataType:      datatype.DataTypeDocument,
-		Layouts:       []string{LayoutSingle},
-		ProviderHints: []string{FormatProviderDocument},
-	}
-}
-
 func (p documentTextReaderView) ReadDocumentText(ctx context.Context, input io.Reader, limit int64, options *ParseOptions) (string, bool, error) {
 	return p.extract(ctx, input, limit, options)
 }
 
 func (p mediaProviderView) Format() FormatType {
 	return p.formatType
-}
-
-func (p mediaProviderView) Capabilities() FormatCapability {
-	capability, ok := GetFormatCapability(p.formatType)
-	if ok {
-		return capability
-	}
-	return FormatCapability{
-		Format:        p.formatType,
-		DataType:      datatype.DataTypeMedia,
-		Layouts:       []string{LayoutSingle},
-		ProviderHints: []string{FormatProviderMedia},
-	}
 }
 
 func (p mediaProviderView) DescribeMedia(ctx context.Context, input io.Reader, options *ParseOptions) (*MediaDescribeResult, error) {
@@ -192,39 +101,12 @@ func (p containerProviderView) Format() FormatType {
 	return p.formatType
 }
 
-func (p containerProviderView) Capabilities() FormatCapability {
-	capability, ok := GetFormatCapability(p.formatType)
-	if ok {
-		return capability
-	}
-	return FormatCapability{
-		Format:        p.formatType,
-		DataType:      datatype.DataTypeContainer,
-		Layouts:       []string{LayoutSingle},
-		ProviderHints: []string{FormatProviderContainer},
-	}
-}
-
 func (p containerProviderView) DescribeContainer(ctx context.Context, input io.Reader, options *ParseOptions) (*datatype.ContainerInfo, error) {
 	return p.describe(ctx, input, options)
 }
 
 func (p containerChildResolverView) Format() FormatType {
 	return p.formatType
-}
-
-func (p containerChildResolverView) Capabilities() FormatCapability {
-	capability, ok := GetFormatCapability(p.formatType)
-	if ok {
-		return capability
-	}
-	return FormatCapability{
-		Format:         p.formatType,
-		DataType:       datatype.DataTypeContainer,
-		Layouts:        []string{LayoutSingle},
-		ProviderHints:  []string{FormatProviderContainer},
-		ContentReaders: []string{string(ContentReaderContainerEntry)},
-	}
 }
 
 func (p containerChildResolverView) ResolveContainerChild(ctx context.Context, parent contentio.Reader, parentRef contentio.Ref, child datatype.ContainerChildInfo, options *ParseOptions) (*ContainerChildResource, error) {

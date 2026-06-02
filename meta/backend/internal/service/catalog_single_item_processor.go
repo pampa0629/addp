@@ -90,7 +90,7 @@ func (p catalogSingleItemProcessor) Process(ctx context.Context, input catalogSi
 	if input.IndexRootName != "" {
 		metaattr.SetStorage(attrs, "bucket", input.IndexRootName)
 	}
-	dir, name := splitCatalogItemPath(input.IndexPath)
+	dir, name := splitCatalogResourcePath(input.IndexPath)
 	if dir != "" {
 		metaattr.SetStorage(attrs, "path", dir)
 	}
@@ -190,11 +190,11 @@ func (p catalogSingleItemProcessor) Process(ctx context.Context, input catalogSi
 	return catalogSingleItemResult{Item: item, Extraction: counts}, nil
 }
 
-func catalogItemProcessor(repo *metaRepo.ScanRepository, indexer *IndexerService, log *slog.Logger) catalogSingleItemProcessor {
+func catalogDataItemProcessor(repo *metaRepo.ScanRepository, indexer *IndexerService, log *slog.Logger) catalogSingleItemProcessor {
 	return catalogSingleItemProcessor{repo: repo, indexer: indexer, log: log}
 }
 
-func splitCatalogItemPath(value string) (dir, name string) {
+func splitCatalogResourcePath(value string) (dir, name string) {
 	value = strings.Trim(value, "/")
 	if value == "" {
 		return "", ""

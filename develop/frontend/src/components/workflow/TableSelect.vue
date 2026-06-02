@@ -67,11 +67,11 @@ const loadTables = async (engineId, schema) => {
     })
     const nodes = Array.isArray(data?.nodes) ? data.nodes : []
     tables.value = nodes
-      .filter(node => node.is_item)
+      .filter(node => node.role === 'leaf')
       .map(node => ({
         name: node.name,
         type: node.kind || node.term,
-        description: node.attributes?.description || node.attributes?.catalog?.description || ''
+        description: node.table?.comment || ''
       }))
   } catch (error) {
     console.error('获取表列表失败:', error)

@@ -57,20 +57,21 @@ func (p *GraphPreviewProvider) describeGraph(ctx context.Context, req *PreviewRe
 	if err != nil {
 		return nil, fmt.Errorf("unsupported engine type: %s", req.Engine.EngineType)
 	}
-	graphProvider, ok := plug.(plugin.GraphMetadataProvider)
+	factsProvider, ok := plug.(plugin.CatalogFactsProvider)
 	if !ok {
-		return nil, fmt.Errorf("engine %s does not implement GraphMetadataProvider", req.Engine.EngineType)
+		return nil, fmt.Errorf("engine %s does not implement CatalogFactsProvider", req.Engine.EngineType)
 	}
 	path, err := graphPreviewCatalogPath(req)
 	if err != nil {
 		return nil, err
 	}
-	info, err := graphProvider.DescribeGraph(ctx, plugin.ConnectionInfo(req.Engine.ConnectionInfo), path, plugin.MetadataOptions{IncludeStatistics: true})
+	facts, err := factsProvider.DescribeCatalogFacts(ctx, plugin.ConnectionInfo(req.Engine.ConnectionInfo), path, plugin.CatalogFactsOptions{IncludeStatistics: true})
 	if err != nil {
 		return nil, fmt.Errorf("failed to describe graph: %w", err)
 	}
+	info := plugin.CatalogFactsGraphInfo(facts)
 	if info == nil {
-		return nil, fmt.Errorf("graph metadata is missing")
+		return nil, fmt.Errorf("graph facts are missing")
 	}
 	return info, nil
 }
@@ -144,25 +145,13 @@ func clonePreviewMap(values map[string]interface{}) map[string]interface{} {
 }
 
 func graphPreviewCatalogPath(req *PreviewRequest) (plugin.CatalogPath, error) {
-	database := strings.TrimSpace(req.Schema)
-	if database == "" {
-		database = strings.TrimSpace(plugin.GetString(plugin.ConnectionInfo(req.Engine.ConnectionInfo), "database"))
+	if req == nil {
+		return plugin.CatalogPath{}, fmt.Errorf("invalid preview request")
 	}
-	if database == "" {
-		return plugin.CatalogPath{}, fmt.Errorf("graph preview requires database")
+	if len(req.ProviderPath.Segments) == 0 {
+		return plugin.CatalogPath{}, fmt.Errorf("graph preview requires provider catalog path")
 	}
-	graphName := strings.TrimSpace(req.Table)
-	if graphName == "" {
-		graphName = plugin.CatalogKindGraph
-	}
-	return plugin.CatalogPath{
-		Version:  plugin.CatalogPathVersion,
-		EngineID: req.Engine.ID,
-		Segments: []plugin.CatalogSegment{
-			{Term: plugin.CatalogTermDatabase, Kind: plugin.CatalogKindNamespace, Name: database},
-			{Term: plugin.CatalogTermGraph, Kind: plugin.CatalogKindGraph, Name: graphName},
-		},
-	}, nil
+	return req.ProviderPath, nil
 }
 
 func graphOverviewRows(info *datatype.GraphInfo) ([]string, []map[string]interface{}) {

@@ -23,7 +23,7 @@ func RuntimeBaseURL(connInfo ConnectionInfo) (string, error) {
 	return fmt.Sprintf("%s://%s:%d", protocol, host, port), nil
 }
 
-func HTTPListOperators(ctx context.Context, connInfo ConnectionInfo) ([]OperatorMetadata, error) {
+func HTTPListOperators(ctx context.Context, connInfo ConnectionInfo) ([]OperatorDescriptor, error) {
 	baseURL, err := RuntimeBaseURL(connInfo)
 	if err != nil {
 		return nil, err
@@ -47,7 +47,7 @@ func HTTPListOperators(ctx context.Context, connInfo ConnectionInfo) ([]Operator
 	}
 
 	var payload struct {
-		Operators []OperatorMetadata `json:"operators"`
+		Operators []OperatorDescriptor `json:"operators"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return nil, err

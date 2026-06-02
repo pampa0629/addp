@@ -9,7 +9,6 @@ import (
 
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
-	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metacatalog"
@@ -66,27 +65,15 @@ func (s *FilesystemCatalogScanService) ScanPaths(
 	if !ok {
 		return 0, 0, scantask.ExtractionCounts{}, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
 	}
-	itemTerm := catalogItemTermForPlugin(p, plugin.CatalogTermFile)
+	itemTerm := catalogLeafTermForPlugin(p, plugin.CatalogTermFile)
 	contentReader, ok := p.(plugin.ContentReadableProvider)
 	if !ok {
 		return 0, 0, scantask.ExtractionCounts{}, fmt.Errorf("engine %s does not implement ContentReadableProvider", resource.EngineType)
 	}
 
 	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
-	allRoots, err := s.listRoots(context.Background(), resource, catalogProvider, connInfo)
-	if err != nil {
-		return 0, 0, scantask.ExtractionCounts{}, fmt.Errorf("failed to list roots: %w", err)
-	}
-	pathToName := make(map[string]string, len(allRoots))
-	for _, r := range allRoots {
-		r.Path = metapath.SanitizeFSPath(r.Path)
-		pathToName[r.Path] = r.Name
-	}
-
 	if len(paths) == 0 {
-		for _, r := range allRoots {
-			paths = append(paths, r.Path)
-		}
+		paths = []string{""}
 	}
 
 	resolvedPaths, err := resolveCatalogScanPaths(context.Background(), "未检测到可扫描的路径", paths, nil, nil, reporter)
@@ -109,17 +96,19 @@ func (s *FilesystemCatalogScanService) ScanPaths(
 			reporter.Message(fmt.Sprintf("扫描路径 %s", displayPath))
 		}
 
-		// 使用 catalog 根节点返回的展示名；文件系统语义根路径仍保持空字符串。
-		rootName := pathToName[rootPath]
+		if _, _, err := s.listDirectory(context.Background(), resource, catalogProvider, connInfo, rootPath); err != nil {
+			s.log.Warn("跳过非目录扫描路径", "path", rootPath, "error", err)
+			continue
+		}
 
-		rootNode, scanNode, err := s.ensureFilesystemScanRoot(tenantID, resource.ID, rootName, rootPath)
+		_, scanNode, err := s.ensureFilesystemScanRoot(tenantID, resource, p, rootPath)
 		if err != nil {
 			s.log.Warn("创建根节点失败", "path", rootPath, "error", err)
 			continue
 		}
 
 		// 标记扫描中
-		_ = s.repo.ResetNodeState(rootNode, "running")
+		_ = s.repo.ResetNodeState(scanNode, "running")
 		totalRoots++
 
 		// 递归扫描目录
@@ -127,9 +116,9 @@ func (s *FilesystemCatalogScanService) ScanPaths(
 		extractionStats = mergeExtractionCounts(extractionStats, pathExtractionStats)
 		if scanErr != nil {
 			s.log.Warn("扫描目录失败", "path", rootPath, "error", scanErr)
-			_ = s.repo.FinalizeNodeState(rootNode, "failed", items, 0, scanErr.Error())
+			_ = s.repo.FinalizeNodeState(scanNode, "failed", items, 0, scanErr.Error())
 		} else {
-			_ = s.repo.FinalizeNodeStateWithDepth(rootNode, "completed", items, 0, "", scanDepth)
+			_ = s.repo.FinalizeNodeStateWithDepth(scanNode, "completed", items, 0, "", scanDepth)
 		}
 		totalItems += items
 
@@ -141,10 +130,8 @@ func (s *FilesystemCatalogScanService) ScanPaths(
 	return totalRoots, totalItems, extractionStats, nil
 }
 
-func (s *FilesystemCatalogScanService) ensureFilesystemScanRoot(tenantID, engineID uint, rootName, scanPath string) (*models.MetaNode, *models.MetaNode, error) {
-	rootFullName := ""
-	rootName = filesystemRootDisplayName(rootName)
-	rootNode, err := s.repo.UpsertNode(tenantID, engineID, nil, "root", rootName, &rootFullName, models.JSONMap{"path": ""})
+func (s *FilesystemCatalogScanService) ensureFilesystemScanRoot(tenantID uint, resource *commonModels.Engine, enginePlugin plugin.EnginePlugin, scanPath string) (*models.MetaNode, *models.MetaNode, error) {
+	rootNode, err := ensureCatalogRootNodeWithNativeName(s.repo, tenantID, resource, enginePlugin, "/")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -161,7 +148,7 @@ func (s *FilesystemCatalogScanService) ensureFilesystemScanRoot(tenantID, engine
 		fullName := strings.Join(parts[:i+1], "/")
 		node, err := s.repo.UpsertNode(
 			tenantID,
-			engineID,
+			resource.ID,
 			current,
 			"dir",
 			part,
@@ -174,13 +161,6 @@ func (s *FilesystemCatalogScanService) ensureFilesystemScanRoot(tenantID, engine
 		current = node
 	}
 	return rootNode, current, nil
-}
-
-func filesystemRootDisplayName(name string) string {
-	if metapath.SanitizeFSPath(name) == "" {
-		return "/"
-	}
-	return strings.Trim(name, "/")
 }
 
 // scanDirectory 递归扫描目录，对每个目录运行 item resolver 链。
@@ -208,6 +188,26 @@ func (s *FilesystemCatalogScanService) scanDirectory(
 	extractionStats := scantask.ExtractionCounts{}
 
 	claimedPaths := metaitem.ResourceClaimSet{}
+	scannedFileFullNames := make(map[string]bool, len(files))
+	for _, file := range files {
+		scannedFileFullNames[metapath.JoinFSPath(parentNode.FullName, file.Name)] = true
+	}
+	if err := s.repo.HardDeleteChildNodesByFullNames(parentNode.ID, scannedFileFullNames); err != nil {
+		s.log.Warn("清理文件路径冲突节点失败", "path", dirPath, "node_id", parentNode.ID, "error", err)
+	}
+	scannedItemFullNames := make(map[string]bool)
+	scannedSubdirFullNames := make(map[string]bool)
+	reconcileScannedDirectory := func() {
+		if !force {
+			return
+		}
+		if err := s.repo.HardDeleteItemsByNodeExceptFullNames(parentNode.ID, scannedItemFullNames); err != nil {
+			s.log.Warn("清理已消失的文件数据项失败", "path", dirPath, "node_id", parentNode.ID, "error", err)
+		}
+		if err := s.repo.HardDeleteChildNodesExceptFullNames(parentNode.ID, scannedSubdirFullNames); err != nil {
+			s.log.Warn("清理已消失的子目录节点失败", "path", dirPath, "node_id", parentNode.ID, "error", err)
+		}
+	}
 
 	// 根目录允许非独占组合识别（如根目录下的 multi 组件 item），但不允许被目录树 whole-scope 识别整体吞掉。
 	// 子目录走完整组合识别入口；只有 whole scope 等明确独占范围时才停止后续探测。
@@ -230,7 +230,11 @@ func (s *FilesystemCatalogScanService) scanDirectory(
 				if detected == nil {
 					continue
 				}
-				if s.persistFileCatalogDetectedItem(resource, tenantID, parentNode, dirPath, detected, itemTerm) {
+				persisted, fullName := s.persistFileCatalogDetectedItem(resource, tenantID, parentNode, dirPath, detected, itemTerm)
+				if fullName != "" {
+					scannedItemFullNames[fullName] = true
+				}
+				if persisted {
 					totalItems++
 				}
 			}
@@ -253,11 +257,16 @@ func (s *FilesystemCatalogScanService) scanDirectory(
 				if detected == nil {
 					continue
 				}
-				if s.persistFileCatalogDetectedItem(resource, tenantID, parentNode, dirPath, detected, itemTerm) {
+				persisted, fullName := s.persistFileCatalogDetectedItem(resource, tenantID, parentNode, dirPath, detected, itemTerm)
+				if fullName != "" {
+					scannedItemFullNames[fullName] = true
+				}
+				if persisted {
 					totalItems++
 				}
 			}
 			if detection.Exclusive {
+				reconcileScannedDirectory()
 				return totalItems, extractionStats, nil
 			}
 		}
@@ -271,6 +280,7 @@ func (s *FilesystemCatalogScanService) scanDirectory(
 		detected := metaitem.InferSingleResourceItem(file)
 		itemName := file.Name
 		fullName := metapath.JoinFSPath(parentNode.FullName, itemName)
+		scannedItemFullNames[fullName] = true
 		existingItem, itemExists, findErr := s.repo.FindItemByFullName(tenantID, resource.ID, fullName)
 		if findErr != nil {
 			s.log.Warn("查询文件对象失败", "path", file.Path, "error", findErr)
@@ -279,7 +289,7 @@ func (s *FilesystemCatalogScanService) scanDirectory(
 			totalItems++
 			continue
 		}
-		result, err := catalogItemProcessor(s.repo, s.indexer, s.log).Process(ctx, catalogSingleItemInput{
+		result, err := catalogDataItemProcessor(s.repo, s.indexer, s.log).Process(ctx, catalogSingleItemInput{
 			Resource:           resource,
 			TenantID:           tenantID,
 			EngineID:           resource.ID,
@@ -320,6 +330,7 @@ func (s *FilesystemCatalogScanService) scanDirectory(
 		subdirName := subdir.Name
 		subdirAttrs := models.JSONMap{"path": subdir.Path}
 		subdirFullName := metapath.JoinFSPath(parentNode.FullName, subdirName)
+		scannedSubdirFullNames[subdirFullName] = true
 		subdirNode, err := s.repo.UpsertNode(tenantID, resource.ID, parentNode, "dir", subdirName, &subdirFullName, subdirAttrs)
 		if err != nil {
 			s.log.Warn("创建子目录节点失败", "path", subdir.Path, "error", err)
@@ -338,6 +349,7 @@ func (s *FilesystemCatalogScanService) scanDirectory(
 		totalItems += items
 	}
 
+	reconcileScannedDirectory()
 	return totalItems, extractionStats, nil
 }
 
@@ -348,7 +360,7 @@ func fileModifiedAtPtr(value time.Time) *time.Time {
 	return &value
 }
 
-func fileItemNeedsScan(existing *models.MetaItem, file plugin.FileEntry, isDeepScan bool) bool {
+func fileItemNeedsScan(existing *models.MetaItem, file metaitem.StorageFileRef, isDeepScan bool) bool {
 	if existing == nil {
 		return true
 	}
@@ -374,10 +386,10 @@ func (s *FilesystemCatalogScanService) persistFileCatalogDetectedItem(
 	dirPath string,
 	detected *metaitem.DetectedItem,
 	itemTerm string,
-) bool {
+) (bool, string) {
 	itemPlan, ok := metacatalog.PlanFileCatalogDetectedItem(resource.ID, dirPath, detected, itemTerm)
 	if !ok {
-		return false
+		return false, ""
 	}
 	sizeVal := itemPlan.SizeBytes
 	rowCount := itemRowCountFromMetaAttributes(itemPlan.Attributes)
@@ -394,7 +406,7 @@ func (s *FilesystemCatalogScanService) persistFileCatalogDetectedItem(
 			"full_name", itemPlan.FullName,
 			"error", upsertErr,
 		)
-		return false
+		return false, itemPlan.FullName
 	}
 	s.log.Info("识别到复合数据项",
 		"path", dirPath,
@@ -404,7 +416,7 @@ func (s *FilesystemCatalogScanService) persistFileCatalogDetectedItem(
 		"data_type", detected.DataType,
 		"name", itemPlan.ItemName,
 	)
-	return true
+	return true, itemPlan.FullName
 }
 
 func (s *FilesystemCatalogScanService) resolveFileCatalogDirectoryItems(
@@ -414,11 +426,11 @@ func (s *FilesystemCatalogScanService) resolveFileCatalogDirectoryItems(
 	connInfo plugin.ConnectionInfo,
 	resource *commonModels.Engine,
 	dirPath string,
-	files []plugin.FileEntry,
-	subdirs []plugin.DirEntry,
+	files []metaitem.StorageFileRef,
+	subdirs []metaitem.StorageDirectoryRef,
 ) (*metaitem.DetectionResult, error) {
-	var recursiveFiles []plugin.FileEntry
-	var recursiveSubdirs []plugin.DirEntry
+	var recursiveFiles []metaitem.StorageFileRef
+	var recursiveSubdirs []metaitem.StorageDirectoryRef
 	if len(subdirs) > 0 {
 		var err error
 		recursiveFiles, recursiveSubdirs, err = s.listDirectoryRecursive(ctx, resource, catalogProvider, connInfo, dirPath)
@@ -446,8 +458,8 @@ func resolveNonExclusiveScopeItems(
 	connInfo plugin.ConnectionInfo,
 	resource *commonModels.Engine,
 	dirPath string,
-	files []plugin.FileEntry,
-	subdirs []plugin.DirEntry,
+	files []metaitem.StorageFileRef,
+	subdirs []metaitem.StorageDirectoryRef,
 ) (*metaitem.DetectionResult, error) {
 	return metaitem.ResolveNonExclusiveItems(ctx, metaitem.DirectoryResolveInput{
 		ContentReader:  contentReader,
@@ -460,61 +472,27 @@ func resolveNonExclusiveScopeItems(
 	})
 }
 
-func (s *FilesystemCatalogScanService) listRoots(
-	ctx context.Context,
-	resource *commonModels.Engine,
-	catalogProvider plugin.CatalogProvider,
-	connInfo plugin.ConnectionInfo,
-) ([]plugin.RootEntry, error) {
-	nodes, err := catalogProvider.ListChildren(ctx, connInfo, plugin.CatalogPath{
-		Version:  plugin.CatalogPathVersion,
-		EngineID: resource.ID,
-	}, plugin.ListOptions{})
-	if err != nil {
-		return nil, err
-	}
-	roots := make([]plugin.RootEntry, 0, len(nodes))
-	for _, node := range nodes {
-		if !node.IsContainer {
-			continue
-		}
-		rootPath := plugin.NormalizeFileCatalogPath(node.Path.StringPath())
-		if raw := commonJSON.String(node.Attributes, "storage", "path"); raw != "" {
-			rootPath = plugin.NormalizeFileCatalogPath(raw)
-		}
-		rootName := node.Name
-		if plugin.NormalizeFileCatalogPath(rootName) == "" {
-			rootName = "/"
-		}
-		roots = append(roots, plugin.RootEntry{
-			Name: rootName,
-			Path: rootPath,
-		})
-	}
-	return roots, nil
-}
-
 func (s *FilesystemCatalogScanService) listDirectory(
 	ctx context.Context,
 	resource *commonModels.Engine,
 	catalogProvider plugin.CatalogProvider,
 	connInfo plugin.ConnectionInfo,
 	dirPath string,
-) ([]plugin.FileEntry, []plugin.DirEntry, error) {
+) ([]metaitem.StorageFileRef, []metaitem.StorageDirectoryRef, error) {
 	nodes, err := catalogProvider.ListChildren(ctx, connInfo, plugin.FileDirectoryPath(resource.ID, dirPath), plugin.ListOptions{})
 	if err != nil {
 		return nil, nil, err
 	}
-	files := make([]plugin.FileEntry, 0, len(nodes))
-	subdirs := make([]plugin.DirEntry, 0, len(nodes))
+	files := make([]metaitem.StorageFileRef, 0, len(nodes))
+	subdirs := make([]metaitem.StorageDirectoryRef, 0, len(nodes))
 	for _, node := range nodes {
-		if node.IsContainer {
-			if dir, ok := plugin.FileCatalogDirectoryFromNode(node); ok {
+		if node.Role == plugin.CatalogRoleBranch {
+			if dir, ok := storageDirectoryRefFromCatalogEntry(node); ok {
 				subdirs = append(subdirs, dir)
 			}
 			continue
 		}
-		if file, ok := plugin.FileCatalogEntryFromNode(node); ok {
+		if file, ok := storageFileRefFromCatalogEntry(node); ok {
 			files = append(files, file)
 		}
 	}
@@ -527,23 +505,76 @@ func (s *FilesystemCatalogScanService) listDirectoryRecursive(
 	catalogProvider plugin.CatalogProvider,
 	connInfo plugin.ConnectionInfo,
 	dirPath string,
-) ([]plugin.FileEntry, []plugin.DirEntry, error) {
+) ([]metaitem.StorageFileRef, []metaitem.StorageDirectoryRef, error) {
 	nodes, err := catalogProvider.ListChildren(ctx, connInfo, plugin.FileDirectoryPath(resource.ID, dirPath), plugin.ListOptions{Recursive: true})
 	if err != nil {
 		return nil, nil, err
 	}
-	files := make([]plugin.FileEntry, 0, len(nodes))
-	subdirs := make([]plugin.DirEntry, 0)
+	files := make([]metaitem.StorageFileRef, 0, len(nodes))
+	subdirs := make([]metaitem.StorageDirectoryRef, 0)
 	for _, node := range nodes {
-		if node.IsContainer {
-			if dir, ok := plugin.FileCatalogDirectoryFromNode(node); ok {
+		if node.Role == plugin.CatalogRoleBranch {
+			if dir, ok := storageDirectoryRefFromCatalogEntry(node); ok {
 				subdirs = append(subdirs, dir)
 			}
 			continue
 		}
-		if file, ok := plugin.FileCatalogEntryFromNode(node); ok {
+		if file, ok := storageFileRefFromCatalogEntry(node); ok {
 			files = append(files, file)
 		}
 	}
 	return files, subdirs, nil
+}
+
+func storageFileRefFromCatalogEntry(node plugin.CatalogEntry) (metaitem.StorageFileRef, bool) {
+	if node.Role != plugin.CatalogRoleLeaf {
+		return metaitem.StorageFileRef{}, false
+	}
+	return metaitem.StorageFileRef{
+		Name:        node.Name,
+		Path:        catalogEntryStoragePath(node),
+		CatalogPath: node.Path,
+		Size:        storageCatalogEntrySizeBytes(node),
+		ModifiedAt:  catalogEntryUpdatedAt(node),
+		ContentType: catalogEntryContentType(node),
+	}, true
+}
+
+func storageDirectoryRefFromCatalogEntry(node plugin.CatalogEntry) (metaitem.StorageDirectoryRef, bool) {
+	if node.Role != plugin.CatalogRoleBranch {
+		return metaitem.StorageDirectoryRef{}, false
+	}
+	return metaitem.StorageDirectoryRef{
+		Name:        node.Name,
+		Path:        catalogEntryStoragePath(node),
+		CatalogPath: node.Path,
+	}, true
+}
+
+func catalogEntryStoragePath(node plugin.CatalogEntry) string {
+	if node.Storage != nil && node.Storage.Path != "" {
+		return node.Storage.Path
+	}
+	return node.Path.StringPath()
+}
+
+func storageCatalogEntrySizeBytes(node plugin.CatalogEntry) int64 {
+	if node.Storage == nil || node.Storage.SizeBytes == nil {
+		return 0
+	}
+	return *node.Storage.SizeBytes
+}
+
+func catalogEntryUpdatedAt(node plugin.CatalogEntry) time.Time {
+	if node.UpdatedAt == nil {
+		return time.Time{}
+	}
+	return *node.UpdatedAt
+}
+
+func catalogEntryContentType(node plugin.CatalogEntry) string {
+	if node.Storage == nil {
+		return ""
+	}
+	return node.Storage.ContentType
 }

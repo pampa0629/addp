@@ -10,7 +10,6 @@ import (
 type DynamicSchemaAttributesInput struct {
 	Fields     []datatype.FieldInfo
 	Indexes    []IndexAttributesInput
-	Stats      map[string]interface{}
 	Attributes map[string]interface{}
 }
 
@@ -96,13 +95,13 @@ func applyDynamicSchemaMetadata(attrs models.JSONMap, input DynamicSchemaAttribu
 	if v, ok := input.Attributes["sample_size"]; ok {
 		statistics["sample_size"] = v
 	}
-	if count := firstPresent(input.Stats, input.Attributes, "document_count", "total_documents"); count != nil {
+	if count := firstPresent(input.Attributes, "total_documents"); count != nil {
 		table["row_count"] = count
 	}
-	if v, ok := input.Stats["index_count"]; ok {
+	if v, ok := input.Attributes["index_count"]; ok {
 		statistics["index_count"] = v
 	}
-	if v, ok := input.Stats["avg_record_size"]; ok {
+	if v, ok := input.Attributes["avg_record_size"]; ok {
 		statistics["avg_record_size"] = v
 	}
 
@@ -183,12 +182,10 @@ func stringSliceAttribute(raw interface{}) []string {
 	}
 }
 
-func firstPresent(primary, secondary map[string]interface{}, keys ...string) interface{} {
-	for _, values := range []map[string]interface{}{primary, secondary} {
-		for _, key := range keys {
-			if value, ok := values[key]; ok {
-				return value
-			}
+func firstPresent(values map[string]interface{}, keys ...string) interface{} {
+	for _, key := range keys {
+		if value, ok := values[key]; ok {
+			return value
 		}
 	}
 	return nil

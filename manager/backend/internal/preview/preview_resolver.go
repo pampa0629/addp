@@ -107,7 +107,10 @@ func (r *PreviewResolver) Preview(ctx context.Context, req *PreviewResolverReque
 	}
 
 	// 3. 转换为Provider 执行请求
-	providerReq := r.buildProviderRequest(req)
+	providerReq, err := r.buildProviderRequest(req)
+	if err != nil {
+		return nil, err
+	}
 
 	// 4. 按 Meta 标准属性确定性选择预览插件
 	provider, err := r.resolveProviderByMeta(req, providerReq)
@@ -197,11 +200,8 @@ func (r *PreviewResolver) PreviewFromURIWithSelection(ctx context.Context, locat
 			item, err := r.metaClient.GetMetaItemByID(itemID)
 			if err == nil && item != nil {
 				if item.ScannedDepth != "deep" {
-					if ensureErr := r.metaClient.EnsureItemDeepScanned(itemID); ensureErr != nil {
-						logger.L().Warn("触发 Meta item deep 补齐失败", "item_id", itemID, "error", ensureErr)
-					} else if refreshed, refreshErr := r.metaClient.GetMetaItemByID(itemID); refreshErr == nil && refreshed != nil {
-						item = refreshed
-					}
+					r.submitItemDeepScanRun(itemID)
+					return nil, ErrPreviewRequiresScannedMeta
 				}
 				metaItem = item
 				identityResolved = true
@@ -243,11 +243,8 @@ func (r *PreviewResolver) PreviewFromURIWithSelection(ctx context.Context, locat
 				item, err := r.metaClient.GetItemByCatalogPath(loc.EngineID, catalogPath)
 				if err == nil && item != nil {
 					if item.ScannedDepth != "deep" {
-						if ensureErr := r.metaClient.EnsureItemDeepScanned(item.ID); ensureErr != nil {
-							logger.L().Warn("触发 Meta item deep 补齐失败", "item_id", item.ID, "error", ensureErr)
-						} else if refreshed, refreshErr := r.metaClient.GetMetaItemByID(item.ID); refreshErr == nil && refreshed != nil {
-							item = refreshed
-						}
+						r.submitItemDeepScanRun(item.ID)
+						return nil, ErrPreviewRequiresScannedMeta
 					}
 					metaItem = item
 					logger.L().Debug("从 Meta 获取到数据项元数据",
@@ -335,6 +332,23 @@ func (r *PreviewResolver) PreviewFromURIWithSelection(ctx context.Context, locat
 	return r.Preview(ctx, req)
 }
 
+func (r *PreviewResolver) submitItemDeepScanRun(itemID uint) {
+	if r.metaClient == nil || itemID == 0 {
+		return
+	}
+	run, err := r.metaClient.CreateManualScanRun(commonClient.MetaScanOptions{
+		ItemID:      itemID,
+		ScanDepth:   "deep",
+		Force:       false,
+		TriggerType: "preview",
+	})
+	if err != nil {
+		logger.L().Warn("提交 Meta item deep 后台补扫失败", "item_id", itemID, "error", err)
+		return
+	}
+	logger.L().Info("Meta item deep 后台补扫已提交", "item_id", itemID, "execution_id", run.ExecutionID)
+}
+
 func cloneMetaAttributes(attrs map[string]interface{}) map[string]interface{} {
 	if len(attrs) == 0 {
 		return map[string]interface{}{}
@@ -399,7 +413,10 @@ func (r *PreviewResolver) DetectPreviewType(loc *catalogview.ResourceLocator, en
 	if loc != nil {
 		req.ItemType = strings.ToLower(strings.TrimSpace(string(loc.Type)))
 	}
-	providerReq := r.buildProviderRequest(req)
+	providerReq, err := r.buildProviderRequest(req)
+	if err != nil {
+		return "unsupported"
+	}
 
 	provider, err := r.resolveProviderByMeta(req, providerReq)
 	if err != nil {
@@ -412,9 +429,10 @@ func (r *PreviewResolver) DetectPreviewType(loc *catalogview.ResourceLocator, en
 // 内部辅助方法
 
 // buildProviderRequest 根据 Resolver 请求构造 PreviewProvider 执行请求
-func (r *PreviewResolver) buildProviderRequest(req *PreviewResolverRequest) *PreviewRequest {
+func (r *PreviewResolver) buildProviderRequest(req *PreviewResolverRequest) (*PreviewRequest, error) {
 	schema := ""
 	table := ""
+	providerPath := plugin.CatalogPath{}
 
 	// 对于对象存储类型，schema 是根名称，table 是完整的子路径
 	// 对于文件系统类型，根目录下文件需要映射为 schema="" + table="文件名"，避免被识别为目录
@@ -457,6 +475,19 @@ func (r *PreviewResolver) buildProviderRequest(req *PreviewResolverRequest) *Pre
 		pageSize = req.Pagination.PageSize
 	}
 
+	plug, err := plugin.Get(req.Engine.EngineType)
+	if err != nil {
+		return nil, fmt.Errorf("unsupported engine type: %s", req.Engine.EngineType)
+	}
+	modelProvider, ok := plug.(plugin.CatalogModelProvider)
+	if !ok {
+		return nil, fmt.Errorf("engine %s does not implement CatalogModelProvider", req.Engine.EngineType)
+	}
+	providerPath, err = catalogview.ProviderCatalogPathFromLocator(modelProvider.CatalogModel(), req.Locator)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build provider catalog path: %w", err)
+	}
+
 	// 转换 commonModels.Engine 为 models.Engine
 	managerEngine := &models.Engine{
 		ID:             req.Engine.ID,
@@ -481,6 +512,7 @@ func (r *PreviewResolver) buildProviderRequest(req *PreviewResolverRequest) *Pre
 		ItemType:        req.ItemType,
 		ItemRowCount:    req.ItemRowCount,
 		NodeType:        string(req.Locator.Type),
+		ProviderPath:    providerPath,
 		PhysicalPath:    req.PhysicalPath,
 		ScopePath:       req.ScopePath,
 		ChildName:       req.ChildName,
@@ -488,7 +520,7 @@ func (r *PreviewResolver) buildProviderRequest(req *PreviewResolverRequest) *Pre
 		NestedChildPath: req.NestedChildPath,
 		GraphSample:     req.GraphSample.Clone(),
 		Attributes:      req.MetadataAttributes(),
-	}
+	}, nil
 }
 
 func (req *PreviewResolverRequest) MetadataAttributes() map[string]interface{} {
@@ -664,7 +696,7 @@ func (r *PreviewResolver) attachItemMeta(preview *models.TablePreview, req *Prev
 		itemType = req.Metadata.NodeType
 	}
 
-	meta := &models.ItemMetadata{
+	meta := &models.CatalogFacts{
 		ItemType:        itemType,
 		ItemTypeI18nKey: "engine.term." + itemType,
 		FullName:        req.Metadata.FullName,

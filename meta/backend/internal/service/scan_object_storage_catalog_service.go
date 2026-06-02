@@ -48,16 +48,13 @@ func ensureObjectCatalogNodeAggregate(stats map[uint]*objectCatalogNodeAggregate
 	return agg
 }
 
-func listObjectCatalogBucketNodes(ctx context.Context, resource *commonModels.Engine, catalogProvider plugin.CatalogProvider) ([]plugin.CatalogNode, error) {
-	nodes, err := catalogProvider.ListChildren(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), plugin.CatalogPath{
-		Version:  plugin.CatalogPathVersion,
-		EngineID: resource.ID,
-	}, plugin.ListOptions{})
+func listObjectCatalogBucketNodes(ctx context.Context, resource *commonModels.Engine, catalogProvider plugin.CatalogProvider) ([]plugin.CatalogEntry, error) {
+	nodes, err := catalogProvider.ListChildren(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), plugin.ObjectRootPath(resource.ID), plugin.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
 
-	buckets := make([]plugin.CatalogNode, 0, len(nodes))
+	buckets := make([]plugin.CatalogEntry, 0, len(nodes))
 	for _, node := range nodes {
 		if node.Kind == plugin.CatalogKindBucket {
 			buckets = append(buckets, node)
@@ -66,21 +63,21 @@ func listObjectCatalogBucketNodes(ctx context.Context, resource *commonModels.En
 	return buckets, nil
 }
 
-func listObjectCatalogItems(
+func listObjectCatalogLeaves(
 	ctx context.Context,
 	resource *commonModels.Engine,
 	catalogProvider plugin.CatalogProvider,
 	bucketName, prefix string,
 	recursive bool,
-) ([]plugin.CatalogNode, error) {
+) ([]plugin.CatalogEntry, error) {
 	nodes, err := catalogProvider.ListChildren(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), plugin.ObjectDirectoryPath(resource.ID, bucketName, prefix), plugin.ListOptions{Recursive: recursive})
 	if err != nil {
 		return nil, err
 	}
 
-	objects := make([]plugin.CatalogNode, 0, len(nodes))
+	objects := make([]plugin.CatalogEntry, 0, len(nodes))
 	for _, node := range nodes {
-		if node.IsItem {
+		if node.Role == plugin.CatalogRoleLeaf {
 			objects = append(objects, node)
 		}
 	}
@@ -102,7 +99,7 @@ func resolveObjectCatalogTarget(
 		return target, nil
 	}
 	node, err := catalogProvider.ResolvePath(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), plugin.ObjectItemPath(resource.ID, bucketName, objectPath))
-	if err == nil && node != nil && node.IsItem {
+	if err == nil && node != nil && node.Role == plugin.CatalogRoleLeaf {
 		target.Object = objectPath
 		return target, nil
 	}
@@ -110,24 +107,24 @@ func resolveObjectCatalogTarget(
 	return target, nil
 }
 
-func readObjectCatalogItem(
+func readObjectCatalogLeaf(
 	ctx context.Context,
 	resource *commonModels.Engine,
 	catalogProvider plugin.CatalogProvider,
 	bucketName, objectPath string,
-) ([]plugin.CatalogNode, error) {
+) ([]plugin.CatalogEntry, error) {
 	node, err := catalogProvider.ResolvePath(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), plugin.ObjectItemPath(resource.ID, bucketName, objectPath))
 	if err != nil {
 		return nil, err
 	}
-	if node == nil || !node.IsItem {
+	if node == nil || node.Role != plugin.CatalogRoleLeaf {
 		return nil, nil
 	}
-	return []plugin.CatalogNode{*node}, nil
+	return []plugin.CatalogEntry{*node}, nil
 }
 
-func objectCatalogNodesToStorageResources(
-	objects []plugin.CatalogNode,
+func objectCatalogEntriesToStorageResources(
+	objects []plugin.CatalogEntry,
 	bucket string,
 ) []metacatalog.StorageResource {
 	resources := make([]metacatalog.StorageResource, 0, len(objects))
@@ -191,7 +188,7 @@ func (s *ObjectStorageCatalogScanService) ScanPaths(
 	if !ok {
 		return ObjectCatalogScanResult{}, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
 	}
-	itemTerm := catalogItemTermForPlugin(p, plugin.CatalogTermObject)
+	itemTerm := catalogLeafTermForPlugin(p, plugin.CatalogTermObject)
 
 	paths, err := resolveCatalogScanPaths(
 		context.Background(),
@@ -253,6 +250,14 @@ func (s *ObjectStorageCatalogScanService) scanObjectCatalogPaths(
 	completed := 0
 
 	isDeepScan := strings.EqualFold(scanDepth, "deep")
+	enginePlugin, err := plugin.Get(resource.EngineType)
+	if err != nil {
+		return ObjectCatalogScanResult{}, err
+	}
+	rootNode, err := ensureCatalogRootNode(s.repo, tenantID, resource, enginePlugin)
+	if err != nil {
+		return ObjectCatalogScanResult{}, err
+	}
 
 	for _, rawPath := range paths {
 		if reporter != nil {
@@ -289,11 +294,11 @@ func (s *ObjectStorageCatalogScanService) scanObjectCatalogPaths(
 			continue
 		}
 
-		var objects []plugin.CatalogNode
+		var objects []plugin.CatalogEntry
 		if target.Object != "" {
-			objects, err = readObjectCatalogItem(context.Background(), resource, catalogProvider, bucketName, target.Object)
+			objects, err = readObjectCatalogLeaf(context.Background(), resource, catalogProvider, bucketName, target.Object)
 		} else {
-			objects, err = listObjectCatalogItems(context.Background(), resource, catalogProvider, bucketName, prefix, isDeepScan)
+			objects, err = listObjectCatalogLeaves(context.Background(), resource, catalogProvider, bucketName, prefix, isDeepScan)
 		}
 		if err != nil {
 			s.log.Warn("对象 catalog 路径扫描失败",
@@ -312,12 +317,12 @@ func (s *ObjectStorageCatalogScanService) scanObjectCatalogPaths(
 			continue
 		}
 
-		resources := objectCatalogNodesToStorageResources(objects, bucketName)
+		resources := objectCatalogEntriesToStorageResources(objects, bucketName)
 
 		bucketNode, ok := bucketNodes[bucketName]
 		if !ok {
 			attrs := models.JSONMap{"bucket": bucketName}
-			bucketNode, err = s.repo.UpsertNode(tenantID, engineID, nil, "bucket", bucketName, &bucketName, attrs)
+			bucketNode, err = s.repo.UpsertNode(tenantID, engineID, rootNode, "bucket", bucketName, &bucketName, attrs)
 			if err != nil {
 				return ObjectCatalogScanResult{CatalogNodes: totalBuckets, Items: totalObjects, Extraction: extractionStats}, err
 			}
@@ -386,7 +391,7 @@ func (s *ObjectStorageCatalogScanService) scanObjectCatalogPaths(
 			if bucketNodes[bucketName] == nil {
 				continue
 			}
-			deletedItems, err := s.repo.SoftDeleteObjectCatalogItemsMissingFingerprints(tenantID, engineID, bucketName, scannedFingerprints)
+			deletedItems, err := s.repo.SoftDeleteObjectMetaItemsMissingFingerprints(tenantID, engineID, bucketName, scannedFingerprints)
 			if err != nil {
 				s.log.Warn("查询已存在对象元数据失败",
 					"bucket", bucketName,
@@ -457,7 +462,7 @@ func (s *ObjectStorageCatalogScanService) scanObjectCatalogPaths(
 	return ObjectCatalogScanResult{CatalogNodes: totalBuckets, Items: totalObjects, Extraction: extractionStats}, nil
 }
 
-// persistObjectResources 持久化对象 catalog item 到数据库
+// persistObjectResources 持久化对象 catalog leaf 到数据库
 //
 // 职责划分：
 // 1. 目录树构建：根据对象路径构建层级目录节点
@@ -471,7 +476,7 @@ func (s *ObjectStorageCatalogScanService) scanObjectCatalogPaths(
 //   - tenantID: 租户ID
 //   - engineID: 引擎ID
 //   - bucketNode: Bucket节点
-//   - resources: 对象 catalog item 资源列表
+//   - resources: 对象 catalog leaf 资源列表
 //   - stats: 节点统计聚合map
 //   - includeBucketAggregate: 是否包含bucket级别的聚合
 //   - scanDepth: 扫描深度
@@ -676,7 +681,7 @@ func (s *ObjectStorageCatalogScanService) persistObjectResources(
 			"currentParent_name", currentParent.Name,
 			"objectName", itemPlan.ObjectName)
 
-		result, err := catalogItemProcessor(s.repo, s.indexer, s.log).Process(context.Background(), catalogSingleItemInput{
+		result, err := catalogDataItemProcessor(s.repo, s.indexer, s.log).Process(context.Background(), catalogSingleItemInput{
 			Resource:           resource,
 			TenantID:           tenantID,
 			EngineID:           engineID,

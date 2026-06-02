@@ -66,7 +66,7 @@ func (r *objectCatalogContentReader) List(ctx context.Context, scope contentio.R
 			path = node.Path.StringPath()
 		}
 		role := contentio.RoleMain
-		if node.IsContainer {
+		if node.Role == plugin.CatalogRoleBranch {
 			role = contentio.RoleScope
 		}
 		refs = append(refs, contentio.NewRef(path, role))
@@ -130,7 +130,7 @@ func (r *fileCatalogContentReader) List(ctx context.Context, scope contentio.Ref
 	for _, node := range nodes {
 		path := catalogutil.NodePhysicalPath(node)
 		role := contentio.RoleMain
-		if node.IsContainer {
+		if node.Role == plugin.CatalogRoleBranch {
 			role = contentio.RoleScope
 		}
 		refs = append(refs, contentio.NewRef(path, role))

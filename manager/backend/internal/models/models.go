@@ -114,7 +114,7 @@ type TablePreview struct {
 	RenderGeometryColumns map[string]string        `json:"render_geometry_columns,omitempty"` // 原几何列 -> 地图渲染列
 	Object                *ObjectPreview           `json:"object,omitempty"`
 	Graph                 *GraphPreviewData        `json:"graph,omitempty"`
-	ItemMeta              *ItemMetadata            `json:"item_meta,omitempty"` // 数据项元数据（来自 meta 模块）
+	ItemMeta              *CatalogFacts            `json:"item_meta,omitempty"` // 数据项元数据（来自 meta 模块）
 	// MVT preview metadata (for frontend to switch between GeoJSON and MVT rendering)
 	EngineID   uint   `json:"engineId,omitempty"`   // Engine ID for MVT API
 	Schema     string `json:"schema,omitempty"`     // Schema name for MVT API
@@ -145,8 +145,8 @@ type GraphPreviewRelationship struct {
 	Properties  map[string]interface{} `json:"properties"`
 }
 
-// ItemMetadata 数据项元数据（来自 meta 模块，附加在预览响应中）
-type ItemMetadata struct {
+// CatalogFacts 数据项元数据（来自 meta 模块，附加在预览响应中）
+type CatalogFacts struct {
 	ItemType        string          `json:"item_type"`          // 原始类型值，如 "table", "graph"
 	ItemTypeI18nKey string          `json:"item_type_i18n_key"` // i18n key，如 "engine.term.table"
 	FullName        string          `json:"full_name"`          // 在引擎内的完整路径

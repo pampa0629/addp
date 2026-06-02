@@ -152,7 +152,7 @@ function termForKind(kind) {
 
 function isDirectoryNode(node) {
   const kind = String(node?.kind || node?.term || '').toLowerCase()
-  return !!node?.is_container || ['root', 'bucket', 'prefix', 'directory'].includes(kind)
+  return node?.role === 'branch' || ['root', 'bucket', 'prefix', 'directory'].includes(kind)
 }
 
 function displayPath(segments) {

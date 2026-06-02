@@ -72,7 +72,7 @@ func postgresReadSessionQuery(ctx context.Context, db *sql.DB, path plugin.Catal
 	for _, column := range columns {
 		fields = append(fields, postgresFieldInfoFromColumn(column))
 	}
-	selectedFields, err := postgresSelectedFields(fields, opts.Metadata)
+	selectedFields, err := postgresSelectedFields(fields, opts.Hints)
 	if err != nil {
 		return "", nil, nil, err
 	}
@@ -80,8 +80,8 @@ func postgresReadSessionQuery(ctx context.Context, db *sql.DB, path plugin.Catal
 		fields = selectedFields
 	}
 	selectExpr := postgresSelectExprForFields(fields)
-	if shouldReadPostgresSpatialAsGeoJSON(opts.Metadata) {
-		if expr, err := postgresGeoJSONSelectExpr(columns, opts.Metadata, fields); err != nil {
+	if shouldReadPostgresSpatialAsGeoJSON(opts.Hints) {
+		if expr, err := postgresGeoJSONSelectExpr(columns, opts.Hints, fields); err != nil {
 			return "", nil, nil, err
 		} else if expr != "" {
 			selectExpr = expr
@@ -90,11 +90,11 @@ func postgresReadSessionQuery(ctx context.Context, db *sql.DB, path plugin.Catal
 	return sqldialect.ForEngine("postgresql").SelectTableSQL(selectExpr, schema, table, "", "", 0, 0), fields, postgresSpatialInfoFromFields(fields), nil
 }
 
-func postgresSelectedFields(fields []datatype.FieldInfo, metadata map[string]interface{}) ([]datatype.FieldInfo, error) {
-	if len(fields) == 0 || metadata == nil {
+func postgresSelectedFields(fields []datatype.FieldInfo, hints map[string]interface{}) ([]datatype.FieldInfo, error) {
+	if len(fields) == 0 || hints == nil {
 		return nil, nil
 	}
-	selection := postgresFieldSelection(metadata)
+	selection := postgresFieldSelection(hints)
 	if selection == nil || len(selection.Include) == 0 {
 		return nil, nil
 	}
@@ -122,11 +122,11 @@ func postgresSelectedFields(fields []datatype.FieldInfo, metadata map[string]int
 	return selected, nil
 }
 
-func postgresFieldSelection(metadata map[string]interface{}) *format.FieldSelectionOptions {
-	if metadata == nil {
+func postgresFieldSelection(hints map[string]interface{}) *format.FieldSelectionOptions {
+	if hints == nil {
 		return nil
 	}
-	value := metadata[format.FieldSelectionOptionKey]
+	value := hints[format.FieldSelectionOptionKey]
 	switch selection := value.(type) {
 	case *format.FieldSelectionOptions:
 		return selection
@@ -156,15 +156,15 @@ func postgresSelectExprForFields(fields []datatype.FieldInfo) string {
 	return strings.Join(exprs, ", ")
 }
 
-func shouldReadPostgresSpatialAsGeoJSON(metadata map[string]interface{}) bool {
-	if metadata == nil {
+func shouldReadPostgresSpatialAsGeoJSON(hints map[string]interface{}) bool {
+	if hints == nil {
 		return false
 	}
-	return strings.EqualFold(strings.TrimSpace(metadataString(metadata, "spatial.target_encoding")), "geojson")
+	return strings.EqualFold(strings.TrimSpace(hintString(hints, "spatial.target_encoding")), "geojson")
 }
 
-func postgresGeoJSONSelectExpr(columns []postgresColumnInfo, metadata map[string]interface{}, fields []datatype.FieldInfo) (string, error) {
-	geometryField := strings.TrimSpace(metadataString(metadata, "geometry_field"))
+func postgresGeoJSONSelectExpr(columns []postgresColumnInfo, hints map[string]interface{}, fields []datatype.FieldInfo) (string, error) {
+	geometryField := strings.TrimSpace(hintString(hints, "geometry_field"))
 	selected := map[string]bool{}
 	if len(fields) > 0 {
 		for _, field := range fields {
@@ -376,7 +376,7 @@ func normalizePostgresGeometryType(value string) (string, int) {
 	}
 }
 
-func metadataString(values map[string]interface{}, key string) string {
+func hintString(values map[string]interface{}, key string) string {
 	if values == nil {
 		return ""
 	}

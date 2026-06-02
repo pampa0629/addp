@@ -26,7 +26,7 @@ type RegisteredService struct {
 
 	// 认证配置
 	AuthType   string `gorm:"size:50;default:'none';check:auth_type IN ('none', 'basic', 'bearer', 'api_key')" json:"auth_type"`
-	AuthConfig JSONB `gorm:"type:jsonb;default:'{}'" json:"auth_config"`
+	AuthConfig JSONB  `gorm:"type:jsonb;default:'{}'" json:"auth_config"`
 
 	// 健康检查
 	HealthCheckURL string     `gorm:"type:text" json:"health_check_url"`
@@ -151,9 +151,9 @@ type RegisteredServiceDTO struct {
 	Metadata map[string]interface{} `json:"metadata"`
 
 	// 认证配置（不返回敏感信息）
-	AuthType       string `json:"auth_type"`
-	HasAuthConfig  bool   `json:"has_auth_config"` // 是否配置了认证信息
-	HealthCheckURL string `json:"health_check_url"`
+	AuthType       string     `json:"auth_type"`
+	HasAuthConfig  bool       `json:"has_auth_config"` // 是否配置了认证信息
+	HealthCheckURL string     `json:"health_check_url"`
 	LastCheckedAt  *time.Time `json:"last_checked_at"`
 
 	// 图层信息
@@ -201,11 +201,11 @@ type RefreshMetadataRequest struct {
 
 // HealthCheckResult 健康检查结果
 type HealthCheckResult struct {
-	ServiceID   uint      `json:"service_id"`
-	ServiceName string    `json:"service_name"`
-	Status      string    `json:"status"` // healthy, unhealthy, error
-	StatusCode  int       `json:"status_code,omitempty"`
-	Message     string    `json:"message"`
-	CheckedAt   time.Time `json:"checked_at"`
-	ResponseTime int64    `json:"response_time"` // 响应时间（毫秒）
+	ServiceID    uint      `json:"service_id"`
+	ServiceName  string    `json:"service_name"`
+	Status       string    `json:"status"` // healthy, unhealthy, error
+	StatusCode   int       `json:"status_code,omitempty"`
+	Message      string    `json:"message"`
+	CheckedAt    time.Time `json:"checked_at"`
+	ResponseTime int64     `json:"response_time"` // 响应时间（毫秒）
 }

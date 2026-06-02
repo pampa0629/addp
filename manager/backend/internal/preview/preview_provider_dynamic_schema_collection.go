@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/manager/internal/catalogutil"
 	"github.com/addp/manager/internal/models"
 )
 
@@ -32,7 +31,7 @@ func (p *dynamicSchemaCollectionPreviewProvider) Preview(ctx context.Context, re
 	if !ok {
 		return nil, fmt.Errorf("engine %s does not implement QueryRuntimeProvider", req.Engine.EngineType)
 	}
-	metadataProvider, _ := p_.(plugin.ItemMetadataProvider)
+	factsProvider, _ := p_.(plugin.CatalogFactsProvider)
 
 	// 2. 解析 Schema 和 Table
 	// req.Schema 是数据库名，req.Table 可能是 "database.collection" 或只是 "collection"
@@ -103,10 +102,10 @@ func (p *dynamicSchemaCollectionPreviewProvider) Preview(ctx context.Context, re
 
 	// 6. 获取集合统计信息。失败不阻断预览。
 	total := int64(len(rows))
-	if metadataProvider != nil {
-		if item, err := metadataProvider.DescribeItem(ctx, connInfo, dynamicSchemaCollectionCatalogPath(req.Engine.ID, database, collectionName), plugin.MetadataOptions{IncludeStatistics: true}); err == nil {
-			if count := catalogutil.Int64Stat(item.Stats, "document_count"); count > 0 {
-				total = count
+	if factsProvider != nil {
+		if item, err := factsProvider.DescribeCatalogFacts(ctx, connInfo, req.ProviderPath, plugin.CatalogFactsOptions{IncludeStatistics: true}); err == nil {
+			if tableInfo := plugin.CatalogFactsTableInfo(item); tableInfo != nil && tableInfo.RowCount != nil && *tableInfo.RowCount > 0 {
+				total = *tableInfo.RowCount
 			}
 		}
 	}
@@ -152,17 +151,6 @@ func buildDynamicSchemaFindCommand(collection string, skip, limit int) (string, 
 		return "", fmt.Errorf("failed to build dynamic schema collection preview query: %w", err)
 	}
 	return string(bytes), nil
-}
-
-func dynamicSchemaCollectionCatalogPath(engineID uint, database, collection string) plugin.CatalogPath {
-	return plugin.CatalogPath{
-		Version:  plugin.CatalogPathVersion,
-		EngineID: engineID,
-		Segments: []plugin.CatalogSegment{
-			{Term: plugin.CatalogTermDatabase, Kind: plugin.CatalogKindNamespace, Name: database},
-			{Term: plugin.CatalogTermCollection, Kind: plugin.CatalogKindCollection, Name: collection},
-		},
-	}
 }
 
 func buildDynamicSchemaColumnMetadata(columns []string, rows []map[string]interface{}) []models.ColumnMetadata {

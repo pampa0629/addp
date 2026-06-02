@@ -28,15 +28,6 @@ func ParseCleanupRequest(values map[string]interface{}) (events.CleanupRequestEv
 	return event, nil
 }
 
-func ParseEngineDeleted(values map[string]interface{}) (events.EngineDeletedEvent, error) {
-	var event events.EngineDeletedEvent
-	eventJSON, _ := json.Marshal(values)
-	if err := json.Unmarshal(eventJSON, &event); err != nil {
-		return events.EngineDeletedEvent{}, err
-	}
-	return event, nil
-}
-
 func ToMap(v interface{}) map[string]interface{} {
 	data, _ := json.Marshal(v)
 	var result map[string]interface{}

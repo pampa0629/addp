@@ -36,10 +36,10 @@ type CatalogWithCount struct {
 	Count int64 `json:"count"`
 }
 
-// CatalogNode 带子节点的目录树节点
-type CatalogNode struct {
+// CatalogEntry 带子节点的目录树节点
+type CatalogEntry struct {
 	CatalogWithCount
-	Children []CatalogNode `json:"children"`
+	Children []CatalogEntry `json:"children"`
 }
 
 // ListAll 返回租户所有目录（扁平列表，含每个目录直接归属的资产数量）
@@ -56,7 +56,7 @@ func (s *CatalogService) ListAll(tenantID uint) ([]CatalogWithCount, error) {
 }
 
 // GetTree 返回目录树
-func (s *CatalogService) GetTree(tenantID uint) ([]CatalogNode, error) {
+func (s *CatalogService) GetTree(tenantID uint) ([]CatalogEntry, error) {
 	cats, err := s.ListAll(tenantID)
 	if err != nil {
 		return nil, err
@@ -64,14 +64,14 @@ func (s *CatalogService) GetTree(tenantID uint) ([]CatalogNode, error) {
 	return buildCatalogTree(cats, nil), nil
 }
 
-func buildCatalogTree(cats []CatalogWithCount, parentID *int64) []CatalogNode {
-	var nodes []CatalogNode
+func buildCatalogTree(cats []CatalogWithCount, parentID *int64) []CatalogEntry {
+	var nodes []CatalogEntry
 	for _, c := range cats {
 		cCopy := c
 		isRoot := parentID == nil && c.ParentID == nil
 		isChild := parentID != nil && c.ParentID != nil && *parentID == *c.ParentID
 		if isRoot || isChild {
-			node := CatalogNode{
+			node := CatalogEntry{
 				CatalogWithCount: cCopy,
 				Children:         buildCatalogTree(cats, &cCopy.ID),
 			}

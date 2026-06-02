@@ -16,7 +16,7 @@ engine.capabilities/v1
 
 - capabilities 是引擎自身能力与 Provider 实现承诺的事实来源。
 - 声明了可调用能力，就必须有对应 Provider 或明确的模块执行面。
-- Catalog、Metadata、Store、Query、Workflow、Script 是不同能力面，不能混用。
+- Catalog、Facts、Store、Query、Workflow、Script 是不同能力面，不能混用。
 - 核心结构只表达引擎自身原生能力与对应 Provider 能力，不承载模块适配状态。
 - `compute.query`、`compute.workflow`、`compute.script` 是计算能力事实源，取代旧版 `dev_modes` 字符串数组；开发界面可以由这些能力派生，但不得再把 `dev_modes` 作为能力声明事实源。
 - 没有明确模块消费价值的字段不进入核心声明；后续有真实调用方时再扩展。
@@ -52,7 +52,7 @@ type EngineCapabilities struct {
 | `limits` | 跨能力通用限制，如预览大小、超时建议。 | 可选，有真实调用方时声明。 |
 | `extensions` | 引擎特有扩展。 | 可选，不得替代核心字段。 |
 
-`engine_family` 只表达粗粒度引擎族，不能替代 `storage.catalog_model`、provider 组合或模块自身策略。尤其对 Meta 而言，是否走 namespace/item catalog、是否需要内容读取、是否可做动态 schema 采样，必须由 `CatalogModelSpec` 与已实现 provider 一起决定；不得把 `engine_family` 当作扫描策略事实源。
+`engine_family` 只表达粗粒度引擎族，不能替代 `storage.catalog_model`、provider 组合或模块自身策略。尤其对 Meta 而言，是否走 namespace/leaf catalog、是否需要内容读取、是否可做动态 schema 采样，必须由 `CatalogModelSpec` 与已实现 provider 一起决定；不得把 `engine_family` 当作扫描策略事实源。
 
 ---
 
@@ -62,7 +62,7 @@ type EngineCapabilities struct {
 type StorageCapabilities struct {
     CatalogModel *CatalogModelSpec   `json:"catalog_model,omitempty"`
     Catalog      *CatalogCapability  `json:"catalog,omitempty"`
-    Metadata     *MetadataCapability `json:"metadata,omitempty"`
+    Facts        *CatalogFactsCapability `json:"facts,omitempty"`
     Store        *StoreCapability    `json:"store,omitempty"`
     Semantics    []string            `json:"semantics,omitempty"`
     NotSupported []string            `json:"not_supported,omitempty"`
@@ -74,8 +74,8 @@ type StorageCapabilities struct {
 | 字段 | 说明 | 保留要求 |
 | --- | --- | --- |
 | `catalog_model` | 目录层级稳定模型，决定页面树、路径解析、扫描范围和指纹计算。 | 具备 catalog 的存储引擎必须声明。 |
-| `catalog` | 是否能实时列出引擎里的目录和数据项。 | 需要浏览或扫描真实目录时声明。 |
-| `metadata` | 是否能描述叶子 item 的字段、统计、索引、约束、空间信息或原生属性。 | Meta 扫描和资产描述需要时声明。 |
+| `catalog` | 是否能实时列出引擎里的 catalog branch / leaf。 | 需要浏览或扫描真实目录时声明。 |
+| `facts` | 是否能描述 catalog leaf 的字段、统计、索引、约束、空间信息或原生属性。 | Meta 扫描和资产描述需要时声明。 |
 | `store` | 内容访问方式，如流式读、范围读、批量读写。 | 需要预览、导入导出或内容访问时声明。 |
 | `semantics` | 补充稳定机器语义，如 `bucket`、`prefix_listing`、`object`。 | 可选，仅在核心字段不足以表达差异且有调用方时声明。 |
 | `not_supported` | 显式声明容易误判但不支持的能力，如 `real_directory`、`range_write`。 | 可选，对容易混淆的引擎建议声明。 |
@@ -90,12 +90,11 @@ type CatalogModelSpec struct {
 }
 
 type CatalogLevelSpec struct {
-    Term      string   `json:"term"`
-    Kinds     []string `json:"kinds"`
-    Container bool     `json:"container"`
-    Item      bool     `json:"item,omitempty"`
-    Optional  bool     `json:"optional,omitempty"`
-    I18nKey   string   `json:"i18n_key,omitempty"`
+    Term     string   `json:"term"`
+    Kinds    []string `json:"kinds"`
+    Role     string   `json:"role"`
+    Optional bool     `json:"optional,omitempty"`
+    I18nKey  string   `json:"i18n_key,omitempty"`
 }
 ```
 
@@ -104,11 +103,10 @@ type CatalogLevelSpec struct {
 | 字段 | 说明 |
 | --- | --- |
 | `path_version` | 目录路径模型版本。 |
-| `root_term` | 根语义，如 `server`、`service`、`root`。 |
+| `root_term` | 结构根语义，如 `server`、`service`、`root`。 |
 | `levels.term` | 层级语义，如 `bucket`、`prefix`、`object`。 |
 | `levels.kinds` | 该层可能出现的节点类型，如 `table`、`view`、`object`。 |
-| `levels.container` | 该层是否可以继续展开子节点。 |
-| `levels.item` | 该层是否是可被描述、预览、读取或写入的数据项。 |
+| `levels.role` | catalog 结构角色，只允许 `branch` / `leaf`。 |
 | `levels.optional` | 该层是否可省略。 |
 | `levels.i18n_key` | 展示层使用的原生术语国际化 key。内置模型必须声明，推荐格式为 `engine.term.<term>`。 |
 
@@ -123,14 +121,16 @@ type CatalogLevelSpec struct {
 | S3 / MinIO | `service -> bucket -> prefix -> object` |
 | NFS | `root -> directory -> file` |
 
+`root_term` 表达显性 catalog root；`levels` 只包含 root 下业务层级，不包含 root 本身。对外展示完整层次时可以把 `root_term` 作为前缀说明，但能力声明中的 `levels[0]` 必须是第一层业务 branch，例如 PostgreSQL 的 `schema`、MinIO 的 `bucket`、NFS 的 `directory`。
+
 `StorageCapabilities.CatalogModel` 是对外 CatalogModel 事实源。如果插件同时实现 `CatalogModelProvider`，其返回值必须与 `storage.catalog_model` 完全一致。
 
-`levels.term` 是机器语义，`levels.i18n_key` 是展示语义。Meta、Manager 等上层模块可以统一消费 `CatalogNode` / `CatalogPath`，但面向用户的 UI 必须优先使用 `i18n_key` 展示引擎原生术语，例如 PostgreSQL 显示 `Schema`，MySQL/MongoDB 显示 `数据库 / Database`，MinIO/S3 显示 `Bucket`，NFS 显示 `目录 / Directory`。不得把平台内部的 `catalog node` 作为用户可见术语。
+`levels.term` 是机器语义，`levels.i18n_key` 是展示语义。Meta、Manager 等上层模块可以统一消费 `CatalogEntry` / `CatalogPath`，但面向用户的 UI 必须优先使用 `i18n_key` 展示引擎原生术语，例如 PostgreSQL 显示 `Schema`，MySQL/MongoDB 显示 `数据库 / Database`，MinIO/S3 显示 `Bucket`，NFS 显示 `目录 / Directory`。不得把平台内部的 `catalog node` 作为用户可见术语。
 
 消费规则：
 
-- `CatalogModelSpec` 负责回答“目录怎么分层、各层叫什么、谁是 item”。
-- provider 组合负责回答“哪些动作真的可做”，例如是否能列目录、描述 item、采样字段、读取内容。
+- `CatalogModelSpec` 负责回答“catalog 怎么分层、各层叫什么、谁是 branch / leaf”。
+- provider 组合负责回答“哪些动作真的可做”，例如是否能列目录、描述 catalog facts、采样字段、读取内容。
 - 上层模块可以基于二者形成自己的执行策略，但不得绕过 catalog model 再维护第二套 family 专属目录规则。
 
 ### 3.2 CatalogCapability
@@ -155,18 +155,18 @@ type CatalogCapability struct {
 | `system_filtering` | 是否能过滤系统库、系统 schema 等噪声。 | 数据库类引擎建议声明。 |
 | `node_kinds` | catalog 可能返回的节点类型集合。 | 建议声明。 |
 
-### 3.3 MetadataCapability
+### 3.3 CatalogFactsCapability
 
 ```go
-type MetadataCapability struct {
+type CatalogFactsCapability struct {
     Supported       bool `json:"supported"`
     FieldInfo       bool `json:"field_info,omitempty"`
     Statistics      bool `json:"statistics,omitempty"`
     Indexes         bool `json:"indexes,omitempty"`
     Constraints     bool `json:"constraints,omitempty"`
-    SpatialMetadata bool `json:"spatial_metadata,omitempty"`
+    SpatialFacts    bool `json:"spatial_facts,omitempty"`
     Sampling        bool `json:"sampling,omitempty"`
-    NativeMetadata  bool `json:"native_metadata,omitempty"`
+    NativeFacts     bool `json:"native_facts,omitempty"`
 }
 ```
 
@@ -177,9 +177,9 @@ type MetadataCapability struct {
 | `statistics` | 是否能获取行数、大小、采样统计等统计信息。 |
 | `indexes` | 是否能获取索引信息。 |
 | `constraints` | 是否能获取主键、唯一约束、外键等约束信息。 |
-| `spatial_metadata` | 是否能获取空间字段、SRID、范围等空间元数据。 |
+| `spatial_facts` | 是否能获取空间字段、SRID、范围等空间事实。 |
 | `sampling` | 是否需要或支持通过采样推断结构。 |
-| `native_metadata` | 是否能获取引擎原生属性，如对象大小、ETag、修改时间、存储类别等。 |
+| `native_facts` | 是否能获取引擎原生事实，如对象大小、ETag、修改时间、存储类别等。 |
 
 ### 3.4 StoreCapability
 
@@ -350,7 +350,7 @@ type CapabilitiesView struct {
 
 - `schema_version` 必须存在且等于 `engine.capabilities/v1`。
 - 声明 `storage.catalog.supported=true` 的插件必须实现 `CatalogProvider`。
-- 声明 `storage.metadata.supported=true` 的插件必须实现 `ItemMetadataProvider` 或明确的采样 provider。
+- 声明 `storage.facts.supported=true` 的插件必须实现 `CatalogFactsProvider` 或明确的采样 provider。
 - `storage.catalog_model` 是对外 CatalogModel 事实源；如果插件同时实现 `CatalogModelProvider`，其返回值必须与 `storage.catalog_model` 完全一致。
 - 声明 `storage.store.stream_read=true` 的插件必须实现 `ContentReadableProvider`。
 - 声明 `storage.store.stream_write=true` 的插件必须实现 `ContentWritableProvider`。
@@ -362,7 +362,7 @@ type CapabilitiesView struct {
 - 声明 `storage.store.table_write_session=true` 的插件必须实现 `TableWriteSessionProvider`。
 - 声明 `storage.store.table_write_prepare=true` 的插件必须实现 `TableWritePreparer`。
 - 声明 `compute.query.supported=true` 的插件必须实现对应 query runtime provider。
-- 声明 `compute.workflow.supported=true` 的插件必须实现 `WorkflowRuntimeProvider`。若 `dynamic_operators=true`，则其 `ListOperators()` 必须可调用，并返回符合工作流计算引擎接口规范的算子元数据。
+- 声明 `compute.workflow.supported=true` 的插件必须实现 `WorkflowRuntimeProvider`。若 `dynamic_operators=true`，则其 `ListOperators()` 必须可调用，并返回符合工作流计算引擎接口规范的算子描述。
 - 声明 `compute.script.supported=true` 的插件必须实现 `ScriptRuntimeProvider`。
 - capabilities 由插件返回结构体，System 统一序列化为 JSONB。
 - 旧 capabilities 结构不再兼容，发现旧结构可直接刷新或清空。
@@ -388,7 +388,7 @@ PostgreSQL 示例：
       ]
     },
     "catalog": {"supported": true, "real_time": true, "system_filtering": true},
-    "metadata": {"supported": true, "field_info": true, "statistics": true, "indexes": true, "constraints": true, "spatial_metadata": true},
+    "facts": {"supported": true, "field_info": true, "statistics": true, "indexes": true, "constraints": true, "spatial_facts": true},
     "store": {"batch_read": true}
   },
   "compute": {
@@ -415,7 +415,7 @@ MinIO 示例：
       ]
     },
     "catalog": {"supported": true, "real_time": true},
-    "metadata": {"supported": true, "native_metadata": true},
+    "facts": {"supported": true, "native_facts": true},
     "store": {"stream_read": true, "range_read": true},
     "semantics": ["bucket", "prefix_listing", "object", "stream_read", "range_read"],
     "not_supported": ["range_write", "real_directory"]

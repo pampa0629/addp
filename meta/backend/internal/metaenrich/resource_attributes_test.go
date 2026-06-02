@@ -25,10 +25,10 @@ func TestEnrichResourceAttributesKeepsContainerSummaryWhenContentOpenFails(t *te
 
 	item := &metaitem.DetectedItem{
 		ResolvedItem: dataitem.ResolvedItem{
-			Layout:    dataitem.LayoutSingle,
-			DataType:  dataitem.DataTypeContainer,
-			Format:    string(format.FormatZIP),
-			EntryPath: "broken.zip",
+			Layout:             dataitem.LayoutSingle,
+			DataType:           dataitem.DataTypeContainer,
+			Format:             string(format.FormatZIP),
+			PrimaryContentPath: "broken.zip",
 		},
 	}
 	attrs := metaattr.JSONMap(metaattr.BuildAttributes(metaitem.AttributeInput(item)))
@@ -89,11 +89,11 @@ func TestEnrichResourceAttributesDetectsUnknownDocumentAndWritesDocumentInfo(t *
 	size := int64(len(content))
 	item := &metaitem.DetectedItem{
 		ResolvedItem: dataitem.ResolvedItem{
-			Layout:    dataitem.LayoutSingle,
-			DataType:  dataitem.DataTypeUnknown,
-			Format:    string(format.FormatUnknown),
-			EntryPath: "docs/report.docx",
-			SizeBytes: &size,
+			Layout:             dataitem.LayoutSingle,
+			DataType:           dataitem.DataTypeUnknown,
+			Format:             string(format.FormatUnknown),
+			PrimaryContentPath: "docs/report.docx",
+			SizeBytes:          &size,
 		},
 		PhysicalPath: "docs/report.docx",
 	}
@@ -133,11 +133,11 @@ func TestEnrichResourceAttributesDetectsUnknownMediaAndWritesMediaInfo(t *testin
 	size := int64(len(content))
 	item := &metaitem.DetectedItem{
 		ResolvedItem: dataitem.ResolvedItem{
-			Layout:    dataitem.LayoutSingle,
-			DataType:  dataitem.DataTypeUnknown,
-			Format:    string(format.FormatUnknown),
-			EntryPath: "images/pixel.png",
-			SizeBytes: &size,
+			Layout:             dataitem.LayoutSingle,
+			DataType:           dataitem.DataTypeUnknown,
+			Format:             string(format.FormatUnknown),
+			PrimaryContentPath: "images/pixel.png",
+			SizeBytes:          &size,
 		},
 		PhysicalPath: "images/pixel.png",
 	}

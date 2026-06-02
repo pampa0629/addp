@@ -18,8 +18,6 @@ func init() {
 				ContentReaderDocumentText,
 				ContentReaderRawContent,
 			},
-			TransferRead:  true,
-			TransferWrite: true,
 		},
 		mediaDescriptorForTest("builtin-webp", FormatWebP),
 		mediaDescriptorForTest("builtin-svg", FormatSVG),
@@ -62,8 +60,8 @@ func TestListDescriptorsReturnsSortedCopies(t *testing.T) {
 	}
 }
 
-func TestCapabilityViewFromDescriptor(t *testing.T) {
-	view, ok := GetCapabilityView(FormatMarkdown)
+func TestSupportViewFromDescriptor(t *testing.T) {
+	view, ok := GetSupportView(FormatMarkdown)
 	if !ok {
 		t.Fatal("expected markdown capability view")
 	}
@@ -78,9 +76,6 @@ func TestCapabilityViewFromDescriptor(t *testing.T) {
 	}
 	if !containsStringForDescriptorTest(view.ContentReaders, ContentReaderDocumentText) {
 		t.Fatalf("ContentReaders = %#v, want document_text", view.ContentReaders)
-	}
-	if !view.Transfer.Read || !view.Transfer.Write {
-		t.Fatalf("Transfer = %#v, want read/write", view.Transfer)
 	}
 }
 
@@ -119,7 +114,7 @@ func TestMediaDescriptorsDeclareRawRangeOnly(t *testing.T) {
 	}
 	for _, format := range tests {
 		t.Run(string(format), func(t *testing.T) {
-			view, ok := GetCapabilityView(format)
+			view, ok := GetSupportView(format)
 			if !ok {
 				t.Fatalf("expected %s capability view", format)
 			}
@@ -129,9 +124,6 @@ func TestMediaDescriptorsDeclareRawRangeOnly(t *testing.T) {
 			if !containsStringForDescriptorTest(view.ContentReaders, ContentReaderRawContent) ||
 				!containsStringForDescriptorTest(view.ContentReaders, ContentReaderRangeContent) {
 				t.Fatalf("ContentReaders = %#v, want raw and range", view.ContentReaders)
-			}
-			if view.Transfer.Read || view.Transfer.Write {
-				t.Fatalf("Transfer = %#v, media descriptors should not declare transfer", view.Transfer)
 			}
 		})
 	}

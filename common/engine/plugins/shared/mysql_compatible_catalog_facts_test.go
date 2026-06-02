@@ -3,7 +3,7 @@ package shared
 import "testing"
 
 func TestMySQLCompatibleTableNativeRequiresIncludeEngine(t *testing.T) {
-	dialect := MySQLCompatibleMetadataDialect{}
+	dialect := MySQLCompatibleCatalogFactsDialect{}
 	if got := dialect.tableNative("InnoDB"); got != nil {
 		t.Fatalf("tableNative() = %#v, want nil when IncludeEngine is false", got)
 	}

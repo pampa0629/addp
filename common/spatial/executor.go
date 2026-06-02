@@ -12,7 +12,6 @@ func availableTransformExecutors() []transformExecutor {
 	return []transformExecutor{
 		pureGoExecutor{},
 		projExecutor{},
-		duckDBExecutor{},
 	}
 }
 

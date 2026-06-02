@@ -1,10 +1,28 @@
 basePath: /api/v1/develop
 definitions:
+  client.EngineCatalogEntry:
+    properties:
+      kind:
+        type: string
+      leaf_count:
+        type: integer
+      name:
+        type: string
+      path:
+        $ref: '#/definitions/client.EngineCatalogPath'
+      role:
+        type: string
+      storage:
+        $ref: '#/definitions/plugin.CatalogStorageFacts'
+      table:
+        $ref: '#/definitions/datatype.TableInfo'
+      term:
+        type: string
+      updated_at:
+        type: string
+    type: object
   client.EngineCatalogListChildrenRequest:
     properties:
-      filter:
-        additionalProperties: true
-        type: object
       options:
         $ref: '#/definitions/client.EngineCatalogListOptions'
       path:
@@ -14,7 +32,7 @@ definitions:
     properties:
       nodes:
         items:
-          $ref: '#/definitions/client.EngineCatalogNode'
+          $ref: '#/definitions/client.EngineCatalogEntry'
         type: array
     type: object
   client.EngineCatalogListOptions:
@@ -25,31 +43,6 @@ definitions:
         type: integer
       recursive:
         type: boolean
-    type: object
-  client.EngineCatalogNode:
-    properties:
-      actions:
-        items:
-          type: string
-        type: array
-      attributes:
-        additionalProperties: true
-        type: object
-      is_container:
-        type: boolean
-      is_item:
-        type: boolean
-      kind:
-        type: string
-      name:
-        type: string
-      path:
-        $ref: '#/definitions/client.EngineCatalogPath'
-      stats:
-        additionalProperties: true
-        type: object
-      term:
-        type: string
     type: object
   client.EngineCatalogPath:
     properties:
@@ -69,6 +62,109 @@ definitions:
       name:
         type: string
       term:
+        type: string
+    type: object
+  datatype.FieldInfo:
+    properties:
+      comment:
+        type: string
+      default_expression:
+        type: string
+      generated:
+        type: boolean
+      generation_expression:
+        type: string
+      name:
+        type: string
+      native_type:
+        type: string
+      nullable:
+        type: boolean
+      ordinal_position:
+        type: integer
+      precision:
+        type: integer
+      primary_key:
+        type: boolean
+      scale:
+        type: integer
+      size:
+        type: integer
+      type:
+        $ref: '#/definitions/datatype.FieldType'
+    type: object
+  datatype.FieldType:
+    enum:
+    - unknown
+    - string
+    - bool
+    - bytes
+    - mixed
+    - int
+    - bigint
+    - float
+    - double
+    - decimal
+    - date
+    - time
+    - timestamp
+    - json
+    - array
+    - uuid
+    - geometry
+    - point
+    - linestring
+    - polygon
+    - multipoint
+    type: string
+    x-enum-varnames:
+    - FieldTypeUnknown
+    - FieldTypeString
+    - FieldTypeBool
+    - FieldTypeBytes
+    - FieldTypeMixed
+    - FieldTypeInt
+    - FieldTypeBigInt
+    - FieldTypeFloat
+    - FieldTypeDouble
+    - FieldTypeDecimal
+    - FieldTypeDate
+    - FieldTypeTime
+    - FieldTypeTimestamp
+    - FieldTypeJSON
+    - FieldTypeArray
+    - FieldTypeUUID
+    - FieldTypeGeometry
+    - FieldTypePoint
+    - FieldTypeLineString
+    - FieldTypePolygon
+    - FieldTypeMultiPoint
+  datatype.TableInfo:
+    properties:
+      comment:
+        type: string
+      created_at:
+        type: string
+      fields:
+        items:
+          $ref: '#/definitions/datatype.FieldInfo'
+        type: array
+      kind:
+        type: string
+      name:
+        type: string
+      native:
+        additionalProperties: true
+        type: object
+      primary_key:
+        items:
+          type: string
+        type: array
+      row_count:
+        type: integer
+      size_bytes:
+        type: integer
+      updated_at:
         type: string
     type: object
   github_com_addp_develop_backend_internal_models.CreateDevTaskRequest:
@@ -695,6 +791,21 @@ definitions:
       scheduled_scan:
         description: 启用定时扫描
         type: boolean
+    type: object
+  plugin.CatalogStorageFacts:
+    properties:
+      content_type:
+        type: string
+      etag:
+        type: string
+      extension:
+        type: string
+      name:
+        type: string
+      path:
+        type: string
+      size_bytes:
+        type: integer
     type: object
   plugin.GraphData:
     properties:

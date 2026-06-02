@@ -2,7 +2,6 @@ package scanchange
 
 import (
 	"github.com/addp/common/datatype"
-	"github.com/addp/common/engine/plugin"
 	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/models"
 )
@@ -24,19 +23,19 @@ func ShouldUpdateTable(existingItem *models.MetaItem, tableInfo datatype.TableIn
 		(existingItem.SizeBytes == nil && tableInfo.SizeBytes != nil && *tableInfo.SizeBytes != 0)
 }
 
-func ShouldUpdateCollection(existingItem *models.MetaItem, newInfo plugin.CollectionInfo) bool {
+func ShouldUpdateDynamicSchemaItem(existingItem *models.MetaItem, documentCount, sizeBytes int64) bool {
 	if existingItem == nil {
 		return true
 	}
-	if existingItem.RowCount != nil && *existingItem.RowCount != newInfo.DocumentCount {
+	if existingItem.RowCount != nil && *existingItem.RowCount != documentCount {
 		return true
 	}
-	if existingItem.SizeBytes != nil && newInfo.SizeBytes > 0 {
+	if existingItem.SizeBytes != nil && sizeBytes > 0 {
 		oldSize := *existingItem.SizeBytes
 		if oldSize == 0 {
-			return newInfo.SizeBytes != 0
+			return sizeBytes != 0
 		}
-		change := float64(abs64(newInfo.SizeBytes-oldSize)) / float64(oldSize)
+		change := float64(abs64(sizeBytes-oldSize)) / float64(oldSize)
 		return change > 0.1
 	}
 	return false

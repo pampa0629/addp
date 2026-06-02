@@ -19,7 +19,7 @@ import (
 
 func TestCommonDataItemResolverAdaptsMultiItems(t *testing.T) {
 	d := &commonDataItemResolver{}
-	files := []plugin.FileEntry{
+	files := []StorageFileRef{
 		{Name: "farmland.shp", Path: "/shp/farmland.shp", Size: 10},
 		{Name: "farmland.shx", Path: "/shp/farmland.shx", Size: 20},
 		{Name: "farmland.dbf", Path: "/shp/farmland.dbf", Size: 30},
@@ -42,11 +42,11 @@ func TestCommonDataItemResolverAdaptsMultiItems(t *testing.T) {
 	if got, want := len(result.Items), 2; got != want {
 		t.Fatalf("Items len = %d, want %d", got, want)
 	}
-	if result.Items[0].EntryPath != "/shp/farmland.shp" {
-		t.Fatalf("first EntryPath = %q, want /shp/farmland.shp", result.Items[0].EntryPath)
+	if result.Items[0].PrimaryContentPath != "/shp/farmland.shp" {
+		t.Fatalf("first PrimaryContentPath = %q, want /shp/farmland.shp", result.Items[0].PrimaryContentPath)
 	}
-	if result.Items[1].EntryPath != "/shp/roads.shp" {
-		t.Fatalf("second EntryPath = %q, want /shp/roads.shp", result.Items[1].EntryPath)
+	if result.Items[1].PrimaryContentPath != "/shp/roads.shp" {
+		t.Fatalf("second PrimaryContentPath = %q, want /shp/roads.shp", result.Items[1].PrimaryContentPath)
 	}
 	if result.Items[0].Layout != dataitem.LayoutMulti || result.Items[0].DataType != dataitem.DataTypeTable {
 		t.Fatalf("first item = %#v, want multi table", result.Items[0])
@@ -64,7 +64,7 @@ func TestCommonDataItemResolverAdaptsMultiItems(t *testing.T) {
 
 func TestCommonDataItemResolverRejectsIncompleteMultiRefs(t *testing.T) {
 	d := &commonDataItemResolver{}
-	files := []plugin.FileEntry{
+	files := []StorageFileRef{
 		{Name: "roads.shp", Path: "bucket/roads/roads.shp"},
 		{Name: "roads.dbf", Path: "bucket/roads/roads.dbf"},
 	}
@@ -80,7 +80,7 @@ func TestCommonDataItemResolverRejectsIncompleteMultiRefs(t *testing.T) {
 
 func TestCommonDataItemResolverRejectsCrossDirectoryRefs(t *testing.T) {
 	d := &commonDataItemResolver{}
-	files := []plugin.FileEntry{
+	files := []StorageFileRef{
 		{Name: "roads.shp", Path: "dataset/roads/roads.shp"},
 		{Name: "roads.shx", Path: "dataset/roads/roads.shx"},
 		{Name: "roads.dbf", Path: "dataset/roads/attributes/roads.dbf"},
@@ -109,17 +109,18 @@ func TestCommonDataItemResolverEnrichesRefTableViaFormatProvider(t *testing.T) {
 	}
 
 	d := &commonDataItemResolver{}
-	files := []plugin.FileEntry{
+	files := []StorageFileRef{
 		{Name: "roads.shp", Path: "bucket/gis/roads.shp", Size: int64(len(content["bucket/gis/roads.shp"]))},
 		{Name: "roads.shx", Path: "bucket/gis/roads.shx", Size: int64(len(content["bucket/gis/roads.shx"]))},
 		{Name: "roads.dbf", Path: "bucket/gis/roads.dbf", Size: int64(len(content["bucket/gis/roads.dbf"]))},
 	}
 
 	result, err := d.ResolveItems(context.Background(), DirectoryResolveInput{
-		ContentReader: refMapContentReader{content: content},
-		EngineID:      1,
-		DirPath:       "bucket/gis",
-		Files:         files,
+		ContentReader:  refMapContentReader{content: content},
+		EngineID:       1,
+		CatalogPathFor: plugin.ObjectItemPathForBucket(1, "bucket"),
+		DirPath:        "bucket/gis",
+		Files:          files,
 	})
 	if err != nil {
 		t.Fatalf("ResolveItems() error = %v", err)
@@ -162,7 +163,7 @@ func TestCommonDataItemResolverEnrichesObjectRefsWithBucketRelativePaths(t *test
 	}
 
 	d := &commonDataItemResolver{}
-	files := []plugin.FileEntry{
+	files := []StorageFileRef{
 		{Name: "roads.shp", Path: "gis/roads.shp", Size: int64(len(content["gis/roads.shp"]))},
 		{Name: "roads.shx", Path: "gis/roads.shx", Size: int64(len(content["gis/roads.shx"]))},
 		{Name: "roads.dbf", Path: "gis/roads.dbf", Size: int64(len(content["gis/roads.dbf"]))},
@@ -210,7 +211,8 @@ func (r refMapContentReader) StoreSemantics() plugin.StoreSemantics {
 }
 func (r refMapContentReader) OpenContent(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
 	key := path.StringPath()
-	if len(path.Segments) > 0 && path.Segments[0].Name == "bucket" {
+	businessPath := plugin.CatalogPathWithoutRoot(path)
+	if len(businessPath.Segments) > 0 && businessPath.Segments[0].Name == "bucket" {
 		key = strings.TrimPrefix(key, "bucket/")
 	}
 	data, ok := r.content[key]

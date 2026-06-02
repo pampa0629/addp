@@ -52,7 +52,7 @@ func (p *MathWorkflowPlugin) RuntimeEndpoint(ctx context.Context, connInfo plugi
 	return plugin.RuntimeBaseURL(connInfo)
 }
 
-func (p *MathWorkflowPlugin) ListOperators(ctx context.Context, connInfo plugin.ConnectionInfo) ([]plugin.OperatorMetadata, error) {
+func (p *MathWorkflowPlugin) ListOperators(ctx context.Context, connInfo plugin.ConnectionInfo) ([]plugin.OperatorDescriptor, error) {
 	return plugin.HTTPListOperators(ctx, connInfo)
 }
 

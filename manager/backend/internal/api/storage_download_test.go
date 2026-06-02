@@ -233,22 +233,21 @@ func (p *apiDownloadTestFilePlugin) Capabilities() plugin.EngineCapabilities {
 func (p *apiDownloadTestFilePlugin) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemanticsFromCapabilities(p.Capabilities())
 }
-func (p *apiDownloadTestFilePlugin) DescribeItem(_ context.Context, _ plugin.ConnectionInfo, itemPath plugin.CatalogPath, _ plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
+func (p *apiDownloadTestFilePlugin) DescribeCatalogFacts(_ context.Context, _ plugin.ConnectionInfo, itemPath plugin.CatalogPath, _ plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
 	filePath := strings.Trim(itemPath.StringPath(), "/")
 	content, ok := p.files[filePath]
 	if !ok {
 		return nil, fmt.Errorf("file not found: %s", filePath)
 	}
 	now := time.Unix(0, 0)
-	return &plugin.ItemMetadata{
+	sizeBytes := int64(len(content))
+	return &plugin.CatalogFacts{
 		Path: itemPath,
 		Kind: p.itemKind(),
-		Stats: map[string]interface{}{
-			"size_bytes": int64(len(content)),
-		},
-		Attributes: map[string]interface{}{
-			"name": filePath,
-			"path": filePath,
+		Storage: &plugin.CatalogStorageFacts{
+			Name:      filePath,
+			Path:      filePath,
+			SizeBytes: &sizeBytes,
 		},
 		UpdatedAt: &now,
 	}, nil

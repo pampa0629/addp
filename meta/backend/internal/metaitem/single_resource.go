@@ -1,9 +1,6 @@
 package metaitem
 
-import (
-	"github.com/addp/common/dataitem"
-	"github.com/addp/common/engine/plugin"
-)
+import "github.com/addp/common/dataitem"
 
 // SingleResourceInput 是 single 内容布局 item 推断的输入。
 type SingleResourceInput struct {
@@ -15,7 +12,7 @@ type SingleResourceInput struct {
 }
 
 // InferSingleResourceItem 基于一个资源推断基础 Meta item 语义。
-func InferSingleResourceItem(file plugin.FileEntry) *DetectedItem {
+func InferSingleResourceItem(file StorageFileRef) *DetectedItem {
 	return InferSingleResource(SingleResourceInput{
 		Name:        file.Name,
 		Path:        file.Path,
@@ -44,12 +41,12 @@ func InferSingleResource(input SingleResourceInput) *DetectedItem {
 	})
 	formatName := dataitem.InferFormat(input.Name, input.ContentType, input.Format)
 	item := dataitem.ResolvedItem{
-		Layout:    dataitem.LayoutSingle,
-		DataType:  dataitem.InferDataType(formatName, input.ContentType),
-		Format:    formatName,
-		EntryPath: input.Path,
-		RefList:   ItemRefsFromPaths([]string{input.Path}),
-		SizeBytes: &input.Size,
+		Layout:             dataitem.LayoutSingle,
+		DataType:           dataitem.InferDataType(formatName, input.ContentType),
+		Format:             formatName,
+		PrimaryContentPath: input.Path,
+		RefList:            ItemRefsFromPaths([]string{input.Path}),
+		SizeBytes:          &input.Size,
 	}
 	if resolved != nil && len(resolved.Items) > 0 {
 		item = resolved.Items[0]

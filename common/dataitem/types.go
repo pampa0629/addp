@@ -135,9 +135,10 @@ type ResolvedItem struct {
 	DataType DataType
 	Format   string
 
-	EntryPath string
-	RefPaths  map[string]string
-	RefList   []ItemRef
+	PrimaryContentPath string
+	ScopePath          string
+	RefPaths           map[string]string
+	RefList            []ItemRef
 
 	SizeBytes *int64
 
@@ -175,16 +176,17 @@ type ScanTarget struct {
 }
 
 type ItemDescriptor struct {
-	Layout        Layout
-	DataType      DataType
-	Format        string
-	EntryPath     string
-	PhysicalPath  string
-	StoragePath   string
-	StorageName   string
-	StorageBucket string
-	Refs          []ItemRef
-	SizeBytes     *int64
+	Layout             Layout
+	DataType           DataType
+	Format             string
+	PrimaryContentPath string
+	ScopePath          string
+	PhysicalPath       string
+	StoragePath        string
+	StorageName        string
+	StorageBucket      string
+	Refs               []ItemRef
+	SizeBytes          *int64
 }
 
 func (descriptor ItemDescriptor) RelatedRefs() []format.RelatedRef {

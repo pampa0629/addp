@@ -37,17 +37,9 @@ func (plugin *Plugin) Descriptor() format.FormatDescriptor {
 		Identification: format.FormatIdentification{Extensions: []string{extSHP}, MimeTypes: []string{"application/x-shapefile", "application/x-esri-shapefile"}},
 		Providers:      format.FormatProviderDescriptor{MultiTable: true},
 		ContentReaders: []string{string(format.ContentReaderMultiTableSample), string(format.ContentReaderRawContent)},
-		TransferRead:   true,
-		TransferWrite:  true,
 		Parse:          true,
 		Spatial:        true,
-		EngineFamilies: []string{format.EngineFamilyObject, format.EngineFamilyFile},
 	}
-}
-
-func (plugin *Plugin) Capabilities() format.FormatCapability {
-	capability, _ := format.GetFormatCapability(format.FormatShapefile)
-	return capability
 }
 
 func (plugin *Plugin) RelatedRefSpecs() []format.RelatedRefSpec {

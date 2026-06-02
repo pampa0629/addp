@@ -78,7 +78,7 @@ const treeRef = ref(null)
 const showSearch = ref(true)
 
 const itemTypes = new Set(['table', 'view', 'collection', 'graph', 'file', 'object'])
-const nodeTypes = new Set(['schema', 'database', 'bucket', 'prefix', 'directory', 'root', 'dir'])
+const nodeTypes = new Set(['schema', 'database', 'bucket', 'prefix', 'directory', 'root', 'dir', 'server', 'service'])
 const hasLocatorIdentity = (loc) => !!(loc?.itemId || loc?.nodeId)
 
 const nodeContextFromLocator = (locator, baseNode = {}) => {
@@ -140,7 +140,6 @@ const selectedEngineTree = computed(() => {
 const panelType = computed(() => {
   const node = store.selectedNode
   if (!node) return 'item'
-  if (node.type === 'engine') return 'engine'
   if (nodeTypes.has(node.type)) return 'node'
   return 'item'
 })
@@ -154,11 +153,11 @@ const currentNodeChildren = computed(() => {
 // 事件处理：节点选择（从 ExplorerTree 组件触发）
 const handleNodeSelect = async ({ node, locator }) => {
   try {
-    if (node.type !== 'engine' && nodeTypes.has(node.type)) {
+    if (nodeTypes.has(node.type) && (node.children || []).length === 0 && node.hasChildren) {
       await store.loadNodeChildren(locator, 1)
     }
 
-    if (node.type !== 'engine' && itemTypes.has(node.type)) {
+    if (itemTypes.has(node.type)) {
       await store.loadPreview(locator, 1)
     }
   } catch (error) {
@@ -292,7 +291,7 @@ onMounted(async () => {
 
       // 收集初始需要展开的引擎节点 locators
       const engineLocators = store.engines.map(engine =>
-        `addp://engine/${engine.id}/path/?type=database`
+        store.engineTrees[engine.id]?.locator || `addp://engine/${engine.id}/path/?type=root`
       )
 
       // 设置展开状态

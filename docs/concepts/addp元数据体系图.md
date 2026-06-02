@@ -23,7 +23,7 @@ Meta 不负责：
 元数据主链路是：
 
 ```text
-engine catalog / metadata
+engine catalog / facts
   -> Meta scanner
   -> Meta detector
   -> 格式、数据类型和内容读取能力提供候选事实
@@ -37,11 +37,11 @@ engine catalog / metadata
 ```mermaid
 graph LR
     Engine["Engine"] --> Catalog["Catalog Facts"]
-    Engine --> Metadata["Item Metadata Facts"]
+    Engine --> Facts["Catalog Leaf Facts"]
     Engine --> Read["Content / Range / Batch Read"]
 
     Catalog --> Scanner[Meta Scanner]
-    Metadata --> Scanner
+    Facts --> Scanner
     Read --> Scanner
 
     Scanner --> Detector[Meta Detector]
@@ -87,7 +87,7 @@ graph LR
 | MinIO / S3 | bucket、prefix | object |
 | NFS / 本地文件系统 | root、dir | file |
 
-文件、对象、表、集合、graph 是否成为 data item，由 Meta detector 根据引擎稳定 catalog 边界和格式规则裁决。`meta_item.item_type` 保留 catalog item 术语；表格、文档、媒体、容器、图等内容语义写入 `attributes.item.data_type`。
+文件、对象、表、集合、graph 是否成为 data item，由 Meta detector 根据引擎稳定 catalog 边界和格式规则裁决。`meta_item.item_type` 保留 catalog leaf 术语；表格、文档、媒体、容器、图等内容语义写入 `attributes.item.data_type`。
 
 对图数据库，Meta 以 graph 整体作为 data item。Neo4j label、relationship type 和连接模式属于 graph item 的结构事实，不作为独立 `meta_item`。这样可以避免多 label 节点被重复归属，也让图的预览、查询、资产治理围绕同一个 graph item 展开。
 
@@ -110,9 +110,9 @@ Scanner 不应：
 - 按 Manager 需求拼前端 DTO。
 - 在不同引擎里重复写同一格式的解析逻辑。
 - 绕过 detector 自行拼装 multi / whole item。
-- 只根据 `engine_family` 推断 catalog 层级、item 术语或读取路径。
+- 只根据 `engine_family` 推断 catalog 层级、leaf 术语或读取路径。
 
-`engine_family` 只适合做粗分类。Meta 对引擎的统一，不是把 MinIO / S3 和 NFS 视为同一种“文件树”，而是要求每类引擎提供稳定 catalog 层级和 item 术语；差异留在 catalog model 与插件实现里，Meta 只消费稳定契约。
+`engine_family` 只适合做粗分类。Meta 对引擎的统一，不是把 MinIO / S3 和 NFS 视为同一种“文件树”，而是要求每类引擎提供稳定 catalog 层级和 leaf 术语；差异留在 catalog model 与插件实现里，Meta 只消费稳定契约。
 
 Scanner 的扫描深度、覆盖和刷新语义由 `scan_depth`、`scanned_depth`、`force` 和扫描目标共同决定。详细规则见 [ADDP 元数据扫描机制规范](../spec/addp元数据扫描机制规范.md)。
 
@@ -137,7 +137,7 @@ Meta 可以消费引擎、格式和内容读取能力，但必须保持职责边
 
 | 来源类别 | Meta 如何使用 | 边界 |
 |---|---|---|
-| 引擎 catalog 和 item metadata | 获取资源层级、原生 item、基础结构事实 | 不按 `engine_family` 猜测 catalog 层级，不把展示需求写回引擎模型 |
+| 引擎 catalog 和 catalog facts | 获取资源层级、原生 leaf、基础结构事实 | 不按 `engine_family` 猜测 catalog 层级，不把展示需求写回引擎模型 |
 | 格式身份和布局能力 | 辅助判断格式、默认数据类型、multi / whole 归并候选 | 不裁决最终 data item 边界 |
 | 类型信息能力 | 获取 table、document、media、container、graph 等结构事实 | 只提供元数据，不返回内容样本或前端 DTO |
 | 格式私有信息能力 | 获取某个格式内部的私有事实 | 不替代通用 type info，也不承载横切能力 |
@@ -174,7 +174,7 @@ Meta normalizer 是 attributes 标准分区的最终裁决点。
 
 `meta_item` 表字段是 item 身份事实源，不重复写入 attributes。
 
-`attributes.type_info.file` 不存在。文件、对象、目录、bucket、prefix、root 等只表示 catalog / storage 形态；路径、名称、大小、MIME、etag、hash、last_modified 等基础事实写入 `storage` 或 catalog node/item 标准字段。内容语义无法识别时，`item.data_type=unknown`。
+`attributes.type_info.file` 不存在。文件、对象、目录、bucket、prefix、root 等只表示 catalog / storage 形态；路径、名称、大小、MIME、etag、hash、last_modified 等基础事实写入 `storage`，或进入 `CatalogEntry` / Meta item 的标准字段。内容语义无法识别时，`item.data_type=unknown`。
 
 ## 扫描流程
 
@@ -190,7 +190,7 @@ sequenceDiagram
 
     Meta->>Engine: List catalog children
     Engine-->>Meta: nodes / resource candidates
-    Meta->>Engine: item metadata / read capability
+    Meta->>Engine: catalog facts / read capability
     Engine-->>Meta: storage facts / content readers
     Meta->>Detector: ResolveItems(scope, candidates)
     Detector-->>Meta: detected items / claims / exclusive

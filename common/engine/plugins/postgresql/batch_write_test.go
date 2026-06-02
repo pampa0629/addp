@@ -124,8 +124,8 @@ func TestShouldUseCopyBatchWrite(t *testing.T) {
 	if !shouldUseCopyBatchWrite(plugin.BatchWriteOptions{Method: "copy"}, nil) {
 		t.Fatal("shouldUseCopyBatchWrite(copy) = false, want true")
 	}
-	if !shouldUseCopyBatchWrite(plugin.BatchWriteOptions{}, &plugin.BatchData{Metadata: map[string]interface{}{"write_method": "postgres_copy"}}) {
-		t.Fatal("shouldUseCopyBatchWrite(metadata postgres_copy) = false, want true")
+	if !shouldUseCopyBatchWrite(plugin.BatchWriteOptions{}, &plugin.BatchData{Hints: map[string]interface{}{"write_method": "postgres_copy"}}) {
+		t.Fatal("shouldUseCopyBatchWrite(hint postgres_copy) = false, want true")
 	}
 	if shouldUseCopyBatchWrite(plugin.BatchWriteOptions{Method: "insert"}, nil) {
 		t.Fatal("shouldUseCopyBatchWrite(insert) = true, want false")

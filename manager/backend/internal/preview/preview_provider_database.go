@@ -46,7 +46,7 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 	if !ok {
 		return nil, fmt.Errorf("engine %s does not implement BatchReadableProvider", req.Engine.EngineType)
 	}
-	metadataProvider, _ := plug.(plugin.ItemMetadataProvider)
+	catalogFactsProvider, _ := plug.(plugin.CatalogFactsProvider)
 	connInfo := plugin.ConnectionInfo(req.Engine.ConnectionInfo)
 
 	// 1. 处理表名可能包含 schema 前缀的情况
@@ -55,8 +55,8 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 		tableName = strings.TrimPrefix(req.Table, req.Schema+".")
 	}
 
-	// 2. 从 ItemMetadataProvider 获取字段和统计信息。
-	itemMetadata, columns, err := p.describeDatabaseTable(ctx, metadataProvider, connInfo, req.Engine.ID, plug, req.Schema, tableName)
+	// 2. 从 CatalogFactsProvider 获取字段和统计信息。
+	catalogFacts, columns, err := p.describeDatabaseTable(ctx, catalogFactsProvider, connInfo, plug, req.ProviderPath)
 	if err != nil {
 		if p.isTableNotFoundError(err) {
 			return nil, &TableNotFoundError{
@@ -81,7 +81,7 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 			geometryColumns = p.detectGeometryColumns(req.Engine.EngineType, columns)
 		}
 	} else {
-		// Meta 不可用或无数据，回退到 ItemMetadataProvider。
+		// Meta 不可用或无数据，回退到 CatalogFactsProvider。
 		columnNames = make([]string, len(columns))
 		for i, col := range columns {
 			columnNames[i] = col.Name
@@ -103,8 +103,8 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 		}
 	}
 
-	// 4. 获取总行数，优先使用 Meta / ItemMetadata 中已知的估算值。
-	totalCount := p.resolveTableRowCount(req, itemMetadata)
+	// 4. 获取总行数，优先使用 Meta / CatalogFacts 中已知的估算值。
+	totalCount := p.resolveTableRowCount(req, catalogFacts)
 
 	// 5. 计算分页参数
 	page := req.Page
@@ -123,7 +123,7 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 	limit := pageSize
 
 	// 6. 执行分页查询
-	rows, err := p.queryData(ctx, batchReader, connInfo, req.Engine.ID, plug, req.Engine.EngineType, req.Schema, tableName, offset, limit, columns)
+	rows, err := p.queryData(ctx, batchReader, connInfo, req.ProviderPath, req.Engine.EngineType, req.Schema, tableName, offset, limit, columns)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query data: %w", err)
 	}
@@ -154,8 +154,7 @@ func (p *DatabaseTablePreviewProvider) queryData(
 	ctx context.Context,
 	batchReader plugin.BatchReadableProvider,
 	connInfo plugin.ConnectionInfo,
-	engineID uint,
-	plug plugin.EnginePlugin,
+	providerPath plugin.CatalogPath,
 	engineType, schema, table string,
 	offset, limit int,
 	columns []datatype.FieldInfo,
@@ -176,7 +175,7 @@ func (p *DatabaseTablePreviewProvider) queryData(
 	if query == "" {
 		query = dialect.SelectTableSQL(selectExpr, schema, table, "", "", limit, offset)
 	}
-	result, err := batchReader.ReadBatch(ctx, connInfo, databaseTableCatalogPath(engineID, plug, schema, table), plugin.BatchReadOptions{
+	result, err := batchReader.ReadBatch(ctx, connInfo, providerPath, plugin.BatchReadOptions{
 		Query: query,
 	})
 	if err != nil {
@@ -400,49 +399,31 @@ func (p *DatabaseTablePreviewProvider) isSpatialType(dataType string) bool {
 
 func (p *DatabaseTablePreviewProvider) describeDatabaseTable(
 	ctx context.Context,
-	metadataProvider plugin.ItemMetadataProvider,
+	catalogFactsProvider plugin.CatalogFactsProvider,
 	connInfo plugin.ConnectionInfo,
-	engineID uint,
 	plug plugin.EnginePlugin,
-	schema, table string,
-) (*plugin.ItemMetadata, []datatype.FieldInfo, error) {
-	if metadataProvider == nil {
-		return nil, nil, fmt.Errorf("engine %s does not implement ItemMetadataProvider", plug.Type())
+	providerPath plugin.CatalogPath,
+) (*plugin.CatalogFacts, []datatype.FieldInfo, error) {
+	if catalogFactsProvider == nil {
+		return nil, nil, fmt.Errorf("engine %s does not implement CatalogFactsProvider", plug.Type())
 	}
-	itemMetadata, err := metadataProvider.DescribeItem(ctx, connInfo, databaseTableCatalogPath(engineID, plug, schema, table), plugin.MetadataOptions{
+	catalogFacts, err := catalogFactsProvider.DescribeCatalogFacts(ctx, connInfo, providerPath, plugin.CatalogFactsOptions{
 		IncludeStatistics: true,
 		IncludeIndexes:    true,
 	})
 	if err != nil {
 		return nil, nil, err
 	}
-	return itemMetadata, plugin.ItemMetadataFields(itemMetadata), nil
-}
-
-func databaseTableCatalogPath(engineID uint, plug plugin.EnginePlugin, schema, table string) plugin.CatalogPath {
-	return plugin.CatalogPath{
-		Version:  plugin.CatalogPathVersion,
-		EngineID: engineID,
-		Segments: []plugin.CatalogSegment{
-			{Term: databaseNamespaceTerm(plug), Kind: plugin.CatalogKindNamespace, Name: schema},
-			{Term: plugin.CatalogTermTable, Kind: plugin.CatalogKindTable, Name: table},
-		},
+	tableInfo := plugin.CatalogFactsTableInfo(catalogFacts)
+	if tableInfo == nil {
+		return catalogFacts, nil, nil
 	}
-}
-
-func databaseNamespaceTerm(plug plugin.EnginePlugin) string {
-	if modelProvider, ok := plug.(plugin.CatalogModelProvider); ok {
-		model := modelProvider.CatalogModel()
-		if len(model.Levels) > 0 && model.Levels[0].Term != "" {
-			return model.Levels[0].Term
-		}
-	}
-	return plugin.CatalogTermDatabase
+	return catalogFacts, append([]datatype.FieldInfo(nil), tableInfo.Fields...), nil
 }
 
 func (p *DatabaseTablePreviewProvider) resolveTableRowCount(
 	req *PreviewRequest,
-	itemMetadata *plugin.ItemMetadata,
+	catalogFacts *plugin.CatalogFacts,
 ) int64 {
 	if req != nil && req.ItemRowCount != nil && *req.ItemRowCount > 0 {
 		return *req.ItemRowCount
@@ -453,62 +434,9 @@ func (p *DatabaseTablePreviewProvider) resolveTableRowCount(
 			return *tableInfo.RowCount
 		}
 	}
-	if itemMetadata != nil {
-		if tableInfo := plugin.ItemMetadataTableInfo(itemMetadata); tableInfo != nil && tableInfo.RowCount != nil && *tableInfo.RowCount > 0 {
+	if catalogFacts != nil {
+		if tableInfo := plugin.CatalogFactsTableInfo(catalogFacts); tableInfo != nil && tableInfo.RowCount != nil && *tableInfo.RowCount > 0 {
 			return *tableInfo.RowCount
-		}
-		if rowCount, ok := databaseInt64Stat(itemMetadata.Stats, "row_count"); ok && rowCount > 0 {
-			return rowCount
-		}
-		if rowCount, ok := databaseInt64Stat(itemMetadata.Stats, "document_count"); ok && rowCount > 0 {
-			return rowCount
-		}
-	}
-	return 0
-}
-
-func databaseInt64Stat(stats map[string]interface{}, key string) (int64, bool) {
-	if stats == nil {
-		return 0, false
-	}
-	value, ok := stats[key]
-	if !ok {
-		return 0, false
-	}
-	return numericToInt64(value), true
-}
-
-func numericToInt64(value interface{}) int64 {
-	switch typed := value.(type) {
-	case int64:
-		return typed
-	case int:
-		return int64(typed)
-	case int32:
-		return int64(typed)
-	case int16:
-		return int64(typed)
-	case int8:
-		return int64(typed)
-	case uint:
-		return int64(typed)
-	case uint64:
-		return int64(typed)
-	case uint32:
-		return int64(typed)
-	case float64:
-		return int64(typed)
-	case float32:
-		return int64(typed)
-	case []byte:
-		var parsed int64
-		if _, err := fmt.Sscan(string(typed), &parsed); err == nil {
-			return parsed
-		}
-	case string:
-		var parsed int64
-		if _, err := fmt.Sscan(typed, &parsed); err == nil {
-			return parsed
 		}
 	}
 	return 0

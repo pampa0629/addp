@@ -69,26 +69,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		Identification: format.FormatIdentification{Extensions: []string{".json", ".geojson"}, MimeTypes: []string{"application/json", "application/geo+json", "application/vnd.geo+json"}},
 		Providers:      format.FormatProviderDescriptor{DocumentInfo: true, FormatInfo: true, TableInfo: true, TableSample: true, Table: true, AccessIndex: true},
 		ContentReaders: []string{string(format.ContentReaderDocumentText), string(format.ContentReaderTableSample), string(format.ContentReaderRawContent)},
-		TransferRead:   true,
-		TransferWrite:  true,
 		Parse:          true,
-		EngineFamilies: []string{format.EngineFamilyObject, format.EngineFamilyFile, format.EngineFamilyDocument},
-	}
-}
-
-func (p *Plugin) Capabilities() format.FormatCapability {
-	capability, ok := format.GetFormatCapability(format.FormatJSON)
-	if ok {
-		return capability
-	}
-	return format.FormatCapability{
-		Format:        format.FormatJSON,
-		DataType:      datatype.DataTypeDocument,
-		Layouts:       []string{format.LayoutSingle},
-		ProviderHints: []string{format.FormatProviderDocument, format.FormatProviderTable, format.FormatProviderSpatial},
-		TransferRead:  true,
-		TransferWrite: true,
-		Parse:         true,
 	}
 }
 

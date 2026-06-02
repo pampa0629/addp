@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
+	"gorm.io/gorm"
 )
 
 func TestEnsureFilesystemScanRootUsesDirectoryNodeForNonRootPath(t *testing.T) {
@@ -24,12 +26,20 @@ func TestEnsureFilesystemScanRootUsesDirectoryNodeForNonRootPath(t *testing.T) {
 		repo: repo,
 	}
 
-	rootNode, scanNode, err := svc.ensureFilesystemScanRoot(1, 26, "", "shp")
+	resource := &commonModels.Engine{ID: 26, Name: "NFS Demo", EngineType: "nfs"}
+	rootNode, scanNode, err := svc.ensureFilesystemScanRoot(1, resource, filesystemScanTestProvider{}, "shp")
 	if err != nil {
 		t.Fatalf("ensureFilesystemScanRoot() error = %v", err)
 	}
-	if rootNode.Name != "/" || rootNode.FullName != "" {
-		t.Fatalf("root node name/fullName = %q/%q, want '/' and empty full_name", rootNode.Name, rootNode.FullName)
+	if rootNode.Name != "NFS Demo" || rootNode.FullName != "" {
+		t.Fatalf("root node name/fullName = %q/%q, want engine name and empty full_name", rootNode.Name, rootNode.FullName)
+	}
+	catalogAttrs, ok := rootNode.Attributes["catalog"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("root catalog attributes = %#v", rootNode.Attributes)
+	}
+	if catalogAttrs["root_term"] != plugin.CatalogTermRoot || catalogAttrs["native_name"] != "/" {
+		t.Fatalf("root catalog attributes = %#v, want root_term=root and native_name=/", catalogAttrs)
 	}
 	if rootNode.ID == scanNode.ID {
 		t.Fatal("scan path shp should use shp directory node, not filesystem root node")
@@ -62,6 +72,296 @@ func TestEnsureFilesystemScanRootUsesDirectoryNodeForNonRootPath(t *testing.T) {
 	}
 }
 
+func TestFilesystemScanRootDoesNotPromoteRootFilesToNodes(t *testing.T) {
+	db := openObjectCatalogScanTestDB(t)
+	repo := metaRepo.NewScanRepository(db)
+	svc := &FilesystemCatalogScanService{
+		log:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+		repo: repo,
+	}
+	sizeBytes := int64(12)
+	provider := filesystemScanTestProvider{
+		entriesByPath: map[string][]plugin.CatalogEntry{
+			"": {
+				{
+					Name: "docs",
+					Path: plugin.FileDirectoryPath(26, "docs"),
+					Term: plugin.CatalogTermDirectory,
+					Kind: plugin.CatalogKindDirectory,
+					Role: plugin.CatalogRoleBranch,
+					Storage: &plugin.CatalogStorageFacts{
+						Path: "docs",
+					},
+				},
+				{
+					Name: "README.md",
+					Path: plugin.FileItemPath(26, "README.md"),
+					Term: plugin.CatalogTermFile,
+					Kind: plugin.CatalogKindFile,
+					Role: plugin.CatalogRoleLeaf,
+					Storage: &plugin.CatalogStorageFacts{
+						Path:      "README.md",
+						SizeBytes: &sizeBytes,
+					},
+				},
+			},
+			"docs": nil,
+		},
+		content: "hello world\n",
+	}
+	plugin.Register(provider)
+	t.Cleanup(func() {
+		plugin.Unregister(provider.Type())
+	})
+	resource := &commonModels.Engine{ID: 26, Name: "Business NFS", EngineType: provider.Type()}
+
+	roots, items, _, err := svc.ScanPaths(resource, 1, nil, models.ScannedDepthBasic, true, nil)
+	if err != nil {
+		t.Fatalf("ScanPaths() error = %v", err)
+	}
+	if roots != 1 || items != 1 {
+		t.Fatalf("roots/items = %d/%d, want 1/1", roots, items)
+	}
+	var readmeNode models.MetaNode
+	if err := db.Where("tenant_id = ? AND engine_id = ? AND name = ?", 1, 26, "README.md").First(&readmeNode).Error; err == nil {
+		t.Fatalf("README.md was promoted to meta_node: %#v", readmeNode)
+	} else if err != gorm.ErrRecordNotFound {
+		t.Fatalf("query README node: %v", err)
+	}
+	item, ok, err := repo.FindItemByFullName(1, 26, "README.md")
+	if err != nil {
+		t.Fatalf("FindItemByFullName() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("README.md meta_item not found")
+	}
+	var rootNode models.MetaNode
+	if err := db.Where("tenant_id = ? AND engine_id = ? AND parent_node_id IS NULL", 1, 26).First(&rootNode).Error; err != nil {
+		t.Fatalf("query root node: %v", err)
+	}
+	if item.NodeID != rootNode.ID {
+		t.Fatalf("README node_id = %d, want root node %d", item.NodeID, rootNode.ID)
+	}
+	if rootNode.ScanStatus != "completed" || rootNode.ScannedDepth != models.ScannedDepthBasic {
+		t.Fatalf("root scan status/depth = %q/%q, want completed/basic", rootNode.ScanStatus, rootNode.ScannedDepth)
+	}
+}
+
+func TestFilesystemForceScanReconcilesStaleRootFileNodes(t *testing.T) {
+	db := openObjectCatalogScanTestDB(t)
+	repo := metaRepo.NewScanRepository(db)
+	svc := &FilesystemCatalogScanService{
+		log:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+		repo: repo,
+	}
+	root, err := repo.UpsertNode(1, 26, nil, plugin.CatalogTermRoot, "Business NFS", strPtr(""), models.JSONMap{})
+	if err != nil {
+		t.Fatalf("create root node: %v", err)
+	}
+	staleNode, err := repo.UpsertNode(1, 26, root, "dir", "README.md", strPtr("README.md"), models.JSONMap{"path": "README.md"})
+	if err != nil {
+		t.Fatalf("create stale file node: %v", err)
+	}
+	keepNode, err := repo.UpsertNode(1, 26, root, "dir", "docs", strPtr("docs"), models.JSONMap{"path": "docs"})
+	if err != nil {
+		t.Fatalf("create docs node: %v", err)
+	}
+	keepItem, err := repo.UpsertItemWithDepth(1, 26, keepNode, "file", "guide.md", "docs/guide.md", models.JSONMap{}, nil, nil, nil, models.ScannedDepthDeep)
+	if err != nil {
+		t.Fatalf("create docs item: %v", err)
+	}
+	staleItem, err := repo.UpsertItemWithDepth(1, 26, root, "file", "old.txt", "old.txt", models.JSONMap{}, nil, nil, nil, models.ScannedDepthDeep)
+	if err != nil {
+		t.Fatalf("create stale root item: %v", err)
+	}
+	sizeBytes := int64(12)
+	provider := filesystemScanTestProvider{
+		entriesByPath: map[string][]plugin.CatalogEntry{
+			"": {
+				{
+					Name: "docs",
+					Path: plugin.FileDirectoryPath(26, "docs"),
+					Term: plugin.CatalogTermDirectory,
+					Kind: plugin.CatalogKindDirectory,
+					Role: plugin.CatalogRoleBranch,
+					Storage: &plugin.CatalogStorageFacts{
+						Path: "docs",
+					},
+				},
+				{
+					Name: "README.md",
+					Path: plugin.FileItemPath(26, "README.md"),
+					Term: plugin.CatalogTermFile,
+					Kind: plugin.CatalogKindFile,
+					Role: plugin.CatalogRoleLeaf,
+					Storage: &plugin.CatalogStorageFacts{
+						Path:      "README.md",
+						SizeBytes: &sizeBytes,
+					},
+				},
+			},
+			"docs": {
+				{
+					Name: "guide.md",
+					Path: plugin.FileItemPath(26, "docs/guide.md"),
+					Term: plugin.CatalogTermFile,
+					Kind: plugin.CatalogKindFile,
+					Role: plugin.CatalogRoleLeaf,
+					Storage: &plugin.CatalogStorageFacts{
+						Path:      "docs/guide.md",
+						SizeBytes: &sizeBytes,
+					},
+				},
+			},
+		},
+		content: "hello world\n",
+	}
+	plugin.Register(provider)
+	t.Cleanup(func() {
+		plugin.Unregister(provider.Type())
+	})
+	resource := &commonModels.Engine{ID: 26, Name: "Business NFS", EngineType: provider.Type()}
+
+	_, items, _, err := svc.ScanPaths(resource, 1, nil, models.ScannedDepthBasic, true, nil)
+	if err != nil {
+		t.Fatalf("ScanPaths() error = %v", err)
+	}
+	if items != 2 {
+		t.Fatalf("items = %d, want 2", items)
+	}
+	var stale models.MetaNode
+	if err := db.Where("id = ?", staleNode.ID).First(&stale).Error; err == nil {
+		t.Fatalf("stale README.md node still exists: %#v", stale)
+	} else if err != gorm.ErrRecordNotFound {
+		t.Fatalf("query stale node: %v", err)
+	}
+	item, ok, err := repo.FindItemByFullName(1, 26, "README.md")
+	if err != nil {
+		t.Fatalf("FindItemByFullName() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("README.md meta_item not found")
+	}
+	if item.NodeID != root.ID {
+		t.Fatalf("README node_id = %d, want root node %d", item.NodeID, root.ID)
+	}
+	var keptNode models.MetaNode
+	if err := db.Where("id = ?", keepNode.ID).First(&keptNode).Error; err != nil {
+		t.Fatalf("docs node should be kept: %v", err)
+	}
+	var keptItem models.MetaItem
+	if err := db.Where("id = ?", keepItem.ID).First(&keptItem).Error; err != nil {
+		t.Fatalf("docs/guide.md item should be kept: %v", err)
+	}
+	var oldItem models.MetaItem
+	if err := db.Where("id = ?", staleItem.ID).First(&oldItem).Error; err == nil {
+		t.Fatalf("stale root item still exists: %#v", oldItem)
+	} else if err != gorm.ErrRecordNotFound {
+		t.Fatalf("query stale root item: %v", err)
+	}
+}
+
+func TestFilesystemScanDeletesRootFileNodesWithoutForce(t *testing.T) {
+	db := openObjectCatalogScanTestDB(t)
+	repo := metaRepo.NewScanRepository(db)
+	svc := &FilesystemCatalogScanService{
+		log:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+		repo: repo,
+	}
+	root, err := repo.UpsertNode(1, 26, nil, plugin.CatalogTermRoot, "Business NFS", strPtr(""), models.JSONMap{})
+	if err != nil {
+		t.Fatalf("create root node: %v", err)
+	}
+	staleNode, err := repo.UpsertNode(1, 26, root, "dir", "README.md", strPtr("README.md"), models.JSONMap{"path": "README.md"})
+	if err != nil {
+		t.Fatalf("create stale file node: %v", err)
+	}
+	sizeBytes := int64(12)
+	provider := filesystemScanTestProvider{
+		entriesByPath: map[string][]plugin.CatalogEntry{
+			"": {
+				{
+					Name: "README.md",
+					Path: plugin.FileItemPath(26, "README.md"),
+					Term: plugin.CatalogTermFile,
+					Kind: plugin.CatalogKindFile,
+					Role: plugin.CatalogRoleLeaf,
+					Storage: &plugin.CatalogStorageFacts{
+						Path:      "README.md",
+						SizeBytes: &sizeBytes,
+					},
+				},
+			},
+		},
+		content: "hello world\n",
+	}
+	plugin.Register(provider)
+	t.Cleanup(func() {
+		plugin.Unregister(provider.Type())
+	})
+	resource := &commonModels.Engine{ID: 26, Name: "Business NFS", EngineType: provider.Type()}
+
+	_, items, _, err := svc.ScanPaths(resource, 1, nil, models.ScannedDepthBasic, false, nil)
+	if err != nil {
+		t.Fatalf("ScanPaths() error = %v", err)
+	}
+	if items != 1 {
+		t.Fatalf("items = %d, want 1", items)
+	}
+	var stale models.MetaNode
+	if err := db.Where("id = ?", staleNode.ID).First(&stale).Error; err == nil {
+		t.Fatalf("stale README.md node still exists: %#v", stale)
+	} else if err != gorm.ErrRecordNotFound {
+		t.Fatalf("query stale node: %v", err)
+	}
+	item, ok, err := repo.FindItemByFullName(1, 26, "README.md")
+	if err != nil {
+		t.Fatalf("FindItemByFullName() error = %v", err)
+	}
+	if !ok || item.NodeID != root.ID {
+		t.Fatalf("README item = %#v, found=%v, want item under root %d", item, ok, root.ID)
+	}
+}
+
+func TestFilesystemScanFilePathTargetDoesNotCreateNode(t *testing.T) {
+	db := openObjectCatalogScanTestDB(t)
+	repo := metaRepo.NewScanRepository(db)
+	svc := &FilesystemCatalogScanService{
+		log:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+		repo: repo,
+	}
+	provider := filesystemScanTestProvider{
+		entriesByPath: map[string][]plugin.CatalogEntry{
+			"": nil,
+		},
+		missingDirectories: map[string]bool{
+			"README.md": true,
+		},
+	}
+	plugin.Register(provider)
+	t.Cleanup(func() {
+		plugin.Unregister(provider.Type())
+	})
+	resource := &commonModels.Engine{ID: 26, Name: "Business NFS", EngineType: provider.Type()}
+
+	roots, items, _, err := svc.ScanPaths(resource, 1, []string{"README.md"}, models.ScannedDepthBasic, false, nil)
+	if err != nil {
+		t.Fatalf("ScanPaths() error = %v", err)
+	}
+	if roots != 0 || items != 0 {
+		t.Fatalf("roots/items = %d/%d, want 0/0", roots, items)
+	}
+	var count int64
+	if err := db.Model(&models.MetaNode{}).
+		Where("tenant_id = ? AND engine_id = ? AND full_name = ?", 1, 26, "README.md").
+		Count(&count).Error; err != nil {
+		t.Fatalf("count README node: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("README.md node count = %d, want 0", count)
+	}
+}
+
 func TestFilesystemDeepScanExtractsDOCXHeaderFooter(t *testing.T) {
 	db := openObjectCatalogScanTestDB(t)
 	repo := metaRepo.NewScanRepository(db)
@@ -80,16 +380,17 @@ func TestFilesystemDeepScanExtractsDOCXHeaderFooter(t *testing.T) {
 		"docProps/core.xml": `<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>ChatBI详细设计</dc:title><dc:language>zh-CN</dc:language></cp:coreProperties>`,
 		"docProps/app.xml":  `<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Pages>7</Pages><Words>1200</Words></Properties>`,
 	})
+	sizeBytes := int64(len(docx))
 	provider := filesystemScanTestProvider{
-		files: []plugin.CatalogNode{{
-			Name:   "时空数据中台产品详细设计V3.0.0.0（ChatBI部分）.docx",
-			Path:   plugin.FileItemPath(26, "doc/时空数据中台产品详细设计V3.0.0.0（ChatBI部分）.docx"),
-			Term:   plugin.CatalogTermFile,
-			Kind:   plugin.CatalogKindFile,
-			IsItem: true,
-			Stats:  map[string]interface{}{"size_bytes": int64(len(docx))},
-			Attributes: map[string]interface{}{
-				"path": "doc/时空数据中台产品详细设计V3.0.0.0（ChatBI部分）.docx",
+		files: []plugin.CatalogEntry{{
+			Name: "时空数据中台产品详细设计V3.0.0.0（ChatBI部分）.docx",
+			Path: plugin.FileItemPath(26, "doc/时空数据中台产品详细设计V3.0.0.0（ChatBI部分）.docx"),
+			Term: plugin.CatalogTermFile,
+			Kind: plugin.CatalogKindFile,
+			Role: plugin.CatalogRoleLeaf,
+			Storage: &plugin.CatalogStorageFacts{
+				Path:      "doc/时空数据中台产品详细设计V3.0.0.0（ChatBI部分）.docx",
+				SizeBytes: &sizeBytes,
 			},
 		}},
 		content: string(docx),
@@ -129,8 +430,10 @@ func TestFilesystemDeepScanExtractsDOCXHeaderFooter(t *testing.T) {
 }
 
 type filesystemScanTestProvider struct {
-	files   []plugin.CatalogNode
-	content string
+	files              []plugin.CatalogEntry
+	entriesByPath      map[string][]plugin.CatalogEntry
+	missingDirectories map[string]bool
+	content            string
 }
 
 func (p filesystemScanTestProvider) Type() string         { return "filesystem-scan-test" }
@@ -146,13 +449,22 @@ func (p filesystemScanTestProvider) SensitiveFields() []string                  
 func (p filesystemScanTestProvider) Capabilities() plugin.EngineCapabilities {
 	return plugin.EngineCapabilities{}
 }
+func (p filesystemScanTestProvider) CatalogModel() plugin.CatalogModelSpec {
+	return plugin.FileCatalogModel()
+}
 func (p filesystemScanTestProvider) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemantics{}
 }
-func (p filesystemScanTestProvider) ListChildren(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.ListOptions) ([]plugin.CatalogNode, error) {
+func (p filesystemScanTestProvider) ListChildren(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.ListOptions) ([]plugin.CatalogEntry, error) {
+	if p.missingDirectories[path.StringPath()] {
+		return nil, fmt.Errorf("not a directory: %s", path.StringPath())
+	}
+	if p.entriesByPath != nil {
+		return p.entriesByPath[path.StringPath()], nil
+	}
 	return p.files, nil
 }
-func (p filesystemScanTestProvider) ResolvePath(context.Context, plugin.ConnectionInfo, plugin.CatalogPath) (*plugin.CatalogNode, error) {
+func (p filesystemScanTestProvider) ResolvePath(context.Context, plugin.ConnectionInfo, plugin.CatalogPath) (*plugin.CatalogEntry, error) {
 	return nil, nil
 }
 func (p filesystemScanTestProvider) OpenContent(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {

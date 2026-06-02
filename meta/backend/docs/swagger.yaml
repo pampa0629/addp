@@ -171,9 +171,9 @@ definitions:
     type: object
   github_com_addp_meta_internal_models.ResourceWithStats:
     properties:
-      catalog_item_i18n_key:
+      catalog_leaf_i18n_key:
         type: string
-      catalog_item_term:
+      catalog_leaf_term:
         type: string
       catalog_root_term:
         type: string
@@ -914,13 +914,18 @@ paths:
       - Meta Query
   /scan/auto:
     post:
-      description: 扫描当前租户下尚未完成元数据扫描的资源 | Scan resources that have not been scanned
-        for current tenant
+      description: 为当前租户下尚未完成元数据扫描的资源创建后台扫描运行 | Create background scan runs for resources
+        that have not been scanned for current tenant
       produces:
       - application/json
       responses:
-        "200":
-          description: 扫描结果 | Scan result
+        "202":
+          description: 已提交的扫描运行 | Submitted scan runs
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 未授权 | Unauthorized
           schema:
             additionalProperties: true
             type: object
@@ -929,43 +934,14 @@ paths:
           schema:
             additionalProperties: true
             type: object
-      security:
-      - BearerAuth: []
-      summary: 自动扫描未扫描资源 | Auto scan unscanned resources
-      tags:
-      - Meta Scan
-  /scan/engine:
-    post:
-      consumes:
-      - application/json
-      description: 对指定引擎执行元数据扫描 | Execute metadata scan for an engine
-      parameters:
-      - description: 扫描请求 | Scan request
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_addp_meta_internal_models.ScanRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 扫描结果 | Scan result
-          schema:
-            $ref: '#/definitions/github_com_addp_meta_internal_models.ScanResponse'
-        "400":
-          description: 请求参数错误 | Bad request
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: 服务器内部错误 | Internal server error
+        "503":
+          description: 任务服务不可用 | Task service unavailable
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: 扫描指定引擎 | Scan engine
+      summary: 提交未扫描资源后台扫描 | Submit background scans for unscanned resources
       tags:
       - Meta Scan
   /scan/run/manual:

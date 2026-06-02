@@ -195,29 +195,30 @@ func (p *contentProviderStub) OpenRange(_ context.Context, _ engineplugin.Connec
 	return io.NopCloser(bytes.NewBufferString(value[opts.Offset:end])), nil
 }
 
-func (p *contentProviderStub) ListChildren(context.Context, engineplugin.ConnectionInfo, engineplugin.CatalogPath, engineplugin.ListOptions) ([]engineplugin.CatalogNode, error) {
+func (p *contentProviderStub) ListChildren(context.Context, engineplugin.ConnectionInfo, engineplugin.CatalogPath, engineplugin.ListOptions) ([]engineplugin.CatalogEntry, error) {
 	return nil, nil
 }
 
-func (p *contentProviderStub) ResolvePath(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.CatalogPath) (*engineplugin.CatalogNode, error) {
+func (p *contentProviderStub) ResolvePath(_ context.Context, _ engineplugin.ConnectionInfo, path engineplugin.CatalogPath) (*engineplugin.CatalogEntry, error) {
 	value, ok := p.data[path.StringPath()]
 	if !ok {
 		return nil, contentio.ErrContentNotFound
 	}
-	attrs := map[string]interface{}{
-		"content_type": "application/octet-stream",
-	}
+	var updatedAt *time.Time
 	if !p.modifiedAt.IsZero() {
-		attrs["modified_at"] = p.modifiedAt
+		modifiedAt := p.modifiedAt
+		updatedAt = &modifiedAt
 	}
-	return &engineplugin.CatalogNode{
-		Name:   path.StringPath(),
-		Path:   path,
-		IsItem: true,
-		Stats: map[string]interface{}{
-			"size_bytes": int64(len(value)),
+	sizeBytes := int64(len(value))
+	return &engineplugin.CatalogEntry{
+		Name: path.StringPath(),
+		Path: path,
+		Role: engineplugin.CatalogRoleLeaf,
+		Storage: &engineplugin.CatalogStorageFacts{
+			ContentType: "application/octet-stream",
+			SizeBytes:   &sizeBytes,
 		},
-		Attributes: attrs,
+		UpdatedAt: updatedAt,
 	}, nil
 }
 

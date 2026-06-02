@@ -176,6 +176,8 @@ type ResourceLocator struct {
 
 **重要**: ResourceLocator 的 `Path` 字段包含**从 bucket/schema 到 name 的完整路径**，与存储层的字段拆分规范不同。
 
+引擎目录根是结构入口，不进入 ResourceLocator 的业务 `Path`。root node 的 `Path` 为空数组，但仍按普通 node 规则携带 `Type` 和 `NodeID`，例如 `addp://engine/8/path/?type=server&node_id=99`。Manager 可以把该节点标题显示为引擎实例名称，但 locator 规则不因此特殊化。
+
 | 存储层 | 拆分规范 | ResourceLocator.Path |
 |--------|---------|---------------------|
 | 对象存储 | bucket + path + name | `["bucket", "path_segment", ..., "name"]` |

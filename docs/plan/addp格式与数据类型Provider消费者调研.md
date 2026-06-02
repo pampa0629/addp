@@ -2,7 +2,7 @@
 
 更新时间：2026-05-09
 
-本文记录当前代码中 `meta`、`manager`、`transfer` 等模块对格式、数据类型、引擎能力的真实消费方式，用于后续反推统一的 format capability、info provider 和 content reader 体系。
+本文记录当前代码中 `meta`、`manager`、`transfer` 等模块对格式、数据类型、引擎能力的真实消费方式，用于后续反推统一的 format descriptor、info provider、content reader 和 writer provider 体系。
 
 本文只做现状盘点与原则归纳，不定义最终 Go 接口。正式术语以 [ADDP 数据类型与格式能力规范](../spec/addp数据类型与格式能力规范.md) 为准：格式主入口是 FormatPlugin；元数据能力称为 info provider；内容读取能力称为 content reader。
 
@@ -237,8 +237,8 @@ target:
 | StorageWriteProvider | 写对象流、提交ref 资源、生成最终路径 | engine provider |
 | NativeTableReadProvider | 从引擎原生表读取 DataBatch | engine provider |
 | NativeTableWriteProvider | 向引擎原生表写入 DataBatch | engine provider |
-| FormatBatchReader | 从外部提供的一个或多个资源流解码 DataBatch | FormatPlugin / content reader |
-| FormatBatchWriter | 将 DataBatch 编码为一个或多个资源流 | FormatPlugin / writer |
+| FormatBatchReader | 从外部提供的一个或多个资源流解码 DataBatch | format reader provider |
+| FormatBatchWriter | 将 DataBatch 编码为一个或多个资源流 | format writer provider |
 | TransferPlanner | 根据 source/target 的 engine + format + data_type 组合 provider | transfer 编排层 |
 
 `pipeline.Reader` / `pipeline.Writer` 可以保留为运行期执行接口，但创建它们的方式应从“按 connector type 工厂”逐步演进为“由 TransferPlanner 组合 provider”。
@@ -276,7 +276,7 @@ target:
 
 1. `transfer/backend/internal/service/execution_engine_service.go`
    - `inferConnectorType()` 和 `resourceToConnectorConfig()` 是历史入口。
-   - 后续主路径应改成 `TransferPlan`，由 engine capability + format capability + info provider / content reader 组合出来。
+   - 后续主路径应改成 `TransferPlan`，由 engine capability + format descriptor / provider status + info provider / content reader 组合出来。
    - 新路径稳定后应删除旧入口，而不是长期兼容。
 
 2. `transfer/backend/pkg/pipeline/registry.go`
@@ -341,11 +341,11 @@ Transfer 的批量读写不能只考虑格式，还要考虑引擎能力：
 TransferPlan
   SourceEndpoint
     EngineProvider
-    FormatProvider(optional)
+    format reader provider(optional)
     InfoProvider / ContentReader
   TargetEndpoint
     EngineProvider
-    FormatProvider(optional)
+    format writer provider(optional)
     InfoProvider / ContentReader
   BatchPipeline
     Schema
@@ -357,7 +357,7 @@ TransferPlan
 
 1. Transfer 从任务配置或 Meta item 得到 source / target 的 engine、format、data_type。
 2. Transfer 查询 engine capability，确认能否读取或写入对应资源。
-3. Transfer 查询 format capability，确认是否支持基于外部读取抽象的 batch read / batch write / multi read / multi write。
+3. Transfer 查询 format descriptor 和当前进程 provider 实现状态，确认是否支持基于外部读取抽象的 batch read / batch write / multi read / multi write。
 4. Transfer 根据 info provider / content reader 补齐 schema、children、spatial 等平台语义。
 5. Planner 组合成运行期 `Reader` / `Writer`。
 6. Pipeline 只处理 `DataBatch`，不关心底层是 PostgreSQL、S3、CSV 还是 Parquet。
@@ -377,16 +377,16 @@ TransferPlan
 
 ## 现有问题
 
-### 问题 1：format 能力和 item capabilities 混在一起
+### 问题 1：format descriptor / provider 状态和 item capabilities 混在一起
 
 当前既有：
 
-- `common/format` 根包 capability registry
+- `common/format` 根包 descriptor / provider registry
 - `attributes.capabilities`
 
 但两者不是一个层级的东西。
 
-前者是格式声明，后者是 item 落库事实。术语需要在后续规范里强行分清。
+前者是格式静态事实和当前进程实现状态，后者是 item 落库事实。术语需要在后续规范里强行分清。
 
 ### 问题 2：Meta 仍然直接知道部分具体格式
 
@@ -417,7 +417,7 @@ Meta 应只负责调度已注册的 resolver，并根据返回的 `layout`、`cl
 这是可接受的过渡状态，但最终应该收敛成：
 
 - info provider / content reader
-- format capability
+- format descriptor / provider status
 - 平台统一读写能力
 
 而不是上层业务直接依赖每个格式包。
@@ -430,8 +430,8 @@ Meta 应只负责调度已注册的 resolver，并根据返回的 `layout`、`cl
    - Meta 负责询问注册表。
    - Meta 不应该知道每种格式的refs规则细节。
 
-2. **format capability 统一对齐 engine capability 的术语**
-   - 格式声明自己能提供什么。
+2. **format descriptor 与 provider status 必须和 engine capability 分层**
+   - descriptor 声明格式静态事实，provider status 表达当前进程已加载实现。
    - item 的 `attributes.capabilities` 是扫描结果，不是插件声明。
 
 3. **统一通过 info provider / content reader 面向消费者**
@@ -474,7 +474,7 @@ Meta 应只负责调度已注册的 resolver，并根据返回的 `layout`、`cl
 这份调研的结论会直接约束后续接口设计：
 
 1. 先收 `common/format`，把底层能力声明和旧 parser 边界先整理清楚。
-2. 再定义 `format capability`、info provider 和 content reader 的术语边界。
+2. 再定义 `FormatDescriptor`、info provider、content reader 和 writer provider 的术语边界。
 3. 再定义每个 data type 的 provider / reader 需要什么方法。
 4. 再决定哪些 format 需要实现哪些 provider / reader。
 5. 最后再改上层 Manager / Transfer 的调用方式。

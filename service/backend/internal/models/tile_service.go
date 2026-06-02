@@ -114,23 +114,23 @@ func (tsl *TileServiceLayer) GetEngineID() uint {
 
 // TileServiceDTO 瓦片服务响应 DTO
 type TileServiceDTO struct {
-	ID           uint                 `json:"id"`
-	TenantID     uint                 `json:"tenant_id"`
-	ServiceName  string               `json:"service_name"`
-	Title        string               `json:"title"`
-	Description  string               `json:"description"`
-	Keywords     []string             `json:"keywords"`
-	DefaultSRID  int                  `json:"default_srid"`
-	Extent       interface{}          `json:"extent"`
-	Protocols    interface{}          `json:"protocols"`
-	PublicAccess bool                 `json:"public_access"`
-	Status       string               `json:"status"`
-	ErrorMessage string               `json:"error_message,omitempty"`
-	CreatedBy    uint                 `json:"created_by"`
-	CreatedAt    time.Time            `json:"created_at"`
-	UpdatedAt    time.Time            `json:"updated_at"`
+	ID           uint                  `json:"id"`
+	TenantID     uint                  `json:"tenant_id"`
+	ServiceName  string                `json:"service_name"`
+	Title        string                `json:"title"`
+	Description  string                `json:"description"`
+	Keywords     []string              `json:"keywords"`
+	DefaultSRID  int                   `json:"default_srid"`
+	Extent       interface{}           `json:"extent"`
+	Protocols    interface{}           `json:"protocols"`
+	PublicAccess bool                  `json:"public_access"`
+	Status       string                `json:"status"`
+	ErrorMessage string                `json:"error_message,omitempty"`
+	CreatedBy    uint                  `json:"created_by"`
+	CreatedAt    time.Time             `json:"created_at"`
+	UpdatedAt    time.Time             `json:"updated_at"`
 	Layers       []TileServiceLayerDTO `json:"layers,omitempty"`
-	Endpoints    map[string]string    `json:"endpoints,omitempty"` // 服务端点 URL
+	Endpoints    map[string]string     `json:"endpoints,omitempty"` // 服务端点 URL
 }
 
 // TileServiceLayerDTO 瓦片服务图层响应 DTO
@@ -154,14 +154,14 @@ type TileServiceLayerDTO struct {
 
 // CreateTileServiceRequest 创建瓦片服务请求
 type CreateTileServiceRequest struct {
-	ServiceName  string                   `json:"service_name" binding:"required"`
-	Title        string                   `json:"title" binding:"required"`
-	Description  string                   `json:"description"`
-	Keywords     []string                 `json:"keywords"`
-	DefaultSRID  int                      `json:"default_srid"` // 默认 3857
-	Protocols    map[string]interface{}   `json:"protocols"`
-	PublicAccess bool                     `json:"public_access"`
-	FirstLayer   *CreateTileLayerRequest  `json:"first_layer" binding:"required"` // 第一个图层（必需）
+	ServiceName  string                  `json:"service_name" binding:"required"`
+	Title        string                  `json:"title" binding:"required"`
+	Description  string                  `json:"description"`
+	Keywords     []string                `json:"keywords"`
+	DefaultSRID  int                     `json:"default_srid"` // 默认 3857
+	Protocols    map[string]interface{}  `json:"protocols"`
+	PublicAccess bool                    `json:"public_access"`
+	FirstLayer   *CreateTileLayerRequest `json:"first_layer" binding:"required"` // 第一个图层（必需）
 }
 
 // CreateTileLayerRequest 创建图层请求

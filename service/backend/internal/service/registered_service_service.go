@@ -595,11 +595,11 @@ func (s *RegisteredServiceService) refreshWFSMetadata(service *models.Registered
 		if exists {
 			// 更新现有图层
 			updates := map[string]interface{}{
-				"display_name":  ft.Title,
-				"description":   ft.Abstract,
-				"crs":           ft.DefaultCRS,
-				"bbox":          ft.BBox,
-				"enabled":       true,
+				"display_name": ft.Title,
+				"description":  ft.Abstract,
+				"crs":          ft.DefaultCRS,
+				"bbox":         ft.BBox,
+				"enabled":      true,
 			}
 			if err := s.repo.UpdateLayer(existingLayerID, updates); err != nil {
 				log.Printf("[RegisteredService] Failed to update WFS layer %s: %v", ft.Name, err)

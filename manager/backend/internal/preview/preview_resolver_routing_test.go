@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/addp/common/catalogview"
+	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/catalogutil"
 	"github.com/addp/manager/internal/models"
@@ -21,6 +22,43 @@ type namedPreviewProvider struct {
 func (p namedPreviewProvider) Name() string { return p.name }
 func (p namedPreviewProvider) Preview(context.Context, *PreviewRequest) (*models.TablePreview, error) {
 	return nil, nil
+}
+
+type previewRoutingModelPlugin struct {
+	model plugin.CatalogModelSpec
+}
+
+func (p *previewRoutingModelPlugin) Type() string         { return "preview-routing-model" }
+func (p *previewRoutingModelPlugin) DisplayName() string  { return "preview-routing-model" }
+func (p *previewRoutingModelPlugin) EngineOrigin() string { return "general" }
+func (p *previewRoutingModelPlugin) TestConnection(context.Context, plugin.ConnectionInfo) error {
+	return nil
+}
+func (p *previewRoutingModelPlugin) ValidateConnectionInfo(plugin.ConnectionInfo) error {
+	return nil
+}
+func (p *previewRoutingModelPlugin) DefaultPort() int          { return 0 }
+func (p *previewRoutingModelPlugin) RequiredFields() []string  { return nil }
+func (p *previewRoutingModelPlugin) SensitiveFields() []string { return nil }
+func (p *previewRoutingModelPlugin) Capabilities() plugin.EngineCapabilities {
+	return plugin.EngineCapabilities{SchemaVersion: plugin.CapabilitiesSchemaVersion, EngineType: p.Type()}
+}
+func (p *previewRoutingModelPlugin) CatalogModel() plugin.CatalogModelSpec {
+	return p.model
+}
+
+func registerPreviewRoutingModelPlugin(t *testing.T, model plugin.CatalogModelSpec) {
+	t.Helper()
+	const engineType = "preview-routing-model"
+	previous, err := plugin.Get(engineType)
+	plugin.Register(&previewRoutingModelPlugin{model: model})
+	t.Cleanup(func() {
+		if err == nil {
+			plugin.Register(previous)
+			return
+		}
+		plugin.Unregister(engineType)
+	})
 }
 
 func TestLoadPreviewPluginsRegistersBuiltinDefaultsWithoutFiles(t *testing.T) {
@@ -407,28 +445,38 @@ func TestAttributeHelpersReadPartitionedSlicesAndNumbers(t *testing.T) {
 }
 
 func TestBuildProviderRequestUsesPartitionedPhysicalPath(t *testing.T) {
+	registerPreviewRoutingModelPlugin(t, plugin.ObjectCatalogModel())
 	resolver := NewPreviewResolver(NewPreviewRegistry(), nil, nil)
 	req := &PreviewResolverRequest{
 		Locator: &catalogview.ResourceLocator{
-			Path: []string{"bucket", "table.parquet"},
+			EngineID: 1,
+			Path:     []string{"bucket", "table.parquet"},
+			Type:     catalogview.TypeObject,
 		},
-		Engine:       &commonModels.Engine{EngineType: "minio"},
+		Engine:       &commonModels.Engine{ID: 1, EngineType: "preview-routing-model"},
 		Metadata:     &commonModels.MetaNode{Attributes: map[string]interface{}{}},
 		ItemType:     "table",
 		PhysicalPath: "bucket/table.parquet",
 	}
 
-	providerReq := resolver.buildProviderRequest(req)
+	providerReq, err := resolver.buildProviderRequest(req)
+	if err != nil {
+		t.Fatalf("buildProviderRequest() error = %v", err)
+	}
 	if providerReq.PhysicalPath != "bucket/table.parquet" {
 		t.Fatalf("PhysicalPath = %q, want bucket/table.parquet", providerReq.PhysicalPath)
+	}
+	if !plugin.IsCatalogRootSegment(providerReq.ProviderPath.Segments[0]) {
+		t.Fatalf("ProviderPath = %#v, want explicit root", providerReq.ProviderPath)
 	}
 }
 
 func TestBuildProviderRequestKeepsChildName(t *testing.T) {
+	registerPreviewRoutingModelPlugin(t, plugin.ObjectCatalogModel())
 	resolver := NewPreviewResolver(NewPreviewRegistry(), nil, nil)
 	req := &PreviewResolverRequest{
-		Locator: &catalogview.ResourceLocator{Path: []string{"bucket", "test.xlsx"}},
-		Engine:  &commonModels.Engine{EngineType: "minio"},
+		Locator: &catalogview.ResourceLocator{EngineID: 1, Path: []string{"bucket", "test.xlsx"}, Type: catalogview.TypeObject},
+		Engine:  &commonModels.Engine{ID: 1, EngineType: "preview-routing-model"},
 		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
 			"item": map[string]interface{}{"data_type": "container", "format": "excel"},
 		}},
@@ -436,7 +484,10 @@ func TestBuildProviderRequestKeepsChildName(t *testing.T) {
 		ChildName: "Cities",
 	}
 
-	providerReq := resolver.buildProviderRequest(req)
+	providerReq, err := resolver.buildProviderRequest(req)
+	if err != nil {
+		t.Fatalf("buildProviderRequest() error = %v", err)
+	}
 	if providerReq.ChildName != "Cities" {
 		t.Fatalf("ChildName = %q, want Cities", providerReq.ChildName)
 	}

@@ -1,6 +1,6 @@
 # common.task_executions 中的 Transfer 执行记录
 
-更新时间：2026-05-30
+更新时间：2026-05-31
 
 Transfer 执行记录统一存储在 `common.task_executions`。Transfer API 会将统一执行记录投影为模块 DTO，因此接口响应中仍可看到 `task_id`、`start_time`、`checkpoint_offset`、`checkpoint_state` 等 Transfer 视图字段。
 
@@ -19,10 +19,10 @@ Transfer 执行记录统一存储在 `common.task_executions`。Transfer API 会
 
 | 字段 | 说明 |
 |---|---|
-| `records_read` | 读取行数。table Transfer 主指标。 |
-| `records_written` | 写入行数。table Transfer 主指标。 |
-| `bytes_read` | 读取字节数。当前 table Transfer 通常不作为主指标；后续 raw copy 会重点使用。 |
-| `bytes_written` | 写入字节数。 |
+| `records_read` | 读取行数。table Transfer 主指标；raw copy 第一版固定为 `1`。 |
+| `records_written` | 写入行数。table Transfer 主指标；raw copy 第一版固定为 `1`。 |
+| `bytes_read` | 读取字节数。当前 table Transfer 通常不作为主指标；raw copy 第一版会写入该指标。 |
+| `bytes_written` | 写入字节数。raw copy 第一版会写入该指标。 |
 | `started_at` / `completed_at` | 执行开始和完成时间。 |
 
 ## 三、metadata 中的 checkpoint 字段
@@ -66,7 +66,7 @@ Transfer 将 checkpoint 观测信息写入 `metadata`：
 规则：
 
 1. checkpoint 只在目标 batch 写入成功后更新。
-2. `checkpoint_offset` 当前等于累计 `records_read`。
+2. `checkpoint_offset` 当前等于累计 `records_read`；raw copy 第一版完成后为 `1`。
 3. `checkpoint_state` 用于进度展示、故障定位和 provider marker 持久化。
 4. Transfer 只保存 `resume_marker` / `commit_marker`，不解析 marker 内部位置字段。
 5. 保存 marker 不表示当前执行可从 checkpoint 后自动恢复。

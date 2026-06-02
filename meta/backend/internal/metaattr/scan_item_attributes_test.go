@@ -63,11 +63,6 @@ func TestBuildDynamicSchemaAttributesWritesTypeInfoTableSection(t *testing.T) {
 			Fields:    []string{"name"},
 			IndexType: "btree",
 		}},
-		Stats: map[string]interface{}{
-			"document_count":  int64(12),
-			"index_count":     int64(1),
-			"avg_record_size": int64(256),
-		},
 		Attributes: map[string]interface{}{
 			"database":        "db1",
 			"collection":      "people",
@@ -75,6 +70,8 @@ func TestBuildDynamicSchemaAttributesWritesTypeInfoTableSection(t *testing.T) {
 			"sample_size":     10,
 			"schema_type":     "dynamic",
 			"total_documents": int64(12),
+			"index_count":     int64(1),
+			"avg_record_size": int64(256),
 		},
 	})
 

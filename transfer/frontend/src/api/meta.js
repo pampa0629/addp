@@ -34,7 +34,7 @@ export const getSchemas = async (engineId) => {
     }
   })
   const nodes = response.data?.nodes || response.data?.data?.nodes || []
-  return nodes.filter(item => item.is_container).map(item => ({
+  return nodes.filter(item => item.role === 'branch').map(item => ({
     ...item,
     schema_name: item.name || item.schema_name,
     name: item.name || item.schema_name

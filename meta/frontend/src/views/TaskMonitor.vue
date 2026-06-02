@@ -137,7 +137,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import metaApi from '../api/meta'
@@ -150,6 +150,10 @@ const loading = ref(false)
 const page = ref(1)
 const pageSize = 20
 const total = ref(0)
+const autoRefreshTimer = ref(null)
+
+const ACTIVE_REFRESH_INTERVAL_MS = 3000
+const IDLE_REFRESH_INTERVAL_MS = 15000
 
 const filters = reactive({
   engineId: null,
@@ -211,6 +215,26 @@ const storageTypeOptions = computed(() => {
   return options.sort((a, b) => a.label.localeCompare(b.label, 'zh-CN'))
 })
 
+const hasActiveRuns = computed(() =>
+  taskRuns.value.some(run => ['pending', 'running'].includes(run.status))
+)
+
+const clearAutoRefresh = () => {
+  if (autoRefreshTimer.value) {
+    window.clearTimeout(autoRefreshTimer.value)
+    autoRefreshTimer.value = null
+  }
+}
+
+const scheduleAutoRefresh = () => {
+  clearAutoRefresh()
+  const delay = hasActiveRuns.value ? ACTIVE_REFRESH_INTERVAL_MS : IDLE_REFRESH_INTERVAL_MS
+  autoRefreshTimer.value = window.setTimeout(async () => {
+    await loadTaskRuns({ silent: true })
+    scheduleAutoRefresh()
+  }, delay)
+}
+
 const loadEngines = async () => {
   try {
     const res = await metaApi.getResources()
@@ -220,8 +244,10 @@ const loadEngines = async () => {
   }
 }
 
-const loadTaskRuns = async () => {
-  loading.value = true
+const loadTaskRuns = async ({ silent = false } = {}) => {
+  if (!silent) {
+    loading.value = true
+  }
   try {
     const params = {
       page: page.value,
@@ -237,9 +263,13 @@ const loadTaskRuns = async () => {
     taskRuns.value = res.items || []
     total.value = res.total || 0
   } catch (error) {
-    ElMessage.error(t('meta.monitor.loadTaskRunsFailed', { msg: error.response?.data?.error || error.message }))
+    if (!silent) {
+      ElMessage.error(t('meta.monitor.loadTaskRunsFailed', { msg: error.response?.data?.error || error.message }))
+    }
   } finally {
-    loading.value = false
+    if (!silent) {
+      loading.value = false
+    }
   }
 }
 
@@ -263,8 +293,9 @@ const handlePageChange = newPage => {
 }
 
 const refresh = () => {
+  clearAutoRefresh()
   loadEngines()
-  loadTaskRuns()
+  loadTaskRuns().finally(scheduleAutoRefresh)
 }
 
 const statusTag = status => {
@@ -378,6 +409,10 @@ const formatStorageType = row => {
 
 onMounted(() => {
   refresh()
+})
+
+onUnmounted(() => {
+  clearAutoRefresh()
 })
 </script>
 

@@ -66,7 +66,7 @@ func TestClickHouseFieldInfoMapsDefaultExpression(t *testing.T) {
 		t.Fatalf("field default/generation = %#v", field)
 	}
 	if field.PrimaryKey {
-		t.Fatalf("ClickHouse field should not map native key metadata to ADDP primary_key: %#v", field)
+		t.Fatalf("ClickHouse field should not map native key facts to ADDP primary_key: %#v", field)
 	}
 }
 

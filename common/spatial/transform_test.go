@@ -113,7 +113,7 @@ func TestResolveTransformExecutor(t *testing.T) {
 			want:   "pure_go",
 		},
 		{
-			name:   "fallback to duckdb for generic epsg",
+			name:   "generic epsg uses proj when available",
 			source: normalizeSourceCRS("", 32650),
 			target: normalizeTargetCRS(SRIDWGS84),
 			want:   expectedGenericExecutor(),
@@ -126,6 +126,12 @@ func TestResolveTransformExecutor(t *testing.T) {
 			t.Parallel()
 
 			executor := resolveTransformExecutor(tt.source, tt.target)
+			if tt.want == "" {
+				if executor != nil {
+					t.Fatalf("expected no executor, got %s", executor.Name())
+				}
+				return
+			}
 			if executor == nil {
 				t.Fatalf("expected executor %s, got nil", tt.want)
 			}
@@ -140,5 +146,5 @@ func expectedGenericExecutor() string {
 	if (projExecutor{}).CanTransform(normalizeSourceCRS("EPSG:32650", 32650), normalizeTargetCRS(SRIDWGS84)) {
 		return "proj"
 	}
-	return "duckdb"
+	return ""
 }

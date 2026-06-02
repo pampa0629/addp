@@ -8,13 +8,13 @@ import (
 	"github.com/addp/meta/internal/metaitem"
 )
 
-func TestFileCatalogDetectedItemNameUsesEntryPathForMultiFile(t *testing.T) {
+func TestFileCatalogDetectedItemNameUsesPrimaryContentPathForMultiFile(t *testing.T) {
 	t.Parallel()
 
 	name, fullName := FileCatalogDetectedItemName("/shp", &metaitem.DetectedItem{
 		ResolvedItem: dataitem.ResolvedItem{
-			Layout:    dataitem.LayoutMulti,
-			EntryPath: "/shp/farmland.shp",
+			Layout:             dataitem.LayoutMulti,
+			PrimaryContentPath: "/shp/farmland.shp",
 		},
 	})
 
@@ -31,8 +31,8 @@ func TestFileCatalogDetectedItemNameKeepsWholeScopePath(t *testing.T) {
 
 	name, fullName := FileCatalogDetectedItemName("/lake/sales", &metaitem.DetectedItem{
 		ResolvedItem: dataitem.ResolvedItem{
-			Layout:    dataitem.LayoutWhole,
-			EntryPath: "/lake/sales/_metadata",
+			Layout:             dataitem.LayoutWhole,
+			PrimaryContentPath: "/lake/sales/_metadata",
 		},
 	})
 
@@ -50,11 +50,11 @@ func TestPlanFileCatalogDetectedItemBuildsStablePlan(t *testing.T) {
 	size := int64(42)
 	item := &metaitem.DetectedItem{
 		ResolvedItem: dataitem.ResolvedItem{
-			Format:    "csv",
-			DataType:  dataitem.DataTypeTable,
-			Layout:    dataitem.LayoutSingle,
-			EntryPath: "/tables/sales.csv",
-			SizeBytes: &size,
+			Format:             "csv",
+			DataType:           dataitem.DataTypeTable,
+			Layout:             dataitem.LayoutSingle,
+			PrimaryContentPath: "/tables/sales.csv",
+			SizeBytes:          &size,
 		},
 	}
 

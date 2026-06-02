@@ -52,7 +52,7 @@ func (p *PythonWorkflowPlugin) RuntimeEndpoint(ctx context.Context, connInfo plu
 	return plugin.RuntimeBaseURL(connInfo)
 }
 
-func (p *PythonWorkflowPlugin) ListOperators(ctx context.Context, connInfo plugin.ConnectionInfo) ([]plugin.OperatorMetadata, error) {
+func (p *PythonWorkflowPlugin) ListOperators(ctx context.Context, connInfo plugin.ConnectionInfo) ([]plugin.OperatorDescriptor, error) {
 	return plugin.HTTPListOperators(ctx, connInfo)
 }
 

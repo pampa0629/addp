@@ -2,6 +2,9 @@
 
 更新时间：2026-05-09
 
+> 状态：历史清理清单，table 类型 Transfer 主链路已完成并归档。
+> 当前只保留作背景记录；稳定架构以 [Transfer 当前架构设计](../../transfer/docs/design.md) 为准。
+
 本文给出 Transfer 接入统一 Provider 体系的执行顺序。目标是最终删除旧 connector type 路由、旧 reader / writer 混合逻辑、旧 API 和旧数据口径，不保留兼容负担。
 
 ## 总目标
@@ -174,7 +177,7 @@ transfer/backend/internal/resourceadapter/
 | `spatialite_parallel` connector | 删除，改为 read strategy |
 | `geojson` connector | 删除，改为 `format=json + spatial.encoding=geojson` |
 | `parquet` 中的 S3 访问逻辑 | 删除，改为 contentio.Reader + Parquet provider |
-| `S3Reader` 的 CSV/JSON 解码分支 | 删除，改为 contentio.Reader + FormatPlugin / content reader |
+| `S3Reader` 的 CSV/JSON 解码分支 | 删除，改为 contentio.Reader + format reader provider |
 | `S3Writer` 的 CSV/JSON/Shapefile/Parquet 分支 | 删除，改为 format writer + contentio.Writer |
 | `NFSWriter` 中的格式分支 | 删除，改为 contentio.Writer |
 | `inferConnectorType()` | 删除 |
@@ -262,8 +265,8 @@ bash scripts/swagger/check-route-coverage.sh transfer
 1. 先做 `TransferPlan` 文档到代码的最小结构，不改变执行行为。
 2. 把 `ExecutionEngineService` 中的配置推断迁入 planner。
 3. 用 planner 输出继续驱动旧 registry，确认行为不变。
-4. 为 CSV 单文件读写接入 resource + FormatPlugin / content reader adapter。
-5. 为 Parquet scope 读接入 resource + FormatPlugin / content reader adapter。
+4. 为 CSV 单文件读写接入 resource + format reader / writer provider adapter。
+5. 为 Parquet scope 读接入 resource + scope table reader provider adapter。
 6. 为 Shapefile multi 读写接入 multi reader / writer。
 7. 把 PostgreSQL COPY 改成 native write strategy。
 8. 删除被新路径覆盖的旧 connector。

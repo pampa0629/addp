@@ -30,15 +30,15 @@ func (s *TaskProviderService) RegisterOrUpdate(provider *models.TaskProvider) (*
 
 	// 已存在，更新配置（保持用户的 is_enabled 设置）
 	updates := map[string]interface{}{
-		"display_name":           provider.DisplayName,
-		"description":            provider.Description,
-		"base_url":               provider.BaseURL,
-		"task_list_endpoint":     provider.TaskListEndpoint,
-		"task_detail_endpoint":   provider.TaskDetailEndpoint,
-		"task_execute_endpoint":  provider.TaskExecuteEndpoint,
-		"task_status_endpoint":   provider.TaskStatusEndpoint,
-		"task_cancel_endpoint":   provider.TaskCancelEndpoint,
-		"capabilities":           provider.Capabilities,
+		"display_name":          provider.DisplayName,
+		"description":           provider.Description,
+		"base_url":              provider.BaseURL,
+		"task_list_endpoint":    provider.TaskListEndpoint,
+		"task_detail_endpoint":  provider.TaskDetailEndpoint,
+		"task_execute_endpoint": provider.TaskExecuteEndpoint,
+		"task_status_endpoint":  provider.TaskStatusEndpoint,
+		"task_cancel_endpoint":  provider.TaskCancelEndpoint,
+		"capabilities":          provider.Capabilities,
 	}
 
 	if err := s.db.Model(&existing).Updates(updates).Error; err != nil {

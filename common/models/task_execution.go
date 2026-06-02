@@ -14,11 +14,11 @@ type TaskExecution struct {
 	ExecutionID string `gorm:"size:255;uniqueIndex;not null" json:"execution_id"` // UUID 全局唯一
 
 	// 模块标识
-	Module   string `gorm:"size:50;not null;index:idx_task_executions_module_type" json:"module"`    // 'transfer'/'develop'/'orchestrator'/'manager'
+	Module   string `gorm:"size:50;not null;index:idx_task_executions_module_type" json:"module"`     // 'transfer'/'develop'/'orchestrator'/'manager'
 	TaskType string `gorm:"size:100;not null;index:idx_task_executions_module_type" json:"task_type"` // 'import'/'export'/'sync'/'query'/'workflow'/'notebook'/'orchestration'/'mvt_generation'/'embedding'
 
 	// 关联原始任务
-	SourceTaskID   *int    `json:"source_task_id,omitempty"`              // 关联各模块的任务ID
+	SourceTaskID   *int    `json:"source_task_id,omitempty"`                   // 关联各模块的任务ID
 	SourceTaskName *string `gorm:"size:255" json:"source_task_name,omitempty"` // 任务名称（冗余，便于查询）
 
 	// 父执行（Orchestrator 子步骤追踪父编排）

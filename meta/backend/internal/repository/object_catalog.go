@@ -85,7 +85,7 @@ func (r *ScanRepository) EnsureObjectCatalogPrefixRelativePath(
 	return current, created, nil
 }
 
-func (r *ScanRepository) SoftDeleteObjectCatalogItemsMissingFingerprints(tenantID, engineID uint, bucketName string, scannedFingerprints map[string]bool) ([]models.MetaItem, error) {
+func (r *ScanRepository) SoftDeleteObjectMetaItemsMissingFingerprints(tenantID, engineID uint, bucketName string, scannedFingerprints map[string]bool) ([]models.MetaItem, error) {
 	if len(scannedFingerprints) == 0 {
 		return nil, nil
 	}

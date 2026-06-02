@@ -251,15 +251,15 @@ func detectedItemFromDescriptor(item *models.MetaItem, descriptor dataitem.ItemD
 	size := sizeFromDescriptor(descriptor, item)
 	return &metaitem.DetectedItem{
 		ResolvedItem: dataitem.ResolvedItem{
-			Name:      item.Name,
-			FullName:  item.FullName,
-			ItemType:  item.ItemType,
-			Layout:    descriptor.Layout,
-			DataType:  descriptor.DataType,
-			Format:    descriptor.Format,
-			EntryPath: knownItemEntryPath(descriptor, item),
-			RefList:   descriptor.Refs,
-			SizeBytes: &size,
+			Name:               item.Name,
+			FullName:           item.FullName,
+			ItemType:           item.ItemType,
+			Layout:             descriptor.Layout,
+			DataType:           descriptor.DataType,
+			Format:             descriptor.Format,
+			PrimaryContentPath: knownItemPrimaryContentPath(descriptor, item),
+			RefList:            descriptor.Refs,
+			SizeBytes:          &size,
 		},
 		PhysicalPath: knownItemPhysicalPath(descriptor, item),
 		Attributes:   clonePlainMap(item.Attributes),
@@ -270,12 +270,12 @@ func knownItemDescriptorFromMetaAttributes(attrs map[string]interface{}) dataite
 	return dataitem.DescriptorFromAttributes(attrs)
 }
 
-func knownItemEntryPath(descriptor dataitem.ItemDescriptor, item *models.MetaItem) string {
-	return firstNonEmpty(descriptor.EntryPath, descriptor.PhysicalPath, pathFromStorage(descriptor), knownItemFullName(item))
+func knownItemPrimaryContentPath(descriptor dataitem.ItemDescriptor, item *models.MetaItem) string {
+	return firstNonEmpty(descriptor.PrimaryContentPath, descriptor.PhysicalPath, pathFromStorage(descriptor), knownItemFullName(item))
 }
 
 func knownItemPhysicalPath(descriptor dataitem.ItemDescriptor, item *models.MetaItem) string {
-	return firstNonEmpty(descriptor.PhysicalPath, descriptor.EntryPath, pathFromStorage(descriptor), knownItemFullName(item))
+	return firstNonEmpty(descriptor.PhysicalPath, descriptor.PrimaryContentPath, pathFromStorage(descriptor), knownItemFullName(item))
 }
 
 func knownItemObjectPath(descriptor dataitem.ItemDescriptor, physicalPath string) string {
@@ -320,7 +320,7 @@ func catalogModelItemTerm(provider plugin.EnginePlugin) string {
 	if !ok {
 		return ""
 	}
-	return plugin.CatalogItemTerm(modelProvider.CatalogModel())
+	return plugin.CatalogLeafTerm(modelProvider.CatalogModel())
 }
 
 func restoreKnownItemStorage(attrs models.JSONMap, descriptor dataitem.ItemDescriptor, item *models.MetaItem) {

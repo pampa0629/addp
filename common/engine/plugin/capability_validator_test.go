@@ -15,7 +15,7 @@ func (p *dynamicSchemaOnlyPlugin) Capabilities() EngineCapabilities {
 		EngineType:    p.Type(),
 		EngineFamily:  "dynamic_schema",
 		Storage: &StorageCapabilities{
-			Metadata: &MetadataCapability{
+			Facts: &CatalogFactsCapability{
 				Supported:  true,
 				FieldInfo:  true,
 				Statistics: true,
@@ -25,8 +25,8 @@ func (p *dynamicSchemaOnlyPlugin) Capabilities() EngineCapabilities {
 	}
 }
 
-func (p *dynamicSchemaOnlyPlugin) SampleDynamicSchema(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts MetadataOptions) (*ItemMetadata, error) {
-	return &ItemMetadata{Path: path}, nil
+func (p *dynamicSchemaOnlyPlugin) SampleDynamicSchema(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts CatalogFactsOptions) (*CatalogFacts, error) {
+	return &CatalogFacts{Path: path}, nil
 }
 
 func TestValidatePluginCapabilitiesAcceptsDynamicSchemaSamplingProvider(t *testing.T) {

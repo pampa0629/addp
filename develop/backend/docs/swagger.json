@@ -1901,13 +1901,41 @@
         }
     },
     "definitions": {
+        "client.EngineCatalogEntry": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string"
+                },
+                "leaf_count": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "path": {
+                    "$ref": "#/definitions/client.EngineCatalogPath"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "storage": {
+                    "$ref": "#/definitions/plugin.CatalogStorageFacts"
+                },
+                "table": {
+                    "$ref": "#/definitions/datatype.TableInfo"
+                },
+                "term": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "client.EngineCatalogListChildrenRequest": {
             "type": "object",
             "properties": {
-                "filter": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
                 "options": {
                     "$ref": "#/definitions/client.EngineCatalogListOptions"
                 },
@@ -1922,7 +1950,7 @@
                 "nodes": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/client.EngineCatalogNode"
+                        "$ref": "#/definitions/client.EngineCatalogEntry"
                     }
                 }
             }
@@ -1938,43 +1966,6 @@
                 },
                 "recursive": {
                     "type": "boolean"
-                }
-            }
-        },
-        "client.EngineCatalogNode": {
-            "type": "object",
-            "properties": {
-                "actions": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "attributes": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "is_container": {
-                    "type": "boolean"
-                },
-                "is_item": {
-                    "type": "boolean"
-                },
-                "kind": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "path": {
-                    "$ref": "#/definitions/client.EngineCatalogPath"
-                },
-                "stats": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "term": {
-                    "type": "string"
                 }
             }
         },
@@ -2005,6 +1996,141 @@
                     "type": "string"
                 },
                 "term": {
+                    "type": "string"
+                }
+            }
+        },
+        "datatype.FieldInfo": {
+            "type": "object",
+            "properties": {
+                "comment": {
+                    "type": "string"
+                },
+                "default_expression": {
+                    "type": "string"
+                },
+                "generated": {
+                    "type": "boolean"
+                },
+                "generation_expression": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "native_type": {
+                    "type": "string"
+                },
+                "nullable": {
+                    "type": "boolean"
+                },
+                "ordinal_position": {
+                    "type": "integer"
+                },
+                "precision": {
+                    "type": "integer"
+                },
+                "primary_key": {
+                    "type": "boolean"
+                },
+                "scale": {
+                    "type": "integer"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "type": {
+                    "$ref": "#/definitions/datatype.FieldType"
+                }
+            }
+        },
+        "datatype.FieldType": {
+            "type": "string",
+            "enum": [
+                "unknown",
+                "string",
+                "bool",
+                "bytes",
+                "mixed",
+                "int",
+                "bigint",
+                "float",
+                "double",
+                "decimal",
+                "date",
+                "time",
+                "timestamp",
+                "json",
+                "array",
+                "uuid",
+                "geometry",
+                "point",
+                "linestring",
+                "polygon",
+                "multipoint"
+            ],
+            "x-enum-varnames": [
+                "FieldTypeUnknown",
+                "FieldTypeString",
+                "FieldTypeBool",
+                "FieldTypeBytes",
+                "FieldTypeMixed",
+                "FieldTypeInt",
+                "FieldTypeBigInt",
+                "FieldTypeFloat",
+                "FieldTypeDouble",
+                "FieldTypeDecimal",
+                "FieldTypeDate",
+                "FieldTypeTime",
+                "FieldTypeTimestamp",
+                "FieldTypeJSON",
+                "FieldTypeArray",
+                "FieldTypeUUID",
+                "FieldTypeGeometry",
+                "FieldTypePoint",
+                "FieldTypeLineString",
+                "FieldTypePolygon",
+                "FieldTypeMultiPoint"
+            ]
+        },
+        "datatype.TableInfo": {
+            "type": "object",
+            "properties": {
+                "comment": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/datatype.FieldInfo"
+                    }
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "native": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "primary_key": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "row_count": {
+                    "type": "integer"
+                },
+                "size_bytes": {
+                    "type": "integer"
+                },
+                "updated_at": {
                     "type": "string"
                 }
             }
@@ -2927,6 +3053,29 @@
                 "scheduled_scan": {
                     "description": "启用定时扫描",
                     "type": "boolean"
+                }
+            }
+        },
+        "plugin.CatalogStorageFacts": {
+            "type": "object",
+            "properties": {
+                "content_type": {
+                    "type": "string"
+                },
+                "etag": {
+                    "type": "string"
+                },
+                "extension": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "size_bytes": {
+                    "type": "integer"
                 }
             }
         },

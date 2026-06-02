@@ -1,10 +1,15 @@
 package service
 
-import "github.com/addp/common/engine/plugin"
+import (
+	"github.com/addp/common/engine/plugin"
+	commonModels "github.com/addp/common/models"
+	"github.com/addp/meta/internal/models"
+	metaRepo "github.com/addp/meta/internal/repository"
+)
 
-func catalogItemTermForPlugin(p plugin.EnginePlugin, fallback string) string {
+func catalogLeafTermForPlugin(p plugin.EnginePlugin, fallback string) string {
 	if modelProvider, ok := p.(plugin.CatalogModelProvider); ok {
-		if term := plugin.CatalogItemTerm(modelProvider.CatalogModel()); term != "" {
+		if term := plugin.CatalogLeafTerm(modelProvider.CatalogModel()); term != "" {
 			return term
 		}
 	}
@@ -24,6 +29,32 @@ func namespaceTermForPlugin(p plugin.EnginePlugin) string {
 		return level.Term
 	}
 	return plugin.CatalogTermDatabase
+}
+
+func namespaceRootTermForPlugin(p plugin.EnginePlugin) string {
+	if model := catalogModelForPlugin(p); model != nil && model.RootTerm != "" {
+		return model.RootTerm
+	}
+	return plugin.CatalogTermServer
+}
+
+func ensureCatalogRootNode(repo *metaRepo.ScanRepository, tenantID uint, resource *commonModels.Engine, p plugin.EnginePlugin) (*models.MetaNode, error) {
+	return ensureCatalogRootNodeWithNativeName(repo, tenantID, resource, p, "")
+}
+
+func ensureCatalogRootNodeWithNativeName(repo *metaRepo.ScanRepository, tenantID uint, resource *commonModels.Engine, p plugin.EnginePlugin, nativeName string) (*models.MetaNode, error) {
+	rootTerm := namespaceRootTermForPlugin(p)
+	fullName := ""
+	attrs := models.JSONMap{
+		"catalog": map[string]interface{}{
+			"root_term":           rootTerm,
+			"display_name_source": "engine.name",
+		},
+	}
+	if nativeName != "" && nativeName != resource.Name {
+		attrs["catalog"].(map[string]interface{})["native_name"] = nativeName
+	}
+	return repo.UpsertNode(tenantID, resource.ID, nil, rootTerm, resource.Name, &fullName, attrs)
 }
 
 func catalogModelForPlugin(p plugin.EnginePlugin) *plugin.CatalogModelSpec {

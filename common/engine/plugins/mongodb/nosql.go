@@ -15,7 +15,7 @@ import (
 )
 
 // listDatabases lists all non-system databases for the catalog callbacks.
-func (p *MongoDBPlugin) listDatabases(ctx context.Context, connInfo plugin.ConnectionInfo) ([]plugin.DatabaseInfo, error) {
+func (p *MongoDBPlugin) listDatabases(ctx context.Context, connInfo plugin.ConnectionInfo, root plugin.CatalogPath) ([]plugin.CatalogEntry, error) {
 	client, err := p.openClient(ctx, connInfo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create client: %w", err)
@@ -28,25 +28,39 @@ func (p *MongoDBPlugin) listDatabases(ctx context.Context, connInfo plugin.Conne
 		return nil, fmt.Errorf("failed to list databases: %w", err)
 	}
 
-	// 转换为 plugin.DatabaseInfo
-	result := make([]plugin.DatabaseInfo, 0)
+	result := make([]plugin.CatalogEntry, 0, len(databases.Databases))
 	for _, db := range databases.Databases {
 		// 过滤系统数据库
 		if p.IsSystemDatabase(db.Name) {
 			continue
 		}
 
-		result = append(result, plugin.DatabaseInfo{
-			Name:      db.Name,
-			SizeBytes: db.SizeOnDisk,
+		sizeBytes := db.SizeOnDisk
+		result = append(result, plugin.CatalogEntry{
+			Name: db.Name,
+			Path: plugin.CatalogPath{
+				Version:  root.Version,
+				EngineID: root.EngineID,
+				Segments: append(append([]plugin.CatalogSegment(nil), root.Segments...), plugin.CatalogSegment{
+					Term: plugin.CatalogTermDatabase,
+					Kind: plugin.CatalogKindNamespace,
+					Name: db.Name,
+				}),
+			},
+			Term: plugin.CatalogTermDatabase,
+			Kind: plugin.CatalogKindNamespace,
+			Role: plugin.CatalogRoleBranch,
+			Storage: &plugin.CatalogStorageFacts{
+				SizeBytes: &sizeBytes,
+			},
 		})
 	}
 
 	return result, nil
 }
 
-// listCollections lists collections for the catalog callbacks.
-func (p *MongoDBPlugin) listCollections(ctx context.Context, connInfo plugin.ConnectionInfo, database string) ([]plugin.CollectionInfo, error) {
+// listCollections lists collections for the dynamic schema catalog callbacks.
+func (p *MongoDBPlugin) listCollections(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, database string) ([]plugin.CatalogEntry, error) {
 	client, err := p.openClient(ctx, connInfo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create client: %w", err)
@@ -61,35 +75,24 @@ func (p *MongoDBPlugin) listCollections(ctx context.Context, connInfo plugin.Con
 		return nil, fmt.Errorf("failed to list collections: %w", err)
 	}
 
-	// 转换为 plugin.CollectionInfo
-	result := make([]plugin.CollectionInfo, 0, len(collections))
+	result := make([]plugin.CatalogEntry, 0, len(collections))
 	for _, collName := range collections {
-		// 获取集合统计信息
-		stats, err := p.getCollectionStats(ctx, connInfo, database, collName)
+		// 获取 collection 的 engine 原生事实。
+		stats, err := p.describeCollectionFacts(ctx, connInfo, database, collName)
 		if err != nil {
 			// 如果获取统计失败，使用默认值
-			result = append(result, plugin.CollectionInfo{
-				Database:      database,
-				Name:          collName,
-				DocumentCount: 0,
-				SizeBytes:     0,
-			})
+			result = append(result, plugin.DynamicCollectionCatalogEntry(parent, database, collName, plugin.DynamicCollectionFacts{}))
 			continue
 		}
 
-		result = append(result, plugin.CollectionInfo{
-			Database:      database,
-			Name:          collName,
-			DocumentCount: stats.DocumentCount,
-			SizeBytes:     stats.SizeBytes,
-		})
+		result = append(result, plugin.DynamicCollectionCatalogEntry(parent, database, collName, *stats))
 	}
 
 	return result, nil
 }
 
-// getCollectionStats returns collection statistics.
-func (p *MongoDBPlugin) getCollectionStats(ctx context.Context, connInfo plugin.ConnectionInfo, database, collection string) (*plugin.CollectionStats, error) {
+// describeCollectionFacts returns engine-native facts for a MongoDB collection catalog leaf.
+func (p *MongoDBPlugin) describeCollectionFacts(ctx context.Context, connInfo plugin.ConnectionInfo, database, collection string) (*plugin.DynamicCollectionFacts, error) {
 	client, err := p.openClient(ctx, connInfo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create client: %w", err)
@@ -125,12 +128,12 @@ func (p *MongoDBPlugin) getCollectionStats(ctx context.Context, connInfo plugin.
 	} else {
 		// 如果聚合失败，使用估算值
 		count, _ := coll.EstimatedDocumentCount(ctx)
-		return &plugin.CollectionStats{
+		return &plugin.DynamicCollectionFacts{
 			DocumentCount: int64(count),
 			SizeBytes:     0,
 			IndexCount:    0,
 			AvgRecordSize: 0,
-			Indexes:       []plugin.IndexInfo{},
+			Indexes:       []plugin.IndexFacts{},
 		}, nil
 	}
 
@@ -138,10 +141,10 @@ func (p *MongoDBPlugin) getCollectionStats(ctx context.Context, connInfo plugin.
 	indexes, err := p.getIndexes(ctx, coll)
 	if err != nil {
 		// 索引获取失败不影响主要统计信息
-		indexes = []plugin.IndexInfo{}
+		indexes = []plugin.IndexFacts{}
 	}
 
-	return &plugin.CollectionStats{
+	return &plugin.DynamicCollectionFacts{
 		DocumentCount: statsDoc.StorageStats.Count,
 		SizeBytes:     statsDoc.StorageStats.Size,
 		IndexCount:    statsDoc.StorageStats.NIndexes,
@@ -151,12 +154,13 @@ func (p *MongoDBPlugin) getCollectionStats(ctx context.Context, connInfo plugin.
 }
 
 // SampleDynamicSchema samples a collection and returns inferred dynamic field info.
-func (p *MongoDBPlugin) SampleDynamicSchema(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
-	if len(path.Segments) < 2 {
+func (p *MongoDBPlugin) SampleDynamicSchema(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+	segments := plugin.CatalogPathWithoutRoot(path).Segments
+	if len(segments) < 2 {
 		return nil, fmt.Errorf("dynamic schema item path requires database and collection segments")
 	}
-	database := path.Segments[0].Name
-	collection := path.Segments[len(path.Segments)-1].Name
+	database := segments[0].Name
+	collection := segments[len(segments)-1].Name
 
 	client, err := p.createClient(ctx, connInfo)
 	if err != nil {
@@ -215,44 +219,43 @@ func (p *MongoDBPlugin) SampleDynamicSchema(ctx context.Context, connInfo plugin
 		return fields[i].Name < fields[j].Name
 	})
 
-	stats, err := p.getCollectionStats(ctx, connInfo, database, collection)
+	stats, err := p.describeCollectionFacts(ctx, connInfo, database, collection)
 	if err != nil {
 		count, _ := coll.EstimatedDocumentCount(ctx)
-		stats = &plugin.CollectionStats{DocumentCount: count}
+		stats = &plugin.DynamicCollectionFacts{DocumentCount: count}
 	}
 
-	attrs := map[string]interface{}{
-		"database":        database,
-		"collection":      collection,
-		"is_sampled":      true,
-		"sample_size":     len(documents),
-		"schema_type":     "dynamic",
-		"total_documents": stats.DocumentCount,
-	}
-	return &plugin.ItemMetadata{
-		Path:    path,
-		Kind:    plugin.CatalogKindCollection,
-		Fields:  fields,
-		Indexes: append([]plugin.IndexInfo{}, stats.Indexes...),
-		Stats: map[string]interface{}{
-			"document_count":  stats.DocumentCount,
-			"size_bytes":      stats.SizeBytes,
-			"index_count":     stats.IndexCount,
-			"avg_record_size": stats.AvgRecordSize,
+	return &plugin.CatalogFacts{
+		Path: path,
+		Kind: plugin.CatalogKindCollection,
+		Table: &datatype.TableInfo{
+			Name:      collection,
+			Kind:      plugin.CatalogKindCollection,
+			Fields:    fields,
+			RowCount:  &stats.DocumentCount,
+			SizeBytes: &stats.SizeBytes,
+			Native: map[string]interface{}{
+				"database":        database,
+				"collection":      collection,
+				"sample_size":     len(documents),
+				"schema_type":     "dynamic",
+				"index_count":     stats.IndexCount,
+				"avg_record_size": stats.AvgRecordSize,
+			},
 		},
-		Attributes: attrs,
+		Indexes: append([]plugin.IndexFacts{}, stats.Indexes...),
 	}, nil
 }
 
 // getIndexes 获取集合的索引信息（内部辅助方法）
-func (p *MongoDBPlugin) getIndexes(ctx context.Context, coll *mongo.Collection) ([]plugin.IndexInfo, error) {
+func (p *MongoDBPlugin) getIndexes(ctx context.Context, coll *mongo.Collection) ([]plugin.IndexFacts, error) {
 	cursor, err := coll.Indexes().List(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer cursor.Close(ctx)
 
-	var indexes []plugin.IndexInfo
+	var indexes []plugin.IndexFacts
 	for cursor.Next(ctx) {
 		var indexDoc struct {
 			Name   string                 `bson:"name"`
@@ -270,7 +273,7 @@ func (p *MongoDBPlugin) getIndexes(ctx context.Context, coll *mongo.Collection) 
 			fields = append(fields, field)
 		}
 
-		indexes = append(indexes, plugin.IndexInfo{
+		indexes = append(indexes, plugin.IndexFacts{
 			Name:      indexDoc.Name,
 			Fields:    fields,
 			IsUnique:  indexDoc.Unique,

@@ -22,8 +22,7 @@ func TestRegisterFormatPluginManifest(t *testing.T) {
       "extensions": [".mfd"],
       "mime_types": ["text/x-manifest-doc"]
     },
-    "content_readers": ["document_text"],
-    "transfer_read": true
+    "content_readers": ["document_text"]
   }
 }`
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
@@ -38,15 +37,35 @@ func TestRegisterFormatPluginManifest(t *testing.T) {
 		t.Fatalf("descriptor format = %q, want manifest_doc", descriptor.Format)
 	}
 
-	capability, ok := GetFormatCapability(FormatType("manifest_doc"))
+	registered, ok := GetFormatDescriptor(FormatType("manifest_doc"))
 	if !ok {
-		t.Fatal("manifest descriptor did not update capability registry")
+		t.Fatal("manifest descriptor was not registered")
 	}
-	if capability.DataType != datatype.DataTypeDocument {
-		t.Fatalf("capability data type = %q, want document", capability.DataType)
+	if registered.DataType != datatype.DataTypeDocument {
+		t.Fatalf("descriptor data type = %q, want document", registered.DataType)
 	}
 	if got := MIMEToFormat("text/x-manifest-doc"); got != FormatType("manifest_doc") {
 		t.Fatalf("MIMEToFormat() = %q, want manifest_doc", got)
+	}
+}
+
+func TestLoadFormatPluginManifestRejectsUnknownFields(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "plugin.json")
+	content := `{
+  "descriptor": {
+    "id": "plugin-manifest-doc",
+    "format": "manifest_doc",
+    "data_type": "document",
+    "transfer_read": true
+  }
+}`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	if _, err := LoadFormatPluginManifest(path); err == nil {
+		t.Fatal("LoadFormatPluginManifest() error = nil, want unknown field error")
 	}
 }
 

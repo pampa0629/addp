@@ -203,31 +203,12 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		},
 		Providers:      format.FormatProviderDescriptor{TableInfo: true, TableSample: true, Table: true, ScopeTable: true},
 		ContentReaders: []string{string(format.ContentReaderTableSample), string(format.ContentReaderScopeTableSample), string(format.ContentReaderRawContent)},
-		TransferRead:   true,
-		TransferWrite:  true,
 		Parse:          true,
-		EngineFamilies: []string{format.EngineFamilyObject, format.EngineFamilyFile},
 	}
 }
 
 func (p *Plugin) SniffFormat(peek []byte) bool {
 	return len(peek) >= 4 && string(peek[:4]) == "PAR1"
-}
-
-func (p *Plugin) Capabilities() format.FormatCapability {
-	capability, ok := format.GetFormatCapability(format.FormatParquet)
-	if ok {
-		return capability
-	}
-	return format.FormatCapability{
-		Format:        format.FormatParquet,
-		DataType:      datatype.DataTypeTable,
-		Layouts:       []string{format.LayoutSingle, format.LayoutWhole},
-		ProviderHints: []string{format.FormatProviderTable},
-		TransferRead:  true,
-		TransferWrite: true,
-		Parse:         true,
-	}
 }
 
 func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, tableInfo *datatype.TableInfo, options *format.WriteOptions) (format.TableWriter, error) {

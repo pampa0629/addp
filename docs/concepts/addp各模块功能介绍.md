@@ -105,7 +105,7 @@
 **职责定位**：元数据扫描、索引、搜索和管理
 
 **核心能力**：
-- 元数据扫描（统一通过 `CatalogProvider` 和 `ItemMetadataProvider`）：
+- 元数据扫描（统一通过 `CatalogProvider` 和 `CatalogFactsProvider`）：
   - 关系型：schema/database → table/view → field
   - 文档/图数据库：database → collection/graph
   - 对象存储/文件系统：bucket/root → prefix/dir → object/file

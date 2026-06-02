@@ -111,7 +111,7 @@ func GetPoolStats() map[uint]plugin.PoolStats {
 	return plugin.GetPoolStats()
 }
 
-// === Catalog / metadata 查询方法 ===
+// === Catalog / facts 查询方法 ===
 
 func toPluginEngine(engine *models.Engine) *plugin.Engine {
 	pluginEngine := &plugin.Engine{
@@ -123,7 +123,7 @@ func toPluginEngine(engine *models.Engine) *plugin.Engine {
 }
 
 // ListWorkflowOperators 通过工作流运行时 Provider 动态发现算子。
-func ListWorkflowOperators(ctx context.Context, engine *models.Engine) ([]models.OperatorMetadata, error) {
+func ListWorkflowOperators(ctx context.Context, engine *models.Engine) ([]models.OperatorDescriptor, error) {
 	p, err := plugin.Get(engine.EngineType)
 	if err != nil {
 		return nil, err
@@ -153,10 +153,10 @@ func ExecuteWorkflow(ctx context.Context, engine *models.Engine, req plugin.Work
 	return workflowProvider.ExecuteWorkflow(ctx, plugin.ConnectionInfo(engine.ConnectionInfo), req)
 }
 
-func toModelOperators(engine *models.Engine, operators []plugin.OperatorMetadata) []models.OperatorMetadata {
-	result := make([]models.OperatorMetadata, 0, len(operators))
+func toModelOperators(engine *models.Engine, operators []plugin.OperatorDescriptor) []models.OperatorDescriptor {
+	result := make([]models.OperatorDescriptor, 0, len(operators))
 	for _, op := range operators {
-		result = append(result, models.OperatorMetadata{
+		result = append(result, models.OperatorDescriptor{
 			ID:                  firstNonEmpty(op.ID, op.Name),
 			Name:                op.Name,
 			DisplayName:         op.DisplayName,
@@ -174,10 +174,10 @@ func toModelOperators(engine *models.Engine, operators []plugin.OperatorMetadata
 	return result
 }
 
-func toModelParameters(parameters []plugin.ParameterMetadata) []models.ParameterMetadata {
-	result := make([]models.ParameterMetadata, 0, len(parameters))
+func toModelParameters(parameters []plugin.ParameterDescriptor) []models.ParameterDescriptor {
+	result := make([]models.ParameterDescriptor, 0, len(parameters))
 	for _, param := range parameters {
-		result = append(result, models.ParameterMetadata{
+		result = append(result, models.ParameterDescriptor{
 			Name:        param.Name,
 			Type:        param.Type,
 			Required:    param.Required,
@@ -199,13 +199,13 @@ func toModelParameters(parameters []plugin.ParameterMetadata) []models.Parameter
 	return result
 }
 
-func toModelParameterMap(parameters map[string]plugin.ParameterMetadata) map[string]models.ParameterMetadata {
+func toModelParameterMap(parameters map[string]plugin.ParameterDescriptor) map[string]models.ParameterDescriptor {
 	if len(parameters) == 0 {
 		return nil
 	}
-	result := make(map[string]models.ParameterMetadata, len(parameters))
+	result := make(map[string]models.ParameterDescriptor, len(parameters))
 	for name, param := range parameters {
-		result[name] = models.ParameterMetadata{
+		result[name] = models.ParameterDescriptor{
 			Name:        param.Name,
 			Type:        param.Type,
 			Required:    param.Required,
@@ -251,10 +251,10 @@ func toStringInputs(inputs []interface{}) []string {
 	return result
 }
 
-func toModelOutputPorts(ports []plugin.OutputPortMetadata) []models.OutputPortMetadata {
-	result := make([]models.OutputPortMetadata, 0, len(ports))
+func toModelOutputPorts(ports []plugin.OutputPortDescriptor) []models.OutputPortDescriptor {
+	result := make([]models.OutputPortDescriptor, 0, len(ports))
 	for _, port := range ports {
-		result = append(result, models.OutputPortMetadata{
+		result = append(result, models.OutputPortDescriptor{
 			Name:        port.Name,
 			Type:        port.Type,
 			Description: port.Description,
@@ -274,18 +274,27 @@ func firstNonEmpty(values ...string) string {
 }
 
 // ListCatalogChildren 列出指定 catalog 路径下的实时子节点。
-func ListCatalogChildren(ctx context.Context, engine *models.Engine, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
+func ListCatalogChildren(ctx context.Context, engine *models.Engine, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogEntry, error) {
 	pluginEngine := toPluginEngine(engine)
+
+	p, err := plugin.Get(pluginEngine.EngineType)
+	if err != nil {
+		return nil, err
+	}
+	modelProvider, ok := p.(plugin.CatalogModelProvider)
+	if !ok {
+		return nil, fmt.Errorf("plugin %s does not implement CatalogModelProvider", pluginEngine.EngineType)
+	}
+	if len(parent.Segments) == 0 {
+		return []plugin.CatalogEntry{
+			plugin.CatalogRootEntry(modelProvider.CatalogModel(), engine.ID, engine.Name),
+		}, nil
+	}
 	if parent.Version == "" {
 		parent.Version = plugin.CatalogPathVersion
 	}
 	if parent.EngineID == 0 {
 		parent.EngineID = pluginEngine.ID
-	}
-
-	p, err := plugin.Get(pluginEngine.EngineType)
-	if err != nil {
-		return nil, err
 	}
 	catalogProvider, ok := p.(plugin.CatalogProvider)
 	if !ok {
@@ -294,14 +303,14 @@ func ListCatalogChildren(ctx context.Context, engine *models.Engine, parent plug
 	return catalogProvider.ListChildren(ctx, pluginEngine.ConnectionInfo, parent, opts)
 }
 
-// DescribeItem 描述 catalog 叶子数据项。
-func DescribeItem(ctx context.Context, engine *models.Engine, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
-	return plugin.DescribeItem(ctx, toPluginEngine(engine), path, opts)
+// DescribeCatalogFacts 描述 catalog leaf 的 engine-native facts。
+func DescribeCatalogFacts(ctx context.Context, engine *models.Engine, path plugin.CatalogPath, opts plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+	return plugin.DescribeCatalogFacts(ctx, toPluginEngine(engine), path, opts)
 }
 
-// DescribeNamedItem 描述指定命名空间下的具名 tabular 数据项。
-func DescribeNamedItem(ctx context.Context, engine *models.Engine, namespace, item string, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
-	return plugin.DescribeNamedItem(ctx, toPluginEngine(engine), namespace, item, opts)
+// DescribeNamedCatalogFacts 描述指定命名空间下的具名 tabular catalog leaf facts。
+func DescribeNamedCatalogFacts(ctx context.Context, engine *models.Engine, namespace, item string, opts plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+	return plugin.DescribeNamedCatalogFacts(ctx, toPluginEngine(engine), namespace, item, opts)
 }
 
 // CountItemRows 获取 tabular 数据项行数。
@@ -345,7 +354,7 @@ func GenerateSampleQuery(ctx context.Context, engine *models.Engine) (query stri
 		// SQL 表格引擎优先通过实时 Catalog 发现真实数据表，避免默认示例生成不可执行的占位 SQL。
 		if _, ok := p.(plugin.SQLQueryRuntimeProvider); ok {
 			if cp, ok := p.(plugin.CatalogProvider); ok {
-				if q, ok := generateCatalogSampleQuery(sampleCtx, cp, connInfo, engine.ID, engineType); ok {
+				if q, ok := generateCatalogSampleQuery(sampleCtx, p, cp, connInfo, engine.ID, engineType); ok {
 					return q, "sql"
 				}
 			}
@@ -359,7 +368,7 @@ func GenerateSampleQuery(ctx context.Context, engine *models.Engine) (query stri
 
 		// 非 QueryRuntime 的表格引擎兜底仍通过 CatalogProvider 发现第一张可查询表。
 		if cp, ok := p.(plugin.CatalogProvider); ok {
-			if q, ok := generateCatalogSampleQuery(sampleCtx, cp, connInfo, engine.ID, engineType); ok {
+			if q, ok := generateCatalogSampleQuery(sampleCtx, p, cp, connInfo, engine.ID, engineType); ok {
 				return q, "sql"
 			}
 		}
@@ -368,18 +377,19 @@ func GenerateSampleQuery(ctx context.Context, engine *models.Engine) (query stri
 	return "SELECT 1", "sql"
 }
 
-func generateCatalogSampleQuery(ctx context.Context, cp plugin.CatalogProvider, connInfo plugin.ConnectionInfo, engineID uint, engineType string) (string, bool) {
-	namespaces, err := cp.ListChildren(ctx, connInfo, plugin.CatalogPath{
-		Version:  plugin.CatalogPathVersion,
-		EngineID: engineID,
-	}, plugin.ListOptions{})
+func generateCatalogSampleQuery(ctx context.Context, enginePlugin plugin.EnginePlugin, cp plugin.CatalogProvider, connInfo plugin.ConnectionInfo, engineID uint, engineType string) (string, bool) {
+	modelProvider, ok := enginePlugin.(plugin.CatalogModelProvider)
+	if !ok {
+		return "", false
+	}
+	namespaces, err := cp.ListChildren(ctx, connInfo, plugin.CatalogRootPath(modelProvider.CatalogModel(), engineID), plugin.ListOptions{})
 	if err != nil {
 		return "", false
 	}
 
 	var fallbackNamespace, fallbackItem string
 	for _, namespace := range namespaces {
-		if !namespace.IsContainer {
+		if namespace.Role != plugin.CatalogRoleBranch {
 			continue
 		}
 
@@ -389,7 +399,7 @@ func generateCatalogSampleQuery(ctx context.Context, cp plugin.CatalogProvider, 
 		}
 
 		for _, item := range items {
-			if !item.IsItem {
+			if item.Role != plugin.CatalogRoleLeaf {
 				continue
 			}
 
@@ -397,7 +407,7 @@ func generateCatalogSampleQuery(ctx context.Context, cp plugin.CatalogProvider, 
 				fallbackNamespace = namespace.Name
 				fallbackItem = item.Name
 			}
-			if rowCountStat(item.Stats) > 0 {
+			if catalogEntryRowCount(item) > 0 {
 				return tableSampleSQL(engineType, namespace.Name, item.Name), true
 			}
 		}
@@ -413,46 +423,11 @@ func tableSampleSQL(engineType, namespace, table string) string {
 	return sqldialect.SelectAllSampleSQL(engineType, namespace, table, 10)
 }
 
-func rowCountStat(stats map[string]interface{}) int64 {
-	if stats == nil {
+func catalogEntryRowCount(entry plugin.CatalogEntry) int64 {
+	if entry.Table == nil || entry.Table.RowCount == nil {
 		return 0
 	}
-
-	switch value := stats["row_count"].(type) {
-	case int:
-		return int64(value)
-	case int8:
-		return int64(value)
-	case int16:
-		return int64(value)
-	case int32:
-		return int64(value)
-	case int64:
-		return value
-	case uint:
-		return int64(value)
-	case uint8:
-		return int64(value)
-	case uint16:
-		return int64(value)
-	case uint32:
-		return int64(value)
-	case uint64:
-		if value > uint64(^uint64(0)>>1) {
-			return 0
-		}
-		return int64(value)
-	case float32:
-		return int64(value)
-	case float64:
-		return int64(value)
-	case string:
-		parsed, err := strconv.ParseInt(value, 10, 64)
-		if err == nil {
-			return parsed
-		}
-	}
-	return 0
+	return *entry.Table.RowCount
 }
 
 // ExecuteQuery 统一查询执行入口（适用于所有引擎类型）

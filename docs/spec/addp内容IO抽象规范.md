@@ -180,7 +180,7 @@ Manager、Transfer 面向的是 `data_type=table`，不应把 `filetable`、`lak
 | 能力 | 当前接口 | 作用 |
 |---|---|---|
 | catalog | `CatalogProvider` | 列举和解析 engine catalog path |
-| metadata | `ItemMetadataProvider` | 获取 engine-native item metadata |
+| catalog facts | `CatalogFactsProvider` | 获取 engine-native catalog entry facts |
 | stream read | `ContentReadableProvider` | 打开完整内容流 |
 | range read | `RangeReadableProvider` | 打开范围内容流 |
 | stream write | `ContentWritableProvider` | 写入完整内容流 |
@@ -242,7 +242,7 @@ engine-native batch/session -> info provider / content reader
 
 - format 层反向依赖 engine registry、凭据、连接池和权限。
 - 同一个格式难以复用于 S3、MinIO、NFS、本地文件系统等不同 engine。
-- Manager、Meta、Transfer 难以显式校验 engine capability 与 format capability 是否匹配。
+- Manager、Meta、Transfer 难以显式校验 engine capability 与 format descriptor / provider 实现状态是否匹配。
 - FormatPlugin 膨胀成半个 connector。
 
 高层 facade 可以为了调用便利接收 `engine id`，但它不应被定义为 FormatPlugin 或底层 provider / reader 本身。

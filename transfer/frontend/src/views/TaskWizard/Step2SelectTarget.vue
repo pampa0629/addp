@@ -91,7 +91,12 @@
       </el-form-item>
 
       <el-form-item v-if="isContentTarget" :label="t('transfer.taskWizard.outputFormatLabel')">
-        <el-select v-model="outputFormat" :placeholder="t('transfer.taskWizard.outputFormatLabel')" @change="handleOutputFormatChange">
+        <el-select
+          v-model="outputFormat"
+          :placeholder="t('transfer.taskWizard.outputFormatLabel')"
+          :disabled="isRawCopySource"
+          @change="handleOutputFormatChange"
+        >
           <el-option-group
             v-for="group in outputFormatGroups"
             :key="group.key"
@@ -106,6 +111,7 @@
           </el-option-group>
         </el-select>
         <div v-if="selectedOutputFormat.hintKey" class="field-hint">{{ t(selectedOutputFormat.hintKey) }}</div>
+        <div v-else-if="isRawCopySource" class="field-hint">{{ t('transfer.taskWizard.rawCopyFormatHint') }}</div>
       </el-form-item>
 
       <el-form-item v-if="isContentTarget" :label="t('transfer.taskWizard.outputPathLabel')">
@@ -134,8 +140,11 @@
         <div v-else-if="finalOutputPath" class="field-hint">
           {{ t('transfer.taskWizard.finalOutputPathLabel') }}: {{ finalOutputPath }}
         </div>
-        <div v-if="selectedOutputExtension" class="field-hint">
+        <div v-if="selectedOutputExtension && !isRawCopySource" class="field-hint">
           {{ t('transfer.taskWizard.outputFileExtensionAutoHint', { extension: `.${selectedOutputExtension}` }) }}
+        </div>
+        <div v-if="isRawCopySource" class="field-hint">
+          {{ t('transfer.taskWizard.rawCopyTargetPathHint') }}
         </div>
       </el-form-item>
 
@@ -220,6 +229,7 @@ const loadingEngines = ref(false)
 const loadingNamespaces = ref(false)
 const loadingTables = ref(false)
 const supportedEncodedSourceFormats = ref(new Set(['csv', 'tsv', 'json', 'jsonl', 'geojson', 'parquet', 'shapefile']))
+const supportedRawCopyFormats = ref(defaultRawCopyFormats())
 const writableOutputFormats = ref(defaultOutputFormats())
 
 const outputFormatGroups = computed(() => {
@@ -248,11 +258,17 @@ const sourceRepresentation = computed(() => props.wizardState.sourceRepresentati
 const sourceFormat = computed(() => props.wizardState.sourceFormat?.value || '')
 
 const sourceTransferSupported = computed(() => {
-  return sourceDataType.value === 'table' &&
-    (
-      sourceRepresentation.value === 'native' ||
+  if (sourceDataType.value === 'table') {
+    return sourceRepresentation.value === 'native' ||
       (sourceRepresentation.value === 'encoded' && supportedEncodedSourceFormat(sourceFormat.value))
-    )
+  }
+  return isRawCopySource.value
+})
+
+const isRawCopySource = computed(() => {
+  return ['document', 'media', 'unknown'].includes(sourceDataType.value) &&
+    sourceRepresentation.value === 'encoded' &&
+    supportedRawCopyFormats.value.get(String(sourceFormat.value || '').toLowerCase()) === sourceDataType.value
 })
 
 const targetEnginePlaceholder = computed(() => {
@@ -263,6 +279,7 @@ const targetEnginePlaceholder = computed(() => {
 })
 
 const isNativeTableTarget = computed(() => {
+  if (isRawCopySource.value) return false
   return isNativeTableEngine(selectedEngine.value)
 })
 
@@ -286,10 +303,16 @@ const canProceed = computed(() => {
 })
 
 const selectedOutputFormat = computed(() => {
+  if (isRawCopySource.value) {
+    return rawCopyOutputFormat()
+  }
   return outputFormats.value.find(format => format.value === outputFormat.value) || outputFormats.value[0] || defaultOutputFormat('csv')
 })
 
 const outputFileNamePlaceholder = computed(() => {
+  if (isRawCopySource.value) {
+    return sourceFileName.value || `copy.${selectedOutputFormat.value.extension || sourceFormat.value || 'bin'}`
+  }
   return `example.${selectedOutputFormat.value.extension}`
 })
 
@@ -298,6 +321,7 @@ const selectedOutputExtension = computed(() => normalizeExtension(selectedOutput
 const normalizedOutputFileName = computed(() => outputFileNameWithExtension(outputFileName.value))
 
 const outputFileNameError = computed(() => {
+  if (isRawCopySource.value) return ''
   const extension = selectedOutputExtension.value
   const current = outputFileName.value.trim()
   if (!extension || !current) return ''
@@ -316,11 +340,20 @@ const finalOutputPath = computed(() => {
 })
 
 const isDelimitedFormat = computed(() => {
+  if (isRawCopySource.value) return false
   return outputFormat.value === 'csv' || outputFormat.value === 'tsv'
 })
 
 const isSpatialFormat = computed(() => {
+  if (isRawCopySource.value) return false
   return !!selectedOutputFormat.value.spatial
+})
+
+const sourceFileName = computed(() => {
+  const sourceConfig = props.wizardState.sourceConfig?.value || {}
+  const path = sourceConfig.resource?.path || props.wizardState.sourceEndpointResource?.value?.path || {}
+  const fullPath = [path.bucket, path.path || path.name].filter(Boolean).join('/') || sourceConfig.sourceLabel || ''
+  return normalizeFileCatalogPath(fullPath).split('/').filter(Boolean).pop() || ''
 })
 
 const primaryGeometryField = computed(() => {
@@ -376,15 +409,15 @@ function syncTarget() {
         writeMode: tableWriteMode.value
       }
     : {
-        format: outputFormat.value,
+        format: isRawCopySource.value ? sourceFormat.value : outputFormat.value,
         backendFormat: selectedOutputFormat.value.backendType,
         resourcePath: outputPath.value,
-        resourceFile: normalizedOutputFileName.value,
-        includeHeader: csvHeaders.value,
-        delimiter: outputFormat.value === 'tsv' ? '\t' : csvDelimiter.value,
-        geometryField: primaryGeometryFieldName.value,
-        geometryType: primaryGeometryType.value,
-        backendOptions: selectedOutputFormat.value.options || {},
+        resourceFile: isRawCopySource.value ? normalizeFileCatalogPath(outputFileName.value) : normalizedOutputFileName.value,
+        includeHeader: !isRawCopySource.value && csvHeaders.value,
+        delimiter: isRawCopySource.value ? '' : (outputFormat.value === 'tsv' ? '\t' : csvDelimiter.value),
+        geometryField: isRawCopySource.value ? '' : primaryGeometryFieldName.value,
+        geometryType: isRawCopySource.value ? '' : primaryGeometryType.value,
+        backendOptions: isRawCopySource.value ? {} : selectedOutputFormat.value.options || {},
         writeMode: 'overwrite',
         extensionError: outputFileNameError.value
       }
@@ -455,6 +488,7 @@ async function loadEngines() {
 
 function isAllowedTargetEngine(engine) {
   if (!sourceTransferSupported.value) return false
+  if (isRawCopySource.value) return isContentEngine(engine)
   return isNativeTableEngine(engine) || isContentEngine(engine)
 }
 
@@ -472,10 +506,22 @@ async function loadCapabilities() {
       .filter(Boolean)
     const writable = formats
       .filter(format => format?.write)
-      .map(normalizeOutputFormatCapability)
+      .map(normalizeOutputFormatSupport)
       .filter(Boolean)
     if (readable.length > 0) {
       supportedEncodedSourceFormats.value = new Set(readable)
+    }
+    const rawCopyFormats = data?.raw_copy_formats || data?.rawCopyFormats || []
+    const nextRawCopyFormats = new Map()
+    rawCopyFormats.forEach(format => {
+      const value = String(format?.value || '').toLowerCase()
+      const dataType = String(format?.data_type || format?.dataType || '').toLowerCase()
+      if (value && dataType) {
+        nextRawCopyFormats.set(value, dataType)
+      }
+    })
+    if (nextRawCopyFormats.size > 0) {
+      supportedRawCopyFormats.value = nextRawCopyFormats
     }
     if (writable.length > 0) {
       writableOutputFormats.value = writable
@@ -521,9 +567,9 @@ async function restoreState() {
   const state = props.wizardState
 
   const config = state.targetConfig.value || {}
-  outputFormat.value = config.format || 'csv'
+  outputFormat.value = isRawCopySource.value ? sourceFormat.value : (config.format || 'csv')
   outputPath.value = normalizeFileCatalogPath(config.resourcePath || '')
-  outputFileName.value = config.resourceFile || ''
+  outputFileName.value = config.resourceFile || (isRawCopySource.value ? sourceFileName.value : '')
   csvHeaders.value = config.includeHeader !== false
   csvDelimiter.value = config.delimiter || ','
   targetSchema.value = config.schema || state.targetSchema?.value || ''
@@ -547,6 +593,10 @@ async function restoreState() {
 }
 
 function applyOutputFileExtension(options = {}) {
+  if (isRawCopySource.value) {
+    syncTarget()
+    return
+  }
   const normalized = outputFileNameWithExtension(outputFileName.value, options)
   if (normalized && normalized !== outputFileName.value) {
     outputFileName.value = normalized
@@ -636,7 +686,7 @@ function normalizeFileCatalogPath(path) {
     .join('/')
 }
 
-function normalizeOutputFormatCapability(item) {
+function normalizeOutputFormatSupport(item) {
   const value = String(item?.value || '').toLowerCase()
   if (!value) return null
   const fallback = defaultOutputFormat(value)
@@ -648,6 +698,22 @@ function normalizeOutputFormatCapability(item) {
     backendType: item.backend_type || item.backendType || value,
     options: item.options || {}
   }
+}
+
+function rawCopyOutputFormat() {
+  return {
+    label: sourceFormat.value || 'unknown',
+    value: sourceFormat.value || 'unknown',
+    backendType: sourceFormat.value || 'unknown',
+    extension: sourceFileExtension(sourceFileName.value) || sourceFormat.value || ''
+  }
+}
+
+function sourceFileExtension(name) {
+  const file = String(name || '').trim().replace(/\\/g, '/').split('/').pop() || ''
+  const dotIndex = file.lastIndexOf('.')
+  if (dotIndex <= 0) return ''
+  return normalizeExtension(file.slice(dotIndex + 1))
 }
 
 function defaultOutputFormat(value) {
@@ -665,6 +731,37 @@ function defaultOutputFormat(value) {
 
 function defaultOutputFormats() {
   return ['csv', 'tsv', 'jsonl', 'json', 'parquet', 'geojson', 'shapefile'].map(defaultOutputFormat)
+}
+
+function defaultRawCopyFormats() {
+  return new Map([
+    ['pdf', 'document'],
+    ['docx', 'document'],
+    ['pptx', 'document'],
+    ['wps', 'document'],
+    ['text', 'document'],
+    ['markdown', 'document'],
+    ['jpeg', 'media'],
+    ['png', 'media'],
+    ['gif', 'media'],
+    ['tiff', 'media'],
+    ['webp', 'media'],
+    ['bmp', 'media'],
+    ['svg', 'media'],
+    ['avif', 'media'],
+    ['heic', 'media'],
+    ['mp4', 'media'],
+    ['mov', 'media'],
+    ['mkv', 'media'],
+    ['avi', 'media'],
+    ['webm', 'media'],
+    ['mp3', 'media'],
+    ['wav', 'media'],
+    ['flac', 'media'],
+    ['aac', 'media'],
+    ['ogg', 'media'],
+    ['unknown', 'unknown']
+  ])
 }
 
 onMounted(async () => {

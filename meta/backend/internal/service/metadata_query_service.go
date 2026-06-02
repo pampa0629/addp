@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/meta/internal/metapath"
 	"github.com/addp/meta/internal/metaquery"
 	"github.com/addp/meta/internal/models"
@@ -43,7 +44,7 @@ func (s *MetadataQueryService) ListItemsByEngine(engineID, tenantID uint) ([]mod
 
 	var nodeIDs []uint
 	err := s.db.Model(&models.MetaNode{}).
-		Where("tenant_id = ? AND engine_id = ?", tenantID, engineID).
+		Where("tenant_id = ? AND engine_id = ? AND deleted_at IS NULL", tenantID, engineID).
 		Pluck("id", &nodeIDs).Error
 	if err != nil {
 		return nil, err
@@ -70,7 +71,7 @@ func (s *MetadataQueryService) ListItemsByEngine(engineID, tenantID uint) ([]mod
 
 func (s *MetadataQueryService) ListItemsByNamespace(engineID, tenantID uint, namespace string) ([]models.MetaItemLite, error) {
 	var node models.MetaNode
-	err := s.db.Where("tenant_id = ? AND engine_id = ? AND name = ? AND parent_node_id IS NULL",
+	err := s.db.Where("tenant_id = ? AND engine_id = ? AND name = ? AND parent_node_id IS NULL AND deleted_at IS NULL",
 		tenantID, engineID, namespace).
 		First(&node).Error
 	if err != nil {
@@ -96,7 +97,7 @@ func (s *MetadataQueryService) ListItemsByNamespace(engineID, tenantID uint, nam
 func (s *MetadataQueryService) GetItemFieldDetailsByID(tenantID, itemID uint) ([]datatype.FieldInfo, error) {
 	var item models.MetaItem
 	if err := s.db.Where("tenant_id = ? AND id = ? AND deleted_at IS NULL", tenantID, itemID).First(&item).Error; err != nil {
-		return nil, fmt.Errorf("item metadata not found: %w", err)
+		return nil, fmt.Errorf("metadata snapshot not found: %w", err)
 	}
 	return metaquery.FieldsFromMetaItem(item)
 }
@@ -106,23 +107,27 @@ func (s *MetadataQueryService) GetItemFieldDetailsByID(tenantID, itemID uint) ([
 // ============================================================================
 
 func (s *MetadataQueryService) GetMetadataTree(tenantID, engineID uint) (*models.MetadataTreeResponse, error) {
+	if err := s.ensureEngineCatalogRoot(tenantID, engineID); err != nil {
+		return nil, err
+	}
+
 	// 查询顶层节点
 	var topNodes []models.MetaNode
-	if err := s.db.Where("tenant_id = ? AND engine_id = ? AND parent_node_id IS NULL", tenantID, engineID).
+	if err := s.db.Where("tenant_id = ? AND engine_id = ? AND parent_node_id IS NULL AND full_name = '' AND deleted_at IS NULL", tenantID, engineID).
 		Find(&topNodes).Error; err != nil {
 		return nil, fmt.Errorf("failed to query top nodes: %w", err)
 	}
 
 	// 查询子节点
 	var childNodes []models.MetaNode
-	if err := s.db.Where("tenant_id = ? AND engine_id = ? AND parent_node_id IS NOT NULL", tenantID, engineID).
+	if err := s.db.Where("tenant_id = ? AND engine_id = ? AND parent_node_id IS NOT NULL AND deleted_at IS NULL", tenantID, engineID).
 		Find(&childNodes).Error; err != nil {
 		return nil, fmt.Errorf("failed to query child nodes: %w", err)
 	}
 
 	// 查询所有项（只返回 node_id 存在于 meta_node 中的 items，过滤孤立记录）
 	var items []models.MetaItem
-	if err := s.db.Where("tenant_id = ? AND engine_id = ? AND node_id IN (SELECT id FROM metadata.meta_node WHERE tenant_id = ? AND engine_id = ?)",
+	if err := s.db.Where("tenant_id = ? AND engine_id = ? AND deleted_at IS NULL AND node_id IN (SELECT id FROM metadata.meta_node WHERE tenant_id = ? AND engine_id = ? AND deleted_at IS NULL)",
 		tenantID, engineID, tenantID, engineID).
 		Find(&items).Error; err != nil {
 		return nil, fmt.Errorf("failed to query items: %w", err)
@@ -151,11 +156,32 @@ func (s *MetadataQueryService) GetMetadataTree(tenantID, engineID uint) (*models
 	}, nil
 }
 
+func (s *MetadataQueryService) ensureEngineCatalogRoot(tenantID, engineID uint) error {
+	if s.engineService == nil {
+		return fmt.Errorf("engine service is not available")
+	}
+	resource, err := s.engineService.GetResourceByID(engineID, tenantID, "")
+	if err != nil {
+		return fmt.Errorf("failed to get resource: %w", err)
+	}
+	enginePlugin, err := plugin.Get(resource.EngineType)
+	if err != nil {
+		return fmt.Errorf("unsupported engine type %s: %w", resource.EngineType, err)
+	}
+	if _, err := ensureCatalogRootNode(s.repo, tenantID, resource, enginePlugin); err != nil {
+		return fmt.Errorf("failed to ensure catalog root: %w", err)
+	}
+	if err := s.repo.HardDeleteInvalidEngineGraph(tenantID, engineID); err != nil {
+		return fmt.Errorf("failed to reconcile metadata tree: %w", err)
+	}
+	return nil
+}
+
 func (s *MetadataQueryService) GetNodeByCatalogPath(tenantID, engineID uint, catalogPath string) (*models.MetaNodeLite, error) {
 	var node models.MetaNode
 
 	for _, candidate := range catalogPathCandidates(catalogPath) {
-		err := s.db.Where("tenant_id = ? AND engine_id = ? AND full_name = ?", tenantID, engineID, candidate).
+		err := s.db.Where("tenant_id = ? AND engine_id = ? AND full_name = ? AND deleted_at IS NULL", tenantID, engineID, candidate).
 			First(&node).Error
 		if err == nil {
 			result := metaquery.ToMetaNodeLite(node)
@@ -165,7 +191,7 @@ func (s *MetadataQueryService) GetNodeByCatalogPath(tenantID, engineID uint, cat
 
 	trimmed := normalizeCatalogPath(catalogPath)
 	if trimmed != "" {
-		err := s.db.Where("tenant_id = ? AND engine_id = ? AND name = ? AND parent_node_id IS NULL", tenantID, engineID, trimmed).
+		err := s.db.Where("tenant_id = ? AND engine_id = ? AND name = ? AND parent_node_id IS NULL AND deleted_at IS NULL", tenantID, engineID, trimmed).
 			First(&node).Error
 		if err == nil {
 			result := metaquery.ToMetaNodeLite(node)
@@ -218,11 +244,11 @@ func (s *MetadataQueryService) GetNodeChildren(tenantID, nodeID uint) ([]models.
 
 	// 先查询节点是否存在并验证租户
 	var parentNode models.MetaNode
-	if err := s.db.Where("tenant_id = ? AND id = ?", tenantID, nodeID).First(&parentNode).Error; err != nil {
+	if err := s.db.Where("tenant_id = ? AND id = ? AND deleted_at IS NULL", tenantID, nodeID).First(&parentNode).Error; err != nil {
 		return nil, fmt.Errorf("parent node not found: %w", err)
 	}
 
-	if err := s.db.Where("tenant_id = ? AND parent_node_id = ?", tenantID, nodeID).
+	if err := s.db.Where("tenant_id = ? AND parent_node_id = ? AND deleted_at IS NULL", tenantID, nodeID).
 		Order("name").
 		Find(&nodes).Error; err != nil {
 		return nil, fmt.Errorf("failed to query child nodes: %w", err)
@@ -241,11 +267,11 @@ func (s *MetadataQueryService) GetNodeItems(tenantID, nodeID uint) ([]models.Met
 
 	// 先查询节点是否存在并验证租户
 	var parentNode models.MetaNode
-	if err := s.db.Where("tenant_id = ? AND id = ?", tenantID, nodeID).First(&parentNode).Error; err != nil {
+	if err := s.db.Where("tenant_id = ? AND id = ? AND deleted_at IS NULL", tenantID, nodeID).First(&parentNode).Error; err != nil {
 		return nil, fmt.Errorf("parent node not found: %w", err)
 	}
 
-	if err := s.db.Where("tenant_id = ? AND node_id = ?", tenantID, nodeID).
+	if err := s.db.Where("tenant_id = ? AND node_id = ? AND deleted_at IS NULL", tenantID, nodeID).
 		Order("name").
 		Find(&items).Error; err != nil {
 		return nil, fmt.Errorf("failed to query node items: %w", err)
@@ -262,7 +288,7 @@ func (s *MetadataQueryService) GetNodeItems(tenantID, nodeID uint) ([]models.Met
 func (s *MetadataQueryService) GetItemSpatialMetadataByID(tenantID, itemID uint) (*models.SpatialMetadataResponse, error) {
 	var item models.MetaItem
 	if err := s.db.Where("tenant_id = ? AND id = ? AND deleted_at IS NULL", tenantID, itemID).First(&item).Error; err != nil {
-		return nil, fmt.Errorf("item metadata not found: %w", err)
+		return nil, fmt.Errorf("metadata snapshot not found: %w", err)
 	}
 	return metaquery.SpatialMetadataFromItem(item)
 }

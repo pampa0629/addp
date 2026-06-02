@@ -64,11 +64,11 @@ func TestParseURI(t *testing.T) {
 		},
 		{
 			name: "空路径（引擎根节点）",
-			uri:  "addp://engine/1/path/?type=database",
+			uri:  "addp://engine/1/path/?type=root",
 			want: &ResourceLocator{
 				EngineID: 1,
 				Path:     []string{},
-				Type:     TypeDatabase,
+				Type:     TypeRoot,
 			},
 			wantError: false,
 		},
@@ -201,9 +201,9 @@ func TestToURI(t *testing.T) {
 			loc: &ResourceLocator{
 				EngineID: 1,
 				Path:     []string{},
-				Type:     TypeDatabase,
+				Type:     TypeRoot,
 			},
-			want: "addp://engine/1/path/?type=database",
+			want: "addp://engine/1/path/?type=root",
 		},
 		{
 			name: "Schema 节点 with node_id",

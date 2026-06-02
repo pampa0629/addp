@@ -146,7 +146,7 @@ func (p *FileTablePreviewProvider) contentContextForPreview(req *PreviewRequest)
 	if err != nil {
 		return nil, err
 	}
-	switch previewRequestCatalogItemTerm(req) {
+	switch previewRequestCatalogLeafTerm(req) {
 	case "object":
 		bucket, err := resolveBucket(plugin.GetString(connInfo, "bucket"), req.Schema)
 		if err != nil {
@@ -340,7 +340,7 @@ func accessIndexObjectKey(req *PreviewRequest, bucket string, fullPath string) s
 }
 
 func storageRefForPreview(req *PreviewRequest, bucket string, fullPath string) string {
-	if previewRequestCatalogItemTerm(req) == "object" {
+	if previewRequestCatalogLeafTerm(req) == "object" {
 		if strings.HasPrefix(fullPath, bucket+"/") {
 			return fullPath
 		}
@@ -377,8 +377,8 @@ func (p *FileTablePreviewProvider) openIndexedRangeReader(
 		return nil, nil, false
 	}
 	connInfo := plugin.ConnectionInfo(req.Engine.ConnectionInfo)
-	if previewRequestCatalogItemTerm(req) == "file" {
-		reader, err := rangeReader.OpenRange(ctx, connInfo, plugin.FileItemPath(req.Engine.ID, fileSystemPathFromPreviewRequest(req)), plugin.ReadOptions{
+	if previewRequestCatalogLeafTerm(req) == "file" {
+		reader, err := rangeReader.OpenRange(ctx, connInfo, req.ProviderPath, plugin.ReadOptions{
 			Offset: anchor.ByteOffset,
 			Length: length,
 		})
@@ -395,8 +395,7 @@ func (p *FileTablePreviewProvider) openIndexedRangeReader(
 		}
 		bucket = resolved
 	}
-	objectPath := objectKeyFromPreviewRequest(req, bucket)
-	reader, err := rangeReader.OpenRange(ctx, connInfo, plugin.ObjectItemPath(req.Engine.ID, bucket, objectPath), plugin.ReadOptions{
+	reader, err := rangeReader.OpenRange(ctx, connInfo, req.ProviderPath, plugin.ReadOptions{
 		Offset: anchor.ByteOffset,
 		Length: length,
 	})

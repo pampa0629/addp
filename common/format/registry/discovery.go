@@ -1,13 +1,8 @@
 package registry
 
-import (
-	"sort"
-	"strings"
+import "github.com/addp/common/datatype"
 
-	"github.com/addp/common/datatype"
-)
-
-type CapabilityView struct {
+type SupportView struct {
 	PluginID       string             `json:"plugin_id"`
 	Format         Format             `json:"format"`
 	DataType       datatype.DataType  `json:"data_type"`
@@ -15,36 +10,29 @@ type CapabilityView struct {
 	Identification Identification     `json:"identification,omitempty"`
 	Providers      ProviderDescriptor `json:"providers,omitempty"`
 	ContentReaders []string           `json:"content_readers,omitempty"`
-	Transfer       TransferDescriptor `json:"transfer,omitempty"`
 	Parse          bool               `json:"parse,omitempty"`
 	Spatial        bool               `json:"spatial,omitempty"`
-	EngineFamilies []string           `json:"engine_families,omitempty"`
 }
 
-type TransferDescriptor struct {
-	Read  bool `json:"read,omitempty"`
-	Write bool `json:"write,omitempty"`
-}
-
-func ListCapabilityViews() []CapabilityView {
+func ListSupportViews() []SupportView {
 	descriptors := ListDescriptors()
-	views := make([]CapabilityView, 0, len(descriptors))
+	views := make([]SupportView, 0, len(descriptors))
 	for _, descriptor := range descriptors {
-		views = append(views, CapabilityViewFromDescriptor(descriptor))
+		views = append(views, SupportViewFromDescriptor(descriptor))
 	}
 	return views
 }
 
-func GetCapabilityView(format Format) (CapabilityView, bool) {
+func GetSupportView(format Format) (SupportView, bool) {
 	descriptor, ok := GetDescriptor(format)
 	if !ok {
-		return CapabilityView{}, false
+		return SupportView{}, false
 	}
-	return CapabilityViewFromDescriptor(descriptor), true
+	return SupportViewFromDescriptor(descriptor), true
 }
 
-func CapabilityViewFromDescriptor(descriptor Descriptor) CapabilityView {
-	return CapabilityView{
+func SupportViewFromDescriptor(descriptor Descriptor) SupportView {
+	return SupportView{
 		PluginID:       descriptor.ID,
 		Format:         descriptor.Format,
 		DataType:       descriptor.DataType,
@@ -52,32 +40,7 @@ func CapabilityViewFromDescriptor(descriptor Descriptor) CapabilityView {
 		Identification: descriptor.Identification,
 		Providers:      descriptor.Providers,
 		ContentReaders: append([]string(nil), descriptor.ContentReaders...),
-		Transfer: TransferDescriptor{
-			Read:  descriptor.TransferRead,
-			Write: descriptor.TransferWrite,
-		},
 		Parse:          descriptor.Parse,
 		Spatial:        descriptor.Spatial,
-		EngineFamilies: append([]string(nil), descriptor.EngineFamilies...),
 	}
-}
-
-func ListTransferFormatsForEngineFamily(engineFamily string) []string {
-	engineFamily = strings.ToLower(strings.TrimSpace(engineFamily))
-	if engineFamily == "" {
-		return nil
-	}
-
-	descriptors := ListDescriptors()
-	formats := make([]string, 0, len(descriptors))
-	for _, descriptor := range descriptors {
-		if !descriptor.TransferRead && !descriptor.TransferWrite {
-			continue
-		}
-		if containsString(descriptor.EngineFamilies, engineFamily) {
-			formats = append(formats, string(descriptor.Format))
-		}
-	}
-	sort.Strings(formats)
-	return formats
 }

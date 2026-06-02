@@ -16,29 +16,23 @@ type CatalogModelProvider interface {
 	CatalogModel() CatalogModelSpec
 }
 
-// CatalogProvider lists real catalog nodes from an engine.
+// CatalogProvider lists real catalog entries from an engine.
 type CatalogProvider interface {
 	EnginePlugin
-	ListChildren(ctx context.Context, connInfo ConnectionInfo, parent CatalogPath, opts ListOptions) ([]CatalogNode, error)
-	ResolvePath(ctx context.Context, connInfo ConnectionInfo, path CatalogPath) (*CatalogNode, error)
+	ListChildren(ctx context.Context, connInfo ConnectionInfo, parent CatalogPath, opts ListOptions) ([]CatalogEntry, error)
+	ResolvePath(ctx context.Context, connInfo ConnectionInfo, path CatalogPath) (*CatalogEntry, error)
 }
 
-// ItemMetadataProvider describes leaf items in a catalog.
-type ItemMetadataProvider interface {
+// CatalogFactsProvider describes engine-native facts for catalog leaves.
+type CatalogFactsProvider interface {
 	EnginePlugin
-	DescribeItem(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts MetadataOptions) (*ItemMetadata, error)
+	DescribeCatalogFacts(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts CatalogFactsOptions) (*CatalogFacts, error)
 }
 
-// DynamicSchemaSamplingProvider samples schema-flexible items to infer dynamic field info.
+// DynamicSchemaSamplingProvider samples schema-flexible catalog leaves to infer dynamic field info.
 type DynamicSchemaSamplingProvider interface {
 	EnginePlugin
-	SampleDynamicSchema(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts MetadataOptions) (*ItemMetadata, error)
-}
-
-// GraphMetadataProvider describes graph structure facts for a graph item.
-type GraphMetadataProvider interface {
-	EnginePlugin
-	DescribeGraph(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts MetadataOptions) (*datatype.GraphInfo, error)
+	SampleDynamicSchema(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts CatalogFactsOptions) (*CatalogFacts, error)
 }
 
 // GraphSampleProvider samples graph nodes and relationships for lightweight previews.
@@ -47,7 +41,7 @@ type GraphSampleProvider interface {
 	SampleGraph(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts GraphSampleOptions) (*GraphData, error)
 }
 
-// StoreProvider is a marker for item content access capabilities.
+// StoreProvider is a marker for catalog-path content access capabilities.
 type StoreProvider interface {
 	EnginePlugin
 	StoreSemantics() StoreSemantics
@@ -150,7 +144,7 @@ type GraphQueryProvider interface {
 type WorkflowRuntimeProvider interface {
 	EnginePlugin
 	RuntimeEndpoint(ctx context.Context, connInfo ConnectionInfo) (string, error)
-	ListOperators(ctx context.Context, connInfo ConnectionInfo) ([]OperatorMetadata, error)
+	ListOperators(ctx context.Context, connInfo ConnectionInfo) ([]OperatorDescriptor, error)
 	ExecuteWorkflow(ctx context.Context, connInfo ConnectionInfo, req WorkflowExecuteRequest) (*WorkflowExecuteResult, error)
 }
 
@@ -168,7 +162,10 @@ type CatalogPath struct {
 
 func (p CatalogPath) StringPath() string {
 	parts := make([]string, 0, len(p.Segments))
-	for _, segment := range p.Segments {
+	for i, segment := range p.Segments {
+		if i == 0 && IsCatalogRootSegment(segment) {
+			continue
+		}
 		if segment.Name != "" {
 			part := strings.Trim(segment.Name, "/")
 			if part != "" {
@@ -185,26 +182,30 @@ type CatalogSegment struct {
 	Name string `json:"name"`
 }
 
-type CatalogNode struct {
-	Name        string                 `json:"name"`
-	Path        CatalogPath            `json:"path"`
-	Term        string                 `json:"term"`
-	Kind        string                 `json:"kind"`
-	IsContainer bool                   `json:"is_container"`
-	IsItem      bool                   `json:"is_item"`
-	Stats       map[string]interface{} `json:"stats,omitempty"`
-	Attributes  map[string]interface{} `json:"attributes,omitempty"`
-	Actions     []string               `json:"actions,omitempty"`
+const (
+	CatalogRoleBranch = "branch"
+	CatalogRoleLeaf   = "leaf"
+)
+
+type CatalogEntry struct {
+	Name      string               `json:"name"`
+	Path      CatalogPath          `json:"path"`
+	Term      string               `json:"term"`
+	Kind      string               `json:"kind"`
+	Role      string               `json:"role"`
+	Table     *datatype.TableInfo  `json:"table,omitempty"`
+	Storage   *CatalogStorageFacts `json:"storage,omitempty"`
+	LeafCount *int                 `json:"leaf_count,omitempty"`
+	UpdatedAt *time.Time           `json:"updated_at,omitempty"`
 }
 
 type ListOptions struct {
 	Recursive bool
 	Limit     int
 	Offset    int
-	Filter    map[string]interface{}
 }
 
-type MetadataOptions struct {
+type CatalogFactsOptions struct {
 	IncludeStatistics bool
 	IncludeIndexes    bool
 	IncludeSamples    bool
@@ -248,19 +249,23 @@ type GraphSampleOptions struct {
 	Filter GraphSampleFilter
 }
 
-type ItemMetadata struct {
-	Path       CatalogPath             `json:"path"`
-	Kind       string                  `json:"kind"`
-	Table      *datatype.TableInfo     `json:"table,omitempty"`
-	Document   *datatype.DocumentInfo  `json:"document,omitempty"`
-	Media      *datatype.MediaInfo     `json:"media,omitempty"`
-	Container  *datatype.ContainerInfo `json:"container,omitempty"`
-	Graph      *datatype.GraphInfo     `json:"graph,omitempty"`
-	Fields     []datatype.FieldInfo    `json:"fields,omitempty"`
-	Indexes    []IndexInfo             `json:"indexes,omitempty"`
-	Stats      map[string]interface{}  `json:"stats,omitempty"`
-	Attributes map[string]interface{}  `json:"attributes,omitempty"`
-	UpdatedAt  *time.Time              `json:"updated_at,omitempty"`
+type CatalogFacts struct {
+	Path      CatalogPath          `json:"path"`
+	Kind      string               `json:"kind"`
+	Table     *datatype.TableInfo  `json:"table,omitempty"`
+	Graph     *datatype.GraphInfo  `json:"graph,omitempty"`
+	Storage   *CatalogStorageFacts `json:"storage,omitempty"`
+	Indexes   []IndexFacts         `json:"indexes,omitempty"`
+	UpdatedAt *time.Time           `json:"updated_at,omitempty"`
+}
+
+type CatalogStorageFacts struct {
+	Name        string `json:"name,omitempty"`
+	Path        string `json:"path,omitempty"`
+	ContentType string `json:"content_type,omitempty"`
+	ETag        string `json:"etag,omitempty"`
+	Extension   string `json:"extension,omitempty"`
+	SizeBytes   *int64 `json:"size_bytes,omitempty"`
 }
 
 func cleanGraphSampleFilterStrings(values []string) []string {
@@ -287,9 +292,9 @@ type ReadOptions struct {
 }
 
 type WriteOptions struct {
-	ContentType string
-	Overwrite   bool
-	Metadata    map[string]string
+	ContentType  string
+	Overwrite    bool
+	UserMetadata map[string]string
 }
 
 type BatchReadOptions struct {
@@ -300,7 +305,7 @@ type BatchReadOptions struct {
 
 type TableReadSessionOptions struct {
 	Query        string
-	Metadata     map[string]interface{}
+	Hints        map[string]interface{}
 	ResumeMarker *resume.Marker
 }
 
@@ -321,11 +326,11 @@ type TableWriteOptions struct {
 }
 
 type BatchData struct {
-	Rows     []map[string]interface{} `json:"rows"`
-	Fields   []datatype.FieldInfo     `json:"fields,omitempty"`
-	Spatial  *datatype.SpatialInfo    `json:"spatial,omitempty"`
-	Metadata map[string]interface{}   `json:"metadata,omitempty"`
-	Offset   int64                    `json:"offset,omitempty"`
+	Rows    []map[string]interface{} `json:"rows"`
+	Fields  []datatype.FieldInfo     `json:"fields,omitempty"`
+	Spatial *datatype.SpatialInfo    `json:"spatial,omitempty"`
+	Hints   map[string]interface{}   `json:"hints,omitempty"`
+	Offset  int64                    `json:"offset,omitempty"`
 }
 
 type SampleQueryOptions struct {
@@ -347,7 +352,7 @@ type QueryOptions struct {
 	ReadOnly   bool
 }
 
-type OperatorMetadata struct {
+type OperatorDescriptor struct {
 	ID                  string                 `json:"id,omitempty"`
 	Name                string                 `json:"name"`
 	DisplayName         string                 `json:"display_name,omitempty"`
@@ -356,34 +361,34 @@ type OperatorMetadata struct {
 	Description         string                 `json:"description,omitempty"`
 	BriefDescription    string                 `json:"brief_description,omitempty"`
 	DetailedDescription map[string]interface{} `json:"detailed_description,omitempty"`
-	Parameters          []ParameterMetadata    `json:"parameters,omitempty"`
+	Parameters          []ParameterDescriptor  `json:"parameters,omitempty"`
 	Inputs              []interface{}          `json:"inputs,omitempty"`
-	OutputPorts         []OutputPortMetadata   `json:"output_ports,omitempty"`
+	OutputPorts         []OutputPortDescriptor `json:"output_ports,omitempty"`
 	Outputs             []datatype.FieldInfo   `json:"outputs,omitempty"`
 	Module              string                 `json:"module,omitempty"`
 	Attributes          map[string]interface{} `json:"attributes,omitempty"`
 }
 
-type ParameterMetadata struct {
-	Name        string                       `json:"name"`
-	Type        string                       `json:"type"`
-	Required    bool                         `json:"required"`
-	Default     interface{}                  `json:"default,omitempty"`
-	Description string                       `json:"description,omitempty"`
-	Enum        []string                     `json:"enum,omitempty"`
-	Min         *float64                     `json:"min,omitempty"`
-	Max         *float64                     `json:"max,omitempty"`
-	Pattern     string                       `json:"pattern,omitempty"`
-	ItemType    string                       `json:"item_type,omitempty"`
-	Properties  map[string]ParameterMetadata `json:"properties,omitempty"`
-	DependsOn   string                       `json:"depends_on,omitempty"`
-	ShowWhen    map[string]interface{}       `json:"show_when,omitempty"`
-	Notes       string                       `json:"notes,omitempty"`
-	UIType      string                       `json:"ui_type,omitempty"`
-	UIConfig    map[string]interface{}       `json:"ui_config,omitempty"`
+type ParameterDescriptor struct {
+	Name        string                         `json:"name"`
+	Type        string                         `json:"type"`
+	Required    bool                           `json:"required"`
+	Default     interface{}                    `json:"default,omitempty"`
+	Description string                         `json:"description,omitempty"`
+	Enum        []string                       `json:"enum,omitempty"`
+	Min         *float64                       `json:"min,omitempty"`
+	Max         *float64                       `json:"max,omitempty"`
+	Pattern     string                         `json:"pattern,omitempty"`
+	ItemType    string                         `json:"item_type,omitempty"`
+	Properties  map[string]ParameterDescriptor `json:"properties,omitempty"`
+	DependsOn   string                         `json:"depends_on,omitempty"`
+	ShowWhen    map[string]interface{}         `json:"show_when,omitempty"`
+	Notes       string                         `json:"notes,omitempty"`
+	UIType      string                         `json:"ui_type,omitempty"`
+	UIConfig    map[string]interface{}         `json:"ui_config,omitempty"`
 }
 
-type OutputPortMetadata struct {
+type OutputPortDescriptor struct {
 	Name        string `json:"name"`
 	Type        string `json:"type"`
 	Description string `json:"description,omitempty"`
@@ -412,5 +417,5 @@ type ScriptSessionRequest struct {
 type ScriptSession struct {
 	ID       string                 `json:"id"`
 	Endpoint string                 `json:"endpoint,omitempty"`
-	Metadata map[string]interface{} `json:"metadata,omitempty"`
+	Info     map[string]interface{} `json:"info,omitempty"`
 }

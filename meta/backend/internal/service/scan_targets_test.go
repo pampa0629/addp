@@ -7,6 +7,38 @@ import (
 	"github.com/addp/meta/internal/models"
 )
 
+func TestScanTargetFromRootNodeScansWholeEngine(t *testing.T) {
+	t.Parallel()
+
+	got := scanTargetFromNode(models.MetaNode{
+		NodeType:     "server",
+		Name:         "Business PostgreSQL",
+		FullName:     "",
+		ParentNodeID: nil,
+	})
+
+	if len(got) != 0 {
+		t.Fatalf("scanTargetFromNode(root) = %#v, want no explicit target", got)
+	}
+}
+
+func TestScanTargetFromNodeUsesFullName(t *testing.T) {
+	t.Parallel()
+
+	parentID := uint(1)
+	got := scanTargetFromNode(models.MetaNode{
+		NodeType:     "schema",
+		Name:         "public",
+		FullName:     "/public/",
+		ParentNodeID: &parentID,
+	})
+	want := []string{"public"}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("scanTargetFromNode() = %#v, want %#v", got, want)
+	}
+}
+
 func TestScanTargetFromItemDoesNotExpandMultiRefs(t *testing.T) {
 	t.Parallel()
 

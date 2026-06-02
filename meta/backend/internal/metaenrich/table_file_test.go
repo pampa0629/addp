@@ -21,11 +21,11 @@ func TestTableFileResolverDetectsPartitionedWholeScope(t *testing.T) {
 	t.Parallel()
 
 	d := &tableFileItemResolver{}
-	files := []plugin.FileEntry{
+	files := []metaitem.StorageFileRef{
 		{Name: "part-000.parquet", Path: "dataset/dt=2026-05-05/part-000.parquet", Size: 10},
 		{Name: "part-001.parquet", Path: "dataset/dt=2026-05-06/part-001.parquet", Size: 20},
 	}
-	subdirs := []plugin.DirEntry{
+	subdirs := []metaitem.StorageDirectoryRef{
 		{Name: "dt=2026-05-05", Path: "dataset/dt=2026-05-05/"},
 		{Name: "dt=2026-05-06", Path: "dataset/dt=2026-05-06/"},
 	}
@@ -40,8 +40,8 @@ func TestTableFileResolverDetectsPartitionedWholeScope(t *testing.T) {
 	if info.Layout != dataitem.LayoutWhole {
 		t.Fatalf("Layout = %q, want %q", info.Layout, dataitem.LayoutWhole)
 	}
-	if info.EntryPath != "dataset" {
-		t.Fatalf("EntryPath = %q, want dataset", info.EntryPath)
+	if info.ScopePath != "dataset" {
+		t.Fatalf("ScopePath = %q, want dataset", info.ScopePath)
 	}
 	if len(info.RefFiles) != 2 {
 		t.Fatalf("RefFiles len = %d, want 2", len(info.RefFiles))
@@ -56,11 +56,11 @@ func TestTableFileResolverWritesParquetPartRowCounts(t *testing.T) {
 		"dataset/dt=2026-05-05/part-000.parquet": buildMetaitemParquetRows(t, testMetaitemParquetRow{ID: 1, Name: "Alice"}),
 		"dataset/dt=2026-05-06/part-001.parquet": buildMetaitemParquetRows(t, testMetaitemParquetRow{ID: 2, Name: "Bob"}, testMetaitemParquetRow{ID: 3, Name: "Carol"}),
 	}}
-	files := []plugin.FileEntry{
+	files := []metaitem.StorageFileRef{
 		{Name: "part-000.parquet", Path: "dataset/dt=2026-05-05/part-000.parquet", Size: 10},
 		{Name: "part-001.parquet", Path: "dataset/dt=2026-05-06/part-001.parquet", Size: 20},
 	}
-	subdirs := []plugin.DirEntry{
+	subdirs := []metaitem.StorageDirectoryRef{
 		{Name: "dt=2026-05-05", Path: "dataset/dt=2026-05-05/"},
 		{Name: "dt=2026-05-06", Path: "dataset/dt=2026-05-06/"},
 	}
@@ -115,7 +115,7 @@ func TestTableFileResolverAllowsAuxiliaryFiles(t *testing.T) {
 	t.Parallel()
 
 	d := &tableFileItemResolver{}
-	files := []plugin.FileEntry{
+	files := []metaitem.StorageFileRef{
 		{Name: "part-000.parquet", Path: "dataset/part-000.parquet", Size: 10},
 		{Name: "_SUCCESS", Path: "dataset/_SUCCESS", Size: 0},
 		{Name: "._metadata.crc", Path: "dataset/._metadata.crc", Size: 4},
@@ -140,11 +140,11 @@ func TestTableFileResolverRejectsMixedWholeScope(t *testing.T) {
 	t.Parallel()
 
 	d := &tableFileItemResolver{}
-	files := []plugin.FileEntry{
+	files := []metaitem.StorageFileRef{
 		{Name: "part-000.parquet", Path: "dataset/dt=2026-05-05/part-000.parquet"},
 		{Name: "README.txt", Path: "dataset/README.txt"},
 	}
-	subdirs := []plugin.DirEntry{{Name: "dt=2026-05-05", Path: "dataset/dt=2026-05-05/"}}
+	subdirs := []metaitem.StorageDirectoryRef{{Name: "dt=2026-05-05", Path: "dataset/dt=2026-05-05/"}}
 
 	if d.Detect(context.Background(), files, subdirs) {
 		t.Fatal("expected mixed whole scope to be rejected")
@@ -157,13 +157,13 @@ func TestTableFileResolverResolvesWholeScopeFromRecursiveScope(t *testing.T) {
 	d := &tableFileItemResolver{}
 	result, err := d.ResolveItems(context.Background(), metaitem.DirectoryResolveInput{
 		DirPath: "dataset",
-		Subdirs: []plugin.DirEntry{
+		Subdirs: []metaitem.StorageDirectoryRef{
 			{Name: "dt=2026-05-05", Path: "dataset/dt=2026-05-05/"},
 		},
-		RecursiveFiles: []plugin.FileEntry{
+		RecursiveFiles: []metaitem.StorageFileRef{
 			{Name: "part-000.parquet", Path: "dataset/dt=2026-05-05/part-000.parquet", Size: 10},
 		},
-		RecursiveSubdirs: []plugin.DirEntry{
+		RecursiveSubdirs: []metaitem.StorageDirectoryRef{
 			{Name: "dt=2026-05-05", Path: "dataset/dt=2026-05-05/"},
 		},
 	})
@@ -177,8 +177,8 @@ func TestTableFileResolverResolvesWholeScopeFromRecursiveScope(t *testing.T) {
 	if item.Layout != dataitem.LayoutWhole {
 		t.Fatalf("Layout = %q, want whole", item.Layout)
 	}
-	if item.EntryPath != "dataset" || item.PhysicalPath != "dataset" {
-		t.Fatalf("paths = entry %q physical %q, want dataset", item.EntryPath, item.PhysicalPath)
+	if item.ScopePath != "dataset" || item.PhysicalPath != "dataset" {
+		t.Fatalf("paths = scope %q physical %q, want dataset", item.ScopePath, item.PhysicalPath)
 	}
 	if !result.Exclusive {
 		t.Fatal("expected directory tree result to be exclusive")
@@ -192,7 +192,7 @@ func TestTableFileResolverRejectsSiblingIndependentParquetFiles(t *testing.T) {
 	t.Parallel()
 
 	d := &tableFileItemResolver{}
-	files := []plugin.FileEntry{
+	files := []metaitem.StorageFileRef{
 		{Name: "sales.parquet", Path: "dataset/sales.parquet"},
 		{Name: "customers.parquet", Path: "dataset/customers.parquet"},
 	}
@@ -216,11 +216,11 @@ func TestEnrichSingleTableFileItemDetectsFormatFromContent(t *testing.T) {
 	size := int64(len(content))
 	item := &metaitem.DetectedItem{
 		ResolvedItem: dataitem.ResolvedItem{
-			Layout:    dataitem.LayoutSingle,
-			DataType:  dataitem.DataTypeUnknown,
-			Format:    string(format.FormatUnknown),
-			EntryPath: "lake3",
-			SizeBytes: &size,
+			Layout:             dataitem.LayoutSingle,
+			DataType:           dataitem.DataTypeUnknown,
+			Format:             string(format.FormatUnknown),
+			PrimaryContentPath: "lake3",
+			SizeBytes:          &size,
 		},
 		PhysicalPath: "lake3",
 		Attributes:   map[string]interface{}{},

@@ -61,7 +61,7 @@ func (d *commonDataItemResolver) ResolveItems(ctx context.Context, input Directo
 	return result, nil
 }
 
-func fileEntriesToCandidates(files []plugin.FileEntry) []dataitem.Candidate {
+func fileEntriesToCandidates(files []StorageFileRef) []dataitem.Candidate {
 	candidates := make([]dataitem.Candidate, 0, len(files))
 	for _, file := range files {
 		size := file.Size

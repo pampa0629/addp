@@ -10,13 +10,6 @@ import (
 )
 
 const (
-	EngineFamilyTabular  = "tabular"
-	EngineFamilyObject   = "object"
-	EngineFamilyFile     = "file"
-	EngineFamilyDocument = "document"
-)
-
-const (
 	LayoutSingle = "single"
 	LayoutMulti  = "multi"
 	LayoutWhole  = "whole"
@@ -129,11 +122,8 @@ type Descriptor struct {
 	Identification Identification     `json:"identification,omitempty"`
 	Providers      ProviderDescriptor `json:"providers,omitempty"`
 	ContentReaders []string           `json:"content_readers,omitempty"`
-	TransferRead   bool               `json:"transfer_read,omitempty"`
-	TransferWrite  bool               `json:"transfer_write,omitempty"`
 	Parse          bool               `json:"parse,omitempty"`
 	Spatial        bool               `json:"spatial,omitempty"`
-	EngineFamilies []string           `json:"engine_families,omitempty"`
 }
 
 type ConflictDiagnostic struct {
@@ -264,7 +254,6 @@ func normalizeDescriptor(descriptor Descriptor) Descriptor {
 	descriptor.Layouts = NormalizeLayouts(descriptor.Layouts)
 	descriptor.ProviderHints = normalizedStrings(descriptor.ProviderHints, false)
 	descriptor.ContentReaders = normalizedStrings(descriptor.ContentReaders, false)
-	descriptor.EngineFamilies = normalizedStrings(descriptor.EngineFamilies, false)
 	descriptor.Identification.Extensions = normalizedStrings(descriptor.Identification.Extensions, true)
 	descriptor.Identification.MimeTypes = normalizedStrings(descriptor.Identification.MimeTypes, false)
 	descriptor.Identification.ContentSignatures = normalizedStrings(descriptor.Identification.ContentSignatures, false)
@@ -334,7 +323,6 @@ func cloneDescriptor(descriptor Descriptor) Descriptor {
 	descriptor.Layouts = append([]string(nil), descriptor.Layouts...)
 	descriptor.ProviderHints = append([]string(nil), descriptor.ProviderHints...)
 	descriptor.ContentReaders = append([]string(nil), descriptor.ContentReaders...)
-	descriptor.EngineFamilies = append([]string(nil), descriptor.EngineFamilies...)
 	descriptor.Identification.Extensions = append([]string(nil), descriptor.Identification.Extensions...)
 	descriptor.Identification.MimeTypes = append([]string(nil), descriptor.Identification.MimeTypes...)
 	descriptor.Identification.ContentSignatures = append([]string(nil), descriptor.Identification.ContentSignatures...)

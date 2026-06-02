@@ -19,9 +19,9 @@ const (
 )
 
 type ObjectCatalogCallbacks struct {
-	ListRootsFunc         func(ctx context.Context, connInfo ConnectionInfo) ([]RootEntry, error)
-	ListDirectoryFunc     func(ctx context.Context, connInfo ConnectionInfo, path string) (files []FileEntry, prefixes []DirEntry, err error)
-	GetObjectMetadataFunc func(ctx context.Context, connInfo ConnectionInfo, path string) (*FileMetadata, error)
+	ListBucketsFunc           func(ctx context.Context, connInfo ConnectionInfo, root CatalogPath) ([]CatalogEntry, error)
+	ListDirectoryFunc         func(ctx context.Context, connInfo ConnectionInfo, parent CatalogPath) ([]CatalogEntry, error)
+	GetObjectStorageFactsFunc func(ctx context.Context, connInfo ConnectionInfo, path string) (*StorageObjectFacts, error)
 }
 
 // ObjectCatalogModel describes object storage hierarchy: service -> bucket -> prefix? -> object.
@@ -30,150 +30,128 @@ func ObjectCatalogModel() CatalogModelSpec {
 		PathVersion: CatalogPathVersion,
 		RootTerm:    CatalogTermService,
 		Levels: []CatalogLevelSpec{
-			{Term: CatalogTermBucket, Kinds: []string{CatalogKindBucket}, Container: true, I18nKey: CatalogTermI18nKey(CatalogTermBucket)},
-			{Term: CatalogTermPrefix, Kinds: []string{CatalogKindPrefix}, Container: true, Optional: true, I18nKey: CatalogTermI18nKey(CatalogTermPrefix)},
-			{Term: CatalogTermObject, Kinds: []string{CatalogKindObject}, Item: true, I18nKey: CatalogTermI18nKey(CatalogTermObject)},
+			{Term: CatalogTermBucket, Kinds: []string{CatalogKindBucket}, Role: CatalogRoleBranch, I18nKey: CatalogTermI18nKey(CatalogTermBucket)},
+			{Term: CatalogTermPrefix, Kinds: []string{CatalogKindPrefix}, Role: CatalogRoleBranch, Optional: true, I18nKey: CatalogTermI18nKey(CatalogTermPrefix)},
+			{Term: CatalogTermObject, Kinds: []string{CatalogKindObject}, Role: CatalogRoleLeaf, I18nKey: CatalogTermI18nKey(CatalogTermObject)},
 		},
 	}
 }
 
 // ListObjectCatalogChildren maps object-storage buckets, prefixes and objects to CatalogProvider nodes.
-func ListObjectCatalogChildren(ctx context.Context, callbacks ObjectCatalogCallbacks, connInfo ConnectionInfo, engineID uint, parent CatalogPath, opts ListOptions) ([]CatalogNode, error) {
-	if len(parent.Segments) == 0 {
-		if callbacks.ListRootsFunc == nil {
-			return nil, fmt.Errorf("object catalog callbacks ListRootsFunc is nil")
+func ListObjectCatalogChildren(ctx context.Context, callbacks ObjectCatalogCallbacks, connInfo ConnectionInfo, engineID uint, parent CatalogPath, opts ListOptions) ([]CatalogEntry, error) {
+	model := ObjectCatalogModel()
+	if IsCatalogRootPath(parent) {
+		if err := requireCatalogRootPath(parent, model); err != nil {
+			return nil, err
 		}
-		roots, err := callbacks.ListRootsFunc(ctx, connInfo)
+		if callbacks.ListBucketsFunc == nil {
+			return nil, fmt.Errorf("object catalog callbacks ListBucketsFunc is nil")
+		}
+		buckets, err := callbacks.ListBucketsFunc(ctx, connInfo, parent)
 		if err != nil {
 			return nil, err
 		}
-		nodes := make([]CatalogNode, 0, len(roots))
-		for _, root := range roots {
-			nodes = append(nodes, CatalogNode{
-				Name:        root.Name,
-				Path:        appendCatalogSegment(parent, engineID, CatalogTermBucket, CatalogKindBucket, root.Name),
-				Term:        CatalogTermBucket,
-				Kind:        CatalogKindBucket,
-				IsContainer: true,
-				Attributes: map[string]interface{}{
-					"path": root.Path,
-				},
-			})
-		}
-		return nodes, nil
+		return buckets, nil
+	}
+	if _, err := requireCatalogBusinessPath(parent, model); err != nil {
+		return nil, err
 	}
 
-	return listObjectCatalogChildren(ctx, callbacks, connInfo, engineID, parent, parent.StringPath(), opts)
+	return listObjectCatalogChildren(ctx, callbacks, connInfo, parent, opts)
 }
 
-func listObjectCatalogChildren(ctx context.Context, callbacks ObjectCatalogCallbacks, connInfo ConnectionInfo, engineID uint, parent CatalogPath, listPath string, opts ListOptions) ([]CatalogNode, error) {
+func listObjectCatalogChildren(ctx context.Context, callbacks ObjectCatalogCallbacks, connInfo ConnectionInfo, parent CatalogPath, opts ListOptions) ([]CatalogEntry, error) {
 	if callbacks.ListDirectoryFunc == nil {
 		return nil, fmt.Errorf("object catalog callbacks ListDirectoryFunc is nil")
 	}
-	objects, prefixes, err := callbacks.ListDirectoryFunc(ctx, connInfo, listPath)
+	nodes, err := callbacks.ListDirectoryFunc(ctx, connInfo, parent)
 	if err != nil {
 		return nil, err
 	}
-	nodes := make([]CatalogNode, 0, len(prefixes)+len(objects))
-	for _, prefix := range prefixes {
-		prefixPath := appendCatalogSegment(parent, engineID, CatalogTermPrefix, CatalogKindPrefix, prefix.Name)
-		nodes = append(nodes, CatalogNode{
-			Name:        prefix.Name,
-			Path:        prefixPath,
-			Term:        CatalogTermPrefix,
-			Kind:        CatalogKindPrefix,
-			IsContainer: true,
-			Attributes: map[string]interface{}{
-				"path": prefix.Path,
-			},
-		})
-		if opts.Recursive {
-			childNodes, err := listObjectCatalogChildren(ctx, callbacks, connInfo, engineID, prefixPath, prefix.Path, opts)
-			if err != nil {
-				return nil, err
-			}
-			nodes = append(nodes, childNodes...)
+	if !opts.Recursive {
+		return nodes, nil
+	}
+	result := append([]CatalogEntry(nil), nodes...)
+	for _, node := range nodes {
+		if node.Role != CatalogRoleBranch {
+			continue
 		}
+		childNodes, err := listObjectCatalogChildren(ctx, callbacks, connInfo, node.Path, opts)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, childNodes...)
 	}
-	for _, object := range objects {
-		objectPath := appendCatalogSegment(parent, engineID, CatalogTermObject, CatalogKindObject, object.Name)
-		nodes = append(nodes, CatalogNode{
-			Name:   object.Name,
-			Path:   objectPath,
-			Term:   CatalogTermObject,
-			Kind:   CatalogKindObject,
-			IsItem: true,
-			Stats: map[string]interface{}{
-				"size_bytes": object.Size,
-			},
-			Attributes: map[string]interface{}{
-				"path":         object.Path,
-				"content_type": object.ContentType,
-				"modified_at":  object.ModifiedAt,
-			},
-		})
-	}
-	return nodes, nil
+	return result, nil
 }
 
 // ResolveObjectCatalogPath resolves an object catalog path.
-func ResolveObjectCatalogPath(ctx context.Context, callbacks ObjectCatalogCallbacks, connInfo ConnectionInfo, engineID uint, path CatalogPath) (*CatalogNode, error) {
-	if len(path.Segments) == 0 {
-		return &CatalogNode{
-			Name:        "",
-			Path:        CatalogPath{Version: CatalogPathVersion, EngineID: engineID},
-			Term:        CatalogTermService,
-			Kind:        CatalogTermService,
-			IsContainer: true,
+func ResolveObjectCatalogPath(ctx context.Context, callbacks ObjectCatalogCallbacks, connInfo ConnectionInfo, engineID uint, path CatalogPath) (*CatalogEntry, error) {
+	model := ObjectCatalogModel()
+	if IsCatalogRootPath(path) {
+		if err := requireCatalogRootPath(path, model); err != nil {
+			return nil, err
+		}
+		return &CatalogEntry{
+			Name: "",
+			Path: path,
+			Term: CatalogTermService,
+			Kind: CatalogTermService,
+			Role: CatalogRoleBranch,
 		}, nil
+	}
+	if _, err := requireCatalogBusinessPath(path, model); err != nil {
+		return nil, err
 	}
 
 	last := path.Segments[len(path.Segments)-1]
 	if last.Kind == CatalogKindObject || last.Term == CatalogTermObject {
-		if callbacks.GetObjectMetadataFunc == nil {
-			return nil, fmt.Errorf("object catalog callbacks GetObjectMetadataFunc is nil")
+		if callbacks.GetObjectStorageFactsFunc == nil {
+			return nil, fmt.Errorf("object catalog callbacks GetObjectStorageFactsFunc is nil")
 		}
-		meta, err := callbacks.GetObjectMetadataFunc(ctx, connInfo, path.StringPath())
+		meta, err := callbacks.GetObjectStorageFactsFunc(ctx, connInfo, path.StringPath())
 		if err != nil {
 			return nil, err
 		}
-		return objectMetadataCatalogNode(engineID, path, meta), nil
+		return objectStorageFactsCatalogEntry(engineID, path, meta), nil
 	}
 
-	return &CatalogNode{
-		Name:        last.Name,
-		Path:        path,
-		Term:        last.Term,
-		Kind:        last.Kind,
-		IsContainer: true,
-		Attributes: map[string]interface{}{
-			"path": path.StringPath(),
+	return &CatalogEntry{
+		Name: last.Name,
+		Path: path,
+		Term: last.Term,
+		Kind: last.Kind,
+		Role: CatalogRoleBranch,
+		Storage: &CatalogStorageFacts{
+			Path: path.StringPath(),
 		},
 	}, nil
 }
 
-// DescribeObjectItem maps object metadata to ItemMetadataProvider output.
-func DescribeObjectItem(ctx context.Context, callbacks ObjectCatalogCallbacks, connInfo ConnectionInfo, engineID uint, path CatalogPath) (*ItemMetadata, error) {
-	if callbacks.GetObjectMetadataFunc == nil {
-		return nil, fmt.Errorf("object catalog callbacks GetObjectMetadataFunc is nil")
+// DescribeObjectCatalogFacts maps object storage facts to CatalogFactsProvider output.
+func DescribeObjectCatalogFacts(ctx context.Context, callbacks ObjectCatalogCallbacks, connInfo ConnectionInfo, engineID uint, path CatalogPath) (*CatalogFacts, error) {
+	if callbacks.GetObjectStorageFactsFunc == nil {
+		return nil, fmt.Errorf("object catalog callbacks GetObjectStorageFactsFunc is nil")
 	}
-	meta, err := callbacks.GetObjectMetadataFunc(ctx, connInfo, path.StringPath())
+	if _, err := requireCatalogBusinessPath(path, ObjectCatalogModel()); err != nil {
+		return nil, err
+	}
+	meta, err := callbacks.GetObjectStorageFactsFunc(ctx, connInfo, path.StringPath())
 	if err != nil {
 		return nil, err
 	}
 	updatedAt := meta.ModifiedAt
-	return &ItemMetadata{
+	sizeBytes := meta.Size
+	return &CatalogFacts{
 		Path: path,
 		Kind: objectKindFromPath(path),
-		Stats: map[string]interface{}{
-			"size_bytes": meta.Size,
-		},
-		Attributes: map[string]interface{}{
-			"name":         meta.Name,
-			"path":         meta.Path,
-			"content_type": meta.ContentType,
-			"etag":         meta.ETag,
-			"extension":    strings.ToLower(filepath.Ext(meta.Name)),
+		Storage: &CatalogStorageFacts{
+			Name:        meta.Name,
+			Path:        meta.Path,
+			ContentType: meta.ContentType,
+			ETag:        meta.ETag,
+			Extension:   strings.ToLower(filepath.Ext(meta.Name)),
+			SizeBytes:   &sizeBytes,
 		},
 		UpdatedAt: &updatedAt,
 	}, nil
@@ -190,32 +168,52 @@ func objectKindFromPath(path CatalogPath) string {
 	return CatalogKindObject
 }
 
-func ObjectCatalogEntryFromNode(node CatalogNode) (FileEntry, bool) {
-	if !node.IsItem {
-		return FileEntry{}, false
+func ObjectBucketCatalogEntry(root CatalogPath, name string) CatalogEntry {
+	return CatalogEntry{
+		Name: name,
+		Path: appendCatalogSegment(root, root.EngineID, CatalogTermBucket, CatalogKindBucket, name),
+		Term: CatalogTermBucket,
+		Kind: CatalogKindBucket,
+		Role: CatalogRoleBranch,
+		Storage: &CatalogStorageFacts{
+			Path: name + "/",
+		},
 	}
-	return FileEntry{
-		Name:        node.Name,
-		Path:        catalogNodePath(node),
-		CatalogPath: node.Path,
-		Size:        catalogNodeInt64Stat(node.Stats, "size_bytes"),
-		ModifiedAt:  catalogNodeTimeAttribute(node.Attributes, "modified_at"),
-		ContentType: catalogNodeStringAttribute(node.Attributes, "content_type"),
-	}, true
 }
 
-func ObjectCatalogDirectoryFromNode(node CatalogNode) (DirEntry, bool) {
-	if !node.IsContainer {
-		return DirEntry{}, false
+func ObjectPrefixCatalogEntry(parent CatalogPath, name, storagePath string) CatalogEntry {
+	return CatalogEntry{
+		Name: name,
+		Path: appendCatalogSegment(parent, parent.EngineID, CatalogTermPrefix, CatalogKindPrefix, name),
+		Term: CatalogTermPrefix,
+		Kind: CatalogKindPrefix,
+		Role: CatalogRoleBranch,
+		Storage: &CatalogStorageFacts{
+			Path: storagePath,
+		},
 	}
-	return DirEntry{
-		Name:        node.Name,
-		Path:        catalogNodePath(node),
-		CatalogPath: node.Path,
-	}, true
 }
 
-func objectMetadataCatalogNode(engineID uint, path CatalogPath, meta *FileMetadata) *CatalogNode {
+func ObjectLeafCatalogEntry(parent CatalogPath, facts StorageObjectFacts) CatalogEntry {
+	sizeBytes := facts.Size
+	updatedAt := facts.ModifiedAt
+	return CatalogEntry{
+		Name: facts.Name,
+		Path: appendCatalogSegment(parent, parent.EngineID, CatalogTermObject, CatalogKindObject, facts.Name),
+		Term: CatalogTermObject,
+		Kind: CatalogKindObject,
+		Role: CatalogRoleLeaf,
+		Storage: &CatalogStorageFacts{
+			Path:        facts.Path,
+			ContentType: facts.ContentType,
+			ETag:        facts.ETag,
+			SizeBytes:   &sizeBytes,
+		},
+		UpdatedAt: &updatedAt,
+	}
+}
+
+func objectStorageFactsCatalogEntry(engineID uint, path CatalogPath, meta *StorageObjectFacts) *CatalogEntry {
 	if path.Version == "" {
 		path.Version = CatalogPathVersion
 	}
@@ -233,20 +231,19 @@ func objectMetadataCatalogNode(engineID uint, path CatalogPath, meta *FileMetada
 			kind = last.Kind
 		}
 	}
-	return &CatalogNode{
-		Name:   meta.Name,
-		Path:   path,
-		Term:   term,
-		Kind:   kind,
-		IsItem: true,
-		Stats: map[string]interface{}{
-			"size_bytes": meta.Size,
+	updatedAt := meta.ModifiedAt
+	return &CatalogEntry{
+		Name: meta.Name,
+		Path: path,
+		Term: term,
+		Kind: kind,
+		Role: CatalogRoleLeaf,
+		Storage: &CatalogStorageFacts{
+			Path:        meta.Path,
+			ContentType: meta.ContentType,
+			ETag:        meta.ETag,
+			SizeBytes:   &meta.Size,
 		},
-		Attributes: map[string]interface{}{
-			"path":         meta.Path,
-			"content_type": meta.ContentType,
-			"etag":         meta.ETag,
-			"modified_at":  meta.ModifiedAt,
-		},
+		UpdatedAt: &updatedAt,
 	}
 }

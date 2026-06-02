@@ -16,9 +16,9 @@ import (
 // JupyterService Jupyter Notebook执行引擎服务
 // 通过 HTTP API 调用 Jupyter Engine 执行 Notebook
 type JupyterService struct {
-	cfg               *config.Config
-	jupyterEngineURL  string
-	httpClient        *http.Client
+	cfg              *config.Config
+	jupyterEngineURL string
+	httpClient       *http.Client
 }
 
 // NewJupyterService 创建Jupyter执行引擎服务
@@ -48,14 +48,14 @@ type ExecuteNotebookRequest struct {
 
 // ExecuteNotebookResponse 执行Notebook响应
 type ExecuteNotebookResponse struct {
-	Status              string                   `json:"status"`
-	Message             string                   `json:"message"`
+	Status               string                   `json:"status"`
+	Message              string                   `json:"message"`
 	ExecutionTimeSeconds float64                  `json:"execution_time_seconds"`
-	OutputPath          string                   `json:"output_path"`
-	OutputCount         int                      `json:"output_count"`
-	Outputs             []map[string]interface{} `json:"outputs"`
-	ErrorMessage        string                   `json:"error_message,omitempty"`
-	Traceback           string                   `json:"traceback,omitempty"`
+	OutputPath           string                   `json:"output_path"`
+	OutputCount          int                      `json:"output_count"`
+	Outputs              []map[string]interface{} `json:"outputs"`
+	ErrorMessage         string                   `json:"error_message,omitempty"`
+	Traceback            string                   `json:"traceback,omitempty"`
 }
 
 // ExecuteNotebook 执行Notebook

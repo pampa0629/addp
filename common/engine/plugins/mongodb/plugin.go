@@ -66,23 +66,23 @@ func (p *MongoDBPlugin) StoreSemantics() plugin.StoreSemantics {
 
 func (p *MongoDBPlugin) dynamicSchemaCatalogCallbacks() plugin.DynamicSchemaCatalogCallbacks {
 	return plugin.DynamicSchemaCatalogCallbacks{
-		ListDatabasesFunc:      p.listDatabases,
+		ListNamespacesFunc:     p.listDatabases,
 		ListCollectionsFunc:    p.listCollections,
-		GetCollectionStatsFunc: p.getCollectionStats,
+		DescribeCollectionFunc: p.describeCollectionFacts,
 		IsSystemDatabaseFunc:   p.IsSystemDatabase,
 	}
 }
 
-func (p *MongoDBPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
+func (p *MongoDBPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogEntry, error) {
 	return plugin.ListDynamicSchemaCatalogChildren(ctx, p.dynamicSchemaCatalogCallbacks(), parent.EngineID, connInfo, parent, opts)
 }
 
-func (p *MongoDBPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
+func (p *MongoDBPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogEntry, error) {
 	return plugin.ResolveDynamicSchemaCatalogPath(ctx, p.dynamicSchemaCatalogCallbacks(), path.EngineID, connInfo, path)
 }
 
-func (p *MongoDBPlugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
-	return plugin.DescribeDynamicSchemaItem(ctx, p.dynamicSchemaCatalogCallbacks(), path.EngineID, connInfo, path, opts)
+func (p *MongoDBPlugin) DescribeCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+	return plugin.DescribeDynamicSchemaCatalogFacts(ctx, p.dynamicSchemaCatalogCallbacks(), path.EngineID, connInfo, path, opts)
 }
 
 func (p *MongoDBPlugin) QueryLanguages() []string {

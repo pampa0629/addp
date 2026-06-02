@@ -2,6 +2,9 @@
 
 更新时间：2026-05-09
 
+> 状态：历史调研，table 类型主链路已按 `common/engine`、`common/format`、`common/contentio` 完成归档。
+> 当前稳定架构见 [Transfer 当前架构设计](../../transfer/docs/design.md)。
+
 本文汇总 Transfer 模块当前与 engine、format、data type、contentio 抽象相关的真实实现状态，用于后续把 Transfer 接入统一 Provider 体系。
 
 ## 结论
@@ -81,7 +84,7 @@ ConnectorConfig.Type -> ReaderFactory / WriterFactory
 
 ```text
 S3 engine provider -> contentio.Reader/List/Open
-CSV/JSON FormatPlugin / content reader -> ReadBatch
+CSV/JSON format reader provider -> ReadBatch
 Transfer adapter -> pipeline.Reader
 ```
 

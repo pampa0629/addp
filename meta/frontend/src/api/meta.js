@@ -1,7 +1,8 @@
 import client from './client'
 import {
   listCatalogChildren as listSystemCatalogChildren,
-  listCatalogBrowserNodes as listSystemCatalogBrowserNodes
+  normalizeCatalogPath,
+  toCatalogBrowserNode
 } from '@common-ui'
 
 export default {
@@ -27,16 +28,20 @@ export default {
   // 获取指定引擎已扫描的 catalog 顶层容器
   getScannedCatalogTopNodes(engineId) {
     return client.get(`/meta/engines/${engineId}/tree`).then(res => {
-      const nodes = Array.isArray(res?.top_nodes) ? res.top_nodes : []
+      const root = findCatalogRootNode(res)
+      const childNodes = Array.isArray(res?.child_nodes) ? res.child_nodes : []
+      const nodes = root
+        ? childNodes.filter(node => node.parent_node_id === root.id)
+        : []
       return nodes.map(node => ({
         id: node.id,
         name: node.name,
         node_type: node.node_type,
-        path: node.path || node.full_name || node.name,
+        path: node.full_name || node.name,
         scan_status: node.scan_status,
         scanned_depth: node.scanned_depth,
         scanned_at: node.scanned_at,
-        table_count: node.item_count || 0,
+        item_count: node.item_count || 0,
         total_size_bytes: node.total_size_bytes || 0
       }))
     })
@@ -48,8 +53,16 @@ export default {
   },
 
   // 获取扫描配置使用的实时 catalog 顶层节点
-  listCatalogTopNodes(engineId) {
-    return listSystemCatalogBrowserNodes(client, engineId)
+  async listCatalogTopNodes(engineId) {
+    const roots = await listSystemCatalogChildren(client, engineId)
+    const root = roots.find(isCatalogRootEntry)
+    if (!root) {
+      return []
+    }
+    const children = await listSystemCatalogChildren(client, engineId, normalizeCatalogPath(root.path))
+    return children
+      .filter(node => node?.role === 'branch')
+      .map(toCatalogBrowserNode)
   },
 
   // 自动扫描所有未扫描的引擎
@@ -57,8 +70,8 @@ export default {
     return client.post('/meta/scan/auto')
   },
 
-  // 扫描指定引擎的指定 catalog 路径
-  scanEngine(engineId, catalogPaths, options = {}) {
+  // 提交后台扫描运行
+  createManualScanRun(engineId, catalogPaths, options = {}) {
     const payload = {
       engine_id: engineId,
       scan_depth: options.scan_depth || 'deep',
@@ -68,7 +81,7 @@ export default {
     if (catalogPaths && catalogPaths.length > 0) {
       payload.catalog_paths = catalogPaths
     }
-    return client.post('/meta/scan/engine', payload)
+    return client.post('/meta/scan/run/manual', payload)
   },
 
   getScanRuns(engineId, params = {}) {
@@ -82,6 +95,10 @@ export default {
       const filtered = items.filter(run => run.engine_id === engineId)
       return { items: filtered, total: data.total || filtered.length || 0 }
     })
+  },
+
+  getScanRun(runId) {
+    return client.get(`/meta/scan/runs/${runId}`)
   },
 
   getScanTasks(engineId) {
@@ -109,4 +126,15 @@ export default {
         engine_id: engineId
       })
   }
+}
+
+function findCatalogRootNode(tree) {
+  const roots = Array.isArray(tree?.top_nodes) ? tree.top_nodes : []
+  return roots.find(node => String(node?.full_name || '').trim() === '')
+}
+
+function isCatalogRootEntry(node) {
+  if (!node) return false
+  const segments = Array.isArray(node.path?.segments) ? node.path.segments : []
+  return segments.length === 1 && ['server', 'service', 'root'].includes(String(node.term || '').toLowerCase())
 }

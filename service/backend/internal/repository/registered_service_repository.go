@@ -115,7 +115,6 @@ func (r *RegisteredServiceRepository) GetByTenant(tenantID uint, filters map[str
 	return services, nil
 }
 
-
 // CheckServiceNameUnique 检查服务名称是否唯一
 func (r *RegisteredServiceRepository) CheckServiceNameUnique(serviceName string, tenantID uint, excludeID *uint) (bool, error) {
 	var count int64

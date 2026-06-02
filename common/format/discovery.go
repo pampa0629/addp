@@ -5,7 +5,7 @@ import (
 	formatregistry "github.com/addp/common/format/registry"
 )
 
-type FormatCapabilityView struct {
+type FormatSupportView struct {
 	PluginID        string                     `json:"plugin_id"`
 	Format          FormatType                 `json:"format"`
 	DataType        datatype.DataType          `json:"data_type"`
@@ -14,10 +14,8 @@ type FormatCapabilityView struct {
 	Providers       FormatProviderDescriptor   `json:"providers,omitempty"`
 	ContentReaders  []string                   `json:"content_readers,omitempty"`
 	Implementations FormatImplementationStatus `json:"implementations,omitempty"`
-	Transfer        FormatTransferDescriptor   `json:"transfer,omitempty"`
 	Parse           bool                       `json:"parse,omitempty"`
 	Spatial         bool                       `json:"spatial,omitempty"`
-	EngineFamilies  []string                   `json:"engine_families,omitempty"`
 }
 
 type FormatImplementationStatus struct {
@@ -42,33 +40,31 @@ type FormatImplementationStatus struct {
 	ContainerChildResolver bool `json:"container_child_resolver,omitempty"`
 }
 
-type FormatTransferDescriptor = formatregistry.TransferDescriptor
-
 type FormatConflictDiagnostic = formatregistry.ConflictDiagnostic
 
-func ListFormatCapabilityViews() []FormatCapabilityView {
-	views := formatregistry.ListCapabilityViews()
-	result := make([]FormatCapabilityView, 0, len(views))
+func ListFormatSupportViews() []FormatSupportView {
+	views := formatregistry.ListSupportViews()
+	result := make([]FormatSupportView, 0, len(views))
 	for _, view := range views {
-		result = append(result, fromRegistryCapabilityView(view))
+		result = append(result, fromRegistrySupportView(view))
 	}
 	return result
 }
 
-func GetFormatCapabilityView(formatType FormatType) (FormatCapabilityView, bool) {
-	view, ok := formatregistry.GetCapabilityView(formatregistry.Format(formatType))
+func GetFormatSupportView(formatType FormatType) (FormatSupportView, bool) {
+	view, ok := formatregistry.GetSupportView(formatregistry.Format(formatType))
 	if !ok {
-		return FormatCapabilityView{}, false
+		return FormatSupportView{}, false
 	}
-	return fromRegistryCapabilityView(view), true
+	return fromRegistrySupportView(view), true
 }
 
 func ListFormatConflictDiagnostics() []FormatConflictDiagnostic {
 	return formatregistry.ListConflictDiagnostics()
 }
 
-func fromRegistryCapabilityView(view formatregistry.CapabilityView) FormatCapabilityView {
-	return FormatCapabilityView{
+func fromRegistrySupportView(view formatregistry.SupportView) FormatSupportView {
+	return FormatSupportView{
 		PluginID:        view.PluginID,
 		Format:          FormatType(view.Format),
 		DataType:        view.DataType,
@@ -77,10 +73,8 @@ func fromRegistryCapabilityView(view formatregistry.CapabilityView) FormatCapabi
 		Providers:       view.Providers,
 		ContentReaders:  append([]string(nil), view.ContentReaders...),
 		Implementations: implementationStatusForFormat(FormatType(view.Format), view.Identification),
-		Transfer:        view.Transfer,
 		Parse:           view.Parse,
 		Spatial:         view.Spatial,
-		EngineFamilies:  view.EngineFamilies,
 	}
 }
 

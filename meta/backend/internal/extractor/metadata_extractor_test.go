@@ -38,11 +38,11 @@ func TestExtractObjectMetadataOnDemandUsesUnifiedMediaEnrichment(t *testing.T) {
 	size := int64(0)
 	detected := &metaitem.DetectedItem{
 		ResolvedItem: dataitem.ResolvedItem{
-			Layout:    dataitem.LayoutSingle,
-			DataType:  dataitem.DataTypeUnknown,
-			Format:    string(format.FormatUnknown),
-			EntryPath: "pixel.png",
-			SizeBytes: &size,
+			Layout:             dataitem.LayoutSingle,
+			DataType:           dataitem.DataTypeUnknown,
+			Format:             string(format.FormatUnknown),
+			PrimaryContentPath: "pixel.png",
+			SizeBytes:          &size,
 		},
 		PhysicalPath: "pixel.png",
 	}
@@ -111,11 +111,11 @@ func TestExtractObjectMetadataOnDemandUsesUnifiedContainerEnrichment(t *testing.
 	size := int64(0)
 	detected := &metaitem.DetectedItem{
 		ResolvedItem: dataitem.ResolvedItem{
-			Layout:    dataitem.LayoutSingle,
-			DataType:  dataitem.DataTypeUnknown,
-			Format:    string(format.FormatUnknown),
-			EntryPath: "archive.zip",
-			SizeBytes: &size,
+			Layout:             dataitem.LayoutSingle,
+			DataType:           dataitem.DataTypeUnknown,
+			Format:             string(format.FormatUnknown),
+			PrimaryContentPath: "archive.zip",
+			SizeBytes:          &size,
 		},
 		PhysicalPath: "archive.zip",
 	}

@@ -38,6 +38,8 @@ endpoint 只决定 reader / writer 来源：
 
 当前已经接入的 table 格式包括 CSV / TSV、JSON / JSONL、Parquet、Shapefile。native table 写侧已经接入 PostgreSQL、MySQL、Doris、ClickHouse 第一版。
 
+non-table raw copy 已形成第一版最小闭环：`document`、`media`、`unknown` 的 encoded single file/object 可按原始字节复制。raw copy 不进入 `common/format` table reader / writer，不解析正文、不抽取媒体元数据，也不做格式转换；目标写入第一版只支持 `overwrite`。
+
 ## 任务配置
 
 任务配置存放在 `transfer.transfer_tasks.config` 中，必须使用 source / target endpoint 结构：
@@ -146,4 +148,3 @@ go test ./internal/planner ./internal/executor -run 'TableTransfer|Native|Encode
 - [Transfer 数据库架构](./docs/数据库架构.md)
 - [transfer_tasks 表](./docs/tables/tasks表.md)
 - [task_executions 表](./docs/tables/task_executions表.md)
-- [Transfer 基于 common engine / format 的改造进展](../docs/next/transfer基于common-engine-format改造设计.md)

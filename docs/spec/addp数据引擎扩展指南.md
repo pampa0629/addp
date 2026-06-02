@@ -21,11 +21,11 @@
 
 | 引擎类型 | 必选接口 | 常用可选接口 |
 | --- | --- | --- |
-| 关系型 / SQL 表格型 | `EnginePlugin`、`CatalogModelProvider`、`CatalogProvider`、`ItemMetadataProvider`、`SQLQueryRuntimeProvider` | `ConnectionPoolPlugin` |
-| 动态 schema 记录集合型 | `EnginePlugin`、`CatalogModelProvider`、`CatalogProvider`、`ItemMetadataProvider`、`QueryRuntimeProvider` | `DynamicSchemaSamplingProvider` |
-| 图数据库 | `EnginePlugin`、`CatalogModelProvider`、`CatalogProvider`、`ItemMetadataProvider`、`GraphMetadataProvider`、`QueryRuntimeProvider` | `GraphSampleProvider`、`GraphQueryProvider` |
-| 对象存储 | `EnginePlugin`、`CatalogModelProvider`、`CatalogProvider`、`ItemMetadataProvider` | `ContentReadableProvider`、`ContentWritableProvider` |
-| 文件系统 | `EnginePlugin`、`CatalogModelProvider`、`CatalogProvider`、`ItemMetadataProvider` | `ContentReadableProvider`、`ContentWritableProvider` |
+| 关系型 / SQL 表格型 | `EnginePlugin`、`CatalogModelProvider`、`CatalogProvider`、`CatalogFactsProvider`、`SQLQueryRuntimeProvider` | `ConnectionPoolPlugin` |
+| 动态 schema 记录集合型 | `EnginePlugin`、`CatalogModelProvider`、`CatalogProvider`、`CatalogFactsProvider`、`QueryRuntimeProvider` | `DynamicSchemaSamplingProvider` |
+| 图数据库 | `EnginePlugin`、`CatalogModelProvider`、`CatalogProvider`、`CatalogFactsProvider`、`QueryRuntimeProvider` | `GraphSampleProvider`、`GraphQueryProvider` |
+| 对象存储 | `EnginePlugin`、`CatalogModelProvider`、`CatalogProvider`、`CatalogFactsProvider` | `ContentReadableProvider`、`ContentWritableProvider` |
+| 文件系统 | `EnginePlugin`、`CatalogModelProvider`、`CatalogProvider`、`CatalogFactsProvider` | `ContentReadableProvider`、`ContentWritableProvider` |
 | 工作流 | `EnginePlugin` | `WorkflowRuntimeProvider` |
 | Notebook / 脚本 | `EnginePlugin` | `ScriptRuntimeProvider` |
 
@@ -46,7 +46,7 @@ func (p *MyPlugin) Capabilities() plugin.EngineCapabilities {
         Storage: &plugin.StorageCapabilities{
             CatalogModel: plugin.TabularCatalogModel("database"),
             Catalog:      &plugin.CatalogCapability{Supported: true, RealTime: true},
-            Metadata:     &plugin.MetadataCapability{Supported: true, FieldInfo: true},
+            Facts:        &plugin.CatalogFactsCapability{Supported: true, FieldInfo: true},
             Store:        &plugin.StoreCapability{BatchRead: true},
         },
     }
@@ -56,7 +56,7 @@ func (p *MyPlugin) Capabilities() plugin.EngineCapabilities {
 声明和实现必须一致：
 
 - `storage.catalog.supported=true` 时必须实现 `CatalogProvider`。
-- `storage.metadata.supported=true` 时必须实现 `ItemMetadataProvider` 或采样 provider。
+- `storage.facts.supported=true` 时必须实现 `CatalogFactsProvider` 或采样 provider。
 - `storage.store.stream_read=true` 时必须实现 `ContentReadableProvider`。
 - `storage.store.stream_write=true` 时必须实现 `ContentWritableProvider`。
 - `storage.store.range_read=true` 时必须实现 `RangeReadableProvider` 或在 `OpenContent` 中明确支持 offset / length。
@@ -76,8 +76,9 @@ func (p *MyPlugin) Capabilities() plugin.EngineCapabilities {
 
 新增存储引擎必须先定义 Catalog Model：
 
-- 第一层术语是什么：schema、database、bucket、root 等。
-- 叶子 item 类型是什么：table、collection、graph、object、file 等。
+- root 术语是什么：server、service、root 等。
+- root 下第一层业务术语是什么：schema、database、bucket、directory 等。
+- Catalog leaf 术语是什么：table、collection、graph、object、file 等。
 - full_name 如何计算。
 - ResourceLocator 的 path segments 如何由 full_name 转换。
 
@@ -85,10 +86,10 @@ func (p *MyPlugin) Capabilities() plugin.EngineCapabilities {
 
 对象存储和文件系统必须分别建模：
 
-- 对象存储：`bucket -> prefix -> object`。
-- 文件系统：`root -> directory -> file`。
+- 对象存储：`service(root) -> bucket -> prefix -> object`，`Levels` 只包含 `bucket -> prefix -> object`。
+- 文件系统：`root -> directory -> file`，`Levels` 只包含 `directory -> file`。
 
-二者不得共享 CatalogModel 或 catalog 拼装实现；最多共享内容流接口、MIME 推断、格式解析等底层 helper。NFS 必须保留结构性 root meta_node，用于容纳挂载根目录下直接存在的文件；root `name` 使用 `/`，`full_name` 使用空字符串，`.` 不得进入 catalog path 或元数据路径。
+二者不得共享 CatalogModel 或 catalog 拼装实现；最多共享内容流接口、MIME 推断、格式解析等底层 helper。所有存储引擎都必须有显性结构 root；NFS 的 root `name` 使用引擎实例名称，`full_name` 使用空字符串，原生挂载根 `/` 写入 `attributes.catalog.native_name`，`.` 不得进入 catalog path 或元数据路径。
 
 ---
 
@@ -97,7 +98,7 @@ func (p *MyPlugin) Capabilities() plugin.EngineCapabilities {
 完成插件与 capabilities 后，各模块按能力自动消费：
 
 - System：注册、连接测试、能力刷新。
-- Meta：扫描 catalog 和 item metadata。
+- Meta：扫描 catalog，并按需读取 catalog facts 生成元数据快照。
 - Manager：展示探查树并预览 item。
 - Develop：筛选 query/workflow/script 引擎。
 - Service：发布查询服务或空间服务。

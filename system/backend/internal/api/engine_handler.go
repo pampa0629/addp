@@ -416,7 +416,7 @@ func toEngineDetailResponse(engine *models.Engine) engineResponse {
 
 // ListCatalogChildren 列出指定引擎的实时 catalog 子节点。
 // @Summary 列出实时 catalog 子节点 | List live catalog children
-// @Description 基于 System 管理的引擎连接信息实时浏览真实引擎 catalog，适用于扫描前选择 schema、bucket、prefix、collection、label 等范围。| Browse live engine catalog using System-managed connection information.
+// @Description 基于 System 管理的引擎连接信息实时浏览真实引擎 catalog。请求空 path 返回显性结构 root；请求 root path 返回 schema、bucket、database、directory 等第一层业务节点。| Browse live engine catalog using System-managed connection information. Empty path returns the explicit structural root; root path returns first business branches.
 // @Tags 引擎管理 | Engine Management
 // @Accept json
 // @Produce json

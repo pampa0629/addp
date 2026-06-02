@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestMetaClientScanEngineUsesV1PathAndPreciseItemPayload(t *testing.T) {
+func TestMetaClientCreateManualScanRunUsesAsyncPath(t *testing.T) {
 	t.Parallel()
 
 	var gotPath string
@@ -21,7 +21,8 @@ func TestMetaClientScanEngineUsesV1PathAndPreciseItemPayload(t *testing.T) {
 		gotTenant = r.Header.Get("X-Tenant-ID")
 		decodeErr = json.NewDecoder(r.Body).Decode(&gotPayload)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"status":"success","message":"ok","items_scanned":1,"fields_scanned":3,"extraction":{"documents":1,"extracted":1,"unsupported":0,"failed":0,"indexed":1,"index_failed":0}}`))
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":11,"tenant_id":8,"execution_id":"run-1","module":"meta","task_type":"scan","status":"pending","trigger_type":"manual"}`))
 	}))
 	defer server.Close()
 
@@ -29,42 +30,33 @@ func TestMetaClientScanEngineUsesV1PathAndPreciseItemPayload(t *testing.T) {
 	tenantID := uint(8)
 	client.SetTenantID(&tenantID)
 
-	result, err := client.ScanEngine(MetaScanOptions{
+	result, err := client.CreateManualScanRun(MetaScanOptions{
 		EngineID:    26,
-		ItemID:      1831,
+		NodeID:      1831,
 		ScanDepth:   "deep",
 		Force:       true,
 		TriggerType: "manual",
 	})
 	if err != nil {
-		t.Fatalf("ScanEngine() error = %v", err)
+		t.Fatalf("CreateManualScanRun() error = %v", err)
 	}
 	if decodeErr != nil {
 		t.Fatalf("decode payload: %v", decodeErr)
 	}
-	if gotPath != "/api/v1/meta/scan/engine" {
-		t.Fatalf("path = %q, want /api/v1/meta/scan/engine", gotPath)
+	if gotPath != "/api/v1/meta/scan/run/manual" {
+		t.Fatalf("path = %q, want /api/v1/meta/scan/run/manual", gotPath)
 	}
 	if gotHeader != "internal-key" || gotTenant != "8" {
 		t.Fatalf("auth headers = key:%q tenant:%q", gotHeader, gotTenant)
 	}
-	if gotPayload["engine_id"] != float64(26) || gotPayload["item_id"] != float64(1831) {
+	if gotPayload["engine_id"] != float64(26) || gotPayload["node_id"] != float64(1831) {
 		t.Fatalf("payload target = %#v", gotPayload)
-	}
-	if _, ok := gotPayload["targets"]; ok {
-		t.Fatalf("payload should not include targets: %#v", gotPayload)
-	}
-	if _, ok := gotPayload["catalog_paths"]; ok {
-		t.Fatalf("payload should not include catalog_paths: %#v", gotPayload)
 	}
 	if gotPayload["scan_depth"] != "deep" || gotPayload["force"] != true {
 		t.Fatalf("payload scan options = %#v", gotPayload)
 	}
-	if result.ItemsScanned != 1 || result.FieldsScanned != 3 {
+	if result.ExecutionID != "run-1" || result.Status != "pending" {
 		t.Fatalf("result = %#v", result)
-	}
-	if result.Extraction == nil || result.Extraction.Documents != 1 || result.Extraction.Indexed != 1 {
-		t.Fatalf("extraction = %#v", result.Extraction)
 	}
 }
 

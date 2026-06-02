@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"time"
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
@@ -73,16 +72,21 @@ func (s *DatabaseScanService) ScanNamespace(ctx context.Context, resource *commo
 	if !ok {
 		return 0, 0, 0, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
 	}
-	metadataProvider, ok := p.(plugin.ItemMetadataProvider)
+	factsProvider, ok := p.(plugin.CatalogFactsProvider)
 	if !ok {
-		return 0, 0, 0, fmt.Errorf("engine %s does not implement ItemMetadataProvider", resource.EngineType)
+		return 0, 0, 0, fmt.Errorf("engine %s does not implement CatalogFactsProvider", resource.EngineType)
 	}
-	itemTerm := catalogItemTermForPlugin(p, plugin.CatalogTermTable)
+	itemTerm := catalogLeafTermForPlugin(p, plugin.CatalogTermTable)
 
 	db := s.tryOpenConnectionPool(resource)
 
 	// 2. 创建/更新 Schema/Database 节点
-	schemaNode, err := s.repo.UpsertNode(tenantID, engineID, nil, namespaceTermForPlugin(p), namespaceName, nil, nil)
+	rootNode, err := ensureCatalogRootNode(s.repo, tenantID, resource, p)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+
+	schemaNode, err := s.repo.UpsertNode(tenantID, engineID, rootNode, namespaceTermForPlugin(p), namespaceName, nil, nil)
 	if err != nil {
 		return 0, 0, 0, err
 	}
@@ -92,7 +96,7 @@ func (s *DatabaseScanService) ScanNamespace(ctx context.Context, resource *commo
 	}
 
 	// 3. 扫描表
-	tables, fields, err := s.scanTables(ctx, resource, catalogProvider, metadataProvider, db, tenantID, engineID, schemaNode, namespaceName, scanDepth, force, itemTerm)
+	tables, fields, err := s.scanTables(ctx, resource, catalogProvider, factsProvider, db, tenantID, engineID, schemaNode, namespaceName, scanDepth, force, itemTerm)
 	if err != nil {
 		s.repo.FinalizeNodeState(schemaNode, "pending", 0, 0, err.Error())
 		return 0, 0, 0, err
@@ -122,7 +126,7 @@ func (s *DatabaseScanService) scanTables(
 	ctx context.Context,
 	resource *commonModels.Engine,
 	catalogProvider plugin.CatalogProvider,
-	metadataProvider plugin.ItemMetadataProvider,
+	factsProvider plugin.CatalogFactsProvider,
 	db *gorm.DB,
 	tenantID, engineID uint,
 	schemaNode *models.MetaNode,
@@ -185,7 +189,7 @@ func (s *DatabaseScanService) scanTables(
 		}
 
 		// 扫描表字段和元数据
-		fields, attrs, err := s.scanTableDetails(ctx, resource, metadataProvider, db, schemaName, tableInfo, existingItem, isDeepScan)
+		fields, attrs, err := s.scanTableDetails(ctx, resource, factsProvider, db, schemaName, tableInfo, existingItem, isDeepScan)
 		if err != nil {
 			s.log.Warn("表扫描失败，跳过",
 				"schema", schemaName,
@@ -246,6 +250,9 @@ func (s *DatabaseScanService) listTables(
 		Version:  plugin.CatalogPathVersion,
 		EngineID: resource.ID,
 		Segments: []plugin.CatalogSegment{{
+			Term: namespaceRootTermForPlugin(catalogProvider),
+			Kind: namespaceRootTermForPlugin(catalogProvider),
+		}, {
 			Term: namespaceTermForPlugin(catalogProvider),
 			Kind: plugin.CatalogKindNamespace,
 			Name: schemaName,
@@ -256,19 +263,16 @@ func (s *DatabaseScanService) listTables(
 	}
 	tables := make([]datatype.TableInfo, 0, len(nodes))
 	for _, node := range nodes {
-		if !node.IsItem {
+		if node.Role != plugin.CatalogRoleLeaf {
 			continue
 		}
-		rowCount := int64StatPtr(node.Stats, "row_count")
-		sizeBytes := int64StatPtr(node.Stats, "size_bytes")
+		if node.Table != nil {
+			tables = append(tables, *node.Table.Clone())
+			continue
+		}
 		tables = append(tables, datatype.TableInfo{
-			Name:      node.Name,
-			Kind:      node.Kind,
-			Comment:   stringAttr(node.Attributes, "comment"),
-			RowCount:  rowCount,
-			SizeBytes: sizeBytes,
-			UpdatedAt: timeAttr(node.Attributes, "updated_at"),
-			Native:    mapAttr(node.Attributes, "native"),
+			Name: node.Name,
+			Kind: node.Kind,
 		})
 	}
 	return tables, nil
@@ -323,7 +327,7 @@ func (s *DatabaseScanService) tryOpenConnectionPool(resource *commonModels.Engin
 func (s *DatabaseScanService) scanTableDetails(
 	ctx context.Context,
 	resource *commonModels.Engine,
-	metadataProvider plugin.ItemMetadataProvider,
+	factsProvider plugin.CatalogFactsProvider,
 	db *gorm.DB,
 	schemaName string,
 	tableInfo datatype.TableInfo,
@@ -334,7 +338,7 @@ func (s *DatabaseScanService) scanTableDetails(
 	var attrs models.JSONMap
 
 	if isDeepScan {
-		describedTable, err := s.describeTableInfo(ctx, resource, metadataProvider, schemaName, tableInfo.Name)
+		describedTable, err := s.describeTableInfo(ctx, resource, factsProvider, schemaName, tableInfo.Name)
 		if err != nil {
 			return nil, nil, fmt.Errorf("字段扫描失败: %w", err)
 		}
@@ -393,58 +397,11 @@ func tableItemAttributes(schemaName string, tableInfo datatype.TableInfo) models
 	return attrs
 }
 
-func int64StatPtr(stats map[string]interface{}, key string) *int64 {
-	value, ok := int64Stat(stats, key)
-	if !ok {
-		return nil
-	}
-	return &value
-}
-
 func derefInt64Ptr(value *int64) int64 {
 	if value == nil {
 		return 0
 	}
 	return *value
-}
-
-func stringAttr(attrs map[string]interface{}, key string) string {
-	if attrs == nil {
-		return ""
-	}
-	if value, ok := attrs[key].(string); ok {
-		return value
-	}
-	return ""
-}
-
-func timeAttr(attrs map[string]interface{}, key string) *time.Time {
-	if attrs == nil {
-		return nil
-	}
-	switch value := attrs[key].(type) {
-	case *time.Time:
-		return value
-	case time.Time:
-		return &value
-	default:
-		return nil
-	}
-}
-
-func mapAttr(attrs map[string]interface{}, key string) map[string]interface{} {
-	if attrs == nil {
-		return nil
-	}
-	values, ok := attrs[key].(map[string]interface{})
-	if !ok || len(values) == 0 {
-		return nil
-	}
-	cloned := make(map[string]interface{}, len(values))
-	for k, v := range values {
-		cloned[k] = v
-	}
-	return cloned
 }
 
 func engineSupportsSpatialMetadata(engineType string) bool {
@@ -454,8 +411,8 @@ func engineSupportsSpatialMetadata(engineType string) bool {
 	}
 	capabilities := p.Capabilities()
 	return capabilities.Storage != nil &&
-		capabilities.Storage.Metadata != nil &&
-		capabilities.Storage.Metadata.SpatialMetadata
+		capabilities.Storage.Facts != nil &&
+		capabilities.Storage.Facts.SpatialFacts
 }
 
 func normalizedTableKind(table datatype.TableInfo) string {
@@ -468,25 +425,26 @@ func normalizedTableKind(table datatype.TableInfo) string {
 func (s *DatabaseScanService) describeTableInfo(
 	ctx context.Context,
 	resource *commonModels.Engine,
-	metadataProvider plugin.ItemMetadataProvider,
+	factsProvider plugin.CatalogFactsProvider,
 	schemaName string,
 	tableName string,
 ) (datatype.TableInfo, error) {
-	item, err := metadataProvider.DescribeItem(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), plugin.CatalogPath{
+	item, err := factsProvider.DescribeCatalogFacts(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), plugin.CatalogPath{
 		Version:  plugin.CatalogPathVersion,
 		EngineID: resource.ID,
 		Segments: []plugin.CatalogSegment{
-			{Term: namespaceTermForPlugin(metadataProvider), Kind: plugin.CatalogKindNamespace, Name: schemaName},
+			{Term: namespaceRootTermForPlugin(factsProvider), Kind: namespaceRootTermForPlugin(factsProvider)},
+			{Term: namespaceTermForPlugin(factsProvider), Kind: plugin.CatalogKindNamespace, Name: schemaName},
 			{Term: plugin.CatalogTermTable, Kind: plugin.CatalogKindTable, Name: tableName},
 		},
-	}, plugin.MetadataOptions{})
+	}, plugin.CatalogFactsOptions{})
 	if err != nil {
 		return datatype.TableInfo{}, err
 	}
 	if item.Table != nil {
 		return *item.Table.Clone(), nil
 	}
-	return datatype.TableInfo{Name: tableName, Fields: normalizeDatabaseFields(plugin.ItemMetadataFields(item))}, nil
+	return datatype.TableInfo{Name: tableName}, nil
 }
 
 func mergeDatabaseTableInfo(base, described datatype.TableInfo) datatype.TableInfo {

@@ -889,7 +889,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "基于 System 管理的引擎连接信息实时浏览真实引擎 catalog，适用于扫描前选择 schema、bucket、prefix、collection、label 等范围。| Browse live engine catalog using System-managed connection information.",
+                "description": "基于 System 管理的引擎连接信息实时浏览真实引擎 catalog。请求空 path 返回显性结构 root；请求 root path 返回 schema、bucket、database、directory 等第一层业务节点。| Browse live engine catalog using System-managed connection information. Empty path returns the explicit structural root; root path returns first business branches.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1973,6 +1973,141 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "datatype.FieldInfo": {
+            "type": "object",
+            "properties": {
+                "comment": {
+                    "type": "string"
+                },
+                "default_expression": {
+                    "type": "string"
+                },
+                "generated": {
+                    "type": "boolean"
+                },
+                "generation_expression": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "native_type": {
+                    "type": "string"
+                },
+                "nullable": {
+                    "type": "boolean"
+                },
+                "ordinal_position": {
+                    "type": "integer"
+                },
+                "precision": {
+                    "type": "integer"
+                },
+                "primary_key": {
+                    "type": "boolean"
+                },
+                "scale": {
+                    "type": "integer"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "type": {
+                    "$ref": "#/definitions/datatype.FieldType"
+                }
+            }
+        },
+        "datatype.FieldType": {
+            "type": "string",
+            "enum": [
+                "unknown",
+                "string",
+                "bool",
+                "bytes",
+                "mixed",
+                "int",
+                "bigint",
+                "float",
+                "double",
+                "decimal",
+                "date",
+                "time",
+                "timestamp",
+                "json",
+                "array",
+                "uuid",
+                "geometry",
+                "point",
+                "linestring",
+                "polygon",
+                "multipoint"
+            ],
+            "x-enum-varnames": [
+                "FieldTypeUnknown",
+                "FieldTypeString",
+                "FieldTypeBool",
+                "FieldTypeBytes",
+                "FieldTypeMixed",
+                "FieldTypeInt",
+                "FieldTypeBigInt",
+                "FieldTypeFloat",
+                "FieldTypeDouble",
+                "FieldTypeDecimal",
+                "FieldTypeDate",
+                "FieldTypeTime",
+                "FieldTypeTimestamp",
+                "FieldTypeJSON",
+                "FieldTypeArray",
+                "FieldTypeUUID",
+                "FieldTypeGeometry",
+                "FieldTypePoint",
+                "FieldTypeLineString",
+                "FieldTypePolygon",
+                "FieldTypeMultiPoint"
+            ]
+        },
+        "datatype.TableInfo": {
+            "type": "object",
+            "properties": {
+                "comment": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/datatype.FieldInfo"
+                    }
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "native": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "primary_key": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "row_count": {
+                    "type": "integer"
+                },
+                "size_bytes": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_common_models.ConnectionInfo": {
             "type": "object",
             "additionalProperties": true
@@ -2385,13 +2520,45 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_system_internal_models.CatalogEntry": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "example": "namespace"
+                },
+                "leaf_count": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "public"
+                },
+                "path": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_models.CatalogPath"
+                },
+                "role": {
+                    "type": "string",
+                    "example": "branch"
+                },
+                "storage": {
+                    "$ref": "#/definitions/plugin.CatalogStorageFacts"
+                },
+                "table": {
+                    "$ref": "#/definitions/datatype.TableInfo"
+                },
+                "term": {
+                    "type": "string",
+                    "example": "schema"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_system_internal_models.CatalogListChildrenRequest": {
             "type": "object",
             "properties": {
-                "filter": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
                 "options": {
                     "$ref": "#/definitions/github_com_addp_system_internal_models.CatalogListOptions"
                 },
@@ -2406,7 +2573,7 @@ const docTemplate = `{
                 "nodes": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_addp_system_internal_models.CatalogNode"
+                        "$ref": "#/definitions/github_com_addp_system_internal_models.CatalogEntry"
                     }
                 }
             }
@@ -2425,48 +2592,6 @@ const docTemplate = `{
                 "recursive": {
                     "type": "boolean",
                     "example": false
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.CatalogNode": {
-            "type": "object",
-            "properties": {
-                "actions": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "attributes": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "is_container": {
-                    "type": "boolean",
-                    "example": true
-                },
-                "is_item": {
-                    "type": "boolean",
-                    "example": false
-                },
-                "kind": {
-                    "type": "string",
-                    "example": "namespace"
-                },
-                "name": {
-                    "type": "string",
-                    "example": "public"
-                },
-                "path": {
-                    "$ref": "#/definitions/github_com_addp_system_internal_models.CatalogPath"
-                },
-                "stats": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "term": {
-                    "type": "string",
-                    "example": "schema"
                 }
             }
         },
@@ -3276,6 +3401,29 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "plugin.CatalogStorageFacts": {
+            "type": "object",
+            "properties": {
+                "content_type": {
+                    "type": "string"
+                },
+                "etag": {
+                    "type": "string"
+                },
+                "extension": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "size_bytes": {
+                    "type": "integer"
                 }
             }
         }

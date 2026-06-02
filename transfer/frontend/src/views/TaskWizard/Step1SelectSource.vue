@@ -137,6 +137,7 @@ const selectedNode = ref(null)
 const loadingEngines = ref(false)
 const loadingNodes = ref(false)
 const supportedEncodedSourceFormats = ref(new Set(['csv', 'tsv', 'json', 'jsonl', 'geojson', 'parquet', 'shapefile']))
+const supportedRawCopyFormats = ref(defaultRawCopyFormats())
 
 const selectedEngine = computed(() => {
   return engines.value.find(engine => engine.id === formData.engineID) || null
@@ -148,10 +149,7 @@ const selectedRepresentation = computed(() => representationForSelection(selecte
 const selectedSourceLabel = computed(() => catalogPathForNode(selectedNode.value))
 const selectedSourceSummary = computed(() => buildSelectedSourceSummary(selectedNode.value))
 const selectedSourceSupported = computed(() => {
-  if (selectedDataType.value !== 'table') return false
-  if (selectedRepresentation.value === 'native') return true
-  if (selectedRepresentation.value === 'encoded') return supportedEncodedSourceFormats.value.has(selectedFormat.value)
-  return false
+  return isSupportedSourceShape(selectedDataType.value, selectedRepresentation.value, selectedFormat.value)
 })
 
 watch(selectedNode, (node) => {
@@ -185,6 +183,18 @@ async function loadCapabilities() {
       .filter(Boolean)
     if (formats.length > 0) {
       supportedEncodedSourceFormats.value = new Set(formats)
+    }
+    const rawCopyFormats = data?.raw_copy_formats || data?.rawCopyFormats || []
+    const nextRawCopyFormats = new Map()
+    rawCopyFormats.forEach(format => {
+      const value = String(format?.value || '').toLowerCase()
+      const dataType = String(format?.data_type || format?.dataType || '').toLowerCase()
+      if (value && dataType) {
+        nextRawCopyFormats.set(value, dataType)
+      }
+    })
+    if (nextRawCopyFormats.size > 0) {
+      supportedRawCopyFormats.value = nextRawCopyFormats
     }
   } catch (error) {
     ElMessage.warning(t('transfer.taskWizard.loadCapabilitiesFailedMsg'))
@@ -230,14 +240,14 @@ function normalizeTreeNode(node) {
       childrenLoaded: Array.isArray(node.children) && node.children.length > 0
     }
   }
-  normalized.metadata.catalogNode = treeNodeToCatalogNode(normalized)
+  normalized.metadata.catalogNode = treeNodeToCatalogEntry(normalized)
   normalized.metadata.selectable = isSelectableSourceItem(normalized.metadata.catalogNode)
   normalized.metadata.dataType = nodeDataType(normalized.metadata.catalogNode)
   normalized.metadata.format = nodeFormat(normalized.metadata.catalogNode)
   return normalized
 }
 
-function treeNodeToCatalogNode(node) {
+function treeNodeToCatalogEntry(node) {
   const metadata = node.metadata || {}
   const attributes = {
     ...(metadata.attributes || {}),
@@ -248,8 +258,7 @@ function treeNodeToCatalogNode(node) {
     name: node.label,
     kind: node.type,
     term: node.type,
-    is_item: isItemTreeNode(node),
-    is_container: !isItemTreeNode(node) && Boolean(node.hasChildren),
+    role: catalogRoleFromTreeNode(node),
     path: {
       segments
     },
@@ -426,19 +435,24 @@ function contentEndpointResourceFromNode(node) {
 function representationForSelection(node) {
   if (!node) return ''
   if (nodeAttribute(node, 'representation')) return nodeAttribute(node, 'representation')
+  if (nodeItemAttribute(node, 'representation')) return nodeItemAttribute(node, 'representation')
   return isContentEngine(selectedEngine.value?.engine_type) ? 'encoded' : 'native'
 }
 
 function nodeDataType(node) {
-  return nodeAttribute(node, 'data_type') || inferDataTypeFromKind(node)
+  return nodeAttribute(node, 'data_type') || nodeItemAttribute(node, 'data_type') || inferDataTypeFromKind(node)
 }
 
 function nodeFormat(node) {
-  return nodeAttribute(node, 'format') || inferFormatFromName(node?.name)
+  return nodeAttribute(node, 'format') || nodeItemAttribute(node, 'format') || inferFormatFromName(node?.name)
 }
 
 function nodeAttribute(node, key) {
   return String(node?.[key] || '').trim()
+}
+
+function nodeItemAttribute(node, key) {
+  return String(node?.attributes?.item?.[key] || '').trim()
 }
 
 function buildSelectedSourceSummary(node) {
@@ -563,20 +577,26 @@ function visibleSourceTreeNode(node) {
   return node?.type === 'engine' || node?.hasChildren || isSelectableSourceItem(node.metadata?.catalogNode)
 }
 
+function catalogRoleFromTreeNode(node) {
+  return isItemTreeNode(node) ? 'leaf' : 'branch'
+}
+
 function isSelectableSourceItem(node) {
-  if (!node?.is_item) return false
-  return Boolean(nodeDataType(node))
+  if (node?.role !== 'leaf') return false
+  return isSupportedSourceShape(nodeDataType(node), representationForSelection(node), nodeFormat(node))
 }
 
 function inferDataTypeFromKind(node) {
   const kind = String(node?.kind || node?.term || '').toLowerCase()
   if (['table', 'relation', 'collection'].includes(kind)) return 'table'
-  if (['file', 'object'].includes(kind) && node?.is_item && tableFormatFromName(node?.name)) return 'table'
+  if (['file', 'object'].includes(kind) && node?.role === 'leaf' && tableFormatFromName(node?.name)) return 'table'
+  const rawCopyDataType = rawCopyDataTypeFromName(node?.name)
+  if (['file', 'object'].includes(kind) && node?.role === 'leaf' && rawCopyDataType) return rawCopyDataType
   return ''
 }
 
 function inferFormatFromName(name) {
-  return tableFormatFromName(name)
+  return tableFormatFromName(name) || rawCopyFormatFromName(name)
 }
 
 function tableFormatFromName(name) {
@@ -592,6 +612,69 @@ function tableFormatFromName(name) {
     geojson: 'geojson'
   }
   return formats[extension] || ''
+}
+
+function rawCopyFormatFromName(name) {
+  const extension = String(name || '').split('.').pop()?.toLowerCase()
+  const aliases = {
+    jpg: 'jpeg',
+    jpeg: 'jpeg',
+    tif: 'tiff',
+    tiff: 'tiff',
+    md: 'markdown',
+    markdown: 'markdown'
+  }
+  const normalized = aliases[extension] || extension
+  return supportedRawCopyFormats.value.has(normalized) ? normalized : ''
+}
+
+function rawCopyDataTypeFromName(name) {
+  const rawCopyFormat = rawCopyFormatFromName(name)
+  return rawCopyFormat ? supportedRawCopyFormats.value.get(rawCopyFormat) : ''
+}
+
+function isSupportedSourceShape(dataType, representation, sourceFormat) {
+  const normalizedDataType = String(dataType || '').toLowerCase()
+  const normalizedRepresentation = String(representation || '').toLowerCase()
+  const normalizedFormat = String(sourceFormat || '').toLowerCase()
+  if (normalizedDataType === 'table') {
+    return normalizedRepresentation === 'native' ||
+      (normalizedRepresentation === 'encoded' && supportedEncodedSourceFormats.value.has(normalizedFormat))
+  }
+  return ['document', 'media', 'unknown'].includes(normalizedDataType) &&
+    normalizedRepresentation === 'encoded' &&
+    supportedRawCopyFormats.value.get(normalizedFormat) === normalizedDataType
+}
+
+function defaultRawCopyFormats() {
+  return new Map([
+    ['pdf', 'document'],
+    ['docx', 'document'],
+    ['pptx', 'document'],
+    ['wps', 'document'],
+    ['text', 'document'],
+    ['markdown', 'document'],
+    ['jpeg', 'media'],
+    ['png', 'media'],
+    ['gif', 'media'],
+    ['tiff', 'media'],
+    ['webp', 'media'],
+    ['bmp', 'media'],
+    ['svg', 'media'],
+    ['avif', 'media'],
+    ['heic', 'media'],
+    ['mp4', 'media'],
+    ['mov', 'media'],
+    ['mkv', 'media'],
+    ['avi', 'media'],
+    ['webm', 'media'],
+    ['mp3', 'media'],
+    ['wav', 'media'],
+    ['flac', 'media'],
+    ['aac', 'media'],
+    ['ogg', 'media'],
+    ['unknown', 'unknown']
+  ])
 }
 
 function pathNames(node) {
@@ -654,8 +737,7 @@ function restoreSourceNodeFromState(state) {
   if (savedItem) {
     return {
       ...savedItem,
-      is_item: savedItem.is_item !== false,
-      is_container: false,
+      role: savedItem.role || 'leaf',
       data_type: state.sourceDataType.value || savedItem.data_type || 'table',
       representation: state.sourceRepresentation.value || savedItem.representation || 'native',
       format: state.sourceFormat.value || savedItem.format || '',
@@ -673,8 +755,7 @@ function restoreSourceNodeFromState(state) {
       name: table,
       kind: 'table',
       term: 'table',
-      is_item: true,
-      is_container: false,
+      role: 'leaf',
       path: {
         segments: [
           schema ? { name: schema, kind: 'schema', term: 'schema' } : null,
@@ -697,8 +778,7 @@ function restoreSourceNodeFromState(state) {
       name,
       kind: 'object',
       term: 'object',
-      is_item: true,
-      is_container: false,
+      role: 'leaf',
       path: {
         segments: [
           bucket ? { name: bucket, kind: 'bucket', term: 'bucket' } : null,
@@ -723,8 +803,7 @@ function restoreSourceNodeFromState(state) {
       name,
       kind: 'file',
       term: 'file',
-      is_item: true,
-      is_container: false,
+      role: 'leaf',
       path: {
         segments: parts.map((part, index) => ({
           name: part,
@@ -762,7 +841,7 @@ function treeNodeType(node) {
   const kind = String(node?.type || node?.kind || node?.term || '').toLowerCase()
   if (kind === 'namespace') return 'schema'
   if (kind === 'root') return 'directory'
-  return kind || (node?.is_container ? 'directory' : 'object')
+  return kind || (node?.role === 'branch' ? 'directory' : 'object')
 }
 
 function catalogTreeNodeKey(node) {
@@ -781,11 +860,11 @@ function findTreeNodeById(id, nodes = sourceTreeData.value) {
 async function handleTreeNodeClick(treeNode) {
   const catalogNode = treeNode?.metadata?.catalogNode
   if (!catalogNode) return
-  if (catalogNode.is_item) {
+  if (catalogNode.role === 'leaf') {
     await selectNode(catalogNode)
     return
   }
-  if (catalogNode.is_container) {
+  if (catalogNode.role === 'branch') {
     await loadTreeNodeChildren(treeNode)
   }
 }
@@ -799,7 +878,7 @@ async function loadTreeNodeChildren(treeNode) {
   if (!target || target.metadata?.childrenLoaded) return
 
   const catalogNode = target.metadata?.catalogNode
-  if (!catalogNode?.is_container) return
+  if (catalogNode?.role !== 'branch') return
 
   loadingNodes.value = true
   try {
@@ -836,7 +915,7 @@ async function expandAndSelectTreePath(segments) {
   expandedNodeKeys.value = Array.from(keys)
   if (current) {
     currentNodeKey.value = current.id
-    if (current.metadata?.catalogNode?.is_item) {
+    if (current.metadata?.catalogNode?.role === 'leaf') {
       selectedNode.value = current.metadata.catalogNode
     }
   } else {

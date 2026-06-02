@@ -36,9 +36,6 @@ func (p Provider) Descriptor() format.FormatDescriptor {
 			string(format.ContentReaderDocumentText),
 			string(format.ContentReaderRawContent),
 		},
-		TransferRead:   true,
-		TransferWrite:  true,
-		EngineFamilies: []string{format.EngineFamilyObject, format.EngineFamilyFile, format.EngineFamilyDocument},
 	}
 	switch p.formatType {
 	case format.FormatMarkdown:
@@ -57,19 +54,6 @@ func (p Provider) Descriptor() format.FormatDescriptor {
 		}
 	}
 	return descriptor
-}
-
-func (p Provider) Capabilities() format.FormatCapability {
-	capability, ok := format.GetFormatCapability(p.formatType)
-	if ok {
-		return capability
-	}
-	return format.FormatCapability{
-		Format:        p.formatType,
-		DataType:      datatype.DataTypeDocument,
-		Layouts:       []string{format.LayoutSingle},
-		ProviderHints: []string{format.FormatProviderDocument},
-	}
 }
 
 func (p Provider) DescribeDocument(ctx context.Context, input io.Reader, options *format.ParseOptions) (*datatype.DocumentInfo, error) {

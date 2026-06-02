@@ -30,4 +30,3 @@
 - 任务配置：[Transfer 模块基本概念及配置说明](transfer-基本概念及配置说明.md)
 - 引擎能力：[ADDP 引擎能力声明规范](../../docs/spec/addp引擎能力声明规范.md)
 - 格式能力：[ADDP 数据类型与格式能力规范](../../docs/spec/addp数据类型与格式能力规范.md)
-- 推进记录：[Transfer 基于 common engine / format 的改造进展](../../docs/next/transfer基于common-engine-format改造设计.md)

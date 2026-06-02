@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -9,7 +10,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestTableAttributesCarriesTableNativeFacts(t *testing.T) {
+func TestTabularCatalogEntryCarriesTableInfo(t *testing.T) {
 	updatedAt := time.Unix(200, 0)
 	table := datatype.TableInfo{
 		Name:      "orders",
@@ -20,28 +21,58 @@ func TestTableAttributesCarriesTableNativeFacts(t *testing.T) {
 		},
 	}
 
-	attrs := tableAttributes("analytics", table)
+	node := tabularCatalogEntryFromFacts(CatalogPath{Version: CatalogPathVersion}, "orders", "table", &CatalogFacts{
+		Kind:      CatalogKindTable,
+		Table:     table.Clone(),
+		UpdatedAt: &updatedAt,
+	})
+	if node.Table == nil {
+		t.Fatalf("node = %#v, want table info", node)
+	}
 	table.Native["engine"] = "Log"
 
-	if attrs["namespace"] != "analytics" || attrs["table"] != "orders" {
-		t.Fatalf("table identity attrs = %#v", attrs)
+	if node.Table.Name != "orders" {
+		t.Fatalf("Table.Name = %q, want orders", node.Table.Name)
 	}
-	if attrs["comment"] != "order facts" {
-		t.Fatalf("comment attr = %#v, want order facts", attrs["comment"])
+	if node.Table.Comment != "order facts" {
+		t.Fatalf("Table.Comment = %#v, want order facts", node.Table.Comment)
 	}
-	if attrs["updated_at"] != &updatedAt {
-		t.Fatalf("updated_at attr = %#v, want original pointer", attrs["updated_at"])
+	if node.UpdatedAt == nil || !node.UpdatedAt.Equal(updatedAt) {
+		t.Fatalf("UpdatedAt = %#v, want %v", node.UpdatedAt, updatedAt)
 	}
-	native, ok := attrs["native"].(map[string]interface{})
-	if !ok || native["engine"] != "MergeTree" {
-		t.Fatalf("native attrs = %#v, want copied engine", attrs["native"])
+	if node.Table.Native["engine"] != "MergeTree" {
+		t.Fatalf("Table.Native = %#v, want copied engine", node.Table.Native)
 	}
 }
 
-func TestBuildTabularItemMetadataCarriesTableInfo(t *testing.T) {
+func TestTabularNamespaceCatalogEntryUsesLeafCount(t *testing.T) {
+	root := CatalogRootPath(TabularCatalogModel(CatalogTermDatabase), 7)
+
+	node := TabularNamespaceCatalogEntry(root, CatalogTermDatabase, "analytics", 3)
+
+	if node.LeafCount == nil || *node.LeafCount != 3 {
+		t.Fatalf("LeafCount = %#v, want 3", node.LeafCount)
+	}
+	data, err := json.Marshal(node)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := payload["leaf_count"]; !ok {
+		t.Fatalf("payload = %s, want leaf_count", data)
+	}
+	if _, ok := payload["table_count"]; ok {
+		t.Fatalf("payload = %s, must not contain table_count", data)
+	}
+}
+
+func TestBuildTabularCatalogFactsCarriesTableInfo(t *testing.T) {
 	rowCount := int64(42)
 	updatedAt := time.Unix(300, 0)
-	item := buildTabularItemMetadata(CatalogPath{
+	item := buildTabularCatalogFacts(CatalogPath{
 		Version:  CatalogPathVersion,
 		EngineID: 7,
 		Segments: []CatalogSegment{
@@ -60,9 +91,9 @@ func TestBuildTabularItemMetadataCarriesTableInfo(t *testing.T) {
 		Native: map[string]interface{}{
 			"engine": "MergeTree",
 		},
-	}, true, CatalogKindTable, nil, nil, nil)
+	}, true, CatalogKindTable, nil)
 	if item.Table == nil {
-		t.Fatal("ItemMetadata.Table is nil")
+		t.Fatal("CatalogFacts.Table is nil")
 	}
 	if item.Table.Name != "orders" || item.Table.Kind != "view" || item.Table.Comment != "order facts" {
 		t.Fatalf("Table = %#v", item.Table)
@@ -81,9 +112,9 @@ func TestBuildTabularItemMetadataCarriesTableInfo(t *testing.T) {
 	}
 }
 
-func TestTabularCatalogNodeFromItemCarriesAttributes(t *testing.T) {
+func TestTabularCatalogEntryFromFactsCarriesTableInfo(t *testing.T) {
 	rowCount := int64(10)
-	item := &ItemMetadata{
+	facts := &CatalogFacts{
 		Table: &datatype.TableInfo{
 			Name:     "orders",
 			Kind:     "view",
@@ -93,24 +124,23 @@ func TestTabularCatalogNodeFromItemCarriesAttributes(t *testing.T) {
 		},
 	}
 
-	node := tabularCatalogNodeFromItem(CatalogPath{Version: CatalogPathVersion}, "orders", "view", item)
+	node := tabularCatalogEntryFromFacts(CatalogPath{Version: CatalogPathVersion}, "orders", "view", facts)
 
-	if node.Kind != "view" || !node.IsItem {
-		t.Fatalf("node kind/is_item = %q/%v", node.Kind, node.IsItem)
+	if node.Kind != "view" || node.Role != CatalogRoleLeaf {
+		t.Fatalf("node kind/role = %q/%q", node.Kind, node.Role)
 	}
-	if node.Stats["row_count"] != int64(10) {
-		t.Fatalf("Stats = %#v", node.Stats)
+	if node.Table == nil || node.Table.RowCount == nil || *node.Table.RowCount != int64(10) {
+		t.Fatalf("Table.RowCount = %#v", node.Table)
 	}
-	native, ok := node.Attributes["native"].(map[string]interface{})
-	if node.Attributes["comment"] != "orders" || !ok || native["engine"] != "MergeTree" {
-		t.Fatalf("Attributes = %#v", node.Attributes)
+	if node.Table == nil || node.Table.Comment != "orders" || node.Table.Native["engine"] != "MergeTree" {
+		t.Fatalf("Table = %#v", node.Table)
 	}
 }
 
 func TestDescribeTabularItemOnlyRunsRowCountWhenStatisticsRequested(t *testing.T) {
 	rowCountCalls := 0
 	callbacks := TabularCatalogCallbacks{
-		ListNamespaces: func(context.Context, *gorm.DB) ([]NamespaceInfo, error) {
+		ListNamespaces: func(context.Context, *gorm.DB, CatalogPath) ([]CatalogEntry, error) {
 			return nil, nil
 		},
 		ListTables: func(context.Context, *gorm.DB, string) ([]datatype.TableInfo, error) {
@@ -129,6 +159,7 @@ func TestDescribeTabularItemOnlyRunsRowCountWhenStatisticsRequested(t *testing.T
 		Version:  CatalogPathVersion,
 		EngineID: engine.ID,
 		Segments: []CatalogSegment{
+			{Term: CatalogTermServer, Kind: CatalogTermServer},
 			{Term: CatalogTermDatabase, Kind: CatalogKindNamespace, Name: "analytics"},
 			{Term: CatalogTermTable, Kind: CatalogKindTable, Name: "orders"},
 		},
@@ -140,9 +171,9 @@ func TestDescribeTabularItemOnlyRunsRowCountWhenStatisticsRequested(t *testing.T
 		ClosePool(engine.ID)
 	})
 
-	item, err := DescribeTabularItem(context.Background(), callbacks, engine, path, MetadataOptions{})
+	item, err := DescribeTabularCatalogFacts(context.Background(), callbacks, engine, path, CatalogFactsOptions{})
 	if err != nil {
-		t.Fatalf("DescribeTabularItem() error = %v", err)
+		t.Fatalf("DescribeTabularCatalogFacts() error = %v", err)
 	}
 	if rowCountCalls != 0 {
 		t.Fatalf("row count calls = %d, want 0 without IncludeStatistics", rowCountCalls)
@@ -151,9 +182,9 @@ func TestDescribeTabularItemOnlyRunsRowCountWhenStatisticsRequested(t *testing.T
 		t.Fatalf("Table.RowCount = %#v, want nil without IncludeStatistics", item.Table.RowCount)
 	}
 
-	item, err = DescribeTabularItem(context.Background(), callbacks, engine, path, MetadataOptions{IncludeStatistics: true})
+	item, err = DescribeTabularCatalogFacts(context.Background(), callbacks, engine, path, CatalogFactsOptions{IncludeStatistics: true})
 	if err != nil {
-		t.Fatalf("DescribeTabularItem(IncludeStatistics) error = %v", err)
+		t.Fatalf("DescribeTabularCatalogFacts(IncludeStatistics) error = %v", err)
 	}
 	if rowCountCalls != 1 {
 		t.Fatalf("row count calls = %d, want 1 with IncludeStatistics", rowCountCalls)

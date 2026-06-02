@@ -31,7 +31,7 @@
 | `document` | 以阅读、正文提取、全文索引为主 | `DocumentInfoProvider`，需要后端文本时实现 `DocumentTextReader`；否则至少声明 raw / range content reader |
 | `media` | 图片、视频、音频等可感知媒体 | `MediaInfoProvider`，需要缩略图时实现 media content reader |
 | `container` | 内部包含 sheet、table、layer、entry 等子对象 | `ContainerInfoProvider` / `ContainerChildResolver`；父容器先写入轻量 `type_info.container`，child 内容按需解析 |
-| `graph` | 节点、边、关系结构 | 引擎原生图使用 `GraphMetadataProvider` / `GraphSampleProvider`；文件型图数据先补对应 format 能力 |
+| `graph` | 节点、边、关系结构 | 引擎原生图使用 `CatalogFactsProvider` 的 `CatalogFacts.Graph` / `GraphSampleProvider`；文件型图数据先补对应 format 能力 |
 | `unknown` | 暂不能归类 | 只保留 storage、item 和必要 raw / range content 能力 |
 
 只有以上数据类型无法表达用户理解方式、内容读取方式和治理方式时，才新增 data type。新增 data type 必须先修订概念文档和能力规范。
@@ -75,7 +75,6 @@ type Plugin struct{}
 
 func (p *Plugin) Format() format.FormatType
 func (p *Plugin) Descriptor() format.FormatDescriptor
-func (p *Plugin) Capabilities() format.FormatCapability
 ```
 
 `Descriptor()` 必须声明：
@@ -90,9 +89,9 @@ func (p *Plugin) Capabilities() format.FormatCapability
 | `Providers` | 声明 info provider 能力 |
 | `ContentReaders` | 声明内容读取能力 |
 
-`Capabilities()` 表达当前实现实际具备的能力。descriptor 是格式身份声明；capability 是实现能力声明；二者都不是某个 data item 的扫描结果。
+`Descriptor()` 是格式身份与声明能力的唯一静态事实源，不是某个 data item 的扫描结果。当前进程实际加载了哪些 provider / reader，由 `ListFormatSupportViews()` 的 `implementations` 字段派生表达。
 
-如果该格式暂时只有识别、默认 data type、layout、transfer 或 content reader 声明，没有后端解析实现，也要建立 descriptor-only plugin 包并实现 `Descriptor()` / `Capabilities()`。不要把新格式补到 `common/format/registry/descriptor.go`；该目录只保留运行时注册表机制。
+如果该格式暂时只有识别、默认 data type、layout 或 content reader 声明，没有后端解析实现，也要建立 descriptor-only plugin 包并实现 `Descriptor()`。不要把新格式补到 `common/format/registry/descriptor.go`；该目录只保留运行时注册表机制。
 
 ## 4. 实现 provider 和 reader
 
@@ -185,9 +184,9 @@ import _ "github.com/addp/common/format/plugins/<format>"
 | 变更 | 应修改的位置 |
 |---|---|
 | 新增稳定内置 format ID | 新建 `common/format/plugins/<format>/`，实现 `Descriptor()`，并加入 `common/format/builtin/init.go` |
-| 已有 format 补解析、预览、样本、批量读写能力 | 修改已有 `common/format/plugins/<format>/`，必要时更新同目录测试 |
+| 已有 format 补解析、预览、样本、连续读写实现 | 修改已有 `common/format/plugins/<format>/`，必要时更新同目录测试 |
 | 仅第三方或实验格式 | 通过 plugin manifest 或独立包调用 `RegisterFormatPlugin` / `RegisterFormatDescriptor`，不进入内置加载入口 |
-| Manager 需要消费新格式 | 优先消费 capability view、provider / reader 和已入库 attributes，不新增按后缀或引擎类型的 switch |
+| Manager 需要消费新格式 | 优先消费 descriptor、provider / reader 和已入库 attributes，不新增按后缀或引擎类型的 switch |
 
 ## 6. 确认 Meta 是否已有通用消费链路
 
@@ -214,7 +213,7 @@ FormatPlugin 不生成最终 data item，但新增格式不必然修改 Meta。�
 新增或修改格式后至少验证：
 
 1. `FormatPlugin.Descriptor()` 的 format、data type、layouts、identification、providers、content readers 正确。
-2. `RegisterFormatPlugin` 后，`ListFormatCapabilityViews()` 能看到声明能力和实现状态。
+2. `RegisterFormatPlugin` 后，`ListFormatSupportViews()` 能看到声明能力和实现状态。
 3. Meta 扫描生成正确数量的 data item。
 4. `meta_item.name/full_name/item_type/node_id` 符合探测器规范。
 5. `attributes.item/type_info/format_info/access_index/capabilities` 没有重复事实源。

@@ -65,17 +65,29 @@ func DescriptorFromAttributes(attrs map[string]interface{}) ItemDescriptor {
 	}
 	itemAttrs := asMap(attrs["item"])
 	storageAttrs := asMap(attrs["storage"])
+	layout := Layout(strings.ToLower(strings.TrimSpace(asString(itemAttrs["layout"]))))
+	physicalPath := normalizeTargetPath(asString(storageAttrs["physical_path"]))
+	storagePath := normalizeStoragePath(asString(storageAttrs["path"]))
+	primaryContentPath := ""
+	scopePath := ""
+	switch layout {
+	case LayoutWhole:
+		scopePath = firstNonEmpty(physicalPath, storagePath)
+	case LayoutSingle, LayoutMulti:
+		primaryContentPath = physicalPath
+	}
 	return ItemDescriptor{
-		Layout:        Layout(strings.ToLower(strings.TrimSpace(asString(itemAttrs["layout"])))),
-		DataType:      DataType(strings.ToLower(strings.TrimSpace(asString(itemAttrs["data_type"])))),
-		Format:        string(format.NormalizeFormat(asString(itemAttrs["format"]))),
-		EntryPath:     normalizeTargetPath(asString(itemAttrs["entry_path"])),
-		PhysicalPath:  normalizeTargetPath(asString(storageAttrs["physical_path"])),
-		StoragePath:   normalizeStoragePath(asString(storageAttrs["path"])),
-		StorageName:   strings.Trim(strings.TrimSpace(asString(storageAttrs["name"])), "/"),
-		StorageBucket: strings.Trim(strings.TrimSpace(asString(storageAttrs["bucket"])), "/"),
-		Refs:          refsFromAttributes(itemAttrs["refs"]),
-		SizeBytes:     sizeBytesFromAttributes(storageAttrs),
+		Layout:             layout,
+		DataType:           DataType(strings.ToLower(strings.TrimSpace(asString(itemAttrs["data_type"])))),
+		Format:             string(format.NormalizeFormat(asString(itemAttrs["format"]))),
+		PrimaryContentPath: primaryContentPath,
+		ScopePath:          scopePath,
+		PhysicalPath:       physicalPath,
+		StoragePath:        storagePath,
+		StorageName:        strings.Trim(strings.TrimSpace(asString(storageAttrs["name"])), "/"),
+		StorageBucket:      strings.Trim(strings.TrimSpace(asString(storageAttrs["bucket"])), "/"),
+		Refs:               refsFromAttributes(itemAttrs["refs"]),
+		SizeBytes:          sizeBytesFromAttributes(storageAttrs),
 	}
 }
 
@@ -132,6 +144,15 @@ func sizeBytesFromAttributes(storageAttrs map[string]interface{}) *int64 {
 		}
 	}
 	return nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func resolveMultiItems(candidates []Candidate, result *ResolveResult) {
@@ -256,16 +277,16 @@ func matchMultiRule(candidates []Candidate, rule FormatRule, claims map[string]b
 		}
 		size := total
 		item := ResolvedItem{
-			Name:            entry.Name,
-			FullName:        entry.Path,
-			Layout:          LayoutMulti,
-			DataType:        rule.DataType,
-			Format:          rule.Format,
-			EntryPath:       entry.Path,
-			RefPaths:        refPaths,
-			RefList:         refList,
-			SizeBytes:       &size,
-			DetectionReason: "multi_refs",
+			Name:               entry.Name,
+			FullName:           entry.Path,
+			Layout:             LayoutMulti,
+			DataType:           rule.DataType,
+			Format:             rule.Format,
+			PrimaryContentPath: entry.Path,
+			RefPaths:           refPaths,
+			RefList:            refList,
+			SizeBytes:          &size,
+			DetectionReason:    "multi_refs",
 			Properties: map[string]interface{}{
 				"base_name": strings.TrimSuffix(entry.Name, filepath.Ext(entry.Name)),
 			},
@@ -467,7 +488,7 @@ func matchWholeScopeRule(candidates []Candidate, rule FormatRule, claims map[str
 		Layout:          LayoutWhole,
 		DataType:        rule.DataType,
 		Format:          rule.Format,
-		EntryPath:       scopePath,
+		ScopePath:       scopePath,
 		RefPaths:        refPaths,
 		RefList:         refs,
 		SizeBytes:       &size,
@@ -517,15 +538,15 @@ func resolveSingleItems(candidates []Candidate, result *ResolveResult, input Res
 			sizePtr = &size
 		}
 		item := ResolvedItem{
-			Name:            candidate.Name,
-			FullName:        candidate.Path,
-			Layout:          LayoutSingle,
-			DataType:        dataType,
-			Format:          formatName,
-			EntryPath:       candidate.Path,
-			SizeBytes:       sizePtr,
-			DetectionReason: "single_resource",
-			Properties:      cloneMap(candidate.Properties),
+			Name:               candidate.Name,
+			FullName:           candidate.Path,
+			Layout:             LayoutSingle,
+			DataType:           dataType,
+			Format:             formatName,
+			PrimaryContentPath: candidate.Path,
+			SizeBytes:          sizePtr,
+			DetectionReason:    "single_resource",
+			Properties:         cloneMap(candidate.Properties),
 		}
 		result.Items = append(result.Items, item)
 		result.Claims[candidate.Path] = true
@@ -632,7 +653,7 @@ func ContainerChildInfoFromResolvedItem(item ResolvedItem) datatype.ContainerChi
 	}
 	delete(native, "refs")
 	delete(native, "ref_paths")
-	native["path"] = item.EntryPath
+	native["path"] = item.PrimaryContentPath
 	return datatype.ContainerChildInfo{
 		Name:      item.Name,
 		ChildKind: kind,

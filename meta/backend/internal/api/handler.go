@@ -117,25 +117,41 @@ func (h *Handler) GetEngines(c *gin.Context) {
 	c.JSON(http.StatusOK, engines)
 }
 
-// AutoScan 自动扫描所有未扫描的资源
-// @Summary 自动扫描未扫描资源 | Auto scan unscanned resources
-// @Description 扫描当前租户下尚未完成元数据扫描的资源 | Scan resources that have not been scanned for current tenant
+// AutoScan 提交未扫描资源的后台扫描运行
+// @Summary 提交未扫描资源后台扫描 | Submit background scans for unscanned resources
+// @Description 为当前租户下尚未完成元数据扫描的资源创建后台扫描运行 | Create background scan runs for resources that have not been scanned for current tenant
 // @Tags Meta Scan
 // @Produce json
-// @Success 200 {object} map[string]interface{} "扫描结果 | Scan result"
+// @Success 202 {object} map[string]interface{} "已提交的扫描运行 | Submitted scan runs"
+// @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
+// @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @Router /scan/auto [post]
 // @Security BearerAuth
 func (h *Handler) AutoScan(c *gin.Context) {
-	tenantID := commonAuth.GetTenantID(c)
+	if h.taskService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "task service not available"})
+		return
+	}
 
-	result, err := h.scanService.AutoScanUnscanned(tenantID)
+	tenantID := commonAuth.GetTenantID(c)
+	userID := commonAuth.GetUserID(c)
+	token, ok := extractBearerToken(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authorization token"})
+		return
+	}
+
+	runs, err := h.taskService.CreateAutoRuns(c.Request.Context(), tenantID, userID, token)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, result)
+	c.JSON(http.StatusAccepted, gin.H{
+		"runs":      runs,
+		"submitted": len(runs),
+	})
 }
 
 // CreateManualScanRun 创建异步扫描运行
@@ -511,58 +527,6 @@ func (h *Handler) ListScanTasks(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, tasks)
-}
-
-// ScanEngine 扫描指定引擎
-// @Summary 扫描指定引擎 | Scan engine
-// @Description 对指定引擎执行元数据扫描 | Execute metadata scan for an engine
-// @Tags Meta Scan
-// @Accept json
-// @Produce json
-// @Param request body models.ScanRequest true "扫描请求 | Scan request"
-// @Success 200 {object} models.ScanResponse "扫描结果 | Scan result"
-// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /scan/engine [post]
-// @Security BearerAuth
-func (h *Handler) ScanEngine(c *gin.Context) {
-	tenantID := commonAuth.GetTenantID(c)
-
-	var req models.ScanRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	// 提取JWT token（服务间调用时 token 可为空，因为使用 X-Internal-API-Key 认证）
-	token := c.GetHeader("Authorization")
-	if len(token) > 7 && token[:7] == "Bearer " {
-		token = token[7:]
-	}
-	// 注意：不强制要求 token，服务间调用通过 X-Internal-API-Key 认证（middleware 已处理）
-	// tenantID 已从 middleware 提取（line 494），用于多租户数据过滤
-
-	scanDepth := req.ScanDepth
-	if scanDepth == "" {
-		scanDepth = "basic"
-	}
-	result, err := h.scanService.ScanEngineWithOptions(service.ScanOptions{
-		EngineID:     req.EngineID,
-		TenantID:     tenantID,
-		CatalogPaths: req.CatalogPaths,
-		Token:        token,
-		ScanDepth:    scanDepth,
-		Force:        req.Force,
-		NodeID:       req.NodeID,
-		ItemID:       req.ItemID,
-		Targets:      req.Targets,
-	})
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, result)
 }
 
 // RefreshItem 刷新已知数据项

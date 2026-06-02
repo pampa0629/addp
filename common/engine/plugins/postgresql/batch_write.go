@@ -43,8 +43,8 @@ func (p *PostgreSQLPlugin) WriteBatch(ctx context.Context, connInfo plugin.Conne
 	defer db.Close()
 
 	chunkSize := postgresDefaultInsertChunkSize
-	if batch.Metadata != nil {
-		if value, ok := batch.Metadata["chunk_size"].(int); ok && value > 0 {
+	if batch.Hints != nil {
+		if value, ok := batch.Hints["chunk_size"].(int); ok && value > 0 {
 			chunkSize = value
 		}
 	}
@@ -79,8 +79,8 @@ func (p *PostgreSQLPlugin) WriteBatch(ctx context.Context, connInfo plugin.Conne
 
 func shouldUseCopyBatchWrite(opts plugin.BatchWriteOptions, batch *plugin.BatchData) bool {
 	method := strings.ToLower(strings.TrimSpace(opts.Method))
-	if batch != nil && batch.Metadata != nil {
-		if value, ok := batch.Metadata["write_method"].(string); ok && strings.TrimSpace(value) != "" {
+	if batch != nil && batch.Hints != nil {
+		if value, ok := batch.Hints["write_method"].(string); ok && strings.TrimSpace(value) != "" {
 			method = strings.ToLower(strings.TrimSpace(value))
 		}
 	}

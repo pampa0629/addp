@@ -244,12 +244,12 @@ func onDemandDetectedItemFromDescriptor(descriptor dataitem.ItemDescriptor, phys
 	}
 	return &metaitem.DetectedItem{
 		ResolvedItem: dataitem.ResolvedItem{
-			Layout:    descriptor.Layout,
-			DataType:  descriptor.DataType,
-			Format:    descriptor.Format,
-			EntryPath: descriptor.EntryPath,
-			SizeBytes: &sizeBytes,
-			RefList:   descriptor.Refs,
+			Layout:             descriptor.Layout,
+			DataType:           descriptor.DataType,
+			Format:             descriptor.Format,
+			PrimaryContentPath: descriptor.PrimaryContentPath,
+			SizeBytes:          &sizeBytes,
+			RefList:            descriptor.Refs,
 		},
 		PhysicalPath: physicalPath,
 	}

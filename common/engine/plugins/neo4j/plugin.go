@@ -64,29 +64,22 @@ func (p *Neo4jPlugin) StoreSemantics() plugin.StoreSemantics {
 
 func (p *Neo4jPlugin) graphCatalogCallbacks() plugin.GraphCatalogCallbacks {
 	return plugin.GraphCatalogCallbacks{
-		ListDatabasesFunc:    p.listDatabases,
+		ListNamespacesFunc:   p.listDatabases,
 		DescribeGraphFunc:    p.describeGraph,
 		IsSystemDatabaseFunc: p.IsSystemDatabase,
 	}
 }
 
-func (p *Neo4jPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogNode, error) {
+func (p *Neo4jPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.CatalogPath, opts plugin.ListOptions) ([]plugin.CatalogEntry, error) {
 	return plugin.ListGraphCatalogChildren(ctx, p.graphCatalogCallbacks(), parent.EngineID, connInfo, parent, opts)
 }
 
-func (p *Neo4jPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogNode, error) {
+func (p *Neo4jPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) (*plugin.CatalogEntry, error) {
 	return plugin.ResolveGraphCatalogPath(ctx, p.graphCatalogCallbacks(), path.EngineID, connInfo, path)
 }
 
-func (p *Neo4jPlugin) DescribeItem(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
-	return plugin.DescribeGraphItem(ctx, p.graphCatalogCallbacks(), path.EngineID, connInfo, path, opts)
-}
-
-func (p *Neo4jPlugin) DescribeGraph(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.MetadataOptions) (*datatype.GraphInfo, error) {
-	if len(path.Segments) == 0 {
-		return nil, fmt.Errorf("Neo4j graph path requires database segment")
-	}
-	return p.describeGraph(ctx, connInfo, path.Segments[0].Name, opts)
+func (p *Neo4jPlugin) DescribeCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+	return plugin.DescribeGraphCatalogFacts(ctx, p.graphCatalogCallbacks(), path.EngineID, connInfo, path, opts)
 }
 
 func (p *Neo4jPlugin) QueryLanguages() []string {
@@ -107,8 +100,9 @@ func (p *Neo4jPlugin) ExecuteGraphQuery(ctx context.Context, connInfo plugin.Con
 
 func (p *Neo4jPlugin) SampleGraph(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.GraphSampleOptions) (*plugin.GraphData, error) {
 	database := getDatabase(connInfo)
-	if len(path.Segments) > 0 && path.Segments[0].Name != "" {
-		database = path.Segments[0].Name
+	segments := plugin.CatalogPathWithoutRoot(path).Segments
+	if len(segments) > 0 && segments[0].Name != "" {
+		database = segments[0].Name
 	}
 	sampleConn := cloneConnectionInfo(connInfo)
 	sampleConn["database"] = database
@@ -259,7 +253,7 @@ func getDatabase(connInfo plugin.ConnectionInfo) string {
 
 // listDatabases lists databases for the catalog callbacks.
 // Neo4j CE 只有一个默认数据库 "neo4j"
-func (p *Neo4jPlugin) listDatabases(ctx context.Context, connInfo plugin.ConnectionInfo) ([]plugin.DatabaseInfo, error) {
+func (p *Neo4jPlugin) listDatabases(ctx context.Context, connInfo plugin.ConnectionInfo, root plugin.CatalogPath) ([]plugin.CatalogEntry, error) {
 	driver, err := p.createDriver(ctx, connInfo)
 	if err != nil {
 		return nil, err
@@ -276,16 +270,16 @@ func (p *Neo4jPlugin) listDatabases(ctx context.Context, connInfo plugin.Connect
 	if err != nil {
 		// CE 版可能不支持 SHOW DATABASES，直接返回默认数据库
 		dbName := getDatabase(connInfo)
-		return []plugin.DatabaseInfo{{Name: dbName}}, nil
+		return []plugin.CatalogEntry{neo4jDatabaseCatalogEntry(root, dbName)}, nil
 	}
 
 	records, err := result.Collect(ctx)
 	if err != nil || len(records) == 0 {
 		dbName := getDatabase(connInfo)
-		return []plugin.DatabaseInfo{{Name: dbName}}, nil
+		return []plugin.CatalogEntry{neo4jDatabaseCatalogEntry(root, dbName)}, nil
 	}
 
-	databases := make([]plugin.DatabaseInfo, 0, len(records))
+	databases := make([]plugin.CatalogEntry, 0, len(records))
 	for _, record := range records {
 		name, ok := record.Get("name")
 		if !ok {
@@ -295,15 +289,33 @@ func (p *Neo4jPlugin) listDatabases(ctx context.Context, connInfo plugin.Connect
 		if !ok || p.IsSystemDatabase(dbName) {
 			continue
 		}
-		databases = append(databases, plugin.DatabaseInfo{Name: dbName})
+		databases = append(databases, neo4jDatabaseCatalogEntry(root, dbName))
 	}
 
 	if len(databases) == 0 {
 		dbName := getDatabase(connInfo)
-		databases = []plugin.DatabaseInfo{{Name: dbName}}
+		databases = []plugin.CatalogEntry{neo4jDatabaseCatalogEntry(root, dbName)}
 	}
 
 	return databases, nil
+}
+
+func neo4jDatabaseCatalogEntry(root plugin.CatalogPath, name string) plugin.CatalogEntry {
+	return plugin.CatalogEntry{
+		Name: name,
+		Path: plugin.CatalogPath{
+			Version:  root.Version,
+			EngineID: root.EngineID,
+			Segments: append(append([]plugin.CatalogSegment(nil), root.Segments...), plugin.CatalogSegment{
+				Term: plugin.CatalogTermDatabase,
+				Kind: plugin.CatalogKindNamespace,
+				Name: name,
+			}),
+		},
+		Term: plugin.CatalogTermDatabase,
+		Kind: plugin.CatalogKindNamespace,
+		Role: plugin.CatalogRoleBranch,
+	}
 }
 
 // IsSystemDatabase 判断是否为系统数据库
@@ -318,7 +330,7 @@ func (p *Neo4jPlugin) IsSystemDatabase(databaseName string) bool {
 	return false
 }
 
-func (p *Neo4jPlugin) describeGraph(ctx context.Context, connInfo plugin.ConnectionInfo, database string, opts plugin.MetadataOptions) (*datatype.GraphInfo, error) {
+func (p *Neo4jPlugin) describeGraph(ctx context.Context, connInfo plugin.ConnectionInfo, database string, opts plugin.CatalogFactsOptions) (*datatype.GraphInfo, error) {
 	driver, err := p.createDriver(ctx, connInfo)
 	if err != nil {
 		return nil, err

@@ -198,7 +198,7 @@
 `system.engines.capabilities` 使用 `engine.capabilities/v1` 结构。内置引擎的事实来源是引擎插件的 `Capabilities()` 方法；System 服务启动时会基于当前插件体系刷新已注册引擎能力。Engine API 创建或更新引擎时，如果调用方未提供能力声明，System 会按 `engine_type` 生成当前结构；Registry 注册接口提交能力时也必须使用该结构。
 
 **边界**：
-- 该字段只表达引擎自身能力，例如 catalog、metadata、store、query、workflow、script。
+- 该字段只表达引擎自身能力，例如 catalog、facts、store、query、workflow、script。
 - 不表达 Transfer、Manager Preview、Meta 等 ADDP 模块对某个引擎的适配状态。
 - 上层模块可以读取该字段形成自己的执行策略，但模块适配情况不写回该字段。
 - 旧版 `storage[]` / `compute[]`、`dev_modes`、`supported_sources` 结构已不再兼容，发现后应刷新为当前结构。
@@ -219,7 +219,7 @@ type EngineCapabilities struct {
 type StorageCapabilities struct {
     CatalogModel *CatalogModelSpec   `json:"catalog_model,omitempty"`
     Catalog      *CatalogCapability  `json:"catalog,omitempty"`
-    Metadata     *MetadataCapability `json:"metadata,omitempty"`
+    Facts        *CatalogFactsCapability `json:"facts,omitempty"`
     Store        *StoreCapability    `json:"store,omitempty"`
     Semantics    []string            `json:"semantics,omitempty"`
     NotSupported []string            `json:"not_supported,omitempty"`
@@ -239,7 +239,7 @@ type ComputeCapabilities struct {
 | `schema_version` | 固定为 `engine.capabilities/v1` |
 | `engine_type` | 引擎类型，如 `postgresql`、`mysql`、`python_workflow` |
 | `engine_family` | 粗粒度引擎族，如 `tabular`、`object`、`file`、`dynamic_schema`、`graph`、`workflow`、`script` |
-| `storage` | 存储、目录、元数据、内容访问能力 |
+| `storage` | 存储、目录、catalog facts、内容访问能力 |
 | `compute` | 查询、工作流、脚本或 Notebook 运行能力 |
 | `limits` | 跨能力限制，有真实调用方时使用 |
 | `extensions` | 引擎特有补充信息，不得替代核心字段 |
@@ -262,7 +262,7 @@ type ComputeCapabilities struct {
       ]
     },
     "catalog": {"supported": true, "real_time": true, "system_filtering": true},
-    "metadata": {"supported": true, "field_schema": true, "statistics": true, "indexes": true, "constraints": true, "spatial_metadata": true, "native_metadata": true},
+    "facts": {"supported": true, "field_info": true, "statistics": true, "indexes": true, "constraints": true, "spatial_facts": true, "native_facts": true},
     "store": {"batch_read": true, "table_read_session": true, "batch_write": true, "table_write_session": true, "table_write_prepare": true, "delete": true}
   },
   "compute": {

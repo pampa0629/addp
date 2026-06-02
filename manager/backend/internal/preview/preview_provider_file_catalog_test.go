@@ -134,24 +134,23 @@ func (p *recordingFileCatalogPreviewPlugin) Capabilities() plugin.EngineCapabili
 func (p *recordingFileCatalogPreviewPlugin) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemantics{}
 }
-func (p *recordingFileCatalogPreviewPlugin) ListChildren(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.ListOptions) ([]plugin.CatalogNode, error) {
+func (p *recordingFileCatalogPreviewPlugin) ListChildren(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.ListOptions) ([]plugin.CatalogEntry, error) {
 	return nil, nil
 }
-func (p *recordingFileCatalogPreviewPlugin) ResolvePath(context.Context, plugin.ConnectionInfo, plugin.CatalogPath) (*plugin.CatalogNode, error) {
+func (p *recordingFileCatalogPreviewPlugin) ResolvePath(context.Context, plugin.ConnectionInfo, plugin.CatalogPath) (*plugin.CatalogEntry, error) {
 	return nil, nil
 }
-func (p *recordingFileCatalogPreviewPlugin) DescribeItem(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.MetadataOptions) (*plugin.ItemMetadata, error) {
+func (p *recordingFileCatalogPreviewPlugin) DescribeCatalogFacts(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
 	p.describedItemPath = path
 	now := time.Now()
-	return &plugin.ItemMetadata{
+	sizeBytes := int64(1024)
+	return &plugin.CatalogFacts{
 		Path: path,
 		Kind: plugin.CatalogKindFile,
-		Stats: map[string]interface{}{
-			"size_bytes": int64(1024),
-		},
-		Attributes: map[string]interface{}{
-			"path":         path.StringPath(),
-			"content_type": "application/vnd.sqlite3",
+		Storage: &plugin.CatalogStorageFacts{
+			Path:        path.StringPath(),
+			ContentType: "application/vnd.sqlite3",
+			SizeBytes:   &sizeBytes,
 		},
 		UpdatedAt: &now,
 	}, nil

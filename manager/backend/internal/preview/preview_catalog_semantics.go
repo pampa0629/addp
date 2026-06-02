@@ -19,7 +19,7 @@ func IsContentCatalogEngine(engineType string) bool {
 	return isObjectStorageType(engineType) || isFileSystemType(engineType)
 }
 
-func previewRequestCatalogItemTerm(req *PreviewRequest) string {
+func previewRequestCatalogLeafTerm(req *PreviewRequest) string {
 	if req == nil {
 		return ""
 	}

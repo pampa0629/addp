@@ -81,7 +81,7 @@ func (p *JupyterPlugin) OpenSession(ctx context.Context, connInfo plugin.Connect
 	return &plugin.ScriptSession{
 		ID:       "jupyter",
 		Endpoint: endpoint,
-		Metadata: map[string]interface{}{
+		Info: map[string]interface{}{
 			"mode":     mode,
 			"language": language,
 		},
