@@ -144,24 +144,6 @@ func (e *TaskExecution) Duration() time.Duration {
 	return e.EndTime.Time.Sub(e.StartTime.Time)
 }
 
-// FieldMapping 字段映射配置
-type FieldMapping struct {
-	ID           uint      `gorm:"primaryKey" json:"id"`
-	TaskID       uint      `gorm:"not null;index" json:"task_id"`
-	SourceField  string    `gorm:"type:varchar(255);not null" json:"source_field"`
-	TargetField  string    `gorm:"type:varchar(255);not null" json:"target_field"`
-	DefaultValue string    `gorm:"type:text" json:"default_value,omitempty"`
-	FieldType    string    `gorm:"type:varchar(50)" json:"field_type,omitempty"`
-	Format       string    `gorm:"type:varchar(100)" json:"format,omitempty"`
-	Nullable     bool      `gorm:"default:true" json:"nullable"`
-	CreatedAt    time.Time `gorm:"autoCreateTime" json:"created_at"`
-}
-
-// TableName 指定表名（不包含 schema，因为已通过 search_path 设置）
-func (FieldMapping) TableName() string {
-	return "field_mappings"
-}
-
 // CreateTaskRequest 创建任务请求
 type CreateTaskRequest struct {
 	Name             string                 `json:"name" binding:"required"`
@@ -171,7 +153,6 @@ type CreateTaskRequest struct {
 	Schedule         string                 `json:"schedule"`
 	BatchSize        int                    `json:"batch_size"`
 	AutoScanMetadata *bool                  `json:"auto_scan_metadata"`
-	Mappings         []FieldMapping         `json:"mappings"`
 }
 
 // UpdateTaskRequest 更新任务请求
@@ -208,24 +189,4 @@ type TaskStatistics struct {
 	TotalExecutions  int64 `json:"total_executions"`
 	TotalRecords     int64 `json:"total_records"`
 	TotalBytes       int64 `json:"total_bytes"`
-}
-
-// CreateFieldMappingRequest 创建字段映射请求
-type CreateFieldMappingRequest struct {
-	SourceField  string `json:"source_field" binding:"required"`
-	TargetField  string `json:"target_field" binding:"required"`
-	DefaultValue string `json:"default_value"`
-	FieldType    string `json:"field_type"`
-	Format       string `json:"format"`
-	Nullable     bool   `json:"nullable"`
-}
-
-// UpdateFieldMappingRequest 更新字段映射请求
-type UpdateFieldMappingRequest struct {
-	SourceField  *string `json:"source_field"`
-	TargetField  *string `json:"target_field"`
-	DefaultValue *string `json:"default_value"`
-	FieldType    *string `json:"field_type"`
-	Format       *string `json:"format"`
-	Nullable     *bool   `json:"nullable"`
 }

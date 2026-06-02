@@ -11,7 +11,6 @@ BEGIN;
 ALTER TABLE transfer.tasks DROP CONSTRAINT IF EXISTS fk_tasks_source_engine;
 ALTER TABLE transfer.tasks DROP CONSTRAINT IF EXISTS fk_tasks_target_engine;
 ALTER TABLE transfer.task_executions DROP CONSTRAINT IF EXISTS fk_executions_task;
-ALTER TABLE transfer.data_mappings DROP CONSTRAINT IF EXISTS fk_mappings_task;
 
 -- ============================================================
 -- 2. 删除索引

@@ -136,14 +136,6 @@ func SetupRouter(
 		tasks.POST("/:id/pause", taskHandler.PauseTask)                  // 暂停任务
 		tasks.POST("/:id/resume", taskHandler.ResumeTask)                // 恢复任务
 		tasks.GET("/:id/executions", executionHandler.GetTaskExecutions) // 获取任务的执行记录
-		tasks.POST("/:id/mappings", taskHandler.CreateFieldMapping)      // 创建字段映射
-		tasks.GET("/:id/mappings", taskHandler.GetTaskMappings)          // 获取任务的字段映射
-	}
-
-	// 字段映射路由
-	mappings := protected.Group("/mappings")
-	{
-		mappings.DELETE("/:id", taskHandler.DeleteFieldMapping) // 删除字段映射
 	}
 
 	// 对象存储辅助接口

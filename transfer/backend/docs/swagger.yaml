@@ -12,24 +12,6 @@ definitions:
       total_pages:
         type: integer
     type: object
-  github_com_addp_transfer_internal_models.CreateFieldMappingRequest:
-    properties:
-      default_value:
-        type: string
-      field_type:
-        type: string
-      format:
-        type: string
-      nullable:
-        type: boolean
-      source_field:
-        type: string
-      target_field:
-        type: string
-    required:
-    - source_field
-    - target_field
-    type: object
   github_com_addp_transfer_internal_models.CreateTaskRequestDoc:
     properties:
       auto_scan_metadata:
@@ -42,10 +24,6 @@ definitions:
         $ref: '#/definitions/github_com_addp_transfer_internal_models.TableTransferTaskConfigDoc'
       description:
         type: string
-      mappings:
-        items:
-          $ref: '#/definitions/github_com_addp_transfer_internal_models.FieldMapping'
-        type: array
       name:
         example: 导入道路 Shapefile
         type: string
@@ -77,27 +55,6 @@ definitions:
     - ExecutionStatusRunning
     - ExecutionStatusSuccess
     - ExecutionStatusFailed
-  github_com_addp_transfer_internal_models.FieldMapping:
-    properties:
-      created_at:
-        type: string
-      default_value:
-        type: string
-      field_type:
-        type: string
-      format:
-        type: string
-      id:
-        type: integer
-      nullable:
-        type: boolean
-      source_field:
-        type: string
-      target_field:
-        type: string
-      task_id:
-        type: integer
-    type: object
   github_com_addp_transfer_internal_models.FieldMappingSpecDoc:
     properties:
       default: {}
@@ -123,6 +80,40 @@ definitions:
     properties:
       time.Time:
         type: string
+    type: object
+  github_com_addp_transfer_internal_models.SystemEngineDoc:
+    properties:
+      check_message:
+        type: string
+      connection_info:
+        additionalProperties: true
+        type: object
+      connection_status:
+        example: online
+        type: string
+      description:
+        type: string
+      engine_origin:
+        example: general
+        type: string
+      engine_type:
+        example: minio
+        type: string
+      id:
+        example: 1
+        type: integer
+      is_active:
+        example: true
+        type: boolean
+      is_builtin:
+        example: false
+        type: boolean
+      name:
+        example: Business MinIO
+        type: string
+      tenant_id:
+        example: 1
+        type: integer
     type: object
   github_com_addp_transfer_internal_models.TableTransferTaskConfigDoc:
     properties:
@@ -422,127 +413,6 @@ definitions:
         type: string
     required:
     - engine_id
-    type: object
-  models.ConnectionInfo:
-    additionalProperties: true
-    type: object
-  models.Engine:
-    properties:
-      capabilities:
-        description: 能力声明（JSONB）
-        type: string
-      check_message:
-        description: 检测结果消息（错误信息等）
-        type: string
-      connection_info:
-        $ref: '#/definitions/models.ConnectionInfo'
-      connection_status:
-        description: 连接状态缓存（优化扫描性能）
-        type: string
-      created_at:
-        description: 时间戳字段
-        type: string
-      created_by:
-        type: integer
-      description:
-        type: string
-      engine_origin:
-        description: 引擎来源：general 或 extension
-        type: string
-      engine_type:
-        description: 引擎类型（postgresql, mysql, python_workflow等）
-        type: string
-      id:
-        type: integer
-      is_active:
-        type: boolean
-      is_builtin:
-        description: 扩展引擎字段
-        type: boolean
-      last_check_at:
-        description: 上次检测时间
-        type: string
-      name:
-        description: 显示名称（原 display_name）
-        type: string
-      scan_config:
-        allOf:
-        - $ref: '#/definitions/models.ScanConfig'
-        description: 元数据扫描配置（可选）
-      tenant_id:
-        description: 租户ID，SuperAdmin创建的引擎为null
-        type: integer
-      updated_at:
-        type: string
-    type: object
-  models.MVTPreprocessConfig:
-    properties:
-      concurrency:
-        description: 并发生成数 (1-20, 默认 10)
-        type: integer
-      max_zoom:
-        description: 最大缩放级别 (0-18, 默认 18)
-        type: integer
-      stop_threshold_kb:
-        description: 自适应停止阈值：平均瓦片大小（KB）< 该值则停止（默认 50.0）
-        type: number
-      stop_threshold_sec:
-        description: 自适应停止阈值：平均生成时间（秒）< 该值则停止（默认 3.0）
-        type: number
-    type: object
-  models.PreprocessingConfig:
-    properties:
-      auto_trigger:
-        description: 扫描完成后自动触发预处理
-        type: boolean
-      enabled:
-        description: 是否启用预处理
-        type: boolean
-      mvt_config:
-        allOf:
-        - $ref: '#/definitions/models.MVTPreprocessConfig'
-        description: MVT 瓦片预处理配置
-      types:
-        description: 预处理类型列表 ["mvt_tiles", "vector_embedding"]
-        items:
-          type: string
-        type: array
-    type: object
-  models.ScanConfig:
-    properties:
-      cron_expression:
-        description: Cron 表达式（schedule_type=cron 时使用）
-        type: string
-      enabled:
-        description: 是否启用扫描（总开关）
-        type: boolean
-      immediate_depth:
-        description: 立即扫描深度：basic（基础）或 deep（深度）
-        type: string
-      immediate_scan:
-        description: 注册后立即扫描
-        type: boolean
-      preprocessing:
-        allOf:
-        - $ref: '#/definitions/models.PreprocessingConfig'
-        description: 预处理配置（可选）
-      scan_depth:
-        description: 默认扫描深度：basic 或 deep
-        type: string
-      schedule_time:
-        description: 执行时间 HH:mm（daily/weekly/monthly 时使用）
-        type: string
-      schedule_type:
-        description: daily, weekly, monthly, cron（仅当scheduled_scan=true时有效）
-        type: string
-      schedule_value:
-        description: 周几（0-6）或月几（1-31）
-        items:
-          type: integer
-        type: array
-      scheduled_scan:
-        description: 启用定时扫描
-        type: boolean
     type: object
 host: localhost:8083
 info:
@@ -867,34 +737,6 @@ paths:
       summary: 获取执行统计 | Get execution statistics
       tags:
       - 执行管理 | Execution Management
-  /mappings/{id}:
-    delete:
-      parameters:
-      - description: 字段映射ID | Mapping ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 删除字段映射 | Delete field mapping
-      tags:
-      - 字段映射 | Field Mapping
   /nodes/{node_id}/children:
     get:
       parameters:
@@ -1056,7 +898,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/models.Engine'
+              $ref: '#/definitions/github_com_addp_transfer_internal_models.SystemEngineDoc'
             type: array
         "502":
           description: Bad Gateway
@@ -1369,75 +1211,6 @@ paths:
       summary: 获取任务执行列表 | List task executions
       tags:
       - 执行管理 | Execution Management
-  /tasks/{id}/mappings:
-    get:
-      parameters:
-      - description: 任务ID | Task ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              additionalProperties: true
-              type: object
-            type: array
-        "500":
-          description: Internal Server Error
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取任务字段映射 | Get task mappings
-      tags:
-      - 字段映射 | Field Mapping
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: 任务ID | Task ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: 字段映射请求 | Field mapping request
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_addp_transfer_internal_models.CreateFieldMappingRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 创建字段映射 | Create field mapping
-      tags:
-      - 字段映射 | Field Mapping
   /tasks/{id}/pause:
     post:
       parameters:

@@ -64,7 +64,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useTaskWizardState } from './useTaskWizardState'
 import { taskAPI } from '@/api/tasks'
-import { getItemFieldsByCatalogPath, getTableFields } from '@/api/meta'
+import { getItemByID, getItemFieldsByCatalogPath, getItemFieldsByID, getTableFields } from '@/api/meta'
 
 // 导入步骤组件
 import Step1SelectSource from './Step1SelectSource.vue'
@@ -108,6 +108,7 @@ async function loadTaskDetail() {
 
     // 回填任务数据到向导状态
     wizardState.loadFromTask(task)
+    await restoreSourceItemForEdit(task)
 
     // 加载源字段和目标字段
     await loadSourceFieldsForEdit(task)
@@ -119,6 +120,18 @@ async function loadTaskDetail() {
     console.error('加载任务详情失败:', error)
   } finally {
     loading.value = false
+  }
+}
+
+async function restoreSourceItemForEdit(task) {
+  const metaItemID = Number(task.config?.source?.meta_item_id || 0)
+  if (!metaItemID) return
+
+  try {
+    const item = await getItemByID(metaItemID)
+    wizardState.updateSourceItem(item)
+  } catch (error) {
+    console.error('恢复源数据项失败:', error)
   }
 }
 
@@ -137,8 +150,15 @@ async function loadSourceFieldsForEdit(task) {
   try {
     let fieldList = []
 
-    const catalogPath = catalogPathFromEndpoint(source)
-    if (catalogPath) {
+    if (source.meta_item_id) {
+      const response = await getItemFieldsByID(source.meta_item_id)
+      fieldList = Array.isArray(response?.data) ? response.data : (response || [])
+    } else {
+      const catalogPath = catalogPathFromEndpoint(source)
+      if (!catalogPath) {
+        wizardState.loadSourceFields([])
+        return
+      }
       const response = source.resource?.kind === 'native_table'
         ? await getTableFields(engineId, path.schema || '', path.table || '')
         : await getItemFieldsByCatalogPath(engineId, catalogPath)

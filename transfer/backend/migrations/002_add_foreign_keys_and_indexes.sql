@@ -30,13 +30,6 @@ ALTER TABLE transfer.task_executions
     FOREIGN KEY (task_id) REFERENCES transfer.tasks(id)
     ON DELETE CASCADE;
 
--- 1.4 data_mappings.task_id → tasks.id
--- 当任务删除时，级联删除所有字段映射
-ALTER TABLE transfer.data_mappings
-    ADD CONSTRAINT fk_mappings_task
-    FOREIGN KEY (task_id) REFERENCES transfer.tasks(id)
-    ON DELETE CASCADE;
-
 -- ============================================================
 -- 2. 添加高性能索引
 -- ============================================================
@@ -47,7 +40,6 @@ ALTER TABLE transfer.data_mappings
 -- - idx_executions_start_time (task_executions.start_time)
 -- - idx_transfer_tasks_tenant_id (tasks.tenant_id)
 -- - idx_transfer_tasks_status (tasks.status)
--- - idx_transfer_data_mappings_task_id (data_mappings.task_id)
 
 -- 2.1 tasks 表新增索引
 -- 按租户和任务类型查询（用于筛选不同类型的任务）

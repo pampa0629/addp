@@ -220,7 +220,7 @@ raw copy 是 non-table encoded single content 的原始字节复制。它不调�
 | `project` | 只输出 fields 声明的目标字段；可推导 source `field_selection`。 |
 | `passthrough` | 保留源 row 全字段，再应用字段映射覆盖 / 新增目标字段；不下推 `field_selection`。 |
 
-旧任务外层 `mappings` / `field_mappings` 不作为新执行主链路输入。相关 API 如仍存在，只能视为过渡管理入口，不能成为新的配置来源。
+旧任务外层 `mappings` / `field_mappings` 不作为新执行主链路输入；相关表和独立 mappings API 已删除，不能成为新的配置来源。
 
 ## 六、写入策略
 

@@ -27,7 +27,6 @@ type TaskService struct {
 	db               *gorm.DB
 	taskRepo         *repository.TaskRepository
 	executionService *ExecutionService // 使用统一执行服务
-	mappingRepo      *repository.MappingRepository
 	executionEngine  *ExecutionEngineService
 	cfg              *config.Config
 	taskQueue        TaskQueue
@@ -44,7 +43,6 @@ func NewTaskService(
 	return &TaskService{
 		db:              db,
 		taskRepo:        repository.NewTaskRepository(db),
-		mappingRepo:     repository.NewMappingRepository(db),
 		executionEngine: executionEngine,
 		taskQueue:       taskQueue,
 		cfg:             cfg,
@@ -100,16 +98,6 @@ func (s *TaskService) CreateTask(ctx context.Context, req *models.CreateTaskRequ
 	if err := s.taskRepo.Create(task); err != nil {
 		s.logger.Error("failed to create task", "error", err)
 		return nil, fmt.Errorf("failed to create task: %w", err)
-	}
-
-	// 创建字段映射
-	if len(req.Mappings) > 0 {
-		for i := range req.Mappings {
-			req.Mappings[i].TaskID = task.ID
-		}
-		if err := s.mappingRepo.CreateBatch(req.Mappings); err != nil {
-			s.logger.Warn("failed to create mappings", "error", err)
-		}
 	}
 
 	s.logger.Info("task created successfully", "task_id", task.ID)
@@ -212,11 +200,6 @@ func (s *TaskService) DeleteTask(ctx context.Context, id, tenantID uint) error {
 	// 只有非运行中的任务才能删除
 	if task.Status == models.TaskStatusRunning {
 		return fmt.Errorf("cannot delete running task")
-	}
-
-	// 删除字段映射
-	if err := s.mappingRepo.DeleteByTaskID(id); err != nil {
-		s.logger.Warn("failed to delete mappings", "error", err)
 	}
 
 	// 删除任务
@@ -421,64 +404,4 @@ func (s *TaskService) ExecuteTask(ctx context.Context, taskID, executionID uint)
 // GetStatistics 获取任务统计信息
 func (s *TaskService) GetStatistics(ctx context.Context, tenantID uint) (*models.TaskStatistics, error) {
 	return s.taskRepo.GetStatistics(tenantID)
-}
-
-// CreateMapping 创建字段映射
-func (s *TaskService) CreateMapping(ctx context.Context, taskID uint, req *models.CreateFieldMappingRequest, tenantID, userID uint) (*models.FieldMapping, error) {
-	// 验证任务存在且属于该租户
-	task, err := s.taskRepo.GetByID(taskID)
-	if err != nil {
-		return nil, fmt.Errorf("task not found: %w", err)
-	}
-	if task.TenantID != tenantID {
-		return nil, fmt.Errorf("task not found or access denied")
-	}
-
-	mapping := models.FieldMapping{
-		TaskID:       taskID,
-		SourceField:  req.SourceField,
-		TargetField:  req.TargetField,
-		DefaultValue: req.DefaultValue,
-		FieldType:    req.FieldType,
-		Format:       req.Format,
-		Nullable:     req.Nullable,
-	}
-
-	// 使用 CreateBatch 创建单个映射
-	if err := s.mappingRepo.CreateBatch([]models.FieldMapping{mapping}); err != nil {
-		return nil, fmt.Errorf("failed to create mapping: %w", err)
-	}
-
-	return &mapping, nil
-}
-
-// GetTaskMappings 获取任务的所有字段映射
-func (s *TaskService) GetTaskMappings(ctx context.Context, taskID, tenantID uint) ([]*models.FieldMapping, error) {
-	// 验证任务存在且属于该租户
-	task, err := s.taskRepo.GetByID(taskID)
-	if err != nil {
-		return nil, fmt.Errorf("task not found: %w", err)
-	}
-	if task.TenantID != tenantID {
-		return nil, fmt.Errorf("task not found or access denied")
-	}
-
-	mappings, err := s.mappingRepo.GetByTaskID(taskID)
-	if err != nil {
-		return nil, err
-	}
-
-	// 转换为指针数组
-	result := make([]*models.FieldMapping, len(mappings))
-	for i := range mappings {
-		result[i] = &mappings[i]
-	}
-
-	return result, nil
-}
-
-// DeleteMapping 删除数据映射
-func (s *TaskService) DeleteMapping(ctx context.Context, mappingID, tenantID uint) error {
-	// TODO: 需要在 MappingRepository 中添加 Delete 方法
-	return fmt.Errorf("DeleteMapping not yet implemented")
 }

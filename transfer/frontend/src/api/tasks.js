@@ -57,20 +57,7 @@ export const taskAPI = {
     return client.get(`/transfer/tasks/${id}/executions`, { params })
   },
 
-  // 获取任务的字段映射
-  getMappings(id) {
-    return client.get(`/transfer/tasks/${id}/mappings`)
-  },
-
-  // 创建字段映射
-  createMapping(id, data) {
-    return client.post(`/transfer/tasks/${id}/mappings`, data)
-  },
-
-  // 删除字段映射
-  deleteMapping(mappingId) {
-    return client.delete(`/transfer/mappings/${mappingId}`)
-  }
+  // 字段映射写入任务 config.transforms[]，不再提供独立 mappings API。
 }
 
 // 执行记录 API

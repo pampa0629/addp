@@ -25,7 +25,7 @@ func NewSystemEngineHandler(systemClient *commonClient.SystemClient) *SystemEngi
 // @Tags 系统引擎 | System Engines
 // @Produce json
 // @Param engine_type query string false "引擎类型 | Engine type"
-// @Success 200 {array} commonModels.Engine
+// @Success 200 {array} github_com_addp_transfer_internal_models.SystemEngineDoc
 // @Failure 502 {object} map[string]string
 // @Failure 503 {object} map[string]string
 // @Router /system-engines [get]

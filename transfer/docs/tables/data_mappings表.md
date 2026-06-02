@@ -1,15 +1,15 @@
-# data_mappings / field_mappings 旧表说明
+# data_mappings / field_mappings 删除说明
 
-更新时间：2026-05-30
+更新时间：2026-06-02
 
-旧任务外层字段映射表不再作为 Transfer 新执行主链路输入。当前稳定主路径使用 `transfer.transfer_tasks.config.transforms[]` 中的 `field_mapping` transform。
+旧任务外层字段映射表已退出 Transfer 主路径。当前稳定主路径使用 `transfer.transfer_tasks.config.transforms[]` 中的 `field_mapping` transform。
 
 ## 当前规则
 
 - 新任务必须把字段映射写入 `config.transforms[type=field_mapping]`。
 - planner 从 `field_mapping mode=project` 推导 source `field_selection`。
 - 旧 `data_mappings` 概念不得恢复。
-- `field_mappings` 表和相关 API 如仍存在，只能视为过渡管理入口，不能成为执行事实来源。
+- `field_mappings` 表和 `/tasks/:id/mappings`、`/mappings/:id` API 已删除，不再作为过渡管理入口保留。
 
 ## 新配置示例
 

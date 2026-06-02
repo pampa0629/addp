@@ -13,6 +13,21 @@ type SuccessResponse struct {
 	Data    interface{} `json:"data,omitempty"`
 }
 
+// SystemEngineDoc 是 Transfer Swagger 中展示的 System engine 摘要。
+type SystemEngineDoc struct {
+	ID               uint                   `json:"id" example:"1"`
+	TenantID         uint                   `json:"tenant_id,omitempty" example:"1"`
+	Name             string                 `json:"name" example:"Business MinIO"`
+	EngineType       string                 `json:"engine_type" example:"minio"`
+	EngineOrigin     string                 `json:"engine_origin,omitempty" example:"general"`
+	ConnectionInfo   map[string]interface{} `json:"connection_info,omitempty"`
+	Description      string                 `json:"description,omitempty"`
+	IsActive         bool                   `json:"is_active" example:"true"`
+	IsBuiltin        bool                   `json:"is_builtin,omitempty" example:"false"`
+	ConnectionStatus string                 `json:"connection_status,omitempty" example:"online"`
+	CheckMessage     string                 `json:"check_message,omitempty"`
+}
+
 // CreateTaskRequestDoc 是 CreateTaskRequest 的 Swagger 展示结构。
 type CreateTaskRequestDoc struct {
 	Name             string                     `json:"name" example:"导入道路 Shapefile"`
@@ -22,7 +37,6 @@ type CreateTaskRequestDoc struct {
 	Schedule         string                     `json:"schedule,omitempty"`
 	BatchSize        int                        `json:"batch_size,omitempty" example:"1000"`
 	AutoScanMetadata bool                       `json:"auto_scan_metadata,omitempty" example:"true"`
-	Mappings         []FieldMapping             `json:"mappings,omitempty"`
 }
 
 // UpdateTaskRequestDoc 是 UpdateTaskRequest 的 Swagger 展示结构。

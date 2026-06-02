@@ -669,6 +669,76 @@ export function useTaskWizardState() {
     }
   }
 
+  function updateSourceItem(item) {
+    if (!item) return
+    const attrs = item.attributes || {}
+    const itemAttrs = attrs.item || {}
+    const sourceItem = {
+      item_id: item.id || item.item_id,
+      meta_id: item.id || item.item_id,
+      full_name: item.full_name,
+      name: item.name,
+      kind: item.item_type || item.kind,
+      term: item.item_type || item.term,
+      path: sourcePathFromResource(sourceEndpointResource.value) || sourcePathFromLabel(item.full_name || item.name, sourceRepresentation.value),
+      data_type: itemAttrs.data_type || sourceDataType.value,
+      representation: itemAttrs.representation || sourceRepresentation.value,
+      format: itemAttrs.format || sourceFormat.value,
+      layout: itemAttrs.layout,
+      physical_path: attrs.storage?.physical_path || item.physical_path,
+      attributes: attrs,
+      row_count: item.row_count,
+      size_bytes: item.size_bytes,
+      last_modified_at: item.data_updated_at || item.scanned_at
+    }
+    sourceConfig.value = {
+      ...(sourceConfig.value || {}),
+      sourceItem,
+      meta_item_id: sourceItem.item_id
+    }
+  }
+
+  function sourcePathFromLabel(label, representation) {
+    const separator = String(representation || '').toLowerCase() === 'encoded' ? '/' : '.'
+    const names = String(label || '')
+      .split(separator)
+      .map(part => part.trim())
+      .filter(Boolean)
+    return {
+      segments: names.map((name, index) => ({
+        name,
+        kind: index === names.length - 1 ? 'item' : 'container',
+        term: index === names.length - 1 ? 'item' : 'container'
+      }))
+    }
+  }
+
+  function sourcePathFromResource(resource) {
+    const path = resource?.path || {}
+    let names = []
+    if (resource?.kind === 'native_table') {
+      names = [path.schema, path.table || path.name].filter(Boolean)
+    } else if (resource?.kind === 'object') {
+      names = [path.bucket, ...(String(path.path || '').split('/'))].filter(Boolean)
+    } else if (resource?.kind === 'file') {
+      names = String(path.path || path.name || '').split('/').filter(Boolean)
+    }
+    if (names.length === 0) return null
+    return {
+      segments: names.map((name, index) => ({
+        name,
+        kind: index === names.length - 1 ? resource.kind : containerKindForResource(resource.kind, index),
+        term: index === names.length - 1 ? resource.kind : containerKindForResource(resource.kind, index)
+      }))
+    }
+  }
+
+  function containerKindForResource(kind, index) {
+    if (kind === 'native_table') return 'schema'
+    if (kind === 'object' && index === 0) return 'bucket'
+    return 'directory'
+  }
+
   function targetUiFormat(format, options = {}) {
     const normalized = String(format || '').toLowerCase()
     if (!normalized) return ''
@@ -811,6 +881,7 @@ export function useTaskWizardState() {
     updateSource,
     updateFormatCapabilities,
     loadSourceFields,
+    updateSourceItem,
     updateTarget,
     clearTarget,
     loadTargetFields,

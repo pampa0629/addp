@@ -158,6 +158,19 @@ watch(selectedNode, (node) => {
   }
 })
 
+watch(
+  () => [
+    props.wizardState.sourceEngineID.value,
+    props.wizardState.sourceConfig.value?.sourceItem?.item_id
+  ],
+  async ([engineID]) => {
+    if (!engineID) return
+    if (formData.engineID === engineID && selectedNode.value) return
+    await restoreState()
+  },
+  { flush: 'post' }
+)
+
 async function loadEngines() {
   loadingEngines.value = true
   try {

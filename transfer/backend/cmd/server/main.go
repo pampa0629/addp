@@ -18,7 +18,6 @@ import (
 	"github.com/addp/transfer/internal/api"
 	"github.com/addp/transfer/internal/config"
 	"github.com/addp/transfer/internal/models"
-	"github.com/addp/transfer/internal/repository"
 	"github.com/addp/transfer/internal/service"
 	"github.com/addp/transfer/internal/worker"
 	"github.com/redis/go-redis/v9"
@@ -82,7 +81,6 @@ func main() {
 	}
 
 	// 初始化 Repository 层
-	_ = repository.NewMappingRepository(db)                        // mappingRepo unused for now
 	taskExecutionRepo := commonRepo.NewTaskExecutionRepository(db) // 统一执行记录仓库
 	log.Printf("✅ Repository 层初始化完成（使用统一执行表）")
 
@@ -195,7 +193,6 @@ func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
 		&models.TransferTask{},
 		// &models.TaskExecution{}, // 【已废弃】改用统一执行表
 		&commonModels.TaskExecution{}, // 统一执行记录表（common.task_executions）
-		&models.FieldMapping{},
 		// &pipeline.Checkpoint{}, // TODO: 启用 pipeline 时取消注释
 	)
 	if err != nil {

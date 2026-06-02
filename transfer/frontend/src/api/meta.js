@@ -57,6 +57,20 @@ export const getTransferNodeChildren = async (nodeId) => {
   return client.get(`/transfer/nodes/${nodeId}/children`)
 }
 
+export const getItemByID = async (itemId) => {
+  const response = await apiRequest('get', `/meta/items/${itemId}`)
+  return response.data?.data || response.data
+}
+
+export const getItemFieldsByID = async (itemId) => {
+  const response = await apiRequest('get', `/meta/items/${itemId}/fields`, {
+    params: {
+      include_details: true
+    }
+  })
+  return response.data
+}
+
 export const getItemByCatalogPath = async (engineId, catalogPath) => {
   const response = await apiRequest('get', '/meta/items/by-catalog-path', {
     params: {
@@ -69,12 +83,7 @@ export const getItemByCatalogPath = async (engineId, catalogPath) => {
 
 export const getItemFieldsByCatalogPath = async (engineId, catalogPath) => {
   const item = await getItemByCatalogPath(engineId, catalogPath)
-  const response = await apiRequest('get', `/meta/items/${item.id}/fields`, {
-    params: {
-      include_details: true
-    }
-  })
-  return response.data
+  return getItemFieldsByID(item.id)
 }
 
 /**
