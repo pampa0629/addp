@@ -273,6 +273,8 @@ function treeNodeToCatalogEntry(node) {
     format: metadata.format,
     layout: metadata.layout,
     physical_path: metadata.physical_path,
+    item_id: metadata.item_id,
+    meta_id: metadata.item_id || metadata.meta_id,
     size_bytes: metadata.size_bytes,
     last_modified_at: metadata.last_modified_at,
     row_count: metadata.row_count,
@@ -377,7 +379,8 @@ function syncSource(node) {
       format: nodeFormat(node),
       resource: endpointResource,
       sourceItem: {
-        meta_id: node.meta_id,
+        item_id: node.item_id,
+        meta_id: node.meta_id || node.item_id,
         full_name: node.full_name,
         name: node.name,
         kind: node.kind,
@@ -442,11 +445,11 @@ function representationForSelection(node) {
 }
 
 function nodeDataType(node) {
-  return nodeAttribute(node, 'data_type') || nodeItemAttribute(node, 'data_type') || inferDataTypeFromKind(node)
+  return nodeAttribute(node, 'data_type') || nodeItemAttribute(node, 'data_type')
 }
 
 function nodeFormat(node) {
-  return nodeAttribute(node, 'format') || nodeItemAttribute(node, 'format') || inferFormatFromName(node?.name)
+  return nodeAttribute(node, 'format') || nodeItemAttribute(node, 'format')
 }
 
 function nodeAttribute(node, key) {
@@ -588,53 +591,6 @@ function isSelectableSourceItem(node) {
   return isSupportedSourceShape(nodeDataType(node), representationForSelection(node), nodeFormat(node))
 }
 
-function inferDataTypeFromKind(node) {
-  const kind = String(node?.kind || node?.term || '').toLowerCase()
-  if (['table', 'relation', 'collection'].includes(kind)) return 'table'
-  if (['file', 'object'].includes(kind) && node?.role === 'leaf' && tableFormatFromName(node?.name)) return 'table'
-  const rawCopyDataType = rawCopyDataTypeFromName(node?.name)
-  if (['file', 'object'].includes(kind) && node?.role === 'leaf' && rawCopyDataType) return rawCopyDataType
-  return ''
-}
-
-function inferFormatFromName(name) {
-  return tableFormatFromName(name) || rawCopyFormatFromName(name)
-}
-
-function tableFormatFromName(name) {
-  const extension = String(name || '').split('.').pop()?.toLowerCase()
-  const formats = {
-    csv: 'csv',
-    tsv: 'tsv',
-    json: 'json',
-    jsonl: 'jsonl',
-    ndjson: 'jsonl',
-    parquet: 'parquet',
-    shp: 'shapefile',
-    geojson: 'geojson'
-  }
-  return formats[extension] || ''
-}
-
-function rawCopyFormatFromName(name) {
-  const extension = String(name || '').split('.').pop()?.toLowerCase()
-  const aliases = {
-    jpg: 'jpeg',
-    jpeg: 'jpeg',
-    tif: 'tiff',
-    tiff: 'tiff',
-    md: 'markdown',
-    markdown: 'markdown'
-  }
-  const normalized = aliases[extension] || extension
-  return supportedRawCopyFormats.value.has(normalized) ? normalized : ''
-}
-
-function rawCopyDataTypeFromName(name) {
-  const rawCopyFormat = rawCopyFormatFromName(name)
-  return rawCopyFormat ? supportedRawCopyFormats.value.get(rawCopyFormat) : ''
-}
-
 function isSupportedSourceShape(dataType, representation, sourceFormat) {
   const normalizedDataType = String(dataType || '').toLowerCase()
   const normalizedRepresentation = String(representation || '').toLowerCase()
@@ -715,80 +671,6 @@ function restoreSourceNodeFromState(state) {
       attributes: restoreSourceAttributes(state, savedItem.attributes)
     }
   }
-
-  const endpointResource = state.sourceEndpointResource.value || config.resource
-  if (!endpointResource?.kind) return null
-
-  if (endpointResource.kind === 'native_table') {
-    const schema = endpointResource.path?.schema || state.sourceSchema.value || ''
-    const table = endpointResource.path?.table || endpointResource.path?.name || state.sourceTable.value || ''
-    return {
-      name: table,
-      kind: 'table',
-      term: 'table',
-      role: 'leaf',
-      path: {
-        segments: [
-          schema ? { name: schema, kind: 'schema', term: 'schema' } : null,
-          table ? { name: table, kind: 'table', term: 'table' } : null
-        ].filter(Boolean)
-      },
-      data_type: state.sourceDataType.value || 'table',
-      representation: state.sourceRepresentation.value || 'native',
-      format: state.sourceFormat.value || '',
-      attributes: restoreSourceAttributes(state)
-    }
-  }
-
-  if (endpointResource.kind === 'object') {
-    const bucket = endpointResource.path?.bucket || ''
-    const objectPath = endpointResource.path?.path || ''
-    const objectParts = objectPath.split('/').filter(Boolean)
-    const name = objectParts[objectParts.length - 1] || bucket
-    return {
-      name,
-      kind: 'object',
-      term: 'object',
-      role: 'leaf',
-      path: {
-        segments: [
-          bucket ? { name: bucket, kind: 'bucket', term: 'bucket' } : null,
-          ...objectParts.map((part, index) => ({
-            name: part,
-            kind: index === objectParts.length - 1 ? 'object' : 'prefix',
-            term: index === objectParts.length - 1 ? 'object' : 'prefix'
-          }))
-        ].filter(Boolean)
-      },
-      data_type: state.sourceDataType.value || 'table',
-      representation: state.sourceRepresentation.value || 'encoded',
-      format: state.sourceFormat.value || '',
-      attributes: restoreSourceAttributes(state)
-    }
-  }
-
-  if (endpointResource.kind === 'file') {
-    const parts = String(endpointResource.path?.path || '').split('/').filter(Boolean)
-    const name = parts[parts.length - 1] || config.sourceLabel || ''
-    return {
-      name,
-      kind: 'file',
-      term: 'file',
-      role: 'leaf',
-      path: {
-        segments: parts.map((part, index) => ({
-          name: part,
-          kind: index === parts.length - 1 ? 'file' : 'directory',
-          term: index === parts.length - 1 ? 'file' : 'directory'
-        }))
-      },
-      data_type: state.sourceDataType.value || 'table',
-      representation: state.sourceRepresentation.value || 'encoded',
-      format: state.sourceFormat.value || '',
-      attributes: restoreSourceAttributes(state)
-    }
-  }
-
   return null
 }
 

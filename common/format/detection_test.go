@@ -347,6 +347,8 @@ func TestIsGeospatialFormat(t *testing.T) {
 		{FormatShapefile, true},
 		{FormatGeoPackage, true},
 		{FormatKML, true},
+		{FormatKMZ, true},
+		{FormatJSON, false},
 		{FormatCSV, false},
 		{FormatPDF, false},
 		{FormatImage, false},

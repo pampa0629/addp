@@ -39,8 +39,8 @@ func ParseRawCopyTaskSpec(config map[string]interface{}) (RawCopyTaskSpec, error
 	if err != nil {
 		return RawCopyTaskSpec{}, fmt.Errorf("marshal raw copy task config: %w", err)
 	}
-	if err := json.Unmarshal(configBytes, &spec); err != nil {
-		return RawCopyTaskSpec{}, fmt.Errorf("parse raw copy task config: %w", err)
+	if err := decodeStrictTaskConfig(configBytes, &spec, "raw copy"); err != nil {
+		return RawCopyTaskSpec{}, err
 	}
 	if err := validateRawCopySpec(&spec); err != nil {
 		return RawCopyTaskSpec{}, err

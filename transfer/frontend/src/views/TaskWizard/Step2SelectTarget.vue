@@ -738,8 +738,8 @@ function normalizeOutputFormatSupport(item) {
   return {
     ...fallback,
     value,
-    extension: item.extension || fallback.extension,
-    spatial: item.spatial === true || value === 'geojson' || value === 'shapefile',
+    extension: item.extension || '',
+    spatial: item.spatial === true,
     backendType: item.backend_type || item.backendType || value,
     options: item.options || {}
   }
@@ -763,15 +763,15 @@ function sourceFileExtension(name) {
 
 function defaultOutputFormat(value) {
   const defaults = {
-    csv: { labelKey: 'transfer.taskWizard.formatCsv', value: 'csv', extension: 'csv' },
-    tsv: { labelKey: 'transfer.taskWizard.formatTsv', value: 'tsv', extension: 'tsv' },
-    jsonl: { labelKey: 'transfer.taskWizard.formatJsonl', value: 'jsonl', extension: 'jsonl', hintKey: 'transfer.taskWizard.jsonlFormatHint' },
-    json: { labelKey: 'transfer.taskWizard.formatJson', value: 'json', extension: 'json', hintKey: 'transfer.taskWizard.jsonFormatHint' },
-    parquet: { labelKey: 'transfer.taskWizard.formatParquet', value: 'parquet', extension: 'parquet' },
-    geojson: { labelKey: 'transfer.taskWizard.formatGeojson', value: 'geojson', extension: 'geojson', spatial: true, hintKey: 'transfer.taskWizard.geojsonFormatHint' },
-    shapefile: { labelKey: 'transfer.taskWizard.formatShapefile', value: 'shapefile', extension: 'shp', spatial: true, hintKey: 'transfer.taskWizard.shapefileFormatHint' }
+    csv: { labelKey: 'transfer.taskWizard.formatCsv', value: 'csv' },
+    tsv: { labelKey: 'transfer.taskWizard.formatTsv', value: 'tsv' },
+    jsonl: { labelKey: 'transfer.taskWizard.formatJsonl', value: 'jsonl', hintKey: 'transfer.taskWizard.jsonlFormatHint' },
+    json: { labelKey: 'transfer.taskWizard.formatJson', value: 'json', hintKey: 'transfer.taskWizard.jsonFormatHint' },
+    parquet: { labelKey: 'transfer.taskWizard.formatParquet', value: 'parquet' },
+    geojson: { labelKey: 'transfer.taskWizard.formatGeojson', value: 'geojson', hintKey: 'transfer.taskWizard.geojsonFormatHint' },
+    shapefile: { labelKey: 'transfer.taskWizard.formatShapefile', value: 'shapefile', hintKey: 'transfer.taskWizard.shapefileFormatHint' }
   }
-  return defaults[value] || { label: value, value, extension: value }
+  return defaults[value] || { label: value, value }
 }
 
 function emptyOutputFormat() {

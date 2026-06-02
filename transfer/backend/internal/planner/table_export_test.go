@@ -847,7 +847,7 @@ func TestParseTableExportTaskSpecRejectsLegacyConfig(t *testing.T) {
 	}
 }
 
-func TestParseTableExportTaskSpecRejectsEngineScope(t *testing.T) {
+func TestParseTableExportTaskSpecRejectsUnknownEngineField(t *testing.T) {
 	_, err := ParseTableExportTaskSpec(map[string]interface{}{
 		"mode": "batch",
 		"source": map[string]interface{}{
@@ -865,10 +865,10 @@ func TestParseTableExportTaskSpecRejectsEngineScope(t *testing.T) {
 		},
 	}, 1000)
 	if err == nil {
-		t.Fatal("ParseTableExportTaskSpec succeeded, want engine scope legacy error")
+		t.Fatal("ParseTableExportTaskSpec succeeded, want unknown field error")
 	}
-	if !strings.Contains(err.Error(), "legacy transfer task config") {
-		t.Fatalf("error = %q, want legacy config error", err)
+	if !strings.Contains(err.Error(), "unknown field \"scope\"") {
+		t.Fatalf("error = %q, want unknown scope field error", err)
 	}
 }
 

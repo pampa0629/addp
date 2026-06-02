@@ -69,6 +69,27 @@ func TestBuildRawCopyPlanRejectsTargetFormatConflict(t *testing.T) {
 	}
 }
 
+func TestParseRawCopyTaskSpecRejectsUnknownEngineField(t *testing.T) {
+	spec := minimalRawCopySpec()
+	_, err := ParseRawCopyTaskSpec(map[string]interface{}{
+		"mode": spec.Mode,
+		"source": map[string]interface{}{
+			"engine":         map[string]interface{}{"id": 1, "scope": "system"},
+			"resource":       spec.Source.EndpointResource,
+			"data_type":      spec.Source.DataType,
+			"representation": spec.Source.Representation,
+			"format":         spec.Source.Format,
+		},
+		"target": spec.Target,
+	})
+	if err == nil {
+		t.Fatal("ParseRawCopyTaskSpec succeeded, want unknown field error")
+	}
+	if !strings.Contains(err.Error(), "unknown field \"scope\"") {
+		t.Fatalf("ParseRawCopyTaskSpec error = %v, want unknown scope field error", err)
+	}
+}
+
 func minimalRawCopySpec() RawCopyTaskSpec {
 	return RawCopyTaskSpec{
 		Mode: modeBatch,

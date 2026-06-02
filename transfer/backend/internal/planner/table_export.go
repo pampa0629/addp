@@ -1,6 +1,7 @@
 package planner
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"github.com/addp/common/datatype"
@@ -127,8 +128,8 @@ func ParseTableExportTaskSpec(config map[string]interface{}, fallbackBatchSize i
 	if err != nil {
 		return TableExportTaskSpec{}, fmt.Errorf("marshal transfer task config: %w", err)
 	}
-	if err := json.Unmarshal(configBytes, &spec); err != nil {
-		return TableExportTaskSpec{}, fmt.Errorf("parse transfer task config: %w", err)
+	if err := decodeStrictTaskConfig(configBytes, &spec, "transfer"); err != nil {
+		return TableExportTaskSpec{}, err
 	}
 	if spec.BatchSize <= 0 {
 		spec.BatchSize = fallbackBatchSize
@@ -202,7 +203,7 @@ func applySourceGeometryEncodingForTarget(sourcePlan *executor.TableSourcePlan, 
 	if sourcePlan == nil || sourcePlan.Kind != executor.TableEndpointEncoded || targetPlan.Kind != executor.TableEndpointNative {
 		return
 	}
-	if !formatHasSpatialRows(sourcePlan.Format) && sourcePlan.SpatialInfo == nil {
+	if !formatImpliesSpatialRows(sourcePlan.Format) && sourcePlan.SpatialInfo == nil {
 		return
 	}
 	if sourcePlan.ParseOptions == nil {
@@ -213,7 +214,7 @@ func applySourceGeometryEncodingForTarget(sourcePlan *executor.TableSourcePlan, 
 	}
 }
 
-func formatHasSpatialRows(formatType format.FormatType) bool {
+func formatImpliesSpatialRows(formatType format.FormatType) bool {
 	return format.IsGeospatialFormat(formatType)
 }
 
@@ -793,12 +794,16 @@ func endpointHasLegacyFields(raw interface{}) bool {
 			return true
 		}
 	}
-	if engine, ok := endpoint["engine"].(map[string]interface{}); ok {
-		if _, ok := engine["scope"]; ok {
-			return true
-		}
-	}
 	return false
+}
+
+func decodeStrictTaskConfig(configBytes []byte, target interface{}, label string) error {
+	decoder := json.NewDecoder(bytes.NewReader(configBytes))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return fmt.Errorf("parse %s task config: %w", label, err)
+	}
+	return nil
 }
 
 func effectiveEngineType(binding EngineBinding, ref EngineRef) string {

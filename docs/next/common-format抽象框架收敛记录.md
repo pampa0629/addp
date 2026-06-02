@@ -244,7 +244,9 @@ type FormatType string
 3. Transfer 前端向导已删除 encoded table / raw copy 的默认格式能力清单兜底：
    - Step1 / Step2 从 `/transfer/capabilities` 读取 `table_formats` 和 `raw_copy_formats`。
    - `useTaskWizardState` 保存同一份 readable encoded formats 和 raw copy formats，底部“下一步”判断与页面展示使用同一个能力源。
+   - Step2 目标格式的写出扩展名和空间分组来自 `/transfer/capabilities`，前端只保留 label / hint 展示映射，不再用本地格式清单推断扩展名或空间分组。
    - capabilities 加载失败时不再默认启用 CSV / Parquet / Shapefile 等格式；后端未声明的 encoded 格式暂不可用。
+   - 旧任务 JSON / 历史 endpoint 形态不做兼容回填；向导不会根据 endpoint resource 伪造 source item，source item 只来自当前 Meta 资源树选择结果。
 4. Manager object content 已从 `builtin:content-parquet` / `parquetContentHandler` 收敛为通用 `builtin:content-table` / `tableContentHandler`，表格内容入口按 `data_type=table` 和当前进程是否具备 table info/sample provider 判断。
 5. Manager scope table preview 已收敛为 `layout=whole` 的单一路径，只使用 `ScopeTableInfoProvider` / `ScopeTableSampleReader`；单文件表继续由 `builtin:file-table` 和 single table provider 处理。
 6. Manager 容器 child 预览继续保留动态扫描和按需解析能力：
@@ -259,6 +261,15 @@ type FormatType string
    文件级候选、单文件补充和主要格式检测只使用 single table provider，避免把目录级能力误当成单文件可读能力。
 9. Meta refresh 中清理旧 `access_index.table` 的逻辑已从 `format=shapefile` 特判泛化为 `layout=multi + data_type=table`。multi table provider 如果本次刷新能重新产出 access index，仍可通过 `TableDescribeResult.AccessIndex` 写回；否则不会保留上一轮单资源索引。
 10. Shapefile import 的 ZIP 业务约束仍属于 Manager 上传入口；允许 / 必需 sidecar 扩展名已从 Shapefile plugin 的 `RelatedRefSpecs()` 派生，避免 Manager 维护第二份 ref 清单。
+11. Transfer table / raw copy 任务配置解析已改为 strict JSON decode：
+   - 只接受 `TableExportTaskSpec` / `RawCopyTaskSpec` 明确声明的字段。
+   - 旧 `engine.scope` 不再作为代码概念存在；如果调用方继续传入，会作为未知字段失败。
+   - 任务配置事实源只保留 `engine.id` / `engine.type`、`resource`、`data_type`、`representation`、`format`、`options`、`policy` 和 `source.meta_item_id` 等新主路径字段。
+12. Transfer source 选择树继续复用 common 资源树语义，树内容来自 Meta 构造结果，不引入 Transfer 专属的“非 Meta item”过滤概念：
+   - Step1 不再基于文件名或扩展名推断 `data_type` / `format`。
+   - source 是否可选只消费 Meta tree 节点携带的标准事实，例如 `data_type`、`representation`、`format` 和 `attributes.item`。
+   - 创建 source endpoint 时优先使用 common tree 中已有的 `item_id` 写入 `source.meta_item_id`。
+   - Manager 预览树和 Transfer source 树继续共享资源树展示语义；差异只体现在各模块对已知 Meta 事实的消费策略。
 
 ## GeoJSON 格式身份后续修订记录
 

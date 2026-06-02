@@ -164,7 +164,7 @@ export function useTaskWizardState() {
       data_type: sourceDataType.value || 'table',
       representation: sourceRepresentation.value || 'native'
     }
-    const metaItemID = Number(config.sourceItem?.meta_id || config.meta_item_id || 0)
+    const metaItemID = Number(config.sourceItem?.item_id || config.sourceItem?.meta_id || config.meta_item_id || 0)
     if (metaItemID > 0) {
       endpoint.meta_item_id = metaItemID
     }
