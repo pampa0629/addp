@@ -1,61 +1,59 @@
 package format
 
-import formatregistry "github.com/addp/common/format/registry"
-
 // FormatType 是 ADDP 内稳定的文件/逻辑格式标识。
-type FormatType = formatregistry.Format
+type FormatType string
 
 const (
-	FormatShapefile  = formatregistry.FormatShapefile
-	FormatGeoPackage = formatregistry.FormatGeoPackage
-	FormatKML        = formatregistry.FormatKML
-	FormatKMZ        = formatregistry.FormatKMZ
+	FormatShapefile  FormatType = "shapefile"
+	FormatGeoPackage FormatType = "geopackage"
+	FormatKML        FormatType = "kml"
+	FormatKMZ        FormatType = "kmz"
 
-	FormatCSV   = formatregistry.FormatCSV
-	FormatExcel = formatregistry.FormatExcel
-	FormatTSV   = formatregistry.FormatTSV
+	FormatCSV   FormatType = "csv"
+	FormatExcel FormatType = "excel"
+	FormatTSV   FormatType = "tsv"
 
-	FormatPDF      = formatregistry.FormatPDF
-	FormatDOCX     = formatregistry.FormatDOCX
-	FormatPPTX     = formatregistry.FormatPPTX
-	FormatWPS      = formatregistry.FormatWPS
-	FormatText     = formatregistry.FormatText
-	FormatMarkdown = formatregistry.FormatMarkdown
+	FormatPDF      FormatType = "pdf"
+	FormatDOCX     FormatType = "docx"
+	FormatPPTX     FormatType = "pptx"
+	FormatWPS      FormatType = "wps"
+	FormatText     FormatType = "text"
+	FormatMarkdown FormatType = "markdown"
 
-	FormatImage = formatregistry.FormatImage
-	FormatJPEG  = formatregistry.FormatJPEG
-	FormatPNG   = formatregistry.FormatPNG
-	FormatGIF   = formatregistry.FormatGIF
-	FormatTIFF  = formatregistry.FormatTIFF
-	FormatWebP  = formatregistry.FormatWebP
-	FormatBMP   = formatregistry.FormatBMP
-	FormatSVG   = formatregistry.FormatSVG
-	FormatAVIF  = formatregistry.FormatAVIF
-	FormatHEIC  = formatregistry.FormatHEIC
+	FormatImage FormatType = "image"
+	FormatJPEG  FormatType = "jpeg"
+	FormatPNG   FormatType = "png"
+	FormatGIF   FormatType = "gif"
+	FormatTIFF  FormatType = "tiff"
+	FormatWebP  FormatType = "webp"
+	FormatBMP   FormatType = "bmp"
+	FormatSVG   FormatType = "svg"
+	FormatAVIF  FormatType = "avif"
+	FormatHEIC  FormatType = "heic"
 
-	FormatSQLite   = formatregistry.FormatSQLite
-	FormatPostgres = formatregistry.FormatPostgres
-	FormatMySQL    = formatregistry.FormatMySQL
+	FormatSQLite   FormatType = "sqlite"
+	FormatPostgres FormatType = "postgres"
+	FormatMySQL    FormatType = "mysql"
 
-	FormatJSON    = formatregistry.FormatJSON
-	FormatXML     = formatregistry.FormatXML
-	FormatParquet = formatregistry.FormatParquet
-	FormatORC     = formatregistry.FormatORC
-	FormatAvro    = formatregistry.FormatAvro
-	FormatZIP     = formatregistry.FormatZIP
+	FormatJSON    FormatType = "json"
+	FormatXML     FormatType = "xml"
+	FormatParquet FormatType = "parquet"
+	FormatORC     FormatType = "orc"
+	FormatAvro    FormatType = "avro"
+	FormatZIP     FormatType = "zip"
 
-	FormatVideo = formatregistry.FormatVideo
-	FormatAudio = formatregistry.FormatAudio
-	FormatMP4   = formatregistry.FormatMP4
-	FormatMOV   = formatregistry.FormatMOV
-	FormatMKV   = formatregistry.FormatMKV
-	FormatAVI   = formatregistry.FormatAVI
-	FormatWebM  = formatregistry.FormatWebM
-	FormatMP3   = formatregistry.FormatMP3
-	FormatWAV   = formatregistry.FormatWAV
-	FormatFLAC  = formatregistry.FormatFLAC
-	FormatAAC   = formatregistry.FormatAAC
-	FormatOGG   = formatregistry.FormatOGG
+	FormatVideo FormatType = "video"
+	FormatAudio FormatType = "audio"
+	FormatMP4   FormatType = "mp4"
+	FormatMOV   FormatType = "mov"
+	FormatMKV   FormatType = "mkv"
+	FormatAVI   FormatType = "avi"
+	FormatWebM  FormatType = "webm"
+	FormatMP3   FormatType = "mp3"
+	FormatWAV   FormatType = "wav"
+	FormatFLAC  FormatType = "flac"
+	FormatAAC   FormatType = "aac"
+	FormatOGG   FormatType = "ogg"
 
-	FormatUnknown = formatregistry.FormatUnknown
+	FormatUnknown FormatType = "unknown"
 )

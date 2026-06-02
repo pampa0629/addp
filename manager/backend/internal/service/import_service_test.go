@@ -7,6 +7,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 )
 
@@ -150,6 +151,59 @@ func TestExtractShapefileZipRejectsMultipleComponentSets(t *testing.T) {
 	}
 	if !errors.Is(err, ErrImportZipBasenameMismatch) {
 		t.Fatalf("extractShapefileZip() error = %v, want ErrImportZipBasenameMismatch", err)
+	}
+}
+
+func TestShapefileImportExtensionsComeFromFormatSpecs(t *testing.T) {
+	t.Parallel()
+
+	allowed := shapefileImportAllowedExtensions()
+	for _, ext := range []string{".shp", ".shx", ".dbf", ".prj", ".qpj", ".cpg"} {
+		if !allowed[ext] {
+			t.Fatalf("allowed extensions = %#v, missing %s", allowed, ext)
+		}
+	}
+
+	required := map[string]bool{}
+	for _, ext := range shapefileImportRequiredExtensions() {
+		required[format.NormalizeExtension(ext)] = true
+	}
+	for _, ext := range []string{".shp", ".shx", ".dbf"} {
+		if !required[ext] {
+			t.Fatalf("required extensions = %#v, missing %s", required, ext)
+		}
+	}
+	for _, ext := range []string{".prj", ".qpj", ".cpg"} {
+		if required[ext] {
+			t.Fatalf("required extensions = %#v, should not require %s", required, ext)
+		}
+	}
+}
+
+func TestExtractShapefileZipKeepsQPJSidecar(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for _, name := range []string{"roads.shp", "roads.dbf", "roads.shx", "roads.qpj"} {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatalf("zip create %s: %v", name, err)
+		}
+		if _, err := w.Write([]byte("x")); err != nil {
+			t.Fatalf("zip write %s: %v", name, err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zip close: %v", err)
+	}
+
+	files, err := extractShapefileZip(buf.Bytes())
+	if err != nil {
+		t.Fatalf("extractShapefileZip() error = %v", err)
+	}
+	if _, ok := files["roads.qpj"]; !ok {
+		t.Fatalf("files = %#v, missing qpj sidecar", files)
 	}
 }
 

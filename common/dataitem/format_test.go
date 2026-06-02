@@ -38,3 +38,18 @@ func TestValidateFormatRuleAcceptsSinglePrimaryRelatedRefSpec(t *testing.T) {
 		t.Fatalf("ValidateFormatRule() error = %v", err)
 	}
 }
+
+func TestInferDataTypeUsesFormatDescriptorForContentType(t *testing.T) {
+	if got := InferDataType("", "image/png"); got != DataTypeMedia {
+		t.Fatalf("InferDataType(image/png) = %q, want media", got)
+	}
+	if got := InferDataType("", "text/plain; charset=utf-8"); got != DataTypeDocument {
+		t.Fatalf("InferDataType(text/plain) = %q, want document", got)
+	}
+}
+
+func TestInferDataTypeDoesNotClassifyUnknownMIMEPrefix(t *testing.T) {
+	if got := InferDataType("", "application/x-custom"); got != DataTypeUnknown {
+		t.Fatalf("InferDataType(application/x-custom) = %q, want unknown", got)
+	}
+}

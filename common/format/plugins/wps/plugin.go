@@ -17,19 +17,14 @@ func (p *Plugin) Format() format.FormatType {
 
 func (p *Plugin) Descriptor() format.FormatDescriptor {
 	return format.FormatDescriptor{
-		ID:            "builtin-wps",
-		Format:        p.Format(),
-		I18nKey:       "format.wps",
-		DataType:      datatype.DataTypeDocument,
-		Layouts:       []string{format.LayoutSingle},
-		ProviderHints: []string{format.FormatProviderDocument},
+		ID:       "builtin-wps",
+		Format:   p.Format(),
+		I18nKey:  "format.wps",
+		DataType: datatype.DataTypeDocument,
+		Layouts:  []string{format.LayoutSingle},
 		Identification: format.FormatIdentification{
 			Extensions: []string{".wps"},
 			MimeTypes:  []string{"application/vnd.ms-works", "application/wps-office.doc", "application/x-wps", "application/kswps"},
-		},
-		ContentReaders: []string{
-			string(format.ContentReaderRawContent),
-			string(format.ContentReaderRangeContent),
 		},
 	}
 }

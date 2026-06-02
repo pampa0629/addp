@@ -8,7 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/addp/common/contentio"
 	"github.com/addp/common/dataitem"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	parquetformat "github.com/addp/common/format/plugins/parquet"
@@ -86,28 +88,127 @@ func TestTableFileResolverRulesDeclareSingleFileAndWholeScope(t *testing.T) {
 
 	d := &tableFileItemResolver{}
 	rules := d.Rules()
-	if len(rules) != 2 {
-		t.Fatalf("Rules len = %d, want 2", len(rules))
-	}
 
-	seenSingle := false
-	seenWhole := false
+	seen := map[string]bool{}
 	for _, rule := range rules {
 		if err := dataitem.ValidateFormatRule(rule); err != nil {
 			t.Fatalf("ValidateFormatRule(%s/%s) error = %v", rule.Format, rule.Layout, err)
 		}
+		if rule.DataType != dataitem.DataTypeTable {
+			t.Fatalf("rule = %#v, want table data type", rule)
+		}
+		seen[rule.Format+"/"+string(rule.Layout)] = true
 		switch rule.Layout {
 		case dataitem.LayoutSingle:
-			seenSingle = true
+			if !hasSingleTableProvider(rule.Format) {
+				t.Fatalf("single rule = %#v, want single table provider", rule)
+			}
 		case dataitem.LayoutWhole:
-			seenWhole = true
+			if !hasScopeTableProvider(rule.Format) {
+				t.Fatalf("whole scope rule = %#v, want scope table provider", rule)
+			}
 			if rule.WholeScope == nil || !rule.WholeScope.ExclusiveOnStrongHit {
 				t.Fatalf("whole scope rule = %#v, want explicit exclusive rule", rule.WholeScope)
 			}
+		default:
+			t.Fatalf("rule = %#v, want single or whole layout", rule)
 		}
 	}
-	if !seenSingle || !seenWhole {
-		t.Fatalf("rules missing single=%v whole=%v", seenSingle, seenWhole)
+	for _, key := range []string{"csv/single", "tsv/single", "parquet/single", "parquet/whole"} {
+		if !seen[key] {
+			t.Fatalf("rules = %#v, missing %s", rules, key)
+		}
+	}
+}
+
+func TestTableFileRuleCanReadUsesLayoutCapability(t *testing.T) {
+	testFormat := format.FormatType("metaenrich_scope_only_test")
+	if err := format.RegisterFormatPlugin(scopeOnlyTestFormatPlugin{formatType: testFormat}); err != nil {
+		t.Fatalf("RegisterFormatPlugin() error = %v", err)
+	}
+
+	if hasSingleTableProvider(string(testFormat)) {
+		t.Fatal("scope-only test format should not expose single table provider")
+	}
+	if !hasScopeTableProvider(string(testFormat)) {
+		t.Fatal("scope-only test format should expose scope table provider")
+	}
+	if tableFileRuleCanRead(dataitem.FormatRule{
+		Format:   string(testFormat),
+		DataType: dataitem.DataTypeTable,
+		Layout:   dataitem.LayoutSingle,
+	}) {
+		t.Fatal("single rule should require single table provider")
+	}
+	if !tableFileRuleCanRead(dataitem.FormatRule{
+		Format:   string(testFormat),
+		DataType: dataitem.DataTypeTable,
+		Layout:   dataitem.LayoutWhole,
+	}) {
+		t.Fatal("whole scope rule should use scope table provider")
+	}
+
+	filtered := tableFiles([]metaitem.StorageFileRef{
+		{Name: "dataset.scopeonlytable", Path: "dataset/dataset.scopeonlytable"},
+	})
+	if len(filtered) != 0 {
+		t.Fatalf("tableFiles() = %#v, want scope-only format excluded from single-file candidates", filtered)
+	}
+}
+
+func TestTableFilesUseProviderCapabilities(t *testing.T) {
+	t.Parallel()
+
+	files := []metaitem.StorageFileRef{
+		{Name: "sales.csv", Path: "dataset/sales.csv"},
+		{Name: "sales.tsv", Path: "dataset/sales.tsv"},
+		{Name: "sales.json", Path: "dataset/sales.json"},
+		{Name: "part-000.parquet", Path: "dataset/part-000.parquet"},
+		{Name: "README.txt", Path: "dataset/README.txt"},
+		{Name: "blob.unknown", Path: "dataset/blob.unknown"},
+	}
+
+	filtered := tableFiles(files)
+	paths := map[string]bool{}
+	for _, file := range filtered {
+		paths[file.Path] = true
+		if !hasSingleTableProvider(fileFormatName(file.Name)) {
+			t.Fatalf("tableFiles included unreadable table file: %#v", file)
+		}
+	}
+
+	for _, path := range []string{
+		"dataset/sales.csv",
+		"dataset/sales.tsv",
+		"dataset/sales.json",
+		"dataset/part-000.parquet",
+	} {
+		if !paths[path] {
+			t.Fatalf("tableFiles = %#v, missing %s", filtered, path)
+		}
+	}
+	for _, path := range []string{"dataset/README.txt", "dataset/blob.unknown"} {
+		if paths[path] {
+			t.Fatalf("tableFiles = %#v, should not include %s", filtered, path)
+		}
+	}
+}
+
+func TestDetectFormatOnlyCountsReadableTableFormats(t *testing.T) {
+	t.Parallel()
+
+	if got := detectFormat([]metaitem.StorageFileRef{
+		{Name: "README.txt", Path: "dataset/README.txt"},
+		{Name: "blob.unknown", Path: "dataset/blob.unknown"},
+	}); got != string(format.FormatUnknown) {
+		t.Fatalf("detectFormat() = %q, want unknown", got)
+	}
+
+	if got := detectFormat([]metaitem.StorageFileRef{
+		{Name: "README.txt", Path: "dataset/README.txt"},
+		{Name: "rows.json", Path: "dataset/rows.json"},
+	}); got != string(format.FormatJSON) {
+		t.Fatalf("detectFormat() = %q, want json", got)
 	}
 }
 
@@ -366,6 +467,34 @@ func (r mapContentReader) OpenContent(_ context.Context, _ plugin.ConnectionInfo
 		return nil, fmt.Errorf("content not found: %s", path.StringPath())
 	}
 	return io.NopCloser(bytes.NewReader(data)), nil
+}
+
+type scopeOnlyTestFormatPlugin struct {
+	formatType format.FormatType
+}
+
+func (p scopeOnlyTestFormatPlugin) Format() format.FormatType {
+	return p.formatType
+}
+
+func (p scopeOnlyTestFormatPlugin) Descriptor() format.FormatDescriptor {
+	return format.FormatDescriptor{
+		ID:       string(p.formatType),
+		Format:   p.formatType,
+		DataType: datatype.DataTypeTable,
+		Layouts:  []string{format.LayoutWhole},
+		Identification: format.FormatIdentification{
+			Extensions: []string{".scopeonlytable"},
+		},
+	}
+}
+
+func (p scopeOnlyTestFormatPlugin) DescribeTableScope(context.Context, contentio.Reader, contentio.Ref, *format.ParseOptions) (*format.TableDescribeResult, error) {
+	return &format.TableDescribeResult{
+		Table: &datatype.TableInfo{
+			Fields: []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeString}},
+		},
+	}, nil
 }
 
 type testMetaitemParquetRow struct {

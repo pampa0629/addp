@@ -8,13 +8,47 @@ import (
 	"testing"
 
 	commonClient "github.com/addp/common/client"
+	_ "github.com/addp/common/format/builtin"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
 )
 
-func TestTargetCatalogPathsUsesObjectParentPrefix(t *testing.T) {
+func TestTargetCatalogPathsUsesExactObjectForSingleObjectTarget(t *testing.T) {
 	endpoint := planner.EndpointSpec{
+		Format: "csv",
+		EndpointResource: planner.EndpointResourceSpec{
+			Kind: planner.EndpointResourceKindObject,
+			Path: map[string]interface{}{"bucket": "addp", "path": "gis/abc.csv"},
+		},
+	}
+
+	got := targetCatalogPaths(endpoint)
+	want := []string{"addp/gis/abc.csv"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("targetCatalogPaths() = %#v, want %#v", got, want)
+	}
+}
+
+func TestTargetCatalogPathsUsesExactObjectForTopLevelSingleObject(t *testing.T) {
+	endpoint := planner.EndpointSpec{
+		Format: "csv",
+		EndpointResource: planner.EndpointResourceSpec{
+			Kind: planner.EndpointResourceKindObject,
+			Path: map[string]interface{}{"bucket": "addp", "path": "abc.csv"},
+		},
+	}
+
+	got := targetCatalogPaths(endpoint)
+	want := []string{"addp/abc.csv"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("targetCatalogPaths() = %#v, want %#v", got, want)
+	}
+}
+
+func TestTargetCatalogPathsUsesObjectParentPrefixForMultiObjectTarget(t *testing.T) {
+	endpoint := planner.EndpointSpec{
+		Format: "shapefile",
 		EndpointResource: planner.EndpointResourceSpec{
 			Kind: planner.EndpointResourceKindObject,
 			Path: map[string]interface{}{"bucket": "addp", "path": "gis/abc.shp"},
@@ -23,21 +57,6 @@ func TestTargetCatalogPathsUsesObjectParentPrefix(t *testing.T) {
 
 	got := targetCatalogPaths(endpoint)
 	want := []string{"addp/gis"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("targetCatalogPaths() = %#v, want %#v", got, want)
-	}
-}
-
-func TestTargetCatalogPathsUsesBucketForTopLevelObject(t *testing.T) {
-	endpoint := planner.EndpointSpec{
-		EndpointResource: planner.EndpointResourceSpec{
-			Kind: planner.EndpointResourceKindObject,
-			Path: map[string]interface{}{"bucket": "addp", "path": "abc.csv"},
-		},
-	}
-
-	got := targetCatalogPaths(endpoint)
-	want := []string{"addp"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("targetCatalogPaths() = %#v, want %#v", got, want)
 	}

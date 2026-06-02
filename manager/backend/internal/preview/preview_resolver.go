@@ -578,7 +578,7 @@ func providerNamesForMeta(req *PreviewResolverRequest, providerReq *PreviewReque
 		if layout == "whole" && hasScopeTableProvider(formatType) {
 			return []string{"builtin:scope-table"}
 		}
-		if providerReq != nil && isFileTableFormat(formatType) && isContentFileItemType(itemType) {
+		if providerReq != nil && isFileTableFormat(formatType, attrs) && isContentFileItemType(itemType) {
 			return []string{"builtin:file-table"}
 		}
 		if providerReq != nil && itemType == "file" {
@@ -629,15 +629,19 @@ func isNodePreview(req *PreviewResolverRequest, providerReq *PreviewRequest) boo
 	}
 }
 
-func isFileTableFormat(formatType format.FormatType) bool {
+func isFileTableFormat(formatType format.FormatType, attrs map[string]interface{}) bool {
 	if formatType == "" || formatType == format.FormatUnknown {
 		return false
 	}
 	if _, err := format.GetTableSampleReader(formatType); err == nil {
-		return true
+		if _, infoErr := format.GetTableInfoProvider(formatType); infoErr == nil {
+			return true
+		}
+		return tableInfoFromMetaAttributes(attrs, "table") != nil
 	}
 	if _, err := format.GetMultiTableSampleReader(formatType); err == nil {
-		return true
+		_, infoErr := format.GetMultiTableInfoProvider(formatType)
+		return infoErr == nil
 	}
 	return false
 }

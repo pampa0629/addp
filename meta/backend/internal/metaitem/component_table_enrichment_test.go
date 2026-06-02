@@ -95,7 +95,7 @@ func TestCommonDataItemResolverRejectsCrossDirectoryRefs(t *testing.T) {
 	}
 }
 
-func TestCommonDataItemResolverEnrichesRefTableViaFormatProvider(t *testing.T) {
+func TestCommonDataItemResolverEnrichesRefTableViaFormatPlugin(t *testing.T) {
 	t.Parallel()
 
 	base := createMetaTestShapefile(t)

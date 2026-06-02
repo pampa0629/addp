@@ -21,8 +21,7 @@ func TestRegisterFormatPluginManifest(t *testing.T) {
     "identification": {
       "extensions": [".mfd"],
       "mime_types": ["text/x-manifest-doc"]
-    },
-    "content_readers": ["document_text"]
+    }
   }
 }`
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
@@ -77,8 +76,7 @@ func TestRegisterFormatPluginManifestsFromDir(t *testing.T) {
     "format": "manifest_dir_doc",
     "data_type": "document",
     "layouts": ["single"],
-    "identification": {"extensions": [".mdd"]},
-    "content_readers": ["document_text"]
+    "identification": {"extensions": [".mdd"]}
   }
 }`
 	if err := os.WriteFile(filepath.Join(dir, "plugin.json"), []byte(content), 0o600); err != nil {

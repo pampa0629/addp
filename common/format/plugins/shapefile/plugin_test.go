@@ -39,14 +39,41 @@ func TestDescribeRefsUsesRefFormatFacts(t *testing.T) {
 	}
 }
 
-func TestDescriptorDeclaresOnlyMultiTableProvider(t *testing.T) {
+func TestPluginImplementsOnlyMultiTableProviders(t *testing.T) {
 	descriptor := NewPlugin(nil).Descriptor()
-
-	if !descriptor.Providers.MultiTable {
-		t.Fatalf("providers = %#v, want multi_table", descriptor.Providers)
+	if descriptor.DataType != datatype.DataTypeTable {
+		t.Fatalf("descriptor data type = %q, want table", descriptor.DataType)
 	}
-	if descriptor.Providers.FormatInfo || descriptor.Providers.TableInfo || descriptor.Providers.TableSample || descriptor.Providers.Table {
-		t.Fatalf("providers = %#v, shapefile must not declare single table providers", descriptor.Providers)
+	plugin := NewPlugin(nil)
+	if _, ok := any(plugin).(format.MultiTableInfoProvider); !ok {
+		t.Fatal("shapefile should implement MultiTableInfoProvider")
+	}
+	if _, ok := any(plugin).(format.MultiTableSampleReader); !ok {
+		t.Fatal("shapefile should implement MultiTableSampleReader")
+	}
+	if _, ok := any(plugin).(format.MultiTableReaderProvider); !ok {
+		t.Fatal("shapefile should implement MultiTableReaderProvider")
+	}
+	if _, ok := any(plugin).(format.TableInfoProvider); ok {
+		t.Fatal("shapefile must not implement single TableInfoProvider")
+	}
+}
+
+func TestRelatedRefSpecsIncludeProjectionSidecars(t *testing.T) {
+	t.Parallel()
+
+	seen := map[string]format.RelatedRefSpec{}
+	for _, spec := range RelatedRefSpecs() {
+		seen[format.NormalizeExtension(spec.Extension)] = spec
+	}
+	for _, ext := range []string{extPRJ, extQPJ} {
+		spec, ok := seen[ext]
+		if !ok {
+			t.Fatalf("RelatedRefSpecs() missing %s", ext)
+		}
+		if spec.Required || spec.Role != roleProjection {
+			t.Fatalf("spec %s = %#v, want optional projection sidecar", ext, spec)
+		}
 	}
 }
 
@@ -216,30 +243,24 @@ func TestShapefileRegistersOnlyMultiTableProviders(t *testing.T) {
 	}
 }
 
-func TestShapefileSupportViewMatchesMultiTableContract(t *testing.T) {
+func TestShapefileCapabilitySnapshotMatchesMultiTableContract(t *testing.T) {
 	t.Parallel()
 
-	view, ok := format.GetFormatSupportView(format.FormatShapefile)
+	snapshot, ok := format.GetFormatCapabilitySnapshot(format.FormatShapefile)
 	if !ok {
-		t.Fatal("expected shapefile capability view")
+		t.Fatal("expected shapefile capability snapshot")
 	}
-	if !view.Providers.MultiTable {
-		t.Fatalf("providers = %#v, want multi_table", view.Providers)
+	if !snapshot.Implementations.MultiTableInfoProvider ||
+		!snapshot.Implementations.MultiTableSampleReader ||
+		!snapshot.Implementations.MultiTableReader ||
+		!snapshot.Implementations.MultiTableWriter {
+		t.Fatalf("implementations = %#v, want complete multi table implementations", snapshot.Implementations)
 	}
-	if view.Providers.TableInfo || view.Providers.TableSample || view.Providers.Table {
-		t.Fatalf("providers = %#v, shapefile must not declare single table providers", view.Providers)
-	}
-	if !view.Implementations.MultiTableInfoProvider ||
-		!view.Implementations.MultiTableSampleReader ||
-		!view.Implementations.MultiTableReader ||
-		!view.Implementations.MultiTableWriter {
-		t.Fatalf("implementations = %#v, want complete multi table implementations", view.Implementations)
-	}
-	if view.Implementations.TableInfoProvider ||
-		view.Implementations.TableSampleReader ||
-		view.Implementations.TableReaderProvider ||
-		view.Implementations.TableWriterProvider {
-		t.Fatalf("implementations = %#v, shapefile must not register single table implementations", view.Implementations)
+	if snapshot.Implementations.TableInfoProvider ||
+		snapshot.Implementations.TableSampleReader ||
+		snapshot.Implementations.TableReaderProvider ||
+		snapshot.Implementations.TableWriterProvider {
+		t.Fatalf("implementations = %#v, shapefile must not register single table implementations", snapshot.Implementations)
 	}
 }
 

@@ -12,7 +12,7 @@ import (
 )
 
 // ScopeTablePreviewProvider 目录型表格预览 Provider。
-// 当前主要服务 layout=whole 的 Parquet/ORC/Avro 表格资源。
+// 当前服务 layout=whole 且实现 scope table provider 的表格资源。
 type ScopeTablePreviewProvider struct{}
 
 func NewScopeTablePreviewProvider() PreviewProvider {
@@ -51,80 +51,42 @@ func (p *ScopeTablePreviewProvider) Preview(ctx context.Context, req *PreviewReq
 	limit := int64(pageSize)
 
 	formatType := resolveScopeTableFormat(req)
-	infoProvider, err := format.GetTableInfoProvider(formatType)
-	if err != nil && req.PhysicalPath != "" {
-		return nil, fmt.Errorf("no table info provider for %s: %w", formatType, err)
-	}
-	sampleReader, err := format.GetTableSampleReader(formatType)
-	if err != nil && req.PhysicalPath != "" {
-		return nil, fmt.Errorf("no table sample reader for %s: %w", formatType, err)
-	}
-	scopeInfoProvider, err := format.GetScopeTableInfoProvider(formatType)
-	if err != nil && req.PhysicalPath == "" {
-		return nil, fmt.Errorf("no scope table info provider for %s: %w", formatType, err)
-	}
 	scopeSampleReader, err := format.GetScopeTableSampleReader(formatType)
-	if err != nil && req.PhysicalPath == "" {
+	if err != nil {
 		return nil, fmt.Errorf("no scope table sample reader for %s: %w", formatType, err)
 	}
 
 	var tableInfo *datatype.TableInfo
 	var rows []map[string]interface{}
 
-	if req.PhysicalPath != "" {
-		if contentReader == nil {
-			err = fmt.Errorf("engine %s does not implement ContentReadableProvider", req.Engine.EngineType)
-		} else {
-			ref := contentio.NewRef(req.PhysicalPath, contentio.RoleMain)
-			input, openErr := reader.Open(ctx, ref)
-			if openErr != nil {
-				err = openErr
-			} else {
-				result, describeErr := infoProvider.DescribeTable(ctx, input, nil)
-				if describeErr == nil {
-					tableInfo = format.TableInfoFromDescribeResult(result)
-				}
-				err = describeErr
-				input.Close()
-			}
-			if err == nil {
-				input, openErr := reader.Open(ctx, ref)
-				if openErr != nil {
-					err = openErr
-				} else {
-					rows, err = sampleReader.SampleTable(ctx, input, offset, limit, nil)
-					input.Close()
-				}
-			}
-		}
-		if err != nil {
-			return nil, fmt.Errorf("failed to read scope table preview: %w", err)
-		}
+	dirPath := req.ScopePath
+	if dirPath == "" {
+		dirPath = nfsPhysicalPath(req.Schema, req.Table)
+	}
+	if catalogProvider == nil || contentReader == nil {
+		err = fmt.Errorf("engine %s does not implement CatalogProvider and ContentReadableProvider", req.Engine.EngineType)
 	} else {
-		dirPath := req.ScopePath
-		if dirPath == "" {
-			dirPath = nfsPhysicalPath(req.Schema, req.Table)
-		}
-		if catalogProvider == nil || contentReader == nil {
-			err = fmt.Errorf("engine %s does not implement CatalogProvider and ContentReadableProvider", req.Engine.EngineType)
-		} else {
-			scope := contentio.NewRef(dirPath, contentio.RoleScope)
-			tableInfo = tableInfoFromMetaAttributes(req.Attributes, "table")
-			sampleOptions := scopeTableSampleOptionsFromMetaAttributes(req.Attributes)
-			if tableInfo == nil {
+		scope := contentio.NewRef(dirPath, contentio.RoleScope)
+		tableInfo = tableInfoFromMetaAttributes(req.Attributes, "table")
+		sampleOptions := scopeTableSampleOptionsFromMetaAttributes(req.Attributes)
+		if tableInfo == nil {
+			scopeInfoProvider, infoErr := format.GetScopeTableInfoProvider(formatType)
+			if infoErr != nil {
+				err = fmt.Errorf("no scope table info provider for %s: %w", formatType, infoErr)
+			} else {
 				result, describeErr := scopeInfoProvider.DescribeTableScope(ctx, reader, scope, nil)
 				if describeErr == nil {
 					tableInfo = format.TableInfoFromDescribeResult(result)
 				}
 				err = describeErr
 			}
-			if err == nil {
-				rows, err = scopeSampleReader.SampleTableScope(ctx, reader, scope, offset, limit, sampleOptions)
-			}
 		}
-		if err != nil {
-			return nil, fmt.Errorf("failed to read scope table preview: %w", err)
+		if err == nil {
+			rows, err = scopeSampleReader.SampleTableScope(ctx, reader, scope, offset, limit, sampleOptions)
 		}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to read scope table preview: %w", err)
 	}
 
 	// 构建列名和列元数据

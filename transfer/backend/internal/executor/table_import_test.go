@@ -19,7 +19,6 @@ func TestTableTransferExecutorWritesEncodedCSVToNativeTable(t *testing.T) {
 	preparer := &fakeTableWritePreparer{}
 	exec := &TableTransferExecutor{
 		SourceContentReader:     reader,
-		SourceFormatProvider:    csvformat.NewPlugin(nil),
 		SourceTableReadProvider: csvformat.NewPlugin(nil),
 		TargetNativePreparer:    preparer,
 		TargetNativeWriter:      writer,
@@ -56,7 +55,6 @@ func TestTableTransferExecutorPreparesNativeTargetOnce(t *testing.T) {
 	preparer := &fakeTableWritePreparer{}
 	exec := &TableTransferExecutor{
 		SourceContentReader:     reader,
-		SourceFormatProvider:    csvformat.NewPlugin(nil),
 		SourceInfoProvider:      csvformat.NewPlugin(nil),
 		SourceTableReadProvider: csvformat.NewPlugin(nil),
 		TargetNativePreparer:    preparer,
@@ -113,7 +111,6 @@ func TestTableTransferExecutorPrepareAppendUsesTableInfo(t *testing.T) {
 	preparer := &fakeTableWritePreparer{}
 	exec := &TableTransferExecutor{
 		SourceContentReader:     reader,
-		SourceFormatProvider:    csvformat.NewPlugin(nil),
 		SourceInfoProvider:      csvformat.NewPlugin(nil),
 		SourceTableReadProvider: csvformat.NewPlugin(nil),
 		TargetNativePreparer:    preparer,
@@ -142,7 +139,6 @@ func TestTableTransferExecutorPrefersNativeTableWriteSessionForCopy(t *testing.T
 	preparer := &fakeTableWritePreparer{}
 	exec := &TableTransferExecutor{
 		SourceContentReader:        reader,
-		SourceFormatProvider:       csvformat.NewPlugin(nil),
 		SourceInfoProvider:         csvformat.NewPlugin(nil),
 		SourceTableReadProvider:    csvformat.NewPlugin(nil),
 		TargetNativePreparer:       preparer,
@@ -188,7 +184,6 @@ func TestTableTransferExecutorPassesResumeMarkerToNativeWriteSession(t *testing.
 	preparer := &fakeTableWritePreparer{}
 	exec := &TableTransferExecutor{
 		SourceContentReader:        reader,
-		SourceFormatProvider:       csvformat.NewPlugin(nil),
 		SourceInfoProvider:         csvformat.NewPlugin(nil),
 		SourceTableReadProvider:    csvformat.NewPlugin(nil),
 		TargetNativePreparer:       preparer,
@@ -220,10 +215,10 @@ func TestTableTransferExecutorPassesResumeMarkerToEncodedWriter(t *testing.T) {
 	reader := &fakeContentReader{content: "id\n1\n"}
 	writer := &fakeContentWriter{}
 	exec := &TableTransferExecutor{
-		SourceContentReader:     reader,
-		SourceTableReadProvider: csvformat.NewPlugin(nil),
-		TargetContentWriter:     writer,
-		TargetFormatProvider:    csvformat.NewPlugin(nil),
+		SourceContentReader:       reader,
+		SourceTableReadProvider:   csvformat.NewPlugin(nil),
+		TargetContentWriter:       writer,
+		TargetTableWriterProvider: csvformat.NewPlugin(nil),
 	}
 
 	_, err := exec.Execute(context.Background(), TableTransferPlan{
@@ -255,7 +250,6 @@ func TestTableTransferExecutorPrefersNativeTableWriteSessionForDefaultMethod(t *
 	preparer := &fakeTableWritePreparer{}
 	exec := &TableTransferExecutor{
 		SourceContentReader:        reader,
-		SourceFormatProvider:       csvformat.NewPlugin(nil),
 		SourceInfoProvider:         csvformat.NewPlugin(nil),
 		SourceTableReadProvider:    csvformat.NewPlugin(nil),
 		TargetNativePreparer:       preparer,
@@ -284,9 +278,9 @@ func TestTableTransferExecutorPrefersNativeTableWriteSessionForDefaultMethod(t *
 
 func TestTableTransferExecutorRequiresNativePreparer(t *testing.T) {
 	exec := &TableTransferExecutor{
-		SourceContentReader:  &fakeContentReader{},
-		SourceFormatProvider: csvformat.NewPlugin(nil),
-		TargetNativeWriter:   &fakeBatchWriter{},
+		SourceContentReader:     &fakeContentReader{},
+		SourceTableReadProvider: csvformat.NewPlugin(nil),
+		TargetNativeWriter:      &fakeBatchWriter{},
 	}
 
 	_, err := exec.Execute(context.Background(), TableTransferPlan{
@@ -320,9 +314,6 @@ func TestNewTableTransferExecutorLoadsEncodedToNativeProvidersFromRegistry(t *te
 	}
 	if exec.TargetNativeWriter != target {
 		t.Fatalf("writer = %#v, want registered target", exec.TargetNativeWriter)
-	}
-	if exec.SourceFormatProvider.Format() != format.FormatCSV {
-		t.Fatalf("format provider = %q, want csv", exec.SourceFormatProvider.Format())
 	}
 	if exec.SourceTableReadProvider == nil || exec.SourceTableReadProvider.Format() != format.FormatCSV {
 		t.Fatalf("table read provider = %#v, want csv", exec.SourceTableReadProvider)

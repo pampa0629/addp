@@ -392,9 +392,12 @@ func (p *ContainerChildPreviewProvider) previewTableChild(ctx context.Context, r
 		}
 		return (&FileTablePreviewProvider{}).previewRefs(ctx, child.Reader, child.Refs, child.Ref.Path, bucket, child.Format, infoProvider, sampleReader, opts, req)
 	}
-	infoProvider, _ := format.GetTableInfoProvider(child.Format)
 	sampleReader, err := format.GetTableSampleReader(child.Format)
 	if err != nil {
+		return p.previewObjectChild(ctx, req, bucket, child)
+	}
+	infoProvider, err := format.GetTableInfoProvider(child.Format)
+	if err != nil && tableInfoFromMetaAttributes(req.Attributes, "table") == nil {
 		return p.previewObjectChild(ctx, req, bucket, child)
 	}
 	return (&FileTablePreviewProvider{}).previewStreamable(ctx, child.Reader, bucket, child.Ref.Path, child.Format, infoProvider, sampleReader, opts, req)

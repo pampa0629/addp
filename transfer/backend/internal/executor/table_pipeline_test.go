@@ -2,12 +2,10 @@ package executor
 
 import (
 	"context"
-	"fmt"
 	"github.com/addp/common/datatype"
 	"strings"
 	"testing"
 
-	"github.com/addp/common/contentio"
 	"github.com/addp/common/engine/contentadapter"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
@@ -22,10 +20,10 @@ func TestTableTransferExecutorConvertsEncodedCSVToJSONL(t *testing.T) {
 	reader := &fakeContentReader{content: "id,name\n1,Alice\n2,Bob\n3,Carol\n"}
 	writer := &fakeContentWriter{}
 	exec := &TableTransferExecutor{
-		SourceContentReader:     reader,
-		TargetContentWriter:     writer,
-		SourceTableReadProvider: csvformat.NewPlugin(nil),
-		TargetFormatProvider:    jsonformat.NewPlugin(nil),
+		SourceContentReader:       reader,
+		TargetContentWriter:       writer,
+		SourceTableReadProvider:   csvformat.NewPlugin(nil),
+		TargetTableWriterProvider: jsonformat.NewPlugin(nil),
 	}
 
 	metrics, err := exec.Execute(context.Background(), TableTransferPlan{
@@ -142,10 +140,10 @@ func TestTableTransferExecutorReadsShapefileRefs(t *testing.T) {
 
 	output := &fakeContentWriter{}
 	exec := &TableTransferExecutor{
-		SourceContentReader:     source,
-		TargetContentWriter:     output,
-		SourceMultiReadProvider: shapefilePlugin,
-		TargetFormatProvider:    csvformat.NewPlugin(nil),
+		SourceContentReader:       source,
+		TargetContentWriter:       output,
+		SourceMultiReadProvider:   shapefilePlugin,
+		TargetTableWriterProvider: csvformat.NewPlugin(nil),
 	}
 	metrics, err := exec.Execute(context.Background(), TableTransferPlan{
 		Source:    TableSourcePlan{Kind: TableEndpointEncoded, Path: target, Format: format.FormatShapefile},
@@ -193,10 +191,10 @@ func TestTableTransferExecutorUsesPlannedSourceRelatedRefs(t *testing.T) {
 
 	output := &fakeContentWriter{}
 	exec := &TableTransferExecutor{
-		SourceContentReader:     source,
-		TargetContentWriter:     output,
-		SourceMultiReadProvider: shapefilePlugin,
-		TargetFormatProvider:    csvformat.NewPlugin(nil),
+		SourceContentReader:       source,
+		TargetContentWriter:       output,
+		SourceMultiReadProvider:   shapefilePlugin,
+		TargetTableWriterProvider: csvformat.NewPlugin(nil),
 	}
 	staleBasePath := engineplugin.FileItemPath(7, "imports/stale.shp")
 	metrics, err := exec.Execute(context.Background(), TableTransferPlan{
@@ -223,10 +221,9 @@ func TestTableTransferExecutorUsesPlannedSourceRelatedRefs(t *testing.T) {
 
 func TestTableTransferExecutorRejectsEncodedWholeScopeSourceWithoutProvider(t *testing.T) {
 	exec := &TableTransferExecutor{
-		SourceContentReader:  &fakeContentReader{},
-		TargetContentWriter:  &fakeContentWriter{},
-		SourceFormatProvider: csvformat.NewPlugin(nil),
-		TargetFormatProvider: csvformat.NewPlugin(nil),
+		SourceContentReader:       &fakeContentReader{},
+		TargetContentWriter:       &fakeContentWriter{},
+		TargetTableWriterProvider: csvformat.NewPlugin(nil),
 	}
 
 	_, err := exec.Execute(context.Background(), TableTransferPlan{
@@ -265,10 +262,10 @@ func TestTableTransferExecutorReadsParquetWholeScopeSource(t *testing.T) {
 
 	output := &fakeContentWriter{}
 	exec := &TableTransferExecutor{
-		SourceContentReader:     source,
-		TargetContentWriter:     output,
-		SourceScopeReadProvider: parquetPlugin,
-		TargetFormatProvider:    csvformat.NewPlugin(nil),
+		SourceContentReader:       source,
+		TargetContentWriter:       output,
+		SourceScopeReadProvider:   parquetPlugin,
+		TargetTableWriterProvider: csvformat.NewPlugin(nil),
 	}
 	metrics, err := exec.Execute(context.Background(), TableTransferPlan{
 		Source: TableSourcePlan{
@@ -554,14 +551,11 @@ func TestTableTransferExecutorPrefersMultiTableProvider(t *testing.T) {
 	}
 
 	output := &fakeContentWriter{}
-	sampleOnly := &failingMultiTableProvider{formatType: shapefilePlugin.Format(), specs: shapefilePlugin.RelatedRefSpecs()}
 	exec := &TableTransferExecutor{
-		SourceContentReader:     source,
-		TargetContentWriter:     output,
-		SourceMultiReadProvider: shapefilePlugin,
-		SourceMultiInfoProvider: shapefilePlugin,
-		SourceMultiSampleReader: sampleOnly,
-		TargetFormatProvider:    csvformat.NewPlugin(nil),
+		SourceContentReader:       source,
+		TargetContentWriter:       output,
+		SourceMultiReadProvider:   shapefilePlugin,
+		TargetTableWriterProvider: csvformat.NewPlugin(nil),
 	}
 	metrics, err := exec.Execute(context.Background(), TableTransferPlan{
 		Source:    TableSourcePlan{Kind: TableEndpointEncoded, Path: target, Format: format.FormatShapefile},
@@ -570,9 +564,6 @@ func TestTableTransferExecutorPrefersMultiTableProvider(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
-	}
-	if sampleOnly.sampleCalled {
-		t.Fatal("sample multi provider was called; want continuous multi reader path")
 	}
 	if metrics.RecordsRead != 2 || metrics.RecordsWritten != 2 || metrics.Batches != 2 {
 		t.Fatalf("metrics = %#v, want 2 read/written and 2 batches", metrics)
@@ -602,28 +593,9 @@ func TestNewTableTransferExecutorLoadsEncodedToEncodedProvidersFromRegistry(t *t
 	if exec.SourceTableReadProvider.Format() != format.FormatCSV {
 		t.Fatalf("table read provider = %q, want csv", exec.SourceTableReadProvider.Format())
 	}
-	if exec.TargetFormatProvider.Format() != format.FormatJSON {
-		t.Fatalf("table writer provider = %q, want json", exec.TargetFormatProvider.Format())
+	if exec.TargetTableWriterProvider.Format() != format.FormatJSON {
+		t.Fatalf("table writer provider = %q, want json", exec.TargetTableWriterProvider.Format())
 	}
-}
-
-type failingMultiTableProvider struct {
-	formatType   format.FormatType
-	specs        []format.RelatedRefSpec
-	sampleCalled bool
-}
-
-func (p *failingMultiTableProvider) Format() format.FormatType {
-	return p.formatType
-}
-
-func (p *failingMultiTableProvider) RelatedRefSpecs() []format.RelatedRefSpec {
-	return append([]format.RelatedRefSpec(nil), p.specs...)
-}
-
-func (p *failingMultiTableProvider) SampleMultiTable(context.Context, contentio.Reader, []format.RelatedRef, int64, int64, *format.ParseOptions) ([]map[string]interface{}, error) {
-	p.sampleCalled = true
-	return nil, fmt.Errorf("sample multi provider should not be called")
 }
 
 type markerTableBatchSource struct {

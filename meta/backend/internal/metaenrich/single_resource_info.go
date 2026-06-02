@@ -69,12 +69,12 @@ func EnrichSingleDocumentItem(
 	item.Document = info.Clone()
 	metaitem.ApplyDocumentInfo(attrs, item)
 
-	if formatProvider, err := format.GetFormatInfoProvider(formatType); err == nil {
+	if infoProvider, err := format.GetFormatInfoProvider(formatType); err == nil {
 		rc, err := contentReader.OpenContent(ctx, connInfo, catalogPathFor(path), plugin.ReadOptions{})
 		if err != nil {
 			return err
 		}
-		formatInfo, err := formatProvider.DescribeFormat(ctx, rc, nil)
+		formatInfo, err := infoProvider.DescribeFormat(ctx, rc, nil)
 		closeErr := rc.Close()
 		if err != nil {
 			return err

@@ -7,51 +7,15 @@ import (
 )
 
 type ProviderRegistry struct {
-	mu                      sync.RWMutex
-	formatPlugins           map[FormatType]FormatPlugin
-	multiTableInfoProviders map[FormatType]MultiTableInfoProvider
-	multiTableSampleReaders map[FormatType]MultiTableSampleReader
-	scopeTableInfoProviders map[FormatType]ScopeTableInfoProvider
-	scopeTableSampleReaders map[FormatType]ScopeTableSampleReader
-	scopeTableReaders       map[FormatType]ScopeTableReaderProvider
-	formatInfoProviders     map[FormatType]FormatInfoProvider
-	tableInfoProviders      map[FormatType]TableInfoProvider
-	tableSampleProviders    map[FormatType]TableSampleReader
-	tableReaderProviders    map[FormatType]TableReaderProvider
-	multiTableReaders       map[FormatType]MultiTableReaderProvider
-	tableWriterProviders    map[FormatType]TableWriterProvider
-	multiTableWriters       map[FormatType]MultiTableWriterProvider
-	documentInfoProviders   map[FormatType]DocumentInfoProvider
-	documentTextReaders     map[FormatType]DocumentTextReader
-	binaryContentReaders    map[FormatType]BinaryContentReader
-	mediaInfoProviders      map[FormatType]MediaInfoProvider
-	containerInfoProviders  map[FormatType]ContainerInfoProvider
-	containerChildResolvers map[FormatType]ContainerChildResolver
+	mu            sync.RWMutex
+	formatPlugins map[FormatType]FormatPlugin
 }
 
 var globalProviderRegistry = NewProviderRegistry()
 
 func NewProviderRegistry() *ProviderRegistry {
 	return &ProviderRegistry{
-		formatPlugins:           make(map[FormatType]FormatPlugin),
-		multiTableInfoProviders: make(map[FormatType]MultiTableInfoProvider),
-		multiTableSampleReaders: make(map[FormatType]MultiTableSampleReader),
-		scopeTableInfoProviders: make(map[FormatType]ScopeTableInfoProvider),
-		scopeTableSampleReaders: make(map[FormatType]ScopeTableSampleReader),
-		scopeTableReaders:       make(map[FormatType]ScopeTableReaderProvider),
-		formatInfoProviders:     make(map[FormatType]FormatInfoProvider),
-		tableInfoProviders:      make(map[FormatType]TableInfoProvider),
-		tableSampleProviders:    make(map[FormatType]TableSampleReader),
-		tableReaderProviders:    make(map[FormatType]TableReaderProvider),
-		multiTableReaders:       make(map[FormatType]MultiTableReaderProvider),
-		tableWriterProviders:    make(map[FormatType]TableWriterProvider),
-		multiTableWriters:       make(map[FormatType]MultiTableWriterProvider),
-		documentInfoProviders:   make(map[FormatType]DocumentInfoProvider),
-		documentTextReaders:     make(map[FormatType]DocumentTextReader),
-		binaryContentReaders:    make(map[FormatType]BinaryContentReader),
-		mediaInfoProviders:      make(map[FormatType]MediaInfoProvider),
-		containerInfoProviders:  make(map[FormatType]ContainerInfoProvider),
-		containerChildResolvers: make(map[FormatType]ContainerChildResolver),
+		formatPlugins: make(map[FormatType]FormatPlugin),
 	}
 }
 
@@ -60,7 +24,22 @@ func GetFormatPlugin(formatType FormatType) (FormatPlugin, error) {
 }
 
 func (r *ProviderRegistry) GetFormatPlugin(formatType FormatType) (FormatPlugin, error) {
-	return providerFromMap(r, r.formatPlugins, formatType, "format plugin")
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	plugin, ok := r.formatPlugins[formatType]
+	if !ok {
+		return nil, fmt.Errorf("no format plugin registered for format: %s", formatType)
+	}
+	return plugin, nil
+}
+
+func GetFormatDescriptorProvider(formatType FormatType) (FormatDescriptorProvider, error) {
+	return globalProviderRegistry.GetFormatDescriptorProvider(formatType)
+}
+
+func (r *ProviderRegistry) GetFormatDescriptorProvider(formatType FormatType) (FormatDescriptorProvider, error) {
+	return pluginCapability[FormatDescriptorProvider](r, formatType, "format descriptor provider")
 }
 
 func GetFormatInfoProvider(formatType FormatType) (FormatInfoProvider, error) {
@@ -68,7 +47,7 @@ func GetFormatInfoProvider(formatType FormatType) (FormatInfoProvider, error) {
 }
 
 func (r *ProviderRegistry) GetFormatInfoProvider(formatType FormatType) (FormatInfoProvider, error) {
-	return providerFromMap(r, r.formatInfoProviders, formatType, "format info provider")
+	return pluginCapability[FormatInfoProvider](r, formatType, "format info provider")
 }
 
 func GetMultiTableInfoProvider(formatType FormatType) (MultiTableInfoProvider, error) {
@@ -76,7 +55,7 @@ func GetMultiTableInfoProvider(formatType FormatType) (MultiTableInfoProvider, e
 }
 
 func (r *ProviderRegistry) GetMultiTableInfoProvider(formatType FormatType) (MultiTableInfoProvider, error) {
-	return providerFromMap(r, r.multiTableInfoProviders, formatType, "multi table info provider")
+	return pluginCapability[MultiTableInfoProvider](r, formatType, "multi table info provider")
 }
 
 func GetMultiTableSampleReader(formatType FormatType) (MultiTableSampleReader, error) {
@@ -84,7 +63,7 @@ func GetMultiTableSampleReader(formatType FormatType) (MultiTableSampleReader, e
 }
 
 func (r *ProviderRegistry) GetMultiTableSampleReader(formatType FormatType) (MultiTableSampleReader, error) {
-	return providerFromMap(r, r.multiTableSampleReaders, formatType, "multi table sample reader")
+	return pluginCapability[MultiTableSampleReader](r, formatType, "multi table sample reader")
 }
 
 func GetScopeTableInfoProvider(formatType FormatType) (ScopeTableInfoProvider, error) {
@@ -92,7 +71,7 @@ func GetScopeTableInfoProvider(formatType FormatType) (ScopeTableInfoProvider, e
 }
 
 func (r *ProviderRegistry) GetScopeTableInfoProvider(formatType FormatType) (ScopeTableInfoProvider, error) {
-	return providerFromMap(r, r.scopeTableInfoProviders, formatType, "scope table info provider")
+	return pluginCapability[ScopeTableInfoProvider](r, formatType, "scope table info provider")
 }
 
 func GetScopeTableSampleReader(formatType FormatType) (ScopeTableSampleReader, error) {
@@ -100,7 +79,7 @@ func GetScopeTableSampleReader(formatType FormatType) (ScopeTableSampleReader, e
 }
 
 func (r *ProviderRegistry) GetScopeTableSampleReader(formatType FormatType) (ScopeTableSampleReader, error) {
-	return providerFromMap(r, r.scopeTableSampleReaders, formatType, "scope table sample reader")
+	return pluginCapability[ScopeTableSampleReader](r, formatType, "scope table sample reader")
 }
 
 func GetScopeTableReaderProvider(formatType FormatType) (ScopeTableReaderProvider, error) {
@@ -108,7 +87,7 @@ func GetScopeTableReaderProvider(formatType FormatType) (ScopeTableReaderProvide
 }
 
 func (r *ProviderRegistry) GetScopeTableReaderProvider(formatType FormatType) (ScopeTableReaderProvider, error) {
-	return providerFromMap(r, r.scopeTableReaders, formatType, "scope table reader provider")
+	return pluginCapability[ScopeTableReaderProvider](r, formatType, "scope table reader provider")
 }
 
 func GetTableInfoProvider(formatType FormatType) (TableInfoProvider, error) {
@@ -116,7 +95,7 @@ func GetTableInfoProvider(formatType FormatType) (TableInfoProvider, error) {
 }
 
 func (r *ProviderRegistry) GetTableInfoProvider(formatType FormatType) (TableInfoProvider, error) {
-	return providerFromMap(r, r.tableInfoProviders, formatType, "table info provider")
+	return pluginCapability[TableInfoProvider](r, formatType, "table info provider")
 }
 
 func GetTableSampleReader(formatType FormatType) (TableSampleReader, error) {
@@ -124,7 +103,7 @@ func GetTableSampleReader(formatType FormatType) (TableSampleReader, error) {
 }
 
 func (r *ProviderRegistry) GetTableSampleReader(formatType FormatType) (TableSampleReader, error) {
-	return providerFromMap(r, r.tableSampleProviders, formatType, "table sample provider")
+	return pluginCapability[TableSampleReader](r, formatType, "table sample reader")
 }
 
 func GetTableReaderProvider(formatType FormatType) (TableReaderProvider, error) {
@@ -132,7 +111,7 @@ func GetTableReaderProvider(formatType FormatType) (TableReaderProvider, error) 
 }
 
 func (r *ProviderRegistry) GetTableReaderProvider(formatType FormatType) (TableReaderProvider, error) {
-	return providerFromMap(r, r.tableReaderProviders, formatType, "table reader provider")
+	return pluginCapability[TableReaderProvider](r, formatType, "table reader provider")
 }
 
 func GetMultiTableReaderProvider(formatType FormatType) (MultiTableReaderProvider, error) {
@@ -140,7 +119,7 @@ func GetMultiTableReaderProvider(formatType FormatType) (MultiTableReaderProvide
 }
 
 func (r *ProviderRegistry) GetMultiTableReaderProvider(formatType FormatType) (MultiTableReaderProvider, error) {
-	return providerFromMap(r, r.multiTableReaders, formatType, "multi table reader provider")
+	return pluginCapability[MultiTableReaderProvider](r, formatType, "multi table reader provider")
 }
 
 func GetTableWriterProvider(formatType FormatType) (TableWriterProvider, error) {
@@ -148,7 +127,7 @@ func GetTableWriterProvider(formatType FormatType) (TableWriterProvider, error) 
 }
 
 func (r *ProviderRegistry) GetTableWriterProvider(formatType FormatType) (TableWriterProvider, error) {
-	return providerFromMap(r, r.tableWriterProviders, formatType, "table writer provider")
+	return pluginCapability[TableWriterProvider](r, formatType, "table writer provider")
 }
 
 func GetMultiTableWriterProvider(formatType FormatType) (MultiTableWriterProvider, error) {
@@ -156,7 +135,7 @@ func GetMultiTableWriterProvider(formatType FormatType) (MultiTableWriterProvide
 }
 
 func (r *ProviderRegistry) GetMultiTableWriterProvider(formatType FormatType) (MultiTableWriterProvider, error) {
-	return providerFromMap(r, r.multiTableWriters, formatType, "multi table writer provider")
+	return pluginCapability[MultiTableWriterProvider](r, formatType, "multi table writer provider")
 }
 
 func GetDocumentInfoProvider(formatType FormatType) (DocumentInfoProvider, error) {
@@ -164,7 +143,7 @@ func GetDocumentInfoProvider(formatType FormatType) (DocumentInfoProvider, error
 }
 
 func (r *ProviderRegistry) GetDocumentInfoProvider(formatType FormatType) (DocumentInfoProvider, error) {
-	return providerFromMap(r, r.documentInfoProviders, formatType, "document info provider")
+	return pluginCapability[DocumentInfoProvider](r, formatType, "document info provider")
 }
 
 func GetDocumentTextReader(formatType FormatType) (DocumentTextReader, error) {
@@ -172,7 +151,7 @@ func GetDocumentTextReader(formatType FormatType) (DocumentTextReader, error) {
 }
 
 func (r *ProviderRegistry) GetDocumentTextReader(formatType FormatType) (DocumentTextReader, error) {
-	return providerFromMap(r, r.documentTextReaders, formatType, "document text reader")
+	return pluginCapability[DocumentTextReader](r, formatType, "document text reader")
 }
 
 func GetBinaryContentReader(formatType FormatType) (BinaryContentReader, error) {
@@ -180,7 +159,7 @@ func GetBinaryContentReader(formatType FormatType) (BinaryContentReader, error) 
 }
 
 func (r *ProviderRegistry) GetBinaryContentReader(formatType FormatType) (BinaryContentReader, error) {
-	return providerFromMap(r, r.binaryContentReaders, formatType, "binary content reader")
+	return pluginCapability[BinaryContentReader](r, formatType, "binary content reader")
 }
 
 func GetMediaInfoProvider(formatType FormatType) (MediaInfoProvider, error) {
@@ -188,7 +167,7 @@ func GetMediaInfoProvider(formatType FormatType) (MediaInfoProvider, error) {
 }
 
 func (r *ProviderRegistry) GetMediaInfoProvider(formatType FormatType) (MediaInfoProvider, error) {
-	return providerFromMap(r, r.mediaInfoProviders, formatType, "media info provider")
+	return pluginCapability[MediaInfoProvider](r, formatType, "media info provider")
 }
 
 func GetContainerInfoProvider(formatType FormatType) (ContainerInfoProvider, error) {
@@ -196,7 +175,7 @@ func GetContainerInfoProvider(formatType FormatType) (ContainerInfoProvider, err
 }
 
 func (r *ProviderRegistry) GetContainerInfoProvider(formatType FormatType) (ContainerInfoProvider, error) {
-	return providerFromMap(r, r.containerInfoProviders, formatType, "container info provider")
+	return pluginCapability[ContainerInfoProvider](r, formatType, "container info provider")
 }
 
 func GetContainerChildResolver(formatType FormatType) (ContainerChildResolver, error) {
@@ -204,19 +183,21 @@ func GetContainerChildResolver(formatType FormatType) (ContainerChildResolver, e
 }
 
 func (r *ProviderRegistry) GetContainerChildResolver(formatType FormatType) (ContainerChildResolver, error) {
-	return providerFromMap(r, r.containerChildResolvers, formatType, "container child resolver")
+	return pluginCapability[ContainerChildResolver](r, formatType, "container child resolver")
 }
 
-func providerFromMap[T any](r *ProviderRegistry, values map[FormatType]T, formatType FormatType, label string) (T, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	provider, ok := values[formatType]
+func pluginCapability[T any](r *ProviderRegistry, formatType FormatType, label string) (T, error) {
+	plugin, err := r.GetFormatPlugin(formatType)
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	capability, ok := plugin.(T)
 	if !ok {
 		var zero T
-		return zero, fmt.Errorf("no %s registered for format: %s", label, formatType)
+		return zero, fmt.Errorf("format %s has no %s", formatType, label)
 	}
-	return provider, nil
+	return capability, nil
 }
 
 func ListFormatPluginFormats() []FormatType {
@@ -224,159 +205,11 @@ func ListFormatPluginFormats() []FormatType {
 }
 
 func (r *ProviderRegistry) ListFormatPluginFormats() []FormatType {
-	return sortedMapKeys(r, r.formatPlugins)
-}
-
-func ListFormatInfoProviderFormats() []FormatType {
-	return globalProviderRegistry.ListFormatInfoProviderFormats()
-}
-
-func (r *ProviderRegistry) ListFormatInfoProviderFormats() []FormatType {
-	return sortedMapKeys(r, r.formatInfoProviders)
-}
-
-func ListMultiTableInfoProviderFormats() []FormatType {
-	return globalProviderRegistry.ListMultiTableInfoProviderFormats()
-}
-
-func (r *ProviderRegistry) ListMultiTableInfoProviderFormats() []FormatType {
-	return sortedMapKeys(r, r.multiTableInfoProviders)
-}
-
-func ListMultiTableSampleReaderFormats() []FormatType {
-	return globalProviderRegistry.ListMultiTableSampleReaderFormats()
-}
-
-func (r *ProviderRegistry) ListMultiTableSampleReaderFormats() []FormatType {
-	return sortedMapKeys(r, r.multiTableSampleReaders)
-}
-
-func ListScopeTableInfoProviderFormats() []FormatType {
-	return globalProviderRegistry.ListScopeTableInfoProviderFormats()
-}
-
-func (r *ProviderRegistry) ListScopeTableInfoProviderFormats() []FormatType {
-	return sortedMapKeys(r, r.scopeTableInfoProviders)
-}
-
-func ListScopeTableSampleReaderFormats() []FormatType {
-	return globalProviderRegistry.ListScopeTableSampleReaderFormats()
-}
-
-func (r *ProviderRegistry) ListScopeTableSampleReaderFormats() []FormatType {
-	return sortedMapKeys(r, r.scopeTableSampleReaders)
-}
-
-func ListScopeTableReaderProviderFormats() []FormatType {
-	return globalProviderRegistry.ListScopeTableReaderProviderFormats()
-}
-
-func (r *ProviderRegistry) ListScopeTableReaderProviderFormats() []FormatType {
-	return sortedMapKeys(r, r.scopeTableReaders)
-}
-
-func ListTableInfoProviderFormats() []FormatType {
-	return globalProviderRegistry.ListTableInfoProviderFormats()
-}
-
-func (r *ProviderRegistry) ListTableInfoProviderFormats() []FormatType {
-	return sortedMapKeys(r, r.tableInfoProviders)
-}
-
-func ListTableSampleReaderFormats() []FormatType {
-	return globalProviderRegistry.ListTableSampleReaderFormats()
-}
-
-func (r *ProviderRegistry) ListTableSampleReaderFormats() []FormatType {
-	return sortedMapKeys(r, r.tableSampleProviders)
-}
-
-func ListTableReaderProviderFormats() []FormatType {
-	return globalProviderRegistry.ListTableReaderProviderFormats()
-}
-
-func (r *ProviderRegistry) ListTableReaderProviderFormats() []FormatType {
-	return sortedMapKeys(r, r.tableReaderProviders)
-}
-
-func ListMultiTableReaderProviderFormats() []FormatType {
-	return globalProviderRegistry.ListMultiTableReaderProviderFormats()
-}
-
-func (r *ProviderRegistry) ListMultiTableReaderProviderFormats() []FormatType {
-	return sortedMapKeys(r, r.multiTableReaders)
-}
-
-func ListTableWriterProviderFormats() []FormatType {
-	return globalProviderRegistry.ListTableWriterProviderFormats()
-}
-
-func (r *ProviderRegistry) ListTableWriterProviderFormats() []FormatType {
-	return sortedMapKeys(r, r.tableWriterProviders)
-}
-
-func ListMultiTableWriterProviderFormats() []FormatType {
-	return globalProviderRegistry.ListMultiTableWriterProviderFormats()
-}
-
-func (r *ProviderRegistry) ListMultiTableWriterProviderFormats() []FormatType {
-	return sortedMapKeys(r, r.multiTableWriters)
-}
-
-func ListDocumentInfoProviderFormats() []FormatType {
-	return globalProviderRegistry.ListDocumentInfoProviderFormats()
-}
-
-func (r *ProviderRegistry) ListDocumentInfoProviderFormats() []FormatType {
-	return sortedMapKeys(r, r.documentInfoProviders)
-}
-
-func ListDocumentTextReaderFormats() []FormatType {
-	return globalProviderRegistry.ListDocumentTextReaderFormats()
-}
-
-func (r *ProviderRegistry) ListDocumentTextReaderFormats() []FormatType {
-	return sortedMapKeys(r, r.documentTextReaders)
-}
-
-func ListBinaryContentReaderFormats() []FormatType {
-	return globalProviderRegistry.ListBinaryContentReaderFormats()
-}
-
-func (r *ProviderRegistry) ListBinaryContentReaderFormats() []FormatType {
-	return sortedMapKeys(r, r.binaryContentReaders)
-}
-
-func ListMediaInfoProviderFormats() []FormatType {
-	return globalProviderRegistry.ListMediaInfoProviderFormats()
-}
-
-func (r *ProviderRegistry) ListMediaInfoProviderFormats() []FormatType {
-	return sortedMapKeys(r, r.mediaInfoProviders)
-}
-
-func ListContainerInfoProviderFormats() []FormatType {
-	return globalProviderRegistry.ListContainerInfoProviderFormats()
-}
-
-func (r *ProviderRegistry) ListContainerInfoProviderFormats() []FormatType {
-	return sortedMapKeys(r, r.containerInfoProviders)
-}
-
-func ListContainerChildResolverFormats() []FormatType {
-	return globalProviderRegistry.ListContainerChildResolverFormats()
-}
-
-func (r *ProviderRegistry) ListContainerChildResolverFormats() []FormatType {
-	return sortedMapKeys(r, r.containerChildResolvers)
-}
-
-func sortedMapKeys[T any](r *ProviderRegistry, values map[FormatType]T) []FormatType {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	formats := make([]FormatType, 0, len(values))
-	for formatType := range values {
+	formats := make([]FormatType, 0, len(r.formatPlugins))
+	for formatType := range r.formatPlugins {
 		formats = append(formats, formatType)
 	}
 	sort.Slice(formats, func(i, j int) bool {

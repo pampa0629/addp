@@ -30,9 +30,8 @@ const (
 )
 
 type EngineRef struct {
-	Scope string `json:"scope"`
-	ID    uint   `json:"id"`
-	Type  string `json:"type,omitempty"`
+	ID   uint   `json:"id"`
+	Type string `json:"type,omitempty"`
 }
 
 type EndpointResourceSpec struct {
@@ -215,8 +214,7 @@ func applySourceGeometryEncodingForTarget(sourcePlan *executor.TableSourcePlan, 
 }
 
 func formatHasSpatialRows(formatType format.FormatType) bool {
-	descriptor, ok := format.GetFormatDescriptor(formatType)
-	return ok && descriptor.Spatial
+	return format.IsGeospatialFormat(formatType)
 }
 
 func sourceItemDescriptorFromMetaAttributes(attrs map[string]interface{}) (dataitem.ItemDescriptor, bool) {
@@ -742,9 +740,6 @@ func validateEndpointIdentity(endpoint EndpointSpec, role, dataType string) erro
 	if endpoint.Engine.ID == 0 {
 		return fmt.Errorf("%s engine id is required", role)
 	}
-	if endpoint.Engine.Scope != "system" {
-		return fmt.Errorf("%s engine scope must be %q, got %q", role, "system", endpoint.Engine.Scope)
-	}
 	if endpoint.DataType != dataType {
 		return fmt.Errorf("%s data type must be %q, got %q", role, dataType, endpoint.DataType)
 	}
@@ -795,6 +790,11 @@ func endpointHasLegacyFields(raw interface{}) bool {
 	}
 	for _, key := range legacyKeys {
 		if _, ok := endpoint[key]; ok {
+			return true
+		}
+	}
+	if engine, ok := endpoint["engine"].(map[string]interface{}); ok {
+		if _, ok := engine["scope"]; ok {
 			return true
 		}
 	}
@@ -928,6 +928,9 @@ func hasTableTransferReader(formatType format.FormatType) bool {
 		return true
 	}
 	if _, err := format.GetMultiTableReaderProvider(formatType); err == nil {
+		return true
+	}
+	if _, err := format.GetScopeTableReaderProvider(formatType); err == nil {
 		return true
 	}
 	return false

@@ -22,7 +22,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "返回 Transfer 当前可用于表格传输的格式能力，来源于 common format descriptor 与 provider registry | Returns table transfer format capabilities backed by common format descriptors and providers",
+                "description": "返回 Transfer 当前可用于表格传输的格式能力，来源于 common format descriptor 与已加载 plugin 的接口实现状态 | Returns table transfer format capabilities backed by common format descriptors and loaded plugin implementations",
                 "produces": [
                     "application/json"
                 ],
@@ -2010,10 +2010,6 @@ const docTemplate = `{
                     "type": "integer",
                     "example": 1
                 },
-                "scope": {
-                    "type": "string",
-                    "example": "system"
-                },
                 "type": {
                     "type": "string",
                     "example": "nfs"
@@ -2249,8 +2245,7 @@ const docTemplate = `{
         "internal_api.objectStorageBrowseRequest": {
             "type": "object",
             "required": [
-                "engine_id",
-                "scope"
+                "engine_id"
             ],
             "properties": {
                 "engine_id": {
@@ -2258,12 +2253,6 @@ const docTemplate = `{
                 },
                 "prefix": {
                     "type": "string"
-                },
-                "scope": {
-                    "type": "string",
-                    "enum": [
-                        "system"
-                    ]
                 }
             }
         },

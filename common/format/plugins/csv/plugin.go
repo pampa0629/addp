@@ -48,6 +48,10 @@ func (p *Plugin) Format() format.FormatType {
 	return p.formatType
 }
 
+func (p *Plugin) SupportsAccessIndex() bool {
+	return true
+}
+
 func (p *Plugin) Descriptor() format.FormatDescriptor {
 	extensions := []string{".csv"}
 	mimeTypes := []string{"text/csv"}
@@ -63,11 +67,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		I18nKey:        i18nKey,
 		DataType:       datatype.DataTypeTable,
 		Layouts:        []string{format.LayoutSingle},
-		ProviderHints:  []string{format.FormatProviderTable},
 		Identification: format.FormatIdentification{Extensions: extensions, MimeTypes: mimeTypes},
-		Providers:      format.FormatProviderDescriptor{FormatInfo: true, TableInfo: true, TableSample: true, Table: true, AccessIndex: true},
-		ContentReaders: []string{string(format.ContentReaderTableSample), string(format.ContentReaderRawContent)},
-		Parse:          true,
 	}
 }
 

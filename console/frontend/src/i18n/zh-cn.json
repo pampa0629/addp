@@ -195,8 +195,7 @@
       "transfer": {
         "label": "数据传输",
         "tasks": "传输任务",
-        "executions": "执行记录",
-        "localEngines": "本地资源"
+        "executions": "执行记录"
       },
       "meta": {
         "label": "元数据",

@@ -195,8 +195,7 @@
       "transfer": {
         "label": "Data Transfer",
         "tasks": "Transfer Tasks",
-        "executions": "Executions",
-        "localEngines": "Local Resources"
+        "executions": "Executions"
       },
       "meta": {
         "label": "Metadata",

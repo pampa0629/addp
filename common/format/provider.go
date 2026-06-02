@@ -9,21 +9,17 @@ import (
 	"github.com/addp/common/resume"
 )
 
-// Provider 是格式层具体能力实现的基础接口。
+// FormatPlugin 表示一个格式实现的稳定身份入口。
 //
-// Provider 不接 engine id，不创建资源读取器，也不返回上层模块专用 DTO。
-// 调用方应先基于 engine capability 构造读取抽象或内容流，再交给 Provider 解码。
-type Provider interface {
+// Plugin 只声明格式身份，不负责识别某个资源、不决定 data item 边界，
+// 也不必然承载 descriptor 或具体 InfoProvider / Reader / Writer。
+type FormatPlugin interface {
 	Format() FormatType
 }
 
-// FormatPlugin 表示一个格式实现的稳定身份入口。
-//
-// Plugin 只声明格式身份和 descriptor，不负责识别某个资源、不决定 data item
-// 边界，也不替代具体 InfoProvider / Reader / Writer。当前进程实际加载了哪些
-// provider / reader / writer，由 ProviderRegistry 和 FormatSupportView 派生表达。
-type FormatPlugin interface {
-	Format() FormatType
+// FormatDescriptorProvider 表示格式实现能够提供静态格式描述符。
+type FormatDescriptorProvider interface {
+	FormatPlugin
 	Descriptor() FormatDescriptor
 }
 
@@ -40,7 +36,7 @@ type ContentSniffer interface {
 // 结果是当前格式的裸 format_info 内容；调用编排层负责按格式名写入
 // attributes.format_info.<format>，provider 不得混入 type_info 或上层模块 DTO。
 type FormatInfoProvider interface {
-	Provider
+	FormatPlugin
 	DescribeFormat(ctx context.Context, input io.Reader, options *ParseOptions) (map[string]interface{}, error)
 }
 
@@ -48,20 +44,25 @@ type FormatInfoProvider interface {
 //
 // 类型信息是 meta 层写入 type_info.table 的主来源，不应夹带 Manager 展示 DTO。
 type TableInfoProvider interface {
-	Provider
+	FormatPlugin
 	DescribeTable(ctx context.Context, input io.Reader, options *ParseOptions) (*TableDescribeResult, error)
+}
+
+// AccessIndexProvider 表示 table info provider 可生成访问定位索引。
+type AccessIndexProvider interface {
+	SupportsAccessIndex() bool
 }
 
 // ContentReader 是内容读取能力的标记接口。
 //
 // Reader 命名用于区分“读取内容数据”和“提供元数据”的 provider。
 type ContentReader interface {
-	Provider
+	FormatPlugin
 }
 
 // TableSampleReader 表示格式能够从外部提供的资源流中读取 table 样本数据。
 //
-// 样本数据是面向 Manager 内容查看、Transfer 探查等消费场景的数据能力，
+// 样本数据是面向 Manager 内容查看、轻量探查等消费场景的数据能力，
 // 和 TableInfoProvider 并列注册，避免把“类型信息”和“内容数据”绑死。
 // offset / limit 是逻辑数据行窗口，不是字节偏移。input 默认从资源起点开始；
 // 如果调用方基于 access_index 传入局部流，必须通过 ParseOptions.TableSample
@@ -102,7 +103,7 @@ type TableSpatialInfoProvider interface {
 
 // MultiTableInfoProvider 表示多 ref table 格式能够提取 table 类型信息。
 type MultiTableInfoProvider interface {
-	Provider
+	FormatPlugin
 	RelatedRefSpecs() []RelatedRefSpec
 	DescribeMultiTable(ctx context.Context, reader contentio.Reader, refs []RelatedRef, options *ParseOptions) (*TableDescribeResult, error)
 }
@@ -119,14 +120,14 @@ type MultiTableSampleReader interface {
 // 它面向 Transfer 等全量读取场景；与 MultiTableSampleReader 的 SampleMultiTable
 // 不同，TableReader 持有一次 ref 读取状态，调用方循环 ReadRows 直到返回空结果。
 type MultiTableReaderProvider interface {
-	Provider
+	FormatPlugin
 	RelatedRefSpecs() []RelatedRefSpec
 	OpenMultiTableReader(ctx context.Context, reader contentio.Reader, refs []RelatedRef, options *ParseOptions) (TableReader, error)
 }
 
 // ScopeTableInfoProvider 表示 whole scope table 格式能够提取 table 类型信息。
 type ScopeTableInfoProvider interface {
-	Provider
+	FormatPlugin
 	DescribeTableScope(ctx context.Context, reader contentio.Reader, scope contentio.Ref, options *ParseOptions) (*TableDescribeResult, error)
 }
 
@@ -141,7 +142,7 @@ type ScopeTableSampleReader interface {
 // 它面向 Transfer 等全量读取场景；与 ScopeTableSampleReader 的 SampleTableScope
 // 不同，TableReader 持有一次 scope 读取状态，调用方循环 ReadRows 直到返回空结果。
 type ScopeTableReaderProvider interface {
-	Provider
+	FormatPlugin
 	OpenTableScopeReader(ctx context.Context, reader contentio.Reader, scope contentio.Ref, options *ParseOptions) (TableReader, error)
 }
 
@@ -150,7 +151,7 @@ type ScopeTableReaderProvider interface {
 // Provider 是可注册的无状态能力入口；TableWriter 是一次输出会话的状态对象。
 // 调用方负责打开 io.Writer，再交给格式 writer 编码。
 type TableWriterProvider interface {
-	Provider
+	FormatPlugin
 	OpenTableWriter(ctx context.Context, output io.Writer, tableInfo *datatype.TableInfo, options *WriteOptions) (TableWriter, error)
 }
 
@@ -161,7 +162,7 @@ type TableWriterProvider interface {
 // 并通过调用方提供的 writer 写入对应 content。主输出语义由 refs 中的 Primary
 // 标记表达，不额外传递 target，避免 provider 承担资源发现或 engine 路径判断。
 type MultiTableWriterProvider interface {
-	Provider
+	FormatPlugin
 	RelatedRefSpecs() []RelatedRefSpec
 	OpenMultiTableWriter(ctx context.Context, writer contentio.Writer, refs []RelatedRef, tableInfo *datatype.TableInfo, options *WriteOptions) (TableWriter, error)
 }
@@ -184,12 +185,12 @@ type CommitMarkerProvider interface {
 // 可通过 datatype.ContainerChildInfo.Native 承载。
 // provider 不决定 child 是否成为独立 data item，也不返回上层展示 DTO。
 type ContainerInfoProvider interface {
-	Provider
+	FormatPlugin
 	DescribeContainer(ctx context.Context, input io.Reader, options *ParseOptions) (*datatype.ContainerInfo, error)
 }
 
 type DocumentInfoProvider interface {
-	Provider
+	FormatPlugin
 	DescribeDocument(ctx context.Context, input io.Reader, options *ParseOptions) (*datatype.DocumentInfo, error)
 }
 
@@ -209,7 +210,7 @@ type BinaryContentReader interface {
 }
 
 type MediaInfoProvider interface {
-	Provider
+	FormatPlugin
 	DescribeMedia(ctx context.Context, input io.Reader, options *ParseOptions) (*MediaDescribeResult, error)
 }
 
@@ -218,7 +219,7 @@ type MediaInfoProvider interface {
 // 该接口只描述 ref 角色和必需性，调用方仍负责 data item 边界识别、
 // 资源路径发现与 contentio.Reader 构造。
 type RelatedRefSpecProvider interface {
-	Provider
+	FormatPlugin
 	RelatedRefSpecs() []RelatedRefSpec
 }
 
@@ -239,6 +240,6 @@ type RefDescriptor struct {
 // 该接口只提供用户可理解的 ref 描述，不参与 data item 边界识别；
 // Meta、Manager、前端不得硬编码某个格式的 ref 语义。
 type RefDescriptorProvider interface {
-	Provider
+	FormatPlugin
 	DescribeRefs(refs []RelatedRef) []RefDescriptor
 }

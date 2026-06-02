@@ -33,12 +33,7 @@ func (plugin *Plugin) Descriptor() format.FormatDescriptor {
 		I18nKey:        "format.shapefile",
 		DataType:       datatype.DataTypeTable,
 		Layouts:        []string{format.LayoutMulti},
-		ProviderHints:  []string{format.FormatProviderTable, format.FormatProviderSpatial},
 		Identification: format.FormatIdentification{Extensions: []string{extSHP}, MimeTypes: []string{"application/x-shapefile", "application/x-esri-shapefile"}},
-		Providers:      format.FormatProviderDescriptor{MultiTable: true},
-		ContentReaders: []string{string(format.ContentReaderMultiTableSample), string(format.ContentReaderRawContent)},
-		Parse:          true,
-		Spatial:        true,
 	}
 }
 
@@ -59,6 +54,7 @@ const (
 	extSHX = ".shx"
 	extDBF = ".dbf"
 	extPRJ = ".prj"
+	extQPJ = ".qpj"
 	extCPG = ".cpg"
 	extSBN = ".sbn"
 	extSBX = ".sbx"
@@ -77,6 +73,7 @@ func RelatedRefSpecs() []format.RelatedRefSpec {
 		{Extension: extSHX, Role: roleIndex, Required: true},
 		{Extension: extDBF, Role: roleAttributes, Required: true},
 		{Extension: extPRJ, Role: roleProjection, Required: false},
+		{Extension: extQPJ, Role: roleProjection, Required: false},
 		{Extension: extCPG, Role: roleEncoding, Required: false},
 		{Extension: extSBN, Role: roleSpatialIndex, Required: false},
 		{Extension: extSBX, Role: roleSpatialIndex, Required: false},

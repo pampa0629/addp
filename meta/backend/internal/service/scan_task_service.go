@@ -260,17 +260,36 @@ func (s *ScanTaskService) CreateManualRun(ctx context.Context, tenantID, userID 
 	if req == nil {
 		return nil, errors.New("请求不能为空")
 	}
-	if req.EngineID == 0 {
-		return nil, errors.New("engine_id 不能为空")
+	engineID := req.EngineID
+	if engineID == 0 {
+		resolvedEngineID, err := s.scanService.resolveScanEngineID(tenantID, ScanOptions{
+			NodeID:  req.NodeID,
+			ItemID:  req.ItemID,
+			Targets: req.Targets,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("engine_id 不能为空: %w", err)
+		}
+		engineID = resolvedEngineID
 	}
 
-	resource, err := s.engineService.GetResourceByID(req.EngineID, tenantID, token)
+	resource, err := s.engineService.GetResourceByID(engineID, tenantID, token)
 	if err != nil {
 		return nil, fmt.Errorf("验证资源失败: %w", err)
 	}
+	catalogPaths := req.CatalogPaths
+	resolvedCatalogPaths, err := s.scanService.resolveScanTargets(tenantID, ScanOptions{
+		NodeID:  req.NodeID,
+		ItemID:  req.ItemID,
+		Targets: req.Targets,
+	})
+	if err != nil {
+		return nil, err
+	}
+	catalogPaths = uniqueNonEmpty(append(catalogPaths, resolvedCatalogPaths...))
 
 	if s.dedupService != nil {
-		taskKey := s.dedupService.GenerateTaskKey(tenantID, req.EngineID, models.TriggerTypeManual)
+		taskKey := s.dedupService.GenerateTaskKey(tenantID, engineID, models.TriggerTypeManual)
 		if s.dedupService.CheckTaskExists(ctx, taskKey) {
 			return nil, fmt.Errorf("该资源正在扫描中，请稍后再试")
 		}
@@ -282,9 +301,9 @@ func (s *ScanTaskService) CreateManualRun(ctx context.Context, tenantID, userID 
 	execution := scantask.NewManualExecution(
 		tenantID,
 		userID,
-		req.EngineID,
+		engineID,
 		scantask.NormalizeStorageType(resource.EngineType),
-		req.CatalogPaths,
+		catalogPaths,
 		req.ScanDepth,
 		req.Force,
 		token,

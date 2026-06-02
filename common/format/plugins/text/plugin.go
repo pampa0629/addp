@@ -26,16 +26,10 @@ func (p Provider) Format() format.FormatType {
 
 func (p Provider) Descriptor() format.FormatDescriptor {
 	descriptor := format.FormatDescriptor{
-		ID:            "builtin-" + string(p.formatType),
-		Format:        p.formatType,
-		DataType:      datatype.DataTypeDocument,
-		Layouts:       []string{format.LayoutSingle},
-		ProviderHints: []string{format.FormatProviderDocument},
-		Providers:     format.FormatProviderDescriptor{DocumentInfo: true},
-		ContentReaders: []string{
-			string(format.ContentReaderDocumentText),
-			string(format.ContentReaderRawContent),
-		},
+		ID:       "builtin-" + string(p.formatType),
+		Format:   p.formatType,
+		DataType: datatype.DataTypeDocument,
+		Layouts:  []string{format.LayoutSingle},
 	}
 	switch p.formatType {
 	case format.FormatMarkdown:

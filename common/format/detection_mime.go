@@ -15,15 +15,11 @@ func MIMEToFormat(mimeType string) FormatType {
 	if formatType := descriptorFormatByMIME(mimeType); formatType != FormatUnknown {
 		return formatType
 	}
-	if formatType := fallbackFormatByMIME(mimeType); formatType != FormatUnknown {
+	if formatType := descriptorFormatByMIMEPattern(mimeType); formatType != FormatUnknown {
 		return formatType
 	}
-	for _, descriptor := range ListFormatDescriptors() {
-		for _, candidate := range descriptor.Identification.MimeTypes {
-			if strings.HasSuffix(candidate, "/*") && strings.HasPrefix(mimeType, strings.TrimSuffix(candidate, "*")) {
-				return descriptor.Format
-			}
-		}
+	if formatType := fallbackFormatByMIME(mimeType); formatType != FormatUnknown {
+		return formatType
 	}
 	return FormatUnknown
 }
@@ -46,6 +42,20 @@ func descriptorFormatByMIME(mimeType string) FormatType {
 	for _, descriptor := range ListFormatDescriptors() {
 		for _, candidate := range descriptor.Identification.MimeTypes {
 			if strings.EqualFold(candidate, mimeType) {
+				return descriptor.Format
+			}
+		}
+	}
+	return FormatUnknown
+}
+
+func descriptorFormatByMIMEPattern(mimeType string) FormatType {
+	if mimeType == "" {
+		return FormatUnknown
+	}
+	for _, descriptor := range ListFormatDescriptors() {
+		for _, candidate := range descriptor.Identification.MimeTypes {
+			if strings.HasSuffix(candidate, "/*") && strings.HasPrefix(mimeType, strings.TrimSuffix(candidate, "*")) {
 				return descriptor.Format
 			}
 		}

@@ -874,23 +874,8 @@ func TestContainerChildPreviewProviderPreviewsZIPMultiTableChildRefs(t *testing.
 		"roads.shx": []byte("index"),
 		"roads.dbf": []byte("attrs"),
 	})
-	previousInfoProvider, previousInfoErr := format.GetMultiTableInfoProvider(format.FormatShapefile)
-	previousSampleReader, previousSampleErr := format.GetMultiTableSampleReader(format.FormatShapefile)
 	refProvider := &recordingMultiTableProvider{}
-	if err := format.RegisterMultiTableInfoProvider(refProvider); err != nil {
-		t.Fatalf("RegisterMultiTableInfoProvider() error = %v", err)
-	}
-	if err := format.RegisterMultiTableSampleReader(refProvider); err != nil {
-		t.Fatalf("RegisterMultiTableSampleReader() error = %v", err)
-	}
-	defer func() {
-		if previousInfoErr == nil {
-			_ = format.RegisterMultiTableInfoProvider(previousInfoProvider)
-		}
-		if previousSampleErr == nil {
-			_ = format.RegisterMultiTableSampleReader(previousSampleReader)
-		}
-	}()
+	registerPreviewTestFormatPlugin(t, refProvider)
 	provider := NewContainerChildPreviewProvider(objectcontent.NewObjectContentRegistry())
 	req := &PreviewRequest{
 		Engine:       &models.Engine{EngineType: enginePlugin.Type(), ID: 7},
@@ -1130,23 +1115,8 @@ func TestFileTablePreviewProviderMultiPreviewKeepsNFSFullStorageRef(t *testing.T
 		plugin.Unregister(enginePlugin.Type())
 	}()
 
-	previousInfoProvider, previousInfoErr := format.GetMultiTableInfoProvider(format.FormatShapefile)
-	previousSampleReader, previousSampleErr := format.GetMultiTableSampleReader(format.FormatShapefile)
 	refProvider := &recordingMultiTableProvider{}
-	if err := format.RegisterMultiTableInfoProvider(refProvider); err != nil {
-		t.Fatalf("RegisterMultiTableInfoProvider() error = %v", err)
-	}
-	if err := format.RegisterMultiTableSampleReader(refProvider); err != nil {
-		t.Fatalf("RegisterMultiTableSampleReader() error = %v", err)
-	}
-	defer func() {
-		if previousInfoErr == nil {
-			_ = format.RegisterMultiTableInfoProvider(previousInfoProvider)
-		}
-		if previousSampleErr == nil {
-			_ = format.RegisterMultiTableSampleReader(previousSampleReader)
-		}
-	}()
+	registerPreviewTestFormatPlugin(t, refProvider)
 
 	provider := &FileTablePreviewProvider{}
 	req := &PreviewRequest{
@@ -1195,23 +1165,8 @@ func TestFileTablePreviewProviderMultiPreviewKeepsObjectStorageRef(t *testing.T)
 	plugin.Register(enginePlugin)
 	defer plugin.Unregister(engineType)
 
-	previousInfoProvider, previousInfoErr := format.GetMultiTableInfoProvider(format.FormatShapefile)
-	previousSampleReader, previousSampleErr := format.GetMultiTableSampleReader(format.FormatShapefile)
 	refProvider := &recordingMultiTableProvider{}
-	if err := format.RegisterMultiTableInfoProvider(refProvider); err != nil {
-		t.Fatalf("RegisterMultiTableInfoProvider() error = %v", err)
-	}
-	if err := format.RegisterMultiTableSampleReader(refProvider); err != nil {
-		t.Fatalf("RegisterMultiTableSampleReader() error = %v", err)
-	}
-	defer func() {
-		if previousInfoErr == nil {
-			_ = format.RegisterMultiTableInfoProvider(previousInfoProvider)
-		}
-		if previousSampleErr == nil {
-			_ = format.RegisterMultiTableSampleReader(previousSampleReader)
-		}
-	}()
+	registerPreviewTestFormatPlugin(t, refProvider)
 
 	provider := &FileTablePreviewProvider{}
 	req := &PreviewRequest{
@@ -1482,23 +1437,8 @@ func TestContainerChildPreviewProviderPreviewsNestedZIPMultiTableChildRefs(t *te
 		"inner.zip": inner,
 	})
 
-	previousInfoProvider, previousInfoErr := format.GetMultiTableInfoProvider(format.FormatShapefile)
-	previousSampleReader, previousSampleErr := format.GetMultiTableSampleReader(format.FormatShapefile)
 	refProvider := &recordingMultiTableProvider{}
-	if err := format.RegisterMultiTableInfoProvider(refProvider); err != nil {
-		t.Fatalf("RegisterMultiTableInfoProvider() error = %v", err)
-	}
-	if err := format.RegisterMultiTableSampleReader(refProvider); err != nil {
-		t.Fatalf("RegisterMultiTableSampleReader() error = %v", err)
-	}
-	defer func() {
-		if previousInfoErr == nil {
-			_ = format.RegisterMultiTableInfoProvider(previousInfoProvider)
-		}
-		if previousSampleErr == nil {
-			_ = format.RegisterMultiTableSampleReader(previousSampleReader)
-		}
-	}()
+	registerPreviewTestFormatPlugin(t, refProvider)
 
 	provider := NewContainerChildPreviewProvider(objectcontent.NewObjectContentRegistry())
 	req := &PreviewRequest{
@@ -1923,6 +1863,19 @@ func (p *recordingMultiTableProvider) DescribeMultiTable(_ context.Context, _ co
 func (p *recordingMultiTableProvider) SampleMultiTable(_ context.Context, _ contentio.Reader, _ []format.RelatedRef, offset, _ int64, _ *format.ParseOptions) ([]map[string]interface{}, error) {
 	p.sampleOffset = offset
 	return []map[string]interface{}{{"name": "first"}}, nil
+}
+
+func registerPreviewTestFormatPlugin(t *testing.T, testPlugin format.FormatPlugin) {
+	t.Helper()
+	previousPlugin, previousErr := format.GetFormatPlugin(testPlugin.Format())
+	if err := format.RegisterFormatPlugin(testPlugin); err != nil {
+		t.Fatalf("RegisterFormatPlugin(%s) error = %v", testPlugin.Format(), err)
+	}
+	t.Cleanup(func() {
+		if previousErr == nil {
+			_ = format.RegisterFormatPlugin(previousPlugin)
+		}
+	})
 }
 
 type emptyRefReader struct{}

@@ -4,7 +4,6 @@ export const SEARCH_INDEX = [
   // 数据传输
   { labelKey: 'console.menus.transfer.tasks',       module: 'transfer',     route: '/transfer/tasks',        keywords: ['传输任务', '数据导入', '数据接入', 'transfer', 'import', '同步'] },
   { labelKey: 'console.menus.transfer.executions',  module: 'transfer',     route: '/transfer/executions',   keywords: ['传输执行', '执行记录', 'execution'] },
-  { labelKey: 'console.menus.transfer.localEngines',module: 'transfer',     route: '/transfer/local-engines',keywords: ['本地资源', '本地引擎', 'local engine'] },
   // 元数据
   { labelKey: 'console.menus.meta.scan',            module: 'meta',         route: '/meta/scan',             keywords: ['元数据扫描', '扫描', '元数据', 'metadata', 'scan'] },
   { labelKey: 'console.menus.meta.tasks',           module: 'meta',         route: '/meta/tasks',            keywords: ['元数据任务', '任务监控', 'meta task'] },

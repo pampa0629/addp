@@ -358,10 +358,7 @@ type encodedContentTableSource struct {
 	reader              engineplugin.ContentReadableProvider
 	tableProvider       format.TableReaderProvider
 	multiReaderProvider format.MultiTableReaderProvider
-	multiInfoProvider   format.MultiTableInfoProvider
-	multiSampleReader   format.MultiTableSampleReader
 	scopeReaderProvider format.ScopeTableReaderProvider
-	sampleProvider      format.TableSampleReader
 	infoProvider        format.TableInfoProvider
 	connInfo            engineplugin.ConnectionInfo
 	path                engineplugin.CatalogPath
@@ -418,27 +415,6 @@ func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader,
 		}, nil
 	}
 
-	if s.multiInfoProvider != nil && s.multiSampleReader != nil {
-		reader, refs := s.refReader(s.multiInfoProvider.RelatedRefSpecs())
-		tableInfo := s.tableInfo
-		if tableInfoEmpty(tableInfo) {
-			result, err := s.multiInfoProvider.DescribeMultiTable(ctx, reader, refs, parseOptions)
-			if err != nil {
-				return nil, fmt.Errorf("describe encoded source table refs: %w", err)
-			}
-			tableInfo = format.TableInfoFromDescribeResult(result)
-			s.spatialInfo = result.Spatial.Clone()
-		}
-		return &multiEncodedTableBatchReader{
-			reader:         reader,
-			refs:           refs,
-			readerProvider: s.multiSampleReader,
-			tableInfo:      tableInfo,
-			spatialInfo:    s.spatialInfo.Clone(),
-			parseOptions:   parseOptions,
-		}, nil
-	}
-
 	tableInfo := s.tableInfo
 	if tableInfoEmpty(tableInfo) {
 		var err error
@@ -448,14 +424,7 @@ func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader,
 		}
 	}
 	if s.tableProvider == nil {
-		if s.sampleProvider == nil {
-			return nil, fmt.Errorf("encoded source requires table reader or sample provider")
-		}
-		return &sampleEncodedTableBatchReader{
-			source:      s,
-			tableInfo:   tableInfo,
-			spatialInfo: s.spatialInfo.Clone(),
-		}, nil
+		return nil, fmt.Errorf("encoded source requires table reader provider")
 	}
 
 	input, err := s.contentReader().Open(ctx, contentRefFromCatalogPath(s.path))
@@ -652,113 +621,6 @@ func (r *encodedTableBatchReader) ResumeMarker() *resume.Marker {
 	return nil
 }
 
-type multiEncodedTableBatchReader struct {
-	reader         contentio.Reader
-	refs           []format.RelatedRef
-	readerProvider format.MultiTableSampleReader
-	tableInfo      *datatype.TableInfo
-	spatialInfo    *datatype.SpatialInfo
-	parseOptions   *format.ParseOptions
-	offset         int64
-	done           bool
-}
-
-func (r *multiEncodedTableBatchReader) TableInfo() *datatype.TableInfo {
-	return r.tableInfo
-}
-
-func (r *multiEncodedTableBatchReader) SpatialInfo() *datatype.SpatialInfo {
-	if r.spatialInfo != nil {
-		return r.spatialInfo.Clone()
-	}
-	return spatialInfoFromTableInfoOrFields(r.tableInfo)
-}
-
-func (r *multiEncodedTableBatchReader) ReadBatch(ctx context.Context, limit int) (*engineplugin.BatchData, error) {
-	if r.done {
-		return &engineplugin.BatchData{}, nil
-	}
-	rows, err := r.readerProvider.SampleMultiTable(ctx, r.reader, r.refs, r.offset, int64(limit), r.parseOptions)
-	if err != nil {
-		return nil, fmt.Errorf("sample encoded source table refs at offset %d: %w", r.offset, err)
-	}
-	batch := &engineplugin.BatchData{
-		Rows:    rows,
-		Fields:  tableInfoFields(r.tableInfo),
-		Spatial: r.SpatialInfo(),
-		Offset:  r.offset,
-	}
-	r.offset += int64(len(rows))
-	if len(rows) < limit {
-		r.done = true
-	}
-	return batch, nil
-}
-
-func (r *multiEncodedTableBatchReader) Close(context.Context) error {
-	return nil
-}
-
-func (r *multiEncodedTableBatchReader) ResumeMarker() *resume.Marker {
-	return nil
-}
-
-type sampleEncodedTableBatchReader struct {
-	source      *encodedContentTableSource
-	tableInfo   *datatype.TableInfo
-	spatialInfo *datatype.SpatialInfo
-	offset      int64
-	done        bool
-}
-
-func (r *sampleEncodedTableBatchReader) TableInfo() *datatype.TableInfo {
-	return r.tableInfo
-}
-
-func (r *sampleEncodedTableBatchReader) SpatialInfo() *datatype.SpatialInfo {
-	if r.spatialInfo != nil {
-		return r.spatialInfo.Clone()
-	}
-	return spatialInfoFromTableInfoOrFields(r.tableInfo)
-}
-
-func (r *sampleEncodedTableBatchReader) ReadBatch(ctx context.Context, limit int) (*engineplugin.BatchData, error) {
-	if r.done {
-		return &engineplugin.BatchData{}, nil
-	}
-	input, err := r.source.contentReader().Open(ctx, contentRefFromCatalogPath(r.source.path))
-	if err != nil {
-		return nil, fmt.Errorf("open encoded source content at offset %d: %w", r.offset, err)
-	}
-	rows, sampleErr := r.source.sampleProvider.SampleTable(ctx, input, r.offset, int64(limit), r.source.parseOptions)
-	closeErr := input.Close()
-	if sampleErr != nil {
-		return nil, fmt.Errorf("sample encoded source table at offset %d: %w", r.offset, sampleErr)
-	}
-	if closeErr != nil {
-		return nil, fmt.Errorf("close encoded source content at offset %d: %w", r.offset, closeErr)
-	}
-	batch := &engineplugin.BatchData{
-		Rows:    rows,
-		Fields:  tableInfoFields(r.tableInfo),
-		Spatial: r.SpatialInfo(),
-		Offset:  r.offset,
-	}
-	r.offset += int64(len(rows))
-	if len(rows) < limit {
-		r.done = true
-	}
-	return batch, nil
-}
-
-func (r *sampleEncodedTableBatchReader) Close(context.Context) error {
-	return nil
-}
-
-func (r *sampleEncodedTableBatchReader) ResumeMarker() *resume.Marker {
-	return nil
-}
-
 func (s *encodedContentTableSource) contentReader() contentio.Reader {
 	return contentadapter.NewMappedReader(s.reader, s.connInfo, contentadapter.FixedPathMapper(s.path), s.readOptions)
 }
@@ -926,15 +788,15 @@ func (w *nativeTableSessionBatchWriter) CommitMarker() *resume.Marker {
 }
 
 type encodedContentTableTarget struct {
-	writer         engineplugin.ContentWritableProvider
-	deleter        *engineTargetResourceDeleter
-	formatProvider format.TableWriterProvider
-	multiProvider  format.MultiTableWriterProvider
-	connInfo       engineplugin.ConnectionInfo
-	path           engineplugin.CatalogPath
-	writeOptions   engineplugin.WriteOptions
-	formatOptions  *format.WriteOptions
-	resumeMarker   *resume.Marker
+	writer              engineplugin.ContentWritableProvider
+	deleter             *engineTargetResourceDeleter
+	tableWriterProvider format.TableWriterProvider
+	multiProvider       format.MultiTableWriterProvider
+	connInfo            engineplugin.ConnectionInfo
+	path                engineplugin.CatalogPath
+	writeOptions        engineplugin.WriteOptions
+	formatOptions       *format.WriteOptions
+	resumeMarker        *resume.Marker
 }
 
 func (t *encodedContentTableTarget) Open(ctx context.Context, tableInfo *datatype.TableInfo, spatialInfo *datatype.SpatialInfo) (TableBatchWriter, error) {
@@ -964,7 +826,7 @@ func (t *encodedContentTableTarget) Open(ctx context.Context, tableInfo *datatyp
 	if err != nil {
 		return nil, fmt.Errorf("create encoded target content: %w", err)
 	}
-	tableWriter, err := t.formatProvider.OpenTableWriter(ctx, output, tableInfo, formatOptions)
+	tableWriter, err := t.tableWriterProvider.OpenTableWriter(ctx, output, tableInfo, formatOptions)
 	if err != nil {
 		_ = output.Close()
 		return nil, fmt.Errorf("open encoded target table writer: %w", err)

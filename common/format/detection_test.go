@@ -419,8 +419,9 @@ func TestIsTableFormat(t *testing.T) {
 		want   bool
 	}{
 		{FormatCSV, true},
-		{FormatExcel, true},
+		{FormatExcel, false},
 		{FormatTSV, true},
+		{FormatParquet, true},
 		{FormatPDF, false},
 		{FormatJSON, false},
 	}

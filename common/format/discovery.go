@@ -1,143 +1,93 @@
 package format
 
-import (
-	"github.com/addp/common/datatype"
-	formatregistry "github.com/addp/common/format/registry"
-)
-
-type FormatSupportView struct {
-	PluginID        string                     `json:"plugin_id"`
-	Format          FormatType                 `json:"format"`
-	DataType        datatype.DataType          `json:"data_type"`
-	Layouts         []string                   `json:"layouts,omitempty"`
-	Identification  FormatIdentification       `json:"identification,omitempty"`
-	Providers       FormatProviderDescriptor   `json:"providers,omitempty"`
-	ContentReaders  []string                   `json:"content_readers,omitempty"`
-	Implementations FormatImplementationStatus `json:"implementations,omitempty"`
-	Parse           bool                       `json:"parse,omitempty"`
-	Spatial         bool                       `json:"spatial,omitempty"`
+// FormatCapabilitySnapshot 是由静态 descriptor 和当前进程插件接口断言派生的诊断视图。
+//
+// 它不是格式事实源；业务调用方需要可执行能力时应直接调用 Get*Provider / Get*Reader。
+type FormatCapabilitySnapshot struct {
+	Descriptor      FormatDescriptor             `json:"descriptor"`
+	Implementations FormatImplementationSnapshot `json:"implementations,omitempty"`
 }
 
-type FormatImplementationStatus struct {
-	FormatPlugin           bool `json:"format_plugin,omitempty"`
-	FormatInfoProvider     bool `json:"format_info_provider,omitempty"`
-	TableInfoProvider      bool `json:"table_info_provider,omitempty"`
-	TableSampleReader      bool `json:"table_sample_reader,omitempty"`
-	MultiTableInfoProvider bool `json:"multi_table_info_provider,omitempty"`
-	MultiTableSampleReader bool `json:"multi_table_sample_reader,omitempty"`
-	ScopeTableInfoProvider bool `json:"scope_table_info_provider,omitempty"`
-	ScopeTableSampleReader bool `json:"scope_table_sample_reader,omitempty"`
-	ScopeTableReader       bool `json:"scope_table_reader_provider,omitempty"`
-	TableReaderProvider    bool `json:"table_reader_provider,omitempty"`
-	MultiTableReader       bool `json:"multi_table_reader_provider,omitempty"`
-	TableWriterProvider    bool `json:"table_writer_provider,omitempty"`
-	MultiTableWriter       bool `json:"multi_table_writer_provider,omitempty"`
-	DocumentInfoProvider   bool `json:"document_info_provider,omitempty"`
-	DocumentTextReader     bool `json:"document_text_reader,omitempty"`
-	BinaryContentReader    bool `json:"binary_content_reader,omitempty"`
-	MediaInfoProvider      bool `json:"media_info_provider,omitempty"`
-	ContainerInfoProvider  bool `json:"container_info_provider,omitempty"`
-	ContainerChildResolver bool `json:"container_child_resolver,omitempty"`
+type FormatImplementationSnapshot struct {
+	FormatPlugin             bool `json:"format_plugin,omitempty"`
+	FormatDescriptorProvider bool `json:"format_descriptor_provider,omitempty"`
+	FormatInfoProvider       bool `json:"format_info_provider,omitempty"`
+	TableInfoProvider        bool `json:"table_info_provider,omitempty"`
+	TableSampleReader        bool `json:"table_sample_reader,omitempty"`
+	MultiTableInfoProvider   bool `json:"multi_table_info_provider,omitempty"`
+	MultiTableSampleReader   bool `json:"multi_table_sample_reader,omitempty"`
+	ScopeTableInfoProvider   bool `json:"scope_table_info_provider,omitempty"`
+	ScopeTableSampleReader   bool `json:"scope_table_sample_reader,omitempty"`
+	ScopeTableReader         bool `json:"scope_table_reader_provider,omitempty"`
+	TableReaderProvider      bool `json:"table_reader_provider,omitempty"`
+	MultiTableReader         bool `json:"multi_table_reader_provider,omitempty"`
+	TableWriterProvider      bool `json:"table_writer_provider,omitempty"`
+	MultiTableWriter         bool `json:"multi_table_writer_provider,omitempty"`
+	DocumentInfoProvider     bool `json:"document_info_provider,omitempty"`
+	DocumentTextReader       bool `json:"document_text_reader,omitempty"`
+	BinaryContentReader      bool `json:"binary_content_reader,omitempty"`
+	MediaInfoProvider        bool `json:"media_info_provider,omitempty"`
+	ContainerInfoProvider    bool `json:"container_info_provider,omitempty"`
+	ContainerChildResolver   bool `json:"container_child_resolver,omitempty"`
+	AccessIndexProvider      bool `json:"access_index_provider,omitempty"`
 }
 
-type FormatConflictDiagnostic = formatregistry.ConflictDiagnostic
-
-func ListFormatSupportViews() []FormatSupportView {
-	views := formatregistry.ListSupportViews()
-	result := make([]FormatSupportView, 0, len(views))
-	for _, view := range views {
-		result = append(result, fromRegistrySupportView(view))
+func ListFormatCapabilitySnapshots() []FormatCapabilitySnapshot {
+	descriptors := ListFormatDescriptors()
+	result := make([]FormatCapabilitySnapshot, 0, len(descriptors))
+	for _, descriptor := range descriptors {
+		result = append(result, FormatCapabilitySnapshot{
+			Descriptor:      descriptor,
+			Implementations: implementationSnapshotForFormat(descriptor.Format),
+		})
 	}
 	return result
 }
 
-func GetFormatSupportView(formatType FormatType) (FormatSupportView, bool) {
-	view, ok := formatregistry.GetSupportView(formatregistry.Format(formatType))
+func GetFormatCapabilitySnapshot(formatType FormatType) (FormatCapabilitySnapshot, bool) {
+	descriptor, ok := GetFormatDescriptor(formatType)
 	if !ok {
-		return FormatSupportView{}, false
+		return FormatCapabilitySnapshot{}, false
 	}
-	return fromRegistrySupportView(view), true
+	return FormatCapabilitySnapshot{
+		Descriptor:      descriptor,
+		Implementations: implementationSnapshotForFormat(formatType),
+	}, true
 }
 
 func ListFormatConflictDiagnostics() []FormatConflictDiagnostic {
-	return formatregistry.ListConflictDiagnostics()
+	return globalDescriptorRegistry.ListFormatConflictDiagnostics()
 }
 
-func fromRegistrySupportView(view formatregistry.SupportView) FormatSupportView {
-	return FormatSupportView{
-		PluginID:        view.PluginID,
-		Format:          FormatType(view.Format),
-		DataType:        view.DataType,
-		Layouts:         view.Layouts,
-		Identification:  view.Identification,
-		Providers:       view.Providers,
-		ContentReaders:  append([]string(nil), view.ContentReaders...),
-		Implementations: implementationStatusForFormat(FormatType(view.Format), view.Identification),
-		Parse:           view.Parse,
-		Spatial:         view.Spatial,
-	}
-}
+func implementationSnapshotForFormat(formatType FormatType) FormatImplementationSnapshot {
+	status := FormatImplementationSnapshot{}
 
-func implementationStatusForFormat(formatType FormatType, identification FormatIdentification) FormatImplementationStatus {
-	status := FormatImplementationStatus{}
-
-	if _, err := GetFormatPlugin(formatType); err == nil {
-		status.FormatPlugin = true
+	plugin, err := GetFormatPlugin(formatType)
+	if err != nil {
+		return status
 	}
-	if _, err := GetFormatInfoProvider(formatType); err == nil {
-		status.FormatInfoProvider = true
+	status.FormatPlugin = true
+	_, status.FormatDescriptorProvider = plugin.(FormatDescriptorProvider)
+	_, status.FormatInfoProvider = plugin.(FormatInfoProvider)
+	_, status.TableInfoProvider = plugin.(TableInfoProvider)
+	_, status.TableSampleReader = plugin.(TableSampleReader)
+	_, status.MultiTableInfoProvider = plugin.(MultiTableInfoProvider)
+	_, status.MultiTableSampleReader = plugin.(MultiTableSampleReader)
+	_, status.ScopeTableInfoProvider = plugin.(ScopeTableInfoProvider)
+	_, status.ScopeTableSampleReader = plugin.(ScopeTableSampleReader)
+	_, status.ScopeTableReader = plugin.(ScopeTableReaderProvider)
+	_, status.TableReaderProvider = plugin.(TableReaderProvider)
+	_, status.MultiTableReader = plugin.(MultiTableReaderProvider)
+	_, status.TableWriterProvider = plugin.(TableWriterProvider)
+	_, status.MultiTableWriter = plugin.(MultiTableWriterProvider)
+	_, status.DocumentInfoProvider = plugin.(DocumentInfoProvider)
+	_, status.DocumentTextReader = plugin.(DocumentTextReader)
+	_, status.BinaryContentReader = plugin.(BinaryContentReader)
+	_, status.MediaInfoProvider = plugin.(MediaInfoProvider)
+	_, status.ContainerInfoProvider = plugin.(ContainerInfoProvider)
+	_, status.ContainerChildResolver = plugin.(ContainerChildResolver)
+	if provider, ok := plugin.(AccessIndexProvider); ok {
+		status.AccessIndexProvider = provider.SupportsAccessIndex()
 	}
-	if _, err := GetTableInfoProvider(formatType); err == nil {
-		status.TableInfoProvider = true
-	}
-	if _, err := GetTableSampleReader(formatType); err == nil {
-		status.TableSampleReader = true
-	}
-	if _, err := GetMultiTableInfoProvider(formatType); err == nil {
-		status.MultiTableInfoProvider = true
-	}
-	if _, err := GetMultiTableSampleReader(formatType); err == nil {
-		status.MultiTableSampleReader = true
-	}
-	if _, err := GetScopeTableInfoProvider(formatType); err == nil {
-		status.ScopeTableInfoProvider = true
-	}
-	if _, err := GetScopeTableSampleReader(formatType); err == nil {
-		status.ScopeTableSampleReader = true
-	}
-	if _, err := GetScopeTableReaderProvider(formatType); err == nil {
-		status.ScopeTableReader = true
-	}
-	if _, err := GetTableReaderProvider(formatType); err == nil {
-		status.TableReaderProvider = true
-	}
-	if _, err := GetMultiTableReaderProvider(formatType); err == nil {
-		status.MultiTableReader = true
-	}
-	if _, err := GetTableWriterProvider(formatType); err == nil {
-		status.TableWriterProvider = true
-	}
-	if _, err := GetMultiTableWriterProvider(formatType); err == nil {
-		status.MultiTableWriter = true
-	}
-	if _, err := GetDocumentInfoProvider(formatType); err == nil {
-		status.DocumentInfoProvider = true
-	}
-	if _, err := GetDocumentTextReader(formatType); err == nil {
-		status.DocumentTextReader = true
-	}
-	if _, err := GetBinaryContentReader(formatType); err == nil {
-		status.BinaryContentReader = true
-	}
-	if _, err := GetMediaInfoProvider(formatType); err == nil {
-		status.MediaInfoProvider = true
-	}
-	if _, err := GetContainerInfoProvider(formatType); err == nil {
-		status.ContainerInfoProvider = true
-	}
-	if _, err := GetContainerChildResolver(formatType); err == nil {
-		status.ContainerChildResolver = true
-	}
-
 	return status
 }

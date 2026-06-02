@@ -76,8 +76,8 @@ func buildBuiltinContentHandler(cfg ObjectContentPluginConfig) (ObjectContentHan
 		return buildAudioContentHandler(cfg, "audio"), nil
 	case models.ObjectPreviewKindJSON:
 		return buildJSONContentHandler(cfg), nil
-	case string(commonformat.FormatParquet):
-		return buildParquetContentHandler(cfg), nil
+	case models.ObjectPreviewKindTable:
+		return buildTableContentHandler(cfg), nil
 	case models.ObjectPreviewKindText:
 		return buildTextContentHandler(cfg, commonformat.FormatText, models.ObjectPreviewKindText), nil
 	case models.ObjectPreviewKindMarkdown:
@@ -100,7 +100,7 @@ func buildBuiltinContentHandler(cfg ObjectContentPluginConfig) (ObjectContentHan
 			return buildAudioContentHandler(cfg, string(descriptor.Format)), nil
 		}
 	}
-	if descriptor.DataType == commondatatype.DataTypeDocument && commonformat.DescriptorHasContentReader(descriptor, commonformat.ContentReaderRawContent) {
+	if descriptor.DataType == commondatatype.DataTypeDocument {
 		return buildRawDocumentContentHandler(cfg, descriptor.Format), nil
 	}
 	return nil, fmt.Errorf("内置内容插件 %q 没有对应的对象内容处理器", cfg.Builtin)
@@ -131,10 +131,10 @@ func fallbackBuiltinContentPlugins() []ObjectContentPluginConfig {
 	plugins = append(plugins, defaultMediaContentPlugins()...)
 	plugins = append(plugins,
 		ObjectContentPluginConfig{
-			Name:     "builtin:content-parquet",
+			Name:     "builtin:content-table",
 			Type:     "builtin",
-			Builtin:  string(commonformat.FormatParquet),
-			Metadata: map[string]interface{}{"row_limit": defaultParquetRowLimit},
+			Builtin:  models.ObjectPreviewKindTable,
+			Metadata: map[string]interface{}{"row_limit": defaultTableRowLimit},
 		},
 		ObjectContentPluginConfig{Name: "builtin:content-json", Type: "builtin", Builtin: models.ObjectPreviewKindJSON},
 		ObjectContentPluginConfig{Name: "builtin:content-container", Type: "builtin", Builtin: models.ObjectPreviewKindContainer},
@@ -258,15 +258,15 @@ func buildTextContentHandler(cfg ObjectContentPluginConfig, formatType commonfor
 	}
 }
 
-func buildParquetContentHandler(cfg ObjectContentPluginConfig) ObjectContentHandler {
-	handler := &parquetContentHandler{
+func buildTableContentHandler(cfg ObjectContentPluginConfig) ObjectContentHandler {
+	handler := &tableContentHandler{
 		baseContentHandler: baseContentHandler{
 			name:     cfg.Name,
-			priority: cfg.priorityOr(defaultBuiltinContentPriority(string(commonformat.FormatParquet))),
-			matcher:  descriptorObjectContentMatcher(cfg.Match, commonformat.FormatParquet, nil, nil),
+			priority: cfg.priorityOr(defaultBuiltinContentPriority(models.ObjectPreviewKindTable)),
+			matcher:  tableObjectContentMatcher(cfg.Match),
 		},
-		maxBytes: cfg.maxBytesOr(maxParquetPreviewBytes),
-		rowLimit: defaultParquetRowLimit,
+		maxBytes: cfg.maxBytesOr(maxTablePreviewBytes),
+		rowLimit: defaultTableRowLimit,
 	}
 	handler.rowLimit = metadataInt(cfg.Metadata, "row_limit", handler.rowLimit)
 	return handler
@@ -297,7 +297,7 @@ func defaultBuiltinContentPriority(kind string) int {
 		return 68
 	case models.ObjectPreviewKindAudio:
 		return 67
-	case string(commonformat.FormatParquet):
+	case models.ObjectPreviewKindTable:
 		return 63
 	case models.ObjectPreviewKindJSON:
 		return 60
@@ -393,6 +393,38 @@ func descriptorObjectContentMatcher(match ObjectContentMatcherConfig, formatType
 	)
 }
 
+func tableObjectContentMatcher(match ObjectContentMatcherConfig) objectContentMatcher {
+	formats := make([]string, 0)
+	extensions := make([]string, 0)
+	contentTypes := make([]string, 0)
+	for _, descriptor := range commonformat.ListFormatDescriptors() {
+		if descriptor.DataType != commondatatype.DataTypeTable || !hasSingleTableContentProviders(descriptor.Format) {
+			continue
+		}
+		formats = append(formats, string(descriptor.Format))
+		extensions = append(extensions, descriptor.Identification.Extensions...)
+		contentTypes = append(contentTypes, descriptor.Identification.MimeTypes...)
+	}
+	sort.Strings(formats)
+	sort.Strings(extensions)
+	sort.Strings(contentTypes)
+	return newObjectContentMatcher(
+		normalizeFormatsOrDefault(match.Formats, formats),
+		normalizeExtensionsOrDefault(match.Extensions, extensions),
+		normalizeContentTypesOrDefault(match.ContentTypes, contentTypes),
+	)
+}
+
+func hasSingleTableContentProviders(formatType commonformat.FormatType) bool {
+	if _, err := commonformat.GetTableInfoProvider(formatType); err != nil {
+		return false
+	}
+	if _, err := commonformat.GetTableSampleReader(formatType); err != nil {
+		return false
+	}
+	return true
+}
+
 func mediaObjectContentMatcher(match ObjectContentMatcherConfig, mediaKind string) objectContentMatcher {
 	formats, extensions, contentTypes := mediaMatcherDefaults(mediaKind)
 	return newObjectContentMatcher(
@@ -452,7 +484,7 @@ func containerObjectContentMatcher(match ObjectContentMatcherConfig) objectConte
 	extensions := make([]string, 0)
 	contentTypes := make([]string, 0)
 	for _, descriptor := range commonformat.ListFormatDescriptors() {
-		if descriptor.DataType != commondatatype.DataTypeContainer || !descriptor.Providers.ContainerInfo {
+		if descriptor.DataType != commondatatype.DataTypeContainer || !hasContainerInfoProvider(descriptor.Format) {
 			continue
 		}
 		formats = append(formats, string(descriptor.Format))
@@ -468,6 +500,11 @@ func containerObjectContentMatcher(match ObjectContentMatcherConfig) objectConte
 		normalizeExtensionsOrDefault(match.Extensions, extensions),
 		normalizeContentTypesOrDefault(match.ContentTypes, contentTypes),
 	)
+}
+
+func hasContainerInfoProvider(formatType commonformat.FormatType) bool {
+	_, err := commonformat.GetContainerInfoProvider(formatType)
+	return err == nil
 }
 
 func normalizeExtensionsOrDefault(values, fallback []string) []string {

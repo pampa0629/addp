@@ -37,9 +37,9 @@ func TestTableTransferExecutorWritesNativeTableToCSV(t *testing.T) {
 	}
 	writer := &fakeContentWriter{}
 	exec := &TableTransferExecutor{
-		SourceNativeReader:   reader,
-		TargetContentWriter:  writer,
-		TargetFormatProvider: csvformat.NewPlugin(nil),
+		SourceNativeReader:        reader,
+		TargetContentWriter:       writer,
+		TargetTableWriterProvider: csvformat.NewPlugin(nil),
 	}
 
 	metrics, err := exec.Execute(context.Background(), TableTransferPlan{
@@ -83,9 +83,9 @@ func TestTableTransferExecutorAppliesFieldMappingTransform(t *testing.T) {
 	}
 	writer := &fakeContentWriter{}
 	exec := &TableTransferExecutor{
-		SourceNativeReader:   reader,
-		TargetContentWriter:  writer,
-		TargetFormatProvider: csvformat.NewPlugin(nil),
+		SourceNativeReader:        reader,
+		TargetContentWriter:       writer,
+		TargetTableWriterProvider: csvformat.NewPlugin(nil),
 	}
 
 	metrics, err := exec.Execute(context.Background(), TableTransferPlan{
@@ -136,9 +136,9 @@ func TestTableTransferExecutorReportsBatchProgress(t *testing.T) {
 	writer := &fakeContentWriter{}
 	var events []TableProgressEvent
 	exec := &TableTransferExecutor{
-		SourceNativeReader:   reader,
-		TargetContentWriter:  writer,
-		TargetFormatProvider: csvformat.NewPlugin(nil),
+		SourceNativeReader:        reader,
+		TargetContentWriter:       writer,
+		TargetTableWriterProvider: csvformat.NewPlugin(nil),
 	}
 
 	_, err := exec.Execute(context.Background(), TableTransferPlan{
@@ -182,7 +182,7 @@ func TestTableTransferExecutorPassesResumeMarkerToNativeReadSession(t *testing.T
 		SourceNativeReader:         reader,
 		SourceTableSessionProvider: reader,
 		TargetContentWriter:        writer,
-		TargetFormatProvider:       csvformat.NewPlugin(nil),
+		TargetTableWriterProvider:  csvformat.NewPlugin(nil),
 	}
 
 	_, err := exec.Execute(context.Background(), TableTransferPlan{
@@ -205,10 +205,10 @@ func TestTableTransferExecutorPassesResumeMarkerToEncodedReader(t *testing.T) {
 	reader := &fakeContentReader{content: "id\n1\n"}
 	writer := &fakeContentWriter{}
 	exec := &TableTransferExecutor{
-		SourceContentReader:     reader,
-		SourceTableReadProvider: csvformat.NewPlugin(nil),
-		TargetContentWriter:     writer,
-		TargetFormatProvider:    csvformat.NewPlugin(nil),
+		SourceContentReader:       reader,
+		SourceTableReadProvider:   csvformat.NewPlugin(nil),
+		TargetContentWriter:       writer,
+		TargetTableWriterProvider: csvformat.NewPlugin(nil),
 	}
 
 	_, err := exec.Execute(context.Background(), TableTransferPlan{
@@ -233,9 +233,9 @@ func TestTableTransferExecutorNoRowsCreatesEmptyEncodedTarget(t *testing.T) {
 	reader := &fakeBatchReader{batches: []*engineplugin.BatchData{{}}}
 	writer := &fakeContentWriter{}
 	exec := &TableTransferExecutor{
-		SourceNativeReader:   reader,
-		TargetContentWriter:  writer,
-		TargetFormatProvider: csvformat.NewPlugin(nil),
+		SourceNativeReader:        reader,
+		TargetContentWriter:       writer,
+		TargetTableWriterProvider: csvformat.NewPlugin(nil),
 	}
 
 	metrics, err := exec.Execute(context.Background(), TableTransferPlan{
@@ -278,7 +278,7 @@ func TestTableTransferExecutorPrefersNativeTableReadSession(t *testing.T) {
 		SourceNativeReader:         &fakeBatchReader{},
 		SourceTableSessionProvider: reader,
 		TargetContentWriter:        writer,
-		TargetFormatProvider:       csvformat.NewPlugin(nil),
+		TargetTableWriterProvider:  csvformat.NewPlugin(nil),
 	}
 
 	metrics, err := exec.Execute(context.Background(), TableTransferPlan{
@@ -579,8 +579,8 @@ func TestNewTableTransferExecutorLoadsNativeToEncodedProvidersFromRegistry(t *te
 	if exec.TargetContentWriter != target {
 		t.Fatalf("writer = %#v, want registered target", exec.TargetContentWriter)
 	}
-	if exec.TargetFormatProvider.Format() != format.FormatCSV {
-		t.Fatalf("format provider = %q, want csv", exec.TargetFormatProvider.Format())
+	if exec.TargetTableWriterProvider.Format() != format.FormatCSV {
+		t.Fatalf("table writer provider = %q, want csv", exec.TargetTableWriterProvider.Format())
 	}
 }
 

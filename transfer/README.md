@@ -48,7 +48,7 @@ non-table raw copy 已形成第一版最小闭环：`document`、`media`、`unkn
 {
   "mode": "batch",
   "source": {
-    "engine": {"scope": "system", "id": 1},
+    "engine": {"id": 1},
     "resource": {
       "kind": "native_table",
       "path": {"schema": "public", "table": "roads"}
@@ -57,7 +57,7 @@ non-table raw copy 已形成第一版最小闭环：`document`、`media`、`unkn
     "representation": "native"
   },
   "target": {
-    "engine": {"scope": "system", "id": 2},
+    "engine": {"id": 2},
     "resource": {
       "kind": "file",
       "path": {"path": "exports/roads.parquet"}

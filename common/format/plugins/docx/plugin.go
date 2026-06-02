@@ -29,21 +29,14 @@ func (p *Plugin) Format() format.FormatType {
 
 func (p *Plugin) Descriptor() format.FormatDescriptor {
 	return format.FormatDescriptor{
-		ID:            "builtin-docx",
-		Format:        p.Format(),
-		I18nKey:       "format.docx",
-		DataType:      datatype.DataTypeDocument,
-		Layouts:       []string{format.LayoutSingle},
-		ProviderHints: []string{format.FormatProviderDocument},
-		Providers:     format.FormatProviderDescriptor{DocumentInfo: true},
+		ID:       "builtin-docx",
+		Format:   p.Format(),
+		I18nKey:  "format.docx",
+		DataType: datatype.DataTypeDocument,
+		Layouts:  []string{format.LayoutSingle},
 		Identification: format.FormatIdentification{
 			Extensions: []string{".docx"},
 			MimeTypes:  []string{"application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
-		},
-		ContentReaders: []string{
-			string(format.ContentReaderDocumentText),
-			string(format.ContentReaderRawContent),
-			string(format.ContentReaderRangeContent),
 		},
 	}
 }

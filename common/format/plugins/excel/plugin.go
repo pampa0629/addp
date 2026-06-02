@@ -38,10 +38,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		I18nKey:        "format.excel",
 		DataType:       datatype.DataTypeContainer,
 		Layouts:        []string{format.LayoutSingle},
-		ProviderHints:  []string{format.FormatProviderContainer, format.FormatProviderTable},
 		Identification: format.FormatIdentification{Extensions: []string{".xlsx", ".xls", ".xlsm"}, MimeTypes: []string{"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel", "application/vnd.ms-excel.sheet.macroenabled.12"}},
-		Providers:      format.FormatProviderDescriptor{ContainerInfo: true, TableInfo: true, TableSample: true, Table: true},
-		ContentReaders: []string{string(format.ContentReaderTableSample), string(format.ContentReaderRawContent), string(format.ContentReaderContainerEntry)},
 	}
 }
 

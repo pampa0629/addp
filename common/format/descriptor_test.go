@@ -26,20 +26,20 @@ func TestListFormatDescriptorsIncludesBuiltinTextAndMarkdown(t *testing.T) {
 	}
 }
 
-func TestDescriptorsDeclareContentReadersForManagerHandledFormats(t *testing.T) {
+func TestDescriptorsKeepOnlyStaticFactsForBuiltinFormats(t *testing.T) {
 	tests := []struct {
 		formatType FormatType
 		dataType   datatype.DataType
-		reader     string
+		layout     string
 	}{
-		{FormatPDF, datatype.DataTypeDocument, string(ContentReaderRawContent)},
-		{FormatDOCX, datatype.DataTypeDocument, string(ContentReaderRawContent)},
-		{FormatPPTX, datatype.DataTypeDocument, string(ContentReaderRawContent)},
-		{FormatWPS, datatype.DataTypeDocument, string(ContentReaderRawContent)},
-		{FormatJPEG, datatype.DataTypeMedia, string(ContentReaderRawContent)},
-		{FormatPNG, datatype.DataTypeMedia, string(ContentReaderRawContent)},
-		{FormatExcel, datatype.DataTypeContainer, string(ContentReaderTableSample)},
-		{FormatSQLite, datatype.DataTypeContainer, string(ContentReaderTableSample)},
+		{FormatPDF, datatype.DataTypeDocument, LayoutSingle},
+		{FormatDOCX, datatype.DataTypeDocument, LayoutSingle},
+		{FormatPPTX, datatype.DataTypeDocument, LayoutSingle},
+		{FormatWPS, datatype.DataTypeDocument, LayoutSingle},
+		{FormatJPEG, datatype.DataTypeMedia, LayoutSingle},
+		{FormatPNG, datatype.DataTypeMedia, LayoutSingle},
+		{FormatExcel, datatype.DataTypeContainer, LayoutSingle},
+		{FormatSQLite, datatype.DataTypeContainer, LayoutSingle},
 	}
 
 	for _, tt := range tests {
@@ -51,29 +51,10 @@ func TestDescriptorsDeclareContentReadersForManagerHandledFormats(t *testing.T) 
 			if descriptor.DataType != tt.dataType {
 				t.Fatalf("data type = %q, want %q", descriptor.DataType, tt.dataType)
 			}
-			if !containsStringForTest(descriptor.ContentReaders, tt.reader) {
-				t.Fatalf("content readers = %#v, want %q", descriptor.ContentReaders, tt.reader)
+			if !HasLayout(descriptor.Layouts, tt.layout) {
+				t.Fatalf("layouts = %#v, want %q", descriptor.Layouts, tt.layout)
 			}
 		})
-	}
-}
-
-func TestGetFormatDescriptorReturnsDetachedContentReaders(t *testing.T) {
-	descriptor, ok := GetFormatDescriptor(FormatCSV)
-	if !ok {
-		t.Fatal("csv descriptor not found")
-	}
-	if len(descriptor.ContentReaders) == 0 {
-		t.Fatal("csv descriptor should declare content readers")
-	}
-	descriptor.ContentReaders[0] = "changed"
-
-	next, ok := GetFormatDescriptor(FormatCSV)
-	if !ok {
-		t.Fatal("csv descriptor not found on second read")
-	}
-	if next.ContentReaders[0] == "changed" {
-		t.Fatal("GetFormatDescriptor returned mutable content readers")
 	}
 }
 
@@ -105,7 +86,6 @@ func TestRegisterFormatDescriptorStoresDescriptor(t *testing.T) {
 		Identification: FormatIdentification{
 			Extensions: []string{".ptd"},
 		},
-		ContentReaders: []string{string(ContentReaderDocumentText)},
 	})
 	if err != nil {
 		t.Fatalf("RegisterFormatDescriptor() error = %v", err)
@@ -124,12 +104,9 @@ func TestRegisterFormatDescriptorStoresDescriptor(t *testing.T) {
 	if !sameStrings(descriptor.Identification.Extensions, []string{".ptd"}) {
 		t.Fatalf("descriptor extensions = %#v, want .ptd", descriptor.Identification.Extensions)
 	}
-	if !sameStrings(descriptor.ContentReaders, []string{string(ContentReaderDocumentText)}) {
-		t.Fatalf("descriptor content readers = %#v, want document_text", descriptor.ContentReaders)
-	}
 }
 
-func TestSupportsAccessIndexUsesDescriptorProviderCapability(t *testing.T) {
+func TestSupportsAccessIndexUsesDynamicProviderCapability(t *testing.T) {
 	if !SupportsAccessIndex(FormatCSV) {
 		t.Fatalf("SupportsAccessIndex(csv) = false, want true")
 	}
@@ -158,13 +135,4 @@ func sameStrings(left, right []string) bool {
 		}
 	}
 	return true
-}
-
-func containsStringForTest(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
 }

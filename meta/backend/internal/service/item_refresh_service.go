@@ -9,7 +9,6 @@ import (
 
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metacatalog"
@@ -159,6 +158,7 @@ func (s *ScanService) refreshKnownItemAttributes(
 	var err error
 	switch descriptor.Layout {
 	case dataitem.LayoutMulti:
+		clearStaleKnownMultiTableAccessIndex(attrs, detected)
 		detected, _, err = metaitem.EnrichKnownMultiTableItem(ctx, contentReader, connInfo, resource.ID, catalogPathFor, detected)
 	case dataitem.LayoutSingle, dataitem.LayoutWhole:
 		physicalPath := knownItemPhysicalPath(descriptor, item)
@@ -175,7 +175,6 @@ func (s *ScanService) refreshKnownItemAttributes(
 	if detected != nil && len(detected.Attributes) > 0 {
 		attrs = metaattr.JSONMap(detected.Attributes)
 	}
-	clearObsoleteKnownItemAttributes(attrs, detected)
 	metaattr.MergeDataItemAttributes(attrs, metaitem.AttributeInput(detected))
 	restoreKnownItemStorage(attrs, descriptor, item)
 	return metaattr.Normalize(attrs), len(detected.Fields), nil
@@ -237,14 +236,15 @@ func enrichKnownResourceAttributes(
 	return enriched, err
 }
 
-func clearObsoleteKnownItemAttributes(attrs map[string]interface{}, item *metaitem.DetectedItem) {
+func clearStaleKnownMultiTableAccessIndex(attrs map[string]interface{}, item *metaitem.DetectedItem) {
 	if attrs == nil || item == nil {
 		return
 	}
-	if item.Format == string(format.FormatShapefile) {
-		metaattr.RemoveAccessIndexTable(attrs)
-		metaattr.RemoveAccessIndexTable(item.Attributes)
+	if item.Layout != dataitem.LayoutMulti || item.DataType != dataitem.DataTypeTable {
+		return
 	}
+	metaattr.RemoveAccessIndexTable(attrs)
+	metaattr.RemoveAccessIndexTable(item.Attributes)
 }
 
 func detectedItemFromDescriptor(item *models.MetaItem, descriptor dataitem.ItemDescriptor) *metaitem.DetectedItem {

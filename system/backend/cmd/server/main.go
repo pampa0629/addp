@@ -72,7 +72,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 清理误注册到 System 的本地文件型连接器。SQLite/SpatiaLite 仅保留在 Transfer 本地引擎。
+	// 清理误注册到 System 的本地文件型连接器。SQLite/SpatiaLite 作为文件格式或容器处理，不作为 System engine 注册。
 	if err := repository.RemoveLocalFileEnginesFromSystem(db); err != nil {
 		logger.L().Error("清理本地文件型引擎失败", "error", err)
 		os.Exit(1)

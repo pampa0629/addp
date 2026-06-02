@@ -8,7 +8,7 @@
 
 | 本文负责 | 不在本文定义 |
 |---|---|
-| FormatDescriptor 表达格式静态事实，provider registry 表达当前进程实现状态 | data item 如何归并和 claims 如何合并 |
+| FormatDescriptor 表达格式静态事实，plugin registry 表达当前进程实现状态 | data item 如何归并和 claims 如何合并 |
 | FormatPlugin 如何声明格式身份和布局 | `meta_item.name/full_name/item_type` 来源规则 |
 | info provider 如何提供 `common/datatype` 定义的 data type info、横切事实和 format info | `meta_item.attributes` 的完整 schema |
 | content reader 如何提供内容数据 | contentio Reader / Writer 与 `[]format.RelatedRef` 的具体接口 |
@@ -17,7 +17,7 @@ item 归并见 [ADDP 数据项探测器规范](addp数据项探测器规范.md)�
 
 ## 核心原则
 
-格式能力分为两层：`FormatDescriptor` 声明格式静态事实，provider / reader / writer registry 声明当前 Go 进程已经加载的可调用实现。它不同于 `meta_item.attributes.capabilities`；后者是扫描后的 item 事实结果。
+格式能力分为两层：`FormatDescriptor` 声明格式静态事实，`RegisterFormatPlugin` 注册当前 Go 进程唯一格式实现入口；具体 provider / reader / writer 能力由已注册 plugin 的接口断言动态得到。它不同于 `meta_item.attributes.capabilities`；后者是扫描后的 item 事实结果。
 
 `common/format` 只回答格式和数据类型能力实现问题：
 
@@ -47,8 +47,8 @@ item 归并见 [ADDP 数据项探测器规范](addp数据项探测器规范.md)�
 
 `common/format` 负责格式侧能力：
 
-- format identity、descriptor、support view 和 detection。
-- FormatPlugin、info provider、content reader、reader/writer provider 注册和发现。
+- format identity、descriptor、诊断快照和 detection。
+- FormatPlugin、info provider、content reader、reader/writer provider 发现。
 - 具体格式解析、编码、解码和格式私有信息。
 - native type mapper，将格式或引擎原生类型转换为 `datatype.FieldType`。
 
@@ -74,6 +74,10 @@ FormatPlugin 是一个文件格式在 `common/format` 中的主入口。新增�
 ```go
 type FormatPlugin interface {
     Format() FormatType
+}
+
+type FormatDescriptorProvider interface {
+    FormatPlugin
     Descriptor() FormatDescriptor
 }
 ```
@@ -81,18 +85,19 @@ type FormatPlugin interface {
 | 方法 | 负责 | 不负责 |
 |---|---|---|
 | `Format()` | 返回稳定格式 ID，例如 `csv`、`parquet`、`shapefile` | 不根据输入资源动态猜格式 |
-| `Descriptor()` | 返回格式身份、默认数据类型、布局、识别规则、provider / reader 声明 | 不表达某个 data item 的扫描结果 |
+| `Descriptor()` | 返回格式身份、默认数据类型、布局和识别规则 | 不表达某个 data item 的扫描结果，也不声明当前进程 provider / reader / writer 实现状态 |
 
-FormatPlugin 是静态格式身份和实现入口，不是 detector：
+FormatPlugin 是稳定格式身份入口，不是 detector。`Descriptor()` 是可选静态描述能力，不属于 FormatPlugin 本体：
 
-- 它可以声明“CSV 是 `format=csv`，默认 `data_type=table`，支持 `single`，有 `table_sample` reader”。
+- 它可以声明“CSV 是 `format=csv`”；如果同时实现 `FormatDescriptorProvider`，还可以声明“默认 `data_type=table`，支持 `single`，扩展名是 `.csv`”。
+- 它可以同时实现 `TableInfoProvider`、`TableSampleReader`、`TableReaderProvider`、`TableWriterProvider` 等能力；这些是当前进程可调用实现状态，通过接口断言发现。
 - 它不能决定“当前某个文件最终是不是一个 data item”。
 - 它不能决定 Shapefile refs如何归并成最终 item；只能声明ref 布局能力，最终归并由 Meta detector 裁决。
 - 它不能通过 `engine_id` 自己构造读取器；调用方必须先构造 `io.Reader`、`contentio.Reader`，并在多 content 场景下显式传递 `[]format.RelatedRef`。
 
 ### FormatDescriptor
 
-`FormatDescriptor` 是 FormatPlugin 的静态身份说明。新增格式至少要说明：
+`FormatDescriptor` 是格式的静态身份说明。新增格式至少要说明：
 
 | 字段 | 必填性 | 说明 |
 |---|---|---|
@@ -101,17 +106,14 @@ FormatPlugin 是静态格式身份和实现入口，不是 detector：
 | `DataType` | 必填 | 默认数据类型，例如 `table`、`document` |
 | `Layouts` | 必填 | 支持的内容布局，例如 `single`、`multi`、`whole` |
 | `Identification` | 文件格式通常必填 | 扩展名、MIME、内容签名等识别依据 |
-| `Providers` | 按能力填写 | 声明有哪些 info provider |
-| `ContentReaders` | 按能力填写 | 声明有哪些 content reader |
-| `ProviderHints` | 建议填写 | 上层快速判断 provider 家族 |
-| `Parse` | 按能力填写 | 是否有后端解析能力 |
-| `Spatial` | 按能力填写 | 是否能产生 spatial 横切事实 |
 
-`Descriptor()` 描述“这个格式理论和规范上声明了什么能力”；实际 Go 进程里是否已经注册了对应实现，由 provider / reader registry 决定。能力发现视图必须同时呈现声明能力和实现状态，不能把二者混为一谈。
+`Descriptor()` 只描述格式身份、识别规则、默认 data type 和 layout。实际 Go 进程里是否已经具备 info provider、content reader 或 writer provider，只能由当前已注册 `FormatPlugin` 是否实现对应接口动态判断，不能写入 descriptor。
 
-内置格式的 descriptor 由各自格式包维护，代码位置为 `common/format/plugins/<format>/`。`common/format/registry` 只负责运行时注册、查询、冲突诊断和能力发现视图，不再集中保存一份内置格式大清单。即使某个格式当前只有静态声明、暂时没有解析 provider，也应建立对应格式包并实现 `Descriptor()`，例如逻辑格式、文档族、媒体族或 ORC / Avro 这类 descriptor-only 阶段能力。
+内置格式的 descriptor 由各自格式包维护，代码位置为 `common/format/plugins/<format>/`。`common/format` 根包负责 descriptor 注册、查询和冲突诊断，不再集中保存一份内置格式大清单。即使某个格式当前只有静态声明、暂时没有解析 provider，也应建立对应格式包，并让 plugin 实现 `FormatDescriptorProvider`，例如逻辑格式、文档族、媒体族或 ORC / Avro 这类 descriptor-only 阶段能力。
 
-扩展名、MIME、content signature 等格式识别事实优先来自 `FormatDescriptor.Identification`。`common/format` 根包中的 detection fallback 只服务“内置 descriptor 尚未加载时仍可做最低限度识别”和 magic bytes 等算法性判断，不是第二套格式规范清单。新增或调整格式时，必须先更新对应格式包的 `Descriptor()`；只有能说明独立价值的通用兜底，才允许进入 fallback。
+扩展名、MIME、content signature 等格式识别事实优先来自 `FormatDescriptor.Identification`。`common/format` 根包中的 detection fallback 只服务“内置 descriptor 尚未加载时仍可做最低限度识别”和 magic bytes 等算法性判断，不是第二套格式规范清单。fallback 只允许保留 bootstrap 主扩展名 / 主 MIME；完整扩展名、MIME 变体和 wildcard 识别必须来自 descriptor。新增或调整格式时，必须先更新对应格式包的 `Descriptor()`；只有能说明独立价值的通用兜底，才允许进入 fallback。
+
+`IsDocumentFormat`、`IsTableFormat`、`IsImageFormat` 等分类 helper 是 descriptor `DataType` / MIME 事实的派生判断，不维护独立格式分类表。某些格式具备表格解析能力但默认 data type 不是 `table` 时，分类结果仍以 descriptor 为准，例如 Excel 默认属于 `container`，不属于 `IsTableFormat`。
 
 上层模块不得自行把文件扩展名、MIME 或自由字符串转换成 format ID。消费已有 attributes、用户输入、插件返回值或文件名时，必须通过 `format.NormalizeFormat` 得到 canonical format；识别不到必须保留为 `format=unknown`。禁止把裸后缀或未知字符串写入 `meta_item.attributes.item.format`、container child format、Manager preview request format 或 Transfer planner format 字段。
 
@@ -121,8 +123,8 @@ FormatPlugin 是静态格式身份和实现入口，不是 detector：
 
 | 注册层 | 入口 | 作用 |
 |---|---|---|
-| 格式身份声明 | `RegisterFormatDescriptor` 或 `FormatPlugin.Descriptor()` | 让平台知道这个 format 是谁、默认 data type 是什么、如何识别、声明哪些能力 |
-| 代码实现注册 | `RegisterFormatPlugin` 或具体 `Register*Provider` / `Register*Reader` | 让当前进程能调用对应 Go 实现 |
+| 格式身份声明 | `RegisterFormatDescriptor` 或 `FormatDescriptorProvider.Descriptor()` | 让平台知道这个 format 是谁、默认 data type 是什么、如何识别 |
+| 代码实现注册 | `RegisterFormatPlugin` | 注册该 format 的唯一 Go 实现入口，当前进程通过接口断言判断可调用能力 |
 
 推荐做法：
 
@@ -134,30 +136,28 @@ func init() {
 }
 ```
 
-`RegisterFormatPlugin` 会根据 plugin 实现的接口自动注册：
+`RegisterFormatPlugin` 会记录 plugin 的 `Format()` 身份；若 plugin 同时实现 `FormatDescriptorProvider`，会校验 `Format()` 与 `Descriptor().Format` 完全一致，并在当前进程尚未注册该 format descriptor 时注册 descriptor。后续能力查询统一对该 plugin 做接口断言：
 
-| plugin 同时实现 | 自动注册为 |
+| plugin 同时实现 | 可通过 |
 |---|---|
-| `FormatInfoProvider` | format info provider |
-| `TableInfoProvider` | table info provider |
-| `TableSampleReader` | table sample reader |
-| `MultiTableInfoProvider` | multi table info provider |
-| `MultiTableSampleReader` | multi table sample reader |
-| `ScopeTableInfoProvider` | scope table info provider |
-| `ScopeTableSampleReader` | scope table sample reader |
-| `TableReaderProvider` | table continuous reader provider |
-| `MultiTableReaderProvider` | multi table continuous reader provider |
-| `TableWriterProvider` | table writer provider |
-| `MultiTableWriterProvider` | multi table writer provider |
-| `DocumentInfoProvider` | document info provider |
-| `DocumentTextReader` | document text reader |
-| `MediaInfoProvider` | media info provider |
-| `ContainerInfoProvider` | container info provider |
-| `ContainerChildResolver` | container child resolver |
+| `FormatInfoProvider` | `GetFormatInfoProvider(format)` |
+| `TableInfoProvider` | `GetTableInfoProvider(format)` |
+| `TableSampleReader` | `GetTableSampleReader(format)` |
+| `MultiTableInfoProvider` | `GetMultiTableInfoProvider(format)` |
+| `MultiTableSampleReader` | `GetMultiTableSampleReader(format)` |
+| `ScopeTableInfoProvider` | `GetScopeTableInfoProvider(format)` |
+| `ScopeTableSampleReader` | `GetScopeTableSampleReader(format)` |
+| `TableReaderProvider` | `GetTableReaderProvider(format)` |
+| `MultiTableReaderProvider` | `GetMultiTableReaderProvider(format)` |
+| `TableWriterProvider` | `GetTableWriterProvider(format)` |
+| `MultiTableWriterProvider` | `GetMultiTableWriterProvider(format)` |
+| `DocumentInfoProvider` | `GetDocumentInfoProvider(format)` |
+| `DocumentTextReader` | `GetDocumentTextReader(format)` |
+| `MediaInfoProvider` | `GetMediaInfoProvider(format)` |
+| `ContainerInfoProvider` | `GetContainerInfoProvider(format)` |
+| `ContainerChildResolver` | `GetContainerChildResolver(format)` |
 
-也可以只注册单一能力，例如 `RegisterTableInfoProvider` 或 `RegisterDocumentTextReader`。这种方式只适合格式能力已经明确、但无需聚合成完整插件的场景；新增格式优先使用 `RegisterFormatPlugin`，让格式身份和实现入口在同一个子目录内闭合。
-
-内置格式通过 `common/format/builtin` 统一 blank import 加载。Meta、Manager 或测试进程如果需要完整内置格式识别、`FormatSupportView`、provider / reader 和 type mapper，应显式导入：
+内置格式通过 `common/format/builtin` 统一 blank import 加载。Meta、Manager 或测试进程如果需要完整内置格式识别、provider / reader / writer 和 type mapper，应显式导入：
 
 ```go
 import _ "github.com/addp/common/format/builtin"
@@ -165,7 +165,7 @@ import _ "github.com/addp/common/format/builtin"
 
 新增内置 format ID 时，必须同时完成：
 
-1. 在 `common/format/plugins/<format>/` 实现 `Descriptor()`。
+1. 在 `common/format/plugins/<format>/` 实现 `FormatDescriptorProvider.Descriptor()`。
 2. 在同一格式包内按需实现 provider / reader；没有 Go 解析能力时也保留 descriptor-only plugin。
 3. 在 `common/format/builtin/init.go` 加入 blank import，使内置加载入口能触发注册。
 
@@ -183,22 +183,21 @@ import _ "github.com/addp/common/format/builtin"
 
 ## FormatDescriptor 与能力分层
 
-格式能力总览不是 parser 注册表，也不是 `meta_item.attributes.capabilities`。静态事实由 `FormatDescriptor` 表达，当前进程实现状态由 provider / reader / writer registry 表达。
+格式能力总览不是 parser 注册表，也不是 `meta_item.attributes.capabilities`。静态事实由 `FormatDescriptor` 表达，当前进程实现状态由已注册 plugin 的接口断言表达。
 
 | 能力段 | 说明 | 典型产出 | 主要消费者 |
 |---|---|---|---|
 | Identification | 如何识别格式 | 扩展名、MIME、magic bytes、内容签名 | Meta、Registry |
 | Layout | 格式自身如何组织 content | single / multi / whole、primary ref、related refs 规则、manifest 规则 | Meta |
 | Info / Facts | 能提取什么 data type info、横切事实和 format info | table / document / media / container info、spatial facts、access index、format_info | Meta、Manager、Transfer |
-| Content Reader | 能否提供按 data type 组织后的内容数据 | 行样本、文本片段、缩略图、容器树、raw content、range content | Manager、Transfer |
-| Runtime provider | 当前进程是否已经注册可调用的 reader / writer provider | batch read / write、multi read / write、commit policy | Transfer |
-| Provider hints | 实现了哪些 provider 家族 | table / document / media / container / graph / spatial | Registry、上层调用方 |
+| Content Reader | 能否提供按 data type 组织后的内容数据 | 行样本、文本片段、容器树、二进制片段 | Manager、Transfer |
+| Runtime provider | 当前进程是否已经加载可调用的 reader / writer provider | batch read / write、multi read / write、commit policy | Transfer |
 
-当前代码中 `FormatDescriptor` 是静态声明事实源；`FormatPlugin` 是格式包的代码入口；`FormatInfoProvider`、`TableInfoProvider`、`TableSampleReader`、`MultiTableInfoProvider`、`MultiTableSampleReader`、`ScopeTableInfoProvider`、`ScopeTableSampleReader`、`TableReaderProvider`、`TableWriterProvider`、`MultiTableReaderProvider`、`MultiTableWriterProvider`、`DocumentInfoProvider`、`DocumentTextReader`、`BinaryContentReader`、`MediaInfoProvider`、`ContainerInfoProvider`、`ContainerChildResolver`、type mapper 等是具体实现能力。静态声明可以先于 plugin / provider 完整实现存在，因此文档必须区分“声明支持”和“已有实现”。
+当前代码中 `FormatDescriptor` 是静态声明事实源；`FormatPlugin` 是格式包的代码入口；`FormatDescriptorProvider` 是 plugin 可选实现的静态描述能力；`FormatInfoProvider`、`TableInfoProvider`、`TableSampleReader`、`MultiTableInfoProvider`、`MultiTableSampleReader`、`ScopeTableInfoProvider`、`ScopeTableSampleReader`、`TableReaderProvider`、`TableWriterProvider`、`MultiTableReaderProvider`、`MultiTableWriterProvider`、`DocumentInfoProvider`、`DocumentTextReader`、`BinaryContentReader`、`MediaInfoProvider`、`ContainerInfoProvider`、`ContainerChildResolver`、type mapper 等是具体实现能力。静态声明可以先于 plugin / provider 完整实现存在，因此文档必须区分“声明支持”和“已有实现”。
 
 ### Format Identity 与 Format Detection
 
-`format identity` 定义“平台支持的这个格式是谁”，通常由 `FormatDescriptor` 表达；当该格式已有代码实现时，由 `FormatPlugin` 作为格式包主入口承载。它包含稳定格式 ID、默认 data type、布局、info provider、content reader 和横切能力声明。
+`format identity` 定义“平台支持的这个格式是谁”，由 `FormatType`、`FormatPlugin.Format()` 和 `FormatDescriptor.Format` 共同约束。`FormatDescriptor` 只包含稳定格式 ID、默认 data type、layout 和识别事实；info provider、content reader、writer provider 和横切事实提取能力属于已注册 plugin 的动态实现状态。
 
 `format detection` 是“给定一个 content，判断它像哪个格式”的动态过程。它输入文件名、MIME、magic bytes、内容签名或 ref 上下文，输出指向某个 format identity 的识别结果。
 
@@ -213,7 +212,7 @@ import _ "github.com/addp/common/format/builtin"
 | 回答的问题 | 平台支持哪些格式以及这些格式能做什么 | 当前 content 看起来是什么格式 |
 | 性质 | 静态注册事实 | 动态识别过程 |
 | 输入 | plugin / descriptor 注册信息 | 文件名、MIME、magic bytes、内容片段、ref 上下文 |
-| 输出 | format descriptor / support view | detection result，指向某个 format |
+| 输出 | format descriptor / capability snapshot | detection result，指向某个 format |
 | 是否决定 item | 不决定 | 不最终决定，只给 Meta detector 提供格式候选 |
 
 Shapefile 这类 multi 格式尤其要区分：单个 `.shp/.dbf/.shx` 的识别不等于 data item 归并；最终 item 边界由 Meta item detector 根据 format layout 和候选 content 上下文决定。
@@ -333,9 +332,9 @@ content reader 负责提供上层可继续组装的数据，不直接负责展�
 - media thumbnail
 - container children sample
 - graph sample
-- raw content / range content
+- binary content fragment
 
-Manager 面向前端的 DTO 由 Manager 组装，不应进入 `common/format`。`common/format` 只声明和实现 reader 能力，例如 `table_sample`、`document_text`、`raw_content`、`range_content`。是否使用这些 reader 做页面展示、下载、索引或传输，由上层模块决定。
+Manager 面向前端的 DTO 由 Manager 组装，不应进入 `common/format`。`common/format` 只声明和实现需要格式解码的 reader 能力，例如 `TableSampleReader`、`DocumentTextReader`、`BinaryContentReader`。`raw_content`、`range_content`、预签名 URL 和直接下载属于 engine / contentio / 模块 fetcher 的内容通道能力，不写入 format descriptor，也不作为 format plugin 的静态声明。是否使用这些能力做页面展示、下载、索引或传输，由上层模块决定。
 
 合理链路是：
 
@@ -368,30 +367,28 @@ Transfer 模块负责根据当前进程已注册的 reader / writer provider 判
 
 Format writer 负责编码格式，Engine writer 负责提交到目标存储。多文件格式必须明确提交边界，不能只写主文件。Transfer 应基于 `TableReaderProvider`、`TableWriterProvider`、`MultiTableReaderProvider`、`MultiTableWriterProvider`、`ScopeTableReaderProvider` 等具体实现状态判断可读写能力。更细的读取抽象和ref 定位规则见 [ADDP 内容 I/O 抽象规范](addp内容IO抽象规范.md)。
 
-## 能力发现视图
+## 能力诊断快照
 
-`common/format.ListFormatSupportViews()` 是上层模块查询格式能力的稳定入口。视图中需要明确区分两层含义：
+`common/format.ListFormatCapabilitySnapshots()` 是由 descriptor 列表和当前进程已注册 plugin 接口断言临时派生的诊断入口，不是业务事实源。业务调用方需要可执行能力时，应直接调用对应 `Get*Provider` / `Get*Reader` / `Get*Writer`。
 
 | 字段 | 含义 |
 |---|---|
-| `providers` | descriptor 的声明能力，表示该格式在规范上属于哪些 info provider 家族 |
-| `content_readers` | descriptor 的内容读取能力声明，表示该格式声明可提供哪些内容数据读取方式 |
-| `implementations` | 当前进程内已经注册的实际实现状态，表示 `FormatInfoProvider`、`TableInfoProvider`、`TableSampleReader`、`MultiTableInfoProvider`、`MultiTableSampleReader`、`ScopeTableInfoProvider`、`ScopeTableSampleReader`、`TableReaderProvider`、`TableWriterProvider`、`MultiTableReaderProvider`、`MultiTableWriterProvider`、`DocumentInfoProvider`、`DocumentTextReader`、`MediaInfoProvider`、`ContainerInfoProvider`、`ContainerChildResolver` 等是否已经可调用 |
+| `descriptor` | format 静态事实，包括身份、默认 data type、layout、识别规则 |
+| `implementations` | 当前进程内已注册 plugin 实际实现状态，表示 `FormatDescriptorProvider`、`FormatInfoProvider`、`TableInfoProvider`、`TableSampleReader`、`MultiTableInfoProvider`、`MultiTableSampleReader`、`ScopeTableInfoProvider`、`ScopeTableSampleReader`、`TableReaderProvider`、`TableWriterProvider`、`MultiTableReaderProvider`、`MultiTableWriterProvider`、`DocumentInfoProvider`、`DocumentTextReader`、`BinaryContentReader`、`MediaInfoProvider`、`ContainerInfoProvider`、`ContainerChildResolver` 等是否已经可调用 |
 
-上层模块做格式路由时，应优先依据 `format`、`data_type`、`providers`、`content_readers` 判断语义，再根据 `implementations` 决定能否直接调用后端实现。不能把 `providers.document_info=true` 理解为一定已经有 `DocumentTextReader`；例如 DOCX / PPTX 当前已有内置 `DocumentTextReader`，WPS 当前只声明 raw/range content reader。
+上层模块做格式路由时，应优先依据 `format`、`data_type`、`layouts` 判断语义；需要后端实现时直接查询具体 provider / reader。不能从 descriptor 推断某个 Go reader 一定可调用；例如 DOCX / PPTX 当前已有内置 `DocumentTextReader`，WPS 当前只有 document 静态身份和前端/raw 内容处理路径。
 
-`raw_content` / `range_content` 是内容读取方式声明，不对应 `ProviderRegistry` 中的可调用 Go reader。它们表示编排层可以基于 engine capability、`common/contentio`、预签名 URL 或模块 fetcher 提供完整流 / 范围流；format 层只提供 `DescriptorHasContentReader` / `SupportsContentReader` 这类声明判断 helper。需要实际解码或抽取时，仍应使用 `DocumentTextReader`、`TableSampleReader`、`BinaryContentReader` 等已注册实现能力。
+`raw_content` / `range_content` 不进入 `FormatDescriptor`，也不进入 format plugin registry。它们是 engine capability、`common/contentio`、预签名 URL 或模块 fetcher 的内容通道能力；需要实际解码或抽取时，使用 `DocumentTextReader`、`TableSampleReader`、`BinaryContentReader` 等已注册插件能力。
 
 Manager 的 `preview_material` 是前端展示材料或展示状态协议，和 `content_readers` 不同层。`preview_material=raw_binary` 表示响应体里携带 base64 原始字节或展示层按原始二进制处理；`preview_material=unsupported` 表示 Manager 不支持该内容在线预览。它们都不是 `raw_content`、`range_content` 或 `binary_content` 声明。format descriptor 中的能力名称不得写入 `preview_material`。
 
-能力发现视图不替代内置格式规范，也不作为实现进度清单。首批内置格式的确定性落地规则见 [ADDP 内置数据类型与文件格式规范](addp内置数据类型与文件格式规范.md)；当前代码实现状态以 `common/format/README.md` 和测试为准；未完成事项进入 `docs/next/common-format格式完善矩阵.md`。
+能力诊断快照不替代内置格式规范，也不作为实现进度清单。首批内置格式的确定性落地规则见 [ADDP 内置数据类型与文件格式规范](addp内置数据类型与文件格式规范.md)；当前代码实现状态以 `common/format/README.md` 和测试为准；未完成事项进入 `docs/next/common-format格式完善矩阵.md`。
 
-新增或调整格式后，应检查能力发现视图：
+新增或调整格式后，应检查能力诊断快照：
 
-1. `providers` 是否表达规范上的目标能力。
-2. `implementations` 是否只反映当前已注册的 Go 实现。
-3. `content_readers` 是否只描述内容读取方式，不包含前端渲染器或展示策略。
-4. 对未知二进制对象，能力发现视图不应新增普通 `binary` format；应通过内置 `unknown` format 的 `BinaryContentReader` 表达非文本 raw binary 兜底，上层再投影成自身展示或传输协议。
+1. `descriptor` 是否只包含格式身份、默认 data type、layout 和识别规则。
+2. `implementations` 是否只反映当前已注册 plugin 的 Go 接口实现。
+3. 对未知二进制对象，能力诊断快照不应新增普通 `binary` format；应通过内置 `unknown` format 的 `BinaryContentReader` 表达非文本 raw binary 兜底，上层再投影成自身展示或传输协议。
 
 ## 旧 FileMetadataExtractor 退出说明
 
@@ -413,7 +410,7 @@ info provider 和 content reader 是上层消费者面向数据类型能力的�
 | 类别 | 职责 | 示例 |
 |---|---|---|
 | info provider | 提供对应 data type 的元数据，供 Meta 写入 `type_info.*` | `TableInfoProvider`、`DocumentInfoProvider`、`MediaInfoProvider`、`ContainerInfoProvider` |
-| sample / text reader | 提供按 data type 组织后的轻量内容数据，供 Manager / Search / Transfer 探查消费 | `TableSampleReader`、`DocumentTextReader`、`MediaThumbnailReader` |
+| sample / text reader | 提供按 data type 组织后的轻量内容数据，供 Manager / Search / 轻量探查消费 | `TableSampleReader`、`DocumentTextReader`、`MediaThumbnailReader` |
 | continuous reader provider | 打开一次连续读取会话，供 Transfer 等批处理消费 | `TableReaderProvider`、`MultiTableReaderProvider`、`ScopeTableReaderProvider` |
 | writer provider | 打开一次连续写出会话，供 Transfer 写侧消费 | `TableWriterProvider`、`MultiTableWriterProvider` |
 
@@ -426,7 +423,7 @@ info provider 只回答对应 data type 的元数据语义；sample / text reade
 表格能力按消费意图拆成四类：
 
 - `TableInfoProvider`：返回表结构与字段元数据，是 `type_info.table` 的主来源；如果同次解析得到空间事实、访问索引或格式私有事实，应通过 describe result 同级返回。
-- `TableSampleReader`：返回分页或采样样本，是 Manager 表格探查和 Transfer 探查的主来源。
+- `TableSampleReader`：返回分页或采样样本，是 Manager 表格预览和轻量探查的主来源，不能用于 Transfer 全量读取。
 - `TableReaderProvider`：打开单资源 table 的连续读取会话，是 Transfer 读取 encoded table 的主入口。
 - `TableWriterProvider`：打开单资源 table 的连续写出会话，是 Transfer 写出 encoded table 的主入口。
 - `MultiTableInfoProvider` / `MultiTableSampleReader`：面向 Shapefile 等 multi table 的类型信息与样本读取。
@@ -502,7 +499,7 @@ checkpoint / resume 属于批量执行的恢复契约，不是 sample offset，�
 
 `DocumentTextReader` 提供正文片段。raw content / range content 由对应 content reader 表达。二者都不负责 Manager 的最终前端 DTO。
 
-文档格式不要求都必须在后端完成解析。DOCX / PPTX 当前可以通过内置 `DocumentTextReader` 提取正文片段；WPS 当前只声明 raw content / range content reader。后续如需 WPS、PDF OCR、摘要、脱敏或服务端导出，再补对应文本提取或外部 extraction 能力，不能扩展 `DocumentInfo` 承载正文状态或正文内容。
+文档格式不要求都必须在后端完成解析。DOCX / PPTX 当前可以通过内置 `DocumentTextReader` 提取正文片段；WPS 当前不声明后端文本解析能力，原始文件读取由 engine / contentio / URL 内容通道提供。后续如需 WPS、PDF OCR、摘要、脱敏或服务端导出，再补对应文本提取或外部 extraction 能力，不能扩展 `DocumentInfo` 承载正文状态或正文内容。
 
 ### BinaryContentReader
 

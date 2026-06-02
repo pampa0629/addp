@@ -69,8 +69,8 @@ func NewObjectStorageService(systemClient *commonClient.SystemClient) *ObjectSto
 
 // ListDirectories 列出指定前缀下的子目录
 // 当引擎未配置 bucket 时，根目录列出所有 bucket；prefix 中第一段为 bucket 名
-func (s *ObjectStorageService) ListDirectories(ctx context.Context, tenantID uint, scope string, engineID uint, prefix string) (*ObjectStorageBrowseResult, error) {
-	connInfo, bucket, err := s.resolveConnectionInfo(scope, engineID, tenantID)
+func (s *ObjectStorageService) ListDirectories(ctx context.Context, tenantID uint, engineID uint, prefix string) (*ObjectStorageBrowseResult, error) {
+	connInfo, bucket, err := s.resolveConnectionInfo(engineID, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -190,8 +190,8 @@ func (s *ObjectStorageService) listDirectoriesInBucket(ctx context.Context, clie
 
 // ListFiles 列出指定前缀下的文件（不包括子目录）
 // 当引擎未配置 bucket 时，从 prefix 第一段提取 bucket 名
-func (s *ObjectStorageService) ListFiles(ctx context.Context, tenantID uint, scope string, engineID uint, prefix string) (*ObjectStorageListFilesResult, error) {
-	connInfo, bucket, err := s.resolveConnectionInfo(scope, engineID, tenantID)
+func (s *ObjectStorageService) ListFiles(ctx context.Context, tenantID uint, engineID uint, prefix string) (*ObjectStorageListFilesResult, error) {
+	connInfo, bucket, err := s.resolveConnectionInfo(engineID, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -286,27 +286,21 @@ func buildMinIOClient(connInfo map[string]interface{}) (*minio.Client, error) {
 	})
 }
 
-func (s *ObjectStorageService) resolveConnectionInfo(scope string, engineID, tenantID uint) (map[string]interface{}, string, error) {
-	scope = strings.ToLower(strings.TrimSpace(scope))
-	switch scope {
-	case "system":
-		if s.systemClient == nil {
-			return nil, "", ErrSystemIntegrationDisabled
-		}
-		systemRes, err := s.systemClient.GetEngine(engineID)
-		if err != nil {
-			return nil, "", err
-		}
-		if systemRes.TenantID != nil && *systemRes.TenantID != 0 && *systemRes.TenantID != tenantID {
-			return nil, "", ErrEngineAccessDenied
-		}
-		if !isObjectStorageType(systemRes.EngineType) {
-			return nil, "", ErrObjectStorageNotSupported
-		}
-		return map[string]interface{}(systemRes.ConnectionInfo), getStringFromConn(map[string]interface{}(systemRes.ConnectionInfo), "bucket"), nil
-	default:
-		return nil, "", fmt.Errorf("invalid scope: %s", scope)
+func (s *ObjectStorageService) resolveConnectionInfo(engineID, tenantID uint) (map[string]interface{}, string, error) {
+	if s.systemClient == nil {
+		return nil, "", ErrSystemIntegrationDisabled
 	}
+	systemRes, err := s.systemClient.GetEngine(engineID)
+	if err != nil {
+		return nil, "", err
+	}
+	if systemRes.TenantID != nil && *systemRes.TenantID != 0 && *systemRes.TenantID != tenantID {
+		return nil, "", ErrEngineAccessDenied
+	}
+	if !isObjectStorageType(systemRes.EngineType) {
+		return nil, "", ErrObjectStorageNotSupported
+	}
+	return map[string]interface{}(systemRes.ConnectionInfo), getStringFromConn(map[string]interface{}(systemRes.ConnectionInfo), "bucket"), nil
 }
 
 func isObjectStorageType(resourceType string) bool {

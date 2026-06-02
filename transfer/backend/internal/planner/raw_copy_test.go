@@ -73,7 +73,7 @@ func minimalRawCopySpec() RawCopyTaskSpec {
 	return RawCopyTaskSpec{
 		Mode: modeBatch,
 		Source: EndpointSpec{
-			Engine:         EngineRef{Scope: "system", ID: 1},
+			Engine:         EngineRef{ID: 1},
 			DataType:       "document",
 			Representation: representationEncoded,
 			Format:         format.FormatPDF,
@@ -83,7 +83,7 @@ func minimalRawCopySpec() RawCopyTaskSpec {
 			},
 		},
 		Target: EndpointSpec{
-			Engine:         EngineRef{Scope: "system", ID: 2},
+			Engine:         EngineRef{ID: 2},
 			DataType:       "document",
 			Representation: representationEncoded,
 			Format:         format.FormatPDF,

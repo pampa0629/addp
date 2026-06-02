@@ -35,7 +35,7 @@
 {
   "mode": "batch",
   "source": {
-    "engine": {"scope": "system", "id": 1},
+    "engine": {"id": 1},
     "resource": {
       "kind": "native_table",
       "path": {"schema": "public", "table": "source_roads"}
@@ -44,7 +44,7 @@
     "representation": "native"
   },
   "target": {
-    "engine": {"scope": "system", "id": 2},
+    "engine": {"id": 2},
     "resource": {
       "kind": "file",
       "path": {"path": "exports/roads.parquet"}
@@ -82,7 +82,6 @@
 
 | 字段 | 说明 |
 |---|---|
-| `engine.scope` | 当前主路径使用 `system`。 |
 | `engine.id` | System engine ID。 |
 | `resource.kind` | `native_table`、`file`、`object`。 |
 | `resource.path` | 对应 engine catalog path 的业务描述。 |

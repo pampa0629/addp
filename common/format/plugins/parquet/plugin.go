@@ -190,20 +190,16 @@ func (p *Plugin) Format() format.FormatType {
 
 func (p *Plugin) Descriptor() format.FormatDescriptor {
 	return format.FormatDescriptor{
-		ID:            "builtin-parquet",
-		Format:        format.FormatParquet,
-		I18nKey:       "format.parquet",
-		DataType:      datatype.DataTypeTable,
-		Layouts:       []string{format.LayoutSingle, format.LayoutWhole},
-		ProviderHints: []string{format.FormatProviderTable},
+		ID:       "builtin-parquet",
+		Format:   format.FormatParquet,
+		I18nKey:  "format.parquet",
+		DataType: datatype.DataTypeTable,
+		Layouts:  []string{format.LayoutSingle, format.LayoutWhole},
 		Identification: format.FormatIdentification{
 			Extensions:        []string{".parquet"},
 			MimeTypes:         []string{"application/parquet", "application/x-parquet", "application/vnd.apache.parquet"},
 			ContentSignatures: []string{"hex:50415231"},
 		},
-		Providers:      format.FormatProviderDescriptor{TableInfo: true, TableSample: true, Table: true, ScopeTable: true},
-		ContentReaders: []string{string(format.ContentReaderTableSample), string(format.ContentReaderScopeTableSample), string(format.ContentReaderRawContent)},
-		Parse:          true,
 	}
 }
 

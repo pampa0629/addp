@@ -136,8 +136,8 @@ const selectedNode = ref(null)
 
 const loadingEngines = ref(false)
 const loadingNodes = ref(false)
-const supportedEncodedSourceFormats = ref(new Set(['csv', 'tsv', 'json', 'jsonl', 'geojson', 'parquet', 'shapefile']))
-const supportedRawCopyFormats = ref(defaultRawCopyFormats())
+const supportedEncodedSourceFormats = ref(new Set())
+const supportedRawCopyFormats = ref(new Map())
 
 const selectedEngine = computed(() => {
   return engines.value.find(engine => engine.id === formData.engineID) || null
@@ -181,9 +181,7 @@ async function loadCapabilities() {
       .filter(format => format?.read)
       .map(format => String(format.value || '').toLowerCase())
       .filter(Boolean)
-    if (formats.length > 0) {
-      supportedEncodedSourceFormats.value = new Set(formats)
-    }
+    supportedEncodedSourceFormats.value = new Set(formats)
     const rawCopyFormats = data?.raw_copy_formats || data?.rawCopyFormats || []
     const nextRawCopyFormats = new Map()
     rawCopyFormats.forEach(format => {
@@ -193,10 +191,15 @@ async function loadCapabilities() {
         nextRawCopyFormats.set(value, dataType)
       }
     })
-    if (nextRawCopyFormats.size > 0) {
-      supportedRawCopyFormats.value = nextRawCopyFormats
-    }
+    supportedRawCopyFormats.value = nextRawCopyFormats
+    props.wizardState.updateFormatCapabilities({
+      readableEncodedFormats: formats,
+      rawCopyFormats: nextRawCopyFormats
+    })
   } catch (error) {
+    supportedEncodedSourceFormats.value = new Set()
+    supportedRawCopyFormats.value = new Map()
+    props.wizardState.updateFormatCapabilities()
     ElMessage.warning(t('transfer.taskWizard.loadCapabilitiesFailedMsg'))
   }
 }
@@ -359,7 +362,6 @@ function syncSource(node) {
   props.wizardState.updateSource({
     engineID: formData.engineID,
     engineType: engine.engine_type,
-    scope: 'system',
     schema: endpointResource.path?.schema || '',
     table: endpointResource.path?.table || '',
     sourceType: normalizeEngineType(engine.engine_type),
@@ -644,37 +646,6 @@ function isSupportedSourceShape(dataType, representation, sourceFormat) {
   return ['document', 'media', 'unknown'].includes(normalizedDataType) &&
     normalizedRepresentation === 'encoded' &&
     supportedRawCopyFormats.value.get(normalizedFormat) === normalizedDataType
-}
-
-function defaultRawCopyFormats() {
-  return new Map([
-    ['pdf', 'document'],
-    ['docx', 'document'],
-    ['pptx', 'document'],
-    ['wps', 'document'],
-    ['text', 'document'],
-    ['markdown', 'document'],
-    ['jpeg', 'media'],
-    ['png', 'media'],
-    ['gif', 'media'],
-    ['tiff', 'media'],
-    ['webp', 'media'],
-    ['bmp', 'media'],
-    ['svg', 'media'],
-    ['avif', 'media'],
-    ['heic', 'media'],
-    ['mp4', 'media'],
-    ['mov', 'media'],
-    ['mkv', 'media'],
-    ['avi', 'media'],
-    ['webm', 'media'],
-    ['mp3', 'media'],
-    ['wav', 'media'],
-    ['flac', 'media'],
-    ['aac', 'media'],
-    ['ogg', 'media'],
-    ['unknown', 'unknown']
-  ])
 }
 
 function pathNames(node) {

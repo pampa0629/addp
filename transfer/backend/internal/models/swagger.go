@@ -60,9 +60,8 @@ type TransferEndpointDoc struct {
 }
 
 type TransferEngineRefDoc struct {
-	Scope string `json:"scope" example:"system"`
-	ID    uint   `json:"id" example:"1"`
-	Type  string `json:"type,omitempty" example:"nfs"`
+	ID   uint   `json:"id" example:"1"`
+	Type string `json:"type,omitempty" example:"nfs"`
 }
 
 type TransferEndpointResourceDoc struct {

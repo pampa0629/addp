@@ -56,9 +56,6 @@ func descriptorFormatByExtension(ext string) FormatType {
 }
 
 func IsGeospatialFormat(format FormatType) bool {
-	if descriptor, ok := GetFormatDescriptor(format); ok {
-		return descriptor.Spatial
-	}
 	switch format {
 	case FormatShapefile, FormatGeoPackage, FormatKML, FormatKMZ:
 		return true
@@ -68,34 +65,41 @@ func IsGeospatialFormat(format FormatType) bool {
 }
 
 func IsDocumentFormat(format FormatType) bool {
-	if descriptor, ok := GetFormatDescriptor(format); ok {
-		return descriptor.DataType == datatype.DataTypeDocument
-	}
-	switch format {
-	case FormatPDF, FormatDOCX, FormatPPTX, FormatWPS, FormatText, FormatMarkdown:
-		return true
-	default:
-		return false
-	}
+	dataType, ok := dataTypeForFormat(format)
+	return ok && dataType == datatype.DataTypeDocument
 }
 
 func IsImageFormat(format FormatType) bool {
-	switch format {
-	case FormatImage, FormatJPEG, FormatPNG, FormatGIF, FormatTIFF, FormatWebP, FormatBMP, FormatSVG, FormatAVIF, FormatHEIC:
+	if format == FormatImage {
 		return true
-	default:
-		return false
 	}
+	descriptor, ok := GetFormatDescriptor(format)
+	if ok {
+		return descriptor.DataType == datatype.DataTypeMedia && descriptorHasMIMEPrefix(descriptor, "image/")
+	}
+	if mimeType, ok := fallbackMIMEForFormat(format); ok {
+		return strings.HasPrefix(mimeType, "image/")
+	}
+	return false
 }
 
 func IsTableFormat(format FormatType) bool {
-	if descriptor, ok := GetFormatDescriptor(format); ok && descriptor.DataType == datatype.DataTypeTable {
-		return true
+	dataType, ok := dataTypeForFormat(format)
+	return ok && dataType == datatype.DataTypeTable
+}
+
+func dataTypeForFormat(format FormatType) (datatype.DataType, bool) {
+	if descriptor, ok := GetFormatDescriptor(format); ok {
+		return descriptor.DataType, true
 	}
-	switch format {
-	case FormatCSV, FormatExcel, FormatTSV:
-		return true
-	default:
-		return false
+	return fallbackDataTypeForFormat(format)
+}
+
+func descriptorHasMIMEPrefix(descriptor FormatDescriptor, prefix string) bool {
+	for _, mimeType := range descriptor.Identification.MimeTypes {
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(mimeType)), prefix) {
+			return true
+		}
 	}
+	return false
 }

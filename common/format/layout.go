@@ -1,6 +1,10 @@
 package format
 
-import formatregistry "github.com/addp/common/format/registry"
+import (
+	"fmt"
+	"sort"
+	"strings"
+)
 
 // Layout describes how content can be organized into a data item.
 //
@@ -9,29 +13,63 @@ import formatregistry "github.com/addp/common/format/registry"
 type Layout = string
 
 const (
-	LayoutSingle Layout = formatregistry.LayoutSingle
-	LayoutMulti  Layout = formatregistry.LayoutMulti
-	LayoutWhole  Layout = formatregistry.LayoutWhole
+	LayoutSingle Layout = "single"
+	LayoutMulti  Layout = "multi"
+	LayoutWhole  Layout = "whole"
 )
 
 // NormalizeLayout returns the canonical layout value, or an empty string for unknown values.
 func NormalizeLayout(value string) Layout {
-	return Layout(formatregistry.NormalizeLayout(value))
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case LayoutSingle:
+		return LayoutSingle
+	case LayoutMulti:
+		return LayoutMulti
+	case LayoutWhole:
+		return LayoutWhole
+	default:
+		return ""
+	}
 }
 
 // IsKnownLayout reports whether value is one of the supported item layout values.
 func IsKnownLayout(value string) bool {
-	return formatregistry.IsKnownLayout(value)
+	return NormalizeLayout(value) != ""
 }
 
 // NormalizeLayouts returns canonical, de-duplicated known layout values.
 func NormalizeLayouts(values []string) []string {
-	return formatregistry.NormalizeLayouts(values)
+	if len(values) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		layout := NormalizeLayout(value)
+		if layout == "" {
+			continue
+		}
+		if _, ok := seen[layout]; ok {
+			continue
+		}
+		seen[layout] = struct{}{}
+		result = append(result, layout)
+	}
+	sort.Strings(result)
+	return result
 }
 
 // ValidateLayouts rejects unknown layout values.
 func ValidateLayouts(values []string) error {
-	return formatregistry.ValidateLayouts(values)
+	for _, value := range values {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		if !IsKnownLayout(value) {
+			return fmt.Errorf("unsupported layout %q", value)
+		}
+	}
+	return nil
 }
 
 // HasLayout reports whether values contains layout after canonical normalization.

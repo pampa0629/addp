@@ -260,9 +260,6 @@ definitions:
       id:
         example: 1
         type: integer
-      scope:
-        example: system
-        type: string
       type:
         example: nfs
         type: string
@@ -423,13 +420,8 @@ definitions:
         type: integer
       prefix:
         type: string
-      scope:
-        enum:
-        - system
-        type: string
     required:
     - engine_id
-    - scope
     type: object
   models.ConnectionInfo:
     additionalProperties: true
@@ -560,9 +552,9 @@ info:
 paths:
   /capabilities:
     get:
-      description: 返回 Transfer 当前可用于表格传输的格式能力，来源于 common format descriptor 与 provider
-        registry | Returns table transfer format capabilities backed by common format
-        descriptors and providers
+      description: 返回 Transfer 当前可用于表格传输的格式能力，来源于 common format descriptor 与已加载 plugin
+        的接口实现状态 | Returns table transfer format capabilities backed by common format
+        descriptors and loaded plugin implementations
       produces:
       - application/json
       responses:

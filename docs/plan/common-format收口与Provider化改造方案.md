@@ -148,8 +148,8 @@ Manager provider 选择也已经改为看标准 attributes：
 先把 `common/format` 根包 descriptor 与 provider registry 作为事实源收稳：
 
 - `FormatDescriptor` 作为唯一静态声明事实源。
-- provider / reader / writer registry 表达当前 Go 进程实际实现状态。
-- `FormatSupportView` 只作为 descriptor + implementation status 的只读派生视图。
+- `FormatPlugin` 表达当前 Go 进程的唯一实现入口；provider / reader / writer 可用性由 plugin 接口断言表达。
+- `FormatCapabilitySnapshot` 只作为 descriptor + plugin implementation status 的只读诊断快照。
 
 这一层先不要再长出新的 parser 依赖。
 

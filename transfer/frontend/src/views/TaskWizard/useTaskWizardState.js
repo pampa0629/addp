@@ -28,6 +28,9 @@ export function useTaskWizardState() {
   const sourceRepresentation = ref('native')
   const sourceFormat = ref('')
   const sourceEndpointResource = ref(null)
+  const readableEncodedFormats = ref(new Set())
+  const rawCopyFormats = ref(new Map())
+  const formatCapabilitiesLoaded = ref(false)
 
   // Target 配置
   const targetConfig = ref({})
@@ -64,8 +67,10 @@ export function useTaskWizardState() {
         if (targetRepresentation.value === 'native') {
           return !!(targetEngineID.value && targetSchema.value && targetTable.value)
         }
+        const hasTargetFormat = isRawCopyTask.value || !!targetBackendFormat(targetConfig.value || {})
         return !!(
           targetEngineID.value &&
+          hasTargetFormat &&
           targetConfig.value?.resourceFile &&
           !targetConfig.value?.extensionError &&
           (targetType.value !== 's3' || targetConfig.value?.resourcePath)
@@ -146,7 +151,6 @@ export function useTaskWizardState() {
     const config = sourceConfig.value || {}
     const endpoint = {
       engine: {
-        scope: 'system',
         id: Number(sourceEngineID.value),
         type: sourceEngineType.value || sourceType.value
       },
@@ -210,7 +214,42 @@ export function useTaskWizardState() {
   }
 
   function supportedEncodedSourceFormat(format) {
-    return ['csv', 'tsv', 'json', 'jsonl', 'geojson', 'parquet', 'shapefile'].includes(String(format || '').toLowerCase())
+    return readableEncodedFormats.value.has(String(format || '').toLowerCase())
+  }
+
+  function rawCopyDataTypeForFormat(format) {
+    return rawCopyFormats.value.get(String(format || '').toLowerCase()) || ''
+  }
+
+  function updateFormatCapabilities(capabilities = null) {
+    const readable = Array.isArray(capabilities?.readableEncodedFormats)
+      ? capabilities.readableEncodedFormats
+      : []
+    readableEncodedFormats.value = new Set(
+      readable.map(format => String(format || '').toLowerCase()).filter(Boolean)
+    )
+
+    const nextRawCopyFormats = new Map()
+    const rawCopyEntries = capabilities?.rawCopyFormats
+    if (rawCopyEntries instanceof Map) {
+      rawCopyEntries.forEach((dataType, format) => {
+        const value = String(format || '').toLowerCase()
+        const normalizedDataType = String(dataType || '').toLowerCase()
+        if (value && normalizedDataType) {
+          nextRawCopyFormats.set(value, normalizedDataType)
+        }
+      })
+    } else if (Array.isArray(rawCopyEntries)) {
+      rawCopyEntries.forEach(entry => {
+        const value = String(entry?.value || entry?.format || '').toLowerCase()
+        const dataType = String(entry?.data_type || entry?.dataType || '').toLowerCase()
+        if (value && dataType) {
+          nextRawCopyFormats.set(value, dataType)
+        }
+      })
+    }
+    rawCopyFormats.value = nextRawCopyFormats
+    formatCapabilitiesLoaded.value = capabilities !== null
   }
 
   function buildTargetEndpoint() {
@@ -218,7 +257,6 @@ export function useTaskWizardState() {
     if (targetRepresentation.value === 'native') {
       return {
         engine: {
-          scope: 'system',
           id: Number(targetEngineID.value),
           type: targetEngineType.value || targetType.value
         },
@@ -241,7 +279,6 @@ export function useTaskWizardState() {
     const dataType = isRawCopyTask.value ? sourceDataType.value : 'table'
     const endpoint = {
       engine: {
-        scope: 'system',
         id: Number(targetEngineID.value),
         type: targetEngineType.value || targetType.value
       },
@@ -264,7 +301,8 @@ export function useTaskWizardState() {
     if (fileConfig.backendFormat) {
       return String(fileConfig.backendFormat).toLowerCase()
     }
-    const uiFormat = String(fileConfig.format || 'csv').toLowerCase()
+    const uiFormat = String(fileConfig.format || '').toLowerCase()
+    if (!uiFormat) return ''
     if (uiFormat === 'jsonl' || uiFormat === 'geojson') return 'json'
     return uiFormat
   }
@@ -272,7 +310,7 @@ export function useTaskWizardState() {
   function targetBackendOptions(fileConfig) {
     if (isRawCopyTask.value) return {}
     const backendOptions = compactOptions(fileConfig.backendOptions || {})
-    const uiFormat = String(fileConfig.format || 'csv').toLowerCase()
+    const uiFormat = String(fileConfig.format || '').toLowerCase()
     switch (uiFormat) {
       case 'csv':
         return {
@@ -426,6 +464,17 @@ export function useTaskWizardState() {
     targetType.value = config.targetType || 'nfs'
     targetRepresentation.value = config.representation || 'encoded'
     targetConfig.value = extra
+  }
+
+  function clearTarget() {
+    targetEngineID.value = null
+    targetEngineType.value = ''
+    targetSchema.value = ''
+    targetTable.value = ''
+    targetType.value = 'nfs'
+    targetRepresentation.value = 'encoded'
+    targetConfig.value = {}
+    targetFields.value = []
   }
 
   function loadTargetFields(fields) {
@@ -621,7 +670,8 @@ export function useTaskWizardState() {
   }
 
   function targetUiFormat(format, options = {}) {
-    const normalized = String(format || 'csv').toLowerCase()
+    const normalized = String(format || '').toLowerCase()
+    if (!normalized) return ''
     if (normalized !== 'json') return normalized
 
     const spatialEncoding = String(options['spatial.target_encoding'] || options.target_encoding || '').toLowerCase()
@@ -655,7 +705,8 @@ export function useTaskWizardState() {
     return ['document', 'media', 'unknown'].includes(dataType) &&
       representation === 'encoded' &&
       !!format &&
-      ['file', 'object'].includes(resourceKind)
+      ['file', 'object'].includes(resourceKind) &&
+      rawCopyDataTypeForFormat(format) === dataType
   }
 
   function isRawCopyEndpoint(endpoint) {
@@ -698,6 +749,9 @@ export function useTaskWizardState() {
     sourceRepresentation.value = 'native'
     sourceFormat.value = ''
     sourceEndpointResource.value = null
+    readableEncodedFormats.value = new Set()
+    rawCopyFormats.value = new Map()
+    formatCapabilitiesLoaded.value = false
     sourceConfig.value = {}
     targetEngineID.value = null
     targetEngineType.value = ''
@@ -730,6 +784,9 @@ export function useTaskWizardState() {
     sourceRepresentation,
     sourceFormat,
     sourceEndpointResource,
+    readableEncodedFormats,
+    rawCopyFormats,
+    formatCapabilitiesLoaded,
     targetConfig,
     targetEngineID,
     targetEngineType,
@@ -752,8 +809,10 @@ export function useTaskWizardState() {
     prevStep,
     goToStep,
     updateSource,
+    updateFormatCapabilities,
     loadSourceFields,
     updateTarget,
+    clearTarget,
     loadTargetFields,
     autoGenerateFieldMappings,
     updateFieldMapping,

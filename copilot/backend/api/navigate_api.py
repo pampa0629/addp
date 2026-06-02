@@ -19,7 +19,6 @@ ADDP 数据平台模块说明：
 【数据准备】
 - /transfer/tasks - 数据传输任务（配置和管理数据同步任务）
 - /transfer/executions - 传输执行记录
-- /transfer/local-engines - 本地传输引擎管理
 - /meta/scan - 元数据扫描（扫描数据库表结构）
 - /meta/tasks - 元数据扫描任务
 - /manager/data-explorer - 数据探索（浏览和查询数据）

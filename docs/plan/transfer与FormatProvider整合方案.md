@@ -70,9 +70,8 @@ TransferEndpoint
 
 典型字段：
 
-- `scope`：system / local。
-- `engine_id`：引擎注册 ID。
-- `engine_type`：由 System / local engine 解析得到。
+- `id`：System engine 注册 ID。
+- `engine_type`：由 System engine 解析得到。
 - `capabilities`：engine capability 查询结果。
 
 Transfer 不应把 `engine_type` 直接当作 reader / writer 类型。它只用于选择 engine provider 和资源适配器。
@@ -389,13 +388,13 @@ Manager preview 和 Transfer 都消费 provider，但目标不同：
 ```json
 {
   "source": {
-    "engine": {"scope": "system", "engine_id": 3},
+    "engine": {"id": 3},
     "resource": {"kind": "scope", "path": "datasets/poi/"},
     "data_type": "table",
     "format": "parquet"
   },
   "target": {
-    "engine": {"scope": "system", "engine_id": 4},
+    "engine": {"id": 4},
     "resource": {"kind": "object", "path": "exports/poi.geojson"},
     "data_type": "table",
     "format": "json",

@@ -44,9 +44,9 @@ func NewTransferCapabilityHandler() *TransferCapabilityHandler {
 	return &TransferCapabilityHandler{}
 }
 
-// Get returns Transfer capabilities backed by common format providers.
+// Get returns Transfer capabilities backed by common format descriptors and loaded plugins.
 // @Summary 获取传输能力 | Get transfer capabilities
-// @Description 返回 Transfer 当前可用于表格传输的格式能力，来源于 common format descriptor 与 provider registry | Returns table transfer format capabilities backed by common format descriptors and providers
+// @Description 返回 Transfer 当前可用于表格传输的格式能力，来源于 common format descriptor 与已加载 plugin 的接口实现状态 | Returns table transfer format capabilities backed by common format descriptors and loaded plugin implementations
 // @Tags 传输能力 | Capabilities
 // @Produce json
 // @Success 200 {object} api.TransferCapabilitiesResponse
@@ -60,34 +60,63 @@ func (h *TransferCapabilityHandler) Get(c *gin.Context) {
 }
 
 func buildTableFormatCapabilities() []TransferTableFormatSupport {
-	formats := []TransferTableFormatSupport{
-		tableCapabilityFromFormat(format.FormatCSV, "csv", nil),
-		tableCapabilityFromFormat(format.FormatTSV, "tsv", nil),
-		tableCapabilityFromFormat(format.FormatJSON, "json", map[string]any{"json_mode": "array"}),
-		tableCapabilityFromFormat(format.FormatJSON, "jsonl", map[string]any{"json_mode": "jsonl"}),
-		tableCapabilityFromFormat(format.FormatJSON, "geojson", map[string]any{"spatial.target_encoding": "geojson"}),
-		tableCapabilityFromFormat(format.FormatParquet, "parquet", nil),
-		tableCapabilityFromFormat(format.FormatShapefile, "shapefile", nil),
-	}
-
-	result := make([]TransferTableFormatSupport, 0, len(formats))
-	for _, item := range formats {
+	descriptors := format.ListFormatDescriptors()
+	result := make([]TransferTableFormatSupport, 0, len(descriptors))
+	for _, descriptor := range descriptors {
+		if !isTransferTableDescriptor(descriptor) {
+			continue
+		}
+		item := tableCapabilityFromDescriptor(descriptor, string(descriptor.Format), nil)
 		if item.Read || item.Write {
 			result = append(result, item)
 		}
+		if descriptor.Format == format.FormatJSON {
+			result = appendJSONTableEncodingCapabilities(result, descriptor)
+		}
 	}
 	sort.SliceStable(result, func(i, j int) bool {
-		return formatSortRank(result[i].Value) < formatSortRank(result[j].Value)
+		leftRank := formatSortRank(result[i].Value)
+		rightRank := formatSortRank(result[j].Value)
+		if leftRank != rightRank {
+			return leftRank < rightRank
+		}
+		return result[i].Value < result[j].Value
 	})
 	return result
 }
 
-func tableCapabilityFromFormat(backendType format.FormatType, value string, options map[string]any) TransferTableFormatSupport {
-	descriptor, ok := format.GetFormatDescriptor(backendType)
-	read := ok && hasTableReader(backendType)
+func appendJSONTableEncodingCapabilities(result []TransferTableFormatSupport, descriptor format.FormatDescriptor) []TransferTableFormatSupport {
+	for _, variant := range []struct {
+		value   string
+		options map[string]any
+	}{
+		{value: "jsonl", options: map[string]any{"json_mode": "jsonl"}},
+		{value: "geojson", options: map[string]any{"spatial.target_encoding": "geojson"}},
+	} {
+		item := tableCapabilityFromDescriptor(descriptor, variant.value, variant.options)
+		if item.Read || item.Write {
+			result = append(result, item)
+		}
+	}
+	return result
+}
+
+func isTransferTableDescriptor(descriptor format.FormatDescriptor) bool {
+	if descriptor.Format == "" || descriptor.Format == format.FormatUnknown {
+		return false
+	}
+	if descriptor.DataType == datatype.DataTypeTable {
+		return true
+	}
+	write, _ := transferWritable(descriptor.Format)
+	return hasTableReader(descriptor.Format) || write
+}
+
+func tableCapabilityFromDescriptor(descriptor format.FormatDescriptor, value string, options map[string]any) TransferTableFormatSupport {
+	backendType := descriptor.Format
+	read := hasTableReader(backendType)
 	write, providerKind := transferWritable(backendType)
-	write = ok && write
-	spatial := descriptor.Spatial || value == "geojson" || value == "shapefile"
+	spatial := format.IsGeospatialFormat(backendType) || tableCapabilityTargetsSpatialEncoding(options)
 	return TransferTableFormatSupport{
 		Value:        value,
 		BackendType:  string(backendType),
@@ -102,6 +131,14 @@ func tableCapabilityFromFormat(backendType format.FormatType, value string, opti
 		MultiFile:    containsString(descriptor.Layouts, format.LayoutMulti),
 		ProviderKind: providerKind,
 	}
+}
+
+func tableCapabilityTargetsSpatialEncoding(options map[string]any) bool {
+	if options == nil {
+		return false
+	}
+	value, ok := options["spatial.target_encoding"].(string)
+	return ok && strings.EqualFold(strings.TrimSpace(value), "geojson")
 }
 
 func hasTableReader(formatType format.FormatType) bool {

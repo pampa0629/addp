@@ -22,9 +22,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		I18nKey:        "format.avro",
 		DataType:       datatype.DataTypeTable,
 		Layouts:        []string{format.LayoutSingle, format.LayoutWhole},
-		ProviderHints:  []string{format.FormatProviderTable},
 		Identification: format.FormatIdentification{Extensions: []string{".avro"}, MimeTypes: []string{"application/avro", "application/x-avro-binary"}},
-		ContentReaders: []string{string(format.ContentReaderRawContent)},
 	}
 }
 

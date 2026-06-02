@@ -187,8 +187,8 @@ func (h *Handler) CreateManualScanRun(c *gin.Context) {
 		return
 	}
 
-	token, ok := extractBearerToken(c)
-	if !ok {
+	token, hasBearerToken := extractBearerToken(c)
+	if !hasBearerToken && strings.TrimSpace(c.GetHeader("X-Internal-API-Key")) == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authorization token"})
 		return
 	}

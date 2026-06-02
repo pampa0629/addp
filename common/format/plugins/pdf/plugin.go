@@ -34,20 +34,14 @@ func (p *Plugin) Format() format.FormatType {
 
 func (p *Plugin) Descriptor() format.FormatDescriptor {
 	return format.FormatDescriptor{
-		ID:            "builtin-pdf",
-		Format:        p.Format(),
-		I18nKey:       "format.pdf",
-		DataType:      datatype.DataTypeDocument,
-		Layouts:       []string{format.LayoutSingle},
-		ProviderHints: []string{format.FormatProviderDocument},
+		ID:       "builtin-pdf",
+		Format:   p.Format(),
+		I18nKey:  "format.pdf",
+		DataType: datatype.DataTypeDocument,
+		Layouts:  []string{format.LayoutSingle},
 		Identification: format.FormatIdentification{
 			Extensions: []string{".pdf"},
 			MimeTypes:  []string{"application/pdf"},
-		},
-		Providers: format.FormatProviderDescriptor{DocumentInfo: true, FormatInfo: true},
-		ContentReaders: []string{
-			string(format.ContentReaderRawContent),
-			string(format.ContentReaderRangeContent),
 		},
 	}
 }
@@ -253,9 +247,6 @@ func pdfReadLimit(options *format.ParseOptions) int64 {
 func init() {
 	plugin := NewPlugin(nil)
 	if err := format.RegisterFormatPlugin(plugin); err != nil {
-		panic(err)
-	}
-	if err := format.RegisterFormatInfoProvider(plugin); err != nil {
 		panic(err)
 	}
 }

@@ -19,7 +19,7 @@ func TestSystemEngineResolverResolveEngine(t *testing.T) {
 		},
 	}
 
-	binding, err := NewSystemEngineResolver(client).ResolveEngine(EngineRef{Scope: "system", ID: 7, Type: "postgresql"})
+	binding, err := NewSystemEngineResolver(client).ResolveEngine(EngineRef{ID: 7, Type: "postgresql"})
 	if err != nil {
 		t.Fatalf("ResolveEngine failed: %v", err)
 	}
@@ -38,7 +38,7 @@ func TestSystemEngineResolverRejectsTypeMismatch(t *testing.T) {
 		},
 	}
 
-	_, err := NewSystemEngineResolver(client).ResolveEngine(EngineRef{Scope: "system", ID: 7, Type: "mysql"})
+	_, err := NewSystemEngineResolver(client).ResolveEngine(EngineRef{ID: 7, Type: "mysql"})
 	if err == nil {
 		t.Fatal("ResolveEngine succeeded, want type mismatch error")
 	}
@@ -54,7 +54,7 @@ func TestSystemEngineResolverRejectsInactiveEngine(t *testing.T) {
 		},
 	}
 
-	_, err := NewSystemEngineResolver(client).ResolveEngine(EngineRef{Scope: "system", ID: 7})
+	_, err := NewSystemEngineResolver(client).ResolveEngine(EngineRef{ID: 7})
 	if err == nil {
 		t.Fatal("ResolveEngine succeeded, want inactive error")
 	}

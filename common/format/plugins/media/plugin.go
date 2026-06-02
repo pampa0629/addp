@@ -27,19 +27,14 @@ func (p *Plugin) Format() format.FormatType {
 
 func (p *Plugin) Descriptor() format.FormatDescriptor {
 	return format.FormatDescriptor{
-		ID:            "builtin-" + string(p.formatType),
-		Format:        p.formatType,
-		I18nKey:       p.i18nKey,
-		DataType:      datatype.DataTypeMedia,
-		Layouts:       []string{format.LayoutSingle},
-		ProviderHints: []string{format.FormatProviderMedia},
+		ID:       "builtin-" + string(p.formatType),
+		Format:   p.formatType,
+		I18nKey:  p.i18nKey,
+		DataType: datatype.DataTypeMedia,
+		Layouts:  []string{format.LayoutSingle},
 		Identification: format.FormatIdentification{
 			Extensions: p.extensions,
 			MimeTypes:  p.mimeTypes,
-		},
-		ContentReaders: []string{
-			string(format.ContentReaderRawContent),
-			string(format.ContentReaderRangeContent),
 		},
 	}
 }

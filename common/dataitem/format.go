@@ -56,15 +56,10 @@ func InferDataType(formatName, contentType string) DataType {
 	if dataType := DetectDataType(normalizeFormat(formatName)); dataType != DataTypeUnknown {
 		return dataType
 	}
-	contentType = strings.ToLower(strings.TrimSpace(contentType))
-	switch {
-	case strings.HasPrefix(contentType, "image/"), strings.HasPrefix(contentType, "video/"), strings.HasPrefix(contentType, "audio/"):
-		return DataTypeMedia
-	case contentType == "application/pdf", strings.HasPrefix(contentType, "text/"):
-		return DataTypeDocument
-	default:
-		return DataTypeUnknown
+	if detected := format.MIMEToFormat(contentType); detected != format.FormatUnknown {
+		return DetectDataType(string(detected))
 	}
+	return DataTypeUnknown
 }
 
 func MatchBuiltinSingleResourceRule(formatName string) (FormatRule, bool) {

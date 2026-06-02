@@ -28,9 +28,6 @@ func (r *SystemEngineResolver) ResolveEngine(ref EngineRef) (EngineBinding, erro
 	if ref.ID == 0 {
 		return EngineBinding{}, fmt.Errorf("engine id is required")
 	}
-	if ref.Scope != "" && ref.Scope != "system" {
-		return EngineBinding{}, fmt.Errorf("unsupported engine scope %q", ref.Scope)
-	}
 
 	engine, err := r.client.GetEngine(ref.ID)
 	if err != nil {

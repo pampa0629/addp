@@ -55,17 +55,11 @@ func (p *Plugin) Format() format.FormatType {
 
 func (p *Plugin) Descriptor() format.FormatDescriptor {
 	descriptor := format.FormatDescriptor{
-		ID:            "builtin-" + string(p.Format()),
-		Format:        p.Format(),
-		I18nKey:       "format." + string(p.Format()),
-		DataType:      datatype.DataTypeMedia,
-		Layouts:       []string{format.LayoutSingle},
-		ProviderHints: []string{format.FormatProviderMedia},
-		Providers:     format.FormatProviderDescriptor{MediaInfo: true},
-		ContentReaders: []string{
-			string(format.ContentReaderRawContent),
-			string(format.ContentReaderRangeContent),
-		},
+		ID:       "builtin-" + string(p.Format()),
+		Format:   p.Format(),
+		I18nKey:  "format." + string(p.Format()),
+		DataType: datatype.DataTypeMedia,
+		Layouts:  []string{format.LayoutSingle},
 	}
 	switch p.Format() {
 	case format.FormatJPEG:

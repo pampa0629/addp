@@ -91,7 +91,6 @@ export const PAGE_MAPS = {
   transfer: {
     'tasks': 'tasks',
     'executions': 'executions',
-    'local-engines': 'local-engines',
     '': 'tasks',
   },
   orchestrator: {
@@ -193,7 +192,6 @@ export const SIDEBAR_MENUS = {
     items: [
       { index: '/transfer/tasks',        icon: List,       label: 'console.menus.transfer.tasks' },
       { index: '/transfer/executions',   icon: Timer,      label: 'console.menus.transfer.executions' },
-      { index: '/transfer/local-engines',icon: Connection, label: 'console.menus.transfer.localEngines' },
     ],
   },
   meta: {

@@ -76,7 +76,7 @@ Manager 的 Shapefile 上传导入不是由 Manager 自己解析写库。Manager
 ```json
 {
   "source": {
-    "engine": {"scope": "system", "id": 9},
+    "engine": {"id": 9},
     "resource": {"kind": "object", "path": {"bucket": "manager", "path": "temp/<uuid>/roads.shp"}},
     "data_type": "table",
     "representation": "encoded",

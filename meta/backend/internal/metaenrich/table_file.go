@@ -37,79 +37,32 @@ func RegisterItemResolvers() {
 }
 
 func tableFileItemRules() []dataitem.FormatRule {
-	formats := tableFileFormatsByExtension()
-	extensions := make([]string, 0, len(formats))
-	for ext := range formats {
-		extensions = append(extensions, ext)
+	rules := []dataitem.FormatRule{}
+	for _, rule := range dataitem.BuiltinSingleResourceRules() {
+		if tableFileRuleCanRead(rule) {
+			rules = append(rules, rule)
+		}
 	}
-	sort.Strings(extensions)
-	formatName := preferredTableFileFormat(formats)
-	return []dataitem.FormatRule{
-		{
-			Format:   formatName,
-			DataType: dataitem.DataTypeTable,
-			Layout:   dataitem.LayoutSingle,
-			Priority: 40,
-			Entry: dataitem.EntryRule{
-				Extensions: extensions,
-			},
-		},
-		{
-			Format:   formatName,
-			DataType: dataitem.DataTypeTable,
-			Layout:   dataitem.LayoutWhole,
-			Priority: 80,
-			WholeScope: &dataitem.WholeScopeRule{
-				AllowRecursive:       true,
-				IgnoredFileNames:     []string{"_SUCCESS", "_metadata", "_common_metadata"},
-				RequiresStrongMatch:  true,
-				ExclusiveOnStrongHit: true,
-			},
-		},
+	for _, rule := range dataitem.BuiltinWholeScopeRules() {
+		if tableFileRuleCanRead(rule) {
+			rules = append(rules, rule)
+		}
 	}
+	return rules
 }
 
-func tableFileFormatsByExtension() map[string]string {
-	formats := map[string]string{}
-	for _, descriptor := range format.ListFormatDescriptors() {
-		if descriptor.DataType != datatype.DataTypeTable {
-			continue
-		}
-		if !format.HasLayout(descriptor.Layouts, format.LayoutWhole) {
-			continue
-		}
-		for _, ext := range descriptor.Identification.Extensions {
-			normalized := strings.ToLower(strings.TrimSpace(ext))
-			if normalized == "" {
-				continue
-			}
-			if !strings.HasPrefix(normalized, ".") {
-				normalized = "." + normalized
-			}
-			formats[normalized] = string(descriptor.Format)
-		}
+func tableFileRuleCanRead(rule dataitem.FormatRule) bool {
+	if rule.DataType != dataitem.DataTypeTable {
+		return false
 	}
-	return formats
-}
-
-func preferredTableFileFormat(formats map[string]string) string {
-	if formatName := formats[".parquet"]; formatName != "" {
-		return formatName
+	switch rule.Layout {
+	case dataitem.LayoutSingle:
+		return hasSingleTableProvider(rule.Format)
+	case dataitem.LayoutWhole:
+		return hasScopeTableProvider(rule.Format)
+	default:
+		return false
 	}
-	values := make([]string, 0, len(formats))
-	seen := map[string]bool{}
-	for _, formatName := range formats {
-		if seen[formatName] {
-			continue
-		}
-		seen[formatName] = true
-		values = append(values, formatName)
-	}
-	sort.Strings(values)
-	if len(values) == 0 {
-		return string(format.FormatParquet)
-	}
-	return values[0]
 }
 
 func (d *tableFileItemResolver) Priority() int {
@@ -239,11 +192,9 @@ func inferScopePath(files []metaitem.StorageFileRef, subdirs []metaitem.StorageD
 }
 
 func tableFiles(files []metaitem.StorageFileRef) []metaitem.StorageFileRef {
-	formats := tableFileFormatsByExtension()
 	filtered := make([]metaitem.StorageFileRef, 0, len(files))
 	for _, f := range files {
-		ext := strings.ToLower(filepath.Ext(f.Name))
-		if formats[ext] != "" {
+		if hasSingleTableProvider(fileFormatName(f.Name)) {
 			filtered = append(filtered, f)
 		}
 	}
@@ -282,12 +233,12 @@ func directTableFiles(files []metaitem.StorageFileRef, dirPath string) []metaite
 func firstReadableTableFile(files []metaitem.StorageFileRef, dirPath string) *metaitem.StorageFileRef {
 	candidates := directTableFiles(files, dirPath)
 	for i := range candidates {
-		if hasTableProvider(fileFormatName(candidates[i].Name)) {
+		if hasSingleTableProvider(fileFormatName(candidates[i].Name)) {
 			return &candidates[i]
 		}
 	}
 	for i := range files {
-		if hasTableProvider(fileFormatName(files[i].Name)) {
+		if hasSingleTableProvider(fileFormatName(files[i].Name)) {
 			return &files[i]
 		}
 	}
@@ -658,7 +609,7 @@ func extractSingleTableFileItemWithFormat(
 }
 
 // ExtractSingleTableFileItemStrict 仅在格式 provider 成功解析出表结构时返回 item 主事实。
-// 适用于 JSON 这类默认是 document、只有特定内容结构才应升级为 table 的格式。
+// 适用于需要通过内容结构确认是否可作为 table item 的格式。
 func ExtractSingleTableFileItemStrict(
 	ctx context.Context,
 	contentReader plugin.ContentReadableProvider,
@@ -723,7 +674,7 @@ func EnrichSingleTableFileItem(
 			ApplySingleFileFormat(item, detectedFormat)
 		}
 	}
-	if !hasTableProvider(item.Format) {
+	if !hasSingleTableProvider(item.Format) {
 		return item, false, nil
 	}
 	if item.DataType == dataitem.DataTypeUnknown {
@@ -748,13 +699,13 @@ func detectFormat(files []metaitem.StorageFileRef) string {
 	counts := map[string]int{}
 	for _, f := range files {
 		formatName := fileFormatName(f.Name)
-		if formatName == "" || formatName == string(format.FormatUnknown) {
+		if formatName == "" || formatName == string(format.FormatUnknown) || !hasSingleTableProvider(formatName) {
 			continue
 		}
 		counts[formatName]++
 	}
 	// 返回数量最多的格式
-	best := preferredTableFileFormat(tableFileFormatsByExtension())
+	best := string(format.FormatUnknown)
 	bestCount := 0
 	for fmt, cnt := range counts {
 		if cnt > bestCount || (cnt == bestCount && fmt < best) {
@@ -769,12 +720,21 @@ func fileFormatName(fileName string) string {
 	return string(format.NormalizeFormat(fileName))
 }
 
-func hasTableProvider(formatName string) bool {
+func hasSingleTableProvider(formatName string) bool {
 	formatType := format.NormalizeFormat(formatName)
 	if formatType == format.FormatUnknown {
 		return false
 	}
 	_, err := format.GetTableInfoProvider(formatType)
+	return err == nil
+}
+
+func hasScopeTableProvider(formatName string) bool {
+	formatType := format.NormalizeFormat(formatName)
+	if formatType == format.FormatUnknown {
+		return false
+	}
+	_, err := format.GetScopeTableInfoProvider(formatType)
 	return err == nil
 }
 

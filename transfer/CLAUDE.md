@@ -27,7 +27,7 @@ table 类型 Transfer 主链路已经稳定：native table、encoded single file
 transfer/
 ├── backend/
 │   ├── cmd/server/main.go
-│   ├── internal/api/          # tasks、executions、local-engines、object-storage、transforms
+│   ├── internal/api/          # tasks、executions、engines、object-storage、transforms
 │   ├── internal/planner/      # source/target endpoint -> table transfer plan
 │   ├── internal/executor/     # 基于 common engine/format/contentio 的 table transfer executor
 │   ├── internal/service/      # task、execution、system engine resolver、Meta scan 触发
@@ -38,7 +38,7 @@ transfer/
 │   ├── transfer-基本概念及配置说明.md
 │   └── tables/
 └── frontend/src/
-    ├── views/                 # TaskList、TaskWizard、ExecutionList、LocalEngines
+    ├── views/                 # TaskList、TaskWizard、ExecutionList、TaskDetail
     ├── components/
     └── api/
 ```
@@ -51,7 +51,6 @@ transfer/
 - 数据源辅助：`GET /engines`、`GET /engines/:engine_id/tree`、`GET /nodes/:node_id/children`、`GET /tables/metadata`。
 - 任务：`POST /tasks`、`GET /tasks`、`GET /tasks/statistics`、`GET /tasks/:id`、`PUT /tasks/:id`、`DELETE /tasks/:id`、`POST /tasks/:id/start|stop|pause|resume`、`GET /tasks/:id/executions`。
 - 字段映射：`POST /tasks/:id/mappings`、`GET /tasks/:id/mappings`、`DELETE /mappings/:id`。该接口仍存在，但新执行主线只消费 `config.transforms[type=field_mapping]`。
-- 本地引擎：旧路线遗留能力；新任务 endpoint 使用 System engine，不以 local engine 作为新功能入口。
 - 对象存储：`POST /object-storage/browse`、`POST /object-storage/list-files`。
 - 执行记录：`GET /executions`、`GET /executions/statistics`、`GET /executions/:id`、`POST /executions/:id/cancel|retry`、`GET /executions/:id/progress|logs`。
 - 转换器：`GET /transforms`、`GET /transforms/stats`、`GET /transforms/:name`、`POST /transforms/:name/validate|test`。

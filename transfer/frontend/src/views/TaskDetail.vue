@@ -231,7 +231,6 @@ function buildEndpointDetails(endpoint, role) {
   }
 
   const items = []
-  addItem(items, t('transfer.taskDetail.engineScope'), endpoint.engine?.scope)
   addItem(items, t('transfer.taskDetail.reviewEngineId'), endpoint.engine?.id)
   addItem(items, t('transfer.taskDetail.connectionType'), endpoint.engine?.type)
   addItem(items, t('transfer.taskDetail.dataType'), endpoint.data_type)

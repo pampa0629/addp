@@ -4,7 +4,7 @@
 
 本文只记录已经形成规范共识的格式。尚未定稿的格式、插件 manifest、whole scope explain / confidence 等问题，分别进入 `docs/plan/` 下的对应构想文档或后续事项文档，不再依赖 `docs/next/` 里的公共待规范页。
 
-代码实现中，内置格式的静态身份声明由各格式包自己的 `Descriptor()` 维护，位置为 `common/format/plugins/<format>/`；统一加载入口为 `common/format/builtin/init.go`。本文是规范语义来源，代码中的 descriptor 应与本文保持一致；`common/format/registry` 只承担运行时注册和能力发现，不再维护集中式内置 descriptor 清单。
+代码实现中，内置格式的静态身份声明由各格式包自己的 `Descriptor()` 维护，位置为 `common/format/plugins/<format>/`；统一加载入口为 `common/format/builtin/init.go`。本文是规范语义来源，代码中的 descriptor 应与本文保持一致；`common/format` 根包承担运行时注册、能力发现和冲突诊断，不再维护集中式内置 descriptor 清单。
 
 ## 编写模板
 
@@ -282,7 +282,7 @@ Parquet、ORC、Avro 是表格型数据的文件格式，不应直接称为“�
 
 ### 表格读取
 
-上层统一按 `data_type=table` 消费。单文件表、multi 文件表、scope 表和引擎原生表的读取差异由 contentio 抽象和 format provider 收口：元信息走 `TableInfoProvider` / `MultiTableInfoProvider` / `ScopeTableInfoProvider`，预览探查走 `TableSampleReader` / `MultiTableSampleReader` / `ScopeTableSampleReader`，Transfer 全量读写走 `TableReaderProvider` / `MultiTableReaderProvider` / writer provider。不向 Manager / Transfer 暴露 `filetable` / `laketable` 两套业务概念。
+上层统一按 `data_type=table` 消费。单文件表、multi 文件表、scope 表和引擎原生表的读取差异由 contentio 抽象和 format provider 收口：元信息走 `TableInfoProvider` / `MultiTableInfoProvider` / `ScopeTableInfoProvider`，预览探查走 `TableSampleReader` / `MultiTableSampleReader` / `ScopeTableSampleReader`，Transfer 全量读写走 `TableReaderProvider` / `MultiTableReaderProvider` / `ScopeTableReaderProvider` / writer provider。不向 Manager / Transfer 暴露 `filetable` / `laketable` 两套业务概念。
 
 ### 格式约束
 
@@ -501,7 +501,7 @@ Manager 文档内容读取消费 `type_info.document` 和 `capabilities.extracti
 | `format` | `docx` | `pptx` | `wps` |
 | 主资源 | `meta_item.full_name` 指向 DOCX 文件 | `meta_item.full_name` 指向 PPTX 文件 | `meta_item.full_name` 指向 WPS 文件 |
 
-DOCX / PPTX / WPS 是单资源文档文件。内置规范要求稳定识别格式、声明 raw / range 内容读取能力，并让 Manager 通过文档预览组件消费原始文件流。DOCX / PPTX 可以实现轻量 `DocumentTextReader` 进入全文检索链路；WPS 格式变体较多，未实现可靠 reader 时只声明 raw / range，并在 deep scan 中记录不可抽取状态。
+DOCX / PPTX / WPS 是单资源文档文件。内置规范要求稳定识别格式，并让 Manager 通过 engine / contentio / storage-stream 等内容通道消费原始文件流。DOCX / PPTX 可以实现轻量 `DocumentTextReader` 进入全文检索链路；WPS 格式变体较多，未实现可靠 reader 时不声明后端解析能力，并在 deep scan 中记录不可抽取状态。
 
 ### attributes 写入
 

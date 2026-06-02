@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/addp/common/client"
+	"github.com/addp/common/format"
+	"github.com/addp/common/format/plugins/shapefile"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/google/uuid"
@@ -203,8 +205,7 @@ func (s *ImportService) buildShapefileImportTaskConfig(sourceEngineID uint, sour
 	}
 	source := map[string]interface{}{
 		"engine": map[string]interface{}{
-			"scope": "system",
-			"id":    sourceEngineID,
+			"id": sourceEngineID,
 		},
 		"resource": map[string]interface{}{
 			"kind": "object",
@@ -225,8 +226,7 @@ func (s *ImportService) buildShapefileImportTaskConfig(sourceEngineID uint, sour
 		"source": source,
 		"target": map[string]interface{}{
 			"engine": map[string]interface{}{
-				"scope": "system",
-				"id":    req.TargetEngineID,
+				"id": req.TargetEngineID,
 			},
 			"resource": map[string]interface{}{
 				"kind": "native_table",
@@ -351,15 +351,7 @@ func extractShapefileZip(zipData []byte) (map[string][]byte, error) {
 		return nil, fmt.Errorf("failed to open zip: %w", err)
 	}
 
-	// 从 ZIP 中提取所有 Shapefile 相关文件
-	shapefileExts := map[string]bool{
-		".shp": true,
-		".dbf": true,
-		".shx": true,
-		".prj": true,
-		".cpg": true, // 编码文件
-		".qpj": true, // 投影信息
-	}
+	shapefileExts := shapefileImportAllowedExtensions()
 
 	files := make(map[string][]byte)
 	componentsByBase := map[string]map[string]bool{}
@@ -369,7 +361,7 @@ func extractShapefileZip(zipData []byte) (map[string][]byte, error) {
 			continue
 		}
 
-		ext := strings.ToLower(filepath.Ext(f.Name))
+		ext := format.NormalizeExtension(filepath.Ext(f.Name))
 		if !shapefileExts[ext] {
 			continue
 		}
@@ -408,7 +400,7 @@ func extractShapefileZip(zipData []byte) (map[string][]byte, error) {
 		sort.Strings(bases)
 		return nil, fmt.Errorf("%w: %s", ErrImportZipBasenameMismatch, strings.Join(bases, ","))
 	}
-	requiredExts := []string{".shp", ".dbf", ".shx"}
+	requiredExts := shapefileImportRequiredExtensions()
 	completeBases := make([]string, 0, 1)
 	for base, exts := range componentsByBase {
 		if hasAllExtensions(exts, requiredExts) {
@@ -419,6 +411,30 @@ func extractShapefileZip(zipData []byte) (map[string][]byte, error) {
 		return nil, ErrImportZipMissingRequiredSet
 	}
 	return files, nil
+}
+
+func shapefileImportAllowedExtensions() map[string]bool {
+	extensions := map[string]bool{}
+	for _, spec := range shapefile.RelatedRefSpecs() {
+		if ext := format.NormalizeExtension(spec.Extension); ext != "" {
+			extensions[ext] = true
+		}
+	}
+	return extensions
+}
+
+func shapefileImportRequiredExtensions() []string {
+	extensions := []string{}
+	for _, spec := range shapefile.RelatedRefSpecs() {
+		if !spec.Required {
+			continue
+		}
+		if ext := format.NormalizeExtension(spec.Extension); ext != "" {
+			extensions = append(extensions, ext)
+		}
+	}
+	sort.Strings(extensions)
+	return extensions
 }
 
 func hasAllExtensions(exts map[string]bool, required []string) bool {

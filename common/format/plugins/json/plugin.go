@@ -58,6 +58,10 @@ func (p *Plugin) Format() format.FormatType {
 	return format.FormatJSON
 }
 
+func (p *Plugin) SupportsAccessIndex() bool {
+	return true
+}
+
 func (p *Plugin) Descriptor() format.FormatDescriptor {
 	return format.FormatDescriptor{
 		ID:             "builtin-json",
@@ -65,11 +69,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		I18nKey:        "format.json",
 		DataType:       datatype.DataTypeDocument,
 		Layouts:        []string{format.LayoutSingle},
-		ProviderHints:  []string{format.FormatProviderDocument, format.FormatProviderTable, format.FormatProviderSpatial},
 		Identification: format.FormatIdentification{Extensions: []string{".json", ".geojson"}, MimeTypes: []string{"application/json", "application/geo+json", "application/vnd.geo+json"}},
-		Providers:      format.FormatProviderDescriptor{DocumentInfo: true, FormatInfo: true, TableInfo: true, TableSample: true, Table: true, AccessIndex: true},
-		ContentReaders: []string{string(format.ContentReaderDocumentText), string(format.ContentReaderTableSample), string(format.ContentReaderRawContent)},
-		Parse:          true,
 	}
 }
 

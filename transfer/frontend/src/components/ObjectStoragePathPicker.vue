@@ -99,7 +99,6 @@ const { t } = useI18n()
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
-  scope: { type: String, default: '' },
   resourceId: { type: Number, default: null },
   initialPrefix: { type: String, default: '' }
 })
@@ -112,7 +111,7 @@ const currentPrefix = ref('')
 const directories = ref([])
 const selectedPath = ref('')
 
-const canConfirm = computed(() => !!(props.resourceId && props.scope))
+const canConfirm = computed(() => !!props.resourceId)
 
 const breadcrumbItems = computed(() => {
   const prefix = currentPrefix.value
@@ -147,14 +146,22 @@ const displayPath = (value) => {
   return normalized ? `/${normalized}` : '/'
 }
 
+const selectedStoragePath = (value) => {
+  const normalized = normalizeDirectory(value)
+  const bucket = String(bucketName.value || '').trim()
+  if (!bucket) return normalized
+  if (!normalized) return `${bucket}/`
+  if (normalized === `${bucket}/` || normalized.startsWith(`${bucket}/`)) return normalized
+  return `${bucket}/${normalized}`
+}
+
 const loadDirectories = async (prefix = '') => {
-  if (!props.resourceId || !props.scope) {
+  if (!props.resourceId) {
     return
   }
   loading.value = true
   try {
     const payload = {
-      scope: props.scope,
       engine_id: props.resourceId,
       prefix: normalizeDirectory(prefix)
     }
@@ -199,7 +206,7 @@ const selectDirectory = (path) => {
     return
   }
   const normalized = normalizeDirectory(path)
-  emit('selected', normalized)
+  emit('selected', selectedStoragePath(normalized))
   emit('update:visible', false)
 }
 

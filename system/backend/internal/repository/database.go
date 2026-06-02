@@ -115,7 +115,7 @@ func migrateEngineOrigin(db *gorm.DB) error {
 }
 
 // RemoveLocalFileEnginesFromSystem 删除误注册到 System 的本地文件型连接器。
-// SQLite/SpatiaLite 文件路径只在 Transfer 本地引擎执行面有意义，System 后端无法保证可访问这些路径。
+// SQLite/SpatiaLite 作为文件格式或容器处理，System 后端不把本地文件路径注册为 engine。
 func RemoveLocalFileEnginesFromSystem(db *gorm.DB) error {
 	result := db.Exec(`
 		DELETE FROM system.engines

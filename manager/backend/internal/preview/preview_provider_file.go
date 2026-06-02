@@ -97,10 +97,13 @@ func (p *FileTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequ
 		return preview, nil
 	}
 
-	infoProvider, _ := format.GetTableInfoProvider(formatType)
 	sampleReader, err := format.GetTableSampleReader(formatType)
 	if err != nil {
 		return nil, fmt.Errorf("no table sample reader for format %s: %w", formatType, err)
+	}
+	infoProvider, infoErr := format.GetTableInfoProvider(formatType)
+	if infoErr != nil && tableInfoFromMetaAttributes(req.Attributes, "table") == nil {
+		return nil, fmt.Errorf("no table info provider for format %s: %w", formatType, infoErr)
 	}
 
 	p.ensureAccessIndex(ctx, req, contentReader, contentCtx.bucket, fullPath, formatType)
@@ -169,7 +172,7 @@ func (p *FileTablePreviewProvider) contentContextForPreview(req *PreviewRequest)
 	}
 }
 
-// previewStreamable 处理可以流式读取的格式（CSV、Excel、GeoJSON 等）
+// previewStreamable 处理具备 table info/sample provider 的单资源表格格式。
 func (p *FileTablePreviewProvider) previewStreamable(
 	ctx context.Context,
 	contentReader contentio.Reader,

@@ -50,11 +50,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 			I18nKey:        "format.geopackage",
 			DataType:       datatype.DataTypeContainer,
 			Layouts:        []string{format.LayoutSingle},
-			ProviderHints:  []string{format.FormatProviderContainer, format.FormatProviderTable, format.FormatProviderSpatial},
 			Identification: format.FormatIdentification{Extensions: []string{".gpkg"}, MimeTypes: []string{"application/geopackage+sqlite3"}},
-			Providers:      format.FormatProviderDescriptor{ContainerInfo: true, TableInfo: true, TableSample: true, Table: true},
-			ContentReaders: []string{string(format.ContentReaderTableSample), string(format.ContentReaderRawContent), string(format.ContentReaderContainerEntry)},
-			Spatial:        true,
 		}
 	}
 	return format.FormatDescriptor{
@@ -63,10 +59,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		I18nKey:        "format.sqlite",
 		DataType:       datatype.DataTypeContainer,
 		Layouts:        []string{format.LayoutSingle},
-		ProviderHints:  []string{format.FormatProviderContainer, format.FormatProviderTable},
 		Identification: format.FormatIdentification{Extensions: []string{".sqlite", ".sqlite3", ".db"}, MimeTypes: []string{"application/x-sqlite3", "application/vnd.sqlite3", "application/sqlite"}},
-		Providers:      format.FormatProviderDescriptor{ContainerInfo: true, TableInfo: true, TableSample: true, Table: true},
-		ContentReaders: []string{string(format.ContentReaderTableSample), string(format.ContentReaderRawContent), string(format.ContentReaderContainerEntry)},
 	}
 }
 

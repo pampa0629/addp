@@ -22,9 +22,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		I18nKey:        "format.orc",
 		DataType:       datatype.DataTypeTable,
 		Layouts:        []string{format.LayoutSingle, format.LayoutWhole},
-		ProviderHints:  []string{format.FormatProviderTable},
 		Identification: format.FormatIdentification{Extensions: []string{".orc"}, MimeTypes: []string{"application/orc", "application/vnd.apache.orc"}},
-		ContentReaders: []string{string(format.ContentReaderRawContent)},
 	}
 }
 

@@ -28,11 +28,11 @@
 | 判断结果 | 适用条件 | 后续要实现的能力 |
 |---|---|---|
 | `table` | 有字段、行列、记录集合，或能稳定映射成字段集合 | `TableInfoProvider`，需要内容样本时实现 `TableSampleReader` |
-| `document` | 以阅读、正文提取、全文索引为主 | `DocumentInfoProvider`，需要后端文本时实现 `DocumentTextReader`；否则至少声明 raw / range content reader |
+| `document` | 以阅读、正文提取、全文索引为主 | `DocumentInfoProvider`，需要后端文本时实现 `DocumentTextReader`；原始文件预览由 engine / contentio / URL 内容通道提供 |
 | `media` | 图片、视频、音频等可感知媒体 | `MediaInfoProvider`，需要缩略图时实现 media content reader |
 | `container` | 内部包含 sheet、table、layer、entry 等子对象 | `ContainerInfoProvider` / `ContainerChildResolver`；父容器先写入轻量 `type_info.container`，child 内容按需解析 |
 | `graph` | 节点、边、关系结构 | 引擎原生图使用 `CatalogFactsProvider` 的 `CatalogFacts.Graph` / `GraphSampleProvider`；文件型图数据先补对应 format 能力 |
-| `unknown` | 暂不能归类 | 只保留 storage、item 和必要 raw / range content 能力 |
+| `unknown` | 暂不能归类 | 只保留 storage、item 等基础事实；原始字节读取由 engine / contentio / URL 内容通道或 `BinaryContentReader` 的探测兜底提供 |
 
 只有以上数据类型无法表达用户理解方式、内容读取方式和治理方式时，才新增 data type。新增 data type 必须先修订概念文档和能力规范。
 
@@ -74,6 +74,11 @@ common/format/plugins/<format>/
 type Plugin struct{}
 
 func (p *Plugin) Format() format.FormatType
+```
+
+如果该格式提供静态 descriptor，再实现：
+
+```go
 func (p *Plugin) Descriptor() format.FormatDescriptor
 ```
 
@@ -86,12 +91,10 @@ func (p *Plugin) Descriptor() format.FormatDescriptor
 | `DataType` | 默认 data type |
 | `Layouts` | `single`、`multi`、`whole` |
 | `Identification` | 扩展名、MIME、内容签名 |
-| `Providers` | 声明 info provider 能力 |
-| `ContentReaders` | 声明内容读取能力 |
 
-`Descriptor()` 是格式身份与声明能力的唯一静态事实源，不是某个 data item 的扫描结果。当前进程实际加载了哪些 provider / reader，由 `ListFormatSupportViews()` 的 `implementations` 字段派生表达。
+`Descriptor()` 是格式身份、识别规则、默认 data type 和 layout 的静态事实源，不是某个 data item 的扫描结果，也不声明当前 Go 进程是否已有 provider / reader / writer。当前进程实际加载了哪些实现，只能由已注册 `FormatPlugin` 是否实现对应接口动态判断。
 
-如果该格式暂时只有识别、默认 data type、layout 或 content reader 声明，没有后端解析实现，也要建立 descriptor-only plugin 包并实现 `Descriptor()`。不要把新格式补到 `common/format/registry/descriptor.go`；该目录只保留运行时注册表机制。
+如果该格式暂时只有识别、默认 data type 或 layout，没有后端解析实现，也要建立 descriptor-only plugin 包并实现 `Descriptor()`。不要在 `common/format` 根包集中追加内置 descriptor 清单；根包只保留 descriptor 注册、查询和冲突诊断机制。
 
 ## 4. 实现 provider 和 reader
 
@@ -99,29 +102,29 @@ func (p *Plugin) Descriptor() format.FormatDescriptor
 
 | 场景 | 必需 / 推荐接口 | 注册后主要消费者 |
 |---|---|---|
-| 格式身份与能力声明 | `FormatPlugin` | Meta、Manager、Transfer、能力发现 |
+| 格式身份 | `FormatPlugin` | Meta、Manager、Transfer、能力发现 |
 | 格式私有元信息 | `FormatInfoProvider` | Meta |
-| 单资源表格元信息 | `TableInfoProvider` | Meta、Manager、Transfer 探查 |
-| 单资源表格样本 | `TableSampleReader` | Manager、Transfer 探查 |
+| 单资源表格元信息 | `TableInfoProvider` | Meta、Manager 探查、Transfer 规划 |
+| 单资源表格样本 | `TableSampleReader` | Manager、轻量探查 |
 | 单资源表格全量读取 | `TableReaderProvider` | Transfer 主链路 |
 | 单资源表格写出 | `TableWriterProvider` | Transfer 写侧 |
-| 多组件表格元信息 | `MultiTableInfoProvider` | Meta、Manager、Transfer 探查 |
-| 多组件表格样本 | `MultiTableSampleReader` | Manager、Transfer 探查兜底 |
+| 多组件表格元信息 | `MultiTableInfoProvider` | Meta、Manager 探查、Transfer 规划 |
+| 多组件表格样本 | `MultiTableSampleReader` | Manager、轻量探查 |
 | 多组件表格全量读取 | `MultiTableReaderProvider` | Transfer 主链路 |
 | 多组件表格写出 | `MultiTableWriterProvider` | Transfer 写侧 |
 | 多组件规格 / 展示描述 | `RelatedRefSpecProvider`、`RefDescriptorProvider` | Meta item detector、Manager |
-| scope 表格元信息 | `ScopeTableInfoProvider` | Meta、Manager、Transfer 探查 |
-| scope 表格样本 | `ScopeTableSampleReader` | Manager、Transfer 探查 |
+| scope 表格元信息 | `ScopeTableInfoProvider` | Meta、Manager 探查、Transfer 规划 |
+| scope 表格样本 | `ScopeTableSampleReader` | Manager、轻量探查 |
 | 文档元信息 | `DocumentInfoProvider` | Meta、Manager、Search |
 | 文档文本片段 | `DocumentTextReader` | Manager、Search |
-| 文档仅前端解析 | descriptor 声明 `raw_content` / `range_content`，后端不实现 `DocumentTextReader` | Manager |
+| 文档仅前端解析 | descriptor 保留 document 静态身份，后端不实现 `DocumentTextReader`；Manager 基于 engine/contentio 或自身 fetcher 提供 raw/range 内容 | Manager |
 | 媒体元信息 | `MediaInfoProvider` | Meta、Manager |
 | 容器内部对象信息 | `ContainerInfoProvider` | Meta、Manager |
 | 容器 child 解析 | `ContainerChildResolver` | Manager、Transfer 后续 child 读取 |
 | 空间横切事实 | 通过 describe result 或等价结构提供 `datatype.SpatialInfo`，由 Meta 写入 `capabilities.spatial` | Meta、Manager、Search |
 | 访问定位索引 | 通过 describe result 或等价结构提供 `datatype.AccessIndex`，由 Meta 写入 `access_index.<data_type>`；`AccessIndex` 不是 data type 或 type info | Meta、Manager、Transfer |
 
-新增实现必须直接使用拆分后的接口。multi / scope 的 info、sample、连续全量读取必须分别使用对应接口；后续如果 scope 表格进入 Transfer 主链路，再新增明确的 `ScopeTableReaderProvider`，不得引入组合 provider。
+新增实现必须直接使用拆分后的接口。multi / scope 的 info、sample、连续全量读取必须分别使用对应接口；Transfer 主链路读取 whole scope table 必须使用明确的 `ScopeTableReaderProvider`，不得引入组合 provider，也不得用 sample reader 冒充全量读取。
 
 Info provider 一次解析可能同时得到多类事实。以 table 为例：
 
@@ -152,23 +155,12 @@ func init() {
 
 1. 校验 `Format()` 与 `Descriptor().Format` 一致。
 2. 在当前进程尚未注册该 format descriptor 时注册 `Descriptor()`。
-3. 根据 plugin 实现的接口自动注册 info provider 和 content reader。
-
-也可以按能力手动注册：
+3. 将该 plugin 作为该 format 的唯一运行时实现入口。后续 `GetTableInfoProvider`、`GetDocumentTextReader`、`GetTableWriterProvider` 等查询都会对同一个 plugin 做接口断言。
 
 | 入口 | 使用场景 |
 |---|---|
 | `RegisterFormatDescriptor` | 只新增格式身份声明，暂时没有 Go 实现 |
-| `RegisterFormatInfoProvider` | 只提供 `format_info.<format>` |
-| `RegisterTableInfoProvider` | 只提供 `type_info.table` |
-| `RegisterTableSampleReader` | 只提供 table sample content reader |
-| `RegisterTableReaderProvider` | 只提供单资源 table 连续读取 |
-| `RegisterMultiTableReaderProvider` | 只提供多组件 table 连续读取 |
-| `RegisterTableWriterProvider` | 只提供单资源 table 写出 |
-| `RegisterMultiTableWriterProvider` | 只提供多组件 table 写出 |
-| `RegisterDocumentInfoProvider` | 只提供 `type_info.document` |
-| `RegisterDocumentTextReader` | 只提供 document text content reader |
-| `RegisterMediaInfoProvider` | 只提供 `type_info.media` |
+| `RegisterFormatPlugin` | 注册该 format 的 Go 实现；该实例可同时实现一个或多个 provider / reader / writer 接口 |
 
 内置格式还必须加入统一加载入口：
 
@@ -212,8 +204,8 @@ FormatPlugin 不生成最终 data item，但新增格式不必然修改 Meta。�
 
 新增或修改格式后至少验证：
 
-1. `FormatPlugin.Descriptor()` 的 format、data type、layouts、identification、providers、content readers 正确。
-2. `RegisterFormatPlugin` 后，`ListFormatSupportViews()` 能看到声明能力和实现状态。
+1. `FormatDescriptorProvider.Descriptor()` 的 format、data type、layouts、identification 正确。
+2. `RegisterFormatPlugin` 后，具体 `Get*Provider` / `Get*Reader` / `Get*Writer` 能按插件实际接口实现返回或明确失败。
 3. Meta 扫描生成正确数量的 data item。
 4. `meta_item.name/full_name/item_type/node_id` 符合探测器规范。
 5. `attributes.item/type_info/format_info/access_index/capabilities` 没有重复事实源。

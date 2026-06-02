@@ -10,7 +10,7 @@ import (
 	"github.com/addp/common/format"
 )
 
-func TestPluginDescriptorDeclaresDocumentTextReader(t *testing.T) {
+func TestPluginDescriptorAndDocumentCapabilities(t *testing.T) {
 	plugin := NewPlugin()
 	descriptor := plugin.Descriptor()
 	if descriptor.Format != format.FormatDOCX {
@@ -19,15 +19,11 @@ func TestPluginDescriptorDeclaresDocumentTextReader(t *testing.T) {
 	if descriptor.DataType != datatype.DataTypeDocument {
 		t.Fatalf("descriptor data type = %q, want document", descriptor.DataType)
 	}
-	if !descriptor.Providers.DocumentInfo {
-		t.Fatalf("docx should declare document info provider")
+	if _, ok := any(plugin).(format.DocumentInfoProvider); !ok {
+		t.Fatal("docx plugin should implement DocumentInfoProvider")
 	}
-	if !contains(descriptor.ContentReaders, string(format.ContentReaderDocumentText)) {
-		t.Fatalf("content readers = %#v, want document text", descriptor.ContentReaders)
-	}
-	if !contains(descriptor.ContentReaders, string(format.ContentReaderRawContent)) ||
-		!contains(descriptor.ContentReaders, string(format.ContentReaderRangeContent)) {
-		t.Fatalf("content readers = %#v, want raw and range", descriptor.ContentReaders)
+	if _, ok := any(plugin).(format.DocumentTextReader); !ok {
+		t.Fatal("docx plugin should implement DocumentTextReader")
 	}
 }
 

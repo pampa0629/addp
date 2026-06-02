@@ -151,14 +151,14 @@ source
 
 这样设计后，Manager 可以继续提供用户熟悉的“导入 / 导出”入口；Transfer 则保持少量、稳定、可组合的执行语义。
 
-## 七、只给 Transfer 使用的引擎
+## 七、只给 Transfer 使用的 System engine
 
-仍建议引擎统一管理，不恢复 Transfer local engine。
+引擎统一由 System 管理，不恢复 Transfer 私有引擎路线。
 
 但不应为了尚未出现的需求添加复杂 visibility / role / preview / query / ttl 组合。当前真实需求只有一个：
 
 ```text
-这个引擎是否只允许 Transfer 使用。
+这个 System engine 是否只允许 Transfer 使用。
 ```
 
 因此第一版只需要一个最小策略：

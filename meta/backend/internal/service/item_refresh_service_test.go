@@ -17,6 +17,7 @@ import (
 	_ "github.com/addp/common/format/builtin"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
 	"github.com/jonas-p/go-shp"
 )
@@ -110,6 +111,60 @@ func TestRefreshKnownMultiItemUsesStoredRefsWithoutCatalogRediscovery(t *testing
 		if tableIndex, exists := accessIndex["table"]; exists {
 			t.Fatalf("access_index.table = %#v, want stale shapefile table index removed", tableIndex)
 		}
+	}
+}
+
+func TestClearStaleKnownMultiTableAccessIndexUsesLayoutSemantics(t *testing.T) {
+	t.Parallel()
+
+	multiAttrs := map[string]interface{}{
+		"access_index": map[string]interface{}{
+			"table": map[string]interface{}{"kind": "stale"},
+		},
+	}
+	multiItemAttrs := map[string]interface{}{
+		"access_index": map[string]interface{}{
+			"table": map[string]interface{}{"kind": "stale-item"},
+		},
+	}
+	clearStaleKnownMultiTableAccessIndex(multiAttrs, &metaitem.DetectedItem{
+		ResolvedItem: dataitem.ResolvedItem{
+			Layout:   dataitem.LayoutMulti,
+			DataType: dataitem.DataTypeTable,
+			Format:   "custom_multi_table",
+		},
+		Attributes: multiItemAttrs,
+	})
+	if accessIndex, ok := multiAttrs["access_index"].(map[string]interface{}); ok {
+		if tableIndex, exists := accessIndex["table"]; exists {
+			t.Fatalf("multi access_index.table = %#v, want removed", tableIndex)
+		}
+	}
+	if accessIndex, ok := multiItemAttrs["access_index"].(map[string]interface{}); ok {
+		if tableIndex, exists := accessIndex["table"]; exists {
+			t.Fatalf("multi item access_index.table = %#v, want removed", tableIndex)
+		}
+	}
+
+	singleAttrs := map[string]interface{}{
+		"access_index": map[string]interface{}{
+			"table": map[string]interface{}{"kind": "keep"},
+		},
+	}
+	clearStaleKnownMultiTableAccessIndex(singleAttrs, &metaitem.DetectedItem{
+		ResolvedItem: dataitem.ResolvedItem{
+			Layout:   dataitem.LayoutSingle,
+			DataType: dataitem.DataTypeTable,
+			Format:   "csv",
+		},
+		Attributes: map[string]interface{}{},
+	})
+	tableIndex, ok := singleAttrs["access_index"].(map[string]interface{})["table"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("single access_index.table missing: %#v", singleAttrs)
+	}
+	if got := tableIndex["kind"]; got != "keep" {
+		t.Fatalf("single access_index.table.kind = %q, want keep", got)
 	}
 }
 

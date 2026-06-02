@@ -47,7 +47,7 @@ Transfer API / Frontend
 {
   "mode": "batch",
   "source": {
-    "engine": {"scope": "system", "id": 1},
+    "engine": {"id": 1},
     "resource": {
       "kind": "native_table",
       "path": {"schema": "public", "table": "roads"}
@@ -56,7 +56,7 @@ Transfer API / Frontend
     "representation": "native"
   },
   "target": {
-    "engine": {"scope": "system", "id": 2},
+    "engine": {"id": 2},
     "resource": {
       "kind": "object",
       "path": {"path": "bucket/exports/roads.shp"}

@@ -33,8 +33,8 @@ func EnrichContainerChildren(ctx context.Context, attrs models.JSONMap, detected
 	if err != nil {
 		return err
 	}
-	if formatProvider, err := format.GetFormatInfoProvider(formatType); err == nil {
-		formatInfo, err := formatProvider.DescribeFormat(ctx, bytes.NewReader(data), format.ContainerParseOptions(containerChildLimit, 0))
+	if infoProvider, err := format.GetFormatInfoProvider(formatType); err == nil {
+		formatInfo, err := infoProvider.DescribeFormat(ctx, bytes.NewReader(data), format.ContainerParseOptions(containerChildLimit, 0))
 		if err != nil {
 			return err
 		}

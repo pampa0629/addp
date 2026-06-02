@@ -49,7 +49,7 @@ checkpoint 当前用于 progress / diagnostics，不表示可从 checkpoint 自�
 {
   "mode": "batch",
   "source": {
-    "engine": {"scope": "system", "id": 1},
+    "engine": {"id": 1},
     "resource": {
       "kind": "native_table",
       "path": {"schema": "public", "table": "roads"}
@@ -58,7 +58,7 @@ checkpoint 当前用于 progress / diagnostics，不表示可从 checkpoint 自�
     "representation": "native"
   },
   "target": {
-    "engine": {"scope": "system", "id": 2},
+    "engine": {"id": 2},
     "resource": {
       "kind": "file",
       "path": {"path": "exports/roads.csv"}
@@ -88,7 +88,6 @@ checkpoint 当前用于 progress / diagnostics，不表示可从 checkpoint 自�
 
 | 字段 | 必填 | 说明 |
 |---|---:|---|
-| `engine.scope` | 是 | 当前主路径使用 `system`。 |
 | `engine.id` | 是 | System engine ID。 |
 | `engine.type` | 否 | 仅用于测试或诊断一致性校验；生产链路由 System engine resolver 获取真实类型。 |
 | `resource.kind` | 是 | `native_table`、`file`、`object`。 |
@@ -163,7 +162,7 @@ raw copy 是 non-table encoded single content 的原始字节复制。它不调�
 {
   "mode": "batch",
   "source": {
-    "engine": {"scope": "system", "id": 1},
+    "engine": {"id": 1},
     "resource": {
       "kind": "object",
       "path": {"bucket": "raw", "path": "docs/report.pdf"}
@@ -173,7 +172,7 @@ raw copy 是 non-table encoded single content 的原始字节复制。它不调�
     "format": "pdf"
   },
   "target": {
-    "engine": {"scope": "system", "id": 2},
+    "engine": {"id": 2},
     "resource": {
       "kind": "file",
       "path": {"path": "archive/report.pdf"}

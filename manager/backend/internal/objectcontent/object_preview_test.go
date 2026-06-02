@@ -239,7 +239,12 @@ func TestLoadObjectContentPluginsUsesDescriptorDefaults(t *testing.T) {
 		{
 			name: "parquet",
 			req:  ObjectContentRequest{Extension: ".parquet", ContentType: "application/vnd.apache.parquet"},
-			want: "builtin:content-parquet",
+			want: "builtin:content-table",
+		},
+		{
+			name: "csv",
+			req:  ObjectContentRequest{Extension: ".csv", ContentType: "text/csv"},
+			want: "builtin:content-table",
 		},
 		{
 			name: "spatial_json_uses_json_handler",
@@ -659,6 +664,15 @@ func TestObjectContentTableFormatUsesExplicitFormat(t *testing.T) {
 	}
 }
 
+func TestObjectContentTableFormatKeepsUnknownUnknown(t *testing.T) {
+	if got := objectContentTableFormat(&ObjectContentRequest{Name: "blob.bin", Extension: ".bin", ContentType: "application/octet-stream"}); got != format.FormatUnknown {
+		t.Fatalf("objectContentTableFormat() = %q, want %q", got, format.FormatUnknown)
+	}
+	if got := objectContentTableFormat(nil); got != format.FormatUnknown {
+		t.Fatalf("objectContentTableFormat(nil) = %q, want %q", got, format.FormatUnknown)
+	}
+}
+
 func TestBuildContainerPreviewFromExcelAttributes(t *testing.T) {
 	preview := buildContainerPreviewFromMetaAttributes(map[string]interface{}{
 		"item": map[string]interface{}{
@@ -913,20 +927,29 @@ func TestBuildContainerPreviewFromMetaAttributesKeepsResolvedMultiChild(t *testi
 	}
 }
 
-func TestObjectContentRegistryDoesNotResolveCSV(t *testing.T) {
+func TestObjectContentRegistryResolvesCSVWithTableHandler(t *testing.T) {
 	registry := NewObjectContentRegistry()
 	LoadObjectContentPlugins(registry, "../../plugins")
 
-	for _, req := range []ObjectContentRequest{
-		{Format: "csv"},
-		{Extension: ".csv"},
-		{ContentType: "text/csv"},
-		{ContentType: "text/csv; charset=utf-8"},
+	for _, tt := range []struct {
+		name string
+		req  ObjectContentRequest
+	}{
+		{name: "format", req: ObjectContentRequest{Format: "csv"}},
+		{name: "extension", req: ObjectContentRequest{Extension: ".csv"}},
+		{name: "content_type", req: ObjectContentRequest{ContentType: "text/csv"}},
+		{name: "content_type_with_charset", req: ObjectContentRequest{ContentType: "text/csv; charset=utf-8"}},
 	} {
-		req := req
-		if handler := registry.Resolve(&req); handler != nil {
-			t.Fatalf("CSV object content request resolved to %q, want nil", handler.Name())
-		}
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			handler := registry.Resolve(&tt.req)
+			if handler == nil {
+				t.Fatalf("CSV object content request did not resolve")
+			}
+			if handler.Name() != "builtin:content-table" {
+				t.Fatalf("CSV object content request resolved to %q, want builtin:content-table", handler.Name())
+			}
+		})
 	}
 }
 

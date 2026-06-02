@@ -134,7 +134,7 @@ Shapefile 的 `.shp/.shx/.dbf/.prj` ref 集合必须整体提交，不能让 S3W
 
 `transfer/backend/internal/service/execution_engine_service.go` 当前有几个历史入口：
 
-- `resolveConnectorConfig()`：把 System / local engine 配置和任务配置合并成 connector config。
+- `resolveConnectorConfig()`：把 System engine 配置和任务配置合并成 connector config。
 - `resourceToConnectorConfig()`：把 engine 配置转成 Transfer 自有 connector config。
 - `inferConnectorType()`：根据 `engine_type`、`type`、`bucket`、`path` 等字段推断 connector。
 - 自动把 PostgreSQL JDBC target 改成 `postgres_copy`。

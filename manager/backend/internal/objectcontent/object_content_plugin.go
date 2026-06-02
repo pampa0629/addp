@@ -16,6 +16,7 @@ import (
 	"github.com/addp/common/contentio"
 	commondataitem "github.com/addp/common/dataitem"
 	"github.com/addp/common/format"
+	_ "github.com/addp/common/format/builtin"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/logger"
 	"github.com/addp/manager/internal/models"
@@ -128,6 +129,9 @@ func isTableObjectContentRequest(req *ObjectContentRequest) bool {
 	if formatType == format.FormatUnknown && req.Extension != "" {
 		formatType = format.DetectFormat("file"+req.Extension, nil)
 	}
+	if formatType == format.FormatUnknown && req.ContentType != "" {
+		formatType = format.MIMEToFormat(req.ContentType)
+	}
 	if formatType != "" && formatType != format.FormatUnknown {
 		if _, err := format.GetTableSampleReader(formatType); err == nil {
 			return true
@@ -136,10 +140,7 @@ func isTableObjectContentRequest(req *ObjectContentRequest) bool {
 			return true
 		}
 	}
-	contentType := strings.ToLower(strings.TrimSpace(req.ContentType))
-	return contentType == "text/csv" ||
-		strings.Contains(contentType, "text/csv;") ||
-		strings.Contains(contentType, "comma-separated")
+	return false
 }
 
 func isGenericObjectContentHandler(handler ObjectContentHandler) bool {
@@ -464,7 +465,11 @@ func (m objectContentMatcher) matches(req *ObjectContentRequest) bool {
 		return false
 	}
 
-	extMatched := len(m.extensions) == 0
+	if len(m.formats) == 0 && len(m.extensions) == 0 && len(m.contentTypes) == 0 {
+		return true
+	}
+
+	extMatched := false
 	extLower := strings.ToLower(strings.TrimSpace(req.Extension))
 	if len(m.extensions) > 0 {
 		for _, ext := range m.extensions {
@@ -476,20 +481,8 @@ func (m objectContentMatcher) matches(req *ObjectContentRequest) bool {
 	}
 
 	ctLower := strings.ToLower(strings.TrimSpace(req.ContentType))
-	ctMatched := len(m.contentTypes) == 0 || ctLower == ""
-	if !ctMatched {
-		if isGenericContentType(ctLower) {
-			ctLower = ""
-			ctMatched = true
-		}
-	}
-	if ctMatched && ctLower == "" {
-		if len(m.contentTypes) > 0 && len(m.extensions) == 0 {
-			return false
-		}
-		return extMatched
-	}
-	if !ctMatched {
+	ctMatched := false
+	if len(m.contentTypes) > 0 && ctLower != "" && !isGenericContentType(ctLower) {
 		for _, ct := range m.contentTypes {
 			target := strings.ToLower(strings.TrimSpace(ct))
 			if target == "" {
@@ -502,7 +495,13 @@ func (m objectContentMatcher) matches(req *ObjectContentRequest) bool {
 		}
 	}
 
-	return extMatched && ctMatched
+	if len(m.extensions) > 0 && extMatched {
+		return true
+	}
+	if len(m.contentTypes) > 0 && ctMatched {
+		return true
+	}
+	return len(m.extensions) == 0 && len(m.contentTypes) == 0
 }
 
 func normalizeContentFormat(formatName string) string {
@@ -1177,7 +1176,7 @@ func containerChildKey(name, tableName string, index int) string {
 func isContainerObjectContentFormat(formatName string) bool {
 	formatType := normalizeFileTableFormat(formatName)
 	descriptor, ok := format.GetFormatDescriptor(formatType)
-	return ok && descriptor.DataType == datatype.DataTypeContainer && descriptor.Providers.ContainerInfo
+	return ok && descriptor.DataType == datatype.DataTypeContainer && hasObjectContentContainerProvider(formatType)
 }
 
 type textContentHandler struct {
@@ -1580,16 +1579,21 @@ func isContainerFormatType(formatType format.FormatType) bool {
 		return false
 	}
 	descriptor, ok := format.GetFormatDescriptor(formatType)
-	return ok && descriptor.DataType == datatype.DataTypeContainer && descriptor.Providers.ContainerInfo
+	return ok && descriptor.DataType == datatype.DataTypeContainer && hasObjectContentContainerProvider(formatType)
 }
 
 func firstContainerFormatType() format.FormatType {
 	for _, descriptor := range format.ListFormatDescriptors() {
-		if descriptor.DataType == datatype.DataTypeContainer && descriptor.Providers.ContainerInfo {
+		if descriptor.DataType == datatype.DataTypeContainer && hasObjectContentContainerProvider(descriptor.Format) {
 			return descriptor.Format
 		}
 	}
 	return format.FormatUnknown
+}
+
+func hasObjectContentContainerProvider(formatType format.FormatType) bool {
+	_, err := format.GetContainerInfoProvider(formatType)
+	return err == nil
 }
 
 type commandContentHandler struct {
@@ -1672,19 +1676,22 @@ func runCommandCollectingOutput(cmd *exec.Cmd) ([]byte, string, error) {
 // ------------ 表格文件对象内容处理器 ------------
 
 const (
-	maxParquetPreviewBytes = 200 * 1024 * 1024 // 200MB
-	defaultParquetRowLimit = 50
+	maxTablePreviewBytes = 200 * 1024 * 1024 // 200MB
+	defaultTableRowLimit = 50
 )
 
-type parquetContentHandler struct {
+type tableContentHandler struct {
 	baseContentHandler
 	maxBytes int64
 	rowLimit int
 }
 
 // HandleStream 流式处理表格文件（下载到临时文件后解析）
-func (h *parquetContentHandler) HandleStream(ctx context.Context, req *ObjectContentRequest, streamer ObjectStreamProvider) (*models.ObjectPreviewContent, bool, error) {
+func (h *tableContentHandler) HandleStream(ctx context.Context, req *ObjectContentRequest, streamer ObjectStreamProvider) (*models.ObjectPreviewContent, bool, error) {
 	formatType := objectContentTableFormat(req)
+	if formatType == format.FormatUnknown {
+		return nil, false, fmt.Errorf("无法识别表格文件格式")
+	}
 	tmpFile, err := os.CreateTemp("", "table-preview-*"+strings.ToLower(string(formatType)))
 	if err != nil {
 		return nil, false, fmt.Errorf("创建临时表格文件失败: %w", err)
@@ -1750,7 +1757,7 @@ func (h *parquetContentHandler) HandleStream(ctx context.Context, req *ObjectCon
 
 	rowLimit := int64(h.rowLimit)
 	if rowLimit <= 0 {
-		rowLimit = defaultParquetRowLimit
+		rowLimit = defaultTableRowLimit
 	}
 	rows, err := sampleReader.SampleTable(ctx, f2, 0, rowLimit, opts)
 	if err != nil {
@@ -1792,8 +1799,11 @@ func (h *parquetContentHandler) HandleStream(ctx context.Context, req *ObjectCon
 }
 
 // Handle 回退实现（不推荐，部分表格格式需要随机访问）
-func (h *parquetContentHandler) Handle(ctx context.Context, req *ObjectContentRequest, fetcher ObjectContentProvider) (*models.ObjectPreviewContent, bool, error) {
+func (h *tableContentHandler) Handle(ctx context.Context, req *ObjectContentRequest, fetcher ObjectContentProvider) (*models.ObjectPreviewContent, bool, error) {
 	formatType := objectContentTableFormat(req)
+	if formatType == format.FormatUnknown {
+		return nil, false, fmt.Errorf("无法识别表格文件格式")
+	}
 	data, _, err := fetcher(h.maxBytes)
 	if err != nil {
 		return nil, false, err
@@ -1822,7 +1832,7 @@ func (h *parquetContentHandler) Handle(ctx context.Context, req *ObjectContentRe
 
 	rowLimit := int64(h.rowLimit)
 	if rowLimit <= 0 {
-		rowLimit = defaultParquetRowLimit
+		rowLimit = defaultTableRowLimit
 	}
 	rows, err := sampleReader.SampleTable(ctx, bytes.NewReader(data), 0, rowLimit, opts)
 	if err != nil {
@@ -1858,7 +1868,7 @@ func (h *parquetContentHandler) Handle(ctx context.Context, req *ObjectContentRe
 
 func objectContentTableFormat(req *ObjectContentRequest) format.FormatType {
 	if req == nil {
-		return format.FormatParquet
+		return format.FormatUnknown
 	}
 	for _, value := range []string{req.Format, req.Extension, req.ContentType, req.Name} {
 		if strings.TrimSpace(value) == "" {
@@ -1874,5 +1884,5 @@ func objectContentTableFormat(req *ObjectContentRequest) format.FormatType {
 			return formatType
 		}
 	}
-	return format.FormatParquet
+	return format.FormatUnknown
 }

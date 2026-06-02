@@ -1,8 +1,12 @@
 package api
 
 import (
+	"context"
+	"io"
 	"testing"
 
+	"github.com/addp/common/datatype"
+	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
 )
 
@@ -18,7 +22,6 @@ func TestBuildTableFormatCapabilitiesExposeUserFacingFormats(t *testing.T) {
 			t.Fatalf("missing table format capability %q; got %#v", value, capabilities)
 		}
 	}
-
 	jsonl := byValue["jsonl"]
 	if jsonl.BackendType != "json" {
 		t.Fatalf("jsonl backend_type = %q, want json", jsonl.BackendType)
@@ -34,6 +37,11 @@ func TestBuildTableFormatCapabilitiesExposeUserFacingFormats(t *testing.T) {
 	}
 	if jsonl.ProviderKind != "table" {
 		t.Fatalf("jsonl provider_kind = %q, want table", jsonl.ProviderKind)
+	}
+
+	json := byValue["json"]
+	if json.Spatial {
+		t.Fatal("json spatial = true, want false")
 	}
 
 	geojson := byValue["geojson"]
@@ -77,6 +85,33 @@ func TestBuildTableFormatCapabilitiesExposeUserFacingFormats(t *testing.T) {
 	}
 }
 
+func TestBuildTableFormatCapabilitiesIncludesRegisteredTableReaders(t *testing.T) {
+	formatType := format.FormatType("transfer_capability_reader_only")
+	if err := format.RegisterFormatPlugin(transferCapabilityReaderOnlyPlugin{formatType: formatType}); err != nil {
+		t.Fatalf("RegisterFormatPlugin() error = %v", err)
+	}
+
+	capabilities := buildTableFormatCapabilities()
+	byValue := make(map[string]TransferTableFormatSupport, len(capabilities))
+	for _, capability := range capabilities {
+		byValue[capability.Value] = capability
+	}
+
+	capability, ok := byValue[string(formatType)]
+	if !ok {
+		t.Fatalf("missing descriptor-derived table format capability %q; got %#v", formatType, capabilities)
+	}
+	if capability.BackendType != string(formatType) {
+		t.Fatalf("backend_type = %q, want %s", capability.BackendType, formatType)
+	}
+	if !capability.Read || capability.Write {
+		t.Fatalf("read/write = %v/%v, want true/false", capability.Read, capability.Write)
+	}
+	if capability.Extension != "tct" {
+		t.Fatalf("extension = %q, want tct", capability.Extension)
+	}
+}
+
 func TestBuildRawCopyFormatCapabilitiesExposeNonTableSingleFormats(t *testing.T) {
 	capabilities := buildRawCopyFormatCapabilities()
 	byValue := make(map[string]TransferRawCopyFormatSupport, len(capabilities))
@@ -110,4 +145,29 @@ func TestBuildRawCopyFormatCapabilitiesExposeNonTableSingleFormats(t *testing.T)
 	if byValue["pdf"].Extension != "pdf" {
 		t.Fatalf("pdf extension = %q, want pdf", byValue["pdf"].Extension)
 	}
+}
+
+type transferCapabilityReaderOnlyPlugin struct {
+	formatType format.FormatType
+}
+
+func (p transferCapabilityReaderOnlyPlugin) Format() format.FormatType {
+	return p.formatType
+}
+
+func (p transferCapabilityReaderOnlyPlugin) Descriptor() format.FormatDescriptor {
+	return format.FormatDescriptor{
+		ID:       "transfer-capability-reader-only",
+		Format:   p.formatType,
+		DataType: datatype.DataTypeTable,
+		Layouts:  []string{format.LayoutSingle},
+		Identification: format.FormatIdentification{
+			Extensions: []string{".tct"},
+			MimeTypes:  []string{"application/x-transfer-capability-test"},
+		},
+	}
+}
+
+func (p transferCapabilityReaderOnlyPlugin) OpenTableReader(context.Context, io.Reader, *format.ParseOptions) (format.TableReader, error) {
+	return nil, nil
 }

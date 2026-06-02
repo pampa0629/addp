@@ -27,9 +27,6 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		I18nKey:  "format.unknown",
 		DataType: datatype.DataTypeUnknown,
 		Layouts:  []string{format.LayoutSingle},
-		ContentReaders: []string{
-			string(format.ContentReaderBinaryContent),
-		},
 	}
 }
 

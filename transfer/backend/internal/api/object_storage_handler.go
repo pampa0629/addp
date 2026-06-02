@@ -21,7 +21,6 @@ func NewObjectStorageHandler(service *service.ObjectStorageService) *ObjectStora
 
 // objectStorageBrowseRequest 请求体
 type objectStorageBrowseRequest struct {
-	Scope    string `json:"scope" binding:"required,oneof=system"`
 	EngineID uint   `json:"engine_id" binding:"required"`
 	Prefix   string `json:"prefix"`
 }
@@ -48,7 +47,7 @@ func (h *ObjectStorageHandler) BrowseDirectories(c *gin.Context) {
 
 	tenantID := c.GetUint("tenant_id")
 
-	result, err := h.service.ListDirectories(c.Request.Context(), tenantID, req.Scope, req.EngineID, req.Prefix)
+	result, err := h.service.ListDirectories(c.Request.Context(), tenantID, req.EngineID, req.Prefix)
 	if err != nil {
 		switch {
 		case errors.Is(err, gorm.ErrRecordNotFound):
@@ -90,7 +89,7 @@ func (h *ObjectStorageHandler) ListFiles(c *gin.Context) {
 
 	tenantID := c.GetUint("tenant_id")
 
-	result, err := h.service.ListFiles(c.Request.Context(), tenantID, req.Scope, req.EngineID, req.Prefix)
+	result, err := h.service.ListFiles(c.Request.Context(), tenantID, req.EngineID, req.Prefix)
 	if err != nil {
 		switch {
 		case errors.Is(err, gorm.ErrRecordNotFound):

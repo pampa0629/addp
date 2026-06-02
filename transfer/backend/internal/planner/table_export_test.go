@@ -406,7 +406,7 @@ func TestBuildTableTransferPlanForEncodedFileToNativeTable(t *testing.T) {
 	spec := TableExportTaskSpec{
 		Mode: modeBatch,
 		Source: EndpointSpec{
-			Engine:           EngineRef{Scope: "system", ID: 1},
+			Engine:           EngineRef{ID: 1},
 			EndpointResource: EndpointResourceSpec{Kind: EndpointResourceKindFile, Path: map[string]interface{}{"path": "imports/roads.csv"}},
 			DataType:         dataTypeTable,
 			Representation:   representationEncoded,
@@ -414,7 +414,7 @@ func TestBuildTableTransferPlanForEncodedFileToNativeTable(t *testing.T) {
 			Options:          map[string]interface{}{"header": true, "delimiter": ","},
 		},
 		Target: EndpointSpec{
-			Engine:           EngineRef{Scope: "system", ID: 2},
+			Engine:           EngineRef{ID: 2},
 			EndpointResource: EndpointResourceSpec{Kind: EndpointResourceKindNativeTable, Path: map[string]interface{}{"schema": "public", "table": "roads"}},
 			DataType:         dataTypeTable,
 			Representation:   representationNative,
@@ -725,13 +725,13 @@ func TestBuildTableTransferPlanForNativeTableToNativeTable(t *testing.T) {
 	spec := TableExportTaskSpec{
 		Mode: modeBatch,
 		Source: EndpointSpec{
-			Engine:           EngineRef{Scope: "system", ID: 1},
+			Engine:           EngineRef{ID: 1},
 			EndpointResource: EndpointResourceSpec{Kind: EndpointResourceKindNativeTable, Path: map[string]interface{}{"schema": "public", "table": "roads"}},
 			DataType:         dataTypeTable,
 			Representation:   representationNative,
 		},
 		Target: EndpointSpec{
-			Engine:           EngineRef{Scope: "system", ID: 2},
+			Engine:           EngineRef{ID: 2},
 			EndpointResource: EndpointResourceSpec{Kind: EndpointResourceKindNativeTable, Path: map[string]interface{}{"schema": "gis", "table": "roads_copy"}},
 			DataType:         dataTypeTable,
 			Representation:   representationNative,
@@ -847,8 +847,9 @@ func TestParseTableExportTaskSpecRejectsLegacyConfig(t *testing.T) {
 	}
 }
 
-func TestParseTableExportTaskSpecRequiresMode(t *testing.T) {
-	config := map[string]interface{}{
+func TestParseTableExportTaskSpecRejectsEngineScope(t *testing.T) {
+	_, err := ParseTableExportTaskSpec(map[string]interface{}{
+		"mode": "batch",
 		"source": map[string]interface{}{
 			"engine":         map[string]interface{}{"scope": "system", "id": 1},
 			"resource":       map[string]interface{}{"kind": "native_table", "path": map[string]interface{}{"schema": "public", "table": "roads"}},
@@ -856,7 +857,31 @@ func TestParseTableExportTaskSpecRequiresMode(t *testing.T) {
 			"representation": "native",
 		},
 		"target": map[string]interface{}{
-			"engine":         map[string]interface{}{"scope": "system", "id": 2},
+			"engine":         map[string]interface{}{"id": 2},
+			"resource":       map[string]interface{}{"kind": "file", "path": map[string]interface{}{"path": "exports/roads.csv"}},
+			"data_type":      "table",
+			"representation": "encoded",
+			"format":         "csv",
+		},
+	}, 1000)
+	if err == nil {
+		t.Fatal("ParseTableExportTaskSpec succeeded, want engine scope legacy error")
+	}
+	if !strings.Contains(err.Error(), "legacy transfer task config") {
+		t.Fatalf("error = %q, want legacy config error", err)
+	}
+}
+
+func TestParseTableExportTaskSpecRequiresMode(t *testing.T) {
+	config := map[string]interface{}{
+		"source": map[string]interface{}{
+			"engine":         map[string]interface{}{"id": 1},
+			"resource":       map[string]interface{}{"kind": "native_table", "path": map[string]interface{}{"schema": "public", "table": "roads"}},
+			"data_type":      "table",
+			"representation": "native",
+		},
+		"target": map[string]interface{}{
+			"engine":         map[string]interface{}{"id": 2},
 			"resource":       map[string]interface{}{"kind": "file", "path": map[string]interface{}{"path": "exports/roads.csv"}},
 			"data_type":      "table",
 			"representation": "encoded",
@@ -877,13 +902,13 @@ func TestParseTableExportTaskSpecAppliesFallbackBatchSize(t *testing.T) {
 	spec, err := ParseTableExportTaskSpec(map[string]interface{}{
 		"mode": "batch",
 		"source": map[string]interface{}{
-			"engine":         map[string]interface{}{"scope": "system", "id": 1},
+			"engine":         map[string]interface{}{"id": 1},
 			"resource":       map[string]interface{}{"kind": "native_table", "path": map[string]interface{}{"schema": "public", "table": "roads"}},
 			"data_type":      "table",
 			"representation": "native",
 		},
 		"target": map[string]interface{}{
-			"engine":         map[string]interface{}{"scope": "system", "id": 2},
+			"engine":         map[string]interface{}{"id": 2},
 			"resource":       map[string]interface{}{"kind": "file", "path": map[string]interface{}{"path": "exports/roads.csv"}},
 			"data_type":      "table",
 			"representation": "encoded",
@@ -902,14 +927,14 @@ func TestParseTableExportTaskSpecPreservesSourceMetaItemID(t *testing.T) {
 	spec, err := ParseTableExportTaskSpec(map[string]interface{}{
 		"mode": "batch",
 		"source": map[string]interface{}{
-			"engine":         map[string]interface{}{"scope": "system", "id": 1},
+			"engine":         map[string]interface{}{"id": 1},
 			"resource":       map[string]interface{}{"kind": "file", "path": map[string]interface{}{"path": "imports/roads.shp"}},
 			"data_type":      "table",
 			"representation": "encoded",
 			"meta_item_id":   12,
 		},
 		"target": map[string]interface{}{
-			"engine":         map[string]interface{}{"scope": "system", "id": 2},
+			"engine":         map[string]interface{}{"id": 2},
 			"resource":       map[string]interface{}{"kind": "native_table", "path": map[string]interface{}{"schema": "public", "table": "roads"}},
 			"data_type":      "table",
 			"representation": "native",
@@ -930,14 +955,14 @@ func TestParseTableExportTaskSpecRejectsEndpointAttributes(t *testing.T) {
 	_, err := ParseTableExportTaskSpec(map[string]interface{}{
 		"mode": "batch",
 		"source": map[string]interface{}{
-			"engine":         map[string]interface{}{"scope": "system", "id": 1},
+			"engine":         map[string]interface{}{"id": 1},
 			"resource":       map[string]interface{}{"kind": "file", "path": map[string]interface{}{"path": "imports/roads.shp"}},
 			"data_type":      "table",
 			"representation": "encoded",
 			"attributes":     map[string]interface{}{"item": map[string]interface{}{"format": "shapefile"}},
 		},
 		"target": map[string]interface{}{
-			"engine":         map[string]interface{}{"scope": "system", "id": 2},
+			"engine":         map[string]interface{}{"id": 2},
 			"resource":       map[string]interface{}{"kind": "native_table", "path": map[string]interface{}{"schema": "public", "table": "roads"}},
 			"data_type":      "table",
 			"representation": "native",
@@ -955,13 +980,13 @@ func minimalNativeToEncodedSpec() TableExportTaskSpec {
 	return TableExportTaskSpec{
 		Mode: modeBatch,
 		Source: EndpointSpec{
-			Engine:           EngineRef{Scope: "system", ID: 1},
+			Engine:           EngineRef{ID: 1},
 			EndpointResource: EndpointResourceSpec{Kind: EndpointResourceKindNativeTable, Path: map[string]interface{}{"name": "public.roads"}},
 			DataType:         dataTypeTable,
 			Representation:   representationNative,
 		},
 		Target: EndpointSpec{
-			Engine:           EngineRef{Scope: "system", ID: 2},
+			Engine:           EngineRef{ID: 2},
 			EndpointResource: EndpointResourceSpec{Kind: EndpointResourceKindFile, Path: map[string]interface{}{"path": "exports/roads.csv"}},
 			DataType:         dataTypeTable,
 			Representation:   representationEncoded,
@@ -974,14 +999,14 @@ func minimalEncodedToNativeSpec() TableExportTaskSpec {
 	return TableExportTaskSpec{
 		Mode: modeBatch,
 		Source: EndpointSpec{
-			Engine:           EngineRef{Scope: "system", ID: 1},
+			Engine:           EngineRef{ID: 1},
 			EndpointResource: EndpointResourceSpec{Kind: EndpointResourceKindFile, Path: map[string]interface{}{"path": "imports/roads.csv"}},
 			DataType:         dataTypeTable,
 			Representation:   representationEncoded,
 			Format:           format.FormatCSV,
 		},
 		Target: EndpointSpec{
-			Engine:           EngineRef{Scope: "system", ID: 2},
+			Engine:           EngineRef{ID: 2},
 			EndpointResource: EndpointResourceSpec{Kind: EndpointResourceKindNativeTable, Path: map[string]interface{}{"schema": "public", "table": "roads"}},
 			DataType:         dataTypeTable,
 			Representation:   representationNative,
@@ -993,14 +1018,14 @@ func minimalEncodedToEncodedSpec() TableExportTaskSpec {
 	return TableExportTaskSpec{
 		Mode: modeBatch,
 		Source: EndpointSpec{
-			Engine:           EngineRef{Scope: "system", ID: 1},
+			Engine:           EngineRef{ID: 1},
 			EndpointResource: EndpointResourceSpec{Kind: EndpointResourceKindObject, Path: map[string]interface{}{"bucket": "imports", "path": "roads.csv"}},
 			DataType:         dataTypeTable,
 			Representation:   representationEncoded,
 			Format:           format.FormatCSV,
 		},
 		Target: EndpointSpec{
-			Engine:           EngineRef{Scope: "system", ID: 2},
+			Engine:           EngineRef{ID: 2},
 			EndpointResource: EndpointResourceSpec{Kind: EndpointResourceKindObject, Path: map[string]interface{}{"bucket": "exports", "path": "roads.csv"}},
 			DataType:         dataTypeTable,
 			Representation:   representationEncoded,

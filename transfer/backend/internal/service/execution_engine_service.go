@@ -8,6 +8,7 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/format"
 	"github.com/addp/common/logger"
 	"github.com/addp/transfer/internal/executor"
 	"github.com/addp/transfer/internal/models"
@@ -464,7 +465,10 @@ func targetCatalogPaths(endpoint planner.EndpointSpec) []string {
 		if objectPath == "" {
 			objectPath = cleanPathValue(path["object"])
 		}
-		return parentObjectCatalogPaths(bucket, objectPath)
+		if shouldScanObjectParent(endpoint.Format) {
+			return parentObjectCatalogPaths(bucket, objectPath)
+		}
+		return objectCatalogPaths(bucket, objectPath)
 	case planner.EndpointResourceKindFile:
 		filePath := cleanPathValue(path["path"])
 		if filePath == "" {
@@ -493,6 +497,26 @@ func parentObjectCatalogPaths(bucket, objectPath string) []string {
 		return []string{bucket + "/" + cleanObjectPath[:idx]}
 	}
 	return []string{bucket}
+}
+
+func objectCatalogPaths(bucket, objectPath string) []string {
+	bucket = strings.Trim(strings.TrimSpace(bucket), "/")
+	if bucket == "" {
+		return nil
+	}
+	cleanObjectPath := strings.Trim(strings.TrimSpace(objectPath), "/")
+	if cleanObjectPath == "" {
+		return []string{bucket}
+	}
+	return []string{bucket + "/" + cleanObjectPath}
+}
+
+func shouldScanObjectParent(formatType format.FormatType) bool {
+	descriptor, ok := format.GetFormatDescriptor(format.NormalizeFormat(string(formatType)))
+	if !ok {
+		return false
+	}
+	return format.HasLayout(descriptor.Layouts, format.LayoutMulti) || format.HasLayout(descriptor.Layouts, format.LayoutWhole)
 }
 
 func parentFileCatalogPaths(filePath string) []string {

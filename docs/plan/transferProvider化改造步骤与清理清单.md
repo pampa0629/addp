@@ -53,7 +53,7 @@ transfer/backend/internal/planner/
 
 1. 解析 task config 中的 source / target。
 2. 区分 engine、resource、data_type、format、spatial、policy。
-3. 查询 System / local engine 配置。
+3. 查询 System engine 配置。
 4. 生成 `TransferPlan`。
 5. 给当前 `pipeline.ConnectorConfig` 生成兼容 adapter 输入。
 
@@ -63,7 +63,6 @@ transfer/backend/internal/planner/
 
 - `resolveConnectorConfig()`
 - `resolveSystemEngine()`
-- `resolveLocalEngine()`
 - `resourceToConnectorConfig()`
 - `inferConnectorType()`
 - S3 / NFS 字段映射逻辑
@@ -85,7 +84,7 @@ transfer/backend/internal/resourceadapter/
 
 读取侧：
 
-- system / local engine -> `contentio.Reader`
+- System engine -> `contentio.Reader`
 - multi refs -> `contentio.Reader` + `[]format.RelatedRef`
 - engine-native table -> native cursor / batch reader adapter
 
