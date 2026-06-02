@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	enginePlugin "github.com/addp/common/engine/plugin"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/models"
 )
@@ -185,7 +186,7 @@ func TestBuildFromMeta(t *testing.T) {
 	if tree.Type != "server" {
 		t.Errorf("tree.Type = %s, want %s", tree.Type, "server")
 	}
-	if tree.Locator != "addp://engine/1/path/?type=root&node_id=99" {
+	if tree.Locator != "addp://engine/1/path/?type=server&node_id=99" {
 		t.Errorf("tree.Locator = %s, want explicit catalog root locator", tree.Locator)
 	}
 
@@ -217,6 +218,55 @@ func TestBuildFromMeta(t *testing.T) {
 		if itemCount, ok := child.Metadata["item_count"].(int); !ok || itemCount != 10 {
 			t.Errorf("child.Metadata[item_count] = %v, want 10", child.Metadata["item_count"])
 		}
+	}
+}
+
+func TestBuildFromMetaFallbackRootUsesCatalogRootTermLabel(t *testing.T) {
+	builder := NewTreeBuilder(nil)
+	caps := enginePlugin.NewObjectCapabilities("minio")
+	capsJSON, err := enginePlugin.MarshalEngineCapabilities(caps)
+	if err != nil {
+		t.Fatalf("MarshalEngineCapabilities() error = %v", err)
+	}
+	capabilities := models.JSONString(capsJSON)
+
+	engine := &models.Engine{
+		ID:           7,
+		Name:         "Object Store",
+		EngineType:   "minio",
+		Capabilities: &capabilities,
+	}
+	tree, err := builder.BuildFromMeta(engine, nil, -1)
+	if err != nil {
+		t.Fatalf("BuildFromMeta() error = %v", err)
+	}
+	if tree.Type != string(TypeService) {
+		t.Fatalf("root type = %s, want %s", tree.Type, TypeService)
+	}
+	if tree.TypeLabel != enginePlugin.CatalogTermI18nKey(string(TypeService)) {
+		t.Fatalf("root type label = %s", tree.TypeLabel)
+	}
+}
+
+func TestCatalogRootResourceTypePrefersCatalogModelRootTerm(t *testing.T) {
+	caps := enginePlugin.NewObjectCapabilities("custom_object")
+	caps.EngineFamily = "tabular"
+	caps.EngineType = "postgresql"
+	capsJSON, err := enginePlugin.MarshalEngineCapabilities(caps)
+	if err != nil {
+		t.Fatalf("MarshalEngineCapabilities() error = %v", err)
+	}
+	capabilities := models.JSONString(capsJSON)
+
+	engine := &models.Engine{
+		ID:           8,
+		Name:         "Custom Root",
+		EngineType:   "postgresql",
+		Capabilities: &capabilities,
+	}
+
+	if got := CatalogRootResourceType(engine); got != TypeService {
+		t.Fatalf("CatalogRootResourceType() = %s, want %s", got, TypeService)
 	}
 }
 
@@ -487,7 +537,7 @@ func TestConvertNodeToTree(t *testing.T) {
 func TestGetNodeByLocator(t *testing.T) {
 	// 构建测试树
 	tree := &TreeNode{
-		Locator: "addp://engine/1/path/?type=root",
+		Locator: "addp://engine/1/path/?type=server",
 		Label:   "Root",
 		Type:    "engine",
 		Children: []*TreeNode{
@@ -514,7 +564,7 @@ func TestGetNodeByLocator(t *testing.T) {
 	}{
 		{
 			name:     "查找根节点",
-			locator:  "addp://engine/1/path/?type=root",
+			locator:  "addp://engine/1/path/?type=server",
 			wantNil:  false,
 			wantType: "engine",
 		},
@@ -555,7 +605,7 @@ func TestGetNodeByLocator(t *testing.T) {
 func TestFilterTreeByType(t *testing.T) {
 	// 构建测试树
 	tree := &TreeNode{
-		Locator: "addp://engine/1/path/?type=root",
+		Locator: "addp://engine/1/path/?type=server",
 		Label:   "Root",
 		Type:    "engine",
 		Children: []*TreeNode{

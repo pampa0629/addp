@@ -107,6 +107,52 @@ func TestObjectStorageResourceFromNodeUsesKnownMIMEWhenExtensionUnknown(t *testi
 	}
 }
 
+func TestStorageFileRefFromEntryProjectsCatalogEntrySummary(t *testing.T) {
+	t.Parallel()
+
+	sizeBytes := int64(42)
+	modifiedAt := time.Unix(300, 0)
+	entry, ok := StorageFileRefFromEntry(plugin.CatalogEntry{
+		Name: "roads.csv",
+		Path: plugin.FileItemPath(7, "datasets/roads.csv"),
+		Role: plugin.CatalogRoleLeaf,
+		Storage: &plugin.CatalogStorageFacts{
+			Path:        "datasets/roads.csv",
+			ContentType: "text/csv",
+			SizeBytes:   &sizeBytes,
+		},
+		UpdatedAt: &modifiedAt,
+	})
+	if !ok {
+		t.Fatal("StorageFileRefFromEntry() ok = false")
+	}
+	if entry.Name != "roads.csv" || entry.Path != "datasets/roads.csv" || entry.ContentType != "text/csv" {
+		t.Fatalf("entry = %#v", entry)
+	}
+	if entry.Size != 42 {
+		t.Fatalf("entry size = %d, want 42", entry.Size)
+	}
+	if !entry.ModifiedAt.Equal(modifiedAt) {
+		t.Fatalf("entry modified_at = %v, want %v", entry.ModifiedAt, modifiedAt)
+	}
+}
+
+func TestStorageDirectoryRefFromEntryFallsBackToCatalogPath(t *testing.T) {
+	t.Parallel()
+
+	entry, ok := StorageDirectoryRefFromEntry(plugin.CatalogEntry{
+		Name: "datasets",
+		Path: plugin.FileDirectoryPath(7, "datasets"),
+		Role: plugin.CatalogRoleBranch,
+	})
+	if !ok {
+		t.Fatal("StorageDirectoryRefFromEntry() ok = false")
+	}
+	if entry.Name != "datasets" || entry.Path != "datasets" {
+		t.Fatalf("entry = %#v", entry)
+	}
+}
+
 func TestObjectResourcesByCompositePrefixAddsPartitionedWholeScopeCandidate(t *testing.T) {
 	t.Parallel()
 

@@ -26,6 +26,10 @@
 
 `DataType` 回答“一个已确认的数据项在平台语义上是什么”。文件、对象、目录、bucket、prefix、collection 等是 storage / catalog 形态或引擎原生术语，不是 ADDP 基础数据类型。
 
-`xxxInfo` 结构只描述对应 data type 的通用结构事实，例如表字段、文档页数、媒体宽高、容器 children 或图结构摘要。格式私有事实应留在 `common/format` 的具体格式插件结果中，由 Meta 映射到 `format_info.<format>`；空间、统计、提取等横切事实由上层按 attributes 规范映射到 `capabilities.*`。
+`xxxInfo` 结构只描述对应 data type 的通用结构事实，例如表字段、文档页数、媒体宽高、容器 children 或图结构摘要。这里的 `Info` 是 data type 的共享语义模型，不等同于 engine catalog facts，也不等同于 Meta 的持久化 attributes。
+
+不为 engine 原生层级新增 `NamespaceInfo`、`DatabaseInfo`、`BucketInfo`、`ObjectInfo`、`FileInfo` 等类型。database、schema、bucket、directory、prefix、file、object 等都先由 `common/engine/plugin` 的 `CatalogEntry` / `CatalogFacts` 表达；只有当内容已经被确认为某个 ADDP data type 后，才进入本包对应的 `TableInfo`、`DocumentInfo`、`MediaInfo`、`ContainerInfo` 或 `GraphInfo`。
+
+格式私有事实应留在 `common/format` 的具体格式插件结果中，由 Meta 映射到 `format_info.<format>`；空间、统计、提取等横切事实由上层按 attributes 规范映射到 `capabilities.*`。
 
 `AccessIndex` 暂时放在本包，是因为 format、Meta 和 Manager preview 需要复用同一 JSON 结构。它不是 data type，也不是 type info；标准落点由 attributes 规范定义。

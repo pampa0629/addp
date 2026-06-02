@@ -13,6 +13,7 @@ type sampleCatalogProvider struct {
 	namespaces []plugin.CatalogEntry
 	items      map[string][]plugin.CatalogEntry
 	parents    []plugin.CatalogPath
+	model      plugin.CatalogModelSpec
 }
 
 func (p *sampleCatalogProvider) Type() string { return "sample" }
@@ -40,6 +41,9 @@ func (p *sampleCatalogProvider) Capabilities() plugin.EngineCapabilities {
 }
 
 func (p *sampleCatalogProvider) CatalogModel() plugin.CatalogModelSpec {
+	if p.model.PathVersion != "" {
+		return p.model
+	}
 	return plugin.TabularCatalogModel(plugin.CatalogTermSchema)
 }
 
@@ -103,6 +107,25 @@ func TestGenerateCatalogSampleQueryFallsBackToFirstItem(t *testing.T) {
 	}
 }
 
+func TestGenerateCatalogSampleQueryRequiresTableLeafModel(t *testing.T) {
+	cp := &sampleCatalogProvider{
+		model: plugin.ObjectCatalogModel(),
+		namespaces: []plugin.CatalogEntry{
+			namespaceNode("bucket"),
+		},
+		items: map[string][]plugin.CatalogEntry{
+			"bucket": {
+				itemNode("object.csv", 12),
+			},
+		},
+	}
+
+	query, ok := generateCatalogSampleQuery(context.Background(), cp, cp, nil, 1, "postgresql")
+	if ok || query != "" {
+		t.Fatalf("generateCatalogSampleQuery() = (%q, %v), want no SQL sample for non-table catalog", query, ok)
+	}
+}
+
 func TestTableSampleSQLEscapesIdentifiers(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -163,6 +186,34 @@ func TestListCatalogChildrenEmptyPathReturnsExplicitRoot(t *testing.T) {
 	}
 	if len(cp.parents) != 0 {
 		t.Fatalf("provider was called with parents %#v", cp.parents)
+	}
+}
+
+func TestListCatalogChildrenExplicitRootForwardsToProvider(t *testing.T) {
+	cp := &sampleCatalogProvider{
+		namespaces: []plugin.CatalogEntry{
+			namespaceNode("public"),
+		},
+	}
+	plugin.Register(cp)
+	t.Cleanup(func() {
+		plugin.Unregister(cp.Type())
+	})
+
+	rootPath := plugin.CatalogRootPath(cp.CatalogModel(), 99)
+	nodes, err := ListCatalogChildren(context.Background(), &models.Engine{
+		ID:         99,
+		Name:       "Analytics DB",
+		EngineType: cp.Type(),
+	}, rootPath, plugin.ListOptions{})
+	if err != nil {
+		t.Fatalf("ListCatalogChildren(root) error = %v", err)
+	}
+	if len(nodes) != 1 || nodes[0].Name != "public" {
+		t.Fatalf("nodes = %#v, want public namespace", nodes)
+	}
+	if len(cp.parents) != 1 || !plugin.IsCatalogRootPath(cp.parents[0]) {
+		t.Fatalf("provider parents = %#v, want explicit root", cp.parents)
 	}
 }
 

@@ -25,10 +25,7 @@ func (r *ScanRepository) EnsureObjectCatalogPrefixPath(
 		}
 		fullName := metapath.ComposeNodeFullName(segment, currentParent, "/")
 		pathSoFar := strings.Join(prefixSegments[:idx+1], "/")
-		attrs := models.JSONMap{
-			"bucket": bucketNode.Name,
-			"path":   pathSoFar + "/",
-		}
+		attrs := objectPrefixNodeAttributes(bucketNode.Name, pathSoFar+"/")
 		childNode, err := r.UpsertNode(tenantID, engineID, currentParent, "prefix", segment, &fullName, attrs)
 		if err != nil {
 			return nil, err
@@ -71,10 +68,7 @@ func (r *ScanRepository) EnsureObjectCatalogPrefixRelativePath(
 		}
 		fullName := metapath.ComposeNodeFullName(segment, current, "/")
 		pathSoFar := metapath.JoinObjectPathParts(strings.Trim(scanPathPrefix, "/"), strings.Join(segments[:idx+1], "/"))
-		attrs := models.JSONMap{
-			"bucket": bucketNode.Name,
-			"path":   pathSoFar + "/",
-		}
+		attrs := objectPrefixNodeAttributes(bucketNode.Name, pathSoFar+"/")
 		childNode, err := r.UpsertNode(tenantID, engineID, current, "prefix", segment, &fullName, attrs)
 		if err != nil {
 			return nil, nil, err
@@ -83,6 +77,16 @@ func (r *ScanRepository) EnsureObjectCatalogPrefixRelativePath(
 		created = append(created, childNode)
 	}
 	return current, created, nil
+}
+
+func objectPrefixNodeAttributes(bucket, path string) models.JSONMap {
+	return models.JSONMap{
+		"schema_version": 1,
+		"storage": map[string]interface{}{
+			"bucket": bucket,
+			"path":   path,
+		},
+	}
 }
 
 func (r *ScanRepository) SoftDeleteObjectMetaItemsMissingFingerprints(tenantID, engineID uint, bucketName string, scannedFingerprints map[string]bool) ([]models.MetaItem, error) {

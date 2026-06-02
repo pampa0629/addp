@@ -100,11 +100,11 @@ func ResolveFileCatalogPath(ctx context.Context, callbacks FileCatalogCallbacks,
 		if callbacks.GetFileStorageFactsFunc == nil {
 			return nil, fmt.Errorf("file catalog callbacks GetFileStorageFactsFunc is nil")
 		}
-		meta, err := callbacks.GetFileStorageFactsFunc(ctx, connInfo, path.StringPath())
+		storageFacts, err := callbacks.GetFileStorageFactsFunc(ctx, connInfo, path.StringPath())
 		if err != nil {
 			return nil, err
 		}
-		return fileStorageFactsCatalogEntry(engineID, path, meta), nil
+		return fileStorageFactsCatalogEntry(engineID, path, storageFacts), nil
 	}
 
 	return &CatalogEntry{
@@ -121,28 +121,28 @@ func ResolveFileCatalogPath(ctx context.Context, callbacks FileCatalogCallbacks,
 
 // DescribeFileCatalogFacts maps file storage facts to CatalogFactsProvider output.
 func DescribeFileCatalogFacts(ctx context.Context, callbacks FileCatalogCallbacks, connInfo ConnectionInfo, engineID uint, path CatalogPath) (*CatalogFacts, error) {
-	if callbacks.GetFileStorageFactsFunc == nil {
-		return nil, fmt.Errorf("file catalog callbacks GetFileStorageFactsFunc is nil")
-	}
 	path = NormalizeFileCatalogSegments(path)
 	if _, err := requireCatalogBusinessPath(path, FileCatalogModel()); err != nil {
 		return nil, err
 	}
-	meta, err := callbacks.GetFileStorageFactsFunc(ctx, connInfo, path.StringPath())
+	if callbacks.GetFileStorageFactsFunc == nil {
+		return nil, fmt.Errorf("file catalog callbacks GetFileStorageFactsFunc is nil")
+	}
+	storageFacts, err := callbacks.GetFileStorageFactsFunc(ctx, connInfo, path.StringPath())
 	if err != nil {
 		return nil, err
 	}
-	updatedAt := meta.ModifiedAt
-	sizeBytes := meta.Size
+	updatedAt := storageFacts.ModifiedAt
+	sizeBytes := storageFacts.Size
 	return &CatalogFacts{
 		Path: path,
 		Kind: fileKindFromPath(path),
 		Storage: &CatalogStorageFacts{
-			Name:        meta.Name,
-			Path:        meta.Path,
-			ContentType: meta.ContentType,
-			ETag:        meta.ETag,
-			Extension:   strings.ToLower(filepath.Ext(meta.Name)),
+			Name:        storageFacts.Name,
+			Path:        storageFacts.Path,
+			ContentType: storageFacts.ContentType,
+			ETag:        storageFacts.ETag,
+			Extension:   strings.ToLower(filepath.Ext(storageFacts.Name)),
 			SizeBytes:   &sizeBytes,
 		},
 		UpdatedAt: &updatedAt,
@@ -171,20 +171,17 @@ func FileLeafCatalogEntry(parent CatalogPath, facts StorageObjectFacts) CatalogE
 		Term: CatalogTermFile,
 		Kind: CatalogKindFile,
 		Role: CatalogRoleLeaf,
-		Storage: &CatalogStorageFacts{
+		Storage: CatalogEntryStorageSummary(&CatalogStorageFacts{
 			Path:        NormalizeFileCatalogPath(facts.Path),
 			ContentType: facts.ContentType,
 			ETag:        facts.ETag,
 			SizeBytes:   &sizeBytes,
-		},
+		}),
 		UpdatedAt: &updatedAt,
 	}
 }
 
 func fileKindFromPath(path CatalogPath) string {
-	if len(path.Segments) == 0 {
-		return CatalogKindFile
-	}
 	last := path.Segments[len(path.Segments)-1]
 	if last.Kind != "" {
 		return last.Kind
@@ -192,7 +189,7 @@ func fileKindFromPath(path CatalogPath) string {
 	return CatalogKindFile
 }
 
-func fileStorageFactsCatalogEntry(engineID uint, path CatalogPath, meta *StorageObjectFacts) *CatalogEntry {
+func fileStorageFactsCatalogEntry(engineID uint, path CatalogPath, facts *StorageObjectFacts) *CatalogEntry {
 	if path.Version == "" {
 		path.Version = CatalogPathVersion
 	}
@@ -210,19 +207,19 @@ func fileStorageFactsCatalogEntry(engineID uint, path CatalogPath, meta *Storage
 			kind = last.Kind
 		}
 	}
-	updatedAt := meta.ModifiedAt
+	updatedAt := facts.ModifiedAt
 	return &CatalogEntry{
-		Name: meta.Name,
+		Name: facts.Name,
 		Path: path,
 		Term: term,
 		Kind: kind,
 		Role: CatalogRoleLeaf,
-		Storage: &CatalogStorageFacts{
-			Path:        meta.Path,
-			ContentType: meta.ContentType,
-			ETag:        meta.ETag,
-			SizeBytes:   &meta.Size,
-		},
+		Storage: CatalogEntryStorageSummary(&CatalogStorageFacts{
+			Path:        facts.Path,
+			ContentType: facts.ContentType,
+			ETag:        facts.ETag,
+			SizeBytes:   &facts.Size,
+		}),
 		UpdatedAt: &updatedAt,
 	}
 }

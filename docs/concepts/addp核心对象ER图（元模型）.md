@@ -111,7 +111,7 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 | 数据项   | DataItem   | 最小数据实体（表/视图/文件/对象/集合），是管理和操作的最小单元，属于存储类 Engine |
 
 - `DataNode` 是容器，可包含多个子 `DataNode` 或多个 `DataItem`（树形结构，parent_node_id 自引用）
-- `DataNode` 和 `DataItem` 都属于具有**存储能力**的 `Engine`（RelationalStorage / NamespaceItemStorage / ObjectStorage / FileStorage）
+- `DataNode` 和 `DataItem` 都属于具有**存储能力**的 `Engine`（RelationalStorage / BranchLeafStorage / ObjectStorage / FileStorage）
 
 ---
 

@@ -62,7 +62,7 @@ func (s *TaskProviderRegistryService) Register() error {
 				"description":  "提取文件元数据（图片、视频、文档）",
 			},
 		},
-		"supported_source_models": []string{"tabular_catalog", "namespace_item_catalog", "object_catalog", "file_catalog"},
+		"supported_source_models": []string{"tabular_catalog", "branch_leaf_catalog", "object_catalog", "file_catalog"},
 		"features":                []string{"async", "cron", "spatial_metadata", "vector_index"},
 		"create_task_url":         "http://localhost:5175/#/scan/new",
 		"edit_task_url":           "http://localhost:5175/#/scan/:id",

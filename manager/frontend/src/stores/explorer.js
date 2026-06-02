@@ -3,7 +3,6 @@ import { parseLocator } from '@addp/common-frontend'
 import client from '@/api/client'
 
 const SCAN_RUN_POLL_INTERVAL_MS = 2000
-const SCAN_RUN_TIMEOUT_MS = 30 * 60 * 1000
 const ACTIVE_SCAN_STATUSES = new Set(['pending', 'running'])
 const SUCCESS_SCAN_STATUSES = new Set(['success'])
 const FAILED_SCAN_STATUSES = new Set(['failed', 'timeout', 'cancelled', 'canceled'])
@@ -65,7 +64,8 @@ export const useExplorerStore = defineStore('explorer', {
   getters: {
     catalogRootNodes: (state) => {
       return state.engines.map(engine => {
-        const locator = `addp://engine/${engine.id}/path/?type=root`
+        const rootType = catalogRootTypeForEngine(engine)
+        const locator = engineRootLocator(engine)
         const tree = state.engineTrees[engine.id]
 
         if (tree) {
@@ -83,7 +83,7 @@ export const useExplorerStore = defineStore('explorer', {
           id: locator,
           locator: locator,
           label: engine.name,
-          type: 'root',
+          type: rootType,
           engineId: engine.id,
           engineType: engine.engine_type,
           engineName: engine.name,
@@ -114,14 +114,14 @@ export const useExplorerStore = defineStore('explorer', {
 
       // 未加载树时，仍允许选中 catalog root 占位节点。
       const engine = state.engines.find(e =>
-        state.selectedLocator === `addp://engine/${e.id}/path/?type=root`
+        state.selectedLocator === engineRootLocator(e)
       )
       if (engine) {
         return {
           id: state.selectedLocator,
           locator: state.selectedLocator,
           label: engine.name,
-          type: 'root',
+          type: catalogRootTypeForEngine(engine),
           engineId: engine.id,
           engineType: engine.engine_type,
           engineName: engine.name
@@ -247,7 +247,7 @@ export const useExplorerStore = defineStore('explorer', {
       }
     },
 
-    async refreshTree(locator) {
+    async refreshTree(locator, hooks = {}) {
       this.refreshingLocators.add(locator)
 
       try {
@@ -259,7 +259,9 @@ export const useExplorerStore = defineStore('explorer', {
         const result = response?.data || response
         const run = result?.run || result?.data?.run
         if (run) {
-          result.run = await waitForScanRun(run)
+          notifyRefreshHook(hooks.onSubmitted, run)
+          result.run = await waitForScanRun(run, hooks)
+          notifyRefreshHook(hooks.onScanCompleted, result.run)
         }
 
         this.clearEngineNodeCache(loc.engineId)
@@ -279,8 +281,8 @@ export const useExplorerStore = defineStore('explorer', {
     /**
      * 刷新节点（仅重载树，不重新拉取预览）
      */
-    async refreshNode(locator) {
-      return await this.refreshTree(locator)
+    async refreshNode(locator, hooks = {}) {
+      return await this.refreshTree(locator, hooks)
     },
 
     /**
@@ -801,6 +803,18 @@ function depthCovers(cachedDepth, requiredDepth) {
   return cachedDepth === -1 || (requiredDepth !== -1 && Number(cachedDepth || 0) >= Number(requiredDepth || 0))
 }
 
+function catalogRootTypeForEngine(engine) {
+  const type = String(engine?.engine_type || '').trim().toLowerCase()
+  if (type === 'minio' || type === 's3') return 'service'
+  if (type === 'nfs' || type === 'nas') return 'root'
+  if (['postgresql', 'mysql', 'doris', 'clickhouse', 'spark_sql', 'mongodb', 'neo4j'].includes(type)) return 'server'
+  return 'root'
+}
+
+function engineRootLocator(engine) {
+  return `addp://engine/${engine.id}/path/?type=${catalogRootTypeForEngine(engine)}`
+}
+
 /**
  * 在树中查找节点（通过 locator）
  */
@@ -825,20 +839,27 @@ function delay(ms) {
   return new Promise(resolve => window.setTimeout(resolve, ms))
 }
 
+function notifyRefreshHook(hook, payload) {
+  if (typeof hook === 'function') {
+    hook(payload)
+  }
+}
+
 function scanRunIDOf(run) {
   return run?.execution_id || run?.executionId || run?.id || ''
 }
 
-async function waitForScanRun(run) {
+async function waitForScanRun(run, hooks = {}) {
   const runID = scanRunIDOf(run)
   if (!runID) {
     return run
   }
 
-  const startedAt = Date.now()
   let latest = run
+  notifyRefreshHook(hooks.onProgress, latest)
   while (true) {
     latest = await client.get(`/meta/scan/runs/${runID}`)
+    notifyRefreshHook(hooks.onProgress, latest)
     const status = String(latest?.status || '').toLowerCase()
     if (SUCCESS_SCAN_STATUSES.has(status)) {
       return latest
@@ -849,9 +870,6 @@ async function waitForScanRun(run) {
     }
     if (!ACTIVE_SCAN_STATUSES.has(status) && status) {
       return latest
-    }
-    if (Date.now() - startedAt > SCAN_RUN_TIMEOUT_MS) {
-      throw new Error('scan is still running in the background')
     }
     await delay(SCAN_RUN_POLL_INTERVAL_MS)
   }

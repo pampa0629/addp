@@ -9,3 +9,198 @@ other = "资源缓存已刷新"
 
 [manager.cache.failed]
 other = "刷新缓存失败"
+
+[manager.error.invalid_engine_id]
+other = "无效的存储引擎 ID"
+
+[manager.error.invalid_engine_id_parameter]
+other = "无效的存储引擎 ID 参数"
+
+[manager.error.missing_locator]
+other = "缺少资源定位符参数"
+
+[manager.error.engine_access_denied]
+other = "无权访问该存储引擎"
+
+[manager.error.meta_scan_required]
+other = "该目标尚未完成元数据扫描"
+
+[manager.error.missing_engine_id_or_storage_ref]
+other = "缺少存储引擎 ID 或存储内容引用"
+
+[manager.error.search_keyword_too_short]
+other = "搜索关键词至少需要 2 个字符"
+
+[manager.error.schema_required]
+other = "缺少 Schema 参数"
+
+[manager.error.table_required]
+other = "缺少数据项名称参数"
+
+[manager.error.schema_and_table_required]
+other = "缺少 Schema 或数据项名称参数"
+
+[manager.error.system_client_unavailable]
+other = "系统服务客户端不可用"
+
+[manager.error.system_client_not_initialized]
+other = "系统服务客户端未初始化"
+
+[manager.error.engine_not_found]
+other = "存储引擎不存在"
+
+[manager.error.unsupported_postgres_only]
+other = "仅支持 PostgreSQL 存储引擎"
+
+[manager.error.database_connection_failed]
+other = "数据库连接失败"
+
+[manager.error.feature_not_found]
+other = "要素不存在"
+
+[manager.error.feature_invalid_geometry]
+other = "要素没有有效几何"
+
+[manager.error.invalid_z_parameter]
+other = "无效的 Z 参数，取值范围为 0-22"
+
+[manager.error.invalid_x_parameter]
+other = "无效的 X 参数"
+
+[manager.error.invalid_y_parameter]
+other = "无效的 Y 参数"
+
+[manager.error.invalid_srid_parameter]
+other = "无效的空间参考参数"
+
+[manager.error.invalid_geojson]
+other = "无效的 GeoJSON 数据"
+
+[manager.error.query_failed]
+other = "查询失败"
+
+[manager.error.query_count_failed]
+other = "记录数查询失败"
+
+[manager.error.query_extent_failed]
+other = "范围查询失败"
+
+[manager.error.tile_config_failed]
+other = "获取瓦片配置失败"
+
+[manager.error.parse_form_failed]
+other = "解析表单失败"
+
+[manager.error.file_required]
+other = "缺少数据文件"
+
+[manager.error.read_file_failed]
+other = "读取数据文件失败"
+
+[manager.error.target_engine_id_required]
+other = "缺少目标存储引擎 ID"
+
+[manager.error.invalid_target_engine_id]
+other = "无效的目标存储引擎 ID"
+
+[manager.error.locator_engine_mismatch]
+other = "资源定位符中的存储引擎 ID 与路径参数不一致"
+
+[manager.error.item_refresh_requires_locator]
+other = "刷新数据项需要数据项定位符"
+
+[manager.error.item_refresh_target_required]
+other = "缺少带 item_id 的资源定位符或请求体 item_id"
+
+[manager.error.missing_param]
+other = "缺少参数"
+
+[manager.error.invalid_param]
+other = "无效参数"
+
+[manager.error.hybrid_search_not_configured]
+other = "混合检索未配置"
+
+[manager.error.missing_query]
+other = "缺少搜索关键词"
+
+[manager.error.search_history_unavailable]
+other = "搜索历史不可用"
+
+[manager.error.unauthorized]
+other = "未授权"
+
+[manager.error.load_history_failed]
+other = "加载搜索历史失败"
+
+[manager.error.invalid_history_id]
+other = "无效的搜索历史 ID"
+
+[manager.error.delete_history_failed]
+other = "删除搜索历史失败"
+
+[manager.error.clear_history_failed]
+other = "清空搜索历史失败"
+
+[manager.error.invalid_request_body]
+other = "无效的请求体"
+
+[manager.error.quick_view_record_not_found]
+other = "快显记录不存在，请先启动 MVT 准备工作"
+
+[manager.error.quick_view_preparation_needed]
+other = "快显准备尚未完成，请先完成 MVT 准备工作"
+
+[manager.error.quick_view_already_generating]
+other = "该数据项的快显任务正在生成中"
+
+[manager.error.quick_view_min_zoom_required]
+other = "缺少最小缩放级别，请先确认快显配置"
+
+[manager.error.quick_view_max_zoom_required]
+other = "缺少最大缩放级别，请先确认快显配置"
+
+[manager.error.quick_view_cancel_status]
+other = "只有生成中的快显任务可以取消"
+
+[manager.error.quick_view_resume_status]
+other = "只有已取消或失败的快显任务可以恢复"
+
+[manager.error.quick_view_invalid_mode]
+other = "无效的显示模式"
+
+[manager.error.quick_view_geometry_missing]
+other = "元数据中缺少几何字段"
+
+[manager.error.import_table_name_required]
+other = "无法从文件名推断目标数据项名称，请手动填写"
+
+[manager.error.import_zip_required]
+other = "请上传包含 .shp/.dbf/.shx 文件的 ZIP 包"
+
+[manager.error.import_unsupported_format]
+other = "不支持的文件格式，目前仅支持 ZIP 包"
+
+[manager.error.import_source_not_configured]
+other = "导入暂存源引擎未配置，请配置 MANAGER_IMPORT_SOURCE_ENGINE_ID 或启用 System 集成"
+
+[manager.error.import_source_not_matched]
+other = "没有匹配当前导入暂存 MinIO 的对象存储引擎"
+
+[manager.error.import_source_ambiguous]
+other = "匹配到多个导入暂存对象存储引擎，请配置 MANAGER_IMPORT_SOURCE_ENGINE_ID"
+
+[manager.error.import_source_id_invalid]
+other = "MANAGER_IMPORT_SOURCE_ENGINE_ID 必须为正整数"
+
+[manager.error.import_source_inactive]
+other = "导入暂存源引擎未启用"
+
+[manager.error.import_zip_missing_shp]
+other = "ZIP 包缺少 .shp 文件"
+
+[manager.error.import_zip_basename_mismatch]
+other = "ZIP 包中的 Shapefile 组件必须使用相同 basename"
+
+[manager.error.import_zip_missing_required]
+other = "ZIP 包缺少同一 basename 的 .shp/.dbf/.shx 组件集合"

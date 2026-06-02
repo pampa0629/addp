@@ -58,7 +58,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "清除指定引擎资源缓存，engine_id 为 all 时清除全部缓存 | Clear engine resource cache",
+                "description": "清除指定存储引擎缓存，engine_id 为 all 时清除全部缓存 | Clear storage engine cache",
                 "produces": [
                     "application/json"
                 ],
@@ -100,14 +100,14 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "清除并重新预加载资源缓存 | Clear and preload resource cache",
+                "description": "清除并重新预加载存储引擎缓存 | Clear and preload storage engine cache",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Meta Cache"
                 ],
-                "summary": "刷新资源缓存 | Refresh resource cache",
+                "summary": "刷新存储引擎缓存 | Refresh storage engine cache",
                 "responses": {
                     "200": {
                         "description": "刷新结果 | Refresh result",
@@ -168,7 +168,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取指定引擎下已扫描的数据项，可按命名空间过滤 | List scanned metadata items for an engine",
+                "description": "获取指定引擎下已扫描的数据项，可按 catalog 第一层业务分支过滤 | List scanned metadata items for an engine, optionally filtered by catalog first business branch",
                 "produces": [
                     "application/json"
                 ],
@@ -186,8 +186,8 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "命名空间 | Namespace",
-                        "name": "namespace",
+                        "description": "catalog 第一层业务分支名称 | Catalog first business branch name",
+                        "name": "branch",
                         "in": "query"
                     }
                 ],
@@ -925,14 +925,14 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "为当前租户下尚未完成元数据扫描的资源创建后台扫描运行 | Create background scan runs for resources that have not been scanned for current tenant",
+                "description": "为当前租户下尚未完成元数据扫描的存储引擎创建后台扫描运行 | Create background scan runs for engines that have not been scanned for current tenant",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Meta Scan"
                 ],
-                "summary": "提交未扫描资源后台扫描 | Submit background scans for unscanned resources",
+                "summary": "提交未扫描存储引擎后台扫描 | Submit background scans for unscanned engines",
                 "responses": {
                     "202": {
                         "description": "已提交的扫描运行 | Submitted scan runs",
@@ -1852,7 +1852,7 @@ const docTemplate = `{
                     }
                 },
                 "engine_id": {
-                    "description": "资源ID",
+                    "description": "存储引擎 ID",
                     "type": "integer"
                 },
                 "force": {

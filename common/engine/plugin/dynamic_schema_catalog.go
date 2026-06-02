@@ -16,7 +16,7 @@ const (
 func DynamicSchemaCatalogModel() CatalogModelSpec {
 	return CatalogModelSpec{
 		PathVersion: CatalogPathVersion,
-		RootTerm:    "server",
+		RootTerm:    CatalogTermServer,
 		Levels: []CatalogLevelSpec{
 			{Term: CatalogTermDatabase, Kinds: []string{CatalogKindNamespace}, Role: CatalogRoleBranch, I18nKey: CatalogTermI18nKey(CatalogTermDatabase)},
 			{Term: CatalogTermCollection, Kinds: []string{CatalogKindCollection}, Role: CatalogRoleLeaf, I18nKey: CatalogTermI18nKey(CatalogTermCollection)},
@@ -92,11 +92,11 @@ func ResolveDynamicSchemaCatalogPath(ctx context.Context, callbacks DynamicSchem
 	if len(segments) == 1 {
 		return &CatalogEntry{Name: last.Name, Path: path, Term: CatalogTermDatabase, Kind: CatalogKindNamespace, Role: CatalogRoleBranch}, nil
 	}
-	meta, err := DescribeDynamicSchemaCatalogFacts(ctx, callbacks, engineID, connInfo, path, CatalogFactsOptions{})
+	facts, err := DescribeDynamicSchemaCatalogFacts(ctx, callbacks, engineID, connInfo, path, CatalogFactsOptions{})
 	if err != nil {
 		return nil, err
 	}
-	return &CatalogEntry{Name: last.Name, Path: path, Term: CatalogTermCollection, Kind: CatalogKindCollection, Role: CatalogRoleLeaf, Table: CatalogFactsTableInfo(meta)}, nil
+	return &CatalogEntry{Name: last.Name, Path: path, Term: CatalogTermCollection, Kind: CatalogKindCollection, Role: CatalogRoleLeaf, Table: CatalogEntryTableInfo(facts)}, nil
 }
 
 func DescribeDynamicSchemaCatalogFacts(ctx context.Context, callbacks DynamicSchemaCatalogCallbacks, engineID uint, connInfo ConnectionInfo, path CatalogPath, opts CatalogFactsOptions) (*CatalogFacts, error) {
@@ -149,7 +149,7 @@ func DynamicCollectionCatalogEntry(parent CatalogPath, database, name string, fa
 		Term: CatalogTermCollection,
 		Kind: CatalogKindCollection,
 		Role: CatalogRoleLeaf,
-		Table: &datatype.TableInfo{
+		Table: CatalogEntryTableSummary(&datatype.TableInfo{
 			Name:      name,
 			Kind:      CatalogKindCollection,
 			RowCount:  &rowCount,
@@ -157,6 +157,6 @@ func DynamicCollectionCatalogEntry(parent CatalogPath, database, name string, fa
 			Native: map[string]interface{}{
 				"database": database,
 			},
-		},
+		}),
 	}
 }

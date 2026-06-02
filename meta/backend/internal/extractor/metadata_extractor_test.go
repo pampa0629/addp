@@ -29,7 +29,7 @@ func TestExtractObjectMetadataOnDemandUsesUnifiedMediaEnrichment(t *testing.T) {
 		Name:       "addp",
 		Depth:      1,
 		FullName:   "addp",
-		Attributes: models.JSONMap{"bucket": "addp"},
+		Attributes: models.JSONMap{"schema_version": 1, "storage": map[string]interface{}{"bucket": "addp"}},
 	}
 	if err := db.Create(&bucket).Error; err != nil {
 		t.Fatalf("create bucket node: %v", err)
@@ -102,7 +102,7 @@ func TestExtractObjectMetadataOnDemandUsesUnifiedContainerEnrichment(t *testing.
 		Name:       "addp",
 		Depth:      1,
 		FullName:   "addp",
-		Attributes: models.JSONMap{"bucket": "addp"},
+		Attributes: models.JSONMap{"schema_version": 1, "storage": map[string]interface{}{"bucket": "addp"}},
 	}
 	if err := db.Create(&bucket).Error; err != nil {
 		t.Fatalf("create bucket node: %v", err)

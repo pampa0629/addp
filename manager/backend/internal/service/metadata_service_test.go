@@ -767,6 +767,7 @@ func TestRefreshNodeSubmitsDeepScanRun(t *testing.T) {
 
 	var gotScanPayload map[string]interface{}
 	var gotScanAuth string
+	treeRequests := 0
 	metaServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
@@ -780,11 +781,8 @@ func TestRefreshNodeSubmitsDeepScanRun(t *testing.T) {
 			w.WriteHeader(http.StatusCreated)
 			_, _ = w.Write([]byte(`{"id":11,"tenant_id":1,"execution_id":"run-1","module":"meta","task_type":"scan","status":"pending","trigger_type":"manual"}`))
 		case "/api/v1/meta/engines/9/tree":
-			_, _ = w.Write([]byte(`{
-				"top_nodes":[{"id":8,"tenant_id":1,"engine_id":9,"node_type":"bucket","name":"addp","full_name":"addp","depth":1,"path":"addp","scan_status":"completed","item_count":8}],
-				"child_nodes":[],
-				"items":[]
-			}`))
+			treeRequests++
+			http.Error(w, "tree should not be loaded during refresh submission", http.StatusInternalServerError)
 		default:
 			http.NotFound(w, r)
 		}
@@ -801,11 +799,11 @@ func TestRefreshNodeSubmitsDeepScanRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RefreshNode() error = %v", err)
 	}
-	if result.Node == nil || len(result.Node.Children) != 1 || result.Node.Children[0].Label != "addp" {
-		t.Fatalf("node = %#v, want engine tree with addp bucket child", result.Node)
-	}
 	if result.Run == nil || result.Run.ExecutionID != "run-1" || result.Run.Status != "pending" {
 		t.Fatalf("run = %#v", result.Run)
+	}
+	if treeRequests != 0 {
+		t.Fatalf("treeRequests = %d, want 0", treeRequests)
 	}
 	if gotScanAuth != "Bearer user-token" {
 		t.Fatalf("scan auth = %q, want user bearer token", gotScanAuth)
@@ -848,7 +846,7 @@ func TestRefreshNodeRequiresAuthTokenBeforeSubmittingScan(t *testing.T) {
 		nil,
 	)
 	tenantID := uint(1)
-	_, err = svc.RefreshNode(t.Context(), &tenantID, "addp://engine/9/path/?type=root", "")
+	_, err = svc.RefreshNode(t.Context(), &tenantID, "addp://engine/9/path/?type=service", "")
 	if err == nil || !strings.Contains(err.Error(), "metadata scan requires authorization token") {
 		t.Fatalf("RefreshNode() error = %v, want missing authorization token", err)
 	}

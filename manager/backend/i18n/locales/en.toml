@@ -9,3 +9,198 @@ other = "Resource cache refreshed"
 
 [manager.cache.failed]
 other = "Failed to refresh cache"
+
+[manager.error.invalid_engine_id]
+other = "Invalid engine ID"
+
+[manager.error.invalid_engine_id_parameter]
+other = "Invalid engine ID parameter"
+
+[manager.error.missing_locator]
+other = "Missing resource locator parameter"
+
+[manager.error.engine_access_denied]
+other = "Access denied to this engine"
+
+[manager.error.meta_scan_required]
+other = "This target has not been scanned by meta"
+
+[manager.error.missing_engine_id_or_storage_ref]
+other = "Missing engine ID or storage content reference"
+
+[manager.error.search_keyword_too_short]
+other = "Search keyword must be at least 2 characters"
+
+[manager.error.schema_required]
+other = "Missing Schema parameter"
+
+[manager.error.table_required]
+other = "Missing item name parameter"
+
+[manager.error.schema_and_table_required]
+other = "Missing Schema or item name parameter"
+
+[manager.error.system_client_unavailable]
+other = "System client is not available"
+
+[manager.error.system_client_not_initialized]
+other = "System client is not initialized"
+
+[manager.error.engine_not_found]
+other = "Engine not found"
+
+[manager.error.unsupported_postgres_only]
+other = "Only PostgreSQL engines are supported"
+
+[manager.error.database_connection_failed]
+other = "Database connection failed"
+
+[manager.error.feature_not_found]
+other = "Feature not found"
+
+[manager.error.feature_invalid_geometry]
+other = "Feature has no valid geometry"
+
+[manager.error.invalid_z_parameter]
+other = "Invalid z parameter, must be 0-22"
+
+[manager.error.invalid_x_parameter]
+other = "Invalid x parameter"
+
+[manager.error.invalid_y_parameter]
+other = "Invalid y parameter"
+
+[manager.error.invalid_srid_parameter]
+other = "Invalid spatial reference parameter"
+
+[manager.error.invalid_geojson]
+other = "Invalid GeoJSON data"
+
+[manager.error.query_failed]
+other = "Query failed"
+
+[manager.error.query_count_failed]
+other = "Record count query failed"
+
+[manager.error.query_extent_failed]
+other = "Extent query failed"
+
+[manager.error.tile_config_failed]
+other = "Failed to get tile config"
+
+[manager.error.parse_form_failed]
+other = "Failed to parse form"
+
+[manager.error.file_required]
+other = "File is required"
+
+[manager.error.read_file_failed]
+other = "Failed to read file"
+
+[manager.error.target_engine_id_required]
+other = "Target engine ID is required"
+
+[manager.error.invalid_target_engine_id]
+other = "Invalid target engine ID"
+
+[manager.error.locator_engine_mismatch]
+other = "Locator engine ID does not match path engine ID"
+
+[manager.error.item_refresh_requires_locator]
+other = "Item refresh requires an item locator"
+
+[manager.error.item_refresh_target_required]
+other = "Locator with item_id or body item_id is required"
+
+[manager.error.missing_param]
+other = "Missing parameter"
+
+[manager.error.invalid_param]
+other = "Invalid parameter"
+
+[manager.error.hybrid_search_not_configured]
+other = "Hybrid search is not configured"
+
+[manager.error.missing_query]
+other = "Missing search query"
+
+[manager.error.search_history_unavailable]
+other = "Search history is not available"
+
+[manager.error.unauthorized]
+other = "Unauthorized"
+
+[manager.error.load_history_failed]
+other = "Failed to load history"
+
+[manager.error.invalid_history_id]
+other = "Invalid history ID"
+
+[manager.error.delete_history_failed]
+other = "Failed to delete history"
+
+[manager.error.clear_history_failed]
+other = "Failed to clear history"
+
+[manager.error.invalid_request_body]
+other = "Invalid request body"
+
+[manager.error.quick_view_record_not_found]
+other = "Quick view record not found; start MVT preparation first"
+
+[manager.error.quick_view_preparation_needed]
+other = "Quick view preparation is not completed; complete MVT preparation first"
+
+[manager.error.quick_view_already_generating]
+other = "Quick view generation is already running for this item"
+
+[manager.error.quick_view_min_zoom_required]
+other = "Minimum zoom is required; confirm quick view configuration first"
+
+[manager.error.quick_view_max_zoom_required]
+other = "Maximum zoom is required; confirm quick view configuration first"
+
+[manager.error.quick_view_cancel_status]
+other = "Only generating quick view tasks can be cancelled"
+
+[manager.error.quick_view_resume_status]
+other = "Only cancelled or failed quick view tasks can be resumed"
+
+[manager.error.quick_view_invalid_mode]
+other = "Invalid display mode"
+
+[manager.error.quick_view_geometry_missing]
+other = "Geometry column is missing from metadata"
+
+[manager.error.import_table_name_required]
+other = "Cannot infer target item name from filename; enter it manually"
+
+[manager.error.import_zip_required]
+other = "Upload a ZIP package containing .shp/.dbf/.shx files"
+
+[manager.error.import_unsupported_format]
+other = "Unsupported file format; only ZIP packages are supported"
+
+[manager.error.import_source_not_configured]
+other = "Import staging source engine is not configured; set MANAGER_IMPORT_SOURCE_ENGINE_ID or enable System integration"
+
+[manager.error.import_source_not_matched]
+other = "No object storage engine matches the current import staging MinIO"
+
+[manager.error.import_source_ambiguous]
+other = "Multiple import staging object storage engines matched; set MANAGER_IMPORT_SOURCE_ENGINE_ID"
+
+[manager.error.import_source_id_invalid]
+other = "MANAGER_IMPORT_SOURCE_ENGINE_ID must be a positive integer"
+
+[manager.error.import_source_inactive]
+other = "Import staging source engine is inactive"
+
+[manager.error.import_zip_missing_shp]
+other = "ZIP package is missing a .shp file"
+
+[manager.error.import_zip_basename_mismatch]
+other = "Shapefile components in the ZIP package must use the same basename"
+
+[manager.error.import_zip_missing_required]
+other = "ZIP package is missing a .shp/.dbf/.shx component set with the same basename"

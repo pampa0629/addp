@@ -25,29 +25,47 @@
     </el-skeleton>
 
     <!-- 正常状态：显示树 -->
-    <ResourceTree
-      ref="resourceTreeRef"
-      v-else
-      :tree-data="treeData"
-      :loading="false"
-      :refreshing-node-ids="refreshingNodeIds"
-      v-model:expanded-keys="expandedKeys"
-      :current-node-key="currentNodeKey"
-      :node-actions="nodeActions"
-      :expand-on-click-node="true"
-      :title="t('manager.explorer.storageEngines')"
-      :count-text="(count) => t('manager.explorer.countText', { count })"
-      @refresh="handleRefresh"
-      @node-click="handleNodeClick"
-      @node-action="handleNodeAction"
-      @node-expand="handleNodeExpand"
-      @node-collapse="handleNodeCollapse"
-    />
+    <template v-else>
+      <div
+        v-if="activeScan.visible"
+        class="scan-status"
+      >
+        <div class="scan-status__header">
+          <span class="scan-status__title">{{ activeScan.title }}</span>
+          <span class="scan-status__percent">{{ activeScan.percent }}%</span>
+        </div>
+        <el-progress
+          :percentage="activeScan.percent"
+          :status="activeScan.status"
+          :stroke-width="6"
+          :show-text="false"
+        />
+        <div class="scan-status__detail">{{ activeScan.detail }}</div>
+      </div>
+
+      <ResourceTree
+        ref="resourceTreeRef"
+        :tree-data="treeData"
+        :loading="false"
+        :refreshing-node-ids="refreshingNodeIds"
+        v-model:expanded-keys="expandedKeys"
+        :current-node-key="currentNodeKey"
+        :node-actions="nodeActions"
+        :expand-on-click-node="true"
+        :title="t('manager.explorer.storageEngines')"
+        :count-text="(count) => t('manager.explorer.countText', { count })"
+        @refresh="handleRefresh"
+        @node-click="handleNodeClick"
+        @node-action="handleNodeAction"
+        @node-expand="handleNodeExpand"
+        @node-collapse="handleNodeCollapse"
+      />
+    </template>
   </div>
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { ResourceTree } from '@addp/common-frontend'
@@ -70,6 +88,14 @@ const emit = defineEmits(['node-select'])
 
 const store = useExplorerStore()
 const resourceTreeRef = ref(null)
+let scanStatusTimer = 0
+const activeScan = ref({
+  visible: false,
+  title: '',
+  detail: '',
+  percent: 0,
+  status: ''
+})
 
 // 节点操作（根据节点类型动态生成）
 const nodeActions = computed(() => {
@@ -128,6 +154,10 @@ const refreshingNodeIds = computed(() => {
 
 // 计算属性：当前选中的节点 key
 const currentNodeKey = computed(() => store.selectedLocator || '')
+
+onBeforeUnmount(() => {
+  cancelScanStatusTimer()
+})
 
 // 事件处理：刷新整个引擎列表
 const handleRefresh = async () => {
@@ -208,14 +238,20 @@ const handleNodeAction = async ({ node, action }) => {
 
   if (action === 'refresh') {
     try {
-      ElMessage.info(t('manager.explorer.scanStarted'))
+      startScanStatus(t('manager.explorer.scanSubmitting'), t('manager.explorer.scanSubmitting'), 5)
       if (isBranchNode(node)) {
-        await store.refreshNode(locator)
+        await store.refreshNode(locator, {
+          onSubmitted: (run) => updateScanStatusFromRun(run, t('manager.explorer.scanSubmitted')),
+          onProgress: updateScanStatusFromRun,
+          onScanCompleted: (run) => updateScanStatusFromRun(run, t('manager.explorer.treeRefreshing'), 95)
+        })
       } else {
         await store.refreshItem(locator)
       }
+      completeScanStatus()
       ElMessage.success(t('manager.explorer.scanCompleted'))
     } catch (error) {
+      failScanStatus(error)
       ElMessage.error(t('manager.explorer.refreshFailed', { error: error.message }))
     }
     return
@@ -333,6 +369,94 @@ const isCatalogRootNode = (node) => {
 
 const isBranchNode = (node) => !!node && branchTypes.has(node.type)
 
+function startScanStatus(title, detail, percent = 5) {
+  cancelScanStatusTimer()
+  activeScan.value = {
+    visible: true,
+    title,
+    detail,
+    percent: clampScanPercent(percent),
+    status: ''
+  }
+}
+
+function updateScanStatusFromRun(run, title = '', minPercent = 10) {
+  cancelScanStatusTimer()
+  const progress = Number(run?.progress)
+  const percent = Number.isFinite(progress)
+    ? clampScanPercent(Math.max(progress, minPercent))
+    : clampScanPercent(minPercent)
+  activeScan.value = {
+    visible: true,
+    title: title || scanTitleFromRun(run),
+    detail: scanDetailFromRun(run),
+    percent,
+    status: ''
+  }
+}
+
+function failScanStatus(error) {
+  cancelScanStatusTimer()
+  activeScan.value = {
+    visible: true,
+    title: t('manager.explorer.scanFailed'),
+    detail: error?.message || t('manager.explorer.scanFailed'),
+    percent: 100,
+    status: 'exception'
+  }
+}
+
+function completeScanStatus() {
+  cancelScanStatusTimer()
+  activeScan.value = {
+    visible: true,
+    title: t('manager.explorer.scanCompleted'),
+    detail: t('manager.explorer.scanCompleted'),
+    percent: 100,
+    status: 'success'
+  }
+  scanStatusTimer = window.setTimeout(() => {
+    clearScanStatus()
+  }, 5000)
+}
+
+function clearScanStatus() {
+  cancelScanStatusTimer()
+  activeScan.value = {
+    visible: false,
+    title: '',
+    detail: '',
+    percent: 0,
+    status: ''
+  }
+}
+
+function cancelScanStatusTimer() {
+  if (scanStatusTimer) {
+    window.clearTimeout(scanStatusTimer)
+    scanStatusTimer = 0
+  }
+}
+
+function scanTitleFromRun(run) {
+  const status = String(run?.status || '').toLowerCase()
+  if (status === 'pending') {
+    return t('manager.explorer.scanSubmitted')
+  }
+  if (status === 'running') {
+    return t('manager.explorer.scanRunning')
+  }
+  return t('manager.explorer.scanSubmitted')
+}
+
+function scanDetailFromRun(run) {
+  return run?.current_step || run?.progress_message || run?.message || t('manager.explorer.scanWaiting')
+}
+
+function clampScanPercent(value) {
+  return Math.max(0, Math.min(100, Math.round(value)))
+}
+
 // 暴露方法供父组件调用
 defineExpose({
   expandNode: (locator) => store.expandNode(locator),
@@ -350,5 +474,48 @@ defineExpose({
 .skeleton-loader {
   padding: 20px;
   height: 100%;
+}
+
+.scan-status {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--el-border-color);
+  background: var(--el-bg-color);
+}
+
+.scan-status__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+
+.scan-status__title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--el-text-color-primary);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scan-status__percent {
+  flex: 0 0 auto;
+  color: var(--el-text-color-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.scan-status__detail {
+  margin-top: 6px;
+  overflow: hidden;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

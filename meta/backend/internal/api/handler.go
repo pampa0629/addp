@@ -95,7 +95,7 @@ func (h *Handler) GetObjectMetadata(c *gin.Context) {
 	c.JSON(http.StatusOK, item)
 }
 
-// GetResources 获取资源列表及统计
+// GetResources 获取存储引擎列表及 catalog 扫描统计
 // GET /api/meta/engines
 // @Summary 获取引擎列表 | Get engine list
 // @Description 获取当前租户的存储引擎列表及统计信息 | Get storage engine list with statistics for the current tenant
@@ -117,9 +117,9 @@ func (h *Handler) GetEngines(c *gin.Context) {
 	c.JSON(http.StatusOK, engines)
 }
 
-// AutoScan 提交未扫描资源的后台扫描运行
-// @Summary 提交未扫描资源后台扫描 | Submit background scans for unscanned resources
-// @Description 为当前租户下尚未完成元数据扫描的资源创建后台扫描运行 | Create background scan runs for resources that have not been scanned for current tenant
+// AutoScan 提交未扫描存储引擎的后台扫描运行
+// @Summary 提交未扫描存储引擎后台扫描 | Submit background scans for unscanned engines
+// @Description 为当前租户下尚未完成元数据扫描的存储引擎创建后台扫描运行 | Create background scan runs for engines that have not been scanned for current tenant
 // @Tags Meta Scan
 // @Produce json
 // @Success 202 {object} map[string]interface{} "已提交的扫描运行 | Submitted scan runs"
@@ -698,11 +698,11 @@ func (h *Handler) effectiveTenantIDForEngine(c *gin.Context, engineID uint) (uin
 
 // ListEngineItems 获取引擎下已扫描的数据项列表。
 // @Summary 列出引擎数据项 | List engine items
-// @Description 获取指定引擎下已扫描的数据项，可按命名空间过滤 | List scanned metadata items for an engine
+// @Description 获取指定引擎下已扫描的数据项，可按 catalog 第一层业务分支过滤 | List scanned metadata items for an engine, optionally filtered by catalog first business branch
 // @Tags Meta Query
 // @Produce json
 // @Param engine_id path int true "存储引擎ID | Engine ID"
-// @Param namespace query string false "命名空间 | Namespace"
+// @Param branch query string false "catalog 第一层业务分支名称 | Catalog first business branch name"
 // @Success 200 {array} models.MetaItemLite "数据项列表 | Items"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
@@ -721,10 +721,10 @@ func (h *Handler) ListEngineItems(c *gin.Context) {
 		return
 	}
 
-	namespace := c.Query("namespace")
+	branch := c.Query("branch")
 	var items []models.MetaItemLite
-	if namespace != "" {
-		items, err = h.scanService.ListItemsByNamespace(uint(engineID), tenantID, namespace)
+	if branch != "" {
+		items, err = h.scanService.ListItemsByBranch(uint(engineID), tenantID, branch)
 	} else {
 		items, err = h.scanService.ListItemsByEngine(uint(engineID), tenantID)
 	}
@@ -766,9 +766,9 @@ func (h *Handler) GetItemFieldsByID(c *gin.Context) {
 	c.JSON(http.StatusOK, fields)
 }
 
-// ClearResourceCache 清除资源缓存
+// ClearResourceCache 清除存储引擎缓存
 // @Summary 清除引擎缓存 | Clear engine cache
-// @Description 清除指定引擎资源缓存，engine_id 为 all 时清除全部缓存 | Clear engine resource cache
+// @Description 清除指定存储引擎缓存，engine_id 为 all 时清除全部缓存 | Clear storage engine cache
 // @Tags Meta Cache
 // @Produce json
 // @Param engine_id path string true "存储引擎ID或all | Engine ID or all"
@@ -782,7 +782,7 @@ func (h *Handler) ClearResourceCache(c *gin.Context) {
 		// 清除所有缓存
 		h.engineService.ClearCache()
 		c.JSON(http.StatusOK, gin.H{
-			"message": "已清除所有资源缓存",
+			"message": "已清除所有存储引擎缓存",
 		})
 		return
 	}
@@ -795,13 +795,13 @@ func (h *Handler) ClearResourceCache(c *gin.Context) {
 
 	h.engineService.ClearEngineCache(uint(engineID))
 	c.JSON(http.StatusOK, gin.H{
-		"message": fmt.Sprintf("已清除资源 %d 的缓存", engineID),
+		"message": fmt.Sprintf("已清除存储引擎 %d 的缓存", engineID),
 	})
 }
 
-// RefreshResourceCache 刷新资源缓存（先清除再重新加载）
-// @Summary 刷新资源缓存 | Refresh resource cache
-// @Description 清除并重新预加载资源缓存 | Clear and preload resource cache
+// RefreshResourceCache 刷新存储引擎缓存（先清除再重新加载）
+// @Summary 刷新存储引擎缓存 | Refresh storage engine cache
+// @Description 清除并重新预加载存储引擎缓存 | Clear and preload storage engine cache
 // @Tags Meta Cache
 // @Produce json
 // @Success 200 {object} map[string]interface{} "刷新结果 | Refresh result"
@@ -818,13 +818,13 @@ func (h *Handler) RefreshResourceCache(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": "资源缓存已刷新",
+		"message": "存储引擎缓存已刷新",
 	})
 }
 
 // ========== 新增：用于 Manager 模块的元数据查询接口 ==========
 
-// GetMetadataTree 获取资源的完整元数据树
+// GetMetadataTree 获取存储引擎的完整元数据树
 // @Summary 获取元数据树 | Get metadata tree
 // @Description 获取指定引擎的完整元数据树 | Get metadata tree for an engine
 // @Tags Meta Query

@@ -25,7 +25,7 @@ func TabularCatalogModel(namespaceTerm string) CatalogModelSpec {
 	}
 	return CatalogModelSpec{
 		PathVersion: CatalogPathVersion,
-		RootTerm:    "server",
+		RootTerm:    CatalogTermServer,
 		Levels: []CatalogLevelSpec{
 			{Term: namespaceTerm, Kinds: []string{CatalogKindNamespace}, Role: CatalogRoleBranch, I18nKey: CatalogTermI18nKey(namespaceTerm)},
 			{Term: CatalogTermTable, Kinds: []string{CatalogKindTable, "view", "materialized_view", "external_table"}, Role: CatalogRoleLeaf, I18nKey: CatalogTermI18nKey(CatalogTermTable)},
@@ -47,16 +47,15 @@ func ListTabularCatalogChildren(ctx context.Context, callbacks TabularCatalogCal
 	if err := callbacks.validate(); err != nil {
 		return nil, err
 	}
-	db, err := GetOrCreatePoolFromFactory(engine, DefaultPoolConfig())
-	if err != nil {
-		return nil, fmt.Errorf("获取连接池失败：%w", err)
-	}
-
 	namespaceTerm := callbacks.namespaceTerm()
 	model := TabularCatalogModel(namespaceTerm)
 	if IsCatalogRootPath(parent) {
 		if err := requireCatalogRootPath(parent, model); err != nil {
 			return nil, err
+		}
+		db, err := GetOrCreatePoolFromFactory(engine, DefaultPoolConfig())
+		if err != nil {
+			return nil, fmt.Errorf("获取连接池失败：%w", err)
 		}
 		namespaces, err := callbacks.ListNamespaces(ctx, db, parent)
 		if err != nil {
@@ -77,13 +76,17 @@ func ListTabularCatalogChildren(ctx context.Context, callbacks TabularCatalogCal
 		return nil, err
 	}
 	namespace := segments[0].Name
+	db, err := GetOrCreatePoolFromFactory(engine, DefaultPoolConfig())
+	if err != nil {
+		return nil, fmt.Errorf("获取连接池失败：%w", err)
+	}
 	tables, err := callbacks.ListTables(ctx, db, namespace)
 	if err != nil {
 		return nil, err
 	}
 	nodes := make([]CatalogEntry, 0, len(tables))
 	for _, table := range tables {
-		tableInfo := table.Clone()
+		tableInfo := CatalogEntryTableSummary(&table)
 		nodes = append(nodes, CatalogEntry{
 			Name:      table.Name,
 			Path:      appendCatalogSegment(parent, engine.ID, CatalogTermTable, CatalogKindTable, table.Name),
@@ -212,7 +215,7 @@ func tabularCatalogEntryFromFacts(path CatalogPath, name, kind string, facts *Ca
 		Term:      CatalogTermTable,
 		Kind:      kind,
 		Role:      CatalogRoleLeaf,
-		Table:     CatalogFactsTableInfo(facts),
+		Table:     CatalogEntryTableInfo(facts),
 		UpdatedAt: facts.UpdatedAt,
 	}
 }

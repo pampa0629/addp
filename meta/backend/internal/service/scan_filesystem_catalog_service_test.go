@@ -34,6 +34,9 @@ func TestEnsureFilesystemScanRootUsesDirectoryNodeForNonRootPath(t *testing.T) {
 	if rootNode.Name != "NFS Demo" || rootNode.FullName != "" {
 		t.Fatalf("root node name/fullName = %q/%q, want engine name and empty full_name", rootNode.Name, rootNode.FullName)
 	}
+	if rootNode.Attributes["schema_version"] == nil {
+		t.Fatalf("root schema_version missing: %#v", rootNode.Attributes)
+	}
 	catalogAttrs, ok := rootNode.Attributes["catalog"].(map[string]interface{})
 	if !ok {
 		t.Fatalf("root catalog attributes = %#v", rootNode.Attributes)
@@ -158,11 +161,11 @@ func TestFilesystemForceScanReconcilesStaleRootFileNodes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create root node: %v", err)
 	}
-	staleNode, err := repo.UpsertNode(1, 26, root, "dir", "README.md", strPtr("README.md"), models.JSONMap{"path": "README.md"})
+	staleNode, err := repo.UpsertNode(1, 26, root, "dir", "README.md", strPtr("README.md"), models.JSONMap{"schema_version": 1, "storage": map[string]interface{}{"path": "README.md"}})
 	if err != nil {
 		t.Fatalf("create stale file node: %v", err)
 	}
-	keepNode, err := repo.UpsertNode(1, 26, root, "dir", "docs", strPtr("docs"), models.JSONMap{"path": "docs"})
+	keepNode, err := repo.UpsertNode(1, 26, root, "dir", "docs", strPtr("docs"), models.JSONMap{"schema_version": 1, "storage": map[string]interface{}{"path": "docs"}})
 	if err != nil {
 		t.Fatalf("create docs node: %v", err)
 	}
@@ -272,7 +275,7 @@ func TestFilesystemScanDeletesRootFileNodesWithoutForce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create root node: %v", err)
 	}
-	staleNode, err := repo.UpsertNode(1, 26, root, "dir", "README.md", strPtr("README.md"), models.JSONMap{"path": "README.md"})
+	staleNode, err := repo.UpsertNode(1, 26, root, "dir", "README.md", strPtr("README.md"), models.JSONMap{"schema_version": 1, "storage": map[string]interface{}{"path": "README.md"}})
 	if err != nil {
 		t.Fatalf("create stale file node: %v", err)
 	}
@@ -369,7 +372,7 @@ func TestFilesystemDeepScanExtractsDOCXHeaderFooter(t *testing.T) {
 		log:  slog.New(slog.NewTextHandler(io.Discard, nil)),
 		repo: repo,
 	}
-	parentNode, err := repo.UpsertNode(1, 26, nil, "dir", "doc", strPtr("doc"), models.JSONMap{"path": "doc"})
+	parentNode, err := repo.UpsertNode(1, 26, nil, "dir", "doc", strPtr("doc"), models.JSONMap{"schema_version": 1, "storage": map[string]interface{}{"path": "doc"}})
 	if err != nil {
 		t.Fatalf("create root node: %v", err)
 	}

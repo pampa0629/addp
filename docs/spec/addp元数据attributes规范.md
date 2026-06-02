@@ -1,8 +1,8 @@
 # ADDP 元数据 attributes 规范
 
-本文定义 `meta_item.attributes` 的标准分区、唯一事实源和扩展命名空间规则。概念边界以 [ADDP 数据项体系图](../concepts/addp数据项体系图.md) 和 [ADDP 数据类型和格式体系图](../concepts/addp数据类型和格式体系图.md) 为准。扫描深度和刷新机制见 [ADDP 元数据扫描机制规范](addp元数据扫描机制规范.md)。
+本文定义 `meta_item.attributes` 和 `meta_node.attributes` 的标准分区、唯一事实源和扩展命名空间规则。概念边界以 [ADDP 数据项体系图](../concepts/addp数据项体系图.md) 和 [ADDP 数据类型和格式体系图](../concepts/addp数据类型和格式体系图.md) 为准。扫描深度和刷新机制见 [ADDP 元数据扫描机制规范](addp元数据扫描机制规范.md)。
 
-## 目标结构
+## meta_item.attributes 目标结构
 
 `meta_item.attributes` 采用“受控核心 + 开放能力”：
 
@@ -31,6 +31,33 @@
 旧 attributes 字段、旧分区和平铺字段不保留兼容读取或兼容写入。旧数据应删除后重新 meta 扫描生成新结构；仍依赖旧结构的代码应尽早暴露并修正。
 
 空分区不落库：`storage`、`type_info`、`format_info`、`access_index`、`capabilities` 等标准分区只有在包含实际事实时才写入。空对象、空字符串和只包含空对象的命名空间应在 normalizer 中删除。空数组可以作为显式事实保留，例如 `type_info.container.children: []` 表示容器已解析但没有子项。
+
+## meta_node.attributes 目标结构
+
+`meta_node.attributes` 只表达 catalog branch 的结构和低成本范围事实，不复用 `meta_item.attributes` 的 item / type_info / format_info / access_index / capabilities 分区：
+
+```json
+{
+  "schema_version": 1,
+  "catalog": {},
+  "storage": {}
+}
+```
+
+顶层只允许长期保留：
+
+- `schema_version`
+- `catalog`
+- `storage`
+
+分区职责：
+
+| 分区 | 回答的问题 | 示例 |
+|---|---|---|
+| `catalog` | 这个 node 在 catalog 树中的结构事实是什么 | root_term、native_name、display_name_source |
+| `storage` | 这个 branch 对应的低成本存储范围是什么 | bucket、path |
+
+`meta_node.attributes` 不表达 data item 语义，不写入 `item`、`type_info`、`format_info`、`access_index` 或 `capabilities`。node 的 `item_count`、`total_size_bytes`、`scan_status`、`scanned_depth`、`scanned_at` 是 `meta_node` 表字段，不写入 attributes。历史裸 `bucket` / `path` 字段不保留兼容读取或兼容写入；旧数据应重新扫描生成新结构。
 
 ## 术语统一
 
@@ -114,7 +141,7 @@ attributes 分区统一采用以下概念：
 12. `locator` 不作为 attributes 标准分区写入。定位事实由 `meta_item.full_name`、`meta_item.item_type` 和搜索/DTO 层派生，不在 attributes 中重复保存。
 13. `access_index` 是读取优化信息，不是 data type info，也不是 format 私有信息。索引必须能通过源对象大小、etag、mtime 或 fingerprint 等事实判断是否仍适用于当前资源；资源变化后应重建，不得继续复用旧索引。对于 multi-ref 格式，`access_index.source` 允许记录 ref 级事实（如 `refs`、`ref_count`、`index_format`），用于重建、失效判断和调试，但不应把格式私有语义写成新的顶层分区。
 14. `SpatialInfo`、`AccessIndex`、`format_info` 不是 `TableInfo` 的组成部分。provider 如果一次解析同时得到这些事实，应作为同级结果交给 Meta normalizer，分别写入 `capabilities.spatial`、`access_index.<data_type>` 和 `format_info.<format>`。
-15. attributes 写入受 `scan_depth` 约束。`basic` 只写不读取 file/object 内容即可获得的身份、存储和轻量 item 事实；字段、行数、容器 children、`access_index`、需要读取内容的 `format_info` 和横切能力应由 `deep` 写入。
+15. attributes 写入受 `scan_depth` 约束。`basic` 只写不读取 file/object 内容即可获得的身份、存储和轻量 item 事实；来自 `CatalogEntry` 或只读 catalog/system table 的低成本 `row_count`、`size_bytes` 可在 basic 写入。字段、主键、索引、容器 children、`access_index`、需要读取内容的 `format_info`、横切能力以及需要执行 `COUNT(*)`、全量扫描或统计刷新的高成本统计应由 `deep` 写入。
 
 ## access_index 结构约定
 

@@ -85,7 +85,7 @@ export const getItemFieldsByCatalogPath = async (engineId, catalogPath) => {
 export const getTables = async (engineId, schema = null) => {
   const params = {}
   if (schema) {
-    params.namespace = schema
+    params.branch = schema
   }
   const response = await apiRequest('get', `/meta/engines/${engineId}/items`, { params })
   return response.data

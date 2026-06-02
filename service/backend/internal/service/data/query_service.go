@@ -10,6 +10,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/service/internal/models"
 )
 
@@ -42,7 +43,7 @@ func (s *QueryService) Query(ctx context.Context, req *models.DataQueryRequest) 
 	}
 
 	// 3. 获取列信息
-	metadata, err := dbbridge.DescribeNamedCatalogFacts(ctx, engine, req.Schema, req.Table, plugin.CatalogFactsOptions{})
+	metadata, err := describeTabularItemFacts(ctx, engine, req.Schema, req.Table, plugin.CatalogFactsOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list columns: %w", err)
 	}
@@ -361,7 +362,7 @@ func (s *QueryService) GetTableStructure(ctx context.Context, engineID uint, sch
 	}
 
 	// 2. 获取列信息：dbbridge 内部走 CatalogFactsProvider。
-	metadata, err := dbbridge.DescribeNamedCatalogFacts(ctx, engine, schema, table, plugin.CatalogFactsOptions{})
+	metadata, err := describeTabularItemFacts(ctx, engine, schema, table, plugin.CatalogFactsOptions{})
 	if err != nil {
 		if strings.Contains(err.Error(), "does not exist") || strings.Contains(err.Error(), "not found") {
 			return nil, fmt.Errorf("表 %s.%s 不存在", schema, table)
@@ -432,6 +433,19 @@ func columnInfosFromMetadata(metadata *plugin.CatalogFacts) []metadataColumnInfo
 		})
 	}
 	return columns
+}
+
+func describeTabularItemFacts(ctx context.Context, engine *commonModels.Engine, namespace, table string, opts plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+	model, err := dbbridge.CatalogModel(engine.EngineType)
+	if err != nil {
+		return nil, err
+	}
+	branchLevel, ok := plugin.CatalogFirstBusinessBranch(model)
+	if !ok || branchLevel.Term == "" {
+		return nil, fmt.Errorf("catalog model for %s has no first business branch", engine.EngineType)
+	}
+	path := plugin.TabularItemPath(engine.ID, branchLevel.Term, namespace, table)
+	return dbbridge.DescribeCatalogFacts(ctx, engine, path, opts)
 }
 
 // Close 关闭所有数据库连接

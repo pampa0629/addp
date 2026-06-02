@@ -28,6 +28,31 @@ type StorageResource struct {
 	ExtractedAttributes map[string]interface{}
 }
 
+func StorageFileRefFromEntry(node plugin.CatalogEntry) (metaitem.StorageFileRef, bool) {
+	if node.Role != plugin.CatalogRoleLeaf {
+		return metaitem.StorageFileRef{}, false
+	}
+	return metaitem.StorageFileRef{
+		Name:        node.Name,
+		Path:        catalogEntryStoragePath(node),
+		CatalogPath: node.Path,
+		Size:        catalogEntrySizeBytes(node),
+		ModifiedAt:  catalogEntryUpdatedAt(node),
+		ContentType: catalogEntryContentType(node),
+	}, true
+}
+
+func StorageDirectoryRefFromEntry(node plugin.CatalogEntry) (metaitem.StorageDirectoryRef, bool) {
+	if node.Role != plugin.CatalogRoleBranch {
+		return metaitem.StorageDirectoryRef{}, false
+	}
+	return metaitem.StorageDirectoryRef{
+		Name:        node.Name,
+		Path:        catalogEntryStoragePath(node),
+		CatalogPath: node.Path,
+	}, true
+}
+
 func ObjectStorageResourceFromNode(bucket string, node plugin.CatalogEntry) StorageResource {
 	itemPath := objectKeyFromCatalogEntry(node, bucket)
 	contentType := catalogEntryContentType(node)
@@ -89,6 +114,13 @@ func objectKeyFromCatalogEntry(node plugin.CatalogEntry, bucket string) string {
 	return strings.TrimPrefix(node.Path.StringPath(), strings.Trim(bucket, "/")+"/")
 }
 
+func catalogEntryStoragePath(node plugin.CatalogEntry) string {
+	if node.Storage != nil && node.Storage.Path != "" {
+		return node.Storage.Path
+	}
+	return node.Path.StringPath()
+}
+
 func trimCatalogRoot(value, root string) string {
 	value = strings.Trim(value, "/")
 	root = strings.Trim(root, "/")
@@ -120,6 +152,13 @@ func catalogEntrySizeBytes(node plugin.CatalogEntry) int64 {
 		return 0
 	}
 	return *node.Storage.SizeBytes
+}
+
+func catalogEntryUpdatedAt(node plugin.CatalogEntry) time.Time {
+	if node.UpdatedAt == nil {
+		return time.Time{}
+	}
+	return *node.UpdatedAt
 }
 
 func joinCatalogPathParts(parts ...string) string {

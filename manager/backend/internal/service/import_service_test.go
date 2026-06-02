@@ -4,7 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
-	"strings"
+	"errors"
 	"testing"
 
 	commonModels "github.com/addp/common/models"
@@ -123,8 +123,8 @@ func TestExtractShapefileZipRequiresSameBasenameComponents(t *testing.T) {
 	if err == nil {
 		t.Fatal("extractShapefileZip() error = nil, want missing same-basename component set")
 	}
-	if !strings.Contains(err.Error(), "same basename") {
-		t.Fatalf("extractShapefileZip() error = %v, want same basename message", err)
+	if !errors.Is(err, ErrImportZipBasenameMismatch) {
+		t.Fatalf("extractShapefileZip() error = %v, want ErrImportZipBasenameMismatch", err)
 	}
 }
 
@@ -148,8 +148,8 @@ func TestExtractShapefileZipRejectsMultipleComponentSets(t *testing.T) {
 	if err == nil {
 		t.Fatal("extractShapefileZip() error = nil, want multiple component sets error")
 	}
-	if !strings.Contains(err.Error(), "same basename") {
-		t.Fatalf("extractShapefileZip() error = %v, want same basename message", err)
+	if !errors.Is(err, ErrImportZipBasenameMismatch) {
+		t.Fatalf("extractShapefileZip() error = %v, want ErrImportZipBasenameMismatch", err)
 	}
 }
 

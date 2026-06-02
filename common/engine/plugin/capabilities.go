@@ -68,8 +68,8 @@ func CatalogLevelI18nKey(model CatalogModelSpec, term string) string {
 	return CatalogTermI18nKey(term)
 }
 
-// CatalogNamespaceLevel 返回 catalog model 中第一层可展开的 branch 定义。
-func CatalogNamespaceLevel(model CatalogModelSpec) (CatalogLevelSpec, bool) {
+// CatalogFirstBusinessBranch 返回 root 下第一层可展开的业务 branch。
+func CatalogFirstBusinessBranch(model CatalogModelSpec) (CatalogLevelSpec, bool) {
 	for _, level := range model.Levels {
 		if level.Role == CatalogRoleBranch {
 			return level, true
@@ -81,11 +81,6 @@ func CatalogNamespaceLevel(model CatalogModelSpec) (CatalogLevelSpec, bool) {
 // CatalogBusinessLevels 返回 root 下的业务层级定义。
 func CatalogBusinessLevels(model CatalogModelSpec) []CatalogLevelSpec {
 	return append([]CatalogLevelSpec(nil), model.Levels...)
-}
-
-// CatalogFirstBusinessBranch 返回 root 下第一层可展开的业务 branch。
-func CatalogFirstBusinessBranch(model CatalogModelSpec) (CatalogLevelSpec, bool) {
-	return CatalogNamespaceLevel(model)
 }
 
 // CatalogLeafTerm 返回 catalog model 中声明的 leaf 层术语。

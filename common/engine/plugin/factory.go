@@ -173,30 +173,8 @@ func DescribeCatalogFacts(ctx context.Context, resource *Engine, path CatalogPat
 	return factsProvider.DescribeCatalogFacts(ctx, resource.ConnectionInfo, path, opts)
 }
 
-// DescribeNamedCatalogFacts 描述指定命名空间下的具名 tabular catalog leaf facts。
-func DescribeNamedCatalogFacts(ctx context.Context, resource *Engine, namespace, item string, opts CatalogFactsOptions) (*CatalogFacts, error) {
-	if resource == nil {
-		return nil, fmt.Errorf("resource cannot be nil")
-	}
-
-	enginePlugin, err := Get(resource.EngineType)
-	if err != nil {
-		return nil, err
-	}
-
-	return DescribeCatalogFacts(ctx, resource, CatalogPath{
-		Version:  CatalogPathVersion,
-		EngineID: resource.ID,
-		Segments: []CatalogSegment{
-			{Term: rootTermForPlugin(enginePlugin), Kind: rootTermForPlugin(enginePlugin)},
-			{Term: namespaceTermForPlugin(enginePlugin), Kind: CatalogKindNamespace, Name: namespace},
-			{Term: CatalogTermTable, Kind: CatalogKindTable, Name: item},
-		},
-	}, opts)
-}
-
-// CountItemRows 获取 tabular 数据项行数。
-func CountItemRows(ctx context.Context, resource *Engine, namespace, item string) (int64, error) {
+// CountCatalogItemRows 获取 tabular catalog leaf 的行数。
+func CountCatalogItemRows(ctx context.Context, resource *Engine, path CatalogPath) (int64, error) {
 	if resource == nil {
 		return 0, fmt.Errorf("resource cannot be nil")
 	}
@@ -207,7 +185,7 @@ func CountItemRows(ctx context.Context, resource *Engine, namespace, item string
 	}
 
 	if _, ok := enginePlugin.(CatalogFactsProvider); ok {
-		facts, err := DescribeNamedCatalogFacts(ctx, resource, namespace, item, CatalogFactsOptions{IncludeStatistics: true})
+		facts, err := DescribeCatalogFacts(ctx, resource, path, CatalogFactsOptions{IncludeStatistics: true})
 		if err == nil && facts != nil {
 			if tableInfo := CatalogFactsTableInfo(facts); tableInfo != nil && tableInfo.RowCount != nil && *tableInfo.RowCount > 0 {
 				return *tableInfo.RowCount, nil
@@ -220,6 +198,12 @@ func CountItemRows(ctx context.Context, resource *Engine, namespace, item string
 		return 0, fmt.Errorf("plugin %s does not implement SQLQueryRuntimeProvider", resource.EngineType)
 	}
 
+	segments := CatalogPathWithoutRoot(path).Segments
+	if len(segments) < 2 {
+		return 0, fmt.Errorf("catalog row count path requires namespace and item segments")
+	}
+	namespace := segments[0].Name
+	item := segments[len(segments)-1].Name
 	result, err := sqlRuntime.ExecuteSQL(ctx, resource.ConnectionInfo, countSQLForEngine(resource.EngineType, namespace, item), QueryOptions{
 		EngineID:   resource.ID,
 		EngineType: resource.EngineType,
@@ -239,26 +223,6 @@ func CountItemRows(ctx context.Context, resource *Engine, namespace, item string
 	}
 
 	return 0, fmt.Errorf("row count query returned non-numeric result")
-}
-
-func namespaceTermForPlugin(p EnginePlugin) string {
-	if modelProvider, ok := p.(CatalogModelProvider); ok {
-		model := modelProvider.CatalogModel()
-		if len(model.Levels) > 0 && model.Levels[0].Term != "" {
-			return model.Levels[0].Term
-		}
-	}
-	return CatalogTermDatabase
-}
-
-func rootTermForPlugin(p EnginePlugin) string {
-	if modelProvider, ok := p.(CatalogModelProvider); ok {
-		model := modelProvider.CatalogModel()
-		if model.RootTerm != "" {
-			return model.RootTerm
-		}
-	}
-	return CatalogTermServer
 }
 
 func countSQLForEngine(engineType, schema, table string) string {

@@ -30,6 +30,13 @@ type DatabaseScanService struct {
 	indexerService *IndexerService          // 索引服务
 }
 
+type databaseScanCatalog struct {
+	catalogProvider plugin.CatalogProvider
+	factsProvider   plugin.CatalogFactsProvider
+	namespaceTerm   string
+	itemTerm        string
+}
+
 // NewDatabaseScanService 创建数据库扫描服务
 func NewDatabaseScanService(db *gorm.DB, log *slog.Logger, indexer *search.Indexer, repo *metaRepo.ScanRepository, spatialService *SpatialMetadataService, indexerService *IndexerService) *DatabaseScanService {
 	return &DatabaseScanService{
@@ -76,7 +83,12 @@ func (s *DatabaseScanService) ScanNamespace(ctx context.Context, resource *commo
 	if !ok {
 		return 0, 0, 0, fmt.Errorf("engine %s does not implement CatalogFactsProvider", resource.EngineType)
 	}
-	itemTerm := catalogLeafTermForPlugin(p, plugin.CatalogTermTable)
+	scanCatalog := databaseScanCatalog{
+		catalogProvider: catalogProvider,
+		factsProvider:   factsProvider,
+		namespaceTerm:   namespaceTermForPlugin(p),
+		itemTerm:        catalogLeafTermForPlugin(p, plugin.CatalogTermTable),
+	}
 
 	db := s.tryOpenConnectionPool(resource)
 
@@ -86,7 +98,7 @@ func (s *DatabaseScanService) ScanNamespace(ctx context.Context, resource *commo
 		return 0, 0, 0, err
 	}
 
-	schemaNode, err := s.repo.UpsertNode(tenantID, engineID, rootNode, namespaceTermForPlugin(p), namespaceName, nil, nil)
+	schemaNode, err := s.repo.UpsertNode(tenantID, engineID, rootNode, scanCatalog.namespaceTerm, namespaceName, nil, nil)
 	if err != nil {
 		return 0, 0, 0, err
 	}
@@ -96,7 +108,7 @@ func (s *DatabaseScanService) ScanNamespace(ctx context.Context, resource *commo
 	}
 
 	// 3. 扫描表
-	tables, fields, err := s.scanTables(ctx, resource, catalogProvider, factsProvider, db, tenantID, engineID, schemaNode, namespaceName, scanDepth, force, itemTerm)
+	tables, fields, err := s.scanTables(ctx, resource, scanCatalog, db, tenantID, engineID, schemaNode, namespaceName, scanDepth, force)
 	if err != nil {
 		s.repo.FinalizeNodeState(schemaNode, "pending", 0, 0, err.Error())
 		return 0, 0, 0, err
@@ -104,7 +116,7 @@ func (s *DatabaseScanService) ScanNamespace(ctx context.Context, resource *commo
 
 	// 6. 完成扫描
 	var totalSize int64
-	tableItems, err := s.repo.GetItemsByNodeAndType(tenantID, engineID, schemaNode.ID, itemTerm)
+	tableItems, err := s.repo.GetItemsByNodeAndType(tenantID, engineID, schemaNode.ID, scanCatalog.itemTerm)
 	if err != nil {
 		return 0, tables, fields, err
 	}
@@ -125,20 +137,18 @@ func (s *DatabaseScanService) ScanNamespace(ctx context.Context, resource *commo
 func (s *DatabaseScanService) scanTables(
 	ctx context.Context,
 	resource *commonModels.Engine,
-	catalogProvider plugin.CatalogProvider,
-	factsProvider plugin.CatalogFactsProvider,
+	scanCatalog databaseScanCatalog,
 	db *gorm.DB,
 	tenantID, engineID uint,
 	schemaNode *models.MetaNode,
 	schemaName string,
 	scanDepth string,
 	force bool,
-	itemTerm string,
 ) (int, int, error) {
 	isDeepScan := strings.EqualFold(scanDepth, "deep")
 
 	// 查询已存在的表
-	existingTableMap := s.repo.GetItemsByNodeAndTypeMap(tenantID, engineID, schemaNode.ID, itemTerm)
+	existingTableMap := s.repo.GetItemsByNodeAndTypeMap(tenantID, engineID, schemaNode.ID, scanCatalog.itemTerm)
 
 	s.log.Info("开始扫描 Schema",
 		"tenant_id", tenantID,
@@ -148,7 +158,7 @@ func (s *DatabaseScanService) scanTables(
 		"existing_tables", len(existingTableMap),
 	)
 
-	pluginTables, err := s.listTables(ctx, resource, catalogProvider, schemaName)
+	pluginTables, err := s.listTables(ctx, resource, scanCatalog, schemaName)
 	if err != nil {
 		return 0, 0, fmt.Errorf("failed to list tables: %w", err)
 	}
@@ -170,7 +180,7 @@ func (s *DatabaseScanService) scanTables(
 		)
 
 		scannedTables[tableInfo.Name] = true
-		tableInfo.RowCount = s.resolveTableRowCount(ctx, resource, schemaName, tableInfo)
+		tableInfo.RowCount = s.resolveTableRowCount(ctx, resource, scanCatalog, schemaName, tableInfo)
 
 		// 检查是否需要更新
 		existingItem := existingTableMap[tableInfo.Name]
@@ -189,7 +199,7 @@ func (s *DatabaseScanService) scanTables(
 		}
 
 		// 扫描表字段和元数据
-		fields, attrs, err := s.scanTableDetails(ctx, resource, factsProvider, db, schemaName, tableInfo, existingItem, isDeepScan)
+		fields, attrs, err := s.scanTableDetails(ctx, resource, scanCatalog, db, schemaName, tableInfo, existingItem, isDeepScan)
 		if err != nil {
 			s.log.Warn("表扫描失败，跳过",
 				"schema", schemaName,
@@ -204,7 +214,7 @@ func (s *DatabaseScanService) scanTables(
 		rowCount := derefInt64Ptr(tableInfo.RowCount)
 		sizeBytes := derefInt64Ptr(tableInfo.SizeBytes)
 
-		item, err := s.repo.UpsertItemWithDepth(tenantID, engineID, schemaNode, itemTerm, tableInfo.Name, fullName, attrs, &rowCount, &sizeBytes, tableInfo.UpdatedAt, scanDepth)
+		item, err := s.repo.UpsertItemWithDepth(tenantID, engineID, schemaNode, scanCatalog.itemTerm, tableInfo.Name, fullName, attrs, &rowCount, &sizeBytes, tableInfo.UpdatedAt, scanDepth)
 		if err != nil {
 			s.log.Error("表元数据持久化失败",
 				"schema", schemaName,
@@ -243,21 +253,11 @@ func (s *DatabaseScanService) scanTables(
 func (s *DatabaseScanService) listTables(
 	ctx context.Context,
 	resource *commonModels.Engine,
-	catalogProvider plugin.CatalogProvider,
+	scanCatalog databaseScanCatalog,
 	schemaName string,
 ) ([]datatype.TableInfo, error) {
-	nodes, err := catalogProvider.ListChildren(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), plugin.CatalogPath{
-		Version:  plugin.CatalogPathVersion,
-		EngineID: resource.ID,
-		Segments: []plugin.CatalogSegment{{
-			Term: namespaceRootTermForPlugin(catalogProvider),
-			Kind: namespaceRootTermForPlugin(catalogProvider),
-		}, {
-			Term: namespaceTermForPlugin(catalogProvider),
-			Kind: plugin.CatalogKindNamespace,
-			Name: schemaName,
-		}},
-	}, plugin.ListOptions{})
+	parentPath := plugin.TabularNamespacePath(resource.ID, scanCatalog.namespaceTerm, schemaName)
+	nodes, err := scanCatalog.catalogProvider.ListChildren(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), parentPath, plugin.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -278,15 +278,16 @@ func (s *DatabaseScanService) listTables(
 	return tables, nil
 }
 
-func (s *DatabaseScanService) resolveTableRowCount(ctx context.Context, resource *commonModels.Engine, schemaName string, tableInfo datatype.TableInfo) *int64 {
+func (s *DatabaseScanService) resolveTableRowCount(ctx context.Context, resource *commonModels.Engine, scanCatalog databaseScanCatalog, schemaName string, tableInfo datatype.TableInfo) *int64 {
 	if tableInfo.RowCount != nil && *tableInfo.RowCount > 0 {
 		return tableInfo.RowCount
 	}
-	count, err := plugin.CountItemRows(ctx, &plugin.Engine{
+	path := plugin.TabularItemPath(resource.ID, scanCatalog.namespaceTerm, schemaName, tableInfo.Name)
+	count, err := plugin.CountCatalogItemRows(ctx, &plugin.Engine{
 		ID:             resource.ID,
 		EngineType:     resource.EngineType,
 		ConnectionInfo: plugin.ConnectionInfo(resource.ConnectionInfo),
-	}, schemaName, tableInfo.Name)
+	}, path)
 	if err != nil {
 		s.log.Debug("表行数精确查询失败，保留 catalog 统计值",
 			"engine_id", resource.ID,
@@ -327,7 +328,7 @@ func (s *DatabaseScanService) tryOpenConnectionPool(resource *commonModels.Engin
 func (s *DatabaseScanService) scanTableDetails(
 	ctx context.Context,
 	resource *commonModels.Engine,
-	factsProvider plugin.CatalogFactsProvider,
+	scanCatalog databaseScanCatalog,
 	db *gorm.DB,
 	schemaName string,
 	tableInfo datatype.TableInfo,
@@ -338,7 +339,7 @@ func (s *DatabaseScanService) scanTableDetails(
 	var attrs models.JSONMap
 
 	if isDeepScan {
-		describedTable, err := s.describeTableInfo(ctx, resource, factsProvider, schemaName, tableInfo.Name)
+		describedTable, err := s.describeTableInfo(ctx, resource, scanCatalog, schemaName, tableInfo.Name)
 		if err != nil {
 			return nil, nil, fmt.Errorf("字段扫描失败: %w", err)
 		}
@@ -425,19 +426,12 @@ func normalizedTableKind(table datatype.TableInfo) string {
 func (s *DatabaseScanService) describeTableInfo(
 	ctx context.Context,
 	resource *commonModels.Engine,
-	factsProvider plugin.CatalogFactsProvider,
+	scanCatalog databaseScanCatalog,
 	schemaName string,
 	tableName string,
 ) (datatype.TableInfo, error) {
-	item, err := factsProvider.DescribeCatalogFacts(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), plugin.CatalogPath{
-		Version:  plugin.CatalogPathVersion,
-		EngineID: resource.ID,
-		Segments: []plugin.CatalogSegment{
-			{Term: namespaceRootTermForPlugin(factsProvider), Kind: namespaceRootTermForPlugin(factsProvider)},
-			{Term: namespaceTermForPlugin(factsProvider), Kind: plugin.CatalogKindNamespace, Name: schemaName},
-			{Term: plugin.CatalogTermTable, Kind: plugin.CatalogKindTable, Name: tableName},
-		},
-	}, plugin.CatalogFactsOptions{})
+	path := plugin.TabularItemPath(resource.ID, scanCatalog.namespaceTerm, schemaName, tableName)
+	item, err := scanCatalog.factsProvider.DescribeCatalogFacts(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), path, plugin.CatalogFactsOptions{})
 	if err != nil {
 		return datatype.TableInfo{}, err
 	}

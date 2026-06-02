@@ -69,10 +69,10 @@ func (s *MetadataQueryService) ListItemsByEngine(engineID, tenantID uint) ([]mod
 	return result, nil
 }
 
-func (s *MetadataQueryService) ListItemsByNamespace(engineID, tenantID uint, namespace string) ([]models.MetaItemLite, error) {
+func (s *MetadataQueryService) ListItemsByBranch(engineID, tenantID uint, branch string) ([]models.MetaItemLite, error) {
 	var node models.MetaNode
 	err := s.db.Where("tenant_id = ? AND engine_id = ? AND name = ? AND parent_node_id IS NULL AND deleted_at IS NULL",
-		tenantID, engineID, namespace).
+		tenantID, engineID, branch).
 		First(&node).Error
 	if err != nil {
 		return nil, err

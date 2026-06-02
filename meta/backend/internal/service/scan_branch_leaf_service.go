@@ -17,9 +17,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// NamespaceItemScanService 扫描 namespace -> catalog leaf，并把 leaf 投影为 Meta item。
-// 文档型与图型引擎共享这一层级，但 leaf 事实仍由插件和 catalog model 决定。
-type NamespaceItemScanService struct {
+// BranchLeafScanService 扫描 root branch -> catalog leaf，并把 leaf 投影为 Meta item。
+// 动态 schema 与图型引擎共享这一层级，但 leaf 事实仍由插件和 catalog model 决定。
+type BranchLeafScanService struct {
 	db             *gorm.DB
 	log            *slog.Logger
 	indexer        *search.Indexer
@@ -27,8 +27,17 @@ type NamespaceItemScanService struct {
 	indexerService *IndexerService          // 索引服务
 }
 
-func NewNamespaceItemScanService(db *gorm.DB, log *slog.Logger, indexer *search.Indexer, repo *metaRepo.ScanRepository, indexerService *IndexerService) *NamespaceItemScanService {
-	return &NamespaceItemScanService{
+type branchLeafScanCatalog struct {
+	model            plugin.CatalogModelSpec
+	catalogProvider  plugin.CatalogProvider
+	factsProvider    plugin.CatalogFactsProvider
+	samplingProvider plugin.DynamicSchemaSamplingProvider
+	connInfo         plugin.ConnectionInfo
+	branchTerm       string
+}
+
+func NewBranchLeafScanService(db *gorm.DB, log *slog.Logger, indexer *search.Indexer, repo *metaRepo.ScanRepository, indexerService *IndexerService) *BranchLeafScanService {
+	return &BranchLeafScanService{
 		db:             db,
 		log:            log,
 		indexer:        indexer,
@@ -37,14 +46,14 @@ func NewNamespaceItemScanService(db *gorm.DB, log *slog.Logger, indexer *search.
 	}
 }
 
-// ScanNamespace 扫描 namespace 及其所有 catalog leaf。
+// ScanBranch 扫描 root branch 及其所有 catalog leaf。
 // CatalogProvider 负责列出真实数据库、集合或 graph leaf；DynamicSchemaSamplingProvider 用于动态 schema 深度推断。
-func (s *NamespaceItemScanService) ScanNamespace(
+func (s *BranchLeafScanService) ScanBranch(
 	ctx context.Context,
 	enginePlugin plugin.EnginePlugin,
 	resource *commonModels.Engine,
 	tenantID uint,
-	namespaceName string,
+	branchName string,
 	scanDepth string,
 	force bool,
 ) (int, int, int, error) {
@@ -56,33 +65,45 @@ func (s *NamespaceItemScanService) ScanNamespace(
 	}
 	samplingProvider, _ := enginePlugin.(plugin.DynamicSchemaSamplingProvider)
 	catalogFactsProvider, _ := enginePlugin.(plugin.CatalogFactsProvider)
+	model := catalogModelForPlugin(enginePlugin)
+	if model == nil {
+		return 0, 0, 0, fmt.Errorf("engine %s has no catalog model", resource.EngineType)
+	}
+	scanCatalog := branchLeafScanCatalog{
+		model:            *model,
+		catalogProvider:  catalogProvider,
+		factsProvider:    catalogFactsProvider,
+		samplingProvider: samplingProvider,
+		connInfo:         connInfo,
+		branchTerm:       firstBusinessBranchTermForPlugin(enginePlugin),
+	}
 
-	// 1. 创建/更新 namespace 节点
+	// 1. 创建/更新 root branch 节点
 	rootNode, err := ensureCatalogRootNode(s.repo, tenantID, resource, enginePlugin)
 	if err != nil {
 		return 0, 0, 0, err
 	}
-	namespaceNode, err := s.repo.UpsertNode(tenantID, resource.ID, rootNode, namespaceTermForPlugin(enginePlugin), namespaceName, nil, nil)
+	branchNode, err := s.repo.UpsertNode(tenantID, resource.ID, rootNode, scanCatalog.branchTerm, branchName, nil, nil)
 	if err != nil {
-		return 0, 0, 0, fmt.Errorf("failed to create namespace node: %w", err)
+		return 0, 0, 0, fmt.Errorf("failed to create catalog branch node: %w", err)
 	}
 
-	if err := s.repo.ResetNodeState(namespaceNode, "running"); err != nil {
+	if err := s.repo.ResetNodeState(branchNode, "running"); err != nil {
 		return 0, 0, 0, err
 	}
 
 	var totalObjects, totalFields int
 
-	totalObjects, totalFields, err = s.scanCatalogLeaves(ctx, enginePlugin, catalogProvider, catalogFactsProvider, samplingProvider, connInfo, resource, tenantID, namespaceNode, namespaceName, scanDepth, force)
+	totalObjects, totalFields, err = s.scanCatalogLeaves(ctx, scanCatalog, resource, tenantID, branchNode, branchName, scanDepth, force)
 
 	if err != nil {
-		s.repo.FinalizeNodeState(namespaceNode, "pending", 0, 0, err.Error())
+		s.repo.FinalizeNodeState(branchNode, "pending", 0, 0, err.Error())
 		return 0, 0, 0, err
 	}
 
 	// 3. 完成扫描
 	var totalSize int64
-	collectionItems, err := s.repo.GetItemsByNode(namespaceNode.ID)
+	collectionItems, err := s.repo.GetItemsByNode(branchNode.ID)
 	if err != nil {
 		return 0, totalObjects, totalFields, err
 	}
@@ -92,46 +113,32 @@ func (s *NamespaceItemScanService) ScanNamespace(
 		}
 	}
 
-	if err := s.repo.FinalizeNodeStateWithDepth(namespaceNode, "completed", totalObjects, totalSize, "", scanDepth); err != nil {
+	if err := s.repo.FinalizeNodeStateWithDepth(branchNode, "completed", totalObjects, totalSize, "", scanDepth); err != nil {
 		return 0, totalObjects, totalFields, err
 	}
 
 	return 1, totalObjects, totalFields, nil
 }
 
-func (s *NamespaceItemScanService) scanCatalogLeaves(
+func (s *BranchLeafScanService) scanCatalogLeaves(
 	ctx context.Context,
-	enginePlugin plugin.EnginePlugin,
-	catalogProvider plugin.CatalogProvider,
-	catalogFactsProvider plugin.CatalogFactsProvider,
-	samplingProvider plugin.DynamicSchemaSamplingProvider,
-	connInfo plugin.ConnectionInfo,
+	scanCatalog branchLeafScanCatalog,
 	resource *commonModels.Engine,
 	tenantID uint,
-	namespaceNode *models.MetaNode,
-	namespaceName string,
+	branchNode *models.MetaNode,
+	branchName string,
 	scanDepth string,
 	force bool,
 ) (int, int, error) {
-	nodes, err := catalogProvider.ListChildren(ctx, connInfo, plugin.CatalogPath{
-		Version:  plugin.CatalogPathVersion,
-		EngineID: resource.ID,
-		Segments: []plugin.CatalogSegment{{
-			Term: namespaceRootTermForPlugin(enginePlugin),
-			Kind: namespaceRootTermForPlugin(enginePlugin),
-		}, {
-			Term: namespaceTermForPlugin(enginePlugin),
-			Kind: plugin.CatalogKindNamespace,
-			Name: namespaceName,
-		}},
-	}, plugin.ListOptions{})
+	parentPath := plugin.BranchCatalogPath(scanCatalog.model, resource.ID, scanCatalog.branchTerm, branchName)
+	nodes, err := scanCatalog.catalogProvider.ListChildren(ctx, scanCatalog.connInfo, parentPath, plugin.ListOptions{})
 	if err != nil {
 		return 0, 0, fmt.Errorf("failed to list catalog leaves: %w", err)
 	}
 
-	s.log.Info("扫描到的 namespace catalog leaf", "namespace", namespaceName, "leaf_count", len(nodes))
+	s.log.Info("扫描到的 catalog branch leaf", "branch", branchName, "leaf_count", len(nodes))
 
-	existingItems, err := s.repo.GetItemsByNode(namespaceNode.ID)
+	existingItems, err := s.repo.GetItemsByNode(branchNode.ID)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -144,7 +151,7 @@ func (s *NamespaceItemScanService) scanCatalogLeaves(
 	totalFields := 0
 
 	for i, node := range nodes {
-		itemType := namespaceLeafItemType(node)
+		itemType := branchLeafItemType(node)
 		if itemType == "" {
 			continue
 		}
@@ -152,7 +159,7 @@ func (s *NamespaceItemScanService) scanCatalogLeaves(
 		sizeBytes := catalogEntrySizeBytes(node)
 		itemName := node.Name
 
-		s.log.Info(fmt.Sprintf("处理第 %d/%d 个 namespace catalog leaf", i+1, len(nodes)),
+		s.log.Info(fmt.Sprintf("处理第 %d/%d 个 catalog branch leaf", i+1, len(nodes)),
 			"item_name", itemName,
 			"item_type", itemType,
 			"count", count,
@@ -176,15 +183,16 @@ func (s *NamespaceItemScanService) scanCatalogLeaves(
 
 		var attrs models.JSONMap
 
-		if itemType == "collection" && strings.EqualFold(scanDepth, "deep") && samplingProvider != nil {
-			catalogFacts, err := samplingProvider.SampleDynamicSchema(ctx, connInfo, itemCatalogPath(resource.ID, namespaceTermForPlugin(enginePlugin), namespaceName, node.Term, node.Kind, itemName), plugin.CatalogFactsOptions{
+		if itemType == "collection" && strings.EqualFold(scanDepth, "deep") && scanCatalog.samplingProvider != nil {
+			itemPath := plugin.BranchLeafCatalogPath(scanCatalog.model, resource.ID, scanCatalog.branchTerm, branchName, node.Term, node.Kind, itemName)
+			catalogFacts, err := scanCatalog.samplingProvider.SampleDynamicSchema(ctx, scanCatalog.connInfo, itemPath, plugin.CatalogFactsOptions{
 				IncludeSamples:    true,
 				IncludeStatistics: true,
 				IncludeIndexes:    true,
 				SampleSize:        100,
 			})
 			if err != nil {
-				s.log.Warn("动态 schema 采样失败", "namespace", namespaceName, "collection", itemName, "error", err)
+				s.log.Warn("动态 schema 采样失败", "branch", branchName, "collection", itemName, "error", err)
 			} else {
 				attrs = metaattr.BuildDynamicSchemaAttributes(dynamicSchemaAttributesInput(catalogFacts))
 				if tableInfo := plugin.CatalogFactsTableInfo(catalogFacts); tableInfo != nil {
@@ -194,21 +202,21 @@ func (s *NamespaceItemScanService) scanCatalogLeaves(
 		}
 		var graphInfo *datatype.GraphInfo
 		if itemType == "graph" {
-			if catalogFactsProvider == nil {
-				s.log.Warn("图 catalog leaf 缺少 facts provider", "namespace", namespaceName, "leaf", itemName)
+			if scanCatalog.factsProvider == nil {
+				s.log.Warn("图 catalog leaf 缺少 facts provider", "branch", branchName, "leaf", itemName)
 				continue
 			}
-			catalogFacts, err := catalogFactsProvider.DescribeCatalogFacts(ctx, connInfo, node.Path, plugin.CatalogFactsOptions{
+			catalogFacts, err := scanCatalog.factsProvider.DescribeCatalogFacts(ctx, scanCatalog.connInfo, node.Path, plugin.CatalogFactsOptions{
 				IncludeStatistics: true,
 				IncludeSamples:    strings.EqualFold(scanDepth, "deep"),
 			})
 			if err != nil {
-				s.log.Warn("图结构扫描失败", "namespace", namespaceName, "leaf", itemName, "error", err)
+				s.log.Warn("图结构扫描失败", "branch", branchName, "leaf", itemName, "error", err)
 				continue
 			}
 			graphInfo = plugin.CatalogFactsGraphInfo(catalogFacts)
 			if graphInfo == nil {
-				s.log.Warn("图结构扫描未返回 GraphInfo", "namespace", namespaceName, "leaf", itemName)
+				s.log.Warn("图结构扫描未返回 GraphInfo", "branch", branchName, "leaf", itemName)
 				continue
 			}
 			count = derefGraphNodeCount(graphInfo)
@@ -225,14 +233,14 @@ func (s *NamespaceItemScanService) scanCatalogLeaves(
 		} else {
 			continue
 		}
-		metaattr.ApplyNamespaceItemAttributes(attrs, itemType)
+		metaattr.ApplyBranchLeafItemAttributes(attrs, itemType)
 
-		fullName := fmt.Sprintf("%s.%s", namespaceName, itemName)
+		fullName := fmt.Sprintf("%s.%s", branchName, itemName)
 		rowCount := count
 
-		_, err = s.repo.UpsertItemWithDepth(tenantID, resource.ID, namespaceNode, itemType, itemName, fullName, attrs, &rowCount, &sizeBytes, nil, scanDepth)
+		_, err = s.repo.UpsertItemWithDepth(tenantID, resource.ID, branchNode, itemType, itemName, fullName, attrs, &rowCount, &sizeBytes, nil, scanDepth)
 		if err != nil {
-			s.log.Warn("保存 namespace item 元数据失败", "namespace", namespaceName, "item", itemName, "item_type", itemType, "error", err)
+			s.log.Warn("保存 branch leaf 元数据失败", "branch", branchName, "item", itemName, "item_type", itemType, "error", err)
 			continue
 		}
 
@@ -243,13 +251,13 @@ func (s *NamespaceItemScanService) scanCatalogLeaves(
 		if len(scanned) == 0 {
 			continue
 		}
-		s.softDeleteMissingItemsByType(tenantID, resource.ID, namespaceNode.ID, itemType, scanned)
+		s.softDeleteMissingItemsByType(tenantID, resource.ID, branchNode.ID, itemType, scanned)
 	}
 	for itemType := range itemTypes(existingItems) {
 		if _, ok := scannedByType[itemType]; ok {
 			continue
 		}
-		s.softDeleteMissingItemsByType(tenantID, resource.ID, namespaceNode.ID, itemType, map[string]bool{})
+		s.softDeleteMissingItemsByType(tenantID, resource.ID, branchNode.ID, itemType, map[string]bool{})
 	}
 	return totalItems, totalFields, nil
 }
@@ -316,23 +324,11 @@ func dynamicSchemaFields(catalogFacts *plugin.CatalogFacts) []datatype.FieldInfo
 	return append([]datatype.FieldInfo(nil), tableInfo.Fields...)
 }
 
-func itemCatalogPath(engineID uint, namespaceTerm, namespace, itemTerm, itemKind, itemName string) plugin.CatalogPath {
-	return plugin.CatalogPath{
-		Version:  plugin.CatalogPathVersion,
-		EngineID: engineID,
-		Segments: []plugin.CatalogSegment{
-			{Term: plugin.CatalogTermServer, Kind: plugin.CatalogTermServer},
-			{Term: namespaceTerm, Kind: plugin.CatalogKindNamespace, Name: namespace},
-			{Term: itemTerm, Kind: itemKind, Name: itemName},
-		},
-	}
-}
-
 // softDeleteMissingItemsByType 按 item_type 软删除不存在的数据项
-func (s *NamespaceItemScanService) softDeleteMissingItemsByType(tenantID, engineID, namespaceNodeID uint, itemType string, scanned map[string]bool) {
+func (s *BranchLeafScanService) softDeleteMissingItemsByType(tenantID, engineID, branchNodeID uint, itemType string, scanned map[string]bool) {
 	var items []models.MetaItem
 	s.db.Where("tenant_id = ? AND engine_id = ? AND node_id = ? AND item_type = ? AND deleted_at IS NULL",
-		tenantID, engineID, namespaceNodeID, itemType).Find(&items)
+		tenantID, engineID, branchNodeID, itemType).Find(&items)
 
 	for _, item := range items {
 		if !scanned[item.Name] {
@@ -347,7 +343,7 @@ func (s *NamespaceItemScanService) softDeleteMissingItemsByType(tenantID, engine
 	}
 }
 
-func namespaceLeafItemType(node plugin.CatalogEntry) string {
+func branchLeafItemType(node plugin.CatalogEntry) string {
 	if node.Role != plugin.CatalogRoleLeaf {
 		return ""
 	}

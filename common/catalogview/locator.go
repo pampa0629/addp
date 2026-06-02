@@ -20,9 +20,11 @@ const (
 	TypePrefix     ResourceType = "prefix"
 	TypeDatabase   ResourceType = "database"
 	TypeSchema     ResourceType = "schema"
-	TypeBucket     ResourceType = "bucket" // 对象存储桶
-	TypeRoot       ResourceType = "root"   // 文件系统根目录
-	TypeDir        ResourceType = "dir"    // 文件系统子目录
+	TypeBucket     ResourceType = "bucket"  // 对象存储桶
+	TypeRoot       ResourceType = "root"    // 文件系统结构根
+	TypeServer     ResourceType = "server"  // 数据库/namespace 引擎结构根
+	TypeService    ResourceType = "service" // 对象存储服务结构根
+	TypeDir        ResourceType = "dir"     // 文件系统子目录
 	TypeUnknown    ResourceType = "unknown"
 )
 
@@ -61,7 +63,25 @@ func LocatorFromFullName(engineID uint, engineType, resourceType, fullName strin
 
 // EngineRootLocator 构建引擎根节点的 ResourceLocator URI。
 func EngineRootLocator(engineID uint) string {
-	return fmt.Sprintf("addp://engine/%d/path/?type=%s", engineID, TypeRoot)
+	return EngineRootLocatorForType(engineID, TypeRoot)
+}
+
+// EngineRootLocatorForType 构建带显性 catalog root 术语的引擎根节点 ResourceLocator URI。
+func EngineRootLocatorForType(engineID uint, rootType ResourceType) string {
+	if !IsRootResourceType(rootType) {
+		rootType = TypeRoot
+	}
+	return fmt.Sprintf("addp://engine/%d/path/?type=%s", engineID, rootType)
+}
+
+// IsRootResourceType 判断 ResourceLocator type 是否表达结构性 catalog root。
+func IsRootResourceType(resourceType ResourceType) bool {
+	switch resourceType {
+	case TypeRoot, TypeServer, TypeService:
+		return true
+	default:
+		return false
+	}
 }
 
 // ParseFullNamePath 按 ResourceLocator 规范将 full_name 拆为 path segments。
@@ -79,7 +99,7 @@ func ParseFullNamePath(engineType, resourceType, fullName string) []string {
 // UsesSlashFullName 判断 catalog full_name 是否使用 slash 路径语义。
 func UsesSlashFullName(engineType, resourceType string) bool {
 	switch strings.ToLower(strings.TrimSpace(resourceType)) {
-	case string(TypeBucket), "prefix", string(TypeDirectory), string(TypeObject), string(TypeRoot), string(TypeDir), string(TypeFile):
+	case string(TypeBucket), "prefix", string(TypeDirectory), string(TypeObject), string(TypeRoot), string(TypeServer), string(TypeService), string(TypeDir), string(TypeFile):
 		return true
 	}
 	switch strings.ToLower(strings.TrimSpace(engineType)) {

@@ -1,16 +1,46 @@
 package api
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
 
-	commonAPI "github.com/addp/common/api"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/middleware/auth"
+	manageri18n "github.com/addp/manager/i18n"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
 )
+
+func importError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, service.ErrImportTableNameRequired):
+		managerError(c, http.StatusBadRequest, manageri18n.MsgImportTableNameRequired)
+	case errors.Is(err, service.ErrImportZipRequired):
+		managerError(c, http.StatusBadRequest, manageri18n.MsgImportZipRequired)
+	case errors.Is(err, service.ErrImportUnsupportedFormat):
+		managerError(c, http.StatusBadRequest, manageri18n.MsgImportUnsupportedFormat)
+	case errors.Is(err, service.ErrImportSourceEngineNotConfigured):
+		managerError(c, http.StatusBadRequest, manageri18n.MsgImportSourceNotConfigured)
+	case errors.Is(err, service.ErrImportSourceEngineNotMatched):
+		managerError(c, http.StatusBadRequest, manageri18n.MsgImportSourceNotMatched)
+	case errors.Is(err, service.ErrImportSourceEngineAmbiguous):
+		managerError(c, http.StatusBadRequest, manageri18n.MsgImportSourceAmbiguous)
+	case errors.Is(err, service.ErrImportSourceEngineIDInvalid):
+		managerError(c, http.StatusBadRequest, manageri18n.MsgImportSourceIDInvalid)
+	case errors.Is(err, service.ErrImportSourceEngineInactive):
+		managerError(c, http.StatusBadRequest, manageri18n.MsgImportSourceInactive)
+	case errors.Is(err, service.ErrImportZipMissingShp):
+		managerError(c, http.StatusBadRequest, manageri18n.MsgImportZipMissingShp)
+	case errors.Is(err, service.ErrImportZipBasenameMismatch):
+		managerError(c, http.StatusBadRequest, manageri18n.MsgImportZipBasenameMismatch)
+	case errors.Is(err, service.ErrImportZipMissingRequiredSet):
+		managerError(c, http.StatusBadRequest, manageri18n.MsgImportZipMissingRequired)
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	}
+}
 
 // ImportHandler 数据导入 API Handler
 type ImportHandler struct {
@@ -28,7 +58,7 @@ func NewImportHandler(importService *service.ImportService) *ImportHandler {
 // 参数:
 //   - file: Shapefile ZIP 包
 //   - target_engine_id: 目标数据库引擎 ID（必填）
-//   - target_schema: 目标命名空间（默认 public）
+//   - target_schema: 目标 Schema（默认 public）
 //   - target_table: 目标数据项名称（可选，默认使用文件名）
 //   - encoding: DBF 编码（可选，默认 UTF-8）
 //
@@ -39,7 +69,7 @@ func NewImportHandler(importService *service.ImportService) *ImportHandler {
 // @Produce json
 // @Param file formData file true "数据文件（Shapefile ZIP包等）| Data file (Shapefile ZIP, etc.)"
 // @Param target_engine_id formData int true "目标数据库引擎ID | Target database engine ID"
-// @Param target_schema formData string false "目标命名空间，默认public | Target namespace, default public"
+// @Param target_schema formData string false "目标 Schema，默认 public | Target schema, default public"
 // @Param target_table formData string false "目标数据项名称，默认使用文件名 | Target item name, default from filename"
 // @Param encoding formData string false "DBF编码，默认UTF-8 | DBF encoding, default UTF-8"
 // @Success 202 {object} map[string]interface{} "导入任务已创建 | Import task created"
@@ -51,14 +81,14 @@ func (h *ImportHandler) ImportData(c *gin.Context) {
 
 	// 解析 multipart 表单
 	if err := c.Request.ParseMultipartForm(100 << 20); err != nil { // 最大 100MB
-		commonAPI.BadRequestError(c, "failed to parse form: "+err.Error())
+		managerErrorWithDetail(c, http.StatusBadRequest, manageri18n.MsgParseFormFailed, err.Error())
 		return
 	}
 
 	// 获取上传文件
 	file, header, err := c.Request.FormFile("file")
 	if err != nil {
-		commonAPI.BadRequestError(c, "file is required")
+		managerError(c, http.StatusBadRequest, manageri18n.MsgFileRequired)
 		return
 	}
 	defer file.Close()
@@ -66,19 +96,19 @@ func (h *ImportHandler) ImportData(c *gin.Context) {
 	// 读取文件内容
 	fileContent, err := io.ReadAll(file)
 	if err != nil {
-		commonAPI.InternalServerError(c, "failed to read file: "+err.Error())
+		managerErrorWithDetail(c, http.StatusInternalServerError, manageri18n.MsgReadFileFailed, err.Error())
 		return
 	}
 
 	// 解析目标引擎 ID（必填）
 	engineIDStr := c.PostForm("target_engine_id")
 	if engineIDStr == "" {
-		commonAPI.BadRequestError(c, "target_engine_id is required")
+		managerError(c, http.StatusBadRequest, manageri18n.MsgTargetEngineIDRequired)
 		return
 	}
 	engineIDUint64, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
-		commonAPI.BadRequestError(c, "invalid target_engine_id")
+		managerError(c, http.StatusBadRequest, manageri18n.MsgInvalidTargetEngineID)
 		return
 	}
 	engineID := uint(engineIDUint64)
@@ -114,7 +144,7 @@ func (h *ImportHandler) ImportData(c *gin.Context) {
 	result, err := h.importService.ImportShapefile(c.Request.Context(), req)
 	if err != nil {
 		log.Error("导入失败", "error", err, "filename", header.Filename)
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		importError(c, err)
 		return
 	}
 

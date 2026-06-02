@@ -87,3 +87,38 @@ func TestCatalogPathWithoutRoot(t *testing.T) {
 		t.Fatalf("business StringPath = %q", got)
 	}
 }
+
+func TestTabularItemPathUsesExplicitServerRoot(t *testing.T) {
+	path := TabularItemPath(7, CatalogTermSchema, "public", "roads")
+	if len(path.Segments) != 3 {
+		t.Fatalf("segments = %#v", path.Segments)
+	}
+	if path.Segments[0].Term != CatalogTermServer || path.Segments[0].Kind != CatalogTermServer {
+		t.Fatalf("root segment = %#v", path.Segments[0])
+	}
+	if path.Segments[1].Term != CatalogTermSchema || path.Segments[1].Kind != CatalogKindNamespace || path.Segments[1].Name != "public" {
+		t.Fatalf("branch segment = %#v", path.Segments[1])
+	}
+	if path.Segments[2].Term != CatalogTermTable || path.Segments[2].Kind != CatalogKindTable || path.Segments[2].Name != "roads" {
+		t.Fatalf("table segment = %#v", path.Segments[2])
+	}
+	if got := path.StringPath(); got != "public/roads" {
+		t.Fatalf("StringPath() = %q, want public/roads", got)
+	}
+}
+
+func TestBranchLeafCatalogPathUsesModelRoot(t *testing.T) {
+	path := BranchLeafCatalogPath(DynamicSchemaCatalogModel(), 7, CatalogTermDatabase, "business", CatalogTermCollection, CatalogKindCollection, "orders")
+	if len(path.Segments) != 3 {
+		t.Fatalf("segments = %#v", path.Segments)
+	}
+	if path.Segments[0].Term != CatalogTermServer || path.Segments[0].Kind != CatalogTermServer {
+		t.Fatalf("root segment = %#v", path.Segments[0])
+	}
+	if path.Segments[1].Term != CatalogTermDatabase || path.Segments[1].Kind != CatalogKindNamespace || path.Segments[1].Name != "business" {
+		t.Fatalf("branch segment = %#v", path.Segments[1])
+	}
+	if path.Segments[2].Term != CatalogTermCollection || path.Segments[2].Kind != CatalogKindCollection || path.Segments[2].Name != "orders" {
+		t.Fatalf("item segment = %#v", path.Segments[2])
+	}
+}

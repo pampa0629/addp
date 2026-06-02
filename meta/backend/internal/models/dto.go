@@ -10,7 +10,7 @@ type JSONMap = commonModels.JSONMap
 
 // ScanRequest 扫描请求
 type ScanRequest struct {
-	EngineID     uint     `json:"engine_id"`     // 资源ID
+	EngineID     uint     `json:"engine_id"`     // 存储引擎 ID
 	CatalogPaths []string `json:"catalog_paths"` // 要扫描的 catalog 路径列表（空则全部）
 	NodeID       uint     `json:"node_id"`       // 要扫描的节点 ID
 	ItemID       uint     `json:"item_id"`       // 要扫描的数据项 ID
@@ -41,7 +41,7 @@ type ExtractionScanStats struct {
 	IndexFailed int `json:"index_failed"`
 }
 
-// ResourceWithStats 资源及其扫描统计
+// ResourceWithStats 存储引擎及其 catalog 扫描统计
 type ResourceWithStats struct {
 	EngineID              uint   `json:"id"`   // 前端期待 id
 	ResourceName          string `json:"name"` // 前端期待 name

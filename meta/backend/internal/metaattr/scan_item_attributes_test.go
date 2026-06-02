@@ -165,18 +165,18 @@ func TestTableInfoPayloadWritesStandardTableFacts(t *testing.T) {
 	}
 }
 
-func TestApplyNamespaceItemAttributesDoesNotWriteEngineFormat(t *testing.T) {
+func TestApplyBranchLeafItemAttributesDoesNotWriteEngineFormat(t *testing.T) {
 	t.Parallel()
 
 	attrs := models.JSONMap{}
-	ApplyNamespaceItemAttributes(attrs, "collection")
+	ApplyBranchLeafItemAttributes(attrs, "collection")
 
 	item := attrs["item"].(map[string]interface{})
 	if item["layout"] != "single" || item["data_type"] != "table" {
 		t.Fatalf("item attrs = %#v", item)
 	}
 	if item["format"] != nil {
-		t.Fatalf("native namespace item should not write item.format: %#v", item)
+		t.Fatalf("native branch leaf should not write item.format: %#v", item)
 	}
 }
 

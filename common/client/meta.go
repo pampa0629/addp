@@ -464,11 +464,11 @@ func (c *MetaClient) ForceRefreshItem(itemID uint) error {
 	return err
 }
 
-// ListItems 获取引擎的已扫描数据项列表，支持按命名空间过滤。
-func (c *MetaClient) ListItems(engineID uint, namespace string) ([]models.MetaItem, error) {
+// ListItems 获取引擎的已扫描数据项列表，支持按 catalog 第一层业务分支过滤。
+func (c *MetaClient) ListItems(engineID uint, branch string) ([]models.MetaItem, error) {
 	urlStr := fmt.Sprintf("%s/api/v1/meta/engines/%d/items", c.baseURL, engineID)
-	if namespace != "" {
-		urlStr += "?namespace=" + url.QueryEscape(namespace)
+	if branch != "" {
+		urlStr += "?branch=" + url.QueryEscape(branch)
 	}
 
 	req, err := http.NewRequest("GET", urlStr, nil)

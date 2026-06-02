@@ -217,7 +217,7 @@ definitions:
           type: string
         type: array
       engine_id:
-        description: 资源ID
+        description: 存储引擎 ID
         type: integer
       force:
         description: 是否强制重新扫描
@@ -345,7 +345,7 @@ paths:
       - Meta
   /cache/engines/{engine_id}:
     delete:
-      description: 清除指定引擎资源缓存，engine_id 为 all 时清除全部缓存 | Clear engine resource cache
+      description: 清除指定存储引擎缓存，engine_id 为 all 时清除全部缓存 | Clear storage engine cache
       parameters:
       - description: 存储引擎ID或all | Engine ID or all
         in: path
@@ -372,7 +372,7 @@ paths:
       - Meta Cache
   /cache/refresh:
     post:
-      description: 清除并重新预加载资源缓存 | Clear and preload resource cache
+      description: 清除并重新预加载存储引擎缓存 | Clear and preload storage engine cache
       produces:
       - application/json
       responses:
@@ -388,7 +388,7 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 刷新资源缓存 | Refresh resource cache
+      summary: 刷新存储引擎缓存 | Refresh storage engine cache
       tags:
       - Meta Cache
   /engines:
@@ -416,16 +416,17 @@ paths:
       - Meta
   /engines/{engine_id}/items:
     get:
-      description: 获取指定引擎下已扫描的数据项，可按命名空间过滤 | List scanned metadata items for an engine
+      description: 获取指定引擎下已扫描的数据项，可按 catalog 第一层业务分支过滤 | List scanned metadata items
+        for an engine, optionally filtered by catalog first business branch
       parameters:
       - description: 存储引擎ID | Engine ID
         in: path
         name: engine_id
         required: true
         type: integer
-      - description: 命名空间 | Namespace
+      - description: catalog 第一层业务分支名称 | Catalog first business branch name
         in: query
-        name: namespace
+        name: branch
         type: string
       produces:
       - application/json
@@ -914,8 +915,8 @@ paths:
       - Meta Query
   /scan/auto:
     post:
-      description: 为当前租户下尚未完成元数据扫描的资源创建后台扫描运行 | Create background scan runs for resources
-        that have not been scanned for current tenant
+      description: 为当前租户下尚未完成元数据扫描的存储引擎创建后台扫描运行 | Create background scan runs for
+        engines that have not been scanned for current tenant
       produces:
       - application/json
       responses:
@@ -941,7 +942,7 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 提交未扫描资源后台扫描 | Submit background scans for unscanned resources
+      summary: 提交未扫描存储引擎后台扫描 | Submit background scans for unscanned engines
       tags:
       - Meta Scan
   /scan/run/manual:

@@ -27,8 +27,7 @@ type ExplorerService struct {
 }
 
 type RefreshNodeResult struct {
-	Node *catalogview.TreeNode       `json:"node"`
-	Run  *commonModels.TaskExecution `json:"run,omitempty"`
+	Run *commonModels.TaskExecution `json:"run"`
 }
 
 // NewExplorerService 创建数据探查服务
@@ -96,7 +95,7 @@ func (s *ExplorerService) GetTree(ctx context.Context, tenantID *uint, engineID 
 //   - tenantID: 租户 ID
 //   - locator: ResourceLocator URI
 //
-// 返回: 刷新后的节点信息
+// 返回: 已提交的扫描运行
 func (s *ExplorerService) RefreshNode(ctx context.Context, tenantID *uint, locatorURI string, authToken string) (*RefreshNodeResult, error) {
 	// 1. 解析 Locator
 	loc, err := catalogview.ParseURI(locatorURI)
@@ -119,74 +118,24 @@ func (s *ExplorerService) RefreshNode(ctx context.Context, tenantID *uint, locat
 	}
 
 	// 3. 提交 Meta 后台深度扫描运行，并保留运行记录用于前端反馈。
-	var scanRun *commonModels.TaskExecution
-	if s.metaClient != nil {
-		authToken = strings.TrimSpace(authToken)
-		if authToken == "" {
-			return nil, fmt.Errorf("metadata scan requires authorization token")
-		}
-		opts := refreshScanOptions(loc)
-		logger.L().Info("提交 Meta 后台深度扫描", "engine_id", loc.EngineID, "type", loc.Type, "node_id", opts.NodeID, "item_id", opts.ItemID, "targets", opts.Targets)
-
-		metaClient := s.metaClient.WithAuthToken(authToken)
-
-		scanRun, err = metaClient.CreateManualScanRun(opts)
-		if err != nil {
-			logger.L().Warn("提交 Meta 后台深度扫描失败", "error", err)
-			return nil, fmt.Errorf("failed to submit metadata scan: %w", err)
-		} else {
-			logger.L().Info("Meta 后台深度扫描已提交", "engine_id", loc.EngineID, "execution_id", scanRun.ExecutionID)
-		}
+	if s.metaClient == nil {
+		return nil, fmt.Errorf("meta client not available")
 	}
+	authToken = strings.TrimSpace(authToken)
+	if authToken == "" {
+		return nil, fmt.Errorf("metadata scan requires authorization token")
+	}
+	opts := refreshScanOptions(loc)
+	logger.L().Info("提交 Meta 后台深度扫描", "engine_id", loc.EngineID, "type", loc.Type, "node_id", opts.NodeID, "item_id", opts.ItemID, "targets", opts.Targets)
 
-	// 4. 重新获取节点信息
-	// 使用 -1 获取所有节点，确保能找到目标节点
-	metaNodes, err := s.getMetaNodes(ctx, loc.EngineID, engine.EngineType, -1, tenantID)
+	scanRun, err := s.metaClient.WithAuthToken(authToken).CreateManualScanRun(opts)
 	if err != nil {
-		logger.L().Warn("刷新节点失败", "locator", locatorURI, "error", err)
-		return nil, fmt.Errorf("failed to refresh node: %w", err)
+		logger.L().Warn("提交 Meta 后台深度扫描失败", "error", err)
+		return nil, fmt.Errorf("failed to submit metadata scan: %w", err)
 	}
+	logger.L().Info("Meta 后台深度扫描已提交", "engine_id", loc.EngineID, "execution_id", scanRun.ExecutionID)
 
-	// 5. 查找对应的节点。
-	// 如果是 engine 根节点（没有 node_id/item_id），返回整个树。
-	if loc.NodeID == nil && loc.ItemID == nil {
-		logger.L().Info("刷新引擎根节点", "engine_id", loc.EngineID)
-		// 构建完整的树结构
-		tree, err := s.treeBuilder.BuildFromMeta(engine, metaNodes, 2)
-		if err != nil {
-			return nil, fmt.Errorf("failed to build engine tree: %w", err)
-		}
-		return &RefreshNodeResult{Node: tree, Run: scanRun}, nil
-	}
-
-	if loc.NodeID != nil {
-		for _, node := range metaNodes {
-			if node.ID == *loc.NodeID {
-				// 构建树节点并返回（只构建该节点及其直接子节点）
-				tree, err := s.treeBuilder.BuildFromMeta(engine, []*commonModels.MetaNode{node}, 1)
-				if err != nil {
-					return nil, fmt.Errorf("failed to build node tree: %w", err)
-				}
-				return &RefreshNodeResult{Node: tree, Run: scanRun}, nil
-			}
-		}
-		return nil, fmt.Errorf("node not found: %s", locatorURI)
-	}
-
-	if loc.ItemID != nil {
-		for _, node := range metaNodes {
-			if metaItemIDFromTreeMetaNode(node) == *loc.ItemID {
-				tree, err := s.treeBuilder.BuildFromMeta(engine, []*commonModels.MetaNode{node}, 1)
-				if err != nil {
-					return nil, fmt.Errorf("failed to build item tree: %w", err)
-				}
-				return &RefreshNodeResult{Node: tree, Run: scanRun}, nil
-			}
-		}
-		return nil, fmt.Errorf("item not found: %s", locatorURI)
-	}
-
-	return nil, fmt.Errorf("resource not found: %s", locatorURI)
+	return &RefreshNodeResult{Run: scanRun}, nil
 }
 
 func refreshScanOptions(loc *catalogview.ResourceLocator) commonClient.MetaScanOptions {
@@ -205,29 +154,6 @@ func refreshScanOptions(loc *catalogview.ResourceLocator) commonClient.MetaScanO
 		return opts
 	}
 	return opts
-}
-
-func metaItemIDFromTreeMetaNode(node *commonModels.MetaNode) uint {
-	if node == nil || node.Attributes == nil {
-		return 0
-	}
-	switch value := node.Attributes["item_id"].(type) {
-	case uint:
-		return value
-	case int:
-		if value > 0 {
-			return uint(value)
-		}
-	case int64:
-		if value > 0 {
-			return uint(value)
-		}
-	case float64:
-		if value > 0 {
-			return uint(value)
-		}
-	}
-	return 0
 }
 
 // ListEngines 获取引擎列表（用于前端显示）
@@ -529,12 +455,13 @@ func (s *ExplorerService) getMetaNodes(ctx context.Context, engineID uint, engin
 
 // buildEngineRootNode 构建引擎根节点（降级方案）
 func (s *ExplorerService) buildEngineRootNode(engine *commonModels.Engine) *catalogview.TreeNode {
-	locator := catalogview.EngineRootLocator(engine.ID)
+	rootType := catalogview.CatalogRootResourceType(engine)
+	locator := catalogview.EngineRootLocatorForType(engine.ID, rootType)
 	return &catalogview.TreeNode{
 		ID:      locator,
 		Locator: locator,
 		Label:   engine.Name,
-		Type:    "engine",
+		Type:    string(rootType),
 		Icon:    catalogview.EngineIcon(engine),
 		Metadata: map[string]interface{}{
 			"engine_id":      engine.ID,

@@ -16,6 +16,10 @@ func TestTabularCatalogEntryCarriesTableInfo(t *testing.T) {
 		Name:      "orders",
 		Comment:   "order facts",
 		UpdatedAt: &updatedAt,
+		Fields:    []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeBigInt}},
+		PrimaryKey: []string{
+			"id",
+		},
 		Native: map[string]interface{}{
 			"engine": "MergeTree",
 		},
@@ -36,6 +40,12 @@ func TestTabularCatalogEntryCarriesTableInfo(t *testing.T) {
 	}
 	if node.Table.Comment != "order facts" {
 		t.Fatalf("Table.Comment = %#v, want order facts", node.Table.Comment)
+	}
+	if len(node.Table.Fields) != 0 {
+		t.Fatalf("entry Table.Fields = %#v, want empty", node.Table.Fields)
+	}
+	if len(node.Table.PrimaryKey) != 0 {
+		t.Fatalf("entry Table.PrimaryKey = %#v, want empty", node.Table.PrimaryKey)
 	}
 	if node.UpdatedAt == nil || !node.UpdatedAt.Equal(updatedAt) {
 		t.Fatalf("UpdatedAt = %#v, want %v", node.UpdatedAt, updatedAt)
@@ -134,6 +144,12 @@ func TestTabularCatalogEntryFromFactsCarriesTableInfo(t *testing.T) {
 	}
 	if node.Table == nil || node.Table.Comment != "orders" || node.Table.Native["engine"] != "MergeTree" {
 		t.Fatalf("Table = %#v", node.Table)
+	}
+	if len(node.Table.Fields) != 0 {
+		t.Fatalf("entry Table.Fields = %#v, want empty", node.Table.Fields)
+	}
+	if len(node.Table.PrimaryKey) != 0 {
+		t.Fatalf("entry Table.PrimaryKey = %#v, want empty", node.Table.PrimaryKey)
 	}
 }
 

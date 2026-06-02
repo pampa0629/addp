@@ -18,7 +18,7 @@ func ProviderCatalogPathFromLocator(model plugin.CatalogModelSpec, loc *Resource
 	}
 	switch strings.TrimSpace(model.RootTerm) {
 	case plugin.CatalogTermServer:
-		return namespaceCatalogPathFromLocator(model, loc)
+		return serverCatalogPathFromLocator(model, loc)
 	case plugin.CatalogTermService:
 		return objectCatalogPathFromLocator(loc)
 	case plugin.CatalogTermRoot:
@@ -28,7 +28,7 @@ func ProviderCatalogPathFromLocator(model plugin.CatalogModelSpec, loc *Resource
 	}
 }
 
-func namespaceCatalogPathFromLocator(model plugin.CatalogModelSpec, loc *ResourceLocator) (plugin.CatalogPath, error) {
+func serverCatalogPathFromLocator(model plugin.CatalogModelSpec, loc *ResourceLocator) (plugin.CatalogPath, error) {
 	if len(loc.Path) == 0 {
 		if !isRootLocatorType(loc.Type) {
 			return plugin.CatalogPath{}, fmt.Errorf("catalog root locator requires root type, got %s", loc.Type)
@@ -36,25 +36,25 @@ func namespaceCatalogPathFromLocator(model plugin.CatalogModelSpec, loc *Resourc
 		return plugin.CatalogRootPath(model, loc.EngineID), nil
 	}
 	if len(model.Levels) < 2 {
-		return plugin.CatalogPath{}, fmt.Errorf("server catalog model requires namespace and leaf levels")
+		return plugin.CatalogPath{}, fmt.Errorf("server catalog model requires branch and leaf levels")
 	}
 
-	namespaceLevel := model.Levels[0]
+	branchLevel := model.Levels[0]
 	leafLevel := model.Levels[len(model.Levels)-1]
-	namespace := strings.TrimSpace(loc.Path[0])
-	if namespace == "" {
-		return plugin.CatalogPath{}, fmt.Errorf("catalog namespace segment is required")
+	branchName := strings.TrimSpace(loc.Path[0])
+	if branchName == "" {
+		return plugin.CatalogPath{}, fmt.Errorf("catalog branch segment is required")
 	}
 	path := plugin.CatalogRootPath(model, loc.EngineID)
 	path.Segments = append(path.Segments, plugin.CatalogSegment{
-		Term: namespaceLevel.Term,
-		Kind: firstCatalogKind(namespaceLevel, plugin.CatalogKindNamespace),
-		Name: namespace,
+		Term: branchLevel.Term,
+		Kind: firstCatalogKind(branchLevel, plugin.CatalogKindNamespace),
+		Name: branchName,
 	})
 
 	if len(loc.Path) == 1 {
-		if !resourceTypeMatchesLevel(loc.Type, namespaceLevel) {
-			return plugin.CatalogPath{}, fmt.Errorf("catalog leaf path requires namespace and %s segments", leafLevel.Term)
+		if !resourceTypeMatchesLevel(loc.Type, branchLevel) {
+			return plugin.CatalogPath{}, fmt.Errorf("catalog leaf path requires branch and %s segments", leafLevel.Term)
 		}
 		return path, nil
 	}
@@ -125,12 +125,7 @@ func fileCatalogPathFromLocator(loc *ResourceLocator) (plugin.CatalogPath, error
 }
 
 func isRootLocatorType(resourceType ResourceType) bool {
-	switch resourceType {
-	case TypeRoot:
-		return true
-	default:
-		return false
-	}
+	return IsRootResourceType(resourceType)
 }
 
 func firstCatalogKind(level plugin.CatalogLevelSpec, fallback string) string {

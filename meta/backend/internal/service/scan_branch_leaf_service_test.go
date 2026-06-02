@@ -13,7 +13,7 @@ import (
 	metaRepo "github.com/addp/meta/internal/repository"
 )
 
-func TestNamespaceItemType(t *testing.T) {
+func TestBranchLeafItemType(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -42,14 +42,14 @@ func TestNamespaceItemType(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := namespaceLeafItemType(tt.node); got != tt.want {
-				t.Fatalf("namespaceLeafItemType() = %q, want %q", got, tt.want)
+			if got := branchLeafItemType(tt.node); got != tt.want {
+				t.Fatalf("branchLeafItemType() = %q, want %q", got, tt.want)
 			}
 		})
 	}
 }
 
-func TestFinalizeCatalogRootAfterNamespaceScan(t *testing.T) {
+func TestFinalizeCatalogRootAfterBranchLeafScan(t *testing.T) {
 	db := openObjectCatalogScanTestDB(t)
 	repo := metaRepo.NewScanRepository(db)
 	svc := &ScanService{
@@ -57,13 +57,13 @@ func TestFinalizeCatalogRootAfterNamespaceScan(t *testing.T) {
 		repo: repo,
 		log:  slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
-	resource := &commonModels.Engine{ID: 25, Name: "Business Neo4j", EngineType: "namespace-root-test"}
-	plugin.Register(namespaceRootTestPlugin{})
+	resource := &commonModels.Engine{ID: 25, Name: "Business Neo4j", EngineType: "catalog-root-test"}
+	plugin.Register(catalogRootTestPlugin{})
 	t.Cleanup(func() {
-		plugin.Unregister("namespace-root-test")
+		plugin.Unregister("catalog-root-test")
 	})
 
-	root, err := ensureCatalogRootNode(repo, 1, resource, namespaceRootTestPlugin{})
+	root, err := ensureCatalogRootNode(repo, 1, resource, catalogRootTestPlugin{})
 	if err != nil {
 		t.Fatalf("ensureCatalogRootNode() error = %v", err)
 	}
@@ -85,41 +85,41 @@ func TestFinalizeCatalogRootAfterNamespaceScan(t *testing.T) {
 	}
 }
 
-type namespaceRootTestPlugin struct{}
+type catalogRootTestPlugin struct{}
 
-func (namespaceRootTestPlugin) Type() string         { return "namespace-root-test" }
-func (namespaceRootTestPlugin) DisplayName() string  { return "Namespace Root Test" }
-func (namespaceRootTestPlugin) EngineOrigin() string { return "general" }
-func (namespaceRootTestPlugin) DefaultPort() int     { return 0 }
-func (namespaceRootTestPlugin) RequiredFields() []string {
+func (catalogRootTestPlugin) Type() string         { return "catalog-root-test" }
+func (catalogRootTestPlugin) DisplayName() string  { return "Catalog Root Test" }
+func (catalogRootTestPlugin) EngineOrigin() string { return "general" }
+func (catalogRootTestPlugin) DefaultPort() int     { return 0 }
+func (catalogRootTestPlugin) RequiredFields() []string {
 	return nil
 }
-func (namespaceRootTestPlugin) SensitiveFields() []string {
+func (catalogRootTestPlugin) SensitiveFields() []string {
 	return nil
 }
-func (namespaceRootTestPlugin) ValidateConnectionInfo(plugin.ConnectionInfo) error {
+func (catalogRootTestPlugin) ValidateConnectionInfo(plugin.ConnectionInfo) error {
 	return nil
 }
-func (namespaceRootTestPlugin) TestConnection(context.Context, plugin.ConnectionInfo) error {
+func (catalogRootTestPlugin) TestConnection(context.Context, plugin.ConnectionInfo) error {
 	return nil
 }
-func (namespaceRootTestPlugin) Capabilities() plugin.EngineCapabilities {
+func (catalogRootTestPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.EngineCapabilities{}
 }
-func (namespaceRootTestPlugin) CatalogModel() plugin.CatalogModelSpec {
+func (catalogRootTestPlugin) CatalogModel() plugin.CatalogModelSpec {
 	return plugin.GraphCatalogModel()
 }
-func (namespaceRootTestPlugin) ListChildren(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.ListOptions) ([]plugin.CatalogEntry, error) {
+func (catalogRootTestPlugin) ListChildren(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.ListOptions) ([]plugin.CatalogEntry, error) {
 	return nil, nil
 }
-func (namespaceRootTestPlugin) ResolvePath(context.Context, plugin.ConnectionInfo, plugin.CatalogPath) (*plugin.CatalogEntry, error) {
+func (catalogRootTestPlugin) ResolvePath(context.Context, plugin.ConnectionInfo, plugin.CatalogPath) (*plugin.CatalogEntry, error) {
 	return nil, nil
 }
-func (namespaceRootTestPlugin) DescribeCatalogFacts(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
+func (catalogRootTestPlugin) DescribeCatalogFacts(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
 	return &plugin.CatalogFacts{Graph: &datatype.GraphInfo{}}, nil
 }
 
-var _ plugin.EnginePlugin = namespaceRootTestPlugin{}
-var _ plugin.CatalogModelProvider = namespaceRootTestPlugin{}
-var _ plugin.CatalogProvider = namespaceRootTestPlugin{}
-var _ plugin.CatalogFactsProvider = namespaceRootTestPlugin{}
+var _ plugin.EnginePlugin = catalogRootTestPlugin{}
+var _ plugin.CatalogModelProvider = catalogRootTestPlugin{}
+var _ plugin.CatalogProvider = catalogRootTestPlugin{}
+var _ plugin.CatalogFactsProvider = catalogRootTestPlugin{}

@@ -2,17 +2,44 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strconv"
 
 	"github.com/addp/common/logger"
 	commonmodels "github.com/addp/common/models"
+	manageri18n "github.com/addp/manager/i18n"
 	"github.com/addp/manager/internal/mvt"
 	"github.com/addp/manager/internal/repository"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 )
+
+func quickViewError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, service.ErrQuickViewRecordNotFound):
+		managerError(c, http.StatusNotFound, manageri18n.MsgQuickViewRecordNotFound)
+	case errors.Is(err, service.ErrQuickViewPreparationNotCompleted):
+		managerError(c, http.StatusBadRequest, manageri18n.MsgQuickViewPreparationNeeded)
+	case errors.Is(err, service.ErrQuickViewAlreadyGenerating):
+		managerError(c, http.StatusConflict, manageri18n.MsgQuickViewAlreadyGenerating)
+	case errors.Is(err, service.ErrQuickViewMinZoomRequired):
+		managerError(c, http.StatusBadRequest, manageri18n.MsgQuickViewMinZoomRequired)
+	case errors.Is(err, service.ErrQuickViewMaxZoomRequired):
+		managerError(c, http.StatusBadRequest, manageri18n.MsgQuickViewMaxZoomRequired)
+	case errors.Is(err, service.ErrQuickViewCancelStatusInvalid):
+		managerError(c, http.StatusBadRequest, manageri18n.MsgQuickViewCancelStatus)
+	case errors.Is(err, service.ErrQuickViewResumeStatusInvalid):
+		managerError(c, http.StatusBadRequest, manageri18n.MsgQuickViewResumeStatus)
+	case errors.Is(err, service.ErrQuickViewInvalidPreferredMode):
+		managerError(c, http.StatusBadRequest, manageri18n.MsgQuickViewInvalidMode)
+	case errors.Is(err, service.ErrQuickViewGeometryColumnNotFound):
+		managerError(c, http.StatusBadRequest, manageri18n.MsgQuickViewGeometryMissing)
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	}
+}
 
 // QuickViewHandler 快显API处理器
 type QuickViewHandler struct {
@@ -50,7 +77,7 @@ type UpdatePreferredModeRequest struct {
 // @Accept json
 // @Produce json
 // @Param id path int true "存储引擎ID | Engine ID"
-// @Param schema path string true "命名空间 | Namespace"
+// @Param schema path string true "Schema | Schema"
 // @Param table path string true "数据项名称 | Item name"
 // @Param body body TriggerQuickViewRequest false "快显生成配置 | Quick view generation configuration"
 // @Success 200 {object} map[string]interface{} "任务已加入队列 | Task enqueued"
@@ -62,7 +89,7 @@ func (h *QuickViewHandler) TriggerQuickView(c *gin.Context) {
 	// 1. 解析路径参数
 	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource id"})
+		invalidEngineID(c)
 		return
 	}
 
@@ -70,7 +97,7 @@ func (h *QuickViewHandler) TriggerQuickView(c *gin.Context) {
 	table := c.Param("table")
 
 	if schema == "" || table == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "schema and table are required"})
+		managerError(c, http.StatusBadRequest, manageri18n.MsgSchemaAndTableRequired)
 		return
 	}
 
@@ -112,7 +139,7 @@ func (h *QuickViewHandler) TriggerQuickView(c *gin.Context) {
 
 	if err := h.service.TriggerQuickView(c.Request.Context(), params); err != nil {
 		logger.L().Error("Failed to trigger quick view", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		quickViewError(c, err)
 		return
 	}
 
@@ -129,7 +156,7 @@ func (h *QuickViewHandler) TriggerQuickView(c *gin.Context) {
 // @Tags Manager
 // @Produce json
 // @Param id path int true "存储引擎ID | Engine ID"
-// @Param schema path string true "命名空间 | Namespace"
+// @Param schema path string true "Schema | Schema"
 // @Param table path string true "数据项名称 | Item name"
 // @Success 200 {object} map[string]interface{} "快显状态信息 | Quick view status"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
@@ -140,7 +167,7 @@ func (h *QuickViewHandler) GetQuickViewStatus(c *gin.Context) {
 	// 1. 解析路径参数
 	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource id"})
+		invalidEngineID(c)
 		return
 	}
 
@@ -209,7 +236,7 @@ func (h *QuickViewHandler) GetQuickViewStatus(c *gin.Context) {
 // @Tags Manager
 // @Produce json
 // @Param id path int true "存储引擎ID | Engine ID"
-// @Param schema path string true "命名空间 | Namespace"
+// @Param schema path string true "Schema | Schema"
 // @Param table path string true "数据项名称 | Item name"
 // @Success 200 {object} map[string]interface{} "清除成功 | Cleared successfully"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
@@ -220,7 +247,7 @@ func (h *QuickViewHandler) ClearQuickView(c *gin.Context) {
 	// 1. 解析路径参数
 	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource id"})
+		invalidEngineID(c)
 		return
 	}
 
@@ -254,7 +281,7 @@ func (h *QuickViewHandler) ClearQuickView(c *gin.Context) {
 // @Tags Manager
 // @Produce json
 // @Param id path int true "存储引擎ID | Engine ID"
-// @Param schema path string true "命名空间 | Namespace"
+// @Param schema path string true "Schema | Schema"
 // @Param table path string true "数据项名称 | Item name"
 // @Success 200 {object} map[string]interface{} "取消成功 | Cancelled successfully"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
@@ -264,7 +291,7 @@ func (h *QuickViewHandler) CancelQuickView(c *gin.Context) {
 	// 1. 解析路径参数
 	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource id"})
+		invalidEngineID(c)
 		return
 	}
 
@@ -282,7 +309,7 @@ func (h *QuickViewHandler) CancelQuickView(c *gin.Context) {
 	// 3. 取消任务
 	if err := h.service.CancelQuickView(c.Request.Context(), tenantID, uint(engineID), schema, table); err != nil {
 		logger.L().Error("Failed to cancel quick view", "error", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		quickViewError(c, err)
 		return
 	}
 
@@ -298,7 +325,7 @@ func (h *QuickViewHandler) CancelQuickView(c *gin.Context) {
 // @Tags Manager
 // @Produce json
 // @Param id path int true "存储引擎ID | Engine ID"
-// @Param schema path string true "命名空间 | Namespace"
+// @Param schema path string true "Schema | Schema"
 // @Param table path string true "数据项名称 | Item name"
 // @Success 200 {object} map[string]interface{} "恢复成功 | Resumed successfully"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
@@ -308,7 +335,7 @@ func (h *QuickViewHandler) ResumeQuickView(c *gin.Context) {
 	// 1. 解析路径参数
 	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource id"})
+		invalidEngineID(c)
 		return
 	}
 
@@ -326,7 +353,7 @@ func (h *QuickViewHandler) ResumeQuickView(c *gin.Context) {
 	// 3. 恢复任务
 	if err := h.service.ResumeQuickView(c.Request.Context(), tenantID, uint(engineID), schema, table); err != nil {
 		logger.L().Error("Failed to resume quick view", "error", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		quickViewError(c, err)
 		return
 	}
 
@@ -433,7 +460,7 @@ func (h *QuickViewHandler) GetStatistics(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param id path int true "存储引擎ID | Engine ID"
-// @Param schema path string true "命名空间 | Namespace"
+// @Param schema path string true "Schema | Schema"
 // @Param table path string true "数据项名称 | Item name"
 // @Param body body UpdatePreferredModeRequest true "显示模式配置 | Display mode configuration"
 // @Success 200 {object} map[string]interface{} "更新成功 | Updated successfully"
@@ -445,7 +472,7 @@ func (h *QuickViewHandler) UpdatePreferredMode(c *gin.Context) {
 	// 1. 解析路径参数
 	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource id"})
+		invalidEngineID(c)
 		return
 	}
 
@@ -453,14 +480,14 @@ func (h *QuickViewHandler) UpdatePreferredMode(c *gin.Context) {
 	table := c.Param("table")
 
 	if schema == "" || table == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "schema and table are required"})
+		managerError(c, http.StatusBadRequest, manageri18n.MsgSchemaAndTableRequired)
 		return
 	}
 
 	// 2. 解析请求体
 	var req UpdatePreferredModeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body: " + err.Error()})
+		managerErrorWithDetail(c, http.StatusBadRequest, manageri18n.MsgInvalidRequestBody, err.Error())
 		return
 	}
 
@@ -482,13 +509,7 @@ func (h *QuickViewHandler) UpdatePreferredMode(c *gin.Context) {
 		req.PreferredMode,
 	); err != nil {
 		logger.L().Error("Failed to update preferred mode", "error", err)
-		statusCode := http.StatusInternalServerError
-		if err.Error() == "quick view record not found" {
-			statusCode = http.StatusNotFound
-		} else if err.Error() == "invalid preferred_mode" {
-			statusCode = http.StatusBadRequest
-		}
-		c.JSON(statusCode, gin.H{"error": err.Error()})
+		quickViewError(c, err)
 		return
 	}
 
@@ -505,7 +526,7 @@ func (h *QuickViewHandler) UpdatePreferredMode(c *gin.Context) {
 // @Tags Manager
 // @Produce json
 // @Param id path int true "存储引擎ID | Engine ID"
-// @Param schema path string true "命名空间 | Namespace"
+// @Param schema path string true "Schema | Schema"
 // @Param table path string true "数据项名称 | Item name"
 // @Success 200 {object} map[string]interface{} "准备状态信息 | Preparation status"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
@@ -516,7 +537,7 @@ func (h *QuickViewHandler) CheckPreparation(c *gin.Context) {
 	// 1. 解析路径参数
 	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource id"})
+		invalidEngineID(c)
 		return
 	}
 
@@ -524,7 +545,7 @@ func (h *QuickViewHandler) CheckPreparation(c *gin.Context) {
 	table := c.Param("table")
 
 	if schema == "" || table == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "schema and table are required"})
+		managerError(c, http.StatusBadRequest, manageri18n.MsgSchemaAndTableRequired)
 		return
 	}
 
@@ -546,7 +567,7 @@ func (h *QuickViewHandler) CheckPreparation(c *gin.Context) {
 	)
 	if err != nil {
 		logger.L().Error("Failed to run preparation checks", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		quickViewError(c, err)
 		return
 	}
 
@@ -561,7 +582,7 @@ func (h *QuickViewHandler) CheckPreparation(c *gin.Context) {
 // @Tags Manager
 // @Produce json
 // @Param id path int true "存储引擎ID | Engine ID"
-// @Param schema path string true "命名空间 | Namespace"
+// @Param schema path string true "Schema | Schema"
 // @Param table path string true "数据项名称 | Item name"
 // @Success 200 {object} map[string]interface{} "准备工作已启动 | Preparation started"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
@@ -572,7 +593,7 @@ func (h *QuickViewHandler) PrepareForCreateMVT(c *gin.Context) {
 	// 1. 解析路径参数
 	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource id"})
+		invalidEngineID(c)
 		return
 	}
 
@@ -580,7 +601,7 @@ func (h *QuickViewHandler) PrepareForCreateMVT(c *gin.Context) {
 	table := c.Param("table")
 
 	if schema == "" || table == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "schema and table are required"})
+		managerError(c, http.StatusBadRequest, manageri18n.MsgSchemaAndTableRequired)
 		return
 	}
 
@@ -602,7 +623,7 @@ func (h *QuickViewHandler) PrepareForCreateMVT(c *gin.Context) {
 	)
 	if err != nil {
 		logger.L().Error("Failed to start preparation", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		quickViewError(c, err)
 		return
 	}
 

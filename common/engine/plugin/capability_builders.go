@@ -2,7 +2,7 @@ package plugin
 
 func NewTabularCapabilities(engineType, namespaceTerm string, opts TabularCapabilityOptions) EngineCapabilities {
 	if namespaceTerm == "" {
-		namespaceTerm = "database"
+		namespaceTerm = CatalogTermDatabase
 	}
 	if opts.DefaultLanguage == "" {
 		opts.DefaultLanguage = "sql"
@@ -16,14 +16,7 @@ func NewTabularCapabilities(engineType, namespaceTerm string, opts TabularCapabi
 		EngineType:    engineType,
 		EngineFamily:  "tabular",
 		Storage: &StorageCapabilities{
-			CatalogModel: &CatalogModelSpec{
-				PathVersion: CatalogPathVersion,
-				RootTerm:    "server",
-				Levels: []CatalogLevelSpec{
-					{Term: namespaceTerm, Kinds: []string{"namespace"}, Role: CatalogRoleBranch, I18nKey: CatalogTermI18nKey(namespaceTerm)},
-					{Term: "table", Kinds: []string{"table", "view", "materialized_view", "external_table"}, Role: CatalogRoleLeaf, I18nKey: CatalogTermI18nKey("table")},
-				},
-			},
+			CatalogModel: PtrCatalogModel(TabularCatalogModel(namespaceTerm)),
 			Catalog: &CatalogCapability{
 				Supported:       true,
 				RealTime:        true,
@@ -95,15 +88,7 @@ func NewObjectCapabilities(engineType string) EngineCapabilities {
 		EngineType:    engineType,
 		EngineFamily:  "object",
 		Storage: &StorageCapabilities{
-			CatalogModel: &CatalogModelSpec{
-				PathVersion: CatalogPathVersion,
-				RootTerm:    "service",
-				Levels: []CatalogLevelSpec{
-					{Term: "bucket", Kinds: []string{"bucket"}, Role: CatalogRoleBranch, I18nKey: CatalogTermI18nKey("bucket")},
-					{Term: "prefix", Kinds: []string{"prefix"}, Role: CatalogRoleBranch, Optional: true, I18nKey: CatalogTermI18nKey("prefix")},
-					{Term: "object", Kinds: []string{"object"}, Role: CatalogRoleLeaf, I18nKey: CatalogTermI18nKey("object")},
-				},
-			},
+			CatalogModel: PtrCatalogModel(ObjectCatalogModel()),
 			Catalog: &CatalogCapability{
 				Supported: true,
 				RealTime:  true,
@@ -131,14 +116,7 @@ func NewFileCapabilities(engineType string) EngineCapabilities {
 		EngineType:    engineType,
 		EngineFamily:  "file",
 		Storage: &StorageCapabilities{
-			CatalogModel: &CatalogModelSpec{
-				PathVersion: CatalogPathVersion,
-				RootTerm:    "root",
-				Levels: []CatalogLevelSpec{
-					{Term: "directory", Kinds: []string{"directory"}, Role: CatalogRoleBranch, Optional: true, I18nKey: CatalogTermI18nKey("directory")},
-					{Term: "file", Kinds: []string{"file"}, Role: CatalogRoleLeaf, I18nKey: CatalogTermI18nKey("file")},
-				},
-			},
+			CatalogModel: PtrCatalogModel(FileCatalogModel()),
 			Catalog: &CatalogCapability{
 				Supported: true,
 				RealTime:  true,

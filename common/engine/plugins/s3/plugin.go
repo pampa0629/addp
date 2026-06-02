@@ -81,30 +81,46 @@ func (p *S3Plugin) DescribeCatalogFacts(ctx context.Context, connInfo plugin.Con
 }
 
 func (p *S3Plugin) OpenContent(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
-	return p.readFile(ctx, connInfo, path.StringPath(), opts)
+	objectPath, err := plugin.RequireObjectLeafPath(path)
+	if err != nil {
+		return nil, err
+	}
+	return p.readFile(ctx, connInfo, objectPath, opts)
 }
 
 func (p *S3Plugin) OpenRange(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
 	if opts.Length <= 0 {
 		return nil, fmt.Errorf("range read requires positive length")
 	}
-	return p.readFile(ctx, connInfo, path.StringPath(), opts)
+	objectPath, err := plugin.RequireObjectLeafPath(path)
+	if err != nil {
+		return nil, err
+	}
+	return p.readFile(ctx, connInfo, objectPath, opts)
 }
 
 func (p *S3Plugin) CreateContent(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.WriteOptions) (io.WriteCloser, error) {
+	objectPath, err := plugin.RequireObjectLeafPath(path)
+	if err != nil {
+		return nil, err
+	}
 	client, err := p.createClient(connInfo)
 	if err != nil {
 		return nil, err
 	}
-	return objectstore.CreateContent(ctx, client, path.StringPath(), opts)
+	return objectstore.CreateContent(ctx, client, objectPath, opts)
 }
 
 func (p *S3Plugin) DeleteResource(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) error {
+	objectPath, err := plugin.RequireObjectLeafPath(path)
+	if err != nil {
+		return err
+	}
 	client, err := p.createClient(connInfo)
 	if err != nil {
 		return err
 	}
-	return objectstore.DeleteResource(ctx, client, path.StringPath())
+	return objectstore.DeleteResource(ctx, client, objectPath)
 }
 
 func (p *S3Plugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {

@@ -110,7 +110,7 @@ func TestProviderCatalogPathFromLocatorRoot(t *testing.T) {
 
 	got, err := ProviderCatalogPathFromLocator(plugin.ObjectCatalogModel(), &ResourceLocator{
 		EngineID: 12,
-		Type:     TypeRoot,
+		Type:     TypeService,
 	})
 	if err != nil {
 		t.Fatalf("ProviderCatalogPathFromLocator() error = %v", err)
@@ -118,6 +118,30 @@ func TestProviderCatalogPathFromLocatorRoot(t *testing.T) {
 	assertCatalogSegments(t, got, []plugin.CatalogSegment{
 		{Term: plugin.CatalogTermService, Kind: plugin.CatalogTermService},
 	})
+}
+
+func TestProviderCatalogPathFromLocatorAcceptsAllRootTypes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		model plugin.CatalogModelSpec
+		typ   ResourceType
+		want  plugin.CatalogSegment
+	}{
+		{name: "server", model: plugin.TabularCatalogModel(plugin.CatalogTermSchema), typ: TypeServer, want: plugin.CatalogSegment{Term: plugin.CatalogTermServer, Kind: plugin.CatalogTermServer}},
+		{name: "service", model: plugin.ObjectCatalogModel(), typ: TypeService, want: plugin.CatalogSegment{Term: plugin.CatalogTermService, Kind: plugin.CatalogTermService}},
+		{name: "root", model: plugin.FileCatalogModel(), typ: TypeRoot, want: plugin.CatalogSegment{Term: plugin.CatalogTermRoot, Kind: plugin.CatalogTermRoot}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ProviderCatalogPathFromLocator(tt.model, &ResourceLocator{EngineID: 15, Type: tt.typ})
+			if err != nil {
+				t.Fatalf("ProviderCatalogPathFromLocator() error = %v", err)
+			}
+			assertCatalogSegments(t, got, []plugin.CatalogSegment{tt.want})
+		})
+	}
 }
 
 func TestProviderCatalogPathFromLocatorRejectsMissingLeaf(t *testing.T) {

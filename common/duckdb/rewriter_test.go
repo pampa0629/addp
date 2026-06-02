@@ -42,7 +42,7 @@ func TestBuildObjectTableMapUsesMetaItemList(t *testing.T) {
 		requestedPath = r.URL.Path
 		requestedTenant = r.Header.Get("X-Tenant-ID")
 		if r.URL.RawQuery != "" {
-			t.Fatalf("query = %q, want empty namespace query", r.URL.RawQuery)
+			t.Fatalf("query = %q, want empty branch query", r.URL.RawQuery)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode([]commonModels.MetaItem{{

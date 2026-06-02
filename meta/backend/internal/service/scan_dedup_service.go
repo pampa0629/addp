@@ -75,6 +75,13 @@ func (s *ScanDedupService) GenerateNamespaceLockKey(tenantID, engineID uint, nam
 		tenantID, engineID, namespaceName)
 }
 
+// GenerateBranchLockKey 生成 catalog branch 级锁 key。
+// 格式: meta:scan:lock:tenant:{tenant_id}:engine:{engine_id}:branch:{branch_name}
+func (s *ScanDedupService) GenerateBranchLockKey(tenantID, engineID uint, branchName string) string {
+	return fmt.Sprintf("meta:scan:lock:tenant:%d:engine:%d:branch:%s",
+		tenantID, engineID, branchName)
+}
+
 // GenerateBucketLockKey 生成Bucket级锁key
 // 格式: meta:scan:lock:tenant:{tenant_id}:engine:{engine_id}:bucket:{bucket_path}
 // 路径中的特殊字符会被清理（/ 和 : 替换为 _）

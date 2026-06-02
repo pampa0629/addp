@@ -100,12 +100,13 @@ func (p *MongoDBPlugin) ExecuteRuntimeQuery(ctx context.Context, connInfo plugin
 func (p *MongoDBPlugin) ReadBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
 	query := opts.Query
 	if query == "" {
-		collection := ""
-		if len(path.Segments) > 0 {
-			collection = path.Segments[len(path.Segments)-1].Name
+		businessPath := plugin.CatalogPathWithoutRoot(path)
+		if len(businessPath.Segments) < 2 {
+			return nil, fmt.Errorf("MongoDB batch read requires collection catalog path or query")
 		}
+		collection := businessPath.Segments[len(businessPath.Segments)-1].Name
 		if collection == "" {
-			return nil, fmt.Errorf("MongoDB batch read requires collection path or query")
+			return nil, fmt.Errorf("MongoDB batch read requires collection catalog path or query")
 		}
 		limit := opts.Limit
 		if limit <= 0 {

@@ -16,22 +16,27 @@ func catalogLeafTermForPlugin(p plugin.EnginePlugin, fallback string) string {
 	return fallback
 }
 
-func namespaceLevelForPlugin(p plugin.EnginePlugin) (plugin.CatalogLevelSpec, bool) {
+func firstBusinessBranchLevelForPlugin(p plugin.EnginePlugin) (plugin.CatalogLevelSpec, bool) {
 	model := catalogModelForPlugin(p)
 	if model == nil {
 		return plugin.CatalogLevelSpec{}, false
 	}
-	return plugin.CatalogNamespaceLevel(*model)
+	return plugin.CatalogFirstBusinessBranch(*model)
 }
 
-func namespaceTermForPlugin(p plugin.EnginePlugin) string {
-	if level, ok := namespaceLevelForPlugin(p); ok && level.Term != "" {
+func firstBusinessBranchTermForPlugin(p plugin.EnginePlugin) string {
+	if level, ok := firstBusinessBranchLevelForPlugin(p); ok && level.Term != "" {
 		return level.Term
 	}
 	return plugin.CatalogTermDatabase
 }
 
-func namespaceRootTermForPlugin(p plugin.EnginePlugin) string {
+// namespaceTermForPlugin is only for tabular database/schema scan paths.
+func namespaceTermForPlugin(p plugin.EnginePlugin) string {
+	return firstBusinessBranchTermForPlugin(p)
+}
+
+func catalogRootTermForPlugin(p plugin.EnginePlugin) string {
 	if model := catalogModelForPlugin(p); model != nil && model.RootTerm != "" {
 		return model.RootTerm
 	}
@@ -43,9 +48,10 @@ func ensureCatalogRootNode(repo *metaRepo.ScanRepository, tenantID uint, resourc
 }
 
 func ensureCatalogRootNodeWithNativeName(repo *metaRepo.ScanRepository, tenantID uint, resource *commonModels.Engine, p plugin.EnginePlugin, nativeName string) (*models.MetaNode, error) {
-	rootTerm := namespaceRootTermForPlugin(p)
+	rootTerm := catalogRootTermForPlugin(p)
 	fullName := ""
 	attrs := models.JSONMap{
+		"schema_version": 1,
 		"catalog": map[string]interface{}{
 			"root_term":           rootTerm,
 			"display_name_source": "engine.name",

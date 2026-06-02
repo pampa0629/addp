@@ -158,13 +158,14 @@ func isCatalogRootMetaNode(node *models.MetaNode) bool {
 }
 
 func buildFallbackCatalogRootTreeNode(engine *models.Engine, hasChildren bool) *TreeNode {
-	rootLocator := buildEngineRootLocator(engine.ID)
+	rootType := catalogRootResourceType(engine)
+	rootLocator := buildEngineRootLocator(engine.ID, rootType)
 	return &TreeNode{
 		ID:          rootLocator,
 		Locator:     rootLocator,
 		Label:       engine.Name,
-		Type:        "root",
-		TypeLabel:   "engine.term.root",
+		Type:        string(rootType),
+		TypeLabel:   enginePlugin.CatalogTermI18nKey(string(rootType)),
 		Icon:        EngineIcon(engine),
 		Metadata:    engineTreeMetadata(engine, 0, "", 0, "", nil),
 		Children:    []*TreeNode{},
@@ -396,7 +397,7 @@ func (b *TreeBuilder) ConvertNodeToTree(loc *ResourceLocator, metadata map[strin
 		Locator:     locatorURI,
 		Label:       loc.LastSegment(),
 		Type:        string(loc.Type),
-		TypeLabel:   "engine.term." + string(loc.Type),
+		TypeLabel:   enginePlugin.CatalogTermI18nKey(string(loc.Type)),
 		Icon:        getIconByType(string(loc.Type)),
 		Metadata:    metadata,
 		Children:    []*TreeNode{},
@@ -651,8 +652,8 @@ func convertNodeType(metaNodeType string) ResourceType {
 		"prefix":     TypeDirectory,
 		"directory":  TypeDirectory,
 		"root":       TypeRoot,
-		"server":     TypeRoot,
-		"service":    TypeRoot,
+		"server":     TypeServer,
+		"service":    TypeService,
 		"dir":        TypeDir,
 		"table":      TypeTable,
 		"collection": TypeCollection,
@@ -667,8 +668,60 @@ func convertNodeType(metaNodeType string) ResourceType {
 }
 
 // buildEngineRootLocator 构建引擎根节点的 Locator
-func buildEngineRootLocator(engineID uint) string {
-	return EngineRootLocator(engineID)
+func buildEngineRootLocator(engineID uint, rootType ResourceType) string {
+	return EngineRootLocatorForType(engineID, rootType)
+}
+
+func catalogRootResourceType(engine *models.Engine) ResourceType {
+	return CatalogRootResourceType(engine)
+}
+
+// CatalogRootResourceType 返回引擎结构根在 ResourceLocator 中应使用的 root term。
+func CatalogRootResourceType(engine *models.Engine) ResourceType {
+	if engine == nil {
+		return TypeRoot
+	}
+	if rootType := catalogRootResourceTypeFromCapabilities(engine); rootType != TypeUnknown {
+		return rootType
+	}
+	switch engineFamily(engine) {
+	case "object":
+		return TypeService
+	case "file":
+		return TypeRoot
+	case "tabular", "dynamic_schema", "document", "graph":
+		return TypeServer
+	}
+	switch strings.ToLower(strings.TrimSpace(engine.EngineType)) {
+	case "minio", "s3":
+		return TypeService
+	case "nfs", "nas":
+		return TypeRoot
+	case "postgresql", "mysql", "doris", "clickhouse", "spark_sql", "mongodb", "neo4j":
+		return TypeServer
+	default:
+		return TypeRoot
+	}
+}
+
+func catalogRootResourceTypeFromCapabilities(engine *models.Engine) ResourceType {
+	if engine == nil || engine.Capabilities == nil {
+		return TypeUnknown
+	}
+	capabilities, err := enginePlugin.ParseEngineCapabilities(string(*engine.Capabilities))
+	if err != nil || capabilities == nil || capabilities.Storage == nil || capabilities.Storage.CatalogModel == nil {
+		return TypeUnknown
+	}
+	switch strings.TrimSpace(capabilities.Storage.CatalogModel.RootTerm) {
+	case enginePlugin.CatalogTermServer:
+		return TypeServer
+	case enginePlugin.CatalogTermService:
+		return TypeService
+	case enginePlugin.CatalogTermRoot:
+		return TypeRoot
+	default:
+		return TypeUnknown
+	}
 }
 
 func EngineIcon(engine *models.Engine) string {

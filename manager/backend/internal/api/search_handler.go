@@ -8,6 +8,7 @@ import (
 
 	"github.com/addp/common/logger"
 	auth "github.com/addp/common/middleware/auth"
+	manageri18n "github.com/addp/manager/i18n"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -39,15 +40,13 @@ func NewSearchHandler(searchService *service.HybridSearchService, historyService
 // @Security BearerAuth
 func (h *SearchHandler) Search(c *gin.Context) {
 	if h.searchService == nil || !h.searchService.Enabled() {
-		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error": "hybrid search not configured",
-		})
+		managerError(c, http.StatusServiceUnavailable, manageri18n.MsgHybridSearchNotConfigured)
 		return
 	}
 
 	query := strings.TrimSpace(c.Query("q"))
 	if query == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing query"})
+		managerError(c, http.StatusBadRequest, manageri18n.MsgMissingQuery)
 		return
 	}
 
@@ -98,13 +97,13 @@ func (h *SearchHandler) Search(c *gin.Context) {
 // @Security BearerAuth
 func (h *SearchHandler) ListHistory(c *gin.Context) {
 	if h.historyService == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "search history is not available"})
+		managerError(c, http.StatusServiceUnavailable, manageri18n.MsgSearchHistoryUnavailable)
 		return
 	}
 
 	userID, ok := userIDFromContext(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		managerError(c, http.StatusUnauthorized, manageri18n.MsgUnauthorized)
 		return
 	}
 
@@ -116,7 +115,7 @@ func (h *SearchHandler) ListHistory(c *gin.Context) {
 	histories, err := h.historyService.List(userID, limit)
 	if err != nil {
 		logger.L().Error("查询搜索历史失败", "error", err, "user_id", userID)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load history"})
+		managerError(c, http.StatusInternalServerError, manageri18n.MsgLoadHistoryFailed)
 		return
 	}
 
@@ -149,26 +148,26 @@ func (h *SearchHandler) ListHistory(c *gin.Context) {
 // @Security BearerAuth
 func (h *SearchHandler) DeleteHistoryItem(c *gin.Context) {
 	if h.historyService == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "search history is not available"})
+		managerError(c, http.StatusServiceUnavailable, manageri18n.MsgSearchHistoryUnavailable)
 		return
 	}
 
 	userID, ok := userIDFromContext(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		managerError(c, http.StatusUnauthorized, manageri18n.MsgUnauthorized)
 		return
 	}
 
 	rawID := c.Param("id")
 	historyID64, err := strconv.ParseUint(strings.TrimSpace(rawID), 10, 64)
 	if err != nil || historyID64 == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid history id"})
+		managerError(c, http.StatusBadRequest, manageri18n.MsgInvalidHistoryID)
 		return
 	}
 
 	if err := h.historyService.Delete(userID, uint(historyID64)); err != nil {
 		logger.L().Error("删除搜索历史失败", "error", err, "user_id", userID, "history_id", historyID64)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete history"})
+		managerError(c, http.StatusInternalServerError, manageri18n.MsgDeleteHistoryFailed)
 		return
 	}
 
@@ -186,19 +185,19 @@ func (h *SearchHandler) DeleteHistoryItem(c *gin.Context) {
 // @Security BearerAuth
 func (h *SearchHandler) ClearHistory(c *gin.Context) {
 	if h.historyService == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "search history is not available"})
+		managerError(c, http.StatusServiceUnavailable, manageri18n.MsgSearchHistoryUnavailable)
 		return
 	}
 
 	userID, ok := userIDFromContext(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		managerError(c, http.StatusUnauthorized, manageri18n.MsgUnauthorized)
 		return
 	}
 
 	if err := h.historyService.Clear(userID); err != nil {
 		logger.L().Error("清空搜索历史失败", "error", err, "user_id", userID)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to clear history"})
+		managerError(c, http.StatusInternalServerError, manageri18n.MsgClearHistoryFailed)
 		return
 	}
 

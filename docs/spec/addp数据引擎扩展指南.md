@@ -89,7 +89,7 @@ func (p *MyPlugin) Capabilities() plugin.EngineCapabilities {
 - 对象存储：`service(root) -> bucket -> prefix -> object`，`Levels` 只包含 `bucket -> prefix -> object`。
 - 文件系统：`root -> directory -> file`，`Levels` 只包含 `directory -> file`。
 
-二者不得共享 CatalogModel 或 catalog 拼装实现；最多共享内容流接口、MIME 推断、格式解析等底层 helper。所有存储引擎都必须有显性结构 root；NFS 的 root `name` 使用引擎实例名称，`full_name` 使用空字符串，原生挂载根 `/` 写入 `attributes.catalog.native_name`，`.` 不得进入 catalog path 或元数据路径。
+二者不得共享 CatalogModel 或 catalog 拼装实现；最多共享内容流接口、MIME 推断、格式解析等底层 helper。所有存储引擎都必须有显性结构 root；NFS 的 root `name` 使用引擎实例名称，`full_name` 使用空字符串，原生挂载根 `/` 写入 `meta_node.attributes.catalog.native_name`，`.` 不得进入 catalog path 或元数据路径。
 
 ---
 

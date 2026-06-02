@@ -291,7 +291,7 @@ onMounted(async () => {
 
       // 收集初始需要展开的引擎节点 locators
       const engineLocators = store.engines.map(engine =>
-        store.engineTrees[engine.id]?.locator || `addp://engine/${engine.id}/path/?type=root`
+        store.engineTrees[engine.id]?.locator || `addp://engine/${engine.id}/path/?type=${catalogRootTypeForEngine(engine)}`
       )
 
       // 设置展开状态
@@ -359,6 +359,14 @@ watch(() => route.query, async (query) => {
     ElMessage.error(t('manager.explorer.loadPreviewFailed', { error: error.message }))
   }
 }, { immediate: true })
+
+const catalogRootTypeForEngine = (engine) => {
+  const type = String(engine?.engine_type || '').trim().toLowerCase()
+  if (type === 'minio' || type === 's3') return 'service'
+  if (type === 'nfs' || type === 'nas') return 'root'
+  if (['postgresql', 'mysql', 'doris', 'clickhouse', 'spark_sql', 'mongodb', 'neo4j'].includes(type)) return 'server'
+  return 'root'
+}
 </script>
 
 <style scoped>

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/logger"
+	manageri18n "github.com/addp/manager/i18n"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -36,7 +37,7 @@ func NewUnifiedTilesHandler(service *service.UnifiedMVTService) *UnifiedTilesHan
 // @Tags Manager
 // @Produce application/vnd.mapbox-vector-tile
 // @Param id path int true "存储引擎ID | Engine ID"
-// @Param schema path string true "命名空间 | Namespace"
+// @Param schema path string true "Schema | Schema"
 // @Param table path string true "数据项名称 | Item name"
 // @Param z path int true "缩放级别(0-22) | Zoom level (0-22)"
 // @Param x path int true "瓦片X坐标 | Tile X coordinate"
@@ -57,33 +58,33 @@ func (h *UnifiedTilesHandler) GetTile(c *gin.Context) {
 	engineIDStr := c.Param("id")
 	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource id parameter"})
+		managerError(c, http.StatusBadRequest, manageri18n.MsgInvalidEngineIDParam)
 		return
 	}
 
 	schema := c.Param("schema")
 	if schema == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "schema parameter is required"})
+		managerError(c, http.StatusBadRequest, manageri18n.MsgSchemaRequired)
 		return
 	}
 
 	table := c.Param("table")
 	if table == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "table parameter is required"})
+		managerError(c, http.StatusBadRequest, manageri18n.MsgTableRequired)
 		return
 	}
 
 	zStr := c.Param("z")
 	z, err := strconv.Atoi(zStr)
 	if err != nil || z < 0 || z > 22 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid z parameter (must be 0-22)"})
+		managerError(c, http.StatusBadRequest, manageri18n.MsgInvalidZParam)
 		return
 	}
 
 	xStr := c.Param("x")
 	x, err := strconv.Atoi(xStr)
 	if err != nil || x < 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid x parameter"})
+		managerError(c, http.StatusBadRequest, manageri18n.MsgInvalidXParam)
 		return
 	}
 
@@ -95,7 +96,7 @@ func (h *UnifiedTilesHandler) GetTile(c *gin.Context) {
 	y, err := strconv.Atoi(yStr)
 	if err != nil || y < 0 {
 		fmt.Printf("DEBUG: Failed to parse y='%s': err=%v\n", yStr, err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid y parameter"})
+		managerError(c, http.StatusBadRequest, manageri18n.MsgInvalidYParam)
 		return
 	}
 	fmt.Printf("DEBUG: Parsed y=%d\n", y)
@@ -106,7 +107,7 @@ func (h *UnifiedTilesHandler) GetTile(c *gin.Context) {
 	sridStr := c.DefaultQuery("srid", "4326")
 	srid, err := strconv.Atoi(sridStr)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid srid parameter"})
+		managerError(c, http.StatusBadRequest, manageri18n.MsgInvalidSRIDParam)
 		return
 	}
 
@@ -163,7 +164,7 @@ func (h *UnifiedTilesHandler) GetTile(c *gin.Context) {
 	)
 	if err != nil {
 		fmt.Printf("ERROR: GetTile failed: %v\n", err)
-		fmt.Printf("ERROR: TenantID=%d, Resource=%d, Schema=%s, Table=%s, Z=%d, X=%d, Y=%d\n",
+		fmt.Printf("ERROR: TenantID=%d, Engine=%d, Schema=%s, Table=%s, Z=%d, X=%d, Y=%d\n",
 			*tenantID, engineID, schema, table, z, x, y)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

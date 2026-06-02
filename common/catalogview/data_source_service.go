@@ -116,12 +116,13 @@ func (s *DataSourceService) GetEngineTree(engineID uint, expandDepth int) (*Tree
 
 	// 2. 如果只需要引擎根节点，直接返回
 	if expandDepth == 0 {
-		rootLocator := buildEngineRootLocator(engine.ID)
+		rootType := catalogRootResourceType(engine)
+		rootLocator := buildEngineRootLocator(engine.ID, rootType)
 		return &TreeNode{
 			ID:      rootLocator,
 			Locator: rootLocator,
 			Label:   engine.Name,
-			Type:    "engine",
+			Type:    string(rootType),
 			Icon:    EngineIcon(engine),
 			Metadata: map[string]interface{}{
 				"engine_id":     engine.ID,
@@ -324,12 +325,13 @@ func (s *DataSourceService) filterEngines(engines []*models.Engine, filters Engi
 
 // buildDegradedTree 构建降级树（Meta 不可用时）
 func (s *DataSourceService) buildDegradedTree(engine *models.Engine) *TreeNode {
-	rootLocator := buildEngineRootLocator(engine.ID)
+	rootType := catalogRootResourceType(engine)
+	rootLocator := buildEngineRootLocator(engine.ID, rootType)
 	return &TreeNode{
 		ID:      rootLocator,
 		Locator: rootLocator,
 		Label:   engine.Name + " (元数据不可用)",
-		Type:    "engine",
+		Type:    string(rootType),
 		Icon:    EngineIcon(engine),
 		Metadata: map[string]interface{}{
 			"engine_id":     engine.ID,

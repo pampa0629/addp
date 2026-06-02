@@ -73,6 +73,26 @@ func TestParseURI(t *testing.T) {
 			wantError: false,
 		},
 		{
+			name: "空路径（server 根节点）",
+			uri:  "addp://engine/1/path/?type=server",
+			want: &ResourceLocator{
+				EngineID: 1,
+				Path:     []string{},
+				Type:     TypeServer,
+			},
+			wantError: false,
+		},
+		{
+			name: "空路径（service 根节点）",
+			uri:  "addp://engine/3/path/?type=service",
+			want: &ResourceLocator{
+				EngineID: 3,
+				Path:     []string{},
+				Type:     TypeService,
+			},
+			wantError: false,
+		},
+		{
 			name: "特殊字符（空格）",
 			uri:  "addp://engine/1/path/public/user%20files?type=table",
 			want: &ResourceLocator{
@@ -197,13 +217,22 @@ func TestToURI(t *testing.T) {
 			want: "addp://engine/1/path/public/user%20files?type=table",
 		},
 		{
-			name: "空路径",
+			name: "空路径 root",
 			loc: &ResourceLocator{
 				EngineID: 1,
 				Path:     []string{},
 				Type:     TypeRoot,
 			},
 			want: "addp://engine/1/path/?type=root",
+		},
+		{
+			name: "空路径 service",
+			loc: &ResourceLocator{
+				EngineID: 3,
+				Path:     []string{},
+				Type:     TypeService,
+			},
+			want: "addp://engine/3/path/?type=service",
 		},
 		{
 			name: "Schema 节点 with node_id",

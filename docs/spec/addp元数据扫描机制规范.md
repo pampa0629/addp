@@ -47,7 +47,7 @@ Meta 的扫描编排必须分开回答三类问题：
 
 `engine_family` 只保留粗分类意义，不能单独决定扫描流程。Meta 可以因为执行语义不同而保留多种 strategy，例如：
 
-- namespace/item 型：表格、文档、图等先扫描 namespace，再扫描 item。
+- branch/leaf 型：动态 schema、图等先扫描 root 下业务 branch，再扫描 leaf。
 - object catalog 型：对象存储按 bucket / prefix / object 模型扫描，可做复合对象聚合。
 - file catalog 型：文件系统按 root / directory / file 模型扫描，可做复合文件聚合。
 
@@ -70,6 +70,16 @@ Meta API 和扫描任务参数中，路径型扫描目标统一使用 `catalog_p
 
 ## Basic / Deep 边界
 
+### CatalogEntry / CatalogFacts 消费规则
+
+Meta 扫描必须先通过 `CatalogProvider.ListChildren()` 获得 `CatalogEntry`，再按条目角色、扫描深度和 provider 组合决定是否进一步读取 `CatalogFacts`。
+
+对 `meta_node`，通常只消费 `CatalogEntry`：root、schema、database、bucket、prefix、directory 等 branch 的身份、层级、展示名、`full_name`、`LeafCount` 和低成本 `Storage.Path` 足以建立资源树。node 的 `item_count`、`total_size`、`scan_status`、`scanned_depth` 来自 Meta 扫描聚合和过程状态，不是 engine 对 node 的原生 facts。第一阶段不为 node 设计 deep-only facts；如果后续要持久化 bucket region、owner、目录权限、生命周期策略等原生事实，必须先单独扩展规范，不能把它们混入 item facts。
+
+对 `meta_item`，`CatalogEntry` 只提供路径坐标、身份和列表级摘要，不能当作完整详情事实使用。`basic` 可以使用 `CatalogEntry.Table`、`CatalogEntry.Storage`、`CatalogEntry.UpdatedAt` 等低成本摘要建立 item 身份、存储属性和跳过判断；需要字段、主键、索引、graph schema、动态 schema 采样、文件内容格式信息、容器 children 或访问索引时，必须显式通过 `CatalogFactsProvider`、`DynamicSchemaSamplingProvider`、content reader 或 format info provider 获取。
+
+`CatalogFacts` 不是每个 entry 自动携带的隐含字段。Meta 需要详情时必须使用 `CatalogEntry.Path` 显式调用对应 provider；不得把 `CatalogEntry` 原样写入 `meta_item.attributes`，也不得从 `CatalogEntry.Table` 推断字段、主键或索引。
+
 ### Basic 扫描
 
 `basic` 的目标是低成本建立资源目录和 data item 身份。原则上不打开 file/object 内容流。
@@ -81,11 +91,13 @@ Meta API 和扫描任务参数中，路径型扫描目标统一使用 `catalog_p
 - `attributes.schema_version`。
 - `attributes.storage` 中由 catalog 直接返回的事实，例如 bucket、path、name、size、etag、last_modified_at、content_type。
 - `attributes.item` 中无需读取内容即可判断的事实，例如 `layout`、`data_type`、`format`。如果 `refs`、`file_count`、`scope_exclusive` 可由 catalog、manifest 或路径规则直接判断，也可以写入；需要打开 file/object 内容才能判断的，一律归 deep。
+- 来自 `CatalogEntry` 或只读 catalog/system table 的低成本摘要，例如 table / collection 的估算 `row_count`、`size_bytes`、storage `etag` 和 `last_modified_at`。这类事实可用于列表展示、跳过判断和 basic attributes，但不得为了得到它们执行全表扫描、读取 file/object 内容或触发统计刷新。
 - 轻量格式判断：扩展名、MIME、catalog 声明。若确实需要读取极小 header，必须有读取上限和明确理由。
 
 不应写入：
 
-- 表字段、行数、主键、索引。
+- 表字段、主键、索引。
+- 需要执行 `COUNT(*)`、全量扫描、统计刷新或读取内容才能得到的真实行数和统计画像。
 - Shapefile / CSV / Parquet 等文件内部 schema。
 - 容器 children，例如 Excel sheet、SQLite table、GeoPackage layer、ZIP entry。
 - `access_index`。
@@ -109,6 +121,7 @@ Meta API 和扫描任务参数中，路径型扫描目标统一使用 `catalog_p
 Deep 扫描可以读取内容，但仍应遵守 provider / reader 边界：
 
 - 元数据事实通过 info provider 写入 `type_info` / `format_info` / `capabilities`。
+- 数据库 table deep 扫描应通过 `CatalogFactsProvider.DescribeCatalogFacts()` 获取 `TableInfo.Fields`、`PrimaryKey` 和索引等详情；collection deep 扫描可通过 `DynamicSchemaSamplingProvider` 获取采样字段和索引；graph item 即使在 basic 下如果需要建立稳定图 item 语义，也可以读取低成本 `CatalogFacts.Graph`，但 deep 才允许请求样本。
 - 内容窗口、样本、原始文本、缩略图不直接塞进 `type_info`。
 - 大文件 deep 扫描应由 provider 自己控制成本和阈值，不能无边界全量读取。
 - Meta deep 扫描不得继续识别并持久化容器 children 的下一层 data item。比如 ZIP 中的 Shapefile 组件应作为 ZIP 的直接 entry 写入 children；把这些 entry 临时组合成 Shapefile 预览项属于 Manager 动态预览职责，不写回 Meta。

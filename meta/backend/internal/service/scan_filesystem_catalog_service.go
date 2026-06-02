@@ -153,7 +153,7 @@ func (s *FilesystemCatalogScanService) ensureFilesystemScanRoot(tenantID uint, r
 			"dir",
 			part,
 			&fullName,
-			models.JSONMap{"path": fullName},
+			metacatalog.FileDirectoryNodeAttributes(fullName),
 		)
 		if err != nil {
 			return rootNode, nil, err
@@ -328,7 +328,7 @@ func (s *FilesystemCatalogScanService) scanDirectory(
 	// 递归扫描子目录
 	for _, subdir := range subdirs {
 		subdirName := subdir.Name
-		subdirAttrs := models.JSONMap{"path": subdir.Path}
+		subdirAttrs := metacatalog.FileDirectoryNodeAttributes(subdir.Path)
 		subdirFullName := metapath.JoinFSPath(parentNode.FullName, subdirName)
 		scannedSubdirFullNames[subdirFullName] = true
 		subdirNode, err := s.repo.UpsertNode(tenantID, resource.ID, parentNode, "dir", subdirName, &subdirFullName, subdirAttrs)
@@ -487,12 +487,12 @@ func (s *FilesystemCatalogScanService) listDirectory(
 	subdirs := make([]metaitem.StorageDirectoryRef, 0, len(nodes))
 	for _, node := range nodes {
 		if node.Role == plugin.CatalogRoleBranch {
-			if dir, ok := storageDirectoryRefFromCatalogEntry(node); ok {
+			if dir, ok := metacatalog.StorageDirectoryRefFromEntry(node); ok {
 				subdirs = append(subdirs, dir)
 			}
 			continue
 		}
-		if file, ok := storageFileRefFromCatalogEntry(node); ok {
+		if file, ok := metacatalog.StorageFileRefFromEntry(node); ok {
 			files = append(files, file)
 		}
 	}
@@ -514,67 +514,14 @@ func (s *FilesystemCatalogScanService) listDirectoryRecursive(
 	subdirs := make([]metaitem.StorageDirectoryRef, 0)
 	for _, node := range nodes {
 		if node.Role == plugin.CatalogRoleBranch {
-			if dir, ok := storageDirectoryRefFromCatalogEntry(node); ok {
+			if dir, ok := metacatalog.StorageDirectoryRefFromEntry(node); ok {
 				subdirs = append(subdirs, dir)
 			}
 			continue
 		}
-		if file, ok := storageFileRefFromCatalogEntry(node); ok {
+		if file, ok := metacatalog.StorageFileRefFromEntry(node); ok {
 			files = append(files, file)
 		}
 	}
 	return files, subdirs, nil
-}
-
-func storageFileRefFromCatalogEntry(node plugin.CatalogEntry) (metaitem.StorageFileRef, bool) {
-	if node.Role != plugin.CatalogRoleLeaf {
-		return metaitem.StorageFileRef{}, false
-	}
-	return metaitem.StorageFileRef{
-		Name:        node.Name,
-		Path:        catalogEntryStoragePath(node),
-		CatalogPath: node.Path,
-		Size:        storageCatalogEntrySizeBytes(node),
-		ModifiedAt:  catalogEntryUpdatedAt(node),
-		ContentType: catalogEntryContentType(node),
-	}, true
-}
-
-func storageDirectoryRefFromCatalogEntry(node plugin.CatalogEntry) (metaitem.StorageDirectoryRef, bool) {
-	if node.Role != plugin.CatalogRoleBranch {
-		return metaitem.StorageDirectoryRef{}, false
-	}
-	return metaitem.StorageDirectoryRef{
-		Name:        node.Name,
-		Path:        catalogEntryStoragePath(node),
-		CatalogPath: node.Path,
-	}, true
-}
-
-func catalogEntryStoragePath(node plugin.CatalogEntry) string {
-	if node.Storage != nil && node.Storage.Path != "" {
-		return node.Storage.Path
-	}
-	return node.Path.StringPath()
-}
-
-func storageCatalogEntrySizeBytes(node plugin.CatalogEntry) int64 {
-	if node.Storage == nil || node.Storage.SizeBytes == nil {
-		return 0
-	}
-	return *node.Storage.SizeBytes
-}
-
-func catalogEntryUpdatedAt(node plugin.CatalogEntry) time.Time {
-	if node.UpdatedAt == nil {
-		return time.Time{}
-	}
-	return *node.UpdatedAt
-}
-
-func catalogEntryContentType(node plugin.CatalogEntry) string {
-	if node.Storage == nil {
-		return ""
-	}
-	return node.Storage.ContentType
 }

@@ -43,7 +43,7 @@
 - root `meta_node.full_name` 固定为空字符串 `""`。
 - root 的 ResourceLocator path 为空，但必须和普通 node 一样携带 `type` 与 `node_id`，例如 `addp://engine/8/path/?type=server&node_id=99`。
 - root 不进入 `CatalogPath.StringPath()`、`full_name`、`storage_ref`、ResourceLocator 业务 path 或指纹输入。
-- root 原生名称如有实际价值，写入 `attributes.catalog.native_name`；例如 NFS 挂载根为 `/`。
+- root 原生名称如有实际价值，写入 `meta_node.attributes.catalog.native_name`；例如 NFS 挂载根为 `/`。
 - Provider 枚举第一层业务 branch 时必须使用 `ListChildren(rootPath)`，不得用 empty path 表达业务第一层。
 
 bucket、schema、database、directory 是 root 下第一层业务 branch。它们可以对用户可见，也可以作为扫描目标，但不再被称为引擎根。
@@ -147,7 +147,7 @@ full_name 使用引擎原生术语：
 
 **full_name 自动计算**：schema 或 database 节点传入 `nil`，由 `UpsertNode` 自动计算为 `parent.full_name + "." + name`。
 
-### Namespace/Item 型引擎（MongoDB / Neo4j）
+### Branch/Leaf 型引擎（MongoDB / Neo4j）
 
 full_name 由 `database.item` 两段组成，使用 `.` 分隔：
 
@@ -185,7 +185,7 @@ Engine (Business NFS)
         └── file: README.md
 ```
 
-root 节点在数据库和 Manager 资源树中都显式存在，标题使用引擎实例名称。目录选择器等需要表达挂载根原生语义时，可以读取 `attributes.catalog.native_name="/"`。
+root 节点在数据库和 Manager 资源树中都显式存在，标题使用引擎实例名称。目录选择器等需要表达挂载根原生语义时，可以读取 `meta_node.attributes.catalog.native_name="/"`。
 
 #### NFS root、name 与 full_name 的语义定位
 
@@ -210,7 +210,7 @@ NFS 不同。NFS root 是“挂载点内的结构性根”，不是业务路径�
 ```text
 root.name = "Business NFS"
 root.full_name = ""
-root.attributes.catalog.native_name = "/"
+root 的 `meta_node.attributes.catalog.native_name = "/"`
 ```
 
 因此，NFS 在 ADDP 中要按四层语义分别处理：
@@ -256,7 +256,7 @@ root 节点字段规范：
 | `name` | 引擎实例名称 |
 | `full_name` | `""` |
 | `node_type` | `root` |
-| `attributes.catalog.native_name` | `/` |
+| `meta_node.attributes.catalog.native_name` | `/` |
 
 这里三个字段含义不同，不能互相替代：
 
@@ -287,7 +287,7 @@ Engine (MySQL)
 server root 是结构入口，标题使用引擎实例名称。schema/database 节点对用户可见；术语按引擎原生语义展示。
 系统 schema/database（如 `pg_catalog`、`information_schema`、`mysql`）由插件过滤，不进入元数据树。
 
-### Namespace/Item 型引擎（MongoDB / Neo4j）
+### Branch/Leaf 型引擎（MongoDB / Neo4j）
 
 ```
 Engine (MongoDB)
@@ -320,7 +320,7 @@ addp://engine/{engine_id}/path/{segments}?type={type}&node_id={node_id}&item_id=
 `type` 表达 catalog / 路径模型中的稳定术语，用于路径语义、路由提示和展示，不表示内容数据类型，也不负责区分 node / item。ID 对应的 Meta 事实优先于 `type`。
 
 `path segments` 由 `full_name` 按 `/` 分割得到。
-注意：数据库与 namespace/item 型引擎的 `full_name` 使用 `.` 分隔（如 `public.users`、`mydb.orders`），
+注意：数据库与 branch/leaf 型引擎的 `full_name` 使用 `.` 分隔（如 `public.users`、`mydb.orders`），
 在 Locator 中应先按业务语义转换为路径段（如 `public/users`、`mydb/orders`）。
 
 | 引擎类型 | full_name | path segments | 示例 URI |
@@ -332,7 +332,7 @@ addp://engine/{engine_id}/path/{segments}?type={type}&node_id={node_id}&item_id=
 | MongoDB collection | `mydb.orders` | `["mydb","orders"]` | `.../path/mydb/orders?type=collection&item_id=234` |
 | Neo4j graph | `neo4j.graph` | `["neo4j","graph"]` | `.../path/neo4j/graph?type=graph&item_id=578` |
 
-数据库与 namespace/item 型引擎的解析语义：`namespace = path[0]`，`item = join(path[1:])`，具体数据项类型由 locator 的 `type` 决定。
+数据库与 branch/leaf 型引擎的解析语义：`branch = path[0]`，`leaf = join(path[1:])`，具体数据项类型由 locator 的 `type` 决定。关系型数据库的 schema/database、MongoDB/Neo4j 的 database 都是 server root 下的第一层 branch。
 Neo4j 的 catalog leaf 必须使用 `type=graph`；节点 label、relationship type 和连接模式属于 `type_info.graph`，不得作为独立 catalog leaf。
 NFS 物理路径重建公式为 `"/" + join(path, "/")`。
 
@@ -347,12 +347,12 @@ NFS 物理路径重建公式为 `"/" + join(path, "/")`。
 | 对象存储（MinIO/S3） | bucket / path | 可按 bucket 或指定路径触发扫描 |
 | NFS | 挂载根 `/` 或任意目录路径 | 可扫描整个挂载点，也可按目录路径扫描；扫描非根路径时必须先确保 root -> directory 节点链存在 |
 | 关系型数据库（PostgreSQL/MySQL/Doris/ClickHouse） | schema 或 database | 用户按引擎术语选择（PostgreSQL 选 schema；MySQL/Doris/ClickHouse 选 database） |
-| Namespace/Item 型引擎（MongoDB/Neo4j） | database | 用户选择一个或多个 database 触发扫描 |
+| Branch/Leaf 型引擎（MongoDB/Neo4j） | database branch | 用户选择一个或多个 database 触发扫描 |
 
 ### NFS 扫描流程
 
 1. 通过 `CatalogRootEntry(model, engineID, engineName)` 获取结构 root，CatalogPath 包含 root segment，但其 `StringPath()` 为空。
-2. 创建 root `meta_node`，`name = engine.name`，`full_name = ""`，`attributes.catalog.native_name="/"`。
+2. 创建 root `meta_node`，`name = engine.name`，`full_name = ""`，`meta_node.attributes.catalog.native_name="/"`。
 3. 扫描根目录时，递归扫描 `/` 下的所有目录和文件。
 4. 扫描非根目录时，先按 `catalog_paths` 确保从 root 到目标目录的 `dir meta_node` 链存在，再把扫描上下文切换到该目录 node。
 5. 子目录创建 dir `meta_node`，`full_name = 目录相对路径`。
@@ -377,9 +377,9 @@ NFS 物理路径重建公式为 `"/" + join(path, "/")`。
 
 ### MongoDB / Neo4j 扫描流程
 
-1. 通过 `CatalogProvider.ListChildren(root)` 获取 database 列表
-2. upsert server root `meta_node`，为每个 database 创建子 `meta_node`（`node_type = database`，`full_name = database`）
-3. 通过 `CatalogProvider.ListChildren(database)` 获取 collection/graph，创建 `meta_item`
+1. 通过 `CatalogProvider.ListChildren(root)` 获取第一层业务 branch（MongoDB / Neo4j 为 database）
+2. upsert server root `meta_node`，为每个 database branch 创建子 `meta_node`（`node_type = database`，`full_name = database`）
+3. 通过 `CatalogProvider.ListChildren(database branch)` 获取 collection/graph leaf，创建 `meta_item`
 4. `meta_item.full_name` 使用 `database.collection`（Neo4j 为 `database.graph`）
 5. Neo4j label、relationship type 和 endpoint pattern 写入 `attributes.type_info.graph`，不作为独立 `meta_item`
 
@@ -392,7 +392,7 @@ NFS 物理路径重建公式为 `"/" + join(path, "/")`。
 - 传入 `nil`：由系统自动计算，规则为 `parent.full_name + "." + name`（用于关系型数据库 schema/database 节点、MongoDB/Neo4j database 节点）
 - 传入具体值（含空字符串）：直接使用，不覆盖（用于对象存储和文件系统，full_name 由扫描服务显式计算）
 
-关系型数据库表和 namespace/item 型 collection/graph 的 `full_name` 由扫描服务显式拼接：
+关系型数据库表和 branch/leaf 型 collection/graph 的 `full_name` 由扫描服务显式拼接：
 
 - 关系型数据库：`schema + "." + table`（PostgreSQL）或 `database + "." + table`（MySQL/Doris/ClickHouse）
 - MongoDB：`database + "." + collection`

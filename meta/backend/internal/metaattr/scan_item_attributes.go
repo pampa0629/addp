@@ -191,7 +191,7 @@ func firstPresent(values map[string]interface{}, keys ...string) interface{} {
 	return nil
 }
 
-func ApplyNamespaceItemAttributes(attrs models.JSONMap, itemType string) {
+func ApplyBranchLeafItemAttributes(attrs models.JSONMap, itemType string) {
 	SetItem(attrs, "layout", "single")
 	switch itemType {
 	case "collection":

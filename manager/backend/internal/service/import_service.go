@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -16,6 +17,20 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
+)
+
+var (
+	ErrImportTableNameRequired         = errors.New("import table name required")
+	ErrImportZipRequired               = errors.New("import zip package required")
+	ErrImportUnsupportedFormat         = errors.New("import unsupported file format")
+	ErrImportSourceEngineNotConfigured = errors.New("import source engine not configured")
+	ErrImportSourceEngineNotMatched    = errors.New("import source engine not matched")
+	ErrImportSourceEngineAmbiguous     = errors.New("import source engine ambiguous")
+	ErrImportSourceEngineIDInvalid     = errors.New("import source engine id invalid")
+	ErrImportSourceEngineInactive      = errors.New("import source engine inactive")
+	ErrImportZipMissingShp             = errors.New("import zip missing shapefile shp")
+	ErrImportZipBasenameMismatch       = errors.New("import zip shapefile basename mismatch")
+	ErrImportZipMissingRequiredSet     = errors.New("import zip missing shapefile required set")
 )
 
 type importSystemClient interface {
@@ -91,7 +106,7 @@ func (s *ImportService) ImportShapefile(ctx context.Context, req *ImportShapefil
 		tableName = inferTableName(req.FileName)
 	}
 	if tableName == "" {
-		return nil, fmt.Errorf("cannot infer table name from filename: %s", req.FileName)
+		return nil, fmt.Errorf("%w: %s", ErrImportTableNameRequired, req.FileName)
 	}
 
 	// 2. 生成上传 UUID（用于 MinIO 路径）
@@ -114,9 +129,9 @@ func (s *ImportService) ImportShapefile(ctx context.Context, req *ImportShapefil
 		}
 	case ".shp":
 		// 单个 .shp 文件（不支持，需要 ZIP 包）
-		return nil, fmt.Errorf("please upload a ZIP package containing .shp/.dbf/.shx files")
+		return nil, ErrImportZipRequired
 	default:
-		return nil, fmt.Errorf("unsupported file format: %s (supported: .zip)", ext)
+		return nil, fmt.Errorf("%w: %s", ErrImportUnsupportedFormat, ext)
 	}
 
 	// 4. 上传所有文件到 MinIO
@@ -234,7 +249,7 @@ func (s *ImportService) resolveImportSourceEngine(tenantID uint) (uint, error) {
 		return s.resolveExplicitImportSourceEngine()
 	}
 	if s.systemClient == nil {
-		return 0, fmt.Errorf("manager import source engine is not configured; set MANAGER_IMPORT_SOURCE_ENGINE_ID or enable System integration")
+		return 0, ErrImportSourceEngineNotConfigured
 	}
 	engines, err := s.systemClient.ListObjectStorages(tenantID)
 	if err != nil {
@@ -253,20 +268,20 @@ func (s *ImportService) resolveImportSourceEngine(tenantID uint) (uint, error) {
 	case 1:
 		return matches[0].ID, nil
 	case 0:
-		return 0, fmt.Errorf("no object storage engine matches manager import staging MinIO endpoint %q and bucket %q; set MANAGER_IMPORT_SOURCE_ENGINE_ID", s.minioEndpoint, s.minioBucket)
+		return 0, fmt.Errorf("%w: endpoint=%s bucket=%s", ErrImportSourceEngineNotMatched, s.minioEndpoint, s.minioBucket)
 	default:
 		sort.Slice(matches, func(i, j int) bool { return matches[i].ID < matches[j].ID })
 		ids := make([]string, 0, len(matches))
 		for _, engine := range matches {
 			ids = append(ids, fmt.Sprintf("%d", engine.ID))
 		}
-		return 0, fmt.Errorf("multiple object storage engines match manager import staging MinIO endpoint %q and bucket %q: %s; set MANAGER_IMPORT_SOURCE_ENGINE_ID", s.minioEndpoint, s.minioBucket, strings.Join(ids, ","))
+		return 0, fmt.Errorf("%w: endpoint=%s bucket=%s ids=%s", ErrImportSourceEngineAmbiguous, s.minioEndpoint, s.minioBucket, strings.Join(ids, ","))
 	}
 }
 
 func (s *ImportService) resolveExplicitImportSourceEngine() (uint, error) {
 	if s.sourceEngineID == 0 {
-		return 0, fmt.Errorf("MANAGER_IMPORT_SOURCE_ENGINE_ID must be positive")
+		return 0, ErrImportSourceEngineIDInvalid
 	}
 	if s.systemClient == nil {
 		return s.sourceEngineID, nil
@@ -276,7 +291,7 @@ func (s *ImportService) resolveExplicitImportSourceEngine() (uint, error) {
 		return 0, fmt.Errorf("get manager import source engine %d: %w", s.sourceEngineID, err)
 	}
 	if engine == nil || !engine.IsActive {
-		return 0, fmt.Errorf("manager import source engine %d is not active", s.sourceEngineID)
+		return 0, fmt.Errorf("%w: %d", ErrImportSourceEngineInactive, s.sourceEngineID)
 	}
 	return engine.ID, nil
 }
@@ -383,7 +398,7 @@ func extractShapefileZip(zipData []byte) (map[string][]byte, error) {
 	}
 
 	if primaryShapefileName(files) == "" {
-		return nil, fmt.Errorf("missing required shapefile component: *%s", ".shp")
+		return nil, ErrImportZipMissingShp
 	}
 	if len(componentsByBase) > 1 {
 		bases := make([]string, 0, len(componentsByBase))
@@ -391,7 +406,7 @@ func extractShapefileZip(zipData []byte) (map[string][]byte, error) {
 			bases = append(bases, base)
 		}
 		sort.Strings(bases)
-		return nil, fmt.Errorf("shapefile components in one ZIP must have the same basename; found: %s", strings.Join(bases, ","))
+		return nil, fmt.Errorf("%w: %s", ErrImportZipBasenameMismatch, strings.Join(bases, ","))
 	}
 	requiredExts := []string{".shp", ".dbf", ".shx"}
 	completeBases := make([]string, 0, 1)
@@ -401,7 +416,7 @@ func extractShapefileZip(zipData []byte) (map[string][]byte, error) {
 		}
 	}
 	if len(completeBases) == 0 {
-		return nil, fmt.Errorf("missing required shapefile component set: .shp/.dbf/.shx with the same basename")
+		return nil, ErrImportZipMissingRequiredSet
 	}
 	return files, nil
 }

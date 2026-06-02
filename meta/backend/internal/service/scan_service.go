@@ -29,7 +29,7 @@ type ScanService struct {
 	db                              *gorm.DB
 	repo                            *metaRepo.ScanRepository         // 数据访问层
 	dbScanService                   *DatabaseScanService             // 数据库扫描服务
-	namespaceItemScanService        *NamespaceItemScanService        // namespace/item 型 catalog 扫描服务
+	branchLeafScanService           *BranchLeafScanService           // branch/leaf 型 catalog 扫描服务
 	objectStorageCatalogScanService *ObjectStorageCatalogScanService // 对象存储 catalog 扫描服务
 	filesystemCatalogScanService    *FilesystemCatalogScanService    // 文件系统 catalog 扫描服务
 	metadataQueryService            *MetadataQueryService            // 元数据查询服务（独立）
@@ -79,8 +79,8 @@ func NewScanService(db *gorm.DB, engineService *EngineService) *ScanService {
 	// 创建 DatabaseScanService（使用独立服务，无循环依赖）
 	s.dbScanService = NewDatabaseScanService(db, log, nil, repo, spatialService, indexerService)
 
-	// 创建 NamespaceItemScanService（使用独立服务，无循环依赖）
-	s.namespaceItemScanService = NewNamespaceItemScanService(db, log, nil, repo, indexerService)
+	// 创建 BranchLeafScanService（使用独立服务，无循环依赖）
+	s.branchLeafScanService = NewBranchLeafScanService(db, log, nil, repo, indexerService)
 
 	// 创建 ObjectStorageCatalogScanService（使用独立服务，无循环依赖）
 	s.objectStorageCatalogScanService = NewObjectStorageCatalogScanService(db, log, repo, indexerService)
@@ -561,12 +561,12 @@ func (s *ScanService) scanResourceNamespacesWithReporter(resource *commonModels.
 			return 0, 0, 0, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
 		}
 
-		namespaceEntries, err := metacatalog.NamespaceEntriesForPlugin(context.Background(), resource, p)
+		rootBranchEntries, err := metacatalog.RootBranchEntries(context.Background(), resource, p)
 		if err != nil {
 			return 0, 0, 0, err
 		}
 
-		for _, entry := range namespaceEntries {
+		for _, entry := range rootBranchEntries {
 			namespaces = append(namespaces, entry.Name)
 		}
 
@@ -670,12 +670,12 @@ func (s *ScanService) scanResourceNamespacesWithReporter(resource *commonModels.
 	return totalNamespaces, totalTables, totalFields, nil
 }
 
-// scanNamespaceItemsWithReporter 扫描 namespace -> item 型 catalog 的指定 namespace 列表。
-func (s *ScanService) scanNamespaceItemsWithReporter(
+// scanBranchLeavesWithReporter 扫描 root branch -> leaf 型 catalog 的指定 branch 列表。
+func (s *ScanService) scanBranchLeavesWithReporter(
 	enginePlugin plugin.EnginePlugin,
 	resource *commonModels.Engine,
 	tenantID uint,
-	namespaceNames []string,
+	branchNames []string,
 	scanDepth string,
 	force bool,
 	reporter ScanProgressReporter,
@@ -683,115 +683,111 @@ func (s *ScanService) scanNamespaceItemsWithReporter(
 
 	resourceID := resource.ID
 	ctx := context.Background()
-	catalogProvider, ok := enginePlugin.(plugin.CatalogProvider)
-	if !ok {
-		return 0, 0, 0, fmt.Errorf("engine %s does not implement CatalogProvider", resource.EngineType)
-	}
 
 	startFields := append(connectionLogFields(resource),
 		"mode", "manual",
 		"scan_depth", scanDepth,
 	)
 
-	// 如果未指定 namespace，列出所有 namespace
-	if len(namespaceNames) == 0 {
+	// 如果未指定 branch，列出 root 下所有 branch。
+	if len(branchNames) == 0 {
 		if reporter != nil {
-			reporter.Message("列出所有命名空间...")
+			reporter.Message("正在列出 catalog 分支")
 		}
 
-		namespaceEntries, err := metacatalog.NamespaceEntries(ctx, resource, catalogProvider)
+		rootBranchEntries, err := metacatalog.RootBranchEntries(ctx, resource, enginePlugin)
 		if err != nil {
 			return 0, 0, 0, err
 		}
 
-		for _, entry := range namespaceEntries {
-			namespaceNames = append(namespaceNames, entry.Name)
+		for _, entry := range rootBranchEntries {
+			branchNames = append(branchNames, entry.Name)
 		}
 
 		if reporter != nil {
-			reporter.Message(fmt.Sprintf("已过滤系统命名空间，待扫描 %d 个用户命名空间", len(namespaceNames)))
+			reporter.Message(fmt.Sprintf("已过滤系统分支，待扫描 %d 个 catalog 分支", len(branchNames)))
 		}
 	}
 
-	totalNamespaces := 0
+	totalCatalogNodes := 0
 	totalItems := 0
 	totalFields := 0
-	total := len(namespaceNames)
+	total := len(branchNames)
 	if reporter != nil {
 		reporter.SetTotal(total)
 	}
 	completed := 0
 
-	for _, namespaceName := range namespaceNames {
+	for _, branchName := range branchNames {
 		if reporter != nil {
-			reporter.Message(fmt.Sprintf("开始扫描命名空间 %s", namespaceName))
+			reporter.Message(fmt.Sprintf("开始扫描 catalog 分支 %s", branchName))
 		}
 
-		// 检查 namespace 级锁
-		var dbLock string
+		// 检查 branch 级锁。
+		var branchLock string
 		if s.dedupService != nil {
-			dbLock = s.dedupService.GenerateNamespaceLockKey(tenantID, resourceID, namespaceName)
-			if s.dedupService.CheckTaskExists(ctx, dbLock) {
-				s.log.Info("命名空间正在扫描中，跳过",
+			branchLock = s.dedupService.GenerateBranchLockKey(tenantID, resourceID, branchName)
+			if s.dedupService.CheckTaskExists(ctx, branchLock) {
+				s.log.Info("catalog 分支正在扫描中，跳过",
 					"engine_id", resourceID,
-					"namespace", namespaceName)
+					"branch", branchName)
 				if reporter != nil {
-					reporter.Message(fmt.Sprintf("命名空间 %s 正在扫描中，跳过", namespaceName))
+					reporter.Message(fmt.Sprintf("catalog 分支 %s 正在扫描中，跳过", branchName))
 				}
 				completed++
 				continue
 			}
 
-			// 加 namespace 级锁
-			if err := s.dedupService.MarkTaskRunning(ctx, dbLock, 2*time.Hour); err != nil {
-				s.log.Warn("加命名空间级锁失败", "namespace", namespaceName, "error", err)
+			// 加 branch 级锁。
+			if err := s.dedupService.MarkTaskRunning(ctx, branchLock, 2*time.Hour); err != nil {
+				s.log.Warn("加 catalog 分支级锁失败", "branch", branchName, "error", err)
 			}
 		}
 
-		// 扫描 namespace
-		namespaces, items, fields, err := s.namespaceItemScanService.ScanNamespace(
-			ctx, enginePlugin, resource, tenantID, namespaceName, scanDepth, force,
+		// 扫描 branch
+		catalogNodes, items, fields, err := s.branchLeafScanService.ScanBranch(
+			ctx, enginePlugin, resource, tenantID, branchName, scanDepth, force,
 		)
 
 		// 扫描完成后清理锁
-		if s.dedupService != nil && dbLock != "" {
-			if clearErr := s.dedupService.ClearTask(ctx, dbLock); clearErr != nil {
-				s.log.Warn("清除命名空间级锁失败", "namespace", namespaceName, "error", clearErr)
+		if s.dedupService != nil && branchLock != "" {
+			if clearErr := s.dedupService.ClearTask(ctx, branchLock); clearErr != nil {
+				s.log.Warn("清除 catalog 分支级锁失败", "branch", branchName, "error", clearErr)
 			}
 		}
 
 		if err != nil {
-			s.log.Warn("命名空间扫描失败",
+			s.log.Warn("catalog 分支扫描失败",
 				"engine_id", resourceID,
 				"tenant_id", tenantID,
-				"namespace", namespaceName,
+				"branch", branchName,
 				"error", err,
 			)
 			if reporter != nil {
-				reporter.Message(fmt.Sprintf("命名空间 %s 扫描失败: %v", namespaceName, err))
+				reporter.Message(fmt.Sprintf("catalog 分支 %s 扫描失败: %v", branchName, err))
 			}
 			continue
 		}
-		totalNamespaces += namespaces
+		totalCatalogNodes += catalogNodes
 		totalItems += items
 		totalFields += fields
 
 		completed++
 		if reporter != nil {
-			reporter.Advance(namespaceName, completed, total, map[string]interface{}{
+			reporter.Advance(branchName, completed, total, map[string]interface{}{
 				"items":  items,
 				"fields": fields,
 			})
 		}
 	}
 
-	s.log.Info("指定命名空间扫描完成", cloneLogFields(startFields,
-		"catalog_nodes_scanned", totalNamespaces,
+	s.log.Info("指定 catalog 分支扫描完成", cloneLogFields(startFields,
+		"catalog_nodes_scanned", totalCatalogNodes,
 		"items_scanned", totalItems,
 		"fields_scanned", totalFields,
 	)...)
 
-	return totalNamespaces, totalItems, totalFields, nil
+	return totalCatalogNodes, totalItems, totalFields, nil
 }
 
 // scanFilesystemCatalogResourceWithReporter 扫描文件系统 catalog 资源。
@@ -893,9 +889,9 @@ func (s *ScanService) ListItemsByEngine(engineID, tenantID uint) ([]models.MetaI
 	return s.metadataQueryService.ListItemsByEngine(engineID, tenantID)
 }
 
-// ListItemsByNamespace 获取命名空间下所有已扫描数据项。
-func (s *ScanService) ListItemsByNamespace(engineID, tenantID uint, namespace string) ([]models.MetaItemLite, error) {
-	return s.metadataQueryService.ListItemsByNamespace(engineID, tenantID, namespace)
+// ListItemsByBranch 获取 catalog 第一层业务分支下所有已扫描数据项。
+func (s *ScanService) ListItemsByBranch(engineID, tenantID uint, branch string) ([]models.MetaItemLite, error) {
+	return s.metadataQueryService.ListItemsByBranch(engineID, tenantID, branch)
 }
 
 // GetItemFieldDetailsByID 按 item_id 获取数据项字段详细信息。

@@ -243,7 +243,58 @@ func TabularNamespacePath(engineID uint, namespaceTerm, namespace string) Catalo
 	return appendCatalogSegment(CatalogRootPath(TabularCatalogModel(namespaceTerm), engineID), engineID, namespaceTerm, CatalogKindNamespace, namespace)
 }
 
-// NamespaceCatalogPath returns root -> namespace for namespace/item engines.
-func NamespaceCatalogPath(model CatalogModelSpec, engineID uint, namespaceTerm, namespace string) CatalogPath {
-	return appendCatalogSegment(CatalogRootPath(model, engineID), engineID, namespaceTerm, CatalogKindNamespace, namespace)
+// TabularItemPath returns root -> namespace -> table for tabular engines.
+func TabularItemPath(engineID uint, namespaceTerm, namespace, table string) CatalogPath {
+	path := TabularNamespacePath(engineID, namespaceTerm, namespace)
+	return appendCatalogSegment(path, engineID, CatalogTermTable, CatalogKindTable, table)
+}
+
+// BranchCatalogPath returns root -> branch for branch/leaf engines.
+func BranchCatalogPath(model CatalogModelSpec, engineID uint, branchTerm, branchName string) CatalogPath {
+	branchKind := CatalogKindNamespace
+	if branchLevel, ok := CatalogFirstBusinessBranch(model); ok && len(branchLevel.Kinds) > 0 && branchLevel.Kinds[0] != "" {
+		branchKind = branchLevel.Kinds[0]
+	}
+	return appendCatalogSegment(CatalogRootPath(model, engineID), engineID, branchTerm, branchKind, branchName)
+}
+
+// BranchLeafCatalogPath returns root -> branch -> leaf for branch/leaf engines.
+func BranchLeafCatalogPath(model CatalogModelSpec, engineID uint, branchTerm, branchName, leafTerm, leafKind, leafName string) CatalogPath {
+	path := BranchCatalogPath(model, engineID, branchTerm, branchName)
+	return appendCatalogSegment(path, engineID, leafTerm, leafKind, leafName)
+}
+
+// RequireObjectLeafPath validates that path points to an object-storage leaf.
+func RequireObjectLeafPath(path CatalogPath) (string, error) {
+	segments, err := requireCatalogBusinessPath(path, ObjectCatalogModel())
+	if err != nil {
+		return "", err
+	}
+	last := segments[len(segments)-1]
+	if last.Term != CatalogTermObject && last.Kind != CatalogKindObject {
+		return "", fmt.Errorf("object content path requires object leaf")
+	}
+	objectPath := path.StringPath()
+	if objectPath == "" {
+		return "", fmt.Errorf("object content path cannot be empty")
+	}
+	return objectPath, nil
+}
+
+// RequireFileLeafPath validates that path points to a filesystem leaf.
+func RequireFileLeafPath(path CatalogPath) (string, error) {
+	path = NormalizeFileCatalogSegments(path)
+	segments, err := requireCatalogBusinessPath(path, FileCatalogModel())
+	if err != nil {
+		return "", err
+	}
+	last := segments[len(segments)-1]
+	if last.Term != CatalogTermFile && last.Kind != CatalogKindFile {
+		return "", fmt.Errorf("file content path requires file leaf")
+	}
+	filePath := path.StringPath()
+	if filePath == "" {
+		return "", fmt.Errorf("file content path cannot be empty")
+	}
+	return filePath, nil
 }

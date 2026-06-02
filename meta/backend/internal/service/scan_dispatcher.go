@@ -37,7 +37,7 @@ type scanDispatchResult struct {
 	Extraction   scantask.ExtractionCounts
 }
 
-type scanDispatchFunc func(context.Context, plugin.EnginePlugin, scanDispatchRequest) (scanDispatchResult, error)
+type scanDispatchFunc func(context.Context, plugin.EnginePlugin, catalogScanPlan, scanDispatchRequest) (scanDispatchResult, error)
 
 func (s *ScanService) dispatchScan(req scanDispatchRequest) (scanDispatchResult, error) {
 	if req.Resource == nil {
@@ -48,48 +48,44 @@ func (s *ScanService) dispatchScan(req scanDispatchRequest) (scanDispatchResult,
 		return scanDispatchResult{}, fmt.Errorf("unsupported engine type: %s", req.Resource.EngineType)
 	}
 
-	strategy, ok := catalogScanStrategyForPlugin(enginePlugin)
+	plan, ok := catalogScanPlanForPlugin(enginePlugin)
 	if !ok {
 		return scanDispatchResult{}, fmt.Errorf("plugin does not expose a supported catalog scan strategy")
 	}
-	dispatch, ok := s.scanDispatchers()[strategy]
+	dispatch, ok := s.scanDispatchers()[plan.strategy]
 	if !ok {
-		return scanDispatchResult{}, fmt.Errorf("plugin does not support metadata query")
+		return scanDispatchResult{}, fmt.Errorf("plugin does not support catalog scan strategy %s", plan.strategy)
 	}
-	return dispatch(context.Background(), enginePlugin, req)
+	return dispatch(context.Background(), enginePlugin, plan, req)
 }
 
 func (s *ScanService) scanDispatchers() map[catalogScanStrategy]scanDispatchFunc {
 	return map[catalogScanStrategy]scanDispatchFunc{
-		catalogScanTabular:        s.dispatchTabularScan,
-		catalogScanNamespaceItems: s.dispatchNamespaceItemScan,
-		catalogScanObject:         s.dispatchObjectCatalogScan,
-		catalogScanFile:           s.dispatchFileCatalogScan,
+		catalogScanTabular:      s.dispatchTabularScan,
+		catalogScanBranchLeaves: s.dispatchBranchLeafScan,
+		catalogScanObject:       s.dispatchObjectCatalogScan,
+		catalogScanFile:         s.dispatchFileCatalogScan,
 	}
 }
 
-func (s *ScanService) dispatchNamespaceItemScan(ctx context.Context, enginePlugin plugin.EnginePlugin, req scanDispatchRequest) (scanDispatchResult, error) {
-	namespaceNames := topCatalogTargets(req.CatalogPaths)
-	if req.Mode == scanDispatchAuto && len(namespaceNames) == 0 {
-		catalogProvider, ok := enginePlugin.(plugin.CatalogProvider)
-		if !ok {
-			return scanDispatchResult{}, fmt.Errorf("engine %s does not implement CatalogProvider", req.Resource.EngineType)
-		}
-		namespaceEntries, err := metacatalog.NamespaceEntries(ctx, req.Resource, catalogProvider)
+func (s *ScanService) dispatchBranchLeafScan(ctx context.Context, enginePlugin plugin.EnginePlugin, plan catalogScanPlan, req scanDispatchRequest) (scanDispatchResult, error) {
+	targetNames := topCatalogTargets(req.CatalogPaths)
+	if req.Mode == scanDispatchAuto && len(targetNames) == 0 {
+		rootBranchEntries, err := metacatalog.RootBranchEntries(ctx, req.Resource, enginePlugin)
 		if err != nil {
-			return scanDispatchResult{}, fmt.Errorf("failed to list namespaces: %w", err)
+			return scanDispatchResult{}, fmt.Errorf("failed to list root branch entries: %w", err)
 		}
-		namespaceNames = make([]string, 0, len(namespaceEntries))
-		for _, entry := range namespaceEntries {
-			namespaceNames = append(namespaceNames, entry.Name)
+		targetNames = make([]string, 0, len(rootBranchEntries))
+		for _, entry := range rootBranchEntries {
+			targetNames = append(targetNames, entry.Name)
 		}
 	}
 
-	namespaces, items, fields, err := s.scanNamespaceItemsWithReporter(
+	catalogNodes, items, fields, err := s.scanBranchLeavesWithReporter(
 		enginePlugin,
 		req.Resource,
 		req.TenantID,
-		namespaceNames,
+		targetNames,
 		req.ScanDepth,
 		req.Force,
 		req.Reporter,
@@ -97,12 +93,13 @@ func (s *ScanService) dispatchNamespaceItemScan(ctx context.Context, enginePlugi
 	if err == nil {
 		s.finalizeCatalogRootAfterScan(req.Resource, req.TenantID, items, req.ScanDepth)
 	}
-	return scanDispatchResult{CatalogNodes: namespaces, Items: items, Fields: fields}, err
+	return scanDispatchResult{CatalogNodes: catalogNodes, Items: items, Fields: fields}, err
 }
 
-func (s *ScanService) dispatchObjectCatalogScan(ctx context.Context, enginePlugin plugin.EnginePlugin, req scanDispatchRequest) (scanDispatchResult, error) {
+func (s *ScanService) dispatchObjectCatalogScan(ctx context.Context, enginePlugin plugin.EnginePlugin, plan catalogScanPlan, req scanDispatchRequest) (scanDispatchResult, error) {
 	_ = ctx
 	_ = enginePlugin
+	_ = plan
 	return s.scanObjectStorageCatalogResourceResultWithReporter(
 		req.Resource,
 		req.TenantID,
@@ -113,8 +110,9 @@ func (s *ScanService) dispatchObjectCatalogScan(ctx context.Context, enginePlugi
 	)
 }
 
-func (s *ScanService) dispatchFileCatalogScan(ctx context.Context, enginePlugin plugin.EnginePlugin, req scanDispatchRequest) (scanDispatchResult, error) {
+func (s *ScanService) dispatchFileCatalogScan(ctx context.Context, enginePlugin plugin.EnginePlugin, plan catalogScanPlan, req scanDispatchRequest) (scanDispatchResult, error) {
 	_ = ctx
+	_ = plan
 	paths := req.CatalogPaths
 	if req.Mode == scanDispatchAuto && len(paths) == 0 {
 		paths = []string{""}
@@ -131,7 +129,7 @@ func (s *ScanService) dispatchFileCatalogScan(ctx context.Context, enginePlugin 
 	)
 }
 
-func (s *ScanService) dispatchTabularScan(ctx context.Context, enginePlugin plugin.EnginePlugin, req scanDispatchRequest) (scanDispatchResult, error) {
+func (s *ScanService) dispatchTabularScan(ctx context.Context, enginePlugin plugin.EnginePlugin, plan catalogScanPlan, req scanDispatchRequest) (scanDispatchResult, error) {
 	if req.Mode == scanDispatchManual {
 		namespaces, items, fields, err := s.scanResourceNamespacesWithReporter(
 			req.Resource,
@@ -145,38 +143,38 @@ func (s *ScanService) dispatchTabularScan(ctx context.Context, enginePlugin plug
 		return scanDispatchResult{CatalogNodes: namespaces, Items: items, Fields: fields}, err
 	}
 
-	namespaceEntries, err := metacatalog.NamespaceEntriesForPlugin(ctx, req.Resource, enginePlugin)
+	rootBranchEntries, err := metacatalog.RootBranchEntries(ctx, req.Resource, enginePlugin)
 	if err != nil {
-		return scanDispatchResult{}, fmt.Errorf("failed to list namespaces: %w", err)
+		return scanDispatchResult{}, fmt.Errorf("failed to list root branch entries: %w", err)
 	}
 
-	namespaceTerm := namespaceTermForPlugin(enginePlugin)
-	s.log.Info("数据库资源扫描开始", "namespace_total", len(namespaceEntries), "namespace_term", namespaceTerm)
+	namespaceTerm := plan.branchTerm
+	s.log.Info("数据库资源扫描开始", "namespace_total", len(rootBranchEntries), "namespace_term", namespaceTerm)
 	scannedNamespaces := make(map[string]bool)
 	result := scanDispatchResult{}
 
-	for _, namespaceEntry := range namespaceEntries {
-		scannedNamespaces[namespaceEntry.Name] = true
+	for _, rootBranchEntry := range rootBranchEntries {
+		scannedNamespaces[rootBranchEntry.Name] = true
 
 		var node models.MetaNode
 		err := s.db.Where("tenant_id = ? AND engine_id = ? AND node_type = ? AND name = ?",
-			req.TenantID, req.Resource.ID, namespaceTerm, namespaceEntry.Name).First(&node).Error
+			req.TenantID, req.Resource.ID, namespaceTerm, rootBranchEntry.Name).First(&node).Error
 		if err != gorm.ErrRecordNotFound && err != nil {
 			s.log.Warn("查询 namespace 节点失败",
 				"engine_id", req.Resource.ID,
 				"tenant_id", req.TenantID,
-				"namespace", namespaceEntry.Name,
+				"namespace", rootBranchEntry.Name,
 				"error", err,
 			)
 			continue
 		}
 
-		namespaces, items, fields, err := s.dbScanService.ScanNamespace(ctx, req.Resource, req.TenantID, req.Resource.ID, namespaceEntry.Name, req.ScanDepth, req.Force)
+		namespaces, items, fields, err := s.dbScanService.ScanNamespace(ctx, req.Resource, req.TenantID, req.Resource.ID, rootBranchEntry.Name, req.ScanDepth, req.Force)
 		if err != nil {
 			s.log.Warn("namespace 扫描失败",
 				"engine_id", req.Resource.ID,
 				"tenant_id", req.TenantID,
-				"namespace", namespaceEntry.Name,
+				"namespace", rootBranchEntry.Name,
 				"error", err,
 			)
 			continue

@@ -5,28 +5,44 @@ import "github.com/addp/common/engine/plugin"
 type catalogScanStrategy string
 
 const (
-	catalogScanTabular        catalogScanStrategy = "tabular"
-	catalogScanNamespaceItems catalogScanStrategy = "namespace_items"
-	catalogScanObject         catalogScanStrategy = "object_catalog"
-	catalogScanFile           catalogScanStrategy = "file_catalog"
+	catalogScanTabular      catalogScanStrategy = "tabular"
+	catalogScanBranchLeaves catalogScanStrategy = "branch_leaves"
+	catalogScanObject       catalogScanStrategy = "object_catalog"
+	catalogScanFile         catalogScanStrategy = "file_catalog"
 )
 
-func catalogScanStrategyForPlugin(p plugin.EnginePlugin) (catalogScanStrategy, bool) {
+type catalogScanPlan struct {
+	strategy   catalogScanStrategy
+	model      plugin.CatalogModelSpec
+	branchTerm string
+	leafTerm   string
+}
+
+func catalogScanPlanForPlugin(p plugin.EnginePlugin) (catalogScanPlan, bool) {
 	model := catalogModelForPlugin(p)
 	if model == nil {
-		return "", false
+		return catalogScanPlan{}, false
 	}
 
-	switch plugin.CatalogLeafTerm(*model) {
-	case plugin.CatalogTermTable:
-		return catalogScanTabular, true
-	case plugin.CatalogTermCollection, plugin.CatalogTermGraph:
-		return catalogScanNamespaceItems, true
-	case plugin.CatalogTermObject:
-		return catalogScanObject, true
-	case plugin.CatalogTermFile:
-		return catalogScanFile, true
-	default:
-		return "", false
+	leafTerm := plugin.CatalogLeafTerm(*model)
+	plan := catalogScanPlan{
+		model:    *model,
+		leafTerm: leafTerm,
 	}
+	switch leafTerm {
+	case plugin.CatalogTermTable:
+		plan.strategy = catalogScanTabular
+		// Tabular first branch is the schema/database namespace.
+		plan.branchTerm = namespaceTermForPlugin(p)
+	case plugin.CatalogTermCollection, plugin.CatalogTermGraph:
+		plan.strategy = catalogScanBranchLeaves
+		plan.branchTerm = firstBusinessBranchTermForPlugin(p)
+	case plugin.CatalogTermObject:
+		plan.strategy = catalogScanObject
+	case plugin.CatalogTermFile:
+		plan.strategy = catalogScanFile
+	default:
+		return catalogScanPlan{}, false
+	}
+	return plan, true
 }

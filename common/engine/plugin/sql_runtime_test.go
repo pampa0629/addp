@@ -91,3 +91,27 @@ func TestReadSQLBatchPaginatesCustomQuery(t *testing.T) {
 		t.Fatalf("generated SQL = %q", provider.lastSQL)
 	}
 }
+
+func TestCountCatalogItemRowsUsesExplicitCatalogPath(t *testing.T) {
+	provider := &fakeSQLRuntimeProvider{}
+	Register(provider)
+	t.Cleanup(func() {
+		Unregister(provider.Type())
+	})
+
+	count, err := CountCatalogItemRows(context.Background(), &Engine{ID: 1, EngineType: provider.Type()}, TabularItemPath(1, CatalogTermSchema, "public", "roads"))
+	if err != nil {
+		t.Fatalf("CountCatalogItemRows() error = %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("count = %d, want 1", count)
+	}
+	if !strings.Contains(provider.lastSQL, `"public"."roads"`) {
+		t.Fatalf("lastSQL = %s, want qualified table", provider.lastSQL)
+	}
+
+	_, err = CountCatalogItemRows(context.Background(), &Engine{ID: 1, EngineType: provider.Type()}, CatalogRootPath(TabularCatalogModel(CatalogTermSchema), 1))
+	if err == nil {
+		t.Fatal("expected error for root-only path")
+	}
+}

@@ -28,7 +28,7 @@ func TestEnrichObjectStorageJSONTableUpdatesItemDataType(t *testing.T) {
 
 	db := openObjectCatalogScanTestDB(t)
 	repo := metaRepo.NewScanRepository(db)
-	parentNode, err := repo.UpsertNode(1, 7, nil, "bucket", "addp", strPtr("addp"), models.JSONMap{"bucket": "addp"})
+	parentNode, err := repo.UpsertNode(1, 7, nil, "bucket", "addp", strPtr("addp"), metacatalog.ObjectBucketNodeAttributes("addp"))
 	if err != nil {
 		t.Fatalf("create parent node: %v", err)
 	}
@@ -393,7 +393,7 @@ func TestEnsureObjectCatalogPrefixNodesUsesCompositeItemParentPath(t *testing.T)
 		repo: repo,
 	}
 
-	bucketNode, err := repo.UpsertNode(1, 9, nil, "bucket", "addp", strPtr("addp"), models.JSONMap{"bucket": "addp"})
+	bucketNode, err := repo.UpsertNode(1, 9, nil, "bucket", "addp", strPtr("addp"), metacatalog.ObjectBucketNodeAttributes("addp"))
 	if err != nil {
 		t.Fatalf("create bucket node: %v", err)
 	}

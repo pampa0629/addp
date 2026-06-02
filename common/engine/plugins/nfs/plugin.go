@@ -136,7 +136,11 @@ func (p *NFSPlugin) DescribeCatalogFacts(ctx context.Context, connInfo plugin.Co
 }
 
 func (p *NFSPlugin) OpenContent(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
-	return p.readFile(ctx, connInfo, path.StringPath())
+	filePath, err := plugin.RequireFileLeafPath(path)
+	if err != nil {
+		return nil, err
+	}
+	return p.readFile(ctx, connInfo, filePath)
 }
 
 func (p *NFSPlugin) OpenRange(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.ReadOptions) (io.ReadCloser, error) {
@@ -146,15 +150,27 @@ func (p *NFSPlugin) OpenRange(ctx context.Context, connInfo plugin.ConnectionInf
 	if opts.Length <= 0 {
 		return nil, fmt.Errorf("range read requires positive length")
 	}
-	return p.readFileRange(ctx, connInfo, path.StringPath(), opts)
+	filePath, err := plugin.RequireFileLeafPath(path)
+	if err != nil {
+		return nil, err
+	}
+	return p.readFileRange(ctx, connInfo, filePath, opts)
 }
 
 func (p *NFSPlugin) CreateContent(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath, opts plugin.WriteOptions) (io.WriteCloser, error) {
-	return p.openFileForWrite(ctx, connInfo, path.StringPath(), opts.Overwrite)
+	filePath, err := plugin.RequireFileLeafPath(path)
+	if err != nil {
+		return nil, err
+	}
+	return p.openFileForWrite(ctx, connInfo, filePath, opts.Overwrite)
 }
 
 func (p *NFSPlugin) DeleteResource(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.CatalogPath) error {
-	return p.deleteFile(ctx, connInfo, path.StringPath())
+	filePath, err := plugin.RequireFileLeafPath(path)
+	if err != nil {
+		return err
+	}
+	return p.deleteFile(ctx, connInfo, filePath)
 }
 
 func (p *NFSPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {

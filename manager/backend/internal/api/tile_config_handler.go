@@ -7,6 +7,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/spatial"
+	manageri18n "github.com/addp/manager/i18n"
 	"github.com/addp/manager/internal/config"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
@@ -56,7 +57,7 @@ type TileConfigResponse struct {
 // @Tags Manager
 // @Produce json
 // @Param id path int true "存储引擎ID | Engine ID"
-// @Param schema path string true "命名空间 | Namespace"
+// @Param schema path string true "Schema | Schema"
 // @Param table path string true "数据项名称 | Item name"
 // @Success 200 {object} TileConfigResponse "瓦片配置信息 | Tile configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
@@ -68,19 +69,19 @@ func (h *TileConfigHandler) GetTileConfig(c *gin.Context) {
 	engineIDStr := c.Param("id")
 	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource id parameter"})
+		managerError(c, http.StatusBadRequest, manageri18n.MsgInvalidEngineIDParam)
 		return
 	}
 
 	schema := c.Param("schema")
 	if schema == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "schema parameter is required"})
+		managerError(c, http.StatusBadRequest, manageri18n.MsgSchemaRequired)
 		return
 	}
 
 	table := c.Param("table")
 	if table == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "table parameter is required"})
+		managerError(c, http.StatusBadRequest, manageri18n.MsgTableRequired)
 		return
 	}
 
@@ -107,7 +108,7 @@ func (h *TileConfigHandler) GetTileConfig(c *gin.Context) {
 			"engine_id", engineID,
 			"schema", schema,
 			"table", table)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get tile config"})
+		managerError(c, http.StatusInternalServerError, manageri18n.MsgTileConfigFailed)
 		return
 	}
 

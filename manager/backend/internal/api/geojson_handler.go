@@ -8,6 +8,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/spatial"
+	manageri18n "github.com/addp/manager/i18n"
 	"github.com/gin-gonic/gin"
 )
 
@@ -30,7 +31,7 @@ func NewGeoJSONHandler(systemClient *commonClient.SystemClient) *GeoJSONHandler 
 // @Tags Manager
 // @Produce application/geo+json
 // @Param id path int true "存储引擎ID | Engine ID"
-// @Param schema path string true "命名空间 | Namespace"
+// @Param schema path string true "Schema | Schema"
 // @Param table path string true "数据项名称 | Item name"
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认1000，最大5000 | Page size, default 1000, max 5000"
@@ -44,7 +45,7 @@ func (h *GeoJSONHandler) GetGeoJSON(c *gin.Context) {
 	// 1. 解析路径参数
 	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid engine id"})
+		invalidEngineID(c)
 		return
 	}
 
@@ -66,21 +67,21 @@ func (h *GeoJSONHandler) GetGeoJSON(c *gin.Context) {
 
 	// 3. 获取引擎连接信息
 	if h.systemClient == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "system client not initialized"})
+		managerError(c, http.StatusInternalServerError, manageri18n.MsgSystemClientNotInitialized)
 		return
 	}
 
 	engine, err := h.systemClient.GetEngine(uint(engineID))
 	if err != nil {
 		logger.L().Error("Failed to get engine", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get engine info"})
+		managerError(c, http.StatusInternalServerError, manageri18n.MsgEngineNotFound)
 		return
 	}
 
 	db, err := spatial.GetPostGISPool(engine, nil)
 	if err != nil {
 		logger.L().Error("Failed to get PostGIS pool", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "database connection failed"})
+		managerError(c, http.StatusInternalServerError, manageri18n.MsgDatabaseConnectionFailed)
 		return
 	}
 
@@ -92,7 +93,7 @@ func (h *GeoJSONHandler) GetGeoJSON(c *gin.Context) {
 	err = db.Raw(query).Scan(&geojsonStr).Error
 	if err != nil {
 		logger.L().Error("Failed to query GeoJSON", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed"})
+		managerError(c, http.StatusInternalServerError, manageri18n.MsgQueryFailed)
 		return
 	}
 
@@ -107,7 +108,7 @@ func (h *GeoJSONHandler) GetGeoJSON(c *gin.Context) {
 	var geojson map[string]interface{}
 	if err := json.Unmarshal([]byte(geojsonStr), &geojson); err != nil {
 		logger.L().Error("Failed to parse GeoJSON", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid geojson"})
+		managerError(c, http.StatusInternalServerError, manageri18n.MsgInvalidGeoJSON)
 		return
 	}
 
@@ -124,7 +125,7 @@ func (h *GeoJSONHandler) GetGeoJSON(c *gin.Context) {
 // @Tags Manager
 // @Produce json
 // @Param id path int true "存储引擎ID | Engine ID"
-// @Param schema path string true "命名空间 | Namespace"
+// @Param schema path string true "Schema | Schema"
 // @Param table path string true "数据项名称 | Item name"
 // @Param geom_column query string false "几何列名，默认geom | Geometry column, default geom"
 // @Success 200 {object} map[string]interface{} "元数据信息 | Metadata"
@@ -136,7 +137,7 @@ func (h *GeoJSONHandler) GetGeoJSONMetadata(c *gin.Context) {
 	// 1. 解析路径参数
 	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid engine id"})
+		invalidEngineID(c)
 		return
 	}
 
@@ -146,21 +147,21 @@ func (h *GeoJSONHandler) GetGeoJSONMetadata(c *gin.Context) {
 
 	// 2. 获取引擎连接信息
 	if h.systemClient == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "system client not initialized"})
+		managerError(c, http.StatusInternalServerError, manageri18n.MsgSystemClientNotInitialized)
 		return
 	}
 
 	engine, err := h.systemClient.GetEngine(uint(engineID))
 	if err != nil {
 		logger.L().Error("Failed to get engine", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get engine info"})
+		managerError(c, http.StatusInternalServerError, manageri18n.MsgEngineNotFound)
 		return
 	}
 
 	db, err := spatial.GetPostGISPool(engine, nil)
 	if err != nil {
 		logger.L().Error("Failed to get PostGIS pool", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "database connection failed"})
+		managerError(c, http.StatusInternalServerError, manageri18n.MsgDatabaseConnectionFailed)
 		return
 	}
 
@@ -178,7 +179,7 @@ func (h *GeoJSONHandler) GetGeoJSONMetadata(c *gin.Context) {
 	countQuery := spatial.BuildPostGISCountQuery(schema, table)
 	if err := db.Raw(countQuery).Scan(&metadata.Count).Error; err != nil {
 		logger.L().Error("Failed to query count", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "query count failed"})
+		managerError(c, http.StatusInternalServerError, manageri18n.MsgQueryCountFailed)
 		return
 	}
 
@@ -190,7 +191,7 @@ func (h *GeoJSONHandler) GetGeoJSONMetadata(c *gin.Context) {
 	err = db.Raw(extentQuery).Row().Scan(&minLng, &minLat, &maxLng, &maxLat)
 	if err != nil {
 		logger.L().Error("Failed to query extent", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "query extent failed"})
+		managerError(c, http.StatusInternalServerError, manageri18n.MsgQueryExtentFailed)
 		return
 	}
 

@@ -321,7 +321,7 @@ func (s *ObjectStorageCatalogScanService) scanObjectCatalogPaths(
 
 		bucketNode, ok := bucketNodes[bucketName]
 		if !ok {
-			attrs := models.JSONMap{"bucket": bucketName}
+			attrs := metacatalog.ObjectBucketNodeAttributes(bucketName)
 			bucketNode, err = s.repo.UpsertNode(tenantID, engineID, rootNode, "bucket", bucketName, &bucketName, attrs)
 			if err != nil {
 				return ObjectCatalogScanResult{CatalogNodes: totalBuckets, Items: totalObjects, Extraction: extractionStats}, err
@@ -597,10 +597,7 @@ func (s *ObjectStorageCatalogScanService) persistObjectResources(
 					break
 				}
 				fullName := metapath.ComposeNodeFullName(segment, currentParent, "/")
-				attrs := models.JSONMap{
-					"bucket": catalogResource.RootName,
-					"path":   strings.Join(pathPlan.Segments[:idx+1], "/") + "/", // 路径规范：目录路径必须以 / 结尾
-				}
+				attrs := metacatalog.ObjectPrefixNodeAttributes(catalogResource.RootName, strings.Join(pathPlan.Segments[:idx+1], "/")+"/")
 				childNode, err := s.repo.UpsertNode(tenantID, engineID, currentParent, "prefix", segment, &fullName, attrs)
 				if err != nil {
 					return objects, extractionStats, err

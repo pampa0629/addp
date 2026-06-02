@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -16,6 +17,18 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
+)
+
+var (
+	ErrQuickViewRecordNotFound          = errors.New("quick view record not found")
+	ErrQuickViewPreparationNotCompleted = errors.New("quick view preparation not completed")
+	ErrQuickViewAlreadyGenerating       = errors.New("quick view already generating")
+	ErrQuickViewMinZoomRequired         = errors.New("quick view min_zoom required")
+	ErrQuickViewMaxZoomRequired         = errors.New("quick view max_zoom required")
+	ErrQuickViewCancelStatusInvalid     = errors.New("quick view cancel status invalid")
+	ErrQuickViewResumeStatusInvalid     = errors.New("quick view resume status invalid")
+	ErrQuickViewInvalidPreferredMode    = errors.New("quick view invalid preferred mode")
+	ErrQuickViewGeometryColumnNotFound  = errors.New("quick view geometry column not found")
 )
 
 // QuickViewService 快显服务层
@@ -71,7 +84,7 @@ func (s *QuickViewService) TriggerQuickView(ctx context.Context, params TriggerQ
 	// 1. 检查快显表记录是否存在
 	exists, _ := s.repo.Exists(params.TenantID, params.EngineID, params.SchemaName, params.TableName)
 	if !exists {
-		return fmt.Errorf("quick view record not found, please run PrepareForCreateMVT first")
+		return ErrQuickViewRecordNotFound
 	}
 
 	// 2. 检查准备是否完成
@@ -80,7 +93,7 @@ func (s *QuickViewService) TriggerQuickView(ctx context.Context, params TriggerQ
 		return fmt.Errorf("failed to check preparation status: %w", err)
 	}
 	if !prepCompleted {
-		return fmt.Errorf("preparation not completed, please complete PrepareForCreateMVT first")
+		return ErrQuickViewPreparationNotCompleted
 	}
 
 	// 3. 检查是否已在生成中（并发控制）
@@ -90,15 +103,15 @@ func (s *QuickViewService) TriggerQuickView(ctx context.Context, params TriggerQ
 	}
 
 	if isGenerating {
-		return fmt.Errorf("quick view is already generating for this table")
+		return ErrQuickViewAlreadyGenerating
 	}
 
 	// 4. 验证必需参数（前端必须提供用户确认的值）
 	if params.MinZoom == nil {
-		return fmt.Errorf("min_zoom is required (must be confirmed by user)")
+		return ErrQuickViewMinZoomRequired
 	}
 	if params.MaxZoom == 0 {
-		return fmt.Errorf("max_zoom is required (must be confirmed by user)")
+		return ErrQuickViewMaxZoomRequired
 	}
 
 	// 5. 从Meta获取空间元数据（GeomColumn、SRID、PrimaryKey 等）
@@ -378,14 +391,14 @@ func (s *QuickViewService) CancelQuickView(
 	qv, err := s.repo.GetByTable(tenantID, engineID, schema, table)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return fmt.Errorf("快显记录不存在")
+			return ErrQuickViewRecordNotFound
 		}
 		return fmt.Errorf("failed to get quick view: %w", err)
 	}
 
 	// 2. 检查状态是否为 generating
 	if qv.Status != "generating" {
-		return fmt.Errorf("只有 generating 状态的任务可以取消，当前状态: %s", qv.Status)
+		return fmt.Errorf("%w: %s", ErrQuickViewCancelStatusInvalid, qv.Status)
 	}
 
 	// 3. 更新状态为 cancelled
@@ -443,14 +456,14 @@ func (s *QuickViewService) ResumeQuickView(
 	qv, err := s.repo.GetByTable(tenantID, engineID, schema, table)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return fmt.Errorf("快显记录不存在")
+			return ErrQuickViewRecordNotFound
 		}
 		return fmt.Errorf("failed to get quick view: %w", err)
 	}
 
 	// 2. 检查状态是否为 cancelled 或 failed
 	if qv.Status != "cancelled" && qv.Status != "failed" {
-		return fmt.Errorf("只有 cancelled 或 failed 状态的任务可以恢复，当前状态: %s", qv.Status)
+		return fmt.Errorf("%w: %s", ErrQuickViewResumeStatusInvalid, qv.Status)
 	}
 
 	// 3. 从Meta获取空间元数据（确保数据仍然有效）
@@ -538,7 +551,7 @@ func (s *QuickViewService) RunPreparationChecks(
 	}
 
 	if spatialMeta == nil || spatialMeta.GeomColumn == "" {
-		return nil, fmt.Errorf("geometry column not found in metadata")
+		return nil, ErrQuickViewGeometryColumnNotFound
 	}
 
 	// 2. 创建准备阶段服务
@@ -602,7 +615,7 @@ func (s *QuickViewService) PrepareForCreateMVT(
 	}
 
 	if spatialMeta == nil || spatialMeta.GeomColumn == "" {
-		return "", fmt.Errorf("geometry column not found in metadata")
+		return "", ErrQuickViewGeometryColumnNotFound
 	}
 
 	// 2. 先创建或更新快显记录（status="preparing"，同时设置 extent）
@@ -711,15 +724,14 @@ func (s *QuickViewService) UpdatePreferredMode(
 ) error {
 	// 1. 验证 preferredMode 参数
 	if preferredMode != "geojson" && preferredMode != "mvt" {
-		return fmt.Errorf("invalid preferred_mode: %s, must be 'geojson' or 'mvt'", preferredMode)
+		return fmt.Errorf("%w: %s", ErrQuickViewInvalidPreferredMode, preferredMode)
 	}
 
 	// 2. 调用 Repository 更新
 	err := s.repo.UpdatePreferredMode(tenantID, engineID, schema, table, preferredMode)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return fmt.Errorf("quick view record not found for engine_id=%d, schema=%s, table=%s",
-				engineID, schema, table)
+			return ErrQuickViewRecordNotFound
 		}
 		return fmt.Errorf("failed to update preferred mode: %w", err)
 	}

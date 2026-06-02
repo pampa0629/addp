@@ -12,6 +12,7 @@ import (
 	commonAPI "github.com/addp/common/api"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/logger"
+	manageri18n "github.com/addp/manager/i18n"
 	"github.com/addp/manager/internal/preview"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
@@ -59,7 +60,7 @@ func (h *ExplorerHandler) GetTree(c *gin.Context) {
 	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
 		logger.L().Warn("无效的 engine_id", "engine_id", engineIDStr)
-		commonAPI.BadRequestError(c, "Invalid engine_id")
+		invalidEngineID(c)
 		return
 	}
 
@@ -78,7 +79,7 @@ func (h *ExplorerHandler) GetTree(c *gin.Context) {
 	tree, err := h.explorerService.GetTree(c.Request.Context(), tenantID, uint(engineID), expandDepth)
 	if err != nil {
 		if err == service.ErrEngineAccessDenied || err == preview.ErrEngineAccessDenied {
-			commonAPI.ForbiddenError(c, "Access denied to this engine")
+			accessDeniedToEngine(c)
 			return
 		}
 		logger.L().Error("获取资源树失败", "error", err)
@@ -95,7 +96,7 @@ func (h *ExplorerHandler) GetTree(c *gin.Context) {
 // RefreshNode 刷新指定节点
 // POST /api/explorer/tree/:engine_id/refresh?locator=addp://engine/1/path/public?type=schema
 // @Summary 刷新资源节点 | Refresh resource node
-// @Description 对指定资源节点提交后台深度扫描，返回当前树节点与扫描运行记录 | Submit a background deep scan for a resource node and return current node plus scan run
+// @Description 对指定资源节点提交后台深度扫描，返回扫描运行记录 | Submit a background deep scan for a resource node and return the scan run
 // @Tags Manager
 // @Produce json
 // @Param locator query string true "资源定位符URI | Resource locator URI"
@@ -110,7 +111,7 @@ func (h *ExplorerHandler) RefreshNode(c *gin.Context) {
 	// 解析 locator
 	locatorURI := c.Query("locator")
 	if locatorURI == "" {
-		commonAPI.BadRequestError(c, "Missing locator parameter")
+		missingLocator(c)
 		return
 	}
 
@@ -120,7 +121,7 @@ func (h *ExplorerHandler) RefreshNode(c *gin.Context) {
 	result, err := h.explorerService.RefreshNode(c.Request.Context(), tenantID, locatorURI, bearerToken(c))
 	if err != nil {
 		if err == service.ErrEngineAccessDenied || err == preview.ErrEngineAccessDenied {
-			commonAPI.ForbiddenError(c, "Access denied to this engine")
+			accessDeniedToEngine(c)
 			return
 		}
 		logger.L().Error("刷新节点失败", "error", err)
@@ -131,11 +132,8 @@ func (h *ExplorerHandler) RefreshNode(c *gin.Context) {
 	logger.L().Info("刷新节点成功", "locator", locatorURI)
 
 	data := gin.H{
-		"node":    result.Node,
 		"locator": locatorURI,
-	}
-	if result.Run != nil {
-		data["run"] = result.Run
+		"run":     result.Run,
 	}
 
 	c.JSON(http.StatusAccepted, gin.H{
@@ -181,7 +179,7 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 	// 解析 locator
 	locatorURI := c.Query("locator")
 	if locatorURI == "" {
-		commonAPI.BadRequestError(c, "Missing locator parameter")
+		missingLocator(c)
 		return
 	}
 
@@ -211,11 +209,11 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 	result, err := h.previewResolver.PreviewFromURIWithSelection(c.Request.Context(), locatorURI, page, pageSize, childName, refPath, nestedChildPath, graphSample, tenantID)
 	if err != nil {
 		if err == service.ErrEngineAccessDenied || err == preview.ErrEngineAccessDenied {
-			commonAPI.ForbiddenError(c, "Access denied to this engine")
+			accessDeniedToEngine(c)
 			return
 		}
 		if err == preview.ErrPreviewRequiresScannedMeta {
-			commonAPI.NotFoundError(c, "Resource has not been scanned by meta")
+			managerError(c, http.StatusNotFound, manageri18n.MsgMetaScanRequired)
 			return
 		}
 		// 检查是否为表不存在错误（使用 errors.As 处理包装后的错误）
@@ -322,14 +320,14 @@ func (h *ExplorerHandler) GetNodeChildren(c *gin.Context) {
 	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
 		logger.L().Warn("无效的 engine_id", "engine_id", engineIDStr)
-		commonAPI.BadRequestError(c, "Invalid engine_id")
+		invalidEngineID(c)
 		return
 	}
 
 	// 解析 locator
 	locatorURI := c.Query("locator")
 	if locatorURI == "" {
-		commonAPI.BadRequestError(c, "Missing locator parameter")
+		missingLocator(c)
 		return
 	}
 
@@ -348,7 +346,7 @@ func (h *ExplorerHandler) GetNodeChildren(c *gin.Context) {
 	result, err := h.explorerService.GetNodeChildren(c.Request.Context(), tenantID, uint(engineID), locatorURI, expandDepth)
 	if err != nil {
 		if err == service.ErrEngineAccessDenied || err == preview.ErrEngineAccessDenied {
-			commonAPI.ForbiddenError(c, "Access denied to this engine")
+			accessDeniedToEngine(c)
 			return
 		}
 		logger.L().Error("获取节点子节点失败", "error", err)
@@ -388,14 +386,14 @@ func (h *ExplorerHandler) SearchNodes(c *gin.Context) {
 	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
 		logger.L().Warn("无效的 engine_id", "engine_id", engineIDStr)
-		commonAPI.BadRequestError(c, "Invalid engine_id")
+		invalidEngineID(c)
 		return
 	}
 
 	// 解析搜索关键词
 	keyword := c.Query("q")
 	if keyword == "" || len(keyword) < 2 {
-		commonAPI.BadRequestError(c, "Search keyword must be at least 2 characters")
+		managerError(c, http.StatusBadRequest, manageri18n.MsgSearchKeywordTooShort)
 		return
 	}
 
@@ -420,7 +418,7 @@ func (h *ExplorerHandler) SearchNodes(c *gin.Context) {
 	results, total, err := h.explorerService.SearchNodes(c.Request.Context(), tenantID, uint(engineID), keyword, nodeTypes, limit)
 	if err != nil {
 		if err == service.ErrEngineAccessDenied || err == preview.ErrEngineAccessDenied {
-			commonAPI.ForbiddenError(c, "Access denied to this engine")
+			accessDeniedToEngine(c)
 			return
 		}
 		logger.L().Error("搜索节点失败", "error", err)
@@ -461,13 +459,13 @@ func (h *ExplorerHandler) StorageStream(c *gin.Context) {
 	storageRef := c.Query("storage_ref")
 
 	if engineIDStr == "" || storageRef == "" {
-		commonAPI.BadRequestError(c, "Missing engine_id or storage_ref")
+		managerError(c, http.StatusBadRequest, manageri18n.MsgMissingEngineIDOrStorageRef)
 		return
 	}
 
 	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
-		commonAPI.BadRequestError(c, "Invalid engine_id")
+		invalidEngineID(c)
 		return
 	}
 
@@ -485,7 +483,7 @@ func (h *ExplorerHandler) StorageStream(c *gin.Context) {
 	)
 	if err != nil {
 		if err == service.ErrEngineAccessDenied || err == preview.ErrEngineAccessDenied {
-			commonAPI.ForbiddenError(c, "Access denied to this engine")
+			accessDeniedToEngine(c)
 			return
 		}
 		if strings.Contains(err.Error(), "does not support storage streaming") {
@@ -545,19 +543,19 @@ func (h *ExplorerHandler) StorageDownload(c *gin.Context) {
 	storageRef := c.Query("storage_ref")
 
 	if engineIDStr == "" || storageRef == "" {
-		commonAPI.BadRequestError(c, "Missing engine_id or storage_ref")
+		managerError(c, http.StatusBadRequest, manageri18n.MsgMissingEngineIDOrStorageRef)
 		return
 	}
 	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
-		commonAPI.BadRequestError(c, "Invalid engine_id")
+		invalidEngineID(c)
 		return
 	}
 
 	plan, err := h.metadataService.ResolveStorageDownloadPlan(c.Request.Context(), uint(engineID), storageRef, tenantID)
 	if err != nil {
 		if err == service.ErrEngineAccessDenied || err == preview.ErrEngineAccessDenied {
-			commonAPI.ForbiddenError(c, "Access denied to this engine")
+			accessDeniedToEngine(c)
 			return
 		}
 		if strings.Contains(err.Error(), "does not support storage streaming") || errors.Is(err, service.ErrDownloadNotSupported) {

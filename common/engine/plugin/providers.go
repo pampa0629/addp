@@ -17,6 +17,10 @@ type CatalogModelProvider interface {
 }
 
 // CatalogProvider lists real catalog entries from an engine.
+//
+// ListChildren requires an explicit structural root path or a business branch
+// path below that root. It must not treat an empty CatalogPath as "root"; callers
+// that need the structural root entry should use CatalogRootEntry instead.
 type CatalogProvider interface {
 	EnginePlugin
 	ListChildren(ctx context.Context, connInfo ConnectionInfo, parent CatalogPath, opts ListOptions) ([]CatalogEntry, error)
@@ -24,6 +28,9 @@ type CatalogProvider interface {
 }
 
 // CatalogFactsProvider describes engine-native facts for catalog leaves.
+//
+// DescribeCatalogFacts requires a business leaf path below the explicit
+// structural root. Root paths and empty paths are not facts targets.
 type CatalogFactsProvider interface {
 	EnginePlugin
 	DescribeCatalogFacts(ctx context.Context, connInfo ConnectionInfo, path CatalogPath, opts CatalogFactsOptions) (*CatalogFacts, error)

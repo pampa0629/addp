@@ -9,6 +9,7 @@ import (
 
 	"github.com/addp/common/catalogview"
 	commonAuth "github.com/addp/common/middleware/auth"
+	manageri18n "github.com/addp/manager/i18n"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
@@ -58,18 +59,18 @@ func (h *MetadataHandler) RefreshItem(c *gin.Context) {
 			return
 		}
 		if loc.EngineID != engineID {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "locator engine_id does not match path engine_id"})
+			managerError(c, http.StatusBadRequest, manageri18n.MsgLocatorEngineMismatch)
 			return
 		}
 		if loc.ItemID != nil && *loc.ItemID > 0 {
 			req.ItemID = *loc.ItemID
 		} else if loc.NodeID != nil && *loc.NodeID > 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "item refresh requires item locator"})
+			managerError(c, http.StatusBadRequest, manageri18n.MsgItemRefreshRequiresLocator)
 			return
 		}
 	}
 	if req.ItemID == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "locator with item_id or body item_id is required"})
+		managerError(c, http.StatusBadRequest, manageri18n.MsgItemRefreshTargetRequired)
 		return
 	}
 	req.ScanDepth = "deep"
@@ -88,13 +89,13 @@ func (h *MetadataHandler) RefreshItem(c *gin.Context) {
 func parseUintParam(c *gin.Context, key string) (uint, bool) {
 	value := c.Param(key)
 	if strings.TrimSpace(value) == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing " + key})
+		managerErrorWithDetail(c, http.StatusBadRequest, manageri18n.MsgMissingParam, key)
 		return 0, false
 	}
 
 	parsed, err := strconv.ParseUint(value, 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid " + key})
+		managerErrorWithDetail(c, http.StatusBadRequest, manageri18n.MsgInvalidParam, key)
 		return 0, false
 	}
 

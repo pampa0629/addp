@@ -511,7 +511,7 @@ func (s *EngineService) GetEnginesWithStats(tenantID uint) ([]*models.ResourceWi
 			engineFamily = capabilities.EngineFamily
 			if model := catalogModelForPlugin(enginePlugin); model != nil {
 				catalogRootTerm = model.RootTerm
-				if level, ok := plugin.CatalogNamespaceLevel(*model); ok {
+				if level, ok := plugin.CatalogFirstBusinessBranch(*model); ok {
 					catalogTopTerm = level.Term
 					catalogTopI18nKey = level.I18nKey
 					if catalogTopI18nKey == "" {

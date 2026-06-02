@@ -12,11 +12,11 @@ func TestUpsertNodeUsesExplicitFullNameAsSemanticKey(t *testing.T) {
 	db := openScanRepositoryTestDB(t)
 	repo := NewScanRepository(db)
 
-	root, err := repo.UpsertNode(1, 26, nil, "root", "", strPtr(""), models.JSONMap{"path": "/"})
+	root, err := repo.UpsertNode(1, 26, nil, "root", "", strPtr(""), models.JSONMap{"schema_version": 1, "storage": map[string]interface{}{"path": "/"}})
 	if err != nil {
 		t.Fatalf("create root: %v", err)
 	}
-	renamedRoot, err := repo.UpsertNode(1, 26, nil, "root", ".", strPtr(""), models.JSONMap{"path": "/"})
+	renamedRoot, err := repo.UpsertNode(1, 26, nil, "root", ".", strPtr(""), models.JSONMap{"schema_version": 1, "storage": map[string]interface{}{"path": "/"}})
 	if err != nil {
 		t.Fatalf("upsert renamed root: %v", err)
 	}
@@ -27,11 +27,11 @@ func TestUpsertNodeUsesExplicitFullNameAsSemanticKey(t *testing.T) {
 		t.Fatalf("root name = %q, want .", renamedRoot.Name)
 	}
 
-	lake, err := repo.UpsertNode(1, 26, root, "dir", "lake", strPtr("lake"), models.JSONMap{"path": "/lake/"})
+	lake, err := repo.UpsertNode(1, 26, root, "dir", "lake", strPtr("lake"), models.JSONMap{"schema_version": 1, "storage": map[string]interface{}{"path": "/lake/"}})
 	if err != nil {
 		t.Fatalf("create lake: %v", err)
 	}
-	renamedLake, err := repo.UpsertNode(1, 26, renamedRoot, "dir", "lake", strPtr("lake"), models.JSONMap{"path": "/lake/"})
+	renamedLake, err := repo.UpsertNode(1, 26, renamedRoot, "dir", "lake", strPtr("lake"), models.JSONMap{"schema_version": 1, "storage": map[string]interface{}{"path": "/lake/"}})
 	if err != nil {
 		t.Fatalf("upsert lake with renamed parent: %v", err)
 	}

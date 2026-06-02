@@ -16,7 +16,7 @@ const (
 func GraphCatalogModel() CatalogModelSpec {
 	return CatalogModelSpec{
 		PathVersion: CatalogPathVersion,
-		RootTerm:    "server",
+		RootTerm:    CatalogTermServer,
 		Levels: []CatalogLevelSpec{
 			{Term: CatalogTermDatabase, Kinds: []string{CatalogKindNamespace}, Role: CatalogRoleBranch, I18nKey: CatalogTermI18nKey(CatalogTermDatabase)},
 			{Term: CatalogTermGraph, Kinds: []string{CatalogKindGraph}, Role: CatalogRoleLeaf, I18nKey: CatalogTermI18nKey(CatalogTermGraph)},

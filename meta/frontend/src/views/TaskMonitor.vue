@@ -73,6 +73,22 @@
     </el-card>
 
     <el-card class="result-card" shadow="hover">
+      <div
+        v-if="hasActiveRuns"
+        class="monitor-status"
+      >
+        <div class="monitor-status__header">
+          <span>{{ t('meta.monitor.activeRunsRefreshing') }}</span>
+          <span>{{ t('meta.monitor.autoRefreshInterval', { seconds: activeRefreshSeconds }) }}</span>
+        </div>
+        <el-progress
+          :percentage="100"
+          status="active"
+          :stroke-width="6"
+          :show-text="false"
+        />
+      </div>
+
       <el-table :data="taskRuns" v-loading="loading" height="640">
         <el-table-column prop="id" :label="t('meta.monitor.runId')" width="90" />
         <el-table-column prop="task_name" :label="t('meta.monitor.taskName')" min-width="200">
@@ -110,7 +126,7 @@
         </el-table-column>
         <el-table-column :label="t('meta.monitor.progress')" width="180">
           <template #default="{ row }">
-            <el-progress :percentage="row.progress_percent || 0" :status="progressStatus(row.status)" />
+            <el-progress :percentage="runProgressPercent(row)" :status="progressStatus(row.status)" />
           </template>
         </el-table-column>
         <el-table-column prop="started_at" :label="t('meta.monitor.startTime')" width="180">
@@ -154,6 +170,7 @@ const autoRefreshTimer = ref(null)
 
 const ACTIVE_REFRESH_INTERVAL_MS = 3000
 const IDLE_REFRESH_INTERVAL_MS = 15000
+const activeRefreshSeconds = Math.round(ACTIVE_REFRESH_INTERVAL_MS / 1000)
 
 const filters = reactive({
   engineId: null,
@@ -326,6 +343,15 @@ const progressStatus = status => {
   }
 }
 
+const runProgressPercent = row => {
+  const progress = Number(row?.progress_percent ?? row?.progress ?? 0)
+  const normalized = Number.isFinite(progress) ? Math.max(0, Math.min(100, Math.round(progress))) : 0
+  if (['pending', 'running'].includes(row?.status) && normalized === 0) {
+    return 5
+  }
+  return normalized
+}
+
 const formatRunStatus = status => {
   switch (status) {
     case 'pending': return t('meta.monitor.pending')
@@ -442,6 +468,24 @@ onUnmounted(() => {
 .result-card {
   flex: 1;
   border-radius: 12px;
+}
+
+.monitor-status {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--el-border-color);
+  border-radius: 6px;
+  background: var(--el-bg-color);
+}
+
+.monitor-status__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+  color: var(--addp-text-secondary);
+  font-size: 12px;
 }
 
 .task-name-cell {

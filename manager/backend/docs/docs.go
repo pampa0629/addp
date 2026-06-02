@@ -506,7 +506,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "命名空间 | Namespace",
+                        "description": "Schema | Schema",
                         "name": "schema",
                         "in": "query",
                         "required": true
@@ -588,7 +588,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "命名空间 | Namespace",
+                        "description": "Schema | Schema",
                         "name": "schema",
                         "in": "query",
                         "required": true
@@ -663,7 +663,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "命名空间 | Namespace",
+                        "description": "Schema | Schema",
                         "name": "schema",
                         "in": "path",
                         "required": true
@@ -768,7 +768,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "命名空间 | Namespace",
+                        "description": "Schema | Schema",
                         "name": "schema",
                         "in": "path",
                         "required": true
@@ -849,7 +849,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "命名空间 | Namespace",
+                        "description": "Schema | Schema",
                         "name": "schema",
                         "in": "path",
                         "required": true
@@ -918,7 +918,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "命名空间 | Namespace",
+                        "description": "Schema | Schema",
                         "name": "schema",
                         "in": "path",
                         "required": true
@@ -981,7 +981,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "命名空间 | Namespace",
+                        "description": "Schema | Schema",
                         "name": "schema",
                         "in": "path",
                         "required": true
@@ -1037,7 +1037,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "命名空间 | Namespace",
+                        "description": "Schema | Schema",
                         "name": "schema",
                         "in": "path",
                         "required": true
@@ -1103,7 +1103,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "命名空间 | Namespace",
+                        "description": "Schema | Schema",
                         "name": "schema",
                         "in": "path",
                         "required": true
@@ -1177,7 +1177,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "命名空间 | Namespace",
+                        "description": "Schema | Schema",
                         "name": "schema",
                         "in": "path",
                         "required": true
@@ -1249,7 +1249,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "命名空间 | Namespace",
+                        "description": "Schema | Schema",
                         "name": "schema",
                         "in": "path",
                         "required": true
@@ -1312,7 +1312,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "命名空间 | Namespace",
+                        "description": "Schema | Schema",
                         "name": "schema",
                         "in": "path",
                         "required": true
@@ -1368,7 +1368,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "命名空间 | Namespace",
+                        "description": "Schema | Schema",
                         "name": "schema",
                         "in": "path",
                         "required": true
@@ -1431,7 +1431,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "命名空间 | Namespace",
+                        "description": "Schema | Schema",
                         "name": "schema",
                         "in": "path",
                         "required": true
@@ -1587,7 +1587,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "目标命名空间，默认public | Target namespace, default public",
+                        "description": "目标 Schema，默认 public | Target schema, default public",
                         "name": "target_schema",
                         "in": "formData"
                     },
@@ -2684,7 +2684,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "对指定资源节点提交后台深度扫描，返回当前树节点与扫描运行记录 | Submit a background deep scan for a resource node and return current node plus scan run",
+                "description": "对指定资源节点提交后台深度扫描，返回扫描运行记录 | Submit a background deep scan for a resource node and return the scan run",
                 "produces": [
                     "application/json"
                 ],

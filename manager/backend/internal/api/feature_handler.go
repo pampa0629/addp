@@ -8,6 +8,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/spatial"
+	manageri18n "github.com/addp/manager/i18n"
 	"github.com/addp/manager/internal/repository"
 	"github.com/gin-gonic/gin"
 )
@@ -34,7 +35,7 @@ func NewFeatureHandler(systemClient *commonClient.SystemClient, metadataRepo *re
 // @Produce json
 // @Param id path int true "存储引擎ID | Engine ID"
 // @Param feature_id path string true "要素ID | Feature ID"
-// @Param schema query string true "命名空间 | Namespace"
+// @Param schema query string true "Schema | Schema"
 // @Param table query string true "数据项名称 | Item name"
 // @Param geom query string false "几何字段名，默认geom | Geometry column name, default geom"
 // @Param primary_key query string false "主键字段名，默认id | Primary key column, default id"
@@ -48,7 +49,7 @@ func (h *FeatureHandler) GetFeatureCentroid(c *gin.Context) {
 	engineIDStr := c.Param("id")
 	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource id parameter"})
+		managerError(c, http.StatusBadRequest, manageri18n.MsgInvalidEngineIDParam)
 		return
 	}
 
@@ -58,41 +59,41 @@ func (h *FeatureHandler) GetFeatureCentroid(c *gin.Context) {
 	// 2. 解析查询参数
 	schema := c.Query("schema")
 	if schema == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "schema parameter is required"})
+		managerError(c, http.StatusBadRequest, manageri18n.MsgSchemaRequired)
 		return
 	}
 
 	table := c.Query("table")
 	if table == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "table parameter is required"})
+		managerError(c, http.StatusBadRequest, manageri18n.MsgTableRequired)
 		return
 	}
 
 	geomCol := c.DefaultQuery("geom", "geom")
 	primaryKey := c.DefaultQuery("primary_key", "id")
 
-	// 3. 获取资源信息
+	// 3. 获取引擎信息
 	if h.systemClient == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "system client not available"})
+		managerError(c, http.StatusInternalServerError, manageri18n.MsgSystemClientUnavailable)
 		return
 	}
 
-	resource, err := h.systemClient.GetEngine(uint(engineID))
+	engine, err := h.systemClient.GetEngine(uint(engineID))
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "resource not found"})
+		managerError(c, http.StatusNotFound, manageri18n.MsgEngineNotFound)
 		return
 	}
 
-	// 4. 验证资源类型（当前为空间预览的 PostGIS 专用能力）
-	if !spatial.IsPostGISEngine(resource.EngineType) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "only postgresql engines are supported"})
+	// 4. 验证引擎类型（当前为空间预览的 PostGIS 专用能力）
+	if !spatial.IsPostGISEngine(engine.EngineType) {
+		managerError(c, http.StatusBadRequest, manageri18n.MsgUnsupportedPostgresOnly)
 		return
 	}
 
 	// 5. 获取 PostGIS 连接池
-	db, err := spatial.GetPostGISPool(resource, nil)
+	db, err := spatial.GetPostGISPool(engine, nil)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get database connection"})
+		managerError(c, http.StatusInternalServerError, manageri18n.MsgDatabaseConnectionFailed)
 		return
 	}
 
@@ -103,7 +104,7 @@ func (h *FeatureHandler) GetFeatureCentroid(c *gin.Context) {
 	err = db.WithContext(c.Request.Context()).Raw(sqlStr, featureIDStr).Row().Scan(&lon, &lat)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			c.JSON(http.StatusNotFound, gin.H{"error": "feature not found"})
+			managerError(c, http.StatusNotFound, manageri18n.MsgFeatureNotFound)
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("query failed: %v", err)})
@@ -111,7 +112,7 @@ func (h *FeatureHandler) GetFeatureCentroid(c *gin.Context) {
 	}
 
 	if !lon.Valid || !lat.Valid {
-		c.JSON(http.StatusNotFound, gin.H{"error": "feature has no valid geometry"})
+		managerError(c, http.StatusNotFound, manageri18n.MsgFeatureInvalidGeometry)
 		return
 	}
 
@@ -130,7 +131,7 @@ func (h *FeatureHandler) GetFeatureCentroid(c *gin.Context) {
 // @Produce json
 // @Param id path int true "存储引擎ID | Engine ID"
 // @Param feature_id path string true "要素ID | Feature ID"
-// @Param schema query string true "命名空间 | Namespace"
+// @Param schema query string true "Schema | Schema"
 // @Param table query string true "数据项名称 | Item name"
 // @Param geom query string false "几何字段名，默认geom | Geometry column name, default geom"
 // @Param primary_key query string false "主键字段名，默认id | Primary key column, default id"
@@ -144,7 +145,7 @@ func (h *FeatureHandler) GetFeatureGeometry(c *gin.Context) {
 	engineIDStr := c.Param("id")
 	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource id parameter"})
+		managerError(c, http.StatusBadRequest, manageri18n.MsgInvalidEngineIDParam)
 		return
 	}
 
@@ -153,41 +154,41 @@ func (h *FeatureHandler) GetFeatureGeometry(c *gin.Context) {
 	// 2. 解析查询参数
 	schema := c.Query("schema")
 	if schema == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "schema parameter is required"})
+		managerError(c, http.StatusBadRequest, manageri18n.MsgSchemaRequired)
 		return
 	}
 
 	table := c.Query("table")
 	if table == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "table parameter is required"})
+		managerError(c, http.StatusBadRequest, manageri18n.MsgTableRequired)
 		return
 	}
 
 	geomCol := c.DefaultQuery("geom", "geom")
 	primaryKey := c.DefaultQuery("primary_key", "id")
 
-	// 3. 获取资源信息
+	// 3. 获取引擎信息
 	if h.systemClient == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "system client not available"})
+		managerError(c, http.StatusInternalServerError, manageri18n.MsgSystemClientUnavailable)
 		return
 	}
 
-	resource, err := h.systemClient.GetEngine(uint(engineID))
+	engine, err := h.systemClient.GetEngine(uint(engineID))
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "resource not found"})
+		managerError(c, http.StatusNotFound, manageri18n.MsgEngineNotFound)
 		return
 	}
 
-	// 4. 验证资源类型（当前为空间预览的 PostGIS 专用能力）
-	if !spatial.IsPostGISEngine(resource.EngineType) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "only postgresql engines are supported"})
+	// 4. 验证引擎类型（当前为空间预览的 PostGIS 专用能力）
+	if !spatial.IsPostGISEngine(engine.EngineType) {
+		managerError(c, http.StatusBadRequest, manageri18n.MsgUnsupportedPostgresOnly)
 		return
 	}
 
 	// 5. 获取 PostGIS 连接池
-	db, err := spatial.GetPostGISPool(resource, nil)
+	db, err := spatial.GetPostGISPool(engine, nil)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get database connection"})
+		managerError(c, http.StatusInternalServerError, manageri18n.MsgDatabaseConnectionFailed)
 		return
 	}
 
@@ -199,7 +200,7 @@ func (h *FeatureHandler) GetFeatureGeometry(c *gin.Context) {
 	err = db.WithContext(c.Request.Context()).Raw(sqlStr, featureIDStr).Row().Scan(&geojson, &lon, &lat, &minLon, &minLat, &maxLon, &maxLat)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			c.JSON(http.StatusNotFound, gin.H{"error": "feature not found"})
+			managerError(c, http.StatusNotFound, manageri18n.MsgFeatureNotFound)
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("query failed: %v", err)})
@@ -207,7 +208,7 @@ func (h *FeatureHandler) GetFeatureGeometry(c *gin.Context) {
 	}
 
 	if !geojson.Valid {
-		c.JSON(http.StatusNotFound, gin.H{"error": "feature has no valid geometry"})
+		managerError(c, http.StatusNotFound, manageri18n.MsgFeatureInvalidGeometry)
 		return
 	}
 

@@ -52,6 +52,19 @@ func ListAllTypes() []string {
 	return plugin.List()
 }
 
+// CatalogModel 获取引擎插件声明的 catalog model。
+func CatalogModel(engineType string) (plugin.CatalogModelSpec, error) {
+	p, err := plugin.Get(engineType)
+	if err != nil {
+		return plugin.CatalogModelSpec{}, err
+	}
+	modelProvider, ok := p.(plugin.CatalogModelProvider)
+	if !ok {
+		return plugin.CatalogModelSpec{}, fmt.Errorf("plugin %s does not implement CatalogModelProvider", engineType)
+	}
+	return modelProvider.CatalogModel(), nil
+}
+
 // GetAllPlugins 获取所有插件信息（用于前端API）
 func GetAllPlugins() map[string]PluginInfo {
 	plugins := plugin.GetAll()
@@ -308,14 +321,9 @@ func DescribeCatalogFacts(ctx context.Context, engine *models.Engine, path plugi
 	return plugin.DescribeCatalogFacts(ctx, toPluginEngine(engine), path, opts)
 }
 
-// DescribeNamedCatalogFacts 描述指定命名空间下的具名 tabular catalog leaf facts。
-func DescribeNamedCatalogFacts(ctx context.Context, engine *models.Engine, namespace, item string, opts plugin.CatalogFactsOptions) (*plugin.CatalogFacts, error) {
-	return plugin.DescribeNamedCatalogFacts(ctx, toPluginEngine(engine), namespace, item, opts)
-}
-
-// CountItemRows 获取 tabular 数据项行数。
-func CountItemRows(ctx context.Context, engine *models.Engine, namespace, item string) (int64, error) {
-	return plugin.CountItemRows(ctx, toPluginEngine(engine), namespace, item)
+// CountCatalogItemRows 获取 tabular catalog leaf 的行数。
+func CountCatalogItemRows(ctx context.Context, engine *models.Engine, path plugin.CatalogPath) (int64, error) {
+	return plugin.CountCatalogItemRows(ctx, toPluginEngine(engine), path)
 }
 
 // ============ 统一查询执行 ============
@@ -382,7 +390,12 @@ func generateCatalogSampleQuery(ctx context.Context, enginePlugin plugin.EngineP
 	if !ok {
 		return "", false
 	}
-	namespaces, err := cp.ListChildren(ctx, connInfo, plugin.CatalogRootPath(modelProvider.CatalogModel(), engineID), plugin.ListOptions{})
+	model := modelProvider.CatalogModel()
+	if plugin.CatalogLeafTerm(model) != plugin.CatalogTermTable {
+		return "", false
+	}
+
+	namespaces, err := cp.ListChildren(ctx, connInfo, plugin.CatalogRootPath(model, engineID), plugin.ListOptions{})
 	if err != nil {
 		return "", false
 	}
