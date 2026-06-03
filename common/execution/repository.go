@@ -1,11 +1,13 @@
-package repository
+package execution
 
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
+	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/models"
 	"gorm.io/gorm"
 )
@@ -21,26 +23,26 @@ func NewTaskExecutionRepository(db *gorm.DB) *TaskExecutionRepository {
 }
 
 // Create 创建执行记录
-func (r *TaskExecutionRepository) Create(ctx context.Context, exec *models.TaskExecution) error {
+func (r *TaskExecutionRepository) Create(ctx context.Context, exec *TaskExecution) error {
 	return r.db.WithContext(ctx).Create(exec).Error
 }
 
 // Update 更新执行记录
-func (r *TaskExecutionRepository) Update(ctx context.Context, exec *models.TaskExecution) error {
+func (r *TaskExecutionRepository) Update(ctx context.Context, exec *TaskExecution) error {
 	return r.db.WithContext(ctx).Save(exec).Error
 }
 
 // UpdateFields 部分更新字段
 func (r *TaskExecutionRepository) UpdateFields(ctx context.Context, executionID string, tenantID int, fields map[string]interface{}) error {
 	return r.db.WithContext(ctx).
-		Model(&models.TaskExecution{}).
+		Model(&TaskExecution{}).
 		Where("execution_id = ? AND tenant_id = ?", executionID, tenantID).
 		Updates(fields).Error
 }
 
 // GetByID 根据 ID 查询
-func (r *TaskExecutionRepository) GetByID(ctx context.Context, id int64, tenantID int) (*models.TaskExecution, error) {
-	var exec models.TaskExecution
+func (r *TaskExecutionRepository) GetByID(ctx context.Context, id int64, tenantID int) (*TaskExecution, error) {
+	var exec TaskExecution
 	query := r.db.WithContext(ctx).Where("id = ?", id)
 
 	// 如果 tenantID > 0，则进行租户过滤；否则不过滤（用于内部调用）
@@ -49,23 +51,23 @@ func (r *TaskExecutionRepository) GetByID(ctx context.Context, id int64, tenantI
 	}
 
 	err := query.First(&exec).Error
-	return &exec, WrapDBError(err)
+	return &exec, wrapDBError(err)
 }
 
 // GetByExecutionID 根据 UUID 查询
-func (r *TaskExecutionRepository) GetByExecutionID(ctx context.Context, executionID string, tenantID int) (*models.TaskExecution, error) {
-	var exec models.TaskExecution
+func (r *TaskExecutionRepository) GetByExecutionID(ctx context.Context, executionID string, tenantID int) (*TaskExecution, error) {
+	var exec TaskExecution
 	query := r.db.WithContext(ctx).Where("execution_id = ?", executionID)
 	if tenantID != 0 {
 		query = query.Where("tenant_id = ?", tenantID)
 	}
 	err := query.First(&exec).Error
-	return &exec, WrapDBError(err)
+	return &exec, wrapDBError(err)
 }
 
 // List 分页查询（支持多种过滤条件）
-func (r *TaskExecutionRepository) List(ctx context.Context, filter TaskExecutionFilter) ([]*models.TaskExecution, int64, error) {
-	query := r.db.WithContext(ctx).Model(&models.TaskExecution{})
+func (r *TaskExecutionRepository) List(ctx context.Context, filter TaskExecutionFilter) ([]*TaskExecution, int64, error) {
+	query := r.db.WithContext(ctx).Model(&TaskExecution{})
 
 	// 租户过滤（必须）
 	query = query.Where("tenant_id = ?", filter.TenantID)
@@ -100,7 +102,7 @@ func (r *TaskExecutionRepository) List(ctx context.Context, filter TaskExecution
 	}
 
 	// 分页查询
-	var executions []*models.TaskExecution
+	var executions []*TaskExecution
 	err := query.
 		Order("created_at DESC").
 		Offset((filter.Page - 1) * filter.PageSize).
@@ -112,7 +114,7 @@ func (r *TaskExecutionRepository) List(ctx context.Context, filter TaskExecution
 
 // GetStatistics 获取执行统计信息
 func (r *TaskExecutionRepository) GetStatistics(ctx context.Context, tenantID int, module string, startDate, endDate *time.Time) (*ExecutionStatistics, error) {
-	query := r.db.WithContext(ctx).Model(&models.TaskExecution{}).
+	query := r.db.WithContext(ctx).Model(&TaskExecution{}).
 		Where("tenant_id = ?", tenantID)
 
 	if module != "" {
@@ -142,13 +144,13 @@ func (r *TaskExecutionRepository) GetStatistics(ctx context.Context, tenantID in
 	for _, sc := range statusCounts {
 		stats.Total += sc.Count
 		switch sc.Status {
-		case models.ExecutionStatusSuccess:
+		case ExecutionStatusSuccess:
 			stats.SuccessCount = sc.Count
-		case models.ExecutionStatusFailed:
+		case ExecutionStatusFailed:
 			stats.FailedCount = sc.Count
-		case models.ExecutionStatusRunning:
+		case ExecutionStatusRunning:
 			stats.RunningCount = sc.Count
-		case models.ExecutionStatusPending:
+		case ExecutionStatusPending:
 			stats.PendingCount = sc.Count
 		}
 	}
@@ -196,10 +198,10 @@ func (r *TaskExecutionRepository) GetTrendData(ctx context.Context, tenantID int
 }
 
 // GetRunningExecutions 获取所有正在运行的执行
-func (r *TaskExecutionRepository) GetRunningExecutions(ctx context.Context, tenantID int) ([]*models.TaskExecution, error) {
-	var executions []*models.TaskExecution
+func (r *TaskExecutionRepository) GetRunningExecutions(ctx context.Context, tenantID int) ([]*TaskExecution, error) {
+	var executions []*TaskExecution
 	err := r.db.WithContext(ctx).
-		Where("tenant_id = ? AND status IN (?, ?)", tenantID, models.ExecutionStatusPending, models.ExecutionStatusRunning).
+		Where("tenant_id = ? AND status IN (?, ?)", tenantID, ExecutionStatusPending, ExecutionStatusRunning).
 		Order("created_at DESC").
 		Find(&executions).Error
 	return executions, err
@@ -208,13 +210,13 @@ func (r *TaskExecutionRepository) GetRunningExecutions(ctx context.Context, tena
 // CleanOrphanExecutions 清理孤儿执行记录（超时未完成的）
 func (r *TaskExecutionRepository) CleanOrphanExecutions(ctx context.Context, timeout time.Duration) (int64, error) {
 	result := r.db.WithContext(ctx).
-		Model(&models.TaskExecution{}).
+		Model(&TaskExecution{}).
 		Where("status IN (?, ?) AND created_at < ?",
-			models.ExecutionStatusPending,
-			models.ExecutionStatusRunning,
+			ExecutionStatusPending,
+			ExecutionStatusRunning,
 			time.Now().Add(-timeout)).
 		Updates(map[string]interface{}{
-			"status": models.ExecutionStatusTimeout,
+			"status": ExecutionStatusTimeout,
 			"error_details": models.JSONMap{
 				"message":    "Execution timed out due to worker crash or long-running task",
 				"cleaned_at": time.Now(),
@@ -227,14 +229,14 @@ func (r *TaskExecutionRepository) CleanOrphanExecutions(ctx context.Context, tim
 func (r *TaskExecutionRepository) DeleteOldRecords(ctx context.Context, tenantID int, beforeDate time.Time) (int64, error) {
 	result := r.db.WithContext(ctx).
 		Where("tenant_id = ? AND created_at < ?", tenantID, beforeDate).
-		Delete(&models.TaskExecution{})
+		Delete(&TaskExecution{})
 	return result.RowsAffected, result.Error
 }
 
 // UpdateStatus 原子更新状态（防止并发冲突）
 func (r *TaskExecutionRepository) UpdateStatus(ctx context.Context, executionID string, tenantID int, fromStatus, toStatus string) error {
 	result := r.db.WithContext(ctx).
-		Model(&models.TaskExecution{}).
+		Model(&TaskExecution{}).
 		Where("execution_id = ? AND tenant_id = ? AND status = ?", executionID, tenantID, fromStatus).
 		Update("status", toStatus)
 
@@ -276,4 +278,17 @@ type TrendDataPoint struct {
 	SuccessCount int64     `json:"success_count"`
 	FailedCount  int64     `json:"failed_count"`
 	AvgTimeMs    float64   `json:"avg_time_ms"`
+}
+
+func wrapDBError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return commonapi.ErrNotFound
+	}
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return commonapi.ErrConflict
+	}
+	return err
 }

@@ -8,6 +8,8 @@ ADDP 平台的共享代码模块，提供各个微服务模块通用的工具和
 提供与其他服务交互的客户端：
 - `SystemClient`: 与 System 模块交互的客户端，用于获取资源配置、用户认证等
 
+`client` 只表达跨服务 HTTP/API 调用边界，不作为 infra PostgreSQL `common` schema 的读写入口。
+
 ### jsonmap
 decoded JSON map 的通用读取工具，用于读取嵌套 section、字符串、数字、时间等基础值。
 
@@ -37,6 +39,13 @@ decoded JSON map 的通用读取工具，用于读取嵌套 section、字符串�
 文件格式、类型信息、格式信息、字段类型映射、parser / extractor / analyzer 等通用能力。
 
 `format` 不直接决定 meta item 如何归并，也不绕过 Meta normalizer 写最终 attributes。
+
+### execution
+统一执行记录能力，负责 `common.task_executions` 的模型、仓储、统计查询和 SQL 迁移入口。
+
+所有模块写入或查询统一执行记录时应复用 `common/execution`，不得在模块内新增私有执行历史主表或绕过仓储直接写 `common.task_executions`。
+
+后续如果确实新增 `common` schema 共享表，应按领域新增 `common/<domain>` 包，并在领域包内提供模型、仓储和 `EnsureStore`；只有当 `common` schema 独立成远程 Common 服务时，才新增对应 `common/client`。
 
 ### models
 共享的数据模型：

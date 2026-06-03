@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	commonExecution "github.com/addp/common/execution"
 	"log"
 	"os"
 	"os/signal"
@@ -11,7 +12,6 @@ import (
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/dbbridge"
-	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/common/utils"
 	"github.com/addp/develop/backend/internal/api"
 	"github.com/addp/develop/backend/internal/config"
@@ -54,7 +54,7 @@ func main() {
 	// ========== Repository 层 ==========
 	devTaskRepo := repository.NewDevTaskRepository(db)
 	// devExecutionRepo := repository.NewDevExecutionRepository(db) // 【已废弃】改用统一执行表
-	taskExecutionRepo := commonRepo.NewTaskExecutionRepository(db) // 统一执行记录仓库
+	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db) // 统一执行记录仓库
 	log.Printf("✅ Repository 层初始化完成（使用统一执行表）")
 
 	// ========== 创建 System Client ==========

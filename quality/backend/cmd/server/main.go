@@ -5,6 +5,7 @@ import (
 	"log"
 
 	commonClient "github.com/addp/common/client"
+	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/utils"
 	_ "github.com/addp/quality/i18n"
 	"github.com/addp/quality/internal/api"
@@ -38,6 +39,10 @@ func main() {
 
 	if err := db.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", cfg.DBSchema)).Error; err != nil {
 		log.Fatalf("Failed to create schema: %v", err)
+	}
+
+	if err := commonExecution.EnsureStore(db); err != nil {
+		log.Fatalf("Failed to ensure execution store: %v", err)
 	}
 
 	if err := db.AutoMigrate(

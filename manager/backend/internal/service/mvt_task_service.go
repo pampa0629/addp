@@ -2,10 +2,10 @@ package service
 
 import (
 	"context"
+	commonExecution "github.com/addp/common/execution"
 	"time"
 
 	commonModels "github.com/addp/common/models"
-	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
 	"github.com/google/uuid"
@@ -17,14 +17,14 @@ import (
 type MvtTaskService struct {
 	mvtTaskRepo  *repository.MvtTaskRepository
 	quickViewSvc *QuickViewService
-	taskExecRepo *commonRepo.TaskExecutionRepository
+	taskExecRepo *commonExecution.TaskExecutionRepository
 }
 
 // NewMvtTaskService 创建服务
 func NewMvtTaskService(
 	mvtTaskRepo *repository.MvtTaskRepository,
 	quickViewSvc *QuickViewService,
-	taskExecRepo *commonRepo.TaskExecutionRepository,
+	taskExecRepo *commonExecution.TaskExecutionRepository,
 ) *MvtTaskService {
 	return &MvtTaskService{
 		mvtTaskRepo:  mvtTaskRepo,
@@ -73,15 +73,15 @@ func (s *MvtTaskService) Execute(ctx context.Context, taskID uint, tenantID uint
 	executionID := uuid.New().String()
 	now := time.Now()
 
-	exec := &commonModels.TaskExecution{
+	exec := &commonExecution.TaskExecution{
 		ExecutionID:       executionID,
 		TenantID:          int(tenantID),
-		Module:            commonModels.ModuleManager,
+		Module:            commonExecution.ModuleManager,
 		TaskType:          "mvt_generation",
 		SourceTaskID:      intPtr(int(taskID)),
 		SourceTaskName:    &task.Name,
 		ParentExecutionID: parentExecutionID,
-		Status:            commonModels.ExecutionStatusRunning,
+		Status:            commonExecution.ExecutionStatusRunning,
 		TriggerType:       triggerType,
 		StartedAt:         &now,
 	}
@@ -96,11 +96,11 @@ func (s *MvtTaskService) Execute(ctx context.Context, taskID uint, tenantID uint
 
 		completedAt := time.Now()
 		durationMs := completedAt.Sub(now).Milliseconds()
-		status := commonModels.ExecutionStatusSuccess
+		status := commonExecution.ExecutionStatusSuccess
 		var errDetails commonModels.JSONMap
 
 		if execErr != nil {
-			status = commonModels.ExecutionStatusFailed
+			status = commonExecution.ExecutionStatusFailed
 			errDetails = commonModels.JSONMap{"message": execErr.Error()}
 		}
 

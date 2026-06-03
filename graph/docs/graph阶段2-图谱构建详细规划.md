@@ -105,7 +105,7 @@ CREATE TABLE graph.review_items (
 
 ### 2.1 新增 graph 模块常量
 
-修改文件：`common/models/task_execution.go`
+修改文件：`common/execution/task_execution.go`
 
 ```go
 // 新增常量
@@ -121,20 +121,20 @@ TaskTypeKGBuild = "kg_build"
 
 ```go
 // 构建任务启动时，创建 task_execution 记录
+import commonExecution "common/execution"
 import commonModels "common/models"
-import commonRepo "common/repository"
 
 executionID := uuid.New().String()
-execution := &commonModels.TaskExecution{
+execution := &commonExecution.TaskExecution{
     TenantID:       tenantID,
     ExecutionID:    executionID,
-    Module:         commonModels.ModuleGraph,
-    TaskType:       commonModels.TaskTypeKGBuild,
+    Module:         commonExecution.ModuleGraph,
+    TaskType:       commonExecution.TaskTypeKGBuild,
     SourceTaskID:   &buildTask.ID,
     SourceTaskName: &buildTask.Name,
-    Status:         commonModels.ExecutionStatusPending,
+    Status:         commonExecution.ExecutionStatusPending,
     Progress:       0,
-    TriggerType:    commonModels.TriggerTypeManual,
+    TriggerType:    commonExecution.TriggerTypeManual,
     TriggeredBy:    &userID,
     ExecutionConfig: commonModels.JSONMap{
         "graph_id":            buildTask.GraphID,
@@ -174,7 +174,7 @@ taskExecutionRepo.UpdateFields(ctx, executionID, tenantID, map[string]interface{
 在 `graph/backend/cmd/server/main.go` 中增加 `TaskExecutionRepository` 的初始化（参考 `develop/backend/cmd/server/main.go`）：
 
 ```go
-taskExecutionRepo := commonRepo.NewTaskExecutionRepository(db)
+taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
 buildService := service.NewBuildService(db, taskExecutionRepo, neo4jSvc, copilotURL)
 ```
 
@@ -710,7 +710,7 @@ if existing, seen := s.seenEntities[key]; seen {
 ### 新增文件
 
 ```
-common/models/task_execution.go          # 修改：新增 ModuleGraph 和 TaskTypeKGBuild 常量
+common/execution/task_execution.go       # 修改：新增 ModuleGraph 和 TaskTypeKGBuild 常量
 
 copilot/backend/api/kg_extract_api.py
 copilot/backend/chains/entity_extraction_chain.py

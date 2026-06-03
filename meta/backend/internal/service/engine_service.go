@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	commonExecution "github.com/addp/common/execution"
 	"log/slog"
 	"os"
 	"strings"
@@ -45,7 +46,7 @@ type EngineService struct {
 type ScanTaskServiceInterface interface {
 	CreateOrUpdateTaskFromScanConfig(resource *commonModels.Engine) error
 	DeleteTaskByResourceID(engineID uint) error
-	CreateManualRun(ctx context.Context, tenantID, userID uint, token string, req *models.ScanRequest) (*commonModels.TaskExecution, error)
+	CreateManualRun(ctx context.Context, tenantID, userID uint, token string, req *models.ScanRequest) (*commonExecution.TaskExecution, error)
 }
 
 func NewEngineService(db *gorm.DB, systemURL, internalKey string, redisClient *redis.Client) *EngineService {

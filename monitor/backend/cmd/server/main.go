@@ -5,8 +5,7 @@ import (
 	"log"
 
 	commonClient "github.com/addp/common/client"
-	commonModels "github.com/addp/common/models"
-	commonRepo "github.com/addp/common/repository"
+	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/utils"
 	_ "github.com/addp/monitor/i18n"
 	"github.com/addp/monitor/internal/api"
@@ -38,9 +37,9 @@ func main() {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 
-	// 自动迁移（确保统一执行表存在）
-	if err := db.AutoMigrate(&commonModels.TaskExecution{}); err != nil {
-		log.Fatalf("Failed to migrate database: %v", err)
+	// 确保统一执行记录表存在
+	if err := commonExecution.EnsureStore(db); err != nil {
+		log.Fatalf("Failed to ensure execution store: %v", err)
 	}
 
 	// 连接 Redis
@@ -57,7 +56,7 @@ func main() {
 	systemClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemURL, cfg.InternalAPIKey)
 
 	// 创建 Repository
-	taskExecutionRepo := commonRepo.NewTaskExecutionRepository(db)
+	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
 
 	// 创建 Services
 	queryService := service.NewExecutionQueryService(taskExecutionRepo)

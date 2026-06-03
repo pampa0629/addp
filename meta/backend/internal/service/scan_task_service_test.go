@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	commonExecution "github.com/addp/common/execution"
 	"reflect"
 	"testing"
 
@@ -41,7 +42,7 @@ func TestCreateAutoRunsSubmitsUnscannedEngines(t *testing.T) {
 	if len(runs) != 1 {
 		t.Fatalf("runs len = %d, want 1", len(runs))
 	}
-	if runs[0].ExecutionID == "" || runs[0].Status != commonModels.ExecutionStatusPending {
+	if runs[0].ExecutionID == "" || runs[0].Status != commonExecution.ExecutionStatusPending {
 		t.Fatalf("run = %#v", runs[0])
 	}
 	if got := jsonMapUint(runs[0].ExecutionConfig, "engine_id"); got != 9 {

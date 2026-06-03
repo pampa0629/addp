@@ -1,7 +1,9 @@
-package models
+package execution
 
 import (
 	"time"
+
+	"github.com/addp/common/models"
 )
 
 // TaskExecution 统一执行记录
@@ -34,9 +36,9 @@ type TaskExecution struct {
 	TriggeredBy *int   `json:"triggered_by,omitempty"`                                                      // 触发用户ID
 
 	// JSONB 字段
-	ExecutionConfig JSONMap `gorm:"type:jsonb" json:"execution_config,omitempty"` // 执行配置
-	ErrorDetails    JSONMap `gorm:"type:jsonb" json:"error_details,omitempty"`    // 错误详情（仅失败时有值）
-	Metadata        JSONMap `gorm:"type:jsonb" json:"metadata,omitempty"`         // 模块特有扩展数据（结果、断点、步骤结果等）
+	ExecutionConfig models.JSONMap `gorm:"type:jsonb" json:"execution_config,omitempty"` // 执行配置
+	ErrorDetails    models.JSONMap `gorm:"type:jsonb" json:"error_details,omitempty"`    // 错误详情（仅失败时有值）
+	Metadata        models.JSONMap `gorm:"type:jsonb" json:"metadata,omitempty"`         // 模块特有扩展数据（结果、断点、步骤结果等）
 
 	// 性能指标
 	ExecutionTimeMs *int64 `json:"execution_time_ms,omitempty"` // 执行时长（毫秒）
@@ -99,6 +101,8 @@ const (
 	TaskTypeSync   = "sync"
 	// Graph 模块
 	TaskTypeKGBuild = "kg_build"
+	// Quality 模块
+	TaskTypeQualityCheck = "check"
 )
 
 // CalculateDuration 计算执行时长

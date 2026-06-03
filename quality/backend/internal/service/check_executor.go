@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	commonExecution "github.com/addp/common/execution"
 	"log"
 	"time"
 
@@ -24,6 +25,7 @@ type CheckExecutor struct {
 	checkTaskRepo *repository.CheckTaskRepository
 	issueRepo     *repository.IssueRepository
 	sqlGen        *SQLGenerator
+	executionRepo *commonExecution.TaskExecutionRepository
 }
 
 func NewCheckExecutor(
@@ -40,6 +42,7 @@ func NewCheckExecutor(
 		checkTaskRepo: checkTaskRepo,
 		issueRepo:     issueRepo,
 		sqlGen:        NewSQLGenerator(),
+		executionRepo: commonExecution.NewTaskExecutionRepository(db),
 	}
 }
 
@@ -57,10 +60,10 @@ type RuleResult struct {
 }
 
 type FieldScore struct {
-	Column  string  `json:"column"`
-	Score   float64 `json:"score"`
-	Passed  int     `json:"passed"`
-	Failed  int     `json:"failed"`
+	Column string  `json:"column"`
+	Score  float64 `json:"score"`
+	Passed int     `json:"passed"`
+	Failed int     `json:"failed"`
 }
 
 type ExecutionResult struct {
@@ -83,19 +86,19 @@ func (e *CheckExecutor) RunCheck(ctx context.Context, taskID, tenantID, userID i
 	now := time.Now()
 
 	// 写入执行记录（pending 状态）
-	taskExec := &commonModels.TaskExecution{
-		ExecutionID:   executionID,
-		TenantID:      int(tenantID),
-		Module:        commonModels.ModuleQuality,
-		TaskType:      "check",
-		SourceTaskID:  intPtr(int(taskID)),
+	taskExec := &commonExecution.TaskExecution{
+		ExecutionID:    executionID,
+		TenantID:       int(tenantID),
+		Module:         commonExecution.ModuleQuality,
+		TaskType:       commonExecution.TaskTypeQualityCheck,
+		SourceTaskID:   intPtr(int(taskID)),
 		SourceTaskName: &task.Name,
-		Status:        commonModels.ExecutionStatusRunning,
-		TriggerType:   commonModels.TriggerTypeManual,
-		TriggeredBy:   intPtr(int(userID)),
-		StartedAt:     &now,
+		Status:         commonExecution.ExecutionStatusRunning,
+		TriggerType:    commonExecution.TriggerTypeManual,
+		TriggeredBy:    intPtr(int(userID)),
+		StartedAt:      &now,
 	}
-	if err := e.db.Table("common.task_executions").Create(taskExec).Error; err != nil {
+	if err := e.executionRepo.Create(ctx, taskExec); err != nil {
 		return "", fmt.Errorf("failed to create execution record: %w", err)
 	}
 
@@ -113,13 +116,11 @@ func (e *CheckExecutor) RunCheck(ctx context.Context, taskID, tenantID, userID i
 
 		if execErr != nil {
 			log.Printf("quality check execution %s failed: %v", executionID, execErr)
-			errDetail, _ := json.Marshal(map[string]string{"error": execErr.Error()})
-			updates["status"] = commonModels.ExecutionStatusFailed
-			updates["error_details"] = errDetail
+			updates["status"] = commonExecution.ExecutionStatusFailed
+			updates["error_details"] = commonModels.JSONMap{"error": execErr.Error()}
 		} else {
-			resultJSON, _ := json.Marshal(result)
-			updates["status"] = commonModels.ExecutionStatusSuccess
-			updates["result"] = resultJSON
+			updates["status"] = commonExecution.ExecutionStatusSuccess
+			updates["metadata"] = executionResultMetadata(result)
 			updates["progress"] = 100
 
 			// 写入问题工单
@@ -133,9 +134,7 @@ func (e *CheckExecutor) RunCheck(ctx context.Context, taskID, tenantID, userID i
 			}
 		}
 
-		if err := e.db.Table("common.task_executions").
-			Where("execution_id = ?", executionID).
-			Updates(updates).Error; err != nil {
+		if err := e.executionRepo.UpdateFields(context.Background(), executionID, int(tenantID), updates); err != nil {
 			log.Printf("failed to update execution %s: %v", executionID, err)
 		}
 
@@ -147,6 +146,20 @@ func (e *CheckExecutor) RunCheck(ctx context.Context, taskID, tenantID, userID i
 	}()
 
 	return executionID, nil
+}
+
+func executionResultMetadata(result *ExecutionResult) commonModels.JSONMap {
+	if result == nil {
+		return commonModels.JSONMap{}
+	}
+	return commonModels.JSONMap{
+		"quality_score": result.QualityScore,
+		"total_rules":   result.TotalRules,
+		"passed_rules":  result.PassedRules,
+		"failed_rules":  result.FailedRules,
+		"field_scores":  result.FieldScores,
+		"rule_details":  result.RuleDetails,
+	}
 }
 
 func (e *CheckExecutor) doCheck(ctx context.Context, task *models.CheckTask) (*ExecutionResult, []models.Issue, error) {

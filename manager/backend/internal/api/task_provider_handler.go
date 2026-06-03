@@ -2,12 +2,11 @@ package api
 
 import (
 	"errors"
+	commonExecution "github.com/addp/common/execution"
 	"net/http"
 	"strconv"
 
 	commonapi "github.com/addp/common/api"
-	commonModels "github.com/addp/common/models"
-	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
@@ -21,14 +20,14 @@ import (
 type TaskProviderHandler struct {
 	embeddingTaskSvc *service.EmbeddingTaskService
 	mvtTaskSvc       *service.MvtTaskService
-	taskExecRepo     *commonRepo.TaskExecutionRepository
+	taskExecRepo     *commonExecution.TaskExecutionRepository
 }
 
 // NewTaskProviderHandler 创建处理器
 func NewTaskProviderHandler(
 	embeddingTaskSvc *service.EmbeddingTaskService,
 	mvtTaskSvc *service.MvtTaskService,
-	taskExecRepo *commonRepo.TaskExecutionRepository,
+	taskExecRepo *commonExecution.TaskExecutionRepository,
 ) *TaskProviderHandler {
 	return &TaskProviderHandler{
 		embeddingTaskSvc: embeddingTaskSvc,
@@ -235,7 +234,7 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 	var req TaskExecuteRequest
 	_ = c.ShouldBindJSON(&req)
 	if req.TriggerType == "" {
-		req.TriggerType = commonModels.TriggerTypeManual
+		req.TriggerType = commonExecution.TriggerTypeManual
 	}
 	var parentExecID *string
 	if req.ParentExecutionID != "" {
@@ -314,7 +313,7 @@ func (h *TaskProviderHandler) ExecutionCancel(c *gin.Context) {
 
 	err := h.taskExecRepo.UpdateStatus(
 		c.Request.Context(), executionID, int(tenantID),
-		commonModels.ExecutionStatusRunning, commonModels.ExecutionStatusCancelled,
+		commonExecution.ExecutionStatusRunning, commonExecution.ExecutionStatusCancelled,
 	)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "取消失败: " + err.Error()})

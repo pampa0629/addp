@@ -3,10 +3,10 @@ package service
 import (
 	"context"
 	"fmt"
+	commonExecution "github.com/addp/common/execution"
 	"testing"
 
 	commonModels "github.com/addp/common/models"
-	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/common/resume"
 	"github.com/addp/transfer/internal/executor"
 	"github.com/addp/transfer/internal/models"
@@ -39,9 +39,9 @@ func TestRetryExecutionEnqueuesRestartExecution(t *testing.T) {
 	ctx := context.Background()
 	db := newExecutionServiceTestDB(t)
 	task := createExecutionServiceTestTask(t, db)
-	oldExecution := createExecutionServiceTestExecution(t, db, task, commonModels.ExecutionStatusFailed)
+	oldExecution := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusFailed)
 	queue := &fakeTaskQueue{}
-	service := NewExecutionService(db, commonRepo.NewTaskExecutionRepository(db))
+	service := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
 	service.SetTaskQueue(queue)
 
 	newExecution, err := service.RetryExecution(ctx, uint(oldExecution.ID), uint(task.TenantID), 9)
@@ -67,11 +67,11 @@ func TestRetryExecutionEnqueuesRestartExecution(t *testing.T) {
 		t.Fatalf("task state = %s progress %.2f, want running progress 0", updatedTask.Status, updatedTask.Progress)
 	}
 
-	var storedExecution commonModels.TaskExecution
+	var storedExecution commonExecution.TaskExecution
 	if err := db.First(&storedExecution, newExecution.ID).Error; err != nil {
 		t.Fatalf("load new execution: %v", err)
 	}
-	if storedExecution.Status != commonModels.ExecutionStatusPending || storedExecution.TriggerType != "retry" {
+	if storedExecution.Status != commonExecution.ExecutionStatusPending || storedExecution.TriggerType != "retry" {
 		t.Fatalf("new execution status=%s trigger=%s, want pending retry", storedExecution.Status, storedExecution.TriggerType)
 	}
 }
@@ -80,7 +80,7 @@ func TestRetryExecutionDoesNotCarryCheckpointState(t *testing.T) {
 	ctx := context.Background()
 	db := newExecutionServiceTestDB(t)
 	task := createExecutionServiceTestTask(t, db)
-	oldExecution := createExecutionServiceTestExecution(t, db, task, commonModels.ExecutionStatusFailed)
+	oldExecution := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusFailed)
 	oldExecution.Metadata = commonModels.JSONMap{
 		"checkpoint_offset": int64(8),
 		"checkpoint_state": map[string]interface{}{
@@ -92,7 +92,7 @@ func TestRetryExecutionDoesNotCarryCheckpointState(t *testing.T) {
 		t.Fatalf("save old execution metadata: %v", err)
 	}
 	queue := &fakeTaskQueue{}
-	service := NewExecutionService(db, commonRepo.NewTaskExecutionRepository(db))
+	service := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
 	service.SetTaskQueue(queue)
 
 	newExecution, err := service.RetryExecution(ctx, uint(oldExecution.ID), uint(task.TenantID), 9)
@@ -100,7 +100,7 @@ func TestRetryExecutionDoesNotCarryCheckpointState(t *testing.T) {
 		t.Fatalf("RetryExecution failed: %v", err)
 	}
 
-	var storedExecution commonModels.TaskExecution
+	var storedExecution commonExecution.TaskExecution
 	if err := db.First(&storedExecution, newExecution.ID).Error; err != nil {
 		t.Fatalf("load new execution: %v", err)
 	}
@@ -113,9 +113,9 @@ func TestRetryExecutionRollsBackWhenEnqueueFails(t *testing.T) {
 	ctx := context.Background()
 	db := newExecutionServiceTestDB(t)
 	task := createExecutionServiceTestTask(t, db)
-	oldExecution := createExecutionServiceTestExecution(t, db, task, commonModels.ExecutionStatusFailed)
+	oldExecution := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusFailed)
 	queue := &fakeTaskQueue{err: fmt.Errorf("queue down")}
-	service := NewExecutionService(db, commonRepo.NewTaskExecutionRepository(db))
+	service := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
 	service.SetTaskQueue(queue)
 
 	_, err := service.RetryExecution(ctx, uint(oldExecution.ID), uint(task.TenantID), 9)
@@ -134,7 +134,7 @@ func TestRetryExecutionRollsBackWhenEnqueueFails(t *testing.T) {
 		t.Fatalf("task state = %s progress %.2f, want idle progress 0", updatedTask.Status, updatedTask.Progress)
 	}
 
-	var executions []commonModels.TaskExecution
+	var executions []commonExecution.TaskExecution
 	if err := db.Order("id asc").Find(&executions).Error; err != nil {
 		t.Fatalf("load executions: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestRetryExecutionRollsBackWhenEnqueueFails(t *testing.T) {
 		t.Fatalf("execution count = %d, want 2", len(executions))
 	}
 	newExecution := executions[1]
-	if newExecution.Status != commonModels.ExecutionStatusFailed {
+	if newExecution.Status != commonExecution.ExecutionStatusFailed {
 		t.Fatalf("new execution status = %s, want failed", newExecution.Status)
 	}
 	if newExecution.ErrorDetails["message"] != "queue down" {
@@ -161,9 +161,9 @@ func TestRetryExecutionRejectsAppendTask(t *testing.T) {
 	if err := db.Save(&task).Error; err != nil {
 		t.Fatalf("update task config: %v", err)
 	}
-	oldExecution := createExecutionServiceTestExecution(t, db, task, commonModels.ExecutionStatusFailed)
+	oldExecution := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusFailed)
 	queue := &fakeTaskQueue{}
-	service := NewExecutionService(db, commonRepo.NewTaskExecutionRepository(db))
+	service := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
 	service.SetTaskQueue(queue)
 
 	_, err := service.RetryExecution(ctx, uint(oldExecution.ID), uint(task.TenantID), 9)
@@ -174,7 +174,7 @@ func TestRetryExecutionRejectsAppendTask(t *testing.T) {
 		t.Fatal("append retry was enqueued")
 	}
 
-	var executions []commonModels.TaskExecution
+	var executions []commonExecution.TaskExecution
 	if err := db.Find(&executions).Error; err != nil {
 		t.Fatalf("load executions: %v", err)
 	}
@@ -220,8 +220,8 @@ func TestTableProgressCallbackStoresResumeAndCommitMarkers(t *testing.T) {
 	ctx := context.Background()
 	db := newExecutionServiceTestDB(t)
 	task := createExecutionServiceTestTask(t, db)
-	execution := createExecutionServiceTestExecution(t, db, task, commonModels.ExecutionStatusRunning)
-	executionService := NewExecutionService(db, commonRepo.NewTaskExecutionRepository(db))
+	execution := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusRunning)
+	executionService := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
 	engineService := &ExecutionEngineService{
 		taskRepo:         repositoryForExecutionServiceTest(db),
 		executionService: executionService,
@@ -252,7 +252,7 @@ func TestTableProgressCallbackStoresResumeAndCommitMarkers(t *testing.T) {
 		t.Fatalf("progress callback failed: %v", err)
 	}
 
-	var stored commonModels.TaskExecution
+	var stored commonExecution.TaskExecution
 	if err := db.First(&stored, execution.ID).Error; err != nil {
 		t.Fatalf("load execution: %v", err)
 	}
@@ -277,8 +277,8 @@ func TestRawCopyProgressCallbackStoresByteMetricsAndContentCheckpoint(t *testing
 	ctx := context.Background()
 	db := newExecutionServiceTestDB(t)
 	task := createExecutionServiceTestTask(t, db)
-	execution := createExecutionServiceTestExecution(t, db, task, commonModels.ExecutionStatusRunning)
-	executionService := NewExecutionService(db, commonRepo.NewTaskExecutionRepository(db))
+	execution := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusRunning)
+	executionService := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
 	engineService := &ExecutionEngineService{
 		taskRepo:         repositoryForExecutionServiceTest(db),
 		executionService: executionService,
@@ -296,7 +296,7 @@ func TestRawCopyProgressCallbackStoresByteMetricsAndContentCheckpoint(t *testing
 		t.Fatalf("raw copy progress callback failed: %v", err)
 	}
 
-	var stored commonModels.TaskExecution
+	var stored commonExecution.TaskExecution
 	if err := db.First(&stored, execution.ID).Error; err != nil {
 		t.Fatalf("load execution: %v", err)
 	}
@@ -433,14 +433,14 @@ func createExecutionServiceTestTask(t *testing.T, db *gorm.DB) models.TransferTa
 	return task
 }
 
-func createExecutionServiceTestExecution(t *testing.T, db *gorm.DB, task models.TransferTask, status string) commonModels.TaskExecution {
+func createExecutionServiceTestExecution(t *testing.T, db *gorm.DB, task models.TransferTask, status string) commonExecution.TaskExecution {
 	t.Helper()
 	taskID := int(task.ID)
 	taskName := task.Name
-	execution := commonModels.TaskExecution{
+	execution := commonExecution.TaskExecution{
 		TenantID:       int(task.TenantID),
 		ExecutionID:    fmt.Sprintf("execution-%s", status),
-		Module:         commonModels.ModuleTransfer,
+		Module:         commonExecution.ModuleTransfer,
 		TaskType:       "transfer",
 		SourceTaskID:   &taskID,
 		SourceTaskName: &taskName,

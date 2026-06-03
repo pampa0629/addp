@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	commonExecution "github.com/addp/common/execution"
 	"log/slog"
 	"sync"
 	"time"
 
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
-	commonRepo "github.com/addp/common/repository"
 	commonScheduler "github.com/addp/common/scheduler"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scantask"
@@ -30,7 +30,7 @@ type ScanTaskService struct {
 	scanService       *ScanService
 	engineService     *EngineService
 	dedupService      *ScanDedupService
-	taskExecutionRepo *commonRepo.TaskExecutionRepository
+	taskExecutionRepo *commonExecution.TaskExecutionRepository
 	log               *slog.Logger
 	taskQueue         TaskQueue
 
@@ -71,7 +71,7 @@ func NewScanTaskService(db *gorm.DB, scanService *ScanService, engineService *En
 		scanService:       scanService,
 		engineService:     engineService,
 		dedupService:      dedupService,
-		taskExecutionRepo: commonRepo.NewTaskExecutionRepository(db),
+		taskExecutionRepo: commonExecution.NewTaskExecutionRepository(db),
 		log:               logger.With("component", "scan_task_service"),
 		queue:             make(chan string, 128),
 		workers:           2,
@@ -145,12 +145,12 @@ func (s *ScanTaskService) recoverPendingExecutions() error {
 	}
 
 	for _, exec := range executions {
-		if exec.Module != commonModels.ModuleMeta {
+		if exec.Module != commonExecution.ModuleMeta {
 			continue
 		}
-		if exec.Status == commonModels.ExecutionStatusRunning {
+		if exec.Status == commonExecution.ExecutionStatusRunning {
 			if err := s.taskExecutionRepo.UpdateFields(ctx, exec.ExecutionID, exec.TenantID, map[string]interface{}{
-				"status":       commonModels.ExecutionStatusPending,
+				"status":       commonExecution.ExecutionStatusPending,
 				"current_step": "检测到未完成执行，已重新排队",
 				"updated_at":   time.Now(),
 			}); err != nil {
@@ -238,7 +238,7 @@ func (s *ScanTaskService) enqueueExecution(executionID string) {
 		if err := s.taskQueue.EnqueueScanTask(ctx, executionID, taskID, uint(exec.TenantID)); err != nil {
 			s.log.Error("任务入队失败", "execution_id", executionID, "error", err)
 			_ = s.taskExecutionRepo.UpdateFields(ctx, executionID, exec.TenantID, map[string]interface{}{
-				"status": commonModels.ExecutionStatusFailed,
+				"status": commonExecution.ExecutionStatusFailed,
 				"error_details": commonModels.JSONMap{
 					"message": fmt.Sprintf("任务入队失败: %v", err),
 				},
@@ -256,7 +256,7 @@ func (s *ScanTaskService) enqueueExecution(executionID string) {
 }
 
 // CreateManualRun 创建手动扫描执行并入队
-func (s *ScanTaskService) CreateManualRun(ctx context.Context, tenantID, userID uint, token string, req *models.ScanRequest) (*commonModels.TaskExecution, error) {
+func (s *ScanTaskService) CreateManualRun(ctx context.Context, tenantID, userID uint, token string, req *models.ScanRequest) (*commonExecution.TaskExecution, error) {
 	if req == nil {
 		return nil, errors.New("请求不能为空")
 	}
@@ -318,13 +318,13 @@ func (s *ScanTaskService) CreateManualRun(ctx context.Context, tenantID, userID 
 	return execution, nil
 }
 
-func (s *ScanTaskService) CreateAutoRuns(ctx context.Context, tenantID, userID uint, token string) ([]*commonModels.TaskExecution, error) {
+func (s *ScanTaskService) CreateAutoRuns(ctx context.Context, tenantID, userID uint, token string) ([]*commonExecution.TaskExecution, error) {
 	resources, err := s.engineService.GetEnginesWithStats(tenantID)
 	if err != nil {
 		return nil, err
 	}
 
-	runs := make([]*commonModels.TaskExecution, 0, len(resources))
+	runs := make([]*commonExecution.TaskExecution, 0, len(resources))
 	for _, resource := range resources {
 		if resource == nil {
 			continue
@@ -379,7 +379,7 @@ func (s *ScanTaskService) executeRun(ctx context.Context, executionID string) er
 		}
 	}()
 
-	if exec.Status != commonModels.ExecutionStatusPending {
+	if exec.Status != commonExecution.ExecutionStatusPending {
 		s.log.Info("跳过非待执行任务", "execution_id", executionID, "status", exec.Status)
 		return nil
 	}
@@ -412,7 +412,7 @@ func (s *ScanTaskService) executeRun(ctx context.Context, executionID string) er
 		_ = s.taskExecutionRepo.UpdateFields(ctx, executionID, exec.TenantID, scantask.FailedExecutionFields(scanErr, completeTime, durationMs, time.Now()))
 
 		if exec.SourceTaskID != nil {
-			s.backfillTaskStatus(uint(*exec.SourceTaskID), executionID, commonModels.ExecutionStatusFailed, completeTime, exec.TenantID)
+			s.backfillTaskStatus(uint(*exec.SourceTaskID), executionID, commonExecution.ExecutionStatusFailed, completeTime, exec.TenantID)
 		}
 		return scanErr
 	}
@@ -420,7 +420,7 @@ func (s *ScanTaskService) executeRun(ctx context.Context, executionID string) er
 	_ = s.taskExecutionRepo.UpdateFields(ctx, executionID, exec.TenantID, scantask.SuccessfulExecutionFields(resp, execConfig.StorageType, completeTime, durationMs, time.Now()))
 
 	if exec.SourceTaskID != nil {
-		s.backfillTaskStatus(uint(*exec.SourceTaskID), executionID, commonModels.ExecutionStatusSuccess, completeTime, exec.TenantID)
+		s.backfillTaskStatus(uint(*exec.SourceTaskID), executionID, commonExecution.ExecutionStatusSuccess, completeTime, exec.TenantID)
 	}
 
 	return nil
@@ -447,21 +447,21 @@ func (s *ScanTaskService) UpdateExecutionProgress(executionID string, tenantID i
 }
 
 // GetExecution 获取执行详情
-func (s *ScanTaskService) GetExecution(ctx context.Context, executionID string, tenantID int) (*commonModels.TaskExecution, error) {
+func (s *ScanTaskService) GetExecution(ctx context.Context, executionID string, tenantID int) (*commonExecution.TaskExecution, error) {
 	return s.taskExecutionRepo.GetByExecutionID(ctx, executionID, tenantID)
 }
 
 // ListExecutions 列出 meta 模块的执行记录
-func (s *ScanTaskService) ListExecutions(ctx context.Context, tenantID int, taskID *int, status, triggerType string, page, pageSize int) ([]*commonModels.TaskExecution, int64, error) {
+func (s *ScanTaskService) ListExecutions(ctx context.Context, tenantID int, taskID *int, status, triggerType string, page, pageSize int) ([]*commonExecution.TaskExecution, int64, error) {
 	if page <= 0 {
 		page = 1
 	}
 	if pageSize <= 0 {
 		pageSize = 20
 	}
-	filter := commonRepo.TaskExecutionFilter{
+	filter := commonExecution.TaskExecutionFilter{
 		TenantID:     tenantID,
-		Module:       commonModels.ModuleMeta,
+		Module:       commonExecution.ModuleMeta,
 		Status:       status,
 		TriggerType:  triggerType,
 		SourceTaskID: taskID,
@@ -481,7 +481,7 @@ func (s *ScanTaskService) CancelExecution(ctx context.Context, executionID strin
 		return fmt.Errorf("执行已完成，无法取消: status=%s", exec.Status)
 	}
 	return s.taskExecutionRepo.UpdateFields(ctx, executionID, tenantID, map[string]interface{}{
-		"status":     commonModels.ExecutionStatusCancelled,
+		"status":     commonExecution.ExecutionStatusCancelled,
 		"updated_at": time.Now(),
 	})
 }
@@ -577,7 +577,7 @@ func (s *ScanTaskService) DeleteTask(ctx context.Context, tenantID, taskID uint)
 }
 
 // TriggerTaskNow 立即触发任务执行
-func (s *ScanTaskService) TriggerTaskNow(ctx context.Context, tenantID, taskID, userID uint) (*commonModels.TaskExecution, error) {
+func (s *ScanTaskService) TriggerTaskNow(ctx context.Context, tenantID, taskID, userID uint) (*commonExecution.TaskExecution, error) {
 	task, err := s.GetTask(tenantID, taskID)
 	if err != nil {
 		return nil, err

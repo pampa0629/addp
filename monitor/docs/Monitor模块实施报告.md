@@ -395,8 +395,8 @@ FOR VALUES FROM ('2026-02-01') TO ('2026-03-01');
 
 ### 10.1 Common 层
 
-- `common/models/task_execution.go` - 统一执行记录模型 ✅
-- `common/repository/task_execution_repository.go` - 执行记录仓库 ✅
+- `common/execution/task_execution.go` - 统一执行记录模型 ✅
+- `common/execution/repository.go` - 执行记录仓库 ✅
 
 ### 10.2 Monitor 模块
 

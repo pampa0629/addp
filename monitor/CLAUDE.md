@@ -30,7 +30,7 @@ monitor/
 
 - 路由前缀：`/api/v1/monitor`。
 - 主要接口：`GET /executions`、`GET /executions/:id`、`GET /executions/stats`、`GET /executions/trend`、`GET /modules`、`GET /modules/:module/health`、`GET /modules/health/all`。
-- 执行记录字段以 `common/models/task_execution.go` 为准；新增模块写执行记录时应复用 `common/repository/task_execution_repository.go`。
+- 执行记录字段以 `common/execution/task_execution.go` 为准；新增模块写执行记录时应复用 `common/execution/repository.go` 和 `common/execution.EnsureStore`。
 
 ## 开发与验证
 

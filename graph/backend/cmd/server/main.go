@@ -13,6 +13,7 @@ package main
 // @description Type "Bearer" followed by a space and JWT token.
 
 import (
+	commonExecution "github.com/addp/common/execution"
 	"os"
 
 	commonClient "github.com/addp/common/client"
@@ -21,7 +22,6 @@ import (
 	commonPlugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/minio"
 	commonLogger "github.com/addp/common/logger"
-	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/common/utils"
 	"github.com/addp/graph/internal/api"
 	"github.com/addp/graph/internal/config"
@@ -61,7 +61,7 @@ func main() {
 	versionRepo := repository.NewOntologyVersionRepository(db)
 	graphRepo := repository.NewKnowledgeGraphRepository(db)
 	buildRepo := repository.NewBuildRepository(db)
-	taskExecutionRepo := commonRepo.NewTaskExecutionRepository(db)
+	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
 
 	materialConnInfo := commonPlugin.ConnectionInfo{
 		"endpoint":   cfg.MinioEndpoint,

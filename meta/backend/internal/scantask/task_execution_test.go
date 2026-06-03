@@ -1,6 +1,7 @@
 package scantask
 
 import (
+	commonExecution "github.com/addp/common/execution"
 	"testing"
 	"time"
 
@@ -14,7 +15,7 @@ func TestNewManualExecution(t *testing.T) {
 	now := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
 	exec := NewManualExecution(3, 9, 7, "postgres", []string{"public"}, "basic", false, "token", now)
 
-	if exec.TenantID != 3 || exec.Module != commonModels.ModuleMeta || exec.Status != commonModels.ExecutionStatusPending {
+	if exec.TenantID != 3 || exec.Module != commonExecution.ModuleMeta || exec.Status != commonExecution.ExecutionStatusPending {
 		t.Fatalf("execution basics = %#v", exec)
 	}
 	if exec.TriggeredBy == nil || *exec.TriggeredBy != 9 {
@@ -32,7 +33,7 @@ func TestNewScheduledExecutionUsesTargets(t *testing.T) {
 	task := &models.ScanTask{ID: 11, TenantID: 3, EngineID: 7, Name: "daily"}
 	exec := NewScheduledExecution(task, "s3", TargetSet{CatalogPaths: []string{"bucket/prefix"}}, now)
 
-	if exec.TriggerType != commonModels.TriggerTypeSchedule {
+	if exec.TriggerType != commonExecution.TriggerTypeSchedule {
 		t.Fatalf("trigger_type = %q", exec.TriggerType)
 	}
 	if exec.SourceTaskID == nil || *exec.SourceTaskID != 11 {
@@ -55,7 +56,7 @@ func TestExecutionStatusFields(t *testing.T) {
 	}
 
 	success := SuccessfulExecutionFields(resp, "postgres", now, 123, now)
-	if success["status"] != commonModels.ExecutionStatusSuccess || success["progress"] != 100 {
+	if success["status"] != commonExecution.ExecutionStatusSuccess || success["progress"] != 100 {
 		t.Fatalf("success fields = %#v", success)
 	}
 	metadata := success["metadata"].(commonModels.JSONMap)
@@ -68,7 +69,7 @@ func TestExecutionStatusFields(t *testing.T) {
 	}
 
 	next := now.Add(time.Hour)
-	backfill := TaskStatusBackfillFields("exec-1", commonModels.ExecutionStatusSuccess, now, &next, now)
+	backfill := TaskStatusBackfillFields("exec-1", commonExecution.ExecutionStatusSuccess, now, &next, now)
 	if backfill["next_run_at"] != next {
 		t.Fatalf("backfill fields = %#v", backfill)
 	}

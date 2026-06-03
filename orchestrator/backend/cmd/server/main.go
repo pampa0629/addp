@@ -6,14 +6,14 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
-	commonModels "github.com/addp/common/models"
+	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/utils"
+	_ "github.com/addp/orchestrator/i18n"
 	"github.com/addp/orchestrator/internal/api"
 	"github.com/addp/orchestrator/internal/config"
 	"github.com/addp/orchestrator/internal/models"
 	"github.com/addp/orchestrator/internal/repository"
 	"github.com/addp/orchestrator/internal/service"
-	_ "github.com/addp/orchestrator/i18n"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -46,10 +46,13 @@ func main() {
 		log.Fatalf("数据库连接失败: %v", err)
 	}
 
+	if err := commonExecution.EnsureStore(db); err != nil {
+		log.Fatalf("统一执行记录存储初始化失败: %v", err)
+	}
+
 	// 自动迁移
 	if err := db.AutoMigrate(
 		&models.Orchestration{},
-		&commonModels.TaskExecution{}, // 统一执行记录表（common.task_executions）
 	); err != nil {
 		log.Fatalf("数据库迁移失败: %v", err)
 	}

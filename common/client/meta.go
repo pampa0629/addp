@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/addp/common/datatype"
+	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/models"
 )
 
@@ -48,8 +49,8 @@ type MetaScanResponse struct {
 }
 
 type MetaAutoScanRunsResponse struct {
-	Runs      []models.TaskExecution `json:"runs"`
-	Submitted int                    `json:"submitted"`
+	Runs      []commonExecution.TaskExecution `json:"runs"`
+	Submitted int                             `json:"submitted"`
 }
 
 type MetaExtractionScanStats struct {
@@ -341,7 +342,7 @@ func (c *MetaClient) GetMetaItemByID(itemID uint) (*models.MetaItem, error) {
 	return &result, nil
 }
 
-func (c *MetaClient) CreateManualScanRun(opts MetaScanOptions) (*models.TaskExecution, error) {
+func (c *MetaClient) CreateManualScanRun(opts MetaScanOptions) (*commonExecution.TaskExecution, error) {
 	urlStr := fmt.Sprintf("%s/api/v1/meta/scan/run/manual", c.baseURL)
 
 	scanReq := map[string]interface{}{}
@@ -402,7 +403,7 @@ func (c *MetaClient) CreateManualScanRun(opts MetaScanOptions) (*models.TaskExec
 		return nil, fmt.Errorf("meta api returned status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
-	var result models.TaskExecution
+	var result commonExecution.TaskExecution
 	if len(bodyBytes) > 0 {
 		if err := json.Unmarshal(bodyBytes, &result); err != nil {
 			return nil, fmt.Errorf("failed to decode response: %w", err)

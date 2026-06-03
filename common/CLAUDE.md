@@ -2,7 +2,7 @@
 
 ## 模块定位
 
-`common/` 是 ADDP Go 后端共享库，承载跨模块复用的 API 响应、客户端、配置、模型、执行记录、内容 I/O、目录视图、调度、空间处理、SQL 构建、存储和通用工具。跨模块重复逻辑应优先抽取到这里。
+`common/` 是 ADDP Go 后端共享库，承载跨模块复用的 API 响应、客户端、配置、模型、统一执行记录、内容 I/O、目录视图、调度、空间处理、SQL 构建、存储和通用工具。跨模块重复逻辑应优先抽取到这里。
 
 ## 重要包
 
@@ -15,9 +15,10 @@ common/
 ├── contentio/      # 基于 Go io 的内容 Ref、Reader、Writer、Lister、RangeReader
 ├── engine/contentadapter/ # engine provider 到 contentio 的适配
 ├── jsonmap/        # decoded JSON map 通用读取工具
+├── execution/      # common.task_executions 统一执行记录模型、仓储和迁移入口
 ├── format/         # 文件格式、类型信息、格式信息、parser / analyzer
-├── models/         # 通用模型、能力声明、统一执行记录
-├── repository/     # 通用仓储，含 task_execution_repository
+├── models/         # 通用模型、能力声明和跨模块 DTO / 值对象
+├── repository/     # 通用数据库初始化和基础仓储错误映射
 ├── scheduler/      # 统一 Cron 调度
 ├── spatial/        # CRS、MVT、WKB、空间转换、PostGIS 空间 SQL 表达式
 ├── sqldialect/     # 跨 SQL 引擎的标识符引用、分页、基础 SELECT/COUNT
@@ -35,7 +36,9 @@ common/
 - `common/resourcetree` 负责把 Meta 已落库的 catalog / item 事实投影为跨模块资源树视图，并提供 `ResourceLocator` / provider `CatalogPath` 的纯转换能力。
 - `common/resourcetree` 不持有 System / Meta client，不主动读取远程服务，不处理租户权限、token、降级策略、扫描或内容读取。
 - `common/resourcetree` 中 attributes helper 只服务 `TreeNode.Metadata` 展示摘要，不作为通用 attributes 规范 API，也不写入持久 attributes。
-- API 响应优先复用 `common/api`，执行记录优先复用 `common/models.TaskExecution` 和 `common/repository.TaskExecutionRepository`。
+- `common/client` 只放跨服务 HTTP/API 客户端，不作为 infra PostgreSQL `common` schema 的读写入口。
+- `common` schema 中的共享表应按领域归入 `common/<domain>`，由领域包提供模型、仓储和 `EnsureStore`；执行记录必须复用 `common/execution.TaskExecution`、`common/execution.TaskExecutionRepository` 和 `common/execution.EnsureStore`。
+- API 响应优先复用 `common/api`。
 - `common/sqldialect` 只承载跨 SQL 引擎的基础方言差异；PostGIS 等空间扩展能力归入 `common/spatial`。
 - 空间能力不要默认几何字段名为 `geom`，应通过元数据或调用方参数传入。
 - 修改 `common/` 后通常需要 `./scripts/dev/restart.sh -all` 验证受影响模块。

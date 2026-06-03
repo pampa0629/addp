@@ -3,15 +3,16 @@ package api
 import (
 	"time"
 
+	commonExecution "github.com/addp/common/execution"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
+	_ "github.com/addp/quality/docs"
 	"github.com/addp/quality/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
-	"gorm.io/gorm"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
-	_ "github.com/addp/quality/docs"
+	"gorm.io/gorm"
 )
 
 func getTenantID(c *gin.Context) int64 {
@@ -57,7 +58,7 @@ func SetupRouter(
 
 	ruleAppHandler := NewRuleApplicationHandler(ruleEngineSvc)
 	checkTaskHandler := NewCheckTaskHandler(checkTaskSvc, checkExecutor)
-	executionHandler := NewExecutionHandler(db)
+	executionHandler := NewExecutionHandler(commonExecution.NewTaskExecutionRepository(db))
 	issueHandler := NewIssueHandler(issueSvc)
 
 	api := router.Group("/api/v1/quality")

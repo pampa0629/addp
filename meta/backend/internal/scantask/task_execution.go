@@ -2,6 +2,7 @@ package scantask
 
 import (
 	"fmt"
+	commonExecution "github.com/addp/common/execution"
 	"time"
 
 	commonModels "github.com/addp/common/models"
@@ -9,15 +10,15 @@ import (
 	"github.com/google/uuid"
 )
 
-func NewManualExecution(tenantID, userID uint, engineID uint, storageType string, catalogPaths []string, scanDepth string, force bool, token string, now time.Time) *commonModels.TaskExecution {
+func NewManualExecution(tenantID, userID uint, engineID uint, storageType string, catalogPaths []string, scanDepth string, force bool, token string, now time.Time) *commonExecution.TaskExecution {
 	userIDInt := int(userID)
-	return &commonModels.TaskExecution{
+	return &commonExecution.TaskExecution{
 		TenantID:    int(tenantID),
 		ExecutionID: uuid.New().String(),
-		Module:      commonModels.ModuleMeta,
+		Module:      commonExecution.ModuleMeta,
 		TaskType:    "scan",
-		Status:      commonModels.ExecutionStatusPending,
-		TriggerType: commonModels.TriggerTypeManual,
+		Status:      commonExecution.ExecutionStatusPending,
+		TriggerType: commonExecution.TriggerTypeManual,
 		TriggeredBy: &userIDInt,
 		ExecutionConfig: ManualExecutionConfig(
 			engineID,
@@ -33,18 +34,18 @@ func NewManualExecution(tenantID, userID uint, engineID uint, storageType string
 	}
 }
 
-func NewTaskManualExecution(task *metaModels.ScanTask, userID uint, storageType string, now time.Time) *commonModels.TaskExecution {
+func NewTaskManualExecution(task *metaModels.ScanTask, userID uint, storageType string, now time.Time) *commonExecution.TaskExecution {
 	userIDInt := int(userID)
 	taskIDInt := int(task.ID)
-	return &commonModels.TaskExecution{
+	return &commonExecution.TaskExecution{
 		TenantID:        int(task.TenantID),
 		ExecutionID:     uuid.New().String(),
-		Module:          commonModels.ModuleMeta,
+		Module:          commonExecution.ModuleMeta,
 		TaskType:        "scan",
 		SourceTaskID:    &taskIDInt,
 		SourceTaskName:  &task.Name,
-		Status:          commonModels.ExecutionStatusPending,
-		TriggerType:     commonModels.TriggerTypeManual,
+		Status:          commonExecution.ExecutionStatusPending,
+		TriggerType:     commonExecution.TriggerTypeManual,
 		TriggeredBy:     &userIDInt,
 		ExecutionConfig: TaskExecutionConfig(task.EngineID, storageType, task.Parameters, "deep"),
 		StartedAt:       &now,
@@ -53,17 +54,17 @@ func NewTaskManualExecution(task *metaModels.ScanTask, userID uint, storageType 
 	}
 }
 
-func NewScheduledExecution(task *metaModels.ScanTask, storageType string, targets TargetSet, now time.Time) *commonModels.TaskExecution {
+func NewScheduledExecution(task *metaModels.ScanTask, storageType string, targets TargetSet, now time.Time) *commonExecution.TaskExecution {
 	taskIDInt := int(task.ID)
-	return &commonModels.TaskExecution{
+	return &commonExecution.TaskExecution{
 		TenantID:        int(task.TenantID),
 		ExecutionID:     uuid.New().String(),
-		Module:          commonModels.ModuleMeta,
+		Module:          commonExecution.ModuleMeta,
 		TaskType:        "scan",
 		SourceTaskID:    &taskIDInt,
 		SourceTaskName:  &task.Name,
-		Status:          commonModels.ExecutionStatusPending,
-		TriggerType:     commonModels.TriggerTypeSchedule,
+		Status:          commonExecution.ExecutionStatusPending,
+		TriggerType:     commonExecution.TriggerTypeSchedule,
 		ExecutionConfig: TargetExecutionConfig(task.EngineID, storageType, targets.CatalogPaths, JSONMapString(task.Parameters, "scan_depth", "deep"), JSONMapBool(task.Parameters, "force", false)),
 		StartedAt:       &now,
 		CreatedAt:       now,
@@ -73,7 +74,7 @@ func NewScheduledExecution(task *metaModels.ScanTask, storageType string, target
 
 func RunningExecutionFields(startedAt time.Time, now time.Time) map[string]interface{} {
 	return map[string]interface{}{
-		"status":       commonModels.ExecutionStatusRunning,
+		"status":       commonExecution.ExecutionStatusRunning,
 		"started_at":   startedAt,
 		"current_step": "任务开始执行",
 		"updated_at":   now,
@@ -82,7 +83,7 @@ func RunningExecutionFields(startedAt time.Time, now time.Time) map[string]inter
 
 func FailedExecutionFields(scanErr error, completedAt time.Time, durationMs int64, now time.Time) map[string]interface{} {
 	return map[string]interface{}{
-		"status":            commonModels.ExecutionStatusFailed,
+		"status":            commonExecution.ExecutionStatusFailed,
 		"completed_at":      completedAt,
 		"execution_time_ms": durationMs,
 		"current_step":      fmt.Sprintf("执行失败: %v", scanErr),
@@ -113,7 +114,7 @@ func SuccessfulExecutionFields(resp *metaModels.ScanResponse, storageType string
 		}
 	}
 	return map[string]interface{}{
-		"status":            commonModels.ExecutionStatusSuccess,
+		"status":            commonExecution.ExecutionStatusSuccess,
 		"completed_at":      completedAt,
 		"execution_time_ms": durationMs,
 		"progress":          100,

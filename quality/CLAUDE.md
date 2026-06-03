@@ -115,7 +115,7 @@ quality/
 | detail | JSONB | 详情（含错误信息等） |
 | status | string | `open` / `resolved` / `ignored` |
 
-> **说明**: 执行记录不在 quality schema，写入 `common.task_executions`，module 标记为 `quality`，执行结果（质量评分、规则明细等）存储在 `result` JSONB 字段中。
+> **说明**: 执行记录不在 quality schema，写入 `common.task_executions`，module 标记为 `quality`，执行结果（质量评分、规则明细等）存储在 `metadata` JSONB 字段中。
 
 ## API 端点（`/api/quality`）
 
@@ -175,7 +175,7 @@ GET    /health                                 # 服务健康检查
     5. 汇总字段级评分和表级综合质量评分
     6. 为失败规则创建 Issue 工单
     ↓
-更新 common.task_executions（status: success/failed，result: JSONB）
+更新 common.task_executions（status: success/failed，metadata: JSONB）
 更新 check_tasks.last_run_at
 ```
 

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	commonExecution "github.com/addp/common/execution"
 	"log"
 	"os"
 	"os/signal"
@@ -74,7 +75,7 @@ func main() {
 	taskRepo := repository.NewTaskRepository(db)
 
 	// 创建统一执行服务
-	taskExecutionRepo := commonRepo.NewTaskExecutionRepository(db)
+	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
 	executionService := service.NewExecutionService(db, taskExecutionRepo)
 	executionService.SetTaskQueue(taskQueue)
 

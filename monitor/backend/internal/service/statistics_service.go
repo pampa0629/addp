@@ -4,16 +4,16 @@ import (
 	"context"
 	"time"
 
-	"github.com/addp/common/repository"
+	commonExecution "github.com/addp/common/execution"
 )
 
 // StatisticsService 统计服务
 type StatisticsService struct {
-	repo *repository.TaskExecutionRepository
+	repo *commonExecution.TaskExecutionRepository
 }
 
 // NewStatisticsService 创建统计服务
-func NewStatisticsService(repo *repository.TaskExecutionRepository) *StatisticsService {
+func NewStatisticsService(repo *commonExecution.TaskExecutionRepository) *StatisticsService {
 	return &StatisticsService{
 		repo: repo,
 	}

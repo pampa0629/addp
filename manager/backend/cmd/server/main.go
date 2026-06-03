@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	commonExecution "github.com/addp/common/execution"
 	"log"
 	"os"
 	"os/signal"
@@ -12,7 +13,6 @@ import (
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/logger"
-	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/common/utils"
 	"github.com/addp/manager/internal/api"
 	"github.com/addp/manager/internal/config"
@@ -75,7 +75,7 @@ func main() {
 	metadataRepo := repository.NewMetadataRepository(db, cfg.EncryptionKey)
 	embeddingRepo := repository.NewEmbeddingRepository(db)
 	mvtTaskRepo := repository.NewMvtTaskRepository(db)
-	taskExecRepo := commonRepo.NewTaskExecutionRepository(db)
+	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
 	log.Println("🔍 [DEBUG] Repositories 初始化完成")
 
 	log.Printf("🔍 [DEBUG] cfg.EnableMetaIntegration=%v, cfg.InternalAPIKey=%s, cfg.MetaServiceURL=%s",

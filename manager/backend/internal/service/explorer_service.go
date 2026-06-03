@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	commonExecution "github.com/addp/common/execution"
 	"strings"
 
 	commonClient "github.com/addp/common/client"
@@ -27,7 +28,7 @@ type ExplorerService struct {
 }
 
 type RefreshNodeResult struct {
-	Run *commonModels.TaskExecution `json:"run"`
+	Run *commonExecution.TaskExecution `json:"run"`
 }
 
 // NewExplorerService 创建数据探查服务

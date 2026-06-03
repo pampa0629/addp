@@ -3,12 +3,12 @@ package service
 import (
 	"context"
 	"fmt"
+	commonExecution "github.com/addp/common/execution"
 	"log/slog"
 	"time"
 
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
-	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/orchestrator/internal/models"
 	"github.com/addp/orchestrator/internal/repository"
 	"github.com/google/uuid"
@@ -17,7 +17,7 @@ import (
 
 // ExecutionService 统一执行服务（Orchestrator 模块）
 type ExecutionService struct {
-	taskExecutionRepo *commonRepo.TaskExecutionRepository
+	taskExecutionRepo *commonExecution.TaskExecutionRepository
 	orchRepo          *repository.OrchestrationRepository
 	logger            *slog.Logger
 }
@@ -28,14 +28,14 @@ func NewExecutionService(
 	orchRepo *repository.OrchestrationRepository,
 ) *ExecutionService {
 	return &ExecutionService{
-		taskExecutionRepo: commonRepo.NewTaskExecutionRepository(db),
+		taskExecutionRepo: commonExecution.NewTaskExecutionRepository(db),
 		orchRepo:          orchRepo,
 		logger:            logger.With("component", "execution_service"),
 	}
 }
 
 // CreateExecution 创建执行记录
-func (s *ExecutionService) CreateExecution(ctx context.Context, orchestrationID, tenantID uint) (*commonModels.TaskExecution, error) {
+func (s *ExecutionService) CreateExecution(ctx context.Context, orchestrationID, tenantID uint) (*commonExecution.TaskExecution, error) {
 	// 获取编排信息
 	orch, err := s.orchRepo.GetByID(orchestrationID)
 	if err != nil {
@@ -47,16 +47,16 @@ func (s *ExecutionService) CreateExecution(ctx context.Context, orchestrationID,
 	orchIDInt := int(orchestrationID)
 	orchName := orch.Name
 
-	execution := &commonModels.TaskExecution{
+	execution := &commonExecution.TaskExecution{
 		TenantID:       int(tenantID),
 		ExecutionID:    uuid.New().String(),
-		Module:         commonModels.ModuleOrchestrator,
+		Module:         commonExecution.ModuleOrchestrator,
 		TaskType:       "orchestration",
 		SourceTaskID:   &orchIDInt,
 		SourceTaskName: &orchName,
-		Status:         commonModels.ExecutionStatusPending,
+		Status:         commonExecution.ExecutionStatusPending,
 		Progress:       0,
-		TriggerType:    commonModels.TriggerTypeManual,
+		TriggerType:    commonExecution.TriggerTypeManual,
 		Metadata:       make(commonModels.JSONMap),
 		StartedAt:      &now,
 		CreatedAt:      now,
@@ -72,7 +72,7 @@ func (s *ExecutionService) CreateExecution(ctx context.Context, orchestrationID,
 }
 
 // GetExecution 获取执行记录
-func (s *ExecutionService) GetExecution(ctx context.Context, id, tenantID uint) (*commonModels.TaskExecution, error) {
+func (s *ExecutionService) GetExecution(ctx context.Context, id, tenantID uint) (*commonExecution.TaskExecution, error) {
 	// 从统一表获取执行记录
 	execution, err := s.taskExecutionRepo.GetByID(ctx, int64(id), int(tenantID))
 	if err != nil {
@@ -83,7 +83,7 @@ func (s *ExecutionService) GetExecution(ctx context.Context, id, tenantID uint) 
 	}
 
 	// 验证是否为 orchestrator 模块的执行
-	if execution.Module != commonModels.ModuleOrchestrator {
+	if execution.Module != commonExecution.ModuleOrchestrator {
 		return nil, fmt.Errorf("execution not found or access denied")
 	}
 
@@ -208,11 +208,11 @@ func (s *ExecutionService) FinishExecution(ctx context.Context, id uint, status,
 }
 
 // ListExecutions 列出执行记录
-func (s *ExecutionService) ListExecutions(ctx context.Context, orchestrationID, tenantID uint, page, pageSize int) ([]*commonModels.TaskExecution, int64, error) {
+func (s *ExecutionService) ListExecutions(ctx context.Context, orchestrationID, tenantID uint, page, pageSize int) ([]*commonExecution.TaskExecution, int64, error) {
 	orchIDInt := int(orchestrationID)
-	filter := commonRepo.TaskExecutionFilter{
+	filter := commonExecution.TaskExecutionFilter{
 		TenantID:     int(tenantID),
-		Module:       commonModels.ModuleOrchestrator,
+		Module:       commonExecution.ModuleOrchestrator,
 		SourceTaskID: &orchIDInt,
 		Page:         page,
 		PageSize:     pageSize,
@@ -222,10 +222,10 @@ func (s *ExecutionService) ListExecutions(ctx context.Context, orchestrationID, 
 }
 
 // ListAllExecutions 列出所有执行记录（跨编排）
-func (s *ExecutionService) ListAllExecutions(ctx context.Context, tenantID uint, page, pageSize int) ([]*commonModels.TaskExecution, int64, error) {
-	filter := commonRepo.TaskExecutionFilter{
+func (s *ExecutionService) ListAllExecutions(ctx context.Context, tenantID uint, page, pageSize int) ([]*commonExecution.TaskExecution, int64, error) {
+	filter := commonExecution.TaskExecutionFilter{
 		TenantID: int(tenantID),
-		Module:   commonModels.ModuleOrchestrator,
+		Module:   commonExecution.ModuleOrchestrator,
 		Page:     page,
 		PageSize: pageSize,
 	}

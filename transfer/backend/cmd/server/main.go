@@ -10,9 +10,9 @@ import (
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	_ "github.com/addp/common/engine/plugins/builtin/general"
+	commonExecution "github.com/addp/common/execution"
 	_ "github.com/addp/common/format/builtin"
 	"github.com/addp/common/logger"
-	commonModels "github.com/addp/common/models"
 	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/common/utils"
 	"github.com/addp/transfer/internal/api"
@@ -81,7 +81,7 @@ func main() {
 	}
 
 	// 初始化 Repository 层
-	taskExecutionRepo := commonRepo.NewTaskExecutionRepository(db) // 统一执行记录仓库
+	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db) // 统一执行记录仓库
 	log.Printf("✅ Repository 层初始化完成（使用统一执行表）")
 
 	// 创建任务队列（连接 Redis）
@@ -191,8 +191,6 @@ func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
 	// Initialize database with auto-migration
 	db, err := commonRepo.InitDatabase(dbConfig,
 		&models.TransferTask{},
-		// &models.TaskExecution{}, // 【已废弃】改用统一执行表
-		&commonModels.TaskExecution{}, // 统一执行记录表（common.task_executions）
 		// &pipeline.Checkpoint{}, // TODO: 启用 pipeline 时取消注释
 	)
 	if err != nil {

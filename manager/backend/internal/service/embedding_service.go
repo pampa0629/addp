@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	commonExecution "github.com/addp/common/execution"
 	"io"
 	"log/slog"
 	"path/filepath"
@@ -14,7 +15,6 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/embedding"
 	commonModels "github.com/addp/common/models"
-	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/manager/internal/config"
 	"github.com/addp/manager/internal/models"
@@ -36,7 +36,7 @@ type EmbeddingService struct {
 	systemClient    *commonClient.SystemClient
 	metaClient      *commonClient.MetaClient
 	embeddingClient embedding.MultiModalEmbedder
-	taskExecRepo    *commonRepo.TaskExecutionRepository
+	taskExecRepo    *commonExecution.TaskExecutionRepository
 	cfg             *config.Config
 	log             *slog.Logger
 }
@@ -46,7 +46,7 @@ func NewEmbeddingService(
 	vectorRepo *repository.EmbeddingRepository,
 	systemClient *commonClient.SystemClient,
 	metaClient *commonClient.MetaClient,
-	taskExecRepo *commonRepo.TaskExecutionRepository,
+	taskExecRepo *commonExecution.TaskExecutionRepository,
 	cfg *config.Config,
 	log *slog.Logger,
 ) (*EmbeddingService, error) {
@@ -232,13 +232,13 @@ func (s *EmbeddingService) EmbedDirectory(ctx context.Context, req EmbedDirector
 	if req.TenantID != nil {
 		tenantIDInt = int(*req.TenantID)
 	}
-	exec := &commonModels.TaskExecution{
+	exec := &commonExecution.TaskExecution{
 		ExecutionID: executionID,
 		TenantID:    tenantIDInt,
-		Module:      commonModels.ModuleManager,
+		Module:      commonExecution.ModuleManager,
 		TaskType:    "embedding",
-		Status:      commonModels.ExecutionStatusRunning,
-		TriggerType: commonModels.TriggerTypeManual,
+		Status:      commonExecution.ExecutionStatusRunning,
+		TriggerType: commonExecution.TriggerTypeManual,
 		StartedAt:   &startTime,
 	}
 	if s.taskExecRepo != nil {
@@ -250,7 +250,7 @@ func (s *EmbeddingService) EmbedDirectory(ctx context.Context, req EmbedDirector
 	// 1. 列出目录下的所有对象
 	objects, err := s.listObjects(ctx, req.EngineID, req.Bucket, req.Prefix, req.Recursive)
 	if err != nil {
-		s.finishExecution(ctx, executionID, tenantIDInt, commonModels.ExecutionStatusFailed, startTime,
+		s.finishExecution(ctx, executionID, tenantIDInt, commonExecution.ExecutionStatusFailed, startTime,
 			commonModels.JSONMap{"message": err.Error()}, nil)
 		return nil, fmt.Errorf("failed to list objects: %w", err)
 	}
@@ -308,9 +308,9 @@ func (s *EmbeddingService) EmbedDirectory(ctx context.Context, req EmbedDirector
 	wg.Wait()
 
 	// 完成执行记录
-	status := commonModels.ExecutionStatusSuccess
+	status := commonExecution.ExecutionStatusSuccess
 	if result.Failed > 0 && result.Vectorized == 0 {
-		status = commonModels.ExecutionStatusFailed
+		status = commonExecution.ExecutionStatusFailed
 	}
 	metadata := commonModels.JSONMap{
 		"total":      result.Total,

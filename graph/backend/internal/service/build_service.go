@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	commonExecution "github.com/addp/common/execution"
 	"io"
 	"net/http"
 	"strings"
@@ -13,7 +14,6 @@ import (
 
 	"github.com/addp/common/contentio"
 	commonModels "github.com/addp/common/models"
-	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/graph/internal/models"
 	"github.com/addp/graph/internal/repository"
 	"github.com/google/uuid"
@@ -31,7 +31,7 @@ type BuildService struct {
 	ontologyRepo      *repository.OntologyRepository
 	ontologySvc       *OntologyService
 	graphRepo         *repository.KnowledgeGraphRepository
-	taskExecutionRepo *commonRepo.TaskExecutionRepository
+	taskExecutionRepo *commonExecution.TaskExecutionRepository
 	neo4jSvc          *Neo4jService
 	materialReader    contentio.Reader
 	materialWriter    contentio.Writer
@@ -48,7 +48,7 @@ func NewBuildService(
 	ontologyRepo *repository.OntologyRepository,
 	ontologySvc *OntologyService,
 	graphRepo *repository.KnowledgeGraphRepository,
-	taskExecutionRepo *commonRepo.TaskExecutionRepository,
+	taskExecutionRepo *commonExecution.TaskExecutionRepository,
 	neo4jSvc *Neo4jService,
 	materialReader contentio.Reader,
 	materialWriter contentio.Writer,
@@ -161,16 +161,16 @@ func (s *BuildService) RunTask(ctx context.Context, taskID, graphID, tenantID, u
 	executionID := uuid.New().String()
 	uid := int(userID)
 	srcID := int(taskID)
-	execution := &commonModels.TaskExecution{
+	execution := &commonExecution.TaskExecution{
 		TenantID:       int(tenantID),
 		ExecutionID:    executionID,
-		Module:         commonModels.ModuleGraph,
-		TaskType:       commonModels.TaskTypeKGBuild,
+		Module:         commonExecution.ModuleGraph,
+		TaskType:       commonExecution.TaskTypeKGBuild,
 		SourceTaskID:   &srcID,
 		SourceTaskName: &task.Name,
-		Status:         commonModels.ExecutionStatusPending,
+		Status:         commonExecution.ExecutionStatusPending,
 		Progress:       0,
-		TriggerType:    commonModels.TriggerTypeManual,
+		TriggerType:    commonExecution.TriggerTypeManual,
 		TriggeredBy:    &uid,
 		ExecutionConfig: commonModels.JSONMap{
 			"graph_id":             graphID,
@@ -232,7 +232,7 @@ func (s *BuildService) CancelTask(taskID, graphID, tenantID uint) error {
 
 	if task.ExecutionID != "" {
 		_ = s.taskExecutionRepo.UpdateFields(context.Background(), task.ExecutionID, int(tenantID), map[string]interface{}{
-			"status":       commonModels.ExecutionStatusCancelled,
+			"status":       commonExecution.ExecutionStatusCancelled,
 			"completed_at": now,
 		})
 	}
@@ -327,7 +327,7 @@ func (s *BuildService) executeTask(ctx context.Context, task *models.BuildTask, 
 		// 更新 Monitor 进度
 		progress := int(float64(i+1) / float64(total) * 100)
 		_ = s.taskExecutionRepo.UpdateFields(ctx, executionID, tenantID, map[string]interface{}{
-			"status":   commonModels.ExecutionStatusRunning,
+			"status":   commonExecution.ExecutionStatusRunning,
 			"progress": progress,
 			"metadata": commonModels.JSONMap{
 				"processed_materials": processed,
@@ -354,7 +354,7 @@ func (s *BuildService) executeTask(ctx context.Context, task *models.BuildTask, 
 
 	rw := int64(autoWritten)
 	_ = s.taskExecutionRepo.UpdateFields(ctx, executionID, tenantID, map[string]interface{}{
-		"status":          commonModels.ExecutionStatusSuccess,
+		"status":          commonExecution.ExecutionStatusSuccess,
 		"progress":        100,
 		"completed_at":    now,
 		"records_written": rw,
@@ -375,7 +375,7 @@ func (s *BuildService) failTask(ctx context.Context, task *models.BuildTask, ten
 
 	if executionID != "" {
 		_ = s.taskExecutionRepo.UpdateFields(ctx, executionID, tenantID, map[string]interface{}{
-			"status":        commonModels.ExecutionStatusFailed,
+			"status":        commonExecution.ExecutionStatusFailed,
 			"completed_at":  now,
 			"error_details": commonModels.JSONMap{"message": msg},
 		})

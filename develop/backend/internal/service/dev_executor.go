@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	commonExecution "github.com/addp/common/execution"
 	"log"
 	"time"
 
 	commonModels "github.com/addp/common/models"
-	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/addp/develop/backend/internal/repository"
 	"github.com/google/uuid"
@@ -19,7 +19,7 @@ import (
 // 【已重构】使用统一执行表 common.task_executions
 type DevExecutor struct {
 	devTaskRepo              *repository.DevTaskRepository
-	taskExecutionRepo        *commonRepo.TaskExecutionRepository // 统一执行记录仓库
+	taskExecutionRepo        *commonExecution.TaskExecutionRepository // 统一执行记录仓库
 	workflowEngine           *WorkflowEngineService
 	sqlEngine                *SQLEngineService
 	jupyterService           *JupyterService
@@ -29,7 +29,7 @@ type DevExecutor struct {
 // NewDevExecutor 创建开发项执行器
 func NewDevExecutor(
 	devTaskRepo *repository.DevTaskRepository,
-	taskExecutionRepo *commonRepo.TaskExecutionRepository, // 使用统一执行记录仓库
+	taskExecutionRepo *commonExecution.TaskExecutionRepository, // 使用统一执行记录仓库
 	workflowEngine *WorkflowEngineService,
 	sqlEngine *SQLEngineService,
 	jupyterService *JupyterService,
@@ -83,14 +83,14 @@ func (e *DevExecutor) ExecuteDevItem(
 	devItemIDInt := int(devItemID)
 	userIDInt := int(userID)
 
-	execution := &commonModels.TaskExecution{
+	execution := &commonExecution.TaskExecution{
 		TenantID:       int(tenantID),
 		ExecutionID:    executionID,
-		Module:         commonModels.ModuleDevelop,
+		Module:         commonExecution.ModuleDevelop,
 		TaskType:       devItem.DevType, // "query"/"workflow"/"notebook"
 		SourceTaskID:   &devItemIDInt,
 		SourceTaskName: &devItem.Name,
-		Status:         commonModels.ExecutionStatusPending,
+		Status:         commonExecution.ExecutionStatusPending,
 		Progress:       0,
 		TriggerType:    triggerType,
 		TriggeredBy:    &userIDInt,
@@ -153,14 +153,14 @@ func (e *DevExecutor) ExecuteContent(
 		resourceIDInt = &rid
 	}
 
-	execution := &commonModels.TaskExecution{
+	execution := &commonExecution.TaskExecution{
 		TenantID:    int(tenantID),
 		ExecutionID: executionID,
-		Module:      commonModels.ModuleDevelop,
+		Module:      commonExecution.ModuleDevelop,
 		TaskType:    devType,
-		Status:      commonModels.ExecutionStatusPending,
+		Status:      commonExecution.ExecutionStatusPending,
 		Progress:    0,
-		TriggerType: commonModels.TriggerTypeManual,
+		TriggerType: commonExecution.TriggerTypeManual,
 		TriggeredBy: &userIDInt,
 		ExecutionConfig: commonModels.JSONMap{
 			"engine_id": resourceIDInt,
@@ -206,7 +206,7 @@ func (e *DevExecutor) executeAsync(recordID int64, executionID string, devItem *
 	startTime := time.Now()
 
 	// 更新状态为 running
-	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonModels.ExecutionStatusRunning, 10, "开始执行")
+	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 10, "开始执行")
 
 	var result commonModels.JSONMap
 	var errorMessage string
@@ -235,9 +235,9 @@ func (e *DevExecutor) executeAsync(recordID int64, executionID string, devItem *
 	// 确定最终状态
 	var status string
 	if errorMessage != "" {
-		status = commonModels.ExecutionStatusFailed
+		status = commonExecution.ExecutionStatusFailed
 	} else {
-		status = commonModels.ExecutionStatusSuccess
+		status = commonExecution.ExecutionStatusSuccess
 	}
 	log.Printf("🟢 [DevExecutor] 准备更新执行记录: execution_id=%s status=%s", executionID, status)
 
@@ -315,7 +315,7 @@ func (e *DevExecutor) updateExecutionStatus(ctx context.Context, executionID str
 // executeWorkflow 执行工作流（支持 JSONB 配置）
 func (e *DevExecutor) executeWorkflow(ctx context.Context, devItem *models.DevTask, executionID string, tenantID int) (commonModels.JSONMap, string) {
 	log.Printf("🔵 [DevExecutor] executeWorkflow 开始: execution_id=%s", executionID)
-	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonModels.ExecutionStatusRunning, 30, "执行工作流")
+	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 30, "执行工作流")
 
 	// 验证执行配置
 	if devItem.ExecutionConfig == nil || len(devItem.ExecutionConfig) == 0 {
@@ -359,7 +359,7 @@ func (e *DevExecutor) executeWorkflow(ctx context.Context, devItem *models.DevTa
 	}
 
 	log.Printf("🔵 [DevExecutor] 工作流引擎返回成功: execution_id=%s", executionID)
-	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonModels.ExecutionStatusRunning, 90, "工作流执行成功")
+	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 90, "工作流执行成功")
 
 	// 构造结果摘要
 	result := commonModels.JSONMap{
@@ -401,7 +401,7 @@ func (e *DevExecutor) executeQuery(ctx context.Context, devItem *models.DevTask,
 
 // executeSQL 执行SQL
 func (e *DevExecutor) executeSQL(ctx context.Context, devItem *models.DevTask, executionID string, tenantID int) (commonModels.JSONMap, string, *int64) {
-	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonModels.ExecutionStatusRunning, 30, "执行SQL")
+	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 30, "执行SQL")
 
 	// 使用兼容方法获取引擎ID
 	engineID := devItem.GetEngineID()
@@ -432,7 +432,7 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devItem *models.DevTask, e
 		return nil, fmt.Sprintf("SQL执行失败: %v", err), nil
 	}
 
-	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonModels.ExecutionStatusRunning, 90, "SQL执行成功")
+	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 90, "SQL执行成功")
 
 	// 构造结果摘要（只保存元数据和少量示例数据）
 	var previewRows []map[string]interface{}
@@ -459,17 +459,17 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devItem *models.DevTask, e
 
 // executeScript 执行脚本（未实现）
 func (e *DevExecutor) executeScript(ctx context.Context, devItem *models.DevTask, executionID string, tenantID int) (commonModels.JSONMap, string) {
-	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonModels.ExecutionStatusRunning, 30, "脚本执行")
+	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 30, "脚本执行")
 	return nil, "脚本执行功能尚未实现"
 }
 
 // executeNotebook 执行 Jupyter Notebook
 func (e *DevExecutor) executeNotebook(ctx context.Context, devItem *models.DevTask, executionID string, tenantID int) (commonModels.JSONMap, string) {
-	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonModels.ExecutionStatusRunning, 20, "准备执行 Notebook")
+	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 20, "准备执行 Notebook")
 
 	// 如果没有 NotebookExecutionService，降级到简单模式
 	if e.notebookExecutionService == nil {
-		_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonModels.ExecutionStatusRunning, 30, "执行 Notebook（简单模式）")
+		_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 30, "执行 Notebook（简单模式）")
 
 		// 解析 Notebook 路径
 		inputPath, ok := devItem.Content["input_path"].(string)
@@ -506,7 +506,7 @@ func (e *DevExecutor) executeNotebook(ctx context.Context, devItem *models.DevTa
 			return nil, errorMsg
 		}
 
-		_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonModels.ExecutionStatusRunning, 90, "Notebook 执行成功")
+		_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 90, "Notebook 执行成功")
 
 		// 构造结果摘要
 		result := commonModels.JSONMap{
@@ -523,7 +523,7 @@ func (e *DevExecutor) executeNotebook(ctx context.Context, devItem *models.DevTa
 	}
 
 	// 使用 NotebookExecutionService（新架构）
-	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonModels.ExecutionStatusRunning, 30, "执行 Notebook（完整模式）")
+	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 30, "执行 Notebook（完整模式）")
 
 	// 获取执行记录以获取 userID
 	execution, err := e.taskExecutionRepo.GetByExecutionID(ctx, executionID, tenantID)
@@ -549,7 +549,7 @@ func (e *DevExecutor) executeNotebook(ctx context.Context, devItem *models.DevTa
 		return nil, errorMsg
 	}
 
-	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonModels.ExecutionStatusRunning, 90, "Notebook 执行成功")
+	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 90, "Notebook 执行成功")
 
 	// 转换为 JSONMap
 	executionResult := commonModels.JSONMap{
@@ -599,9 +599,9 @@ func (e *DevExecutor) ListExecutions(req *models.ListExecutionsRequest, tenantID
 	}
 
 	// 构建过滤器
-	filter := commonRepo.TaskExecutionFilter{
+	filter := commonExecution.TaskExecutionFilter{
 		TenantID:    int(tenantID),
-		Module:      commonModels.ModuleDevelop,
+		Module:      commonExecution.ModuleDevelop,
 		TaskType:    req.DevType,
 		Status:      req.Status,
 		TriggerType: req.TriggerType,
@@ -658,13 +658,13 @@ func (e *DevExecutor) CancelExecution(executionID string, tenantID uint) error {
 	}
 
 	// 只能取消 pending 或 running 状态的执行
-	if execution.Status != commonModels.ExecutionStatusPending && execution.Status != commonModels.ExecutionStatusRunning {
+	if execution.Status != commonExecution.ExecutionStatusPending && execution.Status != commonExecution.ExecutionStatusRunning {
 		return fmt.Errorf("只能取消 pending 或 running 状态的执行，当前状态: %s", execution.Status)
 	}
 
 	// 更新状态为 cancelled
 	now := time.Now()
-	execution.Status = commonModels.ExecutionStatusCancelled
+	execution.Status = commonExecution.ExecutionStatusCancelled
 	execution.CompletedAt = &now
 	execution.ErrorDetails = commonModels.JSONMap{
 		"message": "用户取消执行",
@@ -709,7 +709,7 @@ func (e *DevExecutor) GetStatistics(tenantID uint, devItemID *uint, startDate, e
 		}
 	}
 
-	stats, err := e.taskExecutionRepo.GetStatistics(context.Background(), int(tenantID), commonModels.ModuleDevelop, startDatePtr, endDatePtr)
+	stats, err := e.taskExecutionRepo.GetStatistics(context.Background(), int(tenantID), commonExecution.ModuleDevelop, startDatePtr, endDatePtr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get statistics: %w", err)
 	}
@@ -804,16 +804,16 @@ func (e *DevExecutor) ExecuteWithParams(
 	itemIDInt := int(itemID)
 	userIDInt := int(userID)
 
-	execution := &commonModels.TaskExecution{
+	execution := &commonExecution.TaskExecution{
 		TenantID:       int(tenantID),
 		ExecutionID:    executionID,
-		Module:         commonModels.ModuleDevelop,
+		Module:         commonExecution.ModuleDevelop,
 		TaskType:       devItem.DevType,
 		SourceTaskID:   &itemIDInt,
 		SourceTaskName: &devItem.Name,
-		Status:         commonModels.ExecutionStatusPending,
+		Status:         commonExecution.ExecutionStatusPending,
 		Progress:       0,
-		TriggerType:    commonModels.TriggerTypeOrchestrator,
+		TriggerType:    commonExecution.TriggerTypeOrchestrator,
 		TriggeredBy:    &userIDInt,
 		ExecutionConfig: commonModels.JSONMap{
 			"engine_id": devItem.GetEngineID(),

@@ -3,13 +3,13 @@ package service
 import (
 	"context"
 	"fmt"
+	commonExecution "github.com/addp/common/execution"
 	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
-	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/repository"
 	"github.com/google/uuid"
@@ -18,14 +18,14 @@ import (
 
 // ExecutionService 执行记录服务（使用统一执行表）
 type ExecutionService struct {
-	taskExecutionRepo *commonRepo.TaskExecutionRepository // 统一执行记录仓库
+	taskExecutionRepo *commonExecution.TaskExecutionRepository // 统一执行记录仓库
 	taskRepo          *repository.TaskRepository
 	taskQueue         TaskQueue
 	logger            *slog.Logger
 }
 
 // NewExecutionService 创建执行服务
-func NewExecutionService(db *gorm.DB, taskExecutionRepo *commonRepo.TaskExecutionRepository) *ExecutionService {
+func NewExecutionService(db *gorm.DB, taskExecutionRepo *commonExecution.TaskExecutionRepository) *ExecutionService {
 	return &ExecutionService{
 		taskExecutionRepo: taskExecutionRepo,
 		taskRepo:          repository.NewTaskRepository(db),
@@ -39,7 +39,7 @@ func (s *ExecutionService) SetTaskQueue(taskQueue TaskQueue) {
 }
 
 // convertToTransferExecution 将统一执行记录转换为 Transfer 执行记录格式（API 兼容层）
-func (s *ExecutionService) convertToTransferExecution(exec *commonModels.TaskExecution) *models.TaskExecution {
+func (s *ExecutionService) convertToTransferExecution(exec *commonExecution.TaskExecution) *models.TaskExecution {
 	if exec == nil {
 		return nil
 	}
@@ -115,7 +115,7 @@ func (s *ExecutionService) GetExecution(ctx context.Context, id, tenantID uint) 
 	}
 
 	// 验证是否为 transfer 模块的执行
-	if execution.Module != commonModels.ModuleTransfer {
+	if execution.Module != commonExecution.ModuleTransfer {
 		return nil, fmt.Errorf("execution not found or access denied")
 	}
 
@@ -153,9 +153,9 @@ func (s *ExecutionService) ListExecutions(ctx context.Context, taskID, tenantID 
 
 	// 从统一表查询
 	taskIDInt := int(taskID)
-	filter := commonRepo.TaskExecutionFilter{
+	filter := commonExecution.TaskExecutionFilter{
 		TenantID:     int(tenantID),
-		Module:       commonModels.ModuleTransfer,
+		Module:       commonExecution.ModuleTransfer,
 		SourceTaskID: &taskIDInt,
 		Page:         page,
 		PageSize:     pageSize,
@@ -185,9 +185,9 @@ func (s *ExecutionService) ListAllExecutions(ctx context.Context, tenantID uint,
 	}
 
 	// 构建过滤器
-	filter := commonRepo.TaskExecutionFilter{
+	filter := commonExecution.TaskExecutionFilter{
 		TenantID: int(tenantID),
-		Module:   commonModels.ModuleTransfer,
+		Module:   commonExecution.ModuleTransfer,
 		Page:     page,
 		PageSize: pageSize,
 	}
@@ -228,9 +228,9 @@ func (s *ExecutionService) GetLatestExecution(ctx context.Context, taskID, tenan
 
 	// 从统一表查询最新记录
 	taskIDInt := int(taskID)
-	filter := commonRepo.TaskExecutionFilter{
+	filter := commonExecution.TaskExecutionFilter{
 		TenantID:     int(tenantID),
-		Module:       commonModels.ModuleTransfer,
+		Module:       commonExecution.ModuleTransfer,
 		SourceTaskID: &taskIDInt,
 		Page:         1,
 		PageSize:     1,
@@ -251,10 +251,10 @@ func (s *ExecutionService) GetLatestExecution(ctx context.Context, taskID, tenan
 // GetRunningExecutions 获取所有运行中的执行记录
 func (s *ExecutionService) GetRunningExecutions(ctx context.Context) ([]models.TaskExecution, error) {
 	// 查询所有租户的运行中执行（这里不限制 tenantID，返回所有）
-	filter := commonRepo.TaskExecutionFilter{
+	filter := commonExecution.TaskExecutionFilter{
 		TenantID: 0, // 0 表示不过滤租户
-		Module:   commonModels.ModuleTransfer,
-		Status:   commonModels.ExecutionStatusRunning,
+		Module:   commonExecution.ModuleTransfer,
+		Status:   commonExecution.ExecutionStatusRunning,
 		Page:     1,
 		PageSize: 1000, // 假设最多1000个运行中任务
 	}
@@ -291,14 +291,14 @@ func (s *ExecutionService) CreateExecution(ctx context.Context, taskID uint, tri
 		triggeredByInt = &val
 	}
 
-	execution := &commonModels.TaskExecution{
+	execution := &commonExecution.TaskExecution{
 		TenantID:       int(task.TenantID),
 		ExecutionID:    uuid.New().String(),
-		Module:         commonModels.ModuleTransfer,
+		Module:         commonExecution.ModuleTransfer,
 		TaskType:       "transfer", // Transfer 模块的执行类型统一为 transfer
 		SourceTaskID:   &taskIDInt,
 		SourceTaskName: &task.Name,
-		Status:         commonModels.ExecutionStatusPending,
+		Status:         commonExecution.ExecutionStatusPending,
 		Progress:       0,
 		TriggerType:    triggerType,
 		TriggeredBy:    triggeredByInt,
@@ -573,7 +573,7 @@ func (s *ExecutionService) GetExecutionLogs(ctx context.Context, id, tenantID ui
 // GetExecutionStatistics 获取执行统计信息
 func (s *ExecutionService) GetExecutionStatistics(ctx context.Context, tenantID uint, filters map[string]interface{}) (map[string]interface{}, error) {
 	// 使用统一仓库的统计功能
-	stats, err := s.taskExecutionRepo.GetStatistics(ctx, int(tenantID), commonModels.ModuleTransfer, nil, nil)
+	stats, err := s.taskExecutionRepo.GetStatistics(ctx, int(tenantID), commonExecution.ModuleTransfer, nil, nil)
 	if err != nil {
 		return nil, err
 	}

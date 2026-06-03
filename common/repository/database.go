@@ -1,21 +1,16 @@
 package repository
 
 import (
-	"embed"
 	"fmt"
 	"log"
-	"sort"
-	"strings"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	"github.com/addp/common/execution"
 	"github.com/addp/common/utils"
 )
-
-//go:embed migrations/*.sql
-var migrationFiles embed.FS
 
 // DatabaseConfig holds database connection configuration
 type DatabaseConfig struct {
@@ -67,9 +62,9 @@ func InitDatabase(cfg DatabaseConfig, models ...interface{}) (*gorm.DB, error) {
 	log.Printf("✅ Connected to database: %s@%s:%s/%s (schema: %s)",
 		cfg.User, cfg.Host, cfg.Port, cfg.DBName, cfg.Schema)
 
-	// Run SQL migrations (before AutoMigrate to ensure schema changes are applied first)
-	if err := runSQLMigrations(db); err != nil {
-		return nil, fmt.Errorf("failed to run SQL migrations: %w", err)
+	// Ensure common schema stores before module-specific migrations.
+	if err := execution.EnsureStore(db); err != nil {
+		return nil, fmt.Errorf("failed to ensure common execution store: %w", err)
 	}
 
 	// Auto-migrate models if provided
@@ -90,38 +85,6 @@ func InitDatabase(cfg DatabaseConfig, models ...interface{}) (*gorm.DB, error) {
 	}
 
 	return db, nil
-}
-
-// runSQLMigrations 按文件名顺序执行 migrations/ 目录下的所有 SQL 文件
-func runSQLMigrations(db *gorm.DB) error {
-	entries, err := migrationFiles.ReadDir("migrations")
-	if err != nil {
-		return fmt.Errorf("failed to read migrations directory: %w", err)
-	}
-
-	// 按文件名排序（001_xxx.sql < 002_xxx.sql）
-	names := make([]string, 0, len(entries))
-	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".sql") {
-			names = append(names, e.Name())
-		}
-	}
-	sort.Strings(names)
-
-	for _, name := range names {
-		content, err := migrationFiles.ReadFile("migrations/" + name)
-		if err != nil {
-			return fmt.Errorf("failed to read migration file %s: %w", name, err)
-		}
-
-		log.Printf("[Migration] ▶ Applying SQL migration: %s", name)
-		if err := db.Exec(string(content)).Error; err != nil {
-			return fmt.Errorf("failed to apply migration %s: %w", name, err)
-		}
-		log.Printf("[Migration] ✅ Applied: %s", name)
-	}
-
-	return nil
 }
 
 // InitDatabaseWithConfig is a convenience function that accepts a struct with config fields

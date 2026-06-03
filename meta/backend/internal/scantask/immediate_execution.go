@@ -3,21 +3,21 @@ package scantask
 import (
 	"context"
 	"fmt"
+	commonExecution "github.com/addp/common/execution"
 	"time"
 
 	commonModels "github.com/addp/common/models"
-	commonRepo "github.com/addp/common/repository"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
 type ImmediateExecutionRecorder struct {
-	repo *commonRepo.TaskExecutionRepository
+	repo *commonExecution.TaskExecutionRepository
 }
 
 func NewImmediateExecutionRecorder(db *gorm.DB) *ImmediateExecutionRecorder {
 	return &ImmediateExecutionRecorder{
-		repo: commonRepo.NewTaskExecutionRepository(db),
+		repo: commonExecution.NewTaskExecutionRepository(db),
 	}
 }
 
@@ -28,13 +28,13 @@ func (r *ImmediateExecutionRecorder) Create(resource *commonModels.Engine, tenan
 
 	execID := uuid.New().String()
 	engineIDInt := int(resource.ID)
-	exec := &commonModels.TaskExecution{
+	exec := &commonExecution.TaskExecution{
 		TenantID:    int(tenantID),
 		ExecutionID: execID,
-		Module:      commonModels.ModuleMeta,
+		Module:      commonExecution.ModuleMeta,
 		TaskType:    "scan",
-		Status:      commonModels.ExecutionStatusRunning,
-		TriggerType: commonModels.TriggerTypeAPI,
+		Status:      commonExecution.ExecutionStatusRunning,
+		TriggerType: commonExecution.TriggerTypeAPI,
 		ExecutionConfig: commonModels.JSONMap{
 			"engine_id":     engineIDInt,
 			"catalog_paths": catalogPaths,
@@ -56,7 +56,7 @@ func (r *ImmediateExecutionRecorder) Fail(execID string, tenantID int, scanErr e
 	completedAt := time.Now()
 	durationMs := completedAt.Sub(startTime).Milliseconds()
 	_ = r.repo.UpdateFields(context.Background(), execID, tenantID, map[string]interface{}{
-		"status":            commonModels.ExecutionStatusFailed,
+		"status":            commonExecution.ExecutionStatusFailed,
 		"error_details":     commonModels.JSONMap{"message": scanErr.Error()},
 		"execution_time_ms": durationMs,
 		"completed_at":      completedAt,
@@ -67,7 +67,7 @@ func (r *ImmediateExecutionRecorder) Fail(execID string, tenantID int, scanErr e
 func (r *ImmediateExecutionRecorder) Complete(execID string, tenantID int, meta commonModels.JSONMap, startTime, completedAt time.Time) {
 	durationMs := completedAt.Sub(startTime).Milliseconds()
 	_ = r.repo.UpdateFields(context.Background(), execID, tenantID, map[string]interface{}{
-		"status":            commonModels.ExecutionStatusSuccess,
+		"status":            commonExecution.ExecutionStatusSuccess,
 		"metadata":          meta,
 		"execution_time_ms": durationMs,
 		"progress":          100,

@@ -1,19 +1,18 @@
 package api
 
 import (
+	commonExecution "github.com/addp/common/execution"
 	"net/http"
 
-	commonModels "github.com/addp/common/models"
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 type ExecutionHandler struct {
-	db *gorm.DB
+	executionRepo *commonExecution.TaskExecutionRepository
 }
 
-func NewExecutionHandler(db *gorm.DB) *ExecutionHandler {
-	return &ExecutionHandler{db: db}
+func NewExecutionHandler(executionRepo *commonExecution.TaskExecutionRepository) *ExecutionHandler {
+	return &ExecutionHandler{executionRepo: executionRepo}
 }
 
 // @Summary 获取执行记录列表 | List execution records
@@ -27,15 +26,13 @@ func (h *ExecutionHandler) List(c *gin.Context) {
 	page := 1
 	pageSize := 20
 
-	var total int64
-	var items []commonModels.TaskExecution
-
-	q := h.db.Table("common.task_executions").
-		Where("tenant_id = ? AND module = ?", tenantID, commonModels.ModuleQuality).
-		Order("created_at DESC")
-
-	q.Count(&total)
-	if err := q.Offset((page - 1) * pageSize).Limit(pageSize).Find(&items).Error; err != nil {
+	items, total, err := h.executionRepo.List(c.Request.Context(), commonExecution.TaskExecutionFilter{
+		TenantID: int(tenantID),
+		Module:   commonExecution.ModuleQuality,
+		Page:     page,
+		PageSize: pageSize,
+	})
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -64,10 +61,8 @@ func (h *ExecutionHandler) Get(c *gin.Context) {
 	tenantID := getTenantID(c)
 	executionID := c.Param("id")
 
-	var item commonModels.TaskExecution
-	if err := h.db.Table("common.task_executions").
-		Where("execution_id = ? AND tenant_id = ? AND module = ?", executionID, tenantID, commonModels.ModuleQuality).
-		First(&item).Error; err != nil {
+	item, err := h.executionRepo.GetByExecutionID(c.Request.Context(), executionID, int(tenantID))
+	if err != nil || item.Module != commonExecution.ModuleQuality {
 		c.JSON(http.StatusNotFound, gin.H{"error": "execution not found"})
 		return
 	}
