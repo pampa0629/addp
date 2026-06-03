@@ -6,16 +6,16 @@ type TypeInfo interface {
 }
 
 // TypeInfoDataType reports that TableInfo describes table data.
-func (*TableInfo) TypeInfoDataType() DataType { return DataTypeTable }
+func (*TableInfo) TypeInfoDataType() DataType { return Table }
 
 // TypeInfoDataType reports that DocumentInfo describes document data.
-func (*DocumentInfo) TypeInfoDataType() DataType { return DataTypeDocument }
+func (*DocumentInfo) TypeInfoDataType() DataType { return Document }
 
 // TypeInfoDataType reports that MediaInfo describes media data.
-func (*MediaInfo) TypeInfoDataType() DataType { return DataTypeMedia }
+func (*MediaInfo) TypeInfoDataType() DataType { return Media }
 
 // TypeInfoDataType reports that ContainerInfo describes container data.
-func (*ContainerInfo) TypeInfoDataType() DataType { return DataTypeContainer }
+func (*ContainerInfo) TypeInfoDataType() DataType { return Container }
 
 // TypeInfoDataType reports that GraphInfo describes graph data.
-func (*GraphInfo) TypeInfoDataType() DataType { return DataTypeGraph }
+func (*GraphInfo) TypeInfoDataType() DataType { return Graph }

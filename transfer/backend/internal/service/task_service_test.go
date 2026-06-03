@@ -12,15 +12,13 @@ func TestValidateNewTaskConfigAcceptsRawCopy(t *testing.T) {
 	err := validateNewTaskConfig(map[string]interface{}{
 		"mode": "batch",
 		"source": map[string]interface{}{
-			"engine":         map[string]interface{}{"id": 1},
-			"resource":       map[string]interface{}{"kind": "object", "path": map[string]interface{}{"bucket": "docs", "path": "a.pdf"}},
+			"locator":        "addp://engine/1/path/docs/a.pdf?type=object",
 			"data_type":      "document",
 			"representation": "encoded",
 			"format":         string(format.FormatPDF),
 		},
 		"target": map[string]interface{}{
-			"engine":         map[string]interface{}{"id": 2},
-			"resource":       map[string]interface{}{"kind": "file", "path": map[string]interface{}{"path": "backup/a.pdf"}},
+			"locator":        "addp://engine/2/path/backup/a.pdf?type=file",
 			"representation": "encoded",
 			"policy":         map[string]interface{}{"write_mode": "overwrite"},
 		},
@@ -35,14 +33,12 @@ func TestValidateNewTaskConfigStillAcceptsTableTransfer(t *testing.T) {
 		"mode":       "batch",
 		"batch_size": 100,
 		"source": map[string]interface{}{
-			"engine":         map[string]interface{}{"id": 1},
-			"resource":       map[string]interface{}{"kind": "native_table", "path": map[string]interface{}{"schema": "public", "table": "roads"}},
+			"locator":        "addp://engine/1/path/public/roads?type=table",
 			"data_type":      "table",
 			"representation": "native",
 		},
 		"target": map[string]interface{}{
-			"engine":         map[string]interface{}{"id": 2},
-			"resource":       map[string]interface{}{"kind": "file", "path": map[string]interface{}{"path": "exports/roads.csv"}},
+			"locator":        "addp://engine/2/path/exports/roads.csv?type=file",
 			"data_type":      "table",
 			"representation": "encoded",
 			"format":         string(format.FormatCSV),

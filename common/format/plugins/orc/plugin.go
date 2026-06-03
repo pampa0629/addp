@@ -20,7 +20,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		ID:             "builtin-orc",
 		Format:         p.Format(),
 		I18nKey:        "format.orc",
-		DataType:       datatype.DataTypeTable,
+		DataType:       datatype.Table,
 		Layouts:        []string{format.LayoutSingle, format.LayoutWhole},
 		Identification: format.FormatIdentification{Extensions: []string{".orc"}, MimeTypes: []string{"application/orc", "application/vnd.apache.orc"}},
 	}

@@ -7,12 +7,12 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/addp/common/catalogview"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/resourcetree"
 	"github.com/addp/manager/internal/models"
 )
 
@@ -52,19 +52,19 @@ func NewPreviewResolver(
 
 // PreviewRequest 新的预览请求（基于 ResourceLocator）
 type PreviewResolverRequest struct {
-	Locator         *catalogview.ResourceLocator // 资源定位符
-	Engine          *commonModels.Engine         // 引擎信息
-	Metadata        *commonModels.MetaNode       // 可选：Meta 节点数据
-	Pagination      *Pagination                  // 分页参数
-	TenantID        *uint                        // 租户 ID
-	ItemType        string                       // 数据项类型（如 "table"），来自 MetaItem
-	ItemRowCount    *int64                       // 表/集合行数，来自 MetaItem.RowCount
-	PhysicalPath    string                       // 物理路径（来自 meta_item.attributes.storage.physical_path）
-	ScopePath       string                       // 范围路径（来自 meta_item.attributes.storage.physical_path）
-	ChildName       string                       // 容器内部 child 名称，例如 Excel sheet
-	RefPath         string                       // multi child 内的单个ref 路径，指向容器内原始对象
-	NestedChildPath string                       // 当前 child 是容器时，继续寻址其内部 child 的相对路径
-	GraphSample     plugin.GraphSampleFilter     // 图预览样本过滤条件
+	Locator         *resourcetree.ResourceLocator // 资源定位符
+	Engine          *commonModels.Engine          // 引擎信息
+	Metadata        *commonModels.MetaNode        // 可选：Meta 节点数据
+	Pagination      *Pagination                   // 分页参数
+	TenantID        *uint                         // 租户 ID
+	ItemType        string                        // 数据项类型（如 "table"），来自 MetaItem
+	ItemRowCount    *int64                        // 表/集合行数，来自 MetaItem.RowCount
+	PhysicalPath    string                        // 物理路径（来自 meta_item.attributes.storage.physical_path）
+	ScopePath       string                        // 范围路径（来自 meta_item.attributes.storage.physical_path）
+	ChildName       string                        // 容器内部 child 名称，例如 Excel sheet
+	RefPath         string                        // multi child 内的单个ref 路径，指向容器内原始对象
+	NestedChildPath string                        // 当前 child 是容器时，继续寻址其内部 child 的相对路径
+	GraphSample     plugin.GraphSampleFilter      // 图预览样本过滤条件
 }
 
 // Pagination 分页参数
@@ -166,7 +166,7 @@ func (r *PreviewResolver) PreviewFromURI(ctx context.Context, locatorURI string,
 
 func (r *PreviewResolver) PreviewFromURIWithSelection(ctx context.Context, locatorURI string, page, pageSize int, childName, refPath, nestedChildPath string, graphSample plugin.GraphSampleFilter, tenantID *uint) (*PreviewResult, error) {
 	// 1. 解析 Locator
-	loc, err := catalogview.ParseURI(locatorURI)
+	loc, err := resourcetree.ParseURI(locatorURI)
 	if err != nil {
 		return nil, fmt.Errorf("invalid locator: %w", err)
 	}
@@ -375,7 +375,7 @@ func previewResourcePaths(attrs map[string]interface{}) (physicalPath string, sc
 	}
 }
 
-func isPreviewItemLocator(loc *catalogview.ResourceLocator) bool {
+func isPreviewItemLocator(loc *resourcetree.ResourceLocator) bool {
 	if loc == nil {
 		return false
 	}
@@ -405,7 +405,7 @@ func isPreviewItemType(itemType string) bool {
 }
 
 // DetectPreviewType 检测预览类型
-func (r *PreviewResolver) DetectPreviewType(loc *catalogview.ResourceLocator, engine *commonModels.Engine) string {
+func (r *PreviewResolver) DetectPreviewType(loc *resourcetree.ResourceLocator, engine *commonModels.Engine) string {
 	req := &PreviewResolverRequest{
 		Locator: loc,
 		Engine:  engine,
@@ -483,7 +483,7 @@ func (r *PreviewResolver) buildProviderRequest(req *PreviewResolverRequest) (*Pr
 	if !ok {
 		return nil, fmt.Errorf("engine %s does not implement CatalogModelProvider", req.Engine.EngineType)
 	}
-	providerPath, err = catalogview.ProviderCatalogPathFromLocator(modelProvider.CatalogModel(), req.Locator)
+	providerPath, err = resourcetree.ProviderCatalogPathFromLocator(modelProvider.CatalogModel(), req.Locator)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build provider catalog path: %w", err)
 	}

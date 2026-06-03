@@ -38,7 +38,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		ID:       "builtin-zip",
 		Format:   p.Format(),
 		I18nKey:  "format.zip",
-		DataType: datatype.DataTypeContainer,
+		DataType: datatype.Container,
 		Layouts:  []string{format.LayoutSingle},
 		Identification: format.FormatIdentification{
 			Extensions: []string{".zip"},
@@ -281,11 +281,11 @@ func sortedEntries(entries []*zip.File) []*zip.File {
 func zipEntryToContainerChild(entry *zip.File, isDir bool) datatype.ContainerChildInfo {
 	name := strings.Trim(strings.TrimSpace(entry.Name), "/")
 	kind := "file"
-	dataType := datatype.DataTypeUnknown
+	dataType := datatype.Unknown
 	childFormat := format.FormatUnknown
 	if isDir {
 		kind = "directory"
-		dataType = datatype.DataTypeContainer
+		dataType = datatype.Container
 	}
 	native := map[string]interface{}{
 		"path":              name,

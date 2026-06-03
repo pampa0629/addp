@@ -529,16 +529,10 @@ func (s *ObjectStorageCatalogScanService) persistObjectResources(
 			"basePrefixNode_id", basePrefixNode.ID,
 			"basePrefixNode_name", basePrefixNode.Name)
 	}
-	var compositeSkipPaths map[string]bool
-	var compositeItems []metacatalog.ObjectCatalogCompositeItem
-	if strings.EqualFold(scanDepth, "deep") {
-		var compositeWarnings []metacatalog.ObjectCatalogCompositeDetectionError
-		compositeSkipPaths, compositeItems, compositeWarnings = metacatalog.DetectObjectCatalogCompositeItems(context.Background(), readableProvider, connInfo, engineID, resources)
-		for _, warning := range compositeWarnings {
-			s.log.Warn("对象 catalog 组合项检测失败", "bucket", warning.Bucket, "prefix", warning.Prefix, "error", warning.Err)
-		}
-	} else {
-		compositeSkipPaths = map[string]bool{}
+	var compositeWarnings []metacatalog.ObjectCatalogCompositeDetectionError
+	compositeSkipPaths, compositeItems, compositeWarnings := metacatalog.DetectObjectCatalogCompositeItems(context.Background(), readableProvider, connInfo, engineID, resources, strings.EqualFold(scanDepth, "deep"))
+	for _, warning := range compositeWarnings {
+		s.log.Warn("对象 catalog 组合项检测失败", "bucket", warning.Bucket, "prefix", warning.Prefix, "error", warning.Err)
 	}
 	compositeCount, err := s.persistObjectCatalogCompositeItems(tenantID, engineID, bucketNode, basePrefixNode, compositeItems, stats, includeBucketAggregate, scanPathPrefix, scannedFingerprints, itemTerm)
 	if err != nil {
@@ -756,6 +750,9 @@ func (s *ObjectStorageCatalogScanService) persistObjectCatalogCompositeItems(
 		if _, err := s.repo.UpsertItemWithDepth(tenantID, engineID, parentNode, itemPlan.ItemType, itemPlan.ItemName, itemPlan.FullName, itemPlan.Attributes, rowCount, &sizeVal, nil, models.ScannedDepthDeep); err != nil {
 			return count, err
 		}
+		if err := s.repo.SoftDeleteObjectMetaItemsByObjectPaths(tenantID, engineID, composite.Bucket, compositeComponentObjectPaths(composite, itemPlan.ObjectPath)); err != nil {
+			return count, err
+		}
 		count++
 		updatedNodes := map[uint]bool{}
 		for _, node := range []*models.MetaNode{bucketNode, parentNode} {
@@ -772,6 +769,22 @@ func (s *ObjectStorageCatalogScanService) persistObjectCatalogCompositeItems(
 		}
 	}
 	return count, nil
+}
+
+func compositeComponentObjectPaths(composite metacatalog.ObjectCatalogCompositeItem, primaryObjectPath string) []string {
+	if composite.Item == nil {
+		return nil
+	}
+	primaryObjectPath = strings.Trim(primaryObjectPath, "/")
+	paths := make([]string, 0, len(composite.Item.RefList))
+	for _, refPath := range composite.Item.RefFilePaths() {
+		objectPath := strings.Trim(metacatalog.ObjectPathFromClaim(composite.Bucket, refPath), "/")
+		if objectPath == "" || objectPath == primaryObjectPath {
+			continue
+		}
+		paths = append(paths, objectPath)
+	}
+	return paths
 }
 
 func (s *ObjectStorageCatalogScanService) detectObjectCatalogResourceFormats(

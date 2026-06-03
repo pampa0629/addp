@@ -8,7 +8,9 @@ import (
 	"time"
 
 	"github.com/addp/common/dataitem"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metacatalog"
@@ -157,10 +159,10 @@ func (s *ScanService) refreshKnownItemAttributes(
 
 	var err error
 	switch descriptor.Layout {
-	case dataitem.LayoutMulti:
+	case format.LayoutMulti:
 		clearStaleKnownMultiTableAccessIndex(attrs, detected)
 		detected, _, err = metaitem.EnrichKnownMultiTableItem(ctx, contentReader, connInfo, resource.ID, catalogPathFor, detected)
-	case dataitem.LayoutSingle, dataitem.LayoutWhole:
+	case format.LayoutSingle, format.LayoutWhole:
 		physicalPath := knownItemPhysicalPath(descriptor, item)
 		if detected, err = enrichKnownResourceAttributes(ctx, attrs, contentReader, connInfo, resource.ID, catalogPathFor, detected, physicalPath, sizeFromDescriptor(descriptor, item)); err != nil {
 			return nil, 0, err
@@ -191,7 +193,7 @@ func extractKnownItemDocumentText(
 	descriptor dataitem.ItemDescriptor,
 	physicalPath string,
 ) (documentExtractionResult, error) {
-	if attrs == nil || contentReader == nil || catalogPathFor == nil || item == nil || descriptor.DataType != dataitem.DataTypeDocument || physicalPath == "" {
+	if attrs == nil || contentReader == nil || catalogPathFor == nil || item == nil || descriptor.DataType != datatype.Document || physicalPath == "" {
 		return documentExtractionResult{}, nil
 	}
 	detected := detectedItemFromDescriptor(item, descriptor)
@@ -240,7 +242,7 @@ func clearStaleKnownMultiTableAccessIndex(attrs map[string]interface{}, item *me
 	if attrs == nil || item == nil {
 		return
 	}
-	if item.Layout != dataitem.LayoutMulti || item.DataType != dataitem.DataTypeTable {
+	if item.Layout != format.LayoutMulti || item.DataType != datatype.Table {
 		return
 	}
 	metaattr.RemoveAccessIndexTable(attrs)

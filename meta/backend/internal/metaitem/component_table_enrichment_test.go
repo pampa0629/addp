@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/addp/common/dataitem"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
@@ -48,7 +48,7 @@ func TestCommonDataItemResolverAdaptsMultiItems(t *testing.T) {
 	if result.Items[1].PrimaryContentPath != "/shp/roads.shp" {
 		t.Fatalf("second PrimaryContentPath = %q, want /shp/roads.shp", result.Items[1].PrimaryContentPath)
 	}
-	if result.Items[0].Layout != dataitem.LayoutMulti || result.Items[0].DataType != dataitem.DataTypeTable {
+	if result.Items[0].Layout != format.LayoutMulti || result.Items[0].DataType != datatype.Table {
 		t.Fatalf("first item = %#v, want multi table", result.Items[0])
 	}
 	if result.Items[0].Format != string(format.FormatShapefile) {

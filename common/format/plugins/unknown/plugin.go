@@ -25,7 +25,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		ID:       "builtin-unknown",
 		Format:   format.FormatUnknown,
 		I18nKey:  "format.unknown",
-		DataType: datatype.DataTypeUnknown,
+		DataType: datatype.Unknown,
 		Layouts:  []string{format.LayoutSingle},
 	}
 }

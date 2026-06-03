@@ -6,12 +6,12 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/addp/common/catalogview"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/dbbridge"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/models"
+	"github.com/addp/common/resourcetree"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -126,7 +126,7 @@ func (h *DataSourceHandler) GetEngineTree(c *gin.Context) {
 	}
 
 	// 4. 使用 TreeBuilder 转换为标准树结构
-	treeBuilder := catalogview.NewTreeBuilder(nil)
+	treeBuilder := resourcetree.NewTreeBuilder()
 	treeNode, err := treeBuilder.BuildFromMetadataTree(engine, metadataTree)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to build tree: " + err.Error()})
@@ -204,7 +204,7 @@ func (h *DataSourceHandler) GetNodeChildren(c *gin.Context) {
 	}
 
 	// 5. 使用 TreeBuilder 的统一方法转换 Items 为 MetaNodes
-	treeBuilder := catalogview.NewTreeBuilder(nil)
+	treeBuilder := resourcetree.NewTreeBuilder()
 	itemNodes := treeBuilder.ConvertMetaItemsForEngine(engine.EngineType, items)
 
 	// 6. 合并子节点和转换后的 Item 节点

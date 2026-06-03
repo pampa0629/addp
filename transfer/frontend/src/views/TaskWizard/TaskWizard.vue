@@ -124,7 +124,7 @@ async function loadTaskDetail() {
 }
 
 async function restoreSourceItemForEdit(task) {
-  const metaItemID = Number(task.config?.source?.meta_item_id || 0)
+  const metaItemID = parseLocator(task.config?.source?.locator).itemID
   if (!metaItemID) return
 
   try {
@@ -144,14 +144,13 @@ async function loadSourceFieldsForEdit(task) {
     wizardState.loadSourceFields([])
     return
   }
-  const engineId = source.engine?.id
-  const path = source.resource?.path || {}
+  const sourceLoc = parseLocator(source.locator)
 
   try {
     let fieldList = []
 
-    if (source.meta_item_id) {
-      const response = await getItemFieldsByID(source.meta_item_id)
+    if (sourceLoc.itemID) {
+      const response = await getItemFieldsByID(sourceLoc.itemID)
       fieldList = Array.isArray(response?.data) ? response.data : (response || [])
     } else {
       const catalogPath = catalogPathFromEndpoint(source)
@@ -159,9 +158,9 @@ async function loadSourceFieldsForEdit(task) {
         wizardState.loadSourceFields([])
         return
       }
-      const response = source.resource?.kind === 'native_table'
-        ? await getTableFields(engineId, path.schema || '', path.table || '')
-        : await getItemFieldsByCatalogPath(engineId, catalogPath)
+      const response = sourceLoc.type === 'table'
+        ? await getTableFields(sourceLoc.engineID, sourceLoc.path[sourceLoc.path.length - 2] || '', sourceLoc.path[sourceLoc.path.length - 1] || '')
+        : await getItemFieldsByCatalogPath(sourceLoc.engineID, catalogPath)
       fieldList = Array.isArray(response?.data) ? response.data : (response || [])
     }
 
@@ -173,18 +172,9 @@ async function loadSourceFieldsForEdit(task) {
 }
 
 function catalogPathFromEndpoint(endpoint) {
-  const endpointResource = endpoint?.resource || {}
-  const path = endpointResource.path || {}
-  if (endpointResource.kind === 'native_table') {
-    return [path.schema, path.table || path.name].filter(Boolean).join('.')
-  }
-  if (endpointResource.kind === 'object') {
-    return [path.bucket, path.path].filter(Boolean).join('/')
-  }
-  if (endpointResource.kind === 'file') {
-    return path.path || path.name || ''
-  }
-  return ''
+  const loc = parseLocator(endpoint?.locator)
+  if (loc.type === 'table') return loc.path.slice(-2).join('.')
+  return loc.path.join('/')
 }
 
 // 加载目标字段（编辑模式）
@@ -194,16 +184,15 @@ async function loadTargetFieldsForEdit(task) {
   const target = task.config.target
   if (target.representation !== 'native') return
 
-  const engineId = target.engine?.id
-  const path = target.resource?.path || {}
+  const targetLoc = parseLocator(target.locator)
 
   try {
     let fieldList = []
 
-    const schema = path.schema || ''
-    const table = path.table || ''
+    const schema = targetLoc.path.length >= 2 ? targetLoc.path[targetLoc.path.length - 2] : ''
+    const table = targetLoc.path.length >= 1 ? targetLoc.path[targetLoc.path.length - 1] : ''
     if (table) {
-      const response = await getTableFields(engineId, schema, table)
+      const response = await getTableFields(targetLoc.engineID, schema, table)
       fieldList = Array.isArray(response?.data) ? response.data : (response || [])
     }
 
@@ -212,6 +201,21 @@ async function loadTargetFieldsForEdit(task) {
     console.error('加载目标字段失败:', error)
     // 不阻断整体加载流程，仅记录错误
   }
+}
+
+function parseLocator(locator) {
+  const result = { engineID: 0, path: [], type: '', itemID: 0 }
+  const match = String(locator || '').match(/^addp:\/\/engine\/(\d+)\/path\/([^?]*)(?:\?(.*))?$/)
+  if (!match) return result
+  result.engineID = Number(match[1] || 0)
+  result.path = String(match[2] || '')
+    .split('/')
+    .map(part => decodeURIComponent(part).trim())
+    .filter(Boolean)
+  const params = new URLSearchParams(match[3] || '')
+  result.type = String(params.get('type') || '').toLowerCase()
+  result.itemID = Number(params.get('item_id') || 0)
+  return result
 }
 
 // 提交任务

@@ -1,4 +1,4 @@
-package catalogview
+package resourcetree
 
 import (
 	"strings"
@@ -7,36 +7,39 @@ import (
 	commonJSON "github.com/addp/common/jsonmap"
 )
 
-func tableInfoFromMetaAttributes(attrs map[string]interface{}, fallbackName string) *datatype.TableInfo {
+// 本文件只从 Meta attributes 中派生 TreeNode.Metadata 的展示摘要。
+// 它不是通用 attributes 规范 API，不承担 attributes 兼容读取或持久化构造。
+
+func tableInfoForTreeMetadata(attrs map[string]interface{}, fallbackName string) *datatype.TableInfo {
 	return datatype.TableInfoFromPayload(commonJSON.Section(attrs, "type_info.table"), fallbackName)
 }
 
-func spatialInfoFromMetaAttributes(attrs map[string]interface{}) *datatype.SpatialInfo {
+func spatialInfoForTreeMetadata(attrs map[string]interface{}) *datatype.SpatialInfo {
 	return datatype.SpatialInfoFromPayload(commonJSON.Section(attrs, "capabilities.spatial"))
 }
 
-func itemLayoutFromMetaAttributes(attrs map[string]interface{}) string {
+func itemLayoutForTreeMetadata(attrs map[string]interface{}) string {
 	return strings.ToLower(strings.TrimSpace(commonJSON.StringFromSections(attrs, "layout", "item")))
 }
 
-func dataTypeFromMetaAttributes(attrs map[string]interface{}) string {
+func dataTypeForTreeMetadata(attrs map[string]interface{}) string {
 	return strings.ToLower(strings.TrimSpace(commonJSON.StringFromSections(attrs, "data_type", "item")))
 }
 
-func formatNameFromMetaAttributes(attrs map[string]interface{}) string {
+func formatNameForTreeMetadata(attrs map[string]interface{}) string {
 	return strings.ToLower(strings.TrimSpace(commonJSON.StringFromSections(attrs, "format", "item")))
 }
 
-func physicalPathFromMetaAttributes(attrs map[string]interface{}) string {
+func physicalPathForTreeMetadata(attrs map[string]interface{}) string {
 	return strings.TrimSpace(commonJSON.String(attrs, "storage", "physical_path"))
 }
 
-func objectCountFromMetaAttributes(attrs map[string]interface{}) int64 {
+func objectCountForTreeMetadata(attrs map[string]interface{}) int64 {
 	return commonJSON.Int64(attrs, "storage", "object_count")
 }
 
-func tableFieldCountFromMetaAttributes(attrs map[string]interface{}) int {
-	tableInfo := tableInfoFromMetaAttributes(attrs, "")
+func tableFieldCountForTreeMetadata(attrs map[string]interface{}) int {
+	tableInfo := tableInfoForTreeMetadata(attrs, "")
 	if tableInfo == nil {
 		return 0
 	}
@@ -52,16 +55,16 @@ func tableFieldCountFromMetaAttributes(attrs map[string]interface{}) int {
 	return 0
 }
 
-func tableRowCountFromMetaAttributes(attrs map[string]interface{}) int64 {
-	tableInfo := tableInfoFromMetaAttributes(attrs, "")
+func tableRowCountForTreeMetadata(attrs map[string]interface{}) int64 {
+	tableInfo := tableInfoForTreeMetadata(attrs, "")
 	if tableInfo == nil || tableInfo.RowCount == nil {
 		return 0
 	}
 	return *tableInfo.RowCount
 }
 
-func spatialSummaryFromMetaAttributes(attrs map[string]interface{}) map[string]interface{} {
-	info := spatialInfoFromMetaAttributes(attrs)
+func spatialSummaryForTreeMetadata(attrs map[string]interface{}) map[string]interface{} {
+	info := spatialInfoForTreeMetadata(attrs)
 	if info == nil {
 		return nil
 	}

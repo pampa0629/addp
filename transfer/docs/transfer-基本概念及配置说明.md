@@ -49,20 +49,12 @@ checkpoint 当前用于 progress / diagnostics，不表示可从 checkpoint 自�
 {
   "mode": "batch",
   "source": {
-    "engine": {"id": 1},
-    "resource": {
-      "kind": "native_table",
-      "path": {"schema": "public", "table": "roads"}
-    },
+    "locator": "addp://engine/1/path/public/roads?type=table",
     "data_type": "table",
     "representation": "native"
   },
   "target": {
-    "engine": {"id": 2},
-    "resource": {
-      "kind": "file",
-      "path": {"path": "exports/roads.csv"}
-    },
+    "locator": "addp://engine/2/path/exports/roads.csv?type=file",
     "data_type": "table",
     "representation": "encoded",
     "format": "csv",
@@ -88,24 +80,21 @@ checkpoint 当前用于 progress / diagnostics，不表示可从 checkpoint 自�
 
 | 字段 | 必填 | 说明 |
 |---|---:|---|
-| `engine.id` | 是 | System engine ID。 |
-| `engine.type` | 否 | 仅用于测试或诊断一致性校验；生产链路由 System engine resolver 获取真实类型。 |
-| `resource.kind` | 是 | `native_table`、`file`、`object`。 |
-| `resource.path` | 是 | 对应 engine catalog path 的业务描述。 |
+| `locator` | 是 | common resource tree 使用的 ResourceLocator URI，包含 engine id、catalog path 和 `type`。 |
 | `data_type` | 是 | table Transfer 使用 `table`；raw copy 第一版支持 `document`、`media`、`unknown`。 |
 | `representation` | 是 | `native` 或 `encoded`。 |
-| `meta_item_id` | 否 | source 可引用已入库 Meta item，Transfer 后端通过 Meta client 读取标准 attributes。 |
 | `format` | encoded 必填 | encoded endpoint 的格式，如 `csv`、`json`、`parquet`、`shapefile`。 |
 | `options` | 否 | 格式或读取写入选项。 |
 | `policy` | target 可选 | 目标写入策略。 |
 
-`resource.path` 示例：
+`locator` 示例：
 
-| `resource.kind` | 示例 |
+| 类型 | 示例 |
 |---|---|
-| `native_table` | `{"schema":"public","table":"roads"}` 或 `{"database":"analytics","table":"roads"}` |
-| `file` | `{"path":"exports/roads.csv"}` |
-| `object` | `{"path":"bucket/exports/roads.csv"}` |
+| `table` | `addp://engine/1/path/public/roads?type=table` |
+| `file` | `addp://engine/2/path/exports/roads.csv?type=file` |
+| `object` | `addp://engine/3/path/bucket/exports/roads.csv?type=object` |
+| 已入库 source item | `addp://engine/3/path/bucket/roads.shp?type=object&item_id=12` |
 
 ## 三、table Transfer 支持范围
 
@@ -150,7 +139,7 @@ raw copy 是 non-table encoded single content 的原始字节复制。它不调�
 |---|---|
 | source / target `data_type` | `document`、`media`、`unknown` |
 | source / target `representation` | `encoded` |
-| source / target `resource.kind` | `file`、`object` |
+| source / target locator `type` | `file`、`object` |
 | source format layout | `single` |
 | target `data_type` / `format` | 可省略并继承 source；显式声明时必须一致 |
 | target path | 必须是完整 file / object 路径 |
@@ -162,21 +151,13 @@ raw copy 是 non-table encoded single content 的原始字节复制。它不调�
 {
   "mode": "batch",
   "source": {
-    "engine": {"id": 1},
-    "resource": {
-      "kind": "object",
-      "path": {"bucket": "raw", "path": "docs/report.pdf"}
-    },
+    "locator": "addp://engine/1/path/raw/docs/report.pdf?type=object",
     "data_type": "document",
     "representation": "encoded",
     "format": "pdf"
   },
   "target": {
-    "engine": {"id": 2},
-    "resource": {
-      "kind": "file",
-      "path": {"path": "archive/report.pdf"}
-    },
+    "locator": "addp://engine/2/path/archive/report.pdf?type=file",
     "data_type": "document",
     "representation": "encoded",
     "format": "pdf",

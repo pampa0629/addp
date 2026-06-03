@@ -31,7 +31,7 @@ func (plugin *Plugin) Descriptor() format.FormatDescriptor {
 		ID:             "builtin-shapefile",
 		Format:         format.FormatShapefile,
 		I18nKey:        "format.shapefile",
-		DataType:       datatype.DataTypeTable,
+		DataType:       datatype.Table,
 		Layouts:        []string{format.LayoutMulti},
 		Identification: format.FormatIdentification{Extensions: []string{extSHP}, MimeTypes: []string{"application/x-shapefile", "application/x-esri-shapefile"}},
 	}
@@ -122,9 +122,9 @@ func DescribeRefs(refs []format.RelatedRef) []format.RefDescriptor {
 func refTypeForRole(role string) (datatype.DataType, format.FormatType) {
 	switch strings.ToLower(strings.TrimSpace(role)) {
 	case roleProjection, roleEncoding:
-		return datatype.DataTypeDocument, format.FormatText
+		return datatype.Document, format.FormatText
 	default:
-		return datatype.DataTypeUnknown, format.FormatUnknown
+		return datatype.Unknown, format.FormatUnknown
 	}
 }
 

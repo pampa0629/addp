@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/addp/common/catalogview"
 	commonAuth "github.com/addp/common/middleware/auth"
+	"github.com/addp/common/resourcetree"
 	manageri18n "github.com/addp/manager/i18n"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/service"
@@ -53,7 +53,7 @@ func (h *MetadataHandler) RefreshItem(c *gin.Context) {
 		}
 	}
 	if locatorURI := strings.TrimSpace(c.Query("locator")); locatorURI != "" {
-		loc, err := catalogview.ParseURI(locatorURI)
+		loc, err := resourcetree.ParseURI(locatorURI)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return

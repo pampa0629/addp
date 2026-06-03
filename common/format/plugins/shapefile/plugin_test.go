@@ -41,7 +41,7 @@ func TestDescribeRefsUsesRefFormatFacts(t *testing.T) {
 
 func TestPluginImplementsOnlyMultiTableProviders(t *testing.T) {
 	descriptor := NewPlugin(nil).Descriptor()
-	if descriptor.DataType != datatype.DataTypeTable {
+	if descriptor.DataType != datatype.Table {
 		t.Fatalf("descriptor data type = %q, want table", descriptor.DataType)
 	}
 	plugin := NewPlugin(nil)

@@ -18,8 +18,12 @@ decoded JSON map 的通用读取工具，用于读取嵌套 section、字符串�
 
 `contentio` 不依赖 engine，也不解析格式；多 content 的组织规则属于 `common/format`、`common/dataitem` 或调用编排层，engine 到 contentio 的适配放在 `common/engine/contentadapter`。
 
-### catalogview
-目录展示和路径定位相关能力，包括 `ResourceLocator`、资源树构建和 DataSourceService 编排。
+### resourcetree
+把 Meta 已落库的 catalog / item 事实投影为跨模块资源树视图，并提供 `ResourceLocator` / provider `CatalogPath` 的纯转换能力。
+
+`resourcetree` 不持有 System / Meta client，不主动读取远程服务，不处理租户权限、token、降级策略、扫描或内容读取；上层模块自行获取 System / Meta 数据后，再调用资源树构建和路径转换能力。
+
+`resourcetree` 中 attributes helper 只服务 `TreeNode.Metadata` 展示摘要，不作为通用 attributes 规范 API，也不写入持久 attributes。
 
 ### sqldialect
 跨 SQL 引擎的轻量方言工具，用于标识符引用、命名空间表名拼接、基础 SELECT / COUNT 和 LIMIT / OFFSET 分页 SQL 生成。

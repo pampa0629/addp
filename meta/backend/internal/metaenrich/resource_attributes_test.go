@@ -25,8 +25,8 @@ func TestEnrichResourceAttributesKeepsContainerSummaryWhenContentOpenFails(t *te
 
 	item := &metaitem.DetectedItem{
 		ResolvedItem: dataitem.ResolvedItem{
-			Layout:             dataitem.LayoutSingle,
-			DataType:           dataitem.DataTypeContainer,
+			Layout:             format.LayoutSingle,
+			DataType:           datatype.Container,
 			Format:             string(format.FormatZIP),
 			PrimaryContentPath: "broken.zip",
 		},
@@ -56,8 +56,8 @@ func TestEnrichResourceAttributesKeepsKnownFieldsWithoutContentReader(t *testing
 
 	item := &metaitem.DetectedItem{
 		ResolvedItem: dataitem.ResolvedItem{
-			Layout:   dataitem.LayoutSingle,
-			DataType: dataitem.DataTypeTable,
+			Layout:   format.LayoutSingle,
+			DataType: datatype.Table,
 			Format:   string(format.FormatCSV),
 		},
 		Fields: []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeInt}},
@@ -89,8 +89,8 @@ func TestEnrichResourceAttributesDetectsUnknownDocumentAndWritesDocumentInfo(t *
 	size := int64(len(content))
 	item := &metaitem.DetectedItem{
 		ResolvedItem: dataitem.ResolvedItem{
-			Layout:             dataitem.LayoutSingle,
-			DataType:           dataitem.DataTypeUnknown,
+			Layout:             format.LayoutSingle,
+			DataType:           datatype.Unknown,
 			Format:             string(format.FormatUnknown),
 			PrimaryContentPath: "docs/report.docx",
 			SizeBytes:          &size,
@@ -111,10 +111,10 @@ func TestEnrichResourceAttributesDetectsUnknownDocumentAndWritesDocumentInfo(t *
 	if err != nil {
 		t.Fatalf("EnrichResourceAttributes() error = %v", err)
 	}
-	if enriched.DataType != dataitem.DataTypeDocument || enriched.Format != string(format.FormatDOCX) {
+	if enriched.DataType != datatype.Document || enriched.Format != string(format.FormatDOCX) {
 		t.Fatalf("enriched item = %s/%s, want document/docx", enriched.DataType, enriched.Format)
 	}
-	if got := commonJSON.String(attrs, "item", "data_type"); got != string(dataitem.DataTypeDocument) {
+	if got := commonJSON.String(attrs, "item", "data_type"); got != string(datatype.Document) {
 		t.Fatalf("item.data_type = %q, want document", got)
 	}
 	if got := commonJSON.String(attrs, "item", "format"); got != string(format.FormatDOCX) {
@@ -133,8 +133,8 @@ func TestEnrichResourceAttributesDetectsUnknownMediaAndWritesMediaInfo(t *testin
 	size := int64(len(content))
 	item := &metaitem.DetectedItem{
 		ResolvedItem: dataitem.ResolvedItem{
-			Layout:             dataitem.LayoutSingle,
-			DataType:           dataitem.DataTypeUnknown,
+			Layout:             format.LayoutSingle,
+			DataType:           datatype.Unknown,
 			Format:             string(format.FormatUnknown),
 			PrimaryContentPath: "images/pixel.png",
 			SizeBytes:          &size,
@@ -155,7 +155,7 @@ func TestEnrichResourceAttributesDetectsUnknownMediaAndWritesMediaInfo(t *testin
 	if err != nil {
 		t.Fatalf("EnrichResourceAttributes() error = %v", err)
 	}
-	if enriched.DataType != dataitem.DataTypeMedia || enriched.Format != string(format.FormatPNG) {
+	if enriched.DataType != datatype.Media || enriched.Format != string(format.FormatPNG) {
 		t.Fatalf("enriched item = %s/%s, want media/png", enriched.DataType, enriched.Format)
 	}
 	media := commonJSON.Section(attrs, "type_info.media")

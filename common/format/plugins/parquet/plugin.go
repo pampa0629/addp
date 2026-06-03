@@ -193,7 +193,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		ID:       "builtin-parquet",
 		Format:   format.FormatParquet,
 		I18nKey:  "format.parquet",
-		DataType: datatype.DataTypeTable,
+		DataType: datatype.Table,
 		Layouts:  []string{format.LayoutSingle, format.LayoutWhole},
 		Identification: format.FormatIdentification{
 			Extensions:        []string{".parquet"},

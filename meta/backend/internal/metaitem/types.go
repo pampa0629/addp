@@ -7,6 +7,7 @@ import (
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
 )
 
 // CompositeItemInfo 是 Meta resolver 提取出的 data item 元信息。
@@ -16,8 +17,8 @@ type CompositeItemInfo struct {
 	Media              *datatype.MediaInfo
 	Container          *datatype.ContainerInfo
 	Attributes         map[string]interface{}
-	Layout             dataitem.Layout
-	DataType           dataitem.DataType
+	Layout             format.Layout
+	DataType           datatype.DataType
 	Format             string
 	PrimaryContentPath string
 	ScopePath          string

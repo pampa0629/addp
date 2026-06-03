@@ -101,22 +101,22 @@ func SetupRouter(
 	// 注意：DataSourceHandler 需要用户的 JWT token，所以在路由中动态创建
 	protected.GET("/engines", func(c *gin.Context) {
 		authToken := extractAuthToken(c)
-		dataSourceHandler := NewDataSourceHandlerWithClients(systemClient, metaURL, authToken)
+		dataSourceHandler := NewDataSourceHandler(systemClient, commonClient.NewMetaClient(metaURL, authToken))
 		dataSourceHandler.GetEngines(c)
 	})
 	protected.GET("/engines/:engine_id/tree", func(c *gin.Context) {
 		authToken := extractAuthToken(c)
-		dataSourceHandler := NewDataSourceHandlerWithClients(systemClient, metaURL, authToken)
+		dataSourceHandler := NewDataSourceHandler(systemClient, commonClient.NewMetaClient(metaURL, authToken))
 		dataSourceHandler.GetEngineTree(c)
 	})
 	protected.GET("/nodes/:node_id/children", func(c *gin.Context) {
 		authToken := extractAuthToken(c)
-		dataSourceHandler := NewDataSourceHandlerWithClients(systemClient, metaURL, authToken)
+		dataSourceHandler := NewDataSourceHandler(systemClient, commonClient.NewMetaClient(metaURL, authToken))
 		dataSourceHandler.GetNodeChildren(c)
 	})
 	protected.GET("/tables/metadata", func(c *gin.Context) {
 		authToken := extractAuthToken(c)
-		dataSourceHandler := NewDataSourceHandlerWithClients(systemClient, metaURL, authToken)
+		dataSourceHandler := NewDataSourceHandler(systemClient, commonClient.NewMetaClient(metaURL, authToken))
 		dataSourceHandler.DetectTableMetadata(c)
 	})
 	protected.GET("/system-engines", systemEngineHandler.List)

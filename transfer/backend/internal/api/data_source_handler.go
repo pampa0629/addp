@@ -1,26 +1,52 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
-	"github.com/addp/common/catalogview"
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/datatype"
+	"github.com/addp/common/models"
+	"github.com/addp/common/resourcetree"
 	"github.com/gin-gonic/gin"
 )
 
 // DataSourceHandler 数据源处理器
 // 为 Transfer 前端提供统一的数据源访问接口
-// 调用 common 的 DataSourceService 实现核心逻辑
 type DataSourceHandler struct {
-	dataSourceService *catalogview.DataSourceService
+	systemClient *commonClient.SystemClient
+	metaClient   *commonClient.MetaClient
+	treeBuilder  *resourcetree.TreeBuilder
 }
 
 // NewDataSourceHandler 创建数据源处理器
-func NewDataSourceHandler(systemClient catalogview.SystemClient, metaClient catalogview.MetaClient) *DataSourceHandler {
+func NewDataSourceHandler(systemClient *commonClient.SystemClient, metaClient *commonClient.MetaClient) *DataSourceHandler {
 	return &DataSourceHandler{
-		dataSourceService: catalogview.NewDataSourceService(systemClient, metaClient),
+		systemClient: systemClient,
+		metaClient:   metaClient,
+		treeBuilder:  resourcetree.NewTreeBuilder(),
 	}
+}
+
+type engineFilters struct {
+	EngineTypes     []string
+	DataSourceTypes []string
+}
+
+type tableMetadata struct {
+	HasGeometry    bool             `json:"has_geometry"`
+	GeometryColumn string           `json:"geometry_column,omitempty"`
+	SRID           *int             `json:"srid,omitempty"`
+	GeometryType   string           `json:"geometry_type,omitempty"`
+	Extent         []float64        `json:"extent,omitempty"`
+	Columns        []columnMetadata `json:"columns,omitempty"`
+}
+
+type columnMetadata struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
 }
 
 // GetEngines 获取存储引擎列表
@@ -42,7 +68,7 @@ func (h *DataSourceHandler) GetEngines(c *gin.Context) {
 	}
 
 	// 解析过滤条件
-	var filters catalogview.EngineFilters
+	var filters engineFilters
 
 	// 引擎类型过滤
 	if engineTypesStr := c.Query("engine_types"); engineTypesStr != "" {
@@ -55,15 +81,25 @@ func (h *DataSourceHandler) GetEngines(c *gin.Context) {
 		filters.DataSourceTypes = parseCommaSeparated(dataSourceTypesStr)
 	}
 
-	// 调用 DataSourceService
-	engines, err := h.dataSourceService.GetEngines(tenantID, filters)
+	engineTypeFilter := ""
+	if len(filters.EngineTypes) == 1 {
+		engineTypeFilter = filters.EngineTypes[0]
+	}
+
+	engines, err := h.systemClient.ListEngines(engineTypeFilter, tenantID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get engines: " + err.Error()})
 		return
 	}
 
+	enginePtrs := make([]*models.Engine, 0, len(engines))
+	for i := range engines {
+		enginePtrs = append(enginePtrs, &engines[i])
+	}
+	enginePtrs = filterEngines(enginePtrs, filters)
+
 	// 直接返回数组（符合 ADDP API 规范）
-	c.JSON(http.StatusOK, engines)
+	c.JSON(http.StatusOK, enginePtrs)
 }
 
 // GetEngineTree 获取引擎的元数据树
@@ -100,10 +136,40 @@ func (h *DataSourceHandler) GetEngineTree(c *gin.Context) {
 		}
 	}
 
-	// 调用 DataSourceService
-	tree, err := h.dataSourceService.GetEngineTree(uint(engineID), expandDepth)
+	engine, err := h.systemClient.GetEngine(uint(engineID))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get engine tree: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get engine: " + err.Error()})
+		return
+	}
+
+	if expandDepth == 0 {
+		tree, err := h.treeBuilder.BuildFromMeta(engine, nil, 0)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to build engine root: " + err.Error()})
+			return
+		}
+		tree.HasChildren = true
+		c.JSON(http.StatusOK, tree)
+		return
+	}
+
+	metadataTree, err := h.metaClient.GetMetadataTree(uint(engineID))
+	if err != nil {
+		tree, buildErr := h.treeBuilder.BuildFromMeta(engine, nil, expandDepth)
+		if buildErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to build degraded tree: " + buildErr.Error()})
+			return
+		}
+		tree.Label = engine.Name + " (元数据不可用)"
+		tree.Metadata["degraded"] = true
+		tree.HasChildren = false
+		c.JSON(http.StatusOK, tree)
+		return
+	}
+
+	tree, err := h.treeBuilder.BuildFromMetadataTree(engine, metadataTree)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to build engine tree: " + err.Error()})
 		return
 	}
 
@@ -129,15 +195,49 @@ func (h *DataSourceHandler) GetNodeChildren(c *gin.Context) {
 		return
 	}
 
-	// 调用 DataSourceService
-	children, err := h.dataSourceService.GetNodeChildren(uint(nodeID))
+	children, err := h.metaClient.GetNodeChildren(uint(nodeID))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get node children: " + err.Error()})
 		return
 	}
 
+	items, err := h.metaClient.GetNodeItems(uint(nodeID))
+	if err != nil {
+		items = []models.MetaItem{}
+	}
+
+	if len(children) == 0 && len(items) == 0 {
+		c.JSON(http.StatusOK, []*resourcetree.TreeNode{})
+		return
+	}
+
+	var engineID uint
+	if len(children) > 0 {
+		engineID = children[0].EngineID
+	} else {
+		engineID = items[0].EngineID
+	}
+
+	engine, err := h.systemClient.GetEngine(engineID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get engine: " + err.Error()})
+		return
+	}
+
+	metaNodePtrs := make([]*models.MetaNode, 0, len(children))
+	for i := range children {
+		metaNodePtrs = append(metaNodePtrs, &children[i])
+	}
+
+	itemNodes := h.treeBuilder.ConvertMetaItemsForEngine(engine.EngineType, items)
+	allNodes := make([]*models.MetaNode, 0, len(metaNodePtrs)+len(itemNodes))
+	allNodes = append(allNodes, metaNodePtrs...)
+	allNodes = append(allNodes, itemNodes...)
+
+	treeNodes := h.treeBuilder.ConvertMetaNodes(engine, allNodes)
+
 	// 直接返回数组
-	c.JSON(http.StatusOK, children)
+	c.JSON(http.StatusOK, treeNodes)
 }
 
 // DetectTableMetadata 检测表元数据（几何列检测）
@@ -177,11 +277,32 @@ func (h *DataSourceHandler) DetectTableMetadata(c *gin.Context) {
 		return
 	}
 
-	// 调用 DataSourceService
-	metadata, err := h.dataSourceService.DetectTableMetadata(uint(engineID), schema, table)
+	engine, err := h.systemClient.GetEngine(uint(engineID))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to detect table metadata: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get engine: " + err.Error()})
 		return
+	}
+
+	metadata := &tableMetadata{HasGeometry: false}
+	if isDatabaseEngine(engine.EngineType) {
+		catalogPath := fmt.Sprintf("%s.%s", schema, table)
+		if fields, err := h.metaClient.GetItemFieldsByCatalogPath(uint(engineID), catalogPath, true); err == nil {
+			metadata.Columns = columnsFromFields(fields)
+		}
+		if spatialMeta, err := h.metaClient.GetItemSpatialMetadataByCatalogPath(uint(engineID), catalogPath); err == nil && spatialMeta != nil {
+			metadata.GeometryColumn = spatialMeta.GeometryColumn
+			metadata.HasGeometry = spatialMeta.GeometryColumn != ""
+			if spatialMeta.SRID > 0 {
+				srid := spatialMeta.SRID
+				metadata.SRID = &srid
+			}
+			if len(spatialMeta.GeometryTypes) > 0 {
+				metadata.GeometryType = spatialMeta.GeometryTypes[0]
+			}
+			if len(spatialMeta.Extent) > 0 {
+				metadata.Extent = spatialMeta.Extent
+			}
+		}
 	}
 
 	// 直接返回对象
@@ -189,6 +310,76 @@ func (h *DataSourceHandler) DetectTableMetadata(c *gin.Context) {
 }
 
 // 辅助函数
+
+func filterEngines(engines []*models.Engine, filters engineFilters) []*models.Engine {
+	if len(filters.EngineTypes) == 0 && len(filters.DataSourceTypes) == 0 {
+		return engines
+	}
+
+	filtered := make([]*models.Engine, 0, len(engines))
+
+	if len(filters.EngineTypes) > 0 {
+		engineTypeSet := make(map[string]bool, len(filters.EngineTypes))
+		for _, engineType := range filters.EngineTypes {
+			engineTypeSet[strings.ToLower(engineType)] = true
+		}
+		for _, engine := range engines {
+			if engineTypeSet[strings.ToLower(engine.EngineType)] {
+				filtered = append(filtered, engine)
+			}
+		}
+		engines = filtered
+		filtered = make([]*models.Engine, 0, len(engines))
+	}
+
+	if len(filters.DataSourceTypes) > 0 {
+		dataSourceTypeSet := make(map[string]bool, len(filters.DataSourceTypes))
+		for _, dataSourceType := range filters.DataSourceTypes {
+			dataSourceTypeSet[strings.ToLower(dataSourceType)] = true
+		}
+		for _, engine := range engines {
+			if dataSourceTypeSet[getDataSourceNodeType(engine.EngineType)] {
+				filtered = append(filtered, engine)
+			}
+		}
+		return filtered
+	}
+
+	return engines
+}
+
+func isDatabaseEngine(engineType string) bool {
+	switch strings.ToLower(engineType) {
+	case "postgresql", "mysql", "doris", "clickhouse", "mongodb", "spark_sql":
+		return true
+	default:
+		return false
+	}
+}
+
+func getDataSourceNodeType(engineType string) string {
+	switch strings.ToLower(engineType) {
+	case "postgresql", "mysql", "doris", "clickhouse", "mongodb", "spark_sql":
+		return "database"
+	case "minio", "s3":
+		return "object_storage"
+	case "python_workflow", "spark_workflow":
+		return "compute"
+	default:
+		return "unknown"
+	}
+}
+
+func columnsFromFields(fields []datatype.FieldInfo) []columnMetadata {
+	columns := make([]columnMetadata, 0, len(fields))
+	for _, field := range fields {
+		columns = append(columns, columnMetadata{
+			Name: field.Name,
+			Type: string(field.Type),
+		})
+	}
+	return columns
+}
 
 // parseCommaSeparated 解析逗号分隔的字符串
 func parseCommaSeparated(s string) []string {
@@ -252,16 +443,4 @@ func trimString(s string) string {
 	}
 
 	return s[start:end]
-}
-
-// NewDataSourceHandlerWithClients 使用已有的客户端创建处理器
-// 用于兼容现有的 Transfer 模块结构
-func NewDataSourceHandlerWithClients(systemClient *commonClient.SystemClient, metaURL, authToken string) *DataSourceHandler {
-	// 创建 MetaClient
-	metaClient := commonClient.NewMetaClient(metaURL, authToken)
-
-	// 使用 DataSourceService
-	return &DataSourceHandler{
-		dataSourceService: catalogview.NewDataSourceService(systemClient, metaClient),
-	}
 }

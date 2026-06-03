@@ -20,7 +20,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		ID:       "builtin-wps",
 		Format:   p.Format(),
 		I18nKey:  "format.wps",
-		DataType: datatype.DataTypeDocument,
+		DataType: datatype.Document,
 		Layouts:  []string{format.LayoutSingle},
 		Identification: format.FormatIdentification{
 			Extensions: []string{".wps"},

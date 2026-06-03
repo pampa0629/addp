@@ -48,7 +48,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 			ID:             "builtin-geopackage",
 			Format:         format.FormatGeoPackage,
 			I18nKey:        "format.geopackage",
-			DataType:       datatype.DataTypeContainer,
+			DataType:       datatype.Container,
 			Layouts:        []string{format.LayoutSingle},
 			Identification: format.FormatIdentification{Extensions: []string{".gpkg"}, MimeTypes: []string{"application/geopackage+sqlite3"}},
 		}
@@ -57,7 +57,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		ID:             "builtin-sqlite",
 		Format:         format.FormatSQLite,
 		I18nKey:        "format.sqlite",
-		DataType:       datatype.DataTypeContainer,
+		DataType:       datatype.Container,
 		Layouts:        []string{format.LayoutSingle},
 		Identification: format.FormatIdentification{Extensions: []string{".sqlite", ".sqlite3", ".db"}, MimeTypes: []string{"application/x-sqlite3", "application/vnd.sqlite3", "application/sqlite"}},
 	}
@@ -123,7 +123,7 @@ func (p *Plugin) DescribeContainer(ctx context.Context, input io.Reader, options
 		children = append(children, datatype.ContainerChildInfo{
 			Name:        name,
 			ChildKind:   kind,
-			DataType:    datatype.DataTypeTable,
+			DataType:    datatype.Table,
 			RowCount:    table.RowCount,
 			ColumnCount: &columnCount,
 			Native: map[string]interface{}{

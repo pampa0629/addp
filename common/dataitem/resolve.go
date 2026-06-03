@@ -36,19 +36,19 @@ func ScanTargetsFromAttributes(attrs map[string]interface{}) []ScanTarget {
 	itemAttrs := asMap(attrs["item"])
 	storageAttrs := asMap(attrs["storage"])
 	switch strings.ToLower(strings.TrimSpace(asString(itemAttrs["layout"]))) {
-	case string(LayoutMulti):
+	case string(format.LayoutMulti):
 		if target := normalizeTargetPath(asString(storageAttrs["physical_path"])); target != "" {
 			return []ScanTarget{{Path: target}}
 		}
 		return nil
-	case string(LayoutWhole):
+	case string(format.LayoutWhole):
 		if target := normalizeTargetPath(asString(storageAttrs["physical_path"])); target != "" {
 			return []ScanTarget{{Path: target}}
 		}
 		if target := normalizeTargetPath(asString(storageAttrs["path"])); target != "" {
 			return []ScanTarget{{Path: target}}
 		}
-	case string(LayoutSingle):
+	case string(format.LayoutSingle):
 		if target := normalizeTargetPath(asString(storageAttrs["physical_path"])); target != "" {
 			return []ScanTarget{{Path: target}}
 		}
@@ -65,20 +65,20 @@ func DescriptorFromAttributes(attrs map[string]interface{}) ItemDescriptor {
 	}
 	itemAttrs := asMap(attrs["item"])
 	storageAttrs := asMap(attrs["storage"])
-	layout := Layout(strings.ToLower(strings.TrimSpace(asString(itemAttrs["layout"]))))
+	layout := format.Layout(strings.ToLower(strings.TrimSpace(asString(itemAttrs["layout"]))))
 	physicalPath := normalizeTargetPath(asString(storageAttrs["physical_path"]))
 	storagePath := normalizeStoragePath(asString(storageAttrs["path"]))
 	primaryContentPath := ""
 	scopePath := ""
 	switch layout {
-	case LayoutWhole:
+	case format.LayoutWhole:
 		scopePath = firstNonEmpty(physicalPath, storagePath)
-	case LayoutSingle, LayoutMulti:
+	case format.LayoutSingle, format.LayoutMulti:
 		primaryContentPath = physicalPath
 	}
 	return ItemDescriptor{
 		Layout:             layout,
-		DataType:           DataType(strings.ToLower(strings.TrimSpace(asString(itemAttrs["data_type"])))),
+		DataType:           datatype.DataType(strings.ToLower(strings.TrimSpace(asString(itemAttrs["data_type"])))),
 		Format:             string(format.NormalizeFormat(asString(itemAttrs["format"]))),
 		PrimaryContentPath: primaryContentPath,
 		ScopePath:          scopePath,
@@ -279,7 +279,7 @@ func matchMultiRule(candidates []Candidate, rule FormatRule, claims map[string]b
 		item := ResolvedItem{
 			Name:               entry.Name,
 			FullName:           entry.Path,
-			Layout:             LayoutMulti,
+			Layout:             format.LayoutMulti,
 			DataType:           rule.DataType,
 			Format:             rule.Format,
 			PrimaryContentPath: entry.Path,
@@ -485,7 +485,7 @@ func matchWholeScopeRule(candidates []Candidate, rule FormatRule, claims map[str
 	return ResolvedItem{
 		Name:            name,
 		FullName:        scopePath,
-		Layout:          LayoutWhole,
+		Layout:          format.LayoutWhole,
 		DataType:        rule.DataType,
 		Format:          rule.Format,
 		ScopePath:       scopePath,
@@ -527,9 +527,9 @@ func resolveSingleItems(candidates []Candidate, result *ResolveResult, input Res
 			continue
 		}
 		formatName := DetectFormat(candidate)
-		dataType := DetectDataType(formatName)
-		if dataType == DataTypeUnknown && candidate.IsDirectory {
-			dataType = DataTypeContainer
+		dataType := DefaultDataTypeForFormat(formatName)
+		if dataType == datatype.Unknown && candidate.IsDirectory {
+			dataType = datatype.Container
 		}
 		size := int64(0)
 		var sizePtr *int64
@@ -540,7 +540,7 @@ func resolveSingleItems(candidates []Candidate, result *ResolveResult, input Res
 		item := ResolvedItem{
 			Name:               candidate.Name,
 			FullName:           candidate.Path,
-			Layout:             LayoutSingle,
+			Layout:             format.LayoutSingle,
 			DataType:           dataType,
 			Format:             formatName,
 			PrimaryContentPath: candidate.Path,
@@ -644,7 +644,7 @@ func cloneMap(input map[string]interface{}) map[string]interface{} {
 
 func ContainerChildInfoFromResolvedItem(item ResolvedItem) datatype.ContainerChildInfo {
 	kind := "file"
-	if item.Layout == LayoutMulti {
+	if item.Layout == format.LayoutMulti {
 		kind = "multi"
 	}
 	native := cloneMap(item.Properties)

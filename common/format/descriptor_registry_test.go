@@ -12,7 +12,7 @@ func TestListFormatDescriptorsReturnsSortedCopies(t *testing.T) {
 		{
 			ID:       "builtin-markdown",
 			Format:   FormatMarkdown,
-			DataType: datatype.DataTypeDocument,
+			DataType: datatype.Document,
 			Layouts:  []string{LayoutSingle},
 		},
 		formatMediaDescriptorForTest("builtin-webp", FormatWebP),
@@ -44,7 +44,7 @@ func TestGetFormatDescriptorReturnsStaticFacts(t *testing.T) {
 	if err := registry.RegisterFormatDescriptor(FormatDescriptor{
 		ID:       "builtin-markdown",
 		Format:   FormatMarkdown,
-		DataType: datatype.DataTypeDocument,
+		DataType: datatype.Document,
 		Layouts:  []string{LayoutSingle},
 	}); err != nil {
 		t.Fatalf("register descriptor: %v", err)
@@ -60,8 +60,8 @@ func TestGetFormatDescriptorReturnsStaticFacts(t *testing.T) {
 	if descriptor.Format != FormatMarkdown {
 		t.Fatalf("Format = %q, want %q", descriptor.Format, FormatMarkdown)
 	}
-	if descriptor.DataType != datatype.DataTypeDocument {
-		t.Fatalf("DataType = %q, want %q", descriptor.DataType, datatype.DataTypeDocument)
+	if descriptor.DataType != datatype.Document {
+		t.Fatalf("DataType = %q, want %q", descriptor.DataType, datatype.Document)
 	}
 }
 
@@ -69,7 +69,7 @@ func formatMediaDescriptorForTest(id string, formatType FormatType) FormatDescri
 	return FormatDescriptor{
 		ID:       id,
 		Format:   formatType,
-		DataType: datatype.DataTypeMedia,
+		DataType: datatype.Media,
 		Layouts:  []string{LayoutSingle},
 	}
 }
@@ -104,7 +104,7 @@ func TestDescriptorMIMEPatternPrecedesBootstrapFallback(t *testing.T) {
 	if err := RegisterFormatDescriptor(FormatDescriptor{
 		ID:       "test-image-family",
 		Format:   FormatImage,
-		DataType: datatype.DataTypeMedia,
+		DataType: datatype.Media,
 		Layouts:  []string{LayoutSingle},
 		Identification: FormatIdentification{
 			MimeTypes: []string{"image/*"},
@@ -123,7 +123,7 @@ func TestRegisterFormatDescriptorRejectsUnknownLayout(t *testing.T) {
 	err := registry.RegisterFormatDescriptor(FormatDescriptor{
 		ID:       "bad-layout",
 		Format:   FormatType("bad-layout"),
-		DataType: datatype.DataTypeDocument,
+		DataType: datatype.Document,
 		Layouts:  []string{"bundle"},
 	})
 	if err == nil {
@@ -136,7 +136,7 @@ func TestRegisterFormatDescriptorRecordsFormatConflictAndHonorsPriority(t *testi
 	if err := registry.RegisterFormatDescriptor(FormatDescriptor{
 		ID:       "builtin-test",
 		Format:   FormatType("test"),
-		DataType: datatype.DataTypeDocument,
+		DataType: datatype.Document,
 		Priority: 10,
 	}); err != nil {
 		t.Fatalf("register builtin descriptor: %v", err)
@@ -144,7 +144,7 @@ func TestRegisterFormatDescriptorRecordsFormatConflictAndHonorsPriority(t *testi
 	if err := registry.RegisterFormatDescriptor(FormatDescriptor{
 		ID:       "plugin-test-low",
 		Format:   FormatType("test"),
-		DataType: datatype.DataTypeTable,
+		DataType: datatype.Table,
 		Priority: 5,
 	}); err != nil {
 		t.Fatalf("register low priority descriptor: %v", err)
@@ -169,7 +169,7 @@ func TestRegisterFormatDescriptorRecordsFormatConflictAndHonorsPriority(t *testi
 	if err := registry.RegisterFormatDescriptor(FormatDescriptor{
 		ID:       "plugin-test-high",
 		Format:   FormatType("test"),
-		DataType: datatype.DataTypeTable,
+		DataType: datatype.Table,
 		Priority: 20,
 	}); err != nil {
 		t.Fatalf("register high priority descriptor: %v", err)
@@ -188,7 +188,7 @@ func TestRegisterFormatDescriptorRecordsIdentificationConflicts(t *testing.T) {
 	if err := registry.RegisterFormatDescriptor(FormatDescriptor{
 		ID:       "csv-a",
 		Format:   FormatType("csv-a"),
-		DataType: datatype.DataTypeTable,
+		DataType: datatype.Table,
 		Identification: FormatIdentification{
 			Extensions: []string{".csv"},
 			MimeTypes:  []string{"text/csv"},
@@ -199,7 +199,7 @@ func TestRegisterFormatDescriptorRecordsIdentificationConflicts(t *testing.T) {
 	if err := registry.RegisterFormatDescriptor(FormatDescriptor{
 		ID:       "csv-b",
 		Format:   FormatType("csv-b"),
-		DataType: datatype.DataTypeTable,
+		DataType: datatype.Table,
 		Identification: FormatIdentification{
 			Extensions: []string{"csv"},
 			MimeTypes:  []string{"text/csv"},

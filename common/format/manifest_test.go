@@ -40,7 +40,7 @@ func TestRegisterFormatPluginManifest(t *testing.T) {
 	if !ok {
 		t.Fatal("manifest descriptor was not registered")
 	}
-	if registered.DataType != datatype.DataTypeDocument {
+	if registered.DataType != datatype.Document {
 		t.Fatalf("descriptor data type = %q, want document", registered.DataType)
 	}
 	if got := MIMEToFormat("text/x-manifest-doc"); got != FormatType("manifest_doc") {

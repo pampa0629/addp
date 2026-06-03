@@ -3,7 +3,7 @@ package metaitem
 import (
 	"testing"
 
-	"github.com/addp/common/dataitem"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 )
 
@@ -18,8 +18,8 @@ func TestInferSingleResourceUsesCanonicalFormatForFamily(t *testing.T) {
 	if item.Format != string(format.FormatExcel) {
 		t.Fatalf("Format = %q, want %q", item.Format, format.FormatExcel)
 	}
-	if item.DataType != dataitem.DataTypeContainer {
-		t.Fatalf("DataType = %q, want %q", item.DataType, dataitem.DataTypeContainer)
+	if item.DataType != datatype.Container {
+		t.Fatalf("DataType = %q, want %q", item.DataType, datatype.Container)
 	}
 }
 
@@ -30,11 +30,11 @@ func TestInferSingleResourceDetectsContainerComposition(t *testing.T) {
 		Size: 42,
 	})
 
-	if item.Layout != dataitem.LayoutSingle {
-		t.Fatalf("Layout = %q, want %q", item.Layout, dataitem.LayoutSingle)
+	if item.Layout != format.LayoutSingle {
+		t.Fatalf("Layout = %q, want %q", item.Layout, format.LayoutSingle)
 	}
-	if item.DataType != dataitem.DataTypeContainer {
-		t.Fatalf("DataType = %q, want %q", item.DataType, dataitem.DataTypeContainer)
+	if item.DataType != datatype.Container {
+		t.Fatalf("DataType = %q, want %q", item.DataType, datatype.Container)
 	}
 }
 
@@ -48,8 +48,8 @@ func TestInferSingleResourceDetectsMarkdownAsDocument(t *testing.T) {
 	if item.Format != string(format.FormatMarkdown) {
 		t.Fatalf("Format = %q, want %q", item.Format, format.FormatMarkdown)
 	}
-	if item.DataType != dataitem.DataTypeDocument {
-		t.Fatalf("DataType = %q, want %q", item.DataType, dataitem.DataTypeDocument)
+	if item.DataType != datatype.Document {
+		t.Fatalf("DataType = %q, want %q", item.DataType, datatype.Document)
 	}
 }
 
@@ -63,8 +63,8 @@ func TestInferSingleResourceDetectsTextAsDocument(t *testing.T) {
 	if item.Format != string(format.FormatText) {
 		t.Fatalf("Format = %q, want %q", item.Format, format.FormatText)
 	}
-	if item.DataType != dataitem.DataTypeDocument {
-		t.Fatalf("DataType = %q, want %q", item.DataType, dataitem.DataTypeDocument)
+	if item.DataType != datatype.Document {
+		t.Fatalf("DataType = %q, want %q", item.DataType, datatype.Document)
 	}
 }
 
@@ -73,8 +73,8 @@ func TestInferSingleGeoJSONKeepsJSONAsDocumentUntilContentInspection(t *testing.
 	if item.Format != string(format.FormatJSON) {
 		t.Fatalf("Format = %q, want %q", item.Format, format.FormatJSON)
 	}
-	if item.DataType != dataitem.DataTypeDocument {
-		t.Fatalf("DataType = %q, want %q", item.DataType, dataitem.DataTypeDocument)
+	if item.DataType != datatype.Document {
+		t.Fatalf("DataType = %q, want %q", item.DataType, datatype.Document)
 	}
 	if capabilities, ok := item.Attributes["capabilities"].(map[string]interface{}); ok {
 		if spatial := capabilities["spatial"]; spatial != nil {
@@ -85,8 +85,8 @@ func TestInferSingleGeoJSONKeepsJSONAsDocumentUntilContentInspection(t *testing.
 
 func TestInferSingleTIFFDoesNotInferSpatialWithoutContentFacts(t *testing.T) {
 	item := InferSingleResource(SingleResourceInput{Name: "scene.tif", Path: "scene.tif"})
-	if item.DataType != dataitem.DataTypeMedia {
-		t.Fatalf("DataType = %q, want %q", item.DataType, dataitem.DataTypeMedia)
+	if item.DataType != datatype.Media {
+		t.Fatalf("DataType = %q, want %q", item.DataType, datatype.Media)
 	}
 	if capabilities, ok := item.Attributes["capabilities"].(map[string]interface{}); ok {
 		if spatial := capabilities["spatial"]; spatial != nil {

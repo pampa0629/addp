@@ -6,9 +6,12 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 )
 
+// DetectFormat selects a canonical format from facts already attached to the candidate.
+// MIME and extension recognition facts are owned by common/format descriptors and fallbacks.
 func DetectFormat(candidate Candidate) string {
 	if value := strings.TrimSpace(interfaceString(candidate.Properties["format"])); value != "" {
 		return normalizeFormat(value)
@@ -27,14 +30,15 @@ func DetectFormat(candidate Candidate) string {
 	return string(format.FormatUnknown)
 }
 
-func DetectDataType(formatName string) DataType {
+func DefaultDataTypeForFormat(formatName string) datatype.DataType {
 	descriptor, ok := format.GetFormatDescriptor(format.NormalizeFormat(formatName))
 	if !ok {
-		return DataTypeUnknown
+		return datatype.Unknown
 	}
 	return descriptor.DataType
 }
 
+// InferFormat normalizes explicit format first, then delegates MIME and extension recognition to common/format.
 func InferFormat(fileName, contentType, explicitFormat string) string {
 	if explicitFormat != "" {
 		if canonical := normalizeFormat(explicitFormat); canonical != string(format.FormatUnknown) {
@@ -52,14 +56,14 @@ func InferFormat(fileName, contentType, explicitFormat string) string {
 	return string(format.FormatUnknown)
 }
 
-func InferDataType(formatName, contentType string) DataType {
-	if dataType := DetectDataType(normalizeFormat(formatName)); dataType != DataTypeUnknown {
+func InferDataType(formatName, contentType string) datatype.DataType {
+	if dataType := DefaultDataTypeForFormat(normalizeFormat(formatName)); dataType != datatype.Unknown {
 		return dataType
 	}
 	if detected := format.MIMEToFormat(contentType); detected != format.FormatUnknown {
-		return DetectDataType(string(detected))
+		return DefaultDataTypeForFormat(string(detected))
 	}
-	return DataTypeUnknown
+	return datatype.Unknown
 }
 
 func MatchBuiltinSingleResourceRule(formatName string) (FormatRule, bool) {
@@ -95,19 +99,18 @@ func singleResourceRuleFromDescriptor(formatName string) (FormatRule, bool) {
 		return FormatRule{}, false
 	}
 	dataType := descriptor.DataType
-	if dataType == DataTypeUnknown {
+	if dataType == datatype.Unknown {
 		return FormatRule{}, false
 	}
 	rule := FormatRule{
 		Format:   string(descriptor.Format),
 		DataType: dataType,
-		Layout:   LayoutSingle,
+		Layout:   format.LayoutSingle,
 		Priority: 10,
 		Entry:    EntryRule{Extensions: append([]string(nil), descriptor.Identification.Extensions...)},
 	}
-	if dataType == DataTypeContainer {
+	if dataType == datatype.Container {
 		rule.Priority = 20
-		rule.Container = &ContainerRule{ExpandInternalItems: false}
 	}
 	return rule, true
 }
@@ -125,7 +128,7 @@ func BuiltinMultiRules() []FormatRule {
 		rules = append(rules, FormatRule{
 			Format:          string(descriptor.Format),
 			DataType:        descriptor.DataType,
-			Layout:          LayoutMulti,
+			Layout:          format.LayoutMulti,
 			Priority:        100,
 			Entry:           EntryRule{Extensions: append([]string(nil), descriptor.Identification.Extensions...)},
 			Refs:            refRuleFromSpecs(specs),
@@ -148,17 +151,16 @@ func BuiltinWholeScopeRules() []FormatRule {
 			continue
 		}
 		dataType := descriptor.DataType
-		if dataType == DataTypeUnknown {
+		if dataType == datatype.Unknown {
 			continue
 		}
 		rules = append(rules, FormatRule{
 			Format:   string(descriptor.Format),
 			DataType: dataType,
-			Layout:   LayoutWhole,
+			Layout:   format.LayoutWhole,
 			Priority: 80,
 			Entry:    EntryRule{Extensions: append([]string(nil), descriptor.Identification.Extensions...)},
 			WholeScope: &WholeScopeRule{
-				AllowRecursive:       true,
 				IgnoredFileNames:     []string{"_SUCCESS", "_metadata", "_common_metadata"},
 				RequiresStrongMatch:  true,
 				ExclusiveOnStrongHit: true,
@@ -205,15 +207,15 @@ func ValidateFormatRule(rule FormatRule) error {
 	if rule.Layout == "" {
 		return fmt.Errorf("format rule %s requires Layout", rule.Format)
 	}
-	if len(rule.Entry.Extensions) == 0 && len(rule.Entry.MIMETypes) == 0 && rule.Layout != LayoutWhole {
+	if len(rule.Entry.Extensions) == 0 && rule.Layout != format.LayoutWhole {
 		return fmt.Errorf("format rule %s requires Entry", rule.Format)
 	}
 	switch rule.Layout {
-	case LayoutSingle:
+	case format.LayoutSingle:
 		if rule.Refs != nil || rule.WholeScope != nil {
 			return fmt.Errorf("single rule %s must not declare Refs or WholeScope", rule.Format)
 		}
-	case LayoutMulti:
+	case format.LayoutMulti:
 		if rule.Refs == nil && len(rule.RelatedRefSpecs) == 0 {
 			return fmt.Errorf("multi rule %s requires Refs", rule.Format)
 		}
@@ -230,15 +232,15 @@ func ValidateFormatRule(rule FormatRule) error {
 				return fmt.Errorf("multi rule %s requires EntryExtension", rule.Format)
 			}
 		}
-		if rule.Container != nil || rule.WholeScope != nil {
-			return fmt.Errorf("multi rule %s must not declare Container or WholeScope", rule.Format)
+		if rule.WholeScope != nil {
+			return fmt.Errorf("multi rule %s must not declare WholeScope", rule.Format)
 		}
-	case LayoutWhole:
+	case format.LayoutWhole:
 		if rule.WholeScope == nil {
 			return fmt.Errorf("whole rule %s requires WholeScope", rule.Format)
 		}
-		if rule.Refs != nil || rule.Container != nil {
-			return fmt.Errorf("whole rule %s must not declare Refs or Container", rule.Format)
+		if rule.Refs != nil {
+			return fmt.Errorf("whole rule %s must not declare Refs", rule.Format)
 		}
 	default:
 		return fmt.Errorf("format rule %s has unsupported Layout %q", rule.Format, rule.Layout)
@@ -288,8 +290,6 @@ func refRuleFromSpecs(specs []format.RelatedRefSpec) *RefRule {
 		entry = required[0]
 	}
 	return &RefRule{
-		MatchScope:         RefMatchScopeSameDirectory,
-		MatchKey:           RefMatchKeyBaseName,
 		RequiredExtensions: required,
 		OptionalExtensions: optional,
 		EntryExtension:     entry,

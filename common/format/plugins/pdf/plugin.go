@@ -37,7 +37,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		ID:       "builtin-pdf",
 		Format:   p.Format(),
 		I18nKey:  "format.pdf",
-		DataType: datatype.DataTypeDocument,
+		DataType: datatype.Document,
 		Layouts:  []string{format.LayoutSingle},
 		Identification: format.FormatIdentification{
 			Extensions: []string{".pdf"},

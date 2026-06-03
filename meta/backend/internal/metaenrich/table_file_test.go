@@ -39,8 +39,8 @@ func TestTableFileResolverDetectsPartitionedWholeScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("extractTableFileWholeScopeInfo() error = %v", err)
 	}
-	if info.Layout != dataitem.LayoutWhole {
-		t.Fatalf("Layout = %q, want %q", info.Layout, dataitem.LayoutWhole)
+	if info.Layout != format.LayoutWhole {
+		t.Fatalf("Layout = %q, want %q", info.Layout, format.LayoutWhole)
 	}
 	if info.ScopePath != "dataset" {
 		t.Fatalf("ScopePath = %q, want dataset", info.ScopePath)
@@ -94,16 +94,16 @@ func TestTableFileResolverRulesDeclareSingleFileAndWholeScope(t *testing.T) {
 		if err := dataitem.ValidateFormatRule(rule); err != nil {
 			t.Fatalf("ValidateFormatRule(%s/%s) error = %v", rule.Format, rule.Layout, err)
 		}
-		if rule.DataType != dataitem.DataTypeTable {
+		if rule.DataType != datatype.Table {
 			t.Fatalf("rule = %#v, want table data type", rule)
 		}
 		seen[rule.Format+"/"+string(rule.Layout)] = true
 		switch rule.Layout {
-		case dataitem.LayoutSingle:
+		case format.LayoutSingle:
 			if !hasSingleTableProvider(rule.Format) {
 				t.Fatalf("single rule = %#v, want single table provider", rule)
 			}
-		case dataitem.LayoutWhole:
+		case format.LayoutWhole:
 			if !hasScopeTableProvider(rule.Format) {
 				t.Fatalf("whole scope rule = %#v, want scope table provider", rule)
 			}
@@ -135,15 +135,15 @@ func TestTableFileRuleCanReadUsesLayoutCapability(t *testing.T) {
 	}
 	if tableFileRuleCanRead(dataitem.FormatRule{
 		Format:   string(testFormat),
-		DataType: dataitem.DataTypeTable,
-		Layout:   dataitem.LayoutSingle,
+		DataType: datatype.Table,
+		Layout:   format.LayoutSingle,
 	}) {
 		t.Fatal("single rule should require single table provider")
 	}
 	if !tableFileRuleCanRead(dataitem.FormatRule{
 		Format:   string(testFormat),
-		DataType: dataitem.DataTypeTable,
-		Layout:   dataitem.LayoutWhole,
+		DataType: datatype.Table,
+		Layout:   format.LayoutWhole,
 	}) {
 		t.Fatal("whole scope rule should use scope table provider")
 	}
@@ -275,7 +275,7 @@ func TestTableFileResolverResolvesWholeScopeFromRecursiveScope(t *testing.T) {
 		t.Fatalf("ResolveItems() = %#v, want one item", result)
 	}
 	item := result.Items[0]
-	if item.Layout != dataitem.LayoutWhole {
+	if item.Layout != format.LayoutWhole {
 		t.Fatalf("Layout = %q, want whole", item.Layout)
 	}
 	if item.ScopePath != "dataset" || item.PhysicalPath != "dataset" {
@@ -317,8 +317,8 @@ func TestEnrichSingleTableFileItemDetectsFormatFromContent(t *testing.T) {
 	size := int64(len(content))
 	item := &metaitem.DetectedItem{
 		ResolvedItem: dataitem.ResolvedItem{
-			Layout:             dataitem.LayoutSingle,
-			DataType:           dataitem.DataTypeUnknown,
+			Layout:             format.LayoutSingle,
+			DataType:           datatype.Unknown,
 			Format:             string(format.FormatUnknown),
 			PrimaryContentPath: "lake3",
 			SizeBytes:          &size,
@@ -349,7 +349,7 @@ func TestEnrichSingleTableFileItemDetectsFormatFromContent(t *testing.T) {
 	if enriched.Format != string(format.FormatParquet) {
 		t.Fatalf("Format = %q, want parquet", enriched.Format)
 	}
-	if enriched.DataType != dataitem.DataTypeTable {
+	if enriched.DataType != datatype.Table {
 		t.Fatalf("DataType = %q, want table", enriched.DataType)
 	}
 	if len(enriched.Fields) == 0 {
@@ -367,7 +367,7 @@ func TestExtractJSONSingleTableFileItemStrictAcceptsObjectArray(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExtractSingleTableFileItemStrict() error = %v", err)
 	}
-	if info.DataType != dataitem.DataTypeTable || info.Format != string(format.FormatJSON) {
+	if info.DataType != datatype.Table || info.Format != string(format.FormatJSON) {
 		t.Fatalf("info = %#v", info)
 	}
 	table := commonJSON.Section(info.Attributes, "type_info.table")
@@ -392,7 +392,7 @@ func TestExtractJSONSingleTableFileItemStrictWritesSpatialOnlyWhenGeometryExists
 	if err != nil {
 		t.Fatalf("ExtractSingleTableFileItemStrict() error = %v", err)
 	}
-	if info.DataType != dataitem.DataTypeTable || info.Format != string(format.FormatJSON) {
+	if info.DataType != datatype.Table || info.Format != string(format.FormatJSON) {
 		t.Fatalf("info = %#v", info)
 	}
 	spatial := commonJSON.Section(info.Attributes, "capabilities.spatial")
@@ -481,7 +481,7 @@ func (p scopeOnlyTestFormatPlugin) Descriptor() format.FormatDescriptor {
 	return format.FormatDescriptor{
 		ID:       string(p.formatType),
 		Format:   p.formatType,
-		DataType: datatype.DataTypeTable,
+		DataType: datatype.Table,
 		Layouts:  []string{format.LayoutWhole},
 		Identification: format.FormatIdentification{
 			Extensions: []string{".scopeonlytable"},

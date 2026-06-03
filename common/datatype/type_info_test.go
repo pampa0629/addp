@@ -8,11 +8,11 @@ func TestTypeInfoDataTypes(t *testing.T) {
 		info TypeInfo
 		want DataType
 	}{
-		{name: "table", info: &TableInfo{}, want: DataTypeTable},
-		{name: "document", info: &DocumentInfo{}, want: DataTypeDocument},
-		{name: "media", info: &MediaInfo{}, want: DataTypeMedia},
-		{name: "container", info: &ContainerInfo{}, want: DataTypeContainer},
-		{name: "graph", info: &GraphInfo{}, want: DataTypeGraph},
+		{name: "table", info: &TableInfo{}, want: Table},
+		{name: "document", info: &DocumentInfo{}, want: Document},
+		{name: "media", info: &MediaInfo{}, want: Media},
+		{name: "container", info: &ContainerInfo{}, want: Container},
+		{name: "graph", info: &GraphInfo{}, want: Graph},
 	}
 
 	for _, tt := range tests {

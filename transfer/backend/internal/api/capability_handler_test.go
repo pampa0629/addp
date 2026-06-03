@@ -159,7 +159,7 @@ func (p transferCapabilityReaderOnlyPlugin) Descriptor() format.FormatDescriptor
 	return format.FormatDescriptor{
 		ID:       "transfer-capability-reader-only",
 		Format:   p.formatType,
-		DataType: datatype.DataTypeTable,
+		DataType: datatype.Table,
 		Layouts:  []string{format.LayoutSingle},
 		Identification: format.FormatIdentification{
 			Extensions: []string{".tct"},

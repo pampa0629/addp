@@ -66,7 +66,7 @@ func IsGeospatialFormat(format FormatType) bool {
 
 func IsDocumentFormat(format FormatType) bool {
 	dataType, ok := dataTypeForFormat(format)
-	return ok && dataType == datatype.DataTypeDocument
+	return ok && dataType == datatype.Document
 }
 
 func IsImageFormat(format FormatType) bool {
@@ -75,7 +75,7 @@ func IsImageFormat(format FormatType) bool {
 	}
 	descriptor, ok := GetFormatDescriptor(format)
 	if ok {
-		return descriptor.DataType == datatype.DataTypeMedia && descriptorHasMIMEPrefix(descriptor, "image/")
+		return descriptor.DataType == datatype.Media && descriptorHasMIMEPrefix(descriptor, "image/")
 	}
 	if mimeType, ok := fallbackMIMEForFormat(format); ok {
 		return strings.HasPrefix(mimeType, "image/")
@@ -85,7 +85,7 @@ func IsImageFormat(format FormatType) bool {
 
 func IsTableFormat(format FormatType) bool {
 	dataType, ok := dataTypeForFormat(format)
-	return ok && dataType == datatype.DataTypeTable
+	return ok && dataType == datatype.Table
 }
 
 func dataTypeForFormat(format FormatType) (datatype.DataType, bool) {

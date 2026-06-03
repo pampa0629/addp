@@ -191,6 +191,7 @@ func (e *TableTransferExecutor) openSource(plan TableSourcePlan) (TableBatchSour
 			readOptions:          plan.ReadOptions,
 			resumeMarker:         plan.ResumeMarker,
 			tableInfo:            plan.TableInfo,
+			spatialInfo:          plan.SpatialInfo,
 		}, nil
 	case TableEndpointEncoded:
 		if e.SourceContentReader == nil {

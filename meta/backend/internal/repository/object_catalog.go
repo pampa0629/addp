@@ -4,6 +4,7 @@ import (
 	"strings"
 	"time"
 
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metapath"
 	"github.com/addp/meta/internal/models"
 	"gorm.io/gorm"
@@ -113,6 +114,28 @@ func (r *ScanRepository) SoftDeleteObjectMetaItemsMissingFingerprints(tenantID, 
 		deleted = append(deleted, item)
 	}
 	return deleted, nil
+}
+
+func (r *ScanRepository) SoftDeleteObjectMetaItemsByObjectPaths(tenantID, engineID uint, bucketName string, objectPaths []string) error {
+	if len(objectPaths) == 0 {
+		return nil
+	}
+	fullNames := make([]string, 0, len(objectPaths))
+	seen := map[string]bool{}
+	for _, objectPath := range objectPaths {
+		dir, name := commonModels.SplitObjectPath(strings.Trim(objectPath, "/"))
+		fullName := commonModels.JoinObjectPath(bucketName, dir, name)
+		if fullName == "" || seen[fullName] {
+			continue
+		}
+		seen[fullName] = true
+		fullNames = append(fullNames, fullName)
+	}
+	if len(fullNames) == 0 {
+		return nil
+	}
+	return r.db.Where("tenant_id = ? AND engine_id = ? AND full_name IN ?", tenantID, engineID, fullNames).
+		Delete(&models.MetaItem{}).Error
 }
 
 func (r *ScanRepository) FinalizeObjectCatalogPrefixNode(node *models.MetaNode, itemCount int, totalSize int64) error {

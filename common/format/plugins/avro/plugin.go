@@ -20,7 +20,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		ID:             "builtin-avro",
 		Format:         p.Format(),
 		I18nKey:        "format.avro",
-		DataType:       datatype.DataTypeTable,
+		DataType:       datatype.Table,
 		Layouts:        []string{format.LayoutSingle, format.LayoutWhole},
 		Identification: format.FormatIdentification{Extensions: []string{".avro"}, MimeTypes: []string{"application/avro", "application/x-avro-binary"}},
 	}

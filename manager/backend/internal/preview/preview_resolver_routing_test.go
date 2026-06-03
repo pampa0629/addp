@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/addp/common/catalogview"
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/resourcetree"
 	"github.com/addp/manager/internal/catalogutil"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/objectcontent"
@@ -164,7 +164,7 @@ func TestResolveProviderByMetaUsesWholeTableLayout(t *testing.T) {
 	resolver := NewPreviewResolver(registry, nil, nil)
 
 	req := &PreviewResolverRequest{
-		Locator: &catalogview.ResourceLocator{},
+		Locator: &resourcetree.ResourceLocator{},
 		Engine:  &commonModels.Engine{EngineType: "minio"},
 		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
 			"item": map[string]interface{}{
@@ -190,7 +190,7 @@ func TestResolveProviderByMetaDoesNotRouteWholeTableWithoutScopeProvider(t *test
 	resolver := NewPreviewResolver(registry, nil, nil)
 
 	req := &PreviewResolverRequest{
-		Locator: &catalogview.ResourceLocator{},
+		Locator: &resourcetree.ResourceLocator{},
 		Engine:  &commonModels.Engine{EngineType: "minio"},
 		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
 			"item": map[string]interface{}{
@@ -212,7 +212,7 @@ func TestResolveProviderByMetaUsesItemDataTypeAndFormat(t *testing.T) {
 	resolver := NewPreviewResolver(registry, nil, nil)
 
 	req := &PreviewResolverRequest{
-		Locator: &catalogview.ResourceLocator{},
+		Locator: &resourcetree.ResourceLocator{},
 		Engine:  &commonModels.Engine{EngineType: "minio"},
 		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
 			"item": map[string]interface{}{
@@ -238,7 +238,7 @@ func TestResolveProviderByMetaUsesFileTableForFileCatalogTableFormat(t *testing.
 	resolver := NewPreviewResolver(registry, nil, nil)
 
 	req := &PreviewResolverRequest{
-		Locator: &catalogview.ResourceLocator{},
+		Locator: &resourcetree.ResourceLocator{},
 		Engine:  &commonModels.Engine{EngineType: "nfs"},
 		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
 			"item": map[string]interface{}{
@@ -264,7 +264,7 @@ func TestResolveProviderByMetaUsesDynamicSchemaCollectionForCollectionItem(t *te
 	resolver := NewPreviewResolver(registry, nil, nil)
 
 	req := &PreviewResolverRequest{
-		Locator: &catalogview.ResourceLocator{},
+		Locator: &resourcetree.ResourceLocator{},
 		Engine:  &commonModels.Engine{EngineType: "mongodb"},
 		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
 			"item": map[string]interface{}{
@@ -290,7 +290,7 @@ func TestResolveProviderByMetaUsesContainerChildForExcelChild(t *testing.T) {
 	resolver := NewPreviewResolver(registry, nil, nil)
 
 	req := &PreviewResolverRequest{
-		Locator: &catalogview.ResourceLocator{},
+		Locator: &resourcetree.ResourceLocator{},
 		Engine:  &commonModels.Engine{EngineType: "minio"},
 		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
 			"item": map[string]interface{}{
@@ -318,7 +318,7 @@ func TestResolveProviderByMetaUsesContainerChildForSQLiteChild(t *testing.T) {
 	resolver := NewPreviewResolver(registry, nil, nil)
 
 	req := &PreviewResolverRequest{
-		Locator: &catalogview.ResourceLocator{},
+		Locator: &resourcetree.ResourceLocator{},
 		Engine:  &commonModels.Engine{EngineType: "minio"},
 		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
 			"item": map[string]interface{}{
@@ -347,7 +347,7 @@ func TestResolveProviderByMetaUsesContainerChildForNestedContainerChild(t *testi
 	resolver := NewPreviewResolver(registry, nil, nil)
 
 	req := &PreviewResolverRequest{
-		Locator: &catalogview.ResourceLocator{},
+		Locator: &resourcetree.ResourceLocator{},
 		Engine:  &commonModels.Engine{EngineType: "nfs"},
 		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
 			"item": map[string]interface{}{
@@ -380,7 +380,7 @@ func TestResolveProviderByMetaPrefersPartitionedItemAttributes(t *testing.T) {
 	resolver := NewPreviewResolver(registry, nil, nil)
 
 	req := &PreviewResolverRequest{
-		Locator: &catalogview.ResourceLocator{},
+		Locator: &resourcetree.ResourceLocator{},
 		Engine:  &commonModels.Engine{EngineType: "minio"},
 		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
 			"item": map[string]interface{}{
@@ -448,10 +448,10 @@ func TestBuildProviderRequestUsesPartitionedPhysicalPath(t *testing.T) {
 	registerPreviewRoutingModelPlugin(t, plugin.ObjectCatalogModel())
 	resolver := NewPreviewResolver(NewPreviewRegistry(), nil, nil)
 	req := &PreviewResolverRequest{
-		Locator: &catalogview.ResourceLocator{
+		Locator: &resourcetree.ResourceLocator{
 			EngineID: 1,
 			Path:     []string{"bucket", "table.parquet"},
-			Type:     catalogview.TypeObject,
+			Type:     resourcetree.TypeObject,
 		},
 		Engine:       &commonModels.Engine{ID: 1, EngineType: "preview-routing-model"},
 		Metadata:     &commonModels.MetaNode{Attributes: map[string]interface{}{}},
@@ -475,7 +475,7 @@ func TestBuildProviderRequestKeepsChildName(t *testing.T) {
 	registerPreviewRoutingModelPlugin(t, plugin.ObjectCatalogModel())
 	resolver := NewPreviewResolver(NewPreviewRegistry(), nil, nil)
 	req := &PreviewResolverRequest{
-		Locator: &catalogview.ResourceLocator{EngineID: 1, Path: []string{"bucket", "test.xlsx"}, Type: catalogview.TypeObject},
+		Locator: &resourcetree.ResourceLocator{EngineID: 1, Path: []string{"bucket", "test.xlsx"}, Type: resourcetree.TypeObject},
 		Engine:  &commonModels.Engine{ID: 1, EngineType: "preview-routing-model"},
 		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
 			"item": map[string]interface{}{"data_type": "container", "format": "excel"},
@@ -495,7 +495,7 @@ func TestBuildProviderRequestKeepsChildName(t *testing.T) {
 
 func TestBuildProviderRequestUsesScopePathForWholeScopeTable(t *testing.T) {
 	req := &PreviewResolverRequest{
-		Locator: &catalogview.ResourceLocator{
+		Locator: &resourcetree.ResourceLocator{
 			Path: []string{"bucket", "dataset"},
 		},
 		Engine: &commonModels.Engine{EngineType: "minio"},
@@ -522,7 +522,7 @@ func TestBuildProviderRequestUsesScopePathForWholeScopeTable(t *testing.T) {
 func TestResolveProviderByMetaRejectsUnmappedMeta(t *testing.T) {
 	resolver := NewPreviewResolver(NewPreviewRegistry(), nil, nil)
 	req := &PreviewResolverRequest{
-		Locator:  &catalogview.ResourceLocator{},
+		Locator:  &resourcetree.ResourceLocator{},
 		Engine:   &commonModels.Engine{EngineType: "minio"},
 		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{}},
 		ItemType: "object",

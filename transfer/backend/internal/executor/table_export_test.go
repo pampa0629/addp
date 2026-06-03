@@ -356,6 +356,64 @@ func TestTableTransferExecutorWritesShapefileRefs(t *testing.T) {
 	}
 }
 
+func TestTableTransferExecutorWritesShapefileUsingNativeSourceSpatialInfo(t *testing.T) {
+	reader := &fakeBatchReader{
+		batches: []*engineplugin.BatchData{
+			{
+				Fields: []datatype.FieldInfo{
+					{Name: "id", Type: "int"},
+					{Name: "SmGeometry", Type: "geometry"},
+				},
+				Rows: []map[string]interface{}{
+					{"id": 1, "SmGeometry": "MULTIPOLYGON (((120 30, 121 30, 121 31, 120 31, 120 30)))"},
+				},
+			},
+		},
+	}
+	writer := &fakeContentWriter{files: map[string][]byte{}}
+	exec := &TableTransferExecutor{
+		SourceNativeReader:         &fakeBatchReader{},
+		SourceTableSessionProvider: reader,
+		TargetContentWriter:        writer,
+		TargetMultiProvider:        shapefileformat.NewPlugin(nil),
+	}
+
+	metrics, err := exec.Execute(context.Background(), TableTransferPlan{
+		Source: TableSourcePlan{
+			Kind: TableEndpointNative,
+			TableInfo: &datatype.TableInfo{Fields: []datatype.FieldInfo{
+				{Name: "id", Type: "int"},
+				{Name: "SmGeometry", Type: "geometry"},
+			}},
+			SpatialInfo: datatype.NewSingleGeometrySpatialInfo("SmGeometry", "MultiPolygon", 4549, 0),
+		},
+		Target: TableTargetPlan{
+			Kind:         TableEndpointEncoded,
+			Path:         engineplugin.FileItemPath(2, "exports/a4.shp"),
+			ContentWrite: engineplugin.WriteOptions{Overwrite: true},
+			Format:       format.FormatShapefile,
+			FormatOptions: &format.WriteOptions{
+				Encoding: "utf-8",
+				ExtraParams: map[string]interface{}{
+					"geometry_field": "SmGeometry",
+				},
+			},
+		},
+		BatchSize: 100,
+	})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if metrics.RecordsRead != 1 || metrics.RecordsWritten != 1 {
+		t.Fatalf("metrics = %#v, want 1 read/written", metrics)
+	}
+	for _, path := range []string{"exports/a4.shp", "exports/a4.shx", "exports/a4.dbf", "exports/a4.cpg"} {
+		if len(writer.files[path]) == 0 {
+			t.Fatalf("ref %s was not written", path)
+		}
+	}
+}
+
 func TestTableTransferExecutorWritesShapefileZFromNativeSpatialDimension(t *testing.T) {
 	reader := &fakeBatchReader{
 		batches: []*engineplugin.BatchData{

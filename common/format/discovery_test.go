@@ -21,8 +21,8 @@ func TestListFormatCapabilitySnapshotsIncludesMarkdown(t *testing.T) {
 		if snapshot.Descriptor.ID != "builtin-markdown" {
 			t.Fatalf("descriptor ID = %q, want builtin-markdown", snapshot.Descriptor.ID)
 		}
-		if snapshot.Descriptor.DataType != datatype.DataTypeDocument {
-			t.Fatalf("DataType = %q, want %q", snapshot.Descriptor.DataType, datatype.DataTypeDocument)
+		if snapshot.Descriptor.DataType != datatype.Document {
+			t.Fatalf("DataType = %q, want %q", snapshot.Descriptor.DataType, datatype.Document)
 		}
 		if !snapshot.Implementations.DocumentInfoProvider || !snapshot.Implementations.DocumentTextReader {
 			t.Fatalf("implementations = %#v, want document info/text reader", snapshot.Implementations)
@@ -37,7 +37,7 @@ func TestGetFormatCapabilitySnapshot(t *testing.T) {
 	if !ok {
 		t.Fatal("expected shapefile capability snapshot")
 	}
-	if snapshot.Descriptor.DataType != datatype.DataTypeTable {
+	if snapshot.Descriptor.DataType != datatype.Table {
 		t.Fatalf("DataType = %q, want table", snapshot.Descriptor.DataType)
 	}
 	if !snapshot.Implementations.MultiTableInfoProvider || !snapshot.Implementations.MultiTableReader {
@@ -60,7 +60,7 @@ func TestFormatCapabilitySnapshotSeparatesDescriptorAndImplementations(t *testin
 	if err := RegisterFormatDescriptor(FormatDescriptor{
 		ID:       "discovery-descriptor-only-document",
 		Format:   formatType,
-		DataType: datatype.DataTypeDocument,
+		DataType: datatype.Document,
 		Layouts:  []string{LayoutSingle},
 		Identification: FormatIdentification{
 			Extensions: []string{".ddoc"},
@@ -74,7 +74,7 @@ func TestFormatCapabilitySnapshotSeparatesDescriptorAndImplementations(t *testin
 	if !ok {
 		t.Fatal("expected capability snapshot")
 	}
-	if snapshot.Descriptor.DataType != datatype.DataTypeDocument {
+	if snapshot.Descriptor.DataType != datatype.Document {
 		t.Fatalf("descriptor = %#v, want document", snapshot.Descriptor)
 	}
 	if snapshot.Implementations.FormatPlugin || snapshot.Implementations.DocumentInfoProvider || snapshot.Implementations.DocumentTextReader {

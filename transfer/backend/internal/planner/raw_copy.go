@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/addp/common/dataitem"
 	"github.com/addp/common/datatype"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
@@ -32,7 +31,7 @@ func ParseRawCopyTaskSpec(config map[string]interface{}) (RawCopyTaskSpec, error
 		return RawCopyTaskSpec{}, fmt.Errorf("legacy transfer task config is not supported; use source/target endpoint config")
 	}
 	if hasUnsupportedEndpointAttributes(config) {
-		return RawCopyTaskSpec{}, fmt.Errorf("endpoint attributes are not supported in transfer task config; use source.meta_item_id to reference Meta item attributes")
+		return RawCopyTaskSpec{}, fmt.Errorf("endpoint attributes are not supported in transfer task config; use source locator item_id to reference Meta item attributes")
 	}
 	var spec RawCopyTaskSpec
 	configBytes, err := json.Marshal(config)
@@ -55,16 +54,25 @@ func BuildRawCopyPlan(spec RawCopyTaskSpec, resolver EngineResolver) (*RawCopyBu
 	if err := validateRawCopySpec(&spec); err != nil {
 		return nil, err
 	}
-	sourceEngine, err := resolver.ResolveEngine(spec.Source.Engine)
+	sourceRef, err := spec.Source.EngineRef()
+	if err != nil {
+		return nil, fmt.Errorf("parse source locator: %w", err)
+	}
+	targetRef, err := spec.Target.EngineRef()
+	if err != nil {
+		return nil, fmt.Errorf("parse target locator: %w", err)
+	}
+
+	sourceEngine, err := resolver.ResolveEngine(sourceRef)
 	if err != nil {
 		return nil, fmt.Errorf("resolve source engine: %w", err)
 	}
-	targetEngine, err := resolver.ResolveEngine(spec.Target.Engine)
+	targetEngine, err := resolver.ResolveEngine(targetRef)
 	if err != nil {
 		return nil, fmt.Errorf("resolve target engine: %w", err)
 	}
-	sourceType := effectiveEngineType(sourceEngine, spec.Source.Engine)
-	targetType := effectiveEngineType(targetEngine, spec.Target.Engine)
+	sourceType := effectiveEngineType(sourceEngine, sourceRef)
+	targetType := effectiveEngineType(targetEngine, targetRef)
 	if sourceType == "" {
 		return nil, fmt.Errorf("source engine type is required")
 	}
@@ -72,11 +80,11 @@ func BuildRawCopyPlan(spec RawCopyTaskSpec, resolver EngineResolver) (*RawCopyBu
 		return nil, fmt.Errorf("target engine type is required")
 	}
 	sourceDescriptor, _ := sourceItemDescriptorFromMetaAttributes(spec.Source.Attributes)
-	sourcePath, err := sourceEndpointContentCatalogPath(sourceEngine.EngineID, spec.Source.EndpointResource, sourceDescriptor)
+	sourcePath, err := sourceEndpointContentCatalogPath(spec.Source, sourceDescriptor)
 	if err != nil {
 		return nil, fmt.Errorf("build raw copy source path: %w", err)
 	}
-	targetPath, err := endpointContentCatalogPath(targetEngine.EngineID, spec.Target.EndpointResource, "target")
+	targetPath, err := endpointContentCatalogPath(spec.Target, "target")
 	if err != nil {
 		return nil, fmt.Errorf("build raw copy target path: %w", err)
 	}
@@ -137,8 +145,8 @@ func validateRawCopySpec(spec *RawCopyTaskSpec) error {
 		if descriptor.Format != "" && format.FormatType(descriptor.Format) != spec.Source.Format {
 			return fmt.Errorf("source format %q conflicts with Meta item format %q", spec.Source.Format, descriptor.Format)
 		}
-		if descriptor.Layout != "" && descriptor.Layout != dataitem.LayoutSingle {
-			return fmt.Errorf("raw copy requires source layout=%q, got %q", dataitem.LayoutSingle, descriptor.Layout)
+		if descriptor.Layout != "" && descriptor.Layout != format.LayoutSingle {
+			return fmt.Errorf("raw copy requires source layout=%q, got %q", format.LayoutSingle, descriptor.Layout)
 		}
 	}
 	return nil
@@ -174,7 +182,7 @@ func validateRawCopyEndpoint(endpoint EndpointSpec, role string) error {
 		if !ok {
 			return fmt.Errorf("%s raw copy format %q is not registered", role, endpoint.Format)
 		}
-		if descriptor.DataType != "" && string(descriptor.DataType) != endpoint.DataType && descriptor.DataType != datatype.DataTypeUnknown {
+		if descriptor.DataType != "" && string(descriptor.DataType) != endpoint.DataType && descriptor.DataType != datatype.Unknown {
 			return fmt.Errorf("%s raw copy format %q default data type %q conflicts with endpoint data type %q", role, endpoint.Format, descriptor.DataType, endpoint.DataType)
 		}
 	}
@@ -183,7 +191,7 @@ func validateRawCopyEndpoint(endpoint EndpointSpec, role string) error {
 
 func isRawCopyDataType(dataType string) bool {
 	switch strings.TrimSpace(dataType) {
-	case string(datatype.DataTypeDocument), string(datatype.DataTypeMedia), string(datatype.DataTypeUnknown):
+	case string(datatype.Document), string(datatype.Media), string(datatype.Unknown):
 		return true
 	default:
 		return false

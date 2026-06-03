@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/addp/common/dataitem"
+	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metaitem"
@@ -44,11 +44,11 @@ func FileCatalogDetectedItemName(dirPath string, item *metaitem.DetectedItem) (n
 	if item == nil {
 		return inferFileCatalogItemName(dirPath)
 	}
-	if item.Layout != dataitem.LayoutWhole && item.PrimaryContentPath != "" {
+	if item.Layout != format.LayoutWhole && item.PrimaryContentPath != "" {
 		cleaned := strings.Trim(item.PrimaryContentPath, "/")
 		return filepath.Base(cleaned), cleaned
 	}
-	if item.PhysicalPath != "" && item.Layout != dataitem.LayoutWhole {
+	if item.PhysicalPath != "" && item.Layout != format.LayoutWhole {
 		cleaned := strings.Trim(item.PhysicalPath, "/")
 		return filepath.Base(cleaned), cleaned
 	}

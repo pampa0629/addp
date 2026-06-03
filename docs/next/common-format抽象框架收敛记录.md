@@ -263,14 +263,14 @@ type FormatType string
 10. Shapefile import 的 ZIP 业务约束仍属于 Manager 上传入口；允许 / 必需 sidecar 扩展名已从 Shapefile plugin 的 `RelatedRefSpecs()` 派生，避免 Manager 维护第二份 ref 清单。
 11. Transfer table / raw copy 任务配置解析已改为 strict JSON decode：
    - 只接受 `TableExportTaskSpec` / `RawCopyTaskSpec` 明确声明的字段。
-   - 旧 `engine.scope` 不再作为代码概念存在；如果调用方继续传入，会作为未知字段失败。
-   - 任务配置事实源只保留 `engine.id` / `engine.type`、`resource`、`data_type`、`representation`、`format`、`options`、`policy` 和 `source.meta_item_id` 等新主路径字段。
+   - 旧 `engine.scope`、endpoint `engine`、endpoint `resource` 和 `source.meta_item_id` 不再作为任务 JSON 概念存在；如果调用方继续传入，会作为未知字段失败。
+   - 任务配置事实源只保留 `locator`、`data_type`、`representation`、`format`、`options`、`policy` 等主路径字段；endpoint 定位统一使用 common ResourceLocator URI。
    - 旧任务外层 `mappings`、`transfer.field_mappings` / `transfer.data_mappings` 表和独立 mappings API 已删除；字段映射只保留 `config.transforms[type=field_mapping]`。
 12. Transfer source 选择树继续复用 common 资源树语义，树内容来自 Meta 构造结果，不引入 Transfer 专属的“非 Meta item”过滤概念：
    - Step1 不再基于文件名或扩展名推断 `data_type` / `format`。
    - source 是否可选只消费 Meta tree 节点携带的标准事实，例如 `data_type`、`representation`、`format` 和 `attributes.item`。
-   - 创建 source endpoint 时优先使用 common tree 中已有的 `item_id` 写入 `source.meta_item_id`。
-   - 任务 JSON 不保存前端回显用的 `sourceItem`；编辑模式通过 `source.meta_item_id` 从 Meta 读取当前 item 后恢复 UI 选中态和字段。
+   - 创建 source endpoint 时优先复用 common tree 中已有的 `locator`；已有 Meta item 通过 locator query 中的 `item_id` 引用。
+   - 任务 JSON 不保存前端回显用的 `sourceItem`；编辑模式通过 source locator 的 `item_id` 从 Meta 读取当前 item 后恢复 UI 选中态和字段。
    - Manager 预览树和 Transfer source 树继续共享资源树展示语义；差异只体现在各模块对已知 Meta 事实的消费策略。
 
 ## GeoJSON 格式身份后续修订记录

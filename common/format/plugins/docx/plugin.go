@@ -32,7 +32,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		ID:       "builtin-docx",
 		Format:   p.Format(),
 		I18nKey:  "format.docx",
-		DataType: datatype.DataTypeDocument,
+		DataType: datatype.Document,
 		Layouts:  []string{format.LayoutSingle},
 		Identification: format.FormatIdentification{
 			Extensions: []string{".docx"},

@@ -31,7 +31,7 @@ type AccessIndexAnchor struct {
 func NewSparseRowAccessIndex(format string, step int64, headerBytes int64) *AccessIndex {
 	return &AccessIndex{
 		Kind:        AccessIndexKindSparseRow,
-		DataType:    DataTypeTable,
+		DataType:    Table,
 		Format:      format,
 		Unit:        AccessIndexUnitRow,
 		OffsetUnit:  AccessIndexOffsetByte,
@@ -72,7 +72,7 @@ func (c *AccessIndex) Clone() *AccessIndex {
 func (c *AccessIndex) IsSparseRowIndex() bool {
 	return c != nil &&
 		c.Kind == AccessIndexKindSparseRow &&
-		c.DataType == DataTypeTable &&
+		c.DataType == Table &&
 		c.Unit == AccessIndexUnitRow &&
 		c.OffsetUnit == AccessIndexOffsetByte
 }

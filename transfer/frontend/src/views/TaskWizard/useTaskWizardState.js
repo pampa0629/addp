@@ -27,7 +27,7 @@ export function useTaskWizardState() {
   const sourceDataType = ref('table')
   const sourceRepresentation = ref('native')
   const sourceFormat = ref('')
-  const sourceEndpointResource = ref(null)
+  const sourceLocator = ref('')
   const readableEncodedFormats = ref(new Set())
   const rawCopyFormats = ref(new Map())
   const formatCapabilitiesLoaded = ref(false)
@@ -55,14 +55,14 @@ export function useTaskWizardState() {
       dataType: sourceDataType.value,
       representation: sourceRepresentation.value,
       format: sourceFormat.value,
-      resource: sourceEndpointResource.value
+      locator: sourceLocator.value
     })
   })
 
   const canGoNext = computed(() => {
     switch (currentStep.value) {
       case 0: // 选择Source
-        return !!(sourceEngineID.value && isSupportedSourceShape() && (sourceEndpointResource.value || sourceTable.value))
+        return !!(sourceEngineID.value && isSupportedSourceShape() && (sourceLocator.value || sourceTable.value))
       case 1: // 选择Target
         if (targetRepresentation.value === 'native') {
           return !!(targetEngineID.value && targetSchema.value && targetTable.value)
@@ -150,23 +150,9 @@ export function useTaskWizardState() {
   function buildSourceEndpoint() {
     const config = sourceConfig.value || {}
     const endpoint = {
-      engine: {
-        id: Number(sourceEngineID.value),
-        type: sourceEngineType.value || sourceType.value
-      },
-      resource: sourceEndpointResource.value || {
-        kind: 'native_table',
-        path: {
-          schema: sourceSchema.value,
-          table: sourceTable.value
-        }
-      },
+      locator: sourceLocator.value || buildLocator(Number(sourceEngineID.value), 'table', [sourceSchema.value, sourceTable.value]),
       data_type: sourceDataType.value || 'table',
       representation: sourceRepresentation.value || 'native'
-    }
-    const metaItemID = Number(config.sourceItem?.item_id || config.sourceItem?.meta_id || config.meta_item_id || 0)
-    if (metaItemID > 0) {
-      endpoint.meta_item_id = metaItemID
     }
 
     const format = sourceBackendFormat(sourceFormat.value || config.format)
@@ -256,17 +242,7 @@ export function useTaskWizardState() {
     const fileConfig = targetConfig.value || {}
     if (targetRepresentation.value === 'native') {
       return {
-        engine: {
-          id: Number(targetEngineID.value),
-          type: targetEngineType.value || targetType.value
-        },
-        resource: {
-          kind: 'native_table',
-          path: {
-            schema: targetSchema.value,
-            table: targetTable.value
-          }
-        },
+        locator: buildLocator(Number(targetEngineID.value), 'table', [targetSchema.value, targetTable.value]),
         data_type: 'table',
         representation: 'native',
         policy: {
@@ -278,11 +254,7 @@ export function useTaskWizardState() {
     const format = targetBackendFormat(fileConfig)
     const dataType = isRawCopyTask.value ? sourceDataType.value : 'table'
     const endpoint = {
-      engine: {
-        id: Number(targetEngineID.value),
-        type: targetEngineType.value || targetType.value
-      },
-      resource: buildEncodedTargetResource(fileConfig),
+      locator: buildEncodedTargetLocator(fileConfig),
       data_type: dataType,
       representation: 'encoded',
       format,
@@ -357,32 +329,36 @@ export function useTaskWizardState() {
     )
   }
 
-  function buildEncodedTargetResource(fileConfig) {
+  function buildEncodedTargetLocator(fileConfig) {
     const outputPath = trimSlashes(fileConfig.resourcePath || '')
     const outputFileName = trimSlashes(fileConfig.resourceFile || '')
     const fullPath = [outputPath, outputFileName].filter(Boolean).join('/')
 
     if (targetType.value === 's3') {
-      const parts = fullPath.split('/').filter(Boolean)
-      return {
-        kind: 'object',
-        path: {
-          bucket: parts.shift() || '',
-          path: parts.join('/')
-        }
-      }
+      return buildLocator(Number(targetEngineID.value), 'object', splitPathSegments(fullPath))
     }
 
-    return {
-      kind: 'file',
-      path: {
-        path: fullPath
-      }
-    }
+    return buildLocator(Number(targetEngineID.value), 'file', splitPathSegments(fullPath))
   }
 
   function trimSlashes(value) {
     return String(value || '').trim().replace(/^\/+|\/+$/g, '')
+  }
+
+  function splitPathSegments(value) {
+    return String(value || '').split('/').map(part => part.trim()).filter(Boolean)
+  }
+
+  function buildLocator(engineID, type, segments = [], itemID = 0) {
+    const cleanEngineID = Number(engineID)
+    const cleanType = String(type || '').trim()
+    const path = (segments || []).map(segment => String(segment || '').trim()).filter(Boolean)
+    if (!cleanEngineID || !cleanType || path.length === 0) return ''
+    const encodedPath = path.map(segment => encodeURIComponent(segment)).join('/')
+    const params = new URLSearchParams({ type: cleanType })
+    const cleanItemID = Number(itemID || 0)
+    if (cleanItemID > 0) params.set('item_id', String(cleanItemID))
+    return `addp://engine/${cleanEngineID}/path/${encodedPath}?${params.toString()}`
   }
 
   // ===== 方法 =====
@@ -409,13 +385,13 @@ export function useTaskWizardState() {
   // Source 配置
   function updateSource(config) {
     const extra = config.extra || {}
-    const nextEndpointResource = config.resource || extra.resource || null
+    const nextLocator = config.locator || extra.locator || ''
     const oldSourceEngineID = sourceEngineID.value
-    const oldSourceEndpointResource = sourceEndpointResource.value
-    const oldSourceEmpty = !oldSourceEngineID && !oldSourceEndpointResource
+    const oldSourceLocator = sourceLocator.value
+    const oldSourceEmpty = !oldSourceEngineID && !oldSourceLocator
     const sourceChanged = !oldSourceEmpty && (
       oldSourceEngineID !== config.engineID ||
-      JSON.stringify(oldSourceEndpointResource || null) !== JSON.stringify(nextEndpointResource)
+      oldSourceLocator !== nextLocator
     )
 
     sourceEngineID.value = config.engineID
@@ -426,7 +402,7 @@ export function useTaskWizardState() {
     sourceDataType.value = config.dataType || extra.dataType || 'table'
     sourceRepresentation.value = config.representation || extra.representation || 'native'
     sourceFormat.value = config.format || extra.format || ''
-    sourceEndpointResource.value = nextEndpointResource
+    sourceLocator.value = nextLocator
     sourceConfig.value = extra
 
     if (sourceChanged) {
@@ -561,25 +537,27 @@ export function useTaskWizardState() {
     // Source 配置
     if (task.config?.source) {
       const source = task.config.source
-      sourceEngineID.value = source.engine?.id || null
-      sourceEngineType.value = source.engine?.type || ''
-      sourceSchema.value = source.resource?.path?.schema || ''
-      sourceTable.value = source.resource?.path?.table || source.resource?.path?.name || ''
+      const sourceLoc = parseLocator(source.locator)
+      sourceEngineID.value = sourceLoc.engineID || null
+      sourceEngineType.value = ''
+      sourceSchema.value = sourceLoc.path.length >= 2 ? sourceLoc.path[sourceLoc.path.length - 2] : ''
+      sourceTable.value = sourceLoc.path.length >= 1 ? sourceLoc.path[sourceLoc.path.length - 1] : ''
       sourceType.value = normalizeEngineType(sourceEngineType.value || 'postgresql')
       sourceDataType.value = source.data_type || 'table'
       sourceRepresentation.value = source.representation || 'native'
       sourceFormat.value = targetUiFormat(source.format, source.options || {})
-      sourceEndpointResource.value = source.resource || null
+      sourceLocator.value = source.locator || ''
       sourceConfig.value = extractSourceConfig(source)
     }
 
     // Target 配置
     if (task.config?.target) {
       const target = task.config.target
-      targetEngineID.value = target.engine?.id || null
-      targetEngineType.value = target.engine?.type || ''
-      targetSchema.value = target.resource?.path?.schema || ''
-      targetTable.value = target.resource?.path?.table || target.resource?.path?.name || ''
+      const targetLoc = parseLocator(target.locator)
+      targetEngineID.value = targetLoc.engineID || null
+      targetEngineType.value = ''
+      targetSchema.value = targetLoc.type === 'table' && targetLoc.path.length >= 2 ? targetLoc.path[targetLoc.path.length - 2] : ''
+      targetTable.value = targetLoc.type === 'table' && targetLoc.path.length >= 1 ? targetLoc.path[targetLoc.path.length - 1] : ''
       targetType.value = normalizeTargetType(target)
       targetRepresentation.value = target.representation || 'encoded'
       targetConfig.value = extractTargetConfig(target)
@@ -611,29 +589,27 @@ export function useTaskWizardState() {
   }
 
   function normalizeTargetType(target) {
-    if (target.resource?.kind === 'file') return 'nfs'
-    if (target.resource?.kind === 'object') return 's3'
+    const loc = parseLocator(target?.locator)
+    if (loc.type === 'file') return 'nfs'
+    if (loc.type === 'object') return 's3'
     return 'nfs'
   }
 
   function extractTargetConfig(target) {
-    if (target.resource?.kind === 'native_table') {
-      const path = target.resource?.path || {}
+    const loc = parseLocator(target?.locator)
+    if (loc.type === 'table') {
       return {
-        schema: path.schema || '',
-        table: path.table || path.name || '',
+        schema: loc.path.length >= 2 ? loc.path[loc.path.length - 2] : '',
+        table: loc.path.length >= 1 ? loc.path[loc.path.length - 1] : '',
         writeMode: normalizeTableWriteMode(target.policy?.write_mode)
       }
     }
 
-    if (target.resource?.kind !== 'file' && target.resource?.kind !== 'object') {
+    if (loc.type !== 'file' && loc.type !== 'object') {
       return {}
     }
 
-    const rawPath = target.resource?.path || {}
-    const path = target.resource.kind === 'object'
-      ? [rawPath.bucket, rawPath.path].filter(Boolean).join('/')
-      : rawPath.path || ''
+    const path = loc.path.join('/')
     const { dir, file } = splitPath(path)
     const options = target.options || {}
     const format = targetUiFormat(target.format, options)
@@ -651,21 +627,25 @@ export function useTaskWizardState() {
   }
 
   function extractSourceConfig(source) {
-    const endpointResource = source.resource || {}
-    const path = endpointResource.path || {}
-    const label = endpointResource.kind === 'native_table'
-      ? [path.schema, path.table].filter(Boolean).join('.')
-      : endpointResource.kind === 'object'
-        ? [path.bucket, path.path].filter(Boolean).join('/')
-        : path.path || ''
+    const loc = parseLocator(source?.locator)
+    const label = locatorDisplayPath(source?.locator, source?.representation)
     return {
       sourceLabel: label,
       catalogPath: label,
       dataType: source.data_type || 'table',
       representation: source.representation || 'native',
       format: targetUiFormat(source.format, source.options || {}),
-      resource: endpointResource,
-      meta_item_id: source.meta_item_id || 0
+      locator: source.locator || '',
+      sourceItem: loc.itemID
+        ? {
+            item_id: loc.itemID,
+            meta_id: loc.itemID,
+            path: sourcePathFromLocator(source.locator),
+            data_type: source.data_type || 'table',
+            representation: source.representation || 'native',
+            format: targetUiFormat(source.format, source.options || '')
+          }
+        : null
     }
   }
 
@@ -680,7 +660,7 @@ export function useTaskWizardState() {
       name: item.name,
       kind: item.item_type || item.kind,
       term: item.item_type || item.term,
-      path: sourcePathFromResource(sourceEndpointResource.value) || sourcePathFromLabel(item.full_name || item.name, sourceRepresentation.value),
+      path: sourcePathFromLocator(sourceLocator.value) || sourcePathFromLabel(item.full_name || item.name, sourceRepresentation.value),
       data_type: itemAttrs.data_type || sourceDataType.value,
       representation: itemAttrs.representation || sourceRepresentation.value,
       format: itemAttrs.format || sourceFormat.value,
@@ -693,8 +673,7 @@ export function useTaskWizardState() {
     }
     sourceConfig.value = {
       ...(sourceConfig.value || {}),
-      sourceItem,
-      meta_item_id: sourceItem.item_id
+      sourceItem
     }
   }
 
@@ -713,28 +692,21 @@ export function useTaskWizardState() {
     }
   }
 
-  function sourcePathFromResource(resource) {
-    const path = resource?.path || {}
-    let names = []
-    if (resource?.kind === 'native_table') {
-      names = [path.schema, path.table || path.name].filter(Boolean)
-    } else if (resource?.kind === 'object') {
-      names = [path.bucket, ...(String(path.path || '').split('/'))].filter(Boolean)
-    } else if (resource?.kind === 'file') {
-      names = String(path.path || path.name || '').split('/').filter(Boolean)
-    }
+  function sourcePathFromLocator(locator) {
+    const loc = parseLocator(locator)
+    const names = loc.path
     if (names.length === 0) return null
     return {
       segments: names.map((name, index) => ({
         name,
-        kind: index === names.length - 1 ? resource.kind : containerKindForResource(resource.kind, index),
-        term: index === names.length - 1 ? resource.kind : containerKindForResource(resource.kind, index)
+        kind: index === names.length - 1 ? loc.type : containerKindForLocator(loc.type, index),
+        term: index === names.length - 1 ? loc.type : containerKindForLocator(loc.type, index)
       }))
     }
   }
 
-  function containerKindForResource(kind, index) {
-    if (kind === 'native_table') return 'schema'
+  function containerKindForLocator(kind, index) {
+    if (kind === 'table') return 'schema'
     if (kind === 'object' && index === 0) return 'bucket'
     return 'directory'
   }
@@ -767,15 +739,39 @@ export function useTaskWizardState() {
     return 'overwrite'
   }
 
+  function parseLocator(locator) {
+    const result = { engineID: 0, path: [], type: '', itemID: 0 }
+    const match = String(locator || '').match(/^addp:\/\/engine\/(\d+)\/path\/([^?]*)(?:\?(.*))?$/)
+    if (!match) return result
+    result.engineID = Number(match[1] || 0)
+    result.path = String(match[2] || '')
+      .split('/')
+      .map(part => decodeURIComponent(part).trim())
+      .filter(Boolean)
+    const params = new URLSearchParams(match[3] || '')
+    result.type = String(params.get('type') || '').toLowerCase()
+    result.itemID = Number(params.get('item_id') || 0)
+    return result
+  }
+
+  function locatorDisplayPath(locator, representation = '') {
+    const loc = parseLocator(locator)
+    if (loc.path.length === 0) return ''
+    if (String(representation || '').toLowerCase() === 'native' && loc.type === 'table') {
+      return loc.path.slice(-2).join('.')
+    }
+    return loc.path.join('/')
+  }
+
   function isRawCopyShape(shape) {
     const dataType = String(shape?.dataType || '').toLowerCase()
     const representation = String(shape?.representation || '').toLowerCase()
     const format = String(shape?.format || '').toLowerCase()
-    const resourceKind = String(shape?.resource?.kind || '').toLowerCase()
+    const locatorType = parseLocator(shape?.locator).type
     return ['document', 'media', 'unknown'].includes(dataType) &&
       representation === 'encoded' &&
       !!format &&
-      ['file', 'object'].includes(resourceKind) &&
+      ['file', 'object'].includes(locatorType) &&
       rawCopyDataTypeForFormat(format) === dataType
   }
 
@@ -784,7 +780,7 @@ export function useTaskWizardState() {
       dataType: endpoint?.data_type,
       representation: endpoint?.representation,
       format: endpoint?.format,
-      resource: endpoint?.resource
+      locator: endpoint?.locator
     })
   }
 
@@ -818,7 +814,7 @@ export function useTaskWizardState() {
     sourceDataType.value = 'table'
     sourceRepresentation.value = 'native'
     sourceFormat.value = ''
-    sourceEndpointResource.value = null
+    sourceLocator.value = ''
     readableEncodedFormats.value = new Set()
     rawCopyFormats.value = new Map()
     formatCapabilitiesLoaded.value = false
@@ -853,7 +849,7 @@ export function useTaskWizardState() {
     sourceDataType,
     sourceRepresentation,
     sourceFormat,
-    sourceEndpointResource,
+    sourceLocator,
     readableEncodedFormats,
     rawCopyFormats,
     formatCapabilitiesLoaded,

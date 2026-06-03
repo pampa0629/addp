@@ -8,10 +8,10 @@ func TestParseDataType(t *testing.T) {
 		in   string
 		want DataType
 	}{
-		{name: "normalizes", in: " Table ", want: DataTypeTable},
-		{name: "file is no longer a data type", in: "file", want: DataTypeUnknown},
-		{name: "unknown value", in: "dataset", want: DataTypeUnknown},
-		{name: "empty", in: "", want: DataTypeUnknown},
+		{name: "normalizes", in: " Table ", want: Table},
+		{name: "file is no longer a data type", in: "file", want: Unknown},
+		{name: "unknown value", in: "dataset", want: Unknown},
+		{name: "empty", in: "", want: Unknown},
 	}
 
 	for _, tt := range tests {
@@ -22,7 +22,7 @@ func TestParseDataType(t *testing.T) {
 		})
 	}
 
-	if IsConcreteDataType(DataTypeUnknown) {
+	if IsConcreteDataType(Unknown) {
 		t.Fatalf("unknown should not be a concrete data type")
 	}
 }

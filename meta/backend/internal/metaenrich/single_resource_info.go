@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/addp/common/dataitem"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	"github.com/addp/meta/internal/metaattr"
@@ -36,10 +37,10 @@ func EnrichSingleDocumentItem(
 		}
 		ApplySingleFileFormat(item, detectedFormat)
 	}
-	if item.DataType == dataitem.DataTypeUnknown {
-		item.DataType = dataitem.DetectDataType(item.Format)
+	if item.DataType == datatype.Unknown {
+		item.DataType = dataitem.DefaultDataTypeForFormat(item.Format)
 	}
-	if item.DataType != dataitem.DataTypeDocument {
+	if item.DataType != datatype.Document {
 		return nil
 	}
 	if item.DataType != beforeDataType || item.Format != beforeFormat {
@@ -112,10 +113,10 @@ func EnrichSingleMediaItem(
 		}
 		ApplySingleFileFormat(item, detectedFormat)
 	}
-	if item.DataType == dataitem.DataTypeUnknown {
-		item.DataType = dataitem.DetectDataType(item.Format)
+	if item.DataType == datatype.Unknown {
+		item.DataType = dataitem.DefaultDataTypeForFormat(item.Format)
 	}
-	if item.DataType != dataitem.DataTypeMedia {
+	if item.DataType != datatype.Media {
 		return nil
 	}
 	if item.DataType != beforeDataType || item.Format != beforeFormat {

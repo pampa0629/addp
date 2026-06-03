@@ -105,7 +105,7 @@ func isTransferTableDescriptor(descriptor format.FormatDescriptor) bool {
 	if descriptor.Format == "" || descriptor.Format == format.FormatUnknown {
 		return false
 	}
-	if descriptor.DataType == datatype.DataTypeTable {
+	if descriptor.DataType == datatype.Table {
 		return true
 	}
 	write, _ := transferWritable(descriptor.Format)
@@ -259,7 +259,7 @@ func buildRawCopyFormatCapabilities() []TransferRawCopyFormatSupport {
 
 func isRawCopyDataType(dataType datatype.DataType) bool {
 	switch dataType {
-	case datatype.DataTypeDocument, datatype.DataTypeMedia, datatype.DataTypeUnknown:
+	case datatype.Document, datatype.Media, datatype.Unknown:
 		return true
 	default:
 		return false
@@ -278,11 +278,11 @@ func firstDescriptorExtension(descriptor format.FormatDescriptor) string {
 
 func rawCopyDataTypeRank(dataType string) int {
 	switch dataType {
-	case string(datatype.DataTypeDocument):
+	case string(datatype.Document):
 		return 10
-	case string(datatype.DataTypeMedia):
+	case string(datatype.Media):
 		return 20
-	case string(datatype.DataTypeUnknown):
+	case string(datatype.Unknown):
 		return 30
 	default:
 		return 1000

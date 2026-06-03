@@ -67,7 +67,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		ID:             "builtin-json",
 		Format:         format.FormatJSON,
 		I18nKey:        "format.json",
-		DataType:       datatype.DataTypeDocument,
+		DataType:       datatype.Document,
 		Layouts:        []string{format.LayoutSingle},
 		Identification: format.FormatIdentification{Extensions: []string{".json", ".geojson"}, MimeTypes: []string{"application/json", "application/geo+json", "application/vnd.geo+json"}},
 	}
@@ -849,7 +849,7 @@ func (p *Plugin) newSparseRowIndex(opts *format.ParseOptions, headerBytes int64)
 	}
 	return &datatype.AccessIndex{
 		Kind:        datatype.AccessIndexKindSparseRow,
-		DataType:    datatype.DataTypeTable,
+		DataType:    datatype.Table,
 		Format:      string(format.FormatJSON),
 		Unit:        datatype.AccessIndexUnitRow,
 		OffsetUnit:  datatype.AccessIndexOffsetByte,

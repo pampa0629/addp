@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/addp/common/client"
-	"github.com/addp/common/dataitem"
 	"github.com/addp/common/duckdb"
+	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/service/internal/models"
 	"github.com/addp/service/internal/repository"
@@ -178,7 +178,7 @@ func objectTableConfigFromMetaItem(item *commonModels.MetaItem) map[string]inter
 	}
 	layout := descriptor.Layout
 	if layout == "" {
-		layout = dataitem.LayoutSingle
+		layout = format.LayoutSingle
 	}
 	return map[string]interface{}{
 		"physical_path": descriptor.PhysicalPath,

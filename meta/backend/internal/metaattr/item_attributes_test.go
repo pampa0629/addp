@@ -16,7 +16,7 @@ func TestBuildDataItemAttributesWritesPartitionedItemAndStorage(t *testing.T) {
 	sizeBytes := int64(42)
 	item := DataItemAttributesInput{
 		Layout:       "single",
-		DataType:     datatype.DataTypeTable,
+		DataType:     datatype.Table,
 		Format:       string(format.FormatParquet),
 		PhysicalPath: "bucket/roads.parquet",
 		SizeBytes:    &sizeBytes,
@@ -27,8 +27,8 @@ func TestBuildDataItemAttributesWritesPartitionedItemAndStorage(t *testing.T) {
 	if itemAttrs["layout"] != "single" {
 		t.Fatalf("item.layout = %v, want single", itemAttrs["layout"])
 	}
-	if itemAttrs["data_type"] != string(datatype.DataTypeTable) {
-		t.Fatalf("item.data_type = %v, want %s", itemAttrs["data_type"], datatype.DataTypeTable)
+	if itemAttrs["data_type"] != string(datatype.Table) {
+		t.Fatalf("item.data_type = %v, want %s", itemAttrs["data_type"], datatype.Table)
 	}
 	if itemAttrs["format"] != string(format.FormatParquet) {
 		t.Fatalf("item.format = %v, want %s", itemAttrs["format"], format.FormatParquet)
@@ -50,7 +50,7 @@ func TestBuildDataItemAttributesWritesPartitionedItemAndStorage(t *testing.T) {
 func TestBuildDataItemAttributesWritesWholeScopePolicy(t *testing.T) {
 	item := DataItemAttributesInput{
 		Layout:       "whole",
-		DataType:     datatype.DataTypeTable,
+		DataType:     datatype.Table,
 		Format:       "parquet",
 		SizeBytes:    int64PtrForTest(128),
 		PhysicalPath: "/lake/sales",
@@ -66,7 +66,7 @@ func TestBuildDataItemAttributesWritesWholeScopePolicy(t *testing.T) {
 func TestMergeDataItemAttributesSkipsFlatStorageFields(t *testing.T) {
 	item := DataItemAttributesInput{
 		Layout:   "single",
-		DataType: datatype.DataTypeDocument,
+		DataType: datatype.Document,
 		Attributes: map[string]interface{}{
 			"path": "legacy/path",
 			"size": int64(10),

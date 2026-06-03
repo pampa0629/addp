@@ -16,7 +16,7 @@ func TestPluginDescriptorAndDocumentCapabilities(t *testing.T) {
 	if descriptor.Format != format.FormatPPTX {
 		t.Fatalf("descriptor format = %q, want %q", descriptor.Format, format.FormatPPTX)
 	}
-	if descriptor.DataType != datatype.DataTypeDocument {
+	if descriptor.DataType != datatype.Document {
 		t.Fatalf("descriptor data type = %q, want document", descriptor.DataType)
 	}
 	if _, ok := any(plugin).(format.DocumentInfoProvider); !ok {

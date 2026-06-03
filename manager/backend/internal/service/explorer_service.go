@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/addp/common/catalogview"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/resourcetree"
 	commonUtils "github.com/addp/common/utils"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/preview"
@@ -22,7 +22,7 @@ import (
 type ExplorerService struct {
 	systemClient    *commonClient.SystemClient
 	metaClient      *commonClient.MetaClient
-	treeBuilder     *catalogview.TreeBuilder
+	treeBuilder     *resourcetree.TreeBuilder
 	previewResolver *preview.PreviewResolver
 }
 
@@ -36,7 +36,7 @@ func NewExplorerService(
 	metaClient *commonClient.MetaClient,
 	previewResolver *preview.PreviewResolver,
 ) *ExplorerService {
-	treeBuilder := catalogview.NewTreeBuilder(metaClient)
+	treeBuilder := resourcetree.NewTreeBuilder()
 
 	return &ExplorerService{
 		systemClient:    systemClient,
@@ -54,7 +54,7 @@ func NewExplorerService(
 //   - expandDepth: 展开深度（-1 表示全部展开）
 //
 // 返回: 资源树根节点
-func (s *ExplorerService) GetTree(ctx context.Context, tenantID *uint, engineID uint, expandDepth int) (*catalogview.TreeNode, error) {
+func (s *ExplorerService) GetTree(ctx context.Context, tenantID *uint, engineID uint, expandDepth int) (*resourcetree.TreeNode, error) {
 	// 1. 通过 SystemClient 获取引擎信息
 	if s.systemClient == nil {
 		return nil, fmt.Errorf("system client not available")
@@ -98,7 +98,7 @@ func (s *ExplorerService) GetTree(ctx context.Context, tenantID *uint, engineID 
 // 返回: 已提交的扫描运行
 func (s *ExplorerService) RefreshNode(ctx context.Context, tenantID *uint, locatorURI string, authToken string) (*RefreshNodeResult, error) {
 	// 1. 解析 Locator
-	loc, err := catalogview.ParseURI(locatorURI)
+	loc, err := resourcetree.ParseURI(locatorURI)
 	if err != nil {
 		return nil, fmt.Errorf("invalid locator: %w", err)
 	}
@@ -138,7 +138,7 @@ func (s *ExplorerService) RefreshNode(ctx context.Context, tenantID *uint, locat
 	return &RefreshNodeResult{Run: scanRun}, nil
 }
 
-func refreshScanOptions(loc *catalogview.ResourceLocator) commonClient.MetaScanOptions {
+func refreshScanOptions(loc *resourcetree.ResourceLocator) commonClient.MetaScanOptions {
 	opts := commonClient.MetaScanOptions{
 		EngineID:    loc.EngineID,
 		ScanDepth:   "deep",
@@ -226,14 +226,20 @@ func (s *ExplorerService) GetEngineList(tenantID *uint) ([]*commonModels.Engine,
 //   - tenantID: 租户 ID
 //   - engineID: 引擎 ID
 //   - locatorURI: 父节点的 ResourceLocator URI
-//   - expandDepth: 展开深度（1=直接子节点，-1=全部展开）
+//   - expandDepth: 保留 API 参数；直接子级加载路径固定只返回当前节点的一层 children/items
 //
 // 返回: 包含父节点 locator 和子节点列表的结构
-func (s *ExplorerService) GetNodeChildren(ctx context.Context, tenantID *uint, engineID uint, locatorURI string, expandDepth int) (*catalogview.TreeNode, error) {
+func (s *ExplorerService) GetNodeChildren(ctx context.Context, tenantID *uint, engineID uint, locatorURI string, expandDepth int) (*resourcetree.TreeNode, error) {
 	// 1. 解析 Locator
-	loc, err := catalogview.ParseURI(locatorURI)
+	loc, err := resourcetree.ParseURI(locatorURI)
 	if err != nil {
 		return nil, fmt.Errorf("invalid locator: %w", err)
+	}
+	if loc.EngineID != engineID {
+		return nil, fmt.Errorf("locator engine_id %d does not match requested engine_id %d", loc.EngineID, engineID)
+	}
+	if loc.NodeID == nil || *loc.NodeID == 0 {
+		return nil, fmt.Errorf("resource tree node expansion requires locator node_id")
 	}
 
 	// 2. 通过 SystemClient 验证引擎权限
@@ -251,37 +257,53 @@ func (s *ExplorerService) GetNodeChildren(ctx context.Context, tenantID *uint, e
 		return nil, ErrEngineAccessDenied
 	}
 
-	// 3. 从 Meta 获取元数据节点
-	// 这里我们获取所有节点，然后在内存中过滤出目标节点的子节点
-	// TODO: 优化为直接从 Meta 获取指定节点的子节点
-	metaDepth := metadataExpandDepth(loc, expandDepth)
-	metaNodes, err := s.getMetaNodes(ctx, engineID, engine.EngineType, metaDepth, tenantID)
+	if s.metaClient == nil {
+		return nil, fmt.Errorf("meta client not available")
+	}
+	s.metaClient.SetTenantID(tenantID)
+
+	childNodes, err := s.metaClient.GetNodeChildren(*loc.NodeID)
 	if err != nil {
-		logger.L().Warn("获取 Meta 节点失败", "locator", locatorURI, "error", err)
-		return nil, fmt.Errorf("failed to get meta nodes: %w", err)
+		logger.L().Warn("获取 Meta 直接子节点失败", "locator", locatorURI, "node_id", *loc.NodeID, "error", err)
+		return nil, fmt.Errorf("failed to get meta node children: %w", err)
 	}
 
-	// 4. 使用 TreeBuilder 构建完整树
-	tree, err := s.treeBuilder.BuildFromMeta(engine, metaNodes, metaDepth)
+	items, err := s.metaClient.GetNodeItems(*loc.NodeID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build tree: %w", err)
+		logger.L().Warn("获取 Meta 节点 items 失败", "locator", locatorURI, "node_id", *loc.NodeID, "error", err)
+		return nil, fmt.Errorf("failed to get meta node items: %w", err)
 	}
 
-	// 5. 在树中查找目标节点
-	targetNode := s.findNodeByLocator(tree, locatorURI)
-	if targetNode == nil {
-		return nil, fmt.Errorf("node not found: %s", locatorURI)
+	children := make([]*resourcetree.TreeNode, 0, len(childNodes)+len(items))
+	childNodePtrs := make([]*commonModels.MetaNode, 0, len(childNodes))
+	for i := range childNodes {
+		childNodePtrs = append(childNodePtrs, &childNodes[i])
 	}
+	children = append(children, s.treeBuilder.ConvertMetaNodes(engine, childNodePtrs)...)
+
+	itemNodes := s.treeBuilder.ConvertMetaItemsForEngine(engine.EngineType, items)
+	children = append(children, s.treeBuilder.ConvertMetaNodes(engine, itemNodes)...)
+
+	parent := s.treeBuilder.ConvertNodeToTree(loc, map[string]interface{}{
+		"engine_id":   engine.ID,
+		"engine_type": engine.EngineType,
+		"full_name":   loc.FullName(),
+		"node_id":     *loc.NodeID,
+	})
+	parent.Children = children
+	parent.HasChildren = len(children) > 0
 
 	logger.L().Info("获取节点子节点成功",
 		"engine_id", engineID,
 		"locator", locatorURI,
-		"children_count", len(targetNode.Children))
+		"node_id", *loc.NodeID,
+		"expand_depth", expandDepth,
+		"children_count", len(parent.Children))
 
-	return targetNode, nil
+	return parent, nil
 }
 
-func metadataExpandDepth(loc *catalogview.ResourceLocator, expandDepth int) int {
+func metadataExpandDepth(loc *resourcetree.ResourceLocator, expandDepth int) int {
 	if expandDepth < 0 {
 		return -1
 	}
@@ -302,7 +324,7 @@ func metadataExpandDepth(loc *catalogview.ResourceLocator, expandDepth int) int 
 //   - limit: 返回数量限制
 //
 // 返回: 搜索结果列表和总数
-func (s *ExplorerService) SearchNodes(ctx context.Context, tenantID *uint, engineID uint, keyword string, nodeTypes []string, limit int) ([]*catalogview.TreeNode, int, error) {
+func (s *ExplorerService) SearchNodes(ctx context.Context, tenantID *uint, engineID uint, keyword string, nodeTypes []string, limit int) ([]*resourcetree.TreeNode, int, error) {
 	// 1. 验证引擎权限
 	if s.systemClient == nil {
 		return nil, 0, fmt.Errorf("system client not available")
@@ -331,7 +353,7 @@ func (s *ExplorerService) SearchNodes(ctx context.Context, tenantID *uint, engin
 
 	// 4. 在树中搜索节点（简单实现：遍历所有节点）
 	// TODO: 使用专门的 TreeSearchService 实现更高效的搜索
-	results := make([]*catalogview.TreeNode, 0)
+	results := make([]*resourcetree.TreeNode, 0)
 	s.searchInTree(tree, keyword, nodeTypes, &results)
 
 	// 5. 限制返回数量
@@ -349,23 +371,8 @@ func (s *ExplorerService) SearchNodes(ctx context.Context, tenantID *uint, engin
 	return results, total, nil
 }
 
-// findNodeByLocator 在树中查找指定 locator 的节点（递归）
-func (s *ExplorerService) findNodeByLocator(node *catalogview.TreeNode, locator string) *catalogview.TreeNode {
-	if node.Locator == locator {
-		return node
-	}
-
-	for _, child := range node.Children {
-		if found := s.findNodeByLocator(child, locator); found != nil {
-			return found
-		}
-	}
-
-	return nil
-}
-
 // searchInTree 在树中递归搜索节点
-func (s *ExplorerService) searchInTree(node *catalogview.TreeNode, keyword string, nodeTypes []string, results *[]*catalogview.TreeNode) {
+func (s *ExplorerService) searchInTree(node *resourcetree.TreeNode, keyword string, nodeTypes []string, results *[]*resourcetree.TreeNode) {
 	// 检查节点类型过滤
 	typeMatch := len(nodeTypes) == 0
 	if !typeMatch {
@@ -454,22 +461,22 @@ func (s *ExplorerService) getMetaNodes(ctx context.Context, engineID uint, engin
 }
 
 // buildEngineRootNode 构建引擎根节点（降级方案）
-func (s *ExplorerService) buildEngineRootNode(engine *commonModels.Engine) *catalogview.TreeNode {
-	rootType := catalogview.CatalogRootResourceType(engine)
-	locator := catalogview.EngineRootLocatorForType(engine.ID, rootType)
-	return &catalogview.TreeNode{
+func (s *ExplorerService) buildEngineRootNode(engine *commonModels.Engine) *resourcetree.TreeNode {
+	rootType := resourcetree.CatalogRootResourceType(engine)
+	locator := resourcetree.EngineRootLocatorForType(engine.ID, rootType)
+	return &resourcetree.TreeNode{
 		ID:      locator,
 		Locator: locator,
 		Label:   engine.Name,
 		Type:    string(rootType),
-		Icon:    catalogview.EngineIcon(engine),
+		Icon:    resourcetree.EngineIcon(engine),
 		Metadata: map[string]interface{}{
 			"engine_id":      engine.ID,
 			"engine_type":    engine.EngineType,
 			"capabilities":   engine.Capabilities,
 			"meta_available": false,
 		},
-		Children: []*catalogview.TreeNode{},
+		Children: []*resourcetree.TreeNode{},
 	}
 }
 

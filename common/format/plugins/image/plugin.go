@@ -30,7 +30,7 @@ func NewPlugin(opts *format.ParseOptions) *Plugin {
 	return &Plugin{options: opts, formatType: format.FormatImage}
 }
 
-func NewProvider(formatType format.FormatType) *Plugin {
+func newPlugin(formatType format.FormatType) *Plugin {
 	return &Plugin{options: format.DefaultParseOptions(), formatType: formatType}
 }
 
@@ -58,7 +58,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		ID:       "builtin-" + string(p.Format()),
 		Format:   p.Format(),
 		I18nKey:  "format." + string(p.Format()),
-		DataType: datatype.DataTypeMedia,
+		DataType: datatype.Media,
 		Layouts:  []string{format.LayoutSingle},
 	}
 	switch p.Format() {
@@ -141,6 +141,6 @@ func init() {
 		format.FormatGIF,
 		format.FormatTIFF,
 	} {
-		_ = format.RegisterFormatPlugin(NewProvider(formatType))
+		_ = format.RegisterFormatPlugin(newPlugin(formatType))
 	}
 }

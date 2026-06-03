@@ -40,7 +40,7 @@ func refAttributeInput(refs []dataitem.ItemRef) []metaattr.ItemRefAttributesInpu
 }
 
 func ApplyContainerSummary(attrs models.JSONMap, item *DetectedItem) {
-	if attrs == nil || item == nil || item.DataType != dataitem.DataTypeContainer {
+	if attrs == nil || item == nil || item.DataType != datatype.Container {
 		return
 	}
 	if item.Container == nil {

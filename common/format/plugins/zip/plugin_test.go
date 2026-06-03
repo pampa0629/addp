@@ -31,7 +31,7 @@ func TestDescribeContainerReturnsLightweightEntries(t *testing.T) {
 		t.Fatalf("DefaultChild = %q, want first sorted file", info.DefaultChild)
 	}
 	child := info.Children[0]
-	if child.Name != "data/cities.csv" || child.ChildKind != "file" || child.DataType != datatype.DataTypeTable {
+	if child.Name != "data/cities.csv" || child.ChildKind != "file" || child.DataType != datatype.Table {
 		t.Fatalf("child = %#v, want CSV table entry", child)
 	}
 	if child.Format != string(format.FormatCSV) {
@@ -53,7 +53,7 @@ func TestDescribeContainerKeepsUnknownTextExtensionUnqualified(t *testing.T) {
 		t.Fatalf("children = %#v, want one entry", info.Children)
 	}
 	child := info.Children[0]
-	if child.Name != "config/docker-compose.yml" || child.Format != "" || child.DataType != datatype.DataTypeUnknown {
+	if child.Name != "config/docker-compose.yml" || child.Format != "" || child.DataType != datatype.Unknown {
 		t.Fatalf("child = %#v, want unknown unqualified YAML entry", child)
 	}
 }
@@ -114,7 +114,7 @@ func TestResolveContainerChildReturnsEntryReader(t *testing.T) {
 	child := datatype.ContainerChildInfo{
 		Name:      "data/cities.csv",
 		ChildKind: "file",
-		DataType:  datatype.DataTypeTable,
+		DataType:  datatype.Table,
 		Format:    string(format.FormatCSV),
 		Native: map[string]interface{}{
 			"path": "data/cities.csv",
@@ -153,7 +153,7 @@ func TestResolveContainerChildRefsUseParentQualifiedRefs(t *testing.T) {
 	child := datatype.ContainerChildInfo{
 		Name:      "roads.shp",
 		ChildKind: "file",
-		DataType:  datatype.DataTypeTable,
+		DataType:  datatype.Table,
 		Format:    string(format.FormatShapefile),
 		Native: map[string]interface{}{
 			"path": "roads.shp",

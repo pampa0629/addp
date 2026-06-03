@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/addp/common/dataitem"
+	"github.com/addp/common/format"
 )
 
 func TestUnclaimedFileEntriesFiltersClaimedPaths(t *testing.T) {
@@ -29,7 +30,7 @@ func TestResolveMetaItemsPassesOnlyUnclaimedFilesToNextResolver(t *testing.T) {
 		priority: 20,
 		result: &DetectionResult{
 			Items: []*DetectedItem{detectedItemForTest(dataitem.ResolvedItem{
-				Layout:             dataitem.LayoutMulti,
+				Layout:             format.LayoutMulti,
 				PrimaryContentPath: "/shp/roads.shp",
 			})},
 			Claims: ResourceClaimSet{"/shp/roads.shp": true},

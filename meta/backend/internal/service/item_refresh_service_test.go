@@ -13,7 +13,9 @@ import (
 	"time"
 
 	"github.com/addp/common/dataitem"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
@@ -69,8 +71,8 @@ func TestRefreshKnownMultiItemUsesStoredRefsWithoutCatalogRediscovery(t *testing
 		SizeBytes:   &total,
 		Attributes: models.JSONMap{
 			"item": map[string]interface{}{
-				"layout":    string(dataitem.LayoutMulti),
-				"data_type": string(dataitem.DataTypeTable),
+				"layout":    string(format.LayoutMulti),
+				"data_type": string(datatype.Table),
 				"format":    "shapefile",
 				"refs": []map[string]interface{}{
 					{"path": "addp/gis/roads.shp", "role": "main", "primary": true, "required": true, "extension": ".shp"},
@@ -129,8 +131,8 @@ func TestClearStaleKnownMultiTableAccessIndexUsesLayoutSemantics(t *testing.T) {
 	}
 	clearStaleKnownMultiTableAccessIndex(multiAttrs, &metaitem.DetectedItem{
 		ResolvedItem: dataitem.ResolvedItem{
-			Layout:   dataitem.LayoutMulti,
-			DataType: dataitem.DataTypeTable,
+			Layout:   format.LayoutMulti,
+			DataType: datatype.Table,
 			Format:   "custom_multi_table",
 		},
 		Attributes: multiItemAttrs,
@@ -153,8 +155,8 @@ func TestClearStaleKnownMultiTableAccessIndexUsesLayoutSemantics(t *testing.T) {
 	}
 	clearStaleKnownMultiTableAccessIndex(singleAttrs, &metaitem.DetectedItem{
 		ResolvedItem: dataitem.ResolvedItem{
-			Layout:   dataitem.LayoutSingle,
-			DataType: dataitem.DataTypeTable,
+			Layout:   format.LayoutSingle,
+			DataType: datatype.Table,
 			Format:   "csv",
 		},
 		Attributes: map[string]interface{}{},
@@ -206,8 +208,8 @@ func TestRefreshKnownPDFItemWritesDocumentAndFormatInfo(t *testing.T) {
 		SizeBytes:   &size,
 		Attributes: models.JSONMap{
 			"item": map[string]interface{}{
-				"layout":    string(dataitem.LayoutSingle),
-				"data_type": string(dataitem.DataTypeDocument),
+				"layout":    string(format.LayoutSingle),
+				"data_type": string(datatype.Document),
 				"format":    "pdf",
 			},
 			"storage": map[string]interface{}{
@@ -286,8 +288,8 @@ func TestRefreshKnownDOCXItemExtractsTextFacts(t *testing.T) {
 		SizeBytes:   &size,
 		Attributes: models.JSONMap{
 			"item": map[string]interface{}{
-				"layout":    string(dataitem.LayoutSingle),
-				"data_type": string(dataitem.DataTypeDocument),
+				"layout":    string(format.LayoutSingle),
+				"data_type": string(datatype.Document),
 				"format":    "docx",
 			},
 			"storage": map[string]interface{}{
@@ -376,8 +378,8 @@ func TestRefreshKnownZIPItemWritesContainerInfo(t *testing.T) {
 		SizeBytes:   &size,
 		Attributes: models.JSONMap{
 			"item": map[string]interface{}{
-				"layout":    string(dataitem.LayoutSingle),
-				"data_type": string(dataitem.DataTypeContainer),
+				"layout":    string(format.LayoutSingle),
+				"data_type": string(datatype.Container),
 				"format":    "zip",
 			},
 			"storage": map[string]interface{}{
@@ -405,7 +407,7 @@ func TestRefreshKnownZIPItemWritesContainerInfo(t *testing.T) {
 	if err := db.First(&refreshed, item.ID).Error; err != nil {
 		t.Fatalf("load refreshed item: %v", err)
 	}
-	if got := commonJSON.String(refreshed.Attributes, "item", "data_type"); got != string(dataitem.DataTypeContainer) {
+	if got := commonJSON.String(refreshed.Attributes, "item", "data_type"); got != string(datatype.Container) {
 		t.Fatalf("item.data_type = %q, want container", got)
 	}
 	if got := commonJSON.String(refreshed.Attributes, "item", "format"); got != "zip" {

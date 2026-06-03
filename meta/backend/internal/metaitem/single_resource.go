@@ -1,6 +1,9 @@
 package metaitem
 
-import "github.com/addp/common/dataitem"
+import (
+	"github.com/addp/common/dataitem"
+	"github.com/addp/common/format"
+)
 
 // SingleResourceInput 是 single 内容布局 item 推断的输入。
 type SingleResourceInput struct {
@@ -41,7 +44,7 @@ func InferSingleResource(input SingleResourceInput) *DetectedItem {
 	})
 	formatName := dataitem.InferFormat(input.Name, input.ContentType, input.Format)
 	item := dataitem.ResolvedItem{
-		Layout:             dataitem.LayoutSingle,
+		Layout:             format.LayoutSingle,
 		DataType:           dataitem.InferDataType(formatName, input.ContentType),
 		Format:             formatName,
 		PrimaryContentPath: input.Path,

@@ -8,9 +8,9 @@ import (
 	"github.com/addp/common/format"
 )
 
-func TestTextProviderReadDocumentText(t *testing.T) {
-	provider := NewProvider(format.FormatText)
-	got, truncated, err := provider.ReadDocumentText(context.Background(), strings.NewReader("hello world"), 5, nil)
+func TestTextPluginReadDocumentText(t *testing.T) {
+	plugin := NewPlugin(format.FormatText)
+	got, truncated, err := plugin.ReadDocumentText(context.Background(), strings.NewReader("hello world"), 5, nil)
 	if err != nil {
 		t.Fatalf("ReadDocumentText() error = %v", err)
 	}
@@ -22,9 +22,9 @@ func TestTextProviderReadDocumentText(t *testing.T) {
 	}
 }
 
-func TestTextProviderDescribeDocument(t *testing.T) {
-	provider := NewProvider(format.FormatMarkdown)
-	info, err := provider.DescribeDocument(context.Background(), strings.NewReader("# Title\n\nbody"), nil)
+func TestTextPluginDescribeDocument(t *testing.T) {
+	plugin := NewPlugin(format.FormatMarkdown)
+	info, err := plugin.DescribeDocument(context.Background(), strings.NewReader("# Title\n\nbody"), nil)
 	if err != nil {
 		t.Fatalf("DescribeDocument() error = %v", err)
 	}
@@ -36,9 +36,9 @@ func TestTextProviderDescribeDocument(t *testing.T) {
 	}
 }
 
-func TestTextProviderRemovesBOM(t *testing.T) {
-	provider := NewProvider(format.FormatText)
-	got, _, err := provider.ReadDocumentText(context.Background(), strings.NewReader("\ufeffhello"), 20, nil)
+func TestTextPluginRemovesBOM(t *testing.T) {
+	plugin := NewPlugin(format.FormatText)
+	got, _, err := plugin.ReadDocumentText(context.Background(), strings.NewReader("\ufeffhello"), 20, nil)
 	if err != nil {
 		t.Fatalf("ReadDocumentText() error = %v", err)
 	}

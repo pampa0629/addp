@@ -16,11 +16,8 @@ import (
 
 func TestTargetCatalogPathsUsesExactObjectForSingleObjectTarget(t *testing.T) {
 	endpoint := planner.EndpointSpec{
-		Format: "csv",
-		EndpointResource: planner.EndpointResourceSpec{
-			Kind: planner.EndpointResourceKindObject,
-			Path: map[string]interface{}{"bucket": "addp", "path": "gis/abc.csv"},
-		},
+		Format:  "csv",
+		Locator: "addp://engine/9/path/addp/gis/abc.csv?type=object",
 	}
 
 	got := targetCatalogPaths(endpoint)
@@ -32,11 +29,8 @@ func TestTargetCatalogPathsUsesExactObjectForSingleObjectTarget(t *testing.T) {
 
 func TestTargetCatalogPathsUsesExactObjectForTopLevelSingleObject(t *testing.T) {
 	endpoint := planner.EndpointSpec{
-		Format: "csv",
-		EndpointResource: planner.EndpointResourceSpec{
-			Kind: planner.EndpointResourceKindObject,
-			Path: map[string]interface{}{"bucket": "addp", "path": "abc.csv"},
-		},
+		Format:  "csv",
+		Locator: "addp://engine/9/path/addp/abc.csv?type=object",
 	}
 
 	got := targetCatalogPaths(endpoint)
@@ -48,11 +42,8 @@ func TestTargetCatalogPathsUsesExactObjectForTopLevelSingleObject(t *testing.T) 
 
 func TestTargetCatalogPathsUsesObjectParentPrefixForMultiObjectTarget(t *testing.T) {
 	endpoint := planner.EndpointSpec{
-		Format: "shapefile",
-		EndpointResource: planner.EndpointResourceSpec{
-			Kind: planner.EndpointResourceKindObject,
-			Path: map[string]interface{}{"bucket": "addp", "path": "gis/abc.shp"},
-		},
+		Format:  "shapefile",
+		Locator: "addp://engine/9/path/addp/gis/abc.shp?type=object",
 	}
 
 	got := targetCatalogPaths(endpoint)
@@ -64,10 +55,7 @@ func TestTargetCatalogPathsUsesObjectParentPrefixForMultiObjectTarget(t *testing
 
 func TestTargetCatalogPathsUsesFileParentDirectory(t *testing.T) {
 	endpoint := planner.EndpointSpec{
-		EndpointResource: planner.EndpointResourceSpec{
-			Kind: planner.EndpointResourceKindFile,
-			Path: map[string]interface{}{"path": "exports/abc.shp"},
-		},
+		Locator: "addp://engine/9/path/exports/abc.shp?type=file",
 	}
 
 	got := targetCatalogPaths(endpoint)
@@ -79,10 +67,7 @@ func TestTargetCatalogPathsUsesFileParentDirectory(t *testing.T) {
 
 func TestTargetCatalogPathsUsesFilesystemRootForTopLevelFile(t *testing.T) {
 	endpoint := planner.EndpointSpec{
-		EndpointResource: planner.EndpointResourceSpec{
-			Kind: planner.EndpointResourceKindFile,
-			Path: map[string]interface{}{"path": "abc.csv"},
-		},
+		Locator: "addp://engine/9/path/abc.csv?type=file",
 	}
 
 	got := targetCatalogPaths(endpoint)
@@ -94,10 +79,7 @@ func TestTargetCatalogPathsUsesFilesystemRootForTopLevelFile(t *testing.T) {
 
 func TestTargetCatalogPathsUsesNativeTableNamespace(t *testing.T) {
 	endpoint := planner.EndpointSpec{
-		EndpointResource: planner.EndpointResourceSpec{
-			Kind: planner.EndpointResourceKindNativeTable,
-			Path: map[string]interface{}{"schema": "public", "table": "roads"},
-		},
+		Locator: "addp://engine/9/path/public/roads?type=table",
 	}
 
 	got := targetCatalogPaths(endpoint)
@@ -156,8 +138,7 @@ func TestAttachSourceMetaAttributesLoadsMetaItem(t *testing.T) {
 	}
 	spec := &planner.TableExportTaskSpec{
 		Source: planner.EndpointSpec{
-			Engine:     planner.EngineRef{ID: 3},
-			MetaItemID: 12,
+			Locator: "addp://engine/3/path/datasets/roads.parquet?type=object&item_id=12",
 		},
 	}
 	task := &models.TransferTask{
@@ -191,8 +172,7 @@ func TestAttachSourceMetaAttributesRejectsEngineMismatch(t *testing.T) {
 	}
 	spec := &planner.TableExportTaskSpec{
 		Source: planner.EndpointSpec{
-			Engine:     planner.EngineRef{ID: 3},
-			MetaItemID: 12,
+			Locator: "addp://engine/3/path/datasets/roads.parquet?type=object&item_id=12",
 		},
 	}
 	task := &models.TransferTask{

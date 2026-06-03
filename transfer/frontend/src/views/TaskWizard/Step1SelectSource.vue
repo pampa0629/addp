@@ -288,6 +288,7 @@ function treeNodeToCatalogEntry(node) {
     physical_path: metadata.physical_path,
     item_id: metadata.item_id,
     meta_id: metadata.item_id || metadata.meta_id,
+    locator: node.locator || node.id,
     size_bytes: metadata.size_bytes,
     last_modified_at: metadata.last_modified_at,
     row_count: metadata.row_count,
@@ -374,6 +375,7 @@ function syncSource(node) {
   if (!engine || !node) return
 
   const endpointResource = buildSourceEndpointResource(node)
+  const locator = sourceLocatorForNode(node)
   props.wizardState.updateSource({
     engineID: formData.engineID,
     engineType: engine.engine_type,
@@ -383,14 +385,14 @@ function syncSource(node) {
     dataType: nodeDataType(node),
     representation: representationForSelection(node),
     format: nodeFormat(node),
-    resource: endpointResource,
+    locator,
     extra: {
       sourceLabel: catalogPathForNode(node),
       catalogPath: catalogPathForNode(node),
       dataType: nodeDataType(node),
       representation: representationForSelection(node),
       format: nodeFormat(node),
-      resource: endpointResource,
+      locator,
       sourceItem: {
         item_id: node.item_id,
         meta_id: node.meta_id || node.item_id,
@@ -404,10 +406,43 @@ function syncSource(node) {
         format: nodeFormat(node),
         layout: node.layout,
         physical_path: node.physical_path,
+        locator,
         attributes: node.attributes || {}
       }
     }
   })
+}
+
+function sourceLocatorForNode(node) {
+  const existing = String(node?.locator || node?.id || '').trim()
+  if (existing.startsWith('addp://')) {
+    return ensureLocatorItemID(existing, node?.item_id || node?.meta_id)
+  }
+  return buildLocator(formData.engineID, locatorTypeForNode(node), pathNames(node), node?.item_id || node?.meta_id)
+}
+
+function locatorTypeForNode(node) {
+  if (representationForSelection(node) === 'native') return 'table'
+  return isObjectStorageEngine(selectedEngine.value?.engine_type) ? 'object' : 'file'
+}
+
+function buildLocator(engineID, type, segments = [], itemID = 0) {
+  const cleanEngineID = Number(engineID)
+  const cleanType = String(type || '').trim()
+  const path = (segments || []).map(segment => String(segment || '').trim()).filter(Boolean)
+  if (!cleanEngineID || !cleanType || path.length === 0) return ''
+  const encodedPath = path.map(segment => encodeURIComponent(segment)).join('/')
+  const params = new URLSearchParams({ type: cleanType })
+  const cleanItemID = Number(itemID || 0)
+  if (cleanItemID > 0) params.set('item_id', String(cleanItemID))
+  return `addp://engine/${cleanEngineID}/path/${encodedPath}?${params.toString()}`
+}
+
+function ensureLocatorItemID(locator, itemID = 0) {
+  const cleanItemID = Number(itemID || 0)
+  if (!cleanItemID || /[?&]item_id=/.test(locator)) return locator
+  const separator = locator.includes('?') ? '&' : '?'
+  return `${locator}${separator}item_id=${cleanItemID}`
 }
 
 function buildSourceEndpointResource(node) {

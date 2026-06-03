@@ -63,7 +63,7 @@
           {{ formatLabel(wizardState.sourceFormat.value) }}
         </el-descriptions-item>
         <el-descriptions-item :label="t('transfer.taskWizard.reviewResourcePath')" :span="2">
-          {{ sourceEndpointResourcePath }}
+          {{ sourceLocatorPath }}
         </el-descriptions-item>
       </el-descriptions>
     </el-card>
@@ -204,9 +204,9 @@ const warnings = computed(() => {
 
 const hasWarnings = computed(() => warnings.value.length > 0)
 
-const sourceEndpointResourcePath = computed(() => {
+const sourceLocatorPath = computed(() => {
   const config = props.wizardState.sourceConfig.value || {}
-  return config.sourceLabel || endpointResourcePath(props.wizardState.sourceEndpointResource.value) || '-'
+  return config.sourceLabel || locatorDisplayPath(props.wizardState.sourceLocator.value, props.wizardState.sourceRepresentation.value) || '-'
 })
 
 const targetResourcePath = computed(() => {
@@ -217,18 +217,26 @@ const targetResourcePath = computed(() => {
   return [config.resourcePath, config.resourceFile].filter(Boolean).join('/') || '-'
 })
 
-function endpointResourcePath(endpointResource) {
-  const path = endpointResource?.path || {}
-  if (endpointResource?.kind === 'native_table') {
-    return [path.schema, path.table || path.name].filter(Boolean).join('.')
+function locatorDisplayPath(locator, representation = '') {
+  const loc = parseLocator(locator)
+  if (loc.path.length === 0) return ''
+  if (String(representation || '').toLowerCase() === 'native' && loc.type === 'table') {
+    return loc.path.slice(-2).join('.')
   }
-  if (endpointResource?.kind === 'object') {
-    return [path.bucket, path.path].filter(Boolean).join('/')
-  }
-  if (endpointResource?.kind === 'file') {
-    return path.path || path.name || ''
-  }
-  return ''
+  return loc.path.join('/')
+}
+
+function parseLocator(locator) {
+  const result = { path: [], type: '' }
+  const match = String(locator || '').match(/^addp:\/\/engine\/\d+\/path\/([^?]*)(?:\?(.*))?$/)
+  if (!match) return result
+  result.path = String(match[1] || '')
+    .split('/')
+    .map(part => decodeURIComponent(part).trim())
+    .filter(Boolean)
+  const params = new URLSearchParams(match[2] || '')
+  result.type = String(params.get('type') || '').toLowerCase()
+  return result
 }
 
 function copyConfig() {

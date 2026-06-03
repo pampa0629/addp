@@ -47,20 +47,12 @@ Transfer API / Frontend
 {
   "mode": "batch",
   "source": {
-    "engine": {"id": 1},
-    "resource": {
-      "kind": "native_table",
-      "path": {"schema": "public", "table": "roads"}
-    },
+    "locator": "addp://engine/1/path/public/roads?type=table",
     "data_type": "table",
     "representation": "native"
   },
   "target": {
-    "engine": {"id": 2},
-    "resource": {
-      "kind": "object",
-      "path": {"path": "bucket/exports/roads.shp"}
-    },
+    "locator": "addp://engine/2/path/bucket/exports/roads.shp?type=object",
     "data_type": "table",
     "representation": "encoded",
     "format": "shapefile",
@@ -83,8 +75,7 @@ Transfer API / Frontend
 
 关键规则：
 
-- `engine.id` 指向 System engine；生产链路不依赖上游硬编码 `engine.type`。
-- `resource.kind` 表示资源形态，例如 `native_table`、`file`、`object`。
+- `locator` 使用 common resource tree 的 ResourceLocator URI，包含 engine id、catalog path 和 `type`。
 - `data_type` 稳定支持 `table`；`document`、`media`、`unknown` 已支持 encoded single raw copy。
 - `representation` 支持 `native` 和 `encoded`。
 - `format` 只用于 encoded endpoint。
@@ -167,7 +158,7 @@ source encoded file/object
 | `data_type` | `document`、`media`、`unknown` |
 | `representation` | `encoded` |
 | `layout` | `single` |
-| `resource.kind` | `file`、`object` |
+| locator `type` | `file`、`object` |
 | target `data_type` / `format` | 可省略并继承 source；显式声明时必须和 source 一致 |
 | target path | 必须是完整 file / object 路径 |
 | `policy.write_mode` | 只支持 `overwrite` |

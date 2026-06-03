@@ -43,7 +43,7 @@ func ApplySingleFileFormat(item *metaitem.DetectedItem, formatType format.Format
 		return
 	}
 	item.Format = string(formatType)
-	item.DataType = dataitem.DetectDataType(item.Format)
+	item.DataType = dataitem.DefaultDataTypeForFormat(item.Format)
 }
 
 func openSingleFilePeekReader(

@@ -12,23 +12,23 @@ import (
 
 const defaultTextReadLimit int64 = 16 * 1024
 
-type Provider struct {
+type Plugin struct {
 	formatType format.FormatType
 }
 
-func NewProvider(formatType format.FormatType) Provider {
-	return Provider{formatType: formatType}
+func NewPlugin(formatType format.FormatType) Plugin {
+	return Plugin{formatType: formatType}
 }
 
-func (p Provider) Format() format.FormatType {
+func (p Plugin) Format() format.FormatType {
 	return p.formatType
 }
 
-func (p Provider) Descriptor() format.FormatDescriptor {
+func (p Plugin) Descriptor() format.FormatDescriptor {
 	descriptor := format.FormatDescriptor{
 		ID:       "builtin-" + string(p.formatType),
 		Format:   p.formatType,
-		DataType: datatype.DataTypeDocument,
+		DataType: datatype.Document,
 		Layouts:  []string{format.LayoutSingle},
 	}
 	switch p.formatType {
@@ -50,13 +50,13 @@ func (p Provider) Descriptor() format.FormatDescriptor {
 	return descriptor
 }
 
-func (p Provider) DescribeDocument(ctx context.Context, input io.Reader, options *format.ParseOptions) (*datatype.DocumentInfo, error) {
+func (p Plugin) DescribeDocument(ctx context.Context, input io.Reader, options *format.ParseOptions) (*datatype.DocumentInfo, error) {
 	return &datatype.DocumentInfo{
 		Encoding: "utf-8",
 	}, nil
 }
 
-func (p Provider) ReadDocumentText(ctx context.Context, input io.Reader, limit int64, _ *format.ParseOptions) (string, bool, error) {
+func (p Plugin) ReadDocumentText(ctx context.Context, input io.Reader, limit int64, _ *format.ParseOptions) (string, bool, error) {
 	if limit <= 0 {
 		limit = defaultTextReadLimit
 	}
@@ -83,10 +83,10 @@ func (p Provider) ReadDocumentText(ctx context.Context, input io.Reader, limit i
 }
 
 func init() {
-	if err := format.RegisterFormatPlugin(NewProvider(format.FormatText)); err != nil {
+	if err := format.RegisterFormatPlugin(NewPlugin(format.FormatText)); err != nil {
 		panic(err)
 	}
-	if err := format.RegisterFormatPlugin(NewProvider(format.FormatMarkdown)); err != nil {
+	if err := format.RegisterFormatPlugin(NewPlugin(format.FormatMarkdown)); err != nil {
 		panic(err)
 	}
 }

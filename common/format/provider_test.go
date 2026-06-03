@@ -32,7 +32,7 @@ func (p providerTestPlugin) Descriptor() FormatDescriptor {
 	return FormatDescriptor{
 		ID:       "provider-test-plugin",
 		Format:   p.formatType,
-		DataType: datatype.DataTypeTable,
+		DataType: datatype.Table,
 		Layouts:  []string{LayoutSingle},
 	}
 }
@@ -121,7 +121,7 @@ func (providerTestMismatchedDescriptorPlugin) Descriptor() FormatDescriptor {
 	return FormatDescriptor{
 		ID:       "mismatched",
 		Format:   FormatType("descriptor_format"),
-		DataType: datatype.DataTypeTable,
+		DataType: datatype.Table,
 	}
 }
 

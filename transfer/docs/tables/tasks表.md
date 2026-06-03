@@ -35,20 +35,12 @@
 {
   "mode": "batch",
   "source": {
-    "engine": {"id": 1},
-    "resource": {
-      "kind": "native_table",
-      "path": {"schema": "public", "table": "source_roads"}
-    },
+    "locator": "addp://engine/1/path/public/source_roads?type=table",
     "data_type": "table",
     "representation": "native"
   },
   "target": {
-    "engine": {"id": 2},
-    "resource": {
-      "kind": "file",
-      "path": {"path": "exports/roads.parquet"}
-    },
+    "locator": "addp://engine/2/path/exports/roads.parquet?type=file",
     "data_type": "table",
     "representation": "encoded",
     "format": "parquet",
@@ -72,19 +64,17 @@
 
 | 旧字段 | 当前替代 |
 |---|---|
-| `connector_type` | 通过 `engine.id` 解析 System engine。 |
+| `connector_type` | 通过 endpoint `locator` 解析 System engine。 |
 | `source_config` / `target_config` | `source` / `target` endpoint。 |
 | `output_format` / `file_type` | encoded endpoint 的 `format`。 |
-| 旧 endpoint `engine_id` | `engine.id`。 |
+| 旧 endpoint `engine_id` | endpoint `locator` 中的 engine id。 |
 | 任务外层 `mappings` | `config.transforms[type=field_mapping]`。 |
 
 ## 三、endpoint 规则
 
 | 字段 | 说明 |
 |---|---|
-| `engine.id` | System engine ID。 |
-| `resource.kind` | `native_table`、`file`、`object`。 |
-| `resource.path` | 对应 engine catalog path 的业务描述。 |
+| `locator` | ResourceLocator URI，包含 engine id、catalog path 和 `type`。 |
 | `data_type` | 当前稳定主链路为 `table`。 |
 | `representation` | `native` 或 `encoded`。 |
 | `format` | encoded endpoint 必填。 |

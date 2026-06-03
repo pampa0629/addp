@@ -89,7 +89,7 @@ func buildBuiltinContentHandler(cfg ObjectContentPluginConfig) (ObjectContentHan
 	if !ok {
 		return nil, fmt.Errorf("未知内置内容插件 %q", cfg.Builtin)
 	}
-	if descriptor.DataType == commondatatype.DataTypeMedia {
+	if descriptor.DataType == commondatatype.Media {
 		mediaKind := mediaKindFromDescriptor(descriptor)
 		switch mediaKind {
 		case "image":
@@ -100,7 +100,7 @@ func buildBuiltinContentHandler(cfg ObjectContentPluginConfig) (ObjectContentHan
 			return buildAudioContentHandler(cfg, string(descriptor.Format)), nil
 		}
 	}
-	if descriptor.DataType == commondatatype.DataTypeDocument {
+	if descriptor.DataType == commondatatype.Document {
 		return buildRawDocumentContentHandler(cfg, descriptor.Format), nil
 	}
 	return nil, fmt.Errorf("内置内容插件 %q 没有对应的对象内容处理器", cfg.Builtin)
@@ -398,7 +398,7 @@ func tableObjectContentMatcher(match ObjectContentMatcherConfig) objectContentMa
 	extensions := make([]string, 0)
 	contentTypes := make([]string, 0)
 	for _, descriptor := range commonformat.ListFormatDescriptors() {
-		if descriptor.DataType != commondatatype.DataTypeTable || !hasSingleTableContentProviders(descriptor.Format) {
+		if descriptor.DataType != commondatatype.Table || !hasSingleTableContentProviders(descriptor.Format) {
 			continue
 		}
 		formats = append(formats, string(descriptor.Format))
@@ -440,7 +440,7 @@ func mediaMatcherDefaults(mediaKind string) ([]string, []string, []string) {
 	extensions := make([]string, 0)
 	contentTypes := make([]string, 0)
 	for _, descriptor := range commonformat.ListFormatDescriptors() {
-		if descriptor.DataType != commondatatype.DataTypeMedia {
+		if descriptor.DataType != commondatatype.Media {
 			continue
 		}
 		if mediaKind != "" && !formatDescriptorMatchesMediaKind(descriptor, mediaKind) {
@@ -484,7 +484,7 @@ func containerObjectContentMatcher(match ObjectContentMatcherConfig) objectConte
 	extensions := make([]string, 0)
 	contentTypes := make([]string, 0)
 	for _, descriptor := range commonformat.ListFormatDescriptors() {
-		if descriptor.DataType != commondatatype.DataTypeContainer || !hasContainerInfoProvider(descriptor.Format) {
+		if descriptor.DataType != commondatatype.Container || !hasContainerInfoProvider(descriptor.Format) {
 			continue
 		}
 		formats = append(formats, string(descriptor.Format))

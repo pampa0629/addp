@@ -98,7 +98,7 @@ addp://engine/1/path/bucket/folder/file.txt?type=object&item_id=101  # 对象存
 - ✅ URL 编码处理特殊字符（中文、空格等）
 
 **实现**:
-- 后端: `common/catalogview/locator.go` (148 行)
+- 后端: `common/resourcetree/locator.go` (148 行)
 - 前端: `common-frontend/basic/src/types/resourceLocator.js`
 - 测试: 45 个单元测试全部通过
 
@@ -268,10 +268,10 @@ func (c *EngineConnector) GetConnection(engineID uint) (*gorm.DB, error)
 ## 📦 新增文件清单
 
 ### 后端 (Common)
-- `common/catalogview/locator.go` - ResourceLocator 核心实现
-- `common/catalogview/locator_test.go` - 单元测试 (45 个测试)
-- `common/catalogview/tree_builder.go` - TreeBuilder 资源树构建器
-- `common/catalogview/tree_builder_test.go` - 单元测试
+- `common/resourcetree/locator.go` - ResourceLocator 核心实现
+- `common/resourcetree/locator_test.go` - 单元测试 (45 个测试)
+- `common/resourcetree/tree_builder.go` - TreeBuilder 资源树构建器
+- `common/resourcetree/tree_builder_test.go` - 单元测试
 
 ### 后端 (Manager)
 - `manager/backend/internal/service/explorer_service.go` - ExplorerService
@@ -336,23 +336,23 @@ await store.loadPreview(locator, 1)
 
 ```go
 import (
-    "github.com/addp/common/catalogview"
+    "github.com/addp/common/resourcetree"
     commonModels "github.com/addp/common/models"
 )
 
 itemID := uint(100)
 
 // 解析 locator URI
-loc, err := catalogview.ParseURI("addp://engine/1/path/public/users?type=table&item_id=100")
+loc, err := resourcetree.ParseURI("addp://engine/1/path/public/users?type=table&item_id=100")
 // loc.EngineID = 1
 // loc.Path = ["public", "users"]
 // loc.Type = "table"
 
 // 构建 locator URI
-loc := &catalogview.ResourceLocator{
+loc := &resourcetree.ResourceLocator{
     EngineID: 1,
     Path:     []string{"public", "users"},
-    Type:     catalogview.TypeTable,
+    Type:     resourcetree.TypeTable,
     ItemID:   &itemID,
 }
 uri := loc.ToURI()
@@ -381,11 +381,11 @@ addp://engine/1/path/数据库/用户表?type=table
 ```
 
 ### Q3: 如何在其他模块复用 TreeBuilder？
-A: 导入 Common 模块的 TreeBuilder，传入 MetaClient 即可：
+A: 导入 Common 模块的 TreeBuilder，调用方先取得 Meta 事实后传入构建方法即可：
 ```go
-import "github.com/addp/common/catalogview"
+import "github.com/addp/common/resourcetree"
 
-treeBuilder := catalogview.NewTreeBuilder(metaClient)
+treeBuilder := resourcetree.NewTreeBuilder()
 tree, err := treeBuilder.BuildFromMeta(engine, metaNodes, expandDepth)
 ```
 

@@ -89,11 +89,11 @@ func previewHintDataType(formatType format.FormatType, contentType string) strin
 	contentType = strings.ToLower(strings.TrimSpace(contentType))
 	switch {
 	case strings.HasPrefix(contentType, "image/"), strings.HasPrefix(contentType, "video/"), strings.HasPrefix(contentType, "audio/"):
-		return string(datatype.DataTypeMedia)
+		return string(datatype.Media)
 	case strings.HasPrefix(contentType, "text/"):
-		return string(datatype.DataTypeDocument)
+		return string(datatype.Document)
 	default:
-		return string(datatype.DataTypeUnknown)
+		return string(datatype.Unknown)
 	}
 }
 
@@ -117,13 +117,13 @@ func previewHintSemantics(formatType format.FormatType, dataType, contentType st
 		return previewMaterialText, "text", true, true
 	}
 	switch strings.TrimSpace(dataType) {
-	case string(datatype.DataTypeTable):
+	case string(datatype.Table):
 		return previewMaterialTable, "table", true, false
-	case string(datatype.DataTypeContainer):
+	case string(datatype.Container):
 		return previewMaterialContainer, "container", true, false
-	case string(datatype.DataTypeDocument):
+	case string(datatype.Document):
 		return previewMaterialUnsupported, "unsupported", false, false
-	case string(datatype.DataTypeMedia):
+	case string(datatype.Media):
 		return previewMaterialUnsupported, "unsupported", false, false
 	default:
 		return previewMaterialUnsupported, "unsupported", false, false

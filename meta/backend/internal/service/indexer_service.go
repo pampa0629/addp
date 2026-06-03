@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/addp/common/catalogview"
 	"github.com/addp/common/datatype"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/resourcetree"
 	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/metatext"
 	"github.com/addp/meta/internal/models"
@@ -183,7 +183,7 @@ func (s *IndexerService) IndexCatalogAsset(resource *commonModels.Engine, tenant
 }
 
 func metaItemLocator(engineID uint, engineType, itemType, fullName string, itemID *uint) string {
-	loc := catalogview.LocatorFromFullName(engineID, engineType, itemType, fullName, itemID)
+	loc := resourcetree.LocatorFromFullName(engineID, engineType, itemType, fullName, itemID)
 	if loc == nil {
 		return ""
 	}

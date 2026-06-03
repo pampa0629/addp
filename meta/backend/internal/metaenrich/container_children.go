@@ -5,7 +5,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/addp/common/dataitem"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metaitem"
@@ -19,7 +19,7 @@ const (
 
 // EnrichContainerChildren 枚举容器内部对象，并写入 type_info.container.children。
 func EnrichContainerChildren(ctx context.Context, attrs models.JSONMap, detected *metaitem.DetectedItem, reader io.Reader) error {
-	if attrs == nil || detected == nil || reader == nil || detected.DataType != dataitem.DataTypeContainer {
+	if attrs == nil || detected == nil || reader == nil || detected.DataType != datatype.Container {
 		return nil
 	}
 	formatType := format.NormalizeFormat(detected.Format)

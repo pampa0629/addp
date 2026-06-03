@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/addp/common/dataitem"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/plugins/docx"
 	_ "github.com/addp/common/format/plugins/pdf"
@@ -47,7 +46,7 @@ func TestBuildRawCopyPlanRejectsMultiLayoutSource(t *testing.T) {
 		"item": map[string]interface{}{
 			"data_type": "document",
 			"format":    "pdf",
-			"layout":    string(dataitem.LayoutMulti),
+			"layout":    string(format.LayoutMulti),
 		},
 	}
 	_, err := BuildRawCopyPlan(spec, StaticEngineResolver{1: {Type: "minio"}, 2: {Type: "nfs"}})
@@ -69,13 +68,13 @@ func TestBuildRawCopyPlanRejectsTargetFormatConflict(t *testing.T) {
 	}
 }
 
-func TestParseRawCopyTaskSpecRejectsUnknownEngineField(t *testing.T) {
+func TestParseRawCopyTaskSpecRejectsLegacyEngineField(t *testing.T) {
 	spec := minimalRawCopySpec()
 	_, err := ParseRawCopyTaskSpec(map[string]interface{}{
 		"mode": spec.Mode,
 		"source": map[string]interface{}{
-			"engine":         map[string]interface{}{"id": 1, "scope": "system"},
-			"resource":       spec.Source.EndpointResource,
+			"engine":         map[string]interface{}{"id": 1},
+			"locator":        spec.Source.Locator,
 			"data_type":      spec.Source.DataType,
 			"representation": spec.Source.Representation,
 			"format":         spec.Source.Format,
@@ -85,8 +84,8 @@ func TestParseRawCopyTaskSpecRejectsUnknownEngineField(t *testing.T) {
 	if err == nil {
 		t.Fatal("ParseRawCopyTaskSpec succeeded, want unknown field error")
 	}
-	if !strings.Contains(err.Error(), "unknown field \"scope\"") {
-		t.Fatalf("ParseRawCopyTaskSpec error = %v, want unknown scope field error", err)
+	if !strings.Contains(err.Error(), "unknown field \"engine\"") {
+		t.Fatalf("ParseRawCopyTaskSpec error = %v, want unknown engine field error", err)
 	}
 }
 
@@ -94,25 +93,17 @@ func minimalRawCopySpec() RawCopyTaskSpec {
 	return RawCopyTaskSpec{
 		Mode: modeBatch,
 		Source: EndpointSpec{
-			Engine:         EngineRef{ID: 1},
+			Locator:        "addp://engine/1/path/docs/a.pdf?type=object",
 			DataType:       "document",
 			Representation: representationEncoded,
 			Format:         format.FormatPDF,
-			EndpointResource: EndpointResourceSpec{
-				Kind: EndpointResourceKindObject,
-				Path: map[string]interface{}{"bucket": "docs", "path": "a.pdf"},
-			},
 		},
 		Target: EndpointSpec{
-			Engine:         EngineRef{ID: 2},
+			Locator:        "addp://engine/2/path/backup/a.pdf?type=file",
 			DataType:       "document",
 			Representation: representationEncoded,
 			Format:         format.FormatPDF,
-			EndpointResource: EndpointResourceSpec{
-				Kind: EndpointResourceKindFile,
-				Path: map[string]interface{}{"path": "backup/a.pdf"},
-			},
-			Policy: map[string]interface{}{"write_mode": "overwrite"},
+			Policy:         map[string]interface{}{"write_mode": "overwrite"},
 		},
 	}
 }

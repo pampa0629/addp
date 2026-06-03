@@ -3,9 +3,9 @@ package metaenrich
 import (
 	"context"
 
-	"github.com/addp/common/dataitem"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
@@ -29,7 +29,7 @@ func EnrichResourceAttributes(ctx context.Context, attrs models.JSONMap, input R
 	}
 
 	canReadContent := input.ContentReader != nil && input.CatalogPathFor != nil && input.PhysicalPath != ""
-	if item.Layout == dataitem.LayoutSingle && canReadContent {
+	if item.Layout == format.LayoutSingle && canReadContent {
 		beforeDataType := item.DataType
 		beforeFormat := item.Format
 		enriched, ok, err := EnrichSingleTableFileItem(
@@ -57,7 +57,7 @@ func EnrichResourceAttributes(ctx context.Context, attrs models.JSONMap, input R
 		metaattr.SetTableFields(attrs, item.Fields)
 	}
 
-	if item.Layout == dataitem.LayoutSingle && canReadContent {
+	if item.Layout == format.LayoutSingle && canReadContent {
 		if err := EnrichSingleDocumentItem(ctx, attrs, input.ContentReader, input.ConnInfo, input.EngineID, item, input.PhysicalPath, input.CatalogPathFor); err != nil {
 			return item, item.Fields, err
 		}
@@ -66,7 +66,7 @@ func EnrichResourceAttributes(ctx context.Context, attrs models.JSONMap, input R
 		}
 	}
 	metaitem.ApplyContainerSummary(attrs, item)
-	if item.DataType == dataitem.DataTypeContainer && canReadContent {
+	if item.DataType == datatype.Container && canReadContent {
 		reader, err := input.ContentReader.OpenContent(ctx, input.ConnInfo, input.CatalogPathFor(input.PhysicalPath), plugin.ReadOptions{})
 		if err != nil {
 			return item, item.Fields, nil

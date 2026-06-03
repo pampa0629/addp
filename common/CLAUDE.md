@@ -11,7 +11,7 @@ common/
 ├── api/            # 统一响应、错误和 handler 辅助
 ├── client/         # System、Meta、Asset、Service 等模块客户端
 ├── config/         # .env 加载和服务配置
-├── catalogview/    # 目录展示、资源树和路径定位相关能力
+├── resourcetree/    # Meta catalog / item 事实到资源树视图的投影和路径定位纯转换
 ├── contentio/      # 基于 Go io 的内容 Ref、Reader、Writer、Lister、RangeReader
 ├── engine/contentadapter/ # engine provider 到 contentio 的适配
 ├── jsonmap/        # decoded JSON map 通用读取工具
@@ -32,7 +32,9 @@ common/
 - `common/format` 只提供通用格式、type info / format info、parser / analyzer 能力；Meta item 识别、claims / exclusive、`meta_item.full_name` 决策和 attributes 落库构造属于 Meta 模块。
 - `common/contentio` 只表达内容定位和 I/O，不依赖 engine，不解析 format，不返回上层 DTO。
 - `common/engine/contentadapter` 负责把 engine content provider 适配为 `contentio.Reader` / `Writer`。
-- `common/catalogview` 只承载目录展示、路径定位和资源树相关能力，不承载内容 I/O 抽象。
+- `common/resourcetree` 负责把 Meta 已落库的 catalog / item 事实投影为跨模块资源树视图，并提供 `ResourceLocator` / provider `CatalogPath` 的纯转换能力。
+- `common/resourcetree` 不持有 System / Meta client，不主动读取远程服务，不处理租户权限、token、降级策略、扫描或内容读取。
+- `common/resourcetree` 中 attributes helper 只服务 `TreeNode.Metadata` 展示摘要，不作为通用 attributes 规范 API，也不写入持久 attributes。
 - API 响应优先复用 `common/api`，执行记录优先复用 `common/models.TaskExecution` 和 `common/repository.TaskExecutionRepository`。
 - `common/sqldialect` 只承载跨 SQL 引擎的基础方言差异；PostGIS 等空间扩展能力归入 `common/spatial`。
 - 空间能力不要默认几何字段名为 `geom`，应通过元数据或调用方参数传入。

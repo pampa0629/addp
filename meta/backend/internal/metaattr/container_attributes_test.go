@@ -18,7 +18,7 @@ func TestContainerInfoAttributesKeepsOnlyCanonicalChildFormat(t *testing.T) {
 			{
 				Name:      "config/docker-compose.yml",
 				ChildKind: "file",
-				DataType:  datatype.DataTypeUnknown,
+				DataType:  datatype.Unknown,
 				Native: map[string]interface{}{
 					"format":     "yml",
 					"vendor":     "kept",
@@ -32,7 +32,7 @@ func TestContainerInfoAttributesKeepsOnlyCanonicalChildFormat(t *testing.T) {
 			{
 				Name:      "data/table.data",
 				ChildKind: "file",
-				DataType:  datatype.DataTypeTable,
+				DataType:  datatype.Table,
 				Native: map[string]interface{}{
 					"format": "csv",
 				},
@@ -40,13 +40,13 @@ func TestContainerInfoAttributesKeepsOnlyCanonicalChildFormat(t *testing.T) {
 			{
 				Name:      "docs/readme",
 				ChildKind: "file",
-				DataType:  datatype.DataTypeDocument,
+				DataType:  datatype.Document,
 				Format:    string(format.FormatText),
 			},
 			{
 				Name:      "raw/blob",
 				ChildKind: "file",
-				DataType:  datatype.DataTypeUnknown,
+				DataType:  datatype.Unknown,
 				Format:    "unknown",
 			},
 		},

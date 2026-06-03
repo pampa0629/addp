@@ -65,7 +65,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		ID:             "builtin-" + string(p.formatType),
 		Format:         p.formatType,
 		I18nKey:        i18nKey,
-		DataType:       datatype.DataTypeTable,
+		DataType:       datatype.Table,
 		Layouts:        []string{format.LayoutSingle},
 		Identification: format.FormatIdentification{Extensions: extensions, MimeTypes: mimeTypes},
 	}
@@ -560,7 +560,7 @@ func (p *Plugin) newSparseRowIndex(opts *format.ParseOptions, headerBytes int64)
 	}
 	return &datatype.AccessIndex{
 		Kind:        datatype.AccessIndexKindSparseRow,
-		DataType:    datatype.DataTypeTable,
+		DataType:    datatype.Table,
 		Format:      string(p.formatType),
 		Unit:        datatype.AccessIndexUnitRow,
 		OffsetUnit:  datatype.AccessIndexOffsetByte,

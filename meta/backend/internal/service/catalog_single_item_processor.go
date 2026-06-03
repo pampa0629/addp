@@ -216,7 +216,7 @@ func extractCatalogDocumentText(
 	item *metaitem.DetectedItem,
 ) documentExtractionResult {
 	result := documentExtractionResult{}
-	if attrs == nil || readableProvider == nil || item == nil || item.DataType != datatype.DataTypeDocument {
+	if attrs == nil || readableProvider == nil || item == nil || item.DataType != datatype.Document {
 		return result
 	}
 	result.Counts.Documents = 1

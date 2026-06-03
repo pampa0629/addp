@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/addp/common/dataitem"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/meta/internal/metaattr"
@@ -38,8 +39,8 @@ func TestExtractObjectMetadataOnDemandUsesUnifiedMediaEnrichment(t *testing.T) {
 	size := int64(0)
 	detected := &metaitem.DetectedItem{
 		ResolvedItem: dataitem.ResolvedItem{
-			Layout:             dataitem.LayoutSingle,
-			DataType:           dataitem.DataTypeUnknown,
+			Layout:             format.LayoutSingle,
+			DataType:           datatype.Unknown,
 			Format:             string(format.FormatUnknown),
 			PrimaryContentPath: "pixel.png",
 			SizeBytes:          &size,
@@ -69,7 +70,7 @@ func TestExtractObjectMetadataOnDemandUsesUnifiedMediaEnrichment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExtractObjectMetadataOnDemand() error = %v", err)
 	}
-	if got := commonJSON.String(updated, "item", "data_type"); got != string(dataitem.DataTypeMedia) {
+	if got := commonJSON.String(updated, "item", "data_type"); got != string(datatype.Media) {
 		t.Fatalf("item.data_type = %q, want media", got)
 	}
 	if got := commonJSON.String(updated, "item", "format"); got != string(format.FormatPNG) {
@@ -87,7 +88,7 @@ func TestExtractObjectMetadataOnDemandUsesUnifiedMediaEnrichment(t *testing.T) {
 	if err := db.First(&stored, item.ID).Error; err != nil {
 		t.Fatalf("reload meta item: %v", err)
 	}
-	if got := commonJSON.String(stored.Attributes, "item", "data_type"); got != string(dataitem.DataTypeMedia) {
+	if got := commonJSON.String(stored.Attributes, "item", "data_type"); got != string(datatype.Media) {
 		t.Fatalf("stored item.data_type = %q, want media", got)
 	}
 }
@@ -111,8 +112,8 @@ func TestExtractObjectMetadataOnDemandUsesUnifiedContainerEnrichment(t *testing.
 	size := int64(0)
 	detected := &metaitem.DetectedItem{
 		ResolvedItem: dataitem.ResolvedItem{
-			Layout:             dataitem.LayoutSingle,
-			DataType:           dataitem.DataTypeUnknown,
+			Layout:             format.LayoutSingle,
+			DataType:           datatype.Unknown,
 			Format:             string(format.FormatUnknown),
 			PrimaryContentPath: "archive.zip",
 			SizeBytes:          &size,
@@ -145,7 +146,7 @@ func TestExtractObjectMetadataOnDemandUsesUnifiedContainerEnrichment(t *testing.
 	if err != nil {
 		t.Fatalf("ExtractObjectMetadataOnDemand() error = %v", err)
 	}
-	if got := commonJSON.String(updated, "item", "data_type"); got != string(dataitem.DataTypeContainer) {
+	if got := commonJSON.String(updated, "item", "data_type"); got != string(datatype.Container) {
 		t.Fatalf("item.data_type = %q, want container", got)
 	}
 	if got := commonJSON.String(updated, "item", "format"); got != string(format.FormatZIP) {
@@ -167,7 +168,7 @@ func TestExtractObjectMetadataOnDemandUsesUnifiedContainerEnrichment(t *testing.
 	if err := db.First(&stored, item.ID).Error; err != nil {
 		t.Fatalf("reload meta item: %v", err)
 	}
-	if got := commonJSON.String(stored.Attributes, "item", "data_type"); got != string(dataitem.DataTypeContainer) {
+	if got := commonJSON.String(stored.Attributes, "item", "data_type"); got != string(datatype.Container) {
 		t.Fatalf("stored item.data_type = %q, want container", got)
 	}
 }

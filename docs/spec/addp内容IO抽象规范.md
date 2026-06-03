@@ -20,7 +20,7 @@
 多个 content 共同组成一个 format item 时，不在 `contentio` 内引入独立的 multi 读写器，而是由 format / dataitem / 调用编排层显式传递 `[]format.RelatedRef`。
 从 primary ref 推导 related refs 的规则属于 `common/format.RelatedRefSpec`，不属于 `contentio`。
 
-`common/catalogview` 已退出。目录展示、资源树、`ResourceLocator`、DataSourceService 等偏目录视图和服务编排的能力归入 `common/catalogview`；内容 I/O 归入 `common/contentio`；engine 到 contentio 的适配归入 `common/engine/contentadapter`。
+`common/resourcetree` 已退出内容 I/O 边界，只保留目录视图投影、资源树、`ResourceLocator` 和 provider `CatalogPath` 纯转换能力；System / Meta 读取、DataSource service 编排、权限、token、降级策略和内容读取属于上层模块。内容 I/O 归入 `common/contentio`；engine 到 contentio 的适配归入 `common/engine/contentadapter`。
 
 engine 到 contentio 的适配放在 `common/engine/contentadapter`。该包可以依赖 `common/engine/plugin` 和 `common/contentio`；`common/contentio` 本身不得依赖 engine。
 

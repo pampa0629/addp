@@ -48,7 +48,7 @@ func (d *commonDataItemResolver) ResolveItems(ctx context.Context, input Directo
 		return result, nil
 	}
 	for _, item := range resolved.Items {
-		if item.Layout != dataitem.LayoutMulti {
+		if item.Layout != format.LayoutMulti {
 			continue
 		}
 		detected := detectedItemFromResolvedItem(input.DirPath, item)
@@ -168,7 +168,7 @@ func EnrichKnownMultiTableItem(
 	catalogPathFor func(path string) plugin.CatalogPath,
 	item *DetectedItem,
 ) (*DetectedItem, bool, error) {
-	if contentReader == nil || item == nil || item.Layout != dataitem.LayoutMulti || item.Format == "" || len(item.RefList) == 0 {
+	if contentReader == nil || item == nil || item.Layout != format.LayoutMulti || item.Format == "" || len(item.RefList) == 0 {
 		return item, false, nil
 	}
 	formatType := format.NormalizeFormat(item.Format)

@@ -61,7 +61,7 @@ func TestPreviewHintUsesContainerMaterialForContainerDataType(t *testing.T) {
 	hint := inferPreviewHint(previewHintInput{
 		Name:     "sample.sqlite",
 		Format:   format.FormatSQLite,
-		DataType: string(datatype.DataTypeContainer),
+		DataType: string(datatype.Container),
 	})
 
 	if hint.Material != "container" {
@@ -91,7 +91,7 @@ func TestPreviewHintSemanticMatrix(t *testing.T) {
 			input: previewHintInput{
 				Name:     "report.pdf",
 				Format:   format.FormatPDF,
-				DataType: string(datatype.DataTypeDocument),
+				DataType: string(datatype.Document),
 			},
 			wantMaterial:    "raw_binary",
 			wantRenderer:    "pdf",
@@ -102,7 +102,7 @@ func TestPreviewHintSemanticMatrix(t *testing.T) {
 			input: previewHintInput{
 				Name:     "book.epub",
 				Format:   format.FormatUnknown,
-				DataType: string(datatype.DataTypeDocument),
+				DataType: string(datatype.Document),
 			},
 			wantMaterial:    "unsupported",
 			wantRenderer:    "unsupported",
@@ -113,7 +113,7 @@ func TestPreviewHintSemanticMatrix(t *testing.T) {
 			input: previewHintInput{
 				Name:     "clip.bin",
 				Format:   format.FormatUnknown,
-				DataType: string(datatype.DataTypeMedia),
+				DataType: string(datatype.Media),
 			},
 			wantMaterial:    "unsupported",
 			wantRenderer:    "unsupported",
@@ -124,7 +124,7 @@ func TestPreviewHintSemanticMatrix(t *testing.T) {
 			input: previewHintInput{
 				Name:     "clip.mp4",
 				Format:   format.FormatMP4,
-				DataType: string(datatype.DataTypeMedia),
+				DataType: string(datatype.Media),
 			},
 			wantMaterial:    "raw_binary",
 			wantRenderer:    "video",
@@ -2114,7 +2114,7 @@ func TestTableAccessIndexFromMetaAttributesNormalizesFormat(t *testing.T) {
 		"access_index": map[string]interface{}{
 			"table": map[string]interface{}{
 				"kind":        datatype.AccessIndexKindSparseRow,
-				"data_type":   string(datatype.DataTypeTable),
+				"data_type":   string(datatype.Table),
 				"format":      "yml",
 				"unit":        datatype.AccessIndexUnitRow,
 				"offset_unit": datatype.AccessIndexOffsetByte,

@@ -375,8 +375,8 @@ const isSpatialFormat = computed(() => {
 
 const sourceFileName = computed(() => {
   const sourceConfig = props.wizardState.sourceConfig?.value || {}
-  const path = sourceConfig.resource?.path || props.wizardState.sourceEndpointResource?.value?.path || {}
-  const fullPath = [path.bucket, path.path || path.name].filter(Boolean).join('/') || sourceConfig.sourceLabel || ''
+  const loc = parseLocator(sourceConfig.locator || props.wizardState.sourceLocator?.value || '')
+  const fullPath = loc.path.join('/') || sourceConfig.sourceLabel || ''
   return normalizeFileCatalogPath(fullPath).split('/').filter(Boolean).pop() || ''
 })
 
@@ -776,6 +776,21 @@ function defaultOutputFormat(value) {
 
 function emptyOutputFormat() {
   return { label: '', value: '', extension: '', options: {}, backendType: '' }
+}
+
+function parseLocator(locator) {
+  const result = { engineID: 0, path: [], type: '', itemID: 0 }
+  const match = String(locator || '').match(/^addp:\/\/engine\/(\d+)\/path\/([^?]*)(?:\?(.*))?$/)
+  if (!match) return result
+  result.engineID = Number(match[1] || 0)
+  result.path = String(match[2] || '')
+    .split('/')
+    .map(part => decodeURIComponent(part).trim())
+    .filter(Boolean)
+  const params = new URLSearchParams(match[3] || '')
+  result.type = String(params.get('type') || '').toLowerCase()
+  result.itemID = Number(params.get('item_id') || 0)
+  return result
 }
 
 onMounted(async () => {

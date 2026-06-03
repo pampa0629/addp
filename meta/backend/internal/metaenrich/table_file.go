@@ -52,13 +52,13 @@ func tableFileItemRules() []dataitem.FormatRule {
 }
 
 func tableFileRuleCanRead(rule dataitem.FormatRule) bool {
-	if rule.DataType != dataitem.DataTypeTable {
+	if rule.DataType != datatype.Table {
 		return false
 	}
 	switch rule.Layout {
-	case dataitem.LayoutSingle:
+	case format.LayoutSingle:
 		return hasSingleTableProvider(rule.Format)
-	case dataitem.LayoutWhole:
+	case format.LayoutWhole:
 		return hasScopeTableProvider(rule.Format)
 	default:
 		return false
@@ -89,10 +89,10 @@ func resolveTableFileDataItem(dirPath string, files []metaitem.StorageFileRef) (
 		return nil, false, nil
 	}
 	item := resolved.Items[0]
-	if item.DataType != dataitem.DataTypeTable {
+	if item.DataType != datatype.Table {
 		return nil, false, nil
 	}
-	return &item, item.Layout == dataitem.LayoutWhole && resolved.Exclusive, nil
+	return &item, item.Layout == format.LayoutWhole && resolved.Exclusive, nil
 }
 
 func tableFileCandidates(files []metaitem.StorageFileRef) []dataitem.Candidate {
@@ -154,7 +154,7 @@ func (d *tableFileItemResolver) ResolveItems(
 	return &metaitem.DetectionResult{
 		Items:     []*metaitem.DetectedItem{item},
 		Claims:    claims,
-		Exclusive: item.Layout == dataitem.LayoutWhole,
+		Exclusive: item.Layout == format.LayoutWhole,
 	}, nil
 }
 
@@ -263,17 +263,17 @@ func tableFilePrimaryContentPath(files []metaitem.StorageFileRef, subdirs []meta
 	return dirPath
 }
 
-func tableFileLayout(files []metaitem.StorageFileRef, subdirs []metaitem.StorageDirectoryRef, dirPath string) dataitem.Layout {
+func tableFileLayout(files []metaitem.StorageFileRef, subdirs []metaitem.StorageDirectoryRef, dirPath string) format.Layout {
 	if item, ok, err := resolveTableFileDataItem(dirPath, files); err == nil && item != nil && ok {
 		return item.Layout
 	}
 	if len(subdirs) > 0 {
-		return dataitem.LayoutWhole
+		return format.LayoutWhole
 	}
 	if len(directTableFiles(files, dirPath)) > 1 || len(tableFiles(files)) > 1 {
-		return dataitem.LayoutWhole
+		return format.LayoutWhole
 	}
-	return dataitem.LayoutSingle
+	return format.LayoutSingle
 }
 
 func validateTableFiles(files []metaitem.StorageFileRef, dirPath string) ([]metaitem.StorageFileRef, error) {
@@ -321,7 +321,7 @@ func tableFileAttributes(formatName string, mode string, files []metaitem.Storag
 }
 
 func tableFileMode(files []metaitem.StorageFileRef, subdirs []metaitem.StorageDirectoryRef, dirPath string) string {
-	if tableFileLayout(files, subdirs, dirPath) == dataitem.LayoutWhole {
+	if tableFileLayout(files, subdirs, dirPath) == format.LayoutWhole {
 		return "whole"
 	}
 	return "single"
@@ -343,12 +343,12 @@ func tableDatasetInfoWithoutSchema(files []metaitem.StorageFileRef, subdirs []me
 			totalSize = *resolved.SizeBytes
 		}
 	}
-	if layout == dataitem.LayoutWhole && scopePath == "" {
+	if layout == format.LayoutWhole && scopePath == "" {
 		scopePath = dirPath
 	}
 	return &metaitem.CompositeItemInfo{
 		Layout:             layout,
-		DataType:           dataitem.DataTypeTable,
+		DataType:           datatype.Table,
 		Format:             formatName,
 		PrimaryContentPath: primaryContentPath,
 		ScopePath:          scopePath,
@@ -492,14 +492,14 @@ func (d *tableFileItemResolver) extractTableDatasetInfo(
 			totalSize = *resolved.SizeBytes
 		}
 	}
-	if layout == dataitem.LayoutWhole && scopePath == "" {
+	if layout == format.LayoutWhole && scopePath == "" {
 		scopePath = dirPath
 	}
 	fields := tableFieldsFromDescribeResult(tableInfo)
 	return &metaitem.CompositeItemInfo{
 		Fields:             fields,
 		Layout:             layout,
-		DataType:           dataitem.DataTypeTable,
+		DataType:           datatype.Table,
 		Format:             formatName,
 		PrimaryContentPath: primaryContentPath,
 		ScopePath:          scopePath,
@@ -564,8 +564,8 @@ func extractSingleTableFileItemWithFormat(
 	provider, providerErr := format.GetTableInfoProvider(formatType)
 	if providerErr != nil {
 		return &metaitem.CompositeItemInfo{
-			Layout:             dataitem.LayoutSingle,
-			DataType:           dataitem.DataTypeTable,
+			Layout:             format.LayoutSingle,
+			DataType:           datatype.Table,
 			Format:             formatName,
 			PrimaryContentPath: filePath,
 			RefFiles:           []string{filePath},
@@ -584,8 +584,8 @@ func extractSingleTableFileItemWithFormat(
 	if err != nil {
 		// Schema 解析失败时返回基础信息，不阻断扫描
 		return &metaitem.CompositeItemInfo{
-			Layout:             dataitem.LayoutSingle,
-			DataType:           dataitem.DataTypeTable,
+			Layout:             format.LayoutSingle,
+			DataType:           datatype.Table,
 			Format:             formatName,
 			PrimaryContentPath: filePath,
 			RefFiles:           []string{filePath},
@@ -598,8 +598,8 @@ func extractSingleTableFileItemWithFormat(
 
 	return &metaitem.CompositeItemInfo{
 		Fields:             fields,
-		Layout:             dataitem.LayoutSingle,
-		DataType:           dataitem.DataTypeTable,
+		Layout:             format.LayoutSingle,
+		DataType:           datatype.Table,
 		Format:             formatName,
 		PrimaryContentPath: filePath,
 		RefFiles:           []string{filePath},
@@ -641,8 +641,8 @@ func ExtractSingleTableFileItemStrict(
 	fields := tableFieldsFromDescribeResult(tableInfo)
 	return &metaitem.CompositeItemInfo{
 		Fields:             fields,
-		Layout:             dataitem.LayoutSingle,
-		DataType:           dataitem.DataTypeTable,
+		Layout:             format.LayoutSingle,
+		DataType:           datatype.Table,
 		Format:             formatName,
 		PrimaryContentPath: filePath,
 		RefFiles:           []string{filePath},
@@ -662,7 +662,7 @@ func EnrichSingleTableFileItem(
 	includeAccessIndex bool,
 	catalogPathFor ...func(path string) plugin.CatalogPath,
 ) (*metaitem.DetectedItem, bool, error) {
-	if item == nil || item.Layout != dataitem.LayoutSingle {
+	if item == nil || item.Layout != format.LayoutSingle {
 		return item, false, nil
 	}
 	if IsUnknownFormatName(item.Format) {
@@ -677,10 +677,10 @@ func EnrichSingleTableFileItem(
 	if !hasSingleTableProvider(item.Format) {
 		return item, false, nil
 	}
-	if item.DataType == dataitem.DataTypeUnknown {
-		item.DataType = dataitem.DetectDataType(item.Format)
+	if item.DataType == datatype.Unknown {
+		item.DataType = dataitem.DefaultDataTypeForFormat(item.Format)
 	}
-	if item.DataType != dataitem.DataTypeTable {
+	if item.DataType != datatype.Table {
 		info, err := ExtractSingleTableFileItemStrict(ctx, contentReader, connInfo, engineID, filePath, fileSize, includeAccessIndex, firstCatalogPathResolver(catalogPathFor))
 		if err != nil || info == nil {
 			return item, false, err

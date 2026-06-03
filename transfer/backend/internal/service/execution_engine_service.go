@@ -10,6 +10,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/format"
 	"github.com/addp/common/logger"
+	"github.com/addp/common/resourcetree"
 	"github.com/addp/transfer/internal/executor"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
@@ -91,36 +92,36 @@ func (s *ExecutionEngineService) executeCommonTransferTask(ctx context.Context, 
 }
 
 func (s *ExecutionEngineService) attachRawCopySourceMetaAttributes(task *models.TransferTask, spec *planner.RawCopyTaskSpec) error {
-	if task == nil || spec == nil || spec.Source.MetaItemID == 0 {
+	if task == nil || spec == nil || spec.Source.LocatorItemID() == 0 {
 		return nil
 	}
 	if s.metaClient == nil {
-		return fmt.Errorf("meta client is required when source meta_item_id is set")
+		return fmt.Errorf("meta client is required when source locator item_id is set")
 	}
-	item, err := s.metaClient.WithTenantID(task.TenantID).GetMetaItemByID(spec.Source.MetaItemID)
+	item, err := s.metaClient.WithTenantID(task.TenantID).GetMetaItemByID(spec.Source.LocatorItemID())
 	if err != nil {
 		return err
 	}
-	if item.EngineID != spec.Source.Engine.ID {
-		return fmt.Errorf("source meta item engine_id %d does not match source engine id %d", item.EngineID, spec.Source.Engine.ID)
+	if item.EngineID != spec.Source.LocatorEngineID() {
+		return fmt.Errorf("source meta item engine_id %d does not match source locator engine id %d", item.EngineID, spec.Source.LocatorEngineID())
 	}
 	spec.Source.Attributes = item.Attributes
 	return nil
 }
 
 func (s *ExecutionEngineService) attachSourceMetaAttributes(task *models.TransferTask, spec *planner.TableExportTaskSpec) error {
-	if task == nil || spec == nil || spec.Source.MetaItemID == 0 {
+	if task == nil || spec == nil || spec.Source.LocatorItemID() == 0 {
 		return nil
 	}
 	if s.metaClient == nil {
-		return fmt.Errorf("meta client is required when source meta_item_id is set")
+		return fmt.Errorf("meta client is required when source locator item_id is set")
 	}
-	item, err := s.metaClient.WithTenantID(task.TenantID).GetMetaItemByID(spec.Source.MetaItemID)
+	item, err := s.metaClient.WithTenantID(task.TenantID).GetMetaItemByID(spec.Source.LocatorItemID())
 	if err != nil {
 		return err
 	}
-	if item.EngineID != spec.Source.Engine.ID {
-		return fmt.Errorf("source meta item engine_id %d does not match source engine id %d", item.EngineID, spec.Source.Engine.ID)
+	if item.EngineID != spec.Source.LocatorEngineID() {
+		return fmt.Errorf("source meta item engine_id %d does not match source locator engine id %d", item.EngineID, spec.Source.LocatorEngineID())
 	}
 	spec.Source.Attributes = item.Attributes
 	return nil
@@ -403,7 +404,7 @@ func (s *ExecutionEngineService) triggerMetadataScan(task *models.TransferTask, 
 		return
 	}
 
-	targetEngineID := spec.Target.Engine.ID
+	targetEngineID := spec.Target.LocatorEngineID()
 	if targetEngineID == 0 {
 		s.logger.Warn("no target engine id found, skipping metadata scan", "task_id", task.ID)
 		return
@@ -438,51 +439,34 @@ func (s *ExecutionEngineService) triggerMetadataScan(task *models.TransferTask, 
 }
 
 func targetCatalogPaths(endpoint planner.EndpointSpec) []string {
-	path, ok := endpoint.EndpointResource.Path.(map[string]interface{})
-	if !ok {
-		if endpoint.EndpointResource.Kind == planner.EndpointResourceKindFile {
-			return parentFileCatalogPaths(fmt.Sprint(endpoint.EndpointResource.Path))
-		}
+	loc, err := endpoint.ResourceLocator()
+	if err != nil {
 		return nil
 	}
 
-	switch endpoint.EndpointResource.Kind {
-	case planner.EndpointResourceKindNativeTable:
-		if qualified := strings.TrimSpace(fmt.Sprintf("%v", path["name"])); qualified != "" && qualified != "<nil>" {
-			parts := strings.Split(qualified, ".")
-			if len(parts) == 2 {
-				return []string{strings.TrimSpace(parts[0])}
-			}
+	switch loc.Type {
+	case resourcetree.TypeTable:
+		if len(loc.Path) >= 2 {
+			return []string{strings.TrimSpace(loc.Path[len(loc.Path)-2])}
 		}
-		for _, key := range []string{"schema", "database"} {
-			if value := cleanPathValue(path[key]); value != "" {
-				return []string{value}
-			}
-		}
-	case planner.EndpointResourceKindObject:
-		bucket := cleanPathValue(path["bucket"])
-		objectPath := cleanPathValue(path["path"])
-		if objectPath == "" {
-			objectPath = cleanPathValue(path["object"])
-		}
+		return []string{strings.TrimSpace(loc.PathString())}
+	case resourcetree.TypeObject:
+		bucket, objectPath := objectLocatorParts(loc)
 		if shouldScanObjectParent(endpoint.Format) {
 			return parentObjectCatalogPaths(bucket, objectPath)
 		}
 		return objectCatalogPaths(bucket, objectPath)
-	case planner.EndpointResourceKindFile:
-		filePath := cleanPathValue(path["path"])
-		if filePath == "" {
-			filePath = cleanPathValue(path["file"])
-		}
-		return parentFileCatalogPaths(filePath)
-	}
-
-	for _, key := range []string{"schema", "database", "bucket"} {
-		if value := cleanPathValue(path[key]); value != "" {
-			return []string{value}
-		}
+	case resourcetree.TypeFile:
+		return parentFileCatalogPaths(loc.PathString())
 	}
 	return nil
+}
+
+func objectLocatorParts(loc *resourcetree.ResourceLocator) (string, string) {
+	if loc == nil || len(loc.Path) == 0 {
+		return "", ""
+	}
+	return strings.Trim(loc.Path[0], "/"), strings.Trim(strings.Join(loc.Path[1:], "/"), "/")
 }
 
 func parentObjectCatalogPaths(bucket, objectPath string) []string {

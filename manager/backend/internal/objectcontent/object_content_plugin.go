@@ -976,7 +976,7 @@ func resolveContainerAttributeChildrenForPreview(formatName string, children []i
 	groupedRefCount := 0
 	for index, item := range resolved.Items {
 		childInfo := commondataitem.ContainerChildInfoFromResolvedItem(item)
-		if item.Layout == commondataitem.LayoutMulti {
+		if item.Layout == format.LayoutMulti {
 			groupedItemCount++
 			if len(item.RefList) > 1 {
 				groupedRefCount += len(item.RefList) - 1
@@ -1038,7 +1038,7 @@ func containerChildPreviewMap(childInfo datatype.ContainerChildInfo, index int) 
 
 func containerChildPreviewLayout(childInfo datatype.ContainerChildInfo) string {
 	if len(childInfo.Refs) > 0 || strings.EqualFold(childInfo.ChildKind, "multi") {
-		return string(commondataitem.LayoutMulti)
+		return string(format.LayoutMulti)
 	}
 	return ""
 }
@@ -1176,7 +1176,7 @@ func containerChildKey(name, tableName string, index int) string {
 func isContainerObjectContentFormat(formatName string) bool {
 	formatType := normalizeFileTableFormat(formatName)
 	descriptor, ok := format.GetFormatDescriptor(formatType)
-	return ok && descriptor.DataType == datatype.DataTypeContainer && hasObjectContentContainerProvider(formatType)
+	return ok && descriptor.DataType == datatype.Container && hasObjectContentContainerProvider(formatType)
 }
 
 type textContentHandler struct {
@@ -1476,7 +1476,7 @@ func resolveContainerChildrenForPreview(info *datatype.ContainerInfo) (*datatype
 	groupedItemCount := 0
 	groupedRefCount := 0
 	for _, item := range resolved.Items {
-		if item.Layout == commondataitem.LayoutMulti {
+		if item.Layout == format.LayoutMulti {
 			groupedItemCount++
 			if len(item.RefList) > 1 {
 				groupedRefCount += len(item.RefList) - 1
@@ -1579,12 +1579,12 @@ func isContainerFormatType(formatType format.FormatType) bool {
 		return false
 	}
 	descriptor, ok := format.GetFormatDescriptor(formatType)
-	return ok && descriptor.DataType == datatype.DataTypeContainer && hasObjectContentContainerProvider(formatType)
+	return ok && descriptor.DataType == datatype.Container && hasObjectContentContainerProvider(formatType)
 }
 
 func firstContainerFormatType() format.FormatType {
 	for _, descriptor := range format.ListFormatDescriptors() {
-		if descriptor.DataType == datatype.DataTypeContainer && hasObjectContentContainerProvider(descriptor.Format) {
+		if descriptor.DataType == datatype.Container && hasObjectContentContainerProvider(descriptor.Format) {
 			return descriptor.Format
 		}
 	}

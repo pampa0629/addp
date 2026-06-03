@@ -8,45 +8,6 @@ import (
 	"github.com/addp/common/format"
 )
 
-// Layout is the resolved data item layout.
-//
-// It reuses format.Layout values deliberately: format capability declares which
-// layouts a format can support, while dataitem resolves one concrete layout for
-// an item and stores it as layout.
-type Layout = format.Layout
-
-const (
-	LayoutSingle Layout = format.LayoutSingle
-	LayoutMulti  Layout = format.LayoutMulti
-	LayoutWhole  Layout = format.LayoutWhole
-)
-
-type DataType = datatype.DataType
-
-const (
-	DataTypeTable     DataType = datatype.DataTypeTable
-	DataTypeDocument  DataType = datatype.DataTypeDocument
-	DataTypeMedia     DataType = datatype.DataTypeMedia
-	DataTypeContainer DataType = datatype.DataTypeContainer
-	DataTypeGraph     DataType = datatype.DataTypeGraph
-	DataTypeUnknown   DataType = datatype.DataTypeUnknown
-)
-
-type RefMatchScope string
-
-const (
-	RefMatchScopeSameDirectory RefMatchScope = "same_directory"
-	RefMatchScopeSamePrefix    RefMatchScope = "same_prefix"
-	RefMatchScopeRecursive     RefMatchScope = "recursive"
-)
-
-type RefMatchKey string
-
-const (
-	RefMatchKeyBaseName RefMatchKey = "base_name"
-	RefMatchKeyManifest RefMatchKey = "manifest"
-)
-
 type ScopeKind string
 
 const (
@@ -91,24 +52,15 @@ type ItemRef struct {
 
 type EntryRule struct {
 	Extensions []string
-	MIMETypes  []string
 }
 
 type RefRule struct {
-	MatchScope         RefMatchScope
-	MatchKey           RefMatchKey
 	RequiredExtensions []string
 	OptionalExtensions []string
 	EntryExtension     string
-	AllowRecursive     bool
-}
-
-type ContainerRule struct {
-	ExpandInternalItems bool
 }
 
 type WholeScopeRule struct {
-	AllowRecursive       bool
 	IgnoredFileNames     []string
 	RequiresStrongMatch  bool
 	ExclusiveOnStrongHit bool
@@ -116,13 +68,12 @@ type WholeScopeRule struct {
 
 type FormatRule struct {
 	Format   string
-	DataType DataType
-	Layout   Layout
+	DataType datatype.DataType
+	Layout   format.Layout
 	Priority int
 
 	Entry           EntryRule
 	Refs            *RefRule
-	Container       *ContainerRule
 	WholeScope      *WholeScopeRule
 	RelatedRefSpecs []format.RelatedRefSpec
 }
@@ -131,8 +82,8 @@ type ResolvedItem struct {
 	Name     string
 	FullName string
 	ItemType string
-	Layout   Layout
-	DataType DataType
+	Layout   format.Layout
+	DataType datatype.DataType
 	Format   string
 
 	PrimaryContentPath string
@@ -176,8 +127,8 @@ type ScanTarget struct {
 }
 
 type ItemDescriptor struct {
-	Layout             Layout
-	DataType           DataType
+	Layout             format.Layout
+	DataType           datatype.DataType
 	Format             string
 	PrimaryContentPath string
 	ScopePath          string

@@ -7,6 +7,7 @@ import (
 	commondataitem "github.com/addp/common/dataitem"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
 	"github.com/addp/meta/internal/metaitem"
 )
 
@@ -197,7 +198,7 @@ func TestObjectCatalogCompositeNameUsesSingleFilePrimaryContentPath(t *testing.T
 		Prefix: "lake",
 		Item: &metaitem.DetectedItem{
 			ResolvedItem: commondataitem.ResolvedItem{
-				Layout:             commondataitem.LayoutSingle,
+				Layout:             format.LayoutSingle,
 				PrimaryContentPath: "addp/lake/sales.parquet",
 			},
 		},
@@ -256,7 +257,7 @@ func TestPlanObjectCatalogSingleItemBuildsIdentityAndAttributes(t *testing.T) {
 		t.Fatalf("fullName/fingerprint = %q/%q", plan.FullName, plan.Fingerprint)
 	}
 	item := plan.Attributes["item"].(map[string]interface{})
-	if item["layout"] != string(commondataitem.LayoutSingle) || item["format"] != "json" {
+	if item["layout"] != string(format.LayoutSingle) || item["format"] != "json" {
 		t.Fatalf("item attrs = %#v", item)
 	}
 	if capabilities, ok := plan.Attributes["capabilities"].(map[string]interface{}); ok {
@@ -281,8 +282,8 @@ func TestPlanObjectCatalogCompositeItemBuildsStandardAttributes(t *testing.T) {
 		Prefix: "datasets/roads",
 		Item: &metaitem.DetectedItem{
 			ResolvedItem: commondataitem.ResolvedItem{
-				DataType:           commondataitem.DataTypeTable,
-				Layout:             commondataitem.LayoutMulti,
+				DataType:           datatype.Table,
+				Layout:             format.LayoutMulti,
 				PrimaryContentPath: "addp/datasets/roads/roads.shp",
 				SizeBytes:          int64PtrForTest(256),
 			},

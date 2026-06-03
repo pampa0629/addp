@@ -1,4 +1,4 @@
-package catalogview
+package resourcetree
 
 import (
 	"testing"

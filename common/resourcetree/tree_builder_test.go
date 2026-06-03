@@ -1,4 +1,4 @@
-package catalogview
+package resourcetree
 
 import (
 	"strings"
@@ -123,7 +123,7 @@ func TestParsePath(t *testing.T) {
 }
 
 func TestBuildFromMeta(t *testing.T) {
-	builder := NewTreeBuilder(nil)
+	builder := NewTreeBuilder()
 
 	engine := &models.Engine{
 		ID:         1,
@@ -222,7 +222,7 @@ func TestBuildFromMeta(t *testing.T) {
 }
 
 func TestBuildFromMetaFallbackRootUsesCatalogRootTermLabel(t *testing.T) {
-	builder := NewTreeBuilder(nil)
+	builder := NewTreeBuilder()
 	caps := enginePlugin.NewObjectCapabilities("minio")
 	capsJSON, err := enginePlugin.MarshalEngineCapabilities(caps)
 	if err != nil {
@@ -271,7 +271,7 @@ func TestCatalogRootResourceTypePrefersCatalogModelRootTerm(t *testing.T) {
 }
 
 func TestBuildFromMetadataTreeAttachesItems(t *testing.T) {
-	builder := NewTreeBuilder(nil)
+	builder := NewTreeBuilder()
 	engine := &models.Engine{
 		ID:         7,
 		Name:       "PostgreSQL 主库",
@@ -394,7 +394,7 @@ func TestBuildFromMetadataTreeAttachesItems(t *testing.T) {
 }
 
 func TestBuildFromMetaMergesWholeScopeItemWithSamePathDirectory(t *testing.T) {
-	builder := NewTreeBuilder(nil)
+	builder := NewTreeBuilder()
 	engine := &models.Engine{ID: 26, Name: "Business NFS", EngineType: "nfs"}
 	parentID := uint(95)
 	metaNodes := []*models.MetaNode{
@@ -464,7 +464,7 @@ func TestBuildFromMetaMergesWholeScopeItemWithSamePathDirectory(t *testing.T) {
 }
 
 func TestConvertMetaItemsForEngineUsesPathSemanticTableDepth(t *testing.T) {
-	builder := NewTreeBuilder(nil)
+	builder := NewTreeBuilder()
 	items := []models.MetaItem{
 		{
 			ID:       42,
@@ -497,7 +497,7 @@ func TestConvertMetaItemsForEngineUsesPathSemanticTableDepth(t *testing.T) {
 }
 
 func TestConvertNodeToTree(t *testing.T) {
-	builder := NewTreeBuilder(nil)
+	builder := NewTreeBuilder()
 
 	loc := &ResourceLocator{
 		EngineID: 1,

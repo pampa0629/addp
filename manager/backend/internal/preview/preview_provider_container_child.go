@@ -40,7 +40,7 @@ func (p *ContainerChildPreviewProvider) Preview(ctx context.Context, req *Previe
 		return nil, err
 	}
 	if nestedChildPath := strings.Trim(strings.TrimSpace(req.NestedChildPath), "/"); nestedChildPath != "" {
-		if child.DataType != datatype.DataTypeContainer {
+		if child.DataType != datatype.Container {
 			return nil, fmt.Errorf("nested_child_path requires container child %s", req.ChildName)
 		}
 		resolved, err := resolveNestedPreviewContainerChild(ctx, child, nestedChildPath, req)
@@ -58,11 +58,11 @@ func (p *ContainerChildPreviewProvider) Preview(ctx context.Context, req *Previe
 		child = resolved
 	}
 	switch child.DataType {
-	case datatype.DataTypeTable:
+	case datatype.Table:
 		return p.previewTableChild(ctx, req, contentCtx.bucket, child)
-	case datatype.DataTypeContainer:
+	case datatype.Container:
 		return p.previewContainerChild(ctx, req, contentCtx.bucket, child)
-	case datatype.DataTypeDocument, datatype.DataTypeMedia, datatype.DataTypeUnknown, "":
+	case datatype.Document, datatype.Media, datatype.Unknown, "":
 		return p.previewObjectChild(ctx, req, contentCtx.bucket, child)
 	default:
 		return p.previewObjectChild(ctx, req, contentCtx.bucket, child)
@@ -241,11 +241,11 @@ func isContainerChildResource(child *format.ContainerChildResource) bool {
 	if child == nil {
 		return false
 	}
-	if child.DataType == datatype.DataTypeContainer {
+	if child.DataType == datatype.Container {
 		return true
 	}
 	descriptor, ok := format.GetFormatDescriptor(child.Format)
-	return ok && descriptor.DataType == datatype.DataTypeContainer
+	return ok && descriptor.DataType == datatype.Container
 }
 
 func childInfoForNestedContainerPath(refPath string) map[string]interface{} {

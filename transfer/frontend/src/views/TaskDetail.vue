@@ -231,13 +231,12 @@ function buildEndpointDetails(endpoint, role) {
   }
 
   const items = []
-  addItem(items, t('transfer.taskDetail.reviewEngineId'), endpoint.engine?.id)
-  addItem(items, t('transfer.taskDetail.connectionType'), endpoint.engine?.type)
+  const loc = parseLocator(endpoint.locator)
+  addItem(items, t('transfer.taskDetail.reviewEngineId'), loc.engineID)
+  addItem(items, t('transfer.taskDetail.connectionType'), loc.type)
   addItem(items, t('transfer.taskDetail.dataType'), endpoint.data_type)
   addItem(items, t('transfer.taskDetail.representation'), endpoint.representation)
-  const endpointResource = endpoint.resource
-  addItem(items, t('transfer.taskDetail.resourceKind'), endpointResource?.kind)
-  addItem(items, t('transfer.taskDetail.path'), formatEndpointResourcePath(endpointResource), 2)
+  addItem(items, t('transfer.taskDetail.path'), formatEndpointLocatorPath(endpoint.locator, endpoint.representation), 2)
 
   if (role === 'target') {
     addItem(items, t('transfer.taskDetail.format'), endpoint.format)
@@ -252,24 +251,27 @@ function addItem(items, label, value, span) {
   items.push({ label, value: formatValue(value), span })
 }
 
-function formatEndpointResourcePath(endpointResource) {
-  const path = endpointResource?.path
-  if (path === undefined || path === null) {
-    return ''
+function formatEndpointLocatorPath(locator, representation = '') {
+  const loc = parseLocator(locator)
+  if (loc.path.length === 0) return ''
+  if (String(representation || '').toLowerCase() === 'native' && loc.type === 'table') {
+    return loc.path.slice(-2).join('.')
   }
-  if (typeof path === 'string') {
-    return path
-  }
-  if (path.schema || path.table) {
-    return [path.schema, path.table].filter(Boolean).join('.')
-  }
-  if (path.bucket || path.path) {
-    return [path.bucket, path.path].filter(Boolean).join('/')
-  }
-  if (path.name) {
-    return path.name
-  }
-  return path
+  return loc.path.join('/')
+}
+
+function parseLocator(locator) {
+  const result = { engineID: 0, path: [], type: '' }
+  const match = String(locator || '').match(/^addp:\/\/engine\/(\d+)\/path\/([^?]*)(?:\?(.*))?$/)
+  if (!match) return result
+  result.engineID = Number(match[1] || 0)
+  result.path = String(match[2] || '')
+    .split('/')
+    .map(part => decodeURIComponent(part).trim())
+    .filter(Boolean)
+  const params = new URLSearchParams(match[3] || '')
+  result.type = String(params.get('type') || '').toLowerCase()
+  return result
 }
 
 function formatValue(value) {

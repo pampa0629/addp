@@ -253,7 +253,7 @@ func (s *MetadataService) ResolveStorageDownloadPlan(ctx context.Context, resour
 	}
 	descriptor := downloadItemDescriptor(item)
 	refs := downloadRefsFromDescriptor(descriptor)
-	if descriptor.Layout == dataitem.LayoutMulti && len(refs) == 0 {
+	if descriptor.Layout == format.LayoutMulti && len(refs) == 0 {
 		return nil, fmt.Errorf("%w: multi item is missing item.refs; rescan the node to rebuild related refs", ErrDownloadNotSupported)
 	}
 	refs = normalizeDownloadRefs(resource.EngineType, displayPath, refs)

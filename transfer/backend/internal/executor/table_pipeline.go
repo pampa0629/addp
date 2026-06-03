@@ -226,6 +226,7 @@ type nativeTableBatchSource struct {
 	readOptions          map[string]interface{}
 	resumeMarker         *resume.Marker
 	tableInfo            *datatype.TableInfo
+	spatialInfo          *datatype.SpatialInfo
 }
 
 func (s *nativeTableBatchSource) Open(ctx context.Context) (TableBatchReader, error) {
@@ -238,24 +239,26 @@ func (s *nativeTableBatchSource) Open(ctx context.Context) (TableBatchReader, er
 		if err != nil {
 			return nil, fmt.Errorf("open native table read session: %w", err)
 		}
-		return &nativeTableSessionBatchReader{session: session, tableInfo: s.tableInfo}, nil
+		return &nativeTableSessionBatchReader{session: session, tableInfo: s.tableInfo, spatialInfo: s.spatialInfo}, nil
 	}
 	if s.reader == nil {
 		return nil, fmt.Errorf("native table source requires batch reader")
 	}
 	return &nativeOffsetBatchReader{
-		reader:    s.reader,
-		connInfo:  s.connInfo,
-		path:      s.path,
-		query:     s.query,
-		tableInfo: s.tableInfo,
+		reader:      s.reader,
+		connInfo:    s.connInfo,
+		path:        s.path,
+		query:       s.query,
+		tableInfo:   s.tableInfo,
+		spatialInfo: s.spatialInfo,
 	}, nil
 }
 
 type nativeTableSessionBatchReader struct {
-	session   engineplugin.TableReadSession
-	tableInfo *datatype.TableInfo
-	closed    bool
+	session     engineplugin.TableReadSession
+	tableInfo   *datatype.TableInfo
+	spatialInfo *datatype.SpatialInfo
+	closed      bool
 }
 
 func (r *nativeTableSessionBatchReader) TableInfo() *datatype.TableInfo {
@@ -263,6 +266,9 @@ func (r *nativeTableSessionBatchReader) TableInfo() *datatype.TableInfo {
 }
 
 func (r *nativeTableSessionBatchReader) SpatialInfo() *datatype.SpatialInfo {
+	if r.spatialInfo != nil {
+		return r.spatialInfo.Clone()
+	}
 	return spatialInfoFromTableInfoOrFields(r.tableInfo)
 }
 
@@ -305,13 +311,14 @@ func (r *nativeTableSessionBatchReader) ResumeMarker() *resume.Marker {
 }
 
 type nativeOffsetBatchReader struct {
-	reader    engineplugin.BatchReadableProvider
-	connInfo  engineplugin.ConnectionInfo
-	path      engineplugin.CatalogPath
-	query     string
-	offset    int64
-	tableInfo *datatype.TableInfo
-	done      bool
+	reader      engineplugin.BatchReadableProvider
+	connInfo    engineplugin.ConnectionInfo
+	path        engineplugin.CatalogPath
+	query       string
+	offset      int64
+	tableInfo   *datatype.TableInfo
+	spatialInfo *datatype.SpatialInfo
+	done        bool
 }
 
 func (r *nativeOffsetBatchReader) TableInfo() *datatype.TableInfo {
@@ -319,6 +326,9 @@ func (r *nativeOffsetBatchReader) TableInfo() *datatype.TableInfo {
 }
 
 func (r *nativeOffsetBatchReader) SpatialInfo() *datatype.SpatialInfo {
+	if r.spatialInfo != nil {
+		return r.spatialInfo.Clone()
+	}
 	return spatialInfoFromTableInfoOrFields(r.tableInfo)
 }
 

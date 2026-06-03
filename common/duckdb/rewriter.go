@@ -8,6 +8,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dataitem"
+	"github.com/addp/common/datatype"
 	commonModels "github.com/addp/common/models"
 )
 
@@ -131,7 +132,7 @@ func ObjectTableDescriptorFromMetaItem(item commonModels.MetaItem) (dataitem.Ite
 		return dataitem.ItemDescriptor{}, false
 	}
 	descriptor := dataitem.DescriptorFromAttributes(item.Attributes)
-	if descriptor.DataType != dataitem.DataTypeTable {
+	if descriptor.DataType != datatype.Table {
 		return dataitem.ItemDescriptor{}, false
 	}
 	switch descriptor.Format {

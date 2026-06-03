@@ -102,7 +102,7 @@ func TestDescribeGeoPackageContainerReturnsLightweightLayers(t *testing.T) {
 		t.Fatalf("ChildCount = %d, want visible layer count 1", info.ChildCount)
 	}
 	child := info.Children[0]
-	if child.Name != "Road Layer" || child.ChildKind != "layer" || child.DataType != datatype.DataTypeTable {
+	if child.Name != "Road Layer" || child.ChildKind != "layer" || child.DataType != datatype.Table {
 		t.Fatalf("child = %#v, want Road Layer layer", child)
 	}
 	if child.Native["table"] != "roads" {

@@ -11,11 +11,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/addp/common/catalogview"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/embedding"
 	commonModels "github.com/addp/common/models"
 	commonRepo "github.com/addp/common/repository"
+	"github.com/addp/common/resourcetree"
 	"github.com/addp/manager/internal/config"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
@@ -649,7 +649,7 @@ func (s *EmbeddingService) buildMetadata(ctx context.Context, engineID uint, buc
 			metadata["item_id"] = item.ID
 			metadata["item_type"] = item.ItemType
 			metadata["full_name"] = item.FullName
-			if locator := catalogview.LocatorFromFullName(engineID, engine.EngineType, item.ItemType, item.FullName, &item.ID); locator != nil {
+			if locator := resourcetree.LocatorFromFullName(engineID, engine.EngineType, item.ItemType, item.FullName, &item.ID); locator != nil {
 				metadata["locator"] = locator.ToURI()
 			}
 		}

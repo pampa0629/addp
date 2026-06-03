@@ -3,6 +3,7 @@ package dataitem
 import (
 	"testing"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
 )
@@ -28,7 +29,7 @@ func TestResolveItemsGroupsShapefileRefs(t *testing.T) {
 		t.Fatalf("items = %#v, want shapefile + markdown", result.Items)
 	}
 	item := result.Items[0]
-	if item.Layout != LayoutMulti || item.Format != "shapefile" || item.PrimaryContentPath != "roads.shp" {
+	if item.Layout != format.LayoutMulti || item.Format != "shapefile" || item.PrimaryContentPath != "roads.shp" {
 		t.Fatalf("first item = %#v, want multi shapefile", item)
 	}
 	if len(item.RefList) != 4 {
@@ -37,7 +38,7 @@ func TestResolveItemsGroupsShapefileRefs(t *testing.T) {
 	if !result.Claims["roads.shp"] || !result.Claims["roads.shx"] || !result.Claims["roads.dbf"] {
 		t.Fatalf("claims = %#v, want shapefile refs claimed", result.Claims)
 	}
-	if result.Items[1].Layout != LayoutSingle || result.Items[1].DataType != DataTypeDocument {
+	if result.Items[1].Layout != format.LayoutSingle || result.Items[1].DataType != datatype.Document {
 		t.Fatalf("second item = %#v, want document single", result.Items[1])
 	}
 }
@@ -85,7 +86,7 @@ func TestResolveItemsDetectsWholeScopePartitionedTable(t *testing.T) {
 		t.Fatalf("items = %#v, want one whole scope item", result.Items)
 	}
 	item := result.Items[0]
-	if item.Layout != LayoutWhole || item.Format != string(format.FormatParquet) || item.ScopePath != "dataset" {
+	if item.Layout != format.LayoutWhole || item.Format != string(format.FormatParquet) || item.ScopePath != "dataset" {
 		t.Fatalf("item = %#v, want parquet whole scope", item)
 	}
 	if !result.Exclusive {
@@ -119,7 +120,7 @@ func TestResolveItemsKeepsSiblingTablesAsSingles(t *testing.T) {
 		t.Fatalf("items = %#v, want two single table items", result.Items)
 	}
 	for _, item := range result.Items {
-		if item.Layout != LayoutSingle {
+		if item.Layout != format.LayoutSingle {
 			t.Fatalf("item = %#v, want single layout", item)
 		}
 	}
@@ -147,7 +148,7 @@ func TestResolveItemsDoesNotFoldClaimedMultiRefsIntoWholeScope(t *testing.T) {
 	if len(result.Items) != 2 {
 		t.Fatalf("items = %#v, want shapefile multi + parquet whole scope", result.Items)
 	}
-	if result.Items[0].Layout != LayoutMulti || result.Items[1].Layout != LayoutWhole {
+	if result.Items[0].Layout != format.LayoutMulti || result.Items[1].Layout != format.LayoutWhole {
 		t.Fatalf("items = %#v, want multi before whole", result.Items)
 	}
 	if result.Items[1].SizeBytes == nil || *result.Items[1].SizeBytes != 20 {

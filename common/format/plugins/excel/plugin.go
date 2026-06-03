@@ -36,7 +36,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		ID:             "builtin-excel",
 		Format:         format.FormatExcel,
 		I18nKey:        "format.excel",
-		DataType:       datatype.DataTypeContainer,
+		DataType:       datatype.Container,
 		Layouts:        []string{format.LayoutSingle},
 		Identification: format.FormatIdentification{Extensions: []string{".xlsx", ".xls", ".xlsm"}, MimeTypes: []string{"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel", "application/vnd.ms-excel.sheet.macroenabled.12"}},
 	}
@@ -328,7 +328,7 @@ func (p *Plugin) convertToContainerInfo(analysis *WorkbookAnalysis) *datatype.Co
 		children = append(children, datatype.ContainerChildInfo{
 			Name:        sheet.Name,
 			ChildKind:   "sheet",
-			DataType:    datatype.DataTypeTable,
+			DataType:    datatype.Table,
 			RowCount:    &rowCount,
 			ColumnCount: &columnCount,
 			HasHeader:   &hasHeader,

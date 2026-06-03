@@ -6,6 +6,7 @@ import (
 	"sort"
 
 	"github.com/addp/common/dataitem"
+	"github.com/addp/common/format"
 )
 
 var itemResolvers = []ItemResolver{
@@ -120,7 +121,7 @@ func ResolveNonExclusiveItems(ctx context.Context, input DirectoryResolveInput) 
 			continue
 		}
 		for _, item := range scopeResult.Items {
-			if item == nil || item.Layout == dataitem.LayoutWhole {
+			if item == nil || item.Layout == format.LayoutWhole {
 				continue
 			}
 			result.Items = append(result.Items, item)

@@ -942,7 +942,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "创建一个新的数据导入/导出/同步任务。新任务 config 使用 source/target endpoint；source 指向已入库 Meta item 时使用 source.meta_item_id，Transfer 后端会通过 MetaClient 读取标准 attributes。| Create a new data import/export/sync task. New config uses source/target endpoints; use source.meta_item_id for persisted Meta items, and Transfer backend loads standard attributes through MetaClient.",
+                "description": "创建一个新的数据导入/导出/同步任务。新任务 config 使用 source/target locator endpoint；source locator 带 item_id 时，Transfer 后端会通过 MetaClient 读取标准 attributes。| Create a new data import/export/sync task. New config uses source/target locator endpoints; when source locator carries item_id, Transfer backend loads standard attributes through MetaClient.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1107,7 +1107,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "更新任务的配置信息。source 指向已入库 Meta item 时使用 config.source.meta_item_id；不支持在任务配置中直接传递 endpoint attributes。| Update task configuration. Use config.source.meta_item_id for persisted Meta items; endpoint attributes are not accepted in task config.",
+                "description": "更新任务的配置信息。source 指向已入库 Meta item 时使用 config.source.locator 的 item_id；不支持在任务配置中直接传递 endpoint attributes。| Update task configuration. Use config.source.locator item_id for persisted Meta items; endpoint attributes are not accepted in task config.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1783,16 +1783,13 @@ const docTemplate = `{
                     "type": "string",
                     "example": "table"
                 },
-                "engine": {
-                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.TransferEngineRefDoc"
-                },
                 "format": {
                     "type": "string",
                     "example": "shapefile"
                 },
-                "meta_item_id": {
-                    "type": "integer",
-                    "example": 12
+                "locator": {
+                    "type": "string",
+                    "example": "addp://engine/9/path/manager/a3.shp?type=object"
                 },
                 "options": {
                     "type": "object",
@@ -1809,39 +1806,6 @@ const docTemplate = `{
                         "encoded"
                     ],
                     "example": "encoded"
-                },
-                "resource": {
-                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.TransferEndpointResourceDoc"
-                }
-            }
-        },
-        "github_com_addp_transfer_internal_models.TransferEndpointResourceDoc": {
-            "type": "object",
-            "properties": {
-                "kind": {
-                    "type": "string",
-                    "enum": [
-                        "native_table",
-                        "file",
-                        "object"
-                    ],
-                    "example": "file"
-                },
-                "path": {
-                    "type": "object"
-                }
-            }
-        },
-        "github_com_addp_transfer_internal_models.TransferEngineRefDoc": {
-            "type": "object",
-            "properties": {
-                "id": {
-                    "type": "integer",
-                    "example": 1
-                },
-                "type": {
-                    "type": "string",
-                    "example": "nfs"
                 }
             }
         },

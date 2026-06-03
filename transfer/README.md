@@ -48,20 +48,12 @@ non-table raw copy 已形成第一版最小闭环：`document`、`media`、`unkn
 {
   "mode": "batch",
   "source": {
-    "engine": {"id": 1},
-    "resource": {
-      "kind": "native_table",
-      "path": {"schema": "public", "table": "roads"}
-    },
+    "locator": "addp://engine/1/path/public/roads?type=table",
     "data_type": "table",
     "representation": "native"
   },
   "target": {
-    "engine": {"id": 2},
-    "resource": {
-      "kind": "file",
-      "path": {"path": "exports/roads.parquet"}
-    },
+    "locator": "addp://engine/2/path/exports/roads.parquet?type=file",
     "data_type": "table",
     "representation": "encoded",
     "format": "parquet",

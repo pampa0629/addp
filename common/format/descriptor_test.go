@@ -32,14 +32,14 @@ func TestDescriptorsKeepOnlyStaticFactsForBuiltinFormats(t *testing.T) {
 		dataType   datatype.DataType
 		layout     string
 	}{
-		{FormatPDF, datatype.DataTypeDocument, LayoutSingle},
-		{FormatDOCX, datatype.DataTypeDocument, LayoutSingle},
-		{FormatPPTX, datatype.DataTypeDocument, LayoutSingle},
-		{FormatWPS, datatype.DataTypeDocument, LayoutSingle},
-		{FormatJPEG, datatype.DataTypeMedia, LayoutSingle},
-		{FormatPNG, datatype.DataTypeMedia, LayoutSingle},
-		{FormatExcel, datatype.DataTypeContainer, LayoutSingle},
-		{FormatSQLite, datatype.DataTypeContainer, LayoutSingle},
+		{FormatPDF, datatype.Document, LayoutSingle},
+		{FormatDOCX, datatype.Document, LayoutSingle},
+		{FormatPPTX, datatype.Document, LayoutSingle},
+		{FormatWPS, datatype.Document, LayoutSingle},
+		{FormatJPEG, datatype.Media, LayoutSingle},
+		{FormatPNG, datatype.Media, LayoutSingle},
+		{FormatExcel, datatype.Container, LayoutSingle},
+		{FormatSQLite, datatype.Container, LayoutSingle},
 	}
 
 	for _, tt := range tests {
@@ -81,7 +81,7 @@ func TestRegisterFormatDescriptorStoresDescriptor(t *testing.T) {
 		Version:  "v1",
 		Priority: 10,
 		Format:   formatType,
-		DataType: datatype.DataTypeDocument,
+		DataType: datatype.Document,
 		Layouts:  []string{LayoutSingle},
 		Identification: FormatIdentification{
 			Extensions: []string{".ptd"},
@@ -98,7 +98,7 @@ func TestRegisterFormatDescriptorStoresDescriptor(t *testing.T) {
 	if descriptor.ID != "plugin-test-doc" {
 		t.Fatalf("descriptor ID = %q, want plugin-test-doc", descriptor.ID)
 	}
-	if descriptor.DataType != datatype.DataTypeDocument {
+	if descriptor.DataType != datatype.Document {
 		t.Fatalf("descriptor data type = %q, want document", descriptor.DataType)
 	}
 	if !sameStrings(descriptor.Identification.Extensions, []string{".ptd"}) {

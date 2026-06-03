@@ -12,14 +12,15 @@ import (
 	"net/http/httptest"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/addp/common/catalogview"
 	"github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
 	_ "github.com/addp/common/engine/plugins/minio"
 	_ "github.com/addp/common/engine/plugins/nfs"
+	"github.com/addp/common/resourcetree"
 	"github.com/addp/manager/internal/models"
 )
 
@@ -855,7 +856,7 @@ func TestRefreshNodeRequiresAuthTokenBeforeSubmittingScan(t *testing.T) {
 	}
 }
 
-func findChildByLabel(node *catalogview.TreeNode, label string) *catalogview.TreeNode {
+func findChildByLabel(node *resourcetree.TreeNode, label string) *resourcetree.TreeNode {
 	if node == nil {
 		return nil
 	}
@@ -875,23 +876,23 @@ func TestGetNodeChildrenIncludesObjectStoragePrefixBelowBucket(t *testing.T) {
 		t.Fatalf("failed to marshal capabilities: %v", err)
 	}
 
+	var requestedFullTree atomic.Bool
 	metaServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/api/v1/system/engines/9":
 			fmt.Fprintf(w, `{"id":9,"name":"Business MinIO","engine_type":"s3","connection_info":{},"tenant_id":1,"is_active":true,"capabilities":%q}`, capabilities)
 		case "/api/v1/meta/engines/9/tree":
-			_, _ = w.Write([]byte(`{
-				"top_nodes":[{"id":6,"tenant_id":1,"engine_id":9,"node_type":"service","name":"Business MinIO","full_name":"","depth":1,"path":"6","scan_status":"completed","item_count":0}],
-				"child_nodes":[
-					{"id":31,"tenant_id":1,"engine_id":9,"parent_node_id":6,"node_type":"bucket","name":"manager","full_name":"manager","depth":2,"path":"6/31","scan_status":"completed","item_count":7},
-					{"id":32,"tenant_id":1,"engine_id":9,"parent_node_id":31,"node_type":"prefix","name":"regression","full_name":"manager/regression","depth":3,"path":"6/31/32","scan_status":"completed","item_count":2}
-				],
-				"items":[
-					{"id":168,"tenant_id":1,"engine_id":9,"node_id":31,"item_type":"object","name":"lake2","full_name":"manager/lake2","attributes":{"item":{"layout":"single"},"storage":{"physical_path":"manager/lake2"}}},
-					{"id":167,"tenant_id":1,"engine_id":9,"node_id":32,"item_type":"object","name":"codex-nfs-whole-to-minio-20260521.parquet","full_name":"manager/regression/codex-nfs-whole-to-minio-20260521.parquet","attributes":{"item":{"layout":"single"},"storage":{"physical_path":"manager/regression/codex-nfs-whole-to-minio-20260521.parquet"}}}
-				]
-			}`))
+			requestedFullTree.Store(true)
+			http.Error(w, "full metadata tree must not be requested for node expansion", http.StatusInternalServerError)
+		case "/api/v1/meta/nodes/31/children":
+			_, _ = w.Write([]byte(`[
+				{"id":32,"tenant_id":1,"engine_id":9,"parent_node_id":31,"node_type":"prefix","name":"regression","full_name":"manager/regression","depth":3,"path":"6/31/32","scan_status":"completed","item_count":2}
+			]`))
+		case "/api/v1/meta/nodes/31/items":
+			_, _ = w.Write([]byte(`[
+				{"id":168,"tenant_id":1,"engine_id":9,"node_id":31,"item_type":"object","name":"lake2","full_name":"manager/lake2","attributes":{"item":{"layout":"single"},"storage":{"physical_path":"manager/lake2"}}}
+			]`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -908,6 +909,9 @@ func TestGetNodeChildrenIncludesObjectStoragePrefixBelowBucket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetNodeChildren() error = %v", err)
 	}
+	if requestedFullTree.Load() {
+		t.Fatal("GetNodeChildren() requested full metadata tree, want direct children/items only")
+	}
 
 	labels := make([]string, 0, len(node.Children))
 	for _, child := range node.Children {
@@ -918,7 +922,7 @@ func TestGetNodeChildrenIncludesObjectStoragePrefixBelowBucket(t *testing.T) {
 		t.Fatalf("children labels = %#v, want lake2 and regression", labels)
 	}
 
-	var regression *catalogview.TreeNode
+	var regression *resourcetree.TreeNode
 	for _, child := range node.Children {
 		if child.Label == "regression" {
 			regression = child
@@ -930,5 +934,16 @@ func TestGetNodeChildrenIncludesObjectStoragePrefixBelowBucket(t *testing.T) {
 	}
 	if regression.Type != "prefix" || !regression.HasChildren {
 		t.Fatalf("regression node = %#v, want prefix with children", regression)
+	}
+}
+
+func TestGetNodeChildrenRequiresNodeID(t *testing.T) {
+	t.Parallel()
+
+	svc := NewExplorerService(nil, nil, nil)
+	tenantID := uint(1)
+	_, err := svc.GetNodeChildren(t.Context(), &tenantID, 9, "addp://engine/9/path/manager?type=bucket", 1)
+	if err == nil || !strings.Contains(err.Error(), "requires locator node_id") {
+		t.Fatalf("GetNodeChildren() error = %v, want missing node_id error", err)
 	}
 }

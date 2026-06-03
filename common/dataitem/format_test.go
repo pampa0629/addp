@@ -3,14 +3,15 @@ package dataitem
 import (
 	"testing"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 )
 
 func TestValidateFormatRuleRejectsMissingPrimaryRelatedRefSpec(t *testing.T) {
 	rule := FormatRule{
 		Format:   "bad_multi",
-		DataType: DataTypeTable,
-		Layout:   LayoutMulti,
+		DataType: datatype.Table,
+		Layout:   format.LayoutMulti,
 		Entry:    EntryRule{Extensions: []string{".main"}},
 		RelatedRefSpecs: []format.RelatedRefSpec{
 			{Extension: ".main", Role: "main", Required: true},
@@ -25,8 +26,8 @@ func TestValidateFormatRuleRejectsMissingPrimaryRelatedRefSpec(t *testing.T) {
 func TestValidateFormatRuleAcceptsSinglePrimaryRelatedRefSpec(t *testing.T) {
 	rule := FormatRule{
 		Format:   "good_multi",
-		DataType: DataTypeTable,
-		Layout:   LayoutMulti,
+		DataType: datatype.Table,
+		Layout:   format.LayoutMulti,
 		Entry:    EntryRule{Extensions: []string{".main"}},
 		RelatedRefSpecs: []format.RelatedRefSpec{
 			{Extension: ".main", Role: "main", Required: true, Primary: true},
@@ -40,16 +41,16 @@ func TestValidateFormatRuleAcceptsSinglePrimaryRelatedRefSpec(t *testing.T) {
 }
 
 func TestInferDataTypeUsesFormatDescriptorForContentType(t *testing.T) {
-	if got := InferDataType("", "image/png"); got != DataTypeMedia {
+	if got := InferDataType("", "image/png"); got != datatype.Media {
 		t.Fatalf("InferDataType(image/png) = %q, want media", got)
 	}
-	if got := InferDataType("", "text/plain; charset=utf-8"); got != DataTypeDocument {
+	if got := InferDataType("", "text/plain; charset=utf-8"); got != datatype.Document {
 		t.Fatalf("InferDataType(text/plain) = %q, want document", got)
 	}
 }
 
 func TestInferDataTypeDoesNotClassifyUnknownMIMEPrefix(t *testing.T) {
-	if got := InferDataType("", "application/x-custom"); got != DataTypeUnknown {
+	if got := InferDataType("", "application/x-custom"); got != datatype.Unknown {
 		t.Fatalf("InferDataType(application/x-custom) = %q, want unknown", got)
 	}
 }

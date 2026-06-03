@@ -30,7 +30,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		ID:       "builtin-" + string(p.formatType),
 		Format:   p.formatType,
 		I18nKey:  p.i18nKey,
-		DataType: datatype.DataTypeMedia,
+		DataType: datatype.Media,
 		Layouts:  []string{format.LayoutSingle},
 		Identification: format.FormatIdentification{
 			Extensions: p.extensions,

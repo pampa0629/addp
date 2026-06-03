@@ -7,7 +7,8 @@
 ## 职责
 
 - 基于 `Candidate`、`ResolveInput` 和内置 `FormatRule` 解析 single / multi / whole item。
-- 复用 `common/format` 的 format identity、layout 和 related refs 规则。
+- 复用 `common/format` 的 format identity、`format.Layout` 和 related refs 规则，不维护平行 layout。
+- 复用 `common/format` 的 `FormatDescriptor.Identification.MimeTypes` 和 `format.MIMEToFormat`，不维护平行 MIME 表。
 - 复用 `common/datatype` 的 `DataType` 枚举，不维护平行 data type。
 - 输出 `ResolvedItem`、`ItemDescriptor`、claims 和 ignored candidates，供 Meta / Manager 等调用方继续编排。
 - 从标准 attributes 还原轻量 `ItemDescriptor`，用于已知 item refresh 等流程。
@@ -21,4 +22,3 @@
 - 不新增 `file`、`spatial`、`collection` 等 data type；这些语义由正式概念和规范文档定义。
 
 需要基于内容前缀、schema、容器 child 或外部引擎读取来修正 format / data type 时，应在调用模块的 enrich 层完成，并把结果作为事实重新传入或写入标准 attributes。
-

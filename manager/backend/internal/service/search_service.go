@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/addp/common/catalogview"
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/embedding"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/logger"
+	"github.com/addp/common/resourcetree"
 	"github.com/addp/common/vectorstore"
 	"github.com/addp/manager/internal/config"
 	"github.com/meilisearch/meilisearch-go"
@@ -950,7 +950,7 @@ func normalizeSearchResultLocator(raw interface{}) string {
 	if locator == "" {
 		return ""
 	}
-	parsed, err := catalogview.ParseURI(locator)
+	parsed, err := resourcetree.ParseURI(locator)
 	if err != nil || parsed == nil || parsed.ItemID == nil || *parsed.ItemID == 0 {
 		return ""
 	}

@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metaitem"
@@ -34,13 +34,19 @@ func DetectObjectCatalogCompositeItems(
 	connInfo plugin.ConnectionInfo,
 	engineID uint,
 	resources []StorageResource,
+	includeWholeScope bool,
 ) (map[string]bool, []ObjectCatalogCompositeItem, []ObjectCatalogCompositeDetectionError) {
 	skipPaths := map[string]bool{}
 	if contentReader == nil {
 		return skipPaths, nil, nil
 	}
 
-	groups := objectResourcesByCompositePrefix(resources)
+	groups := objectResourcesByParentPrefix(resources)
+	if includeWholeScope {
+		for key, group := range objectResourcesByPartitionRootPrefix(resources) {
+			groups[key] = append(groups[key], group...)
+		}
+	}
 	items := make([]ObjectCatalogCompositeItem, 0)
 	warnings := make([]ObjectCatalogCompositeDetectionError, 0)
 	groupKeys := make([]string, 0, len(groups))
@@ -64,9 +70,6 @@ func DetectObjectCatalogCompositeItems(
 			continue
 		}
 		bucket, prefix := splitObjectCompositeGroupKey(groupKey)
-		if prefix == "" {
-			continue
-		}
 		files := storageResourcesToFileRefs(group)
 		detection, err := metaitem.ResolveItems(ctx, metaitem.DirectoryResolveInput{
 			ContentReader:  contentReader,
@@ -87,21 +90,31 @@ func DetectObjectCatalogCompositeItems(
 		if detection == nil || len(detection.Items) == 0 {
 			continue
 		}
-		for path, claimed := range detection.Claims {
-			if claimed {
-				skipPaths[ObjectPathFromClaim(bucket, path)] = true
-			}
-		}
+		acceptedAny := false
 		for _, detected := range detection.Items {
 			if detected == nil {
 				continue
 			}
+			if (!includeWholeScope || prefix == "") && detected.Layout != format.LayoutMulti {
+				continue
+			}
+			for _, path := range detected.RefFilePaths() {
+				skipPaths[ObjectPathFromClaim(bucket, path)] = true
+			}
+			acceptedAny = true
 			items = append(items, ObjectCatalogCompositeItem{
 				Bucket: bucket,
 				Prefix: prefix,
 				Item:   detected,
 				Claims: detection.Claims,
 			})
+		}
+		if includeWholeScope && acceptedAny {
+			for path, claimed := range detection.Claims {
+				if claimed {
+					skipPaths[ObjectPathFromClaim(bucket, path)] = true
+				}
+			}
 		}
 	}
 	return skipPaths, items, warnings
@@ -120,7 +133,7 @@ func InferObjectCatalogDataItem(resource StorageResource, objectName string) *me
 func ObjectCatalogCompositeName(composite ObjectCatalogCompositeItem) (name, objectPath string) {
 	if composite.Item != nil {
 		switch composite.Item.Layout {
-		case dataitem.LayoutSingle, dataitem.LayoutMulti:
+		case format.LayoutSingle, format.LayoutMulti:
 			if composite.Item.PrimaryContentPath != "" {
 				objectPath = ObjectPathFromClaim(composite.Bucket, composite.Item.PrimaryContentPath)
 				if objectPath != "" {
@@ -143,11 +156,11 @@ func ObjectCatalogCompositeMode(item *metaitem.DetectedItem) string {
 		return "directory"
 	}
 	switch item.Layout {
-	case dataitem.LayoutSingle:
+	case format.LayoutSingle:
 		return "single"
-	case dataitem.LayoutMulti:
+	case format.LayoutMulti:
 		return "multi"
-	case dataitem.LayoutWhole:
+	case format.LayoutWhole:
 		return "whole"
 	default:
 		return "directory"
@@ -307,9 +320,6 @@ func objectResourcesByParentPrefix(resources []StorageResource) map[string][]Sto
 			continue
 		}
 		parent := strings.Trim(ParentObjectPath(resource.Path), "/")
-		if parent == "" {
-			continue
-		}
 		key := resource.RootName + "\x00" + parent
 		groups[key] = append(groups[key], resource)
 	}

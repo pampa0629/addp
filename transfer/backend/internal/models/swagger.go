@@ -63,24 +63,12 @@ type TableTransferTaskConfigDoc struct {
 
 // TransferEndpointDoc 描述 Transfer source / target endpoint。
 type TransferEndpointDoc struct {
-	Engine         TransferEngineRefDoc        `json:"engine"`
-	Resource       TransferEndpointResourceDoc `json:"resource"`
-	DataType       string                      `json:"data_type" example:"table"`
-	Representation string                      `json:"representation" example:"encoded" enums:"native,encoded"`
-	MetaItemID     uint                        `json:"meta_item_id,omitempty" example:"12" description:"Meta item ID；source 指向已入库 Meta item 时由 Transfer 后端通过 MetaClient 读取标准 attributes。"`
-	Format         string                      `json:"format,omitempty" example:"shapefile"`
-	Options        map[string]interface{}      `json:"options,omitempty"`
-	Policy         map[string]interface{}      `json:"policy,omitempty"`
-}
-
-type TransferEngineRefDoc struct {
-	ID   uint   `json:"id" example:"1"`
-	Type string `json:"type,omitempty" example:"nfs"`
-}
-
-type TransferEndpointResourceDoc struct {
-	Kind string      `json:"kind" example:"file" enums:"native_table,file,object"`
-	Path interface{} `json:"path" swaggertype:"object"`
+	Locator        string                 `json:"locator" example:"addp://engine/9/path/manager/a3.shp?type=object" description:"ResourceLocator URI；source 可通过 locator item_id 引用已入库 Meta item。"`
+	DataType       string                 `json:"data_type" example:"table"`
+	Representation string                 `json:"representation" example:"encoded" enums:"native,encoded"`
+	Format         string                 `json:"format,omitempty" example:"shapefile"`
+	Options        map[string]interface{} `json:"options,omitempty"`
+	Policy         map[string]interface{} `json:"policy,omitempty"`
 }
 
 type TransferTransformDoc struct {

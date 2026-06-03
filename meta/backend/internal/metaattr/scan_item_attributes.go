@@ -122,7 +122,7 @@ func ApplyTableItemAttributes(attrs models.JSONMap, tableInfo *datatype.TableInf
 		return
 	}
 	SetItem(attrs, "layout", "single")
-	SetItem(attrs, "data_type", string(datatype.DataTypeTable))
+	SetItem(attrs, "data_type", string(datatype.Table))
 	if tableInfo == nil {
 		return
 	}
@@ -139,7 +139,7 @@ func ApplyGraphItemAttributes(attrs models.JSONMap, graphInfo *datatype.GraphInf
 		return
 	}
 	SetItem(attrs, "layout", "single")
-	SetItem(attrs, "data_type", string(datatype.DataTypeGraph))
+	SetItem(attrs, "data_type", string(datatype.Graph))
 	if graphInfo == nil {
 		return
 	}
@@ -195,10 +195,10 @@ func ApplyBranchLeafItemAttributes(attrs models.JSONMap, itemType string) {
 	SetItem(attrs, "layout", "single")
 	switch itemType {
 	case "collection":
-		SetItem(attrs, "data_type", string(datatype.DataTypeTable))
+		SetItem(attrs, "data_type", string(datatype.Table))
 	case "graph":
-		SetItem(attrs, "data_type", string(datatype.DataTypeGraph))
+		SetItem(attrs, "data_type", string(datatype.Graph))
 	default:
-		SetItem(attrs, "data_type", string(datatype.DataTypeUnknown))
+		SetItem(attrs, "data_type", string(datatype.Unknown))
 	}
 }

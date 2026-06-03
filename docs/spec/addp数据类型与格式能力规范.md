@@ -254,7 +254,7 @@ Shapefile 这类 multi 格式尤其要区分：单个 `.shp/.dbf/.shx` 的识别
 - Shapefile：`multi`，primary content 加同 basename related refs。
 - Iceberg：`whole`，整体范围认领。
 
-这一组能力只服务 Meta 调度，不直接等于 item 结果。`common/dataitem.Layout` 复用 `format.Layout` 的取值，避免形成两套命名体系。
+这一组能力只服务 Meta 调度，不直接等于 item 结果。dataitem 结果字段直接使用 `format.Layout` 取值，避免形成两套命名体系。
 
 ### Info / Facts
 

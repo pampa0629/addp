@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/addp/common/dataitem"
+	"github.com/addp/common/datatype"
 	"github.com/addp/meta/internal/models"
 )
 
@@ -12,7 +13,7 @@ func TestApplyContainerSummaryWritesStandardTypeInfo(t *testing.T) {
 
 	attrs := models.JSONMap{}
 	ApplyContainerSummary(attrs, &DetectedItem{
-		ResolvedItem: dataitem.ResolvedItem{DataType: dataitem.DataTypeContainer},
+		ResolvedItem: dataitem.ResolvedItem{DataType: datatype.Container},
 	})
 
 	typeInfo := attrs["type_info"].(map[string]interface{})

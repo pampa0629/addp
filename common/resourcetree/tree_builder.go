@@ -1,4 +1,4 @@
-package catalogview
+package resourcetree
 
 import (
 	"encoding/json"
@@ -25,31 +25,7 @@ type TreeNode struct {
 
 // TreeBuilder 资源树构建器
 // 提供通用的树构建能力，可被多个模块复用（Manager、Meta、Service、Orchestrator）
-type TreeBuilder struct {
-	// 可选依赖
-	metaClient MetaClient // 用于从 Meta 模块获取节点信息
-}
-
-// MetaClient Meta 模块客户端接口（可选依赖）
-type MetaClient interface {
-	// GetMetadataTree 获取引擎的完整元数据树
-	GetMetadataTree(engineID uint) (*models.MetadataTree, error)
-
-	// GetNodeByCatalogPath 按 catalog path 查询节点。
-	GetNodeByCatalogPath(engineID uint, catalogPath string) (*models.MetaNode, error)
-
-	// GetItemByCatalogPath 按 catalog path 查询数据项。
-	GetItemByCatalogPath(engineID uint, catalogPath string) (*models.MetaItem, error)
-
-	// GetNodeChildren 获取节点的子节点
-	GetNodeChildren(nodeID uint) ([]models.MetaNode, error)
-
-	// GetNodeItems 获取节点下的项目
-	GetNodeItems(nodeID uint) ([]models.MetaItem, error)
-
-	// GetMetaNode 获取单个节点详情
-	GetMetaNode(nodeID uint) (*models.MetaNode, error)
-}
+type TreeBuilder struct{}
 
 // CustomTreeBuilder 自定义树构建器接口（用于降级方案）
 type CustomTreeBuilder interface {
@@ -58,10 +34,8 @@ type CustomTreeBuilder interface {
 }
 
 // NewTreeBuilder 创建树构建器
-func NewTreeBuilder(metaClient MetaClient) *TreeBuilder {
-	return &TreeBuilder{
-		metaClient: metaClient,
-	}
+func NewTreeBuilder() *TreeBuilder {
+	return &TreeBuilder{}
 }
 
 // BuildFromMetadataTree 从 MetadataTree 构建树
@@ -200,7 +174,7 @@ func isWholeScopeItemNode(node *models.MetaNode) bool {
 	if node == nil {
 		return false
 	}
-	return itemLayoutFromMetaAttributes(node.Attributes) == "whole"
+	return itemLayoutForTreeMetadata(node.Attributes) == "whole"
 }
 
 func sameResourceFullName(left, right string) bool {
@@ -293,7 +267,7 @@ func withMetaItemFacts(attrs map[string]interface{}, item *models.MetaItem) map[
 	next["is_meta_item"] = true
 	if item.RowCount != nil {
 		next["row_count"] = *item.RowCount
-		tableInfo := tableInfoFromMetaAttributes(next, "")
+		tableInfo := tableInfoForTreeMetadata(next, "")
 		if tableInfo == nil || tableInfo.RowCount == nil || *tableInfo.RowCount <= 0 {
 			upsertTreeMetadataSection(next, "type_info", "table", map[string]interface{}{"row_count": *item.RowCount})
 		}
@@ -421,7 +395,7 @@ func calculateItemCount(itemType string, attributes map[string]interface{}) int 
 	// 对象存储的 directory/prefix 可能包含子对象
 	if itemType == "directory" || itemType == "prefix" {
 		// 从标准 storage 分区中提取 object_count。
-		if objCount := objectCountFromMetaAttributes(attributes); objCount > 0 {
+		if objCount := objectCountForTreeMetadata(attributes); objCount > 0 {
 			return int(objCount)
 		}
 		// 如果没有 object_count，返回 0（后续懒加载时会尝试获取子节点）
@@ -525,25 +499,25 @@ func addMetaItemFacts(metadata map[string]interface{}, attrs map[string]interfac
 	if metadata == nil || len(attrs) == 0 {
 		return
 	}
-	if dataType := dataTypeFromMetaAttributes(attrs); dataType != "" {
+	if dataType := dataTypeForTreeMetadata(attrs); dataType != "" {
 		metadata["data_type"] = dataType
 	}
-	if formatName := formatNameFromMetaAttributes(attrs); formatName != "" {
+	if formatName := formatNameForTreeMetadata(attrs); formatName != "" {
 		metadata["format"] = formatName
 	}
-	if layout := itemLayoutFromMetaAttributes(attrs); layout != "" {
+	if layout := itemLayoutForTreeMetadata(attrs); layout != "" {
 		metadata["layout"] = layout
 	}
-	if physicalPath := physicalPathFromMetaAttributes(attrs); physicalPath != "" {
+	if physicalPath := physicalPathForTreeMetadata(attrs); physicalPath != "" {
 		metadata["physical_path"] = physicalPath
 	}
-	if rowCount := tableRowCountFromMetaAttributes(attrs); rowCount > 0 {
+	if rowCount := tableRowCountForTreeMetadata(attrs); rowCount > 0 {
 		metadata["row_count"] = rowCount
 	}
-	if fieldCount := tableFieldCountFromMetaAttributes(attrs); fieldCount > 0 {
+	if fieldCount := tableFieldCountForTreeMetadata(attrs); fieldCount > 0 {
 		metadata["field_count"] = fieldCount
 	}
-	if spatial := spatialSummaryFromMetaAttributes(attrs); len(spatial) > 0 {
+	if spatial := spatialSummaryForTreeMetadata(attrs); len(spatial) > 0 {
 		metadata["spatial"] = spatial
 	}
 }
@@ -599,7 +573,7 @@ func isPathSemanticMetaItem(engineType, itemType, fullName string, attributes ma
 	if UsesSlashFullName(engineType, itemType) {
 		return true
 	}
-	return formatNameFromMetaAttributes(attributes) != "" && itemLayoutFromMetaAttributes(attributes) != ""
+	return formatNameForTreeMetadata(attributes) != "" && itemLayoutForTreeMetadata(attributes) != ""
 }
 
 // parsePath 从 FullName 解析路径
