@@ -269,7 +269,7 @@ func (s *ScanService) ScanEngineWithOptions(opts ScanOptions) (*models.ScanRespo
 
 	var directExecID string
 	if reporter == nil {
-		execID, createErr := s.immediateRecorder.Create(resource, effectiveTenantID, scope.CatalogPaths, scope.ScanDepth, scope.Force, startTime)
+		execID, createErr := s.immediateRecorder.Create(resource, effectiveTenantID, scope.CatalogPaths, scope.RefGroups, scope.ScanDepth, scope.Force, scope.Source, startTime)
 		if createErr != nil {
 			return nil, createErr
 		}
@@ -793,81 +793,6 @@ func (s *ScanService) scanBranchLeavesWithReporter(
 	)...)
 
 	return totalCatalogNodes, totalItems, totalFields, nil
-}
-
-// scanFilesystemCatalogResourceWithReporter 扫描文件系统 catalog 资源。
-func (s *ScanService) scanFilesystemCatalogResourceWithReporter(resource *commonModels.Engine, tenantID uint, catalogPaths []string, scanDepth string, force bool, reporter ScanProgressReporter) (int, int, int, error) {
-	roots, items, _, err := s.filesystemCatalogScanService.ScanPaths(resource, tenantID, catalogPaths, scanDepth, force, reporter)
-	if err != nil {
-		return 0, 0, 0, err
-	}
-	return roots, items, 0, nil
-}
-
-func (s *ScanService) scanFilesystemCatalogResourceResultWithReporter(resource *commonModels.Engine, tenantID uint, catalogPaths []string, scanDepth string, force bool, reporter ScanProgressReporter) (scanDispatchResult, error) {
-	roots, items, extraction, err := s.filesystemCatalogScanService.ScanPaths(resource, tenantID, catalogPaths, scanDepth, force, reporter)
-	if err != nil {
-		return scanDispatchResult{}, err
-	}
-	return scanDispatchResult{
-		CatalogNodes: roots,
-		Items:        items,
-		Extraction:   extraction,
-	}, nil
-}
-
-func (s *ScanService) scanObjectStorageCatalogResourceWithReporter(resource *commonModels.Engine, tenantID uint, catalogPaths []string, scanDepth string, force bool, reporter ScanProgressReporter) (int, int, int, error) {
-	// 标准化 scanDepth
-	if scanDepth == "" {
-		scanDepth = "deep"
-	}
-
-	if reporter != nil && len(catalogPaths) > 0 {
-		reporter.SetTotal(len(catalogPaths))
-	}
-
-	// 调用 ObjectStorageCatalogScanService 进行扫描
-	scanResult, err := s.objectStorageCatalogScanService.ScanPaths(
-		resource,
-		tenantID,
-		catalogPaths,
-		nil,
-		scanDepth,
-		force,
-		reporter,
-	)
-	if err != nil {
-		return 0, 0, 0, err
-	}
-
-	return scanResult.CatalogNodes, scanResult.Items, 0, nil
-}
-
-func (s *ScanService) scanObjectStorageCatalogResourceResultWithReporter(resource *commonModels.Engine, tenantID uint, catalogPaths []string, scanDepth string, force bool, reporter ScanProgressReporter) (scanDispatchResult, error) {
-	if scanDepth == "" {
-		scanDepth = "deep"
-	}
-	if reporter != nil && len(catalogPaths) > 0 {
-		reporter.SetTotal(len(catalogPaths))
-	}
-	result, err := s.objectStorageCatalogScanService.ScanPaths(
-		resource,
-		tenantID,
-		catalogPaths,
-		nil,
-		scanDepth,
-		force,
-		reporter,
-	)
-	if err != nil {
-		return scanDispatchResult{}, err
-	}
-	s.finalizeCatalogRootAfterScan(resource, tenantID, result.Items, scanDepth)
-	return scanDispatchResult{
-		CatalogNodes: result.CatalogNodes,
-		Items:        result.Items,
-		Extraction:   result.Extraction,
-	}, nil
 }
 
 // GetObjectMetadata 获取指定对象的元数据 (代理到 metadataExtractor)

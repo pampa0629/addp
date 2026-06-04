@@ -194,6 +194,145 @@ func processDetectedItem(repo *metaRepo.ScanRepository, indexer *IndexerService,
 	return detectedItemProcessor{repo: repo, indexer: indexer, log: log}
 }
 
+func fileSingleDetectedItemInput(
+	resource *commonModels.Engine,
+	tenantID uint,
+	parentNode *models.MetaNode,
+	file metaitem.StorageFileRef,
+	detected *metaitem.DetectedItem,
+	itemType string,
+	itemName string,
+	fullName string,
+	contentReader plugin.ContentReadableProvider,
+	connInfo plugin.ConnectionInfo,
+	scanDepth string,
+) detectedItemInput {
+	return detectedItemInput{
+		Resource:           resource,
+		TenantID:           tenantID,
+		EngineID:           resource.ID,
+		ParentNode:         parentNode,
+		ItemType:           itemType,
+		ItemName:           itemName,
+		FullName:           fullName,
+		Attributes:         metaattr.JSONMap(metaattr.BuildAttributes(metaitem.AttributeInput(detected))),
+		Detected:           detected,
+		ContentReader:      contentReader,
+		ConnInfo:           connInfo,
+		CatalogPath:        file.CatalogPath,
+		CatalogPathFor:     func(string) plugin.CatalogPath { return file.CatalogPath },
+		PhysicalPath:       file.Path,
+		IndexPath:          file.Path,
+		IndexRelativePath:  file.Path,
+		SizeBytes:          file.Size,
+		DataUpdatedAt:      fileModifiedAtPtr(file.ModifiedAt),
+		ScanDepth:          scanDepth,
+		IncludeAccessIndex: true,
+	}
+}
+
+func fileDetectedItemInput(
+	resource *commonModels.Engine,
+	tenantID uint,
+	parentNode *models.MetaNode,
+	itemPlan metacatalog.FileCatalogDetectedItemPlan,
+	detected *metaitem.DetectedItem,
+	contentReader plugin.ContentReadableProvider,
+	connInfo plugin.ConnectionInfo,
+	scanDepth string,
+) detectedItemInput {
+	return detectedItemInput{
+		Resource:           resource,
+		TenantID:           tenantID,
+		EngineID:           resource.ID,
+		ParentNode:         parentNode,
+		ItemType:           itemPlan.ItemType,
+		ItemName:           itemPlan.ItemName,
+		FullName:           itemPlan.FullName,
+		Attributes:         itemPlan.Attributes,
+		Detected:           detected,
+		ContentReader:      contentReader,
+		ConnInfo:           connInfo,
+		CatalogPathFor:     plugin.FileItemPathForEngine(resource.ID),
+		PhysicalPath:       detectedItemContentPath(detected, itemPlan.FullName),
+		IndexPath:          itemPlan.FullName,
+		IndexRelativePath:  itemPlan.FullName,
+		SizeBytes:          itemPlan.SizeBytes,
+		ScanDepth:          scanDepth,
+		IncludeAccessIndex: true,
+	}
+}
+
+func objectSingleDetectedItemInput(
+	resource *commonModels.Engine,
+	tenantID, engineID uint,
+	parentNode *models.MetaNode,
+	itemPlan metacatalog.ObjectCatalogSingleItemPlan,
+	catalogResource metacatalog.StorageResource,
+	attrs models.JSONMap,
+	trimmedPath string,
+	contentReader plugin.ContentReadableProvider,
+	connInfo plugin.ConnectionInfo,
+	scanDepth string,
+) detectedItemInput {
+	return detectedItemInput{
+		Resource:           resource,
+		TenantID:           tenantID,
+		EngineID:           engineID,
+		ParentNode:         parentNode,
+		ItemType:           itemPlan.ItemType,
+		ItemName:           itemPlan.ItemName,
+		FullName:           itemPlan.FullName,
+		Attributes:         attrs,
+		Detected:           itemPlan.DataItem,
+		ContentReader:      contentReader,
+		ConnInfo:           connInfo,
+		CatalogPath:        catalogResource.CatalogPath,
+		CatalogPathFor:     func(string) plugin.CatalogPath { return catalogResource.CatalogPath },
+		PhysicalPath:       catalogResource.FullPath,
+		IndexRootName:      catalogResource.RootName,
+		IndexPath:          catalogResource.Path,
+		IndexRelativePath:  trimmedPath,
+		SizeBytes:          catalogResource.SizeBytes,
+		DataUpdatedAt:      catalogResource.LastModified,
+		ScanDepth:          scanDepth,
+		IncludeAccessIndex: true,
+	}
+}
+
+func objectCompositeDetectedItemInput(
+	resource *commonModels.Engine,
+	tenantID, engineID uint,
+	parentNode *models.MetaNode,
+	itemPlan metacatalog.ObjectCatalogCompositeItemPlan,
+	composite metacatalog.ObjectCatalogCompositeItem,
+	contentReader plugin.ContentReadableProvider,
+	connInfo plugin.ConnectionInfo,
+	scanDepth string,
+) detectedItemInput {
+	return detectedItemInput{
+		Resource:           resource,
+		TenantID:           tenantID,
+		EngineID:           engineID,
+		ParentNode:         parentNode,
+		ItemType:           itemPlan.ItemType,
+		ItemName:           itemPlan.ItemName,
+		FullName:           itemPlan.FullName,
+		Attributes:         itemPlan.Attributes,
+		Detected:           composite.Item,
+		ContentReader:      contentReader,
+		ConnInfo:           connInfo,
+		CatalogPathFor:     plugin.ObjectItemPathForBucket(engineID, composite.Bucket),
+		PhysicalPath:       detectedItemContentPath(composite.Item, itemPlan.ObjectPath),
+		IndexRootName:      composite.Bucket,
+		IndexPath:          itemPlan.ObjectPath,
+		IndexRelativePath:  strings.Trim(itemPlan.ObjectPath, "/"),
+		SizeBytes:          itemPlan.SizeBytes,
+		ScanDepth:          scanDepth,
+		IncludeAccessIndex: true,
+	}
+}
+
 func detectedItemContentPath(item *metaitem.DetectedItem, fallback string) string {
 	if item == nil {
 		return strings.Trim(fallback, "/")

@@ -10,7 +10,6 @@ import (
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/metaenrich"
 	"github.com/addp/meta/internal/metaitem"
@@ -291,28 +290,19 @@ func (s *FilesystemCatalogScanService) scanDirectory(
 			totalItems++
 			continue
 		}
-		result, err := processDetectedItem(s.repo, s.indexer, s.log).Process(ctx, detectedItemInput{
-			Resource:           resource,
-			TenantID:           tenantID,
-			EngineID:           resource.ID,
-			ParentNode:         parentNode,
-			ItemType:           itemTerm,
-			ItemName:           itemName,
-			FullName:           fullName,
-			Attributes:         metaattr.JSONMap(metaattr.BuildAttributes(metaitem.AttributeInput(detected))),
-			Detected:           detected,
-			ContentReader:      contentReader,
-			ConnInfo:           connInfo,
-			CatalogPath:        file.CatalogPath,
-			CatalogPathFor:     func(string) plugin.CatalogPath { return file.CatalogPath },
-			PhysicalPath:       file.Path,
-			IndexPath:          file.Path,
-			IndexRelativePath:  file.Path,
-			SizeBytes:          file.Size,
-			DataUpdatedAt:      fileModifiedAtPtr(file.ModifiedAt),
-			ScanDepth:          scanDepth,
-			IncludeAccessIndex: true,
-		})
+		result, err := processDetectedItem(s.repo, s.indexer, s.log).Process(ctx, fileSingleDetectedItemInput(
+			resource,
+			tenantID,
+			parentNode,
+			file,
+			detected,
+			itemTerm,
+			itemName,
+			fullName,
+			contentReader,
+			connInfo,
+			scanDepth,
+		))
 		if err != nil {
 			s.log.Warn("保存 single 文件对象失败", "path", file.Path, "error", err)
 			continue
@@ -397,26 +387,16 @@ func (s *FilesystemCatalogScanService) persistFileCatalogDetectedItem(
 	if !ok {
 		return false, "", scantask.ExtractionCounts{}
 	}
-	result, err := processDetectedItem(s.repo, s.indexer, s.log).Process(ctx, detectedItemInput{
-		Resource:           resource,
-		TenantID:           tenantID,
-		EngineID:           resource.ID,
-		ParentNode:         parentNode,
-		ItemType:           itemPlan.ItemType,
-		ItemName:           itemPlan.ItemName,
-		FullName:           itemPlan.FullName,
-		Attributes:         itemPlan.Attributes,
-		Detected:           detected,
-		ContentReader:      contentReader,
-		ConnInfo:           connInfo,
-		CatalogPathFor:     plugin.FileItemPathForEngine(resource.ID),
-		PhysicalPath:       detectedItemContentPath(detected, itemPlan.FullName),
-		IndexPath:          itemPlan.FullName,
-		IndexRelativePath:  itemPlan.FullName,
-		SizeBytes:          itemPlan.SizeBytes,
-		ScanDepth:          scanDepth,
-		IncludeAccessIndex: true,
-	})
+	result, err := processDetectedItem(s.repo, s.indexer, s.log).Process(ctx, fileDetectedItemInput(
+		resource,
+		tenantID,
+		parentNode,
+		itemPlan,
+		detected,
+		contentReader,
+		connInfo,
+		scanDepth,
+	))
 	if err != nil {
 		s.log.Warn("保存复合数据项失败",
 			"path", dirPath,

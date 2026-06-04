@@ -3,10 +3,11 @@ package scantask
 import (
 	"context"
 	"fmt"
-	commonExecution "github.com/addp/common/execution"
 	"time"
 
+	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/meta/internal/models"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -21,35 +22,53 @@ func NewImmediateExecutionRecorder(db *gorm.DB) *ImmediateExecutionRecorder {
 	}
 }
 
-func (r *ImmediateExecutionRecorder) Create(resource *commonModels.Engine, tenantID uint, catalogPaths []string, scanDepth string, force bool, startTime time.Time) (string, error) {
+func (r *ImmediateExecutionRecorder) Create(
+	resource *commonModels.Engine,
+	tenantID uint,
+	catalogPaths []string,
+	refGroups []models.ScanRefGroup,
+	scanDepth string,
+	force bool,
+	source string,
+	startTime time.Time,
+) (string, error) {
 	if resource == nil {
 		return "", fmt.Errorf("resource is required to create immediate execution")
 	}
 
 	execID := uuid.New().String()
-	engineIDInt := int(resource.ID)
 	exec := &commonExecution.TaskExecution{
-		TenantID:    int(tenantID),
-		ExecutionID: execID,
-		Module:      commonExecution.ModuleMeta,
-		TaskType:    "scan",
-		Status:      commonExecution.ExecutionStatusRunning,
-		TriggerType: commonExecution.TriggerTypeAPI,
-		ExecutionConfig: commonModels.JSONMap{
-			"engine_id":     engineIDInt,
-			"catalog_paths": catalogPaths,
-			"scan_depth":    scanDepth,
-			"force":         force,
-		},
-		StartedAt: &startTime,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		TenantID:        int(tenantID),
+		ExecutionID:     execID,
+		Module:          commonExecution.ModuleMeta,
+		TaskType:        "scan",
+		Status:          commonExecution.ExecutionStatusRunning,
+		TriggerType:     commonExecution.TriggerTypeAPI,
+		ExecutionConfig: ImmediateExecutionConfig(resource, catalogPaths, refGroups, scanDepth, force, source),
+		StartedAt:       &startTime,
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
 	}
 
 	if err := r.repo.Create(context.Background(), exec); err != nil {
 		return "", fmt.Errorf("failed to create immediate execution record: %w", err)
 	}
 	return execID, nil
+}
+
+func ImmediateExecutionConfig(resource *commonModels.Engine, catalogPaths []string, refGroups []models.ScanRefGroup, scanDepth string, force bool, source string) commonModels.JSONMap {
+	config := commonModels.JSONMap{
+		"catalog_paths": catalogPaths,
+		"ref_groups":    refGroups,
+		"scan_depth":    scanDepth,
+		"force":         force,
+		"source":        source,
+	}
+	if resource != nil {
+		config["engine_id"] = resource.ID
+		config["storage_type"] = NormalizeStorageType(resource.EngineType)
+	}
+	return config
 }
 
 func (r *ImmediateExecutionRecorder) Fail(execID string, tenantID int, scanErr error, startTime time.Time) {

@@ -237,6 +237,7 @@ const engines = ref([])
 const loadingEngines = ref(false)
 const loadingNamespaces = ref(false)
 const loadingTables = ref(false)
+const restoringState = ref(false)
 const supportedEncodedSourceFormats = computed(() => props.wizardState.readableEncodedFormats?.value || new Set())
 const supportedRawCopyFormats = computed(() => props.wizardState.rawCopyFormats?.value || new Map())
 const writableOutputFormats = ref([])
@@ -413,12 +414,32 @@ const geometryFieldOptions = computed(() => {
 })
 
 watch(canProceed, (ready) => {
+  if (restoringState.value) return
   if (ready) {
     syncTarget()
   } else {
     clearTarget()
   }
 })
+
+watch(
+  () => [
+    props.wizardState.targetEngineID.value,
+    props.wizardState.targetRepresentation.value,
+    props.wizardState.targetSchema.value,
+    props.wizardState.targetTable.value,
+    targetConfigSignature(props.wizardState.targetConfig.value || {})
+  ],
+  async ([engineID]) => {
+    if (!engineID) {
+      resetLocalTargetForm()
+      return
+    }
+    if (targetStateMatchesLocal()) return
+    await restoreState()
+  },
+  { flush: 'post' }
+)
 
 function isObjectStorageEngine(engineType) {
   const type = (engineType || '').toLowerCase()
@@ -610,31 +631,69 @@ async function loadTargetTables() {
 
 async function restoreState() {
   const state = props.wizardState
-
-  const config = state.targetConfig.value || {}
-  outputFormat.value = isRawCopySource.value ? sourceFormat.value : (config.format || '')
-  outputPath.value = normalizeFileCatalogPath(config.resourcePath || '')
-  outputFileName.value = config.resourceFile || (isRawCopySource.value ? sourceFileName.value : '')
-  csvHeaders.value = config.includeHeader !== false
-  csvDelimiter.value = config.delimiter || ','
-  targetSchema.value = config.schema || state.targetSchema?.value || ''
-  targetTable.value = config.table || state.targetTable?.value || ''
-  tableWriteMode.value = normalizeTableWriteMode(config.writeMode)
-  if (isSpatialFormat.value) {
-    applyDefaultGeometryConfig()
+  if (!state.targetEngineID.value) {
+    resetLocalTargetForm()
+    return
   }
 
-  if (state.targetEngineID.value) {
+  restoringState.value = true
+  const config = state.targetConfig.value || {}
+  try {
     formData.engineID = state.targetEngineID.value
     await nextTick()
+    outputFormat.value = isRawCopySource.value ? sourceFormat.value : (config.format || '')
+    outputPath.value = normalizeFileCatalogPath(config.resourcePath || '')
+    outputFileName.value = config.resourceFile || (isRawCopySource.value ? sourceFileName.value : '')
+    csvHeaders.value = config.includeHeader !== false
+    csvDelimiter.value = config.delimiter || ','
+    targetSchema.value = config.schema || state.targetSchema?.value || ''
+    targetTable.value = config.table || state.targetTable?.value || ''
+    tableWriteMode.value = normalizeTableWriteMode(config.writeMode)
     if (isNativeTableTarget.value) {
       await loadNamespaces()
       if (targetSchema.value) {
         await loadTargetTables()
       }
     }
-    syncTarget()
+  } finally {
+    restoringState.value = false
   }
+}
+
+function resetLocalTargetForm() {
+  formData.engineID = null
+  outputPath.value = ''
+  outputFileName.value = ''
+  targetSchema.value = ''
+  targetTable.value = ''
+  targetTables.value = []
+  namespaces.value = []
+  tableWriteMode.value = 'overwrite'
+}
+
+function targetStateMatchesLocal() {
+  const state = props.wizardState
+  const config = state.targetConfig.value || {}
+  return formData.engineID === state.targetEngineID.value &&
+    outputFormat.value === (isRawCopySource.value ? sourceFormat.value : (config.format || '')) &&
+    outputPath.value === normalizeFileCatalogPath(config.resourcePath || '') &&
+    outputFileName.value === (config.resourceFile || (isRawCopySource.value ? sourceFileName.value : '')) &&
+    targetSchema.value === (config.schema || state.targetSchema?.value || '') &&
+    targetTable.value === (config.table || state.targetTable?.value || '') &&
+    tableWriteMode.value === normalizeTableWriteMode(config.writeMode)
+}
+
+function targetConfigSignature(config) {
+  return JSON.stringify({
+    format: config.format || '',
+    resourcePath: normalizeFileCatalogPath(config.resourcePath || ''),
+    resourceFile: config.resourceFile || '',
+    includeHeader: config.includeHeader !== false,
+    delimiter: config.delimiter || ',',
+    schema: config.schema || '',
+    table: config.table || '',
+    writeMode: normalizeTableWriteMode(config.writeMode)
+  })
 }
 
 function applyOutputFileExtension(options = {}) {

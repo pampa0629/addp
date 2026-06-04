@@ -673,29 +673,19 @@ func (s *ObjectStorageCatalogScanService) persistObjectResources(
 			"currentParent_name", currentParent.Name,
 			"objectName", itemPlan.ObjectName)
 
-		result, err := processDetectedItem(s.repo, s.indexer, s.log).Process(context.Background(), detectedItemInput{
-			Resource:           resource,
-			TenantID:           tenantID,
-			EngineID:           engineID,
-			ParentNode:         currentParent,
-			ItemType:           itemPlan.ItemType,
-			ItemName:           itemPlan.ItemName,
-			FullName:           itemPlan.FullName,
-			Attributes:         enhancedAttrs,
-			Detected:           itemPlan.DataItem,
-			ContentReader:      readableProvider,
-			ConnInfo:           connInfo,
-			CatalogPath:        catalogResource.CatalogPath,
-			CatalogPathFor:     func(string) plugin.CatalogPath { return catalogResource.CatalogPath },
-			PhysicalPath:       catalogResource.FullPath,
-			IndexRootName:      catalogResource.RootName,
-			IndexPath:          catalogResource.Path,
-			IndexRelativePath:  trimmed,
-			SizeBytes:          catalogResource.SizeBytes,
-			DataUpdatedAt:      catalogResource.LastModified,
-			ScanDepth:          scanDepth,
-			IncludeAccessIndex: true,
-		})
+		result, err := processDetectedItem(s.repo, s.indexer, s.log).Process(context.Background(), objectSingleDetectedItemInput(
+			resource,
+			tenantID,
+			engineID,
+			currentParent,
+			itemPlan,
+			catalogResource,
+			enhancedAttrs,
+			trimmed,
+			readableProvider,
+			connInfo,
+			scanDepth,
+		))
 		if err != nil {
 			return objects, extractionStats, err
 		}
@@ -751,27 +741,17 @@ func (s *ObjectStorageCatalogScanService) persistObjectCatalogCompositeItems(
 			return count, extractionStats, err
 		}
 
-		result, err := processDetectedItem(s.repo, s.indexer, s.log).Process(context.Background(), detectedItemInput{
-			Resource:           resource,
-			TenantID:           tenantID,
-			EngineID:           engineID,
-			ParentNode:         parentNode,
-			ItemType:           itemPlan.ItemType,
-			ItemName:           itemPlan.ItemName,
-			FullName:           itemPlan.FullName,
-			Attributes:         itemPlan.Attributes,
-			Detected:           composite.Item,
-			ContentReader:      readableProvider,
-			ConnInfo:           connInfo,
-			CatalogPathFor:     plugin.ObjectItemPathForBucket(engineID, composite.Bucket),
-			PhysicalPath:       detectedItemContentPath(composite.Item, itemPlan.ObjectPath),
-			IndexRootName:      composite.Bucket,
-			IndexPath:          itemPlan.ObjectPath,
-			IndexRelativePath:  strings.Trim(itemPlan.ObjectPath, "/"),
-			SizeBytes:          itemPlan.SizeBytes,
-			ScanDepth:          scanDepth,
-			IncludeAccessIndex: true,
-		})
+		result, err := processDetectedItem(s.repo, s.indexer, s.log).Process(context.Background(), objectCompositeDetectedItemInput(
+			resource,
+			tenantID,
+			engineID,
+			parentNode,
+			itemPlan,
+			composite,
+			readableProvider,
+			connInfo,
+			scanDepth,
+		))
 		if err != nil {
 			return count, extractionStats, err
 		}

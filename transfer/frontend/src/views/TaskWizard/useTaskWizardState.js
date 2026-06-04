@@ -390,8 +390,8 @@ export function useTaskWizardState() {
     const oldSourceLocator = sourceLocator.value
     const oldSourceEmpty = !oldSourceEngineID && !oldSourceLocator
     const sourceChanged = !oldSourceEmpty && (
-      oldSourceEngineID !== config.engineID ||
-      oldSourceLocator !== nextLocator
+      Number(oldSourceEngineID || 0) !== Number(config.engineID || 0) ||
+      !sameLocatorIdentity(oldSourceLocator, nextLocator)
     )
 
     sourceEngineID.value = config.engineID
@@ -586,6 +586,22 @@ export function useTaskWizardState() {
     if (type.includes('mysql')) return 'mysql'
     if (type.includes('s3') || type.includes('minio')) return 's3'
     return type || 'postgresql'
+  }
+
+  function sameLocatorIdentity(left, right) {
+    const leftText = String(left || '').trim()
+    const rightText = String(right || '').trim()
+    if (leftText === rightText) return true
+
+    const leftLoc = parseLocator(leftText)
+    const rightLoc = parseLocator(rightText)
+    if (!leftLoc.engineID || !rightLoc.engineID) return false
+    if (leftLoc.engineID !== rightLoc.engineID) return false
+    if (leftLoc.type !== rightLoc.type) return false
+    if (leftLoc.path.length !== rightLoc.path.length) return false
+    if (leftLoc.path.some((part, index) => part !== rightLoc.path[index])) return false
+    if (leftLoc.itemID && rightLoc.itemID && leftLoc.itemID !== rightLoc.itemID) return false
+    return true
   }
 
   function normalizeTargetType(target) {

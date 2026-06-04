@@ -577,13 +577,19 @@ func TestObjectCatalogScanFinalizesCatalogRoot(t *testing.T) {
 	})
 
 	resource := &commonModels.Engine{ID: 9, Name: "Business MinIO", EngineType: provider.Type()}
-	result, err := svc.scanObjectStorageCatalogResourceResultWithReporter(resource, 1, nil, models.ScannedDepthDeep, true, nil)
+	result, err := svc.ensureContentCatalogScanner().ScanObjectCatalog(scanDispatchRequest{
+		Resource:  resource,
+		TenantID:  1,
+		ScanDepth: models.ScannedDepthDeep,
+		Force:     true,
+	})
 	if err != nil {
 		t.Fatalf("scan object catalog: %v", err)
 	}
 	if result.Items != 1 {
 		t.Fatalf("result.Items = %d, want 1", result.Items)
 	}
+	svc.finalizeCatalogRootAfterScan(resource, 1, result.Items, models.ScannedDepthDeep)
 
 	var root models.MetaNode
 	if err := db.Where("tenant_id = ? AND engine_id = ? AND parent_node_id IS NULL", 1, 9).First(&root).Error; err != nil {

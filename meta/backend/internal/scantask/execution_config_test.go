@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
 )
 
@@ -46,6 +47,30 @@ func TestTaskExecutionConfigUsesDefaultScanDepth(t *testing.T) {
 	config := TaskExecutionConfig(7, "object_storage", nil, "deep")
 	if config["scan_depth"] != "deep" {
 		t.Fatalf("scan_depth = %#v, want deep", config["scan_depth"])
+	}
+}
+
+func TestImmediateExecutionConfigKeepsRefGroupsAndSource(t *testing.T) {
+	t.Parallel()
+
+	config := ImmediateExecutionConfig(
+		&commonModels.Engine{ID: 7, EngineType: "Object Storage"},
+		[]string{"bucket/path"},
+		[]models.ScanRefGroup{{Primary: "bucket/path/roads.shp"}},
+		"deep",
+		true,
+		"transfer",
+	)
+
+	parsed := ParseExecutionConfig(config)
+	if parsed.EngineID != 7 || parsed.StorageType != "object_storage" || parsed.ScanDepth != "deep" || !parsed.Force || parsed.Source != "transfer" {
+		t.Fatalf("parsed scalar config = %#v", parsed)
+	}
+	if !reflect.DeepEqual(parsed.CatalogPaths, []string{"bucket/path"}) {
+		t.Fatalf("catalog paths = %#v", parsed.CatalogPaths)
+	}
+	if len(parsed.RefGroups) != 1 || parsed.RefGroups[0].Primary != "bucket/path/roads.shp" {
+		t.Fatalf("ref groups = %#v", parsed.RefGroups)
 	}
 }
 
