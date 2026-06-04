@@ -96,7 +96,7 @@ Meta / Manager / Transfer 编排层
 
 一个可被 format provider 消费的 `[]format.RelatedRef` 必须有且只有一个 `Primary=true` 的 ref。调用方可使用 `format.ValidateRelatedRefs` 校验集合，用 `format.PrimaryRelatedRef` 获取 primary ref。缺失或存在多个 primary 都表示上层 item 识别或 attributes 数据不可信，应回退到 format 规则重新构造 refs，或直接返回错误。
 
-编排层可以用 `format.SameBasenameRelatedRefs` 从 primary path 和 `RelatedRefSpec` 推导默认 related refs。但真实读取时，应优先使用 Meta 已确认并入库的 refs，避免重新猜测 sibling content。
+编排层可以用 `format.SameBasenameRelatedRefs` 从 primary path 和 `RelatedRefSpec` 推导默认 related refs。这类 refs 是计划集合，可能包含可选 ref，不表示对应 content 已存在或已由本次写出生成。真实读取时，应优先使用 Meta 已确认并入库的 refs，避免重新猜测 sibling content；写出后触发 Meta 回扫时，必须使用 writer 实际成功创建的 refs，不得把 `RelatedRefSpec` 或计划 refs 直接当作本次产物清单。
 
 ## Reader / Writer
 
@@ -209,7 +209,7 @@ Meta 已确认 refs
 
 multi 读取必须优先使用 Meta 已确认的 refs。Manager 和 Transfer 不得按扩展名重新枚举 sibling content 后猜 refs。
 
-Transfer 读取 multi table 时，必须把 `contentio.Reader` 和已确认的 `[]format.RelatedRef` 一起交给 `MultiTableReaderProvider`。Transfer 写出 multi table 时，由 planner 根据 format `RelatedRefSpec` 生成目标 refs，再把 `contentio.Writer` 和目标 refs 交给 `MultiTableWriterProvider`。`contentio` 不提供 multi writer 原语，也不负责提交一组 refs 的业务策略。
+Transfer 读取 multi table 时，必须把 `contentio.Reader` 和已确认的 `[]format.RelatedRef` 一起交给 `MultiTableReaderProvider`。Transfer 写出 multi table 时，由 planner 根据 format `RelatedRefSpec` 生成目标计划 refs，再把 `contentio.Writer` 和目标计划 refs 交给 `MultiTableWriterProvider`；writer 关闭成功后，Transfer 必须以实际成功创建的 refs 作为后续 Meta 回扫输入。`contentio` 不提供 multi writer 原语，也不负责提交一组 refs 的业务策略。
 
 ### scope
 

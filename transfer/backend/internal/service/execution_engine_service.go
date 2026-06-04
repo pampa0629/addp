@@ -170,7 +170,7 @@ func (s *ExecutionEngineService) executeCommonTableTransferTask(ctx context.Cont
 		s.logger.Warn("failed to update task after successful table transfer", "error", err, "task_id", task.ID)
 	}
 	if task.AutoScanMetadata {
-		s.triggerMetadataScan(task, spec, buildResult.Plan.Target)
+		s.triggerMetadataScan(task, spec, buildResult.Plan.Target, metrics.TargetRefs)
 	}
 	return nil
 }
@@ -399,7 +399,7 @@ func runningProgress(batchIndex int64) float64 {
 	return progress
 }
 
-func (s *ExecutionEngineService) triggerMetadataScan(task *models.TransferTask, spec planner.TableExportTaskSpec, targetPlan executor.TableTargetPlan) {
+func (s *ExecutionEngineService) triggerMetadataScan(task *models.TransferTask, spec planner.TableExportTaskSpec, targetPlan executor.TableTargetPlan, targetRefs []format.RelatedRef) {
 	if s.metaClient == nil {
 		s.logger.Warn("meta client not available, skipping metadata scan", "task_id", task.ID)
 		return
@@ -412,10 +412,17 @@ func (s *ExecutionEngineService) triggerMetadataScan(task *models.TransferTask, 
 	}
 
 	metaClient := s.metaClient.WithTenantID(task.TenantID)
-	refGroups := tableTargetRefGroups(targetPlan)
+	refGroups := tableTargetRefGroups(targetPlan, targetRefs)
 	catalogPaths := []string(nil)
 	if len(refGroups) == 0 {
 		catalogPaths = nativeTargetCatalogPaths(spec.Target)
+	}
+	if len(refGroups) == 0 && len(catalogPaths) == 0 {
+		s.logger.Warn("metadata scan scope is empty, skipping metadata scan",
+			"task_id", task.ID,
+			"engine_id", targetEngineID,
+			"target_format", targetPlan.Format)
+		return
 	}
 
 	s.logger.Info("triggering metadata scan",
@@ -478,9 +485,12 @@ func (s *ExecutionEngineService) triggerRawCopyMetadataScan(task *models.Transfe
 		"execution_id", run.ExecutionID)
 }
 
-func tableTargetRefGroups(target executor.TableTargetPlan) []commonClient.MetaScanRefGroup {
+func tableTargetRefGroups(target executor.TableTargetPlan, targetRefs []format.RelatedRef) []commonClient.MetaScanRefGroup {
 	if target.Kind != executor.TableEndpointEncoded {
 		return nil
+	}
+	if len(targetRefs) > 0 {
+		return relatedRefsToMetaScanRefGroups(targetRefs)
 	}
 	if target.Format == "" {
 		return singlePathRefGroups(target.Path.StringPath())
@@ -488,11 +498,10 @@ func tableTargetRefGroups(target executor.TableTargetPlan) []commonClient.MetaSc
 	if _, err := format.GetTableWriterProvider(target.Format); err == nil {
 		return singlePathRefGroups(target.Path.StringPath())
 	}
-	multiProvider, err := format.GetMultiTableWriterProvider(target.Format)
-	if err != nil {
+	if _, err := format.GetMultiTableWriterProvider(target.Format); err != nil {
 		return singlePathRefGroups(target.Path.StringPath())
 	}
-	return relatedRefsToMetaScanRefGroups(format.SameBasenameRelatedRefs(target.Path.StringPath(), multiProvider.RelatedRefSpecs()))
+	return nil
 }
 
 func singlePathRefGroups(path string) []commonClient.MetaScanRefGroup {

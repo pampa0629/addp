@@ -1683,6 +1683,44 @@ func TestRefReaderForPreviewUsesMetaRefFiles(t *testing.T) {
 	}
 }
 
+func TestRefReaderForPreviewDoesNotInventMissingOptionalShapefileRefs(t *testing.T) {
+	refs := refsForPreview("bucket/roads/roads.shp", format.FormatShapefile, map[string]interface{}{
+		"item": map[string]interface{}{
+			"refs": []interface{}{
+				map[string]interface{}{"path": "bucket/roads/roads.shp", "role": "main", "required": true, "primary": true},
+				map[string]interface{}{"path": "bucket/roads/roads.shx", "role": "index", "required": true},
+				map[string]interface{}{"path": "bucket/roads/roads.dbf", "role": "attributes", "required": true},
+				map[string]interface{}{"path": "bucket/roads/roads.cpg", "role": "encoding"},
+			},
+		},
+	})
+
+	paths := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		paths = append(paths, ref.Ref.Path)
+	}
+	for _, want := range []string{
+		"bucket/roads/roads.shp",
+		"bucket/roads/roads.shx",
+		"bucket/roads/roads.dbf",
+		"bucket/roads/roads.cpg",
+	} {
+		if !containsString(paths, want) {
+			t.Fatalf("preview refs = %#v, want actual ref %s", paths, want)
+		}
+	}
+	for _, unexpected := range []string{
+		"bucket/roads/roads.prj",
+		"bucket/roads/roads.qpj",
+		"bucket/roads/roads.sbn",
+		"bucket/roads/roads.sbx",
+	} {
+		if containsString(paths, unexpected) {
+			t.Fatalf("preview refs = %#v, must not invent optional ref %s", paths, unexpected)
+		}
+	}
+}
+
 func TestRefReaderForPreviewFallsBackToSameBasenameRefs(t *testing.T) {
 	refs := refsForPreview("bucket/roads/roads.shp", format.FormatShapefile, nil)
 	required := map[string]bool{}
@@ -1699,6 +1737,15 @@ func TestRefReaderForPreviewFallsBackToSameBasenameRefs(t *testing.T) {
 	if !reflect.DeepEqual(required, want) {
 		t.Fatalf("required fallback refs = %#v, want %#v", required, want)
 	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestRefReaderForPreviewFallsBackWhenMetaRefsHaveNoPrimary(t *testing.T) {

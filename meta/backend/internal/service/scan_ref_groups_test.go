@@ -118,7 +118,17 @@ func TestObjectScanRefGroupsPersistsSingleShapefileItem(t *testing.T) {
 	if !ok {
 		t.Fatal("shapefile item not found")
 	}
-	assertShapefileLogicalItem(t, item.Attributes, 4)
+	assertShapefileLogicalItem(t, item.Attributes, []string{
+		"manager/a5.shp",
+		"manager/a5.shx",
+		"manager/a5.dbf",
+		"manager/a5.cpg",
+	}, []string{
+		"manager/a5.prj",
+		"manager/a5.qpj",
+		"manager/a5.sbn",
+		"manager/a5.sbx",
+	})
 }
 
 func TestFileScanRefGroupsPersistsSingleShapefileItem(t *testing.T) {
@@ -158,10 +168,20 @@ func TestFileScanRefGroupsPersistsSingleShapefileItem(t *testing.T) {
 	if !ok {
 		t.Fatal("shapefile item not found")
 	}
-	assertShapefileLogicalItem(t, item.Attributes, 4)
+	assertShapefileLogicalItem(t, item.Attributes, []string{
+		"shp/a5.shp",
+		"shp/a5.shx",
+		"shp/a5.dbf",
+		"shp/a5.cpg",
+	}, []string{
+		"shp/a5.prj",
+		"shp/a5.qpj",
+		"shp/a5.sbn",
+		"shp/a5.sbx",
+	})
 }
 
-func assertShapefileLogicalItem(t *testing.T, attrs models.JSONMap, refCount int) {
+func assertShapefileLogicalItem(t *testing.T, attrs models.JSONMap, wantPaths, unexpectedPaths []string) {
 	t.Helper()
 	if got := commonJSON.String(attrs, "item", "layout"); got != string(format.LayoutMulti) {
 		t.Fatalf("item.layout = %q, want multi", got)
@@ -169,9 +189,36 @@ func assertShapefileLogicalItem(t *testing.T, attrs models.JSONMap, refCount int
 	if got := commonJSON.String(attrs, "item", "format"); got != string(format.FormatShapefile) {
 		t.Fatalf("item.format = %q, want shapefile", got)
 	}
-	if refs := commonJSON.InterfaceSlice(commonJSON.Section(attrs, "item")["refs"]); len(refs) != refCount {
-		t.Fatalf("item.refs = %#v, want %d refs", refs, refCount)
+	refs := commonJSON.InterfaceSlice(commonJSON.Section(attrs, "item")["refs"])
+	if len(refs) != len(wantPaths) {
+		t.Fatalf("item.refs = %#v, want %d refs", refs, len(wantPaths))
 	}
+	paths := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		item := commonJSON.InterfaceMap(ref)
+		if path := commonJSON.InterfaceString(item["path"]); path != "" {
+			paths = append(paths, path)
+		}
+	}
+	for _, want := range wantPaths {
+		if !containsString(paths, want) {
+			t.Fatalf("item.refs paths = %#v, want %s", paths, want)
+		}
+	}
+	for _, unexpected := range unexpectedPaths {
+		if containsString(paths, unexpected) {
+			t.Fatalf("item.refs paths = %#v, must not include non-created ref %s", paths, unexpected)
+		}
+	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func pluginRegisterForTest(t *testing.T, enginePlugin plugin.EnginePlugin) {

@@ -354,6 +354,40 @@ func TestTableTransferExecutorWritesShapefileRefs(t *testing.T) {
 			t.Fatalf("ref %s was not written", path)
 		}
 	}
+	targetRefPaths := relatedRefPaths(metrics.TargetRefs)
+	for _, path := range []string{"exports/cities.shp", "exports/cities.shx", "exports/cities.dbf", "exports/cities.cpg"} {
+		if !containsString(targetRefPaths, path) {
+			t.Fatalf("target refs = %#v, want actual ref %s", targetRefPaths, path)
+		}
+	}
+	for _, path := range []string{"exports/cities.prj", "exports/cities.qpj", "exports/cities.sbn", "exports/cities.sbx"} {
+		if containsString(targetRefPaths, path) {
+			t.Fatalf("target refs = %#v, must not include non-created ref %s", targetRefPaths, path)
+		}
+	}
+	if len(metrics.TargetRefs) != 4 {
+		t.Fatalf("target refs = %#v, want only four created refs", metrics.TargetRefs)
+	}
+	if metrics.TargetRefs[0].Ref.Path != "exports/cities.shp" || !metrics.TargetRefs[0].Required || !metrics.TargetRefs[0].Primary {
+		t.Fatalf("primary target ref = %#v, want required primary shp", metrics.TargetRefs[0])
+	}
+}
+
+func relatedRefPaths(refs []format.RelatedRef) []string {
+	paths := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		paths = append(paths, ref.Ref.Path)
+	}
+	return paths
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestTableTransferExecutorWritesShapefileUsingNativeSourceSpatialInfo(t *testing.T) {

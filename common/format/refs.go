@@ -8,6 +8,13 @@ import (
 	"github.com/addp/common/contentio"
 )
 
+// RelatedRefSpec declares a format-level related-ref slot.
+//
+// It is a capability/constraint description used to build planned refs for
+// readers, writers, validation, and cleanup. It does not mean a concrete ref
+// exists in storage or that a writer produced it in a particular run. Consumers
+// that need actual persisted refs must collect them from storage facts or from
+// successful writer Create/commit events.
 type RelatedRefSpec struct {
 	Extension string
 	Role      string
@@ -52,6 +59,9 @@ func ValidateRelatedRefSpecs(specs []RelatedRefSpec) error {
 	}
 }
 
+// SameBasenameRelatedRefs expands related-ref specs into planned same-basename
+// refs. Optional specs are intentionally included in the result, so this helper
+// must not be used as an actual persisted/created ref list.
 func SameBasenameRelatedRefs(mainPath string, specs []RelatedRefSpec) []RelatedRef {
 	basePath := strings.TrimSuffix(strings.Trim(mainPath, "/"), filepath.Ext(mainPath))
 	refs := make([]RelatedRef, 0, len(specs))

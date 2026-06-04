@@ -7,9 +7,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"sync/atomic"
 	"testing"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/contentio"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
@@ -31,14 +33,20 @@ func TestNativeTargetCatalogPathsIgnoresEncodedObjectTarget(t *testing.T) {
 	}
 }
 
-func TestTableTargetRefGroupsUsesShapefileRelatedRefs(t *testing.T) {
+func TestTableTargetRefGroupsUsesActualShapefileRefs(t *testing.T) {
 	t.Parallel()
 
+	actualRefs := []format.RelatedRef{
+		format.NewRelatedRef(contentio.NewRef("bucket/exports/roads.shp", contentio.RoleMain), true, true),
+		format.NewRelatedRef(contentio.NewRef("bucket/exports/roads.shx", "index"), true, false),
+		format.NewRelatedRef(contentio.NewRef("bucket/exports/roads.dbf", "attributes"), true, false),
+		format.NewRelatedRef(contentio.NewRef("bucket/exports/roads.cpg", "encoding"), false, false),
+	}
 	got := tableTargetRefGroups(executor.TableTargetPlan{
 		Kind:   executor.TableEndpointEncoded,
 		Path:   engineplugin.ObjectItemPath(9, "bucket", "exports/roads.shp"),
 		Format: format.FormatShapefile,
-	})
+	}, actualRefs)
 	if len(got) != 1 {
 		t.Fatalf("ref groups = %#v", got)
 	}
@@ -50,15 +58,39 @@ func TestTableTargetRefGroupsUsesShapefileRelatedRefs(t *testing.T) {
 	for _, ref := range group.Refs {
 		paths = append(paths, ref.Path)
 	}
-	required := []string{
+	wantPaths := []string{
 		"bucket/exports/roads.shp",
 		"bucket/exports/roads.shx",
 		"bucket/exports/roads.dbf",
+		"bucket/exports/roads.cpg",
 	}
-	for _, want := range required {
+	for _, want := range wantPaths {
 		if !containsString(paths, want) {
-			t.Fatalf("ref paths = %#v, want required ref %s", paths, want)
+			t.Fatalf("ref paths = %#v, want actual ref %s", paths, want)
 		}
+	}
+	for _, unexpected := range []string{
+		"bucket/exports/roads.prj",
+		"bucket/exports/roads.qpj",
+		"bucket/exports/roads.sbn",
+		"bucket/exports/roads.sbx",
+	} {
+		if containsString(paths, unexpected) {
+			t.Fatalf("ref paths = %#v, must not include non-created ref %s", paths, unexpected)
+		}
+	}
+}
+
+func TestTableTargetRefGroupsDoesNotInventShapefileRefs(t *testing.T) {
+	t.Parallel()
+
+	got := tableTargetRefGroups(executor.TableTargetPlan{
+		Kind:   executor.TableEndpointEncoded,
+		Path:   engineplugin.ObjectItemPath(9, "bucket", "exports/roads.shp"),
+		Format: format.FormatShapefile,
+	}, nil)
+	if got != nil {
+		t.Fatalf("ref groups = %#v, want nil without actual multi refs", got)
 	}
 }
 
@@ -78,7 +110,7 @@ func TestTableTargetRefGroupsUsesSingleEncodedTargetPath(t *testing.T) {
 		Kind:   executor.TableEndpointEncoded,
 		Path:   engineplugin.FileItemPath(9, "exports/table.csv"),
 		Format: format.FormatCSV,
-	})
+	}, nil)
 	if len(got) != 1 || got[0].Primary != "exports/table.csv" || len(got[0].Refs) != 1 {
 		t.Fatalf("ref groups = %#v", got)
 	}
@@ -118,9 +150,55 @@ func TestTriggerMetadataScanSubmitsEncodedTargetRefGroups(t *testing.T) {
 			Path:   engineplugin.ObjectItemPath(9, "bucket", "exports/roads.shp"),
 			Format: format.FormatShapefile,
 		},
+		[]format.RelatedRef{
+			format.NewRelatedRef(contentio.NewRef("bucket/exports/roads.shp", contentio.RoleMain), true, true),
+			format.NewRelatedRef(contentio.NewRef("bucket/exports/roads.shx", "index"), true, false),
+			format.NewRelatedRef(contentio.NewRef("bucket/exports/roads.dbf", "attributes"), true, false),
+			format.NewRelatedRef(contentio.NewRef("bucket/exports/roads.cpg", "encoding"), false, false),
+		},
 	)
 
 	assertTransferScanPayloadUsesRefGroups(t, gotPayload, "bucket/exports/roads.shp")
+	assertTransferScanPayloadRefPaths(t, gotPayload, []string{
+		"bucket/exports/roads.shp",
+		"bucket/exports/roads.shx",
+		"bucket/exports/roads.dbf",
+		"bucket/exports/roads.cpg",
+	}, []string{
+		"bucket/exports/roads.prj",
+		"bucket/exports/roads.qpj",
+		"bucket/exports/roads.sbn",
+		"bucket/exports/roads.sbx",
+	})
+}
+
+func TestTriggerMetadataScanSkipsEncodedMultiTargetWithoutActualRefs(t *testing.T) {
+	t.Parallel()
+
+	var requests int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&requests, 1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	service := &ExecutionEngineService{
+		metaClient: commonClient.NewMetaClientWithInternalKey(server.URL, "internal-key"),
+		logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	service.triggerMetadataScan(
+		&models.TransferTask{TenantID: 7},
+		planner.TableExportTaskSpec{Target: planner.EndpointSpec{Locator: "addp://engine/9/path/bucket/exports/roads.shp?type=object"}},
+		executor.TableTargetPlan{
+			Kind:   executor.TableEndpointEncoded,
+			Path:   engineplugin.ObjectItemPath(9, "bucket", "exports/roads.shp"),
+			Format: format.FormatShapefile,
+		},
+		nil,
+	)
+	if got := atomic.LoadInt32(&requests); got != 0 {
+		t.Fatalf("metadata scan requests = %d, want 0 without actual multi refs", got)
+	}
 }
 
 func TestTriggerRawCopyMetadataScanSubmitsSingleRefGroup(t *testing.T) {
@@ -173,6 +251,42 @@ func assertTransferScanPayloadUsesRefGroups(t *testing.T, payload map[string]int
 	}
 	if payload["scan_depth"] != "deep" || payload["force"] != true {
 		t.Fatalf("payload scan_depth/force = %#v/%#v, want deep/true", payload["scan_depth"], payload["force"])
+	}
+}
+
+func assertTransferScanPayloadRefPaths(t *testing.T, payload map[string]interface{}, wantPaths []string, unexpectedPaths []string) {
+	t.Helper()
+	refGroups, ok := payload["ref_groups"].([]interface{})
+	if !ok || len(refGroups) != 1 {
+		t.Fatalf("ref_groups = %#v, want one group", payload["ref_groups"])
+	}
+	group, ok := refGroups[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("ref group = %#v, want object", refGroups[0])
+	}
+	refs, ok := group["refs"].([]interface{})
+	if !ok {
+		t.Fatalf("refs = %#v, want array", group["refs"])
+	}
+	paths := make([]string, 0, len(refs))
+	for _, item := range refs {
+		ref, ok := item.(map[string]interface{})
+		if !ok {
+			t.Fatalf("ref = %#v, want object", item)
+		}
+		if path, ok := ref["path"].(string); ok {
+			paths = append(paths, path)
+		}
+	}
+	for _, want := range wantPaths {
+		if !containsString(paths, want) {
+			t.Fatalf("ref paths = %#v, want %s", paths, want)
+		}
+	}
+	for _, unexpected := range unexpectedPaths {
+		if containsString(paths, unexpected) {
+			t.Fatalf("ref paths = %#v, must not include %s", paths, unexpected)
+		}
 	}
 }
 

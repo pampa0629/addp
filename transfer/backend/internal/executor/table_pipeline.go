@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/addp/common/contentio"
 	"github.com/addp/common/datatype"
@@ -17,6 +18,7 @@ type TablePipelineMetrics struct {
 	RecordsRead    int64
 	RecordsWritten int64
 	Batches        int64
+	TargetRefs     []format.RelatedRef
 }
 
 type TableBatchSource interface {
@@ -40,6 +42,7 @@ type TableBatchWriter interface {
 	Close(ctx context.Context) error
 	Abort(ctx context.Context) error
 	CommitMarker() *resume.Marker
+	TargetRefs() []format.RelatedRef
 }
 
 type targetResourceDeleter interface {
@@ -196,6 +199,7 @@ func (p *TablePipeline) Execute(ctx context.Context) (*TablePipelineMetrics, err
 	if err := writer.Close(ctx); err != nil {
 		return metrics, err
 	}
+	metrics.TargetRefs = writer.TargetRefs()
 	writerClosed = true
 	if p.ProgressCallback != nil {
 		if err := p.ProgressCallback(ctx, TableProgressEvent{
@@ -739,6 +743,10 @@ func (w *nativeDirectBatchWriter) CommitMarker() *resume.Marker {
 	return nil
 }
 
+func (w *nativeDirectBatchWriter) TargetRefs() []format.RelatedRef {
+	return nil
+}
+
 func batchWithTargetFields(batch *engineplugin.BatchData, fields []datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) *engineplugin.BatchData {
 	if batch == nil || (len(fields) == 0 && spatialInfo == nil) {
 		return batch
@@ -797,6 +805,10 @@ func (w *nativeTableSessionBatchWriter) CommitMarker() *resume.Marker {
 	return nil
 }
 
+func (w *nativeTableSessionBatchWriter) TargetRefs() []format.RelatedRef {
+	return nil
+}
+
 type encodedContentTableTarget struct {
 	writer              engineplugin.ContentWritableProvider
 	deleter             *engineTargetResourceDeleter
@@ -829,10 +841,11 @@ func (t *encodedContentTableTarget) Open(ctx context.Context, tableInfo *datatyp
 		if err != nil {
 			return nil, fmt.Errorf("open encoded multi table writer: %w", err)
 		}
-		return &multiTableBatchWriter{tableWriter: tableWriter}, nil
+		return &multiTableBatchWriter{tableWriter: tableWriter, refWriter: writer}, nil
 	}
 
-	output, err := t.contentWriter().Create(ctx, contentRefFromCatalogPath(t.path))
+	targetRef := format.NewRelatedRef(contentRefFromCatalogPath(t.path), true, true)
+	output, err := t.contentWriter().Create(ctx, targetRef.Ref)
 	if err != nil {
 		return nil, fmt.Errorf("create encoded target content: %w", err)
 	}
@@ -841,7 +854,7 @@ func (t *encodedContentTableTarget) Open(ctx context.Context, tableInfo *datatyp
 		_ = output.Close()
 		return nil, fmt.Errorf("open encoded target table writer: %w", err)
 	}
-	return &contentTableBatchWriter{output: output, tableWriter: tableWriter}, nil
+	return &contentTableBatchWriter{output: output, tableWriter: tableWriter, targetRef: targetRef}, nil
 }
 
 func writeOptionsWithResumeMarker(options *format.WriteOptions, marker *resume.Marker) *format.WriteOptions {
@@ -879,8 +892,58 @@ func (t *encodedContentTableTarget) contentWriter() contentio.Writer {
 	return contentadapter.NewMappedWriter(t.writer, t.connInfo, contentadapter.FixedPathMapper(t.path), t.writeOptions)
 }
 
-func (t *encodedContentTableTarget) refWriter(specs []format.RelatedRefSpec) (contentio.Writer, []format.RelatedRef) {
-	return contentadapter.NewWriter(t.writer, t.connInfo, t.path, t.writeOptions), format.SameBasenameRelatedRefs(t.path.StringPath(), specs)
+func (t *encodedContentTableTarget) refWriter(specs []format.RelatedRefSpec) (*trackingContentWriter, []format.RelatedRef) {
+	refs := format.SameBasenameRelatedRefs(t.path.StringPath(), specs)
+	writer := &trackingContentWriter{
+		delegate:    contentadapter.NewWriter(t.writer, t.connInfo, t.path, t.writeOptions),
+		plannedRefs: relatedRefsByPath(refs),
+	}
+	return writer, refs
+}
+
+type trackingContentWriter struct {
+	delegate    contentio.Writer
+	plannedRefs map[string]format.RelatedRef
+	refs        []format.RelatedRef
+}
+
+func (w *trackingContentWriter) Create(ctx context.Context, ref contentio.Ref) (io.WriteCloser, error) {
+	if w == nil || w.delegate == nil {
+		return nil, fmt.Errorf("tracking content writer requires delegate")
+	}
+	created, err := w.delegate.Create(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+	relatedRef := format.NewRelatedRef(ref, false, false)
+	if planned, ok := w.plannedRefs[normalizedRelatedRefPath(ref.Path)]; ok {
+		relatedRef = planned
+	}
+	w.refs = append(w.refs, relatedRef)
+	return created, nil
+}
+
+func (w *trackingContentWriter) TargetRefs() []format.RelatedRef {
+	if w == nil || len(w.refs) == 0 {
+		return nil
+	}
+	return append([]format.RelatedRef(nil), w.refs...)
+}
+
+func relatedRefsByPath(refs []format.RelatedRef) map[string]format.RelatedRef {
+	result := make(map[string]format.RelatedRef, len(refs))
+	for _, ref := range refs {
+		path := normalizedRelatedRefPath(ref.Ref.Path)
+		if path == "" {
+			continue
+		}
+		result[path] = ref
+	}
+	return result
+}
+
+func normalizedRelatedRefPath(path string) string {
+	return strings.Trim(path, "/ ")
 }
 
 type emptyContentBatchWriter struct {
@@ -915,9 +978,14 @@ func (w *emptyContentBatchWriter) CommitMarker() *resume.Marker {
 	return nil
 }
 
+func (w *emptyContentBatchWriter) TargetRefs() []format.RelatedRef {
+	return nil
+}
+
 type contentTableBatchWriter struct {
 	output      io.Closer
 	tableWriter format.TableWriter
+	targetRef   format.RelatedRef
 	closed      bool
 }
 
@@ -960,8 +1028,16 @@ func (w *contentTableBatchWriter) CommitMarker() *resume.Marker {
 	return nil
 }
 
+func (w *contentTableBatchWriter) TargetRefs() []format.RelatedRef {
+	if strings.TrimSpace(w.targetRef.Ref.Path) == "" {
+		return nil
+	}
+	return []format.RelatedRef{w.targetRef}
+}
+
 type multiTableBatchWriter struct {
 	tableWriter format.TableWriter
+	refWriter   *trackingContentWriter
 	closed      bool
 }
 
@@ -999,4 +1075,11 @@ func (w *multiTableBatchWriter) CommitMarker() *resume.Marker {
 		return markerProvider.CommitMarker()
 	}
 	return nil
+}
+
+func (w *multiTableBatchWriter) TargetRefs() []format.RelatedRef {
+	if w.refWriter == nil {
+		return nil
+	}
+	return w.refWriter.TargetRefs()
 }

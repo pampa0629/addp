@@ -21,6 +21,20 @@ func TestSameBasenameRelatedRefs(t *testing.T) {
 	}
 }
 
+func TestSameBasenameRelatedRefsIncludesPlannedOptionalRefs(t *testing.T) {
+	got := SameBasenameRelatedRefs("datasets/roads/roads.shp", []RelatedRefSpec{
+		{Extension: ".shp", Role: contentio.RoleMain, Required: true, Primary: true},
+		{Extension: ".prj", Role: "projection", Required: false},
+	})
+	want := []RelatedRef{
+		NewRelatedRef(contentio.NewRef("datasets/roads/roads.shp", contentio.RoleMain), true, true),
+		NewRelatedRef(contentio.NewRef("datasets/roads/roads.prj", "projection"), false, false),
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("SameBasenameRelatedRefs() = %#v, want planned refs %#v", got, want)
+	}
+}
+
 func TestValidateRelatedRefSpecs(t *testing.T) {
 	specs := []RelatedRefSpec{
 		{Extension: ".shp", Role: contentio.RoleMain, Required: true, Primary: true},

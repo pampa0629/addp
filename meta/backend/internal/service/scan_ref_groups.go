@@ -155,7 +155,8 @@ func (s *ObjectStorageCatalogScanService) ScanRefGroups(
 		}
 		s.detectObjectCatalogResourceFormats(context.Background(), contentReader, connInfo, resources)
 
-		prefix := strings.Trim(metacatalog.ParentObjectPath(objectPath), "/")
+		primaryPath := strings.Trim(bucket+"/"+objectPath, "/")
+		prefix := strings.Trim(metacatalog.ParentObjectPath(primaryPath), "/")
 		files := metacatalog.ObjectResourcesByParentPrefix(resources)[bucket+"\x00"+prefix]
 		if len(files) == 0 {
 			files = resources
@@ -164,7 +165,7 @@ func (s *ObjectStorageCatalogScanService) ScanRefGroups(
 			ContentReader:  contentReader,
 			ConnInfo:       connInfo,
 			EngineID:       resource.ID,
-			CatalogPathFor: plugin.ObjectItemPathForBucket(resource.ID, bucket),
+			CatalogPathFor: objectRefCatalogPathForEngine(resource.ID),
 			DirPath:        prefix,
 			Files:          objectStorageFileRefs(files),
 		})
@@ -221,16 +222,27 @@ func objectResourcesFromScanRefGroup(engineID uint, bucket string, group models.
 		if refBucket != bucket {
 			return nil, fmt.Errorf("ref group crosses object buckets: %s != %s", refBucket, bucket)
 		}
+		fullPath := strings.Trim(refBucket+"/"+objectPath, "/")
 		resources = append(resources, metacatalog.StorageResource{
 			RootName:    bucket,
-			Path:        objectPath,
-			FullPath:    strings.Trim(bucket+"/"+objectPath, "/"),
+			Path:        fullPath,
+			FullPath:    fullPath,
 			NodeType:    plugin.CatalogKindObject,
 			ObjectCount: 1,
 			CatalogPath: plugin.ObjectItemPath(engineID, bucket, objectPath),
 		})
 	}
 	return resources, nil
+}
+
+func objectRefCatalogPathForEngine(engineID uint) func(string) plugin.CatalogPath {
+	return func(refPath string) plugin.CatalogPath {
+		bucket, objectPath, err := splitObjectRefPath(refPath)
+		if err != nil {
+			return plugin.ObjectItemPath(engineID, "", strings.Trim(refPath, "/"))
+		}
+		return plugin.ObjectItemPath(engineID, bucket, objectPath)
+	}
 }
 
 func objectStorageFileRefs(resources []metacatalog.StorageResource) []metaitem.StorageFileRef {

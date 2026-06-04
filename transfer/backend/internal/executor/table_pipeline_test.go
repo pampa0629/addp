@@ -681,3 +681,7 @@ func (w *markerTableBatchWriter) CommitMarker() *resume.Marker {
 	}
 	return w.marker
 }
+
+func (w *markerTableBatchWriter) TargetRefs() []format.RelatedRef {
+	return nil
+}
