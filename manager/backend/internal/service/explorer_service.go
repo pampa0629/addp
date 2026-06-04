@@ -145,6 +145,7 @@ func refreshScanOptions(loc *resourcetree.ResourceLocator) commonClient.MetaScan
 		ScanDepth:   "deep",
 		Force:       true,
 		TriggerType: "manual",
+		Source:      "manager_refresh",
 	}
 	if loc.ItemID != nil && *loc.ItemID > 0 {
 		opts.ItemID = *loc.ItemID

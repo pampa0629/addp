@@ -230,13 +230,14 @@ func (s *FilesystemCatalogScanService) scanDirectory(
 				if detected == nil {
 					continue
 				}
-				persisted, fullName := s.persistFileCatalogDetectedItem(resource, tenantID, parentNode, dirPath, detected, itemTerm)
+				persisted, fullName, itemExtractionStats := s.persistFileCatalogDetectedItem(ctx, resource, tenantID, parentNode, dirPath, detected, itemTerm, contentReader, connInfo, scanDepth)
 				if fullName != "" {
 					scannedItemFullNames[fullName] = true
 				}
 				if persisted {
 					totalItems++
 				}
+				extractionStats = mergeExtractionCounts(extractionStats, itemExtractionStats)
 			}
 		}
 	} else if isDeepScan {
@@ -257,13 +258,14 @@ func (s *FilesystemCatalogScanService) scanDirectory(
 				if detected == nil {
 					continue
 				}
-				persisted, fullName := s.persistFileCatalogDetectedItem(resource, tenantID, parentNode, dirPath, detected, itemTerm)
+				persisted, fullName, itemExtractionStats := s.persistFileCatalogDetectedItem(ctx, resource, tenantID, parentNode, dirPath, detected, itemTerm, contentReader, connInfo, scanDepth)
 				if fullName != "" {
 					scannedItemFullNames[fullName] = true
 				}
 				if persisted {
 					totalItems++
 				}
+				extractionStats = mergeExtractionCounts(extractionStats, itemExtractionStats)
 			}
 			if detection.Exclusive {
 				reconcileScannedDirectory()
@@ -289,7 +291,7 @@ func (s *FilesystemCatalogScanService) scanDirectory(
 			totalItems++
 			continue
 		}
-		result, err := catalogDataItemProcessor(s.repo, s.indexer, s.log).Process(ctx, catalogSingleItemInput{
+		result, err := processDetectedItem(s.repo, s.indexer, s.log).Process(ctx, detectedItemInput{
 			Resource:           resource,
 			TenantID:           tenantID,
 			EngineID:           resource.ID,
@@ -380,33 +382,49 @@ func fileItemNeedsScan(existing *models.MetaItem, file metaitem.StorageFileRef, 
 }
 
 func (s *FilesystemCatalogScanService) persistFileCatalogDetectedItem(
+	ctx context.Context,
 	resource *commonModels.Engine,
 	tenantID uint,
 	parentNode *models.MetaNode,
 	dirPath string,
 	detected *metaitem.DetectedItem,
 	itemTerm string,
-) (bool, string) {
+	contentReader plugin.ContentReadableProvider,
+	connInfo plugin.ConnectionInfo,
+	scanDepth string,
+) (bool, string, scantask.ExtractionCounts) {
 	itemPlan, ok := metacatalog.PlanFileCatalogDetectedItem(resource.ID, dirPath, detected, itemTerm)
 	if !ok {
-		return false, ""
+		return false, "", scantask.ExtractionCounts{}
 	}
-	sizeVal := itemPlan.SizeBytes
-	rowCount := itemRowCountFromMetaAttributes(itemPlan.Attributes)
-	_, upsertErr := s.repo.UpsertItemWithDepth(
-		tenantID, resource.ID, parentNode,
-		itemPlan.ItemType, itemPlan.ItemName, itemPlan.FullName,
-		itemPlan.Attributes, rowCount, &sizeVal, nil,
-		models.ScannedDepthDeep,
-	)
-	if upsertErr != nil {
+	result, err := processDetectedItem(s.repo, s.indexer, s.log).Process(ctx, detectedItemInput{
+		Resource:           resource,
+		TenantID:           tenantID,
+		EngineID:           resource.ID,
+		ParentNode:         parentNode,
+		ItemType:           itemPlan.ItemType,
+		ItemName:           itemPlan.ItemName,
+		FullName:           itemPlan.FullName,
+		Attributes:         itemPlan.Attributes,
+		Detected:           detected,
+		ContentReader:      contentReader,
+		ConnInfo:           connInfo,
+		CatalogPathFor:     plugin.FileItemPathForEngine(resource.ID),
+		PhysicalPath:       detectedItemContentPath(detected, itemPlan.FullName),
+		IndexPath:          itemPlan.FullName,
+		IndexRelativePath:  itemPlan.FullName,
+		SizeBytes:          itemPlan.SizeBytes,
+		ScanDepth:          scanDepth,
+		IncludeAccessIndex: true,
+	})
+	if err != nil {
 		s.log.Warn("保存复合数据项失败",
 			"path", dirPath,
 			"item_type", itemPlan.ItemType,
 			"full_name", itemPlan.FullName,
-			"error", upsertErr,
+			"error", err,
 		)
-		return false, itemPlan.FullName
+		return false, itemPlan.FullName, result.Extraction
 	}
 	s.log.Info("识别到复合数据项",
 		"path", dirPath,
@@ -416,7 +434,7 @@ func (s *FilesystemCatalogScanService) persistFileCatalogDetectedItem(
 		"data_type", detected.DataType,
 		"name", itemPlan.ItemName,
 	)
-	return true, itemPlan.FullName
+	return true, itemPlan.FullName, result.Extraction
 }
 
 func (s *FilesystemCatalogScanService) resolveFileCatalogDirectoryItems(

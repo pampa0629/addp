@@ -23,6 +23,7 @@ type scanDispatchRequest struct {
 	Resource     *commonModels.Engine
 	TenantID     uint
 	CatalogPaths []string
+	RefGroups    []models.ScanRefGroup
 	ScanDepth    string
 	Force        bool
 	ScanLogID    uint
@@ -100,14 +101,7 @@ func (s *ScanService) dispatchObjectCatalogScan(ctx context.Context, enginePlugi
 	_ = ctx
 	_ = enginePlugin
 	_ = plan
-	return s.scanObjectStorageCatalogResourceResultWithReporter(
-		req.Resource,
-		req.TenantID,
-		req.CatalogPaths,
-		req.ScanDepth,
-		req.Force,
-		req.Reporter,
-	)
+	return s.ensureContentCatalogScanner().ScanObjectCatalog(req)
 }
 
 func (s *ScanService) dispatchFileCatalogScan(ctx context.Context, enginePlugin plugin.EnginePlugin, plan catalogScanPlan, req scanDispatchRequest) (scanDispatchResult, error) {
@@ -118,15 +112,8 @@ func (s *ScanService) dispatchFileCatalogScan(ctx context.Context, enginePlugin 
 		paths = []string{""}
 		s.log.Info("文件 catalog 资源从结构 root 开始扫描")
 	}
-
-	return s.scanFilesystemCatalogResourceResultWithReporter(
-		req.Resource,
-		req.TenantID,
-		paths,
-		req.ScanDepth,
-		req.Force,
-		req.Reporter,
-	)
+	req.CatalogPaths = paths
+	return s.ensureContentCatalogScanner().ScanFileCatalog(req)
 }
 
 func (s *ScanService) dispatchTabularScan(ctx context.Context, enginePlugin plugin.EnginePlugin, plan catalogScanPlan, req scanDispatchRequest) (scanDispatchResult, error) {

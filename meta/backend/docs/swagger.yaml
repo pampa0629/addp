@@ -209,6 +209,24 @@ definitions:
       unscanned_catalog_nodes:
         type: integer
     type: object
+  github_com_addp_meta_internal_models.ScanRef:
+    properties:
+      path:
+        type: string
+      required:
+        type: boolean
+      role:
+        type: string
+    type: object
+  github_com_addp_meta_internal_models.ScanRefGroup:
+    properties:
+      primary:
+        type: string
+      refs:
+        items:
+          $ref: '#/definitions/github_com_addp_meta_internal_models.ScanRef'
+        type: array
+    type: object
   github_com_addp_meta_internal_models.ScanRequest:
     properties:
       catalog_paths:
@@ -228,8 +246,16 @@ definitions:
       node_id:
         description: 要扫描的节点 ID
         type: integer
+      ref_groups:
+        description: 内容引用组
+        items:
+          $ref: '#/definitions/github_com_addp_meta_internal_models.ScanRefGroup'
+        type: array
       scan_depth:
         description: basic/deep
+        type: string
+      source:
+        description: 扫描来源
         type: string
       targets:
         description: locator 目标列表

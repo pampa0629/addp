@@ -30,6 +30,19 @@ func NewHandler(engineService *service.EngineService, scanService *service.ScanS
 	}
 }
 
+func validateScanRequestTriggerType(triggerType string) error {
+	normalized := strings.ToLower(strings.TrimSpace(triggerType))
+	if normalized == "" {
+		return nil
+	}
+	switch normalized {
+	case models.TriggerTypeManual, models.TriggerTypeScheduled:
+		return nil
+	default:
+		return fmt.Errorf("unsupported trigger_type %q: use manual or scheduled", triggerType)
+	}
+}
+
 // handleServiceError 统一处理 Service 层错误，返回合适的 HTTP 状态码
 func (h *Handler) handleServiceError(c *gin.Context, err error) {
 	statusCode := metaErrors.HTTPStatusCode(err)
@@ -182,8 +195,12 @@ func (h *Handler) CreateManualScanRun(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if req.EngineID == 0 && req.NodeID == 0 && req.ItemID == 0 && len(req.Targets) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "engine_id, node_id, item_id or targets is required"})
+	if err := validateScanRequestTriggerType(req.TriggerType); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.EngineID == 0 && req.NodeID == 0 && req.ItemID == 0 && len(req.Targets) == 0 && len(req.CatalogPaths) == 0 && len(req.RefGroups) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "engine_id, node_id, item_id, targets, catalog_paths or ref_groups is required"})
 		return
 	}
 

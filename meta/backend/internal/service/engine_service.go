@@ -674,6 +674,7 @@ func (s *EngineService) triggerImmediateScan(resource *commonModels.Engine) erro
 		EngineID:    resource.ID,
 		ScanDepth:   scanDepth,
 		TriggerType: models.TriggerTypeManual,
+		Source:      "system_immediate",
 		Force:       false,
 	}
 

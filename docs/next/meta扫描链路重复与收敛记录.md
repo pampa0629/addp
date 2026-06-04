@@ -73,7 +73,7 @@
 
 当前已有多个 item 识别或入库路径：
 
-- 单资源通过 `InferSingleResource` 和 `catalogSingleItemProcessor` 入库。
+- 单资源历史上通过 `InferSingleResource` 和 `catalogSingleItemProcessor` 入库，当前应统一进入 `detectedItemProcessor`。
 - 对象存储组合项通过 `DetectObjectCatalogCompositeItems` 再走 composite persist。
 - 文件系统复合项通过 filesystem scan 内部的 resolver 处理。
 - 已有 item refresh 走 `RefreshItem` 和独立 refresh 逻辑。
@@ -213,4 +213,3 @@ Transfer 后的 Meta scan 应满足：
 5. 清理“先生成 sidecar item，再合并、软删”的后验路径。
 6. 调整 Transfer 后 Meta scan：Transfer 只提交本次生成的 refs，Meta 负责识别和入库。
 7. 补充针对 Shapefile Transfer 输出的端到端测试：Manager 中只出现一个 Shapefile item，不出现 `.shp/.shx/.dbf/.cpg` 多个独立 item。
-

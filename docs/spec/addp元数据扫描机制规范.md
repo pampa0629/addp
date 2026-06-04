@@ -10,7 +10,7 @@
 |---|---|
 | `scan_depth`、`scanned_depth`、`scan_status` 的语义 | data item 识别、claims、exclusive 规则 |
 | `force=true/false` 的覆盖策略 | attributes 的完整 JSON schema |
-| engine / node / item 扫描目标 | FormatPlugin、info provider、content reader 接口形态 |
+| engine / node / item 扫描目标，ScanSelector / ScanScope / `ref_groups` 边界 | FormatPlugin、info provider、content reader 接口形态 |
 | 手动 / 定时触发的默认组合 | Manager 前端 DTO 和预览 UI |
 | 不强制扫描时的低成本跳过判断 | 具体格式 parser 的字段细节 |
 
@@ -27,6 +27,8 @@ Meta 扫描只保留四个核心维度：
 | 已扫深度 | `scanned_depth` | `none` / `basic` / `deep` | 当前 node / item 已经达到的扫描深度。 |
 | 是否强制 | `force` | `true` / `false` | 是否不管已有元数据和时间戳都重新扫描。 |
 
+`source` 是扫描来源标记，不是核心扫描维度。它只记录调用方或业务场景，例如 `system_immediate`、`manager_refresh`、`meta_frontend`、`transfer`，用于审计、排查和执行记录，不得进入 `trigger_type` 枚举，也不得驱动不同扫描主路径。
+
 扫描目标只抽象为三类：
 
 1. engine
@@ -34,6 +36,40 @@ Meta 扫描只保留四个核心维度：
 3. item
 
 如果使用 locator，locator 本身已经能表达目标对象，不需要额外 `target_type`。
+
+## ScanSelector 与 ScanScope
+
+`ScanSelector` 表示 API 层或模块调用方提交的扫描选择器。它是请求输入模型，不是扫描执行模型。
+
+允许的 selector 形态：
+
+| selector | 字段 | 语义 |
+|---|---|---|
+| engine selector | `engine_id` | 从指定引擎的显性 catalog root 开始扫描。 |
+| node selector | `node_id` | 从指定 `meta_node` 范围开始扫描。 |
+| item selector | `item_id` | 刷新或补齐已入库 data item。 |
+| locator selector | `targets` | 使用 ResourceLocator 表达 engine / node / item 目标。 |
+| catalog path selector | `catalog_paths` | 使用引擎 catalog model 下的路径坐标表达扫描范围。 |
+| content refs selector | `ref_groups` | 使用一组共同参与识别的 content refs 表达本次内容边界。 |
+
+`ScanScope` 是 Meta 内部扫描主链路消费的唯一范围模型。所有 selector 进入扫描执行前必须先由 resolver 解析为 `ScanScope`，后续 scanner、detector、processor 和 repository 不应继续各自解析请求 DTO。
+
+`ScanScope` 至少应表达：
+
+- `engine_id`：所属引擎。
+- `mode`：engine / node / item / catalog path / refs group 等内部范围模式。
+- `catalog_paths`：路径型 catalog selector 解析后的 catalog path 集合。
+- `ref_groups`：内容引用边界集合。
+- `source`：扫描来源标记。
+- `scan_depth`：本次目标扫描深度。
+- `force`：是否强制覆盖。
+
+约束：
+
+1. `catalog_paths` 只能表达路径型 catalog selector，不能承载 sibling refs 或 multi content 边界。
+2. `ref_groups` 只表达内容引用边界，不表达资源树父 node，也不要求 Meta 枚举父目录。
+3. 同一个外部事件产生的同一批内容，不能同时用父目录 `catalog_paths` 和 `ref_groups` 表达。
+4. item refresh 必须由已入库 item 标准事实还原内容输入，不得退回为父目录 catalog scan。
 
 ## 扫描编排依据
 
@@ -53,6 +89,13 @@ Meta 的扫描编排必须分开回答三类问题：
 
 这些 strategy 的差异来自 catalog model 和 provider 语义，不等于为每个具体引擎重建一套上层抽象。新增引擎时，优先复用已有 strategy；只有当 `CatalogModelSpec` 与 provider 组合都无法表达真实差异时，才新增 strategy。
 
+object catalog 与 file catalog 可以共用 Meta 内容目录扫描主链路，但不得抹平两者的 catalog model 术语：
+
+- object catalog：`service -> bucket -> prefix? -> object`
+- file catalog：`root -> directory? -> file`
+
+Meta 内部可以通过 object / file adapter 处理路径转换、父 node 计划、storage attributes 和 item leaf 术语差异；枚举 candidate、组织 refs group、调用 data item detector、deep enrich、content hash、extraction、index 和 persist 应收敛到同一条主链路。single / multi / whole item 不应分别拥有多套落库路径，差异应由 detector 结果和 adapter 的 parent node / path plan 表达。
+
 ## 扫描目标字段
 
 Meta API 和扫描任务参数中，路径型扫描目标统一使用 `catalog_paths`：
@@ -67,6 +110,37 @@ Meta API 和扫描任务参数中，路径型扫描目标统一使用 `catalog_p
 ```
 
 `catalog_paths` 表达的是对应引擎 `CatalogModelSpec` 下的 catalog path，不是对象存储专属 object key，也不是文件系统物理路径。MinIO / S3 的路径遵守 `bucket -> prefix -> object`，NFS 的路径遵守 `root -> directory -> file`。新增调用方、前端表单和模块间客户端必须统一使用 `catalog_paths`。
+
+`catalog_paths` 只表示“从这些 catalog 路径开始枚举或刷新范围”。它不表示“这些 sibling content 共同组成一个 data item”。Shapefile 等 multi content 的本次 refs 边界必须使用 `ref_groups`。
+
+内容引用边界使用 `ref_groups`：
+
+```json
+{
+  "engine_id": 1,
+  "ref_groups": [
+    {
+      "primary": "bucket/path/roads.shp",
+      "refs": [
+        {"path": "bucket/path/roads.shp", "role": "main", "required": true},
+        {"path": "bucket/path/roads.shx", "role": "sidecar", "required": true},
+        {"path": "bucket/path/roads.dbf", "role": "sidecar", "required": true}
+      ]
+    }
+  ],
+  "scan_depth": "deep",
+  "force": false,
+  "trigger_type": "manual",
+  "source": "transfer"
+}
+```
+
+规则：
+
+- `ref_groups[].primary` 表示该组的主 content path。
+- `ref_groups[].refs[]` 表示本组可见的完整 content refs；`role` 和 `required` 只描述 ref 在组内的约束，不决定最终 data item 类型。
+- `ref_groups` 进入 Meta 后必须转为 engine 对应的 content ref 或 `plugin.CatalogPath`，再进入统一 detector；不得在 Transfer、Manager 或调用方提前判断 refs 是否构成 data item。
+- 对于 Transfer 写出结果，Transfer 应提交本次实际生成的 refs group，不得为了触发识别而扩大到父目录 `catalog_paths`。
 
 ## Basic / Deep 边界
 
@@ -275,7 +349,9 @@ node 扫描仍由 detector 从 catalog 范围重新发现 item 并落库。item 
 | Manager 预览前 deep 补齐 | `manual` | `deep` | `false` |
 | Transfer 完成后触发 | `manual` | `basic` 或按导入结果决定 | `false` |
 
-`manual` 可以在执行配置中额外记录来源，例如 `source=system_immediate`、`source=manager_refresh`、`source=meta_frontend`，用于审计和排查。但来源不进入 trigger type 枚举。
+`manual` 可以在执行配置中额外记录来源，例如 `source=system_immediate`、`source=manager_refresh`、`source=meta_frontend`、`source=transfer`，用于审计和排查。但来源不进入 trigger type 枚举。
+
+Transfer 完成后触发 Meta 扫描时，应按本次执行实际写出的内容提交 `ref_groups`。Transfer 不应调用 data item detector，不应判断 refs 是否组成 Shapefile、GeoPackage 等 data item，也不应为了让 Meta 重新识别而把目标扩大为父目录 `catalog_paths`。
 
 ## Manager 边界
 
@@ -340,9 +416,12 @@ Manager 刷新目标必须是当前选中的 engine / node / item，不能默认
   "node_id": 0,
   "item_id": 0,
   "targets": [],
+  "catalog_paths": [],
+  "ref_groups": [],
   "scan_depth": "deep",
   "force": false,
-  "trigger_type": "manual"
+  "trigger_type": "manual",
+  "source": "meta_frontend"
 }
 ```
 
@@ -350,7 +429,10 @@ Manager 刷新目标必须是当前选中的 engine / node / item，不能默认
 
 - `scan_depth` 只允许 `basic` / `deep`。
 - `force` 默认为 `false`。
-- 扫描请求语义只区分 `manual` / `scheduled`。公共 `task_executions.trigger_type` 现阶段仍沿用 common 的既有枚举和值，后续再统一收敛。
-- `engine_id`、`node_id`、`item_id`、`targets` 至少提供一种。
+- `trigger_type` 只允许 `manual` / `scheduled`。公共 `task_executions.trigger_type` 现阶段仍沿用 common 的既有枚举和值，后续再统一收敛。
+- `source` 是来源标记，不参与扫描策略分支；未提供时由 Meta 根据入口填入默认来源。
+- `engine_id`、`node_id`、`item_id`、`targets`、`catalog_paths`、`ref_groups` 至少提供一种。
+- `catalog_paths` 只表示路径型 catalog selector。
+- `ref_groups` 只表示内容引用边界；同一批 Transfer 生成物不得同时用父目录 `catalog_paths` 表达。
 - 不保留 `full` / `shallow`。
 - 所有手动扫描请求统一通过 `POST /scan/run/manual` 创建后台扫描运行；调用方通过任务监控查询进度和结果，不保留同步扫描入口。

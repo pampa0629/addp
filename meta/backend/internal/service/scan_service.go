@@ -32,6 +32,7 @@ type ScanService struct {
 	branchLeafScanService           *BranchLeafScanService           // branch/leaf 型 catalog 扫描服务
 	objectStorageCatalogScanService *ObjectStorageCatalogScanService // 对象存储 catalog 扫描服务
 	filesystemCatalogScanService    *FilesystemCatalogScanService    // 文件系统 catalog 扫描服务
+	contentCatalogScanner           *ContentCatalogScanner           // 内容目录扫描主链路
 	metadataQueryService            *MetadataQueryService            // 元数据查询服务（独立）
 	engineService                   *EngineService
 	config                          *config.Config
@@ -87,6 +88,9 @@ func NewScanService(db *gorm.DB, engineService *EngineService) *ScanService {
 
 	// 创建 FilesystemCatalogScanService
 	s.filesystemCatalogScanService = NewFilesystemCatalogScanService(db, log, repo, indexerService)
+
+	// 创建内容目录扫描主链路
+	s.contentCatalogScanner = NewContentCatalogScanner(s.objectStorageCatalogScanService, s.filesystemCatalogScanService)
 
 	// 创建 MetadataQueryService（提供元数据查询接口）
 	s.metadataQueryService = NewMetadataQueryService(db, spatialService, engineService, log)
@@ -225,9 +229,11 @@ type ScanOptions struct {
 	EngineID     uint
 	TenantID     uint
 	CatalogPaths []string
+	RefGroups    []models.ScanRefGroup
 	Token        string
 	ScanDepth    string
 	Force        bool
+	Source       string
 	Reporter     ScanProgressReporter
 	NodeID       uint
 	ItemID       uint
@@ -237,10 +243,9 @@ type ScanOptions struct {
 func (s *ScanService) ScanEngineWithOptions(opts ScanOptions) (*models.ScanResponse, error) {
 	startTime := time.Now()
 	tenantID := opts.TenantID
-	catalogPaths := opts.CatalogPaths
 	token := opts.Token
-	scanDepth := opts.ScanDepth
 	reporter := opts.Reporter
+
 	engineID, err := s.resolveScanEngineID(tenantID, opts)
 	if err != nil {
 		return nil, err
@@ -256,21 +261,15 @@ func (s *ScanService) ScanEngineWithOptions(opts ScanOptions) (*models.ScanRespo
 	}
 	effectiveTenantID := tenantIDForResource(resource, tenantID)
 
-	resolvedCatalogPaths, err := s.resolveScanTargets(effectiveTenantID, opts)
-	if err != nil {
-		return nil, err
-	}
-	catalogPaths = append(catalogPaths, resolvedCatalogPaths...)
-	catalogPaths = uniqueNonEmpty(catalogPaths)
-
-	scanDepth, err = scantask.NormalizeScanDepth(scanDepth, scantask.ScanDepthBasic)
+	opts.EngineID = engineID
+	scope, err := s.ResolveScanScope(effectiveTenantID, opts)
 	if err != nil {
 		return nil, err
 	}
 
 	var directExecID string
 	if reporter == nil {
-		execID, createErr := s.immediateRecorder.Create(resource, effectiveTenantID, catalogPaths, scanDepth, opts.Force, startTime)
+		execID, createErr := s.immediateRecorder.Create(resource, effectiveTenantID, scope.CatalogPaths, scope.ScanDepth, scope.Force, startTime)
 		if createErr != nil {
 			return nil, createErr
 		}
@@ -279,20 +278,26 @@ func (s *ScanService) ScanEngineWithOptions(opts ScanOptions) (*models.ScanRespo
 
 	startFields := append(connectionLogFields(resource),
 		"mode", "manual",
-		"scan_depth", scanDepth,
-		"force", opts.Force,
+		"scope_mode", string(scope.Mode),
+		"scan_depth", scope.ScanDepth,
+		"force", scope.Force,
+		"source", scope.Source,
 	)
-	if len(catalogPaths) > 0 {
-		startFields = append(startFields, "target_paths", catalogPaths)
+	if len(scope.CatalogPaths) > 0 {
+		startFields = append(startFields, "target_paths", scope.CatalogPaths)
+	}
+	if len(scope.RefGroups) > 0 {
+		startFields = append(startFields, "ref_groups", len(scope.RefGroups))
 	}
 	s.log.Info("开始扫描资源", startFields...)
 
 	result, err := s.dispatchScan(scanDispatchRequest{
 		Resource:     resource,
 		TenantID:     effectiveTenantID,
-		CatalogPaths: catalogPaths,
-		ScanDepth:    scanDepth,
-		Force:        opts.Force,
+		CatalogPaths: scope.CatalogPaths,
+		RefGroups:    scope.RefGroups,
+		ScanDepth:    scope.ScanDepth,
+		Force:        scope.Force,
 		Reporter:     reporter,
 		Mode:         scanDispatchManual,
 	})

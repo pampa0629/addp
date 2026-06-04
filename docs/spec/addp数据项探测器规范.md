@@ -35,8 +35,11 @@ detector 只负责回答“哪些资源组成哪些 data item”。它可以给�
 - 对象存储 bucket / prefix 下的对象和子 prefix。
 - 数据库 schema 下的表。
 - 容器文件内部的表、图层或 sheet。
+- API 或模块调用方显式提交的一组 content refs，例如 Transfer 本次写出的 Shapefile refs group。
 
 扫描范围只回答“本轮能看见哪些资源”，不回答“这些资源整体是不是一个 item”。
+
+`catalog_paths` 和 `ref_groups` 都只是组织候选集合的输入形态。前者表示按引擎 catalog path 枚举或定位范围，后者表示一组 content refs 的可见边界；二者都必须进入 Meta detector，由 Meta 统一裁决 data item 边界、claims、exclusive 和落库结果。Transfer、Manager、Asset、Search 等模块不得因为掌握一组 refs 就绕过 Meta 自行生成或合并 `meta_item`。
 
 ## 统一入口
 
@@ -48,7 +51,7 @@ ResolveItems(scope) (*DetectionResult, error)
 
 `ResolveDirectory` 不再作为新规范接口保留。实现阶段应删除旧调用或改为直接调用 `ResolveItems`，不得继续提供旧扫描语义兜底。
 
-`ResolveItems` 的候选集合组织能力由 `common/dataitem` 承载。Meta 扫描流程必须通过该能力或等价封装识别外部范围内的 data item，并在 Meta 内完成最终裁决和落库。Manager、Transfer、Asset、Search 等模块不得对已入库外部 item 重新做目录级识别。
+`ResolveItems` 的候选集合组织能力由 `common/dataitem` 承载。Meta 扫描流程必须通过该能力或等价封装识别外部范围内的 data item，并在 Meta 内完成最终裁决和落库。Manager、Transfer、Asset、Search 等模块不得对已入库外部 item 重新做目录级识别，也不得在提交 `ref_groups` 前预先判断 refs 是否构成某个格式的 data item。
 
 Manager 可以在容器预览过程中调用 `common/dataitem` 组织容器内部 child。该结果只服务本次动态预览，用完即弃；不得自动升格为外部 `meta_item`，不得写回父容器 attributes，也不得替代 Meta 对外部资源范围的扫描裁决。
 

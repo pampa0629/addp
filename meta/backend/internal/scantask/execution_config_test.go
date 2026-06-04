@@ -14,17 +14,29 @@ func TestParseExecutionConfig(t *testing.T) {
 		12,
 		"postgresql",
 		[]string{"public"},
+		[]models.ScanRefGroup{
+			{
+				Primary: "bucket/path/roads.shp",
+				Refs: []models.ScanRef{
+					{Path: "bucket/path/roads.shp", Role: "main", Required: true},
+				},
+			},
+		},
 		"deep",
 		true,
+		"transfer",
 		"token",
 	)
 
 	parsed := ParseExecutionConfig(config)
-	if parsed.EngineID != 12 || parsed.StorageType != "postgresql" || parsed.ScanDepth != "deep" || !parsed.Force || parsed.Token != "token" {
+	if parsed.EngineID != 12 || parsed.StorageType != "postgresql" || parsed.ScanDepth != "deep" || !parsed.Force || parsed.Source != "transfer" || parsed.Token != "token" {
 		t.Fatalf("parsed scalar config = %#v", parsed)
 	}
 	if !reflect.DeepEqual(parsed.CatalogPaths, []string{"public"}) {
 		t.Fatalf("catalog paths = %#v", parsed.CatalogPaths)
+	}
+	if len(parsed.RefGroups) != 1 || parsed.RefGroups[0].Primary != "bucket/path/roads.shp" {
+		t.Fatalf("ref groups = %#v", parsed.RefGroups)
 	}
 }
 

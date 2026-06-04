@@ -31,9 +31,22 @@ type MetaScanOptions struct {
 	Targets  []string
 
 	CatalogPaths []string
+	RefGroups    []MetaScanRefGroup
 	ScanDepth    string
 	Force        bool
 	TriggerType  string
+	Source       string
+}
+
+type MetaScanRefGroup struct {
+	Primary string        `json:"primary"`
+	Refs    []MetaScanRef `json:"refs"`
+}
+
+type MetaScanRef struct {
+	Path     string `json:"path"`
+	Role     string `json:"role"`
+	Required bool   `json:"required"`
 }
 
 // MetaScanResponse 元数据扫描响应
@@ -361,6 +374,9 @@ func (c *MetaClient) CreateManualScanRun(opts MetaScanOptions) (*commonExecution
 	if len(opts.CatalogPaths) > 0 {
 		scanReq["catalog_paths"] = opts.CatalogPaths
 	}
+	if len(opts.RefGroups) > 0 {
+		scanReq["ref_groups"] = opts.RefGroups
+	}
 	if depth := strings.TrimSpace(opts.ScanDepth); depth != "" {
 		scanReq["scan_depth"] = depth
 	} else {
@@ -373,6 +389,9 @@ func (c *MetaClient) CreateManualScanRun(opts MetaScanOptions) (*commonExecution
 		scanReq["trigger_type"] = triggerType
 	} else {
 		scanReq["trigger_type"] = "manual"
+	}
+	if source := strings.TrimSpace(opts.Source); source != "" {
+		scanReq["source"] = source
 	}
 
 	body, err := json.Marshal(scanReq)

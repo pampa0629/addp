@@ -36,6 +36,16 @@ func TestMetaClientCreateManualScanRunUsesAsyncPath(t *testing.T) {
 		ScanDepth:   "deep",
 		Force:       true,
 		TriggerType: "manual",
+		Source:      "transfer",
+		RefGroups: []MetaScanRefGroup{
+			{
+				Primary: "bucket/path/roads.shp",
+				Refs: []MetaScanRef{
+					{Path: "bucket/path/roads.shp", Role: "main", Required: true},
+					{Path: "bucket/path/roads.dbf", Role: "sidecar", Required: true},
+				},
+			},
+		},
 	})
 	if err != nil {
 		t.Fatalf("CreateManualScanRun() error = %v", err)
@@ -54,6 +64,17 @@ func TestMetaClientCreateManualScanRunUsesAsyncPath(t *testing.T) {
 	}
 	if gotPayload["scan_depth"] != "deep" || gotPayload["force"] != true {
 		t.Fatalf("payload scan options = %#v", gotPayload)
+	}
+	if gotPayload["trigger_type"] != "manual" || gotPayload["source"] != "transfer" {
+		t.Fatalf("payload trigger/source = %#v", gotPayload)
+	}
+	refGroups, ok := gotPayload["ref_groups"].([]interface{})
+	if !ok || len(refGroups) != 1 {
+		t.Fatalf("ref_groups = %#v", gotPayload["ref_groups"])
+	}
+	firstGroup, ok := refGroups[0].(map[string]interface{})
+	if !ok || firstGroup["primary"] != "bucket/path/roads.shp" {
+		t.Fatalf("ref group = %#v", refGroups[0])
 	}
 	if result.ExecutionID != "run-1" || result.Status != "pending" {
 		t.Fatalf("result = %#v", result)

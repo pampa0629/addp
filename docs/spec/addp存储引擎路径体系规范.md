@@ -131,6 +131,10 @@ full_name 是相对于挂载点的路径，不包含挂载点本身：
 
 路径型扫描目标统一使用 `catalog_paths`，不得在新增接口、前端状态名或跨模块客户端中引入存储族专属字段名。
 
+`catalog_paths` 只承载路径型 selector，不承载 multi content 的 sibling refs 边界。Shapefile 等由多个 file/object 共同组成的 data item，如果调用方已经掌握本次实际生成或变更的 refs，应通过 Meta 扫描请求的 `ref_groups` 提交；不得把父目录或父 prefix 放入 `catalog_paths` 来间接要求 Meta 猜测本次 refs。
+
+`ref_groups` 中的 path 仍必须遵守所属引擎的内容路径语义：对象存储以 bucket 开头，文件系统使用挂载根内相对路径或可被规范化为相对路径的输入。它不是 ResourceLocator，也不携带 `node_id` / `item_id`；进入 Meta 后由 ScanScope resolver 转换为引擎对应的 content ref 或 catalog path。
+
 ### 关系型数据库（PostgreSQL / MySQL / Doris / ClickHouse）
 
 full_name 使用引擎原生术语：

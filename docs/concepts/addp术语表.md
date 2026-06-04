@@ -56,6 +56,10 @@
 | force scan | 强制扫描 | 不管已有元数据和低成本过时判断，重新扫描并覆盖本次深度对应的元数据。 | 请求字段为 `force`。 |
 | scan target | 扫描目标 | 本次扫描作用的对象范围。 | 只抽象为 engine、node、item。 |
 | trigger type | 触发方式 | 扫描由手动还是定时触发。 | 概念层只区分 `manual` / `scheduled`。 |
+| scan source | 扫描来源 | 触发扫描的模块或业务场景标记。 | 例如 `system_immediate`、`manager_refresh`、`meta_frontend`、`transfer`；不进入 `trigger_type` 枚举。 |
+| ScanSelector | 扫描选择器 | API 层或模块调用方提交的扫描选择信息。 | 可包含 `engine_id`、`node_id`、`item_id`、`targets`、`catalog_paths`、`ref_groups` 等输入形态。 |
+| ScanScope | 扫描范围 | Meta 内部扫描主链路消费的唯一范围模型。 | 所有扫描选择器进入主链路前必须先解析为 ScanScope。 |
+| ref group | 内容引用组 | 一组共同参与 data item 识别的内容引用边界。 | 用于表达 Shapefile 等 multi content 的本次可见 refs；不绑定 ADDP locator，不是 `catalog_paths`。 |
 
 ## 能力与读取
 

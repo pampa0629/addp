@@ -6,6 +6,7 @@ import (
 	"fmt"
 	commonExecution "github.com/addp/common/execution"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -255,41 +256,57 @@ func (s *ScanTaskService) enqueueExecution(executionID string) {
 	}
 }
 
+func normalizeScanRequestTriggerType(triggerType string) (string, error) {
+	normalized := strings.ToLower(strings.TrimSpace(triggerType))
+	if normalized == "" {
+		return models.TriggerTypeManual, nil
+	}
+	switch normalized {
+	case models.TriggerTypeManual, models.TriggerTypeScheduled:
+		return normalized, nil
+	default:
+		return "", fmt.Errorf("unsupported trigger_type %q: use manual or scheduled", triggerType)
+	}
+}
+
+func normalizeScanSource(source string) string {
+	normalized := strings.TrimSpace(source)
+	if normalized == "" {
+		return "meta_frontend"
+	}
+	return normalized
+}
+
 // CreateManualRun 创建手动扫描执行并入队
 func (s *ScanTaskService) CreateManualRun(ctx context.Context, tenantID, userID uint, token string, req *models.ScanRequest) (*commonExecution.TaskExecution, error) {
 	if req == nil {
 		return nil, errors.New("请求不能为空")
 	}
-	engineID := req.EngineID
-	if engineID == 0 {
-		resolvedEngineID, err := s.scanService.resolveScanEngineID(tenantID, ScanOptions{
-			NodeID:  req.NodeID,
-			ItemID:  req.ItemID,
-			Targets: req.Targets,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("engine_id 不能为空: %w", err)
-		}
-		engineID = resolvedEngineID
+	if _, err := normalizeScanRequestTriggerType(req.TriggerType); err != nil {
+		return nil, err
+	}
+	scope, err := s.scanService.ResolveScanScope(tenantID, ScanOptions{
+		EngineID:     req.EngineID,
+		CatalogPaths: req.CatalogPaths,
+		RefGroups:    req.RefGroups,
+		NodeID:       req.NodeID,
+		ItemID:       req.ItemID,
+		Targets:      req.Targets,
+		ScanDepth:    req.ScanDepth,
+		Force:        req.Force,
+		Source:       req.Source,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("解析扫描范围失败: %w", err)
 	}
 
-	resource, err := s.engineService.GetResourceByID(engineID, tenantID, token)
+	resource, err := s.engineService.GetResourceByID(scope.EngineID, tenantID, token)
 	if err != nil {
 		return nil, fmt.Errorf("验证资源失败: %w", err)
 	}
-	catalogPaths := req.CatalogPaths
-	resolvedCatalogPaths, err := s.scanService.resolveScanTargets(tenantID, ScanOptions{
-		NodeID:  req.NodeID,
-		ItemID:  req.ItemID,
-		Targets: req.Targets,
-	})
-	if err != nil {
-		return nil, err
-	}
-	catalogPaths = uniqueNonEmpty(append(catalogPaths, resolvedCatalogPaths...))
 
 	if s.dedupService != nil {
-		taskKey := s.dedupService.GenerateTaskKey(tenantID, engineID, models.TriggerTypeManual)
+		taskKey := s.dedupService.GenerateTaskKey(tenantID, scope.EngineID, models.TriggerTypeManual)
 		if s.dedupService.CheckTaskExists(ctx, taskKey) {
 			return nil, fmt.Errorf("该资源正在扫描中，请稍后再试")
 		}
@@ -301,11 +318,13 @@ func (s *ScanTaskService) CreateManualRun(ctx context.Context, tenantID, userID 
 	execution := scantask.NewManualExecution(
 		tenantID,
 		userID,
-		engineID,
+		scope.EngineID,
 		scantask.NormalizeStorageType(resource.EngineType),
-		catalogPaths,
-		req.ScanDepth,
-		req.Force,
+		scope.CatalogPaths,
+		scope.RefGroups,
+		scope.ScanDepth,
+		scope.Force,
+		scope.Source,
 		token,
 		time.Now(),
 	)
@@ -336,6 +355,7 @@ func (s *ScanTaskService) CreateAutoRuns(ctx context.Context, tenantID, userID u
 			EngineID:  resource.EngineID,
 			ScanDepth: "deep",
 			Force:     false,
+			Source:    "meta_auto",
 		})
 		if err != nil {
 			s.log.Warn("自动扫描运行创建失败，跳过该引擎",
@@ -400,9 +420,11 @@ func (s *ScanTaskService) executeRun(ctx context.Context, executionID string) er
 		EngineID:     execConfig.EngineID,
 		TenantID:     uint(exec.TenantID),
 		CatalogPaths: execConfig.CatalogPaths,
+		RefGroups:    execConfig.RefGroups,
 		Token:        execConfig.Token,
 		ScanDepth:    execConfig.ScanDepth,
 		Force:        execConfig.Force,
+		Source:       execConfig.Source,
 		Reporter:     reporter,
 	})
 	completeTime := time.Now()

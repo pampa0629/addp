@@ -1841,6 +1841,34 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_meta_internal_models.ScanRef": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string"
+                },
+                "required": {
+                    "type": "boolean"
+                },
+                "role": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_meta_internal_models.ScanRefGroup": {
+            "type": "object",
+            "properties": {
+                "primary": {
+                    "type": "string"
+                },
+                "refs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_meta_internal_models.ScanRef"
+                    }
+                }
+            }
+        },
         "github_com_addp_meta_internal_models.ScanRequest": {
             "type": "object",
             "properties": {
@@ -1867,8 +1895,19 @@ const docTemplate = `{
                     "description": "要扫描的节点 ID",
                     "type": "integer"
                 },
+                "ref_groups": {
+                    "description": "内容引用组",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_meta_internal_models.ScanRefGroup"
+                    }
+                },
                 "scan_depth": {
                     "description": "basic/deep",
+                    "type": "string"
+                },
+                "source": {
+                    "description": "扫描来源",
                     "type": "string"
                 },
                 "targets": {

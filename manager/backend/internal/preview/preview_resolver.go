@@ -340,7 +340,8 @@ func (r *PreviewResolver) submitItemDeepScanRun(itemID uint) {
 		ItemID:      itemID,
 		ScanDepth:   "deep",
 		Force:       false,
-		TriggerType: "preview",
+		TriggerType: "manual",
+		Source:      "manager_preview",
 	})
 	if err != nil {
 		logger.L().Warn("提交 Meta item deep 后台补扫失败", "item_id", itemID, "error", err)

@@ -109,6 +109,15 @@ func TestCreateManualRunResolvesNodeTargetToCatalogPaths(t *testing.T) {
 		ScanDepth:   "deep",
 		Force:       true,
 		TriggerType: "manual",
+		Source:      "transfer",
+		RefGroups: []models.ScanRefGroup{
+			{
+				Primary: "manager/a5.shp",
+				Refs: []models.ScanRef{
+					{Path: "manager/a5.shp", Role: "main", Required: true},
+				},
+			},
+		},
 	})
 	if err != nil {
 		t.Fatalf("CreateManualRun() error = %v", err)
@@ -119,6 +128,26 @@ func TestCreateManualRunResolvesNodeTargetToCatalogPaths(t *testing.T) {
 	}
 	if got := jsonMapUint(run.ExecutionConfig, "engine_id"); got != 9 {
 		t.Fatalf("execution engine_id = %d, want 9", got)
+	}
+	if got := run.ExecutionConfig["source"]; got != "transfer" {
+		t.Fatalf("source = %#v, want transfer", got)
+	}
+	refGroups, ok := run.ExecutionConfig["ref_groups"].([]models.ScanRefGroup)
+	if !ok || len(refGroups) != 1 || refGroups[0].Primary != "manager/a5.shp" {
+		t.Fatalf("ref_groups = %#v", run.ExecutionConfig["ref_groups"])
+	}
+}
+
+func TestCreateManualRunRejectsUnsupportedTriggerType(t *testing.T) {
+	t.Parallel()
+
+	taskSvc := NewScanTaskService(nil, nil, nil, nil)
+	_, err := taskSvc.CreateManualRun(context.Background(), 1, 7, "token", &models.ScanRequest{
+		EngineID:    9,
+		TriggerType: "bad",
+	})
+	if err == nil {
+		t.Fatal("CreateManualRun() should reject unsupported trigger_type")
 	}
 }
 

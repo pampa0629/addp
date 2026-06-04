@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func NewManualExecution(tenantID, userID uint, engineID uint, storageType string, catalogPaths []string, scanDepth string, force bool, token string, now time.Time) *commonExecution.TaskExecution {
+func NewManualExecution(tenantID, userID uint, engineID uint, storageType string, catalogPaths []string, refGroups []metaModels.ScanRefGroup, scanDepth string, force bool, source string, token string, now time.Time) *commonExecution.TaskExecution {
 	userIDInt := int(userID)
 	return &commonExecution.TaskExecution{
 		TenantID:    int(tenantID),
@@ -24,8 +24,10 @@ func NewManualExecution(tenantID, userID uint, engineID uint, storageType string
 			engineID,
 			storageType,
 			catalogPaths,
+			refGroups,
 			scanDepth,
 			force,
+			source,
 			token,
 		),
 		StartedAt: &now,

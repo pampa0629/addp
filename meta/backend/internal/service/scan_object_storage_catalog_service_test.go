@@ -43,7 +43,7 @@ func TestEnrichObjectStorageJSONTableUpdatesItemDataType(t *testing.T) {
 	}
 	item := metaitemForJSONDocument(resource)
 
-	result, err := catalogDataItemProcessor(repo, nil, slog.New(slog.NewTextHandler(io.Discard, nil))).Process(context.Background(), catalogSingleItemInput{
+	result, err := processDetectedItem(repo, nil, slog.New(slog.NewTextHandler(io.Discard, nil))).Process(context.Background(), detectedItemInput{
 		Resource:      &commonModels.Engine{ID: 7, EngineType: "static"},
 		TenantID:      1,
 		EngineID:      7,
@@ -67,7 +67,7 @@ func TestEnrichObjectStorageJSONTableUpdatesItemDataType(t *testing.T) {
 		IncludeAccessIndex: false,
 	})
 	if err != nil {
-		t.Fatalf("catalogSingleItemProcessor.Process() error = %v", err)
+		t.Fatalf("detectedItemProcessor.Process() error = %v", err)
 	}
 	attrs := result.Item.Attributes
 	itemAttrs := attrs["item"].(map[string]interface{})
@@ -416,7 +416,7 @@ func TestEnsureObjectCatalogPrefixNodesUsesCompositeItemParentPath(t *testing.T)
 	}
 }
 
-func TestObjectCatalogBasicScanGroupsShapefileRefsAndDeletesSidecarItems(t *testing.T) {
+func TestObjectCatalogBasicScanGroupsShapefileRefsWithoutSidecarItems(t *testing.T) {
 	metaenrich.RegisterItemResolvers()
 	reader := staticObjectContentReader{content: ""}
 	plugin.Register(reader)
@@ -434,19 +434,6 @@ func TestObjectCatalogBasicScanGroupsShapefileRefsAndDeletesSidecarItems(t *test
 	bucketNode, err := repo.UpsertNode(1, 9, nil, "bucket", "manager", strPtr("manager"), metacatalog.ObjectBucketNodeAttributes("manager"))
 	if err != nil {
 		t.Fatalf("create bucket node: %v", err)
-	}
-
-	for _, name := range []string{"a5.shp", "a5.shx", "a5.dbf", "a5.cpg"} {
-		sizeBytes := int64(10)
-		_, err := repo.UpsertItemWithDepth(1, 9, bucketNode, "object", name, "manager/"+name, models.JSONMap{
-			"storage": map[string]interface{}{
-				"bucket": "manager",
-				"name":   name,
-			},
-		}, nil, &sizeBytes, nil, models.ScannedDepthBasic)
-		if err != nil {
-			t.Fatalf("seed item %s: %v", name, err)
-		}
 	}
 
 	resources := []metacatalog.StorageResource{

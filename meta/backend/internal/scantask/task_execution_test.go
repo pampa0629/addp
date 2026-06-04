@@ -13,7 +13,19 @@ func TestNewManualExecution(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
-	exec := NewManualExecution(3, 9, 7, "postgres", []string{"public"}, "basic", false, "token", now)
+	exec := NewManualExecution(
+		3,
+		9,
+		7,
+		"postgres",
+		[]string{"public"},
+		[]models.ScanRefGroup{{Primary: "bucket/path/roads.shp"}},
+		"basic",
+		false,
+		"transfer",
+		"token",
+		now,
+	)
 
 	if exec.TenantID != 3 || exec.Module != commonExecution.ModuleMeta || exec.Status != commonExecution.ExecutionStatusPending {
 		t.Fatalf("execution basics = %#v", exec)
@@ -23,6 +35,13 @@ func TestNewManualExecution(t *testing.T) {
 	}
 	if exec.ExecutionConfig["engine_id"] != uint(7) || exec.ExecutionConfig["scan_depth"] != "basic" {
 		t.Fatalf("execution config = %#v", exec.ExecutionConfig)
+	}
+	if exec.ExecutionConfig["source"] != "transfer" {
+		t.Fatalf("execution source = %#v", exec.ExecutionConfig)
+	}
+	refGroups, ok := exec.ExecutionConfig["ref_groups"].([]models.ScanRefGroup)
+	if !ok || len(refGroups) != 1 || refGroups[0].Primary != "bucket/path/roads.shp" {
+		t.Fatalf("execution ref_groups = %#v", exec.ExecutionConfig["ref_groups"])
 	}
 }
 

@@ -76,7 +76,8 @@ export default {
       engine_id: engineId,
       scan_depth: options.scan_depth || 'deep',
       force: options.force === true,
-      trigger_type: 'manual'
+      trigger_type: 'manual',
+      source: options.source || 'meta_frontend'
     }
     if (catalogPaths && catalogPaths.length > 0) {
       payload.catalog_paths = catalogPaths

@@ -2,10 +2,14 @@ package preview
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
@@ -81,6 +85,33 @@ func TestLoadPreviewPluginsRegistersBuiltinDefaultsWithoutFiles(t *testing.T) {
 		if _, err := registry.GetByName(name); err != nil {
 			t.Fatalf("expected default provider %s: %v", name, err)
 		}
+	}
+}
+
+func TestSubmitItemDeepScanRunUsesManualTriggerAndPreviewSource(t *testing.T) {
+	t.Parallel()
+
+	var gotPayload map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/meta/scan/run/manual" {
+			t.Fatalf("path = %q, want /api/v1/meta/scan/run/manual", r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotPayload); err != nil {
+			t.Fatalf("decode payload: %v", err)
+		}
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":11,"tenant_id":1,"execution_id":"run-1","module":"meta","task_type":"scan","status":"pending","trigger_type":"manual"}`))
+	}))
+	defer server.Close()
+
+	resolver := NewPreviewResolver(NewPreviewRegistry(), nil, client.NewMetaClientWithInternalKey(server.URL, "internal-key"))
+	resolver.submitItemDeepScanRun(42)
+
+	if gotPayload["item_id"] != float64(42) {
+		t.Fatalf("item_id = %#v, want 42", gotPayload["item_id"])
+	}
+	if gotPayload["trigger_type"] != "manual" || gotPayload["source"] != "manager_preview" {
+		t.Fatalf("payload trigger/source = %#v/%#v, want manual/manager_preview", gotPayload["trigger_type"], gotPayload["source"])
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/contentio"
 	"github.com/addp/common/format"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/resourcetree"
@@ -169,7 +170,7 @@ func (s *ExecutionEngineService) executeCommonTableTransferTask(ctx context.Cont
 		s.logger.Warn("failed to update task after successful table transfer", "error", err, "task_id", task.ID)
 	}
 	if task.AutoScanMetadata {
-		s.triggerMetadataScan(task, spec)
+		s.triggerMetadataScan(task, spec, buildResult.Plan.Target)
 	}
 	return nil
 }
@@ -211,7 +212,7 @@ func (s *ExecutionEngineService) executeCommonRawCopyTask(ctx context.Context, t
 		s.logger.Warn("failed to update task after successful raw copy", "error", err, "task_id", task.ID)
 	}
 	if task.AutoScanMetadata {
-		s.triggerMetadataScan(task, planner.TableExportTaskSpec{Target: spec.Target})
+		s.triggerRawCopyMetadataScan(task, spec, buildResult.Plan.Target)
 	}
 	return nil
 }
@@ -398,7 +399,7 @@ func runningProgress(batchIndex int64) float64 {
 	return progress
 }
 
-func (s *ExecutionEngineService) triggerMetadataScan(task *models.TransferTask, spec planner.TableExportTaskSpec) {
+func (s *ExecutionEngineService) triggerMetadataScan(task *models.TransferTask, spec planner.TableExportTaskSpec, targetPlan executor.TableTargetPlan) {
 	if s.metaClient == nil {
 		s.logger.Warn("meta client not available, skipping metadata scan", "task_id", task.ID)
 		return
@@ -411,19 +412,26 @@ func (s *ExecutionEngineService) triggerMetadataScan(task *models.TransferTask, 
 	}
 
 	metaClient := s.metaClient.WithTenantID(task.TenantID)
-	catalogPaths := targetCatalogPaths(spec.Target)
+	refGroups := tableTargetRefGroups(targetPlan)
+	catalogPaths := []string(nil)
+	if len(refGroups) == 0 {
+		catalogPaths = nativeTargetCatalogPaths(spec.Target)
+	}
 
 	s.logger.Info("triggering metadata scan",
 		"task_id", task.ID,
 		"engine_id", targetEngineID,
-		"catalog_paths", catalogPaths)
+		"catalog_paths", catalogPaths,
+		"ref_groups", len(refGroups))
 
 	run, err := metaClient.CreateManualScanRun(commonClient.MetaScanOptions{
 		EngineID:     targetEngineID,
 		CatalogPaths: catalogPaths,
+		RefGroups:    refGroups,
 		ScanDepth:    "deep",
 		Force:        true,
-		TriggerType:  "transfer",
+		TriggerType:  "manual",
+		Source:       "transfer",
 	})
 	if err != nil {
 		s.logger.Error("failed to trigger metadata scan",
@@ -438,7 +446,101 @@ func (s *ExecutionEngineService) triggerMetadataScan(task *models.TransferTask, 
 		"execution_id", run.ExecutionID)
 }
 
-func targetCatalogPaths(endpoint planner.EndpointSpec) []string {
+func (s *ExecutionEngineService) triggerRawCopyMetadataScan(task *models.TransferTask, spec planner.RawCopyTaskSpec, targetPlan executor.RawCopyEndpointPlan) {
+	if s.metaClient == nil {
+		s.logger.Warn("meta client not available, skipping metadata scan", "task_id", task.ID)
+		return
+	}
+	targetEngineID := spec.Target.LocatorEngineID()
+	if targetEngineID == 0 {
+		s.logger.Warn("no target engine id found, skipping metadata scan", "task_id", task.ID)
+		return
+	}
+	refGroups := singlePathRefGroups(targetPlan.Path.StringPath())
+	run, err := s.metaClient.WithTenantID(task.TenantID).CreateManualScanRun(commonClient.MetaScanOptions{
+		EngineID:    targetEngineID,
+		RefGroups:   refGroups,
+		ScanDepth:   "deep",
+		Force:       true,
+		TriggerType: "manual",
+		Source:      "transfer",
+	})
+	if err != nil {
+		s.logger.Error("failed to trigger metadata scan",
+			"error", err,
+			"task_id", task.ID,
+			"engine_id", targetEngineID)
+		return
+	}
+	s.logger.Info("metadata scan triggered successfully",
+		"task_id", task.ID,
+		"engine_id", targetEngineID,
+		"execution_id", run.ExecutionID)
+}
+
+func tableTargetRefGroups(target executor.TableTargetPlan) []commonClient.MetaScanRefGroup {
+	if target.Kind != executor.TableEndpointEncoded {
+		return nil
+	}
+	if target.Format == "" {
+		return singlePathRefGroups(target.Path.StringPath())
+	}
+	if _, err := format.GetTableWriterProvider(target.Format); err == nil {
+		return singlePathRefGroups(target.Path.StringPath())
+	}
+	multiProvider, err := format.GetMultiTableWriterProvider(target.Format)
+	if err != nil {
+		return singlePathRefGroups(target.Path.StringPath())
+	}
+	return relatedRefsToMetaScanRefGroups(format.SameBasenameRelatedRefs(target.Path.StringPath(), multiProvider.RelatedRefSpecs()))
+}
+
+func singlePathRefGroups(path string) []commonClient.MetaScanRefGroup {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil
+	}
+	return []commonClient.MetaScanRefGroup{
+		{
+			Primary: path,
+			Refs: []commonClient.MetaScanRef{
+				{Path: path, Role: contentio.RoleMain, Required: true},
+			},
+		},
+	}
+}
+
+func relatedRefsToMetaScanRefGroups(refs []format.RelatedRef) []commonClient.MetaScanRefGroup {
+	if len(refs) == 0 {
+		return nil
+	}
+	group := commonClient.MetaScanRefGroup{
+		Refs: make([]commonClient.MetaScanRef, 0, len(refs)),
+	}
+	for _, ref := range refs {
+		path := strings.TrimSpace(ref.Ref.Path)
+		if path == "" {
+			continue
+		}
+		if ref.Primary {
+			group.Primary = path
+		}
+		group.Refs = append(group.Refs, commonClient.MetaScanRef{
+			Path:     path,
+			Role:     strings.TrimSpace(ref.Ref.Role),
+			Required: ref.Required,
+		})
+	}
+	if group.Primary == "" && len(group.Refs) > 0 {
+		group.Primary = group.Refs[0].Path
+	}
+	if len(group.Refs) == 0 {
+		return nil
+	}
+	return []commonClient.MetaScanRefGroup{group}
+}
+
+func nativeTargetCatalogPaths(endpoint planner.EndpointSpec) []string {
 	loc, err := endpoint.ResourceLocator()
 	if err != nil {
 		return nil
@@ -450,68 +552,8 @@ func targetCatalogPaths(endpoint planner.EndpointSpec) []string {
 			return []string{strings.TrimSpace(loc.Path[len(loc.Path)-2])}
 		}
 		return []string{strings.TrimSpace(loc.PathString())}
-	case resourcetree.TypeObject:
-		bucket, objectPath := objectLocatorParts(loc)
-		if shouldScanObjectParent(endpoint.Format) {
-			return parentObjectCatalogPaths(bucket, objectPath)
-		}
-		return objectCatalogPaths(bucket, objectPath)
-	case resourcetree.TypeFile:
-		return parentFileCatalogPaths(loc.PathString())
 	}
 	return nil
-}
-
-func objectLocatorParts(loc *resourcetree.ResourceLocator) (string, string) {
-	if loc == nil || len(loc.Path) == 0 {
-		return "", ""
-	}
-	return strings.Trim(loc.Path[0], "/"), strings.Trim(strings.Join(loc.Path[1:], "/"), "/")
-}
-
-func parentObjectCatalogPaths(bucket, objectPath string) []string {
-	if bucket == "" {
-		return nil
-	}
-	cleanObjectPath := strings.Trim(objectPath, "/")
-	if cleanObjectPath == "" {
-		return []string{bucket}
-	}
-	if idx := strings.LastIndex(cleanObjectPath, "/"); idx > 0 {
-		return []string{bucket + "/" + cleanObjectPath[:idx]}
-	}
-	return []string{bucket}
-}
-
-func objectCatalogPaths(bucket, objectPath string) []string {
-	bucket = strings.Trim(strings.TrimSpace(bucket), "/")
-	if bucket == "" {
-		return nil
-	}
-	cleanObjectPath := strings.Trim(strings.TrimSpace(objectPath), "/")
-	if cleanObjectPath == "" {
-		return []string{bucket}
-	}
-	return []string{bucket + "/" + cleanObjectPath}
-}
-
-func shouldScanObjectParent(formatType format.FormatType) bool {
-	descriptor, ok := format.GetFormatDescriptor(format.NormalizeFormat(string(formatType)))
-	if !ok {
-		return false
-	}
-	return format.HasLayout(descriptor.Layouts, format.LayoutMulti) || format.HasLayout(descriptor.Layouts, format.LayoutWhole)
-}
-
-func parentFileCatalogPaths(filePath string) []string {
-	cleanFilePath := strings.Trim(strings.TrimSpace(filePath), "/")
-	if cleanFilePath == "" || cleanFilePath == "." || cleanFilePath == "<nil>" {
-		return nil
-	}
-	if idx := strings.LastIndex(cleanFilePath, "/"); idx > 0 {
-		return []string{cleanFilePath[:idx]}
-	}
-	return []string{"/"}
 }
 
 func cleanPathValue(value interface{}) string {

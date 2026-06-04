@@ -10,14 +10,29 @@ type JSONMap = commonModels.JSONMap
 
 // ScanRequest 扫描请求
 type ScanRequest struct {
-	EngineID     uint     `json:"engine_id"`     // 存储引擎 ID
-	CatalogPaths []string `json:"catalog_paths"` // 要扫描的 catalog 路径列表（空则全部）
-	NodeID       uint     `json:"node_id"`       // 要扫描的节点 ID
-	ItemID       uint     `json:"item_id"`       // 要扫描的数据项 ID
-	Targets      []string `json:"targets"`       // locator 目标列表
-	ScanDepth    string   `json:"scan_depth"`    // basic/deep
-	TriggerType  string   `json:"trigger_type"`  // manual/scheduled
-	Force        bool     `json:"force"`         // 是否强制重新扫描
+	EngineID     uint           `json:"engine_id"`     // 存储引擎 ID
+	CatalogPaths []string       `json:"catalog_paths"` // 要扫描的 catalog 路径列表（空则全部）
+	RefGroups    []ScanRefGroup `json:"ref_groups"`    // 内容引用组
+	NodeID       uint           `json:"node_id"`       // 要扫描的节点 ID
+	ItemID       uint           `json:"item_id"`       // 要扫描的数据项 ID
+	Targets      []string       `json:"targets"`       // locator 目标列表
+	ScanDepth    string         `json:"scan_depth"`    // basic/deep
+	TriggerType  string         `json:"trigger_type"`  // manual/scheduled
+	Source       string         `json:"source"`        // 扫描来源
+	Force        bool           `json:"force"`         // 是否强制重新扫描
+}
+
+// ScanRefGroup 一组共同参与数据项识别的内容引用
+type ScanRefGroup struct {
+	Primary string    `json:"primary"`
+	Refs    []ScanRef `json:"refs"`
+}
+
+// ScanRef 内容引用
+type ScanRef struct {
+	Path     string `json:"path"`
+	Role     string `json:"role"`
+	Required bool   `json:"required"`
 }
 
 // ScanResponse 扫描响应

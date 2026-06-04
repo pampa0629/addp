@@ -534,11 +534,12 @@ func (s *ObjectStorageCatalogScanService) persistObjectResources(
 	for _, warning := range compositeWarnings {
 		s.log.Warn("对象 catalog 组合项检测失败", "bucket", warning.Bucket, "prefix", warning.Prefix, "error", warning.Err)
 	}
-	compositeCount, err := s.persistObjectCatalogCompositeItems(tenantID, engineID, bucketNode, basePrefixNode, compositeItems, stats, includeBucketAggregate, scanPathPrefix, scannedFingerprints, itemTerm)
+	compositeCount, compositeExtractionStats, err := s.persistObjectCatalogCompositeItems(resource, tenantID, engineID, bucketNode, basePrefixNode, compositeItems, stats, includeBucketAggregate, scanPathPrefix, scannedFingerprints, itemTerm, readableProvider, connInfo, scanDepth)
 	if err != nil {
 		return objects, extractionStats, err
 	}
 	objects += compositeCount
+	extractionStats = mergeExtractionCounts(extractionStats, compositeExtractionStats)
 
 	for _, catalogResource := range resources {
 		if catalogResource.NodeType == "bucket" {
@@ -645,7 +646,7 @@ func (s *ObjectStorageCatalogScanService) persistObjectResources(
 		// 根据扫描深度决定是否提取深度元数据
 		var enhancedAttrs models.JSONMap
 		if strings.EqualFold(scanDepth, "deep") {
-			// 深度扫描的主事实统一由 catalogSingleItemProcessor 通过 metaenrich.EnrichResourceAttributes 写入。
+			// 深度扫描的主事实统一由 detectedItemProcessor 通过 metaenrich.EnrichResourceAttributes 写入。
 			enhancedAttrs = itemPlan.Attributes
 		} else if itemExists {
 			// 浅层扫描 + 记录已存在：保留原有attributes，只更新基础字段
@@ -672,7 +673,7 @@ func (s *ObjectStorageCatalogScanService) persistObjectResources(
 			"currentParent_name", currentParent.Name,
 			"objectName", itemPlan.ObjectName)
 
-		result, err := catalogDataItemProcessor(s.repo, s.indexer, s.log).Process(context.Background(), catalogSingleItemInput{
+		result, err := processDetectedItem(s.repo, s.indexer, s.log).Process(context.Background(), detectedItemInput{
 			Resource:           resource,
 			TenantID:           tenantID,
 			EngineID:           engineID,
@@ -718,6 +719,7 @@ func (s *ObjectStorageCatalogScanService) persistObjectResources(
 }
 
 func (s *ObjectStorageCatalogScanService) persistObjectCatalogCompositeItems(
+	resource *commonModels.Engine,
 	tenantID, engineID uint,
 	bucketNode, basePrefixNode *models.MetaNode,
 	items []metacatalog.ObjectCatalogCompositeItem,
@@ -726,8 +728,12 @@ func (s *ObjectStorageCatalogScanService) persistObjectCatalogCompositeItems(
 	scanPathPrefix string,
 	scannedFingerprints map[string]bool,
 	itemTerm string,
-) (int, error) {
+	readableProvider plugin.ContentReadableProvider,
+	connInfo plugin.ConnectionInfo,
+	scanDepth string,
+) (int, scantask.ExtractionCounts, error) {
 	count := 0
+	extractionStats := scantask.ExtractionCounts{}
 	for _, composite := range items {
 		if composite.Item == nil {
 			continue
@@ -742,17 +748,34 @@ func (s *ObjectStorageCatalogScanService) persistObjectCatalogCompositeItems(
 		}
 		parentNode, err := s.ensureObjectCatalogPrefixNodes(tenantID, engineID, bucketNode, basePrefixNode, itemPlan.ParentPath, scanPathPrefix, stats)
 		if err != nil {
-			return count, err
+			return count, extractionStats, err
 		}
 
-		sizeVal := itemPlan.SizeBytes
-		rowCount := itemRowCountFromMetaAttributes(itemPlan.Attributes)
-		if _, err := s.repo.UpsertItemWithDepth(tenantID, engineID, parentNode, itemPlan.ItemType, itemPlan.ItemName, itemPlan.FullName, itemPlan.Attributes, rowCount, &sizeVal, nil, models.ScannedDepthDeep); err != nil {
-			return count, err
+		result, err := processDetectedItem(s.repo, s.indexer, s.log).Process(context.Background(), detectedItemInput{
+			Resource:           resource,
+			TenantID:           tenantID,
+			EngineID:           engineID,
+			ParentNode:         parentNode,
+			ItemType:           itemPlan.ItemType,
+			ItemName:           itemPlan.ItemName,
+			FullName:           itemPlan.FullName,
+			Attributes:         itemPlan.Attributes,
+			Detected:           composite.Item,
+			ContentReader:      readableProvider,
+			ConnInfo:           connInfo,
+			CatalogPathFor:     plugin.ObjectItemPathForBucket(engineID, composite.Bucket),
+			PhysicalPath:       detectedItemContentPath(composite.Item, itemPlan.ObjectPath),
+			IndexRootName:      composite.Bucket,
+			IndexPath:          itemPlan.ObjectPath,
+			IndexRelativePath:  strings.Trim(itemPlan.ObjectPath, "/"),
+			SizeBytes:          itemPlan.SizeBytes,
+			ScanDepth:          scanDepth,
+			IncludeAccessIndex: true,
+		})
+		if err != nil {
+			return count, extractionStats, err
 		}
-		if err := s.repo.SoftDeleteObjectMetaItemsByObjectPaths(tenantID, engineID, composite.Bucket, compositeComponentObjectPaths(composite, itemPlan.ObjectPath)); err != nil {
-			return count, err
-		}
+		extractionStats = mergeExtractionCounts(extractionStats, result.Extraction)
 		count++
 		updatedNodes := map[uint]bool{}
 		for _, node := range []*models.MetaNode{bucketNode, parentNode} {
@@ -768,23 +791,7 @@ func (s *ObjectStorageCatalogScanService) persistObjectCatalogCompositeItems(
 			agg.TotalSize += itemPlan.SizeBytes
 		}
 	}
-	return count, nil
-}
-
-func compositeComponentObjectPaths(composite metacatalog.ObjectCatalogCompositeItem, primaryObjectPath string) []string {
-	if composite.Item == nil {
-		return nil
-	}
-	primaryObjectPath = strings.Trim(primaryObjectPath, "/")
-	paths := make([]string, 0, len(composite.Item.RefList))
-	for _, refPath := range composite.Item.RefFilePaths() {
-		objectPath := strings.Trim(metacatalog.ObjectPathFromClaim(composite.Bucket, refPath), "/")
-		if objectPath == "" || objectPath == primaryObjectPath {
-			continue
-		}
-		paths = append(paths, objectPath)
-	}
-	return paths
+	return count, extractionStats, nil
 }
 
 func (s *ObjectStorageCatalogScanService) detectObjectCatalogResourceFormats(

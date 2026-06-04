@@ -815,6 +815,9 @@ func TestRefreshNodeSubmitsDeepScanRun(t *testing.T) {
 	if gotScanPayload["node_id"] != float64(8) {
 		t.Fatalf("scan payload node_id = %#v, want 8", gotScanPayload["node_id"])
 	}
+	if gotScanPayload["trigger_type"] != "manual" || gotScanPayload["source"] != "manager_refresh" {
+		t.Fatalf("scan payload trigger/source = %#v/%#v, want manual/manager_refresh", gotScanPayload["trigger_type"], gotScanPayload["source"])
+	}
 }
 
 func TestRefreshNodeRequiresAuthTokenBeforeSubmittingScan(t *testing.T) {

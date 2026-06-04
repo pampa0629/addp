@@ -22,13 +22,13 @@ import (
 	"github.com/addp/meta/internal/scantask"
 )
 
-type catalogSingleItemProcessor struct {
+type detectedItemProcessor struct {
 	repo    *metaRepo.ScanRepository
 	indexer *IndexerService
 	log     *slog.Logger
 }
 
-type catalogSingleItemInput struct {
+type detectedItemInput struct {
 	Resource           *commonModels.Engine
 	TenantID           uint
 	EngineID           uint
@@ -52,7 +52,7 @@ type catalogSingleItemInput struct {
 	IncludeAccessIndex bool
 }
 
-type catalogSingleItemResult struct {
+type detectedItemResult struct {
 	Item       *models.MetaItem
 	Extraction scantask.ExtractionCounts
 }
@@ -72,15 +72,15 @@ func mergeExtractionCounts(left, right scantask.ExtractionCounts) scantask.Extra
 	return left
 }
 
-func (p catalogSingleItemProcessor) Process(ctx context.Context, input catalogSingleItemInput) (catalogSingleItemResult, error) {
+func (p detectedItemProcessor) Process(ctx context.Context, input detectedItemInput) (detectedItemResult, error) {
 	if input.Resource == nil {
-		return catalogSingleItemResult{}, fmt.Errorf("resource is nil")
+		return detectedItemResult{}, fmt.Errorf("resource is nil")
 	}
 	if input.ParentNode == nil {
-		return catalogSingleItemResult{}, fmt.Errorf("parent node is nil")
+		return detectedItemResult{}, fmt.Errorf("parent node is nil")
 	}
 	if input.Detected == nil {
-		return catalogSingleItemResult{}, fmt.Errorf("detected item is nil")
+		return detectedItemResult{}, fmt.Errorf("detected item is nil")
 	}
 	attrs := metaattr.JSONMap(input.Attributes)
 	if attrs == nil {
@@ -162,7 +162,7 @@ func (p catalogSingleItemProcessor) Process(ctx context.Context, input catalogSi
 		input.ScanDepth,
 	)
 	if err != nil {
-		return catalogSingleItemResult{}, err
+		return detectedItemResult{}, err
 	}
 
 	counts := extraction.Counts
@@ -187,11 +187,24 @@ func (p catalogSingleItemProcessor) Process(ctx context.Context, input catalogSi
 		}
 	}
 
-	return catalogSingleItemResult{Item: item, Extraction: counts}, nil
+	return detectedItemResult{Item: item, Extraction: counts}, nil
 }
 
-func catalogDataItemProcessor(repo *metaRepo.ScanRepository, indexer *IndexerService, log *slog.Logger) catalogSingleItemProcessor {
-	return catalogSingleItemProcessor{repo: repo, indexer: indexer, log: log}
+func processDetectedItem(repo *metaRepo.ScanRepository, indexer *IndexerService, log *slog.Logger) detectedItemProcessor {
+	return detectedItemProcessor{repo: repo, indexer: indexer, log: log}
+}
+
+func detectedItemContentPath(item *metaitem.DetectedItem, fallback string) string {
+	if item == nil {
+		return strings.Trim(fallback, "/")
+	}
+	if item.PrimaryContentPath != "" {
+		return strings.Trim(item.PrimaryContentPath, "/")
+	}
+	if item.PhysicalPath != "" {
+		return strings.Trim(item.PhysicalPath, "/")
+	}
+	return strings.Trim(fallback, "/")
 }
 
 func splitCatalogResourcePath(value string) (dir, name string) {

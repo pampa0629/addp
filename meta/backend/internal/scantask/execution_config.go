@@ -1,6 +1,7 @@
 package scantask
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -17,18 +18,22 @@ type ExecutionConfig struct {
 	EngineID     uint
 	StorageType  string
 	CatalogPaths []string
+	RefGroups    []models.ScanRefGroup
 	ScanDepth    string
 	Force        bool
+	Source       string
 	Token        string
 }
 
-func ManualExecutionConfig(engineID uint, storageType string, catalogPaths []string, scanDepth string, force bool, token string) commonModels.JSONMap {
+func ManualExecutionConfig(engineID uint, storageType string, catalogPaths []string, refGroups []models.ScanRefGroup, scanDepth string, force bool, source string, token string) commonModels.JSONMap {
 	return commonModels.JSONMap{
 		"engine_id":     engineID,
 		"storage_type":  storageType,
 		"catalog_paths": catalogPaths,
+		"ref_groups":    refGroups,
 		"scan_depth":    scanDepth,
 		"force":         force,
+		"source":        source,
 		"token":         token,
 	}
 }
@@ -74,8 +79,10 @@ func ParseExecutionConfig(config commonModels.JSONMap) ExecutionConfig {
 	parsed.StorageType, _ = config["storage_type"].(string)
 	parsed.ScanDepth, _ = config["scan_depth"].(string)
 	parsed.Force = BoolFromInterface(config["force"])
+	parsed.Source, _ = config["source"].(string)
 	parsed.Token, _ = config["token"].(string)
 	parsed.CatalogPaths = catalogPathsFromCommonConfig(config)
+	parsed.RefGroups = refGroupsFromCommonConfig(config)
 	return parsed
 }
 
@@ -93,6 +100,27 @@ func catalogPathsFromParams(params models.JSONMap) []string {
 
 func catalogPathsFromCommonConfig(config commonModels.JSONMap) []string {
 	return StringSliceFromInterface(config["catalog_paths"])
+}
+
+func refGroupsFromCommonConfig(config commonModels.JSONMap) []models.ScanRefGroup {
+	raw := config["ref_groups"]
+	if raw == nil {
+		return nil
+	}
+	if groups, ok := raw.([]models.ScanRefGroup); ok {
+		result := make([]models.ScanRefGroup, len(groups))
+		copy(result, groups)
+		return result
+	}
+	bytes, err := json.Marshal(raw)
+	if err != nil {
+		return nil
+	}
+	var groups []models.ScanRefGroup
+	if err := json.Unmarshal(bytes, &groups); err != nil {
+		return nil
+	}
+	return groups
 }
 
 func NormalizeScanDepth(scanDepth, defaultDepth string) (string, error) {
