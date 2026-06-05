@@ -7,10 +7,10 @@ import (
 	commonScheduler "github.com/addp/common/scheduler"
 )
 
-func TestBuildCronExpressionFromScanConfigDaily(t *testing.T) {
+func TestBuildCronExpressionFromPolicyDaily(t *testing.T) {
 	t.Parallel()
 
-	got, err := BuildCronExpressionFromScanConfig(nil, &commonModels.ScanConfig{
+	got, err := BuildCronExpressionFromPolicy(nil, &commonModels.ScanConfig{
 		ScheduleType: "daily",
 		ScheduleTime: "03:15",
 	})
@@ -22,10 +22,10 @@ func TestBuildCronExpressionFromScanConfigDaily(t *testing.T) {
 	}
 }
 
-func TestBuildCronExpressionFromScanConfigWeekly(t *testing.T) {
+func TestBuildCronExpressionFromPolicyWeekly(t *testing.T) {
 	t.Parallel()
 
-	got, err := BuildCronExpressionFromScanConfig(nil, &commonModels.ScanConfig{
+	got, err := BuildCronExpressionFromPolicy(nil, &commonModels.ScanConfig{
 		ScheduleType:  "weekly",
 		ScheduleTime:  "08:30",
 		ScheduleValue: []int{1, 3, 5},
@@ -38,11 +38,11 @@ func TestBuildCronExpressionFromScanConfigWeekly(t *testing.T) {
 	}
 }
 
-func TestBuildCronExpressionFromScanConfigValidatesCron(t *testing.T) {
+func TestBuildCronExpressionFromPolicyValidatesCron(t *testing.T) {
 	t.Parallel()
 
 	builder := commonScheduler.NewExpressionBuilder()
-	if _, err := BuildCronExpressionFromScanConfig(builder, &commonModels.ScanConfig{
+	if _, err := BuildCronExpressionFromPolicy(builder, &commonModels.ScanConfig{
 		ScheduleType:   "cron",
 		CronExpression: "invalid",
 	}); err == nil {

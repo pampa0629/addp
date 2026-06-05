@@ -234,7 +234,7 @@ const handleEngineScanPolicyBridge = async (payload = {}) => {
     } else {
       await upsertEngineScanTask(engineId, {
         engine_name: engine.name,
-        scan_config: scanConfig
+        scan_policy: scanConfig
       })
     }
 

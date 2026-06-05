@@ -118,7 +118,8 @@ func (h *FeatureHandler) GetFeatureCentroid(c *gin.Context) {
 	}
 
 	// 8. 返回源坐标中心点和 CRS 契约
-	response := spatialPreviewContract(geomCol, sourceSRID)
+	sourceCRS, sourceCRSDefinition := postGISCRSDefinition(db, sourceSRID)
+	response := spatialPreviewContract(geomCol, sourceSRID, sourceCRS, sourceCRSDefinition)
 	response["centroid"] = gin.H{
 		"x": x.Float64,
 		"y": y.Float64,
@@ -217,7 +218,8 @@ func (h *FeatureHandler) GetFeatureGeometry(c *gin.Context) {
 	}
 
 	// 8. 返回源坐标几何、中心点坐标、边界框和 CRS 契约
-	response := spatialPreviewContract(geomCol, sourceSRID)
+	sourceCRS, sourceCRSDefinition := postGISCRSDefinition(db, sourceSRID)
+	response := spatialPreviewContract(geomCol, sourceSRID, sourceCRS, sourceCRSDefinition)
 	response["geojson"] = geojson.String
 	response["centroid"] = gin.H{
 		"x": x.Float64,

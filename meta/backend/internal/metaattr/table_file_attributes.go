@@ -18,6 +18,39 @@ type TableFileAttributesInput struct {
 	IncludeAccessIndex bool
 }
 
+type TableDescribeAttributesInput struct {
+	FormatName         string
+	Table              *datatype.TableInfo
+	FormatInfo         map[string]interface{}
+	Spatial            *datatype.SpatialInfo
+	AccessIndex        *datatype.AccessIndex
+	IncludeAccessIndex bool
+	AccessIndexSource  map[string]interface{}
+}
+
+func TableDescribeAttributes(input TableDescribeAttributesInput) map[string]interface{} {
+	attrs := map[string]interface{}{}
+	if input.Table != nil {
+		if tableAttrs := datatype.TableInfoPayload(input.Table); len(tableAttrs) > 0 {
+			UpsertNested(attrs, "type_info", "table", tableAttrs)
+		}
+	}
+	if len(input.FormatInfo) > 0 {
+		MergeStandardAttributes(attrs, FormatInfoAttributes(input.FormatName, input.FormatInfo))
+	}
+	if spatialPayload := datatype.SpatialInfoPayload(input.Spatial); len(spatialPayload) > 0 {
+		UpsertNested(attrs, "capabilities", "spatial", spatialPayload)
+	}
+	if input.IncludeAccessIndex && input.AccessIndex != nil {
+		indexInfo := input.AccessIndex.Clone()
+		if indexInfo.Source == nil && len(input.AccessIndexSource) > 0 {
+			indexInfo.Source = cloneInterfaceMap(input.AccessIndexSource)
+		}
+		UpsertNested(attrs, "access_index", "table", commonJSON.MapFromStruct(indexInfo))
+	}
+	return attrs
+}
+
 func TableFileAttributes(input TableFileAttributesInput) map[string]interface{} {
 	attrs := map[string]interface{}{}
 	if input.PhysicalPath != "" || input.TotalSize > 0 {
@@ -44,30 +77,15 @@ func TableFileAttributes(input TableFileAttributesInput) map[string]interface{} 
 		UpsertNested(attrs, "format_info", formatName, formatAttrs)
 	}
 
-	if input.Table != nil {
-		if tableAttrs := datatype.TableInfoPayload(input.Table); len(tableAttrs) > 0 {
-			if len(input.Table.Fields) == 0 {
-				delete(tableAttrs, "fields")
-			}
-			if len(tableAttrs) > 0 {
-				UpsertNested(attrs, "type_info", "table", tableAttrs)
-			}
-		}
-	}
-
-	if spatialPayload := datatype.SpatialInfoPayload(input.Spatial); len(spatialPayload) > 0 {
-		UpsertNested(attrs, "capabilities", "spatial", spatialPayload)
-	}
-
-	if input.IncludeAccessIndex && input.AccessIndex != nil {
-		indexInfo := input.AccessIndex.Clone()
-		if indexInfo.Source == nil {
-			indexInfo.Source = map[string]interface{}{
-				"size_bytes": input.TotalSize,
-			}
-		}
-		UpsertNested(attrs, "access_index", "table", commonJSON.MapFromStruct(indexInfo))
-	}
+	MergeStandardAttributes(attrs, TableDescribeAttributes(TableDescribeAttributesInput{
+		Table:              input.Table,
+		Spatial:            input.Spatial,
+		AccessIndex:        input.AccessIndex,
+		IncludeAccessIndex: input.IncludeAccessIndex,
+		AccessIndexSource: map[string]interface{}{
+			"size_bytes": input.TotalSize,
+		},
+	}))
 
 	return attrs
 }

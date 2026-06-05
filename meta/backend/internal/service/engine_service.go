@@ -25,14 +25,14 @@ type engineCacheEntry struct {
 	expiresAt time.Time
 }
 
-// ResourceService 资源服务 - 直接读取 system.engines
+// EngineService 负责从 System 获取并缓存 engine 连接信息。
 type EngineService struct {
 	db             *gorm.DB
 	systemURL      string
 	internalClient *commonClient.SystemClient
 	cacheMu        sync.RWMutex
-	engineCache    map[uint]*engineCacheEntry // 改为存储带过期时间的条目
-	cacheTTL       time.Duration              // 缓存生存时间，默认 5 分钟
+	engineCache    map[uint]*engineCacheEntry
+	cacheTTL       time.Duration
 	log            *slog.Logger
 }
 
@@ -74,7 +74,7 @@ func (s *EngineService) ensureInternalClient() {
 	}
 }
 
-// PreloadResources 在服务启动时从 System 服务加载引擎连接信息并缓存在内存中
+// PreloadResources 在服务启动时从 System 加载 engine 连接信息并缓存在内存中。
 func (s *EngineService) PreloadResources() error {
 	s.ensureInternalClient()
 	if s.internalClient == nil {
@@ -214,7 +214,7 @@ func (s *EngineService) snapshotCache() map[uint]*commonModels.Engine {
 	return result
 }
 
-// GetResourcesByTenant 获取租户的所有数据库类型资源
+// GetEnginesByTenant 获取租户下所有具备 storage 能力的 active engine。
 func (s *EngineService) GetEnginesByTenant(tenantID uint) ([]*commonModels.Engine, error) {
 	s.ensureInternalClient()
 
@@ -279,8 +279,7 @@ func (s *EngineService) GetEnginesByTenant(tenantID uint) ([]*commonModels.Engin
 	return engines, nil
 }
 
-// GetResourceByID 根据ID获取资源（从System API获取，密码已解密）
-// token: 用户的JWT token，用于认证System API调用
+// GetResourceByID 根据 ID 获取 engine 连接信息（优先内部 API，必要时用用户 token 降级）。
 func (s *EngineService) GetResourceByID(engineID, tenantID uint, token string) (*commonModels.Engine, error) {
 	s.ensureInternalClient()
 
@@ -358,14 +357,14 @@ func (s *EngineService) GetResourceByID(engineID, tenantID uint, token string) (
 	return resource, nil
 }
 
-// GetResource 实现 mvt.ResourceService 接口
+// GetEngine 实现 MVT 侧 engine 查询接口。
 // 用于 MVT 生成器获取引擎连接信息
 func (s *EngineService) GetEngine(engineID, tenantID uint) (*commonModels.Engine, error) {
 	// 直接调用 GetResourceByID，使用空 token（因为是内部调用）
 	return s.GetResourceByID(engineID, tenantID, "")
 }
 
-// GetResourcesWithStats 获取资源及其扫描统计
+// GetEnginesWithStats 获取 engine 及其扫描统计。
 func (s *EngineService) GetEnginesWithStats(tenantID uint) ([]*models.ResourceWithStats, error) {
 	engines, err := s.GetEnginesByTenant(tenantID)
 	if err != nil {

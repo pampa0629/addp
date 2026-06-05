@@ -1,4 +1,4 @@
-package scanadapter
+package scanruntime
 
 import (
 	"context"
@@ -29,7 +29,7 @@ func TestResolveObjectCatalogTargetDistinguishesObjectAndPrefix(t *testing.T) {
 	}
 	resource := &commonModels.Engine{ID: 9, EngineType: provider.Type()}
 
-	objectTarget, err := ResolveObjectCatalogTarget(context.Background(), resource, provider, "addp/contain/shapefile.zip")
+	objectTarget, err := resolveObjectCatalogTarget(context.Background(), resource, provider, "addp/contain/shapefile.zip")
 	if err != nil {
 		t.Fatalf("resolve object target: %v", err)
 	}
@@ -37,7 +37,7 @@ func TestResolveObjectCatalogTargetDistinguishesObjectAndPrefix(t *testing.T) {
 		t.Fatalf("object target = %#v, want exact object", objectTarget)
 	}
 
-	prefixTarget, err := ResolveObjectCatalogTarget(context.Background(), resource, provider, "addp/contain")
+	prefixTarget, err := resolveObjectCatalogTarget(context.Background(), resource, provider, "addp/contain")
 	if err != nil {
 		t.Fatalf("resolve prefix target: %v", err)
 	}

@@ -14,8 +14,8 @@ import (
 	"github.com/addp/meta/internal/scanflow"
 )
 
-// ScanDirectory 递归扫描目录，对每个目录运行 item resolver 链。
-func (s *FilesystemCatalogRuntime) ScanDirectory(
+// scanDirectory 递归扫描目录，对每个目录运行 item resolver 链。
+func (s *FilesystemCatalogRuntime) scanDirectory(
 	ctx context.Context,
 	contentReader plugin.ContentReadableProvider,
 	catalogProvider plugin.CatalogProvider,
@@ -29,7 +29,7 @@ func (s *FilesystemCatalogRuntime) ScanDirectory(
 	scanDepth string,
 	force bool,
 ) (int, scanflow.ExtractionCounts, error) {
-	files, subdirs, err := s.ListDirectory(ctx, resource, catalogProvider, connInfo, dirPath)
+	files, subdirs, err := s.listDirectory(ctx, resource, catalogProvider, connInfo, dirPath)
 	if err != nil {
 		return 0, scanflow.ExtractionCounts{}, fmt.Errorf("failed to list directory %s: %w", dirPath, err)
 	}
@@ -71,7 +71,7 @@ func (s *FilesystemCatalogRuntime) ScanDirectory(
 			if detected == nil {
 				continue
 			}
-			persisted, fullName, itemExtractionStats := s.PersistFileCatalogDetectedItem(ctx, resource, tenantID, parentNode, dirPath, detected, itemTerm, contentReader, connInfo, scanDepth)
+			persisted, fullName, itemExtractionStats := s.persistFileCatalogDetectedItem(ctx, resource, tenantID, parentNode, dirPath, detected, itemTerm, contentReader, connInfo, scanDepth)
 			if fullName != "" {
 				scannedItemFullNames[fullName] = true
 			}
@@ -147,7 +147,7 @@ func (s *FilesystemCatalogRuntime) ScanDirectory(
 		}
 
 		_ = s.repo.ResetNodeState(subdirNode, "running")
-		items, subdirExtractionStats, scanErr := s.ScanDirectory(ctx, contentReader, catalogProvider, connInfo, resource, tenantID, subdir.Path, subdirNode, false, itemTerm, scanDepth, force)
+		items, subdirExtractionStats, scanErr := s.scanDirectory(ctx, contentReader, catalogProvider, connInfo, resource, tenantID, subdir.Path, subdirNode, false, itemTerm, scanDepth, force)
 		extractionStats = scanflow.MergeExtractionCounts(extractionStats, subdirExtractionStats)
 		if scanErr != nil {
 			s.log.Warn("递归扫描子目录失败", "path", subdir.Path, "error", scanErr)

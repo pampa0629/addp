@@ -13,7 +13,7 @@ import (
 
 const contentHashAlgorithmSHA256 = "sha256"
 
-func ComputeContentSHA256(ctx context.Context, readableProvider plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, catalogPath plugin.CatalogPath) (string, error) {
+func computeContentSHA256(ctx context.Context, readableProvider plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, catalogPath plugin.CatalogPath) (string, error) {
 	if readableProvider == nil || len(catalogPath.Segments) == 0 {
 		return "", nil
 	}
@@ -33,7 +33,7 @@ func ComputeContentSHA256(ctx context.Context, readableProvider plugin.ContentRe
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
-func SetStorageContentHash(attrs models.JSONMap, hash string) {
+func setStorageContentHash(attrs models.JSONMap, hash string) {
 	if attrs == nil || hash == "" {
 		return
 	}

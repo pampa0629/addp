@@ -3,6 +3,7 @@ import { register } from 'ol/proj/proj4'
 
 const WGS84 = 'EPSG:4326'
 const WEB_MERCATOR = 'EPSG:3857'
+const SUPPORTED_DEFINITION_ENCODINGS = new Set(['wkt', 'esri_wkt', 'proj4'])
 
 let registered = false
 
@@ -46,26 +47,40 @@ export const sourceCRSFromPreview = (preview) => {
   return String(meta?.source_crs || meta?.spatial_ref_sys || '').trim()
 }
 
+export const sourceCRSDefinitionFromPreview = (preview) => {
+  const direct = preview?.source_crs_definition
+  if (direct && typeof direct === 'object') return direct
+  const metaDefinition = metadata(preview)?.source_crs_definition
+  if (metaDefinition && typeof metaDefinition === 'object') return metaDefinition
+  return null
+}
+
 const sourceCodeFromPreview = (preview) => {
   const targetSRID = numberValue(preview?.target_srid)
   if (targetSRID === 4326) return WGS84
 
+  const crs = sourceCRSFromPreview(preview)
+  if (crs) {
+    const epsgMatch = crs.match(/^EPSG:(\d+)$/i)
+    return epsgMatch ? `EPSG:${epsgMatch[1]}` : crs
+  }
+
   const srid = sourceSRIDFromPreview(preview)
   if (srid > 0) return `EPSG:${srid}`
-
-  const crs = sourceCRSFromPreview(preview)
-  const epsgMatch = crs.match(/^EPSG:(\d+)$/i)
-  if (epsgMatch) return `EPSG:${epsgMatch[1]}`
 
   return ''
 }
 
-const canRegisterCRSDefinition = (code, crsText) => {
-  if (!code || !crsText) return false
-  if (/^EPSG:\d+$/i.test(crsText)) return false
+const canRegisterCRSDefinition = (code, crsDefinition) => {
+  if (!code || !crsDefinition || typeof crsDefinition !== 'object') return false
+
+  const encoding = String(crsDefinition.definition_encoding || '').trim().toLowerCase()
+  const definition = String(crsDefinition.definition || '').trim()
+  if (!SUPPORTED_DEFINITION_ENCODINGS.has(encoding) || !definition) return false
+  if (/^EPSG:\d+$/i.test(definition)) return false
 
   try {
-    proj4.defs(code, crsText)
+    proj4.defs(code, definition)
     register(proj4)
     return !!proj4.defs(code)
   } catch (_error) {
@@ -73,11 +88,11 @@ const canRegisterCRSDefinition = (code, crsText) => {
   }
 }
 
-const ensureProjection = (code, crsText) => {
+const ensureProjection = (code, crsDefinition) => {
   ensureBuiltIns()
   if (!code) return false
   if (proj4.defs(code)) return true
-  return canRegisterCRSDefinition(code, crsText)
+  return canRegisterCRSDefinition(code, crsDefinition)
 }
 
 export const getPreviewCRSTransform = (preview) => {
@@ -89,14 +104,14 @@ export const getPreviewCRSTransform = (preview) => {
   }
 
   const sourceCode = sourceCodeFromPreview(preview)
-  const sourceCRS = sourceCRSFromPreview(preview)
   if (!sourceCode) {
     return { status: 'unknown_crs', message: preview?.transform_message || metadata(preview)?.transform_message || '' }
   }
   if (sourceCode.toUpperCase() === WGS84) {
     return { status: 'direct', sourceCode, targetCode: WGS84 }
   }
-  if (!ensureProjection(sourceCode, sourceCRS)) {
+  const sourceCRSDefinition = sourceCRSDefinitionFromPreview(preview)
+  if (!ensureProjection(sourceCode, sourceCRSDefinition)) {
     return { status: 'unsupported_crs', sourceCode, targetCode: WGS84 }
   }
 

@@ -7,17 +7,10 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaenrich"
 	metaRepo "github.com/addp/meta/internal/repository"
-	"github.com/addp/meta/internal/scanadapter"
 	"github.com/addp/meta/internal/scanflow"
 	"github.com/addp/meta/internal/scanprocessor"
 	"gorm.io/gorm"
 )
-
-type ObjectCatalogScanResult struct {
-	CatalogNodes int
-	Items        int
-	Extraction   scanflow.ExtractionCounts
-}
 
 // ObjectStorageCatalogRuntime 对象存储 catalog 扫描运行时。
 // 职责：按插件 catalog model 扫描 bucket/prefix/object 层级。
@@ -56,11 +49,11 @@ func (s *ObjectStorageCatalogRuntime) ScanPaths(
 	scanDepth string,
 	force bool,
 	reporter scanflow.ProgressReporter,
-) (ObjectCatalogScanResult, error) {
+) (scanflow.DispatchResult, error) {
 	metaenrich.RegisterItemResolvers()
-	result, err := scanadapter.ScanObjectPaths(context.Background(), s, s.repo, resource, tenantID, catalogPaths, fallback, scanDepth, force, reporter)
+	result, err := scanObjectPaths(context.Background(), s, s.repo, resource, tenantID, catalogPaths, fallback, scanDepth, force, reporter)
 	if err != nil {
-		return ObjectCatalogScanResult{}, err
+		return scanflow.DispatchResult{}, err
 	}
-	return ObjectCatalogScanResult{CatalogNodes: result.CatalogNodes, Items: result.Items, Extraction: result.Extraction}, nil
+	return result, nil
 }

@@ -18,7 +18,7 @@ func (d *CatalogDispatcher) dispatchTabularScan(ctx context.Context, enginePlugi
 		return scanflow.DispatchResult{}, fmt.Errorf("namespace scanner is nil")
 	}
 	if req.Mode == scanflow.DispatchManual {
-		namespaces, items, fields, err := d.scanResourceNamespaces(ctx, enginePlugin, req.Resource, req.TenantID, scanflow.TopCatalogTargets(req.CatalogPaths), req.ScanLogID, req.ScanDepth, req.Force, req.Reporter)
+		namespaces, items, fields, err := d.scanResourceNamespaces(ctx, enginePlugin, req.Resource, req.TenantID, scanflow.TopCatalogTargets(req.CatalogPaths), req.ScanLogID, req.ScanDepth, req.Force, req.Mode, req.Reporter)
 		return scanflow.DispatchResult{CatalogNodes: namespaces, Items: items, Fields: fields}, err
 	}
 
@@ -77,6 +77,7 @@ func (d *CatalogDispatcher) scanResourceNamespaces(
 	scanLogID uint,
 	scanDepth string,
 	force bool,
+	mode scanflow.DispatchMode,
 	reporter scanflow.ProgressReporter,
 ) (int, int, int, error) {
 	if d.branchScan == nil {
@@ -90,7 +91,7 @@ func (d *CatalogDispatcher) scanResourceNamespaces(
 		"resource_name", resource.Name,
 		"resource_type", resource.EngineType,
 		"scan_log_id", scanLogID,
-		"mode", "manual",
+		"mode", string(mode),
 	}
 	if len(namespaces) > 0 {
 		startFields = append(startFields, "target_namespaces", namespaces)

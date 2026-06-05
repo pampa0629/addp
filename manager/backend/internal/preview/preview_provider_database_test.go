@@ -56,6 +56,7 @@ func TestDatabasePreviewPostgreSQLPrimaryKeyPageQueryOrdersFirstPage(t *testing.
 func TestDatabaseTablePreviewProviderPreviewUsesBatchReadAndAttributeRowCount(t *testing.T) {
 	previous, previousErr := plugin.Get("postgresql")
 	rowCount := int64(999)
+	srid := 2360
 	enginePlugin := &recordingDatabasePreviewPlugin{
 		engineType: "postgresql",
 		catalogFacts: &plugin.CatalogFacts{
@@ -66,6 +67,21 @@ func TestDatabaseTablePreviewProviderPreviewUsesBatchReadAndAttributeRowCount(t 
 					{Name: "SmGeometry", Type: datatype.FieldTypeGeometry, NativeType: "geometry(MultiPolygon,2360)", Nullable: true},
 					{Name: "DLMC", Type: datatype.FieldTypeString, NativeType: "text", Nullable: true},
 				},
+			},
+			Spatial: &datatype.SpatialInfo{
+				GeometryColumns: []datatype.GeometryColumnInfo{{
+					Name:         "SmGeometry",
+					GeometryType: "MultiPolygon",
+					SRID:         &srid,
+					CRSRef:       "EPSG:2360",
+				}},
+				PrimaryGeometryColumn: "SmGeometry",
+				CRSDefinitions: []datatype.CRSDefinition{{
+					ID:                 "EPSG:2360",
+					DefinitionEncoding: datatype.CRSDefinitionEncodingWKT,
+					Definition:         "PROJCS[...]",
+					Source:             datatype.CRSDefinitionSourcePostGISSpatialRefSys,
+				}},
 			},
 		},
 		batchData: &plugin.BatchData{
@@ -143,6 +159,9 @@ func TestDatabaseTablePreviewProviderPreviewUsesBatchReadAndAttributeRowCount(t 
 	}
 	if preview.SourceSRID != 2360 || preview.SourceCRS != "EPSG:2360" {
 		t.Fatalf("source CRS = %d/%q, want 2360/EPSG:2360", preview.SourceSRID, preview.SourceCRS)
+	}
+	if preview.SourceCRSDefinition == nil || preview.SourceCRSDefinition.ID != "EPSG:2360" || preview.SourceCRSDefinition.DefinitionEncoding != datatype.CRSDefinitionEncodingWKT {
+		t.Fatalf("source CRS definition = %#v, want EPSG:2360 wkt", preview.SourceCRSDefinition)
 	}
 	if preview.TransformStatus != "not_transformed" || preview.PreviewHint != "frontend_transform_required" {
 		t.Fatalf("transform contract = %q/%q, want not_transformed/frontend_transform_required", preview.TransformStatus, preview.PreviewHint)

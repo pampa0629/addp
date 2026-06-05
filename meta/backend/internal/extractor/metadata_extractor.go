@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/addp/common/dataitem"
-	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
@@ -203,11 +202,19 @@ func (e *MetadataExtractor) BuildObjectAccessIndexOnDemand(
 		index.Source["etag"] = etag
 	}
 
-	enhancedAttrs := cloneJSONMap(item.Attributes)
-	metaattr.UpsertNested(enhancedAttrs, "access_index", "table", commonJSON.MapFromStruct(index))
-	if tableInfo.Table != nil && len(tableInfo.Table.Fields) > 0 {
-		metaattr.UpsertNested(enhancedAttrs, "type_info", "table", datatype.TableInfoPayload(tableInfo.Table))
+	tableFacts := tableInfo.Table
+	if tableFacts != nil && len(tableFacts.Fields) == 0 {
+		tableFacts = nil
 	}
+	enhancedAttrs := cloneJSONMap(item.Attributes)
+	metaattr.MergeStandardAttributes(enhancedAttrs, metaattr.TableDescribeAttributes(metaattr.TableDescribeAttributesInput{
+		FormatName:         string(formatType),
+		Table:              tableFacts,
+		FormatInfo:         tableInfo.FormatInfo,
+		Spatial:            tableInfo.Spatial,
+		AccessIndex:        index,
+		IncludeAccessIndex: true,
+	}))
 	enhancedAttrs = metaattr.Normalize(enhancedAttrs)
 
 	if err := e.db.Model(item).Update("attributes", enhancedAttrs).Error; err != nil {

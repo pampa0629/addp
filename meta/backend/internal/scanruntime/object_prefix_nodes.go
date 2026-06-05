@@ -2,15 +2,15 @@ package scanruntime
 
 import (
 	"github.com/addp/meta/internal/models"
-	"github.com/addp/meta/internal/scanadapter"
+	"github.com/addp/meta/internal/scanflow"
 )
 
-func (s *ObjectStorageCatalogRuntime) EnsureObjectCatalogPrefixNodes(
+func (s *ObjectStorageCatalogRuntime) ensureObjectCatalogPrefixNodes(
 	tenantID, engineID uint,
 	bucketNode, basePrefixNode *models.MetaNode,
 	parentPath string,
 	scanPathPrefix string,
-	stats map[uint]*scanadapter.ObjectCatalogNodeAggregate,
+	stats map[uint]*scanflow.ObjectCatalogNodeAggregate,
 ) (*models.MetaNode, error) {
 	parent := bucketNode
 	if basePrefixNode != nil {
@@ -21,7 +21,7 @@ func (s *ObjectStorageCatalogRuntime) EnsureObjectCatalogPrefixNodes(
 		return nil, err
 	}
 	for _, node := range createdNodes {
-		scanadapter.EnsureObjectCatalogNodeAggregate(stats, node)
+		scanflow.EnsureObjectCatalogNodeAggregate(stats, node)
 	}
 	return parentNode, nil
 }

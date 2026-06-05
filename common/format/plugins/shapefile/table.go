@@ -192,8 +192,19 @@ func buildShapefileTableInfo(input shapefileTableInfoInput) (*datatype.TableInfo
 	bbox := datatype.BoundingBox(input.SHPHeader.BBox)
 	spatialInfo.Extent = &bbox
 	if input.SpatialRefSys != "" {
+		crsRef := datatype.CustomCRSRef(input.SpatialRefSys)
 		if srid := commonSpatial.ParseSRID(input.SpatialRefSys); srid > 0 {
 			spatialInfo.GeometryColumns[0].SRID = &srid
+			crsRef = datatype.EPSGCRSRef(srid)
+		}
+		if crsRef != "" {
+			spatialInfo.GeometryColumns[0].CRSRef = crsRef
+			spatialInfo.CRSDefinitions = []datatype.CRSDefinition{{
+				ID:                 crsRef,
+				DefinitionEncoding: datatype.CRSDefinitionEncodingESRIWKT,
+				Definition:         input.SpatialRefSys,
+				Source:             datatype.CRSDefinitionSourceSidecarPRJ,
+			}}
 		}
 	}
 	info := shapefileInfo(input)

@@ -9,7 +9,7 @@ import (
 	"github.com/addp/meta/internal/metaenrich"
 )
 
-func (s *ObjectStorageCatalogRuntime) DetectObjectCatalogResourceFormats(
+func (s *ObjectStorageCatalogRuntime) detectObjectCatalogResourceFormats(
 	ctx context.Context,
 	readableProvider plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
@@ -19,7 +19,7 @@ func (s *ObjectStorageCatalogRuntime) DetectObjectCatalogResourceFormats(
 		if resources[i].NodeType != "object" || !needsContentFormatDetection(resources[i].Format) {
 			continue
 		}
-		detected, err := DetectObjectCatalogResourceFormat(ctx, readableProvider, connInfo, resources[i])
+		detected, err := detectObjectCatalogResourceFormat(ctx, readableProvider, connInfo, resources[i])
 		if err != nil {
 			if s.log != nil {
 				s.log.Warn("对象内容格式嗅探失败，保留基础格式", "bucket", resources[i].RootName, "path", resources[i].Path, "error", err)
@@ -32,7 +32,7 @@ func (s *ObjectStorageCatalogRuntime) DetectObjectCatalogResourceFormats(
 	}
 }
 
-func DetectObjectCatalogResourceFormat(
+func detectObjectCatalogResourceFormat(
 	ctx context.Context,
 	readableProvider plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,

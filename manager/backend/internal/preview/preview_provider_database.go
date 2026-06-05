@@ -67,7 +67,7 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 	}
 
 	// 3. 尝试从 Meta 获取列元数据（优先用于展示，包含更准确的几何类型）。
-	columnMetadata, geometryColumns, srid, extent, metaErr := p.getColumnMetadataFromMeta(ctx, req.TenantID, req.Engine.ID, req.Schema, tableName)
+	columnMetadata, geometryColumns, srid, sourceCRS, sourceCRSDefinition, extent, metaErr := p.getColumnMetadataFromMeta(ctx, req.TenantID, req.Engine.ID, req.Schema, tableName)
 	var columnNames []string
 
 	if metaErr == nil && len(columnMetadata) > 0 {
@@ -104,10 +104,20 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 
 	// 4. 获取总行数，优先使用 Meta / CatalogFacts 中已知的估算值。
 	totalCount := p.resolveTableRowCount(req, catalogFacts)
+	catalogSpatial := plugin.CatalogFactsSpatialInfo(catalogFacts)
 	if srid == 0 {
 		srid = databasePreviewSourceSRID(columns, geometryColumns)
+		if srid == 0 && catalogSpatial != nil {
+			srid = catalogSpatial.PrimarySRIDValue()
+		}
 	}
-	spatialContract := databaseSpatialPreviewContract(geometryColumns, srid)
+	if sourceCRS == "" && catalogSpatial != nil {
+		sourceCRS = catalogSpatial.PrimaryCRSRef()
+	}
+	if sourceCRSDefinition == nil && catalogSpatial != nil {
+		sourceCRSDefinition = catalogSpatial.CRSDefinitionByID(sourceCRS)
+	}
+	spatialContract := databaseSpatialPreviewContract(geometryColumns, srid, sourceCRS, sourceCRSDefinition)
 
 	// 5. 计算分页参数
 	page := req.Page
@@ -132,20 +142,21 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 	}
 
 	return &models.TablePreview{
-		Mode:             PreviewModeTable,
-		Columns:          columnNames,
-		ColumnMetadata:   columnMetadata,
-		Rows:             rows,
-		Total:            int(totalCount),
-		Page:             page,
-		PageSize:         pageSize,
-		GeometryColumns:  geometryColumns,
-		GeometryColumn:   spatialContract.GeometryColumn,
-		SourceSRID:       spatialContract.SourceSRID,
-		SourceCRS:        spatialContract.SourceCRS,
-		TransformStatus:  spatialContract.TransformStatus,
-		PreviewHint:      spatialContract.PreviewHint,
-		TransformMessage: spatialContract.TransformMessage,
+		Mode:                PreviewModeTable,
+		Columns:             columnNames,
+		ColumnMetadata:      columnMetadata,
+		Rows:                rows,
+		Total:               int(totalCount),
+		Page:                page,
+		PageSize:            pageSize,
+		GeometryColumns:     geometryColumns,
+		GeometryColumn:      spatialContract.GeometryColumn,
+		SourceSRID:          spatialContract.SourceSRID,
+		SourceCRS:           spatialContract.SourceCRS,
+		SourceCRSDefinition: spatialContract.SourceCRSDefinition,
+		TransformStatus:     spatialContract.TransformStatus,
+		PreviewHint:         spatialContract.PreviewHint,
+		TransformMessage:    spatialContract.TransformMessage,
 		// MVT preview metadata (for frontend decision-making)
 		EngineID:   req.Engine.ID,
 		Schema:     req.Schema,
@@ -354,26 +365,31 @@ func (p *DatabaseTablePreviewProvider) isSpatialType(dataType string) bool {
 }
 
 type databasePreviewCRSContract struct {
-	GeometryColumn   string
-	SourceSRID       int
-	SourceCRS        string
-	TransformStatus  string
-	PreviewHint      string
-	TransformMessage string
+	GeometryColumn      string
+	SourceSRID          int
+	SourceCRS           string
+	SourceCRSDefinition *datatype.CRSDefinition
+	TransformStatus     string
+	PreviewHint         string
+	TransformMessage    string
 }
 
-func databaseSpatialPreviewContract(geometryColumns []string, srid int) databasePreviewCRSContract {
+func databaseSpatialPreviewContract(geometryColumns []string, srid int, sourceCRS string, sourceCRSDefinition *datatype.CRSDefinition) databasePreviewCRSContract {
 	if len(geometryColumns) == 0 {
 		return databasePreviewCRSContract{}
 	}
 
 	contract := databasePreviewCRSContract{
-		GeometryColumn: geometryColumns[0],
-		SourceSRID:     srid,
-		PreviewHint:    "frontend_transform_required",
+		GeometryColumn:      geometryColumns[0],
+		SourceSRID:          srid,
+		SourceCRS:           strings.TrimSpace(sourceCRS),
+		SourceCRSDefinition: sourceCRSDefinition,
+		PreviewHint:         "frontend_transform_required",
 	}
 	if srid > 0 {
-		contract.SourceCRS = fmt.Sprintf("EPSG:%d", srid)
+		if contract.SourceCRS == "" {
+			contract.SourceCRS = datatype.EPSGCRSRef(srid)
+		}
 		contract.TransformStatus = "not_transformed"
 		if srid == spatial.SRIDWGS84 {
 			contract.PreviewHint = "direct_renderable"
@@ -482,10 +498,10 @@ func (p *DatabaseTablePreviewProvider) getColumnMetadataFromMeta(
 	tenantID *uint,
 	engineID uint,
 	schema, table string,
-) ([]models.ColumnMetadata, []string, int, []float64, error) {
+) ([]models.ColumnMetadata, []string, int, string, *datatype.CRSDefinition, []float64, error) {
 	// 检查 MetaClient 是否可用
 	if p.metaClient == nil {
-		return nil, nil, 0, nil, fmt.Errorf("meta client not available")
+		return nil, nil, 0, "", nil, nil, fmt.Errorf("meta client not available")
 	}
 
 	// 设置租户 ID（用于服务间调用时的租户隔离）
@@ -494,12 +510,12 @@ func (p *DatabaseTablePreviewProvider) getColumnMetadataFromMeta(
 	// 调用 Meta API 获取表的空间元数据（包含字段列表和几何信息）
 	spatialMeta, err := p.metaClient.GetItemSpatialMetadataByCatalogPath(engineID, fmt.Sprintf("%s.%s", schema, table))
 	if err != nil {
-		return nil, nil, 0, nil, fmt.Errorf("failed to get spatial metadata from Meta: %w", err)
+		return nil, nil, 0, "", nil, nil, fmt.Errorf("failed to get spatial metadata from Meta: %w", err)
 	}
 
 	// 如果没有字段信息，返回错误
 	if len(spatialMeta.Fields) == 0 {
-		return nil, nil, 0, nil, fmt.Errorf("no field metadata in Meta")
+		return nil, nil, 0, "", nil, nil, fmt.Errorf("no field metadata in Meta")
 	}
 
 	// 转换字段信息为 ColumnMetadata
@@ -548,7 +564,7 @@ func (p *DatabaseTablePreviewProvider) getColumnMetadataFromMeta(
 	}
 
 	// 返回 SRID 和 Extent（用于前端显示）
-	return columnMetadata, geometryColumns, spatialMeta.SRID, spatialMeta.Extent, nil
+	return columnMetadata, geometryColumns, spatialMeta.SRID, spatialMeta.CRSRef, spatialMeta.CRSDefinition, spatialMeta.Extent, nil
 }
 
 // TableNotFoundError 表不存在错误

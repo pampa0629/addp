@@ -9,6 +9,10 @@ import (
 	"github.com/addp/manager/internal/catalogutil"
 )
 
+// 本文件只把 PreviewRequest 已持有的 Meta item/node snapshot attributes
+// 投影为 preview provider 需要的轻量结构。它不是跨模块查询入口；
+// 需要重新获取权威元数据时，应通过 MetaClient 调用 Meta API。
+
 func tableInfoFromMetaAttributes(attrs map[string]interface{}, fallbackName string) *datatype.TableInfo {
 	return datatype.TableInfoFromPayload(commonJSON.Section(attrs, "type_info.table"), fallbackName)
 }

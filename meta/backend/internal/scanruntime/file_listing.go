@@ -9,7 +9,7 @@ import (
 	"github.com/addp/meta/internal/metaitem"
 )
 
-func (s *FilesystemCatalogRuntime) ListDirectory(
+func (s *FilesystemCatalogRuntime) listDirectory(
 	ctx context.Context,
 	resource *commonModels.Engine,
 	catalogProvider plugin.CatalogProvider,

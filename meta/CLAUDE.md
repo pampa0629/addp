@@ -81,8 +81,8 @@ Meta 只负责把正式规范中的 data type、type info 和横切事实写入�
 ```text
 service.ScanService
   -> scanadapter.ContentCatalogScanner
-  -> scanadapter.ScanObjectPaths / ScanObjectRefGroups
   -> scanruntime.ObjectStorageCatalogRuntime
+  -> scanruntime.ScanPaths / ScanRefGroups
   -> scanruntime.DetectObjectCatalogResourceFormats     # 基于内容前缀修正未知格式
   -> scanflow.DetectObjectCatalogCompositeItems
   -> metaitem.ResolveItems
@@ -97,8 +97,8 @@ service.ScanService
 ```text
 service.ScanService
   -> scanadapter.ContentCatalogScanner
-  -> scanadapter.ScanFilePaths / ScanFileRefGroups
   -> scanruntime.FilesystemCatalogRuntime
+  -> scanruntime.ScanPaths / ScanRefGroups
   -> metaitem.StorageFileRef
   -> metaitem.ResolveItems                   # multi / whole / table resolver
   -> metaitem.InferSingleResourceItem        # 单文件兜底
@@ -120,11 +120,11 @@ service.ScanService
 已知 item refresh：
 
 ```text
-service/item_refresh_service.go
+service.ScanService
   -> scanruntime.ItemRefreshRuntime
   -> dataitem.DescriptorFromAttributes       # 从已落库 attributes 还原 item descriptor
   -> scanflow.KnownItemDetectedItem
-  -> scanprocessor.Input
+  -> scanprocessor.KnownItemInput
   -> metaenrich / metaattr
   -> repository.UpsertItemWithDepth
 ```

@@ -10,19 +10,18 @@ import (
 	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/metapath"
 	"github.com/addp/meta/internal/models"
-	"github.com/addp/meta/internal/scanadapter"
 	"github.com/addp/meta/internal/scanchange"
 	"github.com/addp/meta/internal/scanflow"
 	"github.com/addp/meta/internal/scanprocessor"
 )
 
-// PersistObjectResources 持久化对象 catalog leaf 到数据库。
-func (s *ObjectStorageCatalogRuntime) PersistObjectResources(
+// persistObjectResources 持久化对象 catalog leaf 到数据库。
+func (s *ObjectStorageCatalogRuntime) persistObjectResources(
 	resource *commonModels.Engine,
 	tenantID, engineID uint,
 	bucketNode *models.MetaNode,
 	resources []metacatalog.StorageResource,
-	stats map[uint]*scanadapter.ObjectCatalogNodeAggregate,
+	stats map[uint]*scanflow.ObjectCatalogNodeAggregate,
 	includeBucketAggregate bool,
 	scanDepth string,
 	force bool,
@@ -39,7 +38,7 @@ func (s *ObjectStorageCatalogRuntime) PersistObjectResources(
 	}
 	readableProvider, _ := enginePlugin.(plugin.ContentReadableProvider)
 	if readableProvider != nil {
-		s.DetectObjectCatalogResourceFormats(context.Background(), readableProvider, connInfo, resources)
+		s.detectObjectCatalogResourceFormats(context.Background(), readableProvider, connInfo, resources)
 	}
 
 	basePrefixNode := bucketNode
@@ -53,7 +52,7 @@ func (s *ObjectStorageCatalogRuntime) PersistObjectResources(
 		}
 		if node != nil && node != bucketNode {
 			basePrefixNode = node
-			scanadapter.EnsureObjectCatalogNodeAggregate(stats, node)
+			scanflow.EnsureObjectCatalogNodeAggregate(stats, node)
 		}
 		s.log.Info("scanPathPrefix处理完成",
 			"basePrefixNode_id", basePrefixNode.ID,
@@ -64,7 +63,7 @@ func (s *ObjectStorageCatalogRuntime) PersistObjectResources(
 	for _, warning := range compositeWarnings {
 		s.log.Warn("对象 catalog 组合项检测失败", "bucket", warning.Bucket, "prefix", warning.Prefix, "error", warning.Err)
 	}
-	compositeCount, compositeExtractionStats, err := s.PersistObjectCatalogCompositeItems(resource, tenantID, engineID, bucketNode, basePrefixNode, compositeItems, stats, includeBucketAggregate, scanPathPrefix, scannedFingerprints, itemTerm, readableProvider, connInfo, scanDepth)
+	compositeCount, compositeExtractionStats, err := s.persistObjectCatalogCompositeItems(resource, tenantID, engineID, bucketNode, basePrefixNode, compositeItems, stats, includeBucketAggregate, scanPathPrefix, scannedFingerprints, itemTerm, readableProvider, connInfo, scanDepth)
 	if err != nil {
 		return objects, extractionStats, err
 	}
@@ -74,7 +73,7 @@ func (s *ObjectStorageCatalogRuntime) PersistObjectResources(
 	for _, catalogResource := range resources {
 		if catalogResource.NodeType == "bucket" {
 			if includeBucketAggregate {
-				scanadapter.EnsureObjectCatalogNodeAggregate(stats, bucketNode)
+				scanflow.EnsureObjectCatalogNodeAggregate(stats, bucketNode)
 			}
 			continue
 		}
@@ -96,10 +95,10 @@ func (s *ObjectStorageCatalogRuntime) PersistObjectResources(
 
 		pathPlan := metacatalog.PlanObjectCatalogRelativePath(trimmed, scanPathPrefix)
 		if pathPlan.ExactBase && catalogResource.NodeType == "prefix" {
-			scanadapter.EnsureObjectCatalogNodeAggregate(stats, basePrefixNode)
+			scanflow.EnsureObjectCatalogNodeAggregate(stats, basePrefixNode)
 		}
 		if pathPlan.SkipReason == "空路径" && includeBucketAggregate {
-			scanadapter.EnsureObjectCatalogNodeAggregate(stats, bucketNode)
+			scanflow.EnsureObjectCatalogNodeAggregate(stats, bucketNode)
 		}
 
 		if pathPlan.SkipReason != "" {
@@ -125,7 +124,7 @@ func (s *ObjectStorageCatalogRuntime) PersistObjectResources(
 				}
 				currentParent = childNode
 				parentChain = append(parentChain, childNode)
-				scanadapter.EnsureObjectCatalogNodeAggregate(stats, childNode)
+				scanflow.EnsureObjectCatalogNodeAggregate(stats, childNode)
 			}
 		}
 
@@ -160,7 +159,7 @@ func (s *ObjectStorageCatalogRuntime) PersistObjectResources(
 				if !includeBucketAggregate && idx == 0 {
 					continue
 				}
-				agg := scanadapter.EnsureObjectCatalogNodeAggregate(stats, node)
+				agg := scanflow.EnsureObjectCatalogNodeAggregate(stats, node)
 				agg.ItemCount++
 				agg.TotalSize += catalogResource.SizeBytes
 			}
@@ -212,14 +211,14 @@ func (s *ObjectStorageCatalogRuntime) PersistObjectResources(
 			if !includeBucketAggregate && idx == 0 {
 				continue
 			}
-			agg := scanadapter.EnsureObjectCatalogNodeAggregate(stats, node)
+			agg := scanflow.EnsureObjectCatalogNodeAggregate(stats, node)
 			agg.ItemCount++
 			agg.TotalSize += catalogResource.SizeBytes
 		}
 	}
 
 	if includeBucketAggregate {
-		scanadapter.EnsureObjectCatalogNodeAggregate(stats, bucketNode)
+		scanflow.EnsureObjectCatalogNodeAggregate(stats, bucketNode)
 	}
 	return objects, extractionStats, nil
 }

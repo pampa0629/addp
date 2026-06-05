@@ -7,7 +7,6 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaenrich"
 	metaRepo "github.com/addp/meta/internal/repository"
-	"github.com/addp/meta/internal/scanadapter"
 	"github.com/addp/meta/internal/scanflow"
 	"github.com/addp/meta/internal/scanprocessor"
 	"gorm.io/gorm"
@@ -45,11 +44,11 @@ func (s *FilesystemCatalogRuntime) ScanPaths(
 	scanDepth string,
 	force bool,
 	reporter scanflow.ProgressReporter,
-) (int, int, scanflow.ExtractionCounts, error) {
+) (scanflow.DispatchResult, error) {
 	metaenrich.RegisterItemResolvers()
-	result, err := scanadapter.ScanFilePaths(context.Background(), s, s.repo, resource, tenantID, paths, scanDepth, force, reporter)
+	result, err := scanFilePaths(context.Background(), s, s.repo, resource, tenantID, paths, scanDepth, force, reporter)
 	if err != nil {
-		return 0, 0, scanflow.ExtractionCounts{}, err
+		return scanflow.DispatchResult{}, err
 	}
-	return result.CatalogNodes, result.Items, result.Extraction, nil
+	return result, nil
 }

@@ -3,8 +3,9 @@ package sqlite
 import (
 	"context"
 	"database/sql"
-	"github.com/addp/common/datatype"
 	"strings"
+
+	"github.com/addp/common/datatype"
 )
 
 type geoPackageLayer struct {
@@ -59,6 +60,10 @@ func applyGeoPackageSpatialInfo(ctx context.Context, db *sql.DB, info *datatype.
 		}
 	}
 	spatial := datatype.NewSingleGeometrySpatialInfo(layer.GeometryColumn, layer.GeometryType, layer.SRID, 0)
+	if definition := geoPackageCRSDefinition(ctx, db, layer.SRID); definition != nil {
+		spatial.GeometryColumns[0].CRSRef = definition.ID
+		spatial.CRSDefinitions = []datatype.CRSDefinition{*definition}
+	}
 	hasSpatialIndex := geoPackageLayerHasSpatialIndex(ctx, db, layer)
 	spatial.HasSpatialIndex = &hasSpatialIndex
 	if bbox, ok := geoPackageLayerBoundingBox(layer); ok {
@@ -66,6 +71,38 @@ func applyGeoPackageSpatialInfo(ctx context.Context, db *sql.DB, info *datatype.
 		spatial.Extent = &extent
 	}
 	return spatial
+}
+
+func geoPackageCRSDefinition(ctx context.Context, db *sql.DB, srsID int) *datatype.CRSDefinition {
+	if srsID <= 0 {
+		return nil
+	}
+	var organization sql.NullString
+	var organizationCoordsysID sql.NullInt64
+	var definition sql.NullString
+	err := db.QueryRowContext(ctx, `
+		SELECT organization, organization_coordsys_id, definition
+		FROM gpkg_spatial_ref_sys
+		WHERE srs_id = ?
+		LIMIT 1
+	`, srsID).Scan(&organization, &organizationCoordsysID, &definition)
+	if err != nil || !definition.Valid || strings.TrimSpace(definition.String) == "" {
+		return nil
+	}
+	code := 0
+	if organizationCoordsysID.Valid {
+		code = int(organizationCoordsysID.Int64)
+	}
+	id := datatype.CRSRefFromAuthority(organization.String, code, definition.String)
+	if id == "" {
+		return nil
+	}
+	return &datatype.CRSDefinition{
+		ID:                 id,
+		DefinitionEncoding: datatype.CRSDefinitionEncodingWKT,
+		Definition:         definition.String,
+		Source:             datatype.CRSDefinitionSourceGeoPackageSRS,
+	}
 }
 
 func geoPackageLayerBoundingBox(layer geoPackageLayer) ([4]float64, bool) {

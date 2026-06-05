@@ -13,15 +13,15 @@ import (
 	"gorm.io/gorm"
 )
 
-type NamespaceScanner interface {
+type namespaceScanner interface {
 	ScanNamespace(ctx context.Context, resource *commonModels.Engine, tenantID, engineID uint, namespaceName string, scanDepth string, force bool) (int, int, int, error)
 }
 
-type BranchScanner interface {
+type branchScanner interface {
 	ScanBranch(ctx context.Context, enginePlugin plugin.EnginePlugin, resource *commonModels.Engine, tenantID uint, branchName string, scanDepth string, force bool) (int, int, int, error)
 }
 
-type ScanLocker interface {
+type scanLocker interface {
 	GenerateNamespaceLockKey(tenantID, engineID uint, namespaceName string) string
 	GenerateBranchLockKey(tenantID, engineID uint, branchName string) string
 	TryAcquireLock(ctx context.Context, taskKey string, ttl time.Duration) (bool, error)
@@ -32,18 +32,18 @@ type CatalogDispatcher struct {
 	db             *gorm.DB
 	repo           *metaRepo.ScanRepository
 	log            *slog.Logger
-	namespaceScan  NamespaceScanner
-	branchScan     BranchScanner
+	namespaceScan  namespaceScanner
+	branchScan     branchScanner
 	contentScanner *ContentCatalogScanner
-	locker         ScanLocker
+	locker         scanLocker
 }
 
 func NewCatalogDispatcher(
 	db *gorm.DB,
 	repo *metaRepo.ScanRepository,
 	log *slog.Logger,
-	namespaceScan NamespaceScanner,
-	branchScan BranchScanner,
+	namespaceScan namespaceScanner,
+	branchScan branchScanner,
 	contentScanner *ContentCatalogScanner,
 ) *CatalogDispatcher {
 	return &CatalogDispatcher{
@@ -56,7 +56,7 @@ func NewCatalogDispatcher(
 	}
 }
 
-func (d *CatalogDispatcher) SetLocker(locker ScanLocker) {
+func (d *CatalogDispatcher) SetLocker(locker scanLocker) {
 	d.locker = locker
 }
 

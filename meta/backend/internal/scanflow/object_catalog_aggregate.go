@@ -1,4 +1,4 @@
-package scanadapter
+package scanflow
 
 import "github.com/addp/meta/internal/models"
 

@@ -58,7 +58,13 @@ func TestSpatialInfoCloneDeepCopiesPointers(t *testing.T) {
 	info := NewSingleGeometrySpatialInfo("geom", "Point", 4326, 2)
 	objectSRID := 3857
 	info.SRID = &objectSRID
-	info.CRS = "EPSG:3857"
+	info.CRSRef = "EPSG:3857"
+	info.CRSDefinitions = []CRSDefinition{{
+		ID:                 "EPSG:3857",
+		DefinitionEncoding: CRSDefinitionEncodingWKT,
+		Definition:         "PROJCS[...]",
+		Source:             CRSDefinitionSourcePostGISSpatialRefSys,
+	}}
 	hasIndex := true
 	extent := NewBoundingBox(1, 2, 3, 4)
 	info.HasSpatialIndex = &hasIndex
@@ -71,7 +77,8 @@ func TestSpatialInfoCloneDeepCopiesPointers(t *testing.T) {
 	cloned.GeometryColumns[0].Name = "shape"
 	*cloned.GeometryColumns[0].SRID = 3857
 	*cloned.SRID = 4326
-	cloned.CRS = "EPSG:4326"
+	cloned.CRSRef = "EPSG:4326"
+	cloned.CRSDefinitions[0].ID = "EPSG:4326"
 	*cloned.Extent = NewBoundingBox(5, 6, 7, 8)
 	*cloned.HasSpatialIndex = false
 
@@ -79,8 +86,11 @@ func TestSpatialInfoCloneDeepCopiesPointers(t *testing.T) {
 	if primary.Name != "geom" || *primary.SRID != 4326 {
 		t.Fatalf("original primary changed: %#v", primary)
 	}
-	if info.SRID == nil || *info.SRID != 3857 || info.CRS != "EPSG:3857" {
-		t.Fatalf("original spatial reference changed: %#v / %q", info.SRID, info.CRS)
+	if info.SRID == nil || *info.SRID != 3857 || info.CRSRef != "EPSG:3857" {
+		t.Fatalf("original spatial reference changed: %#v / %q", info.SRID, info.CRSRef)
+	}
+	if len(info.CRSDefinitions) != 1 || info.CRSDefinitions[0].ID != "EPSG:3857" {
+		t.Fatalf("original crs definitions changed: %#v", info.CRSDefinitions)
 	}
 	if *info.Extent != (BoundingBox{1, 2, 3, 4}) {
 		t.Fatalf("original extent changed: %#v", info.Extent)
@@ -98,8 +108,17 @@ func TestSpatialInfoFromPayload(t *testing.T) {
 				"name":          "shape",
 				"geometry_type": "Polygon",
 				"srid":          int64(4326),
+				"crs_ref":       "EPSG:4326",
 				"dimension":     int64(2),
 				"nullable":      false,
+			},
+		},
+		"crs_definitions": []interface{}{
+			map[string]interface{}{
+				"id":                  "EPSG:4326",
+				"definition_encoding": "wkt",
+				"definition":          "GEOGCS[...]",
+				"source":              "postgis_spatial_ref_sys",
 			},
 		},
 		"has_spatial_index": true,
@@ -116,6 +135,12 @@ func TestSpatialInfoFromPayload(t *testing.T) {
 	}
 	if info.PrimarySRIDValue() != 4326 || info.PrimaryDimensionValue() != 2 {
 		t.Fatalf("primary srid/dimension = %d/%d", info.PrimarySRIDValue(), info.PrimaryDimensionValue())
+	}
+	if info.PrimaryCRSRef() != "EPSG:4326" {
+		t.Fatalf("primary crs ref = %q, want EPSG:4326", info.PrimaryCRSRef())
+	}
+	if definition := info.CRSDefinitionByID("EPSG:4326"); definition == nil || definition.DefinitionEncoding != CRSDefinitionEncodingWKT {
+		t.Fatalf("crs definition = %#v, want EPSG:4326 wkt", definition)
 	}
 	if info.HasSpatialIndex == nil || !*info.HasSpatialIndex || info.IndexName != "idx_shape" {
 		t.Fatalf("spatial index = %#v %q", info.HasSpatialIndex, info.IndexName)
@@ -221,10 +246,17 @@ func TestSpatialInfoPayloadWritesGeometryColumnsForTableSpatial(t *testing.T) {
 			Name:         "shape",
 			GeometryType: "MultiPolygon",
 			SRID:         &srid,
+			CRSRef:       "EPSG:4326",
 			Dimension:    &dimension,
 			Nullable:     &nullable,
 		}},
 		PrimaryGeometryColumn: "shape",
+		CRSDefinitions: []CRSDefinition{{
+			ID:                 "EPSG:4326",
+			DefinitionEncoding: CRSDefinitionEncodingWKT,
+			Definition:         "GEOGCS[...]",
+			Source:             CRSDefinitionSourcePostGISSpatialRefSys,
+		}},
 	}
 	values := SpatialInfoPayload(info)
 
@@ -238,7 +270,14 @@ func TestSpatialInfoPayloadWritesGeometryColumnsForTableSpatial(t *testing.T) {
 	if columns[0]["name"] != "shape" || columns[0]["geometry_type"] != "MultiPolygon" || columns[0]["srid"] != 4326 {
 		t.Fatalf("geometry column = %#v", columns[0])
 	}
+	if columns[0]["crs_ref"] != "EPSG:4326" {
+		t.Fatalf("geometry column crs_ref = %#v, want EPSG:4326", columns[0]["crs_ref"])
+	}
 	if columns[0]["nullable"] != false || columns[0]["dimension"] != 2 {
 		t.Fatalf("geometry column facts = %#v", columns[0])
+	}
+	definitions := values["crs_definitions"].([]map[string]interface{})
+	if len(definitions) != 1 || definitions[0]["id"] != "EPSG:4326" || definitions[0]["definition_encoding"] != "wkt" {
+		t.Fatalf("crs_definitions = %#v, want EPSG:4326 wkt", definitions)
 	}
 }

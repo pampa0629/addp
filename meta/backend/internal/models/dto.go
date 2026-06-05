@@ -92,8 +92,72 @@ type ScanTaskUpsertRequest struct {
 
 // EngineScanTaskPolicyRequest 是 Console 为指定 engine 提交的 Meta 扫描计划。
 type EngineScanTaskPolicyRequest struct {
-	EngineName string                   `json:"engine_name"`
-	ScanConfig *commonModels.ScanConfig `json:"scan_config"`
+	EngineName string            `json:"engine_name"`
+	ScanPolicy *EngineScanPolicy `json:"scan_policy"`
+}
+
+// EngineScanPolicy 是 Console -> Meta API 使用的 engine 扫描策略载荷。
+type EngineScanPolicy struct {
+	Enabled        bool                           `json:"enabled"`                   // 是否启用扫描（总开关）
+	ImmediateScan  bool                           `json:"immediate_scan"`            // 注册或保存后立即扫描
+	ImmediateDepth string                         `json:"immediate_depth,omitempty"` // 立即扫描深度：basic 或 deep
+	ScheduledScan  bool                           `json:"scheduled_scan"`            // 是否启用定时扫描
+	ScheduleType   string                         `json:"schedule_type"`             // daily, weekly, monthly, cron
+	CronExpression string                         `json:"cron_expression,omitempty"` // Cron 表达式（schedule_type=cron）
+	ScheduleTime   string                         `json:"schedule_time,omitempty"`   // 执行时间 HH:mm
+	ScheduleValue  []int                          `json:"schedule_value,omitempty"`  // 周几（0-6）或月几（1-31）
+	ScanDepth      string                         `json:"scan_depth"`                // 默认扫描深度：basic 或 deep
+	Preprocessing  *EngineScanPreprocessingPolicy `json:"preprocessing,omitempty"`   // 扫描后预处理策略
+}
+
+// EngineScanPreprocessingPolicy 是 engine 扫描后的预处理策略。
+type EngineScanPreprocessingPolicy struct {
+	Enabled     bool                         `json:"enabled"`
+	AutoTrigger bool                         `json:"auto_trigger"`
+	Types       []string                     `json:"types"`
+	MVTConfig   *EngineScanMVTPreprocessPlan `json:"mvt_config,omitempty"`
+}
+
+// EngineScanMVTPreprocessPlan 是 MVT 瓦片预处理策略。
+type EngineScanMVTPreprocessPlan struct {
+	MaxZoom          int     `json:"max_zoom"`
+	Concurrency      int     `json:"concurrency"`
+	StopThresholdSec float64 `json:"stop_threshold_sec"`
+	StopThresholdKB  float64 `json:"stop_threshold_kb"`
+}
+
+// ToCommonScanConfig 将 Meta API 边界策略转换为内部任务调度复用结构。
+func (p *EngineScanPolicy) ToCommonScanConfig() *commonModels.ScanConfig {
+	if p == nil {
+		return nil
+	}
+	policy := &commonModels.ScanConfig{
+		Enabled:        p.Enabled,
+		ImmediateScan:  p.ImmediateScan,
+		ImmediateDepth: p.ImmediateDepth,
+		ScheduledScan:  p.ScheduledScan,
+		ScheduleType:   p.ScheduleType,
+		CronExpression: p.CronExpression,
+		ScheduleTime:   p.ScheduleTime,
+		ScheduleValue:  p.ScheduleValue,
+		ScanDepth:      p.ScanDepth,
+	}
+	if p.Preprocessing != nil {
+		policy.Preprocessing = &commonModels.PreprocessingConfig{
+			Enabled:     p.Preprocessing.Enabled,
+			AutoTrigger: p.Preprocessing.AutoTrigger,
+			Types:       p.Preprocessing.Types,
+		}
+		if p.Preprocessing.MVTConfig != nil {
+			policy.Preprocessing.MVTConfig = &commonModels.MVTPreprocessConfig{
+				MaxZoom:          p.Preprocessing.MVTConfig.MaxZoom,
+				Concurrency:      p.Preprocessing.MVTConfig.Concurrency,
+				StopThresholdSec: p.Preprocessing.MVTConfig.StopThresholdSec,
+				StopThresholdKB:  p.Preprocessing.MVTConfig.StopThresholdKB,
+			}
+		}
+	}
+	return policy
 }
 
 // MetadataTreeResponse 元数据树响应（用于 Manager 查询）
@@ -141,12 +205,14 @@ type MetaItemLite struct {
 
 // SpatialMetadataResponse 空间元数据响应（用于 Manager MVT 瓦片生成）
 type SpatialMetadataResponse struct {
-	GeometryColumn string               `json:"geometry_column"`
-	GeometryTypes  []string             `json:"geometry_types,omitempty"` // 几何类型列表，如 ["ST_MultiPolygon"]
-	SRID           int                  `json:"srid"`
-	ExtentSRID     int                  `json:"extent_srid"`
-	Extent         []float64            `json:"extent"` // [minLng, minLat, maxLng, maxLat]
-	PrimaryKey     string               `json:"primary_key"`
-	Fields         []datatype.FieldInfo `json:"fields"`
-	RowCount       int64                `json:"row_count"` // 表记录数（从 meta_item.row_count 获取）
+	GeometryColumn string                  `json:"geometry_column"`
+	GeometryTypes  []string                `json:"geometry_types,omitempty"` // 几何类型列表，如 ["ST_MultiPolygon"]
+	SRID           int                     `json:"srid"`
+	CRSRef         string                  `json:"crs_ref,omitempty"`
+	CRSDefinition  *datatype.CRSDefinition `json:"crs_definition,omitempty"`
+	ExtentSRID     int                     `json:"extent_srid"`
+	Extent         []float64               `json:"extent"` // [minLng, minLat, maxLng, maxLat]
+	PrimaryKey     string                  `json:"primary_key"`
+	Fields         []datatype.FieldInfo    `json:"fields"`
+	RowCount       int64                   `json:"row_count"` // 表记录数（从 meta_item.row_count 获取）
 }

@@ -532,7 +532,7 @@ func (h *Handler) UpsertEngineScanTask(c *gin.Context) {
 		return
 	}
 
-	task, err := h.taskService.UpsertEngineScanTaskFromPolicy(tenantID, userID, uint(engineID64), req.EngineName, req.ScanConfig)
+	task, err := h.taskService.UpsertEngineScanTaskFromPolicy(tenantID, userID, uint(engineID64), req.EngineName, req.ScanPolicy.ToCommonScanConfig())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

@@ -25,7 +25,7 @@ type AssetIndexer interface {
 	IndexCatalogAsset(resource *commonModels.Engine, tenantID, engineID uint, catalogResource metacatalog.StorageResource, relativePath, fullName string, item *models.MetaItem, extractedText string) bool
 }
 
-type Input struct {
+type input struct {
 	Resource           *commonModels.Engine
 	TenantID           uint
 	EngineID           uint
@@ -57,7 +57,7 @@ type Result struct {
 	Extraction scanflow.ExtractionCounts
 }
 
-type DocumentExtractionResult struct {
+type documentExtractionResult struct {
 	Text   string
 	Counts scanflow.ExtractionCounts
 }
@@ -88,16 +88,52 @@ func isNilAssetIndexer(indexer AssetIndexer) bool {
 	}
 }
 
-func (p Processor) Process(ctx context.Context, input Input) (Result, error) {
+func (p Processor) Process(ctx context.Context, input input) (Result, error) {
+	if err := validateInput(input); err != nil {
+		return Result{}, err
+	}
+
+	attrs := prepareAttributes(&input)
+	isDeepScan := strings.EqualFold(input.ScanDepth, "deep")
+	if isDeepScan {
+		enrichedAttrs, err := p.enrichDeep(ctx, &input, attrs)
+		if err != nil {
+			return Result{}, err
+		}
+		attrs = enrichedAttrs
+	} else {
+		metaitem.ApplyContainerSummary(attrs, input.Detected)
+	}
+
+	extraction, err := p.extractDeepContent(ctx, &input, attrs, isDeepScan)
+	if err != nil {
+		return Result{}, err
+	}
+
+	item, err := p.persistItem(&input, attrs)
+	if err != nil {
+		return Result{}, err
+	}
+
+	counts := p.indexDeepAsset(&input, item, extraction, isDeepScan)
+
+	return Result{Item: item, Fields: len(input.Detected.Fields), Extraction: counts}, nil
+}
+
+func validateInput(input input) error {
 	if input.Resource == nil {
-		return Result{}, fmt.Errorf("resource is nil")
+		return fmt.Errorf("resource is nil")
 	}
 	if input.ParentNode == nil {
-		return Result{}, fmt.Errorf("parent node is nil")
+		return fmt.Errorf("parent node is nil")
 	}
 	if input.Detected == nil {
-		return Result{}, fmt.Errorf("detected item is nil")
+		return fmt.Errorf("detected item is nil")
 	}
+	return nil
+}
+
+func prepareAttributes(input *input) models.JSONMap {
 	attrs := metaattr.JSONMap(input.Attributes)
 	if attrs == nil {
 		attrs = metaattr.JSONMap(metaattr.BuildAttributes(metaitem.AttributeInput(input.Detected)))
@@ -122,81 +158,79 @@ func (p Processor) Process(ctx context.Context, input Input) (Result, error) {
 			return path
 		}
 	}
-	isDeepScan := strings.EqualFold(input.ScanDepth, "deep")
-	if isDeepScan {
-		if input.Detected.Layout == format.LayoutMulti && input.Detected.DataType == datatype.Table {
-			ClearStaleKnownMultiTableAccessIndex(attrs, input.Detected)
-			enriched, _, err := metaitem.EnrichKnownMultiTableItem(ctx, input.ContentReader, input.ConnInfo, input.EngineID, input.CatalogPathFor, input.Detected)
-			if err != nil {
-				if input.StrictDeepEnrich {
-					return Result{}, err
-				}
-				if p.log != nil {
-					p.log.Warn("提取 multi table 深度属性失败，保留基础属性", "path", input.PhysicalPath, "format", input.Detected.Format, "error", err)
-				}
-			}
-			if enriched != nil {
-				input.Detected = enriched
-				if len(enriched.Attributes) > 0 {
-					attrs = metaattr.JSONMap(enriched.Attributes)
-				}
-			}
+	return attrs
+}
+
+func (p Processor) enrichDeep(ctx context.Context, input *input, attrs models.JSONMap) (models.JSONMap, error) {
+	enrichedAttrs, err := p.enrichKnownMultiTable(ctx, input, attrs)
+	if err != nil {
+		return nil, err
+	}
+	attrs = enrichedAttrs
+
+	enriched, _, err := metaenrich.EnrichResourceAttributes(ctx, attrs, metaenrich.ResourceAttributesInput{
+		ContentReader:      input.ContentReader,
+		ConnInfo:           input.ConnInfo,
+		EngineID:           input.EngineID,
+		Item:               input.Detected,
+		PhysicalPath:       input.PhysicalPath,
+		SizeBytes:          input.SizeBytes,
+		IncludeAccessIndex: input.IncludeAccessIndex,
+		CatalogPathFor:     input.CatalogPathFor,
+	})
+	if err != nil {
+		if input.StrictDeepEnrich {
+			return nil, err
 		}
-		enriched, _, err := metaenrich.EnrichResourceAttributes(ctx, attrs, metaenrich.ResourceAttributesInput{
-			ContentReader:      input.ContentReader,
-			ConnInfo:           input.ConnInfo,
-			EngineID:           input.EngineID,
-			Item:               input.Detected,
-			PhysicalPath:       input.PhysicalPath,
-			SizeBytes:          input.SizeBytes,
-			IncludeAccessIndex: input.IncludeAccessIndex,
-			CatalogPathFor:     input.CatalogPathFor,
-		})
-		if err != nil {
-			if input.StrictDeepEnrich {
-				return Result{}, err
-			}
-			if p.log != nil {
-				p.log.Warn("提取资源深度属性失败，保留基础属性", "path", input.PhysicalPath, "format", input.Detected.Format, "error", err)
-			}
+		p.warn("提取资源深度属性失败，保留基础属性", input, err)
+	}
+	if enriched != nil {
+		input.Detected = enriched
+	}
+	return attrs, nil
+}
+
+func (p Processor) enrichKnownMultiTable(ctx context.Context, input *input, attrs models.JSONMap) (models.JSONMap, error) {
+	if input.Detected.Layout != format.LayoutMulti || input.Detected.DataType != datatype.Table {
+		return attrs, nil
+	}
+	clearStaleKnownMultiTableAccessIndex(attrs, input.Detected)
+	enriched, _, err := metaitem.EnrichKnownMultiTableItem(ctx, input.ContentReader, input.ConnInfo, input.EngineID, input.CatalogPathFor, input.Detected)
+	if err != nil {
+		if input.StrictDeepEnrich {
+			return nil, err
 		}
-		if enriched != nil {
-			input.Detected = enriched
+		p.warn("提取 multi table 深度属性失败，保留基础属性", input, err)
+	}
+	if enriched == nil {
+		return attrs, nil
+	}
+	input.Detected = enriched
+	if len(enriched.Attributes) > 0 {
+		return metaattr.JSONMap(enriched.Attributes), nil
+	}
+	return attrs, nil
+}
+
+func (p Processor) extractDeepContent(ctx context.Context, input *input, attrs models.JSONMap, isDeepScan bool) (documentExtractionResult, error) {
+	if !isDeepScan || input.ContentReader == nil {
+		return documentExtractionResult{}, nil
+	}
+	if contentHash, err := computeContentSHA256(ctx, input.ContentReader, input.ConnInfo, input.CatalogPathFor(input.PhysicalPath)); err != nil {
+		if input.StrictDeepEnrich {
+			return documentExtractionResult{}, err
 		}
+		p.warnPath("计算内容指纹失败", input.PhysicalPath, err)
 	} else {
-		metaitem.ApplyContainerSummary(attrs, input.Detected)
+		setStorageContentHash(attrs, contentHash)
 	}
+	return extractCatalogDocumentText(ctx, attrs, input.ContentReader, input.ConnInfo, input.EngineID, catalogResource(input), input.Detected), nil
+}
 
-	extraction := DocumentExtractionResult{}
-	if isDeepScan && input.ContentReader != nil {
-		if contentHash, err := ComputeContentSHA256(ctx, input.ContentReader, input.ConnInfo, input.CatalogPathFor(input.PhysicalPath)); err != nil {
-			if input.StrictDeepEnrich {
-				return Result{}, err
-			}
-			if p.log != nil {
-				p.log.Warn("计算内容指纹失败", "path", input.PhysicalPath, "error", err)
-			}
-		} else {
-			SetStorageContentHash(attrs, contentHash)
-		}
-		extraction = ExtractCatalogDocumentText(ctx, attrs, input.ContentReader, input.ConnInfo, input.EngineID, metacatalog.StorageResource{
-			RootName:     input.IndexRootName,
-			Path:         input.IndexPath,
-			FullPath:     input.FullName,
-			NodeType:     input.ItemType,
-			Format:       input.Detected.Format,
-			SizeBytes:    input.SizeBytes,
-			ObjectCount:  1,
-			LastModified: input.DataUpdatedAt,
-			CatalogPath:  input.CatalogPathFor(input.PhysicalPath),
-		}, input.Detected)
-	}
-
+func (p Processor) persistItem(input *input, attrs models.JSONMap) (*models.MetaItem, error) {
 	rowCount := itemRowCountFromMetaAttributes(attrs)
-	var item *models.MetaItem
-	var err error
 	if input.ExistingItemID > 0 {
-		item, err = p.repo.UpdateItemByIDWithDepth(
+		return p.repo.UpdateItemByIDWithDepth(
 			input.TenantID,
 			input.ExistingItemID,
 			input.EngineID,
@@ -210,51 +244,67 @@ func (p Processor) Process(ctx context.Context, input Input) (Result, error) {
 			input.DataUpdatedAt,
 			input.ScanDepth,
 		)
-	} else {
-		item, err = p.repo.UpsertItemWithDepth(
-			input.TenantID,
-			input.EngineID,
-			input.ParentNode,
-			input.ItemType,
-			input.ItemName,
-			input.FullName,
-			attrs,
-			rowCount,
-			&input.SizeBytes,
-			input.DataUpdatedAt,
-			input.ScanDepth,
-		)
 	}
-	if err != nil {
-		return Result{}, err
-	}
-
-	counts := extraction.Counts
-	if isDeepScan && p.indexer != nil {
-		indexed := p.indexer.IndexCatalogAsset(input.Resource, input.TenantID, input.EngineID, metacatalog.StorageResource{
-			RootName:     input.IndexRootName,
-			Path:         input.IndexPath,
-			FullPath:     input.FullName,
-			NodeType:     input.ItemType,
-			Format:       input.Detected.Format,
-			SizeBytes:    input.SizeBytes,
-			ObjectCount:  1,
-			LastModified: input.DataUpdatedAt,
-			CatalogPath:  input.CatalogPathFor(input.PhysicalPath),
-		}, input.IndexRelativePath, input.FullName, item, extraction.Text)
-		if extraction.Text != "" {
-			if indexed {
-				counts.Indexed++
-			} else {
-				counts.IndexFailed++
-			}
-		}
-	}
-
-	return Result{Item: item, Fields: len(input.Detected.Fields), Extraction: counts}, nil
+	return p.repo.UpsertItemWithDepth(
+		input.TenantID,
+		input.EngineID,
+		input.ParentNode,
+		input.ItemType,
+		input.ItemName,
+		input.FullName,
+		attrs,
+		rowCount,
+		&input.SizeBytes,
+		input.DataUpdatedAt,
+		input.ScanDepth,
+	)
 }
 
-func ClearStaleKnownMultiTableAccessIndex(attrs map[string]interface{}, item *metaitem.DetectedItem) {
+func (p Processor) indexDeepAsset(input *input, item *models.MetaItem, extraction documentExtractionResult, isDeepScan bool) scanflow.ExtractionCounts {
+	counts := extraction.Counts
+	if !isDeepScan || p.indexer == nil {
+		return counts
+	}
+	indexed := p.indexer.IndexCatalogAsset(input.Resource, input.TenantID, input.EngineID, catalogResource(input), input.IndexRelativePath, input.FullName, item, extraction.Text)
+	if extraction.Text != "" {
+		if indexed {
+			counts.Indexed++
+		} else {
+			counts.IndexFailed++
+		}
+	}
+	return counts
+}
+
+func catalogResource(input *input) metacatalog.StorageResource {
+	return metacatalog.StorageResource{
+		RootName:     input.IndexRootName,
+		Path:         input.IndexPath,
+		FullPath:     input.FullName,
+		NodeType:     input.ItemType,
+		Format:       input.Detected.Format,
+		SizeBytes:    input.SizeBytes,
+		ObjectCount:  1,
+		LastModified: input.DataUpdatedAt,
+		CatalogPath:  input.CatalogPathFor(input.PhysicalPath),
+	}
+}
+
+func (p Processor) warn(message string, input *input, err error) {
+	if p.log == nil {
+		return
+	}
+	p.log.Warn(message, "path", input.PhysicalPath, "format", input.Detected.Format, "error", err)
+}
+
+func (p Processor) warnPath(message, path string, err error) {
+	if p.log == nil {
+		return
+	}
+	p.log.Warn(message, "path", path, "error", err)
+}
+
+func clearStaleKnownMultiTableAccessIndex(attrs map[string]interface{}, item *metaitem.DetectedItem) {
 	if attrs == nil || item == nil {
 		return
 	}

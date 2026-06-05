@@ -10,7 +10,6 @@ import (
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
-	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/meta/internal/metaattr"
 )
 
@@ -148,16 +147,14 @@ func upsertRefTableInfo(item *DetectedItem, tableInfo *format.TableDescribeResul
 	if item.Attributes == nil {
 		item.Attributes = map[string]interface{}{}
 	}
-	metaattr.UpsertNested(item.Attributes, "type_info", "table", datatype.TableInfoPayload(tableInfo.Table))
-	if len(tableInfo.FormatInfo) > 0 {
-		metaattr.UpsertNested(item.Attributes, "format_info", item.Format, tableInfo.FormatInfo)
-	}
-	if spatialPayload := datatype.SpatialInfoPayload(tableInfo.Spatial); len(spatialPayload) > 0 {
-		metaattr.UpsertNested(item.Attributes, "capabilities", "spatial", spatialPayload)
-	}
-	if tableInfo.AccessIndex != nil {
-		metaattr.UpsertNested(item.Attributes, "access_index", "table", commonJSON.MapFromStruct(tableInfo.AccessIndex))
-	}
+	metaattr.MergeStandardAttributes(item.Attributes, metaattr.TableDescribeAttributes(metaattr.TableDescribeAttributesInput{
+		FormatName:         item.Format,
+		Table:              tableInfo.Table,
+		FormatInfo:         tableInfo.FormatInfo,
+		Spatial:            tableInfo.Spatial,
+		AccessIndex:        tableInfo.AccessIndex,
+		IncludeAccessIndex: true,
+	}))
 }
 
 func EnrichKnownMultiTableItem(

@@ -13,7 +13,7 @@ import (
 )
 
 // DatabaseRuntime 数据库扫描运行时。
-// 职责：扫描关系型数据库（PostgreSQL、MySQL等）的Schema、Table、Field
+// 职责：扫描关系型数据库的 namespace、table 和 field。
 type DatabaseRuntime struct {
 	db           *gorm.DB
 	log          *slog.Logger
@@ -44,7 +44,7 @@ func NewDatabaseRuntime(db *gorm.DB, log *slog.Logger, repo *metaRepo.ScanReposi
 // 1. Schema节点管理：创建/更新Schema节点，管理扫描状态
 // 2. 表迭代处理：扫描所有表，判断是否需要更新
 // 3. 字段扫描：深度扫描时获取表字段信息
-// 4. 空间元数据：消费 engine CatalogFacts 中的空间事实
+// 4. 空间事实：消费 engine CatalogFacts 中的 spatial facts
 // 5. 搜索索引：将表资产信息同步到Meilisearch
 // 6. 软删除处理：清理已删除的表
 //

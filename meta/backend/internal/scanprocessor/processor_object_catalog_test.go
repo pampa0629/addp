@@ -38,7 +38,7 @@ func TestEnrichObjectStorageJSONTableUpdatesItemDataType(t *testing.T) {
 	}
 	item := metaitemForJSONDocument(resource)
 
-	result, err := New(repo, nil, slog.New(slog.NewTextHandler(io.Discard, nil))).Process(context.Background(), Input{
+	result, err := New(repo, nil, slog.New(slog.NewTextHandler(io.Discard, nil))).Process(context.Background(), input{
 		Resource:      &commonModels.Engine{ID: 7, EngineType: "static"},
 		TenantID:      1,
 		EngineID:      7,
@@ -76,14 +76,14 @@ func TestEnrichObjectStorageJSONTableUpdatesItemDataType(t *testing.T) {
 	}
 }
 
-func TestExtractCatalogDocumentTextWritesExtractionFacts(t *testing.T) {
+func TestDocumentTextExtractionWritesExtractionFacts(t *testing.T) {
 	t.Parallel()
 
 	resource := textExtractionResource("docs/readme.txt", format.FormatText, 64)
 	item := documentDetectedItem(format.FormatText)
 	attrs := models.JSONMap{"item": map[string]interface{}{"format": string(format.FormatText)}}
 
-	result := ExtractCatalogDocumentText(
+	result := extractCatalogDocumentText(
 		context.Background(),
 		attrs,
 		staticObjectContentReader{content: "hello document search"},
@@ -110,7 +110,7 @@ func TestExtractCatalogDocumentTextWritesExtractionFacts(t *testing.T) {
 	}
 }
 
-func TestExtractCatalogDocumentTextReadsDOCX(t *testing.T) {
+func TestDocumentTextExtractionReadsDOCX(t *testing.T) {
 	t.Parallel()
 
 	docxContent := minimalObjectCatalogDOCX(t, `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Hello</w:t></w:r><w:r><w:t> DOCX</w:t></w:r></w:p><w:p><w:r><w:t>Search body</w:t></w:r></w:p></w:body></w:document>`)
@@ -118,7 +118,7 @@ func TestExtractCatalogDocumentTextReadsDOCX(t *testing.T) {
 	item := documentDetectedItem(format.FormatDOCX)
 	attrs := models.JSONMap{"item": map[string]interface{}{"format": string(format.FormatDOCX)}}
 
-	result := ExtractCatalogDocumentText(
+	result := extractCatalogDocumentText(
 		context.Background(),
 		attrs,
 		staticObjectContentReader{content: string(docxContent)},
@@ -151,7 +151,7 @@ func TestExtractCatalogDocumentTextReadsDOCX(t *testing.T) {
 	}
 }
 
-func TestExtractCatalogDocumentTextReadsPPTX(t *testing.T) {
+func TestDocumentTextExtractionReadsPPTX(t *testing.T) {
 	t.Parallel()
 
 	pptxContent := minimalObjectCatalogPPTX(t, map[string]string{
@@ -162,7 +162,7 @@ func TestExtractCatalogDocumentTextReadsPPTX(t *testing.T) {
 	item := documentDetectedItem(format.FormatPPTX)
 	attrs := models.JSONMap{"item": map[string]interface{}{"format": string(format.FormatPPTX)}}
 
-	result := ExtractCatalogDocumentText(
+	result := extractCatalogDocumentText(
 		context.Background(),
 		attrs,
 		staticObjectContentReader{content: string(pptxContent)},
@@ -189,14 +189,14 @@ func TestExtractCatalogDocumentTextReadsPPTX(t *testing.T) {
 	}
 }
 
-func TestExtractCatalogDocumentTextMarksUnsupportedWithoutReader(t *testing.T) {
+func TestDocumentTextExtractionMarksUnsupportedWithoutReader(t *testing.T) {
 	t.Parallel()
 
 	resource := textExtractionResource("docs/raw.wps", format.FormatWPS, 16)
 	item := documentDetectedItem(format.FormatWPS)
 	attrs := models.JSONMap{"item": map[string]interface{}{"format": string(format.FormatWPS)}}
 
-	result := ExtractCatalogDocumentText(
+	result := extractCatalogDocumentText(
 		context.Background(),
 		attrs,
 		staticObjectContentReader{content: "binary content"},
@@ -229,20 +229,20 @@ func TestExtractCatalogDocumentTextMarksUnsupportedWithoutReader(t *testing.T) {
 	}
 }
 
-func TestComputeContentSHA256WritesStorageContentHash(t *testing.T) {
+func TestContentSHA256WritesStorageContentHash(t *testing.T) {
 	t.Parallel()
 
 	attrs := models.JSONMap{}
-	hash, err := ComputeContentSHA256(
+	hash, err := computeContentSHA256(
 		context.Background(),
 		staticObjectContentReader{content: "binary content"},
 		nil,
 		plugin.ObjectItemPath(7, "addp", "docs/raw.wps"),
 	)
 	if err != nil {
-		t.Fatalf("ComputeContentSHA256() error = %v", err)
+		t.Fatalf("computeContentSHA256() error = %v", err)
 	}
-	SetStorageContentHash(attrs, hash)
+	setStorageContentHash(attrs, hash)
 
 	if got := commonJSON.String(attrs, "storage", "content_hash"); got != "93a0b24644f2e0fd11d6b422c90275c482b0cc20be4a4e3f62148ed2932b4792" {
 		t.Fatalf("storage.content_hash = %q", got)

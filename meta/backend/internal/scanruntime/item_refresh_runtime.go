@@ -4,12 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"github.com/addp/common/dataitem"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
+	"github.com/addp/meta/internal/metapath"
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/scanflow"
@@ -18,11 +19,11 @@ import (
 
 type ItemRefreshRuntime struct {
 	repo    *metaRepo.ScanRepository
-	indexer scanprocessor.AssetIndexer
+	indexer RuntimeIndexer
 	log     *slog.Logger
 }
 
-func NewItemRefreshRuntime(repo *metaRepo.ScanRepository, indexer scanprocessor.AssetIndexer, log *slog.Logger) *ItemRefreshRuntime {
+func NewItemRefreshRuntime(repo *metaRepo.ScanRepository, indexer RuntimeIndexer, log *slog.Logger) *ItemRefreshRuntime {
 	return &ItemRefreshRuntime{
 		repo:    repo,
 		indexer: indexer,
@@ -64,6 +65,10 @@ func (r *ItemRefreshRuntime) RefreshKnownItem(
 	if err != nil {
 		return scanprocessor.Result{}, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
 	}
+	if result, handled, err := r.refreshKnownCatalogFactsItem(ctx, resource, tenantID, p, item, parentNode); handled || err != nil {
+		return result, err
+	}
+
 	contentReader, ok := p.(plugin.ContentReadableProvider)
 	if !ok {
 		return scanprocessor.Result{}, fmt.Errorf("engine %s does not implement ContentReadableProvider", resource.EngineType)
@@ -84,30 +89,109 @@ func (r *ItemRefreshRuntime) RefreshKnownItem(
 
 	attrs := metaattr.JSONMap(cloneJSONMap(item.Attributes))
 	restoreKnownItemStorage(attrs, descriptor, &item)
-	return scanprocessor.New(r.repo, r.indexer, r.log).Process(ctx, scanprocessor.Input{
-		Resource:           resource,
-		TenantID:           tenantID,
-		EngineID:           resource.ID,
-		ParentNode:         &parentNode,
-		ExistingItemID:     item.ID,
-		ItemType:           item.ItemType,
-		ItemName:           item.Name,
-		FullName:           item.FullName,
-		Attributes:         attrs,
-		Detected:           scanflow.KnownItemDetectedItem(&item, descriptor),
-		ContentReader:      contentReader,
-		ConnInfo:           connInfo,
-		CatalogPathFor:     catalogPathFor,
-		PhysicalPath:       physicalPath,
-		IndexRootName:      descriptor.StorageBucket,
-		IndexPath:          indexPath,
-		IndexRelativePath:  strings.Trim(indexPath, "/"),
-		SizeBytes:          scanflow.KnownItemSize(descriptor, &item),
-		DataUpdatedAt:      item.DataUpdatedAt,
-		ScanDepth:          scanflow.ScanDepthDeep,
-		IncludeAccessIndex: true,
-		StrictDeepEnrich:   true,
-	})
+	return scanprocessor.New(r.repo, r.indexer, r.log).Process(ctx, scanprocessor.KnownItemInput(
+		resource,
+		tenantID,
+		&parentNode,
+		item,
+		attrs,
+		scanflow.KnownItemDetectedItem(&item, descriptor),
+		contentReader,
+		connInfo,
+		catalogPathFor,
+		physicalPath,
+		descriptor.StorageBucket,
+		indexPath,
+		scanflow.KnownItemSize(descriptor, &item),
+	))
+}
+
+func (r *ItemRefreshRuntime) refreshKnownCatalogFactsItem(
+	ctx context.Context,
+	resource *commonModels.Engine,
+	tenantID uint,
+	p plugin.EnginePlugin,
+	item models.MetaItem,
+	parentNode models.MetaNode,
+) (scanprocessor.Result, bool, error) {
+	if scanflow.CatalogLeafTermForPlugin(p, "") != plugin.CatalogTermTable || item.ItemType != plugin.CatalogTermTable {
+		return scanprocessor.Result{}, false, nil
+	}
+	factsProvider, ok := p.(plugin.CatalogFactsProvider)
+	if !ok {
+		return scanprocessor.Result{}, true, fmt.Errorf("engine %s does not implement CatalogFactsProvider", resource.EngineType)
+	}
+
+	schemaName := parentNode.FullName
+	if schemaName == "" {
+		schemaName = parentNode.Name
+	}
+	if schemaName == "" || item.Name == "" {
+		return scanprocessor.Result{}, true, fmt.Errorf("table refresh target is incomplete; rescan the parent node")
+	}
+
+	namespaceTerm := scanflow.NamespaceTermForPlugin(p)
+	path := plugin.TabularItemPath(resource.ID, namespaceTerm, schemaName, item.Name)
+	facts, err := factsProvider.DescribeCatalogFacts(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), path, plugin.CatalogFactsOptions{IncludeSpatialFacts: true})
+	if err != nil {
+		return scanprocessor.Result{}, true, fmt.Errorf("字段扫描失败: %w", err)
+	}
+
+	tableInfo := datatype.TableInfo{}
+	if existingTableInfo := tableInfoFromMetaAttributes(item.Attributes); existingTableInfo != nil {
+		tableInfo = *existingTableInfo
+	}
+	tableInfo.Name = item.Name
+	if factsTable := plugin.CatalogFactsTableInfo(facts); factsTable != nil {
+		tableInfo = mergeDatabaseTableInfo(tableInfo, *factsTable)
+	}
+	tableInfo.Kind = normalizedTableKind(tableInfo)
+	primaryKeyColumns := []string{}
+	for _, field := range tableInfo.Fields {
+		if field.PrimaryKey {
+			primaryKeyColumns = append(primaryKeyColumns, field.Name)
+		}
+	}
+	tableInfo.PrimaryKey = primaryKeyColumns
+
+	attrs := tableItemAttributes(schemaName, tableInfo)
+	if item.Attributes != nil {
+		attrs = metaattr.JSONMap(cloneJSONMap(item.Attributes))
+	}
+	metaattr.SetStorage(attrs, "schema_name", schemaName)
+	metaattr.ApplyTableItemAttributes(attrs, &tableInfo)
+	if spatialInfo := plugin.CatalogFactsSpatialInfo(facts); spatialInfo != nil {
+		metaattr.MergeStandardAttributes(attrs, metaattr.TableDescribeAttributes(metaattr.TableDescribeAttributesInput{
+			Spatial: spatialInfo,
+		}))
+	}
+
+	fullName := metapath.ComposeNodeFullName(tableInfo.Name, &parentNode, ".")
+	rowCount := derefInt64Ptr(tableInfo.RowCount)
+	sizeBytes := derefInt64Ptr(tableInfo.SizeBytes)
+	refreshed, err := r.repo.UpdateItemByIDWithDepth(
+		tenantID,
+		item.ID,
+		resource.ID,
+		&parentNode,
+		item.ItemType,
+		tableInfo.Name,
+		fullName,
+		attrs,
+		&rowCount,
+		&sizeBytes,
+		tableInfo.UpdatedAt,
+		scanflow.ScanDepthDeep,
+	)
+	if err != nil {
+		return scanprocessor.Result{}, true, err
+	}
+
+	if r.indexer != nil {
+		r.indexer.IndexTableAsset(resource, tenantID, schemaName, tableInfo, tableInfo.Fields, refreshed)
+	}
+
+	return scanprocessor.Result{Item: refreshed, Fields: len(tableInfo.Fields)}, true, nil
 }
 
 func restoreKnownItemStorage(attrs models.JSONMap, descriptor dataitem.ItemDescriptor, item *models.MetaItem) {

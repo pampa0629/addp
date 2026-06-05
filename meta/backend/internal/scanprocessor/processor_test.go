@@ -178,7 +178,7 @@ func TestObjectSingleDetectedItemInputKeepsEnhancedAttrsAndStorageFacts(t *testi
 	}
 }
 
-func TestClearStaleKnownMultiTableAccessIndexUsesLayoutSemantics(t *testing.T) {
+func TestKnownMultiTableRefreshClearsStaleAccessIndex(t *testing.T) {
 	t.Parallel()
 
 	multiAttrs := map[string]interface{}{
@@ -191,7 +191,7 @@ func TestClearStaleKnownMultiTableAccessIndexUsesLayoutSemantics(t *testing.T) {
 			"table": map[string]interface{}{"kind": "stale-item"},
 		},
 	}
-	ClearStaleKnownMultiTableAccessIndex(multiAttrs, &metaitem.DetectedItem{
+	clearStaleKnownMultiTableAccessIndex(multiAttrs, &metaitem.DetectedItem{
 		ResolvedItem: dataitem.ResolvedItem{
 			Layout:   format.LayoutMulti,
 			DataType: datatype.Table,
@@ -215,7 +215,7 @@ func TestClearStaleKnownMultiTableAccessIndexUsesLayoutSemantics(t *testing.T) {
 			"table": map[string]interface{}{"kind": "keep"},
 		},
 	}
-	ClearStaleKnownMultiTableAccessIndex(singleAttrs, &metaitem.DetectedItem{
+	clearStaleKnownMultiTableAccessIndex(singleAttrs, &metaitem.DetectedItem{
 		ResolvedItem: dataitem.ResolvedItem{
 			Layout:   format.LayoutSingle,
 			DataType: datatype.Table,

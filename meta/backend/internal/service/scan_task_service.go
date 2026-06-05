@@ -8,7 +8,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// ScanTaskService 管理扫描任务定义与扫描配置同步
+// ScanTaskService 管理扫描任务定义和 Console 提交的 engine 扫描策略绑定。
 type ScanTaskService struct {
 	db          *gorm.DB
 	log         *slog.Logger

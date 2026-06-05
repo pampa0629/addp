@@ -25,11 +25,11 @@ func (s *ScanTaskService) nextTimeFromSpec(spec string, from time.Time) *time.Ti
 }
 
 // UpsertEngineScanTaskFromPolicy 根据 Console 提交的 engine 扫描策略创建或更新绑定任务。
-func (s *ScanTaskService) UpsertEngineScanTaskFromPolicy(tenantID, userID, engineID uint, engineName string, scanConfig *commonModels.ScanConfig) (*models.ScanTask, error) {
+func (s *ScanTaskService) UpsertEngineScanTaskFromPolicy(tenantID, userID, engineID uint, engineName string, scanPolicy *commonModels.ScanConfig) (*models.ScanTask, error) {
 	if engineID == 0 {
 		return nil, errors.New("engine_id 不能为空")
 	}
-	if scanConfig == nil || !scanConfig.Enabled || !scanConfig.ScheduledScan {
+	if scanPolicy == nil || !scanPolicy.Enabled || !scanPolicy.ScheduledScan {
 		return nil, s.DeleteEngineTaskBinding(tenantID, engineID)
 	}
 
@@ -37,7 +37,7 @@ func (s *ScanTaskService) UpsertEngineScanTaskFromPolicy(tenantID, userID, engin
 	findErr := s.db.Where("engine_id = ? AND tenant_id = ? AND owner_module = ? AND owner_ref = ?",
 		engineID, tenantID, "system", scantask.AutomaticTaskOwnerRef(engineID)).First(&existingTask).Error
 
-	cronExpr, err := scantask.BuildCronExpressionFromScanConfig(s.exprBuilder, scanConfig)
+	cronExpr, err := scantask.BuildCronExpressionFromPolicy(s.exprBuilder, scanPolicy)
 	if err != nil {
 		return nil, fmt.Errorf("构建 Cron 表达式失败: %w", err)
 	}
@@ -51,7 +51,7 @@ func (s *ScanTaskService) UpsertEngineScanTaskFromPolicy(tenantID, userID, engin
 	if strings.TrimSpace(taskName) == "" {
 		taskName = fmt.Sprintf("Engine %d", engineID)
 	}
-	scanDepth := strings.TrimSpace(scanConfig.ScanDepth)
+	scanDepth := strings.TrimSpace(scanPolicy.ScanDepth)
 	if scanDepth == "" {
 		scanDepth = scantask.DefaultEngineTaskScanDepth
 	}

@@ -12,7 +12,7 @@ import (
 	"github.com/addp/meta/internal/scanprocessor"
 )
 
-func (s *FilesystemCatalogRuntime) PersistFileCatalogDetectedItem(
+func (s *FilesystemCatalogRuntime) persistFileCatalogDetectedItem(
 	ctx context.Context,
 	resource *commonModels.Engine,
 	tenantID uint,

@@ -130,7 +130,6 @@ func (s *ScanService) ScanEngineWithOptions(opts scanflow.Options) (*models.Scan
 	}
 
 	startFields := append(connectionLogFields(resource),
-		"mode", "manual",
 		"scope_mode", string(scope.Mode),
 		"scan_depth", scope.ScanDepth,
 		"force", scope.Force,

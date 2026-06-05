@@ -1,11 +1,29 @@
 package datatype
 
-import commonJSON "github.com/addp/common/jsonmap"
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"strings"
+
+	commonJSON "github.com/addp/common/jsonmap"
+)
+
+const (
+	CRSDefinitionEncodingWKT     = "wkt"
+	CRSDefinitionEncodingESRIWKT = "esri_wkt"
+	CRSDefinitionEncodingProj4   = "proj4"
+
+	CRSDefinitionSourcePostGISSpatialRefSys = "postgis_spatial_ref_sys"
+	CRSDefinitionSourceSidecarPRJ           = "sidecar_prj"
+	CRSDefinitionSourceGeoPackageSRS        = "geopackage_srs"
+)
 
 // SpatialInfo describes spatial facts that cut across data types.
 type SpatialInfo struct {
 	SRID                  *int                 `json:"srid,omitempty"`
-	CRS                   string               `json:"crs,omitempty"`
+	CRSRef                string               `json:"crs_ref,omitempty"`
+	CRSDefinitions        []CRSDefinition      `json:"crs_definitions,omitempty"`
 	GeometryColumns       []GeometryColumnInfo `json:"geometry_columns,omitempty"`
 	PrimaryGeometryColumn string               `json:"primary_geometry_column,omitempty"`
 	Extent                *BoundingBox         `json:"extent,omitempty"`
@@ -13,12 +31,20 @@ type SpatialInfo struct {
 	IndexName             string               `json:"index_name,omitempty"`
 }
 
+// CRSDefinition describes the CRS definition text that can be registered by a consumer.
+type CRSDefinition struct {
+	ID                 string `json:"id,omitempty"`
+	DefinitionEncoding string `json:"definition_encoding,omitempty"`
+	Definition         string `json:"definition,omitempty"`
+	Source             string `json:"source,omitempty"`
+}
+
 // GeometryColumnInfo describes one spatial field.
 type GeometryColumnInfo struct {
 	Name         string `json:"name,omitempty"`
 	GeometryType string `json:"geometry_type,omitempty"`
 	SRID         *int   `json:"srid,omitempty"`
-	CRS          string `json:"crs,omitempty"`
+	CRSRef       string `json:"crs_ref,omitempty"`
 	Dimension    *int   `json:"dimension,omitempty"`
 	Nullable     *bool  `json:"nullable,omitempty"`
 }
@@ -64,7 +90,8 @@ func SpatialInfoFromPayload(payload map[string]interface{}) *SpatialInfo {
 	info := &SpatialInfo{
 		GeometryColumns:       geometryColumns,
 		PrimaryGeometryColumn: primaryName,
-		CRS:                   commonJSON.InterfaceString(payload["crs"]),
+		CRSRef:                commonJSON.InterfaceString(payload["crs_ref"]),
+		CRSDefinitions:        crsDefinitionsFromPayload(payload),
 		IndexName:             commonJSON.InterfaceString(payload["index_name"]),
 	}
 	if srid := int(commonJSON.InterfaceInt64(payload["srid"])); srid > 0 {
@@ -78,7 +105,7 @@ func SpatialInfoFromPayload(payload map[string]interface{}) *SpatialInfo {
 		boundingBox := BoundingBox{extent[0], extent[1], extent[2], extent[3]}
 		info.Extent = &boundingBox
 	}
-	if primaryName == "" && len(geometryColumns) == 0 && info.SRID == nil && info.CRS == "" && info.Extent == nil && info.HasSpatialIndex == nil && info.IndexName == "" {
+	if primaryName == "" && len(geometryColumns) == 0 && info.SRID == nil && info.CRSRef == "" && len(info.CRSDefinitions) == 0 && info.Extent == nil && info.HasSpatialIndex == nil && info.IndexName == "" {
 		return nil
 	}
 	return info
@@ -90,21 +117,18 @@ func SpatialInfoPayload(info *SpatialInfo) map[string]interface{} {
 		return nil
 	}
 	srid := info.SRID
-	crs := info.CRS
+	crsRef := strings.TrimSpace(info.CRSRef)
 	if len(info.GeometryColumns) == 1 && info.GeometryColumns[0].Name == "" {
 		if srid == nil {
 			srid = info.GeometryColumns[0].SRID
 		}
-		if crs == "" {
-			crs = info.GeometryColumns[0].CRS
+		if crsRef == "" {
+			crsRef = strings.TrimSpace(info.GeometryColumns[0].CRSRef)
 		}
-	}
-	if srid != nil {
-		crs = ""
 	}
 	payload := commonJSON.MapFromStruct(spatialInfoPayload{
 		SRID:                  srid,
-		CRS:                   crs,
+		CRSRef:                crsRef,
 		PrimaryGeometryColumn: info.PrimaryGeometryColumn,
 		HasSpatialIndex:       info.HasSpatialIndex,
 		IndexName:             info.IndexName,
@@ -118,6 +142,9 @@ func SpatialInfoPayload(info *SpatialInfo) map[string]interface{} {
 			payload["geometry_columns"] = geometryColumns
 		}
 	}
+	if definitions := crsDefinitionPayloads(info.CRSDefinitions); len(definitions) > 0 {
+		payload["crs_definitions"] = definitions
+	}
 	if info.Extent != nil {
 		bbox := *info.Extent
 		payload["extent"] = []float64{bbox[0], bbox[1], bbox[2], bbox[3]}
@@ -130,7 +157,7 @@ func SpatialInfoPayload(info *SpatialInfo) map[string]interface{} {
 
 type spatialInfoPayload struct {
 	SRID                  *int   `json:"srid,omitempty"`
-	CRS                   string `json:"crs,omitempty"`
+	CRSRef                string `json:"crs_ref,omitempty"`
 	PrimaryGeometryColumn string `json:"primary_geometry_column,omitempty"`
 	HasSpatialIndex       *bool  `json:"has_spatial_index,omitempty"`
 	IndexName             string `json:"index_name,omitempty"`
@@ -140,7 +167,7 @@ type geometryColumnPayload struct {
 	Name         string `json:"name,omitempty"`
 	GeometryType string `json:"geometry_type,omitempty"`
 	SRID         *int   `json:"srid,omitempty"`
-	CRS          string `json:"crs,omitempty"`
+	CRSRef       string `json:"crs_ref,omitempty"`
 	Dimension    *int   `json:"dimension,omitempty"`
 	Nullable     *bool  `json:"nullable,omitempty"`
 }
@@ -157,7 +184,7 @@ func geometryColumnsFromPayload(payload map[string]interface{}) []GeometryColumn
 		column := GeometryColumnInfo{
 			Name:         name,
 			GeometryType: commonJSON.InterfaceString(columnPayload["geometry_type"]),
-			CRS:          commonJSON.InterfaceString(columnPayload["crs"]),
+			CRSRef:       commonJSON.InterfaceString(columnPayload["crs_ref"]),
 		}
 		if srid := int(commonJSON.InterfaceInt64(columnPayload["srid"])); srid > 0 {
 			column.SRID = &srid
@@ -180,15 +207,11 @@ func geometryColumnPayloads(columns []GeometryColumnInfo) []map[string]interface
 		if column.Name == "" {
 			continue
 		}
-		crs := column.CRS
-		if column.SRID != nil {
-			crs = ""
-		}
 		payload := commonJSON.MapFromStruct(geometryColumnPayload{
 			Name:         column.Name,
 			GeometryType: column.GeometryType,
 			SRID:         column.SRID,
-			CRS:          crs,
+			CRSRef:       strings.TrimSpace(column.CRSRef),
 			Dimension:    column.Dimension,
 			Nullable:     column.Nullable,
 		})
@@ -207,7 +230,8 @@ func (s *SpatialInfo) Clone() *SpatialInfo {
 	}
 	cloned := &SpatialInfo{
 		SRID:                  cloneIntPtr(s.SRID),
-		CRS:                   s.CRS,
+		CRSRef:                s.CRSRef,
+		CRSDefinitions:        append([]CRSDefinition(nil), s.CRSDefinitions...),
 		GeometryColumns:       make([]GeometryColumnInfo, 0, len(s.GeometryColumns)),
 		PrimaryGeometryColumn: s.PrimaryGeometryColumn,
 		IndexName:             s.IndexName,
@@ -245,6 +269,113 @@ func cloneIntPtr(value *int) *int {
 	}
 	cloned := *value
 	return &cloned
+}
+
+func crsDefinitionsFromPayload(payload map[string]interface{}) []CRSDefinition {
+	items := commonJSON.InterfaceSlice(payload["crs_definitions"])
+	definitions := make([]CRSDefinition, 0, len(items))
+	for _, item := range items {
+		definitionPayload := commonJSON.InterfaceMap(item)
+		definition := CRSDefinition{
+			ID:                 commonJSON.InterfaceString(definitionPayload["id"]),
+			DefinitionEncoding: commonJSON.InterfaceString(definitionPayload["definition_encoding"]),
+			Definition:         commonJSON.InterfaceString(definitionPayload["definition"]),
+			Source:             commonJSON.InterfaceString(definitionPayload["source"]),
+		}
+		if definition.ID == "" || definition.DefinitionEncoding == "" || definition.Definition == "" {
+			continue
+		}
+		definitions = append(definitions, definition)
+	}
+	return definitions
+}
+
+func crsDefinitionPayloads(definitions []CRSDefinition) []map[string]interface{} {
+	result := make([]map[string]interface{}, 0, len(definitions))
+	seen := map[string]struct{}{}
+	for _, definition := range definitions {
+		definition.ID = strings.TrimSpace(definition.ID)
+		definition.DefinitionEncoding = strings.TrimSpace(definition.DefinitionEncoding)
+		definition.Definition = strings.TrimSpace(definition.Definition)
+		definition.Source = strings.TrimSpace(definition.Source)
+		if definition.ID == "" || definition.DefinitionEncoding == "" || definition.Definition == "" {
+			continue
+		}
+		if _, ok := seen[definition.ID]; ok {
+			continue
+		}
+		seen[definition.ID] = struct{}{}
+		payload := commonJSON.MapFromStruct(definition)
+		if len(payload) > 0 {
+			result = append(result, payload)
+		}
+	}
+	return result
+}
+
+// EPSGCRSRef returns the canonical ADDP CRS reference for an EPSG code.
+func EPSGCRSRef(srid int) string {
+	if srid <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("EPSG:%d", srid)
+}
+
+// CustomCRSRef returns a deterministic ADDP CRS reference for definition text without an EPSG code.
+func CustomCRSRef(definition string) string {
+	trimmed := strings.TrimSpace(definition)
+	if trimmed == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(trimmed))
+	return "ADDP:CRS:" + hex.EncodeToString(sum[:])
+}
+
+// CRSRefFromAuthority returns an ADDP CRS reference from an authority/code pair or definition text.
+func CRSRefFromAuthority(authority string, code int, definition string) string {
+	if strings.EqualFold(strings.TrimSpace(authority), "EPSG") && code > 0 {
+		return EPSGCRSRef(code)
+	}
+	return CustomCRSRef(definition)
+}
+
+// CRSDefinitionByID returns a CRS definition by ID.
+func (s *SpatialInfo) CRSDefinitionByID(id string) *CRSDefinition {
+	if s == nil {
+		return nil
+	}
+	target := strings.TrimSpace(id)
+	if target == "" {
+		return nil
+	}
+	for i := range s.CRSDefinitions {
+		if strings.TrimSpace(s.CRSDefinitions[i].ID) == target {
+			return &s.CRSDefinitions[i]
+		}
+	}
+	return nil
+}
+
+// PrimaryCRSRef returns the CRS reference for the primary spatial fact.
+func (s *SpatialInfo) PrimaryCRSRef() string {
+	if s == nil {
+		return ""
+	}
+	if primary := s.PrimaryGeometry(); primary != nil {
+		if ref := strings.TrimSpace(primary.CRSRef); ref != "" {
+			return ref
+		}
+		if primary.SRID != nil && *primary.SRID > 0 {
+			return EPSGCRSRef(*primary.SRID)
+		}
+	}
+	if ref := strings.TrimSpace(s.CRSRef); ref != "" {
+		return ref
+	}
+	if s.SRID != nil && *s.SRID > 0 {
+		return EPSGCRSRef(*s.SRID)
+	}
+	return ""
 }
 
 // PrimaryGeometry returns the primary geometry column when it can be determined.

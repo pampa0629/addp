@@ -12,7 +12,7 @@ import (
 )
 
 func (d *CatalogDispatcher) dispatchBranchLeafScan(ctx context.Context, enginePlugin plugin.EnginePlugin, req scanflow.DispatchRequest) (scanflow.DispatchResult, error) {
-	catalogNodes, items, fields, err := d.scanBranchLeaves(ctx, enginePlugin, req.Resource, req.TenantID, scanflow.TopCatalogTargets(req.CatalogPaths), req.ScanDepth, req.Force, req.Reporter)
+	catalogNodes, items, fields, err := d.scanBranchLeaves(ctx, enginePlugin, req.Resource, req.TenantID, scanflow.TopCatalogTargets(req.CatalogPaths), req.ScanDepth, req.Force, req.Mode, req.Reporter)
 	if err == nil {
 		d.finalizeCatalogRootAfterScan(req.Resource, req.TenantID, items, req.ScanDepth)
 	}
@@ -27,6 +27,7 @@ func (d *CatalogDispatcher) scanBranchLeaves(
 	branchNames []string,
 	scanDepth string,
 	force bool,
+	mode scanflow.DispatchMode,
 	reporter scanflow.ProgressReporter,
 ) (int, int, int, error) {
 	resourceID := resource.ID
@@ -35,7 +36,7 @@ func (d *CatalogDispatcher) scanBranchLeaves(
 		"tenant_id", tenantID,
 		"resource_name", resource.Name,
 		"resource_type", resource.EngineType,
-		"mode", "manual",
+		"mode", string(mode),
 		"scan_depth", scanDepth,
 	}
 

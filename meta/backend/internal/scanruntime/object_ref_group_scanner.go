@@ -1,4 +1,4 @@
-package scanadapter
+package scanruntime
 
 import (
 	"context"
@@ -12,14 +12,9 @@ import (
 	"github.com/addp/meta/internal/scanflow"
 )
 
-type ObjectRefGroupPersister interface {
-	DetectObjectCatalogResourceFormats(ctx context.Context, readableProvider plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, resources []metacatalog.StorageResource)
-	PersistObjectCatalogCompositeItems(resource *commonModels.Engine, tenantID, engineID uint, bucketNode, basePrefixNode *models.MetaNode, items []metacatalog.ObjectCatalogCompositeItem, stats map[uint]*ObjectCatalogNodeAggregate, includeBucketAggregate bool, scanPathPrefix string, scannedFingerprints map[string]bool, itemTerm string, readableProvider plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, scanDepth string) (int, scanflow.ExtractionCounts, error)
-}
-
-func ScanObjectRefGroups(
+func scanObjectRefGroups(
 	ctx context.Context,
-	persister ObjectRefGroupPersister,
+	runtime *ObjectStorageCatalogRuntime,
 	repo *metaRepo.ScanRepository,
 	resource *commonModels.Engine,
 	tenantID uint,
@@ -44,7 +39,7 @@ func ScanObjectRefGroups(
 	}
 
 	result := scanflow.DispatchResult{}
-	stats := map[uint]*ObjectCatalogNodeAggregate{}
+	stats := map[uint]*scanflow.ObjectCatalogNodeAggregate{}
 	seenBuckets := map[string]*models.MetaNode{}
 	scannedFingerprints := map[string]bool{}
 
@@ -76,7 +71,7 @@ func ScanObjectRefGroups(
 		if err != nil {
 			return result, err
 		}
-		persister.DetectObjectCatalogResourceFormats(ctx, contentReader, connInfo, resources)
+		runtime.detectObjectCatalogResourceFormats(ctx, contentReader, connInfo, resources)
 
 		candidates := scanflow.ObjectRefGroupCandidateSet(resource.ID, bucket, objectPath, resources)
 		detection, err := scanflow.ResolveContentCandidates(ctx, contentReader, connInfo, resource.ID, candidates)
@@ -95,7 +90,7 @@ func ScanObjectRefGroups(
 				Claims: detection.Claims,
 			})
 		}
-		count, extractionStats, err := persister.PersistObjectCatalogCompositeItems(resource, tenantID, resource.ID, bucketNode, bucketNode, composites, stats, false, candidates.DirPath, scannedFingerprints, itemTerm, contentReader, connInfo, scanDepth)
+		count, extractionStats, err := runtime.persistObjectCatalogCompositeItems(resource, tenantID, resource.ID, bucketNode, bucketNode, composites, stats, false, candidates.DirPath, scannedFingerprints, itemTerm, contentReader, connInfo, scanDepth)
 		if err != nil {
 			return result, err
 		}

@@ -21,6 +21,6 @@ PostGIS 相关工具包括：
 - 普通 Manager / Meta / Transfer / Service 后端不通过 `common/spatial` 做通用 CRS transform。
 - PostGIS MVT、物化视图、工作流引擎等明确归属于具体引擎或运行环境的路径，可以使用该引擎自身的 CRS transform 能力。
 - SRID=0 表示 CRS 未知，不得当作 `EPSG:4326` 或可直接渲染处理。
-- GeoJSON / geometry 普通预览使用源坐标表达，并通过 `source_srid`、`source_crs`、`transform_status`、`preview_hint` 说明消费状态。
+- GeoJSON / geometry 普通预览使用源坐标表达，并通过 `source_srid`、`source_crs`、`source_crs_definition`、`transform_status`、`preview_hint` 说明消费状态。
 
 `common/spatial` 不依赖 `common/duckdb`。DuckDB spatial 扩展属于 DuckDB 自身能力，不作为通用空间转换 fallback。

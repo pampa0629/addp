@@ -14,6 +14,7 @@ func FieldsFromMetaItem(item models.MetaItem) ([]datatype.FieldInfo, error) {
 	return append([]datatype.FieldInfo(nil), info.Fields...), nil
 }
 
+// SpatialMetadataFromItem projects stored spatial facts and table info into the GIS-facing spatial metadata response.
 func SpatialMetadataFromItem(item models.MetaItem) (*models.SpatialMetadataResponse, error) {
 	spatialMeta := &models.SpatialMetadataResponse{
 		Fields: []datatype.FieldInfo{},
@@ -50,6 +51,10 @@ func applySpatialInfo(spatialMeta *models.SpatialMetadataResponse, spatialInfo *
 		if primary.SRID != nil {
 			spatialMeta.SRID = *primary.SRID
 		}
+	}
+	spatialMeta.CRSRef = spatialInfo.PrimaryCRSRef()
+	if definition := spatialInfo.CRSDefinitionByID(spatialMeta.CRSRef); definition != nil {
+		spatialMeta.CRSDefinition = definition
 	}
 	if spatialMeta.SRID == 0 && spatialInfo.SRID != nil {
 		spatialMeta.SRID = *spatialInfo.SRID

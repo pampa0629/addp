@@ -30,6 +30,6 @@ func NewRuntimes(
 		FilesystemCatalog: NewFilesystemCatalogRuntime(db, log, repo, indexer),
 		ItemRefresh:       NewItemRefreshRuntime(repo, indexer, log),
 	}
-	runtimes.ContentCatalogScanner = NewContentCatalogScanner(runtimes.ObjectCatalog, runtimes.FilesystemCatalog)
+	runtimes.ContentCatalogScanner = NewRuntimeContentCatalogScanner(runtimes.ObjectCatalog, runtimes.FilesystemCatalog)
 	return runtimes
 }

@@ -2,11 +2,13 @@ package scanruntime
 
 import (
 	"context"
+	"strings"
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
+	_ "github.com/addp/common/format/builtin"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/meta/internal/metaquery"
 )
 
 func (s *DatabaseRuntime) describeTableFacts(
@@ -64,10 +66,25 @@ func normalizeDatabaseFields(input []datatype.FieldInfo) []datatype.FieldInfo {
 			nativeType = string(field.Type)
 		}
 		field.NativeType = nativeType
-		field.Type = datatype.FieldType(metaquery.StandardizeFieldType(nativeType, string(field.Type)))
+		field.Type = standardizeDatabaseFieldType(nativeType, string(field.Type))
 		fields = append(fields, field)
 	}
 	return fields
+}
+
+func standardizeDatabaseFieldType(nativeType, fieldType string) datatype.FieldType {
+	if nativeType == "" && fieldType == "" {
+		return datatype.FieldTypeUnknown
+	}
+	typeToMap := nativeType
+	if typeToMap == "" {
+		typeToMap = fieldType
+	}
+	mapped := format.InferCommonFieldType(strings.ToLower(strings.TrimSpace(typeToMap)))
+	if mapped == "" || mapped == datatype.FieldTypeUnknown {
+		return datatype.FieldTypeString
+	}
+	return mapped
 }
 
 func primaryKeyFieldNames(fields []datatype.FieldInfo) []string {

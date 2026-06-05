@@ -175,6 +175,8 @@ func stringSlice(value interface{}) []string {
 	}
 }
 
+// attributeSectionsForKey 仅用于 Manager 已持有 Meta snapshot 时的展示/预览字段读取。
+// 新的跨模块查询语义应优先由 Meta API 提供，不应通过在这里追加 key 来绕过 Meta 边界。
 func attributeSectionsForKey(key string) []string {
 	switch key {
 	case "layout", "data_type", "format", "refs", "file_count", "scope_exclusive", "claim_policy":

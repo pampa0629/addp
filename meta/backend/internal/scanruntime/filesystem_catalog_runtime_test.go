@@ -24,9 +24,9 @@ func TestEnsureFilesystemScanRootUsesDirectoryNodeForNonRootPath(t *testing.T) {
 	svc := NewFilesystemCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
 
 	resource := &commonModels.Engine{ID: 26, Name: "NFS Demo", EngineType: "nfs"}
-	rootNode, scanNode, err := svc.EnsureFilesystemScanRoot(1, resource, filesystemScanTestProvider{}, "shp")
+	rootNode, scanNode, err := svc.ensureFilesystemScanRoot(1, resource, filesystemScanTestProvider{}, "shp")
 	if err != nil {
-		t.Fatalf("EnsureFilesystemScanRoot() error = %v", err)
+		t.Fatalf("ensureFilesystemScanRoot() error = %v", err)
 	}
 	if rootNode.Name != "NFS Demo" || rootNode.FullName != "" {
 		t.Fatalf("root node name/fullName = %q/%q, want engine name and empty full_name", rootNode.Name, rootNode.FullName)
@@ -112,12 +112,12 @@ func TestFilesystemScanRootDoesNotPromoteRootFilesToNodes(t *testing.T) {
 	})
 	resource := &commonModels.Engine{ID: 26, Name: "Business NFS", EngineType: provider.Type()}
 
-	roots, items, _, err := svc.ScanPaths(resource, 1, nil, models.ScannedDepthBasic, true, nil)
+	result, err := svc.ScanPaths(resource, 1, nil, models.ScannedDepthBasic, true, nil)
 	if err != nil {
 		t.Fatalf("ScanPaths() error = %v", err)
 	}
-	if roots != 1 || items != 1 {
-		t.Fatalf("roots/items = %d/%d, want 1/1", roots, items)
+	if result.CatalogNodes != 1 || result.Items != 1 {
+		t.Fatalf("roots/items = %d/%d, want 1/1", result.CatalogNodes, result.Items)
 	}
 	var readmeNode models.MetaNode
 	if err := db.Where("tenant_id = ? AND engine_id = ? AND name = ?", 1, 26, "README.md").First(&readmeNode).Error; err == nil {
@@ -216,12 +216,12 @@ func TestFilesystemForceScanReconcilesStaleRootFileNodes(t *testing.T) {
 	})
 	resource := &commonModels.Engine{ID: 26, Name: "Business NFS", EngineType: provider.Type()}
 
-	_, items, _, err := svc.ScanPaths(resource, 1, nil, models.ScannedDepthBasic, true, nil)
+	result, err := svc.ScanPaths(resource, 1, nil, models.ScannedDepthBasic, true, nil)
 	if err != nil {
 		t.Fatalf("ScanPaths() error = %v", err)
 	}
-	if items != 2 {
-		t.Fatalf("items = %d, want 2", items)
+	if result.Items != 2 {
+		t.Fatalf("items = %d, want 2", result.Items)
 	}
 	var stale models.MetaNode
 	if err := db.Where("id = ?", staleNode.ID).First(&stale).Error; err == nil {
@@ -292,12 +292,12 @@ func TestFilesystemScanDeletesRootFileNodesWithoutForce(t *testing.T) {
 	})
 	resource := &commonModels.Engine{ID: 26, Name: "Business NFS", EngineType: provider.Type()}
 
-	_, items, _, err := svc.ScanPaths(resource, 1, nil, models.ScannedDepthBasic, false, nil)
+	result, err := svc.ScanPaths(resource, 1, nil, models.ScannedDepthBasic, false, nil)
 	if err != nil {
 		t.Fatalf("ScanPaths() error = %v", err)
 	}
-	if items != 1 {
-		t.Fatalf("items = %d, want 1", items)
+	if result.Items != 1 {
+		t.Fatalf("items = %d, want 1", result.Items)
 	}
 	var stale models.MetaNode
 	if err := db.Where("id = ?", staleNode.ID).First(&stale).Error; err == nil {
@@ -332,12 +332,12 @@ func TestFilesystemScanFilePathTargetDoesNotCreateNode(t *testing.T) {
 	})
 	resource := &commonModels.Engine{ID: 26, Name: "Business NFS", EngineType: provider.Type()}
 
-	roots, items, _, err := svc.ScanPaths(resource, 1, []string{"README.md"}, models.ScannedDepthBasic, false, nil)
+	result, err := svc.ScanPaths(resource, 1, []string{"README.md"}, models.ScannedDepthBasic, false, nil)
 	if err != nil {
 		t.Fatalf("ScanPaths() error = %v", err)
 	}
-	if roots != 0 || items != 0 {
-		t.Fatalf("roots/items = %d/%d, want 0/0", roots, items)
+	if result.CatalogNodes != 0 || result.Items != 0 {
+		t.Fatalf("roots/items = %d/%d, want 0/0", result.CatalogNodes, result.Items)
 	}
 	var count int64
 	if err := db.Model(&models.MetaNode{}).
@@ -382,9 +382,9 @@ func TestFilesystemDeepScanExtractsDOCXHeaderFooter(t *testing.T) {
 	}
 	resource := &commonModels.Engine{ID: 26, EngineType: provider.Type()}
 
-	items, extraction, err := svc.ScanDirectory(context.Background(), provider, provider, nil, resource, 1, "doc", parentNode, false, plugin.CatalogTermFile, models.ScannedDepthDeep, true)
+	items, extraction, err := svc.scanDirectory(context.Background(), provider, provider, nil, resource, 1, "doc", parentNode, false, plugin.CatalogTermFile, models.ScannedDepthDeep, true)
 	if err != nil {
-		t.Fatalf("ScanDirectory() error = %v", err)
+		t.Fatalf("scanDirectory() error = %v", err)
 	}
 	if items != 1 {
 		t.Fatalf("items = %d, want 1", items)

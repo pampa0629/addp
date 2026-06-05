@@ -52,12 +52,14 @@ type MetadataTree struct {
 
 // SpatialMetadata 空间元数据（用于 MVT 瓦片生成）
 type SpatialMetadata struct {
-	GeometryColumn string               `json:"geometry_column"`
-	GeometryTypes  []string             `json:"geometry_types,omitempty"` // 几何类型列表，如 ["ST_MultiPolygon"]
-	SRID           int                  `json:"srid"`
-	ExtentSRID     int                  `json:"extent_srid"`
-	Extent         []float64            `json:"extent"`
-	PrimaryKey     string               `json:"primary_key"`
-	Fields         []datatype.FieldInfo `json:"fields"`
-	RowCount       int64                `json:"row_count"` // 表记录数（从 Meta 服务获取）
+	GeometryColumn string                  `json:"geometry_column"`
+	GeometryTypes  []string                `json:"geometry_types,omitempty"` // 几何类型列表，如 ["ST_MultiPolygon"]
+	SRID           int                     `json:"srid"`
+	CRSRef         string                  `json:"crs_ref,omitempty"`
+	CRSDefinition  *datatype.CRSDefinition `json:"crs_definition,omitempty"`
+	ExtentSRID     int                     `json:"extent_srid"`
+	Extent         []float64               `json:"extent"`
+	PrimaryKey     string                  `json:"primary_key"`
+	Fields         []datatype.FieldInfo    `json:"fields"`
+	RowCount       int64                   `json:"row_count"` // 表记录数（从 Meta 服务获取）
 }

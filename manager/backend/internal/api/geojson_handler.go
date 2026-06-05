@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/spatial"
 	manageri18n "github.com/addp/manager/i18n"
@@ -111,6 +112,7 @@ func (h *GeoJSONHandler) GetGeoJSON(c *gin.Context) {
 		logger.L().Warn("Failed to query GeoJSON source SRID", "error", err, "schema", schema, "table", table, "geom_column", geomColumn)
 		sourceSRID = 0
 	}
+	sourceCRS, sourceCRSDefinition := postGISCRSDefinition(db, sourceSRID)
 
 	var geojson map[string]interface{}
 	if err := json.Unmarshal([]byte(geojsonStr), &geojson); err != nil {
@@ -125,7 +127,7 @@ func (h *GeoJSONHandler) GetGeoJSON(c *gin.Context) {
 		logger.L().Debug("GeoJSON parsed successfully", "type", geojson["type"])
 	}
 
-	response := spatialPreviewContract(geomColumn, sourceSRID)
+	response := spatialPreviewContract(geomColumn, sourceSRID, sourceCRS, sourceCRSDefinition)
 	response["geojson"] = geojson
 	response["page"] = page
 	response["page_size"] = pageSize
@@ -181,15 +183,16 @@ func (h *GeoJSONHandler) GetGeoJSONMetadata(c *gin.Context) {
 
 	// 5. 查询元数据
 	type Metadata struct {
-		Count            int64     `json:"count"`
-		Extent           []float64 `json:"extent"` // [minX, minY, maxX, maxY]
-		ExtentSRID       int       `json:"extent_srid"`
-		GeometryColumn   string    `json:"geometry_column"`
-		SourceSRID       int       `json:"source_srid"`
-		SourceCRS        string    `json:"source_crs,omitempty"`
-		TransformStatus  string    `json:"transform_status"`
-		PreviewHint      string    `json:"preview_hint"`
-		TransformMessage string    `json:"transform_message,omitempty"`
+		Count               int64                   `json:"count"`
+		Extent              []float64               `json:"extent"` // [minX, minY, maxX, maxY]
+		ExtentSRID          int                     `json:"extent_srid"`
+		GeometryColumn      string                  `json:"geometry_column"`
+		SourceSRID          int                     `json:"source_srid"`
+		SourceCRS           string                  `json:"source_crs,omitempty"`
+		SourceCRSDefinition *datatype.CRSDefinition `json:"source_crs_definition,omitempty"`
+		TransformStatus     string                  `json:"transform_status"`
+		PreviewHint         string                  `json:"preview_hint"`
+		TransformMessage    string                  `json:"transform_message,omitempty"`
 	}
 
 	var metadata Metadata
@@ -224,13 +227,17 @@ func (h *GeoJSONHandler) GetGeoJSONMetadata(c *gin.Context) {
 		// SRID 查询失败不是致命错误，继续
 		metadata.SourceSRID = 0
 	}
+	sourceCRS, sourceCRSDefinition := postGISCRSDefinition(db, metadata.SourceSRID)
 
 	metadata.Extent = []float64{minX, minY, maxX, maxY}
 	metadata.ExtentSRID = metadata.SourceSRID
-	contract := spatialPreviewContract(geomColumn, metadata.SourceSRID)
+	contract := spatialPreviewContract(geomColumn, metadata.SourceSRID, sourceCRS, sourceCRSDefinition)
 	metadata.GeometryColumn = geomColumn
 	if sourceCRS, ok := contract["source_crs"].(string); ok {
 		metadata.SourceCRS = sourceCRS
+	}
+	if definition, ok := contract["source_crs_definition"].(*datatype.CRSDefinition); ok {
+		metadata.SourceCRSDefinition = definition
 	}
 	if status, ok := contract["transform_status"].(string); ok {
 		metadata.TransformStatus = status

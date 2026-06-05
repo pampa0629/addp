@@ -303,8 +303,17 @@ Meta attributes 不维护旧字段兼容层。字段可空性只写 `nullable`�
       "name": "geometry",
       "geometry_type": "geometry",
       "srid": 4326,
+      "crs_ref": "EPSG:4326",
       "dimension": 2,
       "nullable": false
+    }
+  ],
+  "crs_definitions": [
+    {
+      "id": "EPSG:4326",
+      "definition_encoding": "wkt",
+      "definition": "GEOGCS[...]",
+      "source": "postgis_spatial_ref_sys"
     }
   ],
   "primary_geometry_column": "geometry",
@@ -318,6 +327,7 @@ Meta attributes 不维护旧字段兼容层。字段可空性只写 `nullable`�
 ```json
 {
   "srid": 4326,
+  "crs_ref": "EPSG:4326",
   "extent": [120.0, 30.0, 121.0, 31.0],
   "has_spatial_index": false
 }
@@ -330,7 +340,12 @@ Meta attributes 不维护旧字段兼容层。字段可空性只写 `nullable`�
 | `geometry_columns` | 支持多个 Geometry 字段。每个元素描述一个空间字段；非字段型空间对象不得虚构字段名，可省略该字段。 |
 | `geometry_type` | 写入声明类型或格式天然可确定的类型。PostGIS 字段声明为 `geometry` 时就写 `geometry`，不得为了得到 Point/Polygon 等具体类型扫描全表。 |
 | `srid` | 能确定 EPSG/SRID 编号时写数字，例如 `4326`。字段型空间对象优先写在对应 `geometry_columns[]` 内；非字段型空间对象写在 `capabilities.spatial.srid` 顶层。 |
-| `crs` | 不能确定编号但能获得 CRS 描述时写 `crs`，例如 WKT、PROJJSON、proj4。字段型空间对象优先写在对应 `geometry_columns[]` 内；非字段型空间对象写在顶层。`srid` 和 `crs` 二选一，不同时写。 |
+| `crs_ref` | 当前空间对象或几何字段引用的 CRS ID。能确定 EPSG 时写 `EPSG:<code>`；不能确定 EPSG 但能获得定义文本时写 `ADDP:CRS:<sha256>`。字段型空间对象优先写在对应 `geometry_columns[]` 内；非字段型空间对象写在顶层。 |
+| `crs_definitions` | CRS 定义集合。只允许写在 `capabilities.spatial` 顶层，字段通过 `crs_ref` 引用，不得在各字段内重复写定义文本。 |
+| `crs_definitions[].id` | CRS 定义 ID，必须被 `crs_ref` 引用。能确定 EPSG 时使用 `EPSG:<code>`；否则使用 `ADDP:CRS:<sha256>`。 |
+| `crs_definitions[].definition_encoding` | CRS 定义表达方式。第一阶段只允许 `wkt`、`esri_wkt`、`proj4`；不得写 `projjson`，因为当前前端不能直接注册。 |
+| `crs_definitions[].definition` | CRS 定义文本，例如 PostGIS `spatial_ref_sys.srtext`、Shapefile `.prj`、GeoPackage `gpkg_spatial_ref_sys.definition` 或 proj4 字符串。 |
+| `crs_definitions[].source` | CRS 定义来源枚举，例如 `postgis_spatial_ref_sys`、`sidecar_prj`、`geopackage_srs`。 |
 | `dimension` | 坐标维度，无法确定时可省略。 |
 | `nullable` | 字段是否可空，无法确定时可省略。 |
 | `primary_geometry_column` | Manager 默认空间预览使用的几何字段。多几何字段时必须明确；单几何字段时建议写入；没有字段列概念的空间媒体应省略。 |
@@ -361,7 +376,7 @@ Meta attributes 不维护旧字段兼容层。字段可空性只写 `nullable`�
 
 空间能力消费规则：
 
-- `capabilities.spatial.srid`、`geometry_columns[].srid`、`crs`、`extent`、`extent_srid` 是空间事实，不表示 ADDP 核心后端具备通用 CRS transform 能力。
+- `capabilities.spatial.srid`、`geometry_columns[].srid`、`crs_ref`、`crs_definitions`、`extent`、`extent_srid` 是空间事实，不表示 ADDP 核心后端具备通用 CRS transform 能力。
 - Manager 普通空间预览只返回源坐标 geometry 表达和 CRS 元数据；不得为了普通预览隐式调用后端 PROJ 或 PostGIS `ST_Transform` 转成 WGS84。
-- `srid=0` 或 CRS 缺失必须按 `unknown_crs` 处理，不得默认解释为 `EPSG:4326`。
+- `srid=0` 且 `crs_ref` / `crs_definitions` 缺失时必须按 `unknown_crs` 处理，不得默认解释为 `EPSG:4326`。如果 `srid=0` 但存在有效 `crs_ref` 和 CRS 定义，表示“无数字 SRID 但 CRS 已知”。
 - 如果某条路径已经由具体引擎能力完成转换，例如 MVT / Quick View 物化视图，应在该路径响应中明确 `target_srid`、`transform_status=engine_transformed` 和 `transform_engine`；该事实不得反向改写源数据的 `capabilities.spatial`。

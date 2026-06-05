@@ -14,7 +14,7 @@ import (
 	"github.com/addp/meta/internal/metaenrich"
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
-	"github.com/addp/meta/internal/scanadapter"
+	"github.com/addp/meta/internal/scanflow"
 )
 
 func TestDetectObjectCatalogResourceFormatUsesCommonFormatSniffing(t *testing.T) {
@@ -29,14 +29,14 @@ func TestDetectObjectCatalogResourceFormatUsesCommonFormatSniffing(t *testing.T)
 		CatalogPath: plugin.ObjectItemPath(7, "addp", "datasets/lake3"),
 	}
 
-	detected, err := DetectObjectCatalogResourceFormat(
+	detected, err := detectObjectCatalogResourceFormat(
 		context.Background(),
 		staticObjectContentReader{content: "PAR1\x15\x04\x15\x00"},
 		nil,
 		resource,
 	)
 	if err != nil {
-		t.Fatalf("DetectObjectCatalogResourceFormat() error = %v", err)
+		t.Fatalf("detectObjectCatalogResourceFormat() error = %v", err)
 	}
 	if detected != string(format.FormatParquet) {
 		t.Fatalf("detected format = %q, want parquet", detected)
@@ -55,14 +55,14 @@ func TestDetectObjectCatalogResourceFormatPromotesUnknownText(t *testing.T) {
 		CatalogPath: plugin.ObjectItemPath(7, "addp", "docs/README"),
 	}
 
-	detected, err := DetectObjectCatalogResourceFormat(
+	detected, err := detectObjectCatalogResourceFormat(
 		context.Background(),
 		staticObjectContentReader{content: "hello\nworld\n"},
 		nil,
 		resource,
 	)
 	if err != nil {
-		t.Fatalf("DetectObjectCatalogResourceFormat() error = %v", err)
+		t.Fatalf("detectObjectCatalogResourceFormat() error = %v", err)
 	}
 	if detected != string(format.FormatText) {
 		t.Fatalf("detected format = %q, want text", detected)
@@ -81,14 +81,14 @@ func TestDetectObjectCatalogResourceFormatKeepsUnknownBinary(t *testing.T) {
 		CatalogPath: plugin.ObjectItemPath(7, "addp", "docs/blob.binx"),
 	}
 
-	detected, err := DetectObjectCatalogResourceFormat(
+	detected, err := detectObjectCatalogResourceFormat(
 		context.Background(),
 		staticObjectContentReader{content: string([]byte{0x00, 0x01, 0x02})},
 		nil,
 		resource,
 	)
 	if err != nil {
-		t.Fatalf("DetectObjectCatalogResourceFormat() error = %v", err)
+		t.Fatalf("detectObjectCatalogResourceFormat() error = %v", err)
 	}
 	if detected != "" {
 		t.Fatalf("detected format = %q, want empty unknown", detected)
@@ -105,8 +105,8 @@ func TestEnsureObjectCatalogPrefixNodesUsesCompositeItemParentPath(t *testing.T)
 		t.Fatalf("create bucket node: %v", err)
 	}
 
-	stats := map[uint]*scanadapter.ObjectCatalogNodeAggregate{}
-	parentNode, err := runtime.EnsureObjectCatalogPrefixNodes(1, 9, bucketNode, bucketNode, "gis/", "", stats)
+	stats := map[uint]*scanflow.ObjectCatalogNodeAggregate{}
+	parentNode, err := runtime.ensureObjectCatalogPrefixNodes(1, 9, bucketNode, bucketNode, "gis/", "", stats)
 	if err != nil {
 		t.Fatalf("ensure prefix nodes: %v", err)
 	}
@@ -142,13 +142,13 @@ func TestObjectCatalogBasicScanGroupsShapefileRefsWithoutSidecarItems(t *testing
 		shapefileObjectResource(9, "manager", "a5.dbf", 12),
 		shapefileObjectResource(9, "manager", "a5.cpg", 3),
 	}
-	count, _, err := runtime.PersistObjectResources(
+	count, _, err := runtime.persistObjectResources(
 		&commonModels.Engine{ID: 9, EngineType: reader.Type()},
 		1,
 		9,
 		bucketNode,
 		resources,
-		map[uint]*scanadapter.ObjectCatalogNodeAggregate{},
+		map[uint]*scanflow.ObjectCatalogNodeAggregate{},
 		true,
 		models.ScannedDepthBasic,
 		true,
@@ -157,7 +157,7 @@ func TestObjectCatalogBasicScanGroupsShapefileRefsWithoutSidecarItems(t *testing
 		"object",
 	)
 	if err != nil {
-		t.Fatalf("PersistObjectResources() error = %v", err)
+		t.Fatalf("persistObjectResources() error = %v", err)
 	}
 	if count != 1 {
 		t.Fatalf("persisted count = %d, want one logical shapefile item", count)

@@ -202,7 +202,7 @@ Shapefile 是空间矢量表，不是单个 `.shp` 文件。ref 匹配规则是�
 | `item` | `layout=multi`、`data_type=table`、`format=shapefile`、`refs`、`file_count` |
 | `type_info.table` | `.dbf` 非空间字段、平台统一几何字段、`row_count`、`primary_key`、`native.shape_type`、`native.dbf_version`、`native.encoding` |
 | `format_info.shapefile` | `base_name`、`ref_extensions`、`has_prj`、`has_cpg`、文件组件级摘要 |
-| `capabilities.spatial` | `geometry_columns`、`primary_geometry_column`、`srid` 或 `crs`、`extent`、`has_spatial_index` |
+| `capabilities.spatial` | `geometry_columns`、`primary_geometry_column`、`srid`、`crs_ref`、`crs_definitions`、`extent`、`has_spatial_index` |
 
 字段规则：
 

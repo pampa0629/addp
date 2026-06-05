@@ -60,7 +60,12 @@ func extractGeoTIFFSpatial(data []byte, width, height int) *datatype.SpatialInfo
 		spatialInfo.SRID = &srid
 		hasSpatialFact = true
 	} else if crs != "" {
-		spatialInfo.CRS = crs
+		spatialInfo.CRSRef = datatype.CustomCRSRef(crs)
+		spatialInfo.CRSDefinitions = []datatype.CRSDefinition{{
+			ID:                 spatialInfo.CRSRef,
+			DefinitionEncoding: datatype.CRSDefinitionEncodingWKT,
+			Definition:         crs,
+		}}
 		hasSpatialFact = true
 	}
 	hasSpatialIndex := false

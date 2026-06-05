@@ -7,17 +7,16 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/models"
-	"github.com/addp/meta/internal/scanadapter"
 	"github.com/addp/meta/internal/scanflow"
 	"github.com/addp/meta/internal/scanprocessor"
 )
 
-func (s *ObjectStorageCatalogRuntime) PersistObjectCatalogCompositeItems(
+func (s *ObjectStorageCatalogRuntime) persistObjectCatalogCompositeItems(
 	resource *commonModels.Engine,
 	tenantID, engineID uint,
 	bucketNode, basePrefixNode *models.MetaNode,
 	items []metacatalog.ObjectCatalogCompositeItem,
-	stats map[uint]*scanadapter.ObjectCatalogNodeAggregate,
+	stats map[uint]*scanflow.ObjectCatalogNodeAggregate,
 	includeBucketAggregate bool,
 	scanPathPrefix string,
 	scannedFingerprints map[string]bool,
@@ -40,7 +39,7 @@ func (s *ObjectStorageCatalogRuntime) PersistObjectCatalogCompositeItems(
 		if scannedFingerprints != nil {
 			scannedFingerprints[itemPlan.Fingerprint] = true
 		}
-		parentNode, err := s.EnsureObjectCatalogPrefixNodes(tenantID, engineID, bucketNode, basePrefixNode, itemPlan.ParentPath, scanPathPrefix, stats)
+		parentNode, err := s.ensureObjectCatalogPrefixNodes(tenantID, engineID, bucketNode, basePrefixNode, itemPlan.ParentPath, scanPathPrefix, stats)
 		if err != nil {
 			return count, extractionStats, err
 		}
@@ -70,7 +69,7 @@ func (s *ObjectStorageCatalogRuntime) PersistObjectCatalogCompositeItems(
 				continue
 			}
 			updatedNodes[node.ID] = true
-			agg := scanadapter.EnsureObjectCatalogNodeAggregate(stats, node)
+			agg := scanflow.EnsureObjectCatalogNodeAggregate(stats, node)
 			agg.ItemCount++
 			agg.TotalSize += itemPlan.SizeBytes
 		}

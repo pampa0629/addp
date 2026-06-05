@@ -1,4 +1,4 @@
-package scanadapter
+package scanruntime
 
 import (
 	"context"
@@ -13,13 +13,9 @@ import (
 	"github.com/addp/meta/internal/scanflow"
 )
 
-type ObjectPathPersister interface {
-	PersistObjectResources(resource *commonModels.Engine, tenantID, engineID uint, bucketNode *models.MetaNode, resources []metacatalog.StorageResource, stats map[uint]*ObjectCatalogNodeAggregate, includeBucketAggregate bool, scanDepth string, force bool, scanPathPrefix string, scannedFingerprints map[string]bool, itemTerm string) (int, scanflow.ExtractionCounts, error)
-}
-
-func ScanObjectPaths(
+func scanObjectPaths(
 	ctx context.Context,
-	persister ObjectPathPersister,
+	runtime *ObjectStorageCatalogRuntime,
 	repo *metaRepo.ScanRepository,
 	resource *commonModels.Engine,
 	tenantID uint,
@@ -47,7 +43,7 @@ func ScanObjectPaths(
 		catalogPaths,
 		fallback,
 		func(ctx context.Context) ([]string, error) {
-			buckets, err := ListObjectCatalogBucketNodes(ctx, resource, catalogProvider)
+			buckets, err := listObjectCatalogBucketNodes(ctx, resource, catalogProvider)
 			if err != nil {
 				return nil, fmt.Errorf("failed to list buckets: %w", err)
 			}
@@ -63,12 +59,12 @@ func ScanObjectPaths(
 		return scanflow.DispatchResult{}, err
 	}
 
-	return scanObjectCatalogPaths(ctx, persister, repo, resource, tenantID, resource.ID, catalogProvider, paths, scanDepth, force, reporter, itemTerm)
+	return scanObjectCatalogPaths(ctx, runtime, repo, resource, tenantID, resource.ID, catalogProvider, paths, scanDepth, force, reporter, itemTerm)
 }
 
 func scanObjectCatalogPaths(
 	ctx context.Context,
-	persister ObjectPathPersister,
+	runtime *ObjectStorageCatalogRuntime,
 	repo *metaRepo.ScanRepository,
 	resource *commonModels.Engine,
 	tenantID, engineID uint,
@@ -81,7 +77,7 @@ func scanObjectCatalogPaths(
 ) (scanflow.DispatchResult, error) {
 	bucketNodes := make(map[string]*models.MetaNode)
 	processedBuckets := make(map[string]bool)
-	nodeStats := make(map[uint]*ObjectCatalogNodeAggregate)
+	nodeStats := make(map[uint]*scanflow.ObjectCatalogNodeAggregate)
 	scannedFingerprints := make(map[string]bool)
 
 	result := scanflow.DispatchResult{}
@@ -102,7 +98,7 @@ func scanObjectCatalogPaths(
 		if reporter != nil {
 			reporter.Message(fmt.Sprintf("扫描对象路径 %s", rawPath))
 		}
-		target, err := ResolveObjectCatalogTarget(ctx, resource, catalogProvider, rawPath)
+		target, err := resolveObjectCatalogTarget(ctx, resource, catalogProvider, rawPath)
 		if err != nil {
 			completed++
 			if reporter != nil {
@@ -124,9 +120,9 @@ func scanObjectCatalogPaths(
 
 		var objects []plugin.CatalogEntry
 		if target.Object != "" {
-			objects, err = ReadObjectCatalogLeaf(ctx, resource, catalogProvider, bucketName, target.Object)
+			objects, err = readObjectCatalogLeaf(ctx, resource, catalogProvider, bucketName, target.Object)
 		} else {
-			objects, err = ListObjectCatalogLeaves(ctx, resource, catalogProvider, bucketName, prefix, isDeepScan)
+			objects, err = listObjectCatalogLeaves(ctx, resource, catalogProvider, bucketName, prefix, isDeepScan)
 		}
 		if err != nil {
 			completed++
@@ -137,7 +133,7 @@ func scanObjectCatalogPaths(
 			continue
 		}
 
-		resources := ObjectCatalogEntriesToStorageResources(objects, bucketName)
+		resources := objectCatalogEntriesToStorageResources(objects, bucketName)
 
 		bucketNode, ok := bucketNodes[bucketName]
 		if !ok {
@@ -162,7 +158,7 @@ func scanObjectCatalogPaths(
 
 		if len(resources) == 0 {
 			if fullBucket {
-				EnsureObjectCatalogNodeAggregate(nodeStats, bucketNode)
+				scanflow.EnsureObjectCatalogNodeAggregate(nodeStats, bucketNode)
 			}
 			completed++
 			if reporter != nil {
@@ -176,7 +172,7 @@ func scanObjectCatalogPaths(
 		if target.Object != "" {
 			scanPathPrefix = metacatalog.ParentObjectPath(target.Object)
 		}
-		objectCount, pathExtractionStats, err := persister.PersistObjectResources(resource, tenantID, engineID, bucketNode, resources, nodeStats, fullBucket, scanDepth, force, scanPathPrefix, scannedFingerprints, itemTerm)
+		objectCount, pathExtractionStats, err := runtime.persistObjectResources(resource, tenantID, engineID, bucketNode, resources, nodeStats, fullBucket, scanDepth, force, scanPathPrefix, scannedFingerprints, itemTerm)
 		if err != nil {
 			completed++
 			if reporter != nil {

@@ -26,8 +26,8 @@ func FileSingleInput(
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
 	scanDepth string,
-) Input {
-	return Input{
+) input {
+	return input{
 		Resource:           resource,
 		TenantID:           tenantID,
 		EngineID:           resource.ID,
@@ -45,7 +45,7 @@ func FileSingleInput(
 		IndexPath:          file.Path,
 		IndexRelativePath:  file.Path,
 		SizeBytes:          file.Size,
-		DataUpdatedAt:      FileModifiedAtPtr(file.ModifiedAt),
+		DataUpdatedAt:      fileModifiedAtPtr(file.ModifiedAt),
 		ScanDepth:          scanDepth,
 		IncludeAccessIndex: true,
 	}
@@ -60,8 +60,8 @@ func FileDetectedInput(
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
 	scanDepth string,
-) Input {
-	return Input{
+) input {
+	return input{
 		Resource:           resource,
 		TenantID:           tenantID,
 		EngineID:           resource.ID,
@@ -74,7 +74,7 @@ func FileDetectedInput(
 		ContentReader:      contentReader,
 		ConnInfo:           connInfo,
 		CatalogPathFor:     plugin.FileItemPathForEngine(resource.ID),
-		PhysicalPath:       DetectedItemContentPath(detected, itemPlan.FullName),
+		PhysicalPath:       detectedItemContentPath(detected, itemPlan.FullName),
 		IndexPath:          itemPlan.FullName,
 		IndexRelativePath:  itemPlan.FullName,
 		SizeBytes:          itemPlan.SizeBytes,
@@ -94,8 +94,8 @@ func ObjectSingleInput(
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
 	scanDepth string,
-) Input {
-	return Input{
+) input {
+	return input{
 		Resource:           resource,
 		TenantID:           tenantID,
 		EngineID:           engineID,
@@ -129,8 +129,8 @@ func ObjectCompositeInput(
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
 	scanDepth string,
-) Input {
-	return Input{
+) input {
+	return input{
 		Resource:           resource,
 		TenantID:           tenantID,
 		EngineID:           engineID,
@@ -143,7 +143,7 @@ func ObjectCompositeInput(
 		ContentReader:      contentReader,
 		ConnInfo:           connInfo,
 		CatalogPathFor:     plugin.ObjectItemPathForBucket(engineID, composite.Bucket),
-		PhysicalPath:       DetectedItemContentPath(composite.Item, itemPlan.ObjectPath),
+		PhysicalPath:       detectedItemContentPath(composite.Item, itemPlan.ObjectPath),
 		IndexRootName:      composite.Bucket,
 		IndexPath:          itemPlan.ObjectPath,
 		IndexRelativePath:  strings.Trim(itemPlan.ObjectPath, "/"),
@@ -153,7 +153,48 @@ func ObjectCompositeInput(
 	}
 }
 
-func DetectedItemContentPath(item *metaitem.DetectedItem, fallback string) string {
+func KnownItemInput(
+	resource *commonModels.Engine,
+	tenantID uint,
+	parentNode *models.MetaNode,
+	item models.MetaItem,
+	attrs models.JSONMap,
+	detected *metaitem.DetectedItem,
+	contentReader plugin.ContentReadableProvider,
+	connInfo plugin.ConnectionInfo,
+	catalogPathFor func(string) plugin.CatalogPath,
+	physicalPath string,
+	indexRootName string,
+	indexPath string,
+	sizeBytes int64,
+) input {
+	return input{
+		Resource:           resource,
+		TenantID:           tenantID,
+		EngineID:           resource.ID,
+		ParentNode:         parentNode,
+		ExistingItemID:     item.ID,
+		ItemType:           item.ItemType,
+		ItemName:           item.Name,
+		FullName:           item.FullName,
+		Attributes:         attrs,
+		Detected:           detected,
+		ContentReader:      contentReader,
+		ConnInfo:           connInfo,
+		CatalogPathFor:     catalogPathFor,
+		PhysicalPath:       physicalPath,
+		IndexRootName:      indexRootName,
+		IndexPath:          indexPath,
+		IndexRelativePath:  strings.Trim(indexPath, "/"),
+		SizeBytes:          sizeBytes,
+		DataUpdatedAt:      item.DataUpdatedAt,
+		ScanDepth:          models.ScannedDepthDeep,
+		IncludeAccessIndex: true,
+		StrictDeepEnrich:   true,
+	}
+}
+
+func detectedItemContentPath(item *metaitem.DetectedItem, fallback string) string {
 	if item == nil {
 		return strings.Trim(fallback, "/")
 	}
@@ -178,7 +219,7 @@ func splitCatalogResourcePath(value string) (dir, name string) {
 	return value[:idx+1], value[idx+1:]
 }
 
-func FileModifiedAtPtr(value time.Time) *time.Time {
+func fileModifiedAtPtr(value time.Time) *time.Time {
 	if value.IsZero() {
 		return nil
 	}

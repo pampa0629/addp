@@ -24,7 +24,7 @@ func itemFingerprintForExtraction(engineID uint, catalogResource metacatalog.Sto
 	return commonModels.GenerateItemFingerprint(engineID, fullName)
 }
 
-func ExtractCatalogDocumentText(
+func extractCatalogDocumentText(
 	ctx context.Context,
 	attrs models.JSONMap,
 	readableProvider plugin.ContentReadableProvider,
@@ -32,8 +32,8 @@ func ExtractCatalogDocumentText(
 	engineID uint,
 	catalogResource metacatalog.StorageResource,
 	item *metaitem.DetectedItem,
-) DocumentExtractionResult {
-	result := DocumentExtractionResult{}
+) documentExtractionResult {
+	result := documentExtractionResult{}
 	if attrs == nil || readableProvider == nil || item == nil || item.DataType != datatype.Document {
 		return result
 	}

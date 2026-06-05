@@ -1,4 +1,4 @@
-package scanadapter
+package scanruntime
 
 import (
 	"context"
@@ -9,13 +9,13 @@ import (
 	"github.com/addp/meta/internal/metapath"
 )
 
-type ObjectCatalogPathTarget struct {
+type objectCatalogPathTarget struct {
 	Bucket string
 	Prefix string
 	Object string
 }
 
-func ListObjectCatalogBucketNodes(ctx context.Context, resource *commonModels.Engine, catalogProvider plugin.CatalogProvider) ([]plugin.CatalogEntry, error) {
+func listObjectCatalogBucketNodes(ctx context.Context, resource *commonModels.Engine, catalogProvider plugin.CatalogProvider) ([]plugin.CatalogEntry, error) {
 	nodes, err := catalogProvider.ListChildren(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), plugin.ObjectRootPath(resource.ID), plugin.ListOptions{})
 	if err != nil {
 		return nil, err
@@ -30,7 +30,7 @@ func ListObjectCatalogBucketNodes(ctx context.Context, resource *commonModels.En
 	return buckets, nil
 }
 
-func ListObjectCatalogLeaves(
+func listObjectCatalogLeaves(
 	ctx context.Context,
 	resource *commonModels.Engine,
 	catalogProvider plugin.CatalogProvider,
@@ -51,14 +51,14 @@ func ListObjectCatalogLeaves(
 	return objects, nil
 }
 
-func ResolveObjectCatalogTarget(
+func resolveObjectCatalogTarget(
 	ctx context.Context,
 	resource *commonModels.Engine,
 	catalogProvider plugin.CatalogProvider,
 	rawPath string,
-) (ObjectCatalogPathTarget, error) {
+) (objectCatalogPathTarget, error) {
 	bucketName, objectPath := metapath.SplitObjectPath(rawPath)
-	target := ObjectCatalogPathTarget{Bucket: bucketName}
+	target := objectCatalogPathTarget{Bucket: bucketName}
 	if bucketName == "" {
 		return target, nil
 	}
@@ -74,7 +74,7 @@ func ResolveObjectCatalogTarget(
 	return target, nil
 }
 
-func ReadObjectCatalogLeaf(
+func readObjectCatalogLeaf(
 	ctx context.Context,
 	resource *commonModels.Engine,
 	catalogProvider plugin.CatalogProvider,
@@ -90,7 +90,7 @@ func ReadObjectCatalogLeaf(
 	return []plugin.CatalogEntry{*node}, nil
 }
 
-func ObjectCatalogEntriesToStorageResources(
+func objectCatalogEntriesToStorageResources(
 	objects []plugin.CatalogEntry,
 	bucket string,
 ) []metacatalog.StorageResource {

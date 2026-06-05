@@ -66,7 +66,7 @@ func TestFileScanRefGroupsPersistsSingleShapefileItem(t *testing.T) {
 	svc := NewFilesystemCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
 	resource := &commonModels.Engine{ID: 26, Name: "Files", EngineType: provider.Type()}
 
-	_, items, _, err := svc.ScanRefGroups(resource, 1, []models.ScanRefGroup{
+	result, err := svc.ScanRefGroups(resource, 1, []models.ScanRefGroup{
 		{
 			Primary: "shp/a5.shp",
 			Refs: []models.ScanRef{
@@ -80,8 +80,8 @@ func TestFileScanRefGroupsPersistsSingleShapefileItem(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ScanRefGroups() error = %v", err)
 	}
-	if items != 1 {
-		t.Fatalf("items = %d, want one logical shapefile item", items)
+	if result.Items != 1 {
+		t.Fatalf("items = %d, want one logical shapefile item", result.Items)
 	}
 
 	item, ok, err := repo.FindItemByFullName(1, 26, "shp/a5.shp")

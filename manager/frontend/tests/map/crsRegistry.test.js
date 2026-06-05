@@ -46,4 +46,34 @@ describe('preview CRS registry', () => {
     expect(crsSuppressionStatus(getPreviewCRSTransform({ source_srid: 0 }))).toBe('unknown_crs')
     expect(crsSuppressionStatus(getPreviewCRSTransform({ source_srid: 4547 }))).toBe('unsupported_crs')
   })
+
+  it('does not treat source_crs id as a CRS definition', () => {
+    const transform = getPreviewCRSTransform({
+      source_srid: 4549,
+      source_crs: 'EPSG:4549'
+    })
+
+    expect(transform.status).toBe('unsupported_crs')
+  })
+
+  it('registers an explicit CRS definition for preview transform', () => {
+    const transform = getPreviewCRSTransform({
+      source_srid: 4549,
+      source_crs: 'EPSG:4549',
+      source_crs_definition: {
+        id: 'EPSG:4549',
+        definition_encoding: 'proj4',
+        definition: '+proj=tmerc +lat_0=0 +lon_0=120 +k=1 +x_0=500000 +y_0=0 +ellps=GRS80 +units=m +no_defs +type=crs',
+        source: 'postgis_spatial_ref_sys'
+      }
+    })
+    const geometry = transformGeoJSONGeometryToWGS84({
+      type: 'Point',
+      coordinates: [500000, 3400000]
+    }, transform)
+
+    expect(transform.status).toBe('transformable')
+    expect(geometry.coordinates[0]).toBeCloseTo(120, 6)
+    expect(geometry.coordinates[1]).toBeCloseTo(30.720617, 6)
+  })
 })

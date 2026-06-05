@@ -63,7 +63,7 @@ func (s *TaskProviderRegistryService) Register() error {
 			},
 		},
 		"supported_source_models": []string{"tabular_catalog", "branch_leaf_catalog", "object_catalog", "file_catalog"},
-		"features":                []string{"async", "cron", "spatial_metadata", "vector_index"},
+		"features":                []string{"async", "cron", "spatial_facts", "vector_index"},
 		"create_task_url":         "http://localhost:5175/#/scan/new",
 		"edit_task_url":           "http://localhost:5175/#/scan/:id",
 	}

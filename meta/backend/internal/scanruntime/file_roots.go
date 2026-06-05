@@ -11,7 +11,7 @@ import (
 	metaRepo "github.com/addp/meta/internal/repository"
 )
 
-func (s *FilesystemCatalogRuntime) EnsureFilesystemScanRoot(tenantID uint, resource *commonModels.Engine, enginePlugin plugin.EnginePlugin, scanPath string) (*models.MetaNode, *models.MetaNode, error) {
+func (s *FilesystemCatalogRuntime) ensureFilesystemScanRoot(tenantID uint, resource *commonModels.Engine, enginePlugin plugin.EnginePlugin, scanPath string) (*models.MetaNode, *models.MetaNode, error) {
 	rootNode, err := metaRepo.EnsureCatalogRootNodeWithNativeName(s.repo, tenantID, resource, enginePlugin, "/")
 	if err != nil {
 		return nil, nil, err

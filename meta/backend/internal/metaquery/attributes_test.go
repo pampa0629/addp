@@ -78,7 +78,16 @@ func TestSpatialMetadataFromItemReadsCapabilitiesSpatial(t *testing.T) {
 						map[string]interface{}{
 							"name":          "shape",
 							"srid":          float64(4326),
+							"crs_ref":       "EPSG:4326",
 							"geometry_type": "POLYGON",
+						},
+					},
+					"crs_definitions": []interface{}{
+						map[string]interface{}{
+							"id":                  "EPSG:4326",
+							"definition_encoding": "wkt",
+							"definition":          "GEOGCS[...]",
+							"source":              "postgis_spatial_ref_sys",
 						},
 					},
 					"primary_geometry_column": "shape",
@@ -99,6 +108,9 @@ func TestSpatialMetadataFromItemReadsCapabilitiesSpatial(t *testing.T) {
 	}
 	if meta.GeometryColumn != "shape" || meta.SRID != 4326 || meta.PrimaryKey != "id" {
 		t.Fatalf("spatial metadata = %#v, want partitioned spatial metadata", meta)
+	}
+	if meta.CRSRef != "EPSG:4326" || meta.CRSDefinition == nil || meta.CRSDefinition.DefinitionEncoding != "wkt" {
+		t.Fatalf("crs metadata = %q/%#v, want EPSG:4326 wkt", meta.CRSRef, meta.CRSDefinition)
 	}
 	if len(meta.GeometryTypes) != 1 || meta.GeometryTypes[0] != "POLYGON" {
 		t.Fatalf("geometry types = %#v, want POLYGON", meta.GeometryTypes)

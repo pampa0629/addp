@@ -17,9 +17,10 @@
 | `full_name` | TEXT | 完整名称，nullable |
 | `path` | TEXT | 路径，nullable |
 | `depth` | INTEGER | 层级深度 |
-| `scan_status` | VARCHAR(20) | 扫描状态：未扫描/扫描中/已扫描，默认'未扫描' |
+| `scan_status` | VARCHAR(20) | 扫描状态：pending/running/completed/failed，默认 `pending` |
+| `scanned_depth` | VARCHAR(10) | 已完成扫描深度：none/basic/deep，默认 `none` |
 | `scanned_at` | TIMESTAMP | 节点的最后扫描时间，nullable |
-| `scan_config` | JSONB | 扫描配置：auto_enabled, cron, next_scan_at, error_message，默认 '{}' |
+| `scan_error` | TEXT | 最后一次节点扫描错误信息，nullable |
 | `item_count` | INTEGER | 子项数量，默认 0 |
 | `total_size_bytes` | BIGINT | 总大小（字节），默认 0 |
 | `attributes` | JSONB | 节点属性，nullable |
@@ -29,12 +30,11 @@
 ### 字段说明
 
 - **scan_status**: 索引字段，用于快速查询扫描状态
+- **scanned_depth**: 索引字段，用于判断节点已完成 basic/deep 的哪一层扫描
 - **scanned_at**: 索引字段，记录节点最后扫描时间
-- **scan_config**: JSONB 字段，存储扫描配置，包含：
-  - `auto_enabled` (bool): 是否启用自动扫描
-  - `cron` (string): Cron 表达式
-  - `next_scan_at` (string): 下次扫描时间（ISO 8601 格式）
-  - `error_message` (string): 最后的错误信息
+- **scan_error**: 最近一次节点扫描失败时的错误信息
+
+扫描调度配置不属于 `meta_node`。定时、手动、engine 绑定扫描策略统一由 `scan_tasks` 和 `common.task_executions` 表达。
 
 ## 相关文档
 

@@ -40,7 +40,10 @@ func TestMergeDatabaseTableInfoPreservesListFactsAndNormalizesFields(t *testing.
 	if merged.Native["engine"] != "MergeTree" {
 		t.Fatalf("Native = %#v", merged.Native)
 	}
-	if len(merged.Fields) != 2 || merged.Fields[0].NativeType != "bigint" || merged.Fields[1].Type != datatype.FieldTypeString {
+	if len(merged.Fields) != 2 ||
+		merged.Fields[0].NativeType != "bigint" ||
+		merged.Fields[0].Type != datatype.FieldTypeBigInt ||
+		merged.Fields[1].Type != datatype.FieldTypeString {
 		t.Fatalf("Fields = %#v", merged.Fields)
 	}
 	if len(merged.PrimaryKey) != 1 || merged.PrimaryKey[0] != "id" {

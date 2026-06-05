@@ -11,7 +11,7 @@ import (
 	"github.com/addp/meta/internal/models"
 )
 
-// scanTableDetails 扫描表的详细信息（字段、空间元数据等）。
+// scanTableDetails 扫描表的详细信息（字段、空间事实等）。
 func (s *DatabaseRuntime) scanTableDetails(
 	ctx context.Context,
 	resource *commonModels.Engine,
@@ -53,8 +53,10 @@ func (s *DatabaseRuntime) scanTableDetails(
 		attrs = tableItemAttributes(schemaName, tableInfo)
 
 		if spatialInfo := plugin.CatalogFactsSpatialInfo(describedFacts); spatialInfo != nil {
-			metaattr.UpsertNested(attrs, "capabilities", "spatial", datatype.SpatialInfoPayload(spatialInfo))
-			s.log.Info("空间元数据扫描成功",
+			metaattr.MergeStandardAttributes(attrs, metaattr.TableDescribeAttributes(metaattr.TableDescribeAttributesInput{
+				Spatial: spatialInfo,
+			}))
+			s.log.Info("空间事实读取成功",
 				"table", tableInfo.Name,
 				"geometry_column", spatialInfo.PrimaryGeometryName(),
 			)

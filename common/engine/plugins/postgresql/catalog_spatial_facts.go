@@ -31,6 +31,12 @@ func (p *PostgreSQLPlugin) describeSpatialFacts(ctx context.Context, db *gorm.DB
 			primary.SRID = &srid
 		}
 	}
+	if primary.SRID != nil {
+		if definition, err := queryPostgresCRSDefinition(ctx, sqlDB, *primary.SRID); err == nil && definition != nil {
+			primary.CRSRef = definition.ID
+			spatialInfo.CRSDefinitions = []datatype.CRSDefinition{*definition}
+		}
+	}
 	if primary.GeometryType == "" {
 		if geometryType, err := queryPostgresGeometryType(ctx, sqlDB, schema, table, primary.Name); err == nil {
 			primary.GeometryType = geometryType
@@ -54,6 +60,50 @@ func queryPostgresSpatialSRID(ctx context.Context, db *sql.DB, schema, table, co
 		return 0, fmt.Errorf("query postgresql spatial srid: %w", err)
 	}
 	return srid, nil
+}
+
+func queryPostgresCRSDefinition(ctx context.Context, db *sql.DB, srid int) (*datatype.CRSDefinition, error) {
+	if srid <= 0 {
+		return nil, nil
+	}
+	var authName sql.NullString
+	var authSRID sql.NullInt64
+	var srtext sql.NullString
+	var proj4text sql.NullString
+	err := db.QueryRowContext(ctx, `
+		SELECT auth_name, auth_srid, srtext, proj4text
+		FROM spatial_ref_sys
+		WHERE srid = $1
+		LIMIT 1
+	`, srid).Scan(&authName, &authSRID, &srtext, &proj4text)
+	if err != nil {
+		return nil, fmt.Errorf("query postgresql crs definition: %w", err)
+	}
+
+	encoding := datatype.CRSDefinitionEncodingWKT
+	definition := strings.TrimSpace(srtext.String)
+	if definition == "" {
+		encoding = datatype.CRSDefinitionEncodingProj4
+		definition = strings.TrimSpace(proj4text.String)
+	}
+	if definition == "" {
+		return nil, nil
+	}
+
+	code := 0
+	if authSRID.Valid {
+		code = int(authSRID.Int64)
+	}
+	id := datatype.CRSRefFromAuthority(authName.String, code, definition)
+	if id == "" {
+		return nil, nil
+	}
+	return &datatype.CRSDefinition{
+		ID:                 id,
+		DefinitionEncoding: encoding,
+		Definition:         definition,
+		Source:             datatype.CRSDefinitionSourcePostGISSpatialRefSys,
+	}, nil
 }
 
 func queryPostgresGeometryType(ctx context.Context, db *sql.DB, schema, table, column string) (string, error) {

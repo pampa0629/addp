@@ -739,7 +739,7 @@ flowchart TD
     - node/item/locator 到 catalog target path 的纯解析逻辑迁入 `scanflow`。
     - `scan_depth=basic/deep` 常量与校验迁入 `scanflow`。
     - catalog model 到 tabular / branch-leaf / object / file scan strategy 的 planner 迁入 `scanflow`。
-11. known item refresh 已复用 `detectedItemProcessor`：
+11. known item refresh 已复用 `scanprocessor`：
     - item refresh 不再维护独立 attributes / content hash / extraction / index 写入路径。
     - processor 增加 `ExistingItemID` refresh mode，刷新指定已存在 item，不因 fingerprint 差异写到另一条记录。
     - processor 增加 strict deep enrich 语义：普通 catalog 扫描可容忍单项 deep enrich 失败，known item refresh 必须失败并暴露错误。
@@ -787,22 +787,22 @@ flowchart TD
 23. `scanresolver` 目录已建立：
     - engine id 推断、node/item/locator 到目标 catalog path 的入口解析、最终 `scanflow.Scope` 构造已从 `ScanService` 迁入 `scanresolver`。
     - `ScanService.ResolveScanScope` 保留为 facade，内部只转发到 resolver；旧 `resolveScanEngineID` / `resolveScanTargets` service 私有实现已删除。
-24. file ref group 执行主线已迁入 `scanadapter`：
-    - `scanadapter.ScanFileRefGroups` 负责 file ref group 的候选解析、内容识别循环和进度推进。
-    - `FilesystemCatalogRuntime` 仅通过窄 runtime 暴露“确保文件扫描根节点”和“持久化 detected item”能力。
+24. file ref group 执行主线已迁入 `scanruntime`：
+    - `scanruntime.scanFileRefGroups` 负责 file ref group 的候选解析、内容识别循环和进度推进。
+    - `FilesystemCatalogRuntime` 内部直接调用文件扫描根节点创建和 detected item 持久化步骤，不再通过 adapter 参数接口绕转。
     - `ExtractionCounts` 合并函数已迁入 `scanflow`，不再把通用计数模型挂在 `scanprocessor` 下。
-25. object ref group 执行主线已迁入 `scanadapter`：
-    - `scanadapter.ScanObjectRefGroups` 负责 object ref group 的 bucket 节点准备、候选解析、内容识别循环和进度推进。
-    - object catalog 聚合模型 `ObjectCatalogNodeAggregate` 已从 `service` 迁入 `scanadapter`。
-    - `ObjectStorageCatalogRuntime` 仅通过窄 runtime 暴露“对象格式嗅探”和“持久化 composite item”能力。
-26. file path scan 执行主线已迁入 `scanadapter`：
-    - `scanadapter.ScanFilePaths` 负责路径解析、目录校验、扫描节点状态推进、递归扫描调度和进度推进。
+25. object ref group 执行主线已迁入 `scanruntime`：
+    - `scanruntime.scanObjectRefGroups` 负责 object ref group 的 bucket 节点准备、候选解析、内容识别循环和进度推进。
+    - object catalog 聚合模型 `ObjectCatalogNodeAggregate` 已迁入 `scanflow`，作为扫描主线过程状态。
+    - `ObjectStorageCatalogRuntime` 内部直接调用对象格式嗅探和 composite item 持久化步骤。
+26. file path scan 执行主线已迁入 `scanruntime`：
+    - `scanruntime.scanFilePaths` 负责路径解析、目录校验、扫描节点状态推进、递归扫描调度和进度推进。
     - `FilesystemCatalogRuntime` 保留目录节点创建、目录枚举、递归目录处理和 item 持久化 runtime 能力。
-27. object catalog 纯路径 helper 已迁入 `scanadapter`：
-    - bucket 列表、object leaf 列表、path target 解析、single leaf 读取、CatalogEntry 到 StorageResource 转换已从 `service` 迁出。
-    - service 层不再保存 object catalog path 的纯解析和转换工具。
-28. object path scan 执行主线已迁入 `scanadapter`：
-    - `scanadapter.ScanObjectPaths` 负责 object catalog path 的路径解析、bucket/prefix/object 枚举、扫描节点状态推进、缺失对象清理和进度推进。
+27. object catalog 纯路径 helper 已迁入 `scanruntime`：
+    - bucket 列表、object leaf 列表、path target 解析、single leaf 读取、CatalogEntry 到 StorageResource 转换属于 object runtime 的内部路径解析实现。
+    - service 和 adapter 层不再保存 object catalog path 的纯解析和转换工具。
+28. object path scan 执行主线已迁入 `scanruntime`：
+    - `scanruntime.scanObjectPaths` 负责 object catalog path 的路径解析、bucket/prefix/object 枚举、扫描节点状态推进、缺失对象清理和进度推进。
     - `ObjectStorageCatalogRuntime` 保留 object resource 持久化、格式嗅探、prefix 节点构建和 item processor 调用 runtime 能力。
 29. `scanruntime` 目录已建立：
     - object/file catalog runtime 已从 `service` 迁入 `scanruntime`。
@@ -838,7 +838,7 @@ flowchart TD
     - known item 的 item/resource/parent 查询、engine_id 校验和 processor 调用归入 `scanruntime.ItemRefreshRuntime`。
     - `service` 不再直接调用 `scanprocessor.New`。
 37. content catalog thin adapter 已迁入 `scanruntime`：
-    - object/file runtime 到 `scanadapter.ContentCatalogAdapter` 的适配由 `scanruntime.NewContentCatalogScanner` 创建。
+    - object/file runtime 到 `scanadapter.ContentCatalogAdapter` 的适配由 `scanruntime.NewRuntimeContentCatalogScanner` 创建。
     - `service/content_catalog_scanner.go` 已删除，`service` 只装配 scanner 实例。
 38. runtime bundle 已建立：
     - `scanruntime.Runtimes` 统一构造 database / branch-leaf / object / filesystem / item refresh runtime。
@@ -854,10 +854,10 @@ flowchart TD
     - 原 service 包中的 object runtime 组合测试已改为 `scanadapter` dispatcher 测试；service 包只保留自身仍需的通用测试 helper。
 41. `scanprocessor` 测试 helper 已拆分：
     - object catalog processor 测试中的 sqlite schema、最小 DOCX/PPTX 构造、静态 content reader 已集中到包内 helper。
-    - `ClearStaleKnownMultiTableAccessIndex` 的语义测试已从 service 包迁回 `scanprocessor` 包。
+    - known multi-table access-index 清理语义测试已从 service 包迁回 `scanprocessor` 包。
     - service 测试不再直接覆盖 processor 内部函数，只保留 item refresh 入口行为。
 42. `ScanService` facade 继续瘦身：
-    - 查询代理、对象按需提取代理和统计入口已拆入 `scan_metadata_facade.go`。
+    - 查询代理、对象按需提取代理和统计入口已从 `ScanService` 主入口拆出，后续继续收敛到专门查询/提取服务。
     - `CountItems` 的实际查询实现已归到 `MetadataQueryService`，`ScanService` 只保留 API facade。
     - `scan_service.go` 聚焦依赖装配、依赖注入和 `ScanEngineWithOptions` 主入口。
     - 后续如继续拆分，应优先围绕“扫描入口 orchestration”和“API 兼容 facade”两个职责边界处理。
@@ -866,11 +866,11 @@ flowchart TD
     - `scanadapter` / `scanruntime` / `scanprocessor` / `service` 包不再重复声明 `meta_node` / `meta_item` 建表 SQL。
     - `metatest.WithoutMetaItemTable` 覆盖只需要 root node 的轻量测试场景。
 44. `ScanTaskService` / `ScanExecutionService` / `ScanTaskScheduler` 职责已拆分：
-    - `ScanTaskService` 只管理扫描任务定义与扫描配置同步。
+    - `ScanTaskService` 只管理扫描任务定义，以及 Console 提交的 engine 扫描策略到 `ScanTask` 的绑定。
     - `ScanExecutionService` 管理 manual/auto execution 创建、执行、等待、查询、取消和进度回写。
     - `ScanTaskScheduler` 管理 execution 入队分发、本地 worker loop、pending execution 恢复和 DB-driven due task claim。
     - `scan_task_crud.go` 只负责任务 CRUD，不再创建 execution。
-    - `scan_task_schedule.go` 负责 System engine scan config 到 `ScanTask` 的同步。
+    - `scan_task_schedule.go` 负责 Console engine 扫描策略到 `ScanTask` 的 upsert/delete，不从 System 读取或解释 `scan_config`。
 45. `CatalogDispatcher` 大文件已按 strategy 拆分：
     - `catalog_dispatcher.go` 保留类型、构造、总分发和 object/file content 分发。
     - `catalog_dispatcher_branch.go` 承接 branch-leaf strategy。
@@ -985,6 +985,70 @@ flowchart TD
     - PostgreSQL 插件通过 `TabularCatalogCallbacks.DescribeSpatial` 提供空间列、SRID、extent 和空间索引事实。
     - `scanruntime.DatabaseRuntime` 深扫时消费 `CatalogFacts.Table` 与 `CatalogFacts.Spatial`，分别写入 `type_info.table` 和 `capabilities.spatial`。
     - Meta 私有 `TableSpatialScanner` / `SpatialMetadataService` / 空间扫描配置残留已删除，避免基于具体数据库实现开分支。
+68. format table describe attributes 落库已收敛：
+    - 新增 `metaattr.TableDescribeAttributes`，统一处理 format `TableDescribeResult` 中的 table / spatial / access_index / format_info 分区。
+    - multi-ref table enrich 不再手写 `type_info.table`、`capabilities.spatial`、`access_index.table` 和 `format_info.<format>`。
+    - on-demand access-index 构建复用同一 helper，保留原有 index source 补充逻辑。
+    - `TableFileAttributes` 复用 table describe helper，继续独立维护文件 item 的 storage、mode、file_count 等扫描上下文属性。
+69. spatial facts 对外能力命名已收敛：
+    - Meta 注册到 System `task_providers` 的 feature 从 `spatial_metadata` 改为 `spatial_facts`，与 engine capabilities 和 common datatype 术语保持一致。
+    - Meta 内部仍通过 `capabilities.spatial` 存储标准 spatial facts；Manager-facing 空间查询 API 的命名属于上层迁移范围，不在本轮半改。
+70. content catalog scanner 装配命名已收敛：
+    - `scanadapter.NewContentCatalogScanner` 保留为 adapter 层 scanner 构造函数。
+    - `scanruntime.NewContentCatalogScanner` 改为 `NewRuntimeContentCatalogScanner`，明确只是把 object/file runtime 适配成 adapter scanner，不再和 adapter 构造函数同名。
+71. Console-facing engine 扫描策略 API 字段已收敛：
+    - `EngineScanTaskPolicyRequest` 的请求字段从 `scan_config` 改为 `scan_policy`，避免和已删除的 System engine `scan_config` 混淆。
+    - System 前端与 common-frontend 表单内部仍可使用表单态 `scan_config`，但跨 Console -> Meta API 边界时统一表达为扫描策略。
+72. `EngineService` 注释命名残留已清理：
+    - `EngineService` 明确表达为 System engine 连接信息读取与缓存，不再在注释中混用 ResourceService / 资源服务旧称。
+    - `GetEnginesByTenant` / `GetEnginesWithStats` 注释统一使用 engine 术语，并保留 storage capability 过滤语义。
+73. spatial facts / spatial metadata 边界已明确：
+    - `/api/v1/meta/items/:item_id/spatial` 对外仍表达 GIS-facing spatial metadata，不暴露 facts 术语。
+    - Meta database runtime 内部消费 engine `CatalogFacts.Spatial` 时统一称为空间事实，避免和对外空间元数据响应混淆。
+    - `metaquery.SpatialMetadataFromItem` 明确是从 `capabilities.spatial` 与 `type_info.table` 投影出对外空间元数据响应。
+74. Manager 读取 Meta attributes 的边界已加固：
+    - Preview 内部读取 `type_info.*` / `capabilities.*` 仅限于已经持有 Meta item/node snapshot 的本地投影，不作为跨模块查询入口。
+    - `catalogutil.attributeSectionsForKey` 明确只服务展示/预览 convenience；新的跨模块查询语义应由 Meta API 提供。
+    - 数据库表空间/MVT 路径继续通过 Meta `/items/:item_id/spatial` API 获取 GIS-facing 空间元数据。
+75. `metaquery` / `scanruntime` 依赖边界已收敛：
+    - 删除 `metaquery.StandardizeFieldType` 等查询包中的字段标准化 helper。
+    - database runtime 自己在扫描链路内完成数据库字段类型归一化，不再反向依赖查询投影包。
+    - 删除未使用的 `metaquery.ParseTableName` / `QualifiedName`，查询包不再承载通用命名工具。
+    - `metaquery` 保持为 Meta item/node 查询投影层，避免被扫描写入主线复用。
+76. Meta 内部 engine 扫描策略命名已收敛：
+    - Console -> Meta API 字段继续使用 `scan_policy`。
+    - `ScanTaskService` / `scantask` 内部函数和变量统一表达为 policy；`commonModels.ScanConfig` 仅作为现有配置结构类型复用，不再在 Meta 内部语义上称为 System `scan_config`。
+77. object catalog path helper 暴露面已收窄：
+    - `ObjectCatalogPathTarget` 与 object catalog path 解析/list/read/resource 转换 helper 改为 `scanadapter` 包内私有。
+    - adapter 对外只保留 `ContentCatalogScanner` / `ContentCatalogAdapter` 这类主线装配概念，具体 object path 解析不再成为可复用公共 API。
+78. object catalog 聚合状态已迁入 `scanflow`：
+    - `ObjectCatalogNodeAggregate` / `EnsureObjectCatalogNodeAggregate` 从 `scanadapter` 移到 `scanflow`。
+    - adapter 与 runtime 共同使用扫描主线模型，不再由 adapter 定义 runtime 持久化过程状态。
+79. `scanadapter` 参数约束接口已收窄：
+    - namespace/branch scanner、scan locker、object/file path/ref-group persister/executor 接口改为包内私有。
+    - `scanadapter` 对外只保留 dispatcher、content catalog scanner 与路径/ref-group 扫描函数，避免把内部参数约束误当成扩展抽象。
+80. content catalog runtime 结果类型已统一：
+    - object/file runtime 的 path 与 ref-group 入口统一返回 `scanflow.DispatchResult`。
+    - 删除 `ObjectCatalogScanResult` 重复壳，`scanruntime.ContentCatalogAdapter` 只负责透传 runtime 结果，不再做字段拆装。
+    - `scanruntime.scanFileRefGroups` 与 object/path 扫描入口一致，直接返回主线调度结果。
+81. content catalog path/ref-group 扫描入口已迁回 `scanruntime`：
+    - `object_path_scanner` / `file_path_scanner` / `object_ref_group_scanner` / `file_ref_group_scanner` 从 `scanadapter` 移入 `scanruntime`。
+    - `object_catalog_paths` helper 与测试跟随迁移，作为 object runtime 的内部路径解析实现。
+    - 删除迁移后无意义的 persister/executor 接口，runtime 内部直接调用自身持久化方法。
+    - `scanadapter` 目录只保留 catalog dispatcher 与 content catalog scanner 装配层。
+82. content catalog runtime 内部步骤已私有化：
+    - file/object runtime 只对外保留 `ScanPaths` / `ScanRefGroups` 入口。
+    - 目录列举、目录递归扫描、单项持久化、对象资源持久化、组合项持久化、对象格式识别、前缀节点创建等步骤改为包内私有。
+    - known item table refresh 复用 `tableInfoFromMetaAttributes` 与 `RuntimeIndexer`，删除不存在的旧 helper/alias 引用。
+83. `scanprocessor` 输入边界已收敛：
+    - 原始 `Input` 改为包内私有，外部只能通过 `FileSingleInput` / `FileDetectedInput` / `ObjectSingleInput` / `ObjectCompositeInput` / `KnownItemInput` 构造处理请求。
+    - `item_refresh_runtime` 不再直接拼 processor 底层字段，改用 `KnownItemInput`。
+    - 内容 hash、文档文本抽取、内容路径、文件更新时间、known multi-table access-index 清理等 helper 改为包内私有。
+84. Meta API 与 processor 主线继续收敛：
+    - Console -> Meta 的 engine 扫描策略 DTO 使用独立 `EngineScanPolicy` / `EngineScanPreprocessingPolicy` / `EngineScanMVTPreprocessPlan`，Swagger 不再暴露 `models.ScanConfig`。
+    - API 边界在 DTO 层显式转换为内部任务调度复用结构，避免把 common 结构名泄漏为 Meta 对外语义。
+    - `scanprocessor.Process` 拆为校验、基础 attributes、deep enrich、deep content extraction、持久化、索引等包内私有步骤；外部入口和 builder 输入保持单一路径。
+    - `ScanService` 扫描启动日志删除固定 `mode=manual`，`scanadapter` dispatcher 日志改为使用真实 dispatch mode；入口维度继续使用 `scope_mode` / `source` / `scan_depth`。
 
 本轮验证：
 
@@ -1022,6 +1086,17 @@ go test ./common/engine/plugin ./common/engine/plugins/postgresql
 cd meta/backend && go test ./internal/scanruntime ./internal/service
 cd meta/backend && go test ./...
 go test ./common/engine/...
+cd meta/backend && go test ./internal/metaattr ./internal/metaitem ./internal/metaenrich ./internal/extractor
+cd meta/backend && go test ./internal/scanprocessor ./internal/scanruntime ./internal/service
+bash scripts/swagger/gen-swagger.sh meta
+bash scripts/swagger/check-route-coverage.sh meta
+cd meta/backend && go test ./...
+cd meta/backend && go test ./internal/scanprocessor ./internal/scanruntime ./internal/service
+cd meta/backend && go test ./internal/scanprocessor
+cd meta/backend && go test ./internal/service
+cd meta/backend && go test ./...
+bash scripts/swagger/check-route-coverage.sh meta
+cd meta/backend && go test ./internal/scanadapter ./internal/service
 git diff --check
 ```
 
