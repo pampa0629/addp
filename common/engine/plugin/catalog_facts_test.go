@@ -104,3 +104,25 @@ func TestCatalogFactsGraphInfoReturnsClone(t *testing.T) {
 		t.Fatalf("CatalogFactsGraphInfo returned mutable graph info")
 	}
 }
+
+func TestCatalogFactsSpatialInfoReturnsClone(t *testing.T) {
+	srid := 4326
+	facts := &CatalogFacts{
+		Spatial: &datatype.SpatialInfo{
+			GeometryColumns: []datatype.GeometryColumnInfo{{
+				Name: "geom",
+				SRID: &srid,
+			}},
+			PrimaryGeometryColumn: "geom",
+		},
+	}
+
+	info := CatalogFactsSpatialInfo(facts)
+	if info == nil || info.PrimaryGeometryColumn != "geom" || len(info.GeometryColumns) != 1 {
+		t.Fatalf("CatalogFactsSpatialInfo() = %#v", info)
+	}
+	*info.GeometryColumns[0].SRID = 3857
+	if *facts.Spatial.GeometryColumns[0].SRID != 4326 {
+		t.Fatalf("CatalogFactsSpatialInfo returned mutable spatial info")
+	}
+}

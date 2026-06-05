@@ -19,6 +19,7 @@ import (
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
+	"github.com/addp/meta/internal/scanflow"
 	"github.com/jonas-p/go-shp"
 )
 
@@ -28,7 +29,7 @@ func TestRefreshKnownMultiItemUsesStoredRefsWithoutCatalogRediscovery(t *testing
 	db := openObjectCatalogScanTestDB(t)
 	tenantID := uint(1)
 	engineID := uint(77)
-	engineSvc := NewEngineService(db, "", "", nil)
+	engineSvc := NewEngineService(db, "", "")
 	engineSvc.engineCache[engineID] = &engineCacheEntry{
 		resource: &commonModels.Engine{
 			ID:         engineID,
@@ -95,7 +96,13 @@ func TestRefreshKnownMultiItemUsesStoredRefsWithoutCatalogRediscovery(t *testing
 		t.Fatalf("create item: %v", err)
 	}
 
-	resp, err := svc.refreshItem(context.Background(), engineID, tenantID, item.ID, "", true)
+	resp, err := svc.ScanEngineWithOptions(scanflow.Options{
+		EngineID:  engineID,
+		TenantID:  tenantID,
+		ItemID:    item.ID,
+		ScanDepth: scanflow.ScanDepthDeep,
+		Force:     true,
+	})
 	if err != nil {
 		t.Fatalf("RefreshItem() error = %v", err)
 	}
@@ -120,7 +127,7 @@ func TestRefreshKnownPDFItemWritesDocumentAndFormatInfo(t *testing.T) {
 	db := openObjectCatalogScanTestDB(t)
 	tenantID := uint(1)
 	engineID := uint(78)
-	engineSvc := NewEngineService(db, "", "", nil)
+	engineSvc := NewEngineService(db, "", "")
 	engineSvc.engineCache[engineID] = &engineCacheEntry{
 		resource: &commonModels.Engine{
 			ID:         engineID,
@@ -168,7 +175,13 @@ func TestRefreshKnownPDFItemWritesDocumentAndFormatInfo(t *testing.T) {
 		t.Fatalf("create item: %v", err)
 	}
 
-	resp, err := svc.refreshItem(context.Background(), engineID, tenantID, item.ID, "", true)
+	resp, err := svc.ScanEngineWithOptions(scanflow.Options{
+		EngineID:  engineID,
+		TenantID:  tenantID,
+		ItemID:    item.ID,
+		ScanDepth: scanflow.ScanDepthDeep,
+		Force:     true,
+	})
 	if err != nil {
 		t.Fatalf("RefreshItem() error = %v", err)
 	}
@@ -200,7 +213,7 @@ func TestRefreshKnownDOCXItemExtractsTextFacts(t *testing.T) {
 	db := openObjectCatalogScanTestDB(t)
 	tenantID := uint(1)
 	engineID := uint(79)
-	engineSvc := NewEngineService(db, "", "", nil)
+	engineSvc := NewEngineService(db, "", "")
 	engineSvc.engineCache[engineID] = &engineCacheEntry{
 		resource: &commonModels.Engine{
 			ID:         engineID,
@@ -249,7 +262,13 @@ func TestRefreshKnownDOCXItemExtractsTextFacts(t *testing.T) {
 		t.Fatalf("create item: %v", err)
 	}
 
-	resp, err := svc.refreshItem(context.Background(), engineID, tenantID, item.ID, "", true)
+	resp, err := svc.ScanEngineWithOptions(scanflow.Options{
+		EngineID:  engineID,
+		TenantID:  tenantID,
+		ItemID:    item.ID,
+		ScanDepth: scanflow.ScanDepthDeep,
+		Force:     true,
+	})
 	if err != nil {
 		t.Fatalf("RefreshItem() error = %v", err)
 	}
@@ -287,7 +306,7 @@ func TestRefreshKnownZIPItemWritesContainerInfo(t *testing.T) {
 	db := openObjectCatalogScanTestDB(t)
 	tenantID := uint(1)
 	engineID := uint(80)
-	engineSvc := NewEngineService(db, "", "", nil)
+	engineSvc := NewEngineService(db, "", "")
 	engineSvc.engineCache[engineID] = &engineCacheEntry{
 		resource: &commonModels.Engine{
 			ID:         engineID,
@@ -339,7 +358,13 @@ func TestRefreshKnownZIPItemWritesContainerInfo(t *testing.T) {
 		t.Fatalf("create item: %v", err)
 	}
 
-	resp, err := svc.refreshItem(context.Background(), engineID, tenantID, item.ID, "", true)
+	resp, err := svc.ScanEngineWithOptions(scanflow.Options{
+		EngineID:  engineID,
+		TenantID:  tenantID,
+		ItemID:    item.ID,
+		ScanDepth: scanflow.ScanDepthDeep,
+		Force:     true,
+	})
 	if err != nil {
 		t.Fatalf("RefreshItem() error = %v", err)
 	}

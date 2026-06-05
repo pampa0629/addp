@@ -287,6 +287,7 @@
         "updateSuccess": "Updated successfully",
         "jsonError": "Invalid JSON format, please check",
         "opFailed": "Operation failed",
+        "scanPolicySyncFailed": "Engine saved, but metadata scan orchestration failed: {error}",
         "deleteConfirm": "Are you sure you want to delete engine \"{name}\"? This action cannot be undone.",
         "deleteTitle": "Confirm Delete",
         "deleteSuccess": "Deleted successfully",

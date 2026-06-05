@@ -29,8 +29,8 @@ type ScanTask struct {
 	Enabled             bool           `gorm:"default:false" json:"enabled"`
 	Scope               JSONMap        `gorm:"type:jsonb" json:"scope,omitempty"`      // 结构化扫描范围
 	Parameters          JSONMap        `gorm:"type:jsonb" json:"parameters,omitempty"` // 扫描参数，不表达范围
-	OwnerModule         string         `gorm:"size:50;not null;default:'meta';index:idx_scan_tasks_owner" json:"owner_module"`
-	OwnerRef            string         `gorm:"size:128;index:idx_scan_tasks_owner" json:"owner_ref,omitempty"`
+	OwnerModule         string         `gorm:"size:50;not null;default:'meta';index:idx_scan_tasks_owner" json:"owner_module"` // 绑定对象所属模块
+	OwnerRef            string         `gorm:"size:128;index:idx_scan_tasks_owner" json:"owner_ref,omitempty"`                 // 绑定对象在模块内的稳定引用
 	LastRunAt           *time.Time     `json:"last_run_at,omitempty"`
 	NextRunAt           *time.Time     `json:"next_run_at,omitempty"`
 	LastExecutionID     *string        `gorm:"size:36" json:"last_execution_id,omitempty"`

@@ -39,6 +39,7 @@ type TabularCatalogCallbacks struct {
 	ListTables            func(ctx context.Context, db *gorm.DB, namespace string) ([]datatype.TableInfo, error)
 	ListColumns           func(ctx context.Context, db *gorm.DB, namespace, table string) ([]datatype.FieldInfo, error)
 	RowCount              func(ctx context.Context, db *gorm.DB, namespace, table string) (int64, error)
+	DescribeSpatial       func(ctx context.Context, db *gorm.DB, namespace, table string, fields []datatype.FieldInfo) (*datatype.SpatialInfo, error)
 	IsSystemNamespaceFunc func(namespace string) bool
 }
 
@@ -180,7 +181,14 @@ func DescribeTabularCatalogFacts(ctx context.Context, callbacks TabularCatalogCa
 			tableInfo.RowCount = &rowCount
 		}
 	}
-	return buildTabularCatalogFacts(path, namespace, table, fields, tableInfo, hasTableInfo, kind, updatedAt), nil
+	var spatialInfo *datatype.SpatialInfo
+	if opts.IncludeSpatialFacts && callbacks.DescribeSpatial != nil {
+		spatialInfo, err = callbacks.DescribeSpatial(ctx, db, namespace, table, fields)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return buildTabularCatalogFacts(path, namespace, table, fields, tableInfo, hasTableInfo, kind, updatedAt, spatialInfo), nil
 }
 
 func primaryKeyFields(fields []datatype.FieldInfo) []string {
@@ -220,7 +228,7 @@ func tabularCatalogEntryFromFacts(path CatalogPath, name, kind string, facts *Ca
 	}
 }
 
-func buildTabularCatalogFacts(path CatalogPath, namespace, table string, fields []datatype.FieldInfo, tableInfo datatype.TableInfo, hasTableInfo bool, kind string, updatedAt *time.Time) *CatalogFacts {
+func buildTabularCatalogFacts(path CatalogPath, namespace, table string, fields []datatype.FieldInfo, tableInfo datatype.TableInfo, hasTableInfo bool, kind string, updatedAt *time.Time, spatialInfo *datatype.SpatialInfo) *CatalogFacts {
 	fields = NormalizeFieldInfos(fields)
 	if kind == "" {
 		kind = CatalogKindTable
@@ -250,6 +258,7 @@ func buildTabularCatalogFacts(path CatalogPath, namespace, table string, fields 
 		Path:      path,
 		Kind:      kind,
 		Table:     tableInfo.Clone(),
+		Spatial:   spatialInfo.Clone(),
 		UpdatedAt: updatedAt,
 	}
 }

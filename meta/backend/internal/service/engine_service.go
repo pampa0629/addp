@@ -1,9 +1,7 @@
 package service
 
 import (
-	"context"
 	"fmt"
-	commonExecution "github.com/addp/common/execution"
 	"log/slog"
 	"os"
 	"strings"
@@ -12,14 +10,12 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/common/events"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/utils"
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/scanflow"
-	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
@@ -31,26 +27,16 @@ type engineCacheEntry struct {
 
 // ResourceService 资源服务 - 直接读取 system.engines
 type EngineService struct {
-	db              *gorm.DB
-	systemURL       string
-	internalClient  *commonClient.SystemClient
-	cacheMu         sync.RWMutex
-	engineCache     map[uint]*engineCacheEntry // 改为存储带过期时间的条目
-	cacheTTL        time.Duration              // 缓存生存时间，默认 5 分钟
-	log             *slog.Logger
-	eventSubscriber *events.EngineEventSubscriber // Redis 事件订阅器
-	taskService     ScanTaskServiceInterface      // 扫描任务服务（用于处理 ScanConfig）
-	cleanupService  *CleanupService
+	db             *gorm.DB
+	systemURL      string
+	internalClient *commonClient.SystemClient
+	cacheMu        sync.RWMutex
+	engineCache    map[uint]*engineCacheEntry // 改为存储带过期时间的条目
+	cacheTTL       time.Duration              // 缓存生存时间，默认 5 分钟
+	log            *slog.Logger
 }
 
-// ScanTaskServiceInterface 扫描任务服务接口（避免循环依赖）
-type ScanTaskServiceInterface interface {
-	CreateOrUpdateTaskFromScanConfig(resource *commonModels.Engine) error
-	DeleteTaskByResourceID(engineID uint) error
-	CreateManualRun(ctx context.Context, tenantID, userID uint, token string, req *models.ScanRequest) (*commonExecution.TaskExecution, error)
-}
-
-func NewEngineService(db *gorm.DB, systemURL, internalKey string, redisClient *redis.Client) *EngineService {
+func NewEngineService(db *gorm.DB, systemURL, internalKey string) *EngineService {
 	// 默认从环境变量读取，便于本地降级
 	if systemURL == "" {
 		systemURL = os.Getenv("SYSTEM_URL")
@@ -74,36 +60,7 @@ func NewEngineService(db *gorm.DB, systemURL, internalKey string, redisClient *r
 		service.internalClient = commonClient.NewSystemClientWithInternalKey(systemURL, internalKey)
 	}
 
-	// 初始化 Redis 事件订阅器
-	if redisClient != nil {
-		service.eventSubscriber = events.NewEngineEventSubscriber(
-			redisClient,
-			service.handleEngineChangeEvent,
-			service.log,
-		)
-		// 启动订阅（在后台 goroutine 中）
-		go func() {
-			if err := service.eventSubscriber.Start(); err != nil {
-				service.log.Error("引擎事件订阅器启动失败", "error", err)
-			}
-		}()
-		service.log.Info("引擎事件订阅器已启动")
-	} else {
-		service.log.Warn("Redis 未配置，资源变更事件同步功能将被禁用")
-	}
-
 	return service
-}
-
-// SetTaskService 设置扫描任务服务（在 main.go 中初始化后调用）
-func (s *EngineService) SetTaskService(taskService ScanTaskServiceInterface) {
-	s.taskService = taskService
-	s.log.Info("扫描任务服务已注入到资源服务")
-}
-
-func (s *EngineService) SetCleanupService(cleanupService *CleanupService) {
-	s.cleanupService = cleanupService
-	s.log.Info("清理服务已注入到资源服务")
 }
 
 // ensureInternalClient 尝试按需初始化内部客户端（用于本地脚本未显式传入密钥的情况）
@@ -546,161 +503,6 @@ func (s *EngineService) GetEnginesWithStats(tenantID uint) ([]*models.ResourceWi
 	}
 
 	return result, nil
-}
-
-// handleEngineChangeEvent 处理资源变更事件（Redis 订阅回调）
-func (s *EngineService) handleEngineChangeEvent(event events.EngineChangeEvent) error {
-	s.log.Info("收到资源变更事件",
-		"engine_id", event.EngineID,
-		"action", event.Action,
-		"timestamp", event.Timestamp)
-
-	switch event.Action {
-	case events.ActionCreate, events.ActionUpdate:
-		// 资源创建或更新：检查 ScanConfig
-		s.ClearEngineCache(event.EngineID)
-
-		// 如果配置了 taskService，尝试处理扫描配置
-		if s.internalClient != nil {
-			// 获取资源详情（包含 ScanConfig）
-			resource, err := s.internalClient.GetEngine(event.EngineID)
-			if err != nil {
-				s.log.Error("获取资源详情失败，跳过扫描配置处理",
-					"engine_id", event.EngineID,
-					"error", err)
-				return nil // 不阻塞事件处理
-			}
-			s.reconcileCatalogRoot(resource)
-
-			// 检查是否有扫描配置
-			if s.taskService != nil && resource.ScanConfig != nil && resource.ScanConfig.Enabled && (resource.ScanConfig.ImmediateScan || resource.ScanConfig.ScheduledScan) {
-				// 1. 处理立即扫描
-				if resource.ScanConfig.ImmediateScan {
-					s.log.Info("检测到立即扫描配置，准备触发扫描", "engine_id", event.EngineID)
-					go func() {
-						if err := s.triggerImmediateScan(resource); err != nil {
-							s.log.Error("立即扫描失败",
-								"engine_id", event.EngineID,
-								"error", err)
-						} else {
-							s.log.Info("立即扫描已触发", "engine_id", event.EngineID)
-						}
-					}()
-				}
-
-				// 2. 处理定时扫描
-				if resource.ScanConfig.ScheduledScan {
-					s.log.Info("检测到定时扫描配置，准备创建定时任务",
-						"engine_id", event.EngineID,
-						"schedule_type", resource.ScanConfig.ScheduleType)
-					if err := s.taskService.CreateOrUpdateTaskFromScanConfig(resource); err != nil {
-						s.log.Error("创建定时扫描任务失败",
-							"engine_id", event.EngineID,
-							"error", err)
-						return err
-					}
-					s.log.Info("定时扫描任务已创建", "engine_id", event.EngineID)
-				}
-			} else if s.taskService != nil {
-				// 如果扫描配置被禁用或删除，删除对应的自动任务
-				if err := s.taskService.DeleteTaskByResourceID(event.EngineID); err != nil {
-					s.log.Warn("删除自动扫描任务失败",
-						"engine_id", event.EngineID,
-						"error", err)
-				} else {
-					s.log.Info("扫描配置已禁用，自动任务已删除", "engine_id", event.EngineID)
-				}
-			}
-		}
-
-		if event.Action == events.ActionCreate {
-			s.log.Debug("资源已创建", "engine_id", event.EngineID)
-		} else {
-			s.log.Info("资源已更新，缓存已清除", "engine_id", event.EngineID)
-		}
-
-	case events.ActionDelete:
-		// 资源删除：清除缓存并删除扫描任务
-		s.ClearEngineCache(event.EngineID)
-
-		if s.taskService != nil {
-			if err := s.taskService.DeleteTaskByResourceID(event.EngineID); err != nil {
-				s.log.Warn("删除资源关联的扫描任务失败",
-					"engine_id", event.EngineID,
-					"error", err)
-			} else {
-				s.log.Info("资源已删除，关联任务已清理", "engine_id", event.EngineID)
-			}
-		}
-		if s.cleanupService != nil {
-			s.cleanupService.CleanupEngineDeleted(context.Background(), event.EngineID, 0)
-		}
-
-	default:
-		s.log.Warn("未知的资源变更动作", "action", event.Action, "engine_id", event.EngineID)
-	}
-
-	return nil
-}
-
-// Stop 停止资源服务（清理资源）
-func (s *EngineService) Stop() {
-	if s.eventSubscriber != nil {
-		s.eventSubscriber.Stop()
-		s.log.Info("引擎事件订阅器已停止")
-	}
-}
-
-// triggerImmediateScan 立即触发扫描（用于 immediate 类型的 ScanConfig）
-func (s *EngineService) triggerImmediateScan(resource *commonModels.Engine) error {
-	if s.taskService == nil {
-		return fmt.Errorf("扫描任务服务未初始化")
-	}
-
-	if resource.ScanConfig == nil {
-		return fmt.Errorf("资源 %d 没有扫描配置", resource.ID)
-	}
-
-	// 确定扫描深度：优先使用 ImmediateDepth，否则使用默认 ScanDepth。
-	scanDepth := resource.ScanConfig.ImmediateDepth
-	if scanDepth == "" {
-		scanDepth = resource.ScanConfig.ScanDepth
-	}
-	if scanDepth == "" {
-		scanDepth = "basic" // 默认使用基础扫描
-	}
-
-	// 构建扫描请求（不限制 catalog_paths，系统自动过滤）
-	req := &models.ScanRequest{
-		EngineID:    resource.ID,
-		ScanDepth:   scanDepth,
-		TriggerType: models.TriggerTypeManual,
-		Source:      commonExecution.ModuleSystem,
-		Force:       false,
-	}
-
-	// 创建扫描运行（使用系统用户 ID=1，租户 ID 从资源获取）
-	var tenantID uint
-	if resource.TenantID == nil || *resource.TenantID == 0 {
-		tenantID = 1 // 默认租户
-	} else {
-		tenantID = *resource.TenantID
-	}
-
-	// 使用系统内部 token 创建扫描任务
-	ctx := context.Background()
-	run, err := s.taskService.CreateManualRun(ctx, tenantID, 0, "", req)
-	if err != nil {
-		return fmt.Errorf("创建立即扫描任务失败: %w", err)
-	}
-
-	s.log.Info("立即扫描任务已创建",
-		"engine_id", resource.ID,
-		"run_id", run.ID,
-		"scan_depth", scanDepth,
-		"tenant_id", tenantID)
-
-	return nil
 }
 
 // TriggerConnectionCheck 触发System检测连接状态

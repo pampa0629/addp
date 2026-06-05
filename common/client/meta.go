@@ -61,11 +61,6 @@ type MetaScanResponse struct {
 	Extraction          *MetaExtractionScanStats `json:"extraction,omitempty"`
 }
 
-type MetaAutoScanRunsResponse struct {
-	Runs      []commonExecution.TaskExecution `json:"runs"`
-	Submitted int                             `json:"submitted"`
-}
-
 type MetaExtractionScanStats struct {
 	Documents   int `json:"documents"`
 	Extracted   int `json:"extracted"`
@@ -486,11 +481,6 @@ func (c *MetaClient) RefreshItem(itemID uint, opts MetaScanOptions) (*MetaScanRe
 		}
 	}
 	return &result, nil
-}
-
-func (c *MetaClient) ForceRefreshItem(itemID uint) error {
-	_, err := c.RefreshItem(itemID, MetaScanOptions{Force: true})
-	return err
 }
 
 // ListItems 获取引擎的已扫描数据项列表，支持按 catalog 第一层业务分支过滤。

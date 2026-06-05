@@ -43,13 +43,7 @@
 | `last_check_at` | TIMESTAMP | | 上次检测时间 |
 | `check_message` | TEXT | | 检测结果消息 |
 
-### 2.4 元数据扫描配置字段
-
-| 字段名 | 类型 | 约束 | 说明 |
-|--------|------|------|------|
-| `scan_config` | JSON | | 扫描配置（可选） |
-
-### 2.5 数据库索引
+### 2.4 数据库索引
 
 | 索引名 | 字段 | 类型 | 说明 |
 |--------|------|------|------|
@@ -319,65 +313,9 @@ WorkflowStandards = map[string]WorkflowStandard{
 
 ---
 
-### 4.4 ScanConfig（元数据扫描配置）
+### 4.4 元数据扫描策略边界
 
-**类型**：JSON
-**作用**：配置引擎的元数据扫描策略
-
-#### 数据结构
-
-```go
-type ScanConfig struct {
-    Enabled           bool                 `json:"enabled"`
-    ImmediateScan     bool                 `json:"immediate_scan"`
-    ImmediateDepth    string               `json:"immediate_depth,omitempty"`    // basic/deep
-    ScheduledScan     bool                 `json:"scheduled_scan"`
-    ScheduleType      string               `json:"schedule_type"`                 // daily/weekly/monthly/cron
-    CronExpression    string               `json:"cron_expression,omitempty"`
-    ScheduleTime      string               `json:"schedule_time,omitempty"`       // HH:mm
-    ScheduleValue     []int                `json:"schedule_value,omitempty"`      // 周几或月几
-    ScanDepth         string               `json:"scan_depth"`                    // basic/deep
-    Preprocessing     *PreprocessingConfig `json:"preprocessing,omitempty"`
-}
-
-type PreprocessingConfig struct {
-    Enabled     bool                 `json:"enabled"`
-    AutoTrigger bool                 `json:"auto_trigger"`
-    Types       []string             `json:"types"`                   // ["mvt_tiles", "vector_embedding"]
-    MVTConfig   *MVTPreprocessConfig `json:"mvt_config,omitempty"`
-}
-
-type MVTPreprocessConfig struct {
-    MaxZoom          int     `json:"max_zoom"`             // 0-18
-    Concurrency      int     `json:"concurrency"`          // 1-20
-    StopThresholdSec float64 `json:"stop_threshold_sec"`   // 默认3.0
-    StopThresholdKB  float64 `json:"stop_threshold_kb"`    // 默认50.0
-}
-```
-
-#### 示例
-```json
-{
-  "enabled": true,
-  "immediate_scan": false,
-  "immediate_depth": "basic",
-  "scheduled_scan": true,
-  "schedule_type": "daily",
-  "schedule_time": "02:00",
-  "scan_depth": "deep",
-  "preprocessing": {
-    "enabled": true,
-    "auto_trigger": false,
-    "types": ["mvt_tiles"],
-    "mvt_config": {
-      "max_zoom": 18,
-      "concurrency": 10,
-      "stop_threshold_sec": 3.0,
-      "stop_threshold_kb": 50.0
-    }
-  }
-}
-```
+System engine 表不保存元数据扫描策略。注册引擎时的扫描计划由 Console 调用 Meta 创建或更新 `meta.scan_tasks`；System 只保存 engine 身份、连接、能力、租户和生命周期等自身事实。
 
 ---
 
@@ -448,12 +386,7 @@ Content-Type: application/json
     "password": "password",
     "database": "testdb"
   },
-  "description": "测试环境数据库",
-  "scan_config": {
-    "enabled": true,
-    "immediate_scan": true,
-    "immediate_depth": "basic"
-  }
+  "description": "测试环境数据库"
 }
 ```
 
@@ -663,15 +596,7 @@ curl -X POST http://localhost:8180/api/engines \
       "password": "admin123",
       "database": "production"
     },
-    "description": "生产环境主数据库",
-    "scan_config": {
-      "enabled": true,
-      "immediate_scan": true,
-      "immediate_depth": "basic",
-      "scheduled_scan": true,
-      "schedule_type": "daily",
-      "schedule_time": "02:00"
-    }
+    "description": "生产环境主数据库"
   }'
 ```
 
@@ -777,10 +702,9 @@ curl http://localhost:8180/internal/registry/compute-engines
 2. **配置时间**使用 `_time` 后缀（如 `schedule_time`）
 3. **敏感字段**自动加密（`password`、`access_key`、`secret_key`、`token`、`api_key`）
 
-### 10.2 废弃字段
+### 10.2 元数据扫描策略
 
-以下字段已从 `ScanConfig` 中删除：
-- ~~`schema_names`~~ - 使用 API 参数传递
+`scan_config` 不属于 System engine 表或 System API。需要注册扫描计划时，由 Console 调用 Meta 的 ScanTask API。
 
 ### 10.3 内置引擎保护
 

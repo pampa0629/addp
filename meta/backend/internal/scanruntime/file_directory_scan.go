@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metacatalog"
@@ -13,7 +12,6 @@ import (
 	"github.com/addp/meta/internal/metapath"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanflow"
-	"github.com/addp/meta/internal/scanprocessor"
 )
 
 // ScanDirectory 递归扫描目录，对每个目录运行 item resolver 链。
@@ -60,6 +58,29 @@ func (s *FilesystemCatalogRuntime) ScanDirectory(
 			s.log.Warn("清理已消失的子目录节点失败", "path", dirPath, "node_id", parentNode.ID, "error", err)
 		}
 	}
+	applyDetection := func(detection *metaitem.DetectionResult) {
+		if detection == nil {
+			return
+		}
+		for path, claimed := range detection.Claims {
+			if claimed {
+				claimedPaths[path] = true
+			}
+		}
+		for _, detected := range detection.Items {
+			if detected == nil {
+				continue
+			}
+			persisted, fullName, itemExtractionStats := s.PersistFileCatalogDetectedItem(ctx, resource, tenantID, parentNode, dirPath, detected, itemTerm, contentReader, connInfo, scanDepth)
+			if fullName != "" {
+				scannedItemFullNames[fullName] = true
+			}
+			if persisted {
+				totalItems++
+			}
+			extractionStats = scanflow.MergeExtractionCounts(extractionStats, itemExtractionStats)
+		}
+	}
 
 	isDeepScan := strings.EqualFold(scanDepth, "deep")
 	if isDeepScan && isBucketRoot {
@@ -70,26 +91,7 @@ func (s *FilesystemCatalogRuntime) ScanDirectory(
 				"error", err,
 			)
 		}
-		if detection != nil {
-			for path, claimed := range detection.Claims {
-				if claimed {
-					claimedPaths[path] = true
-				}
-			}
-			for _, detected := range detection.Items {
-				if detected == nil {
-					continue
-				}
-				persisted, fullName, itemExtractionStats := s.PersistFileCatalogDetectedItem(ctx, resource, tenantID, parentNode, dirPath, detected, itemTerm, contentReader, connInfo, scanDepth)
-				if fullName != "" {
-					scannedItemFullNames[fullName] = true
-				}
-				if persisted {
-					totalItems++
-				}
-				extractionStats = scanflow.MergeExtractionCounts(extractionStats, itemExtractionStats)
-			}
-		}
+		applyDetection(detection)
 	} else if isDeepScan {
 		detection, err := s.resolveFileCatalogDirectoryItems(ctx, contentReader, catalogProvider, connInfo, resource, dirPath, files, subdirs)
 		if err != nil {
@@ -99,24 +101,7 @@ func (s *FilesystemCatalogRuntime) ScanDirectory(
 			)
 		}
 		if detection != nil {
-			for path, claimed := range detection.Claims {
-				if claimed {
-					claimedPaths[path] = true
-				}
-			}
-			for _, detected := range detection.Items {
-				if detected == nil {
-					continue
-				}
-				persisted, fullName, itemExtractionStats := s.PersistFileCatalogDetectedItem(ctx, resource, tenantID, parentNode, dirPath, detected, itemTerm, contentReader, connInfo, scanDepth)
-				if fullName != "" {
-					scannedItemFullNames[fullName] = true
-				}
-				if persisted {
-					totalItems++
-				}
-				extractionStats = scanflow.MergeExtractionCounts(extractionStats, itemExtractionStats)
-			}
+			applyDetection(detection)
 			if detection.Exclusive {
 				reconcileScannedDirectory()
 				return totalItems, extractionStats, nil
@@ -128,42 +113,25 @@ func (s *FilesystemCatalogRuntime) ScanDirectory(
 		if claimedPaths[file.Path] {
 			continue
 		}
-		detected := metaitem.InferSingleResourceItem(file)
-		itemName := file.Name
-		fullName := metapath.JoinFSPath(parentNode.FullName, itemName)
-		scannedItemFullNames[fullName] = true
-		existingItem, itemExists, findErr := s.repo.FindItemByFullName(tenantID, resource.ID, fullName)
-		if findErr != nil {
-			s.log.Warn("查询文件对象失败", "path", file.Path, "error", findErr)
+		fullName, persisted, fileExtractionStats := s.scanSingleFileItem(fileSingleItemScanInput{
+			ctx:           ctx,
+			contentReader: contentReader,
+			connInfo:      connInfo,
+			resource:      resource,
+			tenantID:      tenantID,
+			parentNode:    parentNode,
+			file:          file,
+			itemTerm:      itemTerm,
+			scanDepth:     scanDepth,
+			force:         force,
+			isDeepScan:    isDeepScan,
+		})
+		if fullName != "" {
+			scannedItemFullNames[fullName] = true
 		}
-		if itemExists && !force && !fileItemNeedsScan(existingItem, file, isDeepScan) {
+		if persisted {
+			extractionStats = scanflow.MergeExtractionCounts(extractionStats, fileExtractionStats)
 			totalItems++
-			continue
-		}
-		result, err := scanprocessor.New(s.repo, s.indexer, s.log).Process(ctx, scanprocessor.FileSingleInput(
-			resource,
-			tenantID,
-			parentNode,
-			file,
-			detected,
-			itemTerm,
-			itemName,
-			fullName,
-			contentReader,
-			connInfo,
-			scanDepth,
-		))
-		if err != nil {
-			s.log.Warn("保存 single 文件对象失败", "path", file.Path, "error", err)
-			continue
-		}
-		extractionStats = scanflow.MergeExtractionCounts(extractionStats, result.Extraction)
-		totalItems++
-		if detected.DataType == datatype.Table && result.Item != nil {
-			tableInfo := tableInfoFromMetaAttributes(result.Item.Attributes)
-			if tableInfo != nil && len(tableInfo.Fields) > 0 {
-				s.log.Info("识别到 single 文件表", "path", file.Path, "name", itemName, "format", detected.Format, "field_count", len(tableInfo.Fields))
-			}
 		}
 	}
 
@@ -192,23 +160,4 @@ func (s *FilesystemCatalogRuntime) ScanDirectory(
 
 	reconcileScannedDirectory()
 	return totalItems, extractionStats, nil
-}
-
-func fileItemNeedsScan(existing *models.MetaItem, file metaitem.StorageFileRef, isDeepScan bool) bool {
-	if existing == nil {
-		return true
-	}
-	if isDeepScan && existing.ScannedDepth != models.ScannedDepthDeep {
-		return true
-	}
-	if existing.SizeBytes != nil && *existing.SizeBytes != file.Size {
-		return true
-	}
-	if !file.ModifiedAt.IsZero() && existing.DataUpdatedAt != nil && file.ModifiedAt.After(*existing.DataUpdatedAt) {
-		return true
-	}
-	if existing.DataUpdatedAt == nil && !file.ModifiedAt.IsZero() {
-		return true
-	}
-	return false
 }

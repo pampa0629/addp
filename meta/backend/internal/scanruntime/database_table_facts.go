@@ -9,22 +9,19 @@ import (
 	"github.com/addp/meta/internal/metaquery"
 )
 
-func (s *DatabaseRuntime) describeTableInfo(
+func (s *DatabaseRuntime) describeTableFacts(
 	ctx context.Context,
 	resource *commonModels.Engine,
 	scanCatalog databaseScanCatalog,
 	schemaName string,
 	tableName string,
-) (datatype.TableInfo, error) {
+) (*plugin.CatalogFacts, error) {
 	path := plugin.TabularItemPath(resource.ID, scanCatalog.namespaceTerm, schemaName, tableName)
-	item, err := scanCatalog.factsProvider.DescribeCatalogFacts(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), path, plugin.CatalogFactsOptions{})
+	item, err := scanCatalog.factsProvider.DescribeCatalogFacts(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), path, plugin.CatalogFactsOptions{IncludeSpatialFacts: true})
 	if err != nil {
-		return datatype.TableInfo{}, err
+		return nil, err
 	}
-	if item.Table != nil {
-		return *item.Table.Clone(), nil
-	}
-	return datatype.TableInfo{Name: tableName}, nil
+	return item, nil
 }
 
 func mergeDatabaseTableInfo(base, described datatype.TableInfo) datatype.TableInfo {

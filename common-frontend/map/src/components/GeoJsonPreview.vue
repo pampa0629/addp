@@ -5,14 +5,21 @@
         <span>{{ t('map.preview') }}</span>
         <el-switch v-model="showMap" size="small" />
       </div>
-      <el-select v-if="showMap" v-model="baseMapType" size="small" class="base-map-select">
-        <el-option
-          v-for="item in baseMapOptions"
-          :key="item.value"
-          :label="item.label"
-          :value="item.value"
-        />
-      </el-select>
+      <div v-if="showMap" class="base-map-control">
+        <el-select v-model="baseMapType" size="small" class="base-map-select">
+          <el-option
+            v-for="item in baseMapOptions"
+            :key="item.value"
+            :label="item.label"
+            :value="item.value"
+          />
+        </el-select>
+        <el-tooltip v-if="baseMapNotice" :content="baseMapNotice" placement="top">
+          <el-tag size="small" type="warning" effect="plain" class="base-map-policy-tag">
+            {{ t('map.businessBrowseMode') }}
+          </el-tag>
+        </el-tooltip>
+      </div>
     </div>
 
     <MapContainer
@@ -21,6 +28,9 @@
       :base-map-type="baseMapType"
       height="360px"
     />
+    <div v-else-if="showMap" class="map-placeholder">
+      <el-empty :description="suppressedMapMessage || t('map.noGeometryData')" :image-size="60" />
+    </div>
 
     <pre class="json-content" :class="{ collapsed: showMap }">{{ formattedJson }}</pre>
 
@@ -35,6 +45,11 @@ import { useI18n } from 'vue-i18n'
 import { useMapConfig } from '../composables/useMapConfig'
 import MapContainer from './map/MapContainer.vue'
 import { safeStringify } from '../utils/formatters'
+import {
+  crsSuppressionStatus,
+  getPreviewCRSTransform,
+  transformGeoJSONGeometryToWGS84
+} from '../utils/crsRegistry'
 
 const { t } = useI18n()
 
@@ -45,15 +60,30 @@ const props = defineProps({
   }
 })
 
-const { baseMapOptions, defaultBaseMapType, loadMapConfig } = useMapConfig()
+const { baseMapOptions, defaultBaseMapType, getBaseMapProfile, loadMapConfig } = useMapConfig()
 
 const showMap = ref(true)
 const baseMapType = ref('')
+const selectedBaseMapProfile = computed(() => getBaseMapProfile(baseMapType.value))
+const baseMapNotice = computed(() => {
+  if (selectedBaseMapProfile.value?.coordinate_policy === 'gcj02') {
+    return t('map.gcj02DisplayNotice')
+  }
+  return ''
+})
 
 const objectData = computed(() => props.data?.object || {})
 
 const geojsonData = computed(() => {
   return objectData.value?.content?.geojson || objectData.value?.content?.GeoJSON || null
+})
+
+const crsTransform = computed(() => getPreviewCRSTransform(props.data))
+const suppressedMapMessage = computed(() => {
+  const status = crsSuppressionStatus(crsTransform.value)
+  if (status === 'unknown_crs') return t('map.mapSuppressedUnknownCRS')
+  if (status === 'unsupported_crs') return t('map.mapSuppressedUnsupportedCRS')
+  return ''
 })
 
 const truncated = computed(() => {
@@ -62,17 +92,26 @@ const truncated = computed(() => {
 
 const geoFeatures = computed(() => {
   if (!geojsonData.value) return []
+  if (crsSuppressionStatus(crsTransform.value)) return []
 
   try {
     if (geojsonData.value.type === 'FeatureCollection') {
-      return geojsonData.value.features || []
+      return (geojsonData.value.features || [])
+        .map((feature) => ({
+          ...feature,
+          geometry: transformGeoJSONGeometryToWGS84(feature?.geometry, crsTransform.value)
+        }))
+        .filter((feature) => feature.geometry)
     } else if (geojsonData.value.type === 'Feature') {
-      return [geojsonData.value]
+      const geometry = transformGeoJSONGeometryToWGS84(geojsonData.value.geometry, crsTransform.value)
+      return geometry ? [{ ...geojsonData.value, geometry }] : []
     } else if (geojsonData.value.type && geojsonData.value.coordinates) {
+      const geometry = transformGeoJSONGeometryToWGS84(geojsonData.value, crsTransform.value)
+      if (!geometry) return []
       return [
         {
           type: 'Feature',
-          geometry: geojsonData.value,
+          geometry,
           properties: {}
         }
       ]
@@ -129,8 +168,28 @@ onMounted(() => {
   color: var(--el-text-color-secondary);
 }
 
+.map-placeholder {
+  height: 360px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--addp-border-color);
+  border-radius: 4px;
+  background: var(--addp-bg-primary);
+}
+
 .base-map-select {
   min-width: 160px;
+}
+
+.base-map-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.base-map-policy-tag {
+  flex: 0 0 auto;
 }
 
 .json-content {

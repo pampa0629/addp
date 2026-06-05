@@ -64,10 +64,6 @@ func NewScanResponse(status, message string, counts ScanCounts, startTime, compl
 	return resp
 }
 
-func AutoScanResponse(engineCount int, counts ScanCounts, startTime, completedAt time.Time) *models.ScanResponse {
-	return NewScanResponse("success", fmt.Sprintf("Successfully scanned %d engines", engineCount), counts, startTime, completedAt)
-}
-
 func ScanResultMetadata(counts ScanCounts) commonModels.JSONMap {
 	return commonModels.JSONMap{
 		"catalog_nodes_scanned": counts.CatalogNodes,

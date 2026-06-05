@@ -1,6 +1,7 @@
 import { ref, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
 import AMapLoader from '@amap/amap-jsapi-loader'
+import { mapDisplayCoordinate, mapSourceCoordinate } from '../utils/gcj02'
 
 const DEFAULT_CENTER = [104.0668, 30.5728]
 const POINT_STYLE = {
@@ -88,11 +89,22 @@ const getGeometryCenter = (geometry) => {
   return [(bounds.minLng + bounds.maxLng) / 2, (bounds.minLat + bounds.maxLat) / 2]
 }
 
+const positionToArray = (position) => {
+  if (!position) return null
+  if (Array.isArray(position)) return position
+  if (isFinite(position.lng) && isFinite(position.lat)) return [position.lng, position.lat]
+  if (typeof position.getLng === 'function' && typeof position.getLat === 'function') {
+    return [position.getLng(), position.getLat()]
+  }
+  return null
+}
+
 /**
  * 高德地图管理 Composable
  * @param {Object} config - 地图配置 { amapKey, amapSecurityJsCode }
+ * @param {Object} baseMapProfile - 底图 profile，coordinate_policy=gcj02 时只在展示边界偏移
  */
-export function useGaodeMap(config) {
+export function useGaodeMap(config, baseMapProfile = {}) {
   const mapInstance = ref(null)
   const amapLib = ref(null)
   const overlays = ref([])
@@ -102,7 +114,16 @@ export function useGaodeMap(config) {
   let highlightedOverlays = []
 
   let eventsBound = false
-  let viewState = { center: DEFAULT_CENTER, zoom: 4 }
+  let viewState = { center: mapDisplayCoordinate(DEFAULT_CENTER, baseMapProfile), zoom: 4 }
+
+  const toDisplayCoordinate = (coordinate) => mapDisplayCoordinate(coordinate, baseMapProfile)
+  const toSourceCoordinate = (coordinate) => mapSourceCoordinate(coordinate, baseMapProfile)
+  const toDisplayPath = (path) => path.map((coord) => toDisplayCoordinate(coord))
+  const emitFeatureClick = (callback, feature, displayPosition) => {
+    if (!callback) return
+    const displayCoordinate = positionToArray(displayPosition)
+    callback(feature, toSourceCoordinate(displayCoordinate), displayPosition)
+  }
 
   const updateViewState = () => {
     if (!mapInstance.value) return
@@ -162,7 +183,7 @@ export function useGaodeMap(config) {
 
     const initialCenter = viewState?.center && isFinite(viewState.center[0]) && isFinite(viewState.center[1])
       ? viewState.center
-      : DEFAULT_CENTER
+      : mapDisplayCoordinate(DEFAULT_CENTER, baseMapProfile)
     const initialZoom = viewState && isFinite(viewState.zoom) ? viewState.zoom : 4
 
     if (!mapInstance.value) {
@@ -199,10 +220,11 @@ export function useGaodeMap(config) {
 
   const createMarker = (lng, lat) => {
     if (!isFinite(lng) || !isFinite(lat) || !amapLib.value) return null
+    const [displayLng, displayLat] = toDisplayCoordinate([lng, lat])
 
     if (amapLib.value.CircleMarker) {
       const marker = new amapLib.value.CircleMarker({
-        center: [lng, lat],
+        center: [displayLng, displayLat],
         ...POINT_STYLE
       })
       marker.__addpDefaultStyle = POINT_STYLE
@@ -213,7 +235,7 @@ export function useGaodeMap(config) {
     const div = document.createElement('div')
     div.className = 'gaode-point-marker'
     const marker = new amapLib.value.Marker({
-      position: [lng, lat],
+      position: [displayLng, displayLat],
       offset: new amapLib.value.Pixel(-6, -6),
       content: div
     })
@@ -282,7 +304,7 @@ export function useGaodeMap(config) {
             if (options.onFeatureClick) {
               marker.on('click', () => {
                 highlightFeatureByKey(feature?.properties?.__rowKey || feature?.properties?.id || feature?.properties?.ID || feature?.id)
-                options.onFeatureClick(feature, marker.getPosition())
+                emitFeatureClick(options.onFeatureClick, feature, marker.getPosition())
               })
             }
           }
@@ -297,7 +319,7 @@ export function useGaodeMap(config) {
               if (options.onFeatureClick) {
                 marker.on('click', () => {
                   highlightFeatureByKey(feature?.properties?.__rowKey || feature?.properties?.id || feature?.properties?.ID || feature?.id)
-                  options.onFeatureClick(feature, marker.getPosition())
+                  emitFeatureClick(options.onFeatureClick, feature, marker.getPosition())
                 })
               }
             }
@@ -305,7 +327,7 @@ export function useGaodeMap(config) {
           break
         }
         case 'LineString': {
-          const path = geometry.coordinates.map(([lng, lat]) => [lng, lat])
+          const path = toDisplayPath(geometry.coordinates)
           const polyline = createPolyline(path)
           if (polyline) {
             newOverlays.push(polyline)
@@ -313,7 +335,7 @@ export function useGaodeMap(config) {
             if (options.onFeatureClick) {
               polyline.on('click', (e) => {
                 highlightFeatureByKey(feature?.properties?.__rowKey || feature?.properties?.id || feature?.properties?.ID || feature?.id)
-                options.onFeatureClick(feature, e.lnglat)
+                emitFeatureClick(options.onFeatureClick, feature, e.lnglat)
               })
             }
           }
@@ -321,7 +343,7 @@ export function useGaodeMap(config) {
         }
         case 'MultiLineString': {
           geometry.coordinates.forEach((line) => {
-            const path = line.map(([lng, lat]) => [lng, lat])
+            const path = toDisplayPath(line)
             const polyline = createPolyline(path)
             if (polyline) {
               newOverlays.push(polyline)
@@ -329,7 +351,7 @@ export function useGaodeMap(config) {
               if (options.onFeatureClick) {
                 polyline.on('click', (e) => {
                   highlightFeatureByKey(feature?.properties?.__rowKey || feature?.properties?.id || feature?.properties?.ID || feature?.id)
-                  options.onFeatureClick(feature, e.lnglat)
+                  emitFeatureClick(options.onFeatureClick, feature, e.lnglat)
                 })
               }
             }
@@ -337,7 +359,7 @@ export function useGaodeMap(config) {
           break
         }
         case 'Polygon': {
-          const rings = geometry.coordinates.map((ring) => ring.map(([lng, lat]) => [lng, lat]))
+          const rings = geometry.coordinates.map((ring) => toDisplayPath(ring))
           const polygon = createPolygon(rings)
           if (polygon) {
             newOverlays.push(polygon)
@@ -345,7 +367,7 @@ export function useGaodeMap(config) {
             if (options.onFeatureClick) {
               polygon.on('click', (e) => {
                 highlightFeatureByKey(feature?.properties?.__rowKey || feature?.properties?.id || feature?.properties?.ID || feature?.id)
-                options.onFeatureClick(feature, e.lnglat)
+                emitFeatureClick(options.onFeatureClick, feature, e.lnglat)
               })
             }
           }
@@ -353,7 +375,7 @@ export function useGaodeMap(config) {
         }
         case 'MultiPolygon': {
           geometry.coordinates.forEach((polygonCoords) => {
-            const rings = polygonCoords.map((ring) => ring.map(([lng, lat]) => [lng, lat]))
+            const rings = polygonCoords.map((ring) => toDisplayPath(ring))
             const polygon = createPolygon(rings)
             if (polygon) {
               newOverlays.push(polygon)
@@ -361,7 +383,7 @@ export function useGaodeMap(config) {
               if (options.onFeatureClick) {
                 polygon.on('click', (e) => {
                   highlightFeatureByKey(feature?.properties?.__rowKey || feature?.properties?.id || feature?.properties?.ID || feature?.id)
-                  options.onFeatureClick(feature, e.lnglat)
+                  emitFeatureClick(options.onFeatureClick, feature, e.lnglat)
                 })
               }
             }
@@ -373,8 +395,9 @@ export function useGaodeMap(config) {
 
     if (newOverlays.length === 0) {
       if (!options.preserveView) {
-        mapInstance.value.setZoomAndCenter(4, DEFAULT_CENTER)
-        viewState = { center: DEFAULT_CENTER, zoom: 4 }
+        const defaultCenter = mapDisplayCoordinate(DEFAULT_CENTER, baseMapProfile)
+        mapInstance.value.setZoomAndCenter(4, defaultCenter)
+        viewState = { center: defaultCenter, zoom: 4 }
       } else {
         updateViewState()
       }
@@ -409,7 +432,8 @@ export function useGaodeMap(config) {
       mapInstance.value.setFitView(overlaysForFeature, false, padding)
       setTimeout(updateViewState, 0)
     } else {
-      const center = options.center || getGeometryCenter(geometry)
+      const sourceCenter = options.center || getGeometryCenter(geometry)
+      const center = Array.isArray(sourceCenter) ? toDisplayCoordinate(sourceCenter) : sourceCenter
       if (center && mapInstance.value.setZoomAndCenter) {
         const targetZoom = Math.max(mapInstance.value.getZoom?.() || minZoom, minZoom)
         mapInstance.value.setZoomAndCenter(targetZoom, center)
@@ -495,7 +519,8 @@ export function useGaodeMap(config) {
 
     let lngLatPosition = position
     if (Array.isArray(position)) {
-      lngLatPosition = new amapLib.value.LngLat(position[0], position[1])
+      const [displayLng, displayLat] = toDisplayCoordinate(position)
+      lngLatPosition = new amapLib.value.LngLat(displayLng, displayLat)
     }
 
     if (lngLatPosition) {

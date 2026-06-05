@@ -1,7 +1,9 @@
 import client from './client'
 
 const unwrap = (promise, defaultValue) =>
-  promise.then(res => res.data?.data ?? defaultValue)
+  promise.then(res => res?.data?.data ?? res?.data ?? res ?? defaultValue)
+
+const unwrapData = res => res?.data?.data ?? res?.data ?? res
 
 export const getEngines = () => unwrap(client.get('/meta/engines'), [])
 
@@ -31,7 +33,7 @@ export const listAvailableSchemas = engineId =>
     }))
   })
 
-export const autoScan = () => client.post('/meta/scan/auto').then(res => res.data)
+export const createUnscannedScanRuns = () => client.post('/meta/scan/run/unscanned').then(res => res.data)
 
 export const getScanTasks = async engineId => {
   const tasks = await unwrap(client.get('/meta/scan/tasks'), [])
@@ -47,7 +49,7 @@ export const createScanTask = (engineId, payload) => {
       ...payload,
       engine_id: engineId
     })
-    .then(res => res.data?.data)
+    .then(unwrapData)
 }
 
 export const updateScanTask = (engineId, taskId, payload) => {
@@ -56,18 +58,18 @@ export const updateScanTask = (engineId, taskId, payload) => {
       ...payload,
       engine_id: engineId
     })
-    .then(res => res.data?.data)
+    .then(unwrapData)
 }
 
 export const deleteScanTask = taskId =>
-  client.delete(`/meta/scan/tasks/${taskId}`).then(res => res.data)
+  client.delete(`/meta/scan/tasks/${taskId}`).then(unwrapData)
 
 export const triggerScanTask = taskId =>
-  client.post(`/meta/scan/tasks/${taskId}/trigger`).then(res => res.data?.data)
+  client.post(`/meta/scan/tasks/${taskId}/trigger`).then(unwrapData)
 
 export const getScanRuns = async (engineId, params = {}) => {
   const response = await client.get('/meta/scan/runs', { params })
-  const runs = response.data?.data ?? []
+  const runs = response?.data?.data ?? response?.data ?? response ?? []
   if (!engineId) {
     return runs
   }
@@ -75,7 +77,7 @@ export const getScanRuns = async (engineId, params = {}) => {
 }
 
 export const getScanRun = runId =>
-  client.get(`/meta/scan/runs/${runId}`).then(res => res.data?.data)
+  client.get(`/meta/scan/runs/${runId}`).then(unwrapData)
 
 export const createManualScanRun = (engineId, payload = {}) =>
   client
@@ -83,13 +85,19 @@ export const createManualScanRun = (engineId, payload = {}) =>
       engine_id: engineId,
       ...payload
     })
-    .then(res => res.data?.data)
+    .then(unwrapData)
+
+export const upsertEngineScanTask = (engineId, payload) =>
+  client.put(`/meta/scan/tasks/engines/${engineId}`, payload)
+
+export const deleteEngineScanTask = engineId =>
+  client.delete(`/meta/scan/tasks/engines/${engineId}`)
 
 export default {
   getEngines,
   getSchemas,
   listAvailableSchemas,
-  autoScan,
+  createUnscannedScanRuns,
   getScanTasks,
   createScanTask,
   updateScanTask,
@@ -97,5 +105,7 @@ export default {
   triggerScanTask,
   getScanRuns,
   getScanRun,
-  createManualScanRun
+  createManualScanRun,
+  upsertEngineScanTask,
+  deleteEngineScanTask
 }

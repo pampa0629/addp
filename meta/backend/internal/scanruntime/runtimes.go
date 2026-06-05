@@ -21,11 +21,10 @@ func NewRuntimes(
 	db *gorm.DB,
 	log *slog.Logger,
 	repo *metaRepo.ScanRepository,
-	spatialScanner TableSpatialScanner,
 	indexer RuntimeIndexer,
 ) *Runtimes {
 	runtimes := &Runtimes{
-		Database:          NewDatabaseRuntime(db, log, repo, spatialScanner, indexer),
+		Database:          NewDatabaseRuntime(db, log, repo, indexer),
 		BranchLeaf:        NewBranchLeafRuntime(db, log, repo),
 		ObjectCatalog:     NewObjectStorageCatalogRuntime(db, log, repo, indexer),
 		FilesystemCatalog: NewFilesystemCatalogRuntime(db, log, repo, indexer),

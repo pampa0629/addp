@@ -86,8 +86,8 @@ query := fmt.Sprintf(`
 ```go
 query := fmt.Sprintf(`
     SELECT
-        ST_AsGeoJSON(ST_Transform("%s", 4326)) as geojson,
-        ST_SRID("%s") as srid
+        ST_AsGeoJSON("%s") as geojson,
+        ST_SRID("%s") as source_srid
     FROM "%s"."%s"
     WHERE "%s" = $1
 `, geomColumn, geomColumn, schema, table, primaryKey)
@@ -98,7 +98,7 @@ query := fmt.Sprintf(`
 query := fmt.Sprintf(`
     SELECT
         COUNT(*) as count,
-        ST_Extent(ST_Transform("%s", 4326)) as extent
+        ST_Extent("%s") as extent
     FROM "%s"."%s"
 `, geomColumn, schema, table)
 ```

@@ -25,12 +25,12 @@
             <h3>{{ t('meta.scan.storageEngineList') }}</h3>
             <el-button
               type="primary"
-              @click="handleAutoScan"
-              :loading="autoScanning"
-              class="auto-scan-button"
+              @click="handleCreateUnscannedScanRuns"
+              :loading="unscannedScanning"
+              class="unscanned-scan-button"
             >
               <el-icon><Search /></el-icon>
-              {{ t('meta.scan.autoScanUnscanned') }}
+              {{ t('meta.scan.unscannedScan') }}
             </el-button>
           </div>
           <el-table
@@ -377,7 +377,7 @@ const loadingCatalogEntries = ref(false)
 const selectedCatalogEntries = ref([])
 
 // 扫描状态
-const autoScanning = ref(false)
+const unscannedScanning = ref(false)
 const scanning = ref(false)
 const scanningCatalogEntries = reactive({})
 const activeScan = ref({
@@ -993,44 +993,44 @@ const scanDetailFromRun = run => run?.current_step || run?.progress_message || r
 
 const clampScanPercent = value => Math.max(0, Math.min(100, Math.round(Number(value) || 0)))
 
-// 一键自动扫描
-const handleAutoScan = async () => {
-  try {
-    await ElMessageBox.confirm(
-      t('meta.scan.autoScanConfirmMsg'),
-      t('meta.scan.autoScanConfirmTitle'),
-      { type: 'warning' }
-    )
+// 一键补扫未扫描引擎
+const handleCreateUnscannedScanRuns = async () => {
+	try {
+		await ElMessageBox.confirm(
+			t('meta.scan.unscannedScanConfirmMsg'),
+			t('meta.scan.unscannedScanConfirmTitle'),
+			{ type: 'warning' }
+		)
 
-    autoScanning.value = true
-    const res = await metaApi.autoScan()
+    unscannedScanning.value = true
+    const res = await metaApi.createUnscannedScanRuns()
     const runs = Array.isArray(res?.runs) ? res.runs : []
-    const submitted = Number(res?.submitted || runs.length || 0)
-    if (submitted === 0) {
-      ElMessage.success(t('meta.scan.autoScanNoRuns'))
-      return
-    }
-    startScanStatus(
-      t('meta.scan.autoScanSubmitted', { n: submitted }),
-      t('meta.scan.scanWaiting'),
-      5
-    )
-    await waitForScanRuns(runs, {
-      onProgress: payload => updateBatchScanStatus(payload, t('meta.scan.autoScanSubmitted', { n: submitted }))
-    })
-    completeScanStatus(
-      t('meta.scan.autoScanCompleted', { n: submitted }),
-      t('meta.scan.autoScanCompleted', { n: submitted })
-    )
-    ElMessage.success(t('meta.scan.autoScanCompleted', { n: submitted }))
-    await Promise.all([loadEngines(), loadScanTasks()])
-  } catch (error) {
-    if (error !== 'cancel') {
-      failScanStatus(error)
-      ElMessage.error(t('meta.scan.autoScanFailed', { msg: error.response?.data?.error || error.message }))
-    }
-  } finally {
-    autoScanning.value = false
+	const submitted = Number(res?.submitted || runs.length || 0)
+	if (submitted === 0) {
+		ElMessage.success(t('meta.scan.unscannedScanNoRuns'))
+		return
+	}
+	startScanStatus(
+		t('meta.scan.unscannedScanSubmitted', { n: submitted }),
+		t('meta.scan.scanWaiting'),
+		5
+	)
+	await waitForScanRuns(runs, {
+		onProgress: payload => updateBatchScanStatus(payload, t('meta.scan.unscannedScanSubmitted', { n: submitted }))
+	})
+	completeScanStatus(
+		t('meta.scan.unscannedScanCompleted', { n: submitted }),
+		t('meta.scan.unscannedScanCompleted', { n: submitted })
+	)
+	ElMessage.success(t('meta.scan.unscannedScanCompleted', { n: submitted }))
+	await Promise.all([loadEngines(), loadScanTasks()])
+} catch (error) {
+	if (error !== 'cancel') {
+		failScanStatus(error)
+		ElMessage.error(t('meta.scan.unscannedScanFailed', { msg: error.response?.data?.error || error.message }))
+	}
+} finally {
+    unscannedScanning.value = false
   }
 }
 
@@ -1532,7 +1532,7 @@ onBeforeUnmount(() => {
   font-size: 16px;
 }
 
-.auto-scan-button {
+.unscanned-scan-button {
   white-space: nowrap;
 }
 

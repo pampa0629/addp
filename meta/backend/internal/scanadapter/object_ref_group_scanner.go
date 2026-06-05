@@ -12,14 +12,14 @@ import (
 	"github.com/addp/meta/internal/scanflow"
 )
 
-type ObjectRefGroupRuntime interface {
+type ObjectRefGroupPersister interface {
 	DetectObjectCatalogResourceFormats(ctx context.Context, readableProvider plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, resources []metacatalog.StorageResource)
 	PersistObjectCatalogCompositeItems(resource *commonModels.Engine, tenantID, engineID uint, bucketNode, basePrefixNode *models.MetaNode, items []metacatalog.ObjectCatalogCompositeItem, stats map[uint]*ObjectCatalogNodeAggregate, includeBucketAggregate bool, scanPathPrefix string, scannedFingerprints map[string]bool, itemTerm string, readableProvider plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, scanDepth string) (int, scanflow.ExtractionCounts, error)
 }
 
 func ScanObjectRefGroups(
 	ctx context.Context,
-	runtime ObjectRefGroupRuntime,
+	persister ObjectRefGroupPersister,
 	repo *metaRepo.ScanRepository,
 	resource *commonModels.Engine,
 	tenantID uint,
@@ -76,7 +76,7 @@ func ScanObjectRefGroups(
 		if err != nil {
 			return result, err
 		}
-		runtime.DetectObjectCatalogResourceFormats(ctx, contentReader, connInfo, resources)
+		persister.DetectObjectCatalogResourceFormats(ctx, contentReader, connInfo, resources)
 
 		candidates := scanflow.ObjectRefGroupCandidateSet(resource.ID, bucket, objectPath, resources)
 		detection, err := scanflow.ResolveContentCandidates(ctx, contentReader, connInfo, resource.ID, candidates)
@@ -95,7 +95,7 @@ func ScanObjectRefGroups(
 				Claims: detection.Claims,
 			})
 		}
-		count, extractionStats, err := runtime.PersistObjectCatalogCompositeItems(resource, tenantID, resource.ID, bucketNode, bucketNode, composites, stats, false, candidates.DirPath, scannedFingerprints, itemTerm, contentReader, connInfo, scanDepth)
+		count, extractionStats, err := persister.PersistObjectCatalogCompositeItems(resource, tenantID, resource.ID, bucketNode, bucketNode, composites, stats, false, candidates.DirPath, scannedFingerprints, itemTerm, contentReader, connInfo, scanDepth)
 		if err != nil {
 			return result, err
 		}

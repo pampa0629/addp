@@ -75,6 +75,7 @@ const (
 
 // 模块常量
 const (
+	ModuleConsole      = "console"
 	ModuleMeta         = "meta"
 	ModuleTransfer     = "transfer"
 	ModuleDevelop      = "develop"

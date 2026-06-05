@@ -6,6 +6,11 @@ import (
 	"strings"
 )
 
+const (
+	SRIDWGS84       = 4326
+	SRIDWebMercator = 3857
+)
+
 var (
 	explicitEPSGPattern  = regexp.MustCompile(`(?i)^\s*(?:EPSG:|URN:OGC:DEF:CRS:EPSG::)(\d+)\s*$`)
 	epsgAuthorityPattern = regexp.MustCompile(`(?i)AUTHORITY\s*\[\s*"EPSG"\s*,\s*"(\d+)"\s*\]`)

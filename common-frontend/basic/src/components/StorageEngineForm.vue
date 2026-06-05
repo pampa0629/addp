@@ -482,7 +482,7 @@ const formRef = ref(null)
 const hasStoredPassword = ref(false)
 const hasStoredSecretKey = ref(false)
 const immediateScanEnabled = ref(true)  // 默认启用立即扫描
-const scheduledScanEnabled = ref(true)  // 默认启用定时扫描
+const scheduledScanEnabled = ref(false) // 默认不启用定时扫描
 const scanConfigExpanded = ref(false)   // 扫描配置折叠状态（默认折叠）
 
   const ensureConnectionDefaults = (form) => {
@@ -613,10 +613,10 @@ const formState = reactive({
   is_active: true,
   connection_info: {},
   scan_config: {
-    enabled: false,  // 兼容旧版
+    enabled: true,
     immediate_scan: true,  // 默认启用立即扫描
     immediate_depth: 'basic',  // 立即扫描默认基础
-    scheduled_scan: true,  // 默认启用定时扫描
+    scheduled_scan: false,  // 默认只立即扫描一次
     schedule_type: 'daily',  // 默认每天
     schedule_time: '00:00',  // 凌晨执行
     schedule_value: []
@@ -644,9 +644,18 @@ const syncFromProps = (value) => {
     immediateScanEnabled.value = formState.scan_config.immediate_scan
     scheduledScanEnabled.value = formState.scan_config.scheduled_scan
   } else {
-    // 新建资源时使用默认值
+    // 没有既有 Meta 调度时，默认只在保存后触发一次基础扫描。
     immediateScanEnabled.value = true
-    scheduledScanEnabled.value = true
+    scheduledScanEnabled.value = false
+    formState.scan_config = {
+      enabled: true,
+      immediate_scan: true,
+      immediate_depth: 'basic',
+      scheduled_scan: false,
+      schedule_type: 'daily',
+      schedule_time: '00:00',
+      schedule_value: []
+    }
   }
 
   ensureConnectionDefaults(formState)
@@ -703,10 +712,7 @@ watch(
       is_active: value.is_active,
       connection_info: { ...value.connection_info }
     }
-    // 只在启用扫描时发送 scan_config
-    if (scanConfigEnabled.value) {
-      payload.scan_config = { ...value.scan_config }
-    }
+    payload.scan_config = { ...value.scan_config, enabled: scanConfigEnabled.value }
     emit('update:modelValue', payload)
   },
   { deep: true }

@@ -75,6 +75,13 @@ definitions:
     - FieldTypeLineString
     - FieldTypePolygon
     - FieldTypeMultiPoint
+  github_com_addp_meta_internal_models.EngineScanTaskPolicyRequest:
+    properties:
+      engine_name:
+        type: string
+      scan_config:
+        $ref: '#/definitions/models.ScanConfig'
+    type: object
   github_com_addp_meta_internal_models.ExtractionScanStats:
     properties:
       documents:
@@ -289,6 +296,55 @@ definitions:
         description: success/failed
         type: string
     type: object
+  github_com_addp_meta_internal_models.ScanTask:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      deleted_at:
+        $ref: '#/definitions/gorm.DeletedAt'
+      description:
+        type: string
+      enabled:
+        type: boolean
+      engine_id:
+        type: integer
+      id:
+        type: integer
+      last_execution_id:
+        type: string
+      last_execution_status:
+        type: string
+      last_run_at:
+        type: string
+      name:
+        type: string
+      next_run_at:
+        type: string
+      owner_module:
+        description: 绑定对象所属模块
+        type: string
+      owner_ref:
+        description: 绑定对象在模块内的稳定引用
+        type: string
+      parameters:
+        allOf:
+        - $ref: '#/definitions/github_com_addp_meta_internal_models.JSONMap'
+        description: 扫描参数，不表达范围
+      schedule:
+        type: string
+      scope:
+        allOf:
+        - $ref: '#/definitions/github_com_addp_meta_internal_models.JSONMap'
+        description: 结构化扫描范围
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+      updated_by:
+        type: integer
+    type: object
   github_com_addp_meta_internal_models.ScanTaskUpsertRequest:
     properties:
       catalog_paths:
@@ -343,6 +399,83 @@ definitions:
         type: integer
       srid:
         type: integer
+    type: object
+  gorm.DeletedAt:
+    properties:
+      time:
+        type: string
+      valid:
+        description: Valid is true if Time is not NULL
+        type: boolean
+    type: object
+  models.MVTPreprocessConfig:
+    properties:
+      concurrency:
+        description: 并发生成数 (1-20, 默认 10)
+        type: integer
+      max_zoom:
+        description: 最大缩放级别 (0-18, 默认 18)
+        type: integer
+      stop_threshold_kb:
+        description: 自适应停止阈值：平均瓦片大小（KB）< 该值则停止（默认 50.0）
+        type: number
+      stop_threshold_sec:
+        description: 自适应停止阈值：平均生成时间（秒）< 该值则停止（默认 3.0）
+        type: number
+    type: object
+  models.PreprocessingConfig:
+    properties:
+      auto_trigger:
+        description: 扫描完成后自动触发预处理
+        type: boolean
+      enabled:
+        description: 是否启用预处理
+        type: boolean
+      mvt_config:
+        allOf:
+        - $ref: '#/definitions/models.MVTPreprocessConfig'
+        description: MVT 瓦片预处理配置
+      types:
+        description: 预处理类型列表 ["mvt_tiles", "vector_embedding"]
+        items:
+          type: string
+        type: array
+    type: object
+  models.ScanConfig:
+    properties:
+      cron_expression:
+        description: Cron 表达式（schedule_type=cron 时使用）
+        type: string
+      enabled:
+        description: 是否启用扫描（总开关）
+        type: boolean
+      immediate_depth:
+        description: 立即扫描深度：basic（基础）或 deep（深度）
+        type: string
+      immediate_scan:
+        description: 注册后立即扫描
+        type: boolean
+      preprocessing:
+        allOf:
+        - $ref: '#/definitions/models.PreprocessingConfig'
+        description: 预处理配置（可选）
+      scan_depth:
+        description: 默认扫描深度：basic 或 deep
+        type: string
+      schedule_time:
+        description: 执行时间 HH:mm（daily/weekly/monthly 时使用）
+        type: string
+      schedule_type:
+        description: daily, weekly, monthly, cron（仅当scheduled_scan=true时有效）
+        type: string
+      schedule_value:
+        description: 周几（0-6）或月几（1-31）
+        items:
+          type: integer
+        type: array
+      scheduled_scan:
+        description: 启用定时扫描
+        type: boolean
     type: object
 host: localhost:8082
 info:
@@ -944,38 +1077,6 @@ paths:
       summary: 按 catalog path 查询节点 | Query node by catalog path
       tags:
       - Meta Query
-  /scan/auto:
-    post:
-      description: 为当前租户下尚未完成元数据扫描的存储引擎创建后台扫描运行 | Create background scan runs for
-        engines that have not been scanned for current tenant
-      produces:
-      - application/json
-      responses:
-        "202":
-          description: 已提交的扫描运行 | Submitted scan runs
-          schema:
-            additionalProperties: true
-            type: object
-        "401":
-          description: 未授权 | Unauthorized
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: 服务器内部错误 | Internal server error
-          schema:
-            additionalProperties: true
-            type: object
-        "503":
-          description: 任务服务不可用 | Task service unavailable
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 提交未扫描存储引擎后台扫描 | Submit background scans for unscanned engines
-      tags:
-      - Meta Scan
   /scan/run/manual:
     post:
       consumes:
@@ -1019,6 +1120,38 @@ paths:
       security:
       - BearerAuth: []
       summary: 创建手动扫描运行 | Create manual scan run
+      tags:
+      - Meta Scan
+  /scan/run/unscanned:
+    post:
+      description: 为当前租户下尚未完成元数据扫描的存储引擎创建手动后台扫描运行 | Create manual background scan
+        runs for engines that have not been scanned for current tenant
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: 已提交的扫描运行 | Submitted scan runs
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 未授权 | Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 任务服务不可用 | Task service unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 提交未扫描存储引擎后台扫描 | Submit background scans for unscanned engines
       tags:
       - Meta Scan
   /scan/runs:
@@ -1337,6 +1470,88 @@ paths:
       security:
       - BearerAuth: []
       summary: 触发扫描任务 | Trigger scan task
+      tags:
+      - Meta Scan
+  /scan/tasks/engines/{engine_id}:
+    delete:
+      description: 删除指定 engine 绑定的 Meta 扫描计划 | Delete the Meta scan task bound to
+        an engine
+      parameters:
+      - description: 引擎ID | Engine ID
+        in: path
+        name: engine_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 删除结果 | Delete result
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 任务服务不可用 | Task service unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除 engine 扫描计划 | Delete engine scan task
+      tags:
+      - Meta Scan
+    put:
+      consumes:
+      - application/json
+      description: 为指定 engine 创建、更新或关闭绑定的 Meta 扫描计划 | Create, update or disable the
+        Meta scan task bound to an engine
+      parameters:
+      - description: 引擎ID | Engine ID
+        in: path
+        name: engine_id
+        required: true
+        type: integer
+      - description: engine 扫描计划 | Engine scan policy
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_meta_internal_models.EngineScanTaskPolicyRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 扫描任务 | Scan task
+          schema:
+            $ref: '#/definitions/github_com_addp_meta_internal_models.ScanTask'
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 任务服务不可用 | Task service unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 维护 engine 扫描计划 | Upsert engine scan task
       tags:
       - Meta Scan
   /stats:

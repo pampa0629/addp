@@ -213,10 +213,11 @@ type ListOptions struct {
 }
 
 type CatalogFactsOptions struct {
-	IncludeStatistics bool
-	IncludeIndexes    bool
-	IncludeSamples    bool
-	SampleSize        int
+	IncludeStatistics   bool
+	IncludeIndexes      bool
+	IncludeSpatialFacts bool
+	IncludeSamples      bool
+	SampleSize          int
 }
 
 const (
@@ -257,13 +258,14 @@ type GraphSampleOptions struct {
 }
 
 type CatalogFacts struct {
-	Path      CatalogPath          `json:"path"`
-	Kind      string               `json:"kind"`
-	Table     *datatype.TableInfo  `json:"table,omitempty"`
-	Graph     *datatype.GraphInfo  `json:"graph,omitempty"`
-	Storage   *CatalogStorageFacts `json:"storage,omitempty"`
-	Indexes   []IndexFacts         `json:"indexes,omitempty"`
-	UpdatedAt *time.Time           `json:"updated_at,omitempty"`
+	Path      CatalogPath           `json:"path"`
+	Kind      string                `json:"kind"`
+	Table     *datatype.TableInfo   `json:"table,omitempty"`
+	Graph     *datatype.GraphInfo   `json:"graph,omitempty"`
+	Spatial   *datatype.SpatialInfo `json:"spatial,omitempty"`
+	Storage   *CatalogStorageFacts  `json:"storage,omitempty"`
+	Indexes   []IndexFacts          `json:"indexes,omitempty"`
+	UpdatedAt *time.Time            `json:"updated_at,omitempty"`
 }
 
 type CatalogStorageFacts struct {

@@ -803,11 +803,27 @@ func (r *ScanRepository) FindItemByFullName(tenantID, engineID uint, fullName st
 	return nil, false, err
 }
 
+func (r *ScanRepository) GetItemByID(tenantID, itemID uint) (*models.MetaItem, error) {
+	var item models.MetaItem
+	if err := r.db.Where("tenant_id = ? AND id = ? AND deleted_at IS NULL", tenantID, itemID).First(&item).Error; err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
+
 // GetNodeByID 根据 ID 获取节点
 func (r *ScanRepository) GetNodeByID(nodeID uint) (*models.MetaNode, error) {
 	var node models.MetaNode
 	err := r.db.Where("id = ? AND deleted_at IS NULL", nodeID).First(&node).Error
 	if err != nil {
+		return nil, err
+	}
+	return &node, nil
+}
+
+func (r *ScanRepository) GetNodeByIDForTenant(tenantID, nodeID uint) (*models.MetaNode, error) {
+	var node models.MetaNode
+	if err := r.db.Where("tenant_id = ? AND id = ? AND deleted_at IS NULL", tenantID, nodeID).First(&node).Error; err != nil {
 		return nil, err
 	}
 	return &node, nil

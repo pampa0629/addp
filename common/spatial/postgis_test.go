@@ -9,12 +9,6 @@ func TestPostGISExpressions(t *testing.T) {
 	if wkt != `ST_AsText("geo""col"::geometry)` {
 		t.Fatalf("PostGISWKTExpression() = %q", wkt)
 	}
-
-	render := PostGISRenderGeoJSONExpression("geom", "geometry")
-	want := `CASE WHEN "geom" IS NULL THEN NULL WHEN ST_SRID("geom") IN (0, 4326) THEN ST_AsGeoJSON("geom") ELSE ST_AsGeoJSON(ST_Transform("geom", 4326)) END`
-	if render != want {
-		t.Fatalf("PostGISRenderGeoJSONExpression() = %q, want %q", render, want)
-	}
 }
 
 func TestIsPostGISSpatialType(t *testing.T) {

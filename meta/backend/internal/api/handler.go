@@ -10,6 +10,7 @@ import (
 
 	commonAuth "github.com/addp/common/middleware/auth"
 	metaErrors "github.com/addp/meta/internal/errors"
+	"github.com/addp/meta/internal/extractor"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanflow"
 	"github.com/addp/meta/internal/service"
@@ -18,16 +19,29 @@ import (
 )
 
 type Handler struct {
-	engineService *service.EngineService
-	scanService   *service.ScanService
-	taskService   *service.ScanTaskService
+	engineService        *service.EngineService
+	scanService          *service.ScanService
+	taskService          *service.ScanTaskService
+	executionService     *service.ScanExecutionService
+	metadataQueryService *service.MetadataQueryService
+	metadataExtractor    *extractor.MetadataExtractor
 }
 
-func NewHandler(engineService *service.EngineService, scanService *service.ScanService, taskService *service.ScanTaskService) *Handler {
+func NewHandler(
+	engineService *service.EngineService,
+	scanService *service.ScanService,
+	taskService *service.ScanTaskService,
+	executionService *service.ScanExecutionService,
+	metadataQueryService *service.MetadataQueryService,
+	metadataExtractor *extractor.MetadataExtractor,
+) *Handler {
 	return &Handler{
-		engineService: engineService,
-		scanService:   scanService,
-		taskService:   taskService,
+		engineService:        engineService,
+		scanService:          scanService,
+		taskService:          taskService,
+		executionService:     executionService,
+		metadataQueryService: metadataQueryService,
+		metadataExtractor:    metadataExtractor,
 	}
 }
 
@@ -62,7 +76,7 @@ func (h *Handler) handleServiceError(c *gin.Context, err error) {
 // @Security BearerAuth
 func (h *Handler) GetStats(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
-	itemCount, err := h.scanService.CountItems(tenantID)
+	itemCount, err := h.metadataQueryService.CountItems(tenantID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -100,7 +114,7 @@ func (h *Handler) GetObjectMetadata(c *gin.Context) {
 		return
 	}
 
-	item, err := h.scanService.GetObjectMetadata(tenantID, uint(engineID), objectKey)
+	item, err := h.metadataExtractor.GetObjectMetadata(tenantID, uint(engineID), objectKey)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
@@ -131,20 +145,20 @@ func (h *Handler) GetEngines(c *gin.Context) {
 	c.JSON(http.StatusOK, engines)
 }
 
-// AutoScan 提交未扫描存储引擎的后台扫描运行
+// CreateUnscannedScanRuns 提交未扫描存储引擎的后台扫描运行
 // @Summary 提交未扫描存储引擎后台扫描 | Submit background scans for unscanned engines
-// @Description 为当前租户下尚未完成元数据扫描的存储引擎创建后台扫描运行 | Create background scan runs for engines that have not been scanned for current tenant
+// @Description 为当前租户下尚未完成元数据扫描的存储引擎创建手动后台扫描运行 | Create manual background scan runs for engines that have not been scanned for current tenant
 // @Tags Meta Scan
 // @Produce json
 // @Success 202 {object} map[string]interface{} "已提交的扫描运行 | Submitted scan runs"
 // @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
 // @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /scan/auto [post]
+// @Router /scan/run/unscanned [post]
 // @Security BearerAuth
-func (h *Handler) AutoScan(c *gin.Context) {
-	if h.taskService == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "task service not available"})
+func (h *Handler) CreateUnscannedScanRuns(c *gin.Context) {
+	if h.executionService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "execution service not available"})
 		return
 	}
 
@@ -156,7 +170,7 @@ func (h *Handler) AutoScan(c *gin.Context) {
 		return
 	}
 
-	runs, err := h.taskService.CreateAutoRuns(c.Request.Context(), tenantID, userID, token)
+	runs, err := h.executionService.CreateUnscannedRuns(c.Request.Context(), tenantID, userID, token)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -183,8 +197,8 @@ func (h *Handler) AutoScan(c *gin.Context) {
 // @Router /scan/run/manual [post]
 // @Security BearerAuth
 func (h *Handler) CreateManualScanRun(c *gin.Context) {
-	if h.taskService == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "task service not available"})
+	if h.executionService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "execution service not available"})
 		return
 	}
 
@@ -211,7 +225,7 @@ func (h *Handler) CreateManualScanRun(c *gin.Context) {
 		return
 	}
 
-	run, err := h.taskService.CreateManualRun(c.Request.Context(), tenantID, userID, token, &req)
+	run, err := h.executionService.CreateManualRun(c.Request.Context(), tenantID, userID, token, &req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -234,8 +248,8 @@ func (h *Handler) CreateManualScanRun(c *gin.Context) {
 // @Router /scan/runs/{run_id} [get]
 // @Security BearerAuth
 func (h *Handler) GetScanRun(c *gin.Context) {
-	if h.taskService == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "task service not available"})
+	if h.executionService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "execution service not available"})
 		return
 	}
 
@@ -246,7 +260,7 @@ func (h *Handler) GetScanRun(c *gin.Context) {
 		return
 	}
 
-	exec, err := h.taskService.GetExecution(c.Request.Context(), executionID, int(tenantID))
+	exec, err := h.executionService.GetExecution(c.Request.Context(), executionID, int(tenantID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "execution not found"})
@@ -272,8 +286,8 @@ func (h *Handler) GetScanRun(c *gin.Context) {
 // @Router /scan/runs/{run_id}/cancel [post]
 // @Security BearerAuth
 func (h *Handler) CancelScanRun(c *gin.Context) {
-	if h.taskService == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "task service not available"})
+	if h.executionService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "execution service not available"})
 		return
 	}
 
@@ -284,7 +298,7 @@ func (h *Handler) CancelScanRun(c *gin.Context) {
 		return
 	}
 
-	if err := h.taskService.CancelExecution(c.Request.Context(), executionID, int(tenantID)); err != nil {
+	if err := h.executionService.CancelExecution(c.Request.Context(), executionID, int(tenantID)); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -309,8 +323,8 @@ func (h *Handler) CancelScanRun(c *gin.Context) {
 // @Router /scan/runs [get]
 // @Security BearerAuth
 func (h *Handler) ListScanRuns(c *gin.Context) {
-	if h.taskService == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "task service not available"})
+	if h.executionService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "execution service not available"})
 		return
 	}
 
@@ -346,7 +360,7 @@ func (h *Handler) ListScanRuns(c *gin.Context) {
 		}
 	}
 
-	executions, total, err := h.taskService.ListExecutions(c.Request.Context(), int(tenantID), taskID, status, triggerType, page, pageSize)
+	executions, total, err := h.executionService.ListExecutions(c.Request.Context(), int(tenantID), taskID, status, triggerType, page, pageSize)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -483,6 +497,87 @@ func (h *Handler) DeleteScanTask(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "task deleted"})
 }
 
+// UpsertEngineScanTask 维护指定 engine 绑定的扫描计划
+// @Summary 维护 engine 扫描计划 | Upsert engine scan task
+// @Description 为指定 engine 创建、更新或关闭绑定的 Meta 扫描计划 | Create, update or disable the Meta scan task bound to an engine
+// @Tags Meta Scan
+// @Accept json
+// @Produce json
+// @Param engine_id path int true "引擎ID | Engine ID"
+// @Param request body models.EngineScanTaskPolicyRequest true "engine 扫描计划 | Engine scan policy"
+// @Success 200 {object} models.ScanTask "扫描任务 | Scan task"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /scan/tasks/engines/{engine_id} [put]
+// @Security BearerAuth
+func (h *Handler) UpsertEngineScanTask(c *gin.Context) {
+	if h.taskService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "task service not available"})
+		return
+	}
+
+	tenantID := commonAuth.GetTenantID(c)
+	userID := commonAuth.GetUserID(c)
+
+	engineID64, err := strconv.ParseUint(c.Param("engine_id"), 10, 32)
+	if err != nil || engineID64 == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid engine_id"})
+		return
+	}
+
+	var req models.EngineScanTaskPolicyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	task, err := h.taskService.UpsertEngineScanTaskFromPolicy(tenantID, userID, uint(engineID64), req.EngineName, req.ScanConfig)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if task == nil {
+		c.JSON(http.StatusOK, gin.H{"status": "deleted"})
+		return
+	}
+
+	c.JSON(http.StatusOK, task)
+}
+
+// DeleteEngineScanTask 删除指定 engine 绑定的扫描计划
+// @Summary 删除 engine 扫描计划 | Delete engine scan task
+// @Description 删除指定 engine 绑定的 Meta 扫描计划 | Delete the Meta scan task bound to an engine
+// @Tags Meta Scan
+// @Produce json
+// @Param engine_id path int true "引擎ID | Engine ID"
+// @Success 200 {object} map[string]interface{} "删除结果 | Delete result"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /scan/tasks/engines/{engine_id} [delete]
+// @Security BearerAuth
+func (h *Handler) DeleteEngineScanTask(c *gin.Context) {
+	if h.taskService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "task service not available"})
+		return
+	}
+
+	tenantID := commonAuth.GetTenantID(c)
+	engineID64, err := strconv.ParseUint(c.Param("engine_id"), 10, 32)
+	if err != nil || engineID64 == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid engine_id"})
+		return
+	}
+
+	if err := h.taskService.DeleteEngineTaskBinding(tenantID, uint(engineID64)); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "task deleted"})
+}
+
 // TriggerScanTask 手动触发任务
 // @Summary 触发扫描任务 | Trigger scan task
 // @Description 立即触发指定扫描任务 | Trigger scan task immediately
@@ -496,8 +591,8 @@ func (h *Handler) DeleteScanTask(c *gin.Context) {
 // @Router /scan/tasks/{task_id}/trigger [post]
 // @Security BearerAuth
 func (h *Handler) TriggerScanTask(c *gin.Context) {
-	if h.taskService == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "task service not available"})
+	if h.taskService == nil || h.executionService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "scan task service not available"})
 		return
 	}
 
@@ -511,7 +606,13 @@ func (h *Handler) TriggerScanTask(c *gin.Context) {
 		return
 	}
 
-	run, err := h.taskService.TriggerTaskNow(c.Request.Context(), tenantID, uint(taskID), userID)
+	task, err := h.taskService.GetTask(tenantID, uint(taskID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	run, err := h.executionService.CreateTaskManualRun(c.Request.Context(), task, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -561,8 +662,8 @@ func (h *Handler) ListScanTasks(c *gin.Context) {
 // @Router /items/{item_id}/refresh [post]
 // @Security BearerAuth
 func (h *Handler) RefreshItem(c *gin.Context) {
-	if h.taskService == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "task service not available"})
+	if h.executionService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "execution service not available"})
 		return
 	}
 
@@ -590,13 +691,13 @@ func (h *Handler) RefreshItem(c *gin.Context) {
 		req.ScanDepth = "deep"
 	}
 
-	run, err := h.taskService.CreateManualRun(c.Request.Context(), tenantID, userID, token, &req)
+	run, err := h.executionService.CreateManualRun(c.Request.Context(), tenantID, userID, token, &req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	exec, err := h.taskService.WaitExecution(c.Request.Context(), run.ExecutionID, int(tenantID), 0)
+	exec, err := h.executionService.WaitExecution(c.Request.Context(), run.ExecutionID, int(tenantID), 0)
 	if err != nil {
 		status := http.StatusInternalServerError
 		if strings.Contains(err.Error(), "execution wait timed out") {
@@ -659,7 +760,7 @@ func (h *Handler) ExtractObjectMetadata(c *gin.Context) {
 	defer c.Request.Body.Close()
 
 	// 调用扫描服务提取元数据
-	metadata, err := h.scanService.ExtractObjectMetadataOnDemand(tenantID, uint(engineID), objectKey, token, objectReader)
+	metadata, err := h.metadataExtractor.ExtractObjectMetadataOnDemand(tenantID, uint(engineID), objectKey, token, objectReader)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -704,7 +805,7 @@ func (h *Handler) BuildObjectAccessIndex(c *gin.Context) {
 		return
 	}
 
-	attrs, err := h.scanService.BuildObjectAccessIndexOnDemand(tenantID, uint(engineID), objectKey, c.Request.Body)
+	attrs, err := h.metadataExtractor.BuildObjectAccessIndexOnDemand(tenantID, uint(engineID), objectKey, c.Request.Body)
 	_ = c.Request.Body.Close()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -770,9 +871,9 @@ func (h *Handler) ListEngineItems(c *gin.Context) {
 	branch := c.Query("branch")
 	var items []models.MetaItemLite
 	if branch != "" {
-		items, err = h.scanService.ListItemsByBranch(uint(engineID), tenantID, branch)
+		items, err = h.metadataQueryService.ListItemsByBranch(uint(engineID), tenantID, branch)
 	} else {
-		items, err = h.scanService.ListItemsByEngine(uint(engineID), tenantID)
+		items, err = h.metadataQueryService.ListItemsByEngine(uint(engineID), tenantID)
 	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -803,7 +904,7 @@ func (h *Handler) GetItemFieldsByID(c *gin.Context) {
 		return
 	}
 
-	fields, err := h.scanService.GetItemFieldDetailsByID(tenantID, uint(itemID))
+	fields, err := h.metadataQueryService.GetItemFieldDetailsByID(tenantID, uint(itemID))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
@@ -894,7 +995,7 @@ func (h *Handler) GetMetadataTree(c *gin.Context) {
 		return
 	}
 
-	tree, err := h.scanService.GetMetadataTree(tenantID, uint(engineID))
+	tree, err := h.metadataQueryService.GetMetadataTree(tenantID, uint(engineID))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -924,7 +1025,7 @@ func (h *Handler) GetMetaNodeByID(c *gin.Context) {
 		return
 	}
 
-	node, err := h.scanService.GetMetaNodeByID(tenantID, uint(nodeID))
+	node, err := h.metadataQueryService.GetMetaNodeByID(tenantID, uint(nodeID))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
@@ -954,7 +1055,7 @@ func (h *Handler) GetNodeChildren(c *gin.Context) {
 		return
 	}
 
-	nodes, err := h.scanService.GetNodeChildren(tenantID, uint(nodeID))
+	nodes, err := h.metadataQueryService.GetNodeChildren(tenantID, uint(nodeID))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -984,7 +1085,7 @@ func (h *Handler) GetNodeItems(c *gin.Context) {
 		return
 	}
 
-	items, err := h.scanService.GetNodeItems(tenantID, uint(nodeID))
+	items, err := h.metadataQueryService.GetNodeItems(tenantID, uint(nodeID))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -1021,7 +1122,7 @@ func (h *Handler) QueryNodeByCatalogPath(c *gin.Context) {
 		return
 	}
 
-	node, err := h.scanService.GetNodeByCatalogPath(tenantID, uint(engineID), catalogPath)
+	node, err := h.metadataQueryService.GetNodeByCatalogPath(tenantID, uint(engineID), catalogPath)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
@@ -1058,7 +1159,7 @@ func (h *Handler) QueryItemByCatalogPath(c *gin.Context) {
 		return
 	}
 
-	item, err := h.scanService.GetItemByCatalogPath(tenantID, uint(engineID), catalogPath)
+	item, err := h.metadataQueryService.GetItemByCatalogPath(tenantID, uint(engineID), catalogPath)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
@@ -1088,7 +1189,7 @@ func (h *Handler) GetItemByID(c *gin.Context) {
 		return
 	}
 
-	item, err := h.scanService.GetItemByID(tenantID, uint(itemID))
+	item, err := h.metadataQueryService.GetItemByID(tenantID, uint(itemID))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
@@ -1118,7 +1219,7 @@ func (h *Handler) GetItemSpatialMetadataByID(c *gin.Context) {
 		return
 	}
 
-	spatialMeta, err := h.scanService.GetItemSpatialMetadataByID(tenantID, uint(itemID))
+	spatialMeta, err := h.metadataQueryService.GetItemSpatialMetadataByID(tenantID, uint(itemID))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return

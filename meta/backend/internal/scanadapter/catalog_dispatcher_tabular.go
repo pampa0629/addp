@@ -136,17 +136,16 @@ func (d *CatalogDispatcher) scanResourceNamespaces(
 			lockAcquired := false
 			if d.locker != nil {
 				namespaceLock = d.locker.GenerateNamespaceLockKey(tenantID, resourceID, namespace)
-				if d.locker.CheckTaskExists(ctx, namespaceLock) {
+				acquired, err := d.locker.TryAcquireLock(ctx, namespaceLock, 2*time.Hour)
+				if err != nil {
+					d.log.Warn("加命名空间级锁失败", "namespace", namespace, "error", err)
+				} else if !acquired {
 					d.log.Info("命名空间正在扫描中，跳过", "engine_id", resourceID, "namespace", namespace)
 					if reporter != nil {
 						reporter.Message(fmt.Sprintf("命名空间 %s 正在扫描中，跳过", namespace))
 					}
 					completed++
 					return
-				}
-
-				if err := d.locker.MarkTaskRunning(ctx, namespaceLock, 2*time.Hour); err != nil {
-					d.log.Warn("加命名空间级锁失败", "namespace", namespace, "error", err)
 				} else {
 					lockAcquired = true
 				}

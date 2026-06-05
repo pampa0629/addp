@@ -5,7 +5,6 @@ import (
 	"errors"
 	"time"
 
-	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scantask"
 )
@@ -81,23 +80,4 @@ func (s *ScanTaskService) DeleteTask(ctx context.Context, tenantID, taskID uint)
 		return err
 	}
 	return s.db.Delete(&models.ScanTask{}, taskID).Error
-}
-
-// TriggerTaskNow 立即触发任务执行
-func (s *ScanTaskService) TriggerTaskNow(ctx context.Context, tenantID, taskID, userID uint) (*commonExecution.TaskExecution, error) {
-	task, err := s.GetTask(tenantID, taskID)
-	if err != nil {
-		return nil, err
-	}
-
-	storageType := s.lookupStorageType(task.EngineID, task.TenantID)
-
-	execution := scantask.NewTaskManualExecution(task, userID, storageType, time.Now())
-
-	if err := s.taskExecutionRepo.Create(ctx, execution); err != nil {
-		return nil, err
-	}
-
-	s.enqueueExecution(execution.ExecutionID)
-	return execution, nil
 }

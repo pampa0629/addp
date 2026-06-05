@@ -7,6 +7,27 @@ const DEFAULT_TDT_KEY = import.meta.env.VITE_TDT_KEY || ''
 
 const GAODE_BASE_MAP_VALUE = 'amapVector'
 
+const BASE_MAP_PROFILES = {
+  tiandituVector: {
+    provider: 'tianditu',
+    tile_matrix_set: 'tianditu_w',
+    view_crs: 'EPSG:3857',
+    coordinate_policy: 'wgs84'
+  },
+  tiandituImage: {
+    provider: 'tianditu',
+    tile_matrix_set: 'tianditu_w',
+    view_crs: 'EPSG:3857',
+    coordinate_policy: 'wgs84'
+  },
+  [GAODE_BASE_MAP_VALUE]: {
+    provider: 'amap',
+    tile_matrix_set: 'xyz',
+    view_crs: 'EPSG:3857',
+    coordinate_policy: 'gcj02'
+  }
+}
+
 // 允许宿主应用注入真实的 configAPI 实现
 let configAPI = defaultConfigAPI
 
@@ -40,7 +61,14 @@ export function useMapConfig() {
   const ensureBaseMapOption = (value, label) => {
     const exists = baseMapOptions.value.some((item) => item.value === value)
     if (!exists) {
-      baseMapOptions.value = [...baseMapOptions.value, { label, value }]
+      baseMapOptions.value = [
+        ...baseMapOptions.value,
+        {
+          label,
+          value,
+          profile: BASE_MAP_PROFILES[value] || null
+        }
+      ]
     }
   }
 
@@ -60,7 +88,7 @@ export function useMapConfig() {
       }
     }
 
-    ensureBaseMapOption(GAODE_BASE_MAP_VALUE, '高德地图 矢量')
+    ensureBaseMapOption(GAODE_BASE_MAP_VALUE, '高德地图 矢量（GCJ-02）')
   }
 
   const applyTiandituConfig = (tdtKey) => {
@@ -115,10 +143,15 @@ export function useMapConfig() {
     return baseMapOptions.value[0].value
   })
 
+  const getBaseMapProfile = (baseMapType) => {
+    return BASE_MAP_PROFILES[baseMapType] || null
+  }
+
   return {
     mapConfig,
     baseMapOptions,
     defaultBaseMapType,
+    getBaseMapProfile,
     loadMapConfig,
     GAODE_BASE_MAP_VALUE
   }

@@ -287,6 +287,7 @@
         "updateSuccess": "更新成功",
         "jsonError": "JSON 格式错误，请检查",
         "opFailed": "操作失败",
+        "scanPolicySyncFailed": "引擎已保存，但元数据扫描编排失败：{error}",
         "deleteConfirm": "确定要删除引擎 \"{name}\" 吗？此操作不可恢复。",
         "deleteTitle": "确认删除",
         "deleteSuccess": "删除成功",

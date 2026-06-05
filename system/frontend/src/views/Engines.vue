@@ -407,33 +407,6 @@
             </div>
           </el-tab-pane>
 
-          <!-- 扫描配置标签页 -->
-          <el-tab-pane :label="t('system.engine.dialog.detailTabs.scan')" v-if="selectedEngine.scan_config">
-            <el-descriptions :column="2" border>
-              <el-descriptions-item :label="t('system.engine.dialog.scan.immediateScan')" :span="2">
-                <el-tag :type="selectedEngine.scan_config.immediate_scan ? 'success' : 'info'">
-                  {{ selectedEngine.scan_config.immediate_scan ? t('system.engine.dialog.scan.yes') : t('system.engine.dialog.scan.no') }}
-                </el-tag>
-                <span v-if="selectedEngine.scan_config.immediate_scan" style="margin-left: 8px">
-                  {{ t('system.engine.dialog.scan.depth', { depth: selectedEngine.scan_config.immediate_depth || 'basic' }) }}
-                </span>
-              </el-descriptions-item>
-              <el-descriptions-item :label="t('system.engine.dialog.scan.scheduledScan')" :span="2">
-                <el-tag :type="selectedEngine.scan_config.scheduled_scan ? 'success' : 'info'">
-                  {{ selectedEngine.scan_config.scheduled_scan ? t('system.engine.dialog.scan.yes') : t('system.engine.dialog.scan.no') }}
-                </el-tag>
-              </el-descriptions-item>
-              <el-descriptions-item v-if="selectedEngine.scan_config.scheduled_scan" :label="t('system.engine.dialog.scan.scheduleType')">
-                {{ selectedEngine.scan_config.schedule_type }}
-              </el-descriptions-item>
-              <el-descriptions-item v-if="selectedEngine.scan_config.scheduled_scan && selectedEngine.scan_config.cron_expression" :label="t('system.engine.dialog.scan.cronExpression')">
-                {{ selectedEngine.scan_config.cron_expression }}
-              </el-descriptions-item>
-              <el-descriptions-item v-if="selectedEngine.scan_config.scheduled_scan && selectedEngine.scan_config.schedule_time" :label="t('system.engine.dialog.scan.scheduleTime')">
-                {{ selectedEngine.scan_config.schedule_time }}
-              </el-descriptions-item>
-            </el-descriptions>
-          </el-tab-pane>
         </el-tabs>
       </div>
       <template #footer>
@@ -471,7 +444,7 @@ import { ref, onMounted, computed } from 'vue'
 import { enginesAPI } from '../api/engines'
 import { Plus, Edit, Delete } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { StorageEngineForm, EngineForm } from '@common-ui'
+import { StorageEngineForm, EngineForm, requestConsoleBridge } from '@common-ui'
 import { getEngineFamilyLabelKey } from '@common-ui'
 import { useI18n } from 'vue-i18n'
 
@@ -512,6 +485,92 @@ const form = ref({
   is_active: true,
   connection_info: {}
 })
+
+const ENGINE_SCAN_POLICY_CHANNEL = 'engine-scan-policy'
+
+const splitEngineAndScanPayload = (value) => {
+  const { scan_config, ...enginePayload } = value || {}
+  return {
+    enginePayload,
+    scanConfig: scan_config || null
+  }
+}
+
+const defaultImmediateScanConfig = () => ({
+  enabled: true,
+  immediate_scan: true,
+  immediate_depth: 'basic',
+  scheduled_scan: false,
+  schedule_type: 'daily',
+  schedule_time: '00:00',
+  schedule_value: []
+})
+
+const normalizeScanConfig = (scanConfig) => {
+  if (!scanConfig) return null
+  const enabled = Boolean(scanConfig.immediate_scan || scanConfig.scheduled_scan)
+  return {
+    ...scanConfig,
+    enabled
+  }
+}
+
+const engineFromResponse = (response) => response?.data || response
+
+const requestConsoleEngineScanPolicy = (payload) => {
+  if (window.parent === window) {
+    const scanConfig = normalizeScanConfig(payload.scanConfig)
+    if (scanConfig?.enabled) {
+      return Promise.reject(new Error('请通过 Console 入口维护元数据扫描计划'))
+    }
+    return Promise.resolve({})
+  }
+
+  return requestConsoleBridge(ENGINE_SCAN_POLICY_CHANNEL, payload, {
+    source: 'addp-system',
+    timeoutMessage: 'Console 扫描计划编排请求超时'
+  })
+}
+
+const loadEngineScanConfig = async (engineId) => {
+  try {
+    const result = await requestConsoleEngineScanPolicy({
+      action: 'load',
+      engineId
+    })
+    return result.scanConfig || null
+  } catch (error) {
+    console.warn('load engine scan task failed', error)
+    return null
+  }
+}
+
+const syncEngineScanPolicy = async (engine, scanConfig, shouldTriggerImmediate) => {
+  const normalized = normalizeScanConfig(scanConfig)
+  if (!engine?.id) {
+    return
+  }
+  await requestConsoleEngineScanPolicy({
+    action: 'sync',
+    engine: {
+      id: engine.id,
+      name: engine.name
+    },
+    scanConfig: normalized,
+    triggerImmediate: shouldTriggerImmediate
+  })
+}
+
+const syncEngineScanPolicyAfterSave = async (engine, scanConfig) => {
+  try {
+    await syncEngineScanPolicy(engine, scanConfig, Boolean(scanConfig?.immediate_scan))
+    return true
+  } catch (error) {
+    const message = error.response?.data?.error || error.message || t('system.engine.msg.opFailed')
+    ElMessage.warning(t('system.engine.msg.scanPolicySyncFailed', { error: message }))
+    return false
+  }
+}
 
 const dialogTitle = computed(() => {
   if (isEdit.value) return t('system.engine.dialog.edit')
@@ -1053,7 +1112,7 @@ const confirmEngineType = (category) => {
   dialogVisible.value = true
 }
 
-const editEngine = (row) => {
+const editEngine = async (row) => {
   isEdit.value = true
   editId.value = row.id
 
@@ -1080,12 +1139,14 @@ const editEngine = (row) => {
   } else {
     selectedEngineCapabilityGroup.value = 'storage'
 
+    const scanConfig = await loadEngineScanConfig(row.id)
     form.value = {
       engine_type: row.engine_type,
       name: row.name,
       description: row.description,
       is_active: row.is_active,
-      connection_info: { ...row.connection_info }
+      connection_info: { ...row.connection_info },
+      ...(scanConfig ? { scan_config: scanConfig } : {})
     }
   }
 
@@ -1108,8 +1169,8 @@ const testBeforeCreate = async () => {
   testing.value = true
   try {
     const response = isEdit.value
-      ? await enginesAPI.testExistingConnection(editId.value, form.value)
-      : await enginesAPI.testConnection(form.value)
+      ? await enginesAPI.testExistingConnection(editId.value, splitEngineAndScanPayload(form.value).enginePayload)
+      : await enginesAPI.testConnection(splitEngineAndScanPayload(form.value).enginePayload)
 
     if (response.success) {
       ElMessage.success(t('system.engine.msg.testSuccess'))
@@ -1149,7 +1210,8 @@ const submitForm = async () => {
 
   submitting.value = true
   try {
-    let submitData = { ...form.value }
+    const { enginePayload, scanConfig } = splitEngineAndScanPayload(form.value)
+    let submitData = { ...enginePayload }
 
     if (isComputeEngineForm.value) {
       try {
@@ -1167,16 +1229,22 @@ const submitForm = async () => {
     }
 
     if (isEdit.value) {
-      await enginesAPI.update(editId.value, submitData)
+      const response = await enginesAPI.update(editId.value, submitData)
+      if (!isComputeEngineForm.value) {
+        await syncEngineScanPolicyAfterSave(engineFromResponse(response) || { id: editId.value, name: submitData.name }, scanConfig || defaultImmediateScanConfig())
+      }
       ElMessage.success(t('system.engine.msg.updateSuccess'))
     } else {
-      await enginesAPI.create(submitData)
+      const response = await enginesAPI.create(submitData)
+      if (!isComputeEngineForm.value) {
+        await syncEngineScanPolicyAfterSave(engineFromResponse(response), scanConfig || defaultImmediateScanConfig())
+      }
       ElMessage.success(t('system.engine.msg.createSuccess'))
     }
     dialogVisible.value = false
     loadEngines()
   } catch (error) {
-    ElMessage.error(error.response?.data?.error || t('system.engine.msg.opFailed'))
+    ElMessage.error(error.response?.data?.error || error.message || t('system.engine.msg.opFailed'))
   } finally {
     submitting.value = false
   }

@@ -24,8 +24,7 @@ type BranchScanner interface {
 type ScanLocker interface {
 	GenerateNamespaceLockKey(tenantID, engineID uint, namespaceName string) string
 	GenerateBranchLockKey(tenantID, engineID uint, branchName string) string
-	CheckTaskExists(ctx context.Context, taskKey string) bool
-	MarkTaskRunning(ctx context.Context, taskKey string, ttl time.Duration) error
+	TryAcquireLock(ctx context.Context, taskKey string, ttl time.Duration) (bool, error)
 	ClearTask(ctx context.Context, taskKey string) error
 }
 

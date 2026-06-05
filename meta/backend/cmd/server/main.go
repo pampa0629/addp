@@ -96,7 +96,7 @@ func main() {
 	}
 
 	// 初始化服务
-	engineService := service.NewEngineService(db, cfg.SystemServiceURL, cfg.InternalAPIKey, redisClient)
+	engineService := service.NewEngineService(db, cfg.SystemServiceURL, cfg.InternalAPIKey)
 	if err := engineService.PreloadResources(); err != nil {
 		logger.L().Warn("资源预加载失败，延迟到首次请求", "error", err)
 	}
@@ -144,22 +144,21 @@ func main() {
 		logger.L().Info("扫描事件发布器已初始化")
 	}
 
-	taskService := service.NewScanTaskService(db, scanService, engineService, redisClient)
-	// 将 taskService 注入到 engineService（用于处理 ScanConfig）
-	engineService.SetTaskService(taskService)
+	taskService := service.NewScanTaskService(db)
+	executionService := service.NewScanExecutionService(db, scanService, engineService, redisClient)
 
-	// 如果配置了任务队列，则使用任务队列（worker 模式）
+	scheduler := service.NewScanTaskScheduler(taskService, executionService)
 	if taskQueue != nil {
-		taskService.SetTaskQueue(taskQueue)
-		logger.L().Info("扫描任务服务将使用 Worker 队列执行任务")
+		scheduler.SetTaskQueue(taskQueue)
+		logger.L().Info("扫描任务调度器将使用 Worker 队列执行任务")
 	} else {
-		logger.L().Info("扫描任务服务将使用本地 goroutine 执行任务")
+		logger.L().Info("扫描任务调度器将使用本地 goroutine 执行任务")
 	}
-	if err := taskService.Start(context.Background()); err != nil {
-		logger.L().Error("扫描任务服务启动失败", "error", err)
+	if err := scheduler.Start(context.Background()); err != nil {
+		logger.L().Error("扫描任务调度器启动失败", "error", err)
 		os.Exit(1)
 	}
-	defer taskService.Stop(context.Background())
+	defer scheduler.Stop(context.Background())
 
 	// ========== 启动清理服务 ==========
 	cleanupService := service.NewCleanupService(db, redisClient, systemClient, searchIndexer, minioClient, service.CleanupConfig{
@@ -172,7 +171,6 @@ func main() {
 		os.Exit(1)
 	}
 	defer cleanupService.Stop(context.Background())
-	engineService.SetCleanupService(cleanupService)
 	logger.L().Info("清理服务已启动", "retention_days", 90)
 
 	// 订阅清理事件（如果 Redis 可用）
@@ -185,8 +183,12 @@ func main() {
 	}
 	// ===================================
 
+	engineSyncService := service.NewEngineSyncService(redisClient, engineService, taskService, executionService, cleanupService)
+	engineSyncService.Start()
+	defer engineSyncService.Stop()
+
 	// 设置路由
-	router := api.SetupRouter(cfg, db, engineService, scanService, taskService, redisClient, systemClient)
+	router := api.SetupRouter(cfg, db, engineService, scanService, taskService, executionService, redisClient, systemClient)
 
 	// ========== 模块注册（注册到 System service_registry）==========
 	if cfg.EnableIntegration && cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {

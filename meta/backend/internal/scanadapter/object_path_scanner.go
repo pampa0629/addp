@@ -13,13 +13,13 @@ import (
 	"github.com/addp/meta/internal/scanflow"
 )
 
-type ObjectPathRuntime interface {
+type ObjectPathPersister interface {
 	PersistObjectResources(resource *commonModels.Engine, tenantID, engineID uint, bucketNode *models.MetaNode, resources []metacatalog.StorageResource, stats map[uint]*ObjectCatalogNodeAggregate, includeBucketAggregate bool, scanDepth string, force bool, scanPathPrefix string, scannedFingerprints map[string]bool, itemTerm string) (int, scanflow.ExtractionCounts, error)
 }
 
 func ScanObjectPaths(
 	ctx context.Context,
-	runtime ObjectPathRuntime,
+	persister ObjectPathPersister,
 	repo *metaRepo.ScanRepository,
 	resource *commonModels.Engine,
 	tenantID uint,
@@ -63,12 +63,12 @@ func ScanObjectPaths(
 		return scanflow.DispatchResult{}, err
 	}
 
-	return scanObjectCatalogPaths(ctx, runtime, repo, resource, tenantID, resource.ID, catalogProvider, paths, scanDepth, force, reporter, itemTerm)
+	return scanObjectCatalogPaths(ctx, persister, repo, resource, tenantID, resource.ID, catalogProvider, paths, scanDepth, force, reporter, itemTerm)
 }
 
 func scanObjectCatalogPaths(
 	ctx context.Context,
-	runtime ObjectPathRuntime,
+	persister ObjectPathPersister,
 	repo *metaRepo.ScanRepository,
 	resource *commonModels.Engine,
 	tenantID, engineID uint,
@@ -176,7 +176,7 @@ func scanObjectCatalogPaths(
 		if target.Object != "" {
 			scanPathPrefix = metacatalog.ParentObjectPath(target.Object)
 		}
-		objectCount, pathExtractionStats, err := runtime.PersistObjectResources(resource, tenantID, engineID, bucketNode, resources, nodeStats, fullBucket, scanDepth, force, scanPathPrefix, scannedFingerprints, itemTerm)
+		objectCount, pathExtractionStats, err := persister.PersistObjectResources(resource, tenantID, engineID, bucketNode, resources, nodeStats, fullBucket, scanDepth, force, scanPathPrefix, scannedFingerprints, itemTerm)
 		if err != nil {
 			completed++
 			if reporter != nil {

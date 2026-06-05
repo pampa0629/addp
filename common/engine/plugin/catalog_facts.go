@@ -66,3 +66,14 @@ func CatalogFactsGraphInfo(facts *CatalogFacts) *datatype.GraphInfo {
 	}
 	return nil
 }
+
+// CatalogFactsSpatialInfo returns spatial facts for a catalog entry.
+func CatalogFactsSpatialInfo(facts *CatalogFacts) *datatype.SpatialInfo {
+	if facts == nil {
+		return nil
+	}
+	if facts.Spatial != nil {
+		return facts.Spatial.Clone()
+	}
+	return nil
+}

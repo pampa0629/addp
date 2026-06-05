@@ -203,10 +203,10 @@ overwrite / append 是 Transfer policy，不进入 common engine。
 |---|---|
 | PostgreSQL native table | 所在 schema |
 | MySQL / Doris / ClickHouse native table | 所在 database |
-| NFS file | 文件父目录 |
-| NFS Shapefile refs | refs 所在目录 |
-| MinIO / S3 object | 对象所在 bucket/prefix |
-| MinIO / S3 Shapefile refs | refs 所在 bucket/prefix |
+| NFS encoded/raw file | 单文件 `ref_groups` |
+| NFS Shapefile refs | 本次实际生成的 refs group |
+| MinIO / S3 encoded/raw object | 单对象 `ref_groups` |
+| MinIO / S3 Shapefile refs | 本次实际生成的 refs group |
 
 Transfer 不直接写目标 Meta attributes。目标 item 的 `data_type`、`format`、`layout`、`type_info`、`format_info` 和 capabilities 由 Meta scan 重新识别。
 

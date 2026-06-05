@@ -721,8 +721,8 @@ paths:
       - Manager
   /engines/{id}/spatial/{schema}/{table}/geojson:
     get:
-      description: 获取空间数据项（关系表）的GeoJSON格式数据，支持分页 | Get spatial item data in GeoJSON
-        format with pagination support
+      description: 获取空间数据项（关系表）的源坐标 GeoJSON 预览数据和 CRS 元数据，后端不做 CRS transform | Get
+        source-CRS GeoJSON preview data and CRS metadata without backend CRS transform
       parameters:
       - description: 存储引擎ID | Engine ID
         in: path
@@ -752,10 +752,10 @@ paths:
         name: geom_column
         type: string
       produces:
-      - application/geo+json
+      - application/json
       responses:
         "200":
-          description: GeoJSON FeatureCollection
+          description: GeoJSON preview contract
           schema:
             additionalProperties: true
             type: object
@@ -776,8 +776,8 @@ paths:
       - Manager
   /engines/{id}/spatial/{schema}/{table}/geojson/metadata:
     get:
-      description: 获取空间数据项（关系表）的元数据信息（记录数、地理范围、坐标系等）| Get spatial item metadata (record
-        count, extent, SRID, etc.)
+      description: 获取空间数据项（关系表）的源坐标元数据信息，后端不做 CRS transform | Get source-CRS spatial
+        item metadata without backend CRS transform
       parameters:
       - description: 存储引擎ID | Engine ID
         in: path
@@ -1214,8 +1214,8 @@ paths:
       - Manager
   /engines/{id}/spatial/features/{feature_id}/centroid:
     get:
-      description: 获取指定要素的几何中心点坐标，用于表格行定位到地图 | Get the centroid coordinates of a feature
-        for map positioning
+      description: 获取指定要素的源坐标几何中心点和 CRS 元数据，后端不做 CRS transform | Get the source-CRS
+        centroid and CRS metadata without backend CRS transform
       parameters:
       - description: 存储引擎ID | Engine ID
         in: path
@@ -1270,8 +1270,8 @@ paths:
       - Manager
   /engines/{id}/spatial/features/{feature_id}/geometry:
     get:
-      description: 获取指定要素的完整几何数据（GeoJSON格式），用于地图高亮显示 | Get full geometry of a feature
-        in GeoJSON format for map highlighting
+      description: 获取指定要素的源坐标完整几何数据和 CRS 元数据，后端不做 CRS transform | Get source-CRS feature
+        geometry and CRS metadata without backend CRS transform
       parameters:
       - description: 存储引擎ID | Engine ID
         in: path

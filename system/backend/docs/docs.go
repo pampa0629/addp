@@ -2112,58 +2112,6 @@ const docTemplate = `{
             "type": "object",
             "additionalProperties": true
         },
-        "github_com_addp_common_models.ScanConfig": {
-            "type": "object",
-            "properties": {
-                "cron_expression": {
-                    "description": "Cron 表达式（schedule_type=cron 时使用）",
-                    "type": "string"
-                },
-                "enabled": {
-                    "description": "是否启用扫描（总开关）",
-                    "type": "boolean"
-                },
-                "immediate_depth": {
-                    "description": "立即扫描深度：basic（基础）或 deep（深度）",
-                    "type": "string"
-                },
-                "immediate_scan": {
-                    "description": "注册后立即扫描",
-                    "type": "boolean"
-                },
-                "preprocessing": {
-                    "description": "预处理配置（可选）",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.PreprocessingConfig"
-                        }
-                    ]
-                },
-                "scan_depth": {
-                    "description": "默认扫描深度：basic 或 deep",
-                    "type": "string"
-                },
-                "schedule_time": {
-                    "description": "执行时间 HH:mm（daily/weekly/monthly 时使用）",
-                    "type": "string"
-                },
-                "schedule_type": {
-                    "description": "daily, weekly, monthly, cron（仅当scheduled_scan=true时有效）",
-                    "type": "string"
-                },
-                "schedule_value": {
-                    "description": "周几（0-6）或月几（1-31）",
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "scheduled_scan": {
-                    "description": "启用定时扫描",
-                    "type": "boolean"
-                }
-            }
-        },
         "github_com_addp_common_models.UserType": {
             "type": "string",
             "enum": [
@@ -2783,14 +2731,6 @@ const docTemplate = `{
                     "description": "显示名称（原 display_name）",
                     "type": "string"
                 },
-                "scan_config": {
-                    "description": "元数据扫描配置（可选）",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/github_com_addp_common_models.ScanConfig"
-                        }
-                    ]
-                },
                 "tenant_id": {
                     "description": "租户ID，SuperAdmin创建的引擎为null",
                     "type": "integer"
@@ -2828,14 +2768,6 @@ const docTemplate = `{
                 "name": {
                     "description": "显示名称（中文或英文）",
                     "type": "string"
-                },
-                "scan_config": {
-                    "description": "扫描配置（可选）",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ScanConfig"
-                        }
-                    ]
                 }
             }
         },
@@ -2896,14 +2828,6 @@ const docTemplate = `{
                     "description": "显示名称（原 display_name）",
                     "type": "string"
                 },
-                "scan_config": {
-                    "description": "元数据扫描配置（可选）",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/github_com_addp_common_models.ScanConfig"
-                        }
-                    ]
-                },
                 "tenant_id": {
                     "description": "租户ID，SuperAdmin创建的引擎为null",
                     "type": "integer"
@@ -2932,14 +2856,6 @@ const docTemplate = `{
                 "name": {
                     "description": "显示名称",
                     "type": "string"
-                },
-                "scan_config": {
-                    "description": "扫描配置（可选）",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ScanConfig"
-                        }
-                    ]
                 }
             }
         },
@@ -2975,58 +2891,6 @@ const docTemplate = `{
                 },
                 "token_type": {
                     "type": "string"
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.ScanConfig": {
-            "type": "object",
-            "properties": {
-                "cron_expression": {
-                    "description": "Cron 表达式（schedule_type=cron 时使用）",
-                    "type": "string"
-                },
-                "enabled": {
-                    "description": "是否启用扫描（总开关）",
-                    "type": "boolean"
-                },
-                "immediate_depth": {
-                    "description": "立即扫描深度：basic（基础）或 deep（深度）",
-                    "type": "string"
-                },
-                "immediate_scan": {
-                    "description": "注册后立即扫描",
-                    "type": "boolean"
-                },
-                "preprocessing": {
-                    "description": "预处理配置（可选）",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.PreprocessingConfig"
-                        }
-                    ]
-                },
-                "scan_depth": {
-                    "description": "默认扫描深度：basic 或 deep",
-                    "type": "string"
-                },
-                "schedule_time": {
-                    "description": "执行时间 HH:mm（daily/weekly/monthly 时使用）",
-                    "type": "string"
-                },
-                "schedule_type": {
-                    "description": "daily, weekly, monthly, cron（仅当scheduled_scan=true时有效）",
-                    "type": "string"
-                },
-                "schedule_value": {
-                    "description": "周几（0-6）或月几（1-31）",
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "scheduled_scan": {
-                    "description": "启用定时扫描",
-                    "type": "boolean"
                 }
             }
         },
@@ -3352,55 +3216,6 @@ const docTemplate = `{
                 },
                 "task_id": {
                     "type": "string"
-                }
-            }
-        },
-        "models.MVTPreprocessConfig": {
-            "type": "object",
-            "properties": {
-                "concurrency": {
-                    "description": "并发生成数 (1-20, 默认 10)",
-                    "type": "integer"
-                },
-                "max_zoom": {
-                    "description": "最大缩放级别 (0-18, 默认 18)",
-                    "type": "integer"
-                },
-                "stop_threshold_kb": {
-                    "description": "自适应停止阈值：平均瓦片大小（KB）\u003c 该值则停止（默认 50.0）",
-                    "type": "number"
-                },
-                "stop_threshold_sec": {
-                    "description": "自适应停止阈值：平均生成时间（秒）\u003c 该值则停止（默认 3.0）",
-                    "type": "number"
-                }
-            }
-        },
-        "models.PreprocessingConfig": {
-            "type": "object",
-            "properties": {
-                "auto_trigger": {
-                    "description": "扫描完成后自动触发预处理",
-                    "type": "boolean"
-                },
-                "enabled": {
-                    "description": "是否启用预处理",
-                    "type": "boolean"
-                },
-                "mvt_config": {
-                    "description": "MVT 瓦片预处理配置",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.MVTPreprocessConfig"
-                        }
-                    ]
-                },
-                "types": {
-                    "description": "预处理类型列表 [\"mvt_tiles\", \"vector_embedding\"]",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
                 }
             }
         },

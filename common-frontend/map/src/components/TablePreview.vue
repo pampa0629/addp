@@ -6,14 +6,21 @@
         <span>{{ t('map.preview') }}</span>
         <el-switch v-model="showMap" size="small" />
       </div>
-      <el-select v-if="showMap" v-model="baseMapType" size="small" class="base-map-select">
-        <el-option
-          v-for="item in baseMapOptions"
-          :key="item.value"
-          :label="item.label"
-          :value="item.value"
-        />
-      </el-select>
+      <div v-if="showMap" class="base-map-control">
+        <el-select v-model="baseMapType" size="small" class="base-map-select">
+          <el-option
+            v-for="item in baseMapOptions"
+            :key="item.value"
+            :label="item.label"
+            :value="item.value"
+          />
+        </el-select>
+        <el-tooltip v-if="baseMapNotice" :content="baseMapNotice" placement="top">
+          <el-tag size="small" type="warning" effect="plain" class="base-map-policy-tag">
+            {{ t('map.businessBrowseMode') }}
+          </el-tag>
+        </el-tooltip>
+      </div>
     </div>
 
     <template v-if="hasGeometry && showMap">
@@ -148,6 +155,12 @@ import { useResizable } from '../composables/useResizable'
 import MapContainer from './map/MapContainer.vue'
 import WKT from 'ol/format/WKT'
 import GeoJSON from 'ol/format/GeoJSON'
+import {
+  crsSuppressionStatus,
+  getPreviewCRSTransform,
+  sourceSRIDFromPreview,
+  transformGeoJSONGeometryToWGS84
+} from '../utils/crsRegistry'
 
 const { t } = useI18n()
 
@@ -225,7 +238,7 @@ const props = defineProps({
 
 const emit = defineEmits(['page-change'])
 
-const { baseMapOptions, defaultBaseMapType, loadMapConfig } = useMapConfig()
+const { baseMapOptions, defaultBaseMapType, getBaseMapProfile, loadMapConfig } = useMapConfig()
 
 const tablePreviewRef = ref(null)
 const mapControlsRef = ref(null)
@@ -322,9 +335,16 @@ const columns = computed(() => props.data?.columns || [])
 const rows = computed(() => props.data?.rows || [])
 const total = computed(() => props.data?.total || 0)
 const geometryColumns = computed(() => props.data?.geometry_columns || [])
-const renderGeometryColumns = computed(() => props.data?.render_geometry_columns || {})
-const previewSRID = computed(() => Number(props.data?.srid || 0))
+const previewSRID = computed(() => sourceSRIDFromPreview(props.data))
+const crsTransform = computed(() => getPreviewCRSTransform(props.data))
 const isDynamicSchemaRecordSet = computed(() => props.data?.preview_kind === 'dynamic_schema_record_set')
+const selectedBaseMapProfile = computed(() => getBaseMapProfile(baseMapType.value))
+const baseMapNotice = computed(() => {
+  if (selectedBaseMapProfile.value?.coordinate_policy === 'gcj02') {
+    return t('map.gcj02DisplayNotice')
+  }
+  return ''
+})
 
 const hiddenMetadataKeys = new Set([
   'components',
@@ -368,31 +388,19 @@ const shapefileMetaItems = computed(() => {
 
 const hasGeometry = computed(() => geometryColumns.value.length > 0)
 const activeGeometryColumn = computed(() => geometryColumns.value[0] || '')
-const activeRenderGeometryColumn = computed(() => {
-  const column = activeGeometryColumn.value
-  if (!column) return ''
-  return renderGeometryColumns.value?.[column] || ''
-})
-const transformStatus = computed(() => {
-  const value = props.data?.object?.content?.metadata?.transform_status
-  return typeof value === 'string' ? value : ''
-})
 const transformMessage = computed(() => {
-  const value = props.data?.object?.content?.metadata?.transform_message || props.data?.object?.content?.metadata?.transform_error
+  const value = props.data?.transform_message || props.data?.object?.content?.metadata?.transform_message || props.data?.object?.content?.metadata?.transform_error
   return typeof value === 'string' ? value : ''
 })
 const shouldSuppressRawGeometryMap = computed(() => {
-  if (activeRenderGeometryColumn.value) return false
-  if (transformStatus.value === 'unknown_crs' || transformStatus.value === 'unsupported_crs') {
-    return true
-  }
-  return previewSRID.value > 0 && previewSRID.value !== 4326
+  return crsSuppressionStatus(crsTransform.value) !== ''
 })
 const suppressedMapMessage = computed(() => {
   if (!shouldSuppressRawGeometryMap.value) return ''
   if (transformMessage.value) return transformMessage.value
-  if (transformStatus.value === 'unknown_crs') return t('map.mapSuppressedUnknownCRS')
-  if (transformStatus.value === 'unsupported_crs') return t('map.mapSuppressedUnsupportedCRS')
+  const status = crsSuppressionStatus(crsTransform.value)
+  if (status === 'unknown_crs') return t('map.mapSuppressedUnknownCRS')
+  if (status === 'unsupported_crs') return t('map.mapSuppressedUnsupportedCRS')
   if (previewSRID.value > 0 && previewSRID.value !== 4326) return t('map.mapSuppressedNonWGS84')
   return ''
 })
@@ -401,10 +409,6 @@ const buildFeatureProperties = (row) => {
   const properties = { ...row }
   geometryColumns.value.forEach((column) => {
     delete properties[column]
-    const renderColumn = renderGeometryColumns.value?.[column]
-    if (renderColumn) {
-      delete properties[renderColumn]
-    }
   })
   // OpenLayers 默认使用 "geometry" 作为几何属性名，这个键必须移除，否则会覆盖真实几何对象。
   delete properties.geometry
@@ -507,8 +511,7 @@ const displayColumns = computed(() => {
     return selected.length > 0 ? selected : columns.value
   }
   const geometrySet = new Set(geometryColumns.value || [])
-  const renderGeometrySet = new Set(Object.values(renderGeometryColumns.value || {}))
-  const filtered = columns.value.filter((col) => !geometrySet.has(col) && !renderGeometrySet.has(col))
+  const filtered = columns.value.filter((col) => !geometrySet.has(col))
   return filtered.length > 0 ? filtered : columns.value
 })
 
@@ -537,11 +540,11 @@ const geoFeatures = computed(() => {
   const column = activeGeometryColumn.value
   return tableData.value
     .map((row) => {
-      const renderColumn = activeRenderGeometryColumn.value
-      const rawGeometry = renderColumn ? row[renderColumn] : row[column]
+      const rawGeometry = row[column]
       if (rawGeometry === null || rawGeometry === undefined) return null
       try {
-        const geometry = parseGeometry(rawGeometry)
+        const sourceGeometry = parseGeometry(rawGeometry)
+        const geometry = transformGeoJSONGeometryToWGS84(sourceGeometry, crsTransform.value)
         if (!geometry) return null
         return {
           type: 'Feature',
@@ -759,6 +762,16 @@ onBeforeUnmount(() => {
 
 .base-map-select {
   min-width: 160px;
+}
+
+.base-map-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.base-map-policy-tag {
+  flex: 0 0 auto;
 }
 
 .map-wrapper {

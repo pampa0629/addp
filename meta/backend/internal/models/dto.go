@@ -90,6 +90,12 @@ type ScanTaskUpsertRequest struct {
 	Enabled      bool     `json:"enabled"`
 }
 
+// EngineScanTaskPolicyRequest 是 Console 为指定 engine 提交的 Meta 扫描计划。
+type EngineScanTaskPolicyRequest struct {
+	EngineName string                   `json:"engine_name"`
+	ScanConfig *commonModels.ScanConfig `json:"scan_config"`
+}
+
 // MetadataTreeResponse 元数据树响应（用于 Manager 查询）
 type MetadataTreeResponse struct {
 	TopNodes   []MetaNodeLite `json:"top_nodes"`

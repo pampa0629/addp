@@ -5,10 +5,10 @@ import (
 	"fmt"
 
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/models"
-	"gorm.io/gorm"
 )
 
 // scanTableDetails 扫描表的详细信息（字段、空间元数据等）。
@@ -16,7 +16,6 @@ func (s *DatabaseRuntime) scanTableDetails(
 	ctx context.Context,
 	resource *commonModels.Engine,
 	scanCatalog databaseScanCatalog,
-	db *gorm.DB,
 	schemaName string,
 	tableInfo datatype.TableInfo,
 	existingItem *models.MetaItem,
@@ -26,9 +25,13 @@ func (s *DatabaseRuntime) scanTableDetails(
 	var attrs models.JSONMap
 
 	if isDeepScan {
-		describedTable, err := s.describeTableInfo(ctx, resource, scanCatalog, schemaName, tableInfo.Name)
+		describedFacts, err := s.describeTableFacts(ctx, resource, scanCatalog, schemaName, tableInfo.Name)
 		if err != nil {
 			return nil, nil, fmt.Errorf("字段扫描失败: %w", err)
+		}
+		describedTable := datatype.TableInfo{Name: tableInfo.Name}
+		if factsTable := plugin.CatalogFactsTableInfo(describedFacts); factsTable != nil {
+			describedTable = *factsTable
 		}
 		tableInfo = mergeDatabaseTableInfo(tableInfo, describedTable)
 		fields = append([]datatype.FieldInfo(nil), tableInfo.Fields...)
@@ -49,15 +52,12 @@ func (s *DatabaseRuntime) scanTableDetails(
 		tableInfo.PrimaryKey = primaryKeyColumns
 		attrs = tableItemAttributes(schemaName, tableInfo)
 
-		if engineSupportsSpatialMetadata(resource.EngineType) && db != nil {
-			spatialMeta := s.scanSpatialMetadata(ctx, db, schemaName, tableInfo.Name)
-			if spatialMeta != nil {
-				metaattr.UpsertNested(attrs, "capabilities", "spatial", datatype.SpatialInfoPayload(spatialInfoFromMetadata(spatialMeta)))
-				s.log.Info("空间元数据扫描成功",
-					"table", tableInfo.Name,
-					"geometry_column", spatialMeta.GeometryColumn,
-				)
-			}
+		if spatialInfo := plugin.CatalogFactsSpatialInfo(describedFacts); spatialInfo != nil {
+			metaattr.UpsertNested(attrs, "capabilities", "spatial", datatype.SpatialInfoPayload(spatialInfo))
+			s.log.Info("空间元数据扫描成功",
+				"table", tableInfo.Name,
+				"geometry_column", spatialInfo.PrimaryGeometryName(),
+			)
 		}
 	} else {
 		if existingItem != nil && existingItem.Attributes != nil {

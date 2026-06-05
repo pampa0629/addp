@@ -358,3 +358,10 @@ Meta attributes 不维护旧字段兼容层。字段可空性只写 `nullable`�
 - 私有格式信息默认只用于展示、诊断或插件自身能力。
 - Manager 内容路由不得依赖任意 custom key。
 - 搜索索引可以选择性索引私有格式信息和横切能力，但应记录来源和字段命名空间。
+
+空间能力消费规则：
+
+- `capabilities.spatial.srid`、`geometry_columns[].srid`、`crs`、`extent`、`extent_srid` 是空间事实，不表示 ADDP 核心后端具备通用 CRS transform 能力。
+- Manager 普通空间预览只返回源坐标 geometry 表达和 CRS 元数据；不得为了普通预览隐式调用后端 PROJ 或 PostGIS `ST_Transform` 转成 WGS84。
+- `srid=0` 或 CRS 缺失必须按 `unknown_crs` 处理，不得默认解释为 `EPSG:4326`。
+- 如果某条路径已经由具体引擎能力完成转换，例如 MVT / Quick View 物化视图，应在该路径响应中明确 `target_srid`、`transform_status=engine_transformed` 和 `transform_engine`；该事实不得反向改写源数据的 `capabilities.spatial`。

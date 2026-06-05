@@ -6,6 +6,7 @@
       :features="features"
       :config="mapConfig"
       :base-type="baseMapType"
+      :base-map-profile="baseMapProfile"
       :preserve-view="preserveView"
       ref="rendererRef"
       @feature-click="handleFeatureClick"
@@ -45,7 +46,9 @@ const emit = defineEmits(['feature-click'])
 
 const rendererRef = ref(null)
 
-const { mapConfig, GAODE_BASE_MAP_VALUE } = useMapConfig()
+const { mapConfig, GAODE_BASE_MAP_VALUE, getBaseMapProfile } = useMapConfig()
+
+const baseMapProfile = computed(() => getBaseMapProfile(props.baseMapType))
 
 const mapRenderer = computed(() => {
   if (props.baseMapType === GAODE_BASE_MAP_VALUE) {

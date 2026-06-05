@@ -10,7 +10,6 @@ import (
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/config"
-	"github.com/addp/meta/internal/extractor"
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/scanadapter"
@@ -23,47 +22,40 @@ import (
 
 // ScanService 统一扫描服务
 type ScanService struct {
-	db                   *gorm.DB
-	repo                 *metaRepo.ScanRepository // 数据访问层
-	runtimes             *scanruntime.Runtimes
-	catalogDispatcher    *scanadapter.CatalogDispatcher // catalog 扫描分发主链路
-	scopeResolver        *scanresolver.Resolver         // 扫描入口 scope 解析器
-	metadataQueryService *MetadataQueryService          // 元数据查询服务（独立）
-	engineService        *EngineService
-	config               *config.Config
-	log                  *slog.Logger
-	indexer              *search.Indexer
-	indexerService       *IndexerService              // 索引服务（独立）
-	spatialService       *SpatialMetadataService      // 空间元数据服务（独立）
-	scanEventPublisher   *events.ScanEventPublisher   // 扫描事件发布器
-	metadataExtractor    *extractor.MetadataExtractor // 元数据提取器
-	dedupService         *ScanDedupService            // 扫描去重服务（可选）
+	db                 *gorm.DB
+	repo               *metaRepo.ScanRepository // 数据访问层
+	runtimes           *scanruntime.Runtimes
+	catalogDispatcher  *scanadapter.CatalogDispatcher // catalog 扫描分发主链路
+	scopeResolver      *scanresolver.Resolver         // 扫描入口 scope 解析器
+	engineService      *EngineService
+	config             *config.Config
+	log                *slog.Logger
+	indexer            *search.Indexer
+	indexerService     *IndexerService            // 索引服务（独立）
+	scanEventPublisher *events.ScanEventPublisher // 扫描事件发布器
+	dedupService       *ScanDedupService          // 扫描去重服务（可选）
 }
 
 func NewScanService(db *gorm.DB, engineService *EngineService) *ScanService {
 	if engineService == nil {
-		engineService = NewEngineService(db, "", "", nil) // nil Redis client for fallback
+		engineService = NewEngineService(db, "", "") // nil Redis client for fallback
 	}
 
 	repo := metaRepo.NewScanRepository(db)
 	log := logger.With("component", "scan_service")
 
 	// 创建独立的服务（消除循环依赖）
-	indexerService := NewIndexerService(nil, log)         // indexer 稍后通过 SetIndexer 注入
-	spatialService := NewSpatialMetadataService(nil, log) // config 稍后通过 SetConfig 注入
-	metadataExtractor := extractor.NewMetadataExtractor(db)
-	runtimes := scanruntime.NewRuntimes(db, log, repo, spatialService, indexerService)
+	indexerService := NewIndexerService(nil, log) // indexer 稍后通过 SetIndexer 注入
+	runtimes := scanruntime.NewRuntimes(db, log, repo, indexerService)
 
 	s := &ScanService{
-		db:                db,
-		repo:              repo,
-		runtimes:          runtimes,
-		engineService:     engineService,
-		log:               log,
-		metadataExtractor: metadataExtractor,
-		indexerService:    indexerService,
-		spatialService:    spatialService,
-		scopeResolver:     scanresolver.New(db),
+		db:             db,
+		repo:           repo,
+		runtimes:       runtimes,
+		engineService:  engineService,
+		log:            log,
+		indexerService: indexerService,
+		scopeResolver:  scanresolver.New(db),
 	}
 
 	s.catalogDispatcher = scanadapter.NewCatalogDispatcher(
@@ -74,9 +66,6 @@ func NewScanService(db *gorm.DB, engineService *EngineService) *ScanService {
 		s.runtimes.BranchLeaf,
 		s.runtimes.ContentCatalogScanner,
 	)
-
-	// 创建 MetadataQueryService（提供元数据查询接口）
-	s.metadataQueryService = NewMetadataQueryService(db, spatialService, engineService, log)
 
 	return s
 }
@@ -93,10 +82,6 @@ func (s *ScanService) SetIndexer(indexer *search.Indexer) {
 // SetConfig 注入配置
 func (s *ScanService) SetConfig(cfg *config.Config) {
 	s.config = cfg
-	// 同时注入到空间元数据服务
-	if s.spatialService != nil {
-		s.spatialService.config = cfg
-	}
 }
 
 // SetScanEventPublisher 注入扫描事件发布器
@@ -163,13 +148,21 @@ func (s *ScanService) ScanEngineWithOptions(opts scanflow.Options) (*models.Scan
 		if reporter != nil {
 			reporter.Message("正在刷新数据项元数据")
 		}
-		resp, refreshErr := s.refreshItem(context.Background(), engineID, effectiveTenantID, opts.ItemID, token, scope.Force)
+		result, refreshErr := s.runtimes.ItemRefresh.RefreshKnownItemByID(context.Background(), resource, effectiveTenantID, opts.ItemID)
 		if refreshErr != nil {
 			if reporter != nil {
 				reporter.Message(fmt.Sprintf("扫描失败: %v", refreshErr))
 			}
 			return nil, refreshErr
 		}
+		completedAt := time.Now()
+		resp := scanflow.NewScanResponse(
+			"success",
+			"item refreshed",
+			scanflow.ScanCounts{Items: 1, Fields: result.Fields, Extraction: result.Extraction},
+			startTime,
+			completedAt,
+		)
 		if reporter != nil {
 			reporter.Message("扫描完成")
 		}

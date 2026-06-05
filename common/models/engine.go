@@ -150,7 +150,6 @@ type Engine struct {
 	EngineOrigin   string         `gorm:"column:engine_origin;not null;default:'general'" json:"engine_origin"` // 引擎来源：general 或 extension
 	ConnectionInfo ConnectionInfo `gorm:"column:connection_info;type:json;not null" json:"connection_info"`
 	Description    string         `gorm:"column:description;type:text" json:"description"`
-	ScanConfig     *ScanConfig    `gorm:"column:scan_config;type:json" json:"scan_config,omitempty"` // 元数据扫描配置（可选）
 	IsActive       bool           `gorm:"column:is_active;default:true" json:"is_active"`
 	CreatedBy      *uint          `gorm:"column:created_by" json:"created_by,omitempty"`
 

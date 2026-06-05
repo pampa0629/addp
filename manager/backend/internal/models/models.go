@@ -102,19 +102,26 @@ type MetaItemLite struct {
 
 // TablePreview 表数据预览结果
 type TablePreview struct {
-	Mode                  string                   `json:"mode"`
-	Columns               []string                 `json:"columns"`
-	ColumnMetadata        []ColumnMetadata         `json:"column_metadata,omitempty"` // 列元数据（类型、是否可空、主键等）
-	Rows                  []map[string]interface{} `json:"rows"`
-	Total                 int                      `json:"total"`
-	Page                  int                      `json:"page"`
-	PageSize              int                      `json:"page_size"`
-	PreviewKind           string                   `json:"preview_kind,omitempty"` // 细分预览语义，如 graph_overview
-	GeometryColumns       []string                 `json:"geometry_columns"`
-	RenderGeometryColumns map[string]string        `json:"render_geometry_columns,omitempty"` // 原几何列 -> 地图渲染列
-	Object                *ObjectPreview           `json:"object,omitempty"`
-	Graph                 *GraphPreviewData        `json:"graph,omitempty"`
-	ItemMeta              *CatalogFacts            `json:"item_meta,omitempty"` // 数据项元数据（来自 meta 模块）
+	Mode             string                   `json:"mode"`
+	Columns          []string                 `json:"columns"`
+	ColumnMetadata   []ColumnMetadata         `json:"column_metadata,omitempty"` // 列元数据（类型、是否可空、主键等）
+	Rows             []map[string]interface{} `json:"rows"`
+	Total            int                      `json:"total"`
+	Page             int                      `json:"page"`
+	PageSize         int                      `json:"page_size"`
+	PreviewKind      string                   `json:"preview_kind,omitempty"` // 细分预览语义，如 graph_overview
+	GeometryColumns  []string                 `json:"geometry_columns"`
+	GeometryColumn   string                   `json:"geometry_column,omitempty"`
+	SourceSRID       int                      `json:"source_srid,omitempty"`
+	SourceCRS        string                   `json:"source_crs,omitempty"`
+	TargetSRID       *int                     `json:"target_srid,omitempty"`
+	TransformStatus  string                   `json:"transform_status,omitempty"`
+	TransformEngine  string                   `json:"transform_engine,omitempty"`
+	PreviewHint      string                   `json:"preview_hint,omitempty"`
+	TransformMessage string                   `json:"transform_message,omitempty"`
+	Object           *ObjectPreview           `json:"object,omitempty"`
+	Graph            *GraphPreviewData        `json:"graph,omitempty"`
+	ItemMeta         *CatalogFacts            `json:"item_meta,omitempty"` // 数据项元数据（来自 meta 模块）
 	// MVT preview metadata (for frontend to switch between GeoJSON and MVT rendering)
 	EngineID   uint   `json:"engineId,omitempty"`   // Engine ID for MVT API
 	Schema     string `json:"schema,omitempty"`     // Schema name for MVT API

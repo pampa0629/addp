@@ -15,9 +15,10 @@ export default defineConfig({
       '@element-plus/icons-vue': resolve(__dirname, 'node_modules/@element-plus/icons-vue'),
       'element-plus': resolve(__dirname, 'node_modules/element-plus'),
       'geotiff': resolve(__dirname, 'node_modules/geotiff'),
-      'mermaid': resolve(__dirname, 'node_modules/mermaid')
+      'mermaid': resolve(__dirname, 'node_modules/mermaid'),
+      'proj4': resolve(__dirname, 'node_modules/proj4')
     },
-    dedupe: ['ol', 'vue', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'marked', 'dompurify', 'jszip', 'mammoth', 'mermaid', 'geotiff', 'axios', '@amap/amap-jsapi-loader', '@antv/g6']
+    dedupe: ['ol', 'vue', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'marked', 'dompurify', 'jszip', 'mammoth', 'mermaid', 'geotiff', 'proj4', 'axios', '@amap/amap-jsapi-loader', '@antv/g6']
   },
   optimizeDeps: {
     include: [
@@ -37,7 +38,8 @@ export default defineConfig({
       'ol/Overlay',
       'ol/interaction',
       'ol/control',
-      '@amap/amap-jsapi-loader'
+      '@amap/amap-jsapi-loader',
+      'proj4'
     ]
   },
   server: {

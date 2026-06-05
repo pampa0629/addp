@@ -101,7 +101,7 @@ func TestBuildTabularCatalogFactsCarriesTableInfo(t *testing.T) {
 		Native: map[string]interface{}{
 			"engine": "MergeTree",
 		},
-	}, true, CatalogKindTable, nil)
+	}, true, CatalogKindTable, nil, nil)
 	if item.Table == nil {
 		t.Fatal("CatalogFacts.Table is nil")
 	}
@@ -207,6 +207,73 @@ func TestDescribeTabularItemOnlyRunsRowCountWhenStatisticsRequested(t *testing.T
 	}
 	if item.Table.RowCount == nil || *item.Table.RowCount != 42 {
 		t.Fatalf("Table.RowCount = %#v, want 42", item.Table.RowCount)
+	}
+}
+
+func TestDescribeTabularItemCarriesSpatialFactsWhenRequested(t *testing.T) {
+	srid := 4326
+	spatialCalls := 0
+	callbacks := TabularCatalogCallbacks{
+		ListNamespaces: func(context.Context, *gorm.DB, CatalogPath) ([]CatalogEntry, error) {
+			return nil, nil
+		},
+		ListTables: func(context.Context, *gorm.DB, string) ([]datatype.TableInfo, error) {
+			return []datatype.TableInfo{{Name: "roads", Kind: CatalogKindTable}}, nil
+		},
+		ListColumns: func(context.Context, *gorm.DB, string, string) ([]datatype.FieldInfo, error) {
+			return []datatype.FieldInfo{{Name: "geom", Type: datatype.FieldTypeGeometry}}, nil
+		},
+		DescribeSpatial: func(context.Context, *gorm.DB, string, string, []datatype.FieldInfo) (*datatype.SpatialInfo, error) {
+			spatialCalls++
+			return &datatype.SpatialInfo{
+				GeometryColumns: []datatype.GeometryColumnInfo{{
+					Name: "geom",
+					SRID: &srid,
+				}},
+				PrimaryGeometryColumn: "geom",
+			}, nil
+		},
+	}
+	engine := &Engine{ID: 7002, EngineType: "tabular_catalog_test"}
+	path := CatalogPath{
+		Version:  CatalogPathVersion,
+		EngineID: engine.ID,
+		Segments: []CatalogSegment{
+			{Term: CatalogTermServer, Kind: CatalogTermServer},
+			{Term: CatalogTermDatabase, Kind: CatalogKindNamespace, Name: "analytics"},
+			{Term: CatalogTermTable, Kind: CatalogKindTable, Name: "roads"},
+		},
+	}
+
+	Register(&tabularCatalogTestPlugin{})
+	t.Cleanup(func() {
+		Unregister("tabular_catalog_test")
+		ClosePool(engine.ID)
+	})
+
+	item, err := DescribeTabularCatalogFacts(context.Background(), callbacks, engine, path, CatalogFactsOptions{})
+	if err != nil {
+		t.Fatalf("DescribeTabularCatalogFacts() error = %v", err)
+	}
+	if spatialCalls != 0 {
+		t.Fatalf("spatial calls = %d, want 0 without IncludeSpatialFacts", spatialCalls)
+	}
+	if item.Spatial != nil {
+		t.Fatalf("Spatial = %#v, want nil without IncludeSpatialFacts", item.Spatial)
+	}
+
+	item, err = DescribeTabularCatalogFacts(context.Background(), callbacks, engine, path, CatalogFactsOptions{IncludeSpatialFacts: true})
+	if err != nil {
+		t.Fatalf("DescribeTabularCatalogFacts(IncludeSpatialFacts) error = %v", err)
+	}
+	if spatialCalls != 1 {
+		t.Fatalf("spatial calls = %d, want 1 with IncludeSpatialFacts", spatialCalls)
+	}
+	if item.Spatial == nil || item.Spatial.PrimaryGeometryColumn != "geom" {
+		t.Fatalf("Spatial = %#v, want geom primary", item.Spatial)
+	}
+	if item.Table == nil || len(item.Table.Fields) != 1 || item.Table.Fields[0].Name != "geom" {
+		t.Fatalf("Table = %#v", item.Table)
 	}
 }
 

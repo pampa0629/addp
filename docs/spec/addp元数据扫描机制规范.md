@@ -105,12 +105,12 @@ Meta 扫描必须区分任务定义和执行记录：
 - `last_run_at`
 - `last_execution_id`
 - `last_execution_status`
-- `owner_module`：任务定义由哪个模块创建或管理，例如 `system`、`meta`。
-- `owner_ref`：任务定义在 owner 模块中的稳定关联，例如 `engine:{engine_id}`。
+- `owner_module`：任务定义绑定的对象所属模块，例如 `system`、`meta`。
+- `owner_ref`：任务定义在绑定模块内的稳定引用，例如 `engine:{engine_id}`。
 
 `owner_module` 与 execution `source` 不是同一个概念：
 
-- `owner_module` 表达谁拥有 / 管理这个任务定义。
+- `owner_module` 表达任务绑定在哪个模块的对象上。
 - `source` 表达这次 execution 是哪个模块触发的。
 
 例如 System 注册 engine 时创建的自动扫描任务：
@@ -125,7 +125,21 @@ Meta 扫描必须区分任务定义和执行记录：
 | `TaskExecution.source` | `meta` |
 | `TaskExecution.source_task_id` | `ScanTask.id` |
 
-System 注册 engine 时可以接收 Meta 扫描策略，但该策略应作为命令或事件交给 Meta upsert `ScanTask`。System 不应长期作为 Meta 扫描调度的权威存储；UI 如需展示 engine 的扫描计划，应查询 Meta 的 `ScanTask` 或由聚合层组合 System engine 与 Meta task。
+System 不知道 Meta，不接收、不保存、不投递 Meta 扫描策略。System 注册引擎时“默认带有 Meta 扫描配置”的产品体验由 Console 编排完成，相关 manual execution 的 `source` 应记录为 `console`：
+
+1. Console 承载 System engine 注册体验；System 只保存 engine 身份、连接、能力、租户和生命周期等自身事实。
+2. System iframe 保存 engine 后，只通过 `postMessage` 向父级 Console 提交扫描策略编排请求，不直接调用 Meta。
+3. Console 拿到 `engine_id` 后调用 Meta upsert / delete 该 engine 绑定的 `ScanTask`。
+4. 如果用户选择“注册后立即扫描”，Console 调用 Meta manual execution API 创建一次 `trigger_type=manual` 的 execution。
+5. UI 如需展示 engine 的扫描计划，应查询 Meta 的 `ScanTask`，或由 Console 聚合 System engine 与 Meta task。
+
+System engine 注册 / 编辑体验中，默认扫描行为应为“保存后立即触发一次基础扫描”，不默认创建定时 `ScanTask`。只有用户显式启用定时自动扫描时，Console 才维护 engine 绑定的 `ScanTask`。
+
+当 Console 收到的扫描策略为未启用或未启用定时扫描时，必须调用 Meta 删除该 engine 绑定的 `ScanTask`；不得保留一个 disabled 绑定任务表达“已关闭”，避免任务定义状态漂移。
+
+System 只发布通用 engine lifecycle event，不携带 Meta 扫描策略。Meta 可以监听 System engine create / update / delete 事件，用于清缓存、维护 catalog root、删除 engine 后清理 metadata 和对应 `ScanTask`，但不得从 System 回查并解释 `scan_config`。
+
+`ScanTask.owner_module=system`、`owner_ref=engine:{engine_id}` 只表达任务绑定的外部领域对象是 System engine，不表示 System 管理 Meta。
 
 ## 定时调度保证
 
@@ -158,6 +172,19 @@ sequenceDiagram
 3. scheduled execution 应记录 `planned_run_at`，表示本次执行对应的计划触发时间。
 4. 同一个 `task_id + planned_run_at` 只能创建一条有效 execution。
 5. 默认只补最近一次 due run，避免 Meta 长时间停机后集中创建大量历史执行；如需补跑多个错过时间点，应另行定义补跑策略。
+
+## 扫描去重锁
+
+Meta 扫描执行需要短时去重锁，但锁粒度必须和扫描范围对齐，不得只按 engine 粗粒度阻塞所有入口。
+
+约束：
+
+1. 执行锁优先按 `item_id`、`catalog_paths`、`ref_groups` 生成，最后才退化到 engine 级。
+2. 不同 scope 的执行不得复用同一把锁。
+3. 执行锁必须原子获取，不得先查再写。
+4. 执行锁的 owner 应使用 `execution_id`，释放时必须校验 owner。
+5. execution 创建失败或事务回滚时必须立即释放锁，不得依赖 TTL 自然过期。
+6. catalog namespace / branch / bucket 级短锁可复用同一 primitive，但仍应独立于 execution 锁。
 
 ## 扫描编排依据
 

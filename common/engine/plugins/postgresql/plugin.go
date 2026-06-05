@@ -82,6 +82,7 @@ func (p *PostgreSQLPlugin) tabularCatalogCallbacks() plugin.TabularCatalogCallba
 		ListTables:            p.listTables,
 		ListColumns:           p.listColumns,
 		RowCount:              p.getTableRowCount,
+		DescribeSpatial:       p.describeSpatialFacts,
 		IsSystemNamespaceFunc: p.isSystemSchema,
 	}
 }

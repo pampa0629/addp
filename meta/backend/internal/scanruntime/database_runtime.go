@@ -15,11 +15,10 @@ import (
 // DatabaseRuntime 数据库扫描运行时。
 // 职责：扫描关系型数据库（PostgreSQL、MySQL等）的Schema、Table、Field
 type DatabaseRuntime struct {
-	db             *gorm.DB
-	log            *slog.Logger
-	repo           *metaRepo.ScanRepository // 数据访问层
-	spatialService TableSpatialScanner      // 空间元数据扫描能力
-	indexerService TableAssetIndexer        // 索引能力
+	db           *gorm.DB
+	log          *slog.Logger
+	repo         *metaRepo.ScanRepository // 数据访问层
+	tableIndexer TableAssetIndexer        // 索引能力
 }
 
 type databaseScanCatalog struct {
@@ -30,13 +29,12 @@ type databaseScanCatalog struct {
 }
 
 // NewDatabaseRuntime 创建数据库扫描运行时。
-func NewDatabaseRuntime(db *gorm.DB, log *slog.Logger, repo *metaRepo.ScanRepository, spatialService TableSpatialScanner, indexerService TableAssetIndexer) *DatabaseRuntime {
+func NewDatabaseRuntime(db *gorm.DB, log *slog.Logger, repo *metaRepo.ScanRepository, tableIndexer TableAssetIndexer) *DatabaseRuntime {
 	return &DatabaseRuntime{
-		db:             db,
-		log:            log,
-		repo:           repo,
-		spatialService: spatialService,
-		indexerService: indexerService,
+		db:           db,
+		log:          log,
+		repo:         repo,
+		tableIndexer: tableIndexer,
 	}
 }
 
@@ -46,7 +44,7 @@ func NewDatabaseRuntime(db *gorm.DB, log *slog.Logger, repo *metaRepo.ScanReposi
 // 1. Schema节点管理：创建/更新Schema节点，管理扫描状态
 // 2. 表迭代处理：扫描所有表，判断是否需要更新
 // 3. 字段扫描：深度扫描时获取表字段信息
-// 4. 空间元数据：提取PostGIS等空间类型的元数据
+// 4. 空间元数据：消费 engine CatalogFacts 中的空间事实
 // 5. 搜索索引：将表资产信息同步到Meilisearch
 // 6. 软删除处理：清理已删除的表
 //
@@ -81,8 +79,6 @@ func (s *DatabaseRuntime) ScanNamespace(ctx context.Context, resource *commonMod
 		itemTerm:        scanflow.CatalogLeafTermForPlugin(p, plugin.CatalogTermTable),
 	}
 
-	db := s.tryOpenConnectionPool(resource)
-
 	// 2. 创建/更新 Schema/Database 节点
 	rootNode, err := metaRepo.EnsureCatalogRootNode(s.repo, tenantID, resource, p)
 	if err != nil {
@@ -99,7 +95,7 @@ func (s *DatabaseRuntime) ScanNamespace(ctx context.Context, resource *commonMod
 	}
 
 	// 3. 扫描表
-	tables, fields, err := s.scanTables(ctx, resource, scanCatalog, db, tenantID, engineID, schemaNode, namespaceName, scanDepth, force)
+	tables, fields, err := s.scanTables(ctx, resource, scanCatalog, tenantID, engineID, schemaNode, namespaceName, scanDepth, force)
 	if err != nil {
 		s.repo.FinalizeNodeState(schemaNode, "pending", 0, 0, err.Error())
 		return 0, 0, 0, err

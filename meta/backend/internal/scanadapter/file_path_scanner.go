@@ -13,7 +13,7 @@ import (
 	"github.com/addp/meta/internal/scanflow"
 )
 
-type FilePathRuntime interface {
+type FilePathExecutor interface {
 	EnsureFilesystemScanRoot(tenantID uint, resource *commonModels.Engine, enginePlugin plugin.EnginePlugin, scanPath string) (*models.MetaNode, *models.MetaNode, error)
 	ListDirectory(ctx context.Context, resource *commonModels.Engine, catalogProvider plugin.CatalogProvider, connInfo plugin.ConnectionInfo, dirPath string) ([]metaitem.StorageFileRef, []metaitem.StorageDirectoryRef, error)
 	ScanDirectory(ctx context.Context, contentReader plugin.ContentReadableProvider, catalogProvider plugin.CatalogProvider, connInfo plugin.ConnectionInfo, resource *commonModels.Engine, tenantID uint, dirPath string, parentNode *models.MetaNode, isBucketRoot bool, itemTerm string, scanDepth string, force bool) (int, scanflow.ExtractionCounts, error)
@@ -21,7 +21,7 @@ type FilePathRuntime interface {
 
 func ScanFilePaths(
 	ctx context.Context,
-	runtime FilePathRuntime,
+	executor FilePathExecutor,
 	repo *metaRepo.ScanRepository,
 	resource *commonModels.Engine,
 	tenantID uint,
@@ -65,11 +65,11 @@ func ScanFilePaths(
 			reporter.Message(fmt.Sprintf("扫描路径 %s", displayPath))
 		}
 
-		if _, _, err := runtime.ListDirectory(ctx, resource, catalogProvider, connInfo, rootPath); err != nil {
+		if _, _, err := executor.ListDirectory(ctx, resource, catalogProvider, connInfo, rootPath); err != nil {
 			continue
 		}
 
-		_, scanNode, err := runtime.EnsureFilesystemScanRoot(tenantID, resource, enginePlugin, rootPath)
+		_, scanNode, err := executor.EnsureFilesystemScanRoot(tenantID, resource, enginePlugin, rootPath)
 		if err != nil {
 			continue
 		}
@@ -77,7 +77,7 @@ func ScanFilePaths(
 		_ = repo.ResetNodeState(scanNode, "running")
 		result.CatalogNodes++
 
-		items, pathExtractionStats, scanErr := runtime.ScanDirectory(ctx, contentReader, catalogProvider, connInfo, resource, tenantID, rootPath, scanNode, rootPath == "", itemTerm, scanDepth, force)
+		items, pathExtractionStats, scanErr := executor.ScanDirectory(ctx, contentReader, catalogProvider, connInfo, resource, tenantID, rootPath, scanNode, rootPath == "", itemTerm, scanDepth, force)
 		result.Extraction = scanflow.MergeExtractionCounts(result.Extraction, pathExtractionStats)
 		if scanErr != nil {
 			_ = repo.FinalizeNodeState(scanNode, "failed", items, 0, scanErr.Error())

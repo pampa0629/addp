@@ -12,13 +12,13 @@ import (
 
 // TaskHandler Worker 任务处理器
 type TaskHandler struct {
-	scanTaskService *service.ScanTaskService
+	executionService *service.ScanExecutionService
 }
 
 // NewTaskHandler 创建任务处理器
-func NewTaskHandler(scanTaskService *service.ScanTaskService) *TaskHandler {
+func NewTaskHandler(executionService *service.ScanExecutionService) *TaskHandler {
 	return &TaskHandler{
-		scanTaskService: scanTaskService,
+		executionService: executionService,
 	}
 }
 
@@ -33,7 +33,7 @@ func (h *TaskHandler) HandleScanTask(ctx context.Context, t *asynq.Task) error {
 		payload.ExecutionID, payload.TaskID, payload.TenantID)
 
 	// 执行扫描任务
-	err := h.scanTaskService.ExecuteScanRun(ctx, payload.ExecutionID)
+	err := h.executionService.ExecuteScanRun(ctx, payload.ExecutionID)
 	if err != nil {
 		log.Printf("❌ 扫描任务执行失败 - ExecutionID: %s, Error: %v", payload.ExecutionID, err)
 		return fmt.Errorf("扫描任务执行失败: %w", err)

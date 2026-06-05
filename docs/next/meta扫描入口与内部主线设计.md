@@ -75,6 +75,7 @@ Meta 对外和对内的扫描入口不应按“哪个模块调用”或“哪个
 
 | source | 含义 |
 |---|---|
+| `console` | Console 聚合编排触发，例如注册 engine 后写入扫描计划或创建立即扫描 execution。 |
 | `meta` | Meta 模块自身触发，包括 Meta 前端手动扫描和 Meta 内部定时调度触发。 |
 | `manager` | Manager 模块触发，例如资源树刷新、item refresh 或预览前置刷新。 |
 | `system` | System 模块触发，例如 engine 创建、配置变化后的立即扫描。 |
@@ -131,21 +132,21 @@ flowchart TD
 sequenceDiagram
     participant Caller as Caller
     participant API as Meta API
-    participant Task as ScanTaskService
+    participant Exec as ScanExecutionService
     participant Resolver as ScanScopeResolver
     participant Queue as Execution Queue
     participant Worker as Worker
     participant Scan as ScanService
 
     Caller->>API: POST /scan/run/manual
-    API->>Task: CreateManualRun(req)
-    Task->>Resolver: Resolve selector
-    Resolver-->>Task: ScanScope
-    Task->>Task: Create ScanExecution
-    Task->>Queue: Enqueue execution_id
+    API->>Exec: CreateManualRun(req)
+    Exec->>Resolver: Resolve selector
+    Resolver-->>Exec: ScanScope
+    Exec->>Exec: Create ScanExecution
+    Exec->>Queue: Enqueue execution_id
     API-->>Caller: execution_id
-    Worker->>Task: ExecuteScanRun(execution_id)
-    Task->>Scan: ScanExecution -> ScanEngineWithScope
+    Worker->>Exec: ExecuteScanRun(execution_id)
+    Exec->>Scan: ScanExecution -> ScanEngineWithScope
     Scan->>Scan: Unified scan mainline
 ```
 
@@ -300,23 +301,26 @@ Meta 扫描需要区分三类对象：
 
 - `common.task_executions` 只记录执行，不保存调度定义。
 - `ScanTask` 只记录任务定义和最近一次执行摘要，不保存每次执行历史。
-- System 拥有 engine 身份、连接配置和生命周期，不应长期作为 Meta 扫描调度的权威存储。
-- System 注册 engine 时可以接收 Meta 扫描策略，但该策略应被转交给 Meta 创建 / 更新 `ScanTask`。
+- System 拥有 engine 身份、连接配置和生命周期，不知道 Meta，也不接收、不保存、不投递 Meta 扫描策略。
+- Console 同时知道 System 和 Meta。System 注册引擎时“默认带有 Meta 扫描配置”的产品体验，应由 Console 在同一个表单流程中分别编排 System engine 写入与 Meta `ScanTask` / execution 写入。
 - 定时执行由 `trigger_type=scheduled` 表达，触发来源仍为 `source=meta`；任务定义的创建者或管理方应使用独立字段表达，不混入 execution `source`。
 
 目标链路：
 
 ```mermaid
 flowchart TD
-    A[System engine create/update request<br/>with meta scan policy] --> B[System persists engine identity<br/>and connection config]
-    A --> C[Meta scan policy command/event]
-    C --> D[Meta ScanTask API / handler]
-    D --> E[meta.scan_tasks<br/>task definition]
-    E --> F[Meta scheduler<br/>DB-driven due task claim]
-    F --> G[common.task_executions<br/>scheduled execution]
-    G --> H[Meta worker executes scan]
-    H --> I[common.task_executions<br/>progress/result]
-    H --> J[meta.scan_tasks<br/>last/next execution summary]
+    A[Console engine registration form] --> B[System API<br/>create/update engine facts]
+    B --> C[System persists engine identity<br/>connection/capability/lifecycle facts]
+    B --> D[Console receives engine_id]
+    D --> E[Meta ScanTask API<br/>upsert/delete engine scan task]
+    E --> F[meta.scan_tasks<br/>task definition]
+    D --> G{immediate scan?}
+    G -- yes --> H[Meta manual execution API<br/>source=console trigger_type=manual]
+    F --> I[Meta scheduler<br/>DB-driven due task claim]
+    I --> J[common.task_executions<br/>scheduled execution]
+    J --> K[Meta worker executes scan]
+    K --> L[common.task_executions<br/>progress/result]
+    K --> M[meta.scan_tasks<br/>last/next execution summary]
 ```
 
 ### 1. `ScanTask` 是调度权威
@@ -334,14 +338,14 @@ flowchart TD
 - `last_run_at`
 - `last_execution_id`
 - `last_execution_status`
-- `owner_module` 或同等语义字段：表达任务定义由哪个模块创建或管理，例如 `system`、`meta`
+- `owner_module` 或同等语义字段：表达任务定义绑定的对象所属模块，例如 `system`、`meta`
 
 `owner_module` 与 execution `source` 不是同一个概念：
 
-- `owner_module`：谁拥有 / 管理这个任务定义。
+- `owner_module`：任务绑定在哪个模块的对象上。
 - `source`：这次 execution 是哪个模块触发的。
 
-例如 System 注册 engine 时创建了一个自动扫描任务：
+例如 Console 在注册 engine 后为该 engine 创建了一个自动扫描任务：
 
 - `ScanTask.owner_module=system`
 - 到点后由 Meta scheduler 触发 execution：
@@ -352,6 +356,8 @@ flowchart TD
   - `TaskExecution.source_task_id=scan_tasks.id`
 
 这样不会让一个字段承载两个含义。
+
+这里的 `owner_module=system` / `owner_ref=engine:{engine_id}` 只表达任务绑定的外部领域对象是 System engine，不表达 System 管理 Meta 任务，也不要求 System 知道 Meta。
 
 ### 2. 调度保证方式
 
@@ -384,21 +390,22 @@ sequenceDiagram
 
 ### 3. System 注册引擎时的扫描设置
 
-System 注册引擎时出现 Meta 扫描设置，本质上是跨模块便捷入口，不代表 System 应该拥有 Meta 调度状态。
+System 注册引擎时出现 Meta 扫描设置，本质上是 Console 提供的跨模块便捷入口，不代表 System 应该拥有、理解或转发 Meta 调度状态。
 
 目标上建议：
 
 1. System engine 创建 / 更新只持久化 engine 自身事实：身份、连接、能力、租户、状态等。
-2. 请求里的 Meta 扫描策略作为命令转交 Meta。
-3. Meta 根据策略 upsert `ScanTask`。
-4. UI 需要展示某个 engine 的扫描计划时，查询 Meta 的 `ScanTask`，或由聚合层组合 System engine 与 Meta task。
-5. 删除 engine 时，System 发出 engine deleted 事件；Meta 删除或禁用对应 `ScanTask`，并清理 metadata。
+2. System 前端在 Console iframe 中完成 engine 保存后，只通过 `postMessage` 向父级 Console 提交扫描策略编排请求，不直接调用 Meta。
+3. Console 拿到 `engine_id` 和扫描策略后调用 Meta，由 Meta upsert / delete `ScanTask`。
+4. 如果用户选择“注册后立即扫描”，Console 在 engine 创建成功后再调用 Meta manual execution API，创建一次 `trigger_type=manual` 的 execution。
+5. UI 需要展示某个 engine 的扫描计划时，查询 Meta 的 `ScanTask`，或由 Console 聚合 System engine 与 Meta task。
+6. 删除 engine 时，System 只发布通用 engine lifecycle event；Meta 监听到 delete 后删除或禁用对应 `ScanTask`，并清理 metadata。
 
-当前代码已经有雏形：System engine 上有 `scan_config`，Meta 监听 engine change 后投影为 `meta.scan_tasks`。目标重构时应避免长期双写状态，最终让 `ScanTask` 成为唯一调度定义。
+目标实现中，`ScanTask` 是唯一调度定义。System engine 表、DTO、事件载荷和 System 前端不保留 `scan_config`。
 
 ### 4. 当前实现需要收敛的问题
 
-1. `system.engines.scan_config` 与 `meta.scan_tasks` 都持久化调度信息，存在状态漂移风险。
+1. `system.engines.scan_config` 与 `meta.scan_tasks` 都持久化调度信息，存在状态漂移风险；目标是删除 System 侧 `scan_config`，只保留 Meta `ScanTask`。
 2. Meta 当前启动时把 enabled task 注册到进程内 scheduler，缺少 DB 驱动的 due task claim 机制。
 3. 多实例部署下，纯内存 scheduler 可能重复触发；Meta 宕机时也可能漏掉到点任务。
 4. `common.task_executions.trigger_type` 已通过公共 migration 收敛为 `manual` / `scheduled`，来源模块、API 通道、编排父子关系和重试场景不再进入 trigger type。
@@ -456,7 +463,7 @@ System 注册引擎时出现 Meta 扫描设置，本质上是跨模块便捷入�
 | `graph` | `kg_build` | `manual` | `success` | 4 |
 | `graph` | `kg_build` | `manual` | `pending` | 1 |
 
-原调研时 Meta 执行记录的 `source` 均为空，且存在历史 `trigger_type=api`；公共执行表已通过迁移收敛旧 trigger type，并新增 `source` 字段承载触发来源模块。
+原调研时 Meta 执行记录的 `source` 均为空，且存在历史 `trigger_type=api`；公共执行表已通过迁移收敛旧 trigger type，`source` 字段仍是后续统一执行审计需要补齐的问题。
 
 代码和迁移证据：
 
@@ -478,7 +485,7 @@ System 注册引擎时出现 Meta 扫描设置，本质上是跨模块便捷入�
 - 扫描重构时只保留两类持久对象：`ScanTask` 作为任务定义，`common.task_executions` 作为执行记录。
 - 删除 `scan_task_runs` 的模型、文档、表和引用，不保留兼容读取。
 - 补齐 Meta 自身 migrations 的执行机制，或把需要长期存在的结构迁移纳入统一数据库迁移体系；不能继续只靠 AutoMigrate，因为 AutoMigrate 不会删除旧字段和旧表。
-- 各模块新写入的 `trigger_type` 必须按 `manual` / `scheduled` 规范执行；更细的触发来源写入 `source`，编排上下文和重试原因进入 parent execution 或模块 metadata。
+- 各模块新写入的 `trigger_type` 必须按 `manual` / `scheduled` 规范执行；更细的触发来源、编排上下文和重试原因应进入 source、parent execution 或模块 metadata。
 
 ## 六、建议改造顺序
 
@@ -525,7 +532,7 @@ flowchart TD
 
 后续仍需单独讨论：
 
-1. ADDP 各模块统一任务体系中，`trigger_type` 已整体收敛为 `manual` / `scheduled`；`source` 字段已补齐用于承载触发来源，重试原因等更细审计信息后续进入模块 metadata。
+1. ADDP 各模块统一任务体系中，`trigger_type` 已整体收敛为 `manual` / `scheduled`；后续需要补齐 source 字段或模块 metadata，承载来源和重试原因等审计信息。
 2. 各模块是否都需要任务定义表，还是只有具备定时/可复用定义的模块保留 Task 表，所有一次性运行只写 Execution。
 3. Meta migrations 应自建执行机制，还是纳入全局数据库迁移体系。
 4. `ScanTask.owner_module`、`scope`、planned fire key 等字段是否进入第一轮正式规范。
@@ -640,7 +647,7 @@ flowchart TD
 - `trigger_type` 全平台只表达触发形态，取值为 `manual` / `scheduled`。
 - `common.task_executions` 通过公共 migration 将历史 `schedule` 收敛为 `scheduled`，将 `api`、`orchestrator`、`retry`、`system_immediate` 等混合语义值收敛为 `manual`。
 - 各模块新写入不得再使用 `schedule`、`api`、`system_immediate`、`orchestrator`、`retry` 这类混合语义值。
-- 编排父子关系使用 `parent_execution_id` 表达；调用来源由 `source` 承载，重试原因后续由模块 metadata 承载。
+- 编排父子关系使用 `parent_execution_id` 表达；重试原因和调用来源后续应由 source 或模块 metadata 承载。
 
 ### 5. 各模块是否都需要 Task 表
 
@@ -709,7 +716,7 @@ flowchart TD
 
 1. 正式规范已同步 `source`、`trigger_type`、`ScanTask.scope`、`owner_module`、`owner_ref`、`planned_run_at`、Manager item refresh 前台等待语义。
 2. `ScanTask` 已新增结构化 `scope`、`owner_module`、`owner_ref`，`parameters` 收敛为扫描参数，不再承载范围。
-3. System engine 自动扫描任务已改为通过 `owner_module=system`、`owner_ref=engine:{engine_id}` 幂等维护，不再依赖 `name LIKE 自动扫描%`。
+3. engine 绑定的自动扫描任务已改为通过 `owner_module=system`、`owner_ref=engine:{engine_id}` 幂等维护，不再依赖 `name LIKE 自动扫描%`；任务由 Console 调用 Meta 维护，不由 System 投递。
 4. Meta 已补 embedded SQL migration runner，`meta.schema_migrations` 记录已执行迁移，旧 `scan_task_runs` 和旧 `schedule_type` 可由迁移删除。
 5. 定时调度已从进程内 per-task cron 注册改为 DB-driven due task claim：
    - `next_run_at` 只由任务创建、任务更新、启动初始化和 due claim 推进。
@@ -718,9 +725,9 @@ flowchart TD
 6. Manager item refresh 已迁入统一 execution 主线：
    - Meta `/items/{item_id}/refresh` 创建 `manual` execution，等待 execution 完成后返回原 `ScanResponse` 结构。
    - `item_id` 写入 execution config，worker 执行时恢复为 known item refresh scope。
-   - `ScanService.refreshItem` 降为内部 helper，API 层不能再绕过 execution 直接同步刷新。
+   - `ScanService` item scope 分支统一调用 `scanruntime.ItemRefreshRuntime`，API 层不能再绕过 execution 直接同步刷新。
    - Manager 调用 item refresh 时显式传 `source=manager`、`trigger_type=manual`、`scan_depth=deep`。
-7. `ImmediateExecutionRecorder` 旧同步记录路径已删除，`ScanService` 不再创建 execution；execution 生命周期统一由 `ScanTaskService` 管理。
+7. `ImmediateExecutionRecorder` 旧同步记录路径已删除，`ScanService` 不再创建 execution；execution 生命周期统一由 `ScanExecutionService` 管理。
 8. 已建立 `meta/internal/scanflow` 第一层边界：
    - `Options`、`Scope`、`Mode`、`ProgressReporter` 从 `service` 抽出。
    - `TargetSet`、`TargetsFromScope`、`InheritedTargets` 迁入 `scanflow`。
@@ -820,7 +827,7 @@ flowchart TD
 34. tabular / branch-leaf runtime 已迁入 `scanruntime`：
     - `DatabaseScanService` 更名并迁移为 `scanruntime.DatabaseRuntime`。
     - `BranchLeafScanService` 更名并迁移为 `scanruntime.BranchLeafRuntime`。
-    - database runtime 只依赖 `TableAssetIndexer` / `TableSpatialScanner` 窄接口，不反向依赖 `service` 具体类型。
+    - database runtime 只依赖 `TableAssetIndexer` 窄接口；表级空间事实改由 common engine `CatalogFacts.Spatial` 提供。
     - 对应 helper 测试已从 `service` 迁入 `scanruntime`。
 35. `ScanService` facade 文件继续瘦身：
     - 启动残留扫描锁清理迁入 `scan_lock_cleanup.go`。
@@ -828,7 +835,7 @@ flowchart TD
     - `scan_service.go` 聚焦依赖装配、入口 orchestration 和查询代理。
 36. item refresh 已抽入 `scanruntime`：
     - `scanruntime.ItemRefreshRuntime` 负责 known item descriptor 还原、content reader 获取和 `scanprocessor` 调用。
-    - `service.refreshItem` 只保留 item/resource/parent 查询、engine_id 校验和响应组装。
+    - known item 的 item/resource/parent 查询、engine_id 校验和 processor 调用归入 `scanruntime.ItemRefreshRuntime`。
     - `service` 不再直接调用 `scanprocessor.New`。
 37. content catalog thin adapter 已迁入 `scanruntime`：
     - object/file runtime 到 `scanadapter.ContentCatalogAdapter` 的适配由 `scanruntime.NewContentCatalogScanner` 创建。
@@ -858,12 +865,12 @@ flowchart TD
     - 新增 `internal/metatest.OpenMetadataDB`，统一创建 sqlite in-memory 数据库和 `meta` schema。
     - `scanadapter` / `scanruntime` / `scanprocessor` / `service` 包不再重复声明 `meta_node` / `meta_item` 建表 SQL。
     - `metatest.WithoutMetaItemTable` 覆盖只需要 root node 的轻量测试场景。
-44. `ScanTaskService` 大文件已按职责拆分：
-    - `scan_task_service.go` 只保留类型、常量、构造和依赖字段。
-    - `scan_task_lifecycle.go` 负责启动/停止、worker loop、pending execution 恢复和队列入队。
-    - `scan_task_execution.go` 负责 manual/auto execution 创建、执行、等待、取消和进度回写。
-    - `scan_task_crud.go` 负责任务 CRUD 和立即触发。
-    - `scan_task_schedule.go` 负责定时任务轮询、到期 claim、继承目标计算、system 注册引擎时的自动任务同步。
+44. `ScanTaskService` / `ScanExecutionService` / `ScanTaskScheduler` 职责已拆分：
+    - `ScanTaskService` 只管理扫描任务定义与扫描配置同步。
+    - `ScanExecutionService` 管理 manual/auto execution 创建、执行、等待、查询、取消和进度回写。
+    - `ScanTaskScheduler` 管理 execution 入队分发、本地 worker loop、pending execution 恢复和 DB-driven due task claim。
+    - `scan_task_crud.go` 只负责任务 CRUD，不再创建 execution。
+    - `scan_task_schedule.go` 负责 System engine scan config 到 `ScanTask` 的同步。
 45. `CatalogDispatcher` 大文件已按 strategy 拆分：
     - `catalog_dispatcher.go` 保留类型、构造、总分发和 object/file content 分发。
     - `catalog_dispatcher_branch.go` 承接 branch-leaf strategy。
@@ -900,6 +907,84 @@ flowchart TD
     - `meta/docs/tables/scan_tasks表.md` 已明确 `scan_tasks` 只保存任务定义，执行记录统一进入 `common.task_executions`。
     - 已删除 `meta/docs/tables/scan_task_runs表.md` 和 `meta/docs/tables/scan_logs表.md`，不保留已废弃私有运行历史表文档。
     - `meta/CLAUDE.md` 相关文档入口已同步删除旧表链接。
+52. 扫描去重锁语义已收敛：
+    - execution 去重锁按 scope 生成，不再只按 `tenant+engine+trigger_type` 粗粒度阻塞。
+    - `item_id` 优先于 `catalog_paths` / `ref_groups`，不同 scope 对应不同锁 key。
+    - execution 锁采用原子获取，owner 使用 `execution_id`，释放时必须校验 owner，避免旧执行误删新锁。
+    - execution 创建失败或事务回滚时立即释放锁，不依赖 TTL。
+53. item refresh 私有 service 分支已删除：
+    - `ScanService` 的 item scope 分支直接调用 `scanruntime.ItemRefreshRuntime.RefreshKnownItemByID`。
+    - known item 的 item/node 装载、engine_id 校验、descriptor 还原和 processor 调用统一归入 `scanruntime`。
+    - service 包测试改为通过 `ScanEngineWithOptions` 公开主线覆盖 known item refresh 行为。
+54. `ScanExecutionService` 文件按执行生命周期职责拆分：
+    - `scan_execution_service.go` 保留类型、构造、dispatcher 和存储类型查询。
+    - `scan_execution_create.go` 承接 manual/auto/task execution 创建。
+    - `scan_execution_runner.go` 承接执行运行、锁释放、进度回写和任务最近执行状态回填。
+    - `scan_execution_query.go` 承接执行查询、等待和取消。
+55. `ScanTaskScheduler` 文件按调度职责拆分：
+    - `scan_task_scheduler.go` 保留类型、构造、队列接口和 task queue 注入。
+    - `scan_task_scheduler_lifecycle.go` 承接启动/停止、execution 入队、本地 worker loop 和 pending execution 恢复。
+    - `scan_task_scheduler_due.go` 承接 DB-driven due task claim、planned execution 幂等检查和继承目标计算。
+56. `scanruntime.DatabaseRuntime` 接口依赖命名已收敛：
+    - `indexerService` 更名为 `tableIndexer`，只表达 `TableAssetIndexer` 能力。
+    - 空间事实不再由 meta runtime 通过 service/scanner 私有分支获取，而是消费 common engine catalog facts。
+    - runtime 内部不再用 service 命名承载窄接口依赖。
+57. Transfer 写后 Meta scan 文档已同步为 refs group 语义：
+    - encoded/raw content 目标提交单文件或单对象 `ref_groups`，不扩大为父目录扫描。
+    - Shapefile 等 multi-ref 目标只提交本次实际生成的 refs group，不补不存在的 sidecar refs。
+    - native table 目标仍使用 schema / database catalog path。
+58. Manager / common client 上层迁移已复核：
+    - Manager item refresh 通过 `/items/{item_id}/refresh`，显式使用 `source=manager`、`trigger_type=manual`、`scan_depth=deep`。
+    - Manager 资源树刷新和预览补扫使用 node / item selector，不回退到父目录扫描。
+    - common MetaClient 删除未使用且不带 source 的 `ForceRefreshItem` 快捷入口，避免上层误用裸刷新。
+59. System -> Meta 扫描策略权威边界已确认：
+    - System 不知道 Meta，不接收、不保存、不投递 Meta 扫描配置。
+    - Console 负责注册体验编排：先调用 System 创建 / 更新 engine，再调用 Meta upsert / delete 该 engine 绑定的 `ScanTask`，必要时创建一次 manual execution。
+    - System engine 注册 / 编辑体验默认保存后立即触发一次基础扫描，不默认创建定时 `ScanTask`。
+    - Console 收到未启用或未启用定时扫描的策略时，调用 Meta delete 该 engine 绑定的 `ScanTask`，不保留 disabled 绑定任务。
+    - Meta 监听 System 通用 engine lifecycle event，只用于清缓存、维护 catalog root、engine 删除后的 metadata / scan task 清理；不得从 System 回查并解释 `scan_config`。
+    - `owner_module=system`、`owner_ref=engine:{engine_id}` 只表示 `ScanTask` 绑定 System engine，不表示 System 管理 Meta。
+60. System 侧 `scan_config` 已移除：
+    - `common/models.Engine`、System DTO、System service、System DB 迁移和 Swagger 不再保留扫描配置字段。
+    - common-frontend 仍保留扫描配置表单体验；System iframe 保存 engine 后通过 `postMessage` 请求 Console 编排 Meta 扫描任务，不直接调用 Meta。
+    - Meta 已提供 Console-facing 的 engine scan task upsert/delete 能力；不使用 System 内部 command 或 System -> Meta 直连。
+    - `postMessage` 请求/响应细节已抽到 common-frontend Console bridge helper，System 页面只声明业务 channel，Console Portal 只注册业务 handler。
+61. Meta “扫描未扫描引擎”入口已从 `auto` 语义改为 manual batch run 语义：
+    - 后端路由从 `POST /scan/auto` 收敛为 `POST /scan/run/unscanned`，不再用 auto 表达非定时入口。
+    - `CreateAutoRuns` 改为 `CreateUnscannedRuns`，仍为每个未扫描 engine 创建 `trigger_type=manual` 的 execution。
+    - Meta 前端与 Console 调用已同步到新路径，用户文案改为“一键补扫未扫描引擎”。
+    - 旧 `AUTO_SYNC_*` Meta 配置字段已删除，避免和 DB-driven scheduled task 混淆。
+62. 查询 facade 依赖继续瘦身：
+    - `MetadataQueryService` 删除未使用的 `SpatialMetadataService` 注入。
+    - `ScanService` 不再装配空间表扫描器；数据库空间 facts 统一来自 engine `CatalogFacts.Spatial`。
+63. System -> Console -> Meta 前端编排链路已验收：
+    - 新建 storage engine 默认保存后触发一次 Meta basic manual scan。
+    - 编辑已有 storage engine 默认保存后也触发一次 Meta basic manual scan，即使用户没有改动扫描配置开关。
+    - 用户手动关闭“注册后立即扫描”时，编辑保存不应被默认值重新覆盖。
+    - “定时自动扫描”默认关闭；只有显式打开时，Console 才 upsert engine 绑定的 `ScanTask`。
+    - 保存 System engine 成功后，Meta 扫描编排失败只提示扫描编排失败，不再把已成功的 System 保存误报为整体保存失败。
+64. `ScanService` 查询 facade 已删除：
+    - API handler 直接依赖 `MetadataQueryService` 承接 metadata tree、node、item、field、spatial metadata 查询。
+    - API handler 直接依赖 `MetadataExtractor` 承接 object metadata / on-demand extract / access-index 构建。
+    - `ScanService` 不再持有 `MetadataQueryService` / `MetadataExtractor`，只保留扫描入口 scope 解析、runtime/adapter 分发和扫描执行主线装配。
+    - `scan_metadata_facade.go` 已删除，避免查询路径继续伪装成扫描服务能力。
+65. `scanadapter` 窄接口命名已收敛：
+    - `ObjectPathRuntime` 改为 `ObjectPathPersister`。
+    - `FilePathRuntime` 改为 `FilePathExecutor`。
+    - `ObjectRefGroupRuntime` 改为 `ObjectRefGroupPersister`。
+    - `FileRefGroupRuntime` 改为 `FileRefGroupPersister`。
+    - adapter 包不再用 `Runtime` 命名表达由 scanruntime 传入的窄能力，避免读成 adapter 直接拥有 runtime。
+66. `FilesystemCatalogRuntime.ScanDirectory` 单文件处理职责已拆出：
+    - 新增 `file_single_items.go`，承接 single file item 的 skip 判定、`scanprocessor.FileSingleInput` 构造、processor 调用和表识别日志。
+    - `ScanDirectory` 保留目录级编排：列目录、组合 item 检测、claimed paths、子目录递归和 force reconciliation。
+    - root 目录和普通目录只保留 detection resolver 选择差异，claims 合并、detected item 持久化和 extraction 合并统一走同一个后处理分支。
+    - `fileItemNeedsScan` 归入 single file item 处理文件，避免目录编排文件继续承载 item 刷新细节。
+67. database spatial facts 已收敛到 common engine catalog facts：
+    - `common/engine/plugin.CatalogFacts` 新增独立 `Spatial *datatype.SpatialInfo`，不污染 `datatype.TableInfo`。
+    - `CatalogFactsOptions.IncludeSpatialFacts` 显式控制是否请求空间事实，普通 catalog listing 不承担深度空间探测成本。
+    - PostgreSQL 插件通过 `TabularCatalogCallbacks.DescribeSpatial` 提供空间列、SRID、extent 和空间索引事实。
+    - `scanruntime.DatabaseRuntime` 深扫时消费 `CatalogFacts.Table` 与 `CatalogFacts.Spatial`，分别写入 `type_info.table` 和 `capabilities.spatial`。
+    - Meta 私有 `TableSpatialScanner` / `SpatialMetadataService` / 空间扫描配置残留已删除，避免基于具体数据库实现开分支。
 
 本轮验证：
 
@@ -920,6 +1005,23 @@ cd meta/backend && go test ./...
 cd meta/backend && go test ./internal/scanruntime
 cd meta/backend && go test ./...
 cd meta/backend && go test ./...
+cd meta/backend && go test ./internal/service
+bash scripts/swagger/gen-swagger.sh meta
+bash scripts/swagger/check-route-coverage.sh meta
+cd meta/backend && go test ./internal/service ./internal/scanflow
+cd system/frontend && npm run build
+cd console/frontend && npm run build
+cd meta/backend && go test ./...
+cd meta/backend && go test ./internal/api ./internal/service ./internal/extractor
+bash scripts/swagger/gen-swagger.sh meta
+bash scripts/swagger/check-route-coverage.sh meta
+cd meta/backend && go test ./internal/scanadapter ./internal/scanruntime ./internal/scanprocessor
+cd meta/backend && go test ./internal/service
+cd meta/backend && go test ./internal/scanruntime
+go test ./common/engine/plugin ./common/engine/plugins/postgresql
+cd meta/backend && go test ./internal/scanruntime ./internal/service
+cd meta/backend && go test ./...
+go test ./common/engine/...
 git diff --check
 ```
 

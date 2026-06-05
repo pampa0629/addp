@@ -221,7 +221,6 @@ erDiagram
         bool is_builtin
         json connection_info
         json capabilities "存储/计算能力声明(JSONB)"
-        json scan_config
         string connection_status "online|offline|unknown|checking"
         string check_message
         timestamp last_check_at

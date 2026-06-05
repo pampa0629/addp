@@ -238,13 +238,13 @@ overwrite / append 是 Transfer policy，不进入 common engine。`TableWritePr
 
 Transfer 不直接推导目标文件 attributes。GeoJSON 导出目标使用独立 `format=geojson` 写出；写后扫描由 Meta 按统一格式探测和 GeoJSON provider 解析目标内容，负责写入 `type_info.table`、`format_info.geojson` 和实际存在的 `capabilities.spatial`。
 
-扫描目标为目标资源所在容器：
+Transfer 只提交本次实际写出的目标边界；encoded/raw content 目标使用 `ref_groups`，不扩大为父目录扫描：
 
 | 目标类型 | 扫描目标 |
 |---|---|
 | native table | schema 或 database。 |
-| NFS file | 父目录；根目录文件扫描 `/`。 |
-| MinIO / S3 object | bucket/prefix。 |
-| Shapefile refs | refs 所在目录或 prefix。 |
+| NFS encoded/raw file | 单文件 `ref_groups`。 |
+| MinIO / S3 encoded/raw object | 单对象 `ref_groups`。 |
+| Shapefile refs | 本次实际生成的 refs group，不补不存在的 sidecar refs。 |
 
 Transfer 不直接写目标 Meta attributes。

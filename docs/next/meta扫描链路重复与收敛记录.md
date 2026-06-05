@@ -40,13 +40,13 @@
 
 ### target 解析存在多处入口
 
-当前异步任务创建、即时扫描和 item refresh 都存在各自的目标解析路径：
+历史上异步任务创建、即时扫描和 item refresh 存在各自的目标解析路径：
 
-- `ScanTaskService.CreateManualRun` 会把 node / item / targets 解析为 `catalog_paths` 并写入 execution config。
+- execution 创建会把 node / item / targets 解析为 `catalog_paths` 并写入 execution config。
 - `ScanService.ScanEngineWithOptions` 也会处理 scan options 并解析 targets。
-- `RefreshItem` 又从已有 item attributes 反推刷新目标。
+- item refresh 需要从已有 item attributes 反推刷新目标。
 
-这些路径都在做“从用户选择或已有 metadata 推导扫描范围”的事情，但没有统一成一个 scan target resolution 层，导致概念重复，也容易在不同入口出现行为不一致。
+这些路径本质上都在做“从用户选择或已有 metadata 推导扫描范围”的事情，因此后续收敛方向是统一到 scan target / scope resolution 层，避免不同入口再次出现行为不一致。
 
 ### dispatch 分支过早绑定引擎类型
 

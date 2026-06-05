@@ -13,8 +13,15 @@ func TaskParameters(scanDepth string, force bool) models.JSONMap {
 }
 
 func AutomaticTaskParameters() models.JSONMap {
+	return EngineTaskParameters(scanflow.ScanDepthDeep)
+}
+
+func EngineTaskParameters(scanDepth string) models.JSONMap {
+	if scanDepth == "" {
+		scanDepth = scanflow.ScanDepthDeep
+	}
 	return models.JSONMap{
-		"scan_depth": scanflow.ScanDepthDeep,
+		"scan_depth": scanDepth,
 		"force":      false,
 	}
 }

@@ -111,11 +111,12 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import { useLangStore } from '../store/lang'
 import { ElMessage } from 'element-plus'
+import { registerConsoleBridgeHandler } from '@common-ui'
 import { useI18n } from 'vue-i18n'
 import { MagicStick, Close } from '@element-plus/icons-vue'
 import {
@@ -126,6 +127,7 @@ import PortalHeader from '../components/portal/PortalHeader.vue'
 import PortalSidebar from '../components/portal/PortalSidebar.vue'
 import PortalHome from '../components/portal/PortalHome.vue'
 import { navigateGuide } from '../api/copilot'
+import { createManualScanRun, deleteEngineScanTask, getScanTasks, upsertEngineScanTask } from '../api/meta'
 import PortalIframe from '../components/portal/PortalIframe.vue'
 import ApiDocs from './ApiDocs.vue'
 
@@ -142,6 +144,9 @@ const isCollapsed = ref(false)
 const activeGroup = ref(null)  // null = 全局首页
 const sidebarRef = ref(null)
 const sidebarModules = ref([])  // 侧边栏实际显示的模块（点卡片时只显示单个）
+
+const ENGINE_SCAN_POLICY_CHANNEL = 'engine-scan-policy'
+let stopEngineScanPolicyBridge = null
 
 const currentGroupConfig = computed(() =>
   MODULE_GROUPS.find(g => g.key === activeGroup.value) || null
@@ -164,6 +169,11 @@ const homeCards = computed(() => {
 })
 
 onMounted(async () => {
+  stopEngineScanPolicyBridge = registerConsoleBridgeHandler(
+    ENGINE_SCAN_POLICY_CHANNEL,
+    handleEngineScanPolicyBridge,
+    { allowedSources: ['addp-system'] }
+  )
   if (authStore.isAuthenticated) {
     try {
       await authStore.fetchUser()
@@ -175,6 +185,73 @@ onMounted(async () => {
     }
   }
 })
+
+onBeforeUnmount(() => {
+  stopEngineScanPolicyBridge?.()
+  stopEngineScanPolicyBridge = null
+})
+
+const normalizeScanConfig = (scanConfig) => {
+  if (!scanConfig) return null
+  return {
+    ...scanConfig,
+    enabled: Boolean(scanConfig.immediate_scan || scanConfig.scheduled_scan)
+  }
+}
+
+const scanConfigFromTask = (task) => {
+  if (!task) return null
+  const parameters = task.parameters || {}
+  return {
+    enabled: true,
+    immediate_scan: true,
+    immediate_depth: 'basic',
+    scheduled_scan: true,
+    schedule_type: 'cron',
+    cron_expression: task.schedule || '',
+    schedule_time: '00:00',
+    schedule_value: [],
+    scan_depth: parameters.scan_depth || 'deep'
+  }
+}
+
+const handleEngineScanPolicyBridge = async (payload = {}) => {
+  if (payload.action === 'load') {
+    const engineId = Number(payload.engineId)
+    if (!engineId) throw new Error('engine_id is required')
+    const tasks = await getScanTasks(engineId)
+    const task = tasks.find(item => item.owner_module === 'system' && item.owner_ref === `engine:${engineId}`) || tasks[0]
+    return { scanConfig: scanConfigFromTask(task) }
+  }
+
+  if (payload.action === 'sync') {
+    const engine = payload.engine || {}
+    const engineId = Number(engine.id)
+    if (!engineId) throw new Error('engine_id is required')
+    const scanConfig = normalizeScanConfig(payload.scanConfig)
+    if (!scanConfig || !scanConfig.scheduled_scan) {
+      await deleteEngineScanTask(engineId)
+    } else {
+      await upsertEngineScanTask(engineId, {
+        engine_name: engine.name,
+        scan_config: scanConfig
+      })
+    }
+
+    if (payload.triggerImmediate && scanConfig?.immediate_scan) {
+      await createManualScanRun(engineId, {
+        scan_depth: scanConfig.immediate_depth || scanConfig.scan_depth || 'basic',
+        trigger_type: 'manual',
+        source: 'console',
+        force: false
+      })
+    }
+
+    return {}
+  }
+
+  throw new Error(`unsupported action: ${payload.action || ''}`)
+}
 
 const handleGroupClick = (group) => {
   if (group.isPortal) {

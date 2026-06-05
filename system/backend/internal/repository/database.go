@@ -54,6 +54,9 @@ func AutoMigrate(db *gorm.DB) error {
 	if err := migrateEngineOrigin(db); err != nil {
 		return err
 	}
+	if err := dropEngineScanConfig(db); err != nil {
+		return err
+	}
 	return db.AutoMigrate(
 		&models.Tenant{},
 		&models.User{},
@@ -108,6 +111,25 @@ func migrateEngineOrigin(db *gorm.DB) error {
 
 				IF to_regclass('system.idx_engines_category') IS NOT NULL THEN
 					ALTER INDEX system.idx_engines_category RENAME TO idx_engines_origin;
+				END IF;
+			END IF;
+		END $$;
+	`).Error
+}
+
+func dropEngineScanConfig(db *gorm.DB) error {
+	return db.Exec(`
+		DO $$
+		BEGIN
+			IF to_regclass('system.engines') IS NOT NULL THEN
+				IF EXISTS (
+					SELECT 1
+					FROM information_schema.columns
+					WHERE table_schema = 'system'
+					  AND table_name = 'engines'
+					  AND column_name = 'scan_config'
+				) THEN
+					ALTER TABLE system.engines DROP COLUMN scan_config;
 				END IF;
 			END IF;
 		END $$;

@@ -11,7 +11,6 @@ import (
 	"github.com/addp/meta/internal/metapath"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanchange"
-	"gorm.io/gorm"
 )
 
 // scanTables 扫描Schema下的所有表。
@@ -19,7 +18,6 @@ func (s *DatabaseRuntime) scanTables(
 	ctx context.Context,
 	resource *commonModels.Engine,
 	scanCatalog databaseScanCatalog,
-	db *gorm.DB,
 	tenantID, engineID uint,
 	schemaNode *models.MetaNode,
 	schemaName string,
@@ -76,7 +74,7 @@ func (s *DatabaseRuntime) scanTables(
 			continue
 		}
 
-		fields, attrs, err := s.scanTableDetails(ctx, resource, scanCatalog, db, schemaName, tableInfo, existingItem, isDeepScan)
+		fields, attrs, err := s.scanTableDetails(ctx, resource, scanCatalog, schemaName, tableInfo, existingItem, isDeepScan)
 		if err != nil {
 			s.log.Warn("表扫描失败，跳过",
 				"schema", schemaName,
@@ -105,8 +103,8 @@ func (s *DatabaseRuntime) scanTables(
 			"item_id", item.ID,
 		)
 
-		if isDeepScan && s.indexerService != nil {
-			s.indexerService.IndexTableAsset(resource, tenantID, schemaName, tableInfo, fields, item)
+		if isDeepScan && s.tableIndexer != nil {
+			s.tableIndexer.IndexTableAsset(resource, tenantID, schemaName, tableInfo, fields, item)
 		}
 
 		totalTables++
@@ -174,30 +172,6 @@ func (s *DatabaseRuntime) resolveTableRowCount(ctx context.Context, resource *co
 	return &count
 }
 
-func (s *DatabaseRuntime) tryOpenConnectionPool(resource *commonModels.Engine) *gorm.DB {
-	p, err := plugin.Get(resource.EngineType)
-	if err != nil {
-		return nil
-	}
-	if _, ok := p.(plugin.ConnectionPoolPlugin); !ok {
-		return nil
-	}
-	db, err := plugin.GetOrCreatePoolFromFactory(&plugin.Engine{
-		ID:             resource.ID,
-		EngineType:     resource.EngineType,
-		ConnectionInfo: plugin.ConnectionInfo(resource.ConnectionInfo),
-	}, nil)
-	if err != nil {
-		s.log.Warn("创建连接池失败，跳过连接池增强元数据",
-			"engine_id", resource.ID,
-			"engine_type", resource.EngineType,
-			"error", err,
-		)
-		return nil
-	}
-	return db
-}
-
 // deleteRemovedTables 软删除已移除的表。
 func (s *DatabaseRuntime) deleteRemovedTables(
 	tenantID, engineID uint,
@@ -218,8 +192,8 @@ func (s *DatabaseRuntime) deleteRemovedTables(
 					"error", err,
 				)
 			}
-			if s.indexerService != nil {
-				s.indexerService.DeleteTablesFromIndex(tenantID, engineID, schemaName)
+			if s.tableIndexer != nil {
+				s.tableIndexer.DeleteTablesFromIndex(tenantID, engineID, schemaName)
 			}
 		}
 	}

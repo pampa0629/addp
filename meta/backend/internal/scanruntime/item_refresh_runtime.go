@@ -30,6 +30,29 @@ func NewItemRefreshRuntime(repo *metaRepo.ScanRepository, indexer scanprocessor.
 	}
 }
 
+func (r *ItemRefreshRuntime) RefreshKnownItemByID(
+	ctx context.Context,
+	resource *commonModels.Engine,
+	tenantID uint,
+	itemID uint,
+) (scanprocessor.Result, error) {
+	if itemID == 0 {
+		return scanprocessor.Result{}, fmt.Errorf("item_id is required")
+	}
+	item, err := r.repo.GetItemByID(tenantID, itemID)
+	if err != nil {
+		return scanprocessor.Result{}, fmt.Errorf("item target not found: %w", err)
+	}
+	if item.EngineID != resource.ID {
+		return scanprocessor.Result{}, fmt.Errorf("item engine_id does not match request engine_id")
+	}
+	parentNode, err := r.repo.GetNodeByIDForTenant(tenantID, item.NodeID)
+	if err != nil {
+		return scanprocessor.Result{}, fmt.Errorf("item parent node not found: %w", err)
+	}
+	return r.RefreshKnownItem(ctx, resource, tenantID, *item, *parentNode)
+}
+
 func (r *ItemRefreshRuntime) RefreshKnownItem(
 	ctx context.Context,
 	resource *commonModels.Engine,

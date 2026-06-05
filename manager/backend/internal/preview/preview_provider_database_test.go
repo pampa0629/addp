@@ -11,45 +11,6 @@ import (
 	"github.com/addp/manager/internal/models"
 )
 
-func TestBuildDatabaseRenderGeometryColumns(t *testing.T) {
-	t.Parallel()
-
-	rows := []map[string]interface{}{
-		{
-			"geom":                  "POINT(1 2)",
-			"__render_geojson_geom": `{"type":"Point","coordinates":[1,2]}`,
-		},
-		{
-			"geom":                  nil,
-			"__render_geojson_geom": nil,
-		},
-	}
-
-	got := buildDatabaseRenderGeometryColumns([]string{"geom"}, rows)
-	if len(got) != 1 {
-		t.Fatalf("expected 1 render geometry mapping, got %d", len(got))
-	}
-	if got["geom"] != "__render_geojson_geom" {
-		t.Fatalf("unexpected render geometry column mapping: %+v", got)
-	}
-}
-
-func TestBuildDatabaseRenderGeometryColumnsIgnoreInvalidPayload(t *testing.T) {
-	t.Parallel()
-
-	rows := []map[string]interface{}{
-		{
-			"geom":                  "POINT(1 2)",
-			"__render_geojson_geom": "not-json",
-		},
-	}
-
-	got := buildDatabaseRenderGeometryColumns([]string{"geom"}, rows)
-	if len(got) != 0 {
-		t.Fatalf("expected invalid render payload to be ignored, got %+v", got)
-	}
-}
-
 func TestDatabasePreviewPostgreSQLPrimaryKeyPageQueryUsesKeyCTEForDeepOffset(t *testing.T) {
 	t.Parallel()
 
@@ -66,7 +27,6 @@ func TestDatabasePreviewPostgreSQLPrimaryKeyPageQueryUsesKeyCTEForDeepOffset(t *
 		`WITH "__addp_page_keys" AS (SELECT "SmID" FROM "public"."dltb" ORDER BY "SmID" LIMIT 20 OFFSET 10000000)`,
 		`FROM "public"."dltb" AS "__addp_src" JOIN "__addp_page_keys" AS "__addp_keys" ON "__addp_src"."SmID" = "__addp_keys"."SmID"`,
 		`ST_AsText("__addp_src"."SmGeometry") AS "SmGeometry"`,
-		`AS "__render_geojson_SmGeometry"`,
 		`ORDER BY "__addp_src"."SmID"`,
 	}
 	for _, want := range mustContain {
@@ -111,10 +71,9 @@ func TestDatabaseTablePreviewProviderPreviewUsesBatchReadAndAttributeRowCount(t 
 		batchData: &plugin.BatchData{
 			Rows: []map[string]interface{}{
 				{
-					"SmID":                        int64(10),
-					"SmGeometry":                  "POINT(1 2)",
-					"DLMC":                        "test",
-					"__render_geojson_SmGeometry": `{"type":"Point","coordinates":[1,2]}`,
+					"SmID":       int64(10),
+					"SmGeometry": "POINT(1 2)",
+					"DLMC":       "test",
 				},
 			},
 		},
@@ -179,8 +138,17 @@ func TestDatabaseTablePreviewProviderPreviewUsesBatchReadAndAttributeRowCount(t 
 	if !strings.Contains(enginePlugin.readBatchCalls[0].Query, `OFFSET 4`) {
 		t.Fatalf("ReadBatch query = %q, want offset 4", enginePlugin.readBatchCalls[0].Query)
 	}
-	if preview.RenderGeometryColumns["SmGeometry"] != "__render_geojson_SmGeometry" {
-		t.Fatalf("RenderGeometryColumns = %#v", preview.RenderGeometryColumns)
+	if preview.GeometryColumn != "SmGeometry" {
+		t.Fatalf("GeometryColumn = %q, want SmGeometry", preview.GeometryColumn)
+	}
+	if preview.SourceSRID != 2360 || preview.SourceCRS != "EPSG:2360" {
+		t.Fatalf("source CRS = %d/%q, want 2360/EPSG:2360", preview.SourceSRID, preview.SourceCRS)
+	}
+	if preview.TransformStatus != "not_transformed" || preview.PreviewHint != "frontend_transform_required" {
+		t.Fatalf("transform contract = %q/%q, want not_transformed/frontend_transform_required", preview.TransformStatus, preview.PreviewHint)
+	}
+	if strings.Contains(enginePlugin.readBatchCalls[0].Query, "ST_Transform") {
+		t.Fatalf("ReadBatch query should not transform geometry:\n%s", enginePlugin.readBatchCalls[0].Query)
 	}
 }
 

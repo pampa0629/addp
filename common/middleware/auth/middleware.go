@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -35,6 +36,28 @@ func SystemAuthMiddleware(systemURL string) gin.HandlerFunc {
 	}
 
 	return func(c *gin.Context) {
+		if internalKey := c.GetHeader("X-Internal-API-Key"); internalKey != "" {
+			tenantID := uint(0)
+			var tenantIDPtr *uint
+			if tenantIDStr := c.GetHeader("X-Tenant-ID"); tenantIDStr != "" {
+				if tid, err := strconv.ParseUint(tenantIDStr, 10, 32); err == nil {
+					tenantID = uint(tid)
+					tenantIDPtr = &tenantID
+				}
+			}
+
+			c.Set(ContextUserIDKey, uint(1))
+			c.Set(ContextUsernameKey, "internal-api-call")
+			c.Set(ContextTenantIDKey, tenantID)
+			c.Set(ContextUserInfoKey, UserInfo{
+				ID:       1,
+				Username: "internal-api-call",
+				TenantID: tenantIDPtr,
+			})
+			c.Next()
+			return
+		}
+
 		authHeader := c.GetHeader("Authorization")
 		if strings.TrimSpace(authHeader) == "" {
 			if tokenParam := strings.TrimSpace(c.Query("token")); tokenParam != "" {

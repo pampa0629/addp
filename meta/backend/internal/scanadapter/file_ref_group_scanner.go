@@ -11,14 +11,14 @@ import (
 	"github.com/addp/meta/internal/scanflow"
 )
 
-type FileRefGroupRuntime interface {
+type FileRefGroupPersister interface {
 	EnsureFilesystemScanRoot(tenantID uint, resource *commonModels.Engine, enginePlugin plugin.EnginePlugin, scanPath string) (*models.MetaNode, *models.MetaNode, error)
 	PersistFileCatalogDetectedItem(ctx context.Context, resource *commonModels.Engine, tenantID uint, parentNode *models.MetaNode, dirPath string, detected *metaitem.DetectedItem, itemTerm string, contentReader plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, scanDepth string) (bool, string, scanflow.ExtractionCounts)
 }
 
 func ScanFileRefGroups(
 	ctx context.Context,
-	runtime FileRefGroupRuntime,
+	persister FileRefGroupPersister,
 	resource *commonModels.Engine,
 	tenantID uint,
 	groups []models.ScanRefGroup,
@@ -51,7 +51,7 @@ func ScanFileRefGroups(
 			reporter.Message(fmt.Sprintf("扫描内容引用组 %s", primary))
 		}
 
-		_, parentNode, err := runtime.EnsureFilesystemScanRoot(tenantID, resource, enginePlugin, candidates.DirPath)
+		_, parentNode, err := persister.EnsureFilesystemScanRoot(tenantID, resource, enginePlugin, candidates.DirPath)
 		if err != nil {
 			return totalNodes, totalItems, extractionStats, err
 		}
@@ -65,7 +65,7 @@ func ScanFileRefGroups(
 			return totalNodes, totalItems, extractionStats, err
 		}
 		for _, detected := range detection.Items {
-			persisted, _, itemExtractionStats := runtime.PersistFileCatalogDetectedItem(ctx, resource, tenantID, parentNode, candidates.DirPath, detected, itemTerm, contentReader, connInfo, scanDepth)
+			persisted, _, itemExtractionStats := persister.PersistFileCatalogDetectedItem(ctx, resource, tenantID, parentNode, candidates.DirPath, detected, itemTerm, contentReader, connInfo, scanDepth)
 			if persisted {
 				totalItems++
 			}

@@ -27,6 +27,7 @@ export { formatBytes, formatDate, safeStringify } from './utils/formatters'
 export * from './utils/schedule'
 export * from './utils/index'
 export * from './utils/engineDisplay'
+export * from './utils/consoleBridge'
 export { toAmisResponse, toAmisListResponse, createAmisInterceptor } from './utils/amis-adaptor'
 
 // Types

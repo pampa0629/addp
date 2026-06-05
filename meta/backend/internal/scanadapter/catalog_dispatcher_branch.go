@@ -77,17 +77,16 @@ func (d *CatalogDispatcher) scanBranchLeaves(
 			lockAcquired := false
 			if d.locker != nil {
 				branchLock = d.locker.GenerateBranchLockKey(tenantID, resourceID, branch)
-				if d.locker.CheckTaskExists(ctx, branchLock) {
+				acquired, err := d.locker.TryAcquireLock(ctx, branchLock, 2*time.Hour)
+				if err != nil {
+					d.log.Warn("加 catalog 分支级锁失败", "branch", branch, "error", err)
+				} else if !acquired {
 					d.log.Info("catalog 分支正在扫描中，跳过", "engine_id", resourceID, "branch", branch)
 					if reporter != nil {
 						reporter.Message(fmt.Sprintf("catalog 分支 %s 正在扫描中，跳过", branch))
 					}
 					completed++
 					return
-				}
-
-				if err := d.locker.MarkTaskRunning(ctx, branchLock, 2*time.Hour); err != nil {
-					d.log.Warn("加 catalog 分支级锁失败", "branch", branch, "error", err)
 				} else {
 					lockAcquired = true
 				}

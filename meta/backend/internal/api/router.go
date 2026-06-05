@@ -11,6 +11,7 @@ import (
 	_ "github.com/addp/meta/docs"
 	_ "github.com/addp/meta/i18n"
 	"github.com/addp/meta/internal/config"
+	"github.com/addp/meta/internal/extractor"
 	"github.com/addp/meta/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
@@ -19,7 +20,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineService, scanService *service.ScanService, taskService *service.ScanTaskService, redisClient *redis.Client, systemClient *commonClient.SystemClient) *gin.Engine {
+func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineService, scanService *service.ScanService, taskService *service.ScanTaskService, executionService *service.ScanExecutionService, redisClient *redis.Client, systemClient *commonClient.SystemClient) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(i18nmiddleware.I18nMiddleware())
@@ -34,8 +35,11 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 		panic("engineService and scanService must be provided to SetupRouter")
 	}
 
+	metadataQueryService := service.NewMetadataQueryService(db, engineService, logger.With("component", "metadata_query_service"))
+	metadataExtractor := extractor.NewMetadataExtractor(db)
+
 	// 创建Handler
-	handler := NewHandler(engineService, scanService, taskService)
+	handler := NewHandler(engineService, scanService, taskService, executionService, metadataQueryService, metadataExtractor)
 	assetDiscHandler := newAssetDiscoverableHandler(db)
 
 	// 健康检查
@@ -65,13 +69,15 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 		api.GET("/engines", handler.GetEngines)
 
 		// 扫描相关
-		api.POST("/scan/auto", handler.AutoScan)
+		api.POST("/scan/run/unscanned", handler.CreateUnscannedScanRuns)
 		api.POST("/scan/run/manual", handler.CreateManualScanRun)
 		api.GET("/scan/runs", handler.ListScanRuns)
 		api.GET("/scan/runs/:run_id", handler.GetScanRun)
 		api.POST("/scan/runs/:run_id/cancel", handler.CancelScanRun)
 		api.GET("/scan/tasks", handler.ListScanTasks)
 		api.POST("/scan/tasks", handler.CreateScanTask)
+		api.PUT("/scan/tasks/engines/:engine_id", handler.UpsertEngineScanTask)
+		api.DELETE("/scan/tasks/engines/:engine_id", handler.DeleteEngineScanTask)
 		api.PUT("/scan/tasks/:task_id", handler.UpdateScanTask)
 		api.DELETE("/scan/tasks/:task_id", handler.DeleteScanTask)
 		api.POST("/scan/tasks/:task_id/trigger", handler.TriggerScanTask)

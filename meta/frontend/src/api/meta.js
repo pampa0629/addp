@@ -65,9 +65,9 @@ export default {
       .map(toCatalogBrowserNode)
   },
 
-  // 自动扫描所有未扫描的引擎
-  autoScan() {
-    return client.post('/meta/scan/auto')
+  // 为所有未扫描的引擎提交手动后台扫描运行
+  createUnscannedScanRuns() {
+    return client.post('/meta/scan/run/unscanned')
   },
 
   // 提交后台扫描运行

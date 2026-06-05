@@ -15,6 +15,10 @@ const props = defineProps({
     type: Object,
     required: true
   },
+  baseMapProfile: {
+    type: Object,
+    default: () => ({})
+  },
   preserveView: {
     type: Boolean,
     default: false
@@ -24,7 +28,7 @@ const props = defineProps({
 const emit = defineEmits(['feature-click'])
 
 const mapContainer = ref(null)
-const { initMap, renderFeatures, focusFeature, showPopup, hidePopup, destroy } = useGaodeMap(props.config)
+const { initMap, renderFeatures, focusFeature, showPopup, hidePopup, destroy } = useGaodeMap(props.config, props.baseMapProfile)
 
 let isInitialized = false
 
@@ -42,8 +46,8 @@ const setupMap = async () => {
 
   renderFeatures(props.features, {
     preserveView: props.preserveView,
-    onFeatureClick: (feature, position) => {
-      emit('feature-click', { feature, position })
+    onFeatureClick: (feature, coordinate, position) => {
+      emit('feature-click', { feature, coordinate, position })
     }
   })
 }
@@ -54,8 +58,8 @@ watch(
     if (isInitialized) {
       renderFeatures(props.features, {
         preserveView: props.preserveView,
-        onFeatureClick: (feature, position) => {
-          emit('feature-click', { feature, position })
+        onFeatureClick: (feature, coordinate, position) => {
+          emit('feature-click', { feature, coordinate, position })
         }
       })
     }

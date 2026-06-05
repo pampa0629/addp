@@ -19,6 +19,10 @@ const props = defineProps({
     type: String,
     default: 'tiandituVector'
   },
+  baseMapProfile: {
+    type: Object,
+    default: () => ({})
+  },
   preserveView: {
     type: Boolean,
     default: false

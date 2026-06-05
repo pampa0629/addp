@@ -30,7 +30,7 @@ func NewFeatureHandler(systemClient *commonClient.SystemClient, metadataRepo *re
 // GetFeatureCentroid 获取要素的几何中心点（用于表格行定位到地图）
 // GET /api/manager/engines/:id/spatial/features/:feature_id/centroid?schema=xxx&table=xxx&geom=geom
 // @Summary 获取要素几何中心点 | Get feature centroid
-// @Description 获取指定要素的几何中心点坐标，用于表格行定位到地图 | Get the centroid coordinates of a feature for map positioning
+// @Description 获取指定要素的源坐标几何中心点和 CRS 元数据，后端不做 CRS transform | Get the source-CRS centroid and CRS metadata without backend CRS transform
 // @Tags Manager
 // @Produce json
 // @Param id path int true "存储引擎ID | Engine ID"
@@ -100,8 +100,9 @@ func (h *FeatureHandler) GetFeatureCentroid(c *gin.Context) {
 	sqlStr := spatial.BuildPostGISFeatureCentroidQuery(schema, table, geomCol, primaryKey)
 
 	// 7. 执行查询
-	var lon, lat sql.NullFloat64
-	err = db.WithContext(c.Request.Context()).Raw(sqlStr, featureIDStr).Row().Scan(&lon, &lat)
+	var x, y sql.NullFloat64
+	sourceSRID := 0
+	err = db.WithContext(c.Request.Context()).Raw(sqlStr, featureIDStr).Row().Scan(&x, &y, &sourceSRID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			managerError(c, http.StatusNotFound, manageri18n.MsgFeatureNotFound)
@@ -111,22 +112,24 @@ func (h *FeatureHandler) GetFeatureCentroid(c *gin.Context) {
 		return
 	}
 
-	if !lon.Valid || !lat.Valid {
+	if !x.Valid || !y.Valid {
 		managerError(c, http.StatusNotFound, manageri18n.MsgFeatureInvalidGeometry)
 		return
 	}
 
-	// 8. 返回中心点坐标
-	c.JSON(http.StatusOK, gin.H{
-		"lon": lon.Float64,
-		"lat": lat.Float64,
-	})
+	// 8. 返回源坐标中心点和 CRS 契约
+	response := spatialPreviewContract(geomCol, sourceSRID)
+	response["centroid"] = gin.H{
+		"x": x.Float64,
+		"y": y.Float64,
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 // GetFeatureGeometry 获取要素的完整几何（用于地图高亮显示）
 // GET /api/manager/engines/:id/spatial/features/:feature_id/geometry?schema=xxx&table=xxx&geom=geom
 // @Summary 获取要素完整几何 | Get feature geometry
-// @Description 获取指定要素的完整几何数据（GeoJSON格式），用于地图高亮显示 | Get full geometry of a feature in GeoJSON format for map highlighting
+// @Description 获取指定要素的源坐标完整几何数据和 CRS 元数据，后端不做 CRS transform | Get source-CRS feature geometry and CRS metadata without backend CRS transform
 // @Tags Manager
 // @Produce json
 // @Param id path int true "存储引擎ID | Engine ID"
@@ -196,8 +199,9 @@ func (h *FeatureHandler) GetFeatureGeometry(c *gin.Context) {
 
 	// 7. 执行查询
 	var geojson sql.NullString
-	var lon, lat, minLon, minLat, maxLon, maxLat sql.NullFloat64
-	err = db.WithContext(c.Request.Context()).Raw(sqlStr, featureIDStr).Row().Scan(&geojson, &lon, &lat, &minLon, &minLat, &maxLon, &maxLat)
+	var x, y, minX, minY, maxX, maxY sql.NullFloat64
+	sourceSRID := 0
+	err = db.WithContext(c.Request.Context()).Raw(sqlStr, featureIDStr).Row().Scan(&geojson, &x, &y, &minX, &minY, &maxX, &maxY, &sourceSRID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			managerError(c, http.StatusNotFound, manageri18n.MsgFeatureNotFound)
@@ -212,13 +216,14 @@ func (h *FeatureHandler) GetFeatureGeometry(c *gin.Context) {
 		return
 	}
 
-	// 8. 返回几何、中心点坐标和边界框
-	c.JSON(http.StatusOK, gin.H{
-		"geojson": geojson.String,
-		"centroid": gin.H{
-			"lon": lon.Float64,
-			"lat": lat.Float64,
-		},
-		"extent": []float64{minLon.Float64, minLat.Float64, maxLon.Float64, maxLat.Float64},
-	})
+	// 8. 返回源坐标几何、中心点坐标、边界框和 CRS 契约
+	response := spatialPreviewContract(geomCol, sourceSRID)
+	response["geojson"] = geojson.String
+	response["centroid"] = gin.H{
+		"x": x.Float64,
+		"y": y.Float64,
+	}
+	response["extent"] = []float64{minX.Float64, minY.Float64, maxX.Float64, maxY.Float64}
+	response["extent_srid"] = sourceSRID
+	c.JSON(http.StatusOK, response)
 }

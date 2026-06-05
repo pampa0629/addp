@@ -17,21 +17,19 @@ import (
 // MetadataQueryService 元数据查询服务
 // 提供Manager和Transfer模块的元数据查询接口
 type MetadataQueryService struct {
-	db             *gorm.DB
-	repo           *metaRepo.ScanRepository
-	spatialService *SpatialMetadataService
-	engineService  *EngineService
-	log            *slog.Logger
+	db            *gorm.DB
+	repo          *metaRepo.ScanRepository
+	engineService *EngineService
+	log           *slog.Logger
 }
 
 // NewMetadataQueryService 创建元数据查询服务
-func NewMetadataQueryService(db *gorm.DB, spatialService *SpatialMetadataService, engineService *EngineService, log *slog.Logger) *MetadataQueryService {
+func NewMetadataQueryService(db *gorm.DB, engineService *EngineService, log *slog.Logger) *MetadataQueryService {
 	return &MetadataQueryService{
-		db:             db,
-		repo:           metaRepo.NewScanRepository(db),
-		spatialService: spatialService,
-		engineService:  engineService,
-		log:            log,
+		db:            db,
+		repo:          metaRepo.NewScanRepository(db),
+		engineService: engineService,
+		log:           log,
 	}
 }
 

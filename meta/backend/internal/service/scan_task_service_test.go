@@ -15,7 +15,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestCreateAutoRunsSubmitsUnscannedEngines(t *testing.T) {
+func TestCreateUnscannedRunsSubmitsUnscannedEngines(t *testing.T) {
 	db := openObjectCatalogScanTestDB(t)
 	createTaskExecutionTable(t, db)
 
@@ -25,7 +25,7 @@ func TestCreateAutoRunsSubmitsUnscannedEngines(t *testing.T) {
 	}
 	capJSON := commonModels.JSONString(capabilities)
 	tenantID := uint(1)
-	engineSvc := NewEngineService(db, "", "", nil)
+	engineSvc := NewEngineService(db, "", "")
 	engineSvc.cacheEngine(&commonModels.Engine{
 		ID:           9,
 		TenantID:     &tenantID,
@@ -36,11 +36,11 @@ func TestCreateAutoRunsSubmitsUnscannedEngines(t *testing.T) {
 	})
 
 	repo := NewScanService(db, engineSvc)
-	taskSvc := NewScanTaskService(db, repo, engineSvc, nil)
+	execSvc := NewScanExecutionService(db, repo, engineSvc, nil)
 
-	runs, err := taskSvc.CreateAutoRuns(context.Background(), tenantID, 7, "token")
+	runs, err := execSvc.CreateUnscannedRuns(context.Background(), tenantID, 7, "token")
 	if err != nil {
-		t.Fatalf("CreateAutoRuns() error = %v", err)
+		t.Fatalf("CreateUnscannedRuns() error = %v", err)
 	}
 	if len(runs) != 1 {
 		t.Fatalf("runs len = %d, want 1", len(runs))
@@ -63,7 +63,7 @@ func TestCreateManualRunResolvesNodeTargetToCatalogPaths(t *testing.T) {
 	}
 	capJSON := commonModels.JSONString(capabilities)
 	tenantID := uint(1)
-	engineSvc := NewEngineService(db, "", "", nil)
+	engineSvc := NewEngineService(db, "", "")
 	engineSvc.cacheEngine(&commonModels.Engine{
 		ID:           9,
 		TenantID:     &tenantID,
@@ -104,9 +104,9 @@ func TestCreateManualRunResolvesNodeTargetToCatalogPaths(t *testing.T) {
 	}
 
 	repo := NewScanService(db, engineSvc)
-	taskSvc := NewScanTaskService(db, repo, engineSvc, nil)
+	execSvc := NewScanExecutionService(db, repo, engineSvc, nil)
 
-	run, err := taskSvc.CreateManualRun(context.Background(), tenantID, 7, "token", &models.ScanRequest{
+	run, err := execSvc.CreateManualRun(context.Background(), tenantID, 7, "token", &models.ScanRequest{
 		EngineID:    9,
 		NodeID:      bucket.ID,
 		ScanDepth:   "deep",
@@ -146,7 +146,7 @@ func TestCreateManualRunPreservesItemID(t *testing.T) {
 	createTaskExecutionTable(t, db)
 
 	tenantID := uint(1)
-	engineSvc := NewEngineService(db, "", "", nil)
+	engineSvc := NewEngineService(db, "", "")
 	engineSvc.cacheEngine(&commonModels.Engine{
 		ID:         9,
 		TenantID:   &tenantID,
@@ -173,8 +173,8 @@ func TestCreateManualRunPreservesItemID(t *testing.T) {
 		t.Fatalf("create item: %v", err)
 	}
 
-	taskSvc := NewScanTaskService(db, NewScanService(db, engineSvc), engineSvc, nil)
-	run, err := taskSvc.CreateManualRun(context.Background(), tenantID, 7, "token", &models.ScanRequest{
+	execSvc := NewScanExecutionService(db, NewScanService(db, engineSvc), engineSvc, nil)
+	run, err := execSvc.CreateManualRun(context.Background(), tenantID, 7, "token", &models.ScanRequest{
 		EngineID: 9,
 		ItemID:   item.ID,
 		Source:   commonExecution.ModuleManager,
@@ -191,8 +191,8 @@ func TestCreateManualRunPreservesItemID(t *testing.T) {
 func TestCreateManualRunRejectsUnsupportedTriggerType(t *testing.T) {
 	t.Parallel()
 
-	taskSvc := NewScanTaskService(nil, nil, nil, nil)
-	_, err := taskSvc.CreateManualRun(context.Background(), 1, 7, "token", &models.ScanRequest{
+	execSvc := NewScanExecutionService(nil, nil, nil, nil)
+	_, err := execSvc.CreateManualRun(context.Background(), 1, 7, "token", &models.ScanRequest{
 		EngineID:    9,
 		TriggerType: "bad",
 	})
@@ -201,78 +201,90 @@ func TestCreateManualRunRejectsUnsupportedTriggerType(t *testing.T) {
 	}
 }
 
-func TestCreateOrUpdateTaskFromScanConfigCreatesAutomaticTask(t *testing.T) {
+func TestUpsertEngineScanTaskFromPolicyCreatesTask(t *testing.T) {
 	db := openObjectCatalogScanTestDB(t)
 	createScanTaskTable(t, db)
 
 	tenantID := uint(1)
-	taskSvc := NewScanTaskService(db, nil, nil, nil)
-	err := taskSvc.CreateOrUpdateTaskFromScanConfig(&commonModels.Engine{
-		ID:       9,
-		TenantID: &tenantID,
-		Name:     "Business MinIO",
-		ScanConfig: &commonModels.ScanConfig{
+	taskSvc := NewScanTaskService(db)
+	task, err := taskSvc.UpsertEngineScanTaskFromPolicy(
+		tenantID,
+		7,
+		9,
+		"Business MinIO",
+		&commonModels.ScanConfig{
 			Enabled:       true,
 			ScheduledScan: true,
 			ScheduleType:  "daily",
 			ScheduleTime:  "03:15",
 			ScanDepth:     "deep",
 		},
-	})
+	)
 	if err != nil {
-		t.Fatalf("CreateOrUpdateTaskFromScanConfig() error = %v", err)
+		t.Fatalf("UpsertEngineScanTaskFromPolicy() error = %v", err)
+	}
+	if task == nil {
+		t.Fatal("task should not be nil")
 	}
 
-	var task models.ScanTask
-	if err := db.Where("owner_module = ? AND owner_ref = ?", "system", scantask.AutomaticTaskOwnerRef(9)).First(&task).Error; err != nil {
+	var persisted models.ScanTask
+	if err := db.Where("owner_module = ? AND owner_ref = ?", "system", scantask.AutomaticTaskOwnerRef(9)).First(&persisted).Error; err != nil {
 		t.Fatalf("find automatic task: %v", err)
 	}
-	if task.Schedule != "15 3 * * *" || !task.Enabled || task.NextRunAt == nil {
-		t.Fatalf("automatic task schedule fields = %#v", task)
+	if persisted.Schedule != "15 3 * * *" || !persisted.Enabled || persisted.NextRunAt == nil {
+		t.Fatalf("automatic task schedule fields = %#v", persisted)
 	}
-	if task.Scope["type"] != "engine" || task.Parameters["scan_depth"] != "deep" {
-		t.Fatalf("automatic task scope/parameters = %#v %#v", task.Scope, task.Parameters)
+	if persisted.Scope["type"] != "engine" || persisted.Parameters["scan_depth"] != "deep" {
+		t.Fatalf("automatic task scope/parameters = %#v %#v", persisted.Scope, persisted.Parameters)
 	}
 }
 
-func TestCreateOrUpdateTaskFromScanConfigDeletesDisabledSchedule(t *testing.T) {
+func TestUpsertEngineScanTaskFromPolicyDeletesDisabledSchedule(t *testing.T) {
 	db := openObjectCatalogScanTestDB(t)
 	createScanTaskTable(t, db)
 
 	tenantID := uint(1)
-	existing := scantask.NewAutomaticTask(&commonModels.Engine{
-		ID:       9,
-		TenantID: &tenantID,
-		Name:     "Business MinIO",
-		ScanConfig: &commonModels.ScanConfig{
-			Enabled: true,
-		},
-	}, tenantID, "15 3 * * *")
+	now := time.Now()
+	existing := scantask.NewEngineScanTask(tenantID, 7, 9, "Business MinIO", "15 3 * * *", "deep", now, nil)
 	if err := db.Create(existing).Error; err != nil {
 		t.Fatalf("create existing automatic task: %v", err)
 	}
+	otherTenantTask := scantask.NewEngineScanTask(tenantID+1, 8, 9, "Other MinIO", "30 4 * * *", "deep", now, nil)
+	if err := db.Create(otherTenantTask).Error; err != nil {
+		t.Fatalf("create other tenant automatic task: %v", err)
+	}
 
-	taskSvc := NewScanTaskService(db, nil, nil, nil)
-	err := taskSvc.CreateOrUpdateTaskFromScanConfig(&commonModels.Engine{
-		ID:       9,
-		TenantID: &tenantID,
-		Name:     "Business MinIO",
-		ScanConfig: &commonModels.ScanConfig{
+	taskSvc := NewScanTaskService(db)
+	task, err := taskSvc.UpsertEngineScanTaskFromPolicy(
+		tenantID,
+		7,
+		9,
+		"Business MinIO",
+		&commonModels.ScanConfig{
 			Enabled:       false,
 			ScheduledScan: true,
 			ScheduleType:  "daily",
 		},
-	})
+	)
 	if err != nil {
-		t.Fatalf("CreateOrUpdateTaskFromScanConfig() error = %v", err)
+		t.Fatalf("UpsertEngineScanTaskFromPolicy() error = %v", err)
+	}
+	if task != nil {
+		t.Fatalf("task = %#v, want nil", task)
 	}
 
 	var count int64
-	if err := db.Model(&models.ScanTask{}).Where("owner_module = ? AND owner_ref = ?", "system", scantask.AutomaticTaskOwnerRef(9)).Count(&count).Error; err != nil {
+	if err := db.Model(&models.ScanTask{}).Where("tenant_id = ? AND owner_module = ? AND owner_ref = ?", tenantID, "system", scantask.AutomaticTaskOwnerRef(9)).Count(&count).Error; err != nil {
 		t.Fatalf("count automatic task: %v", err)
 	}
 	if count != 0 {
 		t.Fatalf("automatic task count = %d, want 0", count)
+	}
+	if err := db.Model(&models.ScanTask{}).Where("tenant_id = ? AND owner_module = ? AND owner_ref = ?", tenantID+1, "system", scantask.AutomaticTaskOwnerRef(9)).Count(&count).Error; err != nil {
+		t.Fatalf("count other tenant automatic task: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("other tenant automatic task count = %d, want 1", count)
 	}
 }
 
@@ -318,7 +330,7 @@ func TestComputeInheritedTargetsIgnoresManualTasks(t *testing.T) {
 	db := openObjectCatalogScanTestDB(t)
 	createScanTaskTable(t, db)
 
-	taskSvc := NewScanTaskService(db, nil, nil, nil)
+	taskSvc := NewScanTaskService(db)
 	parent := &models.ScanTask{
 		ID:       100,
 		TenantID: 1,
@@ -354,7 +366,9 @@ func TestComputeInheritedTargetsIgnoresManualTasks(t *testing.T) {
 		t.Fatalf("create scheduled task: %v", err)
 	}
 
-	got := taskSvc.computeInheritedTargets(parent)
+	execSvc := NewScanExecutionService(db, nil, nil, nil)
+	scheduler := NewScanTaskScheduler(taskSvc, execSvc)
+	got := scheduler.computeInheritedTargets(parent)
 	if !reflect.DeepEqual(got.CatalogPaths, []string{"bucket/a", "bucket/b"}) {
 		t.Fatalf("catalog paths = %#v", got.CatalogPaths)
 	}
@@ -397,6 +411,39 @@ func createTaskExecutionTable(t *testing.T, db *gorm.DB) {
 		)
 	`).Error; err != nil {
 		t.Fatalf("create task_executions table: %v", err)
+	}
+	if err := db.Exec(`
+		CREATE TABLE task_executions (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			tenant_id INTEGER NOT NULL,
+			execution_id TEXT NOT NULL UNIQUE,
+			module TEXT NOT NULL,
+			task_type TEXT NOT NULL,
+			source TEXT NOT NULL DEFAULT '',
+			source_task_id INTEGER,
+			source_task_name TEXT,
+			parent_execution_id TEXT,
+			status TEXT NOT NULL,
+			progress INTEGER DEFAULT 0,
+			current_step TEXT,
+			trigger_type TEXT NOT NULL,
+			triggered_by INTEGER,
+			execution_config JSON,
+			error_details JSON,
+			metadata JSON,
+			execution_time_ms INTEGER,
+			rows_affected INTEGER,
+			records_read INTEGER,
+			records_written INTEGER,
+			bytes_read INTEGER,
+			bytes_written INTEGER,
+			started_at DATETIME,
+			completed_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)
+	`).Error; err != nil {
+		t.Fatalf("create unqualified task_executions table: %v", err)
 	}
 }
 

@@ -2,7 +2,6 @@ package preview
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -105,6 +104,10 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 
 	// 4. 获取总行数，优先使用 Meta / CatalogFacts 中已知的估算值。
 	totalCount := p.resolveTableRowCount(req, catalogFacts)
+	if srid == 0 {
+		srid = databasePreviewSourceSRID(columns, geometryColumns)
+	}
+	spatialContract := databaseSpatialPreviewContract(geometryColumns, srid)
 
 	// 5. 计算分页参数
 	page := req.Page
@@ -129,15 +132,20 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 	}
 
 	return &models.TablePreview{
-		Mode:                  PreviewModeTable,
-		Columns:               columnNames,
-		ColumnMetadata:        columnMetadata,
-		Rows:                  rows,
-		Total:                 int(totalCount),
-		Page:                  page,
-		PageSize:              pageSize,
-		GeometryColumns:       geometryColumns,
-		RenderGeometryColumns: buildDatabaseRenderGeometryColumns(geometryColumns, rows),
+		Mode:             PreviewModeTable,
+		Columns:          columnNames,
+		ColumnMetadata:   columnMetadata,
+		Rows:             rows,
+		Total:            int(totalCount),
+		Page:             page,
+		PageSize:         pageSize,
+		GeometryColumns:  geometryColumns,
+		GeometryColumn:   spatialContract.GeometryColumn,
+		SourceSRID:       spatialContract.SourceSRID,
+		SourceCRS:        spatialContract.SourceCRS,
+		TransformStatus:  spatialContract.TransformStatus,
+		PreviewHint:      spatialContract.PreviewHint,
+		TransformMessage: spatialContract.TransformMessage,
 		// MVT preview metadata (for frontend decision-making)
 		EngineID:   req.Engine.ID,
 		Schema:     req.Schema,
@@ -224,10 +232,6 @@ func databasePreviewSelectExpr(dialect sqldialect.Dialect, columns []datatype.Fi
 			selectColumns = append(selectColumns, fmt.Sprintf("%s AS %s",
 				databasePreviewWKTExpr(columnRef, nativeType),
 				dialect.QuoteIdentifier(col.Name),
-			))
-			selectColumns = append(selectColumns, fmt.Sprintf("%s AS %s",
-				databasePreviewRenderExpr(columnRef, nativeType),
-				dialect.QuoteIdentifier(renderGeometryColumnName(col.Name)),
 			))
 			continue
 		}
@@ -321,59 +325,11 @@ func databasePreviewLimitOffsetClause(limit, offset int) string {
 	return sb.String()
 }
 
-func renderGeometryColumnName(column string) string {
-	return "__render_geojson_" + column
-}
-
 func databasePreviewWKTExpr(columnRef, dataType string) string {
 	if spatial.IsPostGISGeographyType(dataType) {
 		return fmt.Sprintf("ST_AsText(%s::geometry)", columnRef)
 	}
 	return fmt.Sprintf("ST_AsText(%s)", columnRef)
-}
-
-func databasePreviewRenderExpr(columnRef, dataType string) string {
-	if spatial.IsPostGISGeographyType(dataType) {
-		return fmt.Sprintf("CASE WHEN %s IS NULL THEN NULL ELSE ST_AsGeoJSON(%s::geometry) END", columnRef, columnRef)
-	}
-	return fmt.Sprintf("CASE WHEN %s IS NULL THEN NULL WHEN ST_SRID(%s) IN (0, 4326) THEN ST_AsGeoJSON(%s) ELSE ST_AsGeoJSON(ST_Transform(%s, 4326)) END", columnRef, columnRef, columnRef, columnRef)
-}
-
-func buildDatabaseRenderGeometryColumns(geometryColumns []string, rows []map[string]interface{}) map[string]string {
-	if len(geometryColumns) == 0 {
-		return nil
-	}
-
-	result := make(map[string]string, len(geometryColumns))
-	for _, column := range geometryColumns {
-		renderColumn := renderGeometryColumnName(column)
-		if rowsContainColumn(rows, renderColumn) {
-			result[column] = renderColumn
-		}
-	}
-	if len(result) == 0 {
-		return nil
-	}
-	return result
-}
-
-func rowsContainColumn(rows []map[string]interface{}, column string) bool {
-	for _, row := range rows {
-		value, exists := row[column]
-		if !exists || value == nil {
-			continue
-		}
-		switch typed := value.(type) {
-		case string:
-			var payload interface{}
-			if json.Unmarshal([]byte(typed), &payload) == nil {
-				return true
-			}
-		case map[string]interface{}:
-			return true
-		}
-	}
-	return false
 }
 
 // detectGeometryColumns 检测几何列（仅 PostgreSQL + PostGIS）
@@ -395,6 +351,84 @@ func (p *DatabaseTablePreviewProvider) detectGeometryColumns(engineType string, 
 // isSpatialType 判断是否为空间类型
 func (p *DatabaseTablePreviewProvider) isSpatialType(dataType string) bool {
 	return spatial.IsPostGISSpatialType(dataType)
+}
+
+type databasePreviewCRSContract struct {
+	GeometryColumn   string
+	SourceSRID       int
+	SourceCRS        string
+	TransformStatus  string
+	PreviewHint      string
+	TransformMessage string
+}
+
+func databaseSpatialPreviewContract(geometryColumns []string, srid int) databasePreviewCRSContract {
+	if len(geometryColumns) == 0 {
+		return databasePreviewCRSContract{}
+	}
+
+	contract := databasePreviewCRSContract{
+		GeometryColumn: geometryColumns[0],
+		SourceSRID:     srid,
+		PreviewHint:    "frontend_transform_required",
+	}
+	if srid > 0 {
+		contract.SourceCRS = fmt.Sprintf("EPSG:%d", srid)
+		contract.TransformStatus = "not_transformed"
+		if srid == spatial.SRIDWGS84 {
+			contract.PreviewHint = "direct_renderable"
+		}
+		return contract
+	}
+
+	contract.TransformStatus = "unknown_crs"
+	contract.PreviewHint = "unknown_crs"
+	contract.TransformMessage = "源坐标系未知，已跳过地图渲染"
+	return contract
+}
+
+func databasePreviewSourceSRID(columns []datatype.FieldInfo, geometryColumns []string) int {
+	if len(geometryColumns) == 0 {
+		return 0
+	}
+	geometrySet := make(map[string]struct{}, len(geometryColumns))
+	for _, column := range geometryColumns {
+		geometrySet[strings.ToLower(strings.TrimSpace(column))] = struct{}{}
+	}
+	for _, col := range columns {
+		if _, ok := geometrySet[strings.ToLower(strings.TrimSpace(col.Name))]; !ok {
+			continue
+		}
+		if srid := parsePostGISNativeSRID(databaseFieldNativeType(col)); srid > 0 {
+			return srid
+		}
+	}
+	return 0
+}
+
+func parsePostGISNativeSRID(nativeType string) int {
+	trimmed := strings.TrimSpace(nativeType)
+	if trimmed == "" {
+		return 0
+	}
+	open := strings.LastIndex(trimmed, "(")
+	close := strings.LastIndex(trimmed, ")")
+	if open < 0 || close <= open {
+		return 0
+	}
+	parts := strings.Split(trimmed[open+1:close], ",")
+	if len(parts) == 0 {
+		return 0
+	}
+	raw := strings.TrimSpace(parts[len(parts)-1])
+	if raw == "" {
+		return 0
+	}
+	srid, err := strconv.Atoi(raw)
+	if err != nil || srid <= 0 {
+		return 0
+	}
+	return srid
 }
 
 func (p *DatabaseTablePreviewProvider) describeDatabaseTable(
