@@ -91,6 +91,18 @@ func tableKindForIndex(tableInfo datatype.TableInfo) string {
 	return "table"
 }
 
+func splitCatalogResourcePath(value string) (dir, name string) {
+	value = strings.Trim(value, "/")
+	if value == "" {
+		return "", ""
+	}
+	idx := strings.LastIndex(value, "/")
+	if idx < 0 {
+		return "", value
+	}
+	return value[:idx+1], value[idx+1:]
+}
+
 // IndexCatalogAsset 索引 catalog single item 资产到 Meilisearch（统一索引）。
 func (s *IndexerService) IndexCatalogAsset(resource *commonModels.Engine, tenantID, engineID uint, catalogResource metacatalog.StorageResource, relativePath, fullName string, item *models.MetaItem, extractedText string) bool {
 	if s.indexer == nil || !s.indexer.Enabled() || resource == nil || item == nil {

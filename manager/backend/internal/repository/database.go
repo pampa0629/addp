@@ -13,7 +13,7 @@ import (
 
 func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	// Use common repository InitDatabase
-	// Note: Manager needs access to manager, metadata, and system schemas
+	// Note: Manager needs access to manager, meta, and system schemas
 	dbConfig := commonRepo.DatabaseConfig{
 		Host:     cfg.DBHost,
 		Port:     cfg.DBPort,

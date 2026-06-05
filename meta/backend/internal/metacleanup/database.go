@@ -49,9 +49,9 @@ func (c *DatabaseCleaner) ScanInvalidEngines(ctx context.Context, tenantID uint)
 	}
 
 	var stats []engineStats
-	query := c.db.Table("metadata.meta_node mn").
+	query := c.db.Table("meta.meta_node mn").
 		Select("mn.engine_id, COUNT(DISTINCT mn.id) as affected_nodes, COUNT(DISTINCT mi.id) as affected_items").
-		Joins("LEFT JOIN metadata.meta_item mi ON mn.id = mi.node_id").
+		Joins("LEFT JOIN meta.meta_item mi ON mn.id = mi.node_id").
 		Group("mn.engine_id")
 	if tenantID > 0 {
 		query = query.Where("mn.tenant_id = ?", tenantID)
@@ -94,8 +94,8 @@ func (c *DatabaseCleaner) ScanOrphanItems(ctx context.Context, tenantID uint) ([
 
 	query := `
 		SELECT mi.id, mi.name, mi.node_id
-		FROM metadata.meta_item mi
-		LEFT JOIN metadata.meta_node mn ON mi.node_id = mn.id
+		FROM meta.meta_item mi
+		LEFT JOIN meta.meta_node mn ON mi.node_id = mn.id
 		WHERE mn.id IS NULL
 	`
 	if tenantID > 0 {
@@ -162,7 +162,7 @@ func (c *DatabaseCleaner) ScanDuplicateFingerprints(ctx context.Context, tenantI
 	query := `
 		SELECT COUNT(*) FROM (
 			SELECT fingerprint
-			FROM metadata.meta_item
+			FROM meta.meta_item
 			WHERE deleted_at IS NULL
 	`
 	if tenantID > 0 {
@@ -206,11 +206,11 @@ func (c *DatabaseCleaner) ExecuteSoftDelete(ctx context.Context, tenantID uint, 
 	}
 
 	orphanSQL := `
-		DELETE FROM metadata.meta_item
+		DELETE FROM meta.meta_item
 		WHERE id IN (
 			SELECT mi.id
-			FROM metadata.meta_item mi
-			LEFT JOIN metadata.meta_node mn ON mi.node_id = mn.id
+			FROM meta.meta_item mi
+			LEFT JOIN meta.meta_node mn ON mi.node_id = mn.id
 			WHERE mn.id IS NULL
 	`
 	if tenantID > 0 {
@@ -277,7 +277,7 @@ func (c *DatabaseCleaner) InvalidEngineIDs(ctx context.Context, tenantID uint) [
 	}
 
 	var allEngineIDsInDB []uint
-	query := c.db.Table("metadata.meta_node").
+	query := c.db.Table("meta.meta_node").
 		Select("DISTINCT engine_id").
 		Where("deleted_at IS NULL")
 	if tenantID > 0 {

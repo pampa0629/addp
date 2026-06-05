@@ -44,6 +44,12 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
+                        "description": "触发来源模块 | Source module",
+                        "name": "source",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "description": "执行状态 | Status",
                         "name": "status",
                         "in": "query"

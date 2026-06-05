@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 
+	commonExecution "github.com/addp/common/execution"
 	commonScheduler "github.com/addp/common/scheduler"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/repository"
@@ -114,7 +115,7 @@ func (s *Scheduler) executeScheduledTask(ctx context.Context, task models.Transf
 	log.Printf("⏰ 触发定时任务 - TaskID: %d, Name: %s", task.ID, task.Name)
 
 	// 创建执行记录（使用统一执行服务）
-	execution, err := s.executionService.CreateExecution(ctx, task.ID, "schedule", nil)
+	execution, err := s.executionService.CreateExecution(ctx, task.ID, commonExecution.TriggerTypeScheduled, nil)
 	if err != nil {
 		log.Printf("❌ 创建执行记录失败 - TaskID: %d, Error: %v", task.ID, err)
 		return

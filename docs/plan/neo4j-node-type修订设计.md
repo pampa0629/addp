@@ -90,7 +90,7 @@
 
 ### 5.1 迁移目标
 
-在 `metadata.meta_item` 中，针对 Neo4j 引擎历史记录执行清理或重扫：
+在 `meta.meta_item` 中，针对 Neo4j 引擎历史记录执行清理或重扫：
 
 - `collection`、`label`、`relationship`、`relationship_type` 等历史拆分值不再作为最终主路径。
 - 推荐在开发阶段直接清理 Neo4j 历史扫描结果并重新扫描，生成 `item_type='graph'`。
@@ -98,7 +98,7 @@
 ### 5.2 迁移 SQL（示意）
 
 ```sql
-DELETE FROM metadata.meta_item mi
+DELETE FROM meta.meta_item mi
 USING system.engines e
 WHERE mi.engine_id = e.id
   AND e.engine_type = 'neo4j'
@@ -110,7 +110,7 @@ WHERE mi.engine_id = e.id
 ```sql
 -- 不应再存在的旧值（Neo4j）
 SELECT mi.id, mi.engine_id, mi.item_type, mi.name
-FROM metadata.meta_item mi
+FROM meta.meta_item mi
 JOIN system.engines e ON mi.engine_id = e.id
 WHERE e.engine_type = 'neo4j'
   AND mi.item_type IN ('collection', 'label', 'relationship', 'relationship_type');

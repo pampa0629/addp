@@ -11,6 +11,7 @@ import (
 
 	"github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
+	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/manager/internal/catalogutil"
@@ -110,8 +111,8 @@ func TestSubmitItemDeepScanRunUsesManualTriggerAndPreviewSource(t *testing.T) {
 	if gotPayload["item_id"] != float64(42) {
 		t.Fatalf("item_id = %#v, want 42", gotPayload["item_id"])
 	}
-	if gotPayload["trigger_type"] != "manual" || gotPayload["source"] != "manager_preview" {
-		t.Fatalf("payload trigger/source = %#v/%#v, want manual/manager_preview", gotPayload["trigger_type"], gotPayload["source"])
+	if gotPayload["trigger_type"] != "manual" || gotPayload["source"] != commonExecution.ModuleManager {
+		t.Fatalf("payload trigger/source = %#v/%#v, want manual/%s", gotPayload["trigger_type"], gotPayload["source"], commonExecution.ModuleManager)
 	}
 }
 

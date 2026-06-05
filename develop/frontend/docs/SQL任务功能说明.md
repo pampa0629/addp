@@ -160,7 +160,7 @@ CREATE TABLE develop.dev_executions (
   dev_type VARCHAR(50) NOT NULL,
 
   -- 执行信息
-  trigger_type VARCHAR(50),  -- 'manual' | 'scheduled' | 'api'
+  trigger_type VARCHAR(50),  -- 'manual' | 'scheduled'
   triggered_by INTEGER,
   status VARCHAR(50) NOT NULL,
   progress INTEGER DEFAULT 0,

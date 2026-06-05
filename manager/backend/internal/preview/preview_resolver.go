@@ -9,6 +9,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
+	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/format"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
@@ -341,7 +342,7 @@ func (r *PreviewResolver) submitItemDeepScanRun(itemID uint) {
 		ScanDepth:   "deep",
 		Force:       false,
 		TriggerType: "manual",
-		Source:      "manager_preview",
+		Source:      commonExecution.ModuleManager,
 	})
 	if err != nil {
 		logger.L().Warn("提交 Meta item deep 后台补扫失败", "item_id", itemID, "error", err)

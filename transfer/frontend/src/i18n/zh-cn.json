@@ -486,7 +486,7 @@
       "formatShapefile": "Shapefile",
       "jsonlFormatHint": "每一行是一条独立 JSON 记录，适合大文件、流式写入和批处理。",
       "jsonFormatHint": "整个文件是一个 JSON 数组，适合普通数据交换和中小型结果。",
-      "geojsonFormatHint": "GeoJSON 是 JSON 的空间表达，会以 json 格式写出，并使用空间列生成 FeatureCollection。",
+      "geojsonFormatHint": "GeoJSON 会以 geojson 格式写出 FeatureCollection，需要明确空间列。",
       "shapefileFormatHint": "Shapefile 会生成 .shp、.shx、.dbf、.cpg 等组件文件，需要明确几何字段和几何类型。",
       "spatialAutoDetectedHint": "已从源字段识别空间列：{field}，几何类型：{type}",
       "spatialFieldWillUseMapping": "未在源字段中识别到空间列，后续会以字段映射为准。",

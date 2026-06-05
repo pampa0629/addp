@@ -232,7 +232,7 @@ Shapefile 这类 multi 格式尤其要区分：单个 `.shp/.dbf/.shx` 的识别
 - `Priority`：识别冲突时的排序权重。
 - `SupportsFallback`：是否能作为兜底格式处理。
 
-`Priority` 只用于识别排序，不表示 item 优先级。`.json` 不能直接等同于空间格式；带空间结构的 JSON 仍是 `format=json`，空间语义由 `spatial` 横切能力表达。
+`Priority` 只用于识别排序，不表示 item 优先级。`.json` 不能直接等同于空间格式；但当内容前缀能严格证明其为 GeoJSON `FeatureCollection` 时，应识别为独立 `format=geojson`。Meta、Manager 或其他消费方需要解析 `.json` 表格候选时，必须允许内容前缀探测把 provider 从 JSON 切换为 GeoJSON；空间语义仍由 `spatial` 横切能力表达，不能仅凭 `format=geojson` 伪造空间事实。
 
 ### Layout / Layout
 
@@ -381,6 +381,8 @@ Format writer 负责编码格式，Engine writer 负责提交到目标存储。�
 `raw_content` / `range_content` 不进入 `FormatDescriptor`，也不进入 format plugin registry。它们是 engine capability、`common/contentio`、预签名 URL 或模块 fetcher 的内容通道能力；需要实际解码或抽取时，使用 `DocumentTextReader`、`TableSampleReader`、`BinaryContentReader` 等已注册插件能力。
 
 Manager 的 `preview_material` 是前端展示材料或展示状态协议，和 `content_readers` 不同层。`preview_material=raw_binary` 表示响应体里携带 base64 原始字节或展示层按原始二进制处理；`preview_material=unsupported` 表示 Manager 不支持该内容在线预览。它们都不是 `raw_content`、`range_content` 或 `binary_content` 声明。format descriptor 中的能力名称不得写入 `preview_material`。
+
+GeoJSON 的对象内容预览应返回 `content.kind=json`、`preview_material=geojson`、`frontend_renderer=map`。它可以复用 JSON 内容承载和 GeoJSON table provider，但不得因为 `data_type=table` 被通用表格预览材料替代。
 
 能力诊断快照不替代内置格式规范，也不作为实现进度清单。首批内置格式的确定性落地规则见 [ADDP 内置数据类型与文件格式规范](addp内置数据类型与文件格式规范.md)；当前代码实现状态以 `common/format/README.md` 和测试为准；未完成事项进入 `docs/next/common-format格式完善矩阵.md`。
 
@@ -633,4 +635,4 @@ Transfer 不能只按 `connector type` 路由，也不能只看 format。它需�
 3. provider 输入保持轻量，只接已确认定位、必要属性片段和调用参数。
 4. FormatPlugin、info provider、content reader 不按 `engine_id` 反向构造 engine reader。
 5. Manager 面向前端的 DTO 不进入 format 层。
-6. GeoJSON 类结构表达为 `format=json` + `capabilities.spatial`，不作为独立顶层格式。
+6. GeoJSON 是独立 `format=geojson`，默认 `data_type=table`、`layout=single`；空间事实仍由解析结果写入 `capabilities.spatial`，不得新增“空间表”数据类型。

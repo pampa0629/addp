@@ -425,7 +425,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "基于已落库 item 的 layout、format、refs 和 storage 信息同步刷新元数据属性 | Refresh metadata attributes for an existing item using stored item descriptor",
+                "description": "创建一次手动扫描执行并等待已落库 item 的元数据刷新完成 | Create a manual scan execution and wait until the known item metadata refresh completes",
                 "consumes": [
                     "application/json"
                 ],
@@ -1664,6 +1664,10 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_meta_internal_models.JSONMap": {
+            "type": "object",
+            "additionalProperties": true
+        },
         "github_com_addp_meta_internal_models.MetaItemLite": {
             "type": "object",
             "properties": {
@@ -1987,6 +1991,9 @@ const docTemplate = `{
                 "schedule": {
                     "description": "Cron 表达式，空字符串表示手动执行",
                     "type": "string"
+                },
+                "scope": {
+                    "$ref": "#/definitions/github_com_addp_meta_internal_models.JSONMap"
                 }
             }
         },

@@ -85,6 +85,9 @@ func (r *TaskExecutionRepository) List(ctx context.Context, filter TaskExecution
 	if filter.TriggerType != "" {
 		query = query.Where("trigger_type = ?", filter.TriggerType)
 	}
+	if filter.Source != "" {
+		query = query.Where("source = ?", filter.Source)
+	}
 	if filter.SourceTaskID != nil {
 		query = query.Where("module = ? AND source_task_id = ?", filter.Module, *filter.SourceTaskID)
 	}
@@ -253,6 +256,7 @@ type TaskExecutionFilter struct {
 	TaskType     string
 	Status       string
 	TriggerType  string
+	Source       string
 	SourceTaskID *int
 	StartDate    *time.Time
 	EndDate      *time.Time

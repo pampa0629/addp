@@ -14,6 +14,22 @@
             <el-option label="Transfer" value="transfer" />
             <el-option label="Develop" value="develop" />
             <el-option label="Orchestrator" value="orchestrator" />
+            <el-option label="Meta" value="meta" />
+            <el-option label="Manager" value="manager" />
+            <el-option label="Quality" value="quality" />
+            <el-option label="Graph" value="graph" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('monitor.execution.filter.source')">
+          <el-select v-model="filters.source" :placeholder="t('monitor.execution.filter.source_placeholder')" clearable style="width: 150px;">
+            <el-option label="Meta" value="meta" />
+            <el-option label="Manager" value="manager" />
+            <el-option label="System" value="system" />
+            <el-option label="Transfer" value="transfer" />
+            <el-option label="Develop" value="develop" />
+            <el-option label="Orchestrator" value="orchestrator" />
+            <el-option label="Quality" value="quality" />
+            <el-option label="Graph" value="graph" />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('monitor.execution.filter.status')">
@@ -29,9 +45,7 @@
         <el-form-item :label="t('monitor.execution.filter.trigger_type')">
           <el-select v-model="filters.trigger_type" :placeholder="t('monitor.execution.filter.trigger_placeholder')" clearable style="width: 150px;">
             <el-option :label="t('monitor.execution.trigger.manual')" value="manual" />
-            <el-option :label="t('monitor.execution.trigger.schedule')" value="schedule" />
-            <el-option label="API" value="api" />
-            <el-option :label="t('monitor.execution.trigger.orchestrator')" value="orchestrator" />
+            <el-option :label="t('monitor.execution.trigger.scheduled')" value="scheduled" />
           </el-select>
         </el-form-item>
         <el-form-item>
@@ -85,8 +99,11 @@
           <el-descriptions-item :label="t('monitor.execution.detail.module')">
             <el-tag size="small">{{ currentExecution.module }}</el-tag>
           </el-descriptions-item>
+          <el-descriptions-item :label="t('monitor.execution.detail.source')">
+            <el-tag size="small" type="info">{{ currentExecution.source || '-' }}</el-tag>
+          </el-descriptions-item>
           <el-descriptions-item :label="t('monitor.execution.detail.type')">
-            {{ currentExecution.execution_type }}
+            {{ currentExecution.task_type }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('monitor.execution.detail.status')">
             <el-tag :type="getStatusType(currentExecution.status)">
@@ -97,7 +114,7 @@
             {{ currentExecution.progress }}%
           </el-descriptions-item>
           <el-descriptions-item :label="t('monitor.execution.detail.trigger_type')">
-            {{ currentExecution.trigger_type }}
+            {{ getTriggerText(currentExecution.trigger_type) }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('monitor.execution.detail.duration')">
             {{ formatDuration(currentExecution.execution_time_ms) }}
@@ -150,6 +167,7 @@ const { t } = useI18n()
 // 过滤条件
 const filters = ref({
   module: '',
+  source: '',
   status: '',
   trigger_type: ''
 })
@@ -197,6 +215,7 @@ function handleSearch() {
 function handleReset() {
   filters.value = {
     module: '',
+    source: '',
     status: '',
     trigger_type: ''
   }
@@ -251,6 +270,14 @@ function getStatusText(status) {
     cancelled: t('monitor.execution.status.cancelled'),
   }
   return textMap[status] || status
+}
+
+function getTriggerText(triggerType) {
+  const textMap = {
+    manual: t('monitor.execution.trigger.manual'),
+    scheduled: t('monitor.execution.trigger.scheduled')
+  }
+  return textMap[triggerType] || triggerType || '-'
 }
 
 function formatDate(date) {

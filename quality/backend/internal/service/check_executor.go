@@ -91,6 +91,7 @@ func (e *CheckExecutor) RunCheck(ctx context.Context, taskID, tenantID, userID i
 		TenantID:       int(tenantID),
 		Module:         commonExecution.ModuleQuality,
 		TaskType:       commonExecution.TaskTypeQualityCheck,
+		Source:         commonExecution.ModuleQuality,
 		SourceTaskID:   intPtr(int(taskID)),
 		SourceTaskName: &task.Name,
 		Status:         commonExecution.ExecutionStatusRunning,

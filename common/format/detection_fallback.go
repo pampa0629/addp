@@ -38,6 +38,7 @@ var fallbackIdentifications = []fallbackIdentification{
 	{FormatHEIC, ".heic", "image/heic", datatype.Media},
 	{FormatSQLite, ".sqlite", "application/x-sqlite3", datatype.Container},
 	{FormatJSON, ".json", "application/json", datatype.Table},
+	{FormatGeoJSON, ".geojson", "application/geo+json", datatype.Table},
 	{FormatXML, ".xml", "application/xml", datatype.Document},
 	{FormatParquet, ".parquet", "application/parquet", datatype.Table},
 	{FormatORC, ".orc", "application/orc", datatype.Table},

@@ -179,11 +179,11 @@ func openMetadataExtractorTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.Exec("ATTACH DATABASE ':memory:' AS metadata").Error; err != nil {
-		t.Fatalf("attach metadata schema: %v", err)
+	if err := db.Exec("ATTACH DATABASE ':memory:' AS meta").Error; err != nil {
+		t.Fatalf("attach meta schema: %v", err)
 	}
 	if err := db.Exec(`
-		CREATE TABLE metadata.meta_node (
+		CREATE TABLE meta.meta_node (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			tenant_id INTEGER NOT NULL,
 			engine_id INTEGER NOT NULL,
@@ -207,7 +207,7 @@ func openMetadataExtractorTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("create meta_node table: %v", err)
 	}
 	if err := db.Exec(`
-		CREATE TABLE metadata.meta_item (
+		CREATE TABLE meta.meta_item (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			tenant_id INTEGER NOT NULL,
 			engine_id INTEGER NOT NULL,

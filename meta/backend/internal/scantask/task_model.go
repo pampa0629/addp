@@ -2,6 +2,7 @@ package scantask
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 
 	commonModels "github.com/addp/common/models"
@@ -18,7 +19,9 @@ func NewTaskFromUpsertRequest(tenantID, userID uint, req *models.ScanTaskUpsertR
 		Description: req.Description,
 		Schedule:    req.Schedule,
 		Enabled:     req.Enabled,
-		Parameters:  TaskParameters(req.CatalogPaths, req.ScanDepth, req.Force),
+		Scope:       TaskScope(req.EngineID, req.Scope, req.CatalogPaths),
+		Parameters:  TaskParameters(req.ScanDepth, req.Force),
+		OwnerModule: "meta",
 		NextRunAt:   nextRunAt,
 		CreatedBy:   userID,
 		UpdatedBy:   userID,
@@ -33,7 +36,10 @@ func ApplyUpsertRequest(task *models.ScanTask, userID uint, req *models.ScanTask
 	task.EngineID = req.EngineID
 	task.Schedule = req.Schedule
 	task.Enabled = req.Enabled
-	task.Parameters = TaskParameters(req.CatalogPaths, req.ScanDepth, req.Force)
+	task.Scope = TaskScope(req.EngineID, req.Scope, req.CatalogPaths)
+	task.Parameters = TaskParameters(req.ScanDepth, req.Force)
+	task.OwnerModule = "meta"
+	task.OwnerRef = ""
 	task.NextRunAt = nextRunAt
 	task.UpdatedBy = userID
 	task.UpdatedAt = now
@@ -43,15 +49,8 @@ func AutomaticTaskName(resourceName string) string {
 	return fmt.Sprintf("%s - %s", AutomaticTaskNamePrefix, resourceName)
 }
 
-func AutomaticTaskPattern() string {
-	return AutomaticTaskNamePrefix + "%"
-}
-
-func AutomaticTaskParameters() models.JSONMap {
-	return models.JSONMap{
-		"scan_depth": "deep",
-		"force":      false,
-	}
+func AutomaticTaskOwnerRef(engineID uint) string {
+	return "engine:" + strconv.FormatUint(uint64(engineID), 10)
 }
 
 func NewAutomaticTask(resource *commonModels.Engine, tenantID uint, cronExpr string) *models.ScanTask {
@@ -62,24 +61,60 @@ func NewAutomaticTask(resource *commonModels.Engine, tenantID uint, cronExpr str
 		Description: "由存储引擎注册时自动创建",
 		Schedule:    cronExpr,
 		Enabled:     true,
+		Scope:       EngineScope(resource.ID),
 		Parameters:  AutomaticTaskParameters(),
+		OwnerModule: "system",
+		OwnerRef:    AutomaticTaskOwnerRef(resource.ID),
 	}
 }
 
-func AutomaticTaskUpdates(resource *commonModels.Engine, cronExpr string, now time.Time) map[string]interface{} {
-	return map[string]interface{}{
-		"name":       AutomaticTaskName(resource.Name),
-		"schedule":   cronExpr,
-		"enabled":    resource.ScanConfig.Enabled,
-		"parameters": AutomaticTaskParameters(),
-		"updated_at": now,
+func AutomaticTaskUpdates(resource *commonModels.Engine, cronExpr string, nextRunAt *time.Time, now time.Time) map[string]interface{} {
+	updates := map[string]interface{}{
+		"name":         AutomaticTaskName(resource.Name),
+		"schedule":     cronExpr,
+		"enabled":      resource.ScanConfig.Enabled,
+		"scope":        EngineScope(resource.ID),
+		"parameters":   AutomaticTaskParameters(),
+		"owner_module": "system",
+		"owner_ref":    AutomaticTaskOwnerRef(resource.ID),
+		"updated_at":   now,
 	}
+	if nextRunAt != nil {
+		updates["next_run_at"] = *nextRunAt
+	} else {
+		updates["next_run_at"] = nil
+	}
+	return updates
 }
 
 func ApplyAutomaticTaskUpdate(task models.ScanTask, resource *commonModels.Engine, cronExpr string) models.ScanTask {
 	task.Name = AutomaticTaskName(resource.Name)
 	task.Schedule = cronExpr
 	task.Enabled = resource.ScanConfig.Enabled
+	task.Scope = EngineScope(resource.ID)
 	task.Parameters = AutomaticTaskParameters()
+	task.OwnerModule = "system"
+	task.OwnerRef = AutomaticTaskOwnerRef(resource.ID)
 	return task
+}
+
+func TaskScope(engineID uint, explicit models.JSONMap, catalogPaths []string) models.JSONMap {
+	if explicit != nil && len(explicit) > 0 {
+		return explicit
+	}
+	if len(catalogPaths) > 0 {
+		return models.JSONMap{
+			"type":          "catalog_path",
+			"engine_id":     engineID,
+			"catalog_paths": catalogPaths,
+		}
+	}
+	return EngineScope(engineID)
+}
+
+func EngineScope(engineID uint) models.JSONMap {
+	return models.JSONMap{
+		"type":      "engine",
+		"engine_id": engineID,
+	}
 }

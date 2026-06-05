@@ -177,8 +177,8 @@ func TestFileTablePreviewProviderResolveFormatUsesContentType(t *testing.T) {
 	}
 
 	got := provider.resolveFormat(req)
-	if got != format.FormatJSON {
-		t.Fatalf("resolveFormat() = %q, want %q", got, format.FormatJSON)
+	if got != format.FormatGeoJSON {
+		t.Fatalf("resolveFormat() = %q, want %q", got, format.FormatGeoJSON)
 	}
 }
 

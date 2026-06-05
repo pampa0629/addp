@@ -247,8 +247,8 @@ func TestLoadObjectContentPluginsUsesDescriptorDefaults(t *testing.T) {
 			want: "builtin:content-table",
 		},
 		{
-			name: "spatial_json_uses_json_handler",
-			req:  ObjectContentRequest{Format: "json", Extension: ".geojson", ContentType: "application/geo+json"},
+			name: "geojson_format_uses_json_content_handler",
+			req:  ObjectContentRequest{Format: "geojson", Extension: ".json", ContentType: "application/json"},
 			want: "builtin:content-json",
 		},
 	}
@@ -493,7 +493,7 @@ func TestAudioContentHandlerReturnsURLMaterial(t *testing.T) {
 	}
 }
 
-func TestJSONContentHandlerReturnsMapMaterialForSpatialJSON(t *testing.T) {
+func TestJSONContentHandlerReturnsMapMaterialForGeoJSONFormat(t *testing.T) {
 	t.Parallel()
 	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "json", Builtin: "json"})
 	if err != nil {
@@ -503,7 +503,7 @@ func TestJSONContentHandlerReturnsMapMaterialForSpatialJSON(t *testing.T) {
 
 	content, truncated, err := handler.Handle(
 		context.Background(),
-		&ObjectContentRequest{Name: "roads.geojson", Format: "json", ContentType: "application/geo+json", Size: int64(len(payload))},
+		&ObjectContentRequest{Name: "roads.json", Format: "geojson", ContentType: "application/json", Size: int64(len(payload))},
 		func(limit int64) ([]byte, bool, error) {
 			return payload, false, nil
 		},

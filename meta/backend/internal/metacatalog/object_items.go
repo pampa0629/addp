@@ -1,7 +1,6 @@
 package metacatalog
 
 import (
-	"context"
 	"fmt"
 	"path"
 	"sort"
@@ -20,104 +19,6 @@ type ObjectCatalogCompositeItem struct {
 	Prefix string
 	Item   *metaitem.DetectedItem
 	Claims metaitem.ResourceClaimSet
-}
-
-type ObjectCatalogCompositeDetectionError struct {
-	Bucket string
-	Prefix string
-	Err    error
-}
-
-func DetectObjectCatalogCompositeItems(
-	ctx context.Context,
-	contentReader plugin.ContentReadableProvider,
-	connInfo plugin.ConnectionInfo,
-	engineID uint,
-	resources []StorageResource,
-	includeWholeScope bool,
-) (map[string]bool, []ObjectCatalogCompositeItem, []ObjectCatalogCompositeDetectionError) {
-	skipPaths := map[string]bool{}
-	if contentReader == nil {
-		return skipPaths, nil, nil
-	}
-
-	groups := objectResourcesByParentPrefix(resources)
-	if includeWholeScope {
-		for key, group := range objectResourcesByPartitionRootPrefix(resources) {
-			groups[key] = append(groups[key], group...)
-		}
-	}
-	items := make([]ObjectCatalogCompositeItem, 0)
-	warnings := make([]ObjectCatalogCompositeDetectionError, 0)
-	groupKeys := make([]string, 0, len(groups))
-	for groupKey := range groups {
-		groupKeys = append(groupKeys, groupKey)
-	}
-	sort.Slice(groupKeys, func(i, j int) bool {
-		_, leftPrefix := splitObjectCompositeGroupKey(groupKeys[i])
-		_, rightPrefix := splitObjectCompositeGroupKey(groupKeys[j])
-		leftDepth := strings.Count(strings.Trim(leftPrefix, "/"), "/")
-		rightDepth := strings.Count(strings.Trim(rightPrefix, "/"), "/")
-		if leftDepth != rightDepth {
-			return leftDepth > rightDepth
-		}
-		return groupKeys[i] < groupKeys[j]
-	})
-
-	for _, groupKey := range groupKeys {
-		group := unclaimedObjectResources(groups[groupKey], skipPaths)
-		if len(group) < 2 {
-			continue
-		}
-		bucket, prefix := splitObjectCompositeGroupKey(groupKey)
-		files := storageResourcesToFileRefs(group)
-		detection, err := metaitem.ResolveItems(ctx, metaitem.DirectoryResolveInput{
-			ContentReader:  contentReader,
-			ConnInfo:       connInfo,
-			EngineID:       engineID,
-			CatalogPathFor: plugin.ObjectItemPathForBucket(engineID, bucket),
-			DirPath:        prefix,
-			Files:          files,
-		})
-		if err != nil {
-			warnings = append(warnings, ObjectCatalogCompositeDetectionError{
-				Bucket: bucket,
-				Prefix: prefix,
-				Err:    err,
-			})
-			continue
-		}
-		if detection == nil || len(detection.Items) == 0 {
-			continue
-		}
-		acceptedAny := false
-		for _, detected := range detection.Items {
-			if detected == nil {
-				continue
-			}
-			if (!includeWholeScope || prefix == "") && detected.Layout != format.LayoutMulti {
-				continue
-			}
-			for _, path := range detected.RefFilePaths() {
-				skipPaths[ObjectPathFromClaim(bucket, path)] = true
-			}
-			acceptedAny = true
-			items = append(items, ObjectCatalogCompositeItem{
-				Bucket: bucket,
-				Prefix: prefix,
-				Item:   detected,
-				Claims: detection.Claims,
-			})
-		}
-		if includeWholeScope && acceptedAny {
-			for path, claimed := range detection.Claims {
-				if claimed {
-					skipPaths[ObjectPathFromClaim(bucket, path)] = true
-				}
-			}
-		}
-	}
-	return skipPaths, items, warnings
 }
 
 func InferObjectCatalogDataItem(resource StorageResource, objectName string) *metaitem.DetectedItem {
@@ -297,6 +198,18 @@ func UnclaimedObjectResources(group []StorageResource, skipPaths map[string]bool
 
 func ObjectResourcesByParentPrefix(resources []StorageResource) map[string][]StorageResource {
 	return objectResourcesByParentPrefix(resources)
+}
+
+func ObjectResourcesByPartitionRootPrefix(resources []StorageResource) map[string][]StorageResource {
+	return objectResourcesByPartitionRootPrefix(resources)
+}
+
+func StorageResourcesToFileRefs(resources []StorageResource) []metaitem.StorageFileRef {
+	return storageResourcesToFileRefs(resources)
+}
+
+func SplitObjectCompositeGroupKey(key string) (string, string) {
+	return splitObjectCompositeGroupKey(key)
 }
 
 func ParentObjectPath(pathValue string) string {

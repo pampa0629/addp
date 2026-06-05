@@ -12,6 +12,7 @@ const (
 	previewMaterialText        = "text"
 	previewMaterialMarkdown    = "markdown"
 	previewMaterialJSON        = "json"
+	previewMaterialGeoJSON     = "geojson"
 	previewMaterialRawBinary   = "raw_binary"
 	previewMaterialTable       = "table"
 	previewMaterialContainer   = "container"
@@ -100,6 +101,9 @@ func previewHintDataType(formatType format.FormatType, contentType string) strin
 func previewHintSemantics(formatType format.FormatType, dataType, contentType string, peek []byte) (string, string, bool, bool) {
 	if formatType == format.FormatMarkdown {
 		return previewMaterialMarkdown, "markdown", true, true
+	}
+	if formatType == format.FormatGeoJSON {
+		return previewMaterialGeoJSON, "map", true, true
 	}
 	if formatType == format.FormatJSON {
 		return previewMaterialJSON, "json", true, true

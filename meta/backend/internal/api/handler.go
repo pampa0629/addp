@@ -11,6 +11,7 @@ import (
 	commonAuth "github.com/addp/common/middleware/auth"
 	metaErrors "github.com/addp/meta/internal/errors"
 	"github.com/addp/meta/internal/models"
+	"github.com/addp/meta/internal/scanflow"
 	"github.com/addp/meta/internal/service"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -548,7 +549,7 @@ func (h *Handler) ListScanTasks(c *gin.Context) {
 
 // RefreshItem 刷新已知数据项
 // @Summary 刷新已知数据项 | Refresh known item
-// @Description 基于已落库 item 的 layout、format、refs 和 storage 信息同步刷新元数据属性 | Refresh metadata attributes for an existing item using stored item descriptor
+// @Description 创建一次手动扫描执行并等待已落库 item 的元数据刷新完成 | Create a manual scan execution and wait until the known item metadata refresh completes
 // @Tags Meta Scan
 // @Accept json
 // @Produce json
@@ -560,7 +561,13 @@ func (h *Handler) ListScanTasks(c *gin.Context) {
 // @Router /items/{item_id}/refresh [post]
 // @Security BearerAuth
 func (h *Handler) RefreshItem(c *gin.Context) {
+	if h.taskService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "task service not available"})
+		return
+	}
+
 	tenantID := commonAuth.GetTenantID(c)
+	userID := commonAuth.GetUserID(c)
 	itemID64, err := strconv.ParseUint(c.Param("item_id"), 10, 32)
 	if err != nil || itemID64 == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid item_id"})
@@ -577,9 +584,31 @@ func (h *Handler) RefreshItem(c *gin.Context) {
 		token = token[7:]
 	}
 
-	result, err := h.scanService.RefreshItem(c.Request.Context(), req.EngineID, tenantID, uint(itemID64), token, req.Force)
+	req.ItemID = uint(itemID64)
+	req.TriggerType = models.TriggerTypeManual
+	if strings.TrimSpace(req.ScanDepth) == "" {
+		req.ScanDepth = "deep"
+	}
+
+	run, err := h.taskService.CreateManualRun(c.Request.Context(), tenantID, userID, token, &req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	exec, err := h.taskService.WaitExecution(c.Request.Context(), run.ExecutionID, int(tenantID), 0)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if strings.Contains(err.Error(), "execution wait timed out") {
+			status = http.StatusGatewayTimeout
+		}
+		c.JSON(status, gin.H{"error": err.Error(), "execution_id": run.ExecutionID})
+		return
+	}
+
+	result, err := scanflow.ScanResponseFromExecution(exec)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error(), "execution_id": run.ExecutionID})
 		return
 	}
 	c.JSON(http.StatusOK, result)

@@ -71,8 +71,8 @@ func TestRetryExecutionEnqueuesRestartExecution(t *testing.T) {
 	if err := db.First(&storedExecution, newExecution.ID).Error; err != nil {
 		t.Fatalf("load new execution: %v", err)
 	}
-	if storedExecution.Status != commonExecution.ExecutionStatusPending || storedExecution.TriggerType != "retry" {
-		t.Fatalf("new execution status=%s trigger=%s, want pending retry", storedExecution.Status, storedExecution.TriggerType)
+	if storedExecution.Status != commonExecution.ExecutionStatusPending || storedExecution.TriggerType != commonExecution.TriggerTypeManual {
+		t.Fatalf("new execution status=%s trigger=%s, want pending manual", storedExecution.Status, storedExecution.TriggerType)
 	}
 }
 
@@ -386,6 +386,7 @@ func createExecutionServiceTestTables(t *testing.T, db *gorm.DB) {
 			execution_id TEXT NOT NULL,
 			module TEXT NOT NULL,
 			task_type TEXT NOT NULL,
+			source TEXT NOT NULL DEFAULT '',
 			source_task_id INTEGER,
 			source_task_name TEXT,
 			parent_execution_id TEXT,
@@ -442,6 +443,7 @@ func createExecutionServiceTestExecution(t *testing.T, db *gorm.DB, task models.
 		ExecutionID:    fmt.Sprintf("execution-%s", status),
 		Module:         commonExecution.ModuleTransfer,
 		TaskType:       "transfer",
+		Source:         commonExecution.ModuleTransfer,
 		SourceTaskID:   &taskID,
 		SourceTaskName: &taskName,
 		Status:         status,

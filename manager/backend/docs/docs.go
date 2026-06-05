@@ -3246,7 +3246,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "trigger_type": {
-                    "description": "manual|schedule|api|orchestrator，默认 manual",
+                    "description": "manual|scheduled，默认 manual",
                     "type": "string"
                 }
             }

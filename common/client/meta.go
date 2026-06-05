@@ -444,6 +444,15 @@ func (c *MetaClient) RefreshItem(itemID uint, opts MetaScanOptions) (*MetaScanRe
 	if opts.Force {
 		reqPayload["force"] = true
 	}
+	if depth := strings.TrimSpace(opts.ScanDepth); depth != "" {
+		reqPayload["scan_depth"] = depth
+	}
+	if triggerType := strings.TrimSpace(opts.TriggerType); triggerType != "" {
+		reqPayload["trigger_type"] = triggerType
+	}
+	if source := strings.TrimSpace(opts.Source); source != "" {
+		reqPayload["source"] = source
+	}
 
 	body, err := json.Marshal(reqPayload)
 	if err != nil {

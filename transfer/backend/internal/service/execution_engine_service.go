@@ -9,6 +9,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/contentio"
+	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/format"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/resourcetree"
@@ -438,7 +439,7 @@ func (s *ExecutionEngineService) triggerMetadataScan(task *models.TransferTask, 
 		ScanDepth:    "deep",
 		Force:        true,
 		TriggerType:  "manual",
-		Source:       "transfer",
+		Source:       commonExecution.ModuleTransfer,
 	})
 	if err != nil {
 		s.logger.Error("failed to trigger metadata scan",
@@ -470,7 +471,7 @@ func (s *ExecutionEngineService) triggerRawCopyMetadataScan(task *models.Transfe
 		ScanDepth:   "deep",
 		Force:       true,
 		TriggerType: "manual",
-		Source:      "transfer",
+		Source:      commonExecution.ModuleTransfer,
 	})
 	if err != nil {
 		s.logger.Error("failed to trigger metadata scan",

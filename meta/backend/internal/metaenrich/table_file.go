@@ -1,6 +1,7 @@
 package metaenrich
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -620,20 +621,26 @@ func ExtractSingleTableFileItemStrict(
 	includeAccessIndex bool,
 	catalogPathFor ...func(path string) plugin.CatalogPath,
 ) (*metaitem.CompositeItemInfo, error) {
-	formatName := fileFormatName(filePath)
-	formatType := format.NormalizeFormat(formatName)
-	provider, providerErr := format.GetTableInfoProvider(formatType)
-	if providerErr != nil {
-		return nil, providerErr
-	}
-
 	rc, err := contentReader.OpenContent(ctx, connInfo, resolveTableFileCatalogPath(engineID, filePath, firstCatalogPathResolver(catalogPathFor)), plugin.ReadOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to read table file %s: %w", filePath, err)
 	}
 	defer rc.Close()
 
-	tableInfo, err := provider.DescribeTable(ctx, rc, nil)
+	br := bufio.NewReader(rc)
+	formatType := format.NormalizeFormat(fileFormatName(filePath))
+	if peek, _ := br.Peek(4096); len(peek) > 0 {
+		if detected := format.DetectFormat(filePath, peek); detected != format.FormatUnknown {
+			formatType = detected
+		}
+	}
+	formatName := string(formatType)
+	provider, providerErr := format.GetTableInfoProvider(formatType)
+	if providerErr != nil {
+		return nil, providerErr
+	}
+
+	tableInfo, err := provider.DescribeTable(ctx, br, nil)
 	if err != nil {
 		return nil, err
 	}

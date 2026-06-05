@@ -275,6 +275,11 @@ func (s *ExecutionService) GetRunningExecutions(ctx context.Context) ([]models.T
 
 // CreateExecution 创建执行记录
 func (s *ExecutionService) CreateExecution(ctx context.Context, taskID uint, triggerType string, triggerBy *uint) (*models.TaskExecution, error) {
+	normalizedTriggerType, err := commonExecution.NormalizeTriggerType(triggerType)
+	if err != nil {
+		return nil, err
+	}
+
 	// 获取任务信息
 	task, err := s.taskRepo.GetByID(taskID)
 	if err != nil {
@@ -296,11 +301,12 @@ func (s *ExecutionService) CreateExecution(ctx context.Context, taskID uint, tri
 		ExecutionID:    uuid.New().String(),
 		Module:         commonExecution.ModuleTransfer,
 		TaskType:       "transfer", // Transfer 模块的执行类型统一为 transfer
+		Source:         commonExecution.ModuleTransfer,
 		SourceTaskID:   &taskIDInt,
 		SourceTaskName: &task.Name,
 		Status:         commonExecution.ExecutionStatusPending,
 		Progress:       0,
-		TriggerType:    triggerType,
+		TriggerType:    normalizedTriggerType,
 		TriggeredBy:    triggeredByInt,
 		StartedAt:      &now,
 		CreatedAt:      now,
@@ -441,7 +447,7 @@ func (s *ExecutionService) RetryExecution(ctx context.Context, id, tenantID, use
 	}
 
 	// 创建新的执行记录
-	newExecution, err := s.CreateExecution(ctx, oldExecution.TaskID, "retry", &userID)
+	newExecution, err := s.CreateExecution(ctx, oldExecution.TaskID, commonExecution.TriggerTypeManual, &userID)
 	if err != nil {
 		return nil, err
 	}

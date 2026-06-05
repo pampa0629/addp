@@ -392,7 +392,7 @@ func TestExtractJSONSingleTableFileItemStrictWritesSpatialOnlyWhenGeometryExists
 	if err != nil {
 		t.Fatalf("ExtractSingleTableFileItemStrict() error = %v", err)
 	}
-	if info.DataType != datatype.Table || info.Format != string(format.FormatJSON) {
+	if info.DataType != datatype.Table || info.Format != string(format.FormatGeoJSON) {
 		t.Fatalf("info = %#v", info)
 	}
 	spatial := commonJSON.Section(info.Attributes, "capabilities.spatial")
@@ -401,6 +401,29 @@ func TestExtractJSONSingleTableFileItemStrictWritesSpatialOnlyWhenGeometryExists
 	}
 	if extent := commonJSON.InterfaceFloat64Slice(spatial["extent"]); len(extent) != 4 || extent[0] != 1 || extent[3] != 4 {
 		t.Fatalf("extent = %#v", spatial["extent"])
+	}
+}
+
+func TestExtractJSONSingleTableFileItemStrictPromotesJSONSuffixGeoJSONContent(t *testing.T) {
+	reader := staticContentReader{content: `{
+		"type": "FeatureCollection",
+		"features": [
+			{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{"name":"A"}}
+		]
+	}`}
+
+	info, err := ExtractSingleTableFileItemStrict(context.Background(), reader, nil, 1, "roads.json", 10, false)
+	if err != nil {
+		t.Fatalf("ExtractSingleTableFileItemStrict() error = %v", err)
+	}
+	if info.DataType != datatype.Table || info.Format != string(format.FormatGeoJSON) {
+		t.Fatalf("info = %#v", info)
+	}
+	if geojsonInfo := commonJSON.Section(info.Attributes, "format_info.geojson"); geojsonInfo["structure"] != "geojson_feature_collection" {
+		t.Fatalf("format_info.geojson = %#v", geojsonInfo)
+	}
+	if jsonInfo := commonJSON.Section(info.Attributes, "format_info.json"); len(jsonInfo) != 0 {
+		t.Fatalf("format_info.json should be empty for promoted GeoJSON: %#v", jsonInfo)
 	}
 }
 
@@ -415,6 +438,9 @@ func TestExtractJSONSingleTableFileItemStrictDoesNotWriteSpatialWithoutGeometry(
 	info, err := ExtractSingleTableFileItemStrict(context.Background(), reader, nil, 1, "rows.geojson", 10, false)
 	if err != nil {
 		t.Fatalf("ExtractSingleTableFileItemStrict() error = %v", err)
+	}
+	if info.DataType != datatype.Table || info.Format != string(format.FormatGeoJSON) {
+		t.Fatalf("info = %#v", info)
 	}
 	if spatial := commonJSON.Section(info.Attributes, "capabilities.spatial"); len(spatial) != 0 {
 		t.Fatalf("spatial should be empty: %#v", spatial)

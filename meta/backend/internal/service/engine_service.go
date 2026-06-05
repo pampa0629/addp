@@ -18,6 +18,7 @@ import (
 	"github.com/addp/common/utils"
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
+	"github.com/addp/meta/internal/scanflow"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
@@ -163,10 +164,10 @@ func (s *EngineService) reconcileCatalogRoot(resource *commonModels.Engine) bool
 		s.log.Debug("跳过 root reconcile，插件不存在", "engine_id", resource.ID, "engine_type", resource.EngineType, "error", err)
 		return false
 	}
-	if catalogModelForPlugin(enginePlugin) == nil {
+	if scanflow.CatalogModelForPlugin(enginePlugin) == nil {
 		return false
 	}
-	if _, err := ensureCatalogRootNode(metaRepo.NewScanRepository(s.db), *resource.TenantID, resource, enginePlugin); err != nil {
+	if _, err := metaRepo.EnsureCatalogRootNode(metaRepo.NewScanRepository(s.db), *resource.TenantID, resource, enginePlugin); err != nil {
 		s.log.Warn("同步 catalog root 失败", "engine_id", resource.ID, "engine_type", resource.EngineType, "error", err)
 		return false
 	}
@@ -432,9 +433,9 @@ func (s *EngineService) GetEnginesWithStats(tenantID uint) ([]*models.ResourceWi
 		Count    int64
 	}
 	var totals []countRow
-	if err := s.db.Table("metadata.meta_node").
+	if err := s.db.Table("meta.meta_node").
 		Where("engine_id IN ? AND parent_node_id IN (?)", engineIDs,
-			s.db.Table("metadata.meta_node").
+			s.db.Table("meta.meta_node").
 				Select("id").
 				Where("engine_id IN ? AND parent_node_id IS NULL AND full_name = ?", engineIDs, ""),
 		).
@@ -448,9 +449,9 @@ func (s *EngineService) GetEnginesWithStats(tenantID uint) ([]*models.ResourceWi
 	}
 
 	var scanned []countRow
-	if err := s.db.Table("metadata.meta_node").
+	if err := s.db.Table("meta.meta_node").
 		Where("engine_id IN ? AND scan_status = ? AND parent_node_id IN (?)", engineIDs, "completed",
-			s.db.Table("metadata.meta_node").
+			s.db.Table("meta.meta_node").
 				Select("id").
 				Where("engine_id IN ? AND parent_node_id IS NULL AND full_name = ?", engineIDs, ""),
 		).
@@ -468,7 +469,7 @@ func (s *EngineService) GetEnginesWithStats(tenantID uint) ([]*models.ResourceWi
 		LastScanAt *time.Time `gorm:"column:scanned_at"`
 	}
 	var lastScans []lastScanRow
-	if err := s.db.Table("metadata.meta_node").
+	if err := s.db.Table("meta.meta_node").
 		Where("engine_id IN ?", engineIDs).
 		Where("scanned_at IS NOT NULL").
 		Select("engine_id, MAX(scanned_at) AS scanned_at").
@@ -510,7 +511,7 @@ func (s *EngineService) GetEnginesWithStats(tenantID uint) ([]*models.ResourceWi
 		if enginePlugin, err := plugin.Get(res.EngineType); err == nil {
 			capabilities := enginePlugin.Capabilities()
 			engineFamily = capabilities.EngineFamily
-			if model := catalogModelForPlugin(enginePlugin); model != nil {
+			if model := scanflow.CatalogModelForPlugin(enginePlugin); model != nil {
 				catalogRootTerm = model.RootTerm
 				if level, ok := plugin.CatalogFirstBusinessBranch(*model); ok {
 					catalogTopTerm = level.Term
@@ -572,7 +573,7 @@ func (s *EngineService) handleEngineChangeEvent(event events.EngineChangeEvent) 
 			s.reconcileCatalogRoot(resource)
 
 			// 检查是否有扫描配置
-			if s.taskService != nil && resource.ScanConfig != nil && (resource.ScanConfig.ImmediateScan || resource.ScanConfig.ScheduledScan) {
+			if s.taskService != nil && resource.ScanConfig != nil && resource.ScanConfig.Enabled && (resource.ScanConfig.ImmediateScan || resource.ScanConfig.ScheduledScan) {
 				// 1. 处理立即扫描
 				if resource.ScanConfig.ImmediateScan {
 					s.log.Info("检测到立即扫描配置，准备触发扫描", "engine_id", event.EngineID)
@@ -674,7 +675,7 @@ func (s *EngineService) triggerImmediateScan(resource *commonModels.Engine) erro
 		EngineID:    resource.ID,
 		ScanDepth:   scanDepth,
 		TriggerType: models.TriggerTypeManual,
-		Source:      "system_immediate",
+		Source:      commonExecution.ModuleSystem,
 		Force:       false,
 	}
 

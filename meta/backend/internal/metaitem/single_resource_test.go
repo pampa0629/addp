@@ -68,13 +68,13 @@ func TestInferSingleResourceDetectsTextAsDocument(t *testing.T) {
 	}
 }
 
-func TestInferSingleGeoJSONKeepsJSONAsDocumentUntilContentInspection(t *testing.T) {
+func TestInferSingleGeoJSONUsesDeclaredFormatWithoutSpatialFacts(t *testing.T) {
 	item := InferSingleResource(SingleResourceInput{Name: "roads.geojson", Path: "roads.geojson"})
-	if item.Format != string(format.FormatJSON) {
-		t.Fatalf("Format = %q, want %q", item.Format, format.FormatJSON)
+	if item.Format != string(format.FormatGeoJSON) {
+		t.Fatalf("Format = %q, want %q", item.Format, format.FormatGeoJSON)
 	}
-	if item.DataType != datatype.Document {
-		t.Fatalf("DataType = %q, want %q", item.DataType, datatype.Document)
+	if item.DataType != datatype.Table {
+		t.Fatalf("DataType = %q, want %q", item.DataType, datatype.Table)
 	}
 	if capabilities, ok := item.Attributes["capabilities"].(map[string]interface{}); ok {
 		if spatial := capabilities["spatial"]; spatial != nil {

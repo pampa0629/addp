@@ -45,9 +45,27 @@ func TestDetectFormat(t *testing.T) {
 			want:     FormatUnknown,
 		},
 		{
-			name:     "GeoJSON extension is JSON format",
+			name:     "GeoJSON extension is GeoJSON format",
 			filename: "data.geojson",
 			peek:     nil,
+			want:     FormatGeoJSON,
+		},
+		{
+			name:     "JSON extension with GeoJSON content is GeoJSON format",
+			filename: "data.json",
+			peek:     []byte(`{"type":"FeatureCollection","features":[`),
+			want:     FormatGeoJSON,
+		},
+		{
+			name:     "JSON extension with plain object stays JSON format",
+			filename: "data.json",
+			peek:     []byte(`{"type":"Feature","features":[]}`),
+			want:     FormatJSON,
+		},
+		{
+			name:     "JSON extension with non array features stays JSON format",
+			filename: "data.json",
+			peek:     []byte(`{"type":"FeatureCollection","features":{}}`),
 			want:     FormatJSON,
 		},
 		{
@@ -193,8 +211,8 @@ func TestMIMEToFormat(t *testing.T) {
 		mimeType string
 		want     FormatType
 	}{
-		{"application/geo+json", FormatJSON},
-		{"application/vnd.geo+json", FormatJSON},
+		{"application/geo+json", FormatGeoJSON},
+		{"application/vnd.geo+json", FormatGeoJSON},
 		{"text/csv", FormatCSV},
 		{"application/pdf", FormatPDF},
 		{"application/vnd.ms-works", FormatWPS},

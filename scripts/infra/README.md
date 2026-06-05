@@ -252,7 +252,7 @@ ADDP 采用**模块化资源隔离**架构,每个模块拥有独立的命名空�
 addp (database)
 ├── system       → System 模块（用户、租户、日志、资源）
 ├── manager      → Manager 模块（数据源、目录、快显）
-├── metadata     → Meta 模块（元数据节点、元数据项、字典）
+├── meta         → Meta 模块（元数据节点、元数据项、字典）
 ├── transfer     → Transfer 模块（任务、执行记录、检查点）
 ├── orchestrator → Orchestrator 模块（编排定义、执行实例）
 └── develop      → Develop 模块（SQL 脚本管理）
@@ -385,8 +385,8 @@ POSTGRES_IMAGE=imresamu/postgis-arm64:15-3.4 ./scripts/infra/up.sh
 # 正常初始化（幂等,不会删除数据）
 ./scripts/infra/init-db.sh
 
-# 重建 metadata schema（删除并重新创建）
-./scripts/infra/init-db.sh --drop-schema metadata
+# 重建 meta schema（删除并重新创建）
+./scripts/infra/init-db.sh --drop-schema meta
 
 # 清空所有 ADDP schema（慎用！会删除所有数据）
 ./scripts/infra/init-db.sh --drop-all

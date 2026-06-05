@@ -376,9 +376,9 @@ err := commonModels.ValidateDirectoryPath(path, true)  // true表示对象存储
 
 **数据库变更**:
 ```sql
--- metadata.meta_item 表的 attributes
+-- meta.meta_item 表的 attributes
 -- 删除 relative_path 和 object_key 字段
-UPDATE metadata.meta_item
+UPDATE meta.meta_item
 SET attributes = attributes - 'relative_path' - 'object_key'
 WHERE attributes ? 'relative_path' OR attributes ? 'object_key';
 ```
@@ -419,8 +419,8 @@ WHERE attributes ? 'relative_path' OR attributes ? 'object_key';
 
 | 模块 | 表名 | Bucket字段 | 目录字段 | 文件名字段 | 完整路径 |
 |------|------|-----------|---------|----------|---------|
-| Meta | metadata.meta_item | attributes.bucket | 无 (通过NodeID) | Name | FullName |
-| Meta | metadata.meta_node | 无 | Path (层级路径) | Name | FullName |
+| Meta | meta.meta_item | attributes.bucket | 无 (通过NodeID) | Name | FullName |
+| Meta | meta.meta_node | 无 | Path (层级路径) | Name | FullName |
 | Manager | manager.embeddings | Bucket | Path | Name | 拼接生成 |
 | Meilisearch | assets索引 | bucket | path (目录) | name | full_name |
 

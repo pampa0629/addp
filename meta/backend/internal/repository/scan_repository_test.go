@@ -1,8 +1,11 @@
 package repository
 
 import (
+	"context"
 	"testing"
 
+	"github.com/addp/common/engine/plugin"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -48,6 +51,35 @@ func TestUpsertNodeUsesExplicitFullNameAsSemanticKey(t *testing.T) {
 	}
 	if count != 2 {
 		t.Fatalf("node count = %d, want 2", count)
+	}
+}
+
+func TestEnsureCatalogRootNodeCanBeFinalized(t *testing.T) {
+	db := openScanRepositoryTestDB(t)
+	repo := NewScanRepository(db)
+	resource := &commonModels.Engine{ID: 25, Name: "Business Neo4j", EngineType: "catalog-root-test"}
+
+	root, err := EnsureCatalogRootNode(repo, 1, resource, catalogRootTestPlugin{})
+	if err != nil {
+		t.Fatalf("EnsureCatalogRootNode() error = %v", err)
+	}
+	if root.ScanStatus == "completed" {
+		t.Fatal("test setup unexpectedly completed root node")
+	}
+
+	if err := repo.FinalizeNodeStateWithDepth(root, "completed", 1, 0, "", models.ScannedDepthDeep); err != nil {
+		t.Fatalf("finalize root node: %v", err)
+	}
+
+	var got models.MetaNode
+	if err := db.Where("id = ?", root.ID).First(&got).Error; err != nil {
+		t.Fatalf("query root node: %v", err)
+	}
+	if got.ScanStatus != "completed" || got.ScannedDepth != models.ScannedDepthDeep {
+		t.Fatalf("root scan status/depth = %q/%q, want completed/deep", got.ScanStatus, got.ScannedDepth)
+	}
+	if got.ItemCount != 1 {
+		t.Fatalf("root item_count = %d, want 1", got.ItemCount)
 	}
 }
 
@@ -101,11 +133,11 @@ func openScanRepositoryTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.Exec("ATTACH DATABASE ':memory:' AS metadata").Error; err != nil {
-		t.Fatalf("attach metadata schema: %v", err)
+	if err := db.Exec("ATTACH DATABASE ':memory:' AS meta").Error; err != nil {
+		t.Fatalf("attach meta schema: %v", err)
 	}
 	if err := db.Exec(`
-		CREATE TABLE metadata.meta_node (
+		CREATE TABLE meta.meta_node (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			tenant_id INTEGER NOT NULL,
 			engine_id INTEGER NOT NULL,
@@ -129,7 +161,7 @@ func openScanRepositoryTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("create meta_node table: %v", err)
 	}
 	if err := db.Exec(`
-		CREATE TABLE metadata.meta_item (
+		CREATE TABLE meta.meta_item (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			tenant_id INTEGER NOT NULL,
 			engine_id INTEGER NOT NULL,
@@ -156,3 +188,31 @@ func openScanRepositoryTestDB(t *testing.T) *gorm.DB {
 func strPtr(s string) *string {
 	return &s
 }
+
+type catalogRootTestPlugin struct{}
+
+func (catalogRootTestPlugin) Type() string         { return "catalog-root-test" }
+func (catalogRootTestPlugin) DisplayName() string  { return "Catalog Root Test" }
+func (catalogRootTestPlugin) EngineOrigin() string { return "general" }
+func (catalogRootTestPlugin) DefaultPort() int     { return 0 }
+func (catalogRootTestPlugin) RequiredFields() []string {
+	return nil
+}
+func (catalogRootTestPlugin) SensitiveFields() []string {
+	return nil
+}
+func (catalogRootTestPlugin) ValidateConnectionInfo(plugin.ConnectionInfo) error {
+	return nil
+}
+func (catalogRootTestPlugin) TestConnection(context.Context, plugin.ConnectionInfo) error {
+	return nil
+}
+func (catalogRootTestPlugin) Capabilities() plugin.EngineCapabilities {
+	return plugin.EngineCapabilities{}
+}
+func (catalogRootTestPlugin) CatalogModel() plugin.CatalogModelSpec {
+	return plugin.GraphCatalogModel()
+}
+
+var _ plugin.EnginePlugin = catalogRootTestPlugin{}
+var _ plugin.CatalogModelProvider = catalogRootTestPlugin{}

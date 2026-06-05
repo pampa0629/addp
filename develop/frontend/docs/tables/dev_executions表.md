@@ -79,7 +79,7 @@
 | `dev_item_id` | INTEGER | INDEXED | 关联的开发项 ID（可为空） |
 | `execution_id` | VARCHAR(255) | NOT NULL, UNIQUE | UUID 执行标识 |
 | `dev_type` | VARCHAR(50) | NOT NULL | 开发类型：'query'、'workflow'、'script'、'notebook' |
-| `trigger_type` | VARCHAR(50) | INDEXED | 触发类型：'manual'、'schedule'、'orchestrator'、'api' |
+| `trigger_type` | VARCHAR(50) | INDEXED | 触发类型：'manual'、'scheduled' |
 | `triggered_by` | INTEGER | | 触发者 ID |
 | `status` | VARCHAR(50) | NOT NULL, INDEXED | 执行状态 |
 | `progress` | INTEGER | DEFAULT 0 | 执行进度（0-100） |

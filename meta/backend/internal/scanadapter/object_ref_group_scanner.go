@@ -1,0 +1,109 @@
+package scanadapter
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/addp/common/engine/plugin"
+	commonModels "github.com/addp/common/models"
+	"github.com/addp/meta/internal/metacatalog"
+	"github.com/addp/meta/internal/models"
+	metaRepo "github.com/addp/meta/internal/repository"
+	"github.com/addp/meta/internal/scanflow"
+)
+
+type ObjectRefGroupRuntime interface {
+	DetectObjectCatalogResourceFormats(ctx context.Context, readableProvider plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, resources []metacatalog.StorageResource)
+	PersistObjectCatalogCompositeItems(resource *commonModels.Engine, tenantID, engineID uint, bucketNode, basePrefixNode *models.MetaNode, items []metacatalog.ObjectCatalogCompositeItem, stats map[uint]*ObjectCatalogNodeAggregate, includeBucketAggregate bool, scanPathPrefix string, scannedFingerprints map[string]bool, itemTerm string, readableProvider plugin.ContentReadableProvider, connInfo plugin.ConnectionInfo, scanDepth string) (int, scanflow.ExtractionCounts, error)
+}
+
+func ScanObjectRefGroups(
+	ctx context.Context,
+	runtime ObjectRefGroupRuntime,
+	repo *metaRepo.ScanRepository,
+	resource *commonModels.Engine,
+	tenantID uint,
+	groups []models.ScanRefGroup,
+	scanDepth string,
+	reporter scanflow.ProgressReporter,
+) (scanflow.DispatchResult, error) {
+	enginePlugin, err := plugin.Get(resource.EngineType)
+	if err != nil {
+		return scanflow.DispatchResult{}, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
+	}
+	contentReader, ok := enginePlugin.(plugin.ContentReadableProvider)
+	if !ok {
+		return scanflow.DispatchResult{}, fmt.Errorf("engine %s does not implement ContentReadableProvider", resource.EngineType)
+	}
+	itemTerm := scanflow.CatalogLeafTermForPlugin(enginePlugin, plugin.CatalogTermObject)
+	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
+
+	rootNode, err := metaRepo.EnsureCatalogRootNode(repo, tenantID, resource, enginePlugin)
+	if err != nil {
+		return scanflow.DispatchResult{}, err
+	}
+
+	result := scanflow.DispatchResult{}
+	stats := map[uint]*ObjectCatalogNodeAggregate{}
+	seenBuckets := map[string]*models.MetaNode{}
+	scannedFingerprints := map[string]bool{}
+
+	for i, group := range groups {
+		primary := scanflow.ScanRefGroupPrimaryPath(group)
+		if primary == "" {
+			continue
+		}
+		bucket, objectPath, err := scanflow.SplitObjectRefPath(primary)
+		if err != nil {
+			return result, err
+		}
+		if reporter != nil {
+			reporter.Message(fmt.Sprintf("扫描对象引用组 %s", primary))
+		}
+
+		bucketNode := seenBuckets[bucket]
+		if bucketNode == nil {
+			attrs := metacatalog.ObjectBucketNodeAttributes(bucket)
+			bucketNode, err = repo.UpsertNode(tenantID, resource.ID, rootNode, "bucket", bucket, &bucket, attrs)
+			if err != nil {
+				return result, err
+			}
+			seenBuckets[bucket] = bucketNode
+			result.CatalogNodes++
+		}
+
+		resources, err := scanflow.ObjectResourcesFromScanRefGroup(resource.ID, bucket, group)
+		if err != nil {
+			return result, err
+		}
+		runtime.DetectObjectCatalogResourceFormats(ctx, contentReader, connInfo, resources)
+
+		candidates := scanflow.ObjectRefGroupCandidateSet(resource.ID, bucket, objectPath, resources)
+		detection, err := scanflow.ResolveContentCandidates(ctx, contentReader, connInfo, resource.ID, candidates)
+		if err != nil {
+			return result, err
+		}
+		composites := make([]metacatalog.ObjectCatalogCompositeItem, 0, len(detection.Items))
+		for _, detected := range detection.Items {
+			if detected == nil {
+				continue
+			}
+			composites = append(composites, metacatalog.ObjectCatalogCompositeItem{
+				Bucket: bucket,
+				Prefix: candidates.DirPath,
+				Item:   detected,
+				Claims: detection.Claims,
+			})
+		}
+		count, extractionStats, err := runtime.PersistObjectCatalogCompositeItems(resource, tenantID, resource.ID, bucketNode, bucketNode, composites, stats, false, candidates.DirPath, scannedFingerprints, itemTerm, contentReader, connInfo, scanDepth)
+		if err != nil {
+			return result, err
+		}
+		result.Items += count
+		result.Extraction = scanflow.MergeExtractionCounts(result.Extraction, extractionStats)
+		if reporter != nil {
+			reporter.Advance(primary, i+1, len(groups), map[string]interface{}{"items": result.Items})
+		}
+	}
+	return result, nil
+}

@@ -407,9 +407,7 @@
       "statusTimeout": "超时",
       "statusCancelled": "已取消",
       "triggerManual": "手动",
-      "triggerSchedule": "定时",
-      "triggerOrchestrator": "编排",
-      "triggerApi": "API"
+      "triggerSchedule": "定时"
     },
     "executionDetail": {
       "title": "执行详情",

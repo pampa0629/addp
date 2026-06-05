@@ -21,7 +21,7 @@ ADDP 中容易混淆的三个概念需要明确区分：
 | 概念 | 回答的问题 | 归属模块 | 典型场景 |
 | --- | --- | --- | --- |
 | 实时 Catalog | 真实引擎当前有什么？ | System | 扫描前选择 PostgreSQL schema、MinIO bucket/prefix、MongoDB collection、NFS 目录等。 |
-| 元数据快照 | 平台已经扫描、记录、纳管了什么？ | Meta | 查询 `metadata.meta_node`、`metadata.meta_item`，展示已扫描资产树、字段、空间信息和扫描状态。 |
+| 元数据快照 | 平台已经扫描、记录、纳管了什么？ | Meta | 查询 `meta.meta_node`、`meta.meta_item`，展示已扫描资产树、字段、空间信息和扫描状态。 |
 | 数据预览 | 用户要查看真实数据内容。 | Manager | 表格预览、对象/文件预览、空间瓦片和后端 preview provider 组合。 |
 
 边界原则：
@@ -54,7 +54,7 @@ graph TB
     Develop --> Common
     Service --> Common
 
-    Meta --> MetaStore[(metadata.meta_node/meta_item)]
+    Meta --> MetaStore[(meta.meta_node/meta_item)]
     Manager --> MetaStore
 ```
 

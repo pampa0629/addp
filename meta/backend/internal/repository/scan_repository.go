@@ -6,10 +6,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/addp/common/engine/plugin"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/models"
+	"github.com/addp/meta/internal/scanflow"
 
 	"gorm.io/gorm"
 )
@@ -27,6 +29,26 @@ var (
 // NewScanRepository 创建 Repository 实例
 func NewScanRepository(db *gorm.DB) *ScanRepository {
 	return &ScanRepository{db: db}
+}
+
+func EnsureCatalogRootNode(repo *ScanRepository, tenantID uint, resource *commonModels.Engine, p plugin.EnginePlugin) (*models.MetaNode, error) {
+	return EnsureCatalogRootNodeWithNativeName(repo, tenantID, resource, p, "")
+}
+
+func EnsureCatalogRootNodeWithNativeName(repo *ScanRepository, tenantID uint, resource *commonModels.Engine, p plugin.EnginePlugin, nativeName string) (*models.MetaNode, error) {
+	rootTerm := scanflow.CatalogRootTermForPlugin(p)
+	fullName := ""
+	attrs := models.JSONMap{
+		"schema_version": 1,
+		"catalog": map[string]interface{}{
+			"root_term":           rootTerm,
+			"display_name_source": "engine.name",
+		},
+	}
+	if nativeName != "" && nativeName != resource.Name {
+		attrs["catalog"].(map[string]interface{})["native_name"] = nativeName
+	}
+	return repo.UpsertNode(tenantID, resource.ID, nil, rootTerm, resource.Name, &fullName, attrs)
 }
 
 func lockNodeUpsert(tenantID, engineID uint, parentID *uint, nodeType, name string, fullName *string) func() {
@@ -429,14 +451,14 @@ func (r *ScanRepository) HardDeleteInvalidEngineGraph(tenantID, engineID uint) e
 	var invalidNodes []models.MetaNode
 	if err := r.db.Raw(`
 		SELECT n.*
-		FROM metadata.meta_node n
+		FROM meta.meta_node n
 		WHERE n.tenant_id = ?
 		  AND n.engine_id = ?
 		  AND n.deleted_at IS NULL
 		  AND n.parent_node_id IS NOT NULL
 		  AND NOT EXISTS (
 		      SELECT 1
-		      FROM metadata.meta_node p
+		      FROM meta.meta_node p
 		      WHERE p.id = n.parent_node_id
 		        AND p.deleted_at IS NULL
 		  )
@@ -447,14 +469,14 @@ func (r *ScanRepository) HardDeleteInvalidEngineGraph(tenantID, engineID uint) e
 	var conflictNodes []models.MetaNode
 	if err := r.db.Raw(`
 		SELECT n.*
-		FROM metadata.meta_node n
+		FROM meta.meta_node n
 		WHERE n.tenant_id = ?
 		  AND n.engine_id = ?
 		  AND n.deleted_at IS NULL
 		  AND n.full_name <> ''
 		  AND EXISTS (
 		      SELECT 1
-		      FROM metadata.meta_item i
+		      FROM meta.meta_item i
 		      WHERE i.tenant_id = n.tenant_id
 		        AND i.engine_id = n.engine_id
 		        AND i.full_name = n.full_name
@@ -484,14 +506,14 @@ func (r *ScanRepository) HardDeleteInvalidEngineGraph(tenantID, engineID uint) e
 	}
 
 	return r.db.Unscoped().Exec(`
-		DELETE FROM metadata.meta_item
+		DELETE FROM meta.meta_item
 		WHERE tenant_id = ?
 		  AND engine_id = ?
 		  AND deleted_at IS NULL
 		  AND NOT EXISTS (
 		      SELECT 1
-		      FROM metadata.meta_node n
-		      WHERE n.id = metadata.meta_item.node_id
+		      FROM meta.meta_node n
+		      WHERE n.id = meta.meta_item.node_id
 		        AND n.deleted_at IS NULL
 		  )
 	`, tenantID, engineID).Error
@@ -530,6 +552,63 @@ func (r *ScanRepository) UpsertItemWithDepth(
 		tenantID, engineID, node, itemType, name, fullName,
 		attrs, rowCount, sizeBytes, dataUpdated, scanDepth,
 	)
+}
+
+func (r *ScanRepository) UpdateItemByIDWithDepth(
+	tenantID, itemID, engineID uint,
+	node *models.MetaNode,
+	itemType, name, fullName string,
+	attrs models.JSONMap,
+	rowCount, sizeBytes *int64,
+	dataUpdated *time.Time,
+	scanDepth string,
+) (*models.MetaItem, error) {
+	if itemID == 0 {
+		return nil, fmt.Errorf("item_id is required")
+	}
+	if node == nil {
+		return nil, fmt.Errorf("parent node is required")
+	}
+
+	var item models.MetaItem
+	if err := r.db.Where("tenant_id = ? AND id = ?", tenantID, itemID).First(&item).Error; err != nil {
+		return nil, err
+	}
+
+	attrs = metaattr.Normalize(attrs)
+	now := time.Now()
+	scannedDepth := mergeScannedDepth(item.ScannedDepth, scanDepth)
+	updates := map[string]interface{}{
+		"engine_id":       engineID,
+		"node_id":         node.ID,
+		"item_type":       itemType,
+		"name":            name,
+		"full_name":       fullName,
+		"row_count":       rowCount,
+		"size_bytes":      sizeBytes,
+		"data_updated_at": dataUpdated,
+		"scanned_at":      &now,
+		"scanned_depth":   scannedDepth,
+		"attributes":      attrs,
+		"deleted_at":      nil,
+	}
+	if err := r.db.Model(&item).Updates(updates).Error; err != nil {
+		return nil, err
+	}
+
+	item.EngineID = engineID
+	item.NodeID = node.ID
+	item.ItemType = itemType
+	item.Name = name
+	item.FullName = fullName
+	item.RowCount = rowCount
+	item.SizeBytes = sizeBytes
+	item.DataUpdatedAt = dataUpdated
+	item.ScannedAt = &now
+	item.ScannedDepth = scannedDepth
+	item.Attributes = attrs
+	item.DeletedAt = gorm.DeletedAt{}
+	return &item, nil
 }
 
 // UpsertItemSelective 选择性更新数据项

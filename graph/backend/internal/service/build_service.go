@@ -166,6 +166,7 @@ func (s *BuildService) RunTask(ctx context.Context, taskID, graphID, tenantID, u
 		ExecutionID:    executionID,
 		Module:         commonExecution.ModuleGraph,
 		TaskType:       commonExecution.TaskTypeKGBuild,
+		Source:         commonExecution.ModuleGraph,
 		SourceTaskID:   &srcID,
 		SourceTaskName: &task.Name,
 		Status:         commonExecution.ExecutionStatusPending,

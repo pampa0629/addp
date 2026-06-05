@@ -2,7 +2,7 @@
 
 ## 表结构概览
 
-`metadata.meta_item` 表是数据项表，存储表、对象、文件系统叶子资源等具体数据项的元数据。文件 / 对象 / 目录只表示 catalog 或 storage 形态，不是 `data_type=file`。
+`meta.meta_item` 表是数据项表，存储表、对象、文件系统叶子资源等具体数据项的元数据。文件 / 对象 / 目录只表示 catalog 或 storage 形态，不是 `data_type=file`。
 
 ### 核心字段
 

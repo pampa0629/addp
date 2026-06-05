@@ -39,6 +39,14 @@ func NewMetadataQueryService(db *gorm.DB, spatialService *SpatialMetadataService
 // 通用元数据查询接口
 // ============================================================================
 
+func (s *MetadataQueryService) CountItems(tenantID uint) (int64, error) {
+	var itemCount int64
+	if err := s.db.Table("meta.meta_item").Where("tenant_id = ?", tenantID).Count(&itemCount).Error; err != nil {
+		return 0, err
+	}
+	return itemCount, nil
+}
+
 func (s *MetadataQueryService) ListItemsByEngine(engineID, tenantID uint) ([]models.MetaItemLite, error) {
 	var items []models.MetaItem
 
@@ -127,7 +135,7 @@ func (s *MetadataQueryService) GetMetadataTree(tenantID, engineID uint) (*models
 
 	// 查询所有项（只返回 node_id 存在于 meta_node 中的 items，过滤孤立记录）
 	var items []models.MetaItem
-	if err := s.db.Where("tenant_id = ? AND engine_id = ? AND deleted_at IS NULL AND node_id IN (SELECT id FROM metadata.meta_node WHERE tenant_id = ? AND engine_id = ? AND deleted_at IS NULL)",
+	if err := s.db.Where("tenant_id = ? AND engine_id = ? AND deleted_at IS NULL AND node_id IN (SELECT id FROM meta.meta_node WHERE tenant_id = ? AND engine_id = ? AND deleted_at IS NULL)",
 		tenantID, engineID, tenantID, engineID).
 		Find(&items).Error; err != nil {
 		return nil, fmt.Errorf("failed to query items: %w", err)
@@ -168,7 +176,7 @@ func (s *MetadataQueryService) ensureEngineCatalogRoot(tenantID, engineID uint) 
 	if err != nil {
 		return fmt.Errorf("unsupported engine type %s: %w", resource.EngineType, err)
 	}
-	if _, err := ensureCatalogRootNode(s.repo, tenantID, resource, enginePlugin); err != nil {
+	if _, err := metaRepo.EnsureCatalogRootNode(s.repo, tenantID, resource, enginePlugin); err != nil {
 		return fmt.Errorf("failed to ensure catalog root: %w", err)
 	}
 	if err := s.repo.HardDeleteInvalidEngineGraph(tenantID, engineID); err != nil {

@@ -11,7 +11,12 @@
         <el-tag size="small">{{ row.module }}</el-tag>
       </template>
     </el-table-column>
-    <el-table-column prop="execution_type" :label="t('monitor.table.execution_type')" width="120" />
+    <el-table-column prop="source" :label="t('monitor.table.source')" width="120">
+      <template #default="{ row }">
+        <el-tag size="small" type="info">{{ row.source || '-' }}</el-tag>
+      </template>
+    </el-table-column>
+    <el-table-column prop="task_type" :label="t('monitor.table.task_type')" width="120" />
     <el-table-column prop="status" :label="t('monitor.table.status')" width="100">
       <template #default="{ row }">
         <el-tag :type="getStatusType(row.status)" size="small">
@@ -19,7 +24,11 @@
         </el-tag>
       </template>
     </el-table-column>
-    <el-table-column prop="trigger_type" :label="t('monitor.table.trigger_type')" width="100" />
+    <el-table-column prop="trigger_type" :label="t('monitor.table.trigger_type')" width="110">
+      <template #default="{ row }">
+        {{ getTriggerText(row.trigger_type) }}
+      </template>
+    </el-table-column>
     <el-table-column prop="progress" :label="t('monitor.table.progress')" width="120">
       <template #default="{ row }">
         <el-progress :percentage="row.progress || 0" :status="getProgressStatus(row.status)" />
@@ -81,6 +90,14 @@ function getStatusText(status) {
     cancelled: t('monitor.execution.status.cancelled'),
   }
   return textMap[status] || status
+}
+
+function getTriggerText(triggerType) {
+  const textMap = {
+    manual: t('monitor.execution.trigger.manual'),
+    scheduled: t('monitor.execution.trigger.scheduled')
+  }
+  return textMap[triggerType] || triggerType || '-'
 }
 
 function getProgressStatus(status) {

@@ -384,9 +384,10 @@ graph TB
 | **模块健康检查** | 检查各模块的任务执行状态,识别异常模块 |
 
 **统一执行表 (common.task_executions)**:
-- **跨模块统一**: Transfer、Develop、Orchestrator 三个模块的执行记录统一存储
+- **跨模块统一**: Meta、Transfer、Develop、Orchestrator、Manager、Quality、Graph 等模块的执行记录统一存储
 - **灵活字段**: 使用 JSONB 字段存储模块特有数据 (execution_config, result, error_details)
 - **性能优化**: 多层索引 (租户+状态、模块+类型、时间降序、JSONB GIN)
+- **来源审计**: 通过 source 记录触发来源模块，trigger_type 只表达 manual / scheduled
 - **数据血缘**: 通过 module + source_task_id 关联原始任务定义
 
 ---

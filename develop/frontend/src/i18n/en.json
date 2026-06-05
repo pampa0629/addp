@@ -395,9 +395,7 @@
       "statusTimeout": "Timeout",
       "statusCancelled": "Cancelled",
       "triggerManual": "Manual",
-      "triggerSchedule": "Schedule",
-      "triggerOrchestrator": "Orchestrator",
-      "triggerApi": "API"
+      "triggerSchedule": "Scheduled"
     },
     "executionDetail": {
       "title": "Execution Detail",

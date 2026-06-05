@@ -89,14 +89,14 @@ graph TB
 
         DB --> Schema1[Schema: system]
         DB --> Schema2[Schema: manager]
-        DB --> Schema3[Schema: metadata]
+        DB --> Schema3[Schema: meta]
 
         Schema1 --> Users[users 表<br/>tenant_id 字段]
         Schema1 --> Engines[engines 表<br/>tenant_id 字段]
 
         Schema2 --> Datasources[datasources 表<br/>tenant_id 字段]
 
-        Schema3 --> Metadata[metadata 表<br/>tenant_id 字段]
+        Schema3 --> Metadata[meta 表<br/>tenant_id 字段]
     end
 
     subgraph "对象存储层隔离"

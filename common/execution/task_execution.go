@@ -1,6 +1,8 @@
 package execution
 
 import (
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/addp/common/models"
@@ -16,8 +18,9 @@ type TaskExecution struct {
 	ExecutionID string `gorm:"size:255;uniqueIndex;not null" json:"execution_id"` // UUID 全局唯一
 
 	// 模块标识
-	Module   string `gorm:"size:50;not null;index:idx_task_executions_module_type" json:"module"`     // 'transfer'/'develop'/'orchestrator'/'manager'
-	TaskType string `gorm:"size:100;not null;index:idx_task_executions_module_type" json:"task_type"` // 'import'/'export'/'sync'/'query'/'workflow'/'notebook'/'orchestration'/'mvt_generation'/'embedding'
+	Module   string `gorm:"size:50;not null;index:idx_task_executions_module_type" json:"module"`       // 'transfer'/'develop'/'orchestrator'/'manager'
+	TaskType string `gorm:"size:100;not null;index:idx_task_executions_module_type" json:"task_type"`   // 'import'/'export'/'sync'/'query'/'workflow'/'notebook'/'orchestration'/'mvt_generation'/'embedding'
+	Source   string `gorm:"size:50;not null;default:'';index:idx_task_executions_source" json:"source"` // 触发来源模块
 
 	// 关联原始任务
 	SourceTaskID   *int    `json:"source_task_id,omitempty"`                   // 关联各模块的任务ID
@@ -32,7 +35,7 @@ type TaskExecution struct {
 	CurrentStep *string `gorm:"size:255" json:"current_step,omitempty"`                                 // 当前步骤（Orchestrator/Workflow）
 
 	// 触发信息
-	TriggerType string `gorm:"size:50;not null;index:idx_task_executions_trigger_type" json:"trigger_type"` // 'manual'/'schedule'/'api'/'orchestrator'
+	TriggerType string `gorm:"size:50;not null;index:idx_task_executions_trigger_type" json:"trigger_type"` // 'manual'/'scheduled'
 	TriggeredBy *int   `json:"triggered_by,omitempty"`                                                      // 触发用户ID
 
 	// JSONB 字段
@@ -79,15 +82,33 @@ const (
 	ModuleQuality      = "quality"
 	ModuleManager      = "manager"
 	ModuleGraph        = "graph"
+	ModuleSystem       = "system"
+	ModuleMonitor      = "monitor"
+	ModuleStandard     = "standard"
+	ModuleModel        = "model"
+	ModuleAsset        = "asset"
+	ModulePortal       = "portal"
+	ModuleService      = "service"
 )
 
 // 触发类型常量
 const (
-	TriggerTypeManual       = "manual"
-	TriggerTypeSchedule     = "schedule"
-	TriggerTypeAPI          = "api"
-	TriggerTypeOrchestrator = "orchestrator"
+	TriggerTypeManual    = "manual"
+	TriggerTypeScheduled = "scheduled"
 )
+
+func NormalizeTriggerType(triggerType string) (string, error) {
+	normalized := strings.ToLower(strings.TrimSpace(triggerType))
+	if normalized == "" {
+		return TriggerTypeManual, nil
+	}
+	switch normalized {
+	case TriggerTypeManual, TriggerTypeScheduled:
+		return normalized, nil
+	default:
+		return "", fmt.Errorf("unsupported trigger_type %q: use manual or scheduled", triggerType)
+	}
+}
 
 // TaskType 常量（各模块使用）
 const (

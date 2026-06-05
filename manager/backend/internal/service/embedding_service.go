@@ -237,6 +237,7 @@ func (s *EmbeddingService) EmbedDirectory(ctx context.Context, req EmbedDirector
 		TenantID:    tenantIDInt,
 		Module:      commonExecution.ModuleManager,
 		TaskType:    "embedding",
+		Source:      commonExecution.ModuleManager,
 		Status:      commonExecution.ExecutionStatusRunning,
 		TriggerType: commonExecution.TriggerTypeManual,
 		StartedAt:   &startTime,

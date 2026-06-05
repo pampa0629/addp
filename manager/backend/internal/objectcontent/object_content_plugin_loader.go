@@ -218,7 +218,7 @@ func buildJSONContentHandler(cfg ObjectContentPluginConfig) ObjectContentHandler
 		baseContentHandler: baseContentHandler{
 			name:     cfg.Name,
 			priority: cfg.priorityOr(defaultBuiltinContentPriority(models.ObjectPreviewKindJSON)),
-			matcher:  descriptorObjectContentMatcher(cfg.Match, commonformat.FormatJSON, nil, nil),
+			matcher:  descriptorObjectContentMatcher(cfg.Match, commonformat.FormatJSON, []commonformat.FormatType{commonformat.FormatGeoJSON}, nil),
 		},
 		maxBytes: cfg.maxBytesOr(maxJSONPreviewBytes),
 		kind:     models.ObjectPreviewKindJSON,
@@ -398,6 +398,9 @@ func tableObjectContentMatcher(match ObjectContentMatcherConfig) objectContentMa
 	extensions := make([]string, 0)
 	contentTypes := make([]string, 0)
 	for _, descriptor := range commonformat.ListFormatDescriptors() {
+		if descriptor.Format == commonformat.FormatGeoJSON {
+			continue
+		}
 		if descriptor.DataType != commondatatype.Table || !hasSingleTableContentProviders(descriptor.Format) {
 			continue
 		}

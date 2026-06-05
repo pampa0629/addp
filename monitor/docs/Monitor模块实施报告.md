@@ -33,8 +33,9 @@ CREATE TABLE common.task_executions (
     execution_id VARCHAR(255) UNIQUE NOT NULL,  -- UUID 全局唯一
 
     -- 模块标识
-    module VARCHAR(50) NOT NULL,                -- 'transfer'/'develop'/'orchestrator'
-    execution_type VARCHAR(100) NOT NULL,       -- 执行类型
+    module VARCHAR(50) NOT NULL,                -- 'meta'/'transfer'/'develop'/'orchestrator'/...
+    task_type VARCHAR(100) NOT NULL,            -- 任务类型
+    source VARCHAR(50) NOT NULL,                -- 触发来源模块
 
     -- 关联原始任务
     source_task_id BIGINT,
@@ -122,10 +123,11 @@ monitor/
 **执行记录查询** (`/api/v1/executions`):
 - `page`: 页码 (默认: 1)
 - `page_size`: 每页大小 (默认: 20)
-- `module`: 模块过滤 (`transfer`/`develop`/`orchestrator`)
+- `module`: 模块过滤 (`meta`/`transfer`/`develop`/`orchestrator`/...)
+- `source`: 触发来源模块过滤
 - `status`: 状态过滤 (`pending`/`running`/`success`/`failed`)
-- `execution_type`: 执行类型过滤
-- `trigger_type`: 触发方式过滤 (`manual`/`schedule`/`api`)
+- `task_type`: 任务类型过滤
+- `trigger_type`: 触发方式过滤 (`manual`/`scheduled`)
 
 **统计数据** (`/api/v1/executions/stats`):
 - `duration`: 时间范围 (`24h`/`7d`/`30d`, 默认: `24h`)
@@ -158,20 +160,23 @@ monitor/
     {
       "id": 3,
       "module": "transfer",
-      "execution_type": "transfer",
+      "task_type": "transfer",
+      "source": "transfer",
       "status": "failed",
       "execution_time_ms": 162
     },
     {
       "id": 2,
       "module": "transfer",
-      "execution_type": "transfer",
+      "task_type": "transfer",
+      "source": "transfer",
       "status": "pending"
     },
     {
       "id": 1,
       "module": "develop",
-      "execution_type": "query",
+      "task_type": "query",
+      "source": "develop",
       "status": "success",
       "execution_time_ms": 45,
       "rows_affected": 1
@@ -332,7 +337,8 @@ GO_MODULES=(
 |---------|-----------|------|
 | `task_id` | `source_task_id` | 任务ID |
 | - | `module` | 固定值 "transfer" |
-| - | `execution_type` | 从 task.type 获取 |
+| - | `task_type` | 从 task.type 获取 |
+| - | `source` | 默认 "transfer" |
 | `records_read` | `records_read` | 读取记录数 |
 | `checkpoint_offset` | `checkpoint_offset` | 断点续传偏移 |
 
@@ -341,7 +347,8 @@ GO_MODULES=(
 | 旧表字段 | 统一表字段 | 说明 |
 |---------|-----------|------|
 | `dev_item_id` | `source_task_id` | 开发项ID |
-| `dev_type` | `execution_type` | query/workflow/notebook |
+| `dev_type` | `task_type` | query/workflow/notebook |
+| - | `source` | 默认 "develop" |
 | `execution_id` | `execution_id` | UUID (已有) |
 | `inputs` | `execution_config` | 执行配置 |
 

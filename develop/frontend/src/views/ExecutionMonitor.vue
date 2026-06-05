@@ -48,9 +48,7 @@
           style="width: 120px; margin-right: 10px;"
         >
           <el-option :label="t('develop.execution.triggerManual')" value="manual" />
-          <el-option :label="t('develop.execution.triggerSchedule')" value="schedule" />
-          <el-option :label="t('develop.execution.triggerOrchestrator')" value="orchestrator" />
-          <el-option label="API" value="api" />
+          <el-option :label="t('develop.execution.triggerSchedule')" value="scheduled" />
         </el-select>
         <el-date-picker
           v-model="dateRange"
@@ -373,9 +371,7 @@ const getProgressStatus = (status) => {
 const getTriggerLabel = (trigger) => {
   const labels = {
     manual: t('develop.execution.triggerManual'),
-    schedule: t('develop.execution.triggerSchedule'),
-    orchestrator: t('develop.execution.triggerOrchestrator'),
-    api: 'API'
+    scheduled: t('develop.execution.triggerSchedule')
   }
   return labels[trigger] || trigger
 }

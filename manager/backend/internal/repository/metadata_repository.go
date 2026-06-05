@@ -13,7 +13,7 @@ import (
 	"gorm.io/gorm"
 )
 
-var ErrMetadataSchemaMissing = errors.New("metadata schema not initialized")
+var ErrMetadataSchemaMissing = errors.New("meta schema not initialized")
 
 type MetadataRepository struct {
 	db            *gorm.DB

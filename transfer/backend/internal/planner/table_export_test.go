@@ -9,6 +9,7 @@ import (
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/plugins/csv"
+	_ "github.com/addp/common/format/plugins/geojson"
 	_ "github.com/addp/common/format/plugins/json"
 	_ "github.com/addp/common/format/plugins/parquet"
 	_ "github.com/addp/common/format/plugins/pdf"
@@ -293,7 +294,6 @@ func TestBuildTableTransferPlanAppendsLogicalJSONTargetExtensions(t *testing.T) 
 	}{
 		{name: "json array", options: map[string]interface{}{"json_mode": "array"}, want: "exports/roads.json"},
 		{name: "json lines", options: map[string]interface{}{"json_mode": "jsonl"}, want: "exports/roads.jsonl"},
-		{name: "geojson", options: map[string]interface{}{"spatial.target_encoding": "geojson"}, want: "exports/roads.geojson"},
 	}
 
 	for _, tt := range tests {
@@ -314,6 +314,23 @@ func TestBuildTableTransferPlanAppendsLogicalJSONTargetExtensions(t *testing.T) 
 				t.Fatalf("target path = %q, want %s", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestBuildTableTransferPlanAppendsGeoJSONTargetExtension(t *testing.T) {
+	spec := minimalNativeToEncodedSpec()
+	spec.Target.Format = format.FormatGeoJSON
+	spec.Target.Locator = fileLocator(2, "exports/roads")
+
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		1: {Type: "postgresql"},
+		2: {Type: "nfs"},
+	})
+	if err != nil {
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
+	}
+	if got := result.Plan.Target.Path.StringPath(); got != "exports/roads.geojson" {
+		t.Fatalf("target path = %q, want exports/roads.geojson", got)
 	}
 }
 
@@ -338,13 +355,12 @@ func TestBuildTableTransferPlanAllowsJSONTableWriter(t *testing.T) {
 	}
 }
 
-func TestBuildTableTransferPlanPassesGeoJSONReadOptions(t *testing.T) {
+func TestBuildTableTransferPlanPassesGeoJSONWriteOptions(t *testing.T) {
 	spec := minimalNativeToEncodedSpec()
-	spec.Target.Format = format.FormatJSON
+	spec.Target.Format = format.FormatGeoJSON
 	spec.Target.Locator = fileLocator(2, "exports/roads.geojson")
 	spec.Target.Options = map[string]interface{}{
-		"spatial.target_encoding": "geojson",
-		"geometry_field":          "geom",
+		"geometry_field": "geom",
 	}
 
 	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
@@ -354,7 +370,13 @@ func TestBuildTableTransferPlanPassesGeoJSONReadOptions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildTableTransferPlan failed: %v", err)
 	}
-	if result.Plan.Source.ReadOptions["spatial.target_encoding"] != "geojson" || result.Plan.Source.ReadOptions["geometry_field"] != "geom" {
+	if result.Plan.Target.Format != format.FormatGeoJSON {
+		t.Fatalf("target format = %q, want geojson", result.Plan.Target.Format)
+	}
+	if result.Plan.Target.FormatOptions == nil || result.Plan.Target.FormatOptions.ExtraParams["geometry_field"] != "geom" {
+		t.Fatalf("write options = %#v, want geojson geometry write options", result.Plan.Target.FormatOptions)
+	}
+	if result.Plan.Source.ReadOptions["geometry_encoding"] != "geojson" || result.Plan.Source.ReadOptions["geometry_field"] != "geom" {
 		t.Fatalf("read options = %#v, want geojson geometry read options", result.Plan.Source.ReadOptions)
 	}
 }

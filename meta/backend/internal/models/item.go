@@ -27,7 +27,7 @@ type MetaItem struct {
 }
 
 func (MetaItem) TableName() string {
-	return "metadata.meta_item"
+	return "meta.meta_item"
 }
 
 // SpatialMetadata 空间表元数据（用于 attributes 字段存储）

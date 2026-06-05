@@ -38,8 +38,8 @@ graph TB
         end
 
         subgraph "血缘存储层"
-            Nodes[metadata.lineage_nodes<br/>血缘节点]
-            Edges[metadata.lineage_edges<br/>血缘关系]
+            Nodes[meta.lineage_nodes<br/>血缘节点]
+            Edges[meta.lineage_edges<br/>血缘关系]
         end
 
         subgraph "血缘查询层"
@@ -73,12 +73,12 @@ graph TB
 
 ## 三、数据模型设计
 
-**复用现有 `metadata` Schema，新增血缘相关表**。
+**复用现有 `meta` Schema，新增血缘相关表**。
 
 ```sql
--- metadata.lineage_nodes: 血缘节点
+-- meta.lineage_nodes: 血缘节点
 -- 节点可以是表、字段、任务或外部数据源
-CREATE TABLE metadata.lineage_nodes (
+CREATE TABLE meta.lineage_nodes (
     id              BIGSERIAL PRIMARY KEY,
     tenant_id       BIGINT NOT NULL,
     node_type       VARCHAR(30) NOT NULL,        -- table/field/job/external
@@ -88,7 +88,7 @@ CREATE TABLE metadata.lineage_nodes (
     schema_name     VARCHAR(200),
     table_name      VARCHAR(200),
     column_name     VARCHAR(200),                -- 仅 field 类型
-    meta_item_id    BIGINT,                      -- 关联 metadata.meta_item（可选）
+    meta_item_id    BIGINT,                      -- 关联 meta.meta_item（可选）
     properties      JSONB,                       -- 扩展属性
     created_at      TIMESTAMPTZ DEFAULT NOW(),
     updated_at      TIMESTAMPTZ DEFAULT NOW(),
@@ -96,15 +96,15 @@ CREATE TABLE metadata.lineage_nodes (
     UNIQUE(tenant_id, node_key)
 );
 
-CREATE INDEX idx_lineage_nodes_type ON metadata.lineage_nodes(tenant_id, node_type);
-CREATE INDEX idx_lineage_nodes_table ON metadata.lineage_nodes(tenant_id, engine_id, table_name);
+CREATE INDEX idx_lineage_nodes_type ON meta.lineage_nodes(tenant_id, node_type);
+CREATE INDEX idx_lineage_nodes_table ON meta.lineage_nodes(tenant_id, engine_id, table_name);
 
--- metadata.lineage_edges: 血缘关系（有向边）
-CREATE TABLE metadata.lineage_edges (
+-- meta.lineage_edges: 血缘关系（有向边）
+CREATE TABLE meta.lineage_edges (
     id              BIGSERIAL PRIMARY KEY,
     tenant_id       BIGINT NOT NULL,
-    source_node_id  BIGINT NOT NULL REFERENCES metadata.lineage_nodes(id) ON DELETE CASCADE,
-    target_node_id  BIGINT NOT NULL REFERENCES metadata.lineage_nodes(id) ON DELETE CASCADE,
+    source_node_id  BIGINT NOT NULL REFERENCES meta.lineage_nodes(id) ON DELETE CASCADE,
+    target_node_id  BIGINT NOT NULL REFERENCES meta.lineage_nodes(id) ON DELETE CASCADE,
     edge_type       VARCHAR(30) NOT NULL,        -- transform（转换）/ copy（复制）/ reference（引用）/ aggregation（聚合）
     job_type        VARCHAR(30),                 -- sql_query/transfer/workflow/orchestration（产生血缘的操作类型）
     job_id          VARCHAR(100),                -- 关联任务 ID（如 Transfer 任务 ID）
@@ -116,9 +116,9 @@ CREATE TABLE metadata.lineage_edges (
     UNIQUE(tenant_id, source_node_id, target_node_id, job_type, job_id)
 );
 
-CREATE INDEX idx_lineage_edges_source ON metadata.lineage_edges(tenant_id, source_node_id);
-CREATE INDEX idx_lineage_edges_target ON metadata.lineage_edges(tenant_id, target_node_id);
-CREATE INDEX idx_lineage_edges_job ON metadata.lineage_edges(tenant_id, job_type, job_id);
+CREATE INDEX idx_lineage_edges_source ON meta.lineage_edges(tenant_id, source_node_id);
+CREATE INDEX idx_lineage_edges_target ON meta.lineage_edges(tenant_id, target_node_id);
+CREATE INDEX idx_lineage_edges_job ON meta.lineage_edges(tenant_id, job_type, job_id);
 ```
 
 ---
@@ -386,7 +386,7 @@ GET /api/meta/lineage/path?source_engine_id=2&source_table=orders&target_engine_
 ## 八、实施优先级
 
 ### Phase 1（MVP - Transfer 血缘）
-- [ ] 新增 `metadata.lineage_nodes` 和 `metadata.lineage_edges` 表
+- [ ] 新增 `meta.lineage_nodes` 和 `meta.lineage_edges` 表
 - [ ] 订阅 Transfer 执行完成事件，自动采集表级血缘
 - [ ] 血缘上游/下游查询 API
 - [ ] Meta 前端新增"血缘图谱"页面（antv/g6）

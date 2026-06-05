@@ -33,7 +33,7 @@ CREATE SCHEMA IF NOT EXISTS manager;
 CREATE EXTENSION IF NOT EXISTS vector SCHEMA manager;
 
 -- Meta 模块 (元数据节点、元数据条目、扫描任务)
-CREATE SCHEMA IF NOT EXISTS metadata;
+CREATE SCHEMA IF NOT EXISTS meta;
 
 -- Transfer 模块 (数据传输任务、执行记录、字段映射)
 CREATE SCHEMA IF NOT EXISTS transfer;
@@ -80,7 +80,7 @@ $$ language 'plpgsql';
 -- ==================== 注释 ====================
 COMMENT ON SCHEMA system IS 'System 模块：用户、租户、引擎、应用、API密钥等核心系统数据';
 COMMENT ON SCHEMA manager IS 'Manager 模块：搜索历史、向量嵌入、快显缓存等数据管理功能';
-COMMENT ON SCHEMA metadata IS 'Meta 模块：元数据节点、元数据条目、扫描任务等元数据服务';
+COMMENT ON SCHEMA meta IS 'Meta 模块：元数据节点、元数据条目、扫描任务等元数据服务';
 COMMENT ON SCHEMA transfer IS 'Transfer 模块：数据传输任务、执行记录、字段映射等';
 COMMENT ON SCHEMA develop IS 'Develop 模块：SQL脚本、空间任务、执行结果等开发工作台功能';
 COMMENT ON SCHEMA orchestrator IS 'Orchestrator 模块：工作流编排相关表';

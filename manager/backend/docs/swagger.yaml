@@ -306,7 +306,7 @@ definitions:
         description: 父执行ID（Orchestrator 调用时传入）
         type: string
       trigger_type:
-        description: manual|schedule|api|orchestrator，默认 manual
+        description: manual|scheduled，默认 manual
         type: string
     type: object
   internal_api.TileConfigResponse:

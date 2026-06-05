@@ -715,7 +715,8 @@ func (h *jsonContentHandler) Handle(ctx context.Context, req *ObjectContentReque
 			Truncated: truncated,
 		}), truncated, nil
 	}
-	if preview, ok := buildSpatialJSONPreview(ctx, []byte(text), parsed); ok {
+	formatType := detectJSONContentFormat(req, []byte(text))
+	if preview, ok := buildSpatialJSONPreview(ctx, formatType, []byte(text), parsed); ok {
 		preview.Truncated = truncated
 		return decoratePreviewContent(preview), truncated, nil
 	}
@@ -726,13 +727,34 @@ func (h *jsonContentHandler) Handle(ctx context.Context, req *ObjectContentReque
 	}), truncated, nil
 }
 
-func buildSpatialJSONPreview(ctx context.Context, data []byte, parsed interface{}) (*models.ObjectPreviewContent, bool) {
+func detectJSONContentFormat(req *ObjectContentRequest, peek []byte) format.FormatType {
+	if req != nil {
+		if detected := format.DetectFormat(req.Name, peek); detected != format.FormatUnknown {
+			return detected
+		}
+		if detected := format.DetectFormat("file"+req.Extension, peek); detected != format.FormatUnknown {
+			return detected
+		}
+		if detected := format.MIMEToFormat(req.ContentType); detected != format.FormatUnknown {
+			return detected
+		}
+		if normalized := format.NormalizeFormat(req.Format); normalized != format.FormatUnknown {
+			return normalized
+		}
+	}
+	if detected := format.DetectFormat("", peek); detected != format.FormatUnknown {
+		return detected
+	}
+	return format.FormatJSON
+}
+
+func buildSpatialJSONPreview(ctx context.Context, formatType format.FormatType, data []byte, parsed interface{}) (*models.ObjectPreviewContent, bool) {
 	opts := format.DefaultParseOptions()
-	infoProvider, err := format.GetTableInfoProvider(format.FormatJSON)
+	infoProvider, err := format.GetTableInfoProvider(formatType)
 	if err != nil {
 		return nil, false
 	}
-	sampleReader, err := format.GetTableSampleReader(format.FormatJSON)
+	sampleReader, err := format.GetTableSampleReader(formatType)
 	if err != nil {
 		return nil, false
 	}

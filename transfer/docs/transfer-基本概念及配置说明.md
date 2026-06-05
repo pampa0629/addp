@@ -83,7 +83,7 @@ checkpoint 当前用于 progress / diagnostics，不表示可从 checkpoint 自�
 | `locator` | 是 | common resource tree 使用的 ResourceLocator URI，包含 engine id、catalog path 和 `type`。 |
 | `data_type` | 是 | table Transfer 使用 `table`；raw copy 第一版支持 `document`、`media`、`unknown`。 |
 | `representation` | 是 | `native` 或 `encoded`。 |
-| `format` | encoded 必填 | encoded endpoint 的格式，如 `csv`、`json`、`parquet`、`shapefile`。 |
+| `format` | encoded 必填 | encoded endpoint 的格式，如 `csv`、`json`、`geojson`、`parquet`、`shapefile`。 |
 | `options` | 否 | 格式或读取写入选项。 |
 | `policy` | target 可选 | 目标写入策略。 |
 
@@ -116,7 +116,8 @@ Transfer 不为 PostgreSQL -> PostgreSQL、NFS -> MinIO、MinIO -> NFS 等具体
 | 格式 | 支持形态 |
 |---|---|
 | CSV / TSV | single table read / write。 |
-| JSON / JSONL | single table read / write；GeoJSON 使用 JSON format + spatial encoding。 |
+| JSON / JSONL | single table read / write；JSONL 是 `json` 的用户侧编码变体。 |
+| GeoJSON | single table read / write；独立 `format=geojson`，空间事实由解析结果表达为 `capabilities.spatial`。 |
 | Parquet | single table read / write；whole scope dataset read；支持 field_selection 下推。 |
 | Shapefile | multi table read / write；完整 refs 由 format specs 或 Meta attributes 提供。 |
 
@@ -234,6 +235,8 @@ overwrite / append 是 Transfer policy，不进入 common engine。`TableWritePr
 ## 八、写后 Meta 扫描
 
 成功写入后，如果 `auto_scan_metadata=true`，Transfer 触发 Meta deep scan。
+
+Transfer 不直接推导目标文件 attributes。GeoJSON 导出目标使用独立 `format=geojson` 写出；写后扫描由 Meta 按统一格式探测和 GeoJSON provider 解析目标内容，负责写入 `type_info.table`、`format_info.geojson` 和实际存在的 `capabilities.spatial`。
 
 扫描目标为目标资源所在容器：
 

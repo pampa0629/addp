@@ -16,6 +16,10 @@ paths:
         in: query
         name: task_type
         type: string
+      - description: 触发来源模块 | Source module
+        in: query
+        name: source
+        type: string
       - description: 执行状态 | Status
         in: query
         name: status

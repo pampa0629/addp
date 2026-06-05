@@ -7,6 +7,7 @@ import (
 
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
+	"github.com/addp/meta/internal/scanflow"
 )
 
 func TestNewManualExecution(t *testing.T) {
@@ -17,6 +18,7 @@ func TestNewManualExecution(t *testing.T) {
 		3,
 		9,
 		7,
+		1831,
 		"postgres",
 		[]string{"public"},
 		[]models.ScanRefGroup{{Primary: "bucket/path/roads.shp"}},
@@ -33,7 +35,7 @@ func TestNewManualExecution(t *testing.T) {
 	if exec.TriggeredBy == nil || *exec.TriggeredBy != 9 {
 		t.Fatalf("triggered_by = %#v", exec.TriggeredBy)
 	}
-	if exec.ExecutionConfig["engine_id"] != uint(7) || exec.ExecutionConfig["scan_depth"] != "basic" {
+	if exec.ExecutionConfig["engine_id"] != uint(7) || exec.ExecutionConfig["item_id"] != uint(1831) || exec.ExecutionConfig["scan_depth"] != "basic" {
 		t.Fatalf("execution config = %#v", exec.ExecutionConfig)
 	}
 	if exec.ExecutionConfig["source"] != "transfer" {
@@ -50,9 +52,9 @@ func TestNewScheduledExecutionUsesTargets(t *testing.T) {
 
 	now := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
 	task := &models.ScanTask{ID: 11, TenantID: 3, EngineID: 7, Name: "daily"}
-	exec := NewScheduledExecution(task, "s3", TargetSet{CatalogPaths: []string{"bucket/prefix"}}, now)
+	exec := NewScheduledExecution(task, "s3", scanflow.TargetSet{ScopeType: "catalog_path", CatalogPaths: []string{"bucket/prefix"}}, now, now)
 
-	if exec.TriggerType != commonExecution.TriggerTypeSchedule {
+	if exec.TriggerType != models.TriggerTypeScheduled {
 		t.Fatalf("trigger_type = %q", exec.TriggerType)
 	}
 	if exec.SourceTaskID == nil || *exec.SourceTaskID != 11 {
@@ -60,6 +62,12 @@ func TestNewScheduledExecutionUsesTargets(t *testing.T) {
 	}
 	if got := exec.ExecutionConfig["catalog_paths"]; len(got.([]string)) != 1 {
 		t.Fatalf("catalog_paths = %#v", got)
+	}
+	if exec.ExecutionConfig["source"] != "meta" {
+		t.Fatalf("source = %#v", exec.ExecutionConfig["source"])
+	}
+	if exec.ExecutionConfig["planned_run_at"] != now.Format(time.RFC3339Nano) {
+		t.Fatalf("planned_run_at = %#v", exec.ExecutionConfig["planned_run_at"])
 	}
 }
 
@@ -87,9 +95,8 @@ func TestExecutionStatusFields(t *testing.T) {
 		t.Fatalf("extraction metadata = %#v", extraction)
 	}
 
-	next := now.Add(time.Hour)
-	backfill := TaskStatusBackfillFields("exec-1", commonExecution.ExecutionStatusSuccess, now, &next, now)
-	if backfill["next_run_at"] != next {
+	backfill := TaskStatusBackfillFields("exec-1", commonExecution.ExecutionStatusSuccess, now, now)
+	if _, ok := backfill["next_run_at"]; ok {
 		t.Fatalf("backfill fields = %#v", backfill)
 	}
 }

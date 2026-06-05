@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/addp/meta/internal/models"
+	"github.com/addp/meta/internal/scanflow"
 )
 
 func NormalizeStorageType(resourceType string) string {
@@ -79,25 +80,7 @@ func BoolFromInterfaceWithDefault(raw interface{}, defaultVal bool) bool {
 
 // StringSliceFromInterface 从 interface{} 中提取字符串数组。
 func StringSliceFromInterface(raw interface{}) []string {
-	if raw == nil {
-		return nil
-	}
-	arr, ok := raw.([]interface{})
-	if !ok {
-		if values, ok := raw.([]string); ok {
-			result := make([]string, len(values))
-			copy(result, values)
-			return result
-		}
-		return nil
-	}
-	result := make([]string, 0, len(arr))
-	for _, v := range arr {
-		if s, ok := v.(string); ok {
-			result = append(result, s)
-		}
-	}
-	return result
+	return scanflow.StringSliceFromInterface(raw)
 }
 
 func CloneJSONMap(m models.JSONMap) models.JSONMap {

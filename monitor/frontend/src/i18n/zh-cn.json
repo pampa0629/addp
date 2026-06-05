@@ -16,6 +16,8 @@
       "filter": {
         "module": "模块",
         "module_placeholder": "全部模块",
+        "source": "来源",
+        "source_placeholder": "全部来源",
         "status": "状态",
         "status_placeholder": "全部状态",
         "trigger_type": "触发方式",
@@ -33,15 +35,14 @@
       },
       "trigger": {
         "manual": "手动",
-        "schedule": "定时",
-        "api": "API",
-        "orchestrator": "编排"
+        "scheduled": "定时"
       },
       "detail": {
         "title": "执行详情",
         "id": "执行ID",
         "uuid": "执行UUID",
         "module": "模块",
+        "source": "来源",
         "type": "执行类型",
         "status": "状态",
         "progress": "进度",
@@ -59,7 +60,8 @@
     "table": {
       "id": "ID",
       "module": "模块",
-      "execution_type": "执行类型",
+      "source": "来源",
+      "task_type": "任务类型",
       "status": "状态",
       "trigger_type": "触发方式",
       "progress": "进度",

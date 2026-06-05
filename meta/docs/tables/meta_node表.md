@@ -2,7 +2,7 @@
 
 ## 表结构概览
 
-`metadata.meta_node` 表是元数据层级节点表，存储数据源的层级结构（engine → schema → table/bucket/folder）。
+`meta.meta_node` 表是元数据层级节点表，存储数据源的层级结构（engine → schema → table/bucket/folder）。
 
 ### 核心字段
 

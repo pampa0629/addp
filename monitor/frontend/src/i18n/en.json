@@ -16,6 +16,8 @@
       "filter": {
         "module": "Module",
         "module_placeholder": "All Modules",
+        "source": "Source",
+        "source_placeholder": "All Sources",
         "status": "Status",
         "status_placeholder": "All Statuses",
         "trigger_type": "Trigger",
@@ -33,15 +35,14 @@
       },
       "trigger": {
         "manual": "Manual",
-        "schedule": "Schedule",
-        "api": "API",
-        "orchestrator": "Orchestrator"
+        "scheduled": "Scheduled"
       },
       "detail": {
         "title": "Execution Detail",
         "id": "Execution ID",
         "uuid": "Execution UUID",
         "module": "Module",
+        "source": "Source",
         "type": "Execution Type",
         "status": "Status",
         "progress": "Progress",
@@ -59,7 +60,8 @@
     "table": {
       "id": "ID",
       "module": "Module",
-      "execution_type": "Execution Type",
+      "source": "Source",
+      "task_type": "Task Type",
       "status": "Status",
       "trigger_type": "Trigger",
       "progress": "Progress",

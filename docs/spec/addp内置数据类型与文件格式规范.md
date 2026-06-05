@@ -39,7 +39,7 @@
 | TSV | `single` | `table` | `tsv` | 单资源表格文件 |
 | Excel | `single` | `container` | `excel` | 外层工作簿先作为容器 item |
 | records JSON / JSON Lines | `single` | `table` | `json` | 行列结构 JSON |
-| GeoJSON / FeatureCollection | `single` | `table` | `json` | JSON 格式 + spatial 横切能力 |
+| GeoJSON / FeatureCollection | `single` | `table` | `geojson` | GeoJSON 格式；spatial 为解析后的横切能力 |
 | 任意对象 JSON / 配置 JSON | `single` | `document` 或 `container` | `json` | 按平台消费方式判断 |
 | Shapefile | `multi` | `table` | `shapefile` | 同目录或同 prefix 的同 basename refs |
 | 单个 Parquet | `single` | `table` | `parquet` | 单文件表 |
@@ -124,29 +124,61 @@ Manager 可以基于 `type_info.container.children` 展示 sheet 列表；进入
 |---|---|---|---|
 | records array | `single` | `table` | `json` |
 | JSON Lines | `single` | `table` | `json` |
-| FeatureCollection / GeoJSON 类空间结构 | `single` | `table` | `json` |
 | 任意对象、配置文件、嵌套文档 | `single` | `document` 或 `container` | `json` |
 
-`.json` 后缀不能直接等同于空间格式，也不能直接等同于表格。必须验证内容结构，并按平台消费方式确定 `data_type`。
+`.json` 后缀不能直接等同于表格。必须验证内容结构，并按平台消费方式确定 `data_type`。如果 `.json` 文件内容前缀能严格证明其为 GeoJSON `FeatureCollection`，Meta deep scan 应升格识别为 `format=geojson`，由 GeoJSON 小节处理。
 
 ### attributes 写入
 
 | 分区 | 写入内容 |
 |---|---|
 | `item` | `layout`、`data_type`、`format` |
-| `type_info.table` | records / JSON Lines / FeatureCollection 的字段、行数 |
+| `type_info.table` | records / JSON Lines 的字段、行数 |
 | `type_info.document` | 文档型 JSON 的标题、语言、编码、页数、字数、大小等通用文档结构信息 |
 | `type_info.container` | 容器型 JSON 的内部对象摘要、默认入口、子对象数量 |
-| `format_info.json` | `structure`、编码、对象层级摘要、GeoJSON 原文 `bbox` / `crs` 等格式私有信息 |
-| `capabilities.spatial` | 仅空间结构 JSON 写入几何字段、SRID / CRS、extent 等空间能力 |
+| `format_info.json` | `structure`、编码、对象层级摘要等格式私有信息 |
+| `capabilities.spatial` | 仅记录值中严格解析出 WKB / EWKB 等几何字段时写入空间能力 |
 | `capabilities.statistics` | 是否采样、采样规模、动态结构推断方式等统计或画像事实 |
 
 ### 格式约束
 
-- 不得引入独立顶层 `format=geojson`；GeoJSON 类结构应表达为 `format=json` + `capabilities.spatial`。
 - 不得只按扩展名把 JSON 判为 `table` 或 `spatial`。
+- `.json` 文件中出现严格 GeoJSON `FeatureCollection` 结构时，应识别为 `format=geojson`，不得继续写入 `format_info.json`。
 - 不得把 JSON 私有结构字段写入 `capabilities.spatial`。
-- 插件推导出来的记录数、几何类型、bbox 等归一事实不得写入 `format_info.json`；记录数进入 `type_info.table.row_count`，空间范围进入 `capabilities.spatial.extent`。只有 GeoJSON 原文显式声明的 `bbox` 可作为格式事实保留在 `format_info.json.bbox`。
+- 插件推导出来的记录数、几何类型、bbox 等归一事实不得写入 `format_info.json`；记录数进入 `type_info.table.row_count`，空间范围进入 `capabilities.spatial.extent`。
+
+## GeoJSON
+
+### 识别与组织
+
+| 维度 | 取值 |
+|---|---|
+| `layout` | `single` |
+| `data_type` | `table` |
+| `format` | `geojson` |
+| 主资源 | `meta_item.full_name` 指向 GeoJSON 文件资源 |
+
+GeoJSON 是单资源空间矢量表格式。`.geojson`、`application/geo+json`、`application/vnd.geo+json` 是强识别事实；`.json` 只是普通 JSON 后缀，只有内容前缀严格匹配 GeoJSON `FeatureCollection` 结构时，才识别为 `format=geojson`。Meta deep scan 对 `.json` 表格候选必须读取内容前缀后调用统一格式探测，不得只按后缀固定为 JSON provider。
+
+当前内置 GeoJSON table 只支持 `FeatureCollection.features` 记录集合。单个 `Feature`、`GeometryCollection` 或任意带 `geometry` 字段的 JSON 对象是否进入 GeoJSON table 主路径，需要先补规范再实现。
+
+### attributes 写入
+
+| 分区 | 写入内容 |
+|---|---|
+| `item` | `layout`、`data_type`、`format` |
+| `type_info.table` | `properties` 字段、平台统一几何字段、`row_count` |
+| `format_info.geojson` | `structure`、原文显式 `bbox` / `crs`、属性摘要等 GeoJSON 格式私有事实 |
+| `capabilities.spatial` | 实际记录中发现 geometry 时写入几何字段、SRID / CRS、extent 等空间能力 |
+| `capabilities.statistics` | 是否采样、采样规模、动态结构推断方式等统计或画像事实 |
+
+### 格式约束
+
+- GeoJSON 类似 Shapefile，默认是 `data_type=table`；但 spatial 仍是横切能力，只能来自解析结果。
+- 不得因为 `format=geojson` 直接写入 `capabilities.spatial`。FeatureCollection 没有有效 geometry 时，不写空间能力。
+- 不得把 GeoJSON 私有结构字段写入 `format_info.json`；格式私有事实进入 `format_info.geojson`。
+- 记录数进入 `type_info.table.row_count`，空间范围进入 `capabilities.spatial.extent`。只有 GeoJSON 原文显式声明的 `bbox` 可作为格式事实保留在 `format_info.geojson.bbox`。
+- `format_info.geojson.structure` 应来自 GeoJSON provider 的格式私有事实；`.json` 后缀被升格为 GeoJSON 时，也只能写入 `format_info.geojson`，不得同时写入 `format_info.json`。
 
 ## Shapefile
 
@@ -519,6 +551,8 @@ Manager 文档预览应优先消费 `frontend_renderer`、`preview_material`、`
 `preview_material` 是 Manager 面向前端的展示材料或展示状态协议，取值如 `url`、`raw_binary`、`text`、`json`、`markdown`、`geojson`、`table`、`container`、`unsupported`。它不等同于 `common/format` 的 `content_readers` 声明；不得把 `raw_content`、`range_content`、`binary_content` 等 descriptor 能力名称写入 `preview_material`。
 
 `frontend_renderer` 是 Manager 对前端渲染组件的建议，前端选择预览组件时应按 `frontend_renderer`、`preview_material`、`content.kind` 的顺序兜底。`content.kind` 表示内容的大类，不能替代展示材料协议；例如 `content.kind=json` 且 `preview_material=geojson`、`frontend_renderer=map` 时，应按地图预览处理。
+
+GeoJSON 虽然是 `data_type=table`，但对象内容预览应优先生成 GeoJSON / map 材料，而不是被通用表格内容 handler 抢占。通用表格预览仍可服务 CSV、Parquet、普通 JSON records 等表格材料；GeoJSON map 预览由 Manager 根据 `format=geojson` 或内容探测后的 GeoJSON 事实生成 `preview_material=geojson`。
 
 推荐组合如下：
 

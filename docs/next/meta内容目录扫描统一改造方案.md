@@ -8,7 +8,7 @@
 
 - common engine 层已经用 `CatalogModel`、`CatalogProvider`、`CatalogFactsProvider`、`ContentReadableProvider` 统一表达 object catalog 与 file catalog。
 - `common/dataitem.ResolveItems` 与 `meta/internal/metaitem.ResolveItems` 已经具备 multi / whole / single item 识别能力。
-- Meta 已有 `catalogSingleItemProcessor`，可以统一处理 single item 的 attributes、deep enrich、content hash、extraction、index 和 upsert。
+- Meta 已统一为 `scanprocessor.Processor`，负责处理 item attributes、deep enrich、content hash、extraction、index 和 upsert。
 - 已知 item refresh 已经基于落库 attributes 还原 descriptor，并按 layout 刷新当前 item。
 
 主要问题是：这些能力还没有收敛成统一主链路。object catalog、file catalog、Transfer 触发扫描、item refresh 和任务创建仍在不同位置解析目标、组织 refs、识别 item、构建 attributes 和落库。
@@ -122,7 +122,7 @@ Meta 对外保留少数稳定入口：
 约束：
 
 - `trigger_type` 只允许 `manual` / `scheduled`。
-- `source` 用于记录触发来源，例如 `system_immediate`、`manager_refresh`、`meta_frontend`、`transfer`。
+- `source` 只记录触发模块，例如 `system`、`manager`、`meta`、`transfer`。
 - `catalog_paths` 只表示 engine catalog model 下的路径。
 - `ref_groups` 只表示内容引用边界。
 - 同一批 Transfer 生成物不得同时用父目录 `catalog_paths` 和 `ref_groups` 表达。
@@ -140,7 +140,7 @@ API request
   -> ContentCandidateSet / RefGroupCandidateSet
   -> metaitem.ResolveItems
   -> DetectedItem
-  -> DetectedItemProcessor
+  -> scanprocessor.Processor
   -> metaenrich
   -> metaattr
   -> repository.UpsertItemWithDepth
@@ -200,7 +200,7 @@ file adapter 负责：
 
 ## Persist 收敛方向
 
-现有 `catalogSingleItemProcessor` 应升级为通用 `DetectedItemProcessor`。
+原 `catalogSingleItemProcessor` 目标已收敛为通用 `scanprocessor.Processor`。
 
 统一处理：
 
@@ -332,6 +332,6 @@ bash scripts/swagger/check-route-coverage.sh meta
 - object catalog 和 file catalog 共用 `ContentCatalogScanner` 主链路。
 - object/file adapter 只保留 catalog model、路径、node plan、storage 语义差异。
 - item detection 统一进入 `metaitem.ResolveItems`。
-- single / multi / whole item 统一进入 `DetectedItemProcessor`。
+- single / multi / whole item 统一进入 `scanprocessor.Processor`。
 - 不再存在先生成 sidecar item 再合并、软删的主路径。
 - Shapefile Transfer 输出后 Manager 中只出现一个 Shapefile item。

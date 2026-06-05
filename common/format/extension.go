@@ -11,13 +11,6 @@ import (
 // FormatType, write options may refine the descriptor's default extension.
 func DefaultWriteExtension(formatType FormatType, options *WriteOptions) string {
 	if formatType == FormatJSON {
-		targetEncoding := writeOptionString(options, "spatial.target_encoding")
-		if targetEncoding == "" {
-			targetEncoding = nestedWriteOptionString(options, "spatial", "target_encoding")
-		}
-		if targetEncoding == "geojson" {
-			return ".geojson"
-		}
 		switch writeOptionString(options, "json_mode") {
 		case "jsonl", "lines", "ndjson":
 			return ".jsonl"

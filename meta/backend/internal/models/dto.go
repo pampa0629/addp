@@ -83,6 +83,7 @@ type ScanTaskUpsertRequest struct {
 	Description  string   `json:"description"`
 	EngineID     uint     `json:"engine_id" binding:"required"`
 	CatalogPaths []string `json:"catalog_paths"`
+	Scope        JSONMap  `json:"scope"`
 	ScanDepth    string   `json:"scan_depth"`
 	Force        bool     `json:"force"`
 	Schedule     string   `json:"schedule"` // Cron 表达式，空字符串表示手动执行

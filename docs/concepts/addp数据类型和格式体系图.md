@@ -11,7 +11,7 @@
 
 二者是多对多语义中的常见一对多落点：
 
-- 一个数据类型可以由多种格式承载，例如 `table` 可以来自 CSV、TSV、Parquet、Shapefile、数据库表、JSON FeatureCollection。
+- 一个数据类型可以由多种格式承载，例如 `table` 可以来自 CSV、TSV、Parquet、Shapefile、GeoJSON、数据库表、JSON 记录集合。
 - 一个格式也可能根据内容结构落到不同数据类型，例如 JSON 可以是 table、document 或 container。
 - 数据库表、动态 schema 记录集合、graph 等引擎原生 item 可以没有文件格式，但仍必须有数据类型。
 
@@ -41,7 +41,7 @@ ADDP 只维护一套稳定的数据类型和类型信息语义。各模块不得
 - 数据库表。
 - CSV / TSV。
 - 严格记录集合型 JSON，例如顶层对象数组。
-- JSON FeatureCollection。
+- GeoJSON FeatureCollection。
 - Shapefile。
 - Parquet / ORC / Avro。
 - Iceberg 等目录型表格式。
@@ -51,7 +51,7 @@ CSV 和 JSON 虽然有文本属性，但只要平台把它们作为行列数据�
 
 MongoDB collection 是动态 schema 的 JSON/BSON 记录集合容器。它既不是关系型数据库表，也不是 PDF / DOCX 这类以阅读和正文提取为主的 document；在 ADDP 当前语义中，它按记录集合归入 `table`，同时保留 collection 作为引擎原生 catalog 术语。具体 attributes 落点、采样画像和索引事实归属见规范层文档。
 
-JSON 默认按 `document` 兜底；只有内容事实能严格证明它是记录集合时才升级为 `table`。当前明确支持两类 JSON table：顶层对象数组和 GeoJSON `FeatureCollection.features`。`{"data":[...]}`、`{"rows":[...]}`、NDJSON 等结构是否作为 table，需要先补规范再实现，不能用字段名或习惯做隐式猜测。
+JSON 默认按 `document` 兜底；只有内容事实能严格证明它是记录集合时才升级为 `table`。当前 JSON 明确支持顶层对象数组和 JSON Lines 记录集合。GeoJSON `FeatureCollection.features` 是独立 `geojson` 格式，不再作为 `json` 格式的空间结构分支。`{"data":[...]}`、`{"rows":[...]}` 等结构是否作为 table，需要先补规范再实现，不能用字段名或习惯做隐式猜测。
 
 JSON / GeoJSON 也不默认具备空间能力。只有实际记录里发现 GeoJSON geometry 结构，或字段值可被严格解析为 WKB / EWKB 几何时，才写入 `capabilities.spatial`。后端只表达 `data_type=table + capabilities.spatial` 这样的横切能力组合，不新增“空间表”数据类型；Manager 前端可以据此选择“表格 + 空间”的渲染方式。
 
@@ -126,6 +126,7 @@ graph 的核心是节点和关系。Neo4j label、relationship type、RDF class 
 
 - `csv`、`tsv`
 - `json`
+- `geojson`
 - `parquet`、`orc`、`avro`
 - `shapefile`
 - `sqlite`、`geopackage`
@@ -137,7 +138,7 @@ graph 的核心是节点和关系。Neo4j label、relationship type、RDF class 
 文件格式不等于数据类型，也不等于内容布局：
 
 - Shapefile = `data_type=table` + `layout=multi` + `format=shapefile` + `capabilities.spatial`。
-- GeoJSON = `data_type=table` + `layout=single` + `format=json`，当 feature 实际包含 geometry 时再附加 `capabilities.spatial`。
+- GeoJSON = `data_type=table` + `layout=single` + `format=geojson`，当 feature 实际包含 geometry 时再附加 `capabilities.spatial`。
 - GeoTIFF = `data_type=media` + `layout=single` + `format=tiff` + `capabilities.spatial`。
 - Excel = `data_type=container` + `layout=single` + `format=excel`。
 - Iceberg = `data_type=table` + `layout=whole` + `format=iceberg`。
@@ -164,7 +165,8 @@ graph 的核心是节点和关系。Neo4j label、relationship type、RDF class 
 |---|---|
 | `csv` | delimiter、encoding、has_header、quote_char |
 | `shapefile` | base_name、ref_extensions、has_prj、shape_type、dbf_version |
-| `json` | structure、feature_count、properties、geometry_types、bbox、crs |
+| `json` | structure、encoding、对象层级摘要 |
+| `geojson` | structure、feature_count、properties、geometry_types、bbox、crs |
 | `sqlite` | sqlite_version、table_count、tables |
 | `zip` | compression_method、entry_count、encrypted |
 

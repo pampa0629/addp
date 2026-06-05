@@ -5,10 +5,13 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
+	"github.com/addp/meta/internal/scanflow"
+	"github.com/addp/meta/internal/scantask"
 	"gorm.io/gorm"
 )
 
@@ -109,7 +112,7 @@ func TestCreateManualRunResolvesNodeTargetToCatalogPaths(t *testing.T) {
 		ScanDepth:   "deep",
 		Force:       true,
 		TriggerType: "manual",
-		Source:      "transfer",
+		Source:      commonExecution.ModuleTransfer,
 		RefGroups: []models.ScanRefGroup{
 			{
 				Primary: "manager/a5.shp",
@@ -138,6 +141,53 @@ func TestCreateManualRunResolvesNodeTargetToCatalogPaths(t *testing.T) {
 	}
 }
 
+func TestCreateManualRunPreservesItemID(t *testing.T) {
+	db := openObjectCatalogScanTestDB(t)
+	createTaskExecutionTable(t, db)
+
+	tenantID := uint(1)
+	engineSvc := NewEngineService(db, "", "", nil)
+	engineSvc.cacheEngine(&commonModels.Engine{
+		ID:         9,
+		TenantID:   &tenantID,
+		Name:       "Business MinIO",
+		EngineType: "s3",
+		IsActive:   true,
+	})
+	item := models.MetaItem{
+		TenantID:    tenantID,
+		EngineID:    9,
+		NodeID:      1,
+		ItemType:    "object",
+		Name:        "a.shp",
+		FullName:    "manager/a.shp",
+		Fingerprint: "fp-item-refresh",
+		Attributes: models.JSONMap{
+			"storage": map[string]interface{}{
+				"bucket": "manager",
+				"path":   "a.shp",
+			},
+		},
+	}
+	if err := db.Create(&item).Error; err != nil {
+		t.Fatalf("create item: %v", err)
+	}
+
+	taskSvc := NewScanTaskService(db, NewScanService(db, engineSvc), engineSvc, nil)
+	run, err := taskSvc.CreateManualRun(context.Background(), tenantID, 7, "token", &models.ScanRequest{
+		EngineID: 9,
+		ItemID:   item.ID,
+		Source:   commonExecution.ModuleManager,
+		Force:    true,
+	})
+	if err != nil {
+		t.Fatalf("CreateManualRun() error = %v", err)
+	}
+	if got := jsonMapUint(run.ExecutionConfig, "item_id"); got != item.ID {
+		t.Fatalf("execution item_id = %d, want %d; config=%#v", got, item.ID, run.ExecutionConfig)
+	}
+}
+
 func TestCreateManualRunRejectsUnsupportedTriggerType(t *testing.T) {
 	t.Parallel()
 
@@ -148,6 +198,165 @@ func TestCreateManualRunRejectsUnsupportedTriggerType(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("CreateManualRun() should reject unsupported trigger_type")
+	}
+}
+
+func TestCreateOrUpdateTaskFromScanConfigCreatesAutomaticTask(t *testing.T) {
+	db := openObjectCatalogScanTestDB(t)
+	createScanTaskTable(t, db)
+
+	tenantID := uint(1)
+	taskSvc := NewScanTaskService(db, nil, nil, nil)
+	err := taskSvc.CreateOrUpdateTaskFromScanConfig(&commonModels.Engine{
+		ID:       9,
+		TenantID: &tenantID,
+		Name:     "Business MinIO",
+		ScanConfig: &commonModels.ScanConfig{
+			Enabled:       true,
+			ScheduledScan: true,
+			ScheduleType:  "daily",
+			ScheduleTime:  "03:15",
+			ScanDepth:     "deep",
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateOrUpdateTaskFromScanConfig() error = %v", err)
+	}
+
+	var task models.ScanTask
+	if err := db.Where("owner_module = ? AND owner_ref = ?", "system", scantask.AutomaticTaskOwnerRef(9)).First(&task).Error; err != nil {
+		t.Fatalf("find automatic task: %v", err)
+	}
+	if task.Schedule != "15 3 * * *" || !task.Enabled || task.NextRunAt == nil {
+		t.Fatalf("automatic task schedule fields = %#v", task)
+	}
+	if task.Scope["type"] != "engine" || task.Parameters["scan_depth"] != "deep" {
+		t.Fatalf("automatic task scope/parameters = %#v %#v", task.Scope, task.Parameters)
+	}
+}
+
+func TestCreateOrUpdateTaskFromScanConfigDeletesDisabledSchedule(t *testing.T) {
+	db := openObjectCatalogScanTestDB(t)
+	createScanTaskTable(t, db)
+
+	tenantID := uint(1)
+	existing := scantask.NewAutomaticTask(&commonModels.Engine{
+		ID:       9,
+		TenantID: &tenantID,
+		Name:     "Business MinIO",
+		ScanConfig: &commonModels.ScanConfig{
+			Enabled: true,
+		},
+	}, tenantID, "15 3 * * *")
+	if err := db.Create(existing).Error; err != nil {
+		t.Fatalf("create existing automatic task: %v", err)
+	}
+
+	taskSvc := NewScanTaskService(db, nil, nil, nil)
+	err := taskSvc.CreateOrUpdateTaskFromScanConfig(&commonModels.Engine{
+		ID:       9,
+		TenantID: &tenantID,
+		Name:     "Business MinIO",
+		ScanConfig: &commonModels.ScanConfig{
+			Enabled:       false,
+			ScheduledScan: true,
+			ScheduleType:  "daily",
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateOrUpdateTaskFromScanConfig() error = %v", err)
+	}
+
+	var count int64
+	if err := db.Model(&models.ScanTask{}).Where("owner_module = ? AND owner_ref = ?", "system", scantask.AutomaticTaskOwnerRef(9)).Count(&count).Error; err != nil {
+		t.Fatalf("count automatic task: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("automatic task count = %d, want 0", count)
+	}
+}
+
+func TestScanResponseFromExecution(t *testing.T) {
+	t.Parallel()
+
+	started := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
+	duration := int64(123)
+	step := "执行完成"
+	exec := &commonExecution.TaskExecution{
+		Status:          commonExecution.ExecutionStatusSuccess,
+		CurrentStep:     &step,
+		StartedAt:       &started,
+		ExecutionTimeMs: &duration,
+		Metadata: commonModels.JSONMap{
+			"catalog_nodes_scanned": 0,
+			"items_scanned":         1,
+			"fields_scanned":        5,
+			"extraction": commonModels.JSONMap{
+				"documents":    1,
+				"extracted":    1,
+				"unsupported":  0,
+				"failed":       0,
+				"indexed":      1,
+				"index_failed": 0,
+			},
+		},
+	}
+
+	resp, err := scanflow.ScanResponseFromExecution(exec)
+	if err != nil {
+		t.Fatalf("ScanResponseFromExecution() error = %v", err)
+	}
+	if resp.Status != "success" || resp.ItemsScanned != 1 || resp.FieldsScanned != 5 || resp.DurationMs != duration {
+		t.Fatalf("response = %#v", resp)
+	}
+	if resp.Extraction == nil || resp.Extraction.Documents != 1 || resp.Extraction.Indexed != 1 {
+		t.Fatalf("extraction = %#v", resp.Extraction)
+	}
+}
+
+func TestComputeInheritedTargetsIgnoresManualTasks(t *testing.T) {
+	db := openObjectCatalogScanTestDB(t)
+	createScanTaskTable(t, db)
+
+	taskSvc := NewScanTaskService(db, nil, nil, nil)
+	parent := &models.ScanTask{
+		ID:       100,
+		TenantID: 1,
+		EngineID: 9,
+		Scope: models.JSONMap{
+			"type":          "catalog_path",
+			"catalog_paths": []interface{}{"bucket/a", "bucket/b", "bucket/c"},
+		},
+	}
+	if err := db.Create(&models.ScanTask{
+		TenantID: 1,
+		EngineID: 9,
+		Name:     "manual",
+		Enabled:  true,
+		Scope: models.JSONMap{
+			"type":          "catalog_path",
+			"catalog_paths": []interface{}{"bucket/b"},
+		},
+	}).Error; err != nil {
+		t.Fatalf("create manual task: %v", err)
+	}
+	if err := db.Create(&models.ScanTask{
+		TenantID: 1,
+		EngineID: 9,
+		Name:     "scheduled",
+		Enabled:  true,
+		Schedule: "15 3 * * *",
+		Scope: models.JSONMap{
+			"type":          "catalog_path",
+			"catalog_paths": []interface{}{"bucket/c"},
+		},
+	}).Error; err != nil {
+		t.Fatalf("create scheduled task: %v", err)
+	}
+
+	got := taskSvc.computeInheritedTargets(parent)
+	if !reflect.DeepEqual(got.CatalogPaths, []string{"bucket/a", "bucket/b"}) {
+		t.Fatalf("catalog paths = %#v", got.CatalogPaths)
 	}
 }
 
@@ -163,6 +372,7 @@ func createTaskExecutionTable(t *testing.T, db *gorm.DB) {
 			execution_id TEXT NOT NULL UNIQUE,
 			module TEXT NOT NULL,
 			task_type TEXT NOT NULL,
+			source TEXT NOT NULL DEFAULT '',
 			source_task_id INTEGER,
 			source_task_name TEXT,
 			parent_execution_id TEXT,
@@ -187,6 +397,36 @@ func createTaskExecutionTable(t *testing.T, db *gorm.DB) {
 		)
 	`).Error; err != nil {
 		t.Fatalf("create task_executions table: %v", err)
+	}
+}
+
+func createScanTaskTable(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	if err := db.Exec(`
+		CREATE TABLE meta.scan_tasks (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			tenant_id INTEGER NOT NULL,
+			engine_id INTEGER NOT NULL,
+			name TEXT NOT NULL,
+			description TEXT,
+			schedule TEXT,
+			enabled BOOLEAN,
+			scope JSON,
+			parameters JSON,
+			owner_module TEXT NOT NULL DEFAULT 'meta',
+			owner_ref TEXT,
+			last_run_at DATETIME,
+			next_run_at DATETIME,
+			last_execution_id TEXT,
+			last_execution_status TEXT,
+			created_by INTEGER,
+			updated_by INTEGER,
+			created_at DATETIME,
+			updated_at DATETIME,
+			deleted_at DATETIME
+		)
+	`).Error; err != nil {
+		t.Fatalf("create scan_tasks table: %v", err)
 	}
 }
 

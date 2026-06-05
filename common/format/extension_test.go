@@ -14,6 +14,7 @@ func TestDefaultWriteExtensionUsesFormatDescriptor(t *testing.T) {
 	}{
 		{format.FormatCSV, ".csv"},
 		{format.FormatTSV, ".tsv"},
+		{format.FormatGeoJSON, ".geojson"},
 		{format.FormatParquet, ".parquet"},
 		{format.FormatShapefile, ".shp"},
 	}
@@ -36,8 +37,6 @@ func TestDefaultWriteExtensionRefinesJSONWriterOptions(t *testing.T) {
 		{name: "default json", options: nil, want: ".json"},
 		{name: "json lines", options: &format.WriteOptions{ExtraParams: map[string]interface{}{"json_mode": "jsonl"}}, want: ".jsonl"},
 		{name: "ndjson", options: &format.WriteOptions{ExtraParams: map[string]interface{}{"json_mode": "ndjson"}}, want: ".jsonl"},
-		{name: "geojson", options: &format.WriteOptions{ExtraParams: map[string]interface{}{"spatial.target_encoding": "geojson"}}, want: ".geojson"},
-		{name: "nested geojson", options: &format.WriteOptions{ExtraParams: map[string]interface{}{"spatial": map[string]interface{}{"target_encoding": "geojson"}}}, want: ".geojson"},
 	}
 
 	for _, tt := range tests {

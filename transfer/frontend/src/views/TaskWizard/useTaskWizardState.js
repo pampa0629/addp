@@ -175,7 +175,6 @@ export function useTaskWizardState() {
     }
     if (uiFormat === 'geojson') {
       return compactOptions({
-        'spatial.target_encoding': 'geojson',
         geometry_field: config.geometryField
       })
     }
@@ -275,7 +274,7 @@ export function useTaskWizardState() {
     }
     const uiFormat = String(fileConfig.format || '').toLowerCase()
     if (!uiFormat) return ''
-    if (uiFormat === 'jsonl' || uiFormat === 'geojson') return 'json'
+    if (uiFormat === 'jsonl') return 'json'
     return uiFormat
   }
 
@@ -309,7 +308,6 @@ export function useTaskWizardState() {
       case 'geojson':
         return compactOptions({
           ...backendOptions,
-          'spatial.target_encoding': 'geojson',
           geometry_field: fileConfig.geometryField
         })
       case 'shapefile':
@@ -731,9 +729,6 @@ export function useTaskWizardState() {
     const normalized = String(format || '').toLowerCase()
     if (!normalized) return ''
     if (normalized !== 'json') return normalized
-
-    const spatialEncoding = String(options['spatial.target_encoding'] || options.target_encoding || '').toLowerCase()
-    if (spatialEncoding === 'geojson') return 'geojson'
 
     const jsonMode = String(options.json_mode || options.layout || '').toLowerCase()
     if (jsonMode === 'jsonl' || jsonMode === 'lines' || jsonMode === 'ndjson') return 'jsonl'

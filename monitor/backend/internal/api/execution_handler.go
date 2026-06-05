@@ -28,6 +28,7 @@ func NewExecutionHandler(queryService *service.ExecutionQueryService) *Execution
 // @Produce json
 // @Param module query string false "模块名 | Module"
 // @Param task_type query string false "任务类型 | Task type"
+// @Param source query string false "触发来源模块 | Source module"
 // @Param status query string false "执行状态 | Status"
 // @Param trigger_type query string false "触发类型 | Trigger type"
 // @Param page query int false "页码 | Page" default(1)
@@ -54,6 +55,7 @@ func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
 		TenantID:    tenantID,
 		Module:      c.Query("module"),
 		TaskType:    c.Query("task_type"),
+		Source:      c.Query("source"),
 		Status:      c.Query("status"),
 		TriggerType: c.Query("trigger_type"),
 		Page:        page,

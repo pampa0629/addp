@@ -21,7 +21,6 @@
 - 不接收 engine id，不读取 engine 配置，不创建 engine 连接。
 - 不定义展示协议，不返回 Manager 面向前端的 DTO，不推荐前端渲染器。
 - 不决定 Transfer 任务计划、提交边界、批量并发策略。
-- 不把 `.geojson` 当作独立顶层格式；它是 `FormatJSON` 的空间结构能力。
 - `ExtractInput` 等 provider 输入不携带 `EngineID`，调用方需要的引擎上下文应留在编排层。
 
 上层模块应先基于 engine capability 或本地文件系统能力构造 `common/contentio` 内容 I/O 抽象，再把 `io.Reader`、`contentio.Reader`，以及多 content 场景下的 `[]format.RelatedRef` 交给 FormatPlugin、info provider 或 content reader。
@@ -67,11 +66,11 @@
 
 ```go
 formatType := format.DetectFormat("roads.geojson", peek)
-// formatType == format.FormatJSON
+// formatType == format.FormatGeoJSON
 
 mimeType := format.FormatToMIME(format.FormatParquet)
 formatType = format.MIMEToFormat("application/geo+json")
-// formatType == format.FormatJSON
+// formatType == format.FormatGeoJSON
 ```
 
 检测入口：
@@ -88,8 +87,8 @@ func GuessContentType(filename string, peek []byte) string
 
 当前约定：
 
-- `.json` 和 `.geojson` 都返回 `FormatJSON`。
-- `application/json`、`application/geo+json`、`application/vnd.geo+json` 都返回 `FormatJSON`。
+- `.geojson` 返回 `FormatGeoJSON`；`.json` 默认返回 `FormatJSON`，但 `DetectFormat(filename, peek)` 在内容前缀严格匹配 GeoJSON `FeatureCollection` 时返回 `FormatGeoJSON`。
+- `application/geo+json`、`application/vnd.geo+json` 返回 `FormatGeoJSON`；`application/json` 返回 `FormatJSON`。
 - Shapefile 只有 primary content `.shp` 识别为 `FormatShapefile`；`.shx`、`.dbf`、`.prj`、`.cpg` 等 related content 不单独代表完整 Shapefile，ref 归并由上层基于 format descriptor、related ref 规则和 item 组织规则完成。
 - Parquet 既可以是单文件表，也可以作为目录 scope 下的表文件；`common/format/plugins/parquet` 只提供格式判断和 provider，不表达 lake table item type。
 - `IsDocumentFormat`、`IsTableFormat`、`IsImageFormat` 等分类 helper 是 descriptor `DataType` / MIME 事实的派生判断，不维护独立格式分类表；例如 Excel 的默认 data type 是 `container`，不属于 `IsTableFormat`。
@@ -465,7 +464,7 @@ Provider 对外返回 `format.TableDescribeResult`。这是 format provider 的�
 
 `datatype.TableInfo` 不承载 `FormatInfo`、`AccessIndex` 或 `SpatialInfo`。格式私有事实通过 `format.TableDescribeResult.FormatInfo` 或 `FormatInfoProvider` 返回；访问定位索引通过 `format.TableDescribeResult.AccessIndex` 返回；空间读取上下文通过 `TableSpatialInfoProvider` 返回，空间写出上下文通过 `WriteOptions.SpatialInfo` 传入。
 
-空间判断应基于标准 `SpatialInfo` / `capabilities.spatial`，不要通过 `format=geojson` 推断。
+空间判断应基于标准 `SpatialInfo` / `capabilities.spatial`，不要仅通过 `format=geojson` 推断。GeoJSON 是独立格式身份，但空间字段、SRID、extent 等事实仍必须来自内容解析结果。
 
 ## 字段类型与类型映射
 

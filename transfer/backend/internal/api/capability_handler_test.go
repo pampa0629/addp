@@ -45,11 +45,11 @@ func TestBuildTableFormatCapabilitiesExposeUserFacingFormats(t *testing.T) {
 	}
 
 	geojson := byValue["geojson"]
-	if geojson.BackendType != "json" {
-		t.Fatalf("geojson backend_type = %q, want json", geojson.BackendType)
+	if geojson.BackendType != "geojson" {
+		t.Fatalf("geojson backend_type = %q, want geojson", geojson.BackendType)
 	}
-	if got := geojson.Options["spatial.target_encoding"]; got != "geojson" {
-		t.Fatalf("geojson options[spatial.target_encoding] = %#v, want geojson", got)
+	if len(geojson.Options) != 0 {
+		t.Fatalf("geojson options = %#v, want empty", geojson.Options)
 	}
 	if !geojson.Spatial {
 		t.Fatal("geojson spatial = false, want true")
@@ -58,7 +58,7 @@ func TestBuildTableFormatCapabilitiesExposeUserFacingFormats(t *testing.T) {
 		t.Fatalf("geojson extension = %q, want geojson", geojson.Extension)
 	}
 	if !geojson.Read || !geojson.Write {
-		t.Fatalf("geojson read/write = %v/%v, want true/true from json provider implementations", geojson.Read, geojson.Write)
+		t.Fatalf("geojson read/write = %v/%v, want true/true from geojson provider implementations", geojson.Read, geojson.Write)
 	}
 
 	for value, want := range map[string]string{

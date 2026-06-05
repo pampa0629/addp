@@ -14,6 +14,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/engine/plugin"
+	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/catalogutil"
@@ -68,7 +69,7 @@ func (s *MetadataService) RefreshItem(ctx context.Context, tenantID *uint, engin
 		return nil, fmt.Errorf("meta client not initialized")
 	}
 
-	opts := commonClient.MetaScanOptions{EngineID: engineID, Force: true}
+	opts := commonClient.MetaScanOptions{EngineID: engineID, ScanDepth: "deep", TriggerType: "manual", Source: commonExecution.ModuleManager, Force: true}
 	if req != nil {
 		if req.NodeID > 0 {
 			return nil, fmt.Errorf("item refresh requires item_id; use node refresh for node_id")

@@ -2,26 +2,34 @@ package scantask
 
 import (
 	"fmt"
-	commonExecution "github.com/addp/common/execution"
+	"strings"
 	"time"
 
+	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	metaModels "github.com/addp/meta/internal/models"
+	"github.com/addp/meta/internal/scanflow"
 	"github.com/google/uuid"
 )
 
-func NewManualExecution(tenantID, userID uint, engineID uint, storageType string, catalogPaths []string, refGroups []metaModels.ScanRefGroup, scanDepth string, force bool, source string, token string, now time.Time) *commonExecution.TaskExecution {
+func NewManualExecution(tenantID, userID uint, engineID uint, itemID uint, storageType string, catalogPaths []string, refGroups []metaModels.ScanRefGroup, scanDepth string, force bool, source string, token string, now time.Time) *commonExecution.TaskExecution {
 	userIDInt := int(userID)
+	source = strings.TrimSpace(source)
+	if source == "" {
+		source = commonExecution.ModuleMeta
+	}
 	return &commonExecution.TaskExecution{
 		TenantID:    int(tenantID),
 		ExecutionID: uuid.New().String(),
 		Module:      commonExecution.ModuleMeta,
 		TaskType:    "scan",
+		Source:      source,
 		Status:      commonExecution.ExecutionStatusPending,
 		TriggerType: commonExecution.TriggerTypeManual,
 		TriggeredBy: &userIDInt,
-		ExecutionConfig: ManualExecutionConfig(
+		ExecutionConfig: scanflow.ManualExecutionConfig(
 			engineID,
+			itemID,
 			storageType,
 			catalogPaths,
 			refGroups,
@@ -44,30 +52,32 @@ func NewTaskManualExecution(task *metaModels.ScanTask, userID uint, storageType 
 		ExecutionID:     uuid.New().String(),
 		Module:          commonExecution.ModuleMeta,
 		TaskType:        "scan",
+		Source:          commonExecution.ModuleMeta,
 		SourceTaskID:    &taskIDInt,
 		SourceTaskName:  &task.Name,
 		Status:          commonExecution.ExecutionStatusPending,
 		TriggerType:     commonExecution.TriggerTypeManual,
 		TriggeredBy:     &userIDInt,
-		ExecutionConfig: TaskExecutionConfig(task.EngineID, storageType, task.Parameters, "deep"),
+		ExecutionConfig: scanflow.TaskExecutionConfig(task.EngineID, storageType, task.Scope, task.Parameters, scanflow.ScanDepthDeep, "meta"),
 		StartedAt:       &now,
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	}
 }
 
-func NewScheduledExecution(task *metaModels.ScanTask, storageType string, targets TargetSet, now time.Time) *commonExecution.TaskExecution {
+func NewScheduledExecution(task *metaModels.ScanTask, storageType string, targets scanflow.TargetSet, plannedRunAt time.Time, now time.Time) *commonExecution.TaskExecution {
 	taskIDInt := int(task.ID)
 	return &commonExecution.TaskExecution{
 		TenantID:        int(task.TenantID),
 		ExecutionID:     uuid.New().String(),
 		Module:          commonExecution.ModuleMeta,
 		TaskType:        "scan",
+		Source:          commonExecution.ModuleMeta,
 		SourceTaskID:    &taskIDInt,
 		SourceTaskName:  &task.Name,
 		Status:          commonExecution.ExecutionStatusPending,
-		TriggerType:     commonExecution.TriggerTypeSchedule,
-		ExecutionConfig: TargetExecutionConfig(task.EngineID, storageType, targets.CatalogPaths, JSONMapString(task.Parameters, "scan_depth", "deep"), JSONMapBool(task.Parameters, "force", false)),
+		TriggerType:     metaModels.TriggerTypeScheduled,
+		ExecutionConfig: scanflow.TargetExecutionConfig(task.EngineID, storageType, targets.CatalogPaths, targets.RefGroups, JSONMapString(task.Parameters, "scan_depth", scanflow.ScanDepthDeep), JSONMapBool(task.Parameters, "force", false), "meta", plannedRunAt.Format(time.RFC3339Nano)),
 		StartedAt:       &now,
 		CreatedAt:       now,
 		UpdatedAt:       now,
@@ -126,17 +136,13 @@ func SuccessfulExecutionFields(resp *metaModels.ScanResponse, storageType string
 	}
 }
 
-func TaskStatusBackfillFields(executionID string, status string, completedAt time.Time, nextRunAt *time.Time, now time.Time) map[string]interface{} {
-	fields := map[string]interface{}{
+func TaskStatusBackfillFields(executionID string, status string, completedAt time.Time, now time.Time) map[string]interface{} {
+	return map[string]interface{}{
 		"last_run_at":           completedAt,
 		"last_execution_id":     executionID,
 		"last_execution_status": status,
 		"updated_at":            now,
 	}
-	if nextRunAt != nil {
-		fields["next_run_at"] = *nextRunAt
-	}
-	return fields
 }
 
 func ScheduledTaskTriggerFields(lastRunAt time.Time, nextRunAt *time.Time, now time.Time) map[string]interface{} {

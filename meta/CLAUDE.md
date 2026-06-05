@@ -8,7 +8,7 @@ Meta 模块负责元数据扫描、元数据存储、元数据查询、对象元
 
 - 后端：Go + Gin + GORM，默认端口 `8082`，环境变量 `META_BACKEND_PORT`。
 - 前端：Vue 3 + Element Plus，开发端口 `5175`，启动脚本环境变量 `META_FE_PORT`。
-- 数据库：PostgreSQL `metadata` schema。
+- 数据库：PostgreSQL `meta` schema。
 - 依赖：System、Redis、Meilisearch、MinIO，可选 pgvector/嵌入服务。
 
 ## 重要目录
@@ -19,7 +19,11 @@ meta/
 │   ├── cmd/server/main.go
 │   ├── internal/api/          # 统一 Handler 与路由
 │   ├── internal/models/       # node、item、scan_task、cleanup
-│   ├── internal/service/      # scan、repository、database/object/filesystem/nosql 扫描
+│   ├── internal/service/      # 应用服务门面、装配、查询代理、刷新入口
+│   ├── internal/scanadapter/  # catalog strategy dispatch 与 object/file path/ref group adapter
+│   ├── internal/scanruntime/  # tabular/branch-leaf/object/file 扫描运行时
+│   ├── internal/scanprocessor/# item 持久化、deep enrich、content hash、索引调度
+│   ├── internal/metatest/     # Meta 后端测试基础设施
 │   ├── internal/search/       # Meilisearch indexer
 │   ├── internal/worker/       # Asynq 扫描 Worker
 │   └── docs/                  # Swagger 产物
@@ -75,42 +79,54 @@ Meta 只负责把正式规范中的 data type、type info 和横切事实写入�
 对象存储 catalog scan：
 
 ```text
-service/scan_object_storage_catalog_service.go
-  -> metacatalog.StorageResource
-  -> metaenrich.DetectSingleFileFormat       # deep scan 下基于内容前缀修正未知格式
-  -> metacatalog.DetectObjectCatalogCompositeItems
+service.ScanService
+  -> scanadapter.ContentCatalogScanner
+  -> scanadapter.ScanObjectPaths / ScanObjectRefGroups
+  -> scanruntime.ObjectStorageCatalogRuntime
+  -> scanruntime.DetectObjectCatalogResourceFormats     # 基于内容前缀修正未知格式
+  -> scanflow.DetectObjectCatalogCompositeItems
   -> metaitem.ResolveItems
-  -> metaenrich table/container resolver
   -> metacatalog.PlanObjectCatalogSingleItem / PlanObjectCatalogCompositeItem
-  -> metaattr.MergeDataItemAttributes
+  -> scanprocessor.ObjectSingleInput / ObjectCompositeInput
+  -> metaenrich / metaattr
   -> repository.UpsertItemWithDepth
 ```
 
 文件系统 catalog scan：
 
 ```text
-service/scan_filesystem_catalog_service.go
+service.ScanService
+  -> scanadapter.ContentCatalogScanner
+  -> scanadapter.ScanFilePaths / ScanFileRefGroups
+  -> scanruntime.FilesystemCatalogRuntime
   -> metaitem.StorageFileRef
   -> metaitem.ResolveItems                   # multi / whole / table resolver
   -> metaitem.InferSingleResourceItem        # 单文件兜底
-  -> metaenrich.EnrichSingleTableFileItem    # deep enrich，必要时基于内容前缀修正格式
-  -> metaattr.BuildAttributes
+  -> scanprocessor.FileDetectedInput / FileSingleInput
+  -> metaenrich / metaattr
   -> repository.UpsertItemWithDepth
+```
+
+数据库 / branch-leaf catalog scan：
+
+```text
+service.ScanService
+  -> scanadapter.CatalogDispatcher
+  -> scanruntime.DatabaseRuntime / BranchLeafRuntime
+  -> metaattr
+  -> repository.UpsertNode / UpsertItemWithDepth
 ```
 
 已知 item refresh：
 
 ```text
 service/item_refresh_service.go
+  -> scanruntime.ItemRefreshRuntime
   -> dataitem.DescriptorFromAttributes       # 从已落库 attributes 还原 item descriptor
-  -> detectedItemFromDescriptor
-  -> layout 分支：
-       multi  -> metaitem.EnrichKnownMultiTableItem
-       single -> metaenrich.EnrichSingleTableFileItem / DetectSingleFileFormat
-       whole  -> metaenrich.EnrichContainerChildren
-  -> metaattr.MergeDataItemAttributes
-  -> restoreKnownItemStorage
-  -> 更新 metadata.meta_item.attributes
+  -> scanflow.KnownItemDetectedItem
+  -> scanprocessor.Input
+  -> metaenrich / metaattr
+  -> repository.UpsertItemWithDepth
 ```
 
 Manager 预览不会重新识别格式，只消费已落库 Meta attributes 中的 `layout`、`data_type`、`format` 选择 preview provider。因此格式识别和类型修正应在 Meta scan / refresh 阶段完成。
@@ -133,7 +149,13 @@ Manager 预览不会重新识别格式，只消费已落库 Meta attributes 中�
 ## 开发规则
 
 - 扫描必须执行租户隔离校验，不能绕过 System 引擎归属与当前用户租户。
-- 数据库、对象存储、文件系统和 NoSQL 扫描逻辑按 service 分层扩展，避免在 Handler 中写扫描细节。
+- 数据库、对象存储、文件系统和 NoSQL 扫描逻辑按 `scanadapter` / `scanruntime` / `scanprocessor` 分层扩展，`service` 只做应用门面和依赖装配，避免在 Handler 或 service 中堆叠扫描细节。
+- `ScanTaskService` 的类型和构造保留在 `scan_task_service.go`；生命周期、execution、任务 CRUD、调度同步分别放在 `scan_task_lifecycle.go`、`scan_task_execution.go`、`scan_task_crud.go`、`scan_task_schedule.go`。
+- `CatalogDispatcher` 的类型和总分发保留在 `catalog_dispatcher.go`；tabular、branch-leaf、通用锁和 root 收尾分别放在 `catalog_dispatcher_tabular.go`、`catalog_dispatcher_branch.go`、`catalog_dispatcher_helpers.go`。
+- `scanprocessor.Processor` 主流程保留在 `processor.go`；输入构造、文档抽取、内容 hash 分别放在 `processor_inputs.go`、`processor_document.go`、`content_hash.go`。
+- `scanruntime.DatabaseRuntime` 类型、构造和 `ScanNamespace` 主入口保留在 `database_runtime.go`；表扫描循环、表详情 attributes、facts 合并、空间元数据分别放在 `database_tables.go`、`database_table_details.go`、`database_table_facts.go`、`database_spatial.go`。
+- `scanruntime.ObjectStorageCatalogRuntime` 和 `FilesystemCatalogRuntime` 主文件只保留类型、构造和 `ScanPaths` 入口；对象 resource 持久化放在 `object_resources.go`，文件目录递归扫描放在 `file_directory_scan.go`。
+- `scanruntime.BranchLeafRuntime` 类型、构造和 `ScanBranch` 主入口保留在 `branch_leaf_runtime.go`；leaf 扫描循环、动态 schema 转换、清理 helper 分别放在 `branch_leaf_leaves.go`、`branch_leaf_dynamic_schema.go`、`branch_leaf_helpers.go`。
 - 空间元数据必须动态检测几何列、SRID、范围和几何类型，不要默认字段名。
 - 扫描去重使用 Redis 锁；调试异常扫描时先检查 `meta:scan_dedup:*`。
 - 修改 API 后同步 Swagger：`bash scripts/swagger/gen-swagger.sh meta` 和 `bash scripts/swagger/check-route-coverage.sh meta`。
@@ -157,7 +179,6 @@ curl http://localhost:8082/health
 - `meta/docs/tables/meta_node表.md`
 - `meta/docs/tables/meta_item表.md`
 - `meta/docs/tables/scan_tasks表.md`
-- `meta/docs/tables/scan_task_runs表.md`
 - `docs/spec/addp引擎插件接口规范.md`
 - `docs/spec/addp引擎能力声明规范.md`
 - `manager/CLAUDE.md`

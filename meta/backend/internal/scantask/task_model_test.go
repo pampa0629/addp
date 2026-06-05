@@ -28,6 +28,12 @@ func TestNewTaskFromUpsertRequest(t *testing.T) {
 	if task.Parameters["scan_depth"] != "deep" {
 		t.Fatalf("parameters = %#v", task.Parameters)
 	}
+	if task.Parameters["catalog_paths"] != nil {
+		t.Fatalf("parameters should not contain catalog paths: %#v", task.Parameters)
+	}
+	if task.Scope["type"] != "catalog_path" {
+		t.Fatalf("scope = %#v", task.Scope)
+	}
 	if task.NextRunAt == nil || !task.NextRunAt.Equal(next) {
 		t.Fatalf("next run = %#v", task.NextRunAt)
 	}
@@ -44,19 +50,19 @@ func TestTaskParametersUseCatalogPaths(t *testing.T) {
 		ScanDepth:    "deep",
 	}, now, nil)
 
-	got, ok := task.Parameters["catalog_paths"].([]string)
+	got, ok := task.Scope["catalog_paths"].([]string)
 	if !ok || len(got) != 1 || got[0] != "catalog/path" {
-		t.Fatalf("catalog_paths = %#v", task.Parameters["catalog_paths"])
+		t.Fatalf("catalog_paths = %#v", task.Scope["catalog_paths"])
 	}
 }
 
-func TestAutomaticTaskName(t *testing.T) {
+func TestAutomaticTaskOwner(t *testing.T) {
 	t.Parallel()
 
 	if got := AutomaticTaskName("PostGIS"); got != "自动扫描 - PostGIS" {
 		t.Fatalf("name = %q", got)
 	}
-	if got := AutomaticTaskPattern(); got != "自动扫描%" {
-		t.Fatalf("pattern = %q", got)
+	if got := AutomaticTaskOwnerRef(7); got != "engine:7" {
+		t.Fatalf("owner_ref = %q", got)
 	}
 }

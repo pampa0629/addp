@@ -675,7 +675,7 @@
       "formatShapefile": "Shapefile",
       "jsonlFormatHint": "Each line is one JSON record, suitable for large files, streaming writes, and batch processing.",
       "jsonFormatHint": "The whole file is one JSON array, suitable for regular data exchange and smaller results.",
-      "geojsonFormatHint": "GeoJSON is a spatial JSON encoding. It is written through the json format with a geometry field as FeatureCollection.",
+      "geojsonFormatHint": "GeoJSON writes a FeatureCollection through the geojson format and requires a geometry field.",
       "shapefileFormatHint": "Shapefile writes .shp, .shx, .dbf, .cpg component files and requires a geometry field and geometry type.",
       "spatialAutoDetectedHint": "Spatial field detected from source metadata: {field}, geometry type: {type}",
       "spatialFieldWillUseMapping": "No spatial field was detected from the source fields. Field mapping will decide it later.",

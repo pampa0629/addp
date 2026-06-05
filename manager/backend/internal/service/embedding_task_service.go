@@ -83,6 +83,7 @@ func (s *EmbeddingTaskService) Execute(ctx context.Context, taskID uint, tenantI
 		TenantID:          int(tenantID),
 		Module:            commonExecution.ModuleManager,
 		TaskType:          "embedding",
+		Source:            commonExecution.ModuleManager,
 		SourceTaskID:      intPtr(int(taskID)),
 		SourceTaskName:    &task.Name,
 		ParentExecutionID: parentExecutionID,

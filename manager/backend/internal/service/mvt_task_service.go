@@ -78,6 +78,7 @@ func (s *MvtTaskService) Execute(ctx context.Context, taskID uint, tenantID uint
 		TenantID:          int(tenantID),
 		Module:            commonExecution.ModuleManager,
 		TaskType:          "mvt_generation",
+		Source:            commonExecution.ModuleManager,
 		SourceTaskID:      intPtr(int(taskID)),
 		SourceTaskName:    &task.Name,
 		ParentExecutionID: parentExecutionID,

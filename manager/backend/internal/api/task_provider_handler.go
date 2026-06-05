@@ -204,7 +204,7 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 
 // TaskExecuteRequest 触发执行请求
 type TaskExecuteRequest struct {
-	TriggerType       string `json:"trigger_type"`        // manual|schedule|api|orchestrator，默认 manual
+	TriggerType       string `json:"trigger_type"`        // manual|scheduled，默认 manual
 	ParentExecutionID string `json:"parent_execution_id"` // 父执行ID（Orchestrator 调用时传入）
 }
 

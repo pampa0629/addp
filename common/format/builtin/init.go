@@ -10,6 +10,7 @@ import (
 	_ "github.com/addp/common/format/plugins/avro"
 	_ "github.com/addp/common/format/plugins/csv"
 	_ "github.com/addp/common/format/plugins/excel"
+	_ "github.com/addp/common/format/plugins/geojson"
 	_ "github.com/addp/common/format/plugins/json"
 	_ "github.com/addp/common/format/plugins/orc"
 	_ "github.com/addp/common/format/plugins/parquet"

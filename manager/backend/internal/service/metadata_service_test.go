@@ -20,6 +20,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	_ "github.com/addp/common/engine/plugins/minio"
 	_ "github.com/addp/common/engine/plugins/nfs"
+	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/manager/internal/models"
 )
@@ -64,7 +65,7 @@ func TestMetadataServiceRefreshItemUsesMetaClient(t *testing.T) {
 	if _, ok := gotPayload["item_id"]; ok {
 		t.Fatalf("payload should not include item_id in body: %#v", gotPayload)
 	}
-	if gotPayload["force"] != true {
+	if gotPayload["force"] != true || gotPayload["scan_depth"] != "deep" || gotPayload["trigger_type"] != "manual" || gotPayload["source"] != "manager" {
 		t.Fatalf("scan options = %#v", gotPayload)
 	}
 	if resp.ItemsScanned != 1 || resp.FieldsScanned != 7 || resp.Status != "success" {
@@ -815,8 +816,8 @@ func TestRefreshNodeSubmitsDeepScanRun(t *testing.T) {
 	if gotScanPayload["node_id"] != float64(8) {
 		t.Fatalf("scan payload node_id = %#v, want 8", gotScanPayload["node_id"])
 	}
-	if gotScanPayload["trigger_type"] != "manual" || gotScanPayload["source"] != "manager_refresh" {
-		t.Fatalf("scan payload trigger/source = %#v/%#v, want manual/manager_refresh", gotScanPayload["trigger_type"], gotScanPayload["source"])
+	if gotScanPayload["trigger_type"] != "manual" || gotScanPayload["source"] != commonExecution.ModuleManager {
+		t.Fatalf("scan payload trigger/source = %#v/%#v, want manual/%s", gotScanPayload["trigger_type"], gotScanPayload["source"], commonExecution.ModuleManager)
 	}
 }
 

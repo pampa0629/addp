@@ -11,6 +11,7 @@
 | `scan_depth`、`scanned_depth`、`scan_status` 的语义 | data item 识别、claims、exclusive 规则 |
 | `force=true/false` 的覆盖策略 | attributes 的完整 JSON schema |
 | engine / node / item 扫描目标，ScanSelector / ScanScope / `ref_groups` 边界 | FormatPlugin、info provider、content reader 接口形态 |
+| ScanTask 任务定义、调度边界与 execution 关系 | 全平台所有模块任务体系的历史值迁移 |
 | 手动 / 定时触发的默认组合 | Manager 前端 DTO 和预览 UI |
 | 不强制扫描时的低成本跳过判断 | 具体格式 parser 的字段细节 |
 
@@ -27,13 +28,15 @@ Meta 扫描只保留四个核心维度：
 | 已扫深度 | `scanned_depth` | `none` / `basic` / `deep` | 当前 node / item 已经达到的扫描深度。 |
 | 是否强制 | `force` | `true` / `false` | 是否不管已有元数据和时间戳都重新扫描。 |
 
-`source` 是扫描来源标记，不是核心扫描维度。它只记录调用方或业务场景，例如 `system_immediate`、`manager_refresh`、`meta_frontend`、`transfer`，用于审计、排查和执行记录，不得进入 `trigger_type` 枚举，也不得驱动不同扫描主路径。
+`source` 是扫描来源标记，不是核心扫描维度。它只记录触发模块，例如 `meta`、`manager`、`system`、`transfer`、`asset`、`orchestrator`、`develop`、`graph`，用于审计、排查和执行记录，不得进入 `trigger_type` 枚举，也不得驱动不同扫描主路径。`source` 不承载调度器、前后端通道或具体业务场景；定时调度只能由 `trigger_type=scheduled` 表达。
 
-扫描目标只抽象为三类：
+身份型扫描目标只抽象为三类：
 
 1. engine
 2. node
 3. item
+
+`catalog_paths` 和 `ref_groups` 是 selector/scope 输入形态，不是新的身份层。它们进入 Meta 后必须解析为 `ScanScope`，再由扫描主线决定如何枚举候选内容、构造 node / item plan 和落库。
 
 如果使用 locator，locator 本身已经能表达目标对象，不需要额外 `target_type`。
 
@@ -70,6 +73,91 @@ Meta 扫描只保留四个核心维度：
 2. `ref_groups` 只表达内容引用边界，不表达资源树父 node，也不要求 Meta 枚举父目录。
 3. 同一个外部事件产生的同一批内容，不能同时用父目录 `catalog_paths` 和 `ref_groups` 表达。
 4. item refresh 必须由已入库 item 标准事实还原内容输入，不得退回为父目录 catalog scan。
+
+## ScanTask 与 Execution 边界
+
+Meta 扫描必须区分任务定义和执行记录：
+
+| 对象 | 归属 | 含义 | 目标存储 |
+|---|---|---|---|
+| `ScanTask` | Meta | “未来应该按什么计划扫描什么范围”的定义态。 | `meta.scan_tasks` |
+| `TaskExecution` | Common | “某一次扫描实际执行了什么、进度如何、结果如何”的运行态。 | `common.task_executions` |
+
+约束：
+
+1. `common.task_executions` 只记录执行，不保存调度定义。
+2. `ScanTask` 只记录任务定义和最近一次执行摘要，不保存每次执行历史。
+3. `scan_task_runs` 这类模块私有执行历史表不再保留；执行历史统一进入 `common.task_executions`。
+4. `TaskExecution.source_task_id` 指向产生本次执行的模块任务定义；在 Meta 扫描中指向 `ScanTask.id`。
+5. `TaskExecution.trigger_type` 只允许 `manual` / `scheduled`。公共执行表通过迁移将历史 `schedule`、`api`、`orchestrator`、`retry` 等值收敛到这两个枚举。
+6. `TaskExecution.source` 只记录触发来源模块；未能追溯的历史记录按 `module` 回填。
+
+`ScanTask` 的目标模型应至少表达：
+
+- `tenant_id`
+- `engine_id`
+- `scope`：结构化 ScanScope/selector 范围模型。
+- `schedule`：标准 Cron 表达式；空值表示无定时计划。
+- `enabled`
+- `scan_depth`
+- `force`
+- `next_run_at`
+- `last_run_at`
+- `last_execution_id`
+- `last_execution_status`
+- `owner_module`：任务定义由哪个模块创建或管理，例如 `system`、`meta`。
+- `owner_ref`：任务定义在 owner 模块中的稳定关联，例如 `engine:{engine_id}`。
+
+`owner_module` 与 execution `source` 不是同一个概念：
+
+- `owner_module` 表达谁拥有 / 管理这个任务定义。
+- `source` 表达这次 execution 是哪个模块触发的。
+
+例如 System 注册 engine 时创建的自动扫描任务：
+
+| 字段 | 取值 |
+|---|---|
+| `ScanTask.owner_module` | `system` |
+| `ScanTask.owner_ref` | `engine:{engine_id}` |
+| `TaskExecution.module` | `meta` |
+| `TaskExecution.task_type` | `scan` |
+| `TaskExecution.trigger_type` | `scheduled` |
+| `TaskExecution.source` | `meta` |
+| `TaskExecution.source_task_id` | `ScanTask.id` |
+
+System 注册 engine 时可以接收 Meta 扫描策略，但该策略应作为命令或事件交给 Meta upsert `ScanTask`。System 不应长期作为 Meta 扫描调度的权威存储；UI 如需展示 engine 的扫描计划，应查询 Meta 的 `ScanTask` 或由聚合层组合 System engine 与 Meta task。
+
+## 定时调度保证
+
+Meta 定时调度目标上应使用 DB-driven due task claim，不应只依赖进程内 Cron 注册。
+
+目标流程：
+
+```mermaid
+sequenceDiagram
+    participant Tick as Meta Scheduler Tick
+    participant Task as meta.scan_tasks
+    participant Exec as common.task_executions
+    participant Queue as Execution Queue
+    participant Worker as Meta Worker
+
+    Tick->>Task: select enabled tasks where next_run_at <= now
+    Task-->>Tick: due tasks
+    Tick->>Task: transaction claim planned run
+    Tick->>Exec: create scheduled execution
+    Tick->>Task: advance next_run_at
+    Tick->>Queue: enqueue execution_id
+    Worker->>Exec: update running / progress / result
+    Worker->>Task: backfill last execution summary
+```
+
+调度保证：
+
+1. Meta 重启后，必须能通过 `next_run_at <= now()` 找回应该触发的任务。
+2. 多实例部署时，必须通过数据库行锁、唯一 fire key 或分布式锁避免同一个 planned run 重复创建 execution。
+3. scheduled execution 应记录 `planned_run_at`，表示本次执行对应的计划触发时间。
+4. 同一个 `task_id + planned_run_at` 只能创建一条有效 execution。
+5. 默认只补最近一次 due run，避免 Meta 长时间停机后集中创建大量历史执行；如需补跑多个错过时间点，应另行定义补跑策略。
 
 ## 扫描编排依据
 
@@ -311,7 +399,7 @@ engine 目标表示从该存储引擎的显性结构 root 开始扫描。node �
 }
 ```
 
-接口层可以支持 `engine_id`、`node_id`、`item_id` 或 `targets`，但进入扫描服务内部后统一转换为 locator 或内部 target 对象。
+接口层可以支持 `engine_id`、`node_id`、`item_id`、`targets`、`catalog_paths` 或 `ref_groups`，但进入扫描服务内部后必须统一解析为 `ScanScope`。
 
 不需要 `target_type`。locator 已经包含 engine、path、type，以及互斥的 `node_id` / `item_id`。`type` 表达 catalog 术语，ID 字段负责区分 node / item。
 
@@ -349,7 +437,7 @@ node 扫描仍由 detector 从 catalog 范围重新发现 item 并落库。item 
 | Manager 预览前 deep 补齐 | `manual` | `deep` | `false` |
 | Transfer 完成后触发 | `manual` | `basic` 或按导入结果决定 | `false` |
 
-`manual` 可以在执行配置中额外记录来源，例如 `source=system_immediate`、`source=manager_refresh`、`source=meta_frontend`、`source=transfer`，用于审计和排查。但来源不进入 trigger type 枚举。
+`manual` 可以在执行配置中额外记录来源模块，例如 `source=system`、`source=manager`、`source=meta`、`source=transfer`，用于审计和排查。但来源不进入 trigger type 枚举，也不表达具体场景。
 
 Transfer 完成后触发 Meta 扫描时，应按本次执行实际写出的内容提交 `ref_groups`。Transfer 不应调用 data item detector，不应判断 refs 是否组成 Shapefile、GeoPackage 等 data item，也不应为了让 Meta 重新识别而把目标扩大为父目录 `catalog_paths`。
 
@@ -382,7 +470,9 @@ Manager 的刷新行为必须区分 node 和 item：
 | 刷新对象 | 行为要求 |
 |---|---|
 | node | 可异步触发 Meta deep + force 扫描；前端刷新树即可，不要求等待整个扫描完成。 |
-| item | 调用 Meta 的已知 item refresh 接口并同步等待完成，再重新读取 item 元数据和预览。 |
+| item | 创建单个 known item refresh execution；前端对该 execution 做局部等待，完成后重新读取 item 元数据和预览。 |
+
+Manager 的 item refresh 不保留后端同步扫描入口。所谓“立等可用”是 UI 对同一条 execution 的前台等待体验，不是绕过 execution 的另一条刷新实现。
 
 item 刷新只刷新 item 本身，但必须包含该 item 的所有 content。对于 Shapefile 这类 `layout=multi` 的 item，刷新时必须使用已入库 `attributes.item.refs` 的完整 refs 集合作为 provider 输入；只读取 `.shp` 主文件会导致字段或空间信息被错误覆盖或丢失。`refs` 不是 catalog scan target，Manager 也不得把它展开后自行发起目录扫描。
 
@@ -421,7 +511,7 @@ Manager 刷新目标必须是当前选中的 engine / node / item，不能默认
   "scan_depth": "deep",
   "force": false,
   "trigger_type": "manual",
-  "source": "meta_frontend"
+  "source": "meta"
 }
 ```
 
@@ -429,10 +519,10 @@ Manager 刷新目标必须是当前选中的 engine / node / item，不能默认
 
 - `scan_depth` 只允许 `basic` / `deep`。
 - `force` 默认为 `false`。
-- `trigger_type` 只允许 `manual` / `scheduled`。公共 `task_executions.trigger_type` 现阶段仍沿用 common 的既有枚举和值，后续再统一收敛。
-- `source` 是来源标记，不参与扫描策略分支；未提供时由 Meta 根据入口填入默认来源。
+- `trigger_type` 只允许 `manual` / `scheduled`。Meta 新写入的 execution 必须遵守该枚举；公共 `task_executions.trigger_type` 也按该枚举加固。
+- `source` 是来源模块标记，不参与扫描策略分支；未提供时由 Meta 根据入口填入默认模块，例如 `meta`、`manager`、`system`、`transfer`。
 - `engine_id`、`node_id`、`item_id`、`targets`、`catalog_paths`、`ref_groups` 至少提供一种。
 - `catalog_paths` 只表示路径型 catalog selector。
 - `ref_groups` 只表示内容引用边界；同一批 Transfer 生成物不得同时用父目录 `catalog_paths` 表达。
 - 不保留 `full` / `shallow`。
-- 所有手动扫描请求统一通过 `POST /scan/run/manual` 创建后台扫描运行；调用方通过任务监控查询进度和结果，不保留同步扫描入口。
+- 所有手动扫描请求统一通过 `POST /scan/run/manual` 创建 execution；调用方通过任务监控查询进度和结果，不保留同步扫描入口。

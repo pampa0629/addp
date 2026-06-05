@@ -103,7 +103,7 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 
 ---
 
-### Meta 模块核心对象（schema: metadata）
+### Meta 模块核心对象（schema: meta）
 
 | 中文     | 英文标识符 | 说明                                                         |
 | -------- | ---------- | ------------------------------------------------------------ |
@@ -453,12 +453,13 @@ erDiagram
         uint tenant_id FK
         string module "meta|transfer|develop|orchestrator|manager"
         string task_type "scan|import|export|sync|query|workflow|notebook|orchestration|mvt_generation|embedding"
+        string source "触发来源模块"
         string source_task_id "对应模块任务 ID（字符串，无 DB FK）"
         string source_task_name "任务名称（冗余，便于展示）"
         string status "pending|running|success|failed|timeout|cancelled"
         int progress "0-100"
         string current_step "当前步骤描述（可选）"
-        string trigger_type "manual | schedule | api | orchestrator"
+        string trigger_type "manual | scheduled"
         uint triggered_by FK "触发用户 ID（可选）"
         string parent_execution_id "父 Orchestration 的 execution_id（无 DB FK）"
         timestamp started_at

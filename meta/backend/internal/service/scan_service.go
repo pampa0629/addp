@@ -3,54 +3,41 @@ package service
 import (
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
-	"strings"
 	"time"
 
-	"github.com/addp/common/dataitem"
-	"github.com/addp/common/datatype"
-	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/events"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/config"
 	"github.com/addp/meta/internal/extractor"
-	"github.com/addp/meta/internal/metacatalog"
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
-	"github.com/addp/meta/internal/scantask"
+	"github.com/addp/meta/internal/scanadapter"
+	"github.com/addp/meta/internal/scanflow"
+	"github.com/addp/meta/internal/scanresolver"
+	"github.com/addp/meta/internal/scanruntime"
 	"github.com/addp/meta/internal/search"
 	"gorm.io/gorm"
 )
 
 // ScanService 统一扫描服务
 type ScanService struct {
-	db                              *gorm.DB
-	repo                            *metaRepo.ScanRepository         // 数据访问层
-	dbScanService                   *DatabaseScanService             // 数据库扫描服务
-	branchLeafScanService           *BranchLeafScanService           // branch/leaf 型 catalog 扫描服务
-	objectStorageCatalogScanService *ObjectStorageCatalogScanService // 对象存储 catalog 扫描服务
-	filesystemCatalogScanService    *FilesystemCatalogScanService    // 文件系统 catalog 扫描服务
-	contentCatalogScanner           *ContentCatalogScanner           // 内容目录扫描主链路
-	metadataQueryService            *MetadataQueryService            // 元数据查询服务（独立）
-	engineService                   *EngineService
-	config                          *config.Config
-	log                             *slog.Logger
-	indexer                         *search.Indexer
-	indexerService                  *IndexerService              // 索引服务（独立）
-	spatialService                  *SpatialMetadataService      // 空间元数据服务（独立）
-	scanEventPublisher              *events.ScanEventPublisher   // 扫描事件发布器
-	metadataExtractor               *extractor.MetadataExtractor // 元数据提取器
-	dedupService                    *ScanDedupService            // 扫描去重服务（可选）
-	immediateRecorder               *scantask.ImmediateExecutionRecorder
-}
-
-// ScanProgressReporter 用于在长时间扫描任务中更新进度
-type ScanProgressReporter interface {
-	SetTotal(total int)
-	Advance(label string, completed, total int, meta map[string]interface{})
-	Message(message string)
+	db                   *gorm.DB
+	repo                 *metaRepo.ScanRepository // 数据访问层
+	runtimes             *scanruntime.Runtimes
+	catalogDispatcher    *scanadapter.CatalogDispatcher // catalog 扫描分发主链路
+	scopeResolver        *scanresolver.Resolver         // 扫描入口 scope 解析器
+	metadataQueryService *MetadataQueryService          // 元数据查询服务（独立）
+	engineService        *EngineService
+	config               *config.Config
+	log                  *slog.Logger
+	indexer              *search.Indexer
+	indexerService       *IndexerService              // 索引服务（独立）
+	spatialService       *SpatialMetadataService      // 空间元数据服务（独立）
+	scanEventPublisher   *events.ScanEventPublisher   // 扫描事件发布器
+	metadataExtractor    *extractor.MetadataExtractor // 元数据提取器
+	dedupService         *ScanDedupService            // 扫描去重服务（可选）
 }
 
 func NewScanService(db *gorm.DB, engineService *EngineService) *ScanService {
@@ -65,45 +52,33 @@ func NewScanService(db *gorm.DB, engineService *EngineService) *ScanService {
 	indexerService := NewIndexerService(nil, log)         // indexer 稍后通过 SetIndexer 注入
 	spatialService := NewSpatialMetadataService(nil, log) // config 稍后通过 SetConfig 注入
 	metadataExtractor := extractor.NewMetadataExtractor(db)
+	runtimes := scanruntime.NewRuntimes(db, log, repo, spatialService, indexerService)
 
 	s := &ScanService{
 		db:                db,
 		repo:              repo,
+		runtimes:          runtimes,
 		engineService:     engineService,
 		log:               log,
 		metadataExtractor: metadataExtractor,
 		indexerService:    indexerService,
 		spatialService:    spatialService,
-		immediateRecorder: scantask.NewImmediateExecutionRecorder(db),
+		scopeResolver:     scanresolver.New(db),
 	}
 
-	// 创建 DatabaseScanService（使用独立服务，无循环依赖）
-	s.dbScanService = NewDatabaseScanService(db, log, nil, repo, spatialService, indexerService)
-
-	// 创建 BranchLeafScanService（使用独立服务，无循环依赖）
-	s.branchLeafScanService = NewBranchLeafScanService(db, log, nil, repo, indexerService)
-
-	// 创建 ObjectStorageCatalogScanService（使用独立服务，无循环依赖）
-	s.objectStorageCatalogScanService = NewObjectStorageCatalogScanService(db, log, repo, indexerService)
-
-	// 创建 FilesystemCatalogScanService
-	s.filesystemCatalogScanService = NewFilesystemCatalogScanService(db, log, repo, indexerService)
-
-	// 创建内容目录扫描主链路
-	s.contentCatalogScanner = NewContentCatalogScanner(s.objectStorageCatalogScanService, s.filesystemCatalogScanService)
+	s.catalogDispatcher = scanadapter.NewCatalogDispatcher(
+		db,
+		repo,
+		log,
+		s.runtimes.Database,
+		s.runtimes.BranchLeaf,
+		s.runtimes.ContentCatalogScanner,
+	)
 
 	// 创建 MetadataQueryService（提供元数据查询接口）
 	s.metadataQueryService = NewMetadataQueryService(db, spatialService, engineService, log)
 
 	return s
-}
-
-func (s *ScanService) CountItems(tenantID uint) (int64, error) {
-	var itemCount int64
-	if err := s.db.Table("metadata.meta_item").Where("tenant_id = ?", tenantID).Count(&itemCount).Error; err != nil {
-		return 0, err
-	}
-	return itemCount, nil
 }
 
 // SetIndexer 注入搜索索引器
@@ -112,9 +87,6 @@ func (s *ScanService) SetIndexer(indexer *search.Indexer) {
 	// 同时注入到独立服务
 	if s.indexerService != nil {
 		s.indexerService.indexer = indexer
-	}
-	if s.dbScanService != nil {
-		s.dbScanService.indexer = indexer
 	}
 }
 
@@ -135,6 +107,9 @@ func (s *ScanService) SetScanEventPublisher(publisher *events.ScanEventPublisher
 // SetDedupService 注入扫描去重服务
 func (s *ScanService) SetDedupService(dedupService *ScanDedupService) {
 	s.dedupService = dedupService
+	if s.catalogDispatcher != nil {
+		s.catalogDispatcher.SetLocker(dedupService)
+	}
 
 	// 启动时清理所有残留的扫描锁（防止上次服务异常退出时的锁未清理）
 	if dedupService != nil {
@@ -142,111 +117,13 @@ func (s *ScanService) SetDedupService(dedupService *ScanDedupService) {
 	}
 }
 
-// cleanupStaleScanLocks 清理所有残留的扫描锁
-// 在服务启动时调用，清理上次服务异常退出时未清理的锁
-func (s *ScanService) cleanupStaleScanLocks() {
-	if s.dedupService == nil {
-		return
-	}
-
-	ctx := context.Background()
-
-	// 1. 查询所有状态为"running"的节点
-	var staleNodes []models.MetaNode
-	if err := s.db.Where("scan_status = ?", "running").Find(&staleNodes).Error; err != nil {
-		s.log.Warn("查询残留扫描节点失败", "error", err)
-		return
-	}
-
-	if len(staleNodes) == 0 {
-		s.log.Info("无残留扫描锁，跳过清理")
-		return
-	}
-
-	s.log.Info("开始清理残留扫描锁", "stale_nodes_count", len(staleNodes))
-
-	cleanedCount := 0
-	for _, node := range staleNodes {
-		// 2. 生成锁的 key
-		lockKey := s.dedupService.GenerateNamespaceLockKey(node.TenantID, node.EngineID, node.Name)
-
-		// 3. 清理 Redis 锁
-		if err := s.dedupService.ClearTask(ctx, lockKey); err != nil {
-			s.log.Warn("清理残留锁失败",
-				"node_id", node.ID,
-				"engine_id", node.EngineID,
-				"schema", node.Name,
-				"error", err)
-			continue
-		}
-
-		// 4. 重置节点状态为"pending"
-		if err := s.db.Model(&node).Updates(map[string]interface{}{
-			"scan_status": "pending",
-			"scanned_at":  nil,
-		}).Error; err != nil {
-			s.log.Warn("重置节点状态失败",
-				"node_id", node.ID,
-				"error", err)
-			continue
-		}
-
-		cleanedCount++
-		s.log.Info("清理残留锁成功",
-			"node_id", node.ID,
-			"engine_id", node.EngineID,
-			"tenant_id", node.TenantID,
-			"schema", node.Name)
-	}
-
-	s.log.Info("残留扫描锁清理完成",
-		"total", len(staleNodes),
-		"cleaned", cleanedCount)
-}
-
-// publishScanCompletedEvent 发布扫描完成事件（异步）
-func (s *ScanService) publishScanCompletedEvent(engineID, tenantID uint, summary models.JSONMap) {
-	if s.scanEventPublisher == nil {
-		return // 未配置事件发布器，跳过
-	}
-
-	// 异步发布，不阻塞主流程
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		event := scantask.ScanCompletedEvent(engineID, tenantID, commonModels.JSONMap(summary), time.Now())
-		if err := s.scanEventPublisher.PublishScanCompleted(ctx, event); err != nil {
-			s.log.Error("发布扫描完成事件失败",
-				"engine_id", engineID,
-				"tenant_id", tenantID,
-				"error", err)
-		}
-	}()
-}
-
-type ScanOptions struct {
-	EngineID     uint
-	TenantID     uint
-	CatalogPaths []string
-	RefGroups    []models.ScanRefGroup
-	Token        string
-	ScanDepth    string
-	Force        bool
-	Source       string
-	Reporter     ScanProgressReporter
-	NodeID       uint
-	ItemID       uint
-	Targets      []string
-}
-
-func (s *ScanService) ScanEngineWithOptions(opts ScanOptions) (*models.ScanResponse, error) {
+func (s *ScanService) ScanEngineWithOptions(opts scanflow.Options) (*models.ScanResponse, error) {
 	startTime := time.Now()
 	tenantID := opts.TenantID
 	token := opts.Token
 	reporter := opts.Reporter
 
-	engineID, err := s.resolveScanEngineID(tenantID, opts)
+	engineID, err := s.ensureScopeResolver().ResolveEngineID(tenantID, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -267,15 +144,6 @@ func (s *ScanService) ScanEngineWithOptions(opts ScanOptions) (*models.ScanRespo
 		return nil, err
 	}
 
-	var directExecID string
-	if reporter == nil {
-		execID, createErr := s.immediateRecorder.Create(resource, effectiveTenantID, scope.CatalogPaths, scope.RefGroups, scope.ScanDepth, scope.Force, scope.Source, startTime)
-		if createErr != nil {
-			return nil, createErr
-		}
-		directExecID = execID
-	}
-
 	startFields := append(connectionLogFields(resource),
 		"mode", "manual",
 		"scope_mode", string(scope.Mode),
@@ -291,7 +159,24 @@ func (s *ScanService) ScanEngineWithOptions(opts ScanOptions) (*models.ScanRespo
 	}
 	s.log.Info("开始扫描资源", startFields...)
 
-	result, err := s.dispatchScan(scanDispatchRequest{
+	if scope.Mode == scanflow.ModeItem && opts.ItemID > 0 {
+		if reporter != nil {
+			reporter.Message("正在刷新数据项元数据")
+		}
+		resp, refreshErr := s.refreshItem(context.Background(), engineID, effectiveTenantID, opts.ItemID, token, scope.Force)
+		if refreshErr != nil {
+			if reporter != nil {
+				reporter.Message(fmt.Sprintf("扫描失败: %v", refreshErr))
+			}
+			return nil, refreshErr
+		}
+		if reporter != nil {
+			reporter.Message("扫描完成")
+		}
+		return resp, nil
+	}
+
+	result, err := s.catalogDispatcher.Dispatch(scanflow.DispatchRequest{
 		Resource:     resource,
 		TenantID:     effectiveTenantID,
 		CatalogPaths: scope.CatalogPaths,
@@ -299,15 +184,12 @@ func (s *ScanService) ScanEngineWithOptions(opts ScanOptions) (*models.ScanRespo
 		ScanDepth:    scope.ScanDepth,
 		Force:        scope.Force,
 		Reporter:     reporter,
-		Mode:         scanDispatchManual,
+		Mode:         scanflow.DispatchManual,
 	})
 
 	if err != nil {
 		if reporter != nil {
 			reporter.Message(fmt.Sprintf("扫描失败: %v", err))
-		}
-		if directExecID != "" {
-			s.immediateRecorder.Fail(directExecID, int(effectiveTenantID), err, startTime)
 		}
 		return nil, err
 	}
@@ -328,211 +210,13 @@ func (s *ScanService) ScanEngineWithOptions(opts ScanOptions) (*models.ScanRespo
 		reporter.Message("扫描完成")
 	}
 
-	if directExecID != "" {
-		resultMeta := scantask.ScanResultMetadata(scantask.ScanCounts{CatalogNodes: result.CatalogNodes, Items: result.Items, Fields: result.Fields, Extraction: result.Extraction})
-		s.immediateRecorder.Complete(directExecID, int(effectiveTenantID), resultMeta, startTime, completedAt)
-		s.publishScanCompletedEvent(resource.ID, effectiveTenantID, models.JSONMap(resultMeta))
-	}
-
-	return scantask.NewScanResponse(
+	return scanflow.NewScanResponse(
 		"success",
 		"Scan completed successfully",
-		scantask.ScanCounts{CatalogNodes: result.CatalogNodes, Items: result.Items, Fields: result.Fields, Extraction: result.Extraction},
+		scanflow.ScanCounts{CatalogNodes: result.CatalogNodes, Items: result.Items, Fields: result.Fields, Extraction: result.Extraction},
 		startTime,
 		completedAt,
 	), nil
-}
-
-func (s *ScanService) resolveScanEngineID(tenantID uint, opts ScanOptions) (uint, error) {
-	if opts.EngineID > 0 {
-		return opts.EngineID, nil
-	}
-	if opts.NodeID > 0 {
-		var node models.MetaNode
-		if err := s.db.Select("engine_id").Where("tenant_id = ? AND id = ?", tenantID, opts.NodeID).First(&node).Error; err != nil {
-			return 0, fmt.Errorf("node target not found: %w", err)
-		}
-		return node.EngineID, nil
-	}
-	if opts.ItemID > 0 {
-		var item models.MetaItem
-		if err := s.db.Select("engine_id").Where("tenant_id = ? AND id = ?", tenantID, opts.ItemID).First(&item).Error; err != nil {
-			return 0, fmt.Errorf("item target not found: %w", err)
-		}
-		return item.EngineID, nil
-	}
-	for _, target := range opts.Targets {
-		if id, ok := engineIDFromLocator(target); ok {
-			return id, nil
-		}
-	}
-	return 0, fmt.Errorf("engine_id is required")
-}
-
-func (s *ScanService) resolveScanTargets(tenantID uint, opts ScanOptions) ([]string, error) {
-	catalogPaths := []string{}
-
-	if opts.NodeID > 0 {
-		var node models.MetaNode
-		if err := s.db.Where("tenant_id = ? AND id = ?", tenantID, opts.NodeID).First(&node).Error; err != nil {
-			return nil, fmt.Errorf("node target not found: %w", err)
-		}
-		catalogPaths = append(catalogPaths, scanTargetFromNode(node)...)
-	}
-
-	if opts.ItemID > 0 {
-		var item models.MetaItem
-		if err := s.db.Where("tenant_id = ? AND id = ?", tenantID, opts.ItemID).First(&item).Error; err != nil {
-			return nil, fmt.Errorf("item target not found: %w", err)
-		}
-		catalogPaths = append(catalogPaths, scanTargetFromItem(item)...)
-	}
-
-	for _, target := range opts.Targets {
-		catalogPaths = append(catalogPaths, scanTargetFromLocator(target)...)
-	}
-
-	return uniqueNonEmpty(catalogPaths), nil
-}
-
-func scanTargetFromNode(node models.MetaNode) []string {
-	if node.ParentNodeID == nil && strings.TrimSpace(node.FullName) == "" {
-		return nil
-	}
-	if target := strings.Trim(strings.TrimSpace(node.FullName), "/"); target != "" {
-		return []string{target}
-	}
-	if target := strings.Trim(strings.TrimSpace(node.Name), "/"); target != "" {
-		return []string{target}
-	}
-	return nil
-}
-
-func scanTargetFromItem(item models.MetaItem) []string {
-	if targets := scanTargetPathsFromMetaAttributes(item.Attributes); len(targets) > 0 {
-		return targets
-	}
-	fullName := strings.Trim(strings.TrimSpace(item.FullName), "/")
-	if fullName != "" {
-		return []string{fullName}
-	}
-	return nil
-}
-
-func scanTargetPathsFromMetaAttributes(attrs map[string]interface{}) []string {
-	if targets := dataitem.ScanTargetsFromAttributes(attrs); len(targets) > 0 {
-		result := make([]string, 0, len(targets))
-		for _, target := range targets {
-			if path := strings.Trim(strings.TrimSpace(target.Path), "/"); path != "" {
-				result = append(result, path)
-			}
-		}
-		if len(result) > 0 {
-			return result
-		}
-	}
-	if physicalPath := dataitem.DescriptorFromAttributes(attrs).PhysicalPath; physicalPath != "" {
-		return []string{strings.Trim(physicalPath, "/")}
-	}
-	return nil
-}
-
-func scanTargetFromLocator(locator string) []string {
-	locator = strings.TrimSpace(locator)
-	if locator == "" {
-		return nil
-	}
-	typeIdx := strings.Index(locator, "?type=")
-	pathPart := locator
-	targetType := ""
-	if typeIdx >= 0 {
-		pathPart = locator[:typeIdx]
-		targetType = locator[typeIdx+6:]
-		if amp := strings.Index(targetType, "&"); amp >= 0 {
-			targetType = targetType[:amp]
-		}
-	}
-	pathMarker := "/path/"
-	pathIdx := strings.Index(pathPart, pathMarker)
-	if pathIdx < 0 {
-		return nil
-	}
-	path := strings.Trim(pathPart[pathIdx+len(pathMarker):], "/")
-	if path == "" {
-		return nil
-	}
-	path = strings.ReplaceAll(path, "%2F", "/")
-	path = strings.ReplaceAll(path, "%2f", "/")
-	switch targetType {
-	case "table", "collection", "graph":
-		parts := strings.Split(path, "/")
-		if len(parts) > 1 {
-			return []string{parts[0]}
-		}
-		return []string{path}
-	case "schema", "database":
-		return []string{strings.Split(path, "/")[0]}
-	}
-	return []string{path}
-}
-
-func topCatalogTargets(paths []string) []string {
-	targets := make([]string, 0, len(paths))
-	for _, path := range paths {
-		path = strings.Trim(strings.TrimSpace(path), "/")
-		if path == "" {
-			continue
-		}
-		parts := strings.FieldsFunc(path, func(r rune) bool {
-			return r == '/' || r == '.'
-		})
-		if len(parts) == 0 {
-			continue
-		}
-		targets = append(targets, parts[0])
-	}
-	return uniqueNonEmpty(targets)
-}
-
-func engineIDFromLocator(locator string) (uint, bool) {
-	locator = strings.TrimSpace(locator)
-	const prefix = "addp://engine/"
-	if !strings.HasPrefix(locator, prefix) {
-		return 0, false
-	}
-	rest := strings.TrimPrefix(locator, prefix)
-	idx := strings.Index(rest, "/")
-	if idx < 0 {
-		return 0, false
-	}
-	var id uint
-	if _, err := fmt.Sscanf(rest[:idx], "%d", &id); err != nil {
-		return 0, false
-	}
-	return id, id > 0
-}
-
-func uniqueNonEmpty(values []string) []string {
-	seen := map[string]bool{}
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" || seen[value] {
-			continue
-		}
-		seen[value] = true
-		result = append(result, value)
-	}
-	return result
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if value = strings.TrimSpace(value); value != "" {
-			return value
-		}
-	}
-	return ""
 }
 
 func tenantIDForResource(resource *commonModels.Engine, fallback uint) uint {
@@ -540,331 +224,4 @@ func tenantIDForResource(resource *commonModels.Engine, fallback uint) uint {
 		return *resource.TenantID
 	}
 	return fallback
-}
-
-func (s *ScanService) scanResourceNamespacesWithReporter(resource *commonModels.Engine, tenantID uint, namespaces []string, scanLogID uint, scanDepth string, force bool, reporter ScanProgressReporter) (int, int, int, error) {
-	resourceID := resource.ID
-
-	startFields := append(connectionLogFields(resource),
-		"scan_log_id", scanLogID,
-		"mode", "manual",
-	)
-	if len(namespaces) > 0 {
-		startFields = append(startFields, "target_namespaces", namespaces)
-	}
-	s.log.Info("开始扫描指定命名空间列表", startFields...)
-
-	// 如果未指定命名空间，则扫描所有命名空间（插件负责过滤系统命名空间）
-	if len(namespaces) == 0 {
-		if reporter != nil {
-			reporter.Message("未指定命名空间，正在获取完整列表")
-		}
-
-		// 获取插件
-		p, err := plugin.Get(resource.EngineType)
-		if err != nil {
-			return 0, 0, 0, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
-		}
-
-		rootBranchEntries, err := metacatalog.RootBranchEntries(context.Background(), resource, p)
-		if err != nil {
-			return 0, 0, 0, err
-		}
-
-		for _, entry := range rootBranchEntries {
-			namespaces = append(namespaces, entry.Name)
-		}
-
-		if reporter != nil {
-			reporter.Message(fmt.Sprintf("已过滤系统命名空间，待扫描 %d 个用户命名空间", len(namespaces)))
-		}
-	}
-
-	totalNamespaces := 0
-	totalTables := 0
-	totalFields := 0
-	total := len(namespaces)
-	var scanErrors []error
-	if reporter != nil {
-		reporter.SetTotal(total)
-	}
-	completed := 0
-
-	for _, namespaceName := range namespaces {
-		// 使用匿名函数包装每次循环，确保 defer 在每次循环结束时执行
-		func(namespace string) {
-			if reporter != nil {
-				reporter.Message(fmt.Sprintf("开始扫描命名空间 %s", namespace))
-			}
-
-			// 检查命名空间级锁
-			ctx := context.Background()
-			var namespaceLock string
-			lockAcquired := false
-
-			if s.dedupService != nil {
-				namespaceLock = s.dedupService.GenerateNamespaceLockKey(tenantID, resourceID, namespace)
-				if s.dedupService.CheckTaskExists(ctx, namespaceLock) {
-					s.log.Info("命名空间正在扫描中，跳过",
-						"engine_id", resourceID,
-						"namespace", namespace)
-					if reporter != nil {
-						reporter.Message(fmt.Sprintf("命名空间 %s 正在扫描中，跳过", namespace))
-					}
-					completed++
-					return
-				}
-
-				// 加命名空间级锁
-				if err := s.dedupService.MarkTaskRunning(ctx, namespaceLock, 2*time.Hour); err != nil {
-					s.log.Warn("加命名空间级锁失败", "namespace", namespace, "error", err)
-				} else {
-					lockAcquired = true
-				}
-
-				// 使用 defer 确保锁在任何情况下都会被清理（包括 panic）
-				defer func() {
-					if lockAcquired && namespaceLock != "" {
-						if clearErr := s.dedupService.ClearTask(context.Background(), namespaceLock); clearErr != nil {
-							s.log.Warn("清除命名空间级锁失败", "namespace", namespace, "error", clearErr)
-						}
-					}
-				}()
-			}
-
-			// 扫描命名空间
-			schemas, tables, fields, err := s.dbScanService.ScanNamespace(context.Background(), resource, tenantID, resourceID, namespace, scanDepth, force)
-
-			if err != nil {
-				s.log.Warn("命名空间扫描失败",
-					"engine_id", resourceID,
-					"tenant_id", tenantID,
-					"namespace", namespace,
-					"error", err,
-				)
-				if reporter != nil {
-					reporter.Message(fmt.Sprintf("命名空间 %s 扫描失败: %v", namespace, err))
-				}
-				scanErrors = append(scanErrors, fmt.Errorf("%s: %w", namespace, err))
-				return
-			}
-			totalNamespaces += schemas
-			totalTables += tables
-			totalFields += fields
-
-			completed++
-			if reporter != nil {
-				reporter.Advance(namespace, completed, total, map[string]interface{}{
-					"tables": tables,
-					"fields": fields,
-				})
-			}
-		}(namespaceName)
-	}
-
-	s.log.Info("指定命名空间扫描完成", cloneLogFields(startFields,
-		"catalog_nodes_scanned", totalNamespaces,
-		"items_scanned", totalTables,
-		"fields_scanned", totalFields,
-	)...)
-
-	if len(scanErrors) > 0 {
-		return totalNamespaces, totalTables, totalFields, fmt.Errorf("failed to scan %d namespace(s): %v", len(scanErrors), scanErrors[0])
-	}
-
-	return totalNamespaces, totalTables, totalFields, nil
-}
-
-// scanBranchLeavesWithReporter 扫描 root branch -> leaf 型 catalog 的指定 branch 列表。
-func (s *ScanService) scanBranchLeavesWithReporter(
-	enginePlugin plugin.EnginePlugin,
-	resource *commonModels.Engine,
-	tenantID uint,
-	branchNames []string,
-	scanDepth string,
-	force bool,
-	reporter ScanProgressReporter,
-) (int, int, int, error) {
-
-	resourceID := resource.ID
-	ctx := context.Background()
-
-	startFields := append(connectionLogFields(resource),
-		"mode", "manual",
-		"scan_depth", scanDepth,
-	)
-
-	// 如果未指定 branch，列出 root 下所有 branch。
-	if len(branchNames) == 0 {
-		if reporter != nil {
-			reporter.Message("正在列出 catalog 分支")
-		}
-
-		rootBranchEntries, err := metacatalog.RootBranchEntries(ctx, resource, enginePlugin)
-		if err != nil {
-			return 0, 0, 0, err
-		}
-
-		for _, entry := range rootBranchEntries {
-			branchNames = append(branchNames, entry.Name)
-		}
-
-		if reporter != nil {
-			reporter.Message(fmt.Sprintf("已过滤系统分支，待扫描 %d 个 catalog 分支", len(branchNames)))
-		}
-	}
-
-	totalCatalogNodes := 0
-	totalItems := 0
-	totalFields := 0
-	total := len(branchNames)
-	if reporter != nil {
-		reporter.SetTotal(total)
-	}
-	completed := 0
-
-	for _, branchName := range branchNames {
-		if reporter != nil {
-			reporter.Message(fmt.Sprintf("开始扫描 catalog 分支 %s", branchName))
-		}
-
-		// 检查 branch 级锁。
-		var branchLock string
-		if s.dedupService != nil {
-			branchLock = s.dedupService.GenerateBranchLockKey(tenantID, resourceID, branchName)
-			if s.dedupService.CheckTaskExists(ctx, branchLock) {
-				s.log.Info("catalog 分支正在扫描中，跳过",
-					"engine_id", resourceID,
-					"branch", branchName)
-				if reporter != nil {
-					reporter.Message(fmt.Sprintf("catalog 分支 %s 正在扫描中，跳过", branchName))
-				}
-				completed++
-				continue
-			}
-
-			// 加 branch 级锁。
-			if err := s.dedupService.MarkTaskRunning(ctx, branchLock, 2*time.Hour); err != nil {
-				s.log.Warn("加 catalog 分支级锁失败", "branch", branchName, "error", err)
-			}
-		}
-
-		// 扫描 branch
-		catalogNodes, items, fields, err := s.branchLeafScanService.ScanBranch(
-			ctx, enginePlugin, resource, tenantID, branchName, scanDepth, force,
-		)
-
-		// 扫描完成后清理锁
-		if s.dedupService != nil && branchLock != "" {
-			if clearErr := s.dedupService.ClearTask(ctx, branchLock); clearErr != nil {
-				s.log.Warn("清除 catalog 分支级锁失败", "branch", branchName, "error", clearErr)
-			}
-		}
-
-		if err != nil {
-			s.log.Warn("catalog 分支扫描失败",
-				"engine_id", resourceID,
-				"tenant_id", tenantID,
-				"branch", branchName,
-				"error", err,
-			)
-			if reporter != nil {
-				reporter.Message(fmt.Sprintf("catalog 分支 %s 扫描失败: %v", branchName, err))
-			}
-			continue
-		}
-		totalCatalogNodes += catalogNodes
-		totalItems += items
-		totalFields += fields
-
-		completed++
-		if reporter != nil {
-			reporter.Advance(branchName, completed, total, map[string]interface{}{
-				"items":  items,
-				"fields": fields,
-			})
-		}
-	}
-
-	s.log.Info("指定 catalog 分支扫描完成", cloneLogFields(startFields,
-		"catalog_nodes_scanned", totalCatalogNodes,
-		"items_scanned", totalItems,
-		"fields_scanned", totalFields,
-	)...)
-
-	return totalCatalogNodes, totalItems, totalFields, nil
-}
-
-// GetObjectMetadata 获取指定对象的元数据 (代理到 metadataExtractor)
-func (s *ScanService) GetObjectMetadata(tenantID, engineID uint, objectKey string) (*models.MetaItem, error) {
-	return s.metadataExtractor.GetObjectMetadata(tenantID, engineID, objectKey)
-}
-
-// ExtractObjectMetadataOnDemand 按需提取对象的深度元数据 (代理到 metadataExtractor)
-func (s *ScanService) ExtractObjectMetadataOnDemand(tenantID, engineID uint, objectKey string, token string, objectReader io.Reader) (map[string]interface{}, error) {
-	return s.metadataExtractor.ExtractObjectMetadataOnDemand(tenantID, engineID, objectKey, token, objectReader)
-}
-
-// BuildObjectAccessIndexOnDemand 按需建立对象访问索引。
-func (s *ScanService) BuildObjectAccessIndexOnDemand(tenantID, engineID uint, objectKey string, objectReader io.Reader) (models.JSONMap, error) {
-	return s.metadataExtractor.BuildObjectAccessIndexOnDemand(tenantID, engineID, objectKey, objectReader)
-}
-
-// ============================================================================
-// 元数据查询接口（委托给 MetadataQueryService）
-// ============================================================================
-
-// ListItemsByEngine 获取引擎下所有已扫描数据项。
-func (s *ScanService) ListItemsByEngine(engineID, tenantID uint) ([]models.MetaItemLite, error) {
-	return s.metadataQueryService.ListItemsByEngine(engineID, tenantID)
-}
-
-// ListItemsByBranch 获取 catalog 第一层业务分支下所有已扫描数据项。
-func (s *ScanService) ListItemsByBranch(engineID, tenantID uint, branch string) ([]models.MetaItemLite, error) {
-	return s.metadataQueryService.ListItemsByBranch(engineID, tenantID, branch)
-}
-
-// GetItemFieldDetailsByID 按 item_id 获取数据项字段详细信息。
-func (s *ScanService) GetItemFieldDetailsByID(tenantID, itemID uint) ([]datatype.FieldInfo, error) {
-	return s.metadataQueryService.GetItemFieldDetailsByID(tenantID, itemID)
-}
-
-// GetMetadataTree 获取资源的完整元数据树（用于Manager模块）
-func (s *ScanService) GetMetadataTree(tenantID, engineID uint) (*models.MetadataTreeResponse, error) {
-	return s.metadataQueryService.GetMetadataTree(tenantID, engineID)
-}
-
-// GetNodeByCatalogPath 按 catalog path 查询节点（用于 Manager 模块）
-func (s *ScanService) GetNodeByCatalogPath(tenantID, engineID uint, catalogPath string) (*models.MetaNodeLite, error) {
-	return s.metadataQueryService.GetNodeByCatalogPath(tenantID, engineID, catalogPath)
-}
-
-// GetItemByCatalogPath 按 catalog path 查询数据项（用于 Manager 模块）
-func (s *ScanService) GetItemByCatalogPath(tenantID, engineID uint, catalogPath string) (*models.MetaItemLite, error) {
-	return s.metadataQueryService.GetItemByCatalogPath(tenantID, engineID, catalogPath)
-}
-
-// GetNodeChildren 获取节点的子节点（用于Manager模块）
-func (s *ScanService) GetNodeChildren(tenantID, nodeID uint) ([]models.MetaNodeLite, error) {
-	return s.metadataQueryService.GetNodeChildren(tenantID, nodeID)
-}
-
-// GetNodeItems 获取节点下的项目（用于Manager模块）
-func (s *ScanService) GetNodeItems(tenantID, nodeID uint) ([]models.MetaItemLite, error) {
-	return s.metadataQueryService.GetNodeItems(tenantID, nodeID)
-}
-
-// GetItemSpatialMetadataByID 按 item_id 获取数据项空间元数据。
-func (s *ScanService) GetItemSpatialMetadataByID(tenantID, itemID uint) (*models.SpatialMetadataResponse, error) {
-	return s.metadataQueryService.GetItemSpatialMetadataByID(tenantID, itemID)
-}
-
-// GetMetaNodeByID 获取单个节点详情（用于Manager模块）
-func (s *ScanService) GetMetaNodeByID(tenantID, nodeID uint) (*models.MetaNodeLite, error) {
-	return s.metadataQueryService.GetMetaNodeByID(tenantID, nodeID)
-}
-
-// GetItemByID 按 ID 查询 MetaItem
-func (s *ScanService) GetItemByID(tenantID, itemID uint) (*models.MetaItemLite, error) {
-	return s.metadataQueryService.GetItemByID(tenantID, itemID)
 }

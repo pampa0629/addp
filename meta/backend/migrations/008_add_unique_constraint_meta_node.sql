@@ -10,21 +10,21 @@ WITH duplicates AS (
             PARTITION BY tenant_id, engine_id, COALESCE(parent_node_id, 0), name, node_type
             ORDER BY id DESC
         ) AS rn
-    FROM metadata.meta_node
+    FROM meta.meta_node
 )
-DELETE FROM metadata.meta_node
+DELETE FROM meta.meta_node
 WHERE id IN (
     SELECT id FROM duplicates WHERE rn > 1
 );
 
 -- 2. 添加唯一性约束
 -- 注意：parent_node_id 可能为 NULL，需要使用部分唯一索引
-CREATE UNIQUE INDEX idx_meta_node_unique_with_parent
-ON metadata.meta_node (tenant_id, engine_id, parent_node_id, name, node_type)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_meta_node_unique_with_parent
+ON meta.meta_node (tenant_id, engine_id, parent_node_id, name, node_type)
 WHERE parent_node_id IS NOT NULL AND deleted_at IS NULL;
 
-CREATE UNIQUE INDEX idx_meta_node_unique_without_parent
-ON metadata.meta_node (tenant_id, engine_id, name, node_type)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_meta_node_unique_without_parent
+ON meta.meta_node (tenant_id, engine_id, name, node_type)
 WHERE parent_node_id IS NULL AND deleted_at IS NULL;
 
 -- 说明：

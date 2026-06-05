@@ -24,6 +24,7 @@ type ListExecutionsRequest struct {
 	TenantID     int
 	Module       string
 	TaskType     string
+	Source       string
 	Status       string
 	TriggerType  string
 	SourceTaskID *int
@@ -47,6 +48,7 @@ func (s *ExecutionQueryService) ListExecutions(ctx context.Context, req *ListExe
 		TenantID:     req.TenantID,
 		Module:       req.Module,
 		TaskType:     req.TaskType,
+		Source:       req.Source,
 		Status:       req.Status,
 		TriggerType:  req.TriggerType,
 		SourceTaskID: req.SourceTaskID,

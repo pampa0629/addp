@@ -5,7 +5,7 @@
 - **语言**: Go 1.23+
 - **HTTP 框架**: Gin
 - **ORM**: GORM
-- **数据库**: PostgreSQL 15 (所有模块使用 schema 隔离: system, manager, metadata, transfer, orchestrator, develop)
+- **数据库**: PostgreSQL 15 (所有模块使用 schema 隔离: system, manager, meta, transfer, orchestrator, develop)
 - **缓存/队列**: Redis 7
 - **对象存储**: MinIO (兼容 S3)
 - **任务队列**: Asynq (基于 Redis,用于 Transfer 模块), Cron (用于 Meta 模块调度)

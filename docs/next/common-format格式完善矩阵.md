@@ -19,7 +19,7 @@
 | 格式 | 后续事项 |
 |---|---|
 | CSV / TSV | 还要核实大文件分页、编码、表头识别，继续收敛 CSV / TSV 的格式族口径，并补 access index 失效规则验证。 |
-| JSON / GeoJSON 编码 | 当前 GeoJSON 暂不升格为独立 format identity，仍按 `format=json` + `capabilities.spatial` 处理；还要补真实样例回归，核实大文件分页、复杂嵌套对象数组、GeoJSON 无 geometry / 混合 geometry、WKB / EWKB 空间渲染体验。 |
+| JSON / GeoJSON 编码 | GeoJSON 已升格为独立 `format=geojson`，`.json` 文件只有内容前缀严格匹配 `FeatureCollection` 时才升格；代码回归已覆盖普通 `.json` 不升格、`.json` GeoJSON deep scan 写入 `format_info.geojson`、Manager `format=geojson` 使用 map 预览材料。后续还要用真实样例核实大文件分页、复杂嵌套对象数组、GeoJSON 无 geometry / 混合 geometry、WKB / EWKB 空间渲染体验。 |
 | Parquet | MinIO / NFS 真实样例、`part-*` 和分区目录 whole scope Transfer 已验收；Hive-style 分区字段已能进入 schema 和 row。后续继续核实 schema 不兼容提示、大文件 row group 性能，并设计专用 range / footer 读取边界。 |
 | Shapefile | 还要用真实 NFS / MinIO / ZIP 样例核实本地 materialized fallback 也能继续利用 `.shx` 索引分页，嵌套 ZIP 中的 Shapefile 子项能正确归并 `.shp/.shx/.dbf` refs，不支持 shape 类型提示和前端空间表渲染体验；如需地图专用展示，应基于通用 table / spatial 预览 DTO 扩展前端渲染。 |
 | Excel | 还要用真实多 sheet、空 sheet、大文件样例核实 Meta children、container 概览、`child_name` 表格分页和 `ContainerPreview` 切换体验。 |

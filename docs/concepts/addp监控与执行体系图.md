@@ -74,7 +74,9 @@ graph TB
 | `tenant_id` | int | 租户 ID (租户隔离) |
 | `module` | string | 模块名称 (meta/transfer/orchestrator/develop/manager) |
 | `task_type` | string | 任务类型 (scan/import/export/sync/orchestration/query/workflow) |
-| `task_id` | string | 任务 ID (对应模块内的任务定义 ID) |
+| `source` | string | 触发来源模块 |
+| `source_task_id` | string | 任务 ID (对应模块内的任务定义 ID) |
+| `trigger_type` | string | `manual` / `scheduled` |
 | `status` | string | 执行状态 (pending/running/success/failed/cancelled) |
 | `started_at` | timestamp | 开始时间 |
 | `finished_at` | timestamp | 结束时间 |

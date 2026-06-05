@@ -34,7 +34,7 @@ func (r *ExecutionResult) Scan(value interface{}) error {
 type CreateExecutionRequest struct {
 	DevItemID   *uint                  `json:"dev_item_id"`
 	DevType     string                 `json:"dev_type" binding:"required,oneof=query workflow script notebook"`
-	TriggerType string                 `json:"trigger_type" binding:"required,oneof=manual schedule orchestrator api"`
+	TriggerType string                 `json:"trigger_type" binding:"required,oneof=manual scheduled"`
 	EngineID    *uint                  `json:"engine_id"`
 	Content     map[string]interface{} `json:"content"` // 执行内容（对于临时执行）
 }
@@ -58,7 +58,7 @@ type ListExecutionsRequest struct {
 	DevItemID   *uint  `form:"dev_item_id"`
 	DevType     string `form:"dev_type" binding:"omitempty,oneof=query workflow script notebook"`
 	Status      string `form:"status" binding:"omitempty,oneof=pending running success failed timeout cancelled"`
-	TriggerType string `form:"trigger_type" binding:"omitempty,oneof=manual schedule orchestrator api"`
+	TriggerType string `form:"trigger_type" binding:"omitempty,oneof=manual scheduled"`
 	StartDate   string `form:"start_date"` // YYYY-MM-DD
 	EndDate     string `form:"end_date"`   // YYYY-MM-DD
 }

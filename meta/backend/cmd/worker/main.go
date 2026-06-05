@@ -11,6 +11,7 @@ import (
 	commonConfig "github.com/addp/common/config"
 	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/meta/internal/config"
+	metaRepo "github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/service"
 	"github.com/addp/meta/internal/worker"
 	"github.com/hibiken/asynq"
@@ -127,6 +128,10 @@ func main() {
 
 // connectDatabase 连接数据库
 func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
+	if err := metaRepo.PrepareSchema(cfg); err != nil {
+		return nil, err
+	}
+
 	// Use common repository InitDatabase (worker doesn't need auto-migration)
 	dbConfig := commonRepo.DatabaseConfig{
 		Host:     cfg.DBHost,

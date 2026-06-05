@@ -80,7 +80,7 @@ func postgresReadSessionQuery(ctx context.Context, db *sql.DB, path plugin.Catal
 		fields = selectedFields
 	}
 	selectExpr := postgresSelectExprForFields(fields)
-	if shouldReadPostgresSpatialAsGeoJSON(opts.Hints) {
+	if shouldReadPostgresGeometryAsGeoJSON(opts.Hints) {
 		if expr, err := postgresGeoJSONSelectExpr(columns, opts.Hints, fields); err != nil {
 			return "", nil, nil, err
 		} else if expr != "" {
@@ -156,11 +156,11 @@ func postgresSelectExprForFields(fields []datatype.FieldInfo) string {
 	return strings.Join(exprs, ", ")
 }
 
-func shouldReadPostgresSpatialAsGeoJSON(hints map[string]interface{}) bool {
+func shouldReadPostgresGeometryAsGeoJSON(hints map[string]interface{}) bool {
 	if hints == nil {
 		return false
 	}
-	return strings.EqualFold(strings.TrimSpace(hintString(hints, "spatial.target_encoding")), "geojson")
+	return strings.EqualFold(strings.TrimSpace(hintString(hints, "geometry_encoding")), "geojson")
 }
 
 func postgresGeoJSONSelectExpr(columns []postgresColumnInfo, hints map[string]interface{}, fields []datatype.FieldInfo) (string, error) {

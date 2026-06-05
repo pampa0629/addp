@@ -2221,9 +2221,7 @@ const docTemplate = `{
                     "type": "string",
                     "enum": [
                         "manual",
-                        "schedule",
-                        "orchestrator",
-                        "api"
+                        "scheduled"
                     ]
                 }
             }
@@ -2432,6 +2430,10 @@ const docTemplate = `{
                 "rows_affected": {
                     "description": "SQL 影响行数",
                     "type": "integer"
+                },
+                "source": {
+                    "description": "触发来源模块",
+                    "type": "string"
                 },
                 "source_task_id": {
                     "description": "关联原始任务",

@@ -322,9 +322,7 @@ const getProgressStatus = (status) => {
 const getTriggerLabel = (trigger) => {
   const labels = {
     manual: t('develop.execution.triggerManual'),
-    schedule: t('develop.execution.triggerSchedule'),
-    orchestrator: t('develop.execution.triggerOrchestrator'),
-    api: 'API'
+    scheduled: t('develop.execution.triggerSchedule')
   }
   return labels[trigger] || trigger
 }

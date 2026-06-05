@@ -331,7 +331,7 @@ func (h *TenantHandler) Create(c *gin.Context) {
 | 引擎 | `engines.tenant_id` | 租户下的数据库/存储引擎配置 |
 | 审计日志 | `audit_logs.tenant_id` | 租户下的操作记录 |
 | Manager 资源 | `manager.*.tenant_id` | 上传目录、权限配置 |
-| Meta 资源 | `metadata.*.tenant_id` | 元数据扫描任务、节点 |
+| Meta 资源 | `meta.*.tenant_id` | 元数据扫描任务、节点 |
 | Transfer 任务 | `transfer.*.tenant_id` | 数据导入导出任务 |
 | Develop 项目 | `develop.*.tenant_id` | SQL 项目、工作流 |
 

@@ -70,10 +70,10 @@ graph TB
 **PostgreSQL** (端口 15432):
 - 用户信息 (`system.users`)
 - 引擎配置 (`system.engines`)
-- 元数据存储 (`metadata.meta_node`, `metadata.meta_item`)
+- 元数据存储 (`meta.meta_node`, `meta.meta_item`)
 - 任务定义 (`orchestrator.orchestrations`)
 - 服务配置 (`service.services`)
-- Schema 隔离: `system`, `manager`, `metadata`, `transfer`, `orchestrator`, `develop`, `service`
+- Schema 隔离: `system`, `manager`, `meta`, `transfer`, `orchestrator`, `develop`, `service`
 
 **Redis** (端口 16379):
 - 用户会话缓存
@@ -130,7 +130,7 @@ graph TB
     Isolation --> AsynqIso[Redis Asynq Queue 命名规范]
     Isolation --> MeiliIso[Meilisearch Index 命名规范]
 
-    PG --> PGEx["system schema: 用户/引擎/日志<br/>manager schema: 数据源/预览配置<br/>metadata schema: 元数据索引<br/>transfer schema: 传输任务<br/>orchestrator schema: 编排定义<br/>develop schema: 查询/工作流/Notebook<br/>service schema: 服务配置"]
+    PG --> PGEx["system schema: 用户/引擎/日志<br/>manager schema: 数据源/预览配置<br/>meta schema: 元数据索引<br/>transfer schema: 传输任务<br/>orchestrator schema: 编排定义<br/>develop schema: 查询/工作流/Notebook<br/>service schema: 服务配置"]
 
     MinIOIso --> MinIOEx["system bucket: 用户头像/系统文件<br/>manager bucket: 预览缓存/MVT瓦片(公开)<br/>meta bucket: 扫描临时文件<br/>transfer bucket: 导入导出临时文件<br/>orchestrator bucket: 编排执行日志<br/>develop bucket: 查询结果/工作流输出<br/>service bucket: 服务缓存"]
 
@@ -152,7 +152,7 @@ graph TB
 ### 隔离机制详情
 
 **1. PostgreSQL Schema 隔离**:
-- 按模块隔离: `system`、`manager`、`metadata`、`transfer`、`orchestrator`、`develop`、`service`
+- 按模块隔离: `system`、`manager`、`meta`、`transfer`、`orchestrator`、`develop`、`service`
 - 避免表名冲突,权限独立管理
 - 租户隔离: 所有业务表包含 `tenant_id` 字段
 

@@ -9,8 +9,10 @@ import (
 
 	"github.com/addp/common/logger"
 	commonRepo "github.com/addp/common/repository"
+	"github.com/addp/common/utils"
 	"github.com/addp/meta/internal/config"
 	"github.com/addp/meta/internal/models"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	gormLogger "gorm.io/gorm/logger"
 )
@@ -19,6 +21,10 @@ var DB *gorm.DB
 
 // InitDatabase 初始化数据库连接
 func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
+	if err := PrepareSchema(cfg); err != nil {
+		return nil, err
+	}
+
 	// Use common repository InitDatabase
 	dbConfig := commonRepo.DatabaseConfig{
 		Host:     cfg.DBHost,
@@ -58,6 +64,10 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	})
 	db.Logger = dbLogger
 
+	if err := applySQLMigrations(db); err != nil {
+		return nil, err
+	}
+
 	// 运行数据库约束迁移（用于新部署）
 	// 注意：这些约束 GORM AutoMigrate 无法创建，需要手动执行 SQL
 	if err := applyDatabaseConstraints(db); err != nil {
@@ -68,6 +78,62 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	DB = db
 	logger.L().Info("数据库连接成功", "host", cfg.DBHost, "schema", cfg.DBSchema)
 	return db, nil
+}
+
+func PrepareSchema(cfg *config.Config) error {
+	if cfg.DBSchema != "meta" {
+		return fmt.Errorf("meta module schema must be 'meta', got %q", cfg.DBSchema)
+	}
+
+	dsn := fmt.Sprintf(
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable TimeZone=%s",
+		cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPassword, cfg.DBName, utils.GetTimezone(),
+	)
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+		Logger: gormLogger.Default.LogMode(gormLogger.Silent),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to connect database for meta schema preparation: %w", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fmt.Errorf("failed to get schema preparation database instance: %w", err)
+	}
+	defer sqlDB.Close()
+
+	metadataExists, err := schemaExists(db, "metadata")
+	if err != nil {
+		return err
+	}
+	metaExists, err := schemaExists(db, "meta")
+	if err != nil {
+		return err
+	}
+
+	if metadataExists && metaExists {
+		return fmt.Errorf("both 'metadata' and 'meta' schemas exist; please resolve before starting meta service")
+	}
+	if metadataExists {
+		if err := db.Exec(`ALTER SCHEMA metadata RENAME TO meta`).Error; err != nil {
+			return fmt.Errorf("failed to rename schema metadata to meta: %w", err)
+		}
+		logger.L().Info("Meta schema renamed", "from", "metadata", "to", "meta")
+	}
+	return nil
+}
+
+func schemaExists(db *gorm.DB, schemaName string) (bool, error) {
+	var exists bool
+	if err := db.Raw(`
+		SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.schemata
+			WHERE schema_name = ?
+		)
+	`, schemaName).Scan(&exists).Error; err != nil {
+		return false, fmt.Errorf("failed to check schema %s: %w", schemaName, err)
+	}
+	return exists, nil
 }
 
 type gormSlogLogger struct {
@@ -157,7 +223,7 @@ func applyDatabaseConstraints(db *gorm.DB) error {
 	// 已在 008_add_unique_constraint_meta_node.sql 中定义
 	if err := db.Exec(`
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_meta_node_unique_with_parent
-		ON metadata.meta_node (tenant_id, engine_id, parent_node_id, name, node_type)
+		ON meta.meta_node (tenant_id, engine_id, parent_node_id, name, node_type)
 		WHERE parent_node_id IS NOT NULL AND deleted_at IS NULL;
 	`).Error; err != nil {
 		logger.L().Warn("创建唯一索引 idx_meta_node_unique_with_parent 失败（可能已存在）", "error", err)
@@ -165,7 +231,7 @@ func applyDatabaseConstraints(db *gorm.DB) error {
 
 	if err := db.Exec(`
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_meta_node_unique_without_parent
-		ON metadata.meta_node (tenant_id, engine_id, name, node_type)
+		ON meta.meta_node (tenant_id, engine_id, name, node_type)
 		WHERE parent_node_id IS NULL AND deleted_at IS NULL;
 	`).Error; err != nil {
 		logger.L().Warn("创建唯一索引 idx_meta_node_unique_without_parent 失败（可能已存在）", "error", err)
@@ -173,7 +239,7 @@ func applyDatabaseConstraints(db *gorm.DB) error {
 
 	if err := db.Exec(`
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_meta_node_unique_full_name
-		ON metadata.meta_node (tenant_id, engine_id, node_type, full_name)
+		ON meta.meta_node (tenant_id, engine_id, node_type, full_name)
 		WHERE deleted_at IS NULL AND full_name <> '';
 	`).Error; err != nil {
 		logger.L().Warn("创建唯一索引 idx_meta_node_unique_full_name 失败（可能已存在）", "error", err)
@@ -192,7 +258,7 @@ func applyDatabaseConstraints(db *gorm.DB) error {
 
 	// 2.2 为 meta_node 添加外键约束
 	if err := db.Exec(`
-		ALTER TABLE metadata.meta_node
+		ALTER TABLE meta.meta_node
 		ADD CONSTRAINT fk_meta_node_tenant_engine
 		FOREIGN KEY (tenant_id, engine_id)
 		REFERENCES system.engines (tenant_id, id)
@@ -206,7 +272,7 @@ func applyDatabaseConstraints(db *gorm.DB) error {
 
 	// 2.3 为 meta_item 添加外键约束
 	if err := db.Exec(`
-		ALTER TABLE metadata.meta_item
+		ALTER TABLE meta.meta_item
 		ADD CONSTRAINT fk_meta_item_tenant_engine
 		FOREIGN KEY (tenant_id, engine_id)
 		REFERENCES system.engines (tenant_id, id)

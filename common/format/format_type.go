@@ -36,6 +36,7 @@ const (
 	FormatMySQL    FormatType = "mysql"
 
 	FormatJSON    FormatType = "json"
+	FormatGeoJSON FormatType = "geojson"
 	FormatXML     FormatType = "xml"
 	FormatParquet FormatType = "parquet"
 	FormatORC     FormatType = "orc"

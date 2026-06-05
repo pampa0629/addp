@@ -11,6 +11,14 @@ import (
 func DetectFormat(filename string, peek []byte) FormatType {
 	ext := strings.ToLower(filepath.Ext(filename))
 	if format := extToFormat(ext); format != FormatUnknown {
+		if len(peek) > 0 && formatCanBeRefinedByContent(format) {
+			if refined := detectByDescriptorSignature(peek); refined != FormatUnknown && refined != format {
+				return refined
+			}
+			if refined := detectByPluginSniffer(peek); refined != FormatUnknown && refined != format {
+				return refined
+			}
+		}
 		if needMagicValidation(format) && len(peek) > 0 && !validateMagicBytes(format, peek) {
 			return FormatUnknown
 		}
@@ -31,6 +39,10 @@ func DetectFormat(filename string, peek []byte) FormatType {
 		}
 	}
 	return FormatUnknown
+}
+
+func formatCanBeRefinedByContent(format FormatType) bool {
+	return format == FormatJSON
 }
 
 func extToFormat(ext string) FormatType {
@@ -57,7 +69,7 @@ func descriptorFormatByExtension(ext string) FormatType {
 
 func IsGeospatialFormat(format FormatType) bool {
 	switch format {
-	case FormatShapefile, FormatGeoPackage, FormatKML, FormatKMZ:
+	case FormatShapefile, FormatGeoJSON, FormatGeoPackage, FormatKML, FormatKMZ:
 		return true
 	default:
 		return false

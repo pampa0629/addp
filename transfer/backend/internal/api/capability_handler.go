@@ -71,7 +71,7 @@ func buildTableFormatCapabilities() []TransferTableFormatSupport {
 			result = append(result, item)
 		}
 		if descriptor.Format == format.FormatJSON {
-			result = appendJSONTableEncodingCapabilities(result, descriptor)
+			result = appendJSONLTableEncodingCapability(result, descriptor)
 		}
 	}
 	sort.SliceStable(result, func(i, j int) bool {
@@ -85,18 +85,10 @@ func buildTableFormatCapabilities() []TransferTableFormatSupport {
 	return result
 }
 
-func appendJSONTableEncodingCapabilities(result []TransferTableFormatSupport, descriptor format.FormatDescriptor) []TransferTableFormatSupport {
-	for _, variant := range []struct {
-		value   string
-		options map[string]any
-	}{
-		{value: "jsonl", options: map[string]any{"json_mode": "jsonl"}},
-		{value: "geojson", options: map[string]any{"spatial.target_encoding": "geojson"}},
-	} {
-		item := tableCapabilityFromDescriptor(descriptor, variant.value, variant.options)
-		if item.Read || item.Write {
-			result = append(result, item)
-		}
+func appendJSONLTableEncodingCapability(result []TransferTableFormatSupport, descriptor format.FormatDescriptor) []TransferTableFormatSupport {
+	item := tableCapabilityFromDescriptor(descriptor, "jsonl", map[string]any{"json_mode": "jsonl"})
+	if item.Read || item.Write {
+		result = append(result, item)
 	}
 	return result
 }
@@ -116,7 +108,7 @@ func tableCapabilityFromDescriptor(descriptor format.FormatDescriptor, value str
 	backendType := descriptor.Format
 	read := hasTableReader(backendType)
 	write, providerKind := transferWritable(backendType)
-	spatial := format.IsGeospatialFormat(backendType) || tableCapabilityTargetsSpatialEncoding(options)
+	spatial := format.IsGeospatialFormat(backendType)
 	return TransferTableFormatSupport{
 		Value:        value,
 		BackendType:  string(backendType),
@@ -131,14 +123,6 @@ func tableCapabilityFromDescriptor(descriptor format.FormatDescriptor, value str
 		MultiFile:    containsString(descriptor.Layouts, format.LayoutMulti),
 		ProviderKind: providerKind,
 	}
-}
-
-func tableCapabilityTargetsSpatialEncoding(options map[string]any) bool {
-	if options == nil {
-		return false
-	}
-	value, ok := options["spatial.target_encoding"].(string)
-	return ok && strings.EqualFold(strings.TrimSpace(value), "geojson")
 }
 
 func hasTableReader(formatType format.FormatType) bool {

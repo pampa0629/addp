@@ -221,7 +221,7 @@ func BuildTableTransferPlan(spec TableExportTaskSpec, resolver EngineResolver) (
 		return nil, err
 	}
 	if sourcePlan.Kind == executor.TableEndpointNative && targetPlan.Kind == executor.TableEndpointEncoded {
-		sourcePlan.ReadOptions = mergeReadOptions(sourcePlan.ReadOptions, readOptionsForTarget(targetPlan.Format, targetPlan.FormatOptions))
+		sourcePlan.ReadOptions = mergeReadOptions(sourcePlan.ReadOptions, readOptionsForGeoJSONTarget(targetPlan.Format, targetPlan.FormatOptions))
 	}
 	applySourceGeometryEncodingForTarget(&sourcePlan, targetPlan)
 	return &TableTransferBuildResult{
@@ -1050,20 +1050,15 @@ func tableWriteOptions(raw map[string]interface{}, formatType format.FormatType)
 	return opts
 }
 
-func readOptionsForTarget(formatType format.FormatType, writeOptions *format.WriteOptions) map[string]interface{} {
-	if formatType != format.FormatJSON || writeOptions == nil || writeOptions.ExtraParams == nil {
+func readOptionsForGeoJSONTarget(formatType format.FormatType, writeOptions *format.WriteOptions) map[string]interface{} {
+	if formatType != format.FormatGeoJSON {
 		return nil
 	}
-	targetEncoding := strings.ToLower(strings.TrimSpace(stringValue(writeOptions.ExtraParams, "spatial.target_encoding")))
-	if targetEncoding == "" {
-		targetEncoding = nestedStringValue(writeOptions.ExtraParams, "spatial", "target_encoding")
-	}
-	if targetEncoding != "geojson" {
-		return nil
-	}
-	options := map[string]interface{}{"spatial.target_encoding": "geojson"}
-	if geometryField := stringValue(writeOptions.ExtraParams, "geometry_field"); geometryField != "" {
-		options["geometry_field"] = geometryField
+	options := map[string]interface{}{"geometry_encoding": "geojson"}
+	if writeOptions != nil && writeOptions.ExtraParams != nil {
+		if geometryField := stringValue(writeOptions.ExtraParams, "geometry_field"); geometryField != "" {
+			options["geometry_field"] = geometryField
+		}
 	}
 	return options
 }
@@ -1166,19 +1161,5 @@ func stringValue(values map[string]interface{}, key string) string {
 		return strings.TrimSpace(typed)
 	default:
 		return strings.TrimSpace(fmt.Sprint(typed))
-	}
-}
-
-func nestedStringValue(values map[string]interface{}, parentKey, childKey string) string {
-	if values == nil {
-		return ""
-	}
-	switch nested := values[parentKey].(type) {
-	case map[string]interface{}:
-		return strings.ToLower(strings.TrimSpace(stringValue(nested, childKey)))
-	case map[string]string:
-		return strings.ToLower(strings.TrimSpace(nested[childKey]))
-	default:
-		return ""
 	}
 }

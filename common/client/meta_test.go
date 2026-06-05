@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	commonExecution "github.com/addp/common/execution"
 )
 
 func TestMetaClientCreateManualScanRunUsesAsyncPath(t *testing.T) {
@@ -36,7 +38,7 @@ func TestMetaClientCreateManualScanRunUsesAsyncPath(t *testing.T) {
 		ScanDepth:   "deep",
 		Force:       true,
 		TriggerType: "manual",
-		Source:      "transfer",
+		Source:      commonExecution.ModuleTransfer,
 		RefGroups: []MetaScanRefGroup{
 			{
 				Primary: "bucket/path/roads.shp",
@@ -103,7 +105,7 @@ func TestMetaClientRefreshItemUsesItemRefreshPath(t *testing.T) {
 	tenantID := uint(8)
 	client.SetTenantID(&tenantID)
 
-	result, err := client.RefreshItem(1831, MetaScanOptions{EngineID: 26, Force: true})
+	result, err := client.RefreshItem(1831, MetaScanOptions{EngineID: 26, ScanDepth: "deep", TriggerType: "manual", Source: commonExecution.ModuleManager, Force: true})
 	if err != nil {
 		t.Fatalf("RefreshItem() error = %v", err)
 	}
@@ -118,6 +120,9 @@ func TestMetaClientRefreshItemUsesItemRefreshPath(t *testing.T) {
 	}
 	if gotPayload["engine_id"] != float64(26) || gotPayload["force"] != true {
 		t.Fatalf("payload = %#v", gotPayload)
+	}
+	if gotPayload["scan_depth"] != "deep" || gotPayload["trigger_type"] != "manual" || gotPayload["source"] != "manager" {
+		t.Fatalf("payload scan context = %#v", gotPayload)
 	}
 	if _, ok := gotPayload["item_id"]; ok {
 		t.Fatalf("payload should not include item_id: %#v", gotPayload)

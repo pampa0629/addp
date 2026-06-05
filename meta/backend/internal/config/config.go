@@ -57,7 +57,7 @@ func LoadConfig() *Config {
 
 	cfg := &Config{
 		ServerPort:        commonConfig.GetEnv("META_BACKEND_PORT", "8082"),
-		DBSchema:          commonConfig.GetEnv("DB_SCHEMA", "metadata"),
+		DBSchema:          commonConfig.GetEnv("DB_SCHEMA", "meta"),
 		InternalAPIKey:    commonConfig.GetEnv("INTERNAL_API_KEY", ""),
 		AutoSyncEnabled:   commonConfig.GetEnvBool("AUTO_SYNC_ENABLED", true),
 		AutoSyncSchedule:  commonConfig.GetEnv("AUTO_SYNC_SCHEDULE", "0 0 * * *"), // Every day at midnight

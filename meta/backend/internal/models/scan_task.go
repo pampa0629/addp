@@ -27,7 +27,10 @@ type ScanTask struct {
 	Description         string         `gorm:"size:512" json:"description,omitempty"`
 	Schedule            string         `gorm:"size:128;column:schedule" json:"schedule,omitempty"`
 	Enabled             bool           `gorm:"default:false" json:"enabled"`
-	Parameters          JSONMap        `gorm:"type:jsonb" json:"parameters,omitempty"` // 扫描目标配置
+	Scope               JSONMap        `gorm:"type:jsonb" json:"scope,omitempty"`      // 结构化扫描范围
+	Parameters          JSONMap        `gorm:"type:jsonb" json:"parameters,omitempty"` // 扫描参数，不表达范围
+	OwnerModule         string         `gorm:"size:50;not null;default:'meta';index:idx_scan_tasks_owner" json:"owner_module"`
+	OwnerRef            string         `gorm:"size:128;index:idx_scan_tasks_owner" json:"owner_ref,omitempty"`
 	LastRunAt           *time.Time     `json:"last_run_at,omitempty"`
 	NextRunAt           *time.Time     `json:"next_run_at,omitempty"`
 	LastExecutionID     *string        `gorm:"size:36" json:"last_execution_id,omitempty"`
@@ -40,5 +43,5 @@ type ScanTask struct {
 }
 
 func (ScanTask) TableName() string {
-	return "metadata.scan_tasks"
+	return "meta.scan_tasks"
 }

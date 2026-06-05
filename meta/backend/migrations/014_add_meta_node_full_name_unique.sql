@@ -11,7 +11,7 @@ WITH duplicates AS (
             PARTITION BY tenant_id, engine_id, node_type, full_name
             ORDER BY id DESC
         ) AS rn
-    FROM metadata.meta_node
+    FROM meta.meta_node
     WHERE deleted_at IS NULL AND full_name <> ''
 )
 SELECT id, path
@@ -20,17 +20,17 @@ WHERE rn > 1;
 
 CREATE TEMP TABLE meta_node_delete_ids_014 AS
 SELECT mn.id
-FROM metadata.meta_node mn
+FROM meta.meta_node mn
 JOIN meta_node_duplicates_014 dup
   ON mn.id = dup.id
   OR (dup.path <> '' AND mn.path LIKE dup.path || '/%');
 
-DELETE FROM metadata.meta_item
+DELETE FROM meta.meta_item
 WHERE node_id IN (
     SELECT id FROM meta_node_delete_ids_014
 );
 
-DELETE FROM metadata.meta_node
+DELETE FROM meta.meta_node
 WHERE id IN (
     SELECT id FROM meta_node_delete_ids_014
 );
@@ -39,5 +39,5 @@ DROP TABLE IF EXISTS meta_node_delete_ids_014;
 DROP TABLE IF EXISTS meta_node_duplicates_014;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_meta_node_unique_full_name
-ON metadata.meta_node (tenant_id, engine_id, node_type, full_name)
+ON meta.meta_node (tenant_id, engine_id, node_type, full_name)
 WHERE deleted_at IS NULL AND full_name <> '';

@@ -13,6 +13,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
+	"github.com/addp/common/format/plugins/shared/jsonrecords"
 	"github.com/addp/common/resume"
 	commonSpatial "github.com/addp/common/spatial"
 )
@@ -21,10 +22,9 @@ const defaultGeometryField = "geometry"
 const defaultDocumentTextLimit int64 = 512 * 1024
 
 const (
-	StructureDocument          = "document"
-	StructureGeoJSONFeatureSet = "geojson_feature_collection"
-	StructureJSONLines         = "json_lines"
-	StructureObjectArray       = "object_array"
+	StructureDocument    = jsonrecords.StructureDocument
+	StructureJSONLines   = jsonrecords.StructureJSONLines
+	StructureObjectArray = jsonrecords.StructureObjectArray
 )
 
 const (
@@ -32,11 +32,7 @@ const (
 	jsonTableWriteModeLines = "lines"
 )
 
-const jsonTargetEncodingGeoJSON = "geojson"
-
 // Plugin 提供 JSON 结构解析能力。
-//
-// 当前实现支持 GeoJSON FeatureCollection 这种 JSON 记录集合结构。
 type Plugin struct {
 	options       *format.ParseOptions
 	geometryField string
@@ -69,7 +65,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		I18nKey:        "format.json",
 		DataType:       datatype.Document,
 		Layouts:        []string{format.LayoutSingle},
-		Identification: format.FormatIdentification{Extensions: []string{".json", ".geojson"}, MimeTypes: []string{"application/json", "application/geo+json", "application/vnd.geo+json"}},
+		Identification: format.FormatIdentification{Extensions: []string{".json"}, MimeTypes: []string{"application/json"}},
 	}
 }
 
@@ -92,25 +88,10 @@ func (p *Plugin) OpenTableWriter(ctx context.Context, output io.Writer, tableInf
 
 	opts := jsonTableWriteOptions(options)
 	writer := &tableWriter{
-		output:         output,
-		fields:         jsonWriterFields(tableInfo),
-		mode:           opts.mode,
-		pretty:         opts.pretty,
-		targetEncoding: opts.targetEncoding,
-		geometryField:  opts.geometryField,
-		idField:        opts.idField,
-	}
-	if writer.geometryField == "" && options != nil && options.SpatialInfo != nil {
-		writer.geometryField = strings.TrimSpace(options.SpatialInfo.PrimaryGeometryName())
-	}
-	if writer.geometryField == "" {
-		writer.geometryField = p.geometryField
-	}
-	if writer.targetEncoding == jsonTargetEncodingGeoJSON {
-		if _, err := writer.output.Write([]byte(`{"type":"FeatureCollection","features":[`)); err != nil {
-			return nil, fmt.Errorf("failed to start GeoJSON feature collection: %w", err)
-		}
-		return writer, nil
+		output: output,
+		fields: jsonWriterFields(tableInfo),
+		mode:   opts.mode,
+		pretty: opts.pretty,
 	}
 	if writer.mode == jsonTableWriteModeArray {
 		if _, err := writer.output.Write([]byte("[")); err != nil {
@@ -136,7 +117,7 @@ func (p *Plugin) OpenTableReader(ctx context.Context, input io.Reader, options *
 	if options != nil {
 		geometryField = geometryFieldFromOptions(options, geometryField)
 	}
-	iter, err := newRecordIterator(input)
+	iter, err := newJSONRecordIterator(input)
 	if err != nil {
 		return nil, err
 	}
@@ -149,14 +130,19 @@ func (p *Plugin) OpenTableReader(ctx context.Context, input io.Reader, options *
 
 // DescribeFormat 返回 JSON 的格式私有结构信息，写入 attributes.format_info.json。
 func (p *Plugin) DescribeFormat(ctx context.Context, input io.Reader, options *format.ParseOptions) (map[string]interface{}, error) {
-	iter, err := newRecordIterator(input)
+	iter, err := jsonrecords.NewRecordIterator(input)
 	if err != nil {
 		return map[string]interface{}{
-			"structure": StructureDocument,
+			"structure": jsonrecords.StructureDocument,
+		}, nil
+	}
+	if iter.Structure == jsonrecords.StructureGeoJSONFeatureSet {
+		return map[string]interface{}{
+			"structure": jsonrecords.StructureDocument,
 		}, nil
 	}
 
-	builder := newMetadataBuilder()
+	builder := jsonrecords.NewMetadataBuilder()
 	for {
 		if err := contextErr(ctx); err != nil {
 			return nil, err
@@ -172,12 +158,12 @@ func (p *Plugin) DescribeFormat(ctx context.Context, input io.Reader, options *f
 	}
 
 	info := builder.Build()
-	info["structure"] = iter.structure
-	if len(iter.meta.BoundingBox) == 4 {
-		info["bbox"] = iter.meta.BoundingBox
+	info["structure"] = iter.Structure
+	if len(iter.Meta.BoundingBox) == 4 {
+		info["bbox"] = iter.Meta.BoundingBox
 	}
-	if iter.meta.CoordinateSystem != "" {
-		info["crs"] = iter.meta.CoordinateSystem
+	if iter.Meta.CoordinateSystem != "" {
+		info["crs"] = iter.Meta.CoordinateSystem
 	}
 	return info, nil
 }
@@ -236,14 +222,14 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 	}
 	geometryField = geometryFieldFromOptions(opts, geometryField)
 
-	iter, err := newRecordIterator(input)
+	iter, err := newJSONRecordIterator(input)
 	if err != nil {
 		return nil, err
 	}
 
-	builder := newTableInfoBuilder(geometryField)
+	builder := jsonrecords.NewTableInfoBuilder(geometryField)
 	featureCount := int64(0)
-	index := p.newSparseRowIndex(opts, iter.dataStartOffset)
+	index := p.newSparseRowIndex(opts, iter.DataStartOffset)
 
 	for {
 		if err := contextErr(ctx); err != nil {
@@ -260,7 +246,7 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 
 		builder.AddFeature(feature)
 		featureCount++
-		p.recordSparseRowAnchor(index, featureCount, iter.decoder.InputOffset())
+		p.recordSparseRowAnchor(index, featureCount, iter.Decoder.InputOffset())
 	}
 	index.RowCount = featureCount
 
@@ -278,19 +264,17 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 			spatialGeometryField = spatialInfo.PrimaryGeometryName()
 		}
 		srid := builder.SRID()
-		if crsSRID := commonSpatial.ParseSRID(iter.meta.CoordinateSystem); crsSRID > 0 {
+		if crsSRID := commonSpatial.ParseSRID(iter.Meta.CoordinateSystem); crsSRID > 0 {
 			srid = crsSRID
-		} else if srid == 0 && iter.structure == StructureGeoJSONFeatureSet {
-			srid = commonSpatial.SRIDWGS84
 		}
 
 		spatialInfo = datatype.NewSingleGeometrySpatialInfo(spatialGeometryField, geometryType, srid, 2)
-		if len(iter.meta.BoundingBox) == 4 {
+		if len(iter.Meta.BoundingBox) == 4 {
 			spatialInfo.Extent = &datatype.BoundingBox{
-				iter.meta.BoundingBox[0],
-				iter.meta.BoundingBox[1],
-				iter.meta.BoundingBox[2],
-				iter.meta.BoundingBox[3],
+				iter.Meta.BoundingBox[0],
+				iter.Meta.BoundingBox[1],
+				iter.Meta.BoundingBox[2],
+				iter.Meta.BoundingBox[3],
 			}
 		} else if bbox, ok := builder.BoundingBox(); ok {
 			extent := datatype.BoundingBox(bbox)
@@ -323,7 +307,7 @@ func (p *Plugin) SampleTable(ctx context.Context, input io.Reader, offset, limit
 		return p.samplePositionedTable(ctx, input, offset, limit, options, geometryField)
 	}
 
-	iter, err := newRecordIterator(input)
+	iter, err := newJSONRecordIterator(input)
 	if err != nil {
 		return nil, err
 	}
@@ -384,7 +368,7 @@ func (p *Plugin) samplePositionedTable(ctx context.Context, input io.Reader, off
 	if err != nil {
 		return nil, fmt.Errorf("failed to read positioned JSON sample: %w", err)
 	}
-	iter, err := newRecordIterator(bytes.NewReader(jsonArrayFragment(data)))
+	iter, err := newJSONRecordIterator(bytes.NewReader(jsonrecords.JSONArrayFragment(data)))
 	if err != nil {
 		return nil, err
 	}
@@ -427,7 +411,7 @@ func (p *Plugin) samplePositionedTable(ctx context.Context, input io.Reader, off
 }
 
 type tableReader struct {
-	iter          *iterator
+	iter          *jsonrecords.RecordIterator
 	geometryField string
 	selection     *format.FieldSelectionOptions
 	tableInfo     *datatype.TableInfo
@@ -461,7 +445,7 @@ func (r *tableReader) ReadRows(ctx context.Context, limit int) ([]map[string]int
 	}
 
 	rows := make([]map[string]interface{}, 0, limit)
-	builder := newTableInfoBuilder(r.geometryField)
+	builder := jsonrecords.NewTableInfoBuilder(r.geometryField)
 	for len(rows) < limit {
 		if err := contextErr(ctx); err != nil {
 			return rows, err
@@ -506,13 +490,10 @@ func (r *tableReader) Close(ctx context.Context) error {
 }
 
 type tableWriter struct {
-	output         io.Writer
-	fields         []string
-	mode           string
-	pretty         bool
-	targetEncoding string
-	geometryField  string
-	idField        string
+	output io.Writer
+	fields []string
+	mode   string
+	pretty bool
 
 	wroteRows bool
 	closed    bool
@@ -526,11 +507,7 @@ func (w *tableWriter) WriteRows(ctx context.Context, rows []map[string]interface
 		if err := contextErr(ctx); err != nil {
 			return err
 		}
-		writeRow := jsonTableRow(row, w.fields)
-		if w.targetEncoding == jsonTargetEncodingGeoJSON {
-			writeRow = geoJSONFeatureRow(writeRow, w.geometryField, w.idField)
-		}
-		data, err := marshalJSONTableRow(writeRow, w.pretty)
+		data, err := marshalJSONTableRow(jsonTableRow(row, w.fields), w.pretty)
 		if err != nil {
 			return err
 		}
@@ -549,18 +526,10 @@ func (w *tableWriter) WriteRows(ctx context.Context, rows []map[string]interface
 				}
 			}
 			if w.pretty {
-				prefix := []byte("\n  ")
-				if w.targetEncoding == jsonTargetEncodingGeoJSON {
-					prefix = []byte("\n    ")
-				}
-				if _, err := w.output.Write(prefix); err != nil {
+				if _, err := w.output.Write([]byte("\n  ")); err != nil {
 					return fmt.Errorf("failed to write JSON row prefix: %w", err)
 				}
-				if w.targetEncoding == jsonTargetEncodingGeoJSON {
-					data = bytes.ReplaceAll(data, []byte("\n"), []byte("\n    "))
-				} else {
-					data = bytes.ReplaceAll(data, []byte("\n"), []byte("\n  "))
-				}
+				data = bytes.ReplaceAll(data, []byte("\n"), []byte("\n  "))
 			}
 			if _, err := w.output.Write(data); err != nil {
 				return fmt.Errorf("failed to write JSON row: %w", err)
@@ -578,15 +547,7 @@ func (w *tableWriter) Close(ctx context.Context) error {
 	if err := contextErr(ctx); err != nil {
 		return err
 	}
-	if w.targetEncoding == jsonTargetEncodingGeoJSON {
-		suffix := []byte(`]}`)
-		if w.pretty && w.wroteRows {
-			suffix = []byte("\n  ]\n}")
-		}
-		if _, err := w.output.Write(suffix); err != nil {
-			return fmt.Errorf("failed to close GeoJSON feature collection: %w", err)
-		}
-	} else if w.mode == jsonTableWriteModeArray {
+	if w.mode == jsonTableWriteModeArray {
 		suffix := []byte("]")
 		if w.pretty && w.wroteRows {
 			suffix = []byte("\n]")
@@ -600,11 +561,8 @@ func (w *tableWriter) Close(ctx context.Context) error {
 }
 
 type jsonTableWriterOptions struct {
-	mode           string
-	pretty         bool
-	targetEncoding string
-	geometryField  string
-	idField        string
+	mode   string
+	pretty bool
 }
 
 func jsonTableWriteOptions(options *format.WriteOptions) jsonTableWriterOptions {
@@ -615,9 +573,6 @@ func jsonTableWriteOptions(options *format.WriteOptions) jsonTableWriterOptions 
 	if v, ok := options.ExtraParams["pretty"].(bool); ok {
 		opts.pretty = v
 	}
-	opts.geometryField = strings.TrimSpace(formatOptionString(options.ExtraParams["geometry_field"]))
-	opts.idField = strings.TrimSpace(formatOptionString(options.ExtraParams["id_field"]))
-	opts.targetEncoding = jsonTargetEncoding(options.ExtraParams)
 	mode := strings.ToLower(strings.TrimSpace(formatOptionString(options.ExtraParams["json_mode"])))
 	if mode == "" {
 		mode = strings.ToLower(strings.TrimSpace(formatOptionString(options.ExtraParams["layout"])))
@@ -630,24 +585,7 @@ func jsonTableWriteOptions(options *format.WriteOptions) jsonTableWriterOptions 
 	default:
 		opts.mode = mode
 	}
-	if opts.targetEncoding == jsonTargetEncodingGeoJSON {
-		opts.mode = jsonTableWriteModeArray
-	}
 	return opts
-}
-
-func jsonTargetEncoding(params map[string]interface{}) string {
-	value := strings.ToLower(strings.TrimSpace(formatOptionString(params["spatial.target_encoding"])))
-	if value != "" {
-		return value
-	}
-	if spatial, ok := params["spatial"].(map[string]interface{}); ok {
-		return strings.ToLower(strings.TrimSpace(formatOptionString(spatial["target_encoding"])))
-	}
-	if spatial, ok := params["spatial"].(map[string]string); ok {
-		return strings.ToLower(strings.TrimSpace(spatial["target_encoding"]))
-	}
-	return strings.ToLower(strings.TrimSpace(formatOptionString(params["target_encoding"])))
 }
 
 func marshalJSONTableRow(row map[string]interface{}, pretty bool) ([]byte, error) {
@@ -678,59 +616,6 @@ func jsonTableRow(row map[string]interface{}, fields []string) map[string]interf
 		out[field] = row[field]
 	}
 	return out
-}
-
-func geoJSONFeatureRow(row map[string]interface{}, geometryField, idField string) map[string]interface{} {
-	if geometryField == "" {
-		geometryField = defaultGeometryField
-	}
-	if idField == "" {
-		idField = "id"
-	}
-	properties := make(map[string]interface{}, len(row))
-	var geometry interface{}
-	var id interface{}
-	for key, value := range row {
-		switch key {
-		case geometryField:
-			geometry = geoJSONGeometry(value)
-		case idField:
-			id = value
-		default:
-			properties[key] = value
-		}
-	}
-	feature := map[string]interface{}{
-		"type":       "Feature",
-		"geometry":   geometry,
-		"properties": properties,
-	}
-	if id != nil {
-		feature["id"] = id
-	}
-	return feature
-}
-
-func geoJSONGeometry(value interface{}) interface{} {
-	if value == nil {
-		return nil
-	}
-	if geom := geometryValue(value); geom != nil {
-		return geom
-	}
-	if raw, ok := value.(json.RawMessage); ok {
-		var decoded interface{}
-		if err := json.Unmarshal(raw, &decoded); err == nil {
-			return decoded
-		}
-	}
-	if text, ok := value.(string); ok {
-		var decoded interface{}
-		if err := json.Unmarshal([]byte(text), &decoded); err == nil {
-			return decoded
-		}
-	}
-	return value
 }
 
 func jsonWriterFields(tableInfo *datatype.TableInfo) []string {
@@ -779,69 +664,6 @@ func formatOptionString(value interface{}) string {
 	return fmt.Sprint(value)
 }
 
-func jsonArrayFragment(data []byte) []byte {
-	objects := jsonObjectFragments(data)
-	if len(objects) == 0 {
-		return []byte("[]")
-	}
-	total := 2
-	for _, object := range objects {
-		total += len(object) + 1
-	}
-	out := make([]byte, 0, total)
-	out = append(out, '[')
-	for i, object := range objects {
-		if i > 0 {
-			out = append(out, ',')
-		}
-		out = append(out, object...)
-	}
-	out = append(out, ']')
-	return out
-}
-
-func jsonObjectFragments(data []byte) [][]byte {
-	fragments := make([][]byte, 0)
-	depth := 0
-	start := -1
-	inString := false
-	escaped := false
-	for i, b := range data {
-		if inString {
-			switch {
-			case escaped:
-				escaped = false
-			case b == '\\':
-				escaped = true
-			case b == '"':
-				inString = false
-			}
-			continue
-		}
-		switch b {
-		case '"':
-			if depth > 0 {
-				inString = true
-			}
-		case '{':
-			if depth == 0 {
-				start = i
-			}
-			depth++
-		case '}':
-			if depth == 0 {
-				continue
-			}
-			depth--
-			if depth == 0 && start >= 0 {
-				fragments = append(fragments, bytes.TrimSpace(data[start:i+1]))
-				start = -1
-			}
-		}
-	}
-	return fragments
-}
-
 func (p *Plugin) newSparseRowIndex(opts *format.ParseOptions, headerBytes int64) *datatype.AccessIndex {
 	step := int64(5000)
 	if opts != nil && opts.AccessIndexStep > 0 {
@@ -875,6 +697,17 @@ func (p *Plugin) recordSparseRowAnchor(index *datatype.AccessIndex, nextRow int6
 		Row:        nextRow,
 		ByteOffset: byteOffset,
 	})
+}
+
+func newJSONRecordIterator(input io.Reader) (*jsonrecords.RecordIterator, error) {
+	iter, err := jsonrecords.NewRecordIterator(input)
+	if err != nil {
+		return nil, err
+	}
+	if iter.Structure == jsonrecords.StructureGeoJSONFeatureSet {
+		return nil, fmt.Errorf("geojson feature collection belongs to %s format", format.FormatGeoJSON)
+	}
+	return iter, nil
 }
 
 func contextErr(ctx context.Context) error {

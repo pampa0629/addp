@@ -9,10 +9,11 @@ Transfer 执行记录统一存储在 `common.task_executions`。Transfer API 会
 | 字段 | Transfer 语义 |
 |---|---|
 | `module` | 固定为 `transfer`。 |
+| `source` | 默认 `transfer`。如果未来由 Manager 或其他模块直接触发 Transfer execution，应写触发模块。 |
 | `source_task_id` | 对应 `transfer.transfer_tasks.id`。 |
 | `tenant_id` | 租户隔离字段。 |
 | `status` | `pending`、`running`、`success`、`failed`。 |
-| `trigger_type` | `manual`、`schedule`、`api` 等触发来源。 |
+| `trigger_type` | `manual` / `scheduled`。只表达手动或定时触发，不表达来源模块、API 通道或重试场景。 |
 | `triggered_by` | 触发用户 ID。 |
 
 ## 二、指标字段
