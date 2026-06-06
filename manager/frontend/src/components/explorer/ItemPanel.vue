@@ -310,6 +310,8 @@ const fieldOrder = [
   'default_sheet',
   'sampled_sheets',
   'geometry_columns',
+  'crs_ref',
+  'crs_definitions',
   'extent',
   'extent_srid',
   'primary_geometry_column',
@@ -324,6 +326,9 @@ const fieldOrder = [
   'index_ref',
   'srid',
   'dimension',
+  'definition',
+  'definition_encoding',
+  'id',
   'geometry_type',
   'name',
   'nullable',
@@ -386,11 +391,16 @@ const fieldLabelKeys = {
   column_count: 'manager.explorer.attributes.fields.columnCount',
   fields: 'manager.explorer.attributes.fields.fields',
   geometry_columns: 'manager.explorer.attributes.fields.geometryColumns',
+  crs_ref: 'manager.explorer.attributes.fields.crsRef',
+  crs_definitions: 'manager.explorer.attributes.fields.crsDefinitions',
   extent: 'manager.explorer.attributes.fields.extent',
   primary_geometry_column: 'manager.explorer.attributes.fields.primaryGeometryColumn',
   has_spatial_index: 'manager.explorer.attributes.fields.hasSpatialIndex',
   srid: 'manager.explorer.attributes.fields.srid',
   dimension: 'manager.explorer.attributes.fields.dimension',
+  definition: 'manager.explorer.attributes.fields.definition',
+  definition_encoding: 'manager.explorer.attributes.fields.definitionEncoding',
+  id: 'manager.explorer.attributes.fields.id',
   geometry_type: 'manager.explorer.attributes.fields.geometryType',
   name: 'manager.explorer.attributes.fields.name',
   nullable: 'manager.explorer.attributes.fields.nullable',
@@ -398,6 +408,7 @@ const fieldLabelKeys = {
   encoding: 'manager.explorer.attributes.fields.encoding',
   line_ending: 'manager.explorer.attributes.fields.lineEnding',
   mode: 'manager.explorer.attributes.fields.mode',
+  source: 'manager.explorer.attributes.fields.source',
   version: 'manager.explorer.attributes.fields.version',
   base_name: 'manager.explorer.attributes.fields.baseName',
   ref_extensions: 'manager.explorer.attributes.fields.refExtensions',
@@ -474,6 +485,11 @@ const tableColumnLabelKeys = {
   labels: 'manager.explorer.attributes.tableColumns.labels',
   patterns: 'manager.explorer.attributes.tableColumns.patterns',
   properties: 'manager.explorer.attributes.tableColumns.properties',
+  id: 'manager.explorer.attributes.tableColumns.id',
+  source: 'manager.explorer.attributes.tableColumns.source',
+  definition: 'manager.explorer.attributes.tableColumns.definition',
+  definition_encoding: 'manager.explorer.attributes.tableColumns.definitionEncoding',
+  crs_ref: 'manager.explorer.attributes.tableColumns.crsRef',
   geometry_type: 'manager.explorer.attributes.tableColumns.geometryType',
   srid: 'manager.explorer.attributes.tableColumns.srid',
   dimension: 'manager.explorer.attributes.tableColumns.dimension',
@@ -801,7 +817,9 @@ const preferredColumnsForObjectTable = (pathParts) => {
     case 'refs':
       return ['path', 'role', 'extension', 'required', 'primary']
     case 'geometry_columns':
-      return ['name', 'type', 'geometry_type', 'srid', 'dimension', 'nullable', 'primary']
+      return ['name', 'type', 'geometry_type', 'srid', 'dimension', 'crs_ref', 'nullable', 'primary']
+    case 'crs_definitions':
+      return ['definition', 'definition_encoding', 'id', 'source']
     case 'indexes':
       return ['name', 'fields', 'is_unique', 'index_type']
     case 'children':

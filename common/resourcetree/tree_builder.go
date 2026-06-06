@@ -277,8 +277,8 @@ func withMetaItemFacts(attrs map[string]interface{}, item *models.MetaItem) map[
 	} else if item.ObjectSizeBytes != nil {
 		next["object_size_bytes"] = *item.ObjectSizeBytes
 	}
-	if item.LastModifiedAt != nil {
-		next["last_modified_at"] = item.LastModifiedAt.Format(time.RFC3339)
+	if item.DataUpdatedAt != nil {
+		next["last_modified_at"] = item.DataUpdatedAt.Format(time.RFC3339)
 	}
 	return next
 }

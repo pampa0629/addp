@@ -14,7 +14,6 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/utils"
 	"github.com/addp/meta/internal/models"
-	metaRepo "github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/scanflow"
 	"gorm.io/gorm"
 )
@@ -34,6 +33,7 @@ type EngineService struct {
 	engineCache    map[uint]*engineCacheEntry
 	cacheTTL       time.Duration
 	log            *slog.Logger
+	rootReconciler *CatalogRootReconciler
 }
 
 func NewEngineService(db *gorm.DB, systemURL, internalKey string) *EngineService {
@@ -55,6 +55,7 @@ func NewEngineService(db *gorm.DB, systemURL, internalKey string) *EngineService
 		cacheTTL:    5 * time.Minute, // 默认 5 分钟 TTL
 		log:         logger.With("component", "engine_service"),
 	}
+	service.rootReconciler = NewCatalogRootReconciler(db)
 
 	if internalKey != "" {
 		service.internalClient = commonClient.NewSystemClientWithInternalKey(systemURL, internalKey)
@@ -95,7 +96,7 @@ func (s *EngineService) PreloadResources() error {
 			continue
 		}
 		engineCopy := res
-		if s.reconcileCatalogRoot(&engineCopy) {
+		if s.rootReconciler.Reconcile(&engineCopy) {
 			rootReconciled++
 		}
 		cache[engineCopy.ID] = &engineCacheEntry{
@@ -110,25 +111,6 @@ func (s *EngineService) PreloadResources() error {
 
 	s.log.Info("引擎缓存预加载完成", "active_engines", len(cache), "root_reconciled", rootReconciled, "system_url", s.systemURL, "ttl_minutes", s.cacheTTL.Minutes())
 	return nil
-}
-
-func (s *EngineService) reconcileCatalogRoot(resource *commonModels.Engine) bool {
-	if resource == nil || !resource.IsActive || resource.TenantID == nil {
-		return false
-	}
-	enginePlugin, err := plugin.Get(resource.EngineType)
-	if err != nil {
-		s.log.Debug("跳过 root reconcile，插件不存在", "engine_id", resource.ID, "engine_type", resource.EngineType, "error", err)
-		return false
-	}
-	if scanflow.CatalogModelForPlugin(enginePlugin) == nil {
-		return false
-	}
-	if _, err := metaRepo.EnsureCatalogRootNode(metaRepo.NewScanRepository(s.db), *resource.TenantID, resource, enginePlugin); err != nil {
-		s.log.Warn("同步 catalog root 失败", "engine_id", resource.ID, "engine_type", resource.EngineType, "error", err)
-		return false
-	}
-	return true
 }
 
 func containsMaskedSensitive(info commonModels.ConnectionInfo) bool {

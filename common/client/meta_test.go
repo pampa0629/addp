@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	commonExecution "github.com/addp/common/execution"
 )
@@ -132,5 +133,34 @@ func TestMetaClientRefreshItemUsesItemRefreshPath(t *testing.T) {
 	}
 	if result.Extraction == nil || result.Extraction.Unsupported != 1 {
 		t.Fatalf("extraction = %#v", result.Extraction)
+	}
+}
+
+func TestMetaClientDecodesItemDataUpdatedAt(t *testing.T) {
+	t.Parallel()
+
+	const dataUpdatedAt = "2026-06-06T08:30:00Z"
+	var gotPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":21,"tenant_id":8,"engine_id":7,"node_id":3,"item_type":"object","name":"roads.geojson","full_name":"bucket/roads.geojson","data_updated_at":"` + dataUpdatedAt + `"}`))
+	}))
+	defer server.Close()
+
+	client := NewMetaClientWithInternalKey(server.URL, "internal-key")
+	item, err := client.GetMetaItemByID(21)
+	if err != nil {
+		t.Fatalf("GetMetaItemByID() error = %v", err)
+	}
+	if gotPath != "/api/v1/meta/items/21" {
+		t.Fatalf("path = %q, want /api/v1/meta/items/21", gotPath)
+	}
+	want, err := time.Parse(time.RFC3339, dataUpdatedAt)
+	if err != nil {
+		t.Fatalf("parse want time: %v", err)
+	}
+	if item.DataUpdatedAt == nil || !item.DataUpdatedAt.Equal(want) {
+		t.Fatalf("DataUpdatedAt = %#v, want %v", item.DataUpdatedAt, want)
 	}
 }

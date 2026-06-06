@@ -117,7 +117,7 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 	if sourceCRSDefinition == nil && catalogSpatial != nil {
 		sourceCRSDefinition = catalogSpatial.CRSDefinitionByID(sourceCRS)
 	}
-	spatialContract := databaseSpatialPreviewContract(geometryColumns, srid, sourceCRS, sourceCRSDefinition)
+	spatialContract := tablePreviewSpatialCRSContract(geometryColumns, srid, sourceCRS, sourceCRSDefinition)
 
 	// 5. 计算分页参数
 	page := req.Page
@@ -364,7 +364,7 @@ func (p *DatabaseTablePreviewProvider) isSpatialType(dataType string) bool {
 	return spatial.IsPostGISSpatialType(dataType)
 }
 
-type databasePreviewCRSContract struct {
+type tablePreviewCRSContract struct {
 	GeometryColumn      string
 	SourceSRID          int
 	SourceCRS           string
@@ -374,22 +374,22 @@ type databasePreviewCRSContract struct {
 	TransformMessage    string
 }
 
-func databaseSpatialPreviewContract(geometryColumns []string, srid int, sourceCRS string, sourceCRSDefinition *datatype.CRSDefinition) databasePreviewCRSContract {
+func tablePreviewSpatialCRSContract(geometryColumns []string, srid int, sourceCRS string, sourceCRSDefinition *datatype.CRSDefinition) tablePreviewCRSContract {
 	if len(geometryColumns) == 0 {
-		return databasePreviewCRSContract{}
+		return tablePreviewCRSContract{}
 	}
 
-	contract := databasePreviewCRSContract{
+	contract := tablePreviewCRSContract{
 		GeometryColumn:      geometryColumns[0],
 		SourceSRID:          srid,
 		SourceCRS:           strings.TrimSpace(sourceCRS),
 		SourceCRSDefinition: sourceCRSDefinition,
 		PreviewHint:         "frontend_transform_required",
 	}
-	if srid > 0 {
-		if contract.SourceCRS == "" {
-			contract.SourceCRS = datatype.EPSGCRSRef(srid)
-		}
+	if contract.SourceCRS == "" && srid > 0 {
+		contract.SourceCRS = datatype.EPSGCRSRef(srid)
+	}
+	if contract.SourceCRS != "" {
 		contract.TransformStatus = "not_transformed"
 		if srid == spatial.SRIDWGS84 {
 			contract.PreviewHint = "direct_renderable"

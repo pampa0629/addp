@@ -10,7 +10,6 @@ import (
 	"sort"
 	"strings"
 
-	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/contentio"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
@@ -105,8 +104,6 @@ func (p *FileTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequ
 	if infoErr != nil && tableInfoFromMetaAttributes(req.Attributes, "table") == nil {
 		return nil, fmt.Errorf("no table info provider for format %s: %w", formatType, infoErr)
 	}
-
-	p.ensureAccessIndex(ctx, req, contentReader, contentCtx.bucket, fullPath, formatType)
 
 	// 其他格式：流式处理
 	return p.previewStreamable(ctx, contentReader, contentCtx.bucket, fullPath, formatType, infoProvider, sampleReader, opts, req)
@@ -248,19 +245,31 @@ func (p *FileTablePreviewProvider) previewStreamable(
 	// 检测几何列（用于空间数据）
 	geometryColumns := p.detectGeometryColumns(tableInfo)
 	srid := 0
+	sourceCRS := ""
+	var sourceCRSDefinition *datatype.CRSDefinition
 	if spatialInfo != nil {
 		srid = spatialInfo.PrimarySRIDValue()
+		sourceCRS = spatialInfo.PrimaryCRSRef()
+		sourceCRSDefinition = spatialInfo.CRSDefinitionByID(sourceCRS)
 	}
+	spatialContract := tablePreviewSpatialCRSContract(geometryColumns, srid, sourceCRS, sourceCRSDefinition)
 
 	return &models.TablePreview{
-		Mode:            PreviewModeTable,
-		Columns:         columns,
-		Rows:            rows,
-		Total:           int(totalCount),
-		Page:            page,
-		PageSize:        pageSize,
-		GeometryColumns: geometryColumns,
-		SRID:            srid,
+		Mode:                PreviewModeTable,
+		Columns:             columns,
+		Rows:                rows,
+		Total:               int(totalCount),
+		Page:                page,
+		PageSize:            pageSize,
+		GeometryColumns:     geometryColumns,
+		GeometryColumn:      spatialContract.GeometryColumn,
+		SourceSRID:          spatialContract.SourceSRID,
+		SourceCRS:           spatialContract.SourceCRS,
+		SourceCRSDefinition: spatialContract.SourceCRSDefinition,
+		TransformStatus:     spatialContract.TransformStatus,
+		PreviewHint:         spatialContract.PreviewHint,
+		TransformMessage:    spatialContract.TransformMessage,
+		SRID:                srid,
 		Object: &models.ObjectPreview{
 			Bucket:      bucket,
 			Path:        fullPath,
@@ -299,47 +308,6 @@ func (p *FileTablePreviewProvider) openSampleReader(
 	}
 	reader, err := contentReader.Open(ctx, contentio.NewRef(fullPath, contentio.RoleMain))
 	return reader, opts, err
-}
-
-func (p *FileTablePreviewProvider) ensureAccessIndex(
-	ctx context.Context,
-	req *PreviewRequest,
-	contentReader contentio.Reader,
-	bucket string,
-	fullPath string,
-	formatType format.FormatType,
-) {
-	if req == nil || req.Engine == nil || contentReader == nil || tableAccessIndexFromMetaAttributes(req.Attributes) != nil {
-		return
-	}
-	if !format.SupportsAccessIndex(formatType) {
-		return
-	}
-	token := getTokenFromContext(ctx)
-	if token == "" {
-		return
-	}
-	object, err := contentReader.Open(ctx, contentio.NewRef(fullPath, contentio.RoleMain))
-	if err != nil {
-		return
-	}
-	defer object.Close()
-
-	metaURL := getEnvOrDefault("META_URL", "http://localhost:8082")
-	metaClient := commonClient.NewMetaClient(metaURL, token)
-	attrs, err := metaClient.BuildObjectAccessIndex(&commonClient.ObjectMetadataRequest{
-		EngineID:   req.Engine.ID,
-		ObjectKey:  accessIndexObjectKey(req, bucket, fullPath),
-		ObjectData: object,
-	})
-	if err != nil || len(attrs) == 0 {
-		return
-	}
-	req.Attributes = attrs
-}
-
-func accessIndexObjectKey(req *PreviewRequest, bucket string, fullPath string) string {
-	return storageRefForPreview(req, bucket, fullPath)
 }
 
 func storageRefForPreview(req *PreviewRequest, bucket string, fullPath string) string {
@@ -562,9 +530,14 @@ func (p *FileTablePreviewProvider) previewRefs(
 	// 检测几何列
 	geometryColumns := p.detectGeometryColumns(tableInfo)
 	srid := 0
+	sourceCRS := ""
+	var sourceCRSDefinition *datatype.CRSDefinition
 	if spatialInfo != nil {
 		srid = spatialInfo.PrimarySRIDValue()
+		sourceCRS = spatialInfo.PrimaryCRSRef()
+		sourceCRSDefinition = spatialInfo.CRSDefinitionByID(sourceCRS)
 	}
+	spatialContract := tablePreviewSpatialCRSContract(geometryColumns, srid, sourceCRS, sourceCRSDefinition)
 
 	objectPath := strings.Trim(fullPath, "/")
 	if objectPath == "" {
@@ -573,14 +546,21 @@ func (p *FileTablePreviewProvider) previewRefs(
 	storageRef := storageRefForPreview(req, bucket, objectPath)
 
 	return &models.TablePreview{
-		Mode:            PreviewModeTable,
-		Columns:         columns,
-		Rows:            rows,
-		Total:           int(totalCount),
-		Page:            page,
-		PageSize:        pageSize,
-		GeometryColumns: geometryColumns,
-		SRID:            srid,
+		Mode:                PreviewModeTable,
+		Columns:             columns,
+		Rows:                rows,
+		Total:               int(totalCount),
+		Page:                page,
+		PageSize:            pageSize,
+		GeometryColumns:     geometryColumns,
+		GeometryColumn:      spatialContract.GeometryColumn,
+		SourceSRID:          spatialContract.SourceSRID,
+		SourceCRS:           spatialContract.SourceCRS,
+		SourceCRSDefinition: spatialContract.SourceCRSDefinition,
+		TransformStatus:     spatialContract.TransformStatus,
+		PreviewHint:         spatialContract.PreviewHint,
+		TransformMessage:    spatialContract.TransformMessage,
+		SRID:                srid,
 		Object: &models.ObjectPreview{
 			Bucket:      bucket,
 			Path:        objectPath,

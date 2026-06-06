@@ -22,16 +22,25 @@ func (r *Resolver) ResolveScope(tenantID uint, opts scanflow.Options) (scanflow.
 		return scanflow.Scope{}, err
 	}
 
+	scanDepth, err := scanflow.NormalizeScanDepth(opts.ScanDepth, scanflow.ScanDepthBasic)
+	if err != nil {
+		return scanflow.Scope{}, err
+	}
+	if opts.ItemID > 0 {
+		return scanflow.Scope{
+			EngineID:  engineID,
+			Mode:      scanflow.ModeItem,
+			Source:    scanflow.NormalizeSource(opts.Source),
+			ScanDepth: scanDepth,
+			Force:     opts.Force,
+		}, nil
+	}
+
 	resolvedCatalogPaths, err := r.ResolveTargets(tenantID, opts)
 	if err != nil {
 		return scanflow.Scope{}, err
 	}
 	catalogPaths := scanflow.UniqueNonEmpty(append(opts.CatalogPaths, resolvedCatalogPaths...))
-
-	scanDepth, err := scanflow.NormalizeScanDepth(opts.ScanDepth, scanflow.ScanDepthBasic)
-	if err != nil {
-		return scanflow.Scope{}, err
-	}
 
 	return scanflow.Scope{
 		EngineID:     engineID,

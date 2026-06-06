@@ -1507,7 +1507,15 @@ func TestFileTablePreviewProviderRestoresSpatialInfoFromMetaAttributes(t *testin
 				"spatial": map[string]interface{}{
 					"primary_geometry_column": "geometry",
 					"geometry_columns": []interface{}{
-						map[string]interface{}{"name": "geometry", "geometry_type": "Point", "srid": int64(4326)},
+						map[string]interface{}{"name": "geometry", "geometry_type": "Point", "srid": int64(4326), "crs_ref": "EPSG:4326"},
+					},
+					"crs_definitions": []interface{}{
+						map[string]interface{}{
+							"id":                  "EPSG:4326",
+							"definition_encoding": datatype.CRSDefinitionEncodingProj4,
+							"definition":          "+proj=longlat +datum=WGS84 +no_defs +type=crs",
+							"source":              "test",
+						},
 					},
 					"extent": []interface{}{1.0, 2.0, 3.0, 4.0},
 				},
@@ -1537,6 +1545,31 @@ func TestFileTablePreviewProviderRestoresSpatialInfoFromMetaAttributes(t *testin
 	}
 	if len(preview.GeometryColumns) != 1 || preview.GeometryColumns[0] != "geometry" {
 		t.Fatalf("GeometryColumns = %#v", preview.GeometryColumns)
+	}
+	if preview.GeometryColumn != "geometry" || preview.SourceCRS != "EPSG:4326" || preview.SourceCRSDefinition == nil {
+		t.Fatalf("CRS contract = column:%q source:%q definition:%#v", preview.GeometryColumn, preview.SourceCRS, preview.SourceCRSDefinition)
+	}
+	if preview.TransformStatus != "not_transformed" || preview.PreviewHint != "direct_renderable" {
+		t.Fatalf("transform contract = %q/%q", preview.TransformStatus, preview.PreviewHint)
+	}
+}
+
+func TestTablePreviewSpatialCRSContractAcceptsCustomCRSWithoutSRID(t *testing.T) {
+	t.Parallel()
+
+	definition := &datatype.CRSDefinition{
+		ID:                 "ADDP:CRS:test",
+		DefinitionEncoding: datatype.CRSDefinitionEncodingESRIWKT,
+		Definition:         `PROJCS["CGCS2000_3_Degree_GK_CM_120E"]`,
+		Source:             datatype.CRSDefinitionSourceSidecarPRJ,
+	}
+	contract := tablePreviewSpatialCRSContract([]string{"geometry"}, 0, definition.ID, definition)
+
+	if contract.GeometryColumn != "geometry" || contract.SourceCRS != definition.ID || contract.SourceCRSDefinition != definition {
+		t.Fatalf("contract = %#v, want custom CRS contract", contract)
+	}
+	if contract.TransformStatus != "not_transformed" || contract.PreviewHint != "frontend_transform_required" || contract.TransformMessage != "" {
+		t.Fatalf("transform contract = %#v, want frontend transform required", contract)
 	}
 }
 
@@ -2066,17 +2099,6 @@ func sqliteFileBytesForPreviewTest(t *testing.T, pattern string, statements []st
 		t.Fatalf("read sqlite file: %v", err)
 	}
 	return data
-}
-
-func TestAccessIndexObjectKeyIncludesBucketForObjectCatalog(t *testing.T) {
-	req := &PreviewRequest{Engine: &models.Engine{EngineType: "minio"}, ItemType: "object"}
-
-	if got := accessIndexObjectKey(req, "bucket", "dir/sample.csv"); got != "bucket/dir/sample.csv" {
-		t.Fatalf("object key = %q, want bucket/dir/sample.csv", got)
-	}
-	if got := accessIndexObjectKey(req, "bucket", "bucket/dir/sample.csv"); got != "bucket/dir/sample.csv" {
-		t.Fatalf("object key = %q, want bucket/dir/sample.csv", got)
-	}
 }
 
 func TestStorageRefForPreviewIncludesBucketForObjectCatalogRef(t *testing.T) {

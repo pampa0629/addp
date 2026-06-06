@@ -73,6 +73,7 @@ Meta 扫描只保留四个核心维度：
 2. `ref_groups` 只表达内容引用边界，不表达资源树父 node，也不要求 Meta 枚举父目录。
 3. 同一个外部事件产生的同一批内容，不能同时用父目录 `catalog_paths` 和 `ref_groups` 表达。
 4. item refresh 必须由已入库 item 标准事实还原内容输入，不得退回为父目录 catalog scan。
+5. `item_id` selector 解析出的 `ScanScope` 和 execution config 必须保持 item 模式，不得为了执行方便补写父级 `catalog_paths` 或 sibling `ref_groups`。
 
 ## ScanTask 与 Execution 边界
 
@@ -449,6 +450,8 @@ item 已入库后的 refresh 不等同于 catalog scan。它的输入必须来�
 - Transfer 或其他模块需要把 meta item 转换为内容读取计划。
 
 node 扫描仍由 detector 从 catalog 范围重新发现 item 并落库。item refresh 只更新当前已知 item 的 attributes、字段、format info、access index 和横切能力，不负责重新裁决 item 身份。如果 item 的 layout、refs 或 full_name 本身已经错误，item refresh 不应扩大范围去“顺便修正” item 边界；应由用户从 node 层重新扫描，让 detector 重新识别 item。
+
+对 `layout=multi` 的已知 item，item refresh 必须使用已落库的 `attributes.item.refs` 还原读取计划。即使 `storage.physical_path` 指向目录或 scope 根，也不得在 item refresh 中把它当成普通文件读取，或扩大为父目录扫描。
 
 ## 默认组合
 

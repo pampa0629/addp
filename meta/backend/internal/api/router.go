@@ -11,7 +11,6 @@ import (
 	_ "github.com/addp/meta/docs"
 	_ "github.com/addp/meta/i18n"
 	"github.com/addp/meta/internal/config"
-	"github.com/addp/meta/internal/extractor"
 	"github.com/addp/meta/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
@@ -35,11 +34,11 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 		panic("engineService and scanService must be provided to SetupRouter")
 	}
 
-	metadataQueryService := service.NewMetadataQueryService(db, engineService, logger.With("component", "metadata_query_service"))
-	metadataExtractor := extractor.NewMetadataExtractor(db)
+	metadataQueryService := service.NewMetadataQueryService(db)
+	objectMetadataService := service.NewObjectMetadataService(db)
 
 	// 创建Handler
-	handler := NewHandler(engineService, scanService, taskService, executionService, metadataQueryService, metadataExtractor)
+	handler := NewHandler(engineService, scanService, taskService, executionService, metadataQueryService, objectMetadataService)
 	assetDiscHandler := newAssetDiscoverableHandler(db)
 
 	// 健康检查
@@ -84,8 +83,6 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 
 		// 元数据相关
 		api.GET("/metadata/object", handler.GetObjectMetadata)
-		api.POST("/metadata/extract", handler.ExtractObjectMetadata)
-		api.POST("/metadata/access-index", handler.BuildObjectAccessIndex)
 		api.GET("/engines/:engine_id/items", handler.ListEngineItems)
 
 		// 新增：用于 Manager 模块的元数据查询接口

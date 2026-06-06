@@ -216,6 +216,9 @@ func (p Processor) extractDeepContent(ctx context.Context, input *input, attrs m
 	if !isDeepScan || input.ContentReader == nil {
 		return documentExtractionResult{}, nil
 	}
+	if input.Detected.Layout != format.LayoutSingle {
+		return documentExtractionResult{}, nil
+	}
 	if contentHash, err := computeContentSHA256(ctx, input.ContentReader, input.ConnInfo, input.CatalogPathFor(input.PhysicalPath)); err != nil {
 		if input.StrictDeepEnrich {
 			return documentExtractionResult{}, err

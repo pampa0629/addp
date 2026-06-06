@@ -17,6 +17,7 @@ func TestModeFor(t *testing.T) {
 		want         Mode
 	}{
 		{name: "ref groups", opts: Options{RefGroups: []models.ScanRefGroup{{Primary: "a.shp"}}}, want: ModeRefGroups},
+		{name: "item wins over ref groups", opts: Options{ItemID: 7, RefGroups: []models.ScanRefGroup{{Primary: "a.shp"}}}, catalogPaths: []string{"bucket/path"}, want: ModeItem},
 		{name: "item", opts: Options{ItemID: 7}, want: ModeItem},
 		{name: "node", opts: Options{NodeID: 3}, want: ModeNode},
 		{name: "targets", opts: Options{Targets: []string{"addp://engine/1"}}, want: ModeTargets},

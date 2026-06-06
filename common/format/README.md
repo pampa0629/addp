@@ -525,7 +525,7 @@ go test ./common/contentio ./common/engine/contentadapter
 涉及 Meta 或 Manager 消费链路时，追加对应模块测试：
 
 ```bash
-go test ./meta/backend/internal/service ./meta/backend/internal/metaitem ./meta/backend/internal/extractor
+go test ./meta/backend/internal/service ./meta/backend/internal/metaitem
 go test ./manager/backend/internal/preview ./manager/backend/internal/objectcontent ./manager/backend/internal/service
 ```
 

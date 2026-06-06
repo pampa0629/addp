@@ -965,8 +965,8 @@ flowchart TD
     - 保存 System engine 成功后，Meta 扫描编排失败只提示扫描编排失败，不再把已成功的 System 保存误报为整体保存失败。
 64. `ScanService` 查询 facade 已删除：
     - API handler 直接依赖 `MetadataQueryService` 承接 metadata tree、node、item、field、spatial metadata 查询。
-    - API handler 直接依赖 `MetadataExtractor` 承接 object metadata / on-demand extract / access-index 构建。
-    - `ScanService` 不再持有 `MetadataQueryService` / `MetadataExtractor`，只保留扫描入口 scope 解析、runtime/adapter 分发和扫描执行主线装配。
+    - API handler 直接依赖独立对象 metadata 服务承接 object metadata 查询。
+    - `ScanService` 不再持有 `MetadataQueryService` 或对象 metadata 服务，只保留扫描入口 scope 解析、runtime/adapter 分发和扫描执行主线装配。
     - `scan_metadata_facade.go` 已删除，避免查询路径继续伪装成扫描服务能力。
 65. `scanadapter` 窄接口命名已收敛：
     - `ObjectPathRuntime` 改为 `ObjectPathPersister`。
@@ -988,7 +988,7 @@ flowchart TD
 68. format table describe attributes 落库已收敛：
     - 新增 `metaattr.TableDescribeAttributes`，统一处理 format `TableDescribeResult` 中的 table / spatial / access_index / format_info 分区。
     - multi-ref table enrich 不再手写 `type_info.table`、`capabilities.spatial`、`access_index.table` 和 `format_info.<format>`。
-    - on-demand access-index 构建复用同一 helper，保留原有 index source 补充逻辑。
+    - access-index 构建归入 deep scan / refresh 的 attributes 写入主线，不再由预览链路按需写回。
     - `TableFileAttributes` 复用 table describe helper，继续独立维护文件 item 的 storage、mode、file_count 等扫描上下文属性。
 69. spatial facts 对外能力命名已收敛：
     - Meta 注册到 System `task_providers` 的 feature 从 `spatial_metadata` 改为 `spatial_facts`，与 engine capabilities 和 common datatype 术语保持一致。
@@ -1049,6 +1049,22 @@ flowchart TD
     - API 边界在 DTO 层显式转换为内部任务调度复用结构，避免把 common 结构名泄漏为 Meta 对外语义。
     - `scanprocessor.Process` 拆为校验、基础 attributes、deep enrich、deep content extraction、持久化、索引等包内私有步骤；外部入口和 builder 输入保持单一路径。
     - `ScanService` 扫描启动日志删除固定 `mode=manual`，`scanadapter` dispatcher 日志改为使用真实 dispatch mode；入口维度继续使用 `scope_mode` / `source` / `scan_depth`。
+85. 对象 metadata 查询与按需写回边界已收敛：
+    - 删除绕过统一扫描/refresh 主线的 `POST /metadata/extract`、`POST /metadata/access-index` API，以及对应 `MetaClient.ExtractObjectMetadata` / `MetaClient.BuildObjectAccessIndex`。
+    - 删除 `internal/extractor` 包，保留的对象 metadata 查询迁入 `service.ObjectMetadataService`。
+    - Manager 文件预览不再缺失 `access_index.table` 时调用 Meta 写回；缺索引时使用普通流式读取，索引生成归属 deep scan / item refresh / preprocessing。
+86. Metadata 查询入口读前写行为已清理：
+    - `MetadataQueryService.GetMetadataTree` 不再在查询前 ensure engine catalog root，也不再触发 invalid graph hard delete。
+    - catalog root 维护归属启动 preload、engine lifecycle event 和扫描 runtime 入口；查询服务只负责从已落库的 meta node/item 投影响应。
+    - `MetadataQueryService` 构造函数收敛为只依赖 `gorm.DB`，避免查询层继续携带 `EngineService` 或 logger 等写入/协调依赖。
+87. `common/client.MetaClient` 的 Meta item DTO 已对齐：
+    - `common/models.MetaItem` 使用 `DataUpdatedAt json:"data_updated_at"`，与 Meta 内部 `MetaItemLite` 响应保持一致。
+    - `common/client` 增加 `data_updated_at` 解码契约测试，避免重新退回旧 `last_modified_at` 字段。
+    - Manager repository 继续把 Meta 的 `DataUpdatedAt` 投影到 Manager 内部展示用 `LastModifiedAt`，不反向污染 Meta API 契约。
+88. catalog root reconcile 职责已从 `EngineService` 拆出：
+    - 新增 `CatalogRootReconciler`，专门负责根据 engine plugin catalog model 维护 Meta catalog root 节点。
+    - `EngineService.PreloadResources` 继续在启动预加载时触发 root reconcile，但不再承载 plugin 判定和 root 落库细节。
+    - `EngineSyncService` 在 engine create/update event 后复用同一个 reconciler；System engine 读取/缓存与 Meta root 维护的职责边界更清晰。
 
 本轮验证：
 
@@ -1076,7 +1092,7 @@ cd meta/backend && go test ./internal/service ./internal/scanflow
 cd system/frontend && npm run build
 cd console/frontend && npm run build
 cd meta/backend && go test ./...
-cd meta/backend && go test ./internal/api ./internal/service ./internal/extractor
+cd meta/backend && go test ./internal/api ./internal/service
 bash scripts/swagger/gen-swagger.sh meta
 bash scripts/swagger/check-route-coverage.sh meta
 cd meta/backend && go test ./internal/scanadapter ./internal/scanruntime ./internal/scanprocessor
@@ -1086,7 +1102,7 @@ go test ./common/engine/plugin ./common/engine/plugins/postgresql
 cd meta/backend && go test ./internal/scanruntime ./internal/service
 cd meta/backend && go test ./...
 go test ./common/engine/...
-cd meta/backend && go test ./internal/metaattr ./internal/metaitem ./internal/metaenrich ./internal/extractor
+cd meta/backend && go test ./internal/metaattr ./internal/metaitem ./internal/metaenrich
 cd meta/backend && go test ./internal/scanprocessor ./internal/scanruntime ./internal/service
 bash scripts/swagger/gen-swagger.sh meta
 bash scripts/swagger/check-route-coverage.sh meta
@@ -1097,11 +1113,22 @@ cd meta/backend && go test ./internal/service
 cd meta/backend && go test ./...
 bash scripts/swagger/check-route-coverage.sh meta
 cd meta/backend && go test ./internal/scanadapter ./internal/service
+cd meta/backend && go test ./internal/api ./internal/service
+go test ./common/client
+cd manager/backend && go test ./internal/preview
+cd meta/backend && go test ./internal/service ./internal/api
+go test ./common/client ./common/resourcetree
+cd manager/backend && go test ./internal/repository ./internal/service ./internal/preview
+cd transfer/backend && go test ./internal/service ./internal/api
+cd service/backend && go test ./internal/service ./internal/api
+cd develop/backend && go test ./internal/service
+cd quality/backend && go test ./internal/service
+cd meta/backend && go test ./internal/service
 git diff --check
 ```
 
 下一步建议：
 
-1. 继续检查 `service` 目录，确认不再残留 catalog runtime / processor / adapter 的旧主线实现。
-2. 清点 `scanadapter` / `scanruntime` / `scanprocessor` 的接口命名，确认是否还存在旧 service 时代的命名残留。
-3. 继续评估 `service.EngineService` / `MetadataQueryService` 等非扫描主链路大文件，判断是否属于本次 meta 扫描主线改造范围，避免把查询和引擎代理职责混进扫描 runtime 收敛。
+1. 评估 access-index 生成策略是否需要正式建模为 preprocessing task；当前 deep scan / refresh 已是唯一 attributes 写入主线。
+2. 继续清点 Manager/Transfer/Service 对 Meta 查询 API 的 direct convenience 包装，优先删除重复转换或命名漂移。
+3. 梳理 `EngineService` 中 capabilities view 构造是否也应迁入独立 view builder；这属于展示视图边界，可单独小步处理。

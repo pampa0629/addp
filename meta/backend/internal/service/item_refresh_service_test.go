@@ -80,10 +80,11 @@ func TestRefreshKnownMultiItemUsesStoredRefsWithoutCatalogRediscovery(t *testing
 				},
 			},
 			"storage": map[string]interface{}{
-				"bucket":     "addp",
-				"path":       "gis/",
-				"name":       "roads.shp",
-				"total_size": total,
+				"bucket":        "addp",
+				"path":          "gis/",
+				"name":          "roads.shp",
+				"physical_path": "addp/gis",
+				"total_size":    total,
 			},
 			"access_index": map[string]interface{}{
 				"table": map[string]interface{}{
@@ -118,6 +119,9 @@ func TestRefreshKnownMultiItemUsesStoredRefsWithoutCatalogRediscovery(t *testing
 		if tableIndex, exists := accessIndex["table"]; exists {
 			t.Fatalf("access_index.table = %#v, want stale shapefile table index removed", tableIndex)
 		}
+	}
+	if got := commonJSON.String(refreshed.Attributes, "storage", "content_hash"); got != "" {
+		t.Fatalf("storage.content_hash = %q, want empty for multi item", got)
 	}
 }
 

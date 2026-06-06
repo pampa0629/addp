@@ -37,7 +37,7 @@ type MetaItem struct {
 	RowCount        *int64                 `json:"row_count,omitempty"`
 	SizeBytes       *int64                 `json:"size_bytes,omitempty"`
 	ObjectSizeBytes *int64                 `json:"object_size_bytes,omitempty"`
-	LastModifiedAt  *time.Time             `json:"last_modified_at,omitempty"`
+	DataUpdatedAt   *time.Time             `json:"data_updated_at,omitempty"`
 	ScannedAt       *time.Time             `json:"scanned_at,omitempty"`
 	ScannedDepth    string                 `json:"scanned_depth"`
 	Attributes      map[string]interface{} `json:"attributes,omitempty"`

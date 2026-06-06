@@ -11,15 +11,16 @@ import (
 )
 
 func spatialPreviewContract(geometryColumn string, sourceSRID int, sourceCRS string, sourceCRSDefinition *datatype.CRSDefinition) gin.H {
+	sourceCRS = strings.TrimSpace(sourceCRS)
 	contract := gin.H{
 		"geometry_column": geometryColumn,
 		"source_srid":     sourceSRID,
 		"target_srid":     nil,
 	}
-	if sourceSRID > 0 {
-		if sourceCRS == "" {
-			sourceCRS = datatype.EPSGCRSRef(sourceSRID)
-		}
+	if sourceCRS == "" && sourceSRID > 0 {
+		sourceCRS = datatype.EPSGCRSRef(sourceSRID)
+	}
+	if sourceCRS != "" {
 		contract["source_crs"] = sourceCRS
 		if sourceCRSDefinition != nil {
 			contract["source_crs_definition"] = sourceCRSDefinition

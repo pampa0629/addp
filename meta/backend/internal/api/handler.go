@@ -10,7 +10,6 @@ import (
 
 	commonAuth "github.com/addp/common/middleware/auth"
 	metaErrors "github.com/addp/meta/internal/errors"
-	"github.com/addp/meta/internal/extractor"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanflow"
 	"github.com/addp/meta/internal/service"
@@ -19,12 +18,12 @@ import (
 )
 
 type Handler struct {
-	engineService        *service.EngineService
-	scanService          *service.ScanService
-	taskService          *service.ScanTaskService
-	executionService     *service.ScanExecutionService
-	metadataQueryService *service.MetadataQueryService
-	metadataExtractor    *extractor.MetadataExtractor
+	engineService         *service.EngineService
+	scanService           *service.ScanService
+	taskService           *service.ScanTaskService
+	executionService      *service.ScanExecutionService
+	metadataQueryService  *service.MetadataQueryService
+	objectMetadataService *service.ObjectMetadataService
 }
 
 func NewHandler(
@@ -33,15 +32,15 @@ func NewHandler(
 	taskService *service.ScanTaskService,
 	executionService *service.ScanExecutionService,
 	metadataQueryService *service.MetadataQueryService,
-	metadataExtractor *extractor.MetadataExtractor,
+	objectMetadataService *service.ObjectMetadataService,
 ) *Handler {
 	return &Handler{
-		engineService:        engineService,
-		scanService:          scanService,
-		taskService:          taskService,
-		executionService:     executionService,
-		metadataQueryService: metadataQueryService,
-		metadataExtractor:    metadataExtractor,
+		engineService:         engineService,
+		scanService:           scanService,
+		taskService:           taskService,
+		executionService:      executionService,
+		metadataQueryService:  metadataQueryService,
+		objectMetadataService: objectMetadataService,
 	}
 }
 
@@ -114,7 +113,7 @@ func (h *Handler) GetObjectMetadata(c *gin.Context) {
 		return
 	}
 
-	item, err := h.metadataExtractor.GetObjectMetadata(tenantID, uint(engineID), objectKey)
+	item, err := h.objectMetadataService.GetObjectMetadata(tenantID, uint(engineID), objectKey)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
@@ -713,106 +712,6 @@ func (h *Handler) RefreshItem(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, result)
-}
-
-// ExtractObjectMetadata 按需提取对象的深度元数据
-// @Summary 提取对象元数据 | Extract object metadata
-// @Description 按需读取请求体内容并提取对象深度元数据 | Extract object metadata from request body
-// @Tags Meta
-// @Accept octet-stream
-// @Produce json
-// @Param engine_id query int true "存储引擎ID | Engine ID"
-// @Param object_key query string true "对象路径 | Object key"
-// @Success 200 {object} map[string]interface{} "对象元数据 | Object metadata"
-// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
-// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /metadata/extract [post]
-// @Security BearerAuth
-func (h *Handler) ExtractObjectMetadata(c *gin.Context) {
-	tenantID := commonAuth.GetTenantID(c)
-
-	engineIDStr := c.Query("engine_id")
-	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid engine_id"})
-		return
-	}
-
-	objectKey := c.Query("object_key")
-	if objectKey == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing object_key"})
-		return
-	}
-
-	// 获取Authorization token（用于访问System API）
-	token := c.GetHeader("Authorization")
-	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authorization token"})
-		return
-	}
-	if len(token) > 7 && token[:7] == "Bearer " {
-		token = token[7:]
-	}
-
-	// 从请求体读取对象内容
-	objectReader := c.Request.Body
-	defer c.Request.Body.Close()
-
-	// 调用扫描服务提取元数据
-	metadata, err := h.metadataExtractor.ExtractObjectMetadataOnDemand(tenantID, uint(engineID), objectKey, token, objectReader)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, metadata)
-}
-
-// BuildObjectAccessIndex 按需建立对象访问索引
-// @Summary 建立对象访问索引 | Build object access index
-// @Description 按需读取请求体内容并建立对象访问索引 | Build object access index from request body
-// @Tags Meta
-// @Accept octet-stream
-// @Produce json
-// @Param engine_id query int true "存储引擎ID | Engine ID"
-// @Param object_key query string true "对象路径 | Object key"
-// @Success 200 {object} map[string]interface{} "对象 attributes | Object attributes"
-// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
-// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /metadata/access-index [post]
-// @Security BearerAuth
-func (h *Handler) BuildObjectAccessIndex(c *gin.Context) {
-	tenantID := commonAuth.GetTenantID(c)
-
-	engineIDStr := c.Query("engine_id")
-	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid engine_id"})
-		return
-	}
-
-	objectKey := c.Query("object_key")
-	if objectKey == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing object_key"})
-		return
-	}
-
-	token := c.GetHeader("Authorization")
-	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authorization token"})
-		return
-	}
-
-	attrs, err := h.metadataExtractor.BuildObjectAccessIndexOnDemand(tenantID, uint(engineID), objectKey, c.Request.Body)
-	_ = c.Request.Body.Close()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"data": gin.H{"attributes": attrs}})
 }
 
 func extractBearerToken(c *gin.Context) (string, bool) {

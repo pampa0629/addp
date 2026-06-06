@@ -2,34 +2,25 @@ package service
 
 import (
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/addp/common/datatype"
-	"github.com/addp/common/engine/plugin"
 	"github.com/addp/meta/internal/metapath"
 	"github.com/addp/meta/internal/metaquery"
 	"github.com/addp/meta/internal/models"
-	metaRepo "github.com/addp/meta/internal/repository"
 	"gorm.io/gorm"
 )
 
 // MetadataQueryService 元数据查询服务
 // 提供Manager和Transfer模块的元数据查询接口
 type MetadataQueryService struct {
-	db            *gorm.DB
-	repo          *metaRepo.ScanRepository
-	engineService *EngineService
-	log           *slog.Logger
+	db *gorm.DB
 }
 
 // NewMetadataQueryService 创建元数据查询服务
-func NewMetadataQueryService(db *gorm.DB, engineService *EngineService, log *slog.Logger) *MetadataQueryService {
+func NewMetadataQueryService(db *gorm.DB) *MetadataQueryService {
 	return &MetadataQueryService{
-		db:            db,
-		repo:          metaRepo.NewScanRepository(db),
-		engineService: engineService,
-		log:           log,
+		db: db,
 	}
 }
 
@@ -113,10 +104,6 @@ func (s *MetadataQueryService) GetItemFieldDetailsByID(tenantID, itemID uint) ([
 // ============================================================================
 
 func (s *MetadataQueryService) GetMetadataTree(tenantID, engineID uint) (*models.MetadataTreeResponse, error) {
-	if err := s.ensureEngineCatalogRoot(tenantID, engineID); err != nil {
-		return nil, err
-	}
-
 	// 查询顶层节点
 	var topNodes []models.MetaNode
 	if err := s.db.Where("tenant_id = ? AND engine_id = ? AND parent_node_id IS NULL AND full_name = '' AND deleted_at IS NULL", tenantID, engineID).
@@ -160,27 +147,6 @@ func (s *MetadataQueryService) GetMetadataTree(tenantID, engineID uint) (*models
 		ChildNodes: childNodesLite,
 		Items:      itemsLite,
 	}, nil
-}
-
-func (s *MetadataQueryService) ensureEngineCatalogRoot(tenantID, engineID uint) error {
-	if s.engineService == nil {
-		return fmt.Errorf("engine service is not available")
-	}
-	resource, err := s.engineService.GetResourceByID(engineID, tenantID, "")
-	if err != nil {
-		return fmt.Errorf("failed to get resource: %w", err)
-	}
-	enginePlugin, err := plugin.Get(resource.EngineType)
-	if err != nil {
-		return fmt.Errorf("unsupported engine type %s: %w", resource.EngineType, err)
-	}
-	if _, err := metaRepo.EnsureCatalogRootNode(s.repo, tenantID, resource, enginePlugin); err != nil {
-		return fmt.Errorf("failed to ensure catalog root: %w", err)
-	}
-	if err := s.repo.HardDeleteInvalidEngineGraph(tenantID, engineID); err != nil {
-		return fmt.Errorf("failed to reconcile metadata tree: %w", err)
-	}
-	return nil
 }
 
 func (s *MetadataQueryService) GetNodeByCatalogPath(tenantID, engineID uint, catalogPath string) (*models.MetaNodeLite, error) {

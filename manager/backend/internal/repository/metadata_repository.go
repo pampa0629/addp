@@ -236,7 +236,7 @@ func convertMetaItemToLite(item commonModels.MetaItem) models.MetaItemLite {
 		RowCount:        item.RowCount,
 		SizeBytes:       item.SizeBytes,
 		ObjectSizeBytes: item.ObjectSizeBytes,
-		LastModifiedAt:  item.LastModifiedAt,
+		LastModifiedAt:  item.DataUpdatedAt,
 		Attributes:      item.Attributes,
 	}
 }

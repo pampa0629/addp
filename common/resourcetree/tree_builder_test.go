@@ -310,15 +310,15 @@ func TestBuildFromMetadataTreeAttachesItems(t *testing.T) {
 		},
 		Items: []models.MetaItem{
 			{
-				ID:             21,
-				EngineID:       7,
-				NodeID:         schemaID,
-				ItemType:       "table",
-				Name:           "roads",
-				FullName:       "public.roads",
-				RowCount:       &rowCount,
-				SizeBytes:      &sizeBytes,
-				LastModifiedAt: &lastModified,
+				ID:            21,
+				EngineID:      7,
+				NodeID:        schemaID,
+				ItemType:      "table",
+				Name:          "roads",
+				FullName:      "public.roads",
+				RowCount:      &rowCount,
+				SizeBytes:     &sizeBytes,
+				DataUpdatedAt: &lastModified,
 				Attributes: map[string]interface{}{
 					"item": map[string]interface{}{
 						"data_type": "table",

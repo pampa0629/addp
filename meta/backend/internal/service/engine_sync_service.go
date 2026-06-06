@@ -92,7 +92,9 @@ func (s *EngineSyncService) handleEngineChangeEvent(event events.EngineChangeEve
 				"error", err)
 			return nil
 		}
-		s.engineService.reconcileCatalogRoot(resource)
+		if s.engineService.rootReconciler != nil {
+			s.engineService.rootReconciler.Reconcile(resource)
+		}
 
 		if event.Action == events.ActionCreate {
 			s.log.Debug("资源已创建", "engine_id", event.EngineID)

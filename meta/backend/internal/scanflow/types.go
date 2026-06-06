@@ -49,11 +49,11 @@ type Scope struct {
 }
 
 func ModeFor(opts Options, catalogPaths []string) Mode {
-	if len(opts.RefGroups) > 0 {
-		return ModeRefGroups
-	}
 	if opts.ItemID > 0 {
 		return ModeItem
+	}
+	if len(opts.RefGroups) > 0 {
+		return ModeRefGroups
 	}
 	if opts.NodeID > 0 {
 		return ModeNode

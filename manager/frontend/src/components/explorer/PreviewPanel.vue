@@ -1250,7 +1250,8 @@ const spatialInfoTooltip = computed(() => {
 
   const parts = []
   const geometryColumns = props.previewData?.geometry_columns || []
-  const srid = props.previewData?.srid || 0
+  const srid = props.previewData?.source_srid || props.previewData?.srid || 0
+  const sourceCRS = String(props.previewData?.source_crs || '').trim()
   const extent = props.previewData?.extent || []
 
   // 几何列
@@ -1261,6 +1262,9 @@ const spatialInfoTooltip = computed(() => {
   // SRID
   if (srid > 0) {
     parts.push(`SRID: ${srid}`)
+  }
+  if (sourceCRS) {
+    parts.push(`${t('manager.explorer.sourceCRS')}: ${sourceCRS}`)
   }
 
   // 空间范围

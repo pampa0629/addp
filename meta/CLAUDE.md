@@ -140,7 +140,7 @@ Manager 预览不会重新识别格式，只消费已落库 Meta attributes 中�
 - 扫描：`POST /scan/run/unscanned`、`POST /scan/run/manual`。
 - 扫描运行：`GET /scan/runs`、`GET /scan/runs/:run_id`、`POST /scan/runs/:run_id/cancel`。
 - 扫描任务：`GET /scan/tasks`、`POST /scan/tasks`、`PUT /scan/tasks/:task_id`、`DELETE /scan/tasks/:task_id`、`POST /scan/tasks/:task_id/trigger`。
-- 元数据对象：`GET /metadata/object`、`POST /metadata/extract`。
+- 元数据对象：`GET /metadata/object`。
 - 引擎数据项：`GET /engines/:engine_id/items`。
 - 树查询：`GET /engines/:engine_id/tree`、`GET /nodes/:node_id`、`GET /nodes/:node_id/children`、`GET /nodes/:node_id/items`、`GET /nodes/by-catalog-path`、`GET /items/by-catalog-path`。
 - 字段与空间信息：`GET /items/:item_id/fields`、`GET /items/:item_id/spatial`、`GET /items/:item_id`。

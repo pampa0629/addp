@@ -233,13 +233,14 @@ item 刷新原先复用了 catalog scan 的入口，把 `item_id` 先转换为 c
 
 - Manager 的 item 刷新只通过 Meta client 调用 Meta item refresh 能力。
 - Meta 新增已知 item refresh 路径：从标准 attributes 还原 item descriptor，再按 format provider 能力刷新属性并落回同一个 item。
-- catalog scan 继续负责发现 item；item refresh 不再通过 `refs` 反推扫描范围。
+- catalog scan 继续负责发现 item；item refresh 不再通过 `item_id` 反推父目录，也不通过 `refs` 反推扫描范围。
 
 #### 预防措施
 
 1. 新增或修改 item refresh 能力时，先还原标准 item descriptor，不要在 Manager 或具体扫描服务中重复格式识别。
 2. `refs` 只表示 item 的组成内容，不应直接作为 catalog scan target。
-3. 如果 item 刷新成功但属性未变化，先检查该 item 的 `attributes.item.layout / item.format / item.refs / storage` 是否足以打开内容。
+3. `layout=multi` 的 item refresh 应使用已落库 `attributes.item.refs`，不得把父目录或 `storage.physical_path` 目录当作普通文件读取。
+4. 如果 item 刷新成功但属性未变化，先检查该 item 的 `attributes.item.layout / item.format / item.refs / storage` 是否足以打开内容。
 
 ---
 

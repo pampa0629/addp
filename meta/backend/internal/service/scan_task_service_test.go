@@ -186,6 +186,12 @@ func TestCreateManualRunPreservesItemID(t *testing.T) {
 	if got := jsonMapUint(run.ExecutionConfig, "item_id"); got != item.ID {
 		t.Fatalf("execution item_id = %d, want %d; config=%#v", got, item.ID, run.ExecutionConfig)
 	}
+	if got := jsonMapStringSlice(run.ExecutionConfig, "catalog_paths"); len(got) != 0 {
+		t.Fatalf("item refresh catalog_paths = %#v, want empty", got)
+	}
+	if got, ok := run.ExecutionConfig["ref_groups"].([]models.ScanRefGroup); ok && len(got) != 0 {
+		t.Fatalf("item refresh ref_groups = %#v, want empty", got)
+	}
 }
 
 func TestCreateManualRunRejectsUnsupportedTriggerType(t *testing.T) {
