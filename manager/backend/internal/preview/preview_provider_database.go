@@ -156,7 +156,6 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 		SourceCRSDefinition: spatialContract.SourceCRSDefinition,
 		TransformStatus:     spatialContract.TransformStatus,
 		PreviewHint:         spatialContract.PreviewHint,
-		TransformMessage:    spatialContract.TransformMessage,
 		// MVT preview metadata (for frontend decision-making)
 		EngineID:   req.Engine.ID,
 		Schema:     req.Schema,
@@ -371,7 +370,6 @@ type tablePreviewCRSContract struct {
 	SourceCRSDefinition *datatype.CRSDefinition
 	TransformStatus     string
 	PreviewHint         string
-	TransformMessage    string
 }
 
 func tablePreviewSpatialCRSContract(geometryColumns []string, srid int, sourceCRS string, sourceCRSDefinition *datatype.CRSDefinition) tablePreviewCRSContract {

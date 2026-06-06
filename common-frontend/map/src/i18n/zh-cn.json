@@ -34,7 +34,6 @@
     "selectColumns": "选择字段",
     "mapSuppressedUnknownCRS": "源坐标系未知，已跳过地图渲染",
     "mapSuppressedUnsupportedCRS": "当前无法可靠完成坐标转换，已跳过地图渲染",
-    "mapSuppressedNonWGS84": "当前预览数据未转换到 EPSG:4326，已跳过地图渲染",
     "businessBrowseMode": "业务浏览",
     "gcj02DisplayNotice": "GCJ-02 底图仅用于业务浏览，不作为精确空间校验依据"
   }

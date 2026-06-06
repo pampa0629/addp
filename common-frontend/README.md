@@ -158,6 +158,8 @@ import {
 - **TablePreview** - 表格数据预览，支持空间字段渲染
 - **ImagePreview** - 图片预览
 
+地图预览、CRS registry、底图 profile 和 GCJ-02 展示适配规则见 [Map 前端组件说明](./map/README.md)。
+
 ### 表单组件
 
 - **StorageEngineForm** - 存储引擎配置表单（支持 PostgreSQL、MinIO/S3）

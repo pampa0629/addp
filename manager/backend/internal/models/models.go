@@ -116,11 +116,9 @@ type TablePreview struct {
 	SourceSRID          int                      `json:"source_srid,omitempty"`
 	SourceCRS           string                   `json:"source_crs,omitempty"`
 	SourceCRSDefinition *datatype.CRSDefinition  `json:"source_crs_definition,omitempty"`
-	TargetSRID          *int                     `json:"target_srid,omitempty"`
 	TransformStatus     string                   `json:"transform_status,omitempty"`
 	TransformEngine     string                   `json:"transform_engine,omitempty"`
 	PreviewHint         string                   `json:"preview_hint,omitempty"`
-	TransformMessage    string                   `json:"transform_message,omitempty"`
 	Object              *ObjectPreview           `json:"object,omitempty"`
 	Graph               *GraphPreviewData        `json:"graph,omitempty"`
 	ItemMeta            *CatalogFacts            `json:"item_meta,omitempty"` // 数据项元数据（来自 meta 模块）

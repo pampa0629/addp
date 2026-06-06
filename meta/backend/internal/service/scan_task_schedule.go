@@ -25,7 +25,7 @@ func (s *ScanTaskService) nextTimeFromSpec(spec string, from time.Time) *time.Ti
 }
 
 // UpsertEngineScanTaskFromPolicy 根据 Console 提交的 engine 扫描策略创建或更新绑定任务。
-func (s *ScanTaskService) UpsertEngineScanTaskFromPolicy(tenantID, userID, engineID uint, engineName string, scanPolicy *commonModels.ScanConfig) (*models.ScanTask, error) {
+func (s *ScanTaskService) UpsertEngineScanTaskFromPolicy(tenantID, userID, engineID uint, engineName string, scanPolicy *commonModels.ScanPolicy) (*models.ScanTask, error) {
 	if engineID == 0 {
 		return nil, errors.New("engine_id 不能为空")
 	}

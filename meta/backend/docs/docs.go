@@ -1668,7 +1668,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "cron_expression": {
-                    "description": "Cron 表达式（schedule_type=cron）",
+                    "description": "Cron 表达式（schedule_mode=cron）",
                     "type": "string"
                 },
                 "enabled": {
@@ -1695,12 +1695,12 @@ const docTemplate = `{
                     "description": "默认扫描深度：basic 或 deep",
                     "type": "string"
                 },
-                "schedule_time": {
-                    "description": "执行时间 HH:mm",
+                "schedule_mode": {
+                    "description": "daily, weekly, monthly, cron",
                     "type": "string"
                 },
-                "schedule_type": {
-                    "description": "daily, weekly, monthly, cron",
+                "schedule_time": {
+                    "description": "执行时间 HH:mm",
                     "type": "string"
                 },
                 "schedule_value": {
@@ -2028,7 +2028,7 @@ const docTemplate = `{
                     }
                 },
                 "trigger_type": {
-                    "description": "manual/scheduled",
+                    "description": "manual；空值按 manual 处理",
                     "type": "string"
                 }
             }

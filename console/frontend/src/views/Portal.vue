@@ -207,7 +207,7 @@ const scanConfigFromTask = (task) => {
     immediate_scan: true,
     immediate_depth: 'basic',
     scheduled_scan: true,
-    schedule_type: 'cron',
+    schedule_mode: 'cron',
     cron_expression: task.schedule || '',
     schedule_time: '00:00',
     schedule_value: [],

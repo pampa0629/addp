@@ -100,7 +100,7 @@ definitions:
   github_com_addp_meta_internal_models.EngineScanPolicy:
     properties:
       cron_expression:
-        description: Cron 表达式（schedule_type=cron）
+        description: Cron 表达式（schedule_mode=cron）
         type: string
       enabled:
         description: 是否启用扫描（总开关）
@@ -118,11 +118,11 @@ definitions:
       scan_depth:
         description: 默认扫描深度：basic 或 deep
         type: string
+      schedule_mode:
+        description: daily, weekly, monthly, cron
+        type: string
       schedule_time:
         description: 执行时间 HH:mm
-        type: string
-      schedule_type:
-        description: daily, weekly, monthly, cron
         type: string
       schedule_value:
         description: 周几（0-6）或月几（1-31）
@@ -344,7 +344,7 @@ definitions:
           type: string
         type: array
       trigger_type:
-        description: manual/scheduled
+        description: manual；空值按 manual 处理
         type: string
     type: object
   github_com_addp_meta_internal_models.ScanResponse:

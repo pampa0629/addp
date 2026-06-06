@@ -13,17 +13,15 @@ import (
 	"github.com/addp/meta/internal/scantask"
 )
 
-func normalizeScanRequestTriggerType(triggerType string) (string, error) {
+func validateManualScanRequestTriggerType(triggerType string) error {
 	normalized := strings.ToLower(strings.TrimSpace(triggerType))
 	if normalized == "" {
-		return models.TriggerTypeManual, nil
+		return nil
 	}
-	switch normalized {
-	case models.TriggerTypeManual, models.TriggerTypeScheduled:
-		return normalized, nil
-	default:
-		return "", fmt.Errorf("unsupported trigger_type %q: use manual or scheduled", triggerType)
+	if normalized == models.TriggerTypeManual {
+		return nil
 	}
+	return fmt.Errorf("unsupported trigger_type %q: use manual", triggerType)
 }
 
 // CreateManualRun 创建手动扫描执行并入队
@@ -31,7 +29,7 @@ func (s *ScanExecutionService) CreateManualRun(ctx context.Context, tenantID, us
 	if req == nil {
 		return nil, errors.New("请求不能为空")
 	}
-	if _, err := normalizeScanRequestTriggerType(req.TriggerType); err != nil {
+	if err := validateManualScanRequestTriggerType(req.TriggerType); err != nil {
 		return nil, err
 	}
 	scope, err := s.scanService.ResolveScanScope(tenantID, scanflow.Options{

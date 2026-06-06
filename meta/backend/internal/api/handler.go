@@ -40,17 +40,15 @@ func NewHandler(
 	}
 }
 
-func validateScanRequestTriggerType(triggerType string) error {
+func validateManualScanRequestTriggerType(triggerType string) error {
 	normalized := strings.ToLower(strings.TrimSpace(triggerType))
 	if normalized == "" {
 		return nil
 	}
-	switch normalized {
-	case models.TriggerTypeManual, models.TriggerTypeScheduled:
+	if normalized == models.TriggerTypeManual {
 		return nil
-	default:
-		return fmt.Errorf("unsupported trigger_type %q: use manual or scheduled", triggerType)
 	}
+	return fmt.Errorf("unsupported trigger_type %q: use manual", triggerType)
 }
 
 // handleServiceError 统一处理 Service 层错误，返回合适的 HTTP 状态码

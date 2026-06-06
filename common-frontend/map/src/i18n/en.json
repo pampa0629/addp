@@ -34,7 +34,6 @@
     "selectColumns": "Select fields",
     "mapSuppressedUnknownCRS": "Source CRS is unknown, map rendering has been skipped",
     "mapSuppressedUnsupportedCRS": "Coordinate transformation is not reliable for this preview, map rendering has been skipped",
-    "mapSuppressedNonWGS84": "Preview geometry was not converted to EPSG:4326, map rendering has been skipped",
     "businessBrowseMode": "Browse mode",
     "gcj02DisplayNotice": "GCJ-02 basemaps are for browsing only and are not a precise spatial validation reference"
   }

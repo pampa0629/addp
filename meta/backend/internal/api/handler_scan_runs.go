@@ -77,7 +77,7 @@ func (h *Handler) CreateManualScanRun(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if err := validateScanRequestTriggerType(req.TriggerType); err != nil {
+	if err := validateManualScanRequestTriggerType(req.TriggerType); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}

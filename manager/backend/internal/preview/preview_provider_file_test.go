@@ -1568,7 +1568,7 @@ func TestTablePreviewSpatialCRSContractAcceptsCustomCRSWithoutSRID(t *testing.T)
 	if contract.GeometryColumn != "geometry" || contract.SourceCRS != definition.ID || contract.SourceCRSDefinition != definition {
 		t.Fatalf("contract = %#v, want custom CRS contract", contract)
 	}
-	if contract.TransformStatus != "not_transformed" || contract.PreviewHint != "frontend_transform_required" || contract.TransformMessage != "" {
+	if contract.TransformStatus != "not_transformed" || contract.PreviewHint != "frontend_transform_required" {
 		t.Fatalf("transform contract = %#v, want frontend transform required", contract)
 	}
 }

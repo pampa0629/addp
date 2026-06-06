@@ -310,6 +310,8 @@ type MultiTableWriterProvider interface {
 
 空间表的 `FieldTypeGeometry` 只表达字段语义，行值编码由 `ParseOptions.GeometryEncoding` 决定。默认编码是 `wkt`，用于 Manager sample、日志和调试；连续读取链路可显式请求 `wkb` 或 `ewkb`，此时行值为 `[]byte`。SRID / CRS 事实以 `datatype.SpatialInfo` 为准，`ewkb` 携带 SRID 只是行值编码能力，不替代空间参考事实。具体格式的 native 几何类型必须在各自 plugin 内转换，不得暴露到 format 根接口或 engine / Transfer 层。
 
+格式写出 CRS 定义时，只能使用定义文本，不能使用 CRS ID 充当定义。Shapefile writer 的 `WriteOptions.ExtraParams["crs_definition"]` 表示 `.prj` 定义文本，例如 WKT、ESRI WKT 或 proj4 文本；不得传入裸 `EPSG:<code>` 或 `URN:OGC:DEF:CRS:EPSG::<code>`。CRS ID 应由 `datatype.SpatialInfo` 的 `crs_ref` 表达，定义文本应由 `crs_definitions[].definition` 表达。
+
 目录 scope 格式同样拆成 info 和 sample：
 
 ```go

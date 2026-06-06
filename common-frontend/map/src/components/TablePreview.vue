@@ -158,7 +158,6 @@ import GeoJSON from 'ol/format/GeoJSON'
 import {
   crsSuppressionStatus,
   getPreviewCRSTransform,
-  sourceSRIDFromPreview,
   transformGeoJSONGeometryToWGS84
 } from '../utils/crsRegistry'
 
@@ -335,7 +334,6 @@ const columns = computed(() => props.data?.columns || [])
 const rows = computed(() => props.data?.rows || [])
 const total = computed(() => props.data?.total || 0)
 const geometryColumns = computed(() => props.data?.geometry_columns || [])
-const previewSRID = computed(() => sourceSRIDFromPreview(props.data))
 const crsTransform = computed(() => getPreviewCRSTransform(props.data))
 const isDynamicSchemaRecordSet = computed(() => props.data?.preview_kind === 'dynamic_schema_record_set')
 const selectedBaseMapProfile = computed(() => getBaseMapProfile(baseMapType.value))
@@ -396,7 +394,6 @@ const suppressedMapMessage = computed(() => {
   const status = crsSuppressionStatus(crsTransform.value)
   if (status === 'unknown_crs') return t('map.mapSuppressedUnknownCRS')
   if (status === 'unsupported_crs') return t('map.mapSuppressedUnsupportedCRS')
-  if (previewSRID.value > 0 && previewSRID.value !== 4326) return t('map.mapSuppressedNonWGS84')
   return ''
 })
 

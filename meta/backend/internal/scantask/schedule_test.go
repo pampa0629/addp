@@ -10,8 +10,8 @@ import (
 func TestBuildCronExpressionFromPolicyDaily(t *testing.T) {
 	t.Parallel()
 
-	got, err := BuildCronExpressionFromPolicy(nil, &commonModels.ScanConfig{
-		ScheduleType: "daily",
+	got, err := BuildCronExpressionFromPolicy(nil, &commonModels.ScanPolicy{
+		ScheduleMode: "daily",
 		ScheduleTime: "03:15",
 	})
 	if err != nil {
@@ -25,8 +25,8 @@ func TestBuildCronExpressionFromPolicyDaily(t *testing.T) {
 func TestBuildCronExpressionFromPolicyWeekly(t *testing.T) {
 	t.Parallel()
 
-	got, err := BuildCronExpressionFromPolicy(nil, &commonModels.ScanConfig{
-		ScheduleType:  "weekly",
+	got, err := BuildCronExpressionFromPolicy(nil, &commonModels.ScanPolicy{
+		ScheduleMode:  "weekly",
 		ScheduleTime:  "08:30",
 		ScheduleValue: []int{1, 3, 5},
 	})
@@ -42,8 +42,8 @@ func TestBuildCronExpressionFromPolicyValidatesCron(t *testing.T) {
 	t.Parallel()
 
 	builder := commonScheduler.NewExpressionBuilder()
-	if _, err := BuildCronExpressionFromPolicy(builder, &commonModels.ScanConfig{
-		ScheduleType:   "cron",
+	if _, err := BuildCronExpressionFromPolicy(builder, &commonModels.ScanPolicy{
+		ScheduleMode:   "cron",
 		CronExpression: "invalid",
 	}); err == nil {
 		t.Fatalf("expected invalid cron error")

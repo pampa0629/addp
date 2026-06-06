@@ -17,7 +17,7 @@ type ScanRequest struct {
 	ItemID       uint           `json:"item_id"`       // 要扫描的数据项 ID
 	Targets      []string       `json:"targets"`       // locator 目标列表
 	ScanDepth    string         `json:"scan_depth"`    // basic/deep
-	TriggerType  string         `json:"trigger_type"`  // manual/scheduled
+	TriggerType  string         `json:"trigger_type"`  // manual；空值按 manual 处理
 	Source       string         `json:"source"`        // 扫描来源
 	Force        bool           `json:"force"`         // 是否强制重新扫描
 }
@@ -102,8 +102,8 @@ type EngineScanPolicy struct {
 	ImmediateScan  bool                           `json:"immediate_scan"`            // 注册或保存后立即扫描
 	ImmediateDepth string                         `json:"immediate_depth,omitempty"` // 立即扫描深度：basic 或 deep
 	ScheduledScan  bool                           `json:"scheduled_scan"`            // 是否启用定时扫描
-	ScheduleType   string                         `json:"schedule_type"`             // daily, weekly, monthly, cron
-	CronExpression string                         `json:"cron_expression,omitempty"` // Cron 表达式（schedule_type=cron）
+	ScheduleMode   string                         `json:"schedule_mode"`             // daily, weekly, monthly, cron
+	CronExpression string                         `json:"cron_expression,omitempty"` // Cron 表达式（schedule_mode=cron）
 	ScheduleTime   string                         `json:"schedule_time,omitempty"`   // 执行时间 HH:mm
 	ScheduleValue  []int                          `json:"schedule_value,omitempty"`  // 周几（0-6）或月几（1-31）
 	ScanDepth      string                         `json:"scan_depth"`                // 默认扫描深度：basic 或 deep
@@ -126,30 +126,30 @@ type EngineScanMVTPreprocessPlan struct {
 	StopThresholdKB  float64 `json:"stop_threshold_kb"`
 }
 
-// ToCommonScanConfig 将 Meta API 边界策略转换为内部任务调度复用结构。
-func (p *EngineScanPolicy) ToCommonScanConfig() *commonModels.ScanConfig {
+// ToCommonScanPolicy 将 Meta API 边界策略转换为内部任务调度复用结构。
+func (p *EngineScanPolicy) ToCommonScanPolicy() *commonModels.ScanPolicy {
 	if p == nil {
 		return nil
 	}
-	policy := &commonModels.ScanConfig{
+	policy := &commonModels.ScanPolicy{
 		Enabled:        p.Enabled,
 		ImmediateScan:  p.ImmediateScan,
 		ImmediateDepth: p.ImmediateDepth,
 		ScheduledScan:  p.ScheduledScan,
-		ScheduleType:   p.ScheduleType,
+		ScheduleMode:   p.ScheduleMode,
 		CronExpression: p.CronExpression,
 		ScheduleTime:   p.ScheduleTime,
 		ScheduleValue:  p.ScheduleValue,
 		ScanDepth:      p.ScanDepth,
 	}
 	if p.Preprocessing != nil {
-		policy.Preprocessing = &commonModels.PreprocessingConfig{
+		policy.Preprocessing = &commonModels.ScanPreprocessingPolicy{
 			Enabled:     p.Preprocessing.Enabled,
 			AutoTrigger: p.Preprocessing.AutoTrigger,
 			Types:       p.Preprocessing.Types,
 		}
 		if p.Preprocessing.MVTConfig != nil {
-			policy.Preprocessing.MVTConfig = &commonModels.MVTPreprocessConfig{
+			policy.Preprocessing.MVTConfig = &commonModels.MVTPreprocessingPolicy{
 				MaxZoom:          p.Preprocessing.MVTConfig.MaxZoom,
 				Concurrency:      p.Preprocessing.MVTConfig.Concurrency,
 				StopThresholdSec: p.Preprocessing.MVTConfig.StopThresholdSec,

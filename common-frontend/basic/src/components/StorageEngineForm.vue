@@ -378,7 +378,7 @@
       <!-- 2.1 定时扫描详细配置（仅在开关打开时显示） -->
       <template v-if="scheduledScanEnabled">
         <el-form-item :label="t('storageEngine.scanFrequency')" style="margin-left: 30px;">
-          <el-radio-group v-model="formState.scan_config.schedule_type">
+          <el-radio-group v-model="formState.scan_config.schedule_mode">
             <el-radio value="daily">{{ t('schedule.mode.daily') }}</el-radio>
             <el-radio value="weekly">{{ t('schedule.mode.weekly') }}</el-radio>
           </el-radio-group>
@@ -395,7 +395,7 @@
         </el-form-item>
 
         <el-form-item
-          v-if="formState.scan_config.schedule_type === 'weekly'"
+          v-if="formState.scan_config.schedule_mode === 'weekly'"
           :label="t('schedule.execDay')"
           style="margin-left: 30px;"
         >
@@ -617,7 +617,7 @@ const formState = reactive({
     immediate_scan: true,  // 默认启用立即扫描
     immediate_depth: 'basic',  // 立即扫描默认基础
     scheduled_scan: false,  // 默认只立即扫描一次
-    schedule_type: 'daily',  // 默认每天
+    schedule_mode: 'daily',  // 默认每天
     schedule_time: '00:00',  // 凌晨执行
     schedule_value: []
   }
@@ -637,7 +637,7 @@ const syncFromProps = (value) => {
       immediate_scan: value.scan_config.immediate_scan !== undefined ? value.scan_config.immediate_scan : true,
       immediate_depth: value.scan_config.immediate_depth || 'basic',
       scheduled_scan: value.scan_config.scheduled_scan !== undefined ? value.scan_config.scheduled_scan : true,
-      schedule_type: value.scan_config.schedule_type || 'daily',
+      schedule_mode: value.scan_config.schedule_mode || 'daily',
       schedule_time: value.scan_config.schedule_time || '00:00',
       schedule_value: value.scan_config.schedule_value || []
     }
@@ -652,7 +652,7 @@ const syncFromProps = (value) => {
       immediate_scan: true,
       immediate_depth: 'basic',
       scheduled_scan: false,
-      schedule_type: 'daily',
+      schedule_mode: 'daily',
       schedule_time: '00:00',
       schedule_value: []
     }
@@ -694,7 +694,7 @@ watch(scheduledScanEnabled, (value) => {
   formState.scan_config.scheduled_scan = value
   if (!value) {
     // 禁用定时扫描时，重置相关配置
-    formState.scan_config.schedule_type = 'daily'
+    formState.scan_config.schedule_mode = 'daily'
     formState.scan_config.schedule_time = '00:00'
     formState.scan_config.schedule_value = []
   }

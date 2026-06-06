@@ -1017,7 +1017,7 @@ flowchart TD
     - `metaquery` 保持为 Meta item/node 查询投影层，避免被扫描写入主线复用。
 76. Meta 内部 engine 扫描策略命名已收敛：
     - Console -> Meta API 字段继续使用 `scan_policy`。
-    - `ScanTaskService` / `scantask` 内部函数和变量统一表达为 policy；`commonModels.ScanConfig` 仅作为现有配置结构类型复用，不再在 Meta 内部语义上称为 System `scan_config`。
+    - `ScanTaskService` / `scantask` 内部函数和变量统一表达为 policy；公共传递结构只作为策略载荷复用，不再在 Meta 内部语义上称为 System `scan_config`。
 77. object catalog path helper 暴露面已收窄：
     - `ObjectCatalogPathTarget` 与 object catalog path 解析/list/read/resource 转换 helper 改为 `scanadapter` 包内私有。
     - adapter 对外只保留 `ContentCatalogScanner` / `ContentCatalogAdapter` 这类主线装配概念，具体 object path 解析不再成为可复用公共 API。
@@ -1045,7 +1045,7 @@ flowchart TD
     - `item_refresh_runtime` 不再直接拼 processor 底层字段，改用 `KnownItemInput`。
     - 内容 hash、文档文本抽取、内容路径、文件更新时间、known multi-table access-index 清理等 helper 改为包内私有。
 84. Meta API 与 processor 主线继续收敛：
-    - Console -> Meta 的 engine 扫描策略 DTO 使用独立 `EngineScanPolicy` / `EngineScanPreprocessingPolicy` / `EngineScanMVTPreprocessPlan`，Swagger 不再暴露 `models.ScanConfig`。
+    - Console -> Meta 的 engine 扫描策略 DTO 使用独立 `EngineScanPolicy` / `EngineScanPreprocessingPolicy` / `EngineScanMVTPreprocessPlan`，Swagger 不暴露 common 内部策略结构。
     - API 边界在 DTO 层显式转换为内部任务调度复用结构，避免把 common 结构名泄漏为 Meta 对外语义。
     - `scanprocessor.Process` 拆为校验、基础 attributes、deep enrich、deep content extraction、持久化、索引等包内私有步骤；外部入口和 builder 输入保持单一路径。
     - `ScanService` 扫描启动日志删除固定 `mode=manual`，`scanadapter` dispatcher 日志改为使用真实 dispatch mode；入口维度继续使用 `scope_mode` / `source` / `scan_depth`。
@@ -1086,6 +1086,35 @@ flowchart TD
     - engine cache entry、内部客户端懒初始化、缓存写入/清理/快照迁入 `engine_cache.go`。
     - 敏感字段掩码判断迁入 `engine_connection_helpers.go`。
     - `engine_service.go` 继续保留 System engine 获取、租户过滤、缓存命中编排和 stats API 编排。
+94. Meta repository 数据库初始化职责已拆分：
+    - schema 准备与历史 `metadata` -> `meta` 单次重命名逻辑迁入 `database_schema.go`。
+    - GORM slog logger 迁入 `gorm_logger.go`。
+    - GORM AutoMigrate 无法表达的数据库约束迁入 `database_constraints.go`。
+    - `database.go` 只保留初始化编排、连接池配置、migration/constraint 调用和全局 DB 设置。
+95. Console -> Meta engine 扫描策略模式字段已改名：
+    - 策略载荷中的表单选择字段从 `schedule_type` 改为 `schedule_mode`，表达 daily/weekly/monthly/cron 这类“策略模式”。
+    - `scan_tasks` 任务定义仍只存 `schedule` Cron 表达式，不恢复旧 `schedule_type` 数据库字段。
+    - common 中复用的扫描策略结构从 `ScanConfig` 收敛为纯载荷 `ScanPolicy`，移出 `engine.go`，并删除数据库序列化方法，避免暗示 System engine 表持久化扫描配置。
+    - System/Console 前端、common-frontend 表单、Meta DTO、内部策略转换和 Swagger 已同步，不保留旧 JSON 字段。
+96. `MetadataQueryService` 查询职责已拆分：
+    - item 列表、branch item、item fields、catalog path item、node items、item by id 查询迁入 `metadata_query_items.go`。
+    - metadata tree、catalog path node、node children、node by id 查询迁入 `metadata_query_nodes.go`。
+    - catalog path 候选与规范化 helper 迁入 `metadata_query_paths.go`。
+    - `metadata_query_service.go` 保留服务壳、item count 与 GIS-facing spatial metadata 投影，不改变查询 SQL 与 API 行为。
+97. Meta query API handler 已按资源维度拆分：
+    - node/tree 查询入口迁入 `handler_query_nodes.go`。
+    - item 查询入口迁入 `handler_query_items.go`。
+    - `handler_query.go` 保留 Swagger 类型引用与 GIS-facing spatial metadata handler。
+    - Swagger 注释跟随 handler 迁移并重新生成，路由覆盖保持一致。
+98. Meta scan task API handler 已按任务职责拆分：
+    - 任务定义 create/update/delete/list 迁入 `handler_scan_task_crud.go`。
+    - Console engine 扫描策略 upsert/delete 迁入 `handler_scan_task_engine_policy.go`。
+    - 任务手动触发迁入 `handler_scan_task_trigger.go`。
+    - 删除原 `handler_scan_tasks.go` 聚合文件，Swagger 注释跟随新文件重新生成，路由覆盖保持一致。
+99. 手动扫描入口的 `trigger_type` 语义已收紧：
+    - `/scan/run/manual` 和 `ScanExecutionService.CreateManualRun` 只接受空值或 `manual`。
+    - `scheduled` 只能由 Meta scheduler 通过 `scantask.NewScheduledExecution` 创建，不再允许从手动 API 入口传入后被静默写成 manual。
+    - 补充 `CreateManualRun` 拒绝 `scheduled` 的测试，避免 manual/scheduled 入口再次混淆。
 94. Meta API handler 文件职责已拆分：
     - metadata query handlers 迁入 `handler_query.go`。
     - scan run handlers 迁入 `handler_scan_runs.go`。
@@ -1159,6 +1188,31 @@ cd meta/backend && go test ./internal/service
 cd meta/backend && go test ./...
 cd meta/backend && go test ./internal/service
 cd meta/backend && go test ./internal/api
+bash scripts/swagger/gen-swagger.sh meta
+bash scripts/swagger/check-route-coverage.sh meta
+git diff --check
+cd meta/backend && go test ./...
+bash scripts/swagger/gen-swagger.sh meta
+bash scripts/swagger/check-route-coverage.sh meta
+cd system/frontend && npm run build
+cd console/frontend && npm run build
+git diff --check
+cd meta/backend && go test ./internal/service
+cd meta/backend && go test ./...
+git diff --check
+cd meta/backend && go test ./internal/api ./internal/service
+cd meta/backend && go test ./...
+bash scripts/swagger/gen-swagger.sh meta
+bash scripts/swagger/check-route-coverage.sh meta
+git diff --check
+cd meta/backend && go test ./internal/api ./internal/service
+cd meta/backend && go test ./...
+bash scripts/swagger/gen-swagger.sh meta
+bash scripts/swagger/check-route-coverage.sh meta
+git diff --check
+cd meta/backend && go test ./internal/service
+cd meta/backend && go test ./internal/api ./internal/scantask
+cd meta/backend && go test ./...
 bash scripts/swagger/gen-swagger.sh meta
 bash scripts/swagger/check-route-coverage.sh meta
 git diff --check

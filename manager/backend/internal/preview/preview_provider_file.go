@@ -268,7 +268,6 @@ func (p *FileTablePreviewProvider) previewStreamable(
 		SourceCRSDefinition: spatialContract.SourceCRSDefinition,
 		TransformStatus:     spatialContract.TransformStatus,
 		PreviewHint:         spatialContract.PreviewHint,
-		TransformMessage:    spatialContract.TransformMessage,
 		SRID:                srid,
 		Object: &models.ObjectPreview{
 			Bucket:      bucket,
@@ -559,7 +558,6 @@ func (p *FileTablePreviewProvider) previewRefs(
 		SourceCRSDefinition: spatialContract.SourceCRSDefinition,
 		TransformStatus:     spatialContract.TransformStatus,
 		PreviewHint:         spatialContract.PreviewHint,
-		TransformMessage:    spatialContract.TransformMessage,
 		SRID:                srid,
 		Object: &models.ObjectPreview{
 			Bucket:      bucket,

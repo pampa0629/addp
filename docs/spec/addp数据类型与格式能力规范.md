@@ -308,6 +308,7 @@ media 已使用同一原则：`MediaDescribeResult.Media` 写入 `type_info.medi
 - SRID 优先由 `SpatialInfo.SRID` 表达；`ewkb` 可以携带 SRID，但不能替代 schema 级空间事实。
 - 各格式 native 几何类型必须在对应 format plugin 内转换为 ADDP 通用几何值，不得把 `shp.Shape` 等 native 类型暴露到 format 根接口、engine 或 Transfer 执行层。
 - 格式写出空间数据时，应根据 `SpatialInfo.GeometryType` 和 `SpatialInfo.Dimension` 选择自身 native 表达。例如 Shapefile writer 在 `dimension >= 3` 时写出 `PointZ`、`PolyLineZ`、`PolygonZ` 或 `MultiPointZ`；M / measure 不属于 ADDP 当前标准空间维度，除非后续有明确 measure 规范，否则不得伪装为 Z 坐标。
+- 格式写出 CRS 定义时，写入参数必须是 CRS 定义文本，不得把 CRS ID 当作定义。例如 Shapefile writer 的 `WriteOptions.ExtraParams["crs_definition"]` 只接受 WKT、ESRI WKT 或 proj4 文本；不得传入裸 `EPSG:<code>`。CRS ID 应写入 `SpatialInfo` / `capabilities.spatial.crs_ref`，定义文本应写入 `crs_definitions[].definition`。
 
 注意：`type_info.*` 只保存对应 data type 的元数据。内容样本、原始内容、缩略图、文本片段不是 info，不能为了上层使用方便塞进 `table info`、`document info` 或 `media info`。空间、时间、统计、提取、语义等横切事实进入 `capabilities`；内容读取索引进入 `access_index`；格式私有事实进入 `format_info`。
 

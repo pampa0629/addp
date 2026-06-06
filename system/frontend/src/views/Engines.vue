@@ -501,7 +501,7 @@ const defaultImmediateScanConfig = () => ({
   immediate_scan: true,
   immediate_depth: 'basic',
   scheduled_scan: false,
-  schedule_type: 'daily',
+  schedule_mode: 'daily',
   schedule_time: '00:00',
   schedule_value: []
 })

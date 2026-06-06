@@ -130,6 +130,21 @@ Transfer 不为 PostgreSQL -> PostgreSQL、NFS -> MinIO、MinIO -> NFS 等具体
 | Doris | DUPLICATE KEY 明细模型、MySQL 协议批量 insert；空间字段暂拒绝。 |
 | ClickHouse | MergeTree 普通表、批量 insert；生成列写入跳过，空间字段暂拒绝。 |
 
+### 3.4 空间字段与 CRS 边界
+
+Transfer 在 table 链路中只传递空间事实，不提供通用 CRS transform 能力。
+
+规则：
+
+- 表结构中的空间字段由 `datatype.FieldInfo` 表达。
+- 空间字段、几何类型、SRID / CRS、dimension、extent 等横切事实由 `datatype.SpatialInfo` 表达。
+- encoded Shapefile / GeoJSON 等空间源写入 native table target 时，Transfer 将 `SpatialInfo` 传给目标 writer / preparer，用于创建 geometry column、typmod、SRID 等目标结构事实。
+- `ewkb` 行值可以携带 SRID，但不能替代 `SpatialInfo` 中的 schema 级 CRS 事实。
+- Transfer 不在普通 table copy / import / export 链路中隐式执行 CRS transform。
+- 批量 CRS transform 属于计算 / ETL 能力，应由 PostGIS、Python/Spark 工作流或后续明确的空间转换算子承担。
+
+Shapefile 写出 `.prj` 时，`WriteOptions.ExtraParams["crs_definition"]` 必须是 CRS 定义文本，例如 WKT、ESRI WKT 或 proj4 文本；不得传入裸 `EPSG:<code>`。CRS ID 应进入 `SpatialInfo` / `capabilities.spatial.crs_ref`，定义文本应进入 `crs_definitions[].definition`。
+
 ## 四、raw copy 支持范围
 
 raw copy 是 non-table encoded single content 的原始字节复制。它不调用 `common/format` 的 table reader / writer，不解析文档、不抽取媒体元数据，也不做格式转换。

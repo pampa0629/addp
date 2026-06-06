@@ -207,6 +207,19 @@ func TestCreateManualRunRejectsUnsupportedTriggerType(t *testing.T) {
 	}
 }
 
+func TestCreateManualRunRejectsScheduledTriggerType(t *testing.T) {
+	t.Parallel()
+
+	execSvc := NewScanExecutionService(nil, nil, nil, nil)
+	_, err := execSvc.CreateManualRun(context.Background(), 1, 7, "token", &models.ScanRequest{
+		EngineID:    9,
+		TriggerType: "scheduled",
+	})
+	if err == nil {
+		t.Fatal("CreateManualRun() should reject scheduled trigger_type")
+	}
+}
+
 func TestUpsertEngineScanTaskFromPolicyCreatesTask(t *testing.T) {
 	db := openObjectCatalogScanTestDB(t)
 	createScanTaskTable(t, db)
@@ -218,10 +231,10 @@ func TestUpsertEngineScanTaskFromPolicyCreatesTask(t *testing.T) {
 		7,
 		9,
 		"Business MinIO",
-		&commonModels.ScanConfig{
+		&commonModels.ScanPolicy{
 			Enabled:       true,
 			ScheduledScan: true,
-			ScheduleType:  "daily",
+			ScheduleMode:  "daily",
 			ScheduleTime:  "03:15",
 			ScanDepth:     "deep",
 		},
@@ -266,10 +279,10 @@ func TestUpsertEngineScanTaskFromPolicyDeletesDisabledSchedule(t *testing.T) {
 		7,
 		9,
 		"Business MinIO",
-		&commonModels.ScanConfig{
+		&commonModels.ScanPolicy{
 			Enabled:       false,
 			ScheduledScan: true,
-			ScheduleType:  "daily",
+			ScheduleMode:  "daily",
 		},
 	)
 	if err != nil {

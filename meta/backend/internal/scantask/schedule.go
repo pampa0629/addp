@@ -10,12 +10,12 @@ import (
 	commonScheduler "github.com/addp/common/scheduler"
 )
 
-func BuildCronExpressionFromPolicy(builder *commonScheduler.ExpressionBuilder, policy *commonModels.ScanConfig) (string, error) {
+func BuildCronExpressionFromPolicy(builder *commonScheduler.ExpressionBuilder, policy *commonModels.ScanPolicy) (string, error) {
 	if policy == nil {
 		return "", errors.New("扫描配置为空")
 	}
 
-	switch policy.ScheduleType {
+	switch policy.ScheduleMode {
 	case "manual":
 		return "", nil
 	case "cron":
@@ -54,7 +54,7 @@ func BuildCronExpressionFromPolicy(builder *commonScheduler.ExpressionBuilder, p
 		}
 		return fmt.Sprintf("%d %d %s * *", minute, hour, dates), nil
 	default:
-		return "", fmt.Errorf("不支持的调度类型: %s", policy.ScheduleType)
+		return "", fmt.Errorf("不支持的调度模式: %s", policy.ScheduleMode)
 	}
 }
 
