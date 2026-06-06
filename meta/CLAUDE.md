@@ -39,6 +39,17 @@ meta/
 
 Meta 扫描链路按“通用规则、Meta 编排、Catalog 规划、内容增强、Attributes 落库”分层。后续改造应优先保持以下边界，避免把同一类逻辑散落到多个扫描入口。
 
+### 当前主线状态
+
+- 扫描入口统一到 manual execution、scheduled ScanTask、item refresh、startup/unscanned execution 几类入口；不同入口进入 Meta 后必须先解析为统一 `ScanScope`，再进入 scanner / detector / processor 主线。
+- `trigger_type` 只表达 `manual` / `scheduled`。手动 API 只接受空值或 `manual`；`scheduled` 只能由 Meta scheduler 创建。
+- `source` 只记录触发模块，例如 `meta`、`manager`、`console`、`transfer`；不得把来源、调度器、前后端通道或业务场景塞进 `trigger_type`。
+- `ScanTask` 是扫描调度定义权威，保存 scope、schedule、enabled、owner 和最近执行摘要；执行历史统一进入 `common.task_executions`。
+- `scan_tasks.schedule` 是 Cron 表达式；Console-facing 策略模式字段为 `schedule_mode`，只存在于策略载荷，不进入 `scan_tasks` 表。
+- System 不知道 Meta，也不保存 Meta 扫描策略。System engine 注册或编辑时的默认扫描体验由 Console 编排：Console 调用 System 保存 engine，再调用 Meta 维护 engine 绑定的 `ScanTask` 或创建一次 manual execution。
+- Manager preview 和 Meta 查询 API 只读取已落库 attributes，不暗中触发扫描、不写 attributes、不构建 `access_index`。
+- preprocessing、cleanup、查询快捷入口是独立专题，不应混入扫描主线中半截实现。
+
 ### 与 common/dataitem 的边界
 
 `common/dataitem` 是跨模块的 data item 规则层，只处理纯事实输入，不打开引擎资源、不读取对象内容、不依赖 Meta 落库模型。
@@ -146,6 +157,12 @@ Manager 预览不会重新识别格式，只消费已落库 Meta attributes 中�
 - 字段与空间信息：`GET /items/:item_id/fields`、`GET /items/:item_id/spatial`、`GET /items/:item_id`。
 - 统计与缓存：`GET /stats`、`DELETE /cache/engines/:engine_id`、`POST /cache/refresh`。
 
+查询 API 边界：
+
+- 已定位资源优先使用 `node_id` / `item_id` 主资源查询。
+- 跨模块定位时使用 `engine_id + catalog_path` 的正式条件查询：`/nodes/by-catalog-path`、`/items/by-catalog-path`。
+- `/metadata/object` 是历史对象快捷查询，目前只读、无写入副作用；后续若迁移，应优先迁到 `items/by-catalog-path` 或明确的 item projection，不新增按存储技术形态分叉的新快捷入口。
+
 ## 开发规则
 
 - 扫描必须执行租户隔离校验，不能绕过 System 引擎归属与当前用户租户。
@@ -179,6 +196,14 @@ curl http://localhost:8082/health
 - `meta/docs/tables/meta_node表.md`
 - `meta/docs/tables/meta_item表.md`
 - `meta/docs/tables/scan_tasks表.md`
+- `docs/concepts/addp术语表.md`
+- `docs/spec/addp元数据扫描机制规范.md`
+- `docs/spec/addp数据项探测器规范.md`
+- `docs/spec/addp元数据attributes规范.md`
+- `docs/spec/addp存储引擎路径体系规范.md`
 - `docs/spec/addp引擎插件接口规范.md`
 - `docs/spec/addp引擎能力声明规范.md`
+- `docs/next/meta-preprocessing语义与任务边界.md`
+- `docs/next/meta-cleanup边界与派生产物清理设计.md`
+- `docs/next/meta查询API快捷入口收敛设计.md`
 - `manager/CLAUDE.md`

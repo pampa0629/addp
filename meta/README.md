@@ -43,34 +43,46 @@ docker-compose up -d
 ### 扫描任务
 
 ```bash
-# 创建定时扫描任务
-curl -X POST http://localhost:8082/api/v1/scan-tasks \
+# 创建或更新一个扫描任务定义
+curl -X POST http://localhost:8082/api/v1/meta/scan/tasks \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "每日扫描",
     "engine_id": 1,
-    "schedule_type": "cron",
-    "schedule": "0 2 * * *"
+    "catalog_paths": ["public"],
+    "scan_depth": "basic",
+    "schedule": "0 2 * * *",
+    "enabled": true
   }'
 
-# 手动触发扫描
-curl -X POST http://localhost:8082/api/v1/manual-scan \
+# 创建一次手动扫描执行
+curl -X POST http://localhost:8082/api/v1/meta/scan/run/manual \
   -H "Authorization: Bearer <token>" \
-  -d '{"engine_id": 1}'
+  -H "Content-Type: application/json" \
+  -d '{
+    "engine_id": 1,
+    "scan_depth": "basic",
+    "trigger_type": "manual",
+    "source": "meta"
+  }'
 
 # 查看运行历史
 curl -H "Authorization: Bearer <token>" \
-  http://localhost:8082/api/v1/scan-runs?task_id=1
+  http://localhost:8082/api/v1/meta/scan/runs
 ```
+
+`trigger_type` 只表达 `manual` / `scheduled`。手动 API 只接受空值或 `manual`；`scheduled` 只能由 Meta 调度器创建。扫描来源使用 `source` 记录模块名，不能写入 `trigger_type`。
+
+Console 为 System engine 注册或编辑体验维护 Meta 扫描计划时，调用 `PUT /api/v1/meta/scan/tasks/engines/:engine_id`。其中表单策略字段使用 `schedule_mode`，Meta 任务定义最终只保存 Cron 表达式 `schedule`。
 
 ## 📡 主要 API 端点
 
 ```
-元数据查询: GET /api/v1/metadata/nodes
-扫描执行:   POST /api/v1/manual-scan
-任务管理:   GET/POST/PUT/DELETE /api/v1/scan-tasks
-运行记录:   GET /api/v1/scan-runs
+元数据查询: GET /api/v1/meta/engines/:engine_id/tree
+手动扫描:   POST /api/v1/meta/scan/run/manual
+扫描任务:   GET/POST/PUT/DELETE /api/v1/meta/scan/tasks
+运行记录:   GET /api/v1/meta/scan/runs
 ```
 
 完整 API 文档请查看 [CLAUDE.md](./CLAUDE.md#常见开发场景)
@@ -110,8 +122,10 @@ META_EMBEDDING_SERVICE_API_KEY=your_api_key
 ## 📚 相关文档
 
 - **[CLAUDE.md](./CLAUDE.md)** - 完整技术文档（架构、开发指南、常见场景）
-- **[../docs/addp技术栈规约.md](../docs/addp技术栈规约.md)** - 技术栈和依赖版本
-- **[../CLAUDE.md](../CLAUDE.md)** - 平台级架构和模块概览
+- **[../docs/spec/addp元数据扫描机制规范.md](../docs/spec/addp元数据扫描机制规范.md)** - 扫描入口、ScanTask、Execution 和调度边界
+- **[../docs/spec/addp数据项探测器规范.md](../docs/spec/addp数据项探测器规范.md)** - data item 识别、refs 和 layout 规则
+- **[../docs/spec/addp元数据attributes规范.md](../docs/spec/addp元数据attributes规范.md)** - attributes 写入边界
+- **[../docs/spec/addp技术栈规约.md](../docs/spec/addp技术栈规约.md)** - 技术栈和依赖版本
 
 ---
 
