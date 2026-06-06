@@ -21,7 +21,10 @@ const (
 	MissingFieldIgnore MissingFieldPolicy = "ignore"
 )
 
-const FieldSelectionOptionKey = "field_selection"
+const (
+	FieldSelectionOptionKey = "field_selection"
+	CRSDefinitionOptionKey  = "crs_definition"
+)
 
 // ParseOptions 解析选项。
 type ParseOptions struct {
@@ -35,7 +38,8 @@ type ParseOptions struct {
 	Delimiter rune
 	HasHeader bool
 
-	SpatialRefSys    string
+	// CRSDefinition carries source CRS definition text such as Shapefile .prj.
+	CRSDefinition    string
 	GeometryEncoding GeometryEncoding
 
 	SheetName   string

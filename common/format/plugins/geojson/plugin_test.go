@@ -199,6 +199,9 @@ func TestGeoJSONPluginComputesBoundingBoxWithoutFileBBox(t *testing.T) {
 	if srid := spatial.PrimarySRIDValue(); srid != 4326 {
 		t.Fatalf("GeoJSON SRID = %d, want 4326", srid)
 	}
+	if crsRef := spatial.PrimaryCRSRef(); crsRef != datatype.EPSGCRSRef(4326) {
+		t.Fatalf("GeoJSON CRS ref = %q, want EPSG:4326", crsRef)
+	}
 
 	formatInfo, err := plugin.DescribeFormat(context.Background(), strings.NewReader(data), nil)
 	if err != nil {

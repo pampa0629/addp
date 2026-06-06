@@ -388,16 +388,11 @@ const shapefileMetaItems = computed(() => {
 
 const hasGeometry = computed(() => geometryColumns.value.length > 0)
 const activeGeometryColumn = computed(() => geometryColumns.value[0] || '')
-const transformMessage = computed(() => {
-  const value = props.data?.transform_message || props.data?.object?.content?.metadata?.transform_message || props.data?.object?.content?.metadata?.transform_error
-  return typeof value === 'string' ? value : ''
-})
 const shouldSuppressRawGeometryMap = computed(() => {
   return crsSuppressionStatus(crsTransform.value) !== ''
 })
 const suppressedMapMessage = computed(() => {
   if (!shouldSuppressRawGeometryMap.value) return ''
-  if (transformMessage.value) return transformMessage.value
   const status = crsSuppressionStatus(crsTransform.value)
   if (status === 'unknown_crs') return t('map.mapSuppressedUnknownCRS')
   if (status === 'unsupported_crs') return t('map.mapSuppressedUnsupportedCRS')

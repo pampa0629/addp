@@ -523,6 +523,15 @@ func TestJSONContentHandlerReturnsMapMaterialForGeoJSONFormat(t *testing.T) {
 	if content.GeoJSON == nil {
 		t.Fatalf("expected GeoJSON preview payload")
 	}
+	if content.Metadata["source_srid"] != 4326 || content.Metadata["source_crs"] != "EPSG:4326" {
+		t.Fatalf("source CRS metadata = %#v/%#v, want 4326/EPSG:4326", content.Metadata["source_srid"], content.Metadata["source_crs"])
+	}
+	if content.Metadata["transform_status"] != "not_transformed" || content.Metadata["preview_hint"] != "direct_renderable" {
+		t.Fatalf("transform metadata = %#v/%#v, want not_transformed/direct_renderable", content.Metadata["transform_status"], content.Metadata["preview_hint"])
+	}
+	if _, ok := content.Metadata["spatial_ref_sys"]; ok {
+		t.Fatalf("legacy spatial_ref_sys metadata must not be emitted: %#v", content.Metadata)
+	}
 }
 
 func TestJSONContentHandlerKeepsPlainJSONRenderer(t *testing.T) {

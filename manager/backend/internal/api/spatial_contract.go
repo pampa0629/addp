@@ -15,7 +15,6 @@ func spatialPreviewContract(geometryColumn string, sourceSRID int, sourceCRS str
 	contract := gin.H{
 		"geometry_column": geometryColumn,
 		"source_srid":     sourceSRID,
-		"target_srid":     nil,
 	}
 	if sourceCRS == "" && sourceSRID > 0 {
 		sourceCRS = datatype.EPSGCRSRef(sourceSRID)
@@ -36,7 +35,6 @@ func spatialPreviewContract(geometryColumn string, sourceSRID int, sourceCRS str
 
 	contract["transform_status"] = "unknown_crs"
 	contract["preview_hint"] = "unknown_crs"
-	contract["transform_message"] = "源坐标系未知，已跳过地图渲染"
 	return contract
 }
 

@@ -16,6 +16,8 @@ import (
 	"github.com/addp/common/resume"
 )
 
+const testWGS84CRSDefinition = `GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563,AUTHORITY["EPSG","7030"]],AUTHORITY["EPSG","6326"]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]],AUTHORITY["EPSG","4326"]]`
+
 func TestTableTransferExecutorConvertsEncodedCSVToJSONL(t *testing.T) {
 	reader := &fakeContentReader{content: "id,name\n1,Alice\n2,Bob\n3,Carol\n"}
 	writer := &fakeContentWriter{}
@@ -356,7 +358,7 @@ func TestTableTransferExecutorCopiesShapefileRefsPreservingSpatialInfo(t *testin
 			3,
 		),
 		ExtraParams: map[string]interface{}{
-			"spatial_ref_sys": "EPSG:4326",
+			format.CRSDefinitionOptionKey: testWGS84CRSDefinition,
 		},
 	})
 	if err != nil {
@@ -508,7 +510,7 @@ func writeShapefilePointZTestContent(t *testing.T, storage *fakeContentWriter, p
 		Encoding:    "utf-8",
 		SpatialInfo: datatype.NewSingleGeometrySpatialInfo("geometry", "Point", 4326, 3),
 		ExtraParams: map[string]interface{}{
-			"spatial_ref_sys": "EPSG:4326",
+			format.CRSDefinitionOptionKey: testWGS84CRSDefinition,
 		},
 	})
 	if err != nil {

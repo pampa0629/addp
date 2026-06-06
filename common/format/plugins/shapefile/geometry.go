@@ -43,10 +43,10 @@ func spatialSRID(info *datatype.SpatialInfo) int {
 }
 
 func sridFromParseOptions(opts *format.ParseOptions) int {
-	if opts == nil || opts.SpatialRefSys == "" {
+	if opts == nil || opts.CRSDefinition == "" {
 		return 0
 	}
-	return commonSpatial.ParseSRID(opts.SpatialRefSys)
+	return commonSpatial.ParseSRID(opts.CRSDefinition)
 }
 
 func determineShapefileGeometryType(shapeType shp.ShapeType) string {

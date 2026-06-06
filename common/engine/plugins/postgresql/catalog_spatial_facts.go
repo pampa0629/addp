@@ -42,7 +42,7 @@ func (p *PostgreSQLPlugin) describeSpatialFacts(ctx context.Context, db *gorm.DB
 			primary.GeometryType = geometryType
 		}
 	}
-	if extent, err := queryPostgresSpatialExtent(ctx, sqlDB, schema, table, primary.Name, primary.SRID); err == nil {
+	if extent, err := queryPostgresSpatialExtent(ctx, sqlDB, schema, table, primary.Name); err == nil {
 		spatialInfo.Extent = extent
 	}
 	hasIndex, indexName, err := queryPostgresSpatialIndex(ctx, sqlDB, schema, table, primary.Name)
@@ -122,26 +122,8 @@ func queryPostgresGeometryType(ctx context.Context, db *sql.DB, schema, table, c
 	return strings.TrimPrefix(strings.TrimSpace(geometryType), "ST_"), nil
 }
 
-func queryPostgresSpatialExtent(ctx context.Context, db *sql.DB, schema, table, column string, srid *int) (*datatype.BoundingBox, error) {
-	dialect := sqldialect.ForEngine("postgresql")
-	quotedColumn := dialect.QuoteIdentifier(column)
-	geomExpr := quotedColumn
-	if srid == nil || *srid != 4326 {
-		geomExpr = "ST_Transform(" + quotedColumn + ", 4326)"
-	}
-	query := fmt.Sprintf(`
-		SELECT
-			round(ST_XMin(extent)::numeric, 6)::float8,
-			round(ST_YMin(extent)::numeric, 6)::float8,
-			round(ST_XMax(extent)::numeric, 6)::float8,
-			round(ST_YMax(extent)::numeric, 6)::float8
-		FROM (
-			SELECT ST_Extent(%s) AS extent
-			FROM %s
-			WHERE %s IS NOT NULL
-		) t
-		WHERE extent IS NOT NULL
-	`, geomExpr, dialect.QualifiedTable(schema, table), quotedColumn)
+func queryPostgresSpatialExtent(ctx context.Context, db *sql.DB, schema, table, column string) (*datatype.BoundingBox, error) {
+	query := postgresSpatialExtentQuery(schema, table, column)
 
 	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
@@ -154,6 +136,24 @@ func queryPostgresSpatialExtent(ctx context.Context, db *sql.DB, schema, table, 
 	}
 	extent := datatype.NewBoundingBox(minX.Float64, minY.Float64, maxX.Float64, maxY.Float64)
 	return &extent, nil
+}
+
+func postgresSpatialExtentQuery(schema, table, column string) string {
+	dialect := sqldialect.ForEngine("postgresql")
+	quotedColumn := dialect.QuoteIdentifier(column)
+	return fmt.Sprintf(`
+		SELECT
+			round(ST_XMin(extent)::numeric, 6)::float8,
+			round(ST_YMin(extent)::numeric, 6)::float8,
+			round(ST_XMax(extent)::numeric, 6)::float8,
+			round(ST_YMax(extent)::numeric, 6)::float8
+		FROM (
+			SELECT ST_Extent(%s) AS extent
+			FROM %s
+			WHERE %s IS NOT NULL
+		) t
+		WHERE extent IS NOT NULL
+	`, quotedColumn, dialect.QualifiedTable(schema, table), quotedColumn)
 }
 
 func queryPostgresSpatialIndex(ctx context.Context, db *sql.DB, schema, table, column string) (bool, string, error) {

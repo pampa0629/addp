@@ -100,7 +100,7 @@ func (s *ExecutionEngineService) attachRawCopySourceMetaAttributes(task *models.
 	if s.metaClient == nil {
 		return fmt.Errorf("meta client is required when source locator item_id is set")
 	}
-	item, err := s.metaClient.WithTenantID(task.TenantID).GetMetaItemByID(spec.Source.LocatorItemID())
+	item, err := s.metaClient.WithTenantID(task.TenantID).GetItemByID(spec.Source.LocatorItemID())
 	if err != nil {
 		return err
 	}
@@ -118,7 +118,7 @@ func (s *ExecutionEngineService) attachSourceMetaAttributes(task *models.Transfe
 	if s.metaClient == nil {
 		return fmt.Errorf("meta client is required when source locator item_id is set")
 	}
-	item, err := s.metaClient.WithTenantID(task.TenantID).GetMetaItemByID(spec.Source.LocatorItemID())
+	item, err := s.metaClient.WithTenantID(task.TenantID).GetItemByID(spec.Source.LocatorItemID())
 	if err != nil {
 		return err
 	}

@@ -212,6 +212,7 @@ Shapefile 是空间矢量表，不是单个 `.shp` 文件。ref 匹配规则是�
 - `ewkb` 可以携带 SRID；Shapefile 的 SRID / CRS 事实仍以 `.prj` 解析结果和 `capabilities.spatial` / `TableInfo.SpatialInfo` 为准。
 - 字段类型映射为 ADDP 通用字段类型。原始 DBF 类型属于 Shapefile format plugin 内部事实；如需给 Manager 展示，只能写入只读 attributes，不能进入 Transfer / engine / format writer 的执行决策。
 - 记录数来自真实 Shapefile 记录数，不写固定占位值。
+- 写出 `.prj` 时，format writer 只接受 `WriteOptions.ExtraParams["crs_definition"]` 作为 CRS 定义文本；该字段表达定义内容，不得写成 `format` 或 PostGIS `spatial_ref_sys`。
 
 ### 标准写入示例
 

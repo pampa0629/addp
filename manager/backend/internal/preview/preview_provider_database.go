@@ -399,7 +399,6 @@ func tablePreviewSpatialCRSContract(geometryColumns []string, srid int, sourceCR
 
 	contract.TransformStatus = "unknown_crs"
 	contract.PreviewHint = "unknown_crs"
-	contract.TransformMessage = "源坐标系未知，已跳过地图渲染"
 	return contract
 }
 

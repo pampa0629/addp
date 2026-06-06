@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/addp/common/datatype"
 	"io"
 	"os"
 	"os/exec"
@@ -15,10 +14,12 @@ import (
 
 	"github.com/addp/common/contentio"
 	commondataitem "github.com/addp/common/dataitem"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/logger"
+	"github.com/addp/common/spatial"
 	"github.com/addp/manager/internal/models"
 )
 
@@ -795,8 +796,26 @@ func buildSpatialJSONPreview(ctx context.Context, formatType format.FormatType, 
 		metadata["geometry_field"] = geometryField
 		metadata["geometry_type"] = geometryType
 		metadata["geometry_types"] = []string{geometryType}
-		if srid := spatialInfo.PrimarySRIDValue(); srid != 0 {
-			metadata["spatial_ref_sys"] = fmt.Sprintf("EPSG:%d", srid)
+		sourceSRID := spatialInfo.PrimarySRIDValue()
+		sourceCRS := spatialInfo.PrimaryCRSRef()
+		if sourceCRS == "" && sourceSRID > 0 {
+			sourceCRS = datatype.EPSGCRSRef(sourceSRID)
+		}
+		metadata["source_srid"] = sourceSRID
+		if sourceCRS != "" {
+			metadata["source_crs"] = sourceCRS
+			if definition := spatialInfo.CRSDefinitionByID(sourceCRS); definition != nil {
+				metadata["source_crs_definition"] = definition
+			}
+			metadata["transform_status"] = "not_transformed"
+			if sourceSRID == spatial.SRIDWGS84 {
+				metadata["preview_hint"] = "direct_renderable"
+			} else {
+				metadata["preview_hint"] = "frontend_transform_required"
+			}
+		} else {
+			metadata["transform_status"] = "unknown_crs"
+			metadata["preview_hint"] = "unknown_crs"
 		}
 	}
 

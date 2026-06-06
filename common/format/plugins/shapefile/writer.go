@@ -11,8 +11,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
+
+var bareCRSIDPattern = regexp.MustCompile(`(?i)^\s*(?:EPSG:\d+|URN:OGC:DEF:CRS:EPSG::\d+)\s*$`)
 
 type writer struct {
 	*shp.Writer
@@ -236,8 +239,12 @@ func (w *multiTableWriter) writeSidecarFiles() error {
 			return fmt.Errorf("write shapefile cpg: %w", err)
 		}
 	}
-	if prj, ok := stringWriteOption(w.options, "spatial_ref_sys"); ok && strings.TrimSpace(prj) != "" {
-		if err := os.WriteFile(w.basePath+extPRJ, []byte(strings.TrimSpace(prj)), 0o644); err != nil {
+	if prj, ok := stringWriteOption(w.options, format.CRSDefinitionOptionKey); ok && strings.TrimSpace(prj) != "" {
+		normalizedPRJ := strings.TrimSpace(prj)
+		if bareCRSIDPattern.MatchString(normalizedPRJ) {
+			return fmt.Errorf("write shapefile prj: %s must contain CRS definition text, got CRS id %q", format.CRSDefinitionOptionKey, normalizedPRJ)
+		}
+		if err := os.WriteFile(w.basePath+extPRJ, []byte(normalizedPRJ), 0o644); err != nil {
 			return fmt.Errorf("write shapefile prj: %w", err)
 		}
 	}

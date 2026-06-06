@@ -1065,6 +1065,34 @@ flowchart TD
     - 新增 `CatalogRootReconciler`，专门负责根据 engine plugin catalog model 维护 Meta catalog root 节点。
     - `EngineService.PreloadResources` 继续在启动预加载时触发 root reconcile，但不再承载 plugin 判定和 root 落库细节。
     - `EngineSyncService` 在 engine create/update event 后复用同一个 reconciler；System engine 读取/缓存与 Meta root 维护的职责边界更清晰。
+89. Meta preprocessing 边界已单独立题：
+    - 新增 `docs/next/meta-preprocessing语义与任务边界.md`，先固化 scan 与 preprocessing 的概念区分。
+    - `access_index` 当前能力保留在 deep scan / item refresh 主线内，不立即拆成独立任务。
+    - MVT、embedding、thumbnail 等派生能力后续按 preprocessing 专题继续讨论，不在当前扫描主线改造中半截先行。
+90. `common/client.MetaClient` 查询方法命名已贴近 Meta API：
+    - `GetMetaItemByID` 改为 `GetItemByID`，`GetMetaNode` 改为 `GetNodeByID`。
+    - `ListItems` 改为 `ListEngineItems`，明确对应 `/engines/{engine_id}/items`。
+    - Manager preview、Transfer 执行服务和 common DuckDB SQL 重写器已迁移到新方法名，不保留旧兼容壳。
+91. `EngineService` 的 engine stats view 构造已拆出：
+    - 新增 `engine_stats_view.go`，承接扫描统计查询、catalog terminology 投影和 `ResourceWithStats` 构造。
+    - `EngineService.GetEnginesWithStats` 只保留 engine 列表获取、统计加载和结果编排。
+    - catalog model / capability view 相关 plugin 依赖不再留在 `engine_service.go` 中。
+92. `IndexerService` 文件职责已拆分：
+    - 表资产索引迁入 `indexer_table_asset.go`。
+    - catalog/object 资产索引迁入 `indexer_catalog_asset.go`。
+    - `indexer_service.go` 保留服务壳、删除索引方法和通用 attributes helper。
+    - 删除未使用的旧深拷贝 helper，索引入口行为保持不变。
+93. `EngineService` 缓存与连接 helper 已拆出：
+    - engine cache entry、内部客户端懒初始化、缓存写入/清理/快照迁入 `engine_cache.go`。
+    - 敏感字段掩码判断迁入 `engine_connection_helpers.go`。
+    - `engine_service.go` 继续保留 System engine 获取、租户过滤、缓存命中编排和 stats API 编排。
+94. Meta API handler 文件职责已拆分：
+    - metadata query handlers 迁入 `handler_query.go`。
+    - scan run handlers 迁入 `handler_scan_runs.go`。
+    - scan task handlers 迁入 `handler_scan_tasks.go`。
+    - item-facing handlers 迁入 `handler_items.go`。
+    - cache handlers 迁入 `handler_cache.go`。
+    - `handler.go` 保留 Handler 构造、基础 stats/object/engine handlers 和共享 helper；Swagger 注释随 handler 移动并重新生成校验。
 
 本轮验证：
 
@@ -1124,11 +1152,20 @@ cd service/backend && go test ./internal/service ./internal/api
 cd develop/backend && go test ./internal/service
 cd quality/backend && go test ./internal/service
 cd meta/backend && go test ./internal/service
+go test ./common/client ./common/duckdb
+cd manager/backend && go test ./internal/preview
+cd transfer/backend && go test ./internal/service
+cd meta/backend && go test ./internal/service
+cd meta/backend && go test ./...
+cd meta/backend && go test ./internal/service
+cd meta/backend && go test ./internal/api
+bash scripts/swagger/gen-swagger.sh meta
+bash scripts/swagger/check-route-coverage.sh meta
 git diff --check
 ```
 
 下一步建议：
 
-1. 评估 access-index 生成策略是否需要正式建模为 preprocessing task；当前 deep scan / refresh 已是唯一 attributes 写入主线。
-2. 继续清点 Manager/Transfer/Service 对 Meta 查询 API 的 direct convenience 包装，优先删除重复转换或命名漂移。
-3. 梳理 `EngineService` 中 capabilities view 构造是否也应迁入独立 view builder；这属于展示视图边界，可单独小步处理。
+1. 继续清点 Manager/Transfer/Service 对 Meta 查询 API 的 direct convenience 包装，优先删除重复转换。
+2. 后续专题讨论 preprocessing policy / execution / artifact 三层边界，再决定哪些能力进入 common execution。
+3. 清点 Meta service 包剩余大文件，优先只拆职责明确且不会改变 API 的部分。

@@ -150,6 +150,9 @@ func (p *Plugin) DescribeTable(ctx context.Context, input io.Reader, options *fo
 		}
 
 		spatialInfo = datatype.NewSingleGeometrySpatialInfo(spatialGeometryField, geometryType, srid, 2)
+		if primary := spatialInfo.PrimaryGeometry(); primary != nil && srid > 0 {
+			primary.CRSRef = datatype.EPSGCRSRef(srid)
+		}
 		if len(iter.Meta.BoundingBox) == 4 {
 			spatialInfo.Extent = &datatype.BoundingBox{
 				iter.Meta.BoundingBox[0],

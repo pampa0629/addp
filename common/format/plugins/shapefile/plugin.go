@@ -181,9 +181,9 @@ func applyMaterializedSidecarOptions(basePath string, opts *format.ParseOptions)
 	if opts == nil {
 		return
 	}
-	if opts.SpatialRefSys == "" {
+	if opts.CRSDefinition == "" {
 		if prjBytes, readErr := os.ReadFile(basePath + extPRJ); readErr == nil {
-			opts.SpatialRefSys = strings.TrimSpace(string(prjBytes))
+			opts.CRSDefinition = strings.TrimSpace(string(prjBytes))
 		}
 	}
 	if opts.Encoding == "" || NormalizeDBFEncoding(opts.Encoding) == "utf-8" {

@@ -288,8 +288,8 @@ func (c *MetaClient) GetNodeItems(nodeID uint) ([]models.MetaItem, error) {
 	return result, nil
 }
 
-// GetMetaNode 获取单个节点详情
-func (c *MetaClient) GetMetaNode(nodeID uint) (*models.MetaNode, error) {
+// GetNodeByID 获取单个节点详情。
+func (c *MetaClient) GetNodeByID(nodeID uint) (*models.MetaNode, error) {
 	url := fmt.Sprintf("%s/api/v1/meta/nodes/%d", c.baseURL, nodeID)
 
 	req, err := http.NewRequest("GET", url, nil)
@@ -319,8 +319,8 @@ func (c *MetaClient) GetMetaNode(nodeID uint) (*models.MetaNode, error) {
 	return &result, nil
 }
 
-// GetMetaItemByID 获取单个 MetaItem 详情
-func (c *MetaClient) GetMetaItemByID(itemID uint) (*models.MetaItem, error) {
+// GetItemByID 获取单个数据项详情。
+func (c *MetaClient) GetItemByID(itemID uint) (*models.MetaItem, error) {
 	urlStr := fmt.Sprintf("%s/api/v1/meta/items/%d", c.baseURL, itemID)
 
 	req, err := http.NewRequest("GET", urlStr, nil)
@@ -483,8 +483,8 @@ func (c *MetaClient) RefreshItem(itemID uint, opts MetaScanOptions) (*MetaScanRe
 	return &result, nil
 }
 
-// ListItems 获取引擎的已扫描数据项列表，支持按 catalog 第一层业务分支过滤。
-func (c *MetaClient) ListItems(engineID uint, branch string) ([]models.MetaItem, error) {
+// ListEngineItems 获取引擎的已扫描数据项列表，支持按 catalog 第一层业务分支过滤。
+func (c *MetaClient) ListEngineItems(engineID uint, branch string) ([]models.MetaItem, error) {
 	urlStr := fmt.Sprintf("%s/api/v1/meta/engines/%d/items", c.baseURL, engineID)
 	if branch != "" {
 		urlStr += "?branch=" + url.QueryEscape(branch)

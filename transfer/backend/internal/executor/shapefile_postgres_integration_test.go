@@ -20,6 +20,8 @@ import (
 	_ "github.com/lib/pq"
 )
 
+const integrationWGS84CRSDefinition = `GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563,AUTHORITY["EPSG","7030"]],AUTHORITY["EPSG","6326"]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]],AUTHORITY["EPSG","4326"]]`
+
 func TestIntegrationShapefileToPostgresWritesEWKBGeometry(t *testing.T) {
 	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
 		t.Skip("set ADDP_POSTGRES_INTEGRATION=1 to run PostgreSQL/PostGIS integration test")
@@ -57,8 +59,8 @@ func TestIntegrationShapefileToPostgresWritesEWKBGeometry(t *testing.T) {
 		Encoding:    "utf-8",
 		SpatialInfo: datatype.NewSingleGeometrySpatialInfo("geometry", "Point", 4326, 0),
 		ExtraParams: map[string]interface{}{
-			"geometry_field":  "geometry",
-			"spatial_ref_sys": "EPSG:4326",
+			"geometry_field":              "geometry",
+			format.CRSDefinitionOptionKey: integrationWGS84CRSDefinition,
 		},
 	})
 	if err != nil {
@@ -83,7 +85,7 @@ func TestIntegrationShapefileToPostgresWritesEWKBGeometry(t *testing.T) {
 
 	parseOptions := format.DefaultParseOptions()
 	parseOptions.GeometryEncoding = format.GeometryEncodingEWKB
-	parseOptions.SpatialRefSys = "EPSG:4326"
+	parseOptions.CRSDefinition = integrationWGS84CRSDefinition
 	exec := &TableTransferExecutor{
 		SourceContentReader:        source,
 		SourceMultiReadProvider:    shapefilePlugin,
@@ -339,7 +341,7 @@ func TestIntegrationPostgresSpatialTableToShapefilePreservesSpatialMetadata(t *t
 			FormatOptions: &format.WriteOptions{
 				Encoding: "utf-8",
 				ExtraParams: map[string]interface{}{
-					"spatial_ref_sys": "EPSG:4326",
+					format.CRSDefinitionOptionKey: integrationWGS84CRSDefinition,
 				},
 			},
 		},
@@ -453,7 +455,7 @@ func runShapefileZToPostgres(
 
 	parseOptions := format.DefaultParseOptions()
 	parseOptions.GeometryEncoding = format.GeometryEncodingEWKB
-	parseOptions.SpatialRefSys = "EPSG:4326"
+	parseOptions.CRSDefinition = integrationWGS84CRSDefinition
 	exec := &TableTransferExecutor{
 		SourceContentReader:        source,
 		SourceMultiReadProvider:    shapefilePlugin,

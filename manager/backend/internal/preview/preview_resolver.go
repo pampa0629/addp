@@ -198,7 +198,7 @@ func (r *PreviewResolver) PreviewFromURIWithSelection(ctx context.Context, locat
 
 		if loc.ItemID != nil && *loc.ItemID > 0 {
 			itemID := *loc.ItemID
-			item, err := r.metaClient.GetMetaItemByID(itemID)
+			item, err := r.metaClient.GetItemByID(itemID)
 			if err == nil && item != nil {
 				if item.ScannedDepth != "deep" {
 					r.submitItemDeepScanRun(itemID)
@@ -217,7 +217,7 @@ func (r *PreviewResolver) PreviewFromURIWithSelection(ctx context.Context, locat
 			}
 		} else if loc.NodeID != nil && *loc.NodeID > 0 {
 			nodeID := *loc.NodeID
-			node, err := r.metaClient.GetMetaNode(nodeID)
+			node, err := r.metaClient.GetNodeByID(nodeID)
 			if err == nil && node != nil {
 				metaNode = node
 				identityResolved = true

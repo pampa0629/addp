@@ -349,8 +349,7 @@ Meta attributes 不维护旧字段兼容层。字段可空性只写 `nullable`�
 | `dimension` | 坐标维度，无法确定时可省略。 |
 | `nullable` | 字段是否可空，无法确定时可省略。 |
 | `primary_geometry_column` | Manager 默认空间预览使用的几何字段。多几何字段时必须明确；单几何字段时建议写入；没有字段列概念的空间媒体应省略。 |
-| `extent` | 空间范围。无法轻量获得时写 `null` 或省略，不得为了 extent 扫描全量数据。 |
-| `extent_srid` | `extent` 的坐标参考。如果与顶层 `srid` 或 primary geometry column 的 `srid` 一致可省略；不一致时必须写明。 |
+| `extent` | 空间范围，只记录当前空间对象或 primary geometry column 原生 CRS 下的事实。无法轻量获得时写 `null` 或省略，不得为了 extent 扫描全量数据，也不得为了底图、MVT 或普通预览把 extent 转成其他 CRS 后写入 `capabilities.spatial`。 |
 | `has_spatial_index` | 是否存在空间索引；无法确定时可省略。 |
 
 `feature_count` 不属于 spatial，表格型行数写入 `type_info.table.row_count`。如果后续画像任务采样得到实际几何类型分布，应进入 `capabilities.statistics` 或后续画像结构，不反向覆盖 meta 扫描阶段的 `geometry_type`。
@@ -376,7 +375,8 @@ Meta attributes 不维护旧字段兼容层。字段可空性只写 `nullable`�
 
 空间能力消费规则：
 
-- `capabilities.spatial.srid`、`geometry_columns[].srid`、`crs_ref`、`crs_definitions`、`extent`、`extent_srid` 是空间事实，不表示 ADDP 核心后端具备通用 CRS transform 能力。
+- `capabilities.spatial.srid`、`geometry_columns[].srid`、`crs_ref`、`crs_definitions`、`extent` 是空间事实，不表示 ADDP 核心后端具备通用 CRS transform 能力。
+- `capabilities.spatial.extent` 必须与当前空间对象或 primary geometry column 的原生 CRS 一致；平台标准 attributes 不支持在 `capabilities.spatial` 内记录与源 CRS 不一致的派生 extent。
 - Manager 普通空间预览只返回源坐标 geometry 表达和 CRS 元数据；不得为了普通预览隐式调用后端 PROJ 或 PostGIS `ST_Transform` 转成 WGS84。
 - `srid=0` 且 `crs_ref` / `crs_definitions` 缺失时必须按 `unknown_crs` 处理，不得默认解释为 `EPSG:4326`。如果 `srid=0` 但存在有效 `crs_ref` 和 CRS 定义，表示“无数字 SRID 但 CRS 已知”。
 - 如果某条路径已经由具体引擎能力完成转换，例如 MVT / Quick View 物化视图，应在该路径响应中明确 `target_srid`、`transform_status=engine_transformed` 和 `transform_engine`；该事实不得反向改写源数据的 `capabilities.spatial`。

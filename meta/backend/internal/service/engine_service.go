@@ -4,25 +4,16 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
 	commonClient "github.com/addp/common/client"
-	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/utils"
 	"github.com/addp/meta/internal/models"
-	"github.com/addp/meta/internal/scanflow"
 	"gorm.io/gorm"
 )
-
-// engineCacheEntry 缓存条目，包含资源和过期时间
-type engineCacheEntry struct {
-	resource  *commonModels.Engine
-	expiresAt time.Time
-}
 
 // EngineService 负责从 System 获取并缓存 engine 连接信息。
 type EngineService struct {
@@ -64,17 +55,6 @@ func NewEngineService(db *gorm.DB, systemURL, internalKey string) *EngineService
 	return service
 }
 
-// ensureInternalClient 尝试按需初始化内部客户端（用于本地脚本未显式传入密钥的情况）
-func (s *EngineService) ensureInternalClient() {
-	if s.internalClient != nil {
-		return
-	}
-
-	if key := os.Getenv("INTERNAL_API_KEY"); key != "" {
-		s.internalClient = commonClient.NewSystemClientWithInternalKey(s.systemURL, key)
-	}
-}
-
 // PreloadResources 在服务启动时从 System 加载 engine 连接信息并缓存在内存中。
 func (s *EngineService) PreloadResources() error {
 	s.ensureInternalClient()
@@ -111,89 +91,6 @@ func (s *EngineService) PreloadResources() error {
 
 	s.log.Info("引擎缓存预加载完成", "active_engines", len(cache), "root_reconciled", rootReconciled, "system_url", s.systemURL, "ttl_minutes", s.cacheTTL.Minutes())
 	return nil
-}
-
-func containsMaskedSensitive(info commonModels.ConnectionInfo) bool {
-	if info == nil {
-		return false
-	}
-
-	for k, v := range info {
-		lowerKey := strings.ToLower(k)
-		if !(strings.Contains(lowerKey, "password") ||
-			strings.Contains(lowerKey, "secret") ||
-			strings.Contains(lowerKey, "token") ||
-			strings.Contains(lowerKey, "key")) {
-			continue
-		}
-
-		strVal, ok := v.(string)
-		if !ok {
-			continue
-		}
-		if strVal == "" {
-			continue
-		}
-		// 判断是否为掩码占位（由系统服务返回的 ****** 或其他星号组合）
-		if strVal == "******" || strVal == "****" || strings.Contains(strVal, "*") {
-			return true
-		}
-	}
-
-	return false
-}
-
-func (s *EngineService) cacheEngine(resource *commonModels.Engine) {
-	if resource == nil {
-		return
-	}
-	resourceCopy := *resource
-	s.cacheMu.Lock()
-	s.engineCache[resourceCopy.ID] = &engineCacheEntry{
-		resource:  &resourceCopy,
-		expiresAt: time.Now().Add(s.cacheTTL),
-	}
-	s.cacheMu.Unlock()
-}
-
-// ClearCache 清除所有引擎缓存
-func (s *EngineService) ClearCache() {
-	s.cacheMu.Lock()
-	s.engineCache = make(map[uint]*engineCacheEntry)
-	s.cacheMu.Unlock()
-	s.log.Info("引擎缓存已清除")
-}
-
-// ClearEngineCache 清除指定资源的缓存
-func (s *EngineService) ClearEngineCache(engineID uint) {
-	s.cacheMu.Lock()
-	delete(s.engineCache, engineID)
-	s.cacheMu.Unlock()
-	s.log.Info("引擎缓存已清除", "engine_id", engineID)
-}
-
-func (s *EngineService) snapshotCache() map[uint]*commonModels.Engine {
-	s.cacheMu.RLock()
-	defer s.cacheMu.RUnlock()
-
-	if len(s.engineCache) == 0 {
-		return nil
-	}
-
-	now := time.Now()
-	result := make(map[uint]*commonModels.Engine, len(s.engineCache))
-	for id, entry := range s.engineCache {
-		if entry == nil || entry.resource == nil {
-			continue
-		}
-		// 跳过已过期的缓存项
-		if now.After(entry.expiresAt) {
-			continue
-		}
-		resourceCopy := *entry.resource
-		result[id] = &resourceCopy
-	}
-	return result
 }
 
 // GetEnginesByTenant 获取租户下所有具备 storage 能力的 active engine。
@@ -362,125 +259,14 @@ func (s *EngineService) GetEnginesWithStats(tenantID uint) ([]*models.ResourceWi
 		engineIDs = append(engineIDs, res.ID)
 	}
 
-	totalCount := make(map[uint]int64)
-	scannedCount := make(map[uint]int64)
-	lastScanByRes := make(map[uint]*time.Time)
-
-	type countRow struct {
-		EngineID uint
-		Count    int64
-	}
-	var totals []countRow
-	if err := s.db.Table("meta.meta_node").
-		Where("engine_id IN ? AND parent_node_id IN (?)", engineIDs,
-			s.db.Table("meta.meta_node").
-				Select("id").
-				Where("engine_id IN ? AND parent_node_id IS NULL AND full_name = ?", engineIDs, ""),
-		).
-		Select("engine_id, COUNT(*) AS count").
-		Group("engine_id").
-		Scan(&totals).Error; err != nil {
-		return nil, fmt.Errorf("failed to count meta nodes: %w", err)
-	}
-	for _, row := range totals {
-		totalCount[row.EngineID] = row.Count
-	}
-
-	var scanned []countRow
-	if err := s.db.Table("meta.meta_node").
-		Where("engine_id IN ? AND scan_status = ? AND parent_node_id IN (?)", engineIDs, "completed",
-			s.db.Table("meta.meta_node").
-				Select("id").
-				Where("engine_id IN ? AND parent_node_id IS NULL AND full_name = ?", engineIDs, ""),
-		).
-		Select("engine_id, COUNT(*) AS count").
-		Group("engine_id").
-		Scan(&scanned).Error; err != nil {
-		return nil, fmt.Errorf("failed to count scanned nodes: %w", err)
-	}
-	for _, row := range scanned {
-		scannedCount[row.EngineID] = row.Count
-	}
-
-	type lastScanRow struct {
-		EngineID   uint
-		LastScanAt *time.Time `gorm:"column:scanned_at"`
-	}
-	var lastScans []lastScanRow
-	if err := s.db.Table("meta.meta_node").
-		Where("engine_id IN ?", engineIDs).
-		Where("scanned_at IS NOT NULL").
-		Select("engine_id, MAX(scanned_at) AS scanned_at").
-		Group("engine_id").
-		Scan(&lastScans).Error; err != nil {
-		return nil, fmt.Errorf("failed to query node last scan time: %w", err)
-	}
-	for _, row := range lastScans {
-		lastScanByRes[row.EngineID] = row.LastScanAt
+	stats, err := loadEngineScanStats(s.db, engineIDs)
+	if err != nil {
+		return nil, err
 	}
 
 	result := make([]*models.ResourceWithStats, 0, len(engines))
 	for _, res := range engines {
-		totalCatalogNodes := 0
-		scannedCatalogNodes := 0
-		lastScanAt := ""
-		engineFamily := ""
-		catalogRootTerm := ""
-		catalogTopTerm := ""
-		catalogTopI18nKey := ""
-		catalogLeafTerm := ""
-		catalogLeafI18nKey := ""
-
-		if cnt, ok := totalCount[res.ID]; ok {
-			totalCatalogNodes = int(cnt)
-		}
-		if cnt, ok := scannedCount[res.ID]; ok {
-			scannedCatalogNodes = int(cnt)
-		}
-		if ts, ok := lastScanByRes[res.ID]; ok && ts != nil {
-			lastScanAt = ts.Format("2006-01-02 15:04:05")
-		}
-
-		// 填充连接状态信息
-		lastCheckAt := ""
-		if res.LastCheckAt != nil {
-			lastCheckAt = res.LastCheckAt.Format("2006-01-02 15:04:05")
-		}
-		if enginePlugin, err := plugin.Get(res.EngineType); err == nil {
-			capabilities := enginePlugin.Capabilities()
-			engineFamily = capabilities.EngineFamily
-			if model := scanflow.CatalogModelForPlugin(enginePlugin); model != nil {
-				catalogRootTerm = model.RootTerm
-				if level, ok := plugin.CatalogFirstBusinessBranch(*model); ok {
-					catalogTopTerm = level.Term
-					catalogTopI18nKey = level.I18nKey
-					if catalogTopI18nKey == "" {
-						catalogTopI18nKey = plugin.CatalogLevelI18nKey(*model, level.Term)
-					}
-				}
-				catalogLeafTerm = plugin.CatalogLeafTerm(*model)
-				catalogLeafI18nKey = plugin.CatalogLevelI18nKey(*model, catalogLeafTerm)
-			}
-		}
-
-		result = append(result, &models.ResourceWithStats{
-			EngineID:              res.ID,
-			ResourceName:          res.Name,
-			ResourceType:          res.EngineType,
-			EngineFamily:          engineFamily,
-			CatalogRootTerm:       catalogRootTerm,
-			CatalogTopTerm:        catalogTopTerm,
-			CatalogTopI18nKey:     catalogTopI18nKey,
-			CatalogLeafTerm:       catalogLeafTerm,
-			CatalogLeafI18nKey:    catalogLeafI18nKey,
-			TotalCatalogNodes:     totalCatalogNodes,
-			ScannedCatalogNodes:   scannedCatalogNodes,
-			UnscannedCatalogNodes: totalCatalogNodes - scannedCatalogNodes,
-			ScannedAt:             lastScanAt,
-			ConnectionStatus:      res.ConnectionStatus,
-			LastCheckAt:           lastCheckAt,
-			CheckMessage:          res.CheckMessage,
-		})
+		result = append(result, buildResourceWithStats(res, stats))
 	}
 
 	return result, nil

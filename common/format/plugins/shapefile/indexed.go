@@ -86,9 +86,9 @@ func (s *indexedMultiTableReadSource) describeTable(ctx context.Context, refs []
 	if opts != nil && opts.Encoding != "" {
 		encodingName = opts.Encoding
 	}
-	spatialRefSys := ""
+	crsDefinition := ""
 	if opts != nil {
-		spatialRefSys = opts.SpatialRefSys
+		crsDefinition = opts.CRSDefinition
 	}
 	refMap := shapefileRefsByExtension(refs)
 	tableInfo, spatialInfo := buildShapefileTableInfo(shapefileTableInfoInput{
@@ -100,7 +100,7 @@ func (s *indexedMultiTableReadSource) describeTable(ctx context.Context, refs []
 		Encoding:      encodingName,
 		HasPRJ:        hasRefExtension(refMap, extPRJ),
 		HasCPG:        hasRefExtension(refMap, extCPG),
-		SpatialRefSys: spatialRefSys,
+		CRSDefinition: crsDefinition,
 	})
 	return tableInfo, spatialInfo, nil
 }

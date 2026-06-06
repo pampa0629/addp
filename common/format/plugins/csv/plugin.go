@@ -89,7 +89,7 @@ func (p *Plugin) effectiveOptions(options *format.ParseOptions) *format.ParseOpt
 	copied.ExtraParams = options.ExtraParams
 	copied.AccessIndexStep = options.AccessIndexStep
 	copied.HasHeader = options.HasHeader
-	copied.SpatialRefSys = options.SpatialRefSys
+	copied.CRSDefinition = options.CRSDefinition
 	copied.GeometryEncoding = options.GeometryEncoding
 	copied.SheetName = options.SheetName
 	copied.SheetIndex = options.SheetIndex

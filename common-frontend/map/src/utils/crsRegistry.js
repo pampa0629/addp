@@ -28,15 +28,15 @@ const metadata = (preview) => {
 }
 
 export const sourceSRIDFromPreview = (preview) => {
-  const direct = numberValue(preview?.source_srid || preview?.srid)
+  const direct = numberValue(preview?.source_srid)
   if (direct > 0) return direct
 
   const meta = metadata(preview)
-  const fromMeta = numberValue(meta?.source_srid || meta?.srid)
+  const fromMeta = numberValue(meta?.source_srid)
   if (fromMeta > 0) return fromMeta
 
-  const spatialRef = String(meta?.source_crs || meta?.spatial_ref_sys || '').trim()
-  const match = spatialRef.match(/^EPSG:(\d+)$/i)
+  const sourceCRS = sourceCRSFromPreview(preview)
+  const match = sourceCRS.match(/^EPSG:(\d+)$/i)
   return match ? numberValue(match[1]) : 0
 }
 
@@ -44,7 +44,7 @@ export const sourceCRSFromPreview = (preview) => {
   const direct = String(preview?.source_crs || '').trim()
   if (direct) return direct
   const meta = metadata(preview)
-  return String(meta?.source_crs || meta?.spatial_ref_sys || '').trim()
+  return String(meta?.source_crs || '').trim()
 }
 
 export const sourceCRSDefinitionFromPreview = (preview) => {
@@ -55,14 +55,24 @@ export const sourceCRSDefinitionFromPreview = (preview) => {
   return null
 }
 
-const sourceCodeFromPreview = (preview) => {
-  const targetSRID = numberValue(preview?.target_srid)
-  if (targetSRID === 4326) return WGS84
+const normalizedEPSGCode = (value) => {
+  const match = String(value || '').trim().match(/^EPSG:(\d+)$/i)
+  return match ? `EPSG:${match[1]}` : String(value || '').trim()
+}
+
+const responseGeometryCodeFromPreview = (preview, transformStatus) => {
+  const meta = metadata(preview)
+  if (transformStatus === 'engine_transformed') {
+    const targetCRS = normalizedEPSGCode(preview?.target_crs || meta?.target_crs)
+    if (targetCRS) return targetCRS
+
+    const targetSRID = numberValue(preview?.target_srid || meta?.target_srid)
+    if (targetSRID > 0) return `EPSG:${targetSRID}`
+  }
 
   const crs = sourceCRSFromPreview(preview)
   if (crs) {
-    const epsgMatch = crs.match(/^EPSG:(\d+)$/i)
-    return epsgMatch ? `EPSG:${epsgMatch[1]}` : crs
+    return normalizedEPSGCode(crs)
   }
 
   const srid = sourceSRIDFromPreview(preview)
@@ -100,12 +110,12 @@ export const getPreviewCRSTransform = (preview) => {
 
   const transformStatus = String(preview?.transform_status || metadata(preview)?.transform_status || '').trim()
   if (transformStatus === 'unknown_crs') {
-    return { status: 'unknown_crs', message: preview?.transform_message || metadata(preview)?.transform_message || '' }
+    return { status: 'unknown_crs' }
   }
 
-  const sourceCode = sourceCodeFromPreview(preview)
+  const sourceCode = responseGeometryCodeFromPreview(preview, transformStatus)
   if (!sourceCode) {
-    return { status: 'unknown_crs', message: preview?.transform_message || metadata(preview)?.transform_message || '' }
+    return { status: 'unknown_crs' }
   }
   if (sourceCode.toUpperCase() === WGS84) {
     return { status: 'direct', sourceCode, targetCode: WGS84 }

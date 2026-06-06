@@ -72,10 +72,10 @@ func (plugin *Plugin) SampleMultiTable(ctx context.Context, reader contentio.Rea
 
 func (plugin *Plugin) describeTableInfoFromHeaders(basePath string, refs []format.RelatedRef, opts *format.ParseOptions) (*datatype.TableInfo, *datatype.SpatialInfo, map[string]interface{}, error) {
 	encodingName := ""
-	spatialRefSys := ""
+	crsDefinition := ""
 	if opts != nil {
 		encodingName = NormalizeDBFEncoding(opts.Encoding)
-		spatialRefSys = opts.SpatialRefSys
+		crsDefinition = opts.CRSDefinition
 	}
 
 	shpHeader, err := readSHPHeader(basePath + extSHP)
@@ -96,7 +96,7 @@ func (plugin *Plugin) describeTableInfoFromHeaders(basePath string, refs []forma
 		Encoding:      encodingName,
 		HasPRJ:        fileExists(basePath + extPRJ),
 		HasCPG:        fileExists(basePath + extCPG),
-		SpatialRefSys: spatialRefSys,
+		CRSDefinition: crsDefinition,
 	}
 	tableInfo, spatialInfo := buildShapefileTableInfo(input)
 	return tableInfo, spatialInfo, shapefileFormatInfo(input), nil
@@ -156,7 +156,7 @@ type shapefileTableInfoInput struct {
 	Encoding      string
 	HasPRJ        bool
 	HasCPG        bool
-	SpatialRefSys string
+	CRSDefinition string
 }
 
 func buildShapefileTableInfo(input shapefileTableInfoInput) (*datatype.TableInfo, *datatype.SpatialInfo) {
@@ -191,9 +191,9 @@ func buildShapefileTableInfo(input shapefileTableInfoInput) (*datatype.TableInfo
 	spatialInfo := datatype.NewSingleGeometrySpatialInfo(input.GeometryField, geomType, 0, determineShapefileDimension(input.SHPHeader.ShapeType))
 	bbox := datatype.BoundingBox(input.SHPHeader.BBox)
 	spatialInfo.Extent = &bbox
-	if input.SpatialRefSys != "" {
-		crsRef := datatype.CustomCRSRef(input.SpatialRefSys)
-		if srid := commonSpatial.ParseSRID(input.SpatialRefSys); srid > 0 {
+	if input.CRSDefinition != "" {
+		crsRef := datatype.CustomCRSRef(input.CRSDefinition)
+		if srid := commonSpatial.ParseSRID(input.CRSDefinition); srid > 0 {
 			spatialInfo.GeometryColumns[0].SRID = &srid
 			crsRef = datatype.EPSGCRSRef(srid)
 		}
@@ -202,7 +202,7 @@ func buildShapefileTableInfo(input shapefileTableInfoInput) (*datatype.TableInfo
 			spatialInfo.CRSDefinitions = []datatype.CRSDefinition{{
 				ID:                 crsRef,
 				DefinitionEncoding: datatype.CRSDefinitionEncodingESRIWKT,
-				Definition:         input.SpatialRefSys,
+				Definition:         input.CRSDefinition,
 				Source:             datatype.CRSDefinitionSourceSidecarPRJ,
 			}}
 		}

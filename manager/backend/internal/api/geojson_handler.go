@@ -192,7 +192,6 @@ func (h *GeoJSONHandler) GetGeoJSONMetadata(c *gin.Context) {
 		SourceCRSDefinition *datatype.CRSDefinition `json:"source_crs_definition,omitempty"`
 		TransformStatus     string                  `json:"transform_status"`
 		PreviewHint         string                  `json:"preview_hint"`
-		TransformMessage    string                  `json:"transform_message,omitempty"`
 	}
 
 	var metadata Metadata
@@ -244,9 +243,6 @@ func (h *GeoJSONHandler) GetGeoJSONMetadata(c *gin.Context) {
 	}
 	if hint, ok := contract["preview_hint"].(string); ok {
 		metadata.PreviewHint = hint
-	}
-	if message, ok := contract["transform_message"].(string); ok {
-		metadata.TransformMessage = message
 	}
 
 	c.JSON(http.StatusOK, metadata)

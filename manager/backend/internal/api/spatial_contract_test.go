@@ -27,6 +27,9 @@ func TestSpatialPreviewContractAcceptsKnownCRSWithoutSRID(t *testing.T) {
 	if contract["transform_status"] != "not_transformed" || contract["preview_hint"] != "frontend_transform_required" {
 		t.Fatalf("transform contract = %#v, want not_transformed/frontend_transform_required", contract)
 	}
+	if _, ok := contract["target_srid"]; ok {
+		t.Fatalf("ordinary preview contract must not emit target_srid: %#v", contract)
+	}
 	if _, ok := contract["transform_message"]; ok {
 		t.Fatalf("transform_message must be absent for known CRS: %#v", contract)
 	}
@@ -43,7 +46,7 @@ func TestSpatialPreviewContractReportsUnknownWhenNoCRSFact(t *testing.T) {
 	if contract["transform_status"] != "unknown_crs" || contract["preview_hint"] != "unknown_crs" {
 		t.Fatalf("transform contract = %#v, want unknown_crs", contract)
 	}
-	if contract["transform_message"] == "" {
-		t.Fatalf("transform_message must explain unknown CRS: %#v", contract)
+	if _, ok := contract["transform_message"]; ok {
+		t.Fatalf("ordinary preview contract must not emit localized transform_message: %#v", contract)
 	}
 }

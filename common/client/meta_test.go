@@ -149,9 +149,9 @@ func TestMetaClientDecodesItemDataUpdatedAt(t *testing.T) {
 	defer server.Close()
 
 	client := NewMetaClientWithInternalKey(server.URL, "internal-key")
-	item, err := client.GetMetaItemByID(21)
+	item, err := client.GetItemByID(21)
 	if err != nil {
-		t.Fatalf("GetMetaItemByID() error = %v", err)
+		t.Fatalf("GetItemByID() error = %v", err)
 	}
 	if gotPath != "/api/v1/meta/items/21" {
 		t.Fatalf("path = %q, want /api/v1/meta/items/21", gotPath)

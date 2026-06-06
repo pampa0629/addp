@@ -180,6 +180,31 @@ func TestOpenMultiTableWriterRequiresPrimaryRef(t *testing.T) {
 	}
 }
 
+func TestOpenMultiTableWriterRejectsCRSDefinitionID(t *testing.T) {
+	plugin := NewPlugin(nil)
+	target := contentio.NewRef("exports/cities"+extSHP, contentio.RoleMain)
+	refs := format.SameBasenameRelatedRefs(target.Path, RelatedRefSpecs())
+	tableInfo := &datatype.TableInfo{
+		Fields: []datatype.FieldInfo{
+			{Name: "geom", Type: datatype.FieldTypeGeometry},
+		},
+	}
+
+	writer, err := plugin.OpenMultiTableWriter(context.Background(), newMemoryRefStore(), refs, tableInfo, &format.WriteOptions{
+		SpatialInfo: datatype.NewSingleGeometrySpatialInfo("geom", "Point", 4326, 0),
+		ExtraParams: map[string]interface{}{
+			format.CRSDefinitionOptionKey: "EPSG:4326",
+		},
+	})
+	if err != nil {
+		t.Fatalf("OpenMultiTableWriter failed before CRS definition validation: %v", err)
+	}
+	err = writer.Close(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "must contain CRS definition text") {
+		t.Fatalf("Close error = %v, want CRS definition text validation", err)
+	}
+}
+
 type memoryRefStore struct {
 	files map[string][]byte
 }
@@ -317,6 +342,42 @@ func TestShapefilePluginUsesCPGForRefSamples(t *testing.T) {
 	}
 	if got := rows[0]["NAME"]; got != "北京" {
 		t.Fatalf("decoded row value = %#v, want 北京", got)
+	}
+}
+
+func TestShapefileDescribeCarriesSidecarPRJCRSDefinition(t *testing.T) {
+	t.Parallel()
+
+	base := createPointShapefileRows(t, []string{"a"})
+	prj := `PROJCS["WGS_1984_UTM_Zone_50N",GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137.0,298.257223563]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Transverse_Mercator"],PARAMETER["False_Easting",500000.0],PARAMETER["False_Northing",0.0],PARAMETER["Central_Meridian",117.0],PARAMETER["Scale_Factor",0.9996],PARAMETER["Latitude_Of_Origin",0.0],UNIT["Meter",1.0]]`
+	if err := os.WriteFile(base+extPRJ, []byte(prj), 0o644); err != nil {
+		t.Fatalf("write prj failed: %v", err)
+	}
+	reader := newLocalRefReader(base)
+	refs := append(reader.refs(), format.NewRelatedRef(contentio.NewRef(base+extPRJ, roleProjection), false, false))
+	plugin := NewPlugin(nil)
+
+	info, err := plugin.DescribeMultiTable(context.Background(), reader, refs, nil)
+	if err != nil {
+		t.Fatalf("DescribeMultiTable() error = %v", err)
+	}
+	spatial := info.Spatial
+	if spatial == nil || len(spatial.GeometryColumns) != 1 {
+		t.Fatalf("spatial info = %#v, want single geometry column", spatial)
+	}
+	column := spatial.GeometryColumns[0]
+	if column.SRID == nil || *column.SRID != 32650 || column.CRSRef != datatype.EPSGCRSRef(32650) {
+		t.Fatalf("geometry CRS = srid:%#v ref:%q, want EPSG:32650", column.SRID, column.CRSRef)
+	}
+	if len(spatial.CRSDefinitions) != 1 {
+		t.Fatalf("CRSDefinitions = %#v, want one sidecar PRJ definition", spatial.CRSDefinitions)
+	}
+	definition := spatial.CRSDefinitions[0]
+	if definition.ID != datatype.EPSGCRSRef(32650) ||
+		definition.DefinitionEncoding != datatype.CRSDefinitionEncodingESRIWKT ||
+		definition.Definition != prj ||
+		definition.Source != datatype.CRSDefinitionSourceSidecarPRJ {
+		t.Fatalf("CRS definition = %#v, want EPSG:32650 ESRI WKT from sidecar PRJ", definition)
 	}
 }
 
