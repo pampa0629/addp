@@ -84,6 +84,25 @@ func TestMetaClientCreateManualScanRunUsesAsyncPath(t *testing.T) {
 	}
 }
 
+func TestMetaClientCreateManualScanRunRejectsScheduledTrigger(t *testing.T) {
+	t.Parallel()
+
+	called := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+	}))
+	defer server.Close()
+
+	client := NewMetaClientWithInternalKey(server.URL, "internal-key")
+	_, err := client.CreateManualScanRun(MetaScanOptions{EngineID: 26, TriggerType: commonExecution.TriggerTypeScheduled})
+	if err == nil {
+		t.Fatal("CreateManualScanRun() should reject scheduled trigger_type")
+	}
+	if called {
+		t.Fatal("CreateManualScanRun() should reject before sending request")
+	}
+}
+
 func TestMetaClientRefreshItemUsesItemRefreshPath(t *testing.T) {
 	t.Parallel()
 
@@ -133,6 +152,25 @@ func TestMetaClientRefreshItemUsesItemRefreshPath(t *testing.T) {
 	}
 	if result.Extraction == nil || result.Extraction.Unsupported != 1 {
 		t.Fatalf("extraction = %#v", result.Extraction)
+	}
+}
+
+func TestMetaClientRefreshItemRejectsScheduledTrigger(t *testing.T) {
+	t.Parallel()
+
+	called := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+	}))
+	defer server.Close()
+
+	client := NewMetaClientWithInternalKey(server.URL, "internal-key")
+	_, err := client.RefreshItem(1831, MetaScanOptions{EngineID: 26, TriggerType: commonExecution.TriggerTypeScheduled})
+	if err == nil {
+		t.Fatal("RefreshItem() should reject scheduled trigger_type")
+	}
+	if called {
+		t.Fatal("RefreshItem() should reject before sending request")
 	}
 }
 

@@ -1115,6 +1115,16 @@ flowchart TD
     - `/scan/run/manual` 和 `ScanExecutionService.CreateManualRun` 只接受空值或 `manual`。
     - `scheduled` 只能由 Meta scheduler 通过 `scantask.NewScheduledExecution` 创建，不再允许从手动 API 入口传入后被静默写成 manual。
     - 补充 `CreateManualRun` 拒绝 `scheduled` 的测试，避免 manual/scheduled 入口再次混淆。
+100. `ScanExecutionService` 执行收尾职责已拆分：
+     - execution lock 释放与最后扫描时间更新迁入 `scan_execution_lock.go`。
+     - execution success/failure 字段更新迁入 `scan_execution_completion.go`。
+     - ScanTask 最近执行状态回填迁入 `scan_execution_task_status.go`。
+     - progress reporter 更新入口迁入 `scan_execution_progress.go`。
+     - `scan_execution_runner.go` 保留执行主线：读取 execution、解析 config、标记 running、调用扫描、按成功/失败完成收尾。
+101. `common/client.MetaClient` 手动扫描 trigger 校验已前移：
+     - `CreateManualScanRun` 与 `RefreshItem` 统一通过 `normalizeManualMetaTriggerType` 校验。
+     - 空值统一写为 `manual`，显式值只接受 `manual`。
+     - 传入 `scheduled` 时在 client 侧直接报错，不再发送到 Meta `/scan/run/manual` 或 item refresh 入口后由后端拒绝。
 94. Meta API handler 文件职责已拆分：
     - metadata query handlers 迁入 `handler_query.go`。
     - scan run handlers 迁入 `handler_scan_runs.go`。
@@ -1216,6 +1226,12 @@ cd meta/backend && go test ./...
 bash scripts/swagger/gen-swagger.sh meta
 bash scripts/swagger/check-route-coverage.sh meta
 git diff --check
+cd meta/backend && go test ./internal/service
+cd meta/backend && go test ./...
+git diff --check
+go test ./common/client
+cd manager/backend && go test ./internal/service ./internal/preview ./internal/api
+cd transfer/backend && go test ./internal/service
 ```
 
 下一步建议：

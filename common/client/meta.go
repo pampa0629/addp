@@ -49,6 +49,14 @@ type MetaScanRef struct {
 	Required bool   `json:"required"`
 }
 
+func normalizeManualMetaTriggerType(triggerType string) (string, error) {
+	normalized := strings.ToLower(strings.TrimSpace(triggerType))
+	if normalized == "" || normalized == commonExecution.TriggerTypeManual {
+		return commonExecution.TriggerTypeManual, nil
+	}
+	return "", fmt.Errorf("unsupported trigger_type %q: use manual", triggerType)
+}
+
 // MetaScanResponse 元数据扫描响应
 type MetaScanResponse struct {
 	Status              string                   `json:"status"`
@@ -380,11 +388,11 @@ func (c *MetaClient) CreateManualScanRun(opts MetaScanOptions) (*commonExecution
 	if opts.Force {
 		scanReq["force"] = true
 	}
-	if triggerType := strings.TrimSpace(opts.TriggerType); triggerType != "" {
-		scanReq["trigger_type"] = triggerType
-	} else {
-		scanReq["trigger_type"] = "manual"
+	triggerType, err := normalizeManualMetaTriggerType(opts.TriggerType)
+	if err != nil {
+		return nil, err
 	}
+	scanReq["trigger_type"] = triggerType
 	if source := strings.TrimSpace(opts.Source); source != "" {
 		scanReq["source"] = source
 	}
@@ -442,9 +450,11 @@ func (c *MetaClient) RefreshItem(itemID uint, opts MetaScanOptions) (*MetaScanRe
 	if depth := strings.TrimSpace(opts.ScanDepth); depth != "" {
 		reqPayload["scan_depth"] = depth
 	}
-	if triggerType := strings.TrimSpace(opts.TriggerType); triggerType != "" {
-		reqPayload["trigger_type"] = triggerType
+	triggerType, err := normalizeManualMetaTriggerType(opts.TriggerType)
+	if err != nil {
+		return nil, err
 	}
+	reqPayload["trigger_type"] = triggerType
 	if source := strings.TrimSpace(opts.Source); source != "" {
 		reqPayload["source"] = source
 	}
