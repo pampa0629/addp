@@ -22,6 +22,13 @@ func (r *BuildRepository) ListTasks(graphID, tenantID uint) ([]models.BuildTask,
 	return tasks, err
 }
 
+func (r *BuildRepository) ListAllTasks(tenantID uint) ([]models.BuildTask, error) {
+	var tasks []models.BuildTask
+	err := r.db.Where("tenant_id = ?", tenantID).
+		Order("created_at DESC").Find(&tasks).Error
+	return tasks, err
+}
+
 func (r *BuildRepository) GetTask(id, tenantID uint) (*models.BuildTask, error) {
 	var task models.BuildTask
 	err := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).First(&task).Error
@@ -77,13 +84,13 @@ func (r *BuildRepository) DeleteMaterial(id, tenantID uint) error {
 // ============ ReviewItem ============
 
 type ReviewFilter struct {
-	GraphID    uint
-	TenantID   uint
-	TaskID     uint   // 0 表示不过滤
-	ItemType   string // "" 表示不过滤
-	Status     string // "" 表示不过滤（默认返回 pending）
-	Page       int
-	PageSize   int
+	GraphID  uint
+	TenantID uint
+	TaskID   uint   // 0 表示不过滤
+	ItemType string // "" 表示不过滤
+	Status   string // "" 表示不过滤（默认返回 pending）
+	Page     int
+	PageSize int
 }
 
 func (r *BuildRepository) ListReviewItems(filter ReviewFilter) ([]models.ReviewItem, int64, error) {
@@ -145,7 +152,7 @@ func (r *BuildRepository) ResetMaterials(taskID, tenantID uint) error {
 	return r.db.Model(&models.BuildMaterial{}).
 		Where("task_id = ? AND tenant_id = ?", taskID, tenantID).
 		Updates(map[string]interface{}{
-			"status":           models.BuildStatusPending,
+			"status":           models.BuildMaterialStatusPending,
 			"processed_chunks": 0,
 			"total_chunks":     0,
 			"error_message":    "",

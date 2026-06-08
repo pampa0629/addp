@@ -132,14 +132,30 @@ function handleStepsUpdate(steps) {
   form.steps = steps
 }
 
+function hasValue(value) {
+  return value !== null && value !== undefined && String(value).trim() !== ''
+}
+
+function hasTaskReference(step) {
+  return hasValue(step.provider) && hasValue(step.task_type) && hasValue(step.task_id)
+}
+
 async function handleSave() {
   if (!form.name) {
     ElMessage.warning(t('orchestrator.orchestrationForm.nameRequired'))
     return
   }
 
+  const latestSteps = dagEditor.value?.getSteps ? dagEditor.value.getSteps() : form.steps
+  form.steps = latestSteps || []
+
   if (!form.steps || form.steps.length === 0) {
     ElMessage.warning(t('orchestrator.orchestrationForm.stepsRequired'))
+    return
+  }
+
+  if (form.steps.some(step => !hasTaskReference(step))) {
+    ElMessage.warning(t('orchestrator.orchestrationForm.stepTaskReferenceRequired'))
     return
   }
 

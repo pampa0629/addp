@@ -125,11 +125,20 @@ func (s *ScanExecutionService) CreateUnscannedRuns(ctx context.Context, tenantID
 
 // CreateTaskManualRun 基于已有扫描任务定义创建一次手动执行
 func (s *ScanExecutionService) CreateTaskManualRun(ctx context.Context, task *models.ScanTask, userID uint) (*commonExecution.TaskExecution, error) {
+	return s.CreateTaskRunWithContext(ctx, task, userID, commonExecution.TriggerTypeManual, commonExecution.ModuleMeta, nil)
+}
+
+// CreateTaskRunWithContext 基于已有扫描任务定义创建一次执行，并记录任务体系上下文。
+func (s *ScanExecutionService) CreateTaskRunWithContext(ctx context.Context, task *models.ScanTask, userID uint, triggerType string, source string, parentExecutionID *string) (*commonExecution.TaskExecution, error) {
 	if task == nil {
 		return nil, errors.New("扫描任务不能为空")
 	}
+	normalizedTriggerType, err := commonExecution.NormalizeTriggerType(triggerType)
+	if err != nil {
+		return nil, err
+	}
 	storageType := s.lookupStorageType(task.EngineID, task.TenantID)
-	execution := scantask.NewTaskManualExecution(task, userID, storageType, time.Now())
+	execution := scantask.NewTaskExecution(task, userID, storageType, normalizedTriggerType, source, parentExecutionID, time.Now())
 
 	if err := s.taskExecutionRepo.Create(ctx, execution); err != nil {
 		return nil, err

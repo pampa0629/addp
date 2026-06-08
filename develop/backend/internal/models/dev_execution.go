@@ -32,8 +32,7 @@ func (r *ExecutionResult) Scan(value interface{}) error {
 
 // CreateExecutionRequest 创建执行请求
 type CreateExecutionRequest struct {
-	DevItemID   *uint                  `json:"dev_item_id"`
-	DevType     string                 `json:"dev_type" binding:"required,oneof=query workflow script notebook"`
+	DevType     string                 `json:"dev_type" binding:"required,oneof=query workflow script"`
 	TriggerType string                 `json:"trigger_type" binding:"required,oneof=manual scheduled"`
 	EngineID    *uint                  `json:"engine_id"`
 	Content     map[string]interface{} `json:"content"` // 执行内容（对于临时执行）
@@ -53,25 +52,25 @@ type UpdateExecutionRequest struct {
 
 // ListExecutionsRequest 查询执行列表请求
 type ListExecutionsRequest struct {
-	Page        int    `form:"page" binding:"min=1"`
-	PageSize    int    `form:"page_size" binding:"min=1,max=100"`
-	DevItemID   *uint  `form:"dev_item_id"`
-	DevType     string `form:"dev_type" binding:"omitempty,oneof=query workflow script notebook"`
-	Status      string `form:"status" binding:"omitempty,oneof=pending running success failed timeout cancelled"`
-	TriggerType string `form:"trigger_type" binding:"omitempty,oneof=manual scheduled"`
-	StartDate   string `form:"start_date"` // YYYY-MM-DD
-	EndDate     string `form:"end_date"`   // YYYY-MM-DD
+	Page         int    `form:"page" binding:"min=1"`
+	PageSize     int    `form:"page_size" binding:"min=1,max=100"`
+	SourceTaskID string `form:"source_task_id"`
+	DevType      string `form:"dev_type" binding:"omitempty,oneof=query workflow script"`
+	Status       string `form:"status" binding:"omitempty,oneof=pending running success failed timeout cancelled"`
+	TriggerType  string `form:"trigger_type" binding:"omitempty,oneof=manual scheduled"`
+	StartDate    string `form:"start_date"` // YYYY-MM-DD
+	EndDate      string `form:"end_date"`   // YYYY-MM-DD
 }
 
-// ExecutionWithDevItem 执行记录和开发任务关联
-type ExecutionWithDevItem struct {
+// ExecutionWithDevTask 执行记录和开发任务关联
+type ExecutionWithDevTask struct {
 	*commonExecution.TaskExecution
-	DevItem *DevTask `json:"dev_item,omitempty"`
+	DevTask *DevTask `json:"dev_task,omitempty"`
 }
 
 // ListExecutionsResponse 执行列表响应
 type ListExecutionsResponse struct {
-	Executions []ExecutionWithDevItem `json:"executions"`
+	Executions []ExecutionWithDevTask `json:"executions"`
 	Total      int64                  `json:"total"`
 	Page       int                    `json:"page"`
 	PageSize   int                    `json:"page_size"`

@@ -51,9 +51,9 @@ type SpatialMetadata struct {
 	UpdatedAtColumn string    `json:"updated_at_column,omitempty"`
 }
 
-// QuickViewProgress 快显进度
+// QuickViewProgress 快显产物生成进度，不是 common.task_executions.status。
 type QuickViewProgress struct {
-	Status                string          `json:"status"` // pending/running/completed/failed
+	Status                string          `json:"status"` // running/ready/failed/cancelled
 	CurrentZoom           int             `json:"current_zoom"`
 	MaxZoom               int             `json:"max_zoom"`
 	TilesProcessed        int             `json:"tiles_processed"`

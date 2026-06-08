@@ -81,6 +81,7 @@ export const PAGE_MAPS = {
     'data-explorer': 'data-explorer',
     'data-retrieval': 'data-retrieval',
     'vectorization-tasks': 'vectorization-tasks',
+    'mvt-tasks': 'mvt-tasks',
     '': 'data-explorer',
   },
   meta: {
@@ -101,9 +102,9 @@ export const PAGE_MAPS = {
   develop: {
     'sql': 'sql',
     'notebook': 'notebook',
-    'gis-workflow': 'gis-workflow',
-    'gis-tasks': 'gis-tasks',
-    'gis-executions': 'gis-executions',
+    'workflow': 'workflow',
+    'tasks': 'tasks',
+    'executions': 'executions',
     '': 'sql',
   },
   service: {
@@ -207,6 +208,7 @@ export const SIDEBAR_MENUS = {
       { index: '/manager/data-explorer',       icon: Search,   label: 'console.menus.manager.dataExplorer' },
       { index: '/manager/data-retrieval',      icon: Document, label: 'console.menus.manager.dataRetrieval' },
       { index: '/manager/vectorization-tasks', icon: List,     label: 'console.menus.manager.vectorizationTasks' },
+      { index: '/manager/mvt-tasks',           icon: Grid,     label: 'console.menus.manager.mvtTasks' },
     ],
   },
   standard: {

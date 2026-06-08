@@ -157,7 +157,7 @@ import SaveQueryDialog from '../components/SaveQueryDialog.vue'
 import { GraphResultView } from '@addp/common-frontend/graph'
 import { executeQuery as executeAPI, testConnection, saveQueryTask, getSampleQuery } from '../api/query.js'
 import { executeFederatedQuery, testDuckDBConnection, getDuckDBSampleQuery } from '../api/duckdb.js'
-import { getDevItem } from '../api/devItem.js'
+import { getDevTask } from '../api/devTask.js'
 import client from '../api/client.js'
 
 const route = useRoute()
@@ -383,7 +383,7 @@ const handleSaveTask = async (taskData) => {
 // 加载已有任务
 const loadTask = async (taskId) => {
   try {
-    const task = await getDevItem(taskId)
+    const task = await getDevTask(taskId)
 
     // 设置当前任务信息
     currentTaskId.value = task.id

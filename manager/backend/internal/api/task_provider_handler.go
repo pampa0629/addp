@@ -5,6 +5,7 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	"net/http"
 	"strconv"
+	"strings"
 
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/manager/internal/models"
@@ -16,7 +17,6 @@ import (
 // 实现: GET /api/manager/tasks, POST /api/manager/tasks/:task_type/:id/execute
 //
 //	GET /api/manager/tasks/:task_type/:id, GET /api/manager/executions/:execution_id
-//	POST /api/manager/executions/:execution_id/cancel
 type TaskProviderHandler struct {
 	embeddingTaskSvc *service.EmbeddingTaskService
 	mvtTaskSvc       *service.MvtTaskService
@@ -58,6 +58,7 @@ type TaskListItem struct {
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Success 200 {object} map[string]interface{} "任务列表 | Task list"
+// @Failure 400 {object} map[string]interface{} "不支持的任务类型 | Unsupported task type"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @Router /tasks [get]
 // @Router /mvt_tasks [get]
@@ -65,7 +66,7 @@ type TaskListItem struct {
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListTasks(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
-	taskType := c.Query("task_type")
+	taskType := strings.TrimSpace(c.Query("task_type"))
 
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	if page < 1 {
@@ -81,7 +82,7 @@ func (h *TaskProviderHandler) ListTasks(c *gin.Context) {
 	var total int64
 
 	switch taskType {
-	case "mvt_generation":
+	case commonExecution.TaskTypeMvtGeneration:
 		tasks, t, err := h.mvtTaskSvc.List(ctx, tenantID, page, pageSize)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
@@ -90,12 +91,12 @@ func (h *TaskProviderHandler) ListTasks(c *gin.Context) {
 		total = t
 		for _, task := range tasks {
 			items = append(items, TaskListItem{
-				ID: task.ID, TenantID: task.TenantID, TaskType: "mvt_generation",
+				ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeMvtGeneration,
 				Name: task.Name, Description: task.Description, Enabled: task.Enabled,
 				LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus,
 			})
 		}
-	case "embedding":
+	case commonExecution.TaskTypeEmbedding:
 		tasks, t, err := h.embeddingTaskSvc.List(ctx, tenantID, page, pageSize)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
@@ -104,12 +105,12 @@ func (h *TaskProviderHandler) ListTasks(c *gin.Context) {
 		total = t
 		for _, task := range tasks {
 			items = append(items, TaskListItem{
-				ID: task.ID, TenantID: task.TenantID, TaskType: "embedding",
+				ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeEmbedding,
 				Name: task.Name, Description: task.Description, Enabled: task.Enabled,
 				LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus,
 			})
 		}
-	default:
+	case "":
 		// 返回所有类型
 		mvtTasks, mvtTotal, err := h.mvtTaskSvc.List(ctx, tenantID, page, pageSize)
 		if err != nil {
@@ -124,18 +125,21 @@ func (h *TaskProviderHandler) ListTasks(c *gin.Context) {
 		total = mvtTotal + embTotal
 		for _, task := range mvtTasks {
 			items = append(items, TaskListItem{
-				ID: task.ID, TenantID: task.TenantID, TaskType: "mvt_generation",
+				ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeMvtGeneration,
 				Name: task.Name, Description: task.Description, Enabled: task.Enabled,
 				LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus,
 			})
 		}
 		for _, task := range embTasks {
 			items = append(items, TaskListItem{
-				ID: task.ID, TenantID: task.TenantID, TaskType: "embedding",
+				ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeEmbedding,
 				Name: task.Name, Description: task.Description, Enabled: task.Enabled,
 				LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus,
 			})
 		}
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "不支持的任务类型: " + taskType})
+		return
 	}
 
 	if items == nil {
@@ -204,8 +208,10 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 
 // TaskExecuteRequest 触发执行请求
 type TaskExecuteRequest struct {
-	TriggerType       string `json:"trigger_type"`        // manual|scheduled，默认 manual
-	ParentExecutionID string `json:"parent_execution_id"` // 父执行ID（Orchestrator 调用时传入）
+	TriggerType       string                 `json:"trigger_type"`        // manual|scheduled，默认 manual
+	Source            string                 `json:"source"`              // 触发来源模块
+	ParentExecutionID string                 `json:"parent_execution_id"` // 父执行ID（Orchestrator 调用时传入）
+	Parameters        map[string]interface{} `json:"parameters"`          // 执行参数覆盖；当前 Manager provider 不支持
 }
 
 // TaskExecute POST /api/manager/tasks/:task_type/:id/execute
@@ -233,8 +239,18 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 
 	var req TaskExecuteRequest
 	_ = c.ShouldBindJSON(&req)
-	if req.TriggerType == "" {
-		req.TriggerType = commonExecution.TriggerTypeManual
+	triggerType, err := commonExecution.NormalizeTriggerType(req.TriggerType)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": err.Error()})
+		return
+	}
+	source := strings.TrimSpace(req.Source)
+	if source == "" {
+		source = commonExecution.ModuleManager
+	}
+	if len(req.Parameters) > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "Manager task provider does not support execution parameter overrides"})
+		return
 	}
 	var parentExecID *string
 	if req.ParentExecutionID != "" {
@@ -246,9 +262,9 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 
 	switch taskType {
 	case "mvt_generation":
-		executionID, err = h.mvtTaskSvc.Execute(ctx, uint(id), tenantID, req.TriggerType, parentExecID)
+		executionID, err = h.mvtTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
 	case "embedding":
-		executionID, err = h.embeddingTaskSvc.Execute(ctx, uint(id), tenantID, req.TriggerType, parentExecID)
+		executionID, err = h.embeddingTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "不支持的任务类型: " + taskType})
 		return
@@ -295,31 +311,6 @@ func (h *TaskProviderHandler) ExecutionStatus(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"status": "success", "data": exec})
-}
-
-// ExecutionCancel POST /api/manager/executions/:execution_id/cancel
-// @Summary 取消执行 | Cancel execution
-// @Description 取消正在运行的任务执行 | Cancel a running task execution
-// @Tags Manager
-// @Produce json
-// @Param execution_id path string true "执行ID | Execution ID"
-// @Success 200 {object} map[string]interface{} "取消成功 | Cancelled successfully"
-// @Failure 400 {object} map[string]interface{} "取消失败 | Cancel failed"
-// @Router /executions/{execution_id}/cancel [post]
-// @Security BearerAuth
-func (h *TaskProviderHandler) ExecutionCancel(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
-	executionID := c.Param("execution_id")
-
-	err := h.taskExecRepo.UpdateStatus(
-		c.Request.Context(), executionID, int(tenantID),
-		commonExecution.ExecutionStatusRunning, commonExecution.ExecutionStatusCancelled,
-	)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "取消失败: " + err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"status": "success", "message": "已取消"})
 }
 
 // ===== EmbeddingTask CRUD =====

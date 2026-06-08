@@ -387,7 +387,7 @@ func createExecutionServiceTestTables(t *testing.T, db *gorm.DB) {
 			module TEXT NOT NULL,
 			task_type TEXT NOT NULL,
 			source TEXT NOT NULL DEFAULT '',
-			source_task_id INTEGER,
+			source_task_id TEXT,
 			source_task_name TEXT,
 			parent_execution_id TEXT,
 			status TEXT NOT NULL,
@@ -422,7 +422,7 @@ func createExecutionServiceTestTask(t *testing.T, db *gorm.DB) models.TransferTa
 	task := models.TransferTask{
 		TenantID:  7,
 		Name:      "retry source",
-		TaskType:  "export",
+		TaskType:  commonExecution.TaskTypeImport,
 		Config:    models.JSONMap{"mode": "batch"},
 		BatchSize: 100,
 		Status:    models.TaskStatusIdle,
@@ -436,15 +436,14 @@ func createExecutionServiceTestTask(t *testing.T, db *gorm.DB) models.TransferTa
 
 func createExecutionServiceTestExecution(t *testing.T, db *gorm.DB, task models.TransferTask, status string) commonExecution.TaskExecution {
 	t.Helper()
-	taskID := int(task.ID)
 	taskName := task.Name
 	execution := commonExecution.TaskExecution{
 		TenantID:       int(task.TenantID),
 		ExecutionID:    fmt.Sprintf("execution-%s", status),
 		Module:         commonExecution.ModuleTransfer,
-		TaskType:       "transfer",
+		TaskType:       commonExecution.TaskTypeImport,
 		Source:         commonExecution.ModuleTransfer,
-		SourceTaskID:   &taskID,
+		SourceTaskID:   commonExecution.NewSourceTaskIDFromUint(task.ID),
 		SourceTaskName: &taskName,
 		Status:         status,
 		Progress:       100,

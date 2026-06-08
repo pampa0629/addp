@@ -171,6 +171,19 @@ definitions:
   github_com_addp_meta_internal_models.JSONMap:
     additionalProperties: true
     type: object
+  github_com_addp_meta_internal_models.ListProviderScanTasksResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/github_com_addp_meta_internal_models.ProviderScanTask'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+    type: object
   github_com_addp_meta_internal_models.MetaItemLite:
     properties:
       attributes:
@@ -249,6 +262,51 @@ definitions:
         items:
           $ref: '#/definitions/github_com_addp_meta_internal_models.MetaNodeLite'
         type: array
+    type: object
+  github_com_addp_meta_internal_models.ProviderScanTask:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      description:
+        type: string
+      display_name:
+        type: string
+      enabled:
+        type: boolean
+      engine_id:
+        type: integer
+      id:
+        type: integer
+      last_execution_id:
+        type: string
+      last_execution_status:
+        type: string
+      last_run_at:
+        type: string
+      name:
+        type: string
+      next_run_at:
+        type: string
+      owner_module:
+        type: string
+      owner_ref:
+        type: string
+      parameters:
+        $ref: '#/definitions/github_com_addp_meta_internal_models.JSONMap'
+      schedule:
+        type: string
+      scope:
+        $ref: '#/definitions/github_com_addp_meta_internal_models.JSONMap'
+      task_type:
+        type: string
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+      updated_by:
+        type: integer
     type: object
   github_com_addp_meta_internal_models.ResourceWithStats:
     properties:
@@ -482,6 +540,18 @@ definitions:
       valid:
         description: Valid is true if Time is not NULL
         type: boolean
+    type: object
+  internal_api.taskProviderExecuteRequest:
+    properties:
+      parameters:
+        additionalProperties: true
+        type: object
+      parent_execution_id:
+        type: string
+      source:
+        type: string
+      trigger_type:
+        type: string
     type: object
 host: localhost:8082
 info:
@@ -823,44 +893,6 @@ paths:
       summary: 按 catalog path 查询数据项 | Query item by catalog path
       tags:
       - Meta Query
-  /metadata/object:
-    get:
-      description: 获取指定对象存储文件的元数据信息 | Get metadata information for a specific object
-        storage file
-      parameters:
-      - description: 存储引擎ID | Engine ID
-        in: query
-        name: engine_id
-        required: true
-        type: integer
-      - description: 对象存储路径 | Object storage path
-        in: query
-        name: object_key
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 对象元数据 | Object metadata
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: 请求参数错误 | Bad request
-          schema:
-            additionalProperties: true
-            type: object
-        "404":
-          description: 对象不存在 | Object not found
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取对象元数据 | Get object metadata
-      tags:
-      - Meta
   /nodes/{node_id}:
     get:
       description: 按节点 ID 获取元数据节点详情 | Get metadata node detail by ID
@@ -1168,46 +1200,14 @@ paths:
       summary: 获取扫描运行详情 | Get scan run
       tags:
       - Meta Scan
-  /scan/runs/{run_id}/cancel:
-    post:
-      description: 按执行 UUID 取消扫描运行 | Cancel scan execution by UUID
-      parameters:
-      - description: 执行ID | Execution ID
-        in: path
-        name: run_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 取消结果 | Cancel result
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: 请求参数错误 | Bad request
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: 服务器内部错误 | Internal server error
-          schema:
-            additionalProperties: true
-            type: object
-        "503":
-          description: 任务服务不可用 | Task service unavailable
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 取消扫描运行 | Cancel scan run
-      tags:
-      - Meta Scan
   /scan/tasks:
     get:
       description: 列出当前租户的扫描任务 | List scan tasks for current tenant
+      parameters:
+      - description: 任务类型，固定为 scan | Task type, fixed to scan
+        in: query
+        name: task_type
+        type: string
       produces:
       - application/json
       responses:
@@ -1218,6 +1218,11 @@ paths:
               additionalProperties: true
               type: object
             type: array
+        "400":
+          description: 不支持的任务类型 | Unsupported task type
+          schema:
+            additionalProperties: true
+            type: object
         "500":
           description: 服务器内部错误 | Internal server error
           schema:
@@ -1493,6 +1498,146 @@ paths:
       summary: 获取元数据统计 | Get metadata stats
       tags:
       - Meta
+  /tasks:
+    get:
+      description: 返回可供 Orchestrator 编排复用的 Meta ScanTask，task_type 固定为 scan。| List
+        Meta ScanTasks exposed through TaskProvider; task_type is fixed to scan.
+      parameters:
+      - description: 任务类型，固定为 scan | Task type, fixed to scan
+        in: query
+        name: task_type
+        type: string
+      - default: 1
+        description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - default: 100
+        description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 扫描任务列表 | Scan tasks
+          schema:
+            $ref: '#/definitions/github_com_addp_meta_internal_models.ListProviderScanTasksResponse'
+        "400":
+          description: 不支持的任务类型 | Unsupported task type
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 任务服务不可用 | Task service unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出 TaskProvider 扫描任务 | List TaskProvider scan tasks
+      tags:
+      - Meta Scan
+  /tasks/{task_type}/{id}:
+    get:
+      description: 按标准 TaskProvider 路径获取 Meta ScanTask 详情；task_type 仅支持 scan。| Get
+        Meta ScanTask detail through the standard TaskProvider path; task_type only
+        supports scan.
+      parameters:
+      - description: 任务类型，固定为 scan | Task type, fixed to scan
+        in: path
+        name: task_type
+        required: true
+        type: string
+      - description: 扫描任务ID | Scan task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 扫描任务详情 | Scan task detail
+          schema:
+            $ref: '#/definitions/github_com_addp_meta_internal_models.ProviderScanTask'
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 任务不存在 | Task not found
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 任务服务不可用 | Task service unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取 TaskProvider 扫描任务详情 | Get TaskProvider scan task detail
+      tags:
+      - Meta Scan
+  /tasks/{task_type}/{id}/execute:
+    post:
+      consumes:
+      - application/json
+      description: 按标准 TaskProvider 协议触发 Meta ScanTask；task_type 仅支持 scan，parameters
+        当前不支持覆盖。| Trigger a Meta ScanTask through the standard TaskProvider protocol;
+        task_type only supports scan and parameters overrides are not supported.
+      parameters:
+      - description: 任务类型，固定为 scan | Task type, fixed to scan
+        in: path
+        name: task_type
+        required: true
+        type: string
+      - description: 扫描任务ID | Scan task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: TaskProvider 执行请求 | TaskProvider execution request
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/internal_api.taskProviderExecuteRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 执行记录 | Execution
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 任务服务不可用 | Task service unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 执行 TaskProvider 扫描任务 | Execute TaskProvider scan task
+      tags:
+      - Meta Scan
 securityDefinitions:
   BearerAuth:
     in: header

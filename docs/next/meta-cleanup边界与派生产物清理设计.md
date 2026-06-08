@@ -1,6 +1,6 @@
 # Meta cleanup 边界与派生产物清理设计
 
-> 状态：讨论稿。本文记录当前 cleanup 实现的边界问题和推荐方向；本轮先不改代码，后续作为 cleanup / preprocessing 专题的输入。
+> 状态：讨论稿。本文记录当前 cleanup 实现的边界问题和推荐方向；本轮先不改代码，后续作为 cleanup / 扫描后派生能力专题的输入。
 
 ## 背景
 
@@ -73,7 +73,7 @@ Meta 可以知道 System，因为 Meta 扫描需要读取 engine 注册信息和
 
 Quick View / MVT tiles 是基于 metadata facts 和展示策略生成的派生产物。它们可能有自己的状态、任务、重试、缓存和过期策略，不应被 Meta DB cleanup 逻辑直接支配。
 
-### 3. 当前逻辑难以扩展到更多 preprocessing 产物
+### 3. 当前逻辑难以扩展到更多扫描后派生产物
 
 如果后续出现：
 
@@ -152,7 +152,7 @@ flowchart TD
 ### 阶段 1：文档固化
 
 - 本文先记录现状、问题和推荐方向。
-- `meta-preprocessing语义与任务边界.md` 可引用本文，说明 artifact preprocessing 的 cleanup owner 归属。
+- `扫描后派生能力与任务边界.md` 可引用本文，说明派生产物的 cleanup owner 归属。
 - 暂不修改 Meta cleanup 代码，避免影响当前正在推进的 Meta 扫描主线。
 
 ### 阶段 2：Manager 接入 cleanup consumer
@@ -190,11 +190,13 @@ Meta 保留：
 
 后续可进一步讨论：
 
-- cleanup task 是否进入 common execution。
+- cleanup 是否以 `module=system` 的系统级运维 execution 进入 `common.task_executions`。
 - cleanup scan 和 cleanup execute 是否需要统一 execution 记录。
 - `ExpectedModules` 的默认行为。
 - 各模块 cleanup result 的标准字段。
 - cleanup scan result 与 execute result 的关联和审计。
+
+阶段 1 明确不把 cleanup 纳入 TaskProvider，也不进入 Orchestrator 编排。cleanup 不是用户数据处理任务；即便后续为了监控和审计接入统一 execution，也只能作为系统运维记录展示，不能出现在编排任务选择列表中。
 
 ## 本轮暂不处理
 
@@ -206,4 +208,4 @@ Meta 保留：
 - 不调整 MVT / Quick View 表结构和 MinIO key。
 - 不改变当前 cleanup API 行为。
 
-后续需要在 cleanup / preprocessing 专题中确认后，再进入代码迁移。
+后续需要在 cleanup / 扫描后派生能力专题中确认后，再进入代码迁移。

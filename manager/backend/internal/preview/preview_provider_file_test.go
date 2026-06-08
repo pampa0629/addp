@@ -2200,3 +2200,38 @@ func TestTableAccessIndexFromMetaAttributesNormalizesFormat(t *testing.T) {
 		t.Fatalf("index format = %q, want empty for unknown legacy format", index.Format)
 	}
 }
+
+func TestShouldRecommendAccessIndexRefreshOnlyForSupportedMissingIndex(t *testing.T) {
+	req := &PreviewRequest{ItemType: "object", ScannedDepth: "deep", Attributes: map[string]interface{}{}}
+	if !shouldRecommendAccessIndexRefresh(req, format.FormatCSV, false) {
+		t.Fatal("expected CSV object preview without usable access index to recommend item refresh")
+	}
+	if shouldRecommendAccessIndexRefresh(&PreviewRequest{ItemType: "object", ScannedDepth: "basic"}, format.FormatCSV, false) {
+		t.Fatal("basic item should use the general item refresh recommendation")
+	}
+	if shouldRecommendAccessIndexRefresh(req, format.FormatParquet, false) {
+		t.Fatal("parquet should not recommend access index refresh")
+	}
+	if shouldRecommendAccessIndexRefresh(req, format.FormatCSV, true) {
+		t.Fatal("used access index should not recommend refresh")
+	}
+	withIndex := &PreviewRequest{
+		ItemType:     "object",
+		ScannedDepth: "deep",
+		Attributes: map[string]interface{}{
+			"access_index": map[string]interface{}{
+				"table": map[string]interface{}{
+					"kind":        datatype.AccessIndexKindSparseRow,
+					"unit":        datatype.AccessIndexUnitRow,
+					"offset_unit": datatype.AccessIndexOffsetByte,
+					"anchors": []interface{}{
+						map[string]interface{}{"row": 0, "byte_offset": 0},
+					},
+				},
+			},
+		},
+	}
+	if shouldRecommendAccessIndexRefresh(withIndex, format.FormatCSV, false) {
+		t.Fatal("usable access index should not recommend refresh")
+	}
+}

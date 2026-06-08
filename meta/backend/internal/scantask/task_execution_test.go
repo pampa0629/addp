@@ -57,7 +57,7 @@ func TestNewScheduledExecutionUsesTargets(t *testing.T) {
 	if exec.TriggerType != models.TriggerTypeScheduled {
 		t.Fatalf("trigger_type = %q", exec.TriggerType)
 	}
-	if exec.SourceTaskID == nil || *exec.SourceTaskID != 11 {
+	if exec.SourceTaskID == nil || *exec.SourceTaskID != "11" {
 		t.Fatalf("source_task_id = %#v", exec.SourceTaskID)
 	}
 	if got := exec.ExecutionConfig["catalog_paths"]; len(got.([]string)) != 1 {

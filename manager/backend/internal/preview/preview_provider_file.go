@@ -225,7 +225,7 @@ func (p *FileTablePreviewProvider) previewStreamable(
 	}
 	offset := (page - 1) * pageSize
 
-	object, sampleOpts, err := p.openSampleReader(ctx, contentReader, fullPath, tableInfo, opts, req, offset, pageSize)
+	object, sampleOpts, usedAccessIndex, err := p.openSampleReader(ctx, contentReader, fullPath, tableInfo, opts, req, offset, pageSize)
 	if err != nil {
 		return nil, fmt.Errorf("failed to reopen object for data: %w", err)
 	}
@@ -254,7 +254,7 @@ func (p *FileTablePreviewProvider) previewStreamable(
 	}
 	spatialContract := tablePreviewSpatialCRSContract(geometryColumns, srid, sourceCRS, sourceCRSDefinition)
 
-	return &models.TablePreview{
+	preview := &models.TablePreview{
 		Mode:                PreviewModeTable,
 		Columns:             columns,
 		Rows:                rows,
@@ -280,7 +280,15 @@ func (p *FileTablePreviewProvider) previewStreamable(
 				Kind: string(formatType),
 			},
 		},
-	}, nil
+	}
+	if shouldRecommendAccessIndexRefresh(req, formatType, usedAccessIndex) {
+		appendPreviewAdvisory(preview, &models.PreviewAdvisory{
+			Code:     "access_index_refresh_recommended",
+			Severity: "info",
+			Action:   "item_refresh",
+		})
+	}
+	return preview, nil
 }
 
 func containerChildNameMatches(child map[string]interface{}, childName string) bool {
@@ -301,12 +309,25 @@ func (p *FileTablePreviewProvider) openSampleReader(
 	req *PreviewRequest,
 	offset int,
 	pageSize int,
-) (io.ReadCloser, *format.ParseOptions, error) {
+) (io.ReadCloser, *format.ParseOptions, bool, error) {
 	if reader, sampleOpts, ok := p.openIndexedRangeReader(ctx, tableInfo, opts, req, offset, pageSize); ok {
-		return reader, sampleOpts, nil
+		return reader, sampleOpts, true, nil
 	}
 	reader, err := contentReader.Open(ctx, contentio.NewRef(fullPath, contentio.RoleMain))
-	return reader, opts, err
+	return reader, opts, false, err
+}
+
+func shouldRecommendAccessIndexRefresh(req *PreviewRequest, formatType format.FormatType, usedAccessIndex bool) bool {
+	if req == nil || usedAccessIndex || !isContentFileItemType(req.ItemType) {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(req.ScannedDepth), "deep") {
+		return false
+	}
+	if formatType == "" || formatType == format.FormatUnknown || !format.SupportsAccessIndex(formatType) {
+		return false
+	}
+	return !usableTableAccessIndex(tableAccessIndexFromMetaAttributes(req.Attributes))
 }
 
 func storageRefForPreview(req *PreviewRequest, bucket string, fullPath string) string {

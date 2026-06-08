@@ -1,6 +1,10 @@
 package models
 
-import "time"
+import (
+	"time"
+
+	commonModels "github.com/addp/common/models"
+)
 
 // TaskProvider 任务提供者（ADDP 内置模块）
 // 供 Orchestrator 查询和调用
@@ -18,8 +22,8 @@ type TaskProvider struct {
 	TaskStatusEndpoint  string `gorm:"column:task_status_endpoint;size:255" json:"task_status_endpoint"`
 	TaskCancelEndpoint  string `gorm:"column:task_cancel_endpoint;size:255" json:"task_cancel_endpoint,omitempty"`
 
-	// 能力描述（JSON 格式，含 task_types、create_task_url、edit_task_url 等）
-	Capabilities *string `gorm:"column:capabilities;type:json" json:"capabilities,omitempty"`
+	// 能力描述（JSON 格式，含 task.capabilities/v1、task_types 等）
+	Capabilities *commonModels.JSONString `gorm:"column:capabilities;type:json" json:"capabilities,omitempty"`
 
 	// 状态
 	IsEnabled bool `gorm:"column:is_enabled;default:true" json:"is_enabled"`

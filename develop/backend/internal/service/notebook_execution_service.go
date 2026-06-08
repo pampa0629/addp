@@ -77,30 +77,30 @@ type NotebookExecutionResult struct {
 	ExecutionTimeMs   int64                    `json:"execution_time_ms"` // 执行时间（毫秒）
 }
 
-// ExecuteNotebook 执行 Notebook（来自 dev_items）
+// ExecuteNotebook 执行 Notebook（来自 develop.dev_tasks）
 func (s *NotebookExecutionService) ExecuteNotebook(
 	ctx context.Context,
-	devItem *models.DevTask,
+	devTask *models.DevTask,
 	executionID string,
 	userID uint,
 ) (*NotebookExecutionResult, string, error) {
 	startTime := time.Now()
 
 	// 1. 从 content 获取 notebook_path
-	notebookPath, ok := devItem.Content["notebook_path"].(string)
+	notebookPath, ok := devTask.Content["notebook_path"].(string)
 	if !ok || notebookPath == "" {
-		return nil, "", fmt.Errorf("notebook_path not found in dev_item content")
+		return nil, "", fmt.Errorf("notebook_path not found in dev_task content")
 	}
 
 	// 获取参数（可选）
-	parameters, _ := devItem.Content["parameters"].(map[string]interface{})
+	parameters, _ := devTask.Content["parameters"].(map[string]interface{})
 	if parameters == nil {
 		parameters = make(map[string]interface{})
 	}
 
 	// 获取数据源 IDs（可选）
 	var dataSourceIDs []uint
-	if dsIDsRaw, ok := devItem.Content["data_sources"].([]interface{}); ok {
+	if dsIDsRaw, ok := devTask.Content["data_sources"].([]interface{}); ok {
 		for _, id := range dsIDsRaw {
 			if idFloat, ok := id.(float64); ok {
 				dataSourceIDs = append(dataSourceIDs, uint(idFloat))
@@ -109,13 +109,13 @@ func (s *NotebookExecutionService) ExecuteNotebook(
 	}
 
 	// 获取 kernel（默认 python3）
-	kernel, _ := devItem.Content["kernel"].(string)
+	kernel, _ := devTask.Content["kernel"].(string)
 	if kernel == "" {
 		kernel = "python3"
 	}
 
 	logger.L().Info("开始执行 Notebook",
-		"dev_item_id", devItem.ID,
+		"source_task_id", devTask.ID,
 		"execution_id", executionID,
 		"notebook_path", notebookPath,
 		"data_sources_count", len(dataSourceIDs))
@@ -143,13 +143,13 @@ func (s *NotebookExecutionService) ExecuteNotebook(
 	// 4. 调用 Jupyter Engine API 执行（使用新架构：直接传递 tenant_id + notebook_path）
 	// 注意：这里调用的是新的 Jupyter Engine API (/api/execute)
 	// 它接受 tenant_id 和 notebook_path，会自动从 MinIO 下载和上传
-	timeout := devItem.Timeout
+	timeout := devTask.Timeout
 	if timeout <= 0 {
 		timeout = 600 // 默认 10 分钟
 	}
 
 	// 调用新的 Jupyter Engine API
-	execResp, err := s.callJupyterEngineAPI(ctx, devItem.TenantID, notebookPath, enrichedParams, kernel, timeout)
+	execResp, err := s.callJupyterEngineAPI(ctx, devTask.TenantID, notebookPath, enrichedParams, kernel, timeout)
 	if err != nil {
 		executionTime := time.Since(startTime).Milliseconds()
 		return &NotebookExecutionResult{
@@ -279,7 +279,7 @@ func (s *NotebookExecutionService) GenerateTempPath(tenantID uint, userID uint, 
 	return fmt.Sprintf("tenant_%d/temp/exec_%s_%s.ipynb", tenantID, executionID, suffix)
 }
 
-// ToMap 将执行结果转换为 map（用于保存到 dev_executions.result）
+// ToMap 将执行结果转换为 map（用于写入统一执行记录的结果摘要）
 func (r *NotebookExecutionResult) ToMap() map[string]interface{} {
 	data, _ := json.Marshal(r)
 	var result map[string]interface{}

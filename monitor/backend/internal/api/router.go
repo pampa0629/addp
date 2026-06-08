@@ -5,12 +5,12 @@ import (
 
 	commonAuth "github.com/addp/common/middleware/auth"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
+	_ "github.com/addp/monitor/docs"
 	"github.com/addp/monitor/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
-	_ "github.com/addp/monitor/docs"
 )
 
 // SetupRouter 设置路由
@@ -62,13 +62,16 @@ func SetupRouter(
 	{
 		// 执行记录查询
 		api.GET("/executions", executionHandler.ListExecutions)
-		api.GET("/executions/:id", executionHandler.GetExecution)
 
 		// 统计数据
 		api.GET("/executions/stats", statisticsHandler.GetStatistics)
 		api.GET("/executions/trend", statisticsHandler.GetTrendData)
 
+		api.GET("/executions/:id/tree", executionHandler.GetExecutionTree)
+		api.GET("/executions/:id", executionHandler.GetExecution)
+
 		// 模块健康检查
+		api.GET("/task-providers", healthHandler.GetTaskProviders)
 		api.GET("/modules", healthHandler.GetModules)
 		api.GET("/modules/:module/health", healthHandler.CheckModuleHealth)
 		api.GET("/modules/health/all", healthHandler.CheckAllModules)

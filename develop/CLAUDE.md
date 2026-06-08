@@ -47,6 +47,10 @@ Develop 模块聚合了所有**计算引擎**的算子定义（用于工作流�
 
 **注意**：Meta、Transfer、Manager 模块提供的是**任务**（Tasks），不是算子，它们主要用于 Orchestrator 工作流编排。
 
+### TaskProvider 边界
+
+Develop 作为一个 TaskProvider 注册到 System，声明 `query`、`workflow`、`script` 三种任务类型。算子工作流必须先在 Develop 中保存为 `dev_tasks.dev_type=workflow` 的任务定义，再以 `provider=develop, task_type=workflow, task_id=...` 被 Orchestrator 引用。Notebook 是 `script` 任务的当前实现形态和 UI 入口，不作为独立 `task_type`。当前 Develop 暂不对 TaskProvider 声明定时能力；`schedule` 字段保留在任务定义内，但没有 owner scheduler 时不得对外暴露 `supports_schedule=true`。
+
 ## 数据库文档
 
 **遇到以下场景时,主动阅读对应文档**:
@@ -56,8 +60,8 @@ Develop 模块聚合了所有**计算引擎**的算子定义（用于工作流�
 | 数据库表结构查询 | 对应单表文档 | 字段定义、索引、约束 |
 | 表之间关系 | 数据库架构.md | 外键、关联、数据流 |
 | API端点详情 | 对应单表文档 | API、接口、请求响应 |
-| 执行记录管理 | dev_executions表 | 执行状态、历史记录、性能监控 |
-| 开发项管理 | dev_items表 | SQL查询、工作流、Notebook |
+| 执行记录管理 | `common.task_executions` | 执行状态、历史记录、性能监控 |
+| 开发任务管理 | dev_tasks表 | SQL查询、工作流、Notebook |
 
 ### 架构说明
 - [数据库架构](frontend/docs/数据库架构.md) - 表关系、数据流向、设计决策
@@ -66,8 +70,8 @@ Develop 模块聚合了所有**计算引擎**的算子定义（用于工作流�
 
 详细的表结构和API说明文档：
 
-- [dev_items表](frontend/docs/tables/dev_items表.md) - 开发项定义表,支持 query/workflow/notebook
-- [dev_executions表](frontend/docs/tables/dev_executions表.md) - 旧执行记录文档；当前执行记录已迁移到 `common.task_executions`
+- [dev_tasks表](frontend/docs/tables/dev_tasks表.md) - 开发任务定义表,支持 query/workflow/script
+- [dev_executions表](frontend/docs/tables/dev_executions表.md) - 旧执行记录表废止说明；当前执行记录已迁移到 `common.task_executions`
 
 **重要**：修改表结构或API时，必须同步更新对应的单表文档。
 
@@ -80,7 +84,7 @@ Develop 模块聚合了所有**计算引擎**的算子定义（用于工作流�
 - [workflow_engine_service.go](backend/internal/service/workflow_engine_service.go) - GIS 工作流执行服务
 - [jupyter_service.go](backend/internal/service/jupyter_service.go) - Jupyter Notebook 服务
 - [operator_discovery_service.go](backend/internal/service/operator_discovery_service.go) - **算子发现服务**（聚合所有引擎算子）
-- [dev_item_service.go](backend/internal/service/dev_item_service.go) - 工作项（SQL/工作流）管理服务
+- [dev_task_service.go](backend/internal/service/dev_task_service.go) - 工作项（SQL/工作流）管理服务
 
 ### API 路由文件
 
@@ -133,7 +137,7 @@ curl -H "Authorization: Bearer <token>" \
   http://localhost:8185/api/v1/develop/operators
 
 # 2. 创建工作流（JSON 定义）
-curl -X POST http://localhost:8185/api/v1/develop/items \
+curl -X POST http://localhost:8185/api/v1/develop/task-definitions \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -149,7 +153,7 @@ curl -X POST http://localhost:8185/api/v1/develop/items \
   }'
 
 # 3. 执行工作流
-curl -X POST http://localhost:8185/api/v1/develop/items/123/execute \
+curl -X POST http://localhost:8185/api/v1/develop/task-definitions/123/execute \
   -H "Authorization: Bearer <token>" \
   -d '{"input_data": "public.cities"}'
 ```

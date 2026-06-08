@@ -111,8 +111,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import { useLangStore } from '../store/lang'
 import { ElMessage } from 'element-plus'
@@ -132,6 +132,7 @@ import PortalIframe from '../components/portal/PortalIframe.vue'
 import ApiDocs from './ApiDocs.vue'
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 const langStore = useLangStore()
 const { t } = useI18n()
@@ -273,27 +274,32 @@ const handleGroupClick = (group) => {
 }
 
 const handleLogoClick = () => {
-  activeGroup.value = null
-  currentModule.value = 'home'
-  iframeUrl.value = ''
-  activeMenu.value = '/'
+  router.push('/')
 }
 
 const handleMenuSelect = (index) => {
-  activeMenu.value = index
   if (!index || typeof index !== 'string' || index === '/') {
-    currentModule.value = 'home'
-    iframeUrl.value = ''
+    router.push('/')
     return
   }
-  const parts = index.split('/').filter(Boolean)
+  router.push(index)
+}
+
+function syncRouteToPortal(fullPath) {
+  const [pathPart, queryPart] = String(fullPath || '/').split('?')
+  activeMenu.value = pathPart || '/'
+
+  const parts = pathPart.split('/').filter(Boolean)
   if (parts.length === 0) {
+    activeGroup.value = null
+    sidebarModules.value = []
     currentModule.value = 'home'
     iframeUrl.value = ''
     return
   }
   const module = parts[0]
-  const page = parts[1] || ''
+  const pagePath = parts.slice(1).join('/')
+  const page = queryPart ? `${pagePath}?${queryPart}` : pagePath
   currentModule.value = module
 
   // 同步 activeGroup 和 sidebarModules（搜索/最近访问跳转时也需要）
@@ -311,8 +317,14 @@ const handleMenuSelect = (index) => {
   }
 
   // 记录最近访问
-  recordRecentVisit(module, page)
+  recordRecentVisit(module, pagePath)
 }
+
+watch(
+  () => route.fullPath,
+  (fullPath) => syncRouteToPortal(fullPath),
+  { immediate: true }
+)
 
 const RECENT_KEY = 'addp_recent_visits'
 function recordRecentVisit(module, page) {
@@ -343,7 +355,7 @@ const navigateToModule = async (module) => {
   }
   const route = DEFAULT_ROUTES[module]
   if (route) {
-    handleMenuSelect(route)
+    await router.push(route)
   }
   await nextTick()
   if (sidebarRef.value && group) {

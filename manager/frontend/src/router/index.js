@@ -36,6 +36,12 @@ const routes = [
         meta: { requiresAuth: true, title: '向量化任务-addp' }
       },
       {
+        path: 'mvt-tasks',
+        name: 'MvtTasks',
+        component: () => import('../views/MvtTasks.vue'),
+        meta: { requiresAuth: true, title: 'MVT任务-addp' }
+      },
+      {
         path: 'spatial-preview',
         name: 'SpatialPreview',
         component: () => import('../views/SpatialPreview.vue'),

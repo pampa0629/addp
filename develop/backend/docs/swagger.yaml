@@ -179,7 +179,6 @@ definitions:
         - query
         - workflow
         - script
-        - notebook
         type: string
       display_name:
         type: string
@@ -207,14 +206,11 @@ definitions:
         additionalProperties: true
         description: 执行内容（对于临时执行）
         type: object
-      dev_item_id:
-        type: integer
       dev_type:
         enum:
         - query
         - workflow
         - script
-        - notebook
         type: string
       engine_id:
         type: integer
@@ -244,7 +240,7 @@ definitions:
         description: 元数据
         type: string
       dev_type:
-        description: '''query'' | ''workflow'' | ''notebook'''
+        description: '''query'' | ''workflow'' | ''script'''
         type: string
       display_name:
         type: string
@@ -308,7 +304,7 @@ definitions:
       total_rows_affected:
         type: integer
     type: object
-  github_com_addp_develop_backend_internal_models.ExecutionWithDevItem:
+  github_com_addp_develop_backend_internal_models.ExecutionWithDevTask:
     properties:
       bytes_read:
         description: Transfer 读取字节数
@@ -323,7 +319,7 @@ definitions:
       current_step:
         description: 当前步骤（Orchestrator/Workflow）
         type: string
-      dev_item:
+      dev_task:
         $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTask'
       error_details:
         allOf:
@@ -368,7 +364,7 @@ definitions:
         type: string
       source_task_id:
         description: 关联原始任务
-        type: integer
+        type: string
       source_task_name:
         description: 任务名称（冗余，便于查询）
         type: string
@@ -379,7 +375,7 @@ definitions:
         description: 执行状态
         type: string
       task_type:
-        description: '''import''/''export''/''sync''/''query''/''workflow''/''notebook''/''orchestration''/''mvt_generation''/''embedding'''
+        description: provider 声明的稳定任务类型
         type: string
       tenant_id:
         type: integer
@@ -409,13 +405,75 @@ definitions:
     properties:
       executions:
         items:
-          $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ExecutionWithDevItem'
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ExecutionWithDevTask'
         type: array
       page:
         type: integer
       page_size:
         type: integer
       total:
+        type: integer
+    type: object
+  github_com_addp_develop_backend_internal_models.ListProviderDevTasksResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ProviderDevTask'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+    type: object
+  github_com_addp_develop_backend_internal_models.ProviderDevTask:
+    properties:
+      content:
+        $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskContent'
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      description:
+        type: string
+      display_name:
+        type: string
+      enabled:
+        type: boolean
+      execution_config:
+        $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskContent'
+      id:
+        type: integer
+      last_execution_id:
+        type: string
+      last_execution_status:
+        type: string
+      last_run_at:
+        type: string
+      name:
+        type: string
+      next_run_at:
+        type: string
+      parameters:
+        $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskContent'
+      schedule:
+        type: string
+      status:
+        type: string
+      tags:
+        items:
+          type: string
+        type: array
+      task_type:
+        type: string
+      tenant_id:
+        type: integer
+      timeout:
+        type: integer
+      updated_at:
+        type: string
+      updated_by:
         type: integer
     type: object
   github_com_addp_develop_backend_internal_models.UpdateDevTaskRequest:
@@ -668,6 +726,18 @@ definitions:
     - engine_id
     - name
     - query
+    type: object
+  internal_api.providerExecuteDevRequest:
+    properties:
+      parameters:
+        additionalProperties: true
+        type: object
+      parent_execution_id:
+        type: string
+      source:
+        type: string
+      trigger_type:
+        type: string
     type: object
   models.ConnectionInfo:
     additionalProperties: true
@@ -982,10 +1052,10 @@ paths:
         in: query
         name: page_size
         type: integer
-      - description: 开发项ID过滤 | Filter by development item ID
+      - description: 任务定义 ID 过滤 | Filter by source task ID
         in: query
-        name: dev_item_id
-        type: integer
+        name: source_task_id
+        type: string
       - description: 类型过滤 | Filter by type
         in: query
         name: dev_type
@@ -1052,26 +1122,8 @@ paths:
         "200":
           description: 执行详情 | Execution details
           schema:
-            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ExecutionWithDevItem'
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ExecutionWithDevTask'
       summary: 获取执行详情 | Get execution details
-      tags:
-      - Execution
-  /executions/{id}/cancel:
-    post:
-      parameters:
-      - description: 执行ID（UUID）| Execution ID (UUID)
-        in: path
-        name: id
-        required: true
-        type: string
-      responses:
-        "200":
-          description: 取消成功 | Cancelled successfully
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: 取消执行 | Cancel execution
       tags:
       - Execution
   /executions/{id}/logs:
@@ -1114,10 +1166,10 @@ paths:
   /executions/statistics:
     get:
       parameters:
-      - description: 开发项ID | Development item ID
+      - description: 任务定义 ID | Source task ID
         in: query
-        name: dev_item_id
-        type: integer
+        name: source_task_id
+        type: string
       - description: 开始日期 YYYY-MM-DD | Start date YYYY-MM-DD
         in: query
         name: start_date
@@ -1136,199 +1188,6 @@ paths:
       summary: 获取执行统计 | Get execution statistics
       tags:
       - Execution
-  /items:
-    get:
-      parameters:
-      - description: 页码 | Page number
-        in: query
-        name: page
-        type: integer
-      - description: 每页数量 | Page size
-        in: query
-        name: page_size
-        type: integer
-      - description: 类型过滤 | Filter by type
-        in: query
-        name: dev_type
-        type: string
-      - description: 状态过滤 | Filter by status
-        in: query
-        name: status
-        type: string
-      - description: 资源ID过滤 | Filter by engine ID
-        in: query
-        name: engine_id
-        type: integer
-      - description: 标签过滤 | Filter by tag
-        in: query
-        name: tag
-        type: string
-      - description: 关键词搜索 | Keyword search
-        in: query
-        name: keyword
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 开发项列表 | Development item list
-          schema:
-            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ListDevTasksResponse'
-      summary: 查询开发项列表 | List development items
-      tags:
-      - DevItem
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: 创建请求 | Create request
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_addp_develop_backend_internal_models.CreateDevTaskRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 已创建的开发项 | Created development item
-          schema:
-            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTask'
-      summary: 创建开发项 | Create development item
-      tags:
-      - DevItem
-  /items/{id}:
-    delete:
-      parameters:
-      - description: 开发项ID | Development item ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      responses:
-        "200":
-          description: 删除成功 | Deleted successfully
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: 删除开发项 | Delete development item
-      tags:
-      - DevItem
-    get:
-      parameters:
-      - description: 开发项ID | Development item ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 开发项详情 | Development item details
-          schema:
-            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTask'
-      summary: 获取开发项详情 | Get development item details
-      tags:
-      - DevItem
-    put:
-      consumes:
-      - application/json
-      parameters:
-      - description: 开发项ID | Development item ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: 更新请求 | Update request
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_addp_develop_backend_internal_models.UpdateDevTaskRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 已更新的开发项 | Updated development item
-          schema:
-            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTask'
-      summary: 更新开发项 | Update development item
-      tags:
-      - DevItem
-  /items/{id}/execute:
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: 开发项ID | Development item ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: 执行参数 | Execution parameters
-        in: body
-        name: body
-        schema:
-          additionalProperties: true
-          type: object
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 执行已启动 | Execution started
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: 执行开发项 | Execute development item
-      tags:
-      - DevItem
-  /items/{id}/execute-with-params:
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: 开发项ID | Development item ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: 执行参数 | Execution parameters
-        in: body
-        name: body
-        required: true
-        schema:
-          additionalProperties: true
-          type: object
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 执行已启动 | Execution started
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: 参数化执行开发项 | Execute development item with parameters
-      tags:
-      - Execution
-  /items/statistics:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 统计数据 | Statistics
-          schema:
-            additionalProperties:
-              format: int64
-              type: integer
-            type: object
-      summary: 获取开发项统计 | Get development item statistics
-      tags:
-      - DevItem
   /jupyter/instance/start:
     post:
       produces:
@@ -1573,7 +1432,7 @@ paths:
   /notebooks/:id:
     delete:
       parameters:
-      - description: DevItem ID | DevItem ID
+      - description: DevTask ID | DevTask ID
         in: path
         name: id
         required: true
@@ -1591,7 +1450,7 @@ paths:
   /notebooks/:id/download:
     get:
       parameters:
-      - description: DevItem ID | DevItem ID
+      - description: DevTask ID | DevTask ID
         in: path
         name: id
         required: true
@@ -1931,13 +1790,178 @@ paths:
       summary: 获取所有 Apache Spark 运行时列表 | List all Apache Spark runtimes
       tags:
       - Engines
-  /tasks/list:
+  /task-definitions:
     get:
-      description: 返回可供 Orchestrator 编排复用的开发任务 | List active develop tasks for Orchestrator
       parameters:
-      - description: 任务提供者唯一标识 | Task provider identifier
+      - description: 页码 | Page number
         in: query
-        name: unique_identifier
+        name: page
+        type: integer
+      - description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
+      - description: 类型过滤 | Filter by type
+        in: query
+        name: dev_type
+        type: string
+      - description: 状态过滤 | Filter by status
+        in: query
+        name: status
+        type: string
+      - description: 资源ID过滤 | Filter by engine ID
+        in: query
+        name: engine_id
+        type: integer
+      - description: 标签过滤 | Filter by tag
+        in: query
+        name: tag
+        type: string
+      - description: 关键词搜索 | Keyword search
+        in: query
+        name: keyword
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 开发任务列表 | Development task list
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ListDevTasksResponse'
+      summary: 查询开发任务列表 | List development tasks
+      tags:
+      - DevTask
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 创建请求 | Create request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_models.CreateDevTaskRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 已创建的开发任务 | Created development task
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTask'
+      summary: 创建开发任务 | Create development task
+      tags:
+      - DevTask
+  /task-definitions/{id}:
+    delete:
+      parameters:
+      - description: 开发任务ID | Development task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: 删除成功 | Deleted successfully
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 删除开发任务 | Delete development task
+      tags:
+      - DevTask
+    get:
+      parameters:
+      - description: 开发任务ID | Development task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 开发任务详情 | Development task details
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTask'
+      summary: 获取开发任务详情 | Get development task details
+      tags:
+      - DevTask
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 开发任务 ID | Development task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 更新请求 | Update request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_models.UpdateDevTaskRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 已更新的开发任务 | Updated development task
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTask'
+      summary: 更新开发任务 | Update development task
+      tags:
+      - DevTask
+  /task-definitions/{id}/execute:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 开发任务ID | Development task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 执行参数 | Execution parameters
+        in: body
+        name: body
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 执行已启动 | Execution started
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 执行开发任务 | Execute development task
+      tags:
+      - DevTask
+  /task-definitions/statistics:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 统计数据 | Statistics
+          schema:
+            additionalProperties:
+              format: int64
+              type: integer
+            type: object
+      summary: 获取开发任务统计 | Get development task statistics
+      tags:
+      - DevTask
+  /tasks:
+    get:
+      description: 返回可供 TaskProvider 编排复用的开发任务 | List active develop tasks exposed
+        by TaskProvider
+      parameters:
+      - description: '任务类型：query/workflow/script | Task type: query/workflow/script'
+        in: query
+        name: task_type
         type: string
       - default: 1
         description: 页码 | Page
@@ -1955,8 +1979,7 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ListProviderDevTasksResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -1967,6 +1990,88 @@ paths:
       summary: 列出可编排任务 | List orchestratable tasks
       tags:
       - Develop
+  /tasks/{task_type}/{id}:
+    get:
+      description: 按标准 TaskProvider 路径获取开发任务详情；task_type 支持 query/workflow/script。|
+        Get development task detail through the standard TaskProvider path; task_type
+        supports query/workflow/script.
+      parameters:
+      - description: '任务类型：query/workflow/script | Task type: query/workflow/script'
+        in: path
+        name: task_type
+        required: true
+        type: string
+      - description: 开发任务ID | Development task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 开发任务详情 | Development task detail
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ProviderDevTask'
+        "400":
+          description: 参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 任务不存在 | Task not found
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 获取 TaskProvider 开发任务详情 | Get TaskProvider development task detail
+      tags:
+      - DevTask
+  /tasks/{task_type}/{id}/execute:
+    post:
+      consumes:
+      - application/json
+      description: 按标准 TaskProvider 协议执行开发任务；task_type 支持 query/workflow/script，parameters
+        会传入本次执行。| Execute a development task through the standard TaskProvider protocol;
+        task_type supports query/workflow/script and parameters are passed to this
+        execution.
+      parameters:
+      - description: '任务类型：query/workflow/script | Task type: query/workflow/script'
+        in: path
+        name: task_type
+        required: true
+        type: string
+      - description: 开发任务ID | Development task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: TaskProvider 执行请求 | TaskProvider execution request
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/internal_api.providerExecuteDevRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 执行已启动 | Execution started
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: 参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器错误 | Server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 执行 TaskProvider 开发任务 | Execute TaskProvider development task
+      tags:
+      - Execution
   /test/{id}:
     get:
       consumes:

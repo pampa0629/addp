@@ -10,7 +10,7 @@ Transfer 执行记录统一存储在 `common.task_executions`。Transfer API 会
 |---|---|
 | `module` | 固定为 `transfer`。 |
 | `source` | 默认 `transfer`。如果未来由 Manager 或其他模块直接触发 Transfer execution，应写触发模块。 |
-| `source_task_id` | 对应 `transfer.transfer_tasks.id`。 |
+| `source_task_id` | 对应 `transfer.transfer_tasks.id`，按十进制字符串软引用写入。 |
 | `tenant_id` | 租户隔离字段。 |
 | `status` | `pending`、`running`、`success`、`failed`。 |
 | `trigger_type` | `manual` / `scheduled`。只表达手动或定时触发，不表达来源模块、API 通道或重试场景。 |
@@ -116,4 +116,4 @@ Transfer 当前恢复能力分三档：
 | `POST` | `/executions/:id/retry` | 按 restartable 语义重试失败执行。 |
 | `GET` | `/executions/:id/progress` | 查询执行进度。 |
 | `GET` | `/executions/:id/logs` | 查询执行日志。 |
-| `GET` | `/tasks/:id/executions` | 查询某个任务的执行记录。 |
+| `GET` | `/task-definitions/:id/executions` | 查询某个任务的执行记录。 |

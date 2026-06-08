@@ -94,12 +94,10 @@ func SetupRouter(
 		// GET    /api/manager/tasks/:task_type/:id        → 任务详情
 		// POST   /api/manager/tasks/:task_type/:id/execute → 触发执行
 		// GET    /api/manager/executions/:execution_id    → 执行状态
-		// POST   /api/manager/executions/:execution_id/cancel → 取消
 		api.GET("/tasks", taskProviderHandler.ListTasks)
 		api.GET("/tasks/:task_type/:id", taskProviderHandler.TaskDetail)
 		api.POST("/tasks/:task_type/:id/execute", taskProviderHandler.TaskExecute)
 		api.GET("/executions/:execution_id", taskProviderHandler.ExecutionStatus)
-		api.POST("/executions/:execution_id/cancel", taskProviderHandler.ExecutionCancel)
 
 		// MvtTask CRUD
 		mvtTasksGroup := api.Group("/mvt_tasks")

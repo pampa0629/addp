@@ -33,7 +33,7 @@ CREATE TABLE graph.build_tasks (
     execution_id         VARCHAR(64),      -- 关联 common.task_executions.execution_id
     name                 VARCHAR(255) NOT NULL,
     description          TEXT,
-    status               VARCHAR(50)  NOT NULL DEFAULT 'pending',  -- pending/running/completed/failed/cancelled
+    status               VARCHAR(50)  NOT NULL DEFAULT 'pending',  -- pending/running/success/failed/cancelled
     confidence_threshold DECIMAL(3,2) NOT NULL DEFAULT 0.70,
     chunk_size           INTEGER NOT NULL DEFAULT 1000,  -- 每个 chunk 的字符数
     chunk_overlap        INTEGER NOT NULL DEFAULT 200,   -- 相邻 chunk 的重叠字符数
@@ -130,7 +130,7 @@ execution := &commonExecution.TaskExecution{
     ExecutionID:    executionID,
     Module:         commonExecution.ModuleGraph,
     TaskType:       commonExecution.TaskTypeKGBuild,
-    SourceTaskID:   &buildTask.ID,
+    SourceTaskID:   commonExecution.NewSourceTaskIDFromUint(buildTask.ID),
     SourceTaskName: &buildTask.Name,
     Status:         commonExecution.ExecutionStatusPending,
     Progress:       0,
@@ -681,7 +681,7 @@ if existing, seen := s.seenEntities[key]; seen {
 ### 页面设计要点
 
 **BuildManager.vue**：
-- 任务卡片列表，显示 status tag（pending/running/completed/failed）+ 进度条
+- 任务卡片列表，显示 status tag（pending/running/success/failed）+ 进度条
 - 统计：已写入 / 待审核 / 已通过 / 已拒绝
 - 创建任务 Dialog（name, confidence_threshold 滑块 0.0-1.0）
 - 点击卡片跳转 BuildTaskDetail；有 `execution_id` 时可链接跳 Monitor 页面

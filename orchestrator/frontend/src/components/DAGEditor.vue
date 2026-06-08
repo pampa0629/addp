@@ -45,7 +45,6 @@
 
         <el-form-item :label="t('orchestrator.dagEditor.executionModeLabel')">
           <el-tag v-if="currentNode.provider" type="success">{{ t('orchestrator.dagEditor.modeTaskRef') }}</el-tag>
-          <el-tag v-else-if="currentNode.engineIdentifier" type="primary">{{ t('orchestrator.dagEditor.modeEngineCall') }}</el-tag>
           <el-tag v-else type="info">{{ t('orchestrator.dagEditor.modeNotConfigured') }}</el-tag>
         </el-form-item>
 
@@ -58,12 +57,6 @@
           </el-form-item>
           <el-form-item :label="t('orchestrator.dagEditor.taskIdLabel')">
             <el-input :model-value="String(currentNode.taskId || '')" disabled></el-input>
-          </el-form-item>
-        </template>
-
-        <template v-else-if="currentNode.engineIdentifier !== undefined">
-          <el-form-item :label="t('orchestrator.dagEditor.engineIdentifierLabel')">
-            <el-input v-model="currentNode.engineIdentifier" :placeholder="t('orchestrator.dagEditor.engineIdentifierPlaceholder')"></el-input>
           </el-form-item>
         </template>
 
@@ -192,7 +185,7 @@ function saveNodeConfig() {
     currentNode.value.parameters = params
 
     graph.value.updateItem(currentNode.value.id, {
-      label: currentNode.value.name || currentNode.value.provider || currentNode.value.engineIdentifier,
+      label: currentNode.value.name || currentNode.value.provider || currentNode.value.id,
       ...currentNode.value
     })
 
@@ -248,7 +241,7 @@ function handleDrop(event) {
       y = height / 2 + Math.random() * 200 - 100
     }
 
-    const colorKey = nodeData.provider || nodeData.engineIdentifier || 'unknown'
+    const colorKey = nodeData.provider || 'unknown'
     const color = generateColor(colorKey)
     const id = `${colorKey}-${Date.now()}`
 
@@ -259,7 +252,6 @@ function handleDrop(event) {
       provider: nodeData.provider || null,
       taskType: nodeData.taskType || null,
       taskId: nodeData.taskId || null,
-      engineIdentifier: nodeData.engineIdentifier || null,
       parameters: nodeData.parameters || {},
       timeout: 300,
       x,
@@ -294,18 +286,13 @@ function convertToSteps(graphData) {
   graphData.nodes.forEach(node => {
     const step = {
       id: node.id,
-      name: node.label || node.provider || node.engineIdentifier || node.id,
+      name: node.label || node.provider || node.id,
+      provider: node.provider || null,
+      task_type: node.taskType || null,
+      task_id: node.taskId || null,
       parameters: node.parameters || {},
       depends_on: [],
       timeout: node.timeout || 300
-    }
-
-    if (node.provider) {
-      step.provider = node.provider
-      step.task_type = node.taskType
-      step.task_id = node.taskId
-    } else if (node.engineIdentifier) {
-      step.engine_identifier = node.engineIdentifier
     }
 
     nodeMap.set(node.id, step)
@@ -328,7 +315,7 @@ function loadSteps(steps) {
   const edges = []
 
   steps.forEach((step) => {
-    const colorKey = step.provider || step.engine_identifier || 'unknown'
+    const colorKey = step.provider || 'unknown'
     const color = generateColor(colorKey)
 
     nodes.push({
@@ -338,7 +325,6 @@ function loadSteps(steps) {
       provider: step.provider || null,
       taskType: step.task_type || null,
       taskId: step.task_id || null,
-      engineIdentifier: step.engine_identifier || null,
       parameters: step.parameters,
       timeout: step.timeout,
       style: {

@@ -200,13 +200,13 @@ function stopPolling() {
 }
 
 function statusTagType(s) {
-  return { pending: 'info', running: 'warning', completed: 'success', failed: 'danger', cancelled: '' }[s] || 'info'
+  return { pending: 'info', running: 'warning', success: 'success', failed: 'danger', cancelled: '' }[s] || 'info'
 }
 function statusLabel(s) {
   return {
     pending: t('graph.build.statusPending'),
     running: t('graph.build.statusRunning'),
-    completed: t('graph.build.statusCompleted'),
+    success: t('graph.build.statusSuccess'),
     failed: t('graph.build.statusFailed'),
     cancelled: t('graph.build.statusCancelled')
   }[s] || s

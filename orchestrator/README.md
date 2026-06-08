@@ -1,6 +1,6 @@
 # Orchestrator 工作流编排模块
 
-> 全域数据平台的工作流编排中枢，支持 DAG 编排、动态引擎调用和定时调度
+> 全域数据平台的工作流编排中枢，支持 DAG 编排、跨模块任务调用和定时调度
 
 ## 📖 文档说明
 
@@ -10,7 +10,7 @@
 ## 🎯 核心功能
 
 - **DAG 工作流编排**: 有向无环图任务编排，支持复杂的任务依赖关系
-- **动态引擎调用**: 从 System 模块动态加载计算引擎，无需硬编码
+- **动态任务调用**: 从 System 模块动态加载 TaskProvider，无需硬编码模块 URL
 - **参数模板化**: 支持 `{{stepID.field}}` 语法实现步骤间数据传递
 - **定时调度**: 基于 Cron 表达式的自动工作流触发
 - **执行追踪**: 详细记录每次执行的步骤结果、错误和耗时
@@ -64,13 +64,13 @@ Executor 解析 DAG → 拓扑排序
 记录执行结果 (成功/失败/超时)
 ```
 
-## 🔗 动态引擎支持
+## 🔗 动态任务提供者支持
 
-Orchestrator 通过 System 模块的能力注册中心实现：
+Orchestrator 通过 System 模块的 TaskProvider 注册表实现：
 
-- **无代码扩展**: 新增计算引擎只需在 System 注册，无需修改 Orchestrator
-- **统一接口**: 所有引擎通过统一的 TaskClient 调用
-- **灵活配置**: API 配置支持 Go template 语法
+- **无代码扩展**: 新增任务类型由 owner 模块注册 TaskProvider capabilities，无需修改 Orchestrator
+- **统一接口**: 所有任务提供者通过统一 TaskProvider endpoint 调用
+- **清晰边界**: Orchestrator 引用任务定义，不拥有业务任务定义
 
 ## 🐛 常见问题
 
@@ -83,9 +83,9 @@ Orchestrator 通过 System 模块的能力注册中心实现：
 ✅ 正确: {"id": "A", "depends_on": []}, {"id": "B", "depends_on": ["A"]}
 ```
 
-### 引擎配置缓存？
+### 任务提供者配置缓存？
 
-EngineRegistry 缓存引擎配置 5 分钟。修改 System 引擎配置后，可重启 Orchestrator 立即生效：
+TaskProviderRegistry 缓存任务提供者配置 5 分钟。修改模块 TaskProvider 注册信息后，可重启 Orchestrator 立即生效：
 
 ```bash
 bash scripts/dev/restart.sh -orchestrator

@@ -280,7 +280,7 @@ def get_execution_status(execution_id):
         {
             "status": "success",
             "execution_id": "uuid-1234",
-            "task_status": "completed",
+            "task_status": "success",
             "result": null,
             "message": "当前版本所有任务同步执行，请直接使用执行接口的响应结果"
         }
@@ -288,7 +288,7 @@ def get_execution_status(execution_id):
     return jsonify({
         "status": "success",
         "execution_id": execution_id,
-        "task_status": "completed",
+        "task_status": "success",
         "result": None,
         "message": "当前版本所有任务同步执行，请直接使用执行接口的响应结果"
     }), 200

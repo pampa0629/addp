@@ -267,7 +267,7 @@ GET /api/executions/uuid-1234-5678
 {
   "status": "success",
   "execution_id": "uuid-1234-5678",
-  "task_status": "completed",
+  "task_status": "success",
   "result": 60,
   "progress": 100,
   "message": "执行完成"

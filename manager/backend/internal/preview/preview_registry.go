@@ -30,6 +30,7 @@ type PreviewRequest struct {
 	TenantID        *uint
 	ItemType        string                   // 数据项类型（如 "table"），用于预览路由
 	ItemRowCount    *int64                   // 表/集合行数，来自 MetaItem.RowCount
+	ScannedDepth    string                   // Meta item/node 当前扫描深度
 	NodeType        string                   // 节点类型（来自 locator type 参数，如 "prefix"/"object"/"bucket"）
 	ProviderPath    plugin.CatalogPath       // provider 调用使用的显式 root CatalogPath
 	PhysicalPath    string                   // 物理路径（来自 meta_item.attributes.storage.physical_path），单文件表直接读取

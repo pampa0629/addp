@@ -10,6 +10,11 @@ export function getExecution(id) {
   return client.get(`/monitor/executions/${id}`)
 }
 
+// 获取执行记录树
+export function getExecutionTree(id) {
+  return client.get(`/monitor/executions/${id}/tree`)
+}
+
 // 获取统计数据
 export function getStatistics(params) {
   return client.get('/monitor/executions/stats', { params })
@@ -33,4 +38,9 @@ export function checkModuleHealth(module) {
 // 检查所有模块健康状态
 export function checkAllModules() {
   return client.get('/monitor/modules/health/all')
+}
+
+// 获取所有任务提供者
+export function listTaskProviders() {
+  return client.get('/monitor/task-providers')
 }

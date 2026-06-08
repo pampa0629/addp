@@ -33,7 +33,7 @@
         >
           <el-option :label="t('develop.taskManagement.typeQuery')" value="query" />
           <el-option :label="t('develop.taskManagement.typeWorkflow')" value="workflow" />
-          <el-option :label="t('develop.taskManagement.typeNotebook')" value="notebook" />
+          <el-option :label="t('develop.taskManagement.typeScript')" value="script" />
         </el-select>
         <el-select
           v-model="filters.status"
@@ -168,7 +168,7 @@
           <el-select v-model="formData.dev_type" style="width: 100%;">
             <el-option :label="t('develop.taskManagement.typeQuery')" value="query" />
             <el-option :label="t('develop.taskManagement.typeWorkflow')" value="workflow" />
-            <el-option :label="t('develop.taskManagement.typeNotebook')" value="notebook" />
+            <el-option :label="t('develop.taskManagement.typeScript')" value="script" />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('develop.taskManagement.fieldResource')">
@@ -268,7 +268,7 @@
 
 <script setup>
 import { ref, reactive, onMounted, watch, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -281,16 +281,18 @@ import {
   Delete
 } from '@element-plus/icons-vue'
 import {
-  listDevItems,
-  createDevItem,
-  updateDevItem,
-  deleteDevItem,
-  executeDevItem,
+  listDevTasks,
+  createDevTask,
+  updateDevTask,
+  deleteDevTask,
+  executeDevTask,
   listEngines
-} from '@/api/devItem'
+} from '@/api/devTask'
 
 const router = useRouter()
+const route = useRoute()
 const { t } = useI18n()
+const supportedDevTypes = ['query', 'workflow', 'script']
 
 // 状态管理
 const loading = ref(false)
@@ -346,7 +348,7 @@ const loadTasks = async () => {
       page_size: pagination.page_size,
       ...filters
     }
-    const data = await listDevItems(params)
+    const data = await listDevTasks(params)
     tasks.value = data.items || []
     pagination.total = data.total || 0
   } catch (error) {
@@ -372,13 +374,13 @@ const getTypeLabel = (type) => {
   const labels = {
     query: t('develop.taskManagement.typeQuery'),
     workflow: t('develop.taskManagement.typeWorkflow'),
-    notebook: t('develop.taskManagement.typeNotebook')
+    script: t('develop.taskManagement.typeScript')
   }
   return labels[type] || type
 }
 
 const getTypeColor = (type) => {
-  const colors = { query: 'primary', workflow: 'success', notebook: 'warning' }
+  const colors = { query: 'primary', workflow: 'success', script: 'info' }
   return colors[type] || 'info'
 }
 
@@ -419,17 +421,26 @@ const formatTime = (time) => {
 }
 
 // 操作函数
-const handleCreate = () => {
-  dialogMode.value = 'create'
+const normalizeDevType = (type) => {
+  return supportedDevTypes.includes(type) ? type : 'query'
+}
+
+const resetFormData = (devType = 'query') => {
   Object.assign(formData, {
+    id: undefined,
     name: '',
     display_name: '',
-    dev_type: 'query',
+    dev_type: normalizeDevType(devType),
     engine_id: null,
     description: '',
     tags: [],
     content: {}
   })
+}
+
+const handleCreate = (devType = 'query') => {
+  dialogMode.value = 'create'
+  resetFormData(devType)
   dialogVisible.value = true
 }
 
@@ -459,6 +470,24 @@ const handleView = (row) => {
   }
 }
 
+const handleRouteAction = () => {
+  const action = String(route.query.action || '')
+  if (action === 'create') {
+    handleCreate(String(route.query.task_type || 'query'))
+    return
+  }
+
+  if (action === 'edit' && route.query.id) {
+    const targetID = Number(route.query.id)
+    const target = tasks.value.find(task => Number(task.id) === targetID)
+    if (target) {
+      handleEdit(target)
+    } else {
+      ElMessage.warning(t('develop.taskManagement.taskNotFound'))
+    }
+  }
+}
+
 const handleExecute = (row) => {
   currentTask.value = row
   executeInputs.value = '{}'
@@ -478,7 +507,7 @@ const confirmExecute = async () => {
       return
     }
 
-    await executeDevItem(currentTask.value.id, inputs)
+    await executeDevTask(currentTask.value.id, inputs)
     ElMessage.success(t('develop.taskManagement.executeSubmitted'))
     executeDialogVisible.value = false
     loadTasks() // 刷新列表
@@ -497,7 +526,7 @@ const handleDelete = async (row) => {
       t('develop.taskManagement.deleteConfirmTitle'),
       { type: 'warning' }
     )
-    await deleteDevItem(row.id)
+    await deleteDevTask(row.id)
     ElMessage.success(t('develop.taskManagement.deleteSuccess'))
     loadTasks()
   } catch (error) {
@@ -516,10 +545,10 @@ const handleSave = async () => {
 
   try {
     if (dialogMode.value === 'create') {
-      await createDevItem(formData)
+      await createDevTask(formData)
       ElMessage.success(t('develop.taskManagement.createSuccess'))
     } else {
-      await updateDevItem(formData.id, formData)
+      await updateDevTask(formData.id, formData)
       ElMessage.success(t('develop.taskManagement.updateSuccess'))
     }
     dialogVisible.value = false
@@ -571,10 +600,15 @@ watch([filters], () => {
   loadTasks()
 }, { deep: true })
 
+watch(() => route.query, () => {
+  handleRouteAction()
+}, { deep: true })
+
 // 初始化
-onMounted(() => {
-  loadTasks()
-  loadEngines()
+onMounted(async () => {
+  await loadTasks()
+  await loadEngines()
+  handleRouteAction()
 })
 </script>
 

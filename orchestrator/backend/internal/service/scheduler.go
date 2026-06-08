@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	commonExecution "github.com/addp/common/execution"
 	commonScheduler "github.com/addp/common/scheduler"
 	"github.com/addp/orchestrator/internal/repository"
 )
@@ -98,7 +99,7 @@ func (s *Scheduler) triggerOrchestration(orchID uint) {
 	}
 
 	// 使用统一执行服务创建执行记录
-	execution, err := s.executionService.CreateExecution(ctx, orchID, orch.TenantID)
+	execution, err := s.executionService.CreateExecution(ctx, orchID, orch.TenantID, commonExecution.TriggerTypeScheduled)
 	if err != nil {
 		fmt.Printf("Failed to create execution for orchestration %d: %v\n", orchID, err)
 		return

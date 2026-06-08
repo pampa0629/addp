@@ -28,6 +28,7 @@ func NewExecutionHandler(queryService *service.ExecutionQueryService) *Execution
 // @Produce json
 // @Param module query string false "模块名 | Module"
 // @Param task_type query string false "任务类型 | Task type"
+// @Param source_task_id query string false "任务定义 ID，字符串软引用 | Source task ID as string soft reference"
 // @Param source query string false "触发来源模块 | Source module"
 // @Param status query string false "执行状态 | Status"
 // @Param trigger_type query string false "触发类型 | Trigger type"
@@ -52,14 +53,15 @@ func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
 
 	req := &service.ListExecutionsRequest{
-		TenantID:    tenantID,
-		Module:      c.Query("module"),
-		TaskType:    c.Query("task_type"),
-		Source:      c.Query("source"),
-		Status:      c.Query("status"),
-		TriggerType: c.Query("trigger_type"),
-		Page:        page,
-		PageSize:    pageSize,
+		TenantID:     tenantID,
+		Module:       c.Query("module"),
+		TaskType:     c.Query("task_type"),
+		SourceTaskID: stringPtrFromQuery(c.Query("source_task_id")),
+		Source:       c.Query("source"),
+		Status:       c.Query("status"),
+		TriggerType:  c.Query("trigger_type"),
+		Page:         page,
+		PageSize:     pageSize,
 	}
 
 	// 查询执行记录
@@ -70,6 +72,13 @@ func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, resp)
+}
+
+func stringPtrFromQuery(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }
 
 // GetExecution 获取单条执行记录
@@ -106,4 +115,35 @@ func (h *ExecutionHandler) GetExecution(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, execution)
+}
+
+// GetExecutionTree 获取执行记录树
+// @Summary 获取执行记录树 | Get execution tree
+// @Tags Monitor
+// @Produce json
+// @Param id path int true "执行ID | Execution ID"
+// @Success 200 {object} service.ExecutionTreeNode
+// @Router /executions/{id}/tree [get]
+// @Security BearerAuth
+func (h *ExecutionHandler) GetExecutionTree(c *gin.Context) {
+	tenantIDRaw, exists := c.Get("tenant_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": commoni18n.T(c, moni18n.MsgTenantNotFound)})
+		return
+	}
+	tenantID := int(tenantIDRaw.(uint))
+
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, moni18n.MsgInvalidExecutionID)})
+		return
+	}
+
+	tree, err := h.queryService.GetExecutionTree(c.Request.Context(), id, tenantID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, moni18n.MsgExecutionNotFound)})
+		return
+	}
+
+	c.JSON(http.StatusOK, tree)
 }

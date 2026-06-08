@@ -18,8 +18,8 @@ type TaskProvider struct {
 	TaskStatusEndpoint  string `json:"task_status_endpoint"`           // 任务状态端点
 	TaskCancelEndpoint  string `json:"task_cancel_endpoint,omitempty"` // 任务取消端点
 
-	// 能力描述（JSON 格式，含 task_types、create_task_url 等）
-	Capabilities *string `json:"capabilities,omitempty"`
+	// 能力描述（JSON 格式，含 task.capabilities/v1、task_types 等）
+	Capabilities *JSONString `json:"capabilities,omitempty"`
 
 	// 状态
 	IsEnabled bool `json:"is_enabled"` // 是否启用

@@ -122,6 +122,7 @@ type TablePreview struct {
 	Object              *ObjectPreview           `json:"object,omitempty"`
 	Graph               *GraphPreviewData        `json:"graph,omitempty"`
 	ItemMeta            *CatalogFacts            `json:"item_meta,omitempty"` // 数据项元数据（来自 meta 模块）
+	Advisories          []PreviewAdvisory        `json:"preview_advisories,omitempty"`
 	// MVT preview metadata (for frontend to switch between GeoJSON and MVT rendering)
 	EngineID   uint   `json:"engineId,omitempty"`   // Engine ID for MVT API
 	Schema     string `json:"schema,omitempty"`     // Schema name for MVT API
@@ -130,6 +131,12 @@ type TablePreview struct {
 	// Spatial metadata (for spatial data preview)
 	SRID   int       `json:"srid,omitempty"`   // 空间参考系统 ID
 	Extent []float64 `json:"extent,omitempty"` // 空间范围 [minX, minY, maxX, maxY]
+}
+
+type PreviewAdvisory struct {
+	Code     string `json:"code"`
+	Severity string `json:"severity"`
+	Action   string `json:"action,omitempty"`
 }
 
 // GraphPreviewData 图数据轻量样本，供通用预览按需展示。
@@ -160,6 +167,7 @@ type CatalogFacts struct {
 	RowCount        *int64          `json:"row_count,omitempty"`
 	Attributes      []MetaAttribute `json:"attributes"` // key-value 列表（字段数、行数、大小等）
 	ScannedAt       *time.Time      `json:"scanned_at,omitempty"`
+	ScannedDepth    string          `json:"scanned_depth,omitempty"`
 }
 
 // MetaAttribute 元数据属性键值对

@@ -61,6 +61,7 @@
       "downloadJsonBtn": "下载 JSON",
       "nameRequired": "请输入编排名称",
       "stepsRequired": "请至少添加一个步骤",
+      "stepTaskReferenceRequired": "画布中存在未绑定任务的节点，请从任务库拖拽任务节点。",
       "updateSuccess": "更新成功",
       "createSuccess": "创建成功",
       "updateFailed": "更新失败",
@@ -94,7 +95,7 @@
       "detailLoadFailed": "加载执行详情失败",
       "statusPending": "等待中",
       "statusRunning": "运行中",
-      "statusCompleted": "已完成",
+      "statusSuccess": "成功",
       "statusFailed": "失败"
     },
     "executionRecords": {
@@ -124,14 +125,17 @@
       "detailLoadFailed": "加载执行详情失败",
       "statusPending": "等待中",
       "statusRunning": "运行中",
-      "statusCompleted": "已完成",
+      "statusSuccess": "成功",
       "statusFailed": "失败"
     },
     "taskPanel": {
       "title": "任务库",
       "emptyText": "暂无任务",
       "loadFailed": "加载任务失败",
-      "refreshSuccess": "任务列表已刷新"
+      "refreshSuccess": "任务列表已刷新",
+      "createTaskTooltip": "创建任务",
+      "editTaskTooltip": "编辑任务",
+      "openUrlMissing": "任务入口未配置"
     },
     "dagEditor": {
       "edgeModeOn": "退出连线",
@@ -147,13 +151,10 @@
       "stepNamePlaceholder": "例如: 数据传输",
       "executionModeLabel": "执行模式",
       "modeTaskRef": "任务引用",
-      "modeEngineCall": "引擎调用",
       "modeNotConfigured": "未配置",
       "providerLabel": "提供者",
       "taskTypeLabel": "任务类型",
       "taskIdLabel": "任务 ID",
-      "engineIdentifierLabel": "引擎标识符",
-      "engineIdentifierPlaceholder": "例如: meta.scanner.default",
       "timeoutLabel": "超时(秒)",
       "parametersLabel": "参数 (JSON)",
       "saveConfigBtn": "保存",

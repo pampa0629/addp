@@ -45,27 +45,24 @@ type TaskProviderRegistration struct {
 func (s *TaskProviderRegistryService) Register() error {
 	// 构造能力描述（含前端集成 URL）
 	capabilities := map[string]interface{}{
-		"task_types": []map[string]string{
+		"schema_version": "task.capabilities/v1",
+		"task_types": []map[string]interface{}{
 			{
-				"type":         "metadata_scan",
-				"display_name": "元数据扫描",
-				"description":  "扫描数据库表结构、对象存储目录树",
-			},
-			{
-				"type":         "auto_scan",
-				"display_name": "自动扫描",
-				"description":  "定时扫描任务（基于 Cron 表达式）",
-			},
-			{
-				"type":         "metadata_extract",
-				"display_name": "元数据提取",
-				"description":  "提取文件元数据（图片、视频、文档）",
+				"type":                      "scan",
+				"display_name":              "元数据扫描",
+				"description":               "执行 Meta ScanTask",
+				"definition_schema":         map[string]interface{}{"type": "object"},
+				"execution_schema":          map[string]interface{}{"type": "object"},
+				"supports_schedule":         true,
+				"supports_cancel":           false,
+				"supports_inline_execution": false,
+				"create_url":                "/meta/scan",
+				"edit_url":                  "/meta/scan?task_id=:id",
+				"deprecated":                false,
 			},
 		},
 		"supported_source_models": []string{"tabular_catalog", "branch_leaf_catalog", "object_catalog", "file_catalog"},
 		"features":                []string{"async", "cron", "spatial_facts", "vector_index"},
-		"create_task_url":         "http://localhost:5175/#/scan/new",
-		"edit_task_url":           "http://localhost:5175/#/scan/:id",
 	}
 
 	// 序列化为 JSON 字符串
@@ -83,11 +80,10 @@ func (s *TaskProviderRegistryService) Register() error {
 
 		// API 端点配置
 		BaseURL:             s.metaURL,
-		TaskListEndpoint:    "/api/v1/meta/scan/tasks",                  // 扫描任务列表
-		TaskDetailEndpoint:  "/api/v1/meta/scan/tasks/:task_id",         // 扫描任务详情
-		TaskExecuteEndpoint: "/api/v1/meta/scan/tasks/:task_id/trigger", // 执行扫描任务
-		TaskStatusEndpoint:  "/api/v1/meta/scan/runs/:run_id",           // 查询执行状态（UUID）
-		TaskCancelEndpoint:  "/api/v1/meta/scan/runs/:run_id/cancel",    // 取消执行
+		TaskListEndpoint:    "/api/v1/meta/tasks",                          // 扫描任务列表
+		TaskDetailEndpoint:  "/api/v1/meta/tasks/{task_type}/{id}",         // 扫描任务详情
+		TaskExecuteEndpoint: "/api/v1/meta/tasks/{task_type}/{id}/execute", // 执行扫描任务
+		TaskStatusEndpoint:  "/api/v1/meta/scan/runs/{execution_id}",       // 查询执行状态（UUID）
 
 		// 能力描述（JSON 字符串）
 		Capabilities: &capabilitiesStr,

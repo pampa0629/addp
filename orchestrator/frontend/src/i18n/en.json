@@ -61,6 +61,7 @@
       "downloadJsonBtn": "Download JSON",
       "nameRequired": "Please enter orchestration name",
       "stepsRequired": "Please add at least one step",
+      "stepTaskReferenceRequired": "The canvas contains nodes without task references. Drag task nodes from the task library.",
       "updateSuccess": "Updated successfully",
       "createSuccess": "Created successfully",
       "updateFailed": "Update failed",
@@ -94,7 +95,7 @@
       "detailLoadFailed": "Failed to load execution detail",
       "statusPending": "Pending",
       "statusRunning": "Running",
-      "statusCompleted": "Completed",
+      "statusSuccess": "Success",
       "statusFailed": "Failed"
     },
     "executionRecords": {
@@ -124,14 +125,17 @@
       "detailLoadFailed": "Failed to load execution detail",
       "statusPending": "Pending",
       "statusRunning": "Running",
-      "statusCompleted": "Completed",
+      "statusSuccess": "Success",
       "statusFailed": "Failed"
     },
     "taskPanel": {
       "title": "Task Library",
       "emptyText": "No tasks available",
       "loadFailed": "Failed to load tasks",
-      "refreshSuccess": "Task list refreshed"
+      "refreshSuccess": "Task list refreshed",
+      "createTaskTooltip": "Create task",
+      "editTaskTooltip": "Edit task",
+      "openUrlMissing": "Task entry URL is not configured"
     },
     "dagEditor": {
       "edgeModeOn": "Exit Edge Mode",
@@ -147,13 +151,10 @@
       "stepNamePlaceholder": "e.g. Data Transfer",
       "executionModeLabel": "Execution Mode",
       "modeTaskRef": "Task Reference",
-      "modeEngineCall": "Engine Call",
       "modeNotConfigured": "Not Configured",
       "providerLabel": "Provider",
       "taskTypeLabel": "Task Type",
       "taskIdLabel": "Task ID",
-      "engineIdentifierLabel": "Engine Identifier",
-      "engineIdentifierPlaceholder": "e.g. meta.scanner.default",
       "timeoutLabel": "Timeout (s)",
       "parametersLabel": "Parameters (JSON)",
       "saveConfigBtn": "Save",

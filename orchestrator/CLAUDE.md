@@ -2,7 +2,7 @@
 
 ## 模块定位
 
-Orchestrator 模块负责任务编排、DAG 执行、定时调度、跨模块任务调用和计算引擎/任务提供者发现。它不直接处理业务数据，而是编排 Meta、Transfer、Manager、Develop 和计算引擎等模块的任务能力。
+Orchestrator 模块负责任务编排、DAG 执行、定时调度、跨模块任务调用和任务提供者发现。它不直接处理业务数据，而是编排 Meta、Transfer、Manager、Develop 等模块通过 TaskProvider 声明的任务能力。
 
 ## 技术栈与端口
 
@@ -38,13 +38,13 @@ orchestrator/
 
 - 编排管理：`POST /orchestrations`、`GET /orchestrations`、`GET /orchestrations/:id`、`PUT /orchestrations/:id`、`DELETE /orchestrations/:id`。
 - 执行管理：`POST /orchestrations/:id/execute`、`GET /orchestrations/:id/executions`、`GET /executions`、`GET /orch-executions/:id`。
-- 能力发现：`GET /compute-engines`、`GET /tasks/list`。
+- 能力发现：`GET /task-providers`、`GET /tasks`。
 - 健康检查：`GET /health`。
 
 ## 开发规则
 
 - 编排步骤必须形成 DAG，执行前要校验循环依赖。
-- 新编排优先使用 `engine_identifier` 和 System 注册的 TaskProvider/Engine 能力，避免硬编码模块 URL。
+- 新编排优先使用 System 注册的 TaskProvider 能力，避免硬编码模块 URL。
 - 参数模板只能引用前序依赖步骤的输出，相关说明见 `orchestrator/docs/参数化模板说明.md`。
 - Orchestrator 只负责调度和状态聚合，不在本模块实现 Meta 扫描、Transfer 传输或 Manager 瓦片生成的业务细节。
 - 修改 API 后同步 Swagger：`bash scripts/swagger/gen-swagger.sh orchestrator` 和 `bash scripts/swagger/check-route-coverage.sh orchestrator`。

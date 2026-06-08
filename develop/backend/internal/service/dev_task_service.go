@@ -9,31 +9,31 @@ import (
 	"github.com/addp/develop/backend/internal/repository"
 )
 
-// DevTaskService 开发项业务逻辑层
+// DevTaskService 开发任务业务逻辑层
 type DevTaskService struct {
 	devTaskRepo *repository.DevTaskRepository
 }
 
-// NewDevTaskService 创建开发项服务
+// NewDevTaskService 创建开发任务服务
 func NewDevTaskService(devTaskRepo *repository.DevTaskRepository) *DevTaskService {
 	return &DevTaskService{
 		devTaskRepo: devTaskRepo,
 	}
 }
 
-// CreateDevItem 创建开发项
-func (s *DevTaskService) CreateDevItem(req *models.CreateDevTaskRequest, tenantID uint, userID uint) (*models.DevTask, error) {
+// CreateDevTask 创建开发任务
+func (s *DevTaskService) CreateDevTask(req *models.CreateDevTaskRequest, tenantID uint, userID uint) (*models.DevTask, error) {
 	// 业务验证：检查名称是否已存在
 	exists, err := s.devTaskRepo.ExistsByName(req.Name, tenantID, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check name existence: %w", err)
 	}
 	if exists {
-		return nil, fmt.Errorf("开发项名称 '%s' 已存在", req.Name)
+		return nil, fmt.Errorf("开发任务名称 '%s' 已存在", req.Name)
 	}
 
 	// 业务验证：验证 dev_type
-	validTypes := []string{"query", "workflow", "script", "notebook"}
+	validTypes := []string{"query", "workflow", "script"}
 	isValidType := false
 	for _, t := range validTypes {
 		if req.DevType == t {
@@ -62,7 +62,7 @@ func (s *DevTaskService) CreateDevItem(req *models.CreateDevTaskRequest, tenantI
 		req.Timeout = 300 // 默认5分钟
 	}
 
-	// 创建开发项
+	// 创建开发任务
 	item := &models.DevTask{
 		TenantID:        tenantID,
 		Name:            req.Name,
@@ -81,19 +81,19 @@ func (s *DevTaskService) CreateDevItem(req *models.CreateDevTaskRequest, tenantI
 	}
 
 	if err := s.devTaskRepo.Create(item); err != nil {
-		return nil, fmt.Errorf("failed to create dev item: %w", err)
+		return nil, fmt.Errorf("failed to create dev task: %w", err)
 	}
 
-	log.Printf("✅ [DevTaskService] 创建开发项成功 id=%d name=%s type=%s", item.ID, item.Name, item.DevType)
+	log.Printf("✅ [DevTaskService] 创建开发任务成功 id=%d name=%s type=%s", item.ID, item.Name, item.DevType)
 	return item, nil
 }
 
-// UpdateDevItem 更新开发项
-func (s *DevTaskService) UpdateDevItem(id uint, req *models.UpdateDevTaskRequest, tenantID uint, userID uint) (*models.DevTask, error) {
-	// 获取现有开发项
+// UpdateDevTask 更新开发任务
+func (s *DevTaskService) UpdateDevTask(id uint, req *models.UpdateDevTaskRequest, tenantID uint, userID uint) (*models.DevTask, error) {
+	// 获取现有开发任务
 	item, err := s.devTaskRepo.FindByID(id, tenantID)
 	if err != nil {
-		return nil, fmt.Errorf("开发项不存在")
+		return nil, fmt.Errorf("开发任务不存在")
 	}
 
 	// 业务验证：检查名称是否重复
@@ -103,7 +103,7 @@ func (s *DevTaskService) UpdateDevItem(id uint, req *models.UpdateDevTaskRequest
 			return nil, fmt.Errorf("failed to check name existence: %w", err)
 		}
 		if exists {
-			return nil, fmt.Errorf("开发项名称 '%s' 已存在", req.Name)
+			return nil, fmt.Errorf("开发任务名称 '%s' 已存在", req.Name)
 		}
 		item.Name = req.Name
 	}
@@ -138,24 +138,24 @@ func (s *DevTaskService) UpdateDevItem(id uint, req *models.UpdateDevTaskRequest
 	item.UpdatedAt = time.Now()
 
 	if err := s.devTaskRepo.Update(item); err != nil {
-		return nil, fmt.Errorf("failed to update dev item: %w", err)
+		return nil, fmt.Errorf("failed to update dev task: %w", err)
 	}
 
-	log.Printf("✅ [DevTaskService] 更新开发项成功 id=%d name=%s", item.ID, item.Name)
+	log.Printf("✅ [DevTaskService] 更新开发任务成功 id=%d name=%s", item.ID, item.Name)
 	return item, nil
 }
 
-// GetDevItem 获取开发项详情
-func (s *DevTaskService) GetDevItem(id uint, tenantID uint) (*models.DevTask, error) {
+// GetDevTask 获取开发任务详情
+func (s *DevTaskService) GetDevTask(id uint, tenantID uint) (*models.DevTask, error) {
 	item, err := s.devTaskRepo.FindByID(id, tenantID)
 	if err != nil {
-		return nil, fmt.Errorf("开发项不存在")
+		return nil, fmt.Errorf("开发任务不存在")
 	}
 	return item, nil
 }
 
-// ListDevItems 查询开发项列表
-func (s *DevTaskService) ListDevItems(req *models.ListDevTasksRequest, tenantID uint) ([]models.DevTask, int64, error) {
+// ListDevTasks 查询开发任务列表
+func (s *DevTaskService) ListDevTasks(req *models.ListDevTasksRequest, tenantID uint) ([]models.DevTask, int64, error) {
 	// 设置默认分页
 	if req.Page <= 0 {
 		req.Page = 1
@@ -166,25 +166,36 @@ func (s *DevTaskService) ListDevItems(req *models.ListDevTasksRequest, tenantID 
 
 	items, total, err := s.devTaskRepo.List(req, tenantID)
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to list dev items: %w", err)
+		return nil, 0, fmt.Errorf("failed to list dev tasks: %w", err)
 	}
 
 	return items, total, nil
 }
 
-// DeleteDevItem 删除开发项（软删除）
-func (s *DevTaskService) DeleteDevItem(id uint, tenantID uint) error {
-	// 验证开发项是否存在
+// ListNotebookScripts 查询 Notebook 形态的脚本开发任务。
+func (s *DevTaskService) ListNotebookScripts(req *models.ListDevTasksRequest, tenantID uint) ([]models.DevTask, int64, error) {
+	if req.Page <= 0 {
+		req.Page = 1
+	}
+	if req.PageSize <= 0 {
+		req.PageSize = 20
+	}
+	return s.devTaskRepo.ListNotebookScripts(req, tenantID)
+}
+
+// DeleteDevTask 删除开发任务（软删除）
+func (s *DevTaskService) DeleteDevTask(id uint, tenantID uint) error {
+	// 验证开发任务是否存在
 	_, err := s.devTaskRepo.FindByID(id, tenantID)
 	if err != nil {
-		return fmt.Errorf("开发项不存在")
+		return fmt.Errorf("开发任务不存在")
 	}
 
 	if err := s.devTaskRepo.Delete(id, tenantID); err != nil {
-		return fmt.Errorf("failed to delete dev item: %w", err)
+		return fmt.Errorf("failed to delete dev task: %w", err)
 	}
 
-	log.Printf("✅ [DevTaskService] 删除开发项成功 id=%d", id)
+	log.Printf("✅ [DevTaskService] 删除开发任务成功 id=%d", id)
 	return nil
 }
 
@@ -196,7 +207,7 @@ func (s *DevTaskService) UpdateLastExecution(id uint, tenantID uint, executionID
 	return nil
 }
 
-// FindScheduledItems 查找所有启用了调度的开发项
+// FindScheduledItems 查找所有启用了调度的开发任务
 func (s *DevTaskService) FindScheduledItems(tenantID uint) ([]models.DevTask, error) {
 	items, err := s.devTaskRepo.FindScheduledItems(tenantID)
 	if err != nil {
@@ -205,17 +216,17 @@ func (s *DevTaskService) FindScheduledItems(tenantID uint) ([]models.DevTask, er
 	return items, nil
 }
 
-// UpdateStatus 更新开发项状态
+// UpdateStatus 更新开发任务状态
 func (s *DevTaskService) UpdateStatus(id uint, tenantID uint, status string) error {
 	// 验证状态值
 	if status != "active" && status != "inactive" && status != "archived" {
 		return fmt.Errorf("无效的状态: %s", status)
 	}
 
-	// 验证开发项是否存在
+	// 验证开发任务是否存在
 	_, err := s.devTaskRepo.FindByID(id, tenantID)
 	if err != nil {
-		return fmt.Errorf("开发项不存在")
+		return fmt.Errorf("开发任务不存在")
 	}
 
 	if err := s.devTaskRepo.UpdateStatus(id, tenantID, status); err != nil {
@@ -226,7 +237,7 @@ func (s *DevTaskService) UpdateStatus(id uint, tenantID uint, status string) err
 	return nil
 }
 
-// CountByType 统计各类型的开发项数量
+// CountByType 统计各类型的开发任务数量
 func (s *DevTaskService) CountByType(tenantID uint) (map[string]int64, error) {
 	counts, err := s.devTaskRepo.CountByType(tenantID)
 	if err != nil {

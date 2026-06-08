@@ -3,13 +3,15 @@ package api
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
+	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/addp/develop/backend/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
-// TaskListHandler 任务列表 API（供 Orchestrator 使用）
+// TaskListHandler TaskProvider 任务列表 API
 type TaskListHandler struct {
 	devTaskService *service.DevTaskService
 }
@@ -21,20 +23,25 @@ func NewTaskListHandler(devTaskService *service.DevTaskService) *TaskListHandler
 	}
 }
 
-// ListTasks 查询任务列表（Orchestrator 标准接口）
+// ListTasks 查询 TaskProvider 任务列表
 // @Summary 列出可编排任务 | List orchestratable tasks
-// @Description 返回可供 Orchestrator 编排复用的开发任务 | List active develop tasks for Orchestrator
+// @Description 返回可供 TaskProvider 编排复用的开发任务 | List active develop tasks exposed by TaskProvider
 // @Tags Develop
 // @Produce json
-// @Param unique_identifier query string false "任务提供者唯一标识 | Task provider identifier"
+// @Param task_type query string false "任务类型：query/workflow/script | Task type: query/workflow/script"
 // @Param page query int false "页码 | Page" default(1)
 // @Param page_size query int false "每页数量 | Page size" default(20)
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} models.ListProviderDevTasksResponse
 // @Failure 500 {object} map[string]interface{}
-// @Router /tasks/list [get]
+// @Router /tasks [get]
 // @Security BearerAuth
 func (h *TaskListHandler) ListTasks(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
+	taskType := strings.TrimSpace(c.Query("task_type"))
+	if taskType != "" && !isDevelopTaskType(taskType) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported task_type: " + taskType})
+		return
+	}
 
 	// 解析分页参数
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
@@ -45,29 +52,33 @@ func (h *TaskListHandler) ListTasks(c *gin.Context) {
 		Page:     page,
 		PageSize: pageSize,
 		Status:   "active", // 仅返回活跃任务
-		// 不指定 DevType，查询所有类型
+	}
+	if taskType != "" {
+		req.DevType = taskType
 	}
 
-	// 查询所有活跃的 DevItem
-	allItems, _, err := h.devTaskService.ListDevItems(req, tenantID)
+	// 查询所有活跃的 DevTask
+	allItems, _, err := h.devTaskService.ListDevTasks(req, tenantID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	// 过滤：只保留 sql 和 workflow，排除 script
+	// 过滤：只保留可编排的开发任务类型
 	filteredItems := []models.DevTask{}
 	for _, item := range allItems {
-		if item.DevType == "sql" || item.DevType == "workflow" {
+		if item.DevType == commonExecution.TaskTypeQuery ||
+			item.DevType == commonExecution.TaskTypeWorkflow ||
+			item.DevType == commonExecution.TaskTypeScript {
 			filteredItems = append(filteredItems, item)
 		}
 	}
 
-	// 返回响应（Orchestrator 期望的格式）
-	c.JSON(http.StatusOK, gin.H{
-		"items":     filteredItems,
-		"total":     len(filteredItems), // 过滤后的总数
-		"page":      page,
-		"page_size": pageSize,
+	// 返回标准任务列表响应
+	c.JSON(http.StatusOK, models.ListProviderDevTasksResponse{
+		Items:    models.NewProviderDevTasks(filteredItems),
+		Total:    int64(len(filteredItems)),
+		Page:     page,
+		PageSize: pageSize,
 	})
 }

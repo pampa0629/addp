@@ -135,7 +135,7 @@ func (h *EmbeddingHandler) CreateEmbedding(c *gin.Context) {
 			h.taskTracker.SetTaskError(taskID, err)
 		} else {
 			h.taskTracker.SetTaskResult(taskID, result)
-			h.taskTracker.UpdateStatus(taskID, service.TaskStatusCompleted, "向量化完成")
+			h.taskTracker.UpdateStatus(taskID, service.TaskStatusSuccess, "向量化完成")
 		}
 	}()
 

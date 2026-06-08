@@ -20,10 +20,10 @@
 **任务编排流** 是基于业务任务的跨模块 DAG 工作流,用于复杂的数据流水线和 ETL 作业。
 
 **核心特点**:
-- **节点粒度**: 粗粒度业务任务 (扫描元数据、导入数据、生成瓦片)
+- **节点粒度**: 粗粒度业务任务 (扫描元数据、Transfer 任务、生成瓦片)
 - **DAG 层级**: 任务级别的有向无环图
 - **数据传递**: 参数模板 `{{stepID.field}}` 引用前序任务结果
-- **执行引擎**: 跨模块动态引擎调用 (Meta、Transfer、Manager、Develop 等)
+- **执行方式**: 通过 TaskProvider 调用各模块已存在的任务定义 (Meta、Transfer、Manager、Develop 等)
 - **适用场景**: 跨模块数据流水线、定时 ETL 作业
 
 ---
@@ -41,13 +41,13 @@ graph TB
         Develop[Develop 模块]
     end
 
-    subgraph "能力注册中心 (System 模块)"
-        Registry[engine_capabilities 表]
+    subgraph "TaskProvider 注册中心 (System 模块)"
+        Registry[task_providers 表]
 
-        Meta --> |注册| MetaCap[Meta 任务能力<br/>scan_metadata<br/>deep_scan]
-        Transfer --> |注册| TransferCap[Transfer 任务能力<br/>import_data<br/>export_data<br/>sync_data]
-        Manager --> |注册| ManagerCap[Manager 任务能力<br/>generate_mvt<br/>preview_data]
-        Develop --> |注册| DevelopCap[Develop 任务能力<br/>execute_query<br/>execute_workflow<br/>execute_notebook]
+        Meta --> |注册| MetaCap[Meta 任务类型<br/>scan]
+        Transfer --> |注册| TransferCap[Transfer 任务类型<br/>import]
+        Manager --> |注册| ManagerCap[Manager 任务类型<br/>mvt_generation<br/>embedding]
+        Develop --> |注册| DevelopCap[Develop 任务类型<br/>query<br/>workflow<br/>script]
 
         MetaCap & TransferCap & ManagerCap & DevelopCap --> Registry
     end
@@ -59,7 +59,7 @@ graph TB
         Orchestrator --> |选择任务| Tasks[任务列表]
         Orchestrator --> |配置参数| Params[参数配置]
         Orchestrator --> |设置依赖| DAG[DAG 依赖关系]
-        Orchestrator --> |执行| Call[动态引擎调用]
+        Orchestrator --> |执行| Call[TaskProvider API 调用]
     end
 
     Call --> Meta
@@ -79,11 +79,11 @@ graph TB
 ### 任务库工作原理
 
 **步骤 1: 模块注册任务能力**
-- 各模块在启动时向 System 模块注册自己的任务 API
-- 注册信息包括:任务名称、API 端点、参数定义、超时配置
+- 各模块在启动时向 System 模块注册自己的 TaskProvider 能力
+- 注册信息包括:模块名、任务类型集合、API 端点、定义 schema、执行 schema 和调度/取消能力
 
 **步骤 2: Orchestrator 发现任务**
-- Orchestrator 通过能力注册中心发现可用任务
+- Orchestrator 通过 TaskProvider 注册中心发现可用任务
 - 前端展示任务列表供用户选择
 
 **步骤 3: 配置编排**
@@ -91,18 +91,19 @@ graph TB
 - 保存为编排定义 JSON
 
 **步骤 4: 执行调用**
-- Orchestrator 通过动态引擎调用机制调用对应模块的任务 API
-- 支持参数模板化,引用前序任务结果
+- Orchestrator 通过 TaskProvider 标准接口调用对应模块的任务
+- 仅当对应任务类型声明支持内联执行参数时,才允许在编排步骤中传入参数模板
 
 ### 任务示例
 
 | 模块 | 任务名称 | 任务 API | 参数示例 |
 |------|---------|---------|---------|
-| **Meta** | 扫描元数据 | `POST /api/meta/scan` | `{engine_id, scan_type}` |
-| **Transfer** | 导入数据 | `POST /api/transfer/import` | `{source_engine, target_engine, table}` |
-| **Manager** | 生成 MVT 瓦片 | `POST /api/manager/mvt/generate` | `{engine_id, schema, table}` |
-| **Develop** | 执行查询 | `POST /api/develop/query/execute` | `{engine_id, sql}` |
-| **Develop** | 执行工作流 | `POST /api/develop/workflow/execute` | `{workflow_id, params}` |
+| **Meta** | 扫描元数据 | `POST /api/v1/meta/tasks/{task_type}/{id}/execute` | `task_type=scan` |
+| **Transfer** | Transfer 任务 | `POST /api/v1/transfer/tasks/{task_type}/{id}/execute` | `task_type=import` |
+| **Manager** | 生成 MVT 瓦片 | `POST /api/v1/manager/tasks/{task_type}/{id}/execute` | `task_type=mvt_generation` |
+| **Manager** | 向量化 | `POST /api/v1/manager/tasks/{task_type}/{id}/execute` | `task_type=embedding` |
+| **Develop** | 执行查询 | `POST /api/v1/develop/tasks/{task_type}/{id}/execute` | `task_type=query` |
+| **Develop** | 执行工作流 | `POST /api/v1/develop/tasks/{task_type}/{id}/execute` | `task_type=workflow` |
 
 ---
 
@@ -130,13 +131,13 @@ graph TB
         TaskWF[任务编排流<br/>Task Orchestration Flow]
 
         TaskWF --> TaskNode1[业务任务<br/>扫描元数据<br/>Meta.scan]
-        TaskWF --> TaskNode2[业务任务<br/>导入数据<br/>Transfer.import]
-        TaskWF --> TaskNode3[业务任务<br/>生成瓦片<br/>Manager.mvt]
+        TaskWF --> TaskNode2[业务任务<br/>Transfer任务<br/>Transfer.import]
+        TaskWF --> TaskNode3[业务任务<br/>生成瓦片<br/>Manager.mvt_generation]
 
         TaskNode1 --> TaskNode2
         TaskNode2 --> TaskNode3
 
-        TaskWF --> TaskEngine[执行引擎:<br/>跨模块API调用]
+        TaskWF --> TaskEngine[执行方式:<br/>TaskProvider API调用]
         TaskWF --> TaskData["数据传递:<br/>参数模板<br/>{{stepID.field}}"]
     end
 
@@ -151,18 +152,18 @@ graph TB
 
 | 维度 | 算子工作流 (Develop) | 任务编排流 (Orchestrator) |
 |------|---------------------|-------------------------|
-| **节点粒度** | 细粒度算子 (buffer, centroid) | 粗粒度业务任务 (扫描元数据, 导入数据) |
+| **节点粒度** | 细粒度算子 (buffer, centroid) | 粗粒度业务任务 (扫描元数据, Transfer 任务) |
 | **DAG 层级** | 算子级别 DAG | 任务级别 DAG |
-| **执行引擎** | GeoPandas/Spark 工作流引擎 | 跨模块动态引擎调用 |
-| **数据传递** | GeoDataFrame 内存传递 | 参数模板 `{{stepID.field}}` |
+| **执行引擎/方式** | GeoPandas/Spark 工作流引擎 | 跨模块 TaskProvider API 调用 |
+| **数据传递** | GeoDataFrame 内存传递 | 已声明支持内联参数的任务可使用参数模板 `{{stepID.field}}` |
 | **适用场景** | 空间数据分析、地理计算 | 跨模块数据流水线、ETL 作业 |
-| **存储表** | `develop.dev_items` | `orchestrator.orchestrations` |
-| **执行记录** | `develop.dev_executions` | `orchestrator.executions` |
+| **存储表** | `develop.dev_tasks` | `orchestrator.orchestrations` |
+| **执行记录** | `common.task_executions`（`module=develop`） | `common.task_executions`（`module=orchestrator`） |
 | **前端界面** | 工作流画布 (算子拖拽) | 编排表单 (步骤配置) |
 
 ### 嵌套调用模式
 
-Orchestrator 可以调用 Develop 模块的工作流任务作为一个步骤:
+Orchestrator 可以调用 Develop 模块已经创建好的工作流任务作为一个步骤。算子工作流必须先在 Develop 中编排并保存为 `workflow` 任务,再以 `provider=develop, task_type=workflow, task_id=...` 的形式进入 Orchestrator:
 
 ```json
 {
@@ -170,13 +171,17 @@ Orchestrator 可以调用 Develop 模块的工作流任务作为一个步骤:
     {
       "id": "extract_data",
       "name": "提取数据",
-      "engine_identifier": "develop.query.default",
+      "provider": "develop",
+      "task_type": "query",
+      "task_id": 101,
       "parameters": {"engine_id": 1, "sql": "SELECT * FROM cities"}
     },
     {
       "id": "spatial_analysis",
       "name": "空间分析工作流",
-      "engine_identifier": "develop.workflow.default",
+      "provider": "develop",
+      "task_type": "workflow",
+      "task_id": 102,
       "parameters": {
         "workflow_name": "city_buffer_analysis",
         "input_table": "{{extract_data.result_table}}"
@@ -185,11 +190,10 @@ Orchestrator 可以调用 Develop 模块的工作流任务作为一个步骤:
     {
       "id": "export_result",
       "name": "导出结果",
-      "engine_identifier": "transfer.export.default",
-      "parameters": {
-        "source_table": "{{spatial_analysis.output_table}}",
-        "target_format": "geojson"
-      }
+      "provider": "transfer",
+      "task_type": "import",
+      "task_id": 201,
+      "parameters": {}
     }
   ]
 }
@@ -203,10 +207,10 @@ Orchestrator 可以调用 Develop 模块的工作流任务作为一个步骤:
 
 ```mermaid
 flowchart TD
-    Start([开始]) --> ScanMeta[扫描元数据<br/>Meta.scan<br/>参数: engine_id=1]
-    ScanMeta --> ImportData[导入数据<br/>Transfer.import<br/>参数: table={{ScanMeta.table_name}}]
+    Start([开始]) --> ScanMeta[扫描元数据<br/>Meta.scan<br/>task_id=11]
+    ScanMeta --> ImportData[Transfer任务<br/>Transfer.import<br/>task_id=21]
     ImportData --> ExecuteWorkflow[执行工作流<br/>Develop.workflow<br/>参数: input={{ImportData.target_table}}]
-    ExecuteWorkflow --> GenerateMVT[生成MVT瓦片<br/>Manager.mvt<br/>参数: table={{ExecuteWorkflow.output_table}}]
+    ExecuteWorkflow --> GenerateMVT[生成MVT瓦片<br/>Manager.mvt_generation<br/>task_id=31]
     GenerateMVT --> End([结束])
 
     classDef meta fill:#e1f5ff,stroke:#01579b
@@ -230,30 +234,29 @@ flowchart TD
     {
       "id": "scan_metadata",
       "name": "扫描元数据",
-      "engine_identifier": "meta.scanner.default",
-      "parameters": {
-        "engine_id": 1,
-        "scan_type": "full"
-      },
+      "provider": "meta",
+      "task_type": "scan",
+      "task_id": 11,
+      "parameters": {},
       "depends_on": [],
       "timeout": 300
     },
     {
       "id": "import_data",
-      "name": "导入数据",
-      "engine_identifier": "transfer.import.default",
-      "parameters": {
-        "source_engine_id": 1,
-        "target_engine_id": 2,
-        "table": "{{scan_metadata.table_name}}"
-      },
+      "name": "Transfer任务",
+      "provider": "transfer",
+      "task_type": "import",
+      "task_id": 21,
+      "parameters": {},
       "depends_on": ["scan_metadata"],
       "timeout": 600
     },
     {
       "id": "execute_workflow",
       "name": "执行空间分析工作流",
-      "engine_identifier": "develop.workflow.default",
+      "provider": "develop",
+      "task_type": "workflow",
+      "task_id": 22,
       "parameters": {
         "workflow_name": "buffer_analysis",
         "input_table": "{{import_data.target_table}}"
@@ -264,12 +267,10 @@ flowchart TD
     {
       "id": "generate_mvt",
       "name": "生成MVT瓦片",
-      "engine_identifier": "manager.mvt.default",
-      "parameters": {
-        "engine_id": 2,
-        "schema": "public",
-        "table": "{{execute_workflow.output_table}}"
-      },
+      "provider": "manager",
+      "task_type": "mvt_generation",
+      "task_id": 31,
+      "parameters": {},
       "depends_on": ["execute_workflow"],
       "timeout": 1200
     }

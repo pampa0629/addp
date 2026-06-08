@@ -1048,11 +1048,11 @@ AI agent 调用 API 时需要理解接口语义、判断错误是否可重试、
 在 Go handler 注释中添加 `x-ai-hint` 扩展字段，描述 API 用途和参数来源：
 
 ```go
-// @Summary 执行开发项
-// @Description 执行指定的工作流或 SQL 开发项
-// @Tags 开发项
-// @x-ai-hint 执行用户创建的工作流或 SQL。item_id 可通过 GET /api/v1/develop/items 获取；engine_id 可通过 GET /api/v1/system/engines 获取
-// @Router /api/v1/develop/items/{id}/execute [post]
+// @Summary 执行开发任务
+// @Description 执行指定的工作流或 SQL 开发任务
+// @Tags 开发任务
+// @x-ai-hint 执行用户创建的工作流或 SQL。task_id 可通过 GET /api/v1/develop/task-definitions 获取；engine_id 可通过 GET /api/v1/system/engines 获取
+// @Router /api/v1/develop/task-definitions/{id}/execute [post]
 func (h *ItemHandler) Execute(c *gin.Context) { ... }
 ```
 
@@ -1191,14 +1191,14 @@ class DevelopClient(AddpBaseClient):
     def __init__(self, base_url: str, internal_api_key: str):
         super().__init__(base_url, internal_api_key=internal_api_key)
 
-    async def list_items(self, item_type: str = None) -> list:
+    async def list_tasks(self, task_type: str = None) -> list:
         params = {}
-        if item_type:
-            params["type"] = item_type
-        return await self.get("/api/v1/develop/items", params=params)
+        if task_type:
+            params["type"] = task_type
+        return await self.get("/api/v1/develop/task-definitions", params=params)
 
-    async def execute_item(self, item_id: int, params: dict = None) -> dict:
-        return await self.post(f"/api/v1/develop/items/{item_id}/execute", json=params or {})
+    async def execute_task(self, task_id: int, params: dict = None) -> dict:
+        return await self.post(f"/api/v1/develop/task-definitions/{task_id}/execute", json=params or {})
 ```
 
 ### 14.3 规范要求

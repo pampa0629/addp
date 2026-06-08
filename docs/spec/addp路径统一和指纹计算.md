@@ -415,7 +415,22 @@ WHERE attributes ? 'relative_path' OR attributes ? 'object_key';
 - [ ] 从旧代码迁移时，是否使用 `SplitObjectPath` 拆分完整路径
 - [ ] 不使用已删除的便利函数（GenerateObjectFingerprint 等）
 
-## 八、数据库表字段对照
+## 八、Meta 查询定位规则
+
+Meta 查询 API 只读取已经扫描并持久化的 `meta_node`、`meta_item`、字段和空间元数据，不触发扫描、不写 `attributes`、不构建 `access_index`，也不创建扫描后派生产物。
+
+查询入口分为两类：
+
+| 入口类型 | 规则 |
+|---|---|
+| 已定位资源查询 | 已拿到 `node_id` 或 `item_id` 时，使用 `/nodes/:node_id`、`/nodes/:node_id/children`、`/nodes/:node_id/items`、`/items/:item_id`、`/items/:item_id/fields`、`/items/:item_id/spatial` 等主资源入口。 |
+| 跨模块条件定位 | 需要从引擎 catalog 路径定位资源时，使用 `engine_id + catalog_path`：`/nodes/by-catalog-path` 或 `/items/by-catalog-path`。 |
+
+`catalog_path` 是 Meta 与引擎 `CatalogModelSpec` 对齐后的稳定定位条件。对象存储路径必须先归一为 catalog path，再通过 `items/by-catalog-path` 定位 object item；不得恢复 `object_key` 作为 Meta 查询主键，也不得新增 `/metadata/table`、`/metadata/file`、`/metadata/spatial`、`/objects/:object_key/metadata` 等按引擎、格式或存储技术形态分叉的快捷查询入口。
+
+`common/client.MetaClient` 只能封装正式查询入口。查询失败不得被包装成隐式扫描、隐式 attributes 补写或派生产物创建。
+
+## 九、数据库表字段对照
 
 | 模块 | 表名 | Bucket字段 | 目录字段 | 文件名字段 | 完整路径 |
 |------|------|-----------|---------|----------|---------|
@@ -424,7 +439,7 @@ WHERE attributes ? 'relative_path' OR attributes ? 'object_key';
 | Manager | manager.embeddings | Bucket | Path | Name | 拼接生成 |
 | Meilisearch | assets索引 | bucket | path (目录) | name | full_name |
 
-## 九、指纹计算示例汇总
+## 十、指纹计算示例汇总
 
 ### 对象存储
 
@@ -496,7 +511,7 @@ fingerprint = commonModels.GenerateItemFingerprint(engineID, fullName)
 // fingerprint = SHA256("3:/data/image/开会.jpg")
 ```
 
-## 十、常见问题 (FAQ)
+## 十一、常见问题 (FAQ)
 
 **Q: 为什么删除便利函数？**
 A: 简化概念，统一为两步计算方式，减少函数数量和参数混淆。
@@ -511,4 +526,4 @@ A: 不会。两步方式计算的结果与便利函数完全一致，只是调�
 A: 优先动态拼接。只有在查询性能关键时才考虑冗余存储。
 
 **Q: attributes 中还能保留旧字段吗？**
-A: 代码支持兼容读取，但新扫描不再写入 `relative_path` 和 `object_key`。建议执行清理 SQL。
+A: 不能。旧 attributes 字段、旧分区和平铺字段不保留兼容读取或兼容写入。历史数据应删除后重新 Meta 扫描生成新结构；仍依赖旧结构的代码应尽早暴露并修正。

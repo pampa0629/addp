@@ -1,32 +1,218 @@
 basePath: /api/v1/orchestrator
+definitions:
+  execution.TaskExecution:
+    properties:
+      bytes_read:
+        description: Transfer 读取字节数
+        type: integer
+      bytes_written:
+        description: Transfer 写入字节数
+        type: integer
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      current_step:
+        description: 当前步骤（Orchestrator/Workflow）
+        type: string
+      error_details:
+        allOf:
+        - $ref: '#/definitions/models.JSONMap'
+        description: 错误详情（仅失败时有值）
+      execution_config:
+        allOf:
+        - $ref: '#/definitions/models.JSONMap'
+        description: JSONB 字段
+      execution_id:
+        description: 执行标识
+        type: string
+      execution_time_ms:
+        description: 性能指标
+        type: integer
+      id:
+        type: integer
+      metadata:
+        allOf:
+        - $ref: '#/definitions/models.JSONMap'
+        description: 模块特有扩展数据（结果、断点、步骤结果等）
+      module:
+        description: 模块标识
+        type: string
+      parent_execution_id:
+        description: 父执行（Orchestrator 子步骤追踪父编排）
+        type: string
+      progress:
+        description: 0-100
+        type: integer
+      records_read:
+        description: Transfer 读取记录数
+        type: integer
+      records_written:
+        description: Transfer 写入记录数
+        type: integer
+      rows_affected:
+        description: SQL 影响行数
+        type: integer
+      source:
+        description: 触发来源模块
+        type: string
+      source_task_id:
+        description: 关联原始任务
+        type: string
+      source_task_name:
+        description: 任务名称（冗余，便于查询）
+        type: string
+      started_at:
+        description: 时间戳
+        type: string
+      status:
+        description: 执行状态
+        type: string
+      task_type:
+        description: provider 声明的稳定任务类型
+        type: string
+      tenant_id:
+        type: integer
+      trigger_type:
+        description: 触发信息
+        type: string
+      triggered_by:
+        description: 触发用户ID
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  github_com_addp_orchestrator_internal_models.Orchestration:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      deleted_at:
+        $ref: '#/definitions/gorm.DeletedAt'
+      description:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: integer
+      last_execution_id:
+        type: string
+      last_execution_status:
+        type: string
+      last_run_at:
+        type: string
+      name:
+        type: string
+      next_run_at:
+        type: string
+      schedule:
+        type: string
+      steps:
+        items:
+          $ref: '#/definitions/github_com_addp_orchestrator_internal_models.Step'
+        type: array
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  github_com_addp_orchestrator_internal_models.ProviderOrchestrationTask:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      description:
+        type: string
+      display_name:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: integer
+      last_execution_id:
+        type: string
+      last_execution_status:
+        type: string
+      last_run_at:
+        type: string
+      name:
+        type: string
+      next_run_at:
+        type: string
+      schedule:
+        type: string
+      steps:
+        items:
+          $ref: '#/definitions/github_com_addp_orchestrator_internal_models.Step'
+        type: array
+      task_type:
+        type: string
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  github_com_addp_orchestrator_internal_models.Step:
+    properties:
+      depends_on:
+        description: 依赖步骤 ID 列表
+        items:
+          type: string
+        type: array
+      id:
+        description: 唯一ID
+        type: string
+      name:
+        description: 步骤名称
+        type: string
+      parameters:
+        additionalProperties: true
+        description: 请求参数
+        type: object
+      provider:
+        description: 任务引用（引用已有的 TaskProvider 任务定义）
+        type: string
+      task_id:
+        description: 具体任务定义 ID
+        type: integer
+      task_type:
+        description: '"scan" | "transfer" | "mvt_generation" 等'
+        type: string
+      timeout:
+        description: 超时秒数
+        type: integer
+    type: object
+  gorm.DeletedAt:
+    properties:
+      time:
+        type: string
+      valid:
+        description: Valid is true if Time is not NULL
+        type: boolean
+    type: object
+  internal_api.orchestrationTaskProviderExecuteRequest:
+    properties:
+      parameters:
+        additionalProperties: true
+        type: object
+      parent_execution_id:
+        type: string
+      source:
+        type: string
+      trigger_type:
+        type: string
+    type: object
+  models.JSONMap:
+    additionalProperties: true
+    type: object
 host: localhost:8084
 info:
   contact: {}
   title: ADDP Orchestrator API
   version: "1.0"
 paths:
-  /compute-engines:
-    get:
-      description: 从 System 任务提供者注册表获取可用计算引擎 | List compute engines from task provider
-        registry
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 列出计算引擎 | List compute engines
-      tags:
-      - Orchestrator
   /executions:
     get:
       parameters:
@@ -51,6 +237,33 @@ paths:
       security:
       - BearerAuth: []
       summary: 获取所有执行列表 | List all executions
+      tags:
+      - Orchestrator
+  /executions/{execution_id}:
+    get:
+      description: 按 execution_id 查询 Orchestrator 编排统一执行记录。| Get an Orchestrator execution
+        record by execution_id.
+      parameters:
+      - description: 执行 UUID | Execution UUID
+        in: path
+        name: execution_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/execution.TaskExecution'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取 Orchestrator 编排执行状态 | Get Orchestrator execution status
       tags:
       - Orchestrator
   /orch-executions/{id}:
@@ -84,11 +297,21 @@ paths:
       tags:
       - Orchestrator
     post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 编排定义，steps 必须使用 provider/task_type/task_id 任务引用 | Orchestration
+          definition, steps must use provider/task_type/task_id task references
+        in: body
+        name: orchestration
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_orchestrator_internal_models.Orchestration'
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
+        "201":
+          description: Created
           schema:
             additionalProperties: true
             type: object
@@ -127,6 +350,21 @@ paths:
       tags:
       - Orchestrator
     put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 编排 ID | Orchestration ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 编排定义，steps 必须使用 provider/task_type/task_id 任务引用 | Orchestration
+          definition, steps must use provider/task_type/task_id task references
+        in: body
+        name: orchestration
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_orchestrator_internal_models.Orchestration'
       produces:
       - application/json
       responses:
@@ -170,21 +408,43 @@ paths:
       summary: 获取执行列表 | List executions
       tags:
       - Orchestrator
-  /tasks/list:
+  /task-providers:
     get:
-      description: 动态调用目标模块任务列表接口并标准化返回格式 | Proxy and normalize module task list
+      description: 从 System 任务提供者注册表获取可编排任务提供者 | List task providers from System task
+        provider registry
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出任务提供者 | List task providers
+      tags:
+      - Orchestrator
+  /tasks:
+    get:
+      description: 动态调用目标模块任务列表接口并标准化返回格式；module_name=orchestrator 时返回本模块已保存的编排任务。|
+        Proxy and normalize module task list; when module_name=orchestrator, return
+        saved orchestration tasks.
       parameters:
-      - description: 模块名 | Module name
+      - description: 模块名；为空或 orchestrator 时返回编排任务 | Module name; empty or orchestrator
+          returns orchestration tasks
         in: query
         name: module_name
         type: string
-      - description: 模块名（兼容）| Module name for compatibility
+      - description: 任务类型；Orchestrator 固定为 orchestration | Task type; orchestration
+          for Orchestrator
         in: query
-        name: module
-        type: string
-      - description: 任务提供者唯一标识 | Task provider identifier
-        in: query
-        name: unique_identifier
+        name: task_type
         type: string
       - default: 1
         description: 页码 | Page
@@ -222,6 +482,96 @@ paths:
       security:
       - BearerAuth: []
       summary: 列出模块任务 | List module tasks
+      tags:
+      - Orchestrator
+  /tasks/{task_type}/{id}:
+    get:
+      description: 按标准 TaskProvider 路径获取 Orchestrator 编排任务详情；task_type 仅支持 orchestration。|
+        Get Orchestrator task detail through the standard TaskProvider path; task_type
+        only supports orchestration.
+      parameters:
+      - description: 任务类型，固定为 orchestration | Task type, fixed to orchestration
+        in: path
+        name: task_type
+        required: true
+        type: string
+      - description: 编排 ID | Orchestration ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_orchestrator_internal_models.ProviderOrchestrationTask'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取 TaskProvider 编排任务详情 | Get TaskProvider orchestration task detail
+      tags:
+      - Orchestrator
+  /tasks/{task_type}/{id}/execute:
+    post:
+      consumes:
+      - application/json
+      description: 按标准 TaskProvider 协议执行 Orchestrator 编排任务；task_type 仅支持 orchestration。|
+        Execute an Orchestrator task through the standard TaskProvider protocol; task_type
+        only supports orchestration.
+      parameters:
+      - description: 任务类型，固定为 orchestration | Task type, fixed to orchestration
+        in: path
+        name: task_type
+        required: true
+        type: string
+      - description: 编排 ID | Orchestration ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: TaskProvider 执行请求 | TaskProvider execution request
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/internal_api.orchestrationTaskProviderExecuteRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 执行 TaskProvider 编排任务 | Execute TaskProvider orchestration task
       tags:
       - Orchestrator
 securityDefinitions:

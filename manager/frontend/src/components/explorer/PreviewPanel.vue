@@ -134,6 +134,30 @@
 
     <!-- 渲染预览组件 -->
     <div v-else class="preview-content">
+      <el-alert
+        v-if="previewRefreshAdvisory"
+        class="preview-advisory"
+        :title="previewRefreshAdvisoryTitle"
+        type="info"
+        :closable="false"
+        show-icon
+      >
+        <template #default>
+          <div class="preview-advisory-body">
+            <span>{{ previewRefreshAdvisoryText }}</span>
+            <el-button
+              size="small"
+              type="primary"
+              :loading="refreshingPreviewItem"
+              :disabled="!props.selectedNode?.locator"
+              @click="handlePreviewAdvisoryRefresh"
+            >
+              <el-icon><Refresh /></el-icon>
+              {{ t('manager.explorer.refreshItem') }}
+            </el-button>
+          </div>
+        </template>
+      </el-alert>
       <div v-if="multiRefOptions.length" class="preview-ref-toolbar">
         <span class="preview-ref-label">{{ t('containerPreview.refs') }}</span>
         <el-select
@@ -240,7 +264,7 @@
 import { computed, ref, watch, onUnmounted } from 'vue'
 import { ElMessage, ElNotification } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { MagicStick, Download, Location, Collection, Upload, Document, View } from '@element-plus/icons-vue'
+import { MagicStick, Download, Location, Collection, Upload, Document, View, Refresh } from '@element-plus/icons-vue'
 import { getPreviewComponent } from '@/plugins/previews'
 import { parseLocator } from '@addp/common-frontend'
 import client from '@/api/client'
@@ -1071,6 +1095,7 @@ const downloadInfo = computed(() => {
 
 const downloading = ref(false)
 const importDialogVisible = ref(false)
+const refreshingPreviewItem = ref(false)
 
 // 切换节点时重置预览局部状态
 watch(
@@ -1109,6 +1134,45 @@ const handleImportSuccess = async () => {
     } catch (error) {
       console.error('刷新节点失败:', error)
     }
+  }
+}
+
+const previewRefreshAdvisory = computed(() => {
+  const advisories = Array.isArray(props.previewData?.preview_advisories)
+    ? props.previewData.preview_advisories
+    : []
+  return advisories.find(advisory =>
+    advisory?.action === 'item_refresh' &&
+    ['item_refresh_recommended', 'access_index_refresh_recommended'].includes(advisory?.code)
+  ) || null
+})
+
+const previewRefreshAdvisoryTitle = computed(() => {
+  if (previewRefreshAdvisory.value?.code === 'access_index_refresh_recommended') {
+    return t('manager.explorer.accessIndexRefreshTitle')
+  }
+  return t('manager.explorer.itemRefreshRecommendedTitle')
+})
+
+const previewRefreshAdvisoryText = computed(() => {
+  if (previewRefreshAdvisory.value?.code === 'access_index_refresh_recommended') {
+    return t('manager.explorer.accessIndexRefreshText')
+  }
+  return t('manager.explorer.itemRefreshRecommendedText')
+})
+
+const handlePreviewAdvisoryRefresh = async () => {
+  if (!props.selectedNode?.locator || refreshingPreviewItem.value) {
+    return
+  }
+  refreshingPreviewItem.value = true
+  try {
+    await store.refreshItem(props.selectedNode.locator)
+    ElMessage.success(t('manager.explorer.refreshSuccess'))
+  } catch (error) {
+    ElMessage.error(t('manager.explorer.refreshFailed', { error: error?.message || error }))
+  } finally {
+    refreshingPreviewItem.value = false
   }
 }
 
@@ -1634,7 +1698,7 @@ const pollTaskStatus = async (taskId, notification, targetName, nodeType, maxAtt
 
       console.log(`[轮询 ${attempts}/${maxAttempts}] 任务状态:`, data.task_status, data.message)
 
-      if (data.task_status === 'completed') {
+      if (data.task_status === 'success') {
         // 任务成功完成
         notification.close()
 
@@ -1867,6 +1931,23 @@ const handleNavigate = (path) => {
   flex-direction: column;
   gap: 10px;
   background: var(--addp-bg-primary) !important;
+}
+
+.preview-advisory {
+  flex: 0 0 auto;
+}
+
+.preview-advisory-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.preview-advisory-body span {
+  min-width: 0;
+  line-height: 1.5;
 }
 
 .preview-ref-toolbar {

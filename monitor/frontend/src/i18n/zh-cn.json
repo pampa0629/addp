@@ -16,6 +16,11 @@
       "filter": {
         "module": "模块",
         "module_placeholder": "全部模块",
+        "task_type": "任务类型",
+        "task_type_placeholder": "全部任务类型",
+        "source_task_id": "任务定义ID",
+        "source_task_id_placeholder": "需同时选择模块和任务类型",
+        "source_task_id_requires_scope": "按任务定义ID查询时，请同时选择模块和任务类型",
         "source": "来源",
         "source_placeholder": "全部来源",
         "status": "状态",
@@ -44,6 +49,8 @@
         "module": "模块",
         "source": "来源",
         "type": "执行类型",
+        "source_task_id": "任务定义ID",
+        "source_task_name": "任务定义名称",
         "status": "状态",
         "progress": "进度",
         "trigger_type": "触发方式",
@@ -51,8 +58,11 @@
         "created_at": "创建时间",
         "started_at": "开始时间",
         "completed_at": "完成时间",
+        "execution_tree": "执行树",
         "result": "执行结果",
-        "error": "错误详情"
+        "error": "错误详情",
+        "open_task_definition": "打开任务定义",
+        "open_task_unavailable": "当前执行记录没有可跳转的任务定义入口"
       },
       "load_failed": "加载执行记录失败",
       "detail_failed": "加载执行详情失败"
@@ -62,6 +72,7 @@
       "module": "模块",
       "source": "来源",
       "task_type": "任务类型",
+      "source_task_id": "任务定义ID",
       "status": "状态",
       "trigger_type": "触发方式",
       "progress": "进度",

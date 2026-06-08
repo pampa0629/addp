@@ -9,9 +9,6 @@ export const getExecution = (id) => client.get(`/develop/executions/${id}`)
 // 获取执行日志
 export const getExecutionLogs = (id) => client.get(`/develop/executions/${id}/logs`)
 
-// 取消执行
-export const cancelExecution = (id) => client.post(`/develop/executions/${id}/cancel`)
-
 // 重试执行
 export const retryExecution = (id) => client.post(`/develop/executions/${id}/retry`)
 

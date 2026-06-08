@@ -16,6 +16,11 @@
       "filter": {
         "module": "Module",
         "module_placeholder": "All Modules",
+        "task_type": "Task Type",
+        "task_type_placeholder": "All Task Types",
+        "source_task_id": "Task Definition ID",
+        "source_task_id_placeholder": "Select module and task type too",
+        "source_task_id_requires_scope": "Select module and task type when filtering by task definition ID",
         "source": "Source",
         "source_placeholder": "All Sources",
         "status": "Status",
@@ -44,6 +49,8 @@
         "module": "Module",
         "source": "Source",
         "type": "Execution Type",
+        "source_task_id": "Task Definition ID",
+        "source_task_name": "Task Definition Name",
         "status": "Status",
         "progress": "Progress",
         "trigger_type": "Trigger Type",
@@ -51,8 +58,11 @@
         "created_at": "Created At",
         "started_at": "Started At",
         "completed_at": "Completed At",
+        "execution_tree": "Execution Tree",
         "result": "Execution Result",
-        "error": "Error Details"
+        "error": "Error Details",
+        "open_task_definition": "Open task definition",
+        "open_task_unavailable": "No task definition entry is available for this execution"
       },
       "load_failed": "Failed to load execution records",
       "detail_failed": "Failed to load execution detail"
@@ -62,6 +72,7 @@
       "module": "Module",
       "source": "Source",
       "task_type": "Task Type",
+      "source_task_id": "Task Definition ID",
       "status": "Status",
       "trigger_type": "Trigger",
       "progress": "Progress",

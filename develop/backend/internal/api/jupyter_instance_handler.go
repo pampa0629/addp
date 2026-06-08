@@ -82,7 +82,7 @@ func (h *JupyterInstanceHandler) GetInstanceStatus(c *gin.Context) {
 
 	if instance == nil {
 		c.JSON(http.StatusOK, gin.H{
-			"status": "not_found",
+			"status":  "not_found",
 			"message": "Jupyter 实例不存在",
 		})
 		return

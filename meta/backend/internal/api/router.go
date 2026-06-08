@@ -35,10 +35,9 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 	}
 
 	metadataQueryService := service.NewMetadataQueryService(db)
-	objectMetadataService := service.NewObjectMetadataService(db)
 
 	// 创建Handler
-	handler := NewHandler(engineService, scanService, taskService, executionService, metadataQueryService, objectMetadataService)
+	handler := NewHandler(engineService, scanService, taskService, executionService, metadataQueryService)
 	assetDiscHandler := newAssetDiscoverableHandler(db)
 
 	// 健康检查
@@ -72,7 +71,9 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 		api.POST("/scan/run/manual", handler.CreateManualScanRun)
 		api.GET("/scan/runs", handler.ListScanRuns)
 		api.GET("/scan/runs/:run_id", handler.GetScanRun)
-		api.POST("/scan/runs/:run_id/cancel", handler.CancelScanRun)
+		api.GET("/tasks", handler.ListProviderScanTasks)
+		api.GET("/tasks/:task_type/:id", handler.ProviderGetScanTask)
+		api.POST("/tasks/:task_type/:id/execute", handler.ProviderExecuteScanTask)
 		api.GET("/scan/tasks", handler.ListScanTasks)
 		api.POST("/scan/tasks", handler.CreateScanTask)
 		api.PUT("/scan/tasks/engines/:engine_id", handler.UpsertEngineScanTask)
@@ -82,7 +83,6 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 		api.POST("/scan/tasks/:task_id/trigger", handler.TriggerScanTask)
 
 		// 元数据相关
-		api.GET("/metadata/object", handler.GetObjectMetadata)
 		api.GET("/engines/:engine_id/items", handler.ListEngineItems)
 
 		// 新增：用于 Manager 模块的元数据查询接口

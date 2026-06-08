@@ -360,7 +360,6 @@ func HandleSQLExecution(ctx context.Context, task *asynq.Task) error {
 │   │   │   └── database.go
 │   │   ├── models/
 │   │   │   ├── script.go               # SQL 脚本模型
-│   │   │   ├── execution.go            # 执行记录
 │   │   │   └── dependency.go           # 依赖关系
 │   │   └── middleware/
 │   │       └── auth.go
@@ -426,21 +425,12 @@ CREATE TABLE develop.script_versions (
     UNIQUE(script_id, version)
 );
 
--- 执行记录表
-CREATE TABLE develop.executions (
-    id SERIAL PRIMARY KEY,
-    script_id INTEGER REFERENCES develop.scripts(id),
-    engine_id INTEGER NOT NULL,
-    sql_content TEXT NOT NULL,
-    status VARCHAR(20) NOT NULL,  -- running, success, failed
-    rows_affected INTEGER,
-    execution_time_ms INTEGER,
-    error_message TEXT,
-    executed_by INTEGER NOT NULL,
-    tenant_id INTEGER NOT NULL,
-    started_at TIMESTAMP DEFAULT NOW(),
-    completed_at TIMESTAMP
-);
+-- 执行记录不在 Develop 私有 schema 建表。
+-- query / workflow / script 每次执行统一写入 common.task_executions：
+-- module='develop'
+-- task_type='query' / 'workflow' / 'script'
+-- source_task_id 以字符串软引用 develop.dev_tasks.id
+-- status 使用 pending/running/success/failed/timeout/cancelled
 
 -- 脚本依赖关系表
 CREATE TABLE develop.script_dependencies (
@@ -454,9 +444,6 @@ CREATE TABLE develop.script_dependencies (
 -- 索引
 CREATE INDEX idx_scripts_tenant ON develop.scripts(tenant_id);
 CREATE INDEX idx_scripts_status ON develop.scripts(status);
-CREATE INDEX idx_executions_script ON develop.executions(script_id);
-CREATE INDEX idx_executions_tenant ON develop.executions(tenant_id);
-CREATE INDEX idx_executions_started ON develop.executions(started_at DESC);
 ```
 
 ---

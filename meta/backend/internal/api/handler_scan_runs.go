@@ -140,39 +140,6 @@ func (h *Handler) GetScanRun(c *gin.Context) {
 	c.JSON(http.StatusOK, exec)
 }
 
-// CancelScanRun 取消执行
-// @Summary 取消扫描运行 | Cancel scan run
-// @Description 按执行 UUID 取消扫描运行 | Cancel scan execution by UUID
-// @Tags Meta Scan
-// @Produce json
-// @Param run_id path string true "执行ID | Execution ID"
-// @Success 200 {object} map[string]interface{} "取消结果 | Cancel result"
-// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
-// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /scan/runs/{run_id}/cancel [post]
-// @Security BearerAuth
-func (h *Handler) CancelScanRun(c *gin.Context) {
-	if h.executionService == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "execution service not available"})
-		return
-	}
-
-	tenantID := commonAuth.GetTenantID(c)
-	executionID := c.Param("run_id")
-	if executionID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing execution_id"})
-		return
-	}
-
-	if err := h.executionService.CancelExecution(c.Request.Context(), executionID, int(tenantID)); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "execution cancelled"})
-}
-
 // ListScanRuns 列出执行记录（从 common.task_executions 查询）
 // @Summary 列出扫描运行 | List scan runs
 // @Description 分页查询当前租户的扫描运行记录 | List scan executions for current tenant

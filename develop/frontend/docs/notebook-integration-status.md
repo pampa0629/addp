@@ -27,7 +27,7 @@ Notebook 功能深度集成 ADDP 架构项目已完成 **MVP 阶段**（约 90%�
 | 删除 scripts 相关表和模型 | ✅ 已完成 | 已创建迁移文件删除 scripts、script_versions、script_dependencies 表 |
 | 在 System 模块注册 Jupyter Engine | ✅ 已完成 | 实现了自注册机制（engines/jupyter/register.py） |
 | 创建 MinIO develop bucket | ✅ 已完成 | Bucket 已创建，支持租户级别隔离（tenant_X/notebooks/） |
-| 扩展 dev_items 表支持 | ✅ 已完成 | dev_type='notebook' 已支持，无需修改表结构 |
+| 扩展开发任务表支持 | ✅ 已完成 | Notebook 已规范为 `dev_type='script'`，通过 `content.notebook_path` 标识 |
 
 **关键产出**：
 - `develop/backend/migrations/20260209_drop_scripts_tables.sql` - 删除 scripts 表
@@ -43,7 +43,7 @@ Notebook 功能深度集成 ADDP 架构项目已完成 **MVP 阶段**（约 90%�
 |------|------|------|
 | 实现 NotebookExecutionService | ✅ 已完成 | 核心执行服务，包含 MinIO 读写、参数合并、Jupyter Engine 调用 |
 | 实现 PrepareDataSourceConnections | ✅ 已完成 | 从 System 模块获取引擎配置，生成连接信息（ds_5、ds_7 等） |
-| 集成到 DevExecutor | ✅ 已完成 | 在 executeAsync 中添加 `case "notebook"` 分支 |
+| 集成到 DevExecutor | ✅ 已完成 | 通过 `script` 任务分支调用 Notebook runtime |
 | 实现 Notebook API Handler | ✅ 已完成 | UploadNotebook、DownloadNotebook、OpenInJupyterLab |
 | 扩展 Jupyter Engine API | ✅ 已完成 | `/api/execute` 接口支持数据源连接注入 |
 
@@ -60,11 +60,11 @@ Notebook 功能深度集成 ADDP 架构项目已完成 **MVP 阶段**（约 90%�
 
 **架构优化**：
 - 从用户级别隔离（`tenant_X/user_Y/`）简化为 **租户级别隔离**（`tenant_X/notebooks/`）
-- 应用层权限控制（dev_items 表）vs 存储层隔离
+- 应用层权限控制（dev_tasks 表）vs 存储层隔离
 
 **数据源注入流程**：
 ```
-1. 用户在 dev_item.content 中指定 data_sources: [5, 7]
+1. 用户在 dev_task.content 中指定 data_sources: [5, 7]
    ↓
 2. NotebookExecutionService.PrepareDataSourceConnections([5, 7])
    - systemClient.GetEngine(5) → PostgreSQL 连接信息
@@ -89,16 +89,16 @@ Notebook 功能深度集成 ADDP 架构项目已完成 **MVP 阶段**（约 90%�
 
 | 任务 | 状态 | 说明 |
 |------|------|------|
-| 改造 NotebookEditor 组件 | ✅ 已完成 | 基于 dev_items API 重构，调用 `/api/develop/items?dev_type=notebook` |
-| 实现 Notebook 列表管理 | ✅ 已完成 | 使用 listDevItems + deleteDevItem 统一接口 |
-| 实现参数化执行 | ✅ 已完成 | ExecuteDevItem 支持可选参数传递 |
-| 集成 ExecutionMonitor | ✅ 已完成 | 添加 dev_type='notebook' 筛选选项 |
+| 改造 NotebookEditor 组件 | ✅ 已完成 | Notebook 列表通过 `/api/develop/notebooks` 查询 `script` 中的 Notebook 形态 |
+| 实现 Notebook 列表管理 | ✅ 已完成 | 使用 Notebook 列表接口 + 统一任务删除接口 |
+| 实现参数化执行 | ✅ 已完成 | ExecuteDevTask 支持可选参数传递 |
+| 集成 ExecutionMonitor | ✅ 已完成 | Notebook 执行按 `dev_type='script'` 进入统一执行监控 |
 
 **关键产出**：
 1. **NotebookEditor.vue 改造**：
-   - 从专用 notebook API 迁移到统一 dev_items API
-   - `listNotebooks()` → `listDevItems({ dev_type: 'notebook' })`
-   - `deleteNotebook()` → `deleteDevItem()`
+   - Notebook 创建后写入 `develop.dev_tasks.dev_type='script'`
+   - `listNotebooks()` → `/api/develop/notebooks`
+   - `deleteNotebook()` → `deleteDevTask()`
    - 保持原有 UI 和功能不变
 
 2. **ExecutionMonitor.vue 增强**：
@@ -107,17 +107,17 @@ Notebook 功能深度集成 ADDP 架构项目已完成 **MVP 阶段**（约 90%�
      <el-option label="全部类型" value="" />
      <el-option label="SQL查询" value="query" />
      <el-option label="工作流" value="workflow" />
-     <el-option label="Notebook" value="notebook" />  <!-- 新增 -->
+     <el-option label="脚本" value="script" />
    </el-select>
    ```
 
 3. **参数化执行支持**：
-   - 修改 `dev_execution_handler.go ExecuteDevItem()` 支持解析请求体参数
+   - 修改 `dev_execution_handler.go ExecuteDevTask()` 支持解析请求体参数
    - 参数非空时调用 `ExecuteWithParams()`
    - 修复参数传递链路：API → DevExecutor → NotebookExecutionService
 
 **已解决问题**：
-- ✅ 参数传递问题：ExecuteWithParams 直接创建执行记录，避免 ExecuteDevItem 重新加载丢失参数
+- ✅ 参数传递问题：ExecuteWithParams 直接创建执行记录，避免 ExecuteDevTask 重新加载丢失参数
 - ✅ 字段名兼容：PrepareDataSourceConnections 同时支持 `username` 和 `user` 字段
 - ✅ JSON null 转换：api_server.py 将 JSON `null` 转换为 Python `None`
 
@@ -141,7 +141,7 @@ Notebook 功能深度集成 ADDP 架构项目已完成 **MVP 阶段**（约 90%�
 
    # 步骤 1: 上传 Notebook (test_notebook.ipynb)
    # 步骤 2: 参数化执行
-   curl -X POST /api/develop/items/21/execute \
+   curl -X POST /api/v1/develop/task-definitions/21/execute \
      -d '{"city_name": "北京", "buffer_distance": 1000}'
 
    # 步骤 3: 验证执行成功
@@ -150,8 +150,8 @@ Notebook 功能深度集成 ADDP 架构项目已完成 **MVP 阶段**（约 90%�
    ```
 
 2. **✅ 参数传递验证**：
-   - **问题**: ExecuteWithParams 参数丢失（被 ExecuteDevItem 重新加载数据库覆盖）
-   - **解决**: 修改 ExecuteWithParams 直接创建执行记录，跳过 ExecuteDevItem
+   - **问题**: ExecuteWithParams 参数丢失（被 ExecuteDevTask 重新加载数据库覆盖）
+   - **解决**: 修改 ExecuteWithParams 直接创建执行记录，跳过 ExecuteDevTask
    - **日志验证**: `user_params_count=2` ✓（之前为 0）
    - **执行结果**: 参数成功传递到 Notebook 执行环境
 
@@ -181,7 +181,7 @@ Notebook 功能深度集成 ADDP 架构项目已完成 **MVP 阶段**（约 90%�
 
 | 问题 | 根本原因 | 解决方案 | 文件位置 |
 |------|---------|---------|---------|
-| 参数传递失败 | ExecuteDevItem 重新加载 DB 覆盖 tempItem | ExecuteWithParams 直接创建执行记录 | dev_executor.go:672-738 |
+| 参数传递失败 | ExecuteDevTask 重新加载 DB 覆盖 tempItem | ExecuteWithParams 直接创建执行记录 | dev_executor.go:672-738 |
 | 连接字符串 `%!s(<nil>)` | engine.ConnectionInfo["user"] 为 nil | 同时兼容 username 和 user 字段 | notebook_execution_service.go:200-234 |
 | JSON null → Python错误 | Go nil 转 JSON null，Python 无法识别 | api_server.py 替换 null → None | api_server.py:162 |
 | 路径隔离 | 用户级路径过于复杂 | 简化为租户级隔离 | notebook_handler.go:275 |
@@ -225,7 +225,7 @@ Notebook 功能深度集成 ADDP 架构项目已完成 **MVP 阶段**（约 90%�
 | Develop Backend | 8085 | ✅ 运行中 | 包含 NotebookExecutionService |
 | Jupyter Lab | 8088 | ✅ 运行中 | MinIO ContentsManager 已配置 |
 | Jupyter Engine API | 8097 | ✅ 运行中 | 支持数据源注入 |
-| PostgreSQL | 15432 | ✅ 运行中 | develop schema + dev_items 表 |
+| PostgreSQL | 15432 | ✅ 运行中 | develop schema + dev_tasks 表 |
 | MinIO | 19000 | ✅ 运行中 | develop bucket + 租户隔离 |
 
 ### 已验证功能
@@ -234,12 +234,12 @@ Notebook 功能深度集成 ADDP 架构项目已完成 **MVP 阶段**（约 90%�
 2. ✅ **租户隔离**：路径结构 `tenant_{tenant_id}/notebooks/` 正常工作，强制验证 tenant_id 参数
 3. ✅ **Notebook 上传/下载**：API 接口正常（UploadNotebook、DownloadNotebook）
 4. ✅ **数据源连接准备**：PrepareDataSourceConnections() 正常生成连接信息（兼容 username/user 字段）
-5. ✅ **DevExecutor 集成**：Notebook 执行通过统一框架（dev_executions）
+5. ✅ **DevExecutor 集成**：Notebook 执行通过统一框架（common.task_executions）
 6. ✅ **端到端执行流程**：通过 API 创建 Notebook → 参数化执行 → 查看结果（完整验证通过）
 7. ✅ **数据源注入实际效果**：Notebook 执行时自动注入 `ds_*` 变量，用户可直接使用
-8. ✅ **执行结果展示**：ExecutionMonitor 支持 dev_type='notebook' 筛选
+8. ✅ **执行结果展示**：ExecutionMonitor 按 `dev_type='script'` 展示 Notebook 执行
 9. ✅ **注入 Cell 清理**：验证输出 Notebook 中注入的连接配置已删除（安全合规）
-10. ✅ **前端集成**：NotebookEditor 使用统一 dev_items API，ExecutionMonitor 支持 notebook 类型
+10. ✅ **前端集成**：NotebookEditor 使用 Notebook API 管理 `script` 任务的 Notebook 形态，ExecutionMonitor 使用 script 类型
 
 ### 待验证功能
 
@@ -451,7 +451,7 @@ MinIO develop bucket/
 
 **权限控制**：
 - **存储层**：MinIO 按 tenant_id 路径前缀隔离
-- **应用层**：dev_items 表的 tenant_id 字段过滤
+- **应用层**：dev_tasks 表的 tenant_id 字段过滤
 - **Jupyter Lab**：通过环境变量 JUPYTER_TENANT_ID 设置租户上下文
 
 ---
@@ -471,11 +471,11 @@ MinIO develop bucket/
 **验证方法**：
 ```bash
 # 1. 执行 Notebook
-curl -X POST http://localhost:8085/api/develop/items/1/execute \
+curl -X POST http://localhost:8085/api/v1/develop/task-definitions/1/execute \
   -H "Authorization: Bearer $TOKEN"
 
 # 2. 下载输出 Notebook
-curl http://localhost:8085/api/develop/items/1/download \
+curl http://localhost:8085/api/v1/develop/notebooks/1/download \
   -H "Authorization: Bearer $TOKEN" -o output.ipynb
 
 # 3. 检查是否包含注入的 Cell
@@ -506,8 +506,8 @@ psql -h localhost -p 15432 -U postgres -d addp -c \
 ### 短期目标（已基本完成） ✅
 
 #### ~~1. 完成前端集成~~  ✅ 已完成
-- [x] 改造 NotebookEditor.vue（基于 dev_items API）
-- [x] 实现参数化执行（ExecuteDevItem 支持参数）
+- [x] 改造 NotebookEditor.vue（基于 dev_tasks API）
+- [x] 实现参数化执行（ExecuteDevTask 支持参数）
 - [x] 集成到 ExecutionMonitor
 
 #### ~~2. 端到端测试~~ ✅ 已完成
@@ -589,10 +589,10 @@ psql -h localhost -p 15432 -U postgres -d addp -c \
 ## 八、FAQ
 
 ### Q1: 为什么删除 scripts 表？
-**A**: scripts 表功能与 dev_items（dev_type='query'）高度重叠，违反 DRY 原则。统一使用 dev_items 管理所有开发资源（SQL、工作流、Notebook）。
+**A**: scripts 表功能与 dev_tasks（dev_type='query'）高度重叠，违反 DRY 原则。统一使用 dev_tasks 管理所有开发资源（SQL、工作流、Notebook）。
 
 ### Q2: 为什么采用租户级别隔离而非用户级别？
-**A**: ADDP 架构设计原则是租户内共享资源，权限控制在应用层（dev_items.created_by）。用户级别路径隔离会增加复杂度，且与 ADDP 多租户模式不符。
+**A**: ADDP 架构设计原则是租户内共享资源，权限控制在应用层（dev_tasks.created_by）。用户级别路径隔离会增加复杂度，且与 ADDP 多租户模式不符。
 
 ### Q3: 数据源连接信息如何保证安全？
 **A**:
@@ -606,7 +606,7 @@ psql -h localhost -p 15432 -U postgres -d addp -c \
 ### Q5: 为什么使用 MinIO ContentsManager 而非本地文件系统？
 **A**:
 - 支持分布式部署（多个 Jupyter 实例共享存储）
-- 统一存储架构（与 dev_items 文件上传一致）
+- 统一存储架构（与 dev_tasks 文件上传一致）
 - 支持租户隔离和权限控制
 - 便于备份和版本管理
 

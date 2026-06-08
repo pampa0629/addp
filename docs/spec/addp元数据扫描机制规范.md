@@ -1,6 +1,6 @@
 # ADDP 元数据扫描机制规范
 
-本文定义 Meta 扫描的深度、目标、覆盖、跳过判断和跨模块触发规则。术语以 [ADDP 术语表](../concepts/addp术语表.md) 和 [ADDP 元数据体系图](../concepts/addp元数据体系图.md) 为准。
+本文定义 Meta 扫描的深度、目标、覆盖、跳过判断和跨模块触发规则。术语以 [ADDP 术语表](../concepts/addp术语表.md)、[ADDP 元数据体系图](../concepts/addp元数据体系图.md) 和 [ADDP 任务体系规范](addp任务体系规范.md) 为准。
 
 ## 本文边界
 
@@ -11,11 +11,11 @@
 | `scan_depth`、`scanned_depth`、`scan_status` 的语义 | data item 识别、claims、exclusive 规则 |
 | `force=true/false` 的覆盖策略 | attributes 的完整 JSON schema |
 | engine / node / item 扫描目标，ScanSelector / ScanScope / `ref_groups` 边界 | FormatPlugin、info provider、content reader 接口形态 |
-| ScanTask 任务定义、调度边界与 execution 关系 | 全平台所有模块任务体系的历史值迁移 |
+| ScanTask 任务定义、调度边界与 execution 关系 | 全平台所有模块任务体系的通用规范 |
 | 手动 / 定时触发的默认组合 | Manager 前端 DTO 和预览 UI |
 | 不强制扫描时的低成本跳过判断 | 具体格式 parser 的字段细节 |
 
-data item 识别规则见 [ADDP 数据项探测器规范](addp数据项探测器规范.md)，attributes 写入规则见 [ADDP 元数据 attributes 规范](addp元数据attributes规范.md)，格式与数据类型能力边界见 [ADDP 数据类型与格式能力规范](addp数据类型与格式能力规范.md)。
+data item 识别规则见 [ADDP 数据项探测器规范](addp数据项探测器规范.md)，attributes 写入规则见 [ADDP 元数据 attributes 规范](addp元数据attributes规范.md)，格式与数据类型能力边界见 [ADDP 数据类型与格式能力规范](addp数据类型与格式能力规范.md)。全平台任务定义、执行记录、TaskProvider、Orchestrator 和 Monitor 的通用约束见 [ADDP 任务体系规范](addp任务体系规范.md)。
 
 ## 核心维度
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
 	"github.com/addp/transfer/internal/config"
 	"github.com/addp/transfer/internal/models"
@@ -15,6 +16,7 @@ import (
 )
 
 var ErrInvalidTaskConfig = errors.New("invalid transfer task config")
+var ErrUnsupportedTaskType = errors.New("unsupported transfer task_type")
 
 // TaskQueue 任务队列接口（避免循环依赖）
 type TaskQueue interface {
@@ -89,9 +91,8 @@ func (s *TaskService) CreateTask(ctx context.Context, req *models.CreateTaskRequ
 		task.AutoScanMetadata = true // 默认为 true
 	}
 
-	// 设置默认值
-	if task.TaskType == "" {
-		task.TaskType = "export"
+	if err := normalizeTransferTaskType(&task.TaskType); err != nil {
+		return nil, err
 	}
 
 	// 创建任务
@@ -152,6 +153,9 @@ func (s *TaskService) UpdateTask(ctx context.Context, id, tenantID uint, req *mo
 	}
 	if req.TaskType != nil {
 		task.TaskType = *req.TaskType
+		if err := normalizeTransferTaskType(&task.TaskType); err != nil {
+			return nil, err
+		}
 	}
 	if req.Config != nil {
 		task.Config = req.Config
@@ -175,6 +179,19 @@ func (s *TaskService) UpdateTask(ctx context.Context, id, tenantID uint, req *mo
 
 	s.logger.Info("task updated", "task_id", id)
 	return task, nil
+}
+
+func normalizeTransferTaskType(taskType *string) error {
+	if taskType == nil || *taskType == "" {
+		if taskType != nil {
+			*taskType = commonExecution.TaskTypeImport
+		}
+		return nil
+	}
+	if *taskType != commonExecution.TaskTypeImport {
+		return fmt.Errorf("%w: %s", ErrUnsupportedTaskType, *taskType)
+	}
+	return nil
 }
 
 func validateNewTaskConfig(config map[string]interface{}, batchSize int) error {
@@ -224,6 +241,12 @@ func (s *TaskService) ListTasks(ctx context.Context, tenantID uint, req *models.
 	if req.Status != nil {
 		filters["status"] = *req.Status
 	}
+	if req.TaskType != "" {
+		if req.TaskType != commonExecution.TaskTypeImport {
+			return nil, 0, fmt.Errorf("%w: %s", ErrUnsupportedTaskType, req.TaskType)
+		}
+		filters["task_type"] = req.TaskType
+	}
 
 	return s.taskRepo.List(tenantID, filters, req.Page, req.PageSize)
 }
@@ -235,6 +258,11 @@ func (s *TaskService) GetTaskStatistics(ctx context.Context, tenantID uint) (*mo
 
 // StartTask 启动任务（立即执行）
 func (s *TaskService) StartTask(ctx context.Context, id, tenantID, userID uint) (*models.TaskExecution, error) {
+	return s.StartTaskWithContext(ctx, id, tenantID, userID, commonExecution.TriggerTypeManual, commonExecution.ModuleTransfer, nil)
+}
+
+// StartTaskWithContext 启动任务并记录统一任务体系上下文。
+func (s *TaskService) StartTaskWithContext(ctx context.Context, id, tenantID, userID uint, triggerType string, source string, parentExecutionID *string) (*models.TaskExecution, error) {
 	s.logger.Info("starting task", "task_id", id)
 
 	// 1. 检查任务存在性和权限
@@ -254,7 +282,7 @@ func (s *TaskService) StartTask(ctx context.Context, id, tenantID, userID uint) 
 	}
 
 	// 4. 使用统一执行服务创建执行记录
-	execution, err := s.executionService.CreateExecution(ctx, id, "manual", &userID)
+	execution, err := s.executionService.CreateExecutionWithContext(ctx, id, triggerType, source, parentExecutionID, &userID)
 	if err != nil {
 		s.logger.Error("failed to create execution", "error", err, "task_id", id)
 		return nil, fmt.Errorf("failed to create execution: %w", err)

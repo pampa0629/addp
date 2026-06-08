@@ -28,49 +28,86 @@ func NewEngineRegistryService(systemURL, internalAPIKey, developURL string) *Eng
 
 // TaskProviderRegistration 任务提供者注册请求
 type TaskProviderRegistration struct {
-	ModuleName          string                 `json:"module_name"`
-	DisplayName         string                 `json:"display_name"`
-	Description         string                 `json:"description"`
-	BaseURL             string                 `json:"base_url"`
-	TaskListEndpoint    string                 `json:"task_list_endpoint"`
-	TaskDetailEndpoint  string                 `json:"task_detail_endpoint"`
-	TaskExecuteEndpoint string                 `json:"task_execute_endpoint"`
-	TaskStatusEndpoint  string                 `json:"task_status_endpoint"`
-	TaskCancelEndpoint  string                 `json:"task_cancel_endpoint,omitempty"`
-	Capabilities        map[string]interface{} `json:"capabilities,omitempty"`
-	IsEnabled           bool                   `json:"is_enabled"`
+	ModuleName          string  `json:"module_name"`
+	DisplayName         string  `json:"display_name"`
+	Description         string  `json:"description"`
+	BaseURL             string  `json:"base_url"`
+	TaskListEndpoint    string  `json:"task_list_endpoint"`
+	TaskDetailEndpoint  string  `json:"task_detail_endpoint"`
+	TaskExecuteEndpoint string  `json:"task_execute_endpoint"`
+	TaskStatusEndpoint  string  `json:"task_status_endpoint"`
+	TaskCancelEndpoint  string  `json:"task_cancel_endpoint,omitempty"`
+	Capabilities        *string `json:"capabilities,omitempty"`
+	IsEnabled           bool    `json:"is_enabled"`
 }
 
 // RegisterEngine 注册 Develop 模块为任务提供者
 func (s *EngineRegistryService) RegisterEngine() error {
+	// 能力描述（供 Orchestrator 查询）
+	capabilities := map[string]interface{}{
+		"schema_version": "task.capabilities/v1",
+		"task_types": []map[string]interface{}{
+			{
+				"type":                      "query",
+				"display_name":              "查询任务",
+				"description":               "执行 SQL 查询开发任务",
+				"definition_schema":         map[string]interface{}{"type": "object"},
+				"execution_schema":          map[string]interface{}{"type": "object"},
+				"supports_schedule":         false,
+				"supports_cancel":           false,
+				"supports_inline_execution": false,
+				"create_url":                "/develop/tasks?action=create&task_type=query",
+				"edit_url":                  "/develop/tasks?action=edit&id=:id",
+				"deprecated":                false,
+			},
+			{
+				"type":                      "workflow",
+				"display_name":              "工作流任务",
+				"description":               "执行 Develop 工作流任务",
+				"definition_schema":         map[string]interface{}{"type": "object"},
+				"execution_schema":          map[string]interface{}{"type": "object"},
+				"supports_schedule":         false,
+				"supports_cancel":           false,
+				"supports_inline_execution": false,
+				"create_url":                "/develop/tasks?action=create&task_type=workflow",
+				"edit_url":                  "/develop/tasks?action=edit&id=:id",
+				"deprecated":                false,
+			},
+			{
+				"type":                      "script",
+				"display_name":              "脚本任务",
+				"description":               "执行脚本开发任务；当前由 Jupyter Notebook runtime 承载",
+				"definition_schema":         map[string]interface{}{"type": "object"},
+				"execution_schema":          map[string]interface{}{"type": "object"},
+				"supports_schedule":         false,
+				"supports_cancel":           false,
+				"supports_inline_execution": false,
+				"create_url":                "/develop/tasks?action=create&task_type=script",
+				"edit_url":                  "/develop/tasks?action=edit&id=:id",
+				"deprecated":                false,
+			},
+		},
+	}
+	capabilitiesJSON, err := json.Marshal(capabilities)
+	if err != nil {
+		return fmt.Errorf("failed to marshal capabilities: %w", err)
+	}
+	capabilitiesStr := string(capabilitiesJSON)
+
 	// 构造注册请求（注册到 task_providers 表）
 	registration := TaskProviderRegistration{
 		ModuleName:  "develop",
-		DisplayName: "开发工作台",
-		Description: "SQL 查询和空间工作流开发任务",
+		DisplayName: "数据开发",
+		Description: "SQL 查询、工作流和脚本开发任务",
 
 		// API 端点配置
 		BaseURL:             s.developURL,
-		TaskListEndpoint:    "/api/develop/items",
-		TaskDetailEndpoint:  "/api/develop/items/:id",
-		TaskExecuteEndpoint: "/api/develop/items/:id/execute",
-		TaskStatusEndpoint:  "/api/develop/executions/:id",
+		TaskListEndpoint:    "/api/v1/develop/tasks",
+		TaskDetailEndpoint:  "/api/v1/develop/tasks/{task_type}/{id}",
+		TaskExecuteEndpoint: "/api/v1/develop/tasks/{task_type}/{id}/execute",
+		TaskStatusEndpoint:  "/api/v1/develop/executions/{execution_id}",
 
-		// 能力描述（供 Orchestrator 查询）
-		Capabilities: map[string]interface{}{
-			"task_types": []map[string]string{
-				{
-					"type":         "sql",
-					"display_name": "SQL 任务",
-				},
-				{
-					"type":         "workflow",
-					"display_name": "工作流任务",
-				},
-			},
-			"create_task_url": "http://localhost:5177/#/workflow/new",
-			"edit_task_url":   "http://localhost:5177/#/workflow/:id",
-		},
+		Capabilities: &capabilitiesStr,
 
 		IsEnabled: true,
 	}
@@ -86,7 +123,7 @@ func (s *EngineRegistryService) sendRegistration(req *TaskProviderRegistration) 
 	}
 
 	// 注册到 task_providers Internal API（使用 Internal API Key 认证）
-	httpReq, err := http.NewRequest("POST", s.systemURL+"/internal/task-providers/register", bytes.NewReader(bodyJSON))
+	httpReq, err := http.NewRequest("POST", s.systemURL+"/api/v1/internal/task-providers/register", bytes.NewReader(bodyJSON))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}

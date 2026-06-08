@@ -9,52 +9,52 @@ export const taskAPI = {
 
   // 获取任务详情
   get(id) {
-    return client.get(`/transfer/tasks/${id}`)
+    return client.get(`/transfer/task-definitions/${id}`)
   },
 
   // 创建任务
   create(data) {
-    return client.post('/transfer/tasks', data)
+    return client.post('/transfer/task-definitions', data)
   },
 
   // 更新任务
   update(id, data) {
-    return client.put(`/transfer/tasks/${id}`, data)
+    return client.put(`/transfer/task-definitions/${id}`, data)
   },
 
   // 删除任务
   delete(id) {
-    return client.delete(`/transfer/tasks/${id}`)
+    return client.delete(`/transfer/task-definitions/${id}`)
   },
 
   // 启动任务
   start(id) {
-    return client.post(`/transfer/tasks/${id}/start`)
+    return client.post(`/transfer/task-definitions/${id}/start`)
   },
 
   // 停止任务
   stop(id) {
-    return client.post(`/transfer/tasks/${id}/stop`)
+    return client.post(`/transfer/task-definitions/${id}/stop`)
   },
 
   // 暂停任务
   pause(id) {
-    return client.post(`/transfer/tasks/${id}/pause`)
+    return client.post(`/transfer/task-definitions/${id}/pause`)
   },
 
   // 恢复任务
   resume(id) {
-    return client.post(`/transfer/tasks/${id}/resume`)
+    return client.post(`/transfer/task-definitions/${id}/resume`)
   },
 
   // 获取任务统计
   statistics() {
-    return client.get('/transfer/tasks/statistics')
+    return client.get('/transfer/task-definitions/statistics')
   },
 
   // 获取任务的执行记录
   executions(id, params) {
-    return client.get(`/transfer/tasks/${id}/executions`, { params })
+    return client.get(`/transfer/task-definitions/${id}/executions`, { params })
   },
 
   // 字段映射写入任务 config.transforms[]，不再提供独立 mappings API。

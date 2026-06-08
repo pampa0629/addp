@@ -485,14 +485,14 @@ def execute_task(task_id):
         # 1. 从 develop.dev_items 查询任务定义
         # 2. 使用 inputs 填充 workflow_def 中的参数模板
         # 3. 调用 execute_workflow
-        # 4. 将结果写入 develop.dev_executions
+        # 4. 将结果写入 common.task_executions
 
         execution_id = str(uuid.uuid4())
 
         return jsonify({
             "status": "success",
             "execution_id": execution_id,
-            "message": "Task execution should query develop.dev_items and save to dev_executions"
+            "message": "Task execution should query develop.dev_items and save to common.task_executions"
         }), 200
 
     except Exception as e:

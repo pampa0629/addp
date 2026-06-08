@@ -83,7 +83,7 @@ type TransferTask struct {
 	TenantID         uint       `gorm:"not null;index" json:"tenant_id"`
 	Name             string     `gorm:"type:varchar(255);not null" json:"name"`
 	Description      string     `gorm:"type:text" json:"description"`
-	TaskType         string     `gorm:"type:varchar(20);not null;default:'import';index" json:"task_type"` // import | export | sync
+	TaskType         string     `gorm:"type:varchar(20);not null;default:'import';index" json:"task_type"` // Transfer 当前统一任务类型，固定为 import
 	Config           JSONMap    `gorm:"type:jsonb;not null" json:"config"`                                 // Reader-Transform-Writer 管道配置
 	Schedule         string     `gorm:"type:varchar(100)" json:"schedule"`                                 // Cron 表达式
 	BatchSize        int        `gorm:"default:1000" json:"batch_size"`
@@ -120,6 +120,7 @@ const (
 // TaskExecution Transfer 执行记录 DTO（仅用于 API 响应，数据来自 common.task_executions）
 type TaskExecution struct {
 	ID               uint            `json:"id"`
+	ExecutionID      string          `json:"execution_id"`
 	TaskID           uint            `json:"task_id"`
 	Status           ExecutionStatus `json:"status"`
 	StartTime        LocalTime       `json:"start_time"`
@@ -148,7 +149,7 @@ func (e *TaskExecution) Duration() time.Duration {
 type CreateTaskRequest struct {
 	Name             string                 `json:"name" binding:"required"`
 	Description      string                 `json:"description"`
-	TaskType         string                 `json:"task_type"`                 // import | export | sync
+	TaskType         string                 `json:"task_type"`                 // Transfer 当前统一任务类型，固定为 import
 	Config           map[string]interface{} `json:"config" binding:"required"` // 包含 source 和 target locator endpoint 配置；source locator item_id 可引用 Meta item
 	Schedule         string                 `json:"schedule"`
 	BatchSize        int                    `json:"batch_size"`

@@ -18,7 +18,7 @@ func newAssetDiscoverableHandler(db *gorm.DB) *assetDiscoverableHandler {
 	return &assetDiscoverableHandler{db: db}
 }
 
-// listDiscoverableAssets 返回当前租户下 status='active' 的开发项，供 Asset 模块自动发现。
+// listDiscoverableAssets 返回当前租户下 status='active' 的开发任务，供 Asset 模块自动发现。
 // @Summary 列出可发现资产 | List discoverable assets
 // @Description 返回当前租户下可被资产模块发现的开发任务 | List active develop tasks for Asset discovery
 // @Tags Develop

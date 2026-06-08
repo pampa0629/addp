@@ -614,6 +614,253 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/tasks": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按标准 TaskProvider 协议列出 Quality 检查任务；task_type 仅支持 check。| List Quality check tasks through the standard TaskProvider protocol; task_type only supports check.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "CheckTask"
+                ],
+                "summary": "列出 TaskProvider 质量检查任务 | List TaskProvider quality check tasks",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "任务类型，固定为 check | Task type, fixed to check",
+                        "name": "task_type",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "任务列表 | Task list",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/tasks/{task_type}/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按标准 TaskProvider 协议获取 Quality 检查任务详情；task_type 仅支持 check。| Get Quality check task detail through the standard TaskProvider protocol; task_type only supports check.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "CheckTask"
+                ],
+                "summary": "获取 TaskProvider 质量检查任务详情 | Get TaskProvider quality check task detail",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "任务类型，固定为 check | Task type, fixed to check",
+                        "name": "task_type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "检查任务ID | Check task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "任务详情 | Task detail",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_quality_internal_models.CheckTask"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "任务不存在 | Task not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/tasks/{task_type}/{id}/execute": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按标准 TaskProvider 协议执行 Quality 检查任务；task_type 仅支持 check，parameters 当前不支持覆盖。| Execute a Quality check task through the standard TaskProvider protocol; task_type only supports check and parameters overrides are not supported.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "CheckTask"
+                ],
+                "summary": "执行 TaskProvider 质量检查任务 | Execute TaskProvider quality check task",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "任务类型，固定为 check | Task type, fixed to check",
+                        "name": "task_type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "检查任务ID | Check task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "TaskProvider 执行请求 | TaskProvider execution request",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityTaskProviderExecuteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "执行ID | Execution ID",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "github_com_addp_quality_internal_models.CheckTask": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "engine_id": {
+                    "description": "目标引擎",
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "last_execution_status": {
+                    "type": "string"
+                },
+                "last_run_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "next_run_at": {
+                    "type": "string"
+                },
+                "schema_name": {
+                    "type": "string"
+                },
+                "table_name": {
+                    "description": "可选：限定表",
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.qualityTaskProviderExecuteRequest": {
+            "type": "object",
+            "properties": {
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "parent_execution_id": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "trigger_type": {
+                    "type": "string"
+                }
+            }
         }
     },
     "securityDefinitions": {

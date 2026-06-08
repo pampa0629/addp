@@ -13,8 +13,11 @@ package main
 // @description Type "Bearer" followed by a space and JWT token.
 
 import (
-	commonExecution "github.com/addp/common/execution"
+	"fmt"
 	"os"
+	"time"
+
+	commonExecution "github.com/addp/common/execution"
 
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
@@ -95,19 +98,44 @@ func main() {
 	graphHandler := api.NewKnowledgeGraphHandler(graphSvc)
 	browseHandler := api.NewBrowseHandler(neo4jSvc, schemaInferenceSvc)
 	buildHandler := api.NewBuildHandler(buildSvc)
+	taskProviderHandler := api.NewTaskProviderHandler(buildSvc, taskExecutionRepo)
 	analysisHandler := api.NewAnalysisHandler(analysisSvc)
 	serviceHandler := api.NewServiceHandler(knowledgeSvc)
 
 	// 设置路由
-	router := api.SetupRouter(cfg, ontologyHandler, graphHandler, browseHandler, buildHandler, analysisHandler, serviceHandler)
+	router := api.SetupRouter(cfg, ontologyHandler, graphHandler, browseHandler, buildHandler, taskProviderHandler, analysisHandler, serviceHandler)
 
 	// 模块注册
+	serviceHost := utils.GetServiceHost()
+	port := utils.GetModulePort("graph")
+	serviceURL := utils.BuildServiceURL(serviceHost, port)
 	if cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
-		serviceHost := utils.GetServiceHost()
-		port := utils.GetModulePort("graph")
-		serviceURL := utils.BuildServiceURL(serviceHost, port)
 		registryClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
 		registryClient.RegisterAndHeartbeat("graph", serviceURL, "/graph")
+	}
+
+	if cfg.EnableIntegration && cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
+		taskProviderRegistry := service.NewTaskProviderRegistryService(
+			cfg.SystemServiceURL,
+			cfg.InternalAPIKey,
+			serviceURL,
+		)
+
+		go func() {
+			time.Sleep(2 * time.Second)
+			maxRetries := 5
+			for attempt := 1; attempt <= maxRetries; attempt++ {
+				if err := taskProviderRegistry.Register(); err != nil {
+					logger.Warn("任务提供者注册失败",
+						"attempt", fmt.Sprintf("%d/%d", attempt, maxRetries),
+						"error", err)
+					time.Sleep(time.Duration(attempt*2) * time.Second)
+					continue
+				}
+				logger.Info("✅ Graph 模块已注册到 task_providers")
+				return
+			}
+		}()
 	}
 
 	addr := ":" + cfg.Port

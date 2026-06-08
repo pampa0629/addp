@@ -80,8 +80,8 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 
 **任务类型（task_type in common.task_executions）**：
 - Meta: `scan`
-- Transfer: `import` / `export` / `sync`
-- Develop: `query` / `workflow` / `notebook`
+- Transfer: `import`
+- Develop: `query` / `workflow` / `script`
 - Orchestrator: `orchestration`
 - Manager: `mvt_generation` / `embedding`
 
@@ -129,7 +129,7 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 | 中文       | 英文标识符    | 说明                                                              |
 | ---------- | ------------- | ----------------------------------------------------------------- |
 | 编排工作流 | Orchestration | Task 派生，跨模块任务的 DAG 定义，本身执行后也产生 Execution      |
-| 步骤       | Step          | Orchestration 的子对象，两种模式：任务引用（provider/task_type/task_id）或引擎调用（engine_identifier），内嵌 JSONB |
+| 步骤       | Step          | Orchestration 的子对象，通过 `provider/task_type/task_id` 引用已有任务定义，内嵌 JSONB |
 
 ---
 
@@ -137,7 +137,7 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 
 | 中文     | 英文标识符 | 说明                                                                  |
 | -------- | ---------- | --------------------------------------------------------------------- |
-| 开发任务 | DevTask    | Task 派生，可执行的开发工件（query/workflow/notebook），选择计算类 Engine 执行 |
+| 开发任务 | DevTask    | Task 派生，可执行的开发工件（query/workflow/script），选择计算类 Engine 执行 |
 
 ---
 
@@ -329,7 +329,7 @@ erDiagram
         uint tenant_id FK
         string name
         string description
-        string task_type "import | export | sync"
+        string task_type "内部业务类型：import | export | sync；不作为统一任务体系 task_type"
         json config "Reader-Transform-Writer 管道配置(JSONB)"
         string schedule "Cron 表达式"
         int batch_size
@@ -363,8 +363,8 @@ erDiagram
         uint engine_id FK "具备对应能力的 Engine"
         string name
         string display_name
-        string dev_type "query | workflow | notebook"
-        json content "SQL语句/工作流节点定义/Notebook内容"
+        string dev_type "query | workflow | script"
+        json content "SQL语句/工作流节点定义/脚本内容"
         json execution_config "引擎ID和执行参数"
         string schedule "Cron 表达式"
         bool enabled "是否启用定时调度"
@@ -451,7 +451,7 @@ erDiagram
         string execution_id UK "UUID，全局唯一，跨模块追踪"
         uint tenant_id FK
         string module "meta|transfer|develop|orchestrator|manager"
-        string task_type "scan|import|export|sync|query|workflow|notebook|orchestration|mvt_generation|embedding"
+        string task_type "scan|import|query|workflow|script|orchestration|mvt_generation|embedding"
         string source "触发来源模块"
         string source_task_id "对应模块任务 ID（字符串，无 DB FK）"
         string source_task_name "任务名称（冗余，便于展示）"
@@ -486,11 +486,10 @@ erDiagram
 ```
 
 **说明**：
-- `Orchestration.steps` 是内嵌 JSONB 数组，每个 Step 支持两种模式：
-  - **任务引用模式**（`provider` 非空）：通过 TaskProvider API 调用已配置好的任务（`provider/task_type/task_id`）
-  - **引擎调用模式**（`engine_identifier` 非空）：动态通过计算引擎类型执行，无需预先定义任务
+- `Orchestration.steps` 是内嵌 JSONB 数组，每个 Step 通过 TaskProvider API 调用已有任务定义（`provider/task_type/task_id`）。
+- 工作流计算引擎由 Develop 消费；算子工作流必须先在 Develop 中形成 `workflow` 任务，再作为 `provider=develop, task_type=workflow` 的 Step 进入 Orchestrator。
 - `Orchestration` 执行后本身也产生 `TaskExecution`（task_type='orchestration'），**未来可被更高层 Orchestration 编排**（当前未实现）
-- `DevTask.engine_id` 指向"具备对应能力的引擎"：`query` 类选择同时具备 RelationalStorage+SQLCompute 的引擎（如 PostgreSQL）；`workflow` 类选择 WorkflowCompute 引擎（如 Python Workflow）；`notebook` 类选择 NotebookCompute 引擎（如 Jupyter）
+- `DevTask.engine_id` 指向"具备对应能力的引擎"：`query` 类选择同时具备 RelationalStorage+SQLCompute 的引擎（如 PostgreSQL）；`workflow` 类选择 WorkflowCompute 引擎（如 Python Workflow）；`script` 类选择具备脚本执行能力的引擎，当前可由 Jupyter Notebook runtime 承载
 - `TaskExecution.error_details`：仅在失败时填充，存储错误类型、错误栈等诊断信息；`metadata`：每次执行均可写入，存储各模块特有的过程数据和结果统计
 
 **⚠️ 发现的问题**：

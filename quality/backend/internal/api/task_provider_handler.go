@@ -1,0 +1,190 @@
+package api
+
+import (
+	"net/http"
+	"strconv"
+	"strings"
+
+	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/quality/internal/models"
+	"github.com/addp/quality/internal/service"
+	"github.com/gin-gonic/gin"
+)
+
+// TaskProviderHandler 标准 TaskProvider API 处理器。
+type TaskProviderHandler struct {
+	checkTaskSvc *service.CheckTaskService
+	executor     *service.CheckExecutor
+}
+
+func NewTaskProviderHandler(checkTaskSvc *service.CheckTaskService, executor *service.CheckExecutor) *TaskProviderHandler {
+	return &TaskProviderHandler{checkTaskSvc: checkTaskSvc, executor: executor}
+}
+
+type taskProviderTaskListItem struct {
+	ID                  int64  `json:"id"`
+	TenantID            int64  `json:"tenant_id"`
+	TaskType            string `json:"task_type"`
+	Name                string `json:"name"`
+	Description         string `json:"description,omitempty"`
+	Enabled             bool   `json:"enabled"`
+	LastRunAt           string `json:"last_run_at,omitempty"`
+	NextRunAt           string `json:"next_run_at,omitempty"`
+	LastExecutionID     string `json:"last_execution_id,omitempty"`
+	LastExecutionStatus string `json:"last_execution_status,omitempty"`
+}
+
+type qualityTaskProviderExecuteRequest struct {
+	TriggerType       string                 `json:"trigger_type"`
+	Source            string                 `json:"source"`
+	ParentExecutionID string                 `json:"parent_execution_id"`
+	Parameters        map[string]interface{} `json:"parameters"`
+}
+
+// ListTasks 列出 Quality 检查任务。
+// @Summary 列出 TaskProvider 质量检查任务 | List TaskProvider quality check tasks
+// @Description 按标准 TaskProvider 协议列出 Quality 检查任务；task_type 仅支持 check。| List Quality check tasks through the standard TaskProvider protocol; task_type only supports check.
+// @Tags CheckTask
+// @Produce json
+// @Param task_type query string false "任务类型，固定为 check | Task type, fixed to check"
+// @Success 200 {object} map[string]interface{} "任务列表 | Task list"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /tasks [get]
+// @Security BearerAuth
+func (h *TaskProviderHandler) ListTasks(c *gin.Context) {
+	taskType := strings.TrimSpace(c.Query("task_type"))
+	if taskType != "" && taskType != commonExecution.TaskTypeQualityCheck {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported task_type: " + taskType})
+		return
+	}
+
+	tenantID := getTenantID(c)
+	tasks, err := h.checkTaskSvc.List(tenantID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	items := make([]taskProviderTaskListItem, 0, len(tasks))
+	for _, task := range tasks {
+		items = append(items, qualityTaskListItem(task))
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"status": "success",
+		"data":   items,
+		"total":  len(items),
+	})
+}
+
+// TaskDetail 获取 Quality 检查任务详情。
+// @Summary 获取 TaskProvider 质量检查任务详情 | Get TaskProvider quality check task detail
+// @Description 按标准 TaskProvider 协议获取 Quality 检查任务详情；task_type 仅支持 check。| Get Quality check task detail through the standard TaskProvider protocol; task_type only supports check.
+// @Tags CheckTask
+// @Produce json
+// @Param task_type path string true "任务类型，固定为 check | Task type, fixed to check"
+// @Param id path int true "检查任务ID | Check task ID"
+// @Success 200 {object} models.CheckTask "任务详情 | Task detail"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
+// @Router /tasks/{task_type}/{id} [get]
+// @Security BearerAuth
+func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
+	taskType := c.Param("task_type")
+	if taskType != commonExecution.TaskTypeQualityCheck {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported task_type: " + taskType})
+		return
+	}
+
+	taskID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+
+	task, err := h.checkTaskSvc.Get(taskID, getTenantID(c))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
+		return
+	}
+	c.JSON(http.StatusOK, task)
+}
+
+// TaskExecute 执行 Quality 检查任务。
+// @Summary 执行 TaskProvider 质量检查任务 | Execute TaskProvider quality check task
+// @Description 按标准 TaskProvider 协议执行 Quality 检查任务；task_type 仅支持 check，parameters 当前不支持覆盖。| Execute a Quality check task through the standard TaskProvider protocol; task_type only supports check and parameters overrides are not supported.
+// @Tags CheckTask
+// @Accept json
+// @Produce json
+// @Param task_type path string true "任务类型，固定为 check | Task type, fixed to check"
+// @Param id path int true "检查任务ID | Check task ID"
+// @Param request body qualityTaskProviderExecuteRequest false "TaskProvider 执行请求 | TaskProvider execution request"
+// @Success 200 {object} map[string]string "执行ID | Execution ID"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /tasks/{task_type}/{id}/execute [post]
+// @Security BearerAuth
+func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
+	taskType := c.Param("task_type")
+	if taskType != commonExecution.TaskTypeQualityCheck {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported task_type: " + taskType})
+		return
+	}
+
+	taskID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+
+	var req qualityTaskProviderExecuteRequest
+	_ = c.ShouldBindJSON(&req)
+	if len(req.Parameters) > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Quality task provider does not support execution parameter overrides"})
+		return
+	}
+
+	triggerType, err := commonExecution.NormalizeTriggerType(req.TriggerType)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	source := strings.TrimSpace(req.Source)
+	if source == "" {
+		source = commonExecution.ModuleQuality
+	}
+	var parentExecutionID *string
+	if strings.TrimSpace(req.ParentExecutionID) != "" {
+		parentExecutionID = &req.ParentExecutionID
+	}
+
+	executionID, err := h.executor.RunCheckWithContext(c.Request.Context(), taskID, getTenantID(c), getUserID(c), triggerType, source, parentExecutionID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"execution_id": executionID,
+		"status":       commonExecution.ExecutionStatusRunning,
+	})
+}
+
+func qualityTaskListItem(task models.CheckTask) taskProviderTaskListItem {
+	item := taskProviderTaskListItem{
+		ID:          task.ID,
+		TenantID:    task.TenantID,
+		TaskType:    commonExecution.TaskTypeQualityCheck,
+		Name:        task.Name,
+		Description: task.Description,
+		Enabled:     task.Enabled,
+	}
+	if task.LastRunAt != nil {
+		item.LastRunAt = task.LastRunAt.Format("2006-01-02T15:04:05Z07:00")
+	}
+	if task.NextRunAt != nil {
+		item.NextRunAt = task.NextRunAt.Format("2006-01-02T15:04:05Z07:00")
+	}
+	item.LastExecutionID = task.LastExecutionID
+	item.LastExecutionStatus = task.LastExecutionStatus
+	return item
+}

@@ -21,14 +21,6 @@
       </div>
       <div class="toolbar-right">
         <el-button
-          v-if="execution?.status === 'running'"
-          type="warning"
-          @click="handleCancel"
-        >
-          <el-icon><Close /></el-icon>
-          {{ t('develop.executionDetail.cancelExecution') }}
-        </el-button>
-        <el-button
           v-if="['failed', 'timeout', 'cancelled'].includes(execution?.status)"
           type="success"
           @click="handleRetry"
@@ -56,11 +48,11 @@
             {{ execution?.execution_id }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('develop.executionDetail.taskName')">
-            {{ execution?.dev_item?.name || '-' }}
+            {{ execution?.dev_task?.name || '-' }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('develop.executionDetail.taskType')">
-            <el-tag :type="getTypeColor(execution?.dev_type)">
-              {{ getTypeLabel(execution?.dev_type) }}
+            <el-tag :type="getTypeColor(execution?.task_type)">
+              {{ getTypeLabel(execution?.task_type) }}
             </el-tag>
           </el-descriptions-item>
           <el-descriptions-item :label="t('develop.executionDetail.triggerType')">
@@ -99,19 +91,19 @@
       <el-tabs v-model="activeTab" type="border-card" style="height: 100%;">
         <el-tab-pane :label="t('develop.executionDetail.tabResult')" name="result">
           <div class="tab-content">
-            <div v-if="execution?.status === 'success' && execution?.result">
+            <div v-if="execution?.status === 'success' && executionResult">
               <!-- 查询结果: 使用 QueryResult 组件 -->
-              <div v-if="execution.dev_type === 'query'">
-                <QueryResult :result="formatSQLResult(execution.result)" />
+              <div v-if="execution.task_type === 'query'">
+                <QueryResult :result="formatSQLResult(executionResult)" />
               </div>
 
               <!-- 工作流结果: 使用表格展示任务列表 -->
-              <div v-else-if="execution.dev_type === 'workflow'">
+              <div v-else-if="execution.task_type === 'workflow'">
                 <div class="workflow-result">
                   <h3>{{ t('develop.executionDetail.workflowResult') }}</h3>
                   <el-table
-                    v-if="execution.result.tasks && execution.result.tasks.length > 0"
-                    :data="execution.result.tasks"
+                    v-if="executionResult.tasks && executionResult.tasks.length > 0"
+                    :data="executionResult.tasks"
                     stripe
                     border
                   >
@@ -137,12 +129,12 @@
 
               <!-- 脚本结果: 使用 JSON 展示 -->
               <div v-else>
-                <pre class="json-result">{{ JSON.stringify(execution.result, null, 2) }}</pre>
+                <pre class="json-result">{{ JSON.stringify(executionResult, null, 2) }}</pre>
               </div>
             </div>
 
             <el-empty v-else-if="execution?.status === 'running'" :description="t('develop.executionDetail.resultPending')" />
-            <el-empty v-else-if="!execution?.result" :description="t('develop.executionDetail.noResult')" />
+            <el-empty v-else-if="!executionResult" :description="t('develop.executionDetail.noResult')" />
           </div>
         </el-tab-pane>
 
@@ -172,7 +164,7 @@
         <!-- Tab 3: 输入参数 -->
         <el-tab-pane :label="t('develop.executionDetail.tabInputs')" name="inputs">
           <div class="tab-content">
-            <pre class="json-result">{{ JSON.stringify(execution?.inputs || {}, null, 2) }}</pre>
+            <pre class="json-result">{{ JSON.stringify(executionInputs, null, 2) }}</pre>
           </div>
         </el-tab-pane>
 
@@ -185,15 +177,15 @@
           <div class="tab-content">
             <el-alert
               type="error"
-              :title="execution?.error_message || t('develop.executionDetail.unknownError')"
+              :title="executionErrorMessage || t('develop.executionDetail.unknownError')"
               :closable="false"
               show-icon
             >
-              <template v-if="execution?.result?.traceback">
+              <template v-if="executionResult?.traceback">
                 <div style="margin-top: 12px; margin-bottom: 8px; font-weight: bold;">{{ t('develop.executionDetail.stackTrace') }}:</div>
-                <pre class="error-traceback">{{ execution.result.traceback }}</pre>
+                <pre class="error-traceback">{{ executionResult.traceback }}</pre>
               </template>
-              <pre v-else style="margin-top: 8px; white-space: pre-wrap;">{{ execution?.error_message }}</pre>
+              <pre v-else style="margin-top: 8px; white-space: pre-wrap;">{{ executionErrorMessage }}</pre>
             </el-alert>
           </div>
         </el-tab-pane>
@@ -203,20 +195,18 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import {
   ArrowLeft,
-  Close,
   Refresh,
   Loading
 } from '@element-plus/icons-vue'
 import {
   getExecution,
   getExecutionLogs,
-  cancelExecution,
   retryExecution
 } from '@/api/devExecution'
 import QueryResult from '@/components/QueryResult.vue'
@@ -230,6 +220,14 @@ const execution = ref(null)
 const logs = ref([])
 const activeTab = ref('result')
 
+const executionResult = computed(() => execution.value?.metadata?.result || null)
+const executionInputs = computed(() => execution.value?.execution_config?.inputs || {})
+const executionErrorMessage = computed(() => (
+  execution.value?.error_details?.message ||
+  execution.value?.error_details?.error ||
+  ''
+))
+
 let refreshTimer = null
 
 // 加载执行详情
@@ -239,9 +237,9 @@ const loadExecution = async (silent = false) => {
     const data = await getExecution(id)
     execution.value = data
 
-    // 从 execution.result 中读取日志
-    if (data.result && data.result.logs) {
-      logs.value = data.result.logs
+    const result = data.metadata?.result
+    if (result?.logs) {
+      logs.value = result.logs
     } else {
       logs.value = []
     }
@@ -253,11 +251,10 @@ const loadExecution = async (silent = false) => {
   }
 }
 
-// 加载执行日志（保留向后兼容，但优先使用 result 中的日志）
+// 加载执行日志
 const loadLogs = async () => {
-  // 如果 result 中已有日志，则不再单独加载
-  if (execution.value?.result?.logs) {
-    logs.value = execution.value.result.logs
+  if (executionResult.value?.logs) {
+    logs.value = executionResult.value.logs
     return
   }
 
@@ -281,7 +278,7 @@ const getTypeLabel = (type) => {
 }
 
 const getTypeColor = (type) => {
-  const colors = { sql: 'primary', workflow: 'success', script: 'warning' }
+  const colors = { query: 'primary', workflow: 'success', script: 'warning' }
   return colors[type] || 'info'
 }
 
@@ -374,22 +371,6 @@ const formatSQLResult = (result) => {
 // 操作函数
 const handleBack = () => {
   router.push('/executions')
-}
-
-const handleCancel = async () => {
-  try {
-    await ElMessageBox.confirm(t('develop.execution.cancelConfirmMsg'), t('develop.execution.cancelConfirmTitle'), {
-      type: 'warning'
-    })
-    await cancelExecution(route.params.id)
-    ElMessage.success(t('develop.execution.cancelSuccess'))
-    loadExecution()
-  } catch (error) {
-    if (error !== 'cancel') {
-      console.error('取消执行失败:', error)
-      ElMessage.error(t('develop.execution.cancelFailed') + (error.response?.data?.error || error.message))
-    }
-  }
 }
 
 const handleRetry = async () => {

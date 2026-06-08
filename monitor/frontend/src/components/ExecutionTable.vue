@@ -17,6 +17,11 @@
       </template>
     </el-table-column>
     <el-table-column prop="task_type" :label="t('monitor.table.task_type')" width="120" />
+    <el-table-column prop="source_task_id" :label="t('monitor.table.source_task_id')" width="130">
+      <template #default="{ row }">
+        {{ row.source_task_id || '-' }}
+      </template>
+    </el-table-column>
     <el-table-column prop="status" :label="t('monitor.table.status')" width="100">
       <template #default="{ row }">
         <el-tag :type="getStatusType(row.status)" size="small">

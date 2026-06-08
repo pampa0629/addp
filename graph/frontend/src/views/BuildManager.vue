@@ -28,7 +28,7 @@
           <div class="task-actions" @click.stop>
             <el-button v-if="task.status === 'pending' || task.status === 'failed'" size="small" type="primary" @click="handleRun(task)">{{ t('graph.build.run') }}</el-button>
             <el-button v-if="task.status === 'running'" size="small" type="warning" @click="handleCancel(task)">{{ t('graph.build.cancel') }}</el-button>
-            <el-button v-if="task.status === 'completed' || task.status === 'cancelled'" size="small" type="primary" plain @click="handleRerun(task)">{{ t('graph.build.rerun') }}</el-button>
+            <el-button v-if="task.status === 'success' || task.status === 'cancelled'" size="small" type="primary" plain @click="handleRerun(task)">{{ t('graph.build.rerun') }}</el-button>
             <el-button size="small" @click="goReview(task)">
               {{ t('graph.build.review') }}
               <el-badge v-if="pendingCounts[task.id]" :value="pendingCounts[task.id]" class="review-badge" />
@@ -111,7 +111,7 @@ async function loadTasks() {
     tasks.value = res || []
     const countRes = await buildAPI.getPendingCount(props.graphId)
     const total = countRes.count || 0
-    // 简单地将 pending 数显示在第一个 running/completed 任务上
+    // 简单地将 pending 数显示在第一个 running/success 任务上
     if (total > 0 && tasks.value.length > 0) {
       pendingCounts.value[tasks.value[0].id] = total
     }
@@ -192,7 +192,7 @@ function goReview(task) {
 }
 
 function statusTagType(status) {
-  const map = { pending: 'info', running: 'warning', completed: 'success', failed: 'danger', cancelled: '' }
+  const map = { pending: 'info', running: 'warning', success: 'success', failed: 'danger', cancelled: '' }
   return map[status] || 'info'
 }
 
@@ -200,7 +200,7 @@ function statusLabel(status) {
   const map = {
     pending: t('graph.build.statusPending'),
     running: t('graph.build.statusRunning'),
-    completed: t('graph.build.statusCompleted'),
+    success: t('graph.build.statusSuccess'),
     failed: t('graph.build.statusFailed'),
     cancelled: t('graph.build.statusCancelled')
   }

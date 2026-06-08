@@ -45,27 +45,24 @@ type TaskProviderRegistration struct {
 func (s *TaskProviderRegistryService) Register() error {
 	// 构造能力描述（含前端集成 URL）
 	capabilities := map[string]interface{}{
-		"task_types": []map[string]string{
+		"schema_version": "task.capabilities/v1",
+		"task_types": []map[string]interface{}{
 			{
-				"type":         "import",
-				"display_name": "数据导入",
-				"description":  "从外部数据源导入数据",
-			},
-			{
-				"type":         "export",
-				"display_name": "数据导出",
-				"description":  "导出数据到外部目标",
-			},
-			{
-				"type":         "sync",
-				"display_name": "数据同步",
-				"description":  "双向数据同步",
+				"type":                      "import",
+				"display_name":              "数据导入",
+				"description":               "执行 Transfer 导入任务定义",
+				"definition_schema":         map[string]interface{}{"type": "object"},
+				"execution_schema":          map[string]interface{}{"type": "object"},
+				"supports_schedule":         true,
+				"supports_cancel":           false,
+				"supports_inline_execution": false,
+				"create_url":                "/transfer/tasks/create",
+				"edit_url":                  "/transfer/tasks/:id/edit",
+				"deprecated":                false,
 			},
 		},
 		"execution_modes": []string{"batch", "stream", "micro-batch"},
 		"features":        []string{"async", "checkpoint", "retry", "field_mapping", "scheduled"},
-		"create_task_url": "http://localhost:5176/#/tasks/new",
-		"edit_task_url":   "http://localhost:5176/#/tasks/:id",
 	}
 
 	// 序列化为 JSON 字符串
@@ -79,14 +76,14 @@ func (s *TaskProviderRegistryService) Register() error {
 	registration := TaskProviderRegistration{
 		ModuleName:  "transfer",
 		DisplayName: "数据传输",
-		Description: "数据导入、导出、同步任务",
+		Description: "数据导入任务",
 
 		// API 端点配置
 		BaseURL:             s.transferURL,
-		TaskListEndpoint:    "/api/v1/transfer/tasks",           // 传输任务列表
-		TaskDetailEndpoint:  "/api/v1/transfer/tasks/:id",       // 传输任务详情
-		TaskExecuteEndpoint: "/api/v1/transfer/tasks/:id/start", // 启动传输任务
-		TaskStatusEndpoint:  "/api/v1/transfer/executions/:id",  // 传输执行状态
+		TaskListEndpoint:    "/api/v1/transfer/tasks",                          // 传输任务列表
+		TaskDetailEndpoint:  "/api/v1/transfer/tasks/{task_type}/{id}",         // 传输任务详情
+		TaskExecuteEndpoint: "/api/v1/transfer/tasks/{task_type}/{id}/execute", // 启动传输任务
+		TaskStatusEndpoint:  "/api/v1/transfer/executions/{execution_id}",      // 传输执行状态
 
 		// 能力描述（JSON 字符串，含前端集成 URL）
 		Capabilities: &capabilitiesStr,

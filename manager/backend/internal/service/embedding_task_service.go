@@ -3,10 +3,11 @@ package service
 import (
 	"context"
 	"errors"
-	commonExecution "github.com/addp/common/execution"
+	"strings"
 	"time"
 
-	commonModels "github.com/addp/common/models"
+	commonExecution "github.com/addp/common/execution"
+
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
 	"github.com/google/uuid"
@@ -64,15 +65,23 @@ func (s *EmbeddingTaskService) Delete(ctx context.Context, id uint, tenantID uin
 // Execute 执行任务定义
 // 1. 写入 common.task_executions (status=running)
 // 2. 调用 EmbeddingService.EmbedDirectory
-// 3. 完成后更新 common.task_executions 和回写任务定义
+// 3. 完成后由 EmbeddingService 更新同一条 common.task_executions，并回写任务定义
 // 返回 executionID，供调用方轮询状态
-func (s *EmbeddingTaskService) Execute(ctx context.Context, taskID uint, tenantID uint, triggerType string, parentExecutionID *string) (string, error) {
+func (s *EmbeddingTaskService) Execute(ctx context.Context, taskID uint, tenantID uint, triggerType string, source string, parentExecutionID *string) (string, error) {
 	task, err := s.embeddingRepo.GetEmbeddingTask(ctx, taskID, tenantID)
 	if err != nil {
 		return "", err
 	}
 	if task == nil {
 		return "", ErrTaskNotFound
+	}
+	normalizedTriggerType, err := commonExecution.NormalizeTriggerType(triggerType)
+	if err != nil {
+		return "", err
+	}
+	normalizedSource := strings.TrimSpace(source)
+	if normalizedSource == "" {
+		normalizedSource = commonExecution.ModuleManager
 	}
 
 	executionID := uuid.New().String()
@@ -82,13 +91,13 @@ func (s *EmbeddingTaskService) Execute(ctx context.Context, taskID uint, tenantI
 		ExecutionID:       executionID,
 		TenantID:          int(tenantID),
 		Module:            commonExecution.ModuleManager,
-		TaskType:          "embedding",
-		Source:            commonExecution.ModuleManager,
-		SourceTaskID:      intPtr(int(taskID)),
+		TaskType:          commonExecution.TaskTypeEmbedding,
+		Source:            normalizedSource,
+		SourceTaskID:      commonExecution.NewSourceTaskIDFromUint(taskID),
 		SourceTaskName:    &task.Name,
 		ParentExecutionID: parentExecutionID,
 		Status:            commonExecution.ExecutionStatusRunning,
-		TriggerType:       triggerType,
+		TriggerType:       normalizedTriggerType,
 		StartedAt:         &now,
 	}
 	if err := s.taskExecRepo.Create(ctx, exec); err != nil {
@@ -104,44 +113,23 @@ func (s *EmbeddingTaskService) Execute(ctx context.Context, taskID uint, tenantI
 			Prefix:    task.Prefix,
 			Recursive: task.Recursive,
 			TenantID:  uintPtr(tenantID),
+			ExecutionContext: &EmbedDirectoryExecutionContext{
+				ExecutionID: executionID,
+				TenantID:    int(tenantID),
+				StartedAt:   now,
+			},
 		})
 
 		completedAt := time.Now()
-		durationMs := completedAt.Sub(now).Milliseconds()
 		status := commonExecution.ExecutionStatusSuccess
-		var errDetails commonModels.JSONMap
-		var metadata commonModels.JSONMap
 
 		if execErr != nil {
 			status = commonExecution.ExecutionStatusFailed
-			errDetails = commonModels.JSONMap{"message": execErr.Error()}
 		} else if result != nil {
 			if result.Failed > 0 && result.Vectorized == 0 {
 				status = commonExecution.ExecutionStatusFailed
 			}
-			metadata = commonModels.JSONMap{
-				"total":      result.Total,
-				"vectorized": result.Vectorized,
-				"skipped":    result.Skipped,
-				"failed":     result.Failed,
-			}
-			if len(result.Errors) > 0 {
-				metadata["error_samples"] = result.Errors
-			}
 		}
-
-		fields := map[string]interface{}{
-			"status":            status,
-			"completed_at":      completedAt,
-			"execution_time_ms": durationMs,
-		}
-		if errDetails != nil {
-			fields["error_details"] = errDetails
-		}
-		if metadata != nil {
-			fields["metadata"] = metadata
-		}
-		s.taskExecRepo.UpdateFields(bgCtx, executionID, int(tenantID), fields)
 
 		// 回写任务定义
 		s.embeddingRepo.UpdateEmbeddingTaskLastExecution(bgCtx, taskID, executionID, status, completedAt)
@@ -150,5 +138,4 @@ func (s *EmbeddingTaskService) Execute(ctx context.Context, taskID uint, tenantI
 	return executionID, nil
 }
 
-func intPtr(v int) *int    { return &v }
 func uintPtr(v uint) *uint { return &v }

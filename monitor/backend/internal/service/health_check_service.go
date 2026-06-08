@@ -7,6 +7,7 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/models"
 )
 
 // HealthCheckService 健康检查服务
@@ -32,10 +33,10 @@ type ModuleInfo struct {
 
 // HealthStatus 健康状态
 type HealthStatus struct {
-	Module  string  `json:"module"`
-	Status  string  `json:"status"` // "up", "down", "unknown"
-	Latency int64   `json:"latency"` // 毫秒
-	Message string  `json:"message,omitempty"`
+	Module  string `json:"module"`
+	Status  string `json:"status"`  // "up", "down", "unknown"
+	Latency int64  `json:"latency"` // 毫秒
+	Message string `json:"message,omitempty"`
 }
 
 // GetModules 获取所有模块（从 System 的 task_providers 表）
@@ -57,6 +58,15 @@ func (s *HealthCheckService) GetModules(ctx context.Context) ([]*ModuleInfo, err
 	}
 
 	return modules, nil
+}
+
+// ListTaskProviders 获取 System 中已启用的 TaskProvider。
+func (s *HealthCheckService) ListTaskProviders(ctx context.Context) ([]*models.TaskProvider, error) {
+	providers, err := s.systemClient.ListTaskProviders()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get task providers: %w", err)
+	}
+	return providers, nil
 }
 
 // CheckModuleHealth 检查模块健康状态（带重试机制）

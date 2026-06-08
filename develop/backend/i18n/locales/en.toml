@@ -1,9 +1,6 @@
 [develop.execution.started]
 other = "Execution started"
 
-[develop.execution.cancelled]
-other = "Execution cancelled"
-
 [develop.execution.retry_started]
 other = "Retry started"
 
@@ -13,8 +10,8 @@ other = "Parameterized execution started"
 [develop.execution.logs_not_ready]
 other = "Log feature is under development..."
 
-[develop.item.delete_success]
+[develop.task.delete_success]
 other = "Deleted successfully"
 
-[develop.item.use_execute_endpoint]
-other = "Please use POST /api/develop/items/{id}/execute to execute a dev item"
+[develop.task.use_execute_endpoint]
+other = "Please use POST /api/v1/develop/task-definitions/{id}/execute to execute a dev task"

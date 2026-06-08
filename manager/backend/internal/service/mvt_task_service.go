@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
-	commonExecution "github.com/addp/common/execution"
+	"strings"
 	"time"
+
+	commonExecution "github.com/addp/common/execution"
 
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
@@ -61,13 +63,21 @@ func (s *MvtTaskService) Delete(ctx context.Context, id uint, tenantID uint) err
 // Execute 执行 MVT 瓦片生成任务
 // 流程：写入 common.task_executions (running) → 调用 QuickView 流程 → 更新执行记录 → 回写任务定义
 // 返回 executionID，供调用方轮询状态
-func (s *MvtTaskService) Execute(ctx context.Context, taskID uint, tenantID uint, triggerType string, parentExecutionID *string) (string, error) {
+func (s *MvtTaskService) Execute(ctx context.Context, taskID uint, tenantID uint, triggerType string, source string, parentExecutionID *string) (string, error) {
 	task, err := s.mvtTaskRepo.GetByID(ctx, taskID, tenantID)
 	if err != nil {
 		return "", err
 	}
 	if task == nil {
 		return "", ErrTaskNotFound
+	}
+	normalizedTriggerType, err := commonExecution.NormalizeTriggerType(triggerType)
+	if err != nil {
+		return "", err
+	}
+	normalizedSource := strings.TrimSpace(source)
+	if normalizedSource == "" {
+		normalizedSource = commonExecution.ModuleManager
 	}
 
 	executionID := uuid.New().String()
@@ -77,13 +87,13 @@ func (s *MvtTaskService) Execute(ctx context.Context, taskID uint, tenantID uint
 		ExecutionID:       executionID,
 		TenantID:          int(tenantID),
 		Module:            commonExecution.ModuleManager,
-		TaskType:          "mvt_generation",
-		Source:            commonExecution.ModuleManager,
-		SourceTaskID:      intPtr(int(taskID)),
+		TaskType:          commonExecution.TaskTypeMvtGeneration,
+		Source:            normalizedSource,
+		SourceTaskID:      commonExecution.NewSourceTaskIDFromUint(taskID),
 		SourceTaskName:    &task.Name,
 		ParentExecutionID: parentExecutionID,
 		Status:            commonExecution.ExecutionStatusRunning,
-		TriggerType:       triggerType,
+		TriggerType:       normalizedTriggerType,
 		StartedAt:         &now,
 	}
 	if err := s.taskExecRepo.Create(ctx, exec); err != nil {

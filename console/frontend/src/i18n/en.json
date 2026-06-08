@@ -206,7 +206,8 @@
         "label": "Data Management",
         "dataExplorer": "Data Explorer",
         "dataRetrieval": "Data Retrieval",
-        "vectorizationTasks": "Vectorization Tasks"
+        "vectorizationTasks": "Vectorization Tasks",
+        "mvtTasks": "MVT Tasks"
       },
       "standard": {
         "label": "Data Standards",

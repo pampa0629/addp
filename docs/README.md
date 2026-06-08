@@ -32,6 +32,7 @@
 - [数据项体系图](concepts/addp数据项体系图.md)
 - [数据类型和格式体系图](concepts/addp数据类型和格式体系图.md)
 - [元数据扫描机制规范](spec/addp元数据扫描机制规范.md)
+- [任务体系规范](spec/addp任务体系规范.md)
 - [数据类型与文件格式扩展指南](spec/addp数据类型与文件格式扩展指南.md)
 - [数据项探测器规范](spec/addp数据项探测器规范.md)
 - [元数据 attributes 规范](spec/addp元数据attributes规范.md)
@@ -70,3 +71,12 @@
 9. [内容 I/O 抽象规范](spec/addp内容IO抽象规范.md)：确认读取抽象和调用链。
 10. [内置数据类型与文件格式规范](spec/addp内置数据类型与文件格式规范.md)：对照首批内置格式的落地规则。
 11. [数据类型与文件格式扩展指南](spec/addp数据类型与文件格式扩展指南.md)：按实现清单落地新 data type / format。
+
+## 任务、执行、编排与监控主题
+
+处理跨模块任务定义、执行记录、TaskProvider、Orchestrator 编排或 Monitor 执行监控时，建议按以下顺序阅读：
+
+1. [任务体系规范](spec/addp任务体系规范.md)：确认任务定义、执行记录、触发来源、TaskProvider 和监控边界。
+2. [任务编排体系图](concepts/addp任务编排体系图.md)：理解任务级 DAG 和跨模块编排概念。
+3. [监控与执行体系图](concepts/addp监控与执行体系图.md)：理解 Monitor 与 `common.task_executions` 的关系。
+4. [元数据扫描机制规范](spec/addp元数据扫描机制规范.md)：处理 Meta ScanTask 与 execution 时阅读。

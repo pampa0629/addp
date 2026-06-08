@@ -43,6 +43,12 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
 	}
 
+	if err := db.Model(&models.BuildTask{}).
+		Where("status = ?", "completed").
+		Update("status", models.BuildStatusSuccess).Error; err != nil {
+		return nil, fmt.Errorf("failed to normalize graph build task status: %w", err)
+	}
+
 	log.Println("✅ Graph 数据库初始化完成")
 	return db, nil
 }

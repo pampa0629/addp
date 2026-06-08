@@ -18,6 +18,12 @@ const routes = [
   {
     path: '/meta',
     redirect: '/meta/scan'
+  },
+  {
+    path: '/:pathMatch(.*)*',
+    name: 'ConsoleRoute',
+    component: () => import('../views/Portal.vue'),
+    meta: { requiresAuth: true, title: '控制台-addp' }
   }
 ]
 

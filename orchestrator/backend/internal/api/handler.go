@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
+	commonExecution "github.com/addp/common/execution"
+	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	_ "github.com/addp/orchestrator/i18n"
 	"github.com/addp/orchestrator/internal/models"
@@ -23,9 +26,15 @@ type OrchestrationHandler struct {
 	executionService     *service.ExecutionService
 	executor             *service.Executor
 	scheduler            *service.Scheduler
-	engineRegistry       *service.EngineRegistry
 	taskProviderRegistry *service.TaskProviderRegistry
 	httpClient           *http.Client
+}
+
+type orchestrationTaskProviderExecuteRequest struct {
+	TriggerType       string                 `json:"trigger_type"`
+	Source            string                 `json:"source"`
+	ParentExecutionID string                 `json:"parent_execution_id"`
+	Parameters        map[string]interface{} `json:"parameters"`
 }
 
 // NewOrchestrationHandler 创建处理器
@@ -34,7 +43,6 @@ func NewOrchestrationHandler(
 	executionService *service.ExecutionService,
 	executor *service.Executor,
 	scheduler *service.Scheduler,
-	engineRegistry *service.EngineRegistry,
 	taskProviderRegistry *service.TaskProviderRegistry,
 	httpClient *http.Client,
 ) *OrchestrationHandler {
@@ -47,7 +55,6 @@ func NewOrchestrationHandler(
 		executionService:     executionService,
 		executor:             executor,
 		scheduler:            scheduler,
-		engineRegistry:       engineRegistry,
 		taskProviderRegistry: taskProviderRegistry,
 		httpClient:           httpClient,
 	}
@@ -56,8 +63,10 @@ func NewOrchestrationHandler(
 // Create 创建编排
 // @Summary 创建编排 | Create orchestration
 // @Tags Orchestrator
+// @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Param orchestration body models.Orchestration true "编排定义，steps 必须使用 provider/task_type/task_id 任务引用 | Orchestration definition, steps must use provider/task_type/task_id task references"
+// @Success 201 {object} map[string]interface{}
 // @Router /orchestrations [post]
 // @Security BearerAuth
 func (h *OrchestrationHandler) Create(c *gin.Context) {
@@ -69,6 +78,15 @@ func (h *OrchestrationHandler) Create(c *gin.Context) {
 
 	// TODO: 从 JWT 中提取 tenant_id
 	req.TenantID = 1
+
+	if err := models.ValidateSteps(req.Steps); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := h.taskProviderRegistry.ValidateStepTaskTypes(c.Request.Context(), req.Steps); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	if err := h.orchRepo.Create(&req); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -132,7 +150,10 @@ func (h *OrchestrationHandler) Get(c *gin.Context) {
 // Update 更新编排
 // @Summary 更新编排 | Update orchestration
 // @Tags Orchestrator
+// @Accept json
 // @Produce json
+// @Param id path int true "编排 ID | Orchestration ID"
+// @Param orchestration body models.Orchestration true "编排定义，steps 必须使用 provider/task_type/task_id 任务引用 | Orchestration definition, steps must use provider/task_type/task_id task references"
 // @Success 200 {object} map[string]interface{}
 // @Router /orchestrations/{id} [put]
 // @Security BearerAuth
@@ -158,6 +179,15 @@ func (h *OrchestrationHandler) Update(c *gin.Context) {
 	// 保留原有字段
 	req.ID = orch.ID
 	req.TenantID = orch.TenantID
+
+	if err := models.ValidateSteps(req.Steps); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := h.taskProviderRegistry.ValidateStepTaskTypes(c.Request.Context(), req.Steps); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	if err := h.orchRepo.Update(&req); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -222,7 +252,7 @@ func (h *OrchestrationHandler) Execute(c *gin.Context) {
 
 	// 使用统一执行服务创建执行记录
 	ctx := c.Request.Context()
-	execution, err := h.executionService.CreateExecution(ctx, orch.ID, orch.TenantID)
+	execution, err := h.executionService.CreateExecution(ctx, orch.ID, orch.TenantID, commonExecution.TriggerTypeManual)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -336,16 +366,16 @@ func (h *OrchestrationHandler) GetExecution(c *gin.Context) {
 	c.JSON(http.StatusOK, exec)
 }
 
-// ListComputeEngines 列出所有任务提供者（从 System 的 task_providers 表获取）
-// @Summary 列出计算引擎 | List compute engines
-// @Description 从 System 任务提供者注册表获取可用计算引擎 | List compute engines from task provider registry
+// ListTaskProviders 列出所有任务提供者（从 System 的 task_providers 表获取）
+// @Summary 列出任务提供者 | List task providers
+// @Description 从 System 任务提供者注册表获取可编排任务提供者 | List task providers from System task provider registry
 // @Tags Orchestrator
 // @Produce json
 // @Success 200 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
-// @Router /compute-engines [get]
+// @Router /task-providers [get]
 // @Security BearerAuth
-func (h *OrchestrationHandler) ListComputeEngines(c *gin.Context) {
+func (h *OrchestrationHandler) ListTaskProviders(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	// 使用 TaskProviderRegistry 获取所有任务提供者
@@ -360,41 +390,23 @@ func (h *OrchestrationHandler) ListComputeEngines(c *gin.Context) {
 
 // ListModuleTasks 列出指定模块的任务（动态调用）
 // @Summary 列出模块任务 | List module tasks
-// @Description 动态调用目标模块任务列表接口并标准化返回格式 | Proxy and normalize module task list
+// @Description 动态调用目标模块任务列表接口并标准化返回格式；module_name=orchestrator 时返回本模块已保存的编排任务。| Proxy and normalize module task list; when module_name=orchestrator, return saved orchestration tasks.
 // @Tags Orchestrator
 // @Produce json
-// @Param module_name query string false "模块名 | Module name"
-// @Param module query string false "模块名（兼容）| Module name for compatibility"
-// @Param unique_identifier query string false "任务提供者唯一标识 | Task provider identifier"
+// @Param module_name query string false "模块名；为空或 orchestrator 时返回编排任务 | Module name; empty or orchestrator returns orchestration tasks"
+// @Param task_type query string false "任务类型；Orchestrator 固定为 orchestration | Task type; orchestration for Orchestrator"
 // @Param page query int false "页码 | Page" default(1)
 // @Param page_size query int false "每页数量 | Page size" default(100)
 // @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} map[string]interface{}
 // @Failure 404 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
-// @Router /tasks/list [get]
+// @Router /tasks [get]
 // @Security BearerAuth
 func (h *OrchestrationHandler) ListModuleTasks(c *gin.Context) {
-	// 支持 module_name 和 module 参数(向后兼容)
-	moduleName := c.Query("module_name")
-	if moduleName == "" {
-		moduleName = c.Query("module")
-	}
-
-	// 也支持 unique_identifier 参数,从中提取 module_name
-	if moduleName == "" {
-		uniqueIdentifier := c.Query("unique_identifier")
-		if uniqueIdentifier != "" {
-			// unique_identifier 格式: "meta.scanner.default" -> 提取第一部分 "meta"
-			parts := strings.Split(uniqueIdentifier, ".")
-			if len(parts) > 0 {
-				moduleName = parts[0]
-			}
-		}
-	}
-
-	if moduleName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, "orchestrator.error.missing_module_param")})
+	moduleName := strings.TrimSpace(c.Query("module_name"))
+	if moduleName == "" || moduleName == commonExecution.ModuleOrchestrator {
+		h.ListProviderOrchestrationTasks(c)
 		return
 	}
 
@@ -415,29 +427,25 @@ func (h *OrchestrationHandler) ListModuleTasks(c *gin.Context) {
 
 	targetURL := provider.BaseURL + provider.TaskListEndpoint
 
-	// 3. 传递请求中的查询参数（page, page_size 等）
-	queryParams := make(map[string]string)
+	// 3. 传递请求中的查询参数（page, page_size, task_type 等）
+	queryParams := url.Values{}
 	for key, values := range c.Request.URL.Query() {
-		if key != "unique_identifier" && key != "module_name" && key != "module" && len(values) > 0 {
-			queryParams[key] = values[0]
+		if key != "module_name" && len(values) > 0 {
+			queryParams.Set(key, values[0])
 		}
 	}
 
 	// 设置默认分页参数（如果不存在）
-	if _, hasPage := queryParams["page"]; !hasPage {
-		queryParams["page"] = "1"
+	if !queryParams.Has("page") {
+		queryParams.Set("page", "1")
 	}
-	if _, hasPageSize := queryParams["page_size"]; !hasPageSize {
-		queryParams["page_size"] = "100"
+	if !queryParams.Has("page_size") {
+		queryParams.Set("page_size", "100")
 	}
 
 	// 构建完整 URL
 	if len(queryParams) > 0 {
-		queryParts := []string{}
-		for key, value := range queryParams {
-			queryParts = append(queryParts, fmt.Sprintf("%s=%s", key, value))
-		}
-		targetURL += "?" + strings.Join(queryParts, "&")
+		targetURL += "?" + queryParams.Encode()
 	}
 
 	// 4. 发送 HTTP 请求（默认使用 GET 方法）
@@ -493,10 +501,185 @@ func (h *OrchestrationHandler) ListModuleTasks(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+// ListProviderOrchestrationTasks 列出 Orchestrator 自身可编排任务。
+func (h *OrchestrationHandler) ListProviderOrchestrationTasks(c *gin.Context) {
+	taskType := strings.TrimSpace(c.Query("task_type"))
+	if taskType != "" && taskType != commonExecution.TaskTypeOrchestration {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported task_type: " + taskType})
+		return
+	}
+
+	tenantID := commonAuth.GetTenantID(c)
+	if tenantID == 0 {
+		tenantID = 1
+	}
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "100"))
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 100
+	}
+
+	orchs, total, err := h.orchRepo.ListPaged(tenantID, page, pageSize)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	items := make([]models.ProviderOrchestrationTask, 0, len(orchs))
+	for _, orch := range orchs {
+		items = append(items, models.NewProviderOrchestrationTask(orch))
+	}
+
+	c.JSON(http.StatusOK, models.ListProviderOrchestrationTasksResponse{
+		Items:    items,
+		Total:    total,
+		Page:     page,
+		PageSize: pageSize,
+	})
+}
+
+// GetProviderOrchestrationTask 获取 Orchestrator 编排任务详情。
+// @Summary 获取 TaskProvider 编排任务详情 | Get TaskProvider orchestration task detail
+// @Description 按标准 TaskProvider 路径获取 Orchestrator 编排任务详情；task_type 仅支持 orchestration。| Get Orchestrator task detail through the standard TaskProvider path; task_type only supports orchestration.
+// @Tags Orchestrator
+// @Produce json
+// @Param task_type path string true "任务类型，固定为 orchestration | Task type, fixed to orchestration"
+// @Param id path int true "编排 ID | Orchestration ID"
+// @Success 200 {object} models.ProviderOrchestrationTask
+// @Failure 400 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Router /tasks/{task_type}/{id} [get]
+// @Security BearerAuth
+func (h *OrchestrationHandler) GetProviderOrchestrationTask(c *gin.Context) {
+	if c.Param("task_type") != commonExecution.TaskTypeOrchestration {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported task_type: " + c.Param("task_type")})
+		return
+	}
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, "orchestrator.error.invalid_id")})
+		return
+	}
+
+	tenantID := commonAuth.GetTenantID(c)
+	if tenantID == 0 {
+		tenantID = 1
+	}
+	orch, err := h.orchRepo.GetByIDAndTenant(uint(id), tenantID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, "orchestrator.error.orchestration_not_found")})
+		return
+	}
+	c.JSON(http.StatusOK, models.NewProviderOrchestrationTask(*orch))
+}
+
+// ExecuteProviderOrchestrationTask 执行 Orchestrator 编排任务。
+// @Summary 执行 TaskProvider 编排任务 | Execute TaskProvider orchestration task
+// @Description 按标准 TaskProvider 协议执行 Orchestrator 编排任务；task_type 仅支持 orchestration。| Execute an Orchestrator task through the standard TaskProvider protocol; task_type only supports orchestration.
+// @Tags Orchestrator
+// @Accept json
+// @Produce json
+// @Param task_type path string true "任务类型，固定为 orchestration | Task type, fixed to orchestration"
+// @Param id path int true "编排 ID | Orchestration ID"
+// @Param request body orchestrationTaskProviderExecuteRequest false "TaskProvider 执行请求 | TaskProvider execution request"
+// @Success 202 {object} map[string]string
+// @Failure 400 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Router /tasks/{task_type}/{id}/execute [post]
+// @Security BearerAuth
+func (h *OrchestrationHandler) ExecuteProviderOrchestrationTask(c *gin.Context) {
+	if c.Param("task_type") != commonExecution.TaskTypeOrchestration {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported task_type: " + c.Param("task_type")})
+		return
+	}
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, "orchestrator.error.invalid_id")})
+		return
+	}
+
+	tenantID := commonAuth.GetTenantID(c)
+	if tenantID == 0 {
+		tenantID = 1
+	}
+	if _, err := h.orchRepo.GetByIDAndTenant(uint(id), tenantID); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, "orchestrator.error.orchestration_not_found")})
+		return
+	}
+
+	var req orchestrationTaskProviderExecuteRequest
+	_ = c.ShouldBindJSON(&req)
+	if len(req.Parameters) > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Orchestrator task provider does not support execution parameter overrides"})
+		return
+	}
+	source := strings.TrimSpace(req.Source)
+	if source == "" {
+		source = commonExecution.ModuleOrchestrator
+	}
+	var parentExecutionID *string
+	if strings.TrimSpace(req.ParentExecutionID) != "" {
+		parentExecutionID = &req.ParentExecutionID
+	}
+
+	execution, err := h.executionService.CreateExecutionWithContext(
+		c.Request.Context(),
+		uint(id),
+		tenantID,
+		req.TriggerType,
+		source,
+		parentExecutionID,
+		commonAuth.GetUserID(c),
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	h.executor.ExecuteAsync(uint(execution.ID))
+
+	c.JSON(http.StatusAccepted, gin.H{
+		"execution_id": execution.ExecutionID,
+		"status":       execution.Status,
+	})
+}
+
+// GetProviderExecution 获取 Orchestrator 编排执行状态。
+// @Summary 获取 Orchestrator 编排执行状态 | Get Orchestrator execution status
+// @Description 按 execution_id 查询 Orchestrator 编排统一执行记录。| Get an Orchestrator execution record by execution_id.
+// @Tags Orchestrator
+// @Produce json
+// @Param execution_id path string true "执行 UUID | Execution UUID"
+// @Success 200 {object} commonExecution.TaskExecution
+// @Failure 404 {object} map[string]interface{}
+// @Router /executions/{execution_id} [get]
+// @Security BearerAuth
+func (h *OrchestrationHandler) GetProviderExecution(c *gin.Context) {
+	tenantID := commonAuth.GetTenantID(c)
+	if tenantID == 0 {
+		tenantID = 1
+	}
+	exec, err := h.executionService.GetExecutionByExecutionID(c.Request.Context(), c.Param("execution_id"), tenantID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, "orchestrator.error.execution_not_found")})
+		return
+	}
+	c.JSON(http.StatusOK, exec)
+}
+
 // standardizeTaskListResponse 统一任务列表响应格式
 // 将不同模块的返回格式统一为 {items: [...], total: X}
 // 同时确保每个任务都有 display_name 字段（用于前端中文显示）
 func (h *OrchestrationHandler) standardizeTaskListResponse(respData interface{}) map[string]interface{} {
+	if items, ok := respData.([]interface{}); ok {
+		return map[string]interface{}{
+			"items": h.ensureDisplayNames(items),
+			"total": len(items),
+		}
+	}
+
 	resultMap, ok := respData.(map[string]interface{})
 	if !ok {
 		// 非对象响应，直接返回空列表
@@ -548,7 +731,6 @@ func (h *OrchestrationHandler) standardizeTaskListResponse(respData interface{})
 		}
 	}
 
-	// 情况 4: 直接是数组，包装为标准格式
 	return map[string]interface{}{
 		"items": []interface{}{},
 		"total": 0,

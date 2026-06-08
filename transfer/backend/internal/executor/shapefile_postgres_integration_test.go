@@ -76,12 +76,9 @@ func TestIntegrationShapefileToPostgresWritesEWKBGeometry(t *testing.T) {
 		t.Fatalf("Close shapefile writer failed: %v", err)
 	}
 
-	schemaName := "transfer_it"
+	schemaName := integrationPostgresTestSchema(t, ctx, db)
 	tableName := fmt.Sprintf("shp_to_pg_%d", time.Now().UnixNano())
 	targetPath := integrationPostgresTablePath(schemaName, tableName)
-	t.Cleanup(func() {
-		_, _ = db.ExecContext(context.Background(), fmt.Sprintf(`DROP TABLE IF EXISTS "%s"."%s"`, schemaName, tableName))
-	})
 
 	parseOptions := format.DefaultParseOptions()
 	parseOptions.GeometryEncoding = format.GeometryEncodingEWKB
@@ -292,14 +289,8 @@ func TestIntegrationPostgresSpatialTableToShapefilePreservesSpatialMetadata(t *t
 	db := openIntegrationPostgres(t, ctx, pg, connInfo)
 	defer db.Close()
 
-	schemaName := "transfer_it"
+	schemaName := integrationPostgresTestSchema(t, ctx, db)
 	tableName := fmt.Sprintf("pg_to_shp_%d", time.Now().UnixNano())
-	if _, err := db.ExecContext(ctx, fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS "%s"`, schemaName)); err != nil {
-		t.Fatalf("create schema failed: %v", err)
-	}
-	t.Cleanup(func() {
-		_, _ = db.ExecContext(context.Background(), fmt.Sprintf(`DROP TABLE IF EXISTS "%s"."%s"`, schemaName, tableName))
-	})
 	if _, err := db.ExecContext(ctx, fmt.Sprintf(`
 		CREATE TABLE "%s"."%s" (
 			id integer PRIMARY KEY,
@@ -431,6 +422,19 @@ func integrationPostgresTablePath(schemaName, tableName string) engineplugin.Cat
 	}
 }
 
+func integrationPostgresTestSchema(t *testing.T, ctx context.Context, db *sql.DB) string {
+	t.Helper()
+
+	schemaName := fmt.Sprintf("transfer_test_%d", time.Now().UnixNano())
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(`CREATE SCHEMA "%s"`, schemaName)); err != nil {
+		t.Fatalf("create test schema failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), fmt.Sprintf(`DROP SCHEMA IF EXISTS "%s" CASCADE`, schemaName))
+	})
+	return schemaName
+}
+
 func runShapefileZToPostgres(
 	t *testing.T,
 	ctx context.Context,
@@ -446,12 +450,9 @@ func runShapefileZToPostgres(
 	sourcePath := engineplugin.FileItemPath(0, "imports/"+sourceBaseName+".shp")
 	source := shapefileContent(t, sourcePath.StringPath(), sourceBaseName, shapeType, shape)
 	shapefilePlugin := shapefileformat.NewPlugin(nil)
-	schemaName := "transfer_it"
+	schemaName := integrationPostgresTestSchema(t, ctx, db)
 	tableName := fmt.Sprintf("%s_to_pg_%d", sourceBaseName, time.Now().UnixNano())
 	targetPath := integrationPostgresTablePath(schemaName, tableName)
-	t.Cleanup(func() {
-		_, _ = db.ExecContext(context.Background(), fmt.Sprintf(`DROP TABLE IF EXISTS "%s"."%s"`, schemaName, tableName))
-	})
 
 	parseOptions := format.DefaultParseOptions()
 	parseOptions.GeometryEncoding = format.GeometryEncodingEWKB

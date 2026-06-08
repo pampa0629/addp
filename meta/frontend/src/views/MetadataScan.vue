@@ -349,6 +349,7 @@
 
 <script setup>
 import { ref, computed, onMounted, reactive, watch, nextTick, onBeforeUnmount } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { Search, Refresh, CircleCheck, CircleClose, Warning, QuestionFilled, Clock, Link, Document } from '@element-plus/icons-vue'
@@ -356,6 +357,7 @@ import { ScheduleConfig, describeCron, decodeScheduleToForm } from '@common-ui'
 import metaApi from '../api/meta'
 
 const { t } = useI18n()
+const route = useRoute()
 
 const AUTO_SCHEDULE_DESC_MARK = '[PortalAutoSchedule]'
 const SCAN_RUN_POLL_INTERVAL_MS = 2000
@@ -389,6 +391,7 @@ const activeScan = ref({
 })
 
 const allScanTasks = ref([])
+const openedRouteTaskID = ref('')
 const scheduleDialogVisible = ref(false)
 const savingSchedule = ref(false)
 const scheduleCron = ref('') // Cron 表达式
@@ -557,6 +560,44 @@ const handleScheduleClick = async row => {
   }
   await loadScanTasks()
   prefillScheduleForm(autoScheduleTask.value)
+  scheduleDialogVisible.value = true
+}
+
+const openScanTaskFromRoute = async () => {
+  const taskID = String(route.query.task_id || '').trim()
+  if (!taskID || openedRouteTaskID.value === taskID) return
+  if (!allScanTasks.value.length) {
+    await loadScanTasks()
+  }
+
+  const task = allScanTasks.value.find(item => String(item.id) === taskID)
+  if (!task) return
+
+  openedRouteTaskID.value = taskID
+  const resource = engines.value.find(item => Number(item.id) === Number(task.engine_id))
+  if (resource && (!selectedResource.value || Number(selectedResource.value.id) !== Number(resource.id))) {
+    selectedResource.value = resource
+    await nextTick()
+    resourceTableRef.value?.setCurrentRow(resource)
+    await loadCatalogEntries()
+  }
+
+  const catalogPaths = Array.isArray(task.parameters?.catalog_paths) ? task.parameters.catalog_paths : []
+  if (catalogPaths.length === 1) {
+    const target = catalogPaths[0]
+    const catalogEntry = catalogEntries.value.find(entry => {
+      return catalogEntryTargetOf(entry) === target || catalogEntryNameOf(entry) === target
+    }) || { name: target, path: target }
+    currentCatalogEntry.value = catalogEntry
+    currentCatalogEntryTask.value = task
+    catalogEntryScheduleCron.value = task.schedule || ''
+    catalogEntryScheduleDepth.value = task.parameters?.scan_depth || 'deep'
+    catalogEntryScheduleEnabled.value = !!task.enabled
+    catalogEntryScheduleDialogVisible.value = true
+    return
+  }
+
+  prefillScheduleForm(task)
   scheduleDialogVisible.value = true
 }
 
@@ -1246,8 +1287,12 @@ watch(selectedResource, () => {
 })
 
 onMounted(() => {
-  loadEngines()
+  loadEngines().then(openScanTaskFromRoute)
   window.addEventListener('resize', enforceBounds)
+})
+
+watch(() => route.query.task_id, () => {
+  openScanTaskFromRoute()
 })
 
 onBeforeUnmount(() => {

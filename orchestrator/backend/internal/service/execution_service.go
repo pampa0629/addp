@@ -35,33 +35,52 @@ func NewExecutionService(
 }
 
 // CreateExecution 创建执行记录
-func (s *ExecutionService) CreateExecution(ctx context.Context, orchestrationID, tenantID uint) (*commonExecution.TaskExecution, error) {
+func (s *ExecutionService) CreateExecution(ctx context.Context, orchestrationID, tenantID uint, triggerType string) (*commonExecution.TaskExecution, error) {
+	return s.CreateExecutionWithContext(ctx, orchestrationID, tenantID, triggerType, commonExecution.ModuleOrchestrator, nil, 0)
+}
+
+// CreateExecutionWithContext 创建带标准 TaskProvider 上下文的编排执行记录。
+func (s *ExecutionService) CreateExecutionWithContext(ctx context.Context, orchestrationID, tenantID uint, triggerType, source string, parentExecutionID *string, triggeredBy uint) (*commonExecution.TaskExecution, error) {
 	// 获取编排信息
 	orch, err := s.orchRepo.GetByID(orchestrationID)
 	if err != nil {
 		return nil, fmt.Errorf("orchestration not found: %w", err)
 	}
 
+	normalizedTriggerType, err := commonExecution.NormalizeTriggerType(triggerType)
+	if err != nil {
+		return nil, err
+	}
+	if source == "" {
+		source = commonExecution.ModuleOrchestrator
+	}
+
 	// 创建统一执行记录
 	now := time.Now()
-	orchIDInt := int(orchestrationID)
 	orchName := orch.Name
+	var triggeredByPtr *int
+	if triggeredBy > 0 {
+		value := int(triggeredBy)
+		triggeredByPtr = &value
+	}
 
 	execution := &commonExecution.TaskExecution{
-		TenantID:       int(tenantID),
-		ExecutionID:    uuid.New().String(),
-		Module:         commonExecution.ModuleOrchestrator,
-		TaskType:       "orchestration",
-		Source:         commonExecution.ModuleOrchestrator,
-		SourceTaskID:   &orchIDInt,
-		SourceTaskName: &orchName,
-		Status:         commonExecution.ExecutionStatusPending,
-		Progress:       0,
-		TriggerType:    commonExecution.TriggerTypeManual,
-		Metadata:       make(commonModels.JSONMap),
-		StartedAt:      &now,
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		TenantID:          int(tenantID),
+		ExecutionID:       uuid.New().String(),
+		Module:            commonExecution.ModuleOrchestrator,
+		TaskType:          commonExecution.TaskTypeOrchestration,
+		Source:            source,
+		SourceTaskID:      commonExecution.NewSourceTaskIDFromUint(orchestrationID),
+		SourceTaskName:    &orchName,
+		ParentExecutionID: parentExecutionID,
+		Status:            commonExecution.ExecutionStatusPending,
+		Progress:          0,
+		TriggerType:       normalizedTriggerType,
+		TriggeredBy:       triggeredByPtr,
+		Metadata:          make(commonModels.JSONMap),
+		StartedAt:         &now,
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 
 	if err := s.taskExecutionRepo.Create(ctx, execution); err != nil {
@@ -91,6 +110,21 @@ func (s *ExecutionService) GetExecution(ctx context.Context, id, tenantID uint) 
 	return execution, nil
 }
 
+// GetExecutionByExecutionID 按全局 execution_id 获取 Orchestrator 执行记录。
+func (s *ExecutionService) GetExecutionByExecutionID(ctx context.Context, executionID string, tenantID uint) (*commonExecution.TaskExecution, error) {
+	execution, err := s.taskExecutionRepo.GetByExecutionID(ctx, executionID, int(tenantID))
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, fmt.Errorf("execution not found")
+		}
+		return nil, err
+	}
+	if execution.Module != commonExecution.ModuleOrchestrator {
+		return nil, fmt.Errorf("execution not found or access denied")
+	}
+	return execution, nil
+}
+
 // UpdateStatus 更新执行状态
 func (s *ExecutionService) UpdateStatus(ctx context.Context, id uint, status string) error {
 	// 获取执行记录
@@ -104,13 +138,13 @@ func (s *ExecutionService) UpdateStatus(ctx context.Context, id uint, status str
 	}
 
 	// 如果状态是运行中，更新 started_at
-	if status == "running" {
+	if status == commonExecution.ExecutionStatusRunning {
 		now := time.Now()
 		updates["started_at"] = now
 	}
 
 	// 如果状态是完成或失败，更新 completed_at
-	if status == "completed" || status == "failed" {
+	if status == commonExecution.ExecutionStatusSuccess || status == commonExecution.ExecutionStatusFailed || status == commonExecution.ExecutionStatusTimeout || status == commonExecution.ExecutionStatusCancelled {
 		now := time.Now()
 		updates["completed_at"] = now
 	}
@@ -153,7 +187,11 @@ func (s *ExecutionService) UpdateStepResults(ctx context.Context, id uint, stepR
 	progress := 0
 	if len(stepResults) > 0 {
 		if execution.SourceTaskID != nil {
-			orch, err := s.orchRepo.GetByID(uint(*execution.SourceTaskID))
+			orchestrationID, parseErr := commonExecution.ParseSourceTaskIDUint(execution.SourceTaskID)
+			if parseErr != nil {
+				return parseErr
+			}
+			orch, err := s.orchRepo.GetByID(orchestrationID)
 			if err == nil && len(orch.Steps) > 0 {
 				progress = int(float64(len(stepResults)) / float64(len(orch.Steps)) * 100)
 			}
@@ -210,11 +248,12 @@ func (s *ExecutionService) FinishExecution(ctx context.Context, id uint, status,
 
 // ListExecutions 列出执行记录
 func (s *ExecutionService) ListExecutions(ctx context.Context, orchestrationID, tenantID uint, page, pageSize int) ([]*commonExecution.TaskExecution, int64, error) {
-	orchIDInt := int(orchestrationID)
+	sourceTaskID := commonExecution.NewSourceTaskIDFromUint(orchestrationID)
 	filter := commonExecution.TaskExecutionFilter{
 		TenantID:     int(tenantID),
 		Module:       commonExecution.ModuleOrchestrator,
-		SourceTaskID: &orchIDInt,
+		TaskType:     commonExecution.TaskTypeOrchestration,
+		SourceTaskID: sourceTaskID,
 		Page:         page,
 		PageSize:     pageSize,
 	}
@@ -227,6 +266,7 @@ func (s *ExecutionService) ListAllExecutions(ctx context.Context, tenantID uint,
 	filter := commonExecution.TaskExecutionFilter{
 		TenantID: int(tenantID),
 		Module:   commonExecution.ModuleOrchestrator,
+		TaskType: commonExecution.TaskTypeOrchestration,
 		Page:     page,
 		PageSize: pageSize,
 	}

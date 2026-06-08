@@ -153,10 +153,10 @@ func (h *TileConfigHandler) GetTileConfig(c *gin.Context) {
 	}
 
 	// 5. 计算 MinZoom
-	if qv != nil && qv.Status == "completed" && qv.MinZoom != nil {
-		// 如果快显已完成，使用预计算的 minZoom
+	if qv != nil && qv.Status == "ready" && qv.MinZoom != nil {
+		// 如果快显产物已就绪，使用预计算的 minZoom
 		minZoom = *qv.MinZoom
-		logger.L().Debug("Using configured MinZoom from quick view (completed)",
+		logger.L().Debug("Using configured MinZoom from quick view artifact",
 			"min_zoom", minZoom,
 			"table", table,
 			"status", qv.Status)
@@ -177,8 +177,8 @@ func (h *TileConfigHandler) GetTileConfig(c *gin.Context) {
 	// 5. 智能计算 MaxZoom（基于记录数）
 	maxZoom := h.cfg.PreCache.MaxZoom // 默认18
 
-	// 如果快显已完成且有 maxZoom，使用预计算值
-	if qv != nil && qv.Status == "completed" && qv.MaxZoom > 0 {
+	// 如果快显产物已就绪且有 maxZoom，使用预计算值
+	if qv != nil && qv.Status == "ready" && qv.MaxZoom > 0 {
 		maxZoom = qv.MaxZoom
 		logger.L().Debug("Using pre-computed MaxZoom from quick view",
 			"max_zoom", maxZoom,

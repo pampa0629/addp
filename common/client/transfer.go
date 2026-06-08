@@ -11,7 +11,8 @@ import (
 )
 
 // TransferClient Transfer 服务客户端
-type TransferClient struct {	baseURL     string
+type TransferClient struct {
+	baseURL     string
 	httpClient  *http.Client
 	internalKey string
 }
@@ -46,8 +47,8 @@ func (c *TransferClient) addAuthWithTenant(req *http.Request, tenantID uint) {
 type CreateTransferTaskRequest struct {
 	Name             string                 `json:"name"`
 	Description      string                 `json:"description,omitempty"`
-	TaskType         string                 `json:"task_type"`          // "import" | "export" | "sync"
-	Config           map[string]interface{} `json:"config"`             // 包含 reader/writer 配置
+	TaskType         string                 `json:"task_type"` // Transfer 当前统一任务类型，固定为 import
+	Config           map[string]interface{} `json:"config"`    // 包含 reader/writer 配置
 	BatchSize        int                    `json:"batch_size,omitempty"`
 	AutoScanMetadata *bool                  `json:"auto_scan_metadata,omitempty"`
 	TenantID         uint                   `json:"tenant_id,omitempty"`
@@ -76,7 +77,7 @@ func (c *TransferClient) CreateTask(req *CreateTransferTaskRequest) (*TransferTa
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	httpReq, err := http.NewRequest("POST", c.baseURL+"/api/v1/transfer/tasks", bytes.NewReader(body))
+	httpReq, err := http.NewRequest("POST", c.baseURL+"/api/v1/transfer/task-definitions", bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -125,7 +126,7 @@ func (c *TransferClient) CreateTask(req *CreateTransferTaskRequest) (*TransferTa
 
 // TriggerTask 触发任务执行
 func (c *TransferClient) TriggerTask(taskID, tenantID uint) (*TriggerTaskResponse, error) {
-	url := fmt.Sprintf("%s/api/v1/transfer/tasks/%d/start", c.baseURL, taskID)
+	url := fmt.Sprintf("%s/api/v1/transfer/task-definitions/%d/start", c.baseURL, taskID)
 
 	httpReq, err := http.NewRequest("POST", url, nil)
 	if err != nil {

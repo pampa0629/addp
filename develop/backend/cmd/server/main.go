@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	commonExecution "github.com/addp/common/execution"
 	"log"
 	"os"
@@ -101,7 +100,7 @@ func main() {
 		log.Printf("✅ NotebookExecutionService 初始化完成")
 	}
 
-	// 4. DevItem业务逻辑服务
+	// 4. DevTask业务逻辑服务
 	devTaskService := service.NewDevTaskService(devTaskRepo)
 	log.Printf("✅ DevTaskService 初始化完成")
 
@@ -124,7 +123,7 @@ func main() {
 	log.Printf("✅ DuckDBService 初始化完成")
 
 	// ========== Handler 层 ==========
-	devItemHandler := api.NewDevItemHandler(devTaskService)
+	devTaskHandler := api.NewDevTaskHandler(devTaskService)
 	devExecutionHandler := api.NewDevExecutionHandler(devExecutor)
 	operatorHandler := api.NewOperatorHandler(operatorDiscovery)
 	engineHandler := api.NewEngineHandler(systemClient)
@@ -149,29 +148,24 @@ func main() {
 	log.Printf("✅ Handler 层初始化完成")
 
 	// ========== 设置路由 ==========
-	router := api.SetupRouter(cfg, db, devItemHandler, devExecutionHandler, operatorHandler, engineHandler, queryHandler, notebookHandler, jupyterInstanceHandler, jupyterVenvHandler, devTaskService, systemClient, duckdbHandler)
+	router := api.SetupRouter(cfg, db, devTaskHandler, devExecutionHandler, operatorHandler, engineHandler, queryHandler, notebookHandler, jupyterInstanceHandler, jupyterVenvHandler, devTaskService, systemClient, duckdbHandler)
 	log.Printf("✅ 路由设置完成")
+
+	serviceHost := utils.GetServiceHost()
+	port := utils.GetModulePort("develop")
+	serviceURL := utils.BuildServiceURL(serviceHost, port)
 
 	// ========== 模块注册（注册到 System service_registry）==========
 	if cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
-		serviceHost := utils.GetServiceHost()
-		port := utils.GetModulePort("develop")
-		serviceURL := utils.BuildServiceURL(serviceHost, port)
 		registryClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
 		registryClient.RegisterAndHeartbeat("develop", serviceURL, "/develop")
 	}
 
 	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========
-	// 构造 Develop 服务的外部访问 URL（供 Orchestrator 调用）
-	developServiceURL := fmt.Sprintf("http://develop-backend:%s", cfg.ServerAddr)
-	if os.Getenv("DEVELOP_URL") != "" {
-		developServiceURL = os.Getenv("DEVELOP_URL")
-	}
-
 	engineRegistry := service.NewEngineRegistryService(
 		cfg.SystemServiceURL,
 		cfg.InternalAPIKey,
-		developServiceURL,
+		serviceURL,
 	)
 
 	// 后台异步注册（不阻塞启动，支持重试）

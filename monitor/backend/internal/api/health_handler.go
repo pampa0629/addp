@@ -38,6 +38,23 @@ func (h *HealthHandler) GetModules(c *gin.Context) {
 	c.JSON(http.StatusOK, modules)
 }
 
+// GetTaskProviders 获取所有任务提供者
+// @Summary 获取任务提供者列表 | Get task providers
+// @Tags Monitor
+// @Produce json
+// @Success 200 {array} models.TaskProvider
+// @Router /task-providers [get]
+// @Security BearerAuth
+func (h *HealthHandler) GetTaskProviders(c *gin.Context) {
+	providers, err := h.healthService.ListTaskProviders(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, providers)
+}
+
 // CheckModuleHealth 检查单个模块健康状态
 // @Summary 检查模块健康状态 | Check module health
 // @Tags Monitor

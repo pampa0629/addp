@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"time"
 
 	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
@@ -100,6 +101,28 @@ func main() {
 	port := utils.GetModulePort("quality")
 	serviceURL := utils.BuildServiceURL(serviceHost, port)
 	systemClient.RegisterAndHeartbeat("quality", serviceURL, "/quality")
+
+	if cfg.EnableIntegration && cfg.SystemURL != "" && cfg.InternalAPIKey != "" {
+		taskProviderRegistry := service.NewTaskProviderRegistryService(
+			cfg.SystemURL,
+			cfg.InternalAPIKey,
+			serviceURL,
+		)
+
+		go func() {
+			time.Sleep(2 * time.Second)
+			maxRetries := 5
+			for attempt := 1; attempt <= maxRetries; attempt++ {
+				if err := taskProviderRegistry.Register(); err != nil {
+					log.Printf("⚠️  Quality 任务提供者注册失败 (%d/%d): %v", attempt, maxRetries, err)
+					time.Sleep(time.Duration(attempt*2) * time.Second)
+					continue
+				}
+				log.Printf("✅ Quality 模块已注册到 task_providers")
+				return
+			}
+		}()
+	}
 
 	select {}
 }

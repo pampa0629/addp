@@ -2,11 +2,11 @@
 
 ## 一、表结构概览
 
-`manager.quick_view` 表是 Manager 模块的快显（预缓存）表，记录空间数据表的瓦片预缓存任务状态和配置。支持自动计算最佳缩放级别，按需生成瓦片到 MinIO，实现快速地图渲染。
+`manager.quick_view` 表是 Manager 模块的快显（预缓存）产物状态表，记录空间数据表的瓦片预缓存 artifact state 和配置。支持自动计算最佳缩放级别，按需生成瓦片到 MinIO，实现快速地图渲染。这里的 `status` 表达当前快显产物是否可用或正在生成，不是 `common.task_executions.status`。
 
 ### 核心功能
 
-- **瓦片预缓存任务管理**：记录快显任务的状态和进度
+- **瓦片预缓存产物管理**：记录快显产物的状态和进度
 - **自动层级计算**：根据表的空间范围自动计算 MinZoom 和 MaxZoom
 - **停止条件控制**：基于瓦片生成时间和大小自动停止
 - **缓存统计追踪**：记录总瓦片数、已缓存数、性能指标
@@ -24,7 +24,7 @@
 | `engine_id` | INTEGER | NOT NULL | 引擎 ID |
 | `schema_name` | VARCHAR(255) | NOT NULL | Schema 名称 |
 | `table_name` | VARCHAR(255) | NOT NULL | 表名 |
-| `status` | VARCHAR(50) | NOT NULL, INDEXED | 任务状态 |
+| `status` | VARCHAR(50) | NOT NULL, INDEXED | 快显产物状态 |
 | `error_message` | TEXT | | 错误信息（失败时） |
 | `min_zoom` | INTEGER | | 最小缩放级别（自动计算） |
 | `max_zoom` | INTEGER | DEFAULT 18 | 最大缩放级别 |

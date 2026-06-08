@@ -2,7 +2,6 @@ package preview
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,7 +10,6 @@ import (
 
 	"github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
-	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/manager/internal/catalogutil"
@@ -26,7 +24,14 @@ type namedPreviewProvider struct {
 
 func (p namedPreviewProvider) Name() string { return p.name }
 func (p namedPreviewProvider) Preview(context.Context, *PreviewRequest) (*models.TablePreview, error) {
-	return nil, nil
+	return &models.TablePreview{
+		Mode:     PreviewModeTable,
+		Columns:  []string{"id"},
+		Rows:     []map[string]interface{}{{"id": 1}},
+		Total:    1,
+		Page:     1,
+		PageSize: 20,
+	}, nil
 }
 
 type previewRoutingModelPlugin struct {
@@ -89,30 +94,56 @@ func TestLoadPreviewPluginsRegistersBuiltinDefaultsWithoutFiles(t *testing.T) {
 	}
 }
 
-func TestSubmitItemDeepScanRunUsesManualTriggerAndPreviewSource(t *testing.T) {
-	t.Parallel()
-
-	var gotPayload map[string]interface{}
+func TestPreviewFromURIWithBasicItemDoesNotSubmitDeepScanRun(t *testing.T) {
+	registerPreviewRoutingModelPlugin(t, plugin.TabularCatalogModel(plugin.CatalogTermSchema))
+	scanRunCalled := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/meta/scan/run/manual" {
-			t.Fatalf("path = %q, want /api/v1/meta/scan/run/manual", r.URL.Path)
+		switch r.URL.Path {
+		case "/api/v1/internal/engines/26":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id":26,"name":"preview","engine_type":"preview-routing-model","connection_info":{},"is_active":true}`))
+		case "/api/v1/meta/items/1831":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id":1831,"engine_id":26,"node_id":7,"item_type":"table","name":"users","full_name":"public.users","scanned_depth":"basic","attributes":{"item":{"data_type":"table","layout":"single"}}}`))
+		case "/api/v1/meta/scan/run/manual":
+			scanRunCalled = true
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			w.WriteHeader(http.StatusNotFound)
 		}
-		if err := json.NewDecoder(r.Body).Decode(&gotPayload); err != nil {
-			t.Fatalf("decode payload: %v", err)
-		}
-		w.WriteHeader(http.StatusCreated)
-		_, _ = w.Write([]byte(`{"id":11,"tenant_id":1,"execution_id":"run-1","module":"meta","task_type":"scan","status":"pending","trigger_type":"manual"}`))
 	}))
 	defer server.Close()
 
-	resolver := NewPreviewResolver(NewPreviewRegistry(), nil, client.NewMetaClientWithInternalKey(server.URL, "internal-key"))
-	resolver.submitItemDeepScanRun(42)
-
-	if gotPayload["item_id"] != float64(42) {
-		t.Fatalf("item_id = %#v, want 42", gotPayload["item_id"])
+	registry := NewPreviewRegistry()
+	registry.Register(namedPreviewProvider{name: "builtin:database-table"})
+	resolver := NewPreviewResolver(
+		registry,
+		client.NewSystemClientWithInternalKey(server.URL, "internal-key"),
+		client.NewMetaClientWithInternalKey(server.URL, "internal-key"),
+	)
+	result, err := resolver.PreviewFromURI(
+		context.Background(),
+		"addp://engine/26/path/public/users?type=table&item_id=1831",
+		1,
+		20,
+		"",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("PreviewFromURI() error = %v", err)
 	}
-	if gotPayload["trigger_type"] != "manual" || gotPayload["source"] != commonExecution.ModuleManager {
-		t.Fatalf("payload trigger/source = %#v/%#v, want manual/%s", gotPayload["trigger_type"], gotPayload["source"], commonExecution.ModuleManager)
+	if scanRunCalled {
+		t.Fatal("preview should not submit Meta deep scan run")
+	}
+	preview, ok := result.Data.(*models.TablePreview)
+	if !ok {
+		t.Fatalf("result.Data = %T, want *models.TablePreview", result.Data)
+	}
+	if len(preview.Advisories) != 1 || preview.Advisories[0].Code != "item_refresh_recommended" {
+		t.Fatalf("Advisories = %#v, want item refresh recommendation", preview.Advisories)
+	}
+	if result.Metadata == nil || result.Metadata.ScannedDepth != "basic" {
+		t.Fatalf("metadata scanned depth = %#v, want basic", result.Metadata)
 	}
 }
 

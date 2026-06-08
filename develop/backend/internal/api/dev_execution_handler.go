@@ -3,11 +3,13 @@ package api
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
+	commonExecution "github.com/addp/common/execution"
+	commoni18n "github.com/addp/common/middleware/i18n"
+	developi18n "github.com/addp/develop/backend/i18n"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/addp/develop/backend/internal/service"
-	developi18n "github.com/addp/develop/backend/i18n"
-	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/gin-gonic/gin"
 )
 
@@ -23,16 +25,16 @@ func NewDevExecutionHandler(devExecutor *service.DevExecutor) *DevExecutionHandl
 	}
 }
 
-// ExecuteDevItem 执行开发项（支持参数化）
-// @Summary 执行开发项 | Execute development item
+// ExecuteDevTask 执行开发任务（支持参数化）
+// @Summary 执行开发任务 | Execute development task
 // @Tags Execution
 // @Accept json
 // @Produce json
-// @Param id path int true "开发项ID | Development item ID"
+// @Param id path int true "开发任务 ID | Development task ID"
 // @Param body body map[string]interface{} false "执行参数（可选）| Execution parameters (optional)"
 // @Success 200 {object} map[string]string "执行已启动 | Execution started"
-// @Router /items/{id}/execute [post]
-func (h *DevExecutionHandler) ExecuteDevItem(c *gin.Context) {
+// @Router /task-definitions/{id}/execute [post]
+func (h *DevExecutionHandler) ExecuteDevTask(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
@@ -58,7 +60,7 @@ func (h *DevExecutionHandler) ExecuteDevItem(c *gin.Context) {
 		)
 	} else {
 		// 常规执行
-		executionID, err = h.devExecutor.ExecuteDevItem(c.Request.Context(), uint(id), tenantID, userID, "manual")
+		executionID, err = h.devExecutor.ExecuteDevTask(c.Request.Context(), uint(id), tenantID, userID, "manual")
 	}
 
 	if err != nil {
@@ -72,7 +74,7 @@ func (h *DevExecutionHandler) ExecuteDevItem(c *gin.Context) {
 	})
 }
 
-// ExecuteContent 执行临时内容（不创建开发项）
+// ExecuteContent 执行临时内容（不创建开发任务）
 // @Summary 执行临时内容 | Execute temporary content
 // @Tags Execution
 // @Accept json
@@ -117,7 +119,7 @@ func (h *DevExecutionHandler) ExecuteContent(c *gin.Context) {
 // @Tags Execution
 // @Produce json
 // @Param id path string true "执行ID（UUID）| Execution ID (UUID)"
-// @Success 200 {object} models.ExecutionWithDevItem "执行详情 | Execution details"
+// @Success 200 {object} models.ExecutionWithDevTask "执行详情 | Execution details"
 // @Router /executions/{id} [get]
 func (h *DevExecutionHandler) GetExecution(c *gin.Context) {
 	executionID := c.Param("id")
@@ -138,7 +140,7 @@ func (h *DevExecutionHandler) GetExecution(c *gin.Context) {
 // @Produce json
 // @Param page query int false "页码 | Page number"
 // @Param page_size query int false "每页数量 | Page size"
-// @Param dev_item_id query int false "开发项ID过滤 | Filter by development item ID"
+// @Param source_task_id query string false "任务定义 ID 过滤 | Filter by source task ID"
 // @Param dev_type query string false "类型过滤 | Filter by type"
 // @Param status query string false "状态过滤 | Filter by status"
 // @Param trigger_type query string false "触发类型过滤 | Filter by trigger type"
@@ -177,24 +179,6 @@ func (h *DevExecutionHandler) ListExecutions(c *gin.Context) {
 	})
 }
 
-// CancelExecution 取消执行
-// @Summary 取消执行 | Cancel execution
-// @Tags Execution
-// @Param id path string true "执行ID（UUID）| Execution ID (UUID)"
-// @Success 200 {object} map[string]string "取消成功 | Cancelled successfully"
-// @Router /executions/{id}/cancel [post]
-func (h *DevExecutionHandler) CancelExecution(c *gin.Context) {
-	executionID := c.Param("id")
-	tenantID := c.GetUint("tenant_id")
-
-	if err := h.devExecutor.CancelExecution(executionID, tenantID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, developi18n.MsgExecutionCancelled)})
-}
-
 // RetryExecution 重试执行
 // @Summary 重试执行 | Retry execution
 // @Tags Execution
@@ -222,7 +206,7 @@ func (h *DevExecutionHandler) RetryExecution(c *gin.Context) {
 // @Summary 获取执行统计 | Get execution statistics
 // @Tags Execution
 // @Produce json
-// @Param dev_item_id query int false "开发项ID | Development item ID"
+// @Param source_task_id query string false "任务定义 ID | Source task ID"
 // @Param start_date query string false "开始日期 YYYY-MM-DD | Start date YYYY-MM-DD"
 // @Param end_date query string false "结束日期 YYYY-MM-DD | End date YYYY-MM-DD"
 // @Success 200 {object} models.ExecutionStatistics "执行统计 | Execution statistics"
@@ -230,20 +214,11 @@ func (h *DevExecutionHandler) RetryExecution(c *gin.Context) {
 func (h *DevExecutionHandler) GetExecutionStatistics(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 
-	// 解析查询参数
-	var devItemID *uint
-	if idStr := c.Query("dev_item_id"); idStr != "" {
-		id, err := strconv.ParseUint(idStr, 10, 32)
-		if err == nil {
-			uintID := uint(id)
-			devItemID = &uintID
-		}
-	}
-
+	sourceTaskID := c.Query("source_task_id")
 	startDate := c.Query("start_date")
 	endDate := c.Query("end_date")
 
-	stats, err := h.devExecutor.GetStatistics(tenantID, devItemID, startDate, endDate)
+	stats, err := h.devExecutor.GetStatistics(tenantID, sourceTaskID, startDate, endDate)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -269,39 +244,66 @@ func (h *DevExecutionHandler) GetExecutionLogs(c *gin.Context) {
 	})
 }
 
-// ExecuteWithParams 参数化执行开发项（供 Orchestrator 调用）
-// @Summary 参数化执行开发项 | Execute development item with parameters
+type providerExecuteDevRequest struct {
+	TriggerType       string                 `json:"trigger_type"`
+	Source            string                 `json:"source"`
+	ParentExecutionID string                 `json:"parent_execution_id"`
+	Parameters        map[string]interface{} `json:"parameters"`
+}
+
+// ProviderExecuteDevTask 按 TaskProvider 标准协议执行开发任务。
+// @Summary 执行 TaskProvider 开发任务 | Execute TaskProvider development task
+// @Description 按标准 TaskProvider 协议执行开发任务；task_type 支持 query/workflow/script，parameters 会传入本次执行。| Execute a development task through the standard TaskProvider protocol; task_type supports query/workflow/script and parameters are passed to this execution.
 // @Tags Execution
 // @Accept json
 // @Produce json
-// @Param id path int true "开发项ID | Development item ID"
-// @Param body body map[string]interface{} true "执行参数 | Execution parameters"
+// @Param task_type path string true "任务类型：query/workflow/script | Task type: query/workflow/script"
+// @Param id path int true "开发任务ID | Development task ID"
+// @Param request body providerExecuteDevRequest false "TaskProvider 执行请求 | TaskProvider execution request"
 // @Success 200 {object} map[string]string "执行已启动 | Execution started"
-// @Router /items/{id}/execute-with-params [post]
-func (h *DevExecutionHandler) ExecuteWithParams(c *gin.Context) {
+// @Failure 400 {object} map[string]interface{} "参数错误 | Bad request"
+// @Failure 500 {object} map[string]interface{} "服务器错误 | Server error"
+// @Router /tasks/{task_type}/{id}/execute [post]
+func (h *DevExecutionHandler) ProviderExecuteDevTask(c *gin.Context) {
+	taskType := c.Param("task_type")
+	if !isDevelopTaskType(taskType) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported task_type: " + taskType})
+		return
+	}
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
 		return
 	}
 
+	var req providerExecuteDevRequest
+	_ = c.ShouldBindJSON(&req)
+	triggerType, err := commonExecution.NormalizeTriggerType(req.TriggerType)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	source := strings.TrimSpace(req.Source)
+	if source == "" {
+		source = commonExecution.ModuleDevelop
+	}
+	var parentExecutionID *string
+	if strings.TrimSpace(req.ParentExecutionID) != "" {
+		parentExecutionID = &req.ParentExecutionID
+	}
+
 	tenantID := c.GetUint("tenant_id")
 	userID := c.GetUint("user_id")
 
-	// 解析参数
-	var params map[string]interface{}
-	if err := c.ShouldBindJSON(&params); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid parameters: " + err.Error()})
-		return
-	}
-
-	// 参数化执行
-	executionID, err := h.devExecutor.ExecuteWithParams(
+	executionID, err := h.devExecutor.ExecuteWithParamsWithContext(
 		c.Request.Context(),
 		uint(id),
-		params,
+		req.Parameters,
 		tenantID,
 		userID,
+		triggerType,
+		source,
+		parentExecutionID,
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -309,6 +311,7 @@ func (h *DevExecutionHandler) ExecuteWithParams(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
+		"status":       "success",
 		"execution_id": executionID,
 		"message":      commoni18n.T(c, developi18n.MsgParamExecStarted),
 	})

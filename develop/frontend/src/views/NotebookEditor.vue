@@ -375,7 +375,7 @@ import {
   Download, Delete, TopRight, QuestionFilled
 } from '@element-plus/icons-vue'
 import { notebookAPI } from '@/api/notebook'
-import { listDevItems, deleteDevItem, executeDevItem } from '@/api/devItem'
+import { deleteDevTask, executeDevTask } from '@/api/devTask'
 import { listEngines } from '@/api/engines'
 import { getVenvStatus, initVenv } from '@/api/jupyter'
 import { useRouter } from 'vue-router'
@@ -462,7 +462,6 @@ const loadNotebooks = async () => {
   loading.value = true
   try {
     const params = {
-      dev_type: 'notebook',
       page: currentPage.value,
       page_size: pageSize.value
     }
@@ -471,7 +470,7 @@ const loadNotebooks = async () => {
       params.keyword = searchKeyword.value
     }
 
-    const response = await listDevItems(params)
+    const response = await notebookAPI.listNotebooks(params)
     notebooks.value = response.items || []
     total.value = response.total || 0
   } catch (error) {
@@ -674,8 +673,8 @@ const confirmExecute = async () => {
 
   executing.value = true
   try {
-    // 调用统一的 dev_item 执行接口
-    const response = await executeDevItem(executeNotebook.value.id, {
+    // 调用统一开发任务执行接口
+    const response = await executeDevTask(executeNotebook.value.id, {
       parameters,
       data_source_ids: executeForm.value.data_source_ids
     })
@@ -700,7 +699,7 @@ const confirmExecute = async () => {
 const viewHistory = (notebook) => {
   router.push({
     path: '/executions',
-    query: { dev_item_id: notebook.id }
+    query: { source_task_id: notebook.id, dev_type: 'script' }
   })
 }
 
@@ -751,7 +750,7 @@ const deleteNotebook = async (notebook) => {
       }
     )
 
-    await deleteDevItem(notebook.id)
+    await deleteDevTask(notebook.id)
     ElMessage.success(t('develop.notebook.deleteSuccess'))
 
     // 如果删除的是当前选中的 Notebook，清空选中状态

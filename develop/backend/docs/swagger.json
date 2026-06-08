@@ -330,9 +330,9 @@
                         "in": "query"
                     },
                     {
-                        "type": "integer",
-                        "description": "开发项ID过滤 | Filter by development item ID",
-                        "name": "dev_item_id",
+                        "type": "string",
+                        "description": "任务定义 ID 过滤 | Filter by source task ID",
+                        "name": "source_task_id",
                         "in": "query"
                     },
                     {
@@ -421,9 +421,9 @@
                 "summary": "获取执行统计 | Get execution statistics",
                 "parameters": [
                     {
-                        "type": "integer",
-                        "description": "开发项ID | Development item ID",
-                        "name": "dev_item_id",
+                        "type": "string",
+                        "description": "任务定义 ID | Source task ID",
+                        "name": "source_task_id",
                         "in": "query"
                     },
                     {
@@ -471,35 +471,7 @@
                     "200": {
                         "description": "执行详情 | Execution details",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ExecutionWithDevItem"
-                        }
-                    }
-                }
-            }
-        },
-        "/executions/{id}/cancel": {
-            "post": {
-                "tags": [
-                    "Execution"
-                ],
-                "summary": "取消执行 | Cancel execution",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "执行ID（UUID）| Execution ID (UUID)",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "取消成功 | Cancelled successfully",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ExecutionWithDevTask"
                         }
                     }
                 }
@@ -552,302 +524,6 @@
                 "responses": {
                     "200": {
                         "description": "重试已启动 | Retry started",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/items": {
-            "get": {
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "DevItem"
-                ],
-                "summary": "查询开发项列表 | List development items",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "页码 | Page number",
-                        "name": "page",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "每页数量 | Page size",
-                        "name": "page_size",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "类型过滤 | Filter by type",
-                        "name": "dev_type",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "状态过滤 | Filter by status",
-                        "name": "status",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "资源ID过滤 | Filter by engine ID",
-                        "name": "engine_id",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "标签过滤 | Filter by tag",
-                        "name": "tag",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "关键词搜索 | Keyword search",
-                        "name": "keyword",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "开发项列表 | Development item list",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ListDevTasksResponse"
-                        }
-                    }
-                }
-            },
-            "post": {
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "DevItem"
-                ],
-                "summary": "创建开发项 | Create development item",
-                "parameters": [
-                    {
-                        "description": "创建请求 | Create request",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.CreateDevTaskRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "已创建的开发项 | Created development item",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTask"
-                        }
-                    }
-                }
-            }
-        },
-        "/items/statistics": {
-            "get": {
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "DevItem"
-                ],
-                "summary": "获取开发项统计 | Get development item statistics",
-                "responses": {
-                    "200": {
-                        "description": "统计数据 | Statistics",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "integer",
-                                "format": "int64"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/items/{id}": {
-            "get": {
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "DevItem"
-                ],
-                "summary": "获取开发项详情 | Get development item details",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "开发项ID | Development item ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "开发项详情 | Development item details",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTask"
-                        }
-                    }
-                }
-            },
-            "put": {
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "DevItem"
-                ],
-                "summary": "更新开发项 | Update development item",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "开发项ID | Development item ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "更新请求 | Update request",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.UpdateDevTaskRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "已更新的开发项 | Updated development item",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTask"
-                        }
-                    }
-                }
-            },
-            "delete": {
-                "tags": [
-                    "DevItem"
-                ],
-                "summary": "删除开发项 | Delete development item",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "开发项ID | Development item ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "删除成功 | Deleted successfully",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/items/{id}/execute": {
-            "post": {
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "DevItem"
-                ],
-                "summary": "执行开发项 | Execute development item",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "开发项ID | Development item ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "执行参数 | Execution parameters",
-                        "name": "body",
-                        "in": "body",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "执行已启动 | Execution started",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/items/{id}/execute-with-params": {
-            "post": {
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Execution"
-                ],
-                "summary": "参数化执行开发项 | Execute development item with parameters",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "开发项ID | Development item ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "执行参数 | Execution parameters",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "执行已启动 | Execution started",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -1241,7 +917,7 @@
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "DevItem ID | DevItem ID",
+                        "description": "DevTask ID | DevTask ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -1272,7 +948,7 @@
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "DevItem ID | DevItem ID",
+                        "description": "DevTask ID | DevTask ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -1788,14 +1464,266 @@
                 }
             }
         },
-        "/tasks/list": {
+        "/task-definitions": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "DevTask"
+                ],
+                "summary": "查询开发任务列表 | List development tasks",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码 | Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "类型过滤 | Filter by type",
+                        "name": "dev_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "状态过滤 | Filter by status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "资源ID过滤 | Filter by engine ID",
+                        "name": "engine_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "标签过滤 | Filter by tag",
+                        "name": "tag",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "关键词搜索 | Keyword search",
+                        "name": "keyword",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "开发任务列表 | Development task list",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ListDevTasksResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "DevTask"
+                ],
+                "summary": "创建开发任务 | Create development task",
+                "parameters": [
+                    {
+                        "description": "创建请求 | Create request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.CreateDevTaskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "已创建的开发任务 | Created development task",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTask"
+                        }
+                    }
+                }
+            }
+        },
+        "/task-definitions/statistics": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "DevTask"
+                ],
+                "summary": "获取开发任务统计 | Get development task statistics",
+                "responses": {
+                    "200": {
+                        "description": "统计数据 | Statistics",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "integer",
+                                "format": "int64"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/task-definitions/{id}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "DevTask"
+                ],
+                "summary": "获取开发任务详情 | Get development task details",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "开发任务ID | Development task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "开发任务详情 | Development task details",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTask"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "DevTask"
+                ],
+                "summary": "更新开发任务 | Update development task",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "开发任务 ID | Development task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "更新请求 | Update request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.UpdateDevTaskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "已更新的开发任务 | Updated development task",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTask"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "DevTask"
+                ],
+                "summary": "删除开发任务 | Delete development task",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "开发任务ID | Development task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "删除成功 | Deleted successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/task-definitions/{id}/execute": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "DevTask"
+                ],
+                "summary": "执行开发任务 | Execute development task",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "开发任务ID | Development task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "执行参数 | Execution parameters",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "执行已启动 | Execution started",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tasks": {
             "get": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "返回可供 Orchestrator 编排复用的开发任务 | List active develop tasks for Orchestrator",
+                "description": "返回可供 TaskProvider 编排复用的开发任务 | List active develop tasks exposed by TaskProvider",
                 "produces": [
                     "application/json"
                 ],
@@ -1806,8 +1734,8 @@
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务提供者唯一标识 | Task provider identifier",
-                        "name": "unique_identifier",
+                        "description": "任务类型：query/workflow/script | Task type: query/workflow/script",
+                        "name": "task_type",
                         "in": "query"
                     },
                     {
@@ -1829,12 +1757,125 @@
                     "200": {
                         "description": "OK",
                         "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ListProviderDevTasksResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/tasks/{task_type}/{id}": {
+            "get": {
+                "description": "按标准 TaskProvider 路径获取开发任务详情；task_type 支持 query/workflow/script。| Get development task detail through the standard TaskProvider path; task_type supports query/workflow/script.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "DevTask"
+                ],
+                "summary": "获取 TaskProvider 开发任务详情 | Get TaskProvider development task detail",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "任务类型：query/workflow/script | Task type: query/workflow/script",
+                        "name": "task_type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "开发任务ID | Development task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "开发任务详情 | Development task detail",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ProviderDevTask"
+                        }
+                    },
+                    "400": {
+                        "description": "参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "任务不存在 | Task not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/tasks/{task_type}/{id}/execute": {
+            "post": {
+                "description": "按标准 TaskProvider 协议执行开发任务；task_type 支持 query/workflow/script，parameters 会传入本次执行。| Execute a development task through the standard TaskProvider protocol; task_type supports query/workflow/script and parameters are passed to this execution.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Execution"
+                ],
+                "summary": "执行 TaskProvider 开发任务 | Execute TaskProvider development task",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "任务类型：query/workflow/script | Task type: query/workflow/script",
+                        "name": "task_type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "开发任务ID | Development task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "TaskProvider 执行请求 | TaskProvider execution request",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.providerExecuteDevRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "执行已启动 | Execution started",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "参数错误 | Bad request",
+                        "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "500": {
-                        "description": "Internal Server Error",
+                        "description": "服务器错误 | Server error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -2155,8 +2196,7 @@
                     "enum": [
                         "query",
                         "workflow",
-                        "script",
-                        "notebook"
+                        "script"
                     ]
                 },
                 "display_name": {
@@ -2195,16 +2235,12 @@
                     "type": "object",
                     "additionalProperties": true
                 },
-                "dev_item_id": {
-                    "type": "integer"
-                },
                 "dev_type": {
                     "type": "string",
                     "enum": [
                         "query",
                         "workflow",
-                        "script",
-                        "notebook"
+                        "script"
                     ]
                 },
                 "engine_id": {
@@ -2245,7 +2281,7 @@
                     "type": "string"
                 },
                 "dev_type": {
-                    "description": "'query' | 'workflow' | 'notebook'",
+                    "description": "'query' | 'workflow' | 'script'",
                     "type": "string"
                 },
                 "display_name": {
@@ -2341,7 +2377,7 @@
                 }
             }
         },
-        "github_com_addp_develop_backend_internal_models.ExecutionWithDevItem": {
+        "github_com_addp_develop_backend_internal_models.ExecutionWithDevTask": {
             "type": "object",
             "properties": {
                 "bytes_read": {
@@ -2362,7 +2398,7 @@
                     "description": "当前步骤（Orchestrator/Workflow）",
                     "type": "string"
                 },
-                "dev_item": {
+                "dev_task": {
                     "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTask"
                 },
                 "error_details": {
@@ -2430,7 +2466,7 @@
                 },
                 "source_task_id": {
                     "description": "关联原始任务",
-                    "type": "integer"
+                    "type": "string"
                 },
                 "source_task_name": {
                     "description": "任务名称（冗余，便于查询）",
@@ -2445,7 +2481,7 @@
                     "type": "string"
                 },
                 "task_type": {
-                    "description": "'import'/'export'/'sync'/'query'/'workflow'/'notebook'/'orchestration'/'mvt_generation'/'embedding'",
+                    "description": "provider 声明的稳定任务类型",
                     "type": "string"
                 },
                 "tenant_id": {
@@ -2490,7 +2526,7 @@
                 "executions": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ExecutionWithDevItem"
+                        "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ExecutionWithDevTask"
                     }
                 },
                 "page": {
@@ -2500,6 +2536,100 @@
                     "type": "integer"
                 },
                 "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_models.ListProviderDevTasksResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ProviderDevTask"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_models.ProviderDevTask": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTaskContent"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "execution_config": {
+                    "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTaskContent"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "last_execution_status": {
+                    "type": "string"
+                },
+                "last_run_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "next_run_at": {
+                    "type": "string"
+                },
+                "parameters": {
+                    "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTaskContent"
+                },
+                "schedule": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "task_type": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "timeout": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
                     "type": "integer"
                 }
             }
@@ -2875,6 +3005,24 @@
                 "timeout": {
                     "description": "超时时间（秒）",
                     "type": "integer"
+                }
+            }
+        },
+        "internal_api.providerExecuteDevRequest": {
+            "type": "object",
+            "properties": {
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "parent_execution_id": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "trigger_type": {
+                    "type": "string"
                 }
             }
         },

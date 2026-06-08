@@ -32,14 +32,20 @@ func NewExecutionHandler(executionService *service.ExecutionService) *ExecutionH
 // @Router /executions/{id} [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) GetExecution(c *gin.Context) {
-	id, ok := commonAPI.ParseUintParam(c, "id")
-	if !ok {
+	tenantID := c.GetUint("tenant_id")
+	idParam := c.Param("id")
+	if id, err := strconv.ParseUint(idParam, 10, 32); err == nil {
+		execution, err := h.executionService.GetExecution(c.Request.Context(), uint(id), tenantID)
+		if err != nil {
+			commonAPI.NotFoundError(c, "Execution not found")
+			return
+		}
+
+		c.JSON(http.StatusOK, execution)
 		return
 	}
 
-	tenantID := c.GetUint("tenant_id")
-
-	execution, err := h.executionService.GetExecution(c.Request.Context(), id, tenantID)
+	execution, err := h.executionService.GetExecutionByExecutionID(c.Request.Context(), idParam, tenantID)
 	if err != nil {
 		commonAPI.NotFoundError(c, "Execution not found")
 		return
@@ -104,7 +110,7 @@ func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
 // @Param page_size query int false "每页数量 | Page size" default(20)
 // @Success 200 {object} map[string]interface{}
 // @Failure 500 {object} map[string]string
-// @Router /tasks/{id}/executions [get]
+// @Router /task-definitions/{id}/executions [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) GetTaskExecutions(c *gin.Context) {
 	taskID, ok := commonAPI.ParseUintParam(c, "id")

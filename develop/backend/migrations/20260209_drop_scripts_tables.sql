@@ -1,5 +1,5 @@
 -- 删除 scripts 相关表
--- 这些表功能与 dev_items 重叠，统一使用 dev_items 管理
+-- 这些表功能与 dev_tasks 重叠，统一使用 dev_tasks 管理
 
 -- 删除依赖关系表
 DROP TABLE IF EXISTS develop.script_dependencies;

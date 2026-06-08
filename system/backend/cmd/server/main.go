@@ -66,7 +66,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 迁移 task_providers 表（将 create_task_url/edit_task_url 合入 capabilities）
+	// 迁移 task_providers 表（删除旧 create_task_url/edit_task_url 列）
 	if err := repository.MigrateTaskProviders(db); err != nil {
 		logger.L().Error("task_providers 迁移失败", "error", err)
 		os.Exit(1)

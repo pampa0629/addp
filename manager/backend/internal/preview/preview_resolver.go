@@ -9,7 +9,6 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
-	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/format"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
@@ -53,19 +52,20 @@ func NewPreviewResolver(
 
 // PreviewRequest 新的预览请求（基于 ResourceLocator）
 type PreviewResolverRequest struct {
-	Locator         *resourcetree.ResourceLocator // 资源定位符
-	Engine          *commonModels.Engine          // 引擎信息
-	Metadata        *commonModels.MetaNode        // 可选：Meta 节点数据
-	Pagination      *Pagination                   // 分页参数
-	TenantID        *uint                         // 租户 ID
-	ItemType        string                        // 数据项类型（如 "table"），来自 MetaItem
-	ItemRowCount    *int64                        // 表/集合行数，来自 MetaItem.RowCount
-	PhysicalPath    string                        // 物理路径（来自 meta_item.attributes.storage.physical_path）
-	ScopePath       string                        // 范围路径（来自 meta_item.attributes.storage.physical_path）
-	ChildName       string                        // 容器内部 child 名称，例如 Excel sheet
-	RefPath         string                        // multi child 内的单个ref 路径，指向容器内原始对象
-	NestedChildPath string                        // 当前 child 是容器时，继续寻址其内部 child 的相对路径
-	GraphSample     plugin.GraphSampleFilter      // 图预览样本过滤条件
+	Locator          *resourcetree.ResourceLocator // 资源定位符
+	Engine           *commonModels.Engine          // 引擎信息
+	Metadata         *commonModels.MetaNode        // 可选：Meta 节点数据
+	Pagination       *Pagination                   // 分页参数
+	TenantID         *uint                         // 租户 ID
+	ItemType         string                        // 数据项类型（如 "table"），来自 MetaItem
+	ItemRowCount     *int64                        // 表/集合行数，来自 MetaItem.RowCount
+	ItemScannedDepth string                        // Meta item 当前扫描深度
+	PhysicalPath     string                        // 物理路径（来自 meta_item.attributes.storage.physical_path）
+	ScopePath        string                        // 范围路径（来自 meta_item.attributes.storage.physical_path）
+	ChildName        string                        // 容器内部 child 名称，例如 Excel sheet
+	RefPath          string                        // multi child 内的单个ref 路径，指向容器内原始对象
+	NestedChildPath  string                        // 当前 child 是容器时，继续寻址其内部 child 的相对路径
+	GraphSample      plugin.GraphSampleFilter      // 图预览样本过滤条件
 }
 
 // Pagination 分页参数
@@ -89,8 +89,9 @@ type PreviewMetadata struct {
 	EngineName   string `json:"engine_name"`   // 引擎名称
 	ResourceType string `json:"resource_type"` // 引擎类型（postgresql/minio）
 	MetaScanned  bool   `json:"meta_scanned"`  // 是否已被 Meta 扫描
-	ItemCount    *int64 `json:"item_count"`    // 项目数（来自 Meta）
-	SizeBytes    *int64 `json:"size_bytes"`    // 大小（来自 Meta）
+	ScannedDepth string `json:"scanned_depth,omitempty"`
+	ItemCount    *int64 `json:"item_count"` // 项目数（来自 Meta）
+	SizeBytes    *int64 `json:"size_bytes"` // 大小（来自 Meta）
 }
 
 // Preview 执行预览。预览必须基于已经由 Meta 扫描入库的节点或 item。
@@ -200,10 +201,6 @@ func (r *PreviewResolver) PreviewFromURIWithSelection(ctx context.Context, locat
 			itemID := *loc.ItemID
 			item, err := r.metaClient.GetItemByID(itemID)
 			if err == nil && item != nil {
-				if item.ScannedDepth != "deep" {
-					r.submitItemDeepScanRun(itemID)
-					return nil, ErrPreviewRequiresScannedMeta
-				}
 				metaItem = item
 				identityResolved = true
 				logger.L().Debug("从 Meta 通过 item_id 获取到 MetaItem",
@@ -243,10 +240,6 @@ func (r *PreviewResolver) PreviewFromURIWithSelection(ctx context.Context, locat
 			if isPreviewItemLocator(loc) {
 				item, err := r.metaClient.GetItemByCatalogPath(loc.EngineID, catalogPath)
 				if err == nil && item != nil {
-					if item.ScannedDepth != "deep" {
-						r.submitItemDeepScanRun(item.ID)
-						return nil, ErrPreviewRequiresScannedMeta
-					}
 					metaItem = item
 					logger.L().Debug("从 Meta 获取到数据项元数据",
 						"catalog_path", catalogPath,
@@ -316,13 +309,16 @@ func (r *PreviewResolver) PreviewFromURIWithSelection(ctx context.Context, locat
 		}
 		attrs := cloneMetaAttributes(metaItem.Attributes)
 		req.ItemRowCount = metaItem.RowCount
+		req.ItemScannedDepth = metaItem.ScannedDepth
 		req.Metadata = &commonModels.MetaNode{
 			ID:             metaItem.ID,
 			EngineID:       metaItem.EngineID,
 			Path:           metaItem.FullName,
 			FullName:       metaItem.FullName,
+			ScannedDepth:   metaItem.ScannedDepth,
 			ItemCount:      1,
 			TotalSizeBytes: sizeBytes,
+			LastScanAt:     metaItem.ScannedAt,
 			Attributes:     attrs,
 		}
 		req.ItemType = metaItem.ItemType
@@ -331,24 +327,6 @@ func (r *PreviewResolver) PreviewFromURIWithSelection(ctx context.Context, locat
 
 	// 5. 执行预览
 	return r.Preview(ctx, req)
-}
-
-func (r *PreviewResolver) submitItemDeepScanRun(itemID uint) {
-	if r.metaClient == nil || itemID == 0 {
-		return
-	}
-	run, err := r.metaClient.CreateManualScanRun(commonClient.MetaScanOptions{
-		ItemID:      itemID,
-		ScanDepth:   "deep",
-		Force:       false,
-		TriggerType: "manual",
-		Source:      commonExecution.ModuleManager,
-	})
-	if err != nil {
-		logger.L().Warn("提交 Meta item deep 后台补扫失败", "item_id", itemID, "error", err)
-		return
-	}
-	logger.L().Info("Meta item deep 后台补扫已提交", "item_id", itemID, "execution_id", run.ExecutionID)
 }
 
 func cloneMetaAttributes(attrs map[string]interface{}) map[string]interface{} {
@@ -513,6 +491,7 @@ func (r *PreviewResolver) buildProviderRequest(req *PreviewResolverRequest) (*Pr
 		TenantID:        req.TenantID,
 		ItemType:        req.ItemType,
 		ItemRowCount:    req.ItemRowCount,
+		ScannedDepth:    req.scannedDepth(),
 		NodeType:        string(req.Locator.Type),
 		ProviderPath:    providerPath,
 		PhysicalPath:    req.PhysicalPath,
@@ -665,6 +644,7 @@ func (r *PreviewResolver) buildPreviewResult(tablePreview *models.TablePreview, 
 		Data:        tablePreview,
 		Metadata:    r.buildMetadata(req),
 	}
+	appendPreviewAdvisory(tablePreview, refreshItemAdvisoryForRequest(req))
 
 	return result
 }
@@ -676,6 +656,7 @@ func (r *PreviewResolver) buildMetadata(req *PreviewResolverRequest) *PreviewMet
 		EngineName:   req.Engine.Name,
 		ResourceType: req.Engine.EngineType,
 		MetaScanned:  req.Metadata != nil,
+		ScannedDepth: req.scannedDepth(),
 	}
 
 	if req.Metadata != nil {
@@ -709,6 +690,7 @@ func (r *PreviewResolver) attachItemMeta(preview *models.TablePreview, req *Prev
 		RowCount:        req.ItemRowCount,
 		Attributes:      mapToMetaAttributes(req.Metadata.Attributes),
 		ScannedAt:       req.Metadata.LastScanAt,
+		ScannedDepth:    req.scannedDepth(),
 	}
 
 	// FullName 兜底
@@ -717,6 +699,48 @@ func (r *PreviewResolver) attachItemMeta(preview *models.TablePreview, req *Prev
 	}
 
 	preview.ItemMeta = meta
+}
+
+func (req *PreviewResolverRequest) scannedDepth() string {
+	if req == nil {
+		return ""
+	}
+	if strings.TrimSpace(req.ItemScannedDepth) != "" {
+		return strings.TrimSpace(req.ItemScannedDepth)
+	}
+	if req.Metadata != nil {
+		return strings.TrimSpace(req.Metadata.ScannedDepth)
+	}
+	return ""
+}
+
+func refreshItemAdvisoryForRequest(req *PreviewResolverRequest) *models.PreviewAdvisory {
+	if req == nil || req.Metadata == nil {
+		return nil
+	}
+	if !isPreviewItemType(strings.ToLower(strings.TrimSpace(req.ItemType))) {
+		return nil
+	}
+	if strings.EqualFold(req.scannedDepth(), "deep") {
+		return nil
+	}
+	return &models.PreviewAdvisory{
+		Code:     "item_refresh_recommended",
+		Severity: "info",
+		Action:   "item_refresh",
+	}
+}
+
+func appendPreviewAdvisory(preview *models.TablePreview, advisory *models.PreviewAdvisory) {
+	if preview == nil || advisory == nil || strings.TrimSpace(advisory.Code) == "" {
+		return
+	}
+	for _, existing := range preview.Advisories {
+		if existing.Code == advisory.Code && existing.Action == advisory.Action {
+			return
+		}
+	}
+	preview.Advisories = append(preview.Advisories, *advisory)
 }
 
 func mapToMetaAttributes(attrs map[string]interface{}) []models.MetaAttribute {

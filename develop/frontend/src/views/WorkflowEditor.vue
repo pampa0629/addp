@@ -296,7 +296,7 @@ import {
 import OperatorPalette from '@/components/workflow/OperatorPalette.vue'
 import WorkflowDAGCanvas from '@/components/workflow/WorkflowDAGCanvas.vue'
 import OperatorParamsPanel from '@/components/workflow/OperatorParamsPanel.vue'
-import { createDevItem, executeDevItem, getDevItem } from '@/api/devItem'
+import { createDevTask, executeDevTask, getDevTask } from '@/api/devTask'
 import { getOperatorDetail } from '@/api/operator'
 import { generateWorkflowFromNL } from '@/api/copilot'
 import { getWorkflowEngines, getSparkRuntimes } from '@/api/engines'
@@ -613,7 +613,7 @@ const confirmSave = async () => {
       executionConfig
     })
 
-    await createDevItem({
+    await createDevTask({
       name: saveForm.name,
       display_name: saveForm.display_name,
       dev_type: 'workflow',
@@ -697,7 +697,7 @@ const confirmExecute = async () => {
     }
 
     // 创建临时任务并执行
-    const tempTask = await createDevItem({
+    const tempTask = await createDevTask({
       name: `${t('develop.workflow.tempWorkflowPrefix')}_${Date.now()}`,
       dev_type: 'workflow',
       execution_config: executionConfig,  // 直接传递对象，不需要序列化
@@ -707,7 +707,7 @@ const confirmExecute = async () => {
       }
     })
 
-    await executeDevItem(tempTask.id, inputs)
+    await executeDevTask(tempTask.id, inputs)
 
     ElMessage.success(t('develop.workflow.executeSubmitted'))
     executeDialogVisible.value = false
@@ -764,7 +764,7 @@ const handleViewJSON = () => {
     }
   }
 
-  // 构造完整的 dev_item 结构（包括 execution_config）
+  // 构造完整的 dev_task 结构（包括 execution_config）
   const exportData = {
     workflow_definition: workflow,
     execution_config: executionConfig
@@ -901,7 +901,7 @@ const handleFileChange = async (event) => {
 // 加载已有任务
 const loadTask = async (taskId) => {
   try {
-    const task = await getDevItem(taskId)
+    const task = await getDevTask(taskId)
 
     // 设置当前任务信息
     currentTaskId.value = task.id
@@ -961,7 +961,7 @@ onMounted(async () => {
 
   const taskId = route.query.taskId
   if (taskId) {
-    // 如果是编辑模式，加载开发项
+    // 如果是编辑模式，加载开发任务
     await loadTask(taskId)
   } else {
     // 新建模式：选择默认引擎

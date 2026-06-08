@@ -857,92 +857,14 @@ const docTemplate = `{
                 }
             }
         },
-        "/tasks": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "分页获取任务列表，支持按类型、状态过滤 | Get paginated task list with type and status filtering",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "任务管理 | Task Management"
-                ],
-                "summary": "获取任务列表 | List tasks",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "default": 1,
-                        "description": "页码 | Page number",
-                        "name": "page",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "default": 20,
-                        "description": "每页大小 | Page size",
-                        "name": "page_size",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "任务类型: import, export, sync | Task type: import, export, sync",
-                        "name": "type",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "任务状态: pending, running, completed, failed | Task status",
-                        "name": "status",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "获取成功 | Retrieved successfully",
-                        "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/api.PaginatedResponse"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "type": "array",
-                                            "items": {
-                                                "$ref": "#/definitions/github_com_addp_transfer_internal_models.TransferTask"
-                                            }
-                                        }
-                                    }
-                                }
-                            ]
-                        }
-                    },
-                    "500": {
-                        "description": "服务器错误 | Server error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            },
+        "/task-definitions": {
             "post": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "创建一个新的数据导入/导出/同步任务。新任务 config 使用 source/target locator endpoint；source locator 带 item_id 时，Transfer 后端会通过 MetaClient 读取标准 attributes。| Create a new data import/export/sync task. New config uses source/target locator endpoints; when source locator carries item_id, Transfer backend loads standard attributes through MetaClient.",
+                "description": "创建一个新的 Transfer 任务。新任务 config 使用 source/target locator endpoint；source locator 带 item_id 时，Transfer 后端会通过 MetaClient 读取标准 attributes。| Create a new Transfer task. New config uses source/target locator endpoints; when source locator carries item_id, Transfer backend loads standard attributes through MetaClient.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1001,7 +923,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/tasks/statistics": {
+        "/task-definitions/statistics": {
             "get": {
                 "security": [
                     {
@@ -1038,7 +960,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/tasks/{id}": {
+        "/task-definitions/{id}": {
             "get": {
                 "security": [
                     {
@@ -1220,7 +1142,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/tasks/{id}/executions": {
+        "/task-definitions/{id}/executions": {
             "get": {
                 "security": [
                     {
@@ -1277,7 +1199,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/tasks/{id}/pause": {
+        "/task-definitions/{id}/pause": {
             "post": {
                 "security": [
                     {
@@ -1322,7 +1244,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/tasks/{id}/resume": {
+        "/task-definitions/{id}/resume": {
             "post": {
                 "security": [
                     {
@@ -1367,7 +1289,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/tasks/{id}/start": {
+        "/task-definitions/{id}/start": {
             "post": {
                 "security": [
                     {
@@ -1422,7 +1344,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/tasks/{id}/stop": {
+        "/task-definitions/{id}/stop": {
             "post": {
                 "security": [
                     {
@@ -1457,6 +1379,224 @@ const docTemplate = `{
                             "additionalProperties": {
                                 "type": "string"
                             }
+                        }
+                    },
+                    "400": {
+                        "description": "参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "服务器错误 | Server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tasks": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "分页获取任务列表，支持按类型、状态过滤 | Get paginated task list with type and status filtering",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "任务管理 | Task Management"
+                ],
+                "summary": "获取任务列表 | List tasks",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码 | Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "每页大小 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "任务类型，当前固定为 import | Task type, currently fixed to import",
+                        "name": "task_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "任务定义状态: idle, running | Task definition status",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "获取成功 | Retrieved successfully",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.PaginatedResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/github_com_addp_transfer_internal_models.TransferTask"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "不支持的任务类型 | Unsupported task type",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "服务器错误 | Server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tasks/{task_type}/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按标准 TaskProvider 路径获取 Transfer 任务详情；task_type 仅支持 import。| Get Transfer task detail through the standard TaskProvider path; task_type only supports import.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "任务管理 | Task Management"
+                ],
+                "summary": "获取 TaskProvider 任务详情 | Get TaskProvider task detail",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "任务类型，固定为 import | Task type, fixed to import",
+                        "name": "task_type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "任务详情 | Task detail",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_transfer_internal_models.TransferTask"
+                        }
+                    },
+                    "400": {
+                        "description": "参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "任务不存在 | Task not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/tasks/{task_type}/{id}/execute": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按标准 TaskProvider 协议启动 Transfer 任务；task_type 仅支持 import，parameters 当前不支持覆盖。| Start a Transfer task through the standard TaskProvider protocol; task_type only supports import and parameters overrides are not supported.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "任务管理 | Task Management"
+                ],
+                "summary": "执行 TaskProvider Transfer 任务 | Execute TaskProvider Transfer task",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "任务类型，固定为 import | Task type, fixed to import",
+                        "name": "task_type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "TaskProvider 执行请求 | TaskProvider execution request",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ProviderExecuteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "执行记录 | Execution",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_transfer_internal_models.TaskExecution"
                         }
                     },
                     "400": {
@@ -1687,6 +1827,9 @@ const docTemplate = `{
                 "error_msg": {
                     "type": "string"
                 },
+                "execution_id": {
+                    "type": "string"
+                },
                 "id": {
                     "type": "integer"
                 },
@@ -1871,7 +2014,7 @@ const docTemplate = `{
                     "$ref": "#/definitions/github_com_addp_transfer_internal_models.TaskStatus"
                 },
                 "task_type": {
-                    "description": "import | export | sync",
+                    "description": "Transfer 当前统一任务类型，固定为 import",
                     "type": "string"
                 },
                 "tenant_id": {
@@ -1947,6 +2090,24 @@ const docTemplate = `{
                 "valid": {
                     "description": "Valid is true if Time is not NULL",
                     "type": "boolean"
+                }
+            }
+        },
+        "internal_api.ProviderExecuteRequest": {
+            "type": "object",
+            "properties": {
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "parent_execution_id": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "trigger_type": {
+                    "type": "string"
                 }
             }
         },

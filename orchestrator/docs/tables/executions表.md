@@ -6,7 +6,7 @@
 
 ### 核心功能
 
-- **执行状态跟踪**：记录工作流的执行状态（pending/running/completed/failed）
+- **执行状态跟踪**：记录工作流的执行状态（pending/running/success/failed）
 - **步骤结果存储**：保存每个步骤的执行结果、耗时、错误信息
 - **执行历史**：提供完整的执行审计记录
 - **异步执行**：支持 Go 协程异步执行，立即返回 execution_id
@@ -23,7 +23,7 @@
 | `id` | SERIAL | PRIMARY KEY | 执行实例唯一标识 |
 | `orchestration_id` | INTEGER | NOT NULL, INDEXED | 关联的编排 ID |
 | `tenant_id` | INTEGER | NOT NULL, INDEXED | 租户 ID |
-| `status` | VARCHAR(32) | NOT NULL | 执行状态：pending/running/completed/failed |
+| `status` | VARCHAR(32) | NOT NULL | 执行状态：pending/running/success/failed |
 | `current_step` | VARCHAR(64) | | 当前执行的步骤 ID |
 | `step_results` | JSONB | | 所有步骤的执行结果 |
 | `error_message` | TEXT | | 错误信息（执行失败时） |
@@ -116,7 +116,7 @@ type StepResult struct {
 |------|------|---------|
 | `pending` | 待执行 | 创建执行实例但尚未开始 |
 | `running` | 执行中 | Go 协程开始执行 DAG |
-| `completed` | 执行成功 | 所有步骤都成功完成 |
+| `success` | 执行成功 | 所有步骤都成功完成 |
 | `failed` | 执行失败 | 任一步骤失败或超时 |
 
 ### 4.2 状态流转图
@@ -126,7 +126,7 @@ type StepResult struct {
     ↓
 开始异步执行 → running
     ↓
-    ├─ 所有步骤成功 → completed
+    ├─ 所有步骤成功 → success
     └─ 任一步骤失败 → failed
 ```
 
@@ -143,7 +143,7 @@ GET /api/executions
 **查询参数**：
 - `page`（可选）：页码，默认 1
 - `page_size`（可选）：每页条数，默认 20
-- `status`（可选）：按状态筛选（pending/running/completed/failed）
+- `status`（可选）：按状态筛选（pending/running/success/failed）
 
 **响应**（200 OK）：
 
@@ -154,7 +154,7 @@ GET /api/executions
       "id": 100,
       "orchestration_id": 1,
       "tenant_id": 1,
-      "status": "completed",
+      "status": "success",
       "current_step": "mvt",
       "started_at": "2026-01-01T10:00:00Z",
       "completed_at": "2026-01-01T10:15:00Z",
@@ -182,7 +182,7 @@ GET /api/orch-executions/:id
   "id": 100,
   "orchestration_id": 1,
   "tenant_id": 1,
-  "status": "completed",
+  "status": "success",
   "current_step": "export",
   "step_results": {
     "scan": {
@@ -239,7 +239,7 @@ GET /api/orchestrations/:id/executions
     {
       "id": 100,
       "orchestration_id": 1,
-      "status": "completed",
+      "status": "success",
       "started_at": "2026-01-01T10:00:00Z",
       "completed_at": "2026-01-01T10:15:00Z",
       "created_at": "2026-01-01T09:59:00Z"
@@ -289,7 +289,7 @@ for each step (按拓扑顺序):
   ↓
   if 失败: break
   ↓
-更新 status = "completed" 或 "failed"
+更新 status = "success" 或 "failed"
 更新 completed_at = NOW()
 ```
 
@@ -329,7 +329,7 @@ while true; do
 
   echo "当前状态: $STATUS"
 
-  if [ "$STATUS" = "completed" ] || [ "$STATUS" = "failed" ]; then
+  if [ "$STATUS" = "success" ] || [ "$STATUS" = "failed" ]; then
     break
   fi
 

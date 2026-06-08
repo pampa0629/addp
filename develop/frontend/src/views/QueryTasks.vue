@@ -212,7 +212,7 @@ import {
 import { ScheduleDisplay } from '@addp/common-frontend'
 import SaveQueryDialog from '../components/SaveQueryDialog.vue'
 import { listQueryTasks, deleteQueryTask, updateQueryTask } from '../api/query.js'
-import { executeDevItem } from '../api/devItem.js'
+import { executeDevTask } from '../api/devTask.js'
 import dayjs from 'dayjs'
 
 const router = useRouter()
@@ -285,7 +285,7 @@ const handleRowClick = (row) => {
 // 执行任务
 const handleExecute = async (task) => {
   try {
-    await executeDevItem(task.id)
+    await executeDevTask(task.id)
     ElMessage.success(t('develop.queryTasks.executeSubmitted'))
     // 可选：跳转到执行监控页面
     // router.push(`/executions/${executionId}`)

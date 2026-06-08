@@ -205,11 +205,19 @@ func (s *EmbeddingService) EmbedObject(ctx context.Context, req EmbedObjectReque
 
 // EmbedDirectoryRequest 目录批量向量化请求
 type EmbedDirectoryRequest struct {
-	EngineID  uint
-	Bucket    string
-	Prefix    string
-	Recursive bool
-	TenantID  *uint
+	EngineID         uint
+	Bucket           string
+	Prefix           string
+	Recursive        bool
+	TenantID         *uint
+	ExecutionContext *EmbedDirectoryExecutionContext
+}
+
+// EmbedDirectoryExecutionContext 复用外层已创建的统一执行记录。
+type EmbedDirectoryExecutionContext struct {
+	ExecutionID string
+	TenantID    int
+	StartedAt   time.Time
 }
 
 // EmbedDirectoryResult 目录批量向量化结果
@@ -222,29 +230,44 @@ type EmbedDirectoryResult struct {
 }
 
 // EmbedDirectory 批量向量化目录
-// tenantID 用于写入 common.task_executions；executionID 为空时自动生成（ad-hoc 调用）
+// tenantID 用于写入 common.task_executions；没有 ExecutionContext 时自动创建 ad-hoc execution。
 func (s *EmbeddingService) EmbedDirectory(ctx context.Context, req EmbedDirectoryRequest) (*EmbedDirectoryResult, error) {
 	startTime := time.Now()
 
-	// 写入 common.task_executions (status=running)
 	executionID := uuid.New().String()
 	var tenantIDInt int
 	if req.TenantID != nil {
 		tenantIDInt = int(*req.TenantID)
 	}
-	exec := &commonExecution.TaskExecution{
-		ExecutionID: executionID,
-		TenantID:    tenantIDInt,
-		Module:      commonExecution.ModuleManager,
-		TaskType:    "embedding",
-		Source:      commonExecution.ModuleManager,
-		Status:      commonExecution.ExecutionStatusRunning,
-		TriggerType: commonExecution.TriggerTypeManual,
-		StartedAt:   &startTime,
-	}
-	if s.taskExecRepo != nil {
-		if err := s.taskExecRepo.Create(ctx, exec); err != nil {
-			s.log.Warn("Failed to create task execution record", "error", err)
+
+	if req.ExecutionContext != nil {
+		executionID = req.ExecutionContext.ExecutionID
+		tenantIDInt = req.ExecutionContext.TenantID
+		if !req.ExecutionContext.StartedAt.IsZero() {
+			startTime = req.ExecutionContext.StartedAt
+		}
+	} else {
+		exec := &commonExecution.TaskExecution{
+			ExecutionID: executionID,
+			TenantID:    tenantIDInt,
+			Module:      commonExecution.ModuleManager,
+			TaskType:    commonExecution.TaskTypeEmbedding,
+			Source:      commonExecution.ModuleManager,
+			Status:      commonExecution.ExecutionStatusRunning,
+			TriggerType: commonExecution.TriggerTypeManual,
+			StartedAt:   &startTime,
+			ExecutionConfig: commonModels.JSONMap{
+				"engine_id": req.EngineID,
+				"bucket":    req.Bucket,
+				"prefix":    req.Prefix,
+				"recursive": req.Recursive,
+				"scope":     "directory",
+			},
+		}
+		if s.taskExecRepo != nil {
+			if err := s.taskExecRepo.Create(ctx, exec); err != nil {
+				s.log.Warn("Failed to create task execution record", "error", err)
+			}
 		}
 	}
 

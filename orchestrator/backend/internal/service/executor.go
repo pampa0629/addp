@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/orchestrator/internal/models"
 	"github.com/addp/orchestrator/internal/repository"
@@ -19,8 +20,6 @@ import (
 type Executor struct {
 	executionService     *ExecutionService
 	orchRepo             *repository.OrchestrationRepository
-	engineRegistry       *EngineRegistry
-	taskClient           *TaskClient
 	taskProviderRegistry *TaskProviderRegistry
 	internalAPIKey       string
 }
@@ -29,16 +28,12 @@ type Executor struct {
 func NewExecutor(
 	executionService *ExecutionService,
 	orchRepo *repository.OrchestrationRepository,
-	engineRegistry *EngineRegistry,
-	taskClient *TaskClient,
 	taskProviderRegistry *TaskProviderRegistry,
 	internalAPIKey string,
 ) *Executor {
 	return &Executor{
 		executionService:     executionService,
 		orchRepo:             orchRepo,
-		engineRegistry:       engineRegistry,
-		taskClient:           taskClient,
 		taskProviderRegistry: taskProviderRegistry,
 		internalAPIKey:       internalAPIKey,
 	}
@@ -61,13 +56,17 @@ func (e *Executor) executeSync(ctx context.Context, executionID uint) error {
 		return err
 	}
 
-	orch, err := e.orchRepo.GetByID(uint(*execution.SourceTaskID))
+	orchestrationID, err := commonExecution.ParseSourceTaskIDUint(execution.SourceTaskID)
+	if err != nil {
+		return err
+	}
+	orch, err := e.orchRepo.GetByID(orchestrationID)
 	if err != nil {
 		return err
 	}
 
 	// 标记开始
-	if err := e.executionService.UpdateStatus(ctx, executionID, "running"); err != nil {
+	if err := e.executionService.UpdateStatus(ctx, executionID, commonExecution.ExecutionStatusRunning); err != nil {
 		return err
 	}
 
@@ -92,7 +91,7 @@ func (e *Executor) executeSync(ctx context.Context, executionID uint) error {
 		}
 
 		// 执行步骤（传递父执行 UUID 用于 parent_execution_id）
-		result, err := e.executeStep(ctx, step, stepResults, execution.ExecutionID)
+		result, err := e.executeStep(ctx, step, stepResults, execution.ExecutionID, execution.TriggerType, execution.TenantID)
 		stepResults[step.ID] = result
 
 		if err != nil {
@@ -102,88 +101,34 @@ func (e *Executor) executeSync(ctx context.Context, executionID uint) error {
 	}
 
 	// 标记完成
-	if err := e.executionService.FinishExecution(ctx, executionID, "completed", "", stepResults); err != nil {
+	if err := e.executionService.FinishExecution(ctx, executionID, commonExecution.ExecutionStatusSuccess, "", stepResults); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-// executeStep 执行单个步骤（支持两种模式）
-func (e *Executor) executeStep(ctx context.Context, step *models.Step, stepResults models.StepResults, parentExecutionID string) (models.StepResult, error) {
+// executeStep 执行单个任务引用步骤
+func (e *Executor) executeStep(ctx context.Context, step *models.Step, stepResults models.StepResults, parentExecutionID string, triggerType string, tenantID int) (models.StepResult, error) {
 	start := time.Now()
 	result := models.StepResult{StartedAt: start, Status: "running"}
 
 	// 解析参数模板引用
 	resolvedParams := e.resolveTemplateReferences(step.Parameters, stepResults)
 
-	if step.EngineIdentifier != "" {
-		// 模式一：动态引擎调用（工作流引擎）
-		return e.executeWithDynamicEngine(ctx, step, resolvedParams, start)
-	} else if step.Provider != "" {
-		// 模式二：任务引用（TaskProvider 模块）
-		return e.executeWithTaskProvider(ctx, step, resolvedParams, start, parentExecutionID)
+	if step.Provider != "" {
+		return e.executeWithTaskProvider(ctx, step, resolvedParams, start, parentExecutionID, triggerType, tenantID)
 	}
 
 	result.Status = "failed"
-	result.Error = "无效步骤：未指定 engine_identifier 或 provider"
+	result.Error = "无效步骤：未指定 provider"
 	result.EndedAt = time.Now()
 	result.Duration = time.Since(start).Milliseconds()
 	return result, fmt.Errorf("%s", result.Error)
 }
 
-// executeWithDynamicEngine 使用动态引擎执行步骤（模式一：引擎调用）
-func (e *Executor) executeWithDynamicEngine(ctx context.Context, step *models.Step, resolvedParams map[string]interface{}, start time.Time) (models.StepResult, error) {
-	result := models.StepResult{StartedAt: start, Status: "running"}
-
-	// 1. 从注册中心获取引擎配置
-	engine, err := e.engineRegistry.GetEngine(ctx, step.EngineIdentifier)
-	if err != nil {
-		result.Status = "failed"
-		result.Error = fmt.Sprintf("failed to get engine %s: %v", step.EngineIdentifier, err)
-		result.EndedAt = time.Now()
-		result.Duration = time.Since(start).Milliseconds()
-		return result, fmt.Errorf("%s", result.Error)
-	}
-
-	// 2. 提交工作流执行请求（工作流引擎的 execute 端点会直接返回 execution_id）
-	executionID, err := e.taskClient.CreateTask(ctx, engine, resolvedParams)
-	if err != nil {
-		result.Status = "failed"
-		result.Error = fmt.Sprintf("failed to submit workflow: %v", err)
-		result.EndedAt = time.Now()
-		result.Duration = time.Since(start).Milliseconds()
-		return result, fmt.Errorf("%s", result.Error)
-	}
-
-	// 3. 轮询任务状态
-	timeout := time.Duration(step.Timeout) * time.Second
-	if timeout == 0 {
-		timeout = 5 * time.Minute
-	}
-
-	pollCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	taskResult, err := e.pollTaskStatusDynamic(pollCtx, engine, executionID)
-	if err != nil {
-		result.Status = "failed"
-		result.Error = fmt.Sprintf("task execution failed: %v", err)
-		result.EndedAt = time.Now()
-		result.Duration = time.Since(start).Milliseconds()
-		return result, fmt.Errorf("%s", result.Error)
-	}
-
-	// 5. 成功
-	result.Status = "success"
-	result.Result = taskResult
-	result.EndedAt = time.Now()
-	result.Duration = time.Since(start).Milliseconds()
-	return result, nil
-}
-
 // executeWithTaskProvider 通过 TaskProvider API 执行步骤（模式二：任务引用）
-func (e *Executor) executeWithTaskProvider(ctx context.Context, step *models.Step, resolvedParams map[string]interface{}, start time.Time, parentExecutionID string) (models.StepResult, error) {
+func (e *Executor) executeWithTaskProvider(ctx context.Context, step *models.Step, resolvedParams map[string]interface{}, start time.Time, parentExecutionID string, triggerType string, tenantID int) (models.StepResult, error) {
 	result := models.StepResult{StartedAt: start, Status: "running"}
 
 	// 1. 从注册表获取 TaskProvider 配置
@@ -198,16 +143,23 @@ func (e *Executor) executeWithTaskProvider(ctx context.Context, step *models.Ste
 
 	// 2. 构建执行 URL（替换 {task_type} 和 {id} 占位符）
 	taskIDStr := fmt.Sprintf("%d", step.TaskID)
-	executeEndpoint := strings.NewReplacer(
-		"{task_type}", step.TaskType,
-		"{id}", taskIDStr,
-	).Replace(provider.TaskExecuteEndpoint)
+	executeEndpoint := replaceTaskProviderEndpoint(provider.TaskExecuteEndpoint, step.TaskType, taskIDStr, "")
 	targetURL := provider.BaseURL + executeEndpoint
 
 	// 3. 构建请求体
+	normalizedTriggerType, err := commonExecution.NormalizeTriggerType(triggerType)
+	if err != nil {
+		result.Status = "failed"
+		result.Error = fmt.Sprintf("非法触发类型: %v", err)
+		result.EndedAt = time.Now()
+		result.Duration = time.Since(start).Milliseconds()
+		return result, fmt.Errorf("%s", result.Error)
+	}
 	reqBody := map[string]interface{}{
-		"trigger_type":        "orchestrator",
+		"trigger_type":        normalizedTriggerType,
+		"source":              commonExecution.ModuleOrchestrator,
 		"parent_execution_id": parentExecutionID,
+		"parameters":          resolvedParams,
 	}
 	bodyJSON, err := json.Marshal(reqBody)
 	if err != nil {
@@ -230,6 +182,9 @@ func (e *Executor) executeWithTaskProvider(ctx context.Context, step *models.Ste
 	req.Header.Set("Content-Type", "application/json")
 	if e.internalAPIKey != "" {
 		req.Header.Set("X-Internal-API-Key", e.internalAPIKey)
+	}
+	if tenantID > 0 {
+		req.Header.Set("X-Tenant-ID", fmt.Sprintf("%d", tenantID))
 	}
 
 	httpClient := &http.Client{Timeout: 30 * time.Second}
@@ -262,8 +217,8 @@ func (e *Executor) executeWithTaskProvider(ctx context.Context, step *models.Ste
 	}
 
 	// 5. 提取 execution_id
-	executionID, ok := respData["execution_id"].(string)
-	if !ok || executionID == "" {
+	executionID := extractProviderExecutionID(respData)
+	if executionID == "" {
 		result.Status = "failed"
 		result.Error = "执行响应中未找到 execution_id"
 		result.EndedAt = time.Now()
@@ -279,7 +234,7 @@ func (e *Executor) executeWithTaskProvider(ctx context.Context, step *models.Ste
 	pollCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	taskResult, err := e.pollTaskProviderExecution(pollCtx, provider, executionID)
+	taskResult, err := e.pollTaskProviderExecution(pollCtx, provider, executionID, tenantID)
 	if err != nil {
 		result.Status = "failed"
 		result.Error = fmt.Sprintf("任务执行失败: %v", err)
@@ -295,38 +250,22 @@ func (e *Executor) executeWithTaskProvider(ctx context.Context, step *models.Ste
 	return result, nil
 }
 
-// pollTaskStatusDynamic 轮询任务状态（引擎调用模式）
-func (e *Executor) pollTaskStatusDynamic(ctx context.Context, engine *commonModels.Engine, taskID string) (map[string]interface{}, error) {
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return nil, fmt.Errorf("轮询超时")
-		case <-ticker.C:
-			status, err := e.taskClient.GetTaskStatus(ctx, engine, taskID)
-			if err != nil {
-				continue
-			}
-
-			switch status.Status {
-			case "completed", "success":
-				return status.Raw, nil
-			case "failed":
-				if status.Message != "" {
-					return nil, fmt.Errorf("任务失败: %s", status.Message)
-				}
-				return nil, fmt.Errorf("任务失败")
-			}
+func extractProviderExecutionID(respData map[string]interface{}) string {
+	if executionID, ok := respData["execution_id"].(string); ok && strings.TrimSpace(executionID) != "" {
+		return executionID
+	}
+	if data, ok := respData["data"].(map[string]interface{}); ok {
+		if executionID, ok := data["execution_id"].(string); ok && strings.TrimSpace(executionID) != "" {
+			return executionID
 		}
 	}
+	return ""
 }
 
 // pollTaskProviderExecution 轮询 TaskProvider 执行状态（任务引用模式）
-func (e *Executor) pollTaskProviderExecution(ctx context.Context, provider *commonModels.TaskProvider, executionID string) (map[string]interface{}, error) {
+func (e *Executor) pollTaskProviderExecution(ctx context.Context, provider *commonModels.TaskProvider, executionID string, tenantID int) (map[string]interface{}, error) {
 	// 构建状态查询 URL（替换 {execution_id} 占位符）
-	statusEndpoint := strings.ReplaceAll(provider.TaskStatusEndpoint, "{execution_id}", executionID)
+	statusEndpoint := replaceTaskProviderEndpoint(provider.TaskStatusEndpoint, "", "", executionID)
 	targetURL := provider.BaseURL + statusEndpoint
 
 	httpClient := &http.Client{Timeout: 10 * time.Second}
@@ -345,10 +284,18 @@ func (e *Executor) pollTaskProviderExecution(ctx context.Context, provider *comm
 			if e.internalAPIKey != "" {
 				req.Header.Set("X-Internal-API-Key", e.internalAPIKey)
 			}
+			if tenantID > 0 {
+				req.Header.Set("X-Tenant-ID", fmt.Sprintf("%d", tenantID))
+			}
 
 			resp, err := httpClient.Do(req)
 			if err != nil {
 				continue
+			}
+			if resp.StatusCode >= 400 {
+				body, _ := io.ReadAll(resp.Body)
+				resp.Body.Close()
+				return nil, fmt.Errorf("任务状态 API 返回错误 %d: %s", resp.StatusCode, string(body))
 			}
 
 			var respData map[string]interface{}
@@ -358,26 +305,14 @@ func (e *Executor) pollTaskProviderExecution(ctx context.Context, provider *comm
 			}
 			resp.Body.Close()
 
-			// 从嵌套 data 中提取状态
-			// 响应格式: {"status": "success", "data": {"execution_id": "...", "status": "running"}}
-			var execStatus string
-			if data, ok := respData["data"].(map[string]interface{}); ok {
-				execStatus, _ = data["status"].(string)
-			}
+			execData := extractProviderExecutionData(respData)
+			execStatus, _ := execData["status"].(string)
 
 			switch execStatus {
-			case "success", "completed":
-				if data, ok := respData["data"].(map[string]interface{}); ok {
-					return data, nil
-				}
-				return map[string]interface{}{}, nil
+			case "success":
+				return execData, nil
 			case "failed":
-				var errMsg string
-				if data, ok := respData["data"].(map[string]interface{}); ok {
-					if errDetails, ok := data["error_details"].(map[string]interface{}); ok {
-						errMsg, _ = errDetails["message"].(string)
-					}
-				}
+				errMsg := providerExecutionErrorMessage(execData)
 				if errMsg != "" {
 					return nil, fmt.Errorf("任务失败: %s", errMsg)
 				}
@@ -387,6 +322,38 @@ func (e *Executor) pollTaskProviderExecution(ctx context.Context, provider *comm
 			}
 		}
 	}
+}
+
+func extractProviderExecutionData(respData map[string]interface{}) map[string]interface{} {
+	if data, ok := respData["data"].(map[string]interface{}); ok {
+		if _, hasStatus := data["status"].(string); hasStatus {
+			return data
+		}
+	}
+	return respData
+}
+
+func providerExecutionErrorMessage(execData map[string]interface{}) string {
+	if errDetails, ok := execData["error_details"].(map[string]interface{}); ok {
+		if msg, ok := errDetails["message"].(string); ok && strings.TrimSpace(msg) != "" {
+			return msg
+		}
+	}
+	if msg, ok := execData["message"].(string); ok && strings.TrimSpace(msg) != "" {
+		return msg
+	}
+	if msg, ok := execData["error"].(string); ok && strings.TrimSpace(msg) != "" {
+		return msg
+	}
+	return ""
+}
+
+func replaceTaskProviderEndpoint(endpoint string, taskType string, taskID string, executionID string) string {
+	return strings.NewReplacer(
+		"{task_type}", taskType,
+		"{id}", taskID,
+		"{execution_id}", executionID,
+	).Replace(endpoint)
 }
 
 // resolveTemplateReferences 解析参数中的模板引用（支持 {{step.result.*}} 语法）

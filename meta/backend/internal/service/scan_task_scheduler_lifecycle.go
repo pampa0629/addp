@@ -70,7 +70,9 @@ func (s *ScanTaskScheduler) EnqueueExecution(executionID string) {
 
 		var taskID uint
 		if exec.SourceTaskID != nil {
-			taskID = uint(*exec.SourceTaskID)
+			if parsed, err := commonExecution.ParseSourceTaskIDUint(exec.SourceTaskID); err == nil {
+				taskID = parsed
+			}
 		}
 
 		if err := s.taskQueue.EnqueueScanTask(ctx, executionID, taskID, uint(exec.TenantID)); err != nil {

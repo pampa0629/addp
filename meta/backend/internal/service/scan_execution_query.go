@@ -75,28 +75,16 @@ func (s *ScanExecutionService) ListExecutions(ctx context.Context, tenantID int,
 		pageSize = 20
 	}
 	filter := commonExecution.TaskExecutionFilter{
-		TenantID:     tenantID,
-		Module:       commonExecution.ModuleMeta,
-		Status:       status,
-		TriggerType:  triggerType,
-		SourceTaskID: taskID,
-		Page:         page,
-		PageSize:     pageSize,
+		TenantID:    tenantID,
+		Module:      commonExecution.ModuleMeta,
+		TaskType:    commonExecution.TaskTypeScan,
+		Status:      status,
+		TriggerType: triggerType,
+		Page:        page,
+		PageSize:    pageSize,
+	}
+	if taskID != nil {
+		filter.SourceTaskID = commonExecution.NewSourceTaskIDFromUint(uint(*taskID))
 	}
 	return s.taskExecutionRepo.List(ctx, filter)
-}
-
-// CancelExecution 取消执行
-func (s *ScanExecutionService) CancelExecution(ctx context.Context, executionID string, tenantID int) error {
-	exec, err := s.taskExecutionRepo.GetByExecutionID(ctx, executionID, tenantID)
-	if err != nil {
-		return err
-	}
-	if exec.IsCompleted() {
-		return fmt.Errorf("执行已完成，无法取消: status=%s", exec.Status)
-	}
-	return s.taskExecutionRepo.UpdateFields(ctx, executionID, tenantID, map[string]interface{}{
-		"status":     commonExecution.ExecutionStatusCancelled,
-		"updated_at": time.Now(),
-	})
 }

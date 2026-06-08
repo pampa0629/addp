@@ -25,7 +25,6 @@
         >
           <el-option :label="t('develop.execution.typeQuery')" value="query" />
           <el-option :label="t('develop.execution.typeWorkflow')" value="workflow" />
-          <el-option label="Notebook" value="notebook" />
           <el-option :label="t('develop.execution.typeScript')" value="script" />
         </el-select>
         <el-select
@@ -121,13 +120,13 @@
         <el-table-column prop="execution_id" :label="t('develop.execution.colId')" width="200" show-overflow-tooltip />
         <el-table-column :label="t('develop.execution.colTaskName')" min-width="150">
           <template #default="{ row }">
-            {{ row.dev_item?.name || '-' }}
+            {{ row.dev_task?.name || '-' }}
           </template>
         </el-table-column>
         <el-table-column :label="t('develop.execution.colType')" width="100">
           <template #default="{ row }">
-            <el-tag :type="getTypeColor(row.dev_type)">
-              {{ getTypeLabel(row.dev_type) }}
+            <el-tag :type="getTypeColor(row.task_type)">
+              {{ getTypeLabel(row.task_type) }}
             </el-tag>
           </template>
         </el-table-column>
@@ -175,15 +174,6 @@
               {{ t('develop.execution.detail') }}
             </el-button>
             <el-button
-              v-if="row.status === 'running'"
-              type="warning"
-              size="small"
-              @click="handleCancel(row)"
-            >
-              <el-icon><Close /></el-icon>
-              {{ t('develop.execution.cancel') }}
-            </el-button>
-            <el-button
               v-if="['failed', 'timeout', 'cancelled'].includes(row.status)"
               type="success"
               size="small"
@@ -214,9 +204,9 @@
 
 <script setup>
 import { ref, reactive, onMounted, onUnmounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import {
   Refresh,
   DataLine,
@@ -224,16 +214,15 @@ import {
   Timer,
   Loading,
   View,
-  Close,
   RefreshRight
 } from '@element-plus/icons-vue'
 import {
   listExecutions,
-  cancelExecution,
   retryExecution,
   getExecutionStatistics
 } from '@/api/devExecution'
 
+const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 
@@ -259,7 +248,7 @@ const filters = reactive({
   dev_type: '',
   status: '',
   trigger_type: '',
-  dev_item_id: null
+  source_task_id: ''
 })
 
 const dateRange = ref([])
@@ -307,7 +296,9 @@ const loadExecutions = async (silent = false) => {
 // 加载统计数据
 const loadStatistics = async () => {
   try {
-    const params = {}
+    const params = {
+      source_task_id: filters.source_task_id
+    }
     if (dateRange.value && dateRange.value.length === 2) {
       params.start_date = dateRange.value[0].toISOString().split('T')[0]
       params.end_date = dateRange.value[1].toISOString().split('T')[0]
@@ -322,7 +313,7 @@ const loadStatistics = async () => {
 // 工具函数
 const getTypeLabel = (type) => {
   const labels = {
-    sql: 'SQL',
+    query: 'SQL',
     workflow: t('develop.execution.typeWorkflow'),
     script: t('develop.execution.typeScript')
   }
@@ -330,7 +321,7 @@ const getTypeLabel = (type) => {
 }
 
 const getTypeColor = (type) => {
-  const colors = { sql: 'primary', workflow: 'success', script: 'warning' }
+  const colors = { query: 'primary', workflow: 'success', script: 'warning' }
   return colors[type] || 'info'
 }
 
@@ -393,23 +384,6 @@ const handleViewDetail = (row) => {
   router.push(`/executions/${row.execution_id}`)
 }
 
-const handleCancel = async (row) => {
-  try {
-    await ElMessageBox.confirm(t('develop.execution.cancelConfirmMsg'), t('develop.execution.cancelConfirmTitle'), {
-      type: 'warning'
-    })
-    await cancelExecution(row.execution_id)
-    ElMessage.success(t('develop.execution.cancelSuccess'))
-    loadExecutions()
-    loadStatistics()
-  } catch (error) {
-    if (error !== 'cancel') {
-      console.error('取消执行失败:', error)
-      ElMessage.error(t('develop.execution.cancelFailed') + (error.response?.data?.error || error.message))
-    }
-  }
-}
-
 const handleRetry = async (row) => {
   try {
     await retryExecution(row.execution_id)
@@ -463,6 +437,12 @@ watch([filters, dateRange], () => {
 
 // 生命周期
 onMounted(() => {
+  if (route.query.source_task_id) {
+    filters.source_task_id = String(route.query.source_task_id)
+  }
+  if (route.query.dev_type) {
+    filters.dev_type = String(route.query.dev_type)
+  }
   loadExecutions()
   loadStatistics()
   startAutoRefresh()

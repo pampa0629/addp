@@ -48,7 +48,7 @@ Meta 扫描链路按“通用规则、Meta 编排、Catalog 规划、内容增�
 - `scan_tasks.schedule` 是 Cron 表达式；Console-facing 策略模式字段为 `schedule_mode`，只存在于策略载荷，不进入 `scan_tasks` 表。
 - System 不知道 Meta，也不保存 Meta 扫描策略。System engine 注册或编辑时的默认扫描体验由 Console 编排：Console 调用 System 保存 engine，再调用 Meta 维护 engine 绑定的 `ScanTask` 或创建一次 manual execution。
 - Manager preview 和 Meta 查询 API 只读取已落库 attributes，不暗中触发扫描、不写 attributes、不构建 `access_index`。
-- preprocessing、cleanup、查询快捷入口是独立专题，不应混入扫描主线中半截实现。
+- 扫描后派生能力、cleanup、查询快捷入口是独立专题，不应混入扫描主线中半截实现。
 
 ### 与 common/dataitem 的边界
 
@@ -149,9 +149,8 @@ Manager 预览不会重新识别格式，只消费已落库 Meta attributes 中�
 - 资产发现：`GET /assets/discoverable`。
 - 引擎：`GET /engines`。
 - 扫描：`POST /scan/run/unscanned`、`POST /scan/run/manual`。
-- 扫描运行：`GET /scan/runs`、`GET /scan/runs/:run_id`、`POST /scan/runs/:run_id/cancel`。
+- 扫描运行：`GET /scan/runs`、`GET /scan/runs/:run_id`。
 - 扫描任务：`GET /scan/tasks`、`POST /scan/tasks`、`PUT /scan/tasks/:task_id`、`DELETE /scan/tasks/:task_id`、`POST /scan/tasks/:task_id/trigger`。
-- 元数据对象：`GET /metadata/object`。
 - 引擎数据项：`GET /engines/:engine_id/items`。
 - 树查询：`GET /engines/:engine_id/tree`、`GET /nodes/:node_id`、`GET /nodes/:node_id/children`、`GET /nodes/:node_id/items`、`GET /nodes/by-catalog-path`、`GET /items/by-catalog-path`。
 - 字段与空间信息：`GET /items/:item_id/fields`、`GET /items/:item_id/spatial`、`GET /items/:item_id`。
@@ -161,7 +160,7 @@ Manager 预览不会重新识别格式，只消费已落库 Meta attributes 中�
 
 - 已定位资源优先使用 `node_id` / `item_id` 主资源查询。
 - 跨模块定位时使用 `engine_id + catalog_path` 的正式条件查询：`/nodes/by-catalog-path`、`/items/by-catalog-path`。
-- `/metadata/object` 是历史对象快捷查询，目前只读、无写入副作用；后续若迁移，应优先迁到 `items/by-catalog-path` 或明确的 item projection，不新增按存储技术形态分叉的新快捷入口。
+- `/metadata/object` 历史对象快捷查询已删除；对象 item 定位统一使用 `items/by-catalog-path`，不新增按存储技术形态分叉的新快捷入口。
 
 ## 开发规则
 
@@ -203,7 +202,6 @@ curl http://localhost:8082/health
 - `docs/spec/addp存储引擎路径体系规范.md`
 - `docs/spec/addp引擎插件接口规范.md`
 - `docs/spec/addp引擎能力声明规范.md`
-- `docs/next/meta-preprocessing语义与任务边界.md`
+- `docs/next/扫描后派生能力与任务边界.md`
 - `docs/next/meta-cleanup边界与派生产物清理设计.md`
-- `docs/next/meta查询API快捷入口收敛设计.md`
 - `manager/CLAUDE.md`

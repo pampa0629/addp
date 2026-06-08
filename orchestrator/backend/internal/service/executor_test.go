@@ -1,8 +1,14 @@
 package service
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/orchestrator/internal/models"
 	"github.com/stretchr/testify/assert"
 )
@@ -89,9 +95,9 @@ func TestResolveTemplateReferences(t *testing.T) {
 		{
 			name: "Multiple references",
 			params: map[string]interface{}{
-				"source_table":  "{{sql_extract.result_table}}",
+				"source_table":   "{{sql_extract.result_table}}",
 				"result_geojson": "{{spatial_analysis.geojson}}",
-				"row_count":     "{{sql_extract.row_count}}",
+				"row_count":      "{{sql_extract.row_count}}",
 			},
 			expected: map[string]interface{}{
 				"source_table": "temp_table_123",
@@ -190,6 +196,95 @@ func TestResolveTemplateReferences(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			resolved := executor.resolveTemplateReferences(tt.params, stepResults)
 			assert.Equal(t, tt.expected, resolved)
+		})
+	}
+}
+
+func TestExecuteWithTaskProviderPassesTenantHeader(t *testing.T) {
+	executeTenantHeader := ""
+	statusTenantHeader := ""
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/execute/check/42":
+			executeTenantHeader = r.Header.Get("X-Tenant-ID")
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{"execution_id": "child-exec"})
+		case "/status/child-exec":
+			statusTenantHeader = r.Header.Get("X-Tenant-ID")
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"execution_id": "child-exec",
+				"status":       "success",
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	executor := &Executor{
+		taskProviderRegistry: &TaskProviderRegistry{
+			providers: map[string]*commonModels.TaskProvider{
+				"quality": {
+					ModuleName:          "quality",
+					BaseURL:             server.URL,
+					TaskExecuteEndpoint: "/execute/{task_type}/{id}",
+					TaskStatusEndpoint:  "/status/{execution_id}",
+				},
+			},
+			cacheTTL:    time.Hour,
+			lastRefresh: time.Now(),
+		},
+		internalAPIKey: "internal",
+	}
+
+	result, err := executor.executeWithTaskProvider(
+		context.Background(),
+		&models.Step{Provider: "quality", TaskType: "check", TaskID: 42, Timeout: 10},
+		map[string]interface{}{},
+		time.Now(),
+		"parent-exec",
+		"manual",
+		7,
+	)
+
+	assert.NoError(t, err)
+	assert.Equal(t, "success", result.Status)
+	assert.Equal(t, "7", executeTenantHeader)
+	assert.Equal(t, "7", statusTenantHeader)
+}
+
+func TestExtractProviderExecutionID(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  map[string]interface{}
+		want string
+	}{
+		{
+			name: "top level execution id",
+			raw:  map[string]interface{}{"execution_id": "exec-top"},
+			want: "exec-top",
+		},
+		{
+			name: "wrapped execution id",
+			raw: map[string]interface{}{
+				"status": "success",
+				"data": map[string]interface{}{
+					"execution_id": "exec-data",
+				},
+			},
+			want: "exec-data",
+		},
+		{
+			name: "missing execution id",
+			raw:  map[string]interface{}{"status": "success"},
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, extractProviderExecutionID(tt.raw))
 		})
 	}
 }
@@ -295,4 +390,43 @@ func TestResolveStringTemplate(t *testing.T) {
 			assert.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+func TestExtractProviderExecutionDataSupportsWrappedResponse(t *testing.T) {
+	raw := map[string]interface{}{
+		"status": "success",
+		"data": map[string]interface{}{
+			"execution_id": "exec-1",
+			"status":       "running",
+		},
+	}
+
+	got := extractProviderExecutionData(raw)
+
+	assert.Equal(t, "running", got["status"])
+	assert.Equal(t, "exec-1", got["execution_id"])
+}
+
+func TestExtractProviderExecutionDataSupportsDirectExecutionResponse(t *testing.T) {
+	raw := map[string]interface{}{
+		"execution_id": "exec-2",
+		"status":       "success",
+		"progress":     float64(100),
+	}
+
+	got := extractProviderExecutionData(raw)
+
+	assert.Equal(t, "success", got["status"])
+	assert.Equal(t, "exec-2", got["execution_id"])
+}
+
+func TestProviderExecutionErrorMessage(t *testing.T) {
+	got := providerExecutionErrorMessage(map[string]interface{}{
+		"status": "failed",
+		"error_details": map[string]interface{}{
+			"message": "boom",
+		},
+	})
+
+	assert.Equal(t, "boom", got)
 }

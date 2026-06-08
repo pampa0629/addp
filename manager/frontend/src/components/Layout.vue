@@ -51,6 +51,10 @@
             <el-icon><List /></el-icon>
             <span>{{ t('manager.layout.vectorizationTasks') }}</span>
           </el-menu-item>
+          <el-menu-item index="/mvt-tasks">
+            <el-icon><Grid /></el-icon>
+            <span>{{ t('manager.layout.mvtTasks') }}</span>
+          </el-menu-item>
         </el-menu>
       </el-aside>
 
@@ -74,7 +78,8 @@ import {
   SwitchButton,
   Search,
   Document,
-  List
+  List,
+  Grid
 } from '@element-plus/icons-vue'
 
 const route = useRoute()

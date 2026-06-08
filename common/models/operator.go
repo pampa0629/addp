@@ -62,7 +62,7 @@ type OperatorExecuteRequest struct {
 type OperatorExecuteResponse struct {
 	Status     string                 `json:"status"`            // "success"/"error"
 	TaskID     string                 `json:"task_id"`           // 任务ID
-	TaskStatus string                 `json:"task_status"`       // "running"/"pending"/"completed"
+	TaskStatus string                 `json:"task_status"`       // "running"/"pending"/"success"/"failed"
 	Result     map[string]interface{} `json:"result,omitempty"`  // 执行结果(同步执行时)
 	Message    string                 `json:"message,omitempty"` // 提示信息
 	CreatedAt  string                 `json:"created_at"`        // 创建时间

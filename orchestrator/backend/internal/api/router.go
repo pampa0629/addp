@@ -8,13 +8,13 @@ import (
 	"github.com/addp/common/middleware/audit"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
+	_ "github.com/addp/orchestrator/docs"
 	"github.com/addp/orchestrator/internal/repository"
 	"github.com/addp/orchestrator/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
-	_ "github.com/addp/orchestrator/docs"
 )
 
 // SetupRouter 设置路由
@@ -23,7 +23,6 @@ func SetupRouter(
 	executionService *service.ExecutionService,
 	executor *service.Executor,
 	scheduler *service.Scheduler,
-	engineRegistry *service.EngineRegistry,
 	taskProviderRegistry *service.TaskProviderRegistry,
 	systemURL string,
 	redisClient *redis.Client,
@@ -51,7 +50,7 @@ func SetupRouter(
 	// 创建 HTTP 客户端
 	httpClient := &http.Client{Timeout: 30 * time.Second}
 
-	handler := NewOrchestrationHandler(orchRepo, executionService, executor, scheduler, engineRegistry, taskProviderRegistry, httpClient)
+	handler := NewOrchestrationHandler(orchRepo, executionService, executor, scheduler, taskProviderRegistry, httpClient)
 
 	api := router.Group("/api/v1/orchestrator")
 
@@ -82,13 +81,16 @@ func SetupRouter(
 		api.POST("/orchestrations/:id/execute", handler.Execute)
 		api.GET("/orchestrations/:id/executions", handler.ListExecutions)
 		api.GET("/executions", handler.ListAllExecutions)
+		api.GET("/executions/:execution_id", handler.GetProviderExecution)
 		api.GET("/orch-executions/:id", handler.GetExecution)
 
-		// 计算引擎管理（动态从 System 获取）
-		api.GET("/compute-engines", handler.ListComputeEngines)
+		// 任务提供者发现（动态从 System 获取）
+		api.GET("/task-providers", handler.ListTaskProviders)
 
 		// 模块任务列表 (用于拖拽复用，动态调用)
-		api.GET("/tasks/list", handler.ListModuleTasks)
+		api.GET("/tasks", handler.ListModuleTasks)
+		api.GET("/tasks/:task_type/:id", handler.GetProviderOrchestrationTask)
+		api.POST("/tasks/:task_type/:id/execute", handler.ExecuteProviderOrchestrationTask)
 	}
 
 	// 健康检查

@@ -1,9 +1,9 @@
 package api
 
 import (
-	"github.com/addp/graph/internal/config"
 	commonAuth "github.com/addp/common/middleware/auth"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
+	"github.com/addp/graph/internal/config"
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
@@ -18,6 +18,7 @@ func SetupRouter(
 	graphHandler *KnowledgeGraphHandler,
 	browseHandler *BrowseHandler,
 	buildHandler *BuildHandler,
+	taskProviderHandler *TaskProviderHandler,
 	analysisHandler *AnalysisHandler,
 	serviceHandler *ServiceHandler,
 ) *gin.Engine {
@@ -138,6 +139,15 @@ func SetupRouter(
 				}
 			}
 		}
+
+		// TaskProvider 标准入口
+		tasks := auth.Group("/tasks")
+		{
+			tasks.GET("", taskProviderHandler.ListProviderTasks)
+			tasks.GET("/:task_type/:id", taskProviderHandler.GetProviderTask)
+			tasks.POST("/:task_type/:id/execute", taskProviderHandler.ExecuteProviderTask)
+		}
+		auth.GET("/executions/:execution_id", taskProviderHandler.GetProviderExecution)
 	}
 
 	// 知识服务 API（可选 JWT，handler 内部判断 is_public）

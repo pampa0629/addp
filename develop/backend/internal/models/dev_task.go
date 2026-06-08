@@ -11,11 +11,11 @@ import (
 
 // DevTask 统一开发任务定义（SQL查询、工作流、脚本等）
 type DevTask struct {
-	ID          uint           `gorm:"primaryKey" json:"id"`
-	TenantID    uint           `gorm:"not null;index:idx_dev_tasks_tenant_type" json:"tenant_id"`
-	Name        string         `gorm:"size:255;not null" json:"name"`
-	DisplayName string         `gorm:"size:255" json:"display_name,omitempty"`
-	DevType     string         `gorm:"size:50;not null;index:idx_dev_tasks_tenant_type" json:"dev_type"` // 'query' | 'workflow' | 'notebook'
+	ID          uint   `gorm:"primaryKey" json:"id"`
+	TenantID    uint   `gorm:"not null;index:idx_dev_tasks_tenant_type" json:"tenant_id"`
+	Name        string `gorm:"size:255;not null" json:"name"`
+	DisplayName string `gorm:"size:255" json:"display_name,omitempty"`
+	DevType     string `gorm:"size:50;not null;index:idx_dev_tasks_tenant_type" json:"dev_type"` // 'query' | 'workflow' | 'script'
 
 	// 内容存储（根据类型解析）
 	Content DevTaskContent `gorm:"type:jsonb;not null" json:"content"`
@@ -40,10 +40,98 @@ type DevTask struct {
 
 	// 状态
 	Status              string     `gorm:"size:50;default:'active';index:idx_dev_tasks_status" json:"status"` // 'active' | 'inactive' | 'archived'
-	LastExecutionID     *string    `gorm:"size:36" json:"last_execution_id,omitempty"` // UUID，软引用 common.task_executions.execution_id
+	LastExecutionID     *string    `gorm:"size:36" json:"last_execution_id,omitempty"`                        // UUID，软引用 common.task_executions.execution_id
 	LastExecutionStatus string     `gorm:"size:50" json:"last_execution_status,omitempty"`
 	LastRunAt           *time.Time `json:"last_run_at,omitempty"`
 	NextRunAt           *time.Time `json:"next_run_at,omitempty"`
+}
+
+// ProviderDevTask 是 Develop 通过 TaskProvider API 暴露的标准任务定义。
+// DevTask 内部使用 dev_type，TaskProvider 契约对外必须使用 task_type。
+type ProviderDevTask struct {
+	ID                  uint           `json:"id"`
+	TenantID            uint           `json:"tenant_id"`
+	Name                string         `json:"name"`
+	DisplayName         string         `json:"display_name,omitempty"`
+	TaskType            string         `json:"task_type"`
+	Content             DevTaskContent `json:"content,omitempty"`
+	ExecutionConfig     DevTaskContent `json:"execution_config,omitempty"`
+	Parameters          DevTaskContent `json:"parameters,omitempty"`
+	Schedule            string         `json:"schedule,omitempty"`
+	Enabled             bool           `json:"enabled"`
+	Timeout             int            `json:"timeout"`
+	Description         string         `json:"description,omitempty"`
+	Tags                pq.StringArray `json:"tags,omitempty"`
+	CreatedBy           *uint          `json:"created_by,omitempty"`
+	UpdatedBy           *uint          `json:"updated_by,omitempty"`
+	CreatedAt           time.Time      `json:"created_at"`
+	UpdatedAt           time.Time      `json:"updated_at"`
+	Status              string         `json:"status"`
+	LastExecutionID     *string        `json:"last_execution_id,omitempty"`
+	LastExecutionStatus string         `json:"last_execution_status,omitempty"`
+	LastRunAt           *time.Time     `json:"last_run_at,omitempty"`
+	NextRunAt           *time.Time     `json:"next_run_at,omitempty"`
+}
+
+// ListProviderDevTasksResponse 是 TaskProvider 标准任务列表响应。
+type ListProviderDevTasksResponse struct {
+	Items    []ProviderDevTask `json:"items"`
+	Total    int64             `json:"total"`
+	Page     int               `json:"page"`
+	PageSize int               `json:"page_size"`
+}
+
+func NewProviderDevTask(item DevTask) ProviderDevTask {
+	return ProviderDevTask{
+		ID:                  item.ID,
+		TenantID:            item.TenantID,
+		Name:                item.Name,
+		DisplayName:         item.DisplayName,
+		TaskType:            item.DevType,
+		Content:             item.Content,
+		ExecutionConfig:     item.ExecutionConfig,
+		Parameters:          providerTaskParameters(item),
+		Schedule:            item.Schedule,
+		Enabled:             item.Enabled,
+		Timeout:             item.Timeout,
+		Description:         item.Description,
+		Tags:                item.Tags,
+		CreatedBy:           item.CreatedBy,
+		UpdatedBy:           item.UpdatedBy,
+		CreatedAt:           item.CreatedAt,
+		UpdatedAt:           item.UpdatedAt,
+		Status:              item.Status,
+		LastExecutionID:     item.LastExecutionID,
+		LastExecutionStatus: item.LastExecutionStatus,
+		LastRunAt:           item.LastRunAt,
+		NextRunAt:           item.NextRunAt,
+	}
+}
+
+func NewProviderDevTasks(items []DevTask) []ProviderDevTask {
+	result := make([]ProviderDevTask, 0, len(items))
+	for _, item := range items {
+		result = append(result, NewProviderDevTask(item))
+	}
+	return result
+}
+
+func providerTaskParameters(item DevTask) DevTaskContent {
+	if item.Content == nil {
+		return DevTaskContent{}
+	}
+	inputs, ok := item.Content["inputs"]
+	if !ok {
+		return DevTaskContent{}
+	}
+	switch value := inputs.(type) {
+	case DevTaskContent:
+		return value
+	case map[string]interface{}:
+		return DevTaskContent(value)
+	default:
+		return DevTaskContent{}
+	}
 }
 
 // TableName 指定表名
@@ -109,7 +197,7 @@ func (c *DevTaskContent) Scan(value interface{}) error {
 type CreateDevTaskRequest struct {
 	Name            string                 `json:"name" binding:"required"`
 	DisplayName     string                 `json:"display_name"`
-	DevType         string                 `json:"dev_type" binding:"required,oneof=query workflow script notebook"`
+	DevType         string                 `json:"dev_type" binding:"required,oneof=query workflow script"`
 	Content         map[string]interface{} `json:"content" binding:"required"`
 	ExecutionConfig map[string]interface{} `json:"execution_config"`
 	Schedule        string                 `json:"schedule"`
@@ -135,7 +223,7 @@ type UpdateDevTaskRequest struct {
 type ListDevTasksRequest struct {
 	Page     int    `form:"page" binding:"min=1"`
 	PageSize int    `form:"page_size" binding:"min=1,max=100"`
-	DevType  string `form:"dev_type" binding:"omitempty,oneof=query workflow script notebook"`
+	DevType  string `form:"dev_type" binding:"omitempty,oneof=query workflow script"`
 	Status   string `form:"status" binding:"omitempty,oneof=active inactive archived"`
 	Tag      string `form:"tag"`
 	Keyword  string `form:"keyword"` // 搜索名称或描述

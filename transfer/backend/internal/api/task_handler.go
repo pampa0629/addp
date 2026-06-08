@@ -3,8 +3,10 @@ package api
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	commonAPI "github.com/addp/common/api"
+	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/service"
@@ -25,7 +27,7 @@ func NewTaskHandler(taskService *service.TaskService) *TaskHandler {
 
 // CreateTask 创建任务
 // @Summary 创建数据传输任务 | Create data transfer task
-// @Description 创建一个新的数据导入/导出/同步任务。新任务 config 使用 source/target locator endpoint；source locator 带 item_id 时，Transfer 后端会通过 MetaClient 读取标准 attributes。| Create a new data import/export/sync task. New config uses source/target locator endpoints; when source locator carries item_id, Transfer backend loads standard attributes through MetaClient.
+// @Description 创建一个新的 Transfer 任务。新任务 config 使用 source/target locator endpoint；source locator 带 item_id 时，Transfer 后端会通过 MetaClient 读取标准 attributes。| Create a new Transfer task. New config uses source/target locator endpoints; when source locator carries item_id, Transfer backend loads standard attributes through MetaClient.
 // @Tags         任务管理 | Task Management
 // @Accept json
 // @Produce json
@@ -34,7 +36,7 @@ func NewTaskHandler(taskService *service.TaskService) *TaskHandler {
 // @Failure 400 {object} map[string]string "请求参数错误 | Bad request"
 // @Failure 401 {object} map[string]string "未授权 | Unauthorized"
 // @Failure 500 {object} map[string]string "服务器内部错误 | Internal server error"
-// @Router /tasks [post]
+// @Router /task-definitions [post]
 // @Security BearerAuth
 func (h *TaskHandler) CreateTask(c *gin.Context) {
 	var req models.CreateTaskRequest
@@ -66,7 +68,7 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 // @Failure 400 {object} map[string]string "参数错误 | Bad request"
 // @Failure 404 {object} map[string]string "任务不存在 | Task not found"
 // @Failure 500 {object} map[string]string "服务器错误 | Server error"
-// @Router /tasks/{id} [get]
+// @Router /task-definitions/{id} [get]
 // @Security BearerAuth
 func (h *TaskHandler) GetTask(c *gin.Context) {
 	id, ok := commonAPI.ParseUintParam(c, "id")
@@ -93,9 +95,10 @@ func (h *TaskHandler) GetTask(c *gin.Context) {
 // @Produce json
 // @Param page query int false "页码 | Page number" default(1)
 // @Param page_size query int false "每页大小 | Page size" default(20)
-// @Param type query string false "任务类型: import, export, sync | Task type: import, export, sync"
-// @Param status query string false "任务状态: pending, running, completed, failed | Task status"
+// @Param task_type query string false "任务类型，当前固定为 import | Task type, currently fixed to import"
+// @Param status query string false "任务定义状态: idle, running | Task definition status"
 // @Success 200 {object} commonAPI.PaginatedResponse{data=[]models.TransferTask} "获取成功 | Retrieved successfully"
+// @Failure 400 {object} map[string]string "不支持的任务类型 | Unsupported task type"
 // @Failure 500 {object} map[string]string "服务器错误 | Server error"
 // @Router /tasks [get]
 // @Security BearerAuth
@@ -109,6 +112,11 @@ func (h *TaskHandler) ListTasks(c *gin.Context) {
 		req.Page = 1
 		req.PageSize = 20
 	}
+	req.TaskType = strings.TrimSpace(req.TaskType)
+	if req.TaskType != "" && req.TaskType != commonExecution.TaskTypeImport {
+		commonAPI.BadRequestError(c, "unsupported task_type: "+req.TaskType)
+		return
+	}
 
 	// 确保分页参数有效
 	if req.Page <= 0 {
@@ -120,7 +128,7 @@ func (h *TaskHandler) ListTasks(c *gin.Context) {
 
 	tasks, total, err := h.taskService.ListTasks(c.Request.Context(), tenantID, &req)
 	if err != nil {
-		commonAPI.InternalServerError(c, err.Error())
+		respondTaskServiceError(c, err)
 		return
 	}
 
@@ -138,7 +146,7 @@ func (h *TaskHandler) ListTasks(c *gin.Context) {
 // @Success 200 {object} models.TransferTask "更新成功 | Updated successfully"
 // @Failure 400 {object} map[string]string "参数错误 | Bad request"
 // @Failure 500 {object} map[string]string "服务器错误 | Server error"
-// @Router /tasks/{id} [put]
+// @Router /task-definitions/{id} [put]
 // @Security BearerAuth
 func (h *TaskHandler) UpdateTask(c *gin.Context) {
 	id, ok := commonAPI.ParseUintParam(c, "id")
@@ -173,7 +181,7 @@ func (h *TaskHandler) UpdateTask(c *gin.Context) {
 // @Success 200 {object} map[string]string "删除成功 | Deleted successfully"
 // @Failure 400 {object} map[string]string "参数错误 | Bad request"
 // @Failure 500 {object} map[string]string "服务器错误 | Server error"
-// @Router /tasks/{id} [delete]
+// @Router /task-definitions/{id} [delete]
 // @Security BearerAuth
 func (h *TaskHandler) DeleteTask(c *gin.Context) {
 	id, ok := commonAPI.ParseUintParam(c, "id")
@@ -201,7 +209,7 @@ func (h *TaskHandler) DeleteTask(c *gin.Context) {
 // @Success 200 {object} models.TaskExecution "启动成功，返回执行记录 | Started successfully, returns execution record"
 // @Failure 400 {object} map[string]string "参数错误或任务已在运行 | Bad request or task already running"
 // @Failure 500 {object} map[string]string "服务器错误 | Server error"
-// @Router /tasks/{id}/start [post]
+// @Router /task-definitions/{id}/start [post]
 // @Security BearerAuth
 func (h *TaskHandler) StartTask(c *gin.Context) {
 	id, ok := commonAPI.ParseUintParam(c, "id")
@@ -221,6 +229,99 @@ func (h *TaskHandler) StartTask(c *gin.Context) {
 	c.JSON(http.StatusOK, execution)
 }
 
+// ProviderExecuteRequest 是 TaskProvider 标准执行请求。
+type ProviderExecuteRequest struct {
+	TriggerType       string                 `json:"trigger_type"`
+	Source            string                 `json:"source"`
+	ParentExecutionID string                 `json:"parent_execution_id"`
+	Parameters        map[string]interface{} `json:"parameters"`
+}
+
+// ProviderGetTask 获取标准 TaskProvider 任务详情。
+// @Summary 获取 TaskProvider 任务详情 | Get TaskProvider task detail
+// @Description 按标准 TaskProvider 路径获取 Transfer 任务详情；task_type 仅支持 import。| Get Transfer task detail through the standard TaskProvider path; task_type only supports import.
+// @Tags         任务管理 | Task Management
+// @Produce json
+// @Param task_type path string true "任务类型，固定为 import | Task type, fixed to import"
+// @Param id path int true "任务ID | Task ID"
+// @Success 200 {object} models.TransferTask "任务详情 | Task detail"
+// @Failure 400 {object} map[string]string "参数错误 | Bad request"
+// @Failure 404 {object} map[string]string "任务不存在 | Task not found"
+// @Router /tasks/{task_type}/{id} [get]
+// @Security BearerAuth
+func (h *TaskHandler) ProviderGetTask(c *gin.Context) {
+	taskType := c.Param("task_type")
+	if taskType != commonExecution.TaskTypeImport {
+		commonAPI.BadRequestError(c, "unsupported task_type: "+taskType)
+		return
+	}
+	h.GetTask(c)
+}
+
+// ProviderExecuteTask 使用 TaskProvider 标准协议启动 Transfer 任务。
+// @Summary 执行 TaskProvider Transfer 任务 | Execute TaskProvider Transfer task
+// @Description 按标准 TaskProvider 协议启动 Transfer 任务；task_type 仅支持 import，parameters 当前不支持覆盖。| Start a Transfer task through the standard TaskProvider protocol; task_type only supports import and parameters overrides are not supported.
+// @Tags         任务管理 | Task Management
+// @Accept json
+// @Produce json
+// @Param task_type path string true "任务类型，固定为 import | Task type, fixed to import"
+// @Param id path int true "任务ID | Task ID"
+// @Param request body ProviderExecuteRequest false "TaskProvider 执行请求 | TaskProvider execution request"
+// @Success 200 {object} models.TaskExecution "执行记录 | Execution"
+// @Failure 400 {object} map[string]string "参数错误 | Bad request"
+// @Failure 500 {object} map[string]string "服务器错误 | Server error"
+// @Router /tasks/{task_type}/{id}/execute [post]
+// @Security BearerAuth
+func (h *TaskHandler) ProviderExecuteTask(c *gin.Context) {
+	taskType := c.Param("task_type")
+	if taskType != commonExecution.TaskTypeImport {
+		commonAPI.BadRequestError(c, "unsupported task_type: "+taskType)
+		return
+	}
+
+	id, ok := commonAPI.ParseUintParam(c, "id")
+	if !ok {
+		return
+	}
+
+	var req ProviderExecuteRequest
+	_ = c.ShouldBindJSON(&req)
+	if len(req.Parameters) > 0 {
+		commonAPI.BadRequestError(c, "Transfer task provider does not support execution parameter overrides")
+		return
+	}
+
+	triggerType, err := commonExecution.NormalizeTriggerType(req.TriggerType)
+	if err != nil {
+		commonAPI.BadRequestError(c, err.Error())
+		return
+	}
+	source := strings.TrimSpace(req.Source)
+	if source == "" {
+		source = commonExecution.ModuleTransfer
+	}
+	var parentExecutionID *string
+	if strings.TrimSpace(req.ParentExecutionID) != "" {
+		parentExecutionID = &req.ParentExecutionID
+	}
+
+	tenantID := c.GetUint("tenant_id")
+	userID := c.GetUint("user_id")
+
+	execution, err := h.taskService.StartTaskWithContext(c.Request.Context(), id, tenantID, userID, triggerType, source, parentExecutionID)
+	if err != nil {
+		respondTaskServiceError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":       "success",
+		"execution_id": execution.ExecutionID,
+		"id":           execution.ID,
+		"data":         execution,
+	})
+}
+
 // StopTask 停止任务
 // @Summary 停止任务 | Stop task
 // @Description 停止正在执行的任务 | Stop a running task
@@ -231,7 +332,7 @@ func (h *TaskHandler) StartTask(c *gin.Context) {
 // @Success 200 {object} map[string]string "停止成功 | Stopped successfully"
 // @Failure 400 {object} map[string]string "参数错误 | Bad request"
 // @Failure 500 {object} map[string]string "服务器错误 | Server error"
-// @Router /tasks/{id}/stop [post]
+// @Router /task-definitions/{id}/stop [post]
 // @Security BearerAuth
 func (h *TaskHandler) StopTask(c *gin.Context) {
 	id, ok := commonAPI.ParseUintParam(c, "id")
@@ -256,7 +357,7 @@ func (h *TaskHandler) StopTask(c *gin.Context) {
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} map[string]string
 // @Failure 500 {object} map[string]string
-// @Router /tasks/{id}/pause [post]
+// @Router /task-definitions/{id}/pause [post]
 // @Security BearerAuth
 func (h *TaskHandler) PauseTask(c *gin.Context) {
 	id, ok := commonAPI.ParseUintParam(c, "id")
@@ -281,7 +382,7 @@ func (h *TaskHandler) PauseTask(c *gin.Context) {
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} map[string]string
 // @Failure 500 {object} map[string]string
-// @Router /tasks/{id}/resume [post]
+// @Router /task-definitions/{id}/resume [post]
 // @Security BearerAuth
 func (h *TaskHandler) ResumeTask(c *gin.Context) {
 	id, ok := commonAPI.ParseUintParam(c, "id")
@@ -307,7 +408,7 @@ func (h *TaskHandler) ResumeTask(c *gin.Context) {
 // @Produce json
 // @Success 200 {object} models.TaskStatistics "统计信息 | Statistics"
 // @Failure 500 {object} map[string]string "服务器错误 | Server error"
-// @Router /tasks/statistics [get]
+// @Router /task-definitions/statistics [get]
 // @Security BearerAuth
 func (h *TaskHandler) GetTaskStatistics(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -329,6 +430,10 @@ func (h *TaskHandler) GetTaskStatistics(c *gin.Context) {
 
 func respondTaskServiceError(c *gin.Context, err error) {
 	if errors.Is(err, service.ErrInvalidTaskConfig) {
+		commonAPI.BadRequestError(c, err.Error())
+		return
+	}
+	if errors.Is(err, service.ErrUnsupportedTaskType) {
 		commonAPI.BadRequestError(c, err.Error())
 		return
 	}

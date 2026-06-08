@@ -97,6 +97,9 @@ quality/
 | table_name | string | 可选：限定检查的表（空则检查整个 Schema） |
 | enabled | bool | 是否启用 |
 | last_run_at | timestamp? | 最近执行时间 |
+| next_run_at | timestamp? | 下一次计划执行时间（当前未启用调度，保持为空） |
+| last_execution_id | string | 最近一次 `common.task_executions.execution_id` |
+| last_execution_status | string | 最近一次执行状态 |
 | created_by / updated_by | int64 | 操作人 |
 
 ### `quality.issues` — 质量问题工单
@@ -117,31 +120,38 @@ quality/
 
 > **说明**: 执行记录不在 quality schema，写入 `common.task_executions`，module 标记为 `quality`，执行结果（质量评分、规则明细等）存储在 `metadata` JSONB 字段中。
 
-## API 端点（`/api/quality`）
+## API 端点（`/api/v1/quality`）
 
 ### 规则应用
 ```
-GET    /api/quality/rule-applications          # 列表（支持过滤：engine_id, schema_name, table_name）
-POST   /api/quality/rule-applications          # 创建（传入 element_id，后端自动获取质量规则快照）
-GET    /api/quality/rule-applications/:id      # 详情
-PUT    /api/quality/rule-applications/:id      # 更新
-DELETE /api/quality/rule-applications/:id      # 删除
+GET    /api/v1/quality/rule-applications          # 列表（支持过滤：engine_id, schema_name, table_name）
+POST   /api/v1/quality/rule-applications          # 创建（传入 element_id，后端自动获取质量规则快照）
+GET    /api/v1/quality/rule-applications/:id      # 详情
+PUT    /api/v1/quality/rule-applications/:id      # 更新
+DELETE /api/v1/quality/rule-applications/:id      # 删除
 ```
 
 ### 检查任务
 ```
-GET    /api/quality/check-tasks                # 列表
-POST   /api/quality/check-tasks                # 创建
-GET    /api/quality/check-tasks/:id            # 详情
-PUT    /api/quality/check-tasks/:id            # 更新
-DELETE /api/quality/check-tasks/:id            # 删除
-POST   /api/quality/check-tasks/:id/run        # 手动触发执行（异步，立即返回 execution_id）
+GET    /api/v1/quality/check-tasks                # 列表
+POST   /api/v1/quality/check-tasks                # 创建
+GET    /api/v1/quality/check-tasks/:id            # 详情
+PUT    /api/v1/quality/check-tasks/:id            # 更新
+DELETE /api/v1/quality/check-tasks/:id            # 删除
+POST   /api/v1/quality/check-tasks/:id/run        # 手动触发执行（异步，立即返回 execution_id）
+```
+
+### TaskProvider 标准入口
+```
+GET    /api/v1/quality/tasks                       # 列表，task_type 仅支持 check
+GET    /api/v1/quality/tasks/:task_type/:id        # 详情
+POST   /api/v1/quality/tasks/:task_type/:id/execute # 执行
 ```
 
 ### 执行记录（只读，读 `common.task_executions`）
 ```
-GET    /api/quality/executions                 # 列表（分页）
-GET    /api/quality/executions/:id             # 详情及结果（含质量评分、字段评分、规则明细）
+GET    /api/v1/quality/executions                 # 列表（分页）
+GET    /api/v1/quality/executions/:id             # 详情及结果（含质量评分、字段评分、规则明细）
 ```
 
 ### 问题工单
@@ -176,7 +186,7 @@ GET    /health                                 # 服务健康检查
     6. 为失败规则创建 Issue 工单
     ↓
 更新 common.task_executions（status: success/failed，metadata: JSONB）
-更新 check_tasks.last_run_at
+更新 check_tasks.last_run_at、last_execution_id、last_execution_status
 ```
 
 ### SQL 生成器（`sql_generator.go`）

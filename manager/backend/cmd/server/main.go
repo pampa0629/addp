@@ -229,27 +229,22 @@ func main() {
 
 	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, metaClient, cacheManager, redisClient, embeddingService, taskProviderHandler, importHandler)
 
+	serviceHost := utils.GetServiceHost()
+	port := utils.GetModulePort("manager")
+	serviceURL := utils.BuildServiceURL(serviceHost, port)
+
 	// ========== 服务注册（注册到 System service_registry）==========
 	if cfg.EnableIntegration && cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
-		serviceHost := utils.GetServiceHost()
-		port := utils.GetModulePort("manager")
-		serviceURL := utils.BuildServiceURL(serviceHost, port)
 		registryClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
 		registryClient.RegisterAndHeartbeat("manager", serviceURL, "/manager")
 	}
 
 	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========
-	// 构造 Manager 服务的外部访问 URL（供 Orchestrator 调用）
-	managerServiceURL := fmt.Sprintf("http://manager-backend:%s", cfg.Port)
-	if os.Getenv("MANAGER_URL") != "" {
-		managerServiceURL = os.Getenv("MANAGER_URL")
-	}
-
 	if cfg.EnableIntegration && cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
 		taskProviderRegistry := service.NewTaskProviderRegistryService(
 			cfg.SystemServiceURL,
 			cfg.InternalAPIKey,
-			managerServiceURL,
+			serviceURL,
 		)
 
 		// 后台异步注册（不阻塞启动，支持重试）

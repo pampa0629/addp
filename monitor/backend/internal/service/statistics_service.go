@@ -55,7 +55,11 @@ func (s *StatisticsService) GetStatistics(ctx context.Context, req *StatisticsRe
 	}
 
 	// 获取统计数据
-	stats, err := s.repo.GetStatistics(ctx, req.TenantID, req.Module, startDate, nil)
+	stats, err := s.repo.GetStatistics(ctx, commonExecution.TaskExecutionFilter{
+		TenantID:  req.TenantID,
+		Module:    req.Module,
+		StartDate: startDate,
+	})
 	if err != nil {
 		return nil, err
 	}

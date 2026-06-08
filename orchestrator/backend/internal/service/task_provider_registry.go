@@ -2,12 +2,15 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
 	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/orchestrator/internal/models"
 )
 
 // TaskProviderRegistry 任务提供者注册表(从 System 动态加载)
@@ -103,4 +106,72 @@ func (r *TaskProviderRegistry) ListAllProviders(ctx context.Context) ([]*commonM
 	}
 
 	return providers, nil
+}
+
+// ValidateStepTaskTypes 校验编排步骤引用的 provider/task_type 已由 TaskProvider capabilities 声明。
+func (r *TaskProviderRegistry) ValidateStepTaskTypes(ctx context.Context, steps models.Steps) error {
+	checked := map[string]struct{}{}
+	for i, step := range steps {
+		providerName := strings.TrimSpace(step.Provider)
+		taskType := strings.TrimSpace(step.TaskType)
+		if providerName == "" || taskType == "" {
+			return fmt.Errorf("steps[%d].provider and task_type are required", i)
+		}
+
+		key := providerName + "\x00" + taskType
+		if _, exists := checked[key]; exists {
+			continue
+		}
+
+		provider, err := r.GetProvider(ctx, providerName)
+		if err != nil {
+			return fmt.Errorf("steps[%d] provider %q is not registered: %w", i, providerName, err)
+		}
+
+		declared, deprecated, err := providerDeclaresTaskType(provider, taskType)
+		if err != nil {
+			return fmt.Errorf("steps[%d] provider %q capabilities invalid: %w", i, providerName, err)
+		}
+		if !declared {
+			return fmt.Errorf("steps[%d] task_type %q is not declared by provider %q", i, taskType, providerName)
+		}
+		if deprecated {
+			return fmt.Errorf("steps[%d] task_type %q of provider %q is deprecated", i, taskType, providerName)
+		}
+
+		checked[key] = struct{}{}
+	}
+	return nil
+}
+
+type taskProviderCapabilities struct {
+	SchemaVersion string `json:"schema_version"`
+	TaskTypes     []struct {
+		Type       string `json:"type"`
+		Deprecated bool   `json:"deprecated"`
+	} `json:"task_types"`
+}
+
+func providerDeclaresTaskType(provider *commonModels.TaskProvider, taskType string) (bool, bool, error) {
+	if provider == nil {
+		return false, false, fmt.Errorf("provider is nil")
+	}
+	if provider.Capabilities == nil || strings.TrimSpace(string(*provider.Capabilities)) == "" {
+		return false, false, fmt.Errorf("capabilities is required")
+	}
+
+	var capabilities taskProviderCapabilities
+	if err := json.Unmarshal([]byte(*provider.Capabilities), &capabilities); err != nil {
+		return false, false, fmt.Errorf("invalid capabilities JSON: %w", err)
+	}
+	if capabilities.SchemaVersion != "task.capabilities/v1" {
+		return false, false, fmt.Errorf("schema_version must be task.capabilities/v1")
+	}
+
+	for _, item := range capabilities.TaskTypes {
+		if strings.TrimSpace(item.Type) == taskType {
+			return true, item.Deprecated, nil
+		}
+	}
+	return false, false, nil
 }

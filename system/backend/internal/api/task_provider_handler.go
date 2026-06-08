@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/addp/system/internal/models"
@@ -27,6 +28,11 @@ func (h *TaskProviderHandler) RegisterOrUpdate(c *gin.Context) {
 
 	provider, err := h.service.RegisterOrUpdate(&req)
 	if err != nil {
+		var validationErr *service.TaskProviderValidationError
+		if errors.As(err, &validationErr) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": validationErr.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

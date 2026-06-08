@@ -125,17 +125,23 @@ func SetupRouter(
 	// 任务管理路由
 	tasks := protected.Group("/tasks")
 	{
-		tasks.POST("", taskHandler.CreateTask)                           // 创建任务
-		tasks.GET("", taskHandler.ListTasks)                             // 获取任务列表
-		tasks.GET("/statistics", taskHandler.GetTaskStatistics)          // 获取任务统计（必须在 /:id 之前）
-		tasks.GET("/:id", taskHandler.GetTask)                           // 获取任务详情
-		tasks.PUT("/:id", taskHandler.UpdateTask)                        // 更新任务
-		tasks.DELETE("/:id", taskHandler.DeleteTask)                     // 删除任务
-		tasks.POST("/:id/start", taskHandler.StartTask)                  // 启动任务
-		tasks.POST("/:id/stop", taskHandler.StopTask)                    // 停止任务
-		tasks.POST("/:id/pause", taskHandler.PauseTask)                  // 暂停任务
-		tasks.POST("/:id/resume", taskHandler.ResumeTask)                // 恢复任务
-		tasks.GET("/:id/executions", executionHandler.GetTaskExecutions) // 获取任务的执行记录
+		tasks.GET("", taskHandler.ListTasks)                      // TaskProvider 列表和任务列表
+		tasks.GET("/:task_type/:id", taskHandler.ProviderGetTask) // TaskProvider 获取任务详情
+		tasks.POST("/:task_type/:id/execute", taskHandler.ProviderExecuteTask)
+	}
+
+	taskDefinitions := protected.Group("/task-definitions")
+	{
+		taskDefinitions.POST("", taskHandler.CreateTask)                           // 创建任务
+		taskDefinitions.GET("/statistics", taskHandler.GetTaskStatistics)          // 获取任务统计
+		taskDefinitions.GET("/:id", taskHandler.GetTask)                           // 获取任务详情
+		taskDefinitions.PUT("/:id", taskHandler.UpdateTask)                        // 更新任务
+		taskDefinitions.DELETE("/:id", taskHandler.DeleteTask)                     // 删除任务
+		taskDefinitions.POST("/:id/start", taskHandler.StartTask)                  // 启动任务
+		taskDefinitions.POST("/:id/stop", taskHandler.StopTask)                    // 停止任务
+		taskDefinitions.POST("/:id/pause", taskHandler.PauseTask)                  // 暂停任务
+		taskDefinitions.POST("/:id/resume", taskHandler.ResumeTask)                // 恢复任务
+		taskDefinitions.GET("/:id/executions", executionHandler.GetTaskExecutions) // 获取任务的执行记录
 	}
 
 	// 对象存储辅助接口

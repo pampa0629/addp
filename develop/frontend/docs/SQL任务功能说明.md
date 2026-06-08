@@ -100,9 +100,9 @@ SQL 开发模块现已支持将 SQL 查询保存为可重用的任务,并支持�
 
 1. **手动执行**: 在任务管理页面点击"执行"按钮
 2. **定时执行**: 通过配置的 Cron 表达式自动触发(需要调度器支持)
-3. **API 调用**: 通过 `POST /api/develop/items/:id/execute` 执行
+3. **API 调用**: 通过 `POST /api/v1/develop/task-definitions/{id}/execute` 执行
 
-执行结果会记录在 `dev_executions` 表中,包含:
+执行结果会记录在 `common.task_executions` 表中,包含:
 - 执行 ID
 - 执行状态 (pending/running/success/failed)
 - 执行结果 (查询返回的数据)
@@ -111,15 +111,15 @@ SQL 开发模块现已支持将 SQL 查询保存为可重用的任务,并支持�
 
 ## 数据库结构
 
-### 开发项表 (develop.dev_items)
+### 开发任务表 (develop.dev_tasks)
 
 ```sql
-CREATE TABLE develop.dev_items (
+CREATE TABLE develop.dev_tasks (
   id SERIAL PRIMARY KEY,
   tenant_id INTEGER NOT NULL,
   name VARCHAR(255) NOT NULL,
   display_name VARCHAR(255),
-  dev_type VARCHAR(50) NOT NULL,  -- 'sql' | 'workflow' | 'script'
+  dev_type VARCHAR(50) NOT NULL,  -- 'query' | 'workflow' | 'script'
 
   -- 内容存储 (JSONB)
   content JSONB NOT NULL,  -- { "sql": "...", "engine_id": 1 }
@@ -149,34 +149,41 @@ CREATE TABLE develop.dev_items (
 );
 ```
 
-### 执行记录表 (develop.dev_executions)
+### 执行记录表 (common.task_executions)
 
 ```sql
-CREATE TABLE develop.dev_executions (
+CREATE TABLE common.task_executions (
   id SERIAL PRIMARY KEY,
-  dev_item_id INTEGER REFERENCES develop.dev_items(id),
   tenant_id INTEGER NOT NULL,
-  execution_id VARCHAR(50) UNIQUE NOT NULL,
-  dev_type VARCHAR(50) NOT NULL,
+  execution_id VARCHAR(255) UNIQUE NOT NULL,
+  module VARCHAR(50) NOT NULL,
+  task_type VARCHAR(100) NOT NULL,
+  source VARCHAR(50) NOT NULL,
+  source_task_id VARCHAR(255),
+  source_task_name VARCHAR(255),
+  parent_execution_id VARCHAR(36),
 
   -- 执行信息
-  trigger_type VARCHAR(50),  -- 'manual' | 'scheduled'
+  trigger_type VARCHAR(50) NOT NULL,  -- 'manual' | 'scheduled'
   triggered_by INTEGER,
   status VARCHAR(50) NOT NULL,
   progress INTEGER DEFAULT 0,
+  current_step VARCHAR(255),
 
-  -- 结果
-  result JSONB,
-  error_message TEXT,
+  -- 配置、错误和模块扩展数据
+  execution_config JSONB,
+  error_details JSONB,
+  metadata JSONB,
+
+  -- 统计
   rows_affected BIGINT,
-  result_size_bytes BIGINT,
+  execution_time_ms BIGINT,
 
   -- 时间统计
   started_at TIMESTAMP,
   completed_at TIMESTAMP,
-  execution_time_ms BIGINT,
-
-  created_at TIMESTAMP DEFAULT NOW()
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
 );
 ```
 
@@ -258,15 +265,15 @@ CREATE TABLE develop.dev_executions (
 
 - **Handler 层**: [develop/backend/internal/api/sql_handler.go](develop/backend/internal/api/sql_handler.go)
   - 新增 5 个 API endpoint
-  - 集成 DevItemService 管理任务
+  - 集成 DevTaskService 管理任务
 
 - **Service 层**:
-  - [develop/backend/internal/service/dev_item_service.go](develop/backend/internal/service/dev_item_service.go) - 任务 CRUD
+  - [develop/backend/internal/service/dev_task_service.go](develop/backend/internal/service/dev_task_service.go) - 任务 CRUD
   - [develop/backend/internal/service/dev_executor.go](develop/backend/internal/service/dev_executor.go) - 任务执行
   - [develop/backend/internal/service/sql_engine_service.go](develop/backend/internal/service/sql_engine_service.go) - SQL 执行引擎
 
 - **Repository 层**:
-  - [develop/backend/internal/repository/dev_item_repository.go](develop/backend/internal/repository/dev_item_repository.go)
+  - [develop/backend/internal/repository/dev_task_repository.go](develop/backend/internal/repository/dev_task_repository.go)
   - [develop/backend/internal/repository/dev_execution_repository.go](develop/backend/internal/repository/dev_execution_repository.go)
 
 ### 前端架构

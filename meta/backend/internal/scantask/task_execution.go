@@ -22,7 +22,7 @@ func NewManualExecution(tenantID, userID uint, engineID uint, itemID uint, stora
 		TenantID:    int(tenantID),
 		ExecutionID: uuid.New().String(),
 		Module:      commonExecution.ModuleMeta,
-		TaskType:    "scan",
+		TaskType:    commonExecution.TaskTypeScan,
 		Source:      source,
 		Status:      commonExecution.ExecutionStatusPending,
 		TriggerType: commonExecution.TriggerTypeManual,
@@ -45,35 +45,42 @@ func NewManualExecution(tenantID, userID uint, engineID uint, itemID uint, stora
 }
 
 func NewTaskManualExecution(task *metaModels.ScanTask, userID uint, storageType string, now time.Time) *commonExecution.TaskExecution {
+	return NewTaskExecution(task, userID, storageType, commonExecution.TriggerTypeManual, commonExecution.ModuleMeta, nil, now)
+}
+
+func NewTaskExecution(task *metaModels.ScanTask, userID uint, storageType string, triggerType string, source string, parentExecutionID *string, now time.Time) *commonExecution.TaskExecution {
 	userIDInt := int(userID)
-	taskIDInt := int(task.ID)
+	source = strings.TrimSpace(source)
+	if source == "" {
+		source = commonExecution.ModuleMeta
+	}
 	return &commonExecution.TaskExecution{
-		TenantID:        int(task.TenantID),
-		ExecutionID:     uuid.New().String(),
-		Module:          commonExecution.ModuleMeta,
-		TaskType:        "scan",
-		Source:          commonExecution.ModuleMeta,
-		SourceTaskID:    &taskIDInt,
-		SourceTaskName:  &task.Name,
-		Status:          commonExecution.ExecutionStatusPending,
-		TriggerType:     commonExecution.TriggerTypeManual,
-		TriggeredBy:     &userIDInt,
-		ExecutionConfig: scanflow.TaskExecutionConfig(task.EngineID, storageType, task.Scope, task.Parameters, scanflow.ScanDepthDeep, "meta"),
-		StartedAt:       &now,
-		CreatedAt:       now,
-		UpdatedAt:       now,
+		TenantID:          int(task.TenantID),
+		ExecutionID:       uuid.New().String(),
+		Module:            commonExecution.ModuleMeta,
+		TaskType:          commonExecution.TaskTypeScan,
+		Source:            source,
+		SourceTaskID:      commonExecution.NewSourceTaskIDFromUint(task.ID),
+		SourceTaskName:    &task.Name,
+		ParentExecutionID: parentExecutionID,
+		Status:            commonExecution.ExecutionStatusPending,
+		TriggerType:       triggerType,
+		TriggeredBy:       &userIDInt,
+		ExecutionConfig:   scanflow.TaskExecutionConfig(task.EngineID, storageType, task.Scope, task.Parameters, scanflow.ScanDepthDeep, source),
+		StartedAt:         &now,
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 }
 
 func NewScheduledExecution(task *metaModels.ScanTask, storageType string, targets scanflow.TargetSet, plannedRunAt time.Time, now time.Time) *commonExecution.TaskExecution {
-	taskIDInt := int(task.ID)
 	return &commonExecution.TaskExecution{
 		TenantID:        int(task.TenantID),
 		ExecutionID:     uuid.New().String(),
 		Module:          commonExecution.ModuleMeta,
-		TaskType:        "scan",
+		TaskType:        commonExecution.TaskTypeScan,
 		Source:          commonExecution.ModuleMeta,
-		SourceTaskID:    &taskIDInt,
+		SourceTaskID:    commonExecution.NewSourceTaskIDFromUint(task.ID),
 		SourceTaskName:  &task.Name,
 		Status:          commonExecution.ExecutionStatusPending,
 		TriggerType:     metaModels.TriggerTypeScheduled,

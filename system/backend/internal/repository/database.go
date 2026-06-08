@@ -332,7 +332,7 @@ func MigrateExistingEnginesDisplayName(db *gorm.DB) error {
 	return nil
 }
 
-// MigrateTaskProviders 迁移 task_providers 表：将 create_task_url/edit_task_url 合入 capabilities，添加 task_cancel_endpoint
+// MigrateTaskProviders 迁移 task_providers 表：删除旧 task_providers 顶层入口字段
 func MigrateTaskProviders(db *gorm.DB) error {
 	// 1. 检查 create_task_url 列是否存在（幂等）
 	var colCount int64
@@ -347,24 +347,7 @@ func MigrateTaskProviders(db *gorm.DB) error {
 		return nil
 	}
 
-	// 2. 将 create_task_url/edit_task_url 合并进 capabilities JSONB
-	if err := db.Exec(`
-		UPDATE system.task_providers
-		SET capabilities = jsonb_set(
-			jsonb_set(
-				COALESCE(capabilities::jsonb, '{}'),
-				'{create_task_url}',
-				to_jsonb(create_task_url)
-			),
-			'{edit_task_url}',
-			to_jsonb(edit_task_url)
-		)
-		WHERE create_task_url IS NOT NULL AND create_task_url != ''
-	`).Error; err != nil {
-		return fmt.Errorf("task_providers capabilities 迁移失败: %w", err)
-	}
-
-	// 3. 删除旧列
+	// 2. 删除旧列。任务创建/编辑入口必须由 task.capabilities/v1 的 task_types[] 声明。
 	if err := db.Exec(`
 		ALTER TABLE system.task_providers
 		DROP COLUMN IF EXISTS create_task_url,
@@ -373,7 +356,7 @@ func MigrateTaskProviders(db *gorm.DB) error {
 		return fmt.Errorf("task_providers 旧列删除失败: %w", err)
 	}
 
-	log.Println("✅ task_providers 迁移完成（create_task_url/edit_task_url 已合入 capabilities）")
+	log.Println("✅ task_providers 迁移完成（create_task_url/edit_task_url 旧列已删除）")
 	return nil
 }
 

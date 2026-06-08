@@ -2,7 +2,9 @@ package repository
 
 import (
 	"errors"
+	"fmt"
 
+	commonExecution "github.com/addp/common/execution"
 	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/transfer/internal/models"
 	"gorm.io/gorm"
@@ -74,6 +76,9 @@ func (r *TaskRepository) List(tenantID uint, filters map[string]interface{}, pag
 	// 应用过滤条件
 	if status, ok := filters["status"].(models.TaskStatus); ok {
 		query = query.Where("status = ?", status)
+	}
+	if taskType, ok := filters["task_type"].(string); ok && taskType != "" {
+		query = query.Where("task_type = ?", taskType)
 	}
 	// 支持根据 enabled 状态过滤（用于调度器加载定时任务）
 	if enabled, ok := filters["enabled"].(bool); ok {
@@ -164,82 +169,79 @@ func (r *TaskRepository) GetStatistics(tenantID uint) (*models.TaskStatistics, e
 	r.db.Raw("SELECT COUNT(*) FROM transfer.transfer_tasks WHERE tenant_id = ? AND deleted_at IS NULL AND schedule IS NOT NULL AND schedule != '' AND enabled = ?", tenantID, false).Scan(&failedTasks)
 	stats.FailedTasks = failedTasks
 
-	// 最后执行状态统计（从 common.task_executions 表获取）
-	// 未执行过的任务数
-	var notExecutedTasks int64
-	r.db.Raw(`
-		SELECT COUNT(*)
-		FROM transfer.transfer_tasks
-		WHERE tenant_id = ? AND deleted_at IS NULL
-		AND id NOT IN (SELECT DISTINCT source_task_id FROM common.task_executions WHERE module = 'transfer' AND source_task_id IS NOT NULL)
-	`, tenantID).Scan(&notExecutedTasks)
-	stats.NotExecutedTasks = notExecutedTasks
-
-	// 最后执行状态为 running 的任务数
-	var runningTaskIDs []uint
-	r.db.Raw(`
-		SELECT source_task_id
-		FROM (
-			SELECT DISTINCT ON (source_task_id) source_task_id, status
-			FROM common.task_executions
-			WHERE module = 'transfer' AND source_task_id IN (SELECT id FROM transfer.transfer_tasks WHERE tenant_id = ? AND deleted_at IS NULL)
-			ORDER BY source_task_id, started_at DESC
-		) latest_executions
-		WHERE status = ?
-	`, tenantID, models.ExecutionStatusRunning).Pluck("source_task_id", &runningTaskIDs)
-	stats.LastRunningTasks = int64(len(runningTaskIDs))
-
-	// 最后执行成功的任务数
-	var successTaskIDs []uint
-	r.db.Raw(`
-		SELECT source_task_id
-		FROM (
-			SELECT DISTINCT ON (source_task_id) source_task_id, status
-			FROM common.task_executions
-			WHERE module = 'transfer' AND source_task_id IN (SELECT id FROM transfer.transfer_tasks WHERE tenant_id = ? AND deleted_at IS NULL)
-			ORDER BY source_task_id, started_at DESC
-		) latest_executions
-		WHERE status = ?
-	`, tenantID, models.ExecutionStatusSuccess).Pluck("source_task_id", &successTaskIDs)
-	stats.LastSuccessTasks = int64(len(successTaskIDs))
-
-	// 最后执行失败的任务数
-	var failedTaskIDs []uint
-	r.db.Raw(`
-		SELECT source_task_id
-		FROM (
-			SELECT DISTINCT ON (source_task_id) source_task_id, status
-			FROM common.task_executions
-			WHERE module = 'transfer' AND source_task_id IN (SELECT id FROM transfer.transfer_tasks WHERE tenant_id = ? AND deleted_at IS NULL)
-			ORDER BY source_task_id, started_at DESC
-		) latest_executions
-		WHERE status = ?
-	`, tenantID, models.ExecutionStatusFailed).Pluck("source_task_id", &failedTaskIDs)
-	stats.LastFailedTasks = int64(len(failedTaskIDs))
-
-	// 总执行次数
-	var totalExecutions int64
-	r.db.Raw(`
-		SELECT COUNT(*)
-		FROM common.task_executions
-		WHERE module = 'transfer' AND source_task_id IN (SELECT id FROM transfer.transfer_tasks WHERE tenant_id = ? AND deleted_at IS NULL)
-	`, tenantID).Scan(&totalExecutions)
-	stats.TotalExecutions = totalExecutions
-
-	// 总处理记录数和字节数（从 metadata 中提取）
-	var result struct {
-		TotalRecords int64 `json:"total_records"`
-		TotalBytes   int64 `json:"total_bytes"`
+	if err := r.fillExecutionStatistics(tenantID, &stats); err != nil {
+		return nil, err
 	}
-	r.db.Raw(`
-		SELECT
-			COALESCE(SUM((metadata->>'records_written')::bigint), 0) as total_records,
-			COALESCE(SUM((metadata->>'bytes_written')::bigint), 0) as total_bytes
-		FROM common.task_executions
-		WHERE module = 'transfer' AND source_task_id IN (SELECT id FROM transfer.transfer_tasks WHERE tenant_id = ? AND deleted_at IS NULL)
-	`, tenantID).Scan(&result)
-	stats.TotalRecords = result.TotalRecords
-	stats.TotalBytes = result.TotalBytes
 
 	return &stats, nil
+}
+
+func (r *TaskRepository) fillExecutionStatistics(tenantID uint, stats *models.TaskStatistics) error {
+	var taskIDs []string
+	if err := r.db.Model(&models.TransferTask{}).
+		Where("tenant_id = ? AND deleted_at IS NULL", tenantID).
+		Select("CAST(id AS TEXT)").
+		Pluck("CAST(id AS TEXT)", &taskIDs).Error; err != nil {
+		return err
+	}
+	if len(taskIDs) == 0 {
+		stats.NotExecutedTasks = 0
+		return nil
+	}
+
+	type executionStatRow struct {
+		SourceTaskID   string
+		Status         string
+		ID             int64
+		RecordsWritten *int64
+		BytesWritten   *int64
+	}
+
+	var executions []executionStatRow
+	if err := r.db.Table("common.task_executions").
+		Select("id, source_task_id, status, started_at, records_written, bytes_written").
+		Where("module = ? AND task_type = ? AND source_task_id IN ?", commonExecution.ModuleTransfer, commonExecution.TaskTypeImport, taskIDs).
+		Order("source_task_id ASC, started_at DESC, id DESC").
+		Find(&executions).Error; err != nil {
+		return err
+	}
+
+	taskIDSet := make(map[string]struct{}, len(taskIDs))
+	for _, taskID := range taskIDs {
+		taskIDSet[taskID] = struct{}{}
+	}
+
+	latestStatusByTask := make(map[string]string)
+	for _, execution := range executions {
+		if execution.SourceTaskID == "" {
+			continue
+		}
+		stats.TotalExecutions++
+		if execution.RecordsWritten != nil {
+			stats.TotalRecords += *execution.RecordsWritten
+		}
+		if execution.BytesWritten != nil {
+			stats.TotalBytes += *execution.BytesWritten
+		}
+		if _, ok := latestStatusByTask[execution.SourceTaskID]; !ok {
+			latestStatusByTask[execution.SourceTaskID] = execution.Status
+		}
+	}
+
+	stats.NotExecutedTasks = int64(len(taskIDSet) - len(latestStatusByTask))
+	for _, status := range latestStatusByTask {
+		switch status {
+		case string(models.ExecutionStatusRunning):
+			stats.LastRunningTasks++
+		case string(models.ExecutionStatusSuccess):
+			stats.LastSuccessTasks++
+		case string(models.ExecutionStatusFailed):
+			stats.LastFailedTasks++
+		}
+	}
+
+	if stats.NotExecutedTasks < 0 {
+		return fmt.Errorf("invalid transfer execution statistics: not_executed=%d", stats.NotExecutedTasks)
+	}
+	return nil
 }

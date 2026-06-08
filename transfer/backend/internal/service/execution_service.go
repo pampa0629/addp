@@ -43,10 +43,15 @@ func (s *ExecutionService) convertToTransferExecution(exec *commonExecution.Task
 	if exec == nil {
 		return nil
 	}
+	taskID, err := commonExecution.ParseSourceTaskIDUint(exec.SourceTaskID)
+	if err != nil {
+		taskID = 0
+	}
 
 	transferExec := &models.TaskExecution{
 		ID:          uint(exec.ID),
-		TaskID:      uint(*exec.SourceTaskID),
+		ExecutionID: exec.ExecutionID,
+		TaskID:      taskID,
 		Status:      models.ExecutionStatus(exec.Status),
 		TriggerType: exec.TriggerType,
 	}
@@ -121,7 +126,11 @@ func (s *ExecutionService) GetExecution(ctx context.Context, id, tenantID uint) 
 
 	// 检查租户权限（通过 task）
 	if execution.SourceTaskID != nil {
-		task, err := s.taskRepo.GetByID(uint(*execution.SourceTaskID))
+		taskID, parseErr := commonExecution.ParseSourceTaskIDUint(execution.SourceTaskID)
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		task, err := s.taskRepo.GetByID(taskID)
 		if err != nil {
 			return nil, err
 		}
@@ -130,6 +139,21 @@ func (s *ExecutionService) GetExecution(ctx context.Context, id, tenantID uint) 
 		}
 	}
 
+	return s.convertToTransferExecution(execution), nil
+}
+
+// GetExecutionByExecutionID 按统一 execution_id 查询执行记录。
+func (s *ExecutionService) GetExecutionByExecutionID(ctx context.Context, executionID string, tenantID uint) (*models.TaskExecution, error) {
+	execution, err := s.taskExecutionRepo.GetByExecutionID(ctx, executionID, int(tenantID))
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, fmt.Errorf("execution not found")
+		}
+		return nil, err
+	}
+	if execution.Module != commonExecution.ModuleTransfer {
+		return nil, fmt.Errorf("execution not found or access denied")
+	}
 	return s.convertToTransferExecution(execution), nil
 }
 
@@ -152,11 +176,12 @@ func (s *ExecutionService) ListExecutions(ctx context.Context, taskID, tenantID 
 	}
 
 	// 从统一表查询
-	taskIDInt := int(taskID)
+	sourceTaskID := commonExecution.NewSourceTaskIDFromUint(taskID)
 	filter := commonExecution.TaskExecutionFilter{
 		TenantID:     int(tenantID),
 		Module:       commonExecution.ModuleTransfer,
-		SourceTaskID: &taskIDInt,
+		TaskType:     commonExecution.TaskTypeImport,
+		SourceTaskID: sourceTaskID,
 		Page:         page,
 		PageSize:     pageSize,
 	}
@@ -188,6 +213,7 @@ func (s *ExecutionService) ListAllExecutions(ctx context.Context, tenantID uint,
 	filter := commonExecution.TaskExecutionFilter{
 		TenantID: int(tenantID),
 		Module:   commonExecution.ModuleTransfer,
+		TaskType: commonExecution.TaskTypeImport,
 		Page:     page,
 		PageSize: pageSize,
 	}
@@ -197,8 +223,7 @@ func (s *ExecutionService) ListAllExecutions(ctx context.Context, tenantID uint,
 		filter.Status = status
 	}
 	if taskID, ok := filters["task_id"].(uint); ok && taskID > 0 {
-		taskIDInt := int(taskID)
-		filter.SourceTaskID = &taskIDInt
+		filter.SourceTaskID = commonExecution.NewSourceTaskIDFromUint(taskID)
 	}
 
 	executions, total, err := s.taskExecutionRepo.List(ctx, filter)
@@ -227,11 +252,12 @@ func (s *ExecutionService) GetLatestExecution(ctx context.Context, taskID, tenan
 	}
 
 	// 从统一表查询最新记录
-	taskIDInt := int(taskID)
+	sourceTaskID := commonExecution.NewSourceTaskIDFromUint(taskID)
 	filter := commonExecution.TaskExecutionFilter{
 		TenantID:     int(tenantID),
 		Module:       commonExecution.ModuleTransfer,
-		SourceTaskID: &taskIDInt,
+		TaskType:     commonExecution.TaskTypeImport,
+		SourceTaskID: sourceTaskID,
 		Page:         1,
 		PageSize:     1,
 	}
@@ -254,6 +280,7 @@ func (s *ExecutionService) GetRunningExecutions(ctx context.Context) ([]models.T
 	filter := commonExecution.TaskExecutionFilter{
 		TenantID: 0, // 0 表示不过滤租户
 		Module:   commonExecution.ModuleTransfer,
+		TaskType: commonExecution.TaskTypeImport,
 		Status:   commonExecution.ExecutionStatusRunning,
 		Page:     1,
 		PageSize: 1000, // 假设最多1000个运行中任务
@@ -275,9 +302,17 @@ func (s *ExecutionService) GetRunningExecutions(ctx context.Context) ([]models.T
 
 // CreateExecution 创建执行记录
 func (s *ExecutionService) CreateExecution(ctx context.Context, taskID uint, triggerType string, triggerBy *uint) (*models.TaskExecution, error) {
+	return s.CreateExecutionWithContext(ctx, taskID, triggerType, commonExecution.ModuleTransfer, nil, triggerBy)
+}
+
+// CreateExecutionWithContext 创建执行记录，并记录触发来源和父执行。
+func (s *ExecutionService) CreateExecutionWithContext(ctx context.Context, taskID uint, triggerType string, source string, parentExecutionID *string, triggerBy *uint) (*models.TaskExecution, error) {
 	normalizedTriggerType, err := commonExecution.NormalizeTriggerType(triggerType)
 	if err != nil {
 		return nil, err
+	}
+	if strings.TrimSpace(source) == "" {
+		source = commonExecution.ModuleTransfer
 	}
 
 	// 获取任务信息
@@ -288,8 +323,6 @@ func (s *ExecutionService) CreateExecution(ctx context.Context, taskID uint, tri
 
 	// 创建统一执行记录
 	now := time.Now()
-	taskIDInt := int(taskID)
-
 	var triggeredByInt *int
 	if triggerBy != nil {
 		val := int(*triggerBy)
@@ -297,20 +330,21 @@ func (s *ExecutionService) CreateExecution(ctx context.Context, taskID uint, tri
 	}
 
 	execution := &commonExecution.TaskExecution{
-		TenantID:       int(task.TenantID),
-		ExecutionID:    uuid.New().String(),
-		Module:         commonExecution.ModuleTransfer,
-		TaskType:       "transfer", // Transfer 模块的执行类型统一为 transfer
-		Source:         commonExecution.ModuleTransfer,
-		SourceTaskID:   &taskIDInt,
-		SourceTaskName: &task.Name,
-		Status:         commonExecution.ExecutionStatusPending,
-		Progress:       0,
-		TriggerType:    normalizedTriggerType,
-		TriggeredBy:    triggeredByInt,
-		StartedAt:      &now,
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		TenantID:          int(task.TenantID),
+		ExecutionID:       uuid.New().String(),
+		Module:            commonExecution.ModuleTransfer,
+		TaskType:          commonExecution.TaskTypeImport,
+		Source:            source,
+		SourceTaskID:      commonExecution.NewSourceTaskIDFromUint(taskID),
+		SourceTaskName:    &task.Name,
+		ParentExecutionID: parentExecutionID,
+		Status:            commonExecution.ExecutionStatusPending,
+		Progress:          0,
+		TriggerType:       normalizedTriggerType,
+		TriggeredBy:       triggeredByInt,
+		StartedAt:         &now,
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 
 	if err := s.taskExecutionRepo.Create(ctx, execution); err != nil {
@@ -579,7 +613,10 @@ func (s *ExecutionService) GetExecutionLogs(ctx context.Context, id, tenantID ui
 // GetExecutionStatistics 获取执行统计信息
 func (s *ExecutionService) GetExecutionStatistics(ctx context.Context, tenantID uint, filters map[string]interface{}) (map[string]interface{}, error) {
 	// 使用统一仓库的统计功能
-	stats, err := s.taskExecutionRepo.GetStatistics(ctx, int(tenantID), commonExecution.ModuleTransfer, nil, nil)
+	stats, err := s.taskExecutionRepo.GetStatistics(ctx, commonExecution.TaskExecutionFilter{
+		TenantID: int(tenantID),
+		Module:   commonExecution.ModuleTransfer,
+	})
 	if err != nil {
 		return nil, err
 	}

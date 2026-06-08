@@ -238,7 +238,7 @@ func (h *QueryHandler) SaveQueryTask(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 	userID := c.GetUint("user_id")
 
-	// 构建 DevItem 请求
+	// 构建 DevTask 请求
 	// 如果前端没有传递query_type，默认设为"sql"
 	queryType := req.QueryType
 	if queryType == "" {
@@ -267,8 +267,8 @@ func (h *QueryHandler) SaveQueryTask(c *gin.Context) {
 		createReq.Timeout = 300 // 5分钟
 	}
 
-	// 创建开发项
-	item, err := h.devTaskService.CreateDevItem(createReq, tenantID, userID)
+	// 创建开发任务
+	item, err := h.devTaskService.CreateDevTask(createReq, tenantID, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "保存 查询任务失败",
@@ -323,8 +323,8 @@ func (h *QueryHandler) UpdateQueryTask(c *gin.Context) {
 		Tags:        req.Tags,
 	}
 
-	// 更新开发项
-	item, err := h.devTaskService.UpdateDevItem(uint(id), updateReq, tenantID, userID)
+	// 更新开发任务
+	item, err := h.devTaskService.UpdateDevTask(uint(id), updateReq, tenantID, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "更新 查询任务失败",
@@ -353,7 +353,7 @@ func (h *QueryHandler) GetQueryTask(c *gin.Context) {
 
 	tenantID := c.GetUint("tenant_id")
 
-	item, err := h.devTaskService.GetDevItem(uint(id), tenantID)
+	item, err := h.devTaskService.GetDevTask(uint(id), tenantID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
@@ -390,7 +390,7 @@ func (h *QueryHandler) ListQueryTasks(c *gin.Context) {
 
 	tenantID := c.GetUint("tenant_id")
 
-	items, total, err := h.devTaskService.ListDevItems(&req, tenantID)
+	items, total, err := h.devTaskService.ListDevTasks(&req, tenantID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -428,7 +428,7 @@ func (h *QueryHandler) DeleteQueryTask(c *gin.Context) {
 
 	tenantID := c.GetUint("tenant_id")
 
-	if err := h.devTaskService.DeleteDevItem(uint(id), tenantID); err != nil {
+	if err := h.devTaskService.DeleteDevTask(uint(id), tenantID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

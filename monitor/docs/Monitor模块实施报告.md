@@ -38,7 +38,7 @@ CREATE TABLE common.task_executions (
     source VARCHAR(50) NOT NULL,                -- 触发来源模块
 
     -- 关联原始任务
-    source_task_id BIGINT,
+    source_task_id VARCHAR(255),
     source_task_name VARCHAR(255),
 
     -- 执行状态
@@ -160,7 +160,7 @@ monitor/
     {
       "id": 3,
       "module": "transfer",
-      "task_type": "transfer",
+      "task_type": "import",
       "source": "transfer",
       "status": "failed",
       "execution_time_ms": 162
@@ -168,7 +168,7 @@ monitor/
     {
       "id": 2,
       "module": "transfer",
-      "task_type": "transfer",
+      "task_type": "import",
       "source": "transfer",
       "status": "pending"
     },
@@ -335,7 +335,7 @@ GO_MODULES=(
 
 | 旧表字段 | 统一表字段 | 说明 |
 |---------|-----------|------|
-| `task_id` | `source_task_id` | 任务ID |
+| `task_id` | `source_task_id` | 任务ID，按字符串软引用写入 |
 | - | `module` | 固定值 "transfer" |
 | - | `task_type` | 从 task.type 获取 |
 | - | `source` | 默认 "transfer" |
@@ -346,8 +346,8 @@ GO_MODULES=(
 
 | 旧表字段 | 统一表字段 | 说明 |
 |---------|-----------|------|
-| `dev_item_id` | `source_task_id` | 开发项ID |
-| `dev_type` | `task_type` | query/workflow/notebook |
+| `source_task_id` | `source_task_id` | 开发任务 ID，按字符串软引用写入 |
+| `dev_type` | `task_type` | query/workflow/script |
 | - | `source` | 默认 "develop" |
 | `execution_id` | `execution_id` | UUID (已有) |
 | `inputs` | `execution_config` | 执行配置 |
@@ -356,7 +356,7 @@ GO_MODULES=(
 
 | 旧表字段 | 统一表字段 | 说明 |
 |---------|-----------|------|
-| `orchestration_id` | `source_task_id` | 编排ID |
+| `orchestration_id` | `source_task_id` | 编排ID，按字符串软引用写入 |
 | - | `module` | 固定值 "orchestrator" |
 | `current_step` | `current_step` | 当前步骤 |
 | `step_results` | `step_results` | 步骤结果 (JSONB) |

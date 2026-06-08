@@ -9,10 +9,10 @@ import (
 type TaskStatus string
 
 const (
-	TaskStatusPending   TaskStatus = "pending"
-	TaskStatusRunning   TaskStatus = "running"
-	TaskStatusCompleted TaskStatus = "completed"
-	TaskStatusFailed    TaskStatus = "failed"
+	TaskStatusPending TaskStatus = "pending"
+	TaskStatusRunning TaskStatus = "running"
+	TaskStatusSuccess TaskStatus = "success"
+	TaskStatusFailed  TaskStatus = "failed"
 )
 
 // TaskInfo 任务信息
@@ -72,7 +72,7 @@ func (t *TaskTracker) UpdateStatus(taskID string, status TaskStatus, message str
 	task := val.(*TaskInfo)
 	task.Status = status
 	task.Message = message
-	if status == TaskStatusCompleted || status == TaskStatusFailed {
+	if status == TaskStatusSuccess || status == TaskStatusFailed {
 		now := time.Now()
 		task.EndTime = &now
 	}

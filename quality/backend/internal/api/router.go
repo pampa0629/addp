@@ -16,21 +16,11 @@ import (
 )
 
 func getTenantID(c *gin.Context) int64 {
-	if v, exists := c.Get("tenant_id"); exists {
-		if id, ok := v.(int64); ok {
-			return id
-		}
-	}
-	return 1
+	return int64(commonAuth.GetTenantID(c))
 }
 
 func getUserID(c *gin.Context) int64 {
-	if v, exists := c.Get("user_id"); exists {
-		if id, ok := v.(int64); ok {
-			return id
-		}
-	}
-	return 1
+	return int64(commonAuth.GetUserID(c))
 }
 
 func SetupRouter(
@@ -58,6 +48,7 @@ func SetupRouter(
 
 	ruleAppHandler := NewRuleApplicationHandler(ruleEngineSvc)
 	checkTaskHandler := NewCheckTaskHandler(checkTaskSvc, checkExecutor)
+	taskProviderHandler := NewTaskProviderHandler(checkTaskSvc, checkExecutor)
 	executionHandler := NewExecutionHandler(commonExecution.NewTaskExecutionRepository(db))
 	issueHandler := NewIssueHandler(issueSvc)
 
@@ -88,6 +79,14 @@ func SetupRouter(
 			checkTasks.PUT("/:id", checkTaskHandler.Update)
 			checkTasks.DELETE("/:id", checkTaskHandler.Delete)
 			checkTasks.POST("/:id/run", checkTaskHandler.Run)
+		}
+
+		// TaskProvider 标准入口
+		tasks := api.Group("/tasks")
+		{
+			tasks.GET("", taskProviderHandler.ListTasks)
+			tasks.GET("/:task_type/:id", taskProviderHandler.TaskDetail)
+			tasks.POST("/:task_type/:id/execute", taskProviderHandler.TaskExecute)
 		}
 
 		// 执行记录（读 common.task_executions）

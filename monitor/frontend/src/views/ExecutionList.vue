@@ -20,6 +20,24 @@
             <el-option label="Graph" value="graph" />
           </el-select>
         </el-form-item>
+        <el-form-item :label="t('monitor.execution.filter.task_type')">
+          <el-select v-model="filters.task_type" :placeholder="t('monitor.execution.filter.task_type_placeholder')" clearable style="width: 180px;">
+            <el-option
+              v-for="option in taskTypeOptions"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('monitor.execution.filter.source_task_id')">
+          <el-input
+            v-model="filters.source_task_id"
+            :placeholder="t('monitor.execution.filter.source_task_id_placeholder')"
+            clearable
+            style="width: 180px;"
+          />
+        </el-form-item>
         <el-form-item :label="t('monitor.execution.filter.source')">
           <el-select v-model="filters.source" :placeholder="t('monitor.execution.filter.source_placeholder')" clearable style="width: 150px;">
             <el-option label="Meta" value="meta" />
@@ -105,6 +123,12 @@
           <el-descriptions-item :label="t('monitor.execution.detail.type')">
             {{ currentExecution.task_type }}
           </el-descriptions-item>
+          <el-descriptions-item :label="t('monitor.execution.detail.source_task_id')">
+            {{ currentExecution.source_task_id || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('monitor.execution.detail.source_task_name')">
+            {{ currentExecution.source_task_name || '-' }}
+          </el-descriptions-item>
           <el-descriptions-item :label="t('monitor.execution.detail.status')">
             <el-tag :type="getStatusType(currentExecution.status)">
               {{ getStatusText(currentExecution.status) }}
@@ -129,6 +153,39 @@
             {{ formatDate(currentExecution.completed_at) }}
           </el-descriptions-item>
         </el-descriptions>
+
+        <div class="detail-actions">
+          <el-button type="primary" @click="openOwnerTask(currentExecution)">
+            <el-icon><Link /></el-icon>
+            {{ t('monitor.execution.detail.open_task_definition') }}
+          </el-button>
+        </div>
+
+        <div v-if="executionTreeData.length" class="execution-tree">
+          <h4>{{ t('monitor.execution.detail.execution_tree') }}</h4>
+          <el-tree
+            :data="executionTreeData"
+            :props="executionTreeProps"
+            node-key="node_key"
+            default-expand-all
+            highlight-current
+            @node-click="handleExecutionTreeNodeClick"
+          >
+            <template #default="{ data }">
+              <div class="execution-tree-node">
+                <span class="execution-tree-title">
+                  {{ data.execution.module }}/{{ data.execution.task_type }}
+                </span>
+                <el-tag size="small" :type="getStatusType(data.execution.status)">
+                  {{ getStatusText(data.execution.status) }}
+                </el-tag>
+                <span class="execution-tree-subtitle">
+                  {{ data.execution.source_task_name || data.execution.source_task_id || data.execution.execution_id }}
+                </span>
+              </div>
+            </template>
+          </el-tree>
+        </div>
 
         <!-- 执行结果 -->
         <div v-if="currentExecution.result" style="margin-top: 20px;">
@@ -156,10 +213,12 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
-import { listExecutions, getExecution } from '@/api/monitor'
+import { Link } from '@element-plus/icons-vue'
+import { buildTaskEditUrlFromProviders } from '@common-ui'
+import { listExecutions, getExecutionTree, listTaskProviders } from '@/api/monitor'
 import ExecutionTable from '@/components/ExecutionTable.vue'
 
 const { t } = useI18n()
@@ -167,6 +226,8 @@ const { t } = useI18n()
 // 过滤条件
 const filters = ref({
   module: '',
+  task_type: '',
+  source_task_id: '',
   source: '',
   status: '',
   trigger_type: ''
@@ -181,12 +242,58 @@ const pagination = ref({
 
 // 数据
 const executions = ref([])
+const taskProviders = ref([])
 const loading = ref(false)
 const detailDialogVisible = ref(false)
 const currentExecution = ref(null)
+const executionTreeData = ref([])
+const executionTreeProps = {
+  children: 'children'
+}
+
+const taskTypeOptions = computed(() => {
+  const options = new Map()
+  options.set('orchestration', 'orchestration')
+
+  for (const provider of taskProviders.value) {
+    for (const taskType of parseTaskTypes(provider.capabilities)) {
+      if (!options.has(taskType.value)) {
+        options.set(taskType.value, taskType.label)
+      }
+    }
+  }
+
+  return Array.from(options, ([value, label]) => ({ value, label }))
+})
+
+function parseTaskTypes(capabilities) {
+  const parsed = parseCapabilities(capabilities)
+  const taskTypes = Array.isArray(parsed.task_types) ? parsed.task_types : []
+  return taskTypes
+    .filter(item => hasValue(item?.type) && !item.deprecated)
+    .map(item => ({
+      value: item.type,
+      label: item.display_name || item.type
+    }))
+}
+
+function parseCapabilities(capabilities) {
+  if (!capabilities) return {}
+  if (typeof capabilities === 'object') return capabilities
+  try {
+    return JSON.parse(capabilities)
+  } catch {
+    return {}
+  }
+}
 
 // 加载执行记录
 async function loadExecutions() {
+  if (filters.value.source_task_id && (!filters.value.module || !filters.value.task_type)) {
+    ElMessage.warning(t('monitor.execution.filter.source_task_id_requires_scope'))
+    return
+  }
+
   loading.value = true
   try {
     const params = {
@@ -205,6 +312,21 @@ async function loadExecutions() {
   }
 }
 
+async function loadTaskProviders() {
+  try {
+    taskProviders.value = await listTaskProviders()
+  } catch (error) {
+    taskProviders.value = []
+    console.error(error)
+  }
+}
+
+async function ensureTaskProviders() {
+  if (taskProviders.value.length === 0) {
+    await loadTaskProviders()
+  }
+}
+
 // 查询
 function handleSearch() {
   pagination.value.page = 1
@@ -215,6 +337,8 @@ function handleSearch() {
 function handleReset() {
   filters.value = {
     module: '',
+    task_type: '',
+    source_task_id: '',
     source: '',
     status: '',
     trigger_type: ''
@@ -238,13 +362,32 @@ function handleSizeChange(size) {
 // 查看执行详情
 async function handleViewExecution(row) {
   try {
-    const data = await getExecution(row.id)
-    currentExecution.value = data
+    const data = await getExecutionTree(row.id)
+    const tree = normalizeExecutionTree(data)
+    executionTreeData.value = tree ? [tree] : []
+    currentExecution.value = tree?.execution || null
     detailDialogVisible.value = true
   } catch (error) {
     ElMessage.error(t('monitor.execution.detail_failed'))
     console.error(error)
   }
+}
+
+function normalizeExecutionTree(node) {
+  if (!node || !node.execution) {
+    return null
+  }
+  return {
+    ...node,
+    node_key: node.execution.execution_id,
+    children: (node.children || [])
+      .map(normalizeExecutionTree)
+      .filter(Boolean)
+  }
+}
+
+function handleExecutionTreeNodeClick(node) {
+  currentExecution.value = node.execution
 }
 
 // 辅助函数
@@ -280,6 +423,26 @@ function getTriggerText(triggerType) {
   return textMap[triggerType] || triggerType || '-'
 }
 
+function hasValue(value) {
+  return value !== null && value !== undefined && String(value).trim() !== ''
+}
+
+function buildOwnerTaskUrl(execution) {
+  return buildTaskEditUrlFromProviders(taskProviders.value, execution, {
+    consoleOrigin: import.meta.env.DEV ? 'http://localhost:5170' : window.location.origin
+  })
+}
+
+async function openOwnerTask(execution) {
+  await ensureTaskProviders()
+  const url = buildOwnerTaskUrl(execution)
+  if (!url) {
+    ElMessage.warning(t('monitor.execution.detail.open_task_unavailable'))
+    return
+  }
+  window.open(url, '_blank', 'noopener,noreferrer')
+}
+
 function formatDate(date) {
   if (!date) return '-'
   return new Date(date).toLocaleString('zh-CN')
@@ -294,6 +457,7 @@ function formatDuration(ms) {
 
 // 初始化
 onMounted(() => {
+  loadTaskProviders()
   loadExecutions()
 })
 </script>
@@ -325,5 +489,34 @@ onMounted(() => {
   margin-top: 20px;
   display: flex;
   justify-content: flex-end;
+}
+
+.detail-actions {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.execution-tree {
+  margin-top: 20px;
+}
+
+.execution-tree-node {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.execution-tree-title {
+  font-weight: 500;
+  color: var(--addp-text-primary);
+}
+
+.execution-tree-subtitle {
+  color: var(--addp-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

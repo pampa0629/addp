@@ -46,7 +46,7 @@ export const notebookAPI = {
   },
 
   /**
-   * 上传 Notebook 文件并创建 dev_item
+   * 上传 Notebook 文件并创建 dev_task
    * @param {File} file - Notebook 文件
    * @param {Object} options - 上传选项
    * @param {string} options.name - Notebook 名称
@@ -97,7 +97,7 @@ export const notebookAPI = {
 
   /**
    * 下载 Notebook 文件
-   * @param {number} id - DevItem ID
+   * @param {number} id - DevTask ID
    * @returns {Promise}
    */
   downloadNotebook(id) {
@@ -108,7 +108,7 @@ export const notebookAPI = {
 
   /**
    * 删除 Notebook
-   * @param {number} id - DevItem ID
+   * @param {number} id - DevTask ID
    * @returns {Promise}
    */
   deleteNotebook(id) {

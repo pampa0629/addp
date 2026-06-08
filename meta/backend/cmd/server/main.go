@@ -190,27 +190,22 @@ func main() {
 	// 设置路由
 	router := api.SetupRouter(cfg, db, engineService, scanService, taskService, executionService, redisClient, systemClient)
 
+	serviceHost := utils.GetServiceHost()
+	port := utils.GetModulePort("meta")
+	serviceURL := utils.BuildServiceURL(serviceHost, port)
+
 	// ========== 模块注册（注册到 System service_registry）==========
 	if cfg.EnableIntegration && cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
-		serviceHost := utils.GetServiceHost()
-		port := utils.GetModulePort("meta")
-		serviceURL := utils.BuildServiceURL(serviceHost, port)
 		registryClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
 		registryClient.RegisterAndHeartbeat("meta", serviceURL, "/meta")
 	}
 
 	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========
-	// 构造 Meta 服务的外部访问 URL（供 Orchestrator 调用）
-	metaServiceURL := fmt.Sprintf("http://meta-backend:%s", cfg.ServerPort)
-	if os.Getenv("META_URL") != "" {
-		metaServiceURL = os.Getenv("META_URL")
-	}
-
 	if cfg.EnableIntegration && cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
 		taskProviderRegistry := service.NewTaskProviderRegistryService(
 			cfg.SystemServiceURL,
 			cfg.InternalAPIKey,
-			metaServiceURL,
+			serviceURL,
 		)
 
 		// 后台异步注册（不阻塞启动，支持重试）

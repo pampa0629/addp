@@ -525,62 +525,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/metadata/object": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "获取指定对象存储文件的元数据信息 | Get metadata information for a specific object storage file",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Meta"
-                ],
-                "summary": "获取对象元数据 | Get object metadata",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "存储引擎ID | Engine ID",
-                        "name": "engine_id",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "对象存储路径 | Object storage path",
-                        "name": "object_key",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "对象元数据 | Object metadata",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "请求参数错误 | Bad request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "404": {
-                        "description": "对象不存在 | Object not found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
         "/nodes/by-catalog-path": {
             "get": {
                 "security": [
@@ -1045,62 +989,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/scan/runs/{run_id}/cancel": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "按执行 UUID 取消扫描运行 | Cancel scan execution by UUID",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Meta Scan"
-                ],
-                "summary": "取消扫描运行 | Cancel scan run",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "执行ID | Execution ID",
-                        "name": "run_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "取消结果 | Cancel result",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "请求参数错误 | Bad request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "服务器内部错误 | Internal server error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "503": {
-                        "description": "任务服务不可用 | Task service unavailable",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
         "/scan/tasks": {
             "get": {
                 "security": [
@@ -1116,6 +1004,14 @@ const docTemplate = `{
                     "Meta Scan"
                 ],
                 "summary": "列出扫描任务 | List scan tasks",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "任务类型，固定为 scan | Task type, fixed to scan",
+                        "name": "task_type",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "扫描任务列表 | Scan tasks",
@@ -1125,6 +1021,13 @@ const docTemplate = `{
                                 "type": "object",
                                 "additionalProperties": true
                             }
+                        }
+                    },
+                    "400": {
+                        "description": "不支持的任务类型 | Unsupported task type",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     },
                     "500": {
@@ -1534,6 +1437,210 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/tasks": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回可供 Orchestrator 编排复用的 Meta ScanTask，task_type 固定为 scan。| List Meta ScanTasks exposed through TaskProvider; task_type is fixed to scan.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Scan"
+                ],
+                "summary": "列出 TaskProvider 扫描任务 | List TaskProvider scan tasks",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "任务类型，固定为 scan | Task type, fixed to scan",
+                        "name": "task_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 100,
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "扫描任务列表 | Scan tasks",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_meta_internal_models.ListProviderScanTasksResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "不支持的任务类型 | Unsupported task type",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "任务服务不可用 | Task service unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/tasks/{task_type}/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按标准 TaskProvider 路径获取 Meta ScanTask 详情；task_type 仅支持 scan。| Get Meta ScanTask detail through the standard TaskProvider path; task_type only supports scan.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Scan"
+                ],
+                "summary": "获取 TaskProvider 扫描任务详情 | Get TaskProvider scan task detail",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "任务类型，固定为 scan | Task type, fixed to scan",
+                        "name": "task_type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "扫描任务ID | Scan task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "扫描任务详情 | Scan task detail",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_meta_internal_models.ProviderScanTask"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "任务不存在 | Task not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "任务服务不可用 | Task service unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/tasks/{task_type}/{id}/execute": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按标准 TaskProvider 协议触发 Meta ScanTask；task_type 仅支持 scan，parameters 当前不支持覆盖。| Trigger a Meta ScanTask through the standard TaskProvider protocol; task_type only supports scan and parameters overrides are not supported.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Scan"
+                ],
+                "summary": "执行 TaskProvider 扫描任务 | Execute TaskProvider scan task",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "任务类型，固定为 scan | Task type, fixed to scan",
+                        "name": "task_type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "扫描任务ID | Scan task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "TaskProvider 执行请求 | TaskProvider execution request",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.taskProviderExecuteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "执行记录 | Execution",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "任务服务不可用 | Task service unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -1774,6 +1881,26 @@ const docTemplate = `{
             "type": "object",
             "additionalProperties": true
         },
+        "github_com_addp_meta_internal_models.ListProviderScanTasksResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_meta_internal_models.ProviderScanTask"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_meta_internal_models.MetaItemLite": {
             "type": "object",
             "properties": {
@@ -1890,6 +2017,74 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/github_com_addp_meta_internal_models.MetaNodeLite"
                     }
+                }
+            }
+        },
+        "github_com_addp_meta_internal_models.ProviderScanTask": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "engine_id": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "last_execution_status": {
+                    "type": "string"
+                },
+                "last_run_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "next_run_at": {
+                    "type": "string"
+                },
+                "owner_module": {
+                    "type": "string"
+                },
+                "owner_ref": {
+                    "type": "string"
+                },
+                "parameters": {
+                    "$ref": "#/definitions/github_com_addp_meta_internal_models.JSONMap"
+                },
+                "schedule": {
+                    "type": "string"
+                },
+                "scope": {
+                    "$ref": "#/definitions/github_com_addp_meta_internal_models.JSONMap"
+                },
+                "task_type": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "integer"
                 }
             }
         },
@@ -2236,6 +2431,24 @@ const docTemplate = `{
                 "valid": {
                     "description": "Valid is true if Time is not NULL",
                     "type": "boolean"
+                }
+            }
+        },
+        "internal_api.taskProviderExecuteRequest": {
+            "type": "object",
+            "properties": {
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "parent_execution_id": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "trigger_type": {
+                    "type": "string"
                 }
             }
         }

@@ -3,7 +3,6 @@ package api
 import (
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 
 	commonAuth "github.com/addp/common/middleware/auth"
@@ -14,12 +13,11 @@ import (
 )
 
 type Handler struct {
-	engineService         *service.EngineService
-	scanService           *service.ScanService
-	taskService           *service.ScanTaskService
-	executionService      *service.ScanExecutionService
-	metadataQueryService  *service.MetadataQueryService
-	objectMetadataService *service.ObjectMetadataService
+	engineService        *service.EngineService
+	scanService          *service.ScanService
+	taskService          *service.ScanTaskService
+	executionService     *service.ScanExecutionService
+	metadataQueryService *service.MetadataQueryService
 }
 
 func NewHandler(
@@ -28,15 +26,13 @@ func NewHandler(
 	taskService *service.ScanTaskService,
 	executionService *service.ScanExecutionService,
 	metadataQueryService *service.MetadataQueryService,
-	objectMetadataService *service.ObjectMetadataService,
 ) *Handler {
 	return &Handler{
-		engineService:         engineService,
-		scanService:           scanService,
-		taskService:           taskService,
-		executionService:      executionService,
-		metadataQueryService:  metadataQueryService,
-		objectMetadataService: objectMetadataService,
+		engineService:        engineService,
+		scanService:          scanService,
+		taskService:          taskService,
+		executionService:     executionService,
+		metadataQueryService: metadataQueryService,
 	}
 }
 
@@ -75,45 +71,6 @@ func (h *Handler) GetStats(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"total": itemCount})
-}
-
-// GetObjectMetadata 获取对象的元数据
-// GET /api/meta/metadata/object
-// Query params: engine_id, object_key
-// @Summary 获取对象元数据 | Get object metadata
-// @Description 获取指定对象存储文件的元数据信息 | Get metadata information for a specific object storage file
-// @Tags Meta
-// @Produce json
-// @Param engine_id query int true "存储引擎ID | Engine ID"
-// @Param object_key query string true "对象存储路径 | Object storage path"
-// @Success 200 {object} map[string]interface{} "对象元数据 | Object metadata"
-// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Failure 404 {object} map[string]interface{} "对象不存在 | Object not found"
-// @Router /metadata/object [get]
-// @Security BearerAuth
-func (h *Handler) GetObjectMetadata(c *gin.Context) {
-	tenantID := commonAuth.GetTenantID(c)
-
-	engineIDStr := c.Query("engine_id")
-	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid engine_id"})
-		return
-	}
-
-	objectKey := c.Query("object_key")
-	if objectKey == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing object_key"})
-		return
-	}
-
-	item, err := h.objectMetadataService.GetObjectMetadata(tenantID, uint(engineID), objectKey)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, item)
 }
 
 // GetResources 获取存储引擎列表及 catalog 扫描统计

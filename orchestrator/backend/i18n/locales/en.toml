@@ -11,7 +11,7 @@ other = "Execution not found"
 other = "Scheduling failed"
 
 [orchestrator.error.missing_module_param]
-other = "Missing module_name or module parameter"
+other = "Missing module_name parameter"
 
 [orchestrator.error.provider_not_found]
 other = "Task provider not found"

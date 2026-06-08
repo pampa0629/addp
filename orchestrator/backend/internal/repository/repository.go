@@ -29,11 +29,37 @@ func (r *OrchestrationRepository) GetByID(id uint) (*models.Orchestration, error
 	return &orch, nil
 }
 
+// GetByIDAndTenant 根据 ID 和租户获取编排。
+func (r *OrchestrationRepository) GetByIDAndTenant(id uint, tenantID uint) (*models.Orchestration, error) {
+	var orch models.Orchestration
+	if err := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).First(&orch).Error; err != nil {
+		return nil, err
+	}
+	return &orch, nil
+}
+
 // List 列出租户的编排
 func (r *OrchestrationRepository) List(tenantID uint) ([]models.Orchestration, error) {
 	var orchs []models.Orchestration
 	err := r.db.Where("tenant_id = ?", tenantID).Order("created_at DESC").Find(&orchs).Error
 	return orchs, err
+}
+
+// ListPaged 分页列出租户的编排。
+func (r *OrchestrationRepository) ListPaged(tenantID uint, page, pageSize int) ([]models.Orchestration, int64, error) {
+	var total int64
+	query := r.db.Model(&models.Orchestration{}).Where("tenant_id = ?", tenantID)
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var orchs []models.Orchestration
+	err := query.
+		Order("created_at DESC").
+		Offset((page - 1) * pageSize).
+		Limit(pageSize).
+		Find(&orchs).Error
+	return orchs, total, err
 }
 
 // ListEnabled 列出所有启用的编排

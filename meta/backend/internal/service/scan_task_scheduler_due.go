@@ -157,7 +157,7 @@ func scheduledExecutionExists(db *gorm.DB, taskID uint, plannedRunAt time.Time) 
 	planned := plannedRunAt.Format(time.RFC3339Nano)
 	if err := db.Model(&commonExecution.TaskExecution{}).
 		Where("module = ? AND task_type = ? AND source_task_id = ? AND execution_config ->> 'planned_run_at' = ?",
-			commonExecution.ModuleMeta, "scan", int(taskID), planned).
+			commonExecution.ModuleMeta, commonExecution.TaskTypeScan, *commonExecution.NewSourceTaskIDFromUint(taskID), planned).
 		Count(&count).Error; err != nil {
 		return false, err
 	}

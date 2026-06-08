@@ -65,38 +65,23 @@ func (r *TaskExecutionRepository) GetByExecutionID(ctx context.Context, executio
 	return &exec, wrapDBError(err)
 }
 
+// ListChildrenByParentExecutionID 根据父执行 UUID 查询直接子执行
+func (r *TaskExecutionRepository) ListChildrenByParentExecutionID(ctx context.Context, parentExecutionID string, tenantID int) ([]*TaskExecution, error) {
+	var executions []*TaskExecution
+	query := r.db.WithContext(ctx).
+		Where("parent_execution_id = ?", parentExecutionID)
+	if tenantID > 0 {
+		query = query.Where("tenant_id = ?", tenantID)
+	}
+	err := query.
+		Order("created_at ASC, id ASC").
+		Find(&executions).Error
+	return executions, err
+}
+
 // List 分页查询（支持多种过滤条件）
 func (r *TaskExecutionRepository) List(ctx context.Context, filter TaskExecutionFilter) ([]*TaskExecution, int64, error) {
-	query := r.db.WithContext(ctx).Model(&TaskExecution{})
-
-	// 租户过滤（必须）
-	query = query.Where("tenant_id = ?", filter.TenantID)
-
-	// 可选过滤
-	if filter.Module != "" {
-		query = query.Where("module = ?", filter.Module)
-	}
-	if filter.TaskType != "" {
-		query = query.Where("task_type = ?", filter.TaskType)
-	}
-	if filter.Status != "" {
-		query = query.Where("status = ?", filter.Status)
-	}
-	if filter.TriggerType != "" {
-		query = query.Where("trigger_type = ?", filter.TriggerType)
-	}
-	if filter.Source != "" {
-		query = query.Where("source = ?", filter.Source)
-	}
-	if filter.SourceTaskID != nil {
-		query = query.Where("module = ? AND source_task_id = ?", filter.Module, *filter.SourceTaskID)
-	}
-	if filter.StartDate != nil {
-		query = query.Where("created_at >= ?", *filter.StartDate)
-	}
-	if filter.EndDate != nil {
-		query = query.Where("created_at <= ?", *filter.EndDate)
-	}
+	query := r.buildFilterQuery(ctx, filter)
 
 	// 计算总数
 	var total int64
@@ -116,20 +101,7 @@ func (r *TaskExecutionRepository) List(ctx context.Context, filter TaskExecution
 }
 
 // GetStatistics 获取执行统计信息
-func (r *TaskExecutionRepository) GetStatistics(ctx context.Context, tenantID int, module string, startDate, endDate *time.Time) (*ExecutionStatistics, error) {
-	query := r.db.WithContext(ctx).Model(&TaskExecution{}).
-		Where("tenant_id = ?", tenantID)
-
-	if module != "" {
-		query = query.Where("module = ?", module)
-	}
-	if startDate != nil {
-		query = query.Where("created_at >= ?", *startDate)
-	}
-	if endDate != nil {
-		query = query.Where("created_at <= ?", *endDate)
-	}
-
+func (r *TaskExecutionRepository) GetStatistics(ctx context.Context, filter TaskExecutionFilter) (*ExecutionStatistics, error) {
 	stats := &ExecutionStatistics{}
 
 	// 总数和状态分布
@@ -137,7 +109,7 @@ func (r *TaskExecutionRepository) GetStatistics(ctx context.Context, tenantID in
 		Status string
 		Count  int64
 	}
-	err := query.Select("status, COUNT(*) as count").
+	err := r.buildFilterQuery(ctx, filter).Select("status, COUNT(*) as count").
 		Group("status").
 		Scan(&statusCounts).Error
 	if err != nil {
@@ -160,7 +132,7 @@ func (r *TaskExecutionRepository) GetStatistics(ctx context.Context, tenantID in
 
 	// 平均执行时间
 	var avgTime sql.NullFloat64
-	err = query.Where("execution_time_ms IS NOT NULL").
+	err = r.buildFilterQuery(ctx, filter).Where("execution_time_ms IS NOT NULL").
 		Select("AVG(execution_time_ms)").
 		Scan(&avgTime).Error
 	if err != nil {
@@ -176,6 +148,40 @@ func (r *TaskExecutionRepository) GetStatistics(ctx context.Context, tenantID in
 	}
 
 	return stats, nil
+}
+
+func (r *TaskExecutionRepository) buildFilterQuery(ctx context.Context, filter TaskExecutionFilter) *gorm.DB {
+	query := r.db.WithContext(ctx).Model(&TaskExecution{})
+
+	// 租户过滤（必须）
+	query = query.Where("tenant_id = ?", filter.TenantID)
+
+	if filter.Module != "" {
+		query = query.Where("module = ?", filter.Module)
+	}
+	if filter.TaskType != "" {
+		query = query.Where("task_type = ?", filter.TaskType)
+	}
+	if filter.Status != "" {
+		query = query.Where("status = ?", filter.Status)
+	}
+	if filter.TriggerType != "" {
+		query = query.Where("trigger_type = ?", filter.TriggerType)
+	}
+	if filter.Source != "" {
+		query = query.Where("source = ?", filter.Source)
+	}
+	if filter.SourceTaskID != nil {
+		query = query.Where("source_task_id = ?", *filter.SourceTaskID)
+	}
+	if filter.StartDate != nil {
+		query = query.Where("created_at >= ?", *filter.StartDate)
+	}
+	if filter.EndDate != nil {
+		query = query.Where("created_at <= ?", *filter.EndDate)
+	}
+
+	return query
 }
 
 // GetTrendData 获取趋势数据（按天聚合）
@@ -257,7 +263,7 @@ type TaskExecutionFilter struct {
 	Status       string
 	TriggerType  string
 	Source       string
-	SourceTaskID *int
+	SourceTaskID *string
 	StartDate    *time.Time
 	EndDate      *time.Time
 	Page         int

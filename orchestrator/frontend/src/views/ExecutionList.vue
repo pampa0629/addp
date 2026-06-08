@@ -145,7 +145,7 @@ function getStatusType(status) {
   const types = {
     pending: 'info',
     running: 'warning',
-    completed: 'success',
+    success: 'success',
     failed: 'danger'
   }
   return types[status] || 'info'
@@ -155,7 +155,7 @@ function getStatusText(status) {
   const texts = {
     pending: t('orchestrator.executionList.statusPending'),
     running: t('orchestrator.executionList.statusRunning'),
-    completed: t('orchestrator.executionList.statusCompleted'),
+    success: t('orchestrator.executionList.statusSuccess'),
     failed: t('orchestrator.executionList.statusFailed')
   }
   return texts[status] || status

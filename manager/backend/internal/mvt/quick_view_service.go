@@ -785,7 +785,7 @@ func (s *QuickViewService) GenerateMixed(
 	// 更新进度：生成完成
 	if progressTracker != nil {
 		progressTracker.UpdateProgress(ctx, &QuickViewProgress{
-			Status:             "completed",
+			Status:             "ready",
 			CurrentZoom:        result.ActualMaxZoom,
 			MaxZoom:            cfg.MaxZoom,
 			TilesProcessed:     processedTiles,

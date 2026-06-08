@@ -218,7 +218,7 @@
       "reviewBtn": "审核",
       "statusPending": "待运行",
       "statusRunning": "运行中",
-      "statusCompleted": "已完成",
+      "statusSuccess": "成功",
       "statusFailed": "失败",
       "statusCancelled": "已取消",
       "taskStarted": "任务已启动",

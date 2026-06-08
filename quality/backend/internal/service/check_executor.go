@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	commonExecution "github.com/addp/common/execution"
 	"log"
+	"strings"
 	"time"
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dbbridge"
+	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/quality/internal/models"
 	"github.com/addp/quality/internal/repository"
@@ -77,9 +78,28 @@ type ExecutionResult struct {
 
 // RunCheck 执行一个检查任务，结果写入 common.task_executions，问题写入 quality.issues
 func (e *CheckExecutor) RunCheck(ctx context.Context, taskID, tenantID, userID int64) (string, error) {
+	return e.RunCheckWithContext(ctx, taskID, tenantID, userID, commonExecution.TriggerTypeManual, commonExecution.ModuleQuality, nil)
+}
+
+// RunCheckWithContext 按统一 TaskProvider 执行上下文执行检查任务。
+func (e *CheckExecutor) RunCheckWithContext(
+	ctx context.Context,
+	taskID, tenantID, userID int64,
+	triggerType string,
+	source string,
+	parentExecutionID *string,
+) (string, error) {
 	task, err := e.checkTaskRepo.Get(taskID, tenantID)
 	if err != nil {
 		return "", fmt.Errorf("task not found: %w", err)
+	}
+	normalizedTriggerType, err := commonExecution.NormalizeTriggerType(triggerType)
+	if err != nil {
+		return "", err
+	}
+	normalizedSource := strings.TrimSpace(source)
+	if normalizedSource == "" {
+		normalizedSource = commonExecution.ModuleQuality
 	}
 
 	executionID := uuid.New().String()
@@ -87,21 +107,23 @@ func (e *CheckExecutor) RunCheck(ctx context.Context, taskID, tenantID, userID i
 
 	// 写入执行记录（pending 状态）
 	taskExec := &commonExecution.TaskExecution{
-		ExecutionID:    executionID,
-		TenantID:       int(tenantID),
-		Module:         commonExecution.ModuleQuality,
-		TaskType:       commonExecution.TaskTypeQualityCheck,
-		Source:         commonExecution.ModuleQuality,
-		SourceTaskID:   intPtr(int(taskID)),
-		SourceTaskName: &task.Name,
-		Status:         commonExecution.ExecutionStatusRunning,
-		TriggerType:    commonExecution.TriggerTypeManual,
-		TriggeredBy:    intPtr(int(userID)),
-		StartedAt:      &now,
+		ExecutionID:       executionID,
+		TenantID:          int(tenantID),
+		Module:            commonExecution.ModuleQuality,
+		TaskType:          commonExecution.TaskTypeQualityCheck,
+		Source:            normalizedSource,
+		SourceTaskID:      commonExecution.NewSourceTaskIDFromInt(int(taskID)),
+		SourceTaskName:    &task.Name,
+		ParentExecutionID: parentExecutionID,
+		Status:            commonExecution.ExecutionStatusRunning,
+		TriggerType:       normalizedTriggerType,
+		TriggeredBy:       intPtr(int(userID)),
+		StartedAt:         &now,
 	}
 	if err := e.executionRepo.Create(ctx, taskExec); err != nil {
 		return "", fmt.Errorf("failed to create execution record: %w", err)
 	}
+	e.updateTaskExecutionSummary(taskID, tenantID, executionID, commonExecution.ExecutionStatusRunning, now)
 
 	// 异步执行检查
 	go func() {
@@ -139,14 +161,24 @@ func (e *CheckExecutor) RunCheck(ctx context.Context, taskID, tenantID, userID i
 			log.Printf("failed to update execution %s: %v", executionID, err)
 		}
 
-		// 更新任务最后运行时间
-		t := time.Now()
-		e.db.Model(&models.CheckTask{}).
-			Where("id = ?", taskID).
-			Update("last_run_at", t)
+		if status, ok := updates["status"].(string); ok {
+			e.updateTaskExecutionSummary(taskID, tenantID, executionID, status, completedAt)
+		}
 	}()
 
 	return executionID, nil
+}
+
+func (e *CheckExecutor) updateTaskExecutionSummary(taskID, tenantID int64, executionID, status string, runAt time.Time) {
+	if err := e.db.Model(&models.CheckTask{}).
+		Where("id = ? AND tenant_id = ?", taskID, tenantID).
+		Updates(map[string]interface{}{
+			"last_run_at":           runAt,
+			"last_execution_id":     executionID,
+			"last_execution_status": status,
+		}).Error; err != nil {
+		log.Printf("failed to update quality check task %d execution summary: %v", taskID, err)
+	}
 }
 
 func executionResultMetadata(result *ExecutionResult) commonModels.JSONMap {

@@ -4,6 +4,8 @@
 
 本文用于讨论 Transfer 后续任务语义，不以当前实现为约束。ADDP 当前处于积极开发阶段，本文默认 clean break：概念确认后可以推翻旧字段、旧任务类型和旧 UI 入口。
 
+当前任务体系阶段 1 只在 TaskProvider 和 `common.task_executions` 层声明 `task_type=import`。本文下方讨论的 `intent=import/export/sync` 仅是后续业务标签草案，不进入当前 TaskProvider `task_type`，也不要求当前接口并行支持导出或同步任务类型。
+
 ## 一、价值定位
 
 Transfer 的核心价值不是提供“导入 / 导出 / 同步”三个并列按钮，而是提供稳定的数据搬运与同步执行能力：

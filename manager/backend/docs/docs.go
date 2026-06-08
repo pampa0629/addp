@@ -173,6 +173,13 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "400": {
+                        "description": "不支持的任务类型 | Unsupported task type",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "500": {
                         "description": "服务器内部错误 | Internal server error",
                         "schema": {
@@ -1510,48 +1517,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/executions/{execution_id}/cancel": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "取消正在运行的任务执行 | Cancel a running task execution",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Manager"
-                ],
-                "summary": "取消执行 | Cancel execution",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "执行ID | Execution ID",
-                        "name": "execution_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "取消成功 | Cancelled successfully",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "取消失败 | Cancel failed",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
         "/import": {
             "post": {
                 "security": [
@@ -1660,6 +1625,13 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "任务列表 | Task list",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "不支持的任务类型 | Unsupported task type",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -2422,6 +2394,13 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "任务列表 | Task list",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "不支持的任务类型 | Unsupported task type",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -3241,8 +3220,17 @@ const docTemplate = `{
         "internal_api.TaskExecuteRequest": {
             "type": "object",
             "properties": {
+                "parameters": {
+                    "description": "执行参数覆盖；当前 Manager provider 不支持",
+                    "type": "object",
+                    "additionalProperties": true
+                },
                 "parent_execution_id": {
                     "description": "父执行ID（Orchestrator 调用时传入）",
+                    "type": "string"
+                },
+                "source": {
+                    "description": "触发来源模块",
                     "type": "string"
                 },
                 "trigger_type": {

@@ -45,24 +45,35 @@ type TaskProviderRegistration struct {
 func (s *TaskProviderRegistryService) Register() error {
 	// 构造能力描述
 	capabilities := map[string]interface{}{
+		"schema_version": "task.capabilities/v1",
 		"task_types": []map[string]interface{}{
 			{
-				"type":         "mvt_generation",
-				"display_name": "MVT 瓦片生成",
-				"description":  "对空间表生成矢量瓦片并缓存到 MinIO",
-				"create_url":   "/manager/mvt-tasks/create",
-				"edit_url":     "/manager/mvt-tasks/:id/edit",
+				"type":                      "mvt_generation",
+				"display_name":              "MVT 瓦片生成",
+				"description":               "对空间表生成矢量瓦片并缓存到 MinIO",
+				"definition_schema":         map[string]interface{}{"type": "object"},
+				"execution_schema":          map[string]interface{}{"type": "object"},
+				"supports_schedule":         false,
+				"supports_cancel":           false,
+				"supports_inline_execution": false,
+				"create_url":                "/manager/mvt-tasks",
+				"edit_url":                  "/manager/mvt-tasks?task_id=:id",
+				"deprecated":                false,
 			},
 			{
-				"type":         "embedding",
-				"display_name": "向量化",
-				"description":  "对对象存储文件进行多模态向量化",
-				"create_url":   "/manager/embedding-tasks/create",
-				"edit_url":     "/manager/embedding-tasks/:id/edit",
+				"type":                      "embedding",
+				"display_name":              "向量化",
+				"description":               "对对象存储文件进行多模态向量化",
+				"definition_schema":         map[string]interface{}{"type": "object"},
+				"execution_schema":          map[string]interface{}{"type": "object"},
+				"supports_schedule":         false,
+				"supports_cancel":           false,
+				"supports_inline_execution": false,
+				"create_url":                "/manager/vectorization-tasks",
+				"edit_url":                  "/manager/vectorization-tasks?task_id=:id",
+				"deprecated":                false,
 			},
 		},
-		"supports_cancel":   true,
-		"supports_schedule": false,
 	}
 
 	// 序列化为 JSON 字符串
@@ -84,7 +95,6 @@ func (s *TaskProviderRegistryService) Register() error {
 		TaskDetailEndpoint:  "/api/v1/manager/tasks/{task_type}/{id}",
 		TaskExecuteEndpoint: "/api/v1/manager/tasks/{task_type}/{id}/execute",
 		TaskStatusEndpoint:  "/api/v1/manager/executions/{execution_id}",
-		TaskCancelEndpoint:  "/api/v1/manager/executions/{execution_id}/cancel",
 
 		// 能力描述（JSON 字符串）
 		Capabilities: &capabilitiesStr,

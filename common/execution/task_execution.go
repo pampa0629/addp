@@ -2,6 +2,7 @@ package execution
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,11 +20,11 @@ type TaskExecution struct {
 
 	// 模块标识
 	Module   string `gorm:"size:50;not null;index:idx_task_executions_module_type" json:"module"`       // 'transfer'/'develop'/'orchestrator'/'manager'
-	TaskType string `gorm:"size:100;not null;index:idx_task_executions_module_type" json:"task_type"`   // 'import'/'export'/'sync'/'query'/'workflow'/'notebook'/'orchestration'/'mvt_generation'/'embedding'
+	TaskType string `gorm:"size:100;not null;index:idx_task_executions_module_type" json:"task_type"`   // provider 声明的稳定任务类型
 	Source   string `gorm:"size:50;not null;default:'';index:idx_task_executions_source" json:"source"` // 触发来源模块
 
 	// 关联原始任务
-	SourceTaskID   *int    `json:"source_task_id,omitempty"`                   // 关联各模块的任务ID
+	SourceTaskID   *string `gorm:"size:255" json:"source_task_id,omitempty"`   // 关联各模块的任务定义 ID，按字符串软引用保存
 	SourceTaskName *string `gorm:"size:255" json:"source_task_name,omitempty"` // 任务名称（冗余，便于查询）
 
 	// 父执行（Orchestrator 子步骤追踪父编排）
@@ -111,16 +112,42 @@ func NormalizeTriggerType(triggerType string) (string, error) {
 	}
 }
 
+func NewSourceTaskIDFromUint(id uint) *string {
+	value := strconv.FormatUint(uint64(id), 10)
+	return &value
+}
+
+func NewSourceTaskIDFromInt(id int) *string {
+	value := strconv.Itoa(id)
+	return &value
+}
+
+func ParseSourceTaskIDUint(sourceTaskID *string) (uint, error) {
+	if sourceTaskID == nil || strings.TrimSpace(*sourceTaskID) == "" {
+		return 0, fmt.Errorf("source_task_id is empty")
+	}
+	value, err := strconv.ParseUint(strings.TrimSpace(*sourceTaskID), 10, 32)
+	if err != nil {
+		return 0, fmt.Errorf("invalid source_task_id %q: %w", *sourceTaskID, err)
+	}
+	return uint(value), nil
+}
+
 // TaskType 常量（各模块使用）
 const (
+	// Meta 模块
+	TaskTypeScan = "scan"
+	// Transfer 模块
+	TaskTypeImport = "import"
 	// Develop 模块
 	TaskTypeQuery    = "query"
 	TaskTypeWorkflow = "workflow"
-	TaskTypeNotebook = "notebook"
-	// Transfer 模块
-	TaskTypeImport = "import"
-	TaskTypeExport = "export"
-	TaskTypeSync   = "sync"
+	TaskTypeScript   = "script"
+	// Orchestrator 模块
+	TaskTypeOrchestration = "orchestration"
+	// Manager 模块
+	TaskTypeMvtGeneration = "mvt_generation"
+	TaskTypeEmbedding     = "embedding"
 	// Graph 模块
 	TaskTypeKGBuild = "kg_build"
 	// Quality 模块

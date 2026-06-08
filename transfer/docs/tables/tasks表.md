@@ -12,7 +12,7 @@
 | `tenant_id` | 租户 ID。 |
 | `name` | 任务名称。 |
 | `description` | 任务描述。 |
-| `task_type` | 任务分类标签，默认值目前由服务层补齐；执行主链路以 `config` 为准。 |
+| `task_type` | 当前固定为 `import`；执行主链路以 `config` 为准。 |
 | `config` | source / target endpoint JSON。 |
 | `schedule` | Cron 表达式；为空表示手动任务。 |
 | `batch_size` | 默认批大小。 |
@@ -96,16 +96,18 @@
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| `POST` | `/tasks` | 创建任务。 |
-| `GET` | `/tasks` | 查询任务列表。 |
-| `GET` | `/tasks/statistics` | 查询任务统计。 |
-| `GET` | `/tasks/:id` | 查询任务详情。 |
-| `PUT` | `/tasks/:id` | 更新任务。 |
-| `DELETE` | `/tasks/:id` | 删除任务。 |
-| `POST` | `/tasks/:id/start` | 创建 execution 并入队执行。 |
-| `POST` | `/tasks/:id/stop` | 停止任务。 |
-| `POST` | `/tasks/:id/pause` | 暂停任务或定时调度。 |
-| `POST` | `/tasks/:id/resume` | 恢复任务调度或任务状态，不表示 checkpoint resumable。 |
-| `GET` | `/tasks/:id/executions` | 查询任务执行记录。 |
+| `GET` | `/tasks` | TaskProvider 任务列表，支持 `task_type=import`。 |
+| `GET` | `/tasks/import/:id` | TaskProvider 标准任务详情。 |
+| `POST` | `/tasks/import/:id/execute` | TaskProvider 标准任务执行入口。 |
+| `POST` | `/task-definitions` | 创建任务定义。 |
+| `GET` | `/task-definitions/statistics` | 查询任务统计。 |
+| `GET` | `/task-definitions/:id` | 查询任务定义详情。 |
+| `PUT` | `/task-definitions/:id` | 更新任务定义。 |
+| `DELETE` | `/task-definitions/:id` | 删除任务定义。 |
+| `POST` | `/task-definitions/:id/start` | 创建 execution 并入队执行。 |
+| `POST` | `/task-definitions/:id/stop` | 停止任务。 |
+| `POST` | `/task-definitions/:id/pause` | 暂停任务或定时调度。 |
+| `POST` | `/task-definitions/:id/resume` | 恢复任务调度或任务状态，不表示 checkpoint resumable。 |
+| `GET` | `/task-definitions/:id/executions` | 查询任务执行记录。 |
 
-`/tasks/:id/resume` 的命名来自任务控制 API。当前 table Transfer 的 checkpoint resumable 尚未进入主链路，不能把该接口理解为“从 checkpoint 后继续写”。
+`/task-definitions/:id/resume` 的命名来自任务控制 API。当前 table Transfer 的 checkpoint resumable 尚未进入主链路，不能把该接口理解为“从 checkpoint 后继续写”。

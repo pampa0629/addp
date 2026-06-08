@@ -42,9 +42,13 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	// AutoMigrate - 确保表结构最新
 	// 所有表由 GORM AutoMigrate 管理（符合统一的数据库表创建策略）
 	if err := db.AutoMigrate(
-		&models.DevTask{}, // 开发项（查询、工作流、Notebook 等）
+		&models.DevTask{}, // 开发任务（query、workflow、script）
 	); err != nil {
 		return nil, fmt.Errorf("failed to auto migrate: %w", err)
+	}
+
+	if err := db.Exec("DROP TABLE IF EXISTS develop.dev_items").Error; err != nil {
+		return nil, fmt.Errorf("failed to drop legacy develop.dev_items: %w", err)
 	}
 
 	log.Println("✅ Database connected successfully (AutoMigrate 完成)")

@@ -73,7 +73,7 @@ graph TB
 | `id` | bigint | 执行记录 ID |
 | `tenant_id` | int | 租户 ID (租户隔离) |
 | `module` | string | 模块名称 (meta/transfer/orchestrator/develop/manager) |
-| `task_type` | string | 任务类型 (scan/import/export/sync/orchestration/query/workflow) |
+| `task_type` | string | 任务类型 (scan/import/orchestration/query/workflow/script/mvt_generation/embedding/check/kg_build) |
 | `source` | string | 触发来源模块 |
 | `source_task_id` | string | 任务 ID (对应模块内的任务定义 ID) |
 | `trigger_type` | string | `manual` / `scheduled` |
@@ -207,16 +207,15 @@ sequenceDiagram
 | 模块 | task_type | 说明 | 示例 |
 |------|-----------|------|------|
 | **Meta** | `scan` | 元数据扫描任务 | 扫描 PostgreSQL 数据库 |
-| | `deep_scan` | 深度扫描任务 | 深度扫描并统计数据分布 |
 | **Transfer** | `import` | 数据导入任务 | 从 CSV 导入到 PostgreSQL |
-| | `export` | 数据导出任务 | 从 PostgreSQL 导出到 S3 |
-| | `sync` | 数据同步任务 | PostgreSQL → MySQL 同步 |
 | **Orchestrator** | `orchestration` | 编排任务执行 | 执行数据处理流水线 |
 | **Develop** | `query` | 查询执行任务 | SQL 查询执行 |
 | | `workflow` | 工作流执行任务 | 执行空间分析工作流 |
-| | `notebook` | Notebook 执行任务 | 执行 Jupyter Notebook |
+| | `script` | 脚本执行任务 | 执行命令式脚本；当前可由 Jupyter Notebook runtime 承载 |
 | **Manager** | `mvt_generation` | MVT 瓦片生成任务 | 为 PostGIS 表生成瓦片 |
-| | `preview` | 数据预览任务 | 预览 Shapefile 数据 |
+| | `embedding` | 向量化任务 | 对对象存储文件进行向量化 |
+| **Quality** | `check` | 数据质量检查任务 | 执行质量规则检查 |
+| **Graph** | `kg_build` | 知识图谱构建任务 | 构建知识图谱 |
 
 ---
 

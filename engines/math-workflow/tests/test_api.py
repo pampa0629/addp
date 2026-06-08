@@ -328,7 +328,7 @@ class TestExecutionStatusEndpoint:
         data = response.get_json()
         assert data['status'] == 'success'
         assert data['execution_id'] == 'test-uuid-1234'
-        assert data['task_status'] == 'completed'
+        assert data['task_status'] == 'success'
 
 
 if __name__ == '__main__':

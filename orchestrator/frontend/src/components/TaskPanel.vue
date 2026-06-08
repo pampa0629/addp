@@ -15,7 +15,11 @@
       <template #node="{ data }">
         <div
           class="tree-node"
-          :class="{'task-node': data.type === 'task', 'module-node': data.type === 'module'}"
+          :class="{
+            'task-node': data.type === 'task',
+            'module-node': data.type === 'module',
+            'task-type-node': data.type === 'taskType'
+          }"
           :draggable="data.type === 'task'"
           @dragstart="startDrag(data, $event)"
         >
@@ -30,11 +34,39 @@
             />
           </template>
 
+          <!-- 任务类型节点 -->
+          <template v-else-if="data.type === 'taskType'">
+            <el-icon class="task-type-icon"><FolderOpened /></el-icon>
+            <span class="task-type-name">{{ data.label }}</span>
+            <el-tag size="small" :type="getTaskTypeColor(data.metadata?.taskType)">
+              {{ data.metadata?.taskType }}
+            </el-tag>
+            <el-badge
+              :value="data.metadata?.taskCount || 0"
+              class="task-count-badge"
+            />
+            <el-tooltip
+              v-if="data.metadata?.createUrl"
+              :content="t('orchestrator.taskPanel.createTaskTooltip')"
+              placement="right"
+            >
+              <el-button
+                class="node-icon-button"
+                size="small"
+                link
+                type="primary"
+                @click.stop="openCreateTask(data)"
+              >
+                <el-icon><Plus /></el-icon>
+              </el-button>
+            </el-tooltip>
+          </template>
+
           <!-- 任务节点 -->
           <template v-else-if="data.type === 'task'">
             <el-icon class="drag-icon"><Rank /></el-icon>
             <span class="task-name">{{ data.label }}</span>
-            <div class="task-tags" @click.stop>
+            <div class="task-actions" @click.stop>
               <el-tag
                 v-if="data.metadata?.status"
                 size="small"
@@ -49,6 +81,21 @@
               >
                 {{ data.metadata.taskType }}
               </el-tag>
+              <el-tooltip
+                v-if="data.metadata?.editUrl"
+                :content="t('orchestrator.taskPanel.editTaskTooltip')"
+                placement="right"
+              >
+                <el-button
+                  class="node-icon-button"
+                  size="small"
+                  link
+                  type="primary"
+                  @click.stop="openEditTask(data)"
+                >
+                  <el-icon><Edit /></el-icon>
+                </el-button>
+              </el-tooltip>
             </div>
           </template>
         </div>
@@ -60,9 +107,9 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Rank, FolderOpened } from '@element-plus/icons-vue'
-import { ResourceTree } from '@addp/common-frontend'
-import computeEnginesAPI from '../api/computeEngines'
+import { Edit, FolderOpened, Plus, Rank } from '@element-plus/icons-vue'
+import { buildTaskOwnerUrl, ResourceTree } from '@addp/common-frontend'
+import taskProvidersAPI from '../api/taskProviders'
 import modulesApi from '../api/modules'
 import { ElMessage } from 'element-plus'
 
@@ -75,18 +122,18 @@ onMounted(async () => {
   await loadAllTasks()
 })
 
-// 加载所有计算引擎及其任务
+// 加载所有任务提供者及其任务
 async function loadAllTasks() {
   loading.value = true
   try {
-    // 1. 获取所有计算引擎
-    const engines = await computeEnginesAPI.list()
-    console.log('已加载计算引擎:', engines)
+    // 1. 获取所有任务提供者
+    const providers = await taskProvidersAPI.list()
+    console.log('已加载任务提供者:', providers)
 
-    // 2. 为每个引擎加载任务
+    // 2. 为每个任务提供者加载任务
     const treeNodes = []
-    for (const engine of engines) {
-      const moduleNode = await loadEngineTasks(engine)
+    for (const provider of providers) {
+      const moduleNode = await loadProviderTasks(provider)
       if (moduleNode) {
         treeNodes.push(moduleNode)
       }
@@ -102,60 +149,146 @@ async function loadAllTasks() {
   }
 }
 
-// 加载单个引擎的任务
-async function loadEngineTasks(engine) {
+// 加载单个任务提供者的任务
+async function loadProviderTasks(provider) {
+  const identifier = provider.module_name
+  const taskTypes = parseTaskTypes(provider.capabilities)
+  let tasks = []
+
   try {
-    // 使用 engine_type 作为标识符
-    const identifier = engine.module_name || engine.engine_type
-    console.log(`加载引擎任务: ${identifier}`)
+    console.log(`加载任务提供者任务: ${identifier}`)
 
-    // 调用后端 API 获取任务列表 (使用 module_name 参数)
-    const data = await modulesApi.listTasksByIdentifier(identifier)
-    const tasks = data.items || []
+    // 按 capabilities 中声明的 task_type 拉取任务，避免跨类型任务由前端猜测过滤。
+    if (taskTypes.length > 0) {
+      const results = await Promise.all(taskTypes.map(async taskType => {
+        const data = await modulesApi.listTasksByModule(identifier, { task_type: taskType.type })
+        return data.items || []
+      }))
+      tasks = results.flat()
+    } else {
+      const data = await modulesApi.listTasksByModule(identifier)
+      tasks = data.items || []
+    }
 
-    console.log(`引擎 ${identifier} 的任务:`, tasks)
+    console.log(`任务提供者 ${identifier} 的任务:`, tasks)
+  } catch (error) {
+    console.error(`加载任务提供者 ${identifier} 任务失败:`, error)
+  }
 
-    // 构建子节点（任务列表）
-    const children = tasks.map(task => ({
-      id: `${identifier}-task-${task.id}`,
-      label: task.display_name || task.name || `Task ${task.id}`,
-      type: 'task',
-      metadata: {
-        provider: identifier,        // TaskProvider module_name，如 "manager"
-        taskType: task.task_type || task.type || null,  // 任务类型，如 "mvt_generation"
-        taskId: task.id,             // 任务定义 ID
-        status: task.last_execution_status || task.status || null,
-        enabled: task.enabled,
-        parameters: task.parameters || {}
-      }
+  const children = buildTaskTypeNodes(identifier, taskTypes, tasks)
+
+  return {
+    id: identifier,
+    label: provider.display_name || provider.name || identifier,
+    type: 'module',
+    metadata: {
+      uniqueIdentifier: identifier,
+      taskCount: children.reduce((sum, child) => sum + (child.metadata?.taskCount || 0), 0)
+    },
+    children
+  }
+}
+
+function hasValue(value) {
+  return value !== null && value !== undefined && String(value).trim() !== ''
+}
+
+function parseTaskTypes(capabilities) {
+  const parsed = parseCapabilities(capabilities)
+  const taskTypes = Array.isArray(parsed.task_types) ? parsed.task_types : []
+  return taskTypes
+    .filter(item => hasValue(item?.type) && !item.deprecated)
+    .map(item => ({
+      type: item.type,
+      displayName: item.display_name || item.type,
+      createUrl: item.create_url || '',
+      editUrl: item.edit_url || ''
     }))
+}
 
-    // 返回模块节点
+function parseCapabilities(capabilities) {
+  if (!capabilities) return {}
+  if (typeof capabilities === 'object') return capabilities
+  try {
+    return JSON.parse(capabilities)
+  } catch (error) {
+    return {}
+  }
+}
+
+function buildTaskTypeNodes(identifier, taskTypes, tasks) {
+  if (taskTypes.length === 0) {
+    return tasks
+      .map(task => buildTaskNode(identifier, task, null))
+      .filter(Boolean)
+  }
+
+  return taskTypes.map(taskType => {
+    const children = tasks
+      .filter(task => (task.task_type || task.type) === taskType.type)
+      .map(task => buildTaskNode(identifier, task, taskType))
+      .filter(Boolean)
+
     return {
-      id: identifier,
-      label: engine.display_name || engine.name,
-      type: 'module',
+      id: `${identifier}-type-${taskType.type}`,
+      label: taskType.displayName,
+      type: 'taskType',
       metadata: {
-        uniqueIdentifier: identifier,
+        provider: identifier,
+        taskType: taskType.type,
+        createUrl: taskType.createUrl,
+        editUrl: taskType.editUrl,
         taskCount: children.length
       },
       children
     }
-  } catch (error) {
-    const identifier = engine.module_name
-    console.error(`加载引擎 ${identifier} 任务失败:`, error)
-    // 返回空任务的模块节点
-    return {
-      id: identifier,
-      label: engine.display_name || engine.name,
-      type: 'module',
-      metadata: {
-        uniqueIdentifier: identifier,
-        taskCount: 0
-      },
-      children: []
+  })
+}
+
+function buildTaskNode(identifier, task, taskTypeDef) {
+  const taskType = task.task_type || task.type
+  if (!hasValue(task.id) || !hasValue(taskType)) {
+    return null
+  }
+
+  return {
+    id: `${identifier}-${taskType}-task-${task.id}`,
+    label: task.display_name || task.name || `Task ${task.id}`,
+    type: 'task',
+    metadata: {
+      provider: identifier,
+      taskType,
+      taskId: task.id,
+      graphId: task.graph_id,
+      editUrl: taskTypeDef?.editUrl || '',
+      status: task.last_execution_status || task.status || null,
+      enabled: task.enabled,
+      parameters: task.parameters || {}
     }
   }
+}
+
+function openCreateTask(data) {
+  openOwnerUrl(data.metadata?.createUrl)
+}
+
+function openEditTask(data) {
+  openOwnerUrl(data.metadata?.editUrl, {
+    taskId: data.metadata?.taskId,
+    graphId: data.metadata?.graphId
+  })
+}
+
+function openOwnerUrl(rawUrl, replacements = {}) {
+  if (!hasValue(rawUrl)) {
+    ElMessage.warning(t('orchestrator.taskPanel.openUrlMissing'))
+    return
+  }
+
+  const url = buildTaskOwnerUrl(rawUrl, replacements, {
+    consoleOrigin: import.meta.env.DEV ? 'http://localhost:5170' : window.location.origin
+  })
+  window.open(url, '_blank', 'noopener,noreferrer')
 }
 
 
@@ -187,10 +320,16 @@ function startDrag(data, event) {
 // 任务类型颜色
 function getTaskTypeColor(type) {
   const colors = {
+    scan: 'primary',
     import: 'success',
-    export: 'warning',
-    sync: 'info',
-    scan: 'primary'
+    query: 'warning',
+    workflow: 'success',
+    script: 'info',
+    mvt_generation: 'warning',
+    embedding: 'success',
+    check: 'danger',
+    kg_build: 'primary',
+    orchestration: 'primary'
   }
   return colors[type] || 'info'
 }
@@ -200,7 +339,7 @@ function getStatusColor(status) {
   const colors = {
     pending: 'info',
     running: 'warning',
-    completed: 'success',
+    success: 'success',
     failed: 'danger',
     scheduled: 'primary'
   }
@@ -263,6 +402,36 @@ function getStatusColor(status) {
   margin-left: auto;
 }
 
+/* 任务类型节点 */
+.task-type-node {
+  font-weight: 500;
+  color: var(--addp-text-primary);
+}
+
+.task-type-node:hover {
+  background-color: var(--addp-bg-secondary);
+}
+
+.task-type-icon {
+  color: var(--el-color-info);
+  flex-shrink: 0;
+}
+
+.task-type-name {
+  flex: 1;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-icon-button {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  flex-shrink: 0;
+}
+
 /* 任务节点 */
 .task-node {
   cursor: move;
@@ -292,8 +461,9 @@ function getStatusColor(status) {
   white-space: nowrap;
 }
 
-.task-tags {
+.task-actions {
   display: flex;
+  align-items: center;
   gap: 4px;
   flex-shrink: 0;
 }

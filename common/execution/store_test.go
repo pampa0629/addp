@@ -1,0 +1,84 @@
+package execution
+
+import (
+	"reflect"
+	"testing"
+	"testing/fstest"
+
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+)
+
+func TestExecutionMigrationNamesFiltersDownMigrations(t *testing.T) {
+	t.Parallel()
+
+	names, err := executionMigrationNames(fstest.MapFS{
+		"migrations/003_add_source.sql":                  {Data: []byte("select 1;")},
+		"migrations/001_restructure_task_executions.sql": {Data: []byte("select 1;")},
+		"migrations/002_normalize_trigger_type_down.sql": {Data: []byte("select 1;")},
+		"migrations/readme.md":                           {Data: []byte("ignored")},
+	}, "migrations")
+	if err != nil {
+		t.Fatalf("executionMigrationNames() error = %v", err)
+	}
+
+	want := []string{
+		"001_restructure_task_executions.sql",
+		"003_add_source.sql",
+	}
+	if !reflect.DeepEqual(names, want) {
+		t.Fatalf("migration names = %#v, want %#v", names, want)
+	}
+}
+
+func TestExecutionMigrationRecordIsIdempotent(t *testing.T) {
+	db := newExecutionStoreTestDB(t)
+
+	if err := ensureExecutionMigrationTable(db); err != nil {
+		t.Fatalf("ensure migration table: %v", err)
+	}
+
+	version := "001_restructure_task_executions.sql"
+	applied, err := executionMigrationApplied(db, version)
+	if err != nil {
+		t.Fatalf("check migration before record: %v", err)
+	}
+	if applied {
+		t.Fatal("migration should not be applied before record")
+	}
+
+	if err := recordExecutionMigration(db, version); err != nil {
+		t.Fatalf("record migration: %v", err)
+	}
+	if err := recordExecutionMigration(db, version); err != nil {
+		t.Fatalf("record migration second time: %v", err)
+	}
+
+	applied, err = executionMigrationApplied(db, version)
+	if err != nil {
+		t.Fatalf("check migration after record: %v", err)
+	}
+	if !applied {
+		t.Fatal("migration should be applied after record")
+	}
+
+	var count int64
+	if err := db.Raw(`SELECT COUNT(*) FROM common.execution_schema_migrations WHERE version = ?`, version).Scan(&count).Error; err != nil {
+		t.Fatalf("count migration records: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("migration record count = %d, want 1", count)
+	}
+}
+
+func newExecutionStoreTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.Exec("ATTACH DATABASE ':memory:' AS common").Error; err != nil {
+		t.Fatalf("attach common schema: %v", err)
+	}
+	return db
+}

@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	commonExecution "github.com/addp/common/execution"
 	"io"
 	"net/http"
 	"strings"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	"github.com/addp/common/contentio"
+	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/graph/internal/models"
 	"github.com/addp/graph/internal/repository"
@@ -75,6 +75,10 @@ func (s *BuildService) ListTasks(graphID, tenantID uint) ([]models.BuildTask, er
 	return s.buildRepo.ListTasks(graphID, tenantID)
 }
 
+func (s *BuildService) ListAllTasks(tenantID uint) ([]models.BuildTask, error) {
+	return s.buildRepo.ListAllTasks(tenantID)
+}
+
 func (s *BuildService) GetTask(id, tenantID uint) (*models.BuildTask, error) {
 	task, err := s.buildRepo.GetTask(id, tenantID)
 	if err != nil {
@@ -127,7 +131,7 @@ func (s *BuildService) UploadMaterial(taskID, tenantID, graphID uint, fileName s
 		FileName: fileName,
 		FilePath: key,
 		FileSize: fileSize,
-		Status:   models.BuildStatusPending,
+		Status:   models.BuildMaterialStatusPending,
 	}
 	if err := s.buildRepo.CreateMaterial(mat); err != nil {
 		return nil, err
@@ -143,36 +147,58 @@ func (s *BuildService) DeleteMaterial(id, tenantID uint) error {
 
 // RunTask 异步启动构建任务
 func (s *BuildService) RunTask(ctx context.Context, taskID, graphID, tenantID, userID uint) error {
+	_, err := s.RunTaskWithContext(ctx, taskID, graphID, tenantID, userID, commonExecution.TriggerTypeManual, commonExecution.ModuleGraph, nil)
+	return err
+}
+
+func (s *BuildService) RunTaskWithContext(
+	ctx context.Context,
+	taskID, graphID, tenantID, userID uint,
+	triggerType string,
+	source string,
+	parentExecutionID *string,
+) (string, error) {
 	task, err := s.buildRepo.GetTask(taskID, tenantID)
 	if err != nil {
-		return fmt.Errorf("任务不存在: %w", err)
+		return "", fmt.Errorf("任务不存在: %w", err)
+	}
+	if task.GraphID != graphID {
+		return "", fmt.Errorf("任务不属于指定图谱")
 	}
 	if task.Status == models.BuildStatusRunning {
-		return fmt.Errorf("任务已在运行中")
+		return "", fmt.Errorf("任务已在运行中")
+	}
+	normalizedTriggerType, err := commonExecution.NormalizeTriggerType(triggerType)
+	if err != nil {
+		return "", err
+	}
+	normalizedSource := strings.TrimSpace(source)
+	if normalizedSource == "" {
+		normalizedSource = commonExecution.ModuleGraph
 	}
 
 	materials, err := s.buildRepo.ListMaterials(taskID, tenantID)
 	if err != nil || len(materials) == 0 {
-		return fmt.Errorf("任务没有可处理的材料")
+		return "", fmt.Errorf("任务没有可处理的材料")
 	}
 
 	// 创建 Monitor 执行记录
 	now := time.Now()
 	executionID := uuid.New().String()
 	uid := int(userID)
-	srcID := int(taskID)
 	execution := &commonExecution.TaskExecution{
-		TenantID:       int(tenantID),
-		ExecutionID:    executionID,
-		Module:         commonExecution.ModuleGraph,
-		TaskType:       commonExecution.TaskTypeKGBuild,
-		Source:         commonExecution.ModuleGraph,
-		SourceTaskID:   &srcID,
-		SourceTaskName: &task.Name,
-		Status:         commonExecution.ExecutionStatusPending,
-		Progress:       0,
-		TriggerType:    commonExecution.TriggerTypeManual,
-		TriggeredBy:    &uid,
+		TenantID:          int(tenantID),
+		ExecutionID:       executionID,
+		Module:            commonExecution.ModuleGraph,
+		TaskType:          commonExecution.TaskTypeKGBuild,
+		Source:            normalizedSource,
+		SourceTaskID:      commonExecution.NewSourceTaskIDFromUint(taskID),
+		SourceTaskName:    &task.Name,
+		ParentExecutionID: parentExecutionID,
+		Status:            commonExecution.ExecutionStatusPending,
+		Progress:          0,
+		TriggerType:       normalizedTriggerType,
+		TriggeredBy:       &uid,
 		ExecutionConfig: commonModels.JSONMap{
 			"graph_id":             graphID,
 			"confidence_threshold": task.ConfidenceThreshold,
@@ -205,7 +231,21 @@ func (s *BuildService) RunTask(ctx context.Context, taskID, graphID, tenantID, u
 		s.executeTask(runCtx, task, materials, int(tenantID), executionID)
 	}()
 
-	return nil
+	return executionID, nil
+}
+
+func (s *BuildService) RunTaskByIDWithContext(
+	ctx context.Context,
+	taskID, tenantID, userID uint,
+	triggerType string,
+	source string,
+	parentExecutionID *string,
+) (string, error) {
+	task, err := s.buildRepo.GetTask(taskID, tenantID)
+	if err != nil {
+		return "", fmt.Errorf("任务不存在: %w", err)
+	}
+	return s.RunTaskWithContext(ctx, taskID, task.GraphID, tenantID, userID, triggerType, source, parentExecutionID)
 }
 
 // CancelTask 取消运行中的任务
@@ -240,7 +280,7 @@ func (s *BuildService) CancelTask(taskID, graphID, tenantID uint) error {
 	return nil
 }
 
-// RerunTask 重置任务状态并重新执行（对 completed/failed/cancelled 任务适用）
+// RerunTask 重置任务状态并重新执行（对 success/failed/cancelled 任务适用）
 func (s *BuildService) RerunTask(ctx context.Context, taskID, graphID, tenantID, userID uint) error {
 	task, err := s.buildRepo.GetTask(taskID, tenantID)
 	if err != nil {
@@ -306,18 +346,18 @@ func (s *BuildService) executeTask(ctx context.Context, task *models.BuildTask, 
 		default:
 		}
 
-		mat.Status = "processing"
+		mat.Status = models.BuildMaterialStatusProcessing
 		_ = s.buildRepo.UpdateMaterial(&mat)
 
 		written, queued, err := s.processMaterial(ctx, task, &mat, ontologySchema, spatialLayerLookup, ancestorChains, uint(tenantID))
 		if err != nil {
-			mat.Status = models.BuildStatusFailed
+			mat.Status = models.BuildMaterialStatusFailed
 			mat.ErrorMessage = err.Error()
 			_ = s.buildRepo.UpdateMaterial(&mat)
 			// 继续处理其他材料，不中断任务
 		} else {
 			now := time.Now()
-			mat.Status = models.BuildStatusCompleted
+			mat.Status = models.BuildMaterialStatusCompleted
 			mat.ProcessedAt = &now
 			_ = s.buildRepo.UpdateMaterial(&mat)
 			autoWritten += written
@@ -341,7 +381,7 @@ func (s *BuildService) executeTask(ctx context.Context, task *models.BuildTask, 
 
 	// 完成
 	now := time.Now()
-	task.Status = models.BuildStatusCompleted
+	task.Status = models.BuildStatusSuccess
 	task.CompletedAt = &now
 
 	statsBytes, _ := json.Marshal(models.BuildTaskStats{
