@@ -22,7 +22,7 @@
 **核心特点**:
 - **节点粒度**: 粗粒度业务任务 (扫描元数据、Transfer 任务、生成瓦片)
 - **DAG 层级**: 任务级别的有向无环图
-- **数据传递**: 参数模板 `{{stepID.field}}` 引用前序任务结果
+- **数据传递**: 参数模板 `{{step_id.field.path}}` 或 `{{step_id}}` 引用显式依赖步骤的结果
 - **执行方式**: 通过 TaskProvider 调用各模块已存在的任务定义 (Meta、Transfer、Develop、Manager、Quality、Graph、Orchestrator 等)
 - **适用场景**: 跨模块数据流水线、定时 ETL 作业
 
@@ -157,7 +157,7 @@ graph TB
         TaskNode2 --> TaskNode3
 
         TaskWF --> TaskEngine[执行方式:<br/>TaskProvider API调用]
-        TaskWF --> TaskData["数据传递:<br/>参数模板<br/>{{stepID.field}}"]
+        TaskWF --> TaskData["数据传递:<br/>参数模板<br/>{{step_id.field.path}}"]
     end
 
     classDef operator fill:#e1f5ff,stroke:#01579b
@@ -174,7 +174,7 @@ graph TB
 | **节点粒度** | 细粒度算子 (buffer, centroid) | 粗粒度业务任务 (扫描元数据, Transfer 任务) |
 | **DAG 层级** | 算子级别 DAG | 任务级别 DAG |
 | **执行引擎/方式** | GeoPandas/Spark 工作流引擎 | 跨模块 TaskProvider API 调用 |
-| **数据传递** | GeoDataFrame 内存传递 | 已保存任务执行时可使用参数模板 `{{stepID.field}}` 传递本次执行参数 |
+| **数据传递** | GeoDataFrame 内存传递 | 已保存任务执行时可使用参数模板 `{{step_id.field.path}}` 或 `{{step_id}}` 传递本次执行参数 |
 | **适用场景** | 空间数据分析、地理计算 | 跨模块数据流水线、ETL 作业 |
 | **存储表** | `develop.dev_tasks` | `orchestrator.orchestrations` |
 | **执行记录** | `common.task_executions`（`module=develop`） | `common.task_executions`（`module=orchestrator`） |
@@ -330,7 +330,7 @@ graph LR
 
 ### 参数模板化
 
-支持 `{{stepID.field}}` 语法引用前序任务结果。当前实现按 `.` 分隔字段路径，不支持数组索引语法:
+参数模板只支持完整字符串引用，格式为 `{{step_id.field.path}}` 或 `{{step_id}}`。模板引用的 `step_id` 必须存在，并且必须在当前 Step 的 `depends_on` 中显式声明；不支持在普通字符串中做局部插值，也不支持数组索引语法:
 
 ```mermaid
 sequenceDiagram
@@ -348,7 +348,8 @@ sequenceDiagram
 **模板语法**:
 - 简单字段引用: `{{step1.result}}`
 - 嵌套字段引用: `{{step1.result.nested.field}}`
-- 自动类型转换: 字符串、数字、对象
+- 整个步骤结果引用: `{{step1}}`
+- 模板解析返回被引用输出的原始值，不做隐式类型转换。运行时如果引用步骤没有结果、字段路径不存在，或路径试图进入非对象值，当前 Step 必须失败。
 
 ---
 

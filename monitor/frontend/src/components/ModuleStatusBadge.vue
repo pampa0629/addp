@@ -11,8 +11,14 @@
       </el-tag>
     </div>
     <div class="module-info">
-      <span class="latency" v-if="module.latency">
-        {{ t('monitor.module_status.latency', { ms: module.latency }) }}
+      <span v-if="displayLatency">
+        {{ t('monitor.module_status.latency', { ms: displayLatency }) }}
+      </span>
+      <span v-if="taskDiscoverySummary">
+        {{ taskDiscoverySummary }}
+      </span>
+      <span v-if="capabilitiesMessage">
+        {{ capabilitiesMessage }}
       </span>
       <span class="message" v-if="module.message">
         {{ module.message }}
@@ -38,6 +44,8 @@ const statusType = computed(() => {
   switch (props.module.status) {
     case 'up':
       return 'success'
+    case 'degraded':
+      return 'warning'
     case 'down':
       return 'danger'
     default:
@@ -49,11 +57,34 @@ const statusText = computed(() => {
   switch (props.module.status) {
     case 'up':
       return t('monitor.module_status.up')
+    case 'degraded':
+      return t('monitor.module_status.degraded')
     case 'down':
       return t('monitor.module_status.down')
     default:
       return t('monitor.module_status.unknown')
   }
+})
+
+const displayLatency = computed(() => {
+  return props.module.latency || props.module.module_health?.latency || 0
+})
+
+const taskDiscoverySummary = computed(() => {
+  const checks = props.module.task_discovery || []
+  if (checks.length === 0) {
+    return ''
+  }
+  const upCount = checks.filter(item => item.status === 'up').length
+  return t('monitor.module_status.task_discovery', { up: upCount, total: checks.length })
+})
+
+const capabilitiesMessage = computed(() => {
+  const capabilities = props.module.capabilities
+  if (!capabilities || capabilities.status === 'up') {
+    return ''
+  }
+  return capabilities.message || t('monitor.module_status.capabilities_invalid')
 })
 </script>
 
@@ -84,10 +115,6 @@ const statusText = computed(() => {
   flex-direction: column;
   font-size: 14px;
   color: var(--addp-text-secondary);
-}
-
-.latency {
-  margin-bottom: 4px;
 }
 
 .message {

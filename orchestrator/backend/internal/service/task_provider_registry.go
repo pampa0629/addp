@@ -110,7 +110,7 @@ func (r *TaskProviderRegistry) ListAllProviders(ctx context.Context) ([]*commonM
 
 // ValidateStepTaskTypes 校验编排步骤引用的 provider/task_type 已由 TaskProvider capabilities 声明。
 func (r *TaskProviderRegistry) ValidateStepTaskTypes(ctx context.Context, steps models.Steps) error {
-	checked := map[string]struct{}{}
+	capabilityCache := map[string]*taskProviderTaskTypeCapability{}
 	for i, step := range steps {
 		providerName := strings.TrimSpace(step.Provider)
 		taskType := strings.TrimSpace(step.TaskType)
@@ -119,59 +119,93 @@ func (r *TaskProviderRegistry) ValidateStepTaskTypes(ctx context.Context, steps 
 		}
 
 		key := providerName + "\x00" + taskType
-		if _, exists := checked[key]; exists {
-			continue
-		}
+		taskTypeCapability, exists := capabilityCache[key]
+		if !exists {
+			provider, err := r.GetProvider(ctx, providerName)
+			if err != nil {
+				return fmt.Errorf("steps[%d] provider %q is not registered: %w", i, providerName, err)
+			}
 
-		provider, err := r.GetProvider(ctx, providerName)
-		if err != nil {
-			return fmt.Errorf("steps[%d] provider %q is not registered: %w", i, providerName, err)
+			taskTypeCapability, err = providerTaskTypeCapability(provider, taskType)
+			if err != nil {
+				return fmt.Errorf("steps[%d] provider %q capabilities invalid: %w", i, providerName, err)
+			}
+			capabilityCache[key] = taskTypeCapability
 		}
-
-		declared, deprecated, err := providerDeclaresTaskType(provider, taskType)
-		if err != nil {
-			return fmt.Errorf("steps[%d] provider %q capabilities invalid: %w", i, providerName, err)
-		}
-		if !declared {
+		if taskTypeCapability == nil {
 			return fmt.Errorf("steps[%d] task_type %q is not declared by provider %q", i, taskType, providerName)
 		}
-		if deprecated {
+		if taskTypeCapability.Deprecated {
 			return fmt.Errorf("steps[%d] task_type %q of provider %q is deprecated", i, taskType, providerName)
 		}
+		if err := validateStepParametersByExecutionSchema(step, taskTypeCapability.ExecutionSchema); err != nil {
+			return fmt.Errorf("steps[%d] %w", i, err)
+		}
 
-		checked[key] = struct{}{}
 	}
 	return nil
 }
 
 type taskProviderCapabilities struct {
-	SchemaVersion string `json:"schema_version"`
-	TaskTypes     []struct {
-		Type       string `json:"type"`
-		Deprecated bool   `json:"deprecated"`
-	} `json:"task_types"`
+	SchemaVersion string                           `json:"schema_version"`
+	TaskTypes     []taskProviderTaskTypeCapability `json:"task_types"`
 }
 
-func providerDeclaresTaskType(provider *commonModels.TaskProvider, taskType string) (bool, bool, error) {
+type taskProviderTaskTypeCapability struct {
+	Type            string                 `json:"type"`
+	Deprecated      bool                   `json:"deprecated"`
+	ExecutionSchema map[string]interface{} `json:"execution_schema"`
+}
+
+func providerTaskTypeCapability(provider *commonModels.TaskProvider, taskType string) (*taskProviderTaskTypeCapability, error) {
 	if provider == nil {
-		return false, false, fmt.Errorf("provider is nil")
+		return nil, fmt.Errorf("provider is nil")
 	}
 	if provider.Capabilities == nil || strings.TrimSpace(string(*provider.Capabilities)) == "" {
-		return false, false, fmt.Errorf("capabilities is required")
+		return nil, fmt.Errorf("capabilities is required")
 	}
 
 	var capabilities taskProviderCapabilities
 	if err := json.Unmarshal([]byte(*provider.Capabilities), &capabilities); err != nil {
-		return false, false, fmt.Errorf("invalid capabilities JSON: %w", err)
+		return nil, fmt.Errorf("invalid capabilities JSON: %w", err)
 	}
 	if capabilities.SchemaVersion != "task.capabilities/v1" {
-		return false, false, fmt.Errorf("schema_version must be task.capabilities/v1")
+		return nil, fmt.Errorf("schema_version must be task.capabilities/v1")
 	}
 
 	for _, item := range capabilities.TaskTypes {
 		if strings.TrimSpace(item.Type) == taskType {
-			return true, item.Deprecated, nil
+			return &item, nil
 		}
 	}
-	return false, false, nil
+	return nil, nil
+}
+
+func validateStepParametersByExecutionSchema(step models.Step, executionSchema map[string]interface{}) error {
+	if len(step.Parameters) == 0 {
+		return nil
+	}
+	if executionSchema == nil {
+		return fmt.Errorf("task_type %q does not declare execution_schema for parameter validation", step.TaskType)
+	}
+
+	additionalProperties, exists := executionSchema["additionalProperties"]
+	if !exists {
+		return nil
+	}
+	allowAdditional, ok := additionalProperties.(bool)
+	if !ok || allowAdditional {
+		return nil
+	}
+
+	properties := map[string]interface{}{}
+	if rawProperties, ok := executionSchema["properties"].(map[string]interface{}); ok {
+		properties = rawProperties
+	}
+	for key := range step.Parameters {
+		if _, declared := properties[key]; !declared {
+			return fmt.Errorf("parameters.%s is not allowed by provider %q task_type %q execution_schema", key, step.Provider, step.TaskType)
+		}
+	}
+	return nil
 }

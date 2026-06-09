@@ -27,6 +27,85 @@ func TestValidateStepTaskTypesAcceptsDeclaredTaskType(t *testing.T) {
 	}
 }
 
+func TestValidateStepTaskTypesRejectsParametersDisallowedByExecutionSchema(t *testing.T) {
+	registry := taskProviderRegistryForTest(map[string]*commonModels.TaskProvider{
+		"meta": taskProviderForTest("meta", `{
+			"schema_version":"task.capabilities/v1",
+			"task_types":[{
+				"type":"scan",
+				"deprecated":false,
+				"execution_schema":{"type":"object","additionalProperties":false}
+			}]
+		}`),
+	})
+
+	err := registry.ValidateStepTaskTypes(context.Background(), models.Steps{{
+		ID: "scan", Name: "Scan", Provider: "meta", TaskType: "scan", TaskID: 1,
+		Parameters: map[string]interface{}{"force": true},
+	}})
+
+	if err == nil {
+		t.Fatal("expected disallowed parameters to be rejected")
+	}
+	if !strings.Contains(err.Error(), "parameters.force is not allowed") {
+		t.Fatalf("error = %q, want parameters.force is not allowed", err.Error())
+	}
+}
+
+func TestValidateStepTaskTypesAcceptsDeclaredExecutionSchemaParameters(t *testing.T) {
+	registry := taskProviderRegistryForTest(map[string]*commonModels.TaskProvider{
+		"develop": taskProviderForTest("develop", `{
+			"schema_version":"task.capabilities/v1",
+			"task_types":[{
+				"type":"query",
+				"deprecated":false,
+				"execution_schema":{
+					"type":"object",
+					"properties":{"limit":{"type":"integer"}},
+					"additionalProperties":false
+				}
+			}]
+		}`),
+	})
+
+	err := registry.ValidateStepTaskTypes(context.Background(), models.Steps{{
+		ID: "query", Name: "Query", Provider: "develop", TaskType: "query", TaskID: 1,
+		Parameters: map[string]interface{}{"limit": 100},
+	}})
+
+	if err != nil {
+		t.Fatalf("ValidateStepTaskTypes() error = %v, want nil", err)
+	}
+}
+
+func TestValidateStepTaskTypesValidatesParametersForRepeatedTaskType(t *testing.T) {
+	registry := taskProviderRegistryForTest(map[string]*commonModels.TaskProvider{
+		"meta": taskProviderForTest("meta", `{
+			"schema_version":"task.capabilities/v1",
+			"task_types":[{
+				"type":"scan",
+				"deprecated":false,
+				"execution_schema":{"type":"object","additionalProperties":false}
+			}]
+		}`),
+	})
+
+	err := registry.ValidateStepTaskTypes(context.Background(), models.Steps{
+		{ID: "scan_a", Name: "Scan A", Provider: "meta", TaskType: "scan", TaskID: 1},
+		{
+			ID: "scan_b", Name: "Scan B", Provider: "meta", TaskType: "scan", TaskID: 2,
+			Parameters: map[string]interface{}{"force": true},
+		},
+	})
+
+	if err == nil {
+		t.Fatal("expected second step parameters to be rejected")
+	}
+	if !strings.Contains(err.Error(), "steps[1]") || !strings.Contains(err.Error(), "parameters.force is not allowed") {
+		t.Fatalf("error = %q, want steps[1] parameters.force rejection", err.Error())
+	}
+}
+
 func TestValidateStepTaskTypesRejectsUndeclaredTaskType(t *testing.T) {
 	registry := taskProviderRegistryForTest(map[string]*commonModels.TaskProvider{
 		"manager": taskProviderForTest("manager", `{

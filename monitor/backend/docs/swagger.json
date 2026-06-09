@@ -383,6 +383,86 @@
                 }
             }
         },
+        "/providers/health": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "从 System 读取启用 TaskProvider，并探测模块 /health 与标准 GET /tasks?task_type= endpoint。| Read enabled TaskProviders from System and probe module /health plus standard GET /tasks?task_type= endpoints.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Monitor"
+                ],
+                "summary": "检查所有任务提供者运行态健康状态 | Check all task provider health",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_monitor_internal_service.ProviderHealthStatus"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/providers/{module}/health": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "从 System 读取指定 TaskProvider，并探测模块 /health 与标准 GET /tasks?task_type= endpoint。| Read a TaskProvider from System and probe module /health plus standard GET /tasks?task_type= endpoints.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Monitor"
+                ],
+                "summary": "检查单个任务提供者运行态健康状态 | Check task provider health",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "模块名 | Module",
+                        "name": "module",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.ProviderHealthStatus"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/task-providers": {
             "get": {
                 "security": [
@@ -543,6 +623,127 @@
                 },
                 "execution": {
                     "$ref": "#/definitions/execution.TaskExecution"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.HealthStatus": {
+            "type": "object",
+            "properties": {
+                "latency": {
+                    "description": "毫秒",
+                    "type": "integer"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "module": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "\"up\", \"down\", \"unknown\"",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.ProviderCapabilitiesStatus": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                },
+                "schema_version": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "task_types": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_monitor_internal_service.ProviderTaskTypeStatus"
+                    }
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.ProviderHealthStatus": {
+            "type": "object",
+            "properties": {
+                "base_url": {
+                    "type": "string"
+                },
+                "capabilities": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_service.ProviderCapabilitiesStatus"
+                },
+                "checked_at": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "module": {
+                    "type": "string"
+                },
+                "module_health": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_service.HealthStatus"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "task_discovery": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_monitor_internal_service.ProviderTaskDiscoveryCheck"
+                    }
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.ProviderTaskDiscoveryCheck": {
+            "type": "object",
+            "properties": {
+                "endpoint": {
+                    "type": "string"
+                },
+                "latency": {
+                    "type": "integer"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "status_code": {
+                    "type": "integer"
+                },
+                "task_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.ProviderTaskTypeStatus": {
+            "type": "object",
+            "properties": {
+                "deprecated": {
+                    "type": "boolean"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer",
+                    "example": 400
+                },
+                "message": {
+                    "type": "string",
+                    "example": "请求参数错误"
                 }
             }
         },

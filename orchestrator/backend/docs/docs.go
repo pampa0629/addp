@@ -828,7 +828,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "task_type": {
-                    "description": "\"scan\" | \"import\" | \"workflow\" | \"mvt_generation\" 等",
+                    "description": "TaskProvider task type, e.g. \"scan\" | \"workflow\" | \"orchestration\"",
                     "type": "string"
                 },
                 "timeout": {

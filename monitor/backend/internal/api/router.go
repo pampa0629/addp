@@ -74,6 +74,8 @@ func SetupRouter(
 
 		// 模块健康检查
 		api.GET("/task-providers", healthHandler.GetTaskProviders)
+		api.GET("/providers/health", healthHandler.CheckAllProvidersHealth)
+		api.GET("/providers/:module/health", healthHandler.CheckProviderHealth)
 		api.GET("/modules", healthHandler.GetModules)
 		api.GET("/modules/:module/health", healthHandler.CheckModuleHealth)
 		api.GET("/modules/health/all", healthHandler.CheckAllModules)

@@ -47,7 +47,7 @@ func (s *TaskProviderRegistrationService) Register() error {
 				"display_name":              "任务编排",
 				"description":               "执行已保存的 Orchestrator 编排定义",
 				"definition_schema":         map[string]interface{}{"type": "object"},
-				"execution_schema":          map[string]interface{}{"type": "object"},
+				"execution_schema":          map[string]interface{}{"type": "object", "additionalProperties": false},
 				"supports_schedule":         true,
 				"supports_cancel":           false,
 				"supports_inline_execution": false,

@@ -91,6 +91,86 @@ definitions:
       execution:
         $ref: '#/definitions/execution.TaskExecution'
     type: object
+  github_com_addp_monitor_internal_service.HealthStatus:
+    properties:
+      latency:
+        description: 毫秒
+        type: integer
+      message:
+        type: string
+      module:
+        type: string
+      status:
+        description: '"up", "down", "unknown"'
+        type: string
+    type: object
+  github_com_addp_monitor_internal_service.ProviderCapabilitiesStatus:
+    properties:
+      message:
+        type: string
+      schema_version:
+        type: string
+      status:
+        type: string
+      task_types:
+        items:
+          $ref: '#/definitions/github_com_addp_monitor_internal_service.ProviderTaskTypeStatus'
+        type: array
+    type: object
+  github_com_addp_monitor_internal_service.ProviderHealthStatus:
+    properties:
+      base_url:
+        type: string
+      capabilities:
+        $ref: '#/definitions/github_com_addp_monitor_internal_service.ProviderCapabilitiesStatus'
+      checked_at:
+        type: string
+      display_name:
+        type: string
+      message:
+        type: string
+      module:
+        type: string
+      module_health:
+        $ref: '#/definitions/github_com_addp_monitor_internal_service.HealthStatus'
+      status:
+        type: string
+      task_discovery:
+        items:
+          $ref: '#/definitions/github_com_addp_monitor_internal_service.ProviderTaskDiscoveryCheck'
+        type: array
+    type: object
+  github_com_addp_monitor_internal_service.ProviderTaskDiscoveryCheck:
+    properties:
+      endpoint:
+        type: string
+      latency:
+        type: integer
+      message:
+        type: string
+      status:
+        type: string
+      status_code:
+        type: integer
+      task_type:
+        type: string
+    type: object
+  github_com_addp_monitor_internal_service.ProviderTaskTypeStatus:
+    properties:
+      deprecated:
+        type: boolean
+      type:
+        type: string
+    type: object
+  models.ErrorResponse:
+    properties:
+      code:
+        example: 400
+        type: integer
+      message:
+        example: 请求参数错误
+        type: string
+    type: object
   models.JSONMap:
     additionalProperties: true
     type: object
@@ -373,6 +453,60 @@ paths:
       security:
       - BearerAuth: []
       summary: 检查所有模块健康状态 | Check all modules health
+      tags:
+      - Monitor
+  /providers/{module}/health:
+    get:
+      description: 从 System 读取指定 TaskProvider，并探测模块 /health 与标准 GET /tasks?task_type=
+        endpoint。| Read a TaskProvider from System and probe module /health plus standard
+        GET /tasks?task_type= endpoints.
+      parameters:
+      - description: 模块名 | Module
+        in: path
+        name: module
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_service.ProviderHealthStatus'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 检查单个任务提供者运行态健康状态 | Check task provider health
+      tags:
+      - Monitor
+  /providers/health:
+    get:
+      description: 从 System 读取启用 TaskProvider，并探测模块 /health 与标准 GET /tasks?task_type=
+        endpoint。| Read enabled TaskProviders from System and probe module /health
+        plus standard GET /tasks?task_type= endpoints.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_addp_monitor_internal_service.ProviderHealthStatus'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 检查所有任务提供者运行态健康状态 | Check all task provider health
       tags:
       - Monitor
   /task-providers:

@@ -51,8 +51,8 @@ func (s *TaskProviderRegistryService) Register() error {
 				"type":                      "query",
 				"display_name":              "查询任务",
 				"description":               "执行 SQL 查询开发任务",
-				"definition_schema":         map[string]interface{}{"type": "object"},
-				"execution_schema":          map[string]interface{}{"type": "object"},
+				"definition_schema":         queryTaskDefinitionSchema(),
+				"execution_schema":          developExecutionSchema(),
 				"supports_schedule":         false,
 				"supports_cancel":           false,
 				"supports_inline_execution": false,
@@ -64,8 +64,8 @@ func (s *TaskProviderRegistryService) Register() error {
 				"type":                      "workflow",
 				"display_name":              "工作流任务",
 				"description":               "执行 Develop 工作流任务",
-				"definition_schema":         map[string]interface{}{"type": "object"},
-				"execution_schema":          map[string]interface{}{"type": "object"},
+				"definition_schema":         workflowTaskDefinitionSchema(),
+				"execution_schema":          developExecutionSchema(),
 				"supports_schedule":         false,
 				"supports_cancel":           false,
 				"supports_inline_execution": false,
@@ -77,8 +77,8 @@ func (s *TaskProviderRegistryService) Register() error {
 				"type":                      "script",
 				"display_name":              "脚本任务",
 				"description":               "执行脚本开发任务；当前由 Jupyter Notebook runtime 承载",
-				"definition_schema":         map[string]interface{}{"type": "object"},
-				"execution_schema":          map[string]interface{}{"type": "object"},
+				"definition_schema":         scriptTaskDefinitionSchema(),
+				"execution_schema":          developExecutionSchema(),
 				"supports_schedule":         false,
 				"supports_cancel":           false,
 				"supports_inline_execution": false,
@@ -113,6 +113,117 @@ func (s *TaskProviderRegistryService) Register() error {
 	}
 
 	return s.sendRegistration(&registration)
+}
+
+func baseDevelopDefinitionSchema(taskType string, contentProperties map[string]interface{}, contentRequired []interface{}) map[string]interface{} {
+	return map[string]interface{}{
+		"type":        "object",
+		"title":       "Develop 任务定义公开摘要",
+		"description": "Develop 任务定义归 Develop 模块所有；该 schema 只描述跨模块可展示的公开摘要字段，不用于 Orchestrator 渲染完整编辑表单。",
+		"properties": map[string]interface{}{
+			"name": map[string]interface{}{
+				"type":  "string",
+				"title": "任务名称",
+			},
+			"display_name": map[string]interface{}{
+				"type":  "string",
+				"title": "展示名称",
+			},
+			"task_type": map[string]interface{}{
+				"type":    "string",
+				"enum":    []interface{}{taskType},
+				"default": taskType,
+				"title":   "任务类型",
+			},
+			"description": map[string]interface{}{
+				"type":  "string",
+				"title": "描述",
+			},
+			"timeout": map[string]interface{}{
+				"type":    "integer",
+				"minimum": float64(0),
+				"title":   "超时时间",
+			},
+			"content": map[string]interface{}{
+				"type":                 "object",
+				"title":                "公开内容摘要",
+				"properties":           contentProperties,
+				"required":             contentRequired,
+				"additionalProperties": true,
+			},
+			"execution_config": map[string]interface{}{
+				"type":                 "object",
+				"title":                "执行配置摘要",
+				"additionalProperties": true,
+			},
+		},
+		"required":             []interface{}{"name", "task_type"},
+		"additionalProperties": true,
+	}
+}
+
+func queryTaskDefinitionSchema() map[string]interface{} {
+	return baseDevelopDefinitionSchema(
+		"query",
+		map[string]interface{}{
+			"query": map[string]interface{}{
+				"type":  "string",
+				"title": "查询语句",
+			},
+			"query_type": map[string]interface{}{
+				"type":        "string",
+				"title":       "查询类型",
+				"description": "例如 sql。",
+			},
+		},
+		[]interface{}{"query", "query_type"},
+	)
+}
+
+func workflowTaskDefinitionSchema() map[string]interface{} {
+	return baseDevelopDefinitionSchema(
+		"workflow",
+		map[string]interface{}{
+			"workflow_definition": map[string]interface{}{
+				"type":                 "object",
+				"title":                "工作流定义摘要",
+				"additionalProperties": true,
+			},
+			"inputs": map[string]interface{}{
+				"type":                 "object",
+				"title":                "输入参数摘要",
+				"additionalProperties": true,
+			},
+		},
+		[]interface{}{"workflow_definition"},
+	)
+}
+
+func scriptTaskDefinitionSchema() map[string]interface{} {
+	return baseDevelopDefinitionSchema(
+		"script",
+		map[string]interface{}{
+			"notebook_path": map[string]interface{}{
+				"type":  "string",
+				"title": "Notebook 路径",
+			},
+			"parameters": map[string]interface{}{
+				"type":                 "object",
+				"title":                "脚本参数摘要",
+				"additionalProperties": true,
+			},
+		},
+		[]interface{}{},
+	)
+}
+
+func developExecutionSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":                 "object",
+		"title":                "Develop 执行参数",
+		"description":          "Develop 执行参数由具体任务定义中的 parameter_schema/default_parameters 决定；本 schema 只声明 parameters 是开放对象，执行时会写入 execution_config.inputs。",
+		"additionalProperties": true,
+	}
 }
 
 // sendRegistration 发送注册请求到 System task_providers API

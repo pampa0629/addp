@@ -2,6 +2,7 @@ package models
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -26,6 +27,43 @@ func TestStepRejectsLegacyEngineIdentifierField(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "engine_identifier") {
 		t.Fatalf("error = %q, want containing engine_identifier", err.Error())
+	}
+}
+
+func TestStepRejectsUnsupportedV1ControlFlowFields(t *testing.T) {
+	cases := map[string]string{
+		"condition": `{"expression":"{{scan.status}} == \"success\""}`,
+		"retry":     `{"max_attempts":3}`,
+		"approval":  `{"assignee":"admin"}`,
+		"parallel":  `true`,
+		"branch":    `[{"when":"success","to":"next"}]`,
+	}
+
+	for field, value := range cases {
+		t.Run(field, func(t *testing.T) {
+			var steps Steps
+			payload := fmt.Sprintf(`[
+				{
+					"id":"scan",
+					"name":"Scan",
+					"provider":"meta",
+					"task_type":"scan",
+					"task_id":1,
+					"parameters":{},
+					"depends_on":[],
+					"timeout":300,
+					"%s":%s
+				}
+			]`, field, value)
+
+			err := json.Unmarshal([]byte(payload), &steps)
+			if err == nil {
+				t.Fatalf("expected unsupported control flow field %q to be rejected", field)
+			}
+			if !strings.Contains(err.Error(), field) {
+				t.Fatalf("error = %q, want containing %s", err.Error(), field)
+			}
+		})
 	}
 }
 
@@ -96,6 +134,82 @@ func TestValidateStepsRejectsUnknownDependency(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "missing") {
 		t.Fatalf("error = %q, want missing dependency name", err.Error())
+	}
+}
+
+func TestValidateStepsRejectsTemplateReferenceWithoutDependency(t *testing.T) {
+	err := ValidateSteps(Steps{
+		{
+			ID:         "scan",
+			Name:       "Scan",
+			Provider:   "meta",
+			TaskType:   "scan",
+			TaskID:     1,
+			Parameters: map[string]interface{}{},
+			DependsOn:  []string{},
+			Timeout:    300,
+		},
+		{
+			ID:         "workflow",
+			Name:       "Workflow",
+			Provider:   "develop",
+			TaskType:   "workflow",
+			TaskID:     8,
+			Parameters: map[string]interface{}{"input": "{{scan.item_id}}"},
+			DependsOn:  []string{},
+			Timeout:    1800,
+		},
+	})
+
+	if err == nil {
+		t.Fatal("expected missing data dependency to be rejected")
+	}
+	if !strings.Contains(err.Error(), "depends_on does not include") {
+		t.Fatalf("error = %q, want depends_on validation", err.Error())
+	}
+}
+
+func TestValidateStepsRejectsTemplateReferenceToUnknownStep(t *testing.T) {
+	err := ValidateSteps(Steps{
+		{
+			ID:         "workflow",
+			Name:       "Workflow",
+			Provider:   "develop",
+			TaskType:   "workflow",
+			TaskID:     8,
+			Parameters: map[string]interface{}{"input": "{{missing.item_id}}"},
+			DependsOn:  []string{},
+			Timeout:    1800,
+		},
+	})
+
+	if err == nil {
+		t.Fatal("expected unknown template reference to be rejected")
+	}
+	if !strings.Contains(err.Error(), `references unknown step "missing"`) {
+		t.Fatalf("error = %q, want unknown template reference validation", err.Error())
+	}
+}
+
+func TestValidateStepsRejectsTemplateSelfReference(t *testing.T) {
+	err := ValidateSteps(Steps{
+		{
+			ID:         "workflow",
+			Name:       "Workflow",
+			Provider:   "develop",
+			TaskType:   "workflow",
+			TaskID:     8,
+			Parameters: map[string]interface{}{"input": "{{workflow.item_id}}"},
+			DependsOn:  []string{"workflow"},
+			Timeout:    1800,
+		},
+	})
+
+	if err == nil {
+		t.Fatal("expected template self reference to be rejected")
+	}
+	if !strings.Contains(err.Error(), "cannot reference itself") {
+		t.Fatalf("error = %q, want self reference validation", err.Error())
 	}
 }
 

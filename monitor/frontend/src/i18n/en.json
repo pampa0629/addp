@@ -112,9 +112,12 @@
     },
     "module_status": {
       "up": "Online",
+      "degraded": "Degraded",
       "down": "Offline",
       "unknown": "Unknown",
-      "latency": "Latency: {ms}ms"
+      "latency": "Latency: {ms}ms",
+      "task_discovery": "Task discovery: {up}/{total}",
+      "capabilities_invalid": "Invalid capabilities"
     }
   }
 }

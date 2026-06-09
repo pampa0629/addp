@@ -52,7 +52,7 @@ func (s *TaskProviderRegistryService) Register() error {
 				"display_name":              "数据导入",
 				"description":               "执行 Transfer 导入任务定义",
 				"definition_schema":         map[string]interface{}{"type": "object"},
-				"execution_schema":          map[string]interface{}{"type": "object"},
+				"execution_schema":          map[string]interface{}{"type": "object", "additionalProperties": false},
 				"supports_schedule":         true,
 				"supports_cancel":           false,
 				"supports_inline_execution": false,
@@ -61,8 +61,8 @@ func (s *TaskProviderRegistryService) Register() error {
 				"deprecated":                false,
 			},
 		},
-		"execution_modes": []string{"batch", "stream", "micro-batch"},
-		"features":        []string{"async", "restartable_retry", "field_mapping", "scheduled"},
+		"x_execution_modes": []string{"batch", "stream", "micro-batch"},
+		"x_features":        []string{"async", "restartable_retry", "field_mapping", "scheduled"},
 	}
 
 	// 序列化为 JSON 字符串

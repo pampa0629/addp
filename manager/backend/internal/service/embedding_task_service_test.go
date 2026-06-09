@@ -59,6 +59,18 @@ func TestEmbeddingTaskExecuteReusesSingleExecution(t *testing.T) {
 	if exec.ParentExecutionID == nil || *exec.ParentExecutionID != parentExecutionID {
 		t.Fatalf("parent execution = %#v, want %s", exec.ParentExecutionID, parentExecutionID)
 	}
+	if exec.ExecutionConfig["engine_id"] != float64(task.EngineID) && exec.ExecutionConfig["engine_id"] != task.EngineID {
+		t.Fatalf("execution_config.engine_id = %v, want %d", exec.ExecutionConfig["engine_id"], task.EngineID)
+	}
+	if exec.ExecutionConfig["bucket"] != task.Bucket {
+		t.Fatalf("execution_config.bucket = %v, want %s", exec.ExecutionConfig["bucket"], task.Bucket)
+	}
+	if exec.ExecutionConfig["prefix"] != task.Prefix {
+		t.Fatalf("execution_config.prefix = %v, want %s", exec.ExecutionConfig["prefix"], task.Prefix)
+	}
+	if exec.ExecutionConfig["scope"] != "directory" {
+		t.Fatalf("execution_config.scope = %v, want directory", exec.ExecutionConfig["scope"])
+	}
 
 	var count int64
 	if err := db.Model(&commonExecution.TaskExecution{}).

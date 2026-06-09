@@ -102,7 +102,6 @@ stateDiagram-v2
     running --> cancelled: 手动取消
 
     success --> [*]
-    failed --> pending: 重试
     failed --> [*]
     timeout --> [*]
     cancelled --> [*]
@@ -139,6 +138,11 @@ stateDiagram-v2
     note right of cancelled
         任务被手动取消
         completed_at = 取消时间
+    end note
+
+    note right of failed
+        execution 完成后不得重用
+        重试必须创建新的 execution
     end note
 ```
 
@@ -189,6 +193,7 @@ sequenceDiagram
 - 最近 24 小时任务执行统计
 - 按模块分组的成功率/失败率
 - 按任务类型分组的平均耗时
+- TaskProvider provider health：注册状态、模块 `/health`、标准 `GET /tasks?task_type=` 任务发现可调用性和 capabilities 基础结构
 
 **2. 历史执行记录**:
 - 按模块、任务类型、状态筛选
@@ -235,6 +240,7 @@ sequenceDiagram
 
 - [返回核心概念关系图](addp核心概念关系图.md)
 - [ADDP 任务编排体系图](addp任务编排体系图.md)
+- [ADDP 任务体系规范](../spec/addp任务体系规范.md)
 - [Monitor 模块实施报告](../Monitor模块实施报告.md)
 
 ---

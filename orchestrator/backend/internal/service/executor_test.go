@@ -158,24 +158,6 @@ func TestResolveTemplateReferences(t *testing.T) {
 			},
 		},
 		{
-			name: "Non-existent step reference",
-			params: map[string]interface{}{
-				"value": "{{nonexistent_step.field}}",
-			},
-			expected: map[string]interface{}{
-				"value": nil,
-			},
-		},
-		{
-			name: "Non-existent field reference",
-			params: map[string]interface{}{
-				"value": "{{sql_extract.nonexistent_field}}",
-			},
-			expected: map[string]interface{}{
-				"value": nil,
-			},
-		},
-		{
 			name: "Array with references",
 			params: map[string]interface{}{
 				"tables": []interface{}{
@@ -194,8 +176,59 @@ func TestResolveTemplateReferences(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resolved := executor.resolveTemplateReferences(tt.params, stepResults)
+			resolved, err := executor.resolveTemplateReferences(tt.params, stepResults)
+			assert.NoError(t, err)
 			assert.Equal(t, tt.expected, resolved)
+		})
+	}
+}
+
+func TestResolveTemplateReferencesRejectsMissingPath(t *testing.T) {
+	executor := &Executor{}
+	stepResults := models.StepResults{
+		"sql_extract": {
+			Status: "success",
+			Result: map[string]interface{}{
+				"result_table": "temp_table_123",
+			},
+		},
+	}
+
+	tests := []struct {
+		name       string
+		params     map[string]interface{}
+		wantErrMsg string
+	}{
+		{
+			name: "Non-existent step reference",
+			params: map[string]interface{}{
+				"value": "{{nonexistent_step.field}}",
+			},
+			wantErrMsg: `referenced step "nonexistent_step" has no result`,
+		},
+		{
+			name: "Non-existent field reference",
+			params: map[string]interface{}{
+				"value": "{{sql_extract.nonexistent_field}}",
+			},
+			wantErrMsg: `path "sql_extract.nonexistent_field" is missing`,
+		},
+		{
+			name: "Nested missing field reference",
+			params: map[string]interface{}{
+				"config": map[string]interface{}{
+					"value": "{{sql_extract.missing}}",
+				},
+			},
+			wantErrMsg: `parameters.config: value: path "sql_extract.missing" is missing`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := executor.resolveTemplateReferences(tt.params, stepResults)
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErrMsg)
 		})
 	}
 }
@@ -230,6 +263,7 @@ func TestExecuteWithTaskProviderPassesTenantHeader(t *testing.T) {
 					BaseURL:             server.URL,
 					TaskExecuteEndpoint: "/api/v1/quality/tasks/{task_type}/{id}/execute",
 					TaskStatusEndpoint:  "/api/v1/quality/executions/{execution_id}",
+					Capabilities:        jsonStringPtr(`{"schema_version":"task.capabilities/v1","task_types":[{"type":"check","deprecated":false,"execution_schema":{"type":"object","additionalProperties":false}}]}`),
 				},
 			},
 			cacheTTL:    time.Hour,
@@ -252,6 +286,86 @@ func TestExecuteWithTaskProviderPassesTenantHeader(t *testing.T) {
 	assert.Equal(t, "success", result.Status)
 	assert.Equal(t, "7", executeTenantHeader)
 	assert.Equal(t, "7", statusTenantHeader)
+}
+
+func TestExecuteWithTaskProviderRejectsDeprecatedTaskTypeBeforeHTTPCall(t *testing.T) {
+	called := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	executor := &Executor{
+		taskProviderRegistry: &TaskProviderRegistry{
+			providers: map[string]*commonModels.TaskProvider{
+				"develop": {
+					ModuleName:          "develop",
+					BaseURL:             server.URL,
+					TaskExecuteEndpoint: "/api/v1/develop/tasks/{task_type}/{id}/execute",
+					TaskStatusEndpoint:  "/api/v1/develop/executions/{execution_id}",
+					Capabilities:        jsonStringPtr(`{"schema_version":"task.capabilities/v1","task_types":[{"type":"workflow","deprecated":true}]}`),
+				},
+			},
+			cacheTTL:    time.Hour,
+			lastRefresh: time.Now(),
+		},
+	}
+
+	result, err := executor.executeWithTaskProvider(
+		context.Background(),
+		&models.Step{Provider: "develop", TaskType: "workflow", TaskID: 42, Timeout: 10},
+		map[string]interface{}{},
+		time.Now(),
+		"parent-exec",
+		"manual",
+		7,
+	)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "deprecated")
+	assert.Equal(t, "failed", result.Status)
+	assert.False(t, called)
+}
+
+func TestExecuteWithTaskProviderRejectsDisallowedParametersBeforeHTTPCall(t *testing.T) {
+	called := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	executor := &Executor{
+		taskProviderRegistry: &TaskProviderRegistry{
+			providers: map[string]*commonModels.TaskProvider{
+				"meta": {
+					ModuleName:          "meta",
+					BaseURL:             server.URL,
+					TaskExecuteEndpoint: "/api/v1/meta/tasks/{task_type}/{id}/execute",
+					TaskStatusEndpoint:  "/api/v1/meta/executions/{execution_id}",
+					Capabilities:        jsonStringPtr(`{"schema_version":"task.capabilities/v1","task_types":[{"type":"scan","deprecated":false,"execution_schema":{"type":"object","additionalProperties":false}}]}`),
+				},
+			},
+			cacheTTL:    time.Hour,
+			lastRefresh: time.Now(),
+		},
+	}
+
+	result, err := executor.executeWithTaskProvider(
+		context.Background(),
+		&models.Step{Provider: "meta", TaskType: "scan", TaskID: 42, Timeout: 10},
+		map[string]interface{}{"force": true},
+		time.Now(),
+		"parent-exec",
+		"manual",
+		7,
+	)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "parameters.force is not allowed")
+	assert.Equal(t, "failed", result.Status)
+	assert.False(t, called)
 }
 
 func TestExtractProviderExecutionID(t *testing.T) {
@@ -351,6 +465,7 @@ func TestResolveStringTemplate(t *testing.T) {
 		name     string
 		template string
 		expected interface{}
+		wantErr  string
 	}{
 		{
 			name:     "Valid template",
@@ -375,18 +490,24 @@ func TestResolveStringTemplate(t *testing.T) {
 		{
 			name:     "Non-existent step",
 			template: "{{nonexistent.field}}",
-			expected: nil,
+			wantErr:  `referenced step "nonexistent" has no result`,
 		},
 		{
 			name:     "Empty template",
 			template: "{{}}",
-			expected: "{{}}",
+			wantErr:  "template path is empty",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := executor.resolveStringTemplate(tt.template, stepResults)
+			result, err := executor.resolveStringTemplate(tt.template, stepResults)
+			if tt.wantErr != "" {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+			assert.NoError(t, err)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -442,4 +563,9 @@ func TestTopologicalSortExecutesDependenciesBeforeDependents(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"query", "orch1", "orch2"}, got)
+}
+
+func jsonStringPtr(value string) *commonModels.JSONString {
+	jsonString := commonModels.JSONString(value)
+	return &jsonString
 }

@@ -306,6 +306,8 @@ function startDrag(data, event) {
     provider: data.metadata.provider,
     taskType: data.metadata.taskType,
     taskId: data.metadata.taskId,
+    graphId: data.metadata.graphId,
+    editUrl: data.metadata.editUrl,
     name: data.label,
     parameters: data.metadata.parameters
   }

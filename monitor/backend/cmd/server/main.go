@@ -61,7 +61,7 @@ func main() {
 	// 创建 Services
 	queryService := service.NewExecutionQueryService(taskExecutionRepo)
 	statisticsService := service.NewStatisticsService(taskExecutionRepo)
-	healthService := service.NewHealthCheckService(systemClient)
+	healthService := service.NewHealthCheckService(systemClient, cfg.InternalAPIKey)
 
 	// 设置路由
 	router := api.SetupRouter(

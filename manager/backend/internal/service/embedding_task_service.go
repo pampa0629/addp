@@ -7,6 +7,7 @@ import (
 	"time"
 
 	commonExecution "github.com/addp/common/execution"
+	commonModels "github.com/addp/common/models"
 
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
@@ -98,7 +99,18 @@ func (s *EmbeddingTaskService) Execute(ctx context.Context, taskID uint, tenantI
 		ParentExecutionID: parentExecutionID,
 		Status:            commonExecution.ExecutionStatusRunning,
 		TriggerType:       normalizedTriggerType,
-		StartedAt:         &now,
+		ExecutionConfig: commonModels.JSONMap{
+			"engine_id":   task.EngineID,
+			"bucket":      task.Bucket,
+			"prefix":      task.Prefix,
+			"recursive":   task.Recursive,
+			"modality":    task.Modality,
+			"file_types":  task.FileTypes,
+			"scope":       "directory",
+			"source":      "embedding_task",
+			"source_task": taskID,
+		},
+		StartedAt: &now,
 	}
 	if err := s.taskExecRepo.Create(ctx, exec); err != nil {
 		return "", err

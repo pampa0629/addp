@@ -47,7 +47,7 @@ func (s *TaskProviderRegistryService) Register() error {
 				"display_name":              "质量检查",
 				"description":               "执行 Quality 检查任务",
 				"definition_schema":         map[string]interface{}{"type": "object"},
-				"execution_schema":          map[string]interface{}{"type": "object"},
+				"execution_schema":          map[string]interface{}{"type": "object", "additionalProperties": false},
 				"supports_schedule":         false,
 				"supports_cancel":           false,
 				"supports_inline_execution": false,
@@ -56,8 +56,8 @@ func (s *TaskProviderRegistryService) Register() error {
 				"deprecated":                false,
 			},
 		},
-		"supported_source_models": []string{"tabular_catalog"},
-		"features":                []string{"async", "quality_rules", "issue_generation"},
+		"x_supported_source_models": []string{"tabular_catalog"},
+		"x_features":                []string{"async", "quality_rules", "issue_generation"},
 	}
 
 	capabilitiesJSON, err := json.Marshal(capabilities)

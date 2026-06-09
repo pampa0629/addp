@@ -47,7 +47,7 @@ func (s *TaskProviderRegistryService) Register() error {
 				"display_name":              "图谱构建",
 				"description":               "执行 Graph 知识图谱构建任务",
 				"definition_schema":         map[string]interface{}{"type": "object"},
-				"execution_schema":          map[string]interface{}{"type": "object"},
+				"execution_schema":          map[string]interface{}{"type": "object", "additionalProperties": false},
 				"supports_schedule":         false,
 				"supports_cancel":           false,
 				"supports_inline_execution": false,
@@ -56,8 +56,8 @@ func (s *TaskProviderRegistryService) Register() error {
 				"deprecated":                false,
 			},
 		},
-		"supported_source_models": []string{"document", "object_catalog"},
-		"features":                []string{"async", "kg_build", "review_queue"},
+		"x_supported_source_models": []string{"document", "object_catalog"},
+		"x_features":                []string{"async", "kg_build", "review_queue"},
 	}
 
 	capabilitiesJSON, err := json.Marshal(capabilities)

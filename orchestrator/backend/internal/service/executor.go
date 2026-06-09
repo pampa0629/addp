@@ -114,7 +114,14 @@ func (e *Executor) executeStep(ctx context.Context, step *models.Step, stepResul
 	result := models.StepResult{StartedAt: start, Status: "running"}
 
 	// 解析参数模板引用
-	resolvedParams := e.resolveTemplateReferences(step.Parameters, stepResults)
+	resolvedParams, err := e.resolveTemplateReferences(step.Parameters, stepResults)
+	if err != nil {
+		result.Status = "failed"
+		result.Error = err.Error()
+		result.EndedAt = time.Now()
+		result.Duration = time.Since(start).Milliseconds()
+		return result, err
+	}
 
 	if step.Provider != "" {
 		return e.executeWithTaskProvider(ctx, step, resolvedParams, start, parentExecutionID, triggerType, tenantID)
@@ -136,6 +143,13 @@ func (e *Executor) executeWithTaskProvider(ctx context.Context, step *models.Ste
 	if err != nil {
 		result.Status = "failed"
 		result.Error = fmt.Sprintf("获取任务提供者 %s 失败: %v", step.Provider, err)
+		result.EndedAt = time.Now()
+		result.Duration = time.Since(start).Milliseconds()
+		return result, fmt.Errorf("%s", result.Error)
+	}
+	if err := validateProviderStepExecutable(provider, step, resolvedParams); err != nil {
+		result.Status = "failed"
+		result.Error = err.Error()
 		result.EndedAt = time.Now()
 		result.Duration = time.Since(start).Milliseconds()
 		return result, fmt.Errorf("%s", result.Error)
@@ -250,6 +264,22 @@ func (e *Executor) executeWithTaskProvider(ctx context.Context, step *models.Ste
 	return result, nil
 }
 
+func validateProviderStepExecutable(provider *commonModels.TaskProvider, step *models.Step, resolvedParams map[string]interface{}) error {
+	taskTypeCapability, err := providerTaskTypeCapability(provider, step.TaskType)
+	if err != nil {
+		return fmt.Errorf("provider %q capabilities invalid: %w", step.Provider, err)
+	}
+	if taskTypeCapability == nil {
+		return fmt.Errorf("task_type %q is not declared by provider %q", step.TaskType, step.Provider)
+	}
+	if taskTypeCapability.Deprecated {
+		return fmt.Errorf("task_type %q of provider %q is deprecated", step.TaskType, step.Provider)
+	}
+	stepForValidation := *step
+	stepForValidation.Parameters = resolvedParams
+	return validateStepParametersByExecutionSchema(stepForValidation, taskTypeCapability.ExecutionSchema)
+}
+
 func extractProviderExecutionID(respData map[string]interface{}) string {
 	if executionID, ok := respData["execution_id"].(string); ok && strings.TrimSpace(executionID) != "" {
 		return executionID
@@ -356,78 +386,91 @@ func replaceTaskProviderEndpoint(endpoint string, taskType string, taskID string
 	).Replace(endpoint)
 }
 
-// resolveTemplateReferences 解析参数中的模板引用（支持 {{step.result.*}} 语法）
-func (e *Executor) resolveTemplateReferences(params map[string]interface{}, stepResults models.StepResults) map[string]interface{} {
+// resolveTemplateReferences 解析参数中的模板引用（支持 {{stepID.field1.field2}} 语法）。
+func (e *Executor) resolveTemplateReferences(params map[string]interface{}, stepResults models.StepResults) (map[string]interface{}, error) {
 	resolved := make(map[string]interface{})
 
 	for key, value := range params {
-		resolved[key] = e.resolveValue(value, stepResults)
+		resolvedValue, err := e.resolveValue(value, stepResults)
+		if err != nil {
+			return nil, fmt.Errorf("parameters.%s: %w", key, err)
+		}
+		resolved[key] = resolvedValue
 	}
 
-	return resolved
+	return resolved, nil
 }
 
 // resolveValue 递归解析单个值（支持嵌套结构）
-func (e *Executor) resolveValue(value interface{}, stepResults models.StepResults) interface{} {
+func (e *Executor) resolveValue(value interface{}, stepResults models.StepResults) (interface{}, error) {
 	switch v := value.(type) {
 	case string:
 		return e.resolveStringTemplate(v, stepResults)
 	case map[string]interface{}:
 		resolved := make(map[string]interface{})
 		for k, val := range v {
-			resolved[k] = e.resolveValue(val, stepResults)
+			resolvedValue, err := e.resolveValue(val, stepResults)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", k, err)
+			}
+			resolved[k] = resolvedValue
 		}
-		return resolved
+		return resolved, nil
 	case []interface{}:
 		resolved := make([]interface{}, len(v))
 		for i, val := range v {
-			resolved[i] = e.resolveValue(val, stepResults)
+			resolvedValue, err := e.resolveValue(val, stepResults)
+			if err != nil {
+				return nil, fmt.Errorf("[%d]: %w", i, err)
+			}
+			resolved[i] = resolvedValue
 		}
-		return resolved
+		return resolved, nil
 	default:
-		return value
+		return value, nil
 	}
 }
 
 // resolveStringTemplate 解析字符串模板（支持 {{stepID.field1.field2}} 格式）
-func (e *Executor) resolveStringTemplate(template string, stepResults models.StepResults) interface{} {
-	if len(template) < 5 || template[:2] != "{{" || template[len(template)-2:] != "}}" {
-		return template
+func (e *Executor) resolveStringTemplate(template string, stepResults models.StepResults) (interface{}, error) {
+	trimmed := strings.TrimSpace(template)
+	if !strings.HasPrefix(trimmed, "{{") || !strings.HasSuffix(trimmed, "}}") {
+		return template, nil
 	}
 
-	path := template[2 : len(template)-2]
+	path := strings.TrimSpace(trimmed[2 : len(trimmed)-2])
 	parts := splitPath(path)
 	if len(parts) < 1 {
-		return template
+		return nil, fmt.Errorf("template path is empty")
 	}
 
 	stepID := parts[0]
 	result, exists := stepResults[stepID]
 	if !exists {
-		return nil
+		return nil, fmt.Errorf("referenced step %q has no result", stepID)
 	}
 
 	if len(parts) == 1 {
-		return result.Result
+		return result.Result, nil
 	}
 
 	var data interface{} = result.Result
 	for _, field := range parts[1:] {
 		if data == nil {
-			return nil
+			return nil, fmt.Errorf("path %q is missing", path)
 		}
 		if mapData, ok := data.(map[string]interface{}); ok {
 			var fieldExists bool
 			data, fieldExists = mapData[field]
 			if !fieldExists {
-				return nil
+				return nil, fmt.Errorf("path %q is missing", path)
 			}
 		} else {
-			return nil
+			return nil, fmt.Errorf("path %q cannot descend into non-object value", path)
 		}
 	}
 
-	return data
+	return data, nil
 }
 
 // splitPath 分割路径字符串（支持 . 分隔符）

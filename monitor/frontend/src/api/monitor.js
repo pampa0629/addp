@@ -50,6 +50,11 @@ export function checkAllModules() {
   return client.get('/monitor/modules/health/all')
 }
 
+// 检查所有任务提供者运行态健康状态
+export function checkAllProviderHealth() {
+  return client.get('/monitor/providers/health')
+}
+
 // 获取所有任务提供者
 export function listTaskProviders() {
   return client.get('/monitor/task-providers')

@@ -136,6 +136,9 @@ func ValidateSteps(steps Steps) error {
 				return fmt.Errorf("steps[%d].depends_on references unknown step %q", i, depID)
 			}
 		}
+		if err := validateStepTemplateReferences(i, step, seen); err != nil {
+			return err
+		}
 	}
 
 	if err := validateStepDAG(steps); err != nil {
@@ -143,6 +146,68 @@ func ValidateSteps(steps Steps) error {
 	}
 
 	return nil
+}
+
+func validateStepTemplateReferences(index int, step Step, knownSteps map[string]struct{}) error {
+	dependencies := map[string]struct{}{}
+	for _, depID := range step.DependsOn {
+		dependencies[depID] = struct{}{}
+	}
+
+	for _, ref := range collectTemplateStepReferences(step.Parameters) {
+		if _, exists := knownSteps[ref]; !exists {
+			return fmt.Errorf("steps[%d].parameters references unknown step %q", index, ref)
+		}
+		if ref == step.ID {
+			return fmt.Errorf("steps[%d].parameters cannot reference itself", index)
+		}
+		if _, exists := dependencies[ref]; !exists {
+			return fmt.Errorf("steps[%d].parameters references step %q but depends_on does not include it", index, ref)
+		}
+	}
+	return nil
+}
+
+func collectTemplateStepReferences(value interface{}) []string {
+	seen := map[string]struct{}{}
+	refs := make([]string, 0)
+	var walk func(interface{})
+	walk = func(current interface{}) {
+		switch typed := current.(type) {
+		case string:
+			ref, ok := parseTemplateStepReference(typed)
+			if !ok {
+				return
+			}
+			if _, exists := seen[ref]; !exists {
+				seen[ref] = struct{}{}
+				refs = append(refs, ref)
+			}
+		case map[string]interface{}:
+			for _, nested := range typed {
+				walk(nested)
+			}
+		case []interface{}:
+			for _, nested := range typed {
+				walk(nested)
+			}
+		}
+	}
+	walk(value)
+	return refs
+}
+
+func parseTemplateStepReference(template string) (string, bool) {
+	trimmed := strings.TrimSpace(template)
+	if len(trimmed) < 5 || !strings.HasPrefix(trimmed, "{{") || !strings.HasSuffix(trimmed, "}}") {
+		return "", false
+	}
+	path := strings.TrimSpace(trimmed[2 : len(trimmed)-2])
+	parts := strings.Split(path, ".")
+	if len(parts) == 0 || strings.TrimSpace(parts[0]) == "" {
+		return "", false
+	}
+	return strings.TrimSpace(parts[0]), true
 }
 
 func validateStepDAG(steps Steps) error {

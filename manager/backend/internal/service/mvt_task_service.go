@@ -94,7 +94,16 @@ func (s *MvtTaskService) Execute(ctx context.Context, taskID uint, tenantID uint
 		ParentExecutionID: parentExecutionID,
 		Status:            commonExecution.ExecutionStatusRunning,
 		TriggerType:       normalizedTriggerType,
-		StartedAt:         &now,
+		ExecutionConfig: commonModels.JSONMap{
+			"engine_id":   task.EngineID,
+			"schema_name": task.SchemaName,
+			"table_name":  task.Table,
+			"min_zoom":    task.MinZoom,
+			"max_zoom":    task.MaxZoom,
+			"source":      "mvt_task",
+			"source_task": taskID,
+		},
+		StartedAt: &now,
 	}
 	if err := s.taskExecRepo.Create(ctx, exec); err != nil {
 		return "", err

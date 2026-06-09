@@ -52,7 +52,7 @@ func (s *TaskProviderRegistryService) Register() error {
 				"display_name":              "元数据扫描",
 				"description":               "执行 Meta ScanTask",
 				"definition_schema":         map[string]interface{}{"type": "object"},
-				"execution_schema":          map[string]interface{}{"type": "object"},
+				"execution_schema":          map[string]interface{}{"type": "object", "additionalProperties": false},
 				"supports_schedule":         true,
 				"supports_cancel":           false,
 				"supports_inline_execution": false,
@@ -61,8 +61,8 @@ func (s *TaskProviderRegistryService) Register() error {
 				"deprecated":                false,
 			},
 		},
-		"supported_source_models": []string{"tabular_catalog", "branch_leaf_catalog", "object_catalog", "file_catalog"},
-		"features":                []string{"async", "cron", "spatial_facts", "vector_index"},
+		"x_supported_source_models": []string{"tabular_catalog", "branch_leaf_catalog", "object_catalog", "file_catalog"},
+		"x_features":                []string{"async", "cron", "spatial_facts", "vector_index"},
 	}
 
 	// 序列化为 JSON 字符串

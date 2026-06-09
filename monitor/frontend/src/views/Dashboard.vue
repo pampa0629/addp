@@ -108,7 +108,7 @@ import {
   getStatistics,
   getTrendData,
   listExecutions,
-  checkAllModules
+  checkAllProviderHealth
 } from '@/api/monitor'
 import StatisticsCard from '@/components/StatisticsCard.vue'
 import ModuleStatusBadge from '@/components/ModuleStatusBadge.vue'
@@ -155,7 +155,7 @@ async function loadStatistics() {
 async function loadModulesHealth() {
   loadingModules.value = true
   try {
-    const data = await checkAllModules()
+    const data = await checkAllProviderHealth()
     modules.value = data || []
   } catch (error) {
     ElMessage.error(t('monitor.dashboard.modules_failed'))

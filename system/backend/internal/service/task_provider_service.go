@@ -14,6 +14,48 @@ const taskProviderCapabilitiesSchemaVersion = "task.capabilities/v1"
 
 var taskProviderTaskTypePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
+var taskProviderAllowedTopLevelCapabilityFields = map[string]struct{}{
+	"schema_version": {},
+	"task_types":     {},
+}
+
+var taskProviderAllowedJSONSchemaKeywords = map[string]struct{}{
+	"type":                 {},
+	"title":                {},
+	"description":          {},
+	"properties":           {},
+	"required":             {},
+	"enum":                 {},
+	"default":              {},
+	"additionalProperties": {},
+	"items":                {},
+	"minimum":              {},
+	"maximum":              {},
+	"minLength":            {},
+	"maxLength":            {},
+	"minItems":             {},
+	"maxItems":             {},
+	"format":               {},
+}
+
+var taskProviderUnsupportedJSONSchemaKeywords = map[string]struct{}{
+	"$ref":  {},
+	"oneOf": {},
+	"anyOf": {},
+	"allOf": {},
+	"not":   {},
+}
+
+var taskProviderAllowedJSONSchemaTypes = map[string]struct{}{
+	"object":  {},
+	"array":   {},
+	"string":  {},
+	"number":  {},
+	"integer": {},
+	"boolean": {},
+	"null":    {},
+}
+
 type TaskProviderValidationError struct {
 	Message string
 }
@@ -186,6 +228,15 @@ func validateTaskProviderCapabilities(capabilities *models.JSONString) error {
 	if got := strings.TrimSpace(asString(payload["schema_version"])); got != taskProviderCapabilitiesSchemaVersion {
 		return validationError("capabilities.schema_version must be %q", taskProviderCapabilitiesSchemaVersion)
 	}
+	for key := range payload {
+		if _, allowed := taskProviderAllowedTopLevelCapabilityFields[key]; allowed {
+			continue
+		}
+		if strings.HasPrefix(key, "x_") && len(key) > len("x_") {
+			continue
+		}
+		return validationError("capabilities.%s must be a standard field or x_ private extension", key)
+	}
 
 	rawTaskTypes, ok := payload["task_types"].([]interface{})
 	if !ok || len(rawTaskTypes) == 0 {
@@ -235,6 +286,9 @@ func validateTaskProviderCapabilities(capabilities *models.JSONString) error {
 			if schemaType := strings.TrimSpace(asString(schemaObject["type"])); schemaType != "object" {
 				return validationError("capabilities.task_types[%d].%s.type must be object", i, field)
 			}
+			if err := validateTaskProviderJSONSchema(schemaObject, fmt.Sprintf("capabilities.task_types[%d].%s", i, field)); err != nil {
+				return err
+			}
 		}
 		for _, field := range []string{"supports_schedule", "supports_cancel", "supports_inline_execution", "deprecated"} {
 			if _, ok := taskType[field].(bool); !ok {
@@ -243,6 +297,93 @@ func validateTaskProviderCapabilities(capabilities *models.JSONString) error {
 		}
 		if supportsInlineExecution, _ := taskType["supports_inline_execution"].(bool); supportsInlineExecution {
 			return validationError("capabilities.task_types[%d].supports_inline_execution must be false in task.capabilities/v1", i)
+		}
+	}
+	return nil
+}
+
+func validateTaskProviderJSONSchema(schema map[string]interface{}, path string) error {
+	for key, value := range schema {
+		if _, unsupported := taskProviderUnsupportedJSONSchemaKeywords[key]; unsupported {
+			return validationError("%s.%s is not supported in task.capabilities/v1", path, key)
+		}
+		if _, allowed := taskProviderAllowedJSONSchemaKeywords[key]; !allowed {
+			return validationError("%s.%s is not allowed in task.capabilities/v1", path, key)
+		}
+		switch key {
+		case "type":
+			typeName, ok := value.(string)
+			if !ok {
+				return validationError("%s.type must be string", path)
+			}
+			if _, allowed := taskProviderAllowedJSONSchemaTypes[typeName]; !allowed {
+				return validationError("%s.type %q is not supported in task.capabilities/v1", path, typeName)
+			}
+		case "title", "description", "format":
+			if _, ok := value.(string); !ok {
+				return validationError("%s.%s must be string", path, key)
+			}
+		case "properties":
+			properties, ok := value.(map[string]interface{})
+			if !ok {
+				return validationError("%s.properties must be object", path)
+			}
+			for propertyName, propertySchema := range properties {
+				propertyObject, ok := propertySchema.(map[string]interface{})
+				if !ok {
+					return validationError("%s.properties.%s must be object schema", path, propertyName)
+				}
+				if err := validateTaskProviderJSONSchema(propertyObject, fmt.Sprintf("%s.properties.%s", path, propertyName)); err != nil {
+					return err
+				}
+			}
+		case "required":
+			items, ok := value.([]interface{})
+			if !ok {
+				return validationError("%s.required must be array", path)
+			}
+			seen := map[string]struct{}{}
+			for i, item := range items {
+				name := strings.TrimSpace(asString(item))
+				if name == "" {
+					return validationError("%s.required[%d] must be non-empty string", path, i)
+				}
+				if _, exists := seen[name]; exists {
+					return validationError("%s.required contains duplicate field %q", path, name)
+				}
+				seen[name] = struct{}{}
+			}
+		case "enum":
+			items, ok := value.([]interface{})
+			if !ok || len(items) == 0 {
+				return validationError("%s.enum must be non-empty array", path)
+			}
+		case "additionalProperties":
+			switch typed := value.(type) {
+			case bool:
+			case map[string]interface{}:
+				if err := validateTaskProviderJSONSchema(typed, path+".additionalProperties"); err != nil {
+					return err
+				}
+			default:
+				return validationError("%s.additionalProperties must be boolean or object schema", path)
+			}
+		case "items":
+			itemSchema, ok := value.(map[string]interface{})
+			if !ok {
+				return validationError("%s.items must be object schema", path)
+			}
+			if err := validateTaskProviderJSONSchema(itemSchema, path+".items"); err != nil {
+				return err
+			}
+		case "minimum", "maximum":
+			if !isJSONNumber(value) {
+				return validationError("%s.%s must be number", path, key)
+			}
+		case "minLength", "maxLength", "minItems", "maxItems":
+			if !isJSONNonNegativeInteger(value) {
+				return validationError("%s.%s must be non-negative integer", path, key)
+			}
 		}
 	}
 	return nil
@@ -283,6 +424,16 @@ func asString(value interface{}) string {
 		return s
 	}
 	return ""
+}
+
+func isJSONNumber(value interface{}) bool {
+	_, ok := value.(float64)
+	return ok
+}
+
+func isJSONNonNegativeInteger(value interface{}) bool {
+	number, ok := value.(float64)
+	return ok && number >= 0 && number == float64(int64(number))
 }
 
 func validationError(format string, args ...interface{}) error {
