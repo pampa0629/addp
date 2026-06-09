@@ -34,14 +34,14 @@
                 }
             }
         },
-        "/embedding": {
+        "/embedding_executions": {
             "post": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "创建对象存储文件的向量化任务，支持单文件、目录和整个Bucket | Create vectorization task for object storage files, supports single file, directory, and entire bucket",
+                "description": "从资源树 item 或 node 触发一次性向量化执行，返回统一 execution_id，不创建向量化任务定义。| Create an ad-hoc embedding execution from a resource tree item or node and return the unified execution_id.",
                 "consumes": [
                     "application/json"
                 ],
@@ -51,24 +51,23 @@
                 "tags": [
                     "Manager"
                 ],
-                "summary": "创建向量化任务 | Create embedding task",
+                "summary": "创建一次性向量化执行 | Create ad-hoc embedding execution",
                 "parameters": [
                     {
-                        "description": "向量化任务配置 | Embedding task configuration",
+                        "description": "一次性向量化执行请求 | Ad-hoc embedding execution request",
                         "name": "body",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api.CreateEmbeddingRequest"
+                            "$ref": "#/definitions/github_com_addp_manager_internal_service.EmbeddingExecutionRequest"
                         }
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "任务已创建 | Task created",
+                        "description": "执行已创建 | Execution created",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_manager_internal_service.EmbeddingExecutionResponse"
                         }
                     },
                     "400": {
@@ -77,44 +76,9 @@
                             "type": "object",
                             "additionalProperties": true
                         }
-                    }
-                }
-            }
-        },
-        "/embedding/tasks/{task_id}": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "查询向量化任务的实时状态（仅内存中的运行中任务）| Query real-time status of an embedding task (in-memory running tasks only)",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Manager"
-                ],
-                "summary": "获取向量化任务状态 | Get embedding task status",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "任务ID | Task ID",
-                        "name": "task_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "任务状态信息 | Task status",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
                     },
-                    "404": {
-                        "description": "任务不存在或已过期 | Task not found or expired",
+                    "503": {
+                        "description": "向量化服务不可用 | Embedding service unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -193,7 +157,7 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_manager_internal_models.EmbeddingTask"
+                            "$ref": "#/definitions/internal_api.EmbeddingTaskRequest"
                         }
                     }
                 ],
@@ -294,7 +258,7 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_manager_internal_models.EmbeddingTask"
+                            "$ref": "#/definitions/internal_api.EmbeddingTaskRequest"
                         }
                     }
                 ],
@@ -355,6 +319,134 @@
                     },
                     "400": {
                         "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/embeddings": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "查询 Manager 向量化结果 artifact state。| List Manager embedding artifact states.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "查询向量化结果 | List embedding results",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码，默认1 | Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认20 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "引擎ID | Engine ID",
+                        "name": "engine_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "节点ID | Node ID",
+                        "name": "node_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "数据项ID | Item ID",
+                        "name": "item_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "结果状态 | Result status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "关键词 | Query",
+                        "name": "q",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "向量化结果列表 | Embedding result list",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "向量化服务不可用 | Embedding service unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/embeddings/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "删除 Manager 向量化结果，不删除源 data item。| Delete an embedding result without deleting the source data item.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "删除向量化结果 | Delete embedding result",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "向量化结果ID | Embedding result ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "删除成功 | Deleted",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "向量化服务不可用 | Embedding service unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1567,6 +1659,55 @@
                 }
             }
         },
+        "/items/{item_id}/embedding": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "查询单个 data item 的当前向量化结果状态。| Get current embedding state for a data item.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "查询 item 向量化状态 | Get item embedding state",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "数据项ID | Item ID",
+                        "name": "item_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "item 向量化状态 | Item embedding state",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "向量化服务不可用 | Embedding service unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/mvt_tasks": {
             "get": {
                 "security": [
@@ -2742,67 +2883,9 @@
         }
     },
     "definitions": {
-        "github_com_addp_manager_internal_models.EmbeddingTask": {
+        "github_com_addp_common_models.JSONMap": {
             "type": "object",
-            "properties": {
-                "bucket": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "description": "时间戳",
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "integer"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "enabled": {
-                    "type": "boolean"
-                },
-                "engine_id": {
-                    "description": "EmbeddingTask 特有字段",
-                    "type": "integer"
-                },
-                "file_types": {
-                    "description": "文件扩展名过滤（逗号分隔，如 \"jpg,png,pdf\"）",
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "last_execution_id": {
-                    "description": "最近一次执行信息（回写）",
-                    "type": "string"
-                },
-                "last_execution_status": {
-                    "type": "string"
-                },
-                "last_run_at": {
-                    "type": "string"
-                },
-                "modality": {
-                    "description": "向量化配置",
-                    "type": "string"
-                },
-                "name": {
-                    "description": "任务基本信息",
-                    "type": "string"
-                },
-                "prefix": {
-                    "type": "string"
-                },
-                "recursive": {
-                    "type": "boolean"
-                },
-                "tenant_id": {
-                    "type": "integer"
-                },
-                "updated_at": {
-                    "type": "string"
-                }
-            }
+            "additionalProperties": true
         },
         "github_com_addp_manager_internal_models.MetaExtractionScanStats": {
             "type": "object",
@@ -2949,6 +3032,72 @@
                 },
                 "updated_at": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_service.EmbeddingExecutionRequest": {
+            "type": "object",
+            "properties": {
+                "entry": {
+                    "type": "string"
+                },
+                "filters": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "scope": {
+                    "$ref": "#/definitions/github_com_addp_manager_internal_service.EmbeddingExecutionScope"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "target": {
+                    "$ref": "#/definitions/github_com_addp_manager_internal_service.EmbeddingExecutionTarget"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_service.EmbeddingExecutionResponse": {
+            "type": "object",
+            "properties": {
+                "execution_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_service.EmbeddingExecutionScope": {
+            "type": "string",
+            "enum": [
+                "item",
+                "node"
+            ],
+            "x-enum-varnames": [
+                "EmbeddingExecutionScopeItem",
+                "EmbeddingExecutionScopeNode"
+            ]
+        },
+        "github_com_addp_manager_internal_service.EmbeddingExecutionTarget": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "integer"
+                },
+                "item_fingerprint": {
+                    "type": "string"
+                },
+                "item_id": {
+                    "type": "integer"
+                },
+                "locator": {
+                    "type": "string"
+                },
+                "node_id": {
+                    "type": "integer"
+                },
+                "recursive": {
+                    "type": "boolean"
                 }
             }
         },
@@ -3120,12 +3269,12 @@
                 "file_name": {
                     "type": "string"
                 },
+                "locator": {
+                    "type": "string"
+                },
                 "metadata": {
                     "type": "object",
                     "additionalProperties": true
-                },
-                "modality": {
-                    "type": "string"
                 },
                 "model": {
                     "type": "string"
@@ -3149,37 +3298,25 @@
                 }
             }
         },
-        "internal_api.CreateEmbeddingRequest": {
+        "internal_api.EmbeddingTaskRequest": {
             "type": "object",
-            "required": [
-                "bucket",
-                "engine_id"
-            ],
             "properties": {
-                "bucket": {
+                "config": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                },
+                "description": {
                     "type": "string"
                 },
-                "engine_id": {
-                    "type": "integer"
-                },
-                "object_key": {
-                    "description": "scope=object 时必填",
-                    "type": "string"
-                },
-                "prefix": {
-                    "description": "scope=directory 时使用",
-                    "type": "string"
-                },
-                "recursive": {
-                    "description": "是否递归，默认 true",
+                "enabled": {
                     "type": "boolean"
                 },
-                "scope": {
-                    "description": "object|directory|bucket，默认 object",
+                "name": {
                     "type": "string"
                 },
-                "task_name": {
-                    "description": "任务名称（可选）",
+                "next_run_at": {
+                    "type": "string"
+                },
+                "schedule": {
                     "type": "string"
                 }
             }

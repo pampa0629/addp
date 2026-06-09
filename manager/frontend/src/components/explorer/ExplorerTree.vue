@@ -88,6 +88,7 @@ const emit = defineEmits(['node-select'])
 
 const store = useExplorerStore()
 const resourceTreeRef = ref(null)
+const embeddingStates = ref({})
 let scanStatusTimer = 0
 const activeScan = ref({
   visible: false,
@@ -109,6 +110,23 @@ const nodeActions = computed(() => {
       icon: 'Refresh',
       visible: () => true
     },
+    // 已向量化状态提示（仅 MinIO/S3 的单个对象）
+    {
+      id: 'embedding-ready',
+      name: 'embedding-ready',
+      label: t('manager.explorer.vectorized'),
+      tooltip: t('manager.explorer.vectorized'),
+      icon: 'MagicStick',
+      color: '#67c23a',
+      disabled: () => true,
+      visible: (node) => {
+        if ((node.engineType !== 'minio' && node.engineType !== 's3') || node.type !== 'object') {
+          return false
+        }
+        const state = embeddingStates.value[node.locator || node.id]
+        return state?.embedding?.status === 'ready'
+      }
+    },
     // 向量化操作（仅 MinIO/S3 的单个对象）
     {
       id: 'embedding',
@@ -116,7 +134,12 @@ const nodeActions = computed(() => {
       label: t('manager.explorer.vectorize'),
       icon: 'MagicStick',
       visible: (node) => {
-        return (node.engineType === 'minio' || node.engineType === 's3') && node.type === 'object'
+        if ((node.engineType !== 'minio' && node.engineType !== 's3') || node.type !== 'object') {
+          return false
+        }
+        const state = embeddingStates.value[node.locator || node.id]
+        const status = state?.embedding?.status
+        return status !== 'ready' && status !== 'unsupported'
       }
     },
     // 批量向量化操作（MinIO/S3 的目录或 Bucket）
@@ -190,6 +213,7 @@ const handleNodeClick = async (node) => {
   // 选择节点
   store.selectNode(locator)
   emit('node-select', { node, locator })
+  await loadItemEmbeddingState(node, locator)
 
   // 关键：@node-collapse / @node-expand 在 element-plus 中先于 @node-click 触发，
   // 因此这里读到的是"点击后"的 store 状态，而不是点击前的状态。
@@ -232,6 +256,21 @@ const handleNodeClick = async (node) => {
   }
 }
 
+const loadItemEmbeddingState = async (node, locator) => {
+  if (!node || node.type !== 'object') return
+  try {
+    const loc = parseLocator(locator)
+    if (!loc.itemId) return
+    const state = await client.get(`/manager/items/${loc.itemId}/embedding`)
+    embeddingStates.value = {
+      ...embeddingStates.value,
+      [locator]: state
+    }
+  } catch (error) {
+    console.warn('加载 item 向量化状态失败:', error)
+  }
+}
+
 // 事件处理：节点操作
 const handleNodeAction = async ({ node, action }) => {
   const locator = node.locator || node.id
@@ -267,47 +306,44 @@ const handleNodeAction = async ({ node, action }) => {
     try {
       // 解析 locator 提取参数
       const loc = parseLocator(locator)
-      const engineId = loc.engineId
-      const bucket = loc.path[0] // 第一个路径段是 bucket
-
-      // 构建请求参数
-      const params = {
-        engine_id: engineId,
-        bucket: bucket
-      }
-
-      // 根据节点类型设置不同的参数
+      let request
       if (action === 'embedding') {
-        // 单个对象向量化
         if (node.type !== 'object') {
           ElMessage.warning(t('manager.explorer.vectorizeSingleFileOnly'))
           return
         }
-        params.scope = 'object'
-        params.object_key = loc.path.slice(1).join('/') // bucket 后面的所有路径段
+        if (!loc.itemId) {
+          ElMessage.warning(t('manager.explorer.vectorizeSingleFileOnly'))
+          return
+        }
+        request = {
+          scope: 'item',
+          target: {
+            engine_id: loc.engineId,
+            item_id: loc.itemId,
+            locator
+          }
+        }
       } else {
-        // 批量向量化
-        if (node.type === 'directory') {
-          params.scope = 'directory'
-          params.prefix = loc.path.slice(1).join('/') + '/' // bucket 后面的路径作为前缀
-          params.recursive = true
-        } else if (node.type === 'bucket') {
-          params.scope = 'bucket'
-        } else {
+        if (!['directory', 'bucket', 'prefix'].includes(node.type) || !loc.nodeId) {
           ElMessage.warning(t('manager.explorer.batchVectorizeDirOnly'))
           return
         }
+        request = {
+          scope: 'node',
+          target: {
+            engine_id: loc.engineId,
+            node_id: loc.nodeId,
+            locator,
+            recursive: true
+          }
+        }
       }
 
-      // 调用后端 API
-      await client.post('/manager/embedding', {
-        operator_name: 'embedding',
-        params: params,
-        execute_now: true
-      })
+      await client.post('/manager/embedding_executions', request)
 
       if (action === 'embedding') {
-        ElMessage.success(t('manager.explorer.vectorizeSubmitted', { key: params.object_key }))
+        ElMessage.success(t('manager.explorer.vectorizeSubmitted', { key: node.label }))
       } else {
         ElMessage.success(t('manager.explorer.batchVectorizeSubmitted', { label: node.label }))
       }

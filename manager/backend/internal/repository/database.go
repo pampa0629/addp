@@ -29,13 +29,19 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	// 添加 QuickView 模型（MVT预缓存）
 	db, err := commonRepo.InitDatabase(dbConfig,
 		&models.SearchHistory{},
-		&models.Embedding{},     // 向量嵌入表
 		&models.EmbeddingTask{}, // 向量化任务定义表
 		&models.MvtTask{},       // MVT 瓦片生成任务定义表
 		&models.QuickView{},     // MVT预缓存状态表
 	)
 	if err != nil {
 		return nil, err
+	}
+
+	if err := ensureEmbeddingArtifactStateSchema(db); err != nil {
+		return nil, fmt.Errorf("failed to ensure embedding artifact state schema: %w", err)
+	}
+	if err := ensureEmbeddingTaskDefinitionSchema(db); err != nil {
+		return nil, fmt.Errorf("failed to ensure embedding task definition schema: %w", err)
 	}
 
 	// Configure connection pool for optimal performance
@@ -60,6 +66,95 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	}
 
 	return db, nil
+}
+
+func ensureEmbeddingArtifactStateSchema(db *gorm.DB) error {
+	if err := db.Exec(`CREATE EXTENSION IF NOT EXISTS vector`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`DROP TABLE IF EXISTS manager.document_embeddings`).Error; err != nil {
+		return err
+	}
+
+	var legacyCount int64
+	if err := db.Raw(`
+		SELECT COUNT(*)
+		FROM information_schema.columns
+		WHERE table_schema = 'manager'
+		  AND table_name = 'embeddings'
+		  AND column_name IN ('fingerprint', 'modality', 'bucket', 'path', 'name')
+	`).Scan(&legacyCount).Error; err != nil {
+		return err
+	}
+
+	var hasItemFingerprint bool
+	if err := db.Raw(`
+		SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.columns
+			WHERE table_schema = 'manager'
+			  AND table_name = 'embeddings'
+			  AND column_name = 'item_fingerprint'
+		)
+	`).Scan(&hasItemFingerprint).Error; err != nil {
+		return err
+	}
+
+	if legacyCount > 0 || !hasItemFingerprint {
+		if err := db.Exec(`DROP TABLE IF EXISTS manager.embeddings`).Error; err != nil {
+			return err
+		}
+		if err := db.AutoMigrate(&models.Embedding{}); err != nil {
+			return err
+		}
+	}
+	if legacyCount == 0 && hasItemFingerprint {
+		if err := db.AutoMigrate(&models.Embedding{}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func ensureEmbeddingTaskDefinitionSchema(db *gorm.DB) error {
+	var legacyCount int64
+	if err := db.Raw(`
+		SELECT COUNT(*)
+		FROM information_schema.columns
+		WHERE table_schema = 'manager'
+		  AND table_name = 'embedding_tasks'
+		  AND column_name IN ('engine_id', 'bucket', 'prefix', 'recursive', 'modality', 'file_types')
+	`).Scan(&legacyCount).Error; err != nil {
+		return err
+	}
+
+	var hasConfig bool
+	if err := db.Raw(`
+		SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.columns
+			WHERE table_schema = 'manager'
+			  AND table_name = 'embedding_tasks'
+			  AND column_name = 'config'
+		)
+	`).Scan(&hasConfig).Error; err != nil {
+		return err
+	}
+
+	if legacyCount > 0 || !hasConfig {
+		if err := db.Exec(`DROP TABLE IF EXISTS manager.embedding_tasks`).Error; err != nil {
+			return err
+		}
+		if err := db.AutoMigrate(&models.EmbeddingTask{}); err != nil {
+			return err
+		}
+	}
+	if legacyCount == 0 && hasConfig {
+		if err := db.AutoMigrate(&models.EmbeddingTask{}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // createVectorIndexes 创建向量索引

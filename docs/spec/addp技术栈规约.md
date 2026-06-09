@@ -53,7 +53,7 @@
 
 - **几何处理**: `github.com/twpayne/go-geom@v1.6.1`
 - **Shapefile**: `github.com/jonas-p/go-shp@v0.1.1`
-- **向量数据库**: `github.com/pgvector/pgvector-go@v0.1.0`
+- **向量数据库**: PostgreSQL `pgvector` 扩展；业务模块通过各自 owner 表和 repository 查询，不引入独立 `pgvector-go` 存储客户端。
 
 #### Excel 与文档处理
 

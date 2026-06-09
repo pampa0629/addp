@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	commonExecution "github.com/addp/common/execution"
 	"log"
@@ -155,7 +156,7 @@ func main() {
 	// 初始化 services（注意：Manager 不负责引擎管理，引擎信息通过 SystemClient 获取）
 	searchHistoryService := service.NewSearchHistoryService(searchHistoryRepo)
 	metadataService := service.NewMetadataService(metadataRepo, systemClient, metaClient, previewRegistry, contentRegistry)
-	searchService, err := service.NewHybridSearchService(cfg)
+	searchService, err := service.NewHybridSearchService(cfg, embeddingRepo)
 	if err != nil {
 		logger.L().Error("初始化混合检索服务失败", "error", err)
 		os.Exit(1)
@@ -201,8 +202,12 @@ func main() {
 	}
 
 	// 初始化任务定义服务
-	embeddingTaskSvc := service.NewEmbeddingTaskService(embeddingRepo, embeddingService, taskExecRepo)
+	embeddingTaskSvc := service.NewEmbeddingTaskService(embeddingRepo, embeddingService, taskExecRepo, cfg)
 	mvtTaskSvc := service.NewMvtTaskService(mvtTaskRepo, quickViewService, taskExecRepo)
+	embeddingTaskScheduler := service.NewEmbeddingTaskScheduler(embeddingTaskSvc)
+	if err := embeddingTaskScheduler.Start(context.Background()); err != nil {
+		logger.L().Warn("向量化任务调度器启动失败", "error", err)
+	}
 
 	// 初始化 TaskProvider Handler
 	taskProviderHandler := api.NewTaskProviderHandler(embeddingTaskSvc, mvtTaskSvc, taskExecRepo)
@@ -277,6 +282,7 @@ func main() {
 		if scanEventHandler != nil {
 			scanEventHandler.Stop()
 		}
+		embeddingTaskScheduler.Stop()
 
 		if err := mvtService.Close(); err != nil {
 			logger.L().Error("关闭数据库连接池失败", "error", err)

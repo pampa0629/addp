@@ -42,7 +42,7 @@ manager/
 - 空间与瓦片：`GET /engines/:id/spatial/features/:feature_id/centroid`、`GET /engines/:id/spatial/features/:feature_id/geometry`、`GET /engines/:id/spatial/:schema/:table/geojson`、`GET /engines/:id/spatial/tiles/:schema/:table/:z/:x/:y`。
 - Quick View：`POST /engines/:id/spatial/:schema/:table/quick-view/prepare`、`POST /engines/:id/spatial/:schema/:table/quick-view/pre-cache`、`GET /engines/:id/spatial/:schema/:table/quick-view/status`。
 - 任务提供者：`GET /tasks`、`GET /tasks/:task_type/:id`、`POST /tasks/:task_type/:id/execute`、`GET /executions/:execution_id`。
-- 数据导入与向量化：`POST /import`、`POST /embedding`、`GET /embedding/tasks/:task_id`。
+- 数据导入与向量化：`POST /import`、`POST /embedding_executions`、`GET /embeddings`、`GET /items/:item_id/embedding`。
 
 ## 开发规则
 

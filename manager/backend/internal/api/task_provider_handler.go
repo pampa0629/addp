@@ -1,13 +1,17 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
-	commonExecution "github.com/addp/common/execution"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	commonapi "github.com/addp/common/api"
+	commonExecution "github.com/addp/common/execution"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
@@ -46,6 +50,43 @@ type TaskListItem struct {
 	Enabled             bool    `json:"enabled"`
 	LastExecutionID     *string `json:"last_execution_id,omitempty"`
 	LastExecutionStatus *string `json:"last_execution_status,omitempty"`
+}
+
+// EmbeddingTaskRequest 是私有向量化任务 CRUD 的显式契约。
+type EmbeddingTaskRequest struct {
+	Name        string               `json:"name"`
+	Description string               `json:"description,omitempty"`
+	Enabled     *bool                `json:"enabled,omitempty"`
+	Schedule    string               `json:"schedule,omitempty"`
+	NextRunAt   *time.Time           `json:"next_run_at,omitempty"`
+	Config      commonModels.JSONMap `json:"config"`
+}
+
+type EmbeddingTaskTargetResponse struct {
+	Scope     string `json:"scope"`
+	EngineID  uint   `json:"engine_id,omitempty"`
+	NodeID    uint   `json:"node_id,omitempty"`
+	Locator   string `json:"locator,omitempty"`
+	Recursive bool   `json:"recursive"`
+}
+
+type EmbeddingTaskResponse struct {
+	ID                  uint                         `json:"id"`
+	TenantID            uint                         `json:"tenant_id"`
+	TaskType            string                       `json:"task_type"`
+	Name                string                       `json:"name"`
+	Description         string                       `json:"description,omitempty"`
+	Enabled             bool                         `json:"enabled"`
+	Schedule            string                       `json:"schedule,omitempty"`
+	NextRunAt           *time.Time                   `json:"next_run_at,omitempty"`
+	LastRunAt           *time.Time                   `json:"last_run_at,omitempty"`
+	LastExecutionID     *string                      `json:"last_execution_id,omitempty"`
+	LastExecutionStatus *string                      `json:"last_execution_status,omitempty"`
+	CreatedBy           *uint                        `json:"created_by,omitempty"`
+	Config              commonModels.JSONMap         `json:"config"`
+	Target              *EmbeddingTaskTargetResponse `json:"target,omitempty"`
+	CreatedAt           time.Time                    `json:"created_at"`
+	UpdatedAt           time.Time                    `json:"updated_at"`
 }
 
 // ListTasks GET /api/manager/tasks
@@ -182,7 +223,32 @@ func (h *TaskProviderHandler) ListMvtTasks(c *gin.Context) {
 // @Router /embedding_tasks [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListEmbeddingTasks(c *gin.Context) {
-	h.listTasks(c, commonExecution.TaskTypeEmbedding)
+	tenantID := c.GetUint("tenant_id")
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if page < 1 {
+		page = 1
+	}
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
+
+	tasks, total, err := h.embeddingTaskSvc.List(c.Request.Context(), tenantID, page, pageSize)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		return
+	}
+	items := make([]EmbeddingTaskResponse, 0, len(tasks))
+	for _, task := range tasks {
+		items = append(items, embeddingTaskResponse(task))
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"status":    "success",
+		"data":      items,
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
+	})
 }
 
 // TaskDetail GET /api/manager/tasks/:task_type/:id
@@ -231,7 +297,7 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "任务不存在"})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"status": "success", "data": task})
+		c.JSON(http.StatusOK, gin.H{"status": "success", "data": embeddingTaskResponse(task)})
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "不支持的任务类型: " + taskType})
 	}
@@ -268,8 +334,11 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 		return
 	}
 
-	var req TaskExecuteRequest
-	_ = c.ShouldBindJSON(&req)
+	req, err := decodeTaskExecuteRequest(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": err.Error()})
+		return
+	}
 	triggerType, err := commonExecution.NormalizeTriggerType(req.TriggerType)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": err.Error()})
@@ -317,6 +386,25 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 	})
 }
 
+func decodeTaskExecuteRequest(c *gin.Context) (TaskExecuteRequest, error) {
+	var req TaskExecuteRequest
+	if c.Request.Body == nil {
+		return req, nil
+	}
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		if errors.Is(err, io.EOF) {
+			return req, nil
+		}
+		return req, err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return req, errors.New("request body must contain a single JSON object")
+	}
+	return req, nil
+}
+
 // ExecutionStatus GET /api/manager/executions/:execution_id
 // @Summary 获取执行状态 | Get execution status
 // @Description 获取任务执行记录的状态信息 | Get status information of a task execution record
@@ -346,13 +434,13 @@ func (h *TaskProviderHandler) ExecutionStatus(c *gin.Context) {
 
 // ===== EmbeddingTask CRUD =====
 
-// CreateEmbeddingTask POST /api/manager/embedding-tasks
+// CreateEmbeddingTask POST /api/manager/embedding_tasks
 // @Summary 创建向量化任务配置 | Create embedding task configuration
 // @Description 创建新的向量化任务配置（定时或手动触发）| Create a new embedding task configuration (scheduled or manual)
 // @Tags Manager
 // @Accept json
 // @Produce json
-// @Param body body models.EmbeddingTask true "向量化任务配置 | Embedding task configuration"
+// @Param body body EmbeddingTaskRequest true "向量化任务配置 | Embedding task configuration"
 // @Success 201 {object} map[string]interface{} "创建的任务配置 | Created task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Router /embedding_tasks [post]
@@ -361,29 +449,41 @@ func (h *TaskProviderHandler) CreateEmbeddingTask(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 	userID := c.GetUint("user_id")
 
-	var task models.EmbeddingTask
-	if err := c.ShouldBindJSON(&task); err != nil {
+	req, err := decodeEmbeddingTaskRequest(c)
+	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": err.Error()})
 		return
 	}
-	task.TenantID = tenantID
-	task.CreatedBy = &userID
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+	task := models.EmbeddingTask{
+		TenantID:    tenantID,
+		Name:        strings.TrimSpace(req.Name),
+		Description: strings.TrimSpace(req.Description),
+		Enabled:     enabled,
+		Schedule:    strings.TrimSpace(req.Schedule),
+		NextRunAt:   req.NextRunAt,
+		Config:      req.Config,
+		CreatedBy:   &userID,
+	}
 
 	if err := h.embeddingTaskSvc.Create(c.Request.Context(), &task); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"status": "success", "data": task})
+	c.JSON(http.StatusCreated, gin.H{"status": "success", "data": embeddingTaskResponse(&task)})
 }
 
-// UpdateEmbeddingTask PUT /api/manager/embedding-tasks/:id
+// UpdateEmbeddingTask PUT /api/manager/embedding_tasks/:id
 // @Summary 更新向量化任务配置 | Update embedding task configuration
 // @Description 更新指定的向量化任务配置 | Update a specific embedding task configuration
 // @Tags Manager
 // @Accept json
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
-// @Param body body models.EmbeddingTask true "向量化任务配置 | Embedding task configuration"
+// @Param body body EmbeddingTaskRequest true "向量化任务配置 | Embedding task configuration"
 // @Success 200 {object} map[string]interface{} "更新后的任务配置 | Updated task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
@@ -407,21 +507,30 @@ func (h *TaskProviderHandler) UpdateEmbeddingTask(c *gin.Context) {
 		return
 	}
 
-	if err := c.ShouldBindJSON(existing); err != nil {
+	req, err := decodeEmbeddingTaskRequest(c)
+	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": err.Error()})
 		return
 	}
 	existing.ID = uint(id)
 	existing.TenantID = tenantID
+	existing.Name = strings.TrimSpace(req.Name)
+	existing.Description = strings.TrimSpace(req.Description)
+	if req.Enabled != nil {
+		existing.Enabled = *req.Enabled
+	}
+	existing.Schedule = strings.TrimSpace(req.Schedule)
+	existing.NextRunAt = req.NextRunAt
+	existing.Config = req.Config
 
 	if err := h.embeddingTaskSvc.Update(c.Request.Context(), existing); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "success", "data": existing})
+	c.JSON(http.StatusOK, gin.H{"status": "success", "data": embeddingTaskResponse(existing)})
 }
 
-// DeleteEmbeddingTask DELETE /api/manager/embedding-tasks/:id
+// DeleteEmbeddingTask DELETE /api/manager/embedding_tasks/:id
 // @Summary 删除向量化任务配置 | Delete embedding task configuration
 // @Description 删除指定的向量化任务配置 | Delete a specific embedding task configuration
 // @Tags Manager
@@ -444,6 +553,101 @@ func (h *TaskProviderHandler) DeleteEmbeddingTask(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "success", "message": "已删除"})
+}
+
+func decodeEmbeddingTaskRequest(c *gin.Context) (EmbeddingTaskRequest, error) {
+	var req EmbeddingTaskRequest
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		return req, err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return req, errors.New("request body must contain a single JSON object")
+	}
+	if req.Config == nil {
+		req.Config = commonModels.JSONMap{}
+	}
+	return req, nil
+}
+
+func embeddingTaskResponse(task *models.EmbeddingTask) EmbeddingTaskResponse {
+	resp := EmbeddingTaskResponse{}
+	if task == nil {
+		return resp
+	}
+	resp = EmbeddingTaskResponse{
+		ID:                  task.ID,
+		TenantID:            task.TenantID,
+		TaskType:            commonExecution.TaskTypeEmbedding,
+		Name:                task.Name,
+		Description:         task.Description,
+		Enabled:             task.Enabled,
+		Schedule:            task.Schedule,
+		NextRunAt:           task.NextRunAt,
+		LastRunAt:           task.LastRunAt,
+		LastExecutionID:     task.LastExecutionID,
+		LastExecutionStatus: task.LastExecutionStatus,
+		CreatedBy:           task.CreatedBy,
+		Config:              task.Config,
+		CreatedAt:           task.CreatedAt,
+		UpdatedAt:           task.UpdatedAt,
+	}
+	if target, ok := asJSONMap(task.Config["target"]); ok {
+		resp.Target = &EmbeddingTaskTargetResponse{
+			Scope:     stringFromConfig(target["scope"]),
+			EngineID:  uintFromConfig(target["engine_id"]),
+			NodeID:    uintFromConfig(target["node_id"]),
+			Locator:   stringFromConfig(target["locator"]),
+			Recursive: boolFromConfig(target["recursive"], true),
+		}
+	}
+	return resp
+}
+
+func asJSONMap(value interface{}) (commonModels.JSONMap, bool) {
+	switch v := value.(type) {
+	case commonModels.JSONMap:
+		return v, true
+	case map[string]interface{}:
+		return commonModels.JSONMap(v), true
+	default:
+		return nil, false
+	}
+}
+
+func uintFromConfig(value interface{}) uint {
+	switch v := value.(type) {
+	case uint:
+		return v
+	case int:
+		if v > 0 {
+			return uint(v)
+		}
+	case int64:
+		if v > 0 {
+			return uint(v)
+		}
+	case float64:
+		if v > 0 {
+			return uint(v)
+		}
+	}
+	return 0
+}
+
+func stringFromConfig(value interface{}) string {
+	if v, ok := value.(string); ok {
+		return strings.TrimSpace(v)
+	}
+	return ""
+}
+
+func boolFromConfig(value interface{}, defaultValue bool) bool {
+	if v, ok := value.(bool); ok {
+		return v
+	}
+	return defaultValue
 }
 
 // ===== MvtTask CRUD =====

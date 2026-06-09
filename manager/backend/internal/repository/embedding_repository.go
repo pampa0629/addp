@@ -4,297 +4,287 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"strings"
 	"time"
 
 	"github.com/addp/manager/internal/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
-// EmbeddingRepository 向量数据库访问层
+// EmbeddingRepository 维护 Manager 向量化结果 artifact state 和向量化任务定义。
 type EmbeddingRepository struct {
 	db *gorm.DB
 }
 
-// NewEmbeddingRepository 创建向量仓库
 func NewEmbeddingRepository(db *gorm.DB) *EmbeddingRepository {
 	return &EmbeddingRepository{db: db}
 }
 
-// UpsertEmbedding 插入或更新向量
-// 使用 fingerprint + modality 作为唯一键
-func (r *EmbeddingRepository) UpsertEmbedding(ctx context.Context, embedding *models.Embedding) error {
-	// 先查询是否存在
-	var existing models.Embedding
-	err := r.db.WithContext(ctx).
-		Where("fingerprint = ? AND modality = ?", embedding.Fingerprint, embedding.Modality).
-		First(&existing).Error
-
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		// 不存在，创建新记录（使用原生 SQL 以支持 vector 类型）
-		vectorStr := vectorToString(embedding.Embedding)
-		log.Printf("[DEBUG] 开始插入向量: fingerprint=%s, modality=%s, vector_length=%d",
-			embedding.Fingerprint, embedding.Modality, len(embedding.Embedding))
-
-		// 使用 fmt.Sprintf 构建完整 SQL，避免 GORM 参数绑定问题
-		// 使用 vector 类型（通过 search_path=manager 自动解析）
-		sql := fmt.Sprintf(`
-			INSERT INTO manager.embeddings
-			(engine_id, bucket, path, name, fingerprint, data_updated_at, embedding, modality, model, file_size, content_type, metadata, tenant_id, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, '%s'::vector, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, vectorStr)
-
-		err := r.db.WithContext(ctx).Exec(sql,
-			embedding.EngineID,
-			embedding.Bucket,
-			embedding.Path,
-			embedding.Name,
-			embedding.Fingerprint,
-			embedding.DataUpdatedAt,
-			// vectorStr 已经在 SQL 中，这里移除
-			embedding.Modality,
-			embedding.Model,
-			embedding.FileSize,
-			embedding.ContentType,
-			embedding.Metadata,
-			embedding.TenantID,
-			time.Now(),
-			time.Now(),
-		).Error
-
-		if err != nil {
-			log.Printf("[ERROR] 向量插入失败: %v", err)
-			return err
-		}
-
-		log.Printf("[DEBUG] 向量插入成功: fingerprint=%s", embedding.Fingerprint)
-		return nil
-	}
-
-	if err != nil {
-		return err
-	}
-
-	// 存在，更新记录
-	log.Printf("[DEBUG] 更新现有向量: id=%d, fingerprint=%s", existing.ID, embedding.Fingerprint)
-
-	vectorStr := vectorToString(embedding.Embedding)
-	// 使用 fmt.Sprintf 构建完整 SQL，避免 GORM 参数绑定问题
-	// 使用 vector 类型（通过 search_path=manager 自动解析）
-	sql := fmt.Sprintf(`
-		UPDATE manager.embeddings
-		SET engine_id = ?, bucket = ?, path = ?, name = ?, fingerprint = ?, data_updated_at = ?,
-		    embedding = '%s'::vector, modality = ?, model = ?, file_size = ?, content_type = ?,
-		    metadata = ?, tenant_id = ?, updated_at = ?
-		WHERE id = ?
-	`, vectorStr)
-
-	err = r.db.WithContext(ctx).Exec(sql,
-		embedding.EngineID,
-		embedding.Bucket,
-		embedding.Path,
-		embedding.Name,
-		embedding.Fingerprint,
-		embedding.DataUpdatedAt,
-		// vectorStr 已经在 SQL 中，这里移除
-		embedding.Modality,
-		embedding.Model,
-		embedding.FileSize,
-		embedding.ContentType,
-		embedding.Metadata,
-		embedding.TenantID,
-		time.Now(),
-		existing.ID,
-	).Error
-
-	if err != nil {
-		log.Printf("[ERROR] 向量更新失败: %v", err)
-		return err
-	}
-
-	log.Printf("[DEBUG] 向量更新成功: id=%d", existing.ID)
-	return nil
+type EmbeddingSimilarityResult struct {
+	Embedding *models.Embedding
+	Distance  float64
 }
 
-// BatchUpsertEmbeddings 批量插入或更新向量
-func (r *EmbeddingRepository) BatchUpsertEmbeddings(ctx context.Context, embeddings []*models.Embedding) error {
-	if len(embeddings) == 0 {
-		return nil
-	}
-
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		for _, emb := range embeddings {
-			if err := r.UpsertEmbedding(ctx, emb); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
+type EmbeddingListFilter struct {
+	TenantID uint
+	EngineID uint
+	NodeID   uint
+	ItemID   uint
+	ItemIDs  []uint
+	Status   string
+	Query    string
+	Page     int
+	PageSize int
 }
 
-// GetByFingerprint 根据指纹查询向量（用于去重检查）
-// 注意：不查询 embedding 字段，避免 pgvector 类型 Scan 错误
-func (r *EmbeddingRepository) GetByFingerprint(ctx context.Context, fingerprint string, modality string) (*models.Embedding, error) {
+func (r *EmbeddingRepository) GetByItemFingerprint(ctx context.Context, tenantID uint, itemFingerprint string) (*models.Embedding, error) {
 	var emb models.Embedding
 	err := r.db.WithContext(ctx).
-		Select("id", "engine_id", "bucket", "path", "name", "fingerprint", "data_updated_at", "modality", "model", "file_size", "content_type", "metadata", "tenant_id", "created_at", "updated_at").
-		Where("fingerprint = ? AND modality = ?", fingerprint, modality).
+		Select("id", "tenant_id", "item_fingerprint", "item_id", "engine_id", "locator", "source_version", "model", "dimension", "status", "status_reason", "error_message", "last_execution_id", "vectorized_at", "created_at", "updated_at").
+		Where("tenant_id = ? AND item_fingerprint = ?", tenantID, itemFingerprint).
 		First(&emb).Error
-
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, nil // 未找到记录，返回 nil
-	}
-	return &emb, err
-}
-
-// GetEmbedding 查询单个向量
-func (r *EmbeddingRepository) GetEmbedding(ctx context.Context, engineID uint, bucket, path, name string, modality string) (*models.Embedding, error) {
-	var emb models.Embedding
-	err := r.db.WithContext(ctx).
-		Where("engine_id = ? AND bucket = ? AND path = ? AND name = ? AND modality = ?",
-			engineID, bucket, path, name, modality).
-		First(&emb).Error
-
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
 	return &emb, err
 }
 
-// QuerySimilar 相似度检索
-// 返回与查询向量最相似的 topK 个结果
-func (r *EmbeddingRepository) QuerySimilar(ctx context.Context, queryVector []float32, modality string, topK int, maxDistance float64, tenantID *uint) ([]*models.Embedding, error) {
-	query := r.db.WithContext(ctx).
-		Select("*, embedding <=> ? as distance", vectorToString(queryVector)).
-		Where("modality = ?", modality)
-
-	if tenantID != nil {
-		query = query.Where("tenant_id = ?", *tenantID)
-	}
-
-	if maxDistance > 0 {
-		query = query.Where("embedding <=> ? <= ?", vectorToString(queryVector), maxDistance)
-	}
-
-	var results []*models.Embedding
-	err := query.
-		Order("distance").
-		Limit(topK).
-		Find(&results).Error
-
-	return results, err
-}
-
-// DeleteEmbedding 删除向量
-func (r *EmbeddingRepository) DeleteEmbedding(ctx context.Context, id uint) error {
-	return r.db.WithContext(ctx).Delete(&models.Embedding{}, id).Error
-}
-
-// DeleteEmbeddingsByFingerprints 批量删除向量（按指纹）
-func (r *EmbeddingRepository) DeleteEmbeddingsByFingerprints(ctx context.Context, fingerprints []string) error {
-	if len(fingerprints) == 0 {
-		return nil
-	}
-	return r.db.WithContext(ctx).
-		Where("fingerprint IN ?", fingerprints).
-		Delete(&models.Embedding{}).Error
-}
-
-// DeleteEmbeddingsByEngine 删除指定引擎的所有向量
-func (r *EmbeddingRepository) DeleteEmbeddingsByEngine(ctx context.Context, engineID uint, bucket string) error {
-	query := r.db.WithContext(ctx).Where("engine_id = ?", engineID)
-	if bucket != "" {
-		query = query.Where("bucket = ?", bucket)
-	}
-	return query.Delete(&models.Embedding{}).Error
-}
-
-// CountEmbeddings 统计向量数量
-func (r *EmbeddingRepository) CountEmbeddings(ctx context.Context, engineID uint, bucket string, modality string) (int64, error) {
-	query := r.db.WithContext(ctx).Model(&models.Embedding{})
-
-	if engineID > 0 {
-		query = query.Where("engine_id = ?", engineID)
-	}
-	if bucket != "" {
-		query = query.Where("bucket = ?", bucket)
-	}
-	if modality != "" {
-		query = query.Where("modality = ?", modality)
-	}
-
-	var count int64
-	err := query.Count(&count).Error
-	return count, err
-}
-
-// FindOutdatedEmbeddings 查找过期向量
-// 对象的 data_updated_at 晚于向量的 data_updated_at，表示对象已修改，向量需要更新
-func (r *EmbeddingRepository) FindOutdatedEmbeddings(ctx context.Context, engineID uint, bucket string, objectUpdatedAt time.Time) ([]*models.Embedding, error) {
-	var results []*models.Embedding
+func (r *EmbeddingRepository) GetByItemID(ctx context.Context, tenantID uint, itemID uint) (*models.Embedding, error) {
+	var emb models.Embedding
 	err := r.db.WithContext(ctx).
-		Where("engine_id = ? AND bucket = ?", engineID, bucket).
-		Where("data_updated_at < ?", objectUpdatedAt).
-		Find(&results).Error
-
-	return results, err
+		Select("id", "tenant_id", "item_fingerprint", "item_id", "engine_id", "locator", "source_version", "model", "dimension", "status", "status_reason", "error_message", "last_execution_id", "vectorized_at", "created_at", "updated_at").
+		Where("tenant_id = ? AND item_id = ?", tenantID, itemID).
+		First(&emb).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	return &emb, err
 }
 
-// GetEmbeddingStatus 获取向量化状态
-func (r *EmbeddingRepository) GetEmbeddingStatus(ctx context.Context, engineID uint, bucket string) (*models.EmbeddingStatus, error) {
-	status := &models.EmbeddingStatus{
-		EngineID: engineID,
-		Bucket:   bucket,
+func (r *EmbeddingRepository) UpsertEmbeddingState(ctx context.Context, embedding *models.Embedding) error {
+	if embedding == nil {
+		return errors.New("embedding state is nil")
+	}
+	if embedding.TenantID == 0 || strings.TrimSpace(embedding.ItemFingerprint) == "" {
+		return errors.New("tenant_id and item_fingerprint are required")
+	}
+	if strings.TrimSpace(embedding.Status) == "" {
+		return errors.New("embedding status is required")
 	}
 
-	// 统计总向量数
-	count, err := r.CountEmbeddings(ctx, engineID, bucket, "")
+	now := time.Now()
+	if embedding.Status == models.EmbeddingStatusReady && embedding.VectorizedAt == nil {
+		embedding.VectorizedAt = &now
+	}
+
+	vectorSQL := "NULL"
+	if embedding.Status == models.EmbeddingStatusReady {
+		if len(embedding.Embedding) == 0 {
+			return errors.New("ready embedding state requires vector")
+		}
+		vectorSQL = fmt.Sprintf("'%s'::vector", vectorToString(embedding.Embedding))
+	}
+
+	sql := fmt.Sprintf(`
+		INSERT INTO manager.embeddings
+			(tenant_id, item_fingerprint, item_id, engine_id, locator, source_version, embedding, model, dimension, status, status_reason, error_message, last_execution_id, vectorized_at, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, %s, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (tenant_id, item_fingerprint) DO UPDATE
+		SET item_id = EXCLUDED.item_id,
+		    engine_id = EXCLUDED.engine_id,
+		    locator = EXCLUDED.locator,
+		    source_version = EXCLUDED.source_version,
+		    embedding = EXCLUDED.embedding,
+		    model = EXCLUDED.model,
+		    dimension = EXCLUDED.dimension,
+		    status = EXCLUDED.status,
+		    status_reason = EXCLUDED.status_reason,
+		    error_message = EXCLUDED.error_message,
+		    last_execution_id = EXCLUDED.last_execution_id,
+		    vectorized_at = EXCLUDED.vectorized_at,
+		    updated_at = EXCLUDED.updated_at
+	`, vectorSQL)
+
+	return r.db.WithContext(ctx).Exec(sql,
+		embedding.TenantID,
+		embedding.ItemFingerprint,
+		embedding.ItemID,
+		embedding.EngineID,
+		embedding.Locator,
+		embedding.SourceVersion,
+		embedding.Model,
+		embedding.Dimension,
+		embedding.Status,
+		emptyToNil(embedding.StatusReason),
+		emptyToNil(embedding.ErrorMessage),
+		embedding.LastExecutionID,
+		embedding.VectorizedAt,
+		now,
+		now,
+	).Error
+}
+
+func (r *EmbeddingRepository) QueryReadySimilar(ctx context.Context, tenantID uint, queryVector []float32, model string, dimension int, topK int, maxDistance float64) ([]EmbeddingSimilarityResult, error) {
+	if tenantID == 0 {
+		return nil, errors.New("tenant_id is required")
+	}
+	if len(queryVector) == 0 {
+		return nil, errors.New("query vector is required")
+	}
+	if strings.TrimSpace(model) == "" || dimension <= 0 {
+		return nil, errors.New("model and dimension are required")
+	}
+	if topK <= 0 {
+		topK = 10
+	}
+
+	vector := vectorToString(queryVector)
+	args := []any{tenantID, models.EmbeddingStatusReady, model, dimension}
+	distanceClause := ""
+	if maxDistance > 0 {
+		distanceClause = " AND embedding <=> ?::vector <= ?"
+		args = append(args, vector, maxDistance)
+	}
+	args = append(args, vector, topK)
+
+	sql := fmt.Sprintf(`
+		SELECT id, tenant_id, item_fingerprint, item_id, engine_id, locator, source_version, model, dimension,
+		       status, status_reason, error_message, last_execution_id, vectorized_at, created_at, updated_at,
+		       embedding <=> ?::vector AS distance
+		FROM manager.embeddings
+		WHERE tenant_id = ? AND status = ? AND model = ? AND dimension = ? AND embedding IS NOT NULL%s
+		ORDER BY embedding <=> ?::vector
+		LIMIT ?
+	`, distanceClause)
+
+	queryArgs := append([]any{vector}, args...)
+	rows, err := r.db.WithContext(ctx).Raw(sql, queryArgs...).Rows()
 	if err != nil {
 		return nil, err
 	}
-	status.VectorizedCount = int(count)
+	defer rows.Close()
 
-	// 查询最后向量化时间
-	var lastEmb models.Embedding
-	err = r.db.WithContext(ctx).
-		Where("engine_id = ? AND bucket = ?", engineID, bucket).
-		Order("created_at DESC").
-		First(&lastEmb).Error
-
-	if err == nil {
-		status.LastVectorizedAt = &lastEmb.CreatedAt
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+	results := make([]EmbeddingSimilarityResult, 0)
+	for rows.Next() {
+		var emb models.Embedding
+		var distance float64
+		if err := rows.Scan(
+			&emb.ID,
+			&emb.TenantID,
+			&emb.ItemFingerprint,
+			&emb.ItemID,
+			&emb.EngineID,
+			&emb.Locator,
+			&emb.SourceVersion,
+			&emb.Model,
+			&emb.Dimension,
+			&emb.Status,
+			&emb.StatusReason,
+			&emb.ErrorMessage,
+			&emb.LastExecutionID,
+			&emb.VectorizedAt,
+			&emb.CreatedAt,
+			&emb.UpdatedAt,
+			&distance,
+		); err != nil {
+			return nil, err
+		}
+		results = append(results, EmbeddingSimilarityResult{Embedding: &emb, Distance: distance})
+	}
+	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-
-	return status, nil
+	return results, nil
 }
 
-// vectorToString 将向量转换为 PostgreSQL 向量字符串
+func (r *EmbeddingRepository) ListEmbeddings(ctx context.Context, filter EmbeddingListFilter) ([]*models.Embedding, int64, error) {
+	if filter.TenantID == 0 {
+		return nil, 0, errors.New("tenant_id is required")
+	}
+	if filter.Page < 1 {
+		filter.Page = 1
+	}
+	if filter.PageSize < 1 || filter.PageSize > 100 {
+		filter.PageSize = 20
+	}
+
+	query := r.db.WithContext(ctx).Model(&models.Embedding{}).Where("tenant_id = ?", filter.TenantID)
+	if filter.EngineID > 0 {
+		query = query.Where("engine_id = ?", filter.EngineID)
+	}
+	if filter.ItemID > 0 {
+		query = query.Where("item_id = ?", filter.ItemID)
+	}
+	if len(filter.ItemIDs) > 0 {
+		query = query.Where("item_id IN ?", filter.ItemIDs)
+	}
+	if strings.TrimSpace(filter.Status) != "" {
+		query = query.Where("status = ?", strings.TrimSpace(filter.Status))
+	}
+	if q := strings.TrimSpace(filter.Query); q != "" {
+		like := "%" + q + "%"
+		query = query.Where("locator ILIKE ? OR item_fingerprint ILIKE ? OR error_message ILIKE ?", like, like, like)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var items []*models.Embedding
+	err := query.
+		Select("id", "tenant_id", "item_fingerprint", "item_id", "engine_id", "locator", "source_version", "model", "dimension", "status", "status_reason", "error_message", "last_execution_id", "vectorized_at", "created_at", "updated_at").
+		Order("updated_at DESC").
+		Offset((filter.Page - 1) * filter.PageSize).
+		Limit(filter.PageSize).
+		Find(&items).Error
+	return items, total, err
+}
+
+func (r *EmbeddingRepository) DeleteEmbedding(ctx context.Context, tenantID uint, id uint) error {
+	return r.db.WithContext(ctx).Where("tenant_id = ? AND id = ?", tenantID, id).Delete(&models.Embedding{}).Error
+}
+
+func (r *EmbeddingRepository) DeleteEmbeddingsByItemFingerprints(ctx context.Context, tenantID uint, itemFingerprints []string) error {
+	if len(itemFingerprints) == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).
+		Where("tenant_id = ? AND item_fingerprint IN ?", tenantID, itemFingerprints).
+		Delete(&models.Embedding{}).Error
+}
+
+func (r *EmbeddingRepository) DeleteEmbeddingsByEngine(ctx context.Context, tenantID uint, engineID uint) error {
+	return r.db.WithContext(ctx).
+		Where("tenant_id = ? AND engine_id = ?", tenantID, engineID).
+		Delete(&models.Embedding{}).Error
+}
+
 func vectorToString(v []float32) string {
 	if len(v) == 0 {
 		return "[]"
 	}
-
-	result := "["
-	for i, val := range v {
-		if i > 0 {
-			result += ","
-		}
-		result += fmt.Sprintf("%f", val)
+	parts := make([]string, 0, len(v))
+	for _, val := range v {
+		parts = append(parts, fmt.Sprintf("%f", val))
 	}
-	result += "]"
-	return result
+	return "[" + strings.Join(parts, ",") + "]"
+}
+
+func emptyToNil(v string) any {
+	if strings.TrimSpace(v) == "" {
+		return nil
+	}
+	return v
 }
 
 // ===== 任务定义相关方法 =====
 
-// CreateEmbeddingTask 创建向量化任务定义
 func (r *EmbeddingRepository) CreateEmbeddingTask(ctx context.Context, task *models.EmbeddingTask) error {
 	return r.db.WithContext(ctx).Create(task).Error
 }
 
-// GetEmbeddingTask 根据 ID 查询任务定义
 func (r *EmbeddingRepository) GetEmbeddingTask(ctx context.Context, id uint, tenantID uint) (*models.EmbeddingTask, error) {
 	var task models.EmbeddingTask
 	err := r.db.WithContext(ctx).
@@ -306,7 +296,17 @@ func (r *EmbeddingRepository) GetEmbeddingTask(ctx context.Context, id uint, ten
 	return &task, err
 }
 
-// ListEmbeddingTasks 分页查询任务定义列表
+func (r *EmbeddingRepository) GetEmbeddingTaskByID(ctx context.Context, id uint) (*models.EmbeddingTask, error) {
+	var task models.EmbeddingTask
+	err := r.db.WithContext(ctx).
+		Where("id = ?", id).
+		First(&task).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	return &task, err
+}
+
 func (r *EmbeddingRepository) ListEmbeddingTasks(ctx context.Context, tenantID uint, page, pageSize int) ([]*models.EmbeddingTask, int64, error) {
 	query := r.db.WithContext(ctx).Model(&models.EmbeddingTask{}).Where("tenant_id = ?", tenantID)
 
@@ -324,19 +324,16 @@ func (r *EmbeddingRepository) ListEmbeddingTasks(ctx context.Context, tenantID u
 	return tasks, total, err
 }
 
-// UpdateEmbeddingTask 更新任务定义
 func (r *EmbeddingRepository) UpdateEmbeddingTask(ctx context.Context, task *models.EmbeddingTask) error {
 	return r.db.WithContext(ctx).Save(task).Error
 }
 
-// DeleteEmbeddingTask 软删除任务定义
 func (r *EmbeddingRepository) DeleteEmbeddingTask(ctx context.Context, id uint, tenantID uint) error {
 	return r.db.WithContext(ctx).
 		Where("id = ? AND tenant_id = ?", id, tenantID).
 		Delete(&models.EmbeddingTask{}).Error
 }
 
-// UpdateEmbeddingTaskLastExecution 回写最近执行信息
 func (r *EmbeddingRepository) UpdateEmbeddingTaskLastExecution(ctx context.Context, id uint, executionID, status string, runAt time.Time) error {
 	return r.db.WithContext(ctx).
 		Model(&models.EmbeddingTask{}).
@@ -346,4 +343,63 @@ func (r *EmbeddingRepository) UpdateEmbeddingTaskLastExecution(ctx context.Conte
 			"last_execution_status": status,
 			"last_run_at":           runAt,
 		}).Error
+}
+
+func (r *EmbeddingRepository) ListEmbeddingTasksMissingNextRun(ctx context.Context) ([]models.EmbeddingTask, error) {
+	var tasks []models.EmbeddingTask
+	err := r.db.WithContext(ctx).
+		Where("enabled = ? AND schedule <> '' AND next_run_at IS NULL", true).
+		Find(&tasks).Error
+	return tasks, err
+}
+
+func (r *EmbeddingRepository) UpdateEmbeddingTaskNextRun(ctx context.Context, id uint, nextRunAt *time.Time) error {
+	updates := map[string]interface{}{
+		"next_run_at": nextRunAt,
+	}
+	return r.db.WithContext(ctx).
+		Model(&models.EmbeddingTask{}).
+		Where("id = ?", id).
+		Updates(updates).Error
+}
+
+func (r *EmbeddingRepository) ListDueEmbeddingTaskIDs(ctx context.Context, now time.Time, limit int) ([]uint, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	var taskIDs []uint
+	err := r.db.WithContext(ctx).
+		Model(&models.EmbeddingTask{}).
+		Where("enabled = ? AND schedule <> '' AND next_run_at IS NOT NULL AND next_run_at <= ?", true, now).
+		Order("next_run_at ASC").
+		Limit(limit).
+		Pluck("id", &taskIDs).Error
+	return taskIDs, err
+}
+
+func (r *EmbeddingRepository) ClaimDueEmbeddingTask(ctx context.Context, taskID uint, schedule string, now time.Time, nextRunAt *time.Time) (*models.EmbeddingTask, error) {
+	var claimed *models.EmbeddingTask
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var task models.EmbeddingTask
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+			Where("id = ? AND enabled = ? AND schedule = ? AND next_run_at IS NOT NULL AND next_run_at <= ?", taskID, true, schedule, now).
+			First(&task).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+
+		if err := tx.Model(&models.EmbeddingTask{}).
+			Where("id = ?", task.ID).
+			Updates(map[string]interface{}{
+				"next_run_at": nextRunAt,
+			}).Error; err != nil {
+			return err
+		}
+
+		claimed = &task
+		return nil
+	})
+	return claimed, err
 }

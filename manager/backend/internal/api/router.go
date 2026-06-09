@@ -61,9 +61,6 @@ func SetupRouter(
 		})
 	})
 
-	// 创建任务追踪器（用于向量化任务状态管理）
-	taskTracker := service.NewTaskTracker()
-
 	// API 路由组
 	api := router.Group("/api/v1/manager")
 	// 使用 Redis 缓存中间件 (TTL: 5分钟, 减少 System 调用 90%)
@@ -78,16 +75,12 @@ func SetupRouter(
 		api.Use(audit.AuditMiddleware("manager", systemClient))
 	}
 	{
-		// 向量化 API（ad-hoc 即时执行）
-		embeddingHandler := NewEmbeddingHandler(embeddingService, taskTracker)
-
-		api.POST("/embedding", embeddingHandler.CreateEmbedding) // 创建即时向量化任务
-
-		// 向量化任务实时状态查询（内存中）
-		embeddingTasksGroup := api.Group("/embedding/tasks")
-		{
-			embeddingTasksGroup.GET("/:task_id", embeddingHandler.GetEmbeddingTaskStatus) // 查询任务状态（内存）
-		}
+		// 向量化 API：结果 artifact state 与一次性 execution
+		embeddingHandler := NewEmbeddingHandler(embeddingService)
+		api.POST("/embedding_executions", embeddingHandler.CreateEmbeddingExecution)
+		api.GET("/embeddings", embeddingHandler.ListEmbeddings)
+		api.DELETE("/embeddings/:id", embeddingHandler.DeleteEmbedding)
+		api.GET("/items/:item_id/embedding", embeddingHandler.GetItemEmbedding)
 
 		// ===== 标准 TaskProvider API =====
 		// GET    /api/manager/tasks                       → 任务列表

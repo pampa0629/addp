@@ -4,10 +4,12 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
 	commonExecution "github.com/addp/common/execution"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/config"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
@@ -25,16 +27,28 @@ func TestEmbeddingTaskExecuteReusesSingleExecution(t *testing.T) {
 		cfg:          &config.Config{},
 		log:          slog.New(slog.NewTextHandler(os.Stdout, nil)),
 	}
-	taskSvc := NewEmbeddingTaskService(embeddingRepo, embeddingSvc, taskExecRepo)
+	taskSvc := NewEmbeddingTaskService(embeddingRepo, embeddingSvc, taskExecRepo, nil)
 
 	task := &models.EmbeddingTask{
-		TenantID:  7,
-		Name:      "目录向量化",
-		Enabled:   true,
-		EngineID:  11,
-		Bucket:    "bucket-a",
-		Prefix:    "datasets/",
-		Recursive: true,
+		TenantID: 7,
+		Name:     "目录向量化",
+		Enabled:  true,
+		Config: commonModels.JSONMap{
+			"target": commonModels.JSONMap{
+				"scope":     "node",
+				"engine_id": 11,
+				"node_id":   23,
+				"locator":   "addp://engine/11/path/datasets?type=directory&node_id=23",
+				"recursive": true,
+			},
+			"filters": commonModels.JSONMap{
+				"max_file_size_mb": 10,
+			},
+			"embedding": commonModels.JSONMap{
+				"model":     "qwen2.5-vl-embedding",
+				"dimension": 1024,
+			},
+		},
 	}
 	if err := embeddingRepo.CreateEmbeddingTask(context.Background(), task); err != nil {
 		t.Fatalf("create embedding task: %v", err)
@@ -59,17 +73,18 @@ func TestEmbeddingTaskExecuteReusesSingleExecution(t *testing.T) {
 	if exec.ParentExecutionID == nil || *exec.ParentExecutionID != parentExecutionID {
 		t.Fatalf("parent execution = %#v, want %s", exec.ParentExecutionID, parentExecutionID)
 	}
-	if exec.ExecutionConfig["engine_id"] != float64(task.EngineID) && exec.ExecutionConfig["engine_id"] != task.EngineID {
-		t.Fatalf("execution_config.engine_id = %v, want %d", exec.ExecutionConfig["engine_id"], task.EngineID)
+	target, ok := exec.ExecutionConfig["target"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("execution_config.target = %#v, want object", exec.ExecutionConfig["target"])
 	}
-	if exec.ExecutionConfig["bucket"] != task.Bucket {
-		t.Fatalf("execution_config.bucket = %v, want %s", exec.ExecutionConfig["bucket"], task.Bucket)
+	if target["scope"] != "node" {
+		t.Fatalf("execution_config.target.scope = %v, want node", target["scope"])
 	}
-	if exec.ExecutionConfig["prefix"] != task.Prefix {
-		t.Fatalf("execution_config.prefix = %v, want %s", exec.ExecutionConfig["prefix"], task.Prefix)
+	if target["engine_id"] != float64(11) && target["engine_id"] != 11 {
+		t.Fatalf("execution_config.target.engine_id = %v, want 11", target["engine_id"])
 	}
-	if exec.ExecutionConfig["scope"] != "directory" {
-		t.Fatalf("execution_config.scope = %v, want directory", exec.ExecutionConfig["scope"])
+	if target["node_id"] != float64(23) && target["node_id"] != 23 {
+		t.Fatalf("execution_config.target.node_id = %v, want 23", target["node_id"])
 	}
 
 	var count int64
@@ -91,6 +106,194 @@ func TestEmbeddingTaskExecuteReusesSingleExecution(t *testing.T) {
 	}
 	if refreshed.LastExecutionStatus == nil || *refreshed.LastExecutionStatus != commonExecution.ExecutionStatusFailed {
 		t.Fatalf("last_execution_status = %#v, want failed", refreshed.LastExecutionStatus)
+	}
+}
+
+func TestEmbeddingTaskExecuteRecordsFailedExecutionWhenEmbeddingServiceUnavailable(t *testing.T) {
+	db := newEmbeddingTaskServiceTestDB(t)
+	embeddingRepo := repository.NewEmbeddingRepository(db)
+	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
+	taskSvc := NewEmbeddingTaskService(embeddingRepo, nil, taskExecRepo, nil)
+
+	task := newEmbeddingTaskDefinition()
+	if err := embeddingRepo.CreateEmbeddingTask(context.Background(), task); err != nil {
+		t.Fatalf("create embedding task: %v", err)
+	}
+
+	executionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil)
+	if err != nil {
+		t.Fatalf("execute embedding task: %v", err)
+	}
+
+	exec, err := taskExecRepo.GetByExecutionID(context.Background(), executionID, int(task.TenantID))
+	if err != nil {
+		t.Fatalf("load execution: %v", err)
+	}
+	if exec.Status != commonExecution.ExecutionStatusFailed {
+		t.Fatalf("execution status = %s, want failed", exec.Status)
+	}
+	if exec.ErrorDetails["message"] != models.EmbeddingReasonEmbeddingServiceNil {
+		t.Fatalf("error message = %#v, want %s", exec.ErrorDetails["message"], models.EmbeddingReasonEmbeddingServiceNil)
+	}
+}
+
+func TestEmbeddingTaskSchedulerClaimsDueTaskAndCreatesScheduledExecution(t *testing.T) {
+	db := newEmbeddingTaskServiceTestDB(t)
+	embeddingRepo := repository.NewEmbeddingRepository(db)
+	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
+	taskSvc := NewEmbeddingTaskService(embeddingRepo, nil, taskExecRepo, nil)
+	scheduler := NewEmbeddingTaskScheduler(taskSvc)
+
+	task := newEmbeddingTaskDefinition()
+	task.Schedule = "* * * * *"
+	dueAt := time.Now().Add(-time.Minute)
+	task.NextRunAt = &dueAt
+	if err := embeddingRepo.CreateEmbeddingTask(context.Background(), task); err != nil {
+		t.Fatalf("create embedding task: %v", err)
+	}
+
+	scheduler.runDueScheduledTasks(context.Background())
+
+	var executions []*commonExecution.TaskExecution
+	if err := db.Where("module = ? AND task_type = ?", commonExecution.ModuleManager, commonExecution.TaskTypeEmbedding).Find(&executions).Error; err != nil {
+		t.Fatalf("list executions: %v", err)
+	}
+	if len(executions) != 1 {
+		t.Fatalf("execution count = %d, want 1", len(executions))
+	}
+	if executions[0].TriggerType != commonExecution.TriggerTypeScheduled {
+		t.Fatalf("trigger_type = %s, want scheduled", executions[0].TriggerType)
+	}
+	if executions[0].Status != commonExecution.ExecutionStatusFailed {
+		t.Fatalf("status = %s, want failed because embedding service is unavailable", executions[0].Status)
+	}
+
+	refreshed, err := embeddingRepo.GetEmbeddingTask(context.Background(), task.ID, task.TenantID)
+	if err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if refreshed.NextRunAt == nil || !refreshed.NextRunAt.After(dueAt) {
+		t.Fatalf("next_run_at = %#v, want after %s", refreshed.NextRunAt, dueAt)
+	}
+	if refreshed.LastExecutionID == nil || *refreshed.LastExecutionID != executions[0].ExecutionID {
+		t.Fatalf("last_execution_id = %#v, want %s", refreshed.LastExecutionID, executions[0].ExecutionID)
+	}
+}
+
+func TestEmbeddingTaskSchedulerRecordsFailedExecutionForOutdatedEmbeddingConfig(t *testing.T) {
+	db := newEmbeddingTaskServiceTestDB(t)
+	embeddingRepo := repository.NewEmbeddingRepository(db)
+	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
+	cfg := &config.Config{}
+	cfg.EmbeddingService.Models = map[string]string{"text": "current-model"}
+	cfg.VectorConfig.Dimension = 768
+	taskSvc := NewEmbeddingTaskService(embeddingRepo, nil, taskExecRepo, cfg)
+	scheduler := NewEmbeddingTaskScheduler(taskSvc)
+
+	task := newEmbeddingTaskDefinition()
+	task.Schedule = "* * * * *"
+	dueAt := time.Now().Add(-time.Minute)
+	task.NextRunAt = &dueAt
+	if err := embeddingRepo.CreateEmbeddingTask(context.Background(), task); err != nil {
+		t.Fatalf("create embedding task: %v", err)
+	}
+
+	scheduler.runDueScheduledTasks(context.Background())
+
+	var executions []*commonExecution.TaskExecution
+	if err := db.Where("module = ? AND task_type = ?", commonExecution.ModuleManager, commonExecution.TaskTypeEmbedding).Find(&executions).Error; err != nil {
+		t.Fatalf("list executions: %v", err)
+	}
+	if len(executions) != 1 {
+		t.Fatalf("execution count = %d, want 1", len(executions))
+	}
+	exec := executions[0]
+	if exec.TriggerType != commonExecution.TriggerTypeScheduled {
+		t.Fatalf("trigger_type = %s, want scheduled", exec.TriggerType)
+	}
+	if exec.Status != commonExecution.ExecutionStatusFailed {
+		t.Fatalf("status = %s, want failed", exec.Status)
+	}
+	if message, _ := exec.ErrorDetails["message"].(string); !strings.Contains(message, "config.embedding.model") {
+		t.Fatalf("error_details.message = %#v, want embedding model mismatch", exec.ErrorDetails["message"])
+	}
+
+	refreshed, err := embeddingRepo.GetEmbeddingTask(context.Background(), task.ID, task.TenantID)
+	if err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if refreshed.NextRunAt == nil || !refreshed.NextRunAt.After(dueAt) {
+		t.Fatalf("next_run_at = %#v, want after %s", refreshed.NextRunAt, dueAt)
+	}
+	if refreshed.LastExecutionID == nil || *refreshed.LastExecutionID != exec.ExecutionID {
+		t.Fatalf("last_execution_id = %#v, want %s", refreshed.LastExecutionID, exec.ExecutionID)
+	}
+	if refreshed.LastExecutionStatus == nil || *refreshed.LastExecutionStatus != commonExecution.ExecutionStatusFailed {
+		t.Fatalf("last_execution_status = %#v, want failed", refreshed.LastExecutionStatus)
+	}
+}
+
+func TestEmbeddingTaskDefinitionRequiresCurrentEmbeddingConfig(t *testing.T) {
+	db := newEmbeddingTaskServiceTestDB(t)
+	embeddingRepo := repository.NewEmbeddingRepository(db)
+	cfg := &config.Config{}
+	cfg.EmbeddingService.Models = map[string]string{"text": "current-model"}
+	cfg.VectorConfig.Dimension = 768
+	taskSvc := NewEmbeddingTaskService(embeddingRepo, nil, nil, cfg)
+
+	task := newEmbeddingTaskDefinition()
+	task.Config["embedding"] = commonModels.JSONMap{
+		"model":     "other-model",
+		"dimension": 768,
+	}
+	if err := taskSvc.Create(context.Background(), task); err == nil || !strings.Contains(err.Error(), "config.embedding.model") {
+		t.Fatalf("Create error = %v, want model mismatch error", err)
+	}
+
+	task = newEmbeddingTaskDefinition()
+	task.Config["embedding"] = commonModels.JSONMap{
+		"model":     "current-model",
+		"dimension": 1024,
+	}
+	if err := taskSvc.Create(context.Background(), task); err == nil || !strings.Contains(err.Error(), "config.embedding.dimension") {
+		t.Fatalf("Create error = %v, want dimension mismatch error", err)
+	}
+
+	task = newEmbeddingTaskDefinition()
+	delete(task.Config, "embedding")
+	if err := taskSvc.Create(context.Background(), task); err != nil {
+		t.Fatalf("Create with omitted embedding config: %v", err)
+	}
+	embeddingCfg, ok := asJSONMap(task.Config["embedding"])
+	if !ok {
+		t.Fatalf("config.embedding = %#v, want JSONMap", task.Config["embedding"])
+	}
+	if embeddingCfg["model"] != "current-model" || intFromConfig(embeddingCfg["dimension"]) != 768 {
+		t.Fatalf("config.embedding = %#v, want current model/dimension", embeddingCfg)
+	}
+}
+
+func newEmbeddingTaskDefinition() *models.EmbeddingTask {
+	return &models.EmbeddingTask{
+		TenantID: 7,
+		Name:     "目录向量化",
+		Enabled:  true,
+		Config: commonModels.JSONMap{
+			"target": commonModels.JSONMap{
+				"scope":     "node",
+				"engine_id": 11,
+				"node_id":   23,
+				"locator":   "addp://engine/11/path/datasets?type=directory&node_id=23",
+				"recursive": true,
+			},
+			"filters": commonModels.JSONMap{
+				"max_file_size_mb": 10,
+			},
+			"embedding": commonModels.JSONMap{
+				"model":     "qwen2.5-vl-embedding",
+				"dimension": 1024,
+			},
+		},
 	}
 }
 
@@ -151,13 +354,10 @@ func newEmbeddingTaskServiceTestDB(t *testing.T) *gorm.DB {
 		last_execution_id TEXT,
 		last_execution_status TEXT,
 		last_run_at DATETIME,
+		next_run_at DATETIME,
+		schedule TEXT,
 		created_by INTEGER,
-		engine_id INTEGER NOT NULL,
-		bucket TEXT NOT NULL,
-		prefix TEXT,
-		recursive BOOLEAN,
-		modality TEXT,
-		file_types TEXT,
+		config JSON,
 		created_at DATETIME,
 		updated_at DATETIME,
 		deleted_at DATETIME

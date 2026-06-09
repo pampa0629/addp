@@ -1625,44 +1625,53 @@ const handleVectorize = async () => {
     // 解析 locator 提取参数
     const locator = node.locator || node.id
     const loc = parseLocator(locator)
-    const engineId = loc.engineId
-    const bucket = loc.path[0]
-
-    // 构建请求参数
-    const params = {
-      engine_id: engineId,
-      bucket: bucket
-    }
-
-    // 根据节点类型设置不同的参数
+    let request
     if (nodeType === 'object') {
-      params.scope = 'object'
-      params.object_key = loc.path.slice(1).join('/')
-    } else if (nodeType === 'directory') {
-      params.scope = 'directory'
-      params.prefix = loc.path.slice(1).join('/') + '/'
-      params.recursive = true
-    } else if (nodeType === 'bucket') {
-      params.scope = 'bucket'
+      if (!loc.itemId) {
+        ElMessage.warning(t('manager.explorer.vectorizeSingleFileOnly'))
+        return
+      }
+      request = {
+        scope: 'item',
+        target: {
+          engine_id: loc.engineId,
+          item_id: loc.itemId,
+          locator
+        }
+      }
+    } else if (['directory', 'bucket', 'prefix'].includes(nodeType)) {
+      if (!loc.nodeId) {
+        ElMessage.warning(t('manager.explorer.batchVectorizeDirOnly'))
+        return
+      }
+      request = {
+        scope: 'node',
+        target: {
+          engine_id: loc.engineId,
+          node_id: loc.nodeId,
+          locator,
+          recursive: true
+        }
+      }
+    } else {
+      ElMessage.warning(t('manager.explorer.batchVectorizeDirOnly'))
+      return
     }
 
-    // 调用后端 API（直接发送参数，不嵌套）
-    const response = await client.post('/manager/embedding', params)
+    const response = await client.post('/manager/embedding_executions', request)
 
     // 获取响应数据
     const responseData = response?.data || response
     console.log('向量化任务响应:', responseData)
 
-    const taskId = responseData?.task_id
-    if (!taskId) {
+    const executionId = responseData?.execution_id
+    if (!executionId) {
       ElMessage.success(t('manager.explorer.vectorizeTaskSubmitted'))
       return
     }
 
     // 显示进度通知
-    const targetName = nodeType === 'object'
-      ? params.object_key
-      : (nodeType === 'bucket' ? bucket : node.label)
+    const targetName = node.label
 
     notification = ElNotification({
       title: t('manager.explorer.vectorizeInProgress'),
@@ -1672,8 +1681,7 @@ const handleVectorize = async () => {
       position: 'bottom-right'
     })
 
-    // 开始轮询任务状态
-    pollTaskStatus(taskId, notification, targetName, nodeType)
+    pollTaskStatus(executionId, notification, targetName)
 
   } catch (error) {
     console.error('向量化失败:', error)
@@ -1685,7 +1693,7 @@ const handleVectorize = async () => {
 }
 
 // 轮询任务状态
-const pollTaskStatus = async (taskId, notification, targetName, nodeType, maxAttempts = 30) => {
+const pollTaskStatus = async (executionId, notification, targetName, maxAttempts = 30) => {
   let attempts = 0
   const pollInterval = 2000 // 2秒
 
@@ -1693,53 +1701,31 @@ const pollTaskStatus = async (taskId, notification, targetName, nodeType, maxAtt
     try {
       attempts++
 
-      const response = await client.get(`/manager/embedding/tasks/${taskId}`)
-      const data = response?.data || response
+      const response = await client.get(`/manager/executions/${executionId}`)
+      const payload = response?.data || response
+      const data = payload?.data || payload
 
-      console.log(`[轮询 ${attempts}/${maxAttempts}] 任务状态:`, data.task_status, data.message)
+      console.log(`[轮询 ${attempts}/${maxAttempts}] execution 状态:`, data.status)
 
-      if (data.task_status === 'success') {
+      if (data.status === 'success') {
         // 任务成功完成
         notification.close()
 
-        // 根据 result 显示详细信息
-        const result = data.result
-
-        // 单文件向量化
-        if (nodeType === 'object' || !result.total) {
-          // 检查是否跳过
-          if (result.skipped) {
-            ElNotification({
-              title: t('manager.explorer.vectorizeSkipped'),
-              message: t('manager.explorer.vectorizeSkippedMsg', { name: targetName, reason: result.skip_reason || t('manager.explorer.vectorizeSkipReasonDefault') }),
-              type: 'info',
-              duration: 5000,
-              position: 'bottom-right'
+        const metadata = data.metadata || {}
+        const total = metadata.total || 0
+        const generated = metadata.generated || 0
+        const rebuilt = metadata.rebuilt || 0
+        const skipped = metadata.ready_skipped || 0
+        const failed = metadata.failed || 0
+        const successMessage = total > 0
+          ? t('manager.explorer.vectorizeBatchStats', {
+              name: targetName,
+              total,
+              vectorized: generated + rebuilt,
+              skipped,
+              failed
             })
-            return
-          }
-          // 正常成功
-          ElNotification({
-            title: t('manager.explorer.vectorizeDone'),
-            message: t('manager.explorer.vectorizeSuccess', { name: targetName }),
-            type: 'success',
-            duration: 5000,
-            position: 'bottom-right'
-          })
-          return
-        }
-
-        // 批量向量化显示统计信息
-        const { total = 0, vectorized = 0, skipped = 0, failed = 0, errors = [] } = result
-        let successMessage = t('manager.explorer.vectorizeBatchStats', { name: targetName, total, vectorized, skipped, failed })
-
-        // 如果有失败，显示错误详情
-        if (failed > 0 && errors.length > 0) {
-          successMessage += t('manager.explorer.vectorizeBatchErrors') + errors.slice(0, 5).join('\n')
-          if (errors.length > 5) {
-            successMessage += t('manager.explorer.vectorizeBatchMoreErrors', { count: errors.length - 5 })
-          }
-        }
+          : t('manager.explorer.vectorizeSuccess', { name: targetName })
 
         ElNotification({
           title: failed > 0 ? t('manager.explorer.vectorizeDoneWithFailed') : t('manager.explorer.vectorizeDone'),
@@ -1751,12 +1737,12 @@ const pollTaskStatus = async (taskId, notification, targetName, nodeType, maxAtt
         return
       }
 
-      if (data.task_status === 'failed') {
+      if (['failed', 'timeout', 'cancelled', 'canceled'].includes(data.status)) {
         // 任务失败
         notification.close()
         ElNotification({
           title: t('manager.explorer.vectorizeFailed2'),
-          message: data.error || data.message || t('manager.explorer.vectorizeUnknownError'),
+          message: data.error_details?.message || data.error || data.message || t('manager.explorer.vectorizeUnknownError'),
           type: 'error',
           duration: 8000,
           position: 'bottom-right'
@@ -1765,7 +1751,7 @@ const pollTaskStatus = async (taskId, notification, targetName, nodeType, maxAtt
       }
 
       // 任务仍在运行
-      if (data.task_status === 'running' || data.task_status === 'pending') {
+      if (data.status === 'running' || data.status === 'pending') {
         if (attempts >= maxAttempts) {
           // 达到最大轮询次数
           notification.close()

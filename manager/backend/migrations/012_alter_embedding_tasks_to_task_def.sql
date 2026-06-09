@@ -15,18 +15,13 @@ CREATE TABLE manager.embedding_tasks (
     last_execution_id       VARCHAR(36),
     last_execution_status   VARCHAR(50),
     last_run_at             TIMESTAMPTZ,
+    next_run_at             TIMESTAMPTZ,
+    schedule                VARCHAR(255),
 
     created_by              INTEGER,
 
-    -- EmbeddingTask 特有字段
-    engine_id               INTEGER NOT NULL,
-    bucket                  VARCHAR(255) NOT NULL,
-    prefix                  TEXT,
-    recursive               BOOLEAN NOT NULL DEFAULT TRUE,
-
-    -- 向量化配置
-    modality                VARCHAR(20),
-    file_types              VARCHAR(255),
+    -- 向量化任务私有配置：config.target / config.filters / config.embedding
+    config                  JSONB NOT NULL DEFAULT '{}'::jsonb,
 
     -- 时间戳
     created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -35,5 +30,5 @@ CREATE TABLE manager.embedding_tasks (
 );
 
 CREATE INDEX IF NOT EXISTS idx_embedding_tasks_tenant_id ON manager.embedding_tasks (tenant_id);
-CREATE INDEX IF NOT EXISTS idx_embedding_tasks_engine_id ON manager.embedding_tasks (engine_id);
+CREATE INDEX IF NOT EXISTS idx_embedding_tasks_next_run_at ON manager.embedding_tasks (next_run_at);
 CREATE INDEX IF NOT EXISTS idx_embedding_tasks_deleted_at ON manager.embedding_tasks (deleted_at);

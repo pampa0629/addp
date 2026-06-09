@@ -1,47 +1,7 @@
 basePath: /api/v1/manager
 definitions:
-  github_com_addp_manager_internal_models.EmbeddingTask:
-    properties:
-      bucket:
-        type: string
-      created_at:
-        description: 时间戳
-        type: string
-      created_by:
-        type: integer
-      description:
-        type: string
-      enabled:
-        type: boolean
-      engine_id:
-        description: EmbeddingTask 特有字段
-        type: integer
-      file_types:
-        description: 文件扩展名过滤（逗号分隔，如 "jpg,png,pdf"）
-        type: string
-      id:
-        type: integer
-      last_execution_id:
-        description: 最近一次执行信息（回写）
-        type: string
-      last_execution_status:
-        type: string
-      last_run_at:
-        type: string
-      modality:
-        description: 向量化配置
-        type: string
-      name:
-        description: 任务基本信息
-        type: string
-      prefix:
-        type: string
-      recursive:
-        type: boolean
-      tenant_id:
-        type: integer
-      updated_at:
-        type: string
+  github_com_addp_common_models.JSONMap:
+    additionalProperties: true
     type: object
   github_com_addp_manager_internal_models.MetaExtractionScanStats:
     properties:
@@ -141,6 +101,50 @@ definitions:
         type: integer
       updated_at:
         type: string
+    type: object
+  github_com_addp_manager_internal_service.EmbeddingExecutionRequest:
+    properties:
+      entry:
+        type: string
+      filters:
+        additionalProperties: true
+        type: object
+      scope:
+        $ref: '#/definitions/github_com_addp_manager_internal_service.EmbeddingExecutionScope'
+      source:
+        type: string
+      target:
+        $ref: '#/definitions/github_com_addp_manager_internal_service.EmbeddingExecutionTarget'
+    type: object
+  github_com_addp_manager_internal_service.EmbeddingExecutionResponse:
+    properties:
+      execution_id:
+        type: string
+      status:
+        type: string
+    type: object
+  github_com_addp_manager_internal_service.EmbeddingExecutionScope:
+    enum:
+    - item
+    - node
+    type: string
+    x-enum-varnames:
+    - EmbeddingExecutionScopeItem
+    - EmbeddingExecutionScopeNode
+  github_com_addp_manager_internal_service.EmbeddingExecutionTarget:
+    properties:
+      engine_id:
+        type: integer
+      item_fingerprint:
+        type: string
+      item_id:
+        type: integer
+      locator:
+        type: string
+      node_id:
+        type: integer
+      recursive:
+        type: boolean
     type: object
   github_com_addp_manager_internal_service.SearchDocument:
     properties:
@@ -255,11 +259,11 @@ definitions:
         type: string
       file_name:
         type: string
+      locator:
+        type: string
       metadata:
         additionalProperties: true
         type: object
-      modality:
-        type: string
       model:
         type: string
       name:
@@ -275,30 +279,20 @@ definitions:
       title:
         type: string
     type: object
-  internal_api.CreateEmbeddingRequest:
+  internal_api.EmbeddingTaskRequest:
     properties:
-      bucket:
+      config:
+        $ref: '#/definitions/github_com_addp_common_models.JSONMap'
+      description:
         type: string
-      engine_id:
-        type: integer
-      object_key:
-        description: scope=object 时必填
-        type: string
-      prefix:
-        description: scope=directory 时使用
-        type: string
-      recursive:
-        description: 是否递归，默认 true
+      enabled:
         type: boolean
-      scope:
-        description: object|directory|bucket，默认 object
+      name:
         type: string
-      task_name:
-        description: 任务名称（可选）
+      next_run_at:
         type: string
-    required:
-    - bucket
-    - engine_id
+      schedule:
+        type: string
     type: object
   internal_api.TaskExecuteRequest:
     properties:
@@ -439,63 +433,40 @@ paths:
       summary: 获取地图服务配置 | Get map service configuration
       tags:
       - Manager
-  /embedding:
+  /embedding_executions:
     post:
       consumes:
       - application/json
-      description: 创建对象存储文件的向量化任务，支持单文件、目录和整个Bucket | Create vectorization task for
-        object storage files, supports single file, directory, and entire bucket
+      description: 从资源树 item 或 node 触发一次性向量化执行，返回统一 execution_id，不创建向量化任务定义。| Create
+        an ad-hoc embedding execution from a resource tree item or node and return
+        the unified execution_id.
       parameters:
-      - description: 向量化任务配置 | Embedding task configuration
+      - description: 一次性向量化执行请求 | Ad-hoc embedding execution request
         in: body
         name: body
         required: true
         schema:
-          $ref: '#/definitions/internal_api.CreateEmbeddingRequest'
+          $ref: '#/definitions/github_com_addp_manager_internal_service.EmbeddingExecutionRequest'
       produces:
       - application/json
       responses:
         "200":
-          description: 任务已创建 | Task created
+          description: 执行已创建 | Execution created
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/github_com_addp_manager_internal_service.EmbeddingExecutionResponse'
         "400":
           description: 请求参数错误 | Bad request
           schema:
             additionalProperties: true
             type: object
-      security:
-      - BearerAuth: []
-      summary: 创建向量化任务 | Create embedding task
-      tags:
-      - Manager
-  /embedding/tasks/{task_id}:
-    get:
-      description: 查询向量化任务的实时状态（仅内存中的运行中任务）| Query real-time status of an embedding
-        task (in-memory running tasks only)
-      parameters:
-      - description: 任务ID | Task ID
-        in: path
-        name: task_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 任务状态信息 | Task status
-          schema:
-            additionalProperties: true
-            type: object
-        "404":
-          description: 任务不存在或已过期 | Task not found or expired
+        "503":
+          description: 向量化服务不可用 | Embedding service unavailable
           schema:
             additionalProperties: true
             type: object
       security:
       - BearerAuth: []
-      summary: 获取向量化任务状态 | Get embedding task status
+      summary: 创建一次性向量化执行 | Create ad-hoc embedding execution
       tags:
       - Manager
   /embedding_tasks:
@@ -541,7 +512,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/github_com_addp_manager_internal_models.EmbeddingTask'
+          $ref: '#/definitions/internal_api.EmbeddingTaskRequest'
       produces:
       - application/json
       responses:
@@ -634,7 +605,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/github_com_addp_manager_internal_models.EmbeddingTask'
+          $ref: '#/definitions/internal_api.EmbeddingTaskRequest'
       produces:
       - application/json
       responses:
@@ -656,6 +627,91 @@ paths:
       security:
       - BearerAuth: []
       summary: 更新向量化任务配置 | Update embedding task configuration
+      tags:
+      - Manager
+  /embeddings:
+    get:
+      description: 查询 Manager 向量化结果 artifact state。| List Manager embedding artifact
+        states.
+      parameters:
+      - description: 页码，默认1 | Page number
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量，默认20 | Page size
+        in: query
+        name: page_size
+        type: integer
+      - description: 引擎ID | Engine ID
+        in: query
+        name: engine_id
+        type: integer
+      - description: 节点ID | Node ID
+        in: query
+        name: node_id
+        type: integer
+      - description: 数据项ID | Item ID
+        in: query
+        name: item_id
+        type: integer
+      - description: 结果状态 | Result status
+        in: query
+        name: status
+        type: string
+      - description: 关键词 | Query
+        in: query
+        name: q
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 向量化结果列表 | Embedding result list
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 向量化服务不可用 | Embedding service unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询向量化结果 | List embedding results
+      tags:
+      - Manager
+  /embeddings/{id}:
+    delete:
+      description: 删除 Manager 向量化结果，不删除源 data item。| Delete an embedding result without
+        deleting the source data item.
+      parameters:
+      - description: 向量化结果ID | Embedding result ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 删除成功 | Deleted
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 向量化服务不可用 | Embedding service unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除向量化结果 | Delete embedding result
       tags:
       - Manager
   /engines:
@@ -1472,6 +1528,39 @@ paths:
       security:
       - BearerAuth: []
       summary: 导入数据文件 | Import data file
+      tags:
+      - Manager
+  /items/{item_id}/embedding:
+    get:
+      description: 查询单个 data item 的当前向量化结果状态。| Get current embedding state for a data
+        item.
+      parameters:
+      - description: 数据项ID | Item ID
+        in: path
+        name: item_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: item 向量化状态 | Item embedding state
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 向量化服务不可用 | Embedding service unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询 item 向量化状态 | Get item embedding state
       tags:
       - Manager
   /mvt_tasks:

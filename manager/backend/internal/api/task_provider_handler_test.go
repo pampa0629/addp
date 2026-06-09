@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	commonExecution "github.com/addp/common/execution"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
 	"github.com/addp/manager/internal/service"
@@ -51,15 +53,19 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 		TenantID: 1,
 		Name:     "embedding task",
 		Enabled:  true,
-		EngineID: 12,
-		Bucket:   "datasets",
-		Prefix:   "docs/",
+		Config: commonModels.JSONMap{
+			"target": commonModels.JSONMap{
+				"scope":     "node",
+				"engine_id": 12,
+				"node_id":   34,
+			},
+		},
 	}); err != nil {
 		t.Fatalf("create embedding task: %v", err)
 	}
 
 	handler := NewTaskProviderHandler(
-		service.NewEmbeddingTaskService(embeddingRepo, nil, nil),
+		service.NewEmbeddingTaskService(embeddingRepo, nil, nil, nil),
 		service.NewMvtTaskService(mvtRepo, nil, nil),
 		nil,
 	)
@@ -74,6 +80,89 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 
 	assertTaskTypes(t, router, "/mvt_tasks", []string{commonExecution.TaskTypeMvtGeneration})
 	assertTaskTypes(t, router, "/embedding_tasks", []string{commonExecution.TaskTypeEmbedding})
+}
+
+func TestCreateEmbeddingTaskRejectsLegacyTopLevelFields(t *testing.T) {
+	db := newTaskProviderHandlerTestDB(t)
+	embeddingRepo := repository.NewEmbeddingRepository(db)
+	handler := NewTaskProviderHandler(
+		service.NewEmbeddingTaskService(embeddingRepo, nil, nil, nil),
+		nil,
+		nil,
+	)
+
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("tenant_id", uint(1))
+		c.Set("user_id", uint(9))
+		c.Next()
+	})
+	router.POST("/embedding_tasks", handler.CreateEmbeddingTask)
+
+	body := `{
+		"name":"legacy",
+		"engine_id":12,
+		"config":{
+			"target":{"scope":"node","engine_id":12,"node_id":34}
+		}
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/embedding_tasks", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "unknown field") {
+		t.Fatalf("body = %s, want unknown field error", w.Body.String())
+	}
+}
+
+func TestTaskExecuteRejectsUnknownFields(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := NewTaskProviderHandler(nil, nil, nil)
+
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("tenant_id", uint(1))
+		c.Next()
+	})
+	router.POST("/tasks/:task_type/:id/execute", handler.TaskExecute)
+
+	body := `{"parameters":{},"legacy":true}`
+	req := httptest.NewRequest(http.MethodPost, "/tasks/embedding/1/execute", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "unknown field") {
+		t.Fatalf("body = %s, want unknown field error", w.Body.String())
+	}
+}
+
+func TestDecodeEmbeddingExecutionRequestRejectsUnknownFields(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/embedding_executions", strings.NewReader(`{
+		"scope":"item",
+		"target":{"item_id":7},
+		"bucket":"legacy"
+	}`))
+
+	_, err := decodeEmbeddingExecutionRequest(c)
+	if err == nil {
+		t.Fatal("decodeEmbeddingExecutionRequest error is nil, want unknown field error")
+	}
+	if !strings.Contains(err.Error(), "unknown field") {
+		t.Fatalf("error = %v, want unknown field error", err)
+	}
 }
 
 func assertTaskTypes(t *testing.T, router *gin.Engine, path string, want []string) {
@@ -152,13 +241,10 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 		last_execution_id TEXT,
 		last_execution_status TEXT,
 		last_run_at DATETIME,
+		next_run_at DATETIME,
+		schedule TEXT,
 		created_by INTEGER,
-		engine_id INTEGER NOT NULL,
-		bucket TEXT NOT NULL,
-		prefix TEXT,
-		recursive BOOLEAN,
-		modality TEXT,
-		file_types TEXT,
+		config JSON,
 		created_at DATETIME,
 		updated_at DATETIME,
 		deleted_at DATETIME

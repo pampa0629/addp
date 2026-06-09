@@ -63,10 +63,10 @@ func (s *TaskProviderRegistryService) Register() error {
 			{
 				"type":                      "embedding",
 				"display_name":              "向量化",
-				"description":               "对对象存储文件进行多模态向量化",
+				"description":               "对数据项执行向量化并生成可检索向量结果",
 				"definition_schema":         map[string]interface{}{"type": "object"},
 				"execution_schema":          map[string]interface{}{"type": "object", "additionalProperties": false},
-				"supports_schedule":         false,
+				"supports_schedule":         true,
 				"supports_cancel":           false,
 				"supports_inline_execution": false,
 				"create_url":                "/manager/vectorization-tasks",

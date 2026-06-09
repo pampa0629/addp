@@ -102,6 +102,21 @@ MANAGER_IMPORT_SOURCE_ENGINE_ID=
 3. 如果匹配不到或匹配到多个对象存储引擎，导入会失败并提示显式配置 `MANAGER_IMPORT_SOURCE_ENGINE_ID`。
 4. 当前上传入口只接受一个 Shapefile ZIP 包；包内 `.shp/.dbf/.shx` 必须同 basename，不能混入多套 Shapefile。
 
+### Manager 向量化配置
+
+Manager 向量化当前阶段只允许一个启用中的向量模型和一个向量维度。任务定义中的 `config.embedding.model` / `config.embedding.dimension` 是当前配置快照，创建或更新任务时必须与以下环境变量一致；不再按 text/image/video 分别配置模型。
+
+```bash
+MANAGER_EMBEDDING_SERVICE_BASE_URL=
+MANAGER_EMBEDDING_SERVICE_API_KEY=
+MANAGER_EMBEDDING_SERVICE_TIMEOUT=15s
+MANAGER_EMBEDDING_MODEL=qwen2.5-vl-embedding
+MANAGER_VECTOR_DIMENSION=1024
+MANAGER_VECTOR_SEARCH_MAX_DISTANCE=0.35
+MANAGER_VECTOR_MAX_FILE_SIZE_MB=10
+MANAGER_VECTOR_BATCH_CONCURRENCY=5
+```
+
 ## 配置
 
 ### 环境变量

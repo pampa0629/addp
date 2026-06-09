@@ -55,6 +55,8 @@
 3. [路径统一和指纹计算](spec/addp路径统一和指纹计算.md)：确认 full_name、fingerprint 和 ResourceLocator 的统一规则。
 4. [存储引擎路径体系规范](spec/addp存储引擎路径体系规范.md)：确认对象存储、文件系统和数据库类引擎的路径规则。
 5. [元数据 attributes 规范](spec/addp元数据attributes规范.md)：确认 locator 不作为 attributes 标准事实持久化。
+6. [向量化体系图](concepts/addp向量化体系图.md)：确认资源树 item / node 向量化、向量化任务和向量化结果的概念边界。
+7. [向量化规范](spec/addp向量化规范.md)：确认向量化结果字段、状态枚举、API、执行配置和 UI 契约。
 
 ## 数据类型与格式主题
 

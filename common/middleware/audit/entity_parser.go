@@ -21,6 +21,12 @@ type PathRule struct {
 // 路径规则映射表
 // 根据常见的 RESTful API 路径模式自动提取资源类型和ID
 var pathPatterns = []PathRule{
+	// Manager 模块
+	{Pattern: "/api/v1/manager/embedding_executions", EntityType: "embedding_execution", IDPosition: 4},
+	{Pattern: "/api/v1/manager/embeddings", EntityType: "embedding", IDPosition: 4},
+	{Pattern: "/api/v1/manager/embedding_tasks", EntityType: "embedding_task", IDPosition: 4},
+	{Pattern: "/api/v1/manager/tasks/embedding", EntityType: "embedding_execution", IDPosition: 5},
+
 	// System 模块
 	{Pattern: "/api/users/", EntityType: "user", IDPosition: 3},
 	{Pattern: "/api/engines/", EntityType: "engine", IDPosition: 3},

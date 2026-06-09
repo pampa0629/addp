@@ -2,9 +2,10 @@ package service
 
 import (
 	"context"
-	"encoding/json"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"fmt"
-	commonExecution "github.com/addp/common/execution"
 	"io"
 	"log/slog"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/embedding"
+	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/manager/internal/config"
@@ -22,15 +24,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
-	"gorm.io/datatypes"
 )
 
-// EmbeddingService Manager 向量化服务
-// 职责：
-// 1. 按需向量化（单对象、目录、Bucket）
-// 2. 指纹去重（避免重复向量化）
-// 3. 数据更新检测（文件修改后重新向量化）
-// 4. 向量化状态查询
 type EmbeddingService struct {
 	vectorRepo      *repository.EmbeddingRepository
 	systemClient    *commonClient.SystemClient
@@ -41,7 +36,6 @@ type EmbeddingService struct {
 	log             *slog.Logger
 }
 
-// NewEmbeddingService 创建向量化服务
 func NewEmbeddingService(
 	vectorRepo *repository.EmbeddingRepository,
 	systemClient *commonClient.SystemClient,
@@ -50,7 +44,6 @@ func NewEmbeddingService(
 	cfg *config.Config,
 	log *slog.Logger,
 ) (*EmbeddingService, error) {
-	// 创建 Embedding 客户端
 	embeddingCfg := embedding.ServiceConfig{
 		BaseURL: cfg.EmbeddingService.BaseURL,
 		APIKey:  cfg.EmbeddingService.APIKey,
@@ -79,297 +72,572 @@ func NewEmbeddingService(
 	}, nil
 }
 
-// EmbedObjectRequest 单对象向量化请求
-type EmbedObjectRequest struct {
-	EngineID uint
-	Bucket   string
-	Path     string // 目录路径（以/结尾）
-	Name     string // 文件名
-	TenantID *uint
+type EmbeddingExecutionScope string
+
+const (
+	EmbeddingExecutionScopeItem EmbeddingExecutionScope = "item"
+	EmbeddingExecutionScopeNode EmbeddingExecutionScope = "node"
+)
+
+type EmbeddingExecutionRequest struct {
+	Scope   EmbeddingExecutionScope  `json:"scope"`
+	Target  EmbeddingExecutionTarget `json:"target"`
+	Filters map[string]interface{}   `json:"filters,omitempty"`
+	Entry   string                   `json:"entry,omitempty"`
+	Source  string                   `json:"source,omitempty"`
+	Config  commonModels.JSONMap     `json:"-"`
 }
 
-// EmbedObjectResult 单对象向量化结果
-type EmbedObjectResult struct {
-	Fingerprint string
-	Modality    string
-	Skipped     bool   // 是否因为未修改而跳过
-	SkipReason  string // 跳过原因
-	Vector      []float32
-	Model       string
+type EmbeddingExecutionTarget struct {
+	EngineID        uint   `json:"engine_id"`
+	ItemID          uint   `json:"item_id,omitempty"`
+	ItemFingerprint string `json:"item_fingerprint,omitempty"`
+	NodeID          uint   `json:"node_id,omitempty"`
+	Locator         string `json:"locator,omitempty"`
+	Recursive       bool   `json:"recursive,omitempty"`
 }
 
-// EmbedObject 向量化单个对象（带去重检查）
-func (s *EmbeddingService) EmbedObject(ctx context.Context, req EmbedObjectRequest) (*EmbedObjectResult, error) {
-	// 拼接完整路径用于操作
-	fullPath := req.Path + req.Name
-
-	// 1. 生成指纹 - 两步计算方式
-	fullName := commonModels.JoinObjectPath(req.Bucket, req.Path, req.Name)
-	fingerprint := commonModels.GenerateItemFingerprint(req.EngineID, fullName)
-
-	// 2. 获取对象元数据
-	objectInfo, err := s.getObjectInfo(ctx, req.EngineID, req.Bucket, fullPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get object info: %w", err)
-	}
-
-	// 3. 检查文件大小限制
-	maxSizeMB := s.cfg.VectorConfig.MaxFileSizeMB
-	if maxSizeMB > 0 && objectInfo.Size > int64(maxSizeMB)*1024*1024 {
-		return nil, fmt.Errorf("file size %d exceeds limit %dMB", objectInfo.Size, maxSizeMB)
-	}
-
-	// 4. 确定模态类型
-	modality := s.detectModality(objectInfo.ContentType, req.Name)
-
-	// 5. 检查是否已向量化且未过期
-	existing, err := s.vectorRepo.GetByFingerprint(ctx, fingerprint, string(modality))
-	if err != nil {
-		return nil, fmt.Errorf("failed to check existing vector: %w", err)
-	}
-
-	if existing != nil && existing.DataUpdatedAt != nil {
-		// 对象未修改，跳过向量化
-		if !objectInfo.LastModified.After(*existing.DataUpdatedAt) {
-			s.log.Info("Object not modified, skipping vectorization",
-				"fingerprint", fingerprint,
-				"full_path", fullPath,
-				"data_updated_at", existing.DataUpdatedAt,
-				"last_modified", objectInfo.LastModified,
-			)
-			return &EmbedObjectResult{
-				Fingerprint: fingerprint,
-				Modality:    string(modality),
-				Skipped:     true,
-				SkipReason:  "object not modified",
-			}, nil
-		}
-		s.log.Info("Object modified, re-vectorizing",
-			"fingerprint", fingerprint,
-			"full_path", fullPath,
-			"old_data_updated_at", existing.DataUpdatedAt,
-			"new_last_modified", objectInfo.LastModified,
-		)
-	}
-
-	// 6. 获取对象内容并向量化
-	vector, model, err := s.embedObjectContent(ctx, req.EngineID, req.Bucket, fullPath, modality, objectInfo)
-	if err != nil {
-		return nil, fmt.Errorf("failed to vectorize content: %w", err)
-	}
-
-	// 7. 构建 metadata（用于搜索展示）
-	metadata, err := s.buildMetadata(ctx, req.EngineID, req.Bucket, fullPath, objectInfo, req.TenantID)
-	if err != nil {
-		s.log.Warn("Failed to build metadata, continuing without it", "error", err)
-		metadata = nil
-	}
-
-	// 8. 存储向量（带去重）
-	embeddingModel := &models.Embedding{
-		EngineID:      req.EngineID,
-		Bucket:        req.Bucket,
-		Path:          req.Path,
-		Name:          req.Name,
-		Fingerprint:   fingerprint,
-		DataUpdatedAt: &objectInfo.LastModified,
-		Embedding:     vector,
-		Modality:      string(modality),
-		Model:         model,
-		FileSize:      objectInfo.Size,
-		ContentType:   objectInfo.ContentType,
-		Metadata:      metadata,
-		TenantID:      req.TenantID,
-	}
-
-	if err := s.vectorRepo.UpsertEmbedding(ctx, embeddingModel); err != nil {
-		return nil, fmt.Errorf("failed to store embedding: %w", err)
-	}
-
-	s.log.Info("Object vectorized successfully",
-		"fingerprint", fingerprint,
-		"full_path", fullPath,
-		"modality", modality,
-		"model", model,
-		"vector_dimension", len(vector),
-	)
-
-	return &EmbedObjectResult{
-		Fingerprint: fingerprint,
-		Modality:    string(modality),
-		Skipped:     false,
-		Vector:      vector,
-		Model:       model,
-	}, nil
+type EmbeddingExecutionResponse struct {
+	ExecutionID string `json:"execution_id"`
+	Status      string `json:"status"`
 }
 
-// EmbedDirectoryRequest 目录批量向量化请求
-type EmbedDirectoryRequest struct {
-	EngineID         uint
-	Bucket           string
-	Prefix           string
-	Recursive        bool
-	TenantID         *uint
-	ExecutionContext *EmbedDirectoryExecutionContext
-}
-
-// EmbedDirectoryExecutionContext 复用外层已创建的统一执行记录。
-type EmbedDirectoryExecutionContext struct {
+type EmbeddingExecutionContext struct {
 	ExecutionID string
 	TenantID    int
 	StartedAt   time.Time
 }
 
-// EmbedDirectoryResult 目录批量向量化结果
-type EmbedDirectoryResult struct {
-	Total      int      `json:"total"`
-	Vectorized int      `json:"vectorized"`
-	Skipped    int      `json:"skipped"`
-	Failed     int      `json:"failed"`
-	Errors     []string `json:"errors,omitempty"`
+type EmbeddingExecutionStats struct {
+	Total         int `json:"total"`
+	ReadySkipped  int `json:"ready_skipped"`
+	Generated     int `json:"generated"`
+	Rebuilt       int `json:"rebuilt"`
+	Unsupported   int `json:"unsupported"`
+	Failed        int `json:"failed"`
+	MissingSource int `json:"missing_source"`
 }
 
-// EmbedDirectory 批量向量化目录
-// tenantID 用于写入 common.task_executions；没有 ExecutionContext 时自动创建 ad-hoc execution。
-func (s *EmbeddingService) EmbedDirectory(ctx context.Context, req EmbedDirectoryRequest) (*EmbedDirectoryResult, error) {
-	startTime := time.Now()
-
-	executionID := uuid.New().String()
-	var tenantIDInt int
-	if req.TenantID != nil {
-		tenantIDInt = int(*req.TenantID)
+func (s *EmbeddingService) CreateAdhocExecution(ctx context.Context, tenantID, userID uint, req EmbeddingExecutionRequest) (*EmbeddingExecutionResponse, error) {
+	if s == nil {
+		return nil, errors.New("embedding service is not available")
+	}
+	if s.taskExecRepo == nil {
+		return nil, errors.New("task execution repository is not available")
 	}
 
-	if req.ExecutionContext != nil {
-		executionID = req.ExecutionContext.ExecutionID
-		tenantIDInt = req.ExecutionContext.TenantID
-		if !req.ExecutionContext.StartedAt.IsZero() {
-			startTime = req.ExecutionContext.StartedAt
-		}
-	} else {
-		exec := &commonExecution.TaskExecution{
-			ExecutionID: executionID,
-			TenantID:    tenantIDInt,
-			Module:      commonExecution.ModuleManager,
-			TaskType:    commonExecution.TaskTypeEmbedding,
-			Source:      commonExecution.ModuleManager,
-			Status:      commonExecution.ExecutionStatusRunning,
-			TriggerType: commonExecution.TriggerTypeManual,
-			StartedAt:   &startTime,
-			ExecutionConfig: commonModels.JSONMap{
-				"engine_id": req.EngineID,
-				"bucket":    req.Bucket,
-				"prefix":    req.Prefix,
-				"recursive": req.Recursive,
-				"scope":     "directory",
-			},
-		}
-		if s.taskExecRepo != nil {
-			if err := s.taskExecRepo.Create(ctx, exec); err != nil {
-				s.log.Warn("Failed to create task execution record", "error", err)
-			}
-		}
+	req.Entry = strings.TrimSpace(req.Entry)
+	if req.Entry == "" {
+		req.Entry = "resource_tree"
 	}
-
-	// 1. 列出目录下的所有对象
-	objects, err := s.listObjects(ctx, req.EngineID, req.Bucket, req.Prefix, req.Recursive)
+	req.Source = commonExecution.ModuleManager
+	executionConfig, err := s.buildExecutionConfig(ctx, tenantID, req)
 	if err != nil {
-		s.finishExecution(ctx, executionID, tenantIDInt, commonExecution.ExecutionStatusFailed, startTime,
-			commonModels.JSONMap{"message": err.Error()}, nil)
-		return nil, fmt.Errorf("failed to list objects: %w", err)
+		return nil, err
 	}
 
-	result := &EmbedDirectoryResult{
-		Total:  len(objects),
-		Errors: make([]string, 0),
+	executionID := uuid.NewString()
+	now := time.Now()
+	exec := &commonExecution.TaskExecution{
+		ExecutionID:     executionID,
+		TenantID:        int(tenantID),
+		Module:          commonExecution.ModuleManager,
+		TaskType:        commonExecution.TaskTypeEmbedding,
+		Source:          commonExecution.ModuleManager,
+		Status:          commonExecution.ExecutionStatusRunning,
+		TriggerType:     commonExecution.TriggerTypeManual,
+		TriggeredBy:     intPtr(int(userID)),
+		ExecutionConfig: executionConfig,
+		StartedAt:       &now,
+	}
+	if err := s.taskExecRepo.Create(ctx, exec); err != nil {
+		return nil, err
 	}
 
-	// 2. 并发向量化
+	go func() {
+		bgCtx := context.Background()
+		stats, execErr := s.RunEmbeddingExecution(bgCtx, tenantID, req, &EmbeddingExecutionContext{
+			ExecutionID: executionID,
+			TenantID:    int(tenantID),
+			StartedAt:   now,
+		})
+		status := commonExecution.ExecutionStatusSuccess
+		var errDetails commonModels.JSONMap
+		if execErr != nil {
+			status = commonExecution.ExecutionStatusFailed
+			errDetails = commonModels.JSONMap{"message": execErr.Error()}
+		}
+		s.finishExecution(bgCtx, executionID, int(tenantID), status, now, errDetails, statsToJSONMap(stats))
+	}()
+
+	return &EmbeddingExecutionResponse{ExecutionID: executionID, Status: commonExecution.ExecutionStatusRunning}, nil
+}
+
+func (s *EmbeddingService) RunEmbeddingExecution(ctx context.Context, tenantID uint, req EmbeddingExecutionRequest, execCtx *EmbeddingExecutionContext) (*EmbeddingExecutionStats, error) {
+	if s == nil {
+		return nil, errors.New("embedding service is not available")
+	}
+	if s.metaClient == nil {
+		return nil, errors.New("meta client is not available")
+	}
+	stats := &EmbeddingExecutionStats{}
+	items, err := s.resolveExecutionItems(ctx, tenantID, req)
+	if err != nil {
+		return stats, err
+	}
+	stats.Total = len(items)
+
 	concurrency := s.cfg.VectorConfig.BatchConcurrency
 	if concurrency <= 0 {
 		concurrency = 5
 	}
-
 	sem := make(chan struct{}, concurrency)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 
-	for _, obj := range objects {
+	for _, item := range items {
+		item := item
 		wg.Add(1)
-		go func(objectKey string) {
+		go func() {
 			defer wg.Done()
-
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			// 拆分完整路径为目录和文件名
-			dir, name := commonModels.SplitObjectPath(objectKey)
-
-			objReq := EmbedObjectRequest{
-				EngineID: req.EngineID,
-				Bucket:   req.Bucket,
-				Path:     dir,
-				Name:     name,
-				TenantID: req.TenantID,
-			}
-
-			objResult, err := s.EmbedObject(ctx, objReq)
+			outcome := s.processItem(ctx, tenantID, item, execCtx)
 			mu.Lock()
 			defer mu.Unlock()
-
-			if err != nil {
-				result.Failed++
-				result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", objectKey, err))
-				s.log.Error("Failed to vectorize object", "object_key", objectKey, "error", err)
-			} else if objResult.Skipped {
-				result.Skipped++
-			} else {
-				result.Vectorized++
+			switch outcome {
+			case "ready_skipped":
+				stats.ReadySkipped++
+			case "generated":
+				stats.Generated++
+			case "rebuilt":
+				stats.Rebuilt++
+			case "unsupported":
+				stats.Unsupported++
+			case "missing_source":
+				stats.MissingSource++
+			default:
+				stats.Failed++
 			}
-		}(obj)
+		}()
 	}
-
 	wg.Wait()
 
-	// 完成执行记录
-	status := commonExecution.ExecutionStatusSuccess
-	if result.Failed > 0 && result.Vectorized == 0 {
-		status = commonExecution.ExecutionStatusFailed
-	}
-	metadata := commonModels.JSONMap{
-		"total":      result.Total,
-		"vectorized": result.Vectorized,
-		"skipped":    result.Skipped,
-		"failed":     result.Failed,
-	}
-	if len(result.Errors) > 0 {
-		metadata["error_samples"] = result.Errors
-	}
-	s.finishExecution(ctx, executionID, tenantIDInt, status, startTime, nil, metadata)
-
-	s.log.Info("Directory vectorization completed",
-		"bucket", req.Bucket,
-		"prefix", req.Prefix,
-		"total", result.Total,
-		"vectorized", result.Vectorized,
-		"skipped", result.Skipped,
-		"failed", result.Failed,
-	)
-
-	return result, nil
+	return stats, nil
 }
 
-// finishExecution 更新 common.task_executions 执行完成状态
+func (s *EmbeddingService) GetItemEmbeddingState(ctx context.Context, tenantID, itemID uint) (*models.Embedding, string, error) {
+	if s.metaClient == nil {
+		return nil, "", errors.New("meta client is not available")
+	}
+	item, err := s.metaClient.WithTenantID(tenantID).GetItemByID(itemID)
+	if err != nil {
+		return nil, "", err
+	}
+	itemFingerprint := commonModels.GenerateItemFingerprint(item.EngineID, item.FullName)
+	state, err := s.vectorRepo.GetByItemFingerprint(ctx, tenantID, itemFingerprint)
+	if err != nil {
+		return nil, itemFingerprint, err
+	}
+	return s.embeddingStateForCurrentItem(*item, state), itemFingerprint, nil
+}
+
+func (s *EmbeddingService) ListEmbeddings(ctx context.Context, filter repository.EmbeddingListFilter) ([]*models.Embedding, int64, error) {
+	if filter.NodeID > 0 {
+		if s.metaClient == nil {
+			return nil, 0, errors.New("meta client is not available")
+		}
+		items, err := s.collectNodeItems(ctx, s.metaClient.WithTenantID(filter.TenantID), filter.NodeID, true)
+		if err != nil {
+			return nil, 0, err
+		}
+		if len(items) == 0 {
+			return []*models.Embedding{}, 0, nil
+		}
+		itemIDs := make([]uint, 0, len(items))
+		for _, item := range items {
+			itemIDs = append(itemIDs, item.ID)
+		}
+		filter.ItemIDs = itemIDs
+	}
+	return s.vectorRepo.ListEmbeddings(ctx, filter)
+}
+
+func (s *EmbeddingService) DeleteEmbedding(ctx context.Context, tenantID, id uint) error {
+	return s.vectorRepo.DeleteEmbedding(ctx, tenantID, id)
+}
+
+func (s *EmbeddingService) resolveExecutionItems(ctx context.Context, tenantID uint, req EmbeddingExecutionRequest) ([]commonModels.MetaItem, error) {
+	client := s.metaClient.WithTenantID(tenantID)
+	switch req.Scope {
+	case EmbeddingExecutionScopeItem:
+		if req.Target.ItemID == 0 {
+			return nil, errors.New("scope=item requires target.item_id")
+		}
+		item, err := client.GetItemByID(req.Target.ItemID)
+		if err != nil {
+			return nil, err
+		}
+		if req.Target.EngineID != 0 && item.EngineID != req.Target.EngineID {
+			return nil, fmt.Errorf("item %d does not belong to engine %d", item.ID, req.Target.EngineID)
+		}
+		return []commonModels.MetaItem{*item}, nil
+	case EmbeddingExecutionScopeNode:
+		if req.Target.NodeID == 0 {
+			return nil, errors.New("scope=node requires target.node_id")
+		}
+		return s.collectNodeItems(ctx, client, req.Target.NodeID, req.Target.Recursive)
+	default:
+		return nil, fmt.Errorf("unsupported embedding execution scope: %s", req.Scope)
+	}
+}
+
+func (s *EmbeddingService) collectNodeItems(ctx context.Context, client *commonClient.MetaClient, nodeID uint, recursive bool) ([]commonModels.MetaItem, error) {
+	items, err := client.GetNodeItems(nodeID)
+	if err != nil {
+		return nil, err
+	}
+	if !recursive {
+		return items, nil
+	}
+	children, err := client.GetNodeChildren(nodeID)
+	if err != nil {
+		return nil, err
+	}
+	for _, child := range children {
+		childItems, err := s.collectNodeItems(ctx, client, child.ID, true)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, childItems...)
+	}
+	return items, nil
+}
+
+func (s *EmbeddingService) processItem(ctx context.Context, tenantID uint, item commonModels.MetaItem, execCtx *EmbeddingExecutionContext) string {
+	itemFingerprint := commonModels.GenerateItemFingerprint(item.EngineID, item.FullName)
+	sourceVersion := sourceVersionForItem(itemFingerprint, item)
+	modelName := s.currentEmbeddingModel()
+	dimension := s.currentEmbeddingDimension()
+	lastExecutionID := ""
+	if execCtx != nil {
+		lastExecutionID = execCtx.ExecutionID
+	}
+
+	existing, err := s.vectorRepo.GetByItemFingerprint(ctx, tenantID, itemFingerprint)
+	if err != nil {
+		s.log.Warn("查询现有向量化结果失败", "item_id", item.ID, "error", err)
+		return "failed"
+	}
+	if existing != nil && existing.Status == models.EmbeddingStatusReady &&
+		existing.SourceVersion == sourceVersion && existing.Model == modelName && existing.Dimension == dimension {
+		return "ready_skipped"
+	}
+
+	resolved, err := s.resolveItemForEmbedding(ctx, item)
+	if err != nil {
+		if errors.Is(err, errUnsupportedItem) {
+			s.upsertNonReadyState(ctx, tenantID, item, itemFingerprint, sourceVersion, modelName, dimension, models.EmbeddingStatusUnsupported, models.EmbeddingReasonFormatUnsupported, err.Error(), lastExecutionID)
+			return "unsupported"
+		}
+		if errors.Is(err, errMissingSource) {
+			s.upsertNonReadyState(ctx, tenantID, item, itemFingerprint, sourceVersion, modelName, dimension, models.EmbeddingStatusMissingSource, models.EmbeddingReasonSourceMissing, err.Error(), lastExecutionID)
+			return "missing_source"
+		}
+		s.upsertNonReadyState(ctx, tenantID, item, itemFingerprint, sourceVersion, modelName, dimension, models.EmbeddingStatusFailed, models.EmbeddingReasonReadFailed, err.Error(), lastExecutionID)
+		return "failed"
+	}
+
+	vector, model, err := s.embedResolvedContent(ctx, resolved)
+	if err != nil {
+		s.upsertNonReadyState(ctx, tenantID, item, itemFingerprint, sourceVersion, modelName, dimension, models.EmbeddingStatusFailed, models.EmbeddingReasonEmbeddingFailed, err.Error(), lastExecutionID)
+		return "failed"
+	}
+	if strings.TrimSpace(model) == "" {
+		model = modelName
+	}
+	if len(vector) > 0 {
+		dimension = len(vector)
+	}
+
+	now := time.Now()
+	state := &models.Embedding{
+		TenantID:        tenantID,
+		ItemFingerprint: itemFingerprint,
+		ItemID:          item.ID,
+		EngineID:        item.EngineID,
+		Locator:         s.itemLocator(ctx, item),
+		SourceVersion:   sourceVersion,
+		Embedding:       vector,
+		Model:           model,
+		Dimension:       dimension,
+		Status:          models.EmbeddingStatusReady,
+		StatusReason:    models.EmbeddingReasonReady,
+		LastExecutionID: stringPtr(lastExecutionID),
+		VectorizedAt:    &now,
+	}
+	if err := s.vectorRepo.UpsertEmbeddingState(ctx, state); err != nil {
+		s.log.Warn("写入向量化结果失败", "item_id", item.ID, "error", err)
+		return "failed"
+	}
+	if existing == nil {
+		return "generated"
+	}
+	return "rebuilt"
+}
+
+type resolvedEmbeddingInput struct {
+	ID          string
+	Data        []byte
+	Text        string
+	ContentType string
+	Modality    embedding.Modality
+}
+
+var (
+	errUnsupportedItem = errors.New("unsupported item")
+	errMissingSource   = errors.New("missing source")
+)
+
+func (s *EmbeddingService) resolveItemForEmbedding(ctx context.Context, item commonModels.MetaItem) (*resolvedEmbeddingInput, error) {
+	switch strings.ToLower(strings.TrimSpace(item.ItemType)) {
+	case string(resourcetree.TypeObject):
+		bucket, objectKey, err := splitObjectFullName(item.FullName)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", errUnsupportedItem, err)
+		}
+		info, data, err := s.readObjectContent(ctx, item.EngineID, bucket, objectKey)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", errMissingSource, err)
+		}
+		if s.cfg.VectorConfig.MaxFileSizeMB > 0 && info.Size > int64(s.cfg.VectorConfig.MaxFileSizeMB)*1024*1024 {
+			return nil, fmt.Errorf("%w: file size %d exceeds limit %dMB", errUnsupportedItem, info.Size, s.cfg.VectorConfig.MaxFileSizeMB)
+		}
+		modality := s.detectModality(info.ContentType, item.Name)
+		return &resolvedEmbeddingInput{
+			ID:          item.FullName,
+			Data:        data,
+			Text:        string(data),
+			ContentType: info.ContentType,
+			Modality:    modality,
+		}, nil
+	default:
+		return nil, fmt.Errorf("%w: item_type %s is not supported for embedding", errUnsupportedItem, item.ItemType)
+	}
+}
+
+func (s *EmbeddingService) embedResolvedContent(ctx context.Context, input *resolvedEmbeddingInput) ([]float32, string, error) {
+	if input == nil {
+		return nil, "", errors.New("embedding input is nil")
+	}
+	if s.embeddingClient == nil {
+		return nil, "", errors.New(models.EmbeddingReasonEmbeddingServiceNil)
+	}
+	var result *embedding.BatchResult
+	var err error
+	switch input.Modality {
+	case embedding.ModalityImage:
+		result, err = s.embeddingClient.EmbedImage(ctx, []embedding.ImageInput{{
+			ID:       input.ID,
+			Data:     input.Data,
+			MIMEType: input.ContentType,
+		}})
+	case embedding.ModalityVideo:
+		result, err = s.embeddingClient.EmbedVideo(ctx, []embedding.VideoInput{{
+			ID:       input.ID,
+			Data:     input.Data,
+			MIMEType: input.ContentType,
+		}})
+	case embedding.ModalityText, embedding.ModalityDocument:
+		result, err = s.embeddingClient.EmbedText(ctx, []embedding.TextInput{{
+			ID:   input.ID,
+			Text: input.Text,
+		}})
+	default:
+		return nil, "", fmt.Errorf("unsupported modality: %s", input.Modality)
+	}
+	if err != nil {
+		return nil, "", err
+	}
+	if result == nil || len(result.Embeddings) == 0 || len(result.Embeddings[0].Vector) == 0 {
+		return nil, "", errors.New("embedding result is empty")
+	}
+	return result.Embeddings[0].Vector, result.Embeddings[0].Model, nil
+}
+
+type ObjectStorageInfo struct {
+	Size         int64
+	ContentType  string
+	LastModified time.Time
+}
+
+func (s *EmbeddingService) readObjectContent(ctx context.Context, engineID uint, bucket, objectKey string) (*ObjectStorageInfo, []byte, error) {
+	if s.systemClient == nil {
+		return nil, nil, errors.New("system client not available")
+	}
+	engine, err := s.systemClient.GetEngine(engineID)
+	if err != nil {
+		return nil, nil, err
+	}
+	minioClient, err := s.createMinioClient(engine)
+	if err != nil {
+		return nil, nil, err
+	}
+	objInfo, err := minioClient.StatObject(ctx, bucket, objectKey, minio.StatObjectOptions{})
+	if err != nil {
+		return nil, nil, err
+	}
+	obj, err := minioClient.GetObject(ctx, bucket, objectKey, minio.GetObjectOptions{})
+	if err != nil {
+		return nil, nil, err
+	}
+	defer obj.Close()
+	data, err := io.ReadAll(obj)
+	if err != nil {
+		return nil, nil, err
+	}
+	return &ObjectStorageInfo{Size: objInfo.Size, ContentType: objInfo.ContentType, LastModified: objInfo.LastModified}, data, nil
+}
+
+func (s *EmbeddingService) upsertNonReadyState(ctx context.Context, tenantID uint, item commonModels.MetaItem, itemFingerprint, sourceVersion, model string, dimension int, status, reason, message, lastExecutionID string) {
+	state := &models.Embedding{
+		TenantID:        tenantID,
+		ItemFingerprint: itemFingerprint,
+		ItemID:          item.ID,
+		EngineID:        item.EngineID,
+		Locator:         s.itemLocator(ctx, item),
+		SourceVersion:   sourceVersion,
+		Model:           model,
+		Dimension:       dimension,
+		Status:          status,
+		StatusReason:    reason,
+		ErrorMessage:    message,
+		LastExecutionID: stringPtr(lastExecutionID),
+	}
+	if err := s.vectorRepo.UpsertEmbeddingState(ctx, state); err != nil {
+		s.log.Warn("写入向量化非 ready 状态失败", "item_id", item.ID, "status", status, "error", err)
+	}
+}
+
+func (s *EmbeddingService) buildExecutionConfig(ctx context.Context, tenantID uint, req EmbeddingExecutionRequest) (commonModels.JSONMap, error) {
+	if req.Config != nil {
+		return req.Config, nil
+	}
+	if req.Scope != EmbeddingExecutionScopeItem && req.Scope != EmbeddingExecutionScopeNode {
+		return nil, fmt.Errorf("unsupported embedding execution scope: %s", req.Scope)
+	}
+	target := commonModels.JSONMap{}
+	if req.Target.EngineID > 0 {
+		target["engine_id"] = req.Target.EngineID
+	}
+	if req.Scope == EmbeddingExecutionScopeItem {
+		if req.Target.ItemID == 0 {
+			return nil, errors.New("scope=item requires target.item_id")
+		}
+		item, err := s.metaClient.WithTenantID(tenantID).GetItemByID(req.Target.ItemID)
+		if err != nil {
+			return nil, err
+		}
+		itemFingerprint := commonModels.GenerateItemFingerprint(item.EngineID, item.FullName)
+		target["engine_id"] = item.EngineID
+		target["item_id"] = item.ID
+		target["item_fingerprint"] = itemFingerprint
+		target["locator"] = s.itemLocator(ctx, *item)
+	} else {
+		if req.Target.NodeID == 0 {
+			return nil, errors.New("scope=node requires target.node_id")
+		}
+		target["node_id"] = req.Target.NodeID
+		target["recursive"] = req.Target.Recursive
+		if strings.TrimSpace(req.Target.Locator) != "" {
+			target["locator"] = req.Target.Locator
+		}
+	}
+	return commonModels.JSONMap{
+		"entry":  req.Entry,
+		"scope":  string(req.Scope),
+		"target": target,
+		"filters": commonModels.JSONMap{
+			"max_file_size_mb": s.cfg.VectorConfig.MaxFileSizeMB,
+		},
+		"embedding": commonModels.JSONMap{
+			"model":     s.currentEmbeddingModel(),
+			"dimension": s.currentEmbeddingDimension(),
+		},
+	}, nil
+}
+
+func (s *EmbeddingService) itemLocator(ctx context.Context, item commonModels.MetaItem) string {
+	engineType := ""
+	if s.systemClient != nil {
+		if engine, err := s.systemClient.GetEngine(item.EngineID); err == nil && engine != nil {
+			engineType = engine.EngineType
+		}
+	}
+	loc := resourcetree.LocatorFromFullName(item.EngineID, engineType, item.ItemType, item.FullName, &item.ID)
+	if loc == nil {
+		return ""
+	}
+	return loc.ToURI()
+}
+
+func (s *EmbeddingService) currentEmbeddingModel() string {
+	if s == nil || s.cfg == nil {
+		return ""
+	}
+	model := strings.TrimSpace(s.cfg.EmbeddingService.Models["text"])
+	if model == "" {
+		model = strings.TrimSpace(s.cfg.EmbeddingService.Models["image"])
+	}
+	return model
+}
+
+func (s *EmbeddingService) currentEmbeddingDimension() int {
+	if s == nil || s.cfg == nil || s.cfg.VectorConfig.Dimension <= 0 {
+		return 1024
+	}
+	return s.cfg.VectorConfig.Dimension
+}
+
+func (s *EmbeddingService) embeddingStateForCurrentItem(item commonModels.MetaItem, state *models.Embedding) *models.Embedding {
+	if state == nil {
+		return nil
+	}
+	if state.Status != models.EmbeddingStatusReady {
+		return state
+	}
+
+	currentSourceVersion := sourceVersionForItem(commonModels.GenerateItemFingerprint(item.EngineID, item.FullName), item)
+	statusReason := ""
+	switch {
+	case state.SourceVersion != currentSourceVersion:
+		statusReason = models.EmbeddingReasonSourceChanged
+	case strings.TrimSpace(s.currentEmbeddingModel()) != "" && state.Model != s.currentEmbeddingModel():
+		statusReason = models.EmbeddingReasonModelChanged
+	case s.currentEmbeddingDimension() > 0 && state.Dimension != s.currentEmbeddingDimension():
+		statusReason = models.EmbeddingReasonDimensionChanged
+	}
+	if statusReason == "" {
+		return state
+	}
+
+	outdated := *state
+	outdated.Status = models.EmbeddingStatusOutdated
+	outdated.StatusReason = statusReason
+	outdated.Embedding = nil
+	return &outdated
+}
+
 func (s *EmbeddingService) finishExecution(ctx context.Context, executionID string, tenantID int, status string, startTime time.Time, errDetails, metadata commonModels.JSONMap) {
 	if s.taskExecRepo == nil {
 		return
 	}
 	completedAt := time.Now()
-	durationMs := completedAt.Sub(startTime).Milliseconds()
 	fields := map[string]interface{}{
 		"status":            status,
 		"completed_at":      completedAt,
-		"execution_time_ms": durationMs,
+		"execution_time_ms": completedAt.Sub(startTime).Milliseconds(),
 	}
 	if errDetails != nil {
 		fields["error_details"] = errDetails
@@ -378,221 +646,11 @@ func (s *EmbeddingService) finishExecution(ctx context.Context, executionID stri
 		fields["metadata"] = metadata
 	}
 	if err := s.taskExecRepo.UpdateFields(ctx, executionID, tenantID, fields); err != nil {
-		s.log.Warn("Failed to update task execution", "execution_id", executionID, "error", err)
+		s.log.Warn("更新向量化 execution 失败", "execution_id", executionID, "error", err)
 	}
 }
 
-// EmbedBucketRequest Bucket 全量向量化请求
-type EmbedBucketRequest struct {
-	EngineID uint
-	Bucket   string
-	TenantID *uint
-}
-
-// EmbedBucket 向量化整个 Bucket
-func (s *EmbeddingService) EmbedBucket(ctx context.Context, req EmbedBucketRequest) (*EmbedDirectoryResult, error) {
-	return s.EmbedDirectory(ctx, EmbedDirectoryRequest{
-		EngineID:  req.EngineID,
-		Bucket:    req.Bucket,
-		Prefix:    "", // 空前缀表示全部对象
-		Recursive: true,
-		TenantID:  req.TenantID,
-	})
-}
-
-// GetEmbeddingStatus 查询向量化状态
-func (s *EmbeddingService) GetEmbeddingStatus(ctx context.Context, engineID uint, bucket string) (*models.EmbeddingStatus, error) {
-	return s.vectorRepo.GetEmbeddingStatus(ctx, engineID, bucket)
-}
-
-// DeleteEmbeddings 删除向量
-func (s *EmbeddingService) DeleteEmbeddings(ctx context.Context, engineID uint, bucket string, objectKeys []string) error {
-	if len(objectKeys) == 0 {
-		// 删除整个 bucket 的向量
-		return s.vectorRepo.DeleteEmbeddingsByEngine(ctx, engineID, bucket)
-	}
-
-	// 删除指定对象的向量（通过指纹）
-	fingerprints := make([]string, len(objectKeys))
-	for i, objectKey := range objectKeys {
-		dir, name := commonModels.SplitObjectPath(objectKey)
-		// 两步计算方式：先拼接 full_name，再计算指纹
-		fullName := commonModels.JoinObjectPath(bucket, dir, name)
-		fingerprints[i] = commonModels.GenerateItemFingerprint(engineID, fullName)
-	}
-
-	return s.vectorRepo.DeleteEmbeddingsByFingerprints(ctx, fingerprints)
-}
-
-// ===== 内部辅助方法 =====
-
-// ObjectStorageInfo 对象存储元数据。
-type ObjectStorageInfo struct {
-	Size         int64
-	ContentType  string
-	LastModified time.Time
-}
-
-// getObjectInfo 获取对象元数据
-func (s *EmbeddingService) getObjectInfo(ctx context.Context, engineID uint, bucket, objectKey string) (*ObjectStorageInfo, error) {
-	// 通过 SystemClient 获取引擎信息
-	if s.systemClient == nil {
-		return nil, fmt.Errorf("system client not available")
-	}
-
-	engine, err := s.systemClient.GetEngine(engineID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get engine from system: %w", err)
-	}
-
-	// 创建 MinIO 客户端
-	minioClient, err := s.createMinioClient(engine)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create minio client: %w", err)
-	}
-
-	// 获取对象元数据
-	objInfo, err := minioClient.StatObject(ctx, bucket, objectKey, minio.StatObjectOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to stat object: %w", err)
-	}
-
-	return &ObjectStorageInfo{
-		Size:         objInfo.Size,
-		ContentType:  objInfo.ContentType,
-		LastModified: objInfo.LastModified,
-	}, nil
-}
-
-// listObjects 列出目录下的所有对象
-func (s *EmbeddingService) listObjects(ctx context.Context, engineID uint, bucket, prefix string, recursive bool) ([]string, error) {
-	// 通过 SystemClient 获取引擎信息
-	if s.systemClient == nil {
-		return nil, fmt.Errorf("system client not available")
-	}
-
-	engine, err := s.systemClient.GetEngine(engineID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get engine from system: %w", err)
-	}
-
-	minioClient, err := s.createMinioClient(engine)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create minio client: %w", err)
-	}
-
-	var objects []string
-	opts := minio.ListObjectsOptions{
-		Prefix:    prefix,
-		Recursive: recursive,
-	}
-
-	for obj := range minioClient.ListObjects(ctx, bucket, opts) {
-		if obj.Err != nil {
-			return nil, fmt.Errorf("failed to list objects: %w", obj.Err)
-		}
-		// 跳过目录（以 / 结尾）
-		if strings.HasSuffix(obj.Key, "/") {
-			continue
-		}
-		objects = append(objects, obj.Key)
-	}
-
-	return objects, nil
-}
-
-// embedObjectContent 获取对象内容并向量化
-func (s *EmbeddingService) embedObjectContent(
-	ctx context.Context,
-	engineID uint,
-	bucket, objectKey string,
-	modality embedding.Modality,
-	objInfo *ObjectStorageInfo,
-) ([]float32, string, error) {
-	// 通过 SystemClient 获取引擎信息
-	if s.systemClient == nil {
-		return nil, "", fmt.Errorf("system client not available")
-	}
-
-	engine, err := s.systemClient.GetEngine(engineID)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to get engine from system: %w", err)
-	}
-
-	// 创建 MinIO 客户端
-	minioClient, err := s.createMinioClient(engine)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to create minio client: %w", err)
-	}
-
-	// 获取对象内容
-	obj, err := minioClient.GetObject(ctx, bucket, objectKey, minio.GetObjectOptions{})
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to get object: %w", err)
-	}
-	defer obj.Close()
-
-	// 读取内容
-	data, err := io.ReadAll(obj)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to read object: %w", err)
-	}
-
-	// 根据模态类型调用相应的 Embedding API
-	var result *embedding.BatchResult
-	var model string
-
-	switch modality {
-	case embedding.ModalityText, embedding.ModalityDocument:
-		textInputs := []embedding.TextInput{
-			{
-				ID:   objectKey,
-				Text: string(data),
-			},
-		}
-		result, err = s.embeddingClient.EmbedText(ctx, textInputs)
-		model = s.cfg.EmbeddingService.Models["text"]
-
-	case embedding.ModalityImage:
-		imageInputs := []embedding.ImageInput{
-			{
-				ID:       objectKey,
-				Data:     data,
-				MIMEType: objInfo.ContentType,
-			},
-		}
-		result, err = s.embeddingClient.EmbedImage(ctx, imageInputs)
-		model = s.cfg.EmbeddingService.Models["image"]
-
-	case embedding.ModalityVideo:
-		videoInputs := []embedding.VideoInput{
-			{
-				ID:       objectKey,
-				Data:     data,
-				MIMEType: objInfo.ContentType,
-			},
-		}
-		result, err = s.embeddingClient.EmbedVideo(ctx, videoInputs)
-		model = s.cfg.EmbeddingService.Models["video"]
-
-	default:
-		return nil, "", fmt.Errorf("unsupported modality: %s", modality)
-	}
-
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to embed content: %w", err)
-	}
-
-	if len(result.Embeddings) == 0 {
-		return nil, "", fmt.Errorf("embedding result is empty")
-	}
-
-	return result.Embeddings[0].Vector, model, nil
-}
-
-// detectModality 根据内容类型和文件扩展名检测模态类型
 func (s *EmbeddingService) detectModality(contentType, objectKey string) embedding.Modality {
-	// 优先使用 content type
 	contentType = strings.ToLower(strings.TrimSpace(contentType))
 	if strings.HasPrefix(contentType, "image/") {
 		return embedding.ModalityImage
@@ -600,19 +658,12 @@ func (s *EmbeddingService) detectModality(contentType, objectKey string) embeddi
 	if strings.HasPrefix(contentType, "video/") {
 		return embedding.ModalityVideo
 	}
-	if strings.HasPrefix(contentType, "audio/") {
-		return embedding.ModalityAudio
-	}
-
-	// 使用文件扩展名
 	ext := strings.ToLower(filepath.Ext(objectKey))
 	switch ext {
 	case ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp":
 		return embedding.ModalityImage
 	case ".mp4", ".avi", ".mov", ".mkv", ".flv", ".wmv":
 		return embedding.ModalityVideo
-	case ".mp3", ".wav", ".flac", ".aac", ".ogg":
-		return embedding.ModalityAudio
 	case ".pdf", ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx":
 		return embedding.ModalityDocument
 	default:
@@ -620,86 +671,68 @@ func (s *EmbeddingService) detectModality(contentType, objectKey string) embeddi
 	}
 }
 
-// createMinioClient 创建 MinIO 客户端
 func (s *EmbeddingService) createMinioClient(engine *commonModels.Engine) (*minio.Client, error) {
 	connInfo := engine.ConnectionInfo
-
 	endpoint, _ := connInfo["endpoint"].(string)
 	accessKey, _ := connInfo["access_key"].(string)
 	secretKey, _ := connInfo["secret_key"].(string)
 	useSSL, _ := connInfo["use_ssl"].(bool)
-
 	if endpoint == "" || accessKey == "" || secretKey == "" {
-		return nil, fmt.Errorf("invalid minio connection info")
+		return nil, errors.New("invalid minio connection info")
 	}
-
 	return minio.New(endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
 		Secure: useSSL,
 	})
 }
 
-// buildMetadata 构建向量的 metadata（用于搜索展示和定位）
-func (s *EmbeddingService) buildMetadata(ctx context.Context, engineID uint, bucket, objectKey string, objInfo *ObjectStorageInfo, tenantID *uint) (datatypes.JSON, error) {
-	// 通过 SystemClient 获取引擎信息
-	if s.systemClient == nil {
-		return nil, fmt.Errorf("system client not available")
+func sourceVersionForItem(itemFingerprint string, item commonModels.MetaItem) string {
+	parts := []string{itemFingerprint}
+	if item.DataUpdatedAt != nil {
+		parts = append(parts, item.DataUpdatedAt.UTC().Format(time.RFC3339Nano))
 	}
-
-	engine, err := s.systemClient.GetEngine(engineID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get engine from system: %w", err)
+	if item.SizeBytes != nil {
+		parts = append(parts, fmt.Sprintf("size:%d", *item.SizeBytes))
 	}
-
-	// 按照路径统一规范拆分：path（目录，以/结尾）、name（文件名）
-	path, name := commonModels.SplitObjectPath(objectKey)
-
-	// 构建 metadata（符合路径统一规范）
-	metadata := map[string]interface{}{
-		"engine_id":   engineID,
-		"engine_name": engine.Name,
-		"engine_type": engine.EngineType,
-		"storage": map[string]interface{}{
-			"bucket":           bucket,
-			"path":             path,
-			"name":             name,
-			"content_type":     objInfo.ContentType,
-			"last_modified_at": objInfo.LastModified.Format(time.RFC3339),
-		},
+	if item.ObjectSizeBytes != nil {
+		parts = append(parts, fmt.Sprintf("object_size:%d", *item.ObjectSizeBytes))
 	}
-
-	if s.metaClient != nil {
-		if item, err := s.lookupMetaItem(ctx, engineID, bucket, objectKey, tenantID); err == nil && item != nil {
-			metadata["item_id"] = item.ID
-			metadata["item_type"] = item.ItemType
-			metadata["full_name"] = item.FullName
-			if locator := resourcetree.LocatorFromFullName(engineID, engine.EngineType, item.ItemType, item.FullName, &item.ID); locator != nil {
-				metadata["locator"] = locator.ToURI()
-			}
-		}
-	}
-
-	// 转换为 JSON
-	jsonData, err := json.Marshal(metadata)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal metadata: %w", err)
-	}
-
-	return jsonData, nil
+	sum := sha256.Sum256([]byte(strings.Join(parts, "|")))
+	return hex.EncodeToString(sum[:])
 }
 
-func (s *EmbeddingService) lookupMetaItem(ctx context.Context, engineID uint, bucket, objectKey string, tenantID *uint) (*commonModels.MetaItem, error) {
-	if s.metaClient == nil {
-		return nil, fmt.Errorf("meta client not available")
+func splitObjectFullName(fullName string) (string, string, error) {
+	trimmed := strings.Trim(strings.TrimSpace(fullName), "/")
+	if trimmed == "" {
+		return "", "", errors.New("empty object full_name")
 	}
-	dir, name := commonModels.SplitObjectPath(objectKey)
-	fullName := commonModels.JoinObjectPath(bucket, dir, name)
-	if strings.TrimSpace(fullName) == "" {
-		return nil, fmt.Errorf("empty catalog path")
+	parts := strings.SplitN(trimmed, "/", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", fmt.Errorf("object full_name must be bucket/object_key, got %q", fullName)
 	}
-	client := s.metaClient
-	if tenantID != nil {
-		client = s.metaClient.WithTenantID(*tenantID)
+	return parts[0], parts[1], nil
+}
+
+func statsToJSONMap(stats *EmbeddingExecutionStats) commonModels.JSONMap {
+	if stats == nil {
+		return commonModels.JSONMap{}
 	}
-	return client.GetItemByCatalogPath(engineID, fullName)
+	return commonModels.JSONMap{
+		"total":          stats.Total,
+		"ready_skipped":  stats.ReadySkipped,
+		"generated":      stats.Generated,
+		"rebuilt":        stats.Rebuilt,
+		"unsupported":    stats.Unsupported,
+		"failed":         stats.Failed,
+		"missing_source": stats.MissingSource,
+	}
+}
+
+func intPtr(v int) *int { return &v }
+
+func stringPtr(v string) *string {
+	if strings.TrimSpace(v) == "" {
+		return nil
+	}
+	return &v
 }

@@ -128,10 +128,11 @@ func Load() *Config {
 	cfg.EmbeddingService.BaseURL = commonConfig.GetEnv("MANAGER_EMBEDDING_SERVICE_BASE_URL", "")
 	cfg.EmbeddingService.APIKey = commonConfig.GetEnv("MANAGER_EMBEDDING_SERVICE_API_KEY", "")
 	cfg.EmbeddingService.Timeout = commonConfig.GetEnvDuration("MANAGER_EMBEDDING_SERVICE_TIMEOUT", "15s")
+	embeddingModel := commonConfig.GetEnv("MANAGER_EMBEDDING_MODEL", "qwen2.5-vl-embedding")
 	cfg.EmbeddingService.Models = map[string]string{
-		"text":  commonConfig.GetEnv("MANAGER_EMBEDDING_MODEL_TEXT", "qwen2.5-vl-embedding"),
-		"image": commonConfig.GetEnv("MANAGER_EMBEDDING_MODEL_IMAGE", "qwen2.5-vl-embedding"),
-		"video": commonConfig.GetEnv("MANAGER_EMBEDDING_MODEL_VIDEO", "qwen2.5-vl-embedding"),
+		"text":  embeddingModel,
+		"image": embeddingModel,
+		"video": embeddingModel,
 	}
 
 	cfg.VectorConfig.Dimension = commonConfig.GetEnvInt("MANAGER_VECTOR_DIMENSION", 1024)

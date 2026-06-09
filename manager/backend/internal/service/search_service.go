@@ -8,13 +8,12 @@ import (
 	"strings"
 	"time"
 
-	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/embedding"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/resourcetree"
-	"github.com/addp/common/vectorstore"
 	"github.com/addp/manager/internal/config"
+	"github.com/addp/manager/internal/repository"
 	"github.com/meilisearch/meilisearch-go"
 	"log/slog"
 )
@@ -34,9 +33,10 @@ type HybridSearchService struct {
 	assetIndex        string
 	enabled           bool
 	log               *slog.Logger
-	vectorStore       *vectorstore.PgVectorStore
+	vectorRepo        *repository.EmbeddingRepository
 	textEmbedder      embedding.TextEmbedder
 	models            map[embedding.Modality]string
+	vectorDimension   int
 	embeddingTimeout  time.Duration
 	vectorTopK        int
 	vectorMaxDistance float64
@@ -80,12 +80,12 @@ type SearchDocument struct {
 type VectorDocument struct {
 	DocumentID     string                 `json:"document_id"`
 	AssetID        string                 `json:"asset_id,omitempty"`
+	Locator        string                 `json:"locator,omitempty"`
 	TenantID       uint                   `json:"tenant_id,omitempty"`
 	EngineID       uint                   `json:"engine_id,omitempty"`
 	Score          float64                `json:"score"`
 	Distance       float64                `json:"distance"`
 	Model          string                 `json:"model"`
-	Modality       string                 `json:"modality"`
 	Title          string                 `json:"title,omitempty"`
 	FileName       string                 `json:"file_name,omitempty"`
 	EngineName     string                 `json:"engine_name,omitempty"`
@@ -107,11 +107,12 @@ type SearchResult struct {
 }
 
 // NewHybridSearchService 构建混合检索服务（全文检索 + 向量检索）
-func NewHybridSearchService(cfg *config.Config) (*HybridSearchService, error) {
+func NewHybridSearchService(cfg *config.Config, vectorRepo *repository.EmbeddingRepository) (*HybridSearchService, error) {
 	svc := &HybridSearchService{
 		assetIndex: strings.TrimSpace(cfg.MeilisearchAssetIndex),
 		enabled:    strings.TrimSpace(cfg.MeilisearchURL) != "",
 		log:        logger.With("component", "manager_hybrid_search"),
+		vectorRepo: vectorRepo,
 		models: map[embedding.Modality]string{
 			embedding.ModalityText:     cfg.EmbeddingService.Models["text"],
 			embedding.ModalityDocument: cfg.EmbeddingService.Models["text"],
@@ -119,6 +120,7 @@ func NewHybridSearchService(cfg *config.Config) (*HybridSearchService, error) {
 			embedding.ModalityAudio:    cfg.EmbeddingService.Models["text"], // 暂用 text 模型
 			embedding.ModalityVideo:    cfg.EmbeddingService.Models["video"],
 		},
+		vectorDimension:   cfg.VectorConfig.Dimension,
 		embeddingTimeout:  cfg.EmbeddingService.Timeout,
 		vectorTopK:        10,
 		vectorMaxDistance: cfg.VectorConfig.MaxDistance,
@@ -152,7 +154,7 @@ func NewHybridSearchService(cfg *config.Config) (*HybridSearchService, error) {
 		"url", cfg.MeilisearchURL,
 	)
 
-	if strings.TrimSpace(cfg.EmbeddingService.BaseURL) != "" {
+	if strings.TrimSpace(cfg.EmbeddingService.BaseURL) != "" && vectorRepo != nil {
 		if err := svc.initVectorComponents(cfg); err != nil {
 			svc.log.Warn("向量检索初始化失败", "error", err)
 		}
@@ -163,24 +165,6 @@ func NewHybridSearchService(cfg *config.Config) (*HybridSearchService, error) {
 }
 
 func (s *HybridSearchService) initVectorComponents(cfg *config.Config) error {
-	// 构造向量数据库配置（向量表在 manager schema 中）
-	vectorDBConfig := commonConfig.VectorDBConfig{
-		Host:      cfg.DBHost,
-		Port:      cfg.DBPort,
-		Name:      cfg.DBName,
-		User:      cfg.DBUser,
-		Password:  cfg.DBPassword,
-		Schema:    "manager", // 向量表在 manager schema
-		Table:     "embeddings",
-		Dimension: cfg.VectorConfig.Dimension,
-		SSLMode:   "disable",
-	}
-
-	store, err := vectorstore.NewPgVectorStore(context.Background(), vectorDBConfig)
-	if err != nil {
-		return fmt.Errorf("init vector store: %w", err)
-	}
-
 	textModel := strings.TrimSpace(s.models[embedding.ModalityText])
 	if textModel == "" {
 		textModel = "bge-large-zh"
@@ -211,17 +195,16 @@ func (s *HybridSearchService) initVectorComponents(cfg *config.Config) error {
 		Models:  models,
 	})
 	if err != nil {
-		store.Close()
 		return fmt.Errorf("init embedding client: %w", err)
 	}
 
-	s.vectorStore = store
 	s.textEmbedder = client
 	s.models = models
 	s.log.Info("向量检索能力已启用",
-		"vector_schema", vectorDBConfig.Schema,
-		"vector_table", vectorDBConfig.Table,
+		"vector_schema", "manager",
+		"vector_table", "embeddings",
 		"text_model", textModel,
+		"dimension", s.vectorDimension,
 	)
 	return nil
 }
@@ -366,7 +349,7 @@ func (s *HybridSearchService) SearchDocuments(
 	}
 
 	// 向量检索
-	if s.vectorStore != nil && s.textEmbedder != nil {
+	if s.vectorRepo != nil && s.textEmbedder != nil {
 		vectorHits, err := s.vectorSearch(ctx, tenantID, query)
 		if err != nil {
 			s.log.Warn("向量检索失败，已忽略", "error", err)
@@ -408,7 +391,7 @@ func (s *HybridSearchService) SearchDocuments(
 }
 
 func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID *uint, query string) ([]VectorDocument, error) {
-	if s.vectorStore == nil || s.textEmbedder == nil {
+	if s.vectorRepo == nil || s.textEmbedder == nil {
 		return nil, nil
 	}
 
@@ -445,30 +428,18 @@ func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID *uint, 
 		return nil, nil
 	}
 
-	docModel := s.models[embedding.ModalityDocument]
-	if strings.TrimSpace(docModel) == "" {
-		docModel = queryEmbedding.Model
-		if strings.TrimSpace(docModel) == "" {
-			docModel = textModel
-		}
+	model := strings.TrimSpace(queryEmbedding.Model)
+	if model == "" {
+		model = strings.TrimSpace(s.models[embedding.ModalityDocument])
 	}
-
-	type modalityQuery struct {
-		modality embedding.Modality
-		model    string
+	if model == "" {
+		model = textModel
 	}
-
-	modQueries := make([]modalityQuery, 0, 3)
-	if trimmed := strings.TrimSpace(docModel); trimmed != "" {
-		modQueries = append(modQueries, modalityQuery{modality: embedding.ModalityDocument, model: trimmed})
+	dimension := len(queryVector)
+	if dimension == 0 {
+		dimension = s.vectorDimension
 	}
-	if imgModel := strings.TrimSpace(s.models[embedding.ModalityImage]); imgModel != "" {
-		modQueries = append(modQueries, modalityQuery{modality: embedding.ModalityImage, model: imgModel})
-	}
-	if videoModel := strings.TrimSpace(s.models[embedding.ModalityVideo]); videoModel != "" {
-		modQueries = append(modQueries, modalityQuery{modality: embedding.ModalityVideo, model: videoModel})
-	}
-	if len(modQueries) == 0 {
+	if model == "" || dimension <= 0 {
 		return nil, nil
 	}
 
@@ -486,103 +457,32 @@ func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID *uint, 
 	queryCtx, cancelQuery := context.WithTimeout(ctx, timeout)
 	defer cancelQuery()
 
-	type resultKey string
-	makeKey := func(id string) resultKey { return resultKey(id) }
-
-	accumulator := make(map[resultKey]VectorDocument)
-
-	for _, mq := range modQueries {
-		opts := vectorstore.QueryOptions{
-			Modalities:  []embedding.Modality{mq.modality},
-			Model:       mq.model,
-			TopK:        s.vectorTopK,
-			IncludeMeta: true,
-		}
-		if s.vectorMaxDistance > 0 && mq.modality == embedding.ModalityDocument {
-			opts.MaxDistance = s.vectorMaxDistance
-		}
-		if tenantID != nil {
-			opts.TenantID = tenantID
-		}
-
-		s.log.Debug("向量检索子查询",
-			"tenant_id", tenantVal,
-			"query", query,
-			"modality", string(mq.modality),
-			"model", mq.model,
-			"top_k", opts.TopK,
-			"max_distance", opts.MaxDistance,
-		)
-
-		results, err := s.vectorStore.QuerySimilar(queryCtx, queryVector, opts)
-		if err != nil {
-			return nil, fmt.Errorf("query vector store (%s): %w", mq.modality, err)
-		}
-
-		subPreview := buildSearchResultPreview(results, 5)
-		s.log.Info("向量检索子查询结果",
-			"tenant_id", tenantVal,
-			"query", query,
-			"modality", string(mq.modality),
-			"model", mq.model,
-			"hit_count", len(results),
-			"preview", subPreview,
-		)
-
-		for _, item := range results {
-			// 拼接完整路径作为AssetID
-			fullPath := item.Record.Path + item.Record.Name
-			doc := VectorDocument{
-				DocumentID: item.Record.Fingerprint,
-				AssetID:    fullPath,
-				Model:      item.Record.Model,
-				Modality:   string(item.Record.Modality),
-				Distance:   item.Distance,
-				Score:      similarityFromDistance(item.Distance),
-			}
-			if item.Record.TenantID != nil {
-				doc.TenantID = *item.Record.TenantID
-			}
-			if item.Record.EngineID != nil {
-				doc.EngineID = *item.Record.EngineID
-			}
-			if meta := item.Record.Metadata; meta != nil {
-				// 从 metadata 中提取展示信息（字段名与 embedding_service.buildMetadata 对应）
-				assignStringFromMetaAttributes(meta, "storage", "name", &doc.Name) // 文件名
-				assignString(meta, "engine_name", &doc.EngineName)                 // 引擎名称
-				assignString(meta, "engine_type", &doc.EngineType)                 // 引擎类型
-				assignStringFromMetaAttributes(meta, "storage", "bucket", &doc.Bucket)
-				assignStringFromMetaAttributes(meta, "storage", "path", &doc.Path) // 目录路径
-
-				// 如果有标题字段也读取（用于未来扩展）
-				assignStringFromMetaAttributes(meta, "type_info.document", "title", &doc.Title)
-				assignString(meta, "content_preview", &doc.ContentPreview)
-
-				doc.Metadata = meta
-			}
-
-			key := makeKey(doc.DocumentID)
-			if existing, ok := accumulator[key]; ok {
-				if doc.Distance < existing.Distance {
-					s.log.Debug("向量检索命中更新",
-						"document_id", doc.DocumentID,
-						"previous_distance", existing.Distance,
-						"new_distance", doc.Distance,
-						"previous_modality", existing.Modality,
-						"new_modality", doc.Modality,
-						"previous_model", existing.Model,
-						"new_model", doc.Model,
-					)
-					accumulator[key] = doc
-				}
-				continue
-			}
-			accumulator[key] = doc
-		}
+	if tenantID == nil {
+		return nil, nil
+	}
+	results, err := s.vectorRepo.QueryReadySimilar(queryCtx, *tenantID, queryVector, model, dimension, s.vectorTopK, s.vectorMaxDistance)
+	if err != nil {
+		return nil, fmt.Errorf("query embedding results: %w", err)
 	}
 
-	vectorDocs := make([]VectorDocument, 0, len(accumulator))
-	for _, doc := range accumulator {
+	vectorDocs := make([]VectorDocument, 0, len(results))
+	for _, item := range results {
+		if item.Embedding == nil {
+			continue
+		}
+		emb := item.Embedding
+		doc := VectorDocument{
+			DocumentID: emb.ItemFingerprint,
+			AssetID:    emb.Locator,
+			Locator:    emb.Locator,
+			TenantID:   emb.TenantID,
+			EngineID:   emb.EngineID,
+			Model:      emb.Model,
+			Distance:   item.Distance,
+			Score:      similarityFromDistance(item.Distance),
+			FileName:   locatorLastSegment(emb.Locator),
+			Name:       locatorLastSegment(emb.Locator),
+		}
 		vectorDocs = append(vectorDocs, doc)
 	}
 
@@ -602,7 +502,6 @@ func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID *uint, 
 		doc := vectorDocs[idx]
 		preview = append(preview, map[string]any{
 			"document_id": doc.DocumentID,
-			"modality":    doc.Modality,
 			"model":       doc.Model,
 			"distance":    doc.Distance,
 			"file_name":   doc.FileName,
@@ -620,11 +519,7 @@ func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID *uint, 
 }
 
 // Close 释放底层资源
-func (s *HybridSearchService) Close() {
-	if s.vectorStore != nil {
-		s.vectorStore.Close()
-	}
-}
+func (s *HybridSearchService) Close() {}
 
 func truncateQueryRunes(text string, limit int) string {
 	if limit <= 0 {
@@ -642,27 +537,6 @@ func similarityFromDistance(distance float64) float64 {
 		return 1
 	}
 	return 1 / (1 + distance)
-}
-
-func buildSearchResultPreview(results []vectorstore.SearchResult, limit int) []map[string]any {
-	if len(results) == 0 || limit <= 0 {
-		return nil
-	}
-	if limit > len(results) {
-		limit = len(results)
-	}
-	preview := make([]map[string]any, 0, limit)
-	for i := 0; i < limit; i++ {
-		item := results[i]
-		preview = append(preview, map[string]any{
-			"document_id": item.Record.Fingerprint,
-			"modality":    string(item.Record.Modality),
-			"model":       item.Record.Model,
-			"distance":    item.Distance,
-			"file_name":   getStringFromMeta(item.Record.Metadata, "file_name"),
-		})
-	}
-	return preview
 }
 
 func min(a, b int) int {
@@ -776,6 +650,7 @@ func vectorDocumentToSearchDocument(v VectorDocument) SearchDocument {
 	}
 
 	contentType := getStringFromMeta(meta, "content_type")
+	documentType := getStringFromMeta(meta, "document_type")
 
 	doc := SearchDocument{
 		DocumentID:     v.DocumentID,
@@ -791,7 +666,7 @@ func vectorDocumentToSearchDocument(v VectorDocument) SearchDocument {
 		Path:           path,
 		Name:           name,
 		FileName:       fileName,
-		DocumentType:   v.Modality,
+		DocumentType:   documentType,
 		ContentPreview: contentPreview,
 		ContentType:    contentType,
 		Metadata:       meta,
@@ -803,7 +678,10 @@ func vectorDocumentToSearchDocument(v VectorDocument) SearchDocument {
 	if doc.Title == "" {
 		doc.Title = getStringFromMeta(meta, "title")
 	}
-	doc.Locator = searchResultLocatorFromMetadata(meta)
+	doc.Locator = normalizeSearchResultLocator(v.Locator)
+	if doc.Locator == "" {
+		doc.Locator = searchResultLocatorFromMetadata(meta)
+	}
 	return doc
 }
 
@@ -955,6 +833,14 @@ func normalizeSearchResultLocator(raw interface{}) string {
 		return ""
 	}
 	return locator
+}
+
+func locatorLastSegment(locator string) string {
+	parsed, err := resourcetree.ParseURI(locator)
+	if err != nil || parsed == nil {
+		return ""
+	}
+	return parsed.LastSegment()
 }
 
 // --- 内部辅助结构 ---

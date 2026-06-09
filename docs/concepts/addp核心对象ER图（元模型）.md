@@ -16,7 +16,7 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 | 调度配置 | Schedule    | 定时触发能力（Cron 表达式），定义"何时执行"                    | Task 及所有派生任务均可具备                       |
 | 执行记录 | Execution   | 单次运行的状态/进度/耗时/错误，记录"执行了什么、结果如何"      | 所有 Task 派生对象执行后均写入 common.task_executions |
 | 数据指纹 | Fingerprint | 内容摘要（MD5/SHA），用于去重、变更检测、血缘追踪              | DataNode / DataItem / QuickView / Embedding       |
-| 向量嵌入 | Embedding   | 多模态内容的高维向量表示（pgvector），支持语义检索             | DataItem（文件/对象/表）                          |
+| 向量嵌入 | Embedding   | data item 的当前向量化结果状态与 pgvector 向量内容，支持语义检索 | DataItem（文件/对象/表）                          |
 | 审计日志 | AuditLog    | 所有操作的不可变轨迹（操作人/时间/HTTP方法/路径/状态码）       | 全局，由 System 集中记录                          |
 
 ---
@@ -70,7 +70,7 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 | 开发任务     | DevTask       | develop       | 可执行的开发工件（query/workflow/script），本质也是任务 |
 | 编排工作流   | Orchestration | orchestrator  | 跨模块任务的 DAG 编排定义，**本身也是一种任务**       |
 | MVT生成任务  | MvtTask       | manager       | 对空间表生成矢量瓦片的任务定义，执行后更新 QuickView  |
-| 向量化任务   | EmbeddingTask | manager       | 对对象存储文件进行多模态向量化的任务定义              |
+| 向量化任务   | EmbeddingTask | manager       | 对 data item 范围执行向量化的任务定义                 |
 | 质量检查任务 | CheckTask     | quality       | 数据质量检查任务定义                                  |
 | 图谱构建任务 | GraphBuildTask | graph        | 知识图谱构建任务定义                                  |
 
@@ -96,9 +96,9 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 | 中文         | 英文标识符    | 说明                                                              |
 | ------------ | ------------- | ----------------------------------------------------------------- |
 | MVT生成任务  | MvtTask       | Task 派生，对空间表生成矢量瓦片，执行时更新关联的 QuickView       |
-| 向量化任务   | EmbeddingTask | Task 派生，对对象存储文件进行多模态向量化，写入 Embedding         |
+| 向量化任务   | EmbeddingTask | Task 派生，对 data item 范围执行向量化，写入 Embedding artifact state |
 | 快速预览状态 | QuickView     | 空间表的 MVT 缓存状态记录（非任务，是状态对象），描述瓦片是否就绪 |
-| 向量记录     | Embedding     | 单个文件的高维向量及元信息，fingerprint 用于去重和变更检测        |
+| 向量记录     | Embedding     | 单个 data item 的当前向量化结果状态，以 item_fingerprint 去重     |
 
 **关于 QuickView**：
 - 是"瓦片缓存状态记录"，不是任务——描述一张空间表的 MVT 缓存是否就绪
@@ -445,22 +445,16 @@ erDiagram
     EmbeddingTask {
         uint id PK
         uint tenant_id FK
-        uint engine_id FK "对象存储引擎"
         string name
         string description
-        string bucket "存储桶"
-        string prefix "路径前缀（空=整个 bucket）"
-        bool recursive "是否递归子目录"
-        string model "向量模型名称"
-        string file_types "text[]，文件扩展名过滤（空=全部，不表示 data_type=file）"
-        string modality "text | image | audio | video | document | auto"
-        string schedule "Cron 表达式"
         bool enabled
-        timestamp last_run_at
+        string schedule "Cron 表达式"
         timestamp next_run_at
+        timestamp last_run_at
         string last_execution_id
         string last_execution_status
         uint created_by FK
+        json config "target / filters / embedding"
         timestamp created_at
         timestamp updated_at
         timestamp deleted_at
@@ -589,21 +583,19 @@ erDiagram
     EmbeddingTask {
         uint id PK
         uint tenant_id FK
-        uint engine_id FK "对象存储引擎"
         string name
-        string bucket
-        string prefix
-        bool recursive
-        string model
-        string file_types "text[]，文件扩展名过滤"
-        string modality "text|image|audio|video|document|auto"
-        string schedule
+        string description
         bool enabled
+        string schedule
+        timestamp next_run_at
         timestamp last_run_at
         string last_execution_id
         string last_execution_status
+        uint created_by FK
+        json config "target / filters / embedding"
         timestamp created_at
         timestamp updated_at
+        timestamp deleted_at
     }
 
     QuickView {
@@ -634,24 +626,25 @@ erDiagram
     Embedding {
         uint id PK
         uint tenant_id FK
+        string item_fingerprint UK "标准 data item 指纹"
+        uint item_id "当前 meta item 行引用"
         uint engine_id FK
-        string bucket
-        string path "目录路径（不含 bucket 和文件名）"
-        string name "文件名"
-        string fingerprint UK "SHA256，内容指纹（去重/变更检测）"
-        vector embedding "vector(1024)，高维向量"
-        string modality "text|image|audio|video|document"
+        string locator "资源树回跳定位"
+        string source_version "源内容版本键"
+        vector embedding "vector(1024)，ready 时有值"
         string model
-        bigint file_size
-        string content_type "MIME 类型"
-        timestamp data_updated_at "对象最后修改时间（来自 MinIO）"
-        json metadata "额外元数据"
+        int dimension
+        string status "ready|outdated|failed|unsupported|missing_source"
+        string status_reason
+        string error_message
+        string last_execution_id
+        timestamp vectorized_at
         timestamp created_at
         timestamp updated_at
     }
 
     MvtTask ||--o| QuickView : "执行时按 engine+schema+table 更新（无 DB FK）"
-    EmbeddingTask ||--o{ Embedding : "执行时写入或更新向量"
+    EmbeddingTask ||--o{ Embedding : "执行时按 item_fingerprint upsert 当前结果"
 ```
 
 **说明**：
@@ -664,7 +657,7 @@ erDiagram
 | # | 问题描述 | 当前状态 | 影响 |
 |---|----------|----------|------|
 | MG-1 | `MvtTask` 与 `QuickView` 通过 engine+schema+table 三字段软关联，无 DB FK | 设计如此 | 同一张空间表可能对应多个 MvtTask（不同 zoom 配置），QuickView 按最新执行覆盖更新 |
-| MG-2 | `Embedding.fingerprint` 是唯一键，依赖 SHA256 内容指纹去重；文件内容不变则不重复向量化 | 设计如此 | 合理，基于内容的去重机制 |
+| MG-2 | `Embedding.item_fingerprint` 与 `tenant_id` 组成唯一键，按标准 data item 指纹去重；重复执行只跳过或覆盖当前结果 | 已收敛 | 与向量化 artifact state 规范一致 |
 
 ---
 
@@ -1397,7 +1390,7 @@ graph TD
 | M-1  | Meta     | ScanTask 的调度字段（schedule_type + cron_expression）与其他任务单字段 schedule 不一致 | 中 | ✅ 已修正，见 T-1 |
 | M-2  | Meta     | DataItem.attributes JSONB 存字段列表，无字段级查询能力                | —      | 已确认合理（依赖 Meilisearch）|
 | MG-1 | Manager  | MvtTask 与 QuickView 通过 engine+schema+table 三字段软关联，无 DB FK  | —      | 已确认合理 |
-| MG-2 | Manager  | Embedding.fingerprint 是唯一键，依赖 SHA256 去重；文件内容不变则不重复向量化 | — | 已确认合理 |
+| MG-2 | Manager  | Embedding 以 `tenant_id + item_fingerprint` 唯一，重复执行只跳过或覆盖当前 artifact state | — | 已按向量化规范收敛 |
 | SV-1 | Service  | TileServiceLayer.engine_id 藏在 layer_config JSONB 中，无 DB FK       | 中     | 待讨论     |
 | SV-2 | Service  | 三类服务无统一父表，服务目录需 UNION 查询                             | 低     | 待讨论     |
 | SV-3 | Service  | RegisteredService.auth_config 加密存储，敏感信息与业务信息混存        | —      | 已确认合理 |
