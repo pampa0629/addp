@@ -548,14 +548,14 @@ paths:
       summary: 获取执行列表 | List executions
       tags:
       - 执行管理 | Execution Management
-  /executions/{id}:
+  /executions/{execution_id}:
     get:
       parameters:
       - description: 执行ID | Execution ID
         in: path
-        name: id
+        name: execution_id
         required: true
-        type: integer
+        type: string
       produces:
       - application/json
       responses:

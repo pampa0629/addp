@@ -118,11 +118,11 @@ func (h *ExecutionHandler) ExecuteContent(c *gin.Context) {
 // @Summary 获取执行详情 | Get execution details
 // @Tags Execution
 // @Produce json
-// @Param id path string true "执行ID（UUID）| Execution ID (UUID)"
+// @Param execution_id path string true "执行ID（UUID）| Execution ID (UUID)"
 // @Success 200 {object} models.ExecutionWithDevTask "执行详情 | Execution details"
-// @Router /executions/{id} [get]
+// @Router /executions/{execution_id} [get]
 func (h *ExecutionHandler) GetExecution(c *gin.Context) {
-	executionID := c.Param("id")
+	executionID := c.Param("execution_id")
 	tenantID := c.GetUint("tenant_id")
 
 	execution, err := h.devExecutor.GetExecution(executionID, tenantID)
@@ -304,6 +304,7 @@ func (h *ExecutionHandler) ProviderExecuteDevTask(c *gin.Context) {
 		triggerType,
 		source,
 		parentExecutionID,
+		taskType,
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

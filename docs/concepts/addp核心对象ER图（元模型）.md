@@ -66,17 +66,19 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 | ------------ | ------------- | ------------- | ----------------------------------------------------- |
 | 任务（抽象） | Task          | —             | 抽象概念，以下均为派生                                |
 | 扫描任务     | ScanTask      | metadata      | 对某个 Engine 的元数据扫描任务定义                    |
-| 传输任务     | TransferTask  | transfer      | 数据导入/导出/同步任务定义，含字段映射                |
-| 开发任务     | DevTask       | develop       | 可执行的开发工件（SQL/工作流/Notebook），本质也是任务 |
+| 传输任务     | TransferTask  | transfer      | 数据导入任务定义，阶段 1 统一任务体系只暴露 `task_type=import` |
+| 开发任务     | DevTask       | develop       | 可执行的开发工件（query/workflow/script），本质也是任务 |
 | 编排工作流   | Orchestration | orchestrator  | 跨模块任务的 DAG 编排定义，**本身也是一种任务**       |
 | MVT生成任务  | MvtTask       | manager       | 对空间表生成矢量瓦片的任务定义，执行后更新 QuickView  |
 | 向量化任务   | EmbeddingTask | manager       | 对对象存储文件进行多模态向量化的任务定义              |
+| 质量检查任务 | CheckTask     | quality       | 数据质量检查任务定义                                  |
+| 图谱构建任务 | GraphBuildTask | graph        | 知识图谱构建任务定义                                  |
 
 **任务的共同能力**：
 - **Schedule**：所有 Task 均可配置定时调度（Cron 表达式）
 - **Execution**：所有 Task 执行后写入 `common.task_executions` 统一记录
-- **可被 Orchestration 编排**：ScanTask / TransferTask / DevTask / MvtTask / EmbeddingTask 均可作为 Orchestration 的步骤（Step）
-- **Orchestration 的递归性**：Orchestration 执行完也产生 Execution，未来可被更高层编排引用
+- **可被 Orchestration 编排**：ScanTask / TransferTask / DevTask / MvtTask / EmbeddingTask / CheckTask / GraphBuildTask / Orchestration 均可作为 Orchestration 的步骤（Step）
+- **Orchestration 的递归性**：Orchestration 执行完也产生 Execution，并以 `task_type=orchestration` 暴露给任务库；保存和执行时必须防止递归引用
 
 **任务类型（task_type in common.task_executions）**：
 - Meta: `scan`
@@ -84,6 +86,8 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 - Develop: `query` / `workflow` / `script`
 - Orchestrator: `orchestration`
 - Manager: `mvt_generation` / `embedding`
+- Quality: `check`
+- Graph: `kg_build`
 
 ---
 
@@ -119,7 +123,7 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 
 | 中文     | 英文标识符   | 说明                                                     |
 | -------- | ------------ | -------------------------------------------------------- |
-| 传输任务 | TransferTask | Task 派生，数据导入/导出/同步的任务定义                  |
+| 传输任务 | TransferTask | Task 派生，阶段 1 对统一任务体系暴露为数据导入任务定义    |
 | 字段映射 | FieldMapping | TransferTask 的子对象，定义源→目标字段的映射规则         |
 
 ---
@@ -138,6 +142,22 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 | 中文     | 英文标识符 | 说明                                                                  |
 | -------- | ---------- | --------------------------------------------------------------------- |
 | 开发任务 | DevTask    | Task 派生，可执行的开发工件（query/workflow/script），选择计算类 Engine 执行 |
+
+---
+
+### Quality 模块核心对象（schema: quality）
+
+| 中文         | 英文标识符 | 说明                         |
+| ------------ | ---------- | ---------------------------- |
+| 质量检查任务 | CheckTask  | Task 派生，执行数据质量规则检查 |
+
+---
+
+### Graph 模块核心对象（schema: graph）
+
+| 中文         | 英文标识符    | 说明                         |
+| ------------ | ------------- | ---------------------------- |
+| 图谱构建任务 | GraphBuildTask | Task 派生，执行知识图谱构建任务 |
 
 ---
 
@@ -446,12 +466,47 @@ erDiagram
         timestamp deleted_at
     }
 
+    CheckTask {
+        uint id PK
+        uint tenant_id FK
+        string name
+        string description
+        string schedule "Cron 表达式"
+        bool enabled
+        timestamp last_run_at
+        timestamp next_run_at
+        string last_execution_id
+        string last_execution_status
+        uint created_by FK
+        timestamp created_at
+        timestamp updated_at
+        timestamp deleted_at
+    }
+
+    GraphBuildTask {
+        uint id PK
+        uint tenant_id FK
+        uint graph_id FK "图谱 ID"
+        string name
+        string description
+        string schedule "Cron 表达式"
+        bool enabled
+        timestamp last_run_at
+        timestamp next_run_at
+        string last_execution_id
+        string last_execution_status
+        uint created_by FK
+        timestamp created_at
+        timestamp updated_at
+        timestamp deleted_at
+    }
+
     TaskExecution {
         bigint id PK "bigint，应对高频写入"
         string execution_id UK "UUID，全局唯一，跨模块追踪"
         uint tenant_id FK
-        string module "meta|transfer|develop|orchestrator|manager"
-        string task_type "scan|import|query|workflow|script|orchestration|mvt_generation|embedding"
+        string module "meta|transfer|develop|orchestrator|manager|quality|graph"
+        string task_type "scan|import|query|workflow|script|orchestration|mvt_generation|embedding|check|kg_build"
         string source "触发来源模块"
         string source_task_id "对应模块任务 ID（字符串，无 DB FK）"
         string source_task_name "任务名称（冗余，便于展示）"
@@ -477,18 +532,23 @@ erDiagram
     Orchestration ||--o{ TaskExecution : "产生"
     MvtTask ||--o{ TaskExecution : "产生"
     EmbeddingTask ||--o{ TaskExecution : "产生"
+    CheckTask ||--o{ TaskExecution : "产生"
+    GraphBuildTask ||--o{ TaskExecution : "产生"
     Orchestration }o--o{ ScanTask : "编排步骤"
     Orchestration }o--o{ TransferTask : "编排步骤"
     Orchestration }o--o{ DevTask : "编排步骤"
     Orchestration }o--o{ MvtTask : "编排步骤"
     Orchestration }o--o{ EmbeddingTask : "编排步骤"
+    Orchestration }o--o{ CheckTask : "编排步骤"
+    Orchestration }o--o{ GraphBuildTask : "编排步骤"
+    Orchestration }o--o{ Orchestration : "编排步骤（需防递归）"
     TaskExecution ||--o{ TaskExecution : "parent_execution_id 子步骤追踪父编排"
 ```
 
 **说明**：
 - `Orchestration.steps` 是内嵌 JSONB 数组，每个 Step 通过 TaskProvider API 调用已有任务定义（`provider/task_type/task_id`）。
 - 工作流计算引擎由 Develop 消费；算子工作流必须先在 Develop 中形成 `workflow` 任务，再作为 `provider=develop, task_type=workflow` 的 Step 进入 Orchestrator。
-- `Orchestration` 执行后本身也产生 `TaskExecution`（task_type='orchestration'），**未来可被更高层 Orchestration 编排**（当前未实现）
+- `Orchestration` 执行后本身也产生 `TaskExecution`（task_type='orchestration'），并可作为 `provider=orchestrator, task_type=orchestration` 的任务被更高层 Orchestration 引用；保存和执行时必须防止自引用或循环引用。
 - `DevTask.engine_id` 指向"具备对应能力的引擎"：`query` 类选择同时具备 RelationalStorage+SQLCompute 的引擎（如 PostgreSQL）；`workflow` 类选择 WorkflowCompute 引擎（如 Python Workflow）；`script` 类选择具备脚本执行能力的引擎，当前可由 Jupyter Notebook runtime 承载
 - `TaskExecution.error_details`：仅在失败时填充，存储错误类型、错误栈等诊断信息；`metadata`：每次执行均可写入，存储各模块特有的过程数据和结果统计
 
@@ -496,10 +556,10 @@ erDiagram
 
 | # | 问题描述 | 当前状态 | 影响 |
 |---|----------|----------|------|
-| T-1 | `TransferTask` 的 `schedule` 字段是字符串（Cron 表达式），而 `ScanTask` 用了 `schedule_type` + `cron_expression` 两字段，两者不一致 | ✅ 已修正 | ScanTask 已统一改为单字段 `schedule`，六类任务调度字段现已一致 |
+| T-1 | `TransferTask` 的 `schedule` 字段是字符串（Cron 表达式），而 `ScanTask` 用了 `schedule_type` + `cron_expression` 两字段，两者不一致 | ✅ 已修正 | ScanTask 已统一改为单字段 `schedule`，任务调度字段现已一致 |
 | T-2 | `Orchestration.steps` 内嵌 JSONB，步骤中引用的任务类型无法做数据库级约束 | 应用层维护 | 合理，跨模块调用只能在应用层验证 |
 | T-3 | `TaskExecution.source_task_id` 是字符串而非 FK，无法联表查询到对应任务的详情 | 设计如此 | 需要应用层按 module+task_type 路由到对应表查询 |
-| T-4 | `Orchestration` 本身也是 Task，但当前无法作为另一个 Orchestration 的 Step 被引用 | 未实现 | 元模型上预留，实现时按需支持 |
+| T-4 | `Orchestration` 本身也是 Task，可作为另一个 Orchestration 的 Step 被引用 | 受限支持 | 必须在保存和执行时防止自引用或循环引用 |
 
 ---
 
@@ -1154,6 +1214,14 @@ graph LR
         Embedding
     end
 
+    subgraph QLT["Quality"]
+        CheckTask
+    end
+
+    subgraph GPH["Graph"]
+        GraphBuildTask
+    end
+
     subgraph MON["Monitor (公共)"]
         TaskExecution
     end
@@ -1216,6 +1284,9 @@ graph LR
     Orchestration -.->|"编排步骤(JSONB)"| DevTask
     Orchestration -.->|"编排步骤(JSONB)"| MvtTask
     Orchestration -.->|"编排步骤(JSONB)"| EmbeddingTask
+    Orchestration -.->|"编排步骤(JSONB)"| CheckTask
+    Orchestration -.->|"编排步骤(JSONB)"| GraphBuildTask
+    Orchestration -.->|"编排步骤(JSONB，防递归)"| Orchestration
 
     %% 统一执行记录
     ScanTask --> TaskExecution
@@ -1224,6 +1295,8 @@ graph LR
     Orchestration --> TaskExecution
     MvtTask --> TaskExecution
     EmbeddingTask --> TaskExecution
+    CheckTask --> TaskExecution
+    GraphBuildTask --> TaskExecution
 
     %% Service 图层
     TileService --> TileServiceLayer
@@ -1271,6 +1344,8 @@ graph TD
     DEV["Develop\nDevTask"]
     ORC["Orchestrator\nOrchestration"]
     MGR["Manager\nMvtTask / EmbeddingTask / QuickView / Embedding"]
+    QLT["Quality\nCheckTask"]
+    GPH["Graph\nGraphBuildTask"]
     MON["Monitor (公共)\nTaskExecution"]
     SVC["Service\nQueryService / TileService / RegisteredService"]
     STD["Standard\nDomain / Element / Metric / CodeSet / Unit"]
@@ -1281,6 +1356,8 @@ graph TD
     SYS -->|"提供 Engine"| DEV
     SYS -->|"提供 Engine"| SVC
     SYS -->|"提供 Engine"| MGR
+    SYS -->|"Module 注册"| QLT
+    SYS -->|"Module 注册"| GPH
     SYS -->|"Module 注册"| ORC
 
     META -->|"DataItem 可选关联"| SVC
@@ -1288,12 +1365,17 @@ graph TD
     ORC -->|"编排步骤(JSONB调用)"| TRF
     ORC -->|"编排步骤(JSONB调用)"| DEV
     ORC -->|"编排步骤(JSONB调用)"| MGR
+    ORC -->|"编排步骤(JSONB调用)"| QLT
+    ORC -->|"编排步骤(JSONB调用)"| GPH
+    ORC -->|"编排步骤(JSONB调用，防递归)"| ORC
 
     META --> MON
     TRF --> MON
     DEV --> MON
     ORC --> MON
     MGR --> MON
+    QLT --> MON
+    GPH --> MON
 
     STD -.->|"Element/Metric 软引用"| MOD
     STD -.->|"Domain 软引用"| MOD
@@ -1308,10 +1390,10 @@ graph TD
 | S-1  | System   | TaskProvider 与 Module 通过 module_name 字符串关联，无 DB FK，考虑合并两表 | 中  | 待讨论     |
 | S-2  | System   | Module 无 tenant_id，模块是全局的                                     | —      | 已确认合理 |
 | S-3  | System   | Engine.created_by 无 DB FK（跨 schema 引用 User）                     | —      | 已确认合理 |
-| T-1  | Task     | ScanTask 调度字段与其他任务不一致（schedule_type+cron_expression vs 单字段 schedule） | 中 | ✅ 已修正（所有六类任务均统一为单字段 schedule） |
+| T-1  | Task     | ScanTask 调度字段与其他任务不一致（schedule_type+cron_expression vs 单字段 schedule） | 中 | ✅ 已修正（任务调度字段已统一为单字段 schedule） |
 | T-2  | Task     | Orchestration.steps 内嵌 JSONB，任务引用无 DB 约束                    | —      | 已确认合理 |
 | T-3  | Task     | TaskExecution.source_task_id 为字符串，无法联表查询任务详情            | 低     | 待讨论     |
-| T-4  | Task     | Orchestration 不能作为另一 Orchestration 的 Step（递归编排）          | 低     | 元模型预留，待实现 |
+| T-4  | Task     | Orchestration 可作为另一 Orchestration 的 Step，但必须防止自引用或循环引用 | 中 | 受限支持 |
 | M-1  | Meta     | ScanTask 的调度字段（schedule_type + cron_expression）与其他任务单字段 schedule 不一致 | 中 | ✅ 已修正，见 T-1 |
 | M-2  | Meta     | DataItem.attributes JSONB 存字段列表，无字段级查询能力                | —      | 已确认合理（依赖 Meilisearch）|
 | MG-1 | Manager  | MvtTask 与 QuickView 通过 engine+schema+table 三字段软关联，无 DB FK  | —      | 已确认合理 |

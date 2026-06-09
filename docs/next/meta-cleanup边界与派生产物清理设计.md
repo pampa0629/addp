@@ -155,6 +155,18 @@ flowchart TD
 - `扫描后派生能力与任务边界.md` 可引用本文，说明派生产物的 cleanup owner 归属。
 - 暂不修改 Meta cleanup 代码，避免影响当前正在推进的 Meta 扫描主线。
 
+### 任务体系边界
+
+cleanup 从监控视角具有 execution 特征，但从编排视角属于系统级运维清理流程，不是用户数据处理流水线的一环。
+
+后续如果 cleanup 接入 `common.task_executions`：
+
+- 只能作为 `module=system` 或具体 owner 模块的运维执行记录，用于监控、审计和故障追踪。
+- 不能声明为 TaskProvider 可编排任务类型。
+- 不能出现在 Orchestrator 任务选择列表中。
+- cleanup scan / execute 是否分别产生 execution，需要在 cleanup 专题中统一定义。
+- `ExpectedModules`、各模块 cleanup result 标准字段、scan result 与 execute result 的关联，也应在本文专题中继续收敛。
+
 ### 阶段 2：Manager 接入 cleanup consumer
 
 在 Manager 内新增 cleanup consumer：

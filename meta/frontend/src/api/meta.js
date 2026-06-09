@@ -99,7 +99,7 @@ export default {
   },
 
   getScanRun(runId) {
-    return client.get(`/meta/scan/runs/${runId}`)
+    return client.get(`/meta/executions/${runId}`)
   },
 
   getScanTasks(engineId) {

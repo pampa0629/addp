@@ -39,6 +39,18 @@ MVT / Quick View 是另一条路径：它服务地图快显、瓦片生成、缓
 
 ## 后续专题需要解决的问题
 
+### 0. 任务体系接入后的 Manager MVT 边界
+
+任务体系主干只要求 Manager 以 `provider=manager, task_type=mvt_generation` 暴露 MVT 任务定义，并能被 Orchestrator 和 Monitor 发现、执行和回跳 owner 页面。MVT / QuickView 内部语义仍由本文专题继续收敛。
+
+后续处理时需要保持以下边界：
+
+- `manager.mvt_tasks` 是可编排任务定义，表达生成策略和调度意图。
+- `manager.quick_view` 是 artifact state，表达当前快显产物是否 ready、缓存范围、fingerprint、zoom、错误和更新时间。
+- `common.task_executions` 中的 `mvt_generation` 只表达某一次生成执行，不替代 QuickView 当前状态。
+- QuickView 从“任务”命名收敛为 artifact state，后续页面、API 和文案都应避免把 QuickView 本身称为任务。
+- `mvt_generation` 的 `create_url` / `edit_url` 必须指向 Manager MVT 任务定义 owner 页面，不应跳到空间预览页。
+
 ### 1. QuickView extent 字段语义
 
 推荐将 QuickView 中的 extent 明确定义为快显派生范围，而不是源空间事实。

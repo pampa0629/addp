@@ -500,13 +500,10 @@ paths:
       - Manager
   /embedding_tasks:
     get:
-      description: 列出Manager模块的任务（MVT生成任务和向量化任务）| List Manager module tasks (MVT generation
-        and embedding tasks)
+      description: 列出 Manager 模块的向量化任务配置。该私有入口固定返回 task_type=embedding；编排模块应使用标准 /tasks
+        入口。| List Manager embedding task configurations. This private endpoint always
+        returns task_type=embedding; orchestrator should use the standard /tasks endpoint.
       parameters:
-      - description: '任务类型过滤：mvt_generation|embedding | Task type filter: mvt_generation|embedding'
-        in: query
-        name: task_type
-        type: string
       - description: 页码，默认1 | Page number, default 1
         in: query
         name: page
@@ -523,11 +520,6 @@ paths:
           schema:
             additionalProperties: true
             type: object
-        "400":
-          description: 不支持的任务类型 | Unsupported task type
-          schema:
-            additionalProperties: true
-            type: object
         "500":
           description: 服务器内部错误 | Internal server error
           schema:
@@ -535,7 +527,7 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 列出任务 | List tasks
+      summary: 列出向量化任务配置 | List embedding task configurations
       tags:
       - Manager
     post:
@@ -1484,13 +1476,11 @@ paths:
       - Manager
   /mvt_tasks:
     get:
-      description: 列出Manager模块的任务（MVT生成任务和向量化任务）| List Manager module tasks (MVT generation
-        and embedding tasks)
+      description: 列出 Manager 模块的 MVT 生成任务配置。该私有入口固定返回 task_type=mvt_generation；编排模块应使用标准
+        /tasks 入口。| List Manager MVT generation task configurations. This private
+        endpoint always returns task_type=mvt_generation; orchestrator should use
+        the standard /tasks endpoint.
       parameters:
-      - description: '任务类型过滤：mvt_generation|embedding | Task type filter: mvt_generation|embedding'
-        in: query
-        name: task_type
-        type: string
       - description: 页码，默认1 | Page number, default 1
         in: query
         name: page
@@ -1507,11 +1497,6 @@ paths:
           schema:
             additionalProperties: true
             type: object
-        "400":
-          description: 不支持的任务类型 | Unsupported task type
-          schema:
-            additionalProperties: true
-            type: object
         "500":
           description: 服务器内部错误 | Internal server error
           schema:
@@ -1519,7 +1504,7 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 列出任务 | List tasks
+      summary: 列出MVT生成任务配置 | List MVT generation task configurations
       tags:
       - Manager
     post:

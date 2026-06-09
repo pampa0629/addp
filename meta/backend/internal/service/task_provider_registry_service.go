@@ -83,7 +83,7 @@ func (s *TaskProviderRegistryService) Register() error {
 		TaskListEndpoint:    "/api/v1/meta/tasks",                          // 扫描任务列表
 		TaskDetailEndpoint:  "/api/v1/meta/tasks/{task_type}/{id}",         // 扫描任务详情
 		TaskExecuteEndpoint: "/api/v1/meta/tasks/{task_type}/{id}/execute", // 执行扫描任务
-		TaskStatusEndpoint:  "/api/v1/meta/scan/runs/{execution_id}",       // 查询执行状态（UUID）
+		TaskStatusEndpoint:  "/api/v1/meta/executions/{execution_id}",      // 查询执行状态（UUID）
 
 		// 能力描述（JSON 字符串）
 		Capabilities: &capabilitiesStr,

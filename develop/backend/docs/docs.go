@@ -456,7 +456,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/executions/{id}": {
+        "/executions/{execution_id}": {
             "get": {
                 "produces": [
                     "application/json"
@@ -469,7 +469,7 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "description": "执行ID（UUID）| Execution ID (UUID)",
-                        "name": "id",
+                        "name": "execution_id",
                         "in": "path",
                         "required": true
                     }

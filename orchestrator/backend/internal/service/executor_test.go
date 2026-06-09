@@ -205,11 +205,11 @@ func TestExecuteWithTaskProviderPassesTenantHeader(t *testing.T) {
 	statusTenantHeader := ""
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/execute/check/42":
+		case "/api/v1/quality/tasks/check/42/execute":
 			executeTenantHeader = r.Header.Get("X-Tenant-ID")
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]string{"execution_id": "child-exec"})
-		case "/status/child-exec":
+		case "/api/v1/quality/executions/child-exec":
 			statusTenantHeader = r.Header.Get("X-Tenant-ID")
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -228,8 +228,8 @@ func TestExecuteWithTaskProviderPassesTenantHeader(t *testing.T) {
 				"quality": {
 					ModuleName:          "quality",
 					BaseURL:             server.URL,
-					TaskExecuteEndpoint: "/execute/{task_type}/{id}",
-					TaskStatusEndpoint:  "/status/{execution_id}",
+					TaskExecuteEndpoint: "/api/v1/quality/tasks/{task_type}/{id}/execute",
+					TaskStatusEndpoint:  "/api/v1/quality/executions/{execution_id}",
 				},
 			},
 			cacheTTL:    time.Hour,
@@ -429,4 +429,17 @@ func TestProviderExecutionErrorMessage(t *testing.T) {
 	})
 
 	assert.Equal(t, "boom", got)
+}
+
+func TestTopologicalSortExecutesDependenciesBeforeDependents(t *testing.T) {
+	graph := buildDAG(models.Steps{
+		{ID: "query"},
+		{ID: "orch1", DependsOn: []string{"query"}},
+		{ID: "orch2", DependsOn: []string{"orch1"}},
+	})
+
+	got, err := topologicalSort(graph)
+
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"query", "orch1", "orch2"}, got)
 }

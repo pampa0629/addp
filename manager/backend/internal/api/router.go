@@ -102,7 +102,7 @@ func SetupRouter(
 		// MvtTask CRUD
 		mvtTasksGroup := api.Group("/mvt_tasks")
 		{
-			mvtTasksGroup.GET("", taskProviderHandler.ListTasks) // ?task_type=mvt_generation
+			mvtTasksGroup.GET("", taskProviderHandler.ListMvtTasks)
 			mvtTasksGroup.POST("", taskProviderHandler.CreateMvtTask)
 			mvtTasksGroup.GET("/:id", func(c *gin.Context) {
 				c.Params = append(c.Params, gin.Param{Key: "task_type", Value: "mvt_generation"})
@@ -115,7 +115,7 @@ func SetupRouter(
 		// EmbeddingTask CRUD
 		embeddingTaskDefGroup := api.Group("/embedding_tasks")
 		{
-			embeddingTaskDefGroup.GET("", taskProviderHandler.ListTasks) // ?task_type=embedding
+			embeddingTaskDefGroup.GET("", taskProviderHandler.ListEmbeddingTasks)
 			embeddingTaskDefGroup.POST("", taskProviderHandler.CreateEmbeddingTask)
 			embeddingTaskDefGroup.GET("/:id", func(c *gin.Context) {
 				c.Params = append(c.Params, gin.Param{Key: "task_type", Value: "embedding"})

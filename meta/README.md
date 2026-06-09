@@ -83,6 +83,7 @@ Console 为 System engine 注册或编辑体验维护 Meta 扫描计划时，调
 手动扫描:   POST /api/v1/meta/scan/run/manual
 扫描任务:   GET/POST/PUT/DELETE /api/v1/meta/scan/tasks
 运行记录:   GET /api/v1/meta/scan/runs
+执行详情:   GET /api/v1/meta/executions/:execution_id
 ```
 
 完整 API 文档请查看 [CLAUDE.md](./CLAUDE.md#常见开发场景)

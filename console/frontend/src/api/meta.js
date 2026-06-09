@@ -77,7 +77,7 @@ export const getScanRuns = async (engineId, params = {}) => {
 }
 
 export const getScanRun = runId =>
-  client.get(`/meta/scan/runs/${runId}`).then(unwrapData)
+  client.get(`/meta/executions/${runId}`).then(unwrapData)
 
 export const createManualScanRun = (engineId, payload = {}) =>
   client

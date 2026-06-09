@@ -93,7 +93,7 @@ func SetupRouter(
 		executions := api.Group("/executions")
 		{
 			executions.GET("", executionHandler.List)
-			executions.GET("/:id", executionHandler.Get)
+			executions.GET("/:execution_id", executionHandler.Get)
 		}
 
 		// 问题工单

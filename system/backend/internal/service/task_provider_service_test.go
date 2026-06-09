@@ -62,6 +62,50 @@ func TestValidateTaskProviderRejectsMissingTaskTypeSchema(t *testing.T) {
 	assertTaskProviderValidationError(t, validateTaskProvider(provider), "execution_schema")
 }
 
+func TestValidateTaskProviderRejectsInvalidTaskTypeName(t *testing.T) {
+	provider := validTaskProviderForTest(strings.Replace(
+		validTaskCapabilitiesForTest(),
+		`"type":"scan"`,
+		`"type":"Scan-Task"`,
+		1,
+	))
+
+	assertTaskProviderValidationError(t, validateTaskProvider(provider), "must match")
+}
+
+func TestValidateTaskProviderRejectsNonObjectTaskTypeSchema(t *testing.T) {
+	provider := validTaskProviderForTest(strings.Replace(
+		validTaskCapabilitiesForTest(),
+		`"execution_schema":{"type":"object"}`,
+		`"execution_schema":[]`,
+		1,
+	))
+
+	assertTaskProviderValidationError(t, validateTaskProvider(provider), "execution_schema must be an object schema")
+}
+
+func TestValidateTaskProviderRejectsNonObjectSchemaType(t *testing.T) {
+	provider := validTaskProviderForTest(strings.Replace(
+		validTaskCapabilitiesForTest(),
+		`"definition_schema":{"type":"object"}`,
+		`"definition_schema":{"type":"array"}`,
+		1,
+	))
+
+	assertTaskProviderValidationError(t, validateTaskProvider(provider), "definition_schema.type must be object")
+}
+
+func TestValidateTaskProviderRejectsInlineExecutionInV1(t *testing.T) {
+	provider := validTaskProviderForTest(strings.Replace(
+		validTaskCapabilitiesForTest(),
+		`"supports_inline_execution":false`,
+		`"supports_inline_execution":true`,
+		1,
+	))
+
+	assertTaskProviderValidationError(t, validateTaskProvider(provider), "supports_inline_execution must be false")
+}
+
 func TestValidateTaskProviderRejectsMissingTaskTypeCreateURL(t *testing.T) {
 	provider := validTaskProviderForTest(`{
 		"schema_version":"task.capabilities/v1",
@@ -181,6 +225,20 @@ func TestValidateTaskProviderRejectsStatusEndpointWithoutExecutionID(t *testing.
 	assertTaskProviderValidationError(t, validateTaskProvider(provider), "{execution_id}")
 }
 
+func TestValidateTaskProviderRejectsNonStandardStatusEndpoint(t *testing.T) {
+	provider := validTaskProviderForTest(validTaskCapabilitiesForTest())
+	provider.TaskStatusEndpoint = "/api/v1/meta/scan/runs/{execution_id}"
+
+	assertTaskProviderValidationError(t, validateTaskProvider(provider), "/executions/{execution_id}")
+}
+
+func TestValidateTaskProviderRejectsNonStandardExecuteEndpoint(t *testing.T) {
+	provider := validTaskProviderForTest(validTaskCapabilitiesForTest())
+	provider.TaskExecuteEndpoint = "/api/v1/meta/tasks/{task_type}/{id}/run"
+
+	assertTaskProviderValidationError(t, validateTaskProvider(provider), "/tasks/{task_type}/{id}/execute")
+}
+
 func TestValidateTaskProviderRejectsCancelableTaskWithoutCancelEndpoint(t *testing.T) {
 	provider := validTaskProviderForTest(strings.Replace(
 		validTaskCapabilitiesForTest(),
@@ -206,6 +264,25 @@ func TestValidateTaskProviderAcceptsCancelableTaskWithCancelEndpoint(t *testing.
 	}
 }
 
+func TestValidateTaskProviderRejectsCancelEndpointWithoutCancelableTask(t *testing.T) {
+	provider := validTaskProviderForTest(validTaskCapabilitiesForTest())
+	provider.TaskCancelEndpoint = "/api/v1/meta/executions/{execution_id}/cancel"
+
+	assertTaskProviderValidationError(t, validateTaskProvider(provider), "must be empty")
+}
+
+func TestValidateTaskProviderRejectsNonStandardCancelEndpoint(t *testing.T) {
+	provider := validTaskProviderForTest(strings.Replace(
+		validTaskCapabilitiesForTest(),
+		`"supports_cancel":false`,
+		`"supports_cancel":true`,
+		1,
+	))
+	provider.TaskCancelEndpoint = "/api/v1/meta/scan/runs/{execution_id}/cancel"
+
+	assertTaskProviderValidationError(t, validateTaskProvider(provider), "/executions/{execution_id}/cancel")
+}
+
 func validTaskProviderForTest(capabilities string) *models.TaskProvider {
 	capabilitiesJSON := models.JSONString(capabilities)
 	return &models.TaskProvider{
@@ -216,7 +293,7 @@ func validTaskProviderForTest(capabilities string) *models.TaskProvider {
 		TaskListEndpoint:    "/api/v1/meta/tasks",
 		TaskDetailEndpoint:  "/api/v1/meta/tasks/{task_type}/{id}",
 		TaskExecuteEndpoint: "/api/v1/meta/tasks/{task_type}/{id}/execute",
-		TaskStatusEndpoint:  "/api/v1/meta/scan/runs/{execution_id}",
+		TaskStatusEndpoint:  "/api/v1/meta/executions/{execution_id}",
 		Capabilities:        &capabilitiesJSON,
 		IsEnabled:           true,
 	}

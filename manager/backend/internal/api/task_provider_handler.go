@@ -61,12 +61,13 @@ type TaskListItem struct {
 // @Failure 400 {object} map[string]interface{} "不支持的任务类型 | Unsupported task type"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @Router /tasks [get]
-// @Router /mvt_tasks [get]
-// @Router /embedding_tasks [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListTasks(c *gin.Context) {
+	h.listTasks(c, strings.TrimSpace(c.Query("task_type")))
+}
+
+func (h *TaskProviderHandler) listTasks(c *gin.Context, taskType string) {
 	tenantID := c.GetUint("tenant_id")
-	taskType := strings.TrimSpace(c.Query("task_type"))
 
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	if page < 1 {
@@ -152,6 +153,36 @@ func (h *TaskProviderHandler) ListTasks(c *gin.Context) {
 		"page":      page,
 		"page_size": pageSize,
 	})
+}
+
+// ListMvtTasks GET /api/manager/mvt_tasks
+// @Summary 列出MVT生成任务配置 | List MVT generation task configurations
+// @Description 列出 Manager 模块的 MVT 生成任务配置。该私有入口固定返回 task_type=mvt_generation；编排模块应使用标准 /tasks 入口。| List Manager MVT generation task configurations. This private endpoint always returns task_type=mvt_generation; orchestrator should use the standard /tasks endpoint.
+// @Tags Manager
+// @Produce json
+// @Param page query int false "页码，默认1 | Page number, default 1"
+// @Param page_size query int false "每页数量，默认20 | Page size, default 20"
+// @Success 200 {object} map[string]interface{} "任务列表 | Task list"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /mvt_tasks [get]
+// @Security BearerAuth
+func (h *TaskProviderHandler) ListMvtTasks(c *gin.Context) {
+	h.listTasks(c, commonExecution.TaskTypeMvtGeneration)
+}
+
+// ListEmbeddingTasks GET /api/manager/embedding_tasks
+// @Summary 列出向量化任务配置 | List embedding task configurations
+// @Description 列出 Manager 模块的向量化任务配置。该私有入口固定返回 task_type=embedding；编排模块应使用标准 /tasks 入口。| List Manager embedding task configurations. This private endpoint always returns task_type=embedding; orchestrator should use the standard /tasks endpoint.
+// @Tags Manager
+// @Produce json
+// @Param page query int false "页码，默认1 | Page number, default 1"
+// @Param page_size query int false "每页数量，默认20 | Page size, default 20"
+// @Success 200 {object} map[string]interface{} "任务列表 | Task list"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /embedding_tasks [get]
+// @Security BearerAuth
+func (h *TaskProviderHandler) ListEmbeddingTasks(c *gin.Context) {
+	h.listTasks(c, commonExecution.TaskTypeEmbedding)
 }
 
 // TaskDetail GET /api/manager/tasks/:task_type/:id

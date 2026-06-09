@@ -57,3 +57,20 @@ func TestValidateDevTaskContentRejectsLegacyWorkflowDef(t *testing.T) {
 		t.Fatalf("expected content.workflow_definition error, got %v", err)
 	}
 }
+
+func TestValidateExpectedDevTaskTypeAllowsInternalExecution(t *testing.T) {
+	err := validateExpectedDevTaskType(commonExecution.TaskTypeWorkflow, "")
+	if err != nil {
+		t.Fatalf("expected empty expected task type to pass, got %v", err)
+	}
+}
+
+func TestValidateExpectedDevTaskTypeRejectsProviderMismatch(t *testing.T) {
+	err := validateExpectedDevTaskType(commonExecution.TaskTypeWorkflow, commonExecution.TaskTypeQuery)
+	if err == nil {
+		t.Fatal("expected task_type/dev_type mismatch to be rejected")
+	}
+	if !strings.Contains(err.Error(), "task_type=query") || !strings.Contains(err.Error(), "dev_type=workflow") {
+		t.Fatalf("unexpected mismatch error: %v", err)
+	}
+}

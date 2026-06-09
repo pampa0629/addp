@@ -204,12 +204,12 @@ paths:
       summary: 获取执行记录列表 | List execution records
       tags:
       - Execution
-  /executions/{id}:
+  /executions/{execution_id}:
     get:
       parameters:
       - description: 执行ID | Execution ID
         in: path
-        name: id
+        name: execution_id
         required: true
         type: string
       produces:

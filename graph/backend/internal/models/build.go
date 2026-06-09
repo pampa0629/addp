@@ -14,7 +14,7 @@ type BuildTask struct {
 	ExecutionID         string         `gorm:"size:64" json:"execution_id"` // 关联 common.task_executions.execution_id
 	Name                string         `gorm:"not null" json:"name"`
 	Description         string         `json:"description"`
-	Status              string         `gorm:"not null;default:'pending'" json:"status"` // pending/running/success/failed/cancelled
+	Status              string         `gorm:"not null;default:'pending'" json:"status"` // pending/running/success/failed/timeout/cancelled
 	ConfidenceThreshold float64        `gorm:"not null;default:0.70" json:"confidence_threshold"`
 	ChunkSize           int            `gorm:"not null;default:1000" json:"chunk_size"`      // 每个 chunk 的字符数
 	ChunkOverlap        int            `gorm:"not null;default:200" json:"chunk_overlap"`    // 相邻 chunk 的重叠字符数
@@ -98,6 +98,7 @@ const (
 	BuildStatusRunning   = "running"
 	BuildStatusSuccess   = "success"
 	BuildStatusFailed    = "failed"
+	BuildStatusTimeout   = "timeout"
 	BuildStatusCancelled = "cancelled"
 )
 

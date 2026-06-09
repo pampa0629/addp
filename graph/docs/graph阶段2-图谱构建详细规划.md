@@ -33,7 +33,7 @@ CREATE TABLE graph.build_tasks (
     execution_id         VARCHAR(64),      -- 关联 common.task_executions.execution_id
     name                 VARCHAR(255) NOT NULL,
     description          TEXT,
-    status               VARCHAR(50)  NOT NULL DEFAULT 'pending',  -- pending/running/success/failed/cancelled
+    status               VARCHAR(50)  NOT NULL DEFAULT 'pending',  -- pending/running/success/failed/timeout/cancelled
     confidence_threshold DECIMAL(3,2) NOT NULL DEFAULT 0.70,
     chunk_size           INTEGER NOT NULL DEFAULT 1000,  -- 每个 chunk 的字符数
     chunk_overlap        INTEGER NOT NULL DEFAULT 200,   -- 相邻 chunk 的重叠字符数

@@ -1,6 +1,6 @@
 # Transfer 任务语义与同步模式设计草案
 
-更新时间：2026-05-31
+更新时间：2026-06-09
 
 本文用于讨论 Transfer 后续任务语义，不以当前实现为约束。ADDP 当前处于积极开发阶段，本文默认 clean break：概念确认后可以推翻旧字段、旧任务类型和旧 UI 入口。
 
@@ -236,3 +236,34 @@ source
 3. 第一版 batch incremental 只支持 watermark，还是也支持 monotonic id。
 4. `allowed_modules` 是否作为 System engine 的通用字段，还是先作为 connection metadata 中的受控策略。
 5. Manager 导入 / 导出创建 Transfer 任务时，是否保留 `intent=import/export` 作为审计和 UI 回显标签。
+
+## 十、任务体系接入遗留点
+
+任务体系阶段 1 只要求 Transfer 在接口层符合 TaskProvider 规范，并且对外只声明一个任务类型：
+
+```text
+provider=transfer
+task_type=import
+```
+
+Transfer 内部任务语义、同步模式、取消、重试、进度和日志仍作为本专题后续处理，不在当前任务体系主线中展开。
+
+后续专题至少需要收敛以下问题：
+
+1. 标准 TaskProvider 执行详情入口已经是 `GET /executions/{execution_id}`，但私有取消、重试、进度、日志接口仍按内部自增 ID 工作。后续需要决定是否统一到 `execution_id`，以及是否继续保留内部执行管理视图。
+2. 当前不声明标准取消能力，即 `supports_cancel=false`，因此 Orchestrator 和 Monitor 不应展示 Transfer 标准取消入口。只有在明确 worker 可中断、资源可清理、状态可一致落库后，才能开放 `POST /executions/{execution_id}/cancel`。
+3. `retry` 当前是 restartable retry，不是 checkpoint resumable。后续如果要支持从中断点续跑，需要先定义 checkpoint commit / resume marker / 写入幂等语义，不能只复用现有 retry 按钮。
+4. `progress` 和 `logs` 当前是 Transfer 私有执行视图。后续要决定哪些信息沉淀到 `common.task_executions.metadata/error_details`，哪些保留在 Transfer 私有观测表或日志中。
+5. `task_type=import` 只是阶段 1 的对外任务类型，不代表 Transfer 长期只做导入。后续是否仍用单一 task type 加 `intent/load/trigger/write_mode` 表达，还是拆分更多 task type，需要结合本专题的全量、增量和实时语义一起决定。
+6. Manager 入口创建 Transfer 任务时，Manager 负责用户交互、字段映射和入口语义；Transfer 负责执行计划与搬运。后续需要明确 Manager 到 Transfer 的创建契约，避免把 Manager UI 概念反向写成 Transfer planner 分支。
+7. Transfer 写后触发 Meta scan 属于执行后派生动作。后续需要明确它在父子 execution 中如何表达：是 Transfer execution 的 metadata，还是单独的 Meta 子 execution，并与 Orchestrator 的 `parent_execution_id` 语义保持一致。
+
+## 十一、来自任务体系主干的后续边界
+
+以下内容从 `任务体系统一设计.md` 的后续清单并入本文，后续 Transfer 专题统一在这里推进，不再散落在任务体系主干文档中：
+
+1. 是否扩展 `task_type` 必须由本文先确认。阶段 1 对外仍只声明 `task_type=import`；如果后续确认需要导出、同步等独立任务类型，必须先修订正式任务体系规范，再按 clean break 迁移。
+2. 导入 / 导出应优先作为 Manager 或其他业务模块的入口 intent / UI 标签 / 审计标签，而不是 Transfer planner 主路径的执行类型分支。
+3. 全量、增量、实时增量的任务定义结构需要在本文中统一，包括 `load.mode`、`trigger.type`、水位状态、写入策略和 retry 语义。
+4. 当前 TaskProvider capabilities 对外只声明 `restartable_retry`，不得声明 checkpoint resumable。checkpoint 仍是观测和诊断信息，真正断点续跑需要 source seek、target 幂等提交和 provider marker 消费同时成立。
+5. Transfer 队列、进度、日志和私有执行管理 API 后续如进入 Monitor，必须先明确哪些属于统一 execution metadata，哪些仍属于 Transfer 私有观测视图。

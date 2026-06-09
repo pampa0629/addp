@@ -284,7 +284,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/executions/{id}": {
+        "/executions/{execution_id}": {
             "get": {
                 "security": [
                     {
@@ -300,9 +300,9 @@ const docTemplate = `{
                 "summary": "获取执行详情 | Get execution detail",
                 "parameters": [
                     {
-                        "type": "integer",
+                        "type": "string",
                         "description": "执行ID | Execution ID",
-                        "name": "id",
+                        "name": "execution_id",
                         "in": "path",
                         "required": true
                     }

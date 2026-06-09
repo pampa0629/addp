@@ -332,7 +332,7 @@ func MigrateExistingEnginesDisplayName(db *gorm.DB) error {
 	return nil
 }
 
-// MigrateTaskProviders 迁移 task_providers 表：删除旧 task_providers 顶层入口字段
+// MigrateTaskProviders 迁移 task_providers 表：删除旧 task_providers 顶层入口字段，并规范化历史 endpoint。
 func MigrateTaskProviders(db *gorm.DB) error {
 	// 1. 检查 create_task_url 列是否存在（幂等）
 	var colCount int64
@@ -342,21 +342,28 @@ func MigrateTaskProviders(db *gorm.DB) error {
 		AND column_name = 'create_task_url'
 	`).Scan(&colCount)
 
-	if colCount == 0 {
-		// 列已删除，无需迁移
-		return nil
+	if colCount > 0 {
+		// 2. 删除旧列。任务创建/编辑入口必须由 task.capabilities/v1 的 task_types[] 声明。
+		if err := db.Exec(`
+			ALTER TABLE system.task_providers
+			DROP COLUMN IF EXISTS create_task_url,
+			DROP COLUMN IF EXISTS edit_task_url
+		`).Error; err != nil {
+			return fmt.Errorf("task_providers 旧列删除失败: %w", err)
+		}
+
+		log.Println("✅ task_providers 迁移完成（create_task_url/edit_task_url 旧列已删除）")
 	}
 
-	// 2. 删除旧列。任务创建/编辑入口必须由 task.capabilities/v1 的 task_types[] 声明。
 	if err := db.Exec(`
-		ALTER TABLE system.task_providers
-		DROP COLUMN IF EXISTS create_task_url,
-		DROP COLUMN IF EXISTS edit_task_url
+		UPDATE system.task_providers
+		SET task_status_endpoint = '/api/v1/meta/executions/{execution_id}'
+		WHERE module_name = 'meta'
+		  AND task_status_endpoint = '/api/v1/meta/scan/runs/{execution_id}'
 	`).Error; err != nil {
-		return fmt.Errorf("task_providers 旧列删除失败: %w", err)
+		return fmt.Errorf("task_providers 标准执行详情 endpoint 迁移失败: %w", err)
 	}
 
-	log.Println("✅ task_providers 迁移完成（create_task_url/edit_task_url 旧列已删除）")
 	return nil
 }
 

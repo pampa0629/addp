@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/addp/system/internal/models"
@@ -10,6 +11,8 @@ import (
 )
 
 const taskProviderCapabilitiesSchemaVersion = "task.capabilities/v1"
+
+var taskProviderTaskTypePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
 type TaskProviderValidationError struct {
 	Message string
@@ -111,6 +114,9 @@ func validateTaskProvider(provider *models.TaskProvider) error {
 	if hasCancelableTaskType && strings.TrimSpace(provider.TaskCancelEndpoint) == "" {
 		return validationError("task_cancel_endpoint is required when any task_type supports cancel")
 	}
+	if !hasCancelableTaskType && strings.TrimSpace(provider.TaskCancelEndpoint) != "" {
+		return validationError("task_cancel_endpoint must be empty when no task_type supports cancel")
+	}
 	return nil
 }
 
@@ -139,15 +145,30 @@ func validateTaskProviderEndpoints(provider *models.TaskProvider) error {
 	if !strings.Contains(endpoints["task_status_endpoint"], "{execution_id}") {
 		return validationError("task_status_endpoint must contain {execution_id}")
 	}
+	expectedSuffixes := map[string]string{
+		"task_list_endpoint":    "/tasks",
+		"task_detail_endpoint":  "/tasks/{task_type}/{id}",
+		"task_execute_endpoint": "/tasks/{task_type}/{id}/execute",
+		"task_status_endpoint":  "/executions/{execution_id}",
+	}
+	for field, suffix := range expectedSuffixes {
+		if !strings.HasSuffix(endpoints[field], suffix) {
+			return validationError("%s must use standard endpoint suffix %s", field, suffix)
+		}
+	}
 	if strings.TrimSpace(provider.TaskCancelEndpoint) != "" {
-		if !strings.HasPrefix(strings.TrimSpace(provider.TaskCancelEndpoint), "/") {
+		cancelEndpoint := strings.TrimSpace(provider.TaskCancelEndpoint)
+		if !strings.HasPrefix(cancelEndpoint, "/") {
 			return validationError("task_cancel_endpoint must start with /")
 		}
-		if strings.Contains(provider.TaskCancelEndpoint, "/provider/tasks") {
+		if strings.Contains(cancelEndpoint, "/provider/tasks") {
 			return validationError("task_cancel_endpoint must use standard execution cancel endpoint, not /provider/tasks")
 		}
-		if !strings.Contains(provider.TaskCancelEndpoint, "{execution_id}") {
+		if !strings.Contains(cancelEndpoint, "{execution_id}") {
 			return validationError("task_cancel_endpoint must contain {execution_id}")
+		}
+		if !strings.HasSuffix(cancelEndpoint, "/executions/{execution_id}/cancel") {
+			return validationError("task_cancel_endpoint must use standard endpoint suffix /executions/{execution_id}/cancel")
 		}
 	}
 	return nil
@@ -180,6 +201,9 @@ func validateTaskProviderCapabilities(capabilities *models.JSONString) error {
 		if typeName == "" {
 			return validationError("capabilities.task_types[%d].type is required", i)
 		}
+		if !taskProviderTaskTypePattern.MatchString(typeName) {
+			return validationError("capabilities.task_types[%d].type must match ^[a-z][a-z0-9_]*$", i)
+		}
 		if _, exists := seen[typeName]; exists {
 			return validationError("duplicate task_type %q in capabilities.task_types", typeName)
 		}
@@ -200,14 +224,25 @@ func validateTaskProviderCapabilities(capabilities *models.JSONString) error {
 			}
 		}
 		for _, field := range []string{"definition_schema", "execution_schema"} {
-			if _, exists := taskType[field]; !exists {
+			schema, exists := taskType[field]
+			if !exists {
 				return validationError("capabilities.task_types[%d].%s is required", i, field)
+			}
+			schemaObject, ok := schema.(map[string]interface{})
+			if !ok {
+				return validationError("capabilities.task_types[%d].%s must be an object schema", i, field)
+			}
+			if schemaType := strings.TrimSpace(asString(schemaObject["type"])); schemaType != "object" {
+				return validationError("capabilities.task_types[%d].%s.type must be object", i, field)
 			}
 		}
 		for _, field := range []string{"supports_schedule", "supports_cancel", "supports_inline_execution", "deprecated"} {
 			if _, ok := taskType[field].(bool); !ok {
 				return validationError("capabilities.task_types[%d].%s must be boolean", i, field)
 			}
+		}
+		if supportsInlineExecution, _ := taskType["supports_inline_execution"].(bool); supportsInlineExecution {
+			return validationError("capabilities.task_types[%d].supports_inline_execution must be false in task.capabilities/v1", i)
 		}
 	}
 	return nil

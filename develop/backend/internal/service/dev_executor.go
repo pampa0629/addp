@@ -699,7 +699,7 @@ func (e *DevExecutor) ExecuteWithParams(
 	tenantID uint,
 	userID uint,
 ) (string, error) {
-	return e.ExecuteWithParamsWithContext(ctx, itemID, params, tenantID, userID, commonExecution.TriggerTypeManual, commonExecution.ModuleDevelop, nil)
+	return e.ExecuteWithParamsWithContext(ctx, itemID, params, tenantID, userID, commonExecution.TriggerTypeManual, commonExecution.ModuleDevelop, nil, "")
 }
 
 // ExecuteWithParamsWithContext 执行带参数的 DevTask，并记录统一任务体系上下文。
@@ -712,6 +712,7 @@ func (e *DevExecutor) ExecuteWithParamsWithContext(
 	triggerType string,
 	source string,
 	parentExecutionID *string,
+	expectedTaskType string,
 ) (string, error) {
 	normalizedTriggerType, err := commonExecution.NormalizeTriggerType(triggerType)
 	if err != nil {
@@ -728,6 +729,10 @@ func (e *DevExecutor) ExecuteWithParamsWithContext(
 	devTask, err := e.devTaskRepo.FindByID(itemID, tenantID)
 	if err != nil {
 		return "", fmt.Errorf("开发任务不存在")
+	}
+
+	if err := validateExpectedDevTaskType(devTask.DevType, expectedTaskType); err != nil {
+		return "", err
 	}
 
 	if devTask.Status != "active" {
@@ -827,6 +832,13 @@ func (e *DevExecutor) ExecuteWithParamsWithContext(
 	go e.executeAsync(execution.ID, executionID, tempItem, int(tenantID))
 
 	return executionID, nil
+}
+
+func validateExpectedDevTaskType(devType, expectedTaskType string) error {
+	if expectedTaskType != "" && devType != expectedTaskType {
+		return fmt.Errorf("开发任务类型不匹配: task_type=%s, dev_type=%s", expectedTaskType, devType)
+	}
+	return nil
 }
 
 // ==================== 辅助函数 ====================

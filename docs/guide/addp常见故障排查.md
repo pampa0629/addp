@@ -38,7 +38,7 @@ bash scripts/dev/keepalive.sh restart -orchestrator
 
 常用示例：
 ```bash
-# 重启单个模块并保持服务可用
+# 重启单个模块并保持服务可用；注意 restart.sh 会先停止整套 ADDP 开发环境
 bash scripts/dev/keepalive.sh restart -orchestrator
 
 # 全量重启并保持服务可用
@@ -54,6 +54,8 @@ bash scripts/dev/keepalive.sh start -system
 
 - 普通本地终端继续优先使用 `bash scripts/dev/start.sh` 或 `bash scripts/dev/restart.sh`。
 - Codex 等命令结束后会回收后台进程的托管环境，使用 `bash scripts/dev/keepalive.sh ...`。
+- `keepalive.sh restart -<模块名>` 会继承 `restart.sh` 的全局停止语义：先停止整套 ADDP 开发环境，再只启动指定模块及其依赖。它适合“只需要该模块继续可用”的场景，不适合在用户外部终端已经启动全套服务时由 Codex 接管局部重启。
+- 如果需要保持全套服务可用，在 Codex 中只能使用 `bash scripts/dev/keepalive.sh restart -all` 并让该命令持续前台运行；如果只想做一次性验证，运行测试和构建命令即可，不要为了局部后端改动在 Codex 中执行 `restart -<模块名>`。
 - 不要同时在外部终端和 Codex 中并发执行 `restart.sh` / `stop.sh`，因为脚本会按 PID、进程名和端口清理 ADDP 开发服务，两个会话可能互相清理。
 
 ---

@@ -130,21 +130,15 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "列出Manager模块的任务（MVT生成任务和向量化任务）| List Manager module tasks (MVT generation and embedding tasks)",
+                "description": "列出 Manager 模块的向量化任务配置。该私有入口固定返回 task_type=embedding；编排模块应使用标准 /tasks 入口。| List Manager embedding task configurations. This private endpoint always returns task_type=embedding; orchestrator should use the standard /tasks endpoint.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "列出任务 | List tasks",
+                "summary": "列出向量化任务配置 | List embedding task configurations",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "任务类型过滤：mvt_generation|embedding | Task type filter: mvt_generation|embedding",
-                        "name": "task_type",
-                        "in": "query"
-                    },
                     {
                         "type": "integer",
                         "description": "页码，默认1 | Page number, default 1",
@@ -161,13 +155,6 @@
                 "responses": {
                     "200": {
                         "description": "任务列表 | Task list",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "不支持的任务类型 | Unsupported task type",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1587,21 +1574,15 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "列出Manager模块的任务（MVT生成任务和向量化任务）| List Manager module tasks (MVT generation and embedding tasks)",
+                "description": "列出 Manager 模块的 MVT 生成任务配置。该私有入口固定返回 task_type=mvt_generation；编排模块应使用标准 /tasks 入口。| List Manager MVT generation task configurations. This private endpoint always returns task_type=mvt_generation; orchestrator should use the standard /tasks endpoint.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Manager"
                 ],
-                "summary": "列出任务 | List tasks",
+                "summary": "列出MVT生成任务配置 | List MVT generation task configurations",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "任务类型过滤：mvt_generation|embedding | Task type filter: mvt_generation|embedding",
-                        "name": "task_type",
-                        "in": "query"
-                    },
                     {
                         "type": "integer",
                         "description": "页码，默认1 | Page number, default 1",
@@ -1618,13 +1599,6 @@
                 "responses": {
                     "200": {
                         "description": "任务列表 | Task list",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "不支持的任务类型 | Unsupported task type",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true

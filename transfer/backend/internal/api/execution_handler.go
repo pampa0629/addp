@@ -26,14 +26,14 @@ func NewExecutionHandler(executionService *service.ExecutionService) *ExecutionH
 // @Summary 获取执行详情 | Get execution detail
 // @Tags 执行管理 | Execution Management
 // @Produce json
-// @Param id path int true "执行ID | Execution ID"
+// @Param execution_id path string true "执行ID | Execution ID"
 // @Success 200 {object} map[string]interface{}
 // @Failure 404 {object} map[string]string
-// @Router /executions/{id} [get]
+// @Router /executions/{execution_id} [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) GetExecution(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
-	idParam := c.Param("id")
+	idParam := c.Param("execution_id")
 	if id, err := strconv.ParseUint(idParam, 10, 32); err == nil {
 		execution, err := h.executionService.GetExecution(c.Request.Context(), uint(id), tenantID)
 		if err != nil {

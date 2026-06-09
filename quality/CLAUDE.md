@@ -151,7 +151,7 @@ POST   /api/v1/quality/tasks/:task_type/:id/execute # 执行
 ### 执行记录（只读，读 `common.task_executions`）
 ```
 GET    /api/v1/quality/executions                 # 列表（分页）
-GET    /api/v1/quality/executions/:id             # 详情及结果（含质量评分、字段评分、规则明细）
+GET    /api/v1/quality/executions/:execution_id   # 详情及结果（含质量评分、字段评分、规则明细）
 ```
 
 ### 问题工单
@@ -234,7 +234,7 @@ GET    /health                                 # 服务健康检查
 /quality/rule-applications          # 规则应用配置列表
 /quality/check-tasks                # 检查任务列表（含手动执行入口）
 /quality/executions                 # 执行记录列表
-/quality/executions/:id             # 执行详情（评分卡片、字段评分表、规则明细表）
+/quality/executions/:execution_id   # 执行详情（评分卡片、字段评分表、规则明细表）
 /quality/issues                     # 问题工单列表（含状态过滤和处理操作）
 ```
 
@@ -283,7 +283,7 @@ open（待处理）
 
 ### 异步检查，立即返回
 
-`POST /check-tasks/:id/run` 立即返回 `execution_id`，实际检查在后台异步执行。前端可通过轮询 `GET /executions/:id` 获取结果。
+`POST /check-tasks/:id/run` 立即返回 `execution_id`，实际检查在后台异步执行。前端可通过轮询 `GET /executions/:execution_id` 获取结果。
 
 ### 前端双模式布局
 

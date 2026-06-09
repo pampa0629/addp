@@ -3421,7 +3421,7 @@ const docTemplate = `{
                     }
                 },
                 "status": {
-                    "description": "pending/running/success/failed/cancelled",
+                    "description": "pending/running/success/failed/timeout/cancelled",
                     "type": "string"
                 },
                 "tenant_id": {

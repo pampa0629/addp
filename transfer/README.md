@@ -99,11 +99,13 @@ non-table raw copy 已形成第一版最小闭环：`document`、`media`、`unkn
 - `POST /tasks/:id/resume`
 - `GET /tasks/:id/executions`
 - `GET /executions`
-- `GET /executions/:id`
+- `GET /executions/:execution_id`
 - `POST /executions/:id/cancel`
 - `POST /executions/:id/retry`
 - `GET /executions/:id/progress`
 - `GET /executions/:id/logs`
+
+`GET /executions/:execution_id` 是 TaskProvider 标准执行详情入口，按统一 `common.task_executions.execution_id` 查询。取消、重试、进度和日志接口仍属于 Transfer 私有执行管理入口，当前按内部执行记录自增 ID 工作；后续由 Transfer 专题统一收敛。
 
 ## 启动与验证
 

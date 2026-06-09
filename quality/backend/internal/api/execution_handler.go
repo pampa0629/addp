@@ -53,13 +53,13 @@ func (h *ExecutionHandler) List(c *gin.Context) {
 // @Summary 获取执行记录详情 | Get execution record detail
 // @Tags Execution
 // @Produce json
-// @Param id path string true "执行ID | Execution ID"
+// @Param execution_id path string true "执行ID | Execution ID"
 // @Success 200 {object} map[string]interface{}
-// @Router /executions/{id} [get]
+// @Router /executions/{execution_id} [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) Get(c *gin.Context) {
 	tenantID := getTenantID(c)
-	executionID := c.Param("id")
+	executionID := c.Param("execution_id")
 
 	item, err := h.executionRepo.GetByExecutionID(c.Request.Context(), executionID, int(tenantID))
 	if err != nil || item.Module != commonExecution.ModuleQuality {

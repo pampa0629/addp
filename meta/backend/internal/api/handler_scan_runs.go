@@ -101,27 +101,27 @@ func (h *Handler) CreateManualScanRun(c *gin.Context) {
 	c.JSON(http.StatusCreated, run)
 }
 
-// GetScanRun 获取执行详情（按 execution UUID）
-// @Summary 获取扫描运行详情 | Get scan run
-// @Description 按执行 UUID 获取扫描运行详情 | Get scan execution by UUID
+// GetExecution 获取执行详情（按 execution UUID）
+// @Summary 获取执行详情 | Get execution
+// @Description 按标准 TaskProvider 路径获取执行详情 | Get execution by standard TaskProvider path
 // @Tags Meta Scan
 // @Produce json
-// @Param run_id path string true "执行ID | Execution ID"
+// @Param execution_id path string true "执行ID | Execution ID"
 // @Success 200 {object} map[string]interface{} "执行详情 | Execution detail"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "执行不存在 | Execution not found"
 // @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /scan/runs/{run_id} [get]
+// @Router /executions/{execution_id} [get]
 // @Security BearerAuth
-func (h *Handler) GetScanRun(c *gin.Context) {
+func (h *Handler) GetExecution(c *gin.Context) {
 	if h.executionService == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "execution service not available"})
 		return
 	}
 
 	tenantID := commonAuth.GetTenantID(c)
-	executionID := c.Param("run_id")
+	executionID := c.Param("execution_id")
 	if executionID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "missing execution_id"})
 		return

@@ -149,7 +149,8 @@ Manager 预览不会重新识别格式，只消费已落库 Meta attributes 中�
 - 资产发现：`GET /assets/discoverable`。
 - 引擎：`GET /engines`。
 - 扫描：`POST /scan/run/unscanned`、`POST /scan/run/manual`。
-- 扫描运行：`GET /scan/runs`、`GET /scan/runs/:run_id`。
+- 扫描运行列表：`GET /scan/runs`。
+- 执行详情：`GET /executions/:execution_id`。
 - 扫描任务：`GET /scan/tasks`、`POST /scan/tasks`、`PUT /scan/tasks/:task_id`、`DELETE /scan/tasks/:task_id`、`POST /scan/tasks/:task_id/trigger`。
 - 引擎数据项：`GET /engines/:engine_id/items`。
 - 树查询：`GET /engines/:engine_id/tree`、`GET /nodes/:node_id`、`GET /nodes/:node_id/children`、`GET /nodes/:node_id/items`、`GET /nodes/by-catalog-path`、`GET /items/by-catalog-path`。

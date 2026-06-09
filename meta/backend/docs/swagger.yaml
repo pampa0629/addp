@@ -723,6 +723,49 @@ paths:
       summary: 获取元数据树 | Get metadata tree
       tags:
       - Meta Query
+  /executions/{execution_id}:
+    get:
+      description: 按标准 TaskProvider 路径获取执行详情 | Get execution by standard TaskProvider
+        path
+      parameters:
+      - description: 执行ID | Execution ID
+        in: path
+        name: execution_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 执行详情 | Execution detail
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 执行不存在 | Execution not found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 任务服务不可用 | Task service unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取执行详情 | Get execution
+      tags:
+      - Meta Scan
   /items/{item_id}:
     get:
       description: 按数据项 ID 获取元数据项详情 | Get metadata item detail by ID
@@ -1156,48 +1199,6 @@ paths:
       security:
       - BearerAuth: []
       summary: 列出扫描运行 | List scan runs
-      tags:
-      - Meta Scan
-  /scan/runs/{run_id}:
-    get:
-      description: 按执行 UUID 获取扫描运行详情 | Get scan execution by UUID
-      parameters:
-      - description: 执行ID | Execution ID
-        in: path
-        name: run_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 执行详情 | Execution detail
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: 请求参数错误 | Bad request
-          schema:
-            additionalProperties: true
-            type: object
-        "404":
-          description: 执行不存在 | Execution not found
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: 服务器内部错误 | Internal server error
-          schema:
-            additionalProperties: true
-            type: object
-        "503":
-          description: 任务服务不可用 | Task service unavailable
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取扫描运行详情 | Get scan run
       tags:
       - Meta Scan
   /scan/tasks:

@@ -1,6 +1,6 @@
 # ADDP 任务编排体系图
 
-本文档展示 ADDP 平台的任务库机制、任务编排流与算子工作流的区别、以及跨模块编排能力。
+本文档展示 ADDP 平台的任务库机制、任务编排流与算子工作流的区别、以及跨模块编排能力。任务定义、执行记录、TaskProvider、Orchestrator 和 Monitor 的正式约束以 [ADDP 任务体系规范](../spec/addp任务体系规范.md) 为准。
 
 ---
 
@@ -23,7 +23,7 @@
 - **节点粒度**: 粗粒度业务任务 (扫描元数据、Transfer 任务、生成瓦片)
 - **DAG 层级**: 任务级别的有向无环图
 - **数据传递**: 参数模板 `{{stepID.field}}` 引用前序任务结果
-- **执行方式**: 通过 TaskProvider 调用各模块已存在的任务定义 (Meta、Transfer、Manager、Develop 等)
+- **执行方式**: 通过 TaskProvider 调用各模块已存在的任务定义 (Meta、Transfer、Develop、Manager、Quality、Graph、Orchestrator 等)
 - **适用场景**: 跨模块数据流水线、定时 ETL 作业
 
 ---
@@ -37,8 +37,11 @@ graph TB
     subgraph "任务提供者 (各模块)"
         Meta[Meta 模块]
         Transfer[Transfer 模块]
-        Manager[Manager 模块]
         Develop[Develop 模块]
+        Manager[Manager 模块]
+        Quality[Quality 模块]
+        Graph[Graph 模块]
+        OrchestratorProvider[Orchestrator 模块]
     end
 
     subgraph "TaskProvider 注册中心 (System 模块)"
@@ -46,10 +49,19 @@ graph TB
 
         Meta --> |注册| MetaCap[Meta 任务类型<br/>scan]
         Transfer --> |注册| TransferCap[Transfer 任务类型<br/>import]
-        Manager --> |注册| ManagerCap[Manager 任务类型<br/>mvt_generation<br/>embedding]
         Develop --> |注册| DevelopCap[Develop 任务类型<br/>query<br/>workflow<br/>script]
+        Manager --> |注册| ManagerCap[Manager 任务类型<br/>mvt_generation<br/>embedding]
+        Quality --> |注册| QualityCap[Quality 任务类型<br/>check]
+        Graph --> |注册| GraphCap[Graph 任务类型<br/>kg_build]
+        OrchestratorProvider --> |注册| OrchestratorCap[Orchestrator 任务类型<br/>orchestration]
 
-        MetaCap & TransferCap & ManagerCap & DevelopCap --> Registry
+        MetaCap --> Registry
+        TransferCap --> Registry
+        DevelopCap --> Registry
+        ManagerCap --> Registry
+        QualityCap --> Registry
+        GraphCap --> Registry
+        OrchestratorCap --> Registry
     end
 
     subgraph "任务编排 (Orchestrator 模块)"
@@ -64,15 +76,18 @@ graph TB
 
     Call --> Meta
     Call --> Transfer
-    Call --> Manager
     Call --> Develop
+    Call --> Manager
+    Call --> Quality
+    Call --> Graph
+    Call --> OrchestratorProvider
 
     classDef provider fill:#e1f5ff,stroke:#01579b
     classDef registry fill:#fff9c4,stroke:#f57f17
     classDef orchestrator fill:#e8f5e9,stroke:#1b5e20
 
-    class Meta,Transfer,Manager,Develop provider
-    class Registry,MetaCap,TransferCap,ManagerCap,DevelopCap registry
+    class Meta,Transfer,Develop,Manager,Quality,Graph,OrchestratorProvider provider
+    class Registry,MetaCap,TransferCap,DevelopCap,ManagerCap,QualityCap,GraphCap,OrchestratorCap registry
     class Orchestrator,Tasks,Params,DAG,Call orchestrator
 ```
 
@@ -92,7 +107,7 @@ graph TB
 
 **步骤 4: 执行调用**
 - Orchestrator 通过 TaskProvider 标准接口调用对应模块的任务
-- 仅当对应任务类型声明支持内联执行参数时,才允许在编排步骤中传入参数模板
+- 编排步骤只能引用 owner 模块已保存的任务定义；参数模板只作为本次执行参数覆盖传入,不创建或改写 owner 任务定义
 
 ### 任务示例
 
@@ -100,10 +115,14 @@ graph TB
 |------|---------|---------|---------|
 | **Meta** | 扫描元数据 | `POST /api/v1/meta/tasks/{task_type}/{id}/execute` | `task_type=scan` |
 | **Transfer** | Transfer 任务 | `POST /api/v1/transfer/tasks/{task_type}/{id}/execute` | `task_type=import` |
-| **Manager** | 生成 MVT 瓦片 | `POST /api/v1/manager/tasks/{task_type}/{id}/execute` | `task_type=mvt_generation` |
-| **Manager** | 向量化 | `POST /api/v1/manager/tasks/{task_type}/{id}/execute` | `task_type=embedding` |
 | **Develop** | 执行查询 | `POST /api/v1/develop/tasks/{task_type}/{id}/execute` | `task_type=query` |
 | **Develop** | 执行工作流 | `POST /api/v1/develop/tasks/{task_type}/{id}/execute` | `task_type=workflow` |
+| **Develop** | 执行脚本 | `POST /api/v1/develop/tasks/{task_type}/{id}/execute` | `task_type=script` |
+| **Manager** | 生成 MVT 瓦片 | `POST /api/v1/manager/tasks/{task_type}/{id}/execute` | `task_type=mvt_generation` |
+| **Manager** | 向量化 | `POST /api/v1/manager/tasks/{task_type}/{id}/execute` | `task_type=embedding` |
+| **Quality** | 质量检查 | `POST /api/v1/quality/tasks/{task_type}/{id}/execute` | `task_type=check` |
+| **Graph** | 图谱构建 | `POST /api/v1/graph/tasks/{task_type}/{id}/execute` | `task_type=kg_build` |
+| **Orchestrator** | 已保存编排 | `POST /api/v1/orchestrator/tasks/{task_type}/{id}/execute` | `task_type=orchestration` |
 
 ---
 
@@ -155,7 +174,7 @@ graph TB
 | **节点粒度** | 细粒度算子 (buffer, centroid) | 粗粒度业务任务 (扫描元数据, Transfer 任务) |
 | **DAG 层级** | 算子级别 DAG | 任务级别 DAG |
 | **执行引擎/方式** | GeoPandas/Spark 工作流引擎 | 跨模块 TaskProvider API 调用 |
-| **数据传递** | GeoDataFrame 内存传递 | 已声明支持内联参数的任务可使用参数模板 `{{stepID.field}}` |
+| **数据传递** | GeoDataFrame 内存传递 | 已保存任务执行时可使用参数模板 `{{stepID.field}}` 传递本次执行参数 |
 | **适用场景** | 空间数据分析、地理计算 | 跨模块数据流水线、ETL 作业 |
 | **存储表** | `develop.dev_tasks` | `orchestrator.orchestrations` |
 | **执行记录** | `common.task_executions`（`module=develop`） | `common.task_executions`（`module=orchestrator`） |
@@ -163,7 +182,7 @@ graph TB
 
 ### 嵌套调用模式
 
-Orchestrator 可以调用 Develop 模块已经创建好的工作流任务作为一个步骤。算子工作流必须先在 Develop 中编排并保存为 `workflow` 任务,再以 `provider=develop, task_type=workflow, task_id=...` 的形式进入 Orchestrator:
+Orchestrator 可以调用 Develop 模块已经创建好的工作流任务作为一个步骤。算子工作流必须先在 Develop 中编排并保存为 `workflow` 任务，再以 `provider=develop, task_type=workflow, task_id=...` 的形式进入 Orchestrator。Orchestrator 不创建 Develop 内部算子工作流，也不把算子节点直接拖入任务编排 DAG:
 
 ```json
 {
@@ -188,8 +207,8 @@ Orchestrator 可以调用 Develop 模块已经创建好的工作流任务作为�
       }
     },
     {
-      "id": "export_result",
-      "name": "导出结果",
+      "id": "run_transfer_task",
+      "name": "执行 Transfer 任务",
       "provider": "transfer",
       "task_type": "import",
       "task_id": 201,
@@ -285,7 +304,7 @@ flowchart TD
 
 ### 依赖管理 (DAG 拓扑排序)
 
-Orchestrator 使用 **Kahn 算法**自动解析任务依赖:
+Orchestrator 使用拓扑排序解析任务依赖。`depends_on` 表示当前步骤依赖的前置步骤，执行器必须先执行依赖步骤，再执行当前步骤:
 
 ```mermaid
 graph LR
@@ -294,7 +313,7 @@ graph LR
     C --> D[Task D<br/>depends_on: [C]]
 
     subgraph "拓扑排序结果"
-        Order["执行顺序:<br/>1. A, B (并行)<br/>2. C<br/>3. D"]
+        Order["执行顺序:<br/>1. A<br/>2. B<br/>3. C<br/>4. D"]
     end
 
     classDef task fill:#e1f5ff,stroke:#01579b
@@ -306,12 +325,12 @@ graph LR
 
 **依赖检测**:
 - **循环依赖检测**: 防止死锁(如 A → B → C → A)
-- **拓扑排序**: 按依赖顺序执行
-- **并行执行**: 无依赖关系的任务并行执行
+- **缺失依赖检测**: `depends_on` 引用不存在的步骤时直接失败
+- **拓扑排序**: 按依赖顺序执行；当前主干不承诺并行执行
 
 ### 参数模板化
 
-支持 `{{stepID.field}}` 语法引用前序任务结果:
+支持 `{{stepID.field}}` 语法引用前序任务结果。当前实现按 `.` 分隔字段路径，不支持数组索引语法:
 
 ```mermaid
 sequenceDiagram
@@ -329,7 +348,6 @@ sequenceDiagram
 **模板语法**:
 - 简单字段引用: `{{step1.result}}`
 - 嵌套字段引用: `{{step1.result.nested.field}}`
-- 数组索引引用: `{{step1.result.items[0]}}`
 - 自动类型转换: 字符串、数字、对象
 
 ---
@@ -361,7 +379,7 @@ sequenceDiagram
 
 ### 手动触发
 
-用户通过 API 或前端手动触发执行,支持传入参数覆盖默认配置。
+用户通过 API 或前端手动触发执行。Orchestrator 会把 `parameters` 作为本次执行参数传给 owner provider；如果对应 provider 不支持参数覆盖，必须明确拒绝，不能静默忽略。
 
 ---
 
@@ -380,10 +398,12 @@ sequenceDiagram
 - [返回核心概念关系图](addp核心概念关系图.md)
 - [ADDP 数据开发体系图](addp数据开发体系图.md)
 - [ADDP 监控与执行体系图](addp监控与执行体系图.md)
+- [ADDP 任务体系规范](../spec/addp任务体系规范.md)
 - [Orchestrator 模块详情](../../orchestrator/CLAUDE.md)
 
 ---
 
-**文档版本**: v1.0
+**文档版本**: v1.1
 **创建日期**: 2026-02-16
+**更新日期**: 2026-06-09
 **作者**: ADDP 开发团队

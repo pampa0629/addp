@@ -52,7 +52,8 @@ transfer/
 - 任务：`POST /tasks`、`GET /tasks`、`GET /tasks/statistics`、`GET /tasks/:id`、`PUT /tasks/:id`、`DELETE /tasks/:id`、`POST /tasks/:id/start|stop|pause|resume`、`GET /tasks/:id/executions`。
 - 字段映射：`POST /tasks/:id/mappings`、`GET /tasks/:id/mappings`、`DELETE /mappings/:id`。该接口仍存在，但新执行主线只消费 `config.transforms[type=field_mapping]`。
 - 对象存储：`POST /object-storage/browse`、`POST /object-storage/list-files`。
-- 执行记录：`GET /executions`、`GET /executions/statistics`、`GET /executions/:id`、`POST /executions/:id/cancel|retry`、`GET /executions/:id/progress|logs`。
+- 执行记录：`GET /executions`、`GET /executions/statistics`、`GET /executions/:execution_id`。
+- 私有执行管理：`POST /executions/:id/cancel|retry`、`GET /executions/:id/progress|logs` 仍按 Transfer 内部执行记录自增 ID 工作；TaskProvider 标准取消能力暂未声明，后续 Transfer 专题再收敛。
 - 转换器：`GET /transforms`、`GET /transforms/stats`、`GET /transforms/:name`、`POST /transforms/:name/validate|test`。
 
 ## 执行规则

@@ -483,9 +483,15 @@ func topologicalSort(graph DAG) ([]string, error) {
 	for node := range graph {
 		inDegree[node] = 0
 	}
-	for _, deps := range graph {
+
+	dependents := make(map[string][]string, len(graph))
+	for node, deps := range graph {
 		for _, dep := range deps {
-			inDegree[dep]++
+			if _, exists := graph[dep]; !exists {
+				return nil, fmt.Errorf("步骤 %s 依赖不存在的步骤 %s", node, dep)
+			}
+			inDegree[node]++
+			dependents[dep] = append(dependents[dep], node)
 		}
 	}
 
@@ -502,10 +508,10 @@ func topologicalSort(graph DAG) ([]string, error) {
 		queue = queue[1:]
 		sorted = append(sorted, node)
 
-		for _, dep := range graph[node] {
-			inDegree[dep]--
-			if inDegree[dep] == 0 {
-				queue = append(queue, dep)
+		for _, dependent := range dependents[node] {
+			inDegree[dependent]--
+			if inDegree[dependent] == 0 {
+				queue = append(queue, dependent)
 			}
 		}
 	}

@@ -30,11 +30,13 @@ ADDP 采用**统一执行监控架构**,通过 `common.task_executions` 表统�
 ```mermaid
 graph TB
     subgraph "任务执行模块"
-        Meta[Meta 模块<br/>元数据扫描任务]
-        Transfer[Transfer 模块<br/>导入/导出/同步任务]
-        Orchestrator[Orchestrator 模块<br/>编排任务]
-        Develop[Develop 模块<br/>查询/工作流/Notebook任务]
-        Manager[Manager 模块<br/>MVT瓦片生成任务]
+        Meta[Meta 模块<br/>scan]
+        Transfer[Transfer 模块<br/>import]
+        Develop[Develop 模块<br/>query / workflow / script]
+        Manager[Manager 模块<br/>mvt_generation / embedding]
+        Quality[Quality 模块<br/>check]
+        Graph[Graph 模块<br/>kg_build]
+        Orchestrator[Orchestrator 模块<br/>orchestration]
     end
 
     subgraph "统一记录层 (common.task_executions)"
@@ -42,9 +44,11 @@ graph TB
 
         Meta --> |写入执行记录| TaskExec
         Transfer --> |写入执行记录| TaskExec
-        Orchestrator --> |写入执行记录| TaskExec
         Develop --> |写入执行记录| TaskExec
         Manager --> |写入执行记录| TaskExec
+        Quality --> |写入执行记录| TaskExec
+        Graph --> |写入执行记录| TaskExec
+        Orchestrator --> |写入执行记录| TaskExec
     end
 
     subgraph "监控层 (Monitor 模块)"
@@ -61,7 +65,7 @@ graph TB
     classDef storage fill:#fff9c4,stroke:#f57f17
     classDef monitor fill:#e8f5e9,stroke:#1b5e20
 
-    class Meta,Transfer,Orchestrator,Develop,Manager module
+    class Meta,Transfer,Develop,Manager,Quality,Graph,Orchestrator module
     class TaskExec storage
     class Monitor,Dashboard,Analysis,Alert,Log monitor
 ```
@@ -72,12 +76,12 @@ graph TB
 |------|------|------|
 | `id` | bigint | 执行记录 ID |
 | `tenant_id` | int | 租户 ID (租户隔离) |
-| `module` | string | 模块名称 (meta/transfer/orchestrator/develop/manager) |
+| `module` | string | 模块名称 (meta/transfer/develop/manager/quality/graph/orchestrator) |
 | `task_type` | string | 任务类型 (scan/import/orchestration/query/workflow/script/mvt_generation/embedding/check/kg_build) |
 | `source` | string | 触发来源模块 |
 | `source_task_id` | string | 任务 ID (对应模块内的任务定义 ID) |
 | `trigger_type` | string | `manual` / `scheduled` |
-| `status` | string | 执行状态 (pending/running/success/failed/cancelled) |
+| `status` | string | 执行状态 (pending/running/success/failed/timeout/cancelled) |
 | `started_at` | timestamp | 开始时间 |
 | `completed_at` | timestamp | 完成时间 |
 | `execution_time_ms` | bigint | 执行时长 (毫秒) |
@@ -94,11 +98,13 @@ stateDiagram-v2
     pending --> running: 开始执行
     running --> success: 执行成功
     running --> failed: 执行失败
+    running --> timeout: 执行超时
     running --> cancelled: 手动取消
 
     success --> [*]
     failed --> pending: 重试
     failed --> [*]
+    timeout --> [*]
     cancelled --> [*]
 
     note right of pending
@@ -124,6 +130,12 @@ stateDiagram-v2
         error_details = 错误信息
     end note
 
+    note right of timeout
+        任务执行超时
+        completed_at = 超时时间
+        error_details = 超时信息
+    end note
+
     note right of cancelled
         任务被手动取消
         completed_at = 取消时间
@@ -138,6 +150,7 @@ stateDiagram-v2
 | `running` | 任务正在执行 | 开始时间 | null | null |
 | `success` | 任务执行成功 | 开始时间 | 完成时间 | metadata |
 | `failed` | 任务执行失败 | 开始时间 | 失败时间 | error_details |
+| `timeout` | 任务执行超时 | 开始时间 | 超时时间 | error_details |
 | `cancelled` | 任务被手动取消 | 开始时间(可选) | 取消时间 | null |
 
 ---

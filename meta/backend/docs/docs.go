@@ -266,6 +266,69 @@ const docTemplate = `{
                 }
             }
         },
+        "/executions/{execution_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按标准 TaskProvider 路径获取执行详情 | Get execution by standard TaskProvider path",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Scan"
+                ],
+                "summary": "获取执行详情 | Get execution",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "执行ID | Execution ID",
+                        "name": "execution_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "执行详情 | Execution detail",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "执行不存在 | Execution not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "任务服务不可用 | Task service unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/items/by-catalog-path": {
             "get": {
                 "security": [
@@ -904,69 +967,6 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "请求参数错误 | Bad request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "服务器内部错误 | Internal server error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "503": {
-                        "description": "任务服务不可用 | Task service unavailable",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/scan/runs/{run_id}": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "按执行 UUID 获取扫描运行详情 | Get scan execution by UUID",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Meta Scan"
-                ],
-                "summary": "获取扫描运行详情 | Get scan run",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "执行ID | Execution ID",
-                        "name": "run_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "执行详情 | Execution detail",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "请求参数错误 | Bad request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "404": {
-                        "description": "执行不存在 | Execution not found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true

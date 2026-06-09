@@ -149,7 +149,7 @@ graph TB
 - **网关层**: Gateway 统一处理外部请求并路由到对应的后端服务
 - **服务层**: 各业务模块的后端服务,提供 RESTful API
 - **Worker运行时**: 独立的后台任务处理进程
-  - **Transfer Worker**: 基于 Asynq 的异步任务队列,处理数据导入/导出/同步任务
+  - **Transfer Worker**: 基于 Asynq 的异步任务队列,处理 Transfer 内部异步传输作业；统一任务体系阶段 1 只暴露 `task_type=import`
   - **Meta Worker**: 基于 Asynq 的扫描任务处理,执行元数据扫描和索引
   - **Manager Worker**: 基于 Asynq 的瓦片缓存生成,批量生成空间数据 Quick View 缓存
 - **共享模块**: common 和 common-frontend 提供可复用的代码和组件
@@ -323,7 +323,7 @@ graph TB
 
 | Worker | 所属模块 | 职责 | 技术栈 |
 |--------|---------|------|-------|
-| **Transfer Worker** | Transfer | 异步处理数据导入/导出/同步任务,支持重试和并发控制 | Go, Asynq, Redis |
+| **Transfer Worker** | Transfer | 异步处理 Transfer 内部传输作业；统一任务体系阶段 1 只暴露 `task_type=import` | Go, Asynq, Redis |
 | **Meta Worker** | Meta | 异步处理元数据扫描和索引任务,支持定时调度 | Go, Asynq, Redis |
 | **Manager Worker** | Manager | 异步处理 Quick View 瓦片缓存批量生成,支持大规模空间数据预缓存 | Go, Asynq, Redis |
 
@@ -348,18 +348,26 @@ graph TB
     end
 
     subgraph "被监控模块"
+        Meta[Meta<br/>元数据扫描]
         Transfer[Transfer<br/>数据传输]
         Develop[Develop<br/>数据开发]
         Orchestrator[Orchestrator<br/>任务编排]
+        Manager[Manager<br/>派生产物任务]
+        Quality[Quality<br/>质量检查]
+        Graph[Graph<br/>图谱构建]
     end
 
     subgraph "统一执行表"
         TaskExec[(common.task_executions<br/>统一执行记录表)]
     end
 
+    Meta -.写入执行记录.-> TaskExec
     Transfer -.写入执行记录.-> TaskExec
     Develop -.写入执行记录.-> TaskExec
     Orchestrator -.写入执行记录.-> TaskExec
+    Manager -.写入执行记录.-> TaskExec
+    Quality -.写入执行记录.-> TaskExec
+    Graph -.写入执行记录.-> TaskExec
     MBE -.查询执行记录.-> TaskExec
 
     Gateway[Gateway<br/>:8000] --> MBE
@@ -370,7 +378,7 @@ graph TB
     classDef infra fill:#fce4ec,stroke:#880e4f
 
     class MFE,MBE monitor
-    class Transfer,Develop,Orchestrator,Gateway,Console module
+    class Meta,Transfer,Develop,Orchestrator,Manager,Quality,Graph,Gateway,Console module
     class TaskExec infra
 ```
 
@@ -712,24 +720,33 @@ graph TB
     end
 
     subgraph Providers["任务提供者（各业务模块）"]
-        ManagerT["Manager<br/>数据扫描、元数据刷新"]
-        MetaT["Meta<br/>元数据解析、向量化"]
-        TransferT["Transfer<br/>数据导入、导出、同步"]
-        DevelopT["Develop<br/>SQL执行、工作流运行<br/>Notebook 运行"]
+        MetaT["Meta<br/>scan"]
+        TransferT["Transfer<br/>import"]
+        DevelopT["Develop<br/>query / workflow / script"]
+        ManagerT["Manager<br/>mvt_generation / embedding"]
+        QualityT["Quality<br/>check"]
+        GraphT["Graph<br/>kg_build"]
+        OrchestratorT["Orchestrator<br/>orchestration"]
 
-        ManagerT -->|"启动时注册任务类型"| TaskRegistry
         MetaT   -->|"启动时注册任务类型"| TaskRegistry
         TransferT -->|"启动时注册任务类型"| TaskRegistry
         DevelopT -->|"启动时注册任务类型"| TaskRegistry
+        ManagerT -->|"启动时注册任务类型"| TaskRegistry
+        QualityT -->|"启动时注册任务类型"| TaskRegistry
+        GraphT -->|"启动时注册任务类型"| TaskRegistry
+        OrchestratorT -->|"启动时注册任务类型"| TaskRegistry
     end
 
     subgraph Orchestrator["Orchestrator（编排调度）"]
         DAGEngine["DAG 调度引擎"]
         DAGEngine -->|"① 拉取任务类型定义"| TaskRegistry
-        DAGEngine -->|"② 按 DAG 顺序调用各模块 API"| ManagerT
         DAGEngine -->|"② 按 DAG 顺序调用各模块 API"| MetaT
         DAGEngine -->|"② 按 DAG 顺序调用各模块 API"| TransferT
         DAGEngine -->|"② 按 DAG 顺序调用各模块 API"| DevelopT
+        DAGEngine -->|"② 按 DAG 顺序调用各模块 API"| ManagerT
+        DAGEngine -->|"② 按 DAG 顺序调用各模块 API"| QualityT
+        DAGEngine -->|"② 按 DAG 顺序调用各模块 API"| GraphT
+        DAGEngine -->|"② 按 DAG 顺序调用各模块 API"| OrchestratorT
     end
 
     classDef system fill:#fff3e0,stroke:#e65100,stroke-width:2px
@@ -737,14 +754,14 @@ graph TB
     classDef orch fill:#e8eaf6,stroke:#283593,stroke-width:2px
 
     class System,TaskRegistry system
-    class ManagerT,MetaT,TransferT,DevelopT provider
+    class MetaT,TransferT,DevelopT,ManagerT,QualityT,GraphT,OrchestratorT provider
     class Orchestrator,DAGEngine orch
 ```
 
 **要点**：
-- 各模块启动时向 System 注册任务类型（任务名、参数 schema、回调 API 地址）
+- 各模块启动时向 System 注册 TaskProvider capabilities（任务类型、定义 schema、执行 schema、owner 前端入口和标准 API endpoint）
 - Orchestrator 不硬编码对任何模块的依赖，完全由注册信息驱动
-- DAG 步骤间通过 `{{stepID.field}}` 语法传递上游结果
+- DAG 步骤只能引用 owner 模块已保存的任务定义，通过 `provider + task_type + task_id` 调用标准 TaskProvider API
 
 ---
 
@@ -781,7 +798,7 @@ graph LR
 
 **Develop 在两层中扮演不同角色**：
 - 对**引擎层**：是消费者，从 System 获取引擎配置，向计算引擎派发执行任务
-- 对**编排层**：是提供者，将自身能力（SQL、工作流、Notebook）封装为可编排任务类型注册到 System，供 Orchestrator 调度
+- 对**编排层**：是提供者，将自身能力封装为 `query` / `workflow` / `script` 三类可编排任务类型注册到 System，供 Orchestrator 调度；Notebook 是 `script` 的当前 UI 和运行时形态，不作为独立 `task_type`
 
 这意味着一个复杂的数据处理流水线可以是：
 > Transfer 导入数据 → Develop 执行 SQL/Python 加工 → Meta 更新元数据 → Manager 刷新目录

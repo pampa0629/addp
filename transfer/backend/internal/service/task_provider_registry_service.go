@@ -62,7 +62,7 @@ func (s *TaskProviderRegistryService) Register() error {
 			},
 		},
 		"execution_modes": []string{"batch", "stream", "micro-batch"},
-		"features":        []string{"async", "checkpoint", "retry", "field_mapping", "scheduled"},
+		"features":        []string{"async", "restartable_retry", "field_mapping", "scheduled"},
 	}
 
 	// 序列化为 JSON 字符串

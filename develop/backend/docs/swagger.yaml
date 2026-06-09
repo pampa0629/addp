@@ -1075,12 +1075,12 @@ paths:
       summary: 执行临时内容 | Execute temporary content
       tags:
       - Execution
-  /executions/{id}:
+  /executions/{execution_id}:
     get:
       parameters:
       - description: 执行ID（UUID）| Execution ID (UUID)
         in: path
-        name: id
+        name: execution_id
         required: true
         type: string
       produces:
