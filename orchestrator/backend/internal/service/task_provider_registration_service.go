@@ -52,7 +52,7 @@ func (s *TaskProviderRegistrationService) Register() error {
 				"supports_cancel":           false,
 				"supports_inline_execution": false,
 				"create_url":                "/orchestrator/orchestrations",
-				"edit_url":                  "/orchestrator/orchestrations/:id",
+				"edit_url":                  "/orchestrator/orchestrations/:id/edit",
 				"deprecated":                false,
 			},
 		},

@@ -1,3 +1,7 @@
+import { requestConsoleBridge } from './consoleBridge'
+
+export const CONSOLE_NAVIGATION_CHANNEL = 'console-navigation'
+
 function hasValue(value) {
   return value !== null && value !== undefined && String(value).trim() !== ''
 }
@@ -17,9 +21,19 @@ function consoleOrigin(options = {}) {
     return String(options.consoleOrigin).replace(/\/$/, '')
   }
   if (typeof window !== 'undefined' && window.location?.origin) {
+    const { protocol, hostname, port } = window.location
+    if (port && port !== '5170' && /^51(7[3-9]|8[0-7])$/.test(port)) {
+      return `${protocol}//${hostname}:5170`
+    }
     return window.location.origin
   }
   return ''
+}
+
+function normalizeConsoleRoute(route) {
+  if (!hasValue(route)) return ''
+  const normalized = String(route).trim()
+  return normalized.startsWith('/') ? normalized : `/${normalized}`
 }
 
 export function fillTaskOwnerUrlTemplate(rawUrl, replacements = {}) {
@@ -54,8 +68,62 @@ export function resolveTaskOwnerUrl(rawUrl, options = {}) {
   return url
 }
 
+export function resolveConsoleRouteUrl(route, options = {}) {
+  const normalizedRoute = normalizeConsoleRoute(route)
+  if (!normalizedRoute) return ''
+  return `${consoleOrigin(options)}${normalizedRoute}`
+}
+
 export function buildTaskOwnerUrl(rawUrl, replacements = {}, options = {}) {
   return resolveTaskOwnerUrl(fillTaskOwnerUrlTemplate(rawUrl, replacements), options)
+}
+
+export function buildMonitorExecutionRoute(executionId) {
+  if (!hasValue(executionId)) return ''
+  return `/monitor/executions?execution_id=${encodeURIComponent(String(executionId))}`
+}
+
+export function buildMonitorExecutionUrl(executionId, options = {}) {
+  return resolveConsoleRouteUrl(buildMonitorExecutionRoute(executionId), options)
+}
+
+export async function openConsoleRoute(route, options = {}) {
+  const normalizedRoute = normalizeConsoleRoute(route)
+  if (!normalizedRoute) return false
+
+  const {
+    source = 'addp-module',
+    timeout = 1500,
+    target = '_self',
+    windowFeatures = 'noopener,noreferrer'
+  } = options
+
+  if (typeof window !== 'undefined' && window.parent !== window) {
+    try {
+      await requestConsoleBridge(
+        CONSOLE_NAVIGATION_CHANNEL,
+        { route: normalizedRoute },
+        { source, timeout }
+      )
+      return true
+    } catch {
+      // 独立模块或旧 Console 中没有该 bridge 时，回退到直接打开 Console 路由。
+    }
+  }
+
+  const url = resolveConsoleRouteUrl(normalizedRoute, options)
+  if (!url || typeof window === 'undefined') return false
+
+  if (target && target !== '_self') {
+    window.open(url, target, windowFeatures)
+  } else {
+    window.location.assign(url)
+  }
+  return true
+}
+
+export function openMonitorExecution(executionId, options = {}) {
+  return openConsoleRoute(buildMonitorExecutionRoute(executionId), options)
 }
 
 export function findTaskTypeCapability(provider, taskType) {

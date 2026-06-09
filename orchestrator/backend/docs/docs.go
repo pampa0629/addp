@@ -828,7 +828,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "task_type": {
-                    "description": "\"scan\" | \"transfer\" | \"mvt_generation\" 等",
+                    "description": "\"scan\" | \"import\" | \"workflow\" | \"mvt_generation\" 等",
                     "type": "string"
                 },
                 "timeout": {

@@ -10,9 +10,19 @@ export function getExecution(id) {
   return client.get(`/monitor/executions/${id}`)
 }
 
+// 按 execution_id 获取单条执行记录
+export function getExecutionByExecutionID(executionId) {
+  return client.get(`/monitor/executions/by-execution-id/${executionId}`)
+}
+
 // 获取执行记录树
 export function getExecutionTree(id) {
   return client.get(`/monitor/executions/${id}/tree`)
+}
+
+// 按 execution_id 获取执行记录树
+export function getExecutionTreeByExecutionID(executionId) {
+  return client.get(`/monitor/executions/by-execution-id/${executionId}/tree`)
 }
 
 // 获取统计数据

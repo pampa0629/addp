@@ -63,7 +63,7 @@ func SetupRouter(
 	cfg *config.Config,
 	db *gorm.DB,
 	devTaskHandler *DevTaskHandler,
-	devExecutionHandler *DevExecutionHandler,
+	executionHandler *ExecutionHandler,
 	operatorHandler *OperatorHandler,
 	engineHandler *EngineHandler,
 	queryHandler *QueryHandler,
@@ -135,30 +135,30 @@ func SetupRouter(
 		// ========== TaskProvider 任务列表 API ==========
 		taskListHandler := NewTaskListHandler(devTaskService.(*service.DevTaskService))
 		api.GET("/tasks", taskListHandler.ListTasks)
-		api.GET("/tasks/:task_type/:id", devTaskHandler.ProviderGetDevTask)                   // TaskProvider 标准任务详情
-		api.POST("/tasks/:task_type/:id/execute", devExecutionHandler.ProviderExecuteDevTask) // TaskProvider 标准任务执行
+		api.GET("/tasks/:task_type/:id", devTaskHandler.ProviderGetDevTask)                // TaskProvider 标准任务详情
+		api.POST("/tasks/:task_type/:id/execute", executionHandler.ProviderExecuteDevTask) // TaskProvider 标准任务执行
 
 		// ========== 开发任务定义管理 ==========
 		taskDefinitions := api.Group("/task-definitions")
 		{
-			taskDefinitions.POST("", devTaskHandler.CreateDevTask)                   // 创建开发任务
-			taskDefinitions.GET("", devTaskHandler.ListDevTasks)                     // 查询开发任务列表
-			taskDefinitions.GET("/statistics", devTaskHandler.GetDevTaskStatistics)  // 获取统计信息
-			taskDefinitions.GET("/:id", devTaskHandler.GetDevTask)                   // 获取开发任务详情
-			taskDefinitions.PUT("/:id", devTaskHandler.UpdateDevTask)                // 更新开发任务
-			taskDefinitions.DELETE("/:id", devTaskHandler.DeleteDevTask)             // 删除开发任务
-			taskDefinitions.POST("/:id/execute", devExecutionHandler.ExecuteDevTask) // 执行开发任务
+			taskDefinitions.POST("", devTaskHandler.CreateDevTask)                  // 创建开发任务
+			taskDefinitions.GET("", devTaskHandler.ListDevTasks)                    // 查询开发任务列表
+			taskDefinitions.GET("/statistics", devTaskHandler.GetDevTaskStatistics) // 获取统计信息
+			taskDefinitions.GET("/:id", devTaskHandler.GetDevTask)                  // 获取开发任务详情
+			taskDefinitions.PUT("/:id", devTaskHandler.UpdateDevTask)               // 更新开发任务
+			taskDefinitions.DELETE("/:id", devTaskHandler.DeleteDevTask)            // 删除开发任务
+			taskDefinitions.POST("/:id/execute", executionHandler.ExecuteDevTask)   // 执行开发任务
 		}
 
 		// ========== 执行管理 ==========
 		executions := api.Group("/executions")
 		{
-			executions.POST("", devExecutionHandler.ExecuteContent)                   // 执行临时内容
-			executions.GET("", devExecutionHandler.ListExecutions)                    // 查询执行列表
-			executions.GET("/statistics", devExecutionHandler.GetExecutionStatistics) // 获取执行统计
-			executions.GET("/:id", devExecutionHandler.GetExecution)                  // 获取执行详情
-			executions.GET("/:id/logs", devExecutionHandler.GetExecutionLogs)         // 获取执行日志
-			executions.POST("/:id/retry", devExecutionHandler.RetryExecution)         // 重试执行
+			executions.POST("", executionHandler.ExecuteContent)                   // 执行临时内容
+			executions.GET("", executionHandler.ListExecutions)                    // 查询执行列表
+			executions.GET("/statistics", executionHandler.GetExecutionStatistics) // 获取执行统计
+			executions.GET("/:id", executionHandler.GetExecution)                  // 获取执行详情
+			executions.GET("/:id/logs", executionHandler.GetExecutionLogs)         // 获取执行日志
+			executions.POST("/:id/retry", executionHandler.RetryExecution)         // 重试执行
 		}
 
 		// ========== 引擎管理 ==========
@@ -177,16 +177,6 @@ func SetupRouter(
 		api.GET("/test/:id", queryHandler.TestConnection)                 // 测试数据源连接
 		api.GET("/engines/:id/sample-query", queryHandler.GetSampleQuery) // 获取样例查询
 		api.POST("/execute", queryHandler.ExecuteQuery)                   // 执行查询
-
-		// 查询任务管理
-		queryTasks := api.Group("/query/tasks")
-		{
-			queryTasks.POST("", queryHandler.SaveQueryTask)         // 保存查询任务
-			queryTasks.GET("", queryHandler.ListQueryTasks)         // 获取查询任务列表
-			queryTasks.GET("/:id", queryHandler.GetQueryTask)       // 获取查询任务详情
-			queryTasks.PUT("/:id", queryHandler.UpdateQueryTask)    // 更新查询任务
-			queryTasks.DELETE("/:id", queryHandler.DeleteQueryTask) // 删除查询任务
-		}
 
 		// ========== Notebook 开发 ==========
 		notebooks := api.Group("/notebooks")

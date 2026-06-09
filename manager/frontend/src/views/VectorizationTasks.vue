@@ -120,6 +120,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
+import { openMonitorExecution } from '@addp/common-frontend'
 import client from '../api/client'
 import { formatDateTime } from '../utils/formatters'
 
@@ -199,6 +200,7 @@ const executeTask = async (task) => {
     })
     ElMessage.success(t('manager.vectorization.executeSubmitted', { id: response.execution_id || '-' }))
     await loadTasks()
+    await openMonitorExecution(response.execution_id)
   } catch (error) {
     console.error('执行向量化任务失败:', error)
     ElMessage.error(t('manager.vectorization.executeFailed'))

@@ -3,8 +3,10 @@ package service
 import (
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
+	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/addp/develop/backend/internal/repository"
 )
@@ -32,29 +34,12 @@ func (s *DevTaskService) CreateDevTask(req *models.CreateDevTaskRequest, tenantI
 		return nil, fmt.Errorf("开发任务名称 '%s' 已存在", req.Name)
 	}
 
-	// 业务验证：验证 dev_type
-	validTypes := []string{"query", "workflow", "script"}
-	isValidType := false
-	for _, t := range validTypes {
-		if req.DevType == t {
-			isValidType = true
-			break
-		}
-	}
-	if !isValidType {
+	if !isDevelopDevType(req.DevType) {
 		return nil, fmt.Errorf("无效的 dev_type: %s", req.DevType)
 	}
 
-	// 业务验证：如果是 query 类型，必须在 content 中提供 query_type
-	if req.DevType == "query" {
-		if req.Content["query_type"] == nil || req.Content["query_type"] == "" {
-			return nil, fmt.Errorf("query 类型必须在 content 中提供 query_type")
-		}
-	}
-
-	// 业务验证：content 不能为空
-	if req.Content == nil || len(req.Content) == 0 {
-		return nil, fmt.Errorf("content 不能为空")
+	if err := validateDevTaskContent(req.DevType, req.Content); err != nil {
+		return nil, err
 	}
 
 	// 设置默认值
@@ -113,6 +98,9 @@ func (s *DevTaskService) UpdateDevTask(id uint, req *models.UpdateDevTaskRequest
 		item.DisplayName = req.DisplayName
 	}
 	if req.Content != nil && len(req.Content) > 0 {
+		if err := validateDevTaskContent(item.DevType, req.Content); err != nil {
+			return nil, err
+		}
 		item.Content = req.Content
 	}
 	if req.ExecutionConfig != nil {
@@ -143,6 +131,39 @@ func (s *DevTaskService) UpdateDevTask(id uint, req *models.UpdateDevTaskRequest
 
 	log.Printf("✅ [DevTaskService] 更新开发任务成功 id=%d name=%s", item.ID, item.Name)
 	return item, nil
+}
+
+func isDevelopDevType(devType string) bool {
+	switch devType {
+	case commonExecution.TaskTypeQuery, commonExecution.TaskTypeWorkflow, commonExecution.TaskTypeScript:
+		return true
+	default:
+		return false
+	}
+}
+
+func validateDevTaskContent(devType string, content map[string]interface{}) error {
+	if content == nil || len(content) == 0 {
+		return fmt.Errorf("content 不能为空")
+	}
+
+	switch devType {
+	case commonExecution.TaskTypeQuery:
+		query, ok := content["query"].(string)
+		if !ok || strings.TrimSpace(query) == "" {
+			return fmt.Errorf("query 类型必须在 content.query 中提供查询内容")
+		}
+		queryType, ok := content["query_type"].(string)
+		if !ok || strings.TrimSpace(queryType) == "" {
+			return fmt.Errorf("query 类型必须在 content.query_type 中提供查询类型")
+		}
+	case commonExecution.TaskTypeWorkflow:
+		if _, ok := content["workflow_definition"].(map[string]interface{}); !ok {
+			return fmt.Errorf("workflow 类型必须在 content.workflow_definition 中提供工作流定义")
+		}
+	}
+
+	return nil
 }
 
 // GetDevTask 获取开发任务详情

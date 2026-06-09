@@ -144,6 +144,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
+import { openMonitorExecution } from '@addp/common-frontend'
 import client from '../api/client'
 import { formatDateTime } from '../utils/formatters'
 
@@ -258,6 +259,7 @@ const executeTask = async (task) => {
     })
     ElMessage.success(t('manager.mvtTasks.executeSubmitted', { id: response.execution_id || '-' }))
     await loadTasks()
+    await openMonitorExecution(response.execution_id)
   } catch (error) {
     console.error('执行 MVT 任务失败:', error)
     ElMessage.error(t('manager.mvtTasks.executeFailed'))

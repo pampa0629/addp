@@ -239,7 +239,7 @@ func (h *DevTaskHandler) ExecuteDevTask(c *gin.Context) {
 		return
 	}
 
-	// 实际执行逻辑在 dev_execution_handler 中
+	// 实际执行逻辑在 execution_handler 中
 	// 这里返回提示信息
 	c.JSON(http.StatusOK, gin.H{
 		"message": commoni18n.T(c, developi18n.MsgUseExecuteEndpoint),

@@ -22,8 +22,10 @@ scripts/dev/
 ├── start.sh           # 启动完整开发环境(后台运行)
 ├── stop.sh            # 停止所有开发服务
 ├── restart.sh         # 重启所有服务
+├── keepalive.sh       # 托管命令环境前台保活入口
 ├── modtidy.sh         # 清理 Go 模块依赖
-└── upgrade-go.sh      # 升级 Go 版本
+├── clean.sh           # 清理开发环境编译产物
+└── install-frontend-deps.sh # 安装前端依赖
 ```
 
 ## 使用方法
@@ -63,12 +65,13 @@ bash scripts/dev/stop.sh
 bash scripts/dev/restart.sh
 # 等同于: stop.sh + start.sh
 
+# 在 Codex 等托管命令环境中启动并前台保活
+bash scripts/dev/keepalive.sh restart -orchestrator
+# Ctrl+C 退出时会自动调用 stop.sh 清理服务
+
 # 清理 Go 依赖
 bash scripts/dev/modtidy.sh
 # 对所有 Go 模块执行 go mod tidy
-
-# 升级 Go 版本
-bash scripts/dev/upgrade-go.sh 1.23
 ```
 
 ## 脚本详细说明
@@ -145,6 +148,28 @@ bash scripts/dev/start.sh
 - 如需重启基础设施: `bash scripts/infra/down.sh && bash scripts/infra/up.sh`
 - `start.sh` 会自动检测基础设施运行状态,已运行则跳过
 
+### keepalive.sh
+
+**功能**: 为 Codex 等托管命令环境提供前台保活入口。
+
+**背景**: `start.sh` 和 `restart.sh` 会以后台进程方式启动开发服务。在普通终端中脚本退出后后台服务会继续运行；但 Codex 等托管命令执行环境可能会在命令结束时回收其派生的后台进程，导致脚本内健康检查通过、脚本退出后端口立刻不可用。
+
+**使用方式**:
+```bash
+# 重启指定模块并保持命令前台运行
+bash scripts/dev/keepalive.sh restart -orchestrator
+
+# 启动指定模块并保持命令前台运行
+bash scripts/dev/keepalive.sh start -system
+
+# 全量重启并保持命令前台运行
+bash scripts/dev/keepalive.sh restart -all
+```
+
+**退出行为**: 按 `Ctrl+C` 或终止该命令时，`keepalive.sh` 会调用 `scripts/dev/stop.sh` 清理开发服务。
+
+**适用边界**: 普通本地终端仍优先使用 `start.sh` / `restart.sh`；`keepalive.sh` 只用于命令会话结束后会回收后台进程的托管执行环境。
+
 ### modtidy.sh
 
 **功能**: 清理所有 Go 模块的依赖
@@ -166,23 +191,6 @@ bash scripts/dev/start.sh
 - 解决 `go.mod` 冲突后
 
 **幂等性**: 可多次执行,不会破坏依赖
-
-### upgrade-go.sh
-
-**功能**: 批量升级所有模块的 Go 版本
-
-**使用示例**:
-```bash
-# 升级到 Go 1.23
-bash scripts/dev/upgrade-go.sh 1.23
-
-# 升级到 Go 1.24
-bash scripts/dev/upgrade-go.sh 1.24
-```
-
-**修改内容**:
-- 所有 `go.mod` 文件的 `go 1.xx`
-- 所有 Dockerfile 的 `FROM golang:1.xx-alpine`
 
 ## 启动依赖关系
 

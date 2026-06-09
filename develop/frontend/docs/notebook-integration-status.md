@@ -112,7 +112,7 @@ Notebook 功能深度集成 ADDP 架构项目已完成 **MVP 阶段**（约 90%�
    ```
 
 3. **参数化执行支持**：
-   - 修改 `dev_execution_handler.go ExecuteDevTask()` 支持解析请求体参数
+   - 修改 `execution_handler.go ExecuteDevTask()` 支持解析请求体参数
    - 参数非空时调用 `ExecuteWithParams()`
    - 修复参数传递链路：API → DevExecutor → NotebookExecutionService
 

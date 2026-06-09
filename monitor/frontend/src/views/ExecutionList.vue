@@ -11,17 +11,22 @@
       <el-form :inline="true" :model="filters" class="filter-form">
         <el-form-item :label="t('monitor.execution.filter.module')">
           <el-select v-model="filters.module" :placeholder="t('monitor.execution.filter.module_placeholder')" clearable style="width: 150px;">
-            <el-option label="Transfer" value="transfer" />
-            <el-option label="Develop" value="develop" />
-            <el-option label="Orchestrator" value="orchestrator" />
-            <el-option label="Meta" value="meta" />
-            <el-option label="Manager" value="manager" />
-            <el-option label="Quality" value="quality" />
-            <el-option label="Graph" value="graph" />
+            <el-option
+              v-for="option in moduleOptions"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('monitor.execution.filter.task_type')">
-          <el-select v-model="filters.task_type" :placeholder="t('monitor.execution.filter.task_type_placeholder')" clearable style="width: 180px;">
+          <el-select
+            v-model="filters.task_type"
+            :placeholder="t('monitor.execution.filter.task_type_placeholder')"
+            clearable
+            :disabled="filters.module && taskTypeOptions.length === 0"
+            style="width: 180px;"
+          >
             <el-option
               v-for="option in taskTypeOptions"
               :key="option.value"
@@ -39,15 +44,21 @@
           />
         </el-form-item>
         <el-form-item :label="t('monitor.execution.filter.source')">
-          <el-select v-model="filters.source" :placeholder="t('monitor.execution.filter.source_placeholder')" clearable style="width: 150px;">
-            <el-option label="Meta" value="meta" />
-            <el-option label="Manager" value="manager" />
-            <el-option label="System" value="system" />
-            <el-option label="Transfer" value="transfer" />
-            <el-option label="Develop" value="develop" />
-            <el-option label="Orchestrator" value="orchestrator" />
-            <el-option label="Quality" value="quality" />
-            <el-option label="Graph" value="graph" />
+          <el-select
+            v-model="filters.source"
+            :placeholder="t('monitor.execution.filter.source_placeholder')"
+            clearable
+            filterable
+            allow-create
+            default-first-option
+            style="width: 150px;"
+          >
+            <el-option
+              v-for="option in sourceOptions"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('monitor.execution.filter.status')">
@@ -173,15 +184,22 @@
           >
             <template #default="{ data }">
               <div class="execution-tree-node">
-                <span class="execution-tree-title">
-                  {{ data.execution.module }}/{{ data.execution.task_type }}
-                </span>
-                <el-tag size="small" :type="getStatusType(data.execution.status)">
-                  {{ getStatusText(data.execution.status) }}
-                </el-tag>
-                <span class="execution-tree-subtitle">
-                  {{ data.execution.source_task_name || data.execution.source_task_id || data.execution.execution_id }}
-                </span>
+                <div class="execution-tree-node-main">
+                  <span class="execution-tree-title">
+                    {{ executionDisplayName(data.execution) }}
+                  </span>
+                  <el-tag size="small" effect="plain">{{ data.execution.module }}</el-tag>
+                  <el-tag size="small" type="info" effect="plain">{{ data.execution.task_type }}</el-tag>
+                  <el-tag size="small" :type="getStatusType(data.execution.status)">
+                    {{ getStatusText(data.execution.status) }}
+                  </el-tag>
+                </div>
+                <div class="execution-tree-node-meta">
+                  <span>{{ t('monitor.execution.detail.duration') }}: {{ formatDuration(data.execution.execution_time_ms) }}</span>
+                  <span>{{ t('monitor.execution.detail.source') }}: {{ data.execution.source || '-' }}</span>
+                  <span>{{ t('monitor.execution.detail.source_task_id') }}: {{ data.execution.source_task_id || '-' }}</span>
+                  <span>{{ t('monitor.execution.detail.uuid') }}: {{ data.execution.execution_id }}</span>
+                </div>
               </div>
             </template>
           </el-tree>
@@ -213,15 +231,17 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Link } from '@element-plus/icons-vue'
 import { buildTaskEditUrlFromProviders } from '@common-ui'
-import { listExecutions, getExecutionTree, listTaskProviders } from '@/api/monitor'
+import { listExecutions, getExecutionTree, getExecutionTreeByExecutionID, listTaskProviders } from '@/api/monitor'
 import ExecutionTable from '@/components/ExecutionTable.vue'
 
 const { t } = useI18n()
+const route = useRoute()
 
 // 过滤条件
 const filters = ref({
@@ -247,15 +267,43 @@ const loading = ref(false)
 const detailDialogVisible = ref(false)
 const currentExecution = ref(null)
 const executionTreeData = ref([])
+const openedExecutionID = ref('')
 const executionTreeProps = {
   children: 'children'
 }
 
+const providerOptions = computed(() => taskProviders.value
+  .filter(provider => hasValue(provider?.module_name))
+  .map(provider => ({
+    value: provider.module_name,
+    label: provider.display_name || provider.module_name,
+    provider
+  }))
+  .sort((a, b) => a.label.localeCompare(b.label)))
+
+const moduleOptions = computed(() => providerOptions.value)
+
+const sourceOptions = computed(() => {
+  const options = new Map()
+  for (const option of providerOptions.value) {
+    options.set(option.value, option.label)
+  }
+  for (const execution of executions.value) {
+    if (hasValue(execution?.source) && !options.has(execution.source)) {
+      options.set(execution.source, execution.source)
+    }
+  }
+  return Array.from(options, ([value, label]) => ({ value, label }))
+})
+
 const taskTypeOptions = computed(() => {
   const options = new Map()
-  options.set('orchestration', 'orchestration')
+  const selectedModule = filters.value.module
 
   for (const provider of taskProviders.value) {
+    if (selectedModule && provider.module_name !== selectedModule) {
+      continue
+    }
     for (const taskType of parseTaskTypes(provider.capabilities)) {
       if (!options.has(taskType.value)) {
         options.set(taskType.value, taskType.label)
@@ -286,6 +334,13 @@ function parseCapabilities(capabilities) {
     return {}
   }
 }
+
+watch(
+  () => filters.value.module,
+  () => {
+    filters.value.task_type = ''
+  }
+)
 
 // 加载执行记录
 async function loadExecutions() {
@@ -363,14 +418,33 @@ function handleSizeChange(size) {
 async function handleViewExecution(row) {
   try {
     const data = await getExecutionTree(row.id)
-    const tree = normalizeExecutionTree(data)
-    executionTreeData.value = tree ? [tree] : []
-    currentExecution.value = tree?.execution || null
-    detailDialogVisible.value = true
+    openExecutionTree(data)
   } catch (error) {
     ElMessage.error(t('monitor.execution.detail_failed'))
     console.error(error)
   }
+}
+
+async function openExecutionByExecutionID(executionID) {
+  executionID = firstQueryValue(executionID)
+  if (!hasValue(executionID) || openedExecutionID.value === executionID) {
+    return
+  }
+  try {
+    const data = await getExecutionTreeByExecutionID(executionID)
+    openExecutionTree(data)
+  } catch (error) {
+    ElMessage.error(t('monitor.execution.detail_failed'))
+    console.error(error)
+  }
+}
+
+function openExecutionTree(data) {
+  const tree = normalizeExecutionTree(data)
+  executionTreeData.value = tree ? [tree] : []
+  currentExecution.value = tree?.execution || null
+  openedExecutionID.value = tree?.execution?.execution_id || ''
+  detailDialogVisible.value = true
 }
 
 function normalizeExecutionTree(node) {
@@ -388,6 +462,10 @@ function normalizeExecutionTree(node) {
 
 function handleExecutionTreeNodeClick(node) {
   currentExecution.value = node.execution
+}
+
+function executionDisplayName(execution) {
+  return execution?.source_task_name || execution?.source_task_id || execution?.execution_id || '-'
 }
 
 // 辅助函数
@@ -427,10 +505,15 @@ function hasValue(value) {
   return value !== null && value !== undefined && String(value).trim() !== ''
 }
 
+function firstQueryValue(value) {
+  if (Array.isArray(value)) {
+    return value[0] || ''
+  }
+  return value || ''
+}
+
 function buildOwnerTaskUrl(execution) {
-  return buildTaskEditUrlFromProviders(taskProviders.value, execution, {
-    consoleOrigin: import.meta.env.DEV ? 'http://localhost:5170' : window.location.origin
-  })
+  return buildTaskEditUrlFromProviders(taskProviders.value, execution)
 }
 
 async function openOwnerTask(execution) {
@@ -456,9 +539,23 @@ function formatDuration(ms) {
 }
 
 // 初始化
-onMounted(() => {
-  loadTaskProviders()
-  loadExecutions()
+onMounted(async () => {
+  await loadTaskProviders()
+  await loadExecutions()
+  await openExecutionByExecutionID(route.query.execution_id)
+})
+
+watch(
+  () => route.query.execution_id,
+  executionID => {
+    openExecutionByExecutionID(executionID)
+  }
+)
+
+watch(detailDialogVisible, visible => {
+  if (!visible) {
+    openedExecutionID.value = ''
+  }
 })
 </script>
 
@@ -501,7 +598,19 @@ onMounted(() => {
   margin-top: 20px;
 }
 
+.execution-tree :deep(.el-tree-node__content) {
+  height: auto;
+  min-height: 44px;
+  align-items: flex-start;
+}
+
 .execution-tree-node {
+  min-width: 0;
+  width: 100%;
+  padding: 6px 0;
+}
+
+.execution-tree-node-main {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -511,10 +620,22 @@ onMounted(() => {
 .execution-tree-title {
   font-weight: 500;
   color: var(--addp-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.execution-tree-subtitle {
+.execution-tree-node-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 4px;
+  font-size: 12px;
   color: var(--addp-text-secondary);
+}
+
+.execution-tree-node-meta span {
+  max-width: 360px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -48,6 +48,18 @@ const format = detectFormatByExtension('data.shp') // "shapefile"
 const isGeo = isGeospatialFormat('shapefile') // true
 ```
 
+### 统一任务监控跳转
+
+任务执行接口返回统一 `execution_id` 后，模块前端应通过公共工具进入 Monitor：
+
+```js
+import { openMonitorExecution } from '@addp/common-frontend'
+
+await openMonitorExecution(execution.execution_id)
+```
+
+该工具在 Console iframe 中会请求父级切换到 `/monitor/executions?execution_id=...`；模块独立运行时会回退到 Console 路由。业务模块不要自行硬编码 Console 端口或拼接跨模块 iframe URL。
+
 ### 导入类型定义
 
 ```js

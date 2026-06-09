@@ -321,8 +321,10 @@ export function buildModuleUrl(module, page, token) {
   if (!base) return null
 
   const map = PAGE_MAPS[module]
-  // map[page] 存在则用映射值；否则透传 page（'' 键作为默认路由）
-  const actualPage = (map && map[page] !== undefined) ? map[page] : page
+  const [pagePath, queryPart] = String(page || '').split('?')
+  // map[pagePath] 存在则用映射值；否则透传 pagePath（'' 键作为默认路由）
+  const mappedPage = (map && map[pagePath] !== undefined) ? map[pagePath] : pagePath
+  const actualPage = queryPart ? `${mappedPage}?${queryPart}` : mappedPage
 
   const url = actualPage ? `${base}/${actualPage}` : base
 

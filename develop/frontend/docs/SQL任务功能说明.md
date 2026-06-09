@@ -274,7 +274,7 @@ CREATE TABLE common.task_executions (
 
 - **Repository 层**:
   - [develop/backend/internal/repository/dev_task_repository.go](develop/backend/internal/repository/dev_task_repository.go)
-  - [develop/backend/internal/repository/dev_execution_repository.go](develop/backend/internal/repository/dev_execution_repository.go)
+  - `common/execution` - 统一执行记录仓库，写入 `common.task_executions`
 
 ### 前端架构
 

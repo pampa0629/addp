@@ -1,4 +1,10 @@
 import client from './client'
+import {
+  createDevTask,
+  deleteDevTask,
+  listDevTasks,
+  updateDevTask
+} from './devTask'
 
 /**
  * 获取引擎的样例查询（切换引擎时自动填充编辑器）
@@ -43,7 +49,7 @@ export const getHealth = () => {
  * @param {object} taskData - 任务数据
  */
 export const saveQueryTask = (taskData) => {
-  return client.post('/develop/query/tasks', taskData)
+  return createDevTask(toQueryDevTaskPayload(taskData))
 }
 
 /**
@@ -52,7 +58,7 @@ export const saveQueryTask = (taskData) => {
  * @param {object} taskData - 任务数据
  */
 export const updateQueryTask = (id, taskData) => {
-  return client.put(`/develop/query/tasks/${id}`, taskData)
+  return updateDevTask(id, toQueryDevTaskPayload(taskData, false))
 }
 
 /**
@@ -60,7 +66,10 @@ export const updateQueryTask = (id, taskData) => {
  * @param {object} params - 查询参数
  */
 export const listQueryTasks = (params = {}) => {
-  return client.get('/develop/query/tasks', { params })
+  return listDevTasks({
+    ...params,
+    dev_type: 'query'
+  })
 }
 
 /**
@@ -68,7 +77,7 @@ export const listQueryTasks = (params = {}) => {
  * @param {number} id - 任务ID
  */
 export const getQueryTask = (id) => {
-  return client.get(`/develop/query/tasks/${id}`)
+  return client.get(`/develop/task-definitions/${id}`)
 }
 
 /**
@@ -76,5 +85,30 @@ export const getQueryTask = (id) => {
  * @param {number} id - 任务ID
  */
 export const deleteQueryTask = (id) => {
-  return client.delete(`/develop/query/tasks/${id}`)
+  return deleteDevTask(id)
+}
+
+const toQueryDevTaskPayload = (taskData, includeDevType = true) => {
+  const queryType = taskData.query_type || 'sql'
+  const payload = {
+    name: taskData.name,
+    display_name: taskData.display_name,
+    content: {
+      query: taskData.query,
+      query_type: queryType
+    },
+    execution_config: {
+      engine_id: taskData.engine_id
+    },
+    schedule: taskData.schedule,
+    timeout: taskData.timeout,
+    description: taskData.description,
+    tags: taskData.tags
+  }
+
+  if (includeDevType) {
+    payload.dev_type = 'query'
+  }
+
+  return payload
 }

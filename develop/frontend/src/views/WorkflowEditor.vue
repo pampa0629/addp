@@ -279,7 +279,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -296,12 +296,12 @@ import {
 import OperatorPalette from '@/components/workflow/OperatorPalette.vue'
 import WorkflowDAGCanvas from '@/components/workflow/WorkflowDAGCanvas.vue'
 import OperatorParamsPanel from '@/components/workflow/OperatorParamsPanel.vue'
-import { createDevTask, executeDevTask, getDevTask } from '@/api/devTask'
+import { createDevTask, executeDevTask, getDevTask, updateDevTask } from '@/api/devTask'
 import { getOperatorDetail } from '@/api/operator'
 import { generateWorkflowFromNL } from '@/api/copilot'
 import { getWorkflowEngines, getSparkRuntimes } from '@/api/engines'
+import { openMonitorExecution } from '@addp/common-frontend'
 
-const router = useRouter()
 const route = useRoute()
 const { t } = useI18n()
 
@@ -334,6 +334,7 @@ const fileInputRef = ref(null)
 // 当前任务信息
 const currentTaskId = ref(null)
 const currentTaskName = ref('')
+const currentTask = ref(null)
 
 // 工作流数据
 const workflowData = ref({
@@ -613,7 +614,7 @@ const confirmSave = async () => {
       executionConfig
     })
 
-    await createDevTask({
+    const payload = {
       name: saveForm.name,
       display_name: saveForm.display_name,
       dev_type: 'workflow',
@@ -623,7 +624,17 @@ const confirmSave = async () => {
         workflow_definition: workflow,
         inputs: {}
       }
-    })
+    }
+
+    if (currentTaskId.value) {
+      delete payload.dev_type
+      await updateDevTask(currentTaskId.value, payload)
+    } else {
+      const task = await createDevTask(payload)
+      currentTaskId.value = task.id
+      currentTaskName.value = task.name
+      currentTask.value = task
+    }
 
     ElMessage.success(t('develop.workflow.saveSuccess'))
     saveDialogVisible.value = false
@@ -707,13 +718,12 @@ const confirmExecute = async () => {
       }
     })
 
-    await executeDevTask(tempTask.id, inputs)
+    const execution = await executeDevTask(tempTask.id, inputs)
 
     ElMessage.success(t('develop.workflow.executeSubmitted'))
     executeDialogVisible.value = false
 
-    // 跳转到执行监控页面
-    router.push('/executions')
+    await openMonitorExecution(execution.execution_id)
   } catch (error) {
     console.error('执行工作流失败:', error)
     ElMessage.error(t('develop.workflow.executeFailed') + (error.response?.data?.error || error.message))
@@ -906,6 +916,12 @@ const loadTask = async (taskId) => {
     // 设置当前任务信息
     currentTaskId.value = task.id
     currentTaskName.value = task.name
+    currentTask.value = task
+    Object.assign(saveForm, {
+      name: task.name || '',
+      display_name: task.display_name || '',
+      description: task.description || ''
+    })
 
     // 解析执行配置
     if (task.execution_config) {
@@ -932,14 +948,10 @@ const loadTask = async (taskId) => {
       }
     }
 
-    // 加载工作流内容（支持新旧字段名）
+    // 加载工作流内容
     if (task.content) {
       if (task.content.workflow_definition) {
-        // 新格式
         workflowData.value = task.content.workflow_definition
-      } else if (task.content.tasks) {
-        // 旧格式（向后兼容）
-        workflowData.value = task.content
       } else {
         ElMessage.warning(t('develop.workflow.noWorkflowContent'))
         return
@@ -959,7 +971,7 @@ onMounted(async () => {
   // 加载工作流引擎列表
   await loadWorkflowEngines()
 
-  const taskId = route.query.taskId
+  const taskId = firstQueryValue(route.query.id || route.query.taskId)
   if (taskId) {
     // 如果是编辑模式，加载开发任务
     await loadTask(taskId)
@@ -968,6 +980,13 @@ onMounted(async () => {
     selectDefaultEngine()
   }
 })
+
+function firstQueryValue(value) {
+  if (Array.isArray(value)) {
+    return value[0] || ''
+  }
+  return value || ''
+}
 </script>
 
 <style scoped>

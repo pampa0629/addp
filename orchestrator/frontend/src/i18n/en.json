@@ -82,6 +82,8 @@
       "colError": "Error",
       "colActions": "Actions",
       "detailBtn": "Detail",
+      "viewMonitorTreeBtn": "View Monitor Tree",
+      "viewChildExecutionBtn": "View Child Execution",
       "detailDialogTitle": "Execution Detail",
       "descExecutionId": "Execution ID",
       "descStatus": "Status",
@@ -96,7 +98,9 @@
       "statusPending": "Pending",
       "statusRunning": "Running",
       "statusSuccess": "Success",
-      "statusFailed": "Failed"
+      "statusFailed": "Failed",
+      "statusTimeout": "Timeout",
+      "statusCancelled": "Cancelled"
     },
     "executionRecords": {
       "title": "Execution Records",
@@ -111,6 +115,8 @@
       "colActions": "Actions",
       "detailBtn": "Detail",
       "viewOrchestrationBtn": "View Orchestration",
+      "viewMonitorTreeBtn": "View Monitor Tree",
+      "viewChildExecutionBtn": "View Child Execution",
       "detailDialogTitle": "Execution Detail",
       "descExecutionId": "Execution ID",
       "descOrchestration": "Orchestration",
@@ -126,7 +132,9 @@
       "statusPending": "Pending",
       "statusRunning": "Running",
       "statusSuccess": "Success",
-      "statusFailed": "Failed"
+      "statusFailed": "Failed",
+      "statusTimeout": "Timeout",
+      "statusCancelled": "Cancelled"
     },
     "taskPanel": {
       "title": "Task Library",

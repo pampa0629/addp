@@ -52,7 +52,6 @@ func main() {
 
 	// ========== Repository 层 ==========
 	devTaskRepo := repository.NewDevTaskRepository(db)
-	// devExecutionRepo := repository.NewDevExecutionRepository(db) // 【已废弃】改用统一执行表
 	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db) // 统一执行记录仓库
 	log.Printf("✅ Repository 层初始化完成（使用统一执行表）")
 
@@ -124,10 +123,10 @@ func main() {
 
 	// ========== Handler 层 ==========
 	devTaskHandler := api.NewDevTaskHandler(devTaskService)
-	devExecutionHandler := api.NewDevExecutionHandler(devExecutor)
+	executionHandler := api.NewExecutionHandler(devExecutor)
 	operatorHandler := api.NewOperatorHandler(operatorDiscovery)
 	engineHandler := api.NewEngineHandler(systemClient)
-	queryHandler := api.NewQueryHandler(sqlEngine, devTaskService)
+	queryHandler := api.NewQueryHandler(sqlEngine)
 	notebookHandler := api.NewNotebookHandler(jupyterService, notebookExecutionService, devTaskService)
 	duckdbHandler := api.NewDuckDBHandler(duckdbService)
 
@@ -148,7 +147,7 @@ func main() {
 	log.Printf("✅ Handler 层初始化完成")
 
 	// ========== 设置路由 ==========
-	router := api.SetupRouter(cfg, db, devTaskHandler, devExecutionHandler, operatorHandler, engineHandler, queryHandler, notebookHandler, jupyterInstanceHandler, jupyterVenvHandler, devTaskService, systemClient, duckdbHandler)
+	router := api.SetupRouter(cfg, db, devTaskHandler, executionHandler, operatorHandler, engineHandler, queryHandler, notebookHandler, jupyterInstanceHandler, jupyterVenvHandler, devTaskService, systemClient, duckdbHandler)
 	log.Printf("✅ 路由设置完成")
 
 	serviceHost := utils.GetServiceHost()
@@ -162,7 +161,7 @@ func main() {
 	}
 
 	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========
-	engineRegistry := service.NewEngineRegistryService(
+	taskProviderRegistry := service.NewTaskProviderRegistryService(
 		cfg.SystemServiceURL,
 		cfg.InternalAPIKey,
 		serviceURL,
@@ -173,15 +172,15 @@ func main() {
 		time.Sleep(2 * time.Second) // 等待服务完全启动
 		maxRetries := 5
 		for attempt := 1; attempt <= maxRetries; attempt++ {
-			if err := engineRegistry.RegisterEngine(); err != nil {
+			if err := taskProviderRegistry.Register(); err != nil {
 				log.Printf("⚠️  Registration attempt %d/%d failed: %v", attempt, maxRetries, err)
 				time.Sleep(time.Duration(attempt*2) * time.Second) // 指数退避
 				continue
 			}
-			log.Printf("✅ Develop engine registered successfully")
+			log.Printf("✅ Develop task provider registered successfully")
 			return
 		}
-		log.Printf("❌ Engine registration failed after %d attempts", maxRetries)
+		log.Printf("❌ Develop task provider registration failed after %d attempts", maxRetries)
 	}()
 
 	// 设置优雅关闭

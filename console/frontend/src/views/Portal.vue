@@ -116,7 +116,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import { useLangStore } from '../store/lang'
 import { ElMessage } from 'element-plus'
-import { registerConsoleBridgeHandler } from '@common-ui'
+import { CONSOLE_NAVIGATION_CHANNEL, registerConsoleBridgeHandler } from '@common-ui'
 import { useI18n } from 'vue-i18n'
 import { MagicStick, Close } from '@element-plus/icons-vue'
 import {
@@ -148,6 +148,7 @@ const sidebarModules = ref([])  // 侧边栏实际显示的模块（点卡片时
 
 const ENGINE_SCAN_POLICY_CHANNEL = 'engine-scan-policy'
 let stopEngineScanPolicyBridge = null
+let stopConsoleNavigationBridge = null
 
 const currentGroupConfig = computed(() =>
   MODULE_GROUPS.find(g => g.key === activeGroup.value) || null
@@ -170,6 +171,11 @@ const homeCards = computed(() => {
 })
 
 onMounted(async () => {
+  stopConsoleNavigationBridge = registerConsoleBridgeHandler(
+    CONSOLE_NAVIGATION_CHANNEL,
+    handleConsoleNavigationBridge,
+    { allowedSources: ['addp-module'] }
+  )
   stopEngineScanPolicyBridge = registerConsoleBridgeHandler(
     ENGINE_SCAN_POLICY_CHANNEL,
     handleEngineScanPolicyBridge,
@@ -188,9 +194,20 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  stopConsoleNavigationBridge?.()
+  stopConsoleNavigationBridge = null
   stopEngineScanPolicyBridge?.()
   stopEngineScanPolicyBridge = null
 })
+
+const handleConsoleNavigationBridge = async (payload = {}) => {
+  const targetRoute = typeof payload.route === 'string' ? payload.route.trim() : ''
+  if (!targetRoute || !targetRoute.startsWith('/')) {
+    throw new Error('route must be an absolute console route')
+  }
+  await router.push(targetRoute)
+  return { route: targetRoute }
+}
 
 const normalizeScanConfig = (scanConfig) => {
   if (!scanConfig) return null

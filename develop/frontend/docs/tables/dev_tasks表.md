@@ -112,9 +112,11 @@
   "name": "查询大城市",
   "display_name": "查询人口大于100万的城市",
   "dev_type": "query",
-  "query_type": "sql",
   "content": {
-    "sql": "SELECT * FROM cities WHERE population > 1000000",
+    "query_type": "sql",
+    "query": "SELECT * FROM cities WHERE population > 1000000"
+  },
+  "execution_config": {
     "engine_id": 1
   },
   "description": "查询所有大城市",
@@ -130,7 +132,6 @@
 
 **查询参数**：
 - `dev_type`：按类型过滤
-- `query_type`：按查询类型过滤
 - `status`：按状态过滤
 - `tag`：按标签过滤
 - `keyword`：搜索名称或描述
@@ -152,5 +153,5 @@
 
 ## 六、相关文档
 
-- [dev_executions表废止说明](./dev_executions表.md) - 执行记录已迁移到 `common.task_executions`
+- Develop 执行记录统一写入 `common.task_executions`。
 - [数据库架构](../数据库架构.md) - Develop 模块架构

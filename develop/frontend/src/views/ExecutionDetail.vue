@@ -208,7 +208,7 @@ import {
   getExecution,
   getExecutionLogs,
   retryExecution
-} from '@/api/devExecution'
+} from '@/api/execution'
 import QueryResult from '@/components/QueryResult.vue'
 
 const route = useRoute()

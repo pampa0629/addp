@@ -176,6 +176,10 @@ Graph 的 `kg_build` 任务定义由 `graph.build_tasks` 保存。`graph.build_t
 
 Develop 的任务类型按开发方式划分为 `query`、`workflow`、`script`。`script` 表示命令式代码开发任务，当前可由 Jupyter Notebook runtime 承载；`notebook` 只是脚本开发的实现形态和 UI 入口，不作为独立 `task_type` 声明，不进入 TaskProvider capabilities。
 
+Develop 的 `develop.dev_tasks.content` 必须使用规范字段：`query` 使用 `content.query` 和 `content.query_type`，引擎绑定写入 `execution_config.engine_id`；`workflow` 使用 `content.workflow_definition` 和可选 `content.inputs`；`script` 的 Notebook 形态使用 `content.notebook_path`。不得再新增或消费 `content.sql`、`content.workflow_def`、`content.input_data` 等旧字段。
+
+Develop 的 `create_url` / `edit_url` 必须指向具体开发方式的专属页面：`query` 指向查询工作台，`workflow` 指向工作流编辑器，`script` 指向脚本开发当前承载页面。`/develop/tasks` 只是任务定义集散页和列表页，不得作为 TaskProvider 的创建或编辑目标。
+
 ## TaskProvider 规范
 
 TaskProvider 是模块的一种角色，不是独立业务 owner。System 保存 provider 注册信息，供 Orchestrator 和 Monitor 发现模块任务能力。
@@ -300,7 +304,7 @@ TaskProvider 注册时必须使用 `task.capabilities/v1` schema，并声明稳�
 | `supports_schedule` | 该任务类型是否支持定时 |
 | `supports_cancel` | 该任务类型是否支持真实取消；不能中断执行体时必须为 `false` |
 | `supports_inline_execution` | 是否支持无持久任务定义的一次性执行 |
-| `create_url` / `edit_url` | owner 模块前端入口；优先使用 Console 模块路由，例如 `/develop/tasks?action=create&task_type=query` |
+| `create_url` / `edit_url` | owner 模块前端入口；优先使用 Console 模块路由，例如 `/develop/sql?action=create` |
 | `deprecated` | 是否废弃 |
 
 约束：
@@ -310,7 +314,7 @@ TaskProvider 注册时必须使用 `task.capabilities/v1` schema，并声明稳�
 3. System 注册入口必须校验 capabilities schema，不符合规范的 provider 不得注册成功。
 4. `task_type` 是 provider 对外契约，不能随 UI 文案变化。
 5. Orchestrator 可以缓存 TaskProvider capabilities，但必须能从 System 刷新。
-6. `create_url` / `edit_url` 应使用 Console 路由形式，可包含模块内深层路径和 query，例如 `/transfer/tasks/:id/edit`、`/develop/tasks?action=edit&id=:id`、`/graph/graphs/:graph_id/build/tasks/:id`；前端负责替换 `:id` / `{id}` / `:task_id` / `{task_id}` / `:graph_id` / `{graph_id}`。
+6. `create_url` / `edit_url` 应使用 Console 路由形式，可包含模块内深层路径和 query，例如 `/transfer/tasks/:id/edit`、`/develop/workflow?action=edit&id=:id`、`/graph/graphs/:graph_id/build/tasks/:id`；前端负责替换 `:id` / `{id}` / `:task_id` / `{task_id}` / `:graph_id` / `{graph_id}`。
 7. 模块新增或删除任务类型时，必须更新自身 capabilities、文档和 Swagger。
 8. 历史 execution 中已经出现的 `task_type` 不应被 owner 模块静默移除；如任务类型废弃，应标记 `deprecated=true`，直到历史查询和迁移完成。
 
@@ -363,7 +367,16 @@ Monitor 不拥有任务定义。Monitor 聚合观察：
 
 Monitor 可以查询 owner 模块公开的只读状态 API，但不得直接依赖 owner 私有表结构。
 
-Monitor 必须支持按执行记录查询 parent / child execution 树。树根入口使用统一执行记录的自增 `id`，树边使用 `common.task_executions.execution_id` 与 `parent_execution_id` 连接。API 为 `GET /api/v1/monitor/executions/{id}/tree`，返回 root execution 及直接或间接子 execution；Monitor 只读取 `common.task_executions`，不得回查 owner 私有表拼装树。
+Monitor 必须支持按执行记录查询 parent / child execution 树。树边使用 `common.task_executions.execution_id` 与 `parent_execution_id` 连接。Monitor 只读取 `common.task_executions`，不得回查 owner 私有表拼装树。
+
+入口包括：
+
+| 入口 | 用途 |
+| --- | --- |
+| `GET /api/v1/monitor/executions/{id}/tree` | 按统一执行记录自增 `id` 查询，适合 Monitor 表格内部跳转 |
+| `GET /api/v1/monitor/executions/by-execution-id/{execution_id}/tree` | 按全局 UUID 查询，适合各模块拿到 `execution_id` 后跳转统一监控 |
+
+前端模块拿到执行响应中的 `execution_id` 后，应使用 `common-frontend` 的 `openMonitorExecution(execution_id)` 进入统一监控页。该工具会优先通过 Console iframe bridge 切换父级路由到 `/monitor/executions?execution_id=...`，独立运行时再回退为打开 Console 路由。业务模块不得自行硬编码 Console 端口或拼装跨模块 iframe URL。
 
 ## 模块接入检查清单
 

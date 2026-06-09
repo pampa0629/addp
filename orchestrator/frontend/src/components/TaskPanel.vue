@@ -285,9 +285,7 @@ function openOwnerUrl(rawUrl, replacements = {}) {
     return
   }
 
-  const url = buildTaskOwnerUrl(rawUrl, replacements, {
-    consoleOrigin: import.meta.env.DEV ? 'http://localhost:5170' : window.location.origin
-  })
+  const url = buildTaskOwnerUrl(rawUrl, replacements)
   window.open(url, '_blank', 'noopener,noreferrer')
 }
 

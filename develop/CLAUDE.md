@@ -71,7 +71,7 @@ Develop 作为一个 TaskProvider 注册到 System，声明 `query`、`workflow`
 详细的表结构和API说明文档：
 
 - [dev_tasks表](frontend/docs/tables/dev_tasks表.md) - 开发任务定义表,支持 query/workflow/script
-- [dev_executions表](frontend/docs/tables/dev_executions表.md) - 旧执行记录表废止说明；当前执行记录已迁移到 `common.task_executions`
+- Develop 执行记录统一写入 `common.task_executions`，不再维护 Develop 私有执行记录表。
 
 **重要**：修改表结构或API时，必须同步更新对应的单表文档。
 
@@ -144,18 +144,21 @@ curl -X POST http://localhost:8185/api/v1/develop/task-definitions \
     "name": "缓冲区分析",
     "dev_type": "workflow",
     "content": {
-      "nodes": [
-        {"id": "1", "type": "buffer", "params": {"distance": 1000}},
-        {"id": "2", "type": "to_geojson"}
-      ],
-      "edges": [{"from": "1", "to": "2"}]
+      "workflow_definition": {
+        "nodes": [
+          {"id": "1", "type": "buffer", "params": {"distance": 1000}},
+          {"id": "2", "type": "to_geojson"}
+        ],
+        "edges": [{"from": "1", "to": "2"}]
+      },
+      "inputs": {}
     }
   }'
 
 # 3. 执行工作流
 curl -X POST http://localhost:8185/api/v1/develop/task-definitions/123/execute \
   -H "Authorization: Bearer <token>" \
-  -d '{"input_data": "public.cities"}'
+  -d '{"parameters": {"input_table": "public.cities"}}'
 ```
 
 ### 场景 3：调试工作流执行失败

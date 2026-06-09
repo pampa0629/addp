@@ -1274,174 +1274,6 @@
                 }
             }
         },
-        "/query/tasks": {
-            "get": {
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Query"
-                ],
-                "summary": "获取查询任务列表 | List query tasks",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "页码 | Page number",
-                        "name": "page",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "每页数量 | Page size",
-                        "name": "page_size",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "状态过滤 | Filter by status",
-                        "name": "status",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "关键词搜索 | Keyword search",
-                        "name": "keyword",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "任务列表 | Task list",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ListDevTasksResponse"
-                        }
-                    }
-                }
-            },
-            "post": {
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Query"
-                ],
-                "summary": "保存 SQL 为任务 | Save SQL as task",
-                "parameters": [
-                    {
-                        "description": "保存请求 | Save request",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.SaveQueryTaskRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "已保存的任务 | Saved task",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTask"
-                        }
-                    }
-                }
-            }
-        },
-        "/query/tasks/{id}": {
-            "get": {
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Query"
-                ],
-                "summary": "获取查询任务详情 | Get query task details",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "任务ID | Task ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "任务详情 | Task details",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTask"
-                        }
-                    }
-                }
-            },
-            "put": {
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Query"
-                ],
-                "summary": "更新查询任务 | Update query task",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "任务ID | Task ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "更新请求 | Update request",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.SaveQueryTaskRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "已更新的任务 | Updated task",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTask"
-                        }
-                    }
-                }
-            },
-            "delete": {
-                "tags": [
-                    "Query"
-                ],
-                "summary": "删除查询任务 | Delete query task",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "任务ID | Task ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "删除成功 | Deleted successfully",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
         "/spark-runtimes": {
             "get": {
                 "produces": [
@@ -1682,19 +1514,19 @@
                     "application/json"
                 ],
                 "tags": [
-                    "DevTask"
+                    "Execution"
                 ],
                 "summary": "执行开发任务 | Execute development task",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "开发任务ID | Development task ID",
+                        "description": "开发任务 ID | Development task ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "执行参数 | Execution parameters",
+                        "description": "执行参数（可选）| Execution parameters (optional)",
                         "name": "body",
                         "in": "body",
                         "schema": {
@@ -2958,53 +2790,6 @@
                     "items": {
                         "$ref": "#/definitions/github_com_addp_develop_backend_internal_service.KernelInfo"
                     }
-                }
-            }
-        },
-        "internal_api.SaveQueryTaskRequest": {
-            "type": "object",
-            "required": [
-                "engine_id",
-                "name",
-                "query"
-            ],
-            "properties": {
-                "description": {
-                    "type": "string"
-                },
-                "display_name": {
-                    "type": "string"
-                },
-                "engine_id": {
-                    "type": "integer"
-                },
-                "is_scheduled": {
-                    "description": "是否启用调度",
-                    "type": "boolean"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "query": {
-                    "type": "string"
-                },
-                "query_type": {
-                    "description": "sql, mql, dsl (从前端传递或自动推断)",
-                    "type": "string"
-                },
-                "schedule": {
-                    "description": "Cron 表达式",
-                    "type": "string"
-                },
-                "tags": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "timeout": {
-                    "description": "超时时间（秒）",
-                    "type": "integer"
                 }
             }
         },

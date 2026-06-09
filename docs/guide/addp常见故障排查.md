@@ -6,7 +6,59 @@
 
 ## 脚本/启动问题
 
-### 1. restart.sh 误报端口被浏览器占用（端口检查假阳性）
+### 1. Codex 等托管命令环境中 restart.sh 退出后服务立刻不可用
+
+#### 问题现象
+
+在 Codex 等托管命令执行环境中运行：
+```bash
+./scripts/dev/restart.sh -orchestrator
+```
+
+脚本输出中健康检查通过，但命令结束后端口立刻不可用：
+```bash
+curl http://localhost:8084/health
+# 无响应或 HTTP 000
+```
+
+`logs/*-backend.log` 中能看到服务曾经成功启动并响应过 `/health`。
+
+#### 根本原因
+
+`scripts/dev/start.sh` 和 `scripts/dev/restart.sh` 会以后台进程方式启动开发服务。在普通终端中，脚本退出后后台服务会继续运行。
+
+Codex 等托管命令执行环境可能会在一次性命令结束时回收其派生的后台进程树。此时服务不是自行崩溃，而是随命令会话结束被执行环境清理，所以会出现“脚本内 health 通过，脚本退出后端口不可用”的现象。
+
+#### 解决方案
+
+在 Codex 等托管命令环境中，使用前台保活入口：
+```bash
+bash scripts/dev/keepalive.sh restart -orchestrator
+```
+
+常用示例：
+```bash
+# 重启单个模块并保持服务可用
+bash scripts/dev/keepalive.sh restart -orchestrator
+
+# 全量重启并保持服务可用
+bash scripts/dev/keepalive.sh restart -all
+
+# 启动单个模块并保持服务可用
+bash scripts/dev/keepalive.sh start -system
+```
+
+`keepalive.sh` 会调用现有 `start.sh` / `restart.sh`，然后以前台阻塞进程承载服务生命周期。按 `Ctrl+C` 或终止命令时，会自动调用 `scripts/dev/stop.sh` 清理开发服务。
+
+#### 使用边界
+
+- 普通本地终端继续优先使用 `bash scripts/dev/start.sh` 或 `bash scripts/dev/restart.sh`。
+- Codex 等命令结束后会回收后台进程的托管环境，使用 `bash scripts/dev/keepalive.sh ...`。
+- 不要同时在外部终端和 Codex 中并发执行 `restart.sh` / `stop.sh`，因为脚本会按 PID、进程名和端口清理 ADDP 开发服务，两个会话可能互相清理。
+
+---
+
+### 2. restart.sh 误报端口被浏览器占用（端口检查假阳性）
 
 #### 问题现象
 

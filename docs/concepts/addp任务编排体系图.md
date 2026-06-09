@@ -346,7 +346,7 @@ sequenceDiagram
     participant Worker as Orchestrator Worker
 
     Cron->>Orchestrator: 1. 触发调度<br/>(根据 cron 表达式)
-    Orchestrator->>DB: 2. 创建执行记录<br/>(executions 表)
+    Orchestrator->>DB: 2. 创建执行记录<br/>(common.task_executions)
     Orchestrator->>Worker: 3. 异步执行编排
     Worker->>Worker: 4. 解析 DAG 依赖
     Worker->>Worker: 5. 依次执行任务步骤

@@ -220,7 +220,7 @@ import {
   listExecutions,
   retryExecution,
   getExecutionStatistics
-} from '@/api/devExecution'
+} from '@/api/execution'
 
 const route = useRoute()
 const router = useRouter()

@@ -9,17 +9,17 @@ import (
 	"time"
 )
 
-// EngineRegistryService 任务提供者注册服务
+// TaskProviderRegistryService 任务提供者注册服务
 // 将 Develop 模块注册到 System 的 task_providers 表
-type EngineRegistryService struct {
+type TaskProviderRegistryService struct {
 	systemURL      string
 	internalAPIKey string
 	developURL     string
 }
 
-// NewEngineRegistryService 创建引擎注册服务
-func NewEngineRegistryService(systemURL, internalAPIKey, developURL string) *EngineRegistryService {
-	return &EngineRegistryService{
+// NewTaskProviderRegistryService 创建任务提供者注册服务
+func NewTaskProviderRegistryService(systemURL, internalAPIKey, developURL string) *TaskProviderRegistryService {
+	return &TaskProviderRegistryService{
 		systemURL:      systemURL,
 		internalAPIKey: internalAPIKey,
 		developURL:     developURL,
@@ -41,8 +41,8 @@ type TaskProviderRegistration struct {
 	IsEnabled           bool    `json:"is_enabled"`
 }
 
-// RegisterEngine 注册 Develop 模块为任务提供者
-func (s *EngineRegistryService) RegisterEngine() error {
+// Register 注册 Develop 模块为任务提供者
+func (s *TaskProviderRegistryService) Register() error {
 	// 能力描述（供 Orchestrator 查询）
 	capabilities := map[string]interface{}{
 		"schema_version": "task.capabilities/v1",
@@ -56,8 +56,8 @@ func (s *EngineRegistryService) RegisterEngine() error {
 				"supports_schedule":         false,
 				"supports_cancel":           false,
 				"supports_inline_execution": false,
-				"create_url":                "/develop/tasks?action=create&task_type=query",
-				"edit_url":                  "/develop/tasks?action=edit&id=:id",
+				"create_url":                "/develop/sql?action=create",
+				"edit_url":                  "/develop/sql?action=edit&id=:id",
 				"deprecated":                false,
 			},
 			{
@@ -69,8 +69,8 @@ func (s *EngineRegistryService) RegisterEngine() error {
 				"supports_schedule":         false,
 				"supports_cancel":           false,
 				"supports_inline_execution": false,
-				"create_url":                "/develop/tasks?action=create&task_type=workflow",
-				"edit_url":                  "/develop/tasks?action=edit&id=:id",
+				"create_url":                "/develop/workflow?action=create",
+				"edit_url":                  "/develop/workflow?action=edit&id=:id",
 				"deprecated":                false,
 			},
 			{
@@ -82,8 +82,8 @@ func (s *EngineRegistryService) RegisterEngine() error {
 				"supports_schedule":         false,
 				"supports_cancel":           false,
 				"supports_inline_execution": false,
-				"create_url":                "/develop/tasks?action=create&task_type=script",
-				"edit_url":                  "/develop/tasks?action=edit&id=:id",
+				"create_url":                "/develop/notebook?action=create",
+				"edit_url":                  "/develop/notebook?action=edit&id=:id",
 				"deprecated":                false,
 			},
 		},
@@ -116,7 +116,7 @@ func (s *EngineRegistryService) RegisterEngine() error {
 }
 
 // sendRegistration 发送注册请求到 System task_providers API
-func (s *EngineRegistryService) sendRegistration(req *TaskProviderRegistration) error {
+func (s *TaskProviderRegistryService) sendRegistration(req *TaskProviderRegistration) error {
 	bodyJSON, err := json.Marshal(req)
 	if err != nil {
 		return fmt.Errorf("failed to marshal registration: %w", err)

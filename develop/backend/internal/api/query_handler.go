@@ -7,22 +7,19 @@ import (
 
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/develop/backend/internal/models"
 	"github.com/addp/develop/backend/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
 // QueryHandler 查询开发 API 处理器
 type QueryHandler struct {
-	sqlEngine      *service.SQLEngineService
-	devTaskService *service.DevTaskService
+	sqlEngine *service.SQLEngineService
 }
 
 // NewQueryHandler 创建 查询处理器
-func NewQueryHandler(sqlEngine *service.SQLEngineService, devTaskService *service.DevTaskService) *QueryHandler {
+func NewQueryHandler(sqlEngine *service.SQLEngineService) *QueryHandler {
 	return &QueryHandler{
-		sqlEngine:      sqlEngine,
-		devTaskService: devTaskService,
+		sqlEngine: sqlEngine,
 	}
 }
 
@@ -46,20 +43,6 @@ type ExecuteQueryResponse struct {
 	RowsAffected    int64                    `json:"rows_affected"`
 	ExecutionTimeMs int64                    `json:"execution_time_ms"`
 	GraphData       *plugin.GraphData        `json:"graph_data,omitempty"` // 图数据（仅图数据库引擎）
-}
-
-// SaveQueryTaskRequest 保存 查询任务请求
-type SaveQueryTaskRequest struct {
-	Name        string   `json:"name" binding:"required"`
-	DisplayName string   `json:"display_name"`
-	EngineID    uint     `json:"engine_id" binding:"required"`
-	Query       string   `json:"query" binding:"required"`
-	QueryType   string   `json:"query_type"` // sql, mql, dsl (从前端传递或自动推断)
-	Description string   `json:"description"`
-	Tags        []string `json:"tags"`
-	Schedule    string   `json:"schedule"`     // Cron 表达式
-	IsScheduled bool     `json:"is_scheduled"` // 是否启用调度
-	Timeout     int      `json:"timeout"`      // 超时时间（秒）
 }
 
 // GetSampleQuery 获取引擎的可执行样例查询（切换引擎时自动填充编辑器）
@@ -218,220 +201,4 @@ func (h *QueryHandler) ExecuteQuery(c *gin.Context) {
 			RowsAffected: rowsAffected,
 		})
 	}
-}
-
-// SaveQueryTask 保存 SQL 为任务
-// @Summary 保存 SQL 为任务 | Save SQL as task
-// @Tags Query
-// @Accept json
-// @Produce json
-// @Param body body SaveQueryTaskRequest true "保存请求 | Save request"
-// @Success 200 {object} models.DevTask "已保存的任务 | Saved task"
-// @Router /query/tasks [post]
-func (h *QueryHandler) SaveQueryTask(c *gin.Context) {
-	var req SaveQueryTaskRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	tenantID := c.GetUint("tenant_id")
-	userID := c.GetUint("user_id")
-
-	// 构建 DevTask 请求
-	// 如果前端没有传递query_type，默认设为"sql"
-	queryType := req.QueryType
-	if queryType == "" {
-		queryType = "sql"
-	}
-
-	createReq := &models.CreateDevTaskRequest{
-		Name:        req.Name,
-		DisplayName: req.DisplayName,
-		DevType:     "query",
-		Content: map[string]interface{}{
-			"query":      req.Query,
-			"query_type": queryType,
-		},
-		ExecutionConfig: map[string]interface{}{
-			"engine_id": req.EngineID,
-		},
-		Schedule:    req.Schedule,
-		Timeout:     req.Timeout,
-		Description: req.Description,
-		Tags:        req.Tags,
-	}
-
-	// 设置默认超时
-	if createReq.Timeout <= 0 {
-		createReq.Timeout = 300 // 5分钟
-	}
-
-	// 创建开发任务
-	item, err := h.devTaskService.CreateDevTask(createReq, tenantID, userID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "保存 查询任务失败",
-			"details": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, item)
-}
-
-// UpdateQueryTask 更新 查询任务
-// @Summary 更新查询任务 | Update query task
-// @Tags Query
-// @Accept json
-// @Produce json
-// @Param id path int true "任务ID | Task ID"
-// @Param body body SaveQueryTaskRequest true "更新请求 | Update request"
-// @Success 200 {object} models.DevTask "已更新的任务 | Updated task"
-// @Router /query/tasks/{id} [put]
-func (h *QueryHandler) UpdateQueryTask(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := strconv.ParseUint(idStr, 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
-		return
-	}
-
-	var req SaveQueryTaskRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	tenantID := c.GetUint("tenant_id")
-	userID := c.GetUint("user_id")
-
-	// 构建更新请求
-	updateReq := &models.UpdateDevTaskRequest{
-		Name:        req.Name,
-		DisplayName: req.DisplayName,
-		Content: map[string]interface{}{
-			"query":      req.Query,
-			"query_type": req.QueryType,
-		},
-		ExecutionConfig: map[string]interface{}{
-			"engine_id": req.EngineID,
-		},
-		Schedule:    req.Schedule,
-		Timeout:     req.Timeout,
-		Description: req.Description,
-		Tags:        req.Tags,
-	}
-
-	// 更新开发任务
-	item, err := h.devTaskService.UpdateDevTask(uint(id), updateReq, tenantID, userID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "更新 查询任务失败",
-			"details": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, item)
-}
-
-// GetQueryTask 获取 查询任务详情
-// @Summary 获取查询任务详情 | Get query task details
-// @Tags Query
-// @Produce json
-// @Param id path int true "任务ID | Task ID"
-// @Success 200 {object} models.DevTask "任务详情 | Task details"
-// @Router /query/tasks/{id} [get]
-func (h *QueryHandler) GetQueryTask(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := strconv.ParseUint(idStr, 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
-		return
-	}
-
-	tenantID := c.GetUint("tenant_id")
-
-	item, err := h.devTaskService.GetDevTask(uint(id), tenantID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-		return
-	}
-
-	// 验证是否为 SQL 类型
-	if item.DevType != "query" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "该任务不是 SQL 类型"})
-		return
-	}
-
-	c.JSON(http.StatusOK, item)
-}
-
-// ListQueryTasks 获取 查询任务列表
-// @Summary 获取查询任务列表 | List query tasks
-// @Tags Query
-// @Produce json
-// @Param page query int false "页码 | Page number"
-// @Param page_size query int false "每页数量 | Page size"
-// @Param status query string false "状态过滤 | Filter by status"
-// @Param keyword query string false "关键词搜索 | Keyword search"
-// @Success 200 {object} models.ListDevTasksResponse "任务列表 | Task list"
-// @Router /query/tasks [get]
-func (h *QueryHandler) ListQueryTasks(c *gin.Context) {
-	var req models.ListDevTasksRequest
-	if err := c.ShouldBindQuery(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	// 强制过滤 SQL 类型
-	req.DevType = "query"
-
-	tenantID := c.GetUint("tenant_id")
-
-	items, total, err := h.devTaskService.ListDevTasks(&req, tenantID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	// 设置默认分页参数
-	if req.Page == 0 {
-		req.Page = 1
-	}
-	if req.PageSize == 0 {
-		req.PageSize = 20
-	}
-
-	c.JSON(http.StatusOK, models.ListDevTasksResponse{
-		Items:    items,
-		Total:    total,
-		Page:     req.Page,
-		PageSize: req.PageSize,
-	})
-}
-
-// DeleteQueryTask 删除 查询任务
-// @Summary 删除查询任务 | Delete query task
-// @Tags Query
-// @Param id path int true "任务ID | Task ID"
-// @Success 200 {object} map[string]string "删除成功 | Deleted successfully"
-// @Router /query/tasks/{id} [delete]
-func (h *QueryHandler) DeleteQueryTask(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := strconv.ParseUint(idStr, 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
-		return
-	}
-
-	tenantID := c.GetUint("tenant_id")
-
-	if err := h.devTaskService.DeleteDevTask(uint(id), tenantID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
 }

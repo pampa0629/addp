@@ -6,8 +6,8 @@
     </div>
 
     <el-table :data="executions" style="width: 100%" v-loading="loading">
-      <el-table-column prop="id" :label="t('orchestrator.executionRecords.colExecutionId')" width="100"></el-table-column>
-      <el-table-column prop="orchestration.name" :label="t('orchestrator.executionRecords.colOrchestration')" width="200" show-overflow-tooltip></el-table-column>
+      <el-table-column prop="execution_id" :label="t('orchestrator.executionRecords.colExecutionId')" width="260" show-overflow-tooltip></el-table-column>
+      <el-table-column prop="source_task_name" :label="t('orchestrator.executionRecords.colOrchestration')" width="200" show-overflow-tooltip></el-table-column>
       <el-table-column :label="t('orchestrator.executionRecords.colStatus')" width="120">
         <template #default="scope">
           <el-tag :type="getStatusType(scope.row.status)">
@@ -26,7 +26,11 @@
           {{ formatTime(scope.row.completed_at) }}
         </template>
       </el-table-column>
-      <el-table-column prop="error_message" :label="t('orchestrator.executionRecords.colError')" show-overflow-tooltip></el-table-column>
+      <el-table-column :label="t('orchestrator.executionRecords.colError')" show-overflow-tooltip>
+        <template #default="scope">
+          {{ getErrorMessage(scope.row) }}
+        </template>
+      </el-table-column>
       <el-table-column :label="t('orchestrator.executionRecords.colActions')" width="180" fixed="right">
         <template #default="scope">
           <el-button size="small" @click="handleViewDetail(scope.row)">{{ t('orchestrator.executionRecords.detailBtn') }}</el-button>
@@ -48,9 +52,14 @@
     <!-- 执行详情对话框 -->
     <el-dialog v-model="detailVisible" :title="t('orchestrator.executionRecords.detailDialogTitle')" width="800px">
       <div v-if="currentExecution" class="execution-detail">
+        <div class="detail-actions">
+          <el-button size="small" type="primary" @click="openExecutionInMonitor(currentExecution.execution_id)">
+            {{ t('orchestrator.executionRecords.viewMonitorTreeBtn') }}
+          </el-button>
+        </div>
         <el-descriptions :column="2" border>
-          <el-descriptions-item :label="t('orchestrator.executionRecords.descExecutionId')">{{ currentExecution.id }}</el-descriptions-item>
-          <el-descriptions-item :label="t('orchestrator.executionRecords.descOrchestration')">{{ currentExecution.orchestration?.name || '-' }}</el-descriptions-item>
+          <el-descriptions-item :label="t('orchestrator.executionRecords.descExecutionId')">{{ currentExecution.execution_id }}</el-descriptions-item>
+          <el-descriptions-item :label="t('orchestrator.executionRecords.descOrchestration')">{{ currentExecution.source_task_name || '-' }}</el-descriptions-item>
           <el-descriptions-item :label="t('orchestrator.executionRecords.descStatus')">
             <el-tag :type="getStatusType(currentExecution.status)">
               {{ getStatusText(currentExecution.status) }}
@@ -66,17 +75,29 @@
             {{ currentExecution.current_step || '-' }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('orchestrator.executionRecords.descError')" :span="2">
-            {{ currentExecution.error_message || '-' }}
+            {{ getErrorMessage(currentExecution) }}
           </el-descriptions-item>
         </el-descriptions>
 
         <h4 style="margin-top: 20px">{{ t('orchestrator.executionRecords.stepResults') }}</h4>
-        <el-collapse v-if="currentExecution.step_results">
+        <el-collapse v-if="getStepResults(currentExecution)">
           <el-collapse-item
-            v-for="(result, stepId) in currentExecution.step_results"
+            v-for="(result, stepId) in getStepResults(currentExecution)"
             :key="stepId"
-            :title="`${stepId} - ${result.status}`"
           >
+            <template #title>
+              <span>{{ stepId }} - {{ result.status }}</span>
+              <el-button
+                v-if="getStepExecutionID(result)"
+                size="small"
+                text
+                type="primary"
+                class="step-monitor-link"
+                @click.stop="openExecutionInMonitor(getStepExecutionID(result))"
+              >
+                {{ t('orchestrator.executionRecords.viewChildExecutionBtn') }}
+              </el-button>
+            </template>
             <pre>{{ JSON.stringify(result, null, 2) }}</pre>
           </el-collapse-item>
         </el-collapse>
@@ -87,10 +108,11 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onBeforeUnmount, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
+import { openMonitorExecution } from '@addp/common-frontend'
 import orchestrationAPI from '../api/orchestration'
 
 const { t } = useI18n()
@@ -104,39 +126,61 @@ const total = ref(0)
 
 const detailVisible = ref(false)
 const currentExecution = ref(null)
+let refreshTimer = null
 
 onMounted(() => {
   loadExecutions()
+  refreshTimer = window.setInterval(() => loadExecutions(false), 5000)
 })
 
-async function loadExecutions() {
-  loading.value = true
+onBeforeUnmount(() => {
+  if (refreshTimer) {
+    window.clearInterval(refreshTimer)
+    refreshTimer = null
+  }
+})
+
+async function loadExecutions(showLoading = true) {
+  if (showLoading) {
+    loading.value = true
+  }
   try {
     const result = await orchestrationAPI.listAllExecutions({
-      limit: pageSize.value,
-      offset: (currentPage.value - 1) * pageSize.value
+      page: currentPage.value,
+      page_size: pageSize.value
     })
-    executions.value = result.items
+    executions.value = result.data || []
     total.value = result.total
   } catch (error) {
     ElMessage.error(t('orchestrator.executionRecords.loadFailed'))
   } finally {
-    loading.value = false
+    if (showLoading) {
+      loading.value = false
+    }
   }
 }
 
 async function handleViewDetail(row) {
   try {
-    currentExecution.value = await orchestrationAPI.getExecution(row.id)
+    const execution = await orchestrationAPI.getExecution(row.id)
+    currentExecution.value = execution
+    updateExecutionInList(execution)
     detailVisible.value = true
   } catch (error) {
     ElMessage.error(t('orchestrator.executionRecords.detailLoadFailed'))
   }
 }
 
+function updateExecutionInList(execution) {
+  const index = executions.value.findIndex(item => item.id === execution.id)
+  if (index >= 0) {
+    executions.value.splice(index, 1, execution)
+  }
+}
+
 function handleViewOrchestration(row) {
-  if (row.orchestration_id) {
-    router.push(`/orchestrations/${row.orchestration_id}/executions`)
+  if (row.source_task_id) {
+    router.push(`/orchestrations/${row.source_task_id}/executions`)
   }
 }
 
@@ -153,7 +197,9 @@ function getStatusType(status) {
     pending: 'info',
     running: 'warning',
     success: 'success',
-    failed: 'danger'
+    failed: 'danger',
+    timeout: 'danger',
+    cancelled: 'info'
   }
   return types[status] || 'info'
 }
@@ -163,7 +209,9 @@ function getStatusText(status) {
     pending: t('orchestrator.executionRecords.statusPending'),
     running: t('orchestrator.executionRecords.statusRunning'),
     success: t('orchestrator.executionRecords.statusSuccess'),
-    failed: t('orchestrator.executionRecords.statusFailed')
+    failed: t('orchestrator.executionRecords.statusFailed'),
+    timeout: t('orchestrator.executionRecords.statusTimeout'),
+    cancelled: t('orchestrator.executionRecords.statusCancelled')
   }
   return texts[status] || status
 }
@@ -171,6 +219,23 @@ function getStatusText(status) {
 function formatTime(time) {
   if (!time) return '-'
   return new Date(time).toLocaleString()
+}
+
+function getErrorMessage(execution) {
+  return execution?.error_details?.message || '-'
+}
+
+function getStepResults(execution) {
+  return execution?.metadata?.step_results || null
+}
+
+function getStepExecutionID(result) {
+  return result?.result?.execution_id || result?.execution_id || ''
+}
+
+async function openExecutionInMonitor(executionID) {
+  if (!executionID) return
+  await openMonitorExecution(executionID)
 }
 </script>
 
@@ -202,5 +267,15 @@ h2 {
   border-radius: 4px;
   overflow-x: auto;
   font-size: 12px;
+}
+
+.detail-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
+.step-monitor-link {
+  margin-left: 12px;
 }
 </style>

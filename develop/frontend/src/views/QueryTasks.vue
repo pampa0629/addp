@@ -68,8 +68,8 @@
 
         <el-table-column :label="t('develop.queryTasks.colDataSource')" width="150">
           <template #default="{ row }">
-            <el-tag v-if="row.engine_id" size="small" type="info">
-              {{ t('develop.queryTasks.resourceId', { id: row.engine_id }) }}
+            <el-tag v-if="getEngineID(row)" size="small" type="info">
+              {{ t('develop.queryTasks.resourceId', { id: getEngineID(row) }) }}
             </el-tag>
             <span v-else>-</span>
           </template>
@@ -189,7 +189,7 @@
       <SaveQueryDialog
         v-if="showEditDialog"
         v-model="showEditDialog"
-        :engine-id="editingTask?.engine_id"
+        :engine-id="getEngineID(editingTask)"
         :sql="editingTask?.content?.query || editingTask?.content?.sql || ''"
         @saved="handleUpdateTask"
       />
@@ -209,7 +209,7 @@ import {
   Edit,
   Delete
 } from '@element-plus/icons-vue'
-import { ScheduleDisplay } from '@addp/common-frontend'
+import { ScheduleDisplay, openMonitorExecution } from '@addp/common-frontend'
 import SaveQueryDialog from '../components/SaveQueryDialog.vue'
 import { listQueryTasks, deleteQueryTask, updateQueryTask } from '../api/query.js'
 import { executeDevTask } from '../api/devTask.js'
@@ -236,6 +236,8 @@ const statusMap = computed(() => ({
   inactive: t('develop.queryTasks.statusInactive'),
   archived: t('develop.queryTasks.statusArchived')
 }))
+
+const getEngineID = (task) => task?.execution_config?.engine_id ?? null
 
 // 加载任务列表
 const loadTasks = async () => {
@@ -285,10 +287,9 @@ const handleRowClick = (row) => {
 // 执行任务
 const handleExecute = async (task) => {
   try {
-    await executeDevTask(task.id)
+    const execution = await executeDevTask(task.id)
     ElMessage.success(t('develop.queryTasks.executeSubmitted'))
-    // 可选：跳转到执行监控页面
-    // router.push(`/executions/${executionId}`)
+    await openMonitorExecution(execution.execution_id)
   } catch (error) {
     console.error('执行任务失败:', error)
     ElMessage.error(t('develop.queryTasks.executeFailed') + (error.response?.data?.error || error.message))

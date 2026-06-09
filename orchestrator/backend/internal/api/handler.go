@@ -77,6 +77,7 @@ func (h *OrchestrationHandler) Create(c *gin.Context) {
 	}
 
 	// TODO: 从 JWT 中提取 tenant_id
+	req.ID = 0
 	req.TenantID = 1
 
 	if err := models.ValidateSteps(req.Steps); err != nil {
@@ -84,6 +85,10 @@ func (h *OrchestrationHandler) Create(c *gin.Context) {
 		return
 	}
 	if err := h.taskProviderRegistry.ValidateStepTaskTypes(c.Request.Context(), req.Steps); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := service.ValidateNoRecursiveOrchestrationReferences(h.orchRepo, req.ID, req.TenantID, req.Steps); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -188,6 +193,10 @@ func (h *OrchestrationHandler) Update(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if err := service.ValidateNoRecursiveOrchestrationReferences(h.orchRepo, req.ID, req.TenantID, req.Steps); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	if err := h.orchRepo.Update(&req); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -260,7 +269,11 @@ func (h *OrchestrationHandler) Execute(c *gin.Context) {
 
 	h.executor.ExecuteAsync(uint(execution.ID))
 
-	c.JSON(http.StatusAccepted, gin.H{"execution_id": execution.ID})
+	c.JSON(http.StatusAccepted, gin.H{
+		"id":           execution.ID,
+		"execution_id": execution.ExecutionID,
+		"status":       execution.Status,
+	})
 }
 
 // ListExecutions 列出编排的执行记录

@@ -117,6 +117,37 @@ func (h *ExecutionHandler) GetExecution(c *gin.Context) {
 	c.JSON(http.StatusOK, execution)
 }
 
+// GetExecutionByExecutionID 获取单条执行记录
+// @Summary 按 execution_id 获取执行记录详情 | Get execution record detail by execution_id
+// @Tags Monitor
+// @Produce json
+// @Param execution_id path string true "执行 UUID | Execution UUID"
+// @Success 200 {object} map[string]interface{}
+// @Router /executions/by-execution-id/{execution_id} [get]
+// @Security BearerAuth
+func (h *ExecutionHandler) GetExecutionByExecutionID(c *gin.Context) {
+	tenantIDRaw, exists := c.Get("tenant_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": commoni18n.T(c, moni18n.MsgTenantNotFound)})
+		return
+	}
+	tenantID := int(tenantIDRaw.(uint))
+
+	executionID := c.Param("execution_id")
+	if executionID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, moni18n.MsgInvalidExecutionID)})
+		return
+	}
+
+	execution, err := h.queryService.GetExecutionByExecutionID(c.Request.Context(), executionID, tenantID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, moni18n.MsgExecutionNotFound)})
+		return
+	}
+
+	c.JSON(http.StatusOK, execution)
+}
+
 // GetExecutionTree 获取执行记录树
 // @Summary 获取执行记录树 | Get execution tree
 // @Tags Monitor
@@ -140,6 +171,37 @@ func (h *ExecutionHandler) GetExecutionTree(c *gin.Context) {
 	}
 
 	tree, err := h.queryService.GetExecutionTree(c.Request.Context(), id, tenantID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, moni18n.MsgExecutionNotFound)})
+		return
+	}
+
+	c.JSON(http.StatusOK, tree)
+}
+
+// GetExecutionTreeByExecutionID 获取执行记录树
+// @Summary 按 execution_id 获取执行记录树 | Get execution tree by execution_id
+// @Tags Monitor
+// @Produce json
+// @Param execution_id path string true "执行 UUID | Execution UUID"
+// @Success 200 {object} service.ExecutionTreeNode
+// @Router /executions/by-execution-id/{execution_id}/tree [get]
+// @Security BearerAuth
+func (h *ExecutionHandler) GetExecutionTreeByExecutionID(c *gin.Context) {
+	tenantIDRaw, exists := c.Get("tenant_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": commoni18n.T(c, moni18n.MsgTenantNotFound)})
+		return
+	}
+	tenantID := int(tenantIDRaw.(uint))
+
+	executionID := c.Param("execution_id")
+	if executionID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, moni18n.MsgInvalidExecutionID)})
+		return
+	}
+
+	tree, err := h.queryService.GetExecutionTreeByExecutionID(c.Request.Context(), executionID, tenantID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, moni18n.MsgExecutionNotFound)})
 		return

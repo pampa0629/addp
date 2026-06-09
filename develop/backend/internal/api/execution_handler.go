@@ -13,14 +13,14 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// DevExecutionHandler 执行记录API处理器
-type DevExecutionHandler struct {
+// ExecutionHandler 执行记录API处理器
+type ExecutionHandler struct {
 	devExecutor *service.DevExecutor
 }
 
-// NewDevExecutionHandler 创建执行记录处理器
-func NewDevExecutionHandler(devExecutor *service.DevExecutor) *DevExecutionHandler {
-	return &DevExecutionHandler{
+// NewExecutionHandler 创建执行记录处理器
+func NewExecutionHandler(devExecutor *service.DevExecutor) *ExecutionHandler {
+	return &ExecutionHandler{
 		devExecutor: devExecutor,
 	}
 }
@@ -34,7 +34,7 @@ func NewDevExecutionHandler(devExecutor *service.DevExecutor) *DevExecutionHandl
 // @Param body body map[string]interface{} false "执行参数（可选）| Execution parameters (optional)"
 // @Success 200 {object} map[string]string "执行已启动 | Execution started"
 // @Router /task-definitions/{id}/execute [post]
-func (h *DevExecutionHandler) ExecuteDevTask(c *gin.Context) {
+func (h *ExecutionHandler) ExecuteDevTask(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
@@ -82,7 +82,7 @@ func (h *DevExecutionHandler) ExecuteDevTask(c *gin.Context) {
 // @Param body body models.CreateExecutionRequest true "执行请求 | Execution request"
 // @Success 200 {object} map[string]string "执行已启动 | Execution started"
 // @Router /executions [post]
-func (h *DevExecutionHandler) ExecuteContent(c *gin.Context) {
+func (h *ExecutionHandler) ExecuteContent(c *gin.Context) {
 	var req models.CreateExecutionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -121,7 +121,7 @@ func (h *DevExecutionHandler) ExecuteContent(c *gin.Context) {
 // @Param id path string true "执行ID（UUID）| Execution ID (UUID)"
 // @Success 200 {object} models.ExecutionWithDevTask "执行详情 | Execution details"
 // @Router /executions/{id} [get]
-func (h *DevExecutionHandler) GetExecution(c *gin.Context) {
+func (h *ExecutionHandler) GetExecution(c *gin.Context) {
 	executionID := c.Param("id")
 	tenantID := c.GetUint("tenant_id")
 
@@ -148,7 +148,7 @@ func (h *DevExecutionHandler) GetExecution(c *gin.Context) {
 // @Param end_date query string false "结束日期 YYYY-MM-DD | End date YYYY-MM-DD"
 // @Success 200 {object} models.ListExecutionsResponse "执行列表 | Execution list"
 // @Router /executions [get]
-func (h *DevExecutionHandler) ListExecutions(c *gin.Context) {
+func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
 	var req models.ListExecutionsRequest
 	if err := c.ShouldBindQuery(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -185,7 +185,7 @@ func (h *DevExecutionHandler) ListExecutions(c *gin.Context) {
 // @Param id path string true "执行ID（UUID）| Execution ID (UUID)"
 // @Success 200 {object} map[string]string "重试已启动 | Retry started"
 // @Router /executions/{id}/retry [post]
-func (h *DevExecutionHandler) RetryExecution(c *gin.Context) {
+func (h *ExecutionHandler) RetryExecution(c *gin.Context) {
 	executionID := c.Param("id")
 	tenantID := c.GetUint("tenant_id")
 	userID := c.GetUint("user_id")
@@ -211,7 +211,7 @@ func (h *DevExecutionHandler) RetryExecution(c *gin.Context) {
 // @Param end_date query string false "结束日期 YYYY-MM-DD | End date YYYY-MM-DD"
 // @Success 200 {object} models.ExecutionStatistics "执行统计 | Execution statistics"
 // @Router /executions/statistics [get]
-func (h *DevExecutionHandler) GetExecutionStatistics(c *gin.Context) {
+func (h *ExecutionHandler) GetExecutionStatistics(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 
 	sourceTaskID := c.Query("source_task_id")
@@ -234,7 +234,7 @@ func (h *DevExecutionHandler) GetExecutionStatistics(c *gin.Context) {
 // @Param id path string true "执行ID（UUID）| Execution ID (UUID)"
 // @Success 200 {object} map[string]interface{} "执行日志 | Execution logs"
 // @Router /executions/{id}/logs [get]
-func (h *DevExecutionHandler) GetExecutionLogs(c *gin.Context) {
+func (h *ExecutionHandler) GetExecutionLogs(c *gin.Context) {
 	executionID := c.Param("id")
 
 	// 暂时返回占位响应
@@ -264,7 +264,7 @@ type providerExecuteDevRequest struct {
 // @Failure 400 {object} map[string]interface{} "参数错误 | Bad request"
 // @Failure 500 {object} map[string]interface{} "服务器错误 | Server error"
 // @Router /tasks/{task_type}/{id}/execute [post]
-func (h *DevExecutionHandler) ProviderExecuteDevTask(c *gin.Context) {
+func (h *ExecutionHandler) ProviderExecuteDevTask(c *gin.Context) {
 	taskType := c.Param("task_type")
 	if !isDevelopTaskType(taskType) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported task_type: " + taskType})

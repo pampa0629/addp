@@ -71,10 +71,7 @@ func (e *DevExecutor) ExecuteDevTask(
 	// 提取输入参数
 	var inputs commonModels.JSONMap
 	if devTask.Content != nil {
-		// 尝试提取 inputs 或 input_data 字段
 		if inputData, ok := devTask.Content["inputs"].(map[string]interface{}); ok {
-			inputs = inputData
-		} else if inputData, ok := devTask.Content["input_data"].(map[string]interface{}); ok {
 			inputs = inputData
 		}
 	}
@@ -139,8 +136,6 @@ func (e *DevExecutor) ExecuteContent(
 	var inputs commonModels.JSONMap
 	if content != nil {
 		if inputData, ok := content["inputs"].(map[string]interface{}); ok {
-			inputs = inputData
-		} else if inputData, ok := content["input_data"].(map[string]interface{}); ok {
 			inputs = inputData
 		}
 	}
@@ -327,18 +322,11 @@ func (e *DevExecutor) executeWorkflow(ctx context.Context, devTask *models.DevTa
 	// 解析工作流定义
 	workflowDef, ok := devTask.Content["workflow_definition"].(map[string]interface{})
 	if !ok {
-		// 向后兼容：尝试旧的字段名
-		workflowDef, ok = devTask.Content["workflow_def"].(map[string]interface{})
-		if !ok {
-			return nil, "无效的工作流定义"
-		}
+		return nil, "无效的工作流定义"
 	}
 
 	// 解析输入数据（可选）
 	inputData, _ := devTask.Content["inputs"].(map[string]interface{})
-	if inputData == nil {
-		inputData, _ = devTask.Content["input_data"].(map[string]interface{})
-	}
 
 	// 设置超时
 	timeout := devTask.Timeout
@@ -393,10 +381,6 @@ func (e *DevExecutor) executeQuery(ctx context.Context, devTask *models.DevTask,
 	case "dsl":
 		return nil, "Elasticsearch 查询功能尚未实现", nil
 	default:
-		// 如果没有指定query_type，默认当作SQL处理（向后兼容）
-		if queryType == "" {
-			return e.executeSQL(ctx, devTask, executionID, tenantID)
-		}
 		return nil, fmt.Sprintf("不支持的查询类型: %s", queryType), nil
 	}
 }
@@ -414,10 +398,7 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, e
 	// 解析SQL内容
 	sqlContent, ok := devTask.Content["query"].(string)
 	if !ok {
-		sqlContent, ok = devTask.Content["sql"].(string)
-		if !ok {
-			return nil, "无效的SQL内容", nil
-		}
+		return nil, "无效的查询内容", nil
 	}
 
 	// 设置超时

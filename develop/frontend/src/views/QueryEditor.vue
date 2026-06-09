@@ -44,11 +44,11 @@
 
         <el-button
           type="primary"
-          @click="showSaveDialog = true"
+          @click="handlePersistQueryTask"
           :disabled="selectedEngineId == null || !queryContent"
         >
           <el-icon><FolderAdd /></el-icon>
-          {{ t('develop.query.saveAsTask') }}
+          {{ currentTaskId ? t('develop.query.updateTask') : t('develop.query.saveAsTask') }}
         </el-button>
 
         <el-button
@@ -155,7 +155,7 @@ import MonacoEditor from '../components/MonacoEditor.vue'
 import QueryResult from '../components/QueryResult.vue'
 import SaveQueryDialog from '../components/SaveQueryDialog.vue'
 import { GraphResultView } from '@addp/common-frontend/graph'
-import { executeQuery as executeAPI, testConnection, saveQueryTask, getSampleQuery } from '../api/query.js'
+import { executeQuery as executeAPI, testConnection, saveQueryTask, updateQueryTask, getSampleQuery } from '../api/query.js'
 import { executeFederatedQuery, testDuckDBConnection, getDuckDBSampleQuery } from '../api/duckdb.js'
 import { getDevTask } from '../api/devTask.js'
 import client from '../api/client.js'
@@ -184,6 +184,7 @@ const isDuckDB = computed(() => {
 // 状态
 const currentTaskId = ref(null)
 const currentTaskName = ref('')
+const currentTask = ref(null)
 const selectedEngineId = ref(null)
 const engines = ref([])
 const queryContent = ref('')
@@ -380,6 +381,32 @@ const handleSaveTask = async (taskData) => {
   }
 }
 
+const handlePersistQueryTask = async () => {
+  if (!currentTaskId.value) {
+    showSaveDialog.value = true
+    return
+  }
+
+  try {
+    const task = currentTask.value || {}
+    await updateQueryTask(currentTaskId.value, {
+      name: task.name || currentTaskName.value,
+      display_name: task.display_name || currentTaskName.value,
+      engine_id: selectedEngineId.value,
+      query: queryContent.value,
+      query_type: task.content?.query_type || 'sql',
+      description: task.description,
+      tags: task.tags || [],
+      timeout: task.timeout,
+      schedule: task.schedule
+    })
+    ElMessage.success(t('develop.query.updateTaskSuccess'))
+  } catch (error) {
+    console.error('更新查询任务失败:', error)
+    ElMessage.error(t('develop.query.updateTaskFailed') + (error.response?.data?.error || error.message))
+  }
+}
+
 // 加载已有任务
 const loadTask = async (taskId) => {
   try {
@@ -388,14 +415,16 @@ const loadTask = async (taskId) => {
     // 设置当前任务信息
     currentTaskId.value = task.id
     currentTaskName.value = task.name
+    currentTask.value = task
 
     // 加载 SQL 内容
-    if (task.content && task.content.sql) {
-      queryContent.value = task.content.sql
+    if (task.content && task.content.query) {
+      queryContent.value = task.content.query
 
       // 如果有关联资源,也设置资源ID
-      if (task.engine_id) {
-        selectedEngineId.value = task.engine_id
+      const engineID = task.execution_config?.engine_id
+      if (engineID) {
+        selectedEngineId.value = engineID
       }
 
       ElMessage.success(t('develop.query.taskLoaded', { name: task.name }))
@@ -413,11 +442,18 @@ onMounted(async () => {
   await loadEngines()
 
   // 检查是否有任务 ID
-  const taskId = route.query.taskId
+  const taskId = firstQueryValue(route.query.id || route.query.taskId)
   if (taskId) {
     await loadTask(taskId)
   }
 })
+
+function firstQueryValue(value) {
+  if (Array.isArray(value)) {
+    return value[0] || ''
+  }
+  return value || ''
+}
 </script>
 
 <style scoped>

@@ -79,11 +79,10 @@ graph TB
 | `trigger_type` | string | `manual` / `scheduled` |
 | `status` | string | 执行状态 (pending/running/success/failed/cancelled) |
 | `started_at` | timestamp | 开始时间 |
-| `finished_at` | timestamp | 结束时间 |
-| `duration` | int | 执行时长 (秒) |
-| `result` | jsonb | 执行结果 (成功时的输出数据) |
-| `error` | jsonb | 错误信息 (失败时的错误详情) |
-| `metadata` | jsonb | 扩展元数据 (任务参数、执行上下文等) |
+| `completed_at` | timestamp | 完成时间 |
+| `execution_time_ms` | bigint | 执行时长 (毫秒) |
+| `metadata` | jsonb | 结果摘要、步骤结果、模块扩展信息 |
+| `error_details` | jsonb | 错误类型、消息和诊断信息 |
 
 ---
 
@@ -110,35 +109,35 @@ stateDiagram-v2
     note right of running
         任务正在执行
         started_at = 当前时间
-        finished_at = null
+        completed_at = null
     end note
 
     note right of success
         任务执行成功
-        finished_at = 完成时间
-        result = 输出数据
+        completed_at = 完成时间
+        metadata = 结果摘要
     end note
 
     note right of failed
         任务执行失败
-        finished_at = 失败时间
-        error = 错误信息
+        completed_at = 失败时间
+        error_details = 错误信息
     end note
 
     note right of cancelled
         任务被手动取消
-        finished_at = 取消时间
+        completed_at = 取消时间
     end note
 ```
 
 ### 状态说明
 
-| 状态 | 说明 | started_at | finished_at | result/error |
+| 状态 | 说明 | started_at | completed_at | metadata/error_details |
 |------|------|-----------|------------|-------------|
 | `pending` | 任务已创建,等待执行 | null | null | null |
 | `running` | 任务正在执行 | 开始时间 | null | null |
-| `success` | 任务执行成功 | 开始时间 | 完成时间 | result |
-| `failed` | 任务执行失败 | 开始时间 | 失败时间 | error |
+| `success` | 任务执行成功 | 开始时间 | 完成时间 | metadata |
+| `failed` | 任务执行失败 | 开始时间 | 失败时间 | error_details |
 | `cancelled` | 任务被手动取消 | 开始时间(可选) | 取消时间 | null |
 
 ---

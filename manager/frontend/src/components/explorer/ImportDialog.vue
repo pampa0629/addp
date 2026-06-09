@@ -78,6 +78,7 @@ import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
+import { openMonitorExecution } from '@addp/common-frontend'
 import { importData, getTransferExecutionStatus } from '@/api/import'
 
 const { t } = useI18n()
@@ -173,6 +174,7 @@ const startPolling = () => {
           ElMessage.success(t('manager.import.importSuccessMsg'))
           emit('success')
           handleClose()
+          void openMonitorExecution(transferExecutionId.value)
         }, 1500)
       } else if (execution.status === 'failed') {
         progressStatus.value = 'exception'

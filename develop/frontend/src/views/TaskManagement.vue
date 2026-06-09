@@ -288,6 +288,7 @@ import {
   executeDevTask,
   listEngines
 } from '@/api/devTask'
+import { openMonitorExecution } from '@addp/common-frontend'
 
 const router = useRouter()
 const route = useRoute()
@@ -507,10 +508,11 @@ const confirmExecute = async () => {
       return
     }
 
-    await executeDevTask(currentTask.value.id, inputs)
+    const execution = await executeDevTask(currentTask.value.id, inputs)
     ElMessage.success(t('develop.taskManagement.executeSubmitted'))
     executeDialogVisible.value = false
     loadTasks() // 刷新列表
+    await openMonitorExecution(execution.execution_id)
   } catch (error) {
     console.error('执行任务失败:', error)
     ElMessage.error(t('develop.taskManagement.executeFailed') + (error.response?.data?.error || error.message))

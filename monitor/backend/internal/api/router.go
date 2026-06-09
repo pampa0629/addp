@@ -67,6 +67,8 @@ func SetupRouter(
 		api.GET("/executions/stats", statisticsHandler.GetStatistics)
 		api.GET("/executions/trend", statisticsHandler.GetTrendData)
 
+		api.GET("/executions/by-execution-id/:execution_id/tree", executionHandler.GetExecutionTreeByExecutionID)
+		api.GET("/executions/by-execution-id/:execution_id", executionHandler.GetExecutionByExecutionID)
 		api.GET("/executions/:id/tree", executionHandler.GetExecutionTree)
 		api.GET("/executions/:id", executionHandler.GetExecution)
 

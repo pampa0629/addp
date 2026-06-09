@@ -124,6 +124,8 @@ bash scripts/dev/start.sh -system
 ./scripts/dev/restart.sh -<模块名>
 ```
 
+在 Codex 等命令结束后会回收后台进程的托管执行环境中，需要保持服务存活时使用 `bash scripts/dev/keepalive.sh restart -<模块名>`；原因和边界见 `docs/guide/addp常见故障排查.md` 的“Codex 等托管命令环境中 restart.sh 退出后服务立刻不可用”。
+
 如果修改了 `common/` 中的代码，使用：
 
 ```bash

@@ -51,7 +51,121 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to drop legacy develop.dev_items: %w", err)
 	}
 
+	if err := normalizeDevTaskContent(db); err != nil {
+		return nil, err
+	}
+
 	log.Println("✅ Database connected successfully (AutoMigrate 完成)")
 
 	return db, nil
+}
+
+func normalizeDevTaskContent(db *gorm.DB) error {
+	statements := []struct {
+		name string
+		sql  string
+	}{
+		{
+			name: "normalize notebook dev_type",
+			sql:  "UPDATE develop.dev_tasks SET dev_type = 'script', updated_at = NOW() WHERE dev_type = 'notebook'",
+		},
+		{
+			name: "normalize notebook executions task_type",
+			sql:  "UPDATE common.task_executions SET task_type = 'script', updated_at = NOW() WHERE module = 'develop' AND task_type = 'notebook'",
+		},
+		{
+			name: "normalize query content.sql",
+			sql: `
+UPDATE develop.dev_tasks
+SET content = jsonb_set(content - 'sql', '{query}', content->'sql', true),
+    updated_at = NOW()
+WHERE dev_type = 'query'
+  AND content ? 'sql'
+  AND NOT content ? 'query'`,
+		},
+		{
+			name: "remove query content.sql",
+			sql: `
+UPDATE develop.dev_tasks
+SET content = content - 'sql',
+    updated_at = NOW()
+WHERE dev_type = 'query'
+  AND content ? 'sql'`,
+		},
+		{
+			name: "default query_type",
+			sql: `
+UPDATE develop.dev_tasks
+SET content = jsonb_set(content, '{query_type}', '"sql"'::jsonb, true),
+    updated_at = NOW()
+WHERE dev_type = 'query'
+  AND NOT content ? 'query_type'`,
+		},
+		{
+			name: "normalize workflow_def",
+			sql: `
+UPDATE develop.dev_tasks
+SET content = jsonb_set(content - 'workflow_def', '{workflow_definition}', content->'workflow_def', true),
+    updated_at = NOW()
+WHERE dev_type = 'workflow'
+  AND content ? 'workflow_def'
+  AND NOT content ? 'workflow_definition'`,
+		},
+		{
+			name: "normalize workflow top-level graph",
+			sql: `
+UPDATE develop.dev_tasks
+SET content = jsonb_set(
+        content - 'nodes' - 'edges',
+        '{workflow_definition}',
+        jsonb_build_object(
+            'nodes', COALESCE(content->'nodes', '[]'::jsonb),
+            'edges', COALESCE(content->'edges', '[]'::jsonb)
+        ),
+        true
+    ),
+    updated_at = NOW()
+WHERE dev_type = 'workflow'
+  AND NOT content ? 'workflow_definition'
+  AND (content ? 'nodes' OR content ? 'edges')`,
+		},
+		{
+			name: "remove workflow_def",
+			sql: `
+UPDATE develop.dev_tasks
+SET content = content - 'workflow_def',
+    updated_at = NOW()
+WHERE dev_type = 'workflow'
+  AND content ? 'workflow_def'`,
+		},
+		{
+			name: "normalize input_data",
+			sql: `
+UPDATE develop.dev_tasks
+SET content = jsonb_set(content - 'input_data', '{inputs}', content->'input_data', true),
+    updated_at = NOW()
+WHERE content ? 'input_data'
+  AND NOT content ? 'inputs'`,
+		},
+		{
+			name: "remove input_data",
+			sql: `
+UPDATE develop.dev_tasks
+SET content = content - 'input_data',
+    updated_at = NOW()
+WHERE content ? 'input_data'`,
+		},
+		{
+			name: "drop unsupported dev_type",
+			sql:  "DELETE FROM develop.dev_tasks WHERE dev_type NOT IN ('query', 'workflow', 'script')",
+		},
+	}
+
+	for _, stmt := range statements {
+		if err := db.Exec(stmt.sql).Error; err != nil {
+			return fmt.Errorf("failed to %s: %w", stmt.name, err)
+		}
+	}
+
+	return nil
 }

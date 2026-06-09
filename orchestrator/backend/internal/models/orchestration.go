@@ -55,7 +55,7 @@ type Step struct {
 
 	// 任务引用（引用已有的 TaskProvider 任务定义）
 	Provider string `json:"provider,omitempty"`  // "meta" | "transfer" | "develop" | "manager"
-	TaskType string `json:"task_type,omitempty"` // "scan" | "transfer" | "mvt_generation" 等
+	TaskType string `json:"task_type,omitempty"` // "scan" | "import" | "workflow" | "mvt_generation" 等
 	TaskID   uint   `json:"task_id,omitempty"`   // 具体任务定义 ID
 
 	Parameters map[string]interface{} `json:"parameters"` // 请求参数

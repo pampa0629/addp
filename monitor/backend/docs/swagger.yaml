@@ -233,6 +233,47 @@ paths:
       summary: 获取执行记录树 | Get execution tree
       tags:
       - Monitor
+  /executions/by-execution-id/{execution_id}:
+    get:
+      parameters:
+      - description: 执行 UUID | Execution UUID
+        in: path
+        name: execution_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 按 execution_id 获取执行记录详情 | Get execution record detail by execution_id
+      tags:
+      - Monitor
+  /executions/by-execution-id/{execution_id}/tree:
+    get:
+      parameters:
+      - description: 执行 UUID | Execution UUID
+        in: path
+        name: execution_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_service.ExecutionTreeNode'
+      security:
+      - BearerAuth: []
+      summary: 按 execution_id 获取执行记录树 | Get execution tree by execution_id
+      tags:
+      - Monitor
   /executions/stats:
     get:
       parameters:

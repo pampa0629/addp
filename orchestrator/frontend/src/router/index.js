@@ -44,6 +44,14 @@ const routes = [
         meta: { requiresAuth: true, title: '编辑编排任务' }
       },
       {
+        path: 'orchestrations/:id',
+        redirect: to => ({
+          name: 'OrchestrationEdit',
+          params: { id: to.params.id },
+          query: to.query
+        })
+      },
+      {
         path: 'orchestrations/:id/executions',
         name: 'ExecutionList',
         component: () => import('../views/ExecutionList.vue'),

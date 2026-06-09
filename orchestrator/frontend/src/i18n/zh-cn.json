@@ -82,6 +82,8 @@
       "colError": "错误信息",
       "colActions": "操作",
       "detailBtn": "详情",
+      "viewMonitorTreeBtn": "查看监控链路",
+      "viewChildExecutionBtn": "查看子执行",
       "detailDialogTitle": "执行详情",
       "descExecutionId": "执行ID",
       "descStatus": "状态",
@@ -96,7 +98,9 @@
       "statusPending": "等待中",
       "statusRunning": "运行中",
       "statusSuccess": "成功",
-      "statusFailed": "失败"
+      "statusFailed": "失败",
+      "statusTimeout": "超时",
+      "statusCancelled": "已取消"
     },
     "executionRecords": {
       "title": "执行记录",
@@ -111,6 +115,8 @@
       "colActions": "操作",
       "detailBtn": "详情",
       "viewOrchestrationBtn": "查看编排",
+      "viewMonitorTreeBtn": "查看监控链路",
+      "viewChildExecutionBtn": "查看子执行",
       "detailDialogTitle": "执行详情",
       "descExecutionId": "执行ID",
       "descOrchestration": "编排任务",
@@ -126,7 +132,9 @@
       "statusPending": "等待中",
       "statusRunning": "运行中",
       "statusSuccess": "成功",
-      "statusFailed": "失败"
+      "statusFailed": "失败",
+      "statusTimeout": "超时",
+      "statusCancelled": "已取消"
     },
     "taskPanel": {
       "title": "任务库",

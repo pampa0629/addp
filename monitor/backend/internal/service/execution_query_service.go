@@ -90,9 +90,24 @@ func (s *ExecutionQueryService) GetExecution(ctx context.Context, id int64, tena
 	return s.repo.GetByID(ctx, id, tenantID)
 }
 
+// GetExecutionByExecutionID 根据全局 execution_id 查询执行记录。
+func (s *ExecutionQueryService) GetExecutionByExecutionID(ctx context.Context, executionID string, tenantID int) (*commonExecution.TaskExecution, error) {
+	return s.repo.GetByExecutionID(ctx, executionID, tenantID)
+}
+
 // GetExecutionTree 获取执行记录及其子执行树
 func (s *ExecutionQueryService) GetExecutionTree(ctx context.Context, id int64, tenantID int) (*ExecutionTreeNode, error) {
 	root, err := s.repo.GetByID(ctx, id, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	visited := map[string]struct{}{}
+	return s.buildExecutionTree(ctx, root, tenantID, 0, visited)
+}
+
+// GetExecutionTreeByExecutionID 根据全局 execution_id 获取执行记录及其子执行树。
+func (s *ExecutionQueryService) GetExecutionTreeByExecutionID(ctx context.Context, executionID string, tenantID int) (*ExecutionTreeNode, error) {
+	root, err := s.repo.GetByExecutionID(ctx, executionID, tenantID)
 	if err != nil {
 		return nil, err
 	}

@@ -133,6 +133,7 @@ const loadingTrend = ref(false)
 // 图表实例
 const trendChart = ref(null)
 let chartInstance = null
+let refreshTimer = null
 
 // 计算 echarts 主题
 const echartsTheme = computed(() => {
@@ -299,6 +300,13 @@ async function loadRecentExecutions() {
   }
 }
 
+async function refreshExecutionSummary() {
+  await Promise.all([
+    loadStatistics(),
+    loadRecentExecutions()
+  ])
+}
+
 // 查看执行详情
 function handleViewExecution(row) {
   ElMessage.info(t('monitor.dashboard.view_execution', { id: row.id }))
@@ -318,6 +326,7 @@ onMounted(async () => {
     loadTrendData(),
     loadRecentExecutions()
   ])
+  refreshTimer = window.setInterval(refreshExecutionSummary, 5000)
 })
 
 // 监听主题变化，重新渲染图表
@@ -329,6 +338,10 @@ watch(echartsTheme, () => {
 
 // 清理图表实例
 onBeforeUnmount(() => {
+  if (refreshTimer) {
+    window.clearInterval(refreshTimer)
+    refreshTimer = null
+  }
   if (chartInstance) {
     chartInstance.dispose()
     chartInstance = null

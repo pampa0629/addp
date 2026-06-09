@@ -375,13 +375,15 @@ import {
   Download, Delete, TopRight, QuestionFilled
 } from '@element-plus/icons-vue'
 import { notebookAPI } from '@/api/notebook'
-import { deleteDevTask, executeDevTask } from '@/api/devTask'
+import { deleteDevTask, executeDevTask, getDevTask } from '@/api/devTask'
 import { listEngines } from '@/api/engines'
 import { getVenvStatus, initVenv } from '@/api/jupyter'
-import { useRouter } from 'vue-router'
+import { openMonitorExecution } from '@addp/common-frontend'
+import { useRoute, useRouter } from 'vue-router'
 import dayjs from 'dayjs'
 
 const router = useRouter()
+const route = useRoute()
 const { t } = useI18n()
 
 // 列表相关
@@ -495,6 +497,31 @@ const loadDataSources = async () => {
 // 选择 Notebook
 const selectNotebook = (notebook) => {
   currentNotebook.value = notebook
+}
+
+const selectNotebookByID = async (id) => {
+  if (!id) return
+
+  const existing = notebooks.value.find(item => String(item.id) === String(id))
+  if (existing) {
+    selectNotebook(existing)
+    return
+  }
+
+  try {
+    const task = await getDevTask(id)
+    if (task.dev_type !== 'script') {
+      ElMessage.warning(t('develop.notebook.taskNotScript'))
+      return
+    }
+    currentNotebook.value = task
+    if (!notebooks.value.some(item => String(item.id) === String(task.id))) {
+      notebooks.value.unshift(task)
+    }
+  } catch (error) {
+    console.error('加载脚本任务失败:', error)
+    ElMessage.error(error.response?.data?.error || t('develop.notebook.loadTaskFailed'))
+  }
 }
 
 // 在 Jupyter Lab 中打开
@@ -682,11 +709,7 @@ const confirmExecute = async () => {
     ElMessage.success(t('develop.notebook.executeSubmitted', { id: response.execution_id }))
     executeDialogVisible.value = false
 
-    // 跳转到执行监控页面
-    router.push({
-      path: '/executions',
-      query: { execution_id: response.execution_id }
-    })
+    await openMonitorExecution(response.execution_id)
   } catch (error) {
     console.error('执行失败:', error)
     ElMessage.error(error.response?.data?.error || t('develop.notebook.executeFailed'))
@@ -820,7 +843,21 @@ onMounted(async () => {
 
   await loadNotebooks()
   await loadDataSources()
+
+  const taskId = firstQueryValue(route.query.id || route.query.taskId)
+  if (taskId) {
+    await selectNotebookByID(taskId)
+  } else if (firstQueryValue(route.query.action) === 'create') {
+    showCreateDialog()
+  }
 })
+
+function firstQueryValue(value) {
+  if (Array.isArray(value)) {
+    return value[0] || ''
+  }
+  return value || ''
+}
 </script>
 
 <style scoped>
