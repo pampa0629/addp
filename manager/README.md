@@ -13,6 +13,7 @@
 - **数据预览**: 插件化架构，支持多种格式（CSV、JSON、Parquet、Shapefile、图片等）
 - **空间数据可视化**: MVT 矢量瓦片服务 + 三层缓存（PostgreSQL + Redis + 实时生成）
 - **数据检索**: 基于 Meilisearch + 向量数据库的混合检索（全文检索 + 语义检索）
+- **向量化**: 对可支持的数据项生成向量表示，支持资源树一次性执行、可调度向量化任务和语义检索消费
 - **元数据展示**: 与 Meta 模块集成，展示数据目录树
 
 ## 🚀 快速开始
@@ -104,6 +105,8 @@ curl -X POST -H "Authorization: Bearer <token>" \
 ## 📚 相关文档
 
 - **[CLAUDE.md](./CLAUDE.md)** - 完整技术文档（预览插件架构、MVT 缓存机制、开发场景指南）
+- **[manager/docs/向量化概念说明.md](./docs/向量化概念说明.md)** - Manager 向量化价值、对象边界、任务边界和结果边界
+- **[manager/docs/向量化能力说明.md](./docs/向量化能力说明.md)** - Manager 向量化结果、任务、执行、检索和 UI 行为说明
 - **[../docs/addp技术栈规约.md](../docs/addp技术栈规约.md)** - 技术栈和依赖版本
 - **[../docs/addp数据库插件系统.md](../docs/addp数据库插件系统.md)** - 存储引擎插件系统
 - **[../common-frontend/README.md](../common-frontend/README.md)** - 前端共享组件使用指南

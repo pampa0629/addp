@@ -575,14 +575,14 @@ paths:
       summary: 获取执行详情 | Get execution detail
       tags:
       - 执行管理 | Execution Management
-  /executions/{id}/cancel:
+  /executions/{execution_id}/cancel:
     post:
       parameters:
       - description: 执行ID | Execution ID
         in: path
-        name: id
+        name: execution_id
         required: true
-        type: integer
+        type: string
       produces:
       - application/json
       responses:
@@ -603,14 +603,14 @@ paths:
       summary: 取消执行 | Cancel execution
       tags:
       - 执行管理 | Execution Management
-  /executions/{id}/logs:
+  /executions/{execution_id}/logs:
     get:
       parameters:
       - description: 执行ID | Execution ID
         in: path
-        name: id
+        name: execution_id
         required: true
-        type: integer
+        type: string
       - description: 最多返回行数 | Line limit
         in: query
         name: limit
@@ -635,14 +635,14 @@ paths:
       summary: 获取执行日志 | Get execution logs
       tags:
       - 执行管理 | Execution Management
-  /executions/{id}/progress:
+  /executions/{execution_id}/progress:
     get:
       parameters:
       - description: 执行ID | Execution ID
         in: path
-        name: id
+        name: execution_id
         required: true
-        type: integer
+        type: string
       produces:
       - application/json
       responses:
@@ -662,7 +662,7 @@ paths:
       summary: 获取执行进度 | Get execution progress
       tags:
       - 执行管理 | Execution Management
-  /executions/{id}/retry:
+  /executions/{execution_id}/retry:
     post:
       description: 为失败执行创建新的 retry 执行记录，并按 restartable 语义从头重新入队执行 | Create a new retry
         execution for a failed execution and enqueue it from the beginning with restartable
@@ -670,9 +670,9 @@ paths:
       parameters:
       - description: 执行ID | Execution ID
         in: path
-        name: id
+        name: execution_id
         required: true
-        type: integer
+        type: string
       produces:
       - application/json
       responses:

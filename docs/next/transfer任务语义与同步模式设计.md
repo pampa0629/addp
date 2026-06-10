@@ -248,9 +248,23 @@ task_type=import
 
 Transfer 内部任务语义、同步模式、取消、重试、进度和日志仍作为本专题后续处理，不在当前任务体系主线中展开。
 
+### 10.1 执行资源标识收敛记录
+
+已确认 Develop 和 Transfer 的执行资源 HTTP 入口统一使用 `execution_id`。Transfer 不再在 `/executions` 路径空间中保留按内部自增 ID 访问的私有执行管理入口；取消、重试、进度和日志入口也统一使用 `execution_id`：
+
+```text
+GET  /executions/{execution_id}
+POST /executions/{execution_id}/cancel
+POST /executions/{execution_id}/retry
+GET  /executions/{execution_id}/progress
+GET  /executions/{execution_id}/logs
+```
+
+这里的统一只是执行资源标识收敛，不等于声明 TaskProvider 标准取消能力。`supports_cancel=false` 时，Orchestrator 和 Monitor 仍不得展示 Transfer 标准取消入口；取消接口是否纳入跨模块标准能力，仍必须先确认 worker 可中断、资源可清理、状态可一致落库。
+
 后续专题至少需要收敛以下问题：
 
-1. 标准 TaskProvider 执行详情入口已经是 `GET /executions/{execution_id}`，但私有取消、重试、进度、日志接口仍按内部自增 ID 工作。后续需要决定是否统一到 `execution_id`，以及是否继续保留内部执行管理视图。
+1. 取消、重试、进度和日志入口已统一到 `execution_id`，但其能力语义仍属于 Transfer 专题：需要继续明确哪些可作为跨模块标准能力，哪些只是 Transfer 私有执行视图。
 2. 当前不声明标准取消能力，即 `supports_cancel=false`，因此 Orchestrator 和 Monitor 不应展示 Transfer 标准取消入口。只有在明确 worker 可中断、资源可清理、状态可一致落库后，才能开放 `POST /executions/{execution_id}/cancel`。
 3. `retry` 当前是 restartable retry，不是 checkpoint resumable。后续如果要支持从中断点续跑，需要先定义 checkpoint commit / resume marker / 写入幂等语义，不能只复用现有 retry 按钮。
 4. `progress` 和 `logs` 当前是 Transfer 私有执行视图。后续要决定哪些信息沉淀到 `common.task_executions.metadata/error_details`，哪些保留在 Transfer 私有观测表或日志中。

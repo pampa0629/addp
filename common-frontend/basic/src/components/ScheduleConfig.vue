@@ -363,14 +363,14 @@ const handleConfirm = () => {
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
-  background-color: #f0f9ff;
-  border: 1px solid #409eff;
+  background-color: var(--addp-bg-secondary);
+  border: 1px solid var(--addp-border-color);
   border-radius: 4px;
   margin-top: 4px;
 }
 
 .schedule-current__icon {
-  color: #409eff;
+  color: var(--addp-module-manager);
   font-size: 16px;
   flex-shrink: 0;
 }

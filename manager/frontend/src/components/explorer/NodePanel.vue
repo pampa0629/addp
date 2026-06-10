@@ -3,6 +3,16 @@
     <template #header>
       <div class="panel-header">
         <span class="header-title">{{ selectedNode?.label || t('manager.explorer.dataPreview') }}</span>
+        <el-button
+          v-if="showVectorizeButton"
+          size="small"
+          type="success"
+          :loading="vectorizing"
+          @click="handleVectorizeNode"
+        >
+          <el-icon><MagicStick /></el-icon>
+          {{ t('manager.explorer.batchVectorize') }}
+        </el-button>
       </div>
     </template>
 
@@ -70,7 +80,12 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { ElMessage } from 'element-plus'
+import { MagicStick } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
+import { parseLocator } from '@addp/common-frontend'
+import client from '@/api/client'
+import { isVectorizableRangeNode } from '@/utils/vectorization'
 
 const { t } = useI18n()
 
@@ -90,6 +105,7 @@ const emit = defineEmits(['open-node'])
 const pageSize = 50
 const childNodePage = ref(1)
 const itemPage = ref(1)
+const vectorizing = ref(false)
 
 watch(() => props.selectedNode?.locator, () => {
   childNodePage.value = 1
@@ -149,6 +165,40 @@ const scanStatusLabel = computed(() => {
 
 const scannedAt = computed(() => props.selectedNode?.metadata?.scanned_at || '-')
 
+const showVectorizeButton = computed(() => isVectorizableRangeNode(props.selectedNode))
+
+const handleVectorizeNode = async () => {
+  const node = props.selectedNode
+  if (!node || vectorizing.value) return
+
+  const locator = node.locator || node.id
+  try {
+    const loc = parseLocator(locator)
+    if (!loc.nodeId) {
+      ElMessage.warning(t('manager.explorer.batchVectorizeDirOnly'))
+      return
+    }
+
+    vectorizing.value = true
+    const response = await client.post('/manager/embedding_executions', {
+      scope: 'node',
+      target: {
+        engine_id: loc.engineId,
+        node_id: loc.nodeId,
+        locator,
+        recursive: true
+      }
+    })
+    const payload = response?.data || response
+    ElMessage.success(t('manager.explorer.vectorizeSubmitted', { key: payload?.execution_id || node.label }))
+  } catch (error) {
+    console.error('节点向量化失败:', error)
+    ElMessage.error(t('manager.explorer.vectorizeFailed', { error: error.response?.data?.error || error.message }))
+  } finally {
+    vectorizing.value = false
+  }
+}
+
 const resolveTypeLabel = (row) => {
   const rowType = row?.type
   const key = row?.typeLabel || (rowType ? `engine.term.${rowType}` : '')
@@ -186,6 +236,13 @@ const openNode = (row) => {
 
 .header-title {
   font-weight: 600;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .empty-state {

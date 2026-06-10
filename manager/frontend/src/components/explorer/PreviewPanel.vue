@@ -77,6 +77,15 @@
             <el-icon><MagicStick /></el-icon>
             {{ vectorizeButtonText }}
           </el-button>
+          <el-tag
+            v-else-if="showVectorizedIndicator"
+            size="small"
+            type="success"
+            class="vectorized-indicator"
+          >
+            <el-icon><Select /></el-icon>
+            {{ t('manager.explorer.vectorized') }}
+          </el-tag>
 
           <!-- 下载按钮 -->
           <el-tooltip
@@ -264,12 +273,18 @@
 import { computed, ref, watch, onUnmounted } from 'vue'
 import { ElMessage, ElNotification } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { MagicStick, Download, Location, Collection, Upload, Document, View, Refresh } from '@element-plus/icons-vue'
+import { MagicStick, Download, Location, Collection, Upload, Document, View, Refresh, Select } from '@element-plus/icons-vue'
 import { getPreviewComponent } from '@/plugins/previews'
 import { parseLocator } from '@addp/common-frontend'
 import client from '@/api/client'
 import ImportDialog from '@/components/explorer/ImportDialog.vue'
 import { useExplorerStore } from '@/stores/explorer'
+import {
+  canShowVectorizeAction,
+  isVectorizableObjectNode,
+  isVectorizableRangeNode,
+  normalizedNodeType
+} from '@/utils/vectorization'
 
 const { t } = useI18n()
 
@@ -1096,6 +1111,31 @@ const downloadInfo = computed(() => {
 const downloading = ref(false)
 const importDialogVisible = ref(false)
 const refreshingPreviewItem = ref(false)
+const selectedEmbeddingState = ref(null)
+
+const loadSelectedItemEmbeddingState = async () => {
+  const node = props.selectedNode
+  if (!node || !isVectorizableObjectNode(node, props.previewData)) {
+    selectedEmbeddingState.value = null
+    return
+  }
+  const locator = node.locator || node.id
+  if (!locator) {
+    selectedEmbeddingState.value = null
+    return
+  }
+  try {
+    const loc = parseLocator(locator)
+    if (!loc.itemId) {
+      selectedEmbeddingState.value = null
+      return
+    }
+    selectedEmbeddingState.value = await client.get(`/manager/items/${loc.itemId}/embedding`)
+  } catch (error) {
+    selectedEmbeddingState.value = null
+    console.warn('加载 item 向量化状态失败:', error)
+  }
+}
 
 // 切换节点时重置预览局部状态
 watch(
@@ -1243,7 +1283,17 @@ watch(
   () => props.previewData,
   () => {
     downloading.value = false
+    loadSelectedItemEmbeddingState()
   }
+)
+
+watch(
+  () => props.selectedNode?.locator || props.selectedNode?.id || '',
+  () => {
+    selectedEmbeddingState.value = null
+    loadSelectedItemEmbeddingState()
+  },
+  { immediate: true }
 )
 
 // 组件卸载时清理状态（防止 race condition 导致的错误）
@@ -1578,13 +1628,12 @@ const formatFileSize = (bytes) => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
-// 判断是否显示向量化按钮（仅 MinIO/S3 的对象、目录、Bucket）
+// 判断是否显示向量化按钮（支持向量化的对象、目录、前缀、Bucket）
 const showVectorizeButton = computed(() => {
   if (!props.selectedNode) return false
   if (!props.previewData) return false
 
   const node = props.selectedNode
-  const nodeType = node.nodeType || node.type
 
   // 检查预览模式（对象存储的节点预览模式是 'object' 或 'node'）
   const previewMode = props.previewData.mode || ''
@@ -1592,19 +1641,25 @@ const showVectorizeButton = computed(() => {
     return false
   }
 
-  // 支持 object、directory、bucket 类型
-  return ['object', 'directory', 'bucket'].includes(nodeType)
+  return canShowVectorizeAction(node, selectedEmbeddingState.value, props.previewData)
+})
+
+const showVectorizedIndicator = computed(() => {
+  if (!props.selectedNode) return false
+  if (!props.previewData) return false
+  return isVectorizableObjectNode(props.selectedNode, props.previewData) &&
+    selectedEmbeddingState.value?.embedding?.status === 'ready'
 })
 
 // 向量化按钮文本
 const vectorizeButtonText = computed(() => {
   if (!props.selectedNode) return t('manager.explorer.vectorize')
 
-  const nodeType = props.selectedNode.nodeType || props.selectedNode.type
+  const nodeType = normalizedNodeType(props.selectedNode)
 
   if (nodeType === 'object') {
     return t('manager.explorer.vectorize')
-  } else if (nodeType === 'directory' || nodeType === 'bucket') {
+  } else if (isVectorizableRangeNode(props.selectedNode)) {
     return t('manager.explorer.batchVectorize')
   }
 
@@ -1616,7 +1671,7 @@ const handleVectorize = async () => {
   if (!props.selectedNode) return
 
   const node = props.selectedNode
-  const nodeType = node.nodeType || node.type
+  const nodeType = normalizedNodeType(node)
 
   // 创建通知实例
   let notification = null
@@ -1627,7 +1682,7 @@ const handleVectorize = async () => {
     const loc = parseLocator(locator)
     let request
     if (nodeType === 'object') {
-      if (!loc.itemId) {
+      if (!isVectorizableObjectNode(node, props.previewData) || !loc.itemId) {
         ElMessage.warning(t('manager.explorer.vectorizeSingleFileOnly'))
         return
       }
@@ -1639,7 +1694,7 @@ const handleVectorize = async () => {
           locator
         }
       }
-    } else if (['directory', 'bucket', 'prefix'].includes(nodeType)) {
+    } else if (isVectorizableRangeNode(node)) {
       if (!loc.nodeId) {
         ElMessage.warning(t('manager.explorer.batchVectorizeDirOnly'))
         return
@@ -1710,6 +1765,7 @@ const pollTaskStatus = async (executionId, notification, targetName, maxAttempts
       if (data.status === 'success') {
         // 任务成功完成
         notification.close()
+        await loadSelectedItemEmbeddingState()
 
         const metadata = data.metadata || {}
         const total = metadata.total || 0

@@ -53,7 +53,7 @@ transfer/
 - 字段映射：`POST /tasks/:id/mappings`、`GET /tasks/:id/mappings`、`DELETE /mappings/:id`。该接口仍存在，但新执行主线只消费 `config.transforms[type=field_mapping]`。
 - 对象存储：`POST /object-storage/browse`、`POST /object-storage/list-files`。
 - 执行记录：`GET /executions`、`GET /executions/statistics`、`GET /executions/:execution_id`。
-- 私有执行管理：`POST /executions/:id/cancel|retry`、`GET /executions/:id/progress|logs` 仍按 Transfer 内部执行记录自增 ID 工作；TaskProvider 标准取消能力暂未声明，后续 Transfer 专题再收敛。
+- 执行管理：`POST /executions/:execution_id/cancel|retry`、`GET /executions/:execution_id/progress|logs` 按统一 `execution_id` 定位执行记录；TaskProvider 标准取消能力暂未声明，`supports_cancel=false` 时不得对 Orchestrator / Monitor 暴露跨模块取消入口。
 - 转换器：`GET /transforms`、`GET /transforms/stats`、`GET /transforms/:name`、`POST /transforms/:name/validate|test`。
 
 ## 执行规则

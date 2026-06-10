@@ -575,7 +575,7 @@ func (s *ExecutionService) GetExecutionProgress(ctx context.Context, id, tenantI
 	}
 
 	progress := map[string]interface{}{
-		"execution_id":    execution.ID,
+		"execution_id":    execution.ExecutionID,
 		"task_id":         execution.TaskID,
 		"status":          execution.Status,
 		"start_time":      execution.StartTime,

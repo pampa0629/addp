@@ -15,6 +15,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/embedding"
+	enginePlugin "github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
@@ -22,8 +23,6 @@ import (
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
 	"github.com/google/uuid"
-	"github.com/minio/minio-go/v7"
-	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
 type EmbeddingService struct {
@@ -106,6 +105,7 @@ type EmbeddingExecutionContext struct {
 	ExecutionID string
 	TenantID    int
 	StartedAt   time.Time
+	Config      commonModels.JSONMap
 }
 
 type EmbeddingExecutionStats struct {
@@ -160,6 +160,7 @@ func (s *EmbeddingService) CreateAdhocExecution(ctx context.Context, tenantID, u
 			ExecutionID: executionID,
 			TenantID:    int(tenantID),
 			StartedAt:   now,
+			Config:      executionConfig,
 		})
 		status := commonExecution.ExecutionStatusSuccess
 		var errDetails commonModels.JSONMap
@@ -335,7 +336,7 @@ func (s *EmbeddingService) processItem(ctx context.Context, tenantID uint, item 
 		return "ready_skipped"
 	}
 
-	resolved, err := s.resolveItemForEmbedding(ctx, item)
+	resolved, err := s.resolveItemForEmbedding(ctx, item, maxFileSizeMBFromExecutionContext(execCtx, s.cfg.VectorConfig.MaxFileSizeMB))
 	if err != nil {
 		if errors.Is(err, errUnsupportedItem) {
 			s.upsertNonReadyState(ctx, tenantID, item, itemFingerprint, sourceVersion, modelName, dimension, models.EmbeddingStatusUnsupported, models.EmbeddingReasonFormatUnsupported, err.Error(), lastExecutionID)
@@ -400,21 +401,42 @@ var (
 	errMissingSource   = errors.New("missing source")
 )
 
-func (s *EmbeddingService) resolveItemForEmbedding(ctx context.Context, item commonModels.MetaItem) (*resolvedEmbeddingInput, error) {
+var vectorizableObjectExtensions = map[string]embedding.Modality{
+	".txt":      embedding.ModalityText,
+	".md":       embedding.ModalityText,
+	".markdown": embedding.ModalityText,
+	".csv":      embedding.ModalityText,
+	".json":     embedding.ModalityText,
+	".jsonl":    embedding.ModalityText,
+	".jpg":      embedding.ModalityImage,
+	".jpeg":     embedding.ModalityImage,
+	".png":      embedding.ModalityImage,
+	".gif":      embedding.ModalityImage,
+	".bmp":      embedding.ModalityImage,
+	".webp":     embedding.ModalityImage,
+	".pdf":      embedding.ModalityDocument,
+	".doc":      embedding.ModalityDocument,
+	".docx":     embedding.ModalityDocument,
+	".ppt":      embedding.ModalityDocument,
+	".pptx":     embedding.ModalityDocument,
+	".xls":      embedding.ModalityDocument,
+	".xlsx":     embedding.ModalityDocument,
+}
+
+func (s *EmbeddingService) resolveItemForEmbedding(ctx context.Context, item commonModels.MetaItem, maxFileSizeMB int) (*resolvedEmbeddingInput, error) {
 	switch strings.ToLower(strings.TrimSpace(item.ItemType)) {
-	case string(resourcetree.TypeObject):
-		bucket, objectKey, err := splitObjectFullName(item.FullName)
-		if err != nil {
-			return nil, fmt.Errorf("%w: %v", errUnsupportedItem, err)
-		}
-		info, data, err := s.readObjectContent(ctx, item.EngineID, bucket, objectKey)
+	case string(resourcetree.TypeObject), string(resourcetree.TypeFile):
+		info, data, err := s.readStorageLeafContent(ctx, item)
 		if err != nil {
 			return nil, fmt.Errorf("%w: %v", errMissingSource, err)
 		}
-		if s.cfg.VectorConfig.MaxFileSizeMB > 0 && info.Size > int64(s.cfg.VectorConfig.MaxFileSizeMB)*1024*1024 {
-			return nil, fmt.Errorf("%w: file size %d exceeds limit %dMB", errUnsupportedItem, info.Size, s.cfg.VectorConfig.MaxFileSizeMB)
+		if maxFileSizeMB > 0 && info.Size > int64(maxFileSizeMB)*1024*1024 {
+			return nil, fmt.Errorf("%w: file size %d exceeds limit %dMB", errUnsupportedItem, info.Size, maxFileSizeMB)
 		}
-		modality := s.detectModality(info.ContentType, item.Name)
+		modality, ok := s.detectSupportedModality(info.ContentType, info.Name)
+		if !ok {
+			return nil, fmt.Errorf("%w: format %s is not supported for embedding", errUnsupportedItem, filepath.Ext(info.Name))
+		}
 		return &resolvedEmbeddingInput{
 			ID:          item.FullName,
 			Data:        data,
@@ -425,6 +447,26 @@ func (s *EmbeddingService) resolveItemForEmbedding(ctx context.Context, item com
 	default:
 		return nil, fmt.Errorf("%w: item_type %s is not supported for embedding", errUnsupportedItem, item.ItemType)
 	}
+}
+
+func maxFileSizeMBFromExecutionContext(execCtx *EmbeddingExecutionContext, defaultValue int) int {
+	if execCtx == nil || execCtx.Config == nil {
+		return defaultValue
+	}
+	filters, ok := execCtx.Config["filters"].(commonModels.JSONMap)
+	if !ok {
+		if raw, rawOK := execCtx.Config["filters"].(map[string]interface{}); rawOK {
+			filters = commonModels.JSONMap(raw)
+			ok = true
+		}
+	}
+	if !ok {
+		return defaultValue
+	}
+	if configured := intFromConfig(filters["max_file_size_mb"]); configured > 0 {
+		return configured
+	}
+	return defaultValue
 }
 
 func (s *EmbeddingService) embedResolvedContent(ctx context.Context, input *resolvedEmbeddingInput) ([]float32, string, error) {
@@ -467,37 +509,99 @@ func (s *EmbeddingService) embedResolvedContent(ctx context.Context, input *reso
 }
 
 type ObjectStorageInfo struct {
+	Name         string
 	Size         int64
 	ContentType  string
 	LastModified time.Time
 }
 
-func (s *EmbeddingService) readObjectContent(ctx context.Context, engineID uint, bucket, objectKey string) (*ObjectStorageInfo, []byte, error) {
+func (s *EmbeddingService) readStorageLeafContent(ctx context.Context, item commonModels.MetaItem) (*ObjectStorageInfo, []byte, error) {
 	if s.systemClient == nil {
 		return nil, nil, errors.New("system client not available")
 	}
-	engine, err := s.systemClient.GetEngine(engineID)
+	engine, err := s.systemClient.GetEngine(item.EngineID)
 	if err != nil {
 		return nil, nil, err
 	}
-	minioClient, err := s.createMinioClient(engine)
+	if engine == nil {
+		return nil, nil, errors.New("engine not found")
+	}
+	plugin, err := enginePlugin.Get(engine.EngineType)
 	if err != nil {
 		return nil, nil, err
 	}
-	objInfo, err := minioClient.StatObject(ctx, bucket, objectKey, minio.StatObjectOptions{})
+	contentReader, ok := plugin.(enginePlugin.ContentReadableProvider)
+	if !ok {
+		return nil, nil, fmt.Errorf("engine %s does not implement content reading", engine.EngineType)
+	}
+	factsProvider, ok := plugin.(enginePlugin.CatalogFactsProvider)
+	if !ok {
+		return nil, nil, fmt.Errorf("engine %s does not implement catalog facts", engine.EngineType)
+	}
+	loc := resourcetree.LocatorFromFullName(item.EngineID, engine.EngineType, item.ItemType, item.FullName, &item.ID)
+	if loc == nil {
+		return nil, nil, fmt.Errorf("cannot build locator for item %d", item.ID)
+	}
+	catalogPath, err := resourcetree.ProviderCatalogPathFromLocator(catalogModelForEmbeddingItem(item), loc)
 	if err != nil {
 		return nil, nil, err
 	}
-	obj, err := minioClient.GetObject(ctx, bucket, objectKey, minio.GetObjectOptions{})
+	connInfo := enginePlugin.ConnectionInfo(engine.ConnectionInfo)
+	facts, err := factsProvider.DescribeCatalogFacts(ctx, connInfo, catalogPath, enginePlugin.CatalogFactsOptions{})
 	if err != nil {
 		return nil, nil, err
 	}
-	defer obj.Close()
-	data, err := io.ReadAll(obj)
+	reader, err := contentReader.OpenContent(ctx, connInfo, catalogPath, enginePlugin.ReadOptions{})
 	if err != nil {
 		return nil, nil, err
 	}
-	return &ObjectStorageInfo{Size: objInfo.Size, ContentType: objInfo.ContentType, LastModified: objInfo.LastModified}, data, nil
+	defer reader.Close()
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, nil, err
+	}
+	info := storageInfoFromCatalogFacts(item, facts)
+	return info, data, nil
+}
+
+func catalogModelForEmbeddingItem(item commonModels.MetaItem) enginePlugin.CatalogModelSpec {
+	switch strings.ToLower(strings.TrimSpace(item.ItemType)) {
+	case string(resourcetree.TypeFile):
+		return enginePlugin.FileCatalogModel()
+	default:
+		return enginePlugin.ObjectCatalogModel()
+	}
+}
+
+func storageInfoFromCatalogFacts(item commonModels.MetaItem, facts *enginePlugin.CatalogFacts) *ObjectStorageInfo {
+	info := &ObjectStorageInfo{
+		Name: item.Name,
+	}
+	if info.Name == "" {
+		info.Name = filepath.Base(strings.Trim(strings.TrimSpace(item.FullName), "/"))
+	}
+	if facts == nil {
+		if item.SizeBytes != nil {
+			info.Size = *item.SizeBytes
+		}
+		return info
+	}
+	if facts.Storage != nil {
+		if strings.TrimSpace(facts.Storage.Name) != "" {
+			info.Name = facts.Storage.Name
+		}
+		info.ContentType = facts.Storage.ContentType
+		if facts.Storage.SizeBytes != nil {
+			info.Size = *facts.Storage.SizeBytes
+		}
+	}
+	if facts.UpdatedAt != nil {
+		info.LastModified = *facts.UpdatedAt
+	}
+	if info.Size == 0 && item.SizeBytes != nil {
+		info.Size = *item.SizeBytes
+	}
+	return info
 }
 
 func (s *EmbeddingService) upsertNonReadyState(ctx context.Context, tenantID uint, item commonModels.MetaItem, itemFingerprint, sourceVersion, model string, dimension int, status, reason, message, lastExecutionID string) {
@@ -595,7 +699,7 @@ func (s *EmbeddingService) currentEmbeddingModel() string {
 
 func (s *EmbeddingService) currentEmbeddingDimension() int {
 	if s == nil || s.cfg == nil || s.cfg.VectorConfig.Dimension <= 0 {
-		return 1024
+		return 2560
 	}
 	return s.cfg.VectorConfig.Dimension
 }
@@ -650,40 +754,29 @@ func (s *EmbeddingService) finishExecution(ctx context.Context, executionID stri
 	}
 }
 
-func (s *EmbeddingService) detectModality(contentType, objectKey string) embedding.Modality {
+func (s *EmbeddingService) detectSupportedModality(contentType, objectKey string) (embedding.Modality, bool) {
+	ext := strings.ToLower(filepath.Ext(objectKey))
+	if modality, ok := vectorizableObjectExtensions[ext]; ok {
+		return modality, true
+	}
+	if ext != "" {
+		return "", false
+	}
+
 	contentType = strings.ToLower(strings.TrimSpace(contentType))
 	if strings.HasPrefix(contentType, "image/") {
-		return embedding.ModalityImage
+		return embedding.ModalityImage, true
 	}
 	if strings.HasPrefix(contentType, "video/") {
-		return embedding.ModalityVideo
+		return "", false
 	}
-	ext := strings.ToLower(filepath.Ext(objectKey))
-	switch ext {
-	case ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp":
-		return embedding.ModalityImage
-	case ".mp4", ".avi", ".mov", ".mkv", ".flv", ".wmv":
-		return embedding.ModalityVideo
-	case ".pdf", ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx":
-		return embedding.ModalityDocument
-	default:
-		return embedding.ModalityText
+	if strings.HasPrefix(contentType, "text/") {
+		return embedding.ModalityText, true
 	}
-}
-
-func (s *EmbeddingService) createMinioClient(engine *commonModels.Engine) (*minio.Client, error) {
-	connInfo := engine.ConnectionInfo
-	endpoint, _ := connInfo["endpoint"].(string)
-	accessKey, _ := connInfo["access_key"].(string)
-	secretKey, _ := connInfo["secret_key"].(string)
-	useSSL, _ := connInfo["use_ssl"].(bool)
-	if endpoint == "" || accessKey == "" || secretKey == "" {
-		return nil, errors.New("invalid minio connection info")
+	if strings.Contains(contentType, "json") {
+		return embedding.ModalityText, true
 	}
-	return minio.New(endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
-		Secure: useSSL,
-	})
+	return "", false
 }
 
 func sourceVersionForItem(itemFingerprint string, item commonModels.MetaItem) string {
@@ -699,18 +792,6 @@ func sourceVersionForItem(itemFingerprint string, item commonModels.MetaItem) st
 	}
 	sum := sha256.Sum256([]byte(strings.Join(parts, "|")))
 	return hex.EncodeToString(sum[:])
-}
-
-func splitObjectFullName(fullName string) (string, string, error) {
-	trimmed := strings.Trim(strings.TrimSpace(fullName), "/")
-	if trimmed == "" {
-		return "", "", errors.New("empty object full_name")
-	}
-	parts := strings.SplitN(trimmed, "/", 2)
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return "", "", fmt.Errorf("object full_name must be bucket/object_key, got %q", fullName)
-	}
-	return parts[0], parts[1], nil
 }
 
 func statsToJSONMap(stats *EmbeddingExecutionStats) commonModels.JSONMap {

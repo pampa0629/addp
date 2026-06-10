@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -83,7 +84,7 @@ func (r *EmbeddingRepository) UpsertEmbeddingState(ctx context.Context, embeddin
 		if len(embedding.Embedding) == 0 {
 			return errors.New("ready embedding state requires vector")
 		}
-		vectorSQL = fmt.Sprintf("'%s'::vector", vectorToString(embedding.Embedding))
+		vectorSQL = fmt.Sprintf("'%s'::manager.vector", vectorToString(embedding.Embedding))
 	}
 
 	sql := fmt.Sprintf(`
@@ -143,23 +144,23 @@ func (r *EmbeddingRepository) QueryReadySimilar(ctx context.Context, tenantID ui
 	args := []any{tenantID, models.EmbeddingStatusReady, model, dimension}
 	distanceClause := ""
 	if maxDistance > 0 {
-		distanceClause = " AND embedding <=> ?::vector <= ?"
+		distanceClause = " AND embedding OPERATOR(manager.<=>) ?::manager.vector <= ?"
 		args = append(args, vector, maxDistance)
 	}
 	args = append(args, vector, topK)
 
-	sql := fmt.Sprintf(`
+	querySQL := fmt.Sprintf(`
 		SELECT id, tenant_id, item_fingerprint, item_id, engine_id, locator, source_version, model, dimension,
 		       status, status_reason, error_message, last_execution_id, vectorized_at, created_at, updated_at,
-		       embedding <=> ?::vector AS distance
+		       embedding OPERATOR(manager.<=>) ?::manager.vector AS distance
 		FROM manager.embeddings
 		WHERE tenant_id = ? AND status = ? AND model = ? AND dimension = ? AND embedding IS NOT NULL%s
-		ORDER BY embedding <=> ?::vector
+		ORDER BY embedding OPERATOR(manager.<=>) ?::manager.vector
 		LIMIT ?
 	`, distanceClause)
 
 	queryArgs := append([]any{vector}, args...)
-	rows, err := r.db.WithContext(ctx).Raw(sql, queryArgs...).Rows()
+	rows, err := r.db.WithContext(ctx).Raw(querySQL, queryArgs...).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -169,6 +170,8 @@ func (r *EmbeddingRepository) QueryReadySimilar(ctx context.Context, tenantID ui
 	for rows.Next() {
 		var emb models.Embedding
 		var distance float64
+		var statusReason sql.NullString
+		var errorMessage sql.NullString
 		if err := rows.Scan(
 			&emb.ID,
 			&emb.TenantID,
@@ -180,8 +183,8 @@ func (r *EmbeddingRepository) QueryReadySimilar(ctx context.Context, tenantID ui
 			&emb.Model,
 			&emb.Dimension,
 			&emb.Status,
-			&emb.StatusReason,
-			&emb.ErrorMessage,
+			&statusReason,
+			&errorMessage,
 			&emb.LastExecutionID,
 			&emb.VectorizedAt,
 			&emb.CreatedAt,
@@ -190,6 +193,8 @@ func (r *EmbeddingRepository) QueryReadySimilar(ctx context.Context, tenantID ui
 		); err != nil {
 			return nil, err
 		}
+		emb.StatusReason = statusReason.String
+		emb.ErrorMessage = errorMessage.String
 		results = append(results, EmbeddingSimilarityResult{Embedding: &emb, Distance: distance})
 	}
 	if err := rows.Err(); err != nil {

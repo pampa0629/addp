@@ -45,8 +45,8 @@ func TestEmbeddingTaskExecuteReusesSingleExecution(t *testing.T) {
 				"max_file_size_mb": 10,
 			},
 			"embedding": commonModels.JSONMap{
-				"model":     "qwen2.5-vl-embedding",
-				"dimension": 1024,
+				"model":     "qwen3-vl-embedding",
+				"dimension": 2560,
 			},
 		},
 	}
@@ -253,7 +253,7 @@ func TestEmbeddingTaskDefinitionRequiresCurrentEmbeddingConfig(t *testing.T) {
 	task = newEmbeddingTaskDefinition()
 	task.Config["embedding"] = commonModels.JSONMap{
 		"model":     "current-model",
-		"dimension": 1024,
+		"dimension": 512,
 	}
 	if err := taskSvc.Create(context.Background(), task); err == nil || !strings.Contains(err.Error(), "config.embedding.dimension") {
 		t.Fatalf("Create error = %v, want dimension mismatch error", err)
@@ -270,6 +270,48 @@ func TestEmbeddingTaskDefinitionRequiresCurrentEmbeddingConfig(t *testing.T) {
 	}
 	if embeddingCfg["model"] != "current-model" || intFromConfig(embeddingCfg["dimension"]) != 768 {
 		t.Fatalf("config.embedding = %#v, want current model/dimension", embeddingCfg)
+	}
+}
+
+func TestEmbeddingTaskDefinitionSupportsItemScope(t *testing.T) {
+	db := newEmbeddingTaskServiceTestDB(t)
+	embeddingRepo := repository.NewEmbeddingRepository(db)
+	cfg := &config.Config{}
+	cfg.EmbeddingService.Models = map[string]string{"text": "qwen3-vl-embedding"}
+	cfg.VectorConfig.Dimension = 2560
+	cfg.VectorConfig.MaxFileSizeMB = 10
+	taskSvc := NewEmbeddingTaskService(embeddingRepo, nil, nil, cfg)
+
+	task := &models.EmbeddingTask{
+		TenantID: 7,
+		Name:     "单文件向量化",
+		Enabled:  true,
+		Config: commonModels.JSONMap{
+			"target": commonModels.JSONMap{
+				"scope":     "item",
+				"engine_id": 11,
+				"item_id":   99,
+				"locator":   "addp://engine/11/path/datasets/a.jpg?type=object&item_id=99",
+			},
+		},
+	}
+
+	if err := taskSvc.Create(context.Background(), task); err != nil {
+		t.Fatalf("Create item-scope task: %v", err)
+	}
+	_, req, err := taskSvc.embeddingTaskExecutionConfig(task)
+	if err != nil {
+		t.Fatalf("embeddingTaskExecutionConfig: %v", err)
+	}
+	if req.Scope != EmbeddingExecutionScopeItem {
+		t.Fatalf("scope = %s, want item", req.Scope)
+	}
+	if req.Target.ItemID != 99 || req.Target.NodeID != 0 || req.Target.EngineID != 11 {
+		t.Fatalf("target = %#v, want item_id=99 engine_id=11 and no node_id", req.Target)
+	}
+	filters, ok := asJSONMap(task.Config["filters"])
+	if !ok || intFromConfig(filters["max_file_size_mb"]) != 10 {
+		t.Fatalf("config.filters = %#v, want default max_file_size_mb=10", task.Config["filters"])
 	}
 }
 
@@ -290,8 +332,8 @@ func newEmbeddingTaskDefinition() *models.EmbeddingTask {
 				"max_file_size_mb": 10,
 			},
 			"embedding": commonModels.JSONMap{
-				"model":     "qwen2.5-vl-embedding",
-				"dimension": 1024,
+				"model":     "qwen3-vl-embedding",
+				"dimension": 2560,
 			},
 		},
 	}

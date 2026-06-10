@@ -36,7 +36,7 @@ type Embedding struct {
 	EngineID        uint       `gorm:"not null;index:idx_embeddings_engine;index:idx_embeddings_ready_query" json:"engine_id"`
 	Locator         string     `gorm:"type:text;not null" json:"locator"`
 	SourceVersion   string     `gorm:"size:255;not null" json:"source_version"`
-	Embedding       []float32  `gorm:"type:vector(1024)" json:"-"`
+	Embedding       []float32  `gorm:"type:manager.vector(2560)" json:"-"`
 	Model           string     `gorm:"size:100;not null;index:idx_embeddings_ready_query" json:"model"`
 	Dimension       int        `gorm:"not null;index:idx_embeddings_ready_query" json:"dimension"`
 	Status          string     `gorm:"size:32;not null;index:idx_embeddings_status;index:idx_embeddings_ready_query;check:ck_embeddings_status,status IN ('ready','outdated','failed','unsupported','missing_source')" json:"status"`
@@ -73,7 +73,7 @@ type EmbeddingTask struct {
 
 	CreatedBy *uint `json:"created_by,omitempty"`
 
-	// 向量化任务私有配置，结构见 addp向量化规范：
+	// 向量化任务私有配置，结构见 manager/docs/向量化能力说明.md：
 	// config.target / config.filters / config.embedding。
 	Config commonModels.JSONMap `gorm:"type:jsonb;not null;default:'{}'" json:"config"`
 

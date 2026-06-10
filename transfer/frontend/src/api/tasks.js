@@ -68,28 +68,28 @@ export const executionAPI = {
   },
 
   // 获取执行详情
-  get(id) {
-    return client.get(`/transfer/executions/${id}`)
+  get(executionId) {
+    return client.get(`/transfer/executions/${executionId}`)
   },
 
   // 取消执行
-  cancel(id) {
-    return client.post(`/transfer/executions/${id}/cancel`)
+  cancel(executionId) {
+    return client.post(`/transfer/executions/${executionId}/cancel`)
   },
 
   // 重试执行
-  retry(id) {
-    return client.post(`/transfer/executions/${id}/retry`)
+  retry(executionId) {
+    return client.post(`/transfer/executions/${executionId}/retry`)
   },
 
   // 获取执行进度
-  progress(id) {
-    return client.get(`/transfer/executions/${id}/progress`)
+  progress(executionId) {
+    return client.get(`/transfer/executions/${executionId}/progress`)
   },
 
   // 获取执行日志
-  logs(id, params) {
-    return client.get(`/transfer/executions/${id}/logs`, { params })
+  logs(executionId, params) {
+    return client.get(`/transfer/executions/${executionId}/logs`, { params })
   },
 
   // 获取执行统计

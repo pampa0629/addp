@@ -28,6 +28,7 @@ type EmbeddingTaskService struct {
 	taskExecRepo     *commonExecution.TaskExecutionRepository
 	currentModel     string
 	currentDimension int
+	currentMaxFileMB int
 }
 
 // NewEmbeddingTaskService 创建服务
@@ -46,9 +47,13 @@ func NewEmbeddingTaskService(
 		cfgSvc := &EmbeddingService{cfg: cfg}
 		svc.currentModel = cfgSvc.currentEmbeddingModel()
 		svc.currentDimension = cfgSvc.currentEmbeddingDimension()
+		svc.currentMaxFileMB = cfg.VectorConfig.MaxFileSizeMB
 	} else if embeddingService != nil {
 		svc.currentModel = embeddingService.currentEmbeddingModel()
 		svc.currentDimension = embeddingService.currentEmbeddingDimension()
+		if embeddingService.cfg != nil {
+			svc.currentMaxFileMB = embeddingService.cfg.VectorConfig.MaxFileSizeMB
+		}
 	}
 	return svc
 }
@@ -157,6 +162,7 @@ func (s *EmbeddingTaskService) Execute(ctx context.Context, taskID uint, tenantI
 			ExecutionID: executionID,
 			TenantID:    int(tenantID),
 			StartedAt:   now,
+			Config:      executionConfig,
 		})
 
 		status := commonExecution.ExecutionStatusSuccess
@@ -231,10 +237,12 @@ func (s *EmbeddingTaskService) embeddingTaskExecutionConfig(task *models.Embeddi
 		return nil, EmbeddingExecutionRequest{}, err
 	}
 	target, _ := embeddingTaskTargetConfig(task.Config)
+	scope := stringFromConfig(target["scope"])
 	req := EmbeddingExecutionRequest{
-		Scope: EmbeddingExecutionScopeNode,
+		Scope: EmbeddingExecutionScope(scope),
 		Target: EmbeddingExecutionTarget{
 			EngineID:  uintFromConfig(target["engine_id"]),
+			ItemID:    uintFromConfig(target["item_id"]),
 			NodeID:    uintFromConfig(target["node_id"]),
 			Locator:   stringFromConfig(target["locator"]),
 			Recursive: boolFromConfig(target["recursive"], true),
@@ -262,14 +270,20 @@ func (s *EmbeddingTaskService) prepareEmbeddingTaskDefinition(task *models.Embed
 		return err
 	}
 	scope := stringFromConfig(target["scope"])
-	if scope != string(EmbeddingExecutionScopeNode) {
-		return fmt.Errorf("embedding task config.target.scope must be node, got %q", scope)
+	switch EmbeddingExecutionScope(scope) {
+	case EmbeddingExecutionScopeItem:
+		if uintFromConfig(target["item_id"]) == 0 {
+			return errors.New("embedding task config.target.item_id is required")
+		}
+	case EmbeddingExecutionScopeNode:
+		if uintFromConfig(target["node_id"]) == 0 {
+			return errors.New("embedding task config.target.node_id is required")
+		}
+	default:
+		return fmt.Errorf("embedding task config.target.scope must be item or node, got %q", scope)
 	}
 	if uintFromConfig(target["engine_id"]) == 0 {
 		return errors.New("embedding task config.target.engine_id is required")
-	}
-	if uintFromConfig(target["node_id"]) == 0 {
-		return errors.New("embedding task config.target.node_id is required")
 	}
 	if err := s.normalizeEmbeddingTaskConfig(task); err != nil {
 		return err
@@ -312,6 +326,16 @@ func (s *EmbeddingTaskService) normalizeEmbeddingTaskConfig(task *models.Embeddi
 	}
 	if len(embeddingCfg) > 0 {
 		task.Config["embedding"] = embeddingCfg
+	}
+	filters, ok := asJSONMap(task.Config["filters"])
+	if !ok {
+		filters = commonModels.JSONMap{}
+	}
+	if s != nil && s.currentMaxFileMB > 0 && intFromConfig(filters["max_file_size_mb"]) <= 0 {
+		filters["max_file_size_mb"] = s.currentMaxFileMB
+	}
+	if len(filters) > 0 {
+		task.Config["filters"] = filters
 	}
 	return nil
 }

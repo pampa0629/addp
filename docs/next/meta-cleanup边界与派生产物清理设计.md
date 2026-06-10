@@ -147,6 +147,38 @@ flowchart TD
 
 这条路径不要求 System 知道 Meta 或 Manager 的内部实现。
 
+### 5. 派生产物 lifecycle 应统一描述
+
+Manager 派生产物不只有 Quick View 和 MVT。随着向量化主线收敛，至少需要把以下 artifact state 纳入同一套 lifecycle 讨论：
+
+| 派生产物 | 状态 owner | 物理产物 | 典型失效来源 |
+| --- | --- | --- | --- |
+| Quick View | Manager | `manager.quick_view`、MVT 准备状态 | 源 item 删除、空间字段变化、engine 删除 |
+| MVT tiles | Manager | MinIO tiles、Redis / 内存缓存、manifest 或任务结果 | 源 item 变化、配置变化、SRID / extent 策略变化 |
+| preview cache | Manager | 预览缓存、临时抽取结果、可能的缩略图 | 源 content 变化、格式插件变化、缓存过期 |
+| embedding vectors | Manager | `manager.embeddings` pgvector 行 | 源 item 变化、模型变化、维度变化、engine / tenant 删除 |
+
+lifecycle 需要区分三类对象：
+
+1. `TaskExecution`：某次执行历史，只记录过程和审计，不代表当前产物是否可用。
+2. `artifact state`：当前产物状态，例如 `ready`、`outdated`、`failed`、`missing_source`。
+3. 物理产物：MinIO 对象、Redis key、pgvector 行、缓存文件等可删除资源。
+
+后续 cleanup 专题至少需要统一以下决策：
+
+- item 删除后，artifact state 是删除还是标记 `missing_source`。
+- engine 删除后，任务定义、artifact state 和物理产物是否同步删除。
+- tenant 删除后，各模块是否通过 cleanup request 统一处理。
+- 源事实变化后，是事件驱动标记 `outdated`，还是查询 / 执行时惰性判断。
+- 模型、维度、SRID、extent、preview 插件等配置变化是否进入统一 config version。
+- cleanup result 是否进入 `common.task_executions`，以及 scan / execute 是否拆分记录。
+
+约束：
+
+- Meta 只发布或处理 Meta 自己的事实生命周期，不直接读写 Manager 私有表和 bucket key。
+- Manager cleanup consumer 只清理 Manager-owned artifact，不反向修改 Meta attributes。
+- 各派生产物可以有不同物理删除策略，但对外应暴露一致的 cleanup result 摘要。
+
 ## 推荐改造方向
 
 ### 阶段 1：文档固化

@@ -2197,6 +2197,12 @@ const docTemplate = `{
                         "description": "每页数量，默认10 | Page size, default 10",
                         "name": "page_size",
                         "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "超级管理员指定检索租户；普通用户忽略该参数 | Tenant filter for super admin; ignored for tenant users",
+                        "name": "tenant_id",
+                        "in": "query"
                     }
                 ],
                 "responses": {

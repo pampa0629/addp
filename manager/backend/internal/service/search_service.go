@@ -129,7 +129,7 @@ func NewHybridSearchService(cfg *config.Config, vectorRepo *repository.Embedding
 		svc.embeddingTimeout = 15 * time.Second
 	}
 	if svc.vectorMaxDistance <= 0 {
-		svc.vectorMaxDistance = 0.35
+		svc.vectorMaxDistance = 0.78
 	}
 
 	if !svc.enabled {
@@ -384,6 +384,9 @@ func (s *HybridSearchService) SearchDocuments(
 					existing[converted.DocumentID] = len(result.Hits) - 1
 				}
 			}
+			if len(result.Hits) > result.Total {
+				result.Total = len(result.Hits)
+			}
 		}
 	}
 
@@ -392,6 +395,10 @@ func (s *HybridSearchService) SearchDocuments(
 
 func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID *uint, query string) ([]VectorDocument, error) {
 	if s.vectorRepo == nil || s.textEmbedder == nil {
+		return nil, nil
+	}
+	if tenantID == nil || *tenantID == 0 {
+		s.log.Debug("向量检索缺少明确租户，已跳过", "query", query)
 		return nil, nil
 	}
 
@@ -443,10 +450,7 @@ func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID *uint, 
 		return nil, nil
 	}
 
-	tenantVal := uint(0)
-	if tenantID != nil {
-		tenantVal = *tenantID
-	}
+	tenantVal := *tenantID
 	s.log.Debug("触发向量检索",
 		"tenant_id", tenantVal,
 		"query", query,
@@ -457,9 +461,6 @@ func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID *uint, 
 	queryCtx, cancelQuery := context.WithTimeout(ctx, timeout)
 	defer cancelQuery()
 
-	if tenantID == nil {
-		return nil, nil
-	}
 	results, err := s.vectorRepo.QueryReadySimilar(queryCtx, *tenantID, queryVector, model, dimension, s.vectorTopK, s.vectorMaxDistance)
 	if err != nil {
 		return nil, fmt.Errorf("query embedding results: %w", err)

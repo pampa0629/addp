@@ -2,7 +2,6 @@ package repository
 
 import (
 	"fmt"
-	"log"
 	"time"
 
 	commonRepo "github.com/addp/common/repository"
@@ -37,7 +36,7 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 		return nil, err
 	}
 
-	if err := ensureEmbeddingArtifactStateSchema(db); err != nil {
+	if err := ensureEmbeddingArtifactStateSchema(db, cfg.VectorConfig.Dimension); err != nil {
 		return nil, fmt.Errorf("failed to ensure embedding artifact state schema: %w", err)
 	}
 	if err := ensureEmbeddingTaskDefinitionSchema(db); err != nil {
@@ -59,21 +58,34 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	// Access to metadata and system schemas should be done via MetaClient and SystemClient
 	db.Exec(fmt.Sprintf("SET search_path TO %s", cfg.DBSchema))
 
-	// 创建向量索引（IVFFlat 索引需要表中有数据才能创建，启动时可能失败）
-	if err := createVectorIndexes(db); err != nil {
-		log.Printf("⚠️  Warning: Failed to create vector indexes (will retry later): %v", err)
-		// 不返回错误，因为空表无法创建 IVFFlat 索引
-	}
-
 	return db, nil
 }
 
-func ensureEmbeddingArtifactStateSchema(db *gorm.DB) error {
-	if err := db.Exec(`CREATE EXTENSION IF NOT EXISTS vector`).Error; err != nil {
+func ensureEmbeddingArtifactStateSchema(db *gorm.DB, vectorDimension int) error {
+	if err := db.Exec(`CREATE EXTENSION IF NOT EXISTS vector SCHEMA manager`).Error; err != nil {
 		return err
 	}
 	if err := db.Exec(`DROP TABLE IF EXISTS manager.document_embeddings`).Error; err != nil {
 		return err
+	}
+	if vectorDimension <= 0 {
+		vectorDimension = 2560
+	}
+
+	var tableExists bool
+	if err := db.Raw(`
+		SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.tables
+			WHERE table_schema = 'manager'
+			  AND table_name = 'embeddings'
+			  AND table_type = 'BASE TABLE'
+		)
+	`).Scan(&tableExists).Error; err != nil {
+		return err
+	}
+	if !tableExists {
+		return db.AutoMigrate(&models.Embedding{})
 	}
 
 	var legacyCount int64
@@ -100,7 +112,23 @@ func ensureEmbeddingArtifactStateSchema(db *gorm.DB) error {
 		return err
 	}
 
-	if legacyCount > 0 || !hasItemFingerprint {
+	var embeddingTypmod int
+	if err := db.Raw(`
+		SELECT COALESCE(a.atttypmod, -1)
+		FROM pg_attribute a
+		JOIN pg_class c ON c.oid = a.attrelid
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE n.nspname = 'manager'
+		  AND c.relname = 'embeddings'
+		  AND a.attname = 'embedding'
+		  AND a.attnum > 0
+		  AND NOT a.attisdropped
+	`).Scan(&embeddingTypmod).Error; err != nil {
+		return err
+	}
+	hasExpectedVectorDimension := embeddingTypmod == vectorDimension
+
+	if legacyCount > 0 || !hasItemFingerprint || !hasExpectedVectorDimension {
 		if err := db.Exec(`DROP TABLE IF EXISTS manager.embeddings`).Error; err != nil {
 			return err
 		}
@@ -108,12 +136,7 @@ func ensureEmbeddingArtifactStateSchema(db *gorm.DB) error {
 			return err
 		}
 	}
-	if legacyCount == 0 && hasItemFingerprint {
-		if err := db.AutoMigrate(&models.Embedding{}); err != nil {
-			return err
-		}
-	}
-	return nil
+	return db.AutoMigrate(&models.Embedding{})
 }
 
 func ensureEmbeddingTaskDefinitionSchema(db *gorm.DB) error {
@@ -154,38 +177,5 @@ func ensureEmbeddingTaskDefinitionSchema(db *gorm.DB) error {
 			return err
 		}
 	}
-	return nil
-}
-
-// createVectorIndexes 创建向量索引
-// IVFFlat 索引是 pgvector 提供的近似最近邻（ANN）索引，用于加速向量相似度搜索
-// 注意：该索引需要表中有一定数据量才能创建（官方建议至少 10,000 行）
-func createVectorIndexes(db *gorm.DB) error {
-	// 检查索引是否已存在
-	var exists bool
-	db.Raw("SELECT EXISTS(SELECT 1 FROM pg_indexes WHERE schemaname = 'manager' AND indexname = 'idx_embeddings_vector')").Scan(&exists)
-
-	if exists {
-		log.Println("✅ Vector index already exists")
-		return nil
-	}
-
-	// 尝试创建 IVFFlat 向量索引
-	// USING ivfflat: 使用 IVFFlat 算法（Inverted File with Flat compression）
-	// vector_cosine_ops: 使用余弦距离度量（适合文本和图像嵌入）
-	// lists = 100: 聚类数量，官方建议 rows/1000（100 适合 10 万行数据）
-	err := db.Exec(`
-		CREATE INDEX IF NOT EXISTS idx_embeddings_vector
-		ON manager.embeddings
-		USING ivfflat (embedding vector_cosine_ops)
-		WITH (lists = 100)
-	`).Error
-
-	if err != nil {
-		// 启动时表为空，创建失败是正常的
-		return fmt.Errorf("IVFFlat index creation failed (table may be empty): %w", err)
-	}
-
-	log.Println("✅ Vector index created successfully")
 	return nil
 }

@@ -83,6 +83,7 @@
     "executionList": {
       "title": "执行记录",
       "id": "ID",
+      "executionId": "执行ID",
       "taskId": "任务ID",
       "status": "状态",
       "processed": "已处理",
@@ -111,6 +112,7 @@
       "targetDataSource": "目标数据源",
       "executionRecords": "执行记录",
       "id": "ID",
+      "executionId": "执行ID",
       "recordsWritten": "已写入记录",
       "startTime": "开始时间",
       "endTime": "结束时间",

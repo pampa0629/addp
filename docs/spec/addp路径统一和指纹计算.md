@@ -391,7 +391,7 @@ WHERE attributes ? 'relative_path' OR attributes ? 'object_key';
 - `unified_mvt_service.go`: 改为两步指纹计算
 
 **数据库说明**:
-- `manager.embeddings` 表已使用 `path + name` 拆分结构（无需修改表结构）
+- `manager.embeddings` 当前按 `tenant_id + item_fingerprint` 去重，`locator` 用于回跳；字段语义见 `manager/docs/向量化能力说明.md`
 
 ### 4. Meilisearch 索引
 
@@ -436,7 +436,7 @@ Meta 查询 API 只读取已经扫描并持久化的 `meta_node`、`meta_item`�
 |------|------|-----------|---------|----------|---------|
 | Meta | meta.meta_item | attributes.bucket | 无 (通过NodeID) | Name | FullName |
 | Meta | meta.meta_node | 无 | Path (层级路径) | Name | FullName |
-| Manager | manager.embeddings | Bucket | Path | Name | 拼接生成 |
+| Manager | manager.embeddings | 不保存为核心字段 | 不保存为核心字段 | 不保存为核心字段 | locator / item_fingerprint |
 | Meilisearch | assets索引 | bucket | path (目录) | name | full_name |
 
 ## 十、指纹计算示例汇总

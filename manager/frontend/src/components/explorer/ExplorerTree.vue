@@ -72,6 +72,13 @@ import { ResourceTree } from '@addp/common-frontend'
 import { parseLocator } from '@addp/common-frontend'
 import { useExplorerStore } from '@/stores/explorer'
 import client from '@/api/client'
+import {
+  canShowVectorizeAction,
+  isEmbeddingReady,
+  isVectorizableObjectNode,
+  isVectorizableRangeNode,
+  isStorageEngineNode
+} from '@/utils/vectorization'
 
 const { t } = useI18n()
 
@@ -110,46 +117,39 @@ const nodeActions = computed(() => {
       icon: 'Refresh',
       visible: () => true
     },
-    // 已向量化状态提示（仅 MinIO/S3 的单个对象）
+    // 已向量化状态提示（仅支持向量化的单个对象）
     {
       id: 'embedding-ready',
       name: 'embedding-ready',
       label: t('manager.explorer.vectorized'),
       tooltip: t('manager.explorer.vectorized'),
-      icon: 'MagicStick',
+      icon: 'Select',
       color: '#67c23a',
       disabled: () => true,
       visible: (node) => {
-        if ((node.engineType !== 'minio' && node.engineType !== 's3') || node.type !== 'object') {
-          return false
-        }
         const state = embeddingStates.value[node.locator || node.id]
-        return state?.embedding?.status === 'ready'
+        return isVectorizableObjectNode(node) && isEmbeddingReady(state)
       }
     },
-    // 向量化操作（仅 MinIO/S3 的单个对象）
+    // 向量化操作（仅支持向量化且尚未 ready 的单个对象）
     {
       id: 'embedding',
       name: 'embedding',
       label: t('manager.explorer.vectorize'),
       icon: 'MagicStick',
       visible: (node) => {
-        if ((node.engineType !== 'minio' && node.engineType !== 's3') || node.type !== 'object') {
-          return false
-        }
         const state = embeddingStates.value[node.locator || node.id]
-        const status = state?.embedding?.status
-        return status !== 'ready' && status !== 'unsupported'
+        return isVectorizableObjectNode(node) && canShowVectorizeAction(node, state)
       }
     },
-    // 批量向量化操作（MinIO/S3 的目录或 Bucket）
+    // 批量向量化操作（MinIO/S3 的目录、前缀或 Bucket）
     {
       id: 'embedding-batch',
       name: 'embedding-batch',
       label: t('manager.explorer.batchVectorize'),
-      icon: 'Files',
+      icon: 'MagicStick',
       visible: (node) => {
-        return (node.engineType === 'minio' || node.engineType === 's3') && (node.type === 'directory' || node.type === 'bucket')
+        return isVectorizableRangeNode(node)
       }
     }
   ]
@@ -298,7 +298,7 @@ const handleNodeAction = async ({ node, action }) => {
 
   if (action === 'embedding' || action === 'embedding-batch') {
     // 只支持 MinIO/S3 对象存储
-    if (node.engineType !== 'minio' && node.engineType !== 's3') {
+    if (!isStorageEngineNode(node)) {
       ElMessage.warning(t('manager.explorer.vectorizeOnlyStorage'))
       return
     }
@@ -308,7 +308,7 @@ const handleNodeAction = async ({ node, action }) => {
       const loc = parseLocator(locator)
       let request
       if (action === 'embedding') {
-        if (node.type !== 'object') {
+        if (!isVectorizableObjectNode(node)) {
           ElMessage.warning(t('manager.explorer.vectorizeSingleFileOnly'))
           return
         }
@@ -325,7 +325,7 @@ const handleNodeAction = async ({ node, action }) => {
           }
         }
       } else {
-        if (!['directory', 'bucket', 'prefix'].includes(node.type) || !loc.nodeId) {
+        if (!isVectorizableRangeNode(node) || !loc.nodeId) {
           ElMessage.warning(t('manager.explorer.batchVectorizeDirOnly'))
           return
         }
@@ -343,6 +343,7 @@ const handleNodeAction = async ({ node, action }) => {
       await client.post('/manager/embedding_executions', request)
 
       if (action === 'embedding') {
+        await loadItemEmbeddingState(node, locator)
         ElMessage.success(t('manager.explorer.vectorizeSubmitted', { key: node.label }))
       } else {
         ElMessage.success(t('manager.explorer.batchVectorizeSubmitted', { label: node.label }))

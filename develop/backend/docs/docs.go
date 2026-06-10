@@ -484,7 +484,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/executions/{id}/logs": {
+        "/executions/{execution_id}/logs": {
             "get": {
                 "produces": [
                     "application/json"
@@ -497,7 +497,7 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "description": "执行ID（UUID）| Execution ID (UUID)",
-                        "name": "id",
+                        "name": "execution_id",
                         "in": "path",
                         "required": true
                     }
@@ -513,7 +513,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/executions/{id}/retry": {
+        "/executions/{execution_id}/retry": {
             "post": {
                 "tags": [
                     "Execution"
@@ -523,7 +523,7 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "description": "执行ID（UUID）| Execution ID (UUID)",
-                        "name": "id",
+                        "name": "execution_id",
                         "in": "path",
                         "required": true
                     }

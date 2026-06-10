@@ -229,12 +229,12 @@ const executionErrorMessage = computed(() => (
 ))
 
 let refreshTimer = null
+const executionId = computed(() => route.params.execution_id)
 
 // 加载执行详情
 const loadExecution = async (silent = false) => {
   try {
-    const id = route.params.id
-    const data = await getExecution(id)
+    const data = await getExecution(executionId.value)
     execution.value = data
 
     const result = data.metadata?.result
@@ -259,8 +259,7 @@ const loadLogs = async () => {
   }
 
   try {
-    const id = route.params.id
-    const data = await getExecutionLogs(id)
+    const data = await getExecutionLogs(executionId.value)
     logs.value = data.logs || []
   } catch (error) {
     console.error('加载日志失败:', error)
@@ -375,7 +374,7 @@ const handleBack = () => {
 
 const handleRetry = async () => {
   try {
-    await retryExecution(route.params.id)
+    await retryExecution(executionId.value)
     ElMessage.success(t('develop.execution.retrySubmitted'))
     router.push('/executions')
   } catch (error) {

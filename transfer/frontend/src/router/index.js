@@ -59,7 +59,7 @@ const routes = [
         meta: { requiresAuth: true, title: '执行记录-数据传输' }
       },
       {
-        path: 'executions/:id',
+        path: 'executions/:execution_id',
         name: 'ExecutionDetail',
         component: () => import('@/views/ExecutionDetail.vue'),
         meta: { requiresAuth: true, title: '执行详情-数据传输' }

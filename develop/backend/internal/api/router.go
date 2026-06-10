@@ -153,12 +153,12 @@ func SetupRouter(
 		// ========== 执行管理 ==========
 		executions := api.Group("/executions")
 		{
-			executions.POST("", executionHandler.ExecuteContent)                   // 执行临时内容
-			executions.GET("", executionHandler.ListExecutions)                    // 查询执行列表
-			executions.GET("/statistics", executionHandler.GetExecutionStatistics) // 获取执行统计
-			executions.GET("/:execution_id", executionHandler.GetExecution)        // 获取执行详情
-			executions.GET("/:id/logs", executionHandler.GetExecutionLogs)         // 获取执行日志
-			executions.POST("/:id/retry", executionHandler.RetryExecution)         // 重试执行
+			executions.POST("", executionHandler.ExecuteContent)                     // 执行临时内容
+			executions.GET("", executionHandler.ListExecutions)                      // 查询执行列表
+			executions.GET("/statistics", executionHandler.GetExecutionStatistics)   // 获取执行统计
+			executions.GET("/:execution_id", executionHandler.GetExecution)          // 获取执行详情
+			executions.GET("/:execution_id/logs", executionHandler.GetExecutionLogs) // 获取执行日志
+			executions.POST("/:execution_id/retry", executionHandler.RetryExecution) // 重试执行
 		}
 
 		// ========== 引擎管理 ==========

@@ -83,6 +83,7 @@
     "executionList": {
       "title": "Execution Records",
       "id": "ID",
+      "executionId": "Execution ID",
       "taskId": "Task ID",
       "status": "Status",
       "processed": "Processed",
@@ -111,6 +112,7 @@
       "targetDataSource": "Target Data Source",
       "executionRecords": "Execution Records",
       "id": "ID",
+      "executionId": "Execution ID",
       "recordsWritten": "Records Written",
       "startTime": "Start Time",
       "endTime": "End Time",

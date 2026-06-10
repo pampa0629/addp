@@ -77,7 +77,7 @@
 
       <el-divider>{{ t('transfer.taskDetail.executionRecords') }}</el-divider>
       <el-table :data="executions" stripe>
-        <el-table-column prop="id" :label="t('transfer.taskDetail.id')" width="80" />
+        <el-table-column prop="execution_id" :label="t('transfer.taskDetail.executionId')" width="220" show-overflow-tooltip />
         <el-table-column prop="status" :label="t('transfer.taskDetail.status')" width="100">
           <template #default="{ row }">
             <el-tag :type="getExecutionTagType(row.status)">
@@ -98,8 +98,8 @@
         </el-table-column>
         <el-table-column :label="t('transfer.taskDetail.actions')" width="150">
           <template #default="{ row }">
-            <el-button size="small" @click="viewExecution(row.id)">{{ t('transfer.taskDetail.detail') }}</el-button>
-            <el-button size="small" type="primary" @click="retryExecution(row.id)" v-if="row.status === 'failed'">
+            <el-button size="small" @click="viewExecution(row.execution_id)">{{ t('transfer.taskDetail.detail') }}</el-button>
+            <el-button size="small" type="primary" @click="retryExecution(row.execution_id)" v-if="row.status === 'failed'">
               {{ t('transfer.taskDetail.retry') }}
             </el-button>
           </template>
@@ -212,12 +212,12 @@ const handleEdit = () => {
   router.push(`/tasks/${route.params.id}/edit`)
 }
 
-const viewExecution = (id) => {
-  router.push(`/executions/${id}`)
+const viewExecution = (executionId) => {
+  router.push(`/executions/${executionId}`)
 }
 
-const retryExecution = async (id) => {
-  await executionAPI.retry(id)
+const retryExecution = async (executionId) => {
+  await executionAPI.retry(executionId)
   ElMessage.success(t('transfer.taskDetail.retrySubmitted'))
   loadTask()
 }

@@ -3,7 +3,7 @@
     <el-card>
       <template #header>{{ t('transfer.executionList.title') }}</template>
       <el-table :data="executions" v-loading="loading">
-        <el-table-column prop="id" :label="t('transfer.executionList.id')" width="80" />
+        <el-table-column prop="execution_id" :label="t('transfer.executionList.executionId')" width="220" show-overflow-tooltip />
         <el-table-column prop="task_id" :label="t('transfer.executionList.taskId')" width="100" />
         <el-table-column prop="status" :label="t('transfer.executionList.status')" width="100">
           <template #default="{ row }">
@@ -14,7 +14,7 @@
         <el-table-column prop="start_time" :label="t('transfer.executionList.startTime')" width="180" />
         <el-table-column :label="t('transfer.executionList.actions')" width="150">
           <template #default="{ row }">
-            <el-button size="small" @click="viewDetail(row.id)">{{ t('transfer.executionList.detail') }}</el-button>
+            <el-button size="small" @click="viewDetail(row.execution_id)">{{ t('transfer.executionList.detail') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -43,8 +43,8 @@ const loadExecutions = async () => {
   }
 }
 
-const viewDetail = (id) => {
-  router.push(`/executions/${id}`)
+const viewDetail = (executionId) => {
+  router.push(`/executions/${executionId}`)
 }
 
 const getStatusType = (status) => {

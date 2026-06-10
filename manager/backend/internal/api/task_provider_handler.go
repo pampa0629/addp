@@ -65,6 +65,7 @@ type EmbeddingTaskRequest struct {
 type EmbeddingTaskTargetResponse struct {
 	Scope     string `json:"scope"`
 	EngineID  uint   `json:"engine_id,omitempty"`
+	ItemID    uint   `json:"item_id,omitempty"`
 	NodeID    uint   `json:"node_id,omitempty"`
 	Locator   string `json:"locator,omitempty"`
 	Recursive bool   `json:"recursive"`
@@ -597,6 +598,7 @@ func embeddingTaskResponse(task *models.EmbeddingTask) EmbeddingTaskResponse {
 		resp.Target = &EmbeddingTaskTargetResponse{
 			Scope:     stringFromConfig(target["scope"]),
 			EngineID:  uintFromConfig(target["engine_id"]),
+			ItemID:    uintFromConfig(target["item_id"]),
 			NodeID:    uintFromConfig(target["node_id"]),
 			Locator:   stringFromConfig(target["locator"]),
 			Recursive: boolFromConfig(target["recursive"], true),

@@ -1,5 +1,7 @@
 # MVT 快显 extent 与 SRID 边界说明
 
+> 相关上层专题：[Manager 快显与 MVT 瓦片缓存概念设计](Manager快显与MVT瓦片缓存概念设计.md)。
+
 ## 背景
 
 ADDP 已将源空间事实统一收敛到 `attributes.capabilities.spatial`。其中 `capabilities.spatial.extent` 只表达当前空间对象或 primary geometry column 原生 CRS 下的范围，不支持记录与源 CRS 不一致的派生 extent，也不再通过 `extent_srid` 在标准 attributes 内表达另一套坐标。

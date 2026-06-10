@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/addp/common/embedding"
+	enginePlugin "github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/config"
 	"github.com/addp/manager/internal/models"
@@ -167,6 +168,82 @@ func TestProcessItemSkipsCurrentReadyStateBeforeReadingSource(t *testing.T) {
 	}
 	if state == nil || state.Status != models.EmbeddingStatusReady || state.LastExecutionID == nil || *state.LastExecutionID != executionID {
 		t.Fatalf("state was unexpectedly changed: %#v", state)
+	}
+}
+
+func TestDetectSupportedModalityRequiresSupportedObjectFormat(t *testing.T) {
+	svc := &EmbeddingService{}
+	tests := []struct {
+		name        string
+		contentType string
+		objectKey   string
+		wantOK      bool
+		want        embedding.Modality
+	}{
+		{
+			name:        "image extension supported even when content type is generic",
+			contentType: "application/octet-stream",
+			objectKey:   "bucket/photo.jpg",
+			wantOK:      true,
+			want:        embedding.ModalityImage,
+		},
+		{
+			name:        "plain text sidecar is not vectorized",
+			contentType: "text/plain",
+			objectKey:   "bucket/srtm_40_01.tfw",
+			wantOK:      false,
+		},
+		{
+			name:        "aux xml sidecar is not vectorized",
+			contentType: "text/xml",
+			objectKey:   "bucket/srtm_40_01.tif.aux.xml",
+			wantOK:      false,
+		},
+		{
+			name:        "csv text is supported",
+			contentType: "text/plain",
+			objectKey:   "bucket/test.csv",
+			wantOK:      true,
+			want:        embedding.ModalityText,
+		},
+		{
+			name:        "unknown extension is not vectorized",
+			contentType: "application/octet-stream",
+			objectKey:   "bucket/data.bin",
+			wantOK:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := svc.detectSupportedModality(tt.contentType, tt.objectKey)
+			if ok != tt.wantOK {
+				t.Fatalf("ok = %v, want %v", ok, tt.wantOK)
+			}
+			if ok && got != tt.want {
+				t.Fatalf("modality = %s, want %s", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCatalogModelForEmbeddingItemSupportsObjectAndFileCatalogs(t *testing.T) {
+	tests := []struct {
+		name     string
+		itemType string
+		wantRoot string
+	}{
+		{name: "object storage item", itemType: "object", wantRoot: enginePlugin.CatalogTermService},
+		{name: "file storage item", itemType: "file", wantRoot: enginePlugin.CatalogTermRoot},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := catalogModelForEmbeddingItem(commonModels.MetaItem{ItemType: tt.itemType})
+			if got.RootTerm != tt.wantRoot {
+				t.Fatalf("RootTerm = %s, want %s", got.RootTerm, tt.wantRoot)
+			}
+		})
 	}
 }
 

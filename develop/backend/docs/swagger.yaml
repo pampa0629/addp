@@ -1093,12 +1093,12 @@ paths:
       summary: 获取执行详情 | Get execution details
       tags:
       - Execution
-  /executions/{id}/logs:
+  /executions/{execution_id}/logs:
     get:
       parameters:
       - description: 执行ID（UUID）| Execution ID (UUID)
         in: path
-        name: id
+        name: execution_id
         required: true
         type: string
       produces:
@@ -1112,12 +1112,12 @@ paths:
       summary: 获取执行日志 | Get execution logs
       tags:
       - Execution
-  /executions/{id}/retry:
+  /executions/{execution_id}/retry:
     post:
       parameters:
       - description: 执行ID（UUID）| Execution ID (UUID)
         in: path
-        name: id
+        name: execution_id
         required: true
         type: string
       responses:

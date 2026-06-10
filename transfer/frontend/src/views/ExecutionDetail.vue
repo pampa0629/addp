@@ -2,9 +2,9 @@
   <div class="execution-detail">
     <el-button @click="$router.back()" style="margin-bottom: 20px;">{{ t('transfer.executionDetail.back') }}</el-button>
     <el-card v-loading="loading">
-      <template #header>{{ t('transfer.executionDetail.executionDetailTitle', { id: execution.id }) }}</template>
+      <template #header>{{ t('transfer.executionDetail.executionDetailTitle', { id: execution.execution_id }) }}</template>
       <el-descriptions :column="2" border>
-        <el-descriptions-item :label="t('transfer.executionDetail.executionId')">{{ execution.id }}</el-descriptions-item>
+        <el-descriptions-item :label="t('transfer.executionDetail.executionId')">{{ execution.execution_id }}</el-descriptions-item>
         <el-descriptions-item :label="t('transfer.executionDetail.taskId')">{{ execution.task_id }}</el-descriptions-item>
         <el-descriptions-item :label="t('transfer.executionDetail.status')">
           <el-tag :type="getStatusType(execution.status)">{{ execution.status }}</el-tag>
@@ -85,7 +85,7 @@
             size="small"
             @click="refreshLogs"
             :loading="refreshing"
-            :disabled="!execution.id">
+            :disabled="!execution.execution_id">
             {{ t('transfer.executionDetail.refreshLogs') }}
           </el-button>
 
@@ -133,14 +133,15 @@ const execution = ref({})
 const logs = ref('')
 const logLevel = ref('all')
 const autoRefreshInterval = ref(null)
+const executionId = computed(() => route.params.execution_id)
 
 const loadExecution = async () => {
   loading.value = true
   try {
-    execution.value = await executionAPI.get(route.params.id)
+    execution.value = await executionAPI.get(executionId.value)
 
     // 加载日志 - API 返回 {logs: "string"}
-    const logData = await executionAPI.logs(route.params.id)
+    const logData = await executionAPI.logs(executionId.value)
 
     // 处理响应格式
     if (typeof logData === 'object' && logData.logs !== undefined) {
@@ -167,9 +168,9 @@ const loadExecution = async () => {
 const refreshLogs = async () => {
   if (refreshing.value) return
 
-  refreshing.value = true
+    refreshing.value = true
   try {
-    const logData = await executionAPI.logs(route.params.id)
+    const logData = await executionAPI.logs(executionId.value)
 
     // 处理响应格式
     if (typeof logData === 'object' && logData.logs !== undefined) {
@@ -183,7 +184,7 @@ const refreshLogs = async () => {
     }
 
     // 同时刷新执行状态
-    execution.value = await executionAPI.get(route.params.id)
+    execution.value = await executionAPI.get(executionId.value)
 
     // 如果任务不再运行，停止自动刷新
     if (execution.value.status !== 'running' && autoRefreshInterval.value) {
@@ -207,7 +208,7 @@ const downloadLogs = () => {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `execution-${route.params.id}-logs.txt`
+  a.download = `execution-${executionId.value}-logs.txt`
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)

@@ -182,11 +182,11 @@ func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
 // RetryExecution 重试执行
 // @Summary 重试执行 | Retry execution
 // @Tags Execution
-// @Param id path string true "执行ID（UUID）| Execution ID (UUID)"
+// @Param execution_id path string true "执行ID（UUID）| Execution ID (UUID)"
 // @Success 200 {object} map[string]string "重试已启动 | Retry started"
-// @Router /executions/{id}/retry [post]
+// @Router /executions/{execution_id}/retry [post]
 func (h *ExecutionHandler) RetryExecution(c *gin.Context) {
-	executionID := c.Param("id")
+	executionID := c.Param("execution_id")
 	tenantID := c.GetUint("tenant_id")
 	userID := c.GetUint("user_id")
 
@@ -231,11 +231,11 @@ func (h *ExecutionHandler) GetExecutionStatistics(c *gin.Context) {
 // @Summary 获取执行日志 | Get execution logs
 // @Tags Execution
 // @Produce json
-// @Param id path string true "执行ID（UUID）| Execution ID (UUID)"
+// @Param execution_id path string true "执行ID（UUID）| Execution ID (UUID)"
 // @Success 200 {object} map[string]interface{} "执行日志 | Execution logs"
-// @Router /executions/{id}/logs [get]
+// @Router /executions/{execution_id}/logs [get]
 func (h *ExecutionHandler) GetExecutionLogs(c *gin.Context) {
-	executionID := c.Param("id")
+	executionID := c.Param("execution_id")
 
 	// 暂时返回占位响应
 	c.JSON(http.StatusOK, gin.H{

@@ -93,7 +93,7 @@ Transfer 当前恢复能力分三档：
 | restartable | 已支持 | 失败执行 retry 创建新 execution 并从头执行。 |
 | resumable | 未进入主链路 | 需要 source seek、target 幂等提交和 provider marker 消费同时满足。 |
 
-`POST /api/v1/transfer/executions/:id/retry` 当前语义：
+`POST /api/v1/transfer/executions/:execution_id/retry` 当前语义：
 
 - 仅重试失败 execution。
 - 新建一条 execution。
@@ -112,8 +112,8 @@ Transfer 当前恢复能力分三档：
 | `GET` | `/executions` | 查询租户下 Transfer 执行记录。 |
 | `GET` | `/executions/statistics` | 查询执行统计。 |
 | `GET` | `/executions/:execution_id` | TaskProvider 标准执行详情入口，按统一 `common.task_executions.execution_id` 查询。 |
-| `POST` | `/executions/:id/cancel` | Transfer 私有执行管理入口，按内部执行记录自增 ID 取消执行。 |
-| `POST` | `/executions/:id/retry` | Transfer 私有执行管理入口，按内部执行记录自增 ID 和 restartable 语义重试失败执行。 |
-| `GET` | `/executions/:id/progress` | Transfer 私有执行管理入口，按内部执行记录自增 ID 查询执行进度。 |
-| `GET` | `/executions/:id/logs` | Transfer 私有执行管理入口，按内部执行记录自增 ID 查询执行日志。 |
+| `POST` | `/executions/:execution_id/cancel` | 按统一 `common.task_executions.execution_id` 取消执行；不等于声明 TaskProvider 标准取消能力。 |
+| `POST` | `/executions/:execution_id/retry` | 按统一 `common.task_executions.execution_id` 和 restartable 语义重试失败执行。 |
+| `GET` | `/executions/:execution_id/progress` | 按统一 `common.task_executions.execution_id` 查询执行进度。 |
+| `GET` | `/executions/:execution_id/logs` | 按统一 `common.task_executions.execution_id` 查询执行日志。 |
 | `GET` | `/task-definitions/:id/executions` | 查询某个任务的执行记录。 |

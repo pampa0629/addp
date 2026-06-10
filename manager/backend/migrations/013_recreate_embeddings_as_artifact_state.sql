@@ -2,7 +2,7 @@
 -- Clean break: manager.embeddings is now the embedding artifact state table.
 -- Historical fingerprint + modality / bucket + path + name storage is removed.
 
-CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS vector SCHEMA manager;
 
 DROP TABLE IF EXISTS manager.document_embeddings;
 DROP TABLE IF EXISTS manager.embeddings;
@@ -15,7 +15,7 @@ CREATE TABLE manager.embeddings (
     engine_id           INTEGER NOT NULL,
     locator             TEXT NOT NULL,
     source_version      VARCHAR(255) NOT NULL,
-    embedding           vector(1024),
+    embedding           manager.vector(2560),
     model               VARCHAR(100) NOT NULL,
     dimension           INTEGER NOT NULL,
     status              VARCHAR(32) NOT NULL,
@@ -35,8 +35,3 @@ CREATE INDEX IF NOT EXISTS idx_embeddings_engine ON manager.embeddings (engine_i
 CREATE INDEX IF NOT EXISTS idx_embeddings_status ON manager.embeddings (status);
 CREATE INDEX IF NOT EXISTS idx_embeddings_ready_query
 ON manager.embeddings (tenant_id, status, model, dimension, engine_id);
-
-CREATE INDEX IF NOT EXISTS idx_embeddings_vector
-ON manager.embeddings
-USING ivfflat (embedding vector_cosine_ops)
-WITH (lists = 100);

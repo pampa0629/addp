@@ -154,13 +154,13 @@ func SetupRouter(
 	// 执行记录路由
 	executions := protected.Group("/executions")
 	{
-		executions.GET("", executionHandler.ListExecutions)                    // 获取执行记录列表
-		executions.GET("/statistics", executionHandler.GetExecutionStatistics) // 获取执行统计
-		executions.GET("/:execution_id", executionHandler.GetExecution)        // 获取执行详情
-		executions.POST("/:id/cancel", executionHandler.CancelExecution)       // 取消执行
-		executions.POST("/:id/retry", executionHandler.RetryExecution)         // 重试执行
-		executions.GET("/:id/progress", executionHandler.GetExecutionProgress) // 获取执行进度
-		executions.GET("/:id/logs", executionHandler.GetExecutionLogs)         // 获取执行日志
+		executions.GET("", executionHandler.ListExecutions)                              // 获取执行记录列表
+		executions.GET("/statistics", executionHandler.GetExecutionStatistics)           // 获取执行统计
+		executions.GET("/:execution_id", executionHandler.GetExecution)                  // 获取执行详情
+		executions.POST("/:execution_id/cancel", executionHandler.CancelExecution)       // 取消执行
+		executions.POST("/:execution_id/retry", executionHandler.RetryExecution)         // 重试执行
+		executions.GET("/:execution_id/progress", executionHandler.GetExecutionProgress) // 获取执行进度
+		executions.GET("/:execution_id/logs", executionHandler.GetExecutionLogs)         // 获取执行日志
 	}
 
 	return router

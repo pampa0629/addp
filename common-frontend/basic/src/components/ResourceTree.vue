@@ -86,6 +86,9 @@
                     <el-icon v-else-if="data.type === 'directory'">
                       <FolderOpened />
                     </el-icon>
+                    <el-icon v-else-if="data.type === 'root' || data.type === 'server' || data.type === 'service'">
+                      <FolderOpened />
+                    </el-icon>
                     <el-icon v-else-if="data.type === 'prefix'">
                       <Folder />
                     </el-icon>
@@ -169,6 +172,7 @@ import {
   DataBoard,
   Box,
   MagicStick,
+  Select,
   OfficeBuilding,
   Shop,
   Share,
@@ -191,6 +195,7 @@ const actionIconMap = {
   Coin,
   Box,
   OfficeBuilding,
+  Select,
   Shop,
   Share,
   Upload

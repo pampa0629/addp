@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	commonAPI "github.com/addp/common/api"
+	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -33,19 +34,9 @@ func NewExecutionHandler(executionService *service.ExecutionService) *ExecutionH
 // @Security BearerAuth
 func (h *ExecutionHandler) GetExecution(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
-	idParam := c.Param("execution_id")
-	if id, err := strconv.ParseUint(idParam, 10, 32); err == nil {
-		execution, err := h.executionService.GetExecution(c.Request.Context(), uint(id), tenantID)
-		if err != nil {
-			commonAPI.NotFoundError(c, "Execution not found")
-			return
-		}
+	executionID := c.Param("execution_id")
 
-		c.JSON(http.StatusOK, execution)
-		return
-	}
-
-	execution, err := h.executionService.GetExecutionByExecutionID(c.Request.Context(), idParam, tenantID)
+	execution, err := h.executionService.GetExecutionByExecutionID(c.Request.Context(), executionID, tenantID)
 	if err != nil {
 		commonAPI.NotFoundError(c, "Execution not found")
 		return
@@ -137,20 +128,19 @@ func (h *ExecutionHandler) GetTaskExecutions(c *gin.Context) {
 // @Summary 取消执行 | Cancel execution
 // @Tags 执行管理 | Execution Management
 // @Produce json
-// @Param id path int true "执行ID | Execution ID"
+// @Param execution_id path string true "执行ID | Execution ID"
 // @Success 200 {object} map[string]string
 // @Failure 500 {object} map[string]string
-// @Router /executions/{id}/cancel [post]
+// @Router /executions/{execution_id}/cancel [post]
 // @Security BearerAuth
 func (h *ExecutionHandler) CancelExecution(c *gin.Context) {
-	id, ok := commonAPI.ParseUintParam(c, "id")
+	tenantID := c.GetUint("tenant_id")
+	execution, ok := h.getExecutionByExecutionID(c, tenantID)
 	if !ok {
 		return
 	}
 
-	tenantID := c.GetUint("tenant_id")
-
-	if err := h.executionService.CancelExecution(c.Request.Context(), id, tenantID); err != nil {
+	if err := h.executionService.CancelExecution(c.Request.Context(), execution.ID, tenantID); err != nil {
 		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
@@ -163,21 +153,20 @@ func (h *ExecutionHandler) CancelExecution(c *gin.Context) {
 // @Description 为失败执行创建新的 retry 执行记录，并按 restartable 语义从头重新入队执行 | Create a new retry execution for a failed execution and enqueue it from the beginning with restartable semantics
 // @Tags 执行管理 | Execution Management
 // @Produce json
-// @Param id path int true "执行ID | Execution ID"
+// @Param execution_id path string true "执行ID | Execution ID"
 // @Success 200 {object} map[string]interface{}
 // @Failure 500 {object} map[string]string
-// @Router /executions/{id}/retry [post]
+// @Router /executions/{execution_id}/retry [post]
 // @Security BearerAuth
 func (h *ExecutionHandler) RetryExecution(c *gin.Context) {
-	id, ok := commonAPI.ParseUintParam(c, "id")
+	tenantID := c.GetUint("tenant_id")
+	userID := c.GetUint("user_id")
+	execution, ok := h.getExecutionByExecutionID(c, tenantID)
 	if !ok {
 		return
 	}
 
-	tenantID := c.GetUint("tenant_id")
-	userID := c.GetUint("user_id")
-
-	newExecution, err := h.executionService.RetryExecution(c.Request.Context(), id, tenantID, userID)
+	newExecution, err := h.executionService.RetryExecution(c.Request.Context(), execution.ID, tenantID, userID)
 	if err != nil {
 		commonAPI.InternalServerError(c, err.Error())
 		return
@@ -190,20 +179,19 @@ func (h *ExecutionHandler) RetryExecution(c *gin.Context) {
 // @Summary 获取执行进度 | Get execution progress
 // @Tags 执行管理 | Execution Management
 // @Produce json
-// @Param id path int true "执行ID | Execution ID"
+// @Param execution_id path string true "执行ID | Execution ID"
 // @Success 200 {object} map[string]interface{}
 // @Failure 500 {object} map[string]string
-// @Router /executions/{id}/progress [get]
+// @Router /executions/{execution_id}/progress [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) GetExecutionProgress(c *gin.Context) {
-	id, ok := commonAPI.ParseUintParam(c, "id")
+	tenantID := c.GetUint("tenant_id")
+	execution, ok := h.getExecutionByExecutionID(c, tenantID)
 	if !ok {
 		return
 	}
 
-	tenantID := c.GetUint("tenant_id")
-
-	progress, err := h.executionService.GetExecutionProgress(c.Request.Context(), id, tenantID)
+	progress, err := h.executionService.GetExecutionProgress(c.Request.Context(), execution.ID, tenantID)
 	if err != nil {
 		commonAPI.InternalServerError(c, err.Error())
 		return
@@ -216,22 +204,21 @@ func (h *ExecutionHandler) GetExecutionProgress(c *gin.Context) {
 // @Summary 获取执行日志 | Get execution logs
 // @Tags 执行管理 | Execution Management
 // @Produce json
-// @Param id path int true "执行ID | Execution ID"
+// @Param execution_id path string true "执行ID | Execution ID"
 // @Param limit query int false "最多返回行数 | Line limit"
 // @Success 200 {array} string
 // @Failure 500 {object} map[string]string
-// @Router /executions/{id}/logs [get]
+// @Router /executions/{execution_id}/logs [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) GetExecutionLogs(c *gin.Context) {
-	id, ok := commonAPI.ParseUintParam(c, "id")
+	tenantID := c.GetUint("tenant_id")
+	execution, ok := h.getExecutionByExecutionID(c, tenantID)
 	if !ok {
 		return
 	}
 
-	tenantID := c.GetUint("tenant_id")
-
 	// 获取完整日志字符串
-	logs, err := h.executionService.GetExecutionLogs(c.Request.Context(), id, tenantID)
+	logs, err := h.executionService.GetExecutionLogs(c.Request.Context(), execution.ID, tenantID)
 	if err != nil {
 		commonAPI.InternalServerError(c, err.Error())
 		return
@@ -257,6 +244,16 @@ func (h *ExecutionHandler) GetExecutionLogs(c *gin.Context) {
 
 	// 返回数组，前端按行渲染
 	c.JSON(http.StatusOK, lines)
+}
+
+func (h *ExecutionHandler) getExecutionByExecutionID(c *gin.Context, tenantID uint) (*models.TaskExecution, bool) {
+	executionID := c.Param("execution_id")
+	execution, err := h.executionService.GetExecutionByExecutionID(c.Request.Context(), executionID, tenantID)
+	if err != nil {
+		commonAPI.NotFoundError(c, "Execution not found")
+		return nil, false
+	}
+	return execution, true
 }
 
 // GetExecutionStatistics 获取执行统计

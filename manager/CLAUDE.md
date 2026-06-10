@@ -23,6 +23,8 @@ manager/
 │   └── docs/                  # Swagger 产物
 ├── docs/
 │   ├── 数据库架构.md
+│   ├── 向量化概念说明.md
+│   ├── 向量化能力说明.md
 │   ├── addp-mvt瓦片两阶段及配置说明.md
 │   └── tables/
 └── frontend/src/
@@ -68,6 +70,8 @@ curl http://localhost:8081/health
 ## 相关文档
 
 - `manager/docs/数据库架构.md`
+- `manager/docs/向量化概念说明.md`
+- `manager/docs/向量化能力说明.md`
 - `manager/docs/addp-mvt瓦片两阶段及配置说明.md`
 - `manager/docs/数据预览API重构方案.md`
 - `manager/docs/数据预览语义协议.md`

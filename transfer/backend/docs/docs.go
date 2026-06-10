@@ -327,7 +327,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/executions/{id}/cancel": {
+        "/executions/{execution_id}/cancel": {
             "post": {
                 "security": [
                     {
@@ -343,9 +343,9 @@ const docTemplate = `{
                 "summary": "取消执行 | Cancel execution",
                 "parameters": [
                     {
-                        "type": "integer",
+                        "type": "string",
                         "description": "执行ID | Execution ID",
-                        "name": "id",
+                        "name": "execution_id",
                         "in": "path",
                         "required": true
                     }
@@ -372,7 +372,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/executions/{id}/logs": {
+        "/executions/{execution_id}/logs": {
             "get": {
                 "security": [
                     {
@@ -388,9 +388,9 @@ const docTemplate = `{
                 "summary": "获取执行日志 | Get execution logs",
                 "parameters": [
                     {
-                        "type": "integer",
+                        "type": "string",
                         "description": "执行ID | Execution ID",
-                        "name": "id",
+                        "name": "execution_id",
                         "in": "path",
                         "required": true
                     },
@@ -423,7 +423,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/executions/{id}/progress": {
+        "/executions/{execution_id}/progress": {
             "get": {
                 "security": [
                     {
@@ -439,9 +439,9 @@ const docTemplate = `{
                 "summary": "获取执行进度 | Get execution progress",
                 "parameters": [
                     {
-                        "type": "integer",
+                        "type": "string",
                         "description": "执行ID | Execution ID",
-                        "name": "id",
+                        "name": "execution_id",
                         "in": "path",
                         "required": true
                     }
@@ -466,7 +466,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/executions/{id}/retry": {
+        "/executions/{execution_id}/retry": {
             "post": {
                 "security": [
                     {
@@ -483,9 +483,9 @@ const docTemplate = `{
                 "summary": "重试执行 | Retry execution",
                 "parameters": [
                     {
-                        "type": "integer",
+                        "type": "string",
                         "description": "执行ID | Execution ID",
-                        "name": "id",
+                        "name": "execution_id",
                         "in": "path",
                         "required": true
                     }

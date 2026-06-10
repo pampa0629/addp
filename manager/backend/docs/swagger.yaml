@@ -1881,6 +1881,11 @@ paths:
         in: query
         name: page_size
         type: integer
+      - description: 超级管理员指定检索租户；普通用户忽略该参数 | Tenant filter for super admin; ignored
+          for tenant users
+        in: query
+        name: tenant_id
+        type: integer
       produces:
       - application/json
       responses:

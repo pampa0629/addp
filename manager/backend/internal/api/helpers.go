@@ -15,3 +15,13 @@ func tenantIDFromContext(c *gin.Context) *uint {
 	}
 	return &tenantID
 }
+
+// tenantFilterIDFromContext 从 Gin Context 中提取检索用租户过滤。
+// 普通用户强制使用认证租户；超级管理员可通过 query.tenant_id 显式指定租户。
+func tenantFilterIDFromContext(c *gin.Context) *uint {
+	tenantID := auth.GetTenantFilterWithQuery(c)
+	if tenantID == 0 {
+		return nil
+	}
+	return &tenantID
+}

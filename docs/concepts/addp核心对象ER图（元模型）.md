@@ -631,7 +631,7 @@ erDiagram
         uint engine_id FK
         string locator "资源树回跳定位"
         string source_version "源内容版本键"
-        vector embedding "vector(1024)，ready 时有值"
+        vector embedding "vector(2560)，ready 时有值"
         string model
         int dimension
         string status "ready|outdated|failed|unsupported|missing_source"
@@ -657,7 +657,7 @@ erDiagram
 | # | 问题描述 | 当前状态 | 影响 |
 |---|----------|----------|------|
 | MG-1 | `MvtTask` 与 `QuickView` 通过 engine+schema+table 三字段软关联，无 DB FK | 设计如此 | 同一张空间表可能对应多个 MvtTask（不同 zoom 配置），QuickView 按最新执行覆盖更新 |
-| MG-2 | `Embedding.item_fingerprint` 与 `tenant_id` 组成唯一键，按标准 data item 指纹去重；重复执行只跳过或覆盖当前结果 | 已收敛 | 与向量化 artifact state 规范一致 |
+| MG-2 | `Embedding.item_fingerprint` 与 `tenant_id` 组成唯一键，按标准 data item 指纹去重；重复执行只跳过或覆盖当前结果 | 已收敛 | 与 Manager 向量化能力说明一致 |
 
 ---
 
@@ -1390,7 +1390,7 @@ graph TD
 | M-1  | Meta     | ScanTask 的调度字段（schedule_type + cron_expression）与其他任务单字段 schedule 不一致 | 中 | ✅ 已修正，见 T-1 |
 | M-2  | Meta     | DataItem.attributes JSONB 存字段列表，无字段级查询能力                | —      | 已确认合理（依赖 Meilisearch）|
 | MG-1 | Manager  | MvtTask 与 QuickView 通过 engine+schema+table 三字段软关联，无 DB FK  | —      | 已确认合理 |
-| MG-2 | Manager  | Embedding 以 `tenant_id + item_fingerprint` 唯一，重复执行只跳过或覆盖当前 artifact state | — | 已按向量化规范收敛 |
+| MG-2 | Manager  | Embedding 以 `tenant_id + item_fingerprint` 唯一，重复执行只跳过或覆盖当前 artifact state | — | 已按 Manager 向量化能力说明收敛 |
 | SV-1 | Service  | TileServiceLayer.engine_id 藏在 layer_config JSONB 中，无 DB FK       | 中     | 待讨论     |
 | SV-2 | Service  | 三类服务无统一父表，服务目录需 UNION 查询                             | 低     | 待讨论     |
 | SV-3 | Service  | RegisteredService.auth_config 加密存储，敏感信息与业务信息混存        | —      | 已确认合理 |

@@ -128,21 +128,21 @@ func Load() *Config {
 	cfg.EmbeddingService.BaseURL = commonConfig.GetEnv("MANAGER_EMBEDDING_SERVICE_BASE_URL", "")
 	cfg.EmbeddingService.APIKey = commonConfig.GetEnv("MANAGER_EMBEDDING_SERVICE_API_KEY", "")
 	cfg.EmbeddingService.Timeout = commonConfig.GetEnvDuration("MANAGER_EMBEDDING_SERVICE_TIMEOUT", "15s")
-	embeddingModel := commonConfig.GetEnv("MANAGER_EMBEDDING_MODEL", "qwen2.5-vl-embedding")
+	embeddingModel := commonConfig.GetEnv("MANAGER_EMBEDDING_MODEL", "qwen3-vl-embedding")
 	cfg.EmbeddingService.Models = map[string]string{
 		"text":  embeddingModel,
 		"image": embeddingModel,
 		"video": embeddingModel,
 	}
 
-	cfg.VectorConfig.Dimension = commonConfig.GetEnvInt("MANAGER_VECTOR_DIMENSION", 1024)
+	cfg.VectorConfig.Dimension = commonConfig.GetEnvInt("MANAGER_VECTOR_DIMENSION", 2560)
 
 	// 解析 MaxDistance（浮点数）
-	maxDistanceStr := commonConfig.GetEnv("MANAGER_VECTOR_SEARCH_MAX_DISTANCE", "0.35")
+	maxDistanceStr := commonConfig.GetEnv("MANAGER_VECTOR_SEARCH_MAX_DISTANCE", "0.78")
 	if maxDistance, err := strconv.ParseFloat(maxDistanceStr, 64); err == nil && maxDistance > 0 {
 		cfg.VectorConfig.MaxDistance = maxDistance
 	} else {
-		cfg.VectorConfig.MaxDistance = 0.35
+		cfg.VectorConfig.MaxDistance = 0.78
 	}
 
 	cfg.VectorConfig.MaxFileSizeMB = commonConfig.GetEnvInt("MANAGER_VECTOR_MAX_FILE_SIZE_MB", 10)

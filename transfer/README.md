@@ -100,12 +100,12 @@ non-table raw copy 已形成第一版最小闭环：`document`、`media`、`unkn
 - `GET /tasks/:id/executions`
 - `GET /executions`
 - `GET /executions/:execution_id`
-- `POST /executions/:id/cancel`
-- `POST /executions/:id/retry`
-- `GET /executions/:id/progress`
-- `GET /executions/:id/logs`
+- `POST /executions/:execution_id/cancel`
+- `POST /executions/:execution_id/retry`
+- `GET /executions/:execution_id/progress`
+- `GET /executions/:execution_id/logs`
 
-`GET /executions/:execution_id` 是 TaskProvider 标准执行详情入口，按统一 `common.task_executions.execution_id` 查询。取消、重试、进度和日志接口仍属于 Transfer 私有执行管理入口，当前按内部执行记录自增 ID 工作；后续由 Transfer 专题统一收敛。
+`GET /executions/:execution_id` 是 TaskProvider 标准执行详情入口，按统一 `common.task_executions.execution_id` 查询。取消、重试、进度和日志入口也按 `execution_id` 定位执行记录；但这不等于声明 TaskProvider 标准取消能力，`supports_cancel=false` 时 Orchestrator 和 Monitor 不应展示跨模块取消入口。
 
 ## 启动与验证
 
