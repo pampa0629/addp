@@ -264,8 +264,6 @@ build-backends: ## 编译所有后端服务到 dist/ 目录（用于生产镜像
 	@cd system/backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../dist/system-backend ./cmd/server
 	@echo "$(YELLOW)编译 manager-backend...$(NC)"
 	@cd manager/backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../dist/manager-backend ./cmd/server
-	@echo "$(YELLOW)编译 manager-worker...$(NC)"
-	@cd manager/backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../dist/manager-worker ./cmd/worker
 	@echo "$(YELLOW)编译 meta-backend...$(NC)"
 	@cd meta/backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../dist/meta-backend ./cmd/server
 	@echo "$(YELLOW)编译 meta-worker...$(NC)"
@@ -287,7 +285,6 @@ prod-build-images: build-backends ## 构建所有生产 Docker 镜像（使用�
 	@echo "$(GREEN)构建所有生产镜像（从项目根目录）...$(NC)"
 	@docker build -t localhost:5001/addp-system-backend:latest -f system/backend/Dockerfile .
 	@docker build -t localhost:5001/addp-manager-backend:latest -f manager/backend/Dockerfile .
-	@docker build -t localhost:5001/addp-manager-worker:latest -f manager/worker/Dockerfile .
 	@docker build -t localhost:5001/addp-meta-backend:latest -f meta/backend/Dockerfile .
 	@docker build -t localhost:5001/addp-meta-worker:latest -f meta/worker/Dockerfile .
 	@docker build -t localhost:5001/addp-transfer-backend:latest -f transfer/backend/Dockerfile .

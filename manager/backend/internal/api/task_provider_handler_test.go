@@ -36,18 +36,27 @@ func TestTaskProviderListTasksRejectsUnsupportedTaskType(t *testing.T) {
 
 func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 	db := newTaskProviderHandlerTestDB(t)
-	mvtRepo := repository.NewMvtTaskRepository(db)
+	tileCacheRepo := repository.NewTileCacheRepository(db)
 	embeddingRepo := repository.NewEmbeddingRepository(db)
 
-	if err := mvtRepo.Create(context.Background(), &models.MvtTask{
-		TenantID:   1,
-		Name:       "mvt task",
-		Enabled:    true,
-		EngineID:   11,
-		SchemaName: "public",
-		Table:      "roads",
+	if err := tileCacheRepo.CreateTask(context.Background(), &models.TileCacheTask{
+		TenantID: 1,
+		Name:     "tile cache task",
+		Enabled:  true,
+		Config: commonModels.JSONMap{
+			"target": commonModels.JSONMap{
+				"item_id":          "99",
+				"source_engine_id": 11,
+				"locator":          "postgresql://11/public/roads",
+			},
+			"tile": commonModels.JSONMap{
+				"format":   "mvt",
+				"min_zoom": 0,
+				"max_zoom": 12,
+			},
+		},
 	}); err != nil {
-		t.Fatalf("create mvt task: %v", err)
+		t.Fatalf("create tile cache task: %v", err)
 	}
 	if err := embeddingRepo.CreateEmbeddingTask(context.Background(), &models.EmbeddingTask{
 		TenantID: 1,
@@ -66,7 +75,7 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 
 	handler := NewTaskProviderHandler(
 		service.NewEmbeddingTaskService(embeddingRepo, nil, nil, nil),
-		service.NewMvtTaskService(mvtRepo, nil, nil),
+		service.NewTileCacheTaskService(tileCacheRepo, nil),
 		nil,
 	)
 
@@ -75,10 +84,10 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 		c.Set("tenant_id", uint(1))
 		c.Next()
 	})
-	router.GET("/mvt_tasks", handler.ListMvtTasks)
+	router.GET("/tile_cache_tasks", handler.ListTileCacheTasks)
 	router.GET("/embedding_tasks", handler.ListEmbeddingTasks)
 
-	assertTaskTypes(t, router, "/mvt_tasks", []string{commonExecution.TaskTypeMvtGeneration})
+	assertTaskTypes(t, router, "/tile_cache_tasks", []string{commonExecution.TaskTypeTileCacheGeneration})
 	assertTaskTypes(t, router, "/embedding_tasks", []string{commonExecution.TaskTypeEmbedding})
 }
 
@@ -210,27 +219,24 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 	if err := db.Exec("ATTACH DATABASE ':memory:' AS manager").Error; err != nil {
 		t.Fatalf("attach manager schema: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE manager.mvt_tasks (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		tenant_id INTEGER NOT NULL,
-		name TEXT NOT NULL,
-		description TEXT,
+	if err := db.Exec(`CREATE TABLE manager.tile_cache_tasks (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			tenant_id INTEGER NOT NULL,
+			name TEXT NOT NULL,
+			description TEXT,
 		enabled BOOLEAN,
 		last_execution_id TEXT,
-		last_execution_status TEXT,
-		last_run_at DATETIME,
-		created_by INTEGER,
-		engine_id INTEGER NOT NULL,
-		schema_name TEXT NOT NULL,
-		table_name TEXT NOT NULL,
-		min_zoom INTEGER,
-		max_zoom INTEGER,
-		optimization_config JSON,
-		created_at DATETIME,
-		updated_at DATETIME,
-		deleted_at DATETIME
-	)`).Error; err != nil {
-		t.Fatalf("create mvt_tasks table: %v", err)
+			last_execution_status TEXT,
+			last_run_at DATETIME,
+			next_run_at DATETIME,
+			schedule TEXT,
+			created_by INTEGER,
+			config JSON,
+			created_at DATETIME,
+			updated_at DATETIME,
+			deleted_at DATETIME
+		)`).Error; err != nil {
+		t.Fatalf("create tile_cache_tasks table: %v", err)
 	}
 	if err := db.Exec(`CREATE TABLE manager.embedding_tasks (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,

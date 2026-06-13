@@ -1,25 +1,34 @@
 <template>
-  <!-- 加载状态指示器 -->
-  <div v-if="isLoadingConfig" class="loading-overlay">
-    <div class="loading-content">
-      <div class="loading-spinner"></div>
-      <p>{{ t('manager.vectorTile.loadingConfig') }}</p>
+  <div class="vector-tile-preview">
+    <!-- 加载状态指示器 -->
+    <div v-if="isLoadingConfig" class="loading-overlay">
+      <div class="loading-content">
+        <div class="loading-spinner"></div>
+        <p>{{ t('manager.vectorTile.loadingConfig') }}</p>
+      </div>
     </div>
-  </div>
 
-  <!-- 错误横幅 -->
-  <div v-if="error && !isLoadingConfig" class="error-banner">
-    <span class="error-icon">⚠️</span>
-    <span class="error-text">{{ error }}</span>
-    <button @click="retryLoadConfig" class="retry-btn">{{ t('manager.vectorTile.retry') }}</button>
-  </div>
+    <!-- 错误横幅 -->
+    <div v-if="error && !isLoadingConfig" class="error-banner">
+      <span class="error-icon">⚠️</span>
+      <span class="error-text">{{ error }}</span>
+      <button @click="retryLoadConfig" class="retry-btn">{{ t('manager.vectorTile.retry') }}</button>
+    </div>
 
-  <div ref="mapEl" class="vt-map"></div>
+    <div ref="mapEl" class="vt-map"></div>
 
-  <!-- Popup 信息框 -->
-  <div ref="popupEl" class="ol-popup">
-    <div class="ol-popup-closer" @click="closePopup"></div>
-    <div class="ol-popup-content" v-html="popupContent"></div>
+    <el-tooltip :content="renderStatusTooltip" placement="left" effect="dark">
+      <div class="render-status-badge" :class="renderStatusClass">
+        <span class="render-status-dot"></span>
+        <span>{{ renderStatusLabel }}</span>
+      </div>
+    </el-tooltip>
+
+    <!-- Popup 信息框 -->
+    <div ref="popupEl" class="ol-popup">
+      <div class="ol-popup-closer" @click="closePopup"></div>
+      <div class="ol-popup-content" v-html="popupContent"></div>
+    </div>
   </div>
 </template>
 
@@ -39,14 +48,20 @@ import {
   useFeatureHighlight,
   useVectorTileLoader,
   fromLonLat,
-  createGaodeBaseLayer
+  useMapConfig,
+  createTiandituBaseLayers
 } from '@common-ui-map'
 
 const props = defineProps({
+  locator: { type: String, default: '' },
   engineId: { type: [Number, String], required: true },
   schema: { type: String, required: true },
   table: { type: String, required: true },
-  geom: { type: String, default: 'geom' },
+  geom: { type: String, default: '' },
+  tileUrlTemplate: { type: String, default: '' },
+  tileRenderInfo: { type: Object, default: () => ({}) },
+  renderSource: { type: String, default: '' },
+  defaultTileCacheId: { type: [Number, String], default: '' },
   center: { type: Array, default: () => [120.2, 30.3] },
   zoom: { type: Number, default: 10 }
 })
@@ -59,108 +74,186 @@ const mapEl = ref(null)
 let map
 
 const error = ref('')
-const tileConfig = ref(null)
+const tileRenderInfo = ref(null)
 const isLoadingConfig = ref(false)
 let lastWarningZoom = null
 let hasShownMinZoomWarning = false  // 是否已显示过最小zoom警告
 let hasShownMaxZoomWarning = false  // 是否已显示过最大zoom警告
+const lastTileStatus = ref({ renderSource: '', tileCacheId: '', cacheStatus: '', generationTime: '', featureCount: null, error: '' })
 
 // 使用 composables
-const { popupEl, popupContent, createPopup, showPopup, closePopup, extractFeatureId } = useMapPopup({ geomColumn: props.geom })
+const { popupEl, popupContent, createPopup, showPopup, closePopup, extractFeatureId } = useMapPopup({ geomColumn: props.geom || undefined })
 const { createHighlightLayer, focusFeatureById } = useFeatureHighlight()
 const { createVectorTileLayer, cancelDifferentZoomRequests, cleanup: cleanupTileLoader } = useVectorTileLoader()
+const { mapConfig, loadMapConfig } = useMapConfig()
 
 const apiBase = computed(() => client.defaults.baseURL)
 const token = () => localStorage.getItem('token') || ''
 
 const tilesURLTemplate = computed(() => {
-  const base = apiBase.value.replace(/\/$/, '')
-  let path = `${base}/manager/engines/${props.engineId}/spatial/tiles/${props.schema}/${props.table}/{z}/{x}/{y}`
-
-  if (props.geom && props.geom !== 'geom') {
-    path += `?geom=${encodeURIComponent(props.geom)}`
+  const rawTemplate = String(props.tileUrlTemplate || '').trim()
+  if (rawTemplate) {
+    return rawTemplate
   }
-
-  return path
+  const values = new URLSearchParams()
+  if (props.locator) values.set('locator', props.locator)
+  if (props.geom) values.set('geometry_column', props.geom)
+  const query = values.toString()
+  if (query) {
+    return `/api/v1/manager/quick-view/tiles/{z}/{x}/{y}.mvt?${query}`
+  }
+  const base = apiBase.value.replace(/\/$/, '')
+  return `${base}/manager/quick-view/tiles/{z}/{x}/{y}.mvt`
 })
 
-// 获取瓦片配置
-async function fetchTileConfig() {
-  if (isLoadingConfig.value || tileConfig.value) {
-    return
+const normalizedRenderSource = computed(() => String(lastTileStatus.value.renderSource || props.renderSource || '').trim())
+const activeTileCacheId = computed(() => String(lastTileStatus.value.tileCacheId || props.defaultTileCacheId || '').trim())
+
+const renderStatusKind = computed(() => {
+  const cacheStatus = String(lastTileStatus.value.cacheStatus || '').toUpperCase()
+  if (lastTileStatus.value.error) return 'error'
+  if (normalizedRenderSource.value === 'cached_tile' && cacheStatus === 'HIT') return 'cache'
+  if (normalizedRenderSource.value === 'cached_tile') return 'cache-priority'
+  if (normalizedRenderSource.value === 'realtime_tile') return 'dynamic'
+  if (cacheStatus === 'MISS') return 'dynamic'
+  return 'unknown'
+})
+
+const renderStatusClass = computed(() => `is-${renderStatusKind.value}`)
+
+const renderStatusLabel = computed(() => {
+  switch (renderStatusKind.value) {
+    case 'cache':
+      return t('manager.spatialPreview.renderStatus.cacheHit')
+    case 'dynamic':
+      return t('manager.spatialPreview.renderStatus.dynamicMvt')
+    case 'cache-priority':
+      return t('manager.spatialPreview.renderStatus.cachePriority')
+    case 'error':
+      return t('manager.spatialPreview.renderStatus.tileError')
+    default:
+      return t('manager.spatialPreview.renderStatus.unknown')
   }
+})
 
-  isLoadingConfig.value = true
-  error.value = ''
+const renderSourceLabel = computed(() => {
+  if (normalizedRenderSource.value === 'cached_tile') return t('manager.spatialPreview.renderSource.tileCache')
+  if (normalizedRenderSource.value === 'realtime_tile') return t('manager.spatialPreview.renderSource.realtimeTile')
+  return normalizedRenderSource.value || '-'
+})
 
-  try {
-    const url = `/manager/engines/${props.engineId}/spatial/${props.schema}/${props.table}/tile-config`
-    console.log('Fetching tile config from:', url)
-    const data = await client.get(url)
-    console.log('Tile config data:', data)
+const renderStatusTooltip = computed(() => {
+  const parts = [
+    t('manager.spatialPreview.renderStatusTooltip.source', { source: renderSourceLabel.value })
+  ]
+  if (activeTileCacheId.value) {
+    parts.push(t('manager.spatialPreview.renderStatusTooltip.tileCacheResult', { id: activeTileCacheId.value }))
+  }
+  const cacheStatus = String(lastTileStatus.value.cacheStatus || '').toUpperCase()
+  if (cacheStatus === 'HIT') {
+    parts.push(t('manager.spatialPreview.renderStatusTooltip.cacheHit'))
+  } else if (cacheStatus === 'MISS') {
+    parts.push(t('manager.spatialPreview.renderStatusTooltip.cacheMiss'))
+  } else {
+    parts.push(t('manager.spatialPreview.renderStatusTooltip.cacheUnknown'))
+  }
+  if (lastTileStatus.value.generationTime) {
+    parts.push(t('manager.spatialPreview.renderStatusTooltip.generationTime', { time: lastTileStatus.value.generationTime }))
+  }
+  if (lastTileStatus.value.featureCount !== null && lastTileStatus.value.featureCount !== undefined) {
+    parts.push(t('manager.spatialPreview.renderStatusTooltip.featureCount', { count: lastTileStatus.value.featureCount }))
+  }
+  if (lastTileStatus.value.error) {
+    parts.push(t('manager.spatialPreview.renderStatusTooltip.error', { error: lastTileStatus.value.error }))
+  }
+  return parts.join('\n')
+})
 
-    if (!data || typeof data !== 'object') {
-      console.error('Invalid data:', data)
-      throw new Error(t('manager.vectorTile.invalidConfig', { data: JSON.stringify(data) }))
-    }
-
-    tileConfig.value = {
-      min_zoom: data.min_zoom || 6,
-      max_zoom: data.max_zoom || 18,
-      extent: data.extent,
-      srid: data.srid || 4326,
-      ...data
-    }
-
-    console.log('Tile config loaded:', tileConfig.value)
-
-    if (!tileConfig.value.extent || tileConfig.value.extent.length !== 4) {
-      console.warn('未获取到有效的 extent，将使用默认视图')
-    }
-  } catch (err) {
-    console.error('Failed to load tile config:', err)
-    error.value = t('manager.vectorTile.loadConfigFailed')
-
-    tileConfig.value = {
-      min_zoom: 6,
-      max_zoom: 18,
-      srid: 4326
-    }
-  } finally {
-    isLoadingConfig.value = false
+const handleTileLoadEnd = (meta) => {
+  lastTileStatus.value = {
+    renderSource: meta.renderSource || '',
+    tileCacheId: meta.tileCacheId || '',
+    cacheStatus: meta.cacheStatus || '',
+    generationTime: meta.generationTime || '',
+    featureCount: meta.featureCount,
+    error: ''
   }
 }
 
-// 重试加载配置
+const handleTileLoadError = (meta) => {
+  lastTileStatus.value = {
+    renderSource: meta?.renderSource || '',
+    tileCacheId: meta?.tileCacheId || '',
+    cacheStatus: '',
+    generationTime: '',
+    featureCount: null,
+    error: meta?.error?.message || String(meta?.error || '')
+  }
+}
+
+const createMVTLayer = () => {
+  const layer = createVectorTileLayer(tilesURLTemplate.value, token, {
+    minZoom: tileRenderInfo.value?.min_zoom || 6,
+    maxZoom: tileRenderInfo.value?.max_zoom || 18,
+    onTileLoadEnd: handleTileLoadEnd,
+    onTileLoadError: handleTileLoadError
+  })
+  layer.set('addpLayerRole', 'vector-tile')
+  return layer
+}
+
+function applyTileRenderInfoFromProps() {
+  const data = props.tileRenderInfo || {}
+  tileRenderInfo.value = {
+    min_zoom: data.min_zoom || 6,
+    max_zoom: data.max_zoom || 18,
+    extent: data.extent,
+    extent_srid: data.extent_srid,
+    geometry_column: data.geometry_column || props.geom,
+    record_count: data.record_count,
+    ...data
+  }
+  if (!tileRenderInfo.value.extent || tileRenderInfo.value.extent.length !== 4) {
+    console.warn('未获取到有效的 extent，将使用默认视图')
+  }
+}
+
+// 重试加载渲染信息
 function retryLoadConfig() {
-  tileConfig.value = null
   error.value = ''
-  fetchTileConfig()
+  applyTileRenderInfoFromProps()
 }
 
 async function initMap() {
-  // 1. 获取瓦片配置
-  await fetchTileConfig()
+  // 1. 应用快显渲染信息并加载底图配置
+  isLoadingConfig.value = true
+  error.value = ''
+  applyTileRenderInfoFromProps()
+  await loadMapConfig()
+  isLoadingConfig.value = false
 
   // 2. 准备初始视图参数（稍后如果有extent会调用fit）
   let initialCenter = props.center
   let initialZoom = props.zoom
 
-  if (tileConfig.value?.extent?.length === 4) {
-    const [minX, minY, maxX, maxY] = tileConfig.value.extent
+  if (tileRenderInfo.value?.extent?.length === 4) {
+    const [minX, minY, maxX, maxY] = tileRenderInfo.value.extent
     initialCenter = [(minX + maxX) / 2, (minY + maxY) / 2]
-    initialZoom = tileConfig.value.min_zoom || props.zoom
-    console.log('Extent available, will fit to extent after map creation')
-  } else {
-    console.log('No extent available, using default center:', initialCenter)
+    initialZoom = tileRenderInfo.value.min_zoom || props.zoom
   }
 
   // 3. 创建图层
-  const baseLayer = createGaodeBaseLayer()
-  const vtLayer = createVectorTileLayer(tilesURLTemplate.value, token, {
-    minZoom: tileConfig.value?.min_zoom || 6,
-    maxZoom: tileConfig.value?.max_zoom || 18
+  const baseLayers = createTiandituBaseLayers({
+    key: mapConfig.value?.tdtKey,
+    type: 'vector',
+    zIndex: 0,
+    labelZIndex: 1,
+    maxZoom: 18
   })
+  if (baseLayers.length === 0) {
+    console.warn('未配置天地图 Key，快显使用无底图模式')
+  }
+  const vtLayer = createMVTLayer()
   const highlightLayer = createHighlightLayer()
 
   // 4. 准备控件
@@ -174,8 +267,8 @@ async function initMap() {
 
   // 如果有有效的 extent，添加全幅显示控件
   let extentForControl = null
-  if (tileConfig.value?.extent?.length === 4) {
-    const [minX, minY, maxX, maxY] = tileConfig.value.extent
+  if (tileRenderInfo.value?.extent?.length === 4) {
+    const [minX, minY, maxX, maxY] = tileRenderInfo.value.extent
     const minCorner = fromLonLat([minX, minY])
     const maxCorner = fromLonLat([maxX, maxY])
     extentForControl = [...minCorner, ...maxCorner]
@@ -190,7 +283,7 @@ async function initMap() {
   // 5. 创建地图
   map = new Map({
     target: mapEl.value,
-    layers: [baseLayer, vtLayer, highlightLayer],
+    layers: [...baseLayers, vtLayer, highlightLayer],
     maxTilesLoading: 16,
     interactions: defaultInteractions({ mouseWheelZoom: false }).extend([
       new MouseWheelZoom({
@@ -203,7 +296,7 @@ async function initMap() {
     view: new View({
       center: fromLonLat(initialCenter),
       zoom: initialZoom,
-      maxZoom: 20,
+      maxZoom: 19,
       minZoom: 1,
       constrainResolution: true,  // 强制zoom level对齐到整数，确保请求正确的切片层级
       enableRotation: false
@@ -216,7 +309,6 @@ async function initMap() {
       padding: [50, 50, 50, 50],  // 四周留白
       duration: 0  // 不需要动画，立即显示
     })
-    console.log('Fitted map view to data extent')
   }
 
   // 7. 创建 Popup
@@ -228,8 +320,8 @@ async function initMap() {
 
     if (currentZoom === lastWarningZoom) return
 
-    const minZoom = tileConfig.value?.min_zoom || 0
-    const maxZoom = tileConfig.value?.max_zoom || 20
+    const minZoom = tileRenderInfo.value?.min_zoom || 0
+    const maxZoom = tileRenderInfo.value?.max_zoom || 20
 
     if (currentZoom < minZoom) {
       if (!hasShownMinZoomWarning) {
@@ -258,8 +350,6 @@ async function initMap() {
       lastWarningZoom = null
     }
   })
-
-  console.log(`Map zoom range (suggested): ${tileConfig.value?.min_zoom || 6} - ${tileConfig.value?.max_zoom || 18}, actual: 1 - 20`)
 
   // 7. 添加点击事件
   map.on('singleclick', (evt) => {
@@ -308,40 +398,113 @@ onBeforeUnmount(() => {
   }
 })
 
-watch(() => [props.engineId, props.schema, props.table, props.geom], async () => {
+watch(() => [props.locator, props.geom, props.tileUrlTemplate, props.tileRenderInfo], async () => {
   if (!map) return
 
-  tileConfig.value = null
+  applyTileRenderInfoFromProps()
   lastWarningZoom = null
+  lastTileStatus.value = { renderSource: '', tileCacheId: '', cacheStatus: '', generationTime: '', featureCount: null, error: '' }
 
-  await fetchTileConfig()
-
-  console.log(`Updated zoom range (suggested): ${tileConfig.value?.min_zoom || 6} - ${tileConfig.value?.max_zoom || 18}`)
-
-  if (tileConfig.value?.extent?.length === 4) {
-    const [minX, minY, maxX, maxY] = tileConfig.value.extent
+  if (tileRenderInfo.value?.extent?.length === 4) {
+    const [minX, minY, maxX, maxY] = tileRenderInfo.value.extent
     const newCenter = [(minX + maxX) / 2, (minY + maxY) / 2]
 
     const view = map.getView()
-    const newZoom = tileConfig.value.min_zoom || view.getZoom()
+    const newZoom = tileRenderInfo.value.min_zoom || view.getZoom()
 
     view.setCenter(fromLonLat(newCenter))
     view.setZoom(newZoom)
-    console.log('Updated map center to extent:', newCenter, 'zoom:', newZoom)
   }
 
   const layers = map.getLayers()
-  const vtIdx = 1
-  const newVt = createVectorTileLayer(tilesURLTemplate.value, token, {
-    minZoom: tileConfig.value?.min_zoom || 6,
-    maxZoom: tileConfig.value?.max_zoom || 18
-  })
-  layers.setAt(vtIdx, newVt)
+  const newVt = createMVTLayer()
+  const vtIdx = layers.getArray().findIndex((layer) => layer.get('addpLayerRole') === 'vector-tile')
+  if (vtIdx >= 0) {
+    layers.setAt(vtIdx, newVt)
+  } else {
+    layers.push(newVt)
+  }
 })
 </script>
 
 <style scoped>
+.vector-tile-preview {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 320px;
+  overflow: hidden;
+}
+
 .vt-map { width: 100%; height: 100%; position: absolute; inset: 0; }
+
+.vt-map :deep(.ol-viewport) {
+  background: #eef2f7;
+}
+
+.render-status-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 20;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100% - 24px);
+  padding: 5px 9px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(24, 30, 38, 0.88);
+  color: #f8fafc;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.32);
+  cursor: default;
+  backdrop-filter: blur(8px);
+}
+
+.render-status-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--el-color-info);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.18);
+}
+
+.render-status-badge.is-cache {
+  color: #bff7c7;
+}
+
+.render-status-badge.is-cache .render-status-dot {
+  background: var(--el-color-success);
+}
+
+.render-status-badge.is-cache-priority {
+  color: #c7ddff;
+}
+
+.render-status-badge.is-cache-priority .render-status-dot {
+  background: var(--el-color-primary);
+}
+
+.render-status-badge.is-dynamic {
+  color: #ffe0a3;
+}
+
+.render-status-badge.is-dynamic .render-status-dot {
+  background: var(--el-color-warning);
+}
+
+.render-status-badge.is-error {
+  color: #ffc4c4;
+}
+
+.render-status-badge.is-error .render-status-dot {
+  background: var(--el-color-danger);
+}
 
 .loading-overlay {
   position: absolute;

@@ -208,7 +208,6 @@ meilisearch   (port 7700)  - Meilisearch 全文搜索
   gateway              (port 8000)
 
 Worker 服务:
-  manager-worker
   meta-worker
   transfer-worker
 

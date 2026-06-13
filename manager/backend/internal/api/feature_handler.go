@@ -5,30 +5,35 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/logger"
 	"github.com/addp/common/spatial"
 	manageri18n "github.com/addp/manager/i18n"
 	"github.com/addp/manager/internal/repository"
+	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
 // FeatureHandler 处理要素相关的请求（用于地图与表格关联）
 type FeatureHandler struct {
-	systemClient *commonClient.SystemClient
-	metadataRepo *repository.MetadataRepository
+	systemClient     *commonClient.SystemClient
+	metadataRepo     *repository.MetadataRepository
+	quickViewService *service.QuickViewService
 }
 
 // NewFeatureHandler 创建要素处理器
-func NewFeatureHandler(systemClient *commonClient.SystemClient, metadataRepo *repository.MetadataRepository) *FeatureHandler {
+func NewFeatureHandler(systemClient *commonClient.SystemClient, metadataRepo *repository.MetadataRepository, quickViewService *service.QuickViewService) *FeatureHandler {
 	return &FeatureHandler{
-		systemClient: systemClient,
-		metadataRepo: metadataRepo,
+		systemClient:     systemClient,
+		metadataRepo:     metadataRepo,
+		quickViewService: quickViewService,
 	}
 }
 
 // GetFeatureCentroid 获取要素的几何中心点（用于表格行定位到地图）
-// GET /api/manager/engines/:id/spatial/features/:feature_id/centroid?schema=xxx&table=xxx&geom=geom
+// GET /api/manager/engines/:id/spatial/features/:feature_id/centroid?schema=xxx&table=xxx&geom=geometry_column
 // @Summary 获取要素几何中心点 | Get feature centroid
 // @Description 获取指定要素的源坐标几何中心点和 CRS 元数据，后端不做 CRS transform | Get the source-CRS centroid and CRS metadata without backend CRS transform
 // @Tags Manager
@@ -37,8 +42,8 @@ func NewFeatureHandler(systemClient *commonClient.SystemClient, metadataRepo *re
 // @Param feature_id path string true "要素ID | Feature ID"
 // @Param schema query string true "Schema | Schema"
 // @Param table query string true "数据项名称 | Item name"
-// @Param geom query string false "几何字段名，默认geom | Geometry column name, default geom"
-// @Param primary_key query string false "主键字段名，默认id | Primary key column, default id"
+// @Param geom query string false "几何字段名；不传则从 Meta 空间元数据读取 | Geometry column; resolved from Meta spatial metadata when omitted"
+// @Param primary_key query string false "主键字段名；不传则从 Meta 空间元数据读取 | Primary key column; resolved from Meta spatial metadata when omitted"
 // @Success 200 {object} map[string]interface{} "中心点坐标 | Centroid coordinates"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "要素不存在 | Feature not found"
@@ -69,8 +74,26 @@ func (h *FeatureHandler) GetFeatureCentroid(c *gin.Context) {
 		return
 	}
 
-	geomCol := c.DefaultQuery("geom", "geom")
-	primaryKey := c.DefaultQuery("primary_key", "id")
+	geomCol := strings.TrimSpace(c.Query("geom"))
+	primaryKey := strings.TrimSpace(c.Query("primary_key"))
+	if geomCol == "" || primaryKey == "" {
+		spatialMeta, err := spatialMetadataFromMeta(c, h.quickViewService, uint(engineID), schema, table)
+		if err != nil {
+			logger.L().Warn("无法从 Meta 获取要素定位空间元数据", "error", err, "engine_id", engineID, "schema", schema, "table", table)
+			managerError(c, http.StatusBadRequest, manageri18n.MsgQuickViewGeometryMissing)
+			return
+		}
+		if geomCol == "" {
+			geomCol = strings.TrimSpace(spatialMeta.GeomColumn)
+		}
+		if primaryKey == "" {
+			primaryKey = strings.TrimSpace(spatialMeta.PrimaryKey)
+		}
+	}
+	if geomCol == "" || primaryKey == "" {
+		managerError(c, http.StatusBadRequest, manageri18n.MsgQuickViewGeometryMissing)
+		return
+	}
 
 	// 3. 获取引擎信息
 	if h.systemClient == nil {
@@ -128,7 +151,7 @@ func (h *FeatureHandler) GetFeatureCentroid(c *gin.Context) {
 }
 
 // GetFeatureGeometry 获取要素的完整几何（用于地图高亮显示）
-// GET /api/manager/engines/:id/spatial/features/:feature_id/geometry?schema=xxx&table=xxx&geom=geom
+// GET /api/manager/engines/:id/spatial/features/:feature_id/geometry?schema=xxx&table=xxx&geom=geometry_column
 // @Summary 获取要素完整几何 | Get feature geometry
 // @Description 获取指定要素的源坐标完整几何数据和 CRS 元数据，后端不做 CRS transform | Get source-CRS feature geometry and CRS metadata without backend CRS transform
 // @Tags Manager
@@ -137,8 +160,8 @@ func (h *FeatureHandler) GetFeatureCentroid(c *gin.Context) {
 // @Param feature_id path string true "要素ID | Feature ID"
 // @Param schema query string true "Schema | Schema"
 // @Param table query string true "数据项名称 | Item name"
-// @Param geom query string false "几何字段名，默认geom | Geometry column name, default geom"
-// @Param primary_key query string false "主键字段名，默认id | Primary key column, default id"
+// @Param geom query string false "几何字段名；不传则从 Meta 空间元数据读取 | Geometry column; resolved from Meta spatial metadata when omitted"
+// @Param primary_key query string false "主键字段名；不传则从 Meta 空间元数据读取 | Primary key column; resolved from Meta spatial metadata when omitted"
 // @Success 200 {object} map[string]interface{} "几何数据及边界框 | Geometry data and bounding box"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "要素不存在 | Feature not found"
@@ -168,8 +191,26 @@ func (h *FeatureHandler) GetFeatureGeometry(c *gin.Context) {
 		return
 	}
 
-	geomCol := c.DefaultQuery("geom", "geom")
-	primaryKey := c.DefaultQuery("primary_key", "id")
+	geomCol := strings.TrimSpace(c.Query("geom"))
+	primaryKey := strings.TrimSpace(c.Query("primary_key"))
+	if geomCol == "" || primaryKey == "" {
+		spatialMeta, err := spatialMetadataFromMeta(c, h.quickViewService, uint(engineID), schema, table)
+		if err != nil {
+			logger.L().Warn("无法从 Meta 获取要素几何空间元数据", "error", err, "engine_id", engineID, "schema", schema, "table", table)
+			managerError(c, http.StatusBadRequest, manageri18n.MsgQuickViewGeometryMissing)
+			return
+		}
+		if geomCol == "" {
+			geomCol = strings.TrimSpace(spatialMeta.GeomColumn)
+		}
+		if primaryKey == "" {
+			primaryKey = strings.TrimSpace(spatialMeta.PrimaryKey)
+		}
+	}
+	if geomCol == "" || primaryKey == "" {
+		managerError(c, http.StatusBadRequest, manageri18n.MsgQuickViewGeometryMissing)
+		return
+	}
 
 	// 3. 获取引擎信息
 	if h.systemClient == nil {

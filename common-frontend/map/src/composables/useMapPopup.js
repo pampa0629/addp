@@ -12,7 +12,7 @@ import { formatFeatureProperties } from '../utils/mapFormatters.js'
  * @returns {Object} Popup相关的响应式数据和方法
  */
 export function useMapPopup(options = {}) {
-  const { geomColumn = 'geom' } = options
+  const { geomColumn = 'geom', labels = {}, geometryTypeLabels = {} } = options
 
   const popupEl = ref(null)
   const popupContent = ref('')
@@ -47,7 +47,11 @@ export function useMapPopup(options = {}) {
     if (!popup) return
 
     const properties = feature.getProperties()
-    popupContent.value = formatFeatureProperties(properties, geomColumn)
+    popupContent.value = formatFeatureProperties(properties, {
+      geomColumn,
+      labels,
+      geometryTypeLabels
+    })
     popup.setPosition(coordinate)
   }
 

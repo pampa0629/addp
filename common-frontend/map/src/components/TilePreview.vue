@@ -23,7 +23,7 @@ const props = defineProps({
   // 底图类型：'osm' | 'gaode' | 'none'
   baseMap: {
     type: String,
-    default: 'osm'
+    default: 'none'
   },
   // 初始中心点 [经度, 纬度]
   center: {
@@ -68,14 +68,8 @@ function createBaseLayer() {
   }
 
   if (props.baseMap === 'gaode') {
-    // 高德地图底图需要额外依赖，暂时回退到 OSM
-    // TODO: 支持动态加载高德地图
-    console.warn('高德地图底图需要安装 @amap/amap-jsapi-loader，当前回退到 OSM')
-    return new TileLayer({
-      source: new XYZ({
-        url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
-      })
-    })
+    console.warn('高德地图底图暂未在 TilePreview 中实现，已使用无底图模式')
+    return null
   }
 
   return null

@@ -48,16 +48,16 @@ func (s *TaskProviderRegistryService) Register() error {
 		"schema_version": "task.capabilities/v1",
 		"task_types": []map[string]interface{}{
 			{
-				"type":                      "mvt_generation",
-				"display_name":              "MVT 瓦片生成",
-				"description":               "对空间表生成矢量瓦片并缓存到 MinIO",
+				"type":                      "tile_cache_generation",
+				"display_name":              "瓦片缓存生成",
+				"description":               "为空间数据项生成可复用的瓦片缓存结果",
 				"definition_schema":         map[string]interface{}{"type": "object"},
 				"execution_schema":          map[string]interface{}{"type": "object", "additionalProperties": false},
-				"supports_schedule":         false,
+				"supports_schedule":         true,
 				"supports_cancel":           false,
 				"supports_inline_execution": false,
-				"create_url":                "/manager/mvt-tasks",
-				"edit_url":                  "/manager/mvt-tasks?task_id=:id",
+				"create_url":                "/manager/tile-cache?tab=tasks",
+				"edit_url":                  "/manager/tile-cache?tab=tasks&task_id=:id",
 				"deprecated":                false,
 			},
 			{
@@ -87,7 +87,7 @@ func (s *TaskProviderRegistryService) Register() error {
 	registration := TaskProviderRegistration{
 		ModuleName:  "manager",
 		DisplayName: "数据管理",
-		Description: "MVT 瓦片生成任务和对象存储向量化任务",
+		Description: "瓦片缓存生成任务和对象存储向量化任务",
 
 		// API 端点配置（相对于 base_url，支持 {task_type}/{id} 占位符）
 		BaseURL:             s.managerURL,

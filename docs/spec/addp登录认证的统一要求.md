@@ -105,7 +105,7 @@ const client = createAPIClient(() => useAuthStore(), {
   timeout: 300000
 })
 
-// 自定义超时 (Manager - 预缓存任务需要查询大表)
+// 自定义超时 (Manager - 瓦片缓存生成任务需要查询大表)
 const client = createAPIClient(() => useAuthStore(), {
   moduleName: 'Manager',
   timeout: 60000

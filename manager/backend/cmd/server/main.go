@@ -17,11 +17,11 @@ import (
 	"github.com/addp/common/utils"
 	"github.com/addp/manager/internal/api"
 	"github.com/addp/manager/internal/config"
+	"github.com/addp/manager/internal/mvt"
 	"github.com/addp/manager/internal/objectcontent"
 	"github.com/addp/manager/internal/preview"
 	"github.com/addp/manager/internal/repository"
 	"github.com/addp/manager/internal/service"
-	"github.com/addp/manager/internal/worker"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/redis/go-redis/v9"
@@ -62,42 +62,29 @@ func main() {
 	logger.L().Info("端口检查通过", "port", cfg.Port)
 
 	// 初始化数据库
-	log.Println("🔍 [DEBUG] 开始初始化数据库...")
+	logger.L().Info("开始初始化数据库")
 	db, err := repository.InitDatabase(cfg)
 	if err != nil {
 		logger.L().Error("数据库初始化失败", "error", err)
 		os.Exit(1)
 	}
-	log.Println("🔍 [DEBUG] 数据库初始化完成")
+	logger.L().Info("数据库初始化完成")
 
 	// 初始化 repositories
-	log.Println("🔍 [DEBUG] 开始初始化 repositories...")
+	logger.L().Info("开始初始化 Manager repositories")
 	searchHistoryRepo := repository.NewSearchHistoryRepository(db)
 	metadataRepo := repository.NewMetadataRepository(db, cfg.EncryptionKey)
 	embeddingRepo := repository.NewEmbeddingRepository(db)
-	mvtTaskRepo := repository.NewMvtTaskRepository(db)
+	tileCacheRepo := repository.NewTileCacheRepository(db)
 	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
-	log.Println("🔍 [DEBUG] Repositories 初始化完成")
+	logger.L().Info("Manager repositories 初始化完成")
 
-	log.Printf("🔍 [DEBUG] cfg.EnableMetaIntegration=%v, cfg.InternalAPIKey=%s, cfg.MetaServiceURL=%s",
-		cfg.EnableMetaIntegration,
-		func() string {
-			if cfg.InternalAPIKey != "" {
-				return "***set***"
-			} else {
-				return "empty"
-			}
-		}(),
-		cfg.MetaServiceURL,
-	)
-	log.Println("🔍 [DEBUG] 即将输出 Manager 配置加载完成日志...")
 	logger.L().Info("Manager 配置加载完成",
 		"enable_integration", cfg.EnableIntegration,
 		"enable_meta_integration", cfg.EnableMetaIntegration,
 		"internal_api_key_set", cfg.InternalAPIKey != "",
 		"meta_service_url", cfg.MetaServiceURL,
 	)
-	log.Println("🔍 [DEBUG] Manager 配置加载完成日志已输出")
 
 	// 初始化 Redis 客户端（可选，用于资源变更事件同步）
 	var redisClient *redis.Client
@@ -173,10 +160,6 @@ func main() {
 	)
 	logger.L().Info("统一 MVT 服务已初始化（RESTful API + 三层缓存穿透架构）")
 
-	// 初始化 Task Queue（用于 Quick View 批量缓存生成）
-	redisAddr := fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort)
-	taskQueue := worker.NewTaskQueue(redisAddr, cfg.RedisPassword)
-
 	// 初始化 MinIO 客户端（用于瓦片存储和删除）
 	minioClient, err := minio.New(cfg.MinioEndpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.MinioAccessKey, cfg.MinioSecretKey, ""),
@@ -186,11 +169,26 @@ func main() {
 		log.Fatalf("❌ Failed to create MinIO client: %v", err)
 	}
 
-	// MinIO Bucket 名称（与 Worker 保持一致）
+	// MinIO Bucket 名称（瓦片缓存结果默认写入 manager bucket）
 	minioBucket := "manager"
 
-	// 初始化 Quick View 服务（依赖 Redis、MinIO 和数据库）
-	quickViewService := service.NewQuickViewService(db, taskQueue, systemClient, metaClient, minioClient, minioBucket, redisClient, cfg)
+	// 初始化快显状态服务（依赖数据库与 Meta 空间元数据）
+	quickViewService := service.NewQuickViewService(db, metaClient)
+	quickViewService.SetCapabilityOptions(service.QuickViewCapabilityOptions{
+		DirectGeoJSONMaxRows: cfg.TileCache.DirectGeoJSONMaxRows,
+	})
+
+	tileGenerator := mvt.NewTileGenerator(systemClient, cfg.TileCache.MaxDBConns)
+	tileCacheGenerator, err := mvt.NewQuickViewService(tileGenerator, mvt.MinIOConfig{
+		Endpoint:  cfg.MinioEndpoint,
+		AccessKey: cfg.MinioAccessKey,
+		SecretKey: cfg.MinioSecretKey,
+		UseSSL:    cfg.MinioUseSSL,
+		Bucket:    minioBucket,
+	}, db)
+	if err != nil {
+		logger.L().Warn("瓦片缓存 MVT 生成器初始化失败（任务执行将失败并记录原因）", "error", err)
+	}
 
 	// 初始化向量化服务（Manager 模块的按需向量化）
 	embeddingService, err := service.NewEmbeddingService(embeddingRepo, systemClient, metaClient, taskExecRepo, cfg, logger.L())
@@ -203,18 +201,27 @@ func main() {
 
 	// 初始化任务定义服务
 	embeddingTaskSvc := service.NewEmbeddingTaskService(embeddingRepo, embeddingService, taskExecRepo, cfg)
-	mvtTaskSvc := service.NewMvtTaskService(mvtTaskRepo, quickViewService, taskExecRepo)
+	tileCacheTaskSvc := service.NewTileCacheTaskService(tileCacheRepo, taskExecRepo)
+	tileCacheTaskSvc.SetQuickViewService(quickViewService)
+	if tileCacheGenerator != nil {
+		tileCacheTaskSvc.SetTileGenerator(tileCacheGenerator, cfg.TileCache.Concurrency)
+		tileCacheTaskSvc.SetTileCacheCleaner(tileCacheGenerator)
+	}
 	embeddingTaskScheduler := service.NewEmbeddingTaskScheduler(embeddingTaskSvc)
 	if err := embeddingTaskScheduler.Start(context.Background()); err != nil {
 		logger.L().Warn("向量化任务调度器启动失败", "error", err)
 	}
+	tileCacheTaskScheduler := service.NewTileCacheTaskScheduler(tileCacheTaskSvc)
+	if err := tileCacheTaskScheduler.Start(context.Background()); err != nil {
+		logger.L().Warn("瓦片缓存任务调度器启动失败", "error", err)
+	}
 
 	// 初始化 TaskProvider Handler
-	taskProviderHandler := api.NewTaskProviderHandler(embeddingTaskSvc, mvtTaskSvc, taskExecRepo)
+	taskProviderHandler := api.NewTaskProviderHandler(embeddingTaskSvc, tileCacheTaskSvc, taskExecRepo)
 
 	// 设置 UnifiedMVTService 的 QuickViewService（延迟注入避免循环依赖）
 	unifiedMVTService.SetQuickViewService(quickViewService)
-	logger.L().Info("Quick View 服务已初始化（自动缓存 + 批量生成）")
+	logger.L().Info("快显状态与瓦片缓存任务服务已初始化")
 
 	// 初始化数据导入服务（Shapefile → business-postgres）
 	transferClient := commonClient.NewTransferClient(cfg.TransferServiceURL, cfg.InternalAPIKey)
@@ -283,6 +290,7 @@ func main() {
 			scanEventHandler.Stop()
 		}
 		embeddingTaskScheduler.Stop()
+		tileCacheTaskScheduler.Stop()
 
 		if err := mvtService.Close(); err != nil {
 			logger.L().Error("关闭数据库连接池失败", "error", err)

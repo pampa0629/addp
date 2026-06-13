@@ -81,7 +81,7 @@ export const PAGE_MAPS = {
     'data-explorer': 'data-explorer',
     'data-retrieval': 'data-retrieval',
     'vectorization-tasks': 'vectorization-tasks',
-    'mvt-tasks': 'mvt-tasks',
+    'tile-cache': 'tile-cache',
     '': 'data-explorer',
   },
   meta: {
@@ -208,7 +208,7 @@ export const SIDEBAR_MENUS = {
       { index: '/manager/data-explorer',       icon: Search,   label: 'console.menus.manager.dataExplorer' },
       { index: '/manager/data-retrieval',      icon: Document, label: 'console.menus.manager.dataRetrieval' },
       { index: '/manager/vectorization-tasks', icon: List,     label: 'console.menus.manager.vectorizationTasks' },
-      { index: '/manager/mvt-tasks',           icon: Grid,     label: 'console.menus.manager.mvtTasks' },
+      { index: '/manager/tile-cache',          icon: Grid,     label: 'console.menus.manager.tileCache' },
     ],
   },
   standard: {

@@ -92,17 +92,20 @@ func SetupRouter(
 		api.POST("/tasks/:task_type/:id/execute", taskProviderHandler.TaskExecute)
 		api.GET("/executions/:execution_id", taskProviderHandler.ExecutionStatus)
 
-		// MvtTask CRUD
-		mvtTasksGroup := api.Group("/mvt_tasks")
+		// TileCacheTask CRUD
+		tileCacheTasksGroup := api.Group("/tile_cache_tasks")
 		{
-			mvtTasksGroup.GET("", taskProviderHandler.ListMvtTasks)
-			mvtTasksGroup.POST("", taskProviderHandler.CreateMvtTask)
-			mvtTasksGroup.GET("/:id", func(c *gin.Context) {
-				c.Params = append(c.Params, gin.Param{Key: "task_type", Value: "mvt_generation"})
-				taskProviderHandler.TaskDetail(c)
-			})
-			mvtTasksGroup.PUT("/:id", taskProviderHandler.UpdateMvtTask)
-			mvtTasksGroup.DELETE("/:id", taskProviderHandler.DeleteMvtTask)
+			tileCacheTasksGroup.GET("", taskProviderHandler.ListTileCacheTasks)
+			tileCacheTasksGroup.POST("", taskProviderHandler.CreateTileCacheTask)
+			tileCacheTasksGroup.GET("/:id", taskProviderHandler.GetTileCacheTask)
+			tileCacheTasksGroup.PUT("/:id", taskProviderHandler.UpdateTileCacheTask)
+			tileCacheTasksGroup.DELETE("/:id", taskProviderHandler.DeleteTileCacheTask)
+		}
+		tileCacheGroup := api.Group("/tile_cache")
+		{
+			tileCacheGroup.GET("", taskProviderHandler.ListTileCaches)
+			tileCacheGroup.GET("/:id", taskProviderHandler.GetTileCache)
+			tileCacheGroup.DELETE("/:id", taskProviderHandler.DeleteTileCache)
 		}
 
 		// EmbeddingTask CRUD
@@ -152,7 +155,7 @@ func SetupRouter(
 		engines := api.Group("/engines")
 		{
 			// 要素查询（用于表格与地图关联）
-			featureHandler := NewFeatureHandler(systemClient, metadataRepo)
+			featureHandler := NewFeatureHandler(systemClient, metadataRepo, quickViewService)
 			engines.GET("/:id/spatial/features/:feature_id/centroid", featureHandler.GetFeatureCentroid)
 			engines.GET("/:id/spatial/features/:feature_id/geometry", featureHandler.GetFeatureGeometry)
 		}
@@ -166,47 +169,13 @@ func SetupRouter(
 			searchGroup.DELETE("/history", handler.ClearHistory)
 		}
 
-		// 瓦片配置 API（获取 MinZoom/MaxZoom）
-		// 注意：必须在 tiles 路由之前注册，避免路由冲突
-		tileConfigHandler := NewTileConfigHandler(quickViewService, systemClient, cfg)
-		engines.GET("/:id/spatial/:schema/:table/tile-config", tileConfigHandler.GetTileConfig)
-
-		// 引擎下的空间瓦片服务（统一 MVT API，RESTful 风格）
-		// GET /api/engines/{id}/spatial/tiles/{schema}/{table}/{z}/{x}/{y}
-		// 内部自动处理：内存 LRU → Redis → MinIO → 实时 PG 生成
-		engines.GET("/:id/spatial/tiles/:schema/:table/:z/:x/:y", func(c *gin.Context) {
-			unifiedTilesHandler := NewUnifiedTilesHandler(unifiedMVTService)
-			unifiedTilesHandler.GetTile(c)
-		})
-
-		// Quick View API（快显服务：准备 → 预缓存 → MVT启用）
-		quickViewHandler := NewQuickViewHandler(quickViewService, redisClient)
-
-		// GeoJSON API（轻量级几何数据获取）
-		geojsonHandler := NewGeoJSONHandler(systemClient)
-		engines.GET("/:id/spatial/:schema/:table/geojson", geojsonHandler.GetGeoJSON)
-		engines.GET("/:id/spatial/:schema/:table/geojson/metadata", geojsonHandler.GetGeoJSONMetadata)
-
-		// Quick View 路由（快显服务：准备 → 预缓存 → MVT启用）
-		engines.POST("/:id/spatial/:schema/:table/quick-view/prepare", quickViewHandler.PrepareForCreateMVT)
-		engines.POST("/:id/spatial/:schema/:table/quick-view/pre-cache", quickViewHandler.TriggerQuickView)
-		engines.GET("/:id/spatial/:schema/:table/quick-view/status", quickViewHandler.GetQuickViewStatus)
-		engines.PATCH("/:id/spatial/:schema/:table/quick-view/preferred-mode", quickViewHandler.UpdatePreferredMode)
-		engines.POST("/:id/spatial/:schema/:table/quick-view/cancel", quickViewHandler.CancelQuickView)
-		engines.POST("/:id/spatial/:schema/:table/quick-view/resume", quickViewHandler.ResumeQuickView)
-		engines.DELETE("/:id/spatial/:schema/:table/quick-view", quickViewHandler.ClearQuickView)
-		engines.GET("/:id/spatial/:schema/:table/quick-view/check-preparation", quickViewHandler.CheckPreparation)
+		// Quick View API：统一 ResourceLocator 入口
+		quickViewHandler := NewQuickViewHandler(quickViewService, previewResolver, unifiedMVTService, redisClient)
+		api.GET("/quick-view/capability", quickViewHandler.GetQuickViewCapabilityByLocator)
+		api.GET("/quick-view/geojson", quickViewHandler.GetQuickViewGeoJSONByLocator)
+		api.GET("/quick-view/tiles/:z/:x/:y.mvt", quickViewHandler.GetQuickViewTileByLocator)
+		api.PATCH("/quick-view/preferred-mode", quickViewHandler.UpdatePreferredModeByLocator)
 	}
-
-	// Quick View 任务列表和统计（全局）
-	api.GET("/quick-view/tasks", func(c *gin.Context) {
-		quickViewHandler := NewQuickViewHandler(quickViewService, redisClient)
-		quickViewHandler.ListQuickViewTasks(c)
-	})
-	api.GET("/quick-view/statistics", func(c *gin.Context) {
-		quickViewHandler := NewQuickViewHandler(quickViewService, redisClient)
-		quickViewHandler.GetStatistics(c)
-	})
 
 	return router
 }

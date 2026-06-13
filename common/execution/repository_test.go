@@ -2,8 +2,10 @@ package execution
 
 import (
 	"context"
+	"errors"
 	"testing"
 
+	commonapi "github.com/addp/common/api"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -55,6 +57,20 @@ func TestGetStatisticsFiltersBySourceTaskID(t *testing.T) {
 	}
 	if stats.AvgExecutionTimeMs != 180 {
 		t.Fatalf("avg execution time = %v, want 180", stats.AvgExecutionTimeMs)
+	}
+}
+
+func TestUpdateFieldsReturnsNotFoundWhenExecutionDoesNotMatchTenant(t *testing.T) {
+	db := newTaskExecutionRepositoryTestDB(t)
+	repo := NewTaskExecutionRepository(db)
+
+	insertTaskExecutionRepositoryTestRow(t, db, 1, 7, "run-1", nil, "2026-01-01 10:00:00")
+
+	err := repo.UpdateFields(context.Background(), "run-1", 8, map[string]interface{}{
+		"status": ExecutionStatusSuccess,
+	})
+	if !errors.Is(err, commonapi.ErrNotFound) {
+		t.Fatalf("UpdateFields error = %v, want ErrNotFound", err)
 	}
 }
 

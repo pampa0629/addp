@@ -34,10 +34,17 @@ func (r *TaskExecutionRepository) Update(ctx context.Context, exec *TaskExecutio
 
 // UpdateFields 部分更新字段
 func (r *TaskExecutionRepository) UpdateFields(ctx context.Context, executionID string, tenantID int, fields map[string]interface{}) error {
-	return r.db.WithContext(ctx).
+	result := r.db.WithContext(ctx).
 		Model(&TaskExecution{}).
 		Where("execution_id = ? AND tenant_id = ?", executionID, tenantID).
-		Updates(fields).Error
+		Updates(fields)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("%w: execution_id=%s tenant_id=%d", commonapi.ErrNotFound, executionID, tenantID)
+	}
+	return nil
 }
 
 // GetByID 根据 ID 查询

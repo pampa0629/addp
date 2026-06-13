@@ -58,47 +58,46 @@ definitions:
       status:
         type: string
     type: object
-  github_com_addp_manager_internal_models.MvtTask:
+  github_com_addp_manager_internal_models.TileCache:
     properties:
+      config_hash:
+        type: string
       created_at:
-        description: 时间戳
         type: string
       created_by:
         type: integer
-      description:
+      error_message:
         type: string
-      enabled:
-        type: boolean
-      engine_id:
-        description: MvtTask 特有字段
+      extent:
+        items:
+          type: integer
+        type: array
+      extent_srid:
         type: integer
       id:
         type: integer
+      item_fingerprint:
+        type: string
+      item_id:
+        type: integer
       last_execution_id:
-        description: 最近一次执行信息（回写）
         type: string
-      last_execution_status:
-        type: string
-      last_run_at:
+      locator:
         type: string
       max_zoom:
         type: integer
       min_zoom:
         type: integer
-      name:
-        description: 任务基本信息
+      status:
         type: string
-      optimization_config:
-        description: 优化配置（JSONB）
-        items:
-          type: integer
-        type: array
-      schema_name:
+      storage_ref:
         type: string
-      table_name:
-        type: string
+      task_id:
+        type: integer
       tenant_id:
         type: integer
+      tile_format:
+        type: string
       updated_at:
         type: string
     type: object
@@ -145,6 +144,64 @@ definitions:
         type: integer
       recursive:
         type: boolean
+    type: object
+  github_com_addp_manager_internal_service.QuickViewCapability:
+    properties:
+      active_mode:
+        type: string
+      can_generate_tile_cache:
+        type: boolean
+      can_use_quick_view:
+        type: boolean
+      default_tile_cache_id:
+        type: integer
+      item_fingerprint:
+        type: string
+      last_checked_at:
+        type: string
+      locator:
+        type: string
+      preferred_mode:
+        type: string
+      quick_view:
+        $ref: '#/definitions/github_com_addp_manager_internal_service.QuickViewRenderInfo'
+      recommended_mode:
+        type: string
+      render_source:
+        type: string
+      status:
+        type: string
+      tenant_id:
+        type: integer
+      tile_cache_generation:
+        $ref: '#/definitions/github_com_addp_manager_internal_service.TileCacheGeneration'
+      unavailable_reason:
+        type: string
+    type: object
+  github_com_addp_manager_internal_service.QuickViewRenderInfo:
+    properties:
+      extent:
+        items:
+          type: number
+        type: array
+      extent_srid:
+        type: integer
+      geojson_url:
+        type: string
+      geometry_column:
+        type: string
+      max_zoom:
+        type: integer
+      min_zoom:
+        type: integer
+      record_count:
+        type: integer
+      render_source:
+        type: string
+      tile_format:
+        type: string
+      tile_url_template:
+        type: string
     type: object
   github_com_addp_manager_internal_service.SearchDocument:
     properties:
@@ -239,6 +296,15 @@ definitions:
           $ref: '#/definitions/github_com_addp_manager_internal_service.VectorDocument'
         type: array
     type: object
+  github_com_addp_manager_internal_service.TileCacheGeneration:
+    properties:
+      available:
+        type: boolean
+      create_url:
+        type: string
+      reason:
+        type: string
+    type: object
   github_com_addp_manager_internal_service.VectorDocument:
     properties:
       asset_id:
@@ -310,105 +376,98 @@ definitions:
         description: manual|scheduled，默认 manual
         type: string
     type: object
-  internal_api.TileConfigResponse:
+  internal_api.TileCacheTaskRequest:
     properties:
-      avg_records_per_tile:
-        description: maxZoom 层级的平均记录数/瓦片
-        type: number
-      estimated_tiles:
-        description: 预估瓦片总数（minZoom-maxZoom）
-        type: integer
-      extent:
-        description: 地理范围（可选）
-        items:
-          type: number
-        type: array
-      max_zoom:
-        description: 最大 zoom 层级
-        type: integer
-      min_zoom:
-        description: 最小 zoom 层级
-        type: integer
-      record_count:
-        description: 表记录数
-        type: integer
-      srid:
-        description: 坐标系（可选）
-        type: integer
-    type: object
-  internal_api.TriggerQuickViewRequest:
-    properties:
-      concurrency:
-        description: 默认10
-        type: integer
-      max_zoom:
-        description: 默认18
-        type: integer
-      min_zoom:
-        description: 可选
-        type: integer
-      optimization_config:
-        allOf:
-        - $ref: '#/definitions/models.OptimizationConfig'
-        description: v2.0 优化配置
-      priority:
-        description: '"critical", "default", "low"'
+      config:
+        $ref: '#/definitions/github_com_addp_common_models.JSONMap'
+      description:
         type: string
+      enabled:
+        type: boolean
+      name:
+        type: string
+      next_run_at:
+        type: string
+      schedule:
+        type: string
+    type: object
+  internal_api.TileCacheTaskResponse:
+    properties:
+      config:
+        $ref: '#/definitions/github_com_addp_common_models.JSONMap'
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      description:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: integer
+      last_execution_id:
+        type: string
+      last_execution_status:
+        type: string
+      last_run_at:
+        type: string
+      name:
+        type: string
+      next_run_at:
+        type: string
+      schedule:
+        type: string
+      target:
+        $ref: '#/definitions/internal_api.TileCacheTaskTargetResponse'
+      task_type:
+        type: string
+      tenant_id:
+        type: integer
+      tile:
+        $ref: '#/definitions/internal_api.TileCacheTaskTileResponse'
+      updated_at:
+        type: string
+    type: object
+  internal_api.TileCacheTaskTargetResponse:
+    properties:
+      item_fingerprint:
+        type: string
+      item_id:
+        type: integer
+      locator:
+        type: string
+      schema:
+        type: string
+      source_engine_id:
+        type: integer
+      table:
+        type: string
+    type: object
+  internal_api.TileCacheTaskTileResponse:
+    properties:
+      format:
+        type: string
+      geometry_column:
+        type: string
+      max_zoom:
+        type: integer
+      min_zoom:
+        type: integer
+      target_srid:
+        type: integer
     type: object
   internal_api.UpdatePreferredModeRequest:
     properties:
+      locator:
+        type: string
       preferred_mode:
         enum:
-        - geojson
-        - mvt
+        - table_geojson
+        - quick_view
         type: string
     required:
+    - locator
     - preferred_mode
-    type: object
-  models.AttributePruningConfig:
-    properties:
-      enabled:
-        description: 是否启用
-        type: boolean
-      zoom_threshold:
-        description: zoom 分界线，<= threshold 只返回主键
-        type: integer
-    type: object
-  models.ExtentOptimizationConfig:
-    properties:
-      base_extent:
-        description: 其他层的基础 Extent（默认 512）
-        type: integer
-      max_zoom_extent:
-        description: Max zoom 层的 Extent（默认 1024）
-        type: integer
-      min_extent:
-        description: 动态减半的最小 Extent（固定 256）
-        type: integer
-    type: object
-  models.OptimizationConfig:
-    properties:
-      attribute_pruning:
-        allOf:
-        - $ref: '#/definitions/models.AttributePruningConfig'
-        description: 属性优化
-      extent_optimization:
-        allOf:
-        - $ref: '#/definitions/models.ExtentOptimizationConfig'
-        description: Extent 优化（分层策略 + 动态减半）
-      tile_size_thresholds:
-        allOf:
-        - $ref: '#/definitions/models.TileSizeThresholdsConfig'
-        description: 瓦片大小阈值
-      version:
-        description: 配置版本
-        type: string
-    type: object
-  models.TileSizeThresholdsConfig:
-    properties:
-      max_size_mb:
-        description: 瓦片大小限制（MB）- 用户可配置，默认 5MB
-        type: number
     type: object
 host: localhost:8081
 info:
@@ -519,8 +578,7 @@ paths:
         "201":
           description: 创建的任务配置 | Created task configuration
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/internal_api.TileCacheTaskResponse'
         "400":
           description: 请求参数错误 | Bad request
           schema:
@@ -612,8 +670,7 @@ paths:
         "200":
           description: 更新后的任务配置 | Updated task configuration
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/internal_api.TileCacheTaskResponse'
         "400":
           description: 请求参数错误 | Bad request
           schema:
@@ -779,499 +836,6 @@ paths:
       summary: 刷新数据项元数据 | Refresh item metadata
       tags:
       - Manager
-  /engines/{id}/spatial/{schema}/{table}/geojson:
-    get:
-      description: 获取空间数据项（关系表）的源坐标 GeoJSON 预览数据和 CRS 元数据，后端不做 CRS transform | Get
-        source-CRS GeoJSON preview data and CRS metadata without backend CRS transform
-      parameters:
-      - description: 存储引擎ID | Engine ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: Schema | Schema
-        in: path
-        name: schema
-        required: true
-        type: string
-      - description: 数据项名称 | Item name
-        in: path
-        name: table
-        required: true
-        type: string
-      - description: 页码，默认1 | Page number, default 1
-        in: query
-        name: page
-        type: integer
-      - description: 每页数量，默认1000，最大5000 | Page size, default 1000, max 5000
-        in: query
-        name: page_size
-        type: integer
-      - description: 几何列名，默认geom | Geometry column, default geom
-        in: query
-        name: geom_column
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: GeoJSON preview contract
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: 请求参数错误 | Bad request
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: 服务器内部错误 | Internal server error
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取GeoJSON数据 | Get GeoJSON data
-      tags:
-      - Manager
-  /engines/{id}/spatial/{schema}/{table}/geojson/metadata:
-    get:
-      description: 获取空间数据项（关系表）的源坐标元数据信息，后端不做 CRS transform | Get source-CRS spatial
-        item metadata without backend CRS transform
-      parameters:
-      - description: 存储引擎ID | Engine ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: Schema | Schema
-        in: path
-        name: schema
-        required: true
-        type: string
-      - description: 数据项名称 | Item name
-        in: path
-        name: table
-        required: true
-        type: string
-      - description: 几何列名，默认geom | Geometry column, default geom
-        in: query
-        name: geom_column
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 元数据信息 | Metadata
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: 请求参数错误 | Bad request
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: 服务器内部错误 | Internal server error
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取GeoJSON元数据 | Get GeoJSON metadata
-      tags:
-      - Manager
-  /engines/{id}/spatial/{schema}/{table}/quick-view:
-    delete:
-      description: 清除指定空间数据项（关系表）的快显缓存数据 | Clear quick view cache data for a spatial
-        item (relational table)
-      parameters:
-      - description: 存储引擎ID | Engine ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: Schema | Schema
-        in: path
-        name: schema
-        required: true
-        type: string
-      - description: 数据项名称 | Item name
-        in: path
-        name: table
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 清除成功 | Cleared successfully
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: 请求参数错误 | Bad request
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: 服务器内部错误 | Internal server error
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 清除快显缓存 | Clear quick view cache
-      tags:
-      - Manager
-  /engines/{id}/spatial/{schema}/{table}/quick-view/cancel:
-    post:
-      description: 取消正在进行的快显缓存生成任务 | Cancel an ongoing quick view cache generation
-        task
-      parameters:
-      - description: 存储引擎ID | Engine ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: Schema | Schema
-        in: path
-        name: schema
-        required: true
-        type: string
-      - description: 数据项名称 | Item name
-        in: path
-        name: table
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 取消成功 | Cancelled successfully
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: 请求参数错误 | Bad request
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 取消快显生成任务 | Cancel quick view generation task
-      tags:
-      - Manager
-  /engines/{id}/spatial/{schema}/{table}/quick-view/check-preparation:
-    get:
-      description: 检查空间数据项（关系表）的快显准备状态，通过则自动创建快显记录 | Check preparation status for
-        quick view, auto-create record if passed
-      parameters:
-      - description: 存储引擎ID | Engine ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: Schema | Schema
-        in: path
-        name: schema
-        required: true
-        type: string
-      - description: 数据项名称 | Item name
-        in: path
-        name: table
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 准备状态信息 | Preparation status
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: 请求参数错误 | Bad request
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: 服务器内部错误 | Internal server error
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 检查快显准备状态 | Check quick view preparation status
-      tags:
-      - Manager
-  /engines/{id}/spatial/{schema}/{table}/quick-view/pre-cache:
-    post:
-      consumes:
-      - application/json
-      description: 触发指定空间数据项（关系表）的MVT瓦片快显缓存生成任务 | Trigger MVT tile quick view cache
-        generation for a spatial item (relational table)
-      parameters:
-      - description: 存储引擎ID | Engine ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: Schema | Schema
-        in: path
-        name: schema
-        required: true
-        type: string
-      - description: 数据项名称 | Item name
-        in: path
-        name: table
-        required: true
-        type: string
-      - description: 快显生成配置 | Quick view generation configuration
-        in: body
-        name: body
-        schema:
-          $ref: '#/definitions/internal_api.TriggerQuickViewRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 任务已加入队列 | Task enqueued
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: 请求参数错误 | Bad request
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: 服务器内部错误 | Internal server error
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 触发快显缓存生成 | Trigger quick view cache generation
-      tags:
-      - Manager
-  /engines/{id}/spatial/{schema}/{table}/quick-view/preferred-mode:
-    patch:
-      consumes:
-      - application/json
-      description: 更新指定空间数据项（关系表）的用户偏好显示模式（geojson或mvt）| Update preferred display
-        mode for a spatial item (geojson or mvt)
-      parameters:
-      - description: 存储引擎ID | Engine ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: Schema | Schema
-        in: path
-        name: schema
-        required: true
-        type: string
-      - description: 数据项名称 | Item name
-        in: path
-        name: table
-        required: true
-        type: string
-      - description: 显示模式配置 | Display mode configuration
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/internal_api.UpdatePreferredModeRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 更新成功 | Updated successfully
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: 请求参数错误 | Bad request
-          schema:
-            additionalProperties: true
-            type: object
-        "404":
-          description: 记录不存在 | Record not found
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 更新显示模式偏好 | Update preferred display mode
-      tags:
-      - Manager
-  /engines/{id}/spatial/{schema}/{table}/quick-view/prepare:
-    post:
-      description: 启动空间数据项（关系表）的MVT瓦片生成准备工作（如创建空间索引等）| Start MVT tile generation preparation
-        work (e.g. creating spatial indexes)
-      parameters:
-      - description: 存储引擎ID | Engine ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: Schema | Schema
-        in: path
-        name: schema
-        required: true
-        type: string
-      - description: 数据项名称 | Item name
-        in: path
-        name: table
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 准备工作已启动 | Preparation started
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: 请求参数错误 | Bad request
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: 服务器内部错误 | Internal server error
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 启动MVT准备工作 | Start MVT preparation
-      tags:
-      - Manager
-  /engines/{id}/spatial/{schema}/{table}/quick-view/resume:
-    post:
-      description: 恢复已暂停或中断的快显缓存生成任务 | Resume a paused or interrupted quick view cache
-        generation task
-      parameters:
-      - description: 存储引擎ID | Engine ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: Schema | Schema
-        in: path
-        name: schema
-        required: true
-        type: string
-      - description: 数据项名称 | Item name
-        in: path
-        name: table
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 恢复成功 | Resumed successfully
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: 请求参数错误 | Bad request
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 恢复快显生成任务 | Resume quick view generation task
-      tags:
-      - Manager
-  /engines/{id}/spatial/{schema}/{table}/quick-view/status:
-    get:
-      description: 获取指定空间数据项（关系表）的快显缓存状态及实时生成进度 | Get quick view cache status and
-        real-time generation progress
-      parameters:
-      - description: 存储引擎ID | Engine ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: Schema | Schema
-        in: path
-        name: schema
-        required: true
-        type: string
-      - description: 数据项名称 | Item name
-        in: path
-        name: table
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 快显状态信息 | Quick view status
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: 请求参数错误 | Bad request
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: 服务器内部错误 | Internal server error
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取快显状态 | Get quick view status
-      tags:
-      - Manager
-  /engines/{id}/spatial/{schema}/{table}/tile-config:
-    get:
-      description: 根据空间数据范围和记录数智能计算瓦片的最小/最大缩放级别 | Intelligently calculate min/max
-        zoom levels based on spatial extent and record count
-      parameters:
-      - description: 存储引擎ID | Engine ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: Schema | Schema
-        in: path
-        name: schema
-        required: true
-        type: string
-      - description: 数据项名称 | Item name
-        in: path
-        name: table
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 瓦片配置信息 | Tile configuration
-          schema:
-            $ref: '#/definitions/internal_api.TileConfigResponse'
-        "400":
-          description: 请求参数错误 | Bad request
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: 服务器内部错误 | Internal server error
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取瓦片配置 | Get tile configuration
-      tags:
-      - Manager
   /engines/{id}/spatial/features/{feature_id}/centroid:
     get:
       description: 获取指定要素的源坐标几何中心点和 CRS 元数据，后端不做 CRS transform | Get the source-CRS
@@ -1297,11 +861,13 @@ paths:
         name: table
         required: true
         type: string
-      - description: 几何字段名，默认geom | Geometry column name, default geom
+      - description: 几何字段名；不传则从 Meta 空间元数据读取 | Geometry column; resolved from Meta
+          spatial metadata when omitted
         in: query
         name: geom
         type: string
-      - description: 主键字段名，默认id | Primary key column, default id
+      - description: 主键字段名；不传则从 Meta 空间元数据读取 | Primary key column; resolved from Meta
+          spatial metadata when omitted
         in: query
         name: primary_key
         type: string
@@ -1353,11 +919,13 @@ paths:
         name: table
         required: true
         type: string
-      - description: 几何字段名，默认geom | Geometry column name, default geom
+      - description: 几何字段名；不传则从 Meta 空间元数据读取 | Geometry column; resolved from Meta
+          spatial metadata when omitted
         in: query
         name: geom
         type: string
-      - description: 主键字段名，默认id | Primary key column, default id
+      - description: 主键字段名；不传则从 Meta 空间元数据读取 | Primary key column; resolved from Meta
+          spatial metadata when omitted
         in: query
         name: primary_key
         type: string
@@ -1382,78 +950,6 @@ paths:
       security:
       - BearerAuth: []
       summary: 获取要素完整几何 | Get feature geometry
-      tags:
-      - Manager
-  /engines/{id}/spatial/tiles/{schema}/{table}/{z}/{x}/{y}:
-    get:
-      description: 获取指定空间数据项（关系表）的Mapbox矢量瓦片（MVT格式），支持三层缓存 | Get Mapbox Vector Tile
-        (MVT) for a spatial item (relational table) with three-layer cache
-      parameters:
-      - description: 存储引擎ID | Engine ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: Schema | Schema
-        in: path
-        name: schema
-        required: true
-        type: string
-      - description: 数据项名称 | Item name
-        in: path
-        name: table
-        required: true
-        type: string
-      - description: 缩放级别(0-22) | Zoom level (0-22)
-        in: path
-        name: z
-        required: true
-        type: integer
-      - description: 瓦片X坐标 | Tile X coordinate
-        in: path
-        name: x
-        required: true
-        type: integer
-      - description: 瓦片Y坐标 | Tile Y coordinate
-        in: path
-        name: "y"
-        required: true
-        type: integer
-      - description: 几何列名，默认geom | Geometry column, default geom
-        in: query
-        name: geom
-        type: string
-      - description: 空间参考系，默认4326 | Spatial reference, default 4326
-        in: query
-        name: srid
-        type: integer
-      - description: 返回列，逗号分隔 | Return columns, comma-separated
-        in: query
-        name: cols
-        type: string
-      produces:
-      - application/vnd.mapbox-vector-tile
-      responses:
-        "200":
-          description: MVT瓦片数据 | MVT tile data
-        "400":
-          description: 请求参数错误 | Bad request
-          schema:
-            additionalProperties: true
-            type: object
-        "401":
-          description: 未授权 | Unauthorized
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: 服务器内部错误 | Internal server error
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取MVT矢量瓦片 | Get MVT vector tile
       tags:
       - Manager
   /executions/{execution_id}:
@@ -1563,166 +1059,6 @@ paths:
       summary: 查询 item 向量化状态 | Get item embedding state
       tags:
       - Manager
-  /mvt_tasks:
-    get:
-      description: 列出 Manager 模块的 MVT 生成任务配置。该私有入口固定返回 task_type=mvt_generation；编排模块应使用标准
-        /tasks 入口。| List Manager MVT generation task configurations. This private
-        endpoint always returns task_type=mvt_generation; orchestrator should use
-        the standard /tasks endpoint.
-      parameters:
-      - description: 页码，默认1 | Page number, default 1
-        in: query
-        name: page
-        type: integer
-      - description: 每页数量，默认20 | Page size, default 20
-        in: query
-        name: page_size
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 任务列表 | Task list
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: 服务器内部错误 | Internal server error
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 列出MVT生成任务配置 | List MVT generation task configurations
-      tags:
-      - Manager
-    post:
-      consumes:
-      - application/json
-      description: 创建新的MVT瓦片生成任务配置 | Create a new MVT tile generation task configuration
-      parameters:
-      - description: MVT任务配置 | MVT task configuration
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_addp_manager_internal_models.MvtTask'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: 创建的任务配置 | Created task configuration
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: 请求参数错误 | Bad request
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 创建MVT生成任务配置 | Create MVT generation task configuration
-      tags:
-      - Manager
-  /mvt_tasks/{id}:
-    delete:
-      description: 删除指定的MVT瓦片生成任务配置 | Delete a specific MVT tile generation task configuration
-      parameters:
-      - description: 任务ID | Task ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 删除成功 | Deleted successfully
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: 请求参数错误 | Bad request
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 删除MVT生成任务配置 | Delete MVT generation task configuration
-      tags:
-      - Manager
-    get:
-      description: 获取指定类型和ID的任务详细信息 | Get detailed information of a task by type and
-        ID
-      parameters:
-      - description: 任务ID | Task ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 任务详情 | Task detail
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: 请求参数错误 | Bad request
-          schema:
-            additionalProperties: true
-            type: object
-        "404":
-          description: 任务不存在 | Task not found
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取任务详情 | Get task detail
-      tags:
-      - Manager
-    put:
-      consumes:
-      - application/json
-      description: 更新指定的MVT瓦片生成任务配置 | Update a specific MVT tile generation task configuration
-      parameters:
-      - description: 任务ID | Task ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: MVT任务配置 | MVT task configuration
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_addp_manager_internal_models.MvtTask'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 更新后的任务配置 | Updated task configuration
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: 请求参数错误 | Bad request
-          schema:
-            additionalProperties: true
-            type: object
-        "404":
-          description: 任务不存在 | Task not found
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 更新MVT生成任务配置 | Update MVT generation task configuration
-      tags:
-      - Manager
   /preview:
     get:
       description: 根据资源定位符预览数据内容，支持表格、文件等多种格式 | Preview data content by resource locator,
@@ -1737,7 +1073,7 @@ paths:
         in: query
         name: page
         type: integer
-      - description: 每页数量，默认20 | Page size, default 20
+      - description: 每页数量，默认20，最大2000 | Page size, default 20, max 2000
         in: query
         name: page_size
         type: integer
@@ -1803,14 +1139,37 @@ paths:
       summary: 数据预览 | Data preview
       tags:
       - Manager
-  /quick-view/statistics:
+  /quick-view/capability:
     get:
-      description: 获取快显缓存的整体统计信息（任务数量、缓存大小等）| Get overall quick view cache statistics
+      description: 以 Resource Locator 为数据项身份返回快显能力状态。快显判断基于 ADDP engine、datatype、format
+        和 spatial capabilities，不以数据库 schema/table 为主身份。 | Return quick view capability
+        by Resource Locator. Capability is based on ADDP engine, datatype, format,
+        and spatial capabilities rather than database schema/table identity.
+      parameters:
+      - description: 资源定位符URI | Resource locator URI
+        in: query
+        name: locator
+        required: true
+        type: string
       produces:
       - application/json
       responses:
         "200":
-          description: 统计信息 | Statistics
+          description: 快显能力状态 | Quick view capability state
+          schema:
+            $ref: '#/definitions/github_com_addp_manager_internal_service.QuickViewCapability'
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 资源不存在 | Resource not found
           schema:
             additionalProperties: true
             type: object
@@ -1821,35 +1180,53 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 获取快显统计信息 | Get quick view statistics
+      summary: 获取 locator 快显能力 | Get locator quick view capability
       tags:
       - Manager
-  /quick-view/tasks:
+  /quick-view/geojson:
     get:
-      description: 列出所有快显缓存生成任务，支持按状态和引擎过滤 | List all quick view cache generation
-        tasks with optional filtering
+      description: 以 Resource Locator 为身份返回标准 GeoJSON FeatureCollection。内部按引擎和格式分派，但响应必须是
+        GeoJSON。 | Return a standard GeoJSON FeatureCollection by Resource Locator.
+        The backend dispatches by engine and format internally, but the response is
+        always GeoJSON.
       parameters:
+      - description: 资源定位符URI | Resource locator URI
+        in: query
+        name: locator
+        required: true
+        type: string
       - description: 页码，默认1 | Page number, default 1
         in: query
         name: page
         type: integer
-      - description: 每页数量，默认10 | Page size, default 10
+      - description: 每页数量，默认1000，最大2000 | Page size, default 1000, max 2000
         in: query
         name: page_size
         type: integer
-      - description: 状态过滤 | Filter by status
+      - description: 几何列名 | Geometry column
         in: query
-        name: status
+        name: geometry_column
         type: string
-      - description: 存储引擎ID过滤 | Filter by engine ID
-        in: query
-        name: engine_id
-        type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: 快显任务列表 | Quick view task list
+          description: GeoJSON FeatureCollection
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 资源不存在 | Resource not found
           schema:
             additionalProperties: true
             type: object
@@ -1860,7 +1237,102 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 列出快显任务 | List quick view tasks
+      summary: 获取统一 GeoJSON 快显数据 | Get unified quick-view GeoJSON
+      tags:
+      - Manager
+  /quick-view/preferred-mode:
+    patch:
+      consumes:
+      - application/json
+      description: '以 Resource Locator 为数据项身份更新显示偏好：table_geojson 或 quick_view | Update
+        preferred display mode by Resource Locator: table_geojson or quick_view'
+      parameters:
+      - description: 显示模式配置 | Display mode configuration
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.UpdatePreferredModeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 更新成功 | Updated successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 资源不存在 | Resource not found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新 locator 预览模式偏好 | Update locator preferred preview mode
+      tags:
+      - Manager
+  /quick-view/tiles/{z}/{x}/{y}.mvt:
+    get:
+      description: 以 Resource Locator 为身份返回 MVT 瓦片。第一阶段动态 MVT 仅支持 PostGIS item，其他
+        item 需先生成瓦片缓存。 | Return an MVT tile by Resource Locator. In phase one, realtime
+        MVT supports PostGIS items; other items require tile cache generation first.
+      parameters:
+      - description: 资源定位符URI | Resource locator URI
+        in: query
+        name: locator
+        required: true
+        type: string
+      - description: 缩放级别 | Zoom
+        in: path
+        name: z
+        required: true
+        type: integer
+      - description: 瓦片X坐标 | Tile X
+        in: path
+        name: x
+        required: true
+        type: integer
+      - description: 瓦片Y坐标 | Tile Y
+        in: path
+        name: "y"
+        required: true
+        type: integer
+      - description: 几何列名 | Geometry column
+        in: query
+        name: geometry_column
+        type: string
+      - description: 返回列，逗号分隔 | Return columns, comma-separated
+        in: query
+        name: cols
+        type: string
+      produces:
+      - application/vnd.mapbox-vector-tile
+      responses:
+        "200":
+          description: MVT瓦片数据 | MVT tile data
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 未授权 | Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取统一 MVT 快显瓦片 | Get unified quick-view MVT tile
       tags:
       - Manager
   /search:
@@ -2079,10 +1551,10 @@ paths:
       - Manager
   /tasks:
     get:
-      description: 列出Manager模块的任务（MVT生成任务和向量化任务）| List Manager module tasks (MVT generation
-        and embedding tasks)
+      description: 列出Manager模块的任务（瓦片缓存生成任务和向量化任务）| List Manager module tasks (tile
+        cache generation and embedding tasks)
       parameters:
-      - description: '任务类型过滤：mvt_generation|embedding | Task type filter: mvt_generation|embedding'
+      - description: '任务类型过滤：tile_cache_generation|embedding | Task type filter: tile_cache_generation|embedding'
         in: query
         name: task_type
         type: string
@@ -2122,7 +1594,7 @@ paths:
       description: 获取指定类型和ID的任务详细信息 | Get detailed information of a task by type and
         ID
       parameters:
-      - description: '任务类型：mvt_generation|embedding | Task type: mvt_generation|embedding'
+      - description: '任务类型：tile_cache_generation|embedding | Task type: tile_cache_generation|embedding'
         in: path
         name: task_type
         required: true
@@ -2161,7 +1633,7 @@ paths:
       - application/json
       description: 触发指定任务立即执行 | Trigger immediate execution of a specific task
       parameters:
-      - description: '任务类型：mvt_generation|embedding | Task type: mvt_generation|embedding'
+      - description: '任务类型：tile_cache_generation|embedding | Task type: tile_cache_generation|embedding'
         in: path
         name: task_type
         required: true
@@ -2197,6 +1669,251 @@ paths:
       security:
       - BearerAuth: []
       summary: 执行任务 | Execute task
+      tags:
+      - Manager
+  /tile_cache:
+    get:
+      description: 查询瓦片缓存结果状态 | Query tile cache result states
+      parameters:
+      - description: 数据项ID | Item ID
+        in: query
+        name: item_id
+        type: integer
+      - description: 数据项指纹 | Item fingerprint
+        in: query
+        name: item_fingerprint
+        type: string
+      - description: 任务ID | Task ID
+        in: query
+        name: task_id
+        type: integer
+      - description: 状态 | Status
+        in: query
+        name: status
+        type: string
+      - description: 关键词 | Keyword
+        in: query
+        name: q
+        type: string
+      - description: 页码，默认1 | Page number, default 1
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量，默认20 | Page size, default 20
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 结果列表 | Result list
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出瓦片缓存结果 | List tile cache results
+      tags:
+      - Manager
+  /tile_cache/{id}:
+    delete:
+      parameters:
+      - description: 结果ID | Result ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 删除成功 | Deleted successfully
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除瓦片缓存结果 | Delete tile cache result
+      tags:
+      - Manager
+    get:
+      parameters:
+      - description: 结果ID | Result ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 结果详情 | Result detail
+          schema:
+            $ref: '#/definitions/github_com_addp_manager_internal_models.TileCache'
+      security:
+      - BearerAuth: []
+      summary: 获取瓦片缓存结果详情 | Get tile cache result detail
+      tags:
+      - Manager
+  /tile_cache_tasks:
+    get:
+      description: 列出 Manager 模块的瓦片缓存生成任务配置。该私有入口固定返回 task_type=tile_cache_generation；编排模块应使用标准
+        /tasks 入口。| List Manager tile cache generation task configurations. This private
+        endpoint always returns task_type=tile_cache_generation; orchestrator should
+        use the standard /tasks endpoint.
+      parameters:
+      - description: 页码，默认1 | Page number, default 1
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量，默认20 | Page size, default 20
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 任务列表 | Task list
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出瓦片缓存生成任务配置 | List tile cache generation task configurations
+      tags:
+      - Manager
+    post:
+      consumes:
+      - application/json
+      description: 创建新的瓦片缓存生成任务配置 | Create a new tile cache generation task configuration
+      parameters:
+      - description: 瓦片缓存任务配置 | Tile cache task configuration
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.TileCacheTaskRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: 创建的任务配置 | Created task configuration
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建瓦片缓存生成任务配置 | Create tile cache generation task configuration
+      tags:
+      - Manager
+  /tile_cache_tasks/{id}:
+    delete:
+      description: 删除指定的瓦片缓存生成任务配置 | Delete a specific tile cache generation task
+        configuration
+      parameters:
+      - description: 任务ID | Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 删除成功 | Deleted successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除瓦片缓存生成任务配置 | Delete tile cache generation task configuration
+      tags:
+      - Manager
+    get:
+      description: 获取指定瓦片缓存生成任务配置 | Get a specific tile cache generation task configuration
+      parameters:
+      - description: 任务ID | Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 任务配置 | Task configuration
+          schema:
+            $ref: '#/definitions/internal_api.TileCacheTaskResponse'
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 任务不存在 | Task not found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取瓦片缓存生成任务配置 | Get tile cache generation task configuration
+      tags:
+      - Manager
+    put:
+      consumes:
+      - application/json
+      description: 更新指定的瓦片缓存生成任务配置 | Update a specific tile cache generation task
+        configuration
+      parameters:
+      - description: 任务ID | Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 瓦片缓存任务配置 | Tile cache task configuration
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.TileCacheTaskRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 更新后的任务配置 | Updated task configuration
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 任务不存在 | Task not found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新瓦片缓存生成任务配置 | Update tile cache generation task configuration
       tags:
       - Manager
   /tree/{engine_id}:

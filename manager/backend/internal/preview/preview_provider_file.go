@@ -216,7 +216,7 @@ func (p *FileTablePreviewProvider) previewStreamable(
 
 	// 计算分页参数
 	pageSize := req.PageSize
-	if pageSize <= 0 || pageSize > 1000 {
+	if pageSize <= 0 || pageSize > 2000 {
 		pageSize = 100
 	}
 	page := req.Page
@@ -532,7 +532,7 @@ func (p *FileTablePreviewProvider) previewRefs(
 
 	// 计算分页参数
 	pageSize := req.PageSize
-	if pageSize <= 0 || pageSize > 1000 {
+	if pageSize <= 0 || pageSize > 2000 {
 		pageSize = 100
 	}
 	page := req.Page

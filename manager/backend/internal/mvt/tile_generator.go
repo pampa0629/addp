@@ -147,7 +147,6 @@ func (g *TileGenerator) buildMVTQuery(
 	primaryKey string,
 	config *commonModels.OptimizationConfig,
 ) (string, []interface{}) {
-	// 使用源表或物化视图（由准备阶段服务确保 3857 坐标系）
 	originalTable := table
 
 	opt := spatial.MVTOptions{
@@ -160,13 +159,11 @@ func (g *TileGenerator) buildMVTQuery(
 	return spatial.BuildMVTQuery(schema, table, geomColumn, []string{}, z, x, y, opt, primaryKey)
 }
 
-// VerifySRID 验证表中几何列的 SRID 是否与期望的 SRID 一致
-// 返回: (actualSRID, error)
-func (g *TileGenerator) VerifySRID(
+// QuerySourceSRID 查询表中几何列的真实 SRID。
+func (g *TileGenerator) QuerySourceSRID(
 	ctx context.Context,
 	engineID, tenantID uint,
 	schema, table, geomColumn string,
-	expectedSRID int,
 ) (int, error) {
 	// ✅ 使用连接池
 	db, err := g.getOrCreateDBPool(ctx, engineID, tenantID)
@@ -185,12 +182,7 @@ func (g *TileGenerator) VerifySRID(
 		return 0, fmt.Errorf("failed to query SRID: %w", err)
 	}
 
-	// 验证 SRID 是否匹配
-	if actualSRID != expectedSRID {
-		return actualSRID, fmt.Errorf("SRID 不匹配: 元数据记录为 %d，但表中实际为 %d", expectedSRID, actualSRID)
-	}
-
-	logger.L().Info("✅ SRID 验证通过",
+	logger.L().Info("✅ 源表 SRID 查询完成",
 		"table", fmt.Sprintf("%s.%s", schema, table),
 		"geom_column", geomColumn,
 		"srid", actualSRID)

@@ -69,7 +69,7 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 | 传输任务     | TransferTask  | transfer      | 数据导入任务定义，阶段 1 统一任务体系只暴露 `task_type=import` |
 | 开发任务     | DevTask       | develop       | 可执行的开发工件（query/workflow/script），本质也是任务 |
 | 编排工作流   | Orchestration | orchestrator  | 跨模块任务的 DAG 编排定义，**本身也是一种任务**       |
-| MVT生成任务  | MvtTask       | manager       | 对空间表生成矢量瓦片的任务定义，执行后更新 QuickView  |
+| 瓦片缓存生成任务 | TileCacheTask | manager | 生成瓦片缓存的任务定义，执行后更新 TileCache 结果事实 |
 | 向量化任务   | EmbeddingTask | manager       | 对 data item 范围执行向量化的任务定义                 |
 | 质量检查任务 | CheckTask     | quality       | 数据质量检查任务定义                                  |
 | 图谱构建任务 | GraphBuildTask | graph        | 知识图谱构建任务定义                                  |
@@ -77,7 +77,7 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 **任务的共同能力**：
 - **Schedule**：所有 Task 均可配置定时调度（Cron 表达式）
 - **Execution**：所有 Task 执行后写入 `common.task_executions` 统一记录
-- **可被 Orchestration 编排**：ScanTask / TransferTask / DevTask / MvtTask / EmbeddingTask / CheckTask / GraphBuildTask / Orchestration 均可作为 Orchestration 的步骤（Step）
+- **可被 Orchestration 编排**：ScanTask / TransferTask / DevTask / TileCacheTask / EmbeddingTask / CheckTask / GraphBuildTask / Orchestration 均可作为 Orchestration 的步骤（Step）
 - **Orchestration 的递归性**：Orchestration 执行完也产生 Execution，并以 `task_type=orchestration` 暴露给任务库；保存和执行时必须防止递归引用
 
 **任务类型（task_type in common.task_executions）**：
@@ -85,7 +85,7 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 - Transfer: `import`
 - Develop: `query` / `workflow` / `script`
 - Orchestrator: `orchestration`
-- Manager: `mvt_generation` / `embedding`
+- Manager: `tile_cache_generation` / `embedding`
 - Quality: `check`
 - Graph: `kg_build`
 
@@ -95,15 +95,16 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 
 | 中文         | 英文标识符    | 说明                                                              |
 | ------------ | ------------- | ----------------------------------------------------------------- |
-| MVT生成任务  | MvtTask       | Task 派生，对空间表生成矢量瓦片，执行时更新关联的 QuickView       |
+| 瓦片缓存生成任务 | TileCacheTask | Task 派生，生成瓦片缓存结果，执行时更新 TileCache |
 | 向量化任务   | EmbeddingTask | Task 派生，对 data item 范围执行向量化，写入 Embedding artifact state |
-| 快速预览状态 | QuickView     | 空间表的 MVT 缓存状态记录（非任务，是状态对象），描述瓦片是否就绪 |
+| 快显偏好 | QuickView | 空间预览快显偏好，只保存 item 身份、回跳定位和用户显示偏好 |
+| 瓦片缓存结果 | TileCache | 空间 data item 的瓦片缓存结果状态，记录最小必要结果事实 |
 | 向量记录     | Embedding     | 单个 data item 的当前向量化结果状态，以 item_fingerprint 去重     |
 
 **关于 QuickView**：
-- 是"瓦片缓存状态记录"，不是任务——描述一张空间表的 MVT 缓存是否就绪
-- 可以存在无对应 MvtTask 的 QuickView（用户 ad-hoc 点击"生成"按钮触发）
-- `preparation_status` JSONB 存储物化视图/空间索引/ANALYZE 等准备阶段检查结果
+- 是快显偏好，不是任务，也不是瓦片缓存结果。
+- QuickView 只保存用户偏好；可快显能力、推荐结果和渲染源由能力 API 根据空间元数据与 `TileCache` 动态合成。
+- 瓦片缓存生成必须先创建 `TileCacheTask`，再执行；不设计无任务定义的 ad-hoc 瓦片缓存生成。
 
 ---
 
@@ -419,24 +420,19 @@ erDiagram
         timestamp deleted_at
     }
 
-    MvtTask {
+    TileCacheTask {
         uint id PK
         uint tenant_id FK
-        uint engine_id FK "空间数据所在引擎"
         string name
         string description
-        string schema_name "目标 schema"
-        string table_name "目标表名"
-        int min_zoom "最小缩放级别"
-        int max_zoom "最大缩放级别，默认 18"
-        json optimization_config "简化精度优化配置"
-        string schedule "Cron 表达式"
         bool enabled
-        timestamp last_run_at
+        string schedule "Cron 表达式"
         timestamp next_run_at
+        timestamp last_run_at
         string last_execution_id
         string last_execution_status
         uint created_by FK
+        json config "target / tile / storage / preparation / options"
         timestamp created_at
         timestamp updated_at
         timestamp deleted_at
@@ -500,7 +496,7 @@ erDiagram
         string execution_id UK "UUID，全局唯一，跨模块追踪"
         uint tenant_id FK
         string module "meta|transfer|develop|orchestrator|manager|quality|graph"
-        string task_type "scan|import|query|workflow|script|orchestration|mvt_generation|embedding|check|kg_build"
+        string task_type "scan|import|query|workflow|script|orchestration|tile_cache_generation|embedding|check|kg_build"
         string source "触发来源模块"
         string source_task_id "对应模块任务 ID（字符串，无 DB FK）"
         string source_task_name "任务名称（冗余，便于展示）"
@@ -524,14 +520,14 @@ erDiagram
     TransferTask ||--o{ TaskExecution : "产生"
     DevTask ||--o{ TaskExecution : "产生"
     Orchestration ||--o{ TaskExecution : "产生"
-    MvtTask ||--o{ TaskExecution : "产生"
+    TileCacheTask ||--o{ TaskExecution : "产生"
     EmbeddingTask ||--o{ TaskExecution : "产生"
     CheckTask ||--o{ TaskExecution : "产生"
     GraphBuildTask ||--o{ TaskExecution : "产生"
     Orchestration }o--o{ ScanTask : "编排步骤"
     Orchestration }o--o{ TransferTask : "编排步骤"
     Orchestration }o--o{ DevTask : "编排步骤"
-    Orchestration }o--o{ MvtTask : "编排步骤"
+    Orchestration }o--o{ TileCacheTask : "编排步骤"
     Orchestration }o--o{ EmbeddingTask : "编排步骤"
     Orchestration }o--o{ CheckTask : "编排步骤"
     Orchestration }o--o{ GraphBuildTask : "编排步骤"
@@ -561,23 +557,22 @@ erDiagram
 
 ```mermaid
 erDiagram
-    MvtTask {
+    TileCacheTask {
         uint id PK
         uint tenant_id FK
-        uint engine_id FK "空间数据所在引擎"
         string name
-        string schema_name
-        string table_name
-        int min_zoom
-        int max_zoom "默认 18"
-        json optimization_config
-        string schedule
+        string description
         bool enabled
+        string schedule
+        timestamp next_run_at
         timestamp last_run_at
         string last_execution_id
         string last_execution_status
+        uint created_by FK
+        json config "target / tile / storage / preparation / options"
         timestamp created_at
         timestamp updated_at
+        timestamp deleted_at
     }
 
     EmbeddingTask {
@@ -601,26 +596,34 @@ erDiagram
     QuickView {
         uint id PK
         uint tenant_id FK
-        uint engine_id FK
-        string schema_name
-        string table_name
-        string status "none|generating|ready|failed|cancelled"
-        string preferred_mode "geojson | mvt（用户偏好）"
-        string error_message
-        int min_zoom
-        int max_zoom
-        int actual_max_zoom "实际生成到第几层"
-        int total_tiles
-        int cached_tiles
-        string fingerprint "SHA256，用于 MinIO 路径和变更检测"
-        json extent "[minLng, minLat, maxLng, maxLat]"
-        int extent_srid
-        json optimization_config "生成时使用的优化配置"
-        json preparation_status "物化视图/空间索引/ANALYZE 检查结果"
-        timestamp started_at
-        timestamp completed_at
+        string item_fingerprint UK "标准 data item 指纹"
+        string locator "资源树回跳定位"
+        string preferred_mode "table_geojson | quick_view"
         timestamp created_at
         timestamp updated_at
+    }
+
+    TileCache {
+        uint id PK
+        uint tenant_id FK
+        string item_fingerprint "标准 data item 指纹"
+        uint item_id "当前 meta item 行引用"
+        string locator "资源树回跳定位"
+        uint task_id "manager.tile_cache_tasks.id"
+        string last_execution_id
+        string tile_format "mvt|raster|image|..."
+        string storage_ref "瓦片缓存或 manifest 存储引用"
+        json extent
+        int extent_srid
+        int min_zoom
+        int max_zoom
+        string config_hash
+        string status "generating|ready|failed|stale|cancelled|deleted"
+        string error_message
+        uint created_by FK
+        timestamp created_at
+        timestamp updated_at
+        timestamp deleted_at
     }
 
     Embedding {
@@ -643,20 +646,21 @@ erDiagram
         timestamp updated_at
     }
 
-    MvtTask ||--o| QuickView : "执行时按 engine+schema+table 更新（无 DB FK）"
+    TileCacheTask ||--o{ TileCache : "执行时生成或刷新"
     EmbeddingTask ||--o{ Embedding : "执行时按 item_fingerprint upsert 当前结果"
 ```
 
 **说明**：
-- `QuickView` 是状态对象，不是任务——描述一张空间表的 MVT 缓存是否就绪
-- `MvtTask` 与 `QuickView` 通过 `engine_id + schema_name + table_name` 关联，无 DB FK（一张表可以没有 MvtTask 也有 QuickView，如 ad-hoc 生成）
-- MvtTask 执行流程：准备阶段（检查物化视图/空间索引/ANALYZE，更新 QuickView.preparation_status）→ 生成阶段（逐 zoom 层写 MinIO，更新 QuickView.cached_tiles）→ 完成阶段（更新 QuickView.status=ready，回写 MvtTask.last_execution_id）
+- `QuickView` 是快显偏好，不是任务，也不是瓦片缓存结果；它只保存当前 item 的显示偏好，`can_use_quick_view`、`can_generate_tile_cache`、`default_tile_cache_id` 等能力字段由能力 API 动态合成。
+- `TileCache` 是瓦片缓存结果状态，记录最小必要结果事实，例如存储引用、格式、范围、层级、配置指纹、最近 execution 和状态。
+- `TileCacheTask` 执行流程：创建 execution → 按 `config` 生成或刷新 `TileCache` → 回写 `TileCacheTask.last_execution_id` / `last_execution_status`；执行链路不写回 `QuickView` 能力字段。
+- 瓦片缓存生成必须先创建 `TileCacheTask`，再执行；不设计无任务定义的 ad-hoc 瓦片缓存生成。
 
 **⚠️ 发现的问题**：
 
 | # | 问题描述 | 当前状态 | 影响 |
 |---|----------|----------|------|
-| MG-1 | `MvtTask` 与 `QuickView` 通过 engine+schema+table 三字段软关联，无 DB FK | 设计如此 | 同一张空间表可能对应多个 MvtTask（不同 zoom 配置），QuickView 按最新执行覆盖更新 |
+| MG-1 | 瓦片缓存结果状态需要从 QuickView 中独立出来 | 已收敛 | `QuickView` 负责快显偏好，`TileCache` 负责结果事实 |
 | MG-2 | `Embedding.item_fingerprint` 与 `tenant_id` 组成唯一键，按标准 data item 指纹去重；重复执行只跳过或覆盖当前结果 | 已收敛 | 与 Manager 向量化能力说明一致 |
 
 ---
@@ -1201,7 +1205,8 @@ graph LR
     end
 
     subgraph MGR["Manager"]
-        MvtTask
+        TileCacheTask
+        TileCache
         EmbeddingTask
         QuickView
         Embedding
@@ -1257,7 +1262,7 @@ graph LR
     Engine --> DevTask
     Engine --> QueryService
     Engine --> TileService
-    Engine --> MvtTask
+    Engine --> TileCacheTask
     Engine --> EmbeddingTask
 
     %% Meta 内部
@@ -1268,14 +1273,15 @@ graph LR
     TransferTask --> FieldMapping
 
     %% Manager 内部
-    MvtTask -.->|"执行时更新\n(engine+schema+table)"| QuickView
+    TileCacheTask --> TileCache
+    TileCache -.->|"能力 API 动态选择"| QuickView
     EmbeddingTask --> Embedding
 
     %% Orchestration 编排（步骤存 JSONB，软引用）
     Orchestration -.->|"编排步骤(JSONB)"| ScanTask
     Orchestration -.->|"编排步骤(JSONB)"| TransferTask
     Orchestration -.->|"编排步骤(JSONB)"| DevTask
-    Orchestration -.->|"编排步骤(JSONB)"| MvtTask
+    Orchestration -.->|"编排步骤(JSONB)"| TileCacheTask
     Orchestration -.->|"编排步骤(JSONB)"| EmbeddingTask
     Orchestration -.->|"编排步骤(JSONB)"| CheckTask
     Orchestration -.->|"编排步骤(JSONB)"| GraphBuildTask
@@ -1286,7 +1292,7 @@ graph LR
     TransferTask --> TaskExecution
     DevTask --> TaskExecution
     Orchestration --> TaskExecution
-    MvtTask --> TaskExecution
+    TileCacheTask --> TaskExecution
     EmbeddingTask --> TaskExecution
     CheckTask --> TaskExecution
     GraphBuildTask --> TaskExecution
@@ -1336,7 +1342,7 @@ graph TD
     TRF["Transfer\nTransferTask / FieldMapping"]
     DEV["Develop\nDevTask"]
     ORC["Orchestrator\nOrchestration"]
-    MGR["Manager\nMvtTask / EmbeddingTask / QuickView / Embedding"]
+    MGR["Manager\nTileCacheTask / TileCache / QuickView / EmbeddingTask / Embedding"]
     QLT["Quality\nCheckTask"]
     GPH["Graph\nGraphBuildTask"]
     MON["Monitor (公共)\nTaskExecution"]
@@ -1389,7 +1395,7 @@ graph TD
 | T-4  | Task     | Orchestration 可作为另一 Orchestration 的 Step，但必须防止自引用或循环引用 | 中 | 受限支持 |
 | M-1  | Meta     | ScanTask 的调度字段（schedule_type + cron_expression）与其他任务单字段 schedule 不一致 | 中 | ✅ 已修正，见 T-1 |
 | M-2  | Meta     | DataItem.attributes JSONB 存字段列表，无字段级查询能力                | —      | 已确认合理（依赖 Meilisearch）|
-| MG-1 | Manager  | MvtTask 与 QuickView 通过 engine+schema+table 三字段软关联，无 DB FK  | —      | 已确认合理 |
+| MG-1 | Manager  | 瓦片缓存结果状态从 QuickView 独立为 TileCache | — | 已按快显与瓦片缓存概念收敛 |
 | MG-2 | Manager  | Embedding 以 `tenant_id + item_fingerprint` 唯一，重复执行只跳过或覆盖当前 artifact state | — | 已按 Manager 向量化能力说明收敛 |
 | SV-1 | Service  | TileServiceLayer.engine_id 藏在 layer_config JSONB 中，无 DB FK       | 中     | 待讨论     |
 | SV-2 | Service  | 三类服务无统一父表，服务目录需 UNION 查询                             | 低     | 待讨论     |

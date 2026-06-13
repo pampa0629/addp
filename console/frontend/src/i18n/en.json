@@ -207,7 +207,7 @@
         "dataExplorer": "Data Explorer",
         "dataRetrieval": "Data Retrieval",
         "vectorizationTasks": "Vectorization Tasks",
-        "mvtTasks": "MVT Tasks"
+        "tileCache": "Tile Cache Tasks"
       },
       "standard": {
         "label": "Data Standards",

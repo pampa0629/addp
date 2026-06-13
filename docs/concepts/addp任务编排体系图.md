@@ -50,7 +50,7 @@ graph TB
         Meta --> |注册| MetaCap[Meta 任务类型<br/>scan]
         Transfer --> |注册| TransferCap[Transfer 任务类型<br/>import]
         Develop --> |注册| DevelopCap[Develop 任务类型<br/>query<br/>workflow<br/>script]
-        Manager --> |注册| ManagerCap[Manager 任务类型<br/>mvt_generation<br/>embedding]
+        Manager --> |注册| ManagerCap[Manager 任务类型<br/>tile_cache_generation<br/>embedding]
         Quality --> |注册| QualityCap[Quality 任务类型<br/>check]
         Graph --> |注册| GraphCap[Graph 任务类型<br/>kg_build]
         OrchestratorProvider --> |注册| OrchestratorCap[Orchestrator 任务类型<br/>orchestration]
@@ -118,7 +118,7 @@ graph TB
 | **Develop** | 执行查询 | `POST /api/v1/develop/tasks/{task_type}/{id}/execute` | `task_type=query` |
 | **Develop** | 执行工作流 | `POST /api/v1/develop/tasks/{task_type}/{id}/execute` | `task_type=workflow` |
 | **Develop** | 执行脚本 | `POST /api/v1/develop/tasks/{task_type}/{id}/execute` | `task_type=script` |
-| **Manager** | 生成 MVT 瓦片 | `POST /api/v1/manager/tasks/{task_type}/{id}/execute` | `task_type=mvt_generation` |
+| **Manager** | 生成瓦片缓存 | `POST /api/v1/manager/tasks/{task_type}/{id}/execute` | `task_type=tile_cache_generation` |
 | **Manager** | 向量化 | `POST /api/v1/manager/tasks/{task_type}/{id}/execute` | `task_type=embedding` |
 | **Quality** | 质量检查 | `POST /api/v1/quality/tasks/{task_type}/{id}/execute` | `task_type=check` |
 | **Graph** | 图谱构建 | `POST /api/v1/graph/tasks/{task_type}/{id}/execute` | `task_type=kg_build` |
@@ -151,7 +151,7 @@ graph TB
 
         TaskWF --> TaskNode1[业务任务<br/>扫描元数据<br/>Meta.scan]
         TaskWF --> TaskNode2[业务任务<br/>Transfer任务<br/>Transfer.import]
-        TaskWF --> TaskNode3[业务任务<br/>生成瓦片<br/>Manager.mvt_generation]
+        TaskWF --> TaskNode3[业务任务<br/>生成瓦片<br/>Manager.tile_cache_generation]
 
         TaskNode1 --> TaskNode2
         TaskNode2 --> TaskNode3
@@ -229,8 +229,8 @@ flowchart TD
     Start([开始]) --> ScanMeta[扫描元数据<br/>Meta.scan<br/>task_id=11]
     ScanMeta --> ImportData[Transfer任务<br/>Transfer.import<br/>task_id=21]
     ImportData --> ExecuteWorkflow[执行工作流<br/>Develop.workflow<br/>参数: input={{ImportData.target_table}}]
-    ExecuteWorkflow --> GenerateMVT[生成MVT瓦片<br/>Manager.mvt_generation<br/>task_id=31]
-    GenerateMVT --> End([结束])
+    ExecuteWorkflow --> GenerateTileCache[生成瓦片缓存<br/>Manager.tile_cache_generation<br/>task_id=31]
+    GenerateTileCache --> End([结束])
 
     classDef meta fill:#e1f5ff,stroke:#01579b
     classDef transfer fill:#fff9c4,stroke:#f57f17
@@ -240,7 +240,7 @@ flowchart TD
     class ScanMeta meta
     class ImportData transfer
     class ExecuteWorkflow develop
-    class GenerateMVT manager
+    class GenerateTileCache manager
 ```
 
 ### 编排定义 JSON
@@ -284,10 +284,10 @@ flowchart TD
       "timeout": 900
     },
     {
-      "id": "generate_mvt",
-      "name": "生成MVT瓦片",
+      "id": "generate_tile_cache",
+      "name": "生成瓦片缓存",
       "provider": "manager",
-      "task_type": "mvt_generation",
+      "task_type": "tile_cache_generation",
       "task_id": 31,
       "parameters": {},
       "depends_on": ["execute_workflow"],
@@ -387,7 +387,7 @@ sequenceDiagram
 ## 典型使用场景
 
 **任务编排流场景**:
-- 每日凌晨扫描数据库元数据 → 生成 MVT 瓦片 → 预缓存热点区域
+- 每日凌晨扫描数据库元数据 → 生成瓦片缓存 → 刷新热点区域瓦片缓存产物
 - 从 CSV 导入数据 → 执行空间分析 → 导出结果到 S3
 - 多数据源同步: PostgreSQL → MySQL → MongoDB
 - 跨模块工作流: Meta 扫描 → Transfer 传输 → Manager 预览

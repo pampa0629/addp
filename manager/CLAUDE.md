@@ -2,7 +2,14 @@
 
 ## 模块定位
 
-Manager 模块负责数据探查、数据预览、混合检索、空间瓦片和 Quick View 快显能力。它不管理存储引擎配置，存储引擎由 System 管理；Manager 通过 System、Meta 和实际数据源完成只读探查与预览。
+Manager 模块负责数据探查、数据预览、混合检索、空间快显和瓦片缓存能力。它不管理存储引擎配置，存储引擎由 System 管理；Manager 通过 System、Meta 和实际数据源完成只读探查与预览。
+
+空间快显与瓦片缓存的目标边界：
+
+- `manager.quick_view`：快显状态，表达某个 spatial item 是否可快显、推荐使用哪个瓦片缓存结果以及 UI 偏好。
+- `manager.tile_cache`：瓦片缓存结果状态，表达瓦片缓存是否可用、存储引用、格式、范围、层级、配置指纹和最近执行。
+- `manager.tile_cache_tasks`：瓦片缓存生成任务定义，TaskProvider `task_type=tile_cache_generation`。MVT 只是 `config.tile.format=mvt`，不是任务类型。
+- 当前 PostGIS + MVT 阶段的 `tile_cache_generation` 由 Manager Backend 内部执行，不保留独立 Manager Worker 空运行时。后续若瓦片缓存生成计算负载转移到 Manager 进程内、需要多执行器横向扩展，或引入专门 GIS 计算引擎，应先统一文档与架构，再把唯一执行运行时切换为 Manager Worker 或 GIS 执行引擎。
 
 ## 技术栈与端口
 
@@ -18,8 +25,8 @@ manager/
 ├── backend/
 │   ├── cmd/server/main.go
 │   ├── internal/api/          # explorer、search、quick-view、tiles、import、embedding
-│   ├── internal/service/      # preview registry、MVT、Quick View、搜索、缓存
-│   ├── internal/mvt/          # 瓦片生成与预处理
+│   ├── internal/service/      # preview registry、瓦片缓存、Quick View、搜索、缓存
+│   ├── internal/mvt/          # 当前 MVT 瓦片生成与预处理实现
 │   └── docs/                  # Swagger 产物
 ├── docs/
 │   ├── 数据库架构.md
@@ -41,8 +48,8 @@ manager/
 - 数据探查：`GET /engines`、`GET /tree/:engine_id`、`GET /tree/:engine_id/node`、`GET /tree/:engine_id/search`、`POST /tree/:engine_id/refresh`。
 - 预览：`GET /preview`、`GET /video-stream`、`GET /graph-schema/:engine_id`。
 - 搜索：`GET /search`、`GET /search/history`、`DELETE /search/history/:id`、`DELETE /search/history`。
-- 空间与瓦片：`GET /engines/:id/spatial/features/:feature_id/centroid`、`GET /engines/:id/spatial/features/:feature_id/geometry`、`GET /engines/:id/spatial/:schema/:table/geojson`、`GET /engines/:id/spatial/tiles/:schema/:table/:z/:x/:y`。
-- Quick View：`POST /engines/:id/spatial/:schema/:table/quick-view/prepare`、`POST /engines/:id/spatial/:schema/:table/quick-view/pre-cache`、`GET /engines/:id/spatial/:schema/:table/quick-view/status`。
+- 空间要素辅助：`GET /engines/:id/spatial/features/:feature_id/centroid`、`GET /engines/:id/spatial/features/:feature_id/geometry`。
+- Quick View：统一使用 ResourceLocator 入口，`GET /quick-view/capability?locator={ResourceLocator}` 返回快显能力状态，`GET /quick-view/geojson?locator={ResourceLocator}` 返回 GeoJSON，`GET /quick-view/tiles/:z/:x/:y.mvt?locator={ResourceLocator}` 返回 MVT，`PATCH /quick-view/preferred-mode` 更新显示偏好；瓦片缓存生成通过 `tile_cache_generation` 任务执行，产物通过 `/tile_cache` 管理。
 - 任务提供者：`GET /tasks`、`GET /tasks/:task_type/:id`、`POST /tasks/:task_type/:id/execute`、`GET /executions/:execution_id`。
 - 数据导入与向量化：`POST /import`、`POST /embedding_executions`、`GET /embeddings`、`GET /items/:item_id/embedding`。
 
@@ -52,6 +59,8 @@ manager/
 - 元数据树与数据项优先通过 Meta 查询，Manager 只做预览、检索和快显侧的缓存与呈现。
 - 预览能力走 `PreviewRegistry` 和 provider，不要为单一数据源在 Handler 中写特殊逻辑。
 - 空间相关逻辑不得默认几何字段名为 `geom`，应从 Meta、预览检测或请求参数获取。
+- 不得把 Quick View 称为任务；瓦片缓存生成任务统一使用 `tile_cache_generation` / `manager.tile_cache_tasks`。
+- 不得同时保留 Backend 内执行和 Manager Worker 执行两条瓦片缓存生成路径；运行时只能有一条主路径。
 - 修改 API 后同步 Swagger：`bash scripts/swagger/gen-swagger.sh manager` 和 `bash scripts/swagger/check-route-coverage.sh manager`。
 
 ## 开发与验证

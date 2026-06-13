@@ -90,7 +90,7 @@ bash scripts/dev/modtidy.sh
    - Manager Backend (8081)
    - Meta Backend (8082)
    - Transfer Backend (8083)
-   - Transfer Worker + Meta Worker + Manager Worker
+   - Transfer Worker + Meta Worker
    - Orchestrator Backend (8084)
    - Gateway (8000) - API 路由
 4. **健康检查**: 等待所有 /health 返回 200
@@ -201,7 +201,7 @@ System Backend (8180) - 配置中心,认证服务
   ↓
 Manager Backend (8081) + Meta Backend (8082) (并行启动)
   ↓
-Transfer Backend (8083) + Transfer Worker + Meta Worker + Manager Worker
+Transfer Backend (8083) + Transfer Worker + Meta Worker
   ↓
 Orchestrator Backend (8084)
   ↓

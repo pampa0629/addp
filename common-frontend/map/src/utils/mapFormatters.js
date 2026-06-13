@@ -1,53 +1,109 @@
 /**
- * 地图要素格式化工具函数
+ * 地图要素属性格式化工具。
  */
+
+const DEFAULT_LABELS = {
+  id: 'ID',
+  unknown: 'Unknown',
+  unknownGeometry: 'Unknown geometry',
+  nullValue: 'NULL',
+  noAttributes: 'No attributes'
+}
+
+const GEOMETRY_TYPE_LABELS = {
+  Point: 'Point',
+  MultiPoint: 'MultiPoint',
+  LineString: 'LineString',
+  MultiLineString: 'MultiLineString',
+  Polygon: 'Polygon',
+  MultiPolygon: 'MultiPolygon'
+}
+
+const PRIMARY_FIELD_CANDIDATES = ['name', '名称', 'NAME', 'title', 'label', 'code']
+const ID_FIELDS = ['id', 'ID', '_id', 'uuid']
+const DEFAULT_GEOMETRY_COLUMNS = ['geom', 'geometry', 'the_geom', 'wkb_geometry']
+
+const escapeHTML = (value) => String(value)
+  .replaceAll('&', '&amp;')
+  .replaceAll('<', '&lt;')
+  .replaceAll('>', '&gt;')
+  .replaceAll('"', '&quot;')
+  .replaceAll("'", '&#39;')
+
+const normalizeOptions = (options) => {
+  if (typeof options === 'string') {
+    return {
+      geomColumn: options
+    }
+  }
+  return options || {}
+}
+
+const normalizeGeometryColumns = (geomColumn) => {
+  const geometryColumns = new Set(DEFAULT_GEOMETRY_COLUMNS)
+  if (geomColumn) geometryColumns.add(geomColumn)
+  return geometryColumns
+}
+
+const isSkippedProperty = (key, { geometryColumns, primaryField }) => {
+  return geometryColumns.has(key) ||
+    key === primaryField ||
+    ID_FIELDS.includes(key) ||
+    key === 'originalFeature' ||
+    key === 'rowData'
+}
+
+const formatDisplayValue = (value, labels) => {
+  if (value === null || value === undefined) {
+    return `<span class="null-value">${escapeHTML(labels.nullValue)}</span>`
+  }
+  if (typeof value === 'object') {
+    return escapeHTML(JSON.stringify(value))
+  }
+  const raw = String(value)
+  const displayValue = raw.length > 120 ? `${raw.slice(0, 120)}...` : raw
+  return escapeHTML(displayValue)
+}
 
 /**
- * 格式化要素属性为分层卡片式 HTML
- * @param {Object} properties - 要素属性对象
- * @param {string} geomColumn - 几何列名（默认'geom'）
- * @returns {string} 格式化后的HTML字符串
+ * 格式化要素属性为弹窗 HTML。
+ * @param {Object} properties 要素属性对象。
+ * @param {Object|string} options 格式化选项，或旧式几何列名。
+ * @param {string} options.geomColumn 几何列名。
+ * @param {Object} options.labels UI 标签。
+ * @returns {string} 格式化后的 HTML 字符串。
  */
-export function formatFeatureProperties(properties, geomColumn = 'geom') {
-  const geometryColumns = [geomColumn, 'geom', 'geometry', 'the_geom', 'wkb_geometry']
-
-  // 提取要素ID
-  const featureId = properties.id || properties.ID || properties._id || properties.uuid || '未知'
-
-  // 获取几何类型（从 geometry 对象中提取）
-  let geomType = '未知类型'
-  if (properties.geometry && properties.geometry.type) {
-    const typeMap = {
-      'Point': '点',
-      'MultiPoint': '多点',
-      'LineString': '线',
-      'MultiLineString': '多线',
-      'Polygon': '面',
-      'MultiPolygon': '多面'
-    }
-    geomType = typeMap[properties.geometry.type] || properties.geometry.type
+export function formatFeatureProperties(properties = {}, options = {}) {
+  const normalizedOptions = normalizeOptions(options)
+  const labels = {
+    ...DEFAULT_LABELS,
+    ...(normalizedOptions.labels || {})
   }
+  const geometryTypeLabels = {
+    ...GEOMETRY_TYPE_LABELS,
+    ...(normalizedOptions.geometryTypeLabels || {})
+  }
+  const geometryColumns = normalizeGeometryColumns(normalizedOptions.geomColumn)
 
-  // 识别主要字段（优先级：name > 名称 > 属性1 > 第一个非ID非几何字段）
-  const primaryFieldCandidates = ['name', '名称', 'NAME', '属性1', 'title', 'label']
-  let primaryField = null
-  let primaryValue = null
+  const resolvedFeatureId = ID_FIELDS.map((field) => properties[field]).find((value) => value !== undefined && value !== null)
+  const featureId = resolvedFeatureId ?? labels.unknown
+  const geometryType = properties.geometry?.type
+  const geometryTypeLabel = geometryTypeLabels[geometryType] || geometryType || labels.unknownGeometry
 
-  for (const candidate of primaryFieldCandidates) {
-    if (properties[candidate] && properties[candidate] !== featureId) {
+  let primaryField = ''
+  let primaryValue
+
+  for (const candidate of PRIMARY_FIELD_CANDIDATES) {
+    if (properties[candidate] !== undefined && properties[candidate] !== null && properties[candidate] !== featureId) {
       primaryField = candidate
       primaryValue = properties[candidate]
       break
     }
   }
 
-  // 如果没找到候选字段，使用第一个非ID非几何的字段
-  if (!primaryValue) {
+  if (primaryValue === undefined || primaryValue === null) {
     for (const [key, value] of Object.entries(properties)) {
-      if (!geometryColumns.includes(key) &&
-          key !== 'geometry' &&
-          key !== 'id' && key !== 'ID' && key !== '_id' && key !== 'uuid' &&
-          value !== null && value !== undefined) {
+      if (!isSkippedProperty(key, { geometryColumns, primaryField }) && value !== null && value !== undefined) {
         primaryField = key
         primaryValue = value
         break
@@ -55,55 +111,32 @@ export function formatFeatureProperties(properties, geomColumn = 'geom') {
     }
   }
 
-  // 构建HTML
-  let html = '<div class="feature-card">'
+  const attributeRows = Object.entries(properties)
+    .filter(([key]) => !isSkippedProperty(key, { geometryColumns, primaryField }))
+    .slice(0, 12)
+    .map(([key, value]) => (
+      '<div class="attribute-item">' +
+        `<span class="attr-key">${escapeHTML(key)}:</span> ` +
+        `<span class="attr-value">${formatDisplayValue(value, labels)}</span>` +
+      '</div>'
+    ))
+    .join('')
 
-  // 卡片头部
-  html += '<div class="feature-card-header">'
-  html += `<div class="feature-id"><span class="id-icon">📍</span> ID: ${featureId}</div>`
-  html += `<div class="feature-geom-type">${geomType}</div>`
-  html += '</div>'
+  const primaryHTML = primaryValue !== undefined && primaryValue !== null
+    ? '<div class="feature-primary-field">' +
+        `<div class="primary-value">${formatDisplayValue(primaryValue, labels)}</div>` +
+        `<div class="primary-label">${escapeHTML(primaryField)}</div>` +
+      '</div>'
+    : ''
 
-  // 主要字段（大字号显示）
-  if (primaryValue) {
-    html += '<div class="feature-primary-field">'
-    html += `<div class="primary-value">${primaryValue}</div>`
-    html += `<div class="primary-label">${primaryField}</div>`
-    html += '</div>'
-  }
-
-  // 属性列表
-  html += '<div class="feature-attributes">'
-  let attributeCount = 0
-  for (const [key, value] of Object.entries(properties)) {
-    // 跳过几何列、内部属性、已显示的主要字段
-    if (geometryColumns.includes(key) ||
-        key === 'geometry' ||
-        key === primaryField ||
-        key === 'id' || key === 'ID' || key === '_id' || key === 'uuid') {
-      continue
-    }
-
-    // 格式化值
-    let displayValue = value
-    if (value === null || value === undefined) {
-      displayValue = '<span class="null-value">NULL</span>'
-    } else if (typeof value === 'object') {
-      displayValue = JSON.stringify(value)
-    } else if (typeof value === 'string' && value.length > 80) {
-      displayValue = value.substring(0, 80) + '...'
-    }
-
-    html += '<div class="attribute-item" style="color:#333">'
-    html += `<span class="attr-key" style="color:#555;font-weight:600">${key}:</span> `
-    html += `<span class="attr-value" style="color:#111">${displayValue}</span>`
-    html += '</div>'
-
-    attributeCount++
-    if (attributeCount >= 10) break // 最多显示10个属性
-  }
-  html += '</div>'
-
-  html += '</div>'
-  return html
+  return '<div class="feature-card">' +
+    '<div class="feature-card-header">' +
+      `<div class="feature-id">${escapeHTML(labels.id)}: ${escapeHTML(featureId)}</div>` +
+      `<div class="feature-geom-type">${escapeHTML(geometryTypeLabel)}</div>` +
+    '</div>' +
+    primaryHTML +
+    '<div class="feature-attributes">' +
+      (attributeRows || `<div class="attribute-empty">${escapeHTML(labels.noAttributes)}</div>`) +
+    '</div>' +
+  '</div>'
 }

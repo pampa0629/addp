@@ -13,6 +13,7 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
+	"github.com/addp/manager/internal/repository"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -23,24 +24,24 @@ import (
 //	GET /api/manager/tasks/:task_type/:id, GET /api/manager/executions/:execution_id
 type TaskProviderHandler struct {
 	embeddingTaskSvc *service.EmbeddingTaskService
-	mvtTaskSvc       *service.MvtTaskService
+	tileCacheTaskSvc *service.TileCacheTaskService
 	taskExecRepo     *commonExecution.TaskExecutionRepository
 }
 
 // NewTaskProviderHandler 创建处理器
 func NewTaskProviderHandler(
 	embeddingTaskSvc *service.EmbeddingTaskService,
-	mvtTaskSvc *service.MvtTaskService,
+	tileCacheTaskSvc *service.TileCacheTaskService,
 	taskExecRepo *commonExecution.TaskExecutionRepository,
 ) *TaskProviderHandler {
 	return &TaskProviderHandler{
 		embeddingTaskSvc: embeddingTaskSvc,
-		mvtTaskSvc:       mvtTaskSvc,
+		tileCacheTaskSvc: tileCacheTaskSvc,
 		taskExecRepo:     taskExecRepo,
 	}
 }
 
-// TaskListResponse 任务列表响应（统一包装 mvt_generation 和 embedding 任务）
+// TaskListResponse 任务列表响应（统一包装 tile_cache_generation 和 embedding 任务）
 type TaskListItem struct {
 	ID                  uint    `json:"id"`
 	TenantID            uint    `json:"tenant_id"`
@@ -90,13 +91,59 @@ type EmbeddingTaskResponse struct {
 	UpdatedAt           time.Time                    `json:"updated_at"`
 }
 
+type TileCacheTaskRequest struct {
+	Name        string               `json:"name"`
+	Description string               `json:"description,omitempty"`
+	Enabled     *bool                `json:"enabled,omitempty"`
+	Schedule    string               `json:"schedule,omitempty"`
+	NextRunAt   *time.Time           `json:"next_run_at,omitempty"`
+	Config      commonModels.JSONMap `json:"config"`
+}
+
+type TileCacheTaskTargetResponse struct {
+	ItemID          uint   `json:"item_id,omitempty"`
+	ItemFingerprint string `json:"item_fingerprint,omitempty"`
+	Locator         string `json:"locator,omitempty"`
+	SourceEngineID  uint   `json:"source_engine_id,omitempty"`
+	Schema          string `json:"schema,omitempty"`
+	Table           string `json:"table,omitempty"`
+}
+
+type TileCacheTaskTileResponse struct {
+	Format         string `json:"format"`
+	MinZoom        int    `json:"min_zoom"`
+	MaxZoom        int    `json:"max_zoom"`
+	TargetSRID     int    `json:"target_srid,omitempty"`
+	GeometryColumn string `json:"geometry_column,omitempty"`
+}
+
+type TileCacheTaskResponse struct {
+	ID                  uint                         `json:"id"`
+	TenantID            uint                         `json:"tenant_id"`
+	TaskType            string                       `json:"task_type"`
+	Name                string                       `json:"name"`
+	Description         string                       `json:"description,omitempty"`
+	Enabled             bool                         `json:"enabled"`
+	Schedule            string                       `json:"schedule,omitempty"`
+	NextRunAt           *time.Time                   `json:"next_run_at,omitempty"`
+	LastRunAt           *time.Time                   `json:"last_run_at,omitempty"`
+	LastExecutionID     *string                      `json:"last_execution_id,omitempty"`
+	LastExecutionStatus *string                      `json:"last_execution_status,omitempty"`
+	CreatedBy           *uint                        `json:"created_by,omitempty"`
+	Config              commonModels.JSONMap         `json:"config"`
+	Target              *TileCacheTaskTargetResponse `json:"target,omitempty"`
+	Tile                *TileCacheTaskTileResponse   `json:"tile,omitempty"`
+	CreatedAt           time.Time                    `json:"created_at"`
+	UpdatedAt           time.Time                    `json:"updated_at"`
+}
+
 // ListTasks GET /api/manager/tasks
-// 查询参数：?task_type=mvt_generation|embedding
+// 查询参数：?task_type=tile_cache_generation|embedding
 // @Summary 列出任务 | List tasks
-// @Description 列出Manager模块的任务（MVT生成任务和向量化任务）| List Manager module tasks (MVT generation and embedding tasks)
+// @Description 列出Manager模块的任务（瓦片缓存生成任务和向量化任务）| List Manager module tasks (tile cache generation and embedding tasks)
 // @Tags Manager
 // @Produce json
-// @Param task_type query string false "任务类型过滤：mvt_generation|embedding | Task type filter: mvt_generation|embedding"
+// @Param task_type query string false "任务类型过滤：tile_cache_generation|embedding | Task type filter: tile_cache_generation|embedding"
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Success 200 {object} map[string]interface{} "任务列表 | Task list"
@@ -125,8 +172,8 @@ func (h *TaskProviderHandler) listTasks(c *gin.Context, taskType string) {
 	var total int64
 
 	switch taskType {
-	case commonExecution.TaskTypeMvtGeneration:
-		tasks, t, err := h.mvtTaskSvc.List(ctx, tenantID, page, pageSize)
+	case commonExecution.TaskTypeTileCacheGeneration:
+		tasks, t, err := h.tileCacheTaskSvc.List(ctx, tenantID, page, pageSize)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
 			return
@@ -134,7 +181,7 @@ func (h *TaskProviderHandler) listTasks(c *gin.Context, taskType string) {
 		total = t
 		for _, task := range tasks {
 			items = append(items, TaskListItem{
-				ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeMvtGeneration,
+				ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeTileCacheGeneration,
 				Name: task.Name, Description: task.Description, Enabled: task.Enabled,
 				LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus,
 			})
@@ -155,7 +202,7 @@ func (h *TaskProviderHandler) listTasks(c *gin.Context, taskType string) {
 		}
 	case "":
 		// 返回所有类型
-		mvtTasks, mvtTotal, err := h.mvtTaskSvc.List(ctx, tenantID, page, pageSize)
+		tileCacheTasks, tileCacheTotal, err := h.tileCacheTaskSvc.List(ctx, tenantID, page, pageSize)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
 			return
@@ -165,10 +212,10 @@ func (h *TaskProviderHandler) listTasks(c *gin.Context, taskType string) {
 			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
 			return
 		}
-		total = mvtTotal + embTotal
-		for _, task := range mvtTasks {
+		total = tileCacheTotal + embTotal
+		for _, task := range tileCacheTasks {
 			items = append(items, TaskListItem{
-				ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeMvtGeneration,
+				ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeTileCacheGeneration,
 				Name: task.Name, Description: task.Description, Enabled: task.Enabled,
 				LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus,
 			})
@@ -197,19 +244,43 @@ func (h *TaskProviderHandler) listTasks(c *gin.Context, taskType string) {
 	})
 }
 
-// ListMvtTasks GET /api/manager/mvt_tasks
-// @Summary 列出MVT生成任务配置 | List MVT generation task configurations
-// @Description 列出 Manager 模块的 MVT 生成任务配置。该私有入口固定返回 task_type=mvt_generation；编排模块应使用标准 /tasks 入口。| List Manager MVT generation task configurations. This private endpoint always returns task_type=mvt_generation; orchestrator should use the standard /tasks endpoint.
+// ListTileCacheTasks GET /api/manager/tile_cache_tasks
+// @Summary 列出瓦片缓存生成任务配置 | List tile cache generation task configurations
+// @Description 列出 Manager 模块的瓦片缓存生成任务配置。该私有入口固定返回 task_type=tile_cache_generation；编排模块应使用标准 /tasks 入口。| List Manager tile cache generation task configurations. This private endpoint always returns task_type=tile_cache_generation; orchestrator should use the standard /tasks endpoint.
 // @Tags Manager
 // @Produce json
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Success 200 {object} map[string]interface{} "任务列表 | Task list"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /mvt_tasks [get]
+// @Router /tile_cache_tasks [get]
 // @Security BearerAuth
-func (h *TaskProviderHandler) ListMvtTasks(c *gin.Context) {
-	h.listTasks(c, commonExecution.TaskTypeMvtGeneration)
+func (h *TaskProviderHandler) ListTileCacheTasks(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if page < 1 {
+		page = 1
+	}
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
+
+	tasks, total, err := h.tileCacheTaskSvc.List(c.Request.Context(), tenantID, page, pageSize)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	items := make([]TileCacheTaskResponse, 0, len(tasks))
+	for _, task := range tasks {
+		items = append(items, tileCacheTaskResponse(task))
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"data":      items,
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
+	})
 }
 
 // ListEmbeddingTasks GET /api/manager/embedding_tasks
@@ -257,13 +328,12 @@ func (h *TaskProviderHandler) ListEmbeddingTasks(c *gin.Context) {
 // @Description 获取指定类型和ID的任务详细信息 | Get detailed information of a task by type and ID
 // @Tags Manager
 // @Produce json
-// @Param task_type path string true "任务类型：mvt_generation|embedding | Task type: mvt_generation|embedding"
+// @Param task_type path string true "任务类型：tile_cache_generation|embedding | Task type: tile_cache_generation|embedding"
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} map[string]interface{} "任务详情 | Task detail"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
 // @Router /tasks/{task_type}/{id} [get]
-// @Router /mvt_tasks/{id} [get]
 // @Router /embedding_tasks/{id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
@@ -277,8 +347,8 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	switch taskType {
-	case "mvt_generation":
-		task, err := h.mvtTaskSvc.GetByID(ctx, uint(id), tenantID)
+	case commonExecution.TaskTypeTileCacheGeneration:
+		task, err := h.tileCacheTaskSvc.GetByID(ctx, uint(id), tenantID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
 			return
@@ -287,7 +357,7 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "任务不存在"})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"status": "success", "data": task})
+		c.JSON(http.StatusOK, gin.H{"status": "success", "data": tileCacheTaskResponse(task)})
 	case "embedding":
 		task, err := h.embeddingTaskSvc.GetByID(ctx, uint(id), tenantID)
 		if err != nil {
@@ -304,6 +374,36 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 	}
 }
 
+// GetTileCacheTask GET /api/manager/tile_cache_tasks/:id
+// @Summary 获取瓦片缓存生成任务配置 | Get tile cache generation task configuration
+// @Description 获取指定瓦片缓存生成任务配置 | Get a specific tile cache generation task configuration
+// @Tags Manager
+// @Produce json
+// @Param id path int true "任务ID | Task ID"
+// @Success 200 {object} TileCacheTaskResponse "任务配置 | Task configuration"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
+// @Router /tile_cache_tasks/{id} [get]
+// @Security BearerAuth
+func (h *TaskProviderHandler) GetTileCacheTask(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
+		return
+	}
+	task, err := h.tileCacheTaskSvc.GetByID(c.Request.Context(), uint(id), tenantID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if task == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
+		return
+	}
+	c.JSON(http.StatusOK, tileCacheTaskResponse(task))
+}
+
 // TaskExecuteRequest 触发执行请求
 type TaskExecuteRequest struct {
 	TriggerType       string                 `json:"trigger_type"`        // manual|scheduled，默认 manual
@@ -318,7 +418,7 @@ type TaskExecuteRequest struct {
 // @Tags Manager
 // @Accept json
 // @Produce json
-// @Param task_type path string true "任务类型：mvt_generation|embedding | Task type: mvt_generation|embedding"
+// @Param task_type path string true "任务类型：tile_cache_generation|embedding | Task type: tile_cache_generation|embedding"
 // @Param id path int true "任务ID | Task ID"
 // @Param body body TaskExecuteRequest false "执行配置 | Execution configuration"
 // @Success 200 {object} map[string]interface{} "执行ID | Execution ID"
@@ -362,8 +462,8 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 	var executionID string
 
 	switch taskType {
-	case "mvt_generation":
-		executionID, err = h.mvtTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
+	case commonExecution.TaskTypeTileCacheGeneration:
+		executionID, err = h.tileCacheTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
 	case "embedding":
 		executionID, err = h.embeddingTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
 	default:
@@ -442,7 +542,7 @@ func (h *TaskProviderHandler) ExecutionStatus(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param body body EmbeddingTaskRequest true "向量化任务配置 | Embedding task configuration"
-// @Success 201 {object} map[string]interface{} "创建的任务配置 | Created task configuration"
+// @Success 201 {object} TileCacheTaskResponse "创建的任务配置 | Created task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Router /embedding_tasks [post]
 // @Security BearerAuth
@@ -485,7 +585,7 @@ func (h *TaskProviderHandler) CreateEmbeddingTask(c *gin.Context) {
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
 // @Param body body EmbeddingTaskRequest true "向量化任务配置 | Embedding task configuration"
-// @Success 200 {object} map[string]interface{} "更新后的任务配置 | Updated task configuration"
+// @Success 200 {object} TileCacheTaskResponse "更新后的任务配置 | Updated task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
 // @Router /embedding_tasks/{id} [put]
@@ -652,104 +752,292 @@ func boolFromConfig(value interface{}, defaultValue bool) bool {
 	return defaultValue
 }
 
-// ===== MvtTask CRUD =====
+// ===== TileCacheTask CRUD =====
 
-// CreateMvtTask POST /api/manager/mvt-tasks
-// @Summary 创建MVT生成任务配置 | Create MVT generation task configuration
-// @Description 创建新的MVT瓦片生成任务配置 | Create a new MVT tile generation task configuration
+// CreateTileCacheTask POST /api/manager/tile_cache_tasks
+// @Summary 创建瓦片缓存生成任务配置 | Create tile cache generation task configuration
+// @Description 创建新的瓦片缓存生成任务配置 | Create a new tile cache generation task configuration
 // @Tags Manager
 // @Accept json
 // @Produce json
-// @Param body body models.MvtTask true "MVT任务配置 | MVT task configuration"
+// @Param body body TileCacheTaskRequest true "瓦片缓存任务配置 | Tile cache task configuration"
 // @Success 201 {object} map[string]interface{} "创建的任务配置 | Created task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Router /mvt_tasks [post]
+// @Router /tile_cache_tasks [post]
 // @Security BearerAuth
-func (h *TaskProviderHandler) CreateMvtTask(c *gin.Context) {
+func (h *TaskProviderHandler) CreateTileCacheTask(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 	userID := c.GetUint("user_id")
 
-	var task models.MvtTask
-	if err := c.ShouldBindJSON(&task); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": err.Error()})
+	req, err := decodeTileCacheTaskRequest(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	task.TenantID = tenantID
-	task.CreatedBy = &userID
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+	task := models.TileCacheTask{
+		TenantID:    tenantID,
+		Name:        strings.TrimSpace(req.Name),
+		Description: strings.TrimSpace(req.Description),
+		Enabled:     enabled,
+		Schedule:    strings.TrimSpace(req.Schedule),
+		NextRunAt:   req.NextRunAt,
+		Config:      req.Config,
+		CreatedBy:   &userID,
+	}
 
-	if err := h.mvtTaskSvc.Create(c.Request.Context(), &task); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+	if err := h.tileCacheTaskSvc.Create(c.Request.Context(), &task); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"status": "success", "data": task})
+	c.JSON(http.StatusCreated, tileCacheTaskResponse(&task))
 }
 
-// UpdateMvtTask PUT /api/manager/mvt-tasks/:id
-// @Summary 更新MVT生成任务配置 | Update MVT generation task configuration
-// @Description 更新指定的MVT瓦片生成任务配置 | Update a specific MVT tile generation task configuration
+// UpdateTileCacheTask PUT /api/manager/tile_cache_tasks/:id
+// @Summary 更新瓦片缓存生成任务配置 | Update tile cache generation task configuration
+// @Description 更新指定的瓦片缓存生成任务配置 | Update a specific tile cache generation task configuration
 // @Tags Manager
 // @Accept json
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
-// @Param body body models.MvtTask true "MVT任务配置 | MVT task configuration"
+// @Param body body TileCacheTaskRequest true "瓦片缓存任务配置 | Tile cache task configuration"
 // @Success 200 {object} map[string]interface{} "更新后的任务配置 | Updated task configuration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
-// @Router /mvt_tasks/{id} [put]
+// @Router /tile_cache_tasks/{id} [put]
 // @Security BearerAuth
-func (h *TaskProviderHandler) UpdateMvtTask(c *gin.Context) {
+func (h *TaskProviderHandler) UpdateTileCacheTask(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "无效的任务ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
 		return
 	}
 
-	existing, err := h.mvtTaskSvc.GetByID(c.Request.Context(), uint(id), tenantID)
+	existing, err := h.tileCacheTaskSvc.GetByID(c.Request.Context(), uint(id), tenantID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	if existing == nil {
-		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "任务不存在"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
 		return
 	}
 
-	if err := c.ShouldBindJSON(existing); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": err.Error()})
+	req, err := decodeTileCacheTaskRequest(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	existing.ID = uint(id)
 	existing.TenantID = tenantID
+	existing.Name = strings.TrimSpace(req.Name)
+	existing.Description = strings.TrimSpace(req.Description)
+	if req.Enabled != nil {
+		existing.Enabled = *req.Enabled
+	}
+	existing.Schedule = strings.TrimSpace(req.Schedule)
+	existing.NextRunAt = req.NextRunAt
+	existing.Config = req.Config
 
-	if err := h.mvtTaskSvc.Update(c.Request.Context(), existing); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+	if err := h.tileCacheTaskSvc.Update(c.Request.Context(), existing); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "success", "data": existing})
+	c.JSON(http.StatusOK, tileCacheTaskResponse(existing))
 }
 
-// DeleteMvtTask DELETE /api/manager/mvt-tasks/:id
-// @Summary 删除MVT生成任务配置 | Delete MVT generation task configuration
-// @Description 删除指定的MVT瓦片生成任务配置 | Delete a specific MVT tile generation task configuration
+// DeleteTileCacheTask DELETE /api/manager/tile_cache_tasks/:id
+// @Summary 删除瓦片缓存生成任务配置 | Delete tile cache generation task configuration
+// @Description 删除指定的瓦片缓存生成任务配置 | Delete a specific tile cache generation task configuration
 // @Tags Manager
 // @Produce json
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Router /mvt_tasks/{id} [delete]
+// @Router /tile_cache_tasks/{id} [delete]
 // @Security BearerAuth
-func (h *TaskProviderHandler) DeleteMvtTask(c *gin.Context) {
+func (h *TaskProviderHandler) DeleteTileCacheTask(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "无效的任务ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
 		return
 	}
 
-	if err := h.mvtTaskSvc.Delete(c.Request.Context(), uint(id), tenantID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+	if err := h.tileCacheTaskSvc.Delete(c.Request.Context(), uint(id), tenantID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "success", "message": "已删除"})
+	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
+}
+
+// ListTileCaches GET /api/manager/tile_cache
+// @Summary 列出瓦片缓存结果 | List tile cache results
+// @Description 查询瓦片缓存结果状态 | Query tile cache result states
+// @Tags Manager
+// @Produce json
+// @Param item_id query int false "数据项ID | Item ID"
+// @Param item_fingerprint query string false "数据项指纹 | Item fingerprint"
+// @Param task_id query int false "任务ID | Task ID"
+// @Param status query string false "状态 | Status"
+// @Param q query string false "关键词 | Keyword"
+// @Param page query int false "页码，默认1 | Page number, default 1"
+// @Param page_size query int false "每页数量，默认20 | Page size, default 20"
+// @Success 200 {object} map[string]interface{} "结果列表 | Result list"
+// @Router /tile_cache [get]
+// @Security BearerAuth
+func (h *TaskProviderHandler) ListTileCaches(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	itemID64, _ := strconv.ParseUint(c.Query("item_id"), 10, 32)
+	taskID64, _ := strconv.ParseUint(c.Query("task_id"), 10, 32)
+	results, total, err := h.tileCacheTaskSvc.ListTileCache(c.Request.Context(), repository.TileCacheFilter{
+		TenantID:        tenantID,
+		ItemID:          uint(itemID64),
+		ItemFingerprint: c.Query("item_fingerprint"),
+		TaskID:          uint(taskID64),
+		Status:          c.Query("status"),
+		Q:               c.Query("q"),
+		Page:            page,
+		PageSize:        pageSize,
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"data":      results,
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
+	})
+}
+
+// GetTileCache GET /api/manager/tile_cache/:id
+// @Summary 获取瓦片缓存结果详情 | Get tile cache result detail
+// @Tags Manager
+// @Produce json
+// @Param id path int true "结果ID | Result ID"
+// @Success 200 {object} models.TileCache "结果详情 | Result detail"
+// @Router /tile_cache/{id} [get]
+// @Security BearerAuth
+func (h *TaskProviderHandler) GetTileCache(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的结果ID"})
+		return
+	}
+	result, err := h.tileCacheTaskSvc.GetTileCache(c.Request.Context(), uint(id), tenantID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if result == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "结果不存在"})
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// DeleteTileCache DELETE /api/manager/tile_cache/:id
+// @Summary 删除瓦片缓存结果 | Delete tile cache result
+// @Tags Manager
+// @Produce json
+// @Param id path int true "结果ID | Result ID"
+// @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @Router /tile_cache/{id} [delete]
+// @Security BearerAuth
+func (h *TaskProviderHandler) DeleteTileCache(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的结果ID"})
+		return
+	}
+	if err := h.tileCacheTaskSvc.DeleteTileCache(c.Request.Context(), uint(id), tenantID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
+}
+
+func decodeTileCacheTaskRequest(c *gin.Context) (TileCacheTaskRequest, error) {
+	var req TileCacheTaskRequest
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		return req, err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return req, errors.New("request body must contain a single JSON object")
+	}
+	if req.Config == nil {
+		req.Config = commonModels.JSONMap{}
+	}
+	return req, nil
+}
+
+func tileCacheTaskResponse(task *models.TileCacheTask) TileCacheTaskResponse {
+	resp := TileCacheTaskResponse{}
+	if task == nil {
+		return resp
+	}
+	resp = TileCacheTaskResponse{
+		ID:                  task.ID,
+		TenantID:            task.TenantID,
+		TaskType:            commonExecution.TaskTypeTileCacheGeneration,
+		Name:                task.Name,
+		Description:         task.Description,
+		Enabled:             task.Enabled,
+		Schedule:            task.Schedule,
+		NextRunAt:           task.NextRunAt,
+		LastRunAt:           task.LastRunAt,
+		LastExecutionID:     task.LastExecutionID,
+		LastExecutionStatus: task.LastExecutionStatus,
+		CreatedBy:           task.CreatedBy,
+		Config:              task.Config,
+		CreatedAt:           task.CreatedAt,
+		UpdatedAt:           task.UpdatedAt,
+	}
+	if target, ok := asJSONMap(task.Config["target"]); ok {
+		resp.Target = &TileCacheTaskTargetResponse{
+			ItemID:          uintFromConfig(target["item_id"]),
+			ItemFingerprint: stringFromConfig(target["item_fingerprint"]),
+			Locator:         stringFromConfig(target["locator"]),
+			SourceEngineID:  uintFromConfig(target["source_engine_id"]),
+			Schema:          stringFromConfig(target["schema"]),
+			Table:           stringFromConfig(target["table"]),
+		}
+	}
+	if tile, ok := asJSONMap(task.Config["tile"]); ok {
+		options, _ := asJSONMap(task.Config["options"])
+		resp.Tile = &TileCacheTaskTileResponse{
+			Format:         stringFromConfig(tile["format"]),
+			MinZoom:        intFromAPIConfig(tile["min_zoom"], 0),
+			MaxZoom:        intFromAPIConfig(tile["max_zoom"], 0),
+			TargetSRID:     intFromAPIConfig(tile["target_srid"], 0),
+			GeometryColumn: stringFromConfig(options["geometry_column"]),
+		}
+	}
+	return resp
+}
+
+func intFromAPIConfig(value interface{}, defaultValue int) int {
+	switch v := value.(type) {
+	case int:
+		return v
+	case int64:
+		return int(v)
+	case uint:
+		return int(v)
+	case float64:
+		return int(v)
+	}
+	return defaultValue
 }

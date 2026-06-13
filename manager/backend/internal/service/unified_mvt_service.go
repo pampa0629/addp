@@ -6,20 +6,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/spatial"
 	"github.com/addp/manager/internal/repository"
-	"github.com/minio/minio-go/v7"
 	"golang.org/x/sync/singleflight"
 )
 
-// UnifiedMVTService 统一的 MVT 服务
-// 整合实时生成和缓存访问，对前端隐藏 fingerprint，实现三层缓存穿透
+// UnifiedMVTService 统一的 MVT 服务。
+// 整合实时生成和按 storage_ref 访问的瓦片对象，对前端隐藏 fingerprint。
 type UnifiedMVTService struct {
-	spatialPreviewService *SpatialPreviewService // 缓存访问（内存 LRU → Redis → MinIO）
+	spatialPreviewService *SpatialPreviewService // 瓦片对象访问（内存 LRU → Redis → MinIO）
 	mvtService            *MVTService            // 实时生成（直接从 PG 查询）
 	metadataRepo          *repository.MetadataRepository
 	quickViewService      *QuickViewService  // 快显服务（可选，用于更新统计）
@@ -47,13 +47,15 @@ func (s *UnifiedMVTService) SetQuickViewService(quickViewService *QuickViewServi
 
 // TileResponse 瓦片响应结构
 type TileResponse struct {
-	Data      []byte        // 瓦片数据
-	FromCache bool          // 是否来自缓存
-	Duration  time.Duration // 生成/获取耗时
+	Data         []byte        // 瓦片数据
+	FromCache    bool          // 是否来自缓存
+	Duration     time.Duration // 生成/获取耗时
+	RenderSource string        // cached_tile 或 realtime_tile
+	TileCacheID  *uint         // 命中的瓦片缓存结果 ID
 }
 
-// GetTile 获取 MVT 瓦片（统一入口，自动缓存穿透）
-// 流程：快显预生成缓存 → 内存 LRU → Redis → MinIO → 实时 PG 生成 → 持久化到 MinIO
+// GetTile 获取 MVT 瓦片（统一入口）。
+// 流程：按 storage_ref 查询已有瓦片对象 → 实时 PG 生成 → 按当前 storage_ref 回填对象存储。
 func (s *UnifiedMVTService) GetTile(
 	ctx context.Context,
 	tenantID *uint,
@@ -65,14 +67,14 @@ func (s *UnifiedMVTService) GetTile(
 ) (*TileResponse, error) {
 	startTime := time.Now()
 
-	// ✅ 租户验证（必须传递 tenant_id）
+	// 租户验证（必须传递 tenant_id）
 	if tenantID == nil {
 		return nil, fmt.Errorf("tenant_id is required for MVT tile access")
 	}
 
 	// 1. 计算 fingerprint（对前端透明）
 	fingerprint := s.calculateFingerprint(resourceID, schema, table)
-	logger.L().Info("📍 统一MVT服务收到请求",
+	logger.L().Info("统一 MVT 服务收到请求",
 		"tenant_id", *tenantID,
 		"engine_id", resourceID,
 		"schema", schema,
@@ -82,34 +84,41 @@ func (s *UnifiedMVTService) GetTile(
 
 	// 2. 验证 zoom 层级是否合理（基于数据的地理范围）
 	// - zoom < minZoom: 返回空瓦片（数据太小，不可见）
-	// - minZoom <= zoom <= maxZoom: 正常处理（预缓存范围）
-	// - zoom > maxZoom: 允许但降低缓存优先级（超出预缓存范围）
-	logger.L().Info("🔍 检查 zoom 验证条件",
+	// - minZoom <= zoom <= maxZoom: 正常处理（产物覆盖范围）
+	// - zoom > maxZoom: 允许但降低缓存优先级（超出产物覆盖范围）
+	logger.L().Debug("检查瓦片层级约束",
 		"quickViewService_nil", s.quickViewService == nil,
 		"tenantID_nil", tenantID == nil,
 		"tenantID", tenantID)
 
 	var minZoom, maxZoom int
-	var beyondMaxZoom bool // 是否超出预缓存范围
+	var beyondMaxZoom bool // 是否超出产物覆盖范围
+	cacheScope := fmt.Sprintf("fingerprint:%s", fingerprint)
+	storageRef := buildTileCacheStorageRef(*tenantID, fingerprint, "realtime")
+	renderSource := QuickViewRenderSourceRealtimeTile
+	var tileCacheID *uint
 
 	if s.quickViewService != nil && tenantID != nil {
-		qv, err := s.quickViewService.GetStatus(ctx, *tenantID, resourceID, schema, table)
-		logger.L().Info("🔍 GetStatus 结果",
-			"err", err,
-			"extent_len", len(qv.Extent),
-			"extent", qv.Extent)
-		if err == nil && len(qv.Extent) == 4 {
-			// 使用 ExtentSRID（QuickView 中记录的 extent 坐标系）
-			extentSRID := qv.ExtentSRID
-			if extentSRID == 0 {
-				extentSRID = 4326 // 向后兼容，默认 WGS84
-			}
-
+		tileCache, err := s.quickViewService.GetDefaultTileCache(ctx, *tenantID, resourceID, schema, table)
+		if err != nil {
+			logger.L().Warn("获取默认瓦片缓存结果失败，使用实时生成路径", "error", err)
+		}
+		if tileCache != nil && strings.TrimSpace(tileCache.StorageRef) != "" {
+			storageRef = strings.TrimSpace(tileCache.StorageRef)
+			cacheScope = fmt.Sprintf("tile_cache:%d", tileCache.ID)
+			renderSource = QuickViewRenderSourceCachedTile
+			tileCacheID = &tileCache.ID
+		}
+		extent, extentSRID, hasExtent := TileCacheExtent(tileCache)
+		if hasExtent {
 			// 计算 minZoom 和 maxZoom
-			minZoom = spatial.CalculateMinZoomFromExtent(qv.Extent, extentSRID)
-			maxZoom = qv.MaxZoom // 从快显配置获取（智能计算的 maxZoom）
+			minZoom = spatial.CalculateMinZoomFromExtent(extent, extentSRID)
+			if configuredMinZoom, configuredMaxZoom, ok := TileCacheZoomRange(tileCache); ok {
+				minZoom = configuredMinZoom
+				maxZoom = configuredMaxZoom
+			}
 			if maxZoom == 0 {
-				maxZoom = 18 // 默认值
+				maxZoom = 18
 			}
 
 			// 对 minZoom 进行后处理（与 tile_config_handler 保持一致）
@@ -123,20 +132,22 @@ func (s *UnifiedMVTService) GetTile(
 				logger.L().Info("Zoom 层级过低，返回空瓦片",
 					"z", z,
 					"min_zoom", minZoom,
-					"extent", qv.Extent,
+					"extent", extent,
 					"extent_srid", extentSRID)
 				// 返回空瓦片，让前端停止请求（不是错误）
 				return &TileResponse{
-					Data:      []byte{}, // 空瓦片
-					FromCache: false,
-					Duration:  time.Since(startTime),
+					Data:         []byte{}, // 空瓦片
+					FromCache:    false,
+					Duration:     time.Since(startTime),
+					RenderSource: renderSource,
+					TileCacheID:  tileCacheID,
 				}, nil
 			}
 
 			// 检查是否超出 maxZoom（允许但降低缓存优先级）
 			if z > maxZoom {
 				beyondMaxZoom = true
-				logger.L().Info("Zoom 层级超出预缓存范围，使用实时生成模式",
+				logger.L().Info("Zoom 层级超出瓦片缓存结果覆盖范围，使用实时生成模式",
 					"z", z,
 					"max_zoom", maxZoom,
 					"will_cache_if_heavy", true)
@@ -144,41 +155,43 @@ func (s *UnifiedMVTService) GetTile(
 		}
 	}
 
-	// 3. 尝试从三层缓存获取（内存 LRU → Redis → MinIO，租户隔离）
-	// MinIO 中包含快显预生成和实时缓存的瓦片，两者存储在同一位置
-	logger.L().Info("🔎 尝试从缓存获取瓦片...", "tenant_id", *tenantID)
-	tileData, err := s.spatialPreviewService.GetTile(ctx, *tenantID, fingerprint, z, x, y)
+	// 3. 尝试从 storage_ref 对应的瓦片对象获取（内存 LRU → Redis → 对象存储，租户隔离）
+	// 瓦片对象位置统一由 storage_ref 描述。
+	logger.L().Debug("尝试从 storage_ref 获取瓦片", "tenant_id", *tenantID, "storage_ref", storageRef)
+	tileData, err := s.spatialPreviewService.GetTileByStorageRef(ctx, *tenantID, cacheScope, storageRef, z, x, y)
 	if err == nil && len(tileData) > 0 {
 		duration := time.Since(startTime)
-		logger.L().Info("✅ 从缓存返回瓦片",
+		logger.L().Info("从瓦片对象返回瓦片",
 			"tenant_id", *tenantID,
 			"size", len(tileData),
 			"duration", duration)
 		return &TileResponse{
-			Data:      tileData,
-			FromCache: true,
-			Duration:  duration,
+			Data:         tileData,
+			FromCache:    true,
+			Duration:     duration,
+			RenderSource: renderSource,
+			TileCacheID:  tileCacheID,
 		}, nil
 	}
 
-	// 特别记录：缓存返回了空数据或错误
+	// 特别记录：瓦片对象查询返回了空数据或错误
 	if err != nil {
-		logger.L().Warn("⚠️  缓存查询出错", "error", err)
+		logger.L().Warn("瓦片对象查询出错", "error", err)
 	} else if len(tileData) == 0 {
-		logger.L().Warn("⚠️  缓存返回空数据")
+		logger.L().Debug("瓦片对象未命中")
 	}
 
-	// 4. 缓存未命中，使用 singleflight 从 PG 实时生成
-	logger.L().Info("🔧 缓存未命中，开始实时生成瓦片 (singleflight)",
+	// 4. 瓦片对象未命中，使用 singleflight 从 PG 实时生成
+	logger.L().Info("瓦片对象未命中，开始实时生成瓦片",
 		"engine_id", resourceID,
 		"schema", schema,
 		"table", table,
 		"z", z, "x", x, "y", y)
 
-	// ✅ 构建 singleflight key (确保相同瓦片的并发请求使用同一 key，租户隔离)
+	// 构建 singleflight key，确保相同瓦片的并发请求使用同一 key，租户隔离。
 	sfKey := fmt.Sprintf("%d:%d:%s:%s:%d:%d:%d", *tenantID, resourceID, schema, table, z, x, y)
 
-	// ✅ singleflight.Do: 多个并发请求同一瓦片时,只生成一次
+	// 多个并发请求同一瓦片时只生成一次。
 	v, err, shared := s.sf.Do(sfKey, func() (interface{}, error) {
 		// 创建 5 秒超时的 context（实时生成必须快速响应）
 		genCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -206,9 +219,9 @@ func (s *UnifiedMVTService) GetTile(
 	tileData = v.([]byte)
 	duration := time.Since(startTime)
 
-	// ✅ 记录是否为 singleflight 合并的请求
+	// 记录是否为 singleflight 合并的请求。
 	if shared {
-		logger.L().Info("✅ Singleflight 合并请求 (共享结果)",
+		logger.L().Info("Singleflight 合并请求",
 			"sf_key", sfKey,
 			"duration", duration,
 			"size", len(tileData))
@@ -222,37 +235,38 @@ func (s *UnifiedMVTService) GetTile(
 			"size", len(tileData))
 	}
 
-	// 5. 判断是否需要自动缓存
-	// - 预缓存范围内（z <= maxZoom）: 生成时间 > 100ms 或 大小 > 50KB
-	// - 超出预缓存范围（z > maxZoom）: 更严格的缓存条件（生成时间 > 200ms 且 大小 > 100KB）
+	// 5. 判断是否需要按当前 storage_ref 回填瓦片对象
+	// - 产物覆盖范围内（z <= maxZoom）: 生成时间 > 100ms 或 大小 > 50KB
+	// - 超出产物覆盖范围（z > maxZoom）: 更严格的缓存条件（生成时间 > 200ms 且 大小 > 100KB）
 	tileSizeKB := float64(len(tileData)) / 1024.0
 	durationMs := float64(duration.Milliseconds())
 
 	var shouldCache bool
 	if beyondMaxZoom {
-		// 超出预缓存范围：仅缓存高成本瓦片（避免缓存爆炸）
+		// 超出产物覆盖范围：仅缓存高成本瓦片（避免缓存爆炸）
 		shouldCache = durationMs > 200 && tileSizeKB > 100
-		logger.L().Info("超出预缓存范围的瓦片缓存判断",
+		logger.L().Info("超出瓦片缓存结果覆盖范围的缓存判断",
 			"z", z,
 			"duration_ms", durationMs,
 			"size_kb", tileSizeKB,
 			"should_cache", shouldCache,
 			"reason", "beyond_max_zoom_strict_policy")
 	} else {
-		// 预缓存范围内：正常缓存策略
+		// 产物覆盖范围内：正常回填策略
 		shouldCache = durationMs > 100 || tileSizeKB > 50
 	}
 
 	if shouldCache && len(tileData) > 0 {
-		// 异步持久化到 MinIO（包括回填 Redis 和内存缓存，租户隔离）
-		go s.persistToMinIO(context.Background(), *tenantID, fingerprint, z, x, y, tileData,
-			resourceID, schema, table, tenantID, durationMs, tileSizeKB)
+		// 异步持久化到对象存储（包括回填 Redis 和内存缓存，租户隔离）
+		go s.persistToObjectStorage(context.Background(), *tenantID, cacheScope, storageRef, z, x, y, tileData)
 	}
 
 	return &TileResponse{
-		Data:      tileData,
-		FromCache: false,
-		Duration:  duration,
+		Data:         tileData,
+		FromCache:    false,
+		Duration:     duration,
+		RenderSource: QuickViewRenderSourceRealtimeTile,
+		TileCacheID:  nil,
 	}, nil
 }
 
@@ -264,17 +278,14 @@ func (s *UnifiedMVTService) calculateFingerprint(engineID uint, schema, table st
 	return commonModels.GenerateItemFingerprint(engineID, fullName)
 }
 
-// persistToMinIO 持久化瓦片到 MinIO（异步执行，不阻塞响应，租户隔离）
-func (s *UnifiedMVTService) persistToMinIO(
+// persistToObjectStorage 持久化瓦片到对象存储（异步执行，不阻塞响应，租户隔离）
+func (s *UnifiedMVTService) persistToObjectStorage(
 	ctx context.Context,
-	tenantID uint, // ✅ 改为必传参数
-	fingerprint string,
+	tenantID uint,
+	cacheScope string,
+	storageRef string,
 	z, x, y int,
 	tileData []byte,
-	resourceID uint,
-	schema, table string,
-	tenantIDPtr *uint, // ✅ 保留原参数（用于更新 QuickView）
-	durationMs, tileSizeKB float64,
 ) {
 	// 1. Gzip 压缩瓦片数据
 	var buf bytes.Buffer
@@ -282,7 +293,7 @@ func (s *UnifiedMVTService) persistToMinIO(
 	if _, err := gzipWriter.Write(tileData); err != nil {
 		logger.L().Warn("Gzip 压缩瓦片数据失败",
 			"tenant_id", tenantID,
-			"error", err, "fingerprint", fingerprint, "z", z, "x", x, "y", y)
+			"error", err, "cache_scope", cacheScope, "z", z, "x", x, "y", y)
 		return
 	}
 	if err := gzipWriter.Close(); err != nil {
@@ -291,60 +302,16 @@ func (s *UnifiedMVTService) persistToMinIO(
 	}
 	compressed := buf.Bytes()
 
-	// 2. 确保 MinIO 客户端已初始化
-	if err := s.spatialPreviewService.ensureMinIOClient(ctx); err != nil {
-		logger.L().Warn("MinIO 客户端初始化失败", "error", err)
-		return
-	}
-
-	// 3. 构建 MinIO 对象名（租户隔离）
-	objectName := s.spatialPreviewService.buildMinIOPath(tenantID, fingerprint, z, x, y)
-
-	// 4. 上传到 MinIO
-	_, err := s.spatialPreviewService.minioClient.PutObject(
-		ctx,
-		s.spatialPreviewService.bucket,
-		objectName,
-		bytes.NewReader(compressed),
-		int64(len(compressed)),
-		minio.PutObjectOptions{
-			ContentType:     "application/vnd.mapbox-vector-tile",
-			ContentEncoding: "gzip",
-		},
-	)
-	if err != nil {
-		logger.L().Warn("上传瓦片到 MinIO 失败",
+	if err := s.spatialPreviewService.PutTileByStorageRef(ctx, tenantID, cacheScope, storageRef, z, x, y, compressed); err != nil {
+		logger.L().Warn("上传瓦片到对象存储失败",
 			"tenant_id", tenantID,
-			"error", err, "fingerprint", fingerprint, "z", z, "x", x, "y", y)
+			"error", err, "cache_scope", cacheScope, "z", z, "x", x, "y", y)
 		return
 	}
 
-	logger.L().Info("瓦片已持久化到 MinIO",
+	logger.L().Info("瓦片已持久化到对象存储",
 		"tenant_id", tenantID,
-		"fingerprint", fingerprint,
+		"cache_scope", cacheScope,
 		"z", z, "x", x, "y", y,
-		"compressed_size", len(compressed),
-		"object_name", objectName)
-
-	// 5. 回填上层缓存（Redis + 内存 LRU，租户隔离）
-	cacheKey := s.spatialPreviewService.buildCacheKey(tenantID, fingerprint, z, x, y)
-	s.spatialPreviewService.backfillCache(ctx, cacheKey, compressed)
-
-	// 6. 更新快显统计（如果有QuickViewService且表有快显记录）
-	if s.quickViewService != nil && tenantIDPtr != nil {
-		err := s.quickViewService.IncrementCachedTiles(
-			ctx,
-			*tenantIDPtr,
-			resourceID,
-			schema,
-			table,
-		)
-		if err != nil {
-			// 不阻塞，仅记录日志
-			logger.L().Debug("更新快显统计失败（可能表无快显记录）",
-				"error", err,
-				"engine_id", resourceID,
-				"table", fmt.Sprintf("%s.%s", schema, table))
-		}
-	}
+		"compressed_size", len(compressed))
 }

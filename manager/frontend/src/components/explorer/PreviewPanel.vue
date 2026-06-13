@@ -87,6 +87,66 @@
             {{ t('manager.explorer.vectorized') }}
           </el-tag>
 
+          <!-- 空间快显 / 瓦片缓存入口 -->
+          <div v-if="showQuickViewActions" class="quick-view-actions">
+            <el-tag
+              v-if="quickViewStatus?.can_use_quick_view"
+              size="small"
+              type="success"
+              class="quick-view-status"
+            >
+              {{ t('manager.spatialPreview.quickViewReady') }}
+            </el-tag>
+            <el-tag
+              v-else-if="quickViewStatus && !quickViewStatus.can_generate_tile_cache"
+              size="small"
+              type="info"
+              class="quick-view-status"
+            >
+              {{ quickViewStatus.unavailable_reason || t('manager.spatialPreview.quickViewUnavailable') }}
+            </el-tag>
+            <el-tag
+              v-else-if="quickViewLoadError"
+              size="small"
+              type="danger"
+              class="quick-view-status"
+            >
+              {{ quickViewLoadError }}
+            </el-tag>
+            <el-button
+              v-if="isQuickViewActive"
+              size="small"
+              :loading="quickViewActionLoading"
+              @click="handleBackToBasicPreview"
+            >
+              {{ t('manager.spatialPreview.backToBasicPreview') }}
+            </el-button>
+            <el-button
+              v-else-if="quickViewStatus?.can_use_quick_view"
+              size="small"
+              type="primary"
+              :loading="quickViewActionLoading"
+              @click="handleSwitchQuickView"
+            >
+              {{ t('manager.spatialPreview.switchQuickView') }}
+            </el-button>
+            <el-button
+              v-else-if="quickViewStatus?.can_generate_tile_cache"
+              size="small"
+              type="primary"
+              @click="handleGenerateTileCache"
+            >
+              {{ t('manager.spatialPreview.generateTileCache') }}
+            </el-button>
+            <el-button
+              v-if="showRealtimeTileCacheGeneration"
+              size="small"
+              @click="handleGenerateTileCache"
+            >
+              {{ t('manager.spatialPreview.generateTileCache') }}
+            </el-button>
+          </div>
+
           <!-- 下载按钮 -->
           <el-tooltip
             v-if="showDownloadControl && downloadDisabled && downloadTip"
@@ -246,7 +306,14 @@
         </div>
       </div>
       <component
-        v-if="previewComponent && !isGraphOverview"
+        v-if="showQuickViewRenderer"
+        :is="quickViewRenderer"
+        :key="quickViewRenderKey"
+        v-bind="quickViewRendererProps"
+        class="quick-view-renderer"
+      />
+      <component
+        v-else-if="previewComponent && !isGraphOverview"
         :is="previewComponent"
         :key="refKey"
         :data="previewData"
@@ -273,11 +340,15 @@
 import { computed, ref, watch, onUnmounted } from 'vue'
 import { ElMessage, ElNotification } from 'element-plus'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import { MagicStick, Download, Location, Collection, Upload, Document, View, Refresh, Select } from '@element-plus/icons-vue'
 import { getPreviewComponent } from '@/plugins/previews'
 import { parseLocator } from '@addp/common-frontend'
 import client from '@/api/client'
+import { quickViewAPI } from '@/api/quickView'
 import ImportDialog from '@/components/explorer/ImportDialog.vue'
+import GeoJSONQuickView from '@/components/map/GeoJSONQuickView.vue'
+import VectorTilePreview from '@/components/map/VectorTilePreview.vue'
 import { useExplorerStore } from '@/stores/explorer'
 import {
   canShowVectorizeAction,
@@ -287,6 +358,7 @@ import {
 } from '@/utils/vectorization'
 
 const { t } = useI18n()
+const router = useRouter()
 
 const props = defineProps({
   selectedNode: {
@@ -312,6 +384,13 @@ const activeGraphSampleKind = ref('')
 const activeGraphSampleTotal = ref(null)
 const graphOverviewPage = ref(1)
 const graphOverviewPageSize = ref(20)
+const quickViewStatus = ref(null)
+const quickViewLoadError = ref('')
+const quickViewActionLoading = ref(false)
+const activePreviewMode = ref('table_geojson')
+let quickViewRequestSeq = 0
+
+const DIRECT_GEOJSON_MAX_ROWS = 2000
 
 const sanitizeBase64 = (value) => {
   if (typeof value !== 'string') return ''
@@ -1142,6 +1221,7 @@ watch(
   () => props.selectedNode?.id,
   () => {
     markdownRawMode.value = false
+    activePreviewMode.value = 'table_geojson'
     activeGraphSampleKey.value = ''
     activeGraphSampleKind.value = ''
     activeGraphSampleTotal.value = null
@@ -1299,6 +1379,7 @@ watch(
 // 组件卸载时清理状态（防止 race condition 导致的错误）
 onUnmounted(() => {
   downloading.value = false
+  quickViewRequestSeq += 1
 })
 
 const title = computed(() => {
@@ -1356,7 +1437,8 @@ const tableTotalText = computed(() => {
 
 const hasGeometry = computed(() => {
   const geometryColumns = props.previewData?.geometry_columns || []
-  return geometryColumns.length > 0
+  const geometryColumn = String(props.previewData?.geometry_column || '').trim()
+  return geometryColumns.length > 0 || geometryColumn !== ''
 })
 
 const spatialInfoTooltip = computed(() => {
@@ -1389,6 +1471,198 @@ const spatialInfoTooltip = computed(() => {
 
   return parts.join('\n')
 })
+
+const spatialPreviewTarget = computed(() => {
+  if (!hasGeometry.value || !props.selectedNode) return null
+  const node = props.selectedNode
+  const locator = String(node.locator || node.id || '').trim()
+  let parsedLocator = null
+  if (locator) {
+    try {
+      parsedLocator = parseLocator(locator)
+    } catch (_error) {
+      parsedLocator = null
+    }
+  }
+  const engine = Number(
+    node.engineId ||
+    node.engine_id ||
+    parsedLocator?.engineId ||
+    props.previewData?.engineId ||
+    props.previewData?.engine_id ||
+    engineId.value ||
+    0
+  )
+  if (!engine) return null
+  const locatorType = String(parsedLocator?.type || node.nodeType || node.type || '').toLowerCase()
+  const schema = String(node.schema || '').trim()
+  const table = String(node.table || '').trim()
+  const geometryColumns = Array.isArray(props.previewData?.geometry_columns)
+    ? props.previewData.geometry_columns
+    : []
+  const extent = Array.isArray(props.previewData?.extent) ? props.previewData.extent : []
+  return {
+    engineId: engine,
+    schema,
+    table,
+    locator,
+    locatorType,
+    geometryColumn: String(props.previewData?.geometry_column || geometryColumns[0] || '').trim(),
+    geometryColumns: geometryColumns.map((column) => String(column || '').trim()).filter(Boolean),
+    sourceSRID: Number(props.previewData?.source_srid || props.previewData?.srid || 0),
+    extentSRID: Number(props.previewData?.extent_srid || props.previewData?.srid || 0),
+    extent,
+    recordCount: Number(props.previewData?.total || props.previewData?.rows?.length || 0)
+  }
+})
+
+const showQuickViewActions = computed(() => {
+  return !!spatialPreviewTarget.value && (!!quickViewStatus.value || !!quickViewLoadError.value)
+})
+
+const isQuickViewActive = computed(() => {
+  return activePreviewMode.value === 'quick_view' && !!quickViewStatus.value?.can_use_quick_view
+})
+
+const quickViewRenderSource = computed(() => String(
+  quickViewStatus.value?.render_source || quickViewStatus.value?.quick_view?.render_source || ''
+).trim())
+
+const quickViewRenderer = computed(() => {
+  if (!isQuickViewActive.value) return null
+  if (quickViewRenderSource.value === 'direct_geojson') return GeoJSONQuickView
+  if (['cached_tile', 'realtime_tile'].includes(quickViewRenderSource.value)) return VectorTilePreview
+  return null
+})
+
+const showRealtimeTileCacheGeneration = computed(() => {
+  return quickViewRenderSource.value === 'realtime_tile' && !!quickViewStatus.value?.can_generate_tile_cache
+})
+
+const quickViewRendererProps = computed(() => {
+  const target = spatialPreviewTarget.value
+  if (!target || !quickViewStatus.value) return {}
+  if (quickViewRenderSource.value === 'direct_geojson') {
+    return { status: quickViewStatus.value }
+  }
+  return {
+    locator: target.locator,
+    engineId: target.engineId,
+    schema: target.schema,
+    table: target.table,
+    geom: quickViewStatus.value?.quick_view?.geometry_column || target.geometryColumn,
+    tileUrlTemplate: quickViewStatus.value?.quick_view?.tile_url_template || '',
+    tileRenderInfo: quickViewStatus.value?.quick_view || {},
+    renderSource: quickViewRenderSource.value,
+    defaultTileCacheId: quickViewStatus.value?.default_tile_cache_id || ''
+  }
+})
+
+const showQuickViewRenderer = computed(() => Boolean(quickViewRenderer.value))
+
+const quickViewRenderKey = computed(() => {
+  const target = spatialPreviewTarget.value
+  if (!target) return 'quick-view-empty'
+  return [
+    'quick-view',
+    target.engineId,
+    target.schema || target.locator,
+    target.table || target.locatorType,
+    quickViewRenderSource.value,
+    quickViewStatus.value?.default_tile_cache_id || '',
+    quickViewStatus.value?.quick_view?.geojson_url || ''
+  ].join('-')
+})
+
+const loadQuickViewStatus = async () => {
+  const target = spatialPreviewTarget.value
+  quickViewStatus.value = null
+  quickViewLoadError.value = ''
+  quickViewRequestSeq += 1
+  const seq = quickViewRequestSeq
+  if (!target) return
+  try {
+    const status = await quickViewAPI.getQuickViewCapabilityByLocator(target.locator)
+    if (seq === quickViewRequestSeq) {
+      quickViewStatus.value = status
+      if (status?.preferred_mode === 'quick_view' && status?.can_use_quick_view) {
+        activePreviewMode.value = 'quick_view'
+      } else if (!status?.can_use_quick_view) {
+        activePreviewMode.value = 'table_geojson'
+      }
+    }
+  } catch (error) {
+    if (seq === quickViewRequestSeq) {
+      quickViewStatus.value = null
+      quickViewLoadError.value = t('manager.spatialPreview.quickViewLoadFailed')
+    }
+    console.error('加载快显状态失败:', error)
+  }
+}
+
+const handleSwitchQuickView = async () => {
+  const target = spatialPreviewTarget.value
+  if (!target) return
+  quickViewActionLoading.value = true
+  try {
+    await quickViewAPI.updatePreferredModeByLocator(target.locator, 'quick_view')
+    ElMessage.success(t('manager.spatialPreview.switchQuickViewSuccess'))
+    await loadQuickViewStatus()
+    if (quickViewStatus.value?.can_use_quick_view) {
+      activePreviewMode.value = 'quick_view'
+    }
+  } catch (error) {
+    console.error('切换快显失败:', error)
+    ElMessage.error(t('manager.spatialPreview.switchQuickViewFailed'))
+  } finally {
+    quickViewActionLoading.value = false
+  }
+}
+
+const handleBackToBasicPreview = async () => {
+  const target = spatialPreviewTarget.value
+  if (!target) return
+  quickViewActionLoading.value = true
+  try {
+    await quickViewAPI.updatePreferredModeByLocator(target.locator, 'table_geojson')
+    activePreviewMode.value = 'table_geojson'
+    await loadQuickViewStatus()
+  } catch (error) {
+    console.error('返回基础预览失败:', error)
+    activePreviewMode.value = 'table_geojson'
+  } finally {
+    quickViewActionLoading.value = false
+  }
+}
+
+const handleGenerateTileCache = () => {
+  const target = spatialPreviewTarget.value
+  if (!target) return
+  router.push({
+    name: 'TileCache',
+    query: {
+      tab: 'tasks',
+      create: '1',
+      engine_id: String(target.engineId),
+      schema: target.schema,
+      table: target.table,
+      ...(target.locator ? { locator: target.locator } : {}),
+      ...(target.geometryColumn ? { geom: target.geometryColumn } : {}),
+      ...(target.geometryColumns.length ? { geometry_columns: target.geometryColumns.join(',') } : {}),
+      ...(target.sourceSRID > 0 ? { source_srid: String(target.sourceSRID) } : {}),
+      ...(target.extentSRID > 0 ? { extent_srid: String(target.extentSRID) } : {}),
+      ...(target.extent.length === 4 ? { extent: target.extent.join(',') } : {})
+    }
+  })
+}
+
+watch(
+  () => spatialPreviewTarget.value
+    ? `${spatialPreviewTarget.value.engineId}:${spatialPreviewTarget.value.schema}:${spatialPreviewTarget.value.table}:${spatialPreviewTarget.value.locator}:${spatialPreviewTarget.value.recordCount}`
+    : '',
+  loadQuickViewStatus,
+  { immediate: true }
+)
 
 // 对象存储元数据相关计算属性
 const showObjectInfo = computed(() => {
@@ -1956,6 +2230,20 @@ const handleNavigate = (path) => {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.quick-view-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.quick-view-status {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .empty-state {
@@ -1973,6 +2261,14 @@ const handleNavigate = (path) => {
   flex-direction: column;
   gap: 10px;
   background: var(--addp-bg-primary) !important;
+}
+
+.quick-view-renderer {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 6px;
 }
 
 .preview-advisory {

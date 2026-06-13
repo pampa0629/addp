@@ -85,7 +85,7 @@ graph TB
 **MinIO** (端口 19000-19001):
 - 用户头像 (`system` bucket)
 - 预览缓存 (`manager` bucket)
-- MVT 瓦片 (`manager` bucket,公开读)
+- 瓦片缓存对象 (`manager` bucket,通过 Manager API 和 `storage_ref` 访问)
 - 临时文件
 - Bucket 隔离: `system`, `manager`, `meta`, `transfer`, `orchestrator`, `develop`, `service`
 
@@ -132,7 +132,7 @@ graph TB
 
     PG --> PGEx["system schema: 用户/引擎/日志<br/>manager schema: 数据源/预览配置<br/>meta schema: 元数据索引<br/>transfer schema: 传输任务<br/>orchestrator schema: 编排定义<br/>develop schema: 查询/工作流/Notebook<br/>service schema: 服务配置"]
 
-    MinIOIso --> MinIOEx["system bucket: 用户头像/系统文件<br/>manager bucket: 预览缓存/MVT瓦片(公开)<br/>meta bucket: 扫描临时文件<br/>transfer bucket: 导入导出临时文件<br/>orchestrator bucket: 编排执行日志<br/>develop bucket: 查询结果/工作流输出<br/>service bucket: 服务缓存"]
+    MinIOIso --> MinIOEx["system bucket: 用户头像/系统文件<br/>manager bucket: 预览缓存/瓦片缓存对象<br/>meta bucket: 扫描临时文件<br/>transfer bucket: 导入导出临时文件<br/>orchestrator bucket: 编排执行日志<br/>develop bucket: 查询结果/工作流输出<br/>service bucket: 服务缓存"]
 
     RedisIso --> RedisEx["system:cache:user:123<br/>system:session:abc<br/>manager:cache:preview:456<br/>transfer:asynq:task:789<br/>meta:scan:status:101"]
 
@@ -159,7 +159,7 @@ graph TB
 **2. MinIO Bucket 隔离**:
 - 按模块隔离: `system`、`manager`、`meta`、`transfer`、`orchestrator`、`develop`、`service`
 - 避免文件冲突,配额独立管理
-- `manager` bucket 设置为公开读 (MVT 瓦片需前端直接访问)
+- `manager` bucket 保存预览缓存和瓦片缓存对象，前端通过 Manager API 访问，不直接依赖公开 bucket 路径
 - 其他 bucket 均为私有访问
 
 **3. Redis Key 命名规范**:

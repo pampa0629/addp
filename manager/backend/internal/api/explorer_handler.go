@@ -158,7 +158,7 @@ func bearerToken(c *gin.Context) string {
 // @Produce json
 // @Param locator query string true "资源定位符URI | Resource locator URI"
 // @Param page query int false "页码，默认1 | Page number, default 1"
-// @Param page_size query int false "每页数量，默认20 | Page size, default 20"
+// @Param page_size query int false "每页数量，默认20，最大2000 | Page size, default 20, max 2000"
 // @Param child_name query string false "容器内部 child 名称，例如 Excel 工作表 | Container child name, e.g. Excel sheet"
 // @Param ref_path query string false "multi child 内的 ref 路径 | Ref path inside a multi child"
 // @Param nested_child_path query string false "嵌套容器内部 child 相对路径 | Relative child path inside a nested container"
@@ -194,7 +194,10 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 	}
 
 	if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
-		if ps, err := strconv.Atoi(pageSizeStr); err == nil && ps > 0 && ps <= 100 {
+		if ps, err := strconv.Atoi(pageSizeStr); err == nil && ps > 0 {
+			if ps > 2000 {
+				ps = 2000
+			}
 			pageSize = ps
 		}
 	}

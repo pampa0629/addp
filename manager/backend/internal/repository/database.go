@@ -23,14 +23,11 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 		SSLMode:  "disable",
 	}
 
-	// Initialize database with auto-migration
-	// 添加 Embedding 和 EmbeddingTask 模型（向量化功能）
-	// 添加 QuickView 模型（MVT预缓存）
+	// Initialize database with auto-migration.
+	// Quick View / tile cache tables use an explicit clean-break schema guard below.
 	db, err := commonRepo.InitDatabase(dbConfig,
 		&models.SearchHistory{},
 		&models.EmbeddingTask{}, // 向量化任务定义表
-		&models.MvtTask{},       // MVT 瓦片生成任务定义表
-		&models.QuickView{},     // MVT预缓存状态表
 	)
 	if err != nil {
 		return nil, err
@@ -41,6 +38,9 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	}
 	if err := ensureEmbeddingTaskDefinitionSchema(db); err != nil {
 		return nil, fmt.Errorf("failed to ensure embedding task definition schema: %w", err)
+	}
+	if err := ensureTileCacheStateSchema(db); err != nil {
+		return nil, fmt.Errorf("failed to ensure tile cache state schema: %w", err)
 	}
 
 	// Configure connection pool for optimal performance
@@ -59,6 +59,161 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	db.Exec(fmt.Sprintf("SET search_path TO %s", cfg.DBSchema))
 
 	return db, nil
+}
+
+func ensureTileCacheStateSchema(db *gorm.DB) error {
+	legacyTileTaskTable := "mvt" + "_tasks"
+	if err := db.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS manager.%q`, legacyTileTaskTable)).Error; err != nil {
+		return err
+	}
+
+	var legacyQuickViewColumns int64
+	if err := db.Raw(`
+		SELECT COUNT(*)
+		FROM information_schema.columns
+		WHERE table_schema = 'manager'
+		  AND table_name = 'quick_view'
+		  AND column_name IN (
+		    'engine_id', 'schema_name', 'table_name', 'min_zoom', 'max_zoom',
+		    'actual_max_zoom', 'total_tiles', 'cached_tiles', 'fingerprint',
+		    'extent', 'extent_srid', 'optimization_config', 'preparation_status',
+		    'started_at', 'completed_at', 'item_id'
+		  )
+	`).Scan(&legacyQuickViewColumns).Error; err != nil {
+		return err
+	}
+
+	var quickViewDerivedColumns int64
+	if err := db.Raw(`
+		SELECT COUNT(*)
+		FROM information_schema.columns
+		WHERE table_schema = 'manager'
+		  AND table_name = 'quick_view'
+		  AND column_name IN (
+		    'can_use_quick_view', 'can_generate_tile_cache', 'default_artifact_id',
+		    'status', 'unavailable_reason', 'last_checked_at'
+		  )
+	`).Scan(&quickViewDerivedColumns).Error; err != nil {
+		return err
+	}
+
+	var quickViewRequiredColumns int64
+	if err := db.Raw(`
+		SELECT COUNT(*)
+		FROM information_schema.columns
+		WHERE table_schema = 'manager'
+		  AND table_name = 'quick_view'
+		  AND column_name IN ('item_fingerprint', 'preferred_mode')
+	`).Scan(&quickViewRequiredColumns).Error; err != nil {
+		return err
+	}
+
+	if legacyQuickViewColumns > 0 || quickViewDerivedColumns > 0 || quickViewRequiredColumns < 2 {
+		if err := db.Exec(`DROP TABLE IF EXISTS manager.quick_view`).Error; err != nil {
+			return err
+		}
+	}
+
+	var tileTaskLegacyColumns int64
+	if err := db.Raw(`
+		SELECT COUNT(*)
+		FROM information_schema.columns
+		WHERE table_schema = 'manager'
+		  AND table_name = 'tile_cache_tasks'
+		  AND column_name IN ('engine_id', 'schema_name', 'table_name', 'min_zoom', 'max_zoom', 'optimization_config')
+	`).Scan(&tileTaskLegacyColumns).Error; err != nil {
+		return err
+	}
+
+	var hasTileTaskConfig bool
+	if err := db.Raw(`
+		SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.columns
+			WHERE table_schema = 'manager'
+			  AND table_name = 'tile_cache_tasks'
+			  AND column_name = 'config'
+		)
+	`).Scan(&hasTileTaskConfig).Error; err != nil {
+		return err
+	}
+
+	if tileTaskLegacyColumns > 0 || !hasTileTaskConfig {
+		if err := db.Exec(`DROP TABLE IF EXISTS manager.tile_cache_tasks`).Error; err != nil {
+			return err
+		}
+	}
+
+	var hasTileCacheItemFingerprint bool
+	if err := db.Raw(`
+		SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.columns
+			WHERE table_schema = 'manager'
+			  AND table_name = 'tile_cache'
+			  AND column_name = 'item_fingerprint'
+		)
+	`).Scan(&hasTileCacheItemFingerprint).Error; err != nil {
+		return err
+	}
+	if !hasTileCacheItemFingerprint {
+		if err := db.Exec(`DROP TABLE IF EXISTS manager.tile_cache`).Error; err != nil {
+			return err
+		}
+	}
+
+	var tileCacheSignatureColumns int64
+	if err := db.Raw(`
+		SELECT COUNT(*)
+		FROM information_schema.columns
+		WHERE table_schema = 'manager'
+		  AND table_name = 'tile_cache'
+		  AND column_name IN ('source_version', 'source_signature')
+	`).Scan(&tileCacheSignatureColumns).Error; err != nil {
+		return err
+	}
+	if tileCacheSignatureColumns > 0 {
+		if err := db.Exec(`DROP TABLE IF EXISTS manager.tile_cache`).Error; err != nil {
+			return err
+		}
+	}
+
+	if err := db.Exec(`DROP TABLE IF EXISTS manager.tile_cache_artifacts`).Error; err != nil {
+		return err
+	}
+
+	if err := db.AutoMigrate(&models.TileCacheTask{}, &models.TileCache{}, &models.QuickView{}); err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		DELETE FROM manager.quick_view
+		WHERE COALESCE(item_fingerprint, '') = ''
+		   OR item_fingerprint LIKE 'locator:%'
+		   OR COALESCE(locator, '') = ''
+		   OR locator NOT LIKE 'addp://engine/%/path/%?%item_id=%'
+	`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		DELETE FROM manager.tile_cache
+		WHERE COALESCE(item_fingerprint, '') = ''
+		   OR item_fingerprint LIKE 'locator:%'
+		   OR COALESCE(locator, '') = ''
+		   OR locator NOT LIKE 'addp://engine/%/path/%?%item_id=%'
+	`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`ALTER TABLE manager.tile_cache_tasks ALTER COLUMN enabled DROP DEFAULT`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_tile_cache_tenant_fingerprint_config_unique
+		ON manager.tile_cache (tenant_id, item_fingerprint, tile_format, config_hash)
+		WHERE deleted_at IS NULL
+	`).Error; err != nil {
+		return err
+	}
+	return nil
 }
 
 func ensureEmbeddingArtifactStateSchema(db *gorm.DB, vectorDimension int) error {
@@ -176,6 +331,9 @@ func ensureEmbeddingTaskDefinitionSchema(db *gorm.DB) error {
 		if err := db.AutoMigrate(&models.EmbeddingTask{}); err != nil {
 			return err
 		}
+	}
+	if err := db.Exec(`ALTER TABLE manager.embedding_tasks ALTER COLUMN enabled DROP DEFAULT`).Error; err != nil {
+		return err
 	}
 	return nil
 }

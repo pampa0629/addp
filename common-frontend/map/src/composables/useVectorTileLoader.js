@@ -34,10 +34,10 @@ export function useVectorTileLoader(options = {}) {
    * @param {VectorTileSource} source - VectorTileSource实例，用于获取tileGrid
    * @returns {Function} 瓦片加载函数
    */
-  function createTileLoadFunction(getToken, source) {
+  function createTileLoadFunction(getToken, source, options = {}) {
     return (tile, src) => {
       // 提取瓦片坐标
-      const match = src.match(/\/tiles\/[^/]+\/[^/]+\/(\d+)\/(\d+)\/(\d+)/)
+      const match = src.match(/\/tiles\/(?:[^/]+\/[^/]+\/)?(\d+)\/(\d+)\/(\d+)(?:\.mvt)?(?:\?|$)/)
       if (!match) {
         console.warn('无法解析瓦片URL:', src)
         tile.setState(3)
@@ -64,20 +64,33 @@ export function useVectorTileLoader(options = {}) {
         })
           .then(res => {
             if (!res.ok) throw new Error(`HTTP ${res.status}`)
-            return res.arrayBuffer()
+            const meta = {
+              tileKey,
+              renderSource: res.headers.get('X-ADDP-Render-Source') || '',
+              tileCacheId: res.headers.get('X-ADDP-Tile-Cache-ID') || '',
+              cacheStatus: res.headers.get('X-Cache-Status') || '',
+              generationTime: res.headers.get('X-Generation-Time') || '',
+              contentLength: res.headers.get('Content-Length') || ''
+            }
+            return res.arrayBuffer().then(buf => ({ buf, meta }))
           })
-          .then(buf => {
+          .then(({ buf, meta }) => {
             const format = tile.getFormat() || new MVT()
             const features = format.readFeatures(buf, {
               extent: extent,
               featureProjection: projection
             })
             console.log(`切片 ${tileKey} 加载成功(降级), 包含 ${features.length} 个要素`, features.length > 0 ? `第一个要素类型: ${features[0].getGeometry()?.getType()}` : '')
+            options.onTileLoadEnd?.({
+              ...meta,
+              featureCount: features.length
+            })
             tile.setFeatures(features)
             tile.setState(2)
           })
           .catch(e => {
             console.error('加载切片失败:', src, e)
+            options.onTileLoadError?.({ tileKey, error: e })
             tile.setState(3)
           })
         return
@@ -101,15 +114,27 @@ export function useVectorTileLoader(options = {}) {
       })
         .then(res => {
           if (!res.ok) throw new Error(`HTTP ${res.status}`)
-          return res.arrayBuffer()
+          const meta = {
+            tileKey,
+            renderSource: res.headers.get('X-ADDP-Render-Source') || '',
+            tileCacheId: res.headers.get('X-ADDP-Tile-Cache-ID') || '',
+            cacheStatus: res.headers.get('X-Cache-Status') || '',
+            generationTime: res.headers.get('X-Generation-Time') || '',
+            contentLength: res.headers.get('Content-Length') || ''
+          }
+          return res.arrayBuffer().then(buf => ({ buf, meta }))
         })
-        .then(buf => {
+        .then(({ buf, meta }) => {
           const format = tile.getFormat() || new MVT()
           const features = format.readFeatures(buf, {
             extent: extent,
             featureProjection: projection
           })
           console.log(`切片 ${tileKey} 加载成功，包含 ${features.length} 个要素`, features.length > 0 ? `第一个要素类型: ${features[0].getGeometry()?.getType()}` : '')
+          options.onTileLoadEnd?.({
+            ...meta,
+            featureCount: features.length
+          })
           tile.setFeatures(features)
           tile.setState(2) // 设置为已加载状态
         })
@@ -119,6 +144,7 @@ export function useVectorTileLoader(options = {}) {
             return
           }
           console.error('加载切片失败:', src, e)
+          options.onTileLoadError?.({ tileKey, error: e })
           tile.setState(3) // 设置为错误状态
         })
         .finally(() => {
@@ -146,7 +172,7 @@ export function useVectorTileLoader(options = {}) {
     })
 
     // 在创建source后设置tileLoadFunction，这样可以访问source对象
-    vtSource.setTileLoadFunction(createTileLoadFunction(getToken, vtSource))
+    vtSource.setTileLoadFunction(createTileLoadFunction(getToken, vtSource, options))
 
     return new VectorTileLayer({
       source: vtSource,

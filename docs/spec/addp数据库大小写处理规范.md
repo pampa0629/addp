@@ -199,7 +199,7 @@ grep -rn "db.Raw\|db.Exec\|db.Query" --include="*.go"
 
 - [ ] GeoJSON 数据预览
 - [ ] 要素详情查询
-- [ ] MVT 瓦片生成
+- [ ] 瓦片缓存生成（MVT 格式实现）
 - [ ] 数据导入导出
 - [ ] 元数据扫描
 - [ ] SQL 执行

@@ -85,9 +85,6 @@ other = "Record count query failed"
 [manager.error.query_extent_failed]
 other = "Extent query failed"
 
-[manager.error.tile_config_failed]
-other = "Failed to get tile config"
-
 [manager.error.parse_form_failed]
 other = "Failed to parse form"
 
@@ -146,25 +143,7 @@ other = "Failed to clear history"
 other = "Invalid request body"
 
 [manager.error.quick_view_record_not_found]
-other = "Quick view record not found; start MVT preparation first"
-
-[manager.error.quick_view_preparation_needed]
-other = "Quick view preparation is not completed; complete MVT preparation first"
-
-[manager.error.quick_view_already_generating]
-other = "Quick view generation is already running for this item"
-
-[manager.error.quick_view_min_zoom_required]
-other = "Minimum zoom is required; confirm quick view configuration first"
-
-[manager.error.quick_view_max_zoom_required]
-other = "Maximum zoom is required; confirm quick view configuration first"
-
-[manager.error.quick_view_cancel_status]
-other = "Only generating quick view tasks can be cancelled"
-
-[manager.error.quick_view_resume_status]
-other = "Only cancelled or failed quick view tasks can be resumed"
+other = "Quick view preference not found"
 
 [manager.error.quick_view_invalid_mode]
 other = "Invalid display mode"

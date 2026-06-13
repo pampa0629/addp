@@ -315,6 +315,26 @@ func TestEmbeddingTaskDefinitionSupportsItemScope(t *testing.T) {
 	}
 }
 
+func TestEmbeddingTaskCreatePreservesDisabledFlag(t *testing.T) {
+	db := newEmbeddingTaskServiceTestDB(t)
+	embeddingRepo := repository.NewEmbeddingRepository(db)
+	taskSvc := NewEmbeddingTaskService(embeddingRepo, nil, nil, nil)
+
+	task := newEmbeddingTaskDefinition()
+	task.Enabled = false
+	if err := taskSvc.Create(context.Background(), task); err != nil {
+		t.Fatalf("create disabled embedding task: %v", err)
+	}
+
+	refreshed, err := embeddingRepo.GetEmbeddingTask(context.Background(), task.ID, task.TenantID)
+	if err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if refreshed.Enabled {
+		t.Fatal("enabled = true, want false")
+	}
+}
+
 func newEmbeddingTaskDefinition() *models.EmbeddingTask {
 	return &models.EmbeddingTask{
 		TenantID: 7,

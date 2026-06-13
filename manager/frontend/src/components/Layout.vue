@@ -51,9 +51,9 @@
             <el-icon><List /></el-icon>
             <span>{{ t('manager.layout.vectorizationTasks') }}</span>
           </el-menu-item>
-          <el-menu-item index="/mvt-tasks">
+          <el-menu-item index="/tile-cache">
             <el-icon><Grid /></el-icon>
-            <span>{{ t('manager.layout.mvtTasks') }}</span>
+            <span>{{ t('manager.layout.tileCache') }}</span>
           </el-menu-item>
         </el-menu>
       </el-aside>

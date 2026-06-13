@@ -22,6 +22,10 @@ const props = defineProps({
   preserveView: {
     type: Boolean,
     default: false
+  },
+  popupOptions: {
+    type: Object,
+    default: () => ({})
   }
 })
 
@@ -46,6 +50,7 @@ const setupMap = async () => {
 
   renderFeatures(props.features, {
     preserveView: props.preserveView,
+    popupOptions: props.popupOptions,
     onFeatureClick: (feature, coordinate, position) => {
       emit('feature-click', { feature, coordinate, position })
     }
@@ -58,6 +63,23 @@ watch(
     if (isInitialized) {
       renderFeatures(props.features, {
         preserveView: props.preserveView,
+        popupOptions: props.popupOptions,
+        onFeatureClick: (feature, coordinate, position) => {
+          emit('feature-click', { feature, coordinate, position })
+        }
+      })
+    }
+  },
+  { deep: true }
+)
+
+watch(
+  () => props.popupOptions,
+  () => {
+    if (isInitialized) {
+      renderFeatures(props.features, {
+        preserveView: true,
+        popupOptions: props.popupOptions,
         onFeatureClick: (feature, coordinate, position) => {
           emit('feature-click', { feature, coordinate, position })
         }

@@ -231,7 +231,7 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted, watch } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
@@ -268,6 +268,7 @@ const detailDialogVisible = ref(false)
 const currentExecution = ref(null)
 const executionTreeData = ref([])
 const openedExecutionID = ref('')
+let autoRefreshTimer = null
 const executionTreeProps = {
   children: 'children'
 }
@@ -314,6 +315,11 @@ const taskTypeOptions = computed(() => {
   return Array.from(options, ([value, label]) => ({ value, label }))
 })
 
+const hasRunningExecution = computed(() => {
+  return executions.value.some(execution => isRunningStatus(execution?.status)) ||
+    (detailDialogVisible.value && isRunningStatus(currentExecution.value?.status))
+})
+
 function parseTaskTypes(capabilities) {
   const parsed = parseCapabilities(capabilities)
   const taskTypes = Array.isArray(parsed.task_types) ? parsed.task_types : []
@@ -343,13 +349,16 @@ watch(
 )
 
 // 加载执行记录
-async function loadExecutions() {
+async function loadExecutions(options = {}) {
   if (filters.value.source_task_id && (!filters.value.module || !filters.value.task_type)) {
     ElMessage.warning(t('monitor.execution.filter.source_task_id_requires_scope'))
     return
   }
 
-  loading.value = true
+  const silent = options.silent === true
+  if (!silent) {
+    loading.value = true
+  }
   try {
     const params = {
       ...filters.value,
@@ -360,10 +369,14 @@ async function loadExecutions() {
     executions.value = data.executions || []
     pagination.value.total = data.total || 0
   } catch (error) {
-    ElMessage.error(t('monitor.execution.load_failed'))
+    if (!silent) {
+      ElMessage.error(t('monitor.execution.load_failed'))
+    }
     console.error(error)
   } finally {
-    loading.value = false
+    if (!silent) {
+      loading.value = false
+    }
   }
 }
 
@@ -481,6 +494,10 @@ function getStatusType(status) {
   return typeMap[status] || 'info'
 }
 
+function isRunningStatus(status) {
+  return status === 'pending' || status === 'running'
+}
+
 function getStatusText(status) {
   const textMap = {
     pending: t('monitor.execution.status.pending'),
@@ -491,6 +508,38 @@ function getStatusText(status) {
     cancelled: t('monitor.execution.status.cancelled'),
   }
   return textMap[status] || status
+}
+
+async function refreshOpenedExecution() {
+  if (!detailDialogVisible.value || !hasValue(openedExecutionID.value)) {
+    return
+  }
+  try {
+    const data = await getExecutionTreeByExecutionID(openedExecutionID.value)
+    openExecutionTree(data)
+  } catch (error) {
+    console.error(error)
+  }
+}
+
+async function refreshRunningExecutions() {
+  if (!hasRunningExecution.value) {
+    return
+  }
+  await loadExecutions({ silent: true })
+  await refreshOpenedExecution()
+}
+
+function startAutoRefresh() {
+  stopAutoRefresh()
+  autoRefreshTimer = window.setInterval(refreshRunningExecutions, 3000)
+}
+
+function stopAutoRefresh() {
+  if (autoRefreshTimer) {
+    window.clearInterval(autoRefreshTimer)
+    autoRefreshTimer = null
+  }
 }
 
 function getTriggerText(triggerType) {
@@ -543,7 +592,12 @@ onMounted(async () => {
   await loadTaskProviders()
   await loadExecutions()
   await openExecutionByExecutionID(route.query.execution_id)
+  if (hasRunningExecution.value) {
+    startAutoRefresh()
+  }
 })
+
+onBeforeUnmount(stopAutoRefresh)
 
 watch(
   () => route.query.execution_id,
@@ -551,6 +605,14 @@ watch(
     openExecutionByExecutionID(executionID)
   }
 )
+
+watch(hasRunningExecution, running => {
+  if (running) {
+    startAutoRefresh()
+  } else {
+    stopAutoRefresh()
+  }
+})
 
 watch(detailDialogVisible, visible => {
   if (!visible) {

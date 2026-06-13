@@ -85,9 +85,6 @@ other = "记录数查询失败"
 [manager.error.query_extent_failed]
 other = "范围查询失败"
 
-[manager.error.tile_config_failed]
-other = "获取瓦片配置失败"
-
 [manager.error.parse_form_failed]
 other = "解析表单失败"
 
@@ -146,25 +143,7 @@ other = "清空搜索历史失败"
 other = "无效的请求体"
 
 [manager.error.quick_view_record_not_found]
-other = "快显记录不存在，请先启动 MVT 准备工作"
-
-[manager.error.quick_view_preparation_needed]
-other = "快显准备尚未完成，请先完成 MVT 准备工作"
-
-[manager.error.quick_view_already_generating]
-other = "该数据项的快显任务正在生成中"
-
-[manager.error.quick_view_min_zoom_required]
-other = "缺少最小缩放级别，请先确认快显配置"
-
-[manager.error.quick_view_max_zoom_required]
-other = "缺少最大缩放级别，请先确认快显配置"
-
-[manager.error.quick_view_cancel_status]
-other = "只有生成中的快显任务可以取消"
-
-[manager.error.quick_view_resume_status]
-other = "只有已取消或失败的快显任务可以恢复"
+other = "快显偏好不存在"
 
 [manager.error.quick_view_invalid_mode]
 other = "无效的显示模式"

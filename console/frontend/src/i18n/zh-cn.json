@@ -207,7 +207,7 @@
         "dataExplorer": "数据探查",
         "dataRetrieval": "数据检索",
         "vectorizationTasks": "向量化任务",
-        "mvtTasks": "MVT任务"
+        "tileCache": "瓦片缓存任务"
       },
       "standard": {
         "label": "数据标准",

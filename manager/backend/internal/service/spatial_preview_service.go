@@ -1,9 +1,9 @@
 package service
 
 import (
+	"bytes"
 	"container/list"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -11,15 +11,16 @@ import (
 	"time"
 
 	"github.com/addp/common/logger"
+	"github.com/addp/manager/internal/tilecache"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/redis/go-redis/v9"
 )
 
 // SpatialPreviewService MVT 空间数据预览服务
-// 实现三层缓存：内存 LRU → Redis → MinIO
+// 实现三层缓存：内存 LRU → Redis → 对象存储
 type SpatialPreviewService struct {
-	// MinIO 客户端（持久化存储，Meta 预缓存的瓦片）
+	// MinIO 客户端（持久化存储，瓦片缓存结果）
 	minioClient *minio.Client
 	bucket      string
 
@@ -148,51 +149,39 @@ func NewSpatialPreviewService(redisClient *redis.Client) *SpatialPreviewService 
 	return svc
 }
 
-// GetTileMetadata 获取瓦片元数据
-func (s *SpatialPreviewService) GetTileMetadata(ctx context.Context, fingerprint string) (map[string]interface{}, error) {
-	// 初始化 MinIO 客户端（如果未初始化）
-	if err := s.ensureMinIOClient(ctx); err != nil {
-		return nil, fmt.Errorf("failed to initialize MinIO client: %w", err)
-	}
-
-	// 尝试读取 metadata.json
-	objectName := fmt.Sprintf("%s/metadata.json", fingerprint)
-	obj, err := s.minioClient.GetObject(ctx, s.bucket, objectName, minio.GetObjectOptions{})
+func (s *SpatialPreviewService) GetTileByStorageRef(ctx context.Context, tenantID uint, cacheScope string, storageRef string, z, x, y int) ([]byte, error) {
+	bucket, objectName, err := s.tileObjectLocationFromStorageRef(storageRef, z, x, y)
 	if err != nil {
-		return nil, fmt.Errorf("metadata not found for fingerprint %s: %w", fingerprint, err)
+		return nil, err
 	}
-	defer obj.Close()
-
-	// 解析 JSON
-	var metadata map[string]interface{}
-	if err := json.NewDecoder(obj).Decode(&metadata); err != nil {
-		return nil, fmt.Errorf("failed to parse metadata: %w", err)
-	}
-
-	return metadata, nil
+	key := s.buildCacheKey(tenantID, cacheScope, z, x, y)
+	return s.getTile(ctx, key, bucket, objectName, map[string]interface{}{
+		"tenant_id":   tenantID,
+		"cache_scope": cacheScope,
+		"z":           z,
+		"x":           x,
+		"y":           y,
+	})
 }
 
-// GetTile 获取指定瓦片（三层缓存：内存 → Redis → MinIO，租户隔离）
-func (s *SpatialPreviewService) GetTile(ctx context.Context, tenantID uint, fingerprint string, z, x, y int) ([]byte, error) {
-	key := s.buildCacheKey(tenantID, fingerprint, z, x, y)
+func (s *SpatialPreviewService) getTile(ctx context.Context, key string, bucket string, objectName string, logFields map[string]interface{}) ([]byte, error) {
+	if bucket == "" {
+		bucket = s.bucket
+	}
 
 	logger.L().Info("🔍 开始查找瓦片",
-		"tenant_id", tenantID,
-		"fingerprint", fingerprint,
-		"z", z, "x", x, "y", y,
+		"tile", logFields,
 		"cache_key", key)
 
 	// 1️⃣ 内存 LRU 缓存（最快，1-2ms）
 	if s.memEnabled {
 		if data, ok := s.memCache.Get(key); ok {
 			logger.L().Info("✅ 瓦片命中内存缓存",
-				"tenant_id", tenantID,
-				"fingerprint", fingerprint,
-				"z", z, "x", x, "y", y,
+				"tile", logFields,
 				"size", len(data))
 			return data, nil
 		}
-		logger.L().Info("❌ 内存缓存未命中", "tenant_id", tenantID, "fingerprint", fingerprint, "z", z, "x", x, "y", y)
+		logger.L().Info("❌ 内存缓存未命中", "tile", logFields)
 	} else {
 		logger.L().Info("⚠️  内存缓存未启用")
 	}
@@ -202,9 +191,7 @@ func (s *SpatialPreviewService) GetTile(ctx context.Context, tenantID uint, fing
 		data, err := s.redisClient.Get(ctx, key).Bytes()
 		if err == nil && len(data) > 0 {
 			logger.L().Info("✅ 瓦片命中 Redis 缓存",
-				"tenant_id", tenantID,
-				"fingerprint", fingerprint,
-				"z", z, "x", x, "y", y,
+				"tile", logFields,
 				"size", len(data))
 
 			// 回填内存缓存（异步）
@@ -216,12 +203,12 @@ func (s *SpatialPreviewService) GetTile(ctx context.Context, tenantID uint, fing
 		if err != nil && err != redis.Nil {
 			logger.L().Warn("Redis 读取失败", "error", err)
 		}
-		logger.L().Info("❌ Redis 缓存未命中", "tenant_id", tenantID, "fingerprint", fingerprint, "z", z, "x", x, "y", y)
+		logger.L().Info("❌ Redis 缓存未命中", "tile", logFields)
 	} else {
 		logger.L().Info("⚠️  Redis 客户端未初始化")
 	}
 
-	// 3️⃣ MinIO 持久化存储（Meta 预缓存的瓦片，5-20ms）
+	// 3️⃣ MinIO 持久化存储（瓦片缓存结果，5-20ms）
 	logger.L().Info("🔧 尝试初始化 MinIO 客户端...")
 	if err := s.ensureMinIOClient(ctx); err != nil {
 		logger.L().Error("❌ MinIO 客户端初始化失败", "error", err)
@@ -229,13 +216,12 @@ func (s *SpatialPreviewService) GetTile(ctx context.Context, tenantID uint, fing
 	}
 	logger.L().Info("✅ MinIO 客户端已初始化")
 
-	objectName := s.buildMinIOPath(tenantID, fingerprint, z, x, y)
 	logger.L().Info("📦 尝试从 MinIO 读取对象",
-		"tenant_id", tenantID,
-		"bucket", s.bucket,
+		"tile", logFields,
+		"bucket", bucket,
 		"object", objectName)
 
-	obj, err := s.minioClient.GetObject(ctx, s.bucket, objectName, minio.GetObjectOptions{})
+	obj, err := s.minioClient.GetObject(ctx, bucket, objectName, minio.GetObjectOptions{})
 	if err != nil {
 		logger.L().Error("❌ MinIO GetObject 失败", "error", err, "object", objectName)
 		return nil, fmt.Errorf("tile not found in MinIO: %w", err)
@@ -263,15 +249,40 @@ func (s *SpatialPreviewService) GetTile(ctx context.Context, tenantID uint, fing
 	}
 
 	logger.L().Info("✅ 瓦片从 MinIO 加载成功",
-		"tenant_id", tenantID,
-		"fingerprint", fingerprint,
-		"z", z, "x", x, "y", y,
+		"tile", logFields,
 		"size", len(data))
 
 	// 回填上层缓存（异步，不阻塞响应）
 	go s.backfillCache(context.Background(), key, data)
 
 	return data, nil
+}
+
+func (s *SpatialPreviewService) PutTileByStorageRef(ctx context.Context, tenantID uint, cacheScope string, storageRef string, z, x, y int, compressed []byte) error {
+	bucket, objectName, err := s.tileObjectLocationFromStorageRef(storageRef, z, x, y)
+	if err != nil {
+		return err
+	}
+	if err := s.ensureMinIOClient(ctx); err != nil {
+		return fmt.Errorf("failed to initialize MinIO client: %w", err)
+	}
+	_, err = s.minioClient.PutObject(
+		ctx,
+		bucket,
+		objectName,
+		bytes.NewReader(compressed),
+		int64(len(compressed)),
+		minio.PutObjectOptions{
+			ContentType:     "application/vnd.mapbox-vector-tile",
+			ContentEncoding: "gzip",
+		},
+	)
+	if err != nil {
+		return err
+	}
+	cacheKey := s.buildCacheKey(tenantID, cacheScope, z, x, y)
+	s.backfillCache(ctx, cacheKey, compressed)
+	return nil
 }
 
 // backfillCache 异步回填上层缓存
@@ -287,40 +298,6 @@ func (s *SpatialPreviewService) backfillCache(ctx context.Context, key string, d
 			logger.L().Warn("Redis 写入失败", "error", err)
 		}
 	}
-}
-
-// CheckTileExists 检查瓦片是否存在（租户隔离）
-func (s *SpatialPreviewService) CheckTileExists(ctx context.Context, tenantID uint, fingerprint string, z, x, y int) (bool, error) {
-	key := s.buildCacheKey(tenantID, fingerprint, z, x, y)
-
-	// 1. 检查内存缓存
-	if s.memEnabled {
-		if _, ok := s.memCache.Get(key); ok {
-			return true, nil
-		}
-	}
-
-	// 2. 检查 Redis 缓存
-	if s.redisClient != nil {
-		exists, err := s.redisClient.Exists(ctx, key).Result()
-		if err == nil && exists > 0 {
-			return true, nil
-		}
-	}
-
-	// 3. 检查 MinIO
-	if err := s.ensureMinIOClient(ctx); err != nil {
-		return false, fmt.Errorf("failed to initialize MinIO client: %w", err)
-	}
-
-	objectName := s.buildMinIOPath(tenantID, fingerprint, z, x, y)
-	_, err := s.minioClient.StatObject(ctx, s.bucket, objectName, minio.StatObjectOptions{})
-	if err != nil {
-		// 对象不存在
-		return false, nil
-	}
-
-	return true, nil
 }
 
 // GetStats 获取缓存统计信息
@@ -346,48 +323,13 @@ func (s *SpatialPreviewService) GetStats(ctx context.Context) map[string]interfa
 	return stats
 }
 
-// ClearCache 清除指定 fingerprint 的所有缓存（租户隔离）
-func (s *SpatialPreviewService) ClearCache(ctx context.Context, tenantID uint, fingerprint string) error {
-	// 1. 清除 Redis 缓存
-	if s.redisClient != nil {
-		// 租户隔离：只清除当前租户的缓存
-		pattern := fmt.Sprintf("manager:tenant_%d:cache:mvt:spatial:%s:*", tenantID, fingerprint)
-		iter := s.redisClient.Scan(ctx, 0, pattern, 100).Iterator()
-		keys := []string{}
-		for iter.Next(ctx) {
-			keys = append(keys, iter.Val())
-		}
-		if err := iter.Err(); err != nil {
-			logger.L().Warn("Redis scan 失败", "error", err)
-		}
-		if len(keys) > 0 {
-			if err := s.redisClient.Del(ctx, keys...).Err(); err != nil {
-				logger.L().Warn("Redis 删除失败", "error", err)
-			}
-		}
-	}
-
-	// 2. 清除内存缓存（简单重建，因为无法精确删除特定前缀）
-	if s.memEnabled {
-		s.memCache = newLRU(s.memCache.cap)
-	}
-
-	logger.L().Info("缓存已清除",
-		"tenant_id", tenantID,
-		"fingerprint", fingerprint)
-	return nil
-}
-
 // buildCacheKey 构建缓存键（用于内存和 Redis，租户隔离）
-func (s *SpatialPreviewService) buildCacheKey(tenantID uint, fingerprint string, z, x, y int) string {
-	return fmt.Sprintf("manager:tenant_%d:cache:mvt:spatial:%s:%d:%d:%d", tenantID, fingerprint, z, x, y)
+func (s *SpatialPreviewService) buildCacheKey(tenantID uint, cacheScope string, z, x, y int) string {
+	return fmt.Sprintf("manager:tenant_%d:cache:mvt:spatial:%s:%d:%d:%d", tenantID, cacheScope, z, x, y)
 }
 
-// buildMinIOPath 构建 MinIO 对象路径（租户隔离）
-// 格式: tenant_{tenant_id}/mvt-tiles/{fingerprint}/tiles/z{z}/{x}_{y}.mvt.gz
-func (s *SpatialPreviewService) buildMinIOPath(tenantID uint, fingerprint string, z, x, y int) string {
-	return fmt.Sprintf("tenant_%d/mvt-tiles/%s/tiles/z%d/%d_%d.mvt.gz",
-		tenantID, fingerprint, z, x, y)
+func (s *SpatialPreviewService) tileObjectLocationFromStorageRef(storageRef string, z, x, y int) (string, string, error) {
+	return tilecache.TileObjectLocation(storageRef, s.bucket, z, x, y)
 }
 
 // ensureMinIOClient 确保 MinIO 客户端已初始化

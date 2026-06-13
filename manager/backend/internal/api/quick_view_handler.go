@@ -2,36 +2,28 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 
-	"github.com/addp/common/logger"
-	commonmodels "github.com/addp/common/models"
+	"github.com/addp/common/engine/plugin"
+	commonSpatial "github.com/addp/common/spatial"
 	manageri18n "github.com/addp/manager/i18n"
-	"github.com/addp/manager/internal/mvt"
-	"github.com/addp/manager/internal/repository"
+	"github.com/addp/manager/internal/models"
+	"github.com/addp/manager/internal/preview"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
+	geomGeoJSON "github.com/twpayne/go-geom/encoding/geojson"
 )
 
 func quickViewError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, service.ErrQuickViewRecordNotFound):
 		managerError(c, http.StatusNotFound, manageri18n.MsgQuickViewRecordNotFound)
-	case errors.Is(err, service.ErrQuickViewPreparationNotCompleted):
-		managerError(c, http.StatusBadRequest, manageri18n.MsgQuickViewPreparationNeeded)
-	case errors.Is(err, service.ErrQuickViewAlreadyGenerating):
-		managerError(c, http.StatusConflict, manageri18n.MsgQuickViewAlreadyGenerating)
-	case errors.Is(err, service.ErrQuickViewMinZoomRequired):
-		managerError(c, http.StatusBadRequest, manageri18n.MsgQuickViewMinZoomRequired)
-	case errors.Is(err, service.ErrQuickViewMaxZoomRequired):
-		managerError(c, http.StatusBadRequest, manageri18n.MsgQuickViewMaxZoomRequired)
-	case errors.Is(err, service.ErrQuickViewCancelStatusInvalid):
-		managerError(c, http.StatusBadRequest, manageri18n.MsgQuickViewCancelStatus)
-	case errors.Is(err, service.ErrQuickViewResumeStatusInvalid):
-		managerError(c, http.StatusBadRequest, manageri18n.MsgQuickViewResumeStatus)
 	case errors.Is(err, service.ErrQuickViewInvalidPreferredMode):
 		managerError(c, http.StatusBadRequest, manageri18n.MsgQuickViewInvalidMode)
 	case errors.Is(err, service.ErrQuickViewGeometryColumnNotFound):
@@ -41,596 +33,533 @@ func quickViewError(c *gin.Context, err error) {
 	}
 }
 
-// QuickViewHandler 快显API处理器
+func quickViewLocatorError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, preview.ErrEngineAccessDenied):
+		accessDeniedToEngine(c)
+	case errors.Is(err, preview.ErrPreviewRequiresScannedMeta):
+		managerError(c, http.StatusNotFound, manageri18n.MsgMetaScanRequired)
+	default:
+		quickViewError(c, err)
+	}
+}
+
 type QuickViewHandler struct {
-	service     *service.QuickViewService
-	redisClient *redis.Client // Redis 客户端用于查询进度
+	service         *service.QuickViewService
+	previewResolver *preview.PreviewResolver
+	mvtService      *service.UnifiedMVTService
 }
 
-// NewQuickViewHandler 创建快显处理器
-func NewQuickViewHandler(service *service.QuickViewService, redisClient *redis.Client) *QuickViewHandler {
-	return &QuickViewHandler{
-		service:     service,
-		redisClient: redisClient,
-	}
+func NewQuickViewHandler(service *service.QuickViewService, previewResolver *preview.PreviewResolver, mvtService *service.UnifiedMVTService, _ *redis.Client) *QuickViewHandler {
+	return &QuickViewHandler{service: service, previewResolver: previewResolver, mvtService: mvtService}
 }
 
-// TriggerQuickViewRequest 触发快显请求
-type TriggerQuickViewRequest struct {
-	MinZoom            *int                             `json:"min_zoom"`                      // 可选
-	MaxZoom            int                              `json:"max_zoom"`                      // 默认18
-	Concurrency        int                              `json:"concurrency"`                   // 默认10
-	Priority           string                           `json:"priority"`                      // "critical", "default", "low"
-	OptimizationConfig *commonmodels.OptimizationConfig `json:"optimization_config,omitempty"` // v2.0 优化配置
-}
-
-// UpdatePreferredModeRequest 更新显示模式偏好请求
 type UpdatePreferredModeRequest struct {
-	PreferredMode string `json:"preferred_mode" binding:"required,oneof=geojson mvt"`
+	Locator       string `json:"locator" binding:"required"`
+	PreferredMode string `json:"preferred_mode" binding:"required,oneof=table_geojson quick_view"`
 }
 
-// TriggerQuickView 触发快显缓存生成
-// POST /api/engines/:id/spatial/:schema/:table/quick-view
-// @Summary 触发快显缓存生成 | Trigger quick view cache generation
-// @Description 触发指定空间数据项（关系表）的MVT瓦片快显缓存生成任务 | Trigger MVT tile quick view cache generation for a spatial item (relational table)
+// GetQuickViewCapabilityByLocator 获取 locator 快显能力
+// @Summary 获取 locator 快显能力 | Get locator quick view capability
+// @Description 以 Resource Locator 为数据项身份返回快显能力状态。快显判断基于 ADDP engine、datatype、format 和 spatial capabilities，不以数据库 schema/table 为主身份。 | Return quick view capability by Resource Locator. Capability is based on ADDP engine, datatype, format, and spatial capabilities rather than database schema/table identity.
+// @Tags Manager
+// @Produce json
+// @Param locator query string true "资源定位符URI | Resource locator URI"
+// @Success 200 {object} service.QuickViewCapability "快显能力状态 | Quick view capability state"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
+// @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Router /quick-view/capability [get]
+// @Security BearerAuth
+func (h *QuickViewHandler) GetQuickViewCapabilityByLocator(c *gin.Context) {
+	locator := strings.TrimSpace(c.Query("locator"))
+	if locator == "" {
+		missingLocator(c)
+		return
+	}
+	capability, err := h.quickViewCapabilityForLocator(c.Request.Context(), tenantIDFromContext(c), locator)
+	if err != nil {
+		quickViewLocatorError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, capability)
+}
+
+// UpdatePreferredModeByLocator 更新 locator 预览模式偏好
+// @Summary 更新 locator 预览模式偏好 | Update locator preferred preview mode
+// @Description 以 Resource Locator 为数据项身份更新显示偏好：table_geojson 或 quick_view | Update preferred display mode by Resource Locator: table_geojson or quick_view
 // @Tags Manager
 // @Accept json
 // @Produce json
-// @Param id path int true "存储引擎ID | Engine ID"
-// @Param schema path string true "Schema | Schema"
-// @Param table path string true "数据项名称 | Item name"
-// @Param body body TriggerQuickViewRequest false "快显生成配置 | Quick view generation configuration"
-// @Success 200 {object} map[string]interface{} "任务已加入队列 | Task enqueued"
-// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /engines/{id}/spatial/{schema}/{table}/quick-view/pre-cache [post]
-// @Security BearerAuth
-func (h *QuickViewHandler) TriggerQuickView(c *gin.Context) {
-	// 1. 解析路径参数
-	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		invalidEngineID(c)
-		return
-	}
-
-	schema := c.Param("schema")
-	table := c.Param("table")
-
-	if schema == "" || table == "" {
-		managerError(c, http.StatusBadRequest, manageri18n.MsgSchemaAndTableRequired)
-		return
-	}
-
-	// 2. 解析请求体（可选参数）
-	var req TriggerQuickViewRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		// 请求体为空也允许，使用默认值
-		req = TriggerQuickViewRequest{}
-	}
-
-	// 🔍 日志：记录收到的并发数参数
-	logger.L().Info("📥 API 收到快显触发请求",
-		"engine_id", engineID,
-		"schema", schema,
-		"table", table,
-		"concurrency_from_request", req.Concurrency,
-		"priority", req.Priority)
-
-	// 3. 获取租户ID（从context或JWT中）
-	tenantID := uint(1) // TODO: 从JWT或context中获取
-	if val, exists := c.Get("tenant_id"); exists {
-		if tid, ok := val.(uint); ok {
-			tenantID = tid
-		}
-	}
-
-	// 4. 调用服务层
-	params := service.TriggerQuickViewParams{
-		TenantID:           tenantID,
-		EngineID:           uint(engineID),
-		SchemaName:         schema,
-		TableName:          table,
-		MinZoom:            req.MinZoom,
-		MaxZoom:            req.MaxZoom,
-		Concurrency:        req.Concurrency,
-		Priority:           req.Priority,
-		OptimizationConfig: req.OptimizationConfig, // v2.0 传递优化配置
-	}
-
-	if err := h.service.TriggerQuickView(c.Request.Context(), params); err != nil {
-		logger.L().Error("Failed to trigger quick view", "error", err)
-		quickViewError(c, err)
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Quick view task enqueued successfully",
-		"status":  "generating",
-	})
-}
-
-// GetQuickViewStatus 获取快显状态（包含实时进度）
-// GET /api/engines/:id/spatial/:schema/:table/quick-view/status
-// @Summary 获取快显状态 | Get quick view status
-// @Description 获取指定空间数据项（关系表）的快显缓存状态及实时生成进度 | Get quick view cache status and real-time generation progress
-// @Tags Manager
-// @Produce json
-// @Param id path int true "存储引擎ID | Engine ID"
-// @Param schema path string true "Schema | Schema"
-// @Param table path string true "数据项名称 | Item name"
-// @Success 200 {object} map[string]interface{} "快显状态信息 | Quick view status"
-// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /engines/{id}/spatial/{schema}/{table}/quick-view/status [get]
-// @Security BearerAuth
-func (h *QuickViewHandler) GetQuickViewStatus(c *gin.Context) {
-	// 1. 解析路径参数
-	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		invalidEngineID(c)
-		return
-	}
-
-	schema := c.Param("schema")
-	table := c.Param("table")
-
-	// 2. 获取租户ID
-	tenantID := uint(1) // TODO: 从JWT或context中获取
-	if val, exists := c.Get("tenant_id"); exists {
-		if tid, ok := val.(uint); ok {
-			tenantID = tid
-		}
-	}
-
-	// 3. 查询数据库中的状态
-	qv, err := h.service.GetStatus(c.Request.Context(), tenantID, uint(engineID), schema, table)
-	if err != nil {
-		logger.L().Error("Failed to get quick view status", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	// 4. 如果状态是 generating，尝试从 Redis 获取实时进度
-	var progress *mvt.QuickViewProgress
-	if qv.Status == "generating" && h.redisClient != nil && qv.Fingerprint != "" {
-		tracker := mvt.NewProgressTracker(h.redisClient, qv.Fingerprint)
-		progress, _ = tracker.GetProgress(context.Background())
-	}
-
-	// 5. 合并响应
-	response := gin.H{
-		"id":                 qv.ID,
-		"engine_id":          qv.EngineID,
-		"schema_name":        qv.SchemaName,
-		"table_name":         qv.Table,
-		"status":             qv.Status,
-		"preferred_mode":     qv.PreferredMode,
-		"error_message":      qv.ErrorMessage,
-		"min_zoom":           qv.MinZoom,
-		"max_zoom":           qv.MaxZoom,
-		"actual_max_zoom":    qv.ActualMaxZoom,
-		"total_tiles":        qv.TotalTiles,
-		"cached_tiles":       qv.CachedTiles,
-		"fingerprint":        qv.Fingerprint,
-		"extent":             qv.Extent,
-		"extent_srid":        qv.ExtentSRID,
-		"started_at":         qv.StartedAt,
-		"completed_at":       qv.CompletedAt,
-		"created_at":         qv.CreatedAt,
-		"updated_at":         qv.UpdatedAt,
-		"preparation_status": qv.PreparationStatus, // v4.0 准备阶段状态
-	}
-
-	// 如果有进度信息，添加到响应中
-	if progress != nil {
-		response["progress"] = progress
-	}
-
-	c.JSON(http.StatusOK, response)
-}
-
-// ClearQuickView 清除快显缓存
-// DELETE /api/engines/:id/spatial/:schema/:table/quick-view
-// @Summary 清除快显缓存 | Clear quick view cache
-// @Description 清除指定空间数据项（关系表）的快显缓存数据 | Clear quick view cache data for a spatial item (relational table)
-// @Tags Manager
-// @Produce json
-// @Param id path int true "存储引擎ID | Engine ID"
-// @Param schema path string true "Schema | Schema"
-// @Param table path string true "数据项名称 | Item name"
-// @Success 200 {object} map[string]interface{} "清除成功 | Cleared successfully"
-// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /engines/{id}/spatial/{schema}/{table}/quick-view [delete]
-// @Security BearerAuth
-func (h *QuickViewHandler) ClearQuickView(c *gin.Context) {
-	// 1. 解析路径参数
-	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		invalidEngineID(c)
-		return
-	}
-
-	schema := c.Param("schema")
-	table := c.Param("table")
-
-	// 2. 获取租户ID
-	tenantID := uint(1) // TODO: 从JWT或context中获取
-	if val, exists := c.Get("tenant_id"); exists {
-		if tid, ok := val.(uint); ok {
-			tenantID = tid
-		}
-	}
-
-	// 3. 清除缓存
-	if err := h.service.ClearQuickView(c.Request.Context(), tenantID, uint(engineID), schema, table); err != nil {
-		logger.L().Error("Failed to clear quick view", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Quick view cleared successfully",
-	})
-}
-
-// CancelQuickView 取消快显生成任务
-// POST /api/engines/:id/spatial/:schema/:table/pre-cache/cancel
-// @Summary 取消快显生成任务 | Cancel quick view generation task
-// @Description 取消正在进行的快显缓存生成任务 | Cancel an ongoing quick view cache generation task
-// @Tags Manager
-// @Produce json
-// @Param id path int true "存储引擎ID | Engine ID"
-// @Param schema path string true "Schema | Schema"
-// @Param table path string true "数据项名称 | Item name"
-// @Success 200 {object} map[string]interface{} "取消成功 | Cancelled successfully"
-// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Router /engines/{id}/spatial/{schema}/{table}/quick-view/cancel [post]
-// @Security BearerAuth
-func (h *QuickViewHandler) CancelQuickView(c *gin.Context) {
-	// 1. 解析路径参数
-	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		invalidEngineID(c)
-		return
-	}
-
-	schema := c.Param("schema")
-	table := c.Param("table")
-
-	// 2. 获取租户ID
-	tenantID := uint(1) // TODO: 从JWT或context中获取
-	if val, exists := c.Get("tenant_id"); exists {
-		if tid, ok := val.(uint); ok {
-			tenantID = tid
-		}
-	}
-
-	// 3. 取消任务
-	if err := h.service.CancelQuickView(c.Request.Context(), tenantID, uint(engineID), schema, table); err != nil {
-		logger.L().Error("Failed to cancel quick view", "error", err)
-		quickViewError(c, err)
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Quick view task cancelled successfully",
-	})
-}
-
-// ResumeQuickView 恢复快显生成任务
-// POST /api/engines/:id/spatial/:schema/:table/pre-cache/resume
-// @Summary 恢复快显生成任务 | Resume quick view generation task
-// @Description 恢复已暂停或中断的快显缓存生成任务 | Resume a paused or interrupted quick view cache generation task
-// @Tags Manager
-// @Produce json
-// @Param id path int true "存储引擎ID | Engine ID"
-// @Param schema path string true "Schema | Schema"
-// @Param table path string true "数据项名称 | Item name"
-// @Success 200 {object} map[string]interface{} "恢复成功 | Resumed successfully"
-// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Router /engines/{id}/spatial/{schema}/{table}/quick-view/resume [post]
-// @Security BearerAuth
-func (h *QuickViewHandler) ResumeQuickView(c *gin.Context) {
-	// 1. 解析路径参数
-	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		invalidEngineID(c)
-		return
-	}
-
-	schema := c.Param("schema")
-	table := c.Param("table")
-
-	// 2. 获取租户ID
-	tenantID := uint(1) // TODO: 从JWT或context中获取
-	if val, exists := c.Get("tenant_id"); exists {
-		if tid, ok := val.(uint); ok {
-			tenantID = tid
-		}
-	}
-
-	// 3. 恢复任务
-	if err := h.service.ResumeQuickView(c.Request.Context(), tenantID, uint(engineID), schema, table); err != nil {
-		logger.L().Error("Failed to resume quick view", "error", err)
-		quickViewError(c, err)
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Quick view task resumed successfully",
-	})
-}
-
-// ListQuickViewTasks 列出所有快显任务
-// GET /api/quick-view/tasks
-// @Summary 列出快显任务 | List quick view tasks
-// @Description 列出所有快显缓存生成任务，支持按状态和引擎过滤 | List all quick view cache generation tasks with optional filtering
-// @Tags Manager
-// @Produce json
-// @Param page query int false "页码，默认1 | Page number, default 1"
-// @Param page_size query int false "每页数量，默认10 | Page size, default 10"
-// @Param status query string false "状态过滤 | Filter by status"
-// @Param engine_id query int false "存储引擎ID过滤 | Filter by engine ID"
-// @Success 200 {object} map[string]interface{} "快显任务列表 | Quick view task list"
-// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /quick-view/tasks [get]
-// @Security BearerAuth
-func (h *QuickViewHandler) ListQuickViewTasks(c *gin.Context) {
-	// 1. 解析查询参数
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
-	status := c.Query("status")
-	engineIDStr := c.Query("engine_id")
-
-	var engineID uint
-	if engineIDStr != "" {
-		rid, err := strconv.ParseUint(engineIDStr, 10, 32)
-		if err == nil {
-			engineID = uint(rid)
-		}
-	}
-
-	// 2. 获取租户ID
-	tenantID := uint(1) // TODO: 从JWT或context中获取
-	if val, exists := c.Get("tenant_id"); exists {
-		if tid, ok := val.(uint); ok {
-			tenantID = tid
-		}
-	}
-
-	// 3. 查询任务列表
-	params := repository.ListParams{
-		Status:   status,
-		EngineID: engineID,
-		Page:     page,
-		PageSize: pageSize,
-	}
-
-	tasks, total, err := h.service.ListAll(c.Request.Context(), tenantID, params)
-	if err != nil {
-		logger.L().Error("Failed to list quick view tasks", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"data":      tasks,
-		"total":     total,
-		"page":      page,
-		"page_size": pageSize,
-	})
-}
-
-// GetStatistics 获取快显统计信息
-// GET /api/quick-view/statistics
-// @Summary 获取快显统计信息 | Get quick view statistics
-// @Description 获取快显缓存的整体统计信息（任务数量、缓存大小等）| Get overall quick view cache statistics
-// @Tags Manager
-// @Produce json
-// @Success 200 {object} map[string]interface{} "统计信息 | Statistics"
-// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /quick-view/statistics [get]
-// @Security BearerAuth
-func (h *QuickViewHandler) GetStatistics(c *gin.Context) {
-	// 1. 获取租户ID
-	tenantID := uint(1) // TODO: 从JWT或context中获取
-	if val, exists := c.Get("tenant_id"); exists {
-		if tid, ok := val.(uint); ok {
-			tenantID = tid
-		}
-	}
-
-	// 2. 查询统计信息
-	stats, err := h.service.GetStatistics(c.Request.Context(), tenantID)
-	if err != nil {
-		logger.L().Error("Failed to get statistics", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, stats)
-}
-
-// UpdatePreferredMode 更新用户偏好的显示模式
-// PATCH /api/manager/engines/:id/spatial/:schema/:table/pre-cache/mode
-// @Summary 更新显示模式偏好 | Update preferred display mode
-// @Description 更新指定空间数据项（关系表）的用户偏好显示模式（geojson或mvt）| Update preferred display mode for a spatial item (geojson or mvt)
-// @Tags Manager
-// @Accept json
-// @Produce json
-// @Param id path int true "存储引擎ID | Engine ID"
-// @Param schema path string true "Schema | Schema"
-// @Param table path string true "数据项名称 | Item name"
 // @Param body body UpdatePreferredModeRequest true "显示模式配置 | Display mode configuration"
 // @Success 200 {object} map[string]interface{} "更新成功 | Updated successfully"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Failure 404 {object} map[string]interface{} "记录不存在 | Record not found"
-// @Router /engines/{id}/spatial/{schema}/{table}/quick-view/preferred-mode [patch]
+// @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
+// @Router /quick-view/preferred-mode [patch]
 // @Security BearerAuth
-func (h *QuickViewHandler) UpdatePreferredMode(c *gin.Context) {
-	// 1. 解析路径参数
-	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		invalidEngineID(c)
-		return
-	}
-
-	schema := c.Param("schema")
-	table := c.Param("table")
-
-	if schema == "" || table == "" {
-		managerError(c, http.StatusBadRequest, manageri18n.MsgSchemaAndTableRequired)
-		return
-	}
-
-	// 2. 解析请求体
+func (h *QuickViewHandler) UpdatePreferredModeByLocator(c *gin.Context) {
 	var req UpdatePreferredModeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		managerErrorWithDetail(c, http.StatusBadRequest, manageri18n.MsgInvalidRequestBody, err.Error())
 		return
 	}
-
-	// 3. 获取租户ID
-	tenantID := uint(1)
-	if val, exists := c.Get("tenant_id"); exists {
-		if tid, ok := val.(uint); ok {
-			tenantID = tid
-		}
-	}
-
-	// 4. 调用服务层更新
-	if err := h.service.UpdatePreferredMode(
-		c.Request.Context(),
-		tenantID,
-		uint(engineID),
-		schema,
-		table,
-		req.PreferredMode,
-	); err != nil {
-		logger.L().Error("Failed to update preferred mode", "error", err)
-		quickViewError(c, err)
+	locator := strings.TrimSpace(req.Locator)
+	if locator == "" {
+		missingLocator(c)
 		return
 	}
-
+	tenantID := tenantIDFromContext(c)
+	capability, err := h.quickViewCapabilityForLocator(c.Request.Context(), tenantID, locator)
+	if err != nil {
+		quickViewLocatorError(c, err)
+		return
+	}
+	identity := service.QuickViewIdentity{
+		TenantID:        capability.TenantID,
+		Locator:         capability.Locator,
+		ItemFingerprint: capability.ItemFingerprint,
+	}
+	if err := h.service.UpdatePreferredModeByIdentity(c.Request.Context(), identity, req.PreferredMode, func(ctx context.Context) (*service.QuickViewCapability, error) {
+		return capability, nil
+	}); err != nil {
+		quickViewLocatorError(c, err)
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"message":        "Preferred mode updated successfully",
 		"preferred_mode": req.PreferredMode,
 	})
 }
 
-// CheckPreparation 检查准备状态（诊断，如果通过则创建快显表记录）
-// GET /api/manager/engines/:id/spatial/:schema/:table/pre-cache/check
-// @Summary 检查快显准备状态 | Check quick view preparation status
-// @Description 检查空间数据项（关系表）的快显准备状态，通过则自动创建快显记录 | Check preparation status for quick view, auto-create record if passed
+// GetQuickViewGeoJSONByLocator 获取统一 GeoJSON 快显数据
+// @Summary 获取统一 GeoJSON 快显数据 | Get unified quick-view GeoJSON
+// @Description 以 Resource Locator 为身份返回标准 GeoJSON FeatureCollection。内部按引擎和格式分派，但响应必须是 GeoJSON。 | Return a standard GeoJSON FeatureCollection by Resource Locator. The backend dispatches by engine and format internally, but the response is always GeoJSON.
 // @Tags Manager
 // @Produce json
-// @Param id path int true "存储引擎ID | Engine ID"
-// @Param schema path string true "Schema | Schema"
-// @Param table path string true "数据项名称 | Item name"
-// @Success 200 {object} map[string]interface{} "准备状态信息 | Preparation status"
+// @Param locator query string true "资源定位符URI | Resource locator URI"
+// @Param page query int false "页码，默认1 | Page number, default 1"
+// @Param page_size query int false "每页数量，默认1000，最大2000 | Page size, default 1000, max 2000"
+// @Param geometry_column query string false "几何列名 | Geometry column"
+// @Success 200 {object} map[string]interface{} "GeoJSON FeatureCollection"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
+// @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /engines/{id}/spatial/{schema}/{table}/quick-view/check-preparation [get]
+// @Router /quick-view/geojson [get]
 // @Security BearerAuth
-func (h *QuickViewHandler) CheckPreparation(c *gin.Context) {
-	// 1. 解析路径参数
-	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+func (h *QuickViewHandler) GetQuickViewGeoJSONByLocator(c *gin.Context) {
+	locator := strings.TrimSpace(c.Query("locator"))
+	if locator == "" {
+		missingLocator(c)
+		return
+	}
+	page := positiveIntQuery(c, "page", 1, 1, 0)
+	pageSize := positiveIntQuery(c, "page_size", 1000, 1, 2000)
+	result, err := h.previewResolver.PreviewFromURIWithSelection(c.Request.Context(), locator, page, pageSize, "", "", "", plugin.GraphSampleFilter{}, tenantIDFromContext(c))
 	if err != nil {
-		invalidEngineID(c)
+		quickViewLocatorError(c, err)
 		return
 	}
-
-	schema := c.Param("schema")
-	table := c.Param("table")
-
-	if schema == "" || table == "" {
-		managerError(c, http.StatusBadRequest, manageri18n.MsgSchemaAndTableRequired)
+	tablePreview, _ := result.Data.(*models.TablePreview)
+	if tablePreview == nil {
+		managerError(c, http.StatusBadRequest, manageri18n.MsgQuickViewGeometryMissing)
 		return
 	}
-
-	// 2. 获取租户ID
-	tenantID := uint(1)
-	if val, exists := c.Get("tenant_id"); exists {
-		if tid, ok := val.(uint); ok {
-			tenantID = tid
-		}
-	}
-
-	// 3. 执行准备检查（如果通过，Service 层会自动创建快显表记录）
-	prepStatus, err := h.service.RunPreparationChecks(
-		c.Request.Context(),
-		tenantID,
-		uint(engineID),
-		schema,
-		table,
-	)
+	geojson, err := quickViewFeatureCollection(result, tablePreview, strings.TrimSpace(c.Query("geometry_column")))
 	if err != nil {
-		logger.L().Error("Failed to run preparation checks", "error", err)
-		quickViewError(c, err)
+		quickViewLocatorError(c, err)
 		return
 	}
-
-	// 4. 返回准备状态
-	c.JSON(http.StatusOK, prepStatus)
+	c.JSON(http.StatusOK, geojson)
 }
 
-// PrepareForCreateMVT 启动准备工作任务
-// POST /api/manager/engines/:id/spatial/:schema/:table/pre-cache/prepare
-// @Summary 启动MVT准备工作 | Start MVT preparation
-// @Description 启动空间数据项（关系表）的MVT瓦片生成准备工作（如创建空间索引等）| Start MVT tile generation preparation work (e.g. creating spatial indexes)
+// GetQuickViewTileByLocator 获取统一 MVT 快显瓦片
+// @Summary 获取统一 MVT 快显瓦片 | Get unified quick-view MVT tile
+// @Description 以 Resource Locator 为身份返回 MVT 瓦片。第一阶段动态 MVT 仅支持 PostGIS item，其他 item 需先生成瓦片缓存。 | Return an MVT tile by Resource Locator. In phase one, realtime MVT supports PostGIS items; other items require tile cache generation first.
 // @Tags Manager
-// @Produce json
-// @Param id path int true "存储引擎ID | Engine ID"
-// @Param schema path string true "Schema | Schema"
-// @Param table path string true "数据项名称 | Item name"
-// @Success 200 {object} map[string]interface{} "准备工作已启动 | Preparation started"
+// @Produce application/vnd.mapbox-vector-tile
+// @Param locator query string true "资源定位符URI | Resource locator URI"
+// @Param z path int true "缩放级别 | Zoom"
+// @Param x path int true "瓦片X坐标 | Tile X"
+// @Param y path int true "瓦片Y坐标 | Tile Y"
+// @Param geometry_column query string false "几何列名 | Geometry column"
+// @Param cols query string false "返回列，逗号分隔 | Return columns, comma-separated"
+// @Success 200 "MVT瓦片数据 | MVT tile data"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /engines/{id}/spatial/{schema}/{table}/quick-view/prepare [post]
+// @Router /quick-view/tiles/{z}/{x}/{y}.mvt [get]
 // @Security BearerAuth
-func (h *QuickViewHandler) PrepareForCreateMVT(c *gin.Context) {
-	// 1. 解析路径参数
-	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+func (h *QuickViewHandler) GetQuickViewTileByLocator(c *gin.Context) {
+	if h.mvtService == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "MVT service is not initialized"})
+		return
+	}
+	locator := strings.TrimSpace(c.Query("locator"))
+	if locator == "" {
+		missingLocator(c)
+		return
+	}
+	source, err := h.quickViewSourceForLocator(c.Request.Context(), tenantIDFromContext(c), locator)
 	if err != nil {
-		invalidEngineID(c)
+		quickViewLocatorError(c, err)
 		return
 	}
-
-	schema := c.Param("schema")
-	table := c.Param("table")
-
-	if schema == "" || table == "" {
-		managerError(c, http.StatusBadRequest, manageri18n.MsgSchemaAndTableRequired)
+	if !source.CanTile || source.EngineID == 0 || source.Schema == "" || source.Table == "" || source.SpatialMeta == nil {
+		managerError(c, http.StatusBadRequest, manageri18n.MsgQuickViewGeometryMissing)
 		return
 	}
-
-	// 2. 获取租户ID
-	tenantID := uint(1)
-	if val, exists := c.Get("tenant_id"); exists {
-		if tid, ok := val.(uint); ok {
-			tenantID = tid
-		}
+	z := positivePathInt(c, "z", 0, 22)
+	x := positivePathInt(c, "x", 0, 0)
+	y := positivePathInt(c, "y", 0, 0)
+	if c.IsAborted() {
+		return
 	}
-
-	// 3. 启动准备工作
-	fingerprint, err := h.service.PrepareForCreateMVT(
+	tenantID := tenantIDFromContext(c)
+	if tenantID == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "tenant_id is required for MVT tile access"})
+		return
+	}
+	geomCol := strings.TrimSpace(c.Query("geometry_column"))
+	if geomCol == "" {
+		geomCol = source.SpatialMeta.GeomColumn
+	}
+	srid := source.SpatialMeta.SRID
+	cols := csvQuery(c.Query("cols"))
+	response, err := h.mvtService.GetTile(
 		c.Request.Context(),
 		tenantID,
-		uint(engineID),
-		schema,
-		table,
+		source.EngineID,
+		source.Schema,
+		source.Table,
+		geomCol,
+		cols,
+		z, x, y,
+		srid,
 	)
 	if err != nil {
-		logger.L().Error("Failed to start preparation", "error", err)
-		quickViewError(c, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	c.Header("Content-Type", "application/vnd.mapbox-vector-tile")
+	c.Header("Access-Control-Expose-Headers", "X-ADDP-Render-Source, X-ADDP-Tile-Cache, X-ADDP-Tile-Cache-ID, X-Cache-Status, X-Generation-Time, Content-Length")
+	renderSource := strings.TrimSpace(response.RenderSource)
+	if renderSource == "" {
+		renderSource = service.QuickViewRenderSourceRealtimeTile
+	}
+	c.Header("X-ADDP-Render-Source", renderSource)
+	if response.TileCacheID != nil {
+		c.Header("X-ADDP-Tile-Cache-ID", strconv.FormatUint(uint64(*response.TileCacheID), 10))
+	}
+	if response.FromCache {
+		c.Header("Content-Encoding", "gzip")
+		c.Header("Cache-Control", "public, max-age=86400")
+		c.Header("X-Cache-Status", "HIT")
+		c.Header("X-ADDP-Tile-Cache", "HIT")
+	} else {
+		c.Header("Cache-Control", "public, max-age=60")
+		c.Header("X-Cache-Status", "MISS")
+		c.Header("X-ADDP-Tile-Cache", "MISS")
+		c.Header("X-Generation-Time", response.Duration.String())
+	}
+	c.Data(http.StatusOK, "application/vnd.mapbox-vector-tile", response.Data)
+}
 
-	// 4. 返回任务信息
-	c.JSON(http.StatusOK, gin.H{
-		"status":      "preparing",
-		"message":     "准备工作已启动",
-		"fingerprint": fingerprint,
-	})
+func (h *QuickViewHandler) quickViewCapabilityForLocator(ctx context.Context, tenantID *uint, locator string) (*service.QuickViewCapability, error) {
+	source, err := h.quickViewSourceForLocator(ctx, tenantID, locator)
+	if err != nil {
+		return nil, err
+	}
+	capability, err := h.service.BuildCapabilityFromSource(ctx, source)
+	if err != nil {
+		return nil, err
+	}
+	applyLocatorQuickViewURLs(capability)
+	return capability, nil
+}
+
+func (h *QuickViewHandler) quickViewSourceForLocator(ctx context.Context, tenantID *uint, locator string) (service.QuickViewSource, error) {
+	if h.previewResolver == nil {
+		return service.QuickViewSource{}, errors.New("preview resolver not initialized")
+	}
+	result, err := h.previewResolver.PreviewFromURIWithSelection(ctx, locator, 1, 1, "", "", "", plugin.GraphSampleFilter{}, tenantID)
+	if err != nil {
+		return service.QuickViewSource{}, err
+	}
+	tablePreview, _ := result.Data.(*models.TablePreview)
+	source := quickViewSourceFromPreview(locator, tenantID, result, tablePreview)
+	return source, nil
+}
+
+func quickViewSourceFromPreview(locator string, tenantID *uint, result *preview.PreviewResult, tablePreview *models.TablePreview) service.QuickViewSource {
+	storageTenantID := uint(0)
+	if tenantID != nil {
+		storageTenantID = *tenantID
+	}
+	source := service.QuickViewSource{
+		Identity: service.QuickViewIdentity{
+			TenantID: storageTenantID,
+			Locator:  locator,
+		},
+		DirectGeoJSON: true,
+		GeoJSONURL:    locatorQuickViewGeoJSONURL(locator, tablePreview),
+	}
+	if tablePreview == nil {
+		return source
+	}
+	source.EngineID = tablePreview.EngineID
+	source.Schema = tablePreview.Schema
+	source.Table = tablePreview.Table
+	if result != nil && result.Metadata != nil {
+		source.Identity.Locator = result.Metadata.Locator
+		source.Identity.ItemFingerprint = strings.TrimSpace(result.Metadata.ItemFingerprint)
+		source.GeoJSONURL = locatorQuickViewGeoJSONURL(source.Identity.Locator, tablePreview)
+	}
+	source.CanTile = strings.EqualFold(strings.TrimSpace(tablePreview.EngineType), "postgresql") &&
+		strings.TrimSpace(tablePreview.Schema) != "" &&
+		strings.TrimSpace(tablePreview.Table) != ""
+	geometryColumn := strings.TrimSpace(tablePreview.GeometryColumn)
+	if geometryColumn == "" && len(tablePreview.GeometryColumns) > 0 {
+		geometryColumn = strings.TrimSpace(tablePreview.GeometryColumns[0])
+	}
+	sourceSRID := tablePreview.SourceSRID
+	if sourceSRID == 0 {
+		sourceSRID = tablePreview.SRID
+	}
+	extentSRID := tablePreview.SRID
+	if extentSRID == 0 {
+		extentSRID = sourceSRID
+	}
+	source.SpatialMeta = &service.SpatialMetadataResult{
+		GeomColumn:      geometryColumn,
+		GeometryColumns: tablePreview.GeometryColumns,
+		SRID:            sourceSRID,
+		ExtentSRID:      extentSRID,
+		Extent:          tablePreview.Extent,
+		RecordCount:     int64(tablePreview.Total),
+	}
+	return source
+}
+
+func locatorQuickViewGeoJSONURL(locator string, tablePreview *models.TablePreview) string {
+	values := url.Values{}
+	values.Set("locator", strings.TrimSpace(locator))
+	values.Set("page", "1")
+	pageSize := 1
+	if tablePreview != nil && tablePreview.Total > 0 {
+		pageSize = tablePreview.Total
+	}
+	values.Set("page_size", strconv.Itoa(pageSize))
+	if tablePreview != nil && strings.TrimSpace(tablePreview.GeometryColumn) != "" {
+		values.Set("geometry_column", strings.TrimSpace(tablePreview.GeometryColumn))
+	}
+	return "/api/v1/manager/quick-view/geojson?" + values.Encode()
+}
+
+func locatorQuickViewTileURL(locator string) string {
+	values := url.Values{}
+	values.Set("locator", strings.TrimSpace(locator))
+	return "/api/v1/manager/quick-view/tiles/{z}/{x}/{y}.mvt?" + values.Encode()
+}
+
+func applyLocatorQuickViewURLs(capability *service.QuickViewCapability) {
+	if capability == nil || strings.TrimSpace(capability.Locator) == "" {
+		return
+	}
+	switch capability.RenderSource {
+	case service.QuickViewRenderSourceDirectGeoJSON:
+		if capability.QuickView.GeoJSONURL == "" {
+			capability.QuickView.GeoJSONURL = locatorQuickViewGeoJSONURL(capability.Locator, nil)
+		}
+	case service.QuickViewRenderSourceRealtimeTile, service.QuickViewRenderSourceCachedTile:
+		capability.QuickView.TileURLTemplate = locatorQuickViewTileURL(capability.Locator)
+	}
+}
+
+func quickViewFeatureCollection(result *preview.PreviewResult, tablePreview *models.TablePreview, requestedGeometryColumn string) (gin.H, error) {
+	geometryColumn := strings.TrimSpace(requestedGeometryColumn)
+	if geometryColumn == "" {
+		geometryColumn = strings.TrimSpace(tablePreview.GeometryColumn)
+	}
+	if geometryColumn == "" && len(tablePreview.GeometryColumns) > 0 {
+		geometryColumn = strings.TrimSpace(tablePreview.GeometryColumns[0])
+	}
+	if geometryColumn == "" {
+		return nil, service.ErrQuickViewGeometryColumnNotFound
+	}
+
+	features := make([]gin.H, 0, len(tablePreview.Rows))
+	for _, row := range tablePreview.Rows {
+		geometry, ok := quickViewGeoJSONGeometry(row[geometryColumn])
+		if !ok {
+			continue
+		}
+		properties := gin.H{}
+		for key, value := range row {
+			if strings.EqualFold(strings.TrimSpace(key), geometryColumn) {
+				continue
+			}
+			properties[key] = value
+		}
+		features = append(features, gin.H{
+			"type":       "Feature",
+			"geometry":   geometry,
+			"properties": properties,
+		})
+	}
+
+	locator := ""
+	itemFingerprint := ""
+	if result != nil && result.Metadata != nil {
+		locator = result.Metadata.Locator
+		itemFingerprint = result.Metadata.ItemFingerprint
+	}
+	sourceSRID := tablePreview.SourceSRID
+	if sourceSRID == 0 {
+		sourceSRID = tablePreview.SRID
+	}
+	sourceCRS := strings.TrimSpace(tablePreview.SourceCRS)
+	sourceCRSDefinition := tablePreview.SourceCRSDefinition
+	metadata := spatialPreviewContract(geometryColumn, sourceSRID, sourceCRS, sourceCRSDefinition)
+	metadata["locator"] = locator
+	metadata["item_fingerprint"] = itemFingerprint
+
+	return gin.H{
+		"type":     "FeatureCollection",
+		"features": features,
+		"metadata": metadata,
+		"pagination": gin.H{
+			"page":      tablePreview.Page,
+			"page_size": tablePreview.PageSize,
+			"total":     tablePreview.Total,
+		},
+	}, nil
+}
+
+func quickViewGeoJSONGeometry(value interface{}) (gin.H, bool) {
+	switch typed := value.(type) {
+	case nil:
+		return nil, false
+	case map[string]interface{}:
+		if quickViewIsGeoJSONGeometry(typed) {
+			return typed, true
+		}
+		if strings.EqualFold(strings.TrimSpace(stringValue(typed["type"])), "Feature") {
+			if geometry, ok := typed["geometry"].(map[string]interface{}); ok && quickViewIsGeoJSONGeometry(geometry) {
+				return geometry, true
+			}
+		}
+	case string:
+		text := strings.TrimSpace(typed)
+		if text == "" {
+			return nil, false
+		}
+		var parsed map[string]interface{}
+		if strings.HasPrefix(text, "{") {
+			if err := json.Unmarshal([]byte(text), &parsed); err == nil {
+				return quickViewGeoJSONGeometry(parsed)
+			}
+		}
+		geometry, err := commonSpatial.ParseGeometryText(text)
+		if err != nil {
+			return nil, false
+		}
+		encoded, err := geomGeoJSON.Encode(geometry)
+		if err != nil || encoded == nil {
+			return nil, false
+		}
+		data, err := json.Marshal(encoded)
+		if err != nil {
+			return nil, false
+		}
+		var out gin.H
+		if err := json.Unmarshal(data, &out); err != nil {
+			return nil, false
+		}
+		return out, true
+	case []byte:
+		geometry, err := commonSpatial.ParseGeometryBytes(typed)
+		if err != nil {
+			return nil, false
+		}
+		encoded, err := geomGeoJSON.Encode(geometry)
+		if err != nil || encoded == nil {
+			return nil, false
+		}
+		data, err := json.Marshal(encoded)
+		if err != nil {
+			return nil, false
+		}
+		var out gin.H
+		if err := json.Unmarshal(data, &out); err != nil {
+			return nil, false
+		}
+		return out, true
+	}
+	return nil, false
+}
+
+func quickViewIsGeoJSONGeometry(value map[string]interface{}) bool {
+	typeName := strings.TrimSpace(stringValue(value["type"]))
+	switch typeName {
+	case "Point", "MultiPoint", "LineString", "MultiLineString", "Polygon", "MultiPolygon":
+		_, ok := value["coordinates"]
+		return ok
+	case "GeometryCollection":
+		_, ok := value["geometries"]
+		return ok
+	default:
+		return false
+	}
+}
+
+func positiveIntQuery(c *gin.Context, name string, defaultValue, minValue, maxValue int) int {
+	value := defaultValue
+	if raw := strings.TrimSpace(c.Query(name)); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil {
+			value = parsed
+		}
+	}
+	if value < minValue {
+		value = minValue
+	}
+	if maxValue > 0 && value > maxValue {
+		value = maxValue
+	}
+	return value
+}
+
+func positivePathInt(c *gin.Context, name string, minValue, maxValue int) int {
+	parsed, err := strconv.Atoi(strings.TrimSpace(c.Param(name)))
+	if err != nil || parsed < minValue || (maxValue > 0 && parsed > maxValue) {
+		managerError(c, http.StatusBadRequest, "invalid "+name)
+		c.Abort()
+		return 0
+	}
+	return parsed
+}
+
+func csvQuery(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if item := strings.TrimSpace(part); item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+func stringValue(value interface{}) string {
+	if value == nil {
+		return ""
+	}
+	if text, ok := value.(string); ok {
+		return text
+	}
+	return ""
 }

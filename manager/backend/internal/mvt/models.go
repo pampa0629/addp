@@ -24,10 +24,15 @@ type ZoomLevelStats struct {
 type QuickViewMetadata struct {
 	EngineID         uint                      `json:"engine_id"`
 	Fingerprint      string                    `json:"fingerprint"`
+	TileFormat       string                    `json:"tile_format"`
+	StorageRef       string                    `json:"storage_ref"`
+	ObjectPrefix     string                    `json:"object_prefix"`
+	ConfigHash       string                    `json:"config_hash,omitempty"`
 	TableName        string                    `json:"table_name"`
 	Schema           string                    `json:"schema"`
 	Extent           []float64                 `json:"extent"` // [minLng, minLat, maxLng, maxLat]
 	SRID             int                       `json:"srid"`
+	MinZoom          int                       `json:"min_zoom"`
 	RowCount         int64                     `json:"row_count"`
 	GeometryTypes    []string                  `json:"geometry_types"`
 	ZoomLevels       map[string]ZoomLevelStats `json:"zoom_levels"` // "0", "1", ... "maxZoom"

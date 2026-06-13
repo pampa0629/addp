@@ -62,7 +62,7 @@ type EmbeddingTask struct {
 	// 任务基本信息
 	Name        string `gorm:"size:255;not null" json:"name"`
 	Description string `gorm:"type:text" json:"description,omitempty"`
-	Enabled     bool   `gorm:"default:true" json:"enabled"`
+	Enabled     bool   `json:"enabled"`
 
 	// 最近一次执行信息（回写）
 	LastExecutionID     *string    `gorm:"size:36" json:"last_execution_id,omitempty"`

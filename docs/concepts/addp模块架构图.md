@@ -54,7 +54,6 @@ graph TB
     subgraph "Worker运行时"
         TransferWorker[Transfer Worker<br/>异步任务处理]
         MetaWorker[Meta Worker<br/>扫描任务处理]
-        ManagerWorker[Manager Worker<br/>瓦片缓存生成]
     end
 
     subgraph "共享模块"
@@ -118,10 +117,8 @@ graph TB
 
     Transfer --> TransferWorker
     Meta --> MetaWorker
-    Manager --> ManagerWorker
     TransferWorker --> Redis
     MetaWorker --> Redis
-    ManagerWorker --> Redis
 
     Develop --> PyWorkflow
     Develop --> SparkWorkflow
@@ -138,7 +135,7 @@ graph TB
     class Console,SystemFE,ManagerFE,MetaFE,TransferFE,OrchestratorFE,DevelopFE,ServiceFE,MonitorFE frontend
     class Gateway gateway
     class System,Manager,Meta,Transfer,Orchestrator,Develop,Service,Monitor backend
-    class TransferWorker,MetaWorker,ManagerWorker worker
+    class TransferWorker,MetaWorker worker
     class Common,CommonFE shared
     class PyWorkflow,SparkWorkflow,Jupyter engine
     class PostgreSQL,Redis,MinIO,Meilisearch infra
@@ -151,7 +148,7 @@ graph TB
 - **Worker运行时**: 独立的后台任务处理进程
   - **Transfer Worker**: 基于 Asynq 的异步任务队列,处理 Transfer 内部异步传输作业；统一任务体系阶段 1 只暴露 `task_type=import`
   - **Meta Worker**: 基于 Asynq 的扫描任务处理,执行元数据扫描和索引
-  - **Manager Worker**: 基于 Asynq 的瓦片缓存生成,批量生成空间数据 Quick View 缓存
+- **Manager 瓦片缓存生成**: 当前 PostGIS + MVT 格式实现通过 Manager Backend 内的 `tile_cache_generation` 任务服务和调度器执行；任务定义为 `manager.tile_cache_tasks`，执行记录进入 `common.task_executions`，结果状态进入 `manager.tile_cache`。若后续瓦片缓存生成计算负载转移到 Manager 进程内、需要多执行器横向扩展，或引入专门 GIS 计算引擎，应将 `tile_cache_generation` 的唯一执行运行时切换为 Manager Worker 或 GIS 执行引擎，不允许 Backend 与 Worker 双轨并存。
 - **共享模块**: common 和 common-frontend 提供可复用的代码和组件
 - **计算引擎**: engines 目录下的内置计算引擎,由 Develop 模块调用
 - **基础设施层**: 共享的数据库、缓存、对象存储和搜索引擎
@@ -165,8 +162,7 @@ graph TB
 | **Console** | 控制台入口,集成所有模块功能 | 5170 / 80 | Vue 3, Vue Router |
 | **System** | 核心系统服务:用户认证、引擎管理、日志 | 8180 / 8180 | Go, Gin, GORM, JWT |
 | **Gateway** | API 网关,请求路由和转发 | 8000 / 8000 | Go, Gin |
-| **Manager** | 数据管理:数据存储目录展示、数据预览、MVT瓦片 | 8081 / 8081 | Go, Gin, OpenLayers |
-| **Manager Worker** | Manager 瓦片缓存生成器 | - | Go, Asynq Worker |
+| **Manager** | 数据管理:数据存储目录展示、数据预览、空间快显和瓦片缓存 | 8081 / 8081 | Go, Gin, OpenLayers |
 | **Meta** | 元数据服务:扫描、索引、搜索 | 8082 / 8082 | Go, Gin, Meilisearch, Cron |
 | **Meta Worker** | Meta 扫描任务处理器 | - | Go, Asynq Worker |
 | **Transfer** | 数据传输:导入、导出、同步任务 | 8083 / 8083 | Go, Gin, Asynq |
@@ -272,7 +268,7 @@ graph LR
 
 ## Worker 运行时
 
-ADDP 平台的部分模块拥有独立的 Worker 运行时进程,用于处理异步任务和后台作业:
+ADDP 平台的部分模块拥有独立的 Worker 运行时进程,用于处理异步任务和后台作业。Manager 当前没有独立 Worker；PostGIS + MVT 阶段的瓦片缓存生成由 Manager Backend 内部的任务服务和调度器执行 `tile_cache_generation`。若后续格式实现需要 Manager 进程内重计算、多执行器并发或独立资源隔离，应先把文档和任务运行时统一切换到 Manager Worker 或 GIS 执行引擎，再实现代码，不保留 Backend 与 Worker 双轨。
 
 ```mermaid
 graph TB
@@ -292,15 +288,13 @@ graph TB
 
     subgraph "Manager 模块"
         MB2[Manager Backend<br/>:8081]
-        MW2[Manager Worker<br/>瓦片缓存生成器]
-        MB2 -.入队.-> Redis3[Redis]
-        Redis3 -.消费.-> MW2
+        TCS[TileCacheTaskScheduler<br/>tile_cache_generation]
+        MB2 --> TCS
     end
 
     subgraph "任务队列 (Asynq)"
         Redis[(Redis<br/>任务队列)]
         Redis2[(Redis<br/>任务队列)]
-        Redis3[(Redis<br/>任务队列)]
     end
 
     TB --> PostgreSQL[(PostgreSQL)]
@@ -308,30 +302,33 @@ graph TB
     MB --> PostgreSQL2[(PostgreSQL)]
     MW --> PostgreSQL2
     MB2 --> PostgreSQL3[(PostgreSQL)]
-    MW2 --> PostgreSQL3
+    TCS --> PostgreSQL3
 
     classDef backend fill:#f3e5f5,stroke:#4a148c
     classDef worker fill:#ffe0b2,stroke:#e65100,stroke-width:2px
+    classDef scheduler fill:#e3f2fd,stroke:#0d47a1,stroke-width:2px
     classDef infra fill:#fce4ec,stroke:#880e4f
 
     class TB,MB,MB2 backend
-    class TW,MW,MW2 worker
-    class Redis,Redis2,Redis3,PostgreSQL,PostgreSQL2,PostgreSQL3 infra
+    class TW,MW worker
+    class TCS scheduler
+    class Redis,Redis2,PostgreSQL,PostgreSQL2,PostgreSQL3 infra
 ```
 
-**Worker 运行时说明**:
+**后台运行时说明**:
 
-| Worker | 所属模块 | 职责 | 技术栈 |
+| 运行时 | 所属模块 | 职责 | 技术栈 |
 |--------|---------|------|-------|
 | **Transfer Worker** | Transfer | 异步处理 Transfer 内部传输作业；统一任务体系阶段 1 只暴露 `task_type=import` | Go, Asynq, Redis |
 | **Meta Worker** | Meta | 异步处理元数据扫描和索引任务,支持定时调度 | Go, Asynq, Redis |
-| **Manager Worker** | Manager | 异步处理 Quick View 瓦片缓存批量生成,支持大规模空间数据预缓存 | Go, Asynq, Redis |
+| **TileCacheTaskScheduler** | Manager | 在 Manager Backend 内按 `manager.tile_cache_tasks.next_run_at` 触发 `tile_cache_generation`，执行记录写入 `common.task_executions` | Go, DB claim |
 
-**Asynq 任务队列架构**:
-- **队列优先级**: 每个 Worker 支持多优先级队列 (critical/default/low)
-- **重试机制**: 任务失败自动重试,支持指数退避
-- **并发控制**: 可配置 Worker 并发数,避免资源耗尽
-- **进度追踪**: 任务执行状态实时更新到 PostgreSQL
+**运行时说明**:
+- **Asynq 队列**: 当前用于 Transfer、Meta 等独立 Worker 场景。
+- **DB claim 调度**: Manager 瓦片缓存任务通过 `enabled + schedule + next_run_at` 轮询并 claim 到期任务。
+- **执行记录**: 各模块执行状态统一写入 `common.task_executions`。
+- **结果状态**: Manager 瓦片缓存结果状态写入 `manager.tile_cache`，不由 execution 替代。
+- **未来切换条件**: 当瓦片生成的主要计算不再由 PostGIS 承担，或 Manager API 响应因后台生成受影响，或需要多个执行器并行消费同一类任务时，`tile_cache_generation` 应切换到唯一的 Manager Worker 或 GIS 执行引擎运行时。
 
 ---
 
@@ -495,7 +492,7 @@ graph LR
 | 路径前缀 | 目标服务 | 端口 | 说明 |
 |---------|---------|------|------|
 | `/api/system/*` | System Backend | 8180 | 用户认证、引擎管理、日志 |
-| `/api/manager/*` | Manager Backend | 8081 | 数据管理、预览、MVT 瓦片 |
+| `/api/manager/*` | Manager Backend | 8081 | 数据管理、预览、空间快显和瓦片缓存 |
 | `/api/meta/*` | Meta Backend | 8082 | 元数据扫描、索引、搜索 |
 | `/api/transfer/*` | Transfer Backend | 8083 | 数据导入、导出、同步 |
 | `/api/orchestrator/*` | Orchestrator Backend | 8084 | 任务编排、调度 |
@@ -723,7 +720,7 @@ graph TB
         MetaT["Meta<br/>scan"]
         TransferT["Transfer<br/>import"]
         DevelopT["Develop<br/>query / workflow / script"]
-        ManagerT["Manager<br/>mvt_generation / embedding"]
+        ManagerT["Manager<br/>tile_cache_generation / embedding"]
         QualityT["Quality<br/>check"]
         GraphT["Graph<br/>kg_build"]
         OrchestratorT["Orchestrator<br/>orchestration"]
@@ -822,7 +819,7 @@ ADDP 平台各模块存在依赖关系，必须按以下顺序启动：
    └─ System Backend（认证中心、模块注册中心、引擎注册表）
 
 3. Go 业务模块层（可并行启动）
-   ├─ Manager Backend + Worker
+   ├─ Manager Backend
    ├─ Meta Backend + Worker
    ├─ Transfer Backend + Worker
    ├─ Orchestrator Backend

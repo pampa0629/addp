@@ -2,6 +2,7 @@ import { ref, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
 import AMapLoader from '@amap/amap-jsapi-loader'
 import { mapDisplayCoordinate, mapSourceCoordinate } from '../utils/gcj02'
+import { formatFeatureProperties } from '../utils/mapFormatters'
 
 const DEFAULT_CENTER = [104.0668, 30.5728]
 const POINT_STYLE = {
@@ -123,6 +124,24 @@ export function useGaodeMap(config, baseMapProfile = {}) {
     if (!callback) return
     const displayCoordinate = positionToArray(displayPosition)
     callback(feature, toSourceCoordinate(displayCoordinate), displayPosition)
+  }
+
+  const getFeatureKey = (feature) => (
+    feature?.properties?.__rowKey ||
+    feature?.properties?.id ||
+    feature?.properties?.ID ||
+    feature?.properties?.uuid ||
+    feature?.id
+  )
+
+  const handleOverlayClick = (feature, position, options = {}) => {
+    highlightFeatureByKey(getFeatureKey(feature))
+    const content = formatFeatureProperties({
+      ...(feature?.properties || {}),
+      geometry: feature?.geometry
+    }, options.popupOptions || {})
+    showPopup(content, position)
+    emitFeatureClick(options.onFeatureClick, feature, position)
   }
 
   const updateViewState = () => {
@@ -268,11 +287,7 @@ export function useGaodeMap(config, baseMapProfile = {}) {
 
   const registerFeatureOverlay = (feature, overlay) => {
     if (!feature || !overlay) return
-    const rowKey =
-      feature?.properties?.__rowKey ||
-      feature?.properties?.id ||
-      feature?.properties?.ID ||
-      feature?.id
+    const rowKey = getFeatureKey(feature)
     if (!rowKey) return
     if (!featureOverlayMap.has(rowKey)) {
       featureOverlayMap.set(rowKey, [])
@@ -301,12 +316,7 @@ export function useGaodeMap(config, baseMapProfile = {}) {
           if (marker) {
             newOverlays.push(marker)
             registerFeatureOverlay(feature, marker)
-            if (options.onFeatureClick) {
-              marker.on('click', () => {
-                highlightFeatureByKey(feature?.properties?.__rowKey || feature?.properties?.id || feature?.properties?.ID || feature?.id)
-                emitFeatureClick(options.onFeatureClick, feature, marker.getPosition())
-              })
-            }
+            marker.on('click', () => handleOverlayClick(feature, marker.getPosition(), options))
           }
           break
         }
@@ -316,12 +326,7 @@ export function useGaodeMap(config, baseMapProfile = {}) {
             if (marker) {
               newOverlays.push(marker)
               registerFeatureOverlay(feature, marker)
-              if (options.onFeatureClick) {
-                marker.on('click', () => {
-                  highlightFeatureByKey(feature?.properties?.__rowKey || feature?.properties?.id || feature?.properties?.ID || feature?.id)
-                  emitFeatureClick(options.onFeatureClick, feature, marker.getPosition())
-                })
-              }
+              marker.on('click', () => handleOverlayClick(feature, marker.getPosition(), options))
             }
           })
           break
@@ -332,12 +337,7 @@ export function useGaodeMap(config, baseMapProfile = {}) {
           if (polyline) {
             newOverlays.push(polyline)
             registerFeatureOverlay(feature, polyline)
-            if (options.onFeatureClick) {
-              polyline.on('click', (e) => {
-                highlightFeatureByKey(feature?.properties?.__rowKey || feature?.properties?.id || feature?.properties?.ID || feature?.id)
-                emitFeatureClick(options.onFeatureClick, feature, e.lnglat)
-              })
-            }
+            polyline.on('click', (e) => handleOverlayClick(feature, e.lnglat, options))
           }
           break
         }
@@ -348,12 +348,7 @@ export function useGaodeMap(config, baseMapProfile = {}) {
             if (polyline) {
               newOverlays.push(polyline)
               registerFeatureOverlay(feature, polyline)
-              if (options.onFeatureClick) {
-                polyline.on('click', (e) => {
-                  highlightFeatureByKey(feature?.properties?.__rowKey || feature?.properties?.id || feature?.properties?.ID || feature?.id)
-                  emitFeatureClick(options.onFeatureClick, feature, e.lnglat)
-                })
-              }
+              polyline.on('click', (e) => handleOverlayClick(feature, e.lnglat, options))
             }
           })
           break
@@ -364,12 +359,7 @@ export function useGaodeMap(config, baseMapProfile = {}) {
           if (polygon) {
             newOverlays.push(polygon)
             registerFeatureOverlay(feature, polygon)
-            if (options.onFeatureClick) {
-              polygon.on('click', (e) => {
-                highlightFeatureByKey(feature?.properties?.__rowKey || feature?.properties?.id || feature?.properties?.ID || feature?.id)
-                emitFeatureClick(options.onFeatureClick, feature, e.lnglat)
-              })
-            }
+            polygon.on('click', (e) => handleOverlayClick(feature, e.lnglat, options))
           }
           break
         }
@@ -380,12 +370,7 @@ export function useGaodeMap(config, baseMapProfile = {}) {
             if (polygon) {
               newOverlays.push(polygon)
               registerFeatureOverlay(feature, polygon)
-              if (options.onFeatureClick) {
-                polygon.on('click', (e) => {
-                  highlightFeatureByKey(feature?.properties?.__rowKey || feature?.properties?.id || feature?.properties?.ID || feature?.id)
-                  emitFeatureClick(options.onFeatureClick, feature, e.lnglat)
-                })
-              }
+              polygon.on('click', (e) => handleOverlayClick(feature, e.lnglat, options))
             }
           })
           break

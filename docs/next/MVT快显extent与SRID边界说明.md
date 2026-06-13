@@ -1,6 +1,6 @@
 # MVT 快显 extent 与 SRID 边界说明
 
-> 相关上层专题：[Manager 快显与 MVT 瓦片缓存概念设计](Manager快显与MVT瓦片缓存概念设计.md)。
+> 相关上层原则：[Manager 快显与瓦片缓存概念原则](Manager快显与瓦片缓存概念原则.md)。实现备查见 [Manager 快显现状调研和问题记录](Manager快显现状调研和问题记录.md)。
 
 ## 背景
 
@@ -16,7 +16,7 @@ MVT / Quick View 是另一条路径：它服务地图快显、瓦片生成、缓
    - 如果不能轻量获得原生 extent，应省略或写 `null`。
 
 2. MVT / Quick View extent 是派生事实。
-   - 只服务瓦片快显、TileConfig、缓存和 zoom 计算。
+   - 只服务瓦片快显、快显渲染信息、缓存和 zoom 计算。
    - 可以有自己的 `extent`、`extent_srid`、`target_srid`、`transform_status`、`transform_engine`。
    - 不得写回 `capabilities.spatial`。
 
@@ -33,7 +33,7 @@ MVT / Quick View 是另一条路径：它服务地图快显、瓦片生成、缓
 |---|---|---|
 | `manager.quick_view.extent` / `extent_srid` | Quick View 快照范围及其 SRID | 目前字段注释仍倾向 `[minLng, minLat, maxLng, maxLat]` 和默认 4326，容易与源事实混淆。 |
 | `QuickViewService.GetSpatialMetadataFromMeta` | 从 Meta 空间响应取 extent 和 `ExtentSRID` 写入 QuickView | Meta 标准 attributes 已不应有 `extent_srid`，但 GIS-facing API 仍有 `ExtentSRID` DTO，需要专题重新定义来源。 |
-| `TileConfigHandler.GetTileConfig` | 优先用 QuickView extent，否则调用 `spatial.QueryExtent` | `extentSRID=0` 时回退 4326，属于旧假设；不能作为新规范保留。 |
+| `快显渲染信息Handler.Get快显渲染信息` | 优先用 QuickView extent，否则调用 `spatial.QueryExtent` | `extentSRID=0` 时回退 4326，属于旧假设；不能作为新规范保留。 |
 | `common/spatial.QueryExtent` | 查询 PostGIS extent 并转 WGS84 | 可作为 MVT 派生能力候选，但命名和注释应明确不是源事实。 |
 | `common/spatial.CalculateMinZoomFromExtent` | 基于 extent 和 SRID 算 zoom | 对 2360 等 SRID 使用粗略米/度估算，未知 SRID 默认当度，后续需要改成“不能可靠转换则不自动计算”。 |
 | `common/spatial.BuildMVTQuery` | 生成 MVT SQL，必要时 `ST_Transform(..., 3857)` | 属于 PostGIS/MVT 引擎能力，可以保留在 MVT 路径，但需明确 `target_srid=3857`。 |
@@ -41,17 +41,18 @@ MVT / Quick View 是另一条路径：它服务地图快显、瓦片生成、缓
 
 ## 后续专题需要解决的问题
 
-### 0. 任务体系接入后的 Manager MVT 边界
+### 0. 任务体系接入后的 Manager 瓦片缓存边界
 
-任务体系主干只要求 Manager 以 `provider=manager, task_type=mvt_generation` 暴露 MVT 任务定义，并能被 Orchestrator 和 Monitor 发现、执行和回跳 owner 页面。MVT / QuickView 内部语义仍由本文专题继续收敛。
+最高概念原则已经将任务语义从 “MVT 生成” 上提为“瓦片缓存生成”。目标任务类型为 `tile_cache_generation`，任务定义表为 `manager.tile_cache_tasks`，并能被 Orchestrator 和 Monitor 发现、执行和回跳 owner 页面。MVT / QuickView 内部语义仍由本文专题继续收敛。
 
 后续处理时需要保持以下边界：
 
-- `manager.mvt_tasks` 是可编排任务定义，表达生成策略和调度意图。
-- `manager.quick_view` 是 artifact state，表达当前快显产物是否 ready、缓存范围、fingerprint、zoom、错误和更新时间。
-- `common.task_executions` 中的 `mvt_generation` 只表达某一次生成执行，不替代 QuickView 当前状态。
-- QuickView 从“任务”命名收敛为 artifact state，后续页面、API 和文案都应避免把 QuickView 本身称为任务。
-- `mvt_generation` 的 `create_url` / `edit_url` 必须指向 Manager MVT 任务定义 owner 页面，不应跳到空间预览页。
+- 瓦片缓存任务定义是可编排任务定义，表达生成策略、瓦片格式、目标存储和调度意图。
+- `manager.quick_view` 是快显状态，表达当前 item 是否可快显、推荐使用哪个瓦片缓存结果，以及快显 UI 偏好。
+- `manager.tile_cache` 是 artifact state，表达瓦片缓存结果是否 ready、存储位置、缓存范围、fingerprint、zoom、错误和更新时间。
+- `common.task_executions` 中的瓦片缓存生成执行只表达某一次生成过程，不替代 QuickView 当前状态或瓦片缓存结果状态。
+- QuickView 从“任务”命名收敛为快显状态，后续页面、API 和文案都应避免把 QuickView 本身称为任务。
+- 瓦片缓存生成任务的 `create_url` / `edit_url` 必须指向 Manager 瓦片缓存任务定义 owner 页面，不应跳到空间预览页。
 
 ### 1. QuickView extent 字段语义
 
@@ -59,14 +60,14 @@ MVT / Quick View 是另一条路径：它服务地图快显、瓦片生成、缓
 
 后续可选方向：
 
-- `quick_view.extent` 表示 MVT/TileConfig 使用的派生范围。
+- `quick_view.extent` 表示 MVT/快显渲染信息 使用的派生范围。
 - `quick_view.extent_srid` 必须显式写入，不能默认猜 4326。
 - 如果派生范围来自 PostGIS `ST_Transform(..., 4326)`，应记录：
   - `extent_srid=4326`
   - `transform_status=engine_transformed`
   - `transform_engine=postgis`
   - `source_srid`
-- 如果无法转换，不写派生 extent，TileConfig 不自动计算 zoom。
+- 如果无法转换，不写派生 extent，快显渲染信息 不自动计算 zoom。
 
 ### 2. Meta GIS-facing API 与 attributes 分离
 
@@ -96,13 +97,13 @@ Meta 标准 attributes 不再维护 `capabilities.spatial.extent_srid`。但 Man
   - 要求用户确认；
   - 或使用配置默认值并明确 `calculation_status=manual_required`。
 
-### 4. TileConfig 回退策略
+### 4. 快显渲染信息 回退策略
 
-当前 TileConfig 没有 QuickView extent 时会调用 `spatial.QueryExtent` 动态转 WGS84。后续需要决定它是否仍是允许的 MVT 派生路径。
+当前 快显渲染信息 没有 QuickView extent 时会调用 `spatial.QueryExtent` 动态转 WGS84。后续需要决定它是否仍是允许的 MVT 派生路径。
 
 建议：
 
-- 如果保留动态查询，应更名或标注为 MVT/TileConfig 派生查询，不得被 Meta 或普通预览复用。
+- 如果保留动态查询，应更名或标注为 MVT/快显渲染信息 派生查询，不得被 Meta 或普通预览复用。
 - 动态查询返回时必须带 `extent_srid=4326` 和 `transform_engine=postgis`。
 - 查询失败或无法转换时，不应默认 4326。
 
@@ -111,7 +112,7 @@ Meta 标准 attributes 不再维护 `capabilities.spatial.extent_srid`。但 Man
 本轮只记录边界，不修改 MVT/QuickView 实现：
 
 - 不改 `quick_view` 表结构。
-- 不改 TileConfig API。
+- 不改 快显渲染信息 API。
 - 不改 MVT SQL。
 - 不改 zoom 计算函数。
 - 不改 Meta GIS-facing DTO。

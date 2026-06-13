@@ -15,7 +15,7 @@
 
 本文不展开：
 
-- Manager 内部 MVT、embedding、QuickView 的详细策略。
+- Manager 内部瓦片缓存生成、embedding、QuickView 的详细策略。
 - Transfer 内部全量、增量、实时同步的详细语义。
 - Develop 算子工作流内部节点模型。
 - Meta scan 具体扫描范围和 detector 规则。
@@ -159,7 +159,7 @@ Common 不维护全量业务 `task_type` 编译期枚举。`task_type` 由 owner
 | Meta | `scan` | `meta.scan_tasks` |
 | Transfer | `import` | `transfer.transfer_tasks` |
 | Develop | `query` / `workflow` / `script` | `develop.dev_tasks` |
-| Manager | `mvt_generation` / `embedding` | `manager.mvt_tasks` / `manager.embedding_tasks` |
+| Manager | `tile_cache_generation` / `embedding` | `manager.tile_cache_tasks` / `manager.embedding_tasks` |
 | Quality | `check` | `quality.check_tasks` |
 | Graph | `kg_build` | `graph.build_tasks` |
 | Orchestrator | `orchestration` | `orchestrator.orchestrations` |
@@ -168,9 +168,9 @@ System cleanup 阶段 1 不纳入 TaskProvider，也不进入 Orchestrator 编�
 
 Transfer 的内部任务语义由 Transfer 专题确认。阶段 1 先把接口层纳入统一任务体系，对外只声明 `task_type=import`，并通过 TaskProvider 和 `common.task_executions` 关联任务定义。后续如专题确认需要增加导出、同步等任务类型，必须先修订本文，再按 clean break 方式迁移，不在同一阶段并行保留 `import`、`export`、`sync`、`transfer` 多套语义。
 
-Manager 的 MVT、embedding、QuickView 细节由 Manager 专题确认。本文只要求 Manager 用同一个 provider 声明多个任务类型，并按 `module + task_type + source_task_id` 关联执行记录。持久化 embedding 任务执行必须复用任务服务创建的主 execution；ad-hoc embedding 可以自行创建 execution，但不得产生 owner 任务定义，且没有 `source_task_id` 时必须写完整 `execution_config`。
+Manager 的瓦片缓存生成、embedding、QuickView 细节由 Manager 专题确认。本文只要求 Manager 用同一个 provider 声明多个任务类型，并按 `module + task_type + source_task_id` 关联执行记录。瓦片缓存生成任务类型为 `tile_cache_generation`，任务定义表为 `manager.tile_cache_tasks`；MVT 是瓦片缓存格式，应进入任务配置，例如 `config.tile.format=mvt`，不作为任务类型。持久化 embedding 任务执行必须复用任务服务创建的主 execution；ad-hoc embedding 可以自行创建 execution，但不得产生 owner 任务定义，且没有 `source_task_id` 时必须写完整 `execution_config`。
 
-Manager 中 QuickView / MVT 的 `ready`、`generating`、`preparing` 等状态属于 artifact state，不是统一 execution status。Manager 的即时向量化内存轮询状态虽不持久化为任务定义，但属于 execution-like 状态，成功态也必须使用 `success`，不得使用 `completed`。
+Manager 中 QuickView、瓦片缓存产物的 `ready`、`generating`、`stale`、`failed` 等状态属于 artifact state，不是统一 execution status。Manager 的即时向量化内存轮询状态虽不持久化为任务定义，但属于 execution-like 状态，成功态也必须使用 `success`，不得使用 `completed`。
 
 Graph 的 `kg_build` 任务定义由 `graph.build_tasks` 保存。`graph.build_tasks.status` 是构建任务最近执行摘要，必须使用统一 execution status；成功态为 `success`。`graph.build_materials.status=completed` 属于材料处理状态，不是任务执行状态，不进入 TaskProvider 和 Monitor 的统一 execution 枚举。
 
@@ -260,7 +260,7 @@ System 注册 TaskProvider 时必须校验标准 endpoint：任务详情和执�
 
 | provider | task_type | 任务定义表 | 执行 owner |
 | --- | --- | --- | --- |
-| `manager` | `mvt_generation` | `manager.mvt_tasks` | Manager |
+| `manager` | `tile_cache_generation` | `manager.tile_cache_tasks` | Manager |
 | `manager` | `embedding` | `manager.embedding_tasks` | Manager |
 
 约束：
@@ -299,7 +299,7 @@ TaskProvider 注册时必须使用 `task.capabilities/v1` schema，并声明稳�
 
 | 字段 | 说明 |
 | --- | --- |
-| `type` | 稳定任务类型，例如 `mvt_generation`；必须匹配 `^[a-z][a-z0-9_]*$` |
+| `type` | 稳定任务类型，例如 `tile_cache_generation`；必须匹配 `^[a-z][a-z0-9_]*$` |
 | `display_name` | 展示名称 |
 | `description` | 任务类型说明 |
 | `definition_schema` | 任务定义公开摘要 JSON Schema，不用于 Orchestrator 创建、编辑或渲染完整 owner 任务定义；当前必须是对象 schema |

@@ -1,38 +1,46 @@
 
-# ADDP MVT 瓦片预缓存两阶段配置说明
+# ADDP MVT 瓦片生成两阶段配置说明
+
+> 状态：当前 PostGIS + MVT 格式实现备查。平台目标概念是“瓦片缓存生成任务”，TaskProvider `task_type=tile_cache_generation`，MVT 只是 `config.tile.format=mvt`。Quick View 是快显状态，不再承载完整瓦片缓存结果和准备状态事实。
 
 ## 一、两阶段工作流
 
-ADDP 采用**检查 → 准备 → 预缓存**的三步流程：
+当前 MVT 实现采用**检查 → 准备 → 生成**的三步流程：
 
 ```
-【步骤1：检查诊断】GET /quick-view/check-preparation
+【步骤1：检查诊断】瓦片缓存生成任务内部执行准备检查
     ↓
   快速检查物化视图、空间索引、统计信息是否就绪
   返回 overall_status: "passed" | "failed"
     ↓
-【步骤2：准备工作】POST /quick-view/prepare（可选，仅当检查失败时执行）
+【步骤2：准备工作】由瓦片缓存生成任务根据 config.preparation 执行（可选，仅当检查失败且任务授权时执行）
     ↓
   实际创建物化视图、空间索引、执行 ANALYZE
-  保存执行结果到 preparation_status
+  保存执行结果到 execution metadata 或后续准备产物摘要
     ↓
-【步骤3：预缓存生成】POST /quick-view/pre-cache
+【步骤3：瓦片生成】POST /api/v1/manager/tasks/tile_cache_generation/{id}/execute
     ↓
-  前置条件：preparation_status.overall_status = "passed"
+  前置条件：准备检查通过，或任务 config 明确允许所需准备动作
   从 checks 动态推导 QueryInfo（无需预先存储）
-  生成瓦片并保存到 MinIO
+  生成 MVT 瓦片并保存到任务配置指定的 storage_ref
 ```
 
 **核心设计**：
 - **检查与执行分离**：检查只诊断，不修改数据库
 - **QueryInfo 动态推导**：运行时从 checks 推导，无需冗余存储
-- **强制顺序**：必须先通过检查才能预缓存
+- **强制顺序**：必须先完成检查，必要且授权时执行准备动作，再生成瓦片缓存结果
 
 ---
 
 ## 二、准备状态数据结构
 
-### 2.1 PreparationStatus（保存在 quick_view.preparation_status）
+### 2.1 PreparationStatus（当前实现结构，后续不再保存在 quick_view）
+
+目标归属：
+
+1. 当次检查和准备结果进入 `common.task_executions.metadata`。
+2. 必要的准备产物摘要可进入后续准备产物专题。
+3. `manager.quick_view` 只保留快显状态和推荐瓦片缓存结果。
 
 ```json
 {
@@ -76,8 +84,8 @@ ADDP 采用**检查 → 准备 → 预缓存**的三步流程：
 
 **字段说明**：
 - `checks[]`：包含物化视图、空间索引、统计信息的完整检查结果
-- `query_info`：在检查阶段为 `null`，预缓存时从 checks 动态推导（包含实际查询表名、几何列名、SRID）
-- `execution_info`：仅在实际执行准备工作时填充（Worker ID、耗时等）
+- `query_info`：在检查阶段为 `null`，瓦片缓存生成时从 checks 动态推导（包含实际查询表名、几何列名、SRID）
+- `execution_info`：仅在实际执行准备工作时填充（执行器 ID、耗时等）
 
 **状态值**：
 - `passed`：已就绪（如物化视图已存在）
@@ -156,31 +164,19 @@ ADDP 采用**检查 → 准备 → 预缓存**的三步流程：
 
 ### 4.1 检查准备状态（诊断）
 
-```
-GET /api/manager/engines/:id/spatial/:schema/:table/quick-view/check-preparation
-```
-
-响应：
-```json
-{
-  "preparation_status": { ... },
-  "can_proceed": true  // overall_status = "passed"
-}
-```
+准备检查由瓦片缓存生成任务内部执行，不再作为普通空间预览 API 暴露。检查结果进入当次 execution metadata，后续如需长期保存准备产物，再进入独立准备产物专题。
 
 ### 4.2 执行准备工作
 
-```
-POST /api/manager/engines/:id/spatial/:schema/:table/quick-view/prepare
-```
+准备动作不再暴露为普通空间预览 API。瓦片缓存生成任务执行时根据 `config.preparation` 判断是否允许创建物化视图、创建空间索引或执行 `ANALYZE`，相关结果写入 execution metadata 或后续准备产物摘要。
 
-创建物化视图、空间索引、执行 ANALYZE
-
-### 4.3 启动预缓存生成
+### 4.3 启动瓦片缓存生成
 
 ```
-POST /api/manager/engines/:id/spatial/:schema/:table/quick-view/pre-cache
+POST /api/v1/manager/tasks/tile_cache_generation/{id}/execute
 ```
+
+通过标准任务入口执行瓦片缓存生成任务。
 
 请求体：
 ```json
@@ -191,22 +187,24 @@ POST /api/manager/engines/:id/spatial/:schema/:table/quick-view/pre-cache
 }
 ```
 
-前置条件：`preparation_status.overall_status = "passed"`
+前置条件：准备检查通过，或任务配置允许执行必要准备动作。
 
-### 4.4 获取生成状态
+### 4.4 获取执行与快显状态
 
 ```
-GET /api/manager/engines/:id/spatial/:schema/:table/quick-view/status
+GET /api/v1/manager/executions/:execution_id
+GET /api/v1/manager/quick-view/capability?locator={ResourceLocator}
 ```
 
 响应：
 ```json
 {
-  "status": "generating",
-  "progress": {
-    "progress_percent": 65.5,
-    "tiles_processed": 1234,
-    "tiles_total_estimate": 1888
+  "execution_id": "uuid",
+  "status": "success",
+  "metadata": {
+    "tile_cache_id": 12,
+    "total_tiles": 1888,
+    "cached_tiles": 1234
   }
 }
 ```
@@ -259,7 +257,7 @@ ANALYZE {schema}.{table}_mv3857;
 
 ### Q2: QueryInfo 如何生成？
 
-无需预先存储。预缓存时从 `preparation_status.checks` 动态推导：
+无需预先存储。当前瓦片缓存生成时从准备检查结果动态推导：
 - 从 `materialized_view` check 判断是否需要物化视图
 - 从 `spatial_index` check 提取查询表名和几何列
 - SRID 固定为 3857

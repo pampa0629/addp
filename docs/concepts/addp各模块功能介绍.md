@@ -84,11 +84,11 @@
 - 数据源目录树展示（关系型/文档型/图数据库/对象存储/文件系统）
 - 多类型数据预览：
   - 表格数据（PostgreSQL、MySQL、Doris、ClickHouse、MongoDB）
-  - 空间数据（GeoJSON、Shapefile、PostGIS、MVT 瓦片快显）
+  - 空间数据（GeoJSON、Shapefile、PostGIS、快显与瓦片缓存）
   - 文件预览（图片、视频、PDF、Office 文档）
 - 对象存储管理（MinIO/S3/OSS 的 Bucket 和对象管理）
 - 预览插件系统（TextPreview、ImagePreview、PDFPreview、DocxPreview、PptxPreview）
-- MVT 瓦片缓存（PostGIS 矢量瓦片生成和缓存，支持快显）
+- 瓦片缓存（PostGIS + MVT 为第一阶段格式实现，任务类型统一为 `tile_cache_generation`）
 - 向量化（文本和图像向量化，支持语义相似度检索）
 - 全文检索与语义检索（基于 Meilisearch 和向量数据库）
 

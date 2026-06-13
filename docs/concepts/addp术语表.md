@@ -71,13 +71,13 @@
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
 | Task | 任务 | 可被执行的业务能力抽象。 | Task 是抽象概念，不是统一任务总表；任务定义归 owner 模块私有表。 |
-| task definition | 任务定义 | “未来应该按什么策略处理什么对象”的定义态。 | 例如 `meta.scan_tasks`、`transfer.transfer_tasks`、`manager.mvt_tasks`。 |
-| task type | 任务类型 | owner 模块内稳定的任务类型标识。 | 例如 `scan`、`mvt_generation`、`embedding`；由 TaskProvider capabilities 声明。 |
+| task definition | 任务定义 | “未来应该按什么策略处理什么对象”的定义态。 | 例如 `meta.scan_tasks`、`transfer.transfer_tasks`、`manager.tile_cache_tasks`。 |
+| task type | 任务类型 | owner 模块内稳定的任务类型标识。 | 例如 `scan`、`tile_cache_generation`、`embedding`；由 TaskProvider capabilities 声明。 |
 | TaskProvider | 任务提供者 | 模块对外声明可编排任务能力的角色。 | 按模块注册，不按任务类型注册；一个 provider 可以声明多个 `task_types`。 |
 | source task id | 来源任务 ID | execution 关联的 owner 模块任务定义 ID。 | 在 `common.task_executions.source_task_id` 中保存；查询时必须结合 `module + task_type`。 |
 | parent execution id | 父执行 ID | 当前 execution 的父级 execution UUID。 | 用于 Orchestrator 子步骤追踪父编排。 |
 | ad-hoc execution | 一次性执行 | 不依赖持久任务定义、直接按本次配置创建的 execution。 | 可以没有 `source_task_id`，但必须在 `execution_config` 保存完整执行配置。 |
-| artifact state | 产物状态 | 描述派生产物当前是否可用、在哪里、由什么配置生成的状态对象。 | 例如 QuickView、MVT tiles manifest、embedding vectors；不是 execution。 |
+| artifact state | 产物状态 | 描述派生产物当前是否可用、在哪里、由什么配置生成的状态对象。 | 例如瓦片缓存产物、embedding vectors；不是 execution。 |
 
 ## 能力与读取
 
@@ -89,6 +89,12 @@
 | index ref | 索引引用 | attributes 中指向外部索引记录的引用。 | 文档正文抽取后的全文索引引用写入 `capabilities.extraction.index_ref`，例如 `meilisearch:assets:<item_fingerprint>`；引用的是 item 指纹对应记录，不是 `content_hash`。 |
 | capability | 能力 | 引擎、当前进程格式实现或数据项呈现的能力。 | engine capability、format descriptor / provider status、item capability 含义不同。 |
 | spatial | 空间能力 | 描述空间字段、CRS、范围、几何类型、空间索引等横切语义。 | 是横切能力，不是 data type。 |
+| quick view | 快显 | Manager 空间预览中的高性能地图浏览模式。 | 快显是 UI 能力，不是任务，也不是瓦片缓存产物。 |
+| quick view preference | 快显偏好 | Manager 中记录某个空间 item 的用户预览模式偏好。 | 目标落点为 `manager.quick_view`；快显能力、推荐结果和不可用原因由能力 API 动态合成。 |
+| tile cache | 瓦片缓存 | 面向地图浏览生成并保存的一组瓦片数据。 | 格式可以是 MVT、栅格瓦片、预渲染图片瓦片或后续扩展格式。 |
+| tile cache result | 瓦片缓存结果 | 某个 data item 生成后的瓦片缓存结果状态。 | 目标落点为 `manager.tile_cache`；属于结果状态，不是 execution。 |
+| tile cache generation task | 瓦片缓存生成任务 | Manager 中可执行、可调度、可编排的瓦片缓存生成任务定义。 | 后续目标落点为 `manager.tile_cache_tasks`，TaskProvider `task_type=tile_cache_generation`。 |
+| storage ref | 存储引用 | 指向外部或内部存储位置的稳定引用。 | 上层逻辑消费存储引用，不应硬编码 bucket、prefix 或对象路径规则。 |
 | contentio.Ref | 内容引用 | 一个已确定 content 的定位器，不携带凭据。 | 需要多个 content 时使用 refs 数组。 |
 | contentio.Reader | 内容读取器 | 按内容引用打开单个 content 并读取轻量状态的统一抽象。 | 由编排层基于 engine capability 构造。 |
 | contentio.Lister | 内容列举器 | 按 scope 引用列举子 content 的可选抽象。 | scope / 目录型格式按需使用。 |

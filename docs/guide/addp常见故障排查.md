@@ -304,7 +304,7 @@ item 刷新原先复用了 catalog scan 的入口，把 `item_id` 先转换为 c
 
 #### 问题现象
 
-在 Manager 模块的数据预览界面，点击"准备预缓存"按钮时，物化视图创建检查失败：
+在 Manager 模块执行瓦片缓存生成任务时，物化视图准备检查失败：
 
 ```
 物化视图创建失败: ERROR: column "id" does not exist (SQLSTATE 42703)
@@ -482,7 +482,7 @@ bash scripts/dev/restart.sh -manager
 # 在前端测试
 # 1. 打开 Manager → 数据浏览器
 # 2. 选择包含混合大小写主键的表（如 public.test，主键 SmID）
-# 3. 点击"准备预缓存"
+# 3. 创建并执行瓦片缓存生成任务
 # 4. 应该显示：
 #    - 物化视图 ✅ 通过（或标记为待创建）
 #    - Details 中显示正确的主键名（如 "SmID"）
@@ -544,7 +544,7 @@ bash scripts/dev/restart.sh -manager
    - 可改为连接多个主键列：`CONCAT(col1, '-', col2) AS id`
 
 3. **前端显示主键状态**
-   - 在预缓存配置界面显示主键信息
+   - 在瓦片缓存生成配置界面显示主键信息
    - 无主键时明确警告用户功能限制
 
 #### 相关影响范围
@@ -553,7 +553,7 @@ bash scripts/dev/restart.sh -manager
 
 **受影响的模块：**
 1. **Manager 模块**
-   - MVT 预缓存准备阶段（物化视图创建）
+   - 瓦片缓存生成准备检查（物化视图创建）
    - 空间索引创建（依赖物化视图）
    - 瓦片生成任务（依赖物化视图）
 
@@ -591,7 +591,7 @@ bash scripts/dev/restart.sh -manager
 
 - **发现日期：** 2026-01-29
 - **修复版本：** v0.0.23+
-- **影响范围：** Manager 模块 MVT 预缓存功能（物化视图创建、空间索引、瓦片生成）
+- **影响范围：** Manager 模块瓦片缓存生成任务（物化视图创建、空间索引、瓦片生成）
 - **相关文件：** `manager/backend/internal/mvt/preparation_service.go`
 - **关键修复：**
   - ✅ 动态查询主键列名（不再硬编码 `id`）
@@ -1116,7 +1116,7 @@ VALUES (ST_GeomFromText('POINT(120.0 30.0)', 4326), 'Test Data');
 测试流程：
 1. 在 Manager 数据浏览器中浏览该表 ✅
 2. 验证数据预览正常显示 ✅
-3. 点击"准备预缓存"，验证物化视图创建成功 ✅
+3. 创建并执行瓦片缓存生成任务，验证物化视图创建成功 ✅
 4. 验证 MVT 瓦片可以正常生成 ✅
 5. 在 Service 模块中发布 WFS 服务 ✅
 6. 验证 WFS GetFeature 请求正常 ✅
@@ -1163,7 +1163,7 @@ whereClause := fmt.Sprintf("%s > 100", dialect.QuoteIdentifier(col))
 
 | 模块 | 修复文件数 | 影响功能 | 风险等级 |
 |------|-----------|---------|----------|
-| Manager | 2 | MVT 预缓存、物化视图创建 | 🔴 高 |
+| Manager | 2 | 瓦片缓存生成、物化视图创建 | 🔴 高 |
 | Service | 1 | OGC WFS 要素查询 | 🟠 中 |
 | Transfer | 0 | 已正确实现 | ✅ 无 |
 | Meta | 0 | 已正确实现 | ✅ 无 |

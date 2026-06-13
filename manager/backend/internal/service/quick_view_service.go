@@ -2,744 +2,619 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
+	"strings"
 	"time"
 
+	commonapi "github.com/addp/common/api"
 	commonClient "github.com/addp/common/client"
-	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/manager/internal/config"
+	"github.com/addp/common/resourcetree"
+	"github.com/addp/common/spatial"
 	"github.com/addp/manager/internal/models"
-	"github.com/addp/manager/internal/mvt"
 	"github.com/addp/manager/internal/repository"
-	"github.com/addp/manager/internal/worker"
-	"github.com/minio/minio-go/v7"
-	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
 var (
-	ErrQuickViewRecordNotFound          = errors.New("quick view record not found")
-	ErrQuickViewPreparationNotCompleted = errors.New("quick view preparation not completed")
-	ErrQuickViewAlreadyGenerating       = errors.New("quick view already generating")
-	ErrQuickViewMinZoomRequired         = errors.New("quick view min_zoom required")
-	ErrQuickViewMaxZoomRequired         = errors.New("quick view max_zoom required")
-	ErrQuickViewCancelStatusInvalid     = errors.New("quick view cancel status invalid")
-	ErrQuickViewResumeStatusInvalid     = errors.New("quick view resume status invalid")
-	ErrQuickViewInvalidPreferredMode    = errors.New("quick view invalid preferred mode")
-	ErrQuickViewGeometryColumnNotFound  = errors.New("quick view geometry column not found")
+	ErrQuickViewRecordNotFound         = errors.New("quick view record not found")
+	ErrQuickViewInvalidPreferredMode   = errors.New("quick view invalid preferred mode")
+	ErrQuickViewGeometryColumnNotFound = errors.New("quick view geometry column not found")
 )
 
-// QuickViewService 快显服务层
+const (
+	QuickViewStatusUnavailable = "unavailable"
+	QuickViewStatusAvailable   = "available"
+	QuickViewStatusGenerating  = "generating"
+	QuickViewStatusFailed      = "failed"
+
+	QuickViewRenderSourceCachedTile    = "cached_tile"
+	QuickViewRenderSourceDirectGeoJSON = "direct_geojson"
+	QuickViewRenderSourceRealtimeTile  = "realtime_tile"
+)
+
 type QuickViewService struct {
-	repo         *repository.QuickViewRepository
-	taskQueue    *worker.TaskQueue
-	systemClient *commonClient.SystemClient
-	metaClient   *commonClient.MetaClient
-	minioClient  *minio.Client
-	minioBucket  string
-	redisClient  *redis.Client
-	cfg          *config.Config
+	repo          *repository.QuickViewRepository
+	tileCacheRepo *repository.TileCacheRepository
+	metaClient    *commonClient.MetaClient
+	options       QuickViewCapabilityOptions
+	spatialLoader func(ctx context.Context, tenantID, engineID uint, schema, table string) (*SpatialMetadataResult, error)
 }
 
-// NewQuickViewService 创建快显服务
 func NewQuickViewService(
 	db *gorm.DB,
-	taskQueue *worker.TaskQueue,
-	systemClient *commonClient.SystemClient,
 	metaClient *commonClient.MetaClient,
-	minioClient *minio.Client,
-	minioBucket string,
-	redisClient *redis.Client,
-	cfg *config.Config,
 ) *QuickViewService {
 	return &QuickViewService{
-		repo:         repository.NewQuickViewRepository(db),
-		taskQueue:    taskQueue,
-		systemClient: systemClient,
-		metaClient:   metaClient,
-		minioClient:  minioClient,
-		minioBucket:  minioBucket,
-		redisClient:  redisClient,
-		cfg:          cfg,
+		repo:          repository.NewQuickViewRepository(db),
+		tileCacheRepo: repository.NewTileCacheRepository(db),
+		metaClient:    metaClient,
 	}
 }
 
-// TriggerQuickViewParams 触发快显参数
-type TriggerQuickViewParams struct {
-	TenantID           uint
-	EngineID           uint
-	SchemaName         string
-	TableName          string
-	MinZoom            *int                             // 必需，用户确认的最小缩放级别
-	MaxZoom            int                              // 必需，用户确认的最大缩放级别
-	Concurrency        int                              // 可选，默认从配置读取
-	Priority           string                           // "critical", "default", "low"
-	OptimizationConfig *commonModels.OptimizationConfig // v2.0 优化配置
+type QuickViewCapabilityOptions struct {
+	DirectGeoJSONMaxRows int
 }
 
-// TriggerQuickView 触发预缓存（第二步，必须先完成准备）
-func (s *QuickViewService) TriggerQuickView(ctx context.Context, params TriggerQuickViewParams) error {
-	// 1. 检查快显表记录是否存在
-	exists, _ := s.repo.Exists(params.TenantID, params.EngineID, params.SchemaName, params.TableName)
-	if !exists {
-		return ErrQuickViewRecordNotFound
+func (s *QuickViewService) SetCapabilityOptions(options QuickViewCapabilityOptions) {
+	if options.DirectGeoJSONMaxRows > 0 {
+		s.options.DirectGeoJSONMaxRows = options.DirectGeoJSONMaxRows
+	}
+}
+
+func (s *QuickViewService) SetSpatialMetadataLoader(loader func(ctx context.Context, tenantID, engineID uint, schema, table string) (*SpatialMetadataResult, error)) {
+	s.spatialLoader = loader
+}
+
+type QuickViewIdentity struct {
+	TenantID        uint
+	ItemFingerprint string
+	Locator         string
+}
+
+type SpatialMetadataResult struct {
+	GeomColumn      string
+	GeometryColumns []string
+	SRID            int
+	ExtentSRID      int
+	PrimaryKey      string
+	Extent          []float64
+	RecordCount     int64
+}
+
+type QuickViewSource struct {
+	Identity      QuickViewIdentity
+	EngineID      uint
+	Schema        string
+	Table         string
+	SpatialMeta   *SpatialMetadataResult
+	DirectGeoJSON bool
+	GeoJSONURL    string
+	CanTile       bool
+}
+
+type QuickViewCapability struct {
+	TenantID             uint                `json:"tenant_id"`
+	ItemFingerprint      string              `json:"item_fingerprint,omitempty"`
+	Locator              string              `json:"locator,omitempty"`
+	CanUseQuickView      bool                `json:"can_use_quick_view"`
+	CanGenerateTileCache bool                `json:"can_generate_tile_cache"`
+	PreferredMode        string              `json:"preferred_mode"`
+	RecommendedMode      string              `json:"recommended_mode"`
+	ActiveMode           string              `json:"active_mode"`
+	DefaultTileCacheID   *uint               `json:"default_tile_cache_id,omitempty"`
+	Status               string              `json:"status"`
+	UnavailableReason    string              `json:"unavailable_reason,omitempty"`
+	RenderSource         string              `json:"render_source,omitempty"`
+	QuickView            QuickViewRenderInfo `json:"quick_view"`
+	TileCacheGeneration  TileCacheGeneration `json:"tile_cache_generation"`
+	LastCheckedAt        *time.Time          `json:"last_checked_at,omitempty"`
+}
+
+type QuickViewRenderInfo struct {
+	RenderSource    string    `json:"render_source,omitempty"`
+	TileFormat      string    `json:"tile_format,omitempty"`
+	TileURLTemplate string    `json:"tile_url_template,omitempty"`
+	GeoJSONURL      string    `json:"geojson_url,omitempty"`
+	Extent          []float64 `json:"extent,omitempty"`
+	ExtentSRID      int       `json:"extent_srid,omitempty"`
+	MinZoom         int       `json:"min_zoom,omitempty"`
+	MaxZoom         int       `json:"max_zoom,omitempty"`
+	GeometryColumn  string    `json:"geometry_column,omitempty"`
+	RecordCount     int64     `json:"record_count,omitempty"`
+}
+
+type TileCacheGeneration struct {
+	Available bool   `json:"available"`
+	Reason    string `json:"reason,omitempty"`
+	CreateURL string `json:"create_url,omitempty"`
+}
+
+func (s *QuickViewService) GetPreference(ctx context.Context, identity QuickViewIdentity) (*models.QuickView, error) {
+	if identity.TenantID == 0 {
+		identity.TenantID = 1
+	}
+	identity.Locator = strings.TrimSpace(identity.Locator)
+	qv, err := s.repo.GetByIdentity(identity.TenantID, identity.ItemFingerprint, identity.Locator)
+	if err == nil {
+		return qv, nil
+	}
+	if !errors.Is(err, commonapi.ErrNotFound) && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	return &models.QuickView{
+		TenantID:        identity.TenantID,
+		ItemFingerprint: identity.ItemFingerprint,
+		Locator:         identity.Locator,
+		PreferredMode:   "table_geojson",
+	}, nil
+}
+
+func (s *QuickViewService) BuildCapability(ctx context.Context, identity QuickViewIdentity, engineID uint, schema, table string) (*QuickViewCapability, error) {
+	if identity.TenantID == 0 {
+		identity.TenantID = 1
+	}
+	if strings.TrimSpace(identity.Locator) == "" {
+		identity.Locator = tableLocator(engineID, schema, table)
+	}
+	if strings.TrimSpace(identity.ItemFingerprint) == "" {
+		identity.ItemFingerprint = spatialItemFingerprint(engineID, schema, table)
 	}
 
-	// 2. 检查准备是否完成
-	prepCompleted, err := s.repo.IsPreparationCompleted(params.TenantID, params.EngineID, params.SchemaName, params.TableName)
-	if err != nil {
-		return fmt.Errorf("failed to check preparation status: %w", err)
-	}
-	if !prepCompleted {
-		return ErrQuickViewPreparationNotCompleted
-	}
-
-	// 3. 检查是否已在生成中（并发控制）
-	isGenerating, err := s.repo.IsGenerating(params.TenantID, params.EngineID, params.SchemaName, params.TableName)
-	if err != nil {
-		return fmt.Errorf("failed to check generating status: %w", err)
-	}
-
-	if isGenerating {
-		return ErrQuickViewAlreadyGenerating
-	}
-
-	// 4. 验证必需参数（前端必须提供用户确认的值）
-	if params.MinZoom == nil {
-		return ErrQuickViewMinZoomRequired
-	}
-	if params.MaxZoom == 0 {
-		return ErrQuickViewMaxZoomRequired
-	}
-
-	// 5. 从Meta获取空间元数据（GeomColumn、SRID、PrimaryKey 等）
-	spatialMeta, err := s.GetSpatialMetadataFromMeta(ctx, params.TenantID, params.EngineID, params.SchemaName, params.TableName)
-	if err != nil {
-		return fmt.Errorf("failed to get spatial metadata: %w", err)
-	}
-
-	// 6. 计算fingerprint
-	fingerprint := calculateFingerprint(params.EngineID, params.SchemaName, params.TableName)
-
-	// 6. 设置默认并发数
-	logger.L().Info("🔍 Service: 并发数配置检查",
-		"table", fmt.Sprintf("%s.%s", params.SchemaName, params.TableName),
-		"concurrency_from_api", params.Concurrency,
-		"concurrency_from_config", s.cfg.PreCache.Concurrency)
-
-	if params.Concurrency == 0 {
-		params.Concurrency = s.cfg.PreCache.Concurrency
-		logger.L().Info("✅ Service: 使用配置中的默认并发数",
-			"table", fmt.Sprintf("%s.%s", params.SchemaName, params.TableName),
-			"final_concurrency", params.Concurrency)
-	}
-
-	// 7. 初始化优化配置（如果用户未提供）
-	if params.OptimizationConfig == nil {
-		params.OptimizationConfig = &commonModels.OptimizationConfig{}
-		*params.OptimizationConfig = commonModels.DefaultOptimizationConfig()
-		logger.L().Info("✅ Service: 使用默认优化配置",
-			"table", fmt.Sprintf("%s.%s", params.SchemaName, params.TableName))
-	}
-
-	// 8. 获取快显表记录
-	qv, err := s.repo.GetByTable(params.TenantID, params.EngineID, params.SchemaName, params.TableName)
-	if err != nil {
-		return fmt.Errorf("failed to get quick view: %w", err)
-	}
-
-	// 9. 更新记录状态为生成中（只更新必要字段，保护 preparation_status 和 extent）
 	now := time.Now()
-	updates := map[string]interface{}{
-		"status":              "generating",
-		"started_at":          now,
-		"min_zoom":            params.MinZoom,
-		"max_zoom":            params.MaxZoom,
-		"optimization_config": params.OptimizationConfig,
+	preferredMode := "table_geojson"
+	existing, err := s.repo.GetByIdentity(identity.TenantID, identity.ItemFingerprint, identity.Locator)
+	if err != nil && !errors.Is(err, commonapi.ErrNotFound) && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	if existing != nil && strings.TrimSpace(existing.PreferredMode) != "" {
+		preferredMode = existing.PreferredMode
 	}
 
-	if err := s.repo.GetDB().Model(&models.QuickView{}).Where("id = ?", qv.ID).Updates(updates).Error; err != nil {
-		return fmt.Errorf("failed to update quick view: %w", err)
+	var spatialMeta *SpatialMetadataResult
+	var spatialErr error
+	if engineID > 0 && strings.TrimSpace(schema) != "" && strings.TrimSpace(table) != "" {
+		spatialMeta, spatialErr = s.GetSpatialMetadataFromMeta(ctx, identity.TenantID, engineID, schema, table)
 	}
 
-	// 10. 清除之前的取消标志（如果存在）
-	if s.redisClient != nil && fingerprint != "" {
-		tracker := mvt.NewProgressTracker(s.redisClient, fingerprint)
-		if err := tracker.ClearCancelFlag(ctx); err != nil {
-			logger.L().Warn("Failed to clear cancel flag during trigger",
-				"error", err,
-				"fingerprint", fingerprint)
-		} else {
-			logger.L().Info("已清除之前的取消标志（重新触发预缓存）",
-				"fingerprint", fingerprint)
+	readyTileCache, err := s.defaultReadyTileCache(ctx, identity)
+	if err != nil {
+		return nil, err
+	}
+
+	initialStatus := QuickViewStatusUnavailable
+	initialReason := "tile cache result is not ready"
+	capability := &QuickViewCapability{
+		TenantID:          identity.TenantID,
+		ItemFingerprint:   identity.ItemFingerprint,
+		Locator:           identity.Locator,
+		PreferredMode:     preferredMode,
+		RecommendedMode:   "table_geojson",
+		ActiveMode:        preferredMode,
+		Status:            initialStatus,
+		UnavailableReason: initialReason,
+		LastCheckedAt:     &now,
+		TileCacheGeneration: TileCacheGeneration{
+			Available: strings.TrimSpace(identity.ItemFingerprint) != "" || strings.TrimSpace(identity.Locator) != "",
+			CreateURL: tileCacheCreateURL(engineID, schema, table),
+		},
+	}
+
+	if readyTileCache != nil {
+		capability.CanUseQuickView = true
+		capability.Status = QuickViewStatusAvailable
+		capability.UnavailableReason = ""
+		capability.RenderSource = QuickViewRenderSourceCachedTile
+		capability.RecommendedMode = "quick_view"
+		capability.DefaultTileCacheID = &readyTileCache.ID
+		capability.QuickView = renderInfoFromTileCache(engineID, schema, table, readyTileCache)
+	} else if directGeoJSONAvailable(s.directGeoJSONMaxRows(), spatialMeta) {
+		capability.CanUseQuickView = true
+		capability.Status = QuickViewStatusAvailable
+		capability.UnavailableReason = ""
+		capability.RenderSource = QuickViewRenderSourceDirectGeoJSON
+		capability.RecommendedMode = "quick_view"
+		capability.QuickView = renderInfoFromSpatialMeta(engineID, schema, table, spatialMeta)
+	} else if spatialErr != nil {
+		capability.TileCacheGeneration.Available = false
+		capability.TileCacheGeneration.Reason = spatialErr.Error()
+		capability.UnavailableReason = spatialErr.Error()
+	} else if !spatialMetaComplete(spatialMeta) {
+		capability.TileCacheGeneration.Available = false
+		capability.TileCacheGeneration.Reason = "spatial metadata is incomplete"
+		capability.UnavailableReason = capability.TileCacheGeneration.Reason
+	} else {
+		capability.CanUseQuickView = true
+		capability.Status = QuickViewStatusAvailable
+		capability.UnavailableReason = ""
+		capability.RenderSource = QuickViewRenderSourceRealtimeTile
+		capability.RecommendedMode = "quick_view"
+		capability.QuickView = renderInfoFromRealtimeTile(engineID, schema, table, spatialMeta)
+		capability.CanGenerateTileCache = true
+	}
+
+	if capability.CanUseQuickView {
+		capability.CanGenerateTileCache = true
+		capability.TileCacheGeneration.Available = true
+	}
+	if !capability.TileCacheGeneration.Available {
+		capability.CanGenerateTileCache = false
+	}
+	if capability.ActiveMode == "quick_view" && !capability.CanUseQuickView {
+		capability.ActiveMode = "table_geojson"
+	}
+
+	return capability, nil
+}
+
+func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source QuickViewSource) (*QuickViewCapability, error) {
+	identity := source.Identity
+	if identity.TenantID == 0 {
+		identity.TenantID = 1
+	}
+	identity.Locator = strings.TrimSpace(identity.Locator)
+	if strings.TrimSpace(identity.ItemFingerprint) == "" {
+		identity.ItemFingerprint = spatialItemFingerprint(source.EngineID, source.Schema, source.Table)
+	}
+	if strings.TrimSpace(identity.ItemFingerprint) == "" {
+		return nil, fmt.Errorf("%w: item fingerprint is required", ErrQuickViewInvalidPreferredMode)
+	}
+	if identity.Locator == "" {
+		identity.Locator = tableLocator(source.EngineID, source.Schema, source.Table)
+	}
+
+	now := time.Now()
+	preferredMode := "table_geojson"
+	existing, err := s.repo.GetByIdentity(identity.TenantID, identity.ItemFingerprint, identity.Locator)
+	if err != nil && !errors.Is(err, commonapi.ErrNotFound) && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	if existing != nil && strings.TrimSpace(existing.PreferredMode) != "" {
+		preferredMode = existing.PreferredMode
+	}
+
+	readyTileCache, err := s.defaultReadyTileCache(ctx, identity)
+	if err != nil {
+		return nil, err
+	}
+
+	initialStatus := QuickViewStatusUnavailable
+	initialReason := "tile cache result is not ready"
+	capability := &QuickViewCapability{
+		TenantID:          identity.TenantID,
+		ItemFingerprint:   identity.ItemFingerprint,
+		Locator:           identity.Locator,
+		PreferredMode:     preferredMode,
+		RecommendedMode:   "table_geojson",
+		ActiveMode:        preferredMode,
+		Status:            initialStatus,
+		UnavailableReason: initialReason,
+		LastCheckedAt:     &now,
+		TileCacheGeneration: TileCacheGeneration{
+			Available: source.CanTile,
+			CreateURL: tileCacheCreateURL(source.EngineID, source.Schema, source.Table),
+		},
+	}
+
+	if readyTileCache != nil {
+		capability.CanUseQuickView = true
+		capability.Status = QuickViewStatusAvailable
+		capability.UnavailableReason = ""
+		capability.RenderSource = QuickViewRenderSourceCachedTile
+		capability.RecommendedMode = "quick_view"
+		capability.DefaultTileCacheID = &readyTileCache.ID
+		capability.QuickView = renderInfoFromTileCache(source.EngineID, source.Schema, source.Table, readyTileCache)
+	} else if source.DirectGeoJSON && directGeoJSONAvailable(s.directGeoJSONMaxRows(), source.SpatialMeta) {
+		capability.CanUseQuickView = true
+		capability.Status = QuickViewStatusAvailable
+		capability.UnavailableReason = ""
+		capability.RenderSource = QuickViewRenderSourceDirectGeoJSON
+		capability.RecommendedMode = "quick_view"
+		capability.QuickView = renderInfoFromLocatorGeoJSON(source.SpatialMeta, source.GeoJSONURL)
+	} else if !spatialMetaComplete(source.SpatialMeta) {
+		capability.TileCacheGeneration.Available = false
+		capability.TileCacheGeneration.Reason = "spatial metadata is incomplete"
+		capability.UnavailableReason = capability.TileCacheGeneration.Reason
+	} else if source.CanTile {
+		capability.CanUseQuickView = true
+		capability.Status = QuickViewStatusAvailable
+		capability.UnavailableReason = ""
+		capability.RenderSource = QuickViewRenderSourceRealtimeTile
+		capability.RecommendedMode = "quick_view"
+		capability.QuickView = renderInfoFromRealtimeTile(source.EngineID, source.Schema, source.Table, source.SpatialMeta)
+		capability.CanGenerateTileCache = true
+	}
+
+	if capability.CanUseQuickView && source.CanTile {
+		capability.CanGenerateTileCache = true
+		capability.TileCacheGeneration.Available = true
+	}
+	if !capability.TileCacheGeneration.Available {
+		capability.CanGenerateTileCache = false
+	}
+	if capability.ActiveMode == "quick_view" && !capability.CanUseQuickView {
+		capability.ActiveMode = "table_geojson"
+	}
+
+	return capability, nil
+}
+
+func (s *QuickViewService) GetDefaultTileCache(
+	ctx context.Context,
+	tenantID, engineID uint,
+	schema, table string,
+) (*models.TileCache, error) {
+	return s.tileCacheRepo.GetLatestReadyTileCacheByFingerprint(ctx, tenantID, spatialItemFingerprint(engineID, schema, table))
+}
+
+func TileCacheExtent(tileCache *models.TileCache) ([]float64, int, bool) {
+	if tileCache == nil || len(tileCache.Extent) == 0 {
+		return nil, 0, false
+	}
+	var extent []float64
+	if err := json.Unmarshal(tileCache.Extent, &extent); err != nil || len(extent) != 4 {
+		return nil, 0, false
+	}
+	extentSRID := 4326
+	if tileCache.ExtentSRID != nil && *tileCache.ExtentSRID > 0 {
+		extentSRID = *tileCache.ExtentSRID
+	}
+	return extent, extentSRID, true
+}
+
+func TileCacheZoomRange(tileCache *models.TileCache) (int, int, bool) {
+	if tileCache == nil || tileCache.MinZoom == nil || tileCache.MaxZoom == nil {
+		return 0, 0, false
+	}
+	return *tileCache.MinZoom, *tileCache.MaxZoom, true
+}
+
+func (s *QuickViewService) UpdatePreferredModeByIdentity(
+	ctx context.Context,
+	identity QuickViewIdentity,
+	preferredMode string,
+	capabilityLoader func(context.Context) (*QuickViewCapability, error),
+) error {
+	if preferredMode != "table_geojson" && preferredMode != "quick_view" {
+		return fmt.Errorf("%w: %s", ErrQuickViewInvalidPreferredMode, preferredMode)
+	}
+	if identity.TenantID == 0 {
+		identity.TenantID = 1
+	}
+	identity.Locator = strings.TrimSpace(identity.Locator)
+	if strings.TrimSpace(identity.ItemFingerprint) == "" {
+		return fmt.Errorf("%w: item identity is missing", ErrQuickViewInvalidPreferredMode)
+	}
+	if preferredMode == "quick_view" {
+		capability, err := capabilityLoader(ctx)
+		if err != nil {
+			return err
+		}
+		if capability == nil || !capability.CanUseQuickView {
+			reason := ""
+			if capability != nil {
+				reason = capability.UnavailableReason
+			}
+			if reason == "" {
+				reason = "quick view is unavailable"
+			}
+			return fmt.Errorf("%w: %s", ErrQuickViewInvalidPreferredMode, reason)
 		}
 	}
-
-	// 11. 入队预缓存任务
-	payload := worker.QuickViewTaskPayload{
-		TenantID:           params.TenantID,
-		EngineID:           params.EngineID,
-		SchemaName:         params.SchemaName,
-		TableName:          params.TableName,
-		GeomColumn:         spatialMeta.GeomColumn,
-		SRID:               spatialMeta.SRID,
-		PrimaryKey:         spatialMeta.PrimaryKey,
-		Extent:             spatialMeta.Extent,
-		MinZoom:            *params.MinZoom,
-		MaxZoom:            params.MaxZoom,
-		Concurrency:        params.Concurrency,
-		Fingerprint:        fingerprint,
-		OptimizationConfig: params.OptimizationConfig,
-	}
-
-	logger.L().Info("📤 Service: 准备入队预缓存任务",
-		"table", fmt.Sprintf("%s.%s", params.SchemaName, params.TableName),
-		"concurrency", payload.Concurrency,
-		"priority", params.Priority)
-
-	if params.Priority != "" {
-		err = s.taskQueue.EnqueueQuickViewTaskWithPriority(ctx, payload, params.Priority)
-	} else {
-		err = s.taskQueue.EnqueueQuickViewTask(ctx, payload)
-	}
-
-	if err != nil {
-		// 更新状态为失败
-		s.repo.UpdateStatusOnly(qv.ID, "failed", err.Error())
-		return fmt.Errorf("failed to enqueue task: %w", err)
-	}
-
-	logger.L().Info("✅ Service: 预缓存任务已入队",
-		"engine_id", params.EngineID,
-		"table", fmt.Sprintf("%s.%s", params.SchemaName, params.TableName),
-		"min_zoom", *params.MinZoom,
-		"max_zoom", params.MaxZoom,
-		"concurrency", payload.Concurrency)
-
-	return nil
+	return s.repo.UpdatePreferredMode(identity.TenantID, identity.ItemFingerprint, identity.Locator, preferredMode)
 }
 
-// SpatialMetadataResult 空间元数据结果
-type SpatialMetadataResult struct {
-	GeomColumn  string
-	SRID        int // 表的原始坐标系
-	ExtentSRID  int // extent 的坐标系
-	PrimaryKey  string
-	Extent      []float64
-	RecordCount int64 // 表记录数
-}
-
-// GetSpatialMetadataFromMeta 从Meta模块获取空间元数据（公开方法，供 API Handler 调用）
 func (s *QuickViewService) GetSpatialMetadataFromMeta(
 	ctx context.Context,
 	tenantID, engineID uint,
 	schema, table string,
 ) (*SpatialMetadataResult, error) {
+	if s.spatialLoader != nil {
+		return s.spatialLoader(ctx, tenantID, engineID, schema, table)
+	}
 	if s.metaClient == nil {
 		return nil, fmt.Errorf("meta client not initialized, cannot query spatial metadata")
 	}
-
-	// 设置租户 ID（用于服务间调用时的租户隔离）
 	s.metaClient.SetTenantID(&tenantID)
-
-	// 通过 Meta API 查询空间元数据
 	spatialMeta, err := s.metaClient.GetItemSpatialMetadataByCatalogPath(engineID, fmt.Sprintf("%s.%s", schema, table))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get spatial metadata from Meta API: %w", err)
 	}
-
-	// 转换为 QuickViewService 内部的数据结构
+	geometryColumns := []string{}
+	for _, field := range spatialMeta.Fields {
+		if spatial.IsPostGISSpatialType(field.NativeType) || spatial.IsPostGISSpatialType(string(field.Type)) {
+			geometryColumns = append(geometryColumns, field.Name)
+		}
+	}
+	if spatialMeta.GeometryColumn != "" && !stringSliceContains(geometryColumns, spatialMeta.GeometryColumn) {
+		geometryColumns = append([]string{spatialMeta.GeometryColumn}, geometryColumns...)
+	}
 	return &SpatialMetadataResult{
-		GeomColumn:  spatialMeta.GeometryColumn,
-		SRID:        spatialMeta.SRID,
-		ExtentSRID:  spatialMeta.ExtentSRID,
-		Extent:      spatialMeta.Extent,
-		PrimaryKey:  spatialMeta.PrimaryKey,
-		RecordCount: spatialMeta.RowCount, // 从 Meta API 获取的表记录数
+		GeomColumn:      spatialMeta.GeometryColumn,
+		GeometryColumns: geometryColumns,
+		SRID:            spatialMeta.SRID,
+		ExtentSRID:      spatialMeta.ExtentSRID,
+		Extent:          spatialMeta.Extent,
+		PrimaryKey:      spatialMeta.PrimaryKey,
+		RecordCount:     spatialMeta.RowCount,
 	}, nil
 }
 
-// GetStatus 获取快显状态
-func (s *QuickViewService) GetStatus(
-	ctx context.Context,
-	tenantID, engineID uint,
-	schema, table string,
-) (*models.QuickView, error) {
-	qv, err := s.repo.GetByTable(tenantID, engineID, schema, table)
-	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			// 返回默认状态
-			fingerprint := calculateFingerprint(engineID, schema, table)
-			return &models.QuickView{
-				TenantID:    tenantID,
-				EngineID:    engineID,
-				SchemaName:  schema,
-				Table:       table,
-				Status:      "none",
-				Fingerprint: fingerprint,
-			}, nil
-		}
-		return nil, err
-	}
-
-	return qv, nil
+func (s *QuickViewService) defaultReadyTileCache(ctx context.Context, identity QuickViewIdentity) (*models.TileCache, error) {
+	return s.tileCacheRepo.GetLatestReadyTileCacheByFingerprint(ctx, identity.TenantID, identity.ItemFingerprint)
 }
 
-// ListAll 列出所有快显任务
-func (s *QuickViewService) ListAll(
-	ctx context.Context,
-	tenantID uint,
-	params repository.ListParams,
-) ([]models.QuickView, int64, error) {
-	return s.repo.ListAll(tenantID, params)
+func (s *QuickViewService) directGeoJSONMaxRows() int64 {
+	if s.options.DirectGeoJSONMaxRows > 0 {
+		return int64(s.options.DirectGeoJSONMaxRows)
+	}
+	return 2000
 }
 
-// GetStatistics 获取统计信息
-func (s *QuickViewService) GetStatistics(
-	ctx context.Context,
-	tenantID uint,
-) (*repository.Statistics, error) {
-	return s.repo.GetStatistics(tenantID)
+func spatialMetaComplete(meta *SpatialMetadataResult) bool {
+	return meta != nil &&
+		strings.TrimSpace(meta.GeomColumn) != "" &&
+		meta.SRID > 0 &&
+		len(meta.Extent) == 4
 }
 
-// ClearQuickView 清除快显缓存
-func (s *QuickViewService) ClearQuickView(
-	ctx context.Context,
-	tenantID, engineID uint,
-	schema, table string,
-) error {
-	// 1. 获取快显记录
-	qv, err := s.repo.GetByTable(tenantID, engineID, schema, table)
-	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil // 记录不存在，无需清除
-		}
-		return fmt.Errorf("failed to get quick view: %w", err)
-	}
-
-	// 2. 删除 MinIO 中的瓦片（租户隔离）
-	if s.minioClient != nil && qv.Fingerprint != "" {
-		prefix := fmt.Sprintf("tenant_%d/mvt-tiles/%s/", tenantID, qv.Fingerprint)
-
-		// 列出所有对象
-		objectsCh := s.minioClient.ListObjects(ctx, s.minioBucket, minio.ListObjectsOptions{
-			Prefix:    prefix,
-			Recursive: true,
-		})
-
-		// 删除所有对象
-		deletedCount := 0
-		for object := range objectsCh {
-			if object.Err != nil {
-				logger.L().Warn("Error listing object for deletion",
-					"tenant_id", tenantID,
-					"error", object.Err, "prefix", prefix)
-				continue
-			}
-
-			if err := s.minioClient.RemoveObject(ctx, s.minioBucket, object.Key, minio.RemoveObjectOptions{}); err != nil {
-				logger.L().Warn("Failed to delete object",
-					"tenant_id", tenantID,
-					"error", err, "key", object.Key)
-				continue
-			}
-
-			deletedCount++
-		}
-
-		logger.L().Info("Deleted tiles from MinIO",
-			"tenant_id", tenantID,
-			"fingerprint", qv.Fingerprint,
-			"deleted_count", deletedCount)
-	}
-
-	// 3. 删除 Redis 进度和取消标志
-	if s.redisClient != nil && qv.Fingerprint != "" {
-		progressTracker := mvt.NewProgressTracker(s.redisClient, qv.Fingerprint)
-		// 删除进度信息
-		if err := progressTracker.DeleteProgress(ctx); err != nil {
-			logger.L().Warn("Failed to delete progress from Redis", "error", err, "fingerprint", qv.Fingerprint)
-		}
-		// 同时删除取消标志
-		if err := progressTracker.ClearCancelFlag(ctx); err != nil {
-			logger.L().Warn("Failed to clear cancel flag from Redis", "error", err, "fingerprint", qv.Fingerprint)
-		}
-	}
-
-	// 4. 删除数据库记录
-	if err := s.repo.Delete(qv.ID); err != nil {
-		return fmt.Errorf("failed to delete quick view: %w", err)
-	}
-
-	logger.L().Info("Quick view cleared",
-		"engine_id", engineID,
-		"table", fmt.Sprintf("%s.%s", schema, table),
-		"fingerprint", qv.Fingerprint)
-
-	return nil
+func spatialMetaDirectGeoJSONReady(meta *SpatialMetadataResult) bool {
+	return meta != nil &&
+		strings.TrimSpace(meta.GeomColumn) != "" &&
+		meta.SRID > 0
 }
 
-// CancelQuickView 取消快显生成任务
-func (s *QuickViewService) CancelQuickView(
-	ctx context.Context,
-	tenantID, engineID uint,
-	schema, table string,
-) error {
-	// 1. 获取快显记录
-	qv, err := s.repo.GetByTable(tenantID, engineID, schema, table)
-	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return ErrQuickViewRecordNotFound
-		}
-		return fmt.Errorf("failed to get quick view: %w", err)
-	}
-
-	// 2. 检查状态是否为 generating
-	if qv.Status != "generating" {
-		return fmt.Errorf("%w: %s", ErrQuickViewCancelStatusInvalid, qv.Status)
-	}
-
-	// 3. 更新状态为 cancelled
-	if err := s.repo.UpdateStatus(qv.ID, "cancelled", "用户取消任务"); err != nil {
-		return fmt.Errorf("failed to update status: %w", err)
-	}
-
-	// 4. 设置 Redis 取消标志，通知 Worker 停止生成
-	if s.redisClient != nil && qv.Fingerprint != "" {
-		tracker := mvt.NewProgressTracker(s.redisClient, qv.Fingerprint)
-		if err := tracker.SetCancelled(ctx); err != nil {
-			// 改进：详细记录Redis错误，但不返回错误，因为：
-			// 1. PG状态已改为cancelled
-			// 2. Worker完成当前瓦片后会检查PG状态，最终一致
-			// 3. 即使Redis失败，任务也会停止恢复
-			logger.L().Error("Failed to set cancel flag in Redis",
-				"error", err,
-				"fingerprint", qv.Fingerprint,
-				"engine_id", engineID,
-				"table", fmt.Sprintf("%s.%s", schema, table))
-			// 不返回错误，让取消操作继续，Worker会通过PG状态最终检查
-		}
-	}
-
-	// 5. 尝试从 Asynq 队列删除任务
-	if s.taskQueue != nil {
-		if err := s.taskQueue.CancelQuickViewTask(ctx, qv.Fingerprint); err != nil {
-			logger.L().Warn("Failed to cancel task from queue, may continue if already processing",
-				"error", err,
-				"fingerprint", qv.Fingerprint,
-				"engine_id", engineID,
-				"table", fmt.Sprintf("%s.%s", schema, table))
-			// 不返回错误，因为：
-			// 1. PG状态已改为cancelled
-			// 2. 任务可能已被Worker获取（active状态），无法从队列删除
-			// 3. Worker会检查PG状态发现cancelled，不会更新为ready
-		}
-	}
-
-	logger.L().Info("Quick view cancelled",
-		"engine_id", engineID,
-		"table", fmt.Sprintf("%s.%s", schema, table),
-		"fingerprint", qv.Fingerprint)
-
-	return nil
+func directGeoJSONAvailable(maxRows int64, meta *SpatialMetadataResult) bool {
+	return spatialMetaDirectGeoJSONReady(meta) && meta.RecordCount > 0 && meta.RecordCount <= maxRows
 }
 
-// ResumeQuickView 恢复快显生成任务（增量生成）
-func (s *QuickViewService) ResumeQuickView(
-	ctx context.Context,
-	tenantID, engineID uint,
-	schema, table string,
-) error {
-	// 1. 获取快显记录
-	qv, err := s.repo.GetByTable(tenantID, engineID, schema, table)
-	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return ErrQuickViewRecordNotFound
-		}
-		return fmt.Errorf("failed to get quick view: %w", err)
+func renderInfoFromTileCache(engineID uint, schema, table string, tileCache *models.TileCache) QuickViewRenderInfo {
+	info := QuickViewRenderInfo{
+		RenderSource:    QuickViewRenderSourceCachedTile,
+		TileFormat:      tileCache.TileFormat,
+		TileURLTemplate: tileURLTemplate(engineID, schema, table),
 	}
-
-	// 2. 检查状态是否为 cancelled 或 failed
-	if qv.Status != "cancelled" && qv.Status != "failed" {
-		return fmt.Errorf("%w: %s", ErrQuickViewResumeStatusInvalid, qv.Status)
+	if extent, extentSRID, ok := TileCacheExtent(tileCache); ok {
+		info.Extent = extent
+		info.ExtentSRID = extentSRID
 	}
-
-	// 3. 从Meta获取空间元数据（确保数据仍然有效）
-	spatialMeta, err := s.GetSpatialMetadataFromMeta(ctx, tenantID, engineID, schema, table)
-	if err != nil {
-		return fmt.Errorf("failed to get spatial metadata: %w", err)
+	if minZoom, maxZoom, ok := TileCacheZoomRange(tileCache); ok {
+		info.MinZoom = minZoom
+		info.MaxZoom = maxZoom
 	}
-
-	// 4. 更新状态为 generating 并设置 started_at
-	err = s.repo.GetDB().Model(&models.QuickView{}).
-		Where("id = ?", qv.ID).
-		Updates(map[string]interface{}{
-			"status":        "generating",
-			"error_message": "",
-			"started_at":    gorm.Expr("NOW()"),
-		}).Error
-	if err != nil {
-		return fmt.Errorf("failed to update status: %w", err)
-	}
-
-	// 5. 清除 Redis 取消标志（Resume 是明确的重新执行操作）
-	if s.redisClient != nil && qv.Fingerprint != "" {
-		tracker := mvt.NewProgressTracker(s.redisClient, qv.Fingerprint)
-		if err := tracker.ClearCancelFlag(ctx); err != nil {
-			logger.L().Warn("Failed to clear cancel flag during resume",
-				"error", err,
-				"fingerprint", qv.Fingerprint)
-			// 继续执行，不影响恢复流程
-		} else {
-			logger.L().Info("已清除取消标志，任务可以重新执行",
-				"fingerprint", qv.Fingerprint)
-		}
-	}
-
-	// 6. 重新入队任务（使用原有的配置）
-	payload := worker.QuickViewTaskPayload{
-		TenantID:    tenantID,
-		EngineID:    engineID,
-		SchemaName:  schema,
-		TableName:   table,
-		GeomColumn:  spatialMeta.GeomColumn,
-		SRID:        spatialMeta.SRID,
-		PrimaryKey:  spatialMeta.PrimaryKey,
-		Extent:      spatialMeta.Extent,
-		MinZoom:     *qv.MinZoom,
-		MaxZoom:     qv.MaxZoom,
-		Concurrency: s.cfg.PreCache.Concurrency,
-		Fingerprint: qv.Fingerprint,
-	}
-
-	if err := s.taskQueue.EnqueueQuickViewTask(ctx, payload); err != nil {
-		// 恢复失败，状态改回原状态
-		s.repo.UpdateStatus(qv.ID, qv.Status, err.Error())
-		return fmt.Errorf("failed to enqueue task: %w", err)
-	}
-
-	logger.L().Info("Quick view resumed",
-		"engine_id", engineID,
-		"table", fmt.Sprintf("%s.%s", schema, table),
-		"fingerprint", qv.Fingerprint)
-
-	return nil
+	return info
 }
 
-// IncrementCachedTiles 增加缓存瓦片数（用于按需生成时更新统计）
-func (s *QuickViewService) IncrementCachedTiles(
-	ctx context.Context,
-	tenantID, engineID uint,
-	schema, table string,
-) error {
-	return s.repo.IncrementCachedTiles(tenantID, engineID, schema, table)
+func renderInfoFromSpatialMeta(engineID uint, schema, table string, meta *SpatialMetadataResult) QuickViewRenderInfo {
+	pageSize := meta.RecordCount
+	if pageSize < 1 {
+		pageSize = 1
+	}
+	minZoom, maxZoom := quickViewZoomRange(meta)
+	return QuickViewRenderInfo{
+		RenderSource:   QuickViewRenderSourceDirectGeoJSON,
+		GeoJSONURL:     geoJSONURL(engineID, schema, table, meta.GeomColumn, pageSize),
+		Extent:         meta.Extent,
+		ExtentSRID:     meta.ExtentSRID,
+		MinZoom:        minZoom,
+		MaxZoom:        maxZoom,
+		GeometryColumn: meta.GeomColumn,
+		RecordCount:    meta.RecordCount,
+	}
 }
 
-// RunPreparationChecks 执行准备检查（仅诊断，不修改）
-// 检查物化视图、空间索引和ANALYZE统计是否满足要求
-func (s *QuickViewService) RunPreparationChecks(
-	ctx context.Context,
-	tenantID, engineID uint,
-	schema, table string,
-) (*models.PreparationStatus, error) {
-	// 1. 从Meta模块获取空间元数据（包括几何列名）
-	spatialMeta, err := s.GetSpatialMetadataFromMeta(ctx, tenantID, engineID, schema, table)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get spatial metadata: %w", err)
+func renderInfoFromLocatorGeoJSON(meta *SpatialMetadataResult, geoJSONURL string) QuickViewRenderInfo {
+	minZoom, maxZoom := quickViewZoomRange(meta)
+	return QuickViewRenderInfo{
+		RenderSource:   QuickViewRenderSourceDirectGeoJSON,
+		GeoJSONURL:     geoJSONURL,
+		Extent:         meta.Extent,
+		ExtentSRID:     meta.ExtentSRID,
+		MinZoom:        minZoom,
+		MaxZoom:        maxZoom,
+		GeometryColumn: meta.GeomColumn,
+		RecordCount:    meta.RecordCount,
 	}
-
-	if spatialMeta == nil || spatialMeta.GeomColumn == "" {
-		return nil, ErrQuickViewGeometryColumnNotFound
-	}
-
-	// 2. 创建准备阶段服务
-	prepService := mvt.NewPreparationService(s.repo.GetDB(), s.systemClient)
-
-	// 3. 执行所有检查，传递实际的几何列名
-	prepStatus, err := prepService.RunPreparationChecks(
-		ctx, tenantID, engineID, schema, table, spatialMeta.GeomColumn,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to run preparation checks: %w", err)
-	}
-
-	// 4. 如果诊断通过，创建快显表记录
-	if prepStatus != nil && prepStatus.OverallStatus == "passed" {
-		// 检查记录是否已存在
-		exists, _ := s.repo.Exists(tenantID, engineID, schema, table)
-		if !exists {
-			// 创建新记录（包含 preparation_status 和空间范围）
-			qv := models.QuickView{
-				TenantID:          tenantID,
-				EngineID:          engineID,
-				SchemaName:        schema,
-				Table:             table,
-				Status:            "prepared",
-				Fingerprint:       calculateFingerprint(engineID, schema, table),
-				PreparationStatus: prepStatus,
-				Extent:            models.JSONFloatArray(spatialMeta.Extent),
-				ExtentSRID:        spatialMeta.ExtentSRID,
-				StartedAt:         &time.Time{},
-				CompletedAt:       &time.Time{},
-			}
-			now := time.Now()
-			qv.StartedAt = &now
-			qv.CompletedAt = &now
-
-			if err := s.repo.Create(&qv); err != nil {
-				logger.L().Error("Failed to create quick view record", "error", err)
-				// 不返回错误，只记录日志，诊断结果不受影响
-			}
-		}
-	}
-
-	return prepStatus, nil
 }
 
-// PrepareForCreateMVT 执行准备工作（启动异步任务）
-// 创建物化视图、空间索引和执行ANALYZE
-func (s *QuickViewService) PrepareForCreateMVT(
-	ctx context.Context,
-	tenantID, engineID uint,
-	schema, table string,
-) (string, error) {
-	fingerprint := calculateFingerprint(engineID, schema, table)
-	now := time.Now()
-
-	// 1. 从Meta模块获取空间元数据（包括几何列名、extent等）
-	spatialMeta, err := s.GetSpatialMetadataFromMeta(ctx, tenantID, engineID, schema, table)
-	if err != nil {
-		return "", fmt.Errorf("failed to get spatial metadata: %w", err)
+func renderInfoFromRealtimeTile(engineID uint, schema, table string, meta *SpatialMetadataResult) QuickViewRenderInfo {
+	minZoom, maxZoom := quickViewZoomRange(meta)
+	return QuickViewRenderInfo{
+		RenderSource:    QuickViewRenderSourceRealtimeTile,
+		TileFormat:      "mvt",
+		TileURLTemplate: tileURLTemplate(engineID, schema, table),
+		Extent:          meta.Extent,
+		ExtentSRID:      meta.ExtentSRID,
+		MinZoom:         minZoom,
+		MaxZoom:         maxZoom,
+		GeometryColumn:  meta.GeomColumn,
+		RecordCount:     meta.RecordCount,
 	}
-
-	if spatialMeta == nil || spatialMeta.GeomColumn == "" {
-		return "", ErrQuickViewGeometryColumnNotFound
-	}
-
-	// 2. 先创建或更新快显记录（status="preparing"，同时设置 extent）
-	exists, _ := s.repo.Exists(tenantID, engineID, schema, table)
-
-	if !exists {
-		// 创建新记录，包含从 Meta 获取的 extent
-		qv := models.QuickView{
-			TenantID:    tenantID,
-			EngineID:    engineID,
-			SchemaName:  schema,
-			Table:       table,
-			Status:      "preparing",
-			Fingerprint: fingerprint,
-			StartedAt:   &now,
-			// 从 Meta 同步 extent 信息
-			Extent:     models.JSONFloatArray(spatialMeta.Extent),
-			ExtentSRID: spatialMeta.ExtentSRID,
-		}
-		if err := s.repo.Create(&qv); err != nil {
-			return "", fmt.Errorf("failed to create quick view record: %w", err)
-		}
-		logger.L().Info("✅ Created QuickView with extent from Meta",
-			"table", fmt.Sprintf("%s.%s", schema, table),
-			"extent", spatialMeta.Extent,
-			"extent_srid", spatialMeta.ExtentSRID)
-	} else {
-		// 更新状态为准备中，同时更新 extent（以防元数据有更新）
-		qv, err := s.repo.GetByTable(tenantID, engineID, schema, table)
-		if err != nil {
-			return "", fmt.Errorf("failed to get quick view record: %w", err)
-		}
-
-		// 使用 Updates 只更新必要字段，保护其他字段
-		updates := map[string]interface{}{
-			"status":      "preparing",
-			"extent":      models.JSONFloatArray(spatialMeta.Extent),
-			"extent_srid": spatialMeta.ExtentSRID,
-		}
-		if err := s.repo.GetDB().Model(&qv).Updates(updates).Error; err != nil {
-			return "", fmt.Errorf("failed to update quick view: %w", err)
-		}
-		logger.L().Info("✅ Updated QuickView extent from Meta",
-			"table", fmt.Sprintf("%s.%s", schema, table),
-			"extent", spatialMeta.Extent,
-			"extent_srid", spatialMeta.ExtentSRID)
-	}
-
-	// 3. 入队准备任务，传递实际的几何列名
-	payload := worker.PrepareForCreateMVTTaskPayload{
-		TenantID:    tenantID,
-		EngineID:    engineID,
-		SchemaName:  schema,
-		TableName:   table,
-		Fingerprint: fingerprint,
-		GeomColumn:  spatialMeta.GeomColumn, // 传递实际的几何列名
-	}
-
-	err = s.taskQueue.EnqueuePrepareForCreateMVTTask(ctx, payload)
-	if err != nil {
-		// 准备失败，更新状态
-		qv, _ := s.repo.GetByTable(tenantID, engineID, schema, table)
-		if qv != nil {
-			s.repo.UpdateStatus(qv.ID, "none", err.Error())
-		}
-		return "", fmt.Errorf("failed to enqueue prepare task: %w", err)
-	}
-
-	logger.L().Info("✅ Preparation task enqueued",
-		"engine_id", engineID,
-		"table", fmt.Sprintf("%s.%s", schema, table),
-		"geom_column", spatialMeta.GeomColumn,
-		"fingerprint", fingerprint)
-
-	return fingerprint, nil
 }
 
-// calculateFingerprint 计算表的指纹（用于 MinIO 路径）
-// 使用 common 模块的统一算法：SHA256(engineID:schema.table)
-func calculateFingerprint(engineID uint, schema, table string) string {
-	// 两步计算方式：先拼接 full_name，再计算指纹
-	fullName := fmt.Sprintf("%s.%s", schema, table)
-	return commonModels.GenerateItemFingerprint(engineID, fullName)
-}
-
-// buildQuickViewPath 构建快显瓦片的 MinIO 路径（租户隔离）
-// 格式: tenant_{tenant_id}/mvt-tiles/{fingerprint}/tiles/z{z}/{x}_{y}.mvt.gz
-func buildQuickViewPath(tenantID uint, fingerprint string, z, x, y int) string {
-	return fmt.Sprintf("tenant_%d/mvt-tiles/%s/tiles/z%d/%d_%d.mvt.gz",
-		tenantID, fingerprint, z, x, y)
-}
-
-// buildQuickViewMetadataPath 构建快显元数据的 MinIO 路径（租户隔离）
-// 格式: tenant_{tenant_id}/mvt-tiles/{fingerprint}/metadata.json
-func buildQuickViewMetadataPath(tenantID uint, fingerprint string) string {
-	return fmt.Sprintf("tenant_%d/mvt-tiles/%s/metadata.json",
-		tenantID, fingerprint)
-}
-
-// UpdatePreferredMode 更新用户偏好的显示模式
-func (s *QuickViewService) UpdatePreferredMode(
-	ctx context.Context,
-	tenantID, engineID uint,
-	schema, table string,
-	preferredMode string,
-) error {
-	// 1. 验证 preferredMode 参数
-	if preferredMode != "geojson" && preferredMode != "mvt" {
-		return fmt.Errorf("%w: %s", ErrQuickViewInvalidPreferredMode, preferredMode)
-	}
-
-	// 2. 调用 Repository 更新
-	err := s.repo.UpdatePreferredMode(tenantID, engineID, schema, table, preferredMode)
-	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return ErrQuickViewRecordNotFound
+func quickViewZoomRange(meta *SpatialMetadataResult) (int, int) {
+	minZoom := 3
+	if meta != nil && len(meta.Extent) == 4 {
+		minZoom = spatial.CalculateMinZoomFromExtent(meta.Extent, meta.ExtentSRID) - 2
+		if minZoom < 3 {
+			minZoom = 3
 		}
-		return fmt.Errorf("failed to update preferred mode: %w", err)
 	}
+	return minZoom, 18
+}
 
-	logger.L().Info("Preferred mode updated",
-		"engine_id", engineID,
-		"table", fmt.Sprintf("%s.%s", schema, table),
-		"preferred_mode", preferredMode)
+func tileURLTemplate(engineID uint, schema, table string) string {
+	locator := tableLocator(engineID, schema, table)
+	if locator == "" {
+		return ""
+	}
+	values := url.Values{}
+	values.Set("locator", locator)
+	return "/api/v1/manager/quick-view/tiles/{z}/{x}/{y}.mvt?" + values.Encode()
+}
 
-	return nil
+func geoJSONURL(engineID uint, schema, table, geomColumn string, pageSize int64) string {
+	values := url.Values{}
+	if locator := tableLocator(engineID, schema, table); locator != "" {
+		values.Set("locator", locator)
+	}
+	values.Set("page", "1")
+	values.Set("page_size", fmt.Sprintf("%d", pageSize))
+	if strings.TrimSpace(geomColumn) != "" {
+		values.Set("geometry_column", strings.TrimSpace(geomColumn))
+	}
+	return "/api/v1/manager/quick-view/geojson?" + values.Encode()
+}
+
+func tileCacheCreateURL(engineID uint, schema, table string) string {
+	values := url.Values{}
+	values.Set("tab", "tasks")
+	values.Set("create", "1")
+	if engineID > 0 {
+		values.Set("engine_id", fmt.Sprintf("%d", engineID))
+	}
+	if strings.TrimSpace(schema) != "" {
+		values.Set("schema", strings.TrimSpace(schema))
+	}
+	if strings.TrimSpace(table) != "" {
+		values.Set("table", strings.TrimSpace(table))
+	}
+	if itemFingerprint := spatialItemFingerprint(engineID, schema, table); itemFingerprint != "" {
+		values.Set("item_fingerprint", itemFingerprint)
+	}
+	return "/manager/tile-cache?" + values.Encode()
+}
+
+func stringSliceContains(items []string, target string) bool {
+	for _, item := range items {
+		if strings.EqualFold(strings.TrimSpace(item), strings.TrimSpace(target)) {
+			return true
+		}
+	}
+	return false
+}
+
+func tableLocator(engineID uint, schema, table string) string {
+	schema = strings.TrimSpace(schema)
+	table = strings.TrimSpace(table)
+	if engineID == 0 || schema == "" || table == "" {
+		return ""
+	}
+	return (&resourcetree.ResourceLocator{
+		EngineID: engineID,
+		Path:     []string{schema, table},
+		Type:     resourcetree.TypeTable,
+	}).ToURI()
+}
+
+func spatialItemFingerprint(engineID uint, schema, table string) string {
+	schema = strings.TrimSpace(schema)
+	table = strings.TrimSpace(table)
+	if engineID == 0 || schema == "" || table == "" {
+		return ""
+	}
+	return commonModels.GenerateItemFingerprint(engineID, fmt.Sprintf("%s.%s", schema, table))
 }

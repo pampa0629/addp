@@ -8,17 +8,19 @@
       :base-type="baseMapType"
       :base-map-profile="baseMapProfile"
       :preserve-view="preserveView"
+      :popup-options="mapPopupOptions"
       ref="rendererRef"
       @feature-click="handleFeatureClick"
     />
     <div v-else class="map-placeholder">
-      <el-empty description="未配置地图服务" />
+      <el-empty :description="t('map.mapServiceNotConfigured')" />
     </div>
   </div>
 </template>
 
 <script setup>
 import { computed, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useMapConfig } from '../../composables/useMapConfig'
 import GaodeMapRenderer from './GaodeMapRenderer.vue'
 import OpenLayersRenderer from './OpenLayersRenderer.vue'
@@ -39,6 +41,10 @@ const props = defineProps({
   preserveView: {
     type: Boolean,
     default: false
+  },
+  popupOptions: {
+    type: Object,
+    default: () => ({})
   }
 })
 
@@ -46,9 +52,30 @@ const emit = defineEmits(['feature-click'])
 
 const rendererRef = ref(null)
 
+const { t } = useI18n()
 const { mapConfig, GAODE_BASE_MAP_VALUE, getBaseMapProfile } = useMapConfig()
 
 const baseMapProfile = computed(() => getBaseMapProfile(props.baseMapType))
+const mapPopupOptions = computed(() => ({
+  ...props.popupOptions,
+  labels: {
+    id: t('map.featureId'),
+    unknown: t('map.unknown'),
+    unknownGeometry: t('map.unknownGeometry'),
+    nullValue: t('map.nullValue'),
+    noAttributes: t('map.noFieldData'),
+    ...(props.popupOptions.labels || {})
+  },
+  geometryTypeLabels: {
+    Point: t('map.geometryPoint'),
+    MultiPoint: t('map.geometryMultiPoint'),
+    LineString: t('map.geometryLineString'),
+    MultiLineString: t('map.geometryMultiLineString'),
+    Polygon: t('map.geometryPolygon'),
+    MultiPolygon: t('map.geometryMultiPolygon'),
+    ...(props.popupOptions.geometryTypeLabels || {})
+  }
+}))
 
 const mapRenderer = computed(() => {
   if (props.baseMapType === GAODE_BASE_MAP_VALUE) {
@@ -103,14 +130,15 @@ defineExpose({ focusFeature, showPopup, hidePopup })
 }
 
 :deep(.map-popup) {
-  background: rgba(255, 255, 255, 0.96);
+  background: var(--addp-bg-primary);
   border: 1px solid var(--el-border-color-light);
   border-radius: 6px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-  padding: 8px 12px;
-  max-width: 280px;
-  font-size: 12px;
-  color: #1f2937;
+  min-width: 280px;
+  max-width: 400px;
+  max-height: 320px;
+  overflow: auto;
+  color: var(--addp-text-primary);
 }
 
 :deep(.map-popup-content) {
@@ -138,5 +166,88 @@ defineExpose({ focusFeature, showPopup, hidePopup })
   text-align: right;
   color: #111827;
   word-break: break-all;
+}
+
+:deep(.feature-card) {
+  font-size: 12px;
+}
+
+:deep(.feature-card-header) {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--el-border-color-light);
+  background: var(--addp-bg-secondary);
+}
+
+:deep(.feature-id) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--addp-text-primary);
+}
+
+:deep(.feature-geom-type) {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+}
+
+:deep(.feature-primary-field) {
+  padding: 12px;
+  border-bottom: 1px solid var(--el-border-color-light);
+}
+
+:deep(.primary-value) {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--addp-text-primary);
+  word-break: break-word;
+}
+
+:deep(.primary-label) {
+  margin-top: 4px;
+  color: var(--addp-text-tertiary);
+}
+
+:deep(.feature-attributes) {
+  padding: 8px 12px 10px;
+}
+
+:deep(.attribute-item) {
+  display: grid;
+  grid-template-columns: minmax(72px, 0.42fr) minmax(0, 1fr);
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  line-height: 1.45;
+}
+
+:deep(.attribute-item:last-child) {
+  border-bottom: 0;
+}
+
+:deep(.attr-key) {
+  color: var(--addp-text-secondary);
+  font-weight: 600;
+  word-break: break-word;
+}
+
+:deep(.attr-value) {
+  color: var(--addp-text-primary);
+  word-break: break-word;
+  user-select: text;
+}
+
+:deep(.attribute-empty),
+:deep(.null-value) {
+  color: var(--addp-text-tertiary);
 }
 </style>

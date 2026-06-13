@@ -99,6 +99,8 @@ fi
 mkdir -p .dev-pids
 mkdir -p .dev-bins
 
+MAX_WAIT=${MAX_WAIT:-60}
+
 # 本地 Go 构建缓存，避免写入系统 GOPATH，并优先使用本机 Go 工具链
 export GOMODCACHE="${PROJECT_ROOT}/.gomodcache"
 export GOPATH="${PROJECT_ROOT}/.gopath"
@@ -174,7 +176,6 @@ START_SYSTEM_BACKEND=false
 START_SYSTEM_FRONTEND=false
 START_MANAGER_BACKEND=false
 START_MANAGER_FRONTEND=false
-START_MANAGER_WORKER=false
 START_META_BACKEND=false
 START_META_FRONTEND=false
 START_META_WORKER=false
@@ -218,7 +219,6 @@ if [ "$START_ALL" = true ]; then
   START_SYSTEM_FRONTEND=true
   START_MANAGER_BACKEND=true
   START_MANAGER_FRONTEND=true
-  START_MANAGER_WORKER=true
   START_META_BACKEND=true
   START_META_FRONTEND=true
   START_META_WORKER=true
@@ -266,7 +266,6 @@ else
       START_SYSTEM_FRONTEND=true
       START_MANAGER_BACKEND=true
       START_MANAGER_FRONTEND=true
-      START_MANAGER_WORKER=true
       ;;
     meta)
       START_SYSTEM_BACKEND=true
@@ -377,7 +376,6 @@ else
     gateway)
       START_SYSTEM_BACKEND=true
       START_MANAGER_BACKEND=true
-      START_MANAGER_WORKER=true
       START_META_BACKEND=true
       START_META_WORKER=true
       START_TRANSFER_BACKEND=true
@@ -399,7 +397,6 @@ else
       START_SYSTEM_FRONTEND=true
       START_MANAGER_BACKEND=true
       START_MANAGER_FRONTEND=true
-      START_MANAGER_WORKER=true
       START_META_BACKEND=true
       START_META_FRONTEND=true
       START_META_WORKER=true
@@ -753,12 +750,12 @@ fi
 # 3. 并行启动所有后端服务 + Workers (System 已就绪)
 # 跳过检查：如果没有任何后端模块需要启动
 if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_QUALITY_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ] || [ "$START_GRAPH_BACKEND" = true ]; then
-  echo -e "${YELLOW}Step 3/5: 并行启动所有后端服务 + Workers${NC}"
+  echo -e "${YELLOW}Step 3/5: 并行启动后端服务和选定 Worker${NC}"
 
   # ============================================================
   # Phase 1: 并行编译所有 Go 服务
   # ============================================================
-  echo "  [1/3] 并行编译 Backends + Workers..."
+  echo "  [1/3] 并行编译后端服务和选定 Worker..."
 
   # 并行编译后端服务(仅编译需要启动的)
   BUILD_PIDS=()
@@ -829,11 +826,6 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   fi
 
   # 并行编译 Workers(仅编译需要启动的)
-  if [ "$START_MANAGER_WORKER" = true ]; then
-    build_worker "manager" "manager/backend" &
-    BUILD_PIDS+=($!)
-  fi
-
   if [ "$START_META_WORKER" = true ]; then
     build_worker "meta" "meta/backend" &
     BUILD_PIDS+=($!)
@@ -1004,16 +996,6 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   fi
 
   # 并行启动 Workers
-  if [ "$START_MANAGER_WORKER" = true ]; then
-    if check_service_running "manager-worker" ""; then
-      .dev-bins/addp-manager-worker > logs/manager-worker.log 2>&1 &
-      MANAGER_WORKER_PID=$!
-      echo $MANAGER_WORKER_PID > .dev-pids/manager-worker.pid
-    else
-      MANAGER_WORKER_PID=$(cat .dev-pids/manager-worker.pid 2>/dev/null)
-    fi
-  fi
-
   if [ "$START_META_WORKER" = true ]; then
     if check_service_running "meta-worker" ""; then
       .dev-bins/addp-meta-worker > logs/meta-worker.log 2>&1 &
@@ -1153,7 +1135,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   done
 
   echo ""
-  echo -e "${GREEN}✓ 所有 Backends + Workers 全部就绪${NC}"
+  echo -e "${GREEN}✓ 后端服务和选定 Worker 全部就绪${NC}"
 fi
 echo "  Manager Backend:    PID $MANAGER_PID (http://localhost:${MANAGER_BACKEND_PORT})"
 echo "  Meta Backend:       PID $META_PID (http://localhost:${META_BACKEND_PORT})"
@@ -1161,7 +1143,6 @@ echo "  Transfer Backend:   PID $TRANSFER_PID (http://localhost:${TRANSFER_BACKE
 echo "  Orchestrator Backend: PID $ORCHESTRATOR_PID (http://localhost:${ORCHESTRATOR_BACKEND_PORT})"
 echo "  Develop Backend:    PID $DEVELOP_PID (http://localhost:${DEVELOP_BACKEND_PORT})"
 echo "  Service Backend:    PID $SERVICE_PID (http://localhost:${SERVICE_BACKEND_PORT})"
-echo "  Manager Worker:     PID $MANAGER_WORKER_PID"
 echo "  Meta Worker:        PID $META_WORKER_PID"
 echo "  Transfer Worker:    PID $TRANSFER_WORKER_PID"
 echo ""
@@ -2203,7 +2184,6 @@ echo "  Quality Backend:      $QUALITY_PID"
 echo "  Gateway:              $GATEWAY_PID"
 echo ""
 echo "Workers PID:"
-echo "  Manager Worker:       $MANAGER_WORKER_PID"
 echo "  Meta Worker:          $META_WORKER_PID"
 echo "  Transfer Worker:      $TRANSFER_WORKER_PID"
 echo ""
@@ -2228,7 +2208,6 @@ echo "  Jupyter Engine: logs/jupyter-engine.log"
 echo "  Gateway:  logs/gateway.log"
 echo "  Transfer Worker: logs/transfer-worker.log"
 echo "  Meta Worker: logs/meta-worker.log"
-echo "  Manager Worker: logs/manager-worker.log"
 echo "  Meta FE:  logs/meta-frontend.log"
 echo "  Transfer FE:  logs/transfer-frontend.log"
 echo "  Develop FE:  logs/develop-frontend.log"

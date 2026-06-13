@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math"
 	"strings"
 	"sync"
@@ -15,6 +14,7 @@ import (
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/spatial"
+	"github.com/addp/manager/internal/tilecache"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"gorm.io/gorm"
@@ -40,10 +40,13 @@ type QuickViewConfig struct {
 	SRID               int
 	PrimaryKey         string
 	Extent             []float64 // [minLng, minLat, maxLng, maxLat]
-	MinZoom            int       // 自动计算或指定
+	ExtentSRID         int
+	MinZoom            int // 自动计算或指定
 	MaxZoom            int
 	Concurrency        int
 	Fingerprint        string
+	StorageRef         string
+	ConfigHash         string
 	OptimizationConfig *commonModels.OptimizationConfig // v2.0 优化配置
 }
 
@@ -136,57 +139,59 @@ func (s *QuickViewService) GenerateMixed(
 		"max_zoom", cfg.MaxZoom,
 		"concurrency", cfg.Concurrency)
 
-	// 1. 验证 SRID 一致性（防止元数据与实际数据不一致导致错误）
-	actualSRID, err := s.tileGen.VerifySRID(ctx, cfg.EngineID, cfg.TenantID, cfg.Schema, cfg.Table, cfg.GeomColumn, cfg.SRID)
+	if strings.TrimSpace(cfg.StorageRef) == "" {
+		return nil, fmt.Errorf("tile cache storage_ref is required")
+	}
+	_, objectPrefix, err := tilecache.ObjectPrefix(cfg.StorageRef, s.bucket)
 	if err != nil {
-		logger.L().Error("❌ SRID 验证失败",
-			"table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table),
-			"expected_srid", cfg.SRID,
-			"error", err)
-		return nil, fmt.Errorf("SRID 验证失败: %w", err)
+		return nil, err
 	}
 
-	logger.L().Info("✅ SRID 验证通过",
+	// 1. 读取源表真实 SRID。MVT 目标坐标系固定为 3857，源 SRID 只用于 SQL 内 ST_Transform。
+	actualSRID, err := s.tileGen.QuerySourceSRID(ctx, cfg.EngineID, cfg.TenantID, cfg.Schema, cfg.Table, cfg.GeomColumn)
+	if err != nil {
+		logger.L().Error("❌ 源表 SRID 解析失败",
+			"table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table),
+			"error", err)
+		return nil, fmt.Errorf("源表 SRID 解析失败: %w", err)
+	}
+	cfg.SRID = actualSRID
+
+	logger.L().Info("✅ 源表 SRID 已解析，MVT 将输出 3857",
 		"table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table),
-		"srid", actualSRID)
+		"source_srid", actualSRID,
+		"target_srid", 3857)
 
 	// 1.3 运行准备阶段检查（v4.0 新增）
 	logger.L().Info("🔄 开始准备阶段检查",
 		"table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table))
 
-	prepStatus, err := s.prepService.RunPreparationChecks(ctx, cfg.TenantID, cfg.EngineID, cfg.Schema, cfg.Table, cfg.GeomColumn)
-	if err != nil {
-		logger.L().Error("❌ 准备阶段检查失败",
-			"table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table),
-			"error", err)
-		return nil, fmt.Errorf("准备阶段检查失败: %w", err)
+	if s.prepService != nil {
+		prepStatus, err := s.prepService.RunPreparationChecks(ctx, cfg.TenantID, cfg.EngineID, cfg.Schema, cfg.Table, cfg.GeomColumn)
+		if err != nil {
+			logger.L().Warn("准备阶段检查失败，继续使用源表生成瓦片",
+				"table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table),
+				"error", err)
+		} else {
+			logger.L().Info("✅ 准备阶段检查完成",
+				"overall_status", prepStatus.OverallStatus,
+				"summary", prepStatus.Summary)
+
+			if prepStatus.OverallStatus == "failed" {
+				logger.L().Warn("准备阶段存在待优化项，当前生成仍使用源表与 SQL 内坐标转换",
+					"table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table),
+					"checks", prepStatus.Checks)
+			}
+		}
 	}
 
-	logger.L().Info("✅ 准备阶段检查完成",
-		"overall_status", prepStatus.OverallStatus,
-		"summary", prepStatus.Summary)
-
-	// 如果准备阶段失败，返回错误并让前端显示失败信息
-	if prepStatus.OverallStatus == "failed" {
-		// 保存准备状态到数据库（以便前端显示）
-		logger.L().Warn("⚠️ 准备阶段有失败项",
-			"table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table),
-			"checks", prepStatus.Checks)
-		return nil, fmt.Errorf("准备阶段检查失败，请手动处理后重试")
-	}
-
-	// 🆕 v4.0 检查是否需要使用物化视图（如果原始 SRID 不是 3857）
-	// 原始 SRID 是在 actualSRID 中
 	if actualSRID != 3857 {
-		// 需要使用物化视图，修改配置
-		cfg.Table = spatial.PostGISMaterializedViewName(cfg.Table)
-		cfg.GeomColumn = "geom_3857"
-		logger.L().Info("🔄 启用物化视图（坐标系转换）",
-			"original_srid", actualSRID,
-			"mv_table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table),
-			"mv_geom_column", cfg.GeomColumn)
+		logger.L().Info("🔄 源表不是 3857，生成 SQL 将在 PostgreSQL 内执行 ST_Transform",
+			"table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table),
+			"source_srid", actualSRID,
+			"target_srid", 3857)
 	} else {
-		logger.L().Info("✅ 原始表已是 3857 坐标系，无需物化视图",
+		logger.L().Info("✅ 原始表已是 3857 坐标系，可直接生成 MVT",
 			"srid", actualSRID)
 	}
 
@@ -322,54 +327,46 @@ func (s *QuickViewService) GenerateMixed(
 		}
 	}
 
-	// 5. 启动 Worker Pool
+	// 5. 启动并发执行器池
 	// 🔍 日志：记录实际启动的并发 goroutines 数量
-	logger.L().Info("🚀 MVT Service: 启动 Worker Pool",
+	logger.L().Info("🚀 MVT Service: 启动 Executor Pool",
 		"table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table),
 		"concurrency", cfg.Concurrency,
-		"worker_count", cfg.Concurrency,
+		"executor_count", cfg.Concurrency,
 		"total_tasks", totalTaskCount)
 
 	var wg sync.WaitGroup
 	for i := 0; i < cfg.Concurrency; i++ {
 		wg.Add(1)
-		workerID := i // 捕获循环变量
-		logger.L().Info("👷 启动 Worker",
-			"worker_id", workerID,
-			"total_workers", cfg.Concurrency)
+		executorID := i // 捕获循环变量
+		logger.L().Info("👷 启动 Executor",
+			"executor_id", executorID,
+			"total_executors", cfg.Concurrency)
 		go func(id int) {
 			defer wg.Done()
-			logger.L().Debug("Worker 开始处理任务", "worker_id", id)
+			logger.L().Debug("Executor 开始处理任务", "executor_id", id)
 			tilesProcessed := 0
 			for coord := range jobs {
-				// ✅ 新增：检查 Context 是否被取消
+				// 检查 Context 是否被取消
 				select {
 				case <-ctx.Done():
-					logger.L().Info("⚠️  Worker 检测到 Context 取消，停止处理新瓦片",
-						"worker_id", id,
+					logger.L().Info("⚠️  Executor 检测到 Context 取消，停止处理新瓦片",
+						"executor_id", id,
 						"tiles_processed", tilesProcessed)
 					return
 				default:
-				}
-
-				// ✅ 新增：检查 Redis 取消标志
-				if progressTracker != nil && progressTracker.IsCancelled(ctx) {
-					logger.L().Info("⚠️  Worker 检测到 Redis 取消标志，停止处理新瓦片",
-						"worker_id", id,
-						"tiles_processed", tilesProcessed)
-					return
 				}
 
 				result := s.processTile(ctx, cfg, coord)
 				results <- result
 				tilesProcessed++
 			}
-			logger.L().Info("Worker 完成所有任务", "worker_id", id, "tiles_processed", tilesProcessed)
-		}(workerID)
+			logger.L().Info("Executor 完成所有任务", "executor_id", id, "tiles_processed", tilesProcessed)
+		}(executorID)
 	}
 
-	logger.L().Info("✅ MVT Service: Worker Pool 已全部启动",
-		"active_workers", cfg.Concurrency)
+	logger.L().Info("✅ MVT Service: Executor Pool 已全部启动",
+		"active_executors", cfg.Concurrency)
 
 	// 6. 流式任务分发器（在单独的goroutine中）
 	go func() {
@@ -382,7 +379,7 @@ func (s *QuickViewService) GenerateMixed(
 			"concurrency", cfg.Concurrency)
 
 		// 先打印所有层级的队列计划
-		logger.L().Info("📊 预缓存队列计划:")
+		logger.L().Info("📊 瓦片缓存生成队列计划:")
 		for _, zr := range zoomRanges {
 			logger.L().Info(fmt.Sprintf("  z%d: %d 个瓦片 (x[%d-%d] y[%d-%d])",
 				zr.zoom, zr.totalTiles, zr.minX, zr.maxX, zr.minY, zr.maxY))
@@ -505,36 +502,6 @@ func (s *QuickViewService) GenerateMixed(
 			return nil, context.Canceled
 		default:
 			// 继续处理
-		}
-
-		// 每个瓦片都检查Redis取消标志（性能影响<1%，用户体验最佳）
-		if progressTracker != nil && progressTracker.IsCancelled(ctx) {
-			logger.L().Warn("⚠️  瓦片生成被用户取消（Redis标志）",
-				"processed", processedTiles,
-				"total", totalTaskCount,
-				"progress", fmt.Sprintf("%.1f%%", float64(processedTiles)/float64(totalTaskCount)*100))
-
-			// 更新进度为已取消
-			progressTracker.UpdateProgress(ctx, &QuickViewProgress{
-				Status:             "cancelled",
-				CurrentZoom:        result.coord.Z,
-				MaxZoom:            cfg.MaxZoom,
-				TilesProcessed:     processedTiles,
-				TilesTotalEstimate: totalTaskCount,
-				ProgressPercent:    float64(processedTiles) / float64(totalTaskCount) * 100,
-			})
-
-			// ⚠️ 不清除取消标志！原因：
-			// 1. 多Worker场景下，清除标志会导致其他Worker无法感知取消
-			// 2. Redis标志由cancel操作设置，由cancel操作负责清除
-			// 3. 标志有TTL（1小时），会自动过期
-			// 4. Worker只应该"读取"标志，不应该"修改"标志
-
-			// 停止进度监控 goroutine
-			close(progressDone)
-
-			// 返回取消错误
-			return nil, fmt.Errorf("task cancelled by user")
 		}
 
 		stats := statsMap[result.coord.Z]
@@ -762,10 +729,15 @@ func (s *QuickViewService) GenerateMixed(
 	metadata := &QuickViewMetadata{
 		EngineID:         cfg.EngineID,
 		Fingerprint:      cfg.Fingerprint,
+		TileFormat:       "mvt",
+		StorageRef:       cfg.StorageRef,
+		ObjectPrefix:     objectPrefix,
+		ConfigHash:       cfg.ConfigHash,
 		TableName:        cfg.Table,
 		Schema:           cfg.Schema,
 		Extent:           cfg.Extent,
 		SRID:             cfg.SRID,
+		MinZoom:          cfg.MinZoom,
 		GeometryTypes:    []string{}, // TODO: 从meta获取
 		ZoomLevels:       make(map[string]ZoomLevelStats),
 		MaxZoomGenerated: result.ActualMaxZoom,
@@ -776,7 +748,7 @@ func (s *QuickViewService) GenerateMixed(
 		GenerationSec:    result.GenerationSec,
 	}
 
-	if err := s.putMetadata(ctx, cfg.TenantID, cfg.Fingerprint, metadata); err != nil {
+	if err := s.putMetadata(ctx, cfg.TenantID, cfg.StorageRef, metadata); err != nil {
 		logger.L().Warn("Failed to save metadata to MinIO",
 			"tenant_id", cfg.TenantID,
 			"error", err)
@@ -794,8 +766,8 @@ func (s *QuickViewService) GenerateMixed(
 		})
 	}
 
-	// ============ 预缓存总结报告 ============
-	logger.L().Info("========== 预缓存完成总结 ==========")
+	// ============ 瓦片缓存生成总结报告 ============
+	logger.L().Info("========== 瓦片缓存生成完成总结 ==========")
 	logger.L().Info(fmt.Sprintf("表: %s.%s", cfg.Schema, cfg.Table))
 	if stats != nil && stats.TableRows > 0 {
 		logger.L().Info(fmt.Sprintf("表行数: %d", stats.TableRows))
@@ -917,10 +889,12 @@ func (s *QuickViewService) processTile(
 	default:
 	}
 
-	// 1. 检查瓦片是否已存在于 MinIO（租户隔离）
-	objectPath := fmt.Sprintf("tenant_%d/mvt-tiles/%s/tiles/z%d/%d_%d.mvt.gz",
-		cfg.TenantID, cfg.Fingerprint, coord.Z, coord.X, coord.Y)
-	_, err := s.minioClient.StatObject(ctx, s.bucket, objectPath, minio.StatObjectOptions{})
+	// 1. 检查瓦片是否已存在于对象存储（租户隔离）
+	bucket, objectPath, err := tilecache.TileObjectLocation(cfg.StorageRef, s.bucket, coord.Z, coord.X, coord.Y)
+	if err != nil {
+		return &tileResult{coord: coord, err: err}
+	}
+	_, err = s.minioClient.StatObject(ctx, bucket, objectPath, minio.StatObjectOptions{})
 	if err == nil {
 		// 瓦片已存在，跳过生成（用 -1 标记）
 		return &tileResult{
@@ -973,8 +947,8 @@ func (s *QuickViewService) processTile(
 		}
 	}
 
-	// 5. 存储到 MinIO（租户隔离）
-	err = s.putTile(ctx, cfg.TenantID, cfg.Fingerprint, coord.Z, coord.X, coord.Y, gzData)
+	// 5. 存储到对象存储（租户隔离）
+	err = s.putTile(ctx, cfg, coord, gzData)
 	if err != nil {
 		return &tileResult{
 			coord: coord,
@@ -990,25 +964,26 @@ func (s *QuickViewService) processTile(
 	}
 }
 
-// putTile 存储瓦片到 MinIO（租户隔离）
+// putTile 存储瓦片到对象存储（租户隔离）
 func (s *QuickViewService) putTile(
 	ctx context.Context,
-	tenantID uint,
-	fingerprint string,
-	z, x, y int,
+	cfg QuickViewConfig,
+	coord TileCoord,
 	data []byte,
 ) error {
-	objectPath := fmt.Sprintf("tenant_%d/mvt-tiles/%s/tiles/z%d/%d_%d.mvt.gz",
-		tenantID, fingerprint, z, x, y)
+	bucket, objectPath, err := tilecache.TileObjectLocation(cfg.StorageRef, s.bucket, coord.Z, coord.X, coord.Y)
+	if err != nil {
+		return err
+	}
 
-	_, err := s.minioClient.PutObject(ctx, s.bucket, objectPath, bytes.NewReader(data), int64(len(data)),
+	_, err = s.minioClient.PutObject(ctx, bucket, objectPath, bytes.NewReader(data), int64(len(data)),
 		minio.PutObjectOptions{
 			ContentType: "application/octet-stream",
 			UserMetadata: map[string]string{
-				"tenant_id":  fmt.Sprintf("%d", tenantID),
-				"z":          fmt.Sprintf("%d", z),
-				"x":          fmt.Sprintf("%d", x),
-				"y":          fmt.Sprintf("%d", y),
+				"tenant_id":  fmt.Sprintf("%d", cfg.TenantID),
+				"z":          fmt.Sprintf("%d", coord.Z),
+				"x":          fmt.Sprintf("%d", coord.X),
+				"y":          fmt.Sprintf("%d", coord.Y),
 				"encoding":   "gzip",
 				"created_at": time.Now().Format(time.RFC3339),
 			},
@@ -1021,21 +996,24 @@ func (s *QuickViewService) putTile(
 	return nil
 }
 
-// putMetadata 保存元数据到 MinIO（租户隔离）
+// putMetadata 保存元数据到对象存储（租户隔离）
 func (s *QuickViewService) putMetadata(
 	ctx context.Context,
 	tenantID uint,
-	fingerprint string,
+	storageRef string,
 	metadata *QuickViewMetadata,
 ) error {
-	objectPath := fmt.Sprintf("tenant_%d/mvt-tiles/%s/metadata.json", tenantID, fingerprint)
+	bucket, objectPath, err := tilecache.ManifestObjectLocation(storageRef, s.bucket)
+	if err != nil {
+		return err
+	}
 
 	data, err := json.Marshal(metadata)
 	if err != nil {
 		return fmt.Errorf("failed to marshal metadata: %w", err)
 	}
 
-	_, err = s.minioClient.PutObject(ctx, s.bucket, objectPath,
+	_, err = s.minioClient.PutObject(ctx, bucket, objectPath,
 		bytes.NewReader(data), int64(len(data)),
 		minio.PutObjectOptions{
 			ContentType: "application/json",
@@ -1051,68 +1029,31 @@ func (s *QuickViewService) putMetadata(
 	return nil
 }
 
-// GetTile 从 MinIO 获取瓦片（租户隔离）
-func (s *QuickViewService) GetTile(
-	ctx context.Context,
-	tenantID uint,
-	fingerprint string,
-	z, x, y int,
-) ([]byte, error) {
-	objectPath := fmt.Sprintf("tenant_%d/mvt-tiles/%s/tiles/z%d/%d_%d.mvt.gz",
-		tenantID, fingerprint, z, x, y)
-
-	obj, err := s.minioClient.GetObject(ctx, s.bucket, objectPath, minio.GetObjectOptions{})
+func (s *QuickViewService) DeleteByStorageRef(ctx context.Context, storageRef string) error {
+	bucket, prefix, err := tilecache.ObjectPrefix(storageRef, s.bucket)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get tile from minio: %w", err)
+		return err
 	}
-	defer obj.Close()
-
-	data, err := io.ReadAll(obj)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read tile data: %w", err)
-	}
-
-	return data, nil
-}
-
-// DeleteTiles 删除指定 fingerprint 的所有瓦片和元数据（租户隔离）
-func (s *QuickViewService) DeleteTiles(ctx context.Context, tenantID uint, fingerprint string) error {
-	// 删除瓦片目录：tenant_{tenant_id}/mvt-tiles/{fingerprint}/tiles/
-	// 删除元数据文件：tenant_{tenant_id}/mvt-tiles/{fingerprint}/metadata.json
-
-	prefix := fmt.Sprintf("tenant_%d/mvt-tiles/%s/", tenantID, fingerprint)
-
-	// 列出所有对象
-	objectsCh := s.minioClient.ListObjects(ctx, s.bucket, minio.ListObjectsOptions{
-		Prefix:    prefix,
+	objectsCh := s.minioClient.ListObjects(ctx, bucket, minio.ListObjectsOptions{
+		Prefix:    prefix + "/",
 		Recursive: true,
 	})
 
-	// 删除所有对象
 	deletedCount := 0
 	for object := range objectsCh {
 		if object.Err != nil {
-			logger.L().Error("Error listing object for deletion",
-				"tenant_id", tenantID,
-				"error", object.Err, "prefix", prefix)
-			continue
+			return fmt.Errorf("failed to list tile cache object %q: %w", prefix, object.Err)
 		}
-
-		if err := s.minioClient.RemoveObject(ctx, s.bucket, object.Key, minio.RemoveObjectOptions{}); err != nil {
-			logger.L().Error("Failed to delete object",
-				"tenant_id", tenantID,
-				"error", err, "key", object.Key)
-			continue
+		if err := s.minioClient.RemoveObject(ctx, bucket, object.Key, minio.RemoveObjectOptions{}); err != nil {
+			return fmt.Errorf("failed to delete tile cache object %q: %w", object.Key, err)
 		}
-
 		deletedCount++
 	}
 
-	logger.L().Info("Deleted tiles from MinIO",
-		"tenant_id", tenantID,
-		"fingerprint", fingerprint,
+	logger.L().Info("瓦片缓存对象已删除",
+		"bucket", bucket,
+		"prefix", prefix,
 		"deleted_count", deletedCount)
-
 	return nil
 }
 
@@ -1122,120 +1063,6 @@ type StatisticsInfo struct {
 	LastAnalyzeAgeHours int
 	NeedsAnalyze        bool
 	Bounds              [4]float64 // [minLng, minLat, maxLng, maxLat]
-}
-
-// prepareFor3857MVT 准备 3857 物化视图和索引（如果需要）
-// 对于非 3857 的空间表，自动创建物化视图和空间索引
-func (s *QuickViewService) prepareFor3857MVT(
-	ctx context.Context,
-	cfg QuickViewConfig,
-	actualSRID int,
-) error {
-	// 1. 判断是否需要物化视图（仅 public.dltb 且 SRID=2360）
-	if cfg.Schema != "public" || cfg.Table != "dltb" || actualSRID == 3857 {
-		logger.L().Info("⏭️  无需物化视图转换",
-			"table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table),
-			"srid", actualSRID)
-		return nil
-	}
-
-	// 2. 获取数据库连接
-	conn, err := s.tileGen.GetOrCreateDBPool(ctx, cfg.EngineID, cfg.TenantID)
-	if err != nil {
-		return fmt.Errorf("failed to get db connection: %w", err)
-	}
-
-	mvTable := cfg.Table + "_3857"
-	mvFullName := fmt.Sprintf("%s.%s", cfg.Schema, mvTable)
-	indexName := fmt.Sprintf("idx_%s_geom", mvTable)
-
-	logger.L().Info("🔍 检查物化视图",
-		"materialized_view", mvFullName,
-		"original_srid", actualSRID,
-		"target_srid", 3857)
-
-	// 3. 检查物化视图是否存在
-	var mvExists bool
-	checkMVSQL := `
-		SELECT EXISTS (
-			SELECT 1 FROM pg_matviews
-			WHERE schemaname = $1 AND matviewname = $2
-		)
-	`
-	if err := conn.QueryRowContext(ctx, checkMVSQL, cfg.Schema, mvTable).Scan(&mvExists); err != nil {
-		return fmt.Errorf("failed to check materialized view: %w", err)
-	}
-
-	if !mvExists {
-		logger.L().Info("🚧 物化视图不存在，开始创建",
-			"materialized_view", mvFullName,
-			"estimated_time", "可能需要数分钟")
-
-		// 创建物化视图（转换为 3857）
-		// ⚠️ 重要：显式指定几何类型和 SRID，确保在 geometry_columns 中正确注册
-		createMVSQL := fmt.Sprintf(`
-			CREATE MATERIALIZED VIEW %s AS
-			SELECT
-				id,
-				ST_Transform(%s, 3857)::geometry(GEOMETRY, 3857) AS geom_3857
-			FROM %s
-			WHERE %s IS NOT NULL
-		`,
-			spatial.QualifiedPostGISTable(cfg.Schema, mvTable),
-			spatial.QuotePostGISIdentifier(cfg.GeomColumn),
-			spatial.QualifiedPostGISTable(cfg.Schema, cfg.Table),
-			spatial.QuotePostGISIdentifier(cfg.GeomColumn),
-		)
-
-		if _, err := conn.ExecContext(ctx, createMVSQL); err != nil {
-			return fmt.Errorf("failed to create materialized view: %w", err)
-		}
-
-		logger.L().Info("✅ 物化视图创建成功（SRID=3857）", "materialized_view", mvFullName)
-	} else {
-		logger.L().Info("✅ 物化视图已存在", "materialized_view", mvFullName)
-	}
-
-	// 4. 检查空间索引是否存在
-	var indexExists bool
-	checkIndexSQL := `
-		SELECT EXISTS (
-			SELECT 1 FROM pg_indexes
-			WHERE schemaname = $1 AND tablename = $2 AND indexname = $3
-		)
-	`
-	if err := conn.QueryRowContext(ctx, checkIndexSQL, cfg.Schema, mvTable, indexName).Scan(&indexExists); err != nil {
-		return fmt.Errorf("failed to check spatial index: %w", err)
-	}
-
-	if !indexExists {
-		logger.L().Info("🚧 空间索引不存在，开始创建",
-			"index", indexName,
-			"table", mvFullName,
-			"estimated_time", "可能需要数分钟")
-
-		// 创建 GIST 空间索引
-		createIndexSQL := spatial.BuildPostGISCreateGISTIndexSQL(cfg.Schema, mvTable, indexName, "geom_3857", false)
-
-		if _, err := conn.ExecContext(ctx, createIndexSQL); err != nil {
-			return fmt.Errorf("failed to create spatial index: %w", err)
-		}
-
-		logger.L().Info("✅ 空间索引创建成功", "index", indexName)
-	} else {
-		logger.L().Info("✅ 空间索引已存在", "index", indexName)
-	}
-
-	// 5. 执行 ANALYZE 更新统计信息
-	logger.L().Info("🔄 更新物化视图统计信息", "table", mvFullName)
-	analyzeSQL := spatial.BuildPostGISAnalyzeSQL(cfg.Schema, mvTable)
-	if _, err := conn.ExecContext(ctx, analyzeSQL); err != nil {
-		logger.L().Warn("⚠️ ANALYZE 执行失败，继续", "error", err)
-	} else {
-		logger.L().Info("✅ 统计信息更新完成", "table", mvFullName)
-	}
-
-	return nil
 }
 
 // collectStatistics 采集统计信息（精准化，仅收集MVT需要的）
@@ -1278,14 +1105,9 @@ func (s *QuickViewService) collectStatistics(
 		}
 	}
 
-	// 2. 采集空间bounds（使用物化视图或原始表）
+	// 2. 采集空间 bounds（上游已决定使用源表或通用 3857 物化视图）
 	geomCol := cfg.GeomColumn
-	// 检查是否使用物化视图
 	table := cfg.Table
-	if cfg.Schema == "public" && cfg.Table == "dltb" && cfg.SRID == 2360 {
-		table = "dltb_3857"
-		geomCol = "geom_3857"
-	}
 
 	boundRow := conn.QueryRowContext(ctx, fmt.Sprintf("SELECT ST_Extent(%s) as bounds FROM %s",
 		spatial.QuotePostGISIdentifier(geomCol),

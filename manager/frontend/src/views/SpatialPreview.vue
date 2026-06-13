@@ -3,35 +3,159 @@
     <div class="toolbar">
       <div class="field">{{ schema }}.{{ table }}</div>
       <div class="spacer" />
+      <div v-if="quickViewStatus" class="quick-view-actions">
+        <span v-if="quickViewStatus.can_use_quick_view" class="status-text">
+          {{ t('manager.spatialPreview.quickViewReady') }}
+        </span>
+        <span v-else-if="!quickViewStatus.can_generate_tile_cache" class="status-text muted">
+          {{ quickViewStatus.unavailable_reason || t('manager.spatialPreview.quickViewUnavailable') }}
+        </span>
+        <el-button
+          v-if="isQuickViewActive"
+          size="small"
+          @click="backToBasicPreview"
+        >
+          {{ t('manager.spatialPreview.backToBasicPreview') }}
+        </el-button>
+        <el-button
+          v-else-if="quickViewStatus.can_use_quick_view"
+          type="primary"
+          size="small"
+          @click="switchToQuickView"
+        >
+          {{ t('manager.spatialPreview.switchQuickView') }}
+        </el-button>
+        <el-button
+          v-else-if="quickViewStatus.can_generate_tile_cache"
+          type="primary"
+          size="small"
+          @click="openTileCacheCreate"
+        >
+          {{ t('manager.spatialPreview.generateTileCache') }}
+        </el-button>
+        <el-button
+          v-if="showRealtimeTileCacheGeneration"
+          size="small"
+          @click="openTileCacheCreate"
+        >
+          {{ t('manager.spatialPreview.generateTileCache') }}
+        </el-button>
+      </div>
     </div>
     <div class="map-wrap">
+      <GeoJSONQuickView
+        v-if="ready && isQuickViewActive && quickViewRenderSource === 'direct_geojson'"
+        :status="quickViewStatus"
+      />
       <VectorTilePreview
-        v-if="ready"
-        :resource-id="engineId"
+        v-else-if="ready"
+        :locator="locator"
+        :engine-id="engineId"
         :schema="schema"
         :table="table"
         :geom="geom"
         :cols="cols"
-        :srid="srid"
+        :tile-url-template="quickViewStatus?.quick_view?.tile_url_template || ''"
+        :tile-render-info="quickViewStatus?.quick_view || {}"
+        :render-source="quickViewRenderSource"
+        :default-tile-cache-id="quickViewStatus?.default_tile_cache_id || ''"
       />
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import VectorTilePreview from '@/components/map/VectorTilePreview.vue'
+import GeoJSONQuickView from '@/components/map/GeoJSONQuickView.vue'
+import { quickViewAPI } from '@/api/quickView'
 
 const route = useRoute()
+const router = useRouter()
+const { t } = useI18n()
 
 const engineId = computed(() => Number(route.query.engine_id || route.query.engineId || 0))
 const schema = computed(() => String(route.query.schema || 'public'))
 const table = computed(() => String(route.query.table || ''))
-const geom = computed(() => String(route.query.geom || 'geom'))
-const srid = computed(() => Number(route.query.srid || 4326))
+const locator = computed(() => String(route.query.locator || '').trim())
+const geom = computed(() => route.query.geom ? String(route.query.geom) : '')
 const cols = computed(() => String(route.query.cols || '').split(',').filter(Boolean))
-const ready = computed(() => !!(engineId.value && schema.value && table.value))
+const ready = computed(() => !!locator.value)
+const quickViewStatus = ref(null)
+const activePreviewMode = ref('table_geojson')
+const quickViewRenderSource = computed(() => String(
+  quickViewStatus.value?.render_source || quickViewStatus.value?.quick_view?.render_source || ''
+).trim())
+const isQuickViewActive = computed(() => {
+  return activePreviewMode.value === 'quick_view' && !!quickViewStatus.value?.can_use_quick_view
+})
+const showRealtimeTileCacheGeneration = computed(() => {
+  return quickViewRenderSource.value === 'realtime_tile' && !!quickViewStatus.value?.can_generate_tile_cache
+})
+
+const loadQuickViewStatus = async () => {
+  quickViewStatus.value = null
+  if (!ready.value) return
+  try {
+    quickViewStatus.value = await quickViewAPI.getQuickViewCapabilityByLocator(locator.value)
+    if (quickViewStatus.value?.preferred_mode === 'quick_view' && quickViewStatus.value?.can_use_quick_view) {
+      activePreviewMode.value = 'quick_view'
+    } else if (!quickViewStatus.value?.can_use_quick_view) {
+      activePreviewMode.value = 'table_geojson'
+    }
+  } catch (error) {
+    console.error('加载快显状态失败:', error)
+  }
+}
+
+const switchToQuickView = async () => {
+  try {
+    await quickViewAPI.updatePreferredModeByLocator(locator.value, 'quick_view')
+    ElMessage.success(t('manager.spatialPreview.switchQuickViewSuccess'))
+    await loadQuickViewStatus()
+    if (quickViewStatus.value?.can_use_quick_view) {
+      activePreviewMode.value = 'quick_view'
+    }
+  } catch (error) {
+    console.error('切换快显失败:', error)
+    ElMessage.error(t('manager.spatialPreview.switchQuickViewFailed'))
+  }
+}
+
+const backToBasicPreview = async () => {
+  try {
+    await quickViewAPI.updatePreferredModeByLocator(locator.value, 'table_geojson')
+    activePreviewMode.value = 'table_geojson'
+    await loadQuickViewStatus()
+  } catch (error) {
+    console.error('返回基础预览失败:', error)
+    activePreviewMode.value = 'table_geojson'
+  }
+}
+
+const openTileCacheCreate = () => {
+  router.push({
+    name: 'TileCache',
+    query: {
+      tab: 'tasks',
+      create: '1',
+      engine_id: String(engineId.value),
+      schema: schema.value,
+      table: table.value,
+      locator: locator.value,
+      ...(geom.value ? { geom: geom.value } : {})
+    }
+  })
+}
+
+onMounted(loadQuickViewStatus)
+watch([engineId, schema, table, locator], () => {
+  activePreviewMode.value = 'table_geojson'
+  loadQuickViewStatus()
+})
 </script>
 
 <style scoped>
@@ -39,4 +163,7 @@ const ready = computed(() => !!(engineId.value && schema.value && table.value))
 .toolbar { height: 44px; display: flex; align-items: center; padding: 0 12px; border-bottom: 1px solid #eee; }
 .spacer { flex: 1; }
 .map-wrap { position: relative; flex: 1; }
+.quick-view-actions { display: flex; align-items: center; gap: 10px; }
+.status-text { font-size: 13px; color: var(--addp-text-secondary); }
+.status-text.muted { color: var(--addp-text-placeholder); }
 </style>

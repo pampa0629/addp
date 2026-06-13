@@ -57,12 +57,12 @@ type Config struct {
 	ImportSourceEngineID    uint
 	ImportSourceEngineIDSet bool
 
-	// MVT 预缓存配置
-	PreCache PreCacheConfig
+	// 瓦片缓存生成配置
+	TileCache TileCacheConfig
 }
 
-// PreCacheConfig MVT 预缓存相关配置
-type PreCacheConfig struct {
+// TileCacheConfig 瓦片缓存生成相关配置
+type TileCacheConfig struct {
 	// 每瓦片目标记录数（用于计算 maxZoom）
 	TargetRecordsPerTile int
 
@@ -74,6 +74,9 @@ type PreCacheConfig struct {
 	MaxZoom     int // 全局最大 zoom 层级
 	Concurrency int // 并发协程数
 	MaxDBConns  int // 数据库最大连接数（默认等于 Concurrency）
+
+	// 快显能力判定
+	DirectGeoJSONMaxRows int // 小数据量直接 GeoJSON 快显的最大行数
 }
 
 func resolveMeilisearchURL() string {
@@ -174,30 +177,32 @@ func Load() *Config {
 		}
 	}
 
-	// MVT 预缓存配置
-	concurrency := commonConfig.GetEnvInt("PRE_CACHE_CONCURRENCY", 10)
-	maxDBConns := commonConfig.GetEnvInt("PRE_CACHE_MAX_DB_CONNS", 0)
+	// 瓦片缓存生成配置
+	concurrency := commonConfig.GetEnvInt("TILE_CACHE_CONCURRENCY", 10)
+	maxDBConns := commonConfig.GetEnvInt("TILE_CACHE_MAX_DB_CONNS", 0)
 
 	// 如果没有指定 MaxDBConns，默认等于 Concurrency
 	if maxDBConns == 0 {
 		maxDBConns = concurrency
 	}
 
-	cfg.PreCache = PreCacheConfig{
-		TargetRecordsPerTile:  commonConfig.GetEnvInt("PRE_CACHE_TARGET_RECORDS", 3000),
-		MinDurationForCacheMS: commonConfig.GetEnvInt("PRE_CACHE_MIN_DURATION_MS", 100),
-		MinSizeForCacheKB:     commonConfig.GetEnvInt("PRE_CACHE_MIN_SIZE_KB", 50),
-		MaxZoom:               commonConfig.GetEnvInt("PRE_CACHE_MAX_ZOOM", 18),
+	cfg.TileCache = TileCacheConfig{
+		TargetRecordsPerTile:  commonConfig.GetEnvInt("TILE_CACHE_TARGET_RECORDS", 3000),
+		MinDurationForCacheMS: commonConfig.GetEnvInt("TILE_CACHE_MIN_DURATION_MS", 100),
+		MinSizeForCacheKB:     commonConfig.GetEnvInt("TILE_CACHE_MIN_SIZE_KB", 50),
+		MaxZoom:               commonConfig.GetEnvInt("TILE_CACHE_MAX_ZOOM", 18),
 		Concurrency:           concurrency,
 		MaxDBConns:            maxDBConns,
+		DirectGeoJSONMaxRows:  commonConfig.GetEnvInt("QUICK_VIEW_DIRECT_GEOJSON_MAX_ROWS", 2000),
 	}
 
-	// 🔍 日志：记录 MVT 预缓存配置（特别关注并发数和连接池）
-	log.Printf("📋 Manager Config: MVT 预缓存配置")
-	log.Printf("   PRE_CACHE_CONCURRENCY (并发数): %d", cfg.PreCache.Concurrency)
-	log.Printf("   PRE_CACHE_MAX_DB_CONNS (数据库连接池): %d", cfg.PreCache.MaxDBConns)
-	log.Printf("   PRE_CACHE_MAX_ZOOM: %d", cfg.PreCache.MaxZoom)
-	log.Printf("   PRE_CACHE_TARGET_RECORDS: %d", cfg.PreCache.TargetRecordsPerTile)
+	// 记录瓦片缓存生成配置（特别关注并发数和连接池）
+	log.Printf("📋 Manager Config: 瓦片缓存生成配置")
+	log.Printf("   TILE_CACHE_CONCURRENCY (并发数): %d", cfg.TileCache.Concurrency)
+	log.Printf("   TILE_CACHE_MAX_DB_CONNS (数据库连接池): %d", cfg.TileCache.MaxDBConns)
+	log.Printf("   TILE_CACHE_MAX_ZOOM: %d", cfg.TileCache.MaxZoom)
+	log.Printf("   TILE_CACHE_TARGET_RECORDS: %d", cfg.TileCache.TargetRecordsPerTile)
+	log.Printf("   QUICK_VIEW_DIRECT_GEOJSON_MAX_ROWS: %d", cfg.TileCache.DirectGeoJSONMaxRows)
 
 	return cfg
 }

@@ -22,9 +22,14 @@ export { formatFeatureProperties } from './utils/mapFormatters'
 export { fromLonLat, toLonLat } from './utils/mapProjection'
 export { createDefaultStyleFunction, createHighlightStyle } from './utils/mapStyles'
 export { mapDisplayCoordinate, mapSourceCoordinate, wgs84ToGCJ02, gcj02ToWGS84 } from './utils/gcj02'
+export {
+  crsSuppressionStatus,
+  getPreviewCRSTransform,
+  transformGeoJSONGeometryToWGS84
+} from './utils/crsRegistry'
 
 // Map Layers Config
-export { createGaodeBaseLayer, createOSMBaseLayer } from './config/mapLayers'
+export { createGaodeBaseLayer, createTiandituBaseLayers, createOSMBaseLayer } from './config/mapLayers'
 
 // i18n messages (for merging into host app's i18n instance)
 export { default as mapMessagesZhCn } from './i18n/zh-cn.json'

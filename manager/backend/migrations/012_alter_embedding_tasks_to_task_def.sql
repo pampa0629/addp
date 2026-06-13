@@ -9,7 +9,7 @@ CREATE TABLE manager.embedding_tasks (
     tenant_id               INTEGER NOT NULL,
     name                    VARCHAR(255) NOT NULL,
     description             TEXT,
-    enabled                 BOOLEAN NOT NULL DEFAULT TRUE,
+    enabled                 BOOLEAN NOT NULL,
 
     -- 最近一次执行信息（回写）
     last_execution_id       VARCHAR(36),

@@ -33,7 +33,7 @@ graph TB
         Meta[Meta 模块<br/>scan]
         Transfer[Transfer 模块<br/>import]
         Develop[Develop 模块<br/>query / workflow / script]
-        Manager[Manager 模块<br/>mvt_generation / embedding]
+        Manager[Manager 模块<br/>tile_cache_generation / embedding]
         Quality[Quality 模块<br/>check]
         Graph[Graph 模块<br/>kg_build]
         Orchestrator[Orchestrator 模块<br/>orchestration]
@@ -77,7 +77,7 @@ graph TB
 | `id` | bigint | 执行记录 ID |
 | `tenant_id` | int | 租户 ID (租户隔离) |
 | `module` | string | 模块名称 (meta/transfer/develop/manager/quality/graph/orchestrator) |
-| `task_type` | string | 任务类型 (scan/import/orchestration/query/workflow/script/mvt_generation/embedding/check/kg_build) |
+| `task_type` | string | 任务类型 (scan/import/orchestration/query/workflow/script/tile_cache_generation/embedding/check/kg_build) |
 | `source` | string | 触发来源模块 |
 | `source_task_id` | string | 任务 ID (对应模块内的任务定义 ID) |
 | `trigger_type` | string | `manual` / `scheduled` |
@@ -229,7 +229,7 @@ sequenceDiagram
 | **Develop** | `query` | 查询执行任务 | SQL 查询执行 |
 | | `workflow` | 工作流执行任务 | 执行空间分析工作流 |
 | | `script` | 脚本执行任务 | 执行命令式脚本；当前可由 Jupyter Notebook runtime 承载 |
-| **Manager** | `mvt_generation` | MVT 瓦片生成任务 | 为 PostGIS 表生成瓦片 |
+| **Manager** | `tile_cache_generation` | 瓦片缓存生成任务 | 为空间数据生成瓦片缓存 |
 | | `embedding` | 向量化任务 | 对对象存储文件进行向量化 |
 | **Quality** | `check` | 数据质量检查任务 | 执行质量规则检查 |
 | **Graph** | `kg_build` | 知识图谱构建任务 | 构建知识图谱 |

@@ -57,6 +57,9 @@ type PreviewResolverRequest struct {
 	Metadata         *commonModels.MetaNode        // 可选：Meta 节点数据
 	Pagination       *Pagination                   // 分页参数
 	TenantID         *uint                         // 租户 ID
+	MetaItemID       *uint                         // MetaItem ID，只有数据项预览存在
+	ItemFullName     string                        // MetaItem full_name，只有数据项预览存在
+	ItemFingerprint  string                        // 标准数据项指纹，GenerateItemFingerprint(engine_id, full_name)
 	ItemType         string                        // 数据项类型（如 "table"），来自 MetaItem
 	ItemRowCount     *int64                        // 表/集合行数，来自 MetaItem.RowCount
 	ItemScannedDepth string                        // Meta item 当前扫描深度
@@ -85,13 +88,16 @@ type PreviewResult struct {
 
 // PreviewMetadata 预览上下文元数据
 type PreviewMetadata struct {
-	Locator      string `json:"locator"`       // ResourceLocator URI
-	EngineName   string `json:"engine_name"`   // 引擎名称
-	ResourceType string `json:"resource_type"` // 引擎类型（postgresql/minio）
-	MetaScanned  bool   `json:"meta_scanned"`  // 是否已被 Meta 扫描
-	ScannedDepth string `json:"scanned_depth,omitempty"`
-	ItemCount    *int64 `json:"item_count"` // 项目数（来自 Meta）
-	SizeBytes    *int64 `json:"size_bytes"` // 大小（来自 Meta）
+	Locator         string `json:"locator"`                    // ResourceLocator URI
+	EngineName      string `json:"engine_name"`                // 引擎名称
+	ResourceType    string `json:"resource_type"`              // 引擎类型（postgresql/minio）
+	MetaScanned     bool   `json:"meta_scanned"`               // 是否已被 Meta 扫描
+	ScannedDepth    string `json:"scanned_depth,omitempty"`    // Meta 扫描深度
+	ItemID          *uint  `json:"item_id,omitempty"`          // MetaItem ID
+	FullName        string `json:"full_name,omitempty"`        // MetaItem full_name
+	ItemFingerprint string `json:"item_fingerprint,omitempty"` // 标准数据项指纹
+	ItemCount       *int64 `json:"item_count"`                 // 项目数（来自 Meta）
+	SizeBytes       *int64 `json:"size_bytes"`                 // 大小（来自 Meta）
 }
 
 // Preview 执行预览。预览必须基于已经由 Meta 扫描入库的节点或 item。
@@ -273,6 +279,13 @@ func (r *PreviewResolver) PreviewFromURIWithSelection(ctx context.Context, locat
 			loc.Path = parts
 		}
 	}
+	if metaItem != nil {
+		itemID := metaItem.ID
+		loc.ItemID = &itemID
+		if strings.TrimSpace(metaItem.ItemType) != "" {
+			loc.Type = resourcetree.ResourceType(metaItem.ItemType)
+		}
+	}
 
 	// 4. 构建请求
 	req := &PreviewResolverRequest{
@@ -302,12 +315,16 @@ func (r *PreviewResolver) PreviewFromURIWithSelection(ctx context.Context, locat
 			req.ItemType = metaNode.NodeType
 		}
 	} else if metaItem != nil {
+		itemID := metaItem.ID
 		// 将 MetaItem 转换为 MetaNode 格式
 		sizeBytes := int64(0)
 		if metaItem.SizeBytes != nil {
 			sizeBytes = *metaItem.SizeBytes
 		}
 		attrs := cloneMetaAttributes(metaItem.Attributes)
+		req.MetaItemID = &itemID
+		req.ItemFullName = metaItem.FullName
+		req.ItemFingerprint = commonModels.GenerateItemFingerprint(metaItem.EngineID, metaItem.FullName)
 		req.ItemRowCount = metaItem.RowCount
 		req.ItemScannedDepth = metaItem.ScannedDepth
 		req.Metadata = &commonModels.MetaNode{
@@ -652,11 +669,14 @@ func (r *PreviewResolver) buildPreviewResult(tablePreview *models.TablePreview, 
 // buildMetadata 构建预览元数据
 func (r *PreviewResolver) buildMetadata(req *PreviewResolverRequest) *PreviewMetadata {
 	metadata := &PreviewMetadata{
-		Locator:      req.Locator.ToURI(),
-		EngineName:   req.Engine.Name,
-		ResourceType: req.Engine.EngineType,
-		MetaScanned:  req.Metadata != nil,
-		ScannedDepth: req.scannedDepth(),
+		Locator:         req.Locator.ToURI(),
+		EngineName:      req.Engine.Name,
+		ResourceType:    req.Engine.EngineType,
+		MetaScanned:     req.Metadata != nil,
+		ScannedDepth:    req.scannedDepth(),
+		ItemID:          req.MetaItemID,
+		FullName:        strings.TrimSpace(req.ItemFullName),
+		ItemFingerprint: strings.TrimSpace(req.ItemFingerprint),
 	}
 
 	if req.Metadata != nil {

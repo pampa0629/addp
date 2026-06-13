@@ -15,6 +15,7 @@ import Fill from 'ol/style/Fill'
 import Stroke from 'ol/style/Stroke'
 import CircleStyle from 'ol/style/Circle'
 import { createHighlightStyle } from '../utils/mapStyles'
+import { formatFeatureProperties } from '../utils/mapFormatters'
 
 const DEFAULT_CENTER = [104.0668, 30.5728]
 const DEFAULT_TDT_KEY = import.meta.env.VITE_TDT_KEY || ''
@@ -51,6 +52,7 @@ export function useOpenLayersMap(config) {
   let currentBaseType = ''
   let viewEventKeys = []
   let mapClickKey = null
+  let featureClickHandler = null
   let viewState = { center: DEFAULT_CENTER, zoom: 4 }
 
   const updateViewState = () => {
@@ -308,8 +310,10 @@ export function useOpenLayersMap(config) {
       updateViewState()
     }
 
+    featureClickHandler = options.onFeatureClick || null
+
     // 绑定点击事件
-    if (options.onFeatureClick && !mapClickKey) {
+    if (!mapClickKey) {
       mapClickKey = mapInstance.value.on('singleclick', (evt) => {
         const feature = mapInstance.value.forEachFeatureAtPixel(evt.pixel, (f, layer) => {
           return layer === vectorLayer.value ? f : null
@@ -331,7 +335,14 @@ export function useOpenLayersMap(config) {
               coordinate = geometry.getClosestPoint(evt.coordinate)
             }
           }
-          options.onFeatureClick(originalFeature, coordinate)
+          const content = formatFeatureProperties({
+            ...(originalFeature?.properties || {}),
+            geometry: originalFeature?.geometry
+          }, options.popupOptions || {})
+          showPopup(content, coordinate)
+          if (featureClickHandler) {
+            featureClickHandler(originalFeature, coordinate)
+          }
         } else {
           clearHighlight()
           hidePopup()
