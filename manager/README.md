@@ -103,6 +103,9 @@ tail -f logs/manager-backend.log
 ## 📚 相关文档
 
 - **[CLAUDE.md](./CLAUDE.md)** - 完整技术文档（预览插件架构、空间快显与瓦片缓存机制、开发场景指南）
+- **[manager/docs/快显概念总览.md](./docs/快显概念总览.md)** - Manager 快显价值、概念、分工和边界
+- **[manager/docs/快显规范与技术路线.md](./docs/快显规范与技术路线.md)** - 快显、瓦片缓存结果和生成任务的表结构、API 契约与技术路线
+- **[manager/docs/快显问题与改造思路.md](./docs/快显问题与改造思路.md)** - 快显当前问题、根因判断和改造顺序
 - **[manager/docs/向量化概念说明.md](./docs/向量化概念说明.md)** - Manager 向量化价值、对象边界、任务边界和结果边界
 - **[manager/docs/向量化能力说明.md](./docs/向量化能力说明.md)** - Manager 向量化结果、任务、执行、检索和 UI 行为说明
 - **[../docs/addp技术栈规约.md](../docs/addp技术栈规约.md)** - 技术栈和依赖版本

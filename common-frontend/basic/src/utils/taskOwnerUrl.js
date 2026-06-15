@@ -123,7 +123,10 @@ export async function openConsoleRoute(route, options = {}) {
 }
 
 export function openMonitorExecution(executionId, options = {}) {
-  return openConsoleRoute(buildMonitorExecutionRoute(executionId), options)
+  return openConsoleRoute(buildMonitorExecutionRoute(executionId), {
+    target: '_blank',
+    ...options
+  })
 }
 
 export function findTaskTypeCapability(provider, taskType) {

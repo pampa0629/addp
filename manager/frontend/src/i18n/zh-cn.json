@@ -184,6 +184,12 @@
       "basicInfo": "基础信息",
       "tileSettings": "瓦片设置",
       "executionStats": "最近执行统计",
+      "executionStatusSourceRealtime": "来自执行实况",
+      "executionStatusSourceTaskSnapshot": "来自任务快照",
+      "statsCheckMatched": "统计一致：已处理 {processed} = 生成 + 空 + 跳过 + 失败 {classified}",
+      "statsCheckMismatch": "统计不一致：已处理 {processed}，分类合计 {classified}",
+      "statsCheckIncomplete": "历史执行缺少完整分类统计，建议重新执行任务后查看。",
+      "statsCheckInvalid": "统计字段格式异常，无法完成一致性校验。",
       "noExecutionYet": "暂无执行记录",
       "noExecutionStats": "最近执行暂无瓦片统计",
       "tilesTotalEstimate": "预计瓦片",
@@ -191,6 +197,7 @@
       "generatedTiles": "生成瓦片",
       "emptyTiles": "空瓦片",
       "skippedTiles": "跳过瓦片",
+      "oversizedSkippedTiles": "超大跳过",
       "failedTiles": "失败瓦片",
       "actualMaxZoom": "实际最大层级",
       "totalTileSize": "瓦片总大小",
@@ -300,6 +307,16 @@
       "backToBasicPreview": "返回基础预览",
       "directGeoJSONQuickView": "直接 GeoJSON 快显",
       "mvtGrid": "MVT 网格",
+      "mvtGridStatus": {
+        "unknown": "未加载",
+        "cache": "缓存",
+        "dynamic": "动态",
+        "ok": "正常",
+        "empty": "空",
+        "timeout": "超时",
+        "degraded": "降级",
+        "error": "异常"
+      },
       "renderSource": {
         "tileCache": "瓦片缓存结果",
         "realtimeTile": "动态 MVT"

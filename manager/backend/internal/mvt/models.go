@@ -65,6 +65,7 @@ type ZoomLevelStats struct {
 	GeneratedTiles int     `json:"generated_tiles"`  // 实际生成的瓦片数（有数据）
 	EmptyTiles     int     `json:"empty_tiles"`      // 空瓦片数
 	SkippedTiles   int     `json:"skipped_tiles"`    // 已存在或无需写入而跳过的瓦片数
+	OversizedTiles int     `json:"oversized_tiles"`  // 体积保护跳过的瓦片数
 	FailedTiles    int     `json:"failed_tiles"`     // 处理失败的瓦片数
 	AvgGenTimeMs   float64 `json:"avg_gen_time_ms"`  // 平均生成时间（毫秒）
 	AvgSizeKB      float64 `json:"avg_size_kb"`      // 平均大小（KB）

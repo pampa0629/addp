@@ -184,6 +184,12 @@
       "basicInfo": "Basic Info",
       "tileSettings": "Tile Settings",
       "executionStats": "Latest Execution Stats",
+      "executionStatusSourceRealtime": "From execution detail",
+      "executionStatusSourceTaskSnapshot": "From task snapshot",
+      "statsCheckMatched": "Stats matched: processed {processed} = generated + empty + skipped + failed {classified}",
+      "statsCheckMismatch": "Stats mismatch: processed {processed}, classified total {classified}",
+      "statsCheckIncomplete": "This historical execution lacks full classified tile stats. Re-run the task to inspect it.",
+      "statsCheckInvalid": "Tile stats contain invalid values, so consistency cannot be checked.",
       "noExecutionYet": "No execution yet",
       "noExecutionStats": "No tile stats in the latest execution",
       "tilesTotalEstimate": "Estimated Tiles",
@@ -191,6 +197,7 @@
       "generatedTiles": "Generated Tiles",
       "emptyTiles": "Empty Tiles",
       "skippedTiles": "Skipped Tiles",
+      "oversizedSkippedTiles": "Oversized Skipped",
       "failedTiles": "Failed Tiles",
       "actualMaxZoom": "Actual Max Zoom",
       "totalTileSize": "Total Tile Size",
@@ -300,6 +307,16 @@
       "backToBasicPreview": "Back to Basic Preview",
       "directGeoJSONQuickView": "Direct GeoJSON Quick View",
       "mvtGrid": "MVT Grid",
+      "mvtGridStatus": {
+        "unknown": "Pending",
+        "cache": "Cache",
+        "dynamic": "Dynamic",
+        "ok": "OK",
+        "empty": "Empty",
+        "timeout": "Timeout",
+        "degraded": "Degraded",
+        "error": "Error"
+      },
       "renderSource": {
         "tileCache": "Tile Cache Result",
         "realtimeTile": "Dynamic MVT"

@@ -3,6 +3,7 @@ package mvt
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -11,6 +12,12 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/spatial"
 )
+
+var ErrMVTTileOversized = errors.New("mvt tile exceeds size threshold")
+
+func tileGenerationTableName(params TileGenerationParams) string {
+	return fmt.Sprintf("%s.%s", params.Schema, params.Table)
+}
 
 // TileGenerator MVT 瓦片生成器
 // 负责连接 PostgreSQL/PostGIS 并生成 MVT 瓦片
@@ -60,14 +67,14 @@ func (g *TileGenerator) GenerateTile(
 	ctx context.Context,
 	params TileGenerationParams,
 ) ([]byte, error) {
-	// ✅ 如果有优化配置，使用三阶段优化流程
+	// 如果有优化配置，使用单阶段 extent 优化流程。
 	if params.OptimizationConfig != nil {
 		return g.generateTileWithOptimization(ctx, params)
 	}
 
 	tileStartTime := time.Now()
 
-	// ✅ 使用连接池（不再每次创建新连接）
+	// 使用连接池，不再每次创建新连接。
 	db, err := g.getOrCreateDBPool(ctx, params.EngineID, params.TenantID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get db pool: %w", err)
@@ -89,17 +96,17 @@ func (g *TileGenerator) GenerateTile(
 	)
 
 	// 详细日志：记录瓦片请求和 SQL
-	logger.L().Info("📍 开始生成 MVT 瓦片（无优化）",
+	logger.L().Info("开始生成 MVT 瓦片（无优化）",
 		"engine_id", params.EngineID,
 		"tenant_id", params.TenantID,
 		"z", params.Z, "x", params.X, "y", params.Y,
-		"table", fmt.Sprintf("%s.%s", params.Schema, params.Table),
+		"table", tileGenerationTableName(params),
 		"geom_col", params.GeomColumn,
 		"srid", params.SRID,
 		"primary_key", params.PrimaryKey)
 
 	// 记录 SQL 查询（用于调试）
-	logger.L().Debug("🔍 MVT SQL 查询",
+	logger.L().Debug("MVT SQL 查询",
 		"sql", sqlStr,
 		"args", args)
 
@@ -111,13 +118,13 @@ func (g *TileGenerator) GenerateTile(
 
 	if err != nil {
 		if err == sql.ErrNoRows {
-			logger.L().Info("📭 MVT 查询无结果（空瓦片）",
+			logger.L().Info("MVT 查询无结果（空瓦片）",
 				"z", params.Z, "x", params.X, "y", params.Y,
-				"table", fmt.Sprintf("%s.%s", params.Schema, params.Table),
+				"table", tileGenerationTableName(params),
 				"query_duration_ms", queryDuration.Milliseconds())
 			return []byte{}, nil // 空瓦片
 		}
-		logger.L().Error("❌ MVT 查询失败",
+		logger.L().Error("MVT 查询失败",
 			"error", err,
 			"z", params.Z, "x", params.X, "y", params.Y,
 			"schema", params.Schema,
@@ -130,9 +137,9 @@ func (g *TileGenerator) GenerateTile(
 	totalDuration := time.Since(tileStartTime)
 	tileSizeMB := float64(len(mvtData)) / (1024 * 1024)
 
-	logger.L().Info("✅ MVT 瓦片生成完成（无优化）",
+	logger.L().Info("MVT 瓦片生成完成（无优化）",
 		"z", params.Z, "x", params.X, "y", params.Y,
-		"table", fmt.Sprintf("%s.%s", params.Schema, params.Table),
+		"table", tileGenerationTableName(params),
 		"data_size_mb", fmt.Sprintf("%.2f", tileSizeMB),
 		"query_duration_ms", queryDuration.Milliseconds(),
 		"total_duration_ms", totalDuration.Milliseconds())
@@ -165,7 +172,7 @@ func (g *TileGenerator) QuerySourceSRID(
 	engineID, tenantID uint,
 	schema, table, geomColumn string,
 ) (int, error) {
-	// ✅ 使用连接池
+	// 使用连接池。
 	db, err := g.getOrCreateDBPool(ctx, engineID, tenantID)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get db pool: %w", err)
@@ -182,7 +189,7 @@ func (g *TileGenerator) QuerySourceSRID(
 		return 0, fmt.Errorf("failed to query SRID: %w", err)
 	}
 
-	logger.L().Info("✅ 源表 SRID 查询完成",
+	logger.L().Info("源表 SRID 查询完成",
 		"table", fmt.Sprintf("%s.%s", schema, table),
 		"geom_column", geomColumn,
 		"srid", actualSRID)
@@ -196,7 +203,7 @@ func (g *TileGenerator) GetSpatialExtent(
 	engineID, tenantID uint,
 	schema, table, geomColumn string,
 ) ([]float64, error) {
-	// ✅ 使用连接池
+	// 使用连接池。
 	db, err := g.getOrCreateDBPool(ctx, engineID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get db pool: %w", err)
@@ -314,7 +321,7 @@ func (g *TileGenerator) getAllColumns(ctx context.Context, db *sql.DB, schema, t
 // Close 关闭所有连接池 (服务关闭时调用)
 func (g *TileGenerator) Close() error {
 	plugin.CloseAllPools()
-	logger.L().Info("✅ 所有数据库连接池已关闭")
+	logger.L().Info("所有数据库连接池已关闭")
 	return nil
 }
 
@@ -336,10 +343,10 @@ func (g *TileGenerator) generateTileWithOptimization(
 		*config = commonModels.DefaultOptimizationConfig()
 	}
 
-	logger.L().Info("🔄 启用 v3.0 单阶段 Extent 优化流程",
+	logger.L().Info("启用 v3.0 单阶段 Extent 优化流程",
 		"z", params.Z, "x", params.X, "y", params.Y,
 		"max_zoom", params.MaxZoom,
-		"table", fmt.Sprintf("%s.%s", params.Schema, params.Table),
+		"table", tileGenerationTableName(params),
 		"max_size_mb", fmt.Sprintf("%.2f MB", config.TileSizeThresholds.MaxSizeMB),
 		"max_zoom_extent", config.ExtentOptimization.MaxZoomExtent,
 		"base_extent", config.ExtentOptimization.BaseExtent,
@@ -353,17 +360,17 @@ func (g *TileGenerator) generateTileWithOptimization(
 		if params.PrimaryKey != "" {
 			columns = []string{params.PrimaryKey}
 		}
-		logger.L().Debug("🔧 属性优化：仅返回主键", "z", params.Z, "primary_key", params.PrimaryKey)
+		logger.L().Debug("属性优化：仅返回主键", "z", params.Z, "primary_key", params.PrimaryKey)
 	} else {
 		// z(N+1)+: 全部属性
 		columns = []string{}
-		logger.L().Debug("🔧 属性优化：返回全部属性", "z", params.Z)
+		logger.L().Debug("属性优化：返回全部属性", "z", params.Z)
 	}
-	logger.L().Debug("📝 属性优化耗时", "duration_ms", time.Since(stepAStart).Milliseconds())
+	logger.L().Debug("属性优化耗时", "duration_ms", time.Since(stepAStart).Milliseconds())
 
 	// Step B: 获取初始 Extent（分层策略）
 	initialExtent := config.ExtentOptimization.GetExtentForZoom(params.Z, params.MaxZoom)
-	logger.L().Info("📊 使用分层 Extent 策略",
+	logger.L().Info("使用分层 Extent 策略",
 		"z", params.Z,
 		"max_zoom", params.MaxZoom,
 		"initial_extent", initialExtent,
@@ -383,9 +390,9 @@ func (g *TileGenerator) generateTileWithOptimization(
 	tileSizeMB := float64(len(mvtData)) / (1024 * 1024)
 	totalDuration := time.Since(tileStartTime)
 
-	logger.L().Info("✅ v3.0 优化流程完成",
+	logger.L().Info("v3.0 优化流程完成",
 		"z", params.Z, "x", params.X, "y", params.Y,
-		"table", fmt.Sprintf("%s.%s", params.Schema, params.Table),
+		"table", tileGenerationTableName(params),
 		"initial_extent", initialExtent,
 		"final_extent", finalExtent,
 		"final_size_mb", fmt.Sprintf("%.2f", tileSizeMB),
@@ -409,7 +416,7 @@ func (g *TileGenerator) generateTileWithDynamicExtentReduction(
 
 	for currentExtent >= minExtent {
 		attempt++
-		logger.L().Info("🔄 生成瓦片尝试",
+		logger.L().Info("生成瓦片尝试",
 			"attempt", attempt,
 			"extent", currentExtent,
 			"z", params.Z, "x", params.X, "y", params.Y)
@@ -421,7 +428,7 @@ func (g *TileGenerator) generateTileWithDynamicExtentReduction(
 		}
 
 		tileSizeMB := float64(len(mvtData)) / (1024 * 1024)
-		logger.L().Info("📊 瓦片大小检查",
+		logger.L().Info("瓦片大小检查",
 			"attempt", attempt,
 			"extent", currentExtent,
 			"size_mb", fmt.Sprintf("%.2f", tileSizeMB),
@@ -429,7 +436,7 @@ func (g *TileGenerator) generateTileWithDynamicExtentReduction(
 			"is_ok", tileSizeMB <= maxSizeMB)
 
 		if tileSizeMB <= maxSizeMB {
-			logger.L().Info("✅ 瓦片大小符合要求",
+			logger.L().Info("瓦片大小符合要求",
 				"attempt", attempt,
 				"extent", currentExtent,
 				"size_mb", fmt.Sprintf("%.2f", tileSizeMB),
@@ -442,13 +449,14 @@ func (g *TileGenerator) generateTileWithDynamicExtentReduction(
 	}
 
 	// 最小 extent 仍超限时跳过该瓦片，避免缓存和前端继续承载超大 MVT。
-	logger.L().Warn("⚠️ 瓦片大小仍超过限制，跳过超大瓦片",
+	logger.L().Warn("瓦片大小仍超过限制，跳过超大瓦片",
 		"min_extent", minExtent,
 		"final_size_mb", fmt.Sprintf("%.2f", float64(len(mvtData))/(1024*1024)),
 		"max_mb", fmt.Sprintf("%.2f", maxSizeMB),
 		"z", params.Z, "x", params.X, "y", params.Y)
 
-	return []byte{}, minExtent, nil
+	return nil, minExtent, fmt.Errorf("%w: z=%d x=%d y=%d min_extent=%d final_size_bytes=%d max_size_mb=%.2f",
+		ErrMVTTileOversized, params.Z, params.X, params.Y, minExtent, len(mvtData), maxSizeMB)
 }
 
 func mvtBufferForExtent(extent int) int {
@@ -480,7 +488,7 @@ func (g *TileGenerator) generateBaseTile(
 	}
 
 	// 构建简单的 MVT 查询（不使用采样和简化）
-	// 🔑 关键：params.Table 和 params.GeomColumn 已从 QuickView 准备结果中获取
+	// params.Table 和 params.GeomColumn 已从 QuickView 准备结果中获取。
 	// - 如果准备阶段创建了物化视图（e.g., dltb_mv3857），则使用物化视图
 	// - 如果源表已是 3857，则直接使用源表
 	// - extent 减半时，继续使用同一个表（不做降级，始终保持高性能）
@@ -502,7 +510,7 @@ func (g *TileGenerator) generateBaseTile(
 		params.PrimaryKey,
 	)
 
-	logger.L().Info("🔍 生成基础瓦片 SQL",
+	logger.L().Debug("生成基础瓦片 SQL",
 		"extent", extent,
 		"columns_count", len(columns),
 		"sql_length", len(sqlStr),
@@ -510,7 +518,7 @@ func (g *TileGenerator) generateBaseTile(
 		"args", fmt.Sprintf("%v", args))
 
 	// 打印完整的SQL和参数（用于排查Extent优化卡住的问题）
-	logger.L().Info("📋 完整的SQL语句（首1000字符）",
+	logger.L().Debug("完整的 SQL 语句预览",
 		"sql_preview", func() string {
 			if len(sqlStr) > 1000 {
 				return sqlStr[:1000] + "..."
@@ -524,19 +532,19 @@ func (g *TileGenerator) generateBaseTile(
 
 	if err != nil {
 		if err == sql.ErrNoRows {
-			logger.L().Debug("📭 基础瓦片查询无结果",
+			logger.L().Debug("基础瓦片查询无结果",
 				"extent", extent,
 				"query_duration_ms", queryDuration.Milliseconds())
 			return []byte{}, nil
 		}
-		logger.L().Error("❌ 基础瓦片查询失败",
+		logger.L().Error("基础瓦片查询失败",
 			"error", err,
 			"extent", extent,
 			"query_duration_ms", queryDuration.Milliseconds())
 		return nil, fmt.Errorf("failed to execute MVT query: %w", err)
 	}
 
-	logger.L().Debug("✅ 基础瓦片查询完成",
+	logger.L().Debug("基础瓦片查询完成",
 		"extent", extent,
 		"data_size_bytes", len(mvtData),
 		"query_duration_ms", queryDuration.Milliseconds())

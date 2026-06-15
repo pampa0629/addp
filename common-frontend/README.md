@@ -58,7 +58,7 @@ import { openMonitorExecution } from '@addp/common-frontend'
 await openMonitorExecution(execution.execution_id)
 ```
 
-该工具在 Console iframe 中会请求父级切换到 `/monitor/executions?execution_id=...`；模块独立运行时会回退到 Console 路由。业务模块不要自行硬编码 Console 端口或拼接跨模块 iframe URL。
+该工具在 Console iframe 中会请求父级切换到 `/monitor/executions?execution_id=...`；模块独立运行时会回退为在新窗口打开 Console 路由。业务模块不要自行硬编码 Console 端口或拼接跨模块 iframe URL。
 
 ### 导入类型定义
 

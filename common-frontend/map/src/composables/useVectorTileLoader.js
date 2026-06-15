@@ -15,9 +15,12 @@ import { createDefaultStyleFunction } from '../utils/mapStyles.js'
 export function useVectorTileLoader(options = {}) {
   const { token } = options
   const defaultMaxDecodedTileBytes = 8 * 1024 * 1024
+  const defaultDegradedRetryCooldownMs = 15000
 
   // 跟踪所有进行中的瓦片请求
   const activeTileRequests = new Map()
+  const degradedTileCooldowns = new Map()
+  const degradedSourceRefreshTimers = new Map()
   let requestSeq = 0
 
   /**
@@ -36,16 +39,79 @@ export function useVectorTileLoader(options = {}) {
     return `${tileKey}#${requestSeq}`
   }
 
-  function handleDecodedTileBuffer(tile, buf, meta, tileKey, extent, projection, options = {}) {
+  function degradedCooldownKey(src) {
+    return src
+  }
+
+  function isDegradedTileStatus(status) {
+    return ['timeout', 'degraded'].includes(String(status || '').toLowerCase())
+  }
+
+  function tileResponseMeta(res, tileKey) {
+    return {
+      tileKey,
+      renderSource: res.headers.get('X-ADDP-Render-Source') || '',
+      tileCacheId: res.headers.get('X-ADDP-Tile-Cache-ID') || '',
+      cacheStatus: res.headers.get('X-ADDP-Tile-Cache') || '',
+      tileStatus: res.headers.get('X-ADDP-Tile-Status') || '',
+      generationTime: res.headers.get('X-Generation-Time') || '',
+      contentLength: res.headers.get('Content-Length') || ''
+    }
+  }
+
+  function isTileInDegradedCooldown(key) {
+    const expiresAt = degradedTileCooldowns.get(key)
+    if (!expiresAt) return false
+    if (Date.now() < expiresAt) return true
+    degradedTileCooldowns.delete(key)
+    return false
+  }
+
+  function scheduleDegradedTileRefresh(source, key, options = {}) {
+    const cooldownMs = options.degradedRetryCooldownMs || defaultDegradedRetryCooldownMs
+    const expiresAt = Date.now() + cooldownMs
+    degradedTileCooldowns.set(key, expiresAt)
+    if (degradedSourceRefreshTimers.has(source)) return
+    const timer = window.setTimeout(() => {
+      degradedSourceRefreshTimers.delete(source)
+      const now = Date.now()
+      degradedTileCooldowns.forEach((tileExpiresAt, tileKey) => {
+        if (tileExpiresAt <= now) {
+          degradedTileCooldowns.delete(tileKey)
+        }
+      })
+      source?.refresh?.()
+    }, cooldownMs)
+    degradedSourceRefreshTimers.set(source, timer)
+  }
+
+  function handleDecodedTileBuffer(tile, buf, meta, tileKey, extent, projection, options = {}, source = null, src = '') {
+    if (source && src && isDegradedTileStatus(meta.tileStatus)) {
+      scheduleDegradedTileRefresh(source, degradedCooldownKey(src), options)
+    }
+
     const maxDecodedTileBytes = options.maxDecodedTileBytes || defaultMaxDecodedTileBytes
     if (buf.byteLength > maxDecodedTileBytes) {
       const error = new Error(`MVT tile too large: ${Math.ceil(buf.byteLength / 1024 / 1024)}MB`)
       options.onTileLoadError?.({
         ...meta,
+        tileStatus: meta.tileStatus || 'degraded',
         tileKey,
         error,
         oversized: true,
         decodedBytes: buf.byteLength
+      })
+      if (source && src) {
+        scheduleDegradedTileRefresh(source, degradedCooldownKey(src), options)
+      }
+      tile.setFeatures([])
+      return
+    }
+
+    if (buf.byteLength === 0) {
+      options.onTileLoadEnd?.({
+        ...meta,
+        featureCount: 0
       })
       tile.setFeatures([])
       return
@@ -56,7 +122,9 @@ export function useVectorTileLoader(options = {}) {
       extent: extent,
       featureProjection: projection
     })
-    console.debug(`切片 ${tileKey} 加载成功，包含 ${features.length} 个要素`, features.length > 0 ? `第一个要素类型: ${features[0].getGeometry()?.getType()}` : '')
+    if (options.debugTileLoading) {
+      console.debug(`切片 ${tileKey} 加载成功，包含 ${features.length} 个要素`, features.length > 0 ? `第一个要素类型: ${features[0].getGeometry()?.getType()}` : '')
+    }
     options.onTileLoadEnd?.({
       ...meta,
       featureCount: features.length
@@ -90,35 +158,16 @@ export function useVectorTileLoader(options = {}) {
       const tileGrid = source.getTileGrid()
       const extent = tileGrid.getTileCoordExtent(tileCoord)
       const projection = source.getProjection()
+      const cooldownKey = degradedCooldownKey(src)
 
-      // 防御性检查：确保 activeTileRequests 是 Map
-      if (!activeTileRequests || typeof activeTileRequests.has !== 'function') {
-        console.error('activeTileRequests is not a Map!', activeTileRequests)
-        // 降级处理：不使用请求取消，直接发起请求
-        fetch(src, {
-          headers: { Authorization: getToken() ? `Bearer ${getToken()}` : '' }
+      if (isTileInDegradedCooldown(cooldownKey)) {
+        options.onTileLoadError?.({
+          tileKey,
+          tileStatus: 'degraded',
+          cooledDown: true,
+          error: new Error('MVT tile is in degraded retry cooldown')
         })
-          .then(res => {
-            if (!res.ok) throw new Error(`HTTP ${res.status}`)
-            const meta = {
-              tileKey,
-              renderSource: res.headers.get('X-ADDP-Render-Source') || '',
-              tileCacheId: res.headers.get('X-ADDP-Tile-Cache-ID') || '',
-              cacheStatus: res.headers.get('X-ADDP-Tile-Cache') || '',
-              tileStatus: res.headers.get('X-ADDP-Tile-Status') || '',
-              generationTime: res.headers.get('X-Generation-Time') || '',
-              contentLength: res.headers.get('Content-Length') || ''
-            }
-            return res.arrayBuffer().then(buf => ({ buf, meta }))
-          })
-          .then(({ buf, meta }) => {
-            handleDecodedTileBuffer(tile, buf, meta, tileKey, extent, projection, options)
-          })
-          .catch(e => {
-            console.error('加载切片失败:', src, e)
-            options.onTileLoadError?.({ tileKey, error: e })
-            tile.setState(TileState.ERROR)
-          })
+        tile.setFeatures([])
         return
       }
 
@@ -134,23 +183,17 @@ export function useVectorTileLoader(options = {}) {
       })
         .then(res => {
           if (!res.ok) throw new Error(`HTTP ${res.status}`)
-          const meta = {
-            tileKey,
-            renderSource: res.headers.get('X-ADDP-Render-Source') || '',
-            tileCacheId: res.headers.get('X-ADDP-Tile-Cache-ID') || '',
-            cacheStatus: res.headers.get('X-ADDP-Tile-Cache') || '',
-            tileStatus: res.headers.get('X-ADDP-Tile-Status') || '',
-            generationTime: res.headers.get('X-Generation-Time') || '',
-            contentLength: res.headers.get('Content-Length') || ''
-          }
+          const meta = tileResponseMeta(res, tileKey)
           return res.arrayBuffer().then(buf => ({ buf, meta }))
         })
         .then(({ buf, meta }) => {
-          handleDecodedTileBuffer(tile, buf, meta, tileKey, extent, projection, options)
+          handleDecodedTileBuffer(tile, buf, meta, tileKey, extent, projection, options, source, src)
         })
         .catch(e => {
           if (e.name === 'AbortError') {
-            console.debug('瓦片请求已取消:', tileKey)
+            if (options.debugTileLoading) {
+              console.debug('瓦片请求已取消:', tileKey)
+            }
             return
           }
           console.error('加载切片失败:', src, e)
@@ -201,6 +244,9 @@ export function useVectorTileLoader(options = {}) {
       })
       activeTileRequests.clear()
     }
+    degradedSourceRefreshTimers.forEach((timer) => window.clearTimeout(timer))
+    degradedSourceRefreshTimers.clear()
+    degradedTileCooldowns.clear()
   }
 
   return {

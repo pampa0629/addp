@@ -30,6 +30,9 @@ manager/
 │   └── docs/                  # Swagger 产物
 ├── docs/
 │   ├── 数据库架构.md
+│   ├── 快显概念总览.md
+│   ├── 快显规范与技术路线.md
+│   ├── 快显问题与改造思路.md
 │   ├── 向量化概念说明.md
 │   ├── 向量化能力说明.md
 │   ├── addp-mvt瓦片两阶段及配置说明.md
@@ -79,6 +82,9 @@ curl http://localhost:8081/health
 ## 相关文档
 
 - `manager/docs/数据库架构.md`
+- `manager/docs/快显概念总览.md`
+- `manager/docs/快显规范与技术路线.md`
+- `manager/docs/快显问题与改造思路.md`
 - `manager/docs/向量化概念说明.md`
 - `manager/docs/向量化能力说明.md`
 - `manager/docs/addp-mvt瓦片两阶段及配置说明.md`

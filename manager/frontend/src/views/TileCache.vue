@@ -294,12 +294,15 @@
           </el-tag>
         </el-descriptions-item>
         <el-descriptions-item :label="t('manager.tileCache.lastExecutionStatus')">
-          <el-tag :type="executionStatusTagType(lastExecutionStatus(selectedTask))">
-            {{ executionStatusLabel(lastExecutionStatus(selectedTask)) }}
-          </el-tag>
+          <div class="status-with-source">
+            <el-tag :type="executionStatusTagType(selectedTaskLastExecutionStatus)">
+              {{ executionStatusLabel(selectedTaskLastExecutionStatus) }}
+            </el-tag>
+            <span class="status-source">{{ selectedTaskLastExecutionStatusSource }}</span>
+          </div>
         </el-descriptions-item>
         <el-descriptions-item :label="t('manager.tileCache.lastRunAt')">
-          {{ formatDateTime(selectedTask.last_run_at) }}
+          {{ formatDateTime(selectedTaskLastRunAt) }}
         </el-descriptions-item>
         <el-descriptions-item :label="t('manager.tileCache.lastExecutionId')" :span="2">
           {{ selectedTask.last_execution_id || '-' }}
@@ -316,6 +319,14 @@
           :description="selectedTask.last_execution_id ? t('manager.tileCache.noExecutionStats') : t('manager.tileCache.noExecutionYet')"
         />
         <template v-else-if="executionStatsAvailable">
+          <el-alert
+            v-if="executionStatsCheck.visible"
+            :type="executionStatsCheck.type"
+            :closable="false"
+            :title="executionStatsCheck.message"
+            class="stats-check-alert"
+            show-icon
+          />
           <div class="stats-grid">
             <div v-for="item in executionStatItems" :key="item.key" class="stat-item">
               <span class="stat-label">{{ item.label }}</span>
@@ -334,6 +345,7 @@
             <el-table-column prop="generatedTilesText" :label="t('manager.tileCache.generatedTiles')" min-width="110" />
             <el-table-column prop="emptyTilesText" :label="t('manager.tileCache.emptyTiles')" min-width="100" />
             <el-table-column prop="skippedTilesText" :label="t('manager.tileCache.skippedTiles')" min-width="100" />
+            <el-table-column prop="oversizedTilesText" :label="t('manager.tileCache.oversizedSkippedTiles')" min-width="100" />
             <el-table-column prop="failedTilesText" :label="t('manager.tileCache.failedTiles')" min-width="100" />
             <el-table-column prop="avgSizeText" :label="t('manager.tileCache.avgTileSize')" min-width="110" />
             <el-table-column prop="maxSizeText" :label="t('manager.tileCache.maxTileSize')" min-width="110" />
@@ -345,7 +357,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowDown, Plus, Refresh } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -353,7 +365,36 @@ import { useI18n } from 'vue-i18n'
 import { openMonitorExecution, parseLocator, ResourceTree, ScheduleConfig, ScheduleDisplay } from '@addp/common-frontend'
 import client from '../api/client'
 import { quickViewAPI } from '../api/quickView'
-import { formatBytes, formatDateTime } from '../utils/formatters'
+import { useTileCacheExecutionStats } from '../composables/useTileCacheExecutionStats'
+import { formatDateTime } from '../utils/formatters'
+import {
+  executionIDFromExecution,
+  executionRunAtFromExecution,
+  executionStatusFromExecution,
+  executionStatusTagType,
+  lastExecutionStatus,
+  resultLocatorInfo as resultLocatorInfoValue,
+  resultStatusTagType,
+  resourceTextFromLocator as resourceTextFromLocatorValue,
+  storageLocationKey,
+  taskResource as taskResourceValue
+} from '../utils/tileCacheDisplay'
+import {
+  createDefaultTileCacheTaskForm,
+  createTileCacheTaskFormFromTask,
+  createTileCacheTaskPayload
+} from '../utils/tileCacheTaskForm'
+import {
+  createResourceRootNode,
+  findResourceNodePath,
+  geometryColumnsFromNode,
+  isResourceRootNode,
+  locatorEngineID,
+  normalizeResourceNode,
+  replaceResourceNode,
+  tableSelectionFromResourceNode,
+  updateResourceNodeChildren
+} from '../utils/tileCacheResourceTree'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -385,17 +426,17 @@ const formRef = ref(null)
 const formDialogVisible = ref(false)
 const saving = ref(false)
 const editingId = ref(null)
-const form = reactive(defaultForm())
+const form = reactive(createDefaultTileCacheTaskForm())
 const detailDialogVisible = ref(false)
 const selectedTask = ref(null)
 const selectedTaskExecution = ref(null)
 const detailExecutionLoading = ref(false)
 let detailExecutionRequestSeq = 0
+let taskRefreshTimer = null
 const capabilityLoading = ref(false)
 const geometryColumnOptions = ref([])
 const selectedSourceNode = ref(null)
 const databaseEngineTypes = new Set(['postgresql', 'postgres', 'postgis'])
-const resourceRootTypes = new Set(['root', 'server', 'service'])
 const routeSourceLocked = computed(() => {
   return !!route.query.engine_id && !!route.query.schema && !!route.query.table
 })
@@ -427,87 +468,25 @@ const selectedExecutionMetadata = computed(() => {
   const metadata = selectedTaskExecution.value?.metadata || selectedTaskExecution.value?.Metadata || null
   return metadata && typeof metadata === 'object' ? metadata : {}
 })
-const executionStatsAvailable = computed(() => {
-  const metadata = selectedExecutionMetadata.value
-  return [
-    'tiles_total_estimate',
-    'tiles_processed',
-    'generated_tiles',
-    'empty_tiles',
-    'failed_tiles',
-    'total_size_bytes',
-    'zoom_levels'
-  ].some((key) => metadata[key] !== undefined && metadata[key] !== null)
+const selectedTaskLastExecutionStatus = computed(() => {
+  return executionStatusFromExecution(selectedTaskExecution.value) || lastExecutionStatus(selectedTask.value)
 })
-const executionStatItems = computed(() => {
-  const metadata = selectedExecutionMetadata.value
-  return [
-    {
-      key: 'tiles_total_estimate',
-      label: t('manager.tileCache.tilesTotalEstimate'),
-      value: formatInteger(metadata.tiles_total_estimate ?? metadata.total_tiles)
-    },
-    {
-      key: 'tiles_processed',
-      label: t('manager.tileCache.tilesProcessed'),
-      value: formatInteger(metadata.tiles_processed)
-    },
-    {
-      key: 'generated_tiles',
-      label: t('manager.tileCache.generatedTiles'),
-      value: formatInteger(metadata.generated_tiles ?? metadata.cached_tiles)
-    },
-    {
-      key: 'empty_tiles',
-      label: t('manager.tileCache.emptyTiles'),
-      value: formatInteger(metadata.empty_tiles)
-    },
-    {
-      key: 'skipped_tiles',
-      label: t('manager.tileCache.skippedTiles'),
-      value: formatInteger(metadata.skipped_tiles)
-    },
-    {
-      key: 'failed_tiles',
-      label: t('manager.tileCache.failedTiles'),
-      value: formatInteger(metadata.failed_tiles)
-    },
-    {
-      key: 'actual_max_zoom',
-      label: t('manager.tileCache.actualMaxZoom'),
-      value: formatInteger(metadata.actual_max_zoom)
-    },
-    {
-      key: 'total_size_bytes',
-      label: t('manager.tileCache.totalTileSize'),
-      value: formatByteValue(metadata.total_size_bytes)
-    },
-    {
-      key: 'max_tile_size_bytes',
-      label: t('manager.tileCache.maxTileSize'),
-      value: formatByteValue(metadata.max_tile_size_bytes)
-    }
-  ]
+const selectedTaskLastExecutionStatusSource = computed(() => {
+  return executionStatusFromExecution(selectedTaskExecution.value)
+    ? t('manager.tileCache.executionStatusSourceRealtime')
+    : t('manager.tileCache.executionStatusSourceTaskSnapshot')
 })
-const zoomLevelRows = computed(() => {
-  const zoomLevels = selectedExecutionMetadata.value.zoom_levels
-  if (!zoomLevels || typeof zoomLevels !== 'object') return []
-  return Object.entries(zoomLevels)
-    .map(([zoom, value]) => {
-      const row = value && typeof value === 'object' ? value : {}
-      const zoomValue = Number(row.zoom ?? zoom)
-      return {
-        zoom: Number.isFinite(zoomValue) ? zoomValue : zoom,
-        totalTilesText: formatInteger(row.total_tiles),
-        generatedTilesText: formatInteger(row.generated_tiles),
-        emptyTilesText: formatInteger(row.empty_tiles),
-        skippedTilesText: formatInteger(row.skipped_tiles),
-        failedTilesText: formatInteger(row.failed_tiles),
-        avgSizeText: formatSizeKB(row.avg_size_kb),
-        maxSizeText: formatByteValue(row.max_size_bytes)
-      }
-    })
-    .sort((a, b) => Number(a.zoom) - Number(b.zoom))
+const selectedTaskLastRunAt = computed(() => {
+  return executionRunAtFromExecution(selectedTaskExecution.value) || selectedTask.value?.last_run_at
+})
+const {
+  executionStatsAvailable,
+  executionStatsCheck,
+  executionStatItems,
+  zoomLevelRows
+} = useTileCacheExecutionStats({
+  t,
+  metadata: selectedExecutionMetadata
 })
 const rules = computed(() => ({
   name: [{ required: true, message: t('manager.tileCache.nameRequired'), trigger: 'blur' }],
@@ -515,89 +494,16 @@ const rules = computed(() => ({
   'config.options.geometry_column': [{ required: true, message: t('manager.tileCache.geometryColumnRequired'), trigger: 'change' }]
 }))
 
-function defaultForm() {
-  return {
-    name: '',
-    description: '',
-    enabled: true,
-    schedule: '',
-    config: {
-      target: { item_id: undefined, item_fingerprint: '', locator: '', source_engine_id: undefined, schema: '', table: '' },
-      tile: {
-        format: 'mvt',
-        tile_matrix_set: 'WebMercatorQuad',
-        min_zoom: 0,
-        max_zoom: 18,
-        source_srid: 0,
-        target_srid: 3857,
-        extent_srid: 0,
-        extent: []
-      },
-      storage: {},
-      preparation: { mode: 'auto' },
-      options: { geometry_column: '' }
-    }
-  }
-}
-
 const resetForm = (task = null) => {
-  const next = defaultForm()
+  const next = createTileCacheTaskFormFromTask(task)
   geometryColumnOptions.value = []
   selectedSourceNode.value = null
   resourceCurrentKey.value = ''
-  if (task) {
-    next.name = task.name || ''
-    next.description = task.description || ''
-    next.enabled = task.enabled !== false
-    next.schedule = task.schedule || ''
-    next.config = {
-      ...next.config,
-      ...(task.config || {}),
-      target: { ...next.config.target, ...(task.config?.target || {}) },
-      tile: { ...next.config.tile, ...(task.config?.tile || {}) },
-      storage: { ...next.config.storage, ...(task.config?.storage || {}) },
-      preparation: { ...next.config.preparation, ...(task.config?.preparation || {}) },
-      options: { ...next.config.options, ...(task.config?.options || {}) }
-    }
-  }
   Object.assign(form, next)
   if (form.config.options.geometry_column) {
     geometryColumnOptions.value = [form.config.options.geometry_column]
   }
   editingId.value = task?.id || null
-}
-
-const taskPayload = () => {
-  const payload = JSON.parse(JSON.stringify(form))
-  payload.name = String(payload.name || '').trim()
-  payload.description = String(payload.description || '').trim()
-  payload.schedule = String(payload.schedule || '').trim()
-  payload.config.tile.format = 'mvt'
-  payload.config.tile.target_srid = 3857
-  if (!payload.config.target.item_id) {
-    delete payload.config.target.item_id
-  }
-  if (!payload.config.target.item_fingerprint) {
-    delete payload.config.target.item_fingerprint
-  }
-  if (!payload.config.target.locator) {
-    delete payload.config.target.locator
-  }
-  delete payload.config.target.label
-  delete payload.config.target.engine_name
-  if (!payload.config.options.geometry_column) {
-    delete payload.config.options.geometry_column
-  }
-  if (!payload.config.tile.source_srid) {
-    delete payload.config.tile.source_srid
-  }
-  if (!payload.config.tile.extent_srid) {
-    delete payload.config.tile.extent_srid
-  }
-  if (!Array.isArray(payload.config.tile.extent) || payload.config.tile.extent.length !== 4) {
-    delete payload.config.tile.extent
-  }
-  return payload
 }
 
 const loadTasks = async () => {
@@ -608,6 +514,7 @@ const loadTasks = async () => {
     })
     tasks.value = response.data || []
     tasksTotal.value = response.total || 0
+    scheduleRunningTaskRefresh()
   } catch (error) {
     console.error('加载瓦片缓存任务失败:', error)
     ElMessage.error(t('manager.tileCache.loadTasksFailed'))
@@ -637,7 +544,7 @@ const loadResourceTrees = async (force = false) => {
   resourceLoading.value = true
   try {
     const engines = await loadEngines(force)
-    resourceTreeData.value = engines.map(resourceRootNode)
+    resourceTreeData.value = engines.map(createResourceRootNode)
     resourceExpandedKeys.value = []
   } catch (error) {
     console.error('加载瓦片缓存资源树失败:', error)
@@ -647,44 +554,8 @@ const loadResourceTrees = async (force = false) => {
   }
 }
 
-const resourceRootNode = (engine) => {
-  const locator = `addp://engine/${engine.id}/path/?type=root`
-  return {
-    id: locator,
-    locator,
-    label: engine.name,
-    type: 'root',
-    icon: 'Folder',
-    engineId: engine.id,
-    engineType: engine.engine_type,
-    engineName: engine.name,
-    children: [],
-    hasChildren: true,
-    loaded: false
-  }
-}
-
-const normalizeResourceNode = (node, engine, loaded = true) => {
-  if (!node) return null
-  const locator = node.locator || node.id || ''
-  const metadata = node.metadata || {}
-  return {
-    ...node,
-    id: locator || node.id,
-    locator,
-    label: node.label || node.name || engine?.name || locator,
-    engineId: node.engineId || node.engine_id || metadata.engine_id || engine?.id || locatorEngineID(locator),
-    engineType: node.engineType || node.engine_type || metadata.engine_type || engine?.engine_type || '',
-    engineName: node.engineName || node.engine_name || engine?.name || '',
-    loaded,
-    children: Array.isArray(node.children)
-      ? node.children.map((child) => normalizeResourceNode(child, engine)).filter(Boolean)
-      : []
-  }
-}
-
 const loadResourceTreeRoot = async (node) => {
-  const engineID = Number(node?.engineId || locatorEngineID(node?.locator || node?.id))
+  const engineID = Number(node?.engineId || locatorEngineID(node?.locator || node?.id, safeParseLocator))
   if (!engineID) return
   resourceLoading.value = true
   try {
@@ -696,7 +567,7 @@ const loadResourceTreeRoot = async (node) => {
       engine_type: node.engineType,
       name: node.engineName
     }
-    const normalized = normalizeResourceNode(tree, engine, true)
+    const normalized = normalizeResourceNode(tree, engine, { parseLocator: safeParseLocator, loaded: true })
     if (!normalized) return
     resourceTreeData.value = replaceResourceNode(resourceTreeData.value, node.locator || node.id, normalized)
     if (!resourceExpandedKeys.value.includes(normalized.id)) {
@@ -712,7 +583,7 @@ const loadResourceTreeRoot = async (node) => {
 
 const loadResourceNodeChildren = async (node) => {
   const locator = node?.locator || node?.id
-  const engineID = Number(node?.engineId || locatorEngineID(locator))
+  const engineID = Number(node?.engineId || locatorEngineID(locator, safeParseLocator))
   if (!locator || !engineID) return
   resourceLoading.value = true
   try {
@@ -724,7 +595,9 @@ const loadResourceNodeChildren = async (node) => {
       engine_type: node.engineType,
       name: node.engineName
     }
-    const children = (response.children || []).map((child) => normalizeResourceNode(child, engine)).filter(Boolean)
+    const children = (response.children || [])
+      .map((child) => normalizeResourceNode(child, engine, { parseLocator: safeParseLocator }))
+      .filter(Boolean)
     resourceTreeData.value = updateResourceNodeChildren(resourceTreeData.value, locator, children)
   } catch (error) {
     console.error('加载瓦片缓存资源子节点失败:', error)
@@ -732,42 +605,6 @@ const loadResourceNodeChildren = async (node) => {
   } finally {
     resourceLoading.value = false
   }
-}
-
-const replaceResourceNode = (nodes, locator, replacement) => {
-  return nodes.map((node) => {
-    const nodeLocator = node.locator || node.id
-    if (nodeLocator === locator) {
-      return replacement
-    }
-    if (node.children?.length) {
-      return {
-        ...node,
-        children: replaceResourceNode(node.children, locator, replacement)
-      }
-    }
-    return node
-  })
-}
-
-const updateResourceNodeChildren = (nodes, locator, children) => {
-  return nodes.map((node) => {
-    const nodeLocator = node.locator || node.id
-    if (nodeLocator === locator) {
-      return {
-        ...node,
-        children,
-        hasChildren: children.length > 0 || node.hasChildren
-      }
-    }
-    if (node.children?.length) {
-      return {
-        ...node,
-        children: updateResourceNodeChildren(node.children, locator, children)
-      }
-    }
-    return node
-  })
 }
 
 const loadResults = async () => {
@@ -801,6 +638,7 @@ const handleTabChange = async () => {
     }
   })
   if (activeTab.value === 'results') {
+    clearTaskRefreshTimer()
     await loadResults()
   } else {
     await loadTasks()
@@ -961,54 +799,14 @@ const safeParseLocator = (locator) => {
   }
 }
 
-const locatorEngineID = (locator) => {
-  return Number(safeParseLocator(locator)?.engineId || 0)
-}
-
-const isResourceRootNode = (node) => {
-  const locator = String(node?.locator || node?.id || '')
-  return resourceRootTypes.has(String(node?.type || '').toLowerCase()) && locator.includes('/path/?')
-}
-
-const tableSelectionFromResourceNode = (node) => {
-  if (!node) return null
-  const locator = node.locator || node.id || ''
-  const loc = safeParseLocator(locator)
-  const type = String(node.type || loc?.type || '').toLowerCase()
-  if (type !== 'table') return null
-  const path = loc?.path || []
-  const schema = String(node.schema || path[path.length - 2] || '').trim()
-  const table = String(node.table || path[path.length - 1] || '').trim()
-  const engineID = Number(node.engineId || loc?.engineId || 0)
-  if (!engineID || !schema || !table) return null
-  return {
-    source_engine_id: engineID,
-    item_id: Number(loc?.itemId || node.metadata?.item_id || 0) || undefined,
-    item_fingerprint: String(node.metadata?.item_fingerprint || '').trim(),
-    locator,
-    schema,
-    table
-  }
-}
-
-const geometryColumnsFromNode = (node) => {
-  const spatial = node?.metadata?.spatial || {}
-  const columns = []
-  if (spatial.geometry) columns.push(spatial.geometry)
-  if (Array.isArray(spatial.geometry_columns)) {
-    columns.push(...spatial.geometry_columns)
-  }
-  return columns.map((column) => String(column || '').trim()).filter(Boolean)
-}
-
 const selectableResourceType = (node) => {
-  return tableSelectionFromResourceNode(node) ? t('manager.tileCache.spatialTable') : ''
+  return tableSelectionFromResourceNode(node, safeParseLocator) ? t('manager.tileCache.spatialTable') : ''
 }
 
 const revealSelectedResource = async () => {
   const locator = String(form.config.target.locator || '').trim()
   if (!locator) return
-  const engineID = Number(form.config.target.source_engine_id || locatorEngineID(locator))
+  const engineID = Number(form.config.target.source_engine_id || locatorEngineID(locator, safeParseLocator))
   if (!engineID) return
   let root = resourceTreeData.value.find((node) => Number(node.engineId) === engineID)
   if (!root) return
@@ -1029,23 +827,6 @@ const revealSelectedResource = async () => {
   resourceCurrentKey.value = ''
   await nextTick()
   resourceCurrentKey.value = locator
-}
-
-const findResourceNodePath = (nodes, locator, path = []) => {
-  for (const node of nodes || []) {
-    const nodeLocator = node.locator || node.id
-    const nextPath = [...path, node]
-    if (nodeLocator === locator) {
-      return nextPath
-    }
-    if (node.children?.length) {
-      const found = findResourceNodePath(node.children, locator, nextPath)
-      if (found.length) {
-        return found
-      }
-    }
-  }
-  return []
 }
 
 const handleResourceNodeExpand = async (node) => {
@@ -1070,7 +851,7 @@ const handleResourceNodeClick = async (node) => {
   if (node?.hasChildren && (node.children || []).length === 0) {
     await loadResourceNodeChildren(node)
   }
-  const selection = tableSelectionFromResourceNode(node)
+  const selection = tableSelectionFromResourceNode(node, safeParseLocator)
   if (!selection) {
     return
   }
@@ -1145,11 +926,12 @@ const saveTask = async () => {
   await formRef.value?.validate()
   saving.value = true
   try {
+    const payload = createTileCacheTaskPayload(form)
     if (editingId.value) {
-      await client.put(`/manager/tile_cache_tasks/${editingId.value}`, taskPayload())
+      await client.put(`/manager/tile_cache_tasks/${editingId.value}`, payload)
       ElMessage.success(t('manager.tileCache.updateSuccess'))
     } else {
-      await client.post('/manager/tile_cache_tasks', taskPayload())
+      await client.post('/manager/tile_cache_tasks', payload)
       ElMessage.success(t('manager.tileCache.createSuccess'))
     }
     formDialogVisible.value = false
@@ -1233,7 +1015,9 @@ const loadTaskExecutionDetail = async (task) => {
     const response = await client.get(`/manager/executions/${executionId}`)
     const payload = response?.data || response
     if (seq === detailExecutionRequestSeq) {
-      selectedTaskExecution.value = payload?.data || payload
+      const execution = payload?.data || payload
+      selectedTaskExecution.value = execution
+      syncTaskLastExecutionFromExecution(task, execution)
     }
   } catch (error) {
     console.error('加载瓦片缓存执行详情失败:', error)
@@ -1247,6 +1031,27 @@ const loadTaskExecutionDetail = async (task) => {
   }
 }
 
+const syncTaskLastExecutionFromExecution = (task, execution) => {
+  const status = executionStatusFromExecution(execution)
+  const executionID = executionIDFromExecution(execution)
+  const taskExecutionID = String(task?.last_execution_id || task?.lastExecutionID || '').trim()
+  if (!task || !status || !executionID || executionID !== taskExecutionID) {
+    return
+  }
+
+  const patch = {
+    last_execution_status: status,
+    lastExecutionStatus: status,
+    last_run_at: executionRunAtFromExecution(execution) || task.last_run_at
+  }
+
+  if (selectedTask.value?.id === task.id) {
+    selectedTask.value = { ...selectedTask.value, ...patch }
+  }
+  tasks.value = tasks.value.map((row) => row.id === task.id ? { ...row, ...patch } : row)
+  scheduleRunningTaskRefresh()
+}
+
 const showTaskDetail = (task) => {
   selectedTask.value = task
   detailDialogVisible.value = true
@@ -1257,9 +1062,7 @@ const openTaskExecution = (task) => openMonitorExecution(task.last_execution_id)
 const openResultExecution = (result) => openMonitorExecution(result.last_execution_id)
 
 const taskResource = (task) => {
-  const target = task?.target || task?.config?.target || {}
-  if (target.schema && target.table) return `${target.schema}.${target.table}`
-  return resourceTextFromLocator(target.locator) || '-'
+  return taskResourceValue(task, safeParseLocator)
 }
 
 const engineName = (engineId) => {
@@ -1270,14 +1073,7 @@ const engineName = (engineId) => {
 }
 
 const resultLocatorInfo = (result) => {
-  const locator = String(result?.locator || '').trim()
-  if (!locator) return null
-  const parsedLocator = safeParseLocator(locator)
-  if (!parsedLocator) return null
-  return {
-    engineId: Number(parsedLocator.engineId || 0),
-    path: parsedLocator.path?.length ? parsedLocator.path.join('.') : ''
-  }
+  return resultLocatorInfoValue(result, safeParseLocator)
 }
 
 const resultEngineName = (result) => {
@@ -1290,62 +1086,17 @@ const resultSourceDataPath = (result) => {
 }
 
 const resourceTextFromLocator = (locator) => {
-  const parsed = safeParseLocator(String(locator || '').trim())
-  if (!parsed?.path?.length) return ''
-  return parsed.path.join('.')
+  return resourceTextFromLocatorValue(locator, safeParseLocator)
 }
 
 const storageLocation = (storageRef) => {
   if (!storageRef) return '-'
-  const parsed = parseLocatorPayload(storageRef)
-  if (parsed?.provider === 'addp_object_storage' || parsed?.object_prefix) {
-    return t('manager.tileCache.platformObjectStorage')
-  }
-  return t('manager.tileCache.externalStorage')
+  return t(`manager.tileCache.${storageLocationKey(storageRef)}`)
 }
 
 const storageLocationDetail = (storageRef) => {
   if (!storageRef) return ''
-  const parsed = parseLocatorPayload(storageRef)
-  if (parsed?.provider === 'addp_object_storage' || parsed?.object_prefix) {
-    return t('manager.tileCache.platformObjectStorage')
-  }
-  return t('manager.tileCache.externalStorage')
-}
-
-const lastExecutionStatus = (task) => {
-  return String(
-    task?.last_execution_status ||
-      task?.lastExecutionStatus ||
-      task?.execution_status ||
-      task?.last_execution?.status ||
-      ''
-  ).trim()
-}
-
-const parseLocatorPayload = (locator) => {
-  if (!locator || typeof locator !== 'string') return null
-  try {
-    const parsed = JSON.parse(locator)
-    return parsed && typeof parsed === 'object' ? parsed : null
-  } catch {
-    return null
-  }
-}
-
-const formatInteger = (value) => {
-  const number = Number(value)
-  return Number.isFinite(number) ? Math.trunc(number).toLocaleString() : '-'
-}
-
-const formatByteValue = (value) => {
-  const number = Number(value)
-  return Number.isFinite(number) && number > 0 ? formatBytes(number) : '-'
-}
-
-const formatSizeKB = (value) => {
-  const number = Number(value)
-  return Number.isFinite(number) && number > 0 ? formatBytes(number * 1024) : '-'
+  return t(`manager.tileCache.${storageLocationKey(storageRef)}`)
 }
 
 const errorMessage = (error, fallback) => {
@@ -1356,24 +1107,10 @@ const errorMessage = (error, fallback) => {
   return fallback
 }
 
-const executionStatusTagType = (status) => {
-  if (status === 'success') return 'success'
-  if (status === 'failed' || status === 'timeout') return 'danger'
-  if (status === 'running' || status === 'pending') return 'warning'
-  return 'info'
-}
-
 const executionStatusLabel = (status) => {
   if (!status) return t('manager.tileCache.statusNeverRun')
   if (!['pending', 'running', 'success', 'failed', 'timeout', 'cancelled'].includes(status)) return status
   return t(`manager.tileCache.status.${status}`)
-}
-
-const resultStatusTagType = (status) => {
-  if (status === 'ready') return 'success'
-  if (status === 'failed') return 'danger'
-  if (status === 'generating') return 'warning'
-  return 'info'
 }
 
 const resultStatusLabel = (status) => {
@@ -1381,7 +1118,44 @@ const resultStatusLabel = (status) => {
   return t(`manager.tileCache.resultStatuses.${status}`)
 }
 
+const hasRunningTileCacheTask = () => {
+  return tasks.value.some((task) => ['pending', 'running'].includes(lastExecutionStatus(task)))
+}
+
+const clearTaskRefreshTimer = () => {
+  if (taskRefreshTimer) {
+    window.clearTimeout(taskRefreshTimer)
+    taskRefreshTimer = null
+  }
+}
+
+const scheduleRunningTaskRefresh = () => {
+  clearTaskRefreshTimer()
+  if (activeTab.value !== 'tasks' || document.visibilityState === 'hidden' || !hasRunningTileCacheTask()) {
+    return
+  }
+  taskRefreshTimer = window.setTimeout(() => {
+    taskRefreshTimer = null
+    refreshTasksWhenVisible()
+  }, 5000)
+}
+
+const refreshTasksWhenVisible = async () => {
+  if (document.visibilityState === 'hidden' || activeTab.value !== 'tasks') {
+    return
+  }
+  await loadTasks()
+}
+
+const handleVisibilityChange = () => {
+  if (document.visibilityState === 'visible') {
+    refreshTasksWhenVisible()
+  }
+}
+
 onMounted(async () => {
+  window.addEventListener('focus', refreshTasksWhenVisible)
+  document.addEventListener('visibilitychange', handleVisibilityChange)
   await Promise.all([loadTasks(), loadEngines()])
   if (activeTab.value === 'results') {
     applyRouteResultContext()
@@ -1400,6 +1174,12 @@ onMounted(async () => {
   } else if (route.query.create === '1') {
     await openCreateDialog()
   }
+})
+
+onBeforeUnmount(() => {
+  clearTaskRefreshTimer()
+  window.removeEventListener('focus', refreshTasksWhenVisible)
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 </script>
 
@@ -1456,6 +1236,22 @@ onMounted(async () => {
 
 .execution-stats {
   margin-top: 18px;
+}
+
+.status-with-source {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.status-source {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+
+.stats-check-alert {
+  margin-bottom: 12px;
 }
 
 .stats-grid {

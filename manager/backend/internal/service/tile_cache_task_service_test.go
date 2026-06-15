@@ -233,12 +233,13 @@ func TestTileCacheGenerationSuccessMarksArtifactReadyAndQuickViewAvailable(t *te
 		result: &mvt.GenerateResult{
 			ActualMaxZoom:      1,
 			TotalTiles:         4,
-			CachedTiles:        4,
+			CachedTiles:        3,
 			TilesTotalEstimate: 4,
 			TilesProcessed:     4,
-			GeneratedTiles:     4,
+			GeneratedTiles:     3,
 			EmptyTiles:         0,
-			SkippedTiles:       0,
+			SkippedTiles:       1,
+			OversizedTiles:     1,
 			FailedTiles:        0,
 			TotalSizeBytes:     4096,
 			MaxTileSizeBytes:   2048,
@@ -247,7 +248,9 @@ func TestTileCacheGenerationSuccessMarksArtifactReadyAndQuickViewAvailable(t *te
 				"1": {
 					Zoom:           1,
 					TotalTiles:     4,
-					GeneratedTiles: 4,
+					GeneratedTiles: 3,
+					SkippedTiles:   1,
+					OversizedTiles: 1,
 					TotalSizeBytes: 4096,
 					MaxSizeBytes:   2048,
 					MinSizeBytes:   512,
@@ -293,14 +296,41 @@ func TestTileCacheGenerationSuccessMarksArtifactReadyAndQuickViewAvailable(t *te
 	if exec.Metadata["tiles_processed"] != float64(4) {
 		t.Fatalf("metadata tiles_processed = %#v, want 4", exec.Metadata["tiles_processed"])
 	}
-	if exec.Metadata["generated_tiles"] != float64(4) {
-		t.Fatalf("metadata generated_tiles = %#v, want 4", exec.Metadata["generated_tiles"])
+	if exec.Metadata["generated_tiles"] != float64(3) {
+		t.Fatalf("metadata generated_tiles = %#v, want 3", exec.Metadata["generated_tiles"])
+	}
+	if exec.Metadata["skipped_tiles"] != float64(1) {
+		t.Fatalf("metadata skipped_tiles = %#v, want 1", exec.Metadata["skipped_tiles"])
+	}
+	if exec.Metadata["oversized_skipped_tiles"] != float64(1) {
+		t.Fatalf("metadata oversized_skipped_tiles = %#v, want 1", exec.Metadata["oversized_skipped_tiles"])
 	}
 	if exec.Metadata["total_size_bytes"] != float64(4096) {
 		t.Fatalf("metadata total_size_bytes = %#v, want 4096", exec.Metadata["total_size_bytes"])
 	}
 	if _, ok := exec.Metadata["zoom_levels"]; !ok {
 		t.Fatalf("metadata = %#v, want zoom_levels", exec.Metadata)
+	}
+	if exec.Metadata["source_srid"] != float64(4326) {
+		t.Fatalf("metadata source_srid = %#v, want 4326", exec.Metadata["source_srid"])
+	}
+	if exec.Metadata["target_srid"] != float64(3857) {
+		t.Fatalf("metadata target_srid = %#v, want 3857", exec.Metadata["target_srid"])
+	}
+	if exec.Metadata["geometry_column"] != "geom_3857" {
+		t.Fatalf("metadata geometry_column = %#v, want geom_3857", exec.Metadata["geometry_column"])
+	}
+	if _, ok := exec.Metadata["tile_range_extent_wgs84"]; !ok {
+		t.Fatalf("metadata = %#v, want tile_range_extent_wgs84", exec.Metadata)
+	}
+	if _, ok := exec.Metadata["preparation_actions"]; !ok {
+		t.Fatalf("metadata = %#v, want preparation_actions", exec.Metadata)
+	}
+	if _, ok := exec.Metadata["tile_generation_target"]; !ok {
+		t.Fatalf("metadata = %#v, want tile_generation_target", exec.Metadata)
+	}
+	if _, ok := exec.Metadata["optimization"]; !ok {
+		t.Fatalf("metadata = %#v, want optimization", exec.Metadata)
 	}
 
 	artifacts, _, err := tileCacheRepo.ListTileCache(context.Background(), repository.TileCacheFilter{

@@ -348,32 +348,14 @@ func (s *TileCacheTaskService) runTileCacheGeneration(ctx context.Context, task 
 			err = errors.New("tile cache generation returned empty result")
 		} else {
 			completedAt = time.Now()
-			metadata = commonModels.JSONMap{
-				"tile_cache_id":        tileCache.ID,
-				"actual_max_zoom":      result.ActualMaxZoom,
-				"total_tiles":          result.TotalTiles,
-				"cached_tiles":         result.CachedTiles,
-				"tiles_total_estimate": nonZeroInt(result.TilesTotalEstimate, result.TotalTiles),
-				"tiles_processed":      nonZeroInt(result.TilesProcessed, result.TotalTiles),
-				"generated_tiles":      nonZeroInt(result.GeneratedTiles, result.CachedTiles),
-				"empty_tiles":          result.EmptyTiles,
-				"skipped_tiles":        result.SkippedTiles,
-				"failed_tiles":         result.FailedTiles,
-				"total_size_bytes":     result.TotalSizeBytes,
-				"max_tile_size_bytes":  result.MaxTileSizeBytes,
-				"min_tile_size_bytes":  result.MinTileSizeBytes,
-				"generation_seconds":   result.GenerationSec,
-				"stop_reason":          result.StopReason,
-			}
-			if len(result.ZoomLevels) > 0 {
-				metadata["zoom_levels"] = result.ZoomLevels
-			}
-			if tileGenerationTargetMetadata != nil {
-				metadata["tile_generation_target"] = tileGenerationTargetMetadata
-			}
-			if optimizationMetadata != nil {
-				metadata["optimization"] = optimizationMetadata
-			}
+			metadata = buildTileCacheGenerationMetadata(
+				tileCache.ID,
+				cfg,
+				result,
+				tileGenerationTargetMetadata,
+				optimizationMetadata,
+				execCfg,
+			)
 			if result.CachedTiles <= 0 {
 				err = errors.New("tile cache generation produced no non-empty tiles")
 			} else {
@@ -445,6 +427,69 @@ func (s *TileCacheTaskService) runTileCacheGeneration(ctx context.Context, task 
 	if err := s.tileCacheRepo.UpdateTaskLastExecution(ctx, task.ID, executionID, status, completedAt); err != nil {
 		logger.L().Warn("更新瓦片缓存任务最近执行状态失败", "execution_id", executionID, "task_id", task.ID, "error", err)
 	}
+}
+
+func buildTileCacheGenerationMetadata(
+	tileCacheID uint,
+	cfg mvt.QuickViewConfig,
+	result *mvt.GenerateResult,
+	tileGenerationTargetMetadata commonModels.JSONMap,
+	optimizationMetadata commonModels.JSONMap,
+	execCfg commonModels.JSONMap,
+) commonModels.JSONMap {
+	tileConfig, _ := asJSONMap(execCfg["tile"])
+	sourceSRID := intFromTileCacheConfig(tileConfig["source_srid"], cfg.SRID)
+
+	metadata := commonModels.JSONMap{
+		"tile_cache_id":           tileCacheID,
+		"actual_max_zoom":         result.ActualMaxZoom,
+		"min_zoom":                cfg.MinZoom,
+		"max_zoom":                cfg.MaxZoom,
+		"source_srid":             sourceSRID,
+		"target_srid":             cfg.SRID,
+		"extent_srid":             cfg.ExtentSRID,
+		"extent":                  cfg.Extent,
+		"geometry_column":         cfg.GeomColumn,
+		"total_tiles":             result.TotalTiles,
+		"cached_tiles":            result.CachedTiles,
+		"tiles_total_estimate":    result.TilesTotalEstimate,
+		"tiles_processed":         result.TilesProcessed,
+		"generated_tiles":         result.GeneratedTiles,
+		"empty_tiles":             result.EmptyTiles,
+		"skipped_tiles":           result.SkippedTiles,
+		"oversized_skipped_tiles": result.OversizedTiles,
+		"failed_tiles":            result.FailedTiles,
+		"total_size_bytes":        result.TotalSizeBytes,
+		"max_tile_size_bytes":     result.MaxTileSizeBytes,
+		"min_tile_size_bytes":     result.MinTileSizeBytes,
+		"generation_seconds":      result.GenerationSec,
+		"stop_reason":             result.StopReason,
+		"preparation_actions": commonModels.JSONMap{
+			"previous_runtime_cache_invalidated": boolFromJSONMap(execCfg, "previous_runtime_cache_invalidated"),
+			"previous_storage_ref_deleted":       boolFromJSONMap(execCfg, "previous_storage_ref_deleted"),
+		},
+	}
+	if len(result.ExtentWGS84) == 4 {
+		metadata["tile_range_extent_wgs84"] = result.ExtentWGS84
+	}
+	if len(result.ZoomLevels) > 0 {
+		metadata["zoom_levels"] = result.ZoomLevels
+	}
+	if tileGenerationTargetMetadata != nil {
+		metadata["tile_generation_target"] = tileGenerationTargetMetadata
+	}
+	if optimizationMetadata != nil {
+		metadata["optimization"] = optimizationMetadata
+	}
+	return metadata
+}
+
+func boolFromJSONMap(values commonModels.JSONMap, key string) bool {
+	if values == nil {
+		return false
+	}
+	value, ok := values[key].(bool)
+	return ok && value
 }
 
 func (s *TileCacheTaskService) prepareExecutionTileCache(ctx context.Context, task *models.TileCacheTask, executionID string) (*models.TileCache, commonModels.JSONMap, mvt.QuickViewConfig, bool, error) {
@@ -890,13 +935,6 @@ func intFromTileCacheConfig(value interface{}, defaultValue int) int {
 		}
 	}
 	return defaultValue
-}
-
-func nonZeroInt(value int, fallback int) int {
-	if value != 0 {
-		return value
-	}
-	return fallback
 }
 
 func floatFromTileCacheConfig(value interface{}, defaultValue float64) float64 {
