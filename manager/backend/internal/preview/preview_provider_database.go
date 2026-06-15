@@ -35,7 +35,7 @@ func (p *DatabaseTablePreviewProvider) Name() string {
 }
 
 func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
-	const maxRows = 50
+	const maxRows = 2000
 
 	plug, err := plugin.Get(req.Engine.EngineType)
 	if err != nil {

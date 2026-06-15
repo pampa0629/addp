@@ -237,6 +237,66 @@ func TestDatabaseTablePreviewProviderPreviewFallsBackToCatalogFactsRowCount(t *t
 	}
 }
 
+func TestDatabaseTablePreviewProviderAllowsQuickViewPageSize(t *testing.T) {
+	previous, previousErr := plugin.Get("postgresql")
+	rowCount := int64(127)
+	enginePlugin := &recordingDatabasePreviewPlugin{
+		engineType: "postgresql",
+		catalogFacts: &plugin.CatalogFacts{
+			Table: &datatype.TableInfo{
+				RowCount: &rowCount,
+				Fields: []datatype.FieldInfo{
+					{Name: "id", Type: datatype.FieldTypeBigInt, NativeType: "bigint", Nullable: false, PrimaryKey: true},
+					{Name: "geometry", Type: datatype.FieldTypeGeometry, NativeType: "geometry(MultiPolygon,4326)", Nullable: true},
+				},
+			},
+		},
+	}
+	plugin.Register(enginePlugin)
+	defer func() {
+		if previousErr == nil {
+			plugin.Register(previous)
+			return
+		}
+		plugin.Unregister(enginePlugin.Type())
+	}()
+
+	provider := &DatabaseTablePreviewProvider{}
+	req := &PreviewRequest{
+		Engine: &models.Engine{
+			ID:         8,
+			EngineType: enginePlugin.Type(),
+		},
+		Schema:   "public",
+		Table:    "public.farmland",
+		Page:     1,
+		PageSize: 127,
+		ProviderPath: plugin.CatalogPath{
+			Version:  plugin.CatalogPathVersion,
+			EngineID: 8,
+			Segments: []plugin.CatalogSegment{
+				{Term: plugin.CatalogTermServer, Kind: plugin.CatalogTermServer},
+				{Term: plugin.CatalogTermSchema, Kind: plugin.CatalogKindNamespace, Name: "public"},
+				{Term: plugin.CatalogTermTable, Kind: plugin.CatalogKindTable, Name: "farmland"},
+			},
+		},
+	}
+
+	preview, err := provider.Preview(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+	if preview.PageSize != 127 {
+		t.Fatalf("PageSize = %d, want 127", preview.PageSize)
+	}
+	if len(enginePlugin.readBatchCalls) != 1 {
+		t.Fatalf("ReadBatch call count = %d, want 1", len(enginePlugin.readBatchCalls))
+	}
+	if !strings.Contains(enginePlugin.readBatchCalls[0].Query, "LIMIT 127") {
+		t.Fatalf("ReadBatch query = %q, want LIMIT 127", enginePlugin.readBatchCalls[0].Query)
+	}
+}
+
 type recordingDatabasePreviewPlugin struct {
 	engineType     string
 	catalogFacts   *plugin.CatalogFacts

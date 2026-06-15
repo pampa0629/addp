@@ -87,12 +87,13 @@ const geoJSONURL = computed(() => {
 })
 const crsPreview = computed(() => {
   const value = tableResponseData.value || {}
+  const metadata = value.metadata || {}
   return {
     ...value,
-    source_srid: value.source_srid || quickViewInfo.value.source_srid || quickViewInfo.value.extent_srid,
-    source_crs: value.source_crs,
-    source_crs_definition: value.source_crs_definition,
-    transform_status: value.transform_status
+    source_srid: value.source_srid || metadata.source_srid || quickViewInfo.value.source_srid || quickViewInfo.value.extent_srid,
+    source_crs: value.source_crs || metadata.source_crs,
+    source_crs_definition: value.source_crs_definition || metadata.source_crs_definition,
+    transform_status: value.transform_status || metadata.transform_status
   }
 })
 const crsTransform = computed(() => getPreviewCRSTransform(crsPreview.value))

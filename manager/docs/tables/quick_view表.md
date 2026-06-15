@@ -114,14 +114,14 @@
 
 | 旧信息 | 目标落点 |
 | --- | --- |
-| 产物范围、层级、格式、存储引用、配置指纹 | `manager.tile_cache` |
+| 产物范围、层级、格式、存储引用 | `manager.tile_cache` |
 | 生成配置 | `manager.tile_cache_tasks.config` |
 | 执行进度、耗时、错误详情、统计摘要 | `common.task_executions.metadata` / `error_details` |
 | 准备动作结果 | execution metadata 或后续准备产物专题 |
 
 ## 九、相关文档
 
-- [Manager 快显与瓦片缓存概念原则](../../../docs/next/Manager快显与瓦片缓存概念原则.md)
-- [Manager 瓦片缓存结果状态设计](../../../docs/next/Manager瓦片缓存结果状态设计.md)
-- [Manager 瓦片缓存生成任务设计](../../../docs/next/Manager瓦片缓存生成任务设计.md)
+- [快显概念总览](../../../docs/next/快显/01-概念总览.md)
+- [快显规范与技术路线](../../../docs/next/快显/02-规范与技术路线.md)
+- [快显当前问题与改造思路](../../../docs/next/快显/03-问题与改造思路.md)
 - [数据库架构](../数据库架构.md)

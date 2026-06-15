@@ -76,42 +76,55 @@ type QuickViewIdentity struct {
 }
 
 type SpatialMetadataResult struct {
-	GeomColumn      string
-	GeometryColumns []string
-	SRID            int
-	ExtentSRID      int
-	PrimaryKey      string
-	Extent          []float64
-	RecordCount     int64
+	GeomColumn         string
+	GeometryColumns    []string
+	SRID               int
+	ExtentSRID         int
+	PrimaryKey         string
+	Extent             []float64
+	RenderExtent       []float64
+	RenderExtentSRID   int
+	RenderExtentSource string
+	RecordCount        int64
 }
 
 type QuickViewSource struct {
-	Identity      QuickViewIdentity
-	EngineID      uint
-	Schema        string
-	Table         string
-	SpatialMeta   *SpatialMetadataResult
-	DirectGeoJSON bool
-	GeoJSONURL    string
-	CanTile       bool
+	Identity           QuickViewIdentity
+	EngineID           uint
+	Schema             string
+	Table              string
+	SpatialMeta        *SpatialMetadataResult
+	DirectGeoJSON      bool
+	GeoJSONURL         string
+	CanTile            bool
+	RealtimeTileTarget *RealtimeTileTarget
+}
+
+type RealtimeTileTarget struct {
+	Schema       string
+	Table        string
+	GeomColumn   string
+	SRID         int
+	Prepared3857 bool
 }
 
 type QuickViewCapability struct {
-	TenantID             uint                `json:"tenant_id"`
-	ItemFingerprint      string              `json:"item_fingerprint,omitempty"`
-	Locator              string              `json:"locator,omitempty"`
-	CanUseQuickView      bool                `json:"can_use_quick_view"`
-	CanGenerateTileCache bool                `json:"can_generate_tile_cache"`
-	PreferredMode        string              `json:"preferred_mode"`
-	RecommendedMode      string              `json:"recommended_mode"`
-	ActiveMode           string              `json:"active_mode"`
-	DefaultTileCacheID   *uint               `json:"default_tile_cache_id,omitempty"`
-	Status               string              `json:"status"`
-	UnavailableReason    string              `json:"unavailable_reason,omitempty"`
-	RenderSource         string              `json:"render_source,omitempty"`
-	QuickView            QuickViewRenderInfo `json:"quick_view"`
-	TileCacheGeneration  TileCacheGeneration `json:"tile_cache_generation"`
-	LastCheckedAt        *time.Time          `json:"last_checked_at,omitempty"`
+	TenantID             uint                  `json:"tenant_id"`
+	ItemFingerprint      string                `json:"item_fingerprint,omitempty"`
+	Locator              string                `json:"locator,omitempty"`
+	CanUseQuickView      bool                  `json:"can_use_quick_view"`
+	CanGenerateTileCache bool                  `json:"can_generate_tile_cache"`
+	PreferredMode        string                `json:"preferred_mode"`
+	RecommendedMode      string                `json:"recommended_mode"`
+	ActiveMode           string                `json:"active_mode"`
+	DefaultTileCacheID   *uint                 `json:"default_tile_cache_id,omitempty"`
+	Status               string                `json:"status"`
+	UnavailableReason    string                `json:"unavailable_reason,omitempty"`
+	RenderSource         string                `json:"render_source,omitempty"`
+	QuickView            QuickViewRenderInfo   `json:"quick_view"`
+	RenderFacts          *QuickViewRenderFacts `json:"render_facts,omitempty"`
+	TileCacheGeneration  TileCacheGeneration   `json:"tile_cache_generation"`
+	LastCheckedAt        *time.Time            `json:"last_checked_at,omitempty"`
 }
 
 type QuickViewRenderInfo struct {
@@ -124,7 +137,25 @@ type QuickViewRenderInfo struct {
 	MinZoom         int       `json:"min_zoom,omitempty"`
 	MaxZoom         int       `json:"max_zoom,omitempty"`
 	GeometryColumn  string    `json:"geometry_column,omitempty"`
+	SourceSRID      int       `json:"source_srid,omitempty"`
 	RecordCount     int64     `json:"record_count,omitempty"`
+}
+
+type QuickViewRenderFacts struct {
+	SourceSRID         int                 `json:"source_srid,omitempty"`
+	SourceExtent       []float64           `json:"source_extent,omitempty"`
+	SourceExtentSRID   int                 `json:"source_extent_srid,omitempty"`
+	RenderExtent       []float64           `json:"render_extent,omitempty"`
+	RenderExtentSRID   int                 `json:"render_extent_srid,omitempty"`
+	RenderExtentSource string              `json:"render_extent_source,omitempty"`
+	ZoomRecommendation *ZoomRecommendation `json:"zoom_recommendation,omitempty"`
+}
+
+type ZoomRecommendation struct {
+	MinZoom int    `json:"min_zoom"`
+	MaxZoom int    `json:"max_zoom"`
+	Status  string `json:"status"`
+	Reason  string `json:"reason,omitempty"`
 }
 
 type TileCacheGeneration struct {
@@ -210,7 +241,7 @@ func (s *QuickViewService) BuildCapability(ctx context.Context, identity QuickVi
 		capability.RenderSource = QuickViewRenderSourceCachedTile
 		capability.RecommendedMode = "quick_view"
 		capability.DefaultTileCacheID = &readyTileCache.ID
-		capability.QuickView = renderInfoFromTileCache(engineID, schema, table, readyTileCache)
+		capability.QuickView = renderInfoFromTileCache(engineID, schema, table, readyTileCache, spatialMeta)
 	} else if directGeoJSONAvailable(s.directGeoJSONMaxRows(), spatialMeta) {
 		capability.CanUseQuickView = true
 		capability.Status = QuickViewStatusAvailable
@@ -226,19 +257,13 @@ func (s *QuickViewService) BuildCapability(ctx context.Context, identity QuickVi
 		capability.TileCacheGeneration.Available = false
 		capability.TileCacheGeneration.Reason = "spatial metadata is incomplete"
 		capability.UnavailableReason = capability.TileCacheGeneration.Reason
-	} else {
-		capability.CanUseQuickView = true
-		capability.Status = QuickViewStatusAvailable
-		capability.UnavailableReason = ""
-		capability.RenderSource = QuickViewRenderSourceRealtimeTile
-		capability.RecommendedMode = "quick_view"
-		capability.QuickView = renderInfoFromRealtimeTile(engineID, schema, table, spatialMeta)
-		capability.CanGenerateTileCache = true
 	}
 
 	if capability.CanUseQuickView {
 		capability.CanGenerateTileCache = true
 		capability.TileCacheGeneration.Available = true
+	} else if capability.TileCacheGeneration.Available && spatialMetaComplete(spatialMeta) {
+		capability.CanGenerateTileCache = true
 	}
 	if !capability.TileCacheGeneration.Available {
 		capability.CanGenerateTileCache = false
@@ -246,6 +271,7 @@ func (s *QuickViewService) BuildCapability(ctx context.Context, identity QuickVi
 	if capability.ActiveMode == "quick_view" && !capability.CanUseQuickView {
 		capability.ActiveMode = "table_geojson"
 	}
+	capability.RenderFacts = renderFactsFromSpatialMeta(spatialMeta)
 
 	return capability, nil
 }
@@ -306,7 +332,7 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 		capability.RenderSource = QuickViewRenderSourceCachedTile
 		capability.RecommendedMode = "quick_view"
 		capability.DefaultTileCacheID = &readyTileCache.ID
-		capability.QuickView = renderInfoFromTileCache(source.EngineID, source.Schema, source.Table, readyTileCache)
+		capability.QuickView = renderInfoFromTileCache(source.EngineID, source.Schema, source.Table, readyTileCache, source.SpatialMeta)
 	} else if source.DirectGeoJSON && directGeoJSONAvailable(s.directGeoJSONMaxRows(), source.SpatialMeta) {
 		capability.CanUseQuickView = true
 		capability.Status = QuickViewStatusAvailable
@@ -318,7 +344,7 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 		capability.TileCacheGeneration.Available = false
 		capability.TileCacheGeneration.Reason = "spatial metadata is incomplete"
 		capability.UnavailableReason = capability.TileCacheGeneration.Reason
-	} else if source.CanTile {
+	} else if source.RealtimeTileTarget != nil {
 		capability.CanUseQuickView = true
 		capability.Status = QuickViewStatusAvailable
 		capability.UnavailableReason = ""
@@ -331,6 +357,8 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 	if capability.CanUseQuickView && source.CanTile {
 		capability.CanGenerateTileCache = true
 		capability.TileCacheGeneration.Available = true
+	} else if source.CanTile && capability.TileCacheGeneration.Available && spatialMetaComplete(source.SpatialMeta) {
+		capability.CanGenerateTileCache = true
 	}
 	if !capability.TileCacheGeneration.Available {
 		capability.CanGenerateTileCache = false
@@ -338,6 +366,7 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 	if capability.ActiveMode == "quick_view" && !capability.CanUseQuickView {
 		capability.ActiveMode = "table_geojson"
 	}
+	capability.RenderFacts = renderFactsFromSpatialMeta(source.SpatialMeta)
 
 	return capability, nil
 }
@@ -471,19 +500,27 @@ func directGeoJSONAvailable(maxRows int64, meta *SpatialMetadataResult) bool {
 	return spatialMetaDirectGeoJSONReady(meta) && meta.RecordCount > 0 && meta.RecordCount <= maxRows
 }
 
-func renderInfoFromTileCache(engineID uint, schema, table string, tileCache *models.TileCache) QuickViewRenderInfo {
+func renderInfoFromTileCache(engineID uint, schema, table string, tileCache *models.TileCache, spatialMeta *SpatialMetadataResult) QuickViewRenderInfo {
 	info := QuickViewRenderInfo{
 		RenderSource:    QuickViewRenderSourceCachedTile,
 		TileFormat:      tileCache.TileFormat,
 		TileURLTemplate: tileURLTemplate(engineID, schema, table),
 	}
 	if extent, extentSRID, ok := TileCacheExtent(tileCache); ok {
-		info.Extent = extent
-		info.ExtentSRID = extentSRID
+		if extentSRID == spatial.SRIDWGS84 {
+			info.Extent = extent
+			info.ExtentSRID = extentSRID
+		}
+	}
+	if len(info.Extent) != 4 {
+		applyRenderableWGS84Extent(&info, spatialMeta)
 	}
 	if minZoom, maxZoom, ok := TileCacheZoomRange(tileCache); ok {
 		info.MinZoom = minZoom
 		info.MaxZoom = maxZoom
+	}
+	if spatialMeta != nil {
+		info.SourceSRID = spatialMeta.SRID
 	}
 	return info
 }
@@ -494,56 +531,137 @@ func renderInfoFromSpatialMeta(engineID uint, schema, table string, meta *Spatia
 		pageSize = 1
 	}
 	minZoom, maxZoom := quickViewZoomRange(meta)
-	return QuickViewRenderInfo{
+	info := QuickViewRenderInfo{
 		RenderSource:   QuickViewRenderSourceDirectGeoJSON,
 		GeoJSONURL:     geoJSONURL(engineID, schema, table, meta.GeomColumn, pageSize),
-		Extent:         meta.Extent,
-		ExtentSRID:     meta.ExtentSRID,
 		MinZoom:        minZoom,
 		MaxZoom:        maxZoom,
 		GeometryColumn: meta.GeomColumn,
+		SourceSRID:     meta.SRID,
 		RecordCount:    meta.RecordCount,
 	}
+	applyRenderableWGS84Extent(&info, meta)
+	return info
 }
 
 func renderInfoFromLocatorGeoJSON(meta *SpatialMetadataResult, geoJSONURL string) QuickViewRenderInfo {
 	minZoom, maxZoom := quickViewZoomRange(meta)
-	return QuickViewRenderInfo{
+	info := QuickViewRenderInfo{
 		RenderSource:   QuickViewRenderSourceDirectGeoJSON,
 		GeoJSONURL:     geoJSONURL,
-		Extent:         meta.Extent,
-		ExtentSRID:     meta.ExtentSRID,
 		MinZoom:        minZoom,
 		MaxZoom:        maxZoom,
 		GeometryColumn: meta.GeomColumn,
+		SourceSRID:     meta.SRID,
 		RecordCount:    meta.RecordCount,
 	}
+	applyRenderableWGS84Extent(&info, meta)
+	return info
 }
 
 func renderInfoFromRealtimeTile(engineID uint, schema, table string, meta *SpatialMetadataResult) QuickViewRenderInfo {
 	minZoom, maxZoom := quickViewZoomRange(meta)
-	return QuickViewRenderInfo{
+	info := QuickViewRenderInfo{
 		RenderSource:    QuickViewRenderSourceRealtimeTile,
 		TileFormat:      "mvt",
 		TileURLTemplate: tileURLTemplate(engineID, schema, table),
-		Extent:          meta.Extent,
-		ExtentSRID:      meta.ExtentSRID,
 		MinZoom:         minZoom,
 		MaxZoom:         maxZoom,
 		GeometryColumn:  meta.GeomColumn,
+		SourceSRID:      meta.SRID,
 		RecordCount:     meta.RecordCount,
+	}
+	applyRenderableWGS84Extent(&info, meta)
+	return info
+}
+
+func applyRenderableWGS84Extent(info *QuickViewRenderInfo, meta *SpatialMetadataResult) {
+	if info == nil || meta == nil {
+		return
+	}
+	if len(meta.RenderExtent) == 4 && meta.RenderExtentSRID == spatial.SRIDWGS84 {
+		info.Extent = append([]float64(nil), meta.RenderExtent...)
+		info.ExtentSRID = spatial.SRIDWGS84
+		return
+	}
+	if len(meta.Extent) == 4 && meta.ExtentSRID == spatial.SRIDWGS84 {
+		info.Extent = append([]float64(nil), meta.Extent...)
+		info.ExtentSRID = spatial.SRIDWGS84
 	}
 }
 
 func quickViewZoomRange(meta *SpatialMetadataResult) (int, int) {
 	minZoom := 3
-	if meta != nil && len(meta.Extent) == 4 {
-		minZoom = spatial.CalculateMinZoomFromExtent(meta.Extent, meta.ExtentSRID) - 2
+	maxZoom := 18
+	if extent, srid, ok := zoomExtent(meta); ok {
+		minZoom = spatial.CalculateMinZoomFromExtent(extent, srid)
 		if minZoom < 3 {
 			minZoom = 3
 		}
 	}
-	return minZoom, 18
+	if meta != nil {
+		switch {
+		case meta.RecordCount >= 1000000:
+			maxZoom = 12
+		case meta.RecordCount >= 100000:
+			maxZoom = 14
+		}
+	}
+	if maxZoom < minZoom {
+		maxZoom = minZoom
+	}
+	return minZoom, maxZoom
+}
+
+func isReliableZoomExtentSRID(srid int) bool {
+	return srid == spatial.SRIDWGS84 || srid == spatial.SRIDWebMercator
+}
+
+func zoomExtent(meta *SpatialMetadataResult) ([]float64, int, bool) {
+	if meta == nil {
+		return nil, 0, false
+	}
+	if len(meta.RenderExtent) == 4 && isReliableZoomExtentSRID(meta.RenderExtentSRID) {
+		return meta.RenderExtent, meta.RenderExtentSRID, true
+	}
+	if len(meta.Extent) == 4 && isReliableZoomExtentSRID(meta.ExtentSRID) {
+		return meta.Extent, meta.ExtentSRID, true
+	}
+	return nil, 0, false
+}
+
+func renderFactsFromSpatialMeta(meta *SpatialMetadataResult) *QuickViewRenderFacts {
+	if meta == nil {
+		return nil
+	}
+	minZoom, maxZoom := quickViewZoomRange(meta)
+	status := "manual_required"
+	reason := "render extent is unavailable"
+	if _, _, ok := zoomExtent(meta); ok {
+		status = "estimated"
+		reason = "computed from render extent"
+	}
+	facts := &QuickViewRenderFacts{
+		SourceSRID:       meta.SRID,
+		SourceExtent:     append([]float64(nil), meta.Extent...),
+		SourceExtentSRID: meta.ExtentSRID,
+		ZoomRecommendation: &ZoomRecommendation{
+			MinZoom: minZoom,
+			MaxZoom: maxZoom,
+			Status:  status,
+			Reason:  reason,
+		},
+	}
+	if len(meta.RenderExtent) == 4 && meta.RenderExtentSRID > 0 {
+		facts.RenderExtent = append([]float64(nil), meta.RenderExtent...)
+		facts.RenderExtentSRID = meta.RenderExtentSRID
+		facts.RenderExtentSource = meta.RenderExtentSource
+	} else if len(meta.Extent) == 4 && meta.ExtentSRID == spatial.SRIDWGS84 {
+		facts.RenderExtent = append([]float64(nil), meta.Extent...)
+		facts.RenderExtentSRID = spatial.SRIDWGS84
+		facts.RenderExtentSource = "source_extent"
+	}
+	return facts
 }
 
 func tileURLTemplate(engineID uint, schema, table string) string {

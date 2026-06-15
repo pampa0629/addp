@@ -2,9 +2,12 @@ package service
 
 import (
 	"context"
+	"database/sql"
+	"fmt"
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/logger"
+	"github.com/addp/common/spatial"
 	"github.com/addp/manager/internal/mvt"
 	"github.com/addp/manager/internal/repository"
 )
@@ -28,6 +31,197 @@ func NewMVTService(meta *repository.MetadataRepository, systemClient *commonClie
 	}
 }
 
+func (s *MVTService) tenantIDForEngine(engineID uint, tenantID *uint) (uint, error) {
+	if s.systemClient == nil {
+		return 0, ErrEngineAccessDenied
+	}
+
+	res, err := s.systemClient.GetEngine(engineID)
+	if err != nil {
+		return 0, err
+	}
+
+	managerEngine := convertResource(res)
+	if !resourceAccessible(managerEngine, tenantID) {
+		return 0, ErrEngineAccessDenied
+	}
+
+	if tenantID != nil {
+		return *tenantID, nil
+	}
+	if res.TenantID != nil {
+		return *res.TenantID, nil
+	}
+	return 1, nil
+}
+
+func (s *MVTService) GetSpatialExtentWGS84(
+	ctx context.Context,
+	tenantID *uint,
+	resourceID uint,
+	schema, table, geomCol string,
+) ([]float64, error) {
+	tid, err := s.tenantIDForEngine(resourceID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	extent, err := s.tileGenerator.GetSpatialExtent(ctx, resourceID, tid, schema, table, geomCol)
+	if err != nil {
+		return nil, fmt.Errorf("resolve MVT WGS84 extent: %w", err)
+	}
+	return extent, nil
+}
+
+func (s *MVTService) TransformExtentWGS84(
+	ctx context.Context,
+	tenantID *uint,
+	resourceID uint,
+	extent []float64,
+	extentSRID int,
+) ([]float64, error) {
+	if len(extent) != 4 {
+		return nil, fmt.Errorf("extent must contain 4 coordinates")
+	}
+	if extentSRID == spatial.SRIDWGS84 {
+		return append([]float64(nil), extent...), nil
+	}
+	if extentSRID <= 0 {
+		return nil, fmt.Errorf("extent_srid is required")
+	}
+	tid, err := s.tenantIDForEngine(resourceID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	db, err := s.tileGenerator.GetOrCreateDBPool(ctx, resourceID, tid)
+	if err != nil {
+		return nil, err
+	}
+	width := extent[2] - extent[0]
+	height := extent[3] - extent[1]
+	segmentLength := (width + height) / 100
+	if segmentLength <= 0 {
+		segmentLength = 1
+	}
+	const query = `
+		WITH g AS (
+			SELECT ST_Transform(
+				ST_Segmentize(
+					ST_SetSRID(ST_MakeEnvelope($1, $2, $3, $4), $5),
+					$6
+				),
+				4326
+			) AS geom
+		)
+		SELECT
+			ST_XMin(Box2D(geom)),
+			ST_YMin(Box2D(geom)),
+			ST_XMax(Box2D(geom)),
+			ST_YMax(Box2D(geom))
+		FROM g
+	`
+	var minX, minY, maxX, maxY float64
+	if err := db.QueryRowContext(ctx, query, extent[0], extent[1], extent[2], extent[3], extentSRID, segmentLength).Scan(&minX, &minY, &maxX, &maxY); err != nil {
+		return nil, fmt.Errorf("transform extent to WGS84 failed: %w", err)
+	}
+	return []float64{minX, minY, maxX, maxY}, nil
+}
+
+// ResolveRealtimeTileTarget returns a tile source that can use a 3857 GiST path.
+// It only checks lightweight PostgreSQL catalog metadata and never scans source data.
+func (s *MVTService) ResolveRealtimeTileTarget(
+	ctx context.Context,
+	tenantID *uint,
+	resourceID uint,
+	schema, table, geomCol string,
+	sourceSRID int,
+) (*RealtimeTileTarget, error) {
+	tid, err := s.tenantIDForEngine(resourceID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	db, err := s.tileGenerator.GetOrCreateDBPool(ctx, resourceID, tid)
+	if err != nil {
+		return nil, err
+	}
+
+	if sourceSRID == spatial.SRIDWebMercator {
+		ok, err := hasValidGiSTIndex(ctx, db, schema, table, geomCol)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			return &RealtimeTileTarget{
+				Schema:     schema,
+				Table:      table,
+				GeomColumn: geomCol,
+				SRID:       spatial.SRIDWebMercator,
+			}, nil
+		}
+		return nil, nil
+	}
+
+	mvName := spatial.PostGISMaterializedViewName(table)
+	populated, err := materializedViewPopulated(ctx, db, schema, mvName)
+	if err != nil || !populated {
+		return nil, err
+	}
+	const mvGeomColumn = "geom_3857"
+	ok, err := hasValidGiSTIndex(ctx, db, schema, mvName, mvGeomColumn)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, nil
+	}
+	return &RealtimeTileTarget{
+		Schema:       schema,
+		Table:        mvName,
+		GeomColumn:   mvGeomColumn,
+		SRID:         spatial.SRIDWebMercator,
+		Prepared3857: true,
+	}, nil
+}
+
+func materializedViewPopulated(ctx context.Context, db *sql.DB, schema, view string) (bool, error) {
+	const query = `
+		SELECT ispopulated
+		FROM pg_matviews
+		WHERE schemaname = $1 AND matviewname = $2
+	`
+	var populated bool
+	if err := db.QueryRowContext(ctx, query, schema, view).Scan(&populated); err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, fmt.Errorf("query materialized view failed: %w", err)
+	}
+	return populated, nil
+}
+
+func hasValidGiSTIndex(ctx context.Context, db *sql.DB, schema, table, geomColumn string) (bool, error) {
+	const query = `
+		SELECT EXISTS (
+			SELECT 1
+			FROM pg_index i
+			JOIN pg_class idx ON idx.oid = i.indexrelid
+			JOIN pg_class tbl ON tbl.oid = i.indrelid
+			JOIN pg_namespace ns ON ns.oid = tbl.relnamespace
+			JOIN pg_am am ON am.oid = idx.relam
+			JOIN pg_attribute attr ON attr.attrelid = tbl.oid AND attr.attnum = ANY(i.indkey)
+			WHERE ns.nspname = $1
+			  AND tbl.relname = $2
+			  AND attr.attname = $3
+			  AND am.amname = 'gist'
+			  AND i.indisvalid
+		)
+	`
+	var exists bool
+	if err := db.QueryRowContext(ctx, query, schema, table, geomColumn).Scan(&exists); err != nil {
+		return false, fmt.Errorf("query gist index failed: %w", err)
+	}
+	return exists, nil
+}
+
 // GetTile produces a single MVT tile for given z/x/y and table.
 // Validates tenant access against the resource.
 func (s *MVTService) GetTile(
@@ -39,33 +233,13 @@ func (s *MVTService) GetTile(
 	z, x, y int,
 	srid int,
 ) ([]byte, error) {
-	// 1. 验证租户权限
-	if s.systemClient == nil {
-		return nil, ErrEngineAccessDenied
-	}
-
-	res, err := s.systemClient.GetEngine(resourceID)
+	// 1. 验证租户权限，并解析瓦片生成使用的租户 ID。
+	tid, err := s.tenantIDForEngine(resourceID, tenantID)
 	if err != nil {
 		return nil, err
 	}
 
-	// 转换为 manager/internal/models.Engine 以使用 resourceAccessible 函数
-	managerEngine := convertResource(res)
-	if !resourceAccessible(managerEngine, tenantID) {
-		return nil, ErrEngineAccessDenied
-	}
-
-	// 2. 解引用 tenantID（TileGenerator 需要具体值）
-	var tid uint
-	if tenantID != nil {
-		tid = *tenantID
-	} else if res.TenantID != nil {
-		tid = *res.TenantID // 使用资源所属的 tenantID
-	} else {
-		tid = 1 // 默认租户 ID
-	}
-
-	// 3. 查询主键列名（用于 MVT 生成的 feature ID）
+	// 2. 查询主键列名（用于 MVT 生成的 feature ID）
 	db, err := s.tileGenerator.GetOrCreateDBPool(ctx, resourceID, tid)
 	if err != nil {
 		logger.L().Warn("Failed to get db pool for primary key query",
@@ -89,7 +263,7 @@ func (s *MVTService) GetTile(
 			"table", table)
 	}
 
-	// 4. 如果未指定列，查询所有列
+	// 3. 如果未指定列，查询所有列
 	if len(cols) == 0 {
 		allCols, err := s.tileGenerator.GetAllColumns(ctx, db, schema, table, geomCol)
 		if err != nil {
@@ -99,7 +273,7 @@ func (s *MVTService) GetTile(
 		}
 	}
 
-	// 5. ✅ 调用 TileGenerator 生成瓦片（复用底层实现）
+	// 4. ✅ 调用 TileGenerator 生成瓦片（复用底层实现）
 	return s.generateTileWithPK(ctx, resourceID, tid, schema, table, geomCol, cols, z, x, y, srid, primaryKey)
 }
 
@@ -114,7 +288,7 @@ func (s *MVTService) generateTileWithPK(
 	primaryKey string,
 ) ([]byte, error) {
 	// ✅ 调用 TileGenerator（统一实现，带连接池）
-	tileData, err := s.tileGenerator.GenerateTile(ctx, mvt.TileGenerationParams{
+	tileData, err := s.tileGenerator.GenerateTile(ctx, mvt.TileGenerationSource{
 		EngineID:   resourceID,
 		TenantID:   tenantID,
 		Schema:     schema,
@@ -122,10 +296,7 @@ func (s *MVTService) generateTileWithPK(
 		GeomColumn: geomCol,
 		SRID:       srid,
 		PrimaryKey: primaryKey,
-		Z:          z,
-		X:          x,
-		Y:          y,
-	})
+	}.Params(mvt.TileCoord{Z: z, X: x, Y: y}))
 
 	if err != nil {
 		logger.L().Error("MVT tile generation failed",

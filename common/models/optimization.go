@@ -28,13 +28,13 @@ type AttributePruningConfig struct {
 
 // TileSizeThresholdsConfig 瓦片大小阈值配置 (v3.0: 仅保留最大大小限制)
 type TileSizeThresholdsConfig struct {
-	MaxSizeMB float64 `json:"max_size_mb"` // 瓦片大小限制（MB）- 用户可配置，默认 5MB
+	MaxSizeMB float64 `json:"max_size_mb"` // 瓦片大小限制（MB）- 用户可配置，默认 4MB
 }
 
 // ExtentOptimizationConfig Extent 优化配置 (v3.0: 分层策略 + 动态减半)
 type ExtentOptimizationConfig struct {
 	MaxZoomExtent int `json:"max_zoom_extent"` // Max zoom 层的 Extent（默认 1024）
-	BaseExtent    int `json:"base_extent"`     // 其他层的基础 Extent（默认 512）
+	BaseExtent    int `json:"base_extent"`     // 其他层的基础 Extent（默认 1024）
 	MinExtent     int `json:"min_extent"`      // 动态减半的最小 Extent（固定 256）
 }
 
@@ -47,19 +47,19 @@ func DefaultOptimizationConfig() OptimizationConfig {
 			ZoomThreshold: 8,
 		},
 		TileSizeThresholds: TileSizeThresholdsConfig{
-			MaxSizeMB: 5.0,
+			MaxSizeMB: 4.0,
 		},
 		ExtentOptimization: ExtentOptimizationConfig{
 			MaxZoomExtent: 1024,
-			BaseExtent:    512,
+			BaseExtent:    1024,
 			MinExtent:     256,
 		},
 	}
 }
 
 // GetExtentForZoom 根据 zoom 级别计算初始 Extent (v3.0: 分层策略)
-// - Max zoom: 1024（默认）
-// - 其他: 512（默认）
+// - 默认从 1024 起步
+// - 超过大小阈值时由生成器动态减半
 func (e *ExtentOptimizationConfig) GetExtentForZoom(z int, maxZoom int) int {
 	if z == maxZoom {
 		return e.MaxZoomExtent

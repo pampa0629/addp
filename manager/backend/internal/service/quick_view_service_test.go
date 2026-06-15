@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -195,7 +196,7 @@ func TestQuickViewCapabilityPrefersReadyTileCacheResultOverDirectGeoJSON(t *test
 	}
 }
 
-func TestQuickViewCapabilityUsesRealtimeTileForLargeSpatialTableWithoutTileCacheResult(t *testing.T) {
+func TestQuickViewCapabilityDoesNotUseRealtimeTileForLargeNon3857TableWithoutPreparedTarget(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	svc := NewQuickViewService(db, nil)
 	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectGeoJSONMaxRows: 2000})
@@ -203,8 +204,8 @@ func TestQuickViewCapabilityUsesRealtimeTileForLargeSpatialTableWithoutTileCache
 		return &SpatialMetadataResult{
 			GeomColumn:      "shape",
 			GeometryColumns: []string{"shape"},
-			SRID:            4490,
-			ExtentSRID:      4490,
+			SRID:            2360,
+			ExtentSRID:      2360,
 			Extent:          []float64{120, 30, 121, 31},
 			PrimaryKey:      "id",
 			RecordCount:     73090,
@@ -214,6 +215,86 @@ func TestQuickViewCapabilityUsesRealtimeTileForLargeSpatialTableWithoutTileCache
 	capability, err := buildQuickViewStatusForTest(t, svc, 7, 11, "public", "farmland")
 	if err != nil {
 		t.Fatalf("get quick view status: %v", err)
+	}
+
+	if capability.CanUseQuickView {
+		t.Fatalf("can_use_quick_view = true, want false without prepared realtime tile target")
+	}
+	if !capability.CanGenerateTileCache {
+		t.Fatal("can_generate_tile_cache = false, want true for PostGIS source")
+	}
+	if capability.RenderSource != "" {
+		t.Fatalf("render_source = %s, want empty without realtime tile target", capability.RenderSource)
+	}
+}
+
+func TestQuickViewCapabilityDoesNotUseRealtimeTileFromLegacyBuilderFor3857Table(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	svc := NewQuickViewService(db, nil)
+	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectGeoJSONMaxRows: 2000})
+	svc.SetSpatialMetadataLoader(func(context.Context, uint, uint, string, string) (*SpatialMetadataResult, error) {
+		return &SpatialMetadataResult{
+			GeomColumn:      "shape",
+			GeometryColumns: []string{"shape"},
+			SRID:            3857,
+			ExtentSRID:      3857,
+			Extent:          []float64{13469658, 3503549, 13490000, 3520000},
+			PrimaryKey:      "id",
+			RecordCount:     73090,
+		}, nil
+	})
+
+	capability, err := buildQuickViewStatusForTest(t, svc, 7, 11, "public", "farmland")
+	if err != nil {
+		t.Fatalf("get quick view status: %v", err)
+	}
+
+	if capability.CanUseQuickView {
+		t.Fatalf("can_use_quick_view = true, want false without resolved realtime tile target")
+	}
+	if capability.RenderSource != "" {
+		t.Fatalf("render_source = %s, want empty without resolved realtime tile target", capability.RenderSource)
+	}
+	if !capability.CanGenerateTileCache {
+		t.Fatal("can_generate_tile_cache = false, want true for PostGIS source")
+	}
+}
+
+func TestQuickViewCapabilityUsesRealtimeTileForLargeSpatialTableWithPreparedTarget(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	svc := NewQuickViewService(db, nil)
+	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectGeoJSONMaxRows: 2000})
+
+	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+		Identity: QuickViewIdentity{
+			TenantID:        7,
+			ItemFingerprint: spatialItemFingerprint(11, "public", "farmland"),
+			Locator:         tableLocator(11, "public", "farmland"),
+		},
+		EngineID:      11,
+		Schema:        "public",
+		Table:         "farmland",
+		DirectGeoJSON: true,
+		CanTile:       true,
+		SpatialMeta: &SpatialMetadataResult{
+			GeomColumn:      "shape",
+			GeometryColumns: []string{"shape"},
+			SRID:            2360,
+			ExtentSRID:      2360,
+			Extent:          []float64{36139988, 2312732, 36911720, 2923289},
+			PrimaryKey:      "id",
+			RecordCount:     73090,
+		},
+		RealtimeTileTarget: &RealtimeTileTarget{
+			Schema:       "public",
+			Table:        "farmland_mv3857",
+			GeomColumn:   "geom_3857",
+			SRID:         3857,
+			Prepared3857: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("build quick view capability: %v", err)
 	}
 
 	if !capability.CanUseQuickView {
@@ -228,8 +309,79 @@ func TestQuickViewCapabilityUsesRealtimeTileForLargeSpatialTableWithoutTileCache
 	if capability.QuickView.TileURLTemplate == "" {
 		t.Fatal("tile_url_template is empty, want unified tile endpoint")
 	}
+	if len(capability.QuickView.Extent) != 0 || capability.QuickView.ExtentSRID != 0 {
+		t.Fatalf("quick_view extent = %#v srid=%d, want empty renderable extent for non-WGS84 metadata",
+			capability.QuickView.Extent, capability.QuickView.ExtentSRID)
+	}
 	if capability.DefaultTileCacheID != nil {
 		t.Fatalf("default_tile_cache_id = %#v, want nil for realtime tile", capability.DefaultTileCacheID)
+	}
+}
+
+func TestQuickViewCapabilityUsesRenderExtentForNonWGS84SpatialTable(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	svc := NewQuickViewService(db, nil)
+	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectGeoJSONMaxRows: 2000})
+	renderExtent := []float64{104.39407266464883, 20.860819209527108, 112.12280883568947, 26.419285005545643}
+
+	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+		Identity: QuickViewIdentity{
+			TenantID:        7,
+			ItemFingerprint: spatialItemFingerprint(11, "public", "dltb"),
+			Locator:         tableLocator(11, "public", "dltb"),
+		},
+		EngineID:      11,
+		Schema:        "public",
+		Table:         "dltb",
+		DirectGeoJSON: true,
+		CanTile:       true,
+		SpatialMeta: &SpatialMetadataResult{
+			GeomColumn:         "SmGeometry",
+			GeometryColumns:    []string{"SmGeometry"},
+			SRID:               2360,
+			ExtentSRID:         2360,
+			Extent:             []float64{36139988.055131, 2312732.766837, 36911717.357651, 2923289.6009},
+			RenderExtent:       renderExtent,
+			RenderExtentSRID:   4326,
+			RenderExtentSource: "source_extent_transformed",
+			PrimaryKey:         "objectid",
+			RecordCount:        10597882,
+		},
+		RealtimeTileTarget: &RealtimeTileTarget{
+			Schema:       "public",
+			Table:        "dltb_mv3857",
+			GeomColumn:   "geom_3857",
+			SRID:         3857,
+			Prepared3857: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("build quick view capability: %v", err)
+	}
+
+	if !reflect.DeepEqual(capability.QuickView.Extent, renderExtent) {
+		t.Fatalf("quick_view extent = %#v, want %#v", capability.QuickView.Extent, renderExtent)
+	}
+	if capability.QuickView.ExtentSRID != 4326 {
+		t.Fatalf("quick_view extent_srid = %d, want 4326", capability.QuickView.ExtentSRID)
+	}
+	if capability.QuickView.MinZoom < 3 {
+		t.Fatalf("quick_view min_zoom = %d, want >= 3", capability.QuickView.MinZoom)
+	}
+	if capability.QuickView.MaxZoom != 12 {
+		t.Fatalf("quick_view max_zoom = %d, want 12 for million-row table", capability.QuickView.MaxZoom)
+	}
+	if capability.RenderFacts == nil {
+		t.Fatal("render_facts is nil, want render facts")
+	}
+	if !reflect.DeepEqual(capability.RenderFacts.RenderExtent, renderExtent) {
+		t.Fatalf("render_facts render_extent = %#v, want %#v", capability.RenderFacts.RenderExtent, renderExtent)
+	}
+	if capability.RenderFacts.RenderExtentSRID != 4326 {
+		t.Fatalf("render_facts render_extent_srid = %d, want 4326", capability.RenderFacts.RenderExtentSRID)
+	}
+	if capability.RenderFacts.ZoomRecommendation == nil || capability.RenderFacts.ZoomRecommendation.MaxZoom != 12 {
+		t.Fatalf("zoom_recommendation = %#v, want max_zoom=12", capability.RenderFacts.ZoomRecommendation)
 	}
 }
 
@@ -256,7 +408,6 @@ func TestQuickViewCapabilityIgnoresGeneratingAndFailedTileCacheResultsWhenReadyE
 			Locator:         ready.Locator,
 			TileFormat:      "mvt",
 			StorageRef:      "minio://manager/tile-cache/public/farmland/" + status,
-			ConfigHash:      status,
 			Status:          status,
 			CreatedAt:       latest,
 			UpdatedAt:       latest,
@@ -333,6 +484,59 @@ func TestQuickViewCapabilityFindsReadyTileCacheResultByItemFingerprint(t *testin
 	}
 }
 
+func TestQuickViewCapabilityUsesRenderExtentWhenReadyTileCacheExtentIsNotWGS84(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	svc := NewQuickViewService(db, nil)
+	renderExtent := []float64{104.4, 20.9, 112.1, 26.4}
+	svc.SetSpatialMetadataLoader(func(context.Context, uint, uint, string, string) (*SpatialMetadataResult, error) {
+		return &SpatialMetadataResult{
+			GeomColumn:         "SmGeometry",
+			GeometryColumns:    []string{"SmGeometry"},
+			SRID:               2360,
+			ExtentSRID:         2360,
+			Extent:             []float64{36139988, 2312732, 36911720, 2923289},
+			RenderExtent:       renderExtent,
+			RenderExtentSRID:   4326,
+			RenderExtentSource: "source_extent_transformed",
+			RecordCount:        10597882,
+		}, nil
+	})
+
+	repo := repository.NewTileCacheRepository(db)
+	extentSRID := 3857
+	minZoom := 6
+	maxZoom := 12
+	tileCacheResult := &models.TileCache{
+		TenantID:        7,
+		ItemFingerprint: spatialItemFingerprint(11, "public", "dltb"),
+		Locator:         tableLocator(11, "public", "dltb"),
+		TileFormat:      "mvt",
+		StorageRef:      "minio://manager/tile-cache/public/dltb",
+		Extent:          datatypes.JSON([]byte(`[11621047,2378680,12481335,3049324]`)),
+		ExtentSRID:      &extentSRID,
+		MinZoom:         &minZoom,
+		MaxZoom:         &maxZoom,
+		Status:          models.TileCacheStatusReady,
+	}
+	if err := repo.CreateTileCache(context.Background(), tileCacheResult); err != nil {
+		t.Fatalf("create tile cache result: %v", err)
+	}
+
+	capability, err := buildQuickViewStatusForTest(t, svc, 7, 11, "public", "dltb")
+	if err != nil {
+		t.Fatalf("get quick view status: %v", err)
+	}
+	if capability.RenderSource != QuickViewRenderSourceCachedTile {
+		t.Fatalf("render_source = %s, want %s", capability.RenderSource, QuickViewRenderSourceCachedTile)
+	}
+	if !reflect.DeepEqual(capability.QuickView.Extent, renderExtent) {
+		t.Fatalf("quick_view extent = %#v, want %#v", capability.QuickView.Extent, renderExtent)
+	}
+	if capability.QuickView.ExtentSRID != 4326 {
+		t.Fatalf("quick_view extent_srid = %d, want 4326", capability.QuickView.ExtentSRID)
+	}
+}
+
 func TestQuickViewCapabilityFallsBackToDirectGeoJSONAfterDefaultTileCacheResultDeleted(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	svc := NewQuickViewService(db, nil)
@@ -403,7 +607,6 @@ func TestQuickViewCapabilityUsesLatestReadyTileCacheResult(t *testing.T) {
 		ExtentSRID:      &extentSRID,
 		MinZoom:         &minZoom,
 		MaxZoom:         &maxZoom,
-		ConfigHash:      "older-ready",
 		Status:          models.TileCacheStatusReady,
 		CreatedAt:       olderUpdatedAt,
 		UpdatedAt:       olderUpdatedAt,
@@ -421,7 +624,6 @@ func TestQuickViewCapabilityUsesLatestReadyTileCacheResult(t *testing.T) {
 		ExtentSRID:      &extentSRID,
 		MinZoom:         &minZoom,
 		MaxZoom:         &maxZoom,
-		ConfigHash:      "latest-ready",
 		Status:          models.TileCacheStatusReady,
 		CreatedAt:       latestUpdatedAt,
 		UpdatedAt:       latestUpdatedAt,

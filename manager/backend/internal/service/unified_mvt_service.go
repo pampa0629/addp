@@ -45,6 +45,44 @@ func (s *UnifiedMVTService) SetQuickViewService(quickViewService *QuickViewServi
 	s.quickViewService = quickViewService
 }
 
+func (s *UnifiedMVTService) GetSpatialExtentWGS84(
+	ctx context.Context,
+	tenantID *uint,
+	resourceID uint,
+	schema, table, geomCol string,
+) ([]float64, error) {
+	if s.mvtService == nil {
+		return nil, fmt.Errorf("MVT service is not initialized")
+	}
+	return s.mvtService.GetSpatialExtentWGS84(ctx, tenantID, resourceID, schema, table, geomCol)
+}
+
+func (s *UnifiedMVTService) TransformExtentWGS84(
+	ctx context.Context,
+	tenantID *uint,
+	resourceID uint,
+	extent []float64,
+	extentSRID int,
+) ([]float64, error) {
+	if s.mvtService == nil {
+		return nil, fmt.Errorf("MVT service is not initialized")
+	}
+	return s.mvtService.TransformExtentWGS84(ctx, tenantID, resourceID, extent, extentSRID)
+}
+
+func (s *UnifiedMVTService) ResolveRealtimeTileTarget(
+	ctx context.Context,
+	tenantID *uint,
+	resourceID uint,
+	schema, table, geomCol string,
+	sourceSRID int,
+) (*RealtimeTileTarget, error) {
+	if s.mvtService == nil {
+		return nil, fmt.Errorf("MVT service is not initialized")
+	}
+	return s.mvtService.ResolveRealtimeTileTarget(ctx, tenantID, resourceID, schema, table, geomCol, sourceSRID)
+}
+
 // TileResponse 瓦片响应结构
 type TileResponse struct {
 	Data         []byte        // 瓦片数据
@@ -52,7 +90,15 @@ type TileResponse struct {
 	Duration     time.Duration // 生成/获取耗时
 	RenderSource string        // cached_tile 或 realtime_tile
 	TileCacheID  *uint         // 命中的瓦片缓存结果 ID
+	Status       string        // ok、empty、timeout、degraded
 }
+
+const (
+	TileStatusOK       = "ok"
+	TileStatusEmpty    = "empty"
+	TileStatusTimeout  = "timeout"
+	TileStatusDegraded = "degraded"
+)
 
 // GetTile 获取 MVT 瓦片（统一入口）。
 // 流程：按 storage_ref 查询已有瓦片对象 → 实时 PG 生成 → 按当前 storage_ref 回填对象存储。
@@ -64,6 +110,7 @@ func (s *UnifiedMVTService) GetTile(
 	cols []string,
 	z, x, y int,
 	srid int,
+	realtimeTarget *RealtimeTileTarget,
 ) (*TileResponse, error) {
 	startTime := time.Now()
 
@@ -94,7 +141,7 @@ func (s *UnifiedMVTService) GetTile(
 	var minZoom, maxZoom int
 	var beyondMaxZoom bool // 是否超出产物覆盖范围
 	cacheScope := fmt.Sprintf("fingerprint:%s", fingerprint)
-	storageRef := buildTileCacheStorageRef(*tenantID, fingerprint, "realtime")
+	storageRef := ""
 	renderSource := QuickViewRenderSourceRealtimeTile
 	var tileCacheID *uint
 
@@ -141,6 +188,7 @@ func (s *UnifiedMVTService) GetTile(
 					Duration:     time.Since(startTime),
 					RenderSource: renderSource,
 					TileCacheID:  tileCacheID,
+					Status:       TileStatusEmpty,
 				}, nil
 			}
 
@@ -157,39 +205,64 @@ func (s *UnifiedMVTService) GetTile(
 
 	// 3. 尝试从 storage_ref 对应的瓦片对象获取（内存 LRU → Redis → 对象存储，租户隔离）
 	// 瓦片对象位置统一由 storage_ref 描述。
-	logger.L().Debug("尝试从 storage_ref 获取瓦片", "tenant_id", *tenantID, "storage_ref", storageRef)
-	tileData, err := s.spatialPreviewService.GetTileByStorageRef(ctx, *tenantID, cacheScope, storageRef, z, x, y)
-	if err == nil && len(tileData) > 0 {
-		duration := time.Since(startTime)
-		logger.L().Info("从瓦片对象返回瓦片",
-			"tenant_id", *tenantID,
-			"size", len(tileData),
-			"duration", duration)
+	var tileData []byte
+	var err error
+	if strings.TrimSpace(storageRef) != "" {
+		logger.L().Debug("尝试从 storage_ref 获取瓦片", "tenant_id", *tenantID, "storage_ref", storageRef)
+		tileData, err = s.spatialPreviewService.GetTileByStorageRef(ctx, *tenantID, cacheScope, storageRef, z, x, y)
+		if err == nil && len(tileData) > 0 {
+			duration := time.Since(startTime)
+			logger.L().Info("从瓦片对象返回瓦片",
+				"tenant_id", *tenantID,
+				"size", len(tileData),
+				"duration", duration)
+			return &TileResponse{
+				Data:         tileData,
+				FromCache:    true,
+				Duration:     duration,
+				RenderSource: renderSource,
+				TileCacheID:  tileCacheID,
+				Status:       TileStatusOK,
+			}, nil
+		}
+
+		// 特别记录：瓦片对象查询返回了空数据或错误
+		if err != nil {
+			logger.L().Warn("瓦片对象查询出错", "error", err)
+		} else if len(tileData) == 0 {
+			logger.L().Debug("瓦片对象未命中")
+		}
+	}
+
+	if realtimeTarget == nil {
+		logger.L().Info("瓦片对象未命中且没有可索引 realtime target，返回空瓦片",
+			"engine_id", resourceID,
+			"schema", schema,
+			"table", table,
+			"z", z, "x", x, "y", y)
 		return &TileResponse{
-			Data:         tileData,
-			FromCache:    true,
-			Duration:     duration,
+			Data:         []byte{},
+			FromCache:    false,
+			Duration:     time.Since(startTime),
 			RenderSource: renderSource,
 			TileCacheID:  tileCacheID,
+			Status:       TileStatusDegraded,
 		}, nil
 	}
 
-	// 特别记录：瓦片对象查询返回了空数据或错误
-	if err != nil {
-		logger.L().Warn("瓦片对象查询出错", "error", err)
-	} else if len(tileData) == 0 {
-		logger.L().Debug("瓦片对象未命中")
-	}
-
 	// 4. 瓦片对象未命中，使用 singleflight 从 PG 实时生成
+	generationSchema := realtimeTarget.Schema
+	generationTable := realtimeTarget.Table
+	generationGeomCol := realtimeTarget.GeomColumn
+	generationSRID := realtimeTarget.SRID
 	logger.L().Info("瓦片对象未命中，开始实时生成瓦片",
 		"engine_id", resourceID,
-		"schema", schema,
-		"table", table,
+		"schema", generationSchema,
+		"table", generationTable,
 		"z", z, "x", x, "y", y)
 
 	// 构建 singleflight key，确保相同瓦片的并发请求使用同一 key，租户隔离。
-	sfKey := fmt.Sprintf("%d:%d:%s:%s:%d:%d:%d", *tenantID, resourceID, schema, table, z, x, y)
+	sfKey := fmt.Sprintf("%d:%d:%s:%s:%d:%d:%d", *tenantID, resourceID, generationSchema, generationTable, z, x, y)
 
 	// 多个并发请求同一瓦片时只生成一次。
 	v, err, shared := s.sf.Do(sfKey, func() (interface{}, error) {
@@ -197,26 +270,39 @@ func (s *UnifiedMVTService) GetTile(
 		genCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 
-		tileData, err := s.mvtService.GetTile(genCtx, tenantID, resourceID, schema, table, geomCol, cols, z, x, y, srid)
+		tileData, err := s.mvtService.GetTile(genCtx, tenantID, resourceID, generationSchema, generationTable, generationGeomCol, cols, z, x, y, generationSRID)
 		if err != nil {
 			// 特殊处理超时错误：返回空瓦片而非错误（优雅降级）
 			if errors.Is(err, context.DeadlineExceeded) {
 				logger.L().Warn("实时 MVT 生成超时，返回空瓦片",
 					"z", z, "x", x, "y", y,
 					"timeout", "5s")
-				return []byte{}, nil
+				return &TileResponse{
+					Data:         []byte{},
+					FromCache:    false,
+					Duration:     time.Since(startTime),
+					RenderSource: QuickViewRenderSourceRealtimeTile,
+					Status:       TileStatusTimeout,
+				}, nil
 			}
 			return nil, fmt.Errorf("failed to generate tile from PG: %w", err)
 		}
 
-		return tileData, nil
+		return &TileResponse{
+			Data:         tileData,
+			FromCache:    false,
+			Duration:     time.Since(startTime),
+			RenderSource: QuickViewRenderSourceRealtimeTile,
+			Status:       tileStatusForData(tileData),
+		}, nil
 	})
 
 	if err != nil {
 		return nil, err
 	}
 
-	tileData = v.([]byte)
+	response := v.(*TileResponse)
+	tileData = response.Data
 	duration := time.Since(startTime)
 
 	// 记录是否为 singleflight 合并的请求。
@@ -256,7 +342,7 @@ func (s *UnifiedMVTService) GetTile(
 		shouldCache = durationMs > 100 || tileSizeKB > 50
 	}
 
-	if shouldCache && len(tileData) > 0 {
+	if shouldCache && len(tileData) > 0 && strings.TrimSpace(storageRef) != "" {
 		// 异步持久化到对象存储（包括回填 Redis 和内存缓存，租户隔离）
 		go s.persistToObjectStorage(context.Background(), *tenantID, cacheScope, storageRef, z, x, y, tileData)
 	}
@@ -267,7 +353,15 @@ func (s *UnifiedMVTService) GetTile(
 		Duration:     duration,
 		RenderSource: QuickViewRenderSourceRealtimeTile,
 		TileCacheID:  nil,
+		Status:       response.Status,
 	}, nil
+}
+
+func tileStatusForData(data []byte) string {
+	if len(data) == 0 {
+		return TileStatusEmpty
+	}
+	return TileStatusOK
 }
 
 // calculateFingerprint 计算表的 fingerprint（内部使用，对前端透明）

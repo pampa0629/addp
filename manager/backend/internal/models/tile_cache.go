@@ -63,7 +63,6 @@ type TileCache struct {
 	MinZoom    *int           `json:"min_zoom,omitempty"`
 	MaxZoom    *int           `json:"max_zoom,omitempty"`
 
-	ConfigHash   string `gorm:"size:64" json:"config_hash,omitempty"`
 	Status       string `gorm:"size:32;not null;index:idx_tile_cache_status" json:"status"`
 	ErrorMessage string `gorm:"type:text" json:"error_message,omitempty"`
 	CreatedBy    *uint  `json:"created_by,omitempty"`

@@ -6,8 +6,8 @@ Manager 模块负责数据探查、数据预览、混合检索、空间快显和
 
 空间快显与瓦片缓存的目标边界：
 
-- `manager.quick_view`：快显状态，表达某个 spatial item 是否可快显、推荐使用哪个瓦片缓存结果以及 UI 偏好。
-- `manager.tile_cache`：瓦片缓存结果状态，表达瓦片缓存是否可用、存储引用、格式、范围、层级、配置指纹和最近执行。
+- `manager.quick_view`：快显偏好，表达某个 spatial item 的用户预览模式偏好；是否可快显、推荐渲染源和默认瓦片缓存结果由 Quick View Capability API 动态合成。
+- `manager.tile_cache`：瓦片缓存结果状态，表达瓦片缓存是否可用、存储引用、格式、范围、层级和最近执行。
 - `manager.tile_cache_tasks`：瓦片缓存生成任务定义，TaskProvider `task_type=tile_cache_generation`。MVT 只是 `config.tile.format=mvt`，不是任务类型。
 - 当前 PostGIS + MVT 阶段的 `tile_cache_generation` 由 Manager Backend 内部执行，不保留独立 Manager Worker 空运行时。后续若瓦片缓存生成计算负载转移到 Manager 进程内、需要多执行器横向扩展，或引入专门 GIS 计算引擎，应先统一文档与架构，再把唯一执行运行时切换为 Manager Worker 或 GIS 执行引擎。
 

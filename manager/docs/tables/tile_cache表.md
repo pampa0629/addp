@@ -10,7 +10,7 @@
 
 它不替代：
 
-1. `manager.quick_view` 的快显 UI 状态。
+1. `manager.quick_view` 的用户预览模式偏好。
 2. `manager.tile_cache_tasks` 的任务定义。
 3. `common.task_executions` 的执行历史。
 
@@ -26,11 +26,10 @@
 | `task_id` | bigint | 产生或最近刷新该产物的 `manager.tile_cache_tasks.id` |
 | `tile_format` | varchar | 瓦片格式，例如 `mvt` |
 | `status` | varchar | 产物状态 |
-| `storage_ref` | text | 存储引用，指向瓦片缓存所在位置或 manifest；对象前缀应包含 `item_fingerprint/config_hash`，避免不同配置互相覆盖 |
-| `extent` | jsonb | 产物覆盖范围 |
-| `extent_srid` | integer | 产物范围所使用的 SRID |
+| `storage_ref` | text | 存储引用，指向当前瓦片缓存所在位置或 manifest；对象前缀按 `item_fingerprint` 组织 |
+| `extent` | jsonb | 产物覆盖范围；用于 Manager 快显渲染时应保存或转换为 WGS84 经纬度范围 |
+| `extent_srid` | integer | 产物范围所使用的 SRID；作为 capability 渲染范围返回时必须为 4326 |
 | `min_zoom` / `max_zoom` | integer | 覆盖层级 |
-| `config_hash` | varchar | 规范化生成配置指纹，只包含瓦片矩阵、层级、SRID、范围、几何列和主键等生成参数 |
 | `last_execution_id` | varchar | 最近一次生成 execution |
 | `error_message` | text | 最近错误摘要 |
 | `created_by` | integer | 创建人 |
@@ -55,13 +54,13 @@
 | 索引名 | 字段 | 说明 |
 | --- | --- | --- |
 | `idx_tile_cache_tenant_item_fingerprint` | `tenant_id, item_fingerprint` | 查询某 item 的瓦片缓存结果 |
-| `idx_tile_cache_tenant_fingerprint_config_unique` | `tenant_id, item_fingerprint, tile_format, config_hash` | 同一 item、格式和生成参数只保留一条当前结果 |
+| `idx_tile_cache_tenant_fingerprint_format_unique` | `tenant_id, item_fingerprint, tile_format` | 同一 item 和格式只保留一条当前结果 |
 | `idx_tile_cache_status` | `status` | 按产物状态过滤 |
 | `idx_tile_cache_task` | `task_id` | 查询某任务产生的产物 |
 | `idx_tile_cache_execution` | `last_execution_id` | 从 execution 回溯产物 |
 
 ## 五、相关文档
 
-- [Manager 瓦片缓存结果状态设计](../../../docs/next/Manager瓦片缓存结果状态设计.md)
+- [快显规范与技术路线](../../../docs/next/快显/02-规范与技术路线.md)
 - [quick_view 表结构和 API 说明](./quick_view表.md)
 - [数据库架构](../数据库架构.md)

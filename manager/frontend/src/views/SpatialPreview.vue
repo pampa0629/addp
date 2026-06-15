@@ -48,7 +48,7 @@
         :status="quickViewStatus"
       />
       <VectorTilePreview
-        v-else-if="ready"
+        v-else-if="ready && isQuickViewActive && isTileQuickView"
         :locator="locator"
         :engine-id="engineId"
         :schema="schema"
@@ -59,6 +59,18 @@
         :tile-render-info="quickViewStatus?.quick_view || {}"
         :render-source="quickViewRenderSource"
         :default-tile-cache-id="quickViewStatus?.default_tile_cache_id || ''"
+      />
+      <TablePreview
+        v-else-if="ready && basicPreviewData"
+        :data="basicPreviewData"
+        :loading="basicPreviewLoading"
+        @page-change="handleBasicPreviewPageChange"
+      />
+      <el-empty
+        v-else-if="ready && !basicPreviewLoading"
+        :description="t('manager.explorer.emptyPreview.noData')"
+        :image-size="80"
+        class="basic-preview-empty"
       />
     </div>
   </div>
@@ -72,6 +84,8 @@ import { ElMessage } from 'element-plus'
 import VectorTilePreview from '@/components/map/VectorTilePreview.vue'
 import GeoJSONQuickView from '@/components/map/GeoJSONQuickView.vue'
 import { quickViewAPI } from '@/api/quickView'
+import client from '@/api/client'
+import { TablePreview } from '@common-ui-map'
 
 const route = useRoute()
 const router = useRouter()
@@ -89,12 +103,56 @@ const activePreviewMode = ref('table_geojson')
 const quickViewRenderSource = computed(() => String(
   quickViewStatus.value?.render_source || quickViewStatus.value?.quick_view?.render_source || ''
 ).trim())
+const isTileQuickView = computed(() => ['cached_tile', 'realtime_tile'].includes(quickViewRenderSource.value))
 const isQuickViewActive = computed(() => {
   return activePreviewMode.value === 'quick_view' && !!quickViewStatus.value?.can_use_quick_view
 })
 const showRealtimeTileCacheGeneration = computed(() => {
   return quickViewRenderSource.value === 'realtime_tile' && !!quickViewStatus.value?.can_generate_tile_cache
 })
+const basicPreviewData = ref(null)
+const basicPreviewLoading = ref(false)
+let basicPreviewRequestSeq = 0
+
+const unpackPreviewResponse = (response) => {
+  if (response?.preview_type && response?.data) return response.data
+  return response?.data || response
+}
+
+const loadBasicPreview = async (page = 1, pageSize = 20) => {
+  basicPreviewRequestSeq += 1
+  const seq = basicPreviewRequestSeq
+  basicPreviewData.value = null
+  if (!ready.value) return
+  basicPreviewLoading.value = true
+  try {
+    const response = await client.get('/manager/preview', {
+      params: {
+        locator: locator.value,
+        page,
+        page_size: pageSize
+      }
+    })
+    if (seq === basicPreviewRequestSeq) {
+      basicPreviewData.value = unpackPreviewResponse(response)
+    }
+  } catch (error) {
+    console.error('加载基础预览失败:', error)
+    if (seq === basicPreviewRequestSeq) {
+      basicPreviewData.value = null
+    }
+  } finally {
+    if (seq === basicPreviewRequestSeq) {
+      basicPreviewLoading.value = false
+    }
+  }
+}
+
+const handleBasicPreviewPageChange = async (payload) => {
+  const page = typeof payload === 'object' ? payload?.page || 1 : payload
+  const pageSize = typeof payload === 'object' ? Number(payload?.pageSize || 20) : 20
+  await loadBasicPreview(page, pageSize > 0 ? pageSize : 20)
+}
 
 const loadQuickViewStatus = async () => {
   quickViewStatus.value = null
@@ -151,10 +209,16 @@ const openTileCacheCreate = () => {
   })
 }
 
-onMounted(loadQuickViewStatus)
+onMounted(() => {
+  loadQuickViewStatus()
+  loadBasicPreview()
+})
 watch([engineId, schema, table, locator], () => {
   activePreviewMode.value = 'table_geojson'
+  basicPreviewRequestSeq += 1
+  basicPreviewData.value = null
   loadQuickViewStatus()
+  loadBasicPreview()
 })
 </script>
 
@@ -163,6 +227,7 @@ watch([engineId, schema, table, locator], () => {
 .toolbar { height: 44px; display: flex; align-items: center; padding: 0 12px; border-bottom: 1px solid #eee; }
 .spacer { flex: 1; }
 .map-wrap { position: relative; flex: 1; }
+.basic-preview-empty { height: 100%; display: flex; align-items: center; justify-content: center; }
 .quick-view-actions { display: flex; align-items: center; gap: 10px; }
 .status-text { font-size: 13px; color: var(--addp-text-secondary); }
 .status-text.muted { color: var(--addp-text-placeholder); }

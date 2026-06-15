@@ -153,8 +153,9 @@ func main() {
 	// 创建统一 MVT 服务（整合实时生成 + 缓存访问，对前端隐藏 fingerprint）
 	// ✅ 传入连接池配置，实时生成瓦片使用较小的连接数（默认5，避免峰值压力）
 	mvtService := service.NewMVTService(metadataRepo, systemClient, 5)
+	spatialPreviewService := service.NewSpatialPreviewService(redisClient)
 	unifiedMVTService := service.NewUnifiedMVTService(
-		service.NewSpatialPreviewService(redisClient),
+		spatialPreviewService,
 		mvtService,
 		metadataRepo,
 	)
@@ -203,6 +204,8 @@ func main() {
 	embeddingTaskSvc := service.NewEmbeddingTaskService(embeddingRepo, embeddingService, taskExecRepo, cfg)
 	tileCacheTaskSvc := service.NewTileCacheTaskService(tileCacheRepo, taskExecRepo)
 	tileCacheTaskSvc.SetQuickViewService(quickViewService)
+	tileCacheTaskSvc.SetRealtimeTileTargetResolver(mvtService)
+	tileCacheTaskSvc.SetTileCacheRuntimeCacheInvalidator(spatialPreviewService)
 	if tileCacheGenerator != nil {
 		tileCacheTaskSvc.SetTileGenerator(tileCacheGenerator, cfg.TileCache.Concurrency)
 		tileCacheTaskSvc.SetTileCacheCleaner(tileCacheGenerator)

@@ -89,6 +89,13 @@
 
           <!-- 空间快显 / 瓦片缓存入口 -->
           <div v-if="showQuickViewActions" class="quick-view-actions">
+            <el-switch
+              v-if="showMvtGridToggle"
+              v-model="mvtGridVisible"
+              size="small"
+              class="mvt-grid-switch"
+              :active-text="t('manager.spatialPreview.mvtGrid')"
+            />
             <el-tag
               v-if="quickViewStatus?.can_use_quick_view"
               size="small"
@@ -388,6 +395,7 @@ const quickViewStatus = ref(null)
 const quickViewLoadError = ref('')
 const quickViewActionLoading = ref(false)
 const activePreviewMode = ref('table_geojson')
+const mvtGridVisible = ref(false)
 let quickViewRequestSeq = 0
 
 const DIRECT_GEOJSON_MAX_ROWS = 2000
@@ -1426,6 +1434,10 @@ const tableTotalText = computed(() => {
   const rows = props.previewData?.rows || []
   const rowCount = rows.length
 
+  if (isQuickViewActive.value) {
+    return t('manager.explorer.quickViewRows', { total: total.toLocaleString() })
+  }
+
   // 如果预览行数小于总行数，说明只是预览了部分数据
   if (rowCount < total) {
     return t('manager.explorer.previewRows', { rowCount: rowCount.toLocaleString(), total: total.toLocaleString() })
@@ -1539,6 +1551,10 @@ const showRealtimeTileCacheGeneration = computed(() => {
   return quickViewRenderSource.value === 'realtime_tile' && !!quickViewStatus.value?.can_generate_tile_cache
 })
 
+const showMvtGridToggle = computed(() => {
+  return isQuickViewActive.value && ['cached_tile', 'realtime_tile'].includes(quickViewRenderSource.value)
+})
+
 const quickViewRendererProps = computed(() => {
   const target = spatialPreviewTarget.value
   if (!target || !quickViewStatus.value) return {}
@@ -1554,7 +1570,8 @@ const quickViewRendererProps = computed(() => {
     tileUrlTemplate: quickViewStatus.value?.quick_view?.tile_url_template || '',
     tileRenderInfo: quickViewStatus.value?.quick_view || {},
     renderSource: quickViewRenderSource.value,
-    defaultTileCacheId: quickViewStatus.value?.default_tile_cache_id || ''
+    defaultTileCacheId: quickViewStatus.value?.default_tile_cache_id || '',
+    showMvtGrid: mvtGridVisible.value
   }
 })
 
@@ -1587,7 +1604,7 @@ const loadQuickViewStatus = async () => {
       quickViewStatus.value = status
       if (status?.preferred_mode === 'quick_view' && status?.can_use_quick_view) {
         activePreviewMode.value = 'quick_view'
-      } else if (!status?.can_use_quick_view) {
+      } else {
         activePreviewMode.value = 'table_geojson'
       }
     }
@@ -2238,6 +2255,19 @@ const handleNavigate = (path) => {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+.mvt-grid-switch {
+  --el-switch-on-color: #ff2d20;
+}
+
+.mvt-grid-switch :deep(.el-switch__label) {
+  color: var(--addp-text-secondary);
+  font-weight: 600;
+}
+
+.mvt-grid-switch :deep(.el-switch__label.is-active) {
+  color: #ff2d20;
 }
 
 .quick-view-status {

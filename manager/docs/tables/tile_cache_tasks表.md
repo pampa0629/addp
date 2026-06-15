@@ -97,6 +97,6 @@ DELETE /api/v1/manager/tile_cache_tasks/{id}
 
 ## 五、相关文档
 
-- [Manager 瓦片缓存生成任务设计](../../../docs/next/Manager瓦片缓存生成任务设计.md)
+- [快显规范与技术路线](../../../docs/next/快显/02-规范与技术路线.md)
 - [tile_cache 表结构说明](./tile_cache表.md)
 - [数据库架构](../数据库架构.md)

@@ -17,6 +17,10 @@ type ProgressTracker struct {
 	startTime   time.Time
 }
 
+type ProgressSink interface {
+	UpdateProgress(ctx context.Context, progress *QuickViewProgress) error
+}
+
 // NewProgressTracker 创建进度跟踪器
 func NewProgressTracker(redisClient *redis.Client, fingerprint string) *ProgressTracker {
 	return &ProgressTracker{

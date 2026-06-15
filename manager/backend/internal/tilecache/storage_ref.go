@@ -19,11 +19,8 @@ type StorageRefPayload struct {
 	Manifest     string `json:"manifest"`
 }
 
-func ObjectPrefixStorageRef(tenantID uint, fingerprint string, configHash string) string {
+func ObjectPrefixStorageRef(tenantID uint, fingerprint string) string {
 	cacheKey := strings.TrimSpace(fingerprint)
-	if hash := strings.TrimSpace(configHash); hash != "" {
-		cacheKey = fmt.Sprintf("%s/%s", cacheKey, hash)
-	}
 	payload := StorageRefPayload{
 		Type:         StorageRefTypeObjectPrefix,
 		Provider:     StorageRefProviderADDP,

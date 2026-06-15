@@ -1,6 +1,7 @@
 package api
 
 import (
+	"net/http/httptest"
 	"testing"
 
 	"github.com/addp/manager/internal/models"
@@ -97,5 +98,31 @@ func TestQuickViewFeatureCollectionUsesRequestedGeometryColumn(t *testing.T) {
 	}
 	if _, exists := properties["geom"]; exists {
 		t.Fatal("geometry column leaked into feature properties")
+	}
+}
+
+func TestPositivePathIntAcceptsMVTSuffixOnY(t *testing.T) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "y", Value: "52.mvt"}}
+
+	if got := positivePathInt(c, "y", 0, 0); got != 52 {
+		t.Fatalf("positivePathInt() = %d, want 52", got)
+	}
+	if c.IsAborted() {
+		t.Fatal("positivePathInt aborted valid MVT tile y parameter")
+	}
+}
+
+func TestPositivePathIntAcceptsGinParamNameWithMVTSuffix(t *testing.T) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "y.mvt", Value: "419.mvt"}}
+
+	if got := positivePathInt(c, "y", 0, 0); got != 419 {
+		t.Fatalf("positivePathInt() = %d, want 419", got)
+	}
+	if c.IsAborted() {
+		t.Fatal("positivePathInt aborted valid Gin MVT tile y parameter")
 	}
 }

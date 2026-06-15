@@ -2,18 +2,19 @@ package service
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
+	"sync"
 	"time"
 
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	commonScheduler "github.com/addp/common/scheduler"
+	"github.com/addp/common/spatial"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/mvt"
 	"github.com/addp/manager/internal/repository"
@@ -22,22 +23,44 @@ import (
 )
 
 const tileCacheTaskSchedulePollInterval = time.Minute
+const tileCacheProgressUpdateMinInterval = 2 * time.Second
 
 type TileCacheGenerator interface {
-	GenerateMixed(ctx context.Context, cfg mvt.QuickViewConfig, progressTracker *mvt.ProgressTracker) (*mvt.GenerateResult, error)
+	GenerateMixed(ctx context.Context, cfg mvt.QuickViewConfig, progressTracker mvt.ProgressSink) (*mvt.GenerateResult, error)
+}
+
+type RealtimeTileTargetResolver interface {
+	ResolveRealtimeTileTarget(ctx context.Context, tenantID *uint, resourceID uint, schema, table, geomCol string, sourceSRID int) (*RealtimeTileTarget, error)
 }
 
 type TileCacheCleaner interface {
 	DeleteByStorageRef(ctx context.Context, storageRef string) error
 }
 
+type TileCacheRuntimeCacheInvalidator interface {
+	InvalidateTileCacheRuntimeCache(ctx context.Context, tenantID uint, tileCacheID uint) error
+}
+
 type TileCacheTaskService struct {
-	tileCacheRepo      *repository.TileCacheRepository
-	taskExecRepo       *commonExecution.TaskExecutionRepository
-	quickViewSvc       *QuickViewService
-	tileGenerator      TileCacheGenerator
-	tileCacheCleaner   TileCacheCleaner
-	defaultConcurrency int
+	tileCacheRepo               *repository.TileCacheRepository
+	taskExecRepo                *commonExecution.TaskExecutionRepository
+	quickViewSvc                *QuickViewService
+	tileGenerator               TileCacheGenerator
+	tileTargetResolver          RealtimeTileTargetResolver
+	tileCacheCleaner            TileCacheCleaner
+	tileCacheRuntimeInvalidator TileCacheRuntimeCacheInvalidator
+	defaultConcurrency          int
+}
+
+type tileCacheExecutionProgressSink struct {
+	repo          *commonExecution.TaskExecutionRepository
+	executionID   string
+	tenantID      uint
+	startedAt     time.Time
+	mu            sync.Mutex
+	lastUpdatedAt time.Time
+	lastProgress  int
+	lastMetadata  commonModels.JSONMap
 }
 
 func NewTileCacheTaskService(
@@ -62,8 +85,135 @@ func (s *TileCacheTaskService) SetTileGenerator(generator TileCacheGenerator, de
 	}
 }
 
+func (s *TileCacheTaskService) SetRealtimeTileTargetResolver(resolver RealtimeTileTargetResolver) {
+	s.tileTargetResolver = resolver
+}
+
 func (s *TileCacheTaskService) SetTileCacheCleaner(cleaner TileCacheCleaner) {
 	s.tileCacheCleaner = cleaner
+}
+
+func (s *TileCacheTaskService) SetTileCacheRuntimeCacheInvalidator(invalidator TileCacheRuntimeCacheInvalidator) {
+	s.tileCacheRuntimeInvalidator = invalidator
+}
+
+func (s *TileCacheTaskService) newTileCacheExecutionProgressSink(executionID string, tenantID uint, startedAt time.Time) *tileCacheExecutionProgressSink {
+	return &tileCacheExecutionProgressSink{
+		repo:          s.taskExecRepo,
+		executionID:   executionID,
+		tenantID:      tenantID,
+		startedAt:     startedAt,
+		lastUpdatedAt: startedAt,
+	}
+}
+
+func (s *tileCacheExecutionProgressSink) UpdateProgress(ctx context.Context, progress *mvt.QuickViewProgress) error {
+	if s == nil || s.repo == nil || progress == nil {
+		return nil
+	}
+	nextProgress := progressPercentInt(progress)
+	now := time.Now()
+	s.mu.Lock()
+	if nextProgress < s.lastProgress {
+		nextProgress = s.lastProgress
+	}
+	shouldUpdate := nextProgress != s.lastProgress ||
+		now.Sub(s.lastUpdatedAt) >= tileCacheProgressUpdateMinInterval ||
+		progress.Status != "running"
+	if !shouldUpdate {
+		s.mu.Unlock()
+		return nil
+	}
+	s.lastProgress = nextProgress
+	s.lastUpdatedAt = now
+	s.mu.Unlock()
+
+	currentStep := tileCacheProgressStep(progress)
+	elapsedMs := now.Sub(s.startedAt).Milliseconds()
+	metadata := commonModels.JSONMap{
+		"tiles_processed":         progress.TilesProcessed,
+		"tiles_total_estimate":    progress.TilesTotalEstimate,
+		"progress_percent":        progress.ProgressPercent,
+		"current_zoom":            progress.CurrentZoom,
+		"max_zoom":                progress.MaxZoom,
+		"elapsed_seconds":         progress.ElapsedSeconds,
+		"estimated_remaining_sec": progress.EstimatedRemainingSec,
+	}
+	if progress.ErrorMessage != "" {
+		metadata["progress_error"] = progress.ErrorMessage
+	}
+	s.mu.Lock()
+	s.lastMetadata = metadata.Clone()
+	s.mu.Unlock()
+	return s.repo.UpdateFields(ctx, s.executionID, int(s.tenantID), map[string]interface{}{
+		"progress":          nextProgress,
+		"current_step":      currentStep,
+		"metadata":          metadata,
+		"execution_time_ms": elapsedMs,
+		"updated_at":        now,
+	})
+}
+
+func (s *tileCacheExecutionProgressSink) LastProgress() int {
+	if s == nil {
+		return 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lastProgress
+}
+
+func (s *tileCacheExecutionProgressSink) LastMetadata() commonModels.JSONMap {
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.lastMetadata == nil {
+		return nil
+	}
+	return s.lastMetadata.Clone()
+}
+
+func mergeTileCacheProgressMetadata(metadata commonModels.JSONMap, progressMetadata commonModels.JSONMap) {
+	if metadata == nil || progressMetadata == nil {
+		return
+	}
+	for key, value := range progressMetadata {
+		if _, exists := metadata[key]; !exists {
+			metadata[key] = value
+		}
+	}
+}
+
+func progressPercentInt(progress *mvt.QuickViewProgress) int {
+	if progress == nil {
+		return 0
+	}
+	percent := progress.ProgressPercent
+	if percent <= 0 && progress.TilesTotalEstimate > 0 {
+		percent = float64(progress.TilesProcessed) / float64(progress.TilesTotalEstimate) * 100
+	}
+	if percent < 0 {
+		percent = 0
+	}
+	if percent > 100 {
+		percent = 100
+	}
+	return int(math.Round(percent))
+}
+
+func tileCacheProgressStep(progress *mvt.QuickViewProgress) string {
+	if progress == nil {
+		return "生成瓦片缓存"
+	}
+	if progress.TilesTotalEstimate > 0 {
+		return fmt.Sprintf("生成瓦片缓存 z%d/%d：%d/%d", progress.CurrentZoom, progress.MaxZoom, progress.TilesProcessed, progress.TilesTotalEstimate)
+	}
+	if progress.MaxZoom > 0 {
+		return fmt.Sprintf("生成瓦片缓存 z%d/%d", progress.CurrentZoom, progress.MaxZoom)
+	}
+	return "生成瓦片缓存"
 }
 
 func (s *TileCacheTaskService) Create(ctx context.Context, task *models.TileCacheTask) error {
@@ -104,6 +254,11 @@ func (s *TileCacheTaskService) DeleteTileCache(ctx context.Context, id uint, ten
 	result, err := s.tileCacheRepo.GetTileCache(ctx, id, tenantID)
 	if err != nil || result == nil {
 		return err
+	}
+	if s.tileCacheRuntimeInvalidator != nil {
+		if err := s.tileCacheRuntimeInvalidator.InvalidateTileCacheRuntimeCache(ctx, tenantID, result.ID); err != nil {
+			return err
+		}
 	}
 	if strings.TrimSpace(result.StorageRef) != "" {
 		if s.tileCacheCleaner == nil {
@@ -178,25 +333,54 @@ func (s *TileCacheTaskService) runTileCacheGeneration(ctx context.Context, task 
 	resultReadyPersisted := false
 	preserveReadyTileCache := false
 
-	tileCache, _, cfg, preserveReadyTileCache, err := s.prepareExecutionTileCache(ctx, task, executionID)
+	tileCache, execCfg, cfg, preserveReadyTileCache, err := s.prepareExecutionTileCache(ctx, task, executionID)
 	if err == nil && s.tileGenerator == nil {
 		err = errors.New("tile cache generation executor is not connected")
 	}
+	progressSink := s.newTileCacheExecutionProgressSink(executionID, task.TenantID, startedAt)
+	tileGenerationTargetMetadata, _ := asJSONMap(execCfg["tile_generation_target"])
+	optimizationMetadata, _ := asJSONMap(execCfg["optimization"])
 	if err == nil {
-		result, genErr := s.tileGenerator.GenerateMixed(ctx, cfg, nil)
+		result, genErr := s.tileGenerator.GenerateMixed(ctx, cfg, progressSink)
 		if genErr != nil {
 			err = genErr
+		} else if result == nil {
+			err = errors.New("tile cache generation returned empty result")
 		} else {
 			completedAt = time.Now()
-			status = commonExecution.ExecutionStatusSuccess
 			metadata = commonModels.JSONMap{
-				"tile_cache_id":      tileCache.ID,
-				"actual_max_zoom":    result.ActualMaxZoom,
-				"total_tiles":        result.TotalTiles,
-				"cached_tiles":       result.CachedTiles,
-				"generation_seconds": result.GenerationSec,
-				"stop_reason":        result.StopReason,
+				"tile_cache_id":        tileCache.ID,
+				"actual_max_zoom":      result.ActualMaxZoom,
+				"total_tiles":          result.TotalTiles,
+				"cached_tiles":         result.CachedTiles,
+				"tiles_total_estimate": nonZeroInt(result.TilesTotalEstimate, result.TotalTiles),
+				"tiles_processed":      nonZeroInt(result.TilesProcessed, result.TotalTiles),
+				"generated_tiles":      nonZeroInt(result.GeneratedTiles, result.CachedTiles),
+				"empty_tiles":          result.EmptyTiles,
+				"skipped_tiles":        result.SkippedTiles,
+				"failed_tiles":         result.FailedTiles,
+				"total_size_bytes":     result.TotalSizeBytes,
+				"max_tile_size_bytes":  result.MaxTileSizeBytes,
+				"min_tile_size_bytes":  result.MinTileSizeBytes,
+				"generation_seconds":   result.GenerationSec,
+				"stop_reason":          result.StopReason,
 			}
+			if len(result.ZoomLevels) > 0 {
+				metadata["zoom_levels"] = result.ZoomLevels
+			}
+			if tileGenerationTargetMetadata != nil {
+				metadata["tile_generation_target"] = tileGenerationTargetMetadata
+			}
+			if optimizationMetadata != nil {
+				metadata["optimization"] = optimizationMetadata
+			}
+			if result.CachedTiles <= 0 {
+				err = errors.New("tile cache generation produced no non-empty tiles")
+			} else {
+				status = commonExecution.ExecutionStatusSuccess
+			}
+		}
+		if err == nil {
 			updates := map[string]interface{}{
 				"status":            models.TileCacheStatusReady,
 				"storage_ref":       cfg.StorageRef,
@@ -204,13 +388,18 @@ func (s *TileCacheTaskService) runTileCacheGeneration(ctx context.Context, task 
 				"min_zoom":          cfg.MinZoom,
 				"max_zoom":          result.ActualMaxZoom,
 				"error_message":     "",
-				"config_hash":       cfg.ConfigHash,
 			}
-			if len(cfg.Extent) == 4 {
-				extentJSON, _ := json.Marshal(cfg.Extent)
+			resultExtent := cfg.Extent
+			resultExtentSRID := cfg.ExtentSRID
+			if len(result.ExtentWGS84) == 4 {
+				resultExtent = result.ExtentWGS84
+				resultExtentSRID = spatial.SRIDWGS84
+			}
+			if len(resultExtent) == 4 {
+				extentJSON, _ := json.Marshal(resultExtent)
 				updates["extent"] = extentJSON
-				if cfg.ExtentSRID > 0 {
-					updates["extent_srid"] = cfg.ExtentSRID
+				if resultExtentSRID > 0 {
+					updates["extent_srid"] = resultExtentSRID
 				}
 			}
 			if updateErr := s.tileCacheRepo.UpdateTileCacheFields(ctx, tileCache.ID, task.TenantID, updates); updateErr != nil {
@@ -237,9 +426,14 @@ func (s *TileCacheTaskService) runTileCacheGeneration(ctx context.Context, task 
 
 	completedAt = time.Now()
 	durationMs := completedAt.Sub(startedAt).Milliseconds()
+	finalProgress := progressSink.LastProgress()
+	if status == commonExecution.ExecutionStatusSuccess {
+		finalProgress = 100
+	}
+	mergeTileCacheProgressMetadata(metadata, progressSink.LastMetadata())
 	if err := s.taskExecRepo.UpdateFields(ctx, executionID, int(task.TenantID), map[string]interface{}{
 		"status":            status,
-		"progress":          100,
+		"progress":          finalProgress,
 		"metadata":          metadata,
 		"error_details":     errDetails,
 		"completed_at":      completedAt,
@@ -324,18 +518,17 @@ func (s *TileCacheTaskService) prepareExecutionTileCache(ctx context.Context, ta
 		return nil, execCfg, mvt.QuickViewConfig{}, false, ErrQuickViewGeometryColumnNotFound
 	}
 
+	var tenantIDPtr *uint
+	if task.TenantID > 0 {
+		tenantID := task.TenantID
+		tenantIDPtr = &tenantID
+	}
+	generationTarget, err := s.resolveTileGenerationTarget(ctx, tenantIDPtr, engineID, schema, table, geomColumn, sourceSRID, primaryKey)
+	if err != nil {
+		return nil, execCfg, mvt.QuickViewConfig{}, false, err
+	}
+
 	fingerprint := identity.ItemFingerprint
-	cfgHash := tileCacheConfigHash(tileCacheConfigHashInput{
-		TileMatrixSet:  stringFromConfig(tile["tile_matrix_set"]),
-		MinZoom:        minZoom,
-		MaxZoom:        maxZoom,
-		SourceSRID:     sourceSRID,
-		TargetSRID:     intFromTileCacheConfig(tile["target_srid"], 3857),
-		ExtentSRID:     extentSRID,
-		Extent:         extent,
-		GeometryColumn: geomColumn,
-		PrimaryKey:     primaryKey,
-	})
 	tileCache := &models.TileCache{
 		TenantID:        task.TenantID,
 		ItemFingerprint: fingerprint,
@@ -345,7 +538,6 @@ func (s *TileCacheTaskService) prepareExecutionTileCache(ctx context.Context, ta
 		LastExecutionID: &executionID,
 		TileFormat:      format,
 		Status:          models.TileCacheStatusGenerating,
-		ConfigHash:      cfgHash,
 		CreatedBy:       task.CreatedBy,
 	}
 	initialUpdates := map[string]interface{}{
@@ -368,18 +560,30 @@ func (s *TileCacheTaskService) prepareExecutionTileCache(ctx context.Context, ta
 	tileCache.MaxZoom = &maxZoom
 	initialUpdates["min_zoom"] = minZoom
 	initialUpdates["max_zoom"] = maxZoom
-	existingTileCache, err := s.tileCacheRepo.GetTileCacheByFingerprintAndConfig(ctx, task.TenantID, fingerprint, format, cfgHash)
+	existingTileCache, err := s.tileCacheRepo.GetTileCacheByFingerprintAndFormat(ctx, task.TenantID, fingerprint, format)
 	if err != nil {
 		return nil, execCfg, mvt.QuickViewConfig{}, false, err
 	}
-	preserveReadyTileCache := existingTileCache != nil && existingTileCache.Status == models.TileCacheStatusReady
 	if existingTileCache != nil {
-		tileCache = existingTileCache
-		if !preserveReadyTileCache {
-			initialUpdates["status"] = models.TileCacheStatusGenerating
-			initialUpdates["storage_ref"] = ""
-			initialUpdates["error_message"] = ""
+		if s.tileCacheRuntimeInvalidator != nil {
+			if err := s.tileCacheRuntimeInvalidator.InvalidateTileCacheRuntimeCache(ctx, task.TenantID, existingTileCache.ID); err != nil {
+				return nil, execCfg, mvt.QuickViewConfig{}, false, fmt.Errorf("invalidate existing tile cache runtime cache: %w", err)
+			}
+			execCfg["previous_runtime_cache_invalidated"] = true
 		}
+		if strings.TrimSpace(existingTileCache.StorageRef) != "" {
+			if s.tileCacheCleaner == nil {
+				return nil, execCfg, mvt.QuickViewConfig{}, false, errors.New("tile cache cleaner is required to refresh existing tile cache")
+			}
+			if err := s.tileCacheCleaner.DeleteByStorageRef(ctx, existingTileCache.StorageRef); err != nil {
+				return nil, execCfg, mvt.QuickViewConfig{}, false, fmt.Errorf("delete existing tile cache objects: %w", err)
+			}
+			execCfg["previous_storage_ref_deleted"] = true
+		}
+		tileCache = existingTileCache
+		initialUpdates["status"] = models.TileCacheStatusGenerating
+		initialUpdates["storage_ref"] = ""
+		initialUpdates["error_message"] = ""
 		if err := s.tileCacheRepo.UpdateTileCacheFields(ctx, tileCache.ID, task.TenantID, initialUpdates); err != nil {
 			return nil, execCfg, mvt.QuickViewConfig{}, false, err
 		}
@@ -389,28 +593,153 @@ func (s *TileCacheTaskService) prepareExecutionTileCache(ctx context.Context, ta
 		}
 	}
 
-	storageRef := buildTileCacheStorageRef(task.TenantID, fingerprint, cfgHash)
+	storageRef := buildTileCacheStorageRef(task.TenantID, fingerprint)
 	cfg := mvt.QuickViewConfig{
-		EngineID:    engineID,
-		TenantID:    task.TenantID,
-		Schema:      schema,
-		Table:       table,
-		GeomColumn:  geomColumn,
-		SRID:        sourceSRID,
-		ExtentSRID:  extentSRID,
-		PrimaryKey:  primaryKey,
-		Extent:      extent,
-		MinZoom:     minZoom,
-		MaxZoom:     maxZoom,
-		Concurrency: intFromTileCacheConfig(execCfg["concurrency"], s.defaultConcurrency),
-		Fingerprint: fingerprint,
-		StorageRef:  storageRef,
-		ConfigHash:  cfgHash,
+		EngineID:           engineID,
+		TenantID:           task.TenantID,
+		Schema:             generationTarget.Schema,
+		Table:              generationTarget.Table,
+		GeomColumn:         generationTarget.GeomColumn,
+		SRID:               generationTarget.SRID,
+		ExtentSRID:         extentSRID,
+		PrimaryKey:         generationTarget.PrimaryKey,
+		Extent:             extent,
+		MinZoom:            minZoom,
+		MaxZoom:            maxZoom,
+		Concurrency:        intFromTileCacheConfig(execCfg["concurrency"], s.defaultConcurrency),
+		Fingerprint:        fingerprint,
+		StorageRef:         storageRef,
+		OptimizationConfig: tileCacheOptimizationConfig(execCfg),
 	}
 	if cfg.Concurrency <= 0 {
 		cfg.Concurrency = s.defaultConcurrency
 	}
-	return tileCache, execCfg, cfg, preserveReadyTileCache, nil
+	execCfg["tile_generation_target"] = commonModels.JSONMap{
+		"schema":        generationTarget.Schema,
+		"table":         generationTarget.Table,
+		"geom_column":   generationTarget.GeomColumn,
+		"srid":          generationTarget.SRID,
+		"prepared_3857": generationTarget.Prepared3857,
+	}
+	return tileCache, execCfg, cfg, false, nil
+}
+
+func tileCacheOptimizationConfig(config commonModels.JSONMap) *commonModels.OptimizationConfig {
+	optimization := commonModels.DefaultOptimizationConfig()
+	raw, ok := asJSONMap(config["optimization"])
+	if !ok {
+		config["optimization"] = optimizationJSONMap(optimization)
+		return &optimization
+	}
+	applyTileCacheOptimizationConfig(&optimization, raw)
+	config["optimization"] = optimizationJSONMap(optimization)
+	return &optimization
+}
+
+func applyTileCacheOptimizationConfig(optimization *commonModels.OptimizationConfig, raw commonModels.JSONMap) {
+	if optimization == nil || raw == nil {
+		return
+	}
+	if version := stringFromConfig(raw["version"]); version != "" {
+		optimization.Version = version
+	}
+	if attr, ok := asJSONMap(raw["attribute_pruning"]); ok {
+		if enabled, exists := attr["enabled"].(bool); exists {
+			optimization.AttributePruning.Enabled = enabled
+		}
+		if threshold := intFromTileCacheConfig(attr["zoom_threshold"], 0); threshold > 0 {
+			optimization.AttributePruning.ZoomThreshold = threshold
+		}
+	}
+	if thresholds, ok := asJSONMap(raw["tile_size_thresholds"]); ok {
+		if maxSizeMB := floatFromTileCacheConfig(thresholds["max_size_mb"], 0); maxSizeMB > 0 {
+			optimization.TileSizeThresholds.MaxSizeMB = maxSizeMB
+		}
+	}
+	if extent, ok := asJSONMap(raw["extent_optimization"]); ok {
+		if maxZoomExtent := intFromTileCacheConfig(extent["max_zoom_extent"], 0); maxZoomExtent > 0 {
+			optimization.ExtentOptimization.MaxZoomExtent = maxZoomExtent
+		}
+		if baseExtent := intFromTileCacheConfig(extent["base_extent"], 0); baseExtent > 0 {
+			optimization.ExtentOptimization.BaseExtent = baseExtent
+		}
+		if minExtent := intFromTileCacheConfig(extent["min_extent"], 0); minExtent > 0 {
+			optimization.ExtentOptimization.MinExtent = minExtent
+		}
+	}
+}
+
+func optimizationJSONMap(optimization commonModels.OptimizationConfig) commonModels.JSONMap {
+	return commonModels.JSONMap{
+		"version": optimization.Version,
+		"attribute_pruning": commonModels.JSONMap{
+			"enabled":        optimization.AttributePruning.Enabled,
+			"zoom_threshold": optimization.AttributePruning.ZoomThreshold,
+		},
+		"tile_size_thresholds": commonModels.JSONMap{
+			"max_size_mb": optimization.TileSizeThresholds.MaxSizeMB,
+		},
+		"extent_optimization": commonModels.JSONMap{
+			"max_zoom_extent": optimization.ExtentOptimization.MaxZoomExtent,
+			"base_extent":     optimization.ExtentOptimization.BaseExtent,
+			"min_extent":      optimization.ExtentOptimization.MinExtent,
+		},
+	}
+}
+
+type tileGenerationTarget struct {
+	Schema       string
+	Table        string
+	GeomColumn   string
+	SRID         int
+	PrimaryKey   string
+	Prepared3857 bool
+}
+
+func (s *TileCacheTaskService) resolveTileGenerationTarget(
+	ctx context.Context,
+	tenantID *uint,
+	engineID uint,
+	schema, table, geomColumn string,
+	sourceSRID int,
+	primaryKey string,
+) (tileGenerationTarget, error) {
+	if sourceSRID <= 0 {
+		return tileGenerationTarget{}, errors.New("tile cache task source_srid is required")
+	}
+	if s.tileTargetResolver == nil {
+		if sourceSRID == spatial.SRIDWebMercator {
+			return tileGenerationTarget{
+				Schema:     schema,
+				Table:      table,
+				GeomColumn: geomColumn,
+				SRID:       sourceSRID,
+				PrimaryKey: primaryKey,
+			}, nil
+		}
+		return tileGenerationTarget{}, errors.New("indexed 3857 tile generation target is required")
+	}
+	target, err := s.tileTargetResolver.ResolveRealtimeTileTarget(ctx, tenantID, engineID, schema, table, geomColumn, sourceSRID)
+	if err != nil {
+		return tileGenerationTarget{}, err
+	}
+	if target == nil {
+		return tileGenerationTarget{}, errors.New("indexed 3857 tile generation target is required")
+	}
+	targetPrimaryKey := primaryKey
+	if !target.Prepared3857 {
+		targetPrimaryKey = primaryKey
+	} else {
+		targetPrimaryKey = ""
+	}
+	return tileGenerationTarget{
+		Schema:       target.Schema,
+		Table:        target.Table,
+		GeomColumn:   target.GeomColumn,
+		SRID:         target.SRID,
+		PrimaryKey:   targetPrimaryKey,
+		Prepared3857: target.Prepared3857,
+	}, nil
 }
 
 func normalizeTileCacheTask(task *models.TileCacheTask) error {
@@ -531,35 +860,8 @@ func readTileCacheTaskTargetIdentity(config commonModels.JSONMap) (tileCacheTask
 	return identity, nil
 }
 
-func buildTileCacheStorageRef(tenantID uint, fingerprint string, configHash string) string {
-	return tilecache.ObjectPrefixStorageRef(tenantID, fingerprint, configHash)
-}
-
-type tileCacheConfigHashInput struct {
-	TileMatrixSet  string    `json:"tile_matrix_set,omitempty"`
-	MinZoom        int       `json:"min_zoom"`
-	MaxZoom        int       `json:"max_zoom"`
-	SourceSRID     int       `json:"source_srid"`
-	TargetSRID     int       `json:"target_srid"`
-	ExtentSRID     int       `json:"extent_srid,omitempty"`
-	Extent         []float64 `json:"extent,omitempty"`
-	GeometryColumn string    `json:"geometry_column"`
-	PrimaryKey     string    `json:"primary_key,omitempty"`
-}
-
-func tileCacheConfigHash(input tileCacheConfigHashInput) string {
-	input.TileMatrixSet = strings.TrimSpace(input.TileMatrixSet)
-	input.GeometryColumn = strings.TrimSpace(input.GeometryColumn)
-	input.PrimaryKey = strings.TrimSpace(input.PrimaryKey)
-	if input.TileMatrixSet == "" {
-		input.TileMatrixSet = "WebMercatorQuad"
-	}
-	if input.TargetSRID == 0 {
-		input.TargetSRID = 3857
-	}
-	data, _ := json.Marshal(input)
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:])
+func buildTileCacheStorageRef(tenantID uint, fingerprint string) string {
+	return tilecache.ObjectPrefixStorageRef(tenantID, fingerprint)
 }
 
 func firstNonNil(values ...interface{}) interface{} {
@@ -584,6 +886,34 @@ func intFromTileCacheConfig(value interface{}, defaultValue int) int {
 	case string:
 		var parsed int
 		if _, err := fmt.Sscanf(strings.TrimSpace(v), "%d", &parsed); err == nil {
+			return parsed
+		}
+	}
+	return defaultValue
+}
+
+func nonZeroInt(value int, fallback int) int {
+	if value != 0 {
+		return value
+	}
+	return fallback
+}
+
+func floatFromTileCacheConfig(value interface{}, defaultValue float64) float64 {
+	switch v := value.(type) {
+	case int:
+		return float64(v)
+	case int64:
+		return float64(v)
+	case uint:
+		return float64(v)
+	case float32:
+		return float64(v)
+	case float64:
+		return v
+	case string:
+		var parsed float64
+		if _, err := fmt.Sscanf(strings.TrimSpace(v), "%f", &parsed); err == nil {
 			return parsed
 		}
 	}

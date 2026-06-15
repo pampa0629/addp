@@ -1255,7 +1255,29 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "MVT瓦片数据 | MVT tile data"
+                        "description": "MVT瓦片数据 | MVT tile data",
+                        "headers": {
+                            "X-ADDP-Render-Source": {
+                                "type": "string",
+                                "description": "渲染来源：cached_tile 或 realtime_tile | Render source: cached_tile or realtime_tile"
+                            },
+                            "X-ADDP-Tile-Cache": {
+                                "type": "string",
+                                "description": "运行时缓存状态：HIT 或 MISS | Runtime cache status: HIT or MISS"
+                            },
+                            "X-ADDP-Tile-Cache-ID": {
+                                "type": "string",
+                                "description": "命中的瓦片缓存结果 ID | Matched tile cache result ID"
+                            },
+                            "X-ADDP-Tile-Status": {
+                                "type": "string",
+                                "description": "瓦片语义状态：ok、empty、timeout 或 degraded | Tile semantic status: ok, empty, timeout, or degraded"
+                            },
+                            "X-Generation-Time": {
+                                "type": "string",
+                                "description": "动态生成耗时 | Dynamic generation duration"
+                            }
+                        }
                     },
                     "400": {
                         "description": "请求参数错误 | Bad request",
@@ -2479,9 +2501,6 @@ const docTemplate = `{
         "github_com_addp_manager_internal_models.TileCache": {
             "type": "object",
             "properties": {
-                "config_hash": {
-                    "type": "string"
-                },
                 "created_at": {
                     "type": "string"
                 },
@@ -2640,6 +2659,9 @@ const docTemplate = `{
                 "recommended_mode": {
                     "type": "string"
                 },
+                "render_facts": {
+                    "$ref": "#/definitions/github_com_addp_manager_internal_service.QuickViewRenderFacts"
+                },
                 "render_source": {
                     "type": "string"
                 },
@@ -2654,6 +2676,38 @@ const docTemplate = `{
                 },
                 "unavailable_reason": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_service.QuickViewRenderFacts": {
+            "type": "object",
+            "properties": {
+                "render_extent": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "render_extent_source": {
+                    "type": "string"
+                },
+                "render_extent_srid": {
+                    "type": "integer"
+                },
+                "source_extent": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "source_extent_srid": {
+                    "type": "integer"
+                },
+                "source_srid": {
+                    "type": "integer"
+                },
+                "zoom_recommendation": {
+                    "$ref": "#/definitions/github_com_addp_manager_internal_service.ZoomRecommendation"
                 }
             }
         },
@@ -2686,6 +2740,9 @@ const docTemplate = `{
                 },
                 "render_source": {
                     "type": "string"
+                },
+                "source_srid": {
+                    "type": "integer"
                 },
                 "tile_format": {
                     "type": "string"
@@ -2902,6 +2959,23 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_service.ZoomRecommendation": {
+            "type": "object",
+            "properties": {
+                "max_zoom": {
+                    "type": "integer"
+                },
+                "min_zoom": {
+                    "type": "integer"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "status": {
                     "type": "string"
                 }
             }

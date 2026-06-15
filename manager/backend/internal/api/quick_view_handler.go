@@ -186,6 +186,11 @@ func (h *QuickViewHandler) GetQuickViewGeoJSONByLocator(c *gin.Context) {
 // @Param geometry_column query string false "几何列名 | Geometry column"
 // @Param cols query string false "返回列，逗号分隔 | Return columns, comma-separated"
 // @Success 200 "MVT瓦片数据 | MVT tile data"
+// @Header 200 {string} X-ADDP-Render-Source "渲染来源：cached_tile 或 realtime_tile | Render source: cached_tile or realtime_tile"
+// @Header 200 {string} X-ADDP-Tile-Cache "运行时缓存状态：HIT 或 MISS | Runtime cache status: HIT or MISS"
+// @Header 200 {string} X-ADDP-Tile-Cache-ID "命中的瓦片缓存结果 ID | Matched tile cache result ID"
+// @Header 200 {string} X-ADDP-Tile-Status "瓦片语义状态：ok、empty、timeout 或 degraded | Tile semantic status: ok, empty, timeout, or degraded"
+// @Header 200 {string} X-Generation-Time "动态生成耗时 | Dynamic generation duration"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
@@ -225,7 +230,15 @@ func (h *QuickViewHandler) GetQuickViewTileByLocator(c *gin.Context) {
 	if geomCol == "" {
 		geomCol = source.SpatialMeta.GeomColumn
 	}
-	srid := source.SpatialMeta.SRID
+	tileSource := source
+	spatialMeta := *source.SpatialMeta
+	spatialMeta.GeomColumn = geomCol
+	tileSource.SpatialMeta = &spatialMeta
+	tileTarget, err := h.resolveRealtimeTileTarget(c.Request.Context(), tenantID, tileSource)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	cols := csvQuery(c.Query("cols"))
 	response, err := h.mvtService.GetTile(
 		c.Request.Context(),
@@ -236,30 +249,37 @@ func (h *QuickViewHandler) GetQuickViewTileByLocator(c *gin.Context) {
 		geomCol,
 		cols,
 		z, x, y,
-		srid,
+		source.SpatialMeta.SRID,
+		tileTarget,
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	c.Header("Content-Type", "application/vnd.mapbox-vector-tile")
-	c.Header("Access-Control-Expose-Headers", "X-ADDP-Render-Source, X-ADDP-Tile-Cache, X-ADDP-Tile-Cache-ID, X-Cache-Status, X-Generation-Time, Content-Length")
+	c.Header("Access-Control-Expose-Headers", "X-ADDP-Render-Source, X-ADDP-Tile-Cache, X-ADDP-Tile-Cache-ID, X-ADDP-Tile-Status, X-Generation-Time, Content-Length")
 	renderSource := strings.TrimSpace(response.RenderSource)
 	if renderSource == "" {
 		renderSource = service.QuickViewRenderSourceRealtimeTile
 	}
 	c.Header("X-ADDP-Render-Source", renderSource)
+	tileStatus := strings.TrimSpace(response.Status)
+	if tileStatus == "" {
+		tileStatus = service.TileStatusOK
+		if len(response.Data) == 0 {
+			tileStatus = service.TileStatusEmpty
+		}
+	}
+	c.Header("X-ADDP-Tile-Status", tileStatus)
 	if response.TileCacheID != nil {
 		c.Header("X-ADDP-Tile-Cache-ID", strconv.FormatUint(uint64(*response.TileCacheID), 10))
 	}
 	if response.FromCache {
 		c.Header("Content-Encoding", "gzip")
 		c.Header("Cache-Control", "public, max-age=86400")
-		c.Header("X-Cache-Status", "HIT")
 		c.Header("X-ADDP-Tile-Cache", "HIT")
 	} else {
 		c.Header("Cache-Control", "public, max-age=60")
-		c.Header("X-Cache-Status", "MISS")
 		c.Header("X-ADDP-Tile-Cache", "MISS")
 		c.Header("X-Generation-Time", response.Duration.String())
 	}
@@ -271,12 +291,69 @@ func (h *QuickViewHandler) quickViewCapabilityForLocator(ctx context.Context, te
 	if err != nil {
 		return nil, err
 	}
+	h.attachRenderableExtent(ctx, tenantID, &source)
+	h.attachRealtimeTileTarget(ctx, tenantID, &source)
 	capability, err := h.service.BuildCapabilityFromSource(ctx, source)
 	if err != nil {
 		return nil, err
 	}
 	applyLocatorQuickViewURLs(capability)
 	return capability, nil
+}
+
+func (h *QuickViewHandler) attachRenderableExtent(ctx context.Context, tenantID *uint, source *service.QuickViewSource) {
+	if h == nil || source == nil || source.SpatialMeta == nil {
+		return
+	}
+	meta := source.SpatialMeta
+	if len(meta.RenderExtent) == 4 && meta.RenderExtentSRID > 0 {
+		return
+	}
+	if len(meta.Extent) != 4 {
+		return
+	}
+	extentSRID := meta.ExtentSRID
+	if extentSRID == 0 {
+		extentSRID = meta.SRID
+	}
+	if extentSRID == commonSpatial.SRIDWGS84 {
+		meta.RenderExtent = append([]float64(nil), meta.Extent...)
+		meta.RenderExtentSRID = commonSpatial.SRIDWGS84
+		meta.RenderExtentSource = "source_extent"
+		return
+	}
+	if extentSRID <= 0 || source.EngineID == 0 || h.mvtService == nil {
+		return
+	}
+	renderExtent, err := h.mvtService.TransformExtentWGS84(ctx, tenantID, source.EngineID, meta.Extent, extentSRID)
+	if err != nil {
+		return
+	}
+	meta.RenderExtent = renderExtent
+	meta.RenderExtentSRID = commonSpatial.SRIDWGS84
+	meta.RenderExtentSource = "source_extent_transformed"
+}
+
+func (h *QuickViewHandler) attachRealtimeTileTarget(ctx context.Context, tenantID *uint, source *service.QuickViewSource) {
+	target, err := h.resolveRealtimeTileTarget(ctx, tenantID, *source)
+	if err != nil || target == nil {
+		return
+	}
+	source.RealtimeTileTarget = target
+}
+
+func (h *QuickViewHandler) resolveRealtimeTileTarget(ctx context.Context, tenantID *uint, source service.QuickViewSource) (*service.RealtimeTileTarget, error) {
+	if h == nil || h.mvtService == nil || !source.CanTile || source.SpatialMeta == nil {
+		return nil, nil
+	}
+	if source.EngineID == 0 || strings.TrimSpace(source.Schema) == "" || strings.TrimSpace(source.Table) == "" {
+		return nil, nil
+	}
+	geomCol := strings.TrimSpace(source.SpatialMeta.GeomColumn)
+	if geomCol == "" {
+		return nil, nil
+	}
+	return h.mvtService.ResolveRealtimeTileTarget(ctx, tenantID, source.EngineID, source.Schema, source.Table, geomCol, source.SpatialMeta.SRID)
 }
 
 func (h *QuickViewHandler) quickViewSourceForLocator(ctx context.Context, tenantID *uint, locator string) (service.QuickViewSource, error) {
@@ -531,7 +608,14 @@ func positiveIntQuery(c *gin.Context, name string, defaultValue, minValue, maxVa
 }
 
 func positivePathInt(c *gin.Context, name string, minValue, maxValue int) int {
-	parsed, err := strconv.Atoi(strings.TrimSpace(c.Param(name)))
+	raw := strings.TrimSpace(c.Param(name))
+	if name == "y" {
+		if raw == "" {
+			raw = strings.TrimSpace(c.Param("y.mvt"))
+		}
+		raw = strings.TrimSuffix(raw, ".mvt")
+	}
+	parsed, err := strconv.Atoi(raw)
 	if err != nil || parsed < minValue || (maxValue > 0 && parsed > maxValue) {
 		managerError(c, http.StatusBadRequest, "invalid "+name)
 		c.Abort()

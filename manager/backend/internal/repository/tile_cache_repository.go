@@ -155,15 +155,14 @@ func (r *TileCacheRepository) CreateTileCache(ctx context.Context, artifact *mod
 	return r.db.WithContext(ctx).Create(artifact).Error
 }
 
-func (r *TileCacheRepository) GetTileCacheByFingerprintAndConfig(ctx context.Context, tenantID uint, itemFingerprint, tileFormat, configHash string) (*models.TileCache, error) {
+func (r *TileCacheRepository) GetTileCacheByFingerprintAndFormat(ctx context.Context, tenantID uint, itemFingerprint, tileFormat string) (*models.TileCache, error) {
 	var artifact models.TileCache
 	err := r.db.WithContext(ctx).
 		Where(
-			"tenant_id = ? AND item_fingerprint = ? AND tile_format = ? AND config_hash = ?",
+			"tenant_id = ? AND item_fingerprint = ? AND tile_format = ?",
 			tenantID,
 			strings.TrimSpace(itemFingerprint),
 			strings.TrimSpace(tileFormat),
-			strings.TrimSpace(configHash),
 		).
 		First(&artifact).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {

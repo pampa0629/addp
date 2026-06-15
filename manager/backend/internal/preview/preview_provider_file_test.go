@@ -1683,6 +1683,68 @@ func TestFileTablePreviewProviderPreviewRefsUsesAttributesTableInfo(t *testing.T
 	}
 }
 
+func TestFileTablePreviewProviderPreviewRefsRestoresProjectionDefinition(t *testing.T) {
+	provider := &FileTablePreviewProvider{}
+	refProvider := &recordingMultiTableProvider{}
+	prj := `PROJCS["WGS_1984_UTM_Zone_50N",GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137.0,298.257223563]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Transverse_Mercator"],PARAMETER["False_Easting",500000.0],PARAMETER["False_Northing",0.0],PARAMETER["Central_Meridian",117.0],PARAMETER["Scale_Factor",0.9996],PARAMETER["Latitude_Of_Origin",0.0],UNIT["Meter",1.0]]`
+	req := &PreviewRequest{
+		Page:     1,
+		PageSize: 2,
+		Table:    "gis/roads.shp",
+		Attributes: map[string]interface{}{
+			"item": map[string]interface{}{
+				"refs": []interface{}{
+					map[string]interface{}{"path": "gis/roads.dbf", "role": "attributes", "required": true, "extension": ".dbf"},
+					map[string]interface{}{"path": "gis/roads.prj", "role": "projection", "extension": ".prj"},
+					map[string]interface{}{"path": "gis/roads.shp", "role": "main", "required": true, "primary": true, "extension": ".shp"},
+					map[string]interface{}{"path": "gis/roads.shx", "role": "index", "required": true, "extension": ".shx"},
+				},
+			},
+			"type_info": map[string]interface{}{
+				"table": map[string]interface{}{
+					"row_count": float64(1),
+					"fields": []interface{}{
+						map[string]interface{}{"name": "geometry", "type": string(datatype.FieldTypeGeometry), "nullable": false},
+					},
+				},
+			},
+			"capabilities": map[string]interface{}{
+				"spatial": map[string]interface{}{
+					"primary_geometry_column": "geometry",
+					"geometry_columns": []interface{}{
+						map[string]interface{}{"name": "geometry", "geometry_type": "LineString", "srid": int64(32650), "crs_ref": "EPSG:32650"},
+					},
+				},
+			},
+		},
+	}
+
+	preview, err := provider.previewRefs(
+		context.Background(),
+		staticContentReader{content: []byte(prj)},
+		refsForPreview("gis/roads.shp", format.FormatShapefile, req.Attributes),
+		"gis/roads.shp",
+		"bucket",
+		format.FormatShapefile,
+		refProvider,
+		refProvider,
+		nil,
+		req,
+	)
+	if err != nil {
+		t.Fatalf("previewRefs() error = %v", err)
+	}
+	if preview.SourceCRS != "EPSG:32650" {
+		t.Fatalf("SourceCRS = %q, want EPSG:32650", preview.SourceCRS)
+	}
+	if preview.SourceCRSDefinition == nil || preview.SourceCRSDefinition.Definition != prj || preview.SourceCRSDefinition.Source != datatype.CRSDefinitionSourceSidecarPRJ {
+		t.Fatalf("SourceCRSDefinition = %#v, want sidecar PRJ definition", preview.SourceCRSDefinition)
+	}
+	if preview.TransformStatus != "not_transformed" || preview.PreviewHint != "frontend_transform_required" {
+		t.Fatalf("transform contract = %q/%q, want not_transformed/frontend_transform_required", preview.TransformStatus, preview.PreviewHint)
+	}
+}
+
 func TestRefReaderForPreviewUsesMetaRefFiles(t *testing.T) {
 	refs := refsForPreview("bucket/roads/roads.shp", format.FormatShapefile, map[string]interface{}{
 		"item": map[string]interface{}{

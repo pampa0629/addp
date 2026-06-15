@@ -4,6 +4,7 @@
 import VectorTileLayer from 'ol/layer/VectorTile.js'
 import VectorTileSource from 'ol/source/VectorTile.js'
 import MVT from 'ol/format/MVT.js'
+import TileState from 'ol/TileState.js'
 import { createDefaultStyleFunction } from '../utils/mapStyles.js'
 
 /**
@@ -13,9 +14,11 @@ import { createDefaultStyleFunction } from '../utils/mapStyles.js'
  */
 export function useVectorTileLoader(options = {}) {
   const { token } = options
+  const defaultMaxDecodedTileBytes = 8 * 1024 * 1024
 
   // 跟踪所有进行中的瓦片请求
   const activeTileRequests = new Map()
+  let requestSeq = 0
 
   /**
    * 构建瓦片唯一标识
@@ -26,6 +29,39 @@ export function useVectorTileLoader(options = {}) {
    */
   function buildTileKey(z, x, y) {
     return `${z}/${x}/${y}`
+  }
+
+  function buildRequestKey(tileKey) {
+    requestSeq += 1
+    return `${tileKey}#${requestSeq}`
+  }
+
+  function handleDecodedTileBuffer(tile, buf, meta, tileKey, extent, projection, options = {}) {
+    const maxDecodedTileBytes = options.maxDecodedTileBytes || defaultMaxDecodedTileBytes
+    if (buf.byteLength > maxDecodedTileBytes) {
+      const error = new Error(`MVT tile too large: ${Math.ceil(buf.byteLength / 1024 / 1024)}MB`)
+      options.onTileLoadError?.({
+        ...meta,
+        tileKey,
+        error,
+        oversized: true,
+        decodedBytes: buf.byteLength
+      })
+      tile.setFeatures([])
+      return
+    }
+
+    const format = tile.getFormat() || new MVT()
+    const features = format.readFeatures(buf, {
+      extent: extent,
+      featureProjection: projection
+    })
+    console.debug(`切片 ${tileKey} 加载成功，包含 ${features.length} 个要素`, features.length > 0 ? `第一个要素类型: ${features[0].getGeometry()?.getType()}` : '')
+    options.onTileLoadEnd?.({
+      ...meta,
+      featureCount: features.length
+    })
+    tile.setFeatures(features)
   }
 
   /**
@@ -40,7 +76,7 @@ export function useVectorTileLoader(options = {}) {
       const match = src.match(/\/tiles\/(?:[^/]+\/[^/]+\/)?(\d+)\/(\d+)\/(\d+)(?:\.mvt)?(?:\?|$)/)
       if (!match) {
         console.warn('无法解析瓦片URL:', src)
-        tile.setState(3)
+        tile.setState(TileState.ERROR)
         return
       }
 
@@ -68,44 +104,28 @@ export function useVectorTileLoader(options = {}) {
               tileKey,
               renderSource: res.headers.get('X-ADDP-Render-Source') || '',
               tileCacheId: res.headers.get('X-ADDP-Tile-Cache-ID') || '',
-              cacheStatus: res.headers.get('X-Cache-Status') || '',
+              cacheStatus: res.headers.get('X-ADDP-Tile-Cache') || '',
+              tileStatus: res.headers.get('X-ADDP-Tile-Status') || '',
               generationTime: res.headers.get('X-Generation-Time') || '',
               contentLength: res.headers.get('Content-Length') || ''
             }
             return res.arrayBuffer().then(buf => ({ buf, meta }))
           })
           .then(({ buf, meta }) => {
-            const format = tile.getFormat() || new MVT()
-            const features = format.readFeatures(buf, {
-              extent: extent,
-              featureProjection: projection
-            })
-            console.log(`切片 ${tileKey} 加载成功(降级), 包含 ${features.length} 个要素`, features.length > 0 ? `第一个要素类型: ${features[0].getGeometry()?.getType()}` : '')
-            options.onTileLoadEnd?.({
-              ...meta,
-              featureCount: features.length
-            })
-            tile.setFeatures(features)
-            tile.setState(2)
+            handleDecodedTileBuffer(tile, buf, meta, tileKey, extent, projection, options)
           })
           .catch(e => {
             console.error('加载切片失败:', src, e)
             options.onTileLoadError?.({ tileKey, error: e })
-            tile.setState(3)
+            tile.setState(TileState.ERROR)
           })
         return
       }
 
-      // 取消该瓦片之前未完成的请求
-      if (activeTileRequests.has(tileKey)) {
-        const oldController = activeTileRequests.get(tileKey)
-        oldController.abort()
-        console.debug('取消旧瓦片请求:', tileKey)
-      }
-
       // 创建新的 AbortController
       const controller = new AbortController()
-      activeTileRequests.set(tileKey, controller)
+      const requestKey = buildRequestKey(tileKey)
+      activeTileRequests.set(requestKey, { controller, tileKey })
 
       // 发起请求 (关联取消信号)
       fetch(src, {
@@ -118,25 +138,15 @@ export function useVectorTileLoader(options = {}) {
             tileKey,
             renderSource: res.headers.get('X-ADDP-Render-Source') || '',
             tileCacheId: res.headers.get('X-ADDP-Tile-Cache-ID') || '',
-            cacheStatus: res.headers.get('X-Cache-Status') || '',
+            cacheStatus: res.headers.get('X-ADDP-Tile-Cache') || '',
+            tileStatus: res.headers.get('X-ADDP-Tile-Status') || '',
             generationTime: res.headers.get('X-Generation-Time') || '',
             contentLength: res.headers.get('Content-Length') || ''
           }
           return res.arrayBuffer().then(buf => ({ buf, meta }))
         })
         .then(({ buf, meta }) => {
-          const format = tile.getFormat() || new MVT()
-          const features = format.readFeatures(buf, {
-            extent: extent,
-            featureProjection: projection
-          })
-          console.log(`切片 ${tileKey} 加载成功，包含 ${features.length} 个要素`, features.length > 0 ? `第一个要素类型: ${features[0].getGeometry()?.getType()}` : '')
-          options.onTileLoadEnd?.({
-            ...meta,
-            featureCount: features.length
-          })
-          tile.setFeatures(features)
-          tile.setState(2) // 设置为已加载状态
+          handleDecodedTileBuffer(tile, buf, meta, tileKey, extent, projection, options)
         })
         .catch(e => {
           if (e.name === 'AbortError') {
@@ -145,10 +155,10 @@ export function useVectorTileLoader(options = {}) {
           }
           console.error('加载切片失败:', src, e)
           options.onTileLoadError?.({ tileKey, error: e })
-          tile.setState(3) // 设置为错误状态
+          tile.setState(TileState.ERROR)
         })
         .finally(() => {
-          activeTileRequests.delete(tileKey)
+          activeTileRequests.delete(requestKey)
         })
     }
   }
@@ -165,7 +175,7 @@ export function useVectorTileLoader(options = {}) {
   function createVectorTileLayer(urlTemplate, getToken, options = {}) {
     const vtSource = new VectorTileSource({
       format: new MVT(),
-      cacheSize: 512,  // 增加客户端缓存,减少重复请求
+      cacheSize: options.cacheSize || 64,
       minZoom: options.minZoom || 0,  // 瓦片数据的最小层级
       maxZoom: options.maxZoom || 20,  // 瓦片数据的最大层级
       url: urlTemplate  // 使用 URL 模板（OpenLayers 会自动替换 {z}/{x}/{y}）
@@ -182,29 +192,12 @@ export function useVectorTileLoader(options = {}) {
   }
 
   /**
-   * 取消不同缩放级别的瓦片请求
-   * @param {number} currentZoom - 当前缩放级别
-   */
-  function cancelDifferentZoomRequests(currentZoom) {
-    if (activeTileRequests && activeTileRequests.forEach) {
-      activeTileRequests.forEach((controller, tileKey) => {
-        const [z] = tileKey.split('/').map(Number)
-        if (z !== currentZoom) {
-          controller.abort()
-          activeTileRequests.delete(tileKey)
-          console.debug('取消不同层级的瓦片请求:', tileKey)
-        }
-      })
-    }
-  }
-
-  /**
    * 清理所有请求
    */
   function cleanup() {
     if (activeTileRequests && activeTileRequests.forEach) {
-      activeTileRequests.forEach((controller) => {
-        controller.abort()
+      activeTileRequests.forEach(({ controller }) => {
+        controller?.abort()
       })
       activeTileRequests.clear()
     }
@@ -213,7 +206,6 @@ export function useVectorTileLoader(options = {}) {
   return {
     activeTileRequests,
     createVectorTileLayer,
-    cancelDifferentZoomRequests,
     cleanup
   }
 }

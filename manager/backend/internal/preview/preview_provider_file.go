@@ -15,6 +15,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
+	commonSpatial "github.com/addp/common/spatial"
 	"github.com/addp/manager/internal/catalogutil"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/objectcontent"
@@ -517,6 +518,7 @@ func (p *FileTablePreviewProvider) previewRefs(
 		tableInfo = format.TableInfoFromDescribeResult(result)
 		spatialInfo = result.Spatial.Clone()
 	}
+	spatialInfo = enrichSpatialInfoFromProjectionRef(ctx, reader, refs, spatialInfo)
 
 	// 提取列名
 	columns := make([]string, len(tableInfo.Fields))
@@ -592,6 +594,64 @@ func (p *FileTablePreviewProvider) previewRefs(
 			},
 		},
 	}, nil
+}
+
+func enrichSpatialInfoFromProjectionRef(ctx context.Context, reader contentio.Reader, refs []format.RelatedRef, spatialInfo *datatype.SpatialInfo) *datatype.SpatialInfo {
+	if reader == nil || spatialInfo == nil {
+		return spatialInfo
+	}
+	sourceCRS := strings.TrimSpace(spatialInfo.PrimaryCRSRef())
+	if sourceCRS != "" && spatialInfo.CRSDefinitionByID(sourceCRS) != nil {
+		return spatialInfo
+	}
+	var projectionRef *format.RelatedRef
+	for i := range refs {
+		ref := refs[i]
+		if strings.EqualFold(strings.TrimSpace(ref.Ref.Role), "projection") || strings.EqualFold(filepath.Ext(ref.Ref.Path), ".prj") {
+			projectionRef = &ref
+			break
+		}
+	}
+	if projectionRef == nil {
+		return spatialInfo
+	}
+	content, err := reader.Open(ctx, projectionRef.Ref)
+	if err != nil {
+		return spatialInfo
+	}
+	defer content.Close()
+	data, err := io.ReadAll(io.LimitReader(content, 256*1024))
+	if err != nil {
+		return spatialInfo
+	}
+	definition := strings.TrimSpace(string(data))
+	if definition == "" {
+		return spatialInfo
+	}
+	if sourceCRS == "" {
+		if srid := commonSpatial.ParseSRID(definition); srid > 0 {
+			sourceCRS = datatype.EPSGCRSRef(srid)
+		} else {
+			sourceCRS = datatype.CustomCRSRef(definition)
+		}
+	}
+	if sourceCRS == "" {
+		return spatialInfo
+	}
+	enriched := spatialInfo.Clone()
+	if enriched.CRSRef == "" {
+		enriched.CRSRef = sourceCRS
+	}
+	if len(enriched.GeometryColumns) > 0 && strings.TrimSpace(enriched.GeometryColumns[0].CRSRef) == "" {
+		enriched.GeometryColumns[0].CRSRef = sourceCRS
+	}
+	enriched.CRSDefinitions = append(enriched.CRSDefinitions, datatype.CRSDefinition{
+		ID:                 sourceCRS,
+		DefinitionEncoding: datatype.CRSDefinitionEncodingESRIWKT,
+		Definition:         definition,
+		Source:             datatype.CRSDefinitionSourceSidecarPRJ,
+	})
+	return enriched
 }
 
 func attachMultiRefPreview(preview *models.TablePreview, formatType format.FormatType, refs []format.RelatedRef) {

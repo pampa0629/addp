@@ -178,6 +178,22 @@ func ensureTileCacheStateSchema(db *gorm.DB) error {
 		}
 	}
 
+	var tileCacheConfigHashColumn int64
+	if err := db.Raw(`
+		SELECT COUNT(*)
+		FROM information_schema.columns
+		WHERE table_schema = 'manager'
+		  AND table_name = 'tile_cache'
+		  AND column_name = 'config_hash'
+	`).Scan(&tileCacheConfigHashColumn).Error; err != nil {
+		return err
+	}
+	if tileCacheConfigHashColumn > 0 {
+		if err := db.Exec(`DROP TABLE IF EXISTS manager.tile_cache`).Error; err != nil {
+			return err
+		}
+	}
+
 	if err := db.Exec(`DROP TABLE IF EXISTS manager.tile_cache_artifacts`).Error; err != nil {
 		return err
 	}
@@ -206,9 +222,12 @@ func ensureTileCacheStateSchema(db *gorm.DB) error {
 	if err := db.Exec(`ALTER TABLE manager.tile_cache_tasks ALTER COLUMN enabled DROP DEFAULT`).Error; err != nil {
 		return err
 	}
+	if err := db.Exec(`DROP INDEX IF EXISTS manager.idx_tile_cache_tenant_fingerprint_config_unique`).Error; err != nil {
+		return err
+	}
 	if err := db.Exec(`
-		CREATE UNIQUE INDEX IF NOT EXISTS idx_tile_cache_tenant_fingerprint_config_unique
-		ON manager.tile_cache (tenant_id, item_fingerprint, tile_format, config_hash)
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_tile_cache_tenant_fingerprint_format_unique
+		ON manager.tile_cache (tenant_id, item_fingerprint, tile_format)
 		WHERE deleted_at IS NULL
 	`).Error; err != nil {
 		return err

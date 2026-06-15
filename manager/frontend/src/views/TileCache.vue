@@ -113,7 +113,9 @@
               <template #default="{ row }">{{ row.min_zoom ?? '-' }} - {{ row.max_zoom ?? '-' }}</template>
             </el-table-column>
             <el-table-column :label="t('manager.tileCache.storageLocation')" min-width="260" show-overflow-tooltip>
-              <template #default="{ row }">{{ storageLocation(row.storage_ref) }}</template>
+              <template #default="{ row }">
+                <span :title="storageLocationDetail(row.storage_ref)">{{ storageLocation(row.storage_ref) }}</span>
+              </template>
             </el-table-column>
             <el-table-column prop="error_message" :label="t('manager.tileCache.error')" min-width="180" show-overflow-tooltip />
             <el-table-column :label="t('manager.tileCache.updatedAt')" width="170">
@@ -259,7 +261,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="detailDialogVisible" :title="t('manager.tileCache.dialogTitle')" width="780px">
+    <el-dialog v-model="detailDialogVisible" :title="t('manager.tileCache.dialogTitle')" width="920px">
       <el-descriptions v-if="selectedTask" :column="2" border>
         <el-descriptions-item :label="t('manager.tileCache.id')">{{ selectedTask.id }}</el-descriptions-item>
         <el-descriptions-item :label="t('manager.tileCache.name')">{{ selectedTask.name }}</el-descriptions-item>
@@ -306,11 +308,38 @@
           <ScheduleDisplay :cron="selectedTask.schedule" :empty-text="t('manager.tileCache.manualOnly')" />
         </el-descriptions-item>
       </el-descriptions>
-      <el-collapse v-if="selectedTask" class="advanced-info">
-        <el-collapse-item :title="t('manager.tileCache.advancedInfo')" name="config">
-          <pre class="config-preview">{{ JSON.stringify(selectedTask.config, null, 2) }}</pre>
-        </el-collapse-item>
-      </el-collapse>
+
+      <div v-if="selectedTask" class="execution-stats" v-loading="detailExecutionLoading">
+        <div class="form-section-title">{{ t('manager.tileCache.executionStats') }}</div>
+        <el-empty
+          v-if="!detailExecutionLoading && !executionStatsAvailable"
+          :description="selectedTask.last_execution_id ? t('manager.tileCache.noExecutionStats') : t('manager.tileCache.noExecutionYet')"
+        />
+        <template v-else-if="executionStatsAvailable">
+          <div class="stats-grid">
+            <div v-for="item in executionStatItems" :key="item.key" class="stat-item">
+              <span class="stat-label">{{ item.label }}</span>
+              <span class="stat-value">{{ item.value }}</span>
+            </div>
+          </div>
+          <el-table
+            v-if="zoomLevelRows.length"
+            :data="zoomLevelRows"
+            size="small"
+            stripe
+            class="zoom-stats-table"
+          >
+            <el-table-column prop="zoom" :label="t('manager.tileCache.zoomLevel')" width="90" />
+            <el-table-column prop="totalTilesText" :label="t('manager.tileCache.tilesTotalEstimate')" min-width="120" />
+            <el-table-column prop="generatedTilesText" :label="t('manager.tileCache.generatedTiles')" min-width="110" />
+            <el-table-column prop="emptyTilesText" :label="t('manager.tileCache.emptyTiles')" min-width="100" />
+            <el-table-column prop="skippedTilesText" :label="t('manager.tileCache.skippedTiles')" min-width="100" />
+            <el-table-column prop="failedTilesText" :label="t('manager.tileCache.failedTiles')" min-width="100" />
+            <el-table-column prop="avgSizeText" :label="t('manager.tileCache.avgTileSize')" min-width="110" />
+            <el-table-column prop="maxSizeText" :label="t('manager.tileCache.maxTileSize')" min-width="110" />
+          </el-table>
+        </template>
+      </div>
     </el-dialog>
   </div>
 </template>
@@ -324,7 +353,7 @@ import { useI18n } from 'vue-i18n'
 import { openMonitorExecution, parseLocator, ResourceTree, ScheduleConfig, ScheduleDisplay } from '@addp/common-frontend'
 import client from '../api/client'
 import { quickViewAPI } from '../api/quickView'
-import { formatDateTime } from '../utils/formatters'
+import { formatBytes, formatDateTime } from '../utils/formatters'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -359,6 +388,9 @@ const editingId = ref(null)
 const form = reactive(defaultForm())
 const detailDialogVisible = ref(false)
 const selectedTask = ref(null)
+const selectedTaskExecution = ref(null)
+const detailExecutionLoading = ref(false)
+let detailExecutionRequestSeq = 0
 const capabilityLoading = ref(false)
 const geometryColumnOptions = ref([])
 const selectedSourceNode = ref(null)
@@ -385,11 +417,97 @@ const selectedResourceSummary = computed(() => {
   const engine = engineName(form.config.target.source_engine_id)
   if (engine && engine !== '-') parts.push(engine)
   if (sourceResourceText.value && sourceResourceText.value !== '-') parts.push(sourceResourceText.value)
-  return parts.join(' / ') || form.config.target.locator || ''
+  return parts.join(' / ') || resourceTextFromLocator(form.config.target.locator) || ''
 })
 const resultTaskFilterLabel = computed(() => {
   if (!selectedResultTask.value) return ''
   return `${t('manager.tileCache.currentTask')}: ${selectedResultTask.value.name || taskResource(selectedResultTask.value)}`
+})
+const selectedExecutionMetadata = computed(() => {
+  const metadata = selectedTaskExecution.value?.metadata || selectedTaskExecution.value?.Metadata || null
+  return metadata && typeof metadata === 'object' ? metadata : {}
+})
+const executionStatsAvailable = computed(() => {
+  const metadata = selectedExecutionMetadata.value
+  return [
+    'tiles_total_estimate',
+    'tiles_processed',
+    'generated_tiles',
+    'empty_tiles',
+    'failed_tiles',
+    'total_size_bytes',
+    'zoom_levels'
+  ].some((key) => metadata[key] !== undefined && metadata[key] !== null)
+})
+const executionStatItems = computed(() => {
+  const metadata = selectedExecutionMetadata.value
+  return [
+    {
+      key: 'tiles_total_estimate',
+      label: t('manager.tileCache.tilesTotalEstimate'),
+      value: formatInteger(metadata.tiles_total_estimate ?? metadata.total_tiles)
+    },
+    {
+      key: 'tiles_processed',
+      label: t('manager.tileCache.tilesProcessed'),
+      value: formatInteger(metadata.tiles_processed)
+    },
+    {
+      key: 'generated_tiles',
+      label: t('manager.tileCache.generatedTiles'),
+      value: formatInteger(metadata.generated_tiles ?? metadata.cached_tiles)
+    },
+    {
+      key: 'empty_tiles',
+      label: t('manager.tileCache.emptyTiles'),
+      value: formatInteger(metadata.empty_tiles)
+    },
+    {
+      key: 'skipped_tiles',
+      label: t('manager.tileCache.skippedTiles'),
+      value: formatInteger(metadata.skipped_tiles)
+    },
+    {
+      key: 'failed_tiles',
+      label: t('manager.tileCache.failedTiles'),
+      value: formatInteger(metadata.failed_tiles)
+    },
+    {
+      key: 'actual_max_zoom',
+      label: t('manager.tileCache.actualMaxZoom'),
+      value: formatInteger(metadata.actual_max_zoom)
+    },
+    {
+      key: 'total_size_bytes',
+      label: t('manager.tileCache.totalTileSize'),
+      value: formatByteValue(metadata.total_size_bytes)
+    },
+    {
+      key: 'max_tile_size_bytes',
+      label: t('manager.tileCache.maxTileSize'),
+      value: formatByteValue(metadata.max_tile_size_bytes)
+    }
+  ]
+})
+const zoomLevelRows = computed(() => {
+  const zoomLevels = selectedExecutionMetadata.value.zoom_levels
+  if (!zoomLevels || typeof zoomLevels !== 'object') return []
+  return Object.entries(zoomLevels)
+    .map(([zoom, value]) => {
+      const row = value && typeof value === 'object' ? value : {}
+      const zoomValue = Number(row.zoom ?? zoom)
+      return {
+        zoom: Number.isFinite(zoomValue) ? zoomValue : zoom,
+        totalTilesText: formatInteger(row.total_tiles),
+        generatedTilesText: formatInteger(row.generated_tiles),
+        emptyTilesText: formatInteger(row.empty_tiles),
+        skippedTilesText: formatInteger(row.skipped_tiles),
+        failedTilesText: formatInteger(row.failed_tiles),
+        avgSizeText: formatSizeKB(row.avg_size_kb),
+        maxSizeText: formatByteValue(row.max_size_bytes)
+      }
+    })
+    .sort((a, b) => Number(a.zoom) - Number(b.zoom))
 })
 const rules = computed(() => ({
   name: [{ required: true, message: t('manager.tileCache.nameRequired'), trigger: 'blur' }],
@@ -801,13 +919,29 @@ const applyQuickViewCapabilityToForm = (config, fallbackGeometryColumns = []) =>
   }
 }
 
+const tileCacheFormConfigFromCapability = (capability) => {
+  const quickView = capability?.quick_view || {}
+  const renderFacts = capability?.render_facts || {}
+  const zoom = renderFacts.zoom_recommendation || {}
+  return {
+    ...quickView,
+    min_zoom: zoom.min_zoom ?? quickView.min_zoom,
+    max_zoom: zoom.max_zoom ?? quickView.max_zoom,
+    source_srid: renderFacts.source_srid ?? quickView.source_srid,
+    extent: Array.isArray(renderFacts.render_extent) ? renderFacts.render_extent : quickView.extent,
+    extent_srid: renderFacts.render_extent_srid ?? quickView.extent_srid,
+    geometry_column: quickView.geometry_column,
+    geometry_columns: quickView.geometry_columns || []
+  }
+}
+
 const loadQuickViewCapabilityForForm = async (fallbackGeometryColumns = []) => {
   const locator = String(form.config.target.locator || '').trim()
   if (!locator) return null
   capabilityLoading.value = true
   try {
     const capability = await quickViewAPI.getQuickViewCapabilityByLocator(locator)
-    const config = capability?.quick_view || {}
+    const config = tileCacheFormConfigFromCapability(capability)
     applyQuickViewCapabilityToForm(config, fallbackGeometryColumns)
     return config
   } catch (error) {
@@ -1085,9 +1219,38 @@ const deleteResult = async (result) => {
   await loadResults()
 }
 
+const loadTaskExecutionDetail = async (task) => {
+  selectedTaskExecution.value = null
+  detailExecutionRequestSeq += 1
+  const seq = detailExecutionRequestSeq
+  const executionId = String(task?.last_execution_id || '').trim()
+  if (!executionId) {
+    detailExecutionLoading.value = false
+    return
+  }
+  detailExecutionLoading.value = true
+  try {
+    const response = await client.get(`/manager/executions/${executionId}`)
+    const payload = response?.data || response
+    if (seq === detailExecutionRequestSeq) {
+      selectedTaskExecution.value = payload?.data || payload
+    }
+  } catch (error) {
+    console.error('加载瓦片缓存执行详情失败:', error)
+    if (seq === detailExecutionRequestSeq) {
+      selectedTaskExecution.value = null
+    }
+  } finally {
+    if (seq === detailExecutionRequestSeq) {
+      detailExecutionLoading.value = false
+    }
+  }
+}
+
 const showTaskDetail = (task) => {
   selectedTask.value = task
   detailDialogVisible.value = true
+  loadTaskExecutionDetail(task)
 }
 
 const openTaskExecution = (task) => openMonitorExecution(task.last_execution_id)
@@ -1096,7 +1259,7 @@ const openResultExecution = (result) => openMonitorExecution(result.last_executi
 const taskResource = (task) => {
   const target = task?.target || task?.config?.target || {}
   if (target.schema && target.table) return `${target.schema}.${target.table}`
-  return target.locator || '-'
+  return resourceTextFromLocator(target.locator) || '-'
 }
 
 const engineName = (engineId) => {
@@ -1126,13 +1289,28 @@ const resultSourceDataPath = (result) => {
   return resultLocatorInfo(result)?.path || '-'
 }
 
+const resourceTextFromLocator = (locator) => {
+  const parsed = safeParseLocator(String(locator || '').trim())
+  if (!parsed?.path?.length) return ''
+  return parsed.path.join('.')
+}
+
 const storageLocation = (storageRef) => {
   if (!storageRef) return '-'
   const parsed = parseLocatorPayload(storageRef)
-  if (parsed?.bucket && parsed?.object_prefix) {
-    return `${parsed.bucket}/${String(parsed.object_prefix).replace(/^\/+/, '')}`
+  if (parsed?.provider === 'addp_object_storage' || parsed?.object_prefix) {
+    return t('manager.tileCache.platformObjectStorage')
   }
-  return storageRef
+  return t('manager.tileCache.externalStorage')
+}
+
+const storageLocationDetail = (storageRef) => {
+  if (!storageRef) return ''
+  const parsed = parseLocatorPayload(storageRef)
+  if (parsed?.provider === 'addp_object_storage' || parsed?.object_prefix) {
+    return t('manager.tileCache.platformObjectStorage')
+  }
+  return t('manager.tileCache.externalStorage')
 }
 
 const lastExecutionStatus = (task) => {
@@ -1153,6 +1331,21 @@ const parseLocatorPayload = (locator) => {
   } catch {
     return null
   }
+}
+
+const formatInteger = (value) => {
+  const number = Number(value)
+  return Number.isFinite(number) ? Math.trunc(number).toLocaleString() : '-'
+}
+
+const formatByteValue = (value) => {
+  const number = Number(value)
+  return Number.isFinite(number) && number > 0 ? formatBytes(number) : '-'
+}
+
+const formatSizeKB = (value) => {
+  const number = Number(value)
+  return Number.isFinite(number) && number > 0 ? formatBytes(number * 1024) : '-'
 }
 
 const errorMessage = (error, fallback) => {
@@ -1261,6 +1454,48 @@ onMounted(async () => {
   margin-bottom: 16px;
 }
 
+.execution-stats {
+  margin-top: 18px;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  background: var(--el-fill-color-lighter);
+}
+
+.stat-label {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.stat-value {
+  overflow: hidden;
+  color: var(--el-text-color-primary);
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zoom-stats-table {
+  margin-top: 4px;
+}
+
 .resource-picker {
   display: flex;
   flex-direction: column;
@@ -1320,21 +1555,9 @@ onMounted(async () => {
   white-space: nowrap;
 }
 
-.advanced-info {
-  margin-top: 14px;
-}
-
 .form-section-title {
   font-weight: 600;
   margin: 14px 0 10px;
   color: var(--addp-text-primary);
-}
-
-.config-preview {
-  margin: 0;
-  max-height: 260px;
-  overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
 }
 </style>

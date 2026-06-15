@@ -151,8 +151,8 @@ func (g *TileGenerator) buildMVTQuery(
 
 	opt := spatial.MVTOptions{
 		Layer:  originalTable, // Layer 名称使用原始表名（前端显示）
-		Extent: 2048,
-		Buffer: 64,
+		Extent: 1024,
+		Buffer: mvtBufferForExtent(1024),
 		SRID:   srid,
 	}
 
@@ -441,14 +441,28 @@ func (g *TileGenerator) generateTileWithDynamicExtentReduction(
 		currentExtent = currentExtent / 2
 	}
 
-	// 即使减半到最小值仍然超过限制，也返回最后一次的结果（进度优于完美）
-	logger.L().Warn("⚠️ 瓦片大小仍超过限制，返回最小 Extent 结果",
+	// 最小 extent 仍超限时跳过该瓦片，避免缓存和前端继续承载超大 MVT。
+	logger.L().Warn("⚠️ 瓦片大小仍超过限制，跳过超大瓦片",
 		"min_extent", minExtent,
 		"final_size_mb", fmt.Sprintf("%.2f", float64(len(mvtData))/(1024*1024)),
 		"max_mb", fmt.Sprintf("%.2f", maxSizeMB),
 		"z", params.Z, "x", params.X, "y", params.Y)
 
-	return mvtData, minExtent, nil
+	return []byte{}, minExtent, nil
+}
+
+func mvtBufferForExtent(extent int) int {
+	if extent <= 0 {
+		return 32
+	}
+	buffer := extent / 32
+	if buffer < 8 {
+		return 8
+	}
+	if buffer > 64 {
+		return 64
+	}
+	return buffer
 }
 
 // generateBaseTile 生成基础瓦片（指定 Extent）
@@ -474,7 +488,7 @@ func (g *TileGenerator) generateBaseTile(
 	opt := spatial.MVTOptions{
 		Layer:  params.Table, // Layer 名称使用原始表名（前端显示）
 		Extent: extent,       // extent 由调用者控制（初始值或减半后的值）
-		Buffer: 64,
+		Buffer: mvtBufferForExtent(extent),
 		SRID:   params.SRID,
 	}
 

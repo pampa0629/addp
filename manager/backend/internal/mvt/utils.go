@@ -56,7 +56,7 @@ func tileXYToLonLat(x, y, zoom int) (float64, float64) {
 	return lng, lat
 }
 
-// calculateTileBounds 计算给定范围在指定缩放级别的瓦片边界
+// calculateTileBounds 计算给定 WGS84 范围在指定缩放级别的瓦片边界
 // extent: [minLng, minLat, maxLng, maxLat]
 // zoom: 缩放级别
 // 返回: minX, minY, maxX, maxY

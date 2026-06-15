@@ -284,5 +284,5 @@ WHERE updated_at < NOW() - INTERVAL '6 months';
 ## 八、相关文档
 
 - [directories表](./directories表.md) - 目录结构表
-- [quick_view表](./quick_view表.md) - 快显状态表
+- [quick_view表](./quick_view表.md) - 快显偏好表
 - [数据库架构](../数据库架构.md) - Manager 模块架构

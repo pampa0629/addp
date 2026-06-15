@@ -18,7 +18,6 @@ CREATE TABLE manager.tile_cache (
     extent_srid             INTEGER,
     min_zoom                INTEGER,
     max_zoom                INTEGER,
-    config_hash             VARCHAR(64),
     status                  VARCHAR(32) NOT NULL,
     error_message           TEXT,
     created_by              INTEGER,
@@ -33,6 +32,6 @@ CREATE INDEX idx_tile_cache_status ON manager.tile_cache (status);
 CREATE INDEX idx_tile_cache_task ON manager.tile_cache (task_id);
 CREATE INDEX idx_tile_cache_execution ON manager.tile_cache (last_execution_id);
 CREATE INDEX idx_tile_cache_deleted_at ON manager.tile_cache (deleted_at);
-CREATE UNIQUE INDEX idx_tile_cache_tenant_fingerprint_config_unique
-    ON manager.tile_cache (tenant_id, item_fingerprint, tile_format, config_hash)
+CREATE UNIQUE INDEX idx_tile_cache_tenant_fingerprint_format_unique
+    ON manager.tile_cache (tenant_id, item_fingerprint, tile_format)
     WHERE deleted_at IS NULL;

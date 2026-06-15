@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -103,6 +104,21 @@ func (c *lruCache) Add(key string, val []byte, ttl time.Duration) {
 			c.ll.Remove(last)
 		}
 	}
+}
+
+func (c *lruCache) DeletePrefix(prefix string) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	deleted := 0
+	for key, ele := range c.dict {
+		if strings.HasPrefix(key, prefix) {
+			delete(c.dict, key)
+			c.ll.Remove(ele)
+			deleted++
+		}
+	}
+	return deleted
 }
 
 func (c *lruCache) Size() int {
@@ -285,6 +301,47 @@ func (s *SpatialPreviewService) PutTileByStorageRef(ctx context.Context, tenantI
 	return nil
 }
 
+func (s *SpatialPreviewService) InvalidateTileCacheRuntimeCache(ctx context.Context, tenantID uint, tileCacheID uint) error {
+	if tileCacheID == 0 {
+		return nil
+	}
+	prefix := s.buildTileCacheRuntimeCachePrefix(tenantID, tileCacheID)
+	memDeleted := 0
+	if s.memEnabled {
+		memDeleted = s.memCache.DeletePrefix(prefix)
+	}
+
+	redisDeleted := 0
+	if s.redisClient != nil {
+		var cursor uint64
+		pattern := prefix + "*"
+		for {
+			keys, nextCursor, err := s.redisClient.Scan(ctx, cursor, pattern, 100).Result()
+			if err != nil {
+				return fmt.Errorf("scan tile cache runtime cache keys: %w", err)
+			}
+			if len(keys) > 0 {
+				deleted, err := s.redisClient.Del(ctx, keys...).Result()
+				if err != nil {
+					return fmt.Errorf("delete tile cache runtime cache keys: %w", err)
+				}
+				redisDeleted += int(deleted)
+			}
+			if nextCursor == 0 {
+				break
+			}
+			cursor = nextCursor
+		}
+	}
+
+	logger.L().Info("瓦片运行时缓存已失效",
+		"tenant_id", tenantID,
+		"tile_cache_id", tileCacheID,
+		"memory_deleted", memDeleted,
+		"redis_deleted", redisDeleted)
+	return nil
+}
+
 // backfillCache 异步回填上层缓存
 func (s *SpatialPreviewService) backfillCache(ctx context.Context, key string, data []byte) {
 	// 写入内存缓存
@@ -326,6 +383,10 @@ func (s *SpatialPreviewService) GetStats(ctx context.Context) map[string]interfa
 // buildCacheKey 构建缓存键（用于内存和 Redis，租户隔离）
 func (s *SpatialPreviewService) buildCacheKey(tenantID uint, cacheScope string, z, x, y int) string {
 	return fmt.Sprintf("manager:tenant_%d:cache:mvt:spatial:%s:%d:%d:%d", tenantID, cacheScope, z, x, y)
+}
+
+func (s *SpatialPreviewService) buildTileCacheRuntimeCachePrefix(tenantID uint, tileCacheID uint) string {
+	return fmt.Sprintf("manager:tenant_%d:cache:mvt:spatial:tile_cache:%d:", tenantID, tileCacheID)
 }
 
 func (s *SpatialPreviewService) tileObjectLocationFromStorageRef(storageRef string, z, x, y int) (string, string, error) {

@@ -1,7 +1,7 @@
 
 # ADDP MVT 瓦片生成两阶段配置说明
 
-> 状态：当前 PostGIS + MVT 格式实现备查。平台目标概念是“瓦片缓存生成任务”，TaskProvider `task_type=tile_cache_generation`，MVT 只是 `config.tile.format=mvt`。Quick View 是快显状态，不再承载完整瓦片缓存结果和准备状态事实。
+> 状态：当前 PostGIS + MVT 格式实现备查。平台目标概念是“瓦片缓存生成任务”，TaskProvider `task_type=tile_cache_generation`，MVT 只是 `config.tile.format=mvt`。Quick View 能力由 Capability API 动态合成，`manager.quick_view` 只保存用户预览模式偏好，不再承载完整瓦片缓存结果和准备状态事实。
 
 ## 一、两阶段工作流
 
@@ -40,7 +40,7 @@
 
 1. 当次检查和准备结果进入 `common.task_executions.metadata`。
 2. 必要的准备产物摘要可进入后续准备产物专题。
-3. `manager.quick_view` 只保留快显状态和推荐瓦片缓存结果。
+3. `manager.quick_view` 只保留用户预览模式偏好；快显能力和推荐瓦片缓存结果由 Capability API 动态合成。
 
 ```json
 {

@@ -40,6 +40,13 @@ import Map from 'ol/Map.js'
 import View from 'ol/View.js'
 import { defaults as defaultInteractions, MouseWheelZoom } from 'ol/interaction.js'
 import { defaults as defaultControls, ZoomToExtent } from 'ol/control.js'
+import { unByKey } from 'ol/Observable.js'
+import Feature from 'ol/Feature.js'
+import LineString from 'ol/geom/LineString.js'
+import Point from 'ol/geom/Point.js'
+import VectorLayer from 'ol/layer/Vector.js'
+import VectorSource from 'ol/source/Vector.js'
+import { Fill, Stroke, Style, Text } from 'ol/style.js'
 import client from '@/api/client'
 
 // 导入 common-frontend/map 的工具和composables
@@ -62,6 +69,7 @@ const props = defineProps({
   tileRenderInfo: { type: Object, default: () => ({}) },
   renderSource: { type: String, default: '' },
   defaultTileCacheId: { type: [Number, String], default: '' },
+  showMvtGrid: { type: Boolean, default: false },
   center: { type: Array, default: () => [120.2, 30.3] },
   zoom: { type: Number, default: 10 }
 })
@@ -72,6 +80,9 @@ const { t } = useI18n()
 
 const mapEl = ref(null)
 let map
+let mvtGridLayer = null
+let mvtGridMoveKey = null
+let mapMoveStartKey = null
 
 const error = ref('')
 const tileRenderInfo = ref(null)
@@ -79,16 +90,144 @@ const isLoadingConfig = ref(false)
 let lastWarningZoom = null
 let hasShownMinZoomWarning = false  // 是否已显示过最小zoom警告
 let hasShownMaxZoomWarning = false  // 是否已显示过最大zoom警告
-const lastTileStatus = ref({ renderSource: '', tileCacheId: '', cacheStatus: '', generationTime: '', featureCount: null, error: '' })
+
+const createEmptyTileStatus = () => ({
+  renderSource: '',
+  tileCacheId: '',
+  cacheStatus: '',
+  tileSemanticStatus: '',
+  generationTime: '',
+  featureCount: null,
+  totalFeatureCount: 0,
+  loadedTileCount: 0,
+  tileStatusCounts: {
+    ok: 0,
+    empty: 0,
+    timeout: 0,
+    degraded: 0
+  },
+  hasCacheHit: false,
+  hasCacheMiss: false,
+  hasNonEmptyDynamicTile: false,
+  error: ''
+})
+
+const tileStatus = ref(createEmptyTileStatus())
+
+const resetTileStatus = () => {
+  tileStatus.value = createEmptyTileStatus()
+}
 
 // 使用 composables
 const { popupEl, popupContent, createPopup, showPopup, closePopup, extractFeatureId } = useMapPopup({ geomColumn: props.geom || undefined })
 const { createHighlightLayer, focusFeatureById } = useFeatureHighlight()
-const { createVectorTileLayer, cancelDifferentZoomRequests, cleanup: cleanupTileLoader } = useVectorTileLoader()
+const { createVectorTileLayer, cleanup: cleanupTileLoader } = useVectorTileLoader()
 const { mapConfig, loadMapConfig } = useMapConfig()
 
 const apiBase = computed(() => client.defaults.baseURL)
 const token = () => localStorage.getItem('token') || ''
+const webMercatorHalfWorld = 20037508.342789244
+const webMercatorWorldSize = webMercatorHalfWorld * 2
+const maxMvtGridTiles = 256
+
+const mvtGridLineStyle = new Style({
+  stroke: new Stroke({
+    color: 'rgba(255, 45, 32, 0.95)',
+    width: 2
+  })
+})
+
+const mvtGridLabelStyleCache = new globalThis.Map()
+
+const mvtGridStyle = (feature) => {
+  if (feature.get('kind') !== 'label') return mvtGridLineStyle
+  const label = feature.get('label') || ''
+  if (!mvtGridLabelStyleCache.has(label)) {
+    mvtGridLabelStyleCache.set(label, new Style({
+      text: new Text({
+        text: label,
+        font: '700 13px Arial, sans-serif',
+        fill: new Fill({ color: '#ff2d20' }),
+        stroke: new Stroke({ color: 'rgba(255, 255, 255, 0.96)', width: 5 }),
+        padding: [2, 4, 2, 4],
+        overflow: true
+      })
+    }))
+  }
+  return mvtGridLabelStyleCache.get(label)
+}
+
+function tileRangeForExtent(extent, z) {
+  const tilesPerAxis = 2 ** z
+  const tileSize = webMercatorWorldSize / tilesPerAxis
+  const clamp = (value) => Math.max(0, Math.min(tilesPerAxis - 1, value))
+  return {
+    minX: clamp(Math.floor((extent[0] + webMercatorHalfWorld) / tileSize)),
+    maxX: clamp(Math.floor((extent[2] + webMercatorHalfWorld) / tileSize)),
+    minY: clamp(Math.floor((webMercatorHalfWorld - extent[3]) / tileSize)),
+    maxY: clamp(Math.floor((webMercatorHalfWorld - extent[1]) / tileSize)),
+    tileSize
+  }
+}
+
+function tileExtent(z, x, y) {
+  const tilesPerAxis = 2 ** z
+  const tileSize = webMercatorWorldSize / tilesPerAxis
+  const minX = -webMercatorHalfWorld + x * tileSize
+  const maxY = webMercatorHalfWorld - y * tileSize
+  return [minX, maxY - tileSize, minX + tileSize, maxY]
+}
+
+function createMvtGridLayer() {
+  return new VectorLayer({
+    source: new VectorSource(),
+    style: mvtGridStyle,
+    visible: props.showMvtGrid,
+    zIndex: 30,
+    declutter: true
+  })
+}
+
+function updateMvtGrid() {
+  if (!map || !mvtGridLayer) return
+  mvtGridLayer.setVisible(props.showMvtGrid)
+  const source = mvtGridLayer.getSource()
+  if (!source) return
+  source.clear()
+  if (!props.showMvtGrid) return
+
+  const view = map.getView()
+  const size = map.getSize()
+  if (!view || !size) return
+  const z = Math.max(0, Math.round(view.getZoom() || 0))
+  const range = tileRangeForExtent(view.calculateExtent(size), z)
+  const tileCount = (range.maxX - range.minX + 1) * (range.maxY - range.minY + 1)
+  if (tileCount > maxMvtGridTiles) return
+
+  const features = []
+  for (let x = range.minX; x <= range.maxX; x += 1) {
+    for (let y = range.minY; y <= range.maxY; y += 1) {
+      const ext = tileExtent(z, x, y)
+      const line = new Feature({
+        geometry: new LineString([
+          [ext[0], ext[1]],
+          [ext[2], ext[1]],
+          [ext[2], ext[3]],
+          [ext[0], ext[3]],
+          [ext[0], ext[1]]
+        ]),
+        kind: 'grid'
+      })
+      const label = new Feature({
+        geometry: new Point([(ext[0] + ext[2]) / 2, (ext[1] + ext[3]) / 2]),
+        kind: 'label',
+        label: `${z}/${x}/${y}`
+      })
+      features.push(line, label)
+    }
+  }
+  source.addFeatures(features)
+}
 
 const tilesURLTemplate = computed(() => {
   const rawTemplate = String(props.tileUrlTemplate || '').trim()
@@ -106,16 +245,17 @@ const tilesURLTemplate = computed(() => {
   return `${base}/manager/quick-view/tiles/{z}/{x}/{y}.mvt`
 })
 
-const normalizedRenderSource = computed(() => String(lastTileStatus.value.renderSource || props.renderSource || '').trim())
-const activeTileCacheId = computed(() => String(lastTileStatus.value.tileCacheId || props.defaultTileCacheId || '').trim())
+const normalizedRenderSource = computed(() => String(props.renderSource || tileStatus.value.renderSource || '').trim())
+const activeTileCacheId = computed(() => String(tileStatus.value.tileCacheId || props.defaultTileCacheId || '').trim())
 
 const renderStatusKind = computed(() => {
-  const cacheStatus = String(lastTileStatus.value.cacheStatus || '').toUpperCase()
-  if (lastTileStatus.value.error) return 'error'
-  if (normalizedRenderSource.value === 'cached_tile' && cacheStatus === 'HIT') return 'cache'
+  if (tileStatus.value.error) return 'error'
+  if (tileStatus.value.tileStatusCounts.timeout > 0 || tileStatus.value.tileStatusCounts.degraded > 0) return 'warning'
+  if (normalizedRenderSource.value === 'cached_tile' && tileStatus.value.hasCacheHit) return 'cache'
+  if (tileStatus.value.hasNonEmptyDynamicTile) return 'dynamic'
   if (normalizedRenderSource.value === 'cached_tile') return 'cache-priority'
+  if (tileStatus.value.hasCacheMiss) return 'dynamic'
   if (normalizedRenderSource.value === 'realtime_tile') return 'dynamic'
-  if (cacheStatus === 'MISS') return 'dynamic'
   return 'unknown'
 })
 
@@ -131,6 +271,8 @@ const renderStatusLabel = computed(() => {
       return t('manager.spatialPreview.renderStatus.cachePriority')
     case 'error':
       return t('manager.spatialPreview.renderStatus.tileError')
+    case 'warning':
+      return t('manager.spatialPreview.renderStatus.tileWarning')
     default:
       return t('manager.spatialPreview.renderStatus.unknown')
   }
@@ -149,44 +291,69 @@ const renderStatusTooltip = computed(() => {
   if (activeTileCacheId.value) {
     parts.push(t('manager.spatialPreview.renderStatusTooltip.tileCacheResult', { id: activeTileCacheId.value }))
   }
-  const cacheStatus = String(lastTileStatus.value.cacheStatus || '').toUpperCase()
-  if (cacheStatus === 'HIT') {
+  if (tileStatus.value.hasCacheHit) {
     parts.push(t('manager.spatialPreview.renderStatusTooltip.cacheHit'))
-  } else if (cacheStatus === 'MISS') {
+  } else if (tileStatus.value.hasCacheMiss || tileStatus.value.hasNonEmptyDynamicTile) {
     parts.push(t('manager.spatialPreview.renderStatusTooltip.cacheMiss'))
   } else {
     parts.push(t('manager.spatialPreview.renderStatusTooltip.cacheUnknown'))
   }
-  if (lastTileStatus.value.generationTime) {
-    parts.push(t('manager.spatialPreview.renderStatusTooltip.generationTime', { time: lastTileStatus.value.generationTime }))
+  if (tileStatus.value.generationTime) {
+    parts.push(t('manager.spatialPreview.renderStatusTooltip.generationTime', { time: tileStatus.value.generationTime }))
   }
-  if (lastTileStatus.value.featureCount !== null && lastTileStatus.value.featureCount !== undefined) {
-    parts.push(t('manager.spatialPreview.renderStatusTooltip.featureCount', { count: lastTileStatus.value.featureCount }))
+  const statusParts = Object.entries(tileStatus.value.tileStatusCounts)
+    .filter(([, count]) => count > 0)
+    .map(([status, count]) => `${status}: ${count}`)
+  if (statusParts.length > 0) {
+    parts.push(t('manager.spatialPreview.renderStatusTooltip.tileStatus', { status: statusParts.join(', ') }))
   }
-  if (lastTileStatus.value.error) {
-    parts.push(t('manager.spatialPreview.renderStatusTooltip.error', { error: lastTileStatus.value.error }))
+  if (tileStatus.value.loadedTileCount > 0) {
+    parts.push(t('manager.spatialPreview.renderStatusTooltip.featureCount', { count: tileStatus.value.totalFeatureCount }))
+  }
+  if (tileStatus.value.error) {
+    parts.push(t('manager.spatialPreview.renderStatusTooltip.error', { error: tileStatus.value.error }))
   }
   return parts.join('\n')
 })
 
 const handleTileLoadEnd = (meta) => {
-  lastTileStatus.value = {
-    renderSource: meta.renderSource || '',
-    tileCacheId: meta.tileCacheId || '',
-    cacheStatus: meta.cacheStatus || '',
-    generationTime: meta.generationTime || '',
-    featureCount: meta.featureCount,
+  const cacheStatus = String(meta.cacheStatus || '').toUpperCase()
+  const semanticStatus = String(meta.tileStatus || '').toLowerCase()
+  const featureCount = Number.isFinite(Number(meta.featureCount)) ? Number(meta.featureCount) : 0
+  const tileStatusCounts = { ...tileStatus.value.tileStatusCounts }
+  if (Object.prototype.hasOwnProperty.call(tileStatusCounts, semanticStatus)) {
+    tileStatusCounts[semanticStatus] += 1
+  }
+  tileStatus.value = {
+    ...tileStatus.value,
+    renderSource: meta.renderSource || tileStatus.value.renderSource,
+    tileCacheId: meta.tileCacheId || tileStatus.value.tileCacheId,
+    cacheStatus: cacheStatus || tileStatus.value.cacheStatus,
+    tileSemanticStatus: semanticStatus || tileStatus.value.tileSemanticStatus,
+    generationTime: meta.generationTime || tileStatus.value.generationTime,
+    featureCount,
+    totalFeatureCount: tileStatus.value.totalFeatureCount + featureCount,
+    loadedTileCount: tileStatus.value.loadedTileCount + 1,
+    tileStatusCounts,
+    hasCacheHit: tileStatus.value.hasCacheHit || cacheStatus === 'HIT',
+    hasCacheMiss: tileStatus.value.hasCacheMiss || cacheStatus === 'MISS',
+    hasNonEmptyDynamicTile: tileStatus.value.hasNonEmptyDynamicTile || (cacheStatus === 'MISS' && featureCount > 0),
     error: ''
   }
 }
 
 const handleTileLoadError = (meta) => {
-  lastTileStatus.value = {
-    renderSource: meta?.renderSource || '',
-    tileCacheId: meta?.tileCacheId || '',
-    cacheStatus: '',
-    generationTime: '',
-    featureCount: null,
+  const semanticStatus = String(meta?.tileStatus || (meta?.oversized ? 'degraded' : '')).toLowerCase()
+  const tileStatusCounts = { ...tileStatus.value.tileStatusCounts }
+  if (Object.prototype.hasOwnProperty.call(tileStatusCounts, semanticStatus)) {
+    tileStatusCounts[semanticStatus] += 1
+  }
+  tileStatus.value = {
+    ...tileStatus.value,
+    renderSource: meta?.renderSource || tileStatus.value.renderSource,
+    tileCacheId: meta?.tileCacheId || tileStatus.value.tileCacheId,
+    tileSemanticStatus: semanticStatus || tileStatus.value.tileSemanticStatus,
+    tileStatusCounts,
     error: meta?.error?.message || String(meta?.error || '')
   }
 }
@@ -195,6 +362,8 @@ const createMVTLayer = () => {
   const layer = createVectorTileLayer(tilesURLTemplate.value, token, {
     minZoom: tileRenderInfo.value?.min_zoom || 6,
     maxZoom: tileRenderInfo.value?.max_zoom || 18,
+    cacheSize: 64,
+    maxDecodedTileBytes: 8 * 1024 * 1024,
     onTileLoadEnd: handleTileLoadEnd,
     onTileLoadError: handleTileLoadError
   })
@@ -218,10 +387,31 @@ function applyTileRenderInfoFromProps() {
   }
 }
 
+function renderExtentInWebMercator() {
+  if (!tileRenderInfo.value?.extent || tileRenderInfo.value.extent.length !== 4) {
+    return null
+  }
+  const [minX, minY, maxX, maxY] = tileRenderInfo.value.extent
+  const minCorner = fromLonLat([minX, minY])
+  const maxCorner = fromLonLat([maxX, maxY])
+  return [...minCorner, ...maxCorner]
+}
+
+function fitToRenderExtent({ duration = 0 } = {}) {
+  const extentForFit = renderExtentInWebMercator()
+  if (!map || !extentForFit) return false
+  map.getView().fit(extentForFit, {
+    padding: [50, 50, 50, 50],
+    duration
+  })
+  return true
+}
+
 // 重试加载渲染信息
 function retryLoadConfig() {
   error.value = ''
   applyTileRenderInfoFromProps()
+  fitToRenderExtent()
 }
 
 async function initMap() {
@@ -255,6 +445,7 @@ async function initMap() {
   }
   const vtLayer = createMVTLayer()
   const highlightLayer = createHighlightLayer()
+  mvtGridLayer = createMvtGridLayer()
 
   // 4. 准备控件
   const controls = defaultControls({
@@ -266,13 +457,8 @@ async function initMap() {
   })
 
   // 如果有有效的 extent，添加全幅显示控件
-  let extentForControl = null
-  if (tileRenderInfo.value?.extent?.length === 4) {
-    const [minX, minY, maxX, maxY] = tileRenderInfo.value.extent
-    const minCorner = fromLonLat([minX, minY])
-    const maxCorner = fromLonLat([maxX, maxY])
-    extentForControl = [...minCorner, ...maxCorner]
-
+  const extentForControl = renderExtentInWebMercator()
+  if (extentForControl) {
     controls.push(new ZoomToExtent({
       extent: extentForControl,
       tipLabel: t('manager.vectorTile.fitExtent'),
@@ -283,8 +469,8 @@ async function initMap() {
   // 5. 创建地图
   map = new Map({
     target: mapEl.value,
-    layers: [...baseLayers, vtLayer, highlightLayer],
-    maxTilesLoading: 16,
+    layers: [...baseLayers, vtLayer, highlightLayer, mvtGridLayer],
+    maxTilesLoading: 8,
     interactions: defaultInteractions({ mouseWheelZoom: false }).extend([
       new MouseWheelZoom({
         duration: 100,
@@ -304,15 +490,14 @@ async function initMap() {
   })
 
   // 6. 如果有 extent，自动全幅显示
-  if (extentForControl) {
-    map.getView().fit(extentForControl, {
-      padding: [50, 50, 50, 50],  // 四周留白
-      duration: 0  // 不需要动画，立即显示
-    })
-  }
+  fitToRenderExtent()
+  updateMvtGrid()
 
   // 7. 创建 Popup
   createPopup(map)
+
+  mvtGridMoveKey = map.on('moveend', updateMvtGrid)
+  mapMoveStartKey = map.on('movestart', resetTileStatus)
 
   // 8. 监听 zoom 变化
   map.getView().on('change:resolution', () => {
@@ -378,24 +563,24 @@ defineExpose({ focusFeatureById: focusFeatureByIdWrapper })
 
 onMounted(() => {
   initMap()
-
-  setTimeout(() => {
-    if (map) {
-      map.on('movestart', () => {
-        const currentZoom = Math.round(map.getView().getZoom())
-        cancelDifferentZoomRequests(currentZoom)
-      })
-    }
-  }, 500)
 })
 
 onBeforeUnmount(() => {
   cleanupTileLoader()
+  if (mvtGridMoveKey) {
+    unByKey(mvtGridMoveKey)
+    mvtGridMoveKey = null
+  }
+  if (mapMoveStartKey) {
+    unByKey(mapMoveStartKey)
+    mapMoveStartKey = null
+  }
 
   if (map) {
     map.setTarget(null)
     map = null
   }
+  mvtGridLayer = null
 })
 
 watch(() => [props.locator, props.geom, props.tileUrlTemplate, props.tileRenderInfo], async () => {
@@ -403,17 +588,10 @@ watch(() => [props.locator, props.geom, props.tileUrlTemplate, props.tileRenderI
 
   applyTileRenderInfoFromProps()
   lastWarningZoom = null
-  lastTileStatus.value = { renderSource: '', tileCacheId: '', cacheStatus: '', generationTime: '', featureCount: null, error: '' }
+  resetTileStatus()
 
   if (tileRenderInfo.value?.extent?.length === 4) {
-    const [minX, minY, maxX, maxY] = tileRenderInfo.value.extent
-    const newCenter = [(minX + maxX) / 2, (minY + maxY) / 2]
-
-    const view = map.getView()
-    const newZoom = tileRenderInfo.value.min_zoom || view.getZoom()
-
-    view.setCenter(fromLonLat(newCenter))
-    view.setZoom(newZoom)
+    fitToRenderExtent()
   }
 
   const layers = map.getLayers()
@@ -424,6 +602,11 @@ watch(() => [props.locator, props.geom, props.tileUrlTemplate, props.tileRenderI
   } else {
     layers.push(newVt)
   }
+  updateMvtGrid()
+})
+
+watch(() => props.showMvtGrid, () => {
+  updateMvtGrid()
 })
 </script>
 
@@ -504,6 +687,14 @@ watch(() => [props.locator, props.geom, props.tileUrlTemplate, props.tileRenderI
 
 .render-status-badge.is-error .render-status-dot {
   background: var(--el-color-danger);
+}
+
+.render-status-badge.is-warning {
+  color: #ffd9a8;
+}
+
+.render-status-badge.is-warning .render-status-dot {
+  background: var(--el-color-warning);
 }
 
 .loading-overlay {

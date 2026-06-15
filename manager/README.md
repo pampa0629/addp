@@ -74,7 +74,7 @@ CSV、JSON、Parquet、Excel、Shapefile、GeoJSON、图片、PDF、文本
 
 ### 快显与瓦片缓存
 1. `quick_view` - 快显偏好，只记录 item 的预览模式偏好。
-2. `tile_cache` - 瓦片缓存结果状态，记录存储引用、格式、范围、层级和配置指纹。
+2. `tile_cache` - 瓦片缓存结果状态，记录存储引用、格式、范围和层级。
 3. `tile_cache_tasks` - 瓦片缓存生成任务定义，TaskProvider `task_type=tile_cache_generation`。
 4. 当前第一阶段瓦片格式以 MVT 为主，可通过 PostGIS `ST_AsMVT` 生成。
 5. 当前 `tile_cache_generation` 由 Manager Backend 内部执行；若后续瓦片生成主要计算负载进入 Manager 进程、需要多执行器并发或引入 GIS 计算引擎，应切换为唯一的 Manager Worker 或 GIS 执行运行时。

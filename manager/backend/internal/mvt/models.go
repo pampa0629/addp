@@ -1,6 +1,10 @@
 package mvt
 
-import "time"
+import (
+	"time"
+
+	commonModels "github.com/addp/common/models"
+)
 
 // TileCoord 瓦片坐标
 type TileCoord struct {
@@ -9,15 +13,64 @@ type TileCoord struct {
 	Y int `json:"y"`
 }
 
+// TileGenerationSource describes the source facts needed to generate one MVT tile.
+// Cache generation and realtime MVT should both construct TileGenerationParams through this type.
+type TileGenerationSource struct {
+	EngineID           uint
+	TenantID           uint
+	Schema             string
+	Table              string
+	GeomColumn         string
+	SRID               int
+	PrimaryKey         string
+	MaxZoom            int
+	OptimizationConfig *commonModels.OptimizationConfig
+}
+
+func TileGenerationSourceFromQuickViewConfig(cfg QuickViewConfig) TileGenerationSource {
+	return TileGenerationSource{
+		EngineID:           cfg.EngineID,
+		TenantID:           cfg.TenantID,
+		Schema:             cfg.Schema,
+		Table:              cfg.Table,
+		GeomColumn:         cfg.GeomColumn,
+		SRID:               cfg.SRID,
+		PrimaryKey:         cfg.PrimaryKey,
+		MaxZoom:            cfg.MaxZoom,
+		OptimizationConfig: cfg.OptimizationConfig,
+	}
+}
+
+func (s TileGenerationSource) Params(coord TileCoord) TileGenerationParams {
+	return TileGenerationParams{
+		EngineID:           s.EngineID,
+		TenantID:           s.TenantID,
+		Schema:             s.Schema,
+		Table:              s.Table,
+		GeomColumn:         s.GeomColumn,
+		SRID:               s.SRID,
+		PrimaryKey:         s.PrimaryKey,
+		Z:                  coord.Z,
+		X:                  coord.X,
+		Y:                  coord.Y,
+		MaxZoom:            s.MaxZoom,
+		OptimizationConfig: s.OptimizationConfig,
+	}
+}
+
 // ZoomLevelStats 每个缩放级别的统计信息
 type ZoomLevelStats struct {
 	Zoom           int     `json:"zoom"`
 	TotalTiles     int     `json:"total_tiles"`      // 计算出的瓦片总数
 	GeneratedTiles int     `json:"generated_tiles"`  // 实际生成的瓦片数（有数据）
 	EmptyTiles     int     `json:"empty_tiles"`      // 空瓦片数
+	SkippedTiles   int     `json:"skipped_tiles"`    // 已存在或无需写入而跳过的瓦片数
+	FailedTiles    int     `json:"failed_tiles"`     // 处理失败的瓦片数
 	AvgGenTimeMs   float64 `json:"avg_gen_time_ms"`  // 平均生成时间（毫秒）
 	AvgSizeKB      float64 `json:"avg_size_kb"`      // 平均大小（KB）
 	TotalSizeBytes int64   `json:"total_size_bytes"` // 总大小（字节）
+	MaxSizeBytes   int64   `json:"max_size_bytes"`   // 最大单瓦片原始 MVT 大小（字节）
+	MinSizeBytes   int64   `json:"min_size_bytes"`   // 最小单瓦片原始 MVT 大小（字节）
 }
 
 // QuickViewMetadata 快显元数据（存储在 MinIO）
@@ -27,7 +80,6 @@ type QuickViewMetadata struct {
 	TileFormat       string                    `json:"tile_format"`
 	StorageRef       string                    `json:"storage_ref"`
 	ObjectPrefix     string                    `json:"object_prefix"`
-	ConfigHash       string                    `json:"config_hash,omitempty"`
 	TableName        string                    `json:"table_name"`
 	Schema           string                    `json:"schema"`
 	Extent           []float64                 `json:"extent"` // [minLng, minLat, maxLng, maxLat]

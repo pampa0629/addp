@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -177,47 +179,6 @@ func TestTileCacheTaskCreatePreservesDisabledFlag(t *testing.T) {
 	}
 }
 
-func TestTileCacheConfigHashOnlyUsesGenerationParameters(t *testing.T) {
-	base := tileCacheConfigHash(tileCacheConfigHashInput{
-		TileMatrixSet:  "WebMercatorQuad",
-		MinZoom:        0,
-		MaxZoom:        12,
-		SourceSRID:     4326,
-		TargetSRID:     3857,
-		ExtentSRID:     4326,
-		Extent:         []float64{120, 30, 121, 31},
-		GeometryColumn: "geom",
-		PrimaryKey:     "id",
-	})
-	sameWithDefaults := tileCacheConfigHash(tileCacheConfigHashInput{
-		MinZoom:        0,
-		MaxZoom:        12,
-		SourceSRID:     4326,
-		ExtentSRID:     4326,
-		Extent:         []float64{120, 30, 121, 31},
-		GeometryColumn: " geom ",
-		PrimaryKey:     " id ",
-	})
-	if sameWithDefaults != base {
-		t.Fatalf("config_hash with normalized defaults = %s, want %s", sameWithDefaults, base)
-	}
-
-	changedZoom := tileCacheConfigHash(tileCacheConfigHashInput{
-		TileMatrixSet:  "WebMercatorQuad",
-		MinZoom:        0,
-		MaxZoom:        13,
-		SourceSRID:     4326,
-		TargetSRID:     3857,
-		ExtentSRID:     4326,
-		Extent:         []float64{120, 30, 121, 31},
-		GeometryColumn: "geom",
-		PrimaryKey:     "id",
-	})
-	if changedZoom == base {
-		t.Fatalf("config_hash should change when generation parameters change: %s", base)
-	}
-}
-
 func TestTileCacheExecutionRejectsUnnormalizedTarget(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	tileCacheRepo := repository.NewTileCacheRepository(db)
@@ -263,13 +224,38 @@ func TestTileCacheGenerationSuccessMarksArtifactReadyAndQuickViewAvailable(t *te
 		}, nil
 	})
 	taskSvc.SetQuickViewService(quickViewSvc)
+	setPrepared3857Resolver(taskSvc, "public", "roads")
+	cleaner := &fakeTileCacheCleaner{}
+	invalidator := &fakeTileCacheRuntimeInvalidator{}
+	taskSvc.SetTileCacheCleaner(cleaner)
+	taskSvc.SetTileCacheRuntimeCacheInvalidator(invalidator)
 	taskSvc.SetTileGenerator(&fakeTileCacheGenerator{
 		result: &mvt.GenerateResult{
-			ActualMaxZoom: 1,
-			TotalTiles:    4,
-			CachedTiles:   4,
+			ActualMaxZoom:      1,
+			TotalTiles:         4,
+			CachedTiles:        4,
+			TilesTotalEstimate: 4,
+			TilesProcessed:     4,
+			GeneratedTiles:     4,
+			EmptyTiles:         0,
+			SkippedTiles:       0,
+			FailedTiles:        0,
+			TotalSizeBytes:     4096,
+			MaxTileSizeBytes:   2048,
+			MinTileSizeBytes:   512,
+			ZoomLevels: map[string]mvt.ZoomLevelStats{
+				"1": {
+					Zoom:           1,
+					TotalTiles:     4,
+					GeneratedTiles: 4,
+					TotalSizeBytes: 4096,
+					MaxSizeBytes:   2048,
+					MinSizeBytes:   512,
+				},
+			},
 			GenerationSec: 0.5,
 			StopReason:    "test_complete",
+			ExtentWGS84:   []float64{120, 30, 121, 31},
 		},
 	}, 1)
 
@@ -295,6 +281,27 @@ func TestTileCacheGenerationSuccessMarksArtifactReadyAndQuickViewAvailable(t *te
 	if exec.Status != commonExecution.ExecutionStatusSuccess {
 		t.Fatalf("execution status = %s, want success; error = %#v", exec.Status, exec.ErrorDetails)
 	}
+	if exec.Progress != 100 {
+		t.Fatalf("execution progress = %d, want 100", exec.Progress)
+	}
+	if exec.Metadata["total_tiles"] != float64(4) {
+		t.Fatalf("metadata total_tiles = %#v, want 4", exec.Metadata["total_tiles"])
+	}
+	if exec.Metadata["tiles_total_estimate"] != float64(4) {
+		t.Fatalf("metadata tiles_total_estimate = %#v, want 4", exec.Metadata["tiles_total_estimate"])
+	}
+	if exec.Metadata["tiles_processed"] != float64(4) {
+		t.Fatalf("metadata tiles_processed = %#v, want 4", exec.Metadata["tiles_processed"])
+	}
+	if exec.Metadata["generated_tiles"] != float64(4) {
+		t.Fatalf("metadata generated_tiles = %#v, want 4", exec.Metadata["generated_tiles"])
+	}
+	if exec.Metadata["total_size_bytes"] != float64(4096) {
+		t.Fatalf("metadata total_size_bytes = %#v, want 4096", exec.Metadata["total_size_bytes"])
+	}
+	if _, ok := exec.Metadata["zoom_levels"]; !ok {
+		t.Fatalf("metadata = %#v, want zoom_levels", exec.Metadata)
+	}
 
 	artifacts, _, err := tileCacheRepo.ListTileCache(context.Background(), repository.TileCacheFilter{
 		TenantID: task.TenantID,
@@ -316,11 +323,17 @@ func TestTileCacheGenerationSuccessMarksArtifactReadyAndQuickViewAvailable(t *te
 	if artifact.ItemFingerprint == "" {
 		t.Fatal("artifact item_fingerprint is empty, want standard item fingerprint")
 	}
-	if artifact.ConfigHash == "" {
-		t.Fatal("artifact config_hash is empty, want normalized config hash")
+	var storageRef map[string]interface{}
+	if err := json.Unmarshal([]byte(artifact.StorageRef), &storageRef); err != nil {
+		t.Fatalf("artifact storage_ref = %s, want valid json: %v", artifact.StorageRef, err)
 	}
-	if !strings.Contains(artifact.StorageRef, artifact.ConfigHash) {
-		t.Fatalf("artifact storage_ref = %s, want config_hash %s in object prefix", artifact.StorageRef, artifact.ConfigHash)
+	expectedObjectPrefix := fmt.Sprintf("tenant_%d/mvt-tiles/%s/", task.TenantID, artifact.ItemFingerprint)
+	if storageRef["object_prefix"] != expectedObjectPrefix {
+		t.Fatalf("artifact object_prefix = %v, want %s", storageRef["object_prefix"], expectedObjectPrefix)
+	}
+	expectedManifest := expectedObjectPrefix + "metadata.json"
+	if storageRef["manifest"] != expectedManifest {
+		t.Fatalf("artifact manifest = %v, want %s", storageRef["manifest"], expectedManifest)
 	}
 	if artifact.ExtentSRID == nil || *artifact.ExtentSRID != 4326 {
 		t.Fatalf("artifact extent_srid = %#v, want 4326", artifact.ExtentSRID)
@@ -369,8 +382,11 @@ func TestTileCacheGenerationSuccessMarksArtifactReadyAndQuickViewAvailable(t *te
 	if artifacts[0].ID != artifact.ID {
 		t.Fatalf("artifact id after second execution = %d, want existing artifact %d", artifacts[0].ID, artifact.ID)
 	}
-	if artifacts[0].ConfigHash != artifact.ConfigHash {
-		t.Fatalf("config_hash after ui-only target changes = %s, want %s", artifacts[0].ConfigHash, artifact.ConfigHash)
+	if len(cleaner.deletedRefs) != 1 || cleaner.deletedRefs[0] != artifact.StorageRef {
+		t.Fatalf("deleted storage refs after second execution = %#v, want previous artifact storage ref", cleaner.deletedRefs)
+	}
+	if len(invalidator.calls) != 1 || invalidator.calls[0] != (tileCacheRuntimeInvalidationCall{tenantID: task.TenantID, tileCacheID: artifact.ID}) {
+		t.Fatalf("runtime cache invalidation after second execution = %#v, want current artifact", invalidator.calls)
 	}
 
 	tileSettings, _ := asJSONMap(task.Config["tile"])
@@ -394,20 +410,441 @@ func TestTileCacheGenerationSuccessMarksArtifactReadyAndQuickViewAvailable(t *te
 	if err != nil {
 		t.Fatalf("list artifacts after tile config change: %v", err)
 	}
-	if len(artifacts) != 2 {
-		t.Fatalf("artifact count after tile config change = %d, want 2", len(artifacts))
+	if len(artifacts) != 1 {
+		t.Fatalf("artifact count after tile config change = %d, want 1 current result", len(artifacts))
 	}
-	if artifacts[0].ConfigHash == artifacts[1].ConfigHash {
-		t.Fatalf("config_hash values after tile config change are equal: %s", artifacts[0].ConfigHash)
+	if artifacts[0].ID != artifact.ID {
+		t.Fatalf("artifact id after tile config change = %d, want current result %d", artifacts[0].ID, artifact.ID)
+	}
+	if len(cleaner.deletedRefs) != 2 || cleaner.deletedRefs[1] != artifact.StorageRef {
+		t.Fatalf("deleted storage refs after third execution = %#v, want previous artifact storage ref again", cleaner.deletedRefs)
+	}
+	if len(invalidator.calls) != 2 || invalidator.calls[1] != (tileCacheRuntimeInvalidationCall{tenantID: task.TenantID, tileCacheID: artifact.ID}) {
+		t.Fatalf("runtime cache invalidation after third execution = %#v, want current artifact again", invalidator.calls)
+	}
+}
+
+func TestTileCacheGenerationWithNoNonEmptyTilesMarksResultFailed(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	tileCacheRepo := repository.NewTileCacheRepository(db)
+	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
+	taskSvc := NewTileCacheTaskService(tileCacheRepo, taskExecRepo)
+	quickViewSvc := NewQuickViewService(db, nil)
+	quickViewSvc.SetSpatialMetadataLoader(func(context.Context, uint, uint, string, string) (*SpatialMetadataResult, error) {
+		return &SpatialMetadataResult{
+			GeomColumn:      "shape",
+			GeometryColumns: []string{"shape"},
+			SRID:            4326,
+			ExtentSRID:      4326,
+			Extent:          []float64{120, 30, 121, 31},
+			PrimaryKey:      "id",
+			RecordCount:     100,
+		}, nil
+	})
+	taskSvc.SetQuickViewService(quickViewSvc)
+	setPrepared3857Resolver(taskSvc, "public", "roads")
+	taskSvc.SetTileGenerator(&fakeTileCacheGenerator{
+		result: &mvt.GenerateResult{
+			ActualMaxZoom: 1,
+			TotalTiles:    10,
+			CachedTiles:   0,
+			GenerationSec: 0.5,
+			StopReason:    "all_empty",
+		},
+	}, 1)
+
+	task := newTileCacheTaskDefinition()
+	task.Config["tile"] = commonModels.JSONMap{
+		"format":      "mvt",
+		"min_zoom":    float64(0),
+		"max_zoom":    float64(1),
+		"source_srid": float64(4326),
+		"target_srid": float64(3857),
+		"extent_srid": float64(4326),
+		"extent":      []interface{}{float64(120), float64(30), float64(121), float64(31)},
+	}
+	if err := taskSvc.Create(context.Background(), task); err != nil {
+		t.Fatalf("create tile cache task: %v", err)
+	}
+
+	executionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil)
+	if err != nil {
+		t.Fatalf("execute tile cache task: %v", err)
+	}
+	exec := waitForTileCacheTaskExecution(t, taskExecRepo, executionID, int(task.TenantID))
+	if exec.Status != commonExecution.ExecutionStatusFailed {
+		t.Fatalf("execution status = %s, want failed", exec.Status)
+	}
+	if !strings.Contains(stringFromConfig(exec.ErrorDetails["message"]), "no non-empty tiles") {
+		t.Fatalf("execution error_details = %#v, want no non-empty tiles", exec.ErrorDetails)
+	}
+	if exec.Metadata["cached_tiles"] != float64(0) {
+		t.Fatalf("metadata cached_tiles = %#v, want 0", exec.Metadata["cached_tiles"])
+	}
+
+	results, _, err := tileCacheRepo.ListTileCache(context.Background(), repository.TileCacheFilter{
+		TenantID: task.TenantID,
+		TaskID:   task.ID,
+	})
+	if err != nil {
+		t.Fatalf("list tile cache: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("tile cache result count = %d, want 1", len(results))
+	}
+	if results[0].Status != models.TileCacheStatusFailed {
+		t.Fatalf("tile cache status = %s, want failed", results[0].Status)
+	}
+	if !strings.Contains(results[0].ErrorMessage, "no non-empty tiles") {
+		t.Fatalf("tile cache error_message = %q, want no non-empty tiles", results[0].ErrorMessage)
+	}
+}
+
+func TestTileCacheGenerationFailureKeepsLastTileProgress(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	tileCacheRepo := repository.NewTileCacheRepository(db)
+	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
+	taskSvc := NewTileCacheTaskService(tileCacheRepo, taskExecRepo)
+	quickViewSvc := NewQuickViewService(db, nil)
+	quickViewSvc.SetSpatialMetadataLoader(func(context.Context, uint, uint, string, string) (*SpatialMetadataResult, error) {
+		return &SpatialMetadataResult{
+			GeomColumn:      "shape",
+			GeometryColumns: []string{"shape"},
+			SRID:            4326,
+			ExtentSRID:      4326,
+			Extent:          []float64{120, 30, 121, 31},
+			PrimaryKey:      "id",
+			RecordCount:     100,
+		}, nil
+	})
+	taskSvc.SetQuickViewService(quickViewSvc)
+	setPrepared3857Resolver(taskSvc, "public", "roads")
+	taskSvc.SetTileGenerator(&fakeTileCacheGenerator{
+		progress: &mvt.QuickViewProgress{
+			Status:             "running",
+			CurrentZoom:        1,
+			MaxZoom:            2,
+			TilesProcessed:     5,
+			TilesTotalEstimate: 10,
+			ProgressPercent:    50,
+		},
+		err: errors.New("generation interrupted"),
+	}, 1)
+
+	task := newTileCacheTaskDefinition()
+	task.Config["tile"] = commonModels.JSONMap{
+		"format":      "mvt",
+		"min_zoom":    float64(0),
+		"max_zoom":    float64(1),
+		"source_srid": float64(4326),
+		"target_srid": float64(3857),
+		"extent_srid": float64(4326),
+		"extent":      []interface{}{float64(120), float64(30), float64(121), float64(31)},
+	}
+	if err := taskSvc.Create(context.Background(), task); err != nil {
+		t.Fatalf("create tile cache task: %v", err)
+	}
+
+	executionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil)
+	if err != nil {
+		t.Fatalf("execute tile cache task: %v", err)
+	}
+	exec := waitForTileCacheTaskExecution(t, taskExecRepo, executionID, int(task.TenantID))
+	if exec.Status != commonExecution.ExecutionStatusFailed {
+		t.Fatalf("execution status = %s, want failed", exec.Status)
+	}
+	if exec.Progress != 50 {
+		t.Fatalf("execution progress = %d, want last tile progress 50", exec.Progress)
+	}
+	if exec.Metadata["tiles_processed"] != float64(5) {
+		t.Fatalf("metadata tiles_processed = %#v, want 5", exec.Metadata["tiles_processed"])
+	}
+	if exec.Metadata["tiles_total_estimate"] != float64(10) {
+		t.Fatalf("metadata tiles_total_estimate = %#v, want 10", exec.Metadata["tiles_total_estimate"])
+	}
+	if exec.CurrentStep == nil || !strings.Contains(*exec.CurrentStep, "5/10") {
+		t.Fatalf("current_step = %#v, want tile progress detail", exec.CurrentStep)
+	}
+}
+
+func TestTileCacheGenerationPersistsRenderableWGS84Extent(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	tileCacheRepo := repository.NewTileCacheRepository(db)
+	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
+	taskSvc := NewTileCacheTaskService(tileCacheRepo, taskExecRepo)
+	quickViewSvc := NewQuickViewService(db, nil)
+	quickViewSvc.SetSpatialMetadataLoader(func(context.Context, uint, uint, string, string) (*SpatialMetadataResult, error) {
+		return &SpatialMetadataResult{
+			GeomColumn:      "shape",
+			GeometryColumns: []string{"shape"},
+			SRID:            4549,
+			ExtentSRID:      4549,
+			Extent:          []float64{570841.0277, 3404864.0397, 598936.5143, 3434951.8803},
+			PrimaryKey:      "id",
+			RecordCount:     73090,
+		}, nil
+	})
+	taskSvc.SetQuickViewService(quickViewSvc)
+	setPrepared3857Resolver(taskSvc, "public", "roads")
+	taskSvc.SetTileGenerator(&fakeTileCacheGenerator{
+		result: &mvt.GenerateResult{
+			ActualMaxZoom: 12,
+			TotalTiles:    38,
+			CachedTiles:   33,
+			GenerationSec: 2.8,
+			StopReason:    "test_complete",
+			ExtentWGS84:   []float64{120.73991920227512, 30.760374555538203, 121.03625518099717, 31.033743937252222},
+		},
+	}, 1)
+
+	task := newTileCacheTaskDefinition()
+	task.Config["tile"] = commonModels.JSONMap{
+		"format":      "mvt",
+		"min_zoom":    float64(3),
+		"max_zoom":    float64(12),
+		"source_srid": float64(4549),
+		"target_srid": float64(3857),
+		"extent_srid": float64(4549),
+		"extent": []interface{}{
+			float64(570841.0277),
+			float64(3404864.0397),
+			float64(598936.5143),
+			float64(3434951.8803),
+		},
+	}
+	if err := taskSvc.Create(context.Background(), task); err != nil {
+		t.Fatalf("create tile cache task: %v", err)
+	}
+
+	executionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil)
+	if err != nil {
+		t.Fatalf("execute tile cache task: %v", err)
+	}
+	exec := waitForTileCacheTaskExecution(t, taskExecRepo, executionID, int(task.TenantID))
+	if exec.Status != commonExecution.ExecutionStatusSuccess {
+		t.Fatalf("execution status = %s, want success; error = %#v", exec.Status, exec.ErrorDetails)
+	}
+
+	results, _, err := tileCacheRepo.ListTileCache(context.Background(), repository.TileCacheFilter{
+		TenantID: task.TenantID,
+		TaskID:   task.ID,
+	})
+	if err != nil {
+		t.Fatalf("list tile cache: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("tile cache result count = %d, want 1", len(results))
+	}
+	result := results[0]
+	if result.ExtentSRID == nil || *result.ExtentSRID != 4326 {
+		t.Fatalf("tile cache extent_srid = %#v, want 4326", result.ExtentSRID)
+	}
+	var extent []float64
+	if err := json.Unmarshal(result.Extent, &extent); err != nil {
+		t.Fatalf("tile cache extent = %s, want json array: %v", string(result.Extent), err)
+	}
+	wantExtent := []float64{120.73991920227512, 30.760374555538203, 121.03625518099717, 31.033743937252222}
+	if fmt.Sprint(extent) != fmt.Sprint(wantExtent) {
+		t.Fatalf("tile cache extent = %v, want WGS84 extent %v", extent, wantExtent)
+	}
+}
+
+func TestTileCacheGenerationUsesIndexed3857Target(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	tileCacheRepo := repository.NewTileCacheRepository(db)
+	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
+	taskSvc := NewTileCacheTaskService(tileCacheRepo, taskExecRepo)
+	quickViewSvc := NewQuickViewService(db, nil)
+	quickViewSvc.SetSpatialMetadataLoader(func(context.Context, uint, uint, string, string) (*SpatialMetadataResult, error) {
+		return &SpatialMetadataResult{
+			GeomColumn:      "SmGeometry",
+			GeometryColumns: []string{"SmGeometry"},
+			SRID:            2360,
+			ExtentSRID:      4326,
+			Extent:          []float64{104.4, 20.9, 112.1, 26.4},
+			PrimaryKey:      "SmID",
+			RecordCount:     10_597_882,
+		}, nil
+	})
+	taskSvc.SetQuickViewService(quickViewSvc)
+	taskSvc.SetRealtimeTileTargetResolver(fakeRealtimeTileTargetResolver{
+		target: &RealtimeTileTarget{
+			Schema:       "public",
+			Table:        "dltb_mv3857",
+			GeomColumn:   "geom_3857",
+			SRID:         3857,
+			Prepared3857: true,
+		},
+	})
+	generator := &fakeTileCacheGenerator{
+		result: &mvt.GenerateResult{
+			ActualMaxZoom: 12,
+			TotalTiles:    48,
+			CachedTiles:   41,
+			GenerationSec: 3.2,
+			StopReason:    "test_complete",
+			ExtentWGS84:   []float64{104.4, 20.9, 112.1, 26.4},
+		},
+	}
+	taskSvc.SetTileGenerator(generator, 1)
+
+	task := newTileCacheTaskDefinition()
+	target, _ := asJSONMap(task.Config["target"])
+	target["table"] = "dltb"
+	target["locator"] = "addp://engine/11/table/public.dltb"
+	task.Config["target"] = target
+	task.Config["tile"] = commonModels.JSONMap{
+		"format":      "mvt",
+		"min_zoom":    float64(6),
+		"max_zoom":    float64(12),
+		"source_srid": float64(2360),
+		"target_srid": float64(3857),
+		"extent_srid": float64(4326),
+		"extent":      []interface{}{float64(104.4), float64(20.9), float64(112.1), float64(26.4)},
+	}
+	task.Config["options"] = commonModels.JSONMap{
+		"geometry_column": "SmGeometry",
+		"primary_key":     "SmID",
+	}
+	if err := taskSvc.Create(context.Background(), task); err != nil {
+		t.Fatalf("create tile cache task: %v", err)
+	}
+
+	executionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil)
+	if err != nil {
+		t.Fatalf("execute tile cache task: %v", err)
+	}
+	exec := waitForTileCacheTaskExecution(t, taskExecRepo, executionID, int(task.TenantID))
+	if exec.Status != commonExecution.ExecutionStatusSuccess {
+		t.Fatalf("execution status = %s, want success; error = %#v", exec.Status, exec.ErrorDetails)
+	}
+	if generator.lastConfig.Schema != "public" || generator.lastConfig.Table != "dltb_mv3857" || generator.lastConfig.GeomColumn != "geom_3857" || generator.lastConfig.SRID != 3857 {
+		t.Fatalf("generator target = %s.%s.%s srid %d, want public.dltb_mv3857.geom_3857 srid 3857",
+			generator.lastConfig.Schema, generator.lastConfig.Table, generator.lastConfig.GeomColumn, generator.lastConfig.SRID)
+	}
+	if generator.lastConfig.PrimaryKey != "" {
+		t.Fatalf("generator primary_key = %q, want empty for prepared 3857 target", generator.lastConfig.PrimaryKey)
+	}
+	if generator.lastConfig.OptimizationConfig == nil {
+		t.Fatal("generator optimization config is nil, want default cache optimization config")
+	}
+	if generator.lastConfig.OptimizationConfig.TileSizeThresholds.MaxSizeMB != 4.0 {
+		t.Fatalf("optimization max_size_mb = %v, want 4", generator.lastConfig.OptimizationConfig.TileSizeThresholds.MaxSizeMB)
+	}
+	if generator.lastConfig.OptimizationConfig.ExtentOptimization.BaseExtent != 1024 ||
+		generator.lastConfig.OptimizationConfig.ExtentOptimization.MaxZoomExtent != 1024 ||
+		generator.lastConfig.OptimizationConfig.ExtentOptimization.MinExtent != 256 {
+		t.Fatalf("optimization extent config = %#v, want 1024/1024/256", generator.lastConfig.OptimizationConfig.ExtentOptimization)
+	}
+	targetMeta, ok := asJSONMap(exec.Metadata["tile_generation_target"])
+	if !ok {
+		t.Fatalf("execution metadata = %#v, want tile_generation_target", exec.Metadata)
+	}
+	if targetMeta["table"] != "dltb_mv3857" || targetMeta["geom_column"] != "geom_3857" || targetMeta["prepared_3857"] != true {
+		t.Fatalf("tile_generation_target = %#v, want prepared dltb_mv3857 target", targetMeta)
+	}
+	optimizationMeta, ok := asJSONMap(exec.Metadata["optimization"])
+	if !ok {
+		t.Fatalf("execution metadata = %#v, want optimization config", exec.Metadata)
+	}
+	thresholds, ok := asJSONMap(optimizationMeta["tile_size_thresholds"])
+	if !ok || thresholds["max_size_mb"] != float64(4) {
+		t.Fatalf("optimization tile_size_thresholds = %#v, want max_size_mb 4", optimizationMeta["tile_size_thresholds"])
+	}
+
+	results, _, err := tileCacheRepo.ListTileCache(context.Background(), repository.TileCacheFilter{
+		TenantID: task.TenantID,
+		TaskID:   task.ID,
+	})
+	if err != nil {
+		t.Fatalf("list tile cache: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("tile cache result count = %d, want 1", len(results))
+	}
+	expectedFingerprint := spatialItemFingerprint(11, "public", "dltb")
+	if results[0].ItemFingerprint != expectedFingerprint {
+		t.Fatalf("item_fingerprint = %s, want source item fingerprint %s", results[0].ItemFingerprint, expectedFingerprint)
+	}
+}
+
+func TestTileCacheGenerationFailsWithoutIndexed3857Target(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	tileCacheRepo := repository.NewTileCacheRepository(db)
+	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
+	taskSvc := NewTileCacheTaskService(tileCacheRepo, taskExecRepo)
+	quickViewSvc := NewQuickViewService(db, nil)
+	quickViewSvc.SetSpatialMetadataLoader(func(context.Context, uint, uint, string, string) (*SpatialMetadataResult, error) {
+		return &SpatialMetadataResult{
+			GeomColumn:      "SmGeometry",
+			GeometryColumns: []string{"SmGeometry"},
+			SRID:            2360,
+			ExtentSRID:      4326,
+			Extent:          []float64{104.4, 20.9, 112.1, 26.4},
+			PrimaryKey:      "SmID",
+			RecordCount:     10_597_882,
+		}, nil
+	})
+	taskSvc.SetQuickViewService(quickViewSvc)
+	taskSvc.SetRealtimeTileTargetResolver(fakeRealtimeTileTargetResolver{})
+	taskSvc.SetTileGenerator(&fakeTileCacheGenerator{
+		result: &mvt.GenerateResult{
+			ActualMaxZoom: 12,
+			TotalTiles:    48,
+			CachedTiles:   41,
+			GenerationSec: 3.2,
+		},
+	}, 1)
+
+	task := newTileCacheTaskDefinition()
+	task.Config["tile"] = commonModels.JSONMap{
+		"format":      "mvt",
+		"min_zoom":    float64(6),
+		"max_zoom":    float64(12),
+		"source_srid": float64(2360),
+		"target_srid": float64(3857),
+		"extent_srid": float64(4326),
+		"extent":      []interface{}{float64(104.4), float64(20.9), float64(112.1), float64(26.4)},
+	}
+	task.Config["options"] = commonModels.JSONMap{
+		"geometry_column": "SmGeometry",
+		"primary_key":     "SmID",
+	}
+	if err := taskSvc.Create(context.Background(), task); err != nil {
+		t.Fatalf("create tile cache task: %v", err)
+	}
+
+	executionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil)
+	if err != nil {
+		t.Fatalf("execute tile cache task: %v", err)
+	}
+	exec := waitForTileCacheTaskExecution(t, taskExecRepo, executionID, int(task.TenantID))
+	if exec.Status != commonExecution.ExecutionStatusFailed {
+		t.Fatalf("execution status = %s, want failed", exec.Status)
+	}
+	if !strings.Contains(stringFromConfig(exec.ErrorDetails["message"]), "indexed 3857 tile generation target is required") {
+		t.Fatalf("execution error_details = %#v, want indexed 3857 target error", exec.ErrorDetails)
 	}
 }
 
 type fakeTileCacheGenerator struct {
-	result *mvt.GenerateResult
-	err    error
+	result     *mvt.GenerateResult
+	err        error
+	progress   *mvt.QuickViewProgress
+	sleepTime  time.Duration
+	lastConfig mvt.QuickViewConfig
 }
 
-func (g *fakeTileCacheGenerator) GenerateMixed(context.Context, mvt.QuickViewConfig, *mvt.ProgressTracker) (*mvt.GenerateResult, error) {
+func (g *fakeTileCacheGenerator) GenerateMixed(ctx context.Context, cfg mvt.QuickViewConfig, progressTracker mvt.ProgressSink) (*mvt.GenerateResult, error) {
+	g.lastConfig = cfg
+	if g.progress != nil && progressTracker != nil {
+		if err := progressTracker.UpdateProgress(ctx, g.progress); err != nil {
+			return nil, err
+		}
+	}
+	if g.sleepTime > 0 {
+		time.Sleep(g.sleepTime)
+	}
 	if g.err != nil {
 		return nil, g.err
 	}
@@ -415,6 +852,55 @@ func (g *fakeTileCacheGenerator) GenerateMixed(context.Context, mvt.QuickViewCon
 		return g.result, nil
 	}
 	return nil, errors.New("fake tile cache result is required")
+}
+
+type fakeRealtimeTileTargetResolver struct {
+	target *RealtimeTileTarget
+	err    error
+}
+
+func (r fakeRealtimeTileTargetResolver) ResolveRealtimeTileTarget(context.Context, *uint, uint, string, string, string, int) (*RealtimeTileTarget, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
+	return r.target, nil
+}
+
+type fakeTileCacheCleaner struct {
+	deletedRefs []string
+	err         error
+}
+
+func (c *fakeTileCacheCleaner) DeleteByStorageRef(_ context.Context, storageRef string) error {
+	c.deletedRefs = append(c.deletedRefs, storageRef)
+	return c.err
+}
+
+type tileCacheRuntimeInvalidationCall struct {
+	tenantID    uint
+	tileCacheID uint
+}
+
+type fakeTileCacheRuntimeInvalidator struct {
+	calls []tileCacheRuntimeInvalidationCall
+	err   error
+}
+
+func (i *fakeTileCacheRuntimeInvalidator) InvalidateTileCacheRuntimeCache(_ context.Context, tenantID uint, tileCacheID uint) error {
+	i.calls = append(i.calls, tileCacheRuntimeInvalidationCall{tenantID: tenantID, tileCacheID: tileCacheID})
+	return i.err
+}
+
+func setPrepared3857Resolver(taskSvc *TileCacheTaskService, schema, table string) {
+	taskSvc.SetRealtimeTileTargetResolver(fakeRealtimeTileTargetResolver{
+		target: &RealtimeTileTarget{
+			Schema:       schema,
+			Table:        table + "_mv3857",
+			GeomColumn:   "geom_3857",
+			SRID:         3857,
+			Prepared3857: true,
+		},
+	})
 }
 
 func newTileCacheTaskDefinition() *models.TileCacheTask {
@@ -524,7 +1010,6 @@ func newTileCacheTaskServiceTestDB(t *testing.T) *gorm.DB {
 		extent_srid INTEGER,
 		min_zoom INTEGER,
 		max_zoom INTEGER,
-		config_hash TEXT,
 		status TEXT NOT NULL,
 		error_message TEXT,
 		created_by INTEGER,

@@ -46,7 +46,6 @@ type QuickViewConfig struct {
 	Concurrency        int
 	Fingerprint        string
 	StorageRef         string
-	ConfigHash         string
 	OptimizationConfig *commonModels.OptimizationConfig // v2.0 优化配置
 }
 
@@ -103,13 +102,24 @@ func NewQuickViewService(tileGen *TileGenerator, minioCfg MinIOConfig, db *gorm.
 
 // GenerateResult 快显生成结果
 type GenerateResult struct {
-	TotalTiles        int
-	CachedTiles       int
-	ActualMaxZoom     int
-	LastZoomAvgTimeMs float64
-	LastZoomAvgSizeKB float64
-	StopReason        string
-	GenerationSec     float64
+	TotalTiles         int
+	CachedTiles        int
+	TilesTotalEstimate int
+	TilesProcessed     int
+	GeneratedTiles     int
+	EmptyTiles         int
+	SkippedTiles       int
+	FailedTiles        int
+	TotalSizeBytes     int64
+	MaxTileSizeBytes   int64
+	MinTileSizeBytes   int64
+	ZoomLevels         map[string]ZoomLevelStats
+	ActualMaxZoom      int
+	LastZoomAvgTimeMs  float64
+	LastZoomAvgSizeKB  float64
+	StopReason         string
+	GenerationSec      float64
+	ExtentWGS84        []float64
 }
 
 // tileResult 瓦片处理结果
@@ -121,12 +131,37 @@ type tileResult struct {
 	err       error
 }
 
+type spatialExtentLoader func(context.Context, uint, uint, string, string, string) ([]float64, error)
+
+func resolveTileRangeExtentWGS84(ctx context.Context, cfg QuickViewConfig, loadExtent spatialExtentLoader) ([]float64, error) {
+	if cfg.ExtentSRID == spatial.SRIDWGS84 {
+		if len(cfg.Extent) != 4 {
+			return nil, fmt.Errorf("tile cache task extent is invalid")
+		}
+		return append([]float64(nil), cfg.Extent...), nil
+	}
+	if cfg.ExtentSRID <= 0 {
+		return nil, fmt.Errorf("tile cache task extent_srid is required")
+	}
+	if loadExtent == nil {
+		return nil, fmt.Errorf("tile cache task extent_srid %d requires PostGIS extent transform", cfg.ExtentSRID)
+	}
+	extent, err := loadExtent(ctx, cfg.EngineID, cfg.TenantID, cfg.Schema, cfg.Table, cfg.GeomColumn)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve WGS84 tile range extent: %w", err)
+	}
+	if len(extent) != 4 {
+		return nil, fmt.Errorf("resolved WGS84 tile range extent is invalid")
+	}
+	return extent, nil
+}
+
 // GenerateMixed 混合入队模式的快显缓存生成
 // 与串行Generate不同，该方法会同时处理多个层级的瓦片，充分利用并发
 func (s *QuickViewService) GenerateMixed(
 	ctx context.Context,
 	cfg QuickViewConfig,
-	progressTracker *ProgressTracker, // 可选的进度跟踪器（nil 时不更新进度）
+	progressTracker ProgressSink, // 可选的进度跟踪器（nil 时不更新进度）
 ) (*GenerateResult, error) {
 	startTime := time.Now()
 
@@ -147,20 +182,29 @@ func (s *QuickViewService) GenerateMixed(
 		return nil, err
 	}
 
-	// 1. 读取源表真实 SRID。MVT 目标坐标系固定为 3857，源 SRID 只用于 SQL 内 ST_Transform。
+	// 1. 读取生成目标真实 SRID。MVT 目标坐标系固定为 3857，非 3857 目标才需要 SQL 内 ST_Transform。
 	actualSRID, err := s.tileGen.QuerySourceSRID(ctx, cfg.EngineID, cfg.TenantID, cfg.Schema, cfg.Table, cfg.GeomColumn)
 	if err != nil {
-		logger.L().Error("❌ 源表 SRID 解析失败",
+		logger.L().Error("❌ 瓦片生成目标 SRID 解析失败",
 			"table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table),
 			"error", err)
-		return nil, fmt.Errorf("源表 SRID 解析失败: %w", err)
+		return nil, fmt.Errorf("瓦片生成目标 SRID 解析失败: %w", err)
 	}
 	cfg.SRID = actualSRID
 
-	logger.L().Info("✅ 源表 SRID 已解析，MVT 将输出 3857",
+	logger.L().Info("✅ 瓦片生成目标 SRID 已解析，MVT 将输出 3857",
 		"table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table),
-		"source_srid", actualSRID,
+		"target_source_srid", actualSRID,
 		"target_srid", 3857)
+
+	tileRangeExtent, err := resolveTileRangeExtentWGS84(ctx, cfg, s.tileGen.GetSpatialExtent)
+	if err != nil {
+		return nil, err
+	}
+	logger.L().Info("✅ 瓦片行列计算范围已解析为 WGS84",
+		"source_extent", fmt.Sprintf("%v", cfg.Extent),
+		"extent_srid", cfg.ExtentSRID,
+		"tile_range_extent", fmt.Sprintf("%v", tileRangeExtent))
 
 	// 1.3 运行准备阶段检查（v4.0 新增）
 	logger.L().Info("🔄 开始准备阶段检查",
@@ -169,7 +213,7 @@ func (s *QuickViewService) GenerateMixed(
 	if s.prepService != nil {
 		prepStatus, err := s.prepService.RunPreparationChecks(ctx, cfg.TenantID, cfg.EngineID, cfg.Schema, cfg.Table, cfg.GeomColumn)
 		if err != nil {
-			logger.L().Warn("准备阶段检查失败，继续使用源表生成瓦片",
+			logger.L().Warn("准备阶段检查失败，继续使用已解析的瓦片目标生成",
 				"table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table),
 				"error", err)
 		} else {
@@ -178,7 +222,7 @@ func (s *QuickViewService) GenerateMixed(
 				"summary", prepStatus.Summary)
 
 			if prepStatus.OverallStatus == "failed" {
-				logger.L().Warn("准备阶段存在待优化项，当前生成仍使用源表与 SQL 内坐标转换",
+				logger.L().Warn("准备阶段存在待优化项，当前生成仍使用已解析的瓦片目标",
 					"table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table),
 					"checks", prepStatus.Checks)
 			}
@@ -186,12 +230,12 @@ func (s *QuickViewService) GenerateMixed(
 	}
 
 	if actualSRID != 3857 {
-		logger.L().Info("🔄 源表不是 3857，生成 SQL 将在 PostgreSQL 内执行 ST_Transform",
+		logger.L().Info("🔄 瓦片生成目标不是 3857，生成 SQL 将在 PostgreSQL 内执行 ST_Transform",
 			"table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table),
-			"source_srid", actualSRID,
+			"target_source_srid", actualSRID,
 			"target_srid", 3857)
 	} else {
-		logger.L().Info("✅ 原始表已是 3857 坐标系，可直接生成 MVT",
+		logger.L().Info("✅ 瓦片生成目标已是 3857 坐标系，可直接生成 MVT",
 			"srid", actualSRID)
 	}
 
@@ -221,7 +265,7 @@ func (s *QuickViewService) GenerateMixed(
 	totalTaskCount := 0
 
 	for z := cfg.MinZoom; z <= cfg.MaxZoom; z++ {
-		minX, minY, maxX, maxY := calculateTileBounds(cfg.Extent, z)
+		minX, minY, maxX, maxY := calculateTileBounds(tileRangeExtent, z)
 		tiles := (maxX - minX + 1) * (maxY - minY + 1)
 		zoomRanges = append(zoomRanges, zoomRange{
 			zoom:       z,
@@ -312,6 +356,7 @@ func (s *QuickViewService) GenerateMixed(
 		generatedTiles     int
 		emptyTiles         int
 		skippedTiles       int // 跳过的瓦片数（已存在）
+		failedTiles        int
 		totalGenTime       float64
 		totalSize          int64
 		maxTileSize        int64
@@ -507,7 +552,9 @@ func (s *QuickViewService) GenerateMixed(
 		stats := statsMap[result.coord.Z]
 		stats.Lock()
 
-		if result.err == nil {
+		if result.err != nil {
+			stats.failedTiles++
+		} else {
 			if result.sizeBytes > 0 {
 				// 新生成的瓦片
 				stats.generatedTiles++
@@ -587,7 +634,12 @@ func (s *QuickViewService) GenerateMixed(
 	}
 
 	// 8. 汇总结果与详细日志
-	result := &GenerateResult{}
+	result := &GenerateResult{
+		TilesTotalEstimate: totalTaskCount,
+		TilesProcessed:     processedTiles,
+		ZoomLevels:         make(map[string]ZoomLevelStats),
+		MinTileSizeBytes:   math.MaxInt64,
+	}
 	var lastAvgTime, lastAvgSize float64
 	var overallAvgTime float64 = 0
 
@@ -613,6 +665,17 @@ func (s *QuickViewService) GenerateMixed(
 
 		result.TotalTiles += stats.generatedTiles + stats.emptyTiles
 		result.CachedTiles += stats.generatedTiles
+		result.GeneratedTiles += stats.generatedTiles
+		result.EmptyTiles += stats.emptyTiles
+		result.SkippedTiles += stats.skippedTiles
+		result.FailedTiles += stats.failedTiles
+		result.TotalSizeBytes += stats.totalSize
+		if stats.maxTileSize > result.MaxTileSizeBytes {
+			result.MaxTileSizeBytes = stats.maxTileSize
+		}
+		if stats.minTileSize < result.MinTileSizeBytes {
+			result.MinTileSizeBytes = stats.minTileSize
+		}
 
 		avgTimeMs := 0.0
 		avgSizeKB := 0.0
@@ -647,6 +710,23 @@ func (s *QuickViewService) GenerateMixed(
 		minSizeKB := float64(stats.minTileSize) / 1024.0
 		if stats.minTileSize == math.MaxInt64 {
 			minSizeKB = 0 // 没有生成的瓦片
+		}
+		minSizeBytes := stats.minTileSize
+		if minSizeBytes == math.MaxInt64 {
+			minSizeBytes = 0
+		}
+		result.ZoomLevels[fmt.Sprintf("%d", zr.zoom)] = ZoomLevelStats{
+			Zoom:           zr.zoom,
+			TotalTiles:     stats.totalTiles,
+			GeneratedTiles: stats.generatedTiles,
+			EmptyTiles:     stats.emptyTiles,
+			SkippedTiles:   stats.skippedTiles,
+			FailedTiles:    stats.failedTiles,
+			AvgGenTimeMs:   avgTimeMs,
+			AvgSizeKB:      avgSizeKB,
+			TotalSizeBytes: stats.totalSize,
+			MaxSizeBytes:   stats.maxTileSize,
+			MinSizeBytes:   minSizeBytes,
 		}
 
 		// 详细的层级性能日志，按照计划格式
@@ -724,6 +804,10 @@ func (s *QuickViewService) GenerateMixed(
 	result.LastZoomAvgSizeKB = lastAvgSize
 	result.GenerationSec = time.Since(startTime).Seconds()
 	result.StopReason = "adaptive_mixed_queue"
+	result.ExtentWGS84 = append([]float64(nil), tileRangeExtent...)
+	if result.MinTileSizeBytes == math.MaxInt64 {
+		result.MinTileSizeBytes = 0
+	}
 
 	// 9. 保存元数据到 MinIO
 	metadata := &QuickViewMetadata{
@@ -732,18 +816,17 @@ func (s *QuickViewService) GenerateMixed(
 		TileFormat:       "mvt",
 		StorageRef:       cfg.StorageRef,
 		ObjectPrefix:     objectPrefix,
-		ConfigHash:       cfg.ConfigHash,
 		TableName:        cfg.Table,
 		Schema:           cfg.Schema,
-		Extent:           cfg.Extent,
-		SRID:             cfg.SRID,
+		Extent:           result.ExtentWGS84,
+		SRID:             spatial.SRIDWGS84,
 		MinZoom:          cfg.MinZoom,
 		GeometryTypes:    []string{}, // TODO: 从meta获取
-		ZoomLevels:       make(map[string]ZoomLevelStats),
+		ZoomLevels:       result.ZoomLevels,
 		MaxZoomGenerated: result.ActualMaxZoom,
 		StopReason:       result.StopReason,
 		TotalTiles:       result.CachedTiles,
-		TotalSizeBytes:   0,
+		TotalSizeBytes:   result.TotalSizeBytes,
 		CreatedAt:        time.Now(),
 		GenerationSec:    result.GenerationSec,
 	}
@@ -906,22 +989,7 @@ func (s *QuickViewService) processTile(
 	}
 
 	// 2. 瓦片不存在，生成瓦片
-	params := TileGenerationParams{
-		EngineID:           cfg.EngineID,
-		TenantID:           cfg.TenantID,
-		Schema:             cfg.Schema,
-		Table:              cfg.Table,
-		GeomColumn:         cfg.GeomColumn,
-		SRID:               cfg.SRID,
-		PrimaryKey:         cfg.PrimaryKey,
-		Z:                  coord.Z,
-		X:                  coord.X,
-		Y:                  coord.Y,
-		MaxZoom:            cfg.MaxZoom,            // 传递最大 zoom 级别
-		OptimizationConfig: cfg.OptimizationConfig, // v3.0 传递优化配置
-	}
-
-	mvtData, err := s.tileGen.GenerateTile(ctx, params)
+	mvtData, err := s.tileGen.GenerateTile(ctx, TileGenerationSourceFromQuickViewConfig(cfg).Params(coord))
 	if err != nil {
 		return &tileResult{
 			coord: coord,
