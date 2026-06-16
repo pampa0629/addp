@@ -735,7 +735,20 @@ Capability 只暴露诊断和推荐，不触发创建动作：
 3. 标准取消能力，包括 PG 语句取消、staging 对象清理和旧 ready 结果保留。
 4. 多尺度快显优化，包括低层级简化、聚合目标和 zoom 到 target 的选择策略。
 
-## 十三、验证命令
+## 十三、dltb 动态 MVT 阈值验证记录
+
+2026-06-16 在本地 business PostGIS 对 `public.dltb` 进行动态 MVT 阈值探测。该表约 1055 万行，源几何列为 `SmGeometry`、SRID 2360；同源 schema 下存在外部 3857 物化视图 `public.dltb_3857.geom_3857` 和 `public.dltb_mv3857.geom_3857`，实际 SRID 为 3857，且具备 GiST 索引。
+
+验证使用 `manager/backend/cmd/quickview-mvt-benchmark`，临时配置和报告位于 `/tmp/addp-dltb-mvt-benchmark*.json`，未写入仓库。样本包含 `z6/51/27`、`z8/204/110`、`z10/819/442`、`z12/3279/1770`。
+
+结论：
+
+1. 源表 `ST_Transform(SmGeometry,3857)` 慢路径在 `timeout_ms=5000` 下 8/8 次超时，动态 MVT 应继续标记为慢路径并使用 `suppress_tile`，引导执行快显性能优化。
+2. 外部 3857 目标在 `z8/z10/z12` 常用浏览层级 15/15 次成功，p95 约 472ms，p99 约 474ms，说明 ready 3857 目标路径适合动态 MVT 快显。
+3. 外部 3857 目标在 `z6/51/27` 低层级大范围瓦片仍 2/2 次超过 5 秒预算；该类瓦片应引导生成瓦片缓存，后续进入多尺度快显优化专题，而不是简单提高全局动态 MVT 超时预算。
+4. 基于本次样本，`QUICK_VIEW_REALTIME_TILE_TIMEOUT_MS=5000` 对 dltb 仍是合理保护值；`QUICK_VIEW_REALTIME_TILE_RETRY_AFTER_SEC=60` 暂无需要调整的实测证据。
+
+## 十四、验证命令
 
 文档检查：
 

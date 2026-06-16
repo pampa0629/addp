@@ -9,12 +9,13 @@ import (
 )
 
 type fakeExecutor struct {
-	mu       sync.Mutex
-	queries  []string
-	args     [][]any
-	results  [][]byte
-	failCall int
-	calls    int
+	mu        sync.Mutex
+	queries   []string
+	args      [][]any
+	results   [][]byte
+	failCall  int
+	failCalls map[int]string
+	calls     int
 }
 
 func (f *fakeExecutor) ExecuteTile(ctx context.Context, query string, args []any) ([]byte, error) {
@@ -23,6 +24,9 @@ func (f *fakeExecutor) ExecuteTile(ctx context.Context, query string, args []any
 	f.calls++
 	f.queries = append(f.queries, query)
 	f.args = append(f.args, append([]any(nil), args...))
+	if message, ok := f.failCalls[f.calls]; ok {
+		return nil, errors.New(message)
+	}
 	if f.failCall > 0 && f.calls == f.failCall {
 		return nil, errors.New("forced failure")
 	}
@@ -145,6 +149,45 @@ func TestRunReportsErrorsAndDoesNotAbortMeasuredIterations(t *testing.T) {
 	}
 	if summary.MaxSizeBytes != 3 {
 		t.Fatalf("max size = %d, want 3", summary.MaxSizeBytes)
+	}
+}
+
+func TestRecommendationConfidencePrefersTimeoutRerun(t *testing.T) {
+	got := recommendationConfidence(MetricSummary{
+		Runs:        2,
+		ErrorRuns:   2,
+		TimeoutRuns: 2,
+	})
+	if got != "needs_higher_timeout_rerun" {
+		t.Fatalf("confidence = %s, want needs_higher_timeout_rerun", got)
+	}
+}
+
+func TestRunRecordsWarmupFailureAndContinuesMeasuredRuns(t *testing.T) {
+	cfg := NormalizeConfig(Config{
+		DSN:        "postgres://example",
+		Iterations: 1,
+		Warmup:     1,
+		Scenarios: []Scenario{{
+			Name:           "roads",
+			Schema:         "public",
+			Table:          "roads",
+			GeometryColumn: "shape",
+			SRID:           3857,
+			Tiles:          []TileCoord{{Z: 1, X: 0, Y: 0}},
+		}},
+	})
+	executor := &fakeExecutor{failCalls: map[int]string{1: "warmup timeout"}}
+
+	report, err := Run(context.Background(), cfg, executor)
+	if err != nil {
+		t.Fatalf("run benchmark: %v", err)
+	}
+	if len(report.Scenarios[0].Warnings) == 0 || !strings.Contains(report.Scenarios[0].Warnings[0], "warmup_failed") {
+		t.Fatalf("warnings = %#v, want warmup failure warning", report.Scenarios[0].Warnings)
+	}
+	if got := report.Scenarios[0].Summary.SuccessfulRuns; got != 1 {
+		t.Fatalf("successful measured runs = %d, want 1", got)
 	}
 }
 

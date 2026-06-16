@@ -353,10 +353,11 @@ func runScenario(ctx context.Context, cfg Config, scenario Scenario, executor Ex
 	scenario = NormalizeConfig(Config{Scenarios: []Scenario{scenario}}).Scenarios[0]
 	query, args := buildScenarioQuery(scenario)
 
+	var warnings []string
 	for _, tile := range scenario.Tiles {
 		for i := 0; i < cfg.Warmup; i++ {
 			if err := executeWarmup(ctx, cfg.TimeoutMS, executor, query, args, tile); err != nil {
-				return ScenarioReport{}, fmt.Errorf("warmup %s z%d/%d/%d: %w", scenario.Name, tile.Z, tile.X, tile.Y, err)
+				warnings = append(warnings, fmt.Sprintf("warmup_failed z%d/%d/%d: %v", tile.Z, tile.X, tile.Y, err))
 			}
 		}
 	}
@@ -385,7 +386,7 @@ func runScenario(ctx context.Context, cfg Config, scenario Scenario, executor Ex
 		Tags:       scenario.Tags,
 		Tiles:      tileReports,
 		Summary:    summarizeRuns(allRuns),
-		Warnings:   scenarioWarnings(scenario),
+		Warnings:   append(scenarioWarnings(scenario), warnings...),
 	}, nil
 }
 
@@ -648,11 +649,11 @@ func recommendedActionForRenderPath(path string) string {
 }
 
 func recommendationConfidence(summary MetricSummary) string {
-	if summary.SuccessfulRuns == 0 {
-		return "insufficient_successful_runs"
-	}
 	if summary.TimeoutRuns > 0 {
 		return "needs_higher_timeout_rerun"
+	}
+	if summary.SuccessfulRuns == 0 {
+		return "insufficient_successful_runs"
 	}
 	if summary.ErrorRuns > 0 {
 		return "partial_errors"
