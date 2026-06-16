@@ -161,6 +161,8 @@ func main() {
 		mvtService,
 		metadataRepo,
 	)
+	unifiedMVTService.SetRealtimeTileTimeout(time.Duration(cfg.TileCache.RealtimeTileTimeoutMS) * time.Millisecond)
+	unifiedMVTService.SetRealtimeTileRetryAfter(time.Duration(cfg.TileCache.RealtimeTileRetryAfterSec) * time.Second)
 	logger.L().Info("统一 MVT 服务已初始化（RESTful API + 三层缓存穿透架构）")
 
 	// 初始化 MinIO 客户端（用于瓦片存储和删除）
@@ -178,7 +180,8 @@ func main() {
 	// 初始化快显状态服务（依赖数据库与 Meta 空间元数据）
 	quickViewService := service.NewQuickViewService(db, metaClient)
 	quickViewService.SetCapabilityOptions(service.QuickViewCapabilityOptions{
-		DirectGeoJSONMaxRows: cfg.TileCache.DirectGeoJSONMaxRows,
+		DirectGeoJSONMaxRows:  cfg.TileCache.DirectGeoJSONMaxRows,
+		RealtimeTileTimeoutMS: cfg.TileCache.RealtimeTileTimeoutMS,
 	})
 
 	tileGenerator := mvt.NewTileGenerator(systemClient, cfg.TileCache.MaxDBConns)

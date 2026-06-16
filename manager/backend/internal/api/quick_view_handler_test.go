@@ -138,12 +138,14 @@ func TestApplyTileResponseHeadersExposesRealtimeTimeoutRecommendation(t *testing
 	applyTileResponseHeaders(c, &service.TileResponse{
 		Data:                  []byte{},
 		FromCache:             false,
-		Duration:              5 * time.Second,
+		Duration:              2500 * time.Millisecond,
 		RenderSource:          service.QuickViewRenderSourceRealtimeTile,
 		Status:                service.TileStatusTimeout,
 		PerformanceMode:       service.RealtimeTilePerformanceReady3857Target,
+		TimeoutBudget:         2500 * time.Millisecond,
 		TimeoutRecommendation: service.RealtimeTileRecommendationTileCacheGeneration,
 		TimeoutRetryPolicy:    service.RealtimeTileTimeoutRetryTTL,
+		TimeoutRetryAfter:     45 * time.Second,
 	})
 
 	headers := w.Header()
@@ -156,10 +158,14 @@ func TestApplyTileResponseHeadersExposesRealtimeTimeoutRecommendation(t *testing
 	if got := headers.Get("X-ADDP-Tile-Retry-Policy"); got != service.RealtimeTileTimeoutRetryTTL {
 		t.Fatalf("retry policy header = %s, want %s", got, service.RealtimeTileTimeoutRetryTTL)
 	}
-	if got := headers.Get("Retry-After"); got != "60" {
-		t.Fatalf("Retry-After = %s, want 60", got)
+	if got := headers.Get("X-ADDP-Tile-Timeout-Budget-MS"); got != "2500" {
+		t.Fatalf("timeout budget header = %s, want 2500", got)
+	}
+	if got := headers.Get("Retry-After"); got != "45" {
+		t.Fatalf("Retry-After = %s, want 45", got)
 	}
 	if got := headers.Get("Access-Control-Expose-Headers"); !strings.Contains(got, "X-ADDP-Tile-Recommendation") ||
+		!strings.Contains(got, "X-ADDP-Tile-Timeout-Budget-MS") ||
 		!strings.Contains(got, "X-ADDP-Tile-Retry-Policy") ||
 		!strings.Contains(got, "Retry-After") {
 		t.Fatalf("expose headers = %q, want tile recommendation headers exposed", got)

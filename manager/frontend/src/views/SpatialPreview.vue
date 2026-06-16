@@ -118,6 +118,7 @@ import VectorTilePreview from '@/components/map/VectorTilePreview.vue'
 import GeoJSONQuickView from '@/components/map/GeoJSONQuickView.vue'
 import { quickViewAPI } from '@/api/quickView'
 import client from '@/api/client'
+import { quickViewTileAdvisoryMessage as tileAdvisoryMessage } from '@/utils/quickViewTileAdvisory'
 import { TablePreview } from '@common-ui-map'
 
 const route = useRoute()
@@ -176,13 +177,7 @@ const quickViewTileAdvisoryAction = computed(() => {
   return ''
 })
 const quickViewTileAdvisoryMessage = computed(() => {
-  if (quickViewTileAdvisoryAction.value === 'tile_cache_generation') {
-    return t('manager.spatialPreview.tileTimeoutCacheRecommended')
-  }
-  if (quickViewTileAdvisoryAction.value === 'quick_view_optimization') {
-    return t('manager.spatialPreview.tileTimeoutOptimizationRecommended')
-  }
-  return ''
+  return tileAdvisoryMessage(t, quickViewTileAdvisoryAction.value, quickViewTileAdvisory.value, quickViewStatus.value)
 })
 const quickViewTileAdvisoryActionLabel = computed(() => {
   if (quickViewTileAdvisoryAction.value === 'tile_cache_generation') {
@@ -331,9 +326,9 @@ const openQuickViewOptimizationCreate = () => {
 const handleTileAdvisory = (advisory) => {
   quickViewTileAdvisory.value = advisory
   if (advisory?.retryPolicy === 'suppress_tile') {
-    ElMessage.warning(t('manager.spatialPreview.tileTimeoutOptimizationRecommended'))
+    ElMessage.warning(tileAdvisoryMessage(t, 'quick_view_optimization', advisory, quickViewStatus.value))
   } else if (advisory?.recommendation === 'tile_cache_generation') {
-    ElMessage.warning(t('manager.spatialPreview.tileTimeoutCacheRecommended'))
+    ElMessage.warning(tileAdvisoryMessage(t, 'tile_cache_generation', advisory, quickViewStatus.value))
   }
 }
 

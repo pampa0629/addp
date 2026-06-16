@@ -388,6 +388,7 @@ import ImportDialog from '@/components/explorer/ImportDialog.vue'
 import GeoJSONQuickView from '@/components/map/GeoJSONQuickView.vue'
 import VectorTilePreview from '@/components/map/VectorTilePreview.vue'
 import { useExplorerStore } from '@/stores/explorer'
+import { quickViewTileAdvisoryMessage as tileAdvisoryMessage } from '@/utils/quickViewTileAdvisory'
 import {
   canShowVectorizeAction,
   isVectorizableObjectNode,
@@ -1623,13 +1624,7 @@ const quickViewTileAdvisoryAction = computed(() => {
 })
 
 const quickViewTileAdvisoryMessage = computed(() => {
-  if (quickViewTileAdvisoryAction.value === 'tile_cache_generation') {
-    return t('manager.spatialPreview.tileTimeoutCacheRecommended')
-  }
-  if (quickViewTileAdvisoryAction.value === 'quick_view_optimization') {
-    return t('manager.spatialPreview.tileTimeoutOptimizationRecommended')
-  }
-  return ''
+  return tileAdvisoryMessage(t, quickViewTileAdvisoryAction.value, quickViewTileAdvisory.value, quickViewStatus.value)
 })
 
 const quickViewTileAdvisoryActionLabel = computed(() => {
@@ -1797,9 +1792,9 @@ const handleQuickViewOptimization = () => {
 const handleTileAdvisory = (advisory) => {
   quickViewTileAdvisory.value = advisory
   if (advisory?.retryPolicy === 'suppress_tile') {
-    ElMessage.warning(t('manager.spatialPreview.tileTimeoutOptimizationRecommended'))
+    ElMessage.warning(tileAdvisoryMessage(t, 'quick_view_optimization', advisory, quickViewStatus.value))
   } else if (advisory?.recommendation === 'tile_cache_generation') {
-    ElMessage.warning(t('manager.spatialPreview.tileTimeoutCacheRecommended'))
+    ElMessage.warning(tileAdvisoryMessage(t, 'tile_cache_generation', advisory, quickViewStatus.value))
   }
 }
 

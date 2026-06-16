@@ -18,11 +18,12 @@ import (
 )
 
 const (
-	DefaultIterations  = 5
-	DefaultWarmup      = 0
-	DefaultConcurrency = 1
-	DefaultExtent      = 1024
-	DefaultTimeoutMS   = 3000
+	DefaultIterations    = 5
+	DefaultWarmup        = 0
+	DefaultConcurrency   = 1
+	DefaultExtent        = 1024
+	DefaultTimeoutMS     = 3000
+	DefaultRetryAfterSec = 60
 )
 
 type Config struct {
@@ -58,11 +59,12 @@ type TileCoord struct {
 }
 
 type Report struct {
-	StartedAt  time.Time        `json:"started_at"`
-	FinishedAt time.Time        `json:"finished_at"`
-	Config     ConfigSummary    `json:"config"`
-	Scenarios  []ScenarioReport `json:"scenarios"`
-	DBStats    DBStats          `json:"db_stats"`
+	StartedAt       time.Time                `json:"started_at"`
+	FinishedAt      time.Time                `json:"finished_at"`
+	Config          ConfigSummary            `json:"config"`
+	Scenarios       []ScenarioReport         `json:"scenarios"`
+	Recommendations BenchmarkRecommendations `json:"recommendations"`
+	DBStats         DBStats                  `json:"db_stats"`
 }
 
 type ConfigSummary struct {
@@ -123,6 +125,24 @@ type MetricSummary struct {
 	ErrorRate      float64 `json:"error_rate"`
 	TimeoutRate    float64 `json:"timeout_rate"`
 	EmptyTileRate  float64 `json:"empty_tile_rate"`
+}
+
+type BenchmarkRecommendations struct {
+	RenderPaths []RenderPathRecommendation `json:"render_paths,omitempty"`
+	Warnings    []string                   `json:"warnings,omitempty"`
+}
+
+type RenderPathRecommendation struct {
+	RenderPath                         string        `json:"render_path"`
+	ScenarioCount                      int           `json:"scenario_count"`
+	TileCount                          int           `json:"tile_count"`
+	Summary                            MetricSummary `json:"summary"`
+	QuickViewRealtimeTileTimeoutMS     int           `json:"quick_view_realtime_tile_timeout_ms,omitempty"`
+	QuickViewRealtimeTileRetryAfterSec int           `json:"quick_view_realtime_tile_retry_after_sec,omitempty"`
+	RetryPolicy                        string        `json:"retry_policy"`
+	RecommendedAction                  string        `json:"recommended_action"`
+	Confidence                         string        `json:"confidence"`
+	Rationale                          []string      `json:"rationale,omitempty"`
 }
 
 type DBStats struct {
@@ -324,6 +344,7 @@ func Run(ctx context.Context, cfg Config, executor Executor) (Report, error) {
 	}
 
 	report.FinishedAt = time.Now().UTC()
+	report.Recommendations = buildRecommendations(report.Scenarios, cfg)
 	report.DBStats = executor.Stats()
 	return report, nil
 }
@@ -533,6 +554,129 @@ func rate(part, total int) float64 {
 		return 0
 	}
 	return float64(part) / float64(total)
+}
+
+func buildRecommendations(scenarios []ScenarioReport, cfg Config) BenchmarkRecommendations {
+	type aggregate struct {
+		renderPath    string
+		scenarioCount int
+		tileCount     int
+		runs          []RunReport
+	}
+
+	groups := map[string]*aggregate{}
+	for _, scenario := range scenarios {
+		group := groups[scenario.RenderPath]
+		if group == nil {
+			group = &aggregate{renderPath: scenario.RenderPath}
+			groups[scenario.RenderPath] = group
+		}
+		group.scenarioCount++
+		group.tileCount += len(scenario.Tiles)
+		for _, tile := range scenario.Tiles {
+			group.runs = append(group.runs, tile.Runs...)
+		}
+	}
+
+	paths := make([]string, 0, len(groups))
+	for path := range groups {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+
+	recommendations := BenchmarkRecommendations{
+		RenderPaths: make([]RenderPathRecommendation, 0, len(paths)),
+	}
+	for _, path := range paths {
+		group := groups[path]
+		summary := summarizeRuns(group.runs)
+		item := RenderPathRecommendation{
+			RenderPath:        path,
+			ScenarioCount:     group.scenarioCount,
+			TileCount:         group.tileCount,
+			Summary:           summary,
+			RetryPolicy:       retryPolicyForRenderPath(path),
+			RecommendedAction: recommendedActionForRenderPath(path),
+			Confidence:        recommendationConfidence(summary),
+			Rationale:         recommendationRationale(path, summary, cfg.TimeoutMS),
+		}
+		item.QuickViewRealtimeTileTimeoutMS = recommendedTimeoutMS(summary, cfg.TimeoutMS)
+		if item.RetryPolicy == "ttl" {
+			item.QuickViewRealtimeTileRetryAfterSec = DefaultRetryAfterSec
+		}
+		recommendations.RenderPaths = append(recommendations.RenderPaths, item)
+		if summary.TimeoutRuns > 0 {
+			recommendations.Warnings = append(recommendations.Warnings, fmt.Sprintf("%s observed timeout_rate=%.4f; rerun with a higher timeout_ms before raising deployment defaults", path, summary.TimeoutRate))
+		}
+	}
+	return recommendations
+}
+
+func recommendedTimeoutMS(summary MetricSummary, benchmarkTimeoutMS int) int {
+	if benchmarkTimeoutMS < 1 {
+		benchmarkTimeoutMS = DefaultTimeoutMS
+	}
+	if summary.SuccessfulRuns == 0 || summary.TimeoutRuns > 0 {
+		return benchmarkTimeoutMS
+	}
+	candidate := int(math.Ceil(summary.P99DurationMS * 1.5))
+	if candidate < 1000 {
+		candidate = 1000
+	}
+	return roundUp(candidate, 100)
+}
+
+func roundUp(value, step int) int {
+	if step < 1 {
+		return value
+	}
+	return ((value + step - 1) / step) * step
+}
+
+func retryPolicyForRenderPath(path string) string {
+	if path == "source_transform_path" {
+		return "suppress_tile"
+	}
+	return "ttl"
+}
+
+func recommendedActionForRenderPath(path string) string {
+	if path == "source_transform_path" {
+		return "quick_view_optimization"
+	}
+	return "tile_cache_generation"
+}
+
+func recommendationConfidence(summary MetricSummary) string {
+	if summary.SuccessfulRuns == 0 {
+		return "insufficient_successful_runs"
+	}
+	if summary.TimeoutRuns > 0 {
+		return "needs_higher_timeout_rerun"
+	}
+	if summary.ErrorRuns > 0 {
+		return "partial_errors"
+	}
+	return "measured"
+}
+
+func recommendationRationale(path string, summary MetricSummary, benchmarkTimeoutMS int) []string {
+	rationale := []string{
+		fmt.Sprintf("observed p95=%.2fms p99=%.2fms with benchmark timeout_ms=%d", summary.P95DurationMS, summary.P99DurationMS, benchmarkTimeoutMS),
+	}
+	if path == "source_transform_path" {
+		rationale = append(rationale, "slow path timeouts should suppress the tile URL and guide users to quick view optimization")
+	} else {
+		rationale = append(rationale, "indexed 3857 target timeouts should use ttl retry and guide users to tile cache generation")
+		rationale = append(rationale, "Retry-After is a client cooldown policy; keep the default unless UX or load validation requires a different value")
+	}
+	if summary.TimeoutRuns > 0 {
+		rationale = append(rationale, "timeouts were observed, so successful-run percentiles understate worst-case cost")
+	}
+	if summary.ErrorRuns > 0 {
+		rationale = append(rationale, "errors were observed; inspect tile runs and EXPLAIN output before changing deployment defaults")
+	}
+	return rationale
 }
 
 func renderPath(scenario Scenario) string {

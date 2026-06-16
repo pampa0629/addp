@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"strings"
 	"testing"
@@ -186,6 +187,52 @@ func TestQuickViewOptimizationDeleteResultReturnsNotFound(t *testing.T) {
 	}
 }
 
+func TestQuickViewOptimizationDeleteResultRecordsCleanupFailure(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	repo := repository.NewQuickViewOptimizationRepository(db)
+	svc := NewQuickViewOptimizationTaskService(repo, nil)
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("get sqlite sql db: %v", err)
+	}
+	svc.SetDBProvider(quickViewOptimizationTestDBProvider{db: sqlDB})
+
+	result := newQuickViewOptimizationResult()
+	if err := repo.CreateResult(context.Background(), result); err != nil {
+		t.Fatalf("create quick view optimization result: %v", err)
+	}
+
+	err = svc.DeleteResult(context.Background(), result.ID, result.TenantID)
+	if err == nil || !strings.Contains(err.Error(), "drop quick view optimization target") {
+		t.Fatalf("delete result error = %v, want drop failure", err)
+	}
+
+	stored, err := repo.GetResult(context.Background(), result.ID, result.TenantID)
+	if err != nil {
+		t.Fatalf("get result after cleanup failure: %v", err)
+	}
+	if stored == nil {
+		t.Fatalf("result was deleted after cleanup failure")
+	}
+	if stored.Status != models.QuickViewOptimizationStatusFailed {
+		t.Fatalf("status = %s, want failed", stored.Status)
+	}
+	if !strings.Contains(stored.ErrorMessage, "cleanup quick view optimization target failed") {
+		t.Fatalf("error_message = %q, want cleanup failure", stored.ErrorMessage)
+	}
+	if stored.Metadata["cleanup_error"] == nil {
+		t.Fatalf("metadata cleanup_error missing: %#v", stored.Metadata)
+	}
+}
+
+type quickViewOptimizationTestDBProvider struct {
+	db *sql.DB
+}
+
+func (p quickViewOptimizationTestDBProvider) GetPostGISDB(context.Context, *uint, uint) (*sql.DB, error) {
+	return p.db, nil
+}
+
 func newQuickViewOptimizationTaskDefinition() *models.QuickViewOptimizationTask {
 	return &models.QuickViewOptimizationTask{
 		TenantID: 1,
@@ -213,5 +260,32 @@ func newQuickViewOptimizationTaskDefinition() *models.QuickViewOptimizationTask 
 				"target_schema": "public",
 			},
 		},
+	}
+}
+
+func newQuickViewOptimizationResult() *models.QuickViewOptimization {
+	executionID := "execution-1"
+	taskID := uint(1)
+	itemID := uint(42)
+	return &models.QuickViewOptimization{
+		TenantID:                  1,
+		ItemFingerprint:           spatialItemFingerprint(11, "public", "roads"),
+		ItemID:                    &itemID,
+		Locator:                   tableLocator(11, "public", "roads"),
+		TaskID:                    &taskID,
+		LastExecutionID:           &executionID,
+		SourceEngineID:            11,
+		SourceSchema:              "public",
+		SourceTable:               "roads",
+		SourceGeometryColumn:      "shape",
+		SourceSRID:                4326,
+		TargetSRID:                3857,
+		TargetKind:                models.QuickViewOptimizationTargetKindSourceSchemaMaterializedView,
+		TargetSchema:              "public",
+		TargetTable:               "addp_qvo_test",
+		TargetGeometryColumn:      models.QuickViewOptimizationTargetGeometryColumn,
+		Status:                    models.QuickViewOptimizationStatusReady,
+		SourceFingerprintSnapshot: commonModels.JSONMap{},
+		Metadata:                  commonModels.JSONMap{"index_name": "idx_addp_qvo_test_geom_3857_gist"},
 	}
 }

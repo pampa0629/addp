@@ -191,6 +191,7 @@ func (h *QuickViewHandler) GetQuickViewGeoJSONByLocator(c *gin.Context) {
 // @Header 200 {string} X-ADDP-Tile-Cache-ID "命中的瓦片缓存结果 ID | Matched tile cache result ID"
 // @Header 200 {string} X-ADDP-Tile-Status "瓦片语义状态：ok、empty、timeout 或 degraded | Tile semantic status: ok, empty, timeout, or degraded"
 // @Header 200 {string} X-ADDP-Tile-Performance-Mode "动态瓦片性能模式：ready_3857_target、source_3857_indexed、source_3857_unindexed 或 source_transform_path | Realtime tile performance mode"
+// @Header 200 {string} X-ADDP-Tile-Timeout-Budget-MS "动态 MVT 单瓦片超时预算，单位毫秒 | Realtime MVT per-tile timeout budget in milliseconds"
 // @Header 200 {string} X-ADDP-Tile-Recommendation "超时或降级时的推荐动作：quick_view_optimization 或 tile_cache_generation | Recommended action when timeout or degraded"
 // @Header 200 {string} X-ADDP-Tile-Retry-Policy "超时或降级后的重试策略：suppress_tile 或 ttl | Retry policy after timeout or degraded"
 // @Header 200 {string} X-Generation-Time "动态生成耗时 | Dynamic generation duration"
@@ -265,7 +266,7 @@ func (h *QuickViewHandler) GetQuickViewTileByLocator(c *gin.Context) {
 
 func applyTileResponseHeaders(c *gin.Context, response *service.TileResponse) {
 	c.Header("Content-Type", "application/vnd.mapbox-vector-tile")
-	c.Header("Access-Control-Expose-Headers", "X-ADDP-Render-Source, X-ADDP-Tile-Cache, X-ADDP-Tile-Cache-ID, X-ADDP-Tile-Status, X-ADDP-Tile-Performance-Mode, X-ADDP-Tile-Recommendation, X-ADDP-Tile-Retry-Policy, Retry-After, X-Generation-Time, Content-Length")
+	c.Header("Access-Control-Expose-Headers", "X-ADDP-Render-Source, X-ADDP-Tile-Cache, X-ADDP-Tile-Cache-ID, X-ADDP-Tile-Status, X-ADDP-Tile-Performance-Mode, X-ADDP-Tile-Timeout-Budget-MS, X-ADDP-Tile-Recommendation, X-ADDP-Tile-Retry-Policy, Retry-After, X-Generation-Time, Content-Length")
 	renderSource := strings.TrimSpace(response.RenderSource)
 	if renderSource == "" {
 		renderSource = service.QuickViewRenderSourceRealtimeTile
@@ -282,6 +283,9 @@ func applyTileResponseHeaders(c *gin.Context, response *service.TileResponse) {
 	if response.PerformanceMode != "" {
 		c.Header("X-ADDP-Tile-Performance-Mode", response.PerformanceMode)
 	}
+	if response.TimeoutBudget > 0 {
+		c.Header("X-ADDP-Tile-Timeout-Budget-MS", strconv.FormatInt(response.TimeoutBudget.Milliseconds(), 10))
+	}
 	if isDegradedTileStatus(tileStatus) {
 		if response.TimeoutRecommendation != "" {
 			c.Header("X-ADDP-Tile-Recommendation", response.TimeoutRecommendation)
@@ -289,7 +293,11 @@ func applyTileResponseHeaders(c *gin.Context, response *service.TileResponse) {
 		if response.TimeoutRetryPolicy != "" {
 			c.Header("X-ADDP-Tile-Retry-Policy", response.TimeoutRetryPolicy)
 			if response.TimeoutRetryPolicy == service.RealtimeTileTimeoutRetryTTL {
-				c.Header("Retry-After", "60")
+				retryAfter := int64(60)
+				if response.TimeoutRetryAfter > 0 {
+					retryAfter = int64(response.TimeoutRetryAfter.Seconds())
+				}
+				c.Header("Retry-After", strconv.FormatInt(retryAfter, 10))
 			}
 		}
 	}

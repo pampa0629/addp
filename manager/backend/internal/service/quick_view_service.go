@@ -72,12 +72,16 @@ func NewQuickViewService(
 }
 
 type QuickViewCapabilityOptions struct {
-	DirectGeoJSONMaxRows int
+	DirectGeoJSONMaxRows  int
+	RealtimeTileTimeoutMS int
 }
 
 func (s *QuickViewService) SetCapabilityOptions(options QuickViewCapabilityOptions) {
 	if options.DirectGeoJSONMaxRows > 0 {
 		s.options.DirectGeoJSONMaxRows = options.DirectGeoJSONMaxRows
+	}
+	if options.RealtimeTileTimeoutMS > 0 {
+		s.options.RealtimeTileTimeoutMS = options.RealtimeTileTimeoutMS
 	}
 }
 
@@ -400,7 +404,7 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 		capability.RenderSource = QuickViewRenderSourceDirectGeoJSON
 		capability.RecommendedMode = "quick_view"
 		capability.QuickView = renderInfoFromLocatorGeoJSON(source.SpatialMeta, source.GeoJSONURL)
-		capability.RealtimeTile = realtimeTileInfoFromTarget(source.RealtimeTileTarget)
+		capability.RealtimeTile = s.realtimeTileInfoFromTarget(source.RealtimeTileTarget)
 	} else if !spatialMetaComplete(source.SpatialMeta) {
 		capability.TileCacheGeneration.Available = false
 		capability.TileCacheGeneration.Reason = "spatial metadata is incomplete"
@@ -412,7 +416,7 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 		capability.RenderSource = QuickViewRenderSourceRealtimeTile
 		capability.RecommendedMode = "quick_view"
 		capability.QuickView = renderInfoFromRealtimeTile(source.EngineID, source.Schema, source.Table, source.SpatialMeta)
-		capability.RealtimeTile = realtimeTileInfoFromTarget(source.RealtimeTileTarget)
+		capability.RealtimeTile = s.realtimeTileInfoFromTarget(source.RealtimeTileTarget)
 		capability.CanGenerateTileCache = true
 	}
 
@@ -594,6 +598,13 @@ func (s *QuickViewService) directGeoJSONMaxRows() int64 {
 	return 2000
 }
 
+func (s *QuickViewService) realtimeTileTimeoutBudgetMS() int {
+	if s.options.RealtimeTileTimeoutMS > 0 {
+		return s.options.RealtimeTileTimeoutMS
+	}
+	return 5000
+}
+
 func spatialMetaComplete(meta *SpatialMetadataResult) bool {
 	return meta != nil &&
 		strings.TrimSpace(meta.GeomColumn) != "" &&
@@ -611,9 +622,16 @@ func directGeoJSONAvailable(maxRows int64, meta *SpatialMetadataResult) bool {
 	return spatialMetaDirectGeoJSONReady(meta) && meta.RecordCount > 0 && meta.RecordCount <= maxRows
 }
 
-func realtimeTileInfoFromTarget(target *RealtimeTileTarget) *QuickViewRealtimeTileInfo {
+func (s *QuickViewService) realtimeTileInfoFromTarget(target *RealtimeTileTarget) *QuickViewRealtimeTileInfo {
+	return realtimeTileInfoFromTarget(target, s.realtimeTileTimeoutBudgetMS())
+}
+
+func realtimeTileInfoFromTarget(target *RealtimeTileTarget, timeoutBudgetMS int) *QuickViewRealtimeTileInfo {
 	if target == nil {
 		return nil
+	}
+	if timeoutBudgetMS <= 0 {
+		timeoutBudgetMS = 5000
 	}
 	mode := target.PerformanceMode
 	if mode == "" {
@@ -628,7 +646,7 @@ func realtimeTileInfoFromTarget(target *RealtimeTileTarget) *QuickViewRealtimeTi
 	info := &QuickViewRealtimeTileInfo{
 		Available:                  true,
 		PerformanceMode:            mode,
-		TimeoutBudgetMS:            5000,
+		TimeoutBudgetMS:            timeoutBudgetMS,
 		OptimizationRecommended:    target.OptimizationRecommended,
 		OptimizationRecommendation: target.OptimizationRecommendation,
 	}

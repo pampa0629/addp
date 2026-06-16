@@ -76,7 +76,9 @@ type TileCacheConfig struct {
 	MaxDBConns  int // 数据库最大连接数（默认等于 Concurrency）
 
 	// 快显能力判定
-	DirectGeoJSONMaxRows int // 小数据量直接 GeoJSON 快显的最大行数
+	DirectGeoJSONMaxRows      int // 小数据量直接 GeoJSON 快显的最大行数
+	RealtimeTileTimeoutMS     int // 动态 MVT 单瓦片交互超时预算
+	RealtimeTileRetryAfterSec int // 动态 MVT 可重试降级的 Retry-After 秒数
 }
 
 func resolveMeilisearchURL() string {
@@ -180,6 +182,14 @@ func Load() *Config {
 	// 瓦片缓存生成配置
 	concurrency := commonConfig.GetEnvInt("TILE_CACHE_CONCURRENCY", 10)
 	maxDBConns := commonConfig.GetEnvInt("TILE_CACHE_MAX_DB_CONNS", 0)
+	realtimeTileTimeoutMS := commonConfig.GetEnvInt("QUICK_VIEW_REALTIME_TILE_TIMEOUT_MS", 5000)
+	if realtimeTileTimeoutMS <= 0 {
+		realtimeTileTimeoutMS = 5000
+	}
+	realtimeTileRetryAfterSec := commonConfig.GetEnvInt("QUICK_VIEW_REALTIME_TILE_RETRY_AFTER_SEC", 60)
+	if realtimeTileRetryAfterSec <= 0 {
+		realtimeTileRetryAfterSec = 60
+	}
 
 	// 如果没有指定 MaxDBConns，默认等于 Concurrency
 	if maxDBConns == 0 {
@@ -187,13 +197,15 @@ func Load() *Config {
 	}
 
 	cfg.TileCache = TileCacheConfig{
-		TargetRecordsPerTile:  commonConfig.GetEnvInt("TILE_CACHE_TARGET_RECORDS", 3000),
-		MinDurationForCacheMS: commonConfig.GetEnvInt("TILE_CACHE_MIN_DURATION_MS", 100),
-		MinSizeForCacheKB:     commonConfig.GetEnvInt("TILE_CACHE_MIN_SIZE_KB", 50),
-		MaxZoom:               commonConfig.GetEnvInt("TILE_CACHE_MAX_ZOOM", 18),
-		Concurrency:           concurrency,
-		MaxDBConns:            maxDBConns,
-		DirectGeoJSONMaxRows:  commonConfig.GetEnvInt("QUICK_VIEW_DIRECT_GEOJSON_MAX_ROWS", 2000),
+		TargetRecordsPerTile:      commonConfig.GetEnvInt("TILE_CACHE_TARGET_RECORDS", 3000),
+		MinDurationForCacheMS:     commonConfig.GetEnvInt("TILE_CACHE_MIN_DURATION_MS", 100),
+		MinSizeForCacheKB:         commonConfig.GetEnvInt("TILE_CACHE_MIN_SIZE_KB", 50),
+		MaxZoom:                   commonConfig.GetEnvInt("TILE_CACHE_MAX_ZOOM", 18),
+		Concurrency:               concurrency,
+		MaxDBConns:                maxDBConns,
+		DirectGeoJSONMaxRows:      commonConfig.GetEnvInt("QUICK_VIEW_DIRECT_GEOJSON_MAX_ROWS", 2000),
+		RealtimeTileTimeoutMS:     realtimeTileTimeoutMS,
+		RealtimeTileRetryAfterSec: realtimeTileRetryAfterSec,
 	}
 
 	// 记录瓦片缓存生成配置（特别关注并发数和连接池）
@@ -203,6 +215,8 @@ func Load() *Config {
 	log.Printf("   TILE_CACHE_MAX_ZOOM: %d", cfg.TileCache.MaxZoom)
 	log.Printf("   TILE_CACHE_TARGET_RECORDS: %d", cfg.TileCache.TargetRecordsPerTile)
 	log.Printf("   QUICK_VIEW_DIRECT_GEOJSON_MAX_ROWS: %d", cfg.TileCache.DirectGeoJSONMaxRows)
+	log.Printf("   QUICK_VIEW_REALTIME_TILE_TIMEOUT_MS: %d", cfg.TileCache.RealtimeTileTimeoutMS)
+	log.Printf("   QUICK_VIEW_REALTIME_TILE_RETRY_AFTER_SEC: %d", cfg.TileCache.RealtimeTileRetryAfterSec)
 
 	return cfg
 }

@@ -312,7 +312,10 @@ func TestQuickViewCapabilityUsesSourceTransformRealtimeTileForLargePGTableWithou
 func TestQuickViewCapabilityUsesSource3857RealtimeTileWhenResolved(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	svc := NewQuickViewService(db, nil)
-	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectGeoJSONMaxRows: 2000})
+	svc.SetCapabilityOptions(QuickViewCapabilityOptions{
+		DirectGeoJSONMaxRows:  2000,
+		RealtimeTileTimeoutMS: 2500,
+	})
 
 	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
 		Identity: QuickViewIdentity{
@@ -360,6 +363,9 @@ func TestQuickViewCapabilityUsesSource3857RealtimeTileWhenResolved(t *testing.T)
 	}
 	if capability.RealtimeTile.PerformanceMode != RealtimeTilePerformanceSource3857Index {
 		t.Fatalf("performance_mode = %s, want %s", capability.RealtimeTile.PerformanceMode, RealtimeTilePerformanceSource3857Index)
+	}
+	if capability.RealtimeTile.TimeoutBudgetMS != 2500 {
+		t.Fatalf("timeout_budget_ms = %d, want 2500", capability.RealtimeTile.TimeoutBudgetMS)
 	}
 	if capability.RealtimeTile.TimeoutRecommendation != RealtimeTileRecommendationTileCacheGeneration ||
 		capability.RealtimeTile.TimeoutRetryPolicy != RealtimeTileTimeoutRetryTTL {

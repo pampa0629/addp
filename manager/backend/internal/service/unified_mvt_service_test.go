@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 func TestUnifiedMVTServiceReturnsEmptyTileWithoutRealtimeTarget(t *testing.T) {
@@ -54,5 +55,18 @@ func TestTileStatusForData(t *testing.T) {
 				t.Fatalf("tileStatusForData() = %s, want %s", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestUnifiedMVTServiceRealtimeTileBudgets(t *testing.T) {
+	svc := NewUnifiedMVTService(nil, nil, nil)
+	svc.SetRealtimeTileTimeout(2500 * time.Millisecond)
+	svc.SetRealtimeTileRetryAfter(45 * time.Second)
+
+	if got := svc.realtimeTileTimeoutBudget(); got != 2500*time.Millisecond {
+		t.Fatalf("timeout budget = %s, want 2500ms", got)
+	}
+	if got := svc.realtimeTileRetryAfterBudget(); got != 45*time.Second {
+		t.Fatalf("retry after = %s, want 45s", got)
 	}
 }

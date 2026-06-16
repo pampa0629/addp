@@ -143,9 +143,29 @@ func (s *QuickViewOptimizationTaskService) DeleteResult(ctx context.Context, id 
 	}
 	dropSQL := "DROP MATERIALIZED VIEW IF EXISTS " + spatial.QualifiedPostGISTable(result.TargetSchema, result.TargetTable)
 	if _, err := db.ExecContext(ctx, dropSQL); err != nil {
+		s.recordQuickViewOptimizationCleanupFailure(ctx, result, err)
 		return fmt.Errorf("drop quick view optimization target: %w", err)
 	}
 	return s.repo.DeleteResult(ctx, id, tenantID)
+}
+
+func (s *QuickViewOptimizationTaskService) recordQuickViewOptimizationCleanupFailure(ctx context.Context, result *models.QuickViewOptimization, cleanupErr error) {
+	if result == nil || cleanupErr == nil {
+		return
+	}
+	metadata := result.Metadata.Clone()
+	if metadata == nil {
+		metadata = commonModels.JSONMap{}
+	}
+	metadata["cleanup_error"] = cleanupErr.Error()
+	metadata["cleanup_failed_at"] = time.Now().Format(time.RFC3339Nano)
+	if err := s.repo.UpdateResultFields(ctx, result.ID, result.TenantID, map[string]interface{}{
+		"status":        models.QuickViewOptimizationStatusFailed,
+		"error_message": fmt.Sprintf("cleanup quick view optimization target failed: %v", cleanupErr),
+		"metadata":      metadata,
+	}); err != nil {
+		logger.L().Warn("记录快显性能优化结果清理失败状态失败", "result_id", result.ID, "error", err)
+	}
 }
 
 func (s *QuickViewOptimizationTaskService) Execute(ctx context.Context, taskID uint, tenantID uint, triggerType string, source string, parentExecutionID *string) (string, error) {

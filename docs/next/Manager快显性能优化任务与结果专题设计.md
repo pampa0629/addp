@@ -560,7 +560,7 @@ manager.quick_view_optimization
 1. 验证应同时覆盖源表 `ST_Transform` 路径、源表已是 3857 且有索引路径、Manager ready 快显性能优化目标路径和外部只读 3857 目标路径。
 2. 验证样本应覆盖小、中、大记录规模和点、线、面几何，输出无可索引 3857 目标和有可索引 3857 目标两组响应时间预算与超时处理建议。
 3. 输出指标至少包含单瓦片耗时、服务端总耗时、超时率、错误率、原始 MVT 大小、空瓦片率和 DB 资源占用。
-4. 验证结论只用于动态 MVT capability 性能模式、提示等级、超时策略和运行时保护；瓦片缓存生成不因动态 MVT 响应时间预算而被禁止。
+4. 验证结论只用于动态 MVT capability 性能模式、提示等级、`QUICK_VIEW_REALTIME_TILE_TIMEOUT_MS` / `QUICK_VIEW_REALTIME_TILE_RETRY_AFTER_SEC` 配置建议和运行时保护；瓦片缓存生成不因动态 MVT 响应时间预算而被禁止。
 
 ## 十一、删除语义
 
@@ -582,8 +582,11 @@ manager.quick_view_optimization
 
 如果删除失败：
 
-1. 结果状态应进入 `failed` 或保留 `ready` 并记录 cleanup failure，具体状态需后续细化。
-2. 不得在未删除实际 PG 对象时把结果伪装为已清理。
+1. 不删除 `manager.quick_view_optimization` 结果记录。
+2. 结果状态进入 `failed`。
+3. `error_message` 记录 cleanup failure 摘要。
+4. `metadata.cleanup_error` 和 `metadata.cleanup_failed_at` 记录清理失败细节和时间。
+5. 不得在未删除实际 PG 对象时把结果伪装为已清理。
 
 ## 十二、已确认决策和后续专题
 

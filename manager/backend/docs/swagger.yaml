@@ -1563,6 +1563,10 @@ paths:
               description: '瓦片语义状态：ok、empty、timeout 或 degraded | Tile semantic status:
                 ok, empty, timeout, or degraded'
               type: string
+            X-ADDP-Tile-Timeout-Budget-MS:
+              description: 动态 MVT 单瓦片超时预算，单位毫秒 | Realtime MVT per-tile timeout budget
+                in milliseconds
+              type: string
             X-Generation-Time:
               description: 动态生成耗时 | Dynamic generation duration
               type: string

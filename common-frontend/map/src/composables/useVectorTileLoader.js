@@ -56,6 +56,7 @@ export function useVectorTileLoader(options = {}) {
       cacheStatus: res.headers.get('X-ADDP-Tile-Cache') || '',
       tileStatus: res.headers.get('X-ADDP-Tile-Status') || '',
       performanceMode: res.headers.get('X-ADDP-Tile-Performance-Mode') || '',
+      timeoutBudgetMS: res.headers.get('X-ADDP-Tile-Timeout-Budget-MS') || '',
       recommendation: res.headers.get('X-ADDP-Tile-Recommendation') || '',
       retryPolicy: res.headers.get('X-ADDP-Tile-Retry-Policy') || '',
       retryAfter: res.headers.get('Retry-After') || '',
@@ -72,8 +73,16 @@ export function useVectorTileLoader(options = {}) {
     return false
   }
 
-  function scheduleDegradedTileRefresh(source, key, options = {}) {
-    const cooldownMs = options.degradedRetryCooldownMs || defaultDegradedRetryCooldownMs
+  function retryAfterCooldownMs(meta = {}) {
+    const retryAfterSeconds = Number(meta.retryAfter || 0)
+    if (retryAfterSeconds > 0) {
+      return retryAfterSeconds * 1000
+    }
+    return 0
+  }
+
+  function scheduleDegradedTileRefresh(source, key, options = {}, meta = {}) {
+    const cooldownMs = retryAfterCooldownMs(meta) || options.degradedRetryCooldownMs || defaultDegradedRetryCooldownMs
     const expiresAt = Date.now() + cooldownMs
     degradedTileCooldowns.set(key, expiresAt)
     if (degradedSourceRefreshTimers.has(source)) return
@@ -99,7 +108,7 @@ export function useVectorTileLoader(options = {}) {
     if (src && shouldSuppressTile(meta)) {
       suppressedTileKeys.add(degradedCooldownKey(src))
     } else if (source && src && isDegradedTileStatus(meta.tileStatus)) {
-      scheduleDegradedTileRefresh(source, degradedCooldownKey(src), options)
+      scheduleDegradedTileRefresh(source, degradedCooldownKey(src), options, meta)
     }
 
     const maxDecodedTileBytes = options.maxDecodedTileBytes || defaultMaxDecodedTileBytes
@@ -114,7 +123,7 @@ export function useVectorTileLoader(options = {}) {
         decodedBytes: buf.byteLength
       })
       if (source && src) {
-        scheduleDegradedTileRefresh(source, degradedCooldownKey(src), options)
+        scheduleDegradedTileRefresh(source, degradedCooldownKey(src), options, meta)
       }
       tile.setFeatures([])
       return

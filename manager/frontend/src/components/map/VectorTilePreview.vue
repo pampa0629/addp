@@ -148,6 +148,8 @@ const {
         retryPolicy,
         tileStatus: meta?.tileStatus || '',
         performanceMode: meta?.performanceMode || '',
+        timeoutBudgetMS: meta?.timeoutBudgetMS || '',
+        retryAfter: meta?.retryAfter || '',
         tileKey: meta?.tileKey || '',
         suppressed: !!meta?.suppressed
       })

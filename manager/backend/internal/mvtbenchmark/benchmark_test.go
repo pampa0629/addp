@@ -94,6 +94,26 @@ func TestRunBuildsSourceTransformAnd3857TargetQueries(t *testing.T) {
 	if strings.Contains(executor.queries[1], "ST_Transform") {
 		t.Fatalf("3857 target query should not transform geometry:\n%s", executor.queries[1])
 	}
+	if len(report.Recommendations.RenderPaths) != 2 {
+		t.Fatalf("recommendation count = %d, want 2", len(report.Recommendations.RenderPaths))
+	}
+	sourceRecommendation := recommendationByRenderPath(report, "source_transform_path")
+	if sourceRecommendation.RecommendedAction != "quick_view_optimization" ||
+		sourceRecommendation.RetryPolicy != "suppress_tile" {
+		t.Fatalf("source recommendation = %#v, want quick view optimization with suppress_tile", sourceRecommendation)
+	}
+	targetRecommendation := recommendationByRenderPath(report, "ready_3857_target")
+	if targetRecommendation.RecommendedAction != "tile_cache_generation" ||
+		targetRecommendation.RetryPolicy != "ttl" ||
+		targetRecommendation.QuickViewRealtimeTileRetryAfterSec != DefaultRetryAfterSec {
+		t.Fatalf("target recommendation = %#v, want tile cache generation with ttl retry", targetRecommendation)
+	}
+	if sourceRecommendation.QuickViewRealtimeTileTimeoutMS < 1000 ||
+		targetRecommendation.QuickViewRealtimeTileTimeoutMS < 1000 {
+		t.Fatalf("timeout recommendations should use a deployable millisecond budget: source=%d target=%d",
+			sourceRecommendation.QuickViewRealtimeTileTimeoutMS,
+			targetRecommendation.QuickViewRealtimeTileTimeoutMS)
+	}
 }
 
 func TestRunReportsErrorsAndDoesNotAbortMeasuredIterations(t *testing.T) {
@@ -144,4 +164,13 @@ func TestValidateConfigRejectsMissingGeometryColumn(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "geometry_column is required") {
 		t.Fatalf("validate error = %v, want geometry column error", err)
 	}
+}
+
+func recommendationByRenderPath(report Report, renderPath string) RenderPathRecommendation {
+	for _, recommendation := range report.Recommendations.RenderPaths {
+		if recommendation.RenderPath == renderPath {
+			return recommendation
+		}
+	}
+	return RenderPathRecommendation{}
 }

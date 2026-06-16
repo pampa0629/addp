@@ -1285,6 +1285,10 @@ const docTemplate = `{
                                 "type": "string",
                                 "description": "瓦片语义状态：ok、empty、timeout 或 degraded | Tile semantic status: ok, empty, timeout, or degraded"
                             },
+                            "X-ADDP-Tile-Timeout-Budget-MS": {
+                                "type": "string",
+                                "description": "动态 MVT 单瓦片超时预算，单位毫秒 | Realtime MVT per-tile timeout budget in milliseconds"
+                            },
                             "X-Generation-Time": {
                                 "type": "string",
                                 "description": "动态生成耗时 | Dynamic generation duration"

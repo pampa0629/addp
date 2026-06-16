@@ -19,11 +19,13 @@ import (
 // UnifiedMVTService 统一的 MVT 服务。
 // 整合实时生成和按 storage_ref 访问的瓦片对象，对前端隐藏 fingerprint。
 type UnifiedMVTService struct {
-	spatialPreviewService *SpatialPreviewService // 瓦片对象访问（内存 LRU → Redis → MinIO）
-	mvtService            *MVTService            // 实时生成（直接从 PG 查询）
-	metadataRepo          *repository.MetadataRepository
-	quickViewService      *QuickViewService  // 快显服务（可选，用于更新统计）
-	sf                    singleflight.Group // ✅ Singleflight 防缓存击穿
+	spatialPreviewService  *SpatialPreviewService // 瓦片对象访问（内存 LRU → Redis → MinIO）
+	mvtService             *MVTService            // 实时生成（直接从 PG 查询）
+	metadataRepo           *repository.MetadataRepository
+	quickViewService       *QuickViewService  // 快显服务（可选，用于更新统计）
+	sf                     singleflight.Group // ✅ Singleflight 防缓存击穿
+	realtimeTileTimeout    time.Duration
+	realtimeTileRetryAfter time.Duration
 }
 
 // NewUnifiedMVTService 创建统一的 MVT 服务
@@ -33,16 +35,46 @@ func NewUnifiedMVTService(
 	metadataRepo *repository.MetadataRepository,
 ) *UnifiedMVTService {
 	return &UnifiedMVTService{
-		spatialPreviewService: spatialPreviewService,
-		mvtService:            mvtService,
-		metadataRepo:          metadataRepo,
-		quickViewService:      nil, // 延迟注入
+		spatialPreviewService:  spatialPreviewService,
+		mvtService:             mvtService,
+		metadataRepo:           metadataRepo,
+		quickViewService:       nil, // 延迟注入
+		realtimeTileTimeout:    5 * time.Second,
+		realtimeTileRetryAfter: 60 * time.Second,
 	}
 }
 
 // SetQuickViewService 设置快显服务（避免循环依赖）
 func (s *UnifiedMVTService) SetQuickViewService(quickViewService *QuickViewService) {
 	s.quickViewService = quickViewService
+}
+
+func (s *UnifiedMVTService) SetRealtimeTileTimeout(timeout time.Duration) {
+	if timeout <= 0 {
+		return
+	}
+	s.realtimeTileTimeout = timeout
+}
+
+func (s *UnifiedMVTService) SetRealtimeTileRetryAfter(retryAfter time.Duration) {
+	if retryAfter <= 0 {
+		return
+	}
+	s.realtimeTileRetryAfter = retryAfter
+}
+
+func (s *UnifiedMVTService) realtimeTileTimeoutBudget() time.Duration {
+	if s.realtimeTileTimeout > 0 {
+		return s.realtimeTileTimeout
+	}
+	return 5 * time.Second
+}
+
+func (s *UnifiedMVTService) realtimeTileRetryAfterBudget() time.Duration {
+	if s.realtimeTileRetryAfter > 0 {
+		return s.realtimeTileRetryAfter
+	}
+	return 60 * time.Second
 }
 
 func (s *UnifiedMVTService) GetSpatialExtentWGS84(
@@ -92,8 +124,10 @@ type TileResponse struct {
 	TileCacheID           *uint         // 命中的瓦片缓存结果 ID
 	Status                string        // ok、empty、timeout、degraded
 	PerformanceMode       string        // ready_3857_target、source_transform_path 等
+	TimeoutBudget         time.Duration // 动态 MVT 单瓦片超时预算
 	TimeoutRecommendation string        // 超时时推荐动作
 	TimeoutRetryPolicy    string        // 超时后前端重试策略
+	TimeoutRetryAfter     time.Duration // 可重试降级的建议重试间隔
 }
 
 const (
@@ -258,7 +292,9 @@ func (s *UnifiedMVTService) GetTile(
 	generationTable := realtimeTarget.Table
 	generationGeomCol := realtimeTarget.GeomColumn
 	generationSRID := realtimeTarget.SRID
-	realtimeInfo := realtimeTileInfoFromTarget(realtimeTarget)
+	timeoutBudget := s.realtimeTileTimeoutBudget()
+	retryAfterBudget := s.realtimeTileRetryAfterBudget()
+	realtimeInfo := realtimeTileInfoFromTarget(realtimeTarget, int(timeoutBudget.Milliseconds()))
 	logger.L().Info("瓦片对象未命中，开始实时生成瓦片",
 		"engine_id", resourceID,
 		"schema", generationSchema,
@@ -270,8 +306,8 @@ func (s *UnifiedMVTService) GetTile(
 
 	// 多个并发请求同一瓦片时只生成一次。
 	v, err, shared := s.sf.Do(sfKey, func() (interface{}, error) {
-		// 创建 5 秒超时的 context（实时生成必须快速响应）
-		genCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		// 实时生成必须在交互预算内返回。
+		genCtx, cancel := context.WithTimeout(ctx, timeoutBudget)
 		defer cancel()
 
 		tileData, err := s.mvtService.GetTile(genCtx, tenantID, resourceID, generationSchema, generationTable, generationGeomCol, cols, z, x, y, generationSRID)
@@ -280,7 +316,7 @@ func (s *UnifiedMVTService) GetTile(
 			if errors.Is(err, context.DeadlineExceeded) {
 				logger.L().Warn("实时 MVT 生成超时，返回空瓦片",
 					"z", z, "x", x, "y", y,
-					"timeout", "5s")
+					"timeout", timeoutBudget.String())
 				return &TileResponse{
 					Data:                  []byte{},
 					FromCache:             false,
@@ -288,8 +324,10 @@ func (s *UnifiedMVTService) GetTile(
 					RenderSource:          QuickViewRenderSourceRealtimeTile,
 					Status:                TileStatusTimeout,
 					PerformanceMode:       realtimeInfo.PerformanceMode,
+					TimeoutBudget:         timeoutBudget,
 					TimeoutRecommendation: realtimeInfo.TimeoutRecommendation,
 					TimeoutRetryPolicy:    realtimeInfo.TimeoutRetryPolicy,
+					TimeoutRetryAfter:     retryAfterBudget,
 				}, nil
 			}
 			return nil, fmt.Errorf("failed to generate tile from PG: %w", err)
@@ -302,8 +340,10 @@ func (s *UnifiedMVTService) GetTile(
 			RenderSource:          QuickViewRenderSourceRealtimeTile,
 			Status:                tileStatusForData(tileData),
 			PerformanceMode:       realtimeInfo.PerformanceMode,
+			TimeoutBudget:         timeoutBudget,
 			TimeoutRecommendation: realtimeInfo.TimeoutRecommendation,
 			TimeoutRetryPolicy:    realtimeInfo.TimeoutRetryPolicy,
+			TimeoutRetryAfter:     retryAfterBudget,
 		}, nil
 	})
 
@@ -365,8 +405,10 @@ func (s *UnifiedMVTService) GetTile(
 		TileCacheID:           nil,
 		Status:                response.Status,
 		PerformanceMode:       response.PerformanceMode,
+		TimeoutBudget:         response.TimeoutBudget,
 		TimeoutRecommendation: response.TimeoutRecommendation,
 		TimeoutRetryPolicy:    response.TimeoutRetryPolicy,
+		TimeoutRetryAfter:     response.TimeoutRetryAfter,
 	}, nil
 }
 
