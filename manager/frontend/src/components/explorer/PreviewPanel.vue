@@ -1697,6 +1697,12 @@ const handleBackToBasicPreview = async () => {
 const handleGenerateTileCache = () => {
   const target = spatialPreviewTarget.value
   if (!target) return
+  const quickView = quickViewStatus.value?.quick_view || {}
+  const renderFacts = quickViewStatus.value?.render_facts || {}
+  const renderExtent = Array.isArray(renderFacts.render_extent) ? renderFacts.render_extent : quickView.extent
+  const renderExtentSRID = renderFacts.render_extent_srid || quickView.extent_srid || target.extentSRID
+  const geometryColumn = quickView.geometry_column || target.geometryColumn
+  const sourceSRID = renderFacts.source_srid || quickView.source_srid || target.sourceSRID
   router.push({
     name: 'TileCache',
     query: {
@@ -1706,11 +1712,12 @@ const handleGenerateTileCache = () => {
       schema: target.schema,
       table: target.table,
       ...(target.locator ? { locator: target.locator } : {}),
-      ...(target.geometryColumn ? { geom: target.geometryColumn } : {}),
+      ...(geometryColumn ? { geom: geometryColumn } : {}),
+      ...(quickViewStatus.value?.item_fingerprint ? { item_fingerprint: quickViewStatus.value.item_fingerprint } : {}),
       ...(target.geometryColumns.length ? { geometry_columns: target.geometryColumns.join(',') } : {}),
-      ...(target.sourceSRID > 0 ? { source_srid: String(target.sourceSRID) } : {}),
-      ...(target.extentSRID > 0 ? { extent_srid: String(target.extentSRID) } : {}),
-      ...(target.extent.length === 4 ? { extent: target.extent.join(',') } : {})
+      ...(sourceSRID > 0 ? { source_srid: String(sourceSRID) } : {}),
+      ...(renderExtentSRID > 0 ? { extent_srid: String(renderExtentSRID) } : {}),
+      ...(Array.isArray(renderExtent) && renderExtent.length === 4 ? { extent: renderExtent.join(',') } : {})
     }
   })
 }

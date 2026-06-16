@@ -228,6 +228,12 @@ const backToBasicPreview = async () => {
 }
 
 const openTileCacheCreate = () => {
+  const quickView = quickViewStatus.value?.quick_view || {}
+  const renderFacts = quickViewStatus.value?.render_facts || {}
+  const renderExtent = Array.isArray(renderFacts.render_extent) ? renderFacts.render_extent : quickView.extent
+  const renderExtentSRID = renderFacts.render_extent_srid || quickView.extent_srid
+  const geometryColumn = quickView.geometry_column || geom.value
+  const sourceSRID = renderFacts.source_srid || quickView.source_srid
   router.push({
     name: 'TileCache',
     query: {
@@ -237,12 +243,21 @@ const openTileCacheCreate = () => {
       schema: schema.value,
       table: table.value,
       locator: locator.value,
-      ...(geom.value ? { geom: geom.value } : {})
+      ...(geometryColumn ? { geom: geometryColumn } : {}),
+      ...(quickViewStatus.value?.item_fingerprint ? { item_fingerprint: quickViewStatus.value.item_fingerprint } : {}),
+      ...(sourceSRID ? { source_srid: String(sourceSRID) } : {}),
+      ...(renderExtentSRID ? { extent_srid: String(renderExtentSRID) } : {}),
+      ...(Array.isArray(renderExtent) && renderExtent.length === 4 ? { extent: renderExtent.join(',') } : {})
     }
   })
 }
 
 const openQuickViewOptimizationCreate = () => {
+  const quickView = quickViewStatus.value?.quick_view || {}
+  const renderFacts = quickViewStatus.value?.render_facts || {}
+  const geometryColumn = quickView.geometry_column || geom.value
+  const geometryColumns = Array.isArray(quickView.geometry_columns) ? quickView.geometry_columns : []
+  const sourceSRID = renderFacts.source_srid || quickView.source_srid
   router.push({
     name: 'QuickViewOptimization',
     query: {
@@ -252,9 +267,10 @@ const openQuickViewOptimizationCreate = () => {
       schema: schema.value,
       table: table.value,
       locator: locator.value,
-      ...(geom.value ? { geom: geom.value } : {}),
+      ...(geometryColumn ? { geom: geometryColumn } : {}),
+      ...(geometryColumns.length ? { geometry_columns: geometryColumns.join(',') } : {}),
       ...(quickViewStatus.value?.item_fingerprint ? { item_fingerprint: quickViewStatus.value.item_fingerprint } : {}),
-      ...(quickViewStatus.value?.render_facts?.source_srid ? { source_srid: String(quickViewStatus.value.render_facts.source_srid) } : {})
+      ...(sourceSRID ? { source_srid: String(sourceSRID) } : {})
     }
   })
 }
