@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/logger"
@@ -175,29 +176,37 @@ func (s *MVTService) ResolveRealtimeTileTarget(
 		}, nil
 	}
 
-	if s.optimizationRepo == nil {
-		return sourceTransformRealtimeTileTarget(schema, table, geomCol, sourceSRID), nil
-	}
 	fingerprint := spatialItemFingerprint(resourceID, schema, table)
-	result, err := s.optimizationRepo.GetReadyByFingerprintGeometry(ctx, tid, fingerprint, geomCol, spatial.SRIDWebMercator)
-	if err != nil || result == nil {
-		return sourceTransformRealtimeTileTarget(schema, table, geomCol, sourceSRID), err
+	if s.optimizationRepo != nil {
+		result, err := s.optimizationRepo.GetReadyByFingerprintGeometry(ctx, tid, fingerprint, geomCol, spatial.SRIDWebMercator)
+		if err != nil {
+			return sourceTransformRealtimeTileTarget(schema, table, geomCol, sourceSRID), err
+		}
+		if result != nil {
+			ok, err := hasValidGiSTIndex(ctx, db, result.TargetSchema, result.TargetTable, result.TargetGeometryColumn)
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				return &RealtimeTileTarget{
+					Schema:                      result.TargetSchema,
+					Table:                       result.TargetTable,
+					GeomColumn:                  result.TargetGeometryColumn,
+					SRID:                        spatial.SRIDWebMercator,
+					QuickViewOptimizationTarget: true,
+					PerformanceMode:             RealtimeTilePerformanceReady3857Target,
+				}, nil
+			}
+		}
 	}
-	ok, err := hasValidGiSTIndex(ctx, db, result.TargetSchema, result.TargetTable, result.TargetGeometryColumn)
-	if err != nil {
+
+	if externalTarget, err := discoverExternal3857MaterializedView(ctx, db, schema, table); err != nil {
 		return nil, err
+	} else if externalTarget != nil {
+		return externalTarget, nil
 	}
-	if !ok {
-		return sourceTransformRealtimeTileTarget(schema, table, geomCol, sourceSRID), nil
-	}
-	return &RealtimeTileTarget{
-		Schema:                      result.TargetSchema,
-		Table:                       result.TargetTable,
-		GeomColumn:                  result.TargetGeometryColumn,
-		SRID:                        spatial.SRIDWebMercator,
-		QuickViewOptimizationTarget: true,
-		PerformanceMode:             RealtimeTilePerformanceReady3857Target,
-	}, nil
+
+	return sourceTransformRealtimeTileTarget(schema, table, geomCol, sourceSRID), nil
 }
 
 func sourceTransformRealtimeTileTarget(schema, table, geomCol string, sourceSRID int) *RealtimeTileTarget {
@@ -226,6 +235,85 @@ func materializedViewPopulated(ctx context.Context, db *sql.DB, schema, view str
 		return false, fmt.Errorf("query materialized view failed: %w", err)
 	}
 	return populated, nil
+}
+
+func discoverExternal3857MaterializedView(ctx context.Context, db *sql.DB, schema, sourceTable string) (*RealtimeTileTarget, error) {
+	for _, candidate := range external3857MaterializedViewCandidates(sourceTable) {
+		populated, err := materializedViewPopulated(ctx, db, schema, candidate)
+		if err != nil {
+			return nil, err
+		}
+		if !populated {
+			continue
+		}
+		if ok, err := postGISColumnExists(ctx, db, schema, candidate, "geom_3857"); err != nil {
+			return nil, err
+		} else if !ok {
+			continue
+		}
+		if ok, err := hasValidGiSTIndex(ctx, db, schema, candidate, "geom_3857"); err != nil {
+			return nil, err
+		} else if !ok {
+			continue
+		}
+		srid, err := queryGeometryColumnActualSRID(ctx, db, schema, candidate, "geom_3857")
+		if err != nil {
+			return nil, err
+		}
+		if srid != spatial.SRIDWebMercator {
+			continue
+		}
+		return &RealtimeTileTarget{
+			Schema:                      schema,
+			Table:                       candidate,
+			GeomColumn:                  "geom_3857",
+			SRID:                        spatial.SRIDWebMercator,
+			QuickViewOptimizationTarget: true,
+			PerformanceMode:             RealtimeTilePerformanceReady3857Target,
+		}, nil
+	}
+	return nil, nil
+}
+
+func external3857MaterializedViewCandidates(sourceTable string) []string {
+	sourceTable = strings.TrimSpace(sourceTable)
+	if sourceTable == "" {
+		return nil
+	}
+	return []string{sourceTable + "_mv3857", sourceTable + "_3857"}
+}
+
+func postGISColumnExists(ctx context.Context, db *sql.DB, schema, table, column string) (bool, error) {
+	const query = `
+		SELECT EXISTS (
+			SELECT 1
+			FROM pg_attribute attr
+			JOIN pg_class tbl ON tbl.oid = attr.attrelid
+			JOIN pg_namespace ns ON ns.oid = tbl.relnamespace
+			WHERE ns.nspname = $1
+			  AND tbl.relname = $2
+			  AND attr.attname = $3
+			  AND attr.attnum > 0
+			  AND NOT attr.attisdropped
+		)
+	`
+	var exists bool
+	if err := db.QueryRowContext(ctx, query, schema, table, column).Scan(&exists); err != nil {
+		return false, fmt.Errorf("query postgis column failed: %w", err)
+	}
+	return exists, nil
+}
+
+func queryGeometryColumnActualSRID(ctx context.Context, db *sql.DB, schema, table, geomColumn string) (int, error) {
+	query := spatial.BuildPostGISSRIDQuery(schema, table, geomColumn)
+	var srid int
+	if err := db.QueryRowContext(ctx, query).Scan(&srid); err != nil {
+		if err == sql.ErrNoRows {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("query geometry srid failed: %w", err)
+	}
+	return srid, nil
 }
 
 func hasValidGiSTIndex(ctx context.Context, db *sql.DB, schema, table, geomColumn string) (bool, error) {

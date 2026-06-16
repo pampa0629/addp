@@ -784,7 +784,9 @@ const applyQuickViewCapabilityToForm = (config, fallbackGeometryColumns = []) =>
     tileCacheOptimizationAdvice.visible = true
     tileCacheOptimizationAdvice.type = 'success'
     tileCacheOptimizationAdvice.actionVisible = false
-    tileCacheOptimizationAdvice.message = t('manager.tileCache.optimizationTargetReady')
+    tileCacheOptimizationAdvice.message = config.external_optimization_target
+      ? t('manager.tileCache.externalOptimizationTargetReady')
+      : t('manager.tileCache.optimizationTargetReady')
   } else {
     tileCacheOptimizationAdvice.visible = !!config.optimization_recommended
     tileCacheOptimizationAdvice.type = 'warning'
@@ -809,6 +811,7 @@ const tileCacheFormConfigFromCapability = (capability) => {
     geometry_column: quickView.geometry_column,
     geometry_columns: quickView.geometry_columns || [],
     optimization_available: optimization.available === true,
+    external_optimization_target: optimization.target_kind === 'external_3857_materialized_view',
     optimization_recommended: realtime.optimization_recommended === true ||
       realtime.performance_mode === 'source_transform_path' ||
       (optimization.available !== true && Number(renderFacts.source_srid || quickView.source_srid || 0) !== 3857),

@@ -82,6 +82,7 @@ export const PAGE_MAPS = {
     'data-retrieval': 'data-retrieval',
     'vectorization-tasks': 'vectorization-tasks',
     'tile-cache': 'tile-cache',
+    'quick-view-optimization': 'quick-view-optimization',
     '': 'data-explorer',
   },
   meta: {
@@ -209,6 +210,7 @@ export const SIDEBAR_MENUS = {
       { index: '/manager/data-retrieval',      icon: Document, label: 'console.menus.manager.dataRetrieval' },
       { index: '/manager/vectorization-tasks', icon: List,     label: 'console.menus.manager.vectorizationTasks' },
       { index: '/manager/tile-cache',          icon: Grid,     label: 'console.menus.manager.tileCache' },
+      { index: '/manager/quick-view-optimization', icon: TrendCharts, label: 'console.menus.manager.quickViewOptimization' },
     ],
   },
   standard: {

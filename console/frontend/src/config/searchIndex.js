@@ -12,6 +12,7 @@ export const SEARCH_INDEX = [
   { labelKey: 'console.menus.manager.dataRetrieval',      module: 'manager', route: '/manager/data-retrieval',      keywords: ['数据检索', '搜索', 'retrieval', 'search'] },
   { labelKey: 'console.menus.manager.vectorizationTasks', module: 'manager', route: '/manager/vectorization-tasks', keywords: ['向量化', '向量', 'vector', 'embedding'] },
   { labelKey: 'console.menus.manager.tileCache',          module: 'manager', route: '/manager/tile-cache',          keywords: ['瓦片缓存任务', '瓦片缓存', '瓦片生成', '矢量瓦片', 'tile cache tasks', 'tile cache', 'tile'] },
+  { labelKey: 'console.menus.manager.quickViewOptimization', module: 'manager', route: '/manager/quick-view-optimization', keywords: ['快显性能优化', '快显优化', '动态MVT', '3857', 'quick view optimization', 'quick view', 'mvt'] },
   // 数据标准
   { labelKey: 'console.menus.standard.domains',      module: 'standard', route: '/standard/domains',      keywords: ['业务域', '业务领域', 'domain'] },
   { labelKey: 'console.menus.standard.glossaries',   module: 'standard', route: '/standard/glossaries',   keywords: ['业务术语', '术语', 'glossary', 'term'] },

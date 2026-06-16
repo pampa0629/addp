@@ -207,7 +207,8 @@
         "dataExplorer": "Data Explorer",
         "dataRetrieval": "Data Retrieval",
         "vectorizationTasks": "Vectorization Tasks",
-        "tileCache": "Tile Cache Tasks"
+        "tileCache": "Tile Cache Tasks",
+        "quickViewOptimization": "Quick View Optimization"
       },
       "standard": {
         "label": "Data Standards",

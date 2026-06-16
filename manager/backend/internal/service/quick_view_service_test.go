@@ -1017,3 +1017,58 @@ func TestQuickViewCapabilityOptimizationDiagnosticUsesSelectedGeometryColumn(t *
 		t.Fatalf("optimization diagnostic = %#v, want unavailable for selected geometry column shape_b", capability.Optimization)
 	}
 }
+
+func TestQuickViewCapabilityReportsExternal3857MaterializedViewOptimization(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	svc := NewQuickViewService(db, nil)
+
+	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+		Identity: QuickViewIdentity{
+			TenantID:        1,
+			ItemFingerprint: spatialItemFingerprint(11, "public", "dltb"),
+			Locator:         tableLocator(11, "public", "dltb"),
+		},
+		EngineID: 11,
+		Schema:   "public",
+		Table:    "dltb",
+		SpatialMeta: &SpatialMetadataResult{
+			GeomColumn:      "SmGeometry",
+			GeometryColumns: []string{"SmGeometry"},
+			SRID:            2360,
+			Extent:          []float64{100, 20, 101, 21},
+			ExtentSRID:      2360,
+			RecordCount:     10_000_000,
+		},
+		CanTile: true,
+		RealtimeTileTarget: &RealtimeTileTarget{
+			Schema:                      "public",
+			Table:                       "dltb_3857",
+			GeomColumn:                  "geom_3857",
+			SRID:                        3857,
+			QuickViewOptimizationTarget: true,
+			PerformanceMode:             RealtimeTilePerformanceReady3857Target,
+		},
+	})
+	if err != nil {
+		t.Fatalf("build capability: %v", err)
+	}
+	if capability.Optimization == nil || !capability.Optimization.Available {
+		t.Fatalf("optimization diagnostic = %#v, want external target available", capability.Optimization)
+	}
+	if capability.Optimization.ResultID != nil {
+		t.Fatalf("result_id = %#v, want nil for external readonly target", capability.Optimization.ResultID)
+	}
+	if capability.Optimization.TargetKind != QuickViewOptimizationTargetKindExternal3857MaterializedView {
+		t.Fatalf("target_kind = %s, want %s", capability.Optimization.TargetKind, QuickViewOptimizationTargetKindExternal3857MaterializedView)
+	}
+	if capability.Optimization.TargetTable != "dltb_3857" ||
+		capability.Optimization.TargetGeometryColumn != "geom_3857" ||
+		capability.Optimization.TargetSRID != 3857 {
+		t.Fatalf("optimization diagnostic = %#v, want dltb_3857.geom_3857 SRID 3857", capability.Optimization)
+	}
+	if capability.RealtimeTile == nil ||
+		capability.RealtimeTile.PerformanceMode != RealtimeTilePerformanceReady3857Target ||
+		capability.RealtimeTile.TimeoutRecommendation != RealtimeTileRecommendationTileCacheGeneration {
+		t.Fatalf("realtime_tile = %#v, want ready 3857 target recommending tile cache", capability.RealtimeTile)
+	}
+}

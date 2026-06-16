@@ -5,7 +5,7 @@
       <div class="spacer" />
       <div v-if="quickViewStatus" class="quick-view-actions">
         <span v-if="quickViewStatus.can_use_quick_view" class="status-text">
-          {{ t('manager.spatialPreview.quickViewReady') }}
+          {{ quickViewStatusText }}
         </span>
         <span v-else-if="!quickViewStatus.can_generate_tile_cache" class="status-text muted">
           {{ quickViewStatus.unavailable_reason || t('manager.spatialPreview.quickViewUnavailable') }}
@@ -119,6 +119,15 @@ const isQuickViewActive = computed(() => {
 })
 const showRealtimeTileCacheGeneration = computed(() => {
   return quickViewRenderSource.value === 'realtime_tile' && !!quickViewStatus.value?.can_generate_tile_cache
+})
+const isExternalOptimizationTarget = computed(() => {
+  return quickViewStatus.value?.optimization?.target_kind === 'external_3857_materialized_view'
+})
+const quickViewStatusText = computed(() => {
+  if (isExternalOptimizationTarget.value) {
+    return t('manager.spatialPreview.externalOptimizationTargetReady')
+  }
+  return t('manager.spatialPreview.quickViewReady')
 })
 const showQuickViewOptimizationAction = computed(() => {
   const realtime = quickViewStatus.value?.realtime_tile || {}
@@ -254,6 +263,8 @@ const handleTileAdvisory = (advisory) => {
   quickViewTileAdvisory.value = advisory
   if (advisory?.retryPolicy === 'suppress_tile') {
     ElMessage.warning(t('manager.spatialPreview.tileTimeoutOptimizationRecommended'))
+  } else if (advisory?.recommendation === 'tile_cache_generation') {
+    ElMessage.warning(t('manager.spatialPreview.tileTimeoutCacheRecommended'))
   }
 }
 

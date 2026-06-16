@@ -137,7 +137,12 @@ const {
     rememberMvtGridTileState(meta, hasError, map)
     const recommendation = String(meta?.recommendation || '').toLowerCase()
     const retryPolicy = String(meta?.retryPolicy || '').toLowerCase()
-    if (recommendation === 'quick_view_optimization' || retryPolicy === 'suppress_tile' || meta?.suppressed) {
+    if (
+      recommendation === 'quick_view_optimization' ||
+      recommendation === 'tile_cache_generation' ||
+      retryPolicy === 'suppress_tile' ||
+      meta?.suppressed
+    ) {
       emit('tile-advisory', {
         recommendation: recommendation || 'quick_view_optimization',
         retryPolicy,

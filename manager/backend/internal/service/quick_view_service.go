@@ -45,6 +45,8 @@ const (
 
 	RealtimeTileTimeoutRetrySuppressTile = "suppress_tile"
 	RealtimeTileTimeoutRetryTTL          = "ttl"
+
+	QuickViewOptimizationTargetKindExternal3857MaterializedView = "external_3857_materialized_view"
 )
 
 type QuickViewService struct {
@@ -360,6 +362,7 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 	if err != nil {
 		return nil, err
 	}
+	optimizationInfo = optimizationInfoFromRealtimeTarget(optimizationInfo, source.RealtimeTileTarget)
 
 	initialStatus := QuickViewStatusUnavailable
 	initialReason := "tile cache result is not ready"
@@ -640,6 +643,25 @@ func realtimeTileInfoFromTarget(target *RealtimeTileTarget) *QuickViewRealtimeTi
 		}
 	}
 	return info
+}
+
+func optimizationInfoFromRealtimeTarget(info *QuickViewOptimizationInfo, target *RealtimeTileTarget) *QuickViewOptimizationInfo {
+	if info != nil && info.Available {
+		return info
+	}
+	if target == nil || !target.QuickViewOptimizationTarget || target.SRID != spatial.SRIDWebMercator {
+		return info
+	}
+	return &QuickViewOptimizationInfo{
+		Available:            true,
+		Status:               models.QuickViewOptimizationStatusReady,
+		TargetKind:           QuickViewOptimizationTargetKindExternal3857MaterializedView,
+		TargetSchema:         target.Schema,
+		TargetTable:          target.Table,
+		TargetGeometryColumn: target.GeomColumn,
+		TargetSRID:           spatial.SRIDWebMercator,
+		Reason:               "external 3857 materialized view detected",
+	}
 }
 
 func renderInfoFromTileCache(engineID uint, schema, table string, tileCache *models.TileCache, spatialMeta *SpatialMetadataResult) QuickViewRenderInfo {
