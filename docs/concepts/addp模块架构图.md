@@ -148,7 +148,7 @@ graph TB
 - **Worker运行时**: 独立的后台任务处理进程
   - **Transfer Worker**: 基于 Asynq 的异步任务队列,处理 Transfer 内部异步传输作业；统一任务体系阶段 1 只暴露 `task_type=import`
   - **Meta Worker**: 基于 Asynq 的扫描任务处理,执行元数据扫描和索引
-- **Manager 瓦片缓存生成**: 当前 PostGIS + MVT 格式实现通过 Manager Backend 内的 `tile_cache_generation` 任务服务和调度器执行；任务定义为 `manager.tile_cache_tasks`，执行记录进入 `common.task_executions`，结果状态进入 `manager.tile_cache`。若后续瓦片缓存生成计算负载转移到 Manager 进程内、需要多执行器横向扩展，或引入专门 GIS 计算引擎，应将 `tile_cache_generation` 的唯一执行运行时切换为 Manager Worker 或 GIS 执行引擎，不允许 Backend 与 Worker 双轨并存。
+- **Manager 快显与瓦片任务**: 当前 PostGIS + MVT 格式实现中，`tile_cache_generation` 由 Manager Backend 内的任务服务和调度器执行；任务定义为 `manager.tile_cache_tasks`，执行记录进入 `common.task_executions`，结果状态进入 `manager.tile_cache`。`quick_view_optimization` 由 Manager Backend 在手动或编排触发时执行，任务定义为 `manager.quick_view_optimization_tasks`，结果状态进入 `manager.quick_view_optimization`，第一阶段不启动模块自身定时调度。若后续瓦片缓存生成或快显优化计算负载转移到 Manager 进程内、需要多执行器横向扩展，或引入专门 GIS 计算引擎，应将对应任务类型的唯一执行运行时切换为 Manager Worker 或 GIS 执行引擎，不允许 Backend 与 Worker 双轨并存。
 - **共享模块**: common 和 common-frontend 提供可复用的代码和组件
 - **计算引擎**: engines 目录下的内置计算引擎,由 Develop 模块调用
 - **基础设施层**: 共享的数据库、缓存、对象存储和搜索引擎
@@ -268,7 +268,7 @@ graph LR
 
 ## Worker 运行时
 
-ADDP 平台的部分模块拥有独立的 Worker 运行时进程,用于处理异步任务和后台作业。Manager 当前没有独立 Worker；PostGIS + MVT 阶段的瓦片缓存生成由 Manager Backend 内部的任务服务和调度器执行 `tile_cache_generation`。若后续格式实现需要 Manager 进程内重计算、多执行器并发或独立资源隔离，应先把文档和任务运行时统一切换到 Manager Worker 或 GIS 执行引擎，再实现代码，不保留 Backend 与 Worker 双轨。
+ADDP 平台的部分模块拥有独立的 Worker 运行时进程,用于处理异步任务和后台作业。Manager 当前没有独立 Worker；PostGIS + MVT 阶段的瓦片缓存生成由 Manager Backend 内部的任务服务和调度器执行 `tile_cache_generation`，快显性能优化由 Manager Backend 在手动或 Orchestrator 编排触发时执行 `quick_view_optimization`。若后续格式实现需要 Manager 进程内重计算、多执行器并发或独立资源隔离，应先把文档和任务运行时统一切换到 Manager Worker 或 GIS 执行引擎，再实现代码，不保留 Backend 与 Worker 双轨。
 
 ```mermaid
 graph TB
@@ -289,7 +289,9 @@ graph TB
     subgraph "Manager 模块"
         MB2[Manager Backend<br/>:8081]
         TCS[TileCacheTaskScheduler<br/>tile_cache_generation]
+        QVO[QuickViewOptimizationTask<br/>quick_view_optimization]
         MB2 --> TCS
+        MB2 --> QVO
     end
 
     subgraph "任务队列 (Asynq)"
@@ -303,6 +305,7 @@ graph TB
     MW --> PostgreSQL2
     MB2 --> PostgreSQL3[(PostgreSQL)]
     TCS --> PostgreSQL3
+    QVO --> PostgreSQL3
 
     classDef backend fill:#f3e5f5,stroke:#4a148c
     classDef worker fill:#ffe0b2,stroke:#e65100,stroke-width:2px
@@ -311,7 +314,7 @@ graph TB
 
     class TB,MB,MB2 backend
     class TW,MW worker
-    class TCS scheduler
+    class TCS,QVO scheduler
     class Redis,Redis2,PostgreSQL,PostgreSQL2,PostgreSQL3 infra
 ```
 
@@ -322,13 +325,14 @@ graph TB
 | **Transfer Worker** | Transfer | 异步处理 Transfer 内部传输作业；统一任务体系阶段 1 只暴露 `task_type=import` | Go, Asynq, Redis |
 | **Meta Worker** | Meta | 异步处理元数据扫描和索引任务,支持定时调度 | Go, Asynq, Redis |
 | **TileCacheTaskScheduler** | Manager | 在 Manager Backend 内按 `manager.tile_cache_tasks.next_run_at` 触发 `tile_cache_generation`，执行记录写入 `common.task_executions` | Go, DB claim |
+| **QuickViewOptimizationTask** | Manager | 在 Manager Backend 内按用户手动或 Orchestrator 编排触发执行 `quick_view_optimization`，创建或刷新 Manager 管理的 3857 快显优化目标 | Go, TaskProvider API |
 
 **运行时说明**:
 - **Asynq 队列**: 当前用于 Transfer、Meta 等独立 Worker 场景。
-- **DB claim 调度**: Manager 瓦片缓存任务通过 `enabled + schedule + next_run_at` 轮询并 claim 到期任务。
+- **DB claim 调度**: Manager 瓦片缓存任务通过 `enabled + schedule + next_run_at` 轮询并 claim 到期任务；快显性能优化第一阶段 `supports_schedule=false`，不由 Manager 自身定时调度。
 - **执行记录**: 各模块执行状态统一写入 `common.task_executions`。
-- **结果状态**: Manager 瓦片缓存结果状态写入 `manager.tile_cache`，不由 execution 替代。
-- **未来切换条件**: 当瓦片生成的主要计算不再由 PostGIS 承担，或 Manager API 响应因后台生成受影响，或需要多个执行器并行消费同一类任务时，`tile_cache_generation` 应切换到唯一的 Manager Worker 或 GIS 执行引擎运行时。
+- **结果状态**: Manager 瓦片缓存结果状态写入 `manager.tile_cache`，快显性能优化结果状态写入 `manager.quick_view_optimization`，不由 execution 替代。
+- **未来切换条件**: 当瓦片生成或快显优化的主要计算不再由 PostGIS 承担，或 Manager API 响应因后台生成受影响，或需要多个执行器并行消费同一类任务时，对应任务类型应切换到唯一的 Manager Worker 或 GIS 执行引擎运行时。
 
 ---
 
@@ -720,7 +724,7 @@ graph TB
         MetaT["Meta<br/>scan"]
         TransferT["Transfer<br/>import"]
         DevelopT["Develop<br/>query / workflow / script"]
-        ManagerT["Manager<br/>tile_cache_generation / embedding"]
+        ManagerT["Manager<br/>tile_cache_generation / quick_view_optimization / embedding"]
         QualityT["Quality<br/>check"]
         GraphT["Graph<br/>kg_build"]
         OrchestratorT["Orchestrator<br/>orchestration"]

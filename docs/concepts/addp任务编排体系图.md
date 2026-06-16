@@ -50,7 +50,7 @@ graph TB
         Meta --> |注册| MetaCap[Meta 任务类型<br/>scan]
         Transfer --> |注册| TransferCap[Transfer 任务类型<br/>import]
         Develop --> |注册| DevelopCap[Develop 任务类型<br/>query<br/>workflow<br/>script]
-        Manager --> |注册| ManagerCap[Manager 任务类型<br/>tile_cache_generation<br/>embedding]
+        Manager --> |注册| ManagerCap[Manager 任务类型<br/>tile_cache_generation<br/>quick_view_optimization<br/>embedding]
         Quality --> |注册| QualityCap[Quality 任务类型<br/>check]
         Graph --> |注册| GraphCap[Graph 任务类型<br/>kg_build]
         OrchestratorProvider --> |注册| OrchestratorCap[Orchestrator 任务类型<br/>orchestration]
@@ -119,6 +119,7 @@ graph TB
 | **Develop** | 执行工作流 | `POST /api/v1/develop/tasks/{task_type}/{id}/execute` | `task_type=workflow` |
 | **Develop** | 执行脚本 | `POST /api/v1/develop/tasks/{task_type}/{id}/execute` | `task_type=script` |
 | **Manager** | 生成瓦片缓存 | `POST /api/v1/manager/tasks/{task_type}/{id}/execute` | `task_type=tile_cache_generation` |
+| **Manager** | 快显性能优化 | `POST /api/v1/manager/tasks/{task_type}/{id}/execute` | `task_type=quick_view_optimization` |
 | **Manager** | 向量化 | `POST /api/v1/manager/tasks/{task_type}/{id}/execute` | `task_type=embedding` |
 | **Quality** | 质量检查 | `POST /api/v1/quality/tasks/{task_type}/{id}/execute` | `task_type=check` |
 | **Graph** | 图谱构建 | `POST /api/v1/graph/tasks/{task_type}/{id}/execute` | `task_type=kg_build` |

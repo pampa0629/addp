@@ -537,10 +537,7 @@ func rate(part, total int) float64 {
 
 func renderPath(scenario Scenario) string {
 	if scenario.SRID == 3857 {
-		if scenario.TargetKind != "" {
-			return scenario.TargetKind
-		}
-		return "web_mercator_target"
+		return "ready_3857_target"
 	}
 	return "source_transform_path"
 }
@@ -550,8 +547,8 @@ func scenarioWarnings(scenario Scenario) []string {
 	if scenario.SRID != 3857 {
 		warnings = append(warnings, "source geometry will be transformed to EPSG:3857 inside each tile query")
 	}
-	if scenario.TargetKind == "quick_view_optimization_target" && scenario.SRID != 3857 {
-		warnings = append(warnings, "quick_view_optimization_target target should normally use srid=3857")
+	if scenario.TargetKind != "" && scenario.SRID != 3857 {
+		warnings = append(warnings, "3857 target_kind should normally use srid=3857")
 	}
 	return warnings
 }

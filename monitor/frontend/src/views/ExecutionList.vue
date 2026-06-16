@@ -205,8 +205,37 @@
           </el-tree>
         </div>
 
+        <!-- 执行元数据 -->
+        <div v-if="hasExecutionMetadata" class="detail-section">
+          <h4>{{ t('monitor.execution.detail.metadata') }}</h4>
+          <el-descriptions
+            v-if="metadataSummaryItems.length"
+            :column="2"
+            border
+            class="metadata-summary"
+          >
+            <el-descriptions-item
+              v-for="item in metadataSummaryItems"
+              :key="item.summaryKey"
+              :label="item.label"
+            >
+              <el-tag v-if="item.tagType" :type="item.tagType" size="small">
+                {{ item.value }}
+              </el-tag>
+              <span v-else>{{ item.value }}</span>
+            </el-descriptions-item>
+          </el-descriptions>
+          <el-input
+            type="textarea"
+            :value="executionMetadataText"
+            :rows="10"
+            readonly
+            class="metadata-json"
+          />
+        </div>
+
         <!-- 执行结果 -->
-        <div v-if="currentExecution.result" style="margin-top: 20px;">
+        <div v-if="currentExecution.result" class="detail-section">
           <h4>{{ t('monitor.execution.detail.result') }}</h4>
           <el-input
             type="textarea"
@@ -217,7 +246,7 @@
         </div>
 
         <!-- 错误详情 -->
-        <div v-if="currentExecution.error_details" style="margin-top: 20px;">
+        <div v-if="currentExecution.error_details" class="detail-section">
           <h4>{{ t('monitor.execution.detail.error') }}</h4>
           <el-alert
             type="error"
@@ -320,6 +349,14 @@ const hasRunningExecution = computed(() => {
     (detailDialogVisible.value && isRunningStatus(currentExecution.value?.status))
 })
 
+const currentExecutionMetadata = computed(() => normalizeObject(currentExecution.value?.metadata))
+
+const hasExecutionMetadata = computed(() => Object.keys(currentExecutionMetadata.value).length > 0)
+
+const executionMetadataText = computed(() => JSON.stringify(currentExecutionMetadata.value, null, 2))
+
+const metadataSummaryItems = computed(() => buildMetadataSummaryItems(currentExecutionMetadata.value))
+
 function parseTaskTypes(capabilities) {
   const parsed = parseCapabilities(capabilities)
   const taskTypes = Array.isArray(parsed.task_types) ? parsed.task_types : []
@@ -339,6 +376,118 @@ function parseCapabilities(capabilities) {
   } catch {
     return {}
   }
+}
+
+function normalizeObject(value) {
+  if (!value) return {}
+  if (typeof value === 'object' && !Array.isArray(value)) return value
+  if (typeof value !== 'string') return {}
+  try {
+    const parsed = JSON.parse(value)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function buildMetadataSummaryItems(metadata) {
+  const items = []
+  appendTileGenerationTargetSummary(items, normalizeObject(metadata.tile_generation_target))
+  appendQuickViewOptimizationSummary(items, metadata)
+  appendMetadataField(items, 'source_srid', metadata.source_srid)
+  appendMetadataField(items, 'target_srid', metadata.target_srid)
+  appendMetadataField(items, 'extent_srid', metadata.extent_srid)
+  appendMetadataField(items, 'min_zoom', metadata.min_zoom)
+  appendMetadataField(items, 'max_zoom', metadata.max_zoom)
+  appendMetadataField(items, 'total_tiles', metadata.total_tiles)
+  appendMetadataField(items, 'generated_tiles', metadata.generated_tiles)
+  appendMetadataField(items, 'cached_tiles', metadata.cached_tiles)
+  appendMetadataField(items, 'failed_tiles', metadata.failed_tiles)
+  appendMetadataField(items, 'stop_reason', metadata.stop_reason)
+  return dedupeMetadataSummaryItems(items)
+}
+
+function appendTileGenerationTargetSummary(items, target) {
+  if (Object.keys(target).length === 0) return
+
+  const qualifiedName = [target.schema, target.table].filter(hasValue).join('.')
+  appendMetadataField(items, 'tile_generation_target', qualifiedName)
+  appendMetadataField(items, 'geometry_column', target.geom_column)
+  appendMetadataField(items, 'target_srid', target.srid)
+  appendMetadataField(items, 'target_kind', target.target_kind, {
+    value: formatTargetKind(target.target_kind),
+    tagType: targetKindTagType(target.target_kind)
+  })
+  appendMetadataField(items, 'optimization_recommended', target.optimization_recommended, {
+    value: formatBoolean(target.optimization_recommended),
+    tagType: target.optimization_recommended ? 'warning' : 'success'
+  })
+  appendMetadataField(items, 'optimization_recommendation', target.optimization_recommendation)
+}
+
+function appendQuickViewOptimizationSummary(items, metadata) {
+  if (!hasValue(metadata.target_table) && !hasValue(metadata.target_kind)) return
+
+  const qualifiedName = [metadata.target_schema, metadata.target_table].filter(hasValue).join('.')
+  appendMetadataField(items, 'quick_view_target', qualifiedName)
+  appendMetadataField(items, 'target_kind', metadata.target_kind, {
+    value: formatTargetKind(metadata.target_kind),
+    tagType: targetKindTagType(metadata.target_kind)
+  })
+  appendMetadataField(items, 'geometry_column', metadata.target_geometry_column)
+  appendMetadataField(items, 'row_count_estimate', metadata.row_count_estimate)
+  appendMetadataField(items, 'analyze_executed', metadata.analyze_executed, {
+    value: formatBoolean(metadata.analyze_executed),
+    tagType: metadata.analyze_executed ? 'success' : 'info'
+  })
+}
+
+function appendMetadataField(items, key, rawValue, options = {}) {
+  if (!hasValue(rawValue)) return
+  items.push({
+    summaryKey: `${key}:${items.length}`,
+    key,
+    label: t(`monitor.execution.detail.metadata_fields.${key}`),
+    value: options.value || formatMetadataValue(rawValue),
+    tagType: options.tagType || ''
+  })
+}
+
+function dedupeMetadataSummaryItems(items) {
+  const seen = new Set()
+  return items.filter(item => {
+    const dedupeKey = `${item.key}:${item.value}`
+    if (seen.has(dedupeKey)) return false
+    seen.add(dedupeKey)
+    return true
+  })
+}
+
+function formatMetadataValue(value) {
+  if (typeof value === 'boolean') return formatBoolean(value)
+  if (typeof value === 'number') return String(value)
+  if (typeof value === 'string') return value
+  return JSON.stringify(value)
+}
+
+function formatBoolean(value) {
+  return value ? t('monitor.execution.detail.boolean.yes') : t('monitor.execution.detail.boolean.no')
+}
+
+function formatTargetKind(targetKind) {
+  if (!hasValue(targetKind)) return '-'
+  const key = `monitor.execution.detail.target_kind.${targetKind}`
+  const translated = t(key)
+  return translated === key ? targetKind : translated
+}
+
+function targetKindTagType(targetKind) {
+  const tagTypeMap = {
+    source_table: 'warning',
+    source_schema_materialized_view: 'success',
+    external_3857_materialized_view: 'success'
+  }
+  return tagTypeMap[targetKind] || 'info'
 }
 
 watch(
@@ -658,6 +807,19 @@ watch(detailDialogVisible, visible => {
 
 .execution-tree {
   margin-top: 20px;
+}
+
+.detail-section {
+  margin-top: 20px;
+}
+
+.metadata-summary {
+  margin-bottom: 12px;
+}
+
+.metadata-json :deep(.el-textarea__inner) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
 }
 
 .execution-tree :deep(.el-tree-node__content) {

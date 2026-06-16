@@ -723,7 +723,16 @@ const viewTaskResults = async (task) => {
   resultFilters.q = ''
   resultsPage.value = 1
   activeTab.value = 'results'
-  await router.replace({ query: { ...route.query, tab: 'results', task_id: String(task.id) } })
+  await router.replace({
+    query: {
+      ...route.query,
+      tab: 'results',
+      task_id: String(task.id),
+      item_id: undefined,
+      item_fingerprint: undefined,
+      create: undefined
+    }
+  })
   await loadResults()
 }
 
@@ -769,9 +778,17 @@ const applyResultFilters = () => {
   loadResults()
 }
 
-const resetResultFilters = () => {
+const resetResultFilters = async () => {
   selectedResultTask.value = null
   Object.assign(resultFilters, { item_id: undefined, item_fingerprint: '', task_id: undefined, status: '', q: '' })
+  await router.replace({
+    query: {
+      ...route.query,
+      task_id: undefined,
+      item_id: undefined,
+      item_fingerprint: undefined
+    }
+  })
   applyResultFilters()
 }
 

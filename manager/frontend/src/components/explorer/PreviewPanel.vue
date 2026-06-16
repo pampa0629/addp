@@ -243,6 +243,27 @@
           </div>
         </template>
       </el-alert>
+      <el-alert
+        v-if="showQuickViewTileAdvisory"
+        class="preview-advisory"
+        :title="t('manager.spatialPreview.tileTimeoutAdvisoryTitle')"
+        type="warning"
+        :closable="false"
+        show-icon
+      >
+        <template #default>
+          <div class="preview-advisory-body">
+            <span>{{ quickViewTileAdvisoryMessage }}</span>
+            <el-button
+              size="small"
+              :type="quickViewTileAdvisoryAction === 'tile_cache_generation' ? 'primary' : 'warning'"
+              @click="handleQuickViewTileAdvisoryAction"
+            >
+              {{ quickViewTileAdvisoryActionLabel }}
+            </el-button>
+          </div>
+        </template>
+      </el-alert>
       <div v-if="multiRefOptions.length" class="preview-ref-toolbar">
         <span class="preview-ref-label">{{ t('containerPreview.refs') }}</span>
         <el-select
@@ -1592,6 +1613,36 @@ const showQuickViewOptimizationAction = computed(() => {
     Number(quickViewStatus.value?.render_facts?.source_srid || target.sourceSRID || 0) !== 3857
 })
 
+const quickViewTileAdvisoryAction = computed(() => {
+  const advisory = quickViewTileAdvisory.value || {}
+  if (advisory.recommendation === 'tile_cache_generation') return 'tile_cache_generation'
+  if (advisory.recommendation === 'quick_view_optimization' || advisory.retryPolicy === 'suppress_tile') {
+    return 'quick_view_optimization'
+  }
+  return ''
+})
+
+const quickViewTileAdvisoryMessage = computed(() => {
+  if (quickViewTileAdvisoryAction.value === 'tile_cache_generation') {
+    return t('manager.spatialPreview.tileTimeoutCacheRecommended')
+  }
+  if (quickViewTileAdvisoryAction.value === 'quick_view_optimization') {
+    return t('manager.spatialPreview.tileTimeoutOptimizationRecommended')
+  }
+  return ''
+})
+
+const quickViewTileAdvisoryActionLabel = computed(() => {
+  if (quickViewTileAdvisoryAction.value === 'tile_cache_generation') {
+    return t('manager.spatialPreview.generateTileCache')
+  }
+  return t('manager.spatialPreview.optimizeQuickView')
+})
+
+const showQuickViewTileAdvisory = computed(() => {
+  return isQuickViewActive.value && !!quickViewTileAdvisoryMessage.value && !!quickViewTileAdvisoryAction.value
+})
+
 const showMvtGridToggle = computed(() => {
   return isQuickViewActive.value && ['cached_tile', 'realtime_tile'].includes(quickViewRenderSource.value)
 })
@@ -1749,6 +1800,16 @@ const handleTileAdvisory = (advisory) => {
     ElMessage.warning(t('manager.spatialPreview.tileTimeoutOptimizationRecommended'))
   } else if (advisory?.recommendation === 'tile_cache_generation') {
     ElMessage.warning(t('manager.spatialPreview.tileTimeoutCacheRecommended'))
+  }
+}
+
+const handleQuickViewTileAdvisoryAction = () => {
+  if (quickViewTileAdvisoryAction.value === 'tile_cache_generation') {
+    handleGenerateTileCache()
+    return
+  }
+  if (quickViewTileAdvisoryAction.value === 'quick_view_optimization') {
+    handleQuickViewOptimization()
   }
 }
 

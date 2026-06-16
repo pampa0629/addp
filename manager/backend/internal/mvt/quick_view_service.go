@@ -1264,8 +1264,3 @@ func (s *QuickViewService) getResourceMetrics(ctx context.Context, cfg QuickView
 
 	return metrics
 }
-
-// isAlreadyMaterializedView 检查表名是否已经是物化视图格式 (xxx_mv3857)
-func isAlreadyMaterializedView(tableName string) bool {
-	return strings.HasSuffix(tableName, "_mv3857")
-}

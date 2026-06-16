@@ -51,9 +51,31 @@
       </div>
     </div>
     <div class="map-wrap">
+      <el-alert
+        v-if="showQuickViewTileAdvisory"
+        class="tile-advisory"
+        :title="t('manager.spatialPreview.tileTimeoutAdvisoryTitle')"
+        type="warning"
+        :closable="false"
+        show-icon
+      >
+        <template #default>
+          <div class="tile-advisory-body">
+            <span>{{ quickViewTileAdvisoryMessage }}</span>
+            <el-button
+              size="small"
+              :type="quickViewTileAdvisoryAction === 'tile_cache_generation' ? 'primary' : 'warning'"
+              @click="handleQuickViewTileAdvisoryAction"
+            >
+              {{ quickViewTileAdvisoryActionLabel }}
+            </el-button>
+          </div>
+        </template>
+      </el-alert>
       <GeoJSONQuickView
         v-if="ready && isQuickViewActive && quickViewRenderSource === 'direct_geojson'"
         :status="quickViewStatus"
+        class="preview-main"
       />
       <VectorTilePreview
         v-else-if="ready && isQuickViewActive && isTileQuickView"
@@ -67,12 +89,14 @@
         :tile-render-info="quickViewStatus?.quick_view || {}"
         :render-source="quickViewRenderSource"
         :default-tile-cache-id="quickViewStatus?.default_tile_cache_id || ''"
+        class="preview-main"
         @tile-advisory="handleTileAdvisory"
       />
       <TablePreview
         v-else-if="ready && basicPreviewData"
         :data="basicPreviewData"
         :loading="basicPreviewLoading"
+        class="preview-main"
         @page-change="handleBasicPreviewPageChange"
       />
       <el-empty
@@ -104,6 +128,7 @@ const engineId = computed(() => Number(route.query.engine_id || route.query.engi
 const schema = computed(() => String(route.query.schema || 'public'))
 const table = computed(() => String(route.query.table || ''))
 const locator = computed(() => String(route.query.locator || '').trim())
+const itemId = computed(() => Number(route.query.item_id || route.query.itemId || 0))
 const geom = computed(() => route.query.geom ? String(route.query.geom) : '')
 const cols = computed(() => String(route.query.cols || '').split(',').filter(Boolean))
 const ready = computed(() => !!locator.value)
@@ -141,6 +166,32 @@ const showQuickViewOptimizationAction = computed(() => {
       quickViewTileAdvisory.value?.recommendation === 'quick_view_optimization' ||
       quickViewTileAdvisory.value?.retryPolicy === 'suppress_tile'
     )
+})
+const quickViewTileAdvisoryAction = computed(() => {
+  const advisory = quickViewTileAdvisory.value || {}
+  if (advisory.recommendation === 'tile_cache_generation') return 'tile_cache_generation'
+  if (advisory.recommendation === 'quick_view_optimization' || advisory.retryPolicy === 'suppress_tile') {
+    return 'quick_view_optimization'
+  }
+  return ''
+})
+const quickViewTileAdvisoryMessage = computed(() => {
+  if (quickViewTileAdvisoryAction.value === 'tile_cache_generation') {
+    return t('manager.spatialPreview.tileTimeoutCacheRecommended')
+  }
+  if (quickViewTileAdvisoryAction.value === 'quick_view_optimization') {
+    return t('manager.spatialPreview.tileTimeoutOptimizationRecommended')
+  }
+  return ''
+})
+const quickViewTileAdvisoryActionLabel = computed(() => {
+  if (quickViewTileAdvisoryAction.value === 'tile_cache_generation') {
+    return t('manager.spatialPreview.generateTileCache')
+  }
+  return t('manager.spatialPreview.optimizeQuickView')
+})
+const showQuickViewTileAdvisory = computed(() => {
+  return isQuickViewActive.value && !!quickViewTileAdvisoryMessage.value && !!quickViewTileAdvisoryAction.value
 })
 const basicPreviewData = ref(null)
 const basicPreviewLoading = ref(false)
@@ -243,6 +294,7 @@ const openTileCacheCreate = () => {
       schema: schema.value,
       table: table.value,
       locator: locator.value,
+      ...(itemId.value ? { item_id: String(itemId.value) } : {}),
       ...(geometryColumn ? { geom: geometryColumn } : {}),
       ...(quickViewStatus.value?.item_fingerprint ? { item_fingerprint: quickViewStatus.value.item_fingerprint } : {}),
       ...(sourceSRID ? { source_srid: String(sourceSRID) } : {}),
@@ -267,6 +319,7 @@ const openQuickViewOptimizationCreate = () => {
       schema: schema.value,
       table: table.value,
       locator: locator.value,
+      ...(itemId.value ? { item_id: String(itemId.value) } : {}),
       ...(geometryColumn ? { geom: geometryColumn } : {}),
       ...(geometryColumns.length ? { geometry_columns: geometryColumns.join(',') } : {}),
       ...(quickViewStatus.value?.item_fingerprint ? { item_fingerprint: quickViewStatus.value.item_fingerprint } : {}),
@@ -281,6 +334,16 @@ const handleTileAdvisory = (advisory) => {
     ElMessage.warning(t('manager.spatialPreview.tileTimeoutOptimizationRecommended'))
   } else if (advisory?.recommendation === 'tile_cache_generation') {
     ElMessage.warning(t('manager.spatialPreview.tileTimeoutCacheRecommended'))
+  }
+}
+
+const handleQuickViewTileAdvisoryAction = () => {
+  if (quickViewTileAdvisoryAction.value === 'tile_cache_generation') {
+    openTileCacheCreate()
+    return
+  }
+  if (quickViewTileAdvisoryAction.value === 'quick_view_optimization') {
+    openQuickViewOptimizationCreate()
   }
 }
 
@@ -299,11 +362,21 @@ watch([engineId, schema, table, locator], () => {
 
 <style scoped>
 .page { position: relative; width: 100%; height: 100%; display: flex; flex-direction: column; }
-.toolbar { height: 44px; display: flex; align-items: center; padding: 0 12px; border-bottom: 1px solid #eee; }
+.toolbar { height: 44px; display: flex; align-items: center; padding: 0 12px; border-bottom: 1px solid var(--addp-border-color-light); }
 .spacer { flex: 1; }
-.map-wrap { position: relative; flex: 1; }
+.map-wrap { position: relative; flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.preview-main { flex: 1; min-height: 0; }
 .basic-preview-empty { height: 100%; display: flex; align-items: center; justify-content: center; }
 .quick-view-actions { display: flex; align-items: center; gap: 10px; }
 .status-text { font-size: 13px; color: var(--addp-text-secondary); }
-.status-text.muted { color: var(--addp-text-placeholder); }
+.status-text.muted { color: var(--addp-text-tertiary); }
+.tile-advisory {
+  margin: 10px 12px;
+}
+.tile-advisory-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
 </style>

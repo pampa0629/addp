@@ -59,6 +59,36 @@
         "started_at": "Started At",
         "completed_at": "Completed At",
         "execution_tree": "Execution Tree",
+        "metadata": "Execution Metadata",
+        "metadata_fields": {
+          "tile_generation_target": "Tile generation target",
+          "quick_view_target": "Quick view target",
+          "geometry_column": "Geometry column",
+          "target_srid": "Target SRID",
+          "source_srid": "Source SRID",
+          "extent_srid": "Extent SRID",
+          "target_kind": "Target kind",
+          "optimization_recommended": "Quick view optimization recommended",
+          "optimization_recommendation": "Optimization recommendation",
+          "min_zoom": "Min zoom",
+          "max_zoom": "Max zoom",
+          "total_tiles": "Total tiles",
+          "generated_tiles": "Generated tiles",
+          "cached_tiles": "Cached tiles",
+          "failed_tiles": "Failed tiles",
+          "stop_reason": "Stop reason",
+          "row_count_estimate": "Estimated rows",
+          "analyze_executed": "ANALYZE executed"
+        },
+        "target_kind": {
+          "source_table": "Source table transform",
+          "source_schema_materialized_view": "Manager 3857 materialized view",
+          "external_3857_materialized_view": "External 3857 materialized view"
+        },
+        "boolean": {
+          "yes": "Yes",
+          "no": "No"
+        },
         "result": "Execution Result",
         "error": "Error Details",
         "open_task_definition": "Open task definition",

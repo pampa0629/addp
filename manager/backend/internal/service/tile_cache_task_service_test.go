@@ -722,6 +722,7 @@ func TestTileCacheGenerationUsesIndexed3857Target(t *testing.T) {
 			GeomColumn:                  "geom_3857",
 			SRID:                        3857,
 			QuickViewOptimizationTarget: true,
+			TargetKind:                  QuickViewOptimizationTargetKindExternal3857MaterializedView,
 		},
 	})
 	generator := &fakeTileCacheGenerator{
@@ -788,8 +789,11 @@ func TestTileCacheGenerationUsesIndexed3857Target(t *testing.T) {
 	if !ok {
 		t.Fatalf("execution metadata = %#v, want tile_generation_target", exec.Metadata)
 	}
-	if targetMeta["table"] != "dltb_mv3857" || targetMeta["geom_column"] != "geom_3857" || targetMeta["quick_view_optimization_target"] != true {
-		t.Fatalf("tile_generation_target = %#v, want quick view optimization dltb_mv3857 target", targetMeta)
+	if targetMeta["table"] != "dltb_mv3857" || targetMeta["geom_column"] != "geom_3857" {
+		t.Fatalf("tile_generation_target = %#v, want dltb_mv3857 target", targetMeta)
+	}
+	if targetMeta["target_kind"] != QuickViewOptimizationTargetKindExternal3857MaterializedView {
+		t.Fatalf("tile_generation_target = %#v, want external 3857 materialized view metadata", targetMeta)
 	}
 	optimizationMeta, ok := asJSONMap(exec.Metadata["optimization"])
 	if !ok {
@@ -813,6 +817,59 @@ func TestTileCacheGenerationUsesIndexed3857Target(t *testing.T) {
 	expectedFingerprint := spatialItemFingerprint(11, "public", "dltb")
 	if results[0].ItemFingerprint != expectedFingerprint {
 		t.Fatalf("item_fingerprint = %s, want source item fingerprint %s", results[0].ItemFingerprint, expectedFingerprint)
+	}
+}
+
+func TestTileCacheGenerationSkipsMetaWhenTaskHasSpatialFacts(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	tileCacheRepo := repository.NewTileCacheRepository(db)
+	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
+	taskSvc := NewTileCacheTaskService(tileCacheRepo, taskExecRepo)
+	metaCalls := 0
+	quickViewSvc := NewQuickViewService(db, nil)
+	quickViewSvc.SetSpatialMetadataLoader(func(context.Context, uint, uint, string, string) (*SpatialMetadataResult, error) {
+		metaCalls++
+		return nil, errors.New("meta backend unavailable")
+	})
+	taskSvc.SetQuickViewService(quickViewSvc)
+	taskSvc.SetRealtimeTileTargetResolver(fakeRealtimeTileTargetResolver{})
+	taskSvc.SetTileGenerator(&fakeTileCacheGenerator{
+		result: &mvt.GenerateResult{
+			ActualMaxZoom: 12,
+			TotalTiles:    48,
+			CachedTiles:   41,
+			GenerationSec: 3.2,
+		},
+	}, 1)
+
+	task := newTileCacheTaskDefinition()
+	task.Config["tile"] = commonModels.JSONMap{
+		"format":      "mvt",
+		"min_zoom":    float64(6),
+		"max_zoom":    float64(12),
+		"source_srid": float64(2360),
+		"target_srid": float64(3857),
+		"extent_srid": float64(4326),
+		"extent":      []interface{}{float64(104.4), float64(20.9), float64(112.1), float64(26.4)},
+	}
+	task.Config["options"] = commonModels.JSONMap{
+		"geometry_column": "SmGeometry",
+		"primary_key":     "SmID",
+	}
+	if err := taskSvc.Create(context.Background(), task); err != nil {
+		t.Fatalf("create tile cache task: %v", err)
+	}
+
+	executionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil)
+	if err != nil {
+		t.Fatalf("execute tile cache task: %v", err)
+	}
+	exec := waitForTileCacheTaskExecution(t, taskExecRepo, executionID, int(task.TenantID))
+	if exec.Status != commonExecution.ExecutionStatusSuccess {
+		t.Fatalf("execution status = %s, want success; error = %#v", exec.Status, exec.ErrorDetails)
+	}
+	if metaCalls != 0 {
+		t.Fatalf("meta loader calls = %d, want 0 when task config already has spatial facts", metaCalls)
 	}
 }
 
@@ -870,6 +927,9 @@ func TestTileCacheGenerationFallsBackToSourceWhenOptimizationTargetMissing(t *te
 	if exec.Status != commonExecution.ExecutionStatusSuccess {
 		t.Fatalf("execution status = %s, want success", exec.Status)
 	}
+	if intFromTileCacheConfig(exec.Metadata["target_srid"], 0) != 3857 {
+		t.Fatalf("metadata target_srid = %v, want tile target srid 3857", exec.Metadata["target_srid"])
+	}
 	targetMeta, ok := asJSONMap(exec.Metadata["tile_generation_target"])
 	if !ok {
 		t.Fatalf("tile_generation_target metadata = %#v", exec.Metadata["tile_generation_target"])
@@ -880,8 +940,8 @@ func TestTileCacheGenerationFallsBackToSourceWhenOptimizationTargetMissing(t *te
 	if intFromTileCacheConfig(targetMeta["srid"], 0) != 2360 {
 		t.Fatalf("tile_generation_target.srid = %v, want 2360", targetMeta["srid"])
 	}
-	if targetMeta["quick_view_optimization_target"] == true {
-		t.Fatalf("quick_view_optimization_target = true, want false for source fallback")
+	if targetMeta["target_kind"] != RealtimeTileTargetKindSourceTable {
+		t.Fatalf("tile_generation_target = %#v, want source table metadata", targetMeta)
 	}
 	if targetMeta["optimization_recommended"] != true {
 		t.Fatalf("optimization_recommended = %v, want true", targetMeta["optimization_recommended"])

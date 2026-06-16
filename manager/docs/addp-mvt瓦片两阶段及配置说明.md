@@ -10,11 +10,11 @@
 ```
 【步骤1：诊断】瓦片缓存生成任务读取源 item 和快显能力事实
     ↓
-  判断源 SRID、几何列、渲染范围、ready 快显性能优化目标和索引状态
+  判断源 SRID、几何列、渲染范围、可索引 3857 目标和索引状态
     ↓
-【步骤2：选择生成目标】优先使用 Manager 登记的 ready 快显性能优化目标
+【步骤2：选择生成目标】优先使用可索引 3857 目标
     ↓
-  缺少 ready 优化目标时仍使用源表生成，并在 execution metadata 中记录快显性能优化推荐
+  缺少可索引 3857 目标时仍使用源表生成，并在 execution metadata 中记录快显性能优化推荐
     ↓
 【步骤3：瓦片生成】POST /api/v1/manager/tasks/tile_cache_generation/{id}/execute
     ↓
@@ -24,17 +24,19 @@
 **核心设计**：
 - **瓦片缓存任务不准备派生产物**：不再根据 `config.preparation` 隐式创建 3857 物化视图或索引。
 - **快显优化目标独立管理**：`quick_view_optimization` 任务负责创建、刷新和删除 Manager 管理的 3857 优化目标。
-- **生成目标可诊断**：当次实际使用的 schema、table、geometry column、SRID 和是否为快显性能优化目标写入 execution metadata。
+- **生成目标可诊断**：当次实际使用的 schema、table、geometry column、SRID 和 `target_kind` 写入 execution metadata；`target_kind` 使用 `source_table`、`source_schema_materialized_view` 或 `external_3857_materialized_view`，外部只读目标由 `external_3857_materialized_view` 表达。
 
 ---
 
-## 二、优化配置
+## 二、瓦片生成优化配置
 
 ### 2.1 默认配置（推荐）
 
+瓦片生成优化配置位于瓦片缓存任务 `config.optimization`，只控制 MVT 生成时的属性裁剪、瓦片体积阈值和 extent 精度策略。它不创建、不刷新 3857 物化视图，也不表达快显性能优化目标；3857 快显优化目标统一由 `quick_view_optimization` 任务管理。
+
 ```json
 {
-  "optimization_config": {
+  "optimization": {
     "version": "4.0",
     "attribute_pruning": {
       "enabled": true,
@@ -102,7 +104,7 @@
 
 ### 3.2 执行快显性能优化
 
-创建 3857 物化视图、`geom_3857` GiST 索引和 `ANALYZE` 由 `quick_view_optimization` 任务显式执行；瓦片缓存生成任务只消费 ready 快显性能优化目标，缺少目标时走源表生成路径并记录推荐。
+创建 3857 物化视图、`geom_3857` GiST 索引和 `ANALYZE` 由 `quick_view_optimization` 任务显式执行；瓦片缓存生成任务只消费可索引 3857 目标，不隐式创建或刷新派生对象。缺少可索引 3857 目标时走源表生成路径并记录推荐。
 
 ### 3.3 启动瓦片缓存生成
 
@@ -115,13 +117,50 @@ POST /api/v1/manager/tasks/tile_cache_generation/{id}/execute
 请求体：
 ```json
 {
-  "min_zoom": 5,
-  "max_zoom": 16,
-  "optimization_config": { ... }
+  "name": "行政区划瓦片缓存",
+  "enabled": true,
+  "config": {
+    "target": {
+      "source_engine_id": 8,
+      "schema": "public",
+      "table": "dltb",
+      "item_id": 54,
+      "item_fingerprint": "由服务端按 source_engine_id/schema/table 规范化",
+      "locator": "addp://engine/8/path/public/dltb?type=table&item_id=54"
+    },
+    "tile": {
+      "format": "mvt",
+      "tile_matrix_set": "WebMercatorQuad",
+      "min_zoom": 5,
+      "max_zoom": 16,
+      "source_srid": 2360,
+      "target_srid": 3857,
+      "extent_srid": 4326,
+      "extent": [116.0, 39.0, 117.0, 40.0]
+    },
+    "options": {
+      "geometry_column": "geom"
+    },
+    "optimization": {
+      "version": "4.0",
+      "attribute_pruning": {
+        "enabled": true,
+        "zoom_threshold": 8
+      },
+      "tile_size_thresholds": {
+        "max_size_mb": 5.0
+      },
+      "extent_optimization": {
+        "max_zoom_extent": 1024,
+        "base_extent": 512,
+        "min_extent": 256
+      }
+    }
+  }
 }
 ```
 
-前置条件：任务配置完整且源 item 可解析。ready 快显性能优化目标不是硬性前置条件；缺少目标时任务仍可执行，但会记录 `optimization_recommended=true`。
+前置条件：任务配置完整且源 item 可解析。可索引 3857 目标不是硬性前置条件；缺少目标时任务仍可执行，但会记录 `optimization_recommended=true`。
 
 ### 3.4 获取执行与快显状态
 
@@ -151,13 +190,15 @@ GET /api/v1/manager/quick-view/capability?locator={ResourceLocator}
 
 **触发条件**：用户显式创建并执行 `quick_view_optimization` 任务，且源表 SRID ≠ 3857。
 
-**命名规则**：`{schema}.{table}_mv3857`
+**命名规则**：`{schema}.addp_qvo_<hash>`
+
+Manager 创建并拥有生命周期的快显性能优化目标使用 ADDP 稳定前缀和哈希命名，当前实现为 `addp_qvo_` 加 24 位稳定哈希。`{table}_mv3857` / `{table}_3857` 只作为同源 schema 下外部已有 3857 物化视图的只读识别候选，不是 Manager 新建目标的命名规则。
 
 **创建逻辑**：
 ```sql
-CREATE MATERIALIZED VIEW {schema}.{table}_mv3857 AS
+CREATE MATERIALIZED VIEW {schema}.addp_qvo_<hash> AS
 SELECT
-  {primary_key},
+  {source_row_id_expression},
   ST_Transform({geom_column}, 3857) AS geom_3857,
   {other_columns}
 FROM {schema}.{table};
@@ -165,18 +206,18 @@ FROM {schema}.{table};
 
 ### 4.2 空间索引创建
 
-**命名规则**：`idx_{table}_mv3857_geom_3857_gist`
+**命名规则**：`idx_<addp_qvo_target>_geom_3857_gist`；超过 PostgreSQL 标识符长度时使用 `idx_qvo_<hash>_gist`。
 
 **创建逻辑**：
 ```sql
-CREATE INDEX CONCURRENTLY idx_{table}_mv3857_geom_3857_gist
-ON {schema}.{table}_mv3857 USING GIST (geom_3857);
+CREATE INDEX CONCURRENTLY idx_<addp_qvo_target>_geom_3857_gist
+ON {schema}.addp_qvo_<hash> USING GIST (geom_3857);
 ```
 
 ### 4.3 统计信息更新
 
 ```sql
-ANALYZE {schema}.{table}_mv3857;
+ANALYZE {schema}.addp_qvo_<hash>;
 ```
 
 ---
@@ -192,9 +233,10 @@ ANALYZE {schema}.{table}_mv3857;
 ### Q2: 瓦片缓存生成如何选择查询目标？
 
 当前瓦片缓存生成时调用快显实时瓦片目标解析：
-- 存在 ready 快显性能优化目标且 `geom_3857` 有有效 GiST 索引时，使用该目标。
+- 存在 Manager ready 快显性能优化目标且 `geom_3857` 有有效 GiST 索引时，使用该目标。
+- 存在同源 schema 下可验证的外部 3857 物化视图时，作为只读目标使用，不写入结果表、不获得删除或刷新所有权。
 - 源表本身是 3857 且可索引时，使用源表 3857 路径。
-- 缺少 ready 优化目标时，使用源表生成，并在 execution metadata 中记录快显性能优化推荐。
+- 缺少可索引 3857 目标时，使用源表生成，并在 execution metadata 中记录快显性能优化推荐。
 
 ### Q3: 物化视图占用多少空间？
 

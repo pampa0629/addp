@@ -172,6 +172,7 @@ func (s *MVTService) ResolveRealtimeTileTarget(
 			Table:           table,
 			GeomColumn:      geomCol,
 			SRID:            spatial.SRIDWebMercator,
+			TargetKind:      RealtimeTileTargetKindSourceTable,
 			PerformanceMode: mode,
 		}, nil
 	}
@@ -194,6 +195,7 @@ func (s *MVTService) ResolveRealtimeTileTarget(
 					GeomColumn:                  result.TargetGeometryColumn,
 					SRID:                        spatial.SRIDWebMercator,
 					QuickViewOptimizationTarget: true,
+					TargetKind:                  result.TargetKind,
 					PerformanceMode:             RealtimeTilePerformanceReady3857Target,
 				}, nil
 			}
@@ -215,6 +217,7 @@ func sourceTransformRealtimeTileTarget(schema, table, geomCol string, sourceSRID
 		Table:                      table,
 		GeomColumn:                 geomCol,
 		SRID:                       sourceSRID,
+		TargetKind:                 RealtimeTileTargetKindSourceTable,
 		PerformanceMode:            RealtimeTilePerformanceSourceTransform,
 		OptimizationRecommended:    true,
 		OptimizationRecommendation: RealtimeTileRecommendationQuickViewOptimization,
@@ -269,6 +272,7 @@ func discoverExternal3857MaterializedView(ctx context.Context, db *sql.DB, schem
 			GeomColumn:                  "geom_3857",
 			SRID:                        spatial.SRIDWebMercator,
 			QuickViewOptimizationTarget: true,
+			TargetKind:                  QuickViewOptimizationTargetKindExternal3857MaterializedView,
 			PerformanceMode:             RealtimeTilePerformanceReady3857Target,
 		}, nil
 	}

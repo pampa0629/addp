@@ -490,9 +490,9 @@ manager.quick_view_optimization
 4. 删除或刷新仍只作用于 Manager 创建并登记的结果，不能删除、刷新或重建外部目标。
 5. 如果无法轻量验证为可用目标，capability 不消费该对象，继续给出快显性能优化建议。
 
-登记外部目标时：
+后续如果设计“登记外部优化目标”专题，应遵守以下边界：
 
-1. 可以在 `quick_view_optimization` 中记录 `target_kind=external_registered_target`。
+1. 应先在专题中定义新的目标形态和生命周期语义，不复用第一阶段 Manager 自建目标或自动识别外部目标的 `target_kind`。
 2. 删除结果只删除 Manager 登记记录，不删除外部表、外部物化视图或外部索引。
 3. 刷新该目标不由 Manager 自动执行，除非用户明确把它迁移为 Manager 管理目标。
 
@@ -543,7 +543,7 @@ manager.quick_view_optimization
 1. 动态 MVT 优先使用 ready 的快显性能优化结果。
 2. 瓦片缓存生成优先使用 ready 的快显性能优化结果。
 3. 没有 ready 快显性能优化结果时，动态 MVT 仍可进行，但作为快显能力开放时必须标记慢路径，并受单瓦片响应时间预算、超时保护和体积限制约束；记录数只作为风险诊断和默认渲染源推荐依据。
-4. 有 ready 快显性能优化结果后，动态 MVT 标记为 ready 快显性能优化目标路径；如果仍发生超时，应提示生成瓦片缓存，并按既有 TTL 允许后续重试。
+4. 有可索引 3857 目标后，动态 MVT 标记为 ready 3857 目标路径；如果仍发生超时，应提示生成瓦片缓存，并按既有 TTL 允许后续重试。
 5. 没有 ready 快显性能优化结果时，瓦片缓存生成仍允许执行且不做数据量限制，但非 3857 源表应给出更强的慢路径风险提示和“建议先执行快显性能优化”推荐。
 6. 删除快显性能优化结果不删除已有瓦片缓存。
 7. 删除瓦片缓存不删除快显性能优化结果。
@@ -551,14 +551,14 @@ manager.quick_view_optimization
 是否把快显性能优化作为瓦片缓存生成子任务：
 
 1. 概念上不作为子任务。
-2. UI 上可以提供“先优化再生成瓦片缓存”的向导。
+2. UI 上提供“先优化再生成瓦片缓存”的分步引导；空间预览中的动态 MVT 超时建议不只使用一次性消息，还会在当前预览区域保留可操作提示，按推荐动作跳转到“执行快显优化”或“生成瓦片缓存”。
 3. 执行上应形成两个 execution，并通过 `parent_execution_id` 或 metadata 关联。
 4. 第一阶段可以先跳转到快显性能优化任务；后续再做一键串联。
 
 动态 MVT 阈值验证作为本专题的后续前置工作：
 
-1. 验证应同时覆盖源表 `ST_Transform` 路径、源表已是 3857 且有索引路径、ready 快显性能优化目标路径。
-2. 验证样本应覆盖小、中、大记录规模和点、线、面几何，输出无 ready 快显性能优化目标和有 ready 快显性能优化目标两组响应时间预算与超时处理建议。
+1. 验证应同时覆盖源表 `ST_Transform` 路径、源表已是 3857 且有索引路径、Manager ready 快显性能优化目标路径和外部只读 3857 目标路径。
+2. 验证样本应覆盖小、中、大记录规模和点、线、面几何，输出无可索引 3857 目标和有可索引 3857 目标两组响应时间预算与超时处理建议。
 3. 输出指标至少包含单瓦片耗时、服务端总耗时、超时率、错误率、原始 MVT 大小、空瓦片率和 DB 资源占用。
 4. 验证结论只用于动态 MVT capability 性能模式、提示等级、超时策略和运行时保护；瓦片缓存生成不因动态 MVT 响应时间预算而被禁止。
 
@@ -593,7 +593,7 @@ manager.quick_view_optimization
 | --- | --- |
 | 稳定 `task_type` | 使用 `quick_view_optimization`。 |
 | 第一阶段结果形态 | 使用源 PG 引擎内、源表所在 schema 下的 ADDP 命名 3857 物化视图。 |
-| 外部已有 3857 目标 | 第一阶段不登记、不自动消费，只做诊断提示；后续单独设计“登记外部优化目标”。 |
+| 外部已有 3857 目标 | 第一阶段自动识别并消费同源 schema 下可轻量验证的只读 3857 目标；不写入结果表、不进入结果列表、不获得 Manager 生命周期所有权。后续单独设计“登记外部优化目标”。 |
 | 当前 ready 结果数量 | 同一 `tenant_id + item_fingerprint + geometry_column + target_srid + target_kind` 只允许一个当前 ready 结果。 |
 | 任务自身定时刷新 | 第一阶段不支持，TaskProvider 声明 `supports_schedule=false`。 |
 | Orchestrator 编排触发 | 支持作为 Orchestrator Step 引用已保存任务定义。 |
@@ -607,21 +607,20 @@ manager.quick_view_optimization
 第一阶段物化视图命名规则：
 
 ```text
-addp_qvo_<fingerprint12>_<geomhash8>_3857
+addp_qvo_<hash24>
 ```
 
 其中：
 
-1. `fingerprint12` 取 `item_fingerprint` 前 12 位。
-2. `geomhash8` 取 geometry column 名称的稳定 hash 前 8 位。
-3. 名称统一使用小写字母、数字和下划线。
-4. 不直接拼接 geometry column 原名，避免超长、大小写、特殊字符和引用转义问题。
-5. 完整来源信息写入 `manager.quick_view_optimization.metadata`。
+1. `hash24` 由 tenant、`item_fingerprint`、geometry column 和目标 SRID 计算得到，取 24 位稳定十六进制摘要。
+2. 名称统一使用小写字母、数字和下划线。
+3. 不直接拼接源表名或 geometry column 原名，避免超长、大小写、特殊字符和引用转义问题。
+4. 完整来源信息写入 `manager.quick_view_optimization.metadata`。
 
 示例：
 
 ```text
-addp_qvo_a1b2c3d4e5f6_9f8e7d6c_3857
+addp_qvo_a1b2c3d4e5f69f8e7d6c1a2b3
 ```
 
 #### 物化视图字段
@@ -738,6 +737,6 @@ Capability 只暴露诊断和推荐，不触发创建动作：
 文档检查：
 
 ```bash
-rg -n "quick_view_optimization|quick_view_optimization_target|快显性能优化|快显性能优化目标|3857 派生" docs/next manager/docs docs/spec -g '*.md'
+rg -n "quick_view_optimization|source_schema_materialized_view|external_3857_materialized_view|快显性能优化|快显性能优化目标|3857 派生" docs/next manager/docs docs/spec -g '*.md'
 git diff --check -- docs/next/Manager快显性能优化任务与结果专题设计.md
 ```

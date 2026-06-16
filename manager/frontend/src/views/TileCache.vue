@@ -640,6 +640,7 @@ const loadResults = async () => {
       status: resultFilters.status || undefined,
       q: resultFilters.q || undefined,
       task_id: resultFilters.task_id || undefined,
+      item_id: resultFilters.item_id || undefined,
       item_fingerprint: resultFilters.item_fingerprint || undefined
     }
     const response = await client.get('/manager/tile_cache', { params })
@@ -684,9 +685,17 @@ const applyResultFilters = () => {
   loadResults()
 }
 
-const resetResultFilters = () => {
+const resetResultFilters = async () => {
   selectedResultTask.value = null
   Object.assign(resultFilters, { item_id: undefined, item_fingerprint: '', task_id: undefined, status: '', q: '' })
+  await router.replace({
+    query: {
+      ...route.query,
+      task_id: undefined,
+      item_id: undefined,
+      item_fingerprint: undefined
+    }
+  })
   applyResultFilters()
 }
 
@@ -784,7 +793,7 @@ const applyQuickViewCapabilityToForm = (config, fallbackGeometryColumns = []) =>
     tileCacheOptimizationAdvice.visible = true
     tileCacheOptimizationAdvice.type = 'success'
     tileCacheOptimizationAdvice.actionVisible = false
-    tileCacheOptimizationAdvice.message = config.external_optimization_target
+    tileCacheOptimizationAdvice.message = config.optimization_target_kind === 'external_3857_materialized_view'
       ? t('manager.tileCache.externalOptimizationTargetReady')
       : t('manager.tileCache.optimizationTargetReady')
   } else {
@@ -811,7 +820,7 @@ const tileCacheFormConfigFromCapability = (capability) => {
     geometry_column: quickView.geometry_column,
     geometry_columns: quickView.geometry_columns || [],
     optimization_available: optimization.available === true,
-    external_optimization_target: optimization.target_kind === 'external_3857_materialized_view',
+    optimization_target_kind: optimization.target_kind || '',
     optimization_recommended: realtime.optimization_recommended === true ||
       realtime.performance_mode === 'source_transform_path' ||
       (optimization.available !== true && Number(renderFacts.source_srid || quickView.source_srid || 0) !== 3857),
@@ -1045,7 +1054,16 @@ const viewTaskResults = async (task) => {
   resultFilters.q = ''
   resultsPage.value = 1
   activeTab.value = 'results'
-  await router.replace({ query: { ...route.query, tab: 'results', task_id: String(task.id) } })
+  await router.replace({
+    query: {
+      ...route.query,
+      tab: 'results',
+      task_id: String(task.id),
+      item_id: undefined,
+      item_fingerprint: undefined,
+      create: undefined
+    }
+  })
   await loadResults()
 }
 

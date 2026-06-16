@@ -36,12 +36,12 @@ ADDP 中容易混淆的三个概念需要明确区分：
 
 ```mermaid
 graph TB
-    System[System<br/>引擎登记/加密/能力声明/连接状态]
-    Common[common/engine/plugin<br/>插件注册表与 provider]
-    Meta[Meta<br/>扫描 catalog 并落 meta_node/meta_item]
-    Manager[Manager<br/>探查树/预览/缓存]
-    Develop[Develop<br/>查询/工作流/Notebook]
-    Service[Service<br/>查询服务/空间服务发布]
+    System["System<br/>引擎登记/加密/能力声明/连接状态"]
+    Common["common/engine/plugin<br/>插件注册表与 provider"]
+    Meta["Meta<br/>扫描 catalog 并落 meta_node/meta_item"]
+    Manager["Manager<br/>探查树/预览/缓存"]
+    Develop["Develop<br/>查询/工作流/Notebook"]
+    Service["Service<br/>查询服务/空间服务发布"]
 
     System --> Common
     Meta --> System
@@ -54,7 +54,7 @@ graph TB
     Develop --> Common
     Service --> Common
 
-    Meta --> MetaStore[(meta.meta_node/meta_item)]
+    Meta --> MetaStore[("meta.meta_node/meta_item")]
     Manager --> MetaStore
 ```
 

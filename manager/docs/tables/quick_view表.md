@@ -1,6 +1,6 @@
 # quick_view 表结构和 API 说明
 
-> 状态：目标设计说明。`manager.quick_view` 收敛为快显偏好表，不保存快显能力快照、瓦片缓存结果事实、生成任务定义或执行历史。瓦片缓存结果见 `manager.tile_cache`，瓦片缓存生成任务见 `manager.tile_cache_tasks`。
+> 状态：目标设计说明。`manager.quick_view` 收敛为快显偏好表，不保存快显能力快照、快显性能优化结果、瓦片缓存结果事实、生成任务定义或执行历史。快显性能优化结果见 `manager.quick_view_optimization`，瓦片缓存结果见 `manager.tile_cache`，任务定义见对应任务表。
 
 ## 一、表定位
 
@@ -24,6 +24,8 @@
 | 对象 | 职责 |
 | --- | --- |
 | `manager.quick_view` | 用户预览模式偏好 |
+| `manager.quick_view_optimization` | Manager 创建并拥有生命周期的 3857 快显性能优化结果状态 |
+| `manager.quick_view_optimization_tasks` | 快显性能优化任务定义 |
 | `manager.tile_cache` | 瓦片缓存结果状态 |
 | `manager.tile_cache_tasks` | 瓦片缓存生成任务定义 |
 | `common.task_executions` | 某一次实际执行记录 |

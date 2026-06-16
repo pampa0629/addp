@@ -46,6 +46,7 @@ const (
 	RealtimeTileTimeoutRetrySuppressTile = "suppress_tile"
 	RealtimeTileTimeoutRetryTTL          = "ttl"
 
+	RealtimeTileTargetKindSourceTable                           = "source_table"
 	QuickViewOptimizationTargetKindExternal3857MaterializedView = "external_3857_materialized_view"
 )
 
@@ -121,6 +122,7 @@ type RealtimeTileTarget struct {
 	GeomColumn                  string
 	SRID                        int
 	QuickViewOptimizationTarget bool
+	TargetKind                  string
 	PerformanceMode             string
 	OptimizationRecommended     bool
 	OptimizationRecommendation  string

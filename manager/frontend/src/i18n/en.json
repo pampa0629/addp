@@ -397,6 +397,7 @@
       "generateTileCache": "Generate Tile Cache",
       "optimizeQuickView": "Run Quick View Optimization",
       "optimizationRecommended": "Dynamic MVT is using a source-transform slow path. Run quick view optimization first to reduce timeout risk.",
+      "tileTimeoutAdvisoryTitle": "Quick view tile timeout",
       "tileTimeoutOptimizationRecommended": "Some tiles were suppressed after slow-path timeout. Run quick view optimization before continuing.",
       "tileTimeoutCacheRecommended": "Some tiles still timed out with the optimization target. Generate tile cache for more stable low-zoom or wide-area browsing.",
       "switchQuickViewSuccess": "Quick view preference updated",

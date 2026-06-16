@@ -771,7 +771,10 @@
       "Bash(cat business/.env)",
       "Bash(GOMODCACHE=\"/Users/pampa/code/addp/.gomodcache\" GOPATH=\"/Users/pampa/code/addp/.gopath\" GOTOOLCHAIN=local go build -tags sqlite_load_extension -o /tmp/addp-transfer-test cmd/server/main.go)",
       "Bash(GOMODCACHE=\"/Users/pampa/code/addp/.gomodcache\" GOPATH=\"/Users/pampa/code/addp/.gopath\" GOTOOLCHAIN=local go build -tags sqlite_load_extension -o /tmp/addp-transfer-test ./cmd/server)",
-      "Bash(GOMODCACHE=\"/Users/pampa/code/addp/.gomodcache\" GOPATH=\"/Users/pampa/code/addp/.gopath\" GOTOOLCHAIN=local go build -tags sqlite_load_extension -o /tmp/addp-transfer-worker-test ./cmd/worker)"
+      "Bash(GOMODCACHE=\"/Users/pampa/code/addp/.gomodcache\" GOPATH=\"/Users/pampa/code/addp/.gopath\" GOTOOLCHAIN=local go build -tags sqlite_load_extension -o /tmp/addp-transfer-worker-test ./cmd/worker)",
+      "Bash(code --list-extensions)",
+      "Bash(ls ~/.vscode/extensions 2>/dev/null | grep -i mermaid; ls ~/.cursor/extensions 2>/dev/null | grep -i mermaid; ls \"/Applications/Visual Studio Code.app/Contents/Resources/app/bin/\" 2>/dev/null)",
+      "Read(//Applications/Visual Studio Code.app/Contents/Resources/app/**)"
     ],
     "deny": [],
     "ask": [],

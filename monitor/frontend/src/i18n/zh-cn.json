@@ -59,6 +59,36 @@
         "started_at": "开始时间",
         "completed_at": "完成时间",
         "execution_tree": "执行树",
+        "metadata": "执行元数据",
+        "metadata_fields": {
+          "tile_generation_target": "瓦片生成目标",
+          "quick_view_target": "快显优化目标",
+          "geometry_column": "几何字段",
+          "target_srid": "目标 SRID",
+          "source_srid": "源 SRID",
+          "extent_srid": "范围 SRID",
+          "target_kind": "目标形态",
+          "optimization_recommended": "建议快显优化",
+          "optimization_recommendation": "优化建议",
+          "min_zoom": "最小层级",
+          "max_zoom": "最大层级",
+          "total_tiles": "总瓦片数",
+          "generated_tiles": "生成瓦片数",
+          "cached_tiles": "缓存瓦片数",
+          "failed_tiles": "失败瓦片数",
+          "stop_reason": "停止原因",
+          "row_count_estimate": "估算行数",
+          "analyze_executed": "已执行 ANALYZE"
+        },
+        "target_kind": {
+          "source_table": "源表实时转换",
+          "source_schema_materialized_view": "Manager 3857 物化视图",
+          "external_3857_materialized_view": "外部 3857 物化视图"
+        },
+        "boolean": {
+          "yes": "是",
+          "no": "否"
+        },
         "result": "执行结果",
         "error": "错误详情",
         "open_task_definition": "打开任务定义",

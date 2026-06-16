@@ -439,6 +439,7 @@ func buildTileCacheGenerationMetadata(
 ) commonModels.JSONMap {
 	tileConfig, _ := asJSONMap(execCfg["tile"])
 	sourceSRID := intFromTileCacheConfig(tileConfig["source_srid"], cfg.SRID)
+	tileTargetSRID := intFromTileCacheConfig(tileConfig["target_srid"], spatial.SRIDWebMercator)
 
 	metadata := commonModels.JSONMap{
 		"tile_cache_id":           tileCacheID,
@@ -446,7 +447,7 @@ func buildTileCacheGenerationMetadata(
 		"min_zoom":                cfg.MinZoom,
 		"max_zoom":                cfg.MaxZoom,
 		"source_srid":             sourceSRID,
-		"target_srid":             cfg.SRID,
+		"target_srid":             tileTargetSRID,
 		"extent_srid":             cfg.ExtentSRID,
 		"extent":                  cfg.Extent,
 		"geometry_column":         cfg.GeomColumn,
@@ -539,23 +540,23 @@ func (s *TileCacheTaskService) prepareExecutionTileCache(ctx context.Context, ta
 
 	var spatialMeta *SpatialMetadataResult
 	needsSpatialMeta := geomColumn == "" || primaryKey == "" || len(extent) == 0 || sourceSRID == 0
-	if s.quickViewSvc != nil {
+	if needsSpatialMeta && s.quickViewSvc != nil {
 		var err error
 		spatialMeta, err = s.quickViewSvc.GetSpatialMetadataFromMeta(ctx, task.TenantID, engineID, schema, table)
 		if err != nil {
 			return nil, execCfg, mvt.QuickViewConfig{}, false, err
 		}
-		if needsSpatialMeta && geomColumn == "" {
+		if geomColumn == "" {
 			geomColumn = spatialMeta.GeomColumn
 		}
-		if needsSpatialMeta && primaryKey == "" {
+		if primaryKey == "" {
 			primaryKey = spatialMeta.PrimaryKey
 		}
-		if needsSpatialMeta && len(extent) == 0 {
+		if len(extent) == 0 {
 			extent = spatialMeta.Extent
 			extentSRID = spatialMeta.ExtentSRID
 		}
-		if needsSpatialMeta && sourceSRID == 0 {
+		if sourceSRID == 0 {
 			sourceSRID = spatialMeta.SRID
 		}
 	}
@@ -660,13 +661,13 @@ func (s *TileCacheTaskService) prepareExecutionTileCache(ctx context.Context, ta
 		cfg.Concurrency = s.defaultConcurrency
 	}
 	execCfg["tile_generation_target"] = commonModels.JSONMap{
-		"schema":                         generationTarget.Schema,
-		"table":                          generationTarget.Table,
-		"geom_column":                    generationTarget.GeomColumn,
-		"srid":                           generationTarget.SRID,
-		"quick_view_optimization_target": generationTarget.QuickViewOptimizationTarget,
-		"optimization_recommended":       generationTarget.OptimizationRecommended,
-		"optimization_recommendation":    generationTarget.OptimizationRecommendation,
+		"schema":                      generationTarget.Schema,
+		"table":                       generationTarget.Table,
+		"geom_column":                 generationTarget.GeomColumn,
+		"srid":                        generationTarget.SRID,
+		"target_kind":                 generationTarget.TargetKind,
+		"optimization_recommended":    generationTarget.OptimizationRecommended,
+		"optimization_recommendation": generationTarget.OptimizationRecommendation,
 	}
 	return tileCache, execCfg, cfg, false, nil
 }
@@ -741,6 +742,7 @@ type tileGenerationTarget struct {
 	SRID                        int
 	PrimaryKey                  string
 	QuickViewOptimizationTarget bool
+	TargetKind                  string
 	OptimizationRecommended     bool
 	OptimizationRecommendation  string
 }
@@ -764,6 +766,7 @@ func (s *TileCacheTaskService) resolveTileGenerationTarget(
 				GeomColumn: geomColumn,
 				SRID:       sourceSRID,
 				PrimaryKey: primaryKey,
+				TargetKind: RealtimeTileTargetKindSourceTable,
 			}, nil
 		}
 		return tileGenerationTarget{
@@ -772,6 +775,7 @@ func (s *TileCacheTaskService) resolveTileGenerationTarget(
 			GeomColumn:                 geomColumn,
 			SRID:                       sourceSRID,
 			PrimaryKey:                 primaryKey,
+			TargetKind:                 RealtimeTileTargetKindSourceTable,
 			OptimizationRecommended:    true,
 			OptimizationRecommendation: "quick_view_optimization is recommended before generating cache for non-3857 spatial data",
 		}, nil
@@ -792,6 +796,7 @@ func (s *TileCacheTaskService) resolveTileGenerationTarget(
 			GeomColumn:                 geomColumn,
 			SRID:                       sourceSRID,
 			PrimaryKey:                 primaryKey,
+			TargetKind:                 RealtimeTileTargetKindSourceTable,
 			OptimizationRecommended:    recommendOptimization,
 			OptimizationRecommendation: recommendation,
 		}, nil
@@ -809,6 +814,7 @@ func (s *TileCacheTaskService) resolveTileGenerationTarget(
 		SRID:                        target.SRID,
 		PrimaryKey:                  targetPrimaryKey,
 		QuickViewOptimizationTarget: target.QuickViewOptimizationTarget,
+		TargetKind:                  target.TargetKind,
 		OptimizationRecommended:     target.OptimizationRecommended,
 		OptimizationRecommendation:  target.OptimizationRecommendation,
 	}, nil

@@ -77,7 +77,7 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 **任务的共同能力**：
 - **Schedule**：所有 Task 均可配置定时调度（Cron 表达式）
 - **Execution**：所有 Task 执行后写入 `common.task_executions` 统一记录
-- **可被 Orchestration 编排**：ScanTask / TransferTask / DevTask / TileCacheTask / EmbeddingTask / CheckTask / GraphBuildTask / Orchestration 均可作为 Orchestration 的步骤（Step）
+- **可被 Orchestration 编排**：ScanTask / TransferTask / DevTask / TileCacheTask / QuickViewOptimizationTask / EmbeddingTask / CheckTask / GraphBuildTask / Orchestration 均可作为 Orchestration 的步骤（Step）
 - **Orchestration 的递归性**：Orchestration 执行完也产生 Execution，并以 `task_type=orchestration` 暴露给任务库；保存和执行时必须防止递归引用
 
 **任务类型（task_type in common.task_executions）**：
@@ -85,7 +85,7 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 - Transfer: `import`
 - Develop: `query` / `workflow` / `script`
 - Orchestrator: `orchestration`
-- Manager: `tile_cache_generation` / `embedding`
+- Manager: `tile_cache_generation` / `quick_view_optimization` / `embedding`
 - Quality: `check`
 - Graph: `kg_build`
 
@@ -432,7 +432,7 @@ erDiagram
         string last_execution_id
         string last_execution_status
         uint created_by FK
-        json config "target / tile / storage / preparation / options"
+        json config "target / tile / storage / options"
         timestamp created_at
         timestamp updated_at
         timestamp deleted_at
@@ -496,7 +496,7 @@ erDiagram
         string execution_id UK "UUID，全局唯一，跨模块追踪"
         uint tenant_id FK
         string module "meta|transfer|develop|orchestrator|manager|quality|graph"
-        string task_type "scan|import|query|workflow|script|orchestration|tile_cache_generation|embedding|check|kg_build"
+        string task_type "scan|import|query|workflow|script|orchestration|tile_cache_generation|quick_view_optimization|embedding|check|kg_build"
         string source "触发来源模块"
         string source_task_id "对应模块任务 ID（字符串，无 DB FK）"
         string source_task_name "任务名称（冗余，便于展示）"
@@ -569,7 +569,7 @@ erDiagram
         string last_execution_id
         string last_execution_status
         uint created_by FK
-        json config "target / tile / storage / preparation / options"
+        json config "target / tile / storage / options"
         timestamp created_at
         timestamp updated_at
         timestamp deleted_at

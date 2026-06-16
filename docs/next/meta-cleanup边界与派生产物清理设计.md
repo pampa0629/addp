@@ -101,6 +101,8 @@ System 只应发布中性的生命周期事件，例如 engine deleted / disable
 | `meta.meta_item` | Meta | Meta |
 | Meta search index | Meta | Meta |
 | `manager.quick_view` | Manager | Manager |
+| `manager.quick_view_optimization` 及 Manager 创建并登记的 3857 优化目标 | Manager | Manager |
+| 自动识别的外部 3857 物化视图、外部表或外部索引 | 外部 owner / 源 PG 管理方 | Manager 不清理 |
 | `manager` bucket 下的 MVT tiles | Manager | Manager |
 | Manager embedding / preview cache | Manager | Manager |
 | Transfer 临时导入产物 | Transfer | Transfer |
@@ -153,7 +155,8 @@ Manager 派生产物不只有 Quick View 和 MVT。随着向量化主线收敛�
 
 | 派生产物 | 状态 owner | 物理产物 | 典型失效来源 |
 | --- | --- | --- | --- |
-| Quick View | Manager | `manager.quick_view`、MVT 准备状态 | 源 item 删除、空间字段变化、engine 删除 |
+| Quick View | Manager | `manager.quick_view` | 源 item 删除、engine 删除 |
+| Quick View Optimization | Manager | `manager.quick_view_optimization`、Manager 创建并登记的 3857 物化视图和索引 | 源 item 删除、空间字段变化、engine 删除、源事实变化 |
 | MVT tiles | Manager | MinIO tiles、Redis / 内存缓存、manifest 或任务结果 | 源 item 变化、配置变化、SRID / extent 策略变化 |
 | preview cache | Manager | 预览缓存、临时抽取结果、可能的缩略图 | 源 content 变化、格式插件变化、缓存过期 |
 | embedding vectors | Manager | `manager.embeddings` pgvector 行 | 源 item 变化、模型变化、维度变化、engine / tenant 删除 |
@@ -208,10 +211,16 @@ cleanup 从监控视角具有 execution 特征，但从编排视角属于系统�
 - scan 阶段统计 Manager 自己的垃圾数据：
   - 无效 engine 关联的 `quick_view`。
   - 孤立或过期的 Quick View 记录。
+  - 无效 engine、缺失 item 或源事实变化导致的 `manager.quick_view_optimization` 记录。
+  - Manager 创建并登记、但已无有效结果归属的 3857 优化目标。
   - 可删除的 MVT tiles。
 - execute 阶段删除 Manager 自己的资源：
   - `manager.quick_view`。
+  - `manager.quick_view_optimization` 中 Manager 拥有生命周期的结果记录。
+  - Manager 创建并登记的 3857 物化视图或索引。
   - `manager` bucket 下对应 MVT tiles。
+  - Redis / 内存中的 Manager 运行时瓦片缓存键。
+- Manager cleanup 不删除 capability 自动识别的外部 3857 物化视图、外部表或外部索引；这些对象不写入 `manager.quick_view_optimization`，也不获得 Manager 生命周期所有权。
 - 写入 `cleanup:results:<task_id>` hash，key 为 `manager`。
 
 ### 阶段 3：移除 Meta 对 Manager 产物的直接依赖
