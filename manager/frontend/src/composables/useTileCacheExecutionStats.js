@@ -2,10 +2,30 @@ import { computed } from 'vue'
 import { formatBytes } from '../utils/formatters'
 
 const requiredTileStatKeys = ['tiles_processed', 'generated_tiles', 'empty_tiles', 'skipped_tiles', 'failed_tiles']
+const tileStatAvailabilityKeys = [
+  'tiles_total_estimate',
+  'tiles_processed',
+  'generated_tiles',
+  'empty_tiles',
+  'failed_tiles',
+  'total_size_bytes',
+  'zoom_levels'
+]
+
+const generationTargetKindLabelKeys = {
+  source_table: 'manager.tileCache.generationTargetSourceTable',
+  source_schema_materialized_view: 'manager.tileCache.generationTargetQuickViewOptimization',
+  external_3857_materialized_view: 'manager.tileCache.generationTargetExternal3857'
+}
 
 const formatInteger = (value) => {
   const number = Number(value)
   return Number.isFinite(number) ? Math.trunc(number).toLocaleString() : '-'
+}
+
+const formatPlainInteger = (value) => {
+  const number = Number(value)
+  return Number.isFinite(number) ? String(Math.trunc(number)) : '-'
 }
 
 const integerValue = (value) => {
@@ -23,18 +43,39 @@ const formatSizeKB = (value) => {
   return Number.isFinite(number) && number > 0 ? formatBytes(number * 1024) : '-'
 }
 
+const generationTargetObject = (value) => {
+  const target = value?.tile_generation_target
+  return target && typeof target === 'object' ? target : null
+}
+
+const formatGenerationTargetKind = (t, targetKind) => {
+  const key = generationTargetKindLabelKeys[String(targetKind || '').trim()]
+  return key ? t(key) : String(targetKind || '').trim() || '-'
+}
+
+const formatGenerationTarget = (t, target) => {
+  if (!target) return '-'
+  const schema = String(target.schema || '').trim()
+  const table = String(target.table || '').trim()
+  const geomColumn = String(target.geom_column || '').trim()
+  const path = [schema, table, geomColumn].filter(Boolean).join('.')
+  const kind = formatGenerationTargetKind(t, target.target_kind)
+  const srid = formatPlainInteger(target.srid)
+  if (!path || path === '-') return kind
+  return `${kind}: ${path}; SRID ${srid}`
+}
+
+const hasValue = (value, key) => value[key] !== undefined && value[key] !== null
+
 export function useTileCacheExecutionStats({ t, metadata }) {
+  const tileStatsAvailable = computed(() => {
+    const value = metadata.value
+    return tileStatAvailabilityKeys.some((key) => value[key] !== undefined && value[key] !== null)
+  })
+
   const executionStatsAvailable = computed(() => {
     const value = metadata.value
-    return [
-      'tiles_total_estimate',
-      'tiles_processed',
-      'generated_tiles',
-      'empty_tiles',
-      'failed_tiles',
-      'total_size_bytes',
-      'zoom_levels'
-    ].some((key) => value[key] !== undefined && value[key] !== null)
+    return tileStatsAvailable.value || generationTargetObject(value) !== null
   })
 
   const executionStatsCheck = computed(() => {
@@ -42,7 +83,7 @@ export function useTileCacheExecutionStats({ t, metadata }) {
     const missingKeys = requiredTileStatKeys.filter((key) => value[key] === undefined || value[key] === null)
     if (missingKeys.length > 0) {
       return {
-        visible: executionStatsAvailable.value,
+        visible: tileStatsAvailable.value,
         type: 'info',
         message: t('manager.tileCache.statsCheckIncomplete')
       }
@@ -85,58 +126,75 @@ export function useTileCacheExecutionStats({ t, metadata }) {
 
   const executionStatItems = computed(() => {
     const value = metadata.value
-    return [
+    const items = [
+      {
+        key: 'tile_generation_target',
+        label: t('manager.tileCache.generationTarget'),
+        value: formatGenerationTarget(t, generationTargetObject(value)),
+        visible: generationTargetObject(value) !== null
+      },
       {
         key: 'tiles_total_estimate',
         label: t('manager.tileCache.tilesTotalEstimate'),
-        value: formatInteger(value.tiles_total_estimate)
+        value: formatInteger(value.tiles_total_estimate),
+        visible: hasValue(value, 'tiles_total_estimate')
       },
       {
         key: 'tiles_processed',
         label: t('manager.tileCache.tilesProcessed'),
-        value: formatInteger(value.tiles_processed)
+        value: formatInteger(value.tiles_processed),
+        visible: hasValue(value, 'tiles_processed')
       },
       {
         key: 'generated_tiles',
         label: t('manager.tileCache.generatedTiles'),
-        value: formatInteger(value.generated_tiles)
+        value: formatInteger(value.generated_tiles),
+        visible: hasValue(value, 'generated_tiles')
       },
       {
         key: 'empty_tiles',
         label: t('manager.tileCache.emptyTiles'),
-        value: formatInteger(value.empty_tiles)
+        value: formatInteger(value.empty_tiles),
+        visible: hasValue(value, 'empty_tiles')
       },
       {
         key: 'skipped_tiles',
         label: t('manager.tileCache.skippedTiles'),
-        value: formatInteger(value.skipped_tiles)
+        value: formatInteger(value.skipped_tiles),
+        visible: hasValue(value, 'skipped_tiles')
       },
       {
         key: 'oversized_skipped_tiles',
         label: t('manager.tileCache.oversizedSkippedTiles'),
-        value: formatInteger(value.oversized_skipped_tiles)
+        value: formatInteger(value.oversized_skipped_tiles),
+        visible: hasValue(value, 'oversized_skipped_tiles')
       },
       {
         key: 'failed_tiles',
         label: t('manager.tileCache.failedTiles'),
-        value: formatInteger(value.failed_tiles)
+        value: formatInteger(value.failed_tiles),
+        visible: hasValue(value, 'failed_tiles')
       },
       {
         key: 'actual_max_zoom',
         label: t('manager.tileCache.actualMaxZoom'),
-        value: formatInteger(value.actual_max_zoom)
+        value: formatInteger(value.actual_max_zoom),
+        visible: hasValue(value, 'actual_max_zoom')
       },
       {
         key: 'total_size_bytes',
         label: t('manager.tileCache.totalTileSize'),
-        value: formatByteValue(value.total_size_bytes)
+        value: formatByteValue(value.total_size_bytes),
+        visible: hasValue(value, 'total_size_bytes')
       },
       {
         key: 'max_tile_size_bytes',
         label: t('manager.tileCache.maxTileSize'),
-        value: formatByteValue(value.max_tile_size_bytes)
+        value: formatByteValue(value.max_tile_size_bytes),
+        visible: hasValue(value, 'max_tile_size_bytes')
       }
     ]
+    return items.filter((item) => item.visible)
   })
 
   const zoomLevelRows = computed(() => {

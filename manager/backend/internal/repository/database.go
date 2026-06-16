@@ -236,6 +236,36 @@ func ensureTileCacheStateSchema(db *gorm.DB) error {
 		return err
 	}
 	if err := db.Exec(`
+		UPDATE common.task_executions
+		SET metadata = jsonb_set(
+			metadata,
+			'{tile_generation_target}',
+			((metadata->'tile_generation_target') - 'prepared_3857') || jsonb_build_object(
+				'target_kind',
+				CASE
+					WHEN metadata->'tile_generation_target'->>'target_kind' IS NOT NULL
+						THEN metadata->'tile_generation_target'->>'target_kind'
+					WHEN metadata->'tile_generation_target'->>'prepared_3857' = 'true'
+						AND metadata->'tile_generation_target'->>'table' LIKE 'addp_qvo_%'
+						THEN 'source_schema_materialized_view'
+					WHEN metadata->'tile_generation_target'->>'prepared_3857' = 'true'
+						THEN 'external_3857_materialized_view'
+					ELSE 'source_table'
+				END
+			),
+			true
+		)
+		WHERE module = 'manager'
+		  AND task_type = 'tile_cache_generation'
+		  AND metadata ? 'tile_generation_target'
+		  AND (
+		    NOT (metadata->'tile_generation_target' ? 'target_kind')
+		    OR metadata->'tile_generation_target' ? 'prepared_3857'
+		  )
+	`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_tile_cache_tenant_fingerprint_format_unique
 		ON manager.tile_cache (tenant_id, item_fingerprint, tile_format)
 		WHERE deleted_at IS NULL

@@ -51,27 +51,6 @@
       </div>
     </div>
     <div class="map-wrap">
-      <el-alert
-        v-if="showQuickViewTileAdvisory"
-        class="tile-advisory"
-        :title="t('manager.spatialPreview.tileTimeoutAdvisoryTitle')"
-        type="warning"
-        :closable="false"
-        show-icon
-      >
-        <template #default>
-          <div class="tile-advisory-body">
-            <span>{{ quickViewTileAdvisoryMessage }}</span>
-            <el-button
-              size="small"
-              :type="quickViewTileAdvisoryAction === 'tile_cache_generation' ? 'primary' : 'warning'"
-              @click="handleQuickViewTileAdvisoryAction"
-            >
-              {{ quickViewTileAdvisoryActionLabel }}
-            </el-button>
-          </div>
-        </template>
-      </el-alert>
       <GeoJSONQuickView
         v-if="ready && isQuickViewActive && quickViewRenderSource === 'direct_geojson'"
         :status="quickViewStatus"
@@ -118,7 +97,11 @@ import VectorTilePreview from '@/components/map/VectorTilePreview.vue'
 import GeoJSONQuickView from '@/components/map/GeoJSONQuickView.vue'
 import { quickViewAPI } from '@/api/quickView'
 import client from '@/api/client'
-import { quickViewTileAdvisoryMessage as tileAdvisoryMessage } from '@/utils/quickViewTileAdvisory'
+import {
+  quickViewTileAdvisoryAction as tileAdvisoryAction,
+  quickViewTileAdvisoryMessage as tileAdvisoryMessage,
+  shouldShowQuickViewTileAdvisoryNotice
+} from '@/utils/quickViewTileAdvisory'
 import { TablePreview } from '@common-ui-map'
 
 const route = useRoute()
@@ -136,6 +119,7 @@ const ready = computed(() => !!locator.value)
 const quickViewStatus = ref(null)
 const activePreviewMode = ref('table_geojson')
 const quickViewTileAdvisory = ref(null)
+const quickViewTileLastNotice = ref({ key: '', at: 0 })
 const quickViewRenderSource = computed(() => String(
   quickViewStatus.value?.render_source || quickViewStatus.value?.quick_view?.render_source || ''
 ).trim())
@@ -167,26 +151,6 @@ const showQuickViewOptimizationAction = computed(() => {
       quickViewTileAdvisory.value?.recommendation === 'quick_view_optimization' ||
       quickViewTileAdvisory.value?.retryPolicy === 'suppress_tile'
     )
-})
-const quickViewTileAdvisoryAction = computed(() => {
-  const advisory = quickViewTileAdvisory.value || {}
-  if (advisory.recommendation === 'tile_cache_generation') return 'tile_cache_generation'
-  if (advisory.recommendation === 'quick_view_optimization' || advisory.retryPolicy === 'suppress_tile') {
-    return 'quick_view_optimization'
-  }
-  return ''
-})
-const quickViewTileAdvisoryMessage = computed(() => {
-  return tileAdvisoryMessage(t, quickViewTileAdvisoryAction.value, quickViewTileAdvisory.value, quickViewStatus.value)
-})
-const quickViewTileAdvisoryActionLabel = computed(() => {
-  if (quickViewTileAdvisoryAction.value === 'tile_cache_generation') {
-    return t('manager.spatialPreview.generateTileCache')
-  }
-  return t('manager.spatialPreview.optimizeQuickView')
-})
-const showQuickViewTileAdvisory = computed(() => {
-  return isQuickViewActive.value && !!quickViewTileAdvisoryMessage.value && !!quickViewTileAdvisoryAction.value
 })
 const basicPreviewData = ref(null)
 const basicPreviewLoading = ref(false)
@@ -238,6 +202,7 @@ const loadQuickViewStatus = async () => {
   try {
     quickViewStatus.value = await quickViewAPI.getQuickViewCapabilityByLocator(locator.value)
     quickViewTileAdvisory.value = null
+    quickViewTileLastNotice.value = { key: '', at: 0 }
     if (quickViewStatus.value?.preferred_mode === 'quick_view' && quickViewStatus.value?.can_use_quick_view) {
       activePreviewMode.value = 'quick_view'
     } else if (!quickViewStatus.value?.can_use_quick_view) {
@@ -325,20 +290,11 @@ const openQuickViewOptimizationCreate = () => {
 
 const handleTileAdvisory = (advisory) => {
   quickViewTileAdvisory.value = advisory
-  if (advisory?.retryPolicy === 'suppress_tile') {
-    ElMessage.warning(tileAdvisoryMessage(t, 'quick_view_optimization', advisory, quickViewStatus.value))
-  } else if (advisory?.recommendation === 'tile_cache_generation') {
-    ElMessage.warning(tileAdvisoryMessage(t, 'tile_cache_generation', advisory, quickViewStatus.value))
-  }
-}
-
-const handleQuickViewTileAdvisoryAction = () => {
-  if (quickViewTileAdvisoryAction.value === 'tile_cache_generation') {
-    openTileCacheCreate()
-    return
-  }
-  if (quickViewTileAdvisoryAction.value === 'quick_view_optimization') {
-    openQuickViewOptimizationCreate()
+  const action = tileAdvisoryAction(advisory, quickViewStatus.value)
+  const notice = shouldShowQuickViewTileAdvisoryNotice(quickViewTileLastNotice.value, action, advisory, quickViewStatus.value)
+  quickViewTileLastNotice.value = notice.lastNotice
+  if (notice.show) {
+    ElMessage.warning(tileAdvisoryMessage(t, action, advisory, quickViewStatus.value))
   }
 }
 
@@ -365,13 +321,4 @@ watch([engineId, schema, table, locator], () => {
 .quick-view-actions { display: flex; align-items: center; gap: 10px; }
 .status-text { font-size: 13px; color: var(--addp-text-secondary); }
 .status-text.muted { color: var(--addp-text-tertiary); }
-.tile-advisory {
-  margin: 10px 12px;
-}
-.tile-advisory-body {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
 </style>
