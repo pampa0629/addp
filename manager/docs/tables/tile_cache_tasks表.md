@@ -8,7 +8,7 @@
 
 > 以后按什么配置生成或刷新瓦片缓存。
 
-瓦片缓存生成必然先创建任务定义，再执行。即使用户从空间预览页点击“生成瓦片缓存”，也应跳转瓦片缓存页面的“任务”tab 创建 `manager.tile_cache_tasks`。
+瓦片缓存生成必然先创建任务定义，再执行。即使用户从空间预览页点击“生成瓦片缓存”，也应跳转瓦片缓存页面的“任务”tab 创建 `manager.tile_cache_tasks`。如果当前 item 处于源表转换慢路径或瓦片响应提示 `quick_view_optimization`，UI 应先引导用户执行快显性能优化；优化结果 ready 后再生成瓦片缓存。
 
 ## 二、目标核心字段
 
@@ -55,12 +55,6 @@
   },
   "storage": {
     "storage_ref": "string"
-  },
-  "preparation": {
-    "mode": "auto",
-    "allow_materialized_view": null,
-    "allow_index": null,
-    "allow_analyze": null
   },
   "options": {
     "geometry_column": "string",

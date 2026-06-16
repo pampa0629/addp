@@ -82,10 +82,10 @@ func (s *TaskProviderRegistryService) Register() error {
 				"supports_schedule":         false,
 				"supports_cancel":           false,
 				"supports_inline_execution": false,
-				// 第一阶段为 API-only；这里注册的是后续 Console 承载路由，不能改指到瓦片缓存页。
-				"create_url":                "/manager/quick-view-optimization?tab=tasks",
-				"edit_url":                  "/manager/quick-view-optimization?tab=tasks&task_id=:id",
-				"deprecated":                false,
+				// 快显性能优化已有独立页面承载任务入口与结果列表，不能改指到瓦片缓存页。
+				"create_url": "/manager/quick-view-optimization?tab=tasks",
+				"edit_url":   "/manager/quick-view-optimization?tab=tasks&task_id=:id",
+				"deprecated": false,
 			},
 		},
 	}

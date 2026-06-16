@@ -228,14 +228,19 @@
         <div class="form-section-title">{{ t('manager.tileCache.tileSettings') }}</div>
         <el-alert
           v-if="tileCacheOptimizationAdvice.visible"
-          type="warning"
+          :type="tileCacheOptimizationAdvice.type"
           :closable="false"
           show-icon
           class="optimization-advice"
           :title="tileCacheOptimizationAdvice.message"
         >
           <template #default>
-            <el-button size="small" type="warning" @click="openQuickViewOptimizationCreate">
+            <el-button
+              v-if="tileCacheOptimizationAdvice.actionVisible"
+              size="small"
+              type="warning"
+              @click="openQuickViewOptimizationCreate"
+            >
               {{ t('manager.spatialPreview.optimizeQuickView') }}
             </el-button>
           </template>
@@ -448,7 +453,7 @@ const detailExecutionLoading = ref(false)
 let detailExecutionRequestSeq = 0
 let taskRefreshTimer = null
 const capabilityLoading = ref(false)
-const tileCacheOptimizationAdvice = reactive({ visible: false, message: '' })
+const tileCacheOptimizationAdvice = reactive({ visible: false, message: '', type: 'warning', actionVisible: true })
 const geometryColumnOptions = ref([])
 const selectedSourceNode = ref(null)
 const databaseEngineTypes = new Set(['postgresql', 'postgres', 'postgis'])
@@ -516,6 +521,8 @@ const resetForm = (task = null) => {
   resourceCurrentKey.value = ''
   tileCacheOptimizationAdvice.visible = false
   tileCacheOptimizationAdvice.message = ''
+  tileCacheOptimizationAdvice.type = 'warning'
+  tileCacheOptimizationAdvice.actionVisible = true
   Object.assign(form, next)
   if (form.config.options.geometry_column) {
     geometryColumnOptions.value = [form.config.options.geometry_column]
@@ -744,6 +751,7 @@ const applyRouteSourceContext = () => {
     form.config.tile.extent = extent
   }
   setGeometryOptions(parseQueryList(route.query.geometry_columns), form.config.options.geometry_column)
+  applyRouteOptimizationAdvice()
 }
 
 const applyRouteResultContext = () => {
@@ -772,8 +780,17 @@ const applyQuickViewCapabilityToForm = (config, fallbackGeometryColumns = []) =>
   if (!form.config.options.geometry_column && config.geometry_column) {
     form.config.options.geometry_column = config.geometry_column
   }
-  tileCacheOptimizationAdvice.visible = !!config.optimization_recommended
-  tileCacheOptimizationAdvice.message = config.optimization_message || t('manager.spatialPreview.optimizationRecommended')
+  if (config.optimization_available) {
+    tileCacheOptimizationAdvice.visible = true
+    tileCacheOptimizationAdvice.type = 'success'
+    tileCacheOptimizationAdvice.actionVisible = false
+    tileCacheOptimizationAdvice.message = t('manager.tileCache.optimizationTargetReady')
+  } else {
+    tileCacheOptimizationAdvice.visible = !!config.optimization_recommended
+    tileCacheOptimizationAdvice.type = 'warning'
+    tileCacheOptimizationAdvice.actionVisible = true
+    tileCacheOptimizationAdvice.message = config.optimization_message || t('manager.spatialPreview.optimizationRecommended')
+  }
 }
 
 const tileCacheFormConfigFromCapability = (capability) => {
@@ -791,11 +808,20 @@ const tileCacheFormConfigFromCapability = (capability) => {
     extent_srid: renderFacts.render_extent_srid ?? quickView.extent_srid,
     geometry_column: quickView.geometry_column,
     geometry_columns: quickView.geometry_columns || [],
+    optimization_available: optimization.available === true,
     optimization_recommended: realtime.optimization_recommended === true ||
       realtime.performance_mode === 'source_transform_path' ||
       (optimization.available !== true && Number(renderFacts.source_srid || quickView.source_srid || 0) !== 3857),
     optimization_message: realtime.optimization_recommendation || t('manager.spatialPreview.optimizationRecommended')
   }
+}
+
+const applyRouteOptimizationAdvice = () => {
+  if (!route.query.quick_view_optimization_id && route.query.quick_view_optimization !== 'ready') return
+  tileCacheOptimizationAdvice.visible = true
+  tileCacheOptimizationAdvice.type = 'success'
+  tileCacheOptimizationAdvice.actionVisible = false
+  tileCacheOptimizationAdvice.message = t('manager.tileCache.optimizationTargetReady')
 }
 
 const openQuickViewOptimizationCreate = () => {

@@ -60,8 +60,8 @@ func TestRunBuildsSourceTransformAnd3857TargetQueries(t *testing.T) {
 				Tiles:          []TileCoord{{Z: 1, X: 0, Y: 0}},
 			},
 			{
-				Name:           "ready 3857",
-				TargetKind:     "ready_3857_optimization",
+				Name:           "quick view optimization target",
+				TargetKind:     "quick_view_optimization_target",
 				Schema:         "public",
 				Table:          "addp_qvo_roads_3857",
 				GeometryColumn: "geom_3857",
@@ -82,8 +82,8 @@ func TestRunBuildsSourceTransformAnd3857TargetQueries(t *testing.T) {
 	if report.Scenarios[0].RenderPath != "source_transform_path" {
 		t.Fatalf("render path = %s, want source_transform_path", report.Scenarios[0].RenderPath)
 	}
-	if report.Scenarios[1].RenderPath != "ready_3857_optimization" {
-		t.Fatalf("render path = %s, want ready_3857_optimization", report.Scenarios[1].RenderPath)
+	if report.Scenarios[1].RenderPath != "quick_view_optimization_target" {
+		t.Fatalf("render path = %s, want quick_view_optimization_target", report.Scenarios[1].RenderPath)
 	}
 	if !strings.Contains(executor.queries[0], `ST_Transform(t."shape", 3857)`) {
 		t.Fatalf("source query should transform geometry:\n%s", executor.queries[0])

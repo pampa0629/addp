@@ -205,6 +205,13 @@ func ensureTileCacheStateSchema(db *gorm.DB) error {
 		return err
 	}
 	if err := db.Exec(`
+		UPDATE manager.tile_cache_tasks
+		SET config = config - 'preparation'
+		WHERE config ? 'preparation'
+	`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`
 		DELETE FROM manager.quick_view
 		WHERE COALESCE(item_fingerprint, '') = ''
 		   OR item_fingerprint LIKE 'locator:%'

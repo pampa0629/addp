@@ -550,8 +550,8 @@ func scenarioWarnings(scenario Scenario) []string {
 	if scenario.SRID != 3857 {
 		warnings = append(warnings, "source geometry will be transformed to EPSG:3857 inside each tile query")
 	}
-	if scenario.TargetKind == "ready_3857_optimization" && scenario.SRID != 3857 {
-		warnings = append(warnings, "ready_3857_optimization target should normally use srid=3857")
+	if scenario.TargetKind == "quick_view_optimization_target" && scenario.SRID != 3857 {
+		warnings = append(warnings, "quick_view_optimization_target target should normally use srid=3857")
 	}
 	return warnings
 }

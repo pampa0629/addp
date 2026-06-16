@@ -248,7 +248,7 @@ func TestQuickViewCapabilityPrefersReadyTileCacheResultOverDirectGeoJSON(t *test
 	}
 }
 
-func TestQuickViewCapabilityUsesSourceTransformRealtimeTileForLargePGTableWithoutPreparedTarget(t *testing.T) {
+func TestQuickViewCapabilityUsesSourceTransformRealtimeTileForLargePGTableWithoutQuickViewOptimizationTarget(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	svc := NewQuickViewService(db, nil)
 	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectGeoJSONMaxRows: 2000})
@@ -367,7 +367,7 @@ func TestQuickViewCapabilityUsesSource3857RealtimeTileWhenResolved(t *testing.T)
 	}
 }
 
-func TestQuickViewCapabilityUsesRealtimeTileForLargeSpatialTableWithPreparedTarget(t *testing.T) {
+func TestQuickViewCapabilityUsesRealtimeTileForLargeSpatialTableWithQuickViewOptimizationTarget(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	svc := NewQuickViewService(db, nil)
 	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectGeoJSONMaxRows: 2000})
@@ -393,11 +393,11 @@ func TestQuickViewCapabilityUsesRealtimeTileForLargeSpatialTableWithPreparedTarg
 			RecordCount:     73090,
 		},
 		RealtimeTileTarget: &RealtimeTileTarget{
-			Schema:       "public",
-			Table:        "farmland_mv3857",
-			GeomColumn:   "geom_3857",
-			SRID:         3857,
-			Prepared3857: true,
+			Schema:                      "public",
+			Table:                       "farmland_mv3857",
+			GeomColumn:                  "geom_3857",
+			SRID:                        3857,
+			QuickViewOptimizationTarget: true,
 		},
 	})
 	if err != nil {
@@ -425,7 +425,7 @@ func TestQuickViewCapabilityUsesRealtimeTileForLargeSpatialTableWithPreparedTarg
 	}
 }
 
-func TestQuickViewCapabilityUsesRealtimeTileForLargePGTableWithoutPreparedTarget(t *testing.T) {
+func TestQuickViewCapabilityUsesRealtimeTileForLargePGTableWithoutQuickViewOptimizationTarget(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	svc := NewQuickViewService(db, nil)
 	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectGeoJSONMaxRows: 2000})
@@ -508,12 +508,12 @@ func TestQuickViewCapabilityReady3857RealtimeTimeoutRecommendsTileCache(t *testi
 			RecordCount:     146180,
 		},
 		RealtimeTileTarget: &RealtimeTileTarget{
-			Schema:          "public",
-			Table:           "addp_qvo_a2",
-			GeomColumn:      "geom_3857",
-			SRID:            3857,
-			Prepared3857:    true,
-			PerformanceMode: RealtimeTilePerformanceReady3857Target,
+			Schema:                      "public",
+			Table:                       "addp_qvo_a2",
+			GeomColumn:                  "geom_3857",
+			SRID:                        3857,
+			QuickViewOptimizationTarget: true,
+			PerformanceMode:             RealtimeTilePerformanceReady3857Target,
 		},
 	})
 	if err != nil {
@@ -560,11 +560,11 @@ func TestQuickViewCapabilityUsesRenderExtentForNonWGS84SpatialTable(t *testing.T
 			RecordCount:        10597882,
 		},
 		RealtimeTileTarget: &RealtimeTileTarget{
-			Schema:       "public",
-			Table:        "dltb_mv3857",
-			GeomColumn:   "geom_3857",
-			SRID:         3857,
-			Prepared3857: true,
+			Schema:                      "public",
+			Table:                       "dltb_mv3857",
+			GeomColumn:                  "geom_3857",
+			SRID:                        3857,
+			QuickViewOptimizationTarget: true,
 		},
 	})
 	if err != nil {
@@ -934,11 +934,11 @@ func TestQuickViewCapabilityIncludesOptimizationDiagnostic(t *testing.T) {
 		},
 		CanTile: true,
 		RealtimeTileTarget: &RealtimeTileTarget{
-			Schema:       "public",
-			Table:        "addp_qvo_ready",
-			GeomColumn:   "geom_3857",
-			SRID:         3857,
-			Prepared3857: true,
+			Schema:                      "public",
+			Table:                       "addp_qvo_ready",
+			GeomColumn:                  "geom_3857",
+			SRID:                        3857,
+			QuickViewOptimizationTarget: true,
 		},
 	})
 	if err != nil {
@@ -1000,11 +1000,11 @@ func TestQuickViewCapabilityOptimizationDiagnosticUsesSelectedGeometryColumn(t *
 		},
 		CanTile: true,
 		RealtimeTileTarget: &RealtimeTileTarget{
-			Schema:       "public",
-			Table:        "roads",
-			GeomColumn:   "shape_b",
-			SRID:         4326,
-			Prepared3857: false,
+			Schema:                      "public",
+			Table:                       "roads",
+			GeomColumn:                  "shape_b",
+			SRID:                        4326,
+			QuickViewOptimizationTarget: false,
 		},
 	})
 	if err != nil {

@@ -159,6 +159,24 @@ func TestTileCacheTaskCreateRejectsLegacyTargetFields(t *testing.T) {
 	}
 }
 
+func TestTileCacheTaskCreateRejectsLegacyPreparationConfig(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	tileCacheRepo := repository.NewTileCacheRepository(db)
+	taskSvc := NewTileCacheTaskService(tileCacheRepo, nil)
+
+	task := newTileCacheTaskDefinition()
+	task.Config["preparation"] = commonModels.JSONMap{
+		"mode":                    "auto",
+		"allow_materialized_view": true,
+		"allow_index":             true,
+	}
+
+	err := taskSvc.Create(context.Background(), task)
+	if err == nil || !strings.Contains(err.Error(), "config.preparation has been removed") {
+		t.Fatalf("create error = %v, want legacy preparation rejection", err)
+	}
+}
+
 func TestTileCacheTaskCreatePreservesDisabledFlag(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	tileCacheRepo := repository.NewTileCacheRepository(db)
@@ -224,7 +242,7 @@ func TestTileCacheGenerationSuccessMarksArtifactReadyAndQuickViewAvailable(t *te
 		}, nil
 	})
 	taskSvc.SetQuickViewService(quickViewSvc)
-	setPrepared3857Resolver(taskSvc, "public", "roads")
+	setQuickViewOptimizationTargetResolver(taskSvc, "public", "roads")
 	cleaner := &fakeTileCacheCleaner{}
 	invalidator := &fakeTileCacheRuntimeInvalidator{}
 	taskSvc.SetTileCacheCleaner(cleaner)
@@ -323,8 +341,8 @@ func TestTileCacheGenerationSuccessMarksArtifactReadyAndQuickViewAvailable(t *te
 	if _, ok := exec.Metadata["tile_range_extent_wgs84"]; !ok {
 		t.Fatalf("metadata = %#v, want tile_range_extent_wgs84", exec.Metadata)
 	}
-	if _, ok := exec.Metadata["preparation_actions"]; !ok {
-		t.Fatalf("metadata = %#v, want preparation_actions", exec.Metadata)
+	if _, ok := exec.Metadata["refresh_actions"]; !ok {
+		t.Fatalf("metadata = %#v, want refresh_actions", exec.Metadata)
 	}
 	if _, ok := exec.Metadata["tile_generation_target"]; !ok {
 		t.Fatalf("metadata = %#v, want tile_generation_target", exec.Metadata)
@@ -472,7 +490,7 @@ func TestTileCacheGenerationWithNoNonEmptyTilesMarksResultFailed(t *testing.T) {
 		}, nil
 	})
 	taskSvc.SetQuickViewService(quickViewSvc)
-	setPrepared3857Resolver(taskSvc, "public", "roads")
+	setQuickViewOptimizationTargetResolver(taskSvc, "public", "roads")
 	taskSvc.SetTileGenerator(&fakeTileCacheGenerator{
 		result: &mvt.GenerateResult{
 			ActualMaxZoom: 1,
@@ -548,7 +566,7 @@ func TestTileCacheGenerationFailureKeepsLastTileProgress(t *testing.T) {
 		}, nil
 	})
 	taskSvc.SetQuickViewService(quickViewSvc)
-	setPrepared3857Resolver(taskSvc, "public", "roads")
+	setQuickViewOptimizationTargetResolver(taskSvc, "public", "roads")
 	taskSvc.SetTileGenerator(&fakeTileCacheGenerator{
 		progress: &mvt.QuickViewProgress{
 			Status:             "running",
@@ -615,7 +633,7 @@ func TestTileCacheGenerationPersistsRenderableWGS84Extent(t *testing.T) {
 		}, nil
 	})
 	taskSvc.SetQuickViewService(quickViewSvc)
-	setPrepared3857Resolver(taskSvc, "public", "roads")
+	setQuickViewOptimizationTargetResolver(taskSvc, "public", "roads")
 	taskSvc.SetTileGenerator(&fakeTileCacheGenerator{
 		result: &mvt.GenerateResult{
 			ActualMaxZoom: 12,
@@ -699,11 +717,11 @@ func TestTileCacheGenerationUsesIndexed3857Target(t *testing.T) {
 	taskSvc.SetQuickViewService(quickViewSvc)
 	taskSvc.SetRealtimeTileTargetResolver(fakeRealtimeTileTargetResolver{
 		target: &RealtimeTileTarget{
-			Schema:       "public",
-			Table:        "dltb_mv3857",
-			GeomColumn:   "geom_3857",
-			SRID:         3857,
-			Prepared3857: true,
+			Schema:                      "public",
+			Table:                       "dltb_mv3857",
+			GeomColumn:                  "geom_3857",
+			SRID:                        3857,
+			QuickViewOptimizationTarget: true,
 		},
 	})
 	generator := &fakeTileCacheGenerator{
@@ -753,7 +771,7 @@ func TestTileCacheGenerationUsesIndexed3857Target(t *testing.T) {
 			generator.lastConfig.Schema, generator.lastConfig.Table, generator.lastConfig.GeomColumn, generator.lastConfig.SRID)
 	}
 	if generator.lastConfig.PrimaryKey != "" {
-		t.Fatalf("generator primary_key = %q, want empty for prepared 3857 target", generator.lastConfig.PrimaryKey)
+		t.Fatalf("generator primary_key = %q, want empty for quick view optimization target", generator.lastConfig.PrimaryKey)
 	}
 	if generator.lastConfig.OptimizationConfig == nil {
 		t.Fatal("generator optimization config is nil, want default cache optimization config")
@@ -770,8 +788,8 @@ func TestTileCacheGenerationUsesIndexed3857Target(t *testing.T) {
 	if !ok {
 		t.Fatalf("execution metadata = %#v, want tile_generation_target", exec.Metadata)
 	}
-	if targetMeta["table"] != "dltb_mv3857" || targetMeta["geom_column"] != "geom_3857" || targetMeta["prepared_3857"] != true {
-		t.Fatalf("tile_generation_target = %#v, want prepared dltb_mv3857 target", targetMeta)
+	if targetMeta["table"] != "dltb_mv3857" || targetMeta["geom_column"] != "geom_3857" || targetMeta["quick_view_optimization_target"] != true {
+		t.Fatalf("tile_generation_target = %#v, want quick view optimization dltb_mv3857 target", targetMeta)
 	}
 	optimizationMeta, ok := asJSONMap(exec.Metadata["optimization"])
 	if !ok {
@@ -862,8 +880,8 @@ func TestTileCacheGenerationFallsBackToSourceWhenOptimizationTargetMissing(t *te
 	if intFromTileCacheConfig(targetMeta["srid"], 0) != 2360 {
 		t.Fatalf("tile_generation_target.srid = %v, want 2360", targetMeta["srid"])
 	}
-	if targetMeta["prepared_3857"] == true {
-		t.Fatalf("prepared_3857 = true, want false for source fallback")
+	if targetMeta["quick_view_optimization_target"] == true {
+		t.Fatalf("quick_view_optimization_target = true, want false for source fallback")
 	}
 	if targetMeta["optimization_recommended"] != true {
 		t.Fatalf("optimization_recommended = %v, want true", targetMeta["optimization_recommended"])
@@ -937,14 +955,14 @@ func (i *fakeTileCacheRuntimeInvalidator) InvalidateTileCacheRuntimeCache(_ cont
 	return i.err
 }
 
-func setPrepared3857Resolver(taskSvc *TileCacheTaskService, schema, table string) {
+func setQuickViewOptimizationTargetResolver(taskSvc *TileCacheTaskService, schema, table string) {
 	taskSvc.SetRealtimeTileTargetResolver(fakeRealtimeTileTargetResolver{
 		target: &RealtimeTileTarget{
-			Schema:       schema,
-			Table:        table + "_mv3857",
-			GeomColumn:   "geom_3857",
-			SRID:         3857,
-			Prepared3857: true,
+			Schema:                      schema,
+			Table:                       table + "_mv3857",
+			GeomColumn:                  "geom_3857",
+			SRID:                        3857,
+			QuickViewOptimizationTarget: true,
 		},
 	})
 }

@@ -218,6 +218,7 @@
       "loadResourceTreeFailed": "加载资源树失败",
       "geometryColumnRequired": "请选择几何列",
       "sourceAlready3857": "源几何已经是 3857，不需要创建快显性能优化任务。",
+      "optimizationTargetReady": "已存在可复用的快显性能优化目标，本次瓦片缓存生成会优先复用该目标。",
       "loadCapabilityFailed": "加载快显能力失败",
       "loadTasksFailed": "加载瓦片缓存任务失败",
       "loadResultsFailed": "加载瓦片缓存结果失败",

@@ -66,11 +66,11 @@
 | 条件 | UI 行为 |
 | --- | --- |
 | `can_use_quick_view=true` 且 `render_source=cached_tile/direct_geojson` | 展示“切换快显”，不展示“生成瓦片缓存”按钮 |
-| `can_use_quick_view=true` 且 `render_source=realtime_tile` | 展示“切换快显”，并保留“生成瓦片缓存”入口 |
-| `can_use_quick_view=false` 且 `can_generate_tile_cache=true` | 只展示“生成瓦片缓存”按钮，点击后跳转瓦片缓存页面的“任务”tab |
+| `can_use_quick_view=true` 且 `render_source=realtime_tile` | 展示“切换快显”；当 `realtime_tile.performance_mode=source_transform_path` 或瓦片返回 `X-ADDP-Tile-Recommendation=quick_view_optimization` 时展示“执行快显优化”；需要稳定低层级浏览时保留“生成瓦片缓存”入口 |
+| `can_use_quick_view=false` 且 `can_generate_tile_cache=true` | 展示“生成瓦片缓存”；如果 capability 或瓦片响应提示快显性能优化，优先展示“执行快显优化”入口 |
 | `can_use_quick_view=false` 且 `can_generate_tile_cache=false` | 不展示生成按钮，只展示不可用原因 |
 
-从预览页跳转时，瓦片缓存页面应自动带入当前 item 上下文，并在“任务”tab 创建 `manager.tile_cache_tasks`。
+从预览页跳转时，快显性能优化页面或瓦片缓存页面应自动带入当前 item 上下文。快显性能优化页面创建 `manager.quick_view_optimization_tasks`；瓦片缓存页面在“任务”tab 创建 `manager.tile_cache_tasks`。
 
 ## 六、与瓦片缓存结果的关系
 
@@ -79,7 +79,8 @@
 推荐结果选择规则：
 
 1. 选择 `status=ready` 且适用于快显的最新产物。
-2. 如果没有可用产物但可生成，预览页跳转瓦片缓存页面创建任务。
+2. 如果没有可用产物但可优化，预览页优先跳转快显性能优化页面创建任务。
+3. 如果需要稳定低层级或大范围浏览，预览页或快显性能优化结果列表跳转瓦片缓存页面创建任务。
 
 ## 七、与任务和 execution 的关系
 
@@ -105,7 +106,7 @@
 3. `total_tiles` / `cached_tiles`
 4. `fingerprint`
 5. `extent` / `extent_srid`
-6. `preparation_status`
+6. 历史准备状态字段 `preparation_status`
 7. `started_at` / `completed_at`
 8. `can_use_quick_view` / `can_generate_tile_cache`
 9. `default_tile_cache_id` / `status` / `unavailable_reason` / `last_checked_at`
@@ -117,7 +118,7 @@
 | 产物范围、层级、格式、存储引用 | `manager.tile_cache` |
 | 生成配置 | `manager.tile_cache_tasks.config` |
 | 执行进度、耗时、错误详情、统计摘要 | `common.task_executions.metadata` / `error_details` |
-| 准备动作结果 | execution metadata 或后续准备产物专题 |
+| 快显性能优化目标状态 | `manager.quick_view_optimization` |
 
 ## 九、相关文档
 

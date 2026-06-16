@@ -541,7 +541,7 @@ manager.quick_view_optimization
 1. 动态 MVT 优先使用 ready 的快显性能优化结果。
 2. 瓦片缓存生成优先使用 ready 的快显性能优化结果。
 3. 没有 ready 快显性能优化结果时，动态 MVT 仍可进行，但作为快显能力开放时必须标记慢路径，并受单瓦片响应时间预算、超时保护和体积限制约束；记录数只作为风险诊断和默认渲染源推荐依据。
-4. 有 ready 快显性能优化结果后，动态 MVT 标记为 ready 3857 路径；如果仍发生超时，应提示生成瓦片缓存，并按既有 TTL 允许后续重试。
+4. 有 ready 快显性能优化结果后，动态 MVT 标记为 ready 快显性能优化目标路径；如果仍发生超时，应提示生成瓦片缓存，并按既有 TTL 允许后续重试。
 5. 没有 ready 快显性能优化结果时，瓦片缓存生成仍允许执行且不做数据量限制，但非 3857 源表应给出更强的慢路径风险提示和“建议先执行快显性能优化”推荐。
 6. 删除快显性能优化结果不删除已有瓦片缓存。
 7. 删除瓦片缓存不删除快显性能优化结果。
@@ -555,8 +555,8 @@ manager.quick_view_optimization
 
 动态 MVT 阈值验证作为本专题的后续前置工作：
 
-1. 验证应同时覆盖源表 `ST_Transform` 路径、源表已是 3857 且有索引路径、ready 3857 优化目标路径。
-2. 验证样本应覆盖小、中、大记录规模和点、线、面几何，输出无 ready 3857 优化结果和有 ready 3857 优化结果两组响应时间预算与超时处理建议。
+1. 验证应同时覆盖源表 `ST_Transform` 路径、源表已是 3857 且有索引路径、ready 快显性能优化目标路径。
+2. 验证样本应覆盖小、中、大记录规模和点、线、面几何，输出无 ready 快显性能优化目标和有 ready 快显性能优化目标两组响应时间预算与超时处理建议。
 3. 输出指标至少包含单瓦片耗时、服务端总耗时、超时率、错误率、原始 MVT 大小、空瓦片率和 DB 资源占用。
 4. 验证结论只用于动态 MVT capability 性能模式、提示等级、超时策略和运行时保护；瓦片缓存生成不因动态 MVT 响应时间预算而被禁止。
 
@@ -736,6 +736,6 @@ Capability 只暴露诊断和推荐，不触发创建动作：
 文档检查：
 
 ```bash
-rg -n "quick_view_optimization|快显性能优化|prepared 3857|3857 派生" docs/next manager/docs docs/spec -g '*.md'
+rg -n "quick_view_optimization|quick_view_optimization_target|快显性能优化|快显性能优化目标|3857 派生" docs/next manager/docs docs/spec -g '*.md'
 git diff --check -- docs/next/Manager快显性能优化任务与结果专题设计.md
 ```

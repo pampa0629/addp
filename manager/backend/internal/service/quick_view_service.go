@@ -114,14 +114,14 @@ type QuickViewSource struct {
 }
 
 type RealtimeTileTarget struct {
-	Schema                     string
-	Table                      string
-	GeomColumn                 string
-	SRID                       int
-	Prepared3857               bool
-	PerformanceMode            string
-	OptimizationRecommended    bool
-	OptimizationRecommendation string
+	Schema                      string
+	Table                       string
+	GeomColumn                  string
+	SRID                        int
+	QuickViewOptimizationTarget bool
+	PerformanceMode             string
+	OptimizationRecommended     bool
+	OptimizationRecommendation  string
 }
 
 type QuickViewCapability struct {
@@ -612,7 +612,7 @@ func realtimeTileInfoFromTarget(target *RealtimeTileTarget) *QuickViewRealtimeTi
 	}
 	mode := target.PerformanceMode
 	if mode == "" {
-		if target.Prepared3857 {
+		if target.QuickViewOptimizationTarget {
 			mode = RealtimeTilePerformanceReady3857Target
 		} else if target.SRID == spatial.SRIDWebMercator {
 			mode = RealtimeTilePerformanceSource3857

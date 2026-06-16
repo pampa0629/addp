@@ -487,12 +487,12 @@ func (g *TileGenerator) generateBaseTile(
 		return nil, fmt.Errorf("failed to get db pool: %w", err)
 	}
 
-	// 构建简单的 MVT 查询（不使用采样和简化）
-	// params.Table 和 params.GeomColumn 已从 QuickView 准备结果中获取。
-	// - 如果准备阶段创建了物化视图（e.g., dltb_mv3857），则使用物化视图
-	// - 如果源表已是 3857，则直接使用源表
+	// 构建简单的 MVT 查询（不使用采样和简化）。
+	// params.Table 和 params.GeomColumn 已由调用方解析为当次生成目标：
+	// - 如果存在 ready 快显性能优化目标，则使用该目标
+	// - 如果源表已是 3857 或缺少优化目标，则使用源表
 	// - extent 减半时，继续使用同一个表（不做降级，始终保持高性能）
-	// - 避免在这里重复检查物化视图存在性
+	// - 避免在这里重复检查或创建派生目标
 	opt := spatial.MVTOptions{
 		Layer:  params.Table, // Layer 名称使用原始表名（前端显示）
 		Extent: extent,       // extent 由调用者控制（初始值或减半后的值）
@@ -502,8 +502,8 @@ func (g *TileGenerator) generateBaseTile(
 
 	sqlStr, args := spatial.BuildMVTQuery(
 		params.Schema,
-		params.Table,      // 使用准备阶段确定的表（物化视图或源表）
-		params.GeomColumn, // 使用准备阶段确定的几何列
+		params.Table,      // 使用调用方解析后的目标表
+		params.GeomColumn, // 使用调用方解析后的几何列
 		columns,
 		params.Z, params.X, params.Y,
 		opt,

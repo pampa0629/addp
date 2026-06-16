@@ -17,7 +17,6 @@ export function createDefaultTileCacheTaskForm() {
         extent: []
       },
       storage: {},
-      preparation: { mode: 'auto' },
       options: { geometry_column: '' }
     }
   }
@@ -37,7 +36,6 @@ export function createTileCacheTaskFormFromTask(task = null) {
     target: { ...next.config.target, ...(task.config?.target || {}) },
     tile: { ...next.config.tile, ...(task.config?.tile || {}) },
     storage: { ...next.config.storage, ...(task.config?.storage || {}) },
-    preparation: { ...next.config.preparation, ...(task.config?.preparation || {}) },
     options: { ...next.config.options, ...(task.config?.options || {}) }
   }
   return next

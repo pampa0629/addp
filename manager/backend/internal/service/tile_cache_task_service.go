@@ -464,7 +464,7 @@ func buildTileCacheGenerationMetadata(
 		"min_tile_size_bytes":     result.MinTileSizeBytes,
 		"generation_seconds":      result.GenerationSec,
 		"stop_reason":             result.StopReason,
-		"preparation_actions": commonModels.JSONMap{
+		"refresh_actions": commonModels.JSONMap{
 			"previous_runtime_cache_invalidated": boolFromJSONMap(execCfg, "previous_runtime_cache_invalidated"),
 			"previous_storage_ref_deleted":       boolFromJSONMap(execCfg, "previous_storage_ref_deleted"),
 		},
@@ -660,13 +660,13 @@ func (s *TileCacheTaskService) prepareExecutionTileCache(ctx context.Context, ta
 		cfg.Concurrency = s.defaultConcurrency
 	}
 	execCfg["tile_generation_target"] = commonModels.JSONMap{
-		"schema":                      generationTarget.Schema,
-		"table":                       generationTarget.Table,
-		"geom_column":                 generationTarget.GeomColumn,
-		"srid":                        generationTarget.SRID,
-		"prepared_3857":               generationTarget.Prepared3857,
-		"optimization_recommended":    generationTarget.OptimizationRecommended,
-		"optimization_recommendation": generationTarget.OptimizationRecommendation,
+		"schema":                         generationTarget.Schema,
+		"table":                          generationTarget.Table,
+		"geom_column":                    generationTarget.GeomColumn,
+		"srid":                           generationTarget.SRID,
+		"quick_view_optimization_target": generationTarget.QuickViewOptimizationTarget,
+		"optimization_recommended":       generationTarget.OptimizationRecommended,
+		"optimization_recommendation":    generationTarget.OptimizationRecommendation,
 	}
 	return tileCache, execCfg, cfg, false, nil
 }
@@ -735,14 +735,14 @@ func optimizationJSONMap(optimization commonModels.OptimizationConfig) commonMod
 }
 
 type tileGenerationTarget struct {
-	Schema                     string
-	Table                      string
-	GeomColumn                 string
-	SRID                       int
-	PrimaryKey                 string
-	Prepared3857               bool
-	OptimizationRecommended    bool
-	OptimizationRecommendation string
+	Schema                      string
+	Table                       string
+	GeomColumn                  string
+	SRID                        int
+	PrimaryKey                  string
+	QuickViewOptimizationTarget bool
+	OptimizationRecommended     bool
+	OptimizationRecommendation  string
 }
 
 func (s *TileCacheTaskService) resolveTileGenerationTarget(
@@ -797,20 +797,20 @@ func (s *TileCacheTaskService) resolveTileGenerationTarget(
 		}, nil
 	}
 	targetPrimaryKey := primaryKey
-	if !target.Prepared3857 {
+	if !target.QuickViewOptimizationTarget {
 		targetPrimaryKey = primaryKey
 	} else {
 		targetPrimaryKey = ""
 	}
 	return tileGenerationTarget{
-		Schema:                     target.Schema,
-		Table:                      target.Table,
-		GeomColumn:                 target.GeomColumn,
-		SRID:                       target.SRID,
-		PrimaryKey:                 targetPrimaryKey,
-		Prepared3857:               target.Prepared3857,
-		OptimizationRecommended:    target.OptimizationRecommended,
-		OptimizationRecommendation: target.OptimizationRecommendation,
+		Schema:                      target.Schema,
+		Table:                       target.Table,
+		GeomColumn:                  target.GeomColumn,
+		SRID:                        target.SRID,
+		PrimaryKey:                  targetPrimaryKey,
+		QuickViewOptimizationTarget: target.QuickViewOptimizationTarget,
+		OptimizationRecommended:     target.OptimizationRecommended,
+		OptimizationRecommendation:  target.OptimizationRecommendation,
 	}, nil
 }
 
@@ -829,6 +829,9 @@ func normalizeTileCacheTask(task *models.TileCacheTask) error {
 	}
 	if len(task.Config) == 0 {
 		return errors.New("tile cache task config is required")
+	}
+	if _, ok := task.Config["preparation"]; ok {
+		return errors.New("tile cache task config.preparation has been removed; create a quick_view_optimization task instead")
 	}
 	if _, err := normalizeTileCacheTaskTarget(task.Config); err != nil {
 		return err

@@ -218,6 +218,7 @@
       "loadResourceTreeFailed": "Failed to load resource tree",
       "geometryColumnRequired": "Please select a geometry column",
       "sourceAlready3857": "The source geometry is already 3857, so no quick view optimization task is needed.",
+      "optimizationTargetReady": "A reusable quick view optimization target is ready. Tile cache generation will reuse it first.",
       "loadCapabilityFailed": "Failed to load quick view capability",
       "loadTasksFailed": "Failed to load tile cache tasks",
       "loadResultsFailed": "Failed to load tile cache results",

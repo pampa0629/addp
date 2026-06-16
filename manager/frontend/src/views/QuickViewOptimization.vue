@@ -797,6 +797,8 @@ const openTileCacheCreate = (result) => {
       locator: result.locator || '',
       geom: result.source_geometry_column || '',
       source_srid: String(result.source_srid || ''),
+      quick_view_optimization: 'ready',
+      quick_view_optimization_id: result.id ? String(result.id) : undefined,
       item_id: result.item_id ? String(result.item_id) : undefined,
       item_fingerprint: result.item_fingerprint || undefined
     }

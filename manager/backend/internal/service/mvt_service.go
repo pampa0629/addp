@@ -191,12 +191,12 @@ func (s *MVTService) ResolveRealtimeTileTarget(
 		return sourceTransformRealtimeTileTarget(schema, table, geomCol, sourceSRID), nil
 	}
 	return &RealtimeTileTarget{
-		Schema:          result.TargetSchema,
-		Table:           result.TargetTable,
-		GeomColumn:      result.TargetGeometryColumn,
-		SRID:            spatial.SRIDWebMercator,
-		Prepared3857:    true,
-		PerformanceMode: RealtimeTilePerformanceReady3857Target,
+		Schema:                      result.TargetSchema,
+		Table:                       result.TargetTable,
+		GeomColumn:                  result.TargetGeometryColumn,
+		SRID:                        spatial.SRIDWebMercator,
+		QuickViewOptimizationTarget: true,
+		PerformanceMode:             RealtimeTilePerformanceReady3857Target,
 	}, nil
 }
 

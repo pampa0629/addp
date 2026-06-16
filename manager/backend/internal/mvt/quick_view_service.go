@@ -19,7 +19,6 @@ import (
 	"github.com/addp/manager/internal/tilecache"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
-	"gorm.io/gorm"
 )
 
 // QuickViewService 快显服务
@@ -28,8 +27,6 @@ type QuickViewService struct {
 	tileGen     *TileGenerator
 	minioClient *minio.Client
 	bucket      string
-	db          *gorm.DB            // 数据库连接（用于保存准备状态）
-	prepService *PreparationService // 准备阶段服务
 }
 
 // QuickViewConfig 快显配置
@@ -61,7 +58,7 @@ type MinIOConfig struct {
 }
 
 // NewQuickViewService 创建快显服务
-func NewQuickViewService(tileGen *TileGenerator, minioCfg MinIOConfig, db *gorm.DB) (*QuickViewService, error) {
+func NewQuickViewService(tileGen *TileGenerator, minioCfg MinIOConfig) (*QuickViewService, error) {
 	// 初始化 MinIO 客户端
 	client, err := minio.New(minioCfg.Endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(minioCfg.AccessKey, minioCfg.SecretKey, ""),
@@ -97,8 +94,6 @@ func NewQuickViewService(tileGen *TileGenerator, minioCfg MinIOConfig, db *gorm.
 		tileGen:     tileGen,
 		minioClient: client,
 		bucket:      minioCfg.Bucket,
-		db:          db,
-		prepService: NewPreparationService(db, tileGen.resourceService),
 	}, nil
 }
 
@@ -363,28 +358,6 @@ func (s *QuickViewService) GenerateMixed(
 		"source_extent", fmt.Sprintf("%v", cfg.Extent),
 		"extent_srid", cfg.ExtentSRID,
 		"tile_range_extent", fmt.Sprintf("%v", tileRangeExtent))
-
-	// 1.3 运行准备阶段检查（v4.0 新增）
-	logger.L().Info("开始准备阶段检查", "table", tableName)
-
-	if s.prepService != nil {
-		prepStatus, err := s.prepService.RunPreparationChecks(ctx, cfg.TenantID, cfg.EngineID, cfg.Schema, cfg.Table, cfg.GeomColumn)
-		if err != nil {
-			logger.L().Warn("准备阶段检查失败，继续使用已解析的瓦片目标生成",
-				"table", tableName,
-				"error", err)
-		} else {
-			logger.L().Info("准备阶段检查完成",
-				"overall_status", prepStatus.OverallStatus,
-				"summary", prepStatus.Summary)
-
-			if prepStatus.OverallStatus == "failed" {
-				logger.L().Warn("准备阶段存在待优化项，当前生成仍使用已解析的瓦片目标",
-					"table", tableName,
-					"checks", prepStatus.Checks)
-			}
-		}
-	}
 
 	if actualSRID != 3857 {
 		logger.L().Info("瓦片生成目标不是 3857，生成 SQL 将在 PostgreSQL 内执行 ST_Transform",

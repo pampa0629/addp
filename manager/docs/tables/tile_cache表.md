@@ -35,7 +35,7 @@
 | `created_by` | integer | 创建人 |
 | `created_at` / `updated_at` / `deleted_at` | timestamp | 生命周期字段 |
 
-第一阶段只保留核心字段。瓦片数量、产物大小、访问策略、清理策略、准备产物详情、转换引擎等信息先放在 manifest、execution metadata 或后续专题中。
+第一阶段只保留核心字段。瓦片数量、产物大小、访问策略、清理策略、快显性能优化目标状态、转换引擎等信息分别放在 manifest、execution metadata、`manager.quick_view_optimization` 或后续专题中。
 
 ## 三、状态语义
 

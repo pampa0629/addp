@@ -188,7 +188,7 @@ func main() {
 		SecretKey: cfg.MinioSecretKey,
 		UseSSL:    cfg.MinioUseSSL,
 		Bucket:    minioBucket,
-	}, db)
+	})
 	if err != nil {
 		logger.L().Warn("瓦片缓存 MVT 生成器初始化失败（任务执行将失败并记录原因）", "error", err)
 	}
