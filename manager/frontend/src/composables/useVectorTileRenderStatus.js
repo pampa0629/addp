@@ -144,7 +144,7 @@ export function useVectorTileRenderStatus({
       tileCacheId: meta?.tileCacheId || tileStatus.value.tileCacheId,
       tileSemanticStatus: semanticStatus || tileStatus.value.tileSemanticStatus,
       tileStatusCounts,
-      error: meta?.cooledDown ? '' : (meta?.error?.message || String(meta?.error || ''))
+      error: meta?.cooledDown || meta?.suppressed ? '' : (meta?.error?.message || String(meta?.error || ''))
     }
   }
 

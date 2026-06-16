@@ -42,6 +42,12 @@ const routes = [
         meta: { requiresAuth: true, title: '瓦片缓存任务-addp' }
       },
       {
+        path: 'quick-view-optimization',
+        name: 'QuickViewOptimization',
+        component: () => import('../views/QuickViewOptimization.vue'),
+        meta: { requiresAuth: true, title: '快显性能优化-addp' }
+      },
+      {
         path: 'spatial-preview',
         name: 'SpatialPreview',
         component: () => import('../views/SpatialPreview.vue'),

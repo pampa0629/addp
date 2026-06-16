@@ -226,6 +226,20 @@
         </template>
 
         <div class="form-section-title">{{ t('manager.tileCache.tileSettings') }}</div>
+        <el-alert
+          v-if="tileCacheOptimizationAdvice.visible"
+          type="warning"
+          :closable="false"
+          show-icon
+          class="optimization-advice"
+          :title="tileCacheOptimizationAdvice.message"
+        >
+          <template #default>
+            <el-button size="small" type="warning" @click="openQuickViewOptimizationCreate">
+              {{ t('manager.spatialPreview.optimizeQuickView') }}
+            </el-button>
+          </template>
+        </el-alert>
         <el-form-item :label="t('manager.tileCache.format')">
           <el-tag type="info">mvt</el-tag>
         </el-form-item>
@@ -434,6 +448,7 @@ const detailExecutionLoading = ref(false)
 let detailExecutionRequestSeq = 0
 let taskRefreshTimer = null
 const capabilityLoading = ref(false)
+const tileCacheOptimizationAdvice = reactive({ visible: false, message: '' })
 const geometryColumnOptions = ref([])
 const selectedSourceNode = ref(null)
 const databaseEngineTypes = new Set(['postgresql', 'postgres', 'postgis'])
@@ -499,6 +514,8 @@ const resetForm = (task = null) => {
   geometryColumnOptions.value = []
   selectedSourceNode.value = null
   resourceCurrentKey.value = ''
+  tileCacheOptimizationAdvice.visible = false
+  tileCacheOptimizationAdvice.message = ''
   Object.assign(form, next)
   if (form.config.options.geometry_column) {
     geometryColumnOptions.value = [form.config.options.geometry_column]
@@ -755,11 +772,15 @@ const applyQuickViewCapabilityToForm = (config, fallbackGeometryColumns = []) =>
   if (!form.config.options.geometry_column && config.geometry_column) {
     form.config.options.geometry_column = config.geometry_column
   }
+  tileCacheOptimizationAdvice.visible = !!config.optimization_recommended
+  tileCacheOptimizationAdvice.message = config.optimization_message || t('manager.spatialPreview.optimizationRecommended')
 }
 
 const tileCacheFormConfigFromCapability = (capability) => {
   const quickView = capability?.quick_view || {}
   const renderFacts = capability?.render_facts || {}
+  const realtime = capability?.realtime_tile || {}
+  const optimization = capability?.optimization || {}
   const zoom = renderFacts.zoom_recommendation || {}
   return {
     ...quickView,
@@ -769,8 +790,32 @@ const tileCacheFormConfigFromCapability = (capability) => {
     extent: Array.isArray(renderFacts.render_extent) ? renderFacts.render_extent : quickView.extent,
     extent_srid: renderFacts.render_extent_srid ?? quickView.extent_srid,
     geometry_column: quickView.geometry_column,
-    geometry_columns: quickView.geometry_columns || []
+    geometry_columns: quickView.geometry_columns || [],
+    optimization_recommended: realtime.optimization_recommended === true ||
+      realtime.performance_mode === 'source_transform_path' ||
+      (optimization.available !== true && Number(renderFacts.source_srid || quickView.source_srid || 0) !== 3857),
+    optimization_message: realtime.optimization_recommendation || t('manager.spatialPreview.optimizationRecommended')
   }
+}
+
+const openQuickViewOptimizationCreate = () => {
+  const target = form.config.target
+  router.push({
+    name: 'QuickViewOptimization',
+    query: {
+      tab: 'tasks',
+      create: '1',
+      engine_id: String(target.source_engine_id || ''),
+      schema: target.schema || '',
+      table: target.table || '',
+      locator: target.locator || '',
+      ...(target.item_id ? { item_id: String(target.item_id) } : {}),
+      ...(target.item_fingerprint ? { item_fingerprint: target.item_fingerprint } : {}),
+      ...(form.config.options.geometry_column ? { geom: form.config.options.geometry_column } : {}),
+      ...(geometryColumnOptions.value.length ? { geometry_columns: geometryColumnOptions.value.join(',') } : {}),
+      ...(form.config.tile.source_srid ? { source_srid: String(form.config.tile.source_srid) } : {})
+    }
+  })
 }
 
 const loadQuickViewCapabilityForForm = async (fallbackGeometryColumns = []) => {
@@ -1232,6 +1277,10 @@ onBeforeUnmount(() => {
 
 .source-summary {
   margin-bottom: 16px;
+}
+
+.optimization-advice {
+  margin-bottom: 14px;
 }
 
 .execution-stats {

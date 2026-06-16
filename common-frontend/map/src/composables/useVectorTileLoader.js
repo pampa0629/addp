@@ -20,6 +20,7 @@ export function useVectorTileLoader(options = {}) {
   // 跟踪所有进行中的瓦片请求
   const activeTileRequests = new Map()
   const degradedTileCooldowns = new Map()
+  const suppressedTileKeys = new Set()
   const degradedSourceRefreshTimers = new Map()
   let requestSeq = 0
 
@@ -54,6 +55,10 @@ export function useVectorTileLoader(options = {}) {
       tileCacheId: res.headers.get('X-ADDP-Tile-Cache-ID') || '',
       cacheStatus: res.headers.get('X-ADDP-Tile-Cache') || '',
       tileStatus: res.headers.get('X-ADDP-Tile-Status') || '',
+      performanceMode: res.headers.get('X-ADDP-Tile-Performance-Mode') || '',
+      recommendation: res.headers.get('X-ADDP-Tile-Recommendation') || '',
+      retryPolicy: res.headers.get('X-ADDP-Tile-Retry-Policy') || '',
+      retryAfter: res.headers.get('Retry-After') || '',
       generationTime: res.headers.get('X-Generation-Time') || '',
       contentLength: res.headers.get('Content-Length') || ''
     }
@@ -85,8 +90,15 @@ export function useVectorTileLoader(options = {}) {
     degradedSourceRefreshTimers.set(source, timer)
   }
 
+  function shouldSuppressTile(meta = {}) {
+    return isDegradedTileStatus(meta.tileStatus) &&
+      String(meta.retryPolicy || '').toLowerCase() === 'suppress_tile'
+  }
+
   function handleDecodedTileBuffer(tile, buf, meta, tileKey, extent, projection, options = {}, source = null, src = '') {
-    if (source && src && isDegradedTileStatus(meta.tileStatus)) {
+    if (src && shouldSuppressTile(meta)) {
+      suppressedTileKeys.add(degradedCooldownKey(src))
+    } else if (source && src && isDegradedTileStatus(meta.tileStatus)) {
       scheduleDegradedTileRefresh(source, degradedCooldownKey(src), options)
     }
 
@@ -170,6 +182,17 @@ export function useVectorTileLoader(options = {}) {
         tile.setFeatures([])
         return
       }
+      if (suppressedTileKeys.has(cooldownKey)) {
+        options.onTileLoadError?.({
+          tileKey,
+          tileStatus: 'timeout',
+          retryPolicy: 'suppress_tile',
+          suppressed: true,
+          error: new Error('MVT tile is suppressed after source-transform timeout')
+        })
+        tile.setFeatures([])
+        return
+      }
 
       // 创建新的 AbortController
       const controller = new AbortController()
@@ -247,6 +270,7 @@ export function useVectorTileLoader(options = {}) {
     degradedSourceRefreshTimers.forEach((timer) => window.clearTimeout(timer))
     degradedSourceRefreshTimers.clear()
     degradedTileCooldowns.clear()
+    suppressedTileKeys.clear()
   }
 
   return {

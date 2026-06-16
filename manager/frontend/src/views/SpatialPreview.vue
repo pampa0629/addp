@@ -40,6 +40,14 @@
         >
           {{ t('manager.spatialPreview.generateTileCache') }}
         </el-button>
+        <el-button
+          v-if="showQuickViewOptimizationAction"
+          size="small"
+          type="warning"
+          @click="openQuickViewOptimizationCreate"
+        >
+          {{ t('manager.spatialPreview.optimizeQuickView') }}
+        </el-button>
       </div>
     </div>
     <div class="map-wrap">
@@ -59,6 +67,7 @@
         :tile-render-info="quickViewStatus?.quick_view || {}"
         :render-source="quickViewRenderSource"
         :default-tile-cache-id="quickViewStatus?.default_tile_cache_id || ''"
+        @tile-advisory="handleTileAdvisory"
       />
       <TablePreview
         v-else-if="ready && basicPreviewData"
@@ -100,6 +109,7 @@ const cols = computed(() => String(route.query.cols || '').split(',').filter(Boo
 const ready = computed(() => !!locator.value)
 const quickViewStatus = ref(null)
 const activePreviewMode = ref('table_geojson')
+const quickViewTileAdvisory = ref(null)
 const quickViewRenderSource = computed(() => String(
   quickViewStatus.value?.render_source || quickViewStatus.value?.quick_view?.render_source || ''
 ).trim())
@@ -109,6 +119,19 @@ const isQuickViewActive = computed(() => {
 })
 const showRealtimeTileCacheGeneration = computed(() => {
   return quickViewRenderSource.value === 'realtime_tile' && !!quickViewStatus.value?.can_generate_tile_cache
+})
+const showQuickViewOptimizationAction = computed(() => {
+  const realtime = quickViewStatus.value?.realtime_tile || {}
+  const optimization = quickViewStatus.value?.optimization || {}
+  return quickViewRenderSource.value === 'realtime_tile' &&
+    optimization.available !== true &&
+    Number(quickViewStatus.value?.render_facts?.source_srid || 0) !== 3857 &&
+    (
+      realtime.optimization_recommended === true ||
+      realtime.performance_mode === 'source_transform_path' ||
+      quickViewTileAdvisory.value?.recommendation === 'quick_view_optimization' ||
+      quickViewTileAdvisory.value?.retryPolicy === 'suppress_tile'
+    )
 })
 const basicPreviewData = ref(null)
 const basicPreviewLoading = ref(false)
@@ -159,6 +182,7 @@ const loadQuickViewStatus = async () => {
   if (!ready.value) return
   try {
     quickViewStatus.value = await quickViewAPI.getQuickViewCapabilityByLocator(locator.value)
+    quickViewTileAdvisory.value = null
     if (quickViewStatus.value?.preferred_mode === 'quick_view' && quickViewStatus.value?.can_use_quick_view) {
       activePreviewMode.value = 'quick_view'
     } else if (!quickViewStatus.value?.can_use_quick_view) {
@@ -207,6 +231,30 @@ const openTileCacheCreate = () => {
       ...(geom.value ? { geom: geom.value } : {})
     }
   })
+}
+
+const openQuickViewOptimizationCreate = () => {
+  router.push({
+    name: 'QuickViewOptimization',
+    query: {
+      tab: 'tasks',
+      create: '1',
+      engine_id: String(engineId.value),
+      schema: schema.value,
+      table: table.value,
+      locator: locator.value,
+      ...(geom.value ? { geom: geom.value } : {}),
+      ...(quickViewStatus.value?.item_fingerprint ? { item_fingerprint: quickViewStatus.value.item_fingerprint } : {}),
+      ...(quickViewStatus.value?.render_facts?.source_srid ? { source_srid: String(quickViewStatus.value.render_facts.source_srid) } : {})
+    }
+  })
+}
+
+const handleTileAdvisory = (advisory) => {
+  quickViewTileAdvisory.value = advisory
+  if (advisory?.retryPolicy === 'suppress_tile') {
+    ElMessage.warning(t('manager.spatialPreview.tileTimeoutOptimizationRecommended'))
+  }
 }
 
 onMounted(() => {

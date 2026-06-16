@@ -55,6 +55,10 @@
             <el-icon><Grid /></el-icon>
             <span>{{ t('manager.layout.tileCache') }}</span>
           </el-menu-item>
+          <el-menu-item index="/quick-view-optimization">
+            <el-icon><MagicStick /></el-icon>
+            <span>{{ t('manager.layout.quickViewOptimization') }}</span>
+          </el-menu-item>
         </el-menu>
       </el-aside>
 
@@ -79,7 +83,8 @@ import {
   Search,
   Document,
   List,
-  Grid
+  Grid,
+  MagicStick
 } from '@element-plus/icons-vue'
 
 const route = useRoute()

@@ -1,6 +1,6 @@
 # Manager 快显性能优化任务与结果专题设计
 
-> 状态：专题草案。本文用于讨论 Manager 快显性能优化任务、结果和 PG 空间表 3857 派生目标的概念边界。正式约束后续应收敛到 Manager 模块文档和任务体系相关规范中。
+> 状态：专题归档。核心约束已收敛到 Manager 模块文档和任务体系规范；本文保留设计讨论、边界说明和阶段记录。
 
 ## 一、背景
 
@@ -689,7 +689,7 @@ POST /api/v1/manager/tasks/quick_view_optimization/{id}/execute
 GET  /api/v1/manager/executions/{execution_id}
 ```
 
-第一阶段只实现后端 API 和任务体系接入，不实现前端创建/编辑 UI。TaskProvider capability 中的 `create_url=/manager/quick-view-optimization?tab=tasks` 与 `edit_url=/manager/quick-view-optimization?tab=tasks&task_id=:id` 是后续 Console 承载路由，不表示第一阶段已有可操作页面；Orchestrator 应通过标准 API 调用任务，不依赖该 UI 路由。
+第一阶段已实现后端 API 和任务体系接入。第二阶段已提供 Manager 前端创建/编辑 UI，TaskProvider capability 中的 `create_url=/manager/quick-view-optimization?tab=tasks` 与 `edit_url=/manager/quick-view-optimization?tab=tasks&task_id=:id` 指向当前承载页面。Orchestrator 应通过标准 API 调用任务，不依赖该 UI 路由。
 
 结果管理：
 

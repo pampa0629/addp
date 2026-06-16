@@ -70,7 +70,7 @@ const props = defineProps({
   zoom: { type: Number, default: 10 }
 })
 
-const emit = defineEmits(['featureClick'])
+const emit = defineEmits(['featureClick', 'tile-advisory'])
 
 const { t } = useI18n()
 
@@ -133,7 +133,21 @@ const {
   t,
   getRenderSource: () => props.renderSource,
   getDefaultTileCacheId: () => props.defaultTileCacheId,
-  rememberTileState: (meta, hasError) => rememberMvtGridTileState(meta, hasError, map)
+  rememberTileState: (meta, hasError) => {
+    rememberMvtGridTileState(meta, hasError, map)
+    const recommendation = String(meta?.recommendation || '').toLowerCase()
+    const retryPolicy = String(meta?.retryPolicy || '').toLowerCase()
+    if (recommendation === 'quick_view_optimization' || retryPolicy === 'suppress_tile' || meta?.suppressed) {
+      emit('tile-advisory', {
+        recommendation: recommendation || 'quick_view_optimization',
+        retryPolicy,
+        tileStatus: meta?.tileStatus || '',
+        performanceMode: meta?.performanceMode || '',
+        tileKey: meta?.tileKey || '',
+        suppressed: !!meta?.suppressed
+      })
+    }
+  }
 })
 
 function resetTileRenderState() {

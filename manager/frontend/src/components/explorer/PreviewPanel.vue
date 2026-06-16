@@ -152,6 +152,15 @@
             >
               {{ t('manager.spatialPreview.generateTileCache') }}
             </el-button>
+            <el-button
+              v-if="showQuickViewOptimizationAction"
+              size="small"
+              type="warning"
+              @click="handleQuickViewOptimization"
+            >
+              <el-icon><MagicStick /></el-icon>
+              {{ t('manager.spatialPreview.optimizeQuickView') }}
+            </el-button>
           </div>
 
           <!-- 下载按钮 -->
@@ -318,6 +327,7 @@
         :key="quickViewRenderKey"
         v-bind="quickViewRendererProps"
         class="quick-view-renderer"
+        @tile-advisory="handleTileAdvisory"
       />
       <component
         v-else-if="previewComponent && !isGraphOverview"
@@ -394,6 +404,7 @@ const graphOverviewPageSize = ref(20)
 const quickViewStatus = ref(null)
 const quickViewLoadError = ref('')
 const quickViewActionLoading = ref(false)
+const quickViewTileAdvisory = ref(null)
 const activePreviewMode = ref('table_geojson')
 const mvtGridVisible = ref(false)
 let quickViewRequestSeq = 0
@@ -1518,6 +1529,7 @@ const spatialPreviewTarget = computed(() => {
     schema,
     table,
     locator,
+    itemID: Number(parsedLocator?.itemId || props.previewData?.item_id || props.previewData?.itemId || 0),
     locatorType,
     geometryColumn: String(props.previewData?.geometry_column || geometryColumns[0] || '').trim(),
     geometryColumns: geometryColumns.map((column) => String(column || '').trim()).filter(Boolean),
@@ -1549,6 +1561,24 @@ const quickViewRenderer = computed(() => {
 
 const showRealtimeTileCacheGeneration = computed(() => {
   return quickViewRenderSource.value === 'realtime_tile' && !!quickViewStatus.value?.can_generate_tile_cache
+})
+
+const quickViewOptimizationRecommended = computed(() => {
+  const realtime = quickViewStatus.value?.realtime_tile || {}
+  return realtime.optimization_recommended === true ||
+    realtime.performance_mode === 'source_transform_path' ||
+    quickViewTileAdvisory.value?.recommendation === 'quick_view_optimization' ||
+    quickViewTileAdvisory.value?.retryPolicy === 'suppress_tile'
+})
+
+const showQuickViewOptimizationAction = computed(() => {
+  const target = spatialPreviewTarget.value
+  const optimization = quickViewStatus.value?.optimization || {}
+  return !!target &&
+    quickViewRenderSource.value === 'realtime_tile' &&
+    quickViewOptimizationRecommended.value &&
+    optimization.available !== true &&
+    Number(quickViewStatus.value?.render_facts?.source_srid || target.sourceSRID || 0) !== 3857
 })
 
 const showMvtGridToggle = computed(() => {
@@ -1602,6 +1632,7 @@ const loadQuickViewStatus = async () => {
     const status = await quickViewAPI.getQuickViewCapabilityByLocator(target.locator)
     if (seq === quickViewRequestSeq) {
       quickViewStatus.value = status
+      quickViewTileAdvisory.value = null
       if (status?.preferred_mode === 'quick_view' && status?.can_use_quick_view) {
         activePreviewMode.value = 'quick_view'
       } else {
@@ -1671,6 +1702,34 @@ const handleGenerateTileCache = () => {
       ...(target.extent.length === 4 ? { extent: target.extent.join(',') } : {})
     }
   })
+}
+
+const handleQuickViewOptimization = () => {
+  const target = spatialPreviewTarget.value
+  if (!target) return
+  router.push({
+    name: 'QuickViewOptimization',
+    query: {
+      tab: 'tasks',
+      create: '1',
+      engine_id: String(target.engineId),
+      schema: target.schema,
+      table: target.table,
+      ...(target.locator ? { locator: target.locator } : {}),
+      ...(target.itemID ? { item_id: String(target.itemID) } : {}),
+      ...(quickViewStatus.value?.item_fingerprint ? { item_fingerprint: quickViewStatus.value.item_fingerprint } : {}),
+      ...(quickViewStatus.value?.quick_view?.geometry_column || target.geometryColumn ? { geom: quickViewStatus.value?.quick_view?.geometry_column || target.geometryColumn } : {}),
+      ...(target.geometryColumns.length ? { geometry_columns: target.geometryColumns.join(',') } : {}),
+      ...(quickViewStatus.value?.render_facts?.source_srid || target.sourceSRID ? { source_srid: String(quickViewStatus.value?.render_facts?.source_srid || target.sourceSRID) } : {})
+    }
+  })
+}
+
+const handleTileAdvisory = (advisory) => {
+  quickViewTileAdvisory.value = advisory
+  if (advisory?.retryPolicy === 'suppress_tile') {
+    ElMessage.warning(t('manager.spatialPreview.tileTimeoutOptimizationRecommended'))
+  }
 }
 
 watch(

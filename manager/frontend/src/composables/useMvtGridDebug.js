@@ -82,10 +82,10 @@ export function useMvtGridDebug({ t, isVisible }) {
   }
 
   function kindFromMeta(meta = {}, hasError = false) {
-    if (meta.oversized || (hasError && !meta.cooledDown)) return 'error'
+    if (meta.oversized || (hasError && !meta.cooledDown && !meta.suppressed)) return 'error'
     const semanticStatus = String(meta.tileStatus || '').toLowerCase()
     if (semanticStatus === 'timeout') return 'timeout'
-    if (semanticStatus === 'degraded' || meta.cooledDown) return 'degraded'
+    if (semanticStatus === 'degraded' || meta.cooledDown || meta.suppressed) return 'degraded'
     if (semanticStatus === 'empty') return 'empty'
     const cacheStatus = String(meta.cacheStatus || '').toUpperCase()
     if (cacheStatus === 'HIT') return 'cache'
@@ -104,6 +104,7 @@ export function useMvtGridDebug({ t, isVisible }) {
       featureCount: Number.isFinite(Number(meta.featureCount)) ? Number(meta.featureCount) : null,
       oversized: !!meta.oversized,
       cooledDown: !!meta.cooledDown,
+      suppressed: !!meta.suppressed,
       updatedAt: Date.now()
     })
     while (tileStates.size > maxMvtGridStatusEntries) {
