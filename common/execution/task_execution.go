@@ -146,8 +146,9 @@ const (
 	// Orchestrator 模块
 	TaskTypeOrchestration = "orchestration"
 	// Manager 模块
-	TaskTypeTileCacheGeneration = "tile_cache_generation"
-	TaskTypeEmbedding           = "embedding"
+	TaskTypeTileCacheGeneration   = "tile_cache_generation"
+	TaskTypeQuickViewOptimization = "quick_view_optimization"
+	TaskTypeEmbedding             = "embedding"
 	// Graph 模块
 	TaskTypeKGBuild = "kg_build"
 	// Quality 模块

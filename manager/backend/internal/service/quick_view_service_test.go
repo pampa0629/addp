@@ -122,6 +122,58 @@ func TestQuickViewCapabilityUsesLocatorDirectGeoJSONForSmallSpatialItem(t *testi
 	}
 }
 
+func TestQuickViewCapabilityUsesDirectGeoJSONForSmallPGTableAndKeepsRealtimeAlternative(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	svc := NewQuickViewService(db, nil)
+	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectGeoJSONMaxRows: 2000})
+
+	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+		Identity: QuickViewIdentity{
+			TenantID:        7,
+			ItemFingerprint: spatialItemFingerprint(11, "public", "small_points"),
+			Locator:         tableLocator(11, "public", "small_points"),
+		},
+		EngineID:      11,
+		Schema:        "public",
+		Table:         "small_points",
+		DirectGeoJSON: true,
+		GeoJSONURL:    "/api/v1/manager/quick-view/geojson?locator=small_points&page=1&page_size=1000&geometry_column=geom",
+		CanTile:       true,
+		SpatialMeta: &SpatialMetadataResult{
+			GeomColumn:      "geom",
+			GeometryColumns: []string{"geom"},
+			SRID:            4326,
+			ExtentSRID:      4326,
+			Extent:          []float64{120, 30, 121, 31},
+			RecordCount:     1000,
+		},
+		RealtimeTileTarget: &RealtimeTileTarget{
+			Schema:                     "public",
+			Table:                      "small_points",
+			GeomColumn:                 "geom",
+			SRID:                       4326,
+			PerformanceMode:            RealtimeTilePerformanceSourceTransform,
+			OptimizationRecommended:    true,
+			OptimizationRecommendation: RealtimeTileRecommendationQuickViewOptimization,
+		},
+	})
+	if err != nil {
+		t.Fatalf("build capability: %v", err)
+	}
+	if capability.RenderSource != QuickViewRenderSourceDirectGeoJSON {
+		t.Fatalf("render_source = %s, want %s", capability.RenderSource, QuickViewRenderSourceDirectGeoJSON)
+	}
+	if capability.RealtimeTile == nil || !capability.RealtimeTile.Available {
+		t.Fatalf("realtime_tile = %#v, want available alternative", capability.RealtimeTile)
+	}
+	if capability.RealtimeTile.PerformanceMode != RealtimeTilePerformanceSourceTransform {
+		t.Fatalf("performance_mode = %s, want %s", capability.RealtimeTile.PerformanceMode, RealtimeTilePerformanceSourceTransform)
+	}
+	if capability.RealtimeTile.TimeoutRetryPolicy != RealtimeTileTimeoutRetrySuppressTile {
+		t.Fatalf("timeout_retry_policy = %s, want %s", capability.RealtimeTile.TimeoutRetryPolicy, RealtimeTileTimeoutRetrySuppressTile)
+	}
+}
+
 func TestQuickViewPreferenceUsesStandardItemFingerprint(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	svc := NewQuickViewService(db, nil)
@@ -196,12 +248,23 @@ func TestQuickViewCapabilityPrefersReadyTileCacheResultOverDirectGeoJSON(t *test
 	}
 }
 
-func TestQuickViewCapabilityDoesNotUseRealtimeTileForLargeNon3857TableWithoutPreparedTarget(t *testing.T) {
+func TestQuickViewCapabilityUsesSourceTransformRealtimeTileForLargePGTableWithoutPreparedTarget(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	svc := NewQuickViewService(db, nil)
 	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectGeoJSONMaxRows: 2000})
-	svc.SetSpatialMetadataLoader(func(context.Context, uint, uint, string, string) (*SpatialMetadataResult, error) {
-		return &SpatialMetadataResult{
+
+	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+		Identity: QuickViewIdentity{
+			TenantID:        7,
+			ItemFingerprint: spatialItemFingerprint(11, "public", "farmland"),
+			Locator:         tableLocator(11, "public", "farmland"),
+		},
+		EngineID:      11,
+		Schema:        "public",
+		Table:         "farmland",
+		DirectGeoJSON: true,
+		CanTile:       true,
+		SpatialMeta: &SpatialMetadataResult{
 			GeomColumn:      "shape",
 			GeometryColumns: []string{"shape"},
 			SRID:            2360,
@@ -209,31 +272,60 @@ func TestQuickViewCapabilityDoesNotUseRealtimeTileForLargeNon3857TableWithoutPre
 			Extent:          []float64{120, 30, 121, 31},
 			PrimaryKey:      "id",
 			RecordCount:     73090,
-		}, nil
+		},
+		RealtimeTileTarget: &RealtimeTileTarget{
+			Schema:                     "public",
+			Table:                      "farmland",
+			GeomColumn:                 "shape",
+			SRID:                       2360,
+			PerformanceMode:            RealtimeTilePerformanceSourceTransform,
+			OptimizationRecommended:    true,
+			OptimizationRecommendation: RealtimeTileRecommendationQuickViewOptimization,
+		},
 	})
-
-	capability, err := buildQuickViewStatusForTest(t, svc, 7, 11, "public", "farmland")
 	if err != nil {
-		t.Fatalf("get quick view status: %v", err)
+		t.Fatalf("build quick view capability: %v", err)
 	}
 
-	if capability.CanUseQuickView {
-		t.Fatalf("can_use_quick_view = true, want false without prepared realtime tile target")
+	if !capability.CanUseQuickView {
+		t.Fatalf("can_use_quick_view = false, want source-transform realtime tile; reason=%s", capability.UnavailableReason)
 	}
 	if !capability.CanGenerateTileCache {
 		t.Fatal("can_generate_tile_cache = false, want true for PostGIS source")
 	}
-	if capability.RenderSource != "" {
-		t.Fatalf("render_source = %s, want empty without realtime tile target", capability.RenderSource)
+	if capability.RenderSource != QuickViewRenderSourceRealtimeTile {
+		t.Fatalf("render_source = %s, want %s", capability.RenderSource, QuickViewRenderSourceRealtimeTile)
+	}
+	if capability.RealtimeTile == nil {
+		t.Fatal("realtime_tile is nil")
+	}
+	if capability.RealtimeTile.PerformanceMode != RealtimeTilePerformanceSourceTransform {
+		t.Fatalf("performance_mode = %s, want %s", capability.RealtimeTile.PerformanceMode, RealtimeTilePerformanceSourceTransform)
+	}
+	if !capability.RealtimeTile.OptimizationRecommended ||
+		capability.RealtimeTile.TimeoutRecommendation != RealtimeTileRecommendationQuickViewOptimization ||
+		capability.RealtimeTile.TimeoutRetryPolicy != RealtimeTileTimeoutRetrySuppressTile {
+		t.Fatalf("realtime_tile = %#v, want optimization recommendation and suppress retry", capability.RealtimeTile)
 	}
 }
 
-func TestQuickViewCapabilityDoesNotUseRealtimeTileFromLegacyBuilderFor3857Table(t *testing.T) {
+func TestQuickViewCapabilityUsesSource3857RealtimeTileWhenResolved(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	svc := NewQuickViewService(db, nil)
 	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectGeoJSONMaxRows: 2000})
-	svc.SetSpatialMetadataLoader(func(context.Context, uint, uint, string, string) (*SpatialMetadataResult, error) {
-		return &SpatialMetadataResult{
+
+	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+		Identity: QuickViewIdentity{
+			TenantID:        7,
+			ItemFingerprint: spatialItemFingerprint(11, "public", "farmland"),
+			Locator:         tableLocator(11, "public", "farmland"),
+		},
+		EngineID:      11,
+		Schema:        "public",
+		Table:         "farmland",
+		DirectGeoJSON: true,
+		CanTile:       true,
+		SpatialMeta: &SpatialMetadataResult{
 			GeomColumn:      "shape",
 			GeometryColumns: []string{"shape"},
 			SRID:            3857,
@@ -241,22 +333,37 @@ func TestQuickViewCapabilityDoesNotUseRealtimeTileFromLegacyBuilderFor3857Table(
 			Extent:          []float64{13469658, 3503549, 13490000, 3520000},
 			PrimaryKey:      "id",
 			RecordCount:     73090,
-		}, nil
+		},
+		RealtimeTileTarget: &RealtimeTileTarget{
+			Schema:          "public",
+			Table:           "farmland",
+			GeomColumn:      "shape",
+			SRID:            3857,
+			PerformanceMode: RealtimeTilePerformanceSource3857Index,
+		},
 	})
-
-	capability, err := buildQuickViewStatusForTest(t, svc, 7, 11, "public", "farmland")
 	if err != nil {
-		t.Fatalf("get quick view status: %v", err)
+		t.Fatalf("build quick view capability: %v", err)
 	}
 
-	if capability.CanUseQuickView {
-		t.Fatalf("can_use_quick_view = true, want false without resolved realtime tile target")
+	if !capability.CanUseQuickView {
+		t.Fatalf("can_use_quick_view = false, want realtime tile; reason=%s", capability.UnavailableReason)
 	}
-	if capability.RenderSource != "" {
-		t.Fatalf("render_source = %s, want empty without resolved realtime tile target", capability.RenderSource)
+	if capability.RenderSource != QuickViewRenderSourceRealtimeTile {
+		t.Fatalf("render_source = %s, want %s", capability.RenderSource, QuickViewRenderSourceRealtimeTile)
 	}
 	if !capability.CanGenerateTileCache {
 		t.Fatal("can_generate_tile_cache = false, want true for PostGIS source")
+	}
+	if capability.RealtimeTile == nil {
+		t.Fatal("realtime_tile is nil")
+	}
+	if capability.RealtimeTile.PerformanceMode != RealtimeTilePerformanceSource3857Index {
+		t.Fatalf("performance_mode = %s, want %s", capability.RealtimeTile.PerformanceMode, RealtimeTilePerformanceSource3857Index)
+	}
+	if capability.RealtimeTile.TimeoutRecommendation != RealtimeTileRecommendationTileCacheGeneration ||
+		capability.RealtimeTile.TimeoutRetryPolicy != RealtimeTileTimeoutRetryTTL {
+		t.Fatalf("realtime_tile = %#v, want tile cache recommendation and ttl retry", capability.RealtimeTile)
 	}
 }
 
@@ -315,6 +422,111 @@ func TestQuickViewCapabilityUsesRealtimeTileForLargeSpatialTableWithPreparedTarg
 	}
 	if capability.DefaultTileCacheID != nil {
 		t.Fatalf("default_tile_cache_id = %#v, want nil for realtime tile", capability.DefaultTileCacheID)
+	}
+}
+
+func TestQuickViewCapabilityUsesRealtimeTileForLargePGTableWithoutPreparedTarget(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	svc := NewQuickViewService(db, nil)
+	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectGeoJSONMaxRows: 2000})
+
+	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+		Identity: QuickViewIdentity{
+			TenantID:        7,
+			ItemFingerprint: spatialItemFingerprint(11, "public", "a2"),
+			Locator:         tableLocator(11, "public", "a2"),
+		},
+		EngineID:      11,
+		Schema:        "public",
+		Table:         "a2",
+		DirectGeoJSON: true,
+		CanTile:       true,
+		SpatialMeta: &SpatialMetadataResult{
+			GeomColumn:      "SmGeometry",
+			GeometryColumns: []string{"SmGeometry"},
+			SRID:            4549,
+			ExtentSRID:      4549,
+			Extent:          []float64{120, 30, 121, 31},
+			PrimaryKey:      "SmID",
+			RecordCount:     146180,
+		},
+		RealtimeTileTarget: &RealtimeTileTarget{
+			Schema:                     "public",
+			Table:                      "a2",
+			GeomColumn:                 "SmGeometry",
+			SRID:                       4549,
+			PerformanceMode:            RealtimeTilePerformanceSourceTransform,
+			OptimizationRecommended:    true,
+			OptimizationRecommendation: RealtimeTileRecommendationQuickViewOptimization,
+		},
+	})
+	if err != nil {
+		t.Fatalf("build capability: %v", err)
+	}
+	if !capability.CanUseQuickView {
+		t.Fatalf("can_use_quick_view = false, want realtime tile; reason=%s", capability.UnavailableReason)
+	}
+	if capability.RenderSource != QuickViewRenderSourceRealtimeTile {
+		t.Fatalf("render_source = %s, want %s", capability.RenderSource, QuickViewRenderSourceRealtimeTile)
+	}
+	if capability.RealtimeTile == nil {
+		t.Fatal("realtime_tile is nil")
+	}
+	if capability.RealtimeTile.PerformanceMode != RealtimeTilePerformanceSourceTransform {
+		t.Fatalf("performance_mode = %s, want source transform path", capability.RealtimeTile.PerformanceMode)
+	}
+	if !capability.RealtimeTile.OptimizationRecommended ||
+		capability.RealtimeTile.TimeoutRecommendation != RealtimeTileRecommendationQuickViewOptimization ||
+		capability.RealtimeTile.TimeoutRetryPolicy != RealtimeTileTimeoutRetrySuppressTile {
+		t.Fatalf("realtime_tile = %#v, want optimization recommendation and suppress retry", capability.RealtimeTile)
+	}
+}
+
+func TestQuickViewCapabilityReady3857RealtimeTimeoutRecommendsTileCache(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	svc := NewQuickViewService(db, nil)
+	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectGeoJSONMaxRows: 2000})
+
+	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+		Identity: QuickViewIdentity{
+			TenantID:        7,
+			ItemFingerprint: spatialItemFingerprint(11, "public", "a2"),
+			Locator:         tableLocator(11, "public", "a2"),
+		},
+		EngineID:      11,
+		Schema:        "public",
+		Table:         "a2",
+		DirectGeoJSON: true,
+		CanTile:       true,
+		SpatialMeta: &SpatialMetadataResult{
+			GeomColumn:      "SmGeometry",
+			GeometryColumns: []string{"SmGeometry"},
+			SRID:            4549,
+			ExtentSRID:      4549,
+			Extent:          []float64{120, 30, 121, 31},
+			PrimaryKey:      "SmID",
+			RecordCount:     146180,
+		},
+		RealtimeTileTarget: &RealtimeTileTarget{
+			Schema:          "public",
+			Table:           "addp_qvo_a2",
+			GeomColumn:      "geom_3857",
+			SRID:            3857,
+			Prepared3857:    true,
+			PerformanceMode: RealtimeTilePerformanceReady3857Target,
+		},
+	})
+	if err != nil {
+		t.Fatalf("build capability: %v", err)
+	}
+	if capability.RealtimeTile == nil {
+		t.Fatal("realtime_tile is nil")
+	}
+	if capability.RealtimeTile.TimeoutRecommendation != RealtimeTileRecommendationTileCacheGeneration {
+		t.Fatalf("timeout_recommendation = %s, want %s", capability.RealtimeTile.TimeoutRecommendation, RealtimeTileRecommendationTileCacheGeneration)
+	}
+	if capability.RealtimeTile.TimeoutRetryPolicy != RealtimeTileTimeoutRetryTTL {
+		t.Fatalf("timeout_retry_policy = %s, want %s", capability.RealtimeTile.TimeoutRetryPolicy, RealtimeTileTimeoutRetryTTL)
 	}
 }
 
@@ -669,4 +881,139 @@ func createQuickViewTestTileCacheResult(t *testing.T, db *gorm.DB, status string
 		t.Fatalf("create tile cache result: %v", err)
 	}
 	return tileCacheResult
+}
+
+func TestQuickViewCapabilityIncludesOptimizationDiagnostic(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	svc := NewQuickViewService(db, nil)
+	fingerprint := spatialItemFingerprint(11, "public", "roads")
+	execID := "execution-qvo"
+	taskID := uint(3)
+	extentSRID := 4326
+	if err := db.Create(&models.QuickViewOptimization{
+		TenantID:                  1,
+		ItemFingerprint:           fingerprint,
+		Locator:                   tableLocator(11, "public", "roads"),
+		TaskID:                    &taskID,
+		LastExecutionID:           &execID,
+		SourceEngineID:            11,
+		SourceSchema:              "public",
+		SourceTable:               "roads",
+		SourceGeometryColumn:      "shape",
+		SourceSRID:                4326,
+		TargetSRID:                3857,
+		TargetKind:                models.QuickViewOptimizationTargetKindSourceSchemaMaterializedView,
+		TargetSchema:              "public",
+		TargetTable:               "addp_qvo_ready",
+		TargetGeometryColumn:      models.QuickViewOptimizationTargetGeometryColumn,
+		Status:                    models.QuickViewOptimizationStatusReady,
+		RenderExtent:              datatypes.JSON([]byte(`[100.1,20.2,101.3,21.4]`)),
+		RenderExtentSRID:          &extentSRID,
+		SourceFingerprintSnapshot: commonModels.JSONMap{},
+		Metadata:                  commonModels.JSONMap{"index_name": "idx_addp_qvo_ready_geom_3857_gist"},
+	}).Error; err != nil {
+		t.Fatalf("create quick view optimization result: %v", err)
+	}
+
+	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+		Identity: QuickViewIdentity{
+			TenantID:        1,
+			ItemFingerprint: fingerprint,
+			Locator:         tableLocator(11, "public", "roads"),
+		},
+		EngineID: 11,
+		Schema:   "public",
+		Table:    "roads",
+		SpatialMeta: &SpatialMetadataResult{
+			GeomColumn:      "shape",
+			GeometryColumns: []string{"shape"},
+			SRID:            4326,
+			Extent:          []float64{100, 20, 101, 21},
+			ExtentSRID:      4326,
+			RecordCount:     100000,
+		},
+		CanTile: true,
+		RealtimeTileTarget: &RealtimeTileTarget{
+			Schema:       "public",
+			Table:        "addp_qvo_ready",
+			GeomColumn:   "geom_3857",
+			SRID:         3857,
+			Prepared3857: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("build capability: %v", err)
+	}
+	if capability.Optimization == nil || !capability.Optimization.Available {
+		t.Fatalf("optimization diagnostic = %#v, want available", capability.Optimization)
+	}
+	if capability.Optimization.TargetTable != "addp_qvo_ready" {
+		t.Fatalf("optimization target table = %s", capability.Optimization.TargetTable)
+	}
+	if capability.Optimization.RenderExtentSRID != 4326 ||
+		!reflect.DeepEqual(capability.Optimization.RenderExtent, []float64{100.1, 20.2, 101.3, 21.4}) {
+		t.Fatalf("optimization render extent = %#v srid=%d", capability.Optimization.RenderExtent, capability.Optimization.RenderExtentSRID)
+	}
+}
+
+func TestQuickViewCapabilityOptimizationDiagnosticUsesSelectedGeometryColumn(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	svc := NewQuickViewService(db, nil)
+	fingerprint := spatialItemFingerprint(11, "public", "roads")
+	if err := db.Create(&models.QuickViewOptimization{
+		TenantID:                  1,
+		ItemFingerprint:           fingerprint,
+		Locator:                   tableLocator(11, "public", "roads"),
+		SourceEngineID:            11,
+		SourceSchema:              "public",
+		SourceTable:               "roads",
+		SourceGeometryColumn:      "shape_a",
+		SourceSRID:                4326,
+		TargetSRID:                3857,
+		TargetKind:                models.QuickViewOptimizationTargetKindSourceSchemaMaterializedView,
+		TargetSchema:              "public",
+		TargetTable:               "addp_qvo_shape_a",
+		TargetGeometryColumn:      models.QuickViewOptimizationTargetGeometryColumn,
+		Status:                    models.QuickViewOptimizationStatusReady,
+		SourceFingerprintSnapshot: commonModels.JSONMap{},
+		Metadata:                  commonModels.JSONMap{},
+	}).Error; err != nil {
+		t.Fatalf("create quick view optimization result: %v", err)
+	}
+
+	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+		Identity: QuickViewIdentity{
+			TenantID:        1,
+			ItemFingerprint: fingerprint,
+			Locator:         tableLocator(11, "public", "roads"),
+		},
+		EngineID: 11,
+		Schema:   "public",
+		Table:    "roads",
+		SpatialMeta: &SpatialMetadataResult{
+			GeomColumn:      "shape_b",
+			GeometryColumns: []string{"shape_a", "shape_b"},
+			SRID:            4326,
+			Extent:          []float64{100, 20, 101, 21},
+			ExtentSRID:      4326,
+			RecordCount:     100000,
+		},
+		CanTile: true,
+		RealtimeTileTarget: &RealtimeTileTarget{
+			Schema:       "public",
+			Table:        "roads",
+			GeomColumn:   "shape_b",
+			SRID:         4326,
+			Prepared3857: false,
+		},
+	})
+	if err != nil {
+		t.Fatalf("build capability: %v", err)
+	}
+	if capability.Optimization == nil {
+		t.Fatal("optimization diagnostic is nil")
+	}
+	if capability.Optimization.Available {
+		t.Fatalf("optimization diagnostic = %#v, want unavailable for selected geometry column shape_b", capability.Optimization)
+	}
 }

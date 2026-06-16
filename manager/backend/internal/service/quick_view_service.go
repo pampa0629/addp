@@ -34,14 +34,26 @@ const (
 	QuickViewRenderSourceCachedTile    = "cached_tile"
 	QuickViewRenderSourceDirectGeoJSON = "direct_geojson"
 	QuickViewRenderSourceRealtimeTile  = "realtime_tile"
+
+	RealtimeTilePerformanceReady3857Target = "ready_3857_target"
+	RealtimeTilePerformanceSource3857Index = "source_3857_indexed"
+	RealtimeTilePerformanceSource3857      = "source_3857_unindexed"
+	RealtimeTilePerformanceSourceTransform = "source_transform_path"
+
+	RealtimeTileRecommendationQuickViewOptimization = "quick_view_optimization"
+	RealtimeTileRecommendationTileCacheGeneration   = "tile_cache_generation"
+
+	RealtimeTileTimeoutRetrySuppressTile = "suppress_tile"
+	RealtimeTileTimeoutRetryTTL          = "ttl"
 )
 
 type QuickViewService struct {
-	repo          *repository.QuickViewRepository
-	tileCacheRepo *repository.TileCacheRepository
-	metaClient    *commonClient.MetaClient
-	options       QuickViewCapabilityOptions
-	spatialLoader func(ctx context.Context, tenantID, engineID uint, schema, table string) (*SpatialMetadataResult, error)
+	repo             *repository.QuickViewRepository
+	tileCacheRepo    *repository.TileCacheRepository
+	optimizationRepo *repository.QuickViewOptimizationRepository
+	metaClient       *commonClient.MetaClient
+	options          QuickViewCapabilityOptions
+	spatialLoader    func(ctx context.Context, tenantID, engineID uint, schema, table string) (*SpatialMetadataResult, error)
 }
 
 func NewQuickViewService(
@@ -49,9 +61,10 @@ func NewQuickViewService(
 	metaClient *commonClient.MetaClient,
 ) *QuickViewService {
 	return &QuickViewService{
-		repo:          repository.NewQuickViewRepository(db),
-		tileCacheRepo: repository.NewTileCacheRepository(db),
-		metaClient:    metaClient,
+		repo:             repository.NewQuickViewRepository(db),
+		tileCacheRepo:    repository.NewTileCacheRepository(db),
+		optimizationRepo: repository.NewQuickViewOptimizationRepository(db),
+		metaClient:       metaClient,
 	}
 }
 
@@ -101,30 +114,61 @@ type QuickViewSource struct {
 }
 
 type RealtimeTileTarget struct {
-	Schema       string
-	Table        string
-	GeomColumn   string
-	SRID         int
-	Prepared3857 bool
+	Schema                     string
+	Table                      string
+	GeomColumn                 string
+	SRID                       int
+	Prepared3857               bool
+	PerformanceMode            string
+	OptimizationRecommended    bool
+	OptimizationRecommendation string
 }
 
 type QuickViewCapability struct {
-	TenantID             uint                  `json:"tenant_id"`
-	ItemFingerprint      string                `json:"item_fingerprint,omitempty"`
-	Locator              string                `json:"locator,omitempty"`
-	CanUseQuickView      bool                  `json:"can_use_quick_view"`
-	CanGenerateTileCache bool                  `json:"can_generate_tile_cache"`
-	PreferredMode        string                `json:"preferred_mode"`
-	RecommendedMode      string                `json:"recommended_mode"`
-	ActiveMode           string                `json:"active_mode"`
-	DefaultTileCacheID   *uint                 `json:"default_tile_cache_id,omitempty"`
-	Status               string                `json:"status"`
-	UnavailableReason    string                `json:"unavailable_reason,omitempty"`
-	RenderSource         string                `json:"render_source,omitempty"`
-	QuickView            QuickViewRenderInfo   `json:"quick_view"`
-	RenderFacts          *QuickViewRenderFacts `json:"render_facts,omitempty"`
-	TileCacheGeneration  TileCacheGeneration   `json:"tile_cache_generation"`
-	LastCheckedAt        *time.Time            `json:"last_checked_at,omitempty"`
+	TenantID             uint                       `json:"tenant_id"`
+	ItemFingerprint      string                     `json:"item_fingerprint,omitempty"`
+	Locator              string                     `json:"locator,omitempty"`
+	CanUseQuickView      bool                       `json:"can_use_quick_view"`
+	CanGenerateTileCache bool                       `json:"can_generate_tile_cache"`
+	PreferredMode        string                     `json:"preferred_mode"`
+	RecommendedMode      string                     `json:"recommended_mode"`
+	ActiveMode           string                     `json:"active_mode"`
+	DefaultTileCacheID   *uint                      `json:"default_tile_cache_id,omitempty"`
+	Status               string                     `json:"status"`
+	UnavailableReason    string                     `json:"unavailable_reason,omitempty"`
+	RenderSource         string                     `json:"render_source,omitempty"`
+	QuickView            QuickViewRenderInfo        `json:"quick_view"`
+	RenderFacts          *QuickViewRenderFacts      `json:"render_facts,omitempty"`
+	Optimization         *QuickViewOptimizationInfo `json:"optimization,omitempty"`
+	RealtimeTile         *QuickViewRealtimeTileInfo `json:"realtime_tile,omitempty"`
+	TileCacheGeneration  TileCacheGeneration        `json:"tile_cache_generation"`
+	LastCheckedAt        *time.Time                 `json:"last_checked_at,omitempty"`
+}
+
+type QuickViewOptimizationInfo struct {
+	Available            bool      `json:"available"`
+	Status               string    `json:"status,omitempty"`
+	ResultID             *uint     `json:"result_id,omitempty"`
+	TaskID               *uint     `json:"task_id,omitempty"`
+	LastExecutionID      *string   `json:"last_execution_id,omitempty"`
+	TargetKind           string    `json:"target_kind,omitempty"`
+	TargetSchema         string    `json:"target_schema,omitempty"`
+	TargetTable          string    `json:"target_table,omitempty"`
+	TargetGeometryColumn string    `json:"target_geometry_column,omitempty"`
+	TargetSRID           int       `json:"target_srid,omitempty"`
+	RenderExtent         []float64 `json:"render_extent,omitempty"`
+	RenderExtentSRID     int       `json:"render_extent_srid,omitempty"`
+	Reason               string    `json:"reason,omitempty"`
+}
+
+type QuickViewRealtimeTileInfo struct {
+	Available                  bool   `json:"available"`
+	PerformanceMode            string `json:"performance_mode,omitempty"`
+	TimeoutBudgetMS            int    `json:"timeout_budget_ms,omitempty"`
+	TimeoutRecommendation      string `json:"timeout_recommendation,omitempty"`
+	TimeoutRetryPolicy         string `json:"timeout_retry_policy,omitempty"`
+	OptimizationRecommended    bool   `json:"optimization_recommended,omitempty"`
+	OptimizationRecommendation string `json:"optimization_recommendation,omitempty"`
 }
 
 type QuickViewRenderInfo struct {
@@ -215,6 +259,10 @@ func (s *QuickViewService) BuildCapability(ctx context.Context, identity QuickVi
 	if err != nil {
 		return nil, err
 	}
+	optimizationInfo, err := s.quickViewOptimizationInfo(ctx, identity, spatialMeta.GeomColumn)
+	if err != nil {
+		return nil, err
+	}
 
 	initialStatus := QuickViewStatusUnavailable
 	initialReason := "tile cache result is not ready"
@@ -233,6 +281,7 @@ func (s *QuickViewService) BuildCapability(ctx context.Context, identity QuickVi
 			CreateURL: tileCacheCreateURL(engineID, schema, table),
 		},
 	}
+	capability.Optimization = optimizationInfo
 
 	if readyTileCache != nil {
 		capability.CanUseQuickView = true
@@ -272,6 +321,7 @@ func (s *QuickViewService) BuildCapability(ctx context.Context, identity QuickVi
 		capability.ActiveMode = "table_geojson"
 	}
 	capability.RenderFacts = renderFactsFromSpatialMeta(spatialMeta)
+	applyOptimizationRenderFacts(capability.RenderFacts, optimizationInfo)
 
 	return capability, nil
 }
@@ -306,6 +356,10 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 	if err != nil {
 		return nil, err
 	}
+	optimizationInfo, err := s.quickViewOptimizationInfo(ctx, identity, source.SpatialMeta.GeomColumn)
+	if err != nil {
+		return nil, err
+	}
 
 	initialStatus := QuickViewStatusUnavailable
 	initialReason := "tile cache result is not ready"
@@ -324,6 +378,7 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 			CreateURL: tileCacheCreateURL(source.EngineID, source.Schema, source.Table),
 		},
 	}
+	capability.Optimization = optimizationInfo
 
 	if readyTileCache != nil {
 		capability.CanUseQuickView = true
@@ -340,6 +395,7 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 		capability.RenderSource = QuickViewRenderSourceDirectGeoJSON
 		capability.RecommendedMode = "quick_view"
 		capability.QuickView = renderInfoFromLocatorGeoJSON(source.SpatialMeta, source.GeoJSONURL)
+		capability.RealtimeTile = realtimeTileInfoFromTarget(source.RealtimeTileTarget)
 	} else if !spatialMetaComplete(source.SpatialMeta) {
 		capability.TileCacheGeneration.Available = false
 		capability.TileCacheGeneration.Reason = "spatial metadata is incomplete"
@@ -351,6 +407,7 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 		capability.RenderSource = QuickViewRenderSourceRealtimeTile
 		capability.RecommendedMode = "quick_view"
 		capability.QuickView = renderInfoFromRealtimeTile(source.EngineID, source.Schema, source.Table, source.SpatialMeta)
+		capability.RealtimeTile = realtimeTileInfoFromTarget(source.RealtimeTileTarget)
 		capability.CanGenerateTileCache = true
 	}
 
@@ -367,6 +424,7 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 		capability.ActiveMode = "table_geojson"
 	}
 	capability.RenderFacts = renderFactsFromSpatialMeta(source.SpatialMeta)
+	applyOptimizationRenderFacts(capability.RenderFacts, optimizationInfo)
 
 	return capability, nil
 }
@@ -476,6 +534,54 @@ func (s *QuickViewService) defaultReadyTileCache(ctx context.Context, identity Q
 	return s.tileCacheRepo.GetLatestReadyTileCacheByFingerprint(ctx, identity.TenantID, identity.ItemFingerprint)
 }
 
+func (s *QuickViewService) quickViewOptimizationInfo(ctx context.Context, identity QuickViewIdentity, geometryColumn string) (*QuickViewOptimizationInfo, error) {
+	if s.optimizationRepo == nil || strings.TrimSpace(identity.ItemFingerprint) == "" {
+		return &QuickViewOptimizationInfo{
+			Available: false,
+			Reason:    "quick view optimization result is not ready",
+		}, nil
+	}
+	var result *models.QuickViewOptimization
+	var err error
+	geometryColumn = strings.TrimSpace(geometryColumn)
+	if geometryColumn != "" {
+		result, err = s.optimizationRepo.GetReadyByFingerprintGeometry(ctx, identity.TenantID, identity.ItemFingerprint, geometryColumn, spatial.SRIDWebMercator)
+	} else {
+		result, err = s.optimizationRepo.GetLatestReadyByFingerprint(ctx, identity.TenantID, identity.ItemFingerprint)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return &QuickViewOptimizationInfo{
+			Available: false,
+			Reason:    "quick view optimization result is not ready",
+		}, nil
+	}
+	info := &QuickViewOptimizationInfo{
+		Available:            true,
+		Status:               result.Status,
+		ResultID:             &result.ID,
+		TaskID:               result.TaskID,
+		LastExecutionID:      result.LastExecutionID,
+		TargetKind:           result.TargetKind,
+		TargetSchema:         result.TargetSchema,
+		TargetTable:          result.TargetTable,
+		TargetGeometryColumn: result.TargetGeometryColumn,
+		TargetSRID:           result.TargetSRID,
+	}
+	if result.RenderExtentSRID != nil {
+		info.RenderExtentSRID = *result.RenderExtentSRID
+	}
+	if len(result.RenderExtent) > 0 {
+		var extent []float64
+		if err := json.Unmarshal(result.RenderExtent, &extent); err == nil && len(extent) == 4 {
+			info.RenderExtent = extent
+		}
+	}
+	return info, nil
+}
+
 func (s *QuickViewService) directGeoJSONMaxRows() int64 {
 	if s.options.DirectGeoJSONMaxRows > 0 {
 		return int64(s.options.DirectGeoJSONMaxRows)
@@ -498,6 +604,42 @@ func spatialMetaDirectGeoJSONReady(meta *SpatialMetadataResult) bool {
 
 func directGeoJSONAvailable(maxRows int64, meta *SpatialMetadataResult) bool {
 	return spatialMetaDirectGeoJSONReady(meta) && meta.RecordCount > 0 && meta.RecordCount <= maxRows
+}
+
+func realtimeTileInfoFromTarget(target *RealtimeTileTarget) *QuickViewRealtimeTileInfo {
+	if target == nil {
+		return nil
+	}
+	mode := target.PerformanceMode
+	if mode == "" {
+		if target.Prepared3857 {
+			mode = RealtimeTilePerformanceReady3857Target
+		} else if target.SRID == spatial.SRIDWebMercator {
+			mode = RealtimeTilePerformanceSource3857
+		} else {
+			mode = RealtimeTilePerformanceSourceTransform
+		}
+	}
+	info := &QuickViewRealtimeTileInfo{
+		Available:                  true,
+		PerformanceMode:            mode,
+		TimeoutBudgetMS:            5000,
+		OptimizationRecommended:    target.OptimizationRecommended,
+		OptimizationRecommendation: target.OptimizationRecommendation,
+	}
+	switch mode {
+	case RealtimeTilePerformanceReady3857Target, RealtimeTilePerformanceSource3857Index:
+		info.TimeoutRecommendation = RealtimeTileRecommendationTileCacheGeneration
+		info.TimeoutRetryPolicy = RealtimeTileTimeoutRetryTTL
+	default:
+		info.TimeoutRecommendation = RealtimeTileRecommendationQuickViewOptimization
+		info.TimeoutRetryPolicy = RealtimeTileTimeoutRetrySuppressTile
+		if info.OptimizationRecommendation == "" {
+			info.OptimizationRecommended = true
+			info.OptimizationRecommendation = RealtimeTileRecommendationQuickViewOptimization
+		}
+	}
+	return info
 }
 
 func renderInfoFromTileCache(engineID uint, schema, table string, tileCache *models.TileCache, spatialMeta *SpatialMetadataResult) QuickViewRenderInfo {
@@ -662,6 +804,25 @@ func renderFactsFromSpatialMeta(meta *SpatialMetadataResult) *QuickViewRenderFac
 		facts.RenderExtentSource = "source_extent"
 	}
 	return facts
+}
+
+func applyOptimizationRenderFacts(facts *QuickViewRenderFacts, optimization *QuickViewOptimizationInfo) {
+	if facts == nil || optimization == nil || !optimization.Available {
+		return
+	}
+	if len(facts.RenderExtent) == 0 && len(optimization.RenderExtent) == 4 {
+		facts.RenderExtent = append([]float64(nil), optimization.RenderExtent...)
+		facts.RenderExtentSRID = optimization.RenderExtentSRID
+		facts.RenderExtentSource = "quick_view_optimization"
+	}
+	if facts.ZoomRecommendation == nil {
+		facts.ZoomRecommendation = &ZoomRecommendation{
+			MinZoom: 3,
+			MaxZoom: 12,
+			Status:  "estimated",
+			Reason:  "ready quick view optimization target",
+		}
+	}
 }
 
 func tileURLTemplate(engineID uint, schema, table string) string {

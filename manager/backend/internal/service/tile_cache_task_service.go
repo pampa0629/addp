@@ -660,11 +660,13 @@ func (s *TileCacheTaskService) prepareExecutionTileCache(ctx context.Context, ta
 		cfg.Concurrency = s.defaultConcurrency
 	}
 	execCfg["tile_generation_target"] = commonModels.JSONMap{
-		"schema":        generationTarget.Schema,
-		"table":         generationTarget.Table,
-		"geom_column":   generationTarget.GeomColumn,
-		"srid":          generationTarget.SRID,
-		"prepared_3857": generationTarget.Prepared3857,
+		"schema":                      generationTarget.Schema,
+		"table":                       generationTarget.Table,
+		"geom_column":                 generationTarget.GeomColumn,
+		"srid":                        generationTarget.SRID,
+		"prepared_3857":               generationTarget.Prepared3857,
+		"optimization_recommended":    generationTarget.OptimizationRecommended,
+		"optimization_recommendation": generationTarget.OptimizationRecommendation,
 	}
 	return tileCache, execCfg, cfg, false, nil
 }
@@ -733,12 +735,14 @@ func optimizationJSONMap(optimization commonModels.OptimizationConfig) commonMod
 }
 
 type tileGenerationTarget struct {
-	Schema       string
-	Table        string
-	GeomColumn   string
-	SRID         int
-	PrimaryKey   string
-	Prepared3857 bool
+	Schema                     string
+	Table                      string
+	GeomColumn                 string
+	SRID                       int
+	PrimaryKey                 string
+	Prepared3857               bool
+	OptimizationRecommended    bool
+	OptimizationRecommendation string
 }
 
 func (s *TileCacheTaskService) resolveTileGenerationTarget(
@@ -762,14 +766,35 @@ func (s *TileCacheTaskService) resolveTileGenerationTarget(
 				PrimaryKey: primaryKey,
 			}, nil
 		}
-		return tileGenerationTarget{}, errors.New("indexed 3857 tile generation target is required")
+		return tileGenerationTarget{
+			Schema:                     schema,
+			Table:                      table,
+			GeomColumn:                 geomColumn,
+			SRID:                       sourceSRID,
+			PrimaryKey:                 primaryKey,
+			OptimizationRecommended:    true,
+			OptimizationRecommendation: "quick_view_optimization is recommended before generating cache for non-3857 spatial data",
+		}, nil
 	}
 	target, err := s.tileTargetResolver.ResolveRealtimeTileTarget(ctx, tenantID, engineID, schema, table, geomColumn, sourceSRID)
 	if err != nil {
 		return tileGenerationTarget{}, err
 	}
 	if target == nil {
-		return tileGenerationTarget{}, errors.New("indexed 3857 tile generation target is required")
+		recommendOptimization := sourceSRID != spatial.SRIDWebMercator
+		recommendation := ""
+		if recommendOptimization {
+			recommendation = "quick_view_optimization is recommended before generating cache for non-3857 spatial data"
+		}
+		return tileGenerationTarget{
+			Schema:                     schema,
+			Table:                      table,
+			GeomColumn:                 geomColumn,
+			SRID:                       sourceSRID,
+			PrimaryKey:                 primaryKey,
+			OptimizationRecommended:    recommendOptimization,
+			OptimizationRecommendation: recommendation,
+		}, nil
 	}
 	targetPrimaryKey := primaryKey
 	if !target.Prepared3857 {
@@ -778,12 +803,14 @@ func (s *TileCacheTaskService) resolveTileGenerationTarget(
 		targetPrimaryKey = ""
 	}
 	return tileGenerationTarget{
-		Schema:       target.Schema,
-		Table:        target.Table,
-		GeomColumn:   target.GeomColumn,
-		SRID:         target.SRID,
-		PrimaryKey:   targetPrimaryKey,
-		Prepared3857: target.Prepared3857,
+		Schema:                     target.Schema,
+		Table:                      target.Table,
+		GeomColumn:                 target.GeomColumn,
+		SRID:                       target.SRID,
+		PrimaryKey:                 targetPrimaryKey,
+		Prepared3857:               target.Prepared3857,
+		OptimizationRecommended:    target.OptimizationRecommended,
+		OptimizationRecommendation: target.OptimizationRecommendation,
 	}, nil
 }
 

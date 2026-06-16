@@ -159,7 +159,7 @@ Common 不维护全量业务 `task_type` 编译期枚举。`task_type` 由 owner
 | Meta | `scan` | `meta.scan_tasks` |
 | Transfer | `import` | `transfer.transfer_tasks` |
 | Develop | `query` / `workflow` / `script` | `develop.dev_tasks` |
-| Manager | `tile_cache_generation` / `embedding` | `manager.tile_cache_tasks` / `manager.embedding_tasks` |
+| Manager | `tile_cache_generation` / `quick_view_optimization` / `embedding` | `manager.tile_cache_tasks` / `manager.quick_view_optimization_tasks` / `manager.embedding_tasks` |
 | Quality | `check` | `quality.check_tasks` |
 | Graph | `kg_build` | `graph.build_tasks` |
 | Orchestrator | `orchestration` | `orchestrator.orchestrations` |
@@ -168,7 +168,7 @@ System cleanup 阶段 1 不纳入 TaskProvider，也不进入 Orchestrator 编�
 
 Transfer 的内部任务语义由 Transfer 专题确认。阶段 1 先把接口层纳入统一任务体系，对外只声明 `task_type=import`，并通过 TaskProvider 和 `common.task_executions` 关联任务定义。后续如专题确认需要增加导出、同步等任务类型，必须先修订本文，再按 clean break 方式迁移，不在同一阶段并行保留 `import`、`export`、`sync`、`transfer` 多套语义。
 
-Manager 的瓦片缓存生成、embedding、QuickView 细节由 Manager 专题确认。本文只要求 Manager 用同一个 provider 声明多个任务类型，并按 `module + task_type + source_task_id` 关联执行记录。瓦片缓存生成任务类型为 `tile_cache_generation`，任务定义表为 `manager.tile_cache_tasks`；MVT 是瓦片缓存格式，应进入任务配置，例如 `config.tile.format=mvt`，不作为任务类型。持久化 embedding 任务执行必须复用任务服务创建的主 execution；ad-hoc embedding 可以自行创建 execution，但不得产生 owner 任务定义，且没有 `source_task_id` 时必须写完整 `execution_config`。
+Manager 的瓦片缓存生成、快显性能优化、embedding、QuickView 细节由 Manager 专题确认。本文只要求 Manager 用同一个 provider 声明多个任务类型，并按 `module + task_type + source_task_id` 关联执行记录。瓦片缓存生成任务类型为 `tile_cache_generation`，任务定义表为 `manager.tile_cache_tasks`；快显性能优化任务类型为 `quick_view_optimization`，任务定义表为 `manager.quick_view_optimization_tasks`，结果表为 `manager.quick_view_optimization`；MVT 是瓦片缓存格式，应进入任务配置，例如 `config.tile.format=mvt`，不作为任务类型。持久化 embedding 任务执行必须复用任务服务创建的主 execution；ad-hoc embedding 可以自行创建 execution，但不得产生 owner 任务定义，且没有 `source_task_id` 时必须写完整 `execution_config`。
 
 Manager 中 QuickView、瓦片缓存产物的 `ready`、`generating`、`stale`、`failed` 等状态属于 artifact state，不是统一 execution status。Manager 的即时向量化内存轮询状态虽不持久化为任务定义，但属于 execution-like 状态，成功态也必须使用 `success`，不得使用 `completed`。
 
@@ -261,6 +261,7 @@ System 注册 TaskProvider 时必须校验标准 endpoint：任务详情和执�
 | provider | task_type | 任务定义表 | 执行 owner |
 | --- | --- | --- | --- |
 | `manager` | `tile_cache_generation` | `manager.tile_cache_tasks` | Manager |
+| `manager` | `quick_view_optimization` | `manager.quick_view_optimization_tasks` | Manager |
 | `manager` | `embedding` | `manager.embedding_tasks` | Manager |
 
 约束：
@@ -325,6 +326,8 @@ TaskProvider 注册时必须使用 `task.capabilities/v1` schema，并声明稳�
 11. `create_url` / `edit_url` 应使用 Console 路由形式，可包含模块内深层路径和 query，例如 `/transfer/tasks/:id/edit`、`/develop/workflow?action=edit&id=:id`、`/graph/graphs/:graph_id/build/tasks/:id`；前端负责替换 `:id` / `{id}` / `:task_id` / `{task_id}` / `:graph_id` / `{graph_id}`。
 12. 模块新增或删除任务类型时，必须更新自身 capabilities、文档和 Swagger。
 13. `deprecated=true` 的 task type 不再作为可用任务类型处理。Orchestrator 保存和执行编排时都必须拒绝引用 deprecated task type；ADDP 当前不为废弃任务类型保留兼容迁移路径。历史 execution 查询只按既有 execution 记录展示，不要求 owner 继续提供可编辑任务定义入口。
+
+API-only 阶段的新增任务类型仍必须注册稳定的 `create_url` / `edit_url`，但这两个 URL 可以先指向 owner 模块已确定的后续 Console 承载路由；专题文档必须明确该阶段尚未实现前端创建/编辑 UI。Orchestrator 和 Monitor 不得仅凭 URL 存在推断 owner 模块已经提供可用 UI。
 
 ## Orchestrator 规范
 

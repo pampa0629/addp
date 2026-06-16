@@ -23,25 +23,28 @@ import (
 //
 //	GET /api/manager/tasks/:task_type/:id, GET /api/manager/executions/:execution_id
 type TaskProviderHandler struct {
-	embeddingTaskSvc *service.EmbeddingTaskService
-	tileCacheTaskSvc *service.TileCacheTaskService
-	taskExecRepo     *commonExecution.TaskExecutionRepository
+	embeddingTaskSvc             *service.EmbeddingTaskService
+	tileCacheTaskSvc             *service.TileCacheTaskService
+	quickViewOptimizationTaskSvc *service.QuickViewOptimizationTaskService
+	taskExecRepo                 *commonExecution.TaskExecutionRepository
 }
 
 // NewTaskProviderHandler 创建处理器
 func NewTaskProviderHandler(
 	embeddingTaskSvc *service.EmbeddingTaskService,
 	tileCacheTaskSvc *service.TileCacheTaskService,
+	quickViewOptimizationTaskSvc *service.QuickViewOptimizationTaskService,
 	taskExecRepo *commonExecution.TaskExecutionRepository,
 ) *TaskProviderHandler {
 	return &TaskProviderHandler{
-		embeddingTaskSvc: embeddingTaskSvc,
-		tileCacheTaskSvc: tileCacheTaskSvc,
-		taskExecRepo:     taskExecRepo,
+		embeddingTaskSvc:             embeddingTaskSvc,
+		tileCacheTaskSvc:             tileCacheTaskSvc,
+		quickViewOptimizationTaskSvc: quickViewOptimizationTaskSvc,
+		taskExecRepo:                 taskExecRepo,
 	}
 }
 
-// TaskListResponse 任务列表响应（统一包装 tile_cache_generation 和 embedding 任务）
+// TaskListResponse 任务列表响应（统一包装 Manager provider 声明的任务类型）
 type TaskListItem struct {
 	ID                  uint    `json:"id"`
 	TenantID            uint    `json:"tenant_id"`
@@ -137,13 +140,57 @@ type TileCacheTaskResponse struct {
 	UpdatedAt           time.Time                    `json:"updated_at"`
 }
 
+type QuickViewOptimizationTaskRequest struct {
+	Name        string               `json:"name"`
+	Description string               `json:"description,omitempty"`
+	Enabled     *bool                `json:"enabled,omitempty"`
+	Schedule    string               `json:"schedule,omitempty"`
+	NextRunAt   *time.Time           `json:"next_run_at,omitempty"`
+	Config      commonModels.JSONMap `json:"config"`
+}
+
+type QuickViewOptimizationTaskTargetResponse struct {
+	ItemID          uint   `json:"item_id,omitempty"`
+	ItemFingerprint string `json:"item_fingerprint,omitempty"`
+	Locator         string `json:"locator,omitempty"`
+	SourceEngineID  uint   `json:"source_engine_id,omitempty"`
+	Schema          string `json:"schema,omitempty"`
+	Table           string `json:"table,omitempty"`
+}
+
+type QuickViewOptimizationTaskGeometryResponse struct {
+	GeometryColumn string `json:"geometry_column,omitempty"`
+	SourceSRID     int    `json:"source_srid,omitempty"`
+	TargetSRID     int    `json:"target_srid,omitempty"`
+}
+
+type QuickViewOptimizationTaskResponse struct {
+	ID                  uint                                       `json:"id"`
+	TenantID            uint                                       `json:"tenant_id"`
+	TaskType            string                                     `json:"task_type"`
+	Name                string                                     `json:"name"`
+	Description         string                                     `json:"description,omitempty"`
+	Enabled             bool                                       `json:"enabled"`
+	Schedule            string                                     `json:"schedule,omitempty"`
+	NextRunAt           *time.Time                                 `json:"next_run_at,omitempty"`
+	LastRunAt           *time.Time                                 `json:"last_run_at,omitempty"`
+	LastExecutionID     *string                                    `json:"last_execution_id,omitempty"`
+	LastExecutionStatus *string                                    `json:"last_execution_status,omitempty"`
+	CreatedBy           *uint                                      `json:"created_by,omitempty"`
+	Config              commonModels.JSONMap                       `json:"config"`
+	Target              *QuickViewOptimizationTaskTargetResponse   `json:"target,omitempty"`
+	Geometry            *QuickViewOptimizationTaskGeometryResponse `json:"geometry,omitempty"`
+	CreatedAt           time.Time                                  `json:"created_at"`
+	UpdatedAt           time.Time                                  `json:"updated_at"`
+}
+
 // ListTasks GET /api/manager/tasks
-// 查询参数：?task_type=tile_cache_generation|embedding
+// 查询参数：?task_type=tile_cache_generation|quick_view_optimization|embedding
 // @Summary 列出任务 | List tasks
-// @Description 列出Manager模块的任务（瓦片缓存生成任务和向量化任务）| List Manager module tasks (tile cache generation and embedding tasks)
+// @Description 列出 Manager 模块的任务（瓦片缓存生成、快显性能优化和向量化任务）| List Manager module tasks (tile cache generation, quick view optimization, and embedding tasks)
 // @Tags Manager
 // @Produce json
-// @Param task_type query string false "任务类型过滤：tile_cache_generation|embedding | Task type filter: tile_cache_generation|embedding"
+// @Param task_type query string false "任务类型过滤：tile_cache_generation|quick_view_optimization|embedding | Task type filter: tile_cache_generation|quick_view_optimization|embedding"
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Success 200 {object} map[string]interface{} "任务列表 | Task list"
@@ -186,6 +233,20 @@ func (h *TaskProviderHandler) listTasks(c *gin.Context, taskType string) {
 				LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus,
 			})
 		}
+	case commonExecution.TaskTypeQuickViewOptimization:
+		tasks, t, err := h.quickViewOptimizationTaskSvc.List(ctx, tenantID, page, pageSize)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+			return
+		}
+		total = t
+		for _, task := range tasks {
+			items = append(items, TaskListItem{
+				ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeQuickViewOptimization,
+				Name: task.Name, Description: task.Description, Enabled: task.Enabled,
+				LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus,
+			})
+		}
 	case commonExecution.TaskTypeEmbedding:
 		tasks, t, err := h.embeddingTaskSvc.List(ctx, tenantID, page, pageSize)
 		if err != nil {
@@ -213,9 +274,22 @@ func (h *TaskProviderHandler) listTasks(c *gin.Context, taskType string) {
 			return
 		}
 		total = tileCacheTotal + embTotal
+		qvoTasks, qvoTotal, err := h.quickViewOptimizationTaskSvc.List(ctx, tenantID, page, pageSize)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+			return
+		}
+		total += qvoTotal
 		for _, task := range tileCacheTasks {
 			items = append(items, TaskListItem{
 				ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeTileCacheGeneration,
+				Name: task.Name, Description: task.Description, Enabled: task.Enabled,
+				LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus,
+			})
+		}
+		for _, task := range qvoTasks {
+			items = append(items, TaskListItem{
+				ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeQuickViewOptimization,
 				Name: task.Name, Description: task.Description, Enabled: task.Enabled,
 				LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus,
 			})
@@ -328,7 +402,7 @@ func (h *TaskProviderHandler) ListEmbeddingTasks(c *gin.Context) {
 // @Description 获取指定类型和ID的任务详细信息 | Get detailed information of a task by type and ID
 // @Tags Manager
 // @Produce json
-// @Param task_type path string true "任务类型：tile_cache_generation|embedding | Task type: tile_cache_generation|embedding"
+// @Param task_type path string true "任务类型：tile_cache_generation|quick_view_optimization|embedding | Task type: tile_cache_generation|quick_view_optimization|embedding"
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} map[string]interface{} "任务详情 | Task detail"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
@@ -358,7 +432,18 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "success", "data": tileCacheTaskResponse(task)})
-	case "embedding":
+	case commonExecution.TaskTypeQuickViewOptimization:
+		task, err := h.quickViewOptimizationTaskSvc.GetByID(ctx, uint(id), tenantID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+			return
+		}
+		if task == nil {
+			c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "任务不存在"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "success", "data": quickViewOptimizationTaskResponse(task)})
+	case commonExecution.TaskTypeEmbedding:
 		task, err := h.embeddingTaskSvc.GetByID(ctx, uint(id), tenantID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
@@ -418,7 +503,7 @@ type TaskExecuteRequest struct {
 // @Tags Manager
 // @Accept json
 // @Produce json
-// @Param task_type path string true "任务类型：tile_cache_generation|embedding | Task type: tile_cache_generation|embedding"
+// @Param task_type path string true "任务类型：tile_cache_generation|quick_view_optimization|embedding | Task type: tile_cache_generation|quick_view_optimization|embedding"
 // @Param id path int true "任务ID | Task ID"
 // @Param body body TaskExecuteRequest false "执行配置 | Execution configuration"
 // @Success 200 {object} map[string]interface{} "执行ID | Execution ID"
@@ -464,7 +549,9 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 	switch taskType {
 	case commonExecution.TaskTypeTileCacheGeneration:
 		executionID, err = h.tileCacheTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
-	case "embedding":
+	case commonExecution.TaskTypeQuickViewOptimization:
+		executionID, err = h.quickViewOptimizationTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
+	case commonExecution.TaskTypeEmbedding:
 		executionID, err = h.embeddingTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "不支持的任务类型: " + taskType})
@@ -875,6 +962,241 @@ func (h *TaskProviderHandler) DeleteTileCacheTask(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
 }
 
+// ListQuickViewOptimizationTasks GET /api/manager/quick_view_optimization_tasks
+// @Summary 列出快显性能优化任务配置 | List quick view optimization task configurations
+// @Description 列出 Manager 模块的快显性能优化任务配置。该私有入口固定返回 task_type=quick_view_optimization；编排模块应使用标准 /tasks 入口。| List Manager quick view optimization task configurations. This private endpoint always returns task_type=quick_view_optimization; orchestrator should use the standard /tasks endpoint.
+// @Tags Manager
+// @Produce json
+// @Param page query int false "页码，默认1 | Page number, default 1"
+// @Param page_size query int false "每页数量，默认20 | Page size, default 20"
+// @Success 200 {object} map[string]interface{} "任务列表 | Task list"
+// @Router /quick_view_optimization_tasks [get]
+// @Security BearerAuth
+func (h *TaskProviderHandler) ListQuickViewOptimizationTasks(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	tasks, total, err := h.quickViewOptimizationTaskSvc.List(c.Request.Context(), tenantID, page, pageSize)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	items := make([]QuickViewOptimizationTaskResponse, 0, len(tasks))
+	for _, task := range tasks {
+		items = append(items, quickViewOptimizationTaskResponse(task))
+	}
+	c.JSON(http.StatusOK, gin.H{"data": items, "total": total, "page": page, "page_size": pageSize})
+}
+
+// CreateQuickViewOptimizationTask POST /api/manager/quick_view_optimization_tasks
+// @Summary 创建快显性能优化任务配置 | Create quick view optimization task configuration
+// @Tags Manager
+// @Accept json
+// @Produce json
+// @Param body body QuickViewOptimizationTaskRequest true "快显性能优化任务配置 | Quick view optimization task configuration"
+// @Success 201 {object} QuickViewOptimizationTaskResponse "创建的任务配置 | Created task configuration"
+// @Router /quick_view_optimization_tasks [post]
+// @Security BearerAuth
+func (h *TaskProviderHandler) CreateQuickViewOptimizationTask(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	userID := c.GetUint("user_id")
+	req, err := decodeQuickViewOptimizationTaskRequest(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+	task := models.QuickViewOptimizationTask{
+		TenantID:    tenantID,
+		Name:        strings.TrimSpace(req.Name),
+		Description: strings.TrimSpace(req.Description),
+		Enabled:     enabled,
+		Schedule:    strings.TrimSpace(req.Schedule),
+		NextRunAt:   req.NextRunAt,
+		Config:      req.Config,
+		CreatedBy:   &userID,
+	}
+	if err := h.quickViewOptimizationTaskSvc.Create(c.Request.Context(), &task); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, quickViewOptimizationTaskResponse(&task))
+}
+
+// GetQuickViewOptimizationTask GET /api/manager/quick_view_optimization_tasks/:id
+// @Summary 获取快显性能优化任务配置 | Get quick view optimization task configuration
+// @Tags Manager
+// @Produce json
+// @Param id path int true "任务ID | Task ID"
+// @Success 200 {object} QuickViewOptimizationTaskResponse "任务配置 | Task configuration"
+// @Router /quick_view_optimization_tasks/{id} [get]
+// @Security BearerAuth
+func (h *TaskProviderHandler) GetQuickViewOptimizationTask(c *gin.Context) {
+	c.Params = append(c.Params, gin.Param{Key: "task_type", Value: commonExecution.TaskTypeQuickViewOptimization})
+	h.TaskDetail(c)
+}
+
+// UpdateQuickViewOptimizationTask PUT /api/manager/quick_view_optimization_tasks/:id
+// @Summary 更新快显性能优化任务配置 | Update quick view optimization task configuration
+// @Tags Manager
+// @Accept json
+// @Produce json
+// @Param id path int true "任务ID | Task ID"
+// @Param body body QuickViewOptimizationTaskRequest true "快显性能优化任务配置 | Quick view optimization task configuration"
+// @Success 200 {object} QuickViewOptimizationTaskResponse "更新后的任务配置 | Updated task configuration"
+// @Router /quick_view_optimization_tasks/{id} [put]
+// @Security BearerAuth
+func (h *TaskProviderHandler) UpdateQuickViewOptimizationTask(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
+		return
+	}
+	existing, err := h.quickViewOptimizationTaskSvc.GetByID(c.Request.Context(), uint(id), tenantID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if existing == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
+		return
+	}
+	req, err := decodeQuickViewOptimizationTaskRequest(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	existing.Name = strings.TrimSpace(req.Name)
+	existing.Description = strings.TrimSpace(req.Description)
+	if req.Enabled != nil {
+		existing.Enabled = *req.Enabled
+	}
+	existing.Schedule = strings.TrimSpace(req.Schedule)
+	existing.NextRunAt = req.NextRunAt
+	existing.Config = req.Config
+	if err := h.quickViewOptimizationTaskSvc.Update(c.Request.Context(), existing); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, quickViewOptimizationTaskResponse(existing))
+}
+
+// DeleteQuickViewOptimizationTask DELETE /api/manager/quick_view_optimization_tasks/:id
+// @Summary 删除快显性能优化任务配置 | Delete quick view optimization task configuration
+// @Tags Manager
+// @Produce json
+// @Param id path int true "任务ID | Task ID"
+// @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @Router /quick_view_optimization_tasks/{id} [delete]
+// @Security BearerAuth
+func (h *TaskProviderHandler) DeleteQuickViewOptimizationTask(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
+		return
+	}
+	if err := h.quickViewOptimizationTaskSvc.Delete(c.Request.Context(), uint(id), tenantID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
+}
+
+// ListQuickViewOptimizations GET /api/manager/quick_view_optimization
+// @Summary 列出快显性能优化结果 | List quick view optimization results
+// @Tags Manager
+// @Produce json
+// @Param item_id query int false "数据项ID | Item ID"
+// @Param item_fingerprint query string false "数据项指纹 | Item fingerprint"
+// @Param task_id query int false "任务ID | Task ID"
+// @Param status query string false "状态 | Status"
+// @Param q query string false "关键词 | Keyword"
+// @Param page query int false "页码，默认1 | Page number, default 1"
+// @Param page_size query int false "每页数量，默认20 | Page size, default 20"
+// @Success 200 {object} map[string]interface{} "结果列表 | Result list"
+// @Router /quick_view_optimization [get]
+// @Security BearerAuth
+func (h *TaskProviderHandler) ListQuickViewOptimizations(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	itemID64, _ := strconv.ParseUint(c.Query("item_id"), 10, 32)
+	taskID64, _ := strconv.ParseUint(c.Query("task_id"), 10, 32)
+	results, total, err := h.quickViewOptimizationTaskSvc.ListResults(c.Request.Context(), repository.QuickViewOptimizationFilter{
+		TenantID:        tenantID,
+		ItemID:          uint(itemID64),
+		ItemFingerprint: c.Query("item_fingerprint"),
+		TaskID:          uint(taskID64),
+		Status:          c.Query("status"),
+		Q:               c.Query("q"),
+		Page:            page,
+		PageSize:        pageSize,
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": results, "total": total, "page": page, "page_size": pageSize})
+}
+
+// GetQuickViewOptimization GET /api/manager/quick_view_optimization/:id
+// @Summary 获取快显性能优化结果详情 | Get quick view optimization result detail
+// @Tags Manager
+// @Produce json
+// @Param id path int true "结果ID | Result ID"
+// @Success 200 {object} models.QuickViewOptimization "结果详情 | Result detail"
+// @Router /quick_view_optimization/{id} [get]
+// @Security BearerAuth
+func (h *TaskProviderHandler) GetQuickViewOptimization(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的结果ID"})
+		return
+	}
+	result, err := h.quickViewOptimizationTaskSvc.GetResult(c.Request.Context(), uint(id), tenantID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if result == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "结果不存在"})
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// DeleteQuickViewOptimization DELETE /api/manager/quick_view_optimization/:id
+// @Summary 删除快显性能优化结果 | Delete quick view optimization result
+// @Tags Manager
+// @Produce json
+// @Param id path int true "结果ID | Result ID"
+// @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @Router /quick_view_optimization/{id} [delete]
+// @Security BearerAuth
+func (h *TaskProviderHandler) DeleteQuickViewOptimization(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的结果ID"})
+		return
+	}
+	if err := h.quickViewOptimizationTaskSvc.DeleteResult(c.Request.Context(), uint(id), tenantID); err != nil {
+		if errors.Is(err, commonapi.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "结果不存在"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
+}
+
 // ListTileCaches GET /api/manager/tile_cache
 // @Summary 列出瓦片缓存结果 | List tile cache results
 // @Description 查询瓦片缓存结果状态 | Query tile cache result states
@@ -983,6 +1305,22 @@ func decodeTileCacheTaskRequest(c *gin.Context) (TileCacheTaskRequest, error) {
 	return req, nil
 }
 
+func decodeQuickViewOptimizationTaskRequest(c *gin.Context) (QuickViewOptimizationTaskRequest, error) {
+	var req QuickViewOptimizationTaskRequest
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		return req, err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return req, errors.New("request body must contain a single JSON object")
+	}
+	if req.Config == nil {
+		req.Config = commonModels.JSONMap{}
+	}
+	return req, nil
+}
+
 func tileCacheTaskResponse(task *models.TileCacheTask) TileCacheTaskResponse {
 	resp := TileCacheTaskResponse{}
 	if task == nil {
@@ -1023,6 +1361,48 @@ func tileCacheTaskResponse(task *models.TileCacheTask) TileCacheTaskResponse {
 			MaxZoom:        intFromAPIConfig(tile["max_zoom"], 0),
 			TargetSRID:     intFromAPIConfig(tile["target_srid"], 0),
 			GeometryColumn: stringFromConfig(options["geometry_column"]),
+		}
+	}
+	return resp
+}
+
+func quickViewOptimizationTaskResponse(task *models.QuickViewOptimizationTask) QuickViewOptimizationTaskResponse {
+	resp := QuickViewOptimizationTaskResponse{}
+	if task == nil {
+		return resp
+	}
+	resp = QuickViewOptimizationTaskResponse{
+		ID:                  task.ID,
+		TenantID:            task.TenantID,
+		TaskType:            commonExecution.TaskTypeQuickViewOptimization,
+		Name:                task.Name,
+		Description:         task.Description,
+		Enabled:             task.Enabled,
+		Schedule:            task.Schedule,
+		NextRunAt:           task.NextRunAt,
+		LastRunAt:           task.LastRunAt,
+		LastExecutionID:     task.LastExecutionID,
+		LastExecutionStatus: task.LastExecutionStatus,
+		CreatedBy:           task.CreatedBy,
+		Config:              task.Config,
+		CreatedAt:           task.CreatedAt,
+		UpdatedAt:           task.UpdatedAt,
+	}
+	if target, ok := asJSONMap(task.Config["target"]); ok {
+		resp.Target = &QuickViewOptimizationTaskTargetResponse{
+			ItemID:          uintFromConfig(target["item_id"]),
+			ItemFingerprint: stringFromConfig(target["item_fingerprint"]),
+			Locator:         stringFromConfig(target["locator"]),
+			SourceEngineID:  uintFromConfig(target["source_engine_id"]),
+			Schema:          stringFromConfig(target["schema"]),
+			Table:           stringFromConfig(target["table"]),
+		}
+	}
+	if geometry, ok := asJSONMap(task.Config["geometry"]); ok {
+		resp.Geometry = &QuickViewOptimizationTaskGeometryResponse{
+			GeometryColumn: stringFromConfig(geometry["geometry_column"]),
+			SourceSRID:     intFromAPIConfig(geometry["source_srid"], 0),
+			TargetSRID:     intFromAPIConfig(geometry["target_srid"], 0),
 		}
 	}
 	return resp

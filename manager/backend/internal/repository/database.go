@@ -42,6 +42,9 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	if err := ensureTileCacheStateSchema(db); err != nil {
 		return nil, fmt.Errorf("failed to ensure tile cache state schema: %w", err)
 	}
+	if err := ensureQuickViewOptimizationSchema(db); err != nil {
+		return nil, fmt.Errorf("failed to ensure quick view optimization schema: %w", err)
+	}
 
 	// Configure connection pool for optimal performance
 	sqlDB, err := db.DB()
@@ -228,6 +231,88 @@ func ensureTileCacheStateSchema(db *gorm.DB) error {
 	if err := db.Exec(`
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_tile_cache_tenant_fingerprint_format_unique
 		ON manager.tile_cache (tenant_id, item_fingerprint, tile_format)
+		WHERE deleted_at IS NULL
+	`).Error; err != nil {
+		return err
+	}
+	return nil
+}
+
+func ensureQuickViewOptimizationSchema(db *gorm.DB) error {
+	if err := db.AutoMigrate(&models.QuickViewOptimizationTask{}, &models.QuickViewOptimization{}); err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		UPDATE manager.quick_view_optimization_tasks
+		SET enabled = false
+		WHERE enabled IS NULL
+	`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		UPDATE manager.quick_view_optimization_tasks
+		SET created_at = NOW()
+		WHERE created_at IS NULL
+	`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		UPDATE manager.quick_view_optimization_tasks
+		SET updated_at = NOW()
+		WHERE updated_at IS NULL
+	`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		UPDATE manager.quick_view_optimization
+		SET created_at = NOW()
+		WHERE created_at IS NULL
+	`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		UPDATE manager.quick_view_optimization
+		SET updated_at = NOW()
+		WHERE updated_at IS NULL
+	`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		ALTER TABLE manager.quick_view_optimization_tasks
+			ALTER COLUMN id TYPE BIGINT,
+			ALTER COLUMN tenant_id TYPE BIGINT,
+			ALTER COLUMN created_by TYPE BIGINT,
+			ALTER COLUMN enabled SET NOT NULL,
+			ALTER COLUMN created_at SET NOT NULL,
+			ALTER COLUMN updated_at SET NOT NULL
+	`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		ALTER TABLE manager.quick_view_optimization
+			ALTER COLUMN id TYPE BIGINT,
+			ALTER COLUMN tenant_id TYPE BIGINT,
+			ALTER COLUMN item_id TYPE BIGINT,
+			ALTER COLUMN task_id TYPE BIGINT,
+			ALTER COLUMN source_engine_id TYPE BIGINT,
+			ALTER COLUMN source_srid TYPE BIGINT,
+			ALTER COLUMN target_srid TYPE BIGINT,
+			ALTER COLUMN render_extent_srid TYPE BIGINT,
+			ALTER COLUMN created_by TYPE BIGINT,
+			ALTER COLUMN created_at SET NOT NULL,
+			ALTER COLUMN updated_at SET NOT NULL
+	`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`DROP INDEX IF EXISTS manager.idx_manager_quick_view_optimization_tasks_deleted_at`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`DROP INDEX IF EXISTS manager.idx_manager_quick_view_optimization_deleted_at`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_qvo_current_target_unique
+		ON manager.quick_view_optimization (tenant_id, item_fingerprint, source_geometry_column, target_srid)
 		WHERE deleted_at IS NULL
 	`).Error; err != nil {
 		return err

@@ -85,12 +85,15 @@ func (s *UnifiedMVTService) ResolveRealtimeTileTarget(
 
 // TileResponse 瓦片响应结构
 type TileResponse struct {
-	Data         []byte        // 瓦片数据
-	FromCache    bool          // 是否来自缓存
-	Duration     time.Duration // 生成/获取耗时
-	RenderSource string        // cached_tile 或 realtime_tile
-	TileCacheID  *uint         // 命中的瓦片缓存结果 ID
-	Status       string        // ok、empty、timeout、degraded
+	Data                  []byte        // 瓦片数据
+	FromCache             bool          // 是否来自缓存
+	Duration              time.Duration // 生成/获取耗时
+	RenderSource          string        // cached_tile 或 realtime_tile
+	TileCacheID           *uint         // 命中的瓦片缓存结果 ID
+	Status                string        // ok、empty、timeout、degraded
+	PerformanceMode       string        // ready_3857_target、source_transform_path 等
+	TimeoutRecommendation string        // 超时时推荐动作
+	TimeoutRetryPolicy    string        // 超时后前端重试策略
 }
 
 const (
@@ -255,6 +258,7 @@ func (s *UnifiedMVTService) GetTile(
 	generationTable := realtimeTarget.Table
 	generationGeomCol := realtimeTarget.GeomColumn
 	generationSRID := realtimeTarget.SRID
+	realtimeInfo := realtimeTileInfoFromTarget(realtimeTarget)
 	logger.L().Info("瓦片对象未命中，开始实时生成瓦片",
 		"engine_id", resourceID,
 		"schema", generationSchema,
@@ -278,22 +282,28 @@ func (s *UnifiedMVTService) GetTile(
 					"z", z, "x", x, "y", y,
 					"timeout", "5s")
 				return &TileResponse{
-					Data:         []byte{},
-					FromCache:    false,
-					Duration:     time.Since(startTime),
-					RenderSource: QuickViewRenderSourceRealtimeTile,
-					Status:       TileStatusTimeout,
+					Data:                  []byte{},
+					FromCache:             false,
+					Duration:              time.Since(startTime),
+					RenderSource:          QuickViewRenderSourceRealtimeTile,
+					Status:                TileStatusTimeout,
+					PerformanceMode:       realtimeInfo.PerformanceMode,
+					TimeoutRecommendation: realtimeInfo.TimeoutRecommendation,
+					TimeoutRetryPolicy:    realtimeInfo.TimeoutRetryPolicy,
 				}, nil
 			}
 			return nil, fmt.Errorf("failed to generate tile from PG: %w", err)
 		}
 
 		return &TileResponse{
-			Data:         tileData,
-			FromCache:    false,
-			Duration:     time.Since(startTime),
-			RenderSource: QuickViewRenderSourceRealtimeTile,
-			Status:       tileStatusForData(tileData),
+			Data:                  tileData,
+			FromCache:             false,
+			Duration:              time.Since(startTime),
+			RenderSource:          QuickViewRenderSourceRealtimeTile,
+			Status:                tileStatusForData(tileData),
+			PerformanceMode:       realtimeInfo.PerformanceMode,
+			TimeoutRecommendation: realtimeInfo.TimeoutRecommendation,
+			TimeoutRetryPolicy:    realtimeInfo.TimeoutRetryPolicy,
 		}, nil
 	})
 
@@ -348,12 +358,15 @@ func (s *UnifiedMVTService) GetTile(
 	}
 
 	return &TileResponse{
-		Data:         tileData,
-		FromCache:    false,
-		Duration:     duration,
-		RenderSource: QuickViewRenderSourceRealtimeTile,
-		TileCacheID:  nil,
-		Status:       response.Status,
+		Data:                  tileData,
+		FromCache:             false,
+		Duration:              duration,
+		RenderSource:          QuickViewRenderSourceRealtimeTile,
+		TileCacheID:           nil,
+		Status:                response.Status,
+		PerformanceMode:       response.PerformanceMode,
+		TimeoutRecommendation: response.TimeoutRecommendation,
+		TimeoutRetryPolicy:    response.TimeoutRetryPolicy,
 	}, nil
 }
 

@@ -798,7 +798,7 @@ func TestTileCacheGenerationUsesIndexed3857Target(t *testing.T) {
 	}
 }
 
-func TestTileCacheGenerationFailsWithoutIndexed3857Target(t *testing.T) {
+func TestTileCacheGenerationFallsBackToSourceWhenOptimizationTargetMissing(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	tileCacheRepo := repository.NewTileCacheRepository(db)
 	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
@@ -849,11 +849,27 @@ func TestTileCacheGenerationFailsWithoutIndexed3857Target(t *testing.T) {
 		t.Fatalf("execute tile cache task: %v", err)
 	}
 	exec := waitForTileCacheTaskExecution(t, taskExecRepo, executionID, int(task.TenantID))
-	if exec.Status != commonExecution.ExecutionStatusFailed {
-		t.Fatalf("execution status = %s, want failed", exec.Status)
+	if exec.Status != commonExecution.ExecutionStatusSuccess {
+		t.Fatalf("execution status = %s, want success", exec.Status)
 	}
-	if !strings.Contains(stringFromConfig(exec.ErrorDetails["message"]), "indexed 3857 tile generation target is required") {
-		t.Fatalf("execution error_details = %#v, want indexed 3857 target error", exec.ErrorDetails)
+	targetMeta, ok := asJSONMap(exec.Metadata["tile_generation_target"])
+	if !ok {
+		t.Fatalf("tile_generation_target metadata = %#v", exec.Metadata["tile_generation_target"])
+	}
+	if targetMeta["schema"] != "public" || targetMeta["table"] != "roads" || targetMeta["geom_column"] != "SmGeometry" {
+		t.Fatalf("tile_generation_target = %#v, want source table", targetMeta)
+	}
+	if intFromTileCacheConfig(targetMeta["srid"], 0) != 2360 {
+		t.Fatalf("tile_generation_target.srid = %v, want 2360", targetMeta["srid"])
+	}
+	if targetMeta["prepared_3857"] == true {
+		t.Fatalf("prepared_3857 = true, want false for source fallback")
+	}
+	if targetMeta["optimization_recommended"] != true {
+		t.Fatalf("optimization_recommended = %v, want true", targetMeta["optimization_recommended"])
+	}
+	if !strings.Contains(stringFromConfig(targetMeta["optimization_recommendation"]), "quick_view_optimization") {
+		t.Fatalf("optimization_recommendation = %#v, want quick_view_optimization recommendation", targetMeta["optimization_recommendation"])
 	}
 }
 
@@ -1059,6 +1075,57 @@ func newTileCacheTaskServiceTestDB(t *testing.T) *gorm.DB {
 		updated_at DATETIME
 	)`).Error; err != nil {
 		t.Fatalf("create quick_view table: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE manager.quick_view_optimization_tasks (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		tenant_id INTEGER NOT NULL,
+		name TEXT NOT NULL,
+		description TEXT,
+		enabled BOOLEAN,
+		last_execution_id TEXT,
+		last_execution_status TEXT,
+		last_run_at DATETIME,
+		next_run_at DATETIME,
+		schedule TEXT,
+		created_by INTEGER,
+		config JSON,
+		created_at DATETIME,
+		updated_at DATETIME,
+		deleted_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create quick_view_optimization_tasks table: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE manager.quick_view_optimization (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		tenant_id INTEGER NOT NULL,
+		item_fingerprint TEXT NOT NULL,
+		item_id INTEGER,
+		locator TEXT,
+		task_id INTEGER,
+		last_execution_id TEXT,
+		source_engine_id INTEGER NOT NULL,
+		source_schema TEXT NOT NULL,
+		source_table TEXT NOT NULL,
+		source_geometry_column TEXT NOT NULL,
+		source_srid INTEGER NOT NULL,
+		target_srid INTEGER NOT NULL,
+		target_kind TEXT NOT NULL,
+		target_schema TEXT NOT NULL,
+		target_table TEXT NOT NULL,
+		target_geometry_column TEXT NOT NULL,
+		status TEXT NOT NULL,
+		render_extent JSON,
+		render_extent_srid INTEGER,
+		row_count_estimate INTEGER,
+		source_fingerprint_snapshot JSON,
+		metadata JSON,
+		error_message TEXT,
+		created_by INTEGER,
+		created_at DATETIME,
+		updated_at DATETIME,
+		deleted_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create quick_view_optimization table: %v", err)
 	}
 	return db
 }

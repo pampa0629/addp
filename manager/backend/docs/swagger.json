@@ -1262,6 +1262,18 @@
                                 "type": "string",
                                 "description": "命中的瓦片缓存结果 ID | Matched tile cache result ID"
                             },
+                            "X-ADDP-Tile-Performance-Mode": {
+                                "type": "string",
+                                "description": "动态瓦片性能模式：ready_3857_target、source_3857_indexed、source_3857_unindexed 或 source_transform_path | Realtime tile performance mode"
+                            },
+                            "X-ADDP-Tile-Recommendation": {
+                                "type": "string",
+                                "description": "超时或降级时的推荐动作：quick_view_optimization 或 tile_cache_generation | Recommended action when timeout or degraded"
+                            },
+                            "X-ADDP-Tile-Retry-Policy": {
+                                "type": "string",
+                                "description": "超时或降级后的重试策略：suppress_tile 或 ttl | Retry policy after timeout or degraded"
+                            },
                             "X-ADDP-Tile-Status": {
                                 "type": "string",
                                 "description": "瓦片语义状态：ok、empty、timeout 或 degraded | Tile semantic status: ok, empty, timeout, or degraded"
@@ -1288,6 +1300,324 @@
                     },
                     "500": {
                         "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/quick_view_optimization": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "列出快显性能优化结果 | List quick view optimization results",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "数据项ID | Item ID",
+                        "name": "item_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据项指纹 | Item fingerprint",
+                        "name": "item_fingerprint",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "task_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "状态 | Status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "关键词 | Keyword",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码，默认1 | Page number, default 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认20 | Page size, default 20",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "结果列表 | Result list",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/quick_view_optimization/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "获取快显性能优化结果详情 | Get quick view optimization result detail",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "结果ID | Result ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "结果详情 | Result detail",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_models.QuickViewOptimization"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "删除快显性能优化结果 | Delete quick view optimization result",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "结果ID | Result ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "删除成功 | Deleted successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/quick_view_optimization_tasks": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "列出 Manager 模块的快显性能优化任务配置。该私有入口固定返回 task_type=quick_view_optimization；编排模块应使用标准 /tasks 入口。| List Manager quick view optimization task configurations. This private endpoint always returns task_type=quick_view_optimization; orchestrator should use the standard /tasks endpoint.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "列出快显性能优化任务配置 | List quick view optimization task configurations",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码，默认1 | Page number, default 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认20 | Page size, default 20",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "任务列表 | Task list",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "创建快显性能优化任务配置 | Create quick view optimization task configuration",
+                "parameters": [
+                    {
+                        "description": "快显性能优化任务配置 | Quick view optimization task configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.QuickViewOptimizationTaskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "创建的任务配置 | Created task configuration",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.QuickViewOptimizationTaskResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/quick_view_optimization_tasks/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "获取快显性能优化任务配置 | Get quick view optimization task configuration",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "任务配置 | Task configuration",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.QuickViewOptimizationTaskResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "更新快显性能优化任务配置 | Update quick view optimization task configuration",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "快显性能优化任务配置 | Quick view optimization task configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.QuickViewOptimizationTaskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新后的任务配置 | Updated task configuration",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.QuickViewOptimizationTaskResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "删除快显性能优化任务配置 | Delete quick view optimization task configuration",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "删除成功 | Deleted successfully",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1617,7 +1947,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "列出Manager模块的任务（瓦片缓存生成任务和向量化任务）| List Manager module tasks (tile cache generation and embedding tasks)",
+                "description": "列出 Manager 模块的任务（瓦片缓存生成、快显性能优化和向量化任务）| List Manager module tasks (tile cache generation, quick view optimization, and embedding tasks)",
                 "produces": [
                     "application/json"
                 ],
@@ -1628,7 +1958,7 @@
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型过滤：tile_cache_generation|embedding | Task type filter: tile_cache_generation|embedding",
+                        "description": "任务类型过滤：tile_cache_generation|quick_view_optimization|embedding | Task type filter: tile_cache_generation|quick_view_optimization|embedding",
                         "name": "task_type",
                         "in": "query"
                     },
@@ -1688,7 +2018,7 @@
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型：tile_cache_generation|embedding | Task type: tile_cache_generation|embedding",
+                        "description": "任务类型：tile_cache_generation|quick_view_optimization|embedding | Task type: tile_cache_generation|quick_view_optimization|embedding",
                         "name": "task_type",
                         "in": "path",
                         "required": true
@@ -1747,7 +2077,7 @@
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型：tile_cache_generation|embedding | Task type: tile_cache_generation|embedding",
+                        "description": "任务类型：tile_cache_generation|quick_view_optimization|embedding | Task type: tile_cache_generation|quick_view_optimization|embedding",
                         "name": "task_type",
                         "in": "path",
                         "required": true
@@ -2491,6 +2821,95 @@
                 }
             }
         },
+        "github_com_addp_manager_internal_models.QuickViewOptimization": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "error_message": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "item_fingerprint": {
+                    "type": "string"
+                },
+                "item_id": {
+                    "type": "integer"
+                },
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "locator": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                },
+                "render_extent": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "render_extent_srid": {
+                    "type": "integer"
+                },
+                "row_count_estimate": {
+                    "type": "integer"
+                },
+                "source_engine_id": {
+                    "type": "integer"
+                },
+                "source_fingerprint_snapshot": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                },
+                "source_geometry_column": {
+                    "type": "string"
+                },
+                "source_schema": {
+                    "type": "string"
+                },
+                "source_srid": {
+                    "type": "integer"
+                },
+                "source_table": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "target_geometry_column": {
+                    "type": "string"
+                },
+                "target_kind": {
+                    "type": "string"
+                },
+                "target_schema": {
+                    "type": "string"
+                },
+                "target_srid": {
+                    "type": "integer"
+                },
+                "target_table": {
+                    "type": "string"
+                },
+                "task_id": {
+                    "type": "integer"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_manager_internal_models.TileCache": {
             "type": "object",
             "properties": {
@@ -2643,11 +3062,17 @@
                 "locator": {
                     "type": "string"
                 },
+                "optimization": {
+                    "$ref": "#/definitions/github_com_addp_manager_internal_service.QuickViewOptimizationInfo"
+                },
                 "preferred_mode": {
                     "type": "string"
                 },
                 "quick_view": {
                     "$ref": "#/definitions/github_com_addp_manager_internal_service.QuickViewRenderInfo"
+                },
+                "realtime_tile": {
+                    "$ref": "#/definitions/github_com_addp_manager_internal_service.QuickViewRealtimeTileInfo"
                 },
                 "recommended_mode": {
                     "type": "string"
@@ -2668,6 +3093,79 @@
                     "$ref": "#/definitions/github_com_addp_manager_internal_service.TileCacheGeneration"
                 },
                 "unavailable_reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_service.QuickViewOptimizationInfo": {
+            "type": "object",
+            "properties": {
+                "available": {
+                    "type": "boolean"
+                },
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "render_extent": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "render_extent_srid": {
+                    "type": "integer"
+                },
+                "result_id": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "target_geometry_column": {
+                    "type": "string"
+                },
+                "target_kind": {
+                    "type": "string"
+                },
+                "target_schema": {
+                    "type": "string"
+                },
+                "target_srid": {
+                    "type": "integer"
+                },
+                "target_table": {
+                    "type": "string"
+                },
+                "task_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_service.QuickViewRealtimeTileInfo": {
+            "type": "object",
+            "properties": {
+                "available": {
+                    "type": "boolean"
+                },
+                "optimization_recommendation": {
+                    "type": "string"
+                },
+                "optimization_recommended": {
+                    "type": "boolean"
+                },
+                "performance_mode": {
+                    "type": "string"
+                },
+                "timeout_budget_ms": {
+                    "type": "integer"
+                },
+                "timeout_recommendation": {
+                    "type": "string"
+                },
+                "timeout_retry_policy": {
                     "type": "string"
                 }
             }
@@ -2992,6 +3490,122 @@
                     "type": "string"
                 },
                 "schedule": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.QuickViewOptimizationTaskGeometryResponse": {
+            "type": "object",
+            "properties": {
+                "geometry_column": {
+                    "type": "string"
+                },
+                "source_srid": {
+                    "type": "integer"
+                },
+                "target_srid": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.QuickViewOptimizationTaskRequest": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "next_run_at": {
+                    "type": "string"
+                },
+                "schedule": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.QuickViewOptimizationTaskResponse": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "geometry": {
+                    "$ref": "#/definitions/internal_api.QuickViewOptimizationTaskGeometryResponse"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "last_execution_status": {
+                    "type": "string"
+                },
+                "last_run_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "next_run_at": {
+                    "type": "string"
+                },
+                "schedule": {
+                    "type": "string"
+                },
+                "target": {
+                    "$ref": "#/definitions/internal_api.QuickViewOptimizationTaskTargetResponse"
+                },
+                "task_type": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.QuickViewOptimizationTaskTargetResponse": {
+            "type": "object",
+            "properties": {
+                "item_fingerprint": {
+                    "type": "string"
+                },
+                "item_id": {
+                    "type": "integer"
+                },
+                "locator": {
+                    "type": "string"
+                },
+                "schema": {
+                    "type": "string"
+                },
+                "source_engine_id": {
+                    "type": "integer"
+                },
+                "table": {
                     "type": "string"
                 }
             }

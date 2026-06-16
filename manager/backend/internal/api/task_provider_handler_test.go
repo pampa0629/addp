@@ -21,7 +21,7 @@ import (
 func TestTaskProviderListTasksRejectsUnsupportedTaskType(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	handler := NewTaskProviderHandler(nil, nil, nil)
+	handler := NewTaskProviderHandler(nil, nil, nil, nil)
 	router.GET("/tasks", handler.ListTasks)
 
 	req := httptest.NewRequest(http.MethodGet, "/tasks?task_type=unknown", nil)
@@ -38,6 +38,7 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 	db := newTaskProviderHandlerTestDB(t)
 	tileCacheRepo := repository.NewTileCacheRepository(db)
 	embeddingRepo := repository.NewEmbeddingRepository(db)
+	qvoRepo := repository.NewQuickViewOptimizationRepository(db)
 
 	if err := tileCacheRepo.CreateTask(context.Background(), &models.TileCacheTask{
 		TenantID: 1,
@@ -72,10 +73,30 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create embedding task: %v", err)
 	}
+	if err := qvoRepo.CreateTask(context.Background(), &models.QuickViewOptimizationTask{
+		TenantID: 1,
+		Name:     "quick view optimization task",
+		Enabled:  true,
+		Config: commonModels.JSONMap{
+			"target": commonModels.JSONMap{
+				"source_engine_id": 11,
+				"schema":           "public",
+				"table":            "roads",
+			},
+			"geometry": commonModels.JSONMap{
+				"geometry_column": "shape",
+				"source_srid":     4326,
+				"target_srid":     3857,
+			},
+		},
+	}); err != nil {
+		t.Fatalf("create quick view optimization task: %v", err)
+	}
 
 	handler := NewTaskProviderHandler(
 		service.NewEmbeddingTaskService(embeddingRepo, nil, nil, nil),
 		service.NewTileCacheTaskService(tileCacheRepo, nil),
+		service.NewQuickViewOptimizationTaskService(qvoRepo, nil),
 		nil,
 	)
 
@@ -86,9 +107,11 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 	})
 	router.GET("/tile_cache_tasks", handler.ListTileCacheTasks)
 	router.GET("/embedding_tasks", handler.ListEmbeddingTasks)
+	router.GET("/quick_view_optimization_tasks", handler.ListQuickViewOptimizationTasks)
 
 	assertTaskTypes(t, router, "/tile_cache_tasks", []string{commonExecution.TaskTypeTileCacheGeneration})
 	assertTaskTypes(t, router, "/embedding_tasks", []string{commonExecution.TaskTypeEmbedding})
+	assertTaskTypes(t, router, "/quick_view_optimization_tasks", []string{commonExecution.TaskTypeQuickViewOptimization})
 }
 
 func TestCreateEmbeddingTaskRejectsLegacyTopLevelFields(t *testing.T) {
@@ -96,6 +119,7 @@ func TestCreateEmbeddingTaskRejectsLegacyTopLevelFields(t *testing.T) {
 	embeddingRepo := repository.NewEmbeddingRepository(db)
 	handler := NewTaskProviderHandler(
 		service.NewEmbeddingTaskService(embeddingRepo, nil, nil, nil),
+		nil,
 		nil,
 		nil,
 	)
@@ -131,7 +155,7 @@ func TestCreateEmbeddingTaskRejectsLegacyTopLevelFields(t *testing.T) {
 
 func TestTaskExecuteRejectsUnknownFields(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	handler := NewTaskProviderHandler(nil, nil, nil)
+	handler := NewTaskProviderHandler(nil, nil, nil, nil)
 
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
@@ -256,6 +280,25 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 		deleted_at DATETIME
 	)`).Error; err != nil {
 		t.Fatalf("create embedding_tasks table: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE manager.quick_view_optimization_tasks (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		tenant_id INTEGER NOT NULL,
+		name TEXT NOT NULL,
+		description TEXT,
+		enabled BOOLEAN,
+		last_execution_id TEXT,
+		last_execution_status TEXT,
+		last_run_at DATETIME,
+		next_run_at DATETIME,
+		schedule TEXT,
+		created_by INTEGER,
+		config JSON,
+		created_at DATETIME,
+		updated_at DATETIME,
+		deleted_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create quick_view_optimization_tasks table: %v", err)
 	}
 	return db
 }

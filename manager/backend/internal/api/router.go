@@ -107,6 +107,20 @@ func SetupRouter(
 			tileCacheGroup.GET("/:id", taskProviderHandler.GetTileCache)
 			tileCacheGroup.DELETE("/:id", taskProviderHandler.DeleteTileCache)
 		}
+		quickViewOptimizationTasksGroup := api.Group("/quick_view_optimization_tasks")
+		{
+			quickViewOptimizationTasksGroup.GET("", taskProviderHandler.ListQuickViewOptimizationTasks)
+			quickViewOptimizationTasksGroup.POST("", taskProviderHandler.CreateQuickViewOptimizationTask)
+			quickViewOptimizationTasksGroup.GET("/:id", taskProviderHandler.GetQuickViewOptimizationTask)
+			quickViewOptimizationTasksGroup.PUT("/:id", taskProviderHandler.UpdateQuickViewOptimizationTask)
+			quickViewOptimizationTasksGroup.DELETE("/:id", taskProviderHandler.DeleteQuickViewOptimizationTask)
+		}
+		quickViewOptimizationGroup := api.Group("/quick_view_optimization")
+		{
+			quickViewOptimizationGroup.GET("", taskProviderHandler.ListQuickViewOptimizations)
+			quickViewOptimizationGroup.GET("/:id", taskProviderHandler.GetQuickViewOptimization)
+			quickViewOptimizationGroup.DELETE("/:id", taskProviderHandler.DeleteQuickViewOptimization)
+		}
 
 		// EmbeddingTask CRUD
 		embeddingTaskDefGroup := api.Group("/embedding_tasks")

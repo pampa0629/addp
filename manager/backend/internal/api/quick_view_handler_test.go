@@ -2,10 +2,13 @@ package api
 
 import (
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/preview"
+	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -124,5 +127,41 @@ func TestPositivePathIntAcceptsGinParamNameWithMVTSuffix(t *testing.T) {
 	}
 	if c.IsAborted() {
 		t.Fatal("positivePathInt aborted valid Gin MVT tile y parameter")
+	}
+}
+
+func TestApplyTileResponseHeadersExposesRealtimeTimeoutRecommendation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	applyTileResponseHeaders(c, &service.TileResponse{
+		Data:                  []byte{},
+		FromCache:             false,
+		Duration:              5 * time.Second,
+		RenderSource:          service.QuickViewRenderSourceRealtimeTile,
+		Status:                service.TileStatusTimeout,
+		PerformanceMode:       service.RealtimeTilePerformanceReady3857Target,
+		TimeoutRecommendation: service.RealtimeTileRecommendationTileCacheGeneration,
+		TimeoutRetryPolicy:    service.RealtimeTileTimeoutRetryTTL,
+	})
+
+	headers := w.Header()
+	if got := headers.Get("X-ADDP-Tile-Performance-Mode"); got != service.RealtimeTilePerformanceReady3857Target {
+		t.Fatalf("performance header = %s, want %s", got, service.RealtimeTilePerformanceReady3857Target)
+	}
+	if got := headers.Get("X-ADDP-Tile-Recommendation"); got != service.RealtimeTileRecommendationTileCacheGeneration {
+		t.Fatalf("recommendation header = %s, want %s", got, service.RealtimeTileRecommendationTileCacheGeneration)
+	}
+	if got := headers.Get("X-ADDP-Tile-Retry-Policy"); got != service.RealtimeTileTimeoutRetryTTL {
+		t.Fatalf("retry policy header = %s, want %s", got, service.RealtimeTileTimeoutRetryTTL)
+	}
+	if got := headers.Get("Retry-After"); got != "60" {
+		t.Fatalf("Retry-After = %s, want 60", got)
+	}
+	if got := headers.Get("Access-Control-Expose-Headers"); !strings.Contains(got, "X-ADDP-Tile-Recommendation") ||
+		!strings.Contains(got, "X-ADDP-Tile-Retry-Policy") ||
+		!strings.Contains(got, "Retry-After") {
+		t.Fatalf("expose headers = %q, want tile recommendation headers exposed", got)
 	}
 }

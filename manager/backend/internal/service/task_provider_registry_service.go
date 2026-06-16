@@ -73,6 +73,20 @@ func (s *TaskProviderRegistryService) Register() error {
 				"edit_url":                  "/manager/vectorization-tasks?task_id=:id",
 				"deprecated":                false,
 			},
+			{
+				"type":                      "quick_view_optimization",
+				"display_name":              "快显性能优化",
+				"description":               "为 PostGIS 空间数据项创建可复用的 3857 快显优化目标",
+				"definition_schema":         map[string]interface{}{"type": "object"},
+				"execution_schema":          map[string]interface{}{"type": "object", "additionalProperties": false},
+				"supports_schedule":         false,
+				"supports_cancel":           false,
+				"supports_inline_execution": false,
+				// 第一阶段为 API-only；这里注册的是后续 Console 承载路由，不能改指到瓦片缓存页。
+				"create_url":                "/manager/quick-view-optimization?tab=tasks",
+				"edit_url":                  "/manager/quick-view-optimization?tab=tasks&task_id=:id",
+				"deprecated":                false,
+			},
 		},
 	}
 
@@ -87,7 +101,7 @@ func (s *TaskProviderRegistryService) Register() error {
 	registration := TaskProviderRegistration{
 		ModuleName:  "manager",
 		DisplayName: "数据管理",
-		Description: "瓦片缓存生成任务和对象存储向量化任务",
+		Description: "瓦片缓存生成、快显性能优化和对象存储向量化任务",
 
 		// API 端点配置（相对于 base_url，支持 {task_type}/{id} 占位符）
 		BaseURL:             s.managerURL,

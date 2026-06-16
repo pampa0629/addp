@@ -76,6 +76,7 @@ func main() {
 	metadataRepo := repository.NewMetadataRepository(db, cfg.EncryptionKey)
 	embeddingRepo := repository.NewEmbeddingRepository(db)
 	tileCacheRepo := repository.NewTileCacheRepository(db)
+	quickViewOptimizationRepo := repository.NewQuickViewOptimizationRepository(db)
 	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
 	logger.L().Info("Manager repositories 初始化完成")
 
@@ -153,6 +154,7 @@ func main() {
 	// 创建统一 MVT 服务（整合实时生成 + 缓存访问，对前端隐藏 fingerprint）
 	// ✅ 传入连接池配置，实时生成瓦片使用较小的连接数（默认5，避免峰值压力）
 	mvtService := service.NewMVTService(metadataRepo, systemClient, 5)
+	mvtService.SetQuickViewOptimizationRepository(quickViewOptimizationRepo)
 	spatialPreviewService := service.NewSpatialPreviewService(redisClient)
 	unifiedMVTService := service.NewUnifiedMVTService(
 		spatialPreviewService,
@@ -203,6 +205,8 @@ func main() {
 	// 初始化任务定义服务
 	embeddingTaskSvc := service.NewEmbeddingTaskService(embeddingRepo, embeddingService, taskExecRepo, cfg)
 	tileCacheTaskSvc := service.NewTileCacheTaskService(tileCacheRepo, taskExecRepo)
+	quickViewOptimizationTaskSvc := service.NewQuickViewOptimizationTaskService(quickViewOptimizationRepo, taskExecRepo)
+	quickViewOptimizationTaskSvc.SetDBProvider(mvtService)
 	tileCacheTaskSvc.SetQuickViewService(quickViewService)
 	tileCacheTaskSvc.SetRealtimeTileTargetResolver(mvtService)
 	tileCacheTaskSvc.SetTileCacheRuntimeCacheInvalidator(spatialPreviewService)
@@ -220,7 +224,7 @@ func main() {
 	}
 
 	// 初始化 TaskProvider Handler
-	taskProviderHandler := api.NewTaskProviderHandler(embeddingTaskSvc, tileCacheTaskSvc, taskExecRepo)
+	taskProviderHandler := api.NewTaskProviderHandler(embeddingTaskSvc, tileCacheTaskSvc, quickViewOptimizationTaskSvc, taskExecRepo)
 
 	// 设置 UnifiedMVTService 的 QuickViewService（延迟注入避免循环依赖）
 	unifiedMVTService.SetQuickViewService(quickViewService)

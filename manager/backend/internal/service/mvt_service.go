@@ -15,9 +15,10 @@ import (
 // MVTService generates Mapbox Vector Tiles (MVT) from PostGIS tables for preview.
 // ✅ 重构：复用 mvt.TileGenerator，消除重复代码
 type MVTService struct {
-	metadataRepo  *repository.MetadataRepository
-	systemClient  *commonClient.SystemClient
-	tileGenerator *mvt.TileGenerator // ✅ 复用底层实现
+	metadataRepo     *repository.MetadataRepository
+	systemClient     *commonClient.SystemClient
+	tileGenerator    *mvt.TileGenerator // ✅ 复用底层实现
+	optimizationRepo *repository.QuickViewOptimizationRepository
 }
 
 func NewMVTService(meta *repository.MetadataRepository, systemClient *commonClient.SystemClient, maxDBConns int) *MVTService {
@@ -29,6 +30,18 @@ func NewMVTService(meta *repository.MetadataRepository, systemClient *commonClie
 		systemClient:  systemClient,
 		tileGenerator: tileGen,
 	}
+}
+
+func (s *MVTService) SetQuickViewOptimizationRepository(repo *repository.QuickViewOptimizationRepository) {
+	s.optimizationRepo = repo
+}
+
+func (s *MVTService) GetPostGISDB(ctx context.Context, tenantID *uint, engineID uint) (*sql.DB, error) {
+	tid, err := s.tenantIDForEngine(engineID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	return s.tileGenerator.GetOrCreateDBPool(ctx, engineID, tid)
 }
 
 func (s *MVTService) tenantIDForEngine(engineID uint, tenantID *uint) (uint, error) {
@@ -126,7 +139,7 @@ func (s *MVTService) TransformExtentWGS84(
 	return []float64{minX, minY, maxX, maxY}, nil
 }
 
-// ResolveRealtimeTileTarget returns a tile source that can use a 3857 GiST path.
+// ResolveRealtimeTileTarget returns the preferred PG tile source for realtime MVT.
 // It only checks lightweight PostgreSQL catalog metadata and never scans source data.
 func (s *MVTService) ResolveRealtimeTileTarget(
 	ctx context.Context,
@@ -149,37 +162,54 @@ func (s *MVTService) ResolveRealtimeTileTarget(
 		if err != nil {
 			return nil, err
 		}
+		mode := RealtimeTilePerformanceSource3857
 		if ok {
-			return &RealtimeTileTarget{
-				Schema:     schema,
-				Table:      table,
-				GeomColumn: geomCol,
-				SRID:       spatial.SRIDWebMercator,
-			}, nil
+			mode = RealtimeTilePerformanceSource3857Index
 		}
-		return nil, nil
+		return &RealtimeTileTarget{
+			Schema:          schema,
+			Table:           table,
+			GeomColumn:      geomCol,
+			SRID:            spatial.SRIDWebMercator,
+			PerformanceMode: mode,
+		}, nil
 	}
 
-	mvName := spatial.PostGISMaterializedViewName(table)
-	populated, err := materializedViewPopulated(ctx, db, schema, mvName)
-	if err != nil || !populated {
-		return nil, err
+	if s.optimizationRepo == nil {
+		return sourceTransformRealtimeTileTarget(schema, table, geomCol, sourceSRID), nil
 	}
-	const mvGeomColumn = "geom_3857"
-	ok, err := hasValidGiSTIndex(ctx, db, schema, mvName, mvGeomColumn)
+	fingerprint := spatialItemFingerprint(resourceID, schema, table)
+	result, err := s.optimizationRepo.GetReadyByFingerprintGeometry(ctx, tid, fingerprint, geomCol, spatial.SRIDWebMercator)
+	if err != nil || result == nil {
+		return sourceTransformRealtimeTileTarget(schema, table, geomCol, sourceSRID), err
+	}
+	ok, err := hasValidGiSTIndex(ctx, db, result.TargetSchema, result.TargetTable, result.TargetGeometryColumn)
 	if err != nil {
 		return nil, err
 	}
 	if !ok {
-		return nil, nil
+		return sourceTransformRealtimeTileTarget(schema, table, geomCol, sourceSRID), nil
 	}
 	return &RealtimeTileTarget{
-		Schema:       schema,
-		Table:        mvName,
-		GeomColumn:   mvGeomColumn,
-		SRID:         spatial.SRIDWebMercator,
-		Prepared3857: true,
+		Schema:          result.TargetSchema,
+		Table:           result.TargetTable,
+		GeomColumn:      result.TargetGeometryColumn,
+		SRID:            spatial.SRIDWebMercator,
+		Prepared3857:    true,
+		PerformanceMode: RealtimeTilePerformanceReady3857Target,
 	}, nil
+}
+
+func sourceTransformRealtimeTileTarget(schema, table, geomCol string, sourceSRID int) *RealtimeTileTarget {
+	return &RealtimeTileTarget{
+		Schema:                     schema,
+		Table:                      table,
+		GeomColumn:                 geomCol,
+		SRID:                       sourceSRID,
+		PerformanceMode:            RealtimeTilePerformanceSourceTransform,
+		OptimizationRecommended:    true,
+		OptimizationRecommendation: RealtimeTileRecommendationQuickViewOptimization,
+	}
 }
 
 func materializedViewPopulated(ctx context.Context, db *sql.DB, schema, view string) (bool, error) {
