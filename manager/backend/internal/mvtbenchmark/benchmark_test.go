@@ -163,6 +163,63 @@ func TestRecommendationConfidencePrefersTimeoutRerun(t *testing.T) {
 	}
 }
 
+func TestRunRecordsMultiScaleCandidateForLowZoomLarge3857Tile(t *testing.T) {
+	cfg := NormalizeConfig(Config{
+		DSN:        "postgres://example",
+		Iterations: 1,
+		Warmup:     0,
+		Scenarios: []Scenario{
+			{
+				Name:           "ready 3857 target",
+				TargetKind:     "external_3857_materialized_view",
+				Schema:         "public",
+				Table:          "dltb_mv3857",
+				GeometryColumn: "geom_3857",
+				SRID:           3857,
+				Tiles: []TileCoord{
+					{Z: 6, X: 51, Y: 27},
+				},
+			},
+			{
+				Name:           "source transform path",
+				Schema:         "public",
+				Table:          "dltb",
+				GeometryColumn: "SmGeometry",
+				SRID:           2360,
+				Tiles: []TileCoord{
+					{Z: 6, X: 51, Y: 27},
+				},
+			},
+		},
+	})
+	executor := &fakeExecutor{
+		results: [][]byte{
+			make([]byte, MultiScaleCandidateMVTSizeB+1),
+			make([]byte, MultiScaleCandidateMVTSizeB+1),
+		},
+	}
+
+	report, err := Run(context.Background(), cfg, executor)
+	if err != nil {
+		t.Fatalf("run benchmark: %v", err)
+	}
+	candidates := report.Recommendations.MultiScaleCandidates
+	if len(candidates) != 1 {
+		t.Fatalf("multi_scale_candidates = %#v, want exactly one ready 3857 candidate", candidates)
+	}
+	candidate := candidates[0]
+	if candidate.RenderPath != "ready_3857_target" ||
+		candidate.TargetKind != "external_3857_materialized_view" ||
+		candidate.Trigger != "low_zoom_large_mvt" ||
+		candidate.CurrentUserAction != "tile_cache_generation" ||
+		candidate.FollowUpTopic != "multi_scale_quick_view_optimization" {
+		t.Fatalf("candidate = %#v, want ready 3857 low zoom large MVT candidate", candidate)
+	}
+	if candidate.Tile.Z != 6 || candidate.Tile.X != 51 || candidate.Tile.Y != 27 {
+		t.Fatalf("candidate tile = %#v, want z6/51/27", candidate.Tile)
+	}
+}
+
 func TestRunRecordsWarmupFailureAndContinuesMeasuredRuns(t *testing.T) {
 	cfg := NormalizeConfig(Config{
 		DSN:        "postgres://example",

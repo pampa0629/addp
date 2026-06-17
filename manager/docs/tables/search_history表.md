@@ -43,7 +43,7 @@
 
 ## 三、API 端点说明
 
-### 3.1 GET /api/search/history - 获取搜索历史列表
+### 3.1 GET /api/v1/manager/search/history - 获取搜索历史列表
 
 **功能**：获取当前用户的搜索历史，按最后搜索时间倒序
 
@@ -75,7 +75,7 @@
 
 ---
 
-### 3.2 DELETE /api/search/history/:id - 删除单条历史记录
+### 3.2 DELETE /api/v1/manager/search/history/:id - 删除单条历史记录
 
 **功能**：删除指定的搜索历史记录
 
@@ -83,7 +83,7 @@
 
 ---
 
-### 3.3 DELETE /api/search/history - 清空搜索历史
+### 3.3 DELETE /api/v1/manager/search/history - 清空搜索历史
 
 **功能**：清空当前用户的所有搜索历史
 
@@ -98,7 +98,7 @@
 
 ---
 
-### 3.4 GET /api/search - 混合检索（自动记录历史）
+### 3.4 GET /api/v1/manager/search - 混合检索（自动记录历史）
 
 **功能**：执行混合检索（全文检索 + 向量检索），自动记录到搜索历史
 
@@ -140,7 +140,7 @@
 ### 4.1 自动记录机制
 
 **触发时机**：
-- 用户执行混合检索（/api/search）
+- 用户执行混合检索（/api/v1/manager/search）
 - 查询字符串非空
 - 查询成功（有结果或无结果都记录）
 
@@ -168,11 +168,11 @@ DO UPDATE SET updated_at = NOW();
 
 ```bash
 # 搜索"城市数据"
-curl -X GET "http://localhost:8081/api/search?q=城市数据&page=1&page_size=10" \
+curl -X GET "http://localhost:8081/api/v1/manager/search?q=城市数据&page=1&page_size=10" \
   -H "Authorization: Bearer $TOKEN"
 
 # 再次搜索相同内容，只会更新 updated_at
-curl -X GET "http://localhost:8081/api/search?q=城市数据&page=1&page_size=10" \
+curl -X GET "http://localhost:8081/api/v1/manager/search?q=城市数据&page=1&page_size=10" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -180,7 +180,7 @@ curl -X GET "http://localhost:8081/api/search?q=城市数据&page=1&page_size=10
 
 ```bash
 # 获取最近 10 条搜索历史
-curl -X GET "http://localhost:8081/api/search/history?limit=10" \
+curl -X GET "http://localhost:8081/api/v1/manager/search/history?limit=10" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -188,7 +188,7 @@ curl -X GET "http://localhost:8081/api/search/history?limit=10" \
 
 ```bash
 # 清空所有搜索历史
-curl -X DELETE http://localhost:8081/api/search/history \
+curl -X DELETE http://localhost:8081/api/v1/manager/search/history \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -218,7 +218,7 @@ curl -X DELETE http://localhost:8081/api/search/history \
 func CreateSearchHistory(userID uint, query string) {
     // 插入记录
     db.Create(&SearchHistory{UserID: userID, Query: query})
-    
+
     // 保留最新 100 条
     db.Exec(`
         DELETE FROM manager.search_history
@@ -241,9 +241,9 @@ func CreateSearchHistory(userID uint, query string) {
 **实现**：
 ```sql
 -- 模糊匹配历史查询
-SELECT DISTINCT query 
+SELECT DISTINCT query
 FROM manager.search_history
-WHERE user_id = 1 
+WHERE user_id = 1
   AND query LIKE '%城市%'
 ORDER BY updated_at DESC
 LIMIT 5;
@@ -283,6 +283,5 @@ WHERE updated_at < NOW() - INTERVAL '6 months';
 
 ## 八、相关文档
 
-- [directories表](./directories表.md) - 目录结构表
 - [quick_view表](./quick_view表.md) - 快显偏好表
 - [数据库架构](../数据库架构.md) - Manager 模块架构

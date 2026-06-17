@@ -178,28 +178,27 @@ export function createAPIClient(getAuthStore, options = {}) {
 
 #### 解决方案
 
-**关键发现：不同 API 的响应格式不一致**
+**当前规则：Manager 前端 API client 默认返回已提取后的响应体**
 
-检查后端代码发现：
-- **PreviewTable API**（`/api/data-explorer/preview`）：直接返回数据对象，无 `{data: ...}` 包装
-- **ListEngines API**（`/api/data-explorer/engines`）：返回 `{data: engines}` 格式
-- **GetTree API**（`/api/data-explorer/tree`）：返回 `{data: tree}` 格式
+当前 Manager 公共入口统一走 `/api/v1/manager/...`：
 
-因此 **只需修改预览 API 的调用**，资源列表和树接口保持原样。
+- 数据预览：`GET /api/v1/manager/preview`
+- 引擎列表：`GET /api/v1/manager/engines`
+- 资源树：`GET /api/v1/manager/tree/{engine_id}`
 
-**修改：数据预览（唯一需要修改的地方）**
+`manager/frontend/src/api/client.js` 使用 `createAPIClient()` 默认 `extractData=true`。因此业务调用拿到的是响应体对象，不是 Axios response。写调用代码时应以 API helper 的返回类型为准，不要习惯性再访问一层 `.data`。
 
-文件：`manager/frontend/src/views/DataExplorer.vue`，第 532 行
+**修改：数据预览**
+
+文件：`manager/frontend/src/stores/explorer.js` 或调用 `dataExplorerAPI.getPreview()` 的位置：
 
 ```diff
-const response = await dataExplorerAPI.getPreview(params)
+const response = await dataExplorerAPI.getPreview(locator, page, pageSize)
 - previewData.value = normalizePreviewPayload(response.data, selectedNode.value)
 + previewData.value = normalizePreviewPayload(response, selectedNode.value)
 ```
 
-**不需要修改的地方**（保持 `.data` 访问）：
-- 第 376 行：`response.data` ✅ 正确（ListEngines 返回 `{data: ...}`）
-- 第 476 行：`response.data` ✅ 正确（GetTree 返回 `{data: ...}`）
+如果某个 helper 显式关闭 `extractData`，才按 Axios response 处理；否则 Manager 前端默认直接消费返回体。
 
 #### 验证方法
 
@@ -226,20 +225,19 @@ const response = await dataExplorerAPI.getPreview(params)
 #### 预防措施
 
 1. **后端响应格式规范化（建议）**
-   - 统一所有 API 使用 `c.JSON(http.StatusOK, gin.H{"data": ...})` 格式
-   - 或统一所有 API 直接返回数据对象
-   - 当前混合格式容易导致混淆
+   - 公共 API 响应遵守 `docs/spec/addp-API设计规范.md`
+   - 前端 helper 层负责消化统一响应包装，组件和 store 不直接猜测 wrapper 结构
 
 2. **代码审查检查清单**
-   - 检查后端 handler 的响应格式（是否有 `gin.H{"data": ...}` 包装）
-   - 前端调用时根据后端格式决定是否使用 `.data`
-   - 搜索 `response.data.data`（双重访问）避免错误
+   - 检查 API helper 是否使用默认 `extractData=true`
+   - 前端调用时根据 helper 返回值决定是否使用 `.data`
+   - 搜索 `response.data.data` 和对已提取响应再次 `.data` 的访问
 
 3. **使用 TypeScript（推荐）**
    ```typescript
    // 类型定义明确返回值
    function getPreview(params): Promise<TablePreview>  // 直接返回数据
-   function getEngines(): Promise<{data: Engine[]}>  // 包装格式
+   function getEngines(): Promise<Engine[]>  // helper 已提取响应体
    ```
 
 #### 相关问题
@@ -693,9 +691,9 @@ response = requests.post(
 ```
 
 **修复的文件：**
-- [engines/python-workflow/api_server.py](../engines/python-workflow/api_server.py)（第 593、604 行）
-- [engines/math-workflow/api_server.py](../engines/math-workflow/api_server.py)（第 354 行）
-- [engines/spark-workflow/api_server.py](../engines/spark-workflow/api_server.py)（第 395 行）
+- [engines/python-workflow/api_server.py](../../engines/python-workflow/api_server.py)（第 593、604 行）
+- [engines/math-workflow/api_server.py](../../engines/math-workflow/api_server.py)（第 354 行）
+- [engines/spark-workflow/api_server.py](../../engines/spark-workflow/api_server.py)（第 395 行）
 
 #### 验证修复
 
@@ -784,11 +782,11 @@ query := fmt.Sprintf(`SELECT "%s" FROM "%s"."%s"`, geomColumn, schema, table)
 
 **Service 模块**：
 
-4. [service/backend/internal/ogc/common/feature_query.go](../../service/backend/internal/ogc/common/feature_query.go)
-   - WFS 要素查询：几何列转换
+4. [service/backend/internal/api/ogc_features_handler.go](../../service/backend/internal/api/ogc_features_handler.go)
+   - OGC API Features 请求入口：collection items、bbox 参数和单要素查询
 
-5. [service/backend/internal/ogc/common/feature_query.go](../../service/backend/internal/ogc/common/feature_query.go)
-   - WFS 空间过滤：几何列引用
+5. [service/backend/internal/service/query_executor_service.go](../../service/backend/internal/service/query_executor_service.go)
+   - Service 查询执行与 GeoJSON FeatureCollection 组装
 
 #### 已确认正确的模块
 
@@ -894,7 +892,7 @@ whereClause := fmt.Sprintf("%s > 100", dialect.QuoteIdentifier(col))
 
 ### 相关文档
 
-- [字段名大小写梳理计划](./字段名的大小写梳理.md) - 完整的排查和修复计划
+- [数据库大小写处理规范](../spec/addp数据库大小写处理规范.md) - 完整的排查和修复计划
 - [common/sqldialect](../../common/sqldialect/) - 跨 SQL 引擎基础方言工具
 - [common/spatial](../../common/spatial/) - PostGIS 空间 SQL 表达式和空间能力
 - [PostgreSQL 标识符文档](https://www.postgresql.org/docs/current/sql-syntax-lexical.html#SQL-SYNTAX-IDENTIFIERS)

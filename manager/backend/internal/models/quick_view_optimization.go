@@ -17,6 +17,8 @@ const (
 
 	QuickViewOptimizationTargetKindSourceSchemaMaterializedView = "source_schema_materialized_view"
 	QuickViewOptimizationTargetGeometryColumn                   = "geom_3857"
+
+	QuickViewOptimizationStaleReasonSourceFactsChanged = "quick view optimization source facts changed"
 )
 
 // QuickViewOptimizationTask 快显性能优化任务定义。

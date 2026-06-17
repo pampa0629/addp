@@ -340,4 +340,4 @@ docker exec business-mongodb mongosh --eval "db.version()"
 
 - [ClickHouse 官方文档](https://clickhouse.com/docs)
 - [MongoDB 官方文档](https://www.mongodb.com/docs/)
-- [ADDP 数据库插件系统文档](../docs/数据库插件系统.md)
+- [ADDP 数据引擎扩展指南](../../docs/spec/addp数据引擎扩展指南.md)

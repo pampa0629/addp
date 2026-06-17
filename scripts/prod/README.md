@@ -40,13 +40,13 @@ cd /path/to/addp
    - Meilisearch (7700)
    ↓
    等待基础设施就绪（调用 wait-infra.sh）
-   
+
 [2/5] System Backend
    ↓
    - System Backend (8180)
    ↓
    等待 System Backend 健康检查通过
-   
+
 [3/5] 业务后端服务
    ↓
    - Manager Backend (8081) + Worker
@@ -55,11 +55,11 @@ cd /path/to/addp
    - Orchestrator Backend (8084)
    - Develop Backend (8085)
    - Gateway (8000)
-   
+
 [4/5] 后端健康检查
    ↓
    等待所有后端服务健康（最多 90 秒）
-   
+
 [5/5] 前端服务
    ↓
    - Console Frontend (5170)
@@ -342,7 +342,7 @@ docker service update --image addp-transfer-worker:v2.0 addp_transfer-worker
 | 负载均衡 | ❌ 无 | ✅ 内置 VIP LB |
 | 零停机更新 | ❌ 无 | ✅ 滚动更新 |
 
-详见: [swarm/README.md](swarm/README.md)
+详见: [scripts/prod/README.md](README.md)
 
 ---
 
@@ -541,8 +541,8 @@ docker system prune -a --volumes
 
 - [scripts/build/README.md](../build/README.md) - 构建脚本文档
 - [scripts/dev/README.md](../dev/README.md) - 开发环境脚本文档
-- [scripts/design.md](../design.md) - Scripts 架构设计文档
-- [docs/DOCKER_SWARM.md](../../docs/DOCKER_SWARM.md) - Swarm 部署详细指南
+- [scripts/README.md](../README.md) - Scripts 架构设计和入口文档
+- [docs/guide/addp部署和开发步骤.md](../../docs/guide/addp部署和开发步骤.md) - 部署与开发启动指南
 - [CLAUDE.md](../../CLAUDE.md) - 项目总体架构文档
 
 ---
@@ -559,5 +559,5 @@ docker system prune -a --volumes
 
 ---
 
-**Version:** 0.0.12  
+**Version:** 0.0.12
 **Last Updated:** 2025-12-09

@@ -575,7 +575,7 @@ psql -h localhost -p 15432 -U postgres -d addp -c \
 - 计划文件：`/Users/pampa/.claude/plans/magical-forging-stearns.md`
 - Jupyter 多租户部署：`engines/jupyter/MULTI_TENANT_DEPLOYMENT.md`
 - Develop 模块文档：`develop/CLAUDE.md`
-- API 设计规范：`docs/addp-API设计规范.md`
+- API 设计规范：`docs/spec/addp-API设计规范.md`
 
 ### 技术栈
 - **后端**：Go 1.23 + Gin + GORM
@@ -619,6 +619,6 @@ psql -h localhost -p 15432 -U postgres -d addp -c \
 **最后更新**：2026-02-09
 
 **反馈渠道**：
-- 技术问题：查阅 `docs/addp常见故障排查.md`
+- 技术问题：查阅 `docs/guide/addp常见故障排查.md`
 - 功能建议：更新 `develop/docs/` 下的文档
 - 紧急问题：联系 System 模块负责人

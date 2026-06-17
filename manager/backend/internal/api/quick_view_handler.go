@@ -176,7 +176,7 @@ func (h *QuickViewHandler) GetQuickViewGeoJSONByLocator(c *gin.Context) {
 
 // GetQuickViewTileByLocator 获取统一 MVT 快显瓦片
 // @Summary 获取统一 MVT 快显瓦片 | Get unified quick-view MVT tile
-// @Description 以 Resource Locator 为身份返回 MVT 瓦片。第一阶段动态 MVT 仅支持 PostGIS item，其他 item 需先生成瓦片缓存。 | Return an MVT tile by Resource Locator. In phase one, realtime MVT supports PostGIS items; other items require tile cache generation first.
+// @Description 以 Resource Locator 为身份返回 MVT 瓦片。实时 MVT 由 PostGIS 空间 item 提供，其他空间 item 通过瓦片缓存结果提供快显。 | Return an MVT tile by Resource Locator. Realtime MVT is provided by PostGIS spatial items; other spatial items use tile cache results for quick view.
 // @Tags Manager
 // @Produce application/vnd.mapbox-vector-tile
 // @Param locator query string true "资源定位符URI | Resource locator URI"

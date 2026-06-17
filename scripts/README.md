@@ -385,7 +385,7 @@ docker service scale addp_transfer-worker=3
 - ✅ 滚动更新零停机
 - ✅ 资源限制和预留
 
-详见: [prod/README.md](prod/README.md), [prod/swarm/README.md](prod/swarm/README.md)
+详见: [prod/README.md](prod/README.md), [build/README.md](build/README.md)
 
 ---
 
@@ -586,8 +586,7 @@ bash scripts/prod/stop.sh --volumes
 - [Makefile](../Makefile) - Make 命令封装
 - [docker-compose.infra.yml](../docker-compose.infra.yml) - 基础设施配置
 - [docker-compose.yml](../docker-compose.yml) - 应用服务配置
-- [docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md) - 详细部署指南
-- [docs/DOCKER_SWARM.md](../docs/DOCKER_SWARM.md) - Swarm 高可用部署
+- [docs/guide/addp部署和开发步骤.md](../docs/guide/addp部署和开发步骤.md) - 部署与开发启动指南
 
 ---
 

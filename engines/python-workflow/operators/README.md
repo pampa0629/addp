@@ -375,11 +375,11 @@ curl http://localhost:5001/api/operators
 - 元数据与实现共存
 - 使用 Pydantic 提供类型安全
 
-详见：[REFACTORING_SUMMARY.md](../REFACTORING_SUMMARY.md)
+详见：[python-workflow开发总结](../docs/python-workflow开发总结.md)
 
 ## 参考资料
 
 - [Pydantic 文档](https://docs.pydantic.dev/)
 - [GeoPandas 文档](https://geopandas.org/)
 - [Shapely 文档](https://shapely.readthedocs.io/)
-- [ADDP 开发原则](../../docs/addp开发原则.md)
+- [ADDP 开发原则](../../../docs/spec/addp开发原则.md)

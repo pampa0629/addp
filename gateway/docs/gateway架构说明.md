@@ -19,7 +19,7 @@ Gateway（API 网关）是全域数据平台的**统一入口**，所有外部�
 ### 为什么需要 Gateway？
 
 在微服务架构中，如果没有 Gateway：
- 
+
 ```
 客户端 → System (8180)     # 直接访问宿主机端口
 客户端 → Manager (8081)
@@ -633,7 +633,7 @@ validateWithCache(keyHash)
 
 ### 平台文档
 
-- [ADDP 开发原则](../../docs/addp开发原则.md) - 平台级开发原则和规范
+- [ADDP 开发原则](../../docs/spec/addp开发原则.md) - 平台级开发原则和规范
 - [ADDP 各模块简要介绍](../../docs/concepts/addp各模块功能介绍.md) - 平台核心概念辨析
 - [System 模块说明](../../system/CLAUDE.md) - System 模块的架构和功能
 

@@ -1,6 +1,6 @@
 # quick_view 表结构和 API 说明
 
-> 状态：目标设计说明。`manager.quick_view` 收敛为快显偏好表，不保存快显能力快照、快显性能优化结果、瓦片缓存结果事实、生成任务定义或执行历史。快显性能优化结果见 `manager.quick_view_optimization`，瓦片缓存结果见 `manager.tile_cache`，任务定义见对应任务表。
+> 状态：当前实现说明。`manager.quick_view` 是快显偏好表，不保存快显能力快照、快显性能优化结果、瓦片缓存结果事实、生成任务定义或执行历史。快显性能优化结果见 `manager.quick_view_optimization`，瓦片缓存结果见 `manager.tile_cache`，任务定义见对应任务表。
 
 ## 一、表定位
 
@@ -33,7 +33,7 @@
 
 ## 二、目标核心字段
 
-| 字段名 | 类型建议 | 说明 |
+| 字段名 | 当前类型 / 语义 | 说明 |
 | --- | --- | --- |
 | `id` | bigint | 偏好记录 ID |
 | `tenant_id` | integer | 租户 ID |
@@ -68,11 +68,17 @@
 | 条件 | UI 行为 |
 | --- | --- |
 | `can_use_quick_view=true` 且 `render_source=cached_tile/direct_geojson` | 展示“切换快显”，不展示“生成瓦片缓存”按钮 |
-| `can_use_quick_view=true` 且 `render_source=realtime_tile` | 展示“切换快显”；当 `realtime_tile.performance_mode=source_transform_path` 或瓦片返回 `X-ADDP-Tile-Recommendation=quick_view_optimization` 时展示“执行快显优化”；当瓦片返回 `X-ADDP-Tile-Recommendation=tile_cache_generation` 时使用节流消息提示生成瓦片缓存；需要稳定低层级浏览时保留“生成瓦片缓存”入口 |
+| `can_use_quick_view=true` 且 `render_source=realtime_tile` | 展示“切换快显”；当 `optimization.status=stale`、`realtime_tile.performance_mode=source_transform_path` 或瓦片返回 `X-ADDP-Tile-Recommendation=quick_view_optimization` 时展示“执行快显优化”；当瓦片返回 `X-ADDP-Tile-Recommendation=tile_cache_generation` 时使用节流消息提示生成瓦片缓存；需要稳定低层级浏览时保留“生成瓦片缓存”入口 |
 | `can_use_quick_view=false` 且 `can_generate_tile_cache=true` | 展示“生成瓦片缓存”；如果 capability 或瓦片响应提示快显性能优化，优先展示“执行快显优化”入口 |
 | `can_use_quick_view=false` 且 `can_generate_tile_cache=false` | 不展示生成按钮，只展示不可用原因 |
 
 从预览页跳转时，快显性能优化页面或瓦片缓存页面应自动带入当前 item 上下文。快显性能优化页面创建 `manager.quick_view_optimization_tasks`；瓦片缓存页面在“任务”tab 创建 `manager.tile_cache_tasks`。
+
+预览页和 Explorer 内嵌预览都必须按同一规则展示快显性能优化诊断：
+
+1. `optimization.target_kind=external_3857_materialized_view` 时展示“已识别外部 3857 优化目标”，不展示“执行快显优化”入口。
+2. `optimization.status=stale` 时展示“快显优化结果需刷新”，并提供“执行快显优化”入口。
+3. 有可索引 3857 目标但动态 MVT 仍超时时，节流提示“生成瓦片缓存”，不把高层级放大误判为慢路径。
 
 ## 六、与瓦片缓存结果的关系
 
@@ -124,7 +130,6 @@
 
 ## 九、相关文档
 
-- [快显概念总览](../快显概念总览.md)
-- [快显规范与技术路线](../快显规范与技术路线.md)
-- [快显问题与改造思路](../快显问题与改造思路.md)
+- [快显概念说明](../快显概念说明.md)
+- [快显实现规范](../快显实现规范.md)
 - [数据库架构](../数据库架构.md)

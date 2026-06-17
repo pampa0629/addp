@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/addp/common/spatial"
+	"github.com/addp/manager/internal/models"
 	_ "github.com/lib/pq"
 )
 
@@ -46,6 +47,73 @@ func TestDiscoverExternal3857MaterializedViewForDLTB(t *testing.T) {
 	}
 	if target.Table != "dltb_mv3857" && target.Table != "dltb_3857" {
 		t.Fatalf("target table = %s, want dltb_mv3857 or dltb_3857", target.Table)
+	}
+}
+
+func TestManagerOptimizationTargetFactsStatus(t *testing.T) {
+	result := &models.QuickViewOptimization{
+		TargetSRID:           spatial.SRIDWebMercator,
+		TargetSchema:         "public",
+		TargetTable:          "addp_qvo_roads",
+		TargetGeometryColumn: models.QuickViewOptimizationTargetGeometryColumn,
+	}
+	tests := []struct {
+		name         string
+		populated    bool
+		columnExists bool
+		indexed      bool
+		actualSRID   int
+		wantReady    bool
+		wantReason   string
+	}{
+		{
+			name:         "ready",
+			populated:    true,
+			columnExists: true,
+			indexed:      true,
+			actualSRID:   spatial.SRIDWebMercator,
+			wantReady:    true,
+		},
+		{
+			name:         "not_populated",
+			populated:    false,
+			columnExists: true,
+			indexed:      true,
+			actualSRID:   spatial.SRIDWebMercator,
+			wantReason:   "quick view optimization materialized view is not populated",
+		},
+		{
+			name:         "missing_column",
+			populated:    true,
+			columnExists: false,
+			indexed:      true,
+			actualSRID:   spatial.SRIDWebMercator,
+			wantReason:   "quick view optimization target geometry column is missing",
+		},
+		{
+			name:         "wrong_srid",
+			populated:    true,
+			columnExists: true,
+			indexed:      true,
+			actualSRID:   4326,
+			wantReason:   "quick view optimization target geometry srid is not 3857",
+		},
+		{
+			name:         "missing_index",
+			populated:    true,
+			columnExists: true,
+			indexed:      false,
+			actualSRID:   spatial.SRIDWebMercator,
+			wantReason:   "quick view optimization target geometry GiST index is missing",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := managerOptimizationTargetFactsStatus(result, tt.populated, tt.columnExists, tt.indexed, tt.actualSRID)
+			if got.Ready != tt.wantReady || got.Reason != tt.wantReason {
+				t.Fatalf("status = %#v, want ready=%v reason=%q", got, tt.wantReady, tt.wantReason)
+			}
+		})
 	}
 }
 

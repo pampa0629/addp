@@ -202,6 +202,16 @@ func (r *QuickViewOptimizationRepository) UpdateResultFields(ctx context.Context
 		Updates(fields).Error
 }
 
+func (r *QuickViewOptimizationRepository) MarkResultStale(ctx context.Context, id uint, tenantID uint, reason string) error {
+	fields := map[string]interface{}{
+		"status": models.QuickViewOptimizationStatusStale,
+	}
+	if strings.TrimSpace(reason) != "" {
+		fields["error_message"] = strings.TrimSpace(reason)
+	}
+	return r.UpdateResultFields(ctx, id, tenantID, fields)
+}
+
 func (r *QuickViewOptimizationRepository) DeleteResult(ctx context.Context, id uint, tenantID uint) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&models.QuickViewOptimization{}).

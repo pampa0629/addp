@@ -11,7 +11,7 @@
 ### 已完成的探索
 - ✅ 阅读 Console 登录实现和 token 传递机制
 - ✅ 阅读各模块的认证流程
-- ✅ 阅读官方文档：`docs/addp登录认证的原理说明.md` 和 `docs/addp登录认证的统一要求.md`
+- ✅ 阅读官方文档：`docs/concepts/addp登录认证的原理说明.md` 和 `docs/spec/addp登录认证的统一要求.md`
 - ✅ 分析 common-frontend 的认证工具库
 
 ## 技术分析

@@ -274,7 +274,7 @@ erDiagram
         string task_detail_endpoint "GET /api/tasks/{task_type}/{id}"
         string task_execute_endpoint "POST /api/tasks/{task_type}/{id}/execute"
         string task_status_endpoint "GET /api/executions/{execution_id}"
-        string task_cancel_endpoint "POST /api/executions/{execution_id}/cancel"
+        string task_cancel_endpoint "POST /api/executions/{execution_id}/cancel，仅当存在 supports_cancel=true 的 task type"
         json capabilities "声明支持的 task_types 及前端路由(JSONB)"
         bool is_enabled
         timestamp created_at

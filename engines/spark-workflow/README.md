@@ -414,5 +414,5 @@ python3 -c "from operators import get_operator; op = get_operator('st_buffer'); 
 
 - [Apache Spark 文档](https://spark.apache.org/docs/latest/)
 - [Apache Sedona 文档](https://sedona.apache.org/)
-- [ADDP 开发指南](../../docs/addp开发原则.md)
-- [Python Workflow Engine 对比](../geopandas/README.md)
+- [ADDP 开发指南](../../docs/spec/addp开发原则.md)
+- [Python Workflow Engine 文档](../python-workflow/docs/python-workflow-gis引擎.md)

@@ -102,6 +102,10 @@ import {
   quickViewTileAdvisoryMessage as tileAdvisoryMessage,
   shouldShowQuickViewTileAdvisoryNotice
 } from '@/utils/quickViewTileAdvisory'
+import {
+  buildQuickViewOptimizationCreateQuery,
+  buildTileCacheCreateQuery
+} from '@/utils/quickViewNavigationQuery'
 import { TablePreview } from '@common-ui-map'
 
 const route = useRoute()
@@ -133,9 +137,15 @@ const showRealtimeTileCacheGeneration = computed(() => {
 const isExternalOptimizationTarget = computed(() => {
   return quickViewStatus.value?.optimization?.target_kind === 'external_3857_materialized_view'
 })
+const isStaleOptimizationTarget = computed(() => {
+  return quickViewStatus.value?.optimization?.status === 'stale'
+})
 const quickViewStatusText = computed(() => {
   if (isExternalOptimizationTarget.value) {
     return t('manager.spatialPreview.externalOptimizationTargetReady')
+  }
+  if (isStaleOptimizationTarget.value) {
+    return t('manager.spatialPreview.optimizationTargetStale')
   }
   return t('manager.spatialPreview.quickViewReady')
 })
@@ -146,6 +156,7 @@ const showQuickViewOptimizationAction = computed(() => {
     optimization.available !== true &&
     Number(quickViewStatus.value?.render_facts?.source_srid || 0) !== 3857 &&
     (
+      optimization.status === 'stale' ||
       realtime.optimization_recommended === true ||
       realtime.performance_mode === 'source_transform_path' ||
       quickViewTileAdvisory.value?.recommendation === 'quick_view_optimization' ||
@@ -239,54 +250,27 @@ const backToBasicPreview = async () => {
 }
 
 const openTileCacheCreate = () => {
-  const quickView = quickViewStatus.value?.quick_view || {}
-  const renderFacts = quickViewStatus.value?.render_facts || {}
-  const renderExtent = Array.isArray(renderFacts.render_extent) ? renderFacts.render_extent : quickView.extent
-  const renderExtentSRID = renderFacts.render_extent_srid || quickView.extent_srid
-  const geometryColumn = quickView.geometry_column || geom.value
-  const sourceSRID = renderFacts.source_srid || quickView.source_srid
   router.push({
     name: 'TileCache',
-    query: {
-      tab: 'tasks',
-      create: '1',
-      engine_id: String(engineId.value),
-      schema: schema.value,
-      table: table.value,
-      locator: locator.value,
-      ...(itemId.value ? { item_id: String(itemId.value) } : {}),
-      ...(geometryColumn ? { geom: geometryColumn } : {}),
-      ...(quickViewStatus.value?.item_fingerprint ? { item_fingerprint: quickViewStatus.value.item_fingerprint } : {}),
-      ...(sourceSRID ? { source_srid: String(sourceSRID) } : {}),
-      ...(renderExtentSRID ? { extent_srid: String(renderExtentSRID) } : {}),
-      ...(Array.isArray(renderExtent) && renderExtent.length === 4 ? { extent: renderExtent.join(',') } : {})
-    }
+    query: buildTileCacheCreateQuery(spatialPreviewNavigationTarget(), quickViewStatus.value)
   })
 }
 
 const openQuickViewOptimizationCreate = () => {
-  const quickView = quickViewStatus.value?.quick_view || {}
-  const renderFacts = quickViewStatus.value?.render_facts || {}
-  const geometryColumn = quickView.geometry_column || geom.value
-  const geometryColumns = Array.isArray(quickView.geometry_columns) ? quickView.geometry_columns : []
-  const sourceSRID = renderFacts.source_srid || quickView.source_srid
   router.push({
     name: 'QuickViewOptimization',
-    query: {
-      tab: 'tasks',
-      create: '1',
-      engine_id: String(engineId.value),
-      schema: schema.value,
-      table: table.value,
-      locator: locator.value,
-      ...(itemId.value ? { item_id: String(itemId.value) } : {}),
-      ...(geometryColumn ? { geom: geometryColumn } : {}),
-      ...(geometryColumns.length ? { geometry_columns: geometryColumns.join(',') } : {}),
-      ...(quickViewStatus.value?.item_fingerprint ? { item_fingerprint: quickViewStatus.value.item_fingerprint } : {}),
-      ...(sourceSRID ? { source_srid: String(sourceSRID) } : {})
-    }
+    query: buildQuickViewOptimizationCreateQuery(spatialPreviewNavigationTarget(), quickViewStatus.value)
   })
 }
+
+const spatialPreviewNavigationTarget = () => ({
+  engineId: engineId.value,
+  schema: schema.value,
+  table: table.value,
+  locator: locator.value,
+  itemID: itemId.value,
+  geometryColumn: geom.value
+})
 
 const handleTileAdvisory = (advisory) => {
   quickViewTileAdvisory.value = advisory

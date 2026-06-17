@@ -5,16 +5,19 @@
 ## 📖 文档说明
 
 - **README.md** (本文件) - 快速入门和功能概览
-- **[CLAUDE.md](./CLAUDE.md)** - 详细技术文档，包含预览插件架构、空间快显与瓦片缓存机制、开发场景指南
+- **[CLAUDE.md](./CLAUDE.md)** - 模块定位、核心 API、开发规则和文档导航
+- **[manager/docs/数据预览与资源树实现规范.md](./docs/数据预览与资源树实现规范.md)** - 数据探查、资源树、预览 API、PreviewResolver 和 PreviewProvider 当前实现规范
+- **[manager/docs/数据预览语义协议.md](./docs/数据预览语义协议.md)** - `content.kind`、`preview_material`、`frontend_renderer` 等预览响应语义
+- **[manager/docs/存储流与原始下载语义.md](./docs/存储流与原始下载语义.md)** - `storage-stream`、`storage-download` 与 DownloadPlan 语义
 
 ## 🎯 核心功能
 
 - **数据探查**: 浏览 8 种存储引擎中的数据（PostgreSQL、MySQL、Doris、ClickHouse、MongoDB、Apache Spark、MinIO、S3）
 - **数据预览**: 插件化架构，支持多种格式（CSV、JSON、Parquet、Shapefile、图片等）
-- **空间数据可视化**: 基础预览 + 快显模式 + 瓦片缓存结果，当前第一阶段实现以 PostGIS + MVT 为主
+- **空间数据可视化**: 基础预览 + 快显模式 + 瓦片缓存结果，当前主路径以 PostGIS + MVT 为核心实现
 - **数据检索**: 基于 Meilisearch + 向量数据库的混合检索（全文检索 + 语义检索）
 - **向量化**: 对可支持的数据项生成向量表示，支持资源树一次性执行、可调度向量化任务和语义检索消费
-- **元数据展示**: 与 Meta 模块集成，展示数据目录树
+- **元数据展示**: 与 Meta 模块集成，展示资源树 node / item facts
 
 ## 🚀 快速开始
 
@@ -49,12 +52,14 @@ MinIO、S3
 ### 文件格式
 CSV、JSON、Parquet、Excel、Shapefile、GeoJSON、图片、PDF、文本
 
-详细格式支持请查看 [CLAUDE.md#预览插件架构](./CLAUDE.md#预览插件架构核心设计)
+详细预览契约请查看 [数据预览与资源树实现规范](./docs/数据预览与资源树实现规范.md) 和 [数据预览语义协议](./docs/数据预览语义协议.md)。
 
 ## 📡 主要 API 端点
 
 ```
 数据预览:     GET  /api/v1/manager/preview
+存储流预览:   GET  /api/v1/manager/storage-stream
+原始下载:     GET  /api/v1/manager/storage-download
 快显能力:     GET  /api/v1/manager/quick-view/capability?locator={ResourceLocator}
 快显GeoJSON: GET  /api/v1/manager/quick-view/geojson?locator={ResourceLocator}
 快显MVT瓦片: GET  /api/v1/manager/quick-view/tiles/{z}/{x}/{y}.mvt?locator={ResourceLocator}
@@ -63,23 +68,34 @@ CSV、JSON、Parquet、Excel、Shapefile、GeoJSON、图片、PDF、文本
 数据检索:     GET  /api/v1/manager/search
 ```
 
-完整 API 文档和请求示例请查看 [CLAUDE.md#API端点](./CLAUDE.md)
+完整 API 文档和请求示例请查看 [数据预览与资源树实现规范](./docs/数据预览与资源树实现规范.md) 和 [快显实现规范](./docs/快显实现规范.md)。
 
 ## 🏗️ 核心架构
 
 ### 预览插件系统（可扩展）
-- 按优先级链式调用预览插件
+- 资源树、预览和刷新统一以 ResourceLocator 定位
+- 通过 PreviewResolver 选择 PreviewProvider
 - 支持 PostgreSQL、MySQL、MongoDB、ClickHouse 等
 - 支持外部插件动态加载
+- 预览响应按 `frontend_renderer -> preview_material -> content.kind` 选择前端组件
 
-### 快显与瓦片缓存
+### 向量化与混合检索
+1. 向量化对象是 data item，资源树 node 只作为批量选择范围。
+2. 资源树 item / node 向量化是一次性 execution，不创建任务定义。
+3. 独立向量化页面创建 `manager.embedding_tasks`，TaskProvider `task_type=embedding`。
+4. 向量化结果写入 `manager.embeddings`，搜索只消费 `status=ready` 且模型、维度匹配的结果。
+5. Meilisearch 负责全文和属性检索，pgvector 负责向量命中，Manager 搜索服务负责融合结果。
+
+### 快显、快显性能优化与瓦片缓存
 1. `quick_view` - 快显偏好，只记录 item 的预览模式偏好。
-2. `tile_cache` - 瓦片缓存结果状态，记录存储引用、格式、范围和层级。
-3. `tile_cache_tasks` - 瓦片缓存生成任务定义，TaskProvider `task_type=tile_cache_generation`。
-4. 当前第一阶段瓦片格式以 MVT 为主，可通过 PostGIS `ST_AsMVT` 生成。
-5. 当前 `tile_cache_generation` 由 Manager Backend 内部执行；若后续瓦片生成主要计算负载进入 Manager 进程、需要多执行器并发或引入 GIS 计算引擎，应切换为唯一的 Manager Worker 或 GIS 执行运行时。
+2. `quick_view_optimization` - 快显性能优化结果，只登记 Manager 创建并拥有生命周期的 3857 优化目标。
+3. `quick_view_optimization_tasks` - 快显性能优化任务定义，TaskProvider `task_type=quick_view_optimization`。
+4. `tile_cache` - 瓦片缓存结果状态，记录存储引用、格式、范围和层级。
+5. `tile_cache_tasks` - 瓦片缓存生成任务定义，TaskProvider `task_type=tile_cache_generation`。
+6. MVT 是瓦片格式，进入 `config.tile.format=mvt`，不是任务类型。
+7. 当前 `tile_cache_generation` 和 `quick_view_optimization` 由 Manager Backend 内部执行；若后续计算负载需要多执行器并发或引入 GIS 计算引擎，应切换为唯一的 Manager Worker 或 GIS 执行运行时。
 
-详细架构请查看 [CLAUDE.md#预览插件架构](./CLAUDE.md#预览插件架构核心设计)
+详细架构请查看 [数据预览与资源树实现规范](./docs/数据预览与资源树实现规范.md)。
 
 ## 🐛 常见问题
 
@@ -98,18 +114,22 @@ tail -f logs/manager-backend.log
 
 地图加载慢时，先看快显能力诊断：动态 MVT 走源表转换慢路径或瓦片返回慢路径超时建议时，应从空间预览页进入“执行快显优化”，创建并执行 `quick_view_optimization` 任务；优化结果 ready 后，低层级或大范围稳定浏览再通过“生成瓦片缓存”创建 `tile_cache_generation` 任务。若当前 item 已有 ready 瓦片缓存结果，预览页展示“切换快显”；若仍使用动态 MVT，可同时保留“执行快显优化”和“生成瓦片缓存”的引导入口。
 
-更多问题请查看 [CLAUDE.md#常见开发场景](./CLAUDE.md#常见开发场景)
+更多预览与下载边界请查看 [数据预览语义协议](./docs/数据预览语义协议.md) 和 [存储流与原始下载语义](./docs/存储流与原始下载语义.md)。
 
 ## 📚 相关文档
 
-- **[CLAUDE.md](./CLAUDE.md)** - 完整技术文档（预览插件架构、空间快显与瓦片缓存机制、开发场景指南）
-- **[manager/docs/快显概念总览.md](./docs/快显概念总览.md)** - Manager 快显价值、概念、分工和边界
-- **[manager/docs/快显规范与技术路线.md](./docs/快显规范与技术路线.md)** - 快显、瓦片缓存结果和生成任务的表结构、API 契约与技术路线
-- **[manager/docs/快显问题与改造思路.md](./docs/快显问题与改造思路.md)** - 快显当前问题、根因判断和改造顺序
+- **[CLAUDE.md](./CLAUDE.md)** - Manager 模块定位、核心 API、开发规则和文档导航
+- **[manager/docs/数据预览与资源树实现规范.md](./docs/数据预览与资源树实现规范.md)** - Manager 数据探查、资源树、预览 API 和插件编排实现规范
+- **[manager/docs/数据预览语义协议.md](./docs/数据预览语义协议.md)** - Manager 预览响应材料和前端渲染语义
+- **[manager/docs/存储流与原始下载语义.md](./docs/存储流与原始下载语义.md)** - Manager 存储叶子流式预览和逻辑对象原始下载语义
+- **[manager/docs/快显概念说明.md](./docs/快显概念说明.md)** - Manager 快显、快显性能优化和瓦片缓存的价值、概念、分工和边界
+- **[manager/docs/快显实现规范.md](./docs/快显实现规范.md)** - 快显、快显性能优化、瓦片缓存结果和生成任务的表结构、API 契约、技术路线与验证记录
 - **[manager/docs/向量化概念说明.md](./docs/向量化概念说明.md)** - Manager 向量化价值、对象边界、任务边界和结果边界
 - **[manager/docs/向量化能力说明.md](./docs/向量化能力说明.md)** - Manager 向量化结果、任务、执行、检索和 UI 行为说明
-- **[../docs/addp技术栈规约.md](../docs/addp技术栈规约.md)** - 技术栈和依赖版本
-- **[../docs/addp数据库插件系统.md](../docs/addp数据库插件系统.md)** - 存储引擎插件系统
+- **[manager/docs/数据库架构.md](./docs/数据库架构.md)** - Manager schema 表清单、关系、索引和数据流
+- **[../docs/spec/addp技术栈规约.md](../docs/spec/addp技术栈规约.md)** - 技术栈和依赖版本
+- **[../docs/spec/addp数据引擎扩展指南.md](../docs/spec/addp数据引擎扩展指南.md)** - 数据引擎扩展指南
+- **[../docs/spec/addp引擎插件接口规范.md](../docs/spec/addp引擎插件接口规范.md)** - 引擎插件接口规范
 - **[../common-frontend/README.md](../common-frontend/README.md)** - 前端共享组件使用指南
 
 ---

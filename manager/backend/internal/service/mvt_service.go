@@ -9,6 +9,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/spatial"
+	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/mvt"
 	"github.com/addp/manager/internal/repository"
 )
@@ -184,20 +185,29 @@ func (s *MVTService) ResolveRealtimeTileTarget(
 			return sourceTransformRealtimeTileTarget(schema, table, geomCol, sourceSRID), err
 		}
 		if result != nil {
-			ok, err := hasValidGiSTIndex(ctx, db, result.TargetSchema, result.TargetTable, result.TargetGeometryColumn)
-			if err != nil {
-				return nil, err
-			}
-			if ok {
-				return &RealtimeTileTarget{
-					Schema:                      result.TargetSchema,
-					Table:                       result.TargetTable,
-					GeomColumn:                  result.TargetGeometryColumn,
-					SRID:                        spatial.SRIDWebMercator,
-					QuickViewOptimizationTarget: true,
-					TargetKind:                  result.TargetKind,
-					PerformanceMode:             RealtimeTilePerformanceReady3857Target,
-				}, nil
+			if !quickViewOptimizationCurrentFactsMatch(result, resourceID, schema, table, geomCol, sourceSRID) {
+				if err := s.optimizationRepo.MarkResultStale(ctx, result.ID, result.TenantID, models.QuickViewOptimizationStaleReasonSourceFactsChanged); err != nil {
+					return nil, err
+				}
+			} else {
+				status, err := validateManagerQuickViewOptimizationTarget(ctx, db, result)
+				if err != nil {
+					return nil, err
+				}
+				if status.Ready {
+					return &RealtimeTileTarget{
+						Schema:                      result.TargetSchema,
+						Table:                       result.TargetTable,
+						GeomColumn:                  result.TargetGeometryColumn,
+						SRID:                        spatial.SRIDWebMercator,
+						QuickViewOptimizationTarget: true,
+						TargetKind:                  result.TargetKind,
+						PerformanceMode:             RealtimeTilePerformanceReady3857Target,
+					}, nil
+				}
+				if err := s.optimizationRepo.MarkResultStale(ctx, result.ID, result.TenantID, status.Reason); err != nil {
+					return nil, err
+				}
 			}
 		}
 	}
@@ -209,6 +219,76 @@ func (s *MVTService) ResolveRealtimeTileTarget(
 	}
 
 	return sourceTransformRealtimeTileTarget(schema, table, geomCol, sourceSRID), nil
+}
+
+type managerOptimizationTargetStatus struct {
+	Ready  bool
+	Reason string
+}
+
+func validateManagerQuickViewOptimizationTarget(ctx context.Context, db *sql.DB, result *models.QuickViewOptimization) (managerOptimizationTargetStatus, error) {
+	status := managerOptimizationTargetIdentityStatus(result)
+	if !status.Ready {
+		return status, nil
+	}
+	populated := true
+	var err error
+	if result.TargetKind == models.QuickViewOptimizationTargetKindSourceSchemaMaterializedView {
+		populated, err = materializedViewPopulated(ctx, db, result.TargetSchema, result.TargetTable)
+		if err != nil {
+			return managerOptimizationTargetStatus{}, err
+		}
+	}
+	columnExists, err := postGISColumnExists(ctx, db, result.TargetSchema, result.TargetTable, result.TargetGeometryColumn)
+	if err != nil {
+		return managerOptimizationTargetStatus{}, err
+	}
+	indexed, err := hasValidGiSTIndex(ctx, db, result.TargetSchema, result.TargetTable, result.TargetGeometryColumn)
+	if err != nil {
+		return managerOptimizationTargetStatus{}, err
+	}
+	srid, err := queryGeometryColumnActualSRID(ctx, db, result.TargetSchema, result.TargetTable, result.TargetGeometryColumn)
+	if err != nil {
+		return managerOptimizationTargetStatus{}, err
+	}
+	return managerOptimizationTargetFactsStatus(result, populated, columnExists, indexed, srid), nil
+}
+
+func managerOptimizationTargetIdentityStatus(result *models.QuickViewOptimization) managerOptimizationTargetStatus {
+	if result == nil {
+		return managerOptimizationTargetStatus{Reason: "quick view optimization result is missing"}
+	}
+	if strings.TrimSpace(result.TargetSchema) == "" ||
+		strings.TrimSpace(result.TargetTable) == "" ||
+		strings.TrimSpace(result.TargetGeometryColumn) == "" {
+		return managerOptimizationTargetStatus{Reason: "quick view optimization target identity is incomplete"}
+	}
+	if result.TargetSRID != spatial.SRIDWebMercator {
+		return managerOptimizationTargetStatus{Reason: "quick view optimization target srid is not 3857"}
+	}
+	return managerOptimizationTargetStatus{Ready: true}
+}
+
+func managerOptimizationTargetFactsStatus(result *models.QuickViewOptimization, populated, columnExists, indexed bool, actualSRID int) managerOptimizationTargetStatus {
+	if status := managerOptimizationTargetIdentityStatus(result); !status.Ready {
+		return status
+	}
+	if !populated {
+		return managerOptimizationTargetStatus{Reason: "quick view optimization materialized view is not populated"}
+	}
+	if !columnExists {
+		return managerOptimizationTargetStatus{Reason: "quick view optimization target geometry column is missing"}
+	}
+	if actualSRID == 0 {
+		return managerOptimizationTargetStatus{Reason: "quick view optimization target geometry srid is missing"}
+	}
+	if actualSRID != spatial.SRIDWebMercator {
+		return managerOptimizationTargetStatus{Reason: "quick view optimization target geometry srid is not 3857"}
+	}
+	if !indexed {
+		return managerOptimizationTargetStatus{Reason: "quick view optimization target geometry GiST index is missing"}
+	}
+	return managerOptimizationTargetStatus{Ready: true}
 }
 
 func sourceTransformRealtimeTileTarget(schema, table, geomCol string, sourceSRID int) *RealtimeTileTarget {

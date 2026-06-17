@@ -94,9 +94,9 @@ done
 echo ""
 echo -e "${YELLOW}▶ 设置 Bucket 访问策略...${NC}"
 
-# 设置 manager bucket 公开读（MVT 瓦片需要前端直接访问）
-echo -e "  ${BLUE}▸ manager - 设置为公开读（MVT 瓦片访问）${NC}"
-if docker compose -f docker-compose.infra.yml exec -T minio mc anonymous set download "local/manager" >/dev/null 2>&1; then
+# Manager 产物统一通过 Manager API 访问，bucket 保持私有。
+echo -e "  ${BLUE}▸ manager - 设置为私有（预览缓存、瓦片缓存对象通过 Manager API 访问）${NC}"
+if docker compose -f docker-compose.infra.yml exec -T minio mc anonymous set private "local/manager" >/dev/null 2>&1; then
   echo -e "  ${GREEN}✓ manager - 访问策略设置完成${NC}"
 else
   echo -e "  ${YELLOW}⚠️  manager - 访问策略设置失败（可能已设置）${NC}"
@@ -126,7 +126,7 @@ echo "  控制台:   http://localhost:$(($MINIO_ENDPOINT + 1))"
 echo ""
 echo "  已创建的 Buckets:"
 echo "  - system        (私有)  : 用户头像、系统配置"
-echo "  - manager       (公开读): 预览缓存、MVT 瓦片、导入临时文件（temp/ 7天后自动过期）"
+echo "  - manager       (私有)  : 预览缓存、瓦片缓存对象、导入临时文件（temp/ 7天后自动过期）"
 echo "  - meta          (私有)  : 元数据文件"
 echo "  - transfer      (私有)  : 传输临时文件"
 echo "  - orchestrator  (私有)  : 编排文件"

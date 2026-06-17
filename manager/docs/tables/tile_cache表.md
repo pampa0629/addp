@@ -1,6 +1,6 @@
 # tile_cache 表结构说明
 
-> 状态：目标设计说明。`manager.tile_cache` 表达瓦片缓存结果状态，是原始 data item 与瓦片缓存结果之间的事实源。
+> 状态：当前实现说明。`manager.tile_cache` 表达瓦片缓存结果状态，是原始 data item 与瓦片缓存结果之间的事实源。
 
 ## 一、表定位
 
@@ -16,12 +16,12 @@
 
 ## 二、目标核心字段
 
-| 字段名 | 类型建议 | 说明 |
+| 字段名 | 当前类型 / 语义 | 说明 |
 | --- | --- | --- |
 | `id` | bigint | 产物 ID |
 | `tenant_id` | integer | 租户 ID |
 | `item_fingerprint` | varchar(64) | 标准 data item 指纹，用于源数据去重和幂等 |
-| `item_id` | string / bigint | 当前 Meta item 行引用，仅用于回查，不作为去重主键 |
+| `item_id` | integer / nullable | 当前 Meta item 行引用，仅用于回查，不作为去重主键 |
 | `locator` | text | 资源树或数据项回跳定位 |
 | `task_id` | bigint | 产生或最近刷新该产物的 `manager.tile_cache_tasks.id` |
 | `tile_format` | varchar | 瓦片格式，例如 `mvt` |
@@ -35,7 +35,7 @@
 | `created_by` | integer | 创建人 |
 | `created_at` / `updated_at` / `deleted_at` | timestamp | 生命周期字段 |
 
-第一阶段只保留核心字段。瓦片数量、产物大小、访问策略、清理策略、快显性能优化目标状态、转换引擎等信息分别放在 manifest、execution metadata、`manager.quick_view_optimization` 或后续专题中。
+当前只保留核心字段。瓦片数量、产物大小、访问策略、清理策略、快显性能优化目标状态、转换引擎等信息分别放在 manifest、execution metadata、`manager.quick_view_optimization` 或后续专题中。
 
 ## 三、状态语义
 
@@ -61,6 +61,6 @@
 
 ## 五、相关文档
 
-- [快显规范与技术路线](../快显规范与技术路线.md)
+- [快显实现规范](../快显实现规范.md)
 - [quick_view 表结构和 API 说明](./quick_view表.md)
 - [数据库架构](../数据库架构.md)

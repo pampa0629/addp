@@ -634,4 +634,4 @@ top -p $(pgrep -f gateway)
 
 - [Gateway 架构说明](gateway架构说明.md) - Gateway 的整体架构和设计
 - [Gateway 鉴权限流设计（未实现）](gateway鉴权限流设计（未实现）.md) - 未来的鉴权和限流增强方案
-- [ADDP 常见故障排查](../../docs/addp常见故障排查.md) - 平台级故障排查指南
+- [ADDP 常见故障排查](../../docs/guide/addp常见故障排查.md) - 平台级故障排查指南

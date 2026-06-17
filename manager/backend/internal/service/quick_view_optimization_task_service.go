@@ -482,7 +482,7 @@ func normalizeQuickViewOptimizationTask(task *models.QuickViewOptimizationTask) 
 		return errors.New("quick view optimization task config is required")
 	}
 	if task.Schedule != "" || task.NextRunAt != nil {
-		return errors.New("quick view optimization task does not support schedule in phase one")
+		return errors.New("quick view optimization task does not support schedule")
 	}
 	_, err := normalizeQuickViewOptimizationTaskConfig(task.Config)
 	return err
@@ -572,7 +572,7 @@ func normalizeQuickViewOptimizationGeometry(config commonModels.JSONMap) (quickV
 		return quickViewOptimizationGeometry{}, errors.New("quick view optimization config.geometry.source_srid=3857 is already optimized by source 3857")
 	}
 	if cfg.TargetSRID != spatial.SRIDWebMercator {
-		return quickViewOptimizationGeometry{}, errors.New("quick view optimization phase one only supports target_srid=3857")
+		return quickViewOptimizationGeometry{}, errors.New("quick view optimization only supports target_srid=3857")
 	}
 	config["geometry"] = commonModels.JSONMap{
 		"geometry_column": cfg.GeometryColumn,
@@ -590,14 +590,14 @@ func normalizeQuickViewOptimizationOptions(config commonModels.JSONMap, sourceSc
 		targetKind = models.QuickViewOptimizationTargetKindSourceSchemaMaterializedView
 	}
 	if targetKind != models.QuickViewOptimizationTargetKindSourceSchemaMaterializedView {
-		return quickViewOptimizationOptions{}, errors.New("quick view optimization phase one only supports source_schema_materialized_view")
+		return quickViewOptimizationOptions{}, errors.New("quick view optimization only supports source_schema_materialized_view")
 	}
 	targetSchema := stringFromConfig(storage["target_schema"])
 	if targetSchema == "" {
 		targetSchema = sourceSchema
 	}
 	if targetSchema != sourceSchema {
-		return quickViewOptimizationOptions{}, errors.New("quick view optimization phase one requires storage.target_schema to equal source schema")
+		return quickViewOptimizationOptions{}, errors.New("quick view optimization requires storage.target_schema to equal source schema")
 	}
 	attributes, err := stringSliceFromConfig(optimization["attributes"])
 	if err != nil {

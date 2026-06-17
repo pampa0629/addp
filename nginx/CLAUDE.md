@@ -35,4 +35,4 @@ docker build -t addp-nginx ./nginx
 - `nginx/README.md`
 - `gateway/CLAUDE.md`
 - `gateway/docs/gateway架构说明.md`
-- `docs/addp部署和开发步骤.md`
+- `docs/guide/addp部署和开发步骤.md`

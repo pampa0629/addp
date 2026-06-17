@@ -116,11 +116,16 @@
             <el-table-column :label="t('manager.quickViewOptimization.target')" min-width="240" show-overflow-tooltip>
               <template #default="{ row }">{{ targetPath(row) }}</template>
             </el-table-column>
-            <el-table-column :label="t('manager.quickViewOptimization.resultStatus')" width="120">
+            <el-table-column :label="t('manager.quickViewOptimization.resultStatus')" width="150">
               <template #default="{ row }">
-                <el-tag :type="optimizationResultStatusTagType(row.status)">
-                  {{ resultStatusLabel(row.status) }}
-                </el-tag>
+                <div class="result-status-cell">
+                  <el-tag :type="optimizationResultStatusTagType(row.status)">
+                    {{ resultStatusLabel(row.status) }}
+                  </el-tag>
+                  <span v-if="row.status === 'stale'" class="result-status-hint">
+                    {{ t('manager.quickViewOptimization.staleResultHint') }}
+                  </span>
+                </div>
               </template>
             </el-table-column>
             <el-table-column :label="t('manager.quickViewOptimization.rowCountEstimate')" width="130">
@@ -130,11 +135,20 @@
             <el-table-column :label="t('manager.quickViewOptimization.updatedAt')" width="170">
               <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
             </el-table-column>
-            <el-table-column :label="t('manager.quickViewOptimization.actions')" width="280" fixed="right">
+            <el-table-column :label="t('manager.quickViewOptimization.actions')" width="380" fixed="right">
               <template #default="{ row }">
                 <div class="row-actions">
                   <el-button size="small" :disabled="!row.last_execution_id" @click="openResultExecution(row)">
                     {{ t('manager.quickViewOptimization.monitor') }}
+                  </el-button>
+                  <el-button
+                    v-if="resultAction(row).visible"
+                    size="small"
+                    type="warning"
+                    :loading="executingResultId === row.id"
+                    @click="refreshStaleResult(row)"
+                  >
+                    {{ t(resultAction(row).labelKey) }}
                   </el-button>
                   <el-button size="small" :disabled="row.status !== 'ready'" @click="openTileCacheCreate(row)">
                     {{ t('manager.quickViewOptimization.generateTileCache') }}
@@ -288,6 +302,8 @@ import {
   createQuickViewOptimizationTaskFormFromTask,
   createQuickViewOptimizationTaskPayload
 } from '@/utils/quickViewOptimizationTaskForm'
+import { quickViewOptimizationResultAction } from '@/utils/quickViewOptimizationResultAction'
+import { buildTileCacheCreateQuery } from '@/utils/quickViewNavigationQuery'
 import {
   createResourceRootNode,
   findResourceNodePath,
@@ -311,6 +327,7 @@ const tasksPage = ref(1)
 const tasksPageSize = ref(20)
 const tasksTotal = ref(0)
 const executingId = ref(null)
+const executingResultId = ref(null)
 const engineOptions = ref([])
 const resourceTreeData = ref([])
 const resourceExpandedKeys = ref([])
@@ -700,6 +717,26 @@ const executeTask = async (task) => {
   }
 }
 
+const refreshStaleResult = async (result) => {
+  const action = resultAction(result)
+  if (!action.canRerun) {
+    await openCreateDialogFromResult(result, { preferCurrentCapability: true })
+    return
+  }
+  executingResultId.value = result.id
+  try {
+    const response = await quickViewAPI.executeOptimizationTask(result.task_id)
+    ElMessage.success(t('manager.quickViewOptimization.refreshSubmitted'))
+    await Promise.all([loadTasks(), loadResults()])
+    await openMonitorExecution(response.execution_id)
+  } catch (error) {
+    console.error('重新执行快显性能优化失败:', error)
+    ElMessage.error(errorMessage(error, t('manager.quickViewOptimization.executeFailed')))
+  } finally {
+    executingResultId.value = null
+  }
+}
+
 const deleteTask = async (task) => {
   await ElMessageBox.confirm(t('manager.quickViewOptimization.deleteTaskConfirm'), t('manager.quickViewOptimization.delete'), { type: 'warning' })
   await quickViewAPI.deleteOptimizationTask(task.id)
@@ -802,22 +839,46 @@ const clearResultTaskFilter = async () => {
 const openTaskExecution = (task) => openMonitorExecution(task.last_execution_id)
 const openResultExecution = (result) => openMonitorExecution(result.last_execution_id)
 
+const resultAction = (result) => quickViewOptimizationResultAction(result)
+
+const openCreateDialogFromResult = async (result, options = {}) => {
+  resetForm()
+  form.config.target.source_engine_id = Number(result.source_engine_id || 0)
+  form.config.target.schema = result.source_schema || ''
+  form.config.target.table = result.source_table || ''
+  form.config.target.locator = result.locator || ''
+  if (result.item_id) form.config.target.item_id = Number(result.item_id)
+  form.config.target.item_fingerprint = result.item_fingerprint || ''
+  form.config.geometry.geometry_column = options.preferCurrentCapability ? '' : result.source_geometry_column || ''
+  form.config.geometry.source_srid = options.preferCurrentCapability ? 0 : Number(result.source_srid || 0)
+  form.config.geometry.target_srid = 3857
+  form.config.storage.target_schema = result.source_schema || ''
+  setGeometryOptions([result.source_geometry_column], form.config.geometry.geometry_column)
+  if (result.source_schema && result.source_table) {
+    form.name = t('manager.quickViewOptimization.defaultTaskName', { resource: `${result.source_schema}.${result.source_table}` })
+  }
+  formDialogVisible.value = true
+  if (showResourcePicker.value) await loadResourceTrees()
+  await loadQuickViewCapabilityForForm([result.source_geometry_column])
+  if (showResourcePicker.value) await revealSelectedResource()
+}
+
 const openTileCacheCreate = (result) => {
   router.push({
     name: 'TileCache',
     query: {
-      tab: 'tasks',
-      create: '1',
-      engine_id: String(result.source_engine_id || ''),
-      schema: result.source_schema || '',
-      table: result.source_table || '',
-      locator: result.locator || '',
-      geom: result.source_geometry_column || '',
-      source_srid: String(result.source_srid || ''),
+      ...buildTileCacheCreateQuery({
+        engineId: result.source_engine_id,
+        schema: result.source_schema,
+        table: result.source_table,
+        locator: result.locator,
+        geometryColumn: result.source_geometry_column,
+        sourceSRID: result.source_srid,
+        itemID: result.item_id,
+        itemFingerprint: result.item_fingerprint
+      }),
       quick_view_optimization: 'ready',
-      quick_view_optimization_id: result.id ? String(result.id) : undefined,
-      item_id: result.item_id ? String(result.item_id) : undefined,
-      item_fingerprint: result.item_fingerprint || undefined
+      quick_view_optimization_id: result.id ? String(result.id) : undefined
     }
   })
 }
@@ -954,6 +1015,19 @@ onMounted(async () => {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
+}
+
+.result-status-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+.result-status-hint {
+  color: var(--addp-text-tertiary);
+  font-size: 12px;
+  line-height: 1.3;
 }
 
 .form-section-title {

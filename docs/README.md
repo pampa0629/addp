@@ -38,7 +38,6 @@
 - [元数据 attributes 规范](spec/addp元数据attributes规范.md)
 - [数据类型与格式能力规范](spec/addp数据类型与格式能力规范.md)
 - [内容 I/O 抽象规范](spec/addp内容IO抽象规范.md)
-- [数据项探测器规范](spec/addp数据项探测器规范.md)
 - [内置数据类型与文件格式规范](spec/addp内置数据类型与文件格式规范.md)
 - [国际化体系图](concepts/addp国际化体系图.md)
 - [国际化开发规范](spec/addp国际化开发规范.md)
@@ -55,8 +54,12 @@
 3. [路径统一和指纹计算](spec/addp路径统一和指纹计算.md)：确认 full_name、fingerprint 和 ResourceLocator 的统一规则。
 4. [存储引擎路径体系规范](spec/addp存储引擎路径体系规范.md)：确认对象存储、文件系统和数据库类引擎的路径规则。
 5. [元数据 attributes 规范](spec/addp元数据attributes规范.md)：确认 locator 不作为 attributes 标准事实持久化。
-6. [Manager 向量化概念说明](../manager/docs/向量化概念说明.md)：确认 Manager 资源树 item / node 向量化、向量化任务和向量化结果的模块内概念边界。
-7. [Manager 向量化能力说明](../manager/docs/向量化能力说明.md)：确认 Manager 向量化结果字段、状态枚举、API、执行配置和 UI 契约。
+6. [Manager 数据预览与资源树实现规范](../manager/docs/数据预览与资源树实现规范.md)：确认 Manager 资源树、预览 API、PreviewResolver 和 PreviewProvider 当前实现契约。
+7. [Manager 数据预览语义协议](../manager/docs/数据预览语义协议.md)：确认 `content.kind`、`preview_material` 和 `frontend_renderer` 等预览响应语义。
+8. [Manager 快显概念说明](../manager/docs/快显概念说明.md)：确认快显、快显性能优化和瓦片缓存的概念边界。
+9. [Manager 快显实现规范](../manager/docs/快显实现规范.md)：确认快显性能优化任务、结果、外部 3857 目标、瓦片缓存和 UI 引导闭环。
+10. [Manager 向量化概念说明](../manager/docs/向量化概念说明.md)：确认 Manager 资源树 item / node 向量化、向量化任务和向量化结果的模块内概念边界。
+11. [Manager 向量化能力说明](../manager/docs/向量化能力说明.md)：确认 Manager 向量化结果字段、状态枚举、API、执行配置和 UI 契约。
 
 ## 数据类型与格式主题
 

@@ -45,4 +45,4 @@ cd console/frontend && npm run build
 - `console/frontend/README.md`
 - `common-frontend/CLAUDE.md`
 - `common-frontend/docs/addp前端风格设计规范.md`
-- `docs/addp部署和开发步骤.md`
+- `docs/guide/addp部署和开发步骤.md`

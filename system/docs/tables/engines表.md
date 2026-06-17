@@ -724,7 +724,7 @@ curl http://localhost:8180/internal/registry/compute-engines
 
 ## 十一、相关文档
 
-- **数据库插件系统**：[docs/数据库插件系统.md](../../docs/数据库插件系统.md)
-- **新增存储引擎指南**：[docs/addp新增存储引擎指南.md](../../docs/addp新增存储引擎指南.md)
+- **引擎插件接口规范**：[docs/spec/addp引擎插件接口规范.md](../../../docs/spec/addp引擎插件接口规范.md)
+- **数据引擎扩展指南**：[docs/spec/addp数据引擎扩展指南.md](../../../docs/spec/addp数据引擎扩展指南.md)
 - **各模块简要介绍**：[docs/concepts/addp各模块功能介绍.md](../../../docs/concepts/addp各模块功能介绍.md)
-- **System模块说明**：[system/CLAUDE.md](../CLAUDE.md)
+- **System模块说明**：[system/CLAUDE.md](../../CLAUDE.md)

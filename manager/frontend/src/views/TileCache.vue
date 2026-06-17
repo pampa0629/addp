@@ -232,9 +232,12 @@
           :closable="false"
           show-icon
           class="optimization-advice"
-          :title="tileCacheOptimizationAdvice.message"
+          :title="tileCacheOptimizationAdvice.title"
         >
           <template #default>
+            <div v-if="tileCacheOptimizationAdvice.message" class="optimization-advice__body">
+              {{ tileCacheOptimizationAdvice.message }}
+            </div>
             <el-button
               v-if="tileCacheOptimizationAdvice.actionVisible"
               size="small"
@@ -403,6 +406,8 @@ import {
   createTileCacheTaskFormFromTask,
   createTileCacheTaskPayload
 } from '../utils/tileCacheTaskForm'
+import { buildQuickViewOptimizationCreateQuery } from '../utils/quickViewNavigationQuery'
+import { tileCacheOptimizationAdvice as buildTileCacheOptimizationAdvice } from '../utils/tileCacheOptimizationAdvice'
 import {
   createResourceRootNode,
   findResourceNodePath,
@@ -453,7 +458,13 @@ const detailExecutionLoading = ref(false)
 let detailExecutionRequestSeq = 0
 let taskRefreshTimer = null
 const capabilityLoading = ref(false)
-const tileCacheOptimizationAdvice = reactive({ visible: false, message: '', type: 'warning', actionVisible: true })
+const tileCacheOptimizationAdvice = reactive({
+  visible: false,
+  title: '',
+  message: '',
+  type: 'warning',
+  actionVisible: true
+})
 const geometryColumnOptions = ref([])
 const selectedSourceNode = ref(null)
 const databaseEngineTypes = new Set(['postgresql', 'postgres', 'postgis'])
@@ -520,6 +531,7 @@ const resetForm = (task = null) => {
   selectedSourceNode.value = null
   resourceCurrentKey.value = ''
   tileCacheOptimizationAdvice.visible = false
+  tileCacheOptimizationAdvice.title = ''
   tileCacheOptimizationAdvice.message = ''
   tileCacheOptimizationAdvice.type = 'warning'
   tileCacheOptimizationAdvice.actionVisible = true
@@ -789,18 +801,17 @@ const applyQuickViewCapabilityToForm = (config, fallbackGeometryColumns = []) =>
   if (!form.config.options.geometry_column && config.geometry_column) {
     form.config.options.geometry_column = config.geometry_column
   }
-  if (config.optimization_available) {
-    tileCacheOptimizationAdvice.visible = true
-    tileCacheOptimizationAdvice.type = 'success'
-    tileCacheOptimizationAdvice.actionVisible = false
-    tileCacheOptimizationAdvice.message = config.optimization_target_kind === 'external_3857_materialized_view'
-      ? t('manager.tileCache.externalOptimizationTargetReady')
-      : t('manager.tileCache.optimizationTargetReady')
-  } else {
-    tileCacheOptimizationAdvice.visible = !!config.optimization_recommended
-    tileCacheOptimizationAdvice.type = 'warning'
-    tileCacheOptimizationAdvice.actionVisible = true
-    tileCacheOptimizationAdvice.message = config.optimization_message || t('manager.spatialPreview.optimizationRecommended')
+  Object.assign(tileCacheOptimizationAdvice, tileCacheOptimizationAdviceFromConfig(config))
+}
+
+const tileCacheOptimizationAdviceFromConfig = (config = {}) => {
+  const advice = buildTileCacheOptimizationAdvice(config)
+  return {
+    visible: advice.visible,
+    type: advice.type,
+    actionVisible: advice.actionVisible,
+    title: advice.titleKey ? t(advice.titleKey) : '',
+    message: advice.messageKey ? t(advice.messageKey) : ''
   }
 }
 
@@ -820,11 +831,15 @@ const tileCacheFormConfigFromCapability = (capability) => {
     geometry_column: quickView.geometry_column,
     geometry_columns: quickView.geometry_columns || [],
     optimization_available: optimization.available === true,
+    optimization_status: optimization.status || '',
     optimization_target_kind: optimization.target_kind || '',
+    optimization_reason: optimization.reason || '',
+    performance_mode: realtime.performance_mode || '',
     optimization_recommended: realtime.optimization_recommended === true ||
+      optimization.status === 'stale' ||
       realtime.performance_mode === 'source_transform_path' ||
       (optimization.available !== true && Number(renderFacts.source_srid || quickView.source_srid || 0) !== 3857),
-    optimization_message: realtime.optimization_recommendation || t('manager.spatialPreview.optimizationRecommended')
+    optimization_message: realtime.optimization_recommendation || ''
   }
 }
 
@@ -833,6 +848,7 @@ const applyRouteOptimizationAdvice = () => {
   tileCacheOptimizationAdvice.visible = true
   tileCacheOptimizationAdvice.type = 'success'
   tileCacheOptimizationAdvice.actionVisible = false
+  tileCacheOptimizationAdvice.title = t('manager.tileCache.optimizationTargetReadyTitle')
   tileCacheOptimizationAdvice.message = t('manager.tileCache.optimizationTargetReady')
 }
 
@@ -840,19 +856,17 @@ const openQuickViewOptimizationCreate = () => {
   const target = form.config.target
   router.push({
     name: 'QuickViewOptimization',
-    query: {
-      tab: 'tasks',
-      create: '1',
-      engine_id: String(target.source_engine_id || ''),
-      schema: target.schema || '',
-      table: target.table || '',
-      locator: target.locator || '',
-      ...(target.item_id ? { item_id: String(target.item_id) } : {}),
-      ...(target.item_fingerprint ? { item_fingerprint: target.item_fingerprint } : {}),
-      ...(form.config.options.geometry_column ? { geom: form.config.options.geometry_column } : {}),
-      ...(geometryColumnOptions.value.length ? { geometry_columns: geometryColumnOptions.value.join(',') } : {}),
-      ...(form.config.tile.source_srid ? { source_srid: String(form.config.tile.source_srid) } : {})
-    }
+    query: buildQuickViewOptimizationCreateQuery({
+      engineId: target.source_engine_id,
+      schema: target.schema,
+      table: target.table,
+      locator: target.locator,
+      itemID: target.item_id,
+      itemFingerprint: target.item_fingerprint,
+      geometryColumn: form.config.options.geometry_column,
+      geometryColumns: geometryColumnOptions.value,
+      sourceSRID: form.config.tile.source_srid
+    })
   })
 }
 
@@ -1328,6 +1342,10 @@ onBeforeUnmount(() => {
 
 .optimization-advice {
   margin-bottom: 14px;
+}
+
+.optimization-advice__body {
+  margin-bottom: 8px;
 }
 
 .execution-stats {

@@ -325,7 +325,7 @@ GO_MODULES=(
 | Monitor Backend | 8100 | 8100 | 监控后端 API |
 | Monitor Frontend | 5179 | 5179 | 监控仪表盘 UI |
 
-**文档更新**: `docs/addp端口分配.md` 已更新
+**文档更新**: `docs/spec/addp端口分配.md` 已更新
 
 ---
 
@@ -437,7 +437,7 @@ FOR VALUES FROM ('2026-02-01') TO ('2026-03-01');
 
 ### 10.4 文档
 
-- `docs/addp端口分配.md` - 端口分配文档 ✅
+- `docs/spec/addp端口分配.md` - 端口分配文档 ✅
 - `docs/Monitor模块实施报告.md` - 本报告 ✅
 
 ---

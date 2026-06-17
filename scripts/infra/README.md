@@ -139,9 +139,9 @@ docker compose -f docker-compose.infra.yml restart meilisearch
 
 ## 相关文档
 
-- [配置说明](../../docs/addp配置介绍.md)
-- [端口分配](../../docs/addp端口分配.md)
-- [部署步骤](../../docs/addp部署和开发步骤.md)
+- [配置说明](../../docs/spec/addp配置介绍.md)
+- [端口分配](../../docs/spec/addp端口分配.md)
+- [部署步骤](../../docs/guide/addp部署和开发步骤.md)
 
 1. **单一职责**: 同样功能只在一处实现,其他地方调用
 2. **适应性**: 适应不同环境(OS、CPU架构),脚本自动适配
@@ -263,15 +263,15 @@ addp (database)
 ```
 MinIO
 ├── system/             → System 模块（用户头像、系统配置）
-├── manager/            → Manager 模块（预览缓存、MVT 瓦片）
-│   └── mvt-tiles/      → MVT 瓦片存储
+├── manager/            → Manager 模块（预览缓存、瓦片缓存对象）
+│   └── tenant_<id>/mvt-tiles/ → 瓦片缓存对象，由 Manager API 按 storage_ref 访问
 ├── meta/               → Meta 模块（元数据相关文件）
 ├── transfer/           → Transfer 模块（传输临时文件）
 ├── orchestrator/       → Orchestrator 模块（编排文件）
 └── develop/            → Develop 模块（查询结果导出）
 ```
 
-**特殊配置**: `manager` bucket 设置为公开读,以支持 MVT 瓦片的前端直接访问。
+**访问策略**: `manager` bucket 保持私有。预览缓存和瓦片缓存对象统一通过 Manager API 访问，前端不直接依赖 MinIO bucket 路径。
 
 ### Redis Key 命名规范
 
@@ -398,7 +398,7 @@ POSTGRES_IMAGE=imresamu/postgis-arm64:15-3.4 ./scripts/infra/up.sh
 
 **创建的 Buckets**:
 - `system` - System 模块（用户头像、系统配置）
-- `manager` - Manager 模块（预览缓存、MVT 瓦片）- **公开读**
+- `manager` - Manager 模块（预览缓存、瓦片缓存对象）- **私有**
 - `meta` - Meta 模块（元数据相关文件）
 - `transfer` - Transfer 模块（传输临时文件）
 - `orchestrator` - Orchestrator 模块（编排文件）
@@ -730,8 +730,8 @@ MINIO_CONSOLE_PORT=19011
 - [CLAUDE.md](../../CLAUDE.md) - 项目整体架构说明
 - [docker-compose.infra.yml](../../docker-compose.infra.yml) - 基础设施容器配置
 - [.env.example](../../.env.example) - 环境变量配置模板
-- [docs/CONFIG_CENTER.md](../../docs/CONFIG_CENTER.md) - 配置中心使用指南
-- [docs/INFRA_ARCHITECTURE_DETECTION.md](../../docs/INFRA_ARCHITECTURE_DETECTION.md) - 基础设施架构检测
+- [docs/spec/addp配置介绍.md](../../docs/spec/addp配置介绍.md) - 配置中心使用指南
+- [scripts/infra/README.md](README.md) - 基础设施启动、检测和排障说明
 
 ## 更新日志
 

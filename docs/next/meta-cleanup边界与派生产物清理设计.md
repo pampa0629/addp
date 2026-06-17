@@ -1,6 +1,6 @@
 # Meta cleanup 边界与派生产物清理设计
 
-> 状态：讨论稿。本文记录当前 cleanup 实现的边界问题和推荐方向；本轮先不改代码，后续作为 cleanup / 扫描后派生能力专题的输入。
+> 状态：讨论稿。本文记录当前 cleanup 实现的边界问题和推荐方向；本轮先不改代码，后续作为 cleanup / 扫描后派生能力专题的输入。注意：即使涉及 Manager Quick View、MVT 和快显性能优化，cleanup 语义仍归本文，不下沉到 Manager 快显规范。
 
 ## 背景
 
@@ -46,6 +46,16 @@ prefix: mvt-tiles/<fingerprint>/
 ```
 
 这使 Meta 知道了 Manager 的 MinIO bucket、MVT tiles key 结构，以及 Quick View 派生产物的存储策略。
+
+该实现还与当前 Manager 瓦片缓存主路径不一致。Manager 当前通过 `manager.tile_cache.storage_ref` 描述瓦片对象位置，默认对象前缀为：
+
+```text
+bucket: manager
+prefix: tenant_<tenant_id>/mvt-tiles/<item_fingerprint>/
+manifest: tenant_<tenant_id>/mvt-tiles/<item_fingerprint>/metadata.json
+```
+
+统一 MVT 入口按 ready `tile_cache` 结果读取 `storage_ref`，前端不直接访问 MinIO bucket。Meta 继续按 `mvt-tiles/<fingerprint>/` 扫描不仅越过 owner 边界，也会漏掉当前租户隔离后的对象路径。
 
 ### 4. cleanup 事件协议已有雏形，但 Manager 未接入
 
@@ -107,6 +117,8 @@ System 只应发布中性的生命周期事件，例如 engine deleted / disable
 | Manager embedding / preview cache | Manager | Manager |
 | Transfer 临时导入产物 | Transfer | Transfer |
 
+Manager cleanup 的 owner 范围应以 Manager 自身状态表和 `storage_ref` 为入口，不以 Meta item attributes 或 MinIO 硬编码前缀为入口。Meta 可以通过 cleanup request 提供 `engine_id`、`tenant_id`、`item_id`、`item_fingerprint` 等中性上下文，但不能直接推导 Manager 私有对象路径。
+
 ### 2. common 只定义协议，不承载业务 owner
 
 `common/events` 可以定义 cleanup request / result 的协议模型，但不能把具体模块的表结构、bucket key、artifact 类型写进 common。
@@ -157,9 +169,20 @@ Manager 派生产物不只有 Quick View 和 MVT。随着向量化主线收敛�
 | --- | --- | --- | --- |
 | Quick View | Manager | `manager.quick_view` | 源 item 删除、engine 删除 |
 | Quick View Optimization | Manager | `manager.quick_view_optimization`、Manager 创建并登记的 3857 物化视图和索引 | 源 item 删除、空间字段变化、engine 删除、源事实变化 |
-| MVT tiles | Manager | MinIO tiles、Redis / 内存缓存、manifest 或任务结果 | 源 item 变化、配置变化、SRID / extent 策略变化 |
+| Tile Cache / MVT tiles | Manager | `manager.tile_cache`、`manager.tile_cache_tasks`、`storage_ref` 指向的 MinIO tiles / manifest、Redis / 内存运行时瓦片缓存 | 源 item 删除、engine 删除、配置变化、SRID / extent 策略变化 |
 | preview cache | Manager | 预览缓存、临时抽取结果、可能的缩略图 | 源 content 变化、格式插件变化、缓存过期 |
-| embedding vectors | Manager | `manager.embeddings` pgvector 行 | 源 item 变化、模型变化、维度变化、engine / tenant 删除 |
+| embedding vectors | Manager | `manager.embeddings` pgvector 行、`manager.embedding_tasks` 任务定义 | 源 item 删除、engine 删除、模型变化、维度变化、源 content 变化 |
+
+Manager 派生产物的清理粒度：
+
+| 场景 | `quick_view` | `quick_view_optimization` | `tile_cache` / tiles | `embeddings` | 任务定义 |
+| --- | --- | --- | --- | --- | --- |
+| item 删除 | 删除偏好 | 删除 Manager 自建优化结果和物理目标；不碰外部 3857 目标 | 删除结果、`storage_ref` 对象和运行时缓存 | 删除或标记源缺失，需统一策略 | 默认保留任务定义，但执行时应跳过缺失 item；是否级联删除待 cleanup 专题统一 |
+| engine 删除 | 删除该 engine 下偏好 | 删除 Manager 自建优化目标；失败时保留错误摘要 | 删除该 engine 下结果与对象 | 删除该 engine 下向量结果 | 与该 engine 强绑定的任务定义是否删除或禁用待统一 |
+| tenant 删除 | 删除该 tenant 全部 Manager artifact state | 删除该 tenant 下 Manager 自建目标 | 删除该 tenant 下对象前缀、manifest、运行时缓存 | 删除该 tenant 下向量结果 | 删除或归档该 tenant 下任务定义 |
+| 源事实变化 | 不一定删除 | 标记 `stale` 或在查询时惰性判定 | 视配置变化标记失效或刷新当前结果 | 模型 / content version 不匹配时视为过期 | 任务定义保留，下一次执行重建 |
+
+以上表格只整理 Manager 相关内容，最终策略仍在 cleanup 专题中统一确认；不应把这些规则拆到 Manager 快显规范里单独演化。
 
 lifecycle 需要区分三类对象：
 
@@ -180,6 +203,8 @@ lifecycle 需要区分三类对象：
 
 - Meta 只发布或处理 Meta 自己的事实生命周期，不直接读写 Manager 私有表和 bucket key。
 - Manager cleanup consumer 只清理 Manager-owned artifact，不反向修改 Meta attributes。
+- Manager cleanup consumer 删除瓦片对象时必须解析 `manager.tile_cache.storage_ref`，不得硬编码 `manager/mvt-tiles/<fingerprint>` 或旧 quick_view 字段。
+- Manager cleanup consumer 删除 3857 优化目标时只处理 `manager.quick_view_optimization` 登记且 target_kind 属于 Manager 自建目标的对象；自动识别的外部 3857 物化视图、外部表和外部索引永远不由 Manager cleanup 删除。
 - 各派生产物可以有不同物理删除策略，但对外应暴露一致的 cleanup result 摘要。
 
 ## 推荐改造方向
@@ -208,20 +233,43 @@ cleanup 从监控视角具有 execution 特征，但从编排视角属于系统�
 
 - 订阅 `cleanup.request`。
 - 仅处理 `ExpectedModules` 包含 `manager`，或请求未限制模块但 Manager cleanup 已启用的任务。
+- 使用 Manager repository / service 查询本模块状态表，不从 Meta 查询 Manager 派生产物路径。
 - scan 阶段统计 Manager 自己的垃圾数据：
-  - 无效 engine 关联的 `quick_view`。
-  - 孤立或过期的 Quick View 记录。
-  - 无效 engine、缺失 item 或源事实变化导致的 `manager.quick_view_optimization` 记录。
+  - 无效 engine、缺失 item 或 tenant 删除关联的 `manager.quick_view`。
+  - 无效 engine、缺失 item、源事实变化或物理目标校验失败导致的 `manager.quick_view_optimization` 记录。
   - Manager 创建并登记、但已无有效结果归属的 3857 优化目标。
-  - 可删除的 MVT tiles。
+  - 无效 engine、缺失 item、删除态或重复刷新遗留的 `manager.tile_cache` 结果。
+  - `manager.tile_cache.storage_ref` 指向但已无有效结果归属的瓦片对象、manifest 和运行时缓存键。
+  - 无效 engine、缺失 item、模型 / 维度 / source_version 不匹配的 `manager.embeddings`。
+  - 与无效 engine、tenant 或缺失 locator 强绑定的 `manager.embedding_tasks`、`manager.tile_cache_tasks`、`manager.quick_view_optimization_tasks`，任务定义是否删除、禁用或保留为失败状态需要在 cleanup 结果中单独列项。
 - execute 阶段删除 Manager 自己的资源：
   - `manager.quick_view`。
   - `manager.quick_view_optimization` 中 Manager 拥有生命周期的结果记录。
   - Manager 创建并登记的 3857 物化视图或索引。
-  - `manager` bucket 下对应 MVT tiles。
+  - `manager.tile_cache` 结果记录和 `storage_ref` 指向的瓦片对象 / manifest。
   - Redis / 内存中的 Manager 运行时瓦片缓存键。
+  - `manager.embeddings` 中对应向量结果和 pgvector 内容。
 - Manager cleanup 不删除 capability 自动识别的外部 3857 物化视图、外部表或外部索引；这些对象不写入 `manager.quick_view_optimization`，也不获得 Manager 生命周期所有权。
+- Manager cleanup 不删除源业务表、源表原有索引、Meta facts、Meilisearch 源事实索引或 System engine 配置。
 - 写入 `cleanup:results:<task_id>` hash，key 为 `manager`。
+
+Manager cleanup result 建议至少包含：
+
+| 字段 | 说明 |
+| --- | --- |
+| `module` | 固定为 `manager`。 |
+| `tenant_id` | 本次清理的租户；全局清理可为空或 0。 |
+| `scope` | `scan` / `execute`，以及 engine / item / tenant 等范围。 |
+| `deleted_quick_view` | 删除的快显偏好数量。 |
+| `deleted_quick_view_optimization` | 删除或标记 stale 的优化结果数量。 |
+| `deleted_optimization_targets` | 成功删除的 Manager 自建 3857 物理目标数量。 |
+| `deleted_tile_cache` | 删除的瓦片缓存结果数量。 |
+| `deleted_tile_objects` / `freed_tile_bytes` | 删除的瓦片对象数量和释放空间。 |
+| `invalidated_runtime_cache_keys` | 失效的 Redis / 内存运行时缓存键数量。 |
+| `deleted_embeddings` | 删除或标记无源的向量结果数量。 |
+| `affected_task_definitions` | 被删除、禁用、保留或需人工确认的任务定义数量。 |
+| `skipped_external_targets` | 因外部 owner 而跳过的 3857 目标数量。 |
+| `errors` | 删除失败或权限不足等错误摘要。 |
 
 ### 阶段 3：移除 Meta 对 Manager 产物的直接依赖
 
@@ -232,6 +280,15 @@ cleanup 从监控视角具有 execution 特征，但从编排视角属于系统�
 - `metacleanup.MinIOCleaner` 中扫描 / 删除 `manager` bucket 的 MVT 逻辑
 - `CleanupService.deleteMinIOMVTByEngine`
 - `CleanupService.ScanGarbage` / `ExecuteCleanup` 中基于 Manager fingerprint 的 MinIO cleanup
+- 引擎删除事件中“软删除 Meta 后顺手删除 Manager MVT”的同步调用链
+
+同时需要确认 Meta 不再引用以下 Manager 私有事实：
+
+- `manager.quick_view.engine_id`
+- `manager.quick_view.fingerprint`
+- `manager` bucket key 结构
+- `mvt-tiles/<fingerprint>/` 前缀
+- `tenant_<tenant_id>/mvt-tiles/<item_fingerprint>/` 前缀
 
 Meta 保留：
 

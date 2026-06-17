@@ -4,7 +4,7 @@
 
 ## 📋 概述
 
-Math Workflow Engine 是一个符合 [ADDP 工作流计算引擎接口规范](../docs/addp工作流计算引擎接口规范.md) 的完整工作流引擎实现，提供基础数学运算的 DAG 工作流编排能力。
+Math Workflow Engine 是一个符合 [ADDP 工作流计算引擎接口规范](../../docs/spec/addp工作流计算引擎接口规范.md) 的完整工作流引擎实现，提供基础数学运算的 DAG 工作流编排能力。
 
 **特点**:
 - ✅ **极简实现**: 核心代码约 350 行（api_server.py 310 行 + workflow_engine.py 170 行）
@@ -308,11 +308,11 @@ registration_data = {
 
 ## 📚 相关文档
 
-- [ADDP 工作流计算引擎接口规范](../docs/addp工作流计算引擎接口规范.md) - 完整规范文档
+- [ADDP 工作流计算引擎接口规范](../../docs/spec/addp工作流计算引擎接口规范.md) - 完整规范文档
 - [OpenAPI 3.0 规范](../docs/workflow-engine-api-v1.yaml) - 机器可读的 API 定义
-- [快速开始](../docs/addp工作流计算引擎接口规范.md#-快速开始) - 5 分钟实现最小引擎
-- [最佳实践](../docs/addp工作流计算引擎接口规范.md#-最佳实践) - 算子设计和性能优化
-- [常见问题](../docs/addp工作流计算引擎接口规范.md#-常见问题faq) - FAQ
+- [快速开始](../../docs/spec/addp工作流计算引擎接口规范.md#-快速开始) - 5 分钟实现最小引擎
+- [最佳实践](../../docs/spec/addp工作流计算引擎接口规范.md#-最佳实践) - 算子设计和性能优化
+- [常见问题](../../docs/spec/addp工作流计算引擎接口规范.md#-常见问题faq) - FAQ
 
 ## 🎯 作为参考实现
 

@@ -8,7 +8,7 @@
 [![Go](https://img.shields.io/badge/Go-1.23+-00ADD8.svg)](https://golang.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.x-4FC08D.svg)](https://vuejs.org/)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg)](https://www.docker.com/)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](#-许可证)
 
 [English](#english) | [中文文档](#中文文档)
 
@@ -239,12 +239,11 @@ ADDP 提供完整的自动化脚本工具链，覆盖开发、构建、部署全
 ### 📚 文档
 
 - **[CLAUDE.md](CLAUDE.md)** - 完整项目架构和开发指南 (English)
-- **[CLAUDE-CN.md](CLAUDE-CN.md)** - 完整项目架构和开发指南 (中文)
+- **[AGENTS.md](AGENTS.md)** - 项目工作原则、模块导航和开发约定
 - **[scripts/README.md](scripts/README.md)** - Scripts 脚本使用指南
 - **[docs/](docs/)** - 详细技术文档
-  - [DEPLOYMENT.md](docs/DEPLOYMENT.md) - 部署指南
-  - [CONFIG_CENTER.md](docs/CONFIG_CENTER.md) - 配置中心
-  - [DOCKER_SWARM.md](docs/DOCKER_SWARM.md) - Swarm 高可用部署
+  - [addp部署和开发步骤.md](docs/guide/addp部署和开发步骤.md) - 部署与开发启动指南
+  - [addp配置介绍.md](docs/spec/addp配置介绍.md) - 配置中心与环境变量说明
 
 ### 🤝 贡献
 
@@ -258,7 +257,7 @@ ADDP 提供完整的自动化脚本工具链，覆盖开发、构建、部署全
 
 ### 📝 许可证
 
-本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件
+本项目采用 MIT 许可证。
 
 ### 🙏 致谢
 
@@ -365,13 +364,13 @@ Complete automation scripts for development, build, and deployment:
 ### 📚 Documentation
 
 - **[CLAUDE.md](CLAUDE.md)** - Complete architecture and development guide (English)
-- **[CLAUDE-CN.md](CLAUDE-CN.md)** - Complete architecture and development guide (Chinese)
+- **[AGENTS.md](AGENTS.md)** - Project working principles, module navigation, and development conventions
 - **[scripts/README.md](scripts/README.md)** - Scripts usage guide
 - **[docs/](docs/)** - Detailed technical documentation
 
 ### 📝 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License.
 
 ---
 

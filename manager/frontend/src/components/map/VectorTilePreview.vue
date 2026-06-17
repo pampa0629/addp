@@ -44,6 +44,11 @@ import { unByKey } from 'ol/Observable.js'
 import client from '@/api/client'
 import { useMvtGridDebug } from '@/composables/useMvtGridDebug'
 import { useVectorTileRenderStatus } from '@/composables/useVectorTileRenderStatus'
+import {
+  shouldWarnVectorTileMaxZoom,
+  vectorTileMaxZoomWarningKey,
+  vectorTileSourceMaxZoom
+} from '@/utils/vectorTileZoomWarning'
 
 // 导入 common-frontend/map 的工具和composables
 import {
@@ -122,6 +127,20 @@ const tilesURLTemplate = computed(() => {
   return `${base}/manager/quick-view/tiles/{z}/{x}/{y}.mvt`
 })
 
+const normalizedRenderSource = computed(() => String(
+  props.renderSource || tileRenderInfo.value?.render_source || ''
+).trim())
+
+const maxZoomWarningMessage = (zoom, max) => {
+  return t(vectorTileMaxZoomWarningKey(normalizedRenderSource.value), { zoom, max })
+}
+
+const sourceMaxZoom = computed(() => vectorTileSourceMaxZoom(
+  normalizedRenderSource.value,
+  tileRenderInfo.value?.max_zoom,
+  22
+))
+
 const {
   renderStatusClass,
   renderStatusLabel,
@@ -165,7 +184,7 @@ function resetTileRenderState() {
 const createMVTLayer = () => {
   const layer = createVectorTileLayer(tilesURLTemplate.value, token, {
     minZoom: tileRenderInfo.value?.min_zoom || 6,
-    maxZoom: tileRenderInfo.value?.max_zoom || 18,
+    maxZoom: sourceMaxZoom.value,
     cacheSize: 64,
     maxDecodedTileBytes: 8 * 1024 * 1024,
     degradedRetryCooldownMs: 15000,
@@ -323,10 +342,10 @@ async function initMap() {
         hasShownMinZoomWarning = true
       }
       lastWarningZoom = currentZoom
-    } else if (currentZoom > maxZoom) {
+    } else if (shouldWarnVectorTileMaxZoom(normalizedRenderSource.value) && currentZoom > maxZoom) {
       if (!hasShownMaxZoomWarning) {
         ElMessage.info({
-          message: t('manager.vectorTile.zoomTooHigh', { zoom: currentZoom, max: maxZoom }),
+          message: maxZoomWarningMessage(currentZoom, maxZoom),
           duration: 3000,
           showClose: true
         })

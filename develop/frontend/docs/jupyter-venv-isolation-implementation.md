@@ -311,7 +311,7 @@ jupyter kernelspec list | grep tenant_1
 
 1. **前端改造** - 修改 `NotebookEditor.vue` 添加虚拟环境初始化界面
 2. **端到端测试** - 按照上述测试步骤验证完整流程
-3. **文档更新** - 更新 `develop/CLAUDE.md` 和 `docs/addp-Notebook开发.md`
+3. **文档更新** - 更新 `develop/CLAUDE.md` 和 `develop/frontend/docs/notebook-integration-status.md`
 
 ---
 

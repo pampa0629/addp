@@ -24,6 +24,10 @@ const (
 	DefaultExtent        = 1024
 	DefaultTimeoutMS     = 3000
 	DefaultRetryAfterSec = 60
+
+	MultiScaleCandidateMaxZoom     = 8
+	MultiScaleCandidateMVTSizeB    = 4 * 1024 * 1024
+	MultiScaleCandidateMaxMVTSizeB = 8 * 1024 * 1024
 )
 
 type Config struct {
@@ -128,8 +132,9 @@ type MetricSummary struct {
 }
 
 type BenchmarkRecommendations struct {
-	RenderPaths []RenderPathRecommendation `json:"render_paths,omitempty"`
-	Warnings    []string                   `json:"warnings,omitempty"`
+	RenderPaths          []RenderPathRecommendation `json:"render_paths,omitempty"`
+	MultiScaleCandidates []MultiScaleCandidate      `json:"multi_scale_candidates,omitempty"`
+	Warnings             []string                   `json:"warnings,omitempty"`
 }
 
 type RenderPathRecommendation struct {
@@ -143,6 +148,21 @@ type RenderPathRecommendation struct {
 	RecommendedAction                  string        `json:"recommended_action"`
 	Confidence                         string        `json:"confidence"`
 	Rationale                          []string      `json:"rationale,omitempty"`
+}
+
+type MultiScaleCandidate struct {
+	ScenarioName      string        `json:"scenario_name"`
+	RenderPath        string        `json:"render_path"`
+	TargetKind        string        `json:"target_kind,omitempty"`
+	Schema            string        `json:"schema"`
+	Table             string        `json:"table"`
+	GeometryColumn    string        `json:"geometry_column"`
+	Tile              TileCoord     `json:"tile"`
+	Trigger           string        `json:"trigger"`
+	Summary           MetricSummary `json:"summary"`
+	CurrentUserAction string        `json:"current_user_action"`
+	FollowUpTopic     string        `json:"follow_up_topic"`
+	Rationale         []string      `json:"rationale,omitempty"`
 }
 
 type DBStats struct {
@@ -586,7 +606,8 @@ func buildRecommendations(scenarios []ScenarioReport, cfg Config) BenchmarkRecom
 	sort.Strings(paths)
 
 	recommendations := BenchmarkRecommendations{
-		RenderPaths: make([]RenderPathRecommendation, 0, len(paths)),
+		RenderPaths:          make([]RenderPathRecommendation, 0, len(paths)),
+		MultiScaleCandidates: multiScaleCandidates(scenarios),
 	}
 	for _, path := range paths {
 		group := groups[path]
@@ -611,6 +632,67 @@ func buildRecommendations(scenarios []ScenarioReport, cfg Config) BenchmarkRecom
 		}
 	}
 	return recommendations
+}
+
+func multiScaleCandidates(scenarios []ScenarioReport) []MultiScaleCandidate {
+	var candidates []MultiScaleCandidate
+	for _, scenario := range scenarios {
+		if scenario.RenderPath == "source_transform_path" {
+			continue
+		}
+		for _, tile := range scenario.Tiles {
+			trigger := multiScaleCandidateTrigger(tile)
+			if trigger == "" {
+				continue
+			}
+			candidates = append(candidates, MultiScaleCandidate{
+				ScenarioName:      scenario.Name,
+				RenderPath:        scenario.RenderPath,
+				TargetKind:        scenario.TargetKind,
+				Schema:            scenario.Schema,
+				Table:             scenario.Table,
+				GeometryColumn:    scenario.GeomColumn,
+				Tile:              tile.Tile,
+				Trigger:           trigger,
+				Summary:           tile.Summary,
+				CurrentUserAction: "tile_cache_generation",
+				FollowUpTopic:     "multi_scale_quick_view_optimization",
+				Rationale:         multiScaleCandidateRationale(trigger, tile.Summary),
+			})
+		}
+	}
+	return candidates
+}
+
+func multiScaleCandidateTrigger(tile TileReport) string {
+	if tile.Tile.Z > MultiScaleCandidateMaxZoom {
+		return ""
+	}
+	summary := tile.Summary
+	switch {
+	case summary.TimeoutRuns > 0:
+		return "low_zoom_timeout"
+	case summary.RawMVTSizeP95B >= MultiScaleCandidateMVTSizeB:
+		return "low_zoom_large_mvt"
+	case summary.MaxSizeBytes >= MultiScaleCandidateMaxMVTSizeB:
+		return "low_zoom_large_mvt"
+	default:
+		return ""
+	}
+}
+
+func multiScaleCandidateRationale(trigger string, summary MetricSummary) []string {
+	rationale := []string{
+		fmt.Sprintf("candidate is limited to z<=%d ready/indexed 3857 paths", MultiScaleCandidateMaxZoom),
+		"current product guidance remains tile cache generation; do not create a multi-scale optimization entry from this report",
+	}
+	switch trigger {
+	case "low_zoom_timeout":
+		rationale = append(rationale, fmt.Sprintf("observed timeout_rate=%.4f on low zoom tile", summary.TimeoutRate))
+	case "low_zoom_large_mvt":
+		rationale = append(rationale, fmt.Sprintf("observed raw_mvt_size_p95_bytes=%.0f max_size_bytes=%d on low zoom tile", summary.RawMVTSizeP95B, summary.MaxSizeBytes))
+	}
+	return rationale
 }
 
 func recommendedTimeoutMS(summary MetricSummary, benchmarkTimeoutMS int) int {

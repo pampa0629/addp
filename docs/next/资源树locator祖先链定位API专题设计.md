@@ -4,7 +4,7 @@
 
 ## 背景
 
-Manager、数据检索、向量化结果、MVT / Quick View 等页面都需要从一个 `locator` 回到资源树并高亮目标资源。
+Manager、数据检索、向量化结果、快显等页面都需要从一个 `locator` 回到资源树并高亮目标资源。
 
 当前前端已经统一消费 ResourceLocator，不再自行拼接 `engine_id / bucket / path` 等旧路径。但资源树是懒加载的：如果目标资源很深，前端只有目标 locator 时，无法稳定知道从根节点到目标节点之间每一级祖先是否已经加载、应该展开哪个节点、每一级展示名和节点类型是什么。
 
@@ -154,5 +154,5 @@ GET /api/v1/manager/tree/{engine_id}/ancestors?locator={locator}
 1. 先补 Manager Explorer API 与 Swagger。
 2. 增加 MetaClient 查询 node / item 祖先链的正式方法，避免 Manager 直接拼 Meta SQL。
 3. 前端 `ResourceTree` 增加 `reveal(locator)` 或等价组合能力。
-4. 数据检索、向量化结果、MVT / Quick View 统一使用该定位能力。
+4. 数据检索、向量化结果、快显页面统一使用该定位能力。
 5. 增加 MinIO 深层 prefix、NFS 深层目录、item locator、node locator 四类最小验证用例。

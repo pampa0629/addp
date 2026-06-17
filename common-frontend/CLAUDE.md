@@ -17,7 +17,7 @@ common-frontend/
 
 ## 开发规则
 
-- 新增前端页面或共享组件前，先阅读 `docs/addp前端风格设计规范.md` 和 `README.md`。
+- 新增前端页面或共享组件前，先阅读 `common-frontend/docs/addp前端风格设计规范.md` 和 `common-frontend/README.md`。
 - 不要硬编码 ADDP 主题色，应使用平台主题变量和已有共享能力。
 - `common-frontend` 不应保留自己的 `node_modules`；各前端模块通过 `overrides` 和 Vite alias 保持 Vue 单一实例。
 - 地图相关组件放在 `map/`，不引入地图依赖的基础组件放在 `basic/`。

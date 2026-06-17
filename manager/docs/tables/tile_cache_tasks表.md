@@ -1,6 +1,6 @@
 # tile_cache_tasks 表结构说明
 
-> 状态：目标设计说明。`manager.tile_cache_tasks` 表达瓦片缓存生成任务定义，TaskProvider `task_type=tile_cache_generation`。
+> 状态：当前实现说明。`manager.tile_cache_tasks` 表达瓦片缓存生成任务定义，TaskProvider `task_type=tile_cache_generation`。
 
 ## 一、表定位
 
@@ -8,13 +8,21 @@
 
 > 以后按什么配置生成或刷新瓦片缓存。
 
-瓦片缓存生成必然先创建任务定义，再执行。即使用户从空间预览页点击“生成瓦片缓存”，也应跳转瓦片缓存页面的“任务”tab 创建 `manager.tile_cache_tasks`。如果当前 item 处于源表转换慢路径或瓦片响应提示 `quick_view_optimization`，UI 应先引导用户执行快显性能优化；优化结果 ready 后再生成瓦片缓存。
+瓦片缓存生成必然先创建任务定义，再执行。即使用户从空间预览页点击“生成瓦片缓存”，也应跳转瓦片缓存页面的“任务”tab 创建 `manager.tile_cache_tasks`。如果当前 item 处于源表转换慢路径、`optimization.status=stale` 或瓦片响应提示 `quick_view_optimization`，UI 应先引导用户执行快显性能优化；优化结果 ready 后再生成瓦片缓存。
+
+瓦片缓存任务创建页的快显性能优化提示分三类：
+
+1. Manager `ready` 优化结果：展示可复用提示，不展示“执行快显优化”入口。
+2. 外部 3857 只读目标：展示外部目标可复用提示，不展示“执行快显优化”入口，不暗示 Manager 可删除或刷新该目标。
+3. Manager `stale` 结果或源表转换慢路径：展示警告和“执行快显优化”入口；瓦片缓存任务仍可创建，不因缺少可索引 3857 目标而禁用。
+
+如果源表本身已是 3857 但缺少 GiST 索引，快显性能优化任务不创建冗余 3857 目标；动态 MVT 超时闭环应提示生成瓦片缓存，并按 TTL 抑制重复慢请求。
 
 ## 二、目标核心字段
 
 公共字段遵守 `docs/spec/addp任务体系规范.md`，并与 `manager.embedding_tasks` 保持一致。
 
-| 字段名 | 类型建议 | 说明 |
+| 字段名 | 当前类型 / 语义 | 说明 |
 | --- | --- | --- |
 | `id` | bigint | Manager 内部任务定义 ID |
 | `tenant_id` | integer | 租户 ID |
@@ -91,6 +99,6 @@ DELETE /api/v1/manager/tile_cache_tasks/{id}
 
 ## 五、相关文档
 
-- [快显规范与技术路线](../快显规范与技术路线.md)
+- [快显实现规范](../快显实现规范.md)
 - [tile_cache 表结构说明](./tile_cache表.md)
 - [数据库架构](../数据库架构.md)

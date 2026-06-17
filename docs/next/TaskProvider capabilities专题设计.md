@@ -253,7 +253,7 @@ POST /executions/{execution_id}/cancel
 }
 ```
 
-不满足以上条件时，模块内部可以保留私有取消能力，但不得声明 TaskProvider 标准取消能力，也不得让 Orchestrator 展示标准取消入口。
+不满足以上条件时，模块内部可以保留私有取消能力，但不得声明 TaskProvider 标准取消能力，也不得让 Orchestrator / Monitor 展示标准取消入口。
 
 ## 七、inline execution
 

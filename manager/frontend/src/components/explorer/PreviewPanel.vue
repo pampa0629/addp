@@ -373,6 +373,10 @@ import {
   shouldShowQuickViewTileAdvisoryNotice
 } from '@/utils/quickViewTileAdvisory'
 import {
+  buildQuickViewOptimizationCreateQuery,
+  buildTileCacheCreateQuery
+} from '@/utils/quickViewNavigationQuery'
+import {
   canShowVectorizeAction,
   isVectorizableObjectNode,
   isVectorizableRangeNode,
@@ -1573,9 +1577,16 @@ const isExternalOptimizationTarget = computed(() => {
   return quickViewStatus.value?.optimization?.target_kind === 'external_3857_materialized_view'
 })
 
+const isStaleOptimizationTarget = computed(() => {
+  return quickViewStatus.value?.optimization?.status === 'stale'
+})
+
 const quickViewStatusText = computed(() => {
   if (isExternalOptimizationTarget.value) {
     return t('manager.spatialPreview.externalOptimizationTargetReady')
+  }
+  if (isStaleOptimizationTarget.value) {
+    return t('manager.spatialPreview.optimizationTargetStale')
   }
   return t('manager.spatialPreview.quickViewReady')
 })
@@ -1583,6 +1594,7 @@ const quickViewStatusText = computed(() => {
 const quickViewOptimizationRecommended = computed(() => {
   const realtime = quickViewStatus.value?.realtime_tile || {}
   return realtime.optimization_recommended === true ||
+    quickViewStatus.value?.optimization?.status === 'stale' ||
     realtime.performance_mode === 'source_transform_path' ||
     quickViewTileAdvisory.value?.recommendation === 'quick_view_optimization' ||
     quickViewTileAdvisory.value?.retryPolicy === 'suppress_tile'
@@ -1704,28 +1716,9 @@ const handleBackToBasicPreview = async () => {
 const handleGenerateTileCache = () => {
   const target = spatialPreviewTarget.value
   if (!target) return
-  const quickView = quickViewStatus.value?.quick_view || {}
-  const renderFacts = quickViewStatus.value?.render_facts || {}
-  const renderExtent = Array.isArray(renderFacts.render_extent) ? renderFacts.render_extent : quickView.extent
-  const renderExtentSRID = renderFacts.render_extent_srid || quickView.extent_srid || target.extentSRID
-  const geometryColumn = quickView.geometry_column || target.geometryColumn
-  const sourceSRID = renderFacts.source_srid || quickView.source_srid || target.sourceSRID
   router.push({
     name: 'TileCache',
-    query: {
-      tab: 'tasks',
-      create: '1',
-      engine_id: String(target.engineId),
-      schema: target.schema,
-      table: target.table,
-      ...(target.locator ? { locator: target.locator } : {}),
-      ...(geometryColumn ? { geom: geometryColumn } : {}),
-      ...(quickViewStatus.value?.item_fingerprint ? { item_fingerprint: quickViewStatus.value.item_fingerprint } : {}),
-      ...(target.geometryColumns.length ? { geometry_columns: target.geometryColumns.join(',') } : {}),
-      ...(sourceSRID > 0 ? { source_srid: String(sourceSRID) } : {}),
-      ...(renderExtentSRID > 0 ? { extent_srid: String(renderExtentSRID) } : {}),
-      ...(Array.isArray(renderExtent) && renderExtent.length === 4 ? { extent: renderExtent.join(',') } : {})
-    }
+    query: buildTileCacheCreateQuery(target, quickViewStatus.value)
   })
 }
 
@@ -1734,19 +1727,7 @@ const handleQuickViewOptimization = () => {
   if (!target) return
   router.push({
     name: 'QuickViewOptimization',
-    query: {
-      tab: 'tasks',
-      create: '1',
-      engine_id: String(target.engineId),
-      schema: target.schema,
-      table: target.table,
-      ...(target.locator ? { locator: target.locator } : {}),
-      ...(target.itemID ? { item_id: String(target.itemID) } : {}),
-      ...(quickViewStatus.value?.item_fingerprint ? { item_fingerprint: quickViewStatus.value.item_fingerprint } : {}),
-      ...(quickViewStatus.value?.quick_view?.geometry_column || target.geometryColumn ? { geom: quickViewStatus.value?.quick_view?.geometry_column || target.geometryColumn } : {}),
-      ...(target.geometryColumns.length ? { geometry_columns: target.geometryColumns.join(',') } : {}),
-      ...(quickViewStatus.value?.render_facts?.source_srid || target.sourceSRID ? { source_srid: String(quickViewStatus.value?.render_facts?.source_srid || target.sourceSRID) } : {})
-    }
+    query: buildQuickViewOptimizationCreateQuery(target, quickViewStatus.value)
   })
 }
 

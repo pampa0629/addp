@@ -256,4 +256,4 @@ curl -X POST http://localhost:8180/api/auth/login \
 - `GET /api/logs` - 审计日志 (支持 `?user_id=X` 过滤)
 - `POST/GET/PUT/DELETE /api/engines` - 引擎 CRUD (支持 `?engine_type=X` 过滤)
 
-**另请参阅**: `docs/CONFIG_CENTER.md` 获取详细的配置中心使用指南。
+**另请参阅**: 本文即为当前配置中心与环境变量说明入口。

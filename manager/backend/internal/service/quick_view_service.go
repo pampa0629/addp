@@ -48,6 +48,7 @@ const (
 
 	RealtimeTileTargetKindSourceTable                           = "source_table"
 	QuickViewOptimizationTargetKindExternal3857MaterializedView = "external_3857_materialized_view"
+	QuickViewOptimizationStatusNotRequired                      = "not_required"
 )
 
 type QuickViewService struct {
@@ -267,7 +268,7 @@ func (s *QuickViewService) BuildCapability(ctx context.Context, identity QuickVi
 	if err != nil {
 		return nil, err
 	}
-	optimizationInfo, err := s.quickViewOptimizationInfo(ctx, identity, spatialMeta.GeomColumn)
+	optimizationInfo, err := s.quickViewOptimizationInfo(ctx, identity, engineID, schema, table, spatialMeta)
 	if err != nil {
 		return nil, err
 	}
@@ -286,7 +287,7 @@ func (s *QuickViewService) BuildCapability(ctx context.Context, identity QuickVi
 		LastCheckedAt:     &now,
 		TileCacheGeneration: TileCacheGeneration{
 			Available: strings.TrimSpace(identity.ItemFingerprint) != "" || strings.TrimSpace(identity.Locator) != "",
-			CreateURL: tileCacheCreateURL(engineID, schema, table),
+			CreateURL: tileCacheCreateURL(identity, engineID, schema, table, spatialMeta),
 		},
 	}
 	capability.Optimization = optimizationInfo
@@ -364,7 +365,7 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 	if err != nil {
 		return nil, err
 	}
-	optimizationInfo, err := s.quickViewOptimizationInfo(ctx, identity, source.SpatialMeta.GeomColumn)
+	optimizationInfo, err := s.quickViewOptimizationInfo(ctx, identity, source.EngineID, source.Schema, source.Table, source.SpatialMeta)
 	if err != nil {
 		return nil, err
 	}
@@ -384,7 +385,7 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 		LastCheckedAt:     &now,
 		TileCacheGeneration: TileCacheGeneration{
 			Available: source.CanTile,
-			CreateURL: tileCacheCreateURL(source.EngineID, source.Schema, source.Table),
+			CreateURL: tileCacheCreateURL(identity, source.EngineID, source.Schema, source.Table, source.SpatialMeta),
 		},
 	}
 	capability.Optimization = optimizationInfo
@@ -543,7 +544,7 @@ func (s *QuickViewService) defaultReadyTileCache(ctx context.Context, identity Q
 	return s.tileCacheRepo.GetLatestReadyTileCacheByFingerprint(ctx, identity.TenantID, identity.ItemFingerprint)
 }
 
-func (s *QuickViewService) quickViewOptimizationInfo(ctx context.Context, identity QuickViewIdentity, geometryColumn string) (*QuickViewOptimizationInfo, error) {
+func (s *QuickViewService) quickViewOptimizationInfo(ctx context.Context, identity QuickViewIdentity, engineID uint, schema, table string, spatialMeta *SpatialMetadataResult) (*QuickViewOptimizationInfo, error) {
 	if s.optimizationRepo == nil || strings.TrimSpace(identity.ItemFingerprint) == "" {
 		return &QuickViewOptimizationInfo{
 			Available: false,
@@ -552,9 +553,12 @@ func (s *QuickViewService) quickViewOptimizationInfo(ctx context.Context, identi
 	}
 	var result *models.QuickViewOptimization
 	var err error
-	geometryColumn = strings.TrimSpace(geometryColumn)
+	geometryColumn := ""
+	if spatialMeta != nil {
+		geometryColumn = strings.TrimSpace(spatialMeta.GeomColumn)
+	}
 	if geometryColumn != "" {
-		result, err = s.optimizationRepo.GetReadyByFingerprintGeometry(ctx, identity.TenantID, identity.ItemFingerprint, geometryColumn, spatial.SRIDWebMercator)
+		result, err = s.optimizationRepo.GetCurrentResult(ctx, identity.TenantID, identity.ItemFingerprint, geometryColumn, spatial.SRIDWebMercator)
 	} else {
 		result, err = s.optimizationRepo.GetLatestReadyByFingerprint(ctx, identity.TenantID, identity.ItemFingerprint)
 	}
@@ -568,7 +572,7 @@ func (s *QuickViewService) quickViewOptimizationInfo(ctx context.Context, identi
 		}, nil
 	}
 	info := &QuickViewOptimizationInfo{
-		Available:            true,
+		Available:            result.Status == models.QuickViewOptimizationStatusReady,
 		Status:               result.Status,
 		ResultID:             &result.ID,
 		TaskID:               result.TaskID,
@@ -578,6 +582,19 @@ func (s *QuickViewService) quickViewOptimizationInfo(ctx context.Context, identi
 		TargetTable:          result.TargetTable,
 		TargetGeometryColumn: result.TargetGeometryColumn,
 		TargetSRID:           result.TargetSRID,
+	}
+	if result.Status != models.QuickViewOptimizationStatusReady {
+		info.Reason = "quick view optimization result is not ready"
+	}
+	if !quickViewOptimizationSourceFactsMatch(result, identity, engineID, schema, table, spatialMeta) {
+		if result.Status == models.QuickViewOptimizationStatusReady {
+			if err := s.optimizationRepo.MarkResultStale(ctx, result.ID, result.TenantID, models.QuickViewOptimizationStaleReasonSourceFactsChanged); err != nil {
+				return nil, err
+			}
+		}
+		info.Available = false
+		info.Status = models.QuickViewOptimizationStatusStale
+		info.Reason = models.QuickViewOptimizationStaleReasonSourceFactsChanged
 	}
 	if result.RenderExtentSRID != nil {
 		info.RenderExtentSRID = *result.RenderExtentSRID
@@ -589,6 +606,64 @@ func (s *QuickViewService) quickViewOptimizationInfo(ctx context.Context, identi
 		}
 	}
 	return info, nil
+}
+
+func quickViewOptimizationSourceFactsMatch(result *models.QuickViewOptimization, identity QuickViewIdentity, engineID uint, schema, table string, spatialMeta *SpatialMetadataResult) bool {
+	if result == nil {
+		return false
+	}
+	if result.SourceEngineID == 0 || result.SourceSchema == "" || result.SourceTable == "" {
+		return false
+	}
+	if engineID == 0 || strings.TrimSpace(schema) == "" || strings.TrimSpace(table) == "" {
+		if locator, err := resourcetree.ParseURI(identity.Locator); err == nil && locator != nil {
+			engineID = locator.EngineID
+			if len(locator.Path) >= 2 {
+				schema = locator.Path[len(locator.Path)-2]
+				table = locator.Path[len(locator.Path)-1]
+			}
+		}
+	}
+	if engineID > 0 && result.SourceEngineID != engineID {
+		return false
+	}
+	if schema != "" && !strings.EqualFold(strings.TrimSpace(result.SourceSchema), strings.TrimSpace(schema)) {
+		return false
+	}
+	if table != "" && !strings.EqualFold(strings.TrimSpace(result.SourceTable), strings.TrimSpace(table)) {
+		return false
+	}
+	if spatialMeta != nil {
+		if strings.TrimSpace(spatialMeta.GeomColumn) != "" && !strings.EqualFold(strings.TrimSpace(result.SourceGeometryColumn), strings.TrimSpace(spatialMeta.GeomColumn)) {
+			return false
+		}
+		if spatialMeta.SRID > 0 && result.SourceSRID != spatialMeta.SRID {
+			return false
+		}
+	}
+	return result.TargetSRID == spatial.SRIDWebMercator
+}
+
+func quickViewOptimizationCurrentFactsMatch(result *models.QuickViewOptimization, engineID uint, schema, table, geometryColumn string, sourceSRID int) bool {
+	if result == nil {
+		return false
+	}
+	if result.SourceEngineID != engineID {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(result.SourceSchema), strings.TrimSpace(schema)) {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(result.SourceTable), strings.TrimSpace(table)) {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(result.SourceGeometryColumn), strings.TrimSpace(geometryColumn)) {
+		return false
+	}
+	if sourceSRID > 0 && result.SourceSRID != sourceSRID {
+		return false
+	}
+	return result.TargetSRID == spatial.SRIDWebMercator
 }
 
 func (s *QuickViewService) directGeoJSONMaxRows() int64 {
@@ -654,6 +729,9 @@ func realtimeTileInfoFromTarget(target *RealtimeTileTarget, timeoutBudgetMS int)
 	case RealtimeTilePerformanceReady3857Target, RealtimeTilePerformanceSource3857Index:
 		info.TimeoutRecommendation = RealtimeTileRecommendationTileCacheGeneration
 		info.TimeoutRetryPolicy = RealtimeTileTimeoutRetryTTL
+	case RealtimeTilePerformanceSource3857:
+		info.TimeoutRecommendation = RealtimeTileRecommendationTileCacheGeneration
+		info.TimeoutRetryPolicy = RealtimeTileTimeoutRetrySuppressTile
 	default:
 		info.TimeoutRecommendation = RealtimeTileRecommendationQuickViewOptimization
 		info.TimeoutRetryPolicy = RealtimeTileTimeoutRetrySuppressTile
@@ -669,7 +747,26 @@ func optimizationInfoFromRealtimeTarget(info *QuickViewOptimizationInfo, target 
 	if info != nil && info.Available {
 		return info
 	}
-	if target == nil || !target.QuickViewOptimizationTarget || target.SRID != spatial.SRIDWebMercator {
+	if target == nil || target.SRID != spatial.SRIDWebMercator {
+		return info
+	}
+	if !target.QuickViewOptimizationTarget && target.TargetKind == RealtimeTileTargetKindSourceTable {
+		reason := "source geometry is already 3857; quick view optimization task is not required"
+		if target.PerformanceMode == RealtimeTilePerformanceSource3857Index {
+			reason = "source 3857 geometry with GiST index is already optimized"
+		}
+		return &QuickViewOptimizationInfo{
+			Available:            false,
+			Status:               QuickViewOptimizationStatusNotRequired,
+			TargetKind:           target.TargetKind,
+			TargetSchema:         target.Schema,
+			TargetTable:          target.Table,
+			TargetGeometryColumn: target.GeomColumn,
+			TargetSRID:           spatial.SRIDWebMercator,
+			Reason:               reason,
+		}
+	}
+	if !target.QuickViewOptimizationTarget {
 		return info
 	}
 	return &QuickViewOptimizationInfo{
@@ -890,7 +987,7 @@ func geoJSONURL(engineID uint, schema, table, geomColumn string, pageSize int64)
 	return "/api/v1/manager/quick-view/geojson?" + values.Encode()
 }
 
-func tileCacheCreateURL(engineID uint, schema, table string) string {
+func tileCacheCreateURL(identity QuickViewIdentity, engineID uint, schema, table string, meta *SpatialMetadataResult) string {
 	values := url.Values{}
 	values.Set("tab", "tasks")
 	values.Set("create", "1")
@@ -903,10 +1000,71 @@ func tileCacheCreateURL(engineID uint, schema, table string) string {
 	if strings.TrimSpace(table) != "" {
 		values.Set("table", strings.TrimSpace(table))
 	}
-	if itemFingerprint := spatialItemFingerprint(engineID, schema, table); itemFingerprint != "" {
+	locator := strings.TrimSpace(identity.Locator)
+	if locator == "" {
+		locator = tableLocator(engineID, schema, table)
+	}
+	if locator != "" {
+		values.Set("locator", locator)
+		if parsed, err := resourcetree.ParseURI(locator); err == nil && parsed != nil && parsed.ItemID != nil {
+			values.Set("item_id", fmt.Sprintf("%d", *parsed.ItemID))
+		}
+	}
+	itemFingerprint := strings.TrimSpace(identity.ItemFingerprint)
+	if itemFingerprint == "" {
+		itemFingerprint = spatialItemFingerprint(engineID, schema, table)
+	}
+	if itemFingerprint != "" {
 		values.Set("item_fingerprint", itemFingerprint)
 	}
+	if meta != nil {
+		if strings.TrimSpace(meta.GeomColumn) != "" {
+			values.Set("geom", strings.TrimSpace(meta.GeomColumn))
+		}
+		if len(meta.GeometryColumns) > 0 {
+			columns := make([]string, 0, len(meta.GeometryColumns))
+			for _, column := range meta.GeometryColumns {
+				if column = strings.TrimSpace(column); column != "" {
+					columns = append(columns, column)
+				}
+			}
+			if len(columns) > 0 {
+				values.Set("geometry_columns", strings.Join(columns, ","))
+			}
+		}
+		if meta.SRID > 0 {
+			values.Set("source_srid", fmt.Sprintf("%d", meta.SRID))
+		}
+		extent, extentSRID := tileCacheCreateURLExtent(meta)
+		if len(extent) == 4 {
+			values.Set("extent", joinFloatParams(extent))
+		}
+		if extentSRID > 0 {
+			values.Set("extent_srid", fmt.Sprintf("%d", extentSRID))
+		}
+	}
 	return "/manager/tile-cache?" + values.Encode()
+}
+
+func tileCacheCreateURLExtent(meta *SpatialMetadataResult) ([]float64, int) {
+	if meta == nil {
+		return nil, 0
+	}
+	if len(meta.RenderExtent) == 4 && meta.RenderExtentSRID > 0 {
+		return meta.RenderExtent, meta.RenderExtentSRID
+	}
+	if len(meta.Extent) == 4 && meta.ExtentSRID > 0 {
+		return meta.Extent, meta.ExtentSRID
+	}
+	return nil, 0
+}
+
+func joinFloatParams(values []float64) string {
+	parts := make([]string, 0, len(values))
+	for _, value := range values {
+		parts = append(parts, fmt.Sprintf("%g", value))
+	}
+	return strings.Join(parts, ",")
 }
 
 func stringSliceContains(items []string, target string) bool {
