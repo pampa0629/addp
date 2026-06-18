@@ -129,7 +129,7 @@ func main() {
 	tileCacheService := serviceInternal.NewTileCacheService(minioClient, minioBucket, "tiles")
 	cleanupService := serviceInternal.NewCleanupService(db, redisClient, taskExecutionRepo)
 	if err := cleanupService.Start(context.Background()); err != nil {
-		logger.L().Warn("Service cleanup service start failed", "error", err)
+		logger.L().Warn("Service 资源回收服务启动失败", "error", err)
 	}
 	defer cleanupService.Stop()
 

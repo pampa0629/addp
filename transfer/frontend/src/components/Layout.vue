@@ -103,8 +103,9 @@ const handleCommand = (command) => {
 <style scoped>
 .content-only {
   width: 100%;
-  height: 100vh;
-  overflow: auto;
+  height: auto;
+  min-height: 0;
+  overflow: visible;
 }
 
 .layout {

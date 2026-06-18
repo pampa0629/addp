@@ -55,7 +55,6 @@
         :data="tasks"
         stripe
         style="width: 100%"
-        height="100%"
       >
         <el-table-column prop="id" label="ID" width="80" />
         <el-table-column prop="name" :label="t('develop.taskManagement.colName')" min-width="150" show-overflow-tooltip />
@@ -618,7 +617,6 @@ onMounted(async () => {
 .task-management-page {
   display: flex;
   flex-direction: column;
-  height: 100vh;
   background: var(--addp-bg-secondary);
 }
 
@@ -650,7 +648,7 @@ onMounted(async () => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: visible;
   padding: 16px;
 }
 

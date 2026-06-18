@@ -88,7 +88,7 @@
 
     <!-- Tab 页签 -->
     <div class="content-area">
-      <el-tabs v-model="activeTab" type="border-card" style="height: 100%;">
+      <el-tabs v-model="activeTab" type="border-card">
         <el-tab-pane :label="t('develop.executionDetail.tabResult')" name="result">
           <div class="tab-content">
             <div v-if="execution?.status === 'success' && executionResult">
@@ -435,7 +435,6 @@ onUnmounted(() => {
 .execution-detail-page {
   display: flex;
   flex-direction: column;
-  height: 100vh;
   background: var(--addp-bg-secondary);
 }
 
@@ -474,26 +473,21 @@ onUnmounted(() => {
 }
 
 .content-area {
-  flex: 1;
-  overflow: hidden;
+  overflow: visible;
   padding: 0 16px 16px 16px;
 }
 
 :deep(.el-tabs) {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
+  display: block;
 }
 
 :deep(.el-tabs__content) {
-  flex: 1;
-  overflow: auto;
+  overflow: visible;
 }
 
 .tab-content {
   padding: 16px;
-  height: 100%;
-  overflow: auto;
+  overflow: visible;
 }
 
 .json-result {

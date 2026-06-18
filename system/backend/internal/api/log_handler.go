@@ -35,6 +35,10 @@ func NewLogHandler(logService *service.LogService) *LogHandler {
 // @Param        start_time query string false "开始时间 | Start time"
 // @Param        end_time query string false "结束时间 | End time"
 // @Param        http_method query string false "HTTP方法 | HTTP method"
+// @Param        resource_path query string false "资源路径前缀 | Resource path prefix"
+// @Param        entity_type query string false "资源类型 | Entity type"
+// @Param        entity_id query string false "资源ID | Entity ID"
+// @Param        module_name query string false "模块名 | Module name"
 // @Success      200 {object} object{data=[]models.AuditLog,total=int,page=int,page_size=int}
 // @Failure      500 {object} models.ErrorResponse
 // @Router       /logs [get]
@@ -43,14 +47,16 @@ func (h *LogHandler) List(c *gin.Context) {
 
 	// 构建过滤条件
 	filters := &models.AuditLogFilters{
-		StartTime:  c.Query("start_time"),
-		EndTime:    c.Query("end_time"),
-		HTTPMethod: c.Query("http_method"),
-		EntityType: c.Query("entity_type"),
-		Username:   c.Query("username"),
-		IPAddress:  c.Query("ip"),
-		ModuleName: c.Query("module_name"),
-		StatusCode: c.Query("status_code"),
+		StartTime:    c.Query("start_time"),
+		EndTime:      c.Query("end_time"),
+		HTTPMethod:   c.Query("http_method"),
+		ResourcePath: c.Query("resource_path"),
+		EntityType:   c.Query("entity_type"),
+		EntityID:     c.Query("entity_id"),
+		Username:     c.Query("username"),
+		IPAddress:    c.Query("ip"),
+		ModuleName:   c.Query("module_name"),
+		StatusCode:   c.Query("status_code"),
 	}
 
 	// 用户ID过滤
@@ -107,6 +113,10 @@ func (h *LogHandler) GetByID(c *gin.Context) {
 // @Param        start_time query string false "开始时间 | Start time"
 // @Param        end_time query string false "结束时间 | End time"
 // @Param        http_method query string false "HTTP方法 | HTTP method"
+// @Param        resource_path query string false "资源路径前缀 | Resource path prefix"
+// @Param        entity_type query string false "资源类型 | Entity type"
+// @Param        entity_id query string false "资源ID | Entity ID"
+// @Param        module_name query string false "模块名 | Module name"
 // @Success      200 {object} map[string]interface{}
 // @Failure      500 {object} models.ErrorResponse
 // @Router       /logs/export [get]
@@ -115,14 +125,16 @@ func (h *LogHandler) Export(c *gin.Context) {
 
 	// 构建过滤条件（与 List 接口相同）
 	filters := &models.AuditLogFilters{
-		StartTime:  c.Query("start_time"),
-		EndTime:    c.Query("end_time"),
-		HTTPMethod: c.Query("http_method"),
-		EntityType: c.Query("entity_type"),
-		Username:   c.Query("username"),
-		IPAddress:  c.Query("ip"),
-		ModuleName: c.Query("module_name"),
-		StatusCode: c.Query("status_code"),
+		StartTime:    c.Query("start_time"),
+		EndTime:      c.Query("end_time"),
+		HTTPMethod:   c.Query("http_method"),
+		ResourcePath: c.Query("resource_path"),
+		EntityType:   c.Query("entity_type"),
+		EntityID:     c.Query("entity_id"),
+		Username:     c.Query("username"),
+		IPAddress:    c.Query("ip"),
+		ModuleName:   c.Query("module_name"),
+		StatusCode:   c.Query("status_code"),
 	}
 
 	if userIDStr := c.Query("user_id"); userIDStr != "" {

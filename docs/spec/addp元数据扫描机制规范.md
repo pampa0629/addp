@@ -143,6 +143,40 @@ System 只发布通用 engine lifecycle event，不携带 Meta 扫描策略。Me
 
 `ScanTask.owner_module=system`、`owner_ref=engine:{engine_id}` 只表达任务绑定的外部领域对象是 System engine，不表示 System 管理 Meta。
 
+## ScanTask 层级调度关系
+
+Meta 中的调度不属于 engine、schema、bucket 或其他 node 本身；调度只属于 `ScanTask`。所谓 engine 层调度、node 层调度，都是不同 `scope` 的 `ScanTask`。
+
+约束：
+
+1. engine 级 `ScanTask` 是粗粒度默认扫描计划，不是对所有下级范围的强制独占调度。
+2. node、`catalog_paths` 或其他更具体 scope 上的 `ScanTask` 是独立扫描计划，不是 engine 级任务的附属字段。
+3. 更具体 scope 的独立调度优先于更粗 scope 的默认调度。
+4. 某个下级范围一旦启用独立调度，该范围必须从上级定时扫描范围中排除，避免同一计划窗口内被父任务和子任务重复扫描。
+5. 某个下级范围没有独立调度时，默认继承上级范围的调度；不得要求用户为所有 node 显式创建调度定义。
+6. `enabled=false` 只表示该 `ScanTask` 自身不参与调度；不得被解释为“显式排除父级调度”。
+7. 如需表达“某个下级范围不独立调度，且也不继承父级调度”，必须单独设计显式排除语义；在专题规范完成前不得用 disabled 任务、空 schedule 或其他旁路状态偷渡该语义。
+8. 同一稳定范围只允许一条启用的独立定时 `ScanTask` 作为权威计划，避免同 scope 多条计划互相重叠。
+
+推荐理解方式：
+
+| 场景 | 语义 |
+|---|---|
+| engine 级配置定时扫描 | 为整个 engine 下尚未独立配置调度的范围提供默认计划 |
+| node 级配置定时扫描 | 为该 node 对应范围建立独立计划，并从 engine 级计划中摘出该范围 |
+| 删除 node 级定时扫描 | 该范围回到继承上级计划的状态，而不是进入“永不扫描”状态 |
+
+示例：
+
+- engine `postgres-A` 每天 00:00 扫描全库。
+- schema `public` 每 15 分钟独立扫描。
+
+则调度语义应为：
+
+1. `public` 范围由自己的 `ScanTask` 每 15 分钟扫描。
+2. engine 级 `ScanTask` 在每天 00:00 扫描 `postgres-A` 时，必须排除 `public` 范围，只扫描剩余未独立配置调度的范围。
+3. 若 `public` 的独立调度被删除，则 `public` 重新回到 engine 级默认扫描计划中。
+
 ## 定时调度保证
 
 Meta 定时调度目标上应使用 DB-driven due task claim，不应只依赖进程内 Cron 注册。

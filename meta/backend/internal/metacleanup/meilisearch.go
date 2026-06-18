@@ -11,7 +11,7 @@ import (
 	"github.com/meilisearch/meilisearch-go"
 )
 
-type MeilisearchGarbageStats struct {
+type MeilisearchReclaimStats struct {
 	TotalCount int
 	ByType     map[string]int
 	Samples    []models.MeilisearchRecordInfo
@@ -30,8 +30,8 @@ func (c *MeilisearchCleaner) Enabled() bool {
 	return c != nil && c.indexer != nil && c.indexer.Enabled()
 }
 
-func (c *MeilisearchCleaner) ScanGarbage(ctx context.Context, tenantID uint, invalidEngineIDs []uint) (*MeilisearchGarbageStats, error) {
-	stats := &MeilisearchGarbageStats{
+func (c *MeilisearchCleaner) ScanReclaimCandidates(ctx context.Context, tenantID uint, invalidEngineIDs []uint) (*MeilisearchReclaimStats, error) {
+	stats := &MeilisearchReclaimStats{
 		ByType:  make(map[string]int),
 		Samples: []models.MeilisearchRecordInfo{},
 	}
@@ -89,7 +89,7 @@ func (c *MeilisearchCleaner) ExecuteCleanup(ctx context.Context, tenantID uint, 
 
 	resp, err := c.indexer.Client().Index(c.indexer.AssetIndexName()).Search("", searchReq)
 	if err != nil {
-		return 0, fmt.Errorf("查询待删除记录失败: %w", err)
+		return 0, fmt.Errorf("查询待回收索引记录失败: %w", err)
 	}
 
 	count := int(resp.EstimatedTotalHits)
@@ -103,7 +103,7 @@ func (c *MeilisearchCleaner) ExecuteCleanup(ctx context.Context, tenantID uint, 
 	}
 
 	if c.log != nil {
-		c.log.Info("Meilisearch 索引清理完成",
+		c.log.Info("Meilisearch 索引资源回收完成",
 			"index", c.indexer.AssetIndexName(),
 			"tenant_id", tenantID,
 			"engine_ids", invalidEngineIDs,

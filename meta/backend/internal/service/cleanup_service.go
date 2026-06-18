@@ -21,7 +21,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// CleanupService 负责定期清理已逻辑删除的记录和处理垃圾数据清理事件
+// CleanupService 负责定期清理已逻辑删除的记录和处理资源回收事件
 type CleanupService struct {
 	db              *gorm.DB
 	redis           *redis.Client
@@ -35,7 +35,7 @@ type CleanupService struct {
 	stopCh          chan struct{}
 }
 
-// CleanupConfig 清理服务配置
+// CleanupConfig 逻辑删除记录保留期清除配置
 type CleanupConfig struct {
 	Enabled         bool
 	RetentionDays   int
@@ -51,7 +51,7 @@ func DefaultCleanupConfig() CleanupConfig {
 	}
 }
 
-// NewCleanupService 创建清理服务
+// NewCleanupService 创建 Meta 资源回收服务
 func NewCleanupService(
 	db *gorm.DB,
 	redisClient *redis.Client,
@@ -80,14 +80,14 @@ func NewCleanupService(
 	}
 }
 
-// Start 启动清理服务
+// Start 启动 Meta 资源回收服务
 func (s *CleanupService) Start(ctx context.Context) error {
 	if !s.enabled {
-		s.log.Info("清理服务已禁用")
+		s.log.Info("Meta 资源回收服务已禁用")
 		return nil
 	}
 
-	s.log.Info("启动清理服务",
+	s.log.Info("启动 Meta 资源回收服务",
 		"retention_days", s.retentionDays,
 		"cleanup_interval", s.cleanupInterval)
 
@@ -95,18 +95,18 @@ func (s *CleanupService) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop 停止清理服务
+// Stop 停止 Meta 资源回收服务
 func (s *CleanupService) Stop(ctx context.Context) error {
 	if !s.enabled {
 		return nil
 	}
 
-	s.log.Info("停止清理服务")
+	s.log.Info("停止 Meta 资源回收服务")
 	close(s.stopCh)
 	return nil
 }
 
-// scheduleCleanup 定时调度清理任务
+// scheduleCleanup 定时调度已逻辑删除记录的物理清除
 func (s *CleanupService) scheduleCleanup(ctx context.Context) {
 	ticker := time.NewTicker(s.cleanupInterval)
 	defer ticker.Stop()
@@ -123,7 +123,7 @@ func (s *CleanupService) scheduleCleanup(ctx context.Context) {
 	}
 }
 
-// runCleanup 执行清理任务
+// runCleanup 清除超过保留期的逻辑删除记录
 func (s *CleanupService) runCleanup(ctx context.Context) {
 	startTime := time.Now()
 	s.log.Info("开始清理已逻辑删除记录", "retention_days", s.retentionDays)
@@ -156,7 +156,7 @@ func (s *CleanupService) runCleanup(ctx context.Context) {
 		s.log.Info("清理 meta_node 完成", "deleted_count", nodesDeleted)
 	}
 
-	s.log.Info("清理任务完成",
+	s.log.Info("逻辑删除记录清除完成",
 		"duration", time.Since(startTime),
 		"items_deleted", itemsDeleted,
 		"nodes_deleted", nodesDeleted,
@@ -196,22 +196,22 @@ func (s *CleanupService) ManualCleanup(ctx context.Context, retentionDays int) (
 	}, nil
 }
 
-// ========== 垃圾数据清理事件处理 ==========
+// ========== 资源回收事件处理 ==========
 
-// SubscribeCleanupEvents 订阅清理事件
+// SubscribeCleanupEvents 订阅资源回收事件
 func (s *CleanupService) SubscribeCleanupEvents(ctx context.Context) error {
 	if s.redis == nil {
-		s.log.Warn("Redis 未配置，跳过清理事件订阅")
+		s.log.Warn("Redis 未配置，跳过资源回收事件订阅")
 		return nil
 	}
 
-	// 使用 Redis Stream 订阅清理请求
+	// 使用 Redis Stream 订阅资源回收请求
 	go s.consumeCleanupRequests(ctx)
-	s.log.Info("清理事件订阅已启动")
+	s.log.Info("资源回收事件订阅已启动")
 	return nil
 }
 
-// consumeCleanupRequests 消费清理请求事件
+// consumeCleanupRequests 消费资源回收请求事件
 func (s *CleanupService) consumeCleanupRequests(ctx context.Context) {
 	groupName := "meta-cleanup-consumer"
 	consumerName := "meta-worker"
@@ -237,7 +237,7 @@ func (s *CleanupService) consumeCleanupRequests(ctx context.Context) {
 
 			if err != nil {
 				if err != redis.Nil {
-					s.log.Error("读取清理事件失败", "error", err)
+					s.log.Error("读取资源回收事件失败", "error", err)
 				}
 				continue
 			}
@@ -254,18 +254,18 @@ func (s *CleanupService) consumeCleanupRequests(ctx context.Context) {
 	}
 }
 
-// handleCleanupRequest 处理清理请求
+// handleCleanupRequest 处理资源回收请求
 func (s *CleanupService) handleCleanupRequest(ctx context.Context, message redis.XMessage) {
 	event, err := metacleanup.ParseCleanupRequest(message.Values)
 	if err != nil {
-		s.log.Error("解析清理请求失败", "error", err, "message_id", message.ID, "values", message.Values)
+		s.log.Error("解析资源回收请求失败", "error", err, "message_id", message.ID, "values", message.Values)
 		return
 	}
 	if !events.CleanupExpectedForModule(event.ExpectedModules, events.ModuleMeta) {
 		return
 	}
 
-	s.log.Info("收到清理请求",
+	s.log.Info("收到资源回收请求",
 		"task_id", event.TaskID,
 		"action", event.Action,
 		"tenant_id", event.TenantID,
@@ -284,7 +284,7 @@ func (s *CleanupService) handleCleanupRequest(ctx context.Context, message redis
 
 	exec, startedAt, execErr := s.createExecutorExecution(ctx, event)
 	if execErr != nil {
-		s.log.Error("创建 Meta cleanup executor execution 失败", "error", execErr, "task_id", event.TaskID)
+		s.log.Error("创建 Meta 资源回收执行记录失败", "error", execErr, "task_id", event.TaskID)
 	}
 
 	// 无论成功失败都写入响应
@@ -298,24 +298,24 @@ func (s *CleanupService) handleCleanupRequest(ctx context.Context, message redis
 	// 根据动作类型处理
 	switch event.Action {
 	case events.CleanupActionScan:
-		stats, err := s.ScanGarbage(ctx, event.TenantID, event.Context)
+		stats, err := s.ScanReclaimCandidates(ctx, event.TenantID, event.Context)
 		if err != nil {
 			result.Status = events.CleanupResultFailed
 			result.Errors = []string{err.Error()}
-			s.log.Error("扫描垃圾数据失败", "error", err, "tenant_id", event.TenantID)
+			s.log.Error("扫描资源回收候选失败", "error", err, "tenant_id", event.TenantID)
 			return
 		}
 		result.Status = events.CleanupResultSuccess
 		result.Statistics = metacleanup.ToMap(stats)
 		result.Summary = metaScanSummary(stats)
-		s.log.Info("扫描垃圾数据完成", "tenant_id", event.TenantID, "task_id", event.TaskID)
+		s.log.Info("扫描资源回收候选完成", "tenant_id", event.TenantID, "task_id", event.TaskID)
 
 	case events.CleanupActionExecute:
 		execResult, err := s.ExecuteCleanup(ctx, event.TenantID, event.CleanupMode, event.Context)
 		if err != nil {
 			result.Status = events.CleanupResultFailed
 			result.Errors = []string{err.Error()}
-			s.log.Error("执行清理失败", "error", err, "tenant_id", event.TenantID)
+			s.log.Error("执行资源回收失败", "error", err, "tenant_id", event.TenantID)
 			return
 		}
 		if len(execResult.Errors) > 0 {
@@ -326,7 +326,7 @@ func (s *CleanupService) handleCleanupRequest(ctx context.Context, message redis
 		}
 		result.Statistics = metacleanup.ToMap(execResult)
 		result.Summary = metaExecuteSummary(execResult)
-		s.log.Info("执行清理完成", "tenant_id", event.TenantID, "task_id", event.TaskID)
+		s.log.Info("执行资源回收完成", "tenant_id", event.TenantID, "task_id", event.TaskID)
 
 	default:
 		result.Status = events.CleanupResultFailed
@@ -335,8 +335,8 @@ func (s *CleanupService) handleCleanupRequest(ctx context.Context, message redis
 	}
 }
 
-// ScanGarbage 扫描垃圾数据
-func (s *CleanupService) ScanGarbage(ctx context.Context, tenantID uint, cleanupContext map[string]interface{}) (*models.MetaCleanupStatistics, error) {
+// ScanReclaimCandidates 扫描资源回收候选
+func (s *CleanupService) ScanReclaimCandidates(ctx context.Context, tenantID uint, cleanupContext map[string]interface{}) (*models.MetaCleanupStatistics, error) {
 	stats := &models.MetaCleanupStatistics{}
 	scope := metacleanup.ScopeFromContext(cleanupContext)
 
@@ -384,11 +384,11 @@ func (s *CleanupService) ScanGarbage(ctx context.Context, tenantID uint, cleanup
 	}
 	stats.DuplicateFingerprints.Count = duplicateCount
 
-	// 6. 扫描 Meilisearch 垃圾（新增）
+	// 6. 扫描 Meilisearch 待回收记录（新增）
 	if s.searchCleaner != nil && s.searchCleaner.Enabled() {
-		meilisearchStats, err := s.searchCleaner.ScanGarbage(ctx, tenantID, s.dbCleaner.InvalidEngineIDsWithScope(ctx, tenantID, scope))
+		meilisearchStats, err := s.searchCleaner.ScanReclaimCandidates(ctx, tenantID, s.dbCleaner.InvalidEngineIDsWithScope(ctx, tenantID, scope))
 		if err != nil {
-			s.log.Error("扫描 Meilisearch 垃圾失败", "error", err)
+			s.log.Error("扫描 Meilisearch 待回收记录失败", "error", err)
 			// 不中断整体扫描流程
 		} else {
 			stats.MeilisearchIndexes.Count = meilisearchStats.TotalCount
@@ -411,7 +411,7 @@ func (s *CleanupService) ScanGarbage(ctx context.Context, tenantID uint, cleanup
 	return stats, nil
 }
 
-// ExecuteCleanup 执行清理
+// ExecuteCleanup 执行资源回收
 func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, cleanupMode string, cleanupContext map[string]interface{}) (*models.MetaCleanupExecuteResult, error) {
 	result := &models.MetaCleanupExecuteResult{}
 	scope := metacleanup.ScopeFromContext(cleanupContext)
@@ -522,7 +522,7 @@ func (s *CleanupService) invalidEngineScanTaskDefinitionsQuery(ctx context.Conte
 	return query.Where("engine_id IN ? AND owner_ref IN ?", invalidEngineIDs, ownerRefs)
 }
 
-// writeResult 写入结果到Redis
+// writeResult 写入资源回收结果到 Redis
 func (s *CleanupService) writeResult(ctx context.Context, taskID string, result events.CleanupResultData) {
 	if s.redis == nil {
 		return
@@ -530,13 +530,13 @@ func (s *CleanupService) writeResult(ctx context.Context, taskID string, result 
 
 	resultJSON, err := json.Marshal(result)
 	if err != nil {
-		s.log.Error("序列化清理结果失败", "error", err)
+		s.log.Error("序列化资源回收结果失败", "error", err)
 		return
 	}
 
 	key := fmt.Sprintf("cleanup:results:%s", taskID)
 	if err := s.redis.HSet(ctx, key, events.ModuleMeta, string(resultJSON)).Err(); err != nil {
-		s.log.Error("写入清理结果失败", "error", err, "task_id", taskID)
+		s.log.Error("写入资源回收结果失败", "error", err, "task_id", taskID)
 	}
 }
 
@@ -545,7 +545,7 @@ func (s *CleanupService) createExecutorExecution(ctx context.Context, event even
 		return nil, time.Time{}, nil
 	}
 	startedAt := time.Now()
-	currentStep := fmt.Sprintf("Meta cleanup %s", event.Action)
+	currentStep := fmt.Sprintf("Meta 资源回收 %s", event.Action)
 	triggerType, err := commonExecution.NormalizeTriggerType(event.TriggerType)
 	if err != nil {
 		triggerType = commonExecution.TriggerTypeManual
@@ -603,7 +603,7 @@ func (s *CleanupService) finishExecutorExecution(ctx context.Context, executionI
 		"execution_time_ms": now.Sub(startedAt).Milliseconds(),
 		"updated_at":        now,
 	}); err != nil {
-		s.log.Warn("更新 Meta cleanup executor execution 失败", "execution_id", executionID, "error", err)
+		s.log.Warn("更新 Meta 资源回收执行记录失败", "execution_id", executionID, "error", err)
 	}
 }
 

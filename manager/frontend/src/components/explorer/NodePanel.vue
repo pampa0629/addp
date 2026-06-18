@@ -214,16 +214,13 @@ const openNode = (row) => {
 
 <style scoped>
 .node-panel {
-  height: 100%;
   display: flex;
   flex-direction: column;
   border: none;
 }
 
 :deep(.el-card__body) {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
+  overflow: visible;
 }
 
 .meta-block {

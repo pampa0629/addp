@@ -212,7 +212,7 @@ func (s *TenantService) Delete(id uint, currentUserID uint) error {
 			events.CleanupCauseTenantDeleted,
 			cleanupTenantContext(id),
 		); err != nil {
-			log.Printf("触发 tenant 删除 cleanup scan 失败: tenant_id=%d error=%v", id, err)
+			log.Printf("触发 tenant 删除资源回收评估失败: tenant_id=%d error=%v", id, err)
 		}
 	}
 

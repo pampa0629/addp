@@ -119,7 +119,7 @@ func main() {
 
 	cleanupService := service.NewCleanupService(db, redisClient, taskExecutionRepo)
 	if err := cleanupService.Start(context.Background()); err != nil {
-		log.Printf("⚠️  Develop cleanup service start failed: %v", err)
+		log.Printf("Develop 资源回收服务启动失败: %v", err)
 	}
 	defer cleanupService.Stop()
 

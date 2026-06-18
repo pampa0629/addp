@@ -11,7 +11,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestDevelopCleanupEngineContextDoesNotTreatUserTasksAsGarbage(t *testing.T) {
+func TestDevelopCleanupEngineContextDoesNotTreatUserTasksAsReclaimCandidates(t *testing.T) {
 	t.Parallel()
 
 	db := newDevelopCleanupTestDB(t)
@@ -19,9 +19,9 @@ func TestDevelopCleanupEngineContextDoesNotTreatUserTasksAsGarbage(t *testing.T)
 	task := createDevelopCleanupTask(t, db, 7, "query-match", "query", map[string]interface{}{"engine_id": float64(12)})
 	createDevelopCleanupTask(t, db, 7, "content-only", "workflow", nil)
 
-	stats, err := svc.ScanGarbage(context.Background(), 7, map[string]interface{}{"engine_id": uint(12)})
+	stats, err := svc.ScanReclaimCandidates(context.Background(), 7, map[string]interface{}{"engine_id": uint(12)})
 	if err != nil {
-		t.Fatalf("ScanGarbage() error = %v", err)
+		t.Fatalf("ScanReclaimCandidates() error = %v", err)
 	}
 	if stats.DevTasks != 0 {
 		t.Fatalf("DevTasks for engine lifecycle = %d, want 0", stats.DevTasks)
@@ -43,9 +43,9 @@ func TestDevelopCleanupEngineContextDoesNotTreatUserTasksAsGarbage(t *testing.T)
 		t.Fatalf("task status=%q enabled=%v next_run_at=%v, want unchanged user task", updated.Status, updated.Enabled, updated.NextRunAt)
 	}
 
-	stats, err = svc.ScanGarbage(context.Background(), 7, nil)
+	stats, err = svc.ScanReclaimCandidates(context.Background(), 7, nil)
 	if err != nil {
-		t.Fatalf("ScanGarbage() without context error = %v", err)
+		t.Fatalf("ScanReclaimCandidates() without context error = %v", err)
 	}
 	if stats.DevTasks != 0 {
 		t.Fatalf("DevTasks without lifecycle context = %d, want 0", stats.DevTasks)

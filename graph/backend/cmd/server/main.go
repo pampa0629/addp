@@ -95,7 +95,7 @@ func main() {
 	analysisSvc := service.NewAnalysisService(graphRepo, ontologyRepo, systemClient)
 	cleanupSvc := service.NewCleanupService(db, redisClient, taskExecutionRepo)
 	if err := cleanupSvc.Start(context.Background()); err != nil {
-		logger.Warn("Graph cleanup executor 启动失败", "error", err)
+		logger.Warn("Graph 资源回收执行方启动失败", "error", err)
 	}
 	defer cleanupSvc.Stop()
 

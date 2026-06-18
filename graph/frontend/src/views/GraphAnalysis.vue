@@ -763,10 +763,9 @@ onMounted(load)
 .analysis-page {
   display: flex;
   flex-direction: column;
-  height: 100%;
   padding: 16px;
   box-sizing: border-box;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .page-header {
@@ -791,11 +790,9 @@ onMounted(load)
 }
 
 .main-area {
-  flex: 1;
   display: flex;
   gap: 16px;
-  overflow: hidden;
-  min-height: 0;
+  overflow: visible;
 }
 
 .config-panel {
@@ -805,7 +802,7 @@ onMounted(load)
   border: 1px solid var(--el-border-color);
   border-radius: 6px;
   padding: 16px;
-  overflow-y: auto;
+  overflow: visible;
 }
 
 .section-title {
@@ -908,7 +905,7 @@ onMounted(load)
   border: 1px solid var(--el-border-color);
   border-radius: 6px;
   padding: 16px;
-  overflow-y: auto;
+  overflow: visible;
   display: flex;
   flex-direction: column;
   min-width: 0;

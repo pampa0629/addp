@@ -39,7 +39,7 @@ type Config struct {
 	DefaultQueryTimeout int // 默认查询超时(秒)
 	MaxQueryTimeout     int // 最大查询超时(秒)
 
-	// Redis 配置（cleanup request/result）
+	// Redis 配置（资源回收 request/result）
 	RedisHost     string
 	RedisPort     string
 	RedisPassword string

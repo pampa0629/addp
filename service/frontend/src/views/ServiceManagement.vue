@@ -320,7 +320,6 @@ onMounted(() => {
 <style scoped>
 .service-management {
   padding: 24px;
-  height: 100%;
   display: flex;
   flex-direction: column;
 }
@@ -344,7 +343,6 @@ onMounted(() => {
 }
 
 .el-table {
-  flex: 1;
   cursor: pointer;
 }
 </style>

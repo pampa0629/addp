@@ -202,7 +202,7 @@ const handleCommand = (command) => {
 
 .content-only {
   width: 100%;
-  min-height: 100vh;
+  min-height: 0;
   background: var(--addp-bg-secondary) !important;
   padding: 20px;
   box-sizing: border-box;

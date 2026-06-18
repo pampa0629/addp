@@ -27,7 +27,7 @@ type MeilisearchRecordInfo struct {
 	Reason    string `json:"reason"`     // 原因(引擎已删除/软删除等)
 }
 
-// MetaCleanupStatistics - Meta模块垃圾数据统计
+// MetaCleanupStatistics - Meta 模块资源回收候选统计
 type MetaCleanupStatistics struct {
 	// 无效引擎的数据
 	InvalidEngines struct {
@@ -61,7 +61,7 @@ type MetaCleanupStatistics struct {
 
 	// Meilisearch 索引统计
 	MeilisearchIndexes struct {
-		Count  int                     `json:"count"`   // assets 索引中的垃圾记录总数
+		Count  int                     `json:"count"`   // assets 索引中的待回收记录总数
 		ByType map[string]int          `json:"by_type"` // 按资产类型分组 (table/object)
 		Sample []MeilisearchRecordInfo `json:"sample"`  // 样本记录（最多10条）
 	} `json:"meilisearch_indexes"`
@@ -72,7 +72,7 @@ type MetaCleanupStatistics struct {
 	} `json:"scan_task_definitions"`
 }
 
-// MetaCleanupExecuteResult - Meta清理执行结果
+// MetaCleanupExecuteResult - Meta 资源回收执行结果
 type MetaCleanupExecuteResult struct {
 	DeletedNodes                int      `json:"deleted_nodes"`
 	DeletedItems                int      `json:"deleted_items"`

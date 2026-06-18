@@ -23,17 +23,17 @@ func TestTransferCleanupScanFindsTaskDefinitionsByEngineContext(t *testing.T) {
 	createTransferCleanupTestTask(t, db, 7, "match-target", 3, 1, true)
 	createTransferCleanupTestTask(t, db, 7, "other", 3, 4, true)
 
-	stats, err := svc.ScanGarbage(context.Background(), 7, map[string]interface{}{"engine_id": 1})
+	stats, err := svc.ScanReclaimCandidates(context.Background(), 7, map[string]interface{}{"engine_id": 1})
 	if err != nil {
-		t.Fatalf("ScanGarbage() error = %v", err)
+		t.Fatalf("ScanReclaimCandidates() error = %v", err)
 	}
 	if stats.TaskDefinitions != 2 {
 		t.Fatalf("TaskDefinitions = %d, want 2", stats.TaskDefinitions)
 	}
 
-	stats, err = svc.ScanGarbage(context.Background(), 7, nil)
+	stats, err = svc.ScanReclaimCandidates(context.Background(), 7, nil)
 	if err != nil {
-		t.Fatalf("ScanGarbage() without context error = %v", err)
+		t.Fatalf("ScanReclaimCandidates() without context error = %v", err)
 	}
 	if stats.TaskDefinitions != 0 {
 		t.Fatalf("TaskDefinitions without lifecycle context = %d, want 0", stats.TaskDefinitions)

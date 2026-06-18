@@ -36,9 +36,9 @@ func TestGraphCleanupScanWithoutLifecycleContextReturnsNoCandidates(t *testing.T
 	seedGraphCleanupEngineCandidate(t, db, 1, 7)
 
 	svc := NewCleanupService(db, nil, nil)
-	stats, err := svc.ScanGarbage(context.Background(), 1, nil)
+	stats, err := svc.ScanReclaimCandidates(context.Background(), 1, nil)
 	if err != nil {
-		t.Fatalf("ScanGarbage: %v", err)
+		t.Fatalf("ScanReclaimCandidates: %v", err)
 	}
 	if graphCandidateRecordCount(stats) != 0 {
 		t.Fatalf("expected no candidates without lifecycle context, got %+v", stats)
@@ -51,9 +51,9 @@ func TestGraphCleanupEngineDeletedOnlyTargetsBoundKnowledgeGraphs(t *testing.T) 
 	otherGraphID, _ := seedGraphCleanupEngineCandidate(t, db, 1, 8)
 
 	svc := NewCleanupService(db, nil, nil)
-	stats, err := svc.ScanGarbage(context.Background(), 1, map[string]interface{}{"engine_id": 7})
+	stats, err := svc.ScanReclaimCandidates(context.Background(), 1, map[string]interface{}{"engine_id": 7})
 	if err != nil {
-		t.Fatalf("ScanGarbage: %v", err)
+		t.Fatalf("ScanReclaimCandidates: %v", err)
 	}
 	if stats.KnowledgeGraphs != 1 || stats.BuildTasks != 1 || stats.BuildMaterials != 1 || stats.ReviewItems != 1 {
 		t.Fatalf("unexpected engine scan stats: %+v", stats)
@@ -99,9 +99,9 @@ func TestGraphCleanupTenantDeletedPhysicalDeletesOwnedState(t *testing.T) {
 	seedGraphCleanupTenantState(t, db, 2)
 
 	svc := NewCleanupService(db, nil, nil)
-	stats, err := svc.ScanGarbage(context.Background(), 1, map[string]interface{}{"tenant_id": 1})
+	stats, err := svc.ScanReclaimCandidates(context.Background(), 1, map[string]interface{}{"tenant_id": 1})
 	if err != nil {
-		t.Fatalf("ScanGarbage: %v", err)
+		t.Fatalf("ScanReclaimCandidates: %v", err)
 	}
 	if stats.Ontologies != 1 || stats.EntityTypes != 1 || stats.RelationTypes != 1 || stats.OntologyVersions != 1 ||
 		stats.KnowledgeGraphs != 1 || stats.BuildTasks != 1 || stats.BuildMaterials != 1 || stats.ReviewItems != 1 {

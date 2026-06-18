@@ -94,7 +94,7 @@ func main() {
 	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
 	cleanupSvc := service.NewCleanupService(db, redisClient, taskExecutionRepo)
 	if err := cleanupSvc.Start(context.Background()); err != nil {
-		log.Printf("⚠️  Model cleanup executor 启动失败: %v", err)
+		log.Printf("Model 资源回收执行方启动失败: %v", err)
 	}
 	defer cleanupSvc.Stop()
 

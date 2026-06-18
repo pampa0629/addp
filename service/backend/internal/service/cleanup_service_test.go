@@ -25,17 +25,17 @@ func TestServiceCleanupScanFindsEngineBoundServices(t *testing.T) {
 	createServiceCleanupTileLayer(t, db, tile.ID, "roads", engineID)
 	createServiceCleanupTileLayer(t, db, tile.ID, "buildings", otherEngineID)
 
-	stats, err := svc.ScanGarbage(context.Background(), 7, map[string]interface{}{"engine_id": engineID})
+	stats, err := svc.ScanReclaimCandidates(context.Background(), 7, map[string]interface{}{"engine_id": engineID})
 	if err != nil {
-		t.Fatalf("ScanGarbage() error = %v", err)
+		t.Fatalf("ScanReclaimCandidates() error = %v", err)
 	}
 	if stats.QueryServices != 1 || stats.GraphQueryServices != 1 || stats.TileServices != 1 || stats.TileLayers != 1 {
 		t.Fatalf("stats = %#v, want one query, graph, tile service and tile layer", stats)
 	}
 
-	stats, err = svc.ScanGarbage(context.Background(), 7, nil)
+	stats, err = svc.ScanReclaimCandidates(context.Background(), 7, nil)
 	if err != nil {
-		t.Fatalf("ScanGarbage() without context error = %v", err)
+		t.Fatalf("ScanReclaimCandidates() without context error = %v", err)
 	}
 	if stats.QueryServices != 0 || stats.GraphQueryServices != 0 || stats.TileServices != 0 || stats.TileLayers != 0 {
 		t.Fatalf("stats without lifecycle context = %#v, want empty", stats)

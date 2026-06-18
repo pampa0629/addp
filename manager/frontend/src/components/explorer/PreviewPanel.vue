@@ -271,7 +271,6 @@
           <el-table
             :data="pagedGraphOverviewRows"
             v-loading="loading"
-            height="100%"
             size="small"
             highlight-current-row
             :row-class-name="graphOverviewRowClassName"
@@ -309,7 +308,7 @@
           <div class="graph-sample-grid">
             <div v-if="showGraphNodeSampleTable" class="graph-sample-table">
               <div class="graph-sample-subtitle">{{ t('manager.explorer.graphSampleNodes') }}</div>
-              <el-table :data="graphSampleNodeRows" height="100%" size="small" empty-text="-">
+              <el-table :data="graphSampleNodeRows" size="small" empty-text="-">
                 <el-table-column prop="name" :label="t('manager.explorer.name')" min-width="160" show-overflow-tooltip />
                 <el-table-column prop="type" :label="t('manager.explorer.type')" min-width="140" show-overflow-tooltip />
                 <el-table-column prop="properties" :label="t('manager.explorer.graphSampleProperties')" min-width="220" show-overflow-tooltip />
@@ -317,7 +316,7 @@
             </div>
             <div v-if="showGraphRelationshipSampleTable" class="graph-sample-table">
               <div class="graph-sample-subtitle">{{ t('manager.explorer.graphSampleRelationships') }}</div>
-              <el-table :data="graphSampleRelationshipRows" height="100%" size="small" empty-text="-">
+              <el-table :data="graphSampleRelationshipRows" size="small" empty-text="-">
                 <el-table-column prop="type" :label="t('manager.explorer.type')" min-width="130" show-overflow-tooltip />
                 <el-table-column prop="start" :label="t('manager.explorer.graphSampleStart')" min-width="140" show-overflow-tooltip />
                 <el-table-column prop="end" :label="t('manager.explorer.graphSampleEnd')" min-width="140" show-overflow-tooltip />
@@ -2266,7 +2265,6 @@ const handleNavigate = (path) => {
 
 <style scoped>
 .preview-panel {
-  height: 100%;
   display: flex;
   flex-direction: column;
   background: var(--addp-bg-primary) !important;
@@ -2279,7 +2277,7 @@ const handleNavigate = (path) => {
 
 .preview-panel :deep(.el-card__body) {
   flex: 1;
-  overflow: hidden;
+  overflow: visible;
   display: flex;
   flex-direction: column;
   background: var(--addp-bg-primary) !important;
@@ -2393,7 +2391,7 @@ const handleNavigate = (path) => {
 
 .preview-content {
   flex: 1;
-  overflow: hidden;
+  overflow: visible;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -2457,17 +2455,13 @@ const handleNavigate = (path) => {
 }
 
 .graph-preview-layout {
-  flex: 1;
-  min-height: 0;
   display: grid;
-  grid-template-rows: minmax(360px, 46%) minmax(260px, 1fr);
+  grid-template-rows: auto auto;
   gap: 12px;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .graph-sample-panel {
-  min-height: 0;
-  overflow: hidden;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--addp-border-color);
@@ -2497,16 +2491,12 @@ const handleNavigate = (path) => {
 }
 
 .graph-sample-grid {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
   gap: 12px;
 }
 
 .graph-sample-table {
-  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -2519,18 +2509,15 @@ const handleNavigate = (path) => {
 }
 
 .graph-sample-table :deep(.el-table) {
-  flex: 1;
-  min-height: 0;
   border: 1px solid var(--addp-border-color);
   border-radius: 6px;
 }
 
 .graph-overview-table {
-  min-height: 0;
-  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  overflow: visible;
 }
 
 .graph-overview-hint {
@@ -2540,8 +2527,6 @@ const handleNavigate = (path) => {
 }
 
 .graph-overview-table :deep(.el-table) {
-  flex: 1;
-  min-height: 0;
   border: 1px solid var(--addp-border-color);
   border-radius: 6px;
 }

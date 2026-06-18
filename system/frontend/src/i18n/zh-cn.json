@@ -604,8 +604,22 @@
       "usernamePlaceholder": "输入用户名",
       "ipAddress": "IP地址",
       "ipPlaceholder": "输入IP",
+      "entityType": "资源类型",
+      "entityTypePlaceholder": "如 cleanup（资源回收）",
+      "entityId": "资源ID",
+      "entityIdPlaceholder": "输入资源ID",
+      "resourcePath": "操作前缀",
+      "resourcePathPlaceholder": "如 cleanup.execute（资源回收执行）",
       "query": "查询",
       "reset": "重置",
+      "auditFilter": {
+        "title": "当前仅显示指定资源的审计日志",
+        "module": "模块: {value}",
+        "entityType": "资源类型: {value}",
+        "entityId": "资源ID: {value}",
+        "resourcePath": "操作前缀: {value}",
+        "clear": "清除资源筛选"
+      },
       "columns": {
         "id": "ID",
         "action": "操作",
@@ -638,9 +652,28 @@
         "time": "时间",
         "error": "错误信息",
         "noError": "无详细信息",
+        "auditDetail": "审计摘要",
         "requestDetail": "请求详情",
         "noRequest": "无请求详情",
         "unauthenticated": "未认证"
+      },
+      "auditDetail": {
+        "basedOnScan": "基于评估",
+        "cleanupMode": "处理方式",
+        "confirmedAt": "确认时间",
+        "confirmationToken": "确认文本",
+        "riskLevel": "风险等级",
+        "scannedItems": "发现项",
+        "affectedRecords": "影响记录",
+        "freedBytes": "释放空间",
+        "expectedModules": "影响模块",
+        "executionId": "监控执行ID",
+        "status": "状态",
+        "causeEvent": "触发事件",
+        "context": "上下文",
+        "summary": "结果摘要",
+        "trueValue": "是",
+        "falseValue": "否"
       },
       "msg": {
         "loadFailed": "加载日志列表失败",
@@ -656,8 +689,14 @@
       "taskInProgress": "{action}任务进行中",
       "taskId": "任务ID: {id}",
       "taskStatus": "状态: {status}",
+      "tenantScopeRequired": {
+        "title": "需要明确租户范围",
+        "desc": "手动资源回收必须在租户范围内发起。请使用租户管理员账号进入对应租户；全局资源回收将使用专门的全局语义。"
+      },
       "scanResult": {
         "title": "评估结果",
+        "bannerTitle": "评估已完成",
+        "bannerDesc": "发现 {items} 个待处理项，涉及 {modules} 个模块。",
         "scanTime": "评估时间",
         "scanScope": "评估范围",
         "triggerType": "触发方式",
@@ -668,8 +707,19 @@
         "monitor": "监控",
         "items": "{count} 项"
       },
+      "executeResult": {
+        "title": "回收结果",
+        "bannerTitle": "资源回收已完成",
+        "bannerDesc": "本次影响 {records} 条状态记录，释放 {space}。",
+        "affectedRecords": "影响记录"
+      },
+      "empty": {
+        "description": "暂无评估结果。先评估待回收资源，再决定是否标记失效或释放存储。",
+        "action": "开始评估"
+      },
       "overview": {
         "items": "待处理项",
+        "affectedRecords": "影响记录",
         "risk": "风险等级",
         "freedBytes": "可释放空间",
         "modules": "参与模块"
@@ -713,12 +763,27 @@
         "physicalCleanup": "释放存储",
         "physicalCleanupDesc": "删除已登记的存储对象、缓存或派生产物，需要谨慎确认"
       },
+      "confirm": {
+        "logicalTitle": "确认标记失效资源",
+        "physicalTitle": "确认释放存储空间",
+        "logicalAlert": "标记失效会让资源离开活跃列表，并保留审计记录。",
+        "physicalAlert": "释放存储会删除已登记的存储对象、缓存或派生产物，请确认评估结果。",
+        "basedOnScan": "基于评估",
+        "riskLevel": "风险等级",
+        "scope": "影响范围",
+        "impact": "评估影响",
+        "impactValue": "{items} 个待处理项 / {records} 条状态记录 / {space} 可释放空间",
+        "confirmChecked": "我已核对评估结果、影响范围和处理方式",
+        "tokenLabel": "请输入 {token} 确认高风险或释放存储操作"
+      },
       "actions": {
         "logicalCleanup": "标记失效资源",
         "physicalCleanup": "释放存储空间",
         "physicalCleanupConfirm": "释放存储会删除已登记的存储对象、缓存或派生产物，确定继续吗？",
+        "newAssessment": "重新评估",
         "viewMonitor": "查看监控",
         "viewAllMonitor": "回收监控",
+        "viewAudit": "查看审计",
         "confirm": "确定",
         "cancel": "取消"
       },
@@ -741,7 +806,9 @@
         "actionCleanup": "回收",
         "logicalCleanup": "标记失效",
         "physicalCleanup": "释放存储",
-        "viewDetail": "查看详情"
+        "viewDetail": "查看详情",
+        "latestScan": "最近评估",
+        "latestExecute": "最近回收"
       },
       "trigger": {
         "manual": "手动",
@@ -772,7 +839,24 @@
         "timeout": "超时"
       },
       "detail": {
-        "title": "任务详情"
+        "title": "任务详情",
+        "summaryTitle": "任务摘要",
+        "moduleTitle": "模块结果",
+        "taskId": "任务ID",
+        "action": "动作",
+        "status": "状态",
+        "cleanupMode": "处理方式",
+        "basedOnScan": "基于评估",
+        "scope": "范围",
+        "triggerType": "触发方式",
+        "causeEvent": "触发事件",
+        "riskLevel": "风险等级",
+        "releasedStorage": "释放空间",
+        "startedAt": "开始时间",
+        "completedAt": "完成时间",
+        "monitor": "监控",
+        "audit": "审计",
+        "rawJson": "原始诊断 JSON"
       },
       "msg": {
         "scanCreated": "资源评估任务已创建",
@@ -781,7 +865,9 @@
         "cleanupFailed": "创建资源回收任务失败: {error}",
         "taskFailed": "任务执行失败",
         "noScanFirst": "请先执行资源评估",
-        "detailFailed": "加载任务详情失败"
+        "confirmRequired": "请先完成确认",
+        "detailFailed": "加载任务详情失败",
+        "tenantScopeRequired": "手动资源回收必须在明确租户范围内发起"
       }
     },
     "tenant": {

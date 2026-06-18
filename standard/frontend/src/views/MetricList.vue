@@ -347,7 +347,6 @@ onMounted(() => {
 .header-left { display: flex; align-items: center; gap: 16px; }
 .header-left h2 { margin: 0; font-size: 18px; color: var(--el-text-color-primary); }
 .card-header { display: flex; justify-content: space-between; align-items: center; }
-.category-card { height: 100%; }
 .category-item { padding: 8px 12px; cursor: pointer; border-radius: 4px; font-size: 13px; color: var(--el-text-color-primary); }
 .category-item.active, .cat-node.active { color: var(--el-color-primary); font-weight: 500; }
 .category-item:hover { background: var(--el-fill-color-light); }

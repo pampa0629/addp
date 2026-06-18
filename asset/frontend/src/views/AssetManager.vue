@@ -444,16 +444,15 @@ function buildTree(list) {
 
 <style scoped>
 .asset-manager {
-  height: 100%;
   display: flex;
   flex-direction: column;
   background: var(--el-bg-color-page, #f5f7fa);
 }
 
 .manager-body {
-  flex: 1;
   display: flex;
-  overflow: hidden;
+  align-items: stretch;
+  overflow: visible;
 }
 
 /* 左侧分类面板 */
@@ -464,12 +463,11 @@ function buildTree(list) {
   border-right: 1px solid var(--el-border-color-lighter);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .category-tree-wrap {
-  flex: 1;
-  overflow-y: auto;
+  overflow: visible;
   padding: 8px 0;
 }
 
@@ -537,7 +535,7 @@ function buildTree(list) {
   flex: 1;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: visible;
   padding: 16px;
   gap: 12px;
 }

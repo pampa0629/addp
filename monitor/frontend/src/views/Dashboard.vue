@@ -352,7 +352,6 @@ onBeforeUnmount(() => {
 <style scoped>
 .dashboard {
   padding: 20px;
-  min-height: 100vh;
   background: var(--addp-bg-secondary);
 }
 

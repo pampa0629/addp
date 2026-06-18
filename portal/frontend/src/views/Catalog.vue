@@ -147,7 +147,6 @@ onMounted(() => {
 <style scoped>
 .catalog-page {
   display: flex;
-  height: 100%;
   gap: 0;
 }
 
@@ -197,7 +196,6 @@ onMounted(() => {
 .main-content {
   flex: 1;
   padding: 20px;
-  overflow-y: auto;
 }
 
 .content-header {

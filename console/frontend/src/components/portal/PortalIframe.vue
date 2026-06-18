@@ -40,7 +40,6 @@ defineEmits(['load'])
   width: 100%;
   flex: 1;
   min-height: 0;
-  height: calc(100vh - 60px);
   background: var(--addp-bg-secondary);
 }
 

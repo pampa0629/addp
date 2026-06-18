@@ -113,7 +113,7 @@ func main() {
 	taskService.SetExecutionService(executionService) // 注入执行服务（避免循环依赖）
 	cleanupService := service.NewTransferCleanupService(db, redisClient, taskExecutionRepo)
 	if err := cleanupService.Start(context.Background()); err != nil {
-		logger.L().Warn("Transfer cleanup service start failed", "error", err)
+		logger.L().Warn("Transfer 资源回收服务启动失败", "error", err)
 	}
 	defer cleanupService.Stop()
 

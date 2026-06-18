@@ -184,7 +184,6 @@ const handleLogout = () => {
 .content-only {
   width: 100%;
   height: auto;
-  min-height: 100vh;
   padding: 20px;
   margin: 0;
   background: var(--addp-bg-secondary) !important;

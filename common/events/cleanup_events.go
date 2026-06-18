@@ -8,23 +8,23 @@ import (
 
 // 事件类型常量
 const (
-	// EventCleanupRequest - 清理请求事件
+	// EventCleanupRequest - 资源回收请求事件
 	EventCleanupRequest = "cleanup.request"
 )
 
-// cleanup 生命周期事件名称。
+// 资源回收生命周期事件名称。
 const (
 	CleanupCauseEngineDeleted = "engine.deleted"
 	CleanupCauseTenantDeleted = "tenant.deleted"
 )
 
-// 清理动作类型
+// 资源回收动作类型
 const (
-	CleanupActionScan    = "scan"    // 扫描垃圾数据
-	CleanupActionExecute = "execute" // 执行清理
+	CleanupActionScan    = "scan"    // 评估可回收资源
+	CleanupActionExecute = "execute" // 执行资源回收
 )
 
-// 清理模式
+// 资源回收模式
 const (
 	CleanupModeLogical  = "logical_cleanup"  // 逻辑清理
 	CleanupModePhysical = "physical_cleanup" // 物理清理
@@ -39,7 +39,7 @@ func ValidateCleanupMode(cleanupMode string) error {
 	}
 }
 
-// 清理结果状态
+// 资源回收结果状态
 const (
 	CleanupResultSuccess        = "success"
 	CleanupResultFailed         = "failed"
@@ -69,7 +69,7 @@ type TenantDeletedEvent struct {
 	DeletedBy uint      `json:"deleted_by"`
 }
 
-// CleanupRequestEvent - 清理请求事件
+// CleanupRequestEvent - 资源回收请求事件
 type CleanupRequestEvent struct {
 	TaskID            string                 `json:"task_id"`                       // 任务ID
 	Action            string                 `json:"action"`                        // scan/execute
@@ -85,7 +85,7 @@ type CleanupRequestEvent struct {
 	RequestedAt       time.Time              `json:"requested_at"`                  // 请求时间
 }
 
-// CleanupResultSummary - 清理结果标准摘要
+// CleanupResultSummary - 资源回收结果标准摘要
 type CleanupResultSummary struct {
 	ScannedItems             int    `json:"scanned_items,omitempty"`
 	AffectedRecords          int    `json:"affected_records,omitempty"`
@@ -99,7 +99,7 @@ type CleanupResultSummary struct {
 	RiskLevel                string `json:"risk_level,omitempty"`
 }
 
-// CleanupResultData - 清理结果数据（各模块写入Redis）
+// CleanupResultData - 资源回收结果数据（各模块写入 Redis）
 type CleanupResultData struct {
 	Module      string                 `json:"module"`                 // 模块名称
 	Status      string                 `json:"status"`                 // success/failed/partial_success/skipped/timeout

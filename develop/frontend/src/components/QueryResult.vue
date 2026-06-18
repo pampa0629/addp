@@ -48,7 +48,6 @@
       :data="result.rows"
       stripe
       border
-      height="100%"
       style="width: 100%"
       :default-sort="{ prop: result.columns[0], order: 'ascending' }"
     >
@@ -156,7 +155,6 @@ const exportCSV = () => {
 .sql-result-container {
   display: flex;
   flex-direction: column;
-  height: 100%;
   background: var(--addp-bg-primary);
   border-radius: 4px;
 }
@@ -196,14 +194,13 @@ const exportCSV = () => {
 }
 
 .el-table {
-  flex: 1;
   overflow: auto;
 }
 
 .el-empty {
-  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 48px 0;
 }
 </style>

@@ -141,9 +141,9 @@ func TestModelCleanupScanWithoutTenantLifecycleContextReturnsNoCandidates(t *tes
 	seedModelCleanupTenantState(t, db, 1)
 
 	svc := NewCleanupService(db, nil, nil)
-	stats, err := svc.ScanGarbage(context.Background(), 1, nil)
+	stats, err := svc.ScanReclaimCandidates(context.Background(), 1, nil)
 	if err != nil {
-		t.Fatalf("ScanGarbage: %v", err)
+		t.Fatalf("ScanReclaimCandidates: %v", err)
 	}
 	if modelCandidateRecordCount(stats) != 0 {
 		t.Fatalf("expected no candidates without tenant lifecycle context, got %+v", stats)
@@ -184,9 +184,9 @@ func TestModelCleanupTenantDeletedPhysicalDeletesOwnedState(t *testing.T) {
 	seedModelCleanupTenantState(t, db, 2)
 
 	svc := NewCleanupService(db, nil, nil)
-	stats, err := svc.ScanGarbage(context.Background(), 1, map[string]interface{}{"tenant_id": 1})
+	stats, err := svc.ScanReclaimCandidates(context.Background(), 1, map[string]interface{}{"tenant_id": 1})
 	if err != nil {
-		t.Fatalf("ScanGarbage: %v", err)
+		t.Fatalf("ScanReclaimCandidates: %v", err)
 	}
 	if stats.DWLayers != 1 || stats.Entities != 2 || stats.EntityAttributes != 1 || stats.EntityRelations != 1 ||
 		stats.LogicalTables != 2 || stats.LogicalFields != 2 || stats.TableRelations != 1 || stats.FactMetricMappings != 1 {

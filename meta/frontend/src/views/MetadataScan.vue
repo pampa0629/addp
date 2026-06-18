@@ -1303,15 +1303,19 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .metadata-scan {
-  padding: 20px;
+  padding: 12px;
+}
+
+.metadata-scan :deep(.el-card__body) {
+  padding: 16px;
 }
 
 .scan-status {
   position: sticky;
   top: 0;
   z-index: 3;
-  margin-bottom: 16px;
-  padding: 10px 12px;
+  margin-bottom: 12px;
+  padding: 8px 10px;
   border: 1px solid var(--el-border-color);
   border-radius: 6px;
   background: var(--el-bg-color);
@@ -1321,8 +1325,8 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 6px;
+  gap: 8px;
+  margin-bottom: 4px;
   font-size: 12px;
 }
 
@@ -1342,7 +1346,7 @@ onBeforeUnmount(() => {
 }
 
 .scan-status__detail {
-  margin-top: 6px;
+  margin-top: 4px;
   overflow: hidden;
   color: var(--addp-text-secondary);
   font-size: 12px;
@@ -1353,7 +1357,7 @@ onBeforeUnmount(() => {
 
 .scan-container {
   display: flex;
-  gap: 16px;
+  gap: 12px;
 }
 
 /* ========== 引擎信息列 ========== */
@@ -1567,7 +1571,7 @@ onBeforeUnmount(() => {
   align-items: center;
   flex-wrap: wrap;
   gap: 12px;
-  margin-bottom: 15px;
+  margin-bottom: 12px;
 }
 
 .panel-header h3 {

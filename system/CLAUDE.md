@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 日志管理（审计日志存储和查询、统计分析、导出）
 - 引擎管理（标准库连接、扩展引擎连接等，含 Schema/表枚举）
 - 应用管理（外部应用注册、API Key 管理）
-- 垃圾数据清理管理（跨模块扫描和执行清理）
+- 资源回收管理（跨模块评估和执行资源回收）
 - 模块注册与发现（供 Gateway 动态路由）
 - 任务提供者注册（供 Orchestrator 查询调用）
 - 数据存储在 PostgreSQL 数据库（system schema）
@@ -84,7 +84,7 @@ backend/
 │   │   ├── log_handler.go             # 日志管理
 │   │   ├── engine_handler.go          # 引擎管理
 │   │   ├── application_handler.go     # 应用与 API Key 管理
-│   │   ├── cleanup_handler.go         # 垃圾数据清理
+│   │   ├── cleanup_handler.go         # 资源回收
 │   │   ├── module_registry_handler.go # 模块注册与发现
 │   │   ├── task_provider_handler.go   # 任务提供者注册
 │   │   ├── registry_handler.go        # 能力注册（计算引擎能力）
@@ -98,7 +98,7 @@ backend/
 │   │   ├── log.go
 │   │   ├── engine.go
 │   │   ├── application.go     # 应用 + APIKey 模型
-│   │   ├── cleanup.go         # 清理任务模型
+│   │   ├── cleanup.go         # 资源回收任务模型
 │   │   ├── module_registry.go # 模块注册表模型
 │   │   └── task_provider.go   # 任务提供者模型
 │   ├── repository/     # 数据访问层
@@ -125,7 +125,7 @@ frontend/src/
 │   ├── engines.js        # 引擎管理 API
 │   ├── logs.js           # 日志管理 API
 │   ├── applications.js   # 应用管理 API
-│   ├── cleanup.js        # 清理管理 API
+│   ├── cleanup.js        # 资源回收 API
 │   └── manager.js        # 外部 Manager 模块 API（预览等）
 ├── components/       # 可复用组件
 │   ├── Layout.vue        # 通用布局
@@ -153,7 +153,7 @@ frontend/src/
 │   ├── Logs.vue           # 日志管理
 │   ├── Engines.vue        # 引擎管理
 │   ├── Applications.vue   # 应用与 API Key 管理
-│   ├── CleanupManager.vue # 垃圾数据清理管理
+│   ├── CleanupManager.vue # 资源回收管理
 │   └── Developer.vue      # 开发者工具页面
 └── router/           # 路由配置
 ```
@@ -325,7 +325,7 @@ frontend/src/
 | 查看引擎列表 | ✅ (所有) | ✅ (本租户) | ✅ (本租户) |
 | 查看日志 | ✅ (所有) | ✅ (本租户) | ✅ (本租户) |
 | 管理应用/API Key | ✅ | ✅ (本租户) | ❌ |
-| 垃圾数据清理 | ❌ | ✅ (本租户) | ❌ |
+| 资源回收 | ❌ | ✅ (本租户) | ❌ |
 
 ## API 端点
 
@@ -379,11 +379,11 @@ frontend/src/
 - `GET /api/v1/system/applications/:id/keys` - 列出应用的 API Key
 - `DELETE /api/v1/system/applications/:id/keys/:key_id` - 撤销 API Key
 
-### 垃圾数据清理（仅租户管理员）
-- `POST /api/v1/system/admin/cleanup/scan` - 创建扫描任务
-- `GET /api/v1/system/admin/cleanup/tasks/:task_id` - 获取任务状态
-- `POST /api/v1/system/admin/cleanup/execute` - 创建执行清理任务
-- `GET /api/v1/system/admin/cleanup/history` - 获取任务历史
+### 资源回收（仅租户管理员）
+- `POST /api/v1/system/admin/cleanup/scan` - 创建资源回收评估任务
+- `GET /api/v1/system/admin/cleanup/tasks/:task_id` - 获取资源回收任务状态
+- `POST /api/v1/system/admin/cleanup/execute` - 创建资源回收执行任务
+- `GET /api/v1/system/admin/cleanup/history` - 获取资源回收任务历史
 
 ### 内部 API（`/api/internal`，X-Internal-API-Key 认证）
 

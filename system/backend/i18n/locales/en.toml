@@ -45,3 +45,45 @@ other = "Confirm the assessment result and impact scope before executing resourc
 
 [system.cleanup.confirm_token_required]
 other = "High-risk or storage release operations require confirmation text"
+
+[system.cleanup.tenant_required]
+other = "Manual resource reclaim must start within an explicit tenant scope; global resource reclaim needs a dedicated global semantic"
+
+[system.cleanup.tenant_missing]
+other = "Tenant context is missing"
+
+[system.cleanup.create_scan_failed]
+other = "Failed to create resource reclaim assessment task"
+
+[system.cleanup.task_id_required]
+other = "Task ID is required"
+
+[system.cleanup.task_not_found]
+other = "Resource reclaim task not found"
+
+[system.cleanup.get_task_failed]
+other = "Failed to query resource reclaim task status"
+
+[system.cleanup.task_forbidden]
+other = "You are not allowed to access this resource reclaim task"
+
+[system.cleanup.scan_not_found]
+other = "Resource reclaim assessment task not found"
+
+[system.cleanup.get_scan_failed]
+other = "Failed to query resource reclaim assessment task"
+
+[system.cleanup.execute_forbidden]
+other = "You are not allowed to execute resource reclaim based on this assessment"
+
+[system.cleanup.based_on_scan_required]
+other = "based_on_scan must reference a scan task"
+
+[system.cleanup.scan_not_completed]
+other = "The assessment task is not completed; resource reclaim cannot be executed"
+
+[system.cleanup.create_execute_failed]
+other = "Failed to create resource reclaim execution task"
+
+[system.cleanup.get_history_failed]
+other = "Failed to query resource reclaim task history"

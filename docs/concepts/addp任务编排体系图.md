@@ -358,9 +358,11 @@ sequenceDiagram
 
 ### 定时调度 (Cron)
 
+编排调度只决定某个 orchestration 何时启动一次编排 run。被 Step 引用的 owner 任务如果自身也配置了定时计划，该计划仍然是独立入口；编排不会继承、覆盖或关闭子任务自身调度。
+
 ```mermaid
 sequenceDiagram
-    participant Cron as Cron 调度器
+    participant Cron as 编排调度器
     participant Orchestrator as Orchestrator Backend
     participant DB as PostgreSQL
     participant Worker as Orchestrator Worker
@@ -373,6 +375,12 @@ sequenceDiagram
     Worker->>DB: 6. 更新执行状态
     Worker-->>Orchestrator: 7. 执行完成
 ```
+
+约束：
+
+- Orchestrator 调度的是 orchestration run，不是把 Step 对应 owner 任务的调度“搬到编排里”。
+- Step 执行时消费的是 owner 任务定义和执行接口，不读取其 `schedule` / `next_run_at` 作为编排依赖。
+- 如果同一个 owner 任务既启用了自身调度，又被某个已调度的 orchestration 引用，两者会形成两个独立执行入口。
 
 **Cron 表达式示例**:
 - `0 2 * * *`: 每天凌晨 2 点执行

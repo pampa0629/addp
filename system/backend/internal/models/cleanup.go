@@ -2,7 +2,7 @@ package models
 
 import "github.com/addp/common/events"
 
-// CleanupTask - 清理任务元数据
+// CleanupTask - 资源回收任务元数据
 type CleanupTask struct {
 	TaskID          string                 `json:"task_id"`
 	Action          string                 `json:"action"` // scan/execute

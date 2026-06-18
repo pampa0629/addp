@@ -115,7 +115,6 @@
         :data="executions"
         stripe
         style="width: 100%"
-        height="100%"
       >
         <el-table-column prop="execution_id" :label="t('develop.execution.colId')" width="200" show-overflow-tooltip />
         <el-table-column :label="t('develop.execution.colTaskName')" min-width="150">
@@ -457,7 +456,6 @@ onUnmounted(() => {
 .execution-monitor-page {
   display: flex;
   flex-direction: column;
-  height: 100vh;
   background: var(--addp-bg-secondary);
 }
 
@@ -537,7 +535,7 @@ onUnmounted(() => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: visible;
   padding: 0 16px 16px 16px;
 }
 

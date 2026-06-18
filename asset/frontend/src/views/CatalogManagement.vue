@@ -241,7 +241,7 @@ onMounted(loadTree)
 }
 .page-header h2 { margin: 0; font-size: 18px; font-weight: 600; }
 
-.tree-card, .detail-card { height: calc(100vh - 180px); overflow-y: auto; }
+.tree-card, .detail-card { overflow-y: visible; }
 
 .tree-node {
   display: flex;

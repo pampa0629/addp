@@ -23,9 +23,9 @@ func TestCleanupScanReportsInvalidEngineScanTaskDefinitions(t *testing.T) {
 	}
 
 	svc := NewCleanupService(db, nil, nil, nil, CleanupConfig{Enabled: true})
-	stats, err := svc.ScanGarbage(context.Background(), tenantID, map[string]interface{}{"engine_id": engineID})
+	stats, err := svc.ScanReclaimCandidates(context.Background(), tenantID, map[string]interface{}{"engine_id": engineID})
 	if err != nil {
-		t.Fatalf("ScanGarbage() error = %v", err)
+		t.Fatalf("ScanReclaimCandidates() error = %v", err)
 	}
 	if stats.ScanTaskDefinitions.Count != 1 {
 		t.Fatalf("scan task definition count = %d, want 1", stats.ScanTaskDefinitions.Count)

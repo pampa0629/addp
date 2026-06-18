@@ -139,9 +139,9 @@ func TestAssetCleanupScanWithoutTenantLifecycleContextReturnsNoCandidates(t *tes
 	seedAssetCleanupTenantState(t, db, 1)
 
 	svc := NewCleanupService(db, nil, nil)
-	stats, err := svc.ScanGarbage(context.Background(), 1, nil)
+	stats, err := svc.ScanReclaimCandidates(context.Background(), 1, nil)
 	if err != nil {
-		t.Fatalf("ScanGarbage: %v", err)
+		t.Fatalf("ScanReclaimCandidates: %v", err)
 	}
 	if assetCandidateRecordCount(stats) != 0 {
 		t.Fatalf("expected no candidates without tenant lifecycle context, got %+v", stats)
@@ -183,9 +183,9 @@ func TestAssetCleanupTenantDeletedPhysicalDeletesOwnedState(t *testing.T) {
 	seedAssetCleanupTenantState(t, db, 2)
 
 	svc := NewCleanupService(db, nil, nil)
-	stats, err := svc.ScanGarbage(context.Background(), 1, map[string]interface{}{"tenant_id": 1})
+	stats, err := svc.ScanReclaimCandidates(context.Background(), 1, map[string]interface{}{"tenant_id": 1})
 	if err != nil {
-		t.Fatalf("ScanGarbage: %v", err)
+		t.Fatalf("ScanReclaimCandidates: %v", err)
 	}
 	if stats.TypeDefinitions != 1 || stats.TypeFieldSchemas != 1 || stats.Catalogs != 1 || stats.Assets != 1 ||
 		stats.AssetExtFields != 1 || stats.Applications != 1 || stats.Authorizations != 1 || stats.Ratings != 1 {

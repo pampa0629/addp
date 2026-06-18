@@ -26,6 +26,13 @@ export const logsAPI = {
     return client.get('/system/logs/stats')
   },
 
+  export: (params) => {
+    return client.get('/system/logs/export', {
+      params,
+      responseType: 'blob'
+    })
+  },
+
   // 时间趋势（新增）
   getTrends: () => {
     return client.get('/system/logs/trends')

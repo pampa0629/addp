@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -54,7 +56,7 @@ func TestCleanupExecutorEnabledReadsModuleRegistryCapability(t *testing.T) {
 		want     bool
 	}{
 		{
-			name: "enabled cleanup executor",
+			name: "enabled resource reclaim executor",
 			metadata: map[string]interface{}{
 				"module": "meta",
 				"capabilities": map[string]interface{}{
@@ -66,7 +68,7 @@ func TestCleanupExecutorEnabledReadsModuleRegistryCapability(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "disabled cleanup executor",
+			name: "disabled resource reclaim executor",
 			metadata: map[string]interface{}{
 				"capabilities": map[string]interface{}{
 					"cleanup_executor": map[string]interface{}{
@@ -157,8 +159,83 @@ func TestCreateExecuteTaskRejectsInvalidCleanupModeBeforeLoadingScan(t *testing.
 	t.Parallel()
 
 	svc := &CleanupOrchestratorService{}
-	if _, err := svc.CreateExecuteTask(context.Background(), "scan-1", "soft_delete", 99); err == nil {
+	if _, err := svc.CreateExecuteTask(context.Background(), "scan-1", "soft_delete", 99, CleanupExecuteConfirmation{Confirmed: true}); err == nil {
 		t.Fatal("CreateExecuteTask should reject invalid cleanup mode")
+	}
+}
+
+func TestValidateCleanupExecuteConfirmation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		cleanupMode  string
+		summary      events.CleanupResultSummary
+		confirmation CleanupExecuteConfirmation
+		wantErr      error
+	}{
+		{
+			name:        "unconfirmed request is rejected",
+			cleanupMode: events.CleanupModeLogical,
+			confirmation: CleanupExecuteConfirmation{
+				Confirmed: false,
+			},
+			wantErr: ErrCleanupExecuteConfirmRequired,
+		},
+		{
+			name:        "physical cleanup requires token",
+			cleanupMode: events.CleanupModePhysical,
+			confirmation: CleanupExecuteConfirmation{
+				Confirmed: true,
+			},
+			wantErr: ErrCleanupExecuteConfirmTokenRequired,
+		},
+		{
+			name:        "high risk logical cleanup requires token",
+			cleanupMode: events.CleanupModeLogical,
+			summary: events.CleanupResultSummary{
+				RiskLevel: "high",
+			},
+			confirmation: CleanupExecuteConfirmation{
+				Confirmed: true,
+			},
+			wantErr: ErrCleanupExecuteConfirmTokenRequired,
+		},
+		{
+			name:        "low risk logical cleanup accepts confirmation",
+			cleanupMode: events.CleanupModeLogical,
+			summary: events.CleanupResultSummary{
+				RiskLevel: "low",
+			},
+			confirmation: CleanupExecuteConfirmation{
+				Confirmed: true,
+			},
+		},
+		{
+			name:        "physical cleanup accepts token",
+			cleanupMode: events.CleanupModePhysical,
+			confirmation: CleanupExecuteConfirmation{
+				Confirmed:         true,
+				ConfirmationToken: "CONFIRM",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := validateCleanupExecuteConfirmation(tt.cleanupMode, tt.summary, tt.confirmation)
+			if tt.wantErr == nil {
+				if err != nil {
+					t.Fatalf("validateCleanupExecuteConfirmation() error = %v", err)
+				}
+				return
+			}
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("validateCleanupExecuteConfirmation() error = %v, want %v", err, tt.wantErr)
+			}
+		})
 	}
 }
 
@@ -223,5 +300,53 @@ func TestCleanupTaskTerminalStatuses(t *testing.T) {
 		if isTaskTerminal(status) {
 			t.Fatalf("status %q should not be terminal", status)
 		}
+	}
+}
+
+func TestBuildCleanupAuditLogKeepsTaskIdentityForAuditLookup(t *testing.T) {
+	t.Parallel()
+
+	tenantID := uint(12)
+	for _, action := range []string{
+		"cleanup.execute.confirmed",
+		"cleanup.execute.created",
+		"cleanup.completed",
+		"cleanup.failed",
+	} {
+		action := action
+		t.Run(action, func(t *testing.T) {
+			t.Parallel()
+
+			log := buildCleanupAuditLog(99, &tenantID, action, "cleanup-exec-1", map[string]interface{}{
+				"confirmation_token": true,
+			})
+
+			if log.HTTPMethod != "SYSTEM" {
+				t.Fatalf("HTTPMethod = %q, want SYSTEM", log.HTTPMethod)
+			}
+			if log.ResourcePath != action {
+				t.Fatalf("ResourcePath = %q, want %q", log.ResourcePath, action)
+			}
+			if log.EntityType != "cleanup" || log.EntityID != "cleanup-exec-1" {
+				t.Fatalf("entity = %s/%s, want cleanup/cleanup-exec-1", log.EntityType, log.EntityID)
+			}
+			if log.ModuleName != "system" {
+				t.Fatalf("ModuleName = %q, want system", log.ModuleName)
+			}
+			if log.TenantID == nil || *log.TenantID != tenantID {
+				t.Fatalf("TenantID = %#v, want %d", log.TenantID, tenantID)
+			}
+			if log.RequestID == "" {
+				t.Fatal("RequestID should not be empty")
+			}
+
+			var body map[string]interface{}
+			if err := json.Unmarshal([]byte(log.RequestBody), &body); err != nil {
+				t.Fatalf("RequestBody is not json: %v", err)
+			}
+			if body["confirmation_token"] != true {
+				t.Fatalf("RequestBody = %#v, want confirmation_token=true", body)
+			}
+		})
 	}
 }

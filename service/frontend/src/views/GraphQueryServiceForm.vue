@@ -392,7 +392,6 @@ onMounted(async () => {
 <style scoped>
 .graph-service-form {
   padding: 24px;
-  min-height: 100%;
   background: var(--addp-bg-secondary);
 }
 .page-header { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }

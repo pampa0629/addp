@@ -18,7 +18,7 @@ type Config struct {
 	ModelServiceURL   string
 	CopilotServiceURL string
 
-	// Redis 配置（cleanup request/result）
+	// Redis 配置（资源回收 request/result）
 	RedisHost     string
 	RedisPort     string
 	RedisPassword string

@@ -70,16 +70,13 @@ const itemCount = computed(() => {
 
 <style scoped>
 .engine-panel {
-  height: 100%;
   display: flex;
   flex-direction: column;
   border: none;
 }
 
 :deep(.el-card__body) {
-  flex: 1;
-  overflow: auto;
-  min-height: 0;
+  overflow: visible;
 }
 
 .panel-content {

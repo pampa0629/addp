@@ -604,8 +604,22 @@
       "usernamePlaceholder": "Enter username",
       "ipAddress": "IP Address",
       "ipPlaceholder": "Enter IP",
+      "entityType": "Entity Type",
+      "entityTypePlaceholder": "e.g. cleanup (resource reclaim)",
+      "entityId": "Entity ID",
+      "entityIdPlaceholder": "Enter entity ID",
+      "resourcePath": "Action Prefix",
+      "resourcePathPlaceholder": "e.g. cleanup.execute (resource reclaim execution)",
       "query": "Search",
       "reset": "Reset",
+      "auditFilter": {
+        "title": "Showing audit logs for a specific resource",
+        "module": "Module: {value}",
+        "entityType": "Entity type: {value}",
+        "entityId": "Entity ID: {value}",
+        "resourcePath": "Action prefix: {value}",
+        "clear": "Clear resource filter"
+      },
       "columns": {
         "id": "ID",
         "action": "Action",
@@ -638,9 +652,28 @@
         "time": "Time",
         "error": "Error",
         "noError": "No details",
+        "auditDetail": "Audit Summary",
         "requestDetail": "Request Details",
         "noRequest": "No request details",
         "unauthenticated": "Unauthenticated"
+      },
+      "auditDetail": {
+        "basedOnScan": "Based On Assessment",
+        "cleanupMode": "Handling Mode",
+        "confirmedAt": "Confirmed At",
+        "confirmationToken": "Confirmation Token",
+        "riskLevel": "Risk Level",
+        "scannedItems": "Found Items",
+        "affectedRecords": "Affected Records",
+        "freedBytes": "Released Storage",
+        "expectedModules": "Modules",
+        "executionId": "Monitor Execution ID",
+        "status": "Status",
+        "causeEvent": "Cause Event",
+        "context": "Context",
+        "summary": "Result Summary",
+        "trueValue": "Yes",
+        "falseValue": "No"
       },
       "msg": {
         "loadFailed": "Failed to load log list",
@@ -656,8 +689,14 @@
       "taskInProgress": "{action} task in progress",
       "taskId": "Task ID: {id}",
       "taskStatus": "Status: {status}",
+      "tenantScopeRequired": {
+        "title": "Explicit Tenant Scope Required",
+        "desc": "Manual resource reclaim must start within a tenant scope. Use a tenant administrator account for the target tenant; global resource reclaim will use a dedicated global semantic."
+      },
       "scanResult": {
         "title": "Assessment Results",
+        "bannerTitle": "Assessment Completed",
+        "bannerDesc": "Found {items} items across {modules} modules.",
         "scanTime": "Assessment Time",
         "scanScope": "Assessment Scope",
         "triggerType": "Trigger",
@@ -668,8 +707,19 @@
         "monitor": "Monitor",
         "items": "{count} items"
       },
+      "executeResult": {
+        "title": "Reclaim Results",
+        "bannerTitle": "Resource Reclaim Completed",
+        "bannerDesc": "This reclaim affected {records} state records and released {space}.",
+        "affectedRecords": "Affected Records"
+      },
+      "empty": {
+        "description": "No assessment result yet. Assess reclaimable resources before marking inactive or releasing storage.",
+        "action": "Start Assessment"
+      },
       "overview": {
         "items": "Items to Handle",
+        "affectedRecords": "Affected Records",
         "risk": "Risk Level",
         "freedBytes": "Reclaimable Space",
         "modules": "Modules"
@@ -713,12 +763,27 @@
         "physicalCleanup": "Release Storage",
         "physicalCleanupDesc": "Delete registered storage objects, caches, or derived artifacts; confirm carefully"
       },
+      "confirm": {
+        "logicalTitle": "Confirm Marking Resources Inactive",
+        "physicalTitle": "Confirm Storage Release",
+        "logicalAlert": "Marking inactive removes resources from active views while keeping audit records.",
+        "physicalAlert": "Storage release deletes registered storage objects, caches, or derived artifacts. Review the assessment first.",
+        "basedOnScan": "Based On Assessment",
+        "riskLevel": "Risk Level",
+        "scope": "Impact Scope",
+        "impact": "Assessment Impact",
+        "impactValue": "{items} items / {records} state records / {space} reclaimable space",
+        "confirmChecked": "I have reviewed the assessment result, impact scope, and handling mode",
+        "tokenLabel": "Enter {token} to confirm high-risk or storage release operations"
+      },
       "actions": {
         "logicalCleanup": "Mark Resources Inactive",
         "physicalCleanup": "Release Storage",
         "physicalCleanupConfirm": "Releasing storage deletes registered storage objects, caches, or derived artifacts. Continue?",
+        "newAssessment": "Run New Assessment",
         "viewMonitor": "View Monitor",
         "viewAllMonitor": "Reclaim Monitor",
+        "viewAudit": "View Audit",
         "confirm": "Confirm",
         "cancel": "Cancel"
       },
@@ -741,7 +806,9 @@
         "actionCleanup": "Reclaim",
         "logicalCleanup": "Mark Inactive",
         "physicalCleanup": "Release Storage",
-        "viewDetail": "View Details"
+        "viewDetail": "View Details",
+        "latestScan": "Latest Assessment",
+        "latestExecute": "Latest Reclaim"
       },
       "trigger": {
         "manual": "Manual",
@@ -772,7 +839,24 @@
         "timeout": "Timeout"
       },
       "detail": {
-        "title": "Task Details"
+        "title": "Task Details",
+        "summaryTitle": "Task Summary",
+        "moduleTitle": "Module Results",
+        "taskId": "Task ID",
+        "action": "Action",
+        "status": "Status",
+        "cleanupMode": "Handling Mode",
+        "basedOnScan": "Based On Assessment",
+        "scope": "Scope",
+        "triggerType": "Trigger",
+        "causeEvent": "Cause Event",
+        "riskLevel": "Risk Level",
+        "releasedStorage": "Released Storage",
+        "startedAt": "Started At",
+        "completedAt": "Completed At",
+        "monitor": "Monitor",
+        "audit": "Audit",
+        "rawJson": "Raw Diagnostic JSON"
       },
       "msg": {
         "scanCreated": "Resource assessment task created",
@@ -781,7 +865,9 @@
         "cleanupFailed": "Failed to create resource reclaim task: {error}",
         "taskFailed": "Task execution failed",
         "noScanFirst": "Please run a resource assessment first",
-        "detailFailed": "Failed to load task details"
+        "confirmRequired": "Complete the confirmation first",
+        "detailFailed": "Failed to load task details",
+        "tenantScopeRequired": "Manual resource reclaim requires an explicit tenant scope"
       }
     },
     "tenant": {

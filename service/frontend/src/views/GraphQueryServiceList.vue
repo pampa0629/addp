@@ -145,7 +145,6 @@ onMounted(loadServices)
 <style scoped>
 .graph-service-list {
   padding: 24px;
-  min-height: 100%;
   background: var(--addp-bg-secondary);
 }
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }

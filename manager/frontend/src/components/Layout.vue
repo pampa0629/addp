@@ -165,6 +165,7 @@ const handleLogout = () => {
 .main-content {
   background: var(--addp-bg-secondary) !important;
   padding: 20px;
+  overflow: auto;
 }
 
 .el-menu-vertical {
@@ -174,8 +175,9 @@ const handleLogout = () => {
 /* iframe 模式样式 */
 .content-only {
   width: 100%;
-  height: 100vh;
-  overflow: hidden;
+  height: auto;
+  min-height: 0;
+  overflow: visible;
   background: var(--addp-bg-secondary) !important;
 }
 </style>

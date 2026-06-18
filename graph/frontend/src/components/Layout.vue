@@ -151,6 +151,8 @@ const handleCommand = (command) => {
 
 .content-only {
   background: var(--addp-bg-secondary) !important;
-  height: 100%;
+  height: auto;
+  min-height: 0;
+  overflow: visible;
 }
 </style>

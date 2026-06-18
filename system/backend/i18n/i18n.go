@@ -23,13 +23,27 @@ const (
 	MsgAuditLogCreateFailed = "system.log.audit_create_failed"
 	MsgAuditLogCreated      = "system.log.audit_created"
 
-	MsgModuleNotFound  = "system.module.not_found"
+	MsgModuleNotFound   = "system.module.not_found"
 	MsgModuleRegistered = "system.module.registered"
-	MsgModuleHeartbeat = "system.module.heartbeat"
-	MsgModuleDeleted   = "system.module.deleted"
+	MsgModuleHeartbeat  = "system.module.heartbeat"
+	MsgModuleDeleted    = "system.module.deleted"
 
 	MsgCleanupConfirmRequired      = "system.cleanup.confirm_required"
 	MsgCleanupConfirmTokenRequired = "system.cleanup.confirm_token_required"
+	MsgCleanupTenantRequired       = "system.cleanup.tenant_required"
+	MsgCleanupTenantMissing        = "system.cleanup.tenant_missing"
+	MsgCleanupCreateScanFailed     = "system.cleanup.create_scan_failed"
+	MsgCleanupTaskIDRequired       = "system.cleanup.task_id_required"
+	MsgCleanupTaskNotFound         = "system.cleanup.task_not_found"
+	MsgCleanupGetTaskFailed        = "system.cleanup.get_task_failed"
+	MsgCleanupTaskForbidden        = "system.cleanup.task_forbidden"
+	MsgCleanupScanNotFound         = "system.cleanup.scan_not_found"
+	MsgCleanupGetScanFailed        = "system.cleanup.get_scan_failed"
+	MsgCleanupExecuteForbidden     = "system.cleanup.execute_forbidden"
+	MsgCleanupBasedOnScanRequired  = "system.cleanup.based_on_scan_required"
+	MsgCleanupScanNotCompleted     = "system.cleanup.scan_not_completed"
+	MsgCleanupCreateExecuteFailed  = "system.cleanup.create_execute_failed"
+	MsgCleanupGetHistoryFailed     = "system.cleanup.get_history_failed"
 )
 
 func init() {

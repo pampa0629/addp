@@ -140,25 +140,25 @@ func main() {
 	}
 	defer scheduler.Stop(context.Background())
 
-	// ========== 启动清理服务 ==========
+	// ========== 启动 Meta 资源回收服务 ==========
 	cleanupService := service.NewCleanupService(db, redisClient, systemClient, searchIndexer, service.CleanupConfig{
 		Enabled:         true,
 		RetentionDays:   90,
 		CleanupInterval: 24 * time.Hour,
 	})
 	if err := cleanupService.Start(context.Background()); err != nil {
-		logger.L().Error("清理服务启动失败", "error", err)
+		logger.L().Error("Meta 资源回收服务启动失败", "error", err)
 		os.Exit(1)
 	}
 	defer cleanupService.Stop(context.Background())
-	logger.L().Info("清理服务已启动", "retention_days", 90)
+	logger.L().Info("Meta 资源回收服务已启动", "retention_days", 90)
 
-	// 订阅清理事件（如果 Redis 可用）
+	// 订阅资源回收事件（如果 Redis 可用）
 	if redisClient != nil {
 		if err := cleanupService.SubscribeCleanupEvents(context.Background()); err != nil {
-			logger.L().Warn("订阅清理事件失败", "error", err)
+			logger.L().Warn("订阅资源回收事件失败", "error", err)
 		} else {
-			logger.L().Info("已订阅垃圾数据清理事件")
+			logger.L().Info("已订阅资源回收事件")
 		}
 	}
 	// ===================================

@@ -855,7 +855,6 @@ watch(detailDialogVisible, visible => {
 <style scoped>
 .execution-list {
   padding: 20px;
-  min-height: 100vh;
   background: var(--addp-bg-secondary);
 }
 

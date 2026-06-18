@@ -45,3 +45,45 @@ other = "执行资源回收前必须确认评估结果和影响范围"
 
 [system.cleanup.confirm_token_required]
 other = "高风险或释放存储操作必须输入确认文本"
+
+[system.cleanup.tenant_required]
+other = "手动资源回收必须在明确租户范围内发起；全局资源回收需要使用专门的全局语义"
+
+[system.cleanup.tenant_missing]
+other = "租户信息缺失"
+
+[system.cleanup.create_scan_failed]
+other = "创建资源回收评估任务失败"
+
+[system.cleanup.task_id_required]
+other = "任务 ID 不能为空"
+
+[system.cleanup.task_not_found]
+other = "资源回收任务不存在"
+
+[system.cleanup.get_task_failed]
+other = "查询资源回收任务状态失败"
+
+[system.cleanup.task_forbidden]
+other = "无权访问该资源回收任务"
+
+[system.cleanup.scan_not_found]
+other = "资源回收评估任务不存在"
+
+[system.cleanup.get_scan_failed]
+other = "查询资源回收评估任务失败"
+
+[system.cleanup.execute_forbidden]
+other = "无权基于该评估任务执行资源回收"
+
+[system.cleanup.based_on_scan_required]
+other = "based_on_scan 必须指向 scan 任务"
+
+[system.cleanup.scan_not_completed]
+other = "评估任务未完成，不能执行资源回收"
+
+[system.cleanup.create_execute_failed]
+other = "创建资源回收执行任务失败"
+
+[system.cleanup.get_history_failed]
+other = "查询资源回收任务历史失败"

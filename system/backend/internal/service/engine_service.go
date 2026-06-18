@@ -341,7 +341,7 @@ func (s *EngineService) Delete(id uint, currentUserID uint) error {
 			events.CleanupCauseEngineDeleted,
 			cleanupEngineContext(id),
 		); err != nil {
-			log.Printf("触发 engine 删除 cleanup scan 失败: engine_id=%d error=%v", id, err)
+			log.Printf("触发 engine 删除资源回收评估失败: engine_id=%d error=%v", id, err)
 		}
 	}
 

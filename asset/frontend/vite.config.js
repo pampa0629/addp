@@ -14,7 +14,8 @@ export default defineConfig({
       '@element-plus/icons-vue': resolve(__dirname, 'node_modules/@element-plus/icons-vue'),
       'element-plus': resolve(__dirname, 'node_modules/element-plus'),
       'vue-i18n': resolve(__dirname, 'node_modules/vue-i18n')
-    }
+    },
+    dedupe: ['vue', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'axios']
   },
   server: {
     port: 5184,

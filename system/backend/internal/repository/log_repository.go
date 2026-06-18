@@ -85,9 +85,22 @@ func (r *LogRepository) applyFilters(query *gorm.DB, filters *models.AuditLogFil
 		query = query.Where("http_method = ?", filters.HTTPMethod)
 	}
 
+	// 资源路径过滤（前缀匹配）
+	if filters.ResourcePath != "" {
+		resourcePath := strings.TrimSpace(filters.ResourcePath)
+		if resourcePath != "" {
+			query = query.Where("resource_path LIKE ?", resourcePath+"%")
+		}
+	}
+
 	// 资源类型过滤
 	if filters.EntityType != "" {
 		query = query.Where("entity_type = ?", filters.EntityType)
+	}
+
+	// 资源ID过滤
+	if filters.EntityID != "" {
+		query = query.Where("entity_id = ?", filters.EntityID)
 	}
 
 	// 用户名过滤（模糊匹配）

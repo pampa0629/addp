@@ -164,7 +164,7 @@ Common 不维护全量业务 `task_type` 编译期枚举。`task_type` 由 owner
 | Graph | `kg_build` | `graph.build_tasks` |
 | Orchestrator | `orchestration` | `orchestrator.orchestrations` |
 
-System cleanup 不纳入 TaskProvider，也不进入 Orchestrator 编排。cleanup 属于系统级运维清理流程，不属于用户数据处理任务；但 cleanup 必须进入 `common.task_executions` 和 System 审计体系。System 创建 `module=system`、`task_type=cleanup` 的父 execution，各模块 cleanup executor 创建 `task_type=cleanup_executor` 的子 execution，并通过 `parent_execution_id` 关联。cleanup 不得声明为可编排业务任务，不得出现在 Orchestrator 的任务选择列表中。
+System 资源回收（cleanup）不纳入 TaskProvider，也不进入 Orchestrator 编排。cleanup 属于系统级运维资源回收流程，不属于用户数据处理任务；但 cleanup 必须进入 `common.task_executions` 和 System 审计体系。System 创建 `module=system`、`task_type=cleanup` 的父 execution，各模块资源回收执行方创建 `task_type=cleanup_executor` 的子 execution，并通过 `parent_execution_id` 关联。cleanup 不得声明为可编排业务任务，不得出现在 Orchestrator 的任务选择列表中。
 
 Transfer 的内部任务语义由 Transfer 专题确认。阶段 1 先把接口层纳入统一任务体系，对外只声明 `task_type=import`，并通过 TaskProvider 和 `common.task_executions` 关联任务定义。后续如专题确认需要增加导出、同步等任务类型，必须先修订本文，再按 clean break 方式迁移，不在同一阶段并行保留 `import`、`export`、`sync`、`transfer` 多套语义。
 
@@ -367,6 +367,33 @@ Step v1 只允许以下字段：
 11. v1 不支持并行执行、分支或条件、Step 级重试策略、人工确认步骤，也不得通过 `condition`、`retry`、`approval`、`parallel`、`branch` 或其他私有 Step 字段提前打开这些控制流能力。后续如需要，必须作为 Orchestrator 执行模型 v2 专题设计，明确状态机、失败语义、资源隔离、审计、UI 表达和迁移边界。
 12. Monitor 回跳任务定义时应使用 TaskProvider capabilities 中对应 `task_type.edit_url`，不得硬编码 `module + task_type` 映射。
 
+### 编排调度与子任务自身调度
+
+Orchestrator 的调度和 Step 引用任务的自身调度不是继承关系，也不是覆盖关系。
+
+核心语义：
+
+1. 编排调度只决定 Orchestration run 何时启动。
+2. 子任务自身调度只决定该 owner 任务作为独立任务何时自动执行。
+3. Orchestrator 执行 Step 时，只消费 `provider + task_type + task_id` 指向的任务定义和 Step 参数，不读取、不触发、不修改该任务定义上的 `schedule` / `enabled` / `next_run_at`。
+4. 一个任务定义同时被自身调度和某个编排引用时，两者是两个独立执行入口；不得将其视为重复调度错误。
+5. 编排触发子任务产生的 execution 必须通过 `source=orchestrator` 和 `parent_execution_id` 表达编排上下文；子任务自身调度产生的 execution 不应写该编排 execution 为父执行。
+6. 如果用户不希望某个任务被自身计划自动执行，应在 owner 模块关闭该任务自身调度；Orchestrator 不负责替用户关闭或屏蔽被引用任务的 owner schedule。
+
+示例：
+
+- Transfer 任务 A 自身配置每天 01:00 执行。
+- Orchestration B 自身配置每天 03:00 执行，且某个 Step 引用 Transfer 任务 A。
+
+则系统应产生两个独立入口：
+
+| 时间 | 入口 | 语义 |
+|---|---|---|
+| 01:00 | Transfer owner scheduler | A 作为独立 Transfer 任务执行 |
+| 03:00 | Orchestrator scheduler | B 启动一次编排 run；执行到对应 Step 时调用 A 的执行能力 |
+
+这两次执行可以使用同一个 owner 任务定义 A，但 execution 上下文不同。前者没有编排父执行；后者必须关联 B 的 execution。
+
 ## 调度规范
 
 调度定义归任务 owner 模块。
@@ -379,6 +406,20 @@ Step v1 只允许以下字段：
 | common execution | 记录调度触发产生的一次 execution |
 
 长期应以 DB-driven due task claim 为主。进程内 Cron 只作为触发器或辅助工具，避免多实例、重启恢复、漏跑补偿和调度审计问题。
+
+平台级约束：
+
+1. 用户可配置、可持久化、可重复执行的任务定义型调度，默认必须采用 DB-driven due task claim 路线。
+2. `common/scheduler` 的平台主职责是 Cron 校验、下次执行时间计算和必要的进程内辅助触发；不得把“各模块各自维护内存任务注册表”作为长期主路线。
+3. 只要某个 task type 对外声明 `supports_schedule=true`，其 owner 任务定义就必须把 `schedule`、`enabled`、`next_run_at` 作为活状态字段参与完整调度闭环。
+4. 所谓完整调度闭环，至少包括：保存/更新任务定义时校验 `schedule`、计算并回写 `next_run_at`；scheduler 按 `next_run_at` claim due task；触发 execution 后推进下一次 `next_run_at`；任务关闭或 schedule 清空时清空 `next_run_at`。
+5. 不允许长期保留“表结构里有 `next_run_at`，但运行时不回写、不 claim、不以其为调度事实源”的半统一状态。
+6. 某个 task type 在未具备 owner scheduler、`next_run_at` 回写和 due task claim 闭环前，必须声明 `supports_schedule=false`；不得只因为模型上预留了 `schedule` 字段就对外宣称支持定时。
+7. 固定系统任务、启动期保活任务或纯进程内维护任务，如果不属于用户可配置的任务定义型调度，可以继续使用配置驱动或轻量进程内 Cron；但这类任务不得伪装成 owner task schedule，也不得与任务定义型调度并称为同一条技术路线。
+8. 固定系统任务如果后续演进为用户可配置、可审计、可监控的任务定义，必须迁移到 owner task + owner scheduler 的统一模型，不保留配置 Cron 与任务定义 Cron 双轨并存。
+9. 用户可见的调度配置入口必须复用共享前端调度能力，默认使用 `common-frontend` 的 `ScheduleConfig` / `ScheduleDisplay` 或其在同一共享能力上的等价封装。
+10. 某个模块存在秒级 Cron、策略载荷转换或行业特定预设等特殊需求时，应扩展共享调度能力，而不是在模块内私写一套独立的调度 UI、Cron 校验和描述逻辑。
+11. 平台级持久任务定义字段统一使用 `schedule` 表达 Cron 字符串；前端策略字段如 `schedule_mode`、`schedule_time`、`schedule_value`、`cron_expression` 只能作为交互载荷或转换中间态，不得替代 owner 任务定义上的 `schedule` 事实字段。
 
 ## Monitor 规范
 

@@ -621,6 +621,5 @@ const formatDate = (str) => str ? new Date(str).toLocaleString() : '-'
 .tab-toolbar { margin-bottom: 12px; }
 .color-dot { display: inline-block; width: 16px; height: 16px; border-radius: 50%; }
 .prop-table { width: 100%; }
-/* page-header ~40px + margin-bottom 20px + tabs-header ~40px + padding top+bottom 40px = ~140px */
-.graph-tab-container { height: calc(100vh - 140px); }
+.graph-tab-container { min-height: 480px; }
 </style>

@@ -82,7 +82,7 @@ const handleCommand = (command) => {
 
 <style scoped>
 .layout {
-  height: 100vh;
+  min-height: 100vh;
 }
 
 .header {
@@ -138,6 +138,5 @@ const handleCommand = (command) => {
 
 .content {
   background: var(--addp-bg-secondary) !important;
-  overflow-y: auto;
 }
 </style>

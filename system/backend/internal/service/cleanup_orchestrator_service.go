@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -18,7 +19,12 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// CleanupOrchestratorService 是 cleanup coordinator。
+var (
+	ErrCleanupExecuteConfirmRequired      = errors.New("resource reclaim execute confirmation is required")
+	ErrCleanupExecuteConfirmTokenRequired = errors.New("resource reclaim execute confirmation token is required")
+)
+
+// CleanupOrchestratorService 是资源回收协调方。
 // 它只负责发起请求、记录 execution、发布事件、汇总结果和写审计，不进入 Orchestrator 任务编排。
 type CleanupOrchestratorService struct {
 	redis      *redis.Client
@@ -28,7 +34,7 @@ type CleanupOrchestratorService struct {
 	log        *slog.Logger
 }
 
-// NewCleanupOrchestratorService 创建 cleanup coordinator 服务
+// NewCleanupOrchestratorService 创建资源回收协调服务
 func NewCleanupOrchestratorService(
 	redisClient *redis.Client,
 	execRepo *commonExecution.TaskExecutionRepository,
@@ -151,12 +157,18 @@ func (s *CleanupOrchestratorService) createScanTask(
 	return taskID, nil
 }
 
-// CreateExecuteTask 创建清理执行任务
+// CreateExecuteTask 创建资源回收执行任务
+type CleanupExecuteConfirmation struct {
+	Confirmed         bool
+	ConfirmationToken string
+}
+
 func (s *CleanupOrchestratorService) CreateExecuteTask(
 	ctx context.Context,
 	basedOnScan string,
 	cleanupMode string,
 	userID uint,
+	confirmation CleanupExecuteConfirmation,
 ) (string, error) {
 	if err := events.ValidateCleanupMode(cleanupMode); err != nil {
 		return "", err
@@ -167,6 +179,10 @@ func (s *CleanupOrchestratorService) CreateExecuteTask(
 		return "", fmt.Errorf("扫描任务不存在: %w", err)
 	}
 	if err := validateExecutableScanTask(scanTask); err != nil {
+		return "", err
+	}
+	scanSummary := scanSummaryForConfirmation(scanTask.Summary)
+	if err := validateCleanupExecuteConfirmation(cleanupMode, scanSummary, confirmation); err != nil {
 		return "", err
 	}
 
@@ -237,6 +253,17 @@ func (s *CleanupOrchestratorService) CreateExecuteTask(
 	historyKey := fmt.Sprintf("cleanup:history:%d", task.TenantID)
 	s.redis.LPush(ctx, historyKey, taskID)
 	s.redis.LTrim(ctx, historyKey, 0, 99)
+	s.writeAuditLog(userID, &task.TenantID, "cleanup.execute.confirmed", taskID, map[string]interface{}{
+		"based_on_scan":      basedOnScan,
+		"cleanup_mode":       cleanupMode,
+		"risk_level":         scanSummary.RiskLevel,
+		"scanned_items":      scanSummary.ScannedItems,
+		"affected_records":   scanSummary.AffectedRecords,
+		"freed_bytes":        scanSummary.FreedBytes,
+		"expected_modules":   task.ExpectedModules,
+		"confirmation_token": confirmation.ConfirmationToken != "",
+		"confirmed_at":       now.Format(time.RFC3339),
+	})
 	s.writeAuditLog(userID, &task.TenantID, "cleanup.execute.created", taskID, map[string]interface{}{
 		"based_on_scan":    basedOnScan,
 		"cleanup_mode":     cleanupMode,
@@ -323,7 +350,7 @@ func (s *CleanupOrchestratorService) GetTaskStatus(ctx context.Context, taskID s
 		summary = s.aggregateExecuteSummary(results)
 	}
 	if err := s.updateTaskAndExecutionStatus(ctx, &task, overallStatus, summaryFromResults(results)); err != nil {
-		s.log.Error("更新 cleanup execution 状态失败", "error", err, "task_id", taskID)
+		s.log.Error("更新资源回收 execution 状态失败", "error", err, "task_id", taskID)
 	}
 
 	return &models.TaskStatusResponse{
@@ -385,7 +412,7 @@ func (s *CleanupOrchestratorService) watchTaskStatus(taskID string, deadline tim
 	for {
 		status, err := s.GetTaskStatus(context.Background(), taskID)
 		if err != nil {
-			s.log.Warn("刷新 cleanup task 状态失败", "task_id", taskID, "error", err)
+			s.log.Warn("刷新资源回收任务状态失败", "task_id", taskID, "error", err)
 			return
 		}
 		if status != nil && isTaskTerminal(status.Status) {
@@ -413,7 +440,7 @@ func (s *CleanupOrchestratorService) resolveExpectedModules(scope []string) ([]s
 		return nil, err
 	}
 	if len(enabledModules) == 0 {
-		return nil, fmt.Errorf("未发现已注册且启用的 cleanup executor 模块")
+		return nil, fmt.Errorf("未发现已注册且启用的资源回收执行方模块")
 	}
 
 	enabledSet := make(map[string]struct{}, len(enabledModules))
@@ -436,13 +463,13 @@ func (s *CleanupOrchestratorService) resolveExpectedModules(scope []string) ([]s
 			continue
 		}
 		if _, ok := enabledSet[normalized]; !ok {
-			return nil, fmt.Errorf("模块 %s 未注册或未启用 cleanup executor", normalized)
+			return nil, fmt.Errorf("模块 %s 未注册或未启用资源回收执行方", normalized)
 		}
 		seen[normalized] = struct{}{}
 		result = append(result, normalized)
 	}
 	if len(result) == 0 {
-		return nil, fmt.Errorf("cleanup scan scope 不能为空")
+		return nil, fmt.Errorf("资源回收评估范围不能为空")
 	}
 	return result, nil
 }
@@ -453,7 +480,7 @@ func (s *CleanupOrchestratorService) enabledCleanupExecutorModules() ([]string, 
 	}
 	modules, err := s.registry.ListActiveModules()
 	if err != nil {
-		return nil, fmt.Errorf("查询已注册 cleanup executor 模块失败: %w", err)
+		return nil, fmt.Errorf("查询已注册资源回收执行方模块失败: %w", err)
 	}
 
 	result := make([]string, 0, len(modules))
@@ -493,6 +520,99 @@ func validateExecutableScanTask(scanTask *models.TaskStatusResponse) error {
 		return fmt.Errorf("扫描任务未完成，当前状态: %s", scanTask.Status)
 	}
 	return nil
+}
+
+func validateCleanupExecuteConfirmation(cleanupMode string, summary events.CleanupResultSummary, confirmation CleanupExecuteConfirmation) error {
+	if !confirmation.Confirmed {
+		return ErrCleanupExecuteConfirmRequired
+	}
+	if cleanupMode != events.CleanupModePhysical && summary.RiskLevel != "high" {
+		return nil
+	}
+	if confirmation.ConfirmationToken != "CONFIRM" {
+		return ErrCleanupExecuteConfirmTokenRequired
+	}
+	return nil
+}
+
+func scanSummaryForConfirmation(summary interface{}) events.CleanupResultSummary {
+	switch value := summary.(type) {
+	case models.TaskSummary:
+		return value.CleanupResultSummary
+	case *models.TaskSummary:
+		if value != nil {
+			return value.CleanupResultSummary
+		}
+	case models.ExecuteSummary:
+		return value.CleanupResultSummary
+	case *models.ExecuteSummary:
+		if value != nil {
+			return value.CleanupResultSummary
+		}
+	case events.CleanupResultSummary:
+		return value
+	case *events.CleanupResultSummary:
+		if value != nil {
+			return *value
+		}
+	case map[string]interface{}:
+		return cleanupSummaryFromMap(value)
+	}
+	return events.CleanupResultSummary{}
+}
+
+func cleanupSummaryFromMap(summary map[string]interface{}) events.CleanupResultSummary {
+	return events.CleanupResultSummary{
+		ScannedItems:             intFromSummaryValue(summary["scanned_items"]),
+		AffectedRecords:          intFromSummaryValue(summary["affected_records"]),
+		DeletedPhysicalArtifacts: intFromSummaryValue(summary["deleted_physical_artifacts"]),
+		FreedBytes:               int64FromSummaryValue(summary["freed_bytes"]),
+		MarkedMissingSource:      intFromSummaryValue(summary["marked_missing_source"]),
+		MarkedOutdated:           intFromSummaryValue(summary["marked_outdated"]),
+		DisabledTaskDefinitions:  intFromSummaryValue(summary["disabled_task_definitions"]),
+		SkippedItems:             intFromSummaryValue(summary["skipped_items"]),
+		ErrorCount:               intFromSummaryValue(summary["error_count"]),
+		RiskLevel:                stringFromSummaryValue(summary["risk_level"]),
+	}
+}
+
+func intFromSummaryValue(value interface{}) int {
+	switch typed := value.(type) {
+	case int:
+		return typed
+	case int64:
+		return int(typed)
+	case float64:
+		return int(typed)
+	case json.Number:
+		parsed, _ := typed.Int64()
+		return int(parsed)
+	default:
+		return 0
+	}
+}
+
+func int64FromSummaryValue(value interface{}) int64 {
+	switch typed := value.(type) {
+	case int:
+		return int64(typed)
+	case int64:
+		return typed
+	case float64:
+		return int64(typed)
+	case json.Number:
+		parsed, _ := typed.Int64()
+		return parsed
+	default:
+		return 0
+	}
+}
+
+func stringFromSummaryValue(value interface{}) string {
+	if text, ok := value.(string); ok {
+		return text
+	}
+	return ""
 }
 
 func buildCleanupScanTask(
@@ -643,7 +763,7 @@ func (s *CleanupOrchestratorService) createParentExecution(
 	timeout time.Duration,
 ) (string, error) {
 	if s.execRepo == nil {
-		return "", fmt.Errorf("cleanup execution repository is not configured")
+		return "", fmt.Errorf("resource reclaim execution repository is not configured")
 	}
 	now := time.Now()
 	executionID := uuid.New().String()
@@ -672,7 +792,7 @@ func (s *CleanupOrchestratorService) createParentExecution(
 		UpdatedAt: now,
 	}
 	if err := s.execRepo.Create(ctx, exec); err != nil {
-		return "", fmt.Errorf("创建 cleanup execution 失败: %w", err)
+		return "", fmt.Errorf("创建资源回收 execution 失败: %w", err)
 	}
 	return executionID, nil
 }
@@ -761,10 +881,17 @@ func (s *CleanupOrchestratorService) writeAuditLog(userID uint, tenantID *uint, 
 	if s.logService == nil {
 		return
 	}
+	auditLog := buildCleanupAuditLog(userID, tenantID, action, taskID, detail)
+	if err := s.logService.Create(auditLog); err != nil {
+		s.log.Error("写入资源回收审计日志失败", "error", err, "action", action, "task_id", taskID)
+	}
+}
+
+func buildCleanupAuditLog(userID uint, tenantID *uint, action string, taskID string, detail map[string]interface{}) *models.AuditLog {
 	body, _ := json.Marshal(detail)
 	userIDPtr := userID
 	requestID := uuid.New().String()
-	auditLog := &models.AuditLog{
+	return &models.AuditLog{
 		UserID:       &userIDPtr,
 		TenantID:     tenantID,
 		HTTPMethod:   "SYSTEM",
@@ -778,9 +905,6 @@ func (s *CleanupOrchestratorService) writeAuditLog(userID uint, tenantID *uint, 
 		LogLevel:     "INFO",
 		RequestID:    requestID,
 		ModuleName:   "system",
-	}
-	if err := s.logService.Create(auditLog); err != nil {
-		s.log.Error("写入 cleanup 审计日志失败", "error", err, "action", action, "task_id", taskID)
 	}
 }
 

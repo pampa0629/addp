@@ -1,31 +1,48 @@
 package api
 
 import (
+	"errors"
+	"net/http"
 	"strconv"
 
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/events"
 	commoni18n "github.com/addp/common/middleware/i18n"
+	sysi18n "github.com/addp/system/i18n"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
-// CleanupHandler 清理任务处理器
+// CleanupHandler 资源回收任务处理器
 type CleanupHandler struct {
 	orchestrator *service.CleanupOrchestratorService
 }
 
-// NewCleanupHandler 创建清理任务处理器
+// NewCleanupHandler 创建资源回收任务处理器
 func NewCleanupHandler(orchestrator *service.CleanupOrchestratorService) *CleanupHandler {
 	return &CleanupHandler{
 		orchestrator: orchestrator,
 	}
 }
 
+func cleanupTenantID(c *gin.Context) (uint, bool) {
+	tenantID, exists := c.Get("tenant_id")
+	if !exists {
+		commonapi.RespondError(c, http.StatusUnauthorized, commoni18n.T(c, sysi18n.MsgCleanupTenantMissing))
+		return 0, false
+	}
+	tenantIDValue, ok := tenantID.(uint)
+	if !ok || tenantIDValue == 0 {
+		commonapi.RespondError(c, http.StatusBadRequest, commoni18n.T(c, sysi18n.MsgCleanupTenantRequired))
+		return 0, false
+	}
+	return tenantIDValue, true
+}
+
 // CreateScanTaskRequest 创建扫描任务请求
 type CreateScanTaskRequest struct {
-	Scope []string `json:"scope"` // 扫描范围：已注册且启用 cleanup executor 的模块；为空则由 System 按模块注册能力生成
+	Scope []string `json:"scope"` // 评估范围：已注册且启用资源回收执行方的模块；为空则由 System 按模块注册能力生成
 }
 
 // CreateScanTaskResponse 创建扫描任务响应
@@ -34,9 +51,9 @@ type CreateScanTaskResponse struct {
 }
 
 // CreateScanTask 创建扫描任务
-// @Summary 创建垃圾数据扫描任务 | Create garbage data scan task
-// @Description 扫描当前租户的系统级资源清理候选；scope 为空时按已注册且启用 cleanup executor 的模块生成 expected_modules | Scan system cleanup candidates for current tenant; when scope is empty, expected_modules is generated from registered cleanup executors
-// @Tags Cleanup
+// @Summary 创建资源回收评估任务 | Create resource reclaim assessment task
+// @Description 评估当前租户的系统级资源回收候选；scope 为空时按已注册且启用资源回收执行方的模块生成 expected_modules | Assess system resource reclaim candidates for current tenant; when scope is empty, expected_modules is generated from registered resource reclaim executors
+// @Tags Resource Reclaim
 // @Accept json
 // @Produce json
 // @Security BearerAuth
@@ -50,13 +67,12 @@ func (h *CleanupHandler) CreateScanTask(c *gin.Context) {
 	// 获取当前用户信息
 	userID, exists := c.Get("user_id")
 	if !exists {
-		commonapi.RespondError(c, 401, "未授权")
+		commonapi.RespondError(c, http.StatusUnauthorized, commoni18n.T(c, commoni18n.MsgUnauthorized))
 		return
 	}
 
-	tenantID, exists := c.Get("tenant_id")
-	if !exists {
-		commonapi.RespondError(c, 401, "租户信息缺失")
+	tenantID, ok := cleanupTenantID(c)
+	if !ok {
 		return
 	}
 
@@ -70,12 +86,12 @@ func (h *CleanupHandler) CreateScanTask(c *gin.Context) {
 	// 创建扫描任务
 	taskID, err := h.orchestrator.CreateScanTask(
 		c.Request.Context(),
-		tenantID.(uint),
+		tenantID,
 		req.Scope,
 		userID.(uint),
 	)
 	if err != nil {
-		commonapi.RespondError(c, 500, "创建扫描任务失败: "+err.Error())
+		commonapi.RespondError(c, http.StatusInternalServerError, commoni18n.TWithDetail(c, sysi18n.MsgCleanupCreateScanFailed, err.Error()))
 		return
 	}
 
@@ -94,9 +110,9 @@ type GetTaskStatusResponse struct {
 }
 
 // GetTaskStatus 查询任务状态
-// @Summary 查询清理任务状态 | Get cleanup task status
-// @Description 查询指定任务的执行状态和结果 | Query execution status and results of a specified task
-// @Tags Cleanup
+// @Summary 查询资源回收任务状态 | Get resource reclaim task status
+// @Description 查询指定资源回收任务的执行状态和结果 | Query execution status and results of a specified resource reclaim task
+// @Tags Resource Reclaim
 // @Produce json
 // @Security BearerAuth
 // @Param task_id path string true "任务ID | Task ID"
@@ -109,7 +125,7 @@ type GetTaskStatusResponse struct {
 func (h *CleanupHandler) GetTaskStatus(c *gin.Context) {
 	taskID := c.Param("task_id")
 	if taskID == "" {
-		commonapi.RespondError(c, 400, "任务ID不能为空")
+		commonapi.RespondError(c, http.StatusBadRequest, commoni18n.T(c, sysi18n.MsgCleanupTaskIDRequired))
 		return
 	}
 
@@ -117,22 +133,21 @@ func (h *CleanupHandler) GetTaskStatus(c *gin.Context) {
 	status, err := h.orchestrator.GetTaskStatus(c.Request.Context(), taskID)
 	if err != nil {
 		if err.Error() == "task not found" {
-			commonapi.RespondError(c, 404, "任务不存在")
+			commonapi.RespondError(c, http.StatusNotFound, commoni18n.T(c, sysi18n.MsgCleanupTaskNotFound))
 		} else {
-			commonapi.RespondError(c, 500, "查询任务状态失败: "+err.Error())
+			commonapi.RespondError(c, http.StatusInternalServerError, commoni18n.TWithDetail(c, sysi18n.MsgCleanupGetTaskFailed, err.Error()))
 		}
 		return
 	}
 
 	// 权限检查：只能查看自己租户的任务
-	tenantID, exists := c.Get("tenant_id")
-	if !exists {
-		commonapi.RespondError(c, 401, "租户信息缺失")
+	tenantID, ok := cleanupTenantID(c)
+	if !ok {
 		return
 	}
 
-	if status.Task.TenantID != tenantID.(uint) {
-		commonapi.RespondError(c, 403, "无权访问该任务")
+	if status.Task.TenantID != tenantID {
+		commonapi.RespondError(c, http.StatusForbidden, commoni18n.T(c, sysi18n.MsgCleanupTaskForbidden))
 		return
 	}
 
@@ -149,8 +164,10 @@ func (h *CleanupHandler) GetTaskStatus(c *gin.Context) {
 
 // CreateExecuteTaskRequest 创建执行任务请求
 type CreateExecuteTaskRequest struct {
-	BasedOnScan string `json:"based_on_scan" binding:"required"` // 基于哪次扫描
-	CleanupMode string `json:"cleanup_mode" binding:"required"`  // logical_cleanup/physical_cleanup
+	BasedOnScan       string `json:"based_on_scan" binding:"required"` // 基于哪次扫描
+	CleanupMode       string `json:"cleanup_mode" binding:"required"`  // logical_cleanup/physical_cleanup
+	Confirmed         bool   `json:"confirmed"`                        // 管理员已确认评估结果和影响范围
+	ConfirmationToken string `json:"confirmation_token,omitempty"`     // 高风险或释放存储时要求输入 CONFIRM
 }
 
 // CreateExecuteTaskResponse 创建执行任务响应
@@ -158,10 +175,10 @@ type CreateExecuteTaskResponse struct {
 	TaskID string `json:"task_id"`
 }
 
-// CreateExecuteTask 创建执行清理任务
-// @Summary 创建执行清理任务 | Create cleanup execution task
-// @Description 基于扫描结果，执行系统级资源清理（逻辑清理或物理清理）| Execute system cleanup based on scan results (logical or physical cleanup)
-// @Tags Cleanup
+// CreateExecuteTask 创建资源回收执行任务
+// @Summary 创建资源回收执行任务 | Create resource reclaim execution task
+// @Description 基于评估结果执行系统级资源回收；所有执行请求都必须确认，高风险或释放存储操作必须提供确认文本 CONFIRM | Execute system resource reclaim based on an assessment; every execution must be confirmed, and high-risk or storage release operations require confirmation token CONFIRM
+// @Tags Resource Reclaim
 // @Accept json
 // @Produce json
 // @Security BearerAuth
@@ -175,7 +192,7 @@ func (h *CleanupHandler) CreateExecuteTask(c *gin.Context) {
 	// 获取当前用户信息
 	userID, exists := c.Get("user_id")
 	if !exists {
-		commonapi.RespondError(c, 401, "未授权")
+		commonapi.RespondError(c, http.StatusUnauthorized, commoni18n.T(c, commoni18n.MsgUnauthorized))
 		return
 	}
 
@@ -191,30 +208,29 @@ func (h *CleanupHandler) CreateExecuteTask(c *gin.Context) {
 		return
 	}
 
-	tenantID, exists := c.Get("tenant_id")
-	if !exists {
-		commonapi.RespondError(c, 401, "租户信息缺失")
+	tenantID, ok := cleanupTenantID(c)
+	if !ok {
 		return
 	}
 	scanStatus, err := h.orchestrator.GetTaskStatus(c.Request.Context(), req.BasedOnScan)
 	if err != nil {
 		if err.Error() == "task not found" {
-			commonapi.RespondError(c, 404, "扫描任务不存在")
+			commonapi.RespondError(c, http.StatusNotFound, commoni18n.T(c, sysi18n.MsgCleanupScanNotFound))
 		} else {
-			commonapi.RespondError(c, 500, "查询扫描任务失败: "+err.Error())
+			commonapi.RespondError(c, http.StatusInternalServerError, commoni18n.TWithDetail(c, sysi18n.MsgCleanupGetScanFailed, err.Error()))
 		}
 		return
 	}
-	if scanStatus.Task.TenantID != tenantID.(uint) {
-		commonapi.RespondError(c, 403, "无权基于该扫描任务执行清理")
+	if scanStatus.Task.TenantID != tenantID {
+		commonapi.RespondError(c, http.StatusForbidden, commoni18n.T(c, sysi18n.MsgCleanupExecuteForbidden))
 		return
 	}
 	if scanStatus.Task.Action != events.CleanupActionScan {
-		commonapi.RespondError(c, 400, "based_on_scan 必须指向 scan 任务")
+		commonapi.RespondError(c, http.StatusBadRequest, commoni18n.T(c, sysi18n.MsgCleanupBasedOnScanRequired))
 		return
 	}
 	if scanStatus.Status != "completed" {
-		commonapi.RespondError(c, 400, "扫描任务未完成，不能执行清理")
+		commonapi.RespondError(c, http.StatusBadRequest, commoni18n.T(c, sysi18n.MsgCleanupScanNotCompleted))
 		return
 	}
 
@@ -224,9 +240,21 @@ func (h *CleanupHandler) CreateExecuteTask(c *gin.Context) {
 		req.BasedOnScan,
 		req.CleanupMode,
 		userID.(uint),
+		service.CleanupExecuteConfirmation{
+			Confirmed:         req.Confirmed,
+			ConfirmationToken: req.ConfirmationToken,
+		},
 	)
 	if err != nil {
-		commonapi.RespondError(c, 500, "创建执行任务失败: "+err.Error())
+		if errors.Is(err, service.ErrCleanupExecuteConfirmRequired) {
+			commonapi.RespondError(c, 400, commoni18n.T(c, sysi18n.MsgCleanupConfirmRequired))
+			return
+		}
+		if errors.Is(err, service.ErrCleanupExecuteConfirmTokenRequired) {
+			commonapi.RespondError(c, 400, commoni18n.T(c, sysi18n.MsgCleanupConfirmTokenRequired))
+			return
+		}
+		commonapi.RespondError(c, http.StatusInternalServerError, commoni18n.TWithDetail(c, sysi18n.MsgCleanupCreateExecuteFailed, err.Error()))
 		return
 	}
 
@@ -240,9 +268,9 @@ type GetTaskHistoryResponse struct {
 }
 
 // GetTaskHistory 获取任务历史
-// @Summary 获取清理任务历史 | Get cleanup task history
-// @Description 获取当前租户的清理任务历史记录 | Get cleanup task history for current tenant
-// @Tags Cleanup
+// @Summary 获取资源回收任务历史 | Get resource reclaim task history
+// @Description 获取当前租户的资源回收任务历史记录 | Get resource reclaim task history for current tenant
+// @Tags Resource Reclaim
 // @Produce json
 // @Security BearerAuth
 // @Param limit query int false "返回记录数 | Limit" default(20)
@@ -253,9 +281,8 @@ type GetTaskHistoryResponse struct {
 // @Router /admin/cleanup/history [get]
 func (h *CleanupHandler) GetTaskHistory(c *gin.Context) {
 	// 获取租户信息
-	tenantID, exists := c.Get("tenant_id")
-	if !exists {
-		commonapi.RespondError(c, 401, "租户信息缺失")
+	tenantID, ok := cleanupTenantID(c)
+	if !ok {
 		return
 	}
 
@@ -270,11 +297,11 @@ func (h *CleanupHandler) GetTaskHistory(c *gin.Context) {
 	// 查询任务历史
 	tasks, err := h.orchestrator.GetTaskHistory(
 		c.Request.Context(),
-		tenantID.(uint),
+		tenantID,
 		limit,
 	)
 	if err != nil {
-		commonapi.RespondError(c, 500, "查询任务历史失败: "+err.Error())
+		commonapi.RespondError(c, http.StatusInternalServerError, commoni18n.TWithDetail(c, sysi18n.MsgCleanupGetHistoryFailed, err.Error()))
 		return
 	}
 

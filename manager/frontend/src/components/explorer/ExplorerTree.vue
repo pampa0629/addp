@@ -504,13 +504,11 @@ defineExpose({
 
 <style scoped>
 .explorer-tree {
-  height: 100%;
-  overflow: auto;
+  overflow: visible;
 }
 
 .skeleton-loader {
   padding: 20px;
-  height: 100%;
 }
 
 .scan-status {

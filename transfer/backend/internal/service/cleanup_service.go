@@ -49,7 +49,7 @@ func (s *TransferCleanupService) Start(ctx context.Context) error {
 		return nil
 	}
 	go s.consumeCleanupRequests(ctx)
-	s.log.Info("Transfer cleanup 事件订阅已启动")
+	s.log.Info("Transfer 资源回收事件订阅已启动")
 	return nil
 }
 
@@ -81,7 +81,7 @@ func (s *TransferCleanupService) consumeCleanupRequests(ctx context.Context) {
 			}).Result()
 			if err != nil {
 				if err != redis.Nil {
-					s.log.Error("读取 cleanup request 失败", "error", err)
+					s.log.Error("读取资源回收请求失败", "error", err)
 				}
 				continue
 			}
@@ -98,7 +98,7 @@ func (s *TransferCleanupService) consumeCleanupRequests(ctx context.Context) {
 func (s *TransferCleanupService) handleCleanupRequest(ctx context.Context, message redis.XMessage) {
 	event, err := events.ParseCleanupRequest(message.Values)
 	if err != nil {
-		s.log.Error("解析 cleanup request 失败", "error", err, "message_id", message.ID)
+		s.log.Error("解析资源回收请求失败", "error", err, "message_id", message.ID)
 		return
 	}
 	if !events.CleanupExpectedForModule(event.ExpectedModules, events.ModuleTransfer) {
@@ -117,7 +117,7 @@ func (s *TransferCleanupService) handleCleanupRequest(ctx context.Context, messa
 
 	exec, startedAt, execErr := s.createExecutorExecution(ctx, event)
 	if execErr != nil {
-		s.log.Error("创建 Transfer cleanup executor execution 失败", "error", execErr, "task_id", event.TaskID)
+		s.log.Error("创建 Transfer 资源回收执行记录失败", "error", execErr, "task_id", event.TaskID)
 	}
 	defer func() {
 		if exec != nil {
@@ -128,7 +128,7 @@ func (s *TransferCleanupService) handleCleanupRequest(ctx context.Context, messa
 
 	switch event.Action {
 	case events.CleanupActionScan:
-		stats, err := s.ScanGarbage(ctx, event.TenantID, event.Context)
+		stats, err := s.ScanReclaimCandidates(ctx, event.TenantID, event.Context)
 		if err != nil {
 			result.Status = events.CleanupResultFailed
 			result.Errors = []string{err.Error()}
@@ -156,14 +156,14 @@ func (s *TransferCleanupService) handleCleanupRequest(ctx context.Context, messa
 		result.Summary = transferExecuteSummary(stats)
 	default:
 		result.Status = events.CleanupResultFailed
-		result.Errors = []string{"unknown cleanup action: " + event.Action}
+		result.Errors = []string{"unknown resource reclaim action: " + event.Action}
 		result.Summary = events.CleanupResultSummary{ErrorCount: 1, RiskLevel: "low"}
 	}
 }
 
-func (s *TransferCleanupService) ScanGarbage(ctx context.Context, tenantID uint, cleanupContext map[string]interface{}) (*TransferCleanupStats, error) {
+func (s *TransferCleanupService) ScanReclaimCandidates(ctx context.Context, tenantID uint, cleanupContext map[string]interface{}) (*TransferCleanupStats, error) {
 	if tenantID == 0 {
-		return nil, fmt.Errorf("transfer cleanup requires tenant_id")
+		return nil, fmt.Errorf("transfer resource reclaim requires tenant_id")
 	}
 	tasks, err := s.listCandidateTaskDefinitions(ctx, tenantID, cleanupContext)
 	if err != nil {
@@ -177,7 +177,7 @@ func (s *TransferCleanupService) ExecuteCleanup(ctx context.Context, tenantID ui
 		return nil, err
 	}
 	if tenantID == 0 {
-		return nil, fmt.Errorf("transfer cleanup requires tenant_id")
+		return nil, fmt.Errorf("transfer resource reclaim requires tenant_id")
 	}
 	tasks, err := s.listCandidateTaskDefinitions(ctx, tenantID, cleanupContext)
 	if err != nil {
@@ -213,7 +213,7 @@ func (s *TransferCleanupService) ExecuteCleanup(ctx context.Context, tenantID ui
 
 func (s *TransferCleanupService) listCandidateTaskDefinitions(ctx context.Context, tenantID uint, cleanupContext map[string]interface{}) ([]models.TransferTask, error) {
 	if s == nil || s.db == nil {
-		return nil, fmt.Errorf("transfer cleanup database is not configured")
+		return nil, fmt.Errorf("transfer resource reclaim database is not configured")
 	}
 	var tasks []models.TransferTask
 	if err := s.db.WithContext(ctx).Where("tenant_id = ?", tenantID).Find(&tasks).Error; err != nil {
@@ -225,7 +225,7 @@ func (s *TransferCleanupService) listCandidateTaskDefinitions(ctx context.Contex
 		if hasContextTenantID && contextTenantID == tenantID {
 			return tasks, nil
 		}
-		// Transfer 不拥有 target 业务数据；没有明确生命周期上下文时，不把普通任务定义视作垃圾。
+		// Transfer 不拥有 target 业务数据；没有明确生命周期上下文时，不把普通任务定义视作待回收对象。
 		return nil, nil
 	}
 	if engineID == 0 {
@@ -296,7 +296,7 @@ func (s *TransferCleanupService) createExecutorExecution(ctx context.Context, ev
 		return nil, time.Time{}, nil
 	}
 	startedAt := time.Now()
-	currentStep := fmt.Sprintf("Transfer cleanup %s", event.Action)
+	currentStep := fmt.Sprintf("Transfer 资源回收 %s", event.Action)
 	triggerType, err := commonExecution.NormalizeTriggerType(event.TriggerType)
 	if err != nil {
 		triggerType = commonExecution.TriggerTypeManual
@@ -353,7 +353,7 @@ func (s *TransferCleanupService) finishExecutorExecution(ctx context.Context, ex
 		"execution_time_ms": now.Sub(startedAt).Milliseconds(),
 		"updated_at":        now,
 	}); err != nil {
-		s.log.Warn("更新 Transfer cleanup executor execution 失败", "execution_id", executionID, "error", err)
+		s.log.Warn("更新 Transfer 资源回收执行记录失败", "execution_id", executionID, "error", err)
 	}
 }
 
@@ -363,12 +363,12 @@ func (s *TransferCleanupService) writeResult(ctx context.Context, taskID string,
 	}
 	resultJSON, err := json.Marshal(result)
 	if err != nil {
-		s.log.Error("序列化 Transfer cleanup result 失败", "error", err, "task_id", taskID)
+		s.log.Error("序列化 Transfer 资源回收结果失败", "error", err, "task_id", taskID)
 		return
 	}
 	key := fmt.Sprintf("cleanup:results:%s", taskID)
 	if err := s.redis.HSet(ctx, key, events.ModuleTransfer, string(resultJSON)).Err(); err != nil {
-		s.log.Error("写入 Transfer cleanup result 失败", "error", err, "task_id", taskID)
+		s.log.Error("写入 Transfer 资源回收结果失败", "error", err, "task_id", taskID)
 	}
 }
 

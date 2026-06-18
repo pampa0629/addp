@@ -80,7 +80,7 @@ func main() {
 	issueSvc := service.NewIssueService(issueRepo)
 	cleanupService := service.NewCleanupService(db, redisClient, commonExecution.NewTaskExecutionRepository(db))
 	if err := cleanupService.Start(context.Background()); err != nil {
-		log.Printf("⚠️  Quality cleanup service start failed: %v", err)
+		log.Printf("Quality 资源回收服务启动失败: %v", err)
 	}
 	defer cleanupService.Stop()
 

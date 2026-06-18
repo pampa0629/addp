@@ -88,7 +88,6 @@ const isInIframe = computed(() => {
 }
 
 #app {
-  height: 100vh;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   background: var(--addp-bg-secondary) !important;
 }
@@ -126,9 +125,10 @@ const isInIframe = computed(() => {
 
 /* iframe 内容样式 */
 .iframe-content {
-  height: 100vh;
+  height: auto;
+  min-height: 0;
   background: var(--addp-bg-secondary) !important;
-  overflow-y: auto;
+  overflow: visible;
 }
 
 /* 菜单样式调整 */

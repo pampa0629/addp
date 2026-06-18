@@ -308,7 +308,6 @@ onMounted(loadGraphs)
 <style scoped>
 .ks-container {
   display: flex;
-  height: 100%;
   background: var(--addp-bg-secondary);
 }
 
@@ -317,7 +316,7 @@ onMounted(loadGraphs)
   flex-shrink: 0;
   background: var(--addp-bg-primary) !important;
   border-right: 1px solid var(--addp-border-color);
-  overflow-y: auto;
+  overflow: visible;
 }
 
 .ks-sidebar-title {
@@ -336,7 +335,7 @@ onMounted(loadGraphs)
 .ks-main {
   flex: 1;
   padding: 24px;
-  overflow: auto;
+  overflow: visible;
   background: var(--addp-bg-primary) !important;
 }
 

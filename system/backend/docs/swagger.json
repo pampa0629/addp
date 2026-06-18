@@ -15,7 +15,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "基于扫描结果，执行系统级资源清理（逻辑清理或物理清理）| Execute system cleanup based on scan results (logical or physical cleanup)",
+                "description": "基于评估结果执行系统级资源回收；所有执行请求都必须确认，高风险或释放存储操作必须提供确认文本 CONFIRM | Execute system resource reclaim based on an assessment; every execution must be confirmed, and high-risk or storage release operations require confirmation token CONFIRM",
                 "consumes": [
                     "application/json"
                 ],
@@ -23,9 +23,9 @@
                     "application/json"
                 ],
                 "tags": [
-                    "Cleanup"
+                    "Resource Reclaim"
                 ],
-                "summary": "创建执行清理任务 | Create cleanup execution task",
+                "summary": "创建资源回收执行任务 | Create resource reclaim execution task",
                 "parameters": [
                     {
                         "description": "执行请求 | Execute request",
@@ -72,14 +72,14 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取当前租户的清理任务历史记录 | Get cleanup task history for current tenant",
+                "description": "获取当前租户的资源回收任务历史记录 | Get resource reclaim task history for current tenant",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "Cleanup"
+                    "Resource Reclaim"
                 ],
-                "summary": "获取清理任务历史 | Get cleanup task history",
+                "summary": "获取资源回收任务历史 | Get resource reclaim task history",
                 "parameters": [
                     {
                         "type": "integer",
@@ -124,7 +124,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "扫描当前租户的系统级资源清理候选；scope 为空时按已注册且启用 cleanup executor 的模块生成 expected_modules | Scan system cleanup candidates for current tenant; when scope is empty, expected_modules is generated from registered cleanup executors",
+                "description": "评估当前租户的系统级资源回收候选；scope 为空时按已注册且启用资源回收执行方的模块生成 expected_modules | Assess system resource reclaim candidates for current tenant; when scope is empty, expected_modules is generated from registered resource reclaim executors",
                 "consumes": [
                     "application/json"
                 ],
@@ -132,9 +132,9 @@
                     "application/json"
                 ],
                 "tags": [
-                    "Cleanup"
+                    "Resource Reclaim"
                 ],
-                "summary": "创建垃圾数据扫描任务 | Create garbage data scan task",
+                "summary": "创建资源回收评估任务 | Create resource reclaim assessment task",
                 "parameters": [
                     {
                         "description": "扫描请求 | Scan request",
@@ -181,14 +181,14 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "查询指定任务的执行状态和结果 | Query execution status and results of a specified task",
+                "description": "查询指定资源回收任务的执行状态和结果 | Query execution status and results of a specified resource reclaim task",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "Cleanup"
+                    "Resource Reclaim"
                 ],
-                "summary": "查询清理任务状态 | Get cleanup task status",
+                "summary": "查询资源回收任务状态 | Get resource reclaim task status",
                 "parameters": [
                     {
                         "type": "string",
@@ -1098,6 +1098,30 @@
                         "description": "HTTP方法 | HTTP method",
                         "name": "http_method",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "资源路径前缀 | Resource path prefix",
+                        "name": "resource_path",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "资源类型 | Entity type",
+                        "name": "entity_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "资源ID | Entity ID",
+                        "name": "entity_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "模块名 | Module name",
+                        "name": "module_name",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -1171,6 +1195,30 @@
                         "type": "string",
                         "description": "HTTP方法 | HTTP method",
                         "name": "http_method",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "资源路径前缀 | Resource path prefix",
+                        "name": "resource_path",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "资源类型 | Entity type",
+                        "name": "entity_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "资源ID | Entity ID",
+                        "name": "entity_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "模块名 | Module name",
+                        "name": "module_name",
                         "in": "query"
                     }
                 ],
@@ -3157,6 +3205,14 @@
                 "cleanup_mode": {
                     "description": "logical_cleanup/physical_cleanup",
                     "type": "string"
+                },
+                "confirmation_token": {
+                    "description": "高风险或释放存储时要求输入 CONFIRM",
+                    "type": "string"
+                },
+                "confirmed": {
+                    "description": "管理员已确认评估结果和影响范围",
+                    "type": "boolean"
                 }
             }
         },
@@ -3172,7 +3228,7 @@
             "type": "object",
             "properties": {
                 "scope": {
-                    "description": "扫描范围：已注册且启用 cleanup executor 的模块；为空则由 System 按模块注册能力生成",
+                    "description": "评估范围：已注册且启用资源回收执行方的模块；为空则由 System 按模块注册能力生成",
                     "type": "array",
                     "items": {
                         "type": "string"

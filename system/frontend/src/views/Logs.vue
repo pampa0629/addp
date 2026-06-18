@@ -77,11 +77,41 @@
         <el-input v-model="ipFilter" :placeholder="t('system.log.ipPlaceholder')" clearable @keyup.enter="loadLogs" style="width: 130px" />
       </el-form-item>
 
+      <el-form-item :label="t('system.log.entityType')">
+        <el-input v-model="entityTypeFilter" :placeholder="t('system.log.entityTypePlaceholder')" clearable @keyup.enter="loadLogs" style="width: 130px" />
+      </el-form-item>
+
+      <el-form-item :label="t('system.log.entityId')">
+        <el-input v-model="entityIdFilter" :placeholder="t('system.log.entityIdPlaceholder')" clearable @keyup.enter="loadLogs" style="width: 180px" />
+      </el-form-item>
+
+      <el-form-item :label="t('system.log.resourcePath')">
+        <el-input v-model="resourcePathFilter" :placeholder="t('system.log.resourcePathPlaceholder')" clearable @keyup.enter="loadLogs" style="width: 190px" />
+      </el-form-item>
+
       <el-form-item>
         <el-button type="primary" @click="loadLogs">{{ t('system.log.query') }}</el-button>
         <el-button @click="resetFilters">{{ t('system.log.reset') }}</el-button>
       </el-form-item>
     </el-form>
+
+    <el-alert
+      v-if="activeAuditFilter"
+      class="audit-filter-alert"
+      type="info"
+      :closable="false"
+      show-icon
+    >
+      <template #title>
+        {{ t('system.log.auditFilter.title') }}
+      </template>
+      <div class="audit-filter-content">
+        <span>{{ activeAuditFilterText }}</span>
+        <el-button type="primary" link @click="clearAuditFilters">
+          {{ t('system.log.auditFilter.clear') }}
+        </el-button>
+      </div>
+    </el-alert>
 
     <!-- 日志列表 -->
     <el-table :data="logs" v-loading="loading" stripe @row-click="showDetails">
@@ -182,6 +212,17 @@
         </el-descriptions-item>
       </el-descriptions>
 
+      <el-divider v-if="isCleanupAuditLog">{{ t('system.log.detail.auditDetail') }}</el-divider>
+      <el-descriptions v-if="isCleanupAuditLog && auditDetailItems.length > 0" :column="2" border class="audit-detail">
+        <el-descriptions-item
+          v-for="item in auditDetailItems"
+          :key="item.label"
+          :label="item.label"
+        >
+          {{ item.value }}
+        </el-descriptions-item>
+      </el-descriptions>
+
       <el-divider>{{ t('system.log.detail.requestDetail') }}</el-divider>
       <div v-if="currentLog?.request_body" class="code-block">
         <pre>{{ formatJSON(currentLog.request_body) }}</pre>
@@ -192,13 +233,16 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute, useRouter } from 'vue-router'
 import { logsAPI } from '../api/logs'
 import { Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
 const { t } = useI18n()
+const route = useRoute()
+const router = useRouter()
 
 const logs = ref([])
 const loading = ref(false)
@@ -214,10 +258,74 @@ const statusFilter = ref('')
 const methodFilter = ref('')
 const usernameFilter = ref('')
 const ipFilter = ref('')
+const entityTypeFilter = ref('')
+const entityIdFilter = ref('')
+const resourcePathFilter = ref('')
 
 // 日志详情
 const detailsVisible = ref(false)
 const currentLog = ref(null)
+let lastQuerySignature = ''
+
+const activeAuditFilter = computed(() => {
+  return Boolean(entityTypeFilter.value || entityIdFilter.value || resourcePathFilter.value)
+})
+
+const parsedRequestBody = computed(() => {
+  if (!currentLog.value?.request_body) return null
+  try {
+    return JSON.parse(currentLog.value.request_body)
+  } catch (error) {
+    return null
+  }
+})
+
+const isCleanupAuditLog = computed(() => {
+  return currentLog.value?.entity_type === 'cleanup' || String(currentLog.value?.resource_path || '').startsWith('cleanup.')
+})
+
+const auditDetailItems = computed(() => {
+  const body = parsedRequestBody.value
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return []
+
+  const preferredKeys = [
+    'based_on_scan',
+    'cleanup_mode',
+    'confirmed_at',
+    'confirmation_token',
+    'risk_level',
+    'scanned_items',
+    'affected_records',
+    'freed_bytes',
+    'expected_modules',
+    'execution_id',
+    'status',
+    'cause_event',
+    'context',
+    'summary'
+  ]
+
+  const items = []
+  preferredKeys.forEach((key) => {
+    if (Object.prototype.hasOwnProperty.call(body, key)) {
+      items.push({
+        label: formatAuditKey(key),
+        value: formatAuditValue(body[key])
+      })
+    }
+  })
+
+  return items
+})
+
+const activeAuditFilterText = computed(() => {
+  const parts = []
+  if (moduleFilter.value) parts.push(t('system.log.auditFilter.module', { value: moduleFilter.value }))
+  if (entityTypeFilter.value) parts.push(t('system.log.auditFilter.entityType', { value: entityTypeFilter.value }))
+  if (entityIdFilter.value) parts.push(t('system.log.auditFilter.entityId', { value: entityIdFilter.value }))
+  if (resourcePathFilter.value) parts.push(t('system.log.auditFilter.resourcePath', { value: resourcePathFilter.value }))
+  return parts.join(' / ')
+})
 
 const formatDateTime = (dateString) => {
   return new Date(dateString).toLocaleString('zh-CN', {
@@ -237,6 +345,34 @@ const formatJSON = (jsonStr) => {
   } catch (e) {
     return jsonStr
   }
+}
+
+const formatAuditKey = (key) => {
+  const map = {
+    based_on_scan: t('system.log.auditDetail.basedOnScan'),
+    cleanup_mode: t('system.log.auditDetail.cleanupMode'),
+    confirmed_at: t('system.log.auditDetail.confirmedAt'),
+    confirmation_token: t('system.log.auditDetail.confirmationToken'),
+    risk_level: t('system.log.auditDetail.riskLevel'),
+    scanned_items: t('system.log.auditDetail.scannedItems'),
+    affected_records: t('system.log.auditDetail.affectedRecords'),
+    freed_bytes: t('system.log.auditDetail.freedBytes'),
+    expected_modules: t('system.log.auditDetail.expectedModules'),
+    execution_id: t('system.log.auditDetail.executionId'),
+    status: t('system.log.auditDetail.status'),
+    cause_event: t('system.log.auditDetail.causeEvent'),
+    context: t('system.log.auditDetail.context'),
+    summary: t('system.log.auditDetail.summary')
+  }
+  return map[key] || key
+}
+
+const formatAuditValue = (value) => {
+  if (value === null || value === undefined || value === '') return '-'
+  if (Array.isArray(value)) return value.join(', ')
+  if (typeof value === 'object') return JSON.stringify(value)
+  if (typeof value === 'boolean') return value ? t('system.log.auditDetail.trueValue') : t('system.log.auditDetail.falseValue')
+  return String(value)
 }
 
 const formatAction = (action) => {
@@ -353,6 +489,15 @@ const loadLogs = async () => {
     if (ipFilter.value) {
       params.ip = ipFilter.value
     }
+    if (entityTypeFilter.value) {
+      params.entity_type = entityTypeFilter.value
+    }
+    if (entityIdFilter.value) {
+      params.entity_id = entityIdFilter.value
+    }
+    if (resourcePathFilter.value) {
+      params.resource_path = resourcePathFilter.value
+    }
 
     const response = await logsAPI.list(params)
     logs.value = response.data || []
@@ -373,7 +518,33 @@ const resetFilters = () => {
   methodFilter.value = ''
   usernameFilter.value = ''
   ipFilter.value = ''
+  entityTypeFilter.value = ''
+  entityIdFilter.value = ''
+  resourcePathFilter.value = ''
   currentPage.value = 1
+  if (Object.keys(route.query).length > 0) {
+    router.replace({ name: 'Logs', query: {} })
+    return
+  }
+  loadLogs()
+}
+
+const clearAuditFilters = () => {
+  moduleFilter.value = ''
+  entityTypeFilter.value = ''
+  entityIdFilter.value = ''
+  resourcePathFilter.value = ''
+  currentPage.value = 1
+
+  const nextQuery = { ...route.query }
+  delete nextQuery.module_name
+  delete nextQuery.entity_type
+  delete nextQuery.entity_id
+  delete nextQuery.resource_path
+  if (Object.keys(route.query).length !== Object.keys(nextQuery).length) {
+    router.replace({ name: 'Logs', query: nextQuery })
+    return
+  }
   loadLogs()
 }
 
@@ -383,42 +554,43 @@ const showDetails = (row) => {
 }
 
 const exportLogs = (format) => {
-  const params = new URLSearchParams({
-    format: format
-  })
+  const params = {
+    format
+  }
 
   if (dateRange.value && dateRange.value.length === 2) {
-    params.append('start_time', dateRange.value[0])
-    params.append('end_time', dateRange.value[1])
+    params.start_time = dateRange.value[0]
+    params.end_time = dateRange.value[1]
   }
   if (moduleFilter.value) {
-    params.append('module_name', moduleFilter.value)
+    params.module_name = moduleFilter.value
   }
   if (statusFilter.value) {
-    params.append('status_code', statusFilter.value)
+    params.status_code = statusFilter.value
   }
   if (methodFilter.value) {
-    params.append('http_method', methodFilter.value)
+    params.http_method = methodFilter.value
   }
   if (usernameFilter.value) {
-    params.append('username', usernameFilter.value)
+    params.username = usernameFilter.value
   }
   if (ipFilter.value) {
-    params.append('ip', ipFilter.value)
+    params.ip = ipFilter.value
+  }
+  if (entityTypeFilter.value) {
+    params.entity_type = entityTypeFilter.value
+  }
+  if (entityIdFilter.value) {
+    params.entity_id = entityIdFilter.value
+  }
+  if (resourcePathFilter.value) {
+    params.resource_path = resourcePathFilter.value
   }
 
-  const token = localStorage.getItem('token')
-  const url = `/api/logs/export?${params.toString()}`
   const a = document.createElement('a')
-  a.href = url
   a.download = `audit_logs_${new Date().toISOString().replace(/[:.]/g, '-')}.${format}`
 
-  fetch(url, {
-    headers: {
-      'Authorization': `Bearer ${token}`
-    }
-  })
-    .then(response => response.blob())
+  logsAPI.export(params)
     .then(blob => {
       const blobUrl = window.URL.createObjectURL(blob)
       a.href = blobUrl
@@ -433,9 +605,41 @@ const exportLogs = (format) => {
     })
 }
 
+const getQueryString = (name) => {
+  const value = route.query[name]
+  if (Array.isArray(value)) return value[0] || ''
+  return value || ''
+}
+
+const applyQueryFilters = () => {
+  moduleFilter.value = getQueryString('module_name')
+  statusFilter.value = getQueryString('status_code')
+  methodFilter.value = getQueryString('http_method')
+  usernameFilter.value = getQueryString('username')
+  ipFilter.value = getQueryString('ip')
+  entityTypeFilter.value = getQueryString('entity_type')
+  entityIdFilter.value = getQueryString('entity_id')
+  resourcePathFilter.value = getQueryString('resource_path')
+}
+
 onMounted(() => {
+  applyQueryFilters()
+  lastQuerySignature = JSON.stringify(route.query || {})
   loadLogs()
 })
+
+watch(
+  () => route.fullPath,
+  () => {
+    const nextQuery = route.query || {}
+    const signature = JSON.stringify(nextQuery || {})
+    if (signature === lastQuerySignature) return
+    lastQuerySignature = signature
+    applyQueryFilters()
+    currentPage.value = 1
+    loadLogs()
+  }
+)
 </script>
 
 <style scoped>
@@ -452,6 +656,22 @@ onMounted(() => {
   background: var(--addp-bg-primary) !important;
   border: 1px solid var(--addp-border-color);
   border-radius: 4px;
+}
+
+.audit-filter-alert {
+  margin-bottom: 16px;
+}
+
+.audit-filter-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.audit-detail {
+  margin-bottom: 16px;
 }
 
 .code-block {

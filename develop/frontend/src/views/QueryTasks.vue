@@ -349,7 +349,6 @@ onMounted(() => {
 .sql-tasks-page {
   display: flex;
   flex-direction: column;
-  height: 100vh;
   background: var(--addp-bg-secondary);
 }
 

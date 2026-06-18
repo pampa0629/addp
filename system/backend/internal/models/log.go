@@ -5,8 +5,8 @@ import (
 )
 
 type AuditLog struct {
-	ID           uint      `gorm:"primaryKey" json:"id"`
-	CreatedAt    time.Time `gorm:"index" json:"created_at"`
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	CreatedAt time.Time `gorm:"index" json:"created_at"`
 
 	// 用户信息 (允许 NULL)
 	UserID   *uint  `gorm:"index" json:"user_id"`
@@ -14,25 +14,25 @@ type AuditLog struct {
 	TenantID *uint  `gorm:"index" json:"tenant_id"` // 租户ID,SuperAdmin操作为null
 
 	// 操作信息 (必填)
-	HTTPMethod   string `gorm:"size:10;not null" json:"http_method"`   // GET/POST/PUT/DELETE/PATCH
-	ResourcePath string `gorm:"not null" json:"resource_path"`         // /api/users/123
-	HTTPStatus   int    `gorm:"not null;index" json:"http_status"`     // HTTP状态码
-	DurationMs   int    `gorm:"not null" json:"duration_ms"`           // 请求耗时(毫秒)
+	HTTPMethod   string `gorm:"size:10;not null" json:"http_method"` // GET/POST/PUT/DELETE/PATCH
+	ResourcePath string `gorm:"not null" json:"resource_path"`       // /api/users/123
+	HTTPStatus   int    `gorm:"not null;index" json:"http_status"`   // HTTP状态码
+	DurationMs   int    `gorm:"not null" json:"duration_ms"`         // 请求耗时(毫秒)
 
 	// 资源标识 (可选)
-	EntityType string `gorm:"size:50" json:"entity_type"`  // 资源类型（如：user, engine, tenant）
-	EntityID   string `gorm:"size:255" json:"entity_id"`   // 资源ID
+	EntityType string `gorm:"size:50" json:"entity_type"` // 资源类型（如：user, engine, tenant）
+	EntityID   string `gorm:"size:255" json:"entity_id"`  // 资源ID
 
 	// 请求详情
-	RequestBody  string `gorm:"type:text" json:"request_body"`  // 脱敏的JSON请求体
-	QueryParams  string `gorm:"type:text" json:"query_params"`  // URL查询参数
-	UserAgent    string `gorm:"size:500" json:"user_agent"`     // 客户端User-Agent
-	IPAddress    string `gorm:"type:inet;not null" json:"ip_address"` // 客户端IP(使用INET类型)
+	RequestBody string `gorm:"type:text" json:"request_body"`        // 脱敏的JSON请求体
+	QueryParams string `gorm:"type:text" json:"query_params"`        // URL查询参数
+	UserAgent   string `gorm:"size:500" json:"user_agent"`           // 客户端User-Agent
+	IPAddress   string `gorm:"type:inet;not null" json:"ip_address"` // 客户端IP(使用INET类型)
 
 	// 错误和追踪
-	LogLevel     string `gorm:"default:'INFO';index" json:"log_level"`  // 日志级别
-	ErrorMessage string `gorm:"type:text" json:"error_message"`         // 错误信息
-	RequestID    string `gorm:"size:64;not null;index" json:"request_id"` // 请求追踪ID
+	LogLevel     string `gorm:"default:'INFO';index" json:"log_level"`     // 日志级别
+	ErrorMessage string `gorm:"type:text" json:"error_message"`            // 错误信息
+	RequestID    string `gorm:"size:64;not null;index" json:"request_id"`  // 请求追踪ID
 	ModuleName   string `gorm:"size:50;not null;index" json:"module_name"` // 来源模块（如：system, manager, meta）
 }
 
@@ -65,6 +65,7 @@ type AuditLogFilters struct {
 	HTTPMethod   string // HTTP方法（POST/PUT/DELETE等）
 	ResourcePath string // 资源路径（前缀匹配）
 	EntityType   string // 资源类型
+	EntityID     string // 资源ID
 	Username     string // 用户名
 	IPAddress    string // IP地址
 	ModuleName   string // 来源模块

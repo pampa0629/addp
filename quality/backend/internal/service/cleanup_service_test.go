@@ -22,17 +22,17 @@ func TestQualityCleanupScanFindsEngineBoundState(t *testing.T) {
 	createQualityCleanupIssue(t, db, 7, 12, "issue-match", "open")
 	createQualityCleanupIssue(t, db, 7, 13, "issue-other", "open")
 
-	stats, err := svc.ScanGarbage(context.Background(), 7, map[string]interface{}{"engine_id": int64(12)})
+	stats, err := svc.ScanReclaimCandidates(context.Background(), 7, map[string]interface{}{"engine_id": int64(12)})
 	if err != nil {
-		t.Fatalf("ScanGarbage() error = %v", err)
+		t.Fatalf("ScanReclaimCandidates() error = %v", err)
 	}
 	if stats.RuleApplications != 1 || stats.CheckTasks != 1 || stats.Issues != 1 {
 		t.Fatalf("stats = %#v, want one rule application, check task and issue", stats)
 	}
 
-	stats, err = svc.ScanGarbage(context.Background(), 7, nil)
+	stats, err = svc.ScanReclaimCandidates(context.Background(), 7, nil)
 	if err != nil {
-		t.Fatalf("ScanGarbage() without context error = %v", err)
+		t.Fatalf("ScanReclaimCandidates() without context error = %v", err)
 	}
 	if stats.RuleApplications != 0 || stats.CheckTasks != 0 || stats.Issues != 0 {
 		t.Fatalf("stats without lifecycle context = %#v, want empty", stats)

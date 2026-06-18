@@ -33,7 +33,7 @@
 - [数据类型和格式体系图](concepts/addp数据类型和格式体系图.md)
 - [元数据扫描机制规范](spec/addp元数据扫描机制规范.md)
 - [任务体系规范](spec/addp任务体系规范.md)
-- [Cleanup 体系规范](spec/addp-cleanup体系规范.md)
+- [资源回收（Cleanup）体系规范](spec/addp-cleanup体系规范.md)
 - [数据类型与文件格式扩展指南](spec/addp数据类型与文件格式扩展指南.md)
 - [数据项探测器规范](spec/addp数据项探测器规范.md)
 - [元数据 attributes 规范](spec/addp元数据attributes规范.md)
@@ -89,11 +89,10 @@
 4. [元数据扫描机制规范](spec/addp元数据扫描机制规范.md)：处理 Meta ScanTask 与 execution 时阅读。
 5. [Transfer 任务语义与同步模式设计](next/transfer任务语义与同步模式设计.md)：处理 Transfer 全量、增量、实时、取消、重试、进度或日志语义时阅读。
 
-## Cleanup 与生命周期主题
+## 资源回收与生命周期主题
 
-处理系统级清理、跨模块 owner 边界、派生产物回收、生命周期事件或 cleanup result 时，建议按以下顺序阅读：
+处理系统级资源回收、跨模块 owner 边界、派生产物回收、生命周期事件或 cleanup result 时，建议按以下顺序阅读：
 
-1. [Cleanup 体系规范](spec/addp-cleanup体系规范.md)：确认 System coordinator、模块 executor、scan / execute、result 模型和禁止规则。
+1. [资源回收（Cleanup）体系规范](spec/addp-cleanup体系规范.md)：确认 System coordinator、模块 executor、scan / execute、result 模型和禁止规则。
 2. [术语表](concepts/addp术语表.md)：确认 cleanup、owner module、artifact state、physical artifact 等术语。
 3. [任务体系规范](spec/addp任务体系规范.md)：确认 cleanup 不纳入 TaskProvider，也不进入 Orchestrator 编排。
-4. [ADDP Cleanup 体系规范](spec/addp-cleanup体系规范.md)：了解 cleanup 的正式概念、边界和执行规则。

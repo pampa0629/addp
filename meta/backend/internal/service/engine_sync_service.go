@@ -94,7 +94,7 @@ func (s *EngineSyncService) handleEngineChangeEvent(event events.EngineChangeEve
 
 	case events.ActionDelete:
 		s.engineService.ClearEngineCache(event.EngineID)
-		s.log.Info("资源已删除，缓存已清除；扫描任务定义残留由 cleanup executor 处理", "engine_id", event.EngineID)
+		s.log.Info("资源已删除，缓存已清除；扫描任务定义残留由资源回收执行方处理", "engine_id", event.EngineID)
 	default:
 		s.log.Warn("未知的资源变更动作", "action", event.Action, "engine_id", event.EngineID)
 	}

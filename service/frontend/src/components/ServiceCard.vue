@@ -195,7 +195,6 @@ const formatDate = (dateStr) => {
 .service-card {
   cursor: pointer;
   transition: all 0.3s;
-  height: 100%;
   display: flex;
   flex-direction: column;
 }

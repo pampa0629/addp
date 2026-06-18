@@ -55,7 +55,7 @@ func (s *CleanupService) Start(ctx context.Context) error {
 		return nil
 	}
 	go s.consumeCleanupRequests(ctx)
-	s.log.Info("Quality cleanup 事件订阅已启动")
+	s.log.Info("Quality 资源回收事件订阅已启动")
 	return nil
 }
 
@@ -87,7 +87,7 @@ func (s *CleanupService) consumeCleanupRequests(ctx context.Context) {
 			}).Result()
 			if err != nil {
 				if err != redis.Nil {
-					s.log.Error("读取 cleanup request 失败", "error", err)
+					s.log.Error("读取资源回收请求失败", "error", err)
 				}
 				continue
 			}
@@ -104,7 +104,7 @@ func (s *CleanupService) consumeCleanupRequests(ctx context.Context) {
 func (s *CleanupService) handleCleanupRequest(ctx context.Context, message redis.XMessage) {
 	event, err := events.ParseCleanupRequest(message.Values)
 	if err != nil {
-		s.log.Error("解析 cleanup request 失败", "error", err, "message_id", message.ID)
+		s.log.Error("解析资源回收请求失败", "error", err, "message_id", message.ID)
 		return
 	}
 	if !events.CleanupExpectedForModule(event.ExpectedModules, events.ModuleQuality) {
@@ -123,7 +123,7 @@ func (s *CleanupService) handleCleanupRequest(ctx context.Context, message redis
 
 	exec, startedAt, execErr := s.createExecutorExecution(ctx, event)
 	if execErr != nil {
-		s.log.Error("创建 Quality cleanup executor execution 失败", "error", execErr, "task_id", event.TaskID)
+		s.log.Error("创建 Quality 资源回收执行记录失败", "error", execErr, "task_id", event.TaskID)
 	}
 	defer func() {
 		if exec != nil {
@@ -134,7 +134,7 @@ func (s *CleanupService) handleCleanupRequest(ctx context.Context, message redis
 
 	switch event.Action {
 	case events.CleanupActionScan:
-		stats, err := s.ScanGarbage(ctx, event.TenantID, event.Context)
+		stats, err := s.ScanReclaimCandidates(ctx, event.TenantID, event.Context)
 		if err != nil {
 			result.Status = events.CleanupResultFailed
 			result.Errors = []string{err.Error()}
@@ -162,12 +162,12 @@ func (s *CleanupService) handleCleanupRequest(ctx context.Context, message redis
 		result.Summary = qualityExecuteSummary(stats)
 	default:
 		result.Status = events.CleanupResultFailed
-		result.Errors = []string{"unknown cleanup action: " + event.Action}
+		result.Errors = []string{"unknown resource reclaim action: " + event.Action}
 		result.Summary = events.CleanupResultSummary{ErrorCount: 1, RiskLevel: "low"}
 	}
 }
 
-func (s *CleanupService) ScanGarbage(ctx context.Context, tenantID uint, cleanupContext map[string]interface{}) (*QualityCleanupStats, error) {
+func (s *CleanupService) ScanReclaimCandidates(ctx context.Context, tenantID uint, cleanupContext map[string]interface{}) (*QualityCleanupStats, error) {
 	candidates, err := s.listCandidates(ctx, tenantID, cleanupContext)
 	if err != nil {
 		return nil, err
@@ -210,10 +210,10 @@ func (c qualityCleanupCandidates) stats() *QualityCleanupStats {
 
 func (s *CleanupService) listCandidates(ctx context.Context, tenantID uint, cleanupContext map[string]interface{}) (qualityCleanupCandidates, error) {
 	if tenantID == 0 {
-		return qualityCleanupCandidates{}, fmt.Errorf("quality cleanup requires tenant_id")
+		return qualityCleanupCandidates{}, fmt.Errorf("quality resource reclaim requires tenant_id")
 	}
 	if s == nil || s.db == nil {
-		return qualityCleanupCandidates{}, fmt.Errorf("quality cleanup database is not configured")
+		return qualityCleanupCandidates{}, fmt.Errorf("quality resource reclaim database is not configured")
 	}
 	engineID, hasEngineID := qualityCleanupContextInt64(cleanupContext, "engine_id")
 	contextTenantID, hasContextTenantID := qualityCleanupContextInt64(cleanupContext, "tenant_id")
@@ -349,7 +349,7 @@ func (s *CleanupService) createExecutorExecution(ctx context.Context, event even
 		return nil, time.Time{}, nil
 	}
 	startedAt := time.Now()
-	currentStep := fmt.Sprintf("Quality cleanup %s", event.Action)
+	currentStep := fmt.Sprintf("Quality 资源回收 %s", event.Action)
 	triggerType, err := commonExecution.NormalizeTriggerType(event.TriggerType)
 	if err != nil {
 		triggerType = commonExecution.TriggerTypeManual
@@ -406,7 +406,7 @@ func (s *CleanupService) finishExecutorExecution(ctx context.Context, executionI
 		"execution_time_ms": now.Sub(startedAt).Milliseconds(),
 		"updated_at":        now,
 	}); err != nil {
-		s.log.Warn("更新 Quality cleanup executor execution 失败", "execution_id", executionID, "error", err)
+		s.log.Warn("更新 Quality 资源回收执行记录失败", "execution_id", executionID, "error", err)
 	}
 }
 
@@ -416,12 +416,12 @@ func (s *CleanupService) writeResult(ctx context.Context, taskID string, result 
 	}
 	resultJSON, err := json.Marshal(result)
 	if err != nil {
-		s.log.Error("序列化 Quality cleanup result 失败", "error", err, "task_id", taskID)
+		s.log.Error("序列化 Quality 资源回收结果失败", "error", err, "task_id", taskID)
 		return
 	}
 	key := fmt.Sprintf("cleanup:results:%s", taskID)
 	if err := s.redis.HSet(ctx, key, events.ModuleQuality, string(resultJSON)).Err(); err != nil {
-		s.log.Error("写入 Quality cleanup result 失败", "error", err, "task_id", taskID)
+		s.log.Error("写入 Quality 资源回收结果失败", "error", err, "task_id", taskID)
 	}
 }
 

@@ -27,8 +27,4 @@ const elementLocale = computed(() => locale.value === 'zh-cn' ? zhCn : enLocale)
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
-body, html {
-  height: 100%;
-  overflow: hidden;
-}
 </style>

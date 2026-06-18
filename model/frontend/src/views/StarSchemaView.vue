@@ -463,8 +463,7 @@ onMounted(async () => {
 }
 
 .fact-list-card {
-  height: calc(100vh - 160px);
-  overflow-y: auto;
+  overflow-y: visible;
 }
 
 .fact-item {

@@ -321,7 +321,6 @@ watch(() => route.query, async (query) => {
 
 <style scoped>
 .data-explorer {
-  height: 100%;
   display: flex;
   flex-direction: column;
   background: var(--addp-bg-secondary) !important;
@@ -331,21 +330,20 @@ watch(() => route.query, async (query) => {
   flex: 1;
   display: grid;
   gap: 0;
-  overflow: hidden;
+  overflow: visible;
   grid-template-rows: 1fr;
   min-height: 0;
   background: var(--addp-bg-secondary) !important;
 }
 
 .tree-container {
-  height: 100%;
-  overflow: auto;
+  min-height: 0;
+  overflow: visible;
   background: var(--addp-bg-primary) !important;
 }
 
 .preview-container {
-  height: 100%;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 </style>

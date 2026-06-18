@@ -26,7 +26,6 @@ onMounted(async () => {
   font-family: Avenir, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  height: 100vh;
   margin: 0;
   padding: 0;
   background: var(--addp-bg-secondary) !important;

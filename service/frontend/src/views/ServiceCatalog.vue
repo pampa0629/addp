@@ -290,7 +290,6 @@ onMounted(() => {
 <style scoped>
 .service-catalog {
   padding: 24px;
-  height: 100%;
 }
 
 .header {

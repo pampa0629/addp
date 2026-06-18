@@ -275,9 +275,9 @@ func TestStandardCleanupScanWithoutTenantLifecycleContextReturnsNoCandidates(t *
 	seedStandardCleanupTenantState(t, db, 1, false)
 
 	svc := NewCleanupService(db, nil, nil, nil)
-	stats, err := svc.ScanGarbage(context.Background(), 1, nil)
+	stats, err := svc.ScanReclaimCandidates(context.Background(), 1, nil)
 	if err != nil {
-		t.Fatalf("ScanGarbage: %v", err)
+		t.Fatalf("ScanReclaimCandidates: %v", err)
 	}
 	if standardCandidateRecordCount(stats) != 0 {
 		t.Fatalf("expected no candidates without tenant lifecycle context, got %+v", stats)
@@ -289,9 +289,9 @@ func TestStandardCleanupEngineDeletedReturnsNoCandidates(t *testing.T) {
 	seedStandardCleanupTenantState(t, db, 1, false)
 
 	svc := NewCleanupService(db, nil, nil, nil)
-	stats, err := svc.ScanGarbage(context.Background(), 1, map[string]interface{}{"engine_id": 7})
+	stats, err := svc.ScanReclaimCandidates(context.Background(), 1, map[string]interface{}{"engine_id": 7})
 	if err != nil {
-		t.Fatalf("ScanGarbage: %v", err)
+		t.Fatalf("ScanReclaimCandidates: %v", err)
 	}
 	if standardCandidateRecordCount(stats) != 0 {
 		t.Fatalf("expected no candidates for engine lifecycle, got %+v", stats)
@@ -348,9 +348,9 @@ func TestStandardCleanupTenantDeletedPhysicalDeletesOwnedState(t *testing.T) {
 	seedStandardCleanupTenantState(t, db, 2, false)
 
 	svc := NewCleanupService(db, nil, nil, nil)
-	stats, err := svc.ScanGarbage(context.Background(), 1, map[string]interface{}{"tenant_id": 1})
+	stats, err := svc.ScanReclaimCandidates(context.Background(), 1, map[string]interface{}{"tenant_id": 1})
 	if err != nil {
-		t.Fatalf("ScanGarbage: %v", err)
+		t.Fatalf("ScanReclaimCandidates: %v", err)
 	}
 	if standardCandidateRecordCount(stats) != 22 {
 		t.Fatalf("expected 22 scanned records, got %+v", stats)

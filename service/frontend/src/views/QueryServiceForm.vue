@@ -857,7 +857,6 @@ onMounted(async () => {
   background: var(--addp-bg-primary);
   display: flex;
   flex-direction: column;
-  min-height: 100%;
 }
 
 .config-card-wrapper:hover {

@@ -110,7 +110,7 @@ func main() {
 	authSvc := service.NewAuthorizationService(db)
 	cleanupSvc := service.NewCleanupService(db, redisClient, taskExecutionRepo)
 	if err := cleanupSvc.Start(context.Background()); err != nil {
-		log.Printf("⚠️  Asset cleanup executor 启动失败: %v", err)
+		log.Printf("Asset 资源回收执行方启动失败: %v", err)
 	}
 	defer cleanupSvc.Stop()
 

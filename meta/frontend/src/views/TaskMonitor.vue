@@ -89,7 +89,7 @@
         />
       </div>
 
-      <el-table :data="taskRuns" v-loading="loading" height="640">
+      <el-table :data="taskRuns" v-loading="loading">
         <el-table-column prop="id" :label="t('meta.monitor.runId')" width="90" />
         <el-table-column prop="task_name" :label="t('meta.monitor.taskName')" min-width="200">
           <template #default="{ row }">
@@ -444,10 +444,10 @@ onUnmounted(() => {
 
 <style scoped>
 .task-monitor {
-  padding: 16px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
 }
 
 .filter-card {
@@ -470,9 +470,13 @@ onUnmounted(() => {
   border-radius: 12px;
 }
 
+.task-monitor :deep(.el-card__body) {
+  padding: 16px;
+}
+
 .monitor-status {
-  margin-bottom: 12px;
-  padding: 10px 12px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
   border: 1px solid var(--el-border-color);
   border-radius: 6px;
   background: var(--el-bg-color);
@@ -509,7 +513,7 @@ onUnmounted(() => {
 }
 
 .pagination {
-  margin-top: 12px;
+  margin-top: 10px;
   display: flex;
   justify-content: flex-end;
 }
