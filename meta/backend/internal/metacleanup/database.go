@@ -22,6 +22,10 @@ func NewDatabaseCleaner(db *gorm.DB, systemClient *commonClient.SystemClient, lo
 }
 
 func (c *DatabaseCleaner) ScanInvalidEngines(ctx context.Context, tenantID uint) ([]models.InvalidEngineDetail, error) {
+	return c.ScanInvalidEnginesWithScope(ctx, tenantID, CleanupScope{})
+}
+
+func (c *DatabaseCleaner) ScanInvalidEnginesWithScope(ctx context.Context, tenantID uint, scope CleanupScope) ([]models.InvalidEngineDetail, error) {
 	var details []models.InvalidEngineDetail
 	if c.systemClient == nil {
 		if c.log != nil {
@@ -55,6 +59,9 @@ func (c *DatabaseCleaner) ScanInvalidEngines(ctx context.Context, tenantID uint)
 		Group("mn.engine_id")
 	if tenantID > 0 {
 		query = query.Where("mn.tenant_id = ?", tenantID)
+	}
+	if scope.EngineID > 0 {
+		query = query.Where("mn.engine_id = ?", scope.EngineID)
 	}
 
 	if err := query.Scan(&stats).Error; err != nil {
@@ -134,12 +141,19 @@ func (c *DatabaseCleaner) ScanExpiredData(ctx context.Context, tenantID uint, th
 	return int(count), nil
 }
 
-func (c *DatabaseCleaner) ScanSoftDeleted(ctx context.Context, tenantID uint) (int, int, error) {
+func (c *DatabaseCleaner) ScanLogicalCleanupCandidates(ctx context.Context, tenantID uint) (int, int, error) {
+	return c.ScanLogicalCleanupCandidatesWithScope(ctx, tenantID, CleanupScope{})
+}
+
+func (c *DatabaseCleaner) ScanLogicalCleanupCandidatesWithScope(ctx context.Context, tenantID uint, scope CleanupScope) (int, int, error) {
 	var nodeCount, itemCount int64
 
 	nodeQuery := c.db.Model(&models.MetaNode{}).Unscoped().Where("deleted_at IS NOT NULL")
 	if tenantID > 0 {
 		nodeQuery = nodeQuery.Where("tenant_id = ?", tenantID)
+	}
+	if scope.EngineID > 0 {
+		nodeQuery = nodeQuery.Where("engine_id = ?", scope.EngineID)
 	}
 	if err := nodeQuery.Count(&nodeCount).Error; err != nil {
 		return 0, 0, err
@@ -148,6 +162,9 @@ func (c *DatabaseCleaner) ScanSoftDeleted(ctx context.Context, tenantID uint) (i
 	itemQuery := c.db.Model(&models.MetaItem{}).Unscoped().Where("deleted_at IS NOT NULL")
 	if tenantID > 0 {
 		itemQuery = itemQuery.Where("tenant_id = ?", tenantID)
+	}
+	if scope.EngineID > 0 {
+		itemQuery = itemQuery.Where("engine_id = ?", scope.EngineID)
 	}
 	if err := itemQuery.Count(&itemCount).Error; err != nil {
 		return 0, 0, err
@@ -227,12 +244,23 @@ func (c *DatabaseCleaner) ExecuteSoftDelete(ctx context.Context, tenantID uint, 
 	return result, nil
 }
 
+func (c *DatabaseCleaner) ExecuteSoftDeleteByEngine(ctx context.Context, tenantID uint, engineID uint) (*models.MetaCleanupExecuteResult, error) {
+	return c.ExecuteSoftDelete(ctx, tenantID, []uint{engineID})
+}
+
 func (c *DatabaseCleaner) ExecuteHardDelete(ctx context.Context, tenantID uint) (*models.MetaCleanupExecuteResult, error) {
+	return c.ExecuteHardDeleteWithScope(ctx, tenantID, CleanupScope{})
+}
+
+func (c *DatabaseCleaner) ExecuteHardDeleteWithScope(ctx context.Context, tenantID uint, scope CleanupScope) (*models.MetaCleanupExecuteResult, error) {
 	result := &models.MetaCleanupExecuteResult{}
 
 	nodeQuery := c.db.Unscoped().Where("deleted_at IS NOT NULL")
 	if tenantID > 0 {
 		nodeQuery = nodeQuery.Where("tenant_id = ?", tenantID)
+	}
+	if scope.EngineID > 0 {
+		nodeQuery = nodeQuery.Where("engine_id = ?", scope.EngineID)
 	}
 	if err := nodeQuery.Delete(&models.MetaNode{}).Error; err != nil {
 		result.Errors = append(result.Errors, fmt.Sprintf("物理删除节点失败: %v", err))
@@ -244,6 +272,9 @@ func (c *DatabaseCleaner) ExecuteHardDelete(ctx context.Context, tenantID uint) 
 	if tenantID > 0 {
 		itemQuery = itemQuery.Where("tenant_id = ?", tenantID)
 	}
+	if scope.EngineID > 0 {
+		itemQuery = itemQuery.Where("engine_id = ?", scope.EngineID)
+	}
 	if err := itemQuery.Delete(&models.MetaItem{}).Error; err != nil {
 		result.Errors = append(result.Errors, fmt.Sprintf("物理删除项失败: %v", err))
 	} else {
@@ -253,7 +284,14 @@ func (c *DatabaseCleaner) ExecuteHardDelete(ctx context.Context, tenantID uint) 
 }
 
 func (c *DatabaseCleaner) InvalidEngineIDs(ctx context.Context, tenantID uint) []uint {
+	return c.InvalidEngineIDsWithScope(ctx, tenantID, CleanupScope{})
+}
+
+func (c *DatabaseCleaner) InvalidEngineIDsWithScope(ctx context.Context, tenantID uint, scope CleanupScope) []uint {
 	var ids []uint
+	if scope.EngineID > 0 {
+		return []uint{scope.EngineID}
+	}
 	if c.systemClient == nil {
 		if c.log != nil {
 			c.log.Warn("SystemClient 未配置，无法获取无效引擎列表")
@@ -296,44 +334,4 @@ func (c *DatabaseCleaner) InvalidEngineIDs(ctx context.Context, tenantID uint) [
 		}
 	}
 	return ids
-}
-
-func (c *DatabaseCleaner) InvalidFingerprints(ctx context.Context, invalidEngineIDs []uint) []string {
-	if len(invalidEngineIDs) == 0 {
-		return []string{}
-	}
-
-	var fingerprints []string
-	err := c.db.Table("manager.quick_view").
-		Where("engine_id IN ?", invalidEngineIDs).
-		Distinct("fingerprint").
-		Pluck("fingerprint", &fingerprints).Error
-	if err != nil {
-		if c.log != nil {
-			c.log.Error("查询 manager.quick_view fingerprint 失败", "error", err)
-		}
-		return []string{}
-	}
-
-	if c.log != nil {
-		c.log.Debug("获取无效引擎的 fingerprint",
-			"engine_ids", invalidEngineIDs,
-			"fingerprint_count", len(fingerprints))
-	}
-	return fingerprints
-}
-
-func (c *DatabaseCleaner) FingerprintsByEngine(ctx context.Context, engineID uint) []string {
-	var fingerprints []string
-	err := c.db.Table("manager.quick_view").
-		Where("engine_id = ?", engineID).
-		Distinct("fingerprint").
-		Pluck("fingerprint", &fingerprints).Error
-	if err != nil {
-		if c.log != nil {
-			c.log.Error("查询 manager.quick_view fingerprint 失败", "engine_id", engineID, "error", err)
-		}
-		return []string{}
-	}
-	return fingerprints
 }

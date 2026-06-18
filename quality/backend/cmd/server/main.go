@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"time"
@@ -77,6 +78,11 @@ func main() {
 	checkTaskSvc := service.NewCheckTaskService(checkTaskRepo)
 	checkExecutor := service.NewCheckExecutor(db, systemClient, ruleAppRepo, checkTaskRepo, issueRepo)
 	issueSvc := service.NewIssueService(issueRepo)
+	cleanupService := service.NewCleanupService(db, redisClient, commonExecution.NewTaskExecutionRepository(db))
+	if err := cleanupService.Start(context.Background()); err != nil {
+		log.Printf("⚠️  Quality cleanup service start failed: %v", err)
+	}
+	defer cleanupService.Stop()
 
 	router := api.SetupRouter(
 		ruleEngineSvc,
@@ -100,7 +106,14 @@ func main() {
 	serviceHost := utils.GetServiceHost()
 	port := utils.GetModulePort("quality")
 	serviceURL := utils.BuildServiceURL(serviceHost, port)
-	systemClient.RegisterAndHeartbeat("quality", serviceURL, "/quality")
+	systemClient.RegisterAndHeartbeatWithMetadata("quality", serviceURL, "/quality", map[string]interface{}{
+		"module": "quality",
+		"capabilities": map[string]interface{}{
+			"cleanup_executor": map[string]interface{}{
+				"enabled": true,
+			},
+		},
+	})
 
 	if cfg.EnableIntegration && cfg.SystemURL != "" && cfg.InternalAPIKey != "" {
 		taskProviderRegistry := service.NewTaskProviderRegistryService(

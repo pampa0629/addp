@@ -1,0 +1,478 @@
+# ADDP Cleanup 体系规范
+
+> 状态：平台级规范。本文定义 ADDP 系统级资源清理体系的概念、职责边界、协议约束和演进顺序。历史背景和当前迁移收口见本文第十三节和第十四节。
+
+## 一、定位
+
+ADDP cleanup 是系统级资源清理与生命周期回收体系，不是单一模块的“垃圾数据删除”功能。
+
+cleanup 的价值在于补齐 ADDP 从“发现、加工、消费”到“失效、回收、审计”的生命周期闭环：
+
+- 保持事实和产物一致：engine、tenant、item 或源 facts 变化后，Meta facts、Manager 派生产物、Transfer 残留和运行时缓存不能长期漂移。
+- 防止跨模块耦合：cleanup 责任跟随 owner module，避免 System 或 Meta 变成理解所有模块私有表、bucket 和 key 的硬编码中心。
+- 控制资源成本：及时识别和回收对象存储、PG 派生对象、向量行、搜索索引、Redis key、临时文件等持续占用的资源。
+- 提升用户体验正确性：避免用户继续看到已失效的快显、旧瓦片、旧 embedding、已删除 engine 下的 metadata 或不可执行任务。
+- 支撑运维可观测：cleanup 本身可能失败、超时或部分完成，必须能被 Monitor 观察，而不是只留在模块日志里。
+- 支撑安全审计和合规追溯：cleanup 必须能回答谁发起、为什么发起、基于哪次 scan、影响哪些模块、清了什么、跳过什么、失败什么。
+
+cleanup 覆盖以下对象：
+
+| 类型 | 示例 | 说明 |
+| --- | --- | --- |
+| 源事实 | `meta.meta_node`、`meta.meta_item`、Meta search index | 由事实 owner 模块清理。 |
+| 派生产物状态 | `manager.tile_cache`、`manager.embeddings`、`manager.quick_view_optimization` | 描述当前产物是否可用、由什么配置生成、在哪里。 |
+| 物理产物 | MinIO objects、PG materialized view / index、pgvector 行、Redis key | 只能由产物 owner 模块按登记状态清理。 |
+| 任务定义残留 | 强绑定已删除 engine / item / tenant 的任务定义 | 是否删除、禁用或标记缺源由 owner 模块定义并在 cleanup result 中报告。 |
+| 运行时缓存 | 内存缓存、Redis 缓存、临时文件 | 由创建缓存的模块清理。 |
+
+cleanup 从监控视角具有 execution 特征，必须纳入 Monitor；从编排视角属于系统运维流程，不是用户数据处理任务，不纳入 TaskProvider，也不进入 Orchestrator 编排。
+
+## 二、核心术语
+
+| 术语 | 定义 |
+| --- | --- |
+| cleanup coordinator | 清理协调方。负责发起请求、记录任务元信息、发布事件、汇总结果和展示审计。当前唯一 coordinator 是 System。 |
+| cleanup executor | 清理执行方。负责扫描和清理本模块拥有的资源，并写入模块结果。Meta、Manager、Transfer 等模块均可成为 executor。 |
+| owner module | 资源、状态或产物的拥有模块。cleanup 责任跟随 owner module，不跟随触发事件来源。 |
+| cleanup request | coordinator 发布的中性清理请求。只携带任务、租户、范围、动作和中性上下文，不携带模块私有表结构或存储路径。 |
+| cleanup result | executor 写回的模块级结果。包含统一状态字段和模块私有统计明细。 |
+| logical cleanup | 逻辑清理。把事实、产物状态或任务定义从活跃路径移除，或标记为 `deleted`、`missing_source`、`outdated`、`disabled` 等。 |
+| physical cleanup | 物理清理。删除实际存储资源，例如对象存储 key、PG 派生对象、向量行、缓存 key、临时文件。 |
+| artifact state | 派生产物当前状态对象，例如瓦片缓存结果、embedding result、快显性能优化结果。不是执行记录。 |
+| physical artifact | 可删除的物理资源，例如对象存储 key、PG 派生对象、向量行、缓存 key。 |
+| lifecycle event | 中性的生命周期事件，例如 engine deleted、tenant deleted、item deleted。各模块独立消费并处理 owner 范围内资源。 |
+
+## 三、职责边界
+
+### 1. System
+
+System 是 cleanup coordinator，负责：
+
+- 提供 Console / Admin UI 入口。
+- 校验操作者权限和租户上下文。
+- 创建 cleanup scan / execute 请求。
+- 发布 `cleanup.request`。
+- 保存任务元信息、等待模块结果、计算总体状态。
+- 展示各模块 cleanup result 和审计摘要。
+- 为 cleanup scan / execute 写入系统运维 execution，并进入 Monitor。
+- 为 cleanup 创建、确认、完成和失败写入审计日志。
+
+System 不负责：
+
+- 判断 Meta、Manager、Transfer 等模块的垃圾规则。
+- 读取或写入业务模块私有表。
+- 删除 MinIO 对象、Meilisearch 文档、PG 派生对象、Redis key 或模块缓存。
+- 知道 MVT、embedding、preview cache 等产物的内部路径、表结构或失效策略。
+
+### 2. common
+
+`common` 只承载跨模块协议模型和事件常量，负责：
+
+- 定义 cleanup request / result 的通用字段。
+- 定义模块名、动作类型、结果状态等公共枚举。
+- 提供可复用的协议解析或序列化 helper。
+
+`common` 不得承载：
+
+- 具体模块的表结构。
+- bucket、prefix、Redis key、PG object name 等物理路径规则。
+- MVT、embedding、preview cache 等模块私有 artifact 类型清单。
+- 模块私有的清理决策逻辑。
+
+### 3. Meta
+
+Meta cleanup executor 只清理 Meta-owned 资源：
+
+- `meta.meta_node`。
+- `meta.meta_item`。
+- Meta search index。
+- Meta 自己的扫描任务定义、扫描锁或执行残留。
+
+Meta 不得：
+
+- 读取 Manager 私有表，例如 `manager.quick_view`、`manager.tile_cache`、`manager.embeddings`。
+- 推导 Manager 的 MinIO bucket、prefix 或对象路径。
+- 删除 Manager quick view、MVT tiles、tile cache、embedding、preview cache。
+- 清理 System audit logs 或其他 System-owned 产物。
+
+### 4. Manager
+
+Manager cleanup executor 只清理 Manager-owned 派生产物和缓存：
+
+- `manager.quick_view`。
+- `manager.quick_view_optimization` 以及 Manager 创建并登记的 3857 优化目标。
+- `manager.tile_cache`、`manager.tile_cache_tasks`、`storage_ref` 指向的瓦片对象和 manifest。
+- Manager runtime tile cache。
+- `manager.embeddings`、`manager.embedding_tasks` 以及向量化结果。
+- Manager preview cache、缩略图、抽取缓存等后续 Manager-owned 产物。
+
+Manager 不得：
+
+- 删除源业务表、源表原有索引或源数据。
+- 删除 Meta facts 或 Meta search index。
+- 删除 System engine 配置。
+- 删除自动识别的外部 3857 物化视图、外部表或外部索引。
+- 通过 Meta attributes 或硬编码 MinIO prefix 反推自身产物位置。
+
+Manager 删除瓦片对象时必须从 `manager.tile_cache.storage_ref` 解析存储位置，不得硬编码 `manager/mvt-tiles/<fingerprint>` 或旧 quick view 字段。
+
+### 5. Transfer 和其他模块
+
+Transfer、Develop、Service、Asset、Portal 等模块按同一原则处理：
+
+- 只清理本模块创建、登记并拥有生命周期的资源。
+- 可以消费 System 或 owner 模块发布的生命周期事件。
+- 不得让其他模块代替自己解释私有表、任务定义或物理路径。
+
+Transfer 第一阶段 cleanup executor 只治理 Transfer-owned 任务定义残留：
+
+- `engine.deleted` 时，扫描 source / target endpoint locator 引用该 engine 的 `transfer.transfer_tasks`。
+- `logical_cleanup` 禁用命中的任务定义、清空下一次调度并恢复 idle 状态。
+- `physical_cleanup` 删除 Transfer 任务定义本身；不删除任务曾经写入的 target 业务数据。
+- 没有明确 lifecycle context 的普通 scan 不应把全部 Transfer 任务定义视作垃圾。
+- Transfer 不拥有目标引擎中的表、文件或对象生命周期；这些资源只有在被其他 owner 模块登记为 artifact state 时，才由对应 owner executor 清理。
+
+Service 第一阶段 cleanup executor 只治理 Service-owned 服务发布定义和动态图层状态：
+
+- `engine.deleted` 时，扫描直接绑定该 engine 的 `service.query_services`、`service.graph_query_services`，以及 `service.tile_service_layers.layer_config.source.engine_id` 指向该 engine 的动态图层。
+- `tenant.deleted` 时，扫描该租户下 Service-owned query service、graph query service、tile service 和 tile layer。
+- `logical_cleanup` 将命中的服务发布定义置为 `inactive` 并记录 `missing_source` 原因，动态图层置为 disabled。
+- `physical_cleanup` 删除命中的 Service-owned 服务发布定义和动态图层状态记录。
+- 没有明确 lifecycle context 的普通 scan 不应把全部 Service 发布定义视作垃圾。
+- Service cleanup 不删除外部 registered services，不删除外部服务端点，不推断或删除 MinIO 静态瓦片、缓存对象或业务引擎中的源数据。
+
+Quality 第一阶段 cleanup executor 只治理 Quality-owned 质量配置和问题状态：
+
+- `engine.deleted` 时，扫描绑定该 engine 的 `quality.rule_applications`、`quality.check_tasks` 和 `quality.issues`。
+- `tenant.deleted` 时，扫描该租户下 Quality-owned 规则应用、检查任务和问题工单。
+- `logical_cleanup` 禁用规则应用和检查任务，清空检查任务下一次调度，并将命中的 open 问题工单置为 ignored。
+- `physical_cleanup` 删除命中的 Quality-owned 规则应用、检查任务和问题工单状态记录。
+- 没有明确 lifecycle context 的普通 scan 不应把全部 Quality 配置和问题工单视作垃圾。
+- Quality cleanup 不删除源业务表、源数据、Standard 数据元或规则定义，也不删除 `common.task_executions` 历史执行记录。
+
+Develop 第一阶段 cleanup executor 只在租户生命周期回收中治理 Develop-owned 开发任务定义：
+
+- `engine.deleted` 时，不扫描、不归档、不禁用、不删除 `develop.dev_tasks`。SQL / workflow / script 等开发任务定义属于用户创作成果，engine 只是可替换的运行环境引用。
+- `tenant.deleted` 时，扫描该租户下 Develop-owned 开发任务定义。
+- `logical_cleanup` 将租户删除范围内的开发任务置为 `archived`、关闭调度、清空下一次调度。
+- `physical_cleanup` 仅在租户删除范围内删除 Develop-owned 开发任务定义本身；不删除 `common.task_executions` 历史执行记录。
+- 没有明确 `tenant.deleted` lifecycle context 的普通 scan 不应把全部 Develop 任务定义视作垃圾。
+- 用户任务定义、Notebook 文件、Jupyter 虚拟环境、工作流输出、中间文件或源业务数据，常规删除必须由用户显式发起，不得因 engine 生命周期自动清理。
+
+Graph 第一阶段 cleanup executor 只治理 Graph-owned 图谱建模和构建状态：
+
+- `engine.deleted` 时，扫描绑定该 engine 的 `graph.knowledge_graphs`，以及这些 graph 下的 `graph.build_tasks`、`graph.build_materials`、`graph.review_items`。
+- `tenant.deleted` 时，扫描该租户下 Graph-owned 本体、实体类型、关系类型、本体版本、知识图谱实例、构建任务、构建材料和审核项。
+- `logical_cleanup` 将命中的本体和知识图谱实例置为 `archived`，将未完成的构建任务置为 `cancelled`；实体类型、关系类型、本体版本、构建材料和审核项不单独改写状态，只随本体、任务和图谱离开活跃路径。
+- `physical_cleanup` 删除 Graph-owned PostgreSQL 状态记录，删除顺序必须先子状态后父状态。
+- 没有明确 lifecycle context 的普通 scan 不应把全部 Graph 本体、图谱或构建状态视作垃圾。
+- Graph cleanup 第一阶段不删除 Neo4j database 中的真实图数据，不删除 MinIO 中的构建材料文件，不删除 `common.task_executions` 历史执行记录；这些物理产物只有在后续被明确登记为 Graph-owned artifact state 后，才进入对应 owner executor。
+
+Asset 第一阶段 cleanup executor 只治理 Asset-owned 资产目录、资产状态和授权状态：
+
+- `tenant.deleted` 时，扫描该租户下 Asset-owned 类型定义、类型字段、目录、资产、资产扩展字段、申请、授权和评价。
+- `logical_cleanup` 将命中的资产下架并标记 `source_available=false`，撤销仍然有效的授权。
+- `physical_cleanup` 删除 Asset-owned PostgreSQL 状态记录，删除顺序必须先消费状态和子状态，再删除资产、目录和类型定义。
+- 没有明确 `tenant.deleted` lifecycle context 的普通 scan 不应把全部 Asset 状态视作垃圾。
+- `engine.deleted` 第一阶段不扫描 Asset 状态；Asset 不解析 `source_reference` 中的模块私有引用格式，也不猜测来源模块是否绑定该 engine。
+- Asset cleanup 第一阶段不删除 Meta / Service / Standard / Develop 的源对象，不删除已发布服务端点，不删除 Meilisearch 索引文档；搜索索引删除只有在后续被明确登记为 Asset-owned artifact state 后，才进入对应 owner executor。
+
+Model 第一阶段 cleanup executor 只治理 Model-owned 建模状态：
+
+- `tenant.deleted` 时，扫描该租户下 Model-owned 数仓分层、实体、实体属性、实体关系、逻辑表、逻辑字段、表关系和事实表指标映射。
+- `logical_cleanup` 将命中的实体和逻辑表降为 `draft`，使其离开已审批 / 已物化语义；字段、关系、映射和分层不单独改写状态。
+- `physical_cleanup` 删除 Model-owned PostgreSQL 状态记录，删除顺序必须先映射、关系和字段，再删除逻辑表、实体和分层。
+- 没有明确 `tenant.deleted` lifecycle context 的普通 scan 不应把全部 Model 状态视作垃圾。
+- `engine.deleted` 第一阶段不扫描 Model 状态；Model 不解析 `materialization` 中的物理目标或引擎私有引用。
+- Model cleanup 第一阶段不删除 Standard 数据元、指标、维度层级或业务域，不删除已物化的外部物理表；这些物理产物只有在后续被明确登记为 Model-owned artifact state 后，才进入对应 owner executor。
+
+Standard 第一阶段 cleanup executor 只治理 Standard-owned 标准治理状态和标准文档文件：
+
+- `tenant.deleted` 时，扫描该租户下 Standard-owned 业务域、术语、数据元、码值、单位、分类分级、指标、维度层级、标准文档和文档关联状态。
+- `logical_cleanup` 将有状态的术语、数据元和指标置为 `deprecated`；标准文档文件不因逻辑清理删除。
+- `physical_cleanup` 在租户删除范围内删除 Standard-owned PostgreSQL 状态记录，并删除 `standard.documents.file_key` 明确登记的 `standard` bucket 文档对象。
+- 单个标准文档由用户显式删除时，可以同步删除 PG 状态和 `file_key` 指向的 MinIO 文件。
+- `engine.deleted` 不扫描 Standard 状态；标准治理材料和文档不受 engine 生命周期影响。
+- Standard cleanup 不删除引用它的 Model、Quality、Asset 等模块状态；跨模块引用残留由引用方 owner executor 自己治理。
+
+## 四、架构模型
+
+```mermaid
+flowchart TD
+    Console[Console / Admin UI] --> System[System cleanup coordinator]
+    System --> Request[cleanup.request]
+
+    Request --> Meta[Meta cleanup executor]
+    Request --> Manager[Manager cleanup executor]
+    Request --> Transfer[Transfer cleanup executor]
+    Request --> Other[Other module cleanup executor]
+
+    Meta --> MetaOwned[Meta-owned facts / indexes]
+    Manager --> ManagerOwned[Manager-owned artifact state / physical artifacts]
+    Transfer --> TransferOwned[Transfer-owned artifacts]
+    Other --> OtherOwned[Module-owned resources]
+
+    Meta --> Result[cleanup result]
+    Manager --> Result
+    Transfer --> Result
+    Other --> Result
+    Result --> System
+```
+
+## 五、请求语义
+
+cleanup request 必须保持中性。
+
+基础字段建议包括：
+
+| 字段 | 说明 |
+| --- | --- |
+| `task_id` | 本次 cleanup 任务 ID。 |
+| `action` | `scan` 或 `execute`。 |
+| `tenant_id` | 租户范围；全局清理使用显式全局语义，不能误用租户 0 作为兜底。 |
+| `expected_modules` | 本次期望响应的 executor 模块列表。 |
+| `based_on_scan` | execute 基于的 scan task ID。 |
+| `cleanup_mode` | `logical_cleanup` 或 `physical_cleanup`；scan 可为空。 |
+| `trigger_type` | `manual`、`scheduled` 或 `event`。 |
+| `cause_event` | 自动触发时的生命周期事件摘要，例如 `engine.deleted`。 |
+| `requested_by` | 发起用户。 |
+| `requested_at` | 发起时间。 |
+| `context` | 可选中性上下文，例如 engine / item / tenant lifecycle 目标。 |
+
+请求中不得包含：
+
+- Manager bucket、prefix、tile cache key。
+- Meta 表名、Manager 表名或模块私有字段。
+- 具体 artifact 删除 SQL。
+- executor 内部策略开关。
+
+`expected_modules` 默认行为必须明确：
+
+- 用户或 coordinator 显式指定模块时，只等待指定模块。
+- 未指定模块时，System 按 `module_registry.metadata.capabilities.cleanup_executor.enabled=true` 且状态为 `up` 的模块集合生成列表。
+- executor 收到请求后，如自身不在 `expected_modules` 中，必须忽略并不得写入结果。
+- `expected_modules` 不得硬编码在 System 或 UI；显式指定的模块也必须是已注册且启用 cleanup executor 的模块。
+
+## 六、scan 与 execute
+
+cleanup 分为两个动作，支持手动、事件驱动和定时触发：
+
+| 动作 | 语义 | 输出 |
+| --- | --- | --- |
+| `scan` | 发现可清理对象、估算影响、生成风险和空间摘要。 | cleanup result，包含模块级 scan statistics。 |
+| `execute` | 基于一次 scan 的结果执行清理。 | cleanup result，包含删除、标记、跳过、失败和释放空间摘要。 |
+
+触发方式：
+
+| 触发方式 | 适用场景 | 约束 |
+| --- | --- | --- |
+| `manual` | 租户管理员或系统管理员主动排查和治理。 | 可发起 scan；execute 必须基于已完成 scan。 |
+| `event` | engine deleted / disabled、tenant deleted、item deleted、source facts changed、config version changed 等生命周期事件。 | 默认只自动 scan 或低风险状态标记，不默认执行高风险 physical cleanup。 |
+| `scheduled` | 周期性发现历史残留、事件漏处理或外部漂移。 | 只负责发现和审计摘要；高风险 execute 仍需显式确认或策略授权。 |
+
+约束：
+
+- execute 必须基于明确的 `based_on_scan`。
+- execute 不应绕过 scan 重新解释另一套范围。
+- executor 可以在 execute 前做幂等复查，但复查结果必须在 result 中报告。
+- scan result 与 execute result 的关联必须可审计。
+- scan 不得产生副作用；必要的短期诊断缓存必须由 executor 自己负责过期。
+- event 触发的自动 scan 必须记录 `cause_event`，并能关联到后续 execute。
+- 自动 physical cleanup 只允许用于确定性缓存、已过保留期对象或已被策略明确授权的低风险资源；其他物理删除必须由管理员确认。
+
+## 七、清理模式
+
+cleanup 使用平台级 `cleanup_mode`，不使用数据库语境的 `soft_delete` / `hard_delete` 作为跨模块语言。
+
+| 模式 | 语义 | 典型处理 |
+| --- | --- | --- |
+| `logical_cleanup` | 逻辑清理。让对象离开活跃路径，但保留必要状态和摘要。 | Meta soft delete；Manager artifact state 标记 `deleted`、`missing_source` 或 `outdated`；任务定义禁用并记录原因。 |
+| `physical_cleanup` | 物理清理。删除实际资源。 | 删除对象存储 key、PG 派生对象、向量行、Redis key、缓存文件。 |
+
+模块映射规则：
+
+- Meta 可以把 `logical_cleanup` 映射为 GORM soft delete 或等价状态标记。
+- Manager 对有审计价值的 artifact state 优先逻辑标记，再按策略删除 physical artifact。
+- 纯缓存类资源可以没有逻辑状态，但必须通过 execution / audit 保留删除摘要。
+- System audit logs 不进入 physical cleanup；审计日志只能保留或归档，不由业务 cleanup 删除。
+- executor 如果不支持某种模式，必须在 cleanup result 中返回 `skipped` 和原因，不得静默忽略。
+
+## 八、结果模型
+
+cleanup result 分为通用字段和模块私有字段。
+
+通用字段建议包括：
+
+| 字段 | 说明 |
+| --- | --- |
+| `module` | executor 模块名。 |
+| `status` | `success`、`failed`、`partial_success`、`skipped` 或 `timeout`。 |
+| `action` | `scan` 或 `execute`。 |
+| `tenant_id` | 本次处理租户。 |
+| `task_id` | 对应 cleanup task。 |
+| `cleanup_mode` | `logical_cleanup` 或 `physical_cleanup`。 |
+| `trigger_type` | `manual`、`scheduled` 或 `event`。 |
+| `timestamp` | 完成时间。 |
+| `summary` | 面向 System 汇总的标准摘要。 |
+| `statistics` | 模块私有统计。 |
+| `details` | 模块私有明细，可分页或采样。 |
+| `errors` | 错误摘要列表。 |
+
+System 只能依赖 `summary` 中的标准摘要字段计算全局视图，不得硬编码解析 `statistics` 的模块私有字段。
+
+标准摘要建议包括：
+
+| 字段 | 说明 |
+| --- | --- |
+| `scanned_items` | scan 阶段发现的候选项数量。 |
+| `affected_records` | execute 阶段影响的状态记录数量。 |
+| `deleted_physical_artifacts` | 删除的物理产物数量。 |
+| `freed_bytes` | 释放空间字节数。 |
+| `marked_missing_source` | 标记源缺失的产物数量。 |
+| `marked_outdated` | 标记过期的产物数量。 |
+| `disabled_task_definitions` | 禁用的任务定义数量。 |
+| `skipped_items` | 跳过数量。 |
+| `error_count` | 错误数量。 |
+| `risk_level` | `low`、`medium`、`high`。 |
+
+模块可以在 `statistics` 中报告私有字段，例如 Manager 的 `deleted_tile_cache`、`deleted_embeddings`、`skipped_external_targets`，但 System 不应把这些字段写入 coordinator 的核心逻辑。
+
+## 九、监控与审计
+
+cleanup 必须同时进入 Monitor 和审计体系。
+
+### 1. Monitor
+
+cleanup 不纳入 Orchestrator 编排，但必须写入 `common.task_executions` 以供 Monitor 展示。
+
+推荐执行记录模型：
+
+- System 创建父 execution：
+  - `module=system`
+  - `task_type=cleanup`
+  - `trigger_type=manual`、`scheduled` 或 `event`
+  - `source=system`
+  - `execution_config` 保存 `action`、`cleanup_mode`、`expected_modules`、`based_on_scan`、`context`、`cause_event`
+- 各 cleanup executor 创建子 execution：
+  - `module=meta`、`manager`、`transfer` 等
+  - `task_type=cleanup_executor`
+  - `parent_execution_id` 指向 System 父 execution
+  - `metadata` 保存本模块 cleanup result 摘要和私有诊断
+
+Monitor 展示要求：
+
+- 能查看 cleanup 父子 execution 树。
+- 能按 tenant、module、action、cleanup_mode、trigger_type、status 查询。
+- 能展示 scan / execute 关联、耗时、错误、释放空间、影响记录数和模块结果。
+- 不提供 Orchestrator 编排入口，不提供 TaskProvider 创建 / 编辑入口。
+- 不直接读取 executor 私有表，只读取 `common.task_executions` 和 owner 模块公开只读诊断 API。
+
+### 2. 审计
+
+cleanup 必须写入 System 审计日志。审计回答“谁、何时、为什么、基于什么确认、影响什么范围”，Monitor 回答“执行过程和运行结果”。
+
+至少记录以下审计事件：
+
+| 事件 | 触发时机 | 关键字段 |
+| --- | --- | --- |
+| `cleanup.scan.created` | scan 请求创建。 | actor、tenant、expected_modules、trigger_type、cause_event、context。 |
+| `cleanup.execute.created` | execute 请求创建。 | actor、tenant、based_on_scan、cleanup_mode、expected_modules、context。 |
+| `cleanup.execute.confirmed` | 管理员确认高风险 execute。 | actor、based_on_scan、risk_level、cleanup_mode、确认时间。 |
+| `cleanup.completed` | cleanup 父 execution 完成。 | task_id、execution_id、status、summary。 |
+| `cleanup.failed` | cleanup 父 execution 失败或部分失败。 | task_id、execution_id、failed_modules、errors。 |
+
+手动触发的 actor 是当前用户；事件触发或定时触发的 actor 是 `system`，但必须记录 `cause_event` 或 schedule 信息。审计日志不随 cleanup physical cleanup 删除。
+
+## 十、生命周期事件
+
+cleanup 不等于所有生命周期事件都必须由 System 同步调度。
+
+推荐模型：
+
+| 事件 | 发布方 | 处理方式 |
+| --- | --- | --- |
+| engine deleted / disabled | System | 自动触发 cleanup scan；只有 owner 模块明确把某类运行配置定义判定为强绑定 engine 且不可替换时，才可禁用并记录 `missing_engine`；用户创作成果类定义不因 engine 生命周期自动清理，physical cleanup 需管理员确认或策略授权。 |
+| tenant deleted | System | 必须触发 system-owned cleanup execution，各模块清理本租户 owner 资源并写审计摘要；System 审计日志保留。 |
+| item deleted | Meta 或 item owner | 相关模块标记 artifact state 为 `missing_source`，并按策略清理物理产物。 |
+| source facts changed | Meta | 相关模块优先标记派生产物 `outdated`；查询和执行时做惰性复查。 |
+| config version changed | 配置 owner 模块 | 相关 executor 标记或扫描受影响产物；按产物类型比较 config version。 |
+
+事件处理原则：
+
+- 事件只携带中性身份和必要上下文。
+- 模块内部资源清理由模块自己决定。
+- 需要管理员确认、风险评估或跨模块审计时，使用 cleanup request。
+- 不需要用户确认的幂等缓存失效可以由模块内部直接处理，但仍应保留必要日志。
+- 生命周期事件可以自动触发 scan；高风险 execute 不得因为事件发生而默认执行。
+- `tenant deleted` 触发的 cleanup 中，`tenant_id` 是历史审计主体和资源归属范围；即使租户记录已离开活跃租户列表，Monitor、审计和 executor 仍应允许按该历史 `tenant_id` 写入 execution / result，不应把“租户已删除”解释为 cleanup 上下文非法。
+
+## 十一、与任务体系的关系
+
+cleanup 不纳入 TaskProvider，也不进入 Orchestrator 编排。
+
+约束：
+
+- cleanup 不能声明为可编排任务类型。
+- cleanup 不能出现在 Orchestrator 任务选择列表。
+- cleanup executor 不应通过 TaskProvider 注册 cleanup 能力。
+- cleanup 必须写入 `common.task_executions`，但只能作为系统运维执行记录，用于 Monitor 展示、审计和排障。
+- cleanup scan / execute 分别产生 execution；execute 通过 `based_on_scan` 和 execution metadata 关联 scan。
+
+## 十二、禁止规则
+
+以下行为一律视为 cleanup 体系缺陷：
+
+1. Meta 读取 Manager 私有表或删除 Manager-owned 物理产物。
+2. System 读取业务模块私有表或删除业务模块物理产物。
+3. `common` 写入模块私有 bucket、prefix、表结构或 artifact 类型。
+4. executor 清理非本模块 owner 的资源。
+5. 通过硬编码路径代替 `storage_ref`、artifact state 或 owner 模块 repository。
+6. scan 阶段执行删除、标记 stale、失效缓存等副作用。
+7. execute 未基于明确 scan 结果直接执行高风险删除。
+8. 为兼容旧路径同时保留两套 cleanup 主路径。
+9. 将 cleanup 注册为 Orchestrator 可编排任务。
+10. 在物理删除失败时把 artifact state 伪装成已清理。
+11. 用数据库 `soft_delete` / `hard_delete` 作为跨模块 cleanup 公共语言。
+12. cleanup 不写 Monitor execution 或不写审计日志。
+
+## 十三、迁移状态
+
+当前迁移遵循单一路线，不保留兼容分支：
+
+| 步骤 | 状态 |
+| --- | --- |
+| 固化平台级规范，更新术语表和文档入口。 | 已完成 |
+| 调整 `common/events` cleanup request / result 模型，使用 `cleanup_mode`、`trigger_type`、`cause_event` 和标准 `summary`，去除模块私有统计汇总耦合。 | 已完成 |
+| System cleanup 写入 `common.task_executions` 和 `system.audit_logs`，形成父 execution 和审计主链路。 | 已完成 |
+| Manager 接入 cleanup executor，按 Manager repository / service 清理 Manager-owned artifact。 | 已完成主路径 |
+| Standard 接入 cleanup executor，按 Standard repository / service 清理 Standard-owned 治理状态和标准文档文件。 | 已完成主路径 |
+| System cleanup UI 改为模块化展示，不硬编码 Meta 或 Manager 私有统计字段。 | 已完成 |
+| System cleanup UI 提供 Monitor 跳转。 | 已完成 |
+| 从 Meta 移除对 Manager 表、Manager bucket 和 System bucket 的直接 cleanup 逻辑。 | 已完成 |
+| 清理旧协议字段、旧 bucket prefix 假设、`soft_delete` / `hard_delete` 跨模块语义和双轨实现。 | 已完成主路径；保留文档中的禁止规则说明 |
+| Manager 任务定义残留治理，例如 embedding / tile cache / quick view optimization 任务定义的禁用或归档。 | 已完成主路径 |
+| Meta 扫描任务定义残留治理，例如 engine 删除后强绑定该 engine 的自动扫描任务定义禁用或删除。 | 已完成主路径 |
+| Transfer 任务定义残留治理，例如 engine 删除后引用该 engine 的传输任务定义禁用或删除。 | 已完成主路径 |
+| Service 服务发布定义残留治理，例如 engine 删除后引用该 engine 的查询服务、图查询服务和动态图层禁用或删除。 | 已完成主路径 |
+| Quality 质量配置和问题状态残留治理，例如 engine 删除后引用该 engine 的规则应用、检查任务和问题工单禁用、忽略或删除。 | 已完成主路径 |
+| Develop 开发任务定义残留治理，仅在 tenant 删除范围内归档或删除；engine 删除不清理用户创作型任务定义。 | 已完成主路径 |
+| Graph 图谱建模和构建状态残留治理，例如 engine 删除后绑定该 engine 的知识图谱实例归档、未完成构建任务取消，tenant 删除后 Graph-owned PG 状态删除。 | 已完成主路径 |
+| Asset 资产目录、资产和授权状态残留治理，例如 tenant 删除后资产下架、授权撤销或 Asset-owned PG 状态删除。 | 已完成主路径 |
+| Model 建模状态残留治理，例如 tenant 删除后实体和逻辑表降为 draft 或 Model-owned PG 状态删除。 | 已完成主路径 |
+| engine / tenant 生命周期事件触发自动 cleanup scan，并通过 `cause_event` / `context` 限定后续 executor 范围。 | 已完成主路径 |
+| `expected_modules` 从模块注册或 cleanup capability 生成，并由 executor 统一按公共协议 helper 判断是否响应。 | 已完成主路径 |
+
+## 十四、已确认决策
+
+以下决策作为后续实现约束：
+
+| 问题 | 决策 |
+| --- | --- |
+| item 删除后 artifact state 如何处理 | 有审计和诊断价值的 artifact state 默认标记 `missing_source`，从活跃查询中隐藏；纯缓存可物理删除，但必须保留 execution / audit 摘要。 |
+| engine 删除后任务定义如何处理 | 自动触发 scan；只有 owner 模块明确判定为强绑定且不可替换的运行配置类任务定义，才默认禁用并记录 `missing_engine`；SQL、workflow、script、Notebook 等用户创作成果不因 engine 生命周期自动清理。 |
+| tenant 删除后如何处理 cleanup | 必须通过 system-owned cleanup execution 汇总各模块结果；业务资源可清理，System 审计日志保留或归档。 |
+| 源事实变化后如何处理派生产物 | 主路径是事件驱动标记 `outdated`；查询和执行时做惰性复查作为防线；不因 facts 变化直接物理删除派生产物。 |
+| 配置变化如何判断产物过期 | 按产物类型保存和比较 `source_version`、`config_version`；不使用一个粗粒度全局版本覆盖所有产物。 |
+| cleanup 是否进入 `common.task_executions` | 必须进入。System 创建父 execution，各 executor 创建子 execution，Monitor 展示父子树。 |
+| cleanup 是否进入审计体系 | 必须进入。scan、execute、确认、完成、失败都写 System 审计日志。 |
+| Standard 文档文件和 PG 状态的删除边界 | `logical_cleanup` 不删除文件；`physical_cleanup` 删除 `standard.documents.file_key` 指向的 MinIO 文件和 Standard-owned PG 状态；用户显式删除单个文档时也可同步删除 PG+文件。 |

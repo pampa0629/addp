@@ -4,12 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"strings"
 
 	"github.com/addp/common/client"
 	"github.com/addp/common/duckdb"
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/resourcetree"
 	"github.com/addp/service/internal/models"
 	"github.com/addp/service/internal/repository"
 )
@@ -18,6 +18,14 @@ type QueryServiceService struct {
 	repo       *repository.QueryServiceRepository
 	metaClient *client.MetaClient
 	baseURL    string // 服务的基础URL（用于构建端点）
+}
+
+type tableResourceRef struct {
+	Locator    string
+	EngineID   uint
+	SchemaName string
+	TableName  string
+	ItemID     uint
 }
 
 func NewQueryServiceService(repo *repository.QueryServiceRepository, metaClient *client.MetaClient, baseURL string) *QueryServiceService {
@@ -35,16 +43,17 @@ func (s *QueryServiceService) CreateService(req *models.CreateQueryServiceReques
 		return nil, errors.New("invalid config_type: must be 'table' or 'sql'")
 	}
 
+	var tableRef *tableResourceRef
+	var err error
+
 	// 2. Table模式的特殊验证
 	if req.ConfigType == "table" {
-		if req.EngineID == nil || *req.EngineID == 0 {
-			return nil, errors.New("engine_id is required for table mode")
-		}
-		if req.SchemaName == "" || req.TableName == "" {
-			return nil, errors.New("schema_name and table_name are required for table mode")
-		}
 		if req.SqlQuery != "" {
 			return nil, errors.New("sql_query should not be provided in table mode")
+		}
+		tableRef, err = tableResourceRefFromRequest(req)
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -76,16 +85,21 @@ func (s *QueryServiceService) CreateService(req *models.CreateQueryServiceReques
 
 	// 6. Table模式：自动检测空间字段 / 对象表信息
 	if req.ConfigType == "table" {
-		engineID := *req.EngineID
+		engineID := tableRef.EngineID
+		req.EngineID = &engineID
+		req.SchemaName = tableRef.SchemaName
+		req.TableName = tableRef.TableName
+		dataConfig["locator"] = tableRef.Locator
+
 		// 先尝试从 Meta 获取对象存储表信息。
-		objectTable := s.detectObjectTable(tenantID, engineID, req.SchemaName, req.TableName)
+		objectTable := s.detectObjectTable(tenantID, tableRef.ItemID)
 		if len(objectTable) > 0 {
 			dataConfig["object_table"] = objectTable
 		} else {
 			// 关系型表：检测空间字段
-			spatialMeta, err := s.metaClient.WithTenantID(tenantID).GetItemSpatialMetadataByCatalogPath(engineID, fmt.Sprintf("%s.%s", req.SchemaName, req.TableName))
+			spatialMeta, err := s.metaClient.WithTenantID(tenantID).GetItemSpatialMetadataByID(tableRef.ItemID)
 			if err != nil {
-				log.Printf("Warning: failed to get spatial metadata for table %s.%s: %v", req.SchemaName, req.TableName, err)
+				log.Printf("Warning: failed to get spatial metadata for locator %s: %v", tableRef.Locator, err)
 			} else if spatialMeta != nil && spatialMeta.GeometryColumn != "" {
 				dataConfig["geometry"] = map[string]interface{}{
 					"has_geometry": true,
@@ -147,18 +161,14 @@ func (s *QueryServiceService) CreateService(req *models.CreateQueryServiceReques
 }
 
 // detectObjectTable 通过 Meta 标准 attributes 判断是否为对象存储表格资源。
-func (s *QueryServiceService) detectObjectTable(tenantID, engineID uint, schemaName, tableName string) map[string]interface{} {
+func (s *QueryServiceService) detectObjectTable(tenantID, itemID uint) map[string]interface{} {
 	if s.metaClient == nil {
 		log.Printf("[detectObjectTable] metaClient is nil, skipping object table detection")
 		return nil
 	}
-	catalogPath := tableName
-	if schemaName != "" {
-		catalogPath = strings.Trim(schemaName+"."+tableName, ".")
-	}
-	item, err := s.metaClient.WithTenantID(tenantID).GetItemByCatalogPath(engineID, catalogPath)
+	item, err := s.metaClient.WithTenantID(tenantID).GetItemByID(itemID)
 	if err != nil {
-		log.Printf("[detectObjectTable] GetItemByCatalogPath(engineID=%d, catalogPath=%s) failed: %v", engineID, catalogPath, err)
+		log.Printf("[detectObjectTable] GetItemByID(itemID=%d) failed: %v", itemID, err)
 		return nil
 	}
 	objectTable := objectTableConfigFromMetaItem(item)
@@ -166,6 +176,39 @@ func (s *QueryServiceService) detectObjectTable(tenantID, engineID uint, schemaN
 		return nil
 	}
 	return objectTable
+}
+
+func tableResourceRefFromRequest(req *models.CreateQueryServiceRequest) (*tableResourceRef, error) {
+	if req.DataConfig == nil {
+		return nil, errors.New("data_config.locator is required for table mode")
+	}
+	locator, ok := req.DataConfig["locator"].(string)
+	if !ok || locator == "" {
+		return nil, errors.New("data_config.locator is required for table mode")
+	}
+	loc, err := resourcetree.ParseURI(locator)
+	if err != nil {
+		return nil, fmt.Errorf("invalid data_config.locator: %w", err)
+	}
+	if loc.Type != resourcetree.TypeTable {
+		return nil, fmt.Errorf("data_config.locator must reference a table resource, got %s", loc.Type)
+	}
+	if loc.ItemID == nil || *loc.ItemID == 0 {
+		return nil, errors.New("data_config.locator must include item_id for table mode")
+	}
+	if req.EngineID != nil && *req.EngineID != 0 && *req.EngineID != loc.EngineID {
+		return nil, fmt.Errorf("engine_id %d does not match locator engine_id %d", *req.EngineID, loc.EngineID)
+	}
+	if len(loc.Path) < 2 {
+		return nil, errors.New("data_config.locator path must include schema and table")
+	}
+	return &tableResourceRef{
+		Locator:    locator,
+		EngineID:   loc.EngineID,
+		SchemaName: loc.Path[len(loc.Path)-2],
+		TableName:  loc.Path[len(loc.Path)-1],
+		ItemID:     *loc.ItemID,
+	}, nil
 }
 
 func objectTableConfigFromMetaItem(item *commonModels.MetaItem) map[string]interface{} {

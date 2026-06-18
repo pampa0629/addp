@@ -2,6 +2,7 @@ package data
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -11,12 +12,28 @@ import (
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/resourcetree"
 	"github.com/addp/service/internal/models"
 )
 
 type QueryService struct {
 	systemClient *commonClient.SystemClient
 	metaClient   *commonClient.MetaClient
+}
+
+type tableResourceRef struct {
+	Locator    string
+	EngineID   uint
+	SchemaName string
+	TableName  string
+	ItemID     uint
+}
+
+var errInvalidResourceLocator = errors.New("invalid resource locator")
+
+// IsInvalidResourceLocatorError 判断错误是否来自资源定位输入本身。
+func IsInvalidResourceLocatorError(err error) bool {
+	return errors.Is(err, errInvalidResourceLocator)
 }
 
 func NewQueryService(systemClient *commonClient.SystemClient, metaClient *commonClient.MetaClient) *QueryService {
@@ -29,9 +46,13 @@ func NewQueryService(systemClient *commonClient.SystemClient, metaClient *common
 // Query 执行数据查询（数据服务核心功能）
 func (s *QueryService) Query(ctx context.Context, req *models.DataQueryRequest) (*models.DataQueryResponse, error) {
 	startTime := time.Now()
+	tableRef, err := tableRefFromLocator(req.Locator)
+	if err != nil {
+		return nil, err
+	}
 
 	// 1. 获取引擎配置
-	engine, err := s.systemClient.GetEngine(req.EngineID)
+	engine, err := s.systemClient.GetEngine(tableRef.EngineID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get engine: %w", err)
 	}
@@ -43,14 +64,14 @@ func (s *QueryService) Query(ctx context.Context, req *models.DataQueryRequest) 
 	}
 
 	// 3. 获取列信息
-	metadata, err := describeTabularItemFacts(ctx, engine, req.Schema, req.Table, plugin.CatalogFactsOptions{})
+	metadata, err := describeTabularItemFacts(ctx, engine, tableRef.SchemaName, tableRef.TableName, plugin.CatalogFactsOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list columns: %w", err)
 	}
 	columnsInfo := columnInfosFromMetadata(metadata)
 
 	if len(columnsInfo) == 0 {
-		return nil, fmt.Errorf("table %s.%s not found or has no columns", req.Schema, req.Table)
+		return nil, fmt.Errorf("table %s.%s not found or has no columns", tableRef.SchemaName, tableRef.TableName)
 	}
 
 	// 4. 构建 SELECT 子句
@@ -100,7 +121,7 @@ func (s *QueryService) Query(ctx context.Context, req *models.DataQueryRequest) 
 	}
 
 	// 6. 构建完整 SQL 查询
-	tableName := fmt.Sprintf("%s.%s", req.Schema, req.Table)
+	tableName := fmt.Sprintf("%s.%s", tableRef.SchemaName, tableRef.TableName)
 	sqlQuery := fmt.Sprintf("SELECT %s FROM %s", selectClause, tableName)
 
 	// 添加 WHERE 条件
@@ -225,9 +246,13 @@ func (s *QueryService) Query(ctx context.Context, req *models.DataQueryRequest) 
 // Aggregate 执行聚合查询
 func (s *QueryService) Aggregate(ctx context.Context, req *models.AggregationRequest) (*models.AggregationResponse, error) {
 	startTime := time.Now()
+	tableRef, err := tableRefFromLocator(req.Locator)
+	if err != nil {
+		return nil, err
+	}
 
 	// 1. 获取引擎配置
-	engine, err := s.systemClient.GetEngine(req.EngineID)
+	engine, err := s.systemClient.GetEngine(tableRef.EngineID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get engine: %w", err)
 	}
@@ -275,7 +300,7 @@ func (s *QueryService) Aggregate(ctx context.Context, req *models.AggregationReq
 		return nil, fmt.Errorf("no aggregation specified")
 	}
 
-	tableName := fmt.Sprintf("%s.%s", req.Schema, req.Table)
+	tableName := fmt.Sprintf("%s.%s", tableRef.SchemaName, tableRef.TableName)
 	sqlQuery := fmt.Sprintf("SELECT %s FROM %s", strings.Join(selectParts, ", "), tableName)
 
 	// 添加 WHERE 条件
@@ -354,25 +379,30 @@ func (s *QueryService) Aggregate(ctx context.Context, req *models.AggregationReq
 }
 
 // GetTableStructure 获取表结构信息（列名、类型等）
-func (s *QueryService) GetTableStructure(ctx context.Context, engineID uint, schema, table string) ([]models.ColumnInfo, error) {
+func (s *QueryService) GetTableStructure(ctx context.Context, locator string) ([]models.ColumnInfo, error) {
+	tableRef, err := tableRefFromLocator(locator)
+	if err != nil {
+		return nil, err
+	}
+
 	// 1. 获取引擎配置
-	engine, err := s.systemClient.GetEngine(engineID)
+	engine, err := s.systemClient.GetEngine(tableRef.EngineID)
 	if err != nil {
 		return nil, fmt.Errorf("获取引擎失败: %w", err)
 	}
 
 	// 2. 获取列信息：dbbridge 内部走 CatalogFactsProvider。
-	metadata, err := describeTabularItemFacts(ctx, engine, schema, table, plugin.CatalogFactsOptions{})
+	metadata, err := describeTabularItemFacts(ctx, engine, tableRef.SchemaName, tableRef.TableName, plugin.CatalogFactsOptions{})
 	if err != nil {
 		if strings.Contains(err.Error(), "does not exist") || strings.Contains(err.Error(), "not found") {
-			return nil, fmt.Errorf("表 %s.%s 不存在", schema, table)
+			return nil, fmt.Errorf("表 %s.%s 不存在", tableRef.SchemaName, tableRef.TableName)
 		}
 		return nil, fmt.Errorf("获取列信息失败: %w", err)
 	}
 	columnsInfo := columnInfosFromMetadata(metadata)
 
 	if len(columnsInfo) == 0 {
-		return nil, fmt.Errorf("表 %s.%s 没有列或不存在", schema, table)
+		return nil, fmt.Errorf("表 %s.%s 没有列或不存在", tableRef.SchemaName, tableRef.TableName)
 	}
 
 	// 4. 转换为响应格式
@@ -385,8 +415,34 @@ func (s *QueryService) GetTableStructure(ctx context.Context, engineID uint, sch
 		}
 	}
 
-	log.Printf("[DataService] 获取表结构成功: %s.%s (%d 列)", schema, table, len(result))
+	log.Printf("[DataService] 获取表结构成功: %s.%s (%d 列)", tableRef.SchemaName, tableRef.TableName, len(result))
 	return result, nil
+}
+
+func tableRefFromLocator(locator string) (*tableResourceRef, error) {
+	if strings.TrimSpace(locator) == "" {
+		return nil, fmt.Errorf("%w: locator is required", errInvalidResourceLocator)
+	}
+	loc, err := resourcetree.ParseURI(locator)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", errInvalidResourceLocator, err)
+	}
+	if loc.Type != resourcetree.TypeTable {
+		return nil, fmt.Errorf("%w: locator must reference a table resource, got %s", errInvalidResourceLocator, loc.Type)
+	}
+	if loc.ItemID == nil || *loc.ItemID == 0 {
+		return nil, fmt.Errorf("%w: locator must include item_id", errInvalidResourceLocator)
+	}
+	if len(loc.Path) < 2 {
+		return nil, fmt.Errorf("%w: locator path must include schema and table", errInvalidResourceLocator)
+	}
+	return &tableResourceRef{
+		Locator:    locator,
+		EngineID:   loc.EngineID,
+		SchemaName: loc.Path[len(loc.Path)-2],
+		TableName:  loc.Path[len(loc.Path)-1],
+		ItemID:     *loc.ItemID,
+	}, nil
 }
 
 // needsQuoting 判断 PostgreSQL 列名是否需要双引号

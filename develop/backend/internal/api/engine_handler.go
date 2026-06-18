@@ -2,8 +2,6 @@ package api
 
 import (
 	"net/http"
-	"strconv"
-	"strings"
 
 	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
@@ -54,70 +52,6 @@ func (h *EngineHandler) ListEngines(c *gin.Context) {
 
 	// 返回引擎列表（与前端期望的格式一致）
 	c.JSON(http.StatusOK, engines)
-}
-
-// ListNfsEngines 获取 NFS 引擎列表（供工作流 NFS 文件选择器使用）
-// @Summary 获取 NFS 存储引擎列表 | List NFS storage engines
-// @Tags Engines
-// @Produce json
-// @Success 200 {array} commonModels.Engine "NFS 引擎列表"
-// @Router /engines/nfs [get]
-func (h *EngineHandler) ListNfsEngines(c *gin.Context) {
-	tenantID := c.GetUint("tenant_id")
-
-	engines, err := h.systemClient.ListEngines("nfs", tenantID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "获取NFS引擎列表失败",
-			"details": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, engines)
-}
-
-// ListCatalogChildren 获取指定引擎的实时 catalog 子节点。
-// @Summary 获取实时 catalog 子节点 | List live catalog children
-// @Tags Engines
-// @Accept json
-// @Produce json
-// @Param id path int true "引擎ID | Engine ID"
-// @Param request body commonClient.EngineCatalogListChildrenRequest true "Catalog 路径请求 | Catalog path request"
-// @Success 200 {object} commonClient.EngineCatalogListChildrenResponse "Catalog 子节点 | Catalog children"
-// @Router /engines/{id}/catalog/children [post]
-func (h *EngineHandler) ListCatalogChildren(c *gin.Context) {
-	engineIDStr := c.Param("id")
-	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的引擎ID"})
-		return
-	}
-
-	var req commonClient.EngineCatalogListChildrenRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	nodes, err := h.systemClient.ListCatalogChildrenWithToken(uint(engineID), req, bearerToken(c))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "获取 catalog 子节点失败",
-			"details": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, commonClient.EngineCatalogListChildrenResponse{Nodes: nodes})
-}
-
-func bearerToken(c *gin.Context) string {
-	authHeader := c.GetHeader("Authorization")
-	if len(authHeader) > 7 && strings.EqualFold(authHeader[:7], "Bearer ") {
-		return authHeader[7:]
-	}
-	return ""
 }
 
 // ListWorkflowEngines 获取工作流引擎列表

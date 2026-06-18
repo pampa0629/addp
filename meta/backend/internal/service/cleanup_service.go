@@ -9,22 +9,25 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/events"
+	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metacleanup"
 	"github.com/addp/meta/internal/models"
+	"github.com/addp/meta/internal/scantask"
 	"github.com/addp/meta/internal/search"
-	"github.com/minio/minio-go/v7"
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
-// CleanupService 负责定期清理软删除的记录和处理垃圾数据清理事件
+// CleanupService 负责定期清理已逻辑删除的记录和处理垃圾数据清理事件
 type CleanupService struct {
 	db              *gorm.DB
 	redis           *redis.Client
 	dbCleaner       *metacleanup.DatabaseCleaner
 	searchCleaner   *metacleanup.MeilisearchCleaner
-	minioCleaner    *metacleanup.MinIOCleaner
+	taskExecRepo    *commonExecution.TaskExecutionRepository
 	log             *slog.Logger
 	retentionDays   int
 	cleanupInterval time.Duration
@@ -54,7 +57,6 @@ func NewCleanupService(
 	redisClient *redis.Client,
 	systemClient *commonClient.SystemClient,
 	indexer *search.Indexer,
-	minioClient *minio.Client,
 	config CleanupConfig,
 ) *CleanupService {
 	if config.RetentionDays == 0 {
@@ -69,7 +71,7 @@ func NewCleanupService(
 		redis:           redisClient,
 		dbCleaner:       metacleanup.NewDatabaseCleaner(db, systemClient, logger.With("component", "cleanup_database")),
 		searchCleaner:   metacleanup.NewMeilisearchCleaner(indexer, logger.With("component", "cleanup_meilisearch")),
-		minioCleaner:    metacleanup.NewMinIOCleaner(minioClient, logger.With("component", "cleanup_minio")),
+		taskExecRepo:    commonExecution.NewTaskExecutionRepository(db),
 		log:             logger.With("component", "cleanup_service"),
 		retentionDays:   config.RetentionDays,
 		cleanupInterval: config.CleanupInterval,
@@ -124,7 +126,7 @@ func (s *CleanupService) scheduleCleanup(ctx context.Context) {
 // runCleanup 执行清理任务
 func (s *CleanupService) runCleanup(ctx context.Context) {
 	startTime := time.Now()
-	s.log.Info("开始清理软删除记录", "retention_days", s.retentionDays)
+	s.log.Info("开始清理已逻辑删除记录", "retention_days", s.retentionDays)
 
 	expiryTime := time.Now().AddDate(0, 0, -s.retentionDays)
 
@@ -259,63 +261,87 @@ func (s *CleanupService) handleCleanupRequest(ctx context.Context, message redis
 		s.log.Error("解析清理请求失败", "error", err, "message_id", message.ID, "values", message.Values)
 		return
 	}
+	if !events.CleanupExpectedForModule(event.ExpectedModules, events.ModuleMeta) {
+		return
+	}
 
 	s.log.Info("收到清理请求",
 		"task_id", event.TaskID,
 		"action", event.Action,
 		"tenant_id", event.TenantID,
-		"delete_type", event.DeleteType,
+		"cleanup_mode", event.CleanupMode,
 		"expected_modules", event.ExpectedModules)
 
 	result := events.CleanupResultData{
-		Module:    events.ModuleMeta,
-		Timestamp: time.Now(),
+		Module:      events.ModuleMeta,
+		Action:      event.Action,
+		TenantID:    event.TenantID,
+		TaskID:      event.TaskID,
+		CleanupMode: event.CleanupMode,
+		TriggerType: event.TriggerType,
+		Timestamp:   time.Now(),
+	}
+
+	exec, startedAt, execErr := s.createExecutorExecution(ctx, event)
+	if execErr != nil {
+		s.log.Error("创建 Meta cleanup executor execution 失败", "error", execErr, "task_id", event.TaskID)
 	}
 
 	// 无论成功失败都写入响应
 	defer func() {
+		if exec != nil {
+			s.finishExecutorExecution(ctx, exec.ExecutionID, event.TenantID, startedAt, result)
+		}
 		s.writeResult(ctx, event.TaskID, result)
 	}()
 
 	// 根据动作类型处理
 	switch event.Action {
 	case events.CleanupActionScan:
-		stats, err := s.ScanGarbage(ctx, event.TenantID)
+		stats, err := s.ScanGarbage(ctx, event.TenantID, event.Context)
 		if err != nil {
-			result.Status = "failed"
-			result.Error = err.Error()
+			result.Status = events.CleanupResultFailed
+			result.Errors = []string{err.Error()}
 			s.log.Error("扫描垃圾数据失败", "error", err, "tenant_id", event.TenantID)
 			return
 		}
-		result.Status = "success"
+		result.Status = events.CleanupResultSuccess
 		result.Statistics = metacleanup.ToMap(stats)
+		result.Summary = metaScanSummary(stats)
 		s.log.Info("扫描垃圾数据完成", "tenant_id", event.TenantID, "task_id", event.TaskID)
 
 	case events.CleanupActionExecute:
-		execResult, err := s.ExecuteCleanup(ctx, event.TenantID, event.DeleteType)
+		execResult, err := s.ExecuteCleanup(ctx, event.TenantID, event.CleanupMode, event.Context)
 		if err != nil {
-			result.Status = "failed"
-			result.Error = err.Error()
+			result.Status = events.CleanupResultFailed
+			result.Errors = []string{err.Error()}
 			s.log.Error("执行清理失败", "error", err, "tenant_id", event.TenantID)
 			return
 		}
-		result.Status = "success"
+		if len(execResult.Errors) > 0 {
+			result.Status = events.CleanupResultPartialSuccess
+			result.Errors = execResult.Errors
+		} else {
+			result.Status = events.CleanupResultSuccess
+		}
 		result.Statistics = metacleanup.ToMap(execResult)
+		result.Summary = metaExecuteSummary(execResult)
 		s.log.Info("执行清理完成", "tenant_id", event.TenantID, "task_id", event.TaskID)
 
 	default:
-		result.Status = "failed"
-		result.Error = "unknown action: " + event.Action
+		result.Status = events.CleanupResultFailed
+		result.Errors = []string{"unknown action: " + event.Action}
 		s.log.Error("未知的清理动作", "action", event.Action)
 	}
 }
 
 // ScanGarbage 扫描垃圾数据
-func (s *CleanupService) ScanGarbage(ctx context.Context, tenantID uint) (*models.MetaCleanupStatistics, error) {
+func (s *CleanupService) ScanGarbage(ctx context.Context, tenantID uint, cleanupContext map[string]interface{}) (*models.MetaCleanupStatistics, error) {
 	stats := &models.MetaCleanupStatistics{}
+	scope := metacleanup.ScopeFromContext(cleanupContext)
 
 	// 1. 扫描无效引擎的数据
-	invalidEngines, err := s.dbCleaner.ScanInvalidEngines(ctx, tenantID)
+	invalidEngines, err := s.dbCleaner.ScanInvalidEnginesWithScope(ctx, tenantID, scope)
 	if err != nil {
 		return nil, fmt.Errorf("扫描无效引擎失败: %w", err)
 	}
@@ -342,14 +368,14 @@ func (s *CleanupService) ScanGarbage(ctx context.Context, tenantID uint) (*model
 	stats.ExpiredData.Count = expiredCount
 	stats.ExpiredData.ThresholdDays = 90
 
-	// 4. 扫描软删除数据
-	softDeletedNodes, softDeletedItems, err := s.dbCleaner.ScanSoftDeleted(ctx, tenantID)
+	// 4. 扫描逻辑清理候选
+	logicalCleanupNodes, logicalCleanupItems, err := s.dbCleaner.ScanLogicalCleanupCandidatesWithScope(ctx, tenantID, scope)
 	if err != nil {
-		return nil, fmt.Errorf("扫描软删除数据失败: %w", err)
+		return nil, fmt.Errorf("扫描逻辑清理候选失败: %w", err)
 	}
-	stats.SoftDeleted.Nodes = softDeletedNodes
-	stats.SoftDeleted.Items = softDeletedItems
-	stats.SoftDeleted.CanRecover = true
+	stats.LogicalCleanupCandidates.Nodes = logicalCleanupNodes
+	stats.LogicalCleanupCandidates.Items = logicalCleanupItems
+	stats.LogicalCleanupCandidates.CanRecover = true
 
 	// 5. 扫描重复fingerprint
 	duplicateCount, err := s.dbCleaner.ScanDuplicateFingerprints(ctx, tenantID)
@@ -360,7 +386,7 @@ func (s *CleanupService) ScanGarbage(ctx context.Context, tenantID uint) (*model
 
 	// 6. 扫描 Meilisearch 垃圾（新增）
 	if s.searchCleaner != nil && s.searchCleaner.Enabled() {
-		meilisearchStats, err := s.searchCleaner.ScanGarbage(ctx, tenantID, s.dbCleaner.InvalidEngineIDs(ctx, tenantID))
+		meilisearchStats, err := s.searchCleaner.ScanGarbage(ctx, tenantID, s.dbCleaner.InvalidEngineIDsWithScope(ctx, tenantID, scope))
 		if err != nil {
 			s.log.Error("扫描 Meilisearch 垃圾失败", "error", err)
 			// 不中断整体扫描流程
@@ -375,43 +401,32 @@ func (s *CleanupService) ScanGarbage(ctx context.Context, tenantID uint) (*model
 		}
 	}
 
-	// 7. 扫描 MinIO 垃圾（新增）
-	if s.minioCleaner != nil && s.minioCleaner.Enabled() {
-		minioStats, err := s.minioCleaner.ScanGarbage(ctx, s.dbCleaner.InvalidFingerprints(ctx, s.dbCleaner.InvalidEngineIDs(ctx, tenantID)))
-		if err != nil {
-			s.log.Error("扫描 MinIO 垃圾失败", "error", err)
-			// 不中断整体扫描流程
-		} else {
-			stats.MinIOObjects.Count = minioStats.TotalCount
-			stats.MinIOObjects.TotalSizeBytes = minioStats.TotalSizeBytes
-			stats.MinIOObjects.TotalSizeMB = minioStats.TotalSizeMB
-			stats.MinIOObjects.ByBucket = minioStats.ByBucket
-			if len(minioStats.Samples) > 10 {
-				stats.MinIOObjects.Sample = minioStats.Samples[:10]
-			} else {
-				stats.MinIOObjects.Sample = minioStats.Samples
-			}
-		}
+	// 7. 扫描 Meta-owned 扫描任务定义残留。
+	scanTaskDefinitionCount, err := s.scanInvalidEngineScanTaskDefinitions(ctx, tenantID, scope)
+	if err != nil {
+		return nil, fmt.Errorf("扫描扫描任务定义残留失败: %w", err)
 	}
+	stats.ScanTaskDefinitions.Count = scanTaskDefinitionCount
 
 	return stats, nil
 }
 
 // ExecuteCleanup 执行清理
-func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, deleteType string) (*models.MetaCleanupExecuteResult, error) {
+func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, cleanupMode string, cleanupContext map[string]interface{}) (*models.MetaCleanupExecuteResult, error) {
 	result := &models.MetaCleanupExecuteResult{}
+	scope := metacleanup.ScopeFromContext(cleanupContext)
 
-	// 根据删除类型执行数据库清理
+	// 根据清理模式执行数据库清理
 	var dbResult *models.MetaCleanupExecuteResult
 	var err error
 
-	switch deleteType {
-	case events.DeleteTypeSoft:
-		dbResult, err = s.dbCleaner.ExecuteSoftDelete(ctx, tenantID, s.dbCleaner.InvalidEngineIDs(ctx, tenantID))
-	case events.DeleteTypeHard:
-		dbResult, err = s.dbCleaner.ExecuteHardDelete(ctx, tenantID)
+	switch cleanupMode {
+	case events.CleanupModeLogical:
+		dbResult, err = s.dbCleaner.ExecuteSoftDelete(ctx, tenantID, s.dbCleaner.InvalidEngineIDsWithScope(ctx, tenantID, scope))
+	case events.CleanupModePhysical:
+		dbResult, err = s.dbCleaner.ExecuteHardDeleteWithScope(ctx, tenantID, scope)
 	default:
-		return nil, fmt.Errorf("unknown delete type: %s", deleteType)
+		return nil, fmt.Errorf("unknown cleanup mode: %s", cleanupMode)
 	}
 
 	if err != nil {
@@ -426,7 +441,7 @@ func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, dele
 
 	// 执行 Meilisearch 清理（新增）
 	if s.searchCleaner != nil && s.searchCleaner.Enabled() {
-		deletedCount, err := s.searchCleaner.ExecuteCleanup(ctx, tenantID, s.dbCleaner.InvalidEngineIDs(ctx, tenantID))
+		deletedCount, err := s.searchCleaner.ExecuteCleanup(ctx, tenantID, s.dbCleaner.InvalidEngineIDsWithScope(ctx, tenantID, scope))
 		if err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("清理 Meilisearch 失败: %v", err))
 			s.log.Error("清理 Meilisearch 失败", "error", err)
@@ -436,20 +451,75 @@ func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, dele
 		}
 	}
 
-	// 执行 MinIO 清理（新增）
-	if s.minioCleaner != nil && s.minioCleaner.Enabled() {
-		minioResult, err := s.minioCleaner.ExecuteCleanup(ctx, s.dbCleaner.InvalidFingerprints(ctx, s.dbCleaner.InvalidEngineIDs(ctx, tenantID)))
+	switch cleanupMode {
+	case events.CleanupModeLogical:
+		disabled, err := s.disableInvalidEngineScanTaskDefinitions(ctx, tenantID, scope)
 		if err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("清理 MinIO 失败: %v", err))
-			s.log.Error("清理 MinIO 失败", "error", err)
-		} else {
-			result.DeletedMinIOObjects = minioResult.DeletedObjects
-			result.FreedSpaceMB = minioResult.FreedSpaceMB
-			s.log.Info("MinIO 清理完成", "deleted_objects", minioResult.DeletedObjects, "freed_mb", minioResult.FreedSpaceMB)
+			result.Errors = append(result.Errors, fmt.Sprintf("禁用扫描任务定义失败: %v", err))
 		}
+		result.DisabledScanTaskDefinitions = disabled
+	case events.CleanupModePhysical:
+		deleted, err := s.deleteInvalidEngineScanTaskDefinitions(ctx, tenantID, scope)
+		if err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("删除扫描任务定义失败: %v", err))
+		}
+		result.DeletedScanTaskDefinitions = deleted
 	}
 
 	return result, nil
+}
+
+func (s *CleanupService) scanInvalidEngineScanTaskDefinitions(ctx context.Context, tenantID uint, scope metacleanup.CleanupScope) (int, error) {
+	query := s.invalidEngineScanTaskDefinitionsQuery(ctx, tenantID, scope)
+	var count int64
+	if err := query.Count(&count).Error; err != nil {
+		return 0, err
+	}
+	return int(count), nil
+}
+
+func (s *CleanupService) disableInvalidEngineScanTaskDefinitions(ctx context.Context, tenantID uint, scope metacleanup.CleanupScope) (int, error) {
+	query := s.invalidEngineScanTaskDefinitionsQuery(ctx, tenantID, scope).Where("enabled = ?", true)
+	result := query.Updates(map[string]interface{}{
+		"enabled":     false,
+		"next_run_at": nil,
+		"updated_at":  time.Now(),
+	})
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	return int(result.RowsAffected), nil
+}
+
+func (s *CleanupService) deleteInvalidEngineScanTaskDefinitions(ctx context.Context, tenantID uint, scope metacleanup.CleanupScope) (int, error) {
+	query := s.invalidEngineScanTaskDefinitionsQuery(ctx, tenantID, scope).Unscoped()
+	result := query.Delete(&models.ScanTask{})
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	return int(result.RowsAffected), nil
+}
+
+func (s *CleanupService) invalidEngineScanTaskDefinitionsQuery(ctx context.Context, tenantID uint, scope metacleanup.CleanupScope) *gorm.DB {
+	query := s.db.Model(&models.ScanTask{}).
+		Where("owner_module = ?", "system")
+	if tenantID > 0 {
+		query = query.Where("tenant_id = ?", tenantID)
+	}
+	if scope.EngineID > 0 {
+		return query.Where("engine_id = ? AND owner_ref = ?", scope.EngineID, scantask.AutomaticTaskOwnerRef(scope.EngineID))
+	}
+
+	invalidEngineIDs := s.dbCleaner.InvalidEngineIDsWithScope(ctx, tenantID, scope)
+	if len(invalidEngineIDs) == 0 {
+		return query.Where("1 = 0")
+	}
+
+	ownerRefs := make([]string, 0, len(invalidEngineIDs))
+	for _, engineID := range invalidEngineIDs {
+		ownerRefs = append(ownerRefs, scantask.AutomaticTaskOwnerRef(engineID))
+	}
+	return query.Where("engine_id IN ? AND owner_ref IN ?", invalidEngineIDs, ownerRefs)
 }
 
 // writeResult 写入结果到Redis
@@ -470,50 +540,117 @@ func (s *CleanupService) writeResult(ctx context.Context, taskID string, result 
 	}
 }
 
-func (s *CleanupService) CleanupEngineDeleted(ctx context.Context, engineID uint, tenantID uint) {
-	s.log.Info("收到Engine删除清理请求", "engine_id", engineID, "tenant_id", tenantID)
-
-	// 1. 软删除关联的MetaNode
-	nodeResult := s.db.Where("engine_id = ?", engineID).Delete(&models.MetaNode{})
-	if nodeResult.Error != nil {
-		s.log.Error("软删除MetaNode失败", "error", nodeResult.Error, "engine_id", engineID)
-	} else {
-		s.log.Info("软删除MetaNode完成", "engine_id", engineID, "count", nodeResult.RowsAffected)
+func (s *CleanupService) createExecutorExecution(ctx context.Context, event events.CleanupRequestEvent) (*commonExecution.TaskExecution, time.Time, error) {
+	if s.taskExecRepo == nil || event.ParentExecutionID == "" {
+		return nil, time.Time{}, nil
 	}
-
-	// 2. 软删除关联的MetaItem
-	itemResult := s.db.Where("engine_id = ?", engineID).Delete(&models.MetaItem{})
-	if itemResult.Error != nil {
-		s.log.Error("软删除MetaItem失败", "error", itemResult.Error, "engine_id", engineID)
-	} else {
-		s.log.Info("软删除MetaItem完成", "engine_id", engineID, "count", itemResult.RowsAffected)
+	startedAt := time.Now()
+	currentStep := fmt.Sprintf("Meta cleanup %s", event.Action)
+	triggerType, err := commonExecution.NormalizeTriggerType(event.TriggerType)
+	if err != nil {
+		triggerType = commonExecution.TriggerTypeManual
 	}
-
-	// 3. 删除 Meilisearch 索引（新增）
-	if s.searchCleaner != nil && s.searchCleaner.Enabled() {
-		if err := s.searchCleaner.DeleteByEngine(ctx, tenantID, engineID); err != nil {
-			s.log.Error("删除 Meilisearch 索引失败", "engine_id", engineID, "error", err)
-		}
+	exec := &commonExecution.TaskExecution{
+		TenantID:          int(event.TenantID),
+		ExecutionID:       uuid.NewString(),
+		Module:            commonExecution.ModuleMeta,
+		TaskType:          commonExecution.TaskTypeCleanupExecutor,
+		Source:            commonExecution.ModuleSystem,
+		ParentExecutionID: &event.ParentExecutionID,
+		Status:            commonExecution.ExecutionStatusRunning,
+		Progress:          0,
+		CurrentStep:       &currentStep,
+		TriggerType:       triggerType,
+		TriggeredBy:       ptrInt(int(event.RequestedBy)),
+		ExecutionConfig: commonModels.JSONMap{
+			"task_id":        event.TaskID,
+			"action":         event.Action,
+			"cleanup_mode":   event.CleanupMode,
+			"based_on_scan":  event.BasedOnScan,
+			"cause_event":    event.CauseEvent,
+			"context":        event.Context,
+			"request_module": commonExecution.ModuleSystem,
+		},
+		StartedAt: &startedAt,
+		CreatedAt: startedAt,
+		UpdatedAt: startedAt,
 	}
+	if err := s.taskExecRepo.Create(ctx, exec); err != nil {
+		return nil, startedAt, err
+	}
+	return exec, startedAt, nil
+}
 
-	// 4. 删除 MinIO MVT 瓦片（新增）
-	if s.minioCleaner != nil && s.minioCleaner.Enabled() {
-		s.deleteMinIOMVTByEngine(ctx, tenantID, engineID)
+func (s *CleanupService) finishExecutorExecution(ctx context.Context, executionID string, tenantID uint, startedAt time.Time, result events.CleanupResultData) {
+	if s.taskExecRepo == nil || executionID == "" {
+		return
+	}
+	now := time.Now()
+	status := commonExecution.ExecutionStatusSuccess
+	if result.Status == events.CleanupResultFailed {
+		status = commonExecution.ExecutionStatusFailed
+	}
+	var errDetails commonModels.JSONMap
+	if len(result.Errors) > 0 {
+		errDetails = commonModels.JSONMap{"errors": result.Errors}
+	}
+	if err := s.taskExecRepo.UpdateFields(ctx, executionID, int(tenantID), map[string]interface{}{
+		"status":            status,
+		"progress":          100,
+		"metadata":          commonModels.JSONMap{"cleanup_result": result, "summary": result.Summary},
+		"error_details":     errDetails,
+		"completed_at":      now,
+		"execution_time_ms": now.Sub(startedAt).Milliseconds(),
+		"updated_at":        now,
+	}); err != nil {
+		s.log.Warn("更新 Meta cleanup executor execution 失败", "execution_id", executionID, "error", err)
 	}
 }
 
-// deleteMinIOMVTByEngine 删除指定引擎的 MVT 瓦片（自动清理）
-func (s *CleanupService) deleteMinIOMVTByEngine(ctx context.Context, tenantID uint, engineID uint) {
-	if s.minioCleaner == nil || !s.minioCleaner.Enabled() {
-		s.log.Warn("MinIO 客户端未配置，跳过 MVT 瓦片清理")
-		return
+func metaScanSummary(stats *models.MetaCleanupStatistics) events.CleanupResultSummary {
+	if stats == nil {
+		return events.CleanupResultSummary{RiskLevel: "low"}
+	}
+	scannedItems := stats.InvalidEngines.Count +
+		stats.OrphanItems.Count +
+		stats.ExpiredData.Count +
+		stats.LogicalCleanupCandidates.Nodes +
+		stats.LogicalCleanupCandidates.Items +
+		stats.DuplicateFingerprints.Count +
+		stats.MeilisearchIndexes.Count +
+		stats.ScanTaskDefinitions.Count
+
+	riskLevel := "low"
+	if scannedItems > 1000 {
+		riskLevel = "high"
+	} else if scannedItems > 100 {
+		riskLevel = "medium"
 	}
 
-	fingerprints := s.dbCleaner.FingerprintsByEngine(ctx, engineID)
-	if len(fingerprints) == 0 {
-		s.log.Debug("未找到需要清理的 MVT 瓦片", "engine_id", engineID)
-		return
+	return events.CleanupResultSummary{
+		ScannedItems: scannedItems,
+		RiskLevel:    riskLevel,
 	}
+}
 
-	s.minioCleaner.DeleteMVTByFingerprints(ctx, engineID, fingerprints)
+func metaExecuteSummary(result *models.MetaCleanupExecuteResult) events.CleanupResultSummary {
+	if result == nil {
+		return events.CleanupResultSummary{RiskLevel: "low"}
+	}
+	errorCount := len(result.Errors)
+	return events.CleanupResultSummary{
+		AffectedRecords: result.DeletedNodes +
+			result.DeletedItems +
+			result.DeletedFingerprints +
+			result.DeletedMeilisearchIndexes +
+			result.DisabledScanTaskDefinitions +
+			result.DeletedScanTaskDefinitions,
+		DisabledTaskDefinitions: result.DisabledScanTaskDefinitions,
+		ErrorCount:              errorCount,
+		RiskLevel:               "low",
+	}
+}
+
+func ptrInt(value int) *int {
+	return &value
 }

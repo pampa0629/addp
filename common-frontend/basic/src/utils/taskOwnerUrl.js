@@ -83,6 +83,17 @@ export function buildMonitorExecutionRoute(executionId) {
   return `/monitor/executions?execution_id=${encodeURIComponent(String(executionId))}`
 }
 
+export function buildMonitorExecutionsRoute(params = {}) {
+  const query = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (hasValue(value)) {
+      query.set(key, String(value))
+    }
+  }
+  const queryString = query.toString()
+  return queryString ? `/monitor/executions?${queryString}` : '/monitor/executions'
+}
+
 export function buildMonitorExecutionUrl(executionId, options = {}) {
   return resolveConsoleRouteUrl(buildMonitorExecutionRoute(executionId), options)
 }
@@ -124,6 +135,13 @@ export async function openConsoleRoute(route, options = {}) {
 
 export function openMonitorExecution(executionId, options = {}) {
   return openConsoleRoute(buildMonitorExecutionRoute(executionId), {
+    target: '_blank',
+    ...options
+  })
+}
+
+export function openMonitorExecutions(params = {}, options = {}) {
+  return openConsoleRoute(buildMonitorExecutionsRoute(params), {
     target: '_blank',
     ...options
   })

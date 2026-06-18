@@ -13,7 +13,10 @@
     },
     "execution": {
       "title": "Execution Records",
+      "system_module": "System Ops",
       "filter": {
+        "preset": "Preset",
+        "preset_placeholder": "Select preset",
         "module": "Module",
         "module_placeholder": "All Modules",
         "task_type": "Task Type",
@@ -30,6 +33,14 @@
         "search": "Search",
         "reset": "Reset"
       },
+      "preset": {
+        "all": "All Executions",
+        "cleanup_system": "Resource Reclaim Executions"
+      },
+      "task_type_names": {
+        "cleanup": "Resource Reclaim",
+        "cleanup_executor": "Resource Reclaim Executor"
+      },
       "status": {
         "pending": "Pending",
         "running": "Running",
@@ -40,7 +51,8 @@
       },
       "trigger": {
         "manual": "Manual",
-        "scheduled": "Scheduled"
+        "scheduled": "Scheduled",
+        "event": "Event"
       },
       "detail": {
         "title": "Execution Detail",

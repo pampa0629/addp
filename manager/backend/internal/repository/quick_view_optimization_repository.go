@@ -64,6 +64,27 @@ func (r *QuickViewOptimizationRepository) DeleteTask(ctx context.Context, id uin
 		Delete(&models.QuickViewOptimizationTask{}).Error
 }
 
+func (r *QuickViewOptimizationRepository) ListAllTasks(ctx context.Context, tenantID uint) ([]*models.QuickViewOptimizationTask, error) {
+	var tasks []*models.QuickViewOptimizationTask
+	err := r.db.WithContext(ctx).
+		Where("tenant_id = ?", tenantID).
+		Order("updated_at DESC, id DESC").
+		Find(&tasks).Error
+	return tasks, err
+}
+
+func (r *QuickViewOptimizationRepository) DisableTaskForCleanup(ctx context.Context, tenantID uint, id uint, reason string) error {
+	return r.db.WithContext(ctx).
+		Model(&models.QuickViewOptimizationTask{}).
+		Where("tenant_id = ? AND id = ?", tenantID, id).
+		Updates(map[string]interface{}{
+			"enabled":               false,
+			"next_run_at":           nil,
+			"last_execution_status": strings.TrimSpace(reason),
+			"updated_at":            time.Now(),
+		}).Error
+}
+
 func (r *QuickViewOptimizationRepository) UpdateTaskLastExecution(ctx context.Context, id uint, executionID, status string, runAt time.Time) error {
 	return r.db.WithContext(ctx).
 		Model(&models.QuickViewOptimizationTask{}).
@@ -123,6 +144,15 @@ func (r *QuickViewOptimizationRepository) ListResults(ctx context.Context, filte
 		Limit(pageSize).
 		Find(&results).Error
 	return results, total, err
+}
+
+func (r *QuickViewOptimizationRepository) ListAllResults(ctx context.Context, tenantID uint) ([]*models.QuickViewOptimization, error) {
+	var results []*models.QuickViewOptimization
+	err := r.db.WithContext(ctx).
+		Where("tenant_id = ?", tenantID).
+		Order("updated_at DESC, id DESC").
+		Find(&results).Error
+	return results, err
 }
 
 func (r *QuickViewOptimizationRepository) GetResult(ctx context.Context, id uint, tenantID uint) (*models.QuickViewOptimization, error) {

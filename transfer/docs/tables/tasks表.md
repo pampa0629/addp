@@ -40,7 +40,8 @@
     "representation": "native"
   },
   "target": {
-    "locator": "addp://engine/2/path/exports/roads.parquet?type=file",
+    "parent_locator": "addp://engine/2/path/exports?type=directory",
+    "name": "roads.parquet",
     "data_type": "table",
     "representation": "encoded",
     "format": "parquet",
@@ -74,7 +75,9 @@
 
 | 字段 | 说明 |
 |---|---|
-| `locator` | ResourceLocator URI，包含 engine id、catalog path 和 `type`。 |
+| `locator` | source 使用的 ResourceLocator URI，指向已存在资源。 |
+| `parent_locator` | target 父 node 的 ResourceLocator URI。 |
+| `name` | target 父 node 下待创建或待覆盖的资源名。 |
 | `data_type` | 当前稳定主链路为 `table`。 |
 | `representation` | `native` 或 `encoded`。 |
 | `format` | encoded endpoint 必填。 |

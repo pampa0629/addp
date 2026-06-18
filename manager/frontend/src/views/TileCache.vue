@@ -3,7 +3,7 @@
     <el-card>
       <el-tabs v-model="activeTab" @tab-change="handleTabChange">
         <el-tab-pane :label="t('manager.tileCache.tasksTab')" name="tasks">
-          <div class="tab-toolbar">
+          <div class="tab-toolbar task-tab-toolbar">
             <el-button type="primary" :icon="Plus" @click="openCreateDialog">
               {{ t('manager.tileCache.create') }}
             </el-button>
@@ -181,10 +181,21 @@
               <el-alert
                 v-if="sourceSelectionLocked"
                 type="info"
-                :title="t('manager.tileCache.sourceLockedHint')"
+                :title="t('manager.tileCache.sourceLockedTitle')"
                 :closable="false"
                 show-icon
-              />
+                class="compact-tip-alert"
+              >
+                <template #default>
+                  <el-tooltip
+                    :content="t('manager.tileCache.sourceLockedHint')"
+                    placement="bottom"
+                    :show-after="300"
+                  >
+                    <el-icon class="inline-tip-icon"><InfoFilled /></el-icon>
+                  </el-tooltip>
+                </template>
+              </el-alert>
               <ResourceTree
                 :tree-data="resourceTreeData"
                 :loading="resourceLoading"
@@ -235,9 +246,14 @@
           :title="tileCacheOptimizationAdvice.title"
         >
           <template #default>
-            <div v-if="tileCacheOptimizationAdvice.message" class="optimization-advice__body">
-              {{ tileCacheOptimizationAdvice.message }}
-            </div>
+            <el-tooltip
+              v-if="tileCacheOptimizationAdvice.message"
+              :content="tileCacheOptimizationAdvice.message"
+              placement="bottom"
+              :show-after="300"
+            >
+              <el-icon class="inline-tip-icon"><InfoFilled /></el-icon>
+            </el-tooltip>
             <el-button
               v-if="tileCacheOptimizationAdvice.actionVisible"
               size="small"
@@ -341,14 +357,21 @@
           :description="selectedTask.last_execution_id ? t('manager.tileCache.noExecutionStats') : t('manager.tileCache.noExecutionYet')"
         />
         <template v-else-if="executionStatsAvailable">
-          <el-alert
+          <div
             v-if="executionStatsCheck.visible"
-            :type="executionStatsCheck.type"
-            :closable="false"
-            :title="executionStatsCheck.message"
-            class="stats-check-alert"
-            show-icon
-          />
+            class="stats-check-summary"
+          >
+            <el-tag :type="executionStatsCheck.type" size="small">
+              {{ executionStatsCheck.label }}
+            </el-tag>
+            <el-tooltip
+              :content="executionStatsCheck.message"
+              placement="bottom"
+              :show-after="300"
+            >
+              <el-icon class="inline-tip-icon"><InfoFilled /></el-icon>
+            </el-tooltip>
+          </div>
           <div class="stats-grid">
             <div v-for="item in executionStatItems" :key="item.key" class="stat-item">
               <span class="stat-label">{{ item.label }}</span>
@@ -379,13 +402,14 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowDown, Plus, Refresh } from '@element-plus/icons-vue'
+import { ArrowDown, InfoFilled, Plus, Refresh } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { openMonitorExecution, parseLocator, ResourceTree, ScheduleConfig, ScheduleDisplay } from '@addp/common-frontend'
+import { openMonitorExecution, parseLocatorSafe, ResourceTree, ScheduleConfig, ScheduleDisplay } from '@addp/common-frontend'
 import client from '../api/client'
+import { dataExplorerAPI } from '../api/dataExplorer'
 import { quickViewAPI } from '../api/quickView'
 import { useTileCacheExecutionStats } from '../composables/useTileCacheExecutionStats'
 import { formatDateTime } from '../utils/formatters'
@@ -410,10 +434,10 @@ import { buildQuickViewOptimizationCreateQuery } from '../utils/quickViewNavigat
 import { tileCacheOptimizationAdvice as buildTileCacheOptimizationAdvice } from '../utils/tileCacheOptimizationAdvice'
 import {
   createResourceRootNode,
-  findResourceNodePath,
   geometryColumnsFromNode,
   isResourceRootNode,
   locatorEngineID,
+  mergeAncestorChainIntoResourceTree,
   normalizeResourceNode,
   replaceResourceNode,
   tableSelectionFromResourceNode,
@@ -468,9 +492,7 @@ const tileCacheOptimizationAdvice = reactive({
 const geometryColumnOptions = ref([])
 const selectedSourceNode = ref(null)
 const databaseEngineTypes = new Set(['postgresql', 'postgres', 'postgis'])
-const routeSourceLocked = computed(() => {
-  return !!route.query.engine_id && !!route.query.schema && !!route.query.table
-})
+const routeSourceLocked = computed(() => !!route.query.locator)
 const sourceSelectionLocked = computed(() => {
   return !!editingId.value || routeSourceLocked.value
 })
@@ -595,9 +617,7 @@ const loadResourceTreeRoot = async (node) => {
   if (!engineID) return
   resourceLoading.value = true
   try {
-    const tree = await client.get(`/manager/tree/${engineID}`, {
-      params: { expand_depth: 2 }
-    })
+    const tree = await dataExplorerAPI.getTree(engineID, 2)
     const engine = {
       id: node.engineId,
       engine_type: node.engineType,
@@ -623,9 +643,7 @@ const loadResourceNodeChildren = async (node) => {
   if (!locator || !engineID) return
   resourceLoading.value = true
   try {
-    const response = await client.get(`/manager/tree/${engineID}/node`, {
-      params: { locator, expand_depth: 1 }
-    })
+    const response = await dataExplorerAPI.getNodeChildren(engineID, locator)
     const engine = {
       id: node.engineId,
       engine_type: node.engineType,
@@ -755,9 +773,6 @@ const setGeometryOptions = (columns, selected = '') => {
 }
 
 const applyRouteSourceContext = () => {
-  if (route.query.engine_id) form.config.target.source_engine_id = Number(route.query.engine_id)
-  if (route.query.schema) form.config.target.schema = String(route.query.schema)
-  if (route.query.table) form.config.target.table = String(route.query.table)
   if (route.query.item_id) form.config.target.item_id = Number(route.query.item_id)
   if (route.query.item_fingerprint) {
     form.config.target.item_fingerprint = String(route.query.item_fingerprint)
@@ -785,6 +800,11 @@ const applyRouteResultContext = () => {
 }
 
 const applyQuickViewCapabilityToForm = (config, fallbackGeometryColumns = []) => {
+  if (config.source_engine_id) form.config.target.source_engine_id = Number(config.source_engine_id)
+  if (config.source_schema) form.config.target.schema = String(config.source_schema)
+  if (config.source_table) form.config.target.table = String(config.source_table)
+  if (config.locator) form.config.target.locator = String(config.locator)
+  if (config.item_fingerprint) form.config.target.item_fingerprint = String(config.item_fingerprint)
   form.config.tile.min_zoom = Number(config.min_zoom ?? form.config.tile.min_zoom)
   form.config.tile.max_zoom = Number(config.max_zoom ?? form.config.tile.max_zoom)
   form.config.tile.target_srid = Number(config.target_srid || 3857)
@@ -823,6 +843,11 @@ const tileCacheFormConfigFromCapability = (capability) => {
   const zoom = renderFacts.zoom_recommendation || {}
   return {
     ...quickView,
+    source_engine_id: capability?.source_engine_id,
+    source_schema: capability?.source_schema,
+    source_table: capability?.source_table,
+    locator: capability?.locator,
+    item_fingerprint: capability?.item_fingerprint,
     min_zoom: zoom.min_zoom ?? quickView.min_zoom,
     max_zoom: zoom.max_zoom ?? quickView.max_zoom,
     source_srid: renderFacts.source_srid ?? quickView.source_srid,
@@ -889,11 +914,8 @@ const loadQuickViewCapabilityForForm = async (fallbackGeometryColumns = []) => {
 }
 
 const safeParseLocator = (locator) => {
-  try {
-    return parseLocator(locator)
-  } catch {
-    return null
-  }
+  const parsed = parseLocatorSafe(locator)
+  return parsed.engineId ? parsed : null
 }
 
 const selectableResourceType = (node) => {
@@ -905,25 +927,29 @@ const revealSelectedResource = async () => {
   if (!locator) return
   const engineID = Number(form.config.target.source_engine_id || locatorEngineID(locator, safeParseLocator))
   if (!engineID) return
-  let root = resourceTreeData.value.find((node) => Number(node.engineId) === engineID)
-  if (!root) return
-  if (isResourceRootNode(root) && !root.loaded) {
-    await loadResourceTreeRoot(root)
-  }
-  const path = findResourceNodePath(resourceTreeData.value, locator)
-  const expanded = new Set(resourceExpandedKeys.value)
-  if (path.length > 1) {
-    for (const node of path.slice(0, -1)) {
-      expanded.add(node.locator || node.id)
+  resourceLoading.value = true
+  try {
+    const response = await dataExplorerAPI.getTreeAncestors(engineID, locator)
+    const chain = Array.isArray(response?.ancestors) ? response.ancestors : []
+    if (!chain.length) return
+    const engine = engineOptions.value.find((item) => Number(item.id) === engineID) || null
+    const merged = mergeAncestorChainIntoResourceTree(resourceTreeData.value, chain, {
+      engine,
+      parseLocator: safeParseLocator
+    })
+    resourceTreeData.value = merged.nodes
+    const expanded = new Set(resourceExpandedKeys.value)
+    for (const key of merged.expandedKeys) {
+      expanded.add(key)
     }
-  } else {
-    root = resourceTreeData.value.find((node) => Number(node.engineId) === engineID) || root
-    expanded.add(root.locator || root.id)
+    resourceExpandedKeys.value = Array.from(expanded)
+    resourceCurrentKey.value = response?.target_locator || merged.target?.locator || merged.target?.id || locator
+  } catch (error) {
+    console.error('定位瓦片缓存资源失败:', error)
+    ElMessage.error(t('manager.tileCache.loadResourceTreeFailed'))
+  } finally {
+    resourceLoading.value = false
   }
-  resourceExpandedKeys.value = Array.from(expanded)
-  resourceCurrentKey.value = ''
-  await nextTick()
-  resourceCurrentKey.value = locator
 }
 
 const handleResourceNodeExpand = async (node) => {
@@ -1303,6 +1329,10 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
 }
 
+.task-tab-toolbar {
+  justify-content: flex-end;
+}
+
 .filter-bar .el-input {
   width: 260px;
 }
@@ -1344,8 +1374,22 @@ onBeforeUnmount(() => {
   margin-bottom: 14px;
 }
 
-.optimization-advice__body {
-  margin-bottom: 8px;
+.optimization-advice :deep(.el-alert__content) {
+  min-width: 0;
+}
+
+.optimization-advice :deep(.el-alert__description),
+.compact-tip-alert :deep(.el-alert__description) {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.inline-tip-icon {
+  flex: 0 0 auto;
+  color: var(--el-color-info);
+  cursor: help;
 }
 
 .execution-stats {
@@ -1364,7 +1408,10 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 
-.stats-check-alert {
+.stats-check-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   margin-bottom: 12px;
 }
 

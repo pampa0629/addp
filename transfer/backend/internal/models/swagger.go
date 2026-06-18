@@ -54,19 +54,30 @@ type UpdateTaskRequestDoc struct {
 // TableTransferTaskConfigDoc 描述新 Transfer table 任务配置。
 // 运行时代码仍使用 JSONMap 存储；该结构只用于 Swagger 展示 source / target endpoint 语义。
 type TableTransferTaskConfigDoc struct {
-	Mode       string                 `json:"mode" example:"batch"`
-	Source     TransferEndpointDoc    `json:"source"`
-	Target     TransferEndpointDoc    `json:"target"`
-	Transforms []TransferTransformDoc `json:"transforms,omitempty"`
-	BatchSize  int                    `json:"batch_size,omitempty" example:"1000"`
+	Mode       string                    `json:"mode" example:"batch"`
+	Source     TransferSourceEndpointDoc `json:"source"`
+	Target     TransferTargetEndpointDoc `json:"target"`
+	Transforms []TransferTransformDoc    `json:"transforms,omitempty"`
+	BatchSize  int                       `json:"batch_size,omitempty" example:"1000"`
 }
 
-// TransferEndpointDoc 描述 Transfer source / target endpoint。
-type TransferEndpointDoc struct {
+// TransferSourceEndpointDoc 描述 Transfer source endpoint；source 必须指向已存在资源。
+type TransferSourceEndpointDoc struct {
 	Locator        string                 `json:"locator" example:"addp://engine/9/path/manager/a3.shp?type=object" description:"ResourceLocator URI；source 可通过 locator item_id 引用已入库 Meta item。"`
 	DataType       string                 `json:"data_type" example:"table"`
 	Representation string                 `json:"representation" example:"encoded" enums:"native,encoded"`
 	Format         string                 `json:"format,omitempty" example:"shapefile"`
+	Options        map[string]interface{} `json:"options,omitempty"`
+	Policy         map[string]interface{} `json:"policy,omitempty"`
+}
+
+// TransferTargetEndpointDoc 描述 Transfer target endpoint；target 表达待写入资源，使用父 node locator 和目标名。
+type TransferTargetEndpointDoc struct {
+	ParentLocator  string                 `json:"parent_locator" example:"addp://engine/10/path/public?type=schema" description:"目标父 node 的 ResourceLocator URI。"`
+	Name           string                 `json:"name" example:"roads_imported" description:"父 node 下待创建或待覆盖的目标资源名。"`
+	DataType       string                 `json:"data_type" example:"table"`
+	Representation string                 `json:"representation" example:"native" enums:"native,encoded"`
+	Format         string                 `json:"format,omitempty" example:"csv"`
 	Options        map[string]interface{} `json:"options,omitempty"`
 	Policy         map[string]interface{} `json:"policy,omitempty"`
 }

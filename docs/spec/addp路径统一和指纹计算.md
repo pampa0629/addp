@@ -172,6 +172,37 @@ type ResourceLocator struct {
 
 搜索结果、预览入口和资源树跳转都应只消费标准 ResourceLocator。前端和跨模块调用方不得根据 engine type、bucket、path、name 等字段自行拼接定位身份；缺少稳定 locator 所需事实的数据应通过重新扫描或重建索引修复。
 
+### 5.1.1 资源树事实入口与 locator 回显
+
+ResourceLocator 是平台级资源身份，不归属于 Manager。Manager、Transfer、Develop、Service、Agent 等模块需要浏览、搜索或回显资源树时，统一消费 Meta resource-tree API：
+
+```http
+GET  /api/v1/meta/resource-tree/{engine_id}
+GET  /api/v1/meta/resource-tree/{engine_id}/node?locator={resource_locator}
+GET  /api/v1/meta/resource-tree/{engine_id}/ancestors?locator={resource_locator}
+GET  /api/v1/meta/resource-tree/{engine_id}/search?q={keyword}&limit=50
+POST /api/v1/meta/resource-tree/{engine_id}/refresh?locator={resource_locator}
+```
+
+其中 `ancestors` 是 `initialLocator` 回显和资源树跳转的标准入口。调用方不得按 locator path 在前端逐层猜测 schema、bucket、目录或表，也不得恢复 Manager 私有 `/tree` 代理作为资源树事实入口。
+
+`ancestors` 必须以 locator 为入口，并由 Meta 按 path 回查当前 `meta_node` / `meta_item` 事实后返回 root 到目标自身的标准 `TreeNode` 链。这样可以在重新扫描导致旧 `node_id` / `item_id` 漂移时，仍按稳定路径重写为当前事实 locator。
+
+### 5.1.2 已有资源与待创建资源
+
+ResourceLocator 只表示已经存在并形成 Meta node / item 事实的资源。新表、新文件、新对象等待创建目标没有真实 `node_id` / `item_id`，不得提前构造虚拟 locator。
+
+创建目标必须表达为父级真实 node 加名称：
+
+```json
+{
+  "parent_locator": "addp://engine/8/path/public?type=schema&node_id=12",
+  "name": "new_table"
+}
+```
+
+业务模块可以在自己的 DTO 中增加 `target_kind`、`write_mode`、格式选项等执行参数，但资源身份只能引用 `parent_locator`。创建成功并完成 Meta 事实写入或扫描后，才由 Meta / resource-tree 链路返回新资源的真实 locator。
+
 ### 5.2 Path 字段语义
 
 **重要**: ResourceLocator 的 `Path` 字段包含**从 bucket/schema 到 name 的完整路径**，与存储层的字段拆分规范不同。

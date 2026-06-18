@@ -1,172 +1,5 @@
 basePath: /api/v1/develop
 definitions:
-  client.EngineCatalogEntry:
-    properties:
-      kind:
-        type: string
-      leaf_count:
-        type: integer
-      name:
-        type: string
-      path:
-        $ref: '#/definitions/client.EngineCatalogPath'
-      role:
-        type: string
-      storage:
-        $ref: '#/definitions/plugin.CatalogStorageFacts'
-      table:
-        $ref: '#/definitions/datatype.TableInfo'
-      term:
-        type: string
-      updated_at:
-        type: string
-    type: object
-  client.EngineCatalogListChildrenRequest:
-    properties:
-      options:
-        $ref: '#/definitions/client.EngineCatalogListOptions'
-      path:
-        $ref: '#/definitions/client.EngineCatalogPath'
-    type: object
-  client.EngineCatalogListChildrenResponse:
-    properties:
-      nodes:
-        items:
-          $ref: '#/definitions/client.EngineCatalogEntry'
-        type: array
-    type: object
-  client.EngineCatalogListOptions:
-    properties:
-      limit:
-        type: integer
-      offset:
-        type: integer
-      recursive:
-        type: boolean
-    type: object
-  client.EngineCatalogPath:
-    properties:
-      engine_id:
-        type: integer
-      segments:
-        items:
-          $ref: '#/definitions/client.EngineCatalogSegment'
-        type: array
-      version:
-        type: string
-    type: object
-  client.EngineCatalogSegment:
-    properties:
-      kind:
-        type: string
-      name:
-        type: string
-      term:
-        type: string
-    type: object
-  datatype.FieldInfo:
-    properties:
-      comment:
-        type: string
-      default_expression:
-        type: string
-      generated:
-        type: boolean
-      generation_expression:
-        type: string
-      name:
-        type: string
-      native_type:
-        type: string
-      nullable:
-        type: boolean
-      ordinal_position:
-        type: integer
-      precision:
-        type: integer
-      primary_key:
-        type: boolean
-      scale:
-        type: integer
-      size:
-        type: integer
-      type:
-        $ref: '#/definitions/datatype.FieldType'
-    type: object
-  datatype.FieldType:
-    enum:
-    - unknown
-    - string
-    - bool
-    - bytes
-    - mixed
-    - int
-    - bigint
-    - float
-    - double
-    - decimal
-    - date
-    - time
-    - timestamp
-    - json
-    - array
-    - uuid
-    - geometry
-    - point
-    - linestring
-    - polygon
-    - multipoint
-    type: string
-    x-enum-varnames:
-    - FieldTypeUnknown
-    - FieldTypeString
-    - FieldTypeBool
-    - FieldTypeBytes
-    - FieldTypeMixed
-    - FieldTypeInt
-    - FieldTypeBigInt
-    - FieldTypeFloat
-    - FieldTypeDouble
-    - FieldTypeDecimal
-    - FieldTypeDate
-    - FieldTypeTime
-    - FieldTypeTimestamp
-    - FieldTypeJSON
-    - FieldTypeArray
-    - FieldTypeUUID
-    - FieldTypeGeometry
-    - FieldTypePoint
-    - FieldTypeLineString
-    - FieldTypePolygon
-    - FieldTypeMultiPoint
-  datatype.TableInfo:
-    properties:
-      comment:
-        type: string
-      created_at:
-        type: string
-      fields:
-        items:
-          $ref: '#/definitions/datatype.FieldInfo'
-        type: array
-      kind:
-        type: string
-      name:
-        type: string
-      native:
-        additionalProperties: true
-        type: object
-      primary_key:
-        items:
-          type: string
-        type: array
-      row_count:
-        type: integer
-      size_bytes:
-        type: integer
-      updated_at:
-        type: string
-    type: object
   github_com_addp_develop_backend_internal_models.CreateDevTaskRequest:
     properties:
       content:
@@ -757,21 +590,6 @@ definitions:
   models.JSONMap:
     additionalProperties: true
     type: object
-  plugin.CatalogStorageFacts:
-    properties:
-      content_type:
-        type: string
-      etag:
-        type: string
-      extension:
-        type: string
-      name:
-        type: string
-      path:
-        type: string
-      size_bytes:
-        type: integer
-    type: object
   plugin.GraphData:
     properties:
       nodes:
@@ -916,32 +734,6 @@ paths:
       summary: 获取可用于 SQL 查询的数据源列表 | List data sources available for SQL queries
       tags:
       - Engines
-  /engines/{id}/catalog/children:
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: 引擎ID | Engine ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: Catalog 路径请求 | Catalog path request
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/client.EngineCatalogListChildrenRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Catalog 子节点 | Catalog children
-          schema:
-            $ref: '#/definitions/client.EngineCatalogListChildrenResponse'
-      summary: 获取实时 catalog 子节点 | List live catalog children
-      tags:
-      - Engines
   /engines/{id}/sample-query:
     get:
       parameters:
@@ -973,20 +765,6 @@ paths:
       summary: 获取样例查询 | Get sample query
       tags:
       - Query
-  /engines/nfs:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: NFS 引擎列表
-          schema:
-            items:
-              $ref: '#/definitions/models.Engine'
-            type: array
-      summary: 获取 NFS 存储引擎列表 | List NFS storage engines
-      tags:
-      - Engines
   /execute:
     post:
       consumes:

@@ -54,7 +54,8 @@ checkpoint 当前用于 progress / diagnostics，不表示可从 checkpoint 自�
     "representation": "native"
   },
   "target": {
-    "locator": "addp://engine/2/path/exports/roads.csv?type=file",
+    "parent_locator": "addp://engine/2/path/exports?type=directory",
+    "name": "roads.csv",
     "data_type": "table",
     "representation": "encoded",
     "format": "csv",
@@ -80,7 +81,9 @@ checkpoint 当前用于 progress / diagnostics，不表示可从 checkpoint 自�
 
 | 字段 | 必填 | 说明 |
 |---|---:|---|
-| `locator` | 是 | common resource tree 使用的 ResourceLocator URI，包含 engine id、catalog path 和 `type`。 |
+| `locator` | source 必填 | source 使用的 ResourceLocator URI，指向已存在资源。 |
+| `parent_locator` | target 必填 | target 父 node 的 ResourceLocator URI，指向已存在 schema / directory / bucket / prefix 等父节点。 |
+| `name` | target 必填 | 父 node 下待创建或待覆盖的目标资源名。 |
 | `data_type` | 是 | table Transfer 使用 `table`；raw copy 第一版支持 `document`、`media`、`unknown`。 |
 | `representation` | 是 | `native` 或 `encoded`。 |
 | `format` | encoded 必填 | encoded endpoint 的格式，如 `csv`、`json`、`geojson`、`parquet`、`shapefile`。 |
@@ -155,7 +158,8 @@ raw copy 是 non-table encoded single content 的原始字节复制。它不调�
 |---|---|
 | source / target `data_type` | `document`、`media`、`unknown` |
 | source / target `representation` | `encoded` |
-| source / target locator `type` | `file`、`object` |
+| source locator `type` | `file`、`object` |
+| target `parent_locator` type | `directory`、`root`、`bucket`、`prefix`、`service` |
 | source format layout | `single` |
 | target `data_type` / `format` | 可省略并继承 source；显式声明时必须一致 |
 | target path | 必须是完整 file / object 路径 |
@@ -173,7 +177,8 @@ raw copy 是 non-table encoded single content 的原始字节复制。它不调�
     "format": "pdf"
   },
   "target": {
-    "locator": "addp://engine/2/path/archive/report.pdf?type=file",
+    "parent_locator": "addp://engine/2/path/archive?type=directory",
+    "name": "report.pdf",
     "data_type": "document",
     "representation": "encoded",
     "format": "pdf",

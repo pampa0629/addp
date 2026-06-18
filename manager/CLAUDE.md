@@ -51,7 +51,7 @@ manager/
 
 路由前缀：`/api/v1/manager`。
 
-- 数据探查：`GET /engines`、`GET /tree/:engine_id`、`GET /tree/:engine_id/node`、`GET /tree/:engine_id/search`、`POST /tree/:engine_id/refresh`。
+- 数据探查：`GET /engines`；资源树事实读取、搜索和刷新统一使用 Meta `/api/v1/meta/resource-tree/:engine_id...`。
 - 预览与下载：`GET /preview`、`GET /storage-stream`、`GET /storage-download`。
 - 搜索：`GET /search`、`GET /search/history`、`DELETE /search/history/:id`、`DELETE /search/history`。
 - 空间要素辅助：`GET /engines/:id/spatial/features/:feature_id/centroid`、`GET /engines/:id/spatial/features/:feature_id/geometry`。

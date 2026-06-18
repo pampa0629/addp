@@ -24,10 +24,20 @@
           <span>{{ t('service.published.selectTableTitle') }}</span>
         </template>
 
-        <el-button type="primary" size="large" @click="showTableSelector = true">
-          <el-icon style="margin-right: 8px"><FolderOpened /></el-icon>
-          {{ t('service.published.selectTableBtn') }}
-        </el-button>
+        <ResourceTreePicker
+          :api-base-url="metaApiBaseUrl"
+          :engine-types="NATIVE_TABLE_ENGINE_TYPES"
+          mode="item"
+          :node-filter="isNativeTableVisibleNode"
+          :selectable-filter="isNativeTableNode"
+          :show-selection-summary="true"
+          :engine-multiple="true"
+          :select-all-engines-by-default="true"
+          :search-selectable-only="true"
+          :show-disabled-label="false"
+          :show-count="false"
+          @update:model-value="handleTableSelected"
+        />
 
         <el-alert
           v-if="selectedTable"
@@ -299,11 +309,6 @@
       <el-button @click="$router.back()">{{ t('service.common.cancel') }}</el-button>
     </div>
 
-    <!-- 表选择器对话框 -->
-    <table-selector
-      v-model:visible="showTableSelector"
-      @table-selected="handleTableSelected"
-    />
   </div>
 </template>
 
@@ -313,13 +318,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import {
-  FolderOpened,
   Location,
   MapLocation,
   Document
 } from '@element-plus/icons-vue'
 import publishedServiceAPI from '../api/publishedService'
-import TableSelector from '../components/TableSelector.vue'
+import { ResourceTreePicker, detectTableMetadata, locatorPathFromSelection } from '@common-ui'
+import { NATIVE_TABLE_ENGINE_TYPES, isNativeTableNode, isNativeTableVisibleNode } from '@/utils/resourceSelection'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -328,9 +333,9 @@ const formRef = ref(null)
 const inputRef = ref(null)
 
 const isEdit = computed(() => !!route.params.id)
+const metaApiBaseUrl = computed(() => '/api/v1/meta')
 
 const currentStep = ref(0)
-const showTableSelector = ref(false)
 const selectedTable = ref(null)
 const enabledProtocols = ref(['wfs', 'wmts', 'ogc_api', 'rest_query'])
 
@@ -394,7 +399,34 @@ const rules = computed(() => ({
 }))
 
 // 处理表选择
-const handleTableSelected = (table) => {
+const handleTableSelected = async (selection) => {
+  if (!selection) {
+    selectedTable.value = null
+    form.value.engine_id = null
+    return
+  }
+
+  const locator = selection.identity?.locator || ''
+  const path = locatorPathFromSelection(selection)
+  const geometry = await detectTableMetadata(metaApiBaseUrl.value, {
+    locator,
+    item_id: selection.identity?.item_id
+  })
+
+  const table = {
+    engineId: selection.identity?.engine_id,
+    schema: path[0] || '',
+    tableName: path[path.length - 1] || selection.display?.label || '',
+    fullName: path.length > 0 ? path.join('.') : selection.display?.label || '',
+    label: selection.display?.label || '',
+    locator,
+    geometryColumn: geometry.geometry_column || '',
+    srid: geometry.srid || 0,
+    geometryType: geometry.geometry_type || '',
+    geometryTypes: geometry.geometry_types || [],
+    hasGeometry: geometry.has_geometry
+  }
+
   selectedTable.value = table
   form.value.engine_id = table.engineId
 
@@ -520,13 +552,14 @@ const handleSubmit = async () => {
 
         // 数据配置
         data_config: {
+          locator: selectedTable.value.locator,
           geometry: selectedTable.value.hasGeometry ? {
             has_geometry: true,
             column: selectedTable.value.geometryColumn,
             srid: selectedTable.value.srid || 4326,
-            types: selectedTable.value.geometryType
-              ? [selectedTable.value.geometryType]
-              : []
+            types: selectedTable.value.geometryTypes?.length
+              ? selectedTable.value.geometryTypes
+              : (selectedTable.value.geometryType ? [selectedTable.value.geometryType] : [])
           } : {
             has_geometry: false
           }

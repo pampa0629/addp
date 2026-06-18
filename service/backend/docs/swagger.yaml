@@ -110,8 +110,6 @@ definitions:
         items:
           $ref: '#/definitions/github_com_addp_service_internal_models.AggregateColumn'
         type: array
-      engine_id:
-        type: integer
       filter:
         description: WHERE 条件
         type: string
@@ -126,17 +124,13 @@ definitions:
       limit:
         description: 限制结果数
         type: integer
+      locator:
+        type: string
       order_by:
         description: 排序
         type: string
-      schema:
-        type: string
-      table:
-        type: string
     required:
-    - engine_id
-    - schema
-    - table
+    - locator
     type: object
   github_com_addp_service_internal_models.AggregationResponse:
     properties:
@@ -220,7 +214,7 @@ definitions:
         type: string
       data_config:
         additionalProperties: true
-        description: 数据配置（可选，系统会自动检测）
+        description: 数据配置。table 模式必须提供 locator，格式为带 item_id 的 ResourceLocator。
         type: object
       description:
         type: string
@@ -243,7 +237,7 @@ definitions:
         description: 访问控制
         type: boolean
       schema_name:
-        description: 表配置字段（config_type='table'时需要）
+        description: 表配置字段由 data_config.locator 服务端派生，仅作为执行快照返回。
         type: string
       service_name:
         type: string
@@ -363,8 +357,6 @@ definitions:
         items:
           type: string
         type: array
-      engine_id:
-        type: integer
       filter:
         description: WHERE 条件（需要防 SQL 注入）
         type: string
@@ -373,6 +365,8 @@ definitions:
         type: boolean
       geometry_type:
         description: '几何输出格式: ''geojson'', ''wkt'', ''wkb'''
+        type: string
+      locator:
         type: string
       order_by:
         description: 排序字段
@@ -383,14 +377,8 @@ definitions:
       page_size:
         description: 每页大小
         type: integer
-      schema:
-        type: string
-      table:
-        type: string
     required:
-    - engine_id
-    - schema
-    - table
+    - locator
     type: object
   github_com_addp_service_internal_models.DataQueryResponse:
     properties:
@@ -1137,19 +1125,10 @@ paths:
       consumes:
       - application/json
       parameters:
-      - description: 引擎ID | Engine ID
+      - description: ResourceLocator，必须指向 table item | ResourceLocator pointing to
+          table item
         in: query
-        name: engine_id
-        required: true
-        type: integer
-      - description: Schema名称 | Schema name
-        in: query
-        name: schema
-        required: true
-        type: string
-      - description: 表名 | Table name
-        in: query
-        name: table
+        name: locator
         required: true
         type: string
       produces:
@@ -1196,61 +1175,6 @@ paths:
       summary: 获取服务端点 | Get service endpoints
       tags:
       - Service
-  /engines:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 引擎列表 | Engine list
-          schema:
-            items:
-              additionalProperties: true
-              type: object
-            type: array
-      summary: 获取可用于数据服务的 PostgreSQL 引擎列表 | List PostgreSQL engines available for
-        data services
-      tags:
-      - Engines
-  /engines/{engine_id}/tree:
-    get:
-      parameters:
-      - description: 引擎ID | Engine ID
-        in: path
-        name: engine_id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "401":
-          description: Unauthorized
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取引擎元数据树 | Get engine metadata tree
-      tags:
-      - 数据源 | Data Sources
   /graph:
     get:
       parameters:
@@ -1447,42 +1371,7 @@ paths:
       - BearerAuth: []
       summary: 获取图节点形状 | Get graph node shapes
       tags:
-      - 数据源 | Data Sources
-  /nodes/{node_id}/children:
-    get:
-      parameters:
-      - description: 节点ID | Node ID
-        in: path
-        name: node_id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              additionalProperties: true
-              type: object
-            type: array
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取节点子项 | Get node children
-      tags:
-      - 数据源 | Data Sources
+      - 资源能力 | Resource Capabilities
   /ogc/features/{serviceName}:
     get:
       parameters:
@@ -2324,87 +2213,7 @@ paths:
       - BearerAuth: []
       summary: 获取 SQL 空间元数据 | Get SQL spatial metadata
       tags:
-      - 数据源 | Data Sources
-  /tables/metadata:
-    get:
-      parameters:
-      - description: 引擎ID | Engine ID
-        in: query
-        name: engine_id
-        required: true
-        type: integer
-      - description: Schema
-        in: query
-        name: schema
-        required: true
-        type: string
-      - description: 表名 | Table
-        in: query
-        name: table
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取表元数据 | Get table metadata
-      tags:
-      - 数据源 | Data Sources
-  /tables/spatial-metadata:
-    get:
-      parameters:
-      - description: 引擎ID | Engine ID
-        in: query
-        name: engine_id
-        required: true
-        type: integer
-      - description: Schema
-        in: query
-        name: schema
-        required: true
-        type: string
-      - description: 表名 | Table
-        in: query
-        name: table
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取表空间元数据 | Get table spatial metadata
-      tags:
-      - 数据源 | Data Sources
+      - 资源能力 | Resource Capabilities
   /tile:
     get:
       parameters:

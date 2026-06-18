@@ -13,6 +13,7 @@ package main
 // @description Type "Bearer" followed by a space and JWT token.
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"time"
@@ -30,6 +31,7 @@ import (
 	"github.com/addp/graph/internal/config"
 	"github.com/addp/graph/internal/repository"
 	"github.com/addp/graph/internal/service"
+	"github.com/redis/go-redis/v9"
 )
 
 func main() {
@@ -65,6 +67,12 @@ func main() {
 	graphRepo := repository.NewKnowledgeGraphRepository(db)
 	buildRepo := repository.NewBuildRepository(db)
 	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort),
+		Password: cfg.RedisPassword,
+		DB:       cfg.RedisDB,
+	})
+	defer redisClient.Close()
 
 	materialConnInfo := commonPlugin.ConnectionInfo{
 		"endpoint":   cfg.MinioEndpoint,
@@ -85,6 +93,11 @@ func main() {
 	schemaInferenceSvc := service.NewSchemaInferenceService(graphRepo, ontologyRepo, neo4jSvc, ontologySvc, systemClient)
 	buildSvc := service.NewBuildService(buildRepo, ontologyRepo, ontologySvc, graphRepo, taskExecutionRepo, neo4jSvc, materialReader, materialWriter, cfg.CopilotServiceURL)
 	analysisSvc := service.NewAnalysisService(graphRepo, ontologyRepo, systemClient)
+	cleanupSvc := service.NewCleanupService(db, redisClient, taskExecutionRepo)
+	if err := cleanupSvc.Start(context.Background()); err != nil {
+		logger.Warn("Graph cleanup executor 启动失败", "error", err)
+	}
+	defer cleanupSvc.Stop()
 
 	// 初始化 Model 导入服务（如果配置了 MODEL_URL）
 	var modelImportSvc *service.ModelImportService
@@ -111,7 +124,14 @@ func main() {
 	serviceURL := utils.BuildServiceURL(serviceHost, port)
 	if cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
 		registryClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
-		registryClient.RegisterAndHeartbeat("graph", serviceURL, "/graph")
+		registryClient.RegisterAndHeartbeatWithMetadata("graph", serviceURL, "/graph", map[string]interface{}{
+			"module": "graph",
+			"capabilities": map[string]interface{}{
+				"cleanup_executor": map[string]interface{}{
+					"enabled": true,
+				},
+			},
+		})
 	}
 
 	if cfg.EnableIntegration && cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {

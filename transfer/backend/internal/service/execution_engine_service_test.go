@@ -304,7 +304,8 @@ func TestNativeTargetCatalogPathsIgnoresEncodedMultiObjectTarget(t *testing.T) {
 
 func TestNativeTargetCatalogPathsIgnoresEncodedFileTarget(t *testing.T) {
 	endpoint := planner.EndpointSpec{
-		Locator: "addp://engine/9/path/exports/abc.shp?type=file",
+		ParentLocator: "addp://engine/9/path/exports?type=directory",
+		Name:          "abc.shp",
 	}
 
 	got := nativeTargetCatalogPaths(endpoint)
@@ -315,7 +316,8 @@ func TestNativeTargetCatalogPathsIgnoresEncodedFileTarget(t *testing.T) {
 
 func TestNativeTargetCatalogPathsUsesNativeTableNamespace(t *testing.T) {
 	endpoint := planner.EndpointSpec{
-		Locator: "addp://engine/9/path/public/roads?type=table",
+		ParentLocator: "addp://engine/9/path/public?type=schema",
+		Name:          "roads",
 	}
 
 	got := nativeTargetCatalogPaths(endpoint)

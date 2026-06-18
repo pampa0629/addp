@@ -129,7 +129,7 @@ VITE_API_BASE_URL=http://localhost:8083/api
 ### 任务表单（TaskForm.vue）
 - 创建/编辑任务
 - 配置任务基本信息
-- 选择连接器类型
+- 通过资源树选择源和目标资源
 - JSON 配置编辑器
 - 表单验证
 

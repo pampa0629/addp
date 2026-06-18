@@ -29,7 +29,8 @@ monitor/
 ## API 与数据
 
 - 路由前缀：`/api/v1/monitor`。
-- 主要接口：`GET /executions`、`GET /executions/:id`、`GET /executions/stats`、`GET /executions/trend`、`GET /modules`、`GET /modules/:module/health`、`GET /modules/health/all`。
+- 主要接口：`GET /executions`、`GET /executions/:id`、`GET /executions/stats`、`GET /executions/trend`、`GET /modules`、`GET /modules/:module/health`、`GET /modules/health/all`、`GET /providers/health`、`GET /providers/:module/health`。
+- provider health 从 System 读取启用的 TaskProvider 注册记录，复用模块 `/health` 与标准 `GET /tasks?task_type=` 做无副作用探活；Monitor 不复制 capabilities、不修复 provider 注册、不读取 owner 私有表。
 - 执行记录字段以 `common/execution/task_execution.go` 为准；新增模块写执行记录时应复用 `common/execution/repository.go` 和 `common/execution.EnsureStore`。
 
 ## 开发与验证
@@ -51,5 +52,6 @@ bash scripts/swagger/check-route-coverage.sh monitor
 
 - `monitor/docs/Monitor模块实施报告.md`
 - `docs/concepts/addp监控与执行体系图.md`
+- `docs/spec/addp任务体系规范.md`
 - `docs/spec/addp-API设计规范.md`
 - `docs/spec/addp-Swagger集成指南.md`

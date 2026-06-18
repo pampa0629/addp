@@ -110,57 +110,81 @@ const uri = buildLocator({
 // 'addp://engine/1/path/public/users?type=table&item_id=100'
 ```
 
-### 数据源选择器
+### 资源树选择器
 
-> 📚 **详细文档**: [数据源选择器使用指南](./docs/数据源选择器使用指南.md)
+跨模块资源选择统一使用 `ResourceTreePicker`。它基于标准 ResourceLocator 和 Meta resource-tree API，负责引擎选择、资源树浏览、懒加载、`initialLocator` 回显和 locator 主身份 selection 输出。
 
-提供统一的数据源（表/对象）选择体验，支持多种存储引擎。
+`ResourceTreePicker` 不负责业务 DTO 组装、空间能力检测、字段加载或新资源创建。调用方应在收到 locator 后按业务需要调用 capability API，并保存必要执行快照。
 
-**组件系列**:
-- `DataSourceSelector` - 核心选择器组件
-- `DataSourceSelectorDialog` - Dialog 包装（弹窗场景）
-- `DataSourceSelectorCard` - Card 包装（表单嵌入场景）
+稳定约束：
 
-**主要特性**:
-- ✅ 多种数据源类型（PostgreSQL、MySQL、MongoDB、MinIO、S3、Doris、ClickHouse、Spark）
-- ✅ 引擎类型过滤和节点类型过滤
-- ✅ 自动几何列检测（空间数据）
-- ✅ 单选/多选模式
-- ✅ 懒加载优化
+- `mode="item"` 选择已有 data item，`mode="node"` 选择已有资源节点，`mode="any"` 仅用于确有混合选择语义的场景。
+- 已有资源选择结果以 `selection.identity.locator` 作为唯一资源身份；`display` 只用于 UI 展示，`raw.node` 只作为调用方补充读取事实的原始材料。
+- `initialLocator` 回显走 Meta resource-tree ancestors API。回显目标不满足当前 `mode` 或 `selectableFilter` 时，只允许展开和高亮，不应回填为有效 selection。
+- 对明确不应出现的资源，优先通过 `nodeFilter` 直接过滤掉；`selectableFilter` 仅在需要保留上下文但禁止选择时使用。
+- 选择器不构造尚不存在资源的 locator。创建新表、新文件或新对象时，业务表单应使用 `ResourceTreePicker mode="node"` 选择父节点，再输入名称，提交 `parent_locator + name`。
 
 **使用示例**:
 ```vue
 <template>
-  <DataSourceSelectorDialog
-    v-model:visible="dialogVisible"
-    api-base-url="/api/service"
+  <ResourceTreePicker
+    v-model="selection"
+    api-base-url="/api/v1/meta"
     :engine-types="['postgresql', 'mysql']"
-    :selectable-node-types="['table']"
-    @confirm="handleConfirm"
+    mode="item"
+    :selectable-filter="node => node.type === 'table'"
+    @select="handleSelect"
   />
 </template>
 
 <script setup>
 import { ref } from 'vue'
-import { DataSourceSelectorDialog } from '@addp/common-frontend'
+import { ResourceTreePicker } from '@addp/common-frontend'
 
-const dialogVisible = ref(false)
+const selection = ref(null)
 
-const handleConfirm = (selection) => {
+const handleSelect = (selection) => {
   console.log('选择:', selection)
-  // { engineId, schema, tableName, fullName, locator, hasGeometry, ... }
+  // selection.identity.locator 是资源主身份
 }
+</script>
+```
+
+新表创建示例：
+
+```vue
+<template>
+  <ResourceTreePicker
+    v-model="parentSelection"
+    api-base-url="/api/v1/meta"
+    mode="node"
+    :selectable-filter="node => ['schema', 'database'].includes(node.type)"
+  />
+  <el-input v-model="targetName" />
+</template>
+
+<script setup>
+import { computed, ref } from 'vue'
+import { ResourceTreePicker } from '@addp/common-frontend'
+
+const parentSelection = ref(null)
+const targetName = ref('')
+
+const targetCreateDTO = computed(() => ({
+  parent_locator: parentSelection.value?.identity?.locator || '',
+  name: targetName.value.trim()
+}))
 </script>
 ```
 
 **相关 API 函数**:
 ```js
 import {
-  getEngines,              // 获取引擎列表
-  getEngineTree,           // 获取引擎树结构
-  getNodeChildren,         // 懒加载子节点
-  detectTableMetadata,     // 检测表元数据（几何列等）
-  extractDataSourceSelection  // 从树节点提取选择信息
+  listResourceTreeEngines,
+  getResourceTree,
+  getResourceTreeNode,
+  getResourceTreeAncestors,
+  selectionFromResourceTreeNode
 } from '@addp/common-frontend'
 ```
 
@@ -411,7 +435,7 @@ cache.clearCache()
 
 #### useTreeLoader
 
-树增量加载器，封装增量加载、缓存、错误处理逻辑。
+树增量加载器，封装增量加载、缓存、错误处理逻辑，默认请求 Meta resource-tree API。
 
 **使用示例**:
 ```javascript
@@ -425,8 +449,7 @@ const treeLoader = useTreeLoader(client, {
 
 // 增量加载子节点
 const children = await treeLoader.loadNodeChildren(
-  'addp://engine/1/path/public?type=schema',
-  1  // 展开深度
+  'addp://engine/1/path/public?type=schema'
 )
 
 // 搜索节点

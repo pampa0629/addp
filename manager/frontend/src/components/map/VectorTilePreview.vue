@@ -17,10 +17,9 @@
 
     <div ref="mapEl" class="vt-map"></div>
 
-    <el-tooltip :content="renderStatusTooltip" placement="left" effect="dark">
-      <div class="render-status-badge" :class="renderStatusClass">
+    <el-tooltip :content="renderStatusTipContent" placement="left" effect="dark">
+      <div class="render-status-badge" :class="renderStatusClass" :aria-label="renderStatusLabel">
         <span class="render-status-dot"></span>
-        <span>{{ renderStatusLabel }}</span>
       </div>
     </el-tooltip>
 
@@ -62,9 +61,9 @@ import {
 
 const props = defineProps({
   locator: { type: String, default: '' },
-  engineId: { type: [Number, String], required: true },
-  schema: { type: String, required: true },
-  table: { type: String, required: true },
+  engineId: { type: [Number, String], default: 0 },
+  schema: { type: String, default: '' },
+  table: { type: String, default: '' },
   geom: { type: String, default: '' },
   tileUrlTemplate: { type: String, default: '' },
   tileRenderInfo: { type: Object, default: () => ({}) },
@@ -174,6 +173,12 @@ const {
       })
     }
   }
+})
+
+const renderStatusTipContent = computed(() => {
+  const label = renderStatusLabel.value || ''
+  const detail = renderStatusTooltip.value || ''
+  return [label, detail].filter(Boolean).join(': ')
 })
 
 function resetTileRenderState() {
@@ -459,19 +464,16 @@ watch(() => props.showMvtGrid, () => {
   z-index: 20;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  max-width: calc(100% - 24px);
-  padding: 5px 9px;
-  border-radius: 4px;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 50%;
   border: 1px solid rgba(255, 255, 255, 0.18);
   background: rgba(24, 30, 38, 0.88);
   color: #f8fafc;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.2;
-  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.45);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.32);
-  cursor: default;
+  cursor: help;
   backdrop-filter: blur(8px);
 }
 

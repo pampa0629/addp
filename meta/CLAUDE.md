@@ -203,6 +203,5 @@ curl http://localhost:8082/health
 - `docs/spec/addp存储引擎路径体系规范.md`
 - `docs/spec/addp引擎插件接口规范.md`
 - `docs/spec/addp引擎能力声明规范.md`
-- `docs/next/扫描后派生能力与任务边界.md`
-- `docs/next/meta-cleanup边界与派生产物清理设计.md`
+- `docs/spec/addp-cleanup体系规范.md`
 - `manager/CLAUDE.md`

@@ -551,16 +551,13 @@ func relatedRefsToMetaScanRefGroups(refs []format.RelatedRef) []commonClient.Met
 }
 
 func nativeTargetCatalogPaths(endpoint planner.EndpointSpec) []string {
-	loc, err := endpoint.ResourceLocator()
+	loc, err := endpoint.ParentResourceLocator()
 	if err != nil {
 		return nil
 	}
 
 	switch loc.Type {
-	case resourcetree.TypeTable:
-		if len(loc.Path) >= 2 {
-			return []string{strings.TrimSpace(loc.Path[len(loc.Path)-2])}
-		}
+	case resourcetree.TypeSchema, resourcetree.TypeDatabase:
 		return []string{strings.TrimSpace(loc.PathString())}
 	}
 	return nil

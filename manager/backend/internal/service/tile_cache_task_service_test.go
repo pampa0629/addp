@@ -389,7 +389,7 @@ func TestTileCacheGenerationSuccessMarksArtifactReadyAndQuickViewAvailable(t *te
 
 	capability, err := quickViewSvc.BuildCapability(context.Background(), QuickViewIdentity{
 		TenantID: task.TenantID,
-		Locator:  "addp://engine/11/table/public.roads",
+		Locator:  "addp://engine/11/path/public/roads?type=table",
 	}, 11, "public", "roads")
 	if err != nil {
 		t.Fatalf("build quick view capability: %v", err)
@@ -740,7 +740,7 @@ func TestTileCacheGenerationUsesIndexed3857Target(t *testing.T) {
 	task := newTileCacheTaskDefinition()
 	target, _ := asJSONMap(task.Config["target"])
 	target["table"] = "dltb"
-	target["locator"] = "addp://engine/11/table/public.dltb"
+	target["locator"] = "addp://engine/11/path/public/dltb?type=table"
 	task.Config["target"] = target
 	task.Config["tile"] = commonModels.JSONMap{
 		"format":      "mvt",
@@ -1037,7 +1037,7 @@ func newTileCacheTaskDefinition() *models.TileCacheTask {
 				"source_engine_id": float64(11),
 				"schema":           "public",
 				"table":            "roads",
-				"locator":          "addp://engine/11/table/public.roads",
+				"locator":          "addp://engine/11/path/public/roads?type=table",
 			},
 			"tile": commonModels.JSONMap{
 				"format":      "mvt",

@@ -164,7 +164,7 @@ Common 不维护全量业务 `task_type` 编译期枚举。`task_type` 由 owner
 | Graph | `kg_build` | `graph.build_tasks` |
 | Orchestrator | `orchestration` | `orchestrator.orchestrations` |
 
-System cleanup 阶段 1 不纳入 TaskProvider，也不进入 Orchestrator 编排。cleanup 属于系统级运维清理流程，不属于用户数据处理任务；后续若为了监控和审计接入 `common.task_executions`，也必须作为 system-owned execution 记录处理，不得声明为可编排业务任务，不得出现在 Orchestrator 的任务选择列表中。
+System cleanup 不纳入 TaskProvider，也不进入 Orchestrator 编排。cleanup 属于系统级运维清理流程，不属于用户数据处理任务；但 cleanup 必须进入 `common.task_executions` 和 System 审计体系。System 创建 `module=system`、`task_type=cleanup` 的父 execution，各模块 cleanup executor 创建 `task_type=cleanup_executor` 的子 execution，并通过 `parent_execution_id` 关联。cleanup 不得声明为可编排业务任务，不得出现在 Orchestrator 的任务选择列表中。
 
 Transfer 的内部任务语义由 Transfer 专题确认。阶段 1 先把接口层纳入统一任务体系，对外只声明 `task_type=import`，并通过 TaskProvider 和 `common.task_executions` 关联任务定义。后续如专题确认需要增加导出、同步等任务类型，必须先修订本文，再按 clean break 方式迁移，不在同一阶段并行保留 `import`、`export`、`sync`、`transfer` 多套语义。
 
@@ -331,6 +331,8 @@ TaskProvider 注册时必须使用 `task.capabilities/v1` schema，并声明稳�
 
 API-only 阶段的新增任务类型仍必须注册稳定的 `create_url` / `edit_url`，但这两个 URL 可以先指向 owner 模块已确定的后续 Console 承载路由；专题文档必须明确该阶段尚未实现前端创建/编辑 UI。Orchestrator 和 Monitor 不得仅凭 URL 存在推断 owner 模块已经提供可用 UI。
 
+后续如需 `task.capabilities/v2`，必须先单独修订本文，再实现代码。v2 可能讨论 UI schema、inline execution、更完整 JSON Schema、标准取消、capabilities 漂移详情和批量编排健康检查；不得在 v1 中通过私有字段、兼容分支或布尔开关提前打开这些能力。
+
 ## Orchestrator 规范
 
 Orchestrator 拥有编排定义，不拥有业务任务定义。
@@ -390,9 +392,31 @@ Monitor 不拥有任务定义。Monitor 聚合观察：
 | artifact state | owner 模块状态 API | 产物是否 ready、缓存位置、版本、失败原因 |
 | provider health | System TaskProvider / module health / 标准任务列表 endpoint | provider 是否注册、模块是否可调用、无副作用任务发现 endpoint 是否可访问 |
 
-Monitor 可以查询 owner 模块公开的只读状态 API，但不得直接依赖 owner 私有表结构。provider health 第一阶段不得新增 TaskProvider 专用 health endpoint，应复用模块 `/health` 与标准 `GET /tasks?task_type=` 这类无副作用 endpoint 做探活。
+Monitor 可以查询 owner 模块公开的只读状态 API，但不得直接依赖 owner 私有表结构。provider health 不新增 TaskProvider 专用 health endpoint，应复用模块 `/health` 与标准 `GET /tasks?task_type=` 这类无副作用 endpoint 做探活。
+
+provider health 至少检查以下内容：
+
+| 检查项 | 来源 | 说明 |
+| --- | --- | --- |
+| registration | System `task_providers` | provider 是否启用并具备基础 endpoint。 |
+| capabilities | System `task_providers.capabilities` | JSON 是否可解析、`schema_version` 是否为 `task.capabilities/v1`、`task_types` 是否非空。 |
+| module_health | `provider.base_url + /health` | 模块进程是否可访问。 |
+| task_discovery | `provider.base_url + task_list_endpoint + ?task_type=` | 每个未 deprecated task type 的标准任务发现 endpoint 是否可访问。 |
+
+provider health 状态只使用：
+
+| 状态 | 说明 |
+| --- | --- |
+| `up` | 所有检查通过。 |
+| `degraded` | provider 已注册，但 capabilities 非法、部分 task type 发现失败，或模块健康与任务发现状态不一致。 |
+| `down` | 模块 `/health` 不可访问，或所有可用 task type 发现都失败。 |
+| `unknown` | 无可检查 task type，或 System 注册信息暂时无法获取。 |
+
+Monitor 探测任务发现时只发送 `GET` 请求，不读取 owner 私有表，不触发执行，不创建 execution。deprecated task type 不作为可用任务类型处理，不进入健康失败统计。
 
 Monitor 必须支持按执行记录查询 parent / child execution 树。树边使用 `common.task_executions.execution_id` 与 `parent_execution_id` 连接。Monitor 只读取 `common.task_executions`，不得回查 owner 私有表拼装树。
+
+cleanup execution 属于系统运维执行记录。Monitor 必须能展示 cleanup 父子 execution 树、scan / execute 关联、触发方式、清理模式、影响记录数、释放空间、错误摘要和各模块结果；但不得提供 Orchestrator 编排入口，也不得把 cleanup 当作 TaskProvider 任务定义处理。cleanup 的正式语义见 [ADDP Cleanup 体系规范](addp-cleanup体系规范.md)。
 
 入口包括：
 
@@ -400,6 +424,8 @@ Monitor 必须支持按执行记录查询 parent / child execution 树。树边�
 | --- | --- |
 | `GET /api/v1/monitor/executions/{id}/tree` | 按统一执行记录自增 `id` 查询，适合 Monitor 表格内部跳转 |
 | `GET /api/v1/monitor/executions/by-execution-id/{execution_id}/tree` | 按全局 UUID 查询，适合各模块拿到 `execution_id` 后跳转统一监控 |
+| `GET /api/v1/monitor/providers/health` | 查询所有 TaskProvider 的运行态健康。 |
+| `GET /api/v1/monitor/providers/{module}/health` | 查询单个 TaskProvider 的运行态健康。 |
 
 前端模块拿到执行响应中的 `execution_id` 后，应使用 `common-frontend` 的 `openMonitorExecution(execution_id)` 进入统一监控页。该工具会优先通过 Console iframe bridge 切换父级路由到 `/monitor/executions?execution_id=...`，独立运行时再回退为在新窗口打开 Console 路由，避免覆盖当前业务模块页面。业务模块不得自行硬编码 Console 端口或拼装跨模块 iframe URL。
 
@@ -421,6 +447,5 @@ Monitor 必须支持按执行记录查询 parent / child execution 树。树边�
 ## 与相关文档的关系
 
 - Meta 扫描任务细节见 [元数据扫描机制规范](addp元数据扫描机制规范.md)。
-- 扫描后派生产物任务边界见 [扫描后派生能力与任务边界](../next/扫描后派生能力与任务边界.md)。
-- Transfer 内部任务语义后续以 Transfer 专题为准。
+- Transfer 内部任务语义后续以 [Transfer 任务语义与同步模式设计](../next/transfer任务语义与同步模式设计.md) 为准。
 - Manager 派生产物任务内部语义后续以 Manager 专题为准。

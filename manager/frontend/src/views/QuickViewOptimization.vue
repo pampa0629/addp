@@ -1,30 +1,22 @@
 <template>
   <div class="quick-view-optimization">
     <el-card>
-      <template #header>
-        <div class="page-header">
-          <div>
-            <div class="page-title">{{ t('manager.quickViewOptimization.title') }}</div>
-            <div class="page-subtitle">{{ t('manager.quickViewOptimization.subtitle') }}</div>
-          </div>
-          <el-button type="primary" :icon="Plus" @click="openCreateDialog">
-            {{ t('manager.quickViewOptimization.create') }}
-          </el-button>
-        </div>
-      </template>
-
-      <el-alert
-        type="info"
-        :closable="false"
-        show-icon
-        class="workflow-alert"
-        :title="t('manager.quickViewOptimization.workflowTitle')"
-        :description="t('manager.quickViewOptimization.workflowDescription')"
-      />
-
       <el-tabs v-model="activeTab" @tab-change="handleTabChange">
         <el-tab-pane :label="t('manager.quickViewOptimization.tasksTab')" name="tasks">
-          <div class="tab-toolbar">
+          <div class="tab-toolbar task-tab-toolbar">
+            <div class="toolbar-tip">
+              <span class="toolbar-tip-text">{{ t('manager.quickViewOptimization.subtitle') }}</span>
+              <el-tooltip
+                :content="t('manager.quickViewOptimization.workflowDescription')"
+                placement="bottom"
+                :show-after="300"
+              >
+                <el-icon class="inline-tip-icon"><InfoFilled /></el-icon>
+              </el-tooltip>
+            </div>
+            <el-button type="primary" :icon="Plus" @click="openCreateDialog">
+              {{ t('manager.quickViewOptimization.create') }}
+            </el-button>
             <el-button :icon="Refresh" circle @click="loadTasks" />
           </div>
 
@@ -122,9 +114,14 @@
                   <el-tag :type="optimizationResultStatusTagType(row.status)">
                     {{ resultStatusLabel(row.status) }}
                   </el-tag>
-                  <span v-if="row.status === 'stale'" class="result-status-hint">
-                    {{ t('manager.quickViewOptimization.staleResultHint') }}
-                  </span>
+                  <el-tooltip
+                    v-if="row.status === 'stale'"
+                    :content="t('manager.quickViewOptimization.staleResultHint')"
+                    placement="bottom"
+                    :show-after="300"
+                  >
+                    <el-icon class="result-status-tip"><InfoFilled /></el-icon>
+                  </el-tooltip>
                 </div>
               </template>
             </el-table-column>
@@ -207,10 +204,21 @@
               <el-alert
                 v-if="sourceSelectionLocked"
                 type="info"
-                :title="t('manager.quickViewOptimization.sourceLockedHint')"
+                :title="t('manager.quickViewOptimization.sourceLockedTitle')"
                 :closable="false"
                 show-icon
-              />
+                class="compact-tip-alert"
+              >
+                <template #default>
+                  <el-tooltip
+                    :content="t('manager.quickViewOptimization.sourceLockedHint')"
+                    placement="bottom"
+                    :show-after="300"
+                  >
+                    <el-icon class="inline-tip-icon"><InfoFilled /></el-icon>
+                  </el-tooltip>
+                </template>
+              </el-alert>
               <ResourceTree
                 :tree-data="resourceTreeData"
                 :loading="resourceLoading"
@@ -256,8 +264,18 @@
           :closable="false"
           show-icon
           class="optimization-advice"
-          :title="t('manager.quickViewOptimization.sourceAlready3857')"
-        />
+          :title="t('manager.quickViewOptimization.sourceAlready3857Title')"
+        >
+          <template #default>
+            <el-tooltip
+              :content="t('manager.quickViewOptimization.sourceAlready3857')"
+              placement="bottom"
+              :show-after="300"
+            >
+              <el-icon class="inline-tip-icon"><InfoFilled /></el-icon>
+            </el-tooltip>
+          </template>
+        </el-alert>
         <el-form-item :label="t('manager.quickViewOptimization.geometryColumn')" prop="config.geometry.geometry_column">
           <el-select v-model="form.config.geometry.geometry_column" filterable :placeholder="t('manager.quickViewOptimization.geometryColumnRequired')">
             <el-option v-for="column in geometryColumnOptions" :key="column" :label="column" :value="column" />
@@ -282,13 +300,14 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowDown, Plus, Refresh } from '@element-plus/icons-vue'
+import { ArrowDown, InfoFilled, Plus, Refresh } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { openMonitorExecution, parseLocator, ResourceTree } from '@addp/common-frontend'
+import { openMonitorExecution, parseLocatorSafe, ResourceTree } from '@addp/common-frontend'
 import client from '@/api/client'
+import { dataExplorerAPI } from '@/api/dataExplorer'
 import { quickViewAPI } from '@/api/quickView'
 import { formatDateTime } from '@/utils/formatters'
 import {
@@ -306,10 +325,10 @@ import { quickViewOptimizationResultAction } from '@/utils/quickViewOptimization
 import { buildTileCacheCreateQuery } from '@/utils/quickViewNavigationQuery'
 import {
   createResourceRootNode,
-  findResourceNodePath,
   geometryColumnsFromNode,
   isResourceRootNode,
   locatorEngineID,
+  mergeAncestorChainIntoResourceTree,
   normalizeResourceNode,
   replaceResourceNode,
   tableSelectionFromResourceNode,
@@ -352,7 +371,7 @@ const form = reactive(createDefaultQuickViewOptimizationTaskForm())
 const geometryColumnOptions = ref([])
 const databaseEngineTypes = new Set(['postgresql', 'postgres', 'postgis'])
 
-const routeSourceLocked = computed(() => !!route.query.engine_id && !!route.query.schema && !!route.query.table)
+const routeSourceLocked = computed(() => !!route.query.locator)
 const sourceSelectionLocked = computed(() => !!editingId.value || routeSourceLocked.value)
 const showResourcePicker = computed(() => !routeSourceLocked.value || !!editingId.value)
 const formTitle = computed(() => editingId.value ? t('manager.quickViewOptimization.editTitle') : t('manager.quickViewOptimization.createTitle'))
@@ -391,11 +410,8 @@ const resetForm = (task = null) => {
 }
 
 const safeParseLocator = (locator) => {
-  try {
-    return parseLocator(locator)
-  } catch {
-    return null
-  }
+  const parsed = parseLocatorSafe(locator)
+  return parsed.engineId ? parsed : null
 }
 
 const loadTasks = async () => {
@@ -469,9 +485,7 @@ const loadResourceTreeRoot = async (node) => {
   if (!engineID) return
   resourceLoading.value = true
   try {
-    const tree = await client.get(`/manager/tree/${engineID}`, {
-      params: { expand_depth: 2 }
-    })
+    const tree = await dataExplorerAPI.getTree(engineID, 2)
     const engine = { id: node.engineId, engine_type: node.engineType, name: node.engineName }
     const normalized = normalizeResourceNode(tree, engine, { parseLocator: safeParseLocator, loaded: true })
     if (!normalized) return
@@ -493,9 +507,7 @@ const loadResourceNodeChildren = async (node) => {
   if (!locator || !engineID) return
   resourceLoading.value = true
   try {
-    const response = await client.get(`/manager/tree/${engineID}/node`, {
-      params: { locator, expand_depth: 1 }
-    })
+    const response = await dataExplorerAPI.getNodeChildren(engineID, locator)
     const engine = { id: node.engineId, engine_type: node.engineType, name: node.engineName }
     const children = (response.children || [])
       .map((child) => normalizeResourceNode(child, engine, { parseLocator: safeParseLocator }))
@@ -510,9 +522,6 @@ const loadResourceNodeChildren = async (node) => {
 }
 
 const applyRouteSourceContext = () => {
-  if (route.query.engine_id) form.config.target.source_engine_id = Number(route.query.engine_id)
-  if (route.query.schema) form.config.target.schema = String(route.query.schema)
-  if (route.query.table) form.config.target.table = String(route.query.table)
   if (route.query.item_id) form.config.target.item_id = Number(route.query.item_id)
   if (route.query.item_fingerprint) {
     form.config.target.item_fingerprint = String(route.query.item_fingerprint)
@@ -557,6 +566,11 @@ const loadQuickViewCapabilityForForm = async (fallbackGeometryColumns = []) => {
     const capability = await quickViewAPI.getQuickViewCapabilityByLocator(locator)
     const quickView = capability?.quick_view || {}
     const renderFacts = capability?.render_facts || {}
+    if (capability?.source_engine_id) form.config.target.source_engine_id = Number(capability.source_engine_id)
+    if (capability?.source_schema) form.config.target.schema = String(capability.source_schema)
+    if (capability?.source_table) form.config.target.table = String(capability.source_table)
+    if (capability?.locator) form.config.target.locator = String(capability.locator)
+    if (capability?.item_fingerprint) form.config.target.item_fingerprint = String(capability.item_fingerprint)
     const columns = [
       ...(quickView.geometry_columns || []),
       quickView.geometry_column,
@@ -631,25 +645,29 @@ const revealSelectedResource = async () => {
   if (!locator) return
   const engineID = Number(form.config.target.source_engine_id || locatorEngineID(locator, safeParseLocator))
   if (!engineID) return
-  let root = resourceTreeData.value.find((node) => Number(node.engineId) === engineID)
-  if (!root) return
-  if (isResourceRootNode(root) && !root.loaded) {
-    await loadResourceTreeRoot(root)
-  }
-  const path = findResourceNodePath(resourceTreeData.value, locator)
-  const expanded = new Set(resourceExpandedKeys.value)
-  if (path.length > 1) {
-    for (const node of path.slice(0, -1)) {
-      expanded.add(node.locator || node.id)
+  resourceLoading.value = true
+  try {
+    const response = await dataExplorerAPI.getTreeAncestors(engineID, locator)
+    const chain = Array.isArray(response?.ancestors) ? response.ancestors : []
+    if (!chain.length) return
+    const engine = engineOptions.value.find((item) => Number(item.id) === engineID) || null
+    const merged = mergeAncestorChainIntoResourceTree(resourceTreeData.value, chain, {
+      engine,
+      parseLocator: safeParseLocator
+    })
+    resourceTreeData.value = merged.nodes
+    const expanded = new Set(resourceExpandedKeys.value)
+    for (const key of merged.expandedKeys) {
+      expanded.add(key)
     }
-  } else {
-    root = resourceTreeData.value.find((node) => Number(node.engineId) === engineID) || root
-    expanded.add(root.locator || root.id)
+    resourceExpandedKeys.value = Array.from(expanded)
+    resourceCurrentKey.value = response?.target_locator || merged.target?.locator || merged.target?.id || locator
+  } catch (error) {
+    console.error('定位快显性能优化资源失败:', error)
+    ElMessage.error(t('manager.quickViewOptimization.loadResourceTreeFailed'))
+  } finally {
+    resourceLoading.value = false
   }
-  resourceExpandedKeys.value = Array.from(expanded)
-  resourceCurrentKey.value = ''
-  await nextTick()
-  resourceCurrentKey.value = locator
 }
 
 const openCreateDialog = async () => {
@@ -962,29 +980,6 @@ onMounted(async () => {
   padding: 20px;
 }
 
-.page-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.page-title {
-  color: var(--addp-text-primary);
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.page-subtitle {
-  color: var(--addp-text-secondary);
-  font-size: 13px;
-  margin-top: 4px;
-}
-
-.workflow-alert {
-  margin-bottom: 14px;
-}
-
 .tab-toolbar,
 .filter-bar {
   display: flex;
@@ -992,6 +987,27 @@ onMounted(async () => {
   align-items: center;
   margin-bottom: 14px;
   flex-wrap: wrap;
+}
+
+.task-tab-toolbar {
+  justify-content: flex-end;
+}
+
+.toolbar-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-right: auto;
+  color: var(--addp-text-secondary);
+  font-size: 13px;
+}
+
+.toolbar-tip-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .filter-bar .el-input {
@@ -1018,16 +1034,16 @@ onMounted(async () => {
 }
 
 .result-status-cell {
-  display: flex;
-  flex-direction: column;
+  display: inline-flex;
   gap: 4px;
-  align-items: flex-start;
+  align-items: center;
 }
 
-.result-status-hint {
-  color: var(--addp-text-tertiary);
-  font-size: 12px;
-  line-height: 1.3;
+.inline-tip-icon,
+.result-status-tip {
+  flex: 0 0 auto;
+  color: var(--el-color-info);
+  cursor: help;
 }
 
 .form-section-title {
@@ -1042,6 +1058,13 @@ onMounted(async () => {
 
 .optimization-advice {
   margin-bottom: 14px;
+}
+
+.optimization-advice :deep(.el-alert__description),
+.compact-tip-alert :deep(.el-alert__description) {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
 }
 
 .resource-picker {

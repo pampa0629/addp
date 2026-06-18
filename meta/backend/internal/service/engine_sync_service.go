@@ -1,7 +1,6 @@
 package service
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 
@@ -13,28 +12,19 @@ import (
 
 // EngineSyncService 负责引擎变更事件的同步处理
 type EngineSyncService struct {
-	engineService    *EngineService
-	taskService      *ScanTaskService
-	executionService *ScanExecutionService
-	cleanupService   *CleanupService
-	eventSubscriber  *events.EngineEventSubscriber
-	log              *slog.Logger
+	engineService   *EngineService
+	eventSubscriber *events.EngineEventSubscriber
+	log             *slog.Logger
 }
 
 // NewEngineSyncService 创建引擎同步服务
 func NewEngineSyncService(
 	redisClient *redis.Client,
 	engineService *EngineService,
-	taskService *ScanTaskService,
-	executionService *ScanExecutionService,
-	cleanupService *CleanupService,
 ) *EngineSyncService {
 	s := &EngineSyncService{
-		engineService:    engineService,
-		taskService:      taskService,
-		executionService: executionService,
-		cleanupService:   cleanupService,
-		log:              logger.With("component", "engine_sync_service"),
+		engineService: engineService,
+		log:           logger.With("component", "engine_sync_service"),
 	}
 
 	if redisClient == nil {
@@ -104,20 +94,7 @@ func (s *EngineSyncService) handleEngineChangeEvent(event events.EngineChangeEve
 
 	case events.ActionDelete:
 		s.engineService.ClearEngineCache(event.EngineID)
-
-		if s.taskService != nil {
-			if err := s.taskService.DeleteEngineTaskBindings(event.EngineID); err != nil {
-				s.log.Warn("删除资源关联的扫描任务失败",
-					"engine_id", event.EngineID,
-					"error", err)
-			} else {
-				s.log.Info("资源已删除，关联任务已清理", "engine_id", event.EngineID)
-			}
-		}
-		if s.cleanupService != nil {
-			s.cleanupService.CleanupEngineDeleted(context.Background(), event.EngineID, 0)
-		}
-
+		s.log.Info("资源已删除，缓存已清除；扫描任务定义残留由 cleanup executor 处理", "engine_id", event.EngineID)
 	default:
 		s.log.Warn("未知的资源变更动作", "action", event.Action, "engine_id", event.EngineID)
 	}

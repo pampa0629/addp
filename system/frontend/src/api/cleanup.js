@@ -1,7 +1,7 @@
 import client from './client'
 
 export const cleanupApi = {
-  // 创建扫描任务
+  // 创建评估任务
   createScanTask: (data) => {
     return client.post('/system/admin/cleanup/scan', data)
   },

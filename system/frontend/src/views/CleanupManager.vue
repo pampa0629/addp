@@ -3,7 +3,10 @@
     <el-card>
       <template #header>
         <div class="card-header">
-          <span>{{ t('system.cleanup.title') }}</span>
+          <div class="page-title">
+            <span>{{ t('system.cleanup.title') }}</span>
+            <small>{{ t('system.cleanup.subtitle') }}</small>
+          </div>
           <div class="header-actions">
             <el-button
               type="primary"
@@ -19,6 +22,12 @@
             >
               {{ t('system.cleanup.refreshHistory') }}
             </el-button>
+            <el-button
+              :icon="Monitor"
+              @click="openCleanupMonitor"
+            >
+              {{ t('system.cleanup.actions.viewAllMonitor') }}
+            </el-button>
           </div>
         </div>
       </template>
@@ -33,6 +42,14 @@
       >
         <div>{{ t('system.cleanup.taskId', { id: currentTask.task_id }) }}</div>
         <div>{{ t('system.cleanup.taskStatus', { status: getStatusText(currentTask.status) }) }}</div>
+        <el-button
+          v-if="currentTask.task?.execution_id"
+          type="primary"
+          link
+          @click="openMonitor(currentTask.task.execution_id)"
+        >
+          {{ t('system.cleanup.actions.viewMonitor') }}
+        </el-button>
         <el-progress
           v-if="currentTask.progress"
           :percentage="Math.round((currentTask.progress.completed / currentTask.progress.total) * 100)"
@@ -42,12 +59,44 @@
 
       <!-- 扫描结果 -->
       <div v-if="scanResult" class="scan-result">
-        <el-descriptions :title="t('system.cleanup.scanResult.title')" :column="2" border>
+        <div class="summary-grid">
+          <div class="summary-tile">
+            <span class="summary-label">{{ t('system.cleanup.overview.items') }}</span>
+            <strong>{{ reclaimOverview.items }}</strong>
+          </div>
+          <div class="summary-tile">
+            <span class="summary-label">{{ t('system.cleanup.overview.risk') }}</span>
+            <el-tag :type="getRiskLevelType(reclaimOverview.risk)">
+              {{ getRiskLevelText(reclaimOverview.risk) }}
+            </el-tag>
+          </div>
+          <div class="summary-tile">
+            <span class="summary-label">{{ t('system.cleanup.overview.freedBytes') }}</span>
+            <strong>{{ formatBytes(reclaimOverview.freedBytes) }}</strong>
+          </div>
+          <div class="summary-tile">
+            <span class="summary-label">{{ t('system.cleanup.overview.modules') }}</span>
+            <strong>{{ reclaimOverview.modules }}</strong>
+          </div>
+        </div>
+
+        <el-descriptions :title="t('system.cleanup.scanResult.title')" :column="2" border class="result-descriptions">
           <el-descriptions-item :label="t('system.cleanup.scanResult.scanTime')">
             {{ formatTime(scanResult.task.started_at) }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('system.cleanup.scanResult.scanScope')">
-            {{ scanResult.task.expected_modules?.join(', ') }}
+            {{ formatModules(scanResult.task.expected_modules) }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('system.cleanup.scanResult.triggerType')">
+            <el-tag :type="getTriggerTypeTag(scanResult.task.trigger_type)">
+              {{ getTriggerTypeText(scanResult.task.trigger_type) }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('system.cleanup.scanResult.causeEvent')">
+            {{ getCauseEventText(scanResult.task.cause_event) }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('system.cleanup.scanResult.context')">
+            {{ formatContext(scanResult.task.context) }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('system.cleanup.scanResult.riskLevel')">
             <el-tag :type="getRiskLevelType(scanResult.summary.risk_level)">
@@ -55,43 +104,62 @@
             </el-tag>
           </el-descriptions-item>
           <el-descriptions-item :label="t('system.cleanup.scanResult.itemsToClean')">
-            {{ t('system.cleanup.scanResult.items', { count: scanResult.summary.total_items_to_clean }) }}
+            {{ t('system.cleanup.scanResult.items', { count: reclaimOverview.items }) }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('system.cleanup.scanResult.monitor')" v-if="scanResult.task.execution_id">
+            <el-button type="primary" link @click="openMonitor(scanResult.task.execution_id)">
+              {{ t('system.cleanup.actions.viewMonitor') }}
+            </el-button>
           </el-descriptions-item>
         </el-descriptions>
 
-        <!-- Meta 模块扫描详情 -->
-        <div v-if="scanResult.results?.meta" class="module-result">
-          <h3>{{ t('system.cleanup.meta.title') }}</h3>
-          <el-row :gutter="20">
-            <el-col :span="8">
-              <el-statistic :title="t('system.cleanup.meta.softDeleted')" :value="scanResult.results.meta.statistics.soft_deleted?.items || 0">
-                <template #suffix>{{ t('system.cleanup.meta.count') }}</template>
-              </el-statistic>
-              <div class="stat-detail">{{ t('system.cleanup.meta.nodes', { count: scanResult.results.meta.statistics.soft_deleted?.nodes || 0 }) }}</div>
-            </el-col>
-            <el-col :span="8">
-              <el-statistic :title="t('system.cleanup.meta.invalidEngines')" :value="scanResult.results.meta.statistics.invalid_engines?.count || 0">
-                <template #suffix>{{ t('system.cleanup.meta.engines') }}</template>
-              </el-statistic>
-            </el-col>
-            <el-col :span="8">
-              <el-statistic :title="t('system.cleanup.meta.duplicateFingerprints')" :value="scanResult.results.meta.statistics.duplicate_fingerprints?.count || 0">
-                <template #suffix>{{ t('system.cleanup.meta.count') }}</template>
-              </el-statistic>
-            </el-col>
-          </el-row>
-
-          <!-- 无效引擎详情 -->
-          <div v-if="scanResult.results.meta.statistics.invalid_engines?.details?.length > 0" class="invalid-engines">
-            <h4>{{ t('system.cleanup.meta.invalidEngineDetail') }}</h4>
-            <el-table :data="scanResult.results.meta.statistics.invalid_engines.details" border>
-              <el-table-column prop="engine_id" :label="t('system.cleanup.meta.engineId')" width="100" />
-              <el-table-column prop="engine_name" :label="t('system.cleanup.meta.engineName')" />
-              <el-table-column prop="reason" :label="t('system.cleanup.meta.reason')" />
-              <el-table-column prop="affected_nodes" :label="t('system.cleanup.meta.affectedNodes')" width="100" />
-              <el-table-column prop="affected_items" :label="t('system.cleanup.meta.affectedItems')" width="100" />
-            </el-table>
-          </div>
+        <!-- 模块扫描详情 -->
+        <div v-if="moduleResults.length > 0" class="module-result">
+          <h3>{{ t('system.cleanup.modules.title') }}</h3>
+          <el-table :data="moduleResults" border>
+            <el-table-column :label="t('system.cleanup.modules.columns.module')" width="130">
+              <template #default="{ row }">
+                {{ getModuleName(row.module) }}
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('system.cleanup.modules.columns.status')" width="120">
+              <template #default="{ row }">
+                <el-tag :type="getModuleStatusType(row.status)">
+                  {{ getModuleStatusText(row.status) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="summary.scanned_items" :label="t('system.cleanup.modules.columns.scannedItems')" width="120" />
+            <el-table-column prop="summary.affected_records" :label="t('system.cleanup.modules.columns.affectedRecords')" width="130" />
+            <el-table-column :label="t('system.cleanup.modules.columns.stateChanges')" min-width="180">
+              <template #default="{ row }">
+                {{ formatStateChanges(row.summary) }}
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('system.cleanup.modules.columns.releasedStorage')" min-width="160">
+              <template #default="{ row }">
+                {{ t('system.cleanup.modules.releasedStorageValue', {
+                  artifacts: row.summary.deleted_physical_artifacts || 0,
+                  bytes: formatBytes(row.summary.freed_bytes)
+                }) }}
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('system.cleanup.modules.columns.exceptions')" min-width="150">
+              <template #default="{ row }">
+                {{ t('system.cleanup.modules.exceptionsValue', {
+                  skipped: row.summary.skipped_items || 0,
+                  errors: row.summary.error_count || 0
+                }) }}
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('system.cleanup.modules.columns.riskLevel')" width="100">
+              <template #default="{ row }">
+                <el-tag :type="getRiskLevelType(row.summary.risk_level)">
+                  {{ getRiskLevelText(row.summary.risk_level || 'low') }}
+                </el-tag>
+              </template>
+            </el-table-column>
+          </el-table>
         </div>
 
         <!-- 清理操作 -->
@@ -103,8 +171,8 @@
             style="margin-bottom: 15px"
           >
             <ul style="margin: 0; padding-left: 20px">
-              <li><strong>{{ t('system.cleanup.cleanupNote.softDelete') }}</strong>: {{ t('system.cleanup.cleanupNote.softDeleteDesc') }}</li>
-              <li><strong>{{ t('system.cleanup.cleanupNote.hardDelete') }}</strong>: {{ t('system.cleanup.cleanupNote.hardDeleteDesc') }}</li>
+              <li><strong>{{ t('system.cleanup.cleanupNote.logicalCleanup') }}</strong>: {{ t('system.cleanup.cleanupNote.logicalCleanupDesc') }}</li>
+              <li><strong>{{ t('system.cleanup.cleanupNote.physicalCleanup') }}</strong>: {{ t('system.cleanup.cleanupNote.physicalCleanupDesc') }}</li>
             </ul>
           </el-alert>
 
@@ -113,15 +181,15 @@
               type="warning"
               :icon="WarningFilled"
               :loading="executeLoading"
-              @click="executeCleanup('soft_delete')"
+              @click="executeCleanup('logical_cleanup')"
             >
-              {{ t('system.cleanup.actions.softDelete') }}
+              {{ t('system.cleanup.actions.logicalCleanup') }}
             </el-button>
             <el-popconfirm
-              :title="t('system.cleanup.actions.hardDeleteConfirm')"
+              :title="t('system.cleanup.actions.physicalCleanupConfirm')"
               :confirm-button-text="t('system.cleanup.actions.confirm')"
               :cancel-button-text="t('system.cleanup.actions.cancel')"
-              @confirm="executeCleanup('hard_delete')"
+              @confirm="executeCleanup('physical_cleanup')"
             >
               <template #reference>
                 <el-button
@@ -129,7 +197,7 @@
                   :icon="Delete"
                   :loading="executeLoading"
                 >
-                  {{ t('system.cleanup.actions.hardDelete') }}
+                  {{ t('system.cleanup.actions.physicalCleanup') }}
                 </el-button>
               </template>
             </el-popconfirm>
@@ -154,11 +222,33 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column :label="t('system.cleanup.history.columns.deleteType')" width="120">
+          <el-table-column :label="t('system.cleanup.history.columns.cleanupMode')" width="120">
             <template #default="{ row }">
-              <el-tag v-if="row.delete_type === 'soft_delete'" type="warning">{{ t('system.cleanup.history.softDelete') }}</el-tag>
-              <el-tag v-else-if="row.delete_type === 'hard_delete'" type="danger">{{ t('system.cleanup.history.hardDelete') }}</el-tag>
+              <el-tag v-if="row.cleanup_mode === 'logical_cleanup'" type="warning">{{ t('system.cleanup.history.logicalCleanup') }}</el-tag>
+              <el-tag v-else-if="row.cleanup_mode === 'physical_cleanup'" type="danger">{{ t('system.cleanup.history.physicalCleanup') }}</el-tag>
               <span v-else>-</span>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('system.cleanup.history.columns.triggerType')" width="110">
+            <template #default="{ row }">
+              <el-tag :type="getTriggerTypeTag(row.trigger_type)">
+                {{ getTriggerTypeText(row.trigger_type) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('system.cleanup.history.columns.causeEvent')" width="150">
+            <template #default="{ row }">
+              {{ getCauseEventText(row.cause_event) }}
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('system.cleanup.history.columns.basedOnScan')" width="220">
+            <template #default="{ row }">
+              {{ row.based_on_scan || '-' }}
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('system.cleanup.history.columns.context')" min-width="180">
+            <template #default="{ row }">
+              <span class="context-cell">{{ formatContext(row.context) }}</span>
             </template>
           </el-table-column>
           <el-table-column :label="t('system.cleanup.history.columns.status')" width="100">
@@ -168,7 +258,7 @@
           </el-table-column>
           <el-table-column :label="t('system.cleanup.history.columns.scope')" width="100">
             <template #default="{ row }">
-              {{ row.expected_modules?.join(', ') || '-' }}
+              {{ formatModules(row.expected_modules) }}
             </template>
           </el-table-column>
           <el-table-column :label="t('system.cleanup.history.columns.startTime')" width="180">
@@ -176,7 +266,7 @@
               {{ formatTime(row.started_at) }}
             </template>
           </el-table-column>
-          <el-table-column :label="t('system.cleanup.history.columns.actions')" fixed="right" width="100">
+          <el-table-column :label="t('system.cleanup.history.columns.actions')" fixed="right" width="180">
             <template #default="{ row }">
               <el-button
                 type="primary"
@@ -184,6 +274,14 @@
                 @click="viewTaskDetail(row.task_id)"
               >
                 {{ t('system.cleanup.history.viewDetail') }}
+              </el-button>
+              <el-button
+                v-if="row.execution_id"
+                type="primary"
+                link
+                @click="openMonitor(row.execution_id)"
+              >
+                {{ t('system.cleanup.actions.viewMonitor') }}
               </el-button>
             </template>
           </el-table-column>
@@ -204,10 +302,11 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
-import { Search, Refresh, Delete, WarningFilled } from '@element-plus/icons-vue'
+import { Search, Refresh, Delete, WarningFilled, Monitor } from '@element-plus/icons-vue'
+import { openMonitorExecution, openMonitorExecutions } from '@common-ui'
 import { cleanupApi } from '../api/cleanup'
 
 const { t } = useI18n()
@@ -221,11 +320,48 @@ const taskHistory = ref([])
 const detailDialogVisible = ref(false)
 const taskDetail = ref(null)
 
-// 开始扫描
+const emptySummary = {
+  scanned_items: 0,
+  affected_records: 0,
+  deleted_physical_artifacts: 0,
+  freed_bytes: 0,
+  marked_missing_source: 0,
+  marked_outdated: 0,
+  disabled_task_definitions: 0,
+  skipped_items: 0,
+  error_count: 0,
+  risk_level: 'low'
+}
+
+const moduleResults = computed(() => {
+  const results = scanResult.value?.results || {}
+  return Object.entries(results)
+    .map(([module, result]) => ({
+      module,
+      status: result?.status || 'unknown',
+      summary: {
+        ...emptySummary,
+        ...(result?.summary || {})
+      }
+    }))
+    .sort((left, right) => left.module.localeCompare(right.module))
+})
+
+const reclaimOverview = computed(() => {
+  const summary = scanResult.value?.summary || {}
+  return {
+    items: Number(summary.scanned_items ?? summary.total_items_to_clean ?? 0),
+    risk: summary.risk_level || 'low',
+    freedBytes: Number(summary.freed_bytes || 0),
+    modules: scanResult.value?.task?.expected_modules?.length || moduleResults.value.length || 0
+  }
+})
+
+// 开始评估
 const startScan = async () => {
   try {
     scanLoading.value = true
-    const response = await cleanupApi.createScanTask({ scope: ['meta'] })
+    const response = await cleanupApi.createScanTask({})
     const taskId = response.task_id
 
     ElMessage.success(t('system.cleanup.msg.scanCreated'))
@@ -239,8 +375,8 @@ const startScan = async () => {
   }
 }
 
-// 执行清理
-const executeCleanup = async (deleteType) => {
+// 执行资源回收
+const executeCleanup = async (cleanupMode) => {
   if (!scanResult.value) {
     ElMessage.warning(t('system.cleanup.msg.noScanFirst'))
     return
@@ -250,7 +386,7 @@ const executeCleanup = async (deleteType) => {
     executeLoading.value = true
     const response = await cleanupApi.createExecuteTask({
       based_on_scan: scanResult.value.task_id,
-      delete_type: deleteType
+      cleanup_mode: cleanupMode
     })
 
     ElMessage.success(t('system.cleanup.msg.cleanupCreated'))
@@ -275,7 +411,7 @@ const pollTaskStatus = async (taskId) => {
       currentTask.value = status
 
       if (status.status === 'completed' || status.status === 'completed_with_errors') {
-        // 扫描完成，显示结果
+        // 评估完成，显示结果
         if (status.action === 'scan') {
           scanResult.value = status
         }
@@ -327,6 +463,18 @@ const viewTaskDetail = async (taskId) => {
   }
 }
 
+const openMonitor = async (executionId) => {
+  if (!executionId) return
+  await openMonitorExecution(executionId)
+}
+
+const openCleanupMonitor = async () => {
+  await openMonitorExecutions({
+    module: 'system',
+    task_type: 'cleanup'
+  })
+}
+
 // 格式化时间
 const formatTime = (time) => {
   if (!time) return '-'
@@ -364,6 +512,92 @@ const getRiskLevelType = (level) => {
   return typeMap[level] || 'info'
 }
 
+const getTriggerTypeText = (triggerType) => {
+  const textMap = {
+    manual: t('system.cleanup.trigger.manual'),
+    scheduled: t('system.cleanup.trigger.scheduled'),
+    event: t('system.cleanup.trigger.event')
+  }
+  return textMap[triggerType] || triggerType || '-'
+}
+
+const getTriggerTypeTag = (triggerType) => {
+  const typeMap = {
+    manual: 'info',
+    scheduled: 'success',
+    event: 'warning'
+  }
+  return typeMap[triggerType] || 'info'
+}
+
+const getCauseEventText = (causeEvent) => {
+  if (!causeEvent) return '-'
+  const key = `system.cleanup.causeEvent.${causeEvent.replaceAll('.', '_')}`
+  const translated = t(key)
+  return translated === key ? causeEvent : translated
+}
+
+const getModuleStatusText = (status) => {
+  const statusMap = {
+    success: t('system.cleanup.moduleStatus.success'),
+    failed: t('system.cleanup.moduleStatus.failed'),
+    partial_success: t('system.cleanup.moduleStatus.partialSuccess'),
+    skipped: t('system.cleanup.moduleStatus.skipped'),
+    timeout: t('system.cleanup.moduleStatus.timeout')
+  }
+  return statusMap[status] || status
+}
+
+const getModuleStatusType = (status) => {
+  const typeMap = {
+    success: 'success',
+    failed: 'danger',
+    partial_success: 'warning',
+    skipped: 'info',
+    timeout: 'danger'
+  }
+  return typeMap[status] || 'info'
+}
+
+const getModuleName = (module) => {
+  if (!module) return '-'
+  const key = `system.cleanup.modules.names.${module}`
+  const translated = t(key)
+  return translated === key ? module : translated
+}
+
+const formatModules = (modules) => {
+  if (!Array.isArray(modules) || modules.length === 0) return '-'
+  return modules.map((module) => getModuleName(module)).join(', ')
+}
+
+const formatBytes = (value) => {
+  const bytes = Number(value || 0)
+  if (bytes <= 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
+  return `${(bytes / Math.pow(1024, index)).toFixed(index === 0 ? 0 : 1)} ${units[index]}`
+}
+
+const formatStateChanges = (summary) => {
+  const parts = []
+  const missing = Number(summary?.marked_missing_source || 0)
+  const outdated = Number(summary?.marked_outdated || 0)
+  const disabled = Number(summary?.disabled_task_definitions || 0)
+  if (missing > 0) parts.push(t('system.cleanup.modules.stateChanges.missing', { count: missing }))
+  if (outdated > 0) parts.push(t('system.cleanup.modules.stateChanges.outdated', { count: outdated }))
+  if (disabled > 0) parts.push(t('system.cleanup.modules.stateChanges.disabled', { count: disabled }))
+  return parts.length > 0 ? parts.join(' / ') : '-'
+}
+
+const formatContext = (context) => {
+  if (!context || Object.keys(context).length === 0) return '-'
+  return Object.entries(context)
+    .filter(([, value]) => value !== undefined && value !== null && value !== '')
+    .map(([key, value]) => `${key}=${value}`)
+    .join(', ') || '-'
+}
+
 onMounted(() => {
   loadHistory()
 })
@@ -378,6 +612,23 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 16px;
+}
+
+.page-title {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.page-title span {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.page-title small {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 
 .header-actions {
@@ -387,6 +638,40 @@ onMounted(() => {
 
 .scan-result {
   margin-top: 20px;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.summary-tile {
+  min-height: 72px;
+  padding: 14px 16px;
+  border: 1px solid var(--addp-border-color);
+  border-radius: 4px;
+  background: var(--addp-bg-secondary);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+}
+
+.summary-tile strong {
+  color: var(--el-text-color-primary);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.summary-label {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+
+.result-descriptions {
+  margin-top: 4px;
 }
 
 .module-result {
@@ -401,24 +686,10 @@ onMounted(() => {
   margin-bottom: 20px;
 }
 
-.stat-detail {
-  font-size: 12px;
-  color: var(--addp-text-tertiary);
-  margin-top: 5px;
-}
-
-.invalid-engines {
-  margin-top: 20px;
-}
-
-.invalid-engines h4 {
-  margin-bottom: 10px;
-}
-
 .cleanup-actions {
   margin-top: 30px;
   padding: 20px;
-  background: #fff;
+  background: var(--addp-bg-secondary);
   border: 1px solid var(--addp-border-color);
   border-radius: 4px;
 }
@@ -429,5 +700,26 @@ onMounted(() => {
 
 .task-history h3 {
   margin-bottom: 15px;
+}
+
+.context-cell {
+  word-break: break-all;
+}
+
+@media (max-width: 960px) {
+  .card-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .summary-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

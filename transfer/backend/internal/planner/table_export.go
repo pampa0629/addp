@@ -31,9 +31,11 @@ type EngineRef struct {
 }
 
 // EndpointSpec 是 Transfer 任务 JSON 中 source / target 的业务端点描述。
-// Locator 使用 common/resourcetree ResourceLocator URI，作为 endpoint 的唯一定位事实。
+// Source 使用 locator 指向已存在资源；target 使用 parent_locator + name 表达待写入资源。
 type EndpointSpec struct {
 	Locator        string                 `json:"locator"`
+	ParentLocator  string                 `json:"parent_locator,omitempty"`
+	Name           string                 `json:"name,omitempty"`
 	DataType       string                 `json:"data_type"`
 	Representation string                 `json:"representation"`
 	Format         format.FormatType      `json:"format,omitempty"`
@@ -102,8 +104,16 @@ func (e EndpointSpec) ResourceLocator() (*resourcetree.ResourceLocator, error) {
 	return loc, nil
 }
 
+func (e EndpointSpec) ParentResourceLocator() (*resourcetree.ResourceLocator, error) {
+	loc, err := resourcetree.ParseURI(strings.TrimSpace(e.ParentLocator))
+	if err != nil {
+		return nil, err
+	}
+	return loc, nil
+}
+
 func (e EndpointSpec) EngineRef() (EngineRef, error) {
-	loc, err := e.ResourceLocator()
+	loc, err := e.endpointEngineLocator()
 	if err != nil {
 		return EngineRef{}, err
 	}
@@ -111,7 +121,7 @@ func (e EndpointSpec) EngineRef() (EngineRef, error) {
 }
 
 func (e EndpointSpec) LocatorEngineID() uint {
-	loc, err := e.ResourceLocator()
+	loc, err := e.endpointEngineLocator()
 	if err != nil || loc == nil {
 		return 0
 	}
@@ -132,6 +142,28 @@ func (e EndpointSpec) LocatorType() resourcetree.ResourceType {
 		return ""
 	}
 	return loc.Type
+}
+
+func (e EndpointSpec) TargetResourceType() resourcetree.ResourceType {
+	switch e.Representation {
+	case representationNative:
+		return resourcetree.TypeTable
+	case representationEncoded:
+		parent, err := e.ParentResourceLocator()
+		if err != nil {
+			return ""
+		}
+		return targetContentResourceTypeFromParent(parent.Type)
+	default:
+		return ""
+	}
+}
+
+func (e EndpointSpec) endpointEngineLocator() (*resourcetree.ResourceLocator, error) {
+	if strings.TrimSpace(e.Locator) != "" {
+		return e.ResourceLocator()
+	}
+	return e.ParentResourceLocator()
 }
 
 type TableTransferBuildResult struct {
@@ -192,7 +224,7 @@ func BuildTableTransferPlan(spec TableExportTaskSpec, resolver EngineResolver) (
 	}
 	targetRef, err := spec.Target.EngineRef()
 	if err != nil {
-		return nil, fmt.Errorf("parse target locator: %w", err)
+		return nil, fmt.Errorf("parse target parent locator: %w", err)
 	}
 
 	sourceEngine, err := resolver.ResolveEngine(sourceRef)
@@ -531,7 +563,7 @@ func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding, transform
 func buildTableTargetPlan(endpoint EndpointSpec, engine EngineBinding) (executor.TableTargetPlan, error) {
 	switch endpoint.Representation {
 	case representationNative:
-		targetPath, err := nativeTablePathFromLocator(endpoint, engine)
+		targetPath, err := nativeTableTargetPath(endpoint, engine)
 		if err != nil {
 			return executor.TableTargetPlan{}, fmt.Errorf("build target path: %w", err)
 		}
@@ -593,7 +625,7 @@ func validateTableTransferSpec(spec TableExportTaskSpec) error {
 	}
 	return fmt.Errorf("unsupported table transfer shape: source %s/%s -> target %s/%s",
 		spec.Source.Representation, spec.Source.LocatorType(),
-		spec.Target.Representation, spec.Target.LocatorType())
+		spec.Target.Representation, spec.Target.TargetResourceType())
 }
 
 func validateTransformSpecs(transforms []TransformSpec) error {
@@ -719,28 +751,28 @@ func isNativeTableTransferSpec(spec TableExportTaskSpec) bool {
 	return spec.Source.Representation == representationNative &&
 		isEndpointNativeTableType(spec.Source.LocatorType()) &&
 		spec.Target.Representation == representationNative &&
-		isEndpointNativeTableType(spec.Target.LocatorType())
+		isEndpointNativeTableType(spec.Target.TargetResourceType())
 }
 
 func isTableExportSpec(spec TableExportTaskSpec) bool {
 	return spec.Source.Representation == representationNative &&
 		isEndpointNativeTableType(spec.Source.LocatorType()) &&
 		spec.Target.Representation == representationEncoded &&
-		isEndpointContentType(spec.Target.LocatorType())
+		isEndpointContentType(spec.Target.TargetResourceType())
 }
 
 func isTableImportSpec(spec TableExportTaskSpec) bool {
 	return spec.Source.Representation == representationEncoded &&
 		isEndpointContentType(spec.Source.LocatorType()) &&
 		spec.Target.Representation == representationNative &&
-		isEndpointNativeTableType(spec.Target.LocatorType())
+		isEndpointNativeTableType(spec.Target.TargetResourceType())
 }
 
 func isEncodedTableTransferSpec(spec TableExportTaskSpec) bool {
 	return spec.Source.Representation == representationEncoded &&
 		isEndpointContentType(spec.Source.LocatorType()) &&
 		spec.Target.Representation == representationEncoded &&
-		isEndpointContentType(spec.Target.LocatorType())
+		isEndpointContentType(spec.Target.TargetResourceType())
 }
 
 func IsTableImportSpec(spec TableExportTaskSpec) bool {
@@ -764,17 +796,23 @@ func isEndpointContentType(resourceType resourcetree.ResourceType) bool {
 }
 
 func validateEndpointCommon(endpoint EndpointSpec, role, dataType string) error {
-	if err := validateEndpointIdentity(endpoint, role, dataType); err != nil {
+	if role == "target" {
+		if err := validateTargetEndpointIdentity(endpoint, dataType); err != nil {
+			return err
+		}
+	} else if err := validateSourceEndpointIdentity(endpoint, role, dataType); err != nil {
 		return err
 	}
 	switch endpoint.Representation {
 	case representationNative:
-		if !isEndpointNativeTableType(endpoint.LocatorType()) {
-			return fmt.Errorf("%s native endpoint locator type must be %q, got %q", role, resourcetree.TypeTable, endpoint.LocatorType())
+		resourceType := endpointResourceType(endpoint, role)
+		if !isEndpointNativeTableType(resourceType) {
+			return fmt.Errorf("%s native endpoint type must be %q, got %q", role, resourcetree.TypeTable, resourceType)
 		}
 	case representationEncoded:
-		if !isEndpointContentType(endpoint.LocatorType()) {
-			return fmt.Errorf("%s encoded endpoint locator type must be %q or %q, got %q", role, resourcetree.TypeFile, resourcetree.TypeObject, endpoint.LocatorType())
+		resourceType := endpointResourceType(endpoint, role)
+		if !isEndpointContentType(resourceType) {
+			return fmt.Errorf("%s encoded endpoint type must be %q or %q, got %q", role, resourcetree.TypeFile, resourcetree.TypeObject, resourceType)
 		}
 	default:
 		return fmt.Errorf("%s representation must be %q or %q, got %q", role, representationNative, representationEncoded, endpoint.Representation)
@@ -782,9 +820,19 @@ func validateEndpointCommon(endpoint EndpointSpec, role, dataType string) error 
 	return nil
 }
 
-func validateEndpointIdentity(endpoint EndpointSpec, role, dataType string) error {
+func endpointResourceType(endpoint EndpointSpec, role string) resourcetree.ResourceType {
+	if role == "target" {
+		return endpoint.TargetResourceType()
+	}
+	return endpoint.LocatorType()
+}
+
+func validateSourceEndpointIdentity(endpoint EndpointSpec, role, dataType string) error {
 	if strings.TrimSpace(endpoint.Locator) == "" {
 		return fmt.Errorf("%s locator is required", role)
+	}
+	if strings.TrimSpace(endpoint.ParentLocator) != "" || strings.TrimSpace(endpoint.Name) != "" {
+		return fmt.Errorf("%s endpoint must use locator only; parent_locator/name are only valid for target", role)
 	}
 	loc, err := endpoint.ResourceLocator()
 	if err != nil {
@@ -795,6 +843,32 @@ func validateEndpointIdentity(endpoint EndpointSpec, role, dataType string) erro
 	}
 	if endpoint.DataType != dataType {
 		return fmt.Errorf("%s data type must be %q, got %q", role, dataType, endpoint.DataType)
+	}
+	return nil
+}
+
+func validateTargetEndpointIdentity(endpoint EndpointSpec, dataType string) error {
+	if strings.TrimSpace(endpoint.Locator) != "" {
+		return fmt.Errorf("target locator is not supported for creation targets; use parent_locator and name")
+	}
+	if strings.TrimSpace(endpoint.ParentLocator) == "" {
+		return fmt.Errorf("target parent_locator is required")
+	}
+	if strings.TrimSpace(endpoint.Name) == "" {
+		return fmt.Errorf("target name is required")
+	}
+	loc, err := endpoint.ParentResourceLocator()
+	if err != nil {
+		return fmt.Errorf("target parent_locator is invalid: %w", err)
+	}
+	if loc.EngineID == 0 {
+		return fmt.Errorf("target parent_locator engine_id is required")
+	}
+	if strings.Contains(strings.TrimSpace(endpoint.Name), "/") {
+		return fmt.Errorf("target name must be a single path segment")
+	}
+	if endpoint.DataType != dataType {
+		return fmt.Errorf("target data type must be %q, got %q", dataType, endpoint.DataType)
 	}
 	return nil
 }
@@ -887,6 +961,26 @@ func nativeTablePathFromLocator(endpoint EndpointSpec, engine EngineBinding) (en
 	return engineplugin.TabularItemPath(loc.EngineID, tabularNamespaceTerm(engine), namespace, table), nil
 }
 
+func nativeTableTargetPath(endpoint EndpointSpec, engine EngineBinding) (engineplugin.CatalogPath, error) {
+	parent, err := endpoint.ParentResourceLocator()
+	if err != nil {
+		return engineplugin.CatalogPath{}, err
+	}
+	if !isNativeTableParentType(parent.Type) {
+		return engineplugin.CatalogPath{}, fmt.Errorf("native target parent_locator type must be %q or %q, got %q", resourcetree.TypeSchema, resourcetree.TypeDatabase, parent.Type)
+	}
+	namespace := strings.TrimSpace(parent.LastSegment())
+	table := strings.TrimSpace(endpoint.Name)
+	if namespace == "" || table == "" {
+		return engineplugin.CatalogPath{}, fmt.Errorf("native target requires parent namespace and target name")
+	}
+	return engineplugin.TabularItemPath(parent.EngineID, tabularNamespaceTerm(engine), namespace, table), nil
+}
+
+func isNativeTableParentType(resourceType resourcetree.ResourceType) bool {
+	return resourceType == resourcetree.TypeSchema || resourceType == resourcetree.TypeDatabase
+}
+
 func tabularNamespaceTerm(engine EngineBinding) string {
 	engineType := strings.ToLower(strings.TrimSpace(effectiveEngineType(engine, EngineRef{})))
 	if strings.Contains(engineType, "postgres") {
@@ -896,7 +990,43 @@ func tabularNamespaceTerm(engine EngineBinding) string {
 }
 
 func targetEndpointContentCatalogPath(endpoint EndpointSpec, formatType format.FormatType, writeOptions *format.WriteOptions) (engineplugin.CatalogPath, error) {
-	return endpointContentCatalogPathWithTargetFormat(endpoint, "target", formatType, writeOptions)
+	parent, err := endpoint.ParentResourceLocator()
+	if err != nil {
+		return engineplugin.CatalogPath{}, err
+	}
+	name := strings.TrimSpace(endpoint.Name)
+	if name == "" {
+		return engineplugin.CatalogPath{}, fmt.Errorf("target name is required")
+	}
+	resourceType := targetContentResourceTypeFromParent(parent.Type)
+	switch resourceType {
+	case resourcetree.TypeFile:
+		path := strings.Trim(pathpkg.Join(parent.PathString(), name), "/")
+		if path == "" {
+			return engineplugin.CatalogPath{}, fmt.Errorf("target file path requires parent path or name")
+		}
+		normalizedPath, err := normalizeTargetContentPathExtension(path, formatType, writeOptions)
+		if err != nil {
+			return engineplugin.CatalogPath{}, err
+		}
+		return engineplugin.FileItemPath(parent.EngineID, normalizedPath), nil
+	case resourcetree.TypeObject:
+		bucket, prefix := objectParentLocatorParts(parent)
+		if bucket == "" {
+			return engineplugin.CatalogPath{}, fmt.Errorf("target object parent_locator requires bucket")
+		}
+		objectPath := strings.Trim(pathpkg.Join(prefix, name), "/")
+		if objectPath == "" {
+			return engineplugin.CatalogPath{}, fmt.Errorf("target object name is required")
+		}
+		normalizedPath, err := normalizeTargetContentPathExtension(objectPath, formatType, writeOptions)
+		if err != nil {
+			return engineplugin.CatalogPath{}, err
+		}
+		return engineplugin.ObjectItemPath(parent.EngineID, bucket, normalizedPath), nil
+	default:
+		return engineplugin.CatalogPath{}, fmt.Errorf("target encoded parent_locator type must be content container, got %q", parent.Type)
+	}
 }
 
 func endpointContentCatalogPath(endpoint EndpointSpec, role string) (engineplugin.CatalogPath, error) {
@@ -950,6 +1080,29 @@ func objectLocatorParts(loc *resourcetree.ResourceLocator) (string, string) {
 		objectPath = strings.Trim(strings.Join(loc.Path[1:], "/"), "/")
 	}
 	return bucket, objectPath
+}
+
+func objectParentLocatorParts(loc *resourcetree.ResourceLocator) (string, string) {
+	if loc == nil || len(loc.Path) == 0 {
+		return "", ""
+	}
+	bucket := strings.Trim(loc.Path[0], "/")
+	prefix := ""
+	if len(loc.Path) > 1 {
+		prefix = strings.Trim(strings.Join(loc.Path[1:], "/"), "/")
+	}
+	return bucket, prefix
+}
+
+func targetContentResourceTypeFromParent(parentType resourcetree.ResourceType) resourcetree.ResourceType {
+	switch parentType {
+	case resourcetree.TypeBucket, resourcetree.TypePrefix, resourcetree.TypeService:
+		return resourcetree.TypeObject
+	case resourcetree.TypeRoot, resourcetree.TypeDirectory, resourcetree.TypeDir:
+		return resourcetree.TypeFile
+	default:
+		return ""
+	}
 }
 
 func normalizeTargetContentPathExtension(rawPath string, formatType format.FormatType, writeOptions *format.WriteOptions) (string, error) {

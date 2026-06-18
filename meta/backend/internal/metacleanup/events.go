@@ -8,24 +8,7 @@ import (
 )
 
 func ParseCleanupRequest(values map[string]interface{}) (events.CleanupRequestEvent, error) {
-	normalized := copyMap(values)
-
-	if modulesStr, ok := normalized["expected_modules"].(string); ok && modulesStr != "" {
-		var modules []string
-		if err := json.Unmarshal([]byte(modulesStr), &modules); err == nil {
-			normalized["expected_modules"] = modules
-		}
-	}
-
-	normalizeUintField(normalized, "tenant_id")
-	normalizeUintField(normalized, "requested_by")
-
-	var event events.CleanupRequestEvent
-	eventJSON, _ := json.Marshal(normalized)
-	if err := json.Unmarshal(eventJSON, &event); err != nil {
-		return events.CleanupRequestEvent{}, err
-	}
-	return event, nil
+	return events.ParseCleanupRequest(values)
 }
 
 func ToMap(v interface{}) map[string]interface{} {
@@ -35,19 +18,37 @@ func ToMap(v interface{}) map[string]interface{} {
 	return result
 }
 
-func copyMap(values map[string]interface{}) map[string]interface{} {
-	result := make(map[string]interface{}, len(values))
-	for key, value := range values {
-		result[key] = value
-	}
-	return result
+type CleanupScope struct {
+	EngineID uint
 }
 
-func normalizeUintField(values map[string]interface{}, key string) {
-	if raw, ok := values[key].(string); ok {
-		var value uint64
-		if _, err := fmt.Sscanf(raw, "%d", &value); err == nil {
-			values[key] = value
+func ScopeFromContext(values map[string]interface{}) CleanupScope {
+	return CleanupScope{
+		EngineID: uintFromContext(values, "engine_id"),
+	}
+}
+
+func uintFromContext(values map[string]interface{}, key string) uint {
+	switch value := values[key].(type) {
+	case uint:
+		return value
+	case int:
+		if value > 0 {
+			return uint(value)
+		}
+	case int64:
+		if value > 0 {
+			return uint(value)
+		}
+	case float64:
+		if value > 0 {
+			return uint(value)
+		}
+	case string:
+		var parsed uint64
+		if _, err := fmt.Sscanf(value, "%d", &parsed); err == nil {
+			return uint(parsed)
 		}
 	}
+	return 0
 }

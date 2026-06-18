@@ -184,6 +184,15 @@ definitions:
       total:
         type: integer
     type: object
+  github_com_addp_meta_internal_models.MetaItemAncestorsResponse:
+    properties:
+      ancestors:
+        items:
+          $ref: '#/definitions/github_com_addp_meta_internal_models.MetaNodeLite'
+        type: array
+      item:
+        $ref: '#/definitions/github_com_addp_meta_internal_models.MetaItemLite'
+    type: object
   github_com_addp_meta_internal_models.MetaItemLite:
     properties:
       attributes:
@@ -306,6 +315,30 @@ definitions:
       updated_at:
         type: string
       updated_by:
+        type: integer
+    type: object
+  github_com_addp_meta_internal_models.ResourceTreeAncestorsResponse:
+    properties:
+      ancestors:
+        items:
+          $ref: '#/definitions/resourcetree.TreeNode'
+        type: array
+      engine_id:
+        type: integer
+      target_kind:
+        type: string
+      target_locator:
+        type: string
+    type: object
+  github_com_addp_meta_internal_models.ResourceTreeSearchResponse:
+    properties:
+      keyword:
+        type: string
+      results:
+        items:
+          $ref: '#/definitions/resourcetree.TreeNode'
+        type: array
+      total:
         type: integer
     type: object
   github_com_addp_meta_internal_models.ResourceWithStats:
@@ -553,6 +586,39 @@ definitions:
       trigger_type:
         type: string
     type: object
+  resourcetree.TreeNode:
+    properties:
+      children:
+        description: 子节点
+        items:
+          $ref: '#/definitions/resourcetree.TreeNode'
+        type: array
+      hasChildren:
+        description: 是否有子节点（用于显示展开图标）
+        type: boolean
+      icon:
+        description: 图标名称
+        type: string
+      id:
+        description: 节点唯一标识（使用 locator 的值）
+        type: string
+      label:
+        description: 显示标签（节点名称）
+        type: string
+      locator:
+        description: ResourceLocator URI (addp://engine/1/path/public/users?type=table)
+        type: string
+      metadata:
+        additionalProperties: true
+        description: 元数据（node_id、item_id、item_count、scanned_at 等）
+        type: object
+      type:
+        description: catalog 术语（如 server/schema/table/service/bucket/prefix/root/directory/file/object）
+        type: string
+      typeLabel:
+        description: 类型的 i18n key，如 "engine.term.schema"（前端查 i18n 字典展示）
+        type: string
+    type: object
 host: localhost:8082
 info:
   contact: {}
@@ -797,6 +863,38 @@ paths:
       summary: 获取数据项详情 | Get item detail
       tags:
       - Meta Query
+  /items/{item_id}/ancestors:
+    get:
+      description: 按数据项 ID 获取数据项及 root 到其父节点的元数据节点链 | Get item and metadata node chain
+        from root to its parent node by item ID
+      parameters:
+      - description: 数据项ID | Item ID
+        in: path
+        name: item_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 数据项祖先链 | Item ancestor chain
+          schema:
+            $ref: '#/definitions/github_com_addp_meta_internal_models.MetaItemAncestorsResponse'
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 祖先链不存在 | Ancestor chain not found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取数据项祖先链 | Get item ancestor chain
+      tags:
+      - Meta Query
   /items/{item_id}/fields:
     get:
       description: 按数据项 ID 获取字段详情 | Get item field details by item ID
@@ -967,6 +1065,40 @@ paths:
       summary: 获取节点详情 | Get node detail
       tags:
       - Meta Query
+  /nodes/{node_id}/ancestors:
+    get:
+      description: 按节点 ID 获取 root 到目标节点的元数据节点链，包含目标节点自身 | Get metadata node chain
+        from root to target node, including the target node
+      parameters:
+      - description: 节点ID | Node ID
+        in: path
+        name: node_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 节点祖先链 | Node ancestor chain
+          schema:
+            items:
+              $ref: '#/definitions/github_com_addp_meta_internal_models.MetaNodeLite'
+            type: array
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 祖先链不存在 | Ancestor chain not found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取节点祖先链 | Get node ancestor chain
+      tags:
+      - Meta Query
   /nodes/{node_id}/children:
     get:
       description: 获取指定节点的直接子节点 | Get direct children of a metadata node
@@ -1070,6 +1202,260 @@ paths:
       summary: 按 catalog path 查询节点 | Query node by catalog path
       tags:
       - Meta Query
+  /resource-tree/{engine_id}:
+    get:
+      description: 获取指定引擎的标准资源树视图，返回 common/resourcetree.TreeNode | Get standard resource
+        tree for an engine
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: path
+        name: engine_id
+        required: true
+        type: integer
+      - description: 展开深度，-1 表示全部展开 | Expand depth, -1 for full tree
+        in: query
+        name: expand_depth
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 资源树 | Resource tree
+          schema:
+            $ref: '#/definitions/resourcetree.TreeNode'
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 资源不存在 | Resource not found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取标准资源树 | Get resource tree
+      tags:
+      - Meta Resource Tree
+  /resource-tree/{engine_id}/ancestors:
+    get:
+      description: 按 locator 获取 root 到目标资源的标准资源树祖先链，并重写为当前 Meta 事实 locator | Get resource
+        tree ancestor chain by locator and rewrite target locator from current Meta
+        facts
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: path
+        name: engine_id
+        required: true
+        type: integer
+      - description: ResourceLocator URI
+        in: query
+        name: locator
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 资源树祖先链 | Resource tree ancestors
+          schema:
+            $ref: '#/definitions/github_com_addp_meta_internal_models.ResourceTreeAncestorsResponse'
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 资源不存在 | Resource not found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取标准资源树祖先链 | Get resource tree ancestors
+      tags:
+      - Meta Resource Tree
+  /resource-tree/{engine_id}/node:
+    get:
+      description: 按 locator 获取资源树节点及直接子级，返回 common/resourcetree.TreeNode | Get resource
+        tree node and direct children by locator
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: path
+        name: engine_id
+        required: true
+        type: integer
+      - description: ResourceLocator URI
+        in: query
+        name: locator
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 资源树节点 | Resource tree node
+          schema:
+            $ref: '#/definitions/resourcetree.TreeNode'
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 资源不存在 | Resource not found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取标准资源树节点 | Get resource tree node
+      tags:
+      - Meta Resource Tree
+  /resource-tree/{engine_id}/refresh:
+    post:
+      description: 按 locator 提交一次后台深度扫描，刷新 Meta 资源树事实 | Submit a background deep scan
+        by locator to refresh Meta resource tree facts
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: path
+        name: engine_id
+        required: true
+        type: integer
+      - description: ResourceLocator URI
+        in: query
+        name: locator
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: 已提交的刷新运行 | Submitted refresh run
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 未授权 | Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 资源不存在 | Resource not found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 任务服务不可用 | Task service unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 刷新标准资源树节点 | Refresh resource tree node
+      tags:
+      - Meta Resource Tree
+  /resource-tree/{engine_id}/search:
+    get:
+      description: 在指定引擎的标准资源树中按关键词搜索节点 | Search nodes in a standard resource tree
+        by keyword
+      parameters:
+      - description: 存储引擎ID | Engine ID
+        in: path
+        name: engine_id
+        required: true
+        type: integer
+      - description: 搜索关键词，至少 2 个字符 | Search keyword, at least 2 characters
+        in: query
+        name: q
+        required: true
+        type: string
+      - description: 节点类型过滤，逗号分隔 | Node type filter, comma-separated
+        in: query
+        name: node_types
+        type: string
+      - description: 返回数量限制，默认 50，最大 100 | Result limit, default 50, max 100
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 搜索结果 | Search results
+          schema:
+            $ref: '#/definitions/github_com_addp_meta_internal_models.ResourceTreeSearchResponse'
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 资源不存在 | Resource not found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 搜索标准资源树 | Search resource tree
+      tags:
+      - Meta Resource Tree
   /scan/run/manual:
     post:
       consumes:

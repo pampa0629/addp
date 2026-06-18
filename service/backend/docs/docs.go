@@ -299,23 +299,9 @@ const docTemplate = `{
                 "summary": "获取表结构 | Get table structure",
                 "parameters": [
                     {
-                        "type": "integer",
-                        "description": "引擎ID | Engine ID",
-                        "name": "engine_id",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
                         "type": "string",
-                        "description": "Schema名称 | Schema name",
-                        "name": "schema",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "表名 | Table name",
-                        "name": "table",
+                        "description": "ResourceLocator，必须指向 table item | ResourceLocator pointing to table item",
+                        "name": "locator",
                         "in": "query",
                         "required": true
                     }
@@ -374,90 +360,6 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/engines": {
-            "get": {
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Engines"
-                ],
-                "summary": "获取可用于数据服务的 PostgreSQL 引擎列表 | List PostgreSQL engines available for data services",
-                "responses": {
-                    "200": {
-                        "description": "引擎列表 | Engine list",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "additionalProperties": true
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/engines/{engine_id}/tree": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "数据源 | Data Sources"
-                ],
-                "summary": "获取引擎元数据树 | Get engine metadata tree",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "引擎ID | Engine ID",
-                        "name": "engine_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -729,7 +631,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "数据源 | Data Sources"
+                    "资源能力 | Resource Capabilities"
                 ],
                 "summary": "获取图节点形状 | Get graph node shapes",
                 "parameters": [
@@ -754,61 +656,6 @@ const docTemplate = `{
                             "type": "array",
                             "items": {
                                 "$ref": "#/definitions/internal_api.graphNodeShapeOption"
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/nodes/{node_id}/children": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "数据源 | Data Sources"
-                ],
-                "summary": "获取节点子项 | Get node children",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "节点ID | Node ID",
-                        "name": "node_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "additionalProperties": true
                             }
                         }
                     },
@@ -2086,7 +1933,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "数据源 | Data Sources"
+                    "资源能力 | Resource Capabilities"
                 ],
                 "summary": "获取 SQL 空间元数据 | Get SQL spatial metadata",
                 "parameters": [
@@ -2120,129 +1967,6 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal Server Error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/tables/metadata": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "数据源 | Data Sources"
-                ],
-                "summary": "获取表元数据 | Get table metadata",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "引擎ID | Engine ID",
-                        "name": "engine_id",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Schema",
-                        "name": "schema",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "表名 | Table",
-                        "name": "table",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/tables/spatial-metadata": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "数据源 | Data Sources"
-                ],
-                "summary": "获取表空间元数据 | Get table spatial metadata",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "引擎ID | Engine ID",
-                        "name": "engine_id",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Schema",
-                        "name": "schema",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "表名 | Table",
-                        "name": "table",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -2895,9 +2619,7 @@ const docTemplate = `{
         "github_com_addp_service_internal_models.AggregationRequest": {
             "type": "object",
             "required": [
-                "engine_id",
-                "schema",
-                "table"
+                "locator"
             ],
             "properties": {
                 "aggregates": {
@@ -2906,9 +2628,6 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/github_com_addp_service_internal_models.AggregateColumn"
                     }
-                },
-                "engine_id": {
-                    "type": "integer"
                 },
                 "filter": {
                     "description": "WHERE 条件",
@@ -2929,14 +2648,11 @@ const docTemplate = `{
                     "description": "限制结果数",
                     "type": "integer"
                 },
+                "locator": {
+                    "type": "string"
+                },
                 "order_by": {
                     "description": "排序",
-                    "type": "string"
-                },
-                "schema": {
-                    "type": "string"
-                },
-                "table": {
                     "type": "string"
                 }
             }
@@ -3063,7 +2779,7 @@ const docTemplate = `{
                     ]
                 },
                 "data_config": {
-                    "description": "数据配置（可选，系统会自动检测）",
+                    "description": "数据配置。table 模式必须提供 locator，格式为带 item_id 的 ResourceLocator。",
                     "type": "object",
                     "additionalProperties": true
                 },
@@ -3095,7 +2811,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "schema_name": {
-                    "description": "表配置字段（config_type='table'时需要）",
+                    "description": "表配置字段由 data_config.locator 服务端派生，仅作为执行快照返回。",
                     "type": "string"
                 },
                 "service_name": {
@@ -3252,9 +2968,7 @@ const docTemplate = `{
         "github_com_addp_service_internal_models.DataQueryRequest": {
             "type": "object",
             "required": [
-                "engine_id",
-                "schema",
-                "table"
+                "locator"
             ],
             "properties": {
                 "columns": {
@@ -3263,9 +2977,6 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
-                },
-                "engine_id": {
-                    "type": "integer"
                 },
                 "filter": {
                     "description": "WHERE 条件（需要防 SQL 注入）",
@@ -3279,6 +2990,9 @@ const docTemplate = `{
                     "description": "几何输出格式: 'geojson', 'wkt', 'wkb'",
                     "type": "string"
                 },
+                "locator": {
+                    "type": "string"
+                },
                 "order_by": {
                     "description": "排序字段",
                     "type": "string"
@@ -3290,12 +3004,6 @@ const docTemplate = `{
                 "page_size": {
                     "description": "每页大小",
                     "type": "integer"
-                },
-                "schema": {
-                    "type": "string"
-                },
-                "table": {
-                    "type": "string"
                 }
             }
         },

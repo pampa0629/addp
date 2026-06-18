@@ -11,6 +11,7 @@ import (
 
 var (
 	_ = models.MetadataTreeResponse{}
+	_ = models.MetaItemAncestorsResponse{}
 	_ = models.MetaNodeLite{}
 	_ = models.MetaItemLite{}
 	_ = models.SpatialMetadataResponse{}

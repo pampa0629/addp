@@ -2,7 +2,9 @@ package models
 
 import (
 	"github.com/addp/common/datatype"
+	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/resourcetree"
 )
 
 // 直接使用 Common 模块的类型，避免重复定义
@@ -165,6 +167,32 @@ type MetadataTreeResponse struct {
 	TopNodes   []MetaNodeLite `json:"top_nodes"`
 	ChildNodes []MetaNodeLite `json:"child_nodes"`
 	Items      []MetaItemLite `json:"items"`
+}
+
+// MetaItemAncestorsResponse 数据项及其父节点祖先链。
+type MetaItemAncestorsResponse struct {
+	Item      MetaItemLite   `json:"item"`
+	Ancestors []MetaNodeLite `json:"ancestors"`
+}
+
+// ResourceTreeAncestorsResponse 是标准资源树祖先链响应。
+type ResourceTreeAncestorsResponse struct {
+	EngineID      uint                     `json:"engine_id"`
+	TargetLocator string                   `json:"target_locator"`
+	TargetKind    string                   `json:"target_kind"`
+	Ancestors     []*resourcetree.TreeNode `json:"ancestors"`
+}
+
+// ResourceTreeSearchResponse 是标准资源树搜索响应。
+type ResourceTreeSearchResponse struct {
+	Keyword string                   `json:"keyword"`
+	Total   int                      `json:"total"`
+	Results []*resourcetree.TreeNode `json:"results"`
+}
+
+type ResourceTreeRefreshResponse struct {
+	Locator string                         `json:"locator"`
+	Run     *commonExecution.TaskExecution `json:"run"`
 }
 
 // MetaNodeLite 元数据节点简化模型（用于返回给 Manager）

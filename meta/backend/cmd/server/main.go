@@ -17,8 +17,6 @@ import (
 	"github.com/addp/meta/internal/search"
 	"github.com/addp/meta/internal/service"
 	"github.com/addp/meta/internal/worker"
-	"github.com/minio/minio-go/v7"
-	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/redis/go-redis/v9"
 
 	// 导入 general 引擎插件以触发自动注册
@@ -108,24 +106,6 @@ func main() {
 		logger.L().Info("SystemClient 已初始化", "system_url", cfg.SystemServiceURL)
 	}
 
-	// 初始化 MinIO 客户端（Infra MinIO，用于清理）
-	var minioClient *minio.Client
-	if cfg.MinioEndpoint != "" {
-		var err error
-		minioClient, err = minio.New(cfg.MinioEndpoint, &minio.Options{
-			Creds:  credentials.NewStaticV4(cfg.MinioAccessKey, cfg.MinioSecretKey, ""),
-			Secure: cfg.MinioUseSSL,
-		})
-		if err != nil {
-			logger.L().Warn("MinIO 客户端初始化失败，MinIO 清理功能将被禁用", "error", err)
-			minioClient = nil
-		} else {
-			logger.L().Info("MinIO 客户端已初始化", "endpoint", cfg.MinioEndpoint)
-		}
-	} else {
-		logger.L().Warn("MinIO 未配置，MinIO 清理功能将被禁用")
-	}
-
 	searchIndexer, err := search.NewIndexer(cfg)
 	if err != nil {
 		logger.L().Warn("搜索索引器初始化失败，搜索功能将被禁用", "error", err)
@@ -161,7 +141,7 @@ func main() {
 	defer scheduler.Stop(context.Background())
 
 	// ========== 启动清理服务 ==========
-	cleanupService := service.NewCleanupService(db, redisClient, systemClient, searchIndexer, minioClient, service.CleanupConfig{
+	cleanupService := service.NewCleanupService(db, redisClient, systemClient, searchIndexer, service.CleanupConfig{
 		Enabled:         true,
 		RetentionDays:   90,
 		CleanupInterval: 24 * time.Hour,
@@ -183,7 +163,7 @@ func main() {
 	}
 	// ===================================
 
-	engineSyncService := service.NewEngineSyncService(redisClient, engineService, taskService, executionService, cleanupService)
+	engineSyncService := service.NewEngineSyncService(redisClient, engineService)
 	engineSyncService.Start()
 	defer engineSyncService.Stop()
 
@@ -197,7 +177,14 @@ func main() {
 	// ========== 模块注册（注册到 System service_registry）==========
 	if cfg.EnableIntegration && cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
 		registryClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
-		registryClient.RegisterAndHeartbeat("meta", serviceURL, "/meta")
+		registryClient.RegisterAndHeartbeatWithMetadata("meta", serviceURL, "/meta", map[string]interface{}{
+			"module": "meta",
+			"capabilities": map[string]interface{}{
+				"cleanup_executor": map[string]interface{}{
+					"enabled": true,
+				},
+			},
+		})
 	}
 
 	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========

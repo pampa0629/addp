@@ -15,7 +15,7 @@ type TreeNode struct {
 	ID          string                 `json:"id"`          // 节点唯一标识（使用 locator 的值）
 	Locator     string                 `json:"locator"`     // ResourceLocator URI (addp://engine/1/path/public/users?type=table)
 	Label       string                 `json:"label"`       // 显示标签（节点名称）
-	Type        string                 `json:"type"`        // 节点类型 (schema/table/bucket/directory/object)
+	Type        string                 `json:"type"`        // catalog 术语（如 server/schema/table/service/bucket/prefix/root/directory/file/object）
 	TypeLabel   string                 `json:"typeLabel"`   // 类型的 i18n key，如 "engine.term.schema"（前端查 i18n 字典展示）
 	Icon        string                 `json:"icon"`        // 图标名称
 	Metadata    map[string]interface{} `json:"metadata"`    // 元数据（node_id、item_id、item_count、scanned_at 等）
@@ -623,7 +623,7 @@ func convertNodeType(metaNodeType string) ResourceType {
 		"database":   TypeDatabase,
 		"schema":     TypeSchema,
 		"bucket":     TypeBucket,
-		"prefix":     TypeDirectory,
+		"prefix":     TypePrefix,
 		"directory":  TypeDirectory,
 		"root":       TypeRoot,
 		"server":     TypeServer,

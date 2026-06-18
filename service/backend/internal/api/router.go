@@ -28,8 +28,7 @@ func SetupRouter(
 	tileEndpointHandler *TileEndpointHandler,
 	wmtsHandler *WMTSHandler,
 	ogcTilesHandler *OGCTilesHandler,
-	engineHandler *EngineHandler,
-	dataSourceHandler *DataSourceHandler,
+	resourceCapabilityHandler *ResourceCapabilityHandler,
 	serviceEndpointHandler *ServiceEndpointHandler,
 	graphQueryHandler *GraphQueryHandler,
 	systemClient *commonClient.SystemClient,
@@ -197,14 +196,9 @@ func SetupRouter(
 			data.GET("/structure", dataServiceHandler.GetTableStructure)
 		}
 
-		// 数据源代理 API（用于前端选择数据表）
-		api.GET("/engines", dataSourceHandler.GetEngines)
-		api.GET("/engines/:engine_id/tree", dataSourceHandler.GetEngineTree)
-		api.GET("/nodes/:node_id/children", dataSourceHandler.GetNodeChildren)
-		api.GET("/graphs/node-shapes", dataSourceHandler.GetGraphNodeShapes)
-		api.GET("/tables/metadata", dataSourceHandler.GetTableMetadata)
-		api.GET("/tables/spatial-metadata", dataSourceHandler.GetTableSpatialMetadata)
-		api.POST("/sql/spatial-metadata", dataSourceHandler.GetSQLSpatialMetadata)
+		// 资源能力辅助 API。资源选择统一走 Meta resource-tree，Service 仅保留业务能力接口。
+		api.GET("/graphs/node-shapes", resourceCapabilityHandler.GetGraphNodeShapes)
+		api.POST("/sql/spatial-metadata", resourceCapabilityHandler.GetSQLSpatialMetadata)
 	}
 
 	return router

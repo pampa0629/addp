@@ -5,50 +5,96 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/addp/common/events"
+	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/system/internal/models"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 )
 
-// CleanupOrchestratorService 清理任务编排服务
+// CleanupOrchestratorService 是 cleanup coordinator。
+// 它只负责发起请求、记录 execution、发布事件、汇总结果和写审计，不进入 Orchestrator 任务编排。
 type CleanupOrchestratorService struct {
-	redis *redis.Client
-	log   *slog.Logger
+	redis      *redis.Client
+	execRepo   *commonExecution.TaskExecutionRepository
+	logService *LogService
+	registry   *ModuleRegistryService
+	log        *slog.Logger
 }
 
-// NewCleanupOrchestratorService 创建清理编排服务
-func NewCleanupOrchestratorService(redisClient *redis.Client) *CleanupOrchestratorService {
+// NewCleanupOrchestratorService 创建 cleanup coordinator 服务
+func NewCleanupOrchestratorService(
+	redisClient *redis.Client,
+	execRepo *commonExecution.TaskExecutionRepository,
+	logService *LogService,
+	registry *ModuleRegistryService,
+) *CleanupOrchestratorService {
 	return &CleanupOrchestratorService{
-		redis: redisClient,
-		log:   logger.With("component", "cleanup_orchestrator"),
+		redis:      redisClient,
+		execRepo:   execRepo,
+		logService: logService,
+		registry:   registry,
+		log:        logger.With("component", "cleanup_orchestrator"),
 	}
 }
 
 // CreateScanTask 创建扫描任务
 func (s *CleanupOrchestratorService) CreateScanTask(ctx context.Context, tenantID uint, scope []string, userID uint) (string, error) {
-	// 生成任务ID
+	return s.createScanTask(ctx, tenantID, scope, userID, commonExecution.TriggerTypeManual, "", nil)
+}
+
+func (s *CleanupOrchestratorService) CreateEventScanTask(
+	ctx context.Context,
+	tenantID uint,
+	scope []string,
+	userID uint,
+	causeEvent string,
+	cleanupContext map[string]interface{},
+) (string, error) {
+	triggerType := commonExecution.TriggerTypeEvent
+	return s.createScanTask(ctx, tenantID, scope, userID, triggerType, causeEvent, cleanupContext)
+}
+
+func (s *CleanupOrchestratorService) createScanTask(
+	ctx context.Context,
+	tenantID uint,
+	scope []string,
+	userID uint,
+	triggerType string,
+	causeEvent string,
+	cleanupContext map[string]interface{},
+) (string, error) {
 	taskID := fmt.Sprintf("cleanup-scan-%d-%s", time.Now().Unix(), uuid.New().String()[:8])
+	now := time.Now()
 
-	// 默认扫描所有模块
-	if len(scope) == 0 {
-		scope = []string{events.ModuleMeta, events.ModuleManager, events.ModuleTransfer}
+	scope, err := s.resolveExpectedModules(scope)
+	if err != nil {
+		return "", err
 	}
 
-	// 创建任务
-	task := models.CleanupTask{
-		TaskID:          taskID,
-		Action:          events.CleanupActionScan,
-		TenantID:        tenantID,
-		Status:          "pending",
-		ExpectedModules: scope,
-		RequestedBy:     userID,
-		StartedAt:       time.Now().Format(time.RFC3339),
-		TimeoutAt:       time.Now().Add(30 * time.Second).Format(time.RFC3339),
+	executionID, err := s.createParentExecution(ctx, tenantID, taskID, events.CleanupActionScan, "", triggerType, causeEvent, "", scope, cleanupContext, userID, 30*time.Second)
+	if err != nil {
+		return "", err
 	}
+
+	task := buildCleanupScanTask(
+		taskID,
+		tenantID,
+		scope,
+		userID,
+		triggerType,
+		causeEvent,
+		cleanupContext,
+		executionID,
+		now.Format(time.RFC3339),
+		now.Add(30*time.Second).Format(time.RFC3339),
+	)
 
 	// 写入Redis
 	taskJSON, err := json.Marshal(task)
@@ -67,22 +113,34 @@ func (s *CleanupOrchestratorService) CreateScanTask(ctx context.Context, tenantI
 
 	// 发布事件到 Redis Stream
 	event := events.CleanupRequestEvent{
-		TaskID:          taskID,
-		Action:          events.CleanupActionScan,
-		TenantID:        tenantID,
-		ExpectedModules: scope,
-		RequestedBy:     userID,
-		RequestedAt:     time.Now(),
+		TaskID:            taskID,
+		Action:            events.CleanupActionScan,
+		TenantID:          tenantID,
+		TriggerType:       triggerType,
+		CauseEvent:        causeEvent,
+		ExpectedModules:   scope,
+		ParentExecutionID: executionID,
+		Context:           cleanupContext,
+		RequestedBy:       userID,
+		RequestedAt:       now,
 	}
 
 	if err := s.publishEvent(ctx, event); err != nil {
 		return "", fmt.Errorf("发布事件失败: %w", err)
 	}
+	s.startTaskStatusWatcher(taskID, now, 30*time.Second)
 
 	// 记录历史
 	historyKey := fmt.Sprintf("cleanup:history:%d", tenantID)
 	s.redis.LPush(ctx, historyKey, taskID)
 	s.redis.LTrim(ctx, historyKey, 0, 99) // 只保留最近100条
+	s.writeAuditLog(userID, &tenantID, "cleanup.scan.created", taskID, map[string]interface{}{
+		"expected_modules": scope,
+		"trigger_type":     triggerType,
+		"cause_event":      causeEvent,
+		"execution_id":     executionID,
+		"context":          cleanupContext,
+	})
 
 	s.log.Info("扫描任务已创建",
 		"task_id", taskID,
@@ -97,29 +155,46 @@ func (s *CleanupOrchestratorService) CreateScanTask(ctx context.Context, tenantI
 func (s *CleanupOrchestratorService) CreateExecuteTask(
 	ctx context.Context,
 	basedOnScan string,
-	deleteType string,
+	cleanupMode string,
 	userID uint,
 ) (string, error) {
-	// 验证基础扫描任务
+	if err := events.ValidateCleanupMode(cleanupMode); err != nil {
+		return "", err
+	}
+
 	scanTask, err := s.GetTaskStatus(ctx, basedOnScan)
 	if err != nil {
 		return "", fmt.Errorf("扫描任务不存在: %w", err)
 	}
+	if err := validateExecutableScanTask(scanTask); err != nil {
+		return "", err
+	}
 
 	// 生成任务ID
 	taskID := fmt.Sprintf("cleanup-exec-%d-%s", time.Now().Unix(), uuid.New().String()[:8])
+	now := time.Now()
+	triggerType := commonExecution.TriggerTypeManual
+
+	executionID, err := s.createParentExecution(ctx, scanTask.Task.TenantID, taskID, events.CleanupActionExecute, cleanupMode, triggerType, scanTask.Task.CauseEvent, basedOnScan, scanTask.Task.ExpectedModules, scanTask.Task.Context, userID, 5*time.Minute)
+	if err != nil {
+		return "", err
+	}
 
 	// 创建任务
 	task := models.CleanupTask{
 		TaskID:          taskID,
 		Action:          events.CleanupActionExecute,
 		TenantID:        scanTask.Task.TenantID,
-		DeleteType:      deleteType,
+		CleanupMode:     cleanupMode,
+		TriggerType:     triggerType,
+		CauseEvent:      scanTask.Task.CauseEvent,
 		Status:          "pending",
 		ExpectedModules: scanTask.Task.ExpectedModules,
+		Context:         scanTask.Task.Context,
+		ExecutionID:     executionID,
 		RequestedBy:     userID,
-		StartedAt:       time.Now().Format(time.RFC3339),
-		TimeoutAt:       time.Now().Add(5 * time.Minute).Format(time.RFC3339), // 执行任务超时5分钟
+		StartedAt:       now.Format(time.RFC3339),
+		TimeoutAt:       now.Add(5 * time.Minute).Format(time.RFC3339), // 执行任务超时5分钟
 		BasedOnScan:     basedOnScan,
 	}
 
@@ -139,29 +214,42 @@ func (s *CleanupOrchestratorService) CreateExecuteTask(
 
 	// 发布事件
 	event := events.CleanupRequestEvent{
-		TaskID:          taskID,
-		Action:          events.CleanupActionExecute,
-		TenantID:        task.TenantID,
-		DeleteType:      deleteType,
-		ExpectedModules: task.ExpectedModules,
-		BasedOnScan:     basedOnScan,
-		RequestedBy:     userID,
-		RequestedAt:     time.Now(),
+		TaskID:            taskID,
+		Action:            events.CleanupActionExecute,
+		TenantID:          task.TenantID,
+		CleanupMode:       cleanupMode,
+		TriggerType:       triggerType,
+		CauseEvent:        scanTask.Task.CauseEvent,
+		ExpectedModules:   task.ExpectedModules,
+		BasedOnScan:       basedOnScan,
+		ParentExecutionID: executionID,
+		Context:           scanTask.Task.Context,
+		RequestedBy:       userID,
+		RequestedAt:       now,
 	}
 
 	if err := s.publishEvent(ctx, event); err != nil {
 		return "", fmt.Errorf("发布事件失败: %w", err)
 	}
+	s.startTaskStatusWatcher(taskID, now, 5*time.Minute)
 
 	// 记录历史
 	historyKey := fmt.Sprintf("cleanup:history:%d", task.TenantID)
 	s.redis.LPush(ctx, historyKey, taskID)
 	s.redis.LTrim(ctx, historyKey, 0, 99)
+	s.writeAuditLog(userID, &task.TenantID, "cleanup.execute.created", taskID, map[string]interface{}{
+		"based_on_scan":    basedOnScan,
+		"cleanup_mode":     cleanupMode,
+		"expected_modules": task.ExpectedModules,
+		"cause_event":      task.CauseEvent,
+		"context":          task.Context,
+		"execution_id":     executionID,
+	})
 
 	s.log.Info("执行任务已创建",
 		"task_id", taskID,
 		"tenant_id", task.TenantID,
-		"delete_type", deleteType,
+		"cleanup_mode", cleanupMode,
 		"based_on_scan", basedOnScan,
 		"user_id", userID)
 
@@ -209,7 +297,7 @@ func (s *CleanupOrchestratorService) GetTaskStatus(ctx context.Context, taskID s
 			if err := json.Unmarshal([]byte(resultStr), &result); err == nil {
 				results[module] = result
 				progress.Modules[module] = result.Status
-				if result.Status == "success" || result.Status == "failed" {
+				if isCleanupResultTerminal(result.Status) {
 					progress.Completed++
 				}
 			}
@@ -233,6 +321,9 @@ func (s *CleanupOrchestratorService) GetTaskStatus(ctx context.Context, taskID s
 		summary = s.aggregateScanSummary(results)
 	} else {
 		summary = s.aggregateExecuteSummary(results)
+	}
+	if err := s.updateTaskAndExecutionStatus(ctx, &task, overallStatus, summaryFromResults(results)); err != nil {
+		s.log.Error("更新 cleanup execution 状态失败", "error", err, "task_id", taskID)
 	}
 
 	return &models.TaskStatusResponse{
@@ -277,6 +368,169 @@ func (s *CleanupOrchestratorService) GetTaskHistory(ctx context.Context, tenantI
 	return tasks, nil
 }
 
+func (s *CleanupOrchestratorService) startTaskStatusWatcher(taskID string, startedAt time.Time, timeout time.Duration) {
+	if s.redis == nil || taskID == "" {
+		return
+	}
+	deadline := cleanupWatchDeadline(startedAt, timeout)
+	go s.watchTaskStatus(taskID, deadline)
+}
+
+func (s *CleanupOrchestratorService) watchTaskStatus(taskID string, deadline time.Time) {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	deadlineTimer := time.NewTimer(time.Until(deadline))
+	defer deadlineTimer.Stop()
+
+	for {
+		status, err := s.GetTaskStatus(context.Background(), taskID)
+		if err != nil {
+			s.log.Warn("刷新 cleanup task 状态失败", "task_id", taskID, "error", err)
+			return
+		}
+		if status != nil && isTaskTerminal(status.Status) {
+			return
+		}
+		select {
+		case <-deadlineTimer.C:
+			_, _ = s.GetTaskStatus(context.Background(), taskID)
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func cleanupWatchDeadline(startedAt time.Time, timeout time.Duration) time.Time {
+	if timeout <= 0 {
+		return startedAt
+	}
+	return startedAt.Add(timeout + 2*time.Second)
+}
+
+func (s *CleanupOrchestratorService) resolveExpectedModules(scope []string) ([]string, error) {
+	enabledModules, err := s.enabledCleanupExecutorModules()
+	if err != nil {
+		return nil, err
+	}
+	if len(enabledModules) == 0 {
+		return nil, fmt.Errorf("未发现已注册且启用的 cleanup executor 模块")
+	}
+
+	enabledSet := make(map[string]struct{}, len(enabledModules))
+	for _, module := range enabledModules {
+		enabledSet[module] = struct{}{}
+	}
+
+	if len(scope) == 0 {
+		return enabledModules, nil
+	}
+
+	result := make([]string, 0, len(scope))
+	seen := make(map[string]struct{}, len(scope))
+	for _, module := range scope {
+		normalized := strings.TrimSpace(module)
+		if normalized == "" {
+			continue
+		}
+		if _, duplicated := seen[normalized]; duplicated {
+			continue
+		}
+		if _, ok := enabledSet[normalized]; !ok {
+			return nil, fmt.Errorf("模块 %s 未注册或未启用 cleanup executor", normalized)
+		}
+		seen[normalized] = struct{}{}
+		result = append(result, normalized)
+	}
+	if len(result) == 0 {
+		return nil, fmt.Errorf("cleanup scan scope 不能为空")
+	}
+	return result, nil
+}
+
+func (s *CleanupOrchestratorService) enabledCleanupExecutorModules() ([]string, error) {
+	if s.registry == nil {
+		return nil, fmt.Errorf("module registry service is not configured")
+	}
+	modules, err := s.registry.ListActiveModules()
+	if err != nil {
+		return nil, fmt.Errorf("查询已注册 cleanup executor 模块失败: %w", err)
+	}
+
+	result := make([]string, 0, len(modules))
+	for _, module := range modules {
+		if module == nil {
+			continue
+		}
+		if cleanupExecutorEnabled(module.Metadata) {
+			result = append(result, module.ModuleName)
+		}
+	}
+	sort.Strings(result)
+	return result, nil
+}
+
+func cleanupExecutorEnabled(metadata map[string]interface{}) bool {
+	capabilities, ok := metadata["capabilities"].(map[string]interface{})
+	if !ok {
+		return false
+	}
+	cleanupExecutor, ok := capabilities["cleanup_executor"].(map[string]interface{})
+	if !ok {
+		return false
+	}
+	enabled, ok := cleanupExecutor["enabled"].(bool)
+	return ok && enabled
+}
+
+func validateExecutableScanTask(scanTask *models.TaskStatusResponse) error {
+	if scanTask == nil {
+		return fmt.Errorf("扫描任务不存在")
+	}
+	if scanTask.Task.Action != events.CleanupActionScan {
+		return fmt.Errorf("based_on_scan 必须指向 scan 任务")
+	}
+	if scanTask.Status != "completed" {
+		return fmt.Errorf("扫描任务未完成，当前状态: %s", scanTask.Status)
+	}
+	return nil
+}
+
+func buildCleanupScanTask(
+	taskID string,
+	tenantID uint,
+	expectedModules []string,
+	requestedBy uint,
+	triggerType string,
+	causeEvent string,
+	cleanupContext map[string]interface{},
+	executionID string,
+	startedAt string,
+	timeoutAt string,
+) models.CleanupTask {
+	return models.CleanupTask{
+		TaskID:          taskID,
+		Action:          events.CleanupActionScan,
+		TenantID:        tenantID,
+		TriggerType:     triggerType,
+		CauseEvent:      causeEvent,
+		Status:          "pending",
+		ExpectedModules: expectedModules,
+		Context:         cleanupContext,
+		ExecutionID:     executionID,
+		RequestedBy:     requestedBy,
+		StartedAt:       startedAt,
+		TimeoutAt:       timeoutAt,
+	}
+}
+
+func cleanupEngineContext(engineID uint) map[string]interface{} {
+	return map[string]interface{}{"engine_id": engineID}
+}
+
+func cleanupTenantContext(tenantID uint) map[string]interface{} {
+	return map[string]interface{}{"tenant_id": tenantID}
+}
+
 // publishEvent 发布事件到 Redis Stream
 func (s *CleanupOrchestratorService) publishEvent(ctx context.Context, event events.CleanupRequestEvent) error {
 	// 将 expected_modules 序列化为 JSON
@@ -284,17 +538,25 @@ func (s *CleanupOrchestratorService) publishEvent(ctx context.Context, event eve
 	if err != nil {
 		return fmt.Errorf("序列化 expected_modules 失败: %w", err)
 	}
+	contextJSON, err := json.Marshal(event.Context)
+	if err != nil {
+		return fmt.Errorf("序列化 context 失败: %w", err)
+	}
 
 	// 将事件转换为 map，注意 Redis Stream 不支持嵌套结构，所以需要序列化复杂字段
 	eventMap := map[string]interface{}{
-		"task_id":          event.TaskID,
-		"action":           event.Action,
-		"tenant_id":        event.TenantID,
-		"delete_type":      event.DeleteType,
-		"expected_modules": string(modulesJSON),
-		"based_on_scan":    event.BasedOnScan,
-		"requested_by":     event.RequestedBy,
-		"requested_at":     event.RequestedAt.Format(time.RFC3339),
+		"task_id":             event.TaskID,
+		"action":              event.Action,
+		"tenant_id":           event.TenantID,
+		"cleanup_mode":        event.CleanupMode,
+		"trigger_type":        event.TriggerType,
+		"cause_event":         event.CauseEvent,
+		"expected_modules":    string(modulesJSON),
+		"based_on_scan":       event.BasedOnScan,
+		"parent_execution_id": event.ParentExecutionID,
+		"context":             string(contextJSON),
+		"requested_by":        event.RequestedBy,
+		"requested_at":        event.RequestedAt.Format(time.RFC3339),
 	}
 
 	// 发布到 Redis Stream
@@ -341,101 +603,233 @@ func (s *CleanupOrchestratorService) calculateOverallStatus(
 // aggregateScanSummary 汇总扫描统计
 func (s *CleanupOrchestratorService) aggregateScanSummary(results map[string]interface{}) models.TaskSummary {
 	summary := models.TaskSummary{
-		RiskLevel: "low",
+		CleanupResultSummary: summaryFromResults(results),
 	}
-
-	totalItems := 0
-
-	for _, result := range results {
-		if resultData, ok := result.(events.CleanupResultData); ok {
-			if resultData.Status != "success" {
-				continue
-			}
-
-			// 尝试从 statistics 中累加数据
-			stats := resultData.Statistics
-			// Meta 模块统计
-			if invalidEngines, ok := stats["invalid_engines"].(map[string]interface{}); ok {
-				if count, ok := invalidEngines["count"].(float64); ok {
-					totalItems += int(count)
-				}
-			}
-			if orphanItems, ok := stats["orphan_items"].(map[string]interface{}); ok {
-				if count, ok := orphanItems["count"].(float64); ok {
-					totalItems += int(count)
-				}
-			}
-			if softDeleted, ok := stats["soft_deleted"].(map[string]interface{}); ok {
-				if nodes, ok := softDeleted["nodes"].(float64); ok {
-					totalItems += int(nodes)
-				}
-				if items, ok := softDeleted["items"].(float64); ok {
-					totalItems += int(items)
-				}
-			}
-
-			// Manager 模块统计
-			if orphanVectors, ok := stats["orphan_vectors"].(map[string]interface{}); ok {
-				if count, ok := orphanVectors["count"].(float64); ok {
-					totalItems += int(count)
-				}
-			}
-			if orphanMVT, ok := stats["orphan_mvt_tiles"].(map[string]interface{}); ok {
-				if count, ok := orphanMVT["count"].(float64); ok {
-					totalItems += int(count)
-				}
-				if sizeMB, ok := orphanMVT["size_mb"].(float64); ok {
-					summary.TotalSizeMB += sizeMB
-				}
-			}
-		}
-	}
-
-	summary.TotalItemsToClean = totalItems
-
-	// 评估风险等级
-	if totalItems > 1000 {
-		summary.RiskLevel = "high"
-	} else if totalItems > 100 {
-		summary.RiskLevel = "medium"
-	} else {
+	if summary.RiskLevel == "" {
 		summary.RiskLevel = "low"
 	}
-
 	return summary
 }
 
 // aggregateExecuteSummary 汇总执行统计
 func (s *CleanupOrchestratorService) aggregateExecuteSummary(results map[string]interface{}) models.ExecuteSummary {
-	summary := models.ExecuteSummary{}
+	summary := models.ExecuteSummary{
+		CleanupResultSummary: summaryFromResults(results),
+	}
 
 	for _, result := range results {
 		if resultData, ok := result.(events.CleanupResultData); ok {
-			if resultData.Error != "" {
+			if len(resultData.Errors) > 0 {
 				summary.HasErrors = true
-			}
-
-			stats := resultData.Statistics
-			// Meta 模块执行结果
-			if deletedNodes, ok := stats["deleted_nodes"].(float64); ok {
-				summary.TotalDeleted += int(deletedNodes)
-			}
-			if deletedItems, ok := stats["deleted_items"].(float64); ok {
-				summary.TotalDeleted += int(deletedItems)
-			}
-
-			// Manager 模块执行结果
-			if deletedVectors, ok := stats["deleted_vectors"].(float64); ok {
-				summary.TotalDeleted += int(deletedVectors)
-			}
-			if deletedMVT, ok := stats["deleted_mvt_tiles"].(float64); ok {
-				summary.TotalDeleted += int(deletedMVT)
-			}
-			if freedSpace, ok := stats["freed_space_mb"].(float64); ok {
-				summary.FreedSpaceMB += freedSpace
 			}
 		}
 	}
 
 	return summary
+}
+
+func (s *CleanupOrchestratorService) createParentExecution(
+	ctx context.Context,
+	tenantID uint,
+	taskID string,
+	action string,
+	cleanupMode string,
+	triggerType string,
+	causeEvent string,
+	basedOnScan string,
+	expectedModules []string,
+	cleanupContext map[string]interface{},
+	userID uint,
+	timeout time.Duration,
+) (string, error) {
+	if s.execRepo == nil {
+		return "", fmt.Errorf("cleanup execution repository is not configured")
+	}
+	now := time.Now()
+	executionID := uuid.New().String()
+	exec := &commonExecution.TaskExecution{
+		TenantID:    int(tenantID),
+		ExecutionID: executionID,
+		Module:      commonExecution.ModuleSystem,
+		TaskType:    commonExecution.TaskTypeCleanup,
+		Source:      commonExecution.ModuleSystem,
+		Status:      commonExecution.ExecutionStatusRunning,
+		Progress:    0,
+		TriggerType: triggerType,
+		TriggeredBy: ptrInt(int(userID)),
+		ExecutionConfig: commonModels.JSONMap{
+			"task_id":          taskID,
+			"action":           action,
+			"cleanup_mode":     cleanupMode,
+			"expected_modules": expectedModules,
+			"based_on_scan":    basedOnScan,
+			"cause_event":      causeEvent,
+			"context":          cleanupContext,
+			"timeout_seconds":  int(timeout.Seconds()),
+		},
+		StartedAt: &now,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := s.execRepo.Create(ctx, exec); err != nil {
+		return "", fmt.Errorf("创建 cleanup execution 失败: %w", err)
+	}
+	return executionID, nil
+}
+
+func (s *CleanupOrchestratorService) updateTaskAndExecutionStatus(
+	ctx context.Context,
+	task *models.CleanupTask,
+	overallStatus string,
+	summary events.CleanupResultSummary,
+) error {
+	previousStatus := task.Status
+	if previousStatus != overallStatus {
+		task.Status = overallStatus
+		if isTaskTerminal(overallStatus) {
+			nowText := time.Now().Format(time.RFC3339)
+			task.CompletedAt = &nowText
+		}
+		taskJSON, err := json.Marshal(task)
+		if err != nil {
+			return fmt.Errorf("序列化任务状态失败: %w", err)
+		}
+		taskKey := fmt.Sprintf("cleanup:tasks:%s", task.TaskID)
+		if err := s.redis.HSet(ctx, taskKey, "data", string(taskJSON)).Err(); err != nil {
+			return fmt.Errorf("保存任务状态失败: %w", err)
+		}
+	}
+
+	if task.ExecutionID == "" || s.execRepo == nil {
+		return nil
+	}
+
+	now := time.Now()
+	fields := map[string]interface{}{
+		"status":     executionStatusFromTaskStatus(overallStatus),
+		"progress":   progressFromTaskStatus(overallStatus),
+		"metadata":   commonModels.JSONMap{"cleanup_summary": summary, "cleanup_status": overallStatus},
+		"updated_at": now,
+	}
+	if isTaskTerminal(overallStatus) {
+		fields["completed_at"] = now
+		if started, err := time.Parse(time.RFC3339, task.StartedAt); err == nil {
+			duration := now.Sub(started).Milliseconds()
+			fields["execution_time_ms"] = duration
+		}
+	}
+	if err := s.execRepo.UpdateFields(ctx, task.ExecutionID, int(task.TenantID), fields); err != nil {
+		return err
+	}
+
+	if previousStatus != overallStatus && isTaskTerminal(overallStatus) {
+		eventName := "cleanup.completed"
+		if overallStatus != "completed" {
+			eventName = "cleanup.failed"
+		}
+		s.writeAuditLog(task.RequestedBy, &task.TenantID, eventName, task.TaskID, map[string]interface{}{
+			"execution_id": task.ExecutionID,
+			"status":       overallStatus,
+			"summary":      summary,
+		})
+	}
+	return nil
+}
+
+func summaryFromResults(results map[string]interface{}) events.CleanupResultSummary {
+	summary := events.CleanupResultSummary{RiskLevel: "low"}
+	for _, result := range results {
+		resultData, ok := result.(events.CleanupResultData)
+		if !ok {
+			continue
+		}
+		summary.ScannedItems += resultData.Summary.ScannedItems
+		summary.AffectedRecords += resultData.Summary.AffectedRecords
+		summary.DeletedPhysicalArtifacts += resultData.Summary.DeletedPhysicalArtifacts
+		summary.FreedBytes += resultData.Summary.FreedBytes
+		summary.MarkedMissingSource += resultData.Summary.MarkedMissingSource
+		summary.MarkedOutdated += resultData.Summary.MarkedOutdated
+		summary.DisabledTaskDefinitions += resultData.Summary.DisabledTaskDefinitions
+		summary.SkippedItems += resultData.Summary.SkippedItems
+		summary.ErrorCount += resultData.Summary.ErrorCount + len(resultData.Errors)
+		summary.RiskLevel = higherRisk(summary.RiskLevel, resultData.Summary.RiskLevel)
+	}
+	return summary
+}
+
+func (s *CleanupOrchestratorService) writeAuditLog(userID uint, tenantID *uint, action string, taskID string, detail map[string]interface{}) {
+	if s.logService == nil {
+		return
+	}
+	body, _ := json.Marshal(detail)
+	userIDPtr := userID
+	requestID := uuid.New().String()
+	auditLog := &models.AuditLog{
+		UserID:       &userIDPtr,
+		TenantID:     tenantID,
+		HTTPMethod:   "SYSTEM",
+		ResourcePath: action,
+		HTTPStatus:   200,
+		DurationMs:   0,
+		EntityType:   "cleanup",
+		EntityID:     taskID,
+		RequestBody:  string(body),
+		IPAddress:    "127.0.0.1",
+		LogLevel:     "INFO",
+		RequestID:    requestID,
+		ModuleName:   "system",
+	}
+	if err := s.logService.Create(auditLog); err != nil {
+		s.log.Error("写入 cleanup 审计日志失败", "error", err, "action", action, "task_id", taskID)
+	}
+}
+
+func isCleanupResultTerminal(status string) bool {
+	switch status {
+	case events.CleanupResultSuccess, events.CleanupResultFailed, events.CleanupResultPartialSuccess, events.CleanupResultSkipped, events.CleanupResultTimeout:
+		return true
+	default:
+		return false
+	}
+}
+
+func isTaskTerminal(status string) bool {
+	return status == "completed" || status == "completed_with_errors" || status == "timeout" || status == "failed"
+}
+
+func executionStatusFromTaskStatus(status string) string {
+	switch status {
+	case "completed":
+		return commonExecution.ExecutionStatusSuccess
+	case "completed_with_errors", "failed":
+		return commonExecution.ExecutionStatusFailed
+	case "timeout":
+		return commonExecution.ExecutionStatusTimeout
+	case "pending":
+		return commonExecution.ExecutionStatusPending
+	default:
+		return commonExecution.ExecutionStatusRunning
+	}
+}
+
+func progressFromTaskStatus(status string) int {
+	if isTaskTerminal(status) {
+		return 100
+	}
+	if status == "pending" {
+		return 0
+	}
+	return 50
+}
+
+func higherRisk(left, right string) string {
+	rank := map[string]int{"": 0, "low": 1, "medium": 2, "high": 3}
+	if rank[right] > rank[left] {
+		return right
+	}
+	return left
+}
+
+func ptrInt(value int) *int {
+	return &value
 }

@@ -33,6 +33,7 @@
 - [数据类型和格式体系图](concepts/addp数据类型和格式体系图.md)
 - [元数据扫描机制规范](spec/addp元数据扫描机制规范.md)
 - [任务体系规范](spec/addp任务体系规范.md)
+- [Cleanup 体系规范](spec/addp-cleanup体系规范.md)
 - [数据类型与文件格式扩展指南](spec/addp数据类型与文件格式扩展指南.md)
 - [数据项探测器规范](spec/addp数据项探测器规范.md)
 - [元数据 attributes 规范](spec/addp元数据attributes规范.md)
@@ -53,13 +54,14 @@
 2. [术语表](concepts/addp术语表.md)：确认 ResourceLocator、resource tree、data retrieval 等术语。
 3. [路径统一和指纹计算](spec/addp路径统一和指纹计算.md)：确认 full_name、fingerprint 和 ResourceLocator 的统一规则。
 4. [存储引擎路径体系规范](spec/addp存储引擎路径体系规范.md)：确认对象存储、文件系统和数据库类引擎的路径规则。
-5. [元数据 attributes 规范](spec/addp元数据attributes规范.md)：确认 locator 不作为 attributes 标准事实持久化。
-6. [Manager 数据预览与资源树实现规范](../manager/docs/数据预览与资源树实现规范.md)：确认 Manager 资源树、预览 API、PreviewResolver 和 PreviewProvider 当前实现契约。
-7. [Manager 数据预览语义协议](../manager/docs/数据预览语义协议.md)：确认 `content.kind`、`preview_material` 和 `frontend_renderer` 等预览响应语义。
-8. [Manager 快显概念说明](../manager/docs/快显概念说明.md)：确认快显、快显性能优化和瓦片缓存的概念边界。
-9. [Manager 快显实现规范](../manager/docs/快显实现规范.md)：确认快显性能优化任务、结果、外部 3857 目标、瓦片缓存和 UI 引导闭环。
-10. [Manager 向量化概念说明](../manager/docs/向量化概念说明.md)：确认 Manager 资源树 item / node 向量化、向量化任务和向量化结果的模块内概念边界。
-11. [Manager 向量化能力说明](../manager/docs/向量化能力说明.md)：确认 Manager 向量化结果字段、状态枚举、API、执行配置和 UI 契约。
+5. [共享模块介绍](concepts/addp共享模块介绍.md)：确认 `common/resourcetree`、Meta resource-tree API、`ResourceTree` 和 `ResourceTreePicker` 的职责边界。
+6. [元数据 attributes 规范](spec/addp元数据attributes规范.md)：确认 locator 不作为 attributes 标准事实持久化。
+7. [Manager 数据预览与资源树实现规范](../manager/docs/数据预览与资源树实现规范.md)：确认 Manager 资源树、预览 API、PreviewResolver 和 PreviewProvider 当前实现契约。
+8. [Manager 数据预览语义协议](../manager/docs/数据预览语义协议.md)：确认 `content.kind`、`preview_material` 和 `frontend_renderer` 等预览响应语义。
+9. [Manager 快显概念说明](../manager/docs/快显概念说明.md)：确认快显、快显性能优化和瓦片缓存的概念边界。
+10. [Manager 快显实现规范](../manager/docs/快显实现规范.md)：确认快显性能优化任务、结果、外部 3857 目标、瓦片缓存和 UI 引导闭环。
+11. [Manager 向量化概念说明](../manager/docs/向量化概念说明.md)：确认 Manager 资源树 item / node 向量化、向量化任务和向量化结果的模块内概念边界。
+12. [Manager 向量化能力说明](../manager/docs/向量化能力说明.md)：确认 Manager 向量化结果字段、状态枚举、API、执行配置和 UI 契约。
 
 ## 数据类型与格式主题
 
@@ -85,3 +87,13 @@
 2. [任务编排体系图](concepts/addp任务编排体系图.md)：理解任务级 DAG 和跨模块编排概念。
 3. [监控与执行体系图](concepts/addp监控与执行体系图.md)：理解 Monitor 与 `common.task_executions` 的关系。
 4. [元数据扫描机制规范](spec/addp元数据扫描机制规范.md)：处理 Meta ScanTask 与 execution 时阅读。
+5. [Transfer 任务语义与同步模式设计](next/transfer任务语义与同步模式设计.md)：处理 Transfer 全量、增量、实时、取消、重试、进度或日志语义时阅读。
+
+## Cleanup 与生命周期主题
+
+处理系统级清理、跨模块 owner 边界、派生产物回收、生命周期事件或 cleanup result 时，建议按以下顺序阅读：
+
+1. [Cleanup 体系规范](spec/addp-cleanup体系规范.md)：确认 System coordinator、模块 executor、scan / execute、result 模型和禁止规则。
+2. [术语表](concepts/addp术语表.md)：确认 cleanup、owner module、artifact state、physical artifact 等术语。
+3. [任务体系规范](spec/addp任务体系规范.md)：确认 cleanup 不纳入 TaskProvider，也不进入 Orchestrator 编排。
+4. [ADDP Cleanup 体系规范](spec/addp-cleanup体系规范.md)：了解 cleanup 的正式概念、边界和执行规则。

@@ -445,9 +445,12 @@
       "sourceItemUnknown": "未知",
       "spatialDataLabel": "空间数据",
       "spatialInfoLabel": "空间信息",
-      "unsupportedSourceDataTypeTitle": "当前数据项暂不支持传输",
+      "unsupportedSourceDataTypeTitle": "请选择可传输的数据项",
       "unsupportedSourceDataTypeDesc": "当前 Transfer 链路支持 table，以及 document/media/unknown encoded single raw copy；当前数据类型为 {dataType}。",
-      "unsupportedSourceShapeDesc": "当前 Transfer 链路支持 native/encoded table，以及后端已声明的 document/media/unknown encoded single raw copy。当前为 {dataType}/{representation}/{format}。",
+      "unsupportedSourceShapeDesc": "当前选择无法继续创建传输任务。请选择表，或后端已声明可传输的文件 / 对象资源。当前为 {dataType}/{representation}/{format}。",
+      "searchCurrentEngineSource": "在当前数据源引擎中搜索数据项",
+      "searchAllEnginesSource": "跨数据源引擎搜索可传输数据项",
+      "noSourceSearchResults": "未找到数据项",
       "loadCapabilitiesFailedMsg": "加载传输格式能力失败，后端未声明的 encoded 格式暂不可用",
       "noSupportedTargetForSource": "当前源数据项暂无可用目标",
       "dataType": "数据类型",
@@ -500,8 +503,10 @@
       "geometryFieldPlaceholder": "请选择或输入几何字段",
       "geometryTypeLabel": "几何类型",
       "geometryTypePlaceholder": "请选择几何类型",
+      "targetParentNodeLabel": "目标父节点",
+      "unsupportedTargetParentLabel": "不可作为目标父节点",
       "targetTableLabel": "目标表",
-      "targetTablePlaceholder": "请选择目标表或输入新表名",
+      "targetTablePlaceholder": "请输入目标表名",
       "targetTableNewAutoMapped": "目标表可能是新表，已使用源字段自动创建映射"
     },
     "taskForm": {
@@ -631,38 +636,6 @@
       "autoMatchTarget": "自动匹配到目标字段: {field}",
       "deleteMapping": "删除",
       "format": "格式"
-    },
-    "catalogDirectory": {
-      "dialogTitle": "选择输出目录",
-      "root": "根目录",
-      "currentDir": "当前目录：{path}",
-      "noSubdirs": "暂无子目录",
-      "dirColumn": "目录",
-      "actionsColumn": "操作",
-      "open": "打开",
-      "select": "选择",
-      "selectedLabel": "已选择：{path}",
-      "cancel": "取消",
-      "useCurrentDir": "使用当前目录",
-      "loadFailed": "加载目录失败: {error}"
-    },
-    "objectStorage": {
-      "dialogTitle": "选择对象存储目录",
-      "bucketLabel": "存储桶：{name}",
-      "bucketUnknown": "未知",
-      "rootDir": "根目录",
-      "currentDir": "当前目录：{path}",
-      "noSubdirs": "暂无子目录",
-      "dirColumn": "目录",
-      "actionsColumn": "操作",
-      "open": "打开",
-      "select": "选择",
-      "selectedLabel": "已选择：{path}",
-      "cancel": "取消",
-      "useCurrentDir": "使用当前目录",
-      "loadFailed": "加载目录失败: {error}",
-      "selectResourceFirst": "请先选择对象存储资源",
-      "unnamed": "未命名"
     }
   }
 }

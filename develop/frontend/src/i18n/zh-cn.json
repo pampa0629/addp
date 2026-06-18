@@ -264,7 +264,9 @@
       "resetSuccess": "已重置参数",
       "defaultValue": "默认: {value}",
       "inputPlaceholder": "请输入 {name}",
-      "dataSourceSelected": "已选择: {name}"
+      "dataSourceSelected": "已选择: {name}",
+      "targetTableName": "目标表名",
+      "targetTableNamePlaceholder": "请输入要创建或覆盖的表名"
     },
     "notebook": {
       "listTitle": "Notebook 列表",

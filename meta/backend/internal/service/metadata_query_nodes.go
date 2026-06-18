@@ -99,10 +99,54 @@ func (s *MetadataQueryService) GetNodeChildren(tenantID, nodeID uint) ([]models.
 func (s *MetadataQueryService) GetMetaNodeByID(tenantID, nodeID uint) (*models.MetaNodeLite, error) {
 	var node models.MetaNode
 
-	if err := s.db.Where("tenant_id = ? AND id = ?", tenantID, nodeID).First(&node).Error; err != nil {
+	if err := s.db.Where("tenant_id = ? AND id = ? AND deleted_at IS NULL", tenantID, nodeID).First(&node).Error; err != nil {
 		return nil, fmt.Errorf("node not found: %w", err)
 	}
 
 	result := metaquery.ToMetaNodeLite(node)
 	return &result, nil
+}
+
+func (s *MetadataQueryService) GetNodeAncestors(tenantID, nodeID uint) ([]models.MetaNodeLite, error) {
+	var target models.MetaNode
+	if err := s.db.Where("tenant_id = ? AND id = ? AND deleted_at IS NULL", tenantID, nodeID).First(&target).Error; err != nil {
+		return nil, fmt.Errorf("node not found: %w", err)
+	}
+
+	nodes, err := s.nodeAncestorChain(tenantID, target)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]models.MetaNodeLite, len(nodes))
+	for i, node := range nodes {
+		result[i] = metaquery.ToMetaNodeLite(node)
+	}
+	return result, nil
+}
+
+func (s *MetadataQueryService) nodeAncestorChain(tenantID uint, target models.MetaNode) ([]models.MetaNode, error) {
+	reversed := []models.MetaNode{target}
+	seen := map[uint]bool{target.ID: true}
+	current := target
+
+	for current.ParentNodeID != nil {
+		parentID := *current.ParentNodeID
+		if seen[parentID] {
+			return nil, fmt.Errorf("node ancestor cycle detected at node %d", parentID)
+		}
+
+		var parent models.MetaNode
+		if err := s.db.Where("tenant_id = ? AND id = ? AND engine_id = ? AND deleted_at IS NULL", tenantID, parentID, target.EngineID).First(&parent).Error; err != nil {
+			return nil, fmt.Errorf("node ancestor missing for node %d: %w", current.ID, err)
+		}
+		reversed = append(reversed, parent)
+		seen[parent.ID] = true
+		current = parent
+	}
+
+	chain := make([]models.MetaNode, len(reversed))
+	for i := range reversed {
+		chain[i] = reversed[len(reversed)-1-i]
+	}
+	return chain, nil
 }

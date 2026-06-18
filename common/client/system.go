@@ -814,15 +814,24 @@ func (c *SystemClient) SendHeartbeat(moduleName string) error {
 // RegisterAndHeartbeat 启动后台 goroutine 完成模块注册+心跳+失败自动重连。
 // 初始注册最多重试 3 次；心跳每 10s 一次，连续失败 3 次自动重新注册。
 func (c *SystemClient) RegisterAndHeartbeat(moduleName, moduleURL, routePrefix string) {
+	c.RegisterAndHeartbeatWithMetadata(moduleName, moduleURL, routePrefix, map[string]interface{}{"module": moduleName})
+}
+
+// RegisterAndHeartbeatWithMetadata 启动后台 goroutine 完成模块注册、能力元数据上报、心跳和失败自动重连。
+func (c *SystemClient) RegisterAndHeartbeatWithMetadata(moduleName, moduleURL, routePrefix string, metadata map[string]interface{}) {
 	go func() {
 		time.Sleep(2 * time.Second)
+		registrationMetadata := map[string]interface{}{"module": moduleName}
+		for key, value := range metadata {
+			registrationMetadata[key] = value
+		}
 
 		req := &ModuleRegistrationRequest{
 			ModuleName:     moduleName,
 			ModuleURL:      moduleURL,
 			RoutePrefix:    routePrefix,
 			HealthCheckURL: moduleURL + "/health",
-			Metadata:       map[string]interface{}{"module": moduleName},
+			Metadata:       registrationMetadata,
 		}
 
 		tryRegister := func() bool {

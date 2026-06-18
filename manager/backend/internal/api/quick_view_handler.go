@@ -447,12 +447,14 @@ func quickViewSourceFromPreview(locator string, tenantID *uint, result *preview.
 		extentSRID = sourceSRID
 	}
 	source.SpatialMeta = &service.SpatialMetadataResult{
-		GeomColumn:      geometryColumn,
-		GeometryColumns: tablePreview.GeometryColumns,
-		SRID:            sourceSRID,
-		ExtentSRID:      extentSRID,
-		Extent:          tablePreview.Extent,
-		RecordCount:     int64(tablePreview.Total),
+		GeomColumn:          geometryColumn,
+		GeometryColumns:     tablePreview.GeometryColumns,
+		SRID:                sourceSRID,
+		SourceCRS:           tablePreview.SourceCRS,
+		SourceCRSDefinition: tablePreview.SourceCRSDefinition,
+		ExtentSRID:          extentSRID,
+		Extent:              tablePreview.Extent,
+		RecordCount:         int64(tablePreview.Total),
 	}
 	return source
 }

@@ -39,3 +39,9 @@ other = "心跳更新成功"
 
 [system.module.deleted]
 other = "模块注销成功"
+
+[system.cleanup.confirm_required]
+other = "执行资源回收前必须确认评估结果和影响范围"
+
+[system.cleanup.confirm_token_required]
+other = "高风险或释放存储操作必须输入确认文本"

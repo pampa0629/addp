@@ -22,7 +22,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "基于扫描结果，执行垃圾数据清理（软删除或物理删除）| Execute garbage data cleanup based on scan results (soft delete or hard delete)",
+                "description": "基于扫描结果，执行系统级资源清理（逻辑清理或物理清理）| Execute system cleanup based on scan results (logical or physical cleanup)",
                 "consumes": [
                     "application/json"
                 ],
@@ -131,7 +131,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "扫描当前租户的垃圾数据（无效引擎、孤儿数据、软删除数据等）| Scan garbage data for current tenant (invalid engines, orphan data, soft-deleted data, etc.)",
+                "description": "扫描当前租户的系统级资源清理候选；scope 为空时按已注册且启用 cleanup executor 的模块生成 expected_modules | Scan system cleanup candidates for current tenant; when scope is empty, expected_modules is generated from registered cleanup executors",
                 "consumes": [
                     "application/json"
                 ],
@@ -2605,11 +2605,22 @@ const docTemplate = `{
                 "based_on_scan": {
                     "type": "string"
                 },
+                "cause_event": {
+                    "description": "生命周期触发事件",
+                    "type": "string"
+                },
+                "cleanup_mode": {
+                    "description": "logical_cleanup/physical_cleanup",
+                    "type": "string"
+                },
                 "completed_at": {
                     "type": "string"
                 },
-                "delete_type": {
-                    "description": "soft_delete/hard_delete",
+                "context": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "execution_id": {
                     "type": "string"
                 },
                 "expected_modules": {
@@ -2635,6 +2646,10 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "timeout_at": {
+                    "type": "string"
+                },
+                "trigger_type": {
+                    "description": "manual/scheduled/event",
                     "type": "string"
                 }
             }
@@ -3139,15 +3154,15 @@ const docTemplate = `{
             "type": "object",
             "required": [
                 "based_on_scan",
-                "delete_type"
+                "cleanup_mode"
             ],
             "properties": {
                 "based_on_scan": {
                     "description": "基于哪次扫描",
                     "type": "string"
                 },
-                "delete_type": {
-                    "description": "soft_delete/hard_delete",
+                "cleanup_mode": {
+                    "description": "logical_cleanup/physical_cleanup",
                     "type": "string"
                 }
             }
@@ -3164,7 +3179,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "scope": {
-                    "description": "扫描范围：meta/manager/transfer 等，为空则扫描所有",
+                    "description": "扫描范围：已注册且启用 cleanup executor 的模块；为空则由 System 按模块注册能力生成",
                     "type": "array",
                     "items": {
                         "type": "string"

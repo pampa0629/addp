@@ -40,7 +40,6 @@ func extractAuthToken(c *gin.Context) string {
 func SetupRouter(
 	taskService *service.TaskService,
 	executionService *service.ExecutionService,
-	objectStorageService *service.ObjectStorageService,
 	systemURL string,
 	metaURL string,
 	redisClient *redis.Client,
@@ -91,34 +90,9 @@ func SetupRouter(
 	// 创建 Handlers
 	taskHandler := NewTaskHandler(taskService)
 	executionHandler := NewExecutionHandler(executionService)
-	objectStorageHandler := NewObjectStorageHandler(objectStorageService)
 	systemEngineHandler := NewSystemEngineHandler(systemClient)
 	capabilityHandler := NewTransferCapabilityHandler()
-	// DataSourceHandler 需要在请求处理时创建（因为需要 JWT token）
-	// 这里先不初始化，在路由中动态创建
 
-	// 数据源路由（为前端提供统一的数据源访问接口）
-	// 注意：DataSourceHandler 需要用户的 JWT token，所以在路由中动态创建
-	protected.GET("/engines", func(c *gin.Context) {
-		authToken := extractAuthToken(c)
-		dataSourceHandler := NewDataSourceHandler(systemClient, commonClient.NewMetaClient(metaURL, authToken))
-		dataSourceHandler.GetEngines(c)
-	})
-	protected.GET("/engines/:engine_id/tree", func(c *gin.Context) {
-		authToken := extractAuthToken(c)
-		dataSourceHandler := NewDataSourceHandler(systemClient, commonClient.NewMetaClient(metaURL, authToken))
-		dataSourceHandler.GetEngineTree(c)
-	})
-	protected.GET("/nodes/:node_id/children", func(c *gin.Context) {
-		authToken := extractAuthToken(c)
-		dataSourceHandler := NewDataSourceHandler(systemClient, commonClient.NewMetaClient(metaURL, authToken))
-		dataSourceHandler.GetNodeChildren(c)
-	})
-	protected.GET("/tables/metadata", func(c *gin.Context) {
-		authToken := extractAuthToken(c)
-		dataSourceHandler := NewDataSourceHandler(systemClient, commonClient.NewMetaClient(metaURL, authToken))
-		dataSourceHandler.DetectTableMetadata(c)
-	})
 	protected.GET("/system-engines", systemEngineHandler.List)
 	protected.GET("/capabilities", capabilityHandler.Get)
 
@@ -142,13 +116,6 @@ func SetupRouter(
 		taskDefinitions.POST("/:id/pause", taskHandler.PauseTask)                  // 暂停任务
 		taskDefinitions.POST("/:id/resume", taskHandler.ResumeTask)                // 恢复任务
 		taskDefinitions.GET("/:id/executions", executionHandler.GetTaskExecutions) // 获取任务的执行记录
-	}
-
-	// 对象存储辅助接口
-	objectStorage := protected.Group("/object-storage")
-	{
-		objectStorage.POST("/browse", objectStorageHandler.BrowseDirectories)
-		objectStorage.POST("/list-files", objectStorageHandler.ListFiles)
 	}
 
 	// 执行记录路由

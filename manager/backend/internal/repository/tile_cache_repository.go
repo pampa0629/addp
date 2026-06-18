@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 
@@ -71,6 +72,27 @@ func (r *TileCacheRepository) DeleteTask(ctx context.Context, id uint, tenantID 
 	return r.db.WithContext(ctx).
 		Where("id = ? AND tenant_id = ?", id, tenantID).
 		Delete(&models.TileCacheTask{}).Error
+}
+
+func (r *TileCacheRepository) ListAllTasks(ctx context.Context, tenantID uint) ([]*models.TileCacheTask, error) {
+	var tasks []*models.TileCacheTask
+	err := r.db.WithContext(ctx).
+		Where("tenant_id = ?", tenantID).
+		Order("updated_at DESC, id DESC").
+		Find(&tasks).Error
+	return tasks, err
+}
+
+func (r *TileCacheRepository) DisableTaskForCleanup(ctx context.Context, tenantID uint, id uint, reason string) error {
+	return r.db.WithContext(ctx).
+		Model(&models.TileCacheTask{}).
+		Where("tenant_id = ? AND id = ?", tenantID, id).
+		Updates(map[string]interface{}{
+			"enabled":               false,
+			"next_run_at":           nil,
+			"last_execution_status": strings.TrimSpace(reason),
+			"updated_at":            time.Now(),
+		}).Error
 }
 
 func (r *TileCacheRepository) UpdateTaskLastExecution(ctx context.Context, id uint, executionID, status string, runAt time.Time) error {
@@ -285,4 +307,26 @@ func (r *TileCacheRepository) ListTileCacheByItem(ctx context.Context, tenantID 
 		Order("updated_at DESC").
 		Find(&artifacts).Error
 	return artifacts, err
+}
+
+func (r *TileCacheRepository) ListAllTileCaches(ctx context.Context, tenantID uint) ([]*models.TileCache, error) {
+	var artifacts []*models.TileCache
+	err := r.db.WithContext(ctx).
+		Where("tenant_id = ?", tenantID).
+		Order("updated_at DESC, id DESC").
+		Find(&artifacts).Error
+	return artifacts, err
+}
+
+func (r *TileCacheRepository) ListTileCachesByEngine(ctx context.Context, tenantID uint, engineID uint) ([]*models.TileCache, error) {
+	var artifacts []*models.TileCache
+	err := r.db.WithContext(ctx).
+		Where("tenant_id = ? AND locator LIKE ?", tenantID, "addp://engine/"+uintString(engineID)+"/%").
+		Order("updated_at DESC, id DESC").
+		Find(&artifacts).Error
+	return artifacts, err
+}
+
+func uintString(value uint) string {
+	return strconv.FormatUint(uint64(value), 10)
 }

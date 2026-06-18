@@ -79,8 +79,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Folder, Document, Check } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import client from '@/api/client'
-import { listNfsEngines } from '@/api/engines'
+import { getResourceTree, getResourceTreeNode, listResourceTreeEngines, parseLocatorSafe } from '@addp/common-frontend'
 
 const { t } = useI18n()
 
@@ -131,25 +130,21 @@ function inferFormat(path) {
   return EXT_FORMAT_MAP[ext] || null
 }
 
-// 从 locator 中提取相对路径
-// locator 格式: addp://engine/1/path/data/rivers.shp?type=file
+const META_API_BASE_URL = '/api/v1/meta'
+
+// 从 locator 中提取绝对路径
 function extractPathFromLocator(locator) {
-  if (!locator) return ''
-  try {
-    const url = new URL(locator)
-    // pathname 形如 /1/path/data/rivers.shp
-    const parts = url.pathname.split('/path/')
-    return parts.length > 1 ? '/' + parts[1] : ''
-  } catch {
+  const parsed = parseLocatorSafe(locator)
+  if (!parsed.path?.length) {
     return ''
   }
+  return `/${parsed.path.join('/')}`
 }
 
 async function loadEngines() {
   loadingEngines.value = true
   try {
-    const data = await listNfsEngines()
-    engines.value = Array.isArray(data) ? data : (data?.data || [])
+    engines.value = await listResourceTreeEngines(META_API_BASE_URL, { engineTypes: ['nfs'] })
   } catch (e) {
     ElMessage.error(t('develop.nfsFilePicker.loadEnginesFailed'))
   } finally {
@@ -161,8 +156,7 @@ async function loadRootTree(engineId) {
   loadingTree.value = true
   treeData.value = []
   try {
-    const res = await client.get(`/manager/tree/${engineId}`, { params: { expand_depth: 1 } })
-    const root = res?.data || res
+    const root = await getResourceTree(META_API_BASE_URL, engineId, { expandDepth: 1 })
     treeData.value = root?.children || []
   } catch (e) {
     ElMessage.error(t('develop.nfsFilePicker.loadTreeFailed'))
@@ -175,10 +169,7 @@ async function loadChildren(node, resolve) {
   const data = node.data
   if (!data?.locator) return resolve([])
   try {
-    const res = await client.get(`/manager/tree/${selectedEngineId.value}/node`, {
-      params: { locator: data.locator, expand_depth: 1 }
-    })
-    const result = res?.data || res
+    const result = await getResourceTreeNode(META_API_BASE_URL, selectedEngineId.value, data.locator)
     resolve(result?.children || [])
   } catch {
     resolve([])

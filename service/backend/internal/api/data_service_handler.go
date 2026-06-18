@@ -1,11 +1,8 @@
 package api
 
 import (
-	"fmt"
 	"net/http"
 
-	commoni18n "github.com/addp/common/middleware/i18n"
-	servicei18n "github.com/addp/service/i18n"
 	"github.com/addp/service/internal/models"
 	"github.com/addp/service/internal/service/data"
 	"github.com/gin-gonic/gin"
@@ -38,6 +35,10 @@ func (h *DataServiceHandler) Query(c *gin.Context) {
 
 	response, err := h.queryService.Query(c.Request.Context(), &req)
 	if err != nil {
+		if data.IsInvalidResourceLocatorError(err) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -62,6 +63,10 @@ func (h *DataServiceHandler) Aggregate(c *gin.Context) {
 
 	response, err := h.queryService.Aggregate(c.Request.Context(), &req)
 	if err != nil {
+		if data.IsInvalidResourceLocatorError(err) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -74,30 +79,22 @@ func (h *DataServiceHandler) Aggregate(c *gin.Context) {
 // @Tags DataService
 // @Accept json
 // @Produce json
-// @Param engine_id query int true "引擎ID | Engine ID"
-// @Param schema query string true "Schema名称 | Schema name"
-// @Param table query string true "表名 | Table name"
+// @Param locator query string true "ResourceLocator，必须指向 table item | ResourceLocator pointing to table item"
 // @Success 200 {object} []models.ColumnInfo "表结构 | Table structure"
 // @Router /data/structure [get]
 func (h *DataServiceHandler) GetTableStructure(c *gin.Context) {
-	engineID := c.Query("engine_id")
-	schema := c.Query("schema")
-	table := c.Query("table")
-
-	if engineID == "" || schema == "" || table == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, servicei18n.MsgMissingParams)})
+	locator := c.Query("locator")
+	if locator == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "locator is required"})
 		return
 	}
 
-	// 转换 engine_id 为 uint
-	var id uint
-	if _, err := fmt.Sscanf(engineID, "%d", &id); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, servicei18n.MsgInvalidEngineID)})
-		return
-	}
-
-	columns, err := h.queryService.GetTableStructure(c.Request.Context(), id, schema, table)
+	columns, err := h.queryService.GetTableStructure(c.Request.Context(), locator)
 	if err != nil {
+		if data.IsInvalidResourceLocatorError(err) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

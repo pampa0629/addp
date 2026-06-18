@@ -27,7 +27,7 @@ func NewTaskHandler(taskService *service.TaskService) *TaskHandler {
 
 // CreateTask 创建任务
 // @Summary 创建数据传输任务 | Create data transfer task
-// @Description 创建一个新的 Transfer 任务。新任务 config 使用 source/target locator endpoint；source locator 带 item_id 时，Transfer 后端会通过 MetaClient 读取标准 attributes。| Create a new Transfer task. New config uses source/target locator endpoints; when source locator carries item_id, Transfer backend loads standard attributes through MetaClient.
+// @Description 创建一个新的 Transfer 任务。config.source 使用 locator 指向已存在资源；config.target 使用 parent_locator + name 表达待写入资源。source locator 带 item_id 时，Transfer 后端会通过 MetaClient 读取标准 attributes。| Create a new Transfer task. config.source uses locator for existing resources; config.target uses parent_locator + name for the resource to write. When source locator carries item_id, Transfer backend loads standard attributes through MetaClient.
 // @Tags         任务管理 | Task Management
 // @Accept json
 // @Produce json
@@ -137,7 +137,7 @@ func (h *TaskHandler) ListTasks(c *gin.Context) {
 
 // UpdateTask 更新任务
 // @Summary 更新任务 | Update task
-// @Description 更新任务的配置信息。source 指向已入库 Meta item 时使用 config.source.locator 的 item_id；不支持在任务配置中直接传递 endpoint attributes。| Update task configuration. Use config.source.locator item_id for persisted Meta items; endpoint attributes are not accepted in task config.
+// @Description 更新任务的配置信息。source 指向已入库 Meta item 时使用 config.source.locator 的 item_id；target 使用 parent_locator + name；不支持在任务配置中直接传递 endpoint attributes。| Update task configuration. Use config.source.locator item_id for persisted Meta items; target uses parent_locator + name; endpoint attributes are not accepted in task config.
 // @Tags         任务管理 | Task Management
 // @Accept json
 // @Produce json

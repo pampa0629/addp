@@ -50,6 +50,12 @@ type MetadataTree struct {
 	Items      []MetaItem `json:"items"`
 }
 
+// MetaItemAncestors 表示数据项及其父节点祖先链。
+type MetaItemAncestors struct {
+	Item      MetaItem   `json:"item"`
+	Ancestors []MetaNode `json:"ancestors"`
+}
+
 // SpatialMetadata 空间元数据（用于 MVT 瓦片生成）
 type SpatialMetadata struct {
 	GeometryColumn string                  `json:"geometry_column"`

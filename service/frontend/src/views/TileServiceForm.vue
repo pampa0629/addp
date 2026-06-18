@@ -60,14 +60,19 @@
 
         <div class="form-group">
           <label>{{ $t('service.tile.selectTableLabel') }} *</label>
-          <DataSourceCascader
+          <ResourceTreePicker
             :api-base-url="metaApiBaseUrl"
-            :engine-types="['postgresql', 'mysql', 'doris', 'clickhouse']"
-            :selectable-node-types="['table']"
-            :enable-geometry-detection="true"
-            :require-geometry="true"
-            :show-selection-info="true"
-            @update:selection="handleTableSelection"
+            :engine-types="nativeTableEngineTypes"
+            mode="item"
+            :node-filter="isNativeTableVisibleNode"
+            :selectable-filter="isNativeTableNode"
+            :show-selection-summary="true"
+            :engine-multiple="true"
+            :select-all-engines-by-default="true"
+            :search-selectable-only="true"
+            :show-disabled-label="false"
+            :show-count="false"
+            @update:model-value="handleTableSelection"
           />
         </div>
 
@@ -219,13 +224,14 @@
 
 <script>
 import tileServiceAPI from '@/api/tileService'
-import { DataSourceCascader } from '@common-ui'
+import { ResourceTreePicker, detectTableMetadata, locatorPathFromSelection } from '@common-ui'
 import { ElMessage } from 'element-plus'
+import { NATIVE_TABLE_ENGINE_TYPES, isNativeTableNode, isNativeTableVisibleNode } from '@/utils/resourceSelection'
 
 export default {
   name: 'TileServiceForm',
   components: {
-    DataSourceCascader
+    ResourceTreePicker
   },
   data() {
     return {
@@ -243,6 +249,7 @@ export default {
         layerDescription: '',
         // 动态图层
         engineId: null,
+        locator: '',
         schema: '',
         table: '',
         geomColumn: '',
@@ -268,20 +275,23 @@ export default {
       return this.$route.params.id !== undefined
     },
     metaApiBaseUrl() {
-      // Service API 基础 URL（用于 DataSourceCascader）
-      // 开发环境：通过 Vite proxy 代理到 Gateway (localhost:8000)
-      // 生产环境：直接访问 Gateway
-      return '/api/v1/service'
+      return '/api/v1/meta'
+    },
+    nativeTableEngineTypes() {
+      return NATIVE_TABLE_ENGINE_TYPES
     }
   },
   methods: {
-    // 处理表选择（DataSourceCascader 回调）
-    handleTableSelection(selection) {
+    isNativeTableNode,
+    isNativeTableVisibleNode,
+    // 处理表选择（ResourceTreePicker 回调）
+    async handleTableSelection(selection) {
       console.log('[TileServiceForm] Table selection:', selection)
 
       if (!selection) {
         // 清空选择
         this.form.engineId = null
+        this.form.locator = ''
         this.form.schema = ''
         this.form.table = ''
         this.form.geomColumn = ''
@@ -290,25 +300,33 @@ export default {
         return
       }
 
+      const path = locatorPathFromSelection(selection)
+
       // 更新表单字段
-      this.form.engineId = selection.engineId
-      this.form.schema = selection.schema
-      this.form.table = selection.tableName
+      this.form.engineId = selection.identity?.engine_id
+      this.form.locator = selection.identity?.locator || ''
+      this.form.schema = path[0] || ''
+      this.form.table = path[path.length - 1] || selection.display?.label || ''
+
+      const geometry = await detectTableMetadata('/api/v1/meta', {
+        locator: this.form.locator,
+        item_id: selection.identity?.item_id
+      })
 
       // 如果检测到几何列，自动填充
-      if (selection.hasGeometry) {
-        this.form.geomColumn = selection.geometryColumn
-        this.form.srid = selection.srid || 4326
+      if (geometry.has_geometry) {
+        this.form.geomColumn = geometry.geometry_column
+        this.form.srid = geometry.srid || 4326
 
         this.spatialMetadata = {
           hasGeometry: true,
-          geometryColumn: selection.geometryColumn,
-          srid: selection.srid || 4326,
-          geometryTypes: selection.geometryType ? [selection.geometryType] : [],
-          extent: selection.extent
+          geometryColumn: geometry.geometry_column,
+          srid: geometry.srid || 4326,
+          geometryTypes: geometry.geometry_types || [],
+          extent: geometry.extent
         }
 
-        ElMessage.success(this.$t('service.tile.spatialDetectedMsg', { column: selection.geometryColumn }))
+        ElMessage.success(this.$t('service.tile.spatialDetectedMsg', { column: geometry.geometry_column }))
       } else {
         this.spatialMetadata = { hasGeometry: false }
         ElMessage.warning(this.$t('service.tile.noSpatialWarning'))
@@ -320,7 +338,7 @@ export default {
         return false
       }
       if (this.layerType === 'dynamic') {
-        return this.form.engineId && this.form.schema && this.form.table && this.form.geomColumn
+        return this.form.locator && this.form.geomColumn
       } else {
         return this.form.tilePath && this.form.format
       }
@@ -354,6 +372,7 @@ export default {
         const layerConfig = this.layerType === 'dynamic'
           ? {
               source: {
+                locator: this.form.locator,
                 engine_id: this.form.engineId,
                 schema: this.form.schema,
                 table: this.form.table,
@@ -433,6 +452,7 @@ export default {
         layerTitle: '',
         layerDescription: '',
         engineId: null,
+        locator: '',
         schema: '',
         table: '',
         geomColumn: '',

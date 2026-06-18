@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/addp/asset/internal/search"
 	"github.com/addp/asset/internal/service"
 	commonClient "github.com/addp/common/client"
+	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/utils"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/postgres"
@@ -32,6 +34,9 @@ func main() {
 	// 确保 asset schema 存在
 	if err := db.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", cfg.DBSchema)).Error; err != nil {
 		log.Fatalf("Failed to create schema: %v", err)
+	}
+	if err := commonExecution.EnsureStore(db); err != nil {
+		log.Fatalf("Failed to ensure execution store: %v", err)
 	}
 
 	// AutoMigrate 所有资产相关表
@@ -88,6 +93,7 @@ func main() {
 		indexer = nil
 	}
 	assetSvc := service.NewAssetService(db, moduleURLs, cfg.InternalAPIKey, indexer)
+	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
 
 	var redisClient *redis.Client
 	if cfg.RedisHost != "" {
@@ -96,11 +102,17 @@ func main() {
 			Password: cfg.RedisPassword,
 			DB:       cfg.RedisDB,
 		})
+		defer redisClient.Close()
 	}
 
 	systemClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemURL, cfg.InternalAPIKey)
 
 	authSvc := service.NewAuthorizationService(db)
+	cleanupSvc := service.NewCleanupService(db, redisClient, taskExecutionRepo)
+	if err := cleanupSvc.Start(context.Background()); err != nil {
+		log.Printf("⚠️  Asset cleanup executor 启动失败: %v", err)
+	}
+	defer cleanupSvc.Stop()
 
 	router := api.SetupRouter(db, cfg.SystemURL, redisClient, assetSvc)
 
@@ -136,7 +148,14 @@ func main() {
 	serviceHost := utils.GetServiceHost()
 	port := utils.GetModulePort("asset")
 	serviceURL := utils.BuildServiceURL(serviceHost, port)
-	systemClient.RegisterAndHeartbeat("asset", serviceURL, "/asset")
+	systemClient.RegisterAndHeartbeatWithMetadata("asset", serviceURL, "/asset", map[string]interface{}{
+		"module": "asset",
+		"capabilities": map[string]interface{}{
+			"cleanup_executor": map[string]interface{}{
+				"enabled": true,
+			},
+		},
+	})
 
 	select {}
 }

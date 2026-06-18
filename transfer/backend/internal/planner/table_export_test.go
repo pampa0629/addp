@@ -221,7 +221,7 @@ func TestBuildTableTransferPlanDoesNotPushNativeFieldSelectionForPassthroughMapp
 
 func TestBuildTableTransferPlanForObjectTarget(t *testing.T) {
 	spec := minimalNativeToEncodedSpec()
-	spec.Target.Locator = objectLocator(2, "exports", "roads.csv")
+	setObjectTarget(&spec, 2, "exports", "roads.csv")
 
 	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
 		1: {Type: "postgresql"},
@@ -238,7 +238,7 @@ func TestBuildTableTransferPlanForObjectTarget(t *testing.T) {
 func TestBuildTableTransferPlanAppendsTargetExtensionForObjectTarget(t *testing.T) {
 	spec := minimalNativeToEncodedSpec()
 	spec.Target.Format = format.FormatParquet
-	spec.Target.Locator = objectLocator(2, "exports", "lake3")
+	setObjectTarget(&spec, 2, "exports", "lake3")
 
 	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
 		1: {Type: "postgresql"},
@@ -255,7 +255,7 @@ func TestBuildTableTransferPlanAppendsTargetExtensionForObjectTarget(t *testing.
 func TestBuildTableTransferPlanAppendsTargetExtensionForFileTarget(t *testing.T) {
 	spec := minimalNativeToEncodedSpec()
 	spec.Target.Format = format.FormatCSV
-	spec.Target.Locator = fileLocator(2, "exports/roads")
+	setFileTarget(&spec, 2, "exports/roads")
 
 	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
 		1: {Type: "postgresql"},
@@ -272,7 +272,7 @@ func TestBuildTableTransferPlanAppendsTargetExtensionForFileTarget(t *testing.T)
 func TestBuildTableTransferPlanRejectsConflictingTargetExtension(t *testing.T) {
 	spec := minimalNativeToEncodedSpec()
 	spec.Target.Format = format.FormatParquet
-	spec.Target.Locator = fileLocator(2, "exports/roads.csv")
+	setFileTarget(&spec, 2, "exports/roads.csv")
 
 	_, err := BuildTableTransferPlan(spec, StaticEngineResolver{
 		1: {Type: "postgresql"},
@@ -301,7 +301,7 @@ func TestBuildTableTransferPlanAppendsLogicalJSONTargetExtensions(t *testing.T) 
 			spec := minimalNativeToEncodedSpec()
 			spec.Target.Format = format.FormatJSON
 			spec.Target.Options = tt.options
-			spec.Target.Locator = fileLocator(2, "exports/roads")
+			setFileTarget(&spec, 2, "exports/roads")
 
 			result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
 				1: {Type: "postgresql"},
@@ -320,7 +320,7 @@ func TestBuildTableTransferPlanAppendsLogicalJSONTargetExtensions(t *testing.T) 
 func TestBuildTableTransferPlanAppendsGeoJSONTargetExtension(t *testing.T) {
 	spec := minimalNativeToEncodedSpec()
 	spec.Target.Format = format.FormatGeoJSON
-	spec.Target.Locator = fileLocator(2, "exports/roads")
+	setFileTarget(&spec, 2, "exports/roads")
 
 	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
 		1: {Type: "postgresql"},
@@ -337,7 +337,7 @@ func TestBuildTableTransferPlanAppendsGeoJSONTargetExtension(t *testing.T) {
 func TestBuildTableTransferPlanAllowsJSONTableWriter(t *testing.T) {
 	spec := minimalNativeToEncodedSpec()
 	spec.Target.Format = format.FormatJSON
-	spec.Target.Locator = fileLocator(2, "exports/roads.jsonl")
+	setFileTarget(&spec, 2, "exports/roads.jsonl")
 	spec.Target.Options = map[string]interface{}{"json_mode": "jsonl"}
 
 	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
@@ -358,7 +358,7 @@ func TestBuildTableTransferPlanAllowsJSONTableWriter(t *testing.T) {
 func TestBuildTableTransferPlanPassesGeoJSONWriteOptions(t *testing.T) {
 	spec := minimalNativeToEncodedSpec()
 	spec.Target.Format = format.FormatGeoJSON
-	spec.Target.Locator = fileLocator(2, "exports/roads.geojson")
+	setFileTarget(&spec, 2, "exports/roads.geojson")
 	spec.Target.Options = map[string]interface{}{
 		"geometry_field": "geom",
 	}
@@ -384,7 +384,7 @@ func TestBuildTableTransferPlanPassesGeoJSONWriteOptions(t *testing.T) {
 func TestBuildTableTransferPlanAllowsParquetTableWriter(t *testing.T) {
 	spec := minimalNativeToEncodedSpec()
 	spec.Target.Format = format.FormatParquet
-	spec.Target.Locator = fileLocator(2, "exports/roads.parquet")
+	setFileTarget(&spec, 2, "exports/roads.parquet")
 
 	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
 		1: {Type: "postgresql"},
@@ -404,7 +404,7 @@ func TestBuildTableTransferPlanAllowsParquetTableWriter(t *testing.T) {
 func TestBuildTableTransferPlanAllowsShapefileMultiTableWriter(t *testing.T) {
 	spec := minimalNativeToEncodedSpec()
 	spec.Target.Format = format.FormatShapefile
-	spec.Target.Locator = fileLocator(2, "exports/roads.shp")
+	setFileTarget(&spec, 2, "exports/roads.shp")
 	spec.Target.Options = map[string]interface{}{
 		"geometry_field": "geom",
 		"geometry_type":  "Point",
@@ -436,7 +436,8 @@ func TestBuildTableTransferPlanForEncodedFileToNativeTable(t *testing.T) {
 			Options:        map[string]interface{}{"header": true, "delimiter": ","},
 		},
 		Target: EndpointSpec{
-			Locator:        "addp://engine/2/path/public/roads?type=table",
+			ParentLocator:  schemaLocator(2, "public"),
+			Name:           "roads",
 			DataType:       dataTypeTable,
 			Representation: representationNative,
 			Policy:         map[string]interface{}{"write_mode": "append"},
@@ -713,7 +714,7 @@ func TestBuildTableTransferPlanForEncodedObjectToEncodedObject(t *testing.T) {
 	spec := minimalEncodedToEncodedSpec()
 	spec.Target.Format = format.FormatJSON
 	spec.Target.Options = map[string]interface{}{"json_mode": "jsonl"}
-	spec.Target.Locator = objectLocator(2, "exports", "roads.jsonl")
+	setObjectTarget(&spec, 2, "exports", "roads.jsonl")
 
 	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
 		1: {Type: "minio"},
@@ -751,7 +752,8 @@ func TestBuildTableTransferPlanForNativeTableToNativeTable(t *testing.T) {
 			Representation: representationNative,
 		},
 		Target: EndpointSpec{
-			Locator:        tableLocator(2, "gis", "roads_copy"),
+			ParentLocator:  schemaLocator(2, "gis"),
+			Name:           "roads_copy",
 			DataType:       dataTypeTable,
 			Representation: representationNative,
 			Policy:         map[string]interface{}{"write_mode": "overwrite"},
@@ -813,8 +815,8 @@ func TestBuildTableTransferPlanRejectsInvalidShape(t *testing.T) {
 	if err == nil {
 		t.Fatal("BuildTableTransferPlan succeeded, want representation error")
 	}
-	if !strings.Contains(err.Error(), "source encoded endpoint locator type") {
-		t.Fatalf("error = %q, want encoded source locator type error", err)
+	if !strings.Contains(err.Error(), "source encoded endpoint type") {
+		t.Fatalf("error = %q, want encoded source endpoint type error", err)
 	}
 }
 
@@ -876,7 +878,8 @@ func TestParseTableExportTaskSpecRejectsLegacyEngineField(t *testing.T) {
 			"representation": "native",
 		},
 		"target": map[string]interface{}{
-			"locator":        fileLocator(2, "exports/roads.csv"),
+			"parent_locator": directoryLocator(2, "exports"),
+			"name":           "roads.csv",
 			"data_type":      "table",
 			"representation": "encoded",
 			"format":         "csv",
@@ -898,7 +901,8 @@ func TestParseTableExportTaskSpecRequiresMode(t *testing.T) {
 			"representation": "native",
 		},
 		"target": map[string]interface{}{
-			"locator":        fileLocator(2, "exports/roads.csv"),
+			"parent_locator": directoryLocator(2, "exports"),
+			"name":           "roads.csv",
 			"data_type":      "table",
 			"representation": "encoded",
 			"format":         "csv",
@@ -923,7 +927,8 @@ func TestParseTableExportTaskSpecAppliesFallbackBatchSize(t *testing.T) {
 			"representation": "native",
 		},
 		"target": map[string]interface{}{
-			"locator":        fileLocator(2, "exports/roads.csv"),
+			"parent_locator": directoryLocator(2, "exports"),
+			"name":           "roads.csv",
 			"data_type":      "table",
 			"representation": "encoded",
 			"format":         "csv",
@@ -946,7 +951,8 @@ func TestParseTableExportTaskSpecPreservesSourceLocatorItemID(t *testing.T) {
 			"representation": "encoded",
 		},
 		"target": map[string]interface{}{
-			"locator":        tableLocator(2, "public", "roads"),
+			"parent_locator": schemaLocator(2, "public"),
+			"name":           "roads",
 			"data_type":      "table",
 			"representation": "native",
 		},
@@ -972,7 +978,8 @@ func TestParseTableExportTaskSpecRejectsEndpointAttributes(t *testing.T) {
 			"attributes":     map[string]interface{}{"item": map[string]interface{}{"format": "shapefile"}},
 		},
 		"target": map[string]interface{}{
-			"locator":        tableLocator(2, "public", "roads"),
+			"parent_locator": schemaLocator(2, "public"),
+			"name":           "roads",
 			"data_type":      "table",
 			"representation": "native",
 		},
@@ -994,7 +1001,8 @@ func minimalNativeToEncodedSpec() TableExportTaskSpec {
 			Representation: representationNative,
 		},
 		Target: EndpointSpec{
-			Locator:        "addp://engine/2/path/exports/roads.csv?type=file",
+			ParentLocator:  directoryLocator(2, "exports"),
+			Name:           "roads.csv",
 			DataType:       dataTypeTable,
 			Representation: representationEncoded,
 			Format:         format.FormatCSV,
@@ -1006,12 +1014,54 @@ func tableLocator(engineID uint, schema, table string) string {
 	return "addp://engine/" + strconv.Itoa(int(engineID)) + "/path/" + schema + "/" + table + "?type=table"
 }
 
+func schemaLocator(engineID uint, schema string) string {
+	return "addp://engine/" + strconv.Itoa(int(engineID)) + "/path/" + schema + "?type=schema"
+}
+
 func fileLocator(engineID uint, path string) string {
 	return "addp://engine/" + strconv.Itoa(int(engineID)) + "/path/" + path + "?type=file"
 }
 
+func directoryLocator(engineID uint, path string) string {
+	return "addp://engine/" + strconv.Itoa(int(engineID)) + "/path/" + path + "?type=directory"
+}
+
 func objectLocator(engineID uint, bucket, path string) string {
 	return "addp://engine/" + strconv.Itoa(int(engineID)) + "/path/" + bucket + "/" + path + "?type=object"
+}
+
+func bucketLocator(engineID uint, bucket string) string {
+	return "addp://engine/" + strconv.Itoa(int(engineID)) + "/path/" + bucket + "?type=bucket"
+}
+
+func setFileTarget(spec *TableExportTaskSpec, engineID uint, fullPath string) {
+	dir, name := splitTestPath(fullPath)
+	spec.Target.Locator = ""
+	spec.Target.ParentLocator = directoryLocator(engineID, dir)
+	spec.Target.Name = name
+}
+
+func setObjectTarget(spec *TableExportTaskSpec, engineID uint, bucket, fullPath string) {
+	prefix, name := splitTestPath(fullPath)
+	spec.Target.Locator = ""
+	if prefix == "" {
+		spec.Target.ParentLocator = bucketLocator(engineID, bucket)
+	} else {
+		spec.Target.ParentLocator = "addp://engine/" + strconv.Itoa(int(engineID)) + "/path/" + bucket + "/" + prefix + "?type=prefix"
+	}
+	spec.Target.Name = name
+}
+
+func splitTestPath(fullPath string) (string, string) {
+	parts := strings.Split(strings.Trim(fullPath, "/"), "/")
+	if len(parts) == 0 {
+		return "", ""
+	}
+	name := parts[len(parts)-1]
+	if len(parts) == 1 {
+		return "", name
+	}
+	return strings.Join(parts[:len(parts)-1], "/"), name
 }
 
 func minimalEncodedToNativeSpec() TableExportTaskSpec {
@@ -1024,7 +1074,8 @@ func minimalEncodedToNativeSpec() TableExportTaskSpec {
 			Format:         format.FormatCSV,
 		},
 		Target: EndpointSpec{
-			Locator:        "addp://engine/2/path/public/roads?type=table",
+			ParentLocator:  schemaLocator(2, "public"),
+			Name:           "roads",
 			DataType:       dataTypeTable,
 			Representation: representationNative,
 		},
@@ -1041,7 +1092,8 @@ func minimalEncodedToEncodedSpec() TableExportTaskSpec {
 			Format:         format.FormatCSV,
 		},
 		Target: EndpointSpec{
-			Locator:        "addp://engine/2/path/exports/roads.csv?type=object",
+			ParentLocator:  bucketLocator(2, "exports"),
+			Name:           "roads.csv",
 			DataType:       dataTypeTable,
 			Representation: representationEncoded,
 			Format:         format.FormatCSV,

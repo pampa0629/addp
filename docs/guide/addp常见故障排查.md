@@ -184,7 +184,7 @@ export function createAPIClient(getAuthStore, options = {}) {
 
 - 数据预览：`GET /api/v1/manager/preview`
 - 引擎列表：`GET /api/v1/manager/engines`
-- 资源树：`GET /api/v1/manager/tree/{engine_id}`
+- 资源树事实：`GET /api/v1/meta/resource-tree/{engine_id}`
 
 `manager/frontend/src/api/client.js` 使用 `createAPIClient()` 默认 `extractData=true`。因此业务调用拿到的是响应体对象，不是 Axios response。写调用代码时应以 API helper 的返回类型为准，不要习惯性再访问一层 `.data`。
 

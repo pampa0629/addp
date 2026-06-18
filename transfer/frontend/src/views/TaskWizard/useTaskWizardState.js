@@ -6,7 +6,9 @@
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
+import { formatLocatorDisplayPath } from '@addp/common-frontend'
 import { taskAPI } from '@/api/tasks'
+import { parseTransferLocator } from '@/utils/resourceLocator'
 
 export function useTaskWizardState() {
   const { t } = useI18n()
@@ -62,18 +64,18 @@ export function useTaskWizardState() {
   const canGoNext = computed(() => {
     switch (currentStep.value) {
       case 0: // 选择Source
-        return !!(sourceEngineID.value && isSupportedSourceShape() && (sourceLocator.value || sourceTable.value))
+        return !!(sourceEngineID.value && isSupportedSourceShape() && sourceLocator.value)
       case 1: // 选择Target
         if (targetRepresentation.value === 'native') {
-          return !!(targetEngineID.value && targetSchema.value && targetTable.value)
+          return !!(targetEngineID.value && targetConfig.value?.parentLocator && targetTable.value)
         }
         const hasTargetFormat = isRawCopyTask.value || !!targetBackendFormat(targetConfig.value || {})
         return !!(
           targetEngineID.value &&
           hasTargetFormat &&
+          targetConfig.value?.parentLocator &&
           targetConfig.value?.resourceFile &&
-          !targetConfig.value?.extensionError &&
-          (targetType.value !== 's3' || targetConfig.value?.resourcePath)
+          !targetConfig.value?.extensionError
         )
       case 2: // 字段映射
         if (isRawCopyTask.value) return true
@@ -150,7 +152,7 @@ export function useTaskWizardState() {
   function buildSourceEndpoint() {
     const config = sourceConfig.value || {}
     const endpoint = {
-      locator: sourceLocator.value || buildLocator(Number(sourceEngineID.value), 'table', [sourceSchema.value, sourceTable.value]),
+      locator: sourceLocator.value,
       data_type: sourceDataType.value || 'table',
       representation: sourceRepresentation.value || 'native'
     }
@@ -241,7 +243,8 @@ export function useTaskWizardState() {
     const fileConfig = targetConfig.value || {}
     if (targetRepresentation.value === 'native') {
       return {
-        locator: buildLocator(Number(targetEngineID.value), 'table', [targetSchema.value, targetTable.value]),
+        parent_locator: fileConfig.parentLocator || '',
+        name: targetTable.value,
         data_type: 'table',
         representation: 'native',
         policy: {
@@ -253,7 +256,8 @@ export function useTaskWizardState() {
     const format = targetBackendFormat(fileConfig)
     const dataType = isRawCopyTask.value ? sourceDataType.value : 'table'
     const endpoint = {
-      locator: buildEncodedTargetLocator(fileConfig),
+      parent_locator: buildEncodedTargetParentLocator(fileConfig),
+      name: trimSlashes(fileConfig.resourceFile || ''),
       data_type: dataType,
       representation: 'encoded',
       format,
@@ -327,36 +331,12 @@ export function useTaskWizardState() {
     )
   }
 
-  function buildEncodedTargetLocator(fileConfig) {
-    const outputPath = trimSlashes(fileConfig.resourcePath || '')
-    const outputFileName = trimSlashes(fileConfig.resourceFile || '')
-    const fullPath = [outputPath, outputFileName].filter(Boolean).join('/')
-
-    if (targetType.value === 's3') {
-      return buildLocator(Number(targetEngineID.value), 'object', splitPathSegments(fullPath))
-    }
-
-    return buildLocator(Number(targetEngineID.value), 'file', splitPathSegments(fullPath))
+  function buildEncodedTargetParentLocator(fileConfig) {
+    return fileConfig.parentLocator || ''
   }
 
   function trimSlashes(value) {
     return String(value || '').trim().replace(/^\/+|\/+$/g, '')
-  }
-
-  function splitPathSegments(value) {
-    return String(value || '').split('/').map(part => part.trim()).filter(Boolean)
-  }
-
-  function buildLocator(engineID, type, segments = [], itemID = 0) {
-    const cleanEngineID = Number(engineID)
-    const cleanType = String(type || '').trim()
-    const path = (segments || []).map(segment => String(segment || '').trim()).filter(Boolean)
-    if (!cleanEngineID || !cleanType || path.length === 0) return ''
-    const encodedPath = path.map(segment => encodeURIComponent(segment)).join('/')
-    const params = new URLSearchParams({ type: cleanType })
-    const cleanItemID = Number(itemID || 0)
-    if (cleanItemID > 0) params.set('item_id', String(cleanItemID))
-    return `addp://engine/${cleanEngineID}/path/${encodedPath}?${params.toString()}`
   }
 
   // ===== 方法 =====
@@ -535,7 +515,7 @@ export function useTaskWizardState() {
     // Source 配置
     if (task.config?.source) {
       const source = task.config.source
-      const sourceLoc = parseLocator(source.locator)
+      const sourceLoc = parseTransferLocator(source.locator)
       sourceEngineID.value = sourceLoc.engineID || null
       sourceEngineType.value = ''
       sourceSchema.value = sourceLoc.path.length >= 2 ? sourceLoc.path[sourceLoc.path.length - 2] : ''
@@ -551,11 +531,11 @@ export function useTaskWizardState() {
     // Target 配置
     if (task.config?.target) {
       const target = task.config.target
-      const targetLoc = parseLocator(target.locator)
-      targetEngineID.value = targetLoc.engineID || null
+      const targetParentLoc = parseTransferLocator(target.parent_locator)
+      targetEngineID.value = targetParentLoc.engineID || null
       targetEngineType.value = ''
-      targetSchema.value = targetLoc.type === 'table' && targetLoc.path.length >= 2 ? targetLoc.path[targetLoc.path.length - 2] : ''
-      targetTable.value = targetLoc.type === 'table' && targetLoc.path.length >= 1 ? targetLoc.path[targetLoc.path.length - 1] : ''
+      targetSchema.value = targetParentLoc.type === 'schema' && targetParentLoc.path.length >= 1 ? targetParentLoc.path[targetParentLoc.path.length - 1] : ''
+      targetTable.value = target.representation === 'native' ? (target.name || '') : ''
       targetType.value = normalizeTargetType(target)
       targetRepresentation.value = target.representation || 'encoded'
       targetConfig.value = extractTargetConfig(target)
@@ -591,8 +571,8 @@ export function useTaskWizardState() {
     const rightText = String(right || '').trim()
     if (leftText === rightText) return true
 
-    const leftLoc = parseLocator(leftText)
-    const rightLoc = parseLocator(rightText)
+    const leftLoc = parseTransferLocator(leftText)
+    const rightLoc = parseTransferLocator(rightText)
     if (!leftLoc.engineID || !rightLoc.engineID) return false
     if (leftLoc.engineID !== rightLoc.engineID) return false
     if (leftLoc.type !== rightLoc.type) return false
@@ -603,35 +583,35 @@ export function useTaskWizardState() {
   }
 
   function normalizeTargetType(target) {
-    const loc = parseLocator(target?.locator)
-    if (loc.type === 'file') return 'nfs'
-    if (loc.type === 'object') return 's3'
+    const loc = parseTransferLocator(target?.parent_locator)
+    if (['bucket', 'prefix', 'service'].includes(loc.type)) return 's3'
     return 'nfs'
   }
 
   function extractTargetConfig(target) {
-    const loc = parseLocator(target?.locator)
-    if (loc.type === 'table') {
+    const loc = parseTransferLocator(target?.parent_locator)
+    if (target?.representation === 'native') {
       return {
-        schema: loc.path.length >= 2 ? loc.path[loc.path.length - 2] : '',
-        table: loc.path.length >= 1 ? loc.path[loc.path.length - 1] : '',
+        parentLocator: target.parent_locator || '',
+        schema: loc.path.length >= 1 ? loc.path[loc.path.length - 1] : '',
+        table: target.name || '',
         writeMode: normalizeTableWriteMode(target.policy?.write_mode)
       }
     }
 
-    if (loc.type !== 'file' && loc.type !== 'object') {
+    if (target?.representation !== 'encoded') {
       return {}
     }
 
-    const path = loc.path.join('/')
-    const { dir, file } = splitPath(path)
+    const parentPath = loc.path.join('/')
     const options = target.options || {}
     const format = targetUiFormat(target.format, options)
 
     return {
       format,
-      resourcePath: dir,
-      resourceFile: file,
+      parentLocator: target.parent_locator || '',
+      resourcePath: parentPath,
+      resourceFile: target.name || '',
       includeHeader: target.options?.header !== false,
       delimiter: target.options?.delimiter || ',',
       geometryField: options.geometry_field || '',
@@ -641,7 +621,7 @@ export function useTaskWizardState() {
   }
 
   function extractSourceConfig(source) {
-    const loc = parseLocator(source?.locator)
+    const loc = parseTransferLocator(source?.locator)
     const label = locatorDisplayPath(source?.locator, source?.representation)
     return {
       sourceLabel: label,
@@ -707,7 +687,7 @@ export function useTaskWizardState() {
   }
 
   function sourcePathFromLocator(locator) {
-    const loc = parseLocator(locator)
+    const loc = parseTransferLocator(locator)
     const names = loc.path
     if (names.length === 0) return null
     return {
@@ -736,49 +716,21 @@ export function useTaskWizardState() {
     return 'json'
   }
 
-  function splitPath(path) {
-    const cleaned = trimSlashes(path)
-    if (!cleaned) return { dir: '', file: '' }
-    const parts = cleaned.split('/')
-    const file = parts.pop() || ''
-    return { dir: parts.join('/'), file }
-  }
-
   function normalizeTableWriteMode(value) {
     const mode = String(value || '').toLowerCase()
     if (mode === 'append') return 'append'
     return 'overwrite'
   }
 
-  function parseLocator(locator) {
-    const result = { engineID: 0, path: [], type: '', itemID: 0 }
-    const match = String(locator || '').match(/^addp:\/\/engine\/(\d+)\/path\/([^?]*)(?:\?(.*))?$/)
-    if (!match) return result
-    result.engineID = Number(match[1] || 0)
-    result.path = String(match[2] || '')
-      .split('/')
-      .map(part => decodeURIComponent(part).trim())
-      .filter(Boolean)
-    const params = new URLSearchParams(match[3] || '')
-    result.type = String(params.get('type') || '').toLowerCase()
-    result.itemID = Number(params.get('item_id') || 0)
-    return result
-  }
-
   function locatorDisplayPath(locator, representation = '') {
-    const loc = parseLocator(locator)
-    if (loc.path.length === 0) return ''
-    if (String(representation || '').toLowerCase() === 'native' && loc.type === 'table') {
-      return loc.path.slice(-2).join('.')
-    }
-    return loc.path.join('/')
+    return formatLocatorDisplayPath(locator, representation)
   }
 
   function isRawCopyShape(shape) {
     const dataType = String(shape?.dataType || '').toLowerCase()
     const representation = String(shape?.representation || '').toLowerCase()
     const format = String(shape?.format || '').toLowerCase()
-    const locatorType = parseLocator(shape?.locator).type
+    const locatorType = parseTransferLocator(shape?.locator).type
     return ['document', 'media', 'unknown'].includes(dataType) &&
       representation === 'encoded' &&
       !!format &&

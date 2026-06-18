@@ -35,6 +35,7 @@ type EngineService struct {
 	userRepo       *repository.UserRepository
 	encryptionKey  []byte
 	eventPublisher *events.EngineEventPublisher
+	cleanup        *CleanupOrchestratorService
 }
 
 func NewEngineService(repo *repository.EngineRepository, userRepo *repository.UserRepository, encryptionKey []byte, redisClient *redis.Client) *EngineService {
@@ -44,6 +45,11 @@ func NewEngineService(repo *repository.EngineRepository, userRepo *repository.Us
 		encryptionKey:  encryptionKey,
 		eventPublisher: events.NewEngineEventPublisher(redisClient, nil),
 	}
+}
+
+func (s *EngineService) WithCleanupOrchestrator(cleanup *CleanupOrchestratorService) *EngineService {
+	s.cleanup = cleanup
+	return s
 }
 
 func (s *EngineService) Create(req *models.EngineCreateRequest, createdBy uint) (*models.Engine, error) {
@@ -324,6 +330,19 @@ func (s *EngineService) Delete(id uint, currentUserID uint) error {
 
 	if err := s.repo.Delete(id); err != nil {
 		return err
+	}
+
+	if s.cleanup != nil && engine.TenantID != nil {
+		if _, err := s.cleanup.CreateEventScanTask(
+			context.Background(),
+			*engine.TenantID,
+			nil,
+			currentUserID,
+			events.CleanupCauseEngineDeleted,
+			cleanupEngineContext(id),
+		); err != nil {
+			log.Printf("触发 engine 删除 cleanup scan 失败: engine_id=%d error=%v", id, err)
+		}
 	}
 
 	// 发布资源删除事件

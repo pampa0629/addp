@@ -73,7 +73,8 @@ CSV、JSON、Parquet、Excel、Shapefile、GeoJSON、图片、PDF、文本
 ## 🏗️ 核心架构
 
 ### 预览插件系统（可扩展）
-- 资源树、预览和刷新统一以 ResourceLocator 定位
+- 资源树事实、搜索和刷新统一由 Meta resource-tree API 提供
+- Manager 预览、下载、快显和任务入口统一以 ResourceLocator 定位
 - 通过 PreviewResolver 选择 PreviewProvider
 - 支持 PostgreSQL、MySQL、MongoDB、ClickHouse 等
 - 支持外部插件动态加载

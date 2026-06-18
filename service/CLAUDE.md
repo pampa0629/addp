@@ -17,7 +17,7 @@ Service 模块负责数据服务发布与外部服务注册，覆盖查询服务
 service/
 ├── backend/
 │   ├── cmd/server/main.go
-│   ├── internal/api/          # query、graph、registered、tile、OGC、data source
+│   ├── internal/api/          # query、graph、registered、tile、OGC、resource capability
 │   ├── internal/models/       # query、graph、registered、tile
 │   ├── internal/repository/
 │   ├── internal/service/      # query executor、tile cache/dynamic/static、data query
@@ -44,14 +44,14 @@ service/
 - 图查询服务管理：`POST/GET /graph`、`GET/PUT/DELETE /graph/:id`；公开执行端点：`POST /api/gquery/:serviceName`。
 - 注册服务管理：`POST/GET /registered`、`GET/PUT/DELETE /registered/:id`、`POST /registered/:id/refresh`、`POST /registered/:id/health`；公开代理：`ANY /api/service/registered/proxy/:id/*path`。
 - 瓦片服务管理：`POST/GET /tile`、`GET /tile/search`、`GET /tile/by-name/:serviceName`、`GET/PUT/DELETE /tile/:id`、`/tile-layers/:serviceId`。
-- 数据查询辅助：`POST /data/query`、`POST /data/aggregate`、`GET /data/structure`。
-- 数据源代理：`GET /engines`、`GET /engines/:engine_id/tree`、`GET /nodes/:node_id/children`、`GET /tables/metadata`、`GET /tables/spatial-metadata`、`POST /sql/spatial-metadata`。
+- 数据查询辅助：`POST /data/query`、`POST /data/aggregate`、`GET /data/structure`，资源输入统一为 `locator`，由后端派生执行所需 `engine_id/schema/table`。
+- 资源能力辅助：资源选择、资源树、表级空间元数据统一走 Meta resource-tree / item API；Service 仅保留 `GET /graphs/node-shapes` 和 `POST /sql/spatial-metadata` 等业务能力接口。
 - OGC/瓦片公开端点：`/ogc/features/:serviceName/*`、`/tiles/:serviceName/:layerName/:z/:x/*yformat`、`/wmts/:serviceName`、`/ogc/tiles/:serviceName/*`。
 
 ## 开发规则
 
 - 存储引擎连接信息必须从 System 获取，Service 不管理连接配置。
-- 表结构、空间信息和数据源树优先通过 Manager/Meta 的共享能力获取，不重复实现数据探查。
+- 表结构、空间信息和资源树通过 Meta 共享能力获取；Service 不重复实现资源树、表空间检测或按 `schema/table` 查找资源的代理接口。
 - 公开访问端点要在 Handler 内检查服务的 public/private 权限，避免绕过认证。
 - 瓦片缓存使用系统 MinIO，路径和缓存策略应保持租户隔离。
 - 修改 API 后同步 Swagger：`bash scripts/swagger/gen-swagger.sh service` 和 `bash scripts/swagger/check-route-coverage.sh service`。

@@ -251,6 +251,28 @@ func (r *EmbeddingRepository) DeleteEmbedding(ctx context.Context, tenantID uint
 	return r.db.WithContext(ctx).Where("tenant_id = ? AND id = ?", tenantID, id).Delete(&models.Embedding{}).Error
 }
 
+func (r *EmbeddingRepository) ListAllEmbeddings(ctx context.Context, tenantID uint) ([]*models.Embedding, error) {
+	var embeddings []*models.Embedding
+	err := r.db.WithContext(ctx).
+		Select("id", "tenant_id", "item_fingerprint", "item_id", "engine_id", "locator", "source_version", "model", "dimension", "status", "status_reason", "error_message", "last_execution_id", "vectorized_at", "created_at", "updated_at").
+		Where("tenant_id = ?", tenantID).
+		Order("updated_at DESC, id DESC").
+		Find(&embeddings).Error
+	return embeddings, err
+}
+
+func (r *EmbeddingRepository) MarkEmbeddingMissingSource(ctx context.Context, tenantID uint, id uint, reason string) error {
+	return r.db.WithContext(ctx).
+		Model(&models.Embedding{}).
+		Where("tenant_id = ? AND id = ?", tenantID, id).
+		Updates(map[string]interface{}{
+			"status":        models.EmbeddingStatusMissingSource,
+			"status_reason": models.EmbeddingReasonSourceMissing,
+			"error_message": strings.TrimSpace(reason),
+			"updated_at":    time.Now(),
+		}).Error
+}
+
 func (r *EmbeddingRepository) DeleteEmbeddingsByItemFingerprints(ctx context.Context, tenantID uint, itemFingerprints []string) error {
 	if len(itemFingerprints) == 0 {
 		return nil
@@ -337,6 +359,27 @@ func (r *EmbeddingRepository) DeleteEmbeddingTask(ctx context.Context, id uint, 
 	return r.db.WithContext(ctx).
 		Where("id = ? AND tenant_id = ?", id, tenantID).
 		Delete(&models.EmbeddingTask{}).Error
+}
+
+func (r *EmbeddingRepository) ListAllEmbeddingTasks(ctx context.Context, tenantID uint) ([]*models.EmbeddingTask, error) {
+	var tasks []*models.EmbeddingTask
+	err := r.db.WithContext(ctx).
+		Where("tenant_id = ?", tenantID).
+		Order("updated_at DESC, id DESC").
+		Find(&tasks).Error
+	return tasks, err
+}
+
+func (r *EmbeddingRepository) DisableEmbeddingTaskForCleanup(ctx context.Context, tenantID uint, id uint, reason string) error {
+	return r.db.WithContext(ctx).
+		Model(&models.EmbeddingTask{}).
+		Where("tenant_id = ? AND id = ?", tenantID, id).
+		Updates(map[string]interface{}{
+			"enabled":               false,
+			"next_run_at":           nil,
+			"last_execution_status": strings.TrimSpace(reason),
+			"updated_at":            time.Now(),
+		}).Error
 }
 
 func (r *EmbeddingRepository) UpdateEmbeddingTaskLastExecution(ctx context.Context, id uint, executionID, status string, runAt time.Time) error {

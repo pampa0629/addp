@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	commonapi "github.com/addp/common/api"
+	"github.com/addp/common/events"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/service"
@@ -24,7 +25,7 @@ func NewCleanupHandler(orchestrator *service.CleanupOrchestratorService) *Cleanu
 
 // CreateScanTaskRequest 创建扫描任务请求
 type CreateScanTaskRequest struct {
-	Scope []string `json:"scope"` // 扫描范围：meta/manager/transfer 等，为空则扫描所有
+	Scope []string `json:"scope"` // 扫描范围：已注册且启用 cleanup executor 的模块；为空则由 System 按模块注册能力生成
 }
 
 // CreateScanTaskResponse 创建扫描任务响应
@@ -34,7 +35,7 @@ type CreateScanTaskResponse struct {
 
 // CreateScanTask 创建扫描任务
 // @Summary 创建垃圾数据扫描任务 | Create garbage data scan task
-// @Description 扫描当前租户的垃圾数据（无效引擎、孤儿数据、软删除数据等）| Scan garbage data for current tenant (invalid engines, orphan data, soft-deleted data, etc.)
+// @Description 扫描当前租户的系统级资源清理候选；scope 为空时按已注册且启用 cleanup executor 的模块生成 expected_modules | Scan system cleanup candidates for current tenant; when scope is empty, expected_modules is generated from registered cleanup executors
 // @Tags Cleanup
 // @Accept json
 // @Produce json
@@ -149,7 +150,7 @@ func (h *CleanupHandler) GetTaskStatus(c *gin.Context) {
 // CreateExecuteTaskRequest 创建执行任务请求
 type CreateExecuteTaskRequest struct {
 	BasedOnScan string `json:"based_on_scan" binding:"required"` // 基于哪次扫描
-	DeleteType  string `json:"delete_type" binding:"required"`   // soft_delete/hard_delete
+	CleanupMode string `json:"cleanup_mode" binding:"required"`  // logical_cleanup/physical_cleanup
 }
 
 // CreateExecuteTaskResponse 创建执行任务响应
@@ -159,7 +160,7 @@ type CreateExecuteTaskResponse struct {
 
 // CreateExecuteTask 创建执行清理任务
 // @Summary 创建执行清理任务 | Create cleanup execution task
-// @Description 基于扫描结果，执行垃圾数据清理（软删除或物理删除）| Execute garbage data cleanup based on scan results (soft delete or hard delete)
+// @Description 基于扫描结果，执行系统级资源清理（逻辑清理或物理清理）| Execute system cleanup based on scan results (logical or physical cleanup)
 // @Tags Cleanup
 // @Accept json
 // @Produce json
@@ -185,9 +186,35 @@ func (h *CleanupHandler) CreateExecuteTask(c *gin.Context) {
 		return
 	}
 
-	// 验证 delete_type
-	if req.DeleteType != "soft_delete" && req.DeleteType != "hard_delete" {
-		commonapi.RespondError(c, 400, "delete_type 必须是 soft_delete 或 hard_delete")
+	if err := events.ValidateCleanupMode(req.CleanupMode); err != nil {
+		commonapi.RespondError(c, 400, err.Error())
+		return
+	}
+
+	tenantID, exists := c.Get("tenant_id")
+	if !exists {
+		commonapi.RespondError(c, 401, "租户信息缺失")
+		return
+	}
+	scanStatus, err := h.orchestrator.GetTaskStatus(c.Request.Context(), req.BasedOnScan)
+	if err != nil {
+		if err.Error() == "task not found" {
+			commonapi.RespondError(c, 404, "扫描任务不存在")
+		} else {
+			commonapi.RespondError(c, 500, "查询扫描任务失败: "+err.Error())
+		}
+		return
+	}
+	if scanStatus.Task.TenantID != tenantID.(uint) {
+		commonapi.RespondError(c, 403, "无权基于该扫描任务执行清理")
+		return
+	}
+	if scanStatus.Task.Action != events.CleanupActionScan {
+		commonapi.RespondError(c, 400, "based_on_scan 必须指向 scan 任务")
+		return
+	}
+	if scanStatus.Status != "completed" {
+		commonapi.RespondError(c, 400, "扫描任务未完成，不能执行清理")
 		return
 	}
 
@@ -195,7 +222,7 @@ func (h *CleanupHandler) CreateExecuteTask(c *gin.Context) {
 	taskID, err := h.orchestrator.CreateExecuteTask(
 		c.Request.Context(),
 		req.BasedOnScan,
-		req.DeleteType,
+		req.CleanupMode,
 		userID.(uint),
 	)
 	if err != nil {

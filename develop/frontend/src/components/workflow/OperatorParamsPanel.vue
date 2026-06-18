@@ -32,25 +32,41 @@
 
           <div v-else>
             <template v-for="param in effectiveParameters" :key="param.name">
-              <!-- 特殊处理：数据源级联选择器 -->
-              <template v-if="param.ui_type === 'data_source_cascader'">
+              <!-- 特殊处理：资源树选择器 -->
+              <template v-if="param.ui_type === 'resource_tree_picker'">
                 <div class="data-source-section">
                   <h4 class="subsection-title">{{ param.name || t('develop.operatorParams.dataSourceSelect') }}</h4>
                   <p v-if="param.description" class="subsection-description">
                     {{ param.description }}
                   </p>
 
-                  <DataSourceCascader
-                    :api-base-url="param.ui_config?.api_base_url || '/api/v1/service'"
+                  <ResourceTreePicker
+                    :api-base-url="param.ui_config?.api_base_url || '/api/v1/meta'"
                     :engine-types="param.ui_config?.engine_types || ['postgresql', 'mysql', 'doris', 'clickhouse']"
-                    :selectable-node-types="param.ui_config?.selectable_node_types || ['table']"
-                    :enable-geometry-detection="param.ui_config?.enable_geometry_detection !== false"
-                    :require-geometry="param.ui_config?.require_geometry || false"
-                    :allow-create-table="param.ui_config?.allow_create_table || false"
-                    :show-selection-info="true"
-                    :initial-selection="{ engine_id: formData.engine_id, schema: formData.schema, table: formData.table }"
-                    @update:selection="handleDataSourceSelection"
+                    :engine-id="resourcePickerEngineId(param)"
+                    :mode="resourcePickerMode(param)"
+                    :node-filter="node => isResourcePickerVisibleNode(node, param)"
+                    :selectable-filter="node => isResourcePickerNodeSelectable(node, param)"
+                    :show-selection-summary="true"
+                    :engine-multiple="!isTargetResourcePicker(param)"
+                    :select-all-engines-by-default="!isTargetResourcePicker(param)"
+                    :search-selectable-only="true"
+                    :show-disabled-label="false"
+                    :show-count="false"
+                    :initial-locator="resourcePickerInitialLocator(param)"
+                    @update:model-value="selection => handleResourceSelection(selection, param)"
                   />
+
+                  <el-form-item
+                    v-if="isTargetResourcePicker(param)"
+                    :label="t('develop.operatorParams.targetTableName')"
+                    class="target-name-field"
+                  >
+                    <el-input
+                      v-model="formData.target_name"
+                      :placeholder="t('develop.operatorParams.targetTableNamePlaceholder')"
+                    />
+                  </el-form-item>
 
                   <div v-if="param.notes" class="help-text" style="margin-top: 12px">
                     <el-icon style="margin-right: 4px"><InfoFilled /></el-icon>
@@ -130,11 +146,8 @@ import { ref, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { QuestionFilled, InfoFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import EngineSelect from './EngineSelect.vue'
-import SchemaSelect from './SchemaSelect.vue'
-import TableSelect from './TableSelect.vue'
 import NfsFilePicker from './NfsFilePicker.vue'
-import { DataSourceCascader } from '@addp/common-frontend'
+import { parseLocatorSafe, ResourceTreePicker } from '@addp/common-frontend'
 
 const { t } = useI18n()
 
@@ -225,11 +238,11 @@ const effectiveParameters = computed(() => {
     return true
   })
 
-  // 检查过滤后的参数列表中是否有可见的 data_source_cascader
-  const hasVisibleDataSourceCascader = params.some(p => p.ui_type === 'data_source_cascader')
-  if (hasVisibleDataSourceCascader) {
-    // 隐藏被 DataSourceCascader 自动填充的参数
-    const autoFilledParams = ['engine_id', 'schema', 'table']
+  // 检查过滤后的参数列表中是否有可见的 resource_tree_picker
+  const hasVisibleResourceTreePicker = params.some(p => p.ui_type === 'resource_tree_picker')
+  if (hasVisibleResourceTreePicker) {
+    // 隐藏被资源树选择器自动填充的参数
+    const autoFilledParams = ['locator', 'target_parent_locator', 'target_name', 'engine_id', 'schema', 'table']
     params = params.filter(p => !autoFilledParams.includes(p.name))
   }
 
@@ -268,42 +281,22 @@ watch(() => props.operator, () => {
 
 // 根据参数元数据选择组件类型
 const getComponentByType = (param) => {
-  // 1. 优先检查 ui_type (自定义 UI 组件)
-  if (param.ui_type === 'engine_select') return EngineSelect
-  if (param.ui_type === 'schema_select') return SchemaSelect
-  if (param.ui_type === 'table_select') return TableSelect
-
-  // 2. 检查 enum (下拉选择)
+  // 1. 检查 enum (下拉选择)
   if (param.enum && param.enum.length > 0) return 'el-select'
 
-  // 3. 根据 type 选择基础组件
+  // 2. 根据 type 选择基础组件
   if (param.type === 'integer' || param.type === 'float' || param.type === 'number') {
     return 'el-input-number'
   }
   if (param.type === 'boolean') return 'el-switch'
 
-  // 4. 默认文本输入
+  // 3. 默认文本输入
   return 'el-input'
 }
 
 // 获取组件的 props
 const getComponentProps = (param) => {
   const props = {}
-
-  // 自定义组件的专用 props
-  if (param.ui_type === 'engine_select') {
-    props.engineTypes = param.engine_types || []
-  } else if (param.ui_type === 'schema_select') {
-    props.engineId = formData.value[param.depends_on] || null
-  } else if (param.ui_type === 'table_select') {
-    // table_select 依赖两个参数: engine_id 和 schema
-    // 找到 schema 参数的 depends_on (通常是 engine_id)
-    const schemaParam = effectiveParameters.value.find(p => p.name === param.depends_on)
-    if (schemaParam && schemaParam.depends_on) {
-      props.engineId = formData.value[schemaParam.depends_on] || null
-    }
-    props.schema = formData.value[param.depends_on] || null
-  }
 
   // enum 类型的下拉选择
   if (param.enum && param.enum.length > 0) {
@@ -344,25 +337,63 @@ const onParamChange = (paramName) => {
   }
 }
 
-// 处理数据源选择器的选择结果
-const handleDataSourceSelection = (selection) => {
+const resourcePickerMode = (param) => {
+  return isTargetResourcePicker(param) ? 'node' : 'item'
+}
+
+const isTargetResourcePicker = (param) => {
+  return props.operator === 'save' || param.ui_config?.allow_create_table === true
+}
+
+const resourcePickerInitialLocator = (param) => {
+  return isTargetResourcePicker(param)
+    ? (formData.value.target_parent_locator || '')
+    : (formData.value.locator || '')
+}
+
+const resourcePickerEngineId = (param) => {
+  return isTargetResourcePicker(param) ? formData.value.engine_id : null
+}
+
+const isResourcePickerNodeSelectable = (node, param) => {
+  if (isTargetResourcePicker(param)) {
+    const selectableTypes = param.ui_config?.selectable_parent_node_types || ['schema', 'database']
+    return selectableTypes.includes(node?.type)
+  }
+  const selectableTypes = param.ui_config?.selectable_node_types || ['table']
+  return selectableTypes.includes(node?.type)
+}
+
+const isResourcePickerVisibleNode = (node, param) => {
+  if (isTargetResourcePicker(param)) {
+    return ['engine', 'schema', 'database', 'bucket', 'directory', 'dir', 'prefix', 'root', 'service', 'server', 'table', 'object', 'file'].includes(String(node?.type || '').toLowerCase())
+  }
+  return ['engine', 'schema', 'database', 'bucket', 'directory', 'dir', 'prefix', 'root', 'service', 'server', 'table'].includes(String(node?.type || '').toLowerCase())
+}
+
+// 处理资源树选择器的选择结果
+const handleResourceSelection = (selection, param) => {
   if (!selection) {
     // 清空数据源相关参数
     formData.value.source_type = null
     formData.value.target_type = null
-    formData.value.engine_id = null
-    formData.value.schema = null
-    formData.value.table = null
+    formData.value.locator = null
+    formData.value.target_parent_locator = null
+    formData.value.target_name = null
     return
   }
 
+  const locator = selection.identity?.locator
+
   // 根据算子类型设置不同的字段
   // load 算子使用 source_type，save 算子使用 target_type
-  if (props.operator === 'save') {
+  if (isTargetResourcePicker(param)) {
     formData.value.target_type = 'table'
-    formData.value.engine_id = selection.engineId
-    formData.value.schema = selection.schema
-    formData.value.table = selection.tableName
+    formData.value.target_parent_locator = locator
+    formData.value.locator = null
+    if (!formData.value.target_name) {
+      formData.value.target_name = ''
+    }
     // 设置默认的 mode
     if (!formData.value.mode) {
       formData.value.mode = 'replace'
@@ -370,13 +401,18 @@ const handleDataSourceSelection = (selection) => {
   } else {
     // 默认情况（load 算子）
     formData.value.source_type = 'table'
-    formData.value.engine_id = selection.engineId
-    formData.value.schema = selection.schema
-    formData.value.table = selection.tableName
+    formData.value.locator = locator
+    formData.value.target_parent_locator = null
+    formData.value.target_name = null
   }
 
   console.log('[OperatorParamsPanel] 数据源选择:', selection)
-  ElMessage.success(t('develop.operatorParams.dataSourceSelected', { name: selection.fullName }))
+  ElMessage.success(t('develop.operatorParams.dataSourceSelected', { name: selection.display?.label || resourceLabelFromLocator(locator) }))
+}
+
+const resourceLabelFromLocator = (locator) => {
+  const parsed = parseLocatorSafe(locator)
+  return parsed.path?.[parsed.path.length - 1] || locator || ''
 }
 
 // 处理 NFS 文件选择器的选择结果
@@ -394,6 +430,23 @@ const saveParams = () => {
   for (const param of effectiveParameters.value) {
     if (param.required && !formData.value[param.name]) {
       ElMessage.warning(t('develop.operatorParams.requiredParam', { name: param.name }))
+      return
+    }
+  }
+
+  const allParams = props.parameters && props.parameters.length > 0 ? props.parameters : []
+  if (allParams.some(p => p.ui_type === 'resource_tree_picker')) {
+    if (formData.value.target_type === 'table') {
+      if (!formData.value.target_parent_locator) {
+        ElMessage.warning(t('develop.operatorParams.requiredParam', { name: 'target_parent_locator' }))
+        return
+      }
+      if (!formData.value.target_name) {
+        ElMessage.warning(t('develop.operatorParams.requiredParam', { name: 'target_name' }))
+        return
+      }
+    } else if (formData.value.source_type === 'table' && !formData.value.locator) {
+      ElMessage.warning(t('develop.operatorParams.requiredParam', { name: 'locator' }))
       return
     }
   }
@@ -421,15 +474,18 @@ const saveParams = () => {
   })
 
   // 补充被 effectiveParameters 过滤掉的特殊 UI 组件自动填充字段
-  const allParams = props.parameters && props.parameters.length > 0 ? props.parameters : []
   if (allParams.some(p => p.ui_type === 'nfs_file_picker')) {
     if (formData.value.engine_id != null) cleanedParams.engine_id = formData.value.engine_id
     if (formData.value.path) cleanedParams.path = formData.value.path
   }
-  if (allParams.some(p => p.ui_type === 'data_source_cascader')) {
-    if (formData.value.engine_id != null) cleanedParams.engine_id = formData.value.engine_id
-    if (formData.value.schema) cleanedParams.schema = formData.value.schema
-    if (formData.value.table) cleanedParams.table = formData.value.table
+  if (allParams.some(p => p.ui_type === 'resource_tree_picker')) {
+    if (formData.value.source_type === 'table' && formData.value.locator) {
+      cleanedParams.locator = formData.value.locator
+    }
+    if (formData.value.target_type === 'table') {
+      if (formData.value.target_parent_locator) cleanedParams.target_parent_locator = formData.value.target_parent_locator
+      if (formData.value.target_name) cleanedParams.target_name = formData.value.target_name
+    }
   }
 
   emit('save', {

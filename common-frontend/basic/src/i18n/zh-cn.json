@@ -259,20 +259,6 @@
       "capabilitiesFieldWarning": "能力声明必须包含 storage 或 compute 字段"
     }
   },
-  "dataSource": {
-    "engine": "存储引擎",
-    "enginePlaceholder": "请选择存储引擎",
-    "spatial": "空间",
-    "selected": "已选择：",
-    "geometryColumn": "几何列：",
-    "srid": "SRID",
-    "noGeometry": "无几何列",
-    "detecting": "正在检测表结构...",
-    "selectedCount": "已选择 {count} 项",
-    "clearSelection": "清空",
-    "requireSpatial": "请选择空间表（包含几何列的表）",
-    "loadChildrenFailed": "加载子节点失败: {msg}"
-  },
   "excelPreview": {
     "sheetsTruncatedTitle": "仅展示部分工作表",
     "sheetsTruncatedBody": "当前仅展示前 {limit} 个工作表，可下载 Excel 查看全部内容。",

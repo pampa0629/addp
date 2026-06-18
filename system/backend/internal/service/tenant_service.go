@@ -1,8 +1,11 @@
 package service
 
 import (
+	"context"
 	"errors"
+	"log"
 
+	"github.com/addp/common/events"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
 	"github.com/addp/system/pkg/utils"
@@ -13,6 +16,7 @@ type TenantService struct {
 	tenantRepo *repository.TenantRepository
 	userRepo   *repository.UserRepository
 	db         *gorm.DB
+	cleanup    *CleanupOrchestratorService
 }
 
 func NewTenantService(tenantRepo *repository.TenantRepository, userRepo *repository.UserRepository, db *gorm.DB) *TenantService {
@@ -21,6 +25,11 @@ func NewTenantService(tenantRepo *repository.TenantRepository, userRepo *reposit
 		userRepo:   userRepo,
 		db:         db,
 	}
+}
+
+func (s *TenantService) WithCleanupOrchestrator(cleanup *CleanupOrchestratorService) *TenantService {
+	s.cleanup = cleanup
+	return s
 }
 
 func (s *TenantService) Create(req *models.TenantCreateRequest, currentUserID uint) (*models.Tenant, error) {
@@ -178,7 +187,7 @@ func (s *TenantService) Delete(id uint, currentUserID uint) error {
 	}
 
 	// 使用事务删除租户及其所有用户
-	return s.db.Transaction(func(tx *gorm.DB) error {
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
 		// 删除租户下的所有用户
 		if err := tx.Where("tenant_id = ?", id).Delete(&models.User{}).Error; err != nil {
 			return err
@@ -190,5 +199,22 @@ func (s *TenantService) Delete(id uint, currentUserID uint) error {
 		}
 
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+
+	if s.cleanup != nil {
+		if _, err := s.cleanup.CreateEventScanTask(
+			context.Background(),
+			id,
+			nil,
+			currentUserID,
+			events.CleanupCauseTenantDeleted,
+			cleanupTenantContext(id),
+		); err != nil {
+			log.Printf("触发 tenant 删除 cleanup scan 失败: tenant_id=%d error=%v", id, err)
+		}
+	}
+
+	return nil
 }

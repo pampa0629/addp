@@ -38,7 +38,7 @@ class OperatorParam(BaseModel):
     notes: Optional[str] = Field(None, description="注意事项")
 
     # UI 配置（可选）
-    ui_type: Optional[str] = Field(None, description="UI组件类型：data_source_cascader/engine_select 等")
+    ui_type: Optional[str] = Field(None, description="UI组件类型：resource_tree_picker/nfs_file_picker 等")
     ui_config: Optional[Dict[str, Any]] = Field(None, description="UI组件配置")
     enum: Optional[List[str]] = Field(None, description="枚举值列表")
     default: Optional[Any] = Field(None, description="默认值")

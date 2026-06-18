@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"errors"
 	"strings"
 
@@ -109,6 +110,21 @@ type Statistics struct {
 // Delete 删除快显记录
 func (r *QuickViewRepository) Delete(id uint) error {
 	return r.db.Delete(&models.QuickView{}, id).Error
+}
+
+func (r *QuickViewRepository) ListQuickViews(ctx context.Context, tenantID uint) ([]*models.QuickView, error) {
+	var results []*models.QuickView
+	err := r.db.WithContext(ctx).
+		Where("tenant_id = ?", tenantID).
+		Order("updated_at DESC, id DESC").
+		Find(&results).Error
+	return results, err
+}
+
+func (r *QuickViewRepository) DeleteByTenantAndFingerprint(ctx context.Context, tenantID uint, itemFingerprint string) error {
+	return r.db.WithContext(ctx).
+		Where("tenant_id = ? AND item_fingerprint = ?", tenantID, strings.TrimSpace(itemFingerprint)).
+		Delete(&models.QuickView{}).Error
 }
 
 // UpdatePreferredMode 更新用户偏好的显示模式

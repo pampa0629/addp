@@ -77,6 +77,36 @@ func (h *Handler) GetMetaNodeByID(c *gin.Context) {
 	c.JSON(http.StatusOK, node)
 }
 
+// GetNodeAncestors 获取节点祖先链
+// @Summary 获取节点祖先链 | Get node ancestor chain
+// @Description 按节点 ID 获取 root 到目标节点的元数据节点链，包含目标节点自身 | Get metadata node chain from root to target node, including the target node
+// @Tags Meta Query
+// @Produce json
+// @Param node_id path int true "节点ID | Node ID"
+// @Success 200 {array} models.MetaNodeLite "节点祖先链 | Node ancestor chain"
+// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 404 {object} map[string]interface{} "祖先链不存在 | Ancestor chain not found"
+// @Router /nodes/{node_id}/ancestors [get]
+// @Security BearerAuth
+func (h *Handler) GetNodeAncestors(c *gin.Context) {
+	tenantID := commonAuth.GetTenantID(c)
+
+	nodeIDStr := c.Param("node_id")
+	nodeID, err := strconv.ParseUint(nodeIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid node_id"})
+		return
+	}
+
+	ancestors, err := h.metadataQueryService.GetNodeAncestors(tenantID, uint(nodeID))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, ancestors)
+}
+
 // GetNodeChildren 获取节点的子节点
 // @Summary 获取子节点 | Get node children
 // @Description 获取指定节点的直接子节点 | Get direct children of a metadata node

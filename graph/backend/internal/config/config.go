@@ -18,6 +18,12 @@ type Config struct {
 	ModelServiceURL   string
 	CopilotServiceURL string
 
+	// Redis 配置（cleanup request/result）
+	RedisHost     string
+	RedisPort     string
+	RedisPassword string
+	RedisDB       int
+
 	// MinIO 配置（用于构建材料文件存储）
 	MinioEndpoint  string
 	MinioAccessKey string
@@ -34,6 +40,10 @@ func Load() *Config {
 		InternalAPIKey:    commonConfig.GetEnv("INTERNAL_API_KEY", ""),
 		ModelServiceURL:   commonConfig.GetEnv("MODEL_URL", "http://localhost:8181"),
 		CopilotServiceURL: commonConfig.GetEnv("COPILOT_URL", "http://localhost:8085"),
+		RedisHost:         commonConfig.GetEnv("REDIS_HOST", "localhost"),
+		RedisPort:         commonConfig.GetEnv("REDIS_PORT", "16379"),
+		RedisPassword:     commonConfig.GetEnv("REDIS_PASSWORD", ""),
+		RedisDB:           commonConfig.GetEnvInt("REDIS_DB", 0),
 		MinioEndpoint:     commonConfig.GetEnv("MINIO_SYSTEM_ENDPOINT", commonConfig.GetEnv("MINIO_ENDPOINT", "http://localhost:"+commonConfig.GetEnv("MINIO_API_PORT", "19000"))),
 		MinioAccessKey:    commonConfig.GetEnv("MINIO_SYSTEM_ACCESS_KEY", commonConfig.GetEnv("MINIO_ROOT_USER", commonConfig.GetEnv("MINIO_ACCESS_KEY", "minioadmin"))),
 		MinioSecretKey:    commonConfig.GetEnv("MINIO_SYSTEM_SECRET_KEY", commonConfig.GetEnv("MINIO_ROOT_PASSWORD", commonConfig.GetEnv("MINIO_SECRET_KEY", "minioadmin"))),

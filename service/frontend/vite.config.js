@@ -9,9 +9,13 @@ export default defineConfig({
       '@': resolve(__dirname, 'src'),
       '@common-ui': resolve(__dirname, '../../common-frontend/basic/src'),
       '@common-ui-map': resolve(__dirname, '../../common-frontend/map/src'),
+      'proj4': resolve(__dirname, 'node_modules/proj4'),
       'vue-i18n': resolve(__dirname, 'node_modules/vue-i18n')
     },
-    dedupe: ['ol', 'vue', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'axios']
+    dedupe: ['ol', 'proj4', 'vue', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'axios']
+  },
+  optimizeDeps: {
+    include: ['ol', 'proj4']
   },
   server: {
     port: 5180,

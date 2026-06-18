@@ -14,6 +14,16 @@
 - `common/resourcetree` - Meta 已落库 catalog / item 事实到跨模块资源树视图的投影层，提供 `TreeNode`、`TreeBuilder`、`ResourceLocator` 和 provider `CatalogPath` 纯转换能力；不持有 System / Meta client，不主动读取远程服务，不处理租户权限、token、降级策略、扫描或内容读取
 - [client/meta.go](common/client/meta.go) - MetaClient 用于跨模块调用 Meta API，Manager 等模块不应保留私有 Meta API client
 
+### 资源树与 locator 共享边界
+
+资源树和 ResourceLocator 是平台级公共契约，但它们分为三层职责：
+
+1. `common/resourcetree` 只提供纯模型与转换能力，包括 `ResourceLocator` 解析 / 构造、`TreeNode` 和 `TreeBuilder`。它不查询 System / Meta，不处理权限、租户、扫描或业务能力。
+2. Meta Backend 提供资源树事实 API：`/api/v1/meta/resource-tree/{engine_id}`、`/node`、`/ancestors`、`/search`、`/refresh`。这些 API 读取已落库 `meta_node` / `meta_item`，并返回标准 `TreeNode` / ancestors 结果。
+3. Manager、Transfer、Develop、Service、Agent 等模块只消费 locator 和 Meta resource-tree API。模块可以在业务 DTO 中保存执行快照或 capability 结果，但不得复制 TreeNode、locator parser / builder，也不得恢复模块私有资源树事实入口。
+
+公共模型字段不足时，应优先扩展 `common/resourcetree.TreeNode`、`ResourceLocator` 或对应前端共享类型。只有业务动作和执行快照才放在业务 DTO 中，不能替代公共资源身份。
+
 **使用模式**:
 
 ```go
@@ -109,10 +119,15 @@ import { TablePreview, GeoJsonPreview } from '@common-ui-map'
 **关键组件**:
 
 - **预览组件**: GeoJsonPreview, TablePreview, ImagePreview
+- **资源选择组件**: ResourceTree, ResourceTreePicker
 - **表单组件**: EngineForm (PostgreSQL/MinIO/S3 配置)
 - **地图组件**: MapContainer, OpenLayersRenderer, GaodeMapRenderer
 - **工具**: formatFileSize, formatDateTime, detectFormatByExtension, isGeospatialFormat
 - **类型**: FieldType, FormatType, EngineType (与后端模型对齐)
+
+ResourceTree 是树展示组件；ResourceTreePicker 是表单级资源选择封装。跨模块选择已有资源时，ResourceTreePicker 输出的主身份只能是 `selection.identity.locator`。新表、新文件等创建目标应由业务表单组合 `ResourceTreePicker mode="node"` 选择父 node，再输入名称，输出 `parent_locator + name`，不得生成尚不存在资源的虚拟 locator。
+
+资源选择的默认策略是“先过滤、后禁选”：明确不应出现的资源优先由业务侧通过 `nodeFilter` 排除；只有需要保留上下文时才使用 `selectableFilter` 让节点留在树中但不可提交。
 
 **优势**:
 

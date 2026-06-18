@@ -53,7 +53,7 @@ import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { parseLocator } from '@addp/common-frontend'
+import { engineRootLocator, parseLocator } from '@addp/common-frontend'
 import ExplorerTree from '@/components/explorer/ExplorerTree.vue'
 import ExplorerSearch from '@/components/explorer/ExplorerSearch.vue'
 import EnginePanel from '@/components/explorer/EnginePanel.vue'
@@ -154,7 +154,7 @@ const currentNodeChildren = computed(() => {
 const handleNodeSelect = async ({ node, locator }) => {
   try {
     if (nodeTypes.has(node.type) && (node.children || []).length === 0 && node.hasChildren) {
-      await store.loadNodeChildren(locator, 1)
+      await store.loadNodeChildren(locator)
     }
 
     if (itemTypes.has(node.type)) {
@@ -176,33 +176,19 @@ const handleSearchResultSelect = async (result) => {
   }
 
   const loc = parseLocator(locator)
-  if (!hasLocatorIdentity(loc) && loc?.type !== 'database') {
+  if (!hasLocatorIdentity(loc)) {
     ElMessage.warning(t('manager.explorer.locateFailed'))
     return
   }
-  if (loc?.engineId) {
-    await store.loadTree(loc.engineId, -1)
-  }
-
-  const tree = loc?.engineId ? store.engineTrees[loc.engineId] : null
-  const path = findNodePathByLocator(tree, locator)
-  for (const segment of path.slice(0, -1)) {
-    const segmentLocator = segment.locator || segment.id
-    if (segmentLocator) {
-      treeRef.value?.expandNode(segmentLocator)
-    }
-  }
-
-  const node = path[path.length - 1] || resultNode
-
-  store.selectNodeContext(nodeContextFromLocator(locator, node), locator)
-  await scrollToLocatedNode(path, locator)
 
   try {
-    await handleNodeSelect({ node, locator })
+    const revealed = await store.revealLocator(locator)
+    const node = revealed.node || resultNode
+    await scrollToLocatedNode(revealed.path || [], revealed.locator || locator)
+    await handleNodeSelect({ node, locator: revealed.locator || locator })
     ElMessage.success(t('manager.explorer.locateSuccess'))
   } catch (error) {
-    console.error('加载预览失败:', error)
+    console.error('定位资源失败:', error)
     ElMessage.error(t('manager.explorer.loadPreviewFailed', { error: error.message }))
   }
 }
@@ -245,21 +231,6 @@ const handleOpenNode = async (locator) => {
   await handleNodeSelect({ node, locator })
 }
 
-const findNodePathByLocator = (node, locator, parents = []) => {
-  if (!node || !locator) return []
-  const current = [...parents, node]
-  if ((node.locator || node.id) === locator) {
-    return current
-  }
-  for (const child of node.children || []) {
-    const found = findNodePathByLocator(child, locator, current)
-    if (found.length > 0) {
-      return found
-    }
-  }
-  return []
-}
-
 const scrollToLocatedNode = async (path, locator) => {
   await nextTick()
   if (await treeRef.value?.scrollToNode(locator, { block: 'center' })) {
@@ -291,7 +262,7 @@ onMounted(async () => {
 
       // 收集初始需要展开的引擎节点 locators
       const engineLocators = store.engines.map(engine =>
-        store.engineTrees[engine.id]?.locator || `addp://engine/${engine.id}/path/?type=${catalogRootTypeForEngine(engine)}`
+        store.engineTrees[engine.id]?.locator || engineRootLocator(engine)
       )
 
       // 设置展开状态
@@ -316,7 +287,7 @@ watch(() => route.query, async (query) => {
       console.warn('[DataExplorer] 无效 locator:', targetLocator)
       return
     }
-    if (!hasLocatorIdentity(loc) && loc.type !== 'database') {
+    if (!hasLocatorIdentity(loc)) {
       console.warn('[DataExplorer] locator 缺少 node_id/item_id，拒绝定位:', targetLocator)
       ElMessage.warning(t('manager.explorer.locateFailed'))
       return
@@ -334,24 +305,10 @@ watch(() => route.query, async (query) => {
       return
     }
 
-    await store.loadTree(engineId, -1)
-
-    const engineTree = store.engineTrees[engineId]
-    const path = findNodePathByLocator(engineTree, targetLocator)
-    if (path.length === 0) {
-      console.warn('[DataExplorer] 资源树中未找到 locator:', targetLocator)
-    }
-    for (const segment of path.slice(0, -1)) {
-      const segmentLocator = segment.locator || segment.id
-      if (segmentLocator) {
-        treeRef.value?.expandNode(segmentLocator)
-      }
-    }
-
-    const targetNode = path[path.length - 1] || nodeContextFromLocator(targetLocator, { type: loc.type })
-    store.selectNodeContext(nodeContextFromLocator(targetLocator, targetNode), targetLocator)
-    await scrollToLocatedNode(path, targetLocator)
-    await handleNodeSelect({ node: targetNode, locator: targetLocator })
+    const revealed = await store.revealLocator(targetLocator)
+    const targetNode = revealed.node || nodeContextFromLocator(revealed.locator || targetLocator, { type: loc.type })
+    await scrollToLocatedNode(revealed.path || [], revealed.locator || targetLocator)
+    await handleNodeSelect({ node: targetNode, locator: revealed.locator || targetLocator })
 
     ElMessage.success(t('manager.explorer.locateSuccess'))
   } catch (error) {
@@ -360,13 +317,6 @@ watch(() => route.query, async (query) => {
   }
 }, { immediate: true })
 
-const catalogRootTypeForEngine = (engine) => {
-  const type = String(engine?.engine_type || '').trim().toLowerCase()
-  if (type === 'minio' || type === 's3') return 'service'
-  if (type === 'nfs' || type === 'nas') return 'root'
-  if (['postgresql', 'mysql', 'doris', 'clickhouse', 'spark_sql', 'mongodb', 'neo4j'].includes(type)) return 'server'
-  return 'root'
-}
 </script>
 
 <style scoped>

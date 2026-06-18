@@ -9,15 +9,22 @@ export const dataExplorerAPI = {
     return client.get('/manager/engines')
   },
   getTree(engineId, expandDepth = 2) {
-    return client.get(`/manager/tree/${engineId}`, {
+    return client.get(`/meta/resource-tree/${engineId}`, {
       params: { expand_depth: expandDepth }
     })
   },
 
   // 获取节点的子节点（增量加载）
-  getNodeChildren(engineId, locator, expandDepth = 1) {
-    return client.get(`/manager/tree/${engineId}/node`, {
-      params: { locator, expand_depth: expandDepth }
+  getNodeChildren(engineId, locator) {
+    return client.get(`/meta/resource-tree/${engineId}/node`, {
+      params: { locator }
+    })
+  },
+
+  // 获取资源树祖先链（用于任意深度 locator 定位）
+  getTreeAncestors(engineId, locator) {
+    return client.get(`/meta/resource-tree/${engineId}/ancestors`, {
+      params: { locator }
     })
   },
 
@@ -27,11 +34,13 @@ export const dataExplorerAPI = {
     if (nodeTypes) {
       params.node_types = Array.isArray(nodeTypes) ? nodeTypes.join(',') : nodeTypes
     }
-    return client.get(`/manager/tree/${engineId}/search`, { params })
+    return client.get(`/meta/resource-tree/${engineId}/search`, { params })
   },
 
   refreshNode(engineId, locator) {
-    return client.post(`/manager/tree/${engineId}/refresh`, { locator })
+    return client.post(`/meta/resource-tree/${engineId}/refresh`, null, {
+      params: { locator }
+    })
   },
   getPreview(locator, page = 1, pageSize = 50, childName = '', refPath = '', nestedChildPath = '') {
     // 取消之前未完成的预览请求

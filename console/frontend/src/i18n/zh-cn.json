@@ -287,7 +287,7 @@
         "engines": "引擎管理",
         "applications": "应用管理",
         "logs": "日志审计",
-        "cleanup": "垃圾清理"
+        "cleanup": "资源回收"
       }
     }
   }

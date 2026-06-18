@@ -327,6 +327,37 @@ func (c *MetaClient) GetNodeByID(nodeID uint) (*models.MetaNode, error) {
 	return &result, nil
 }
 
+// GetNodeAncestors 获取 root 到目标 node 的祖先链，包含目标 node 自身。
+func (c *MetaClient) GetNodeAncestors(nodeID uint) ([]models.MetaNode, error) {
+	url := fmt.Sprintf("%s/api/v1/meta/nodes/%d/ancestors", c.baseURL, nodeID)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.addAuth(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("meta api returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result []models.MetaNode
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return result, nil
+}
+
 // GetItemByID 获取单个数据项详情。
 func (c *MetaClient) GetItemByID(itemID uint) (*models.MetaItem, error) {
 	urlStr := fmt.Sprintf("%s/api/v1/meta/items/%d", c.baseURL, itemID)
@@ -351,6 +382,37 @@ func (c *MetaClient) GetItemByID(itemID uint) (*models.MetaItem, error) {
 	}
 
 	var result models.MetaItem
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// GetItemAncestors 获取 item 及 root 到 item 父节点的祖先链。
+func (c *MetaClient) GetItemAncestors(itemID uint) (*models.MetaItemAncestors, error) {
+	urlStr := fmt.Sprintf("%s/api/v1/meta/items/%d/ancestors", c.baseURL, itemID)
+
+	req, err := http.NewRequest("GET", urlStr, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.addAuth(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("meta api returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result models.MetaItemAncestors
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}

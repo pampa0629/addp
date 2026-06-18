@@ -47,7 +47,7 @@ const routes = [
         path: 'cleanup',
         name: 'CleanupManager',
         component: () => import('../views/CleanupManager.vue'),
-        meta: { requiresAuth: true, title: '垃圾清理-addp' }
+        meta: { requiresAuth: true, title: '资源回收-addp' }
       }
     ]
   }

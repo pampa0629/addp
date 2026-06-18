@@ -1,12 +1,15 @@
+import { catalogRootTypeForEngine, engineRootLocator } from '@addp/common-frontend'
+
 const resourceRootTypes = new Set(['root', 'server', 'service'])
 
 export function createResourceRootNode(engine) {
-  const locator = `addp://engine/${engine.id}/path/?type=root`
+  const type = catalogRootTypeForEngine(engine)
+  const locator = engineRootLocator(engine, type)
   return {
     id: locator,
     locator,
     label: engine.name,
-    type: 'root',
+    type,
     icon: 'Folder',
     engineId: engine.id,
     engineType: engine.engine_type,
@@ -72,6 +75,44 @@ export function updateResourceNodeChildren(nodes, locator, children) {
   })
 }
 
+export function mergeAncestorChainIntoResourceTree(nodes, chain, { engine = null, parseLocator = null, filterNode = null } = {}) {
+  const normalizedChain = (Array.isArray(chain) ? chain : [])
+    .map((node) => normalizeResourceNode(node, engine, { parseLocator, loaded: true }))
+    .filter(Boolean)
+    .filter((node) => typeof filterNode !== 'function' || filterNode(node))
+
+  if (!normalizedChain.length) {
+    return { nodes, path: [], expandedKeys: [] }
+  }
+
+  const root = normalizedChain[0]
+  let nextNodes = Array.isArray(nodes) ? [...nodes] : []
+  const rootIndex = nextNodes.findIndex((node) => sameResourceNode(node, root))
+  if (rootIndex < 0) {
+    nextNodes.push(root)
+  } else {
+    nextNodes[rootIndex] = mergeResourceNodeFacts(nextNodes[rootIndex], root)
+  }
+
+  let current = rootIndex < 0 ? nextNodes[nextNodes.length - 1] : nextNodes[rootIndex]
+  const path = [current]
+
+  for (const node of normalizedChain.slice(1)) {
+    current.children = upsertResourceChild(current.children || [], node)
+    current.hasChildren = true
+    current.loaded = true
+    current = findDirectResourceChild(current.children, node)
+    path.push(current)
+  }
+
+  return {
+    nodes: nextNodes,
+    path,
+    expandedKeys: path.slice(0, -1).map((node) => node.locator || node.id).filter(Boolean),
+    target: path[path.length - 1] || null
+  }
+}
+
 export function isResourceRootNode(node) {
   const locator = String(node?.locator || node?.id || '')
   return resourceRootTypes.has(String(node?.type || '').toLowerCase()) && locator.includes('/path/?')
@@ -108,23 +149,51 @@ export function geometryColumnsFromNode(node) {
   return columns.map((column) => String(column || '').trim()).filter(Boolean)
 }
 
-export function findResourceNodePath(nodes, locator, path = []) {
-  for (const node of nodes || []) {
-    const nodeLocator = node.locator || node.id
-    const nextPath = [...path, node]
-    if (nodeLocator === locator) {
-      return nextPath
-    }
-    if (node.children?.length) {
-      const found = findResourceNodePath(node.children, locator, nextPath)
-      if (found.length) {
-        return found
-      }
-    }
-  }
-  return []
-}
-
 export function locatorEngineID(locator, parseLocator) {
   return Number(parseLocator?.(locator)?.engineId || 0)
+}
+
+function sameResourceNode(a, b) {
+  const aLocator = a?.locator || a?.id || ''
+  const bLocator = b?.locator || b?.id || ''
+  if (aLocator === bLocator) {
+    return true
+  }
+  const aRootKey = catalogRootKey(a)
+  const bRootKey = catalogRootKey(b)
+  return Boolean(aRootKey && bRootKey && aRootKey === bRootKey)
+}
+
+function mergeResourceNodeFacts(existing, incoming) {
+  const existingChildren = Array.isArray(existing?.children) ? existing.children : []
+  const incomingChildren = Array.isArray(incoming?.children) ? incoming.children : []
+  return {
+    ...existing,
+    ...incoming,
+    children: existingChildren.length ? existingChildren : incomingChildren
+  }
+}
+
+function upsertResourceChild(children, child) {
+  const index = children.findIndex((node) => sameResourceNode(node, child))
+  if (index < 0) {
+    return [...children, child]
+  }
+  const next = [...children]
+  next[index] = mergeResourceNodeFacts(next[index], child)
+  return next
+}
+
+function findDirectResourceChild(children, target) {
+  return (children || []).find((node) => sameResourceNode(node, target)) || target
+}
+
+function catalogRootKey(node) {
+  const locator = String(node?.locator || node?.id || '')
+  const type = String(node?.type || '').toLowerCase()
+  if (!resourceRootTypes.has(type) || !locator.includes('/path/?')) {
+    return ''
+  }
+  const match = locator.match(/^addp:\/\/engine\/(\d+)\/path\/\?/)
+  return match ? `engine:${match[1]}:root` : ''
 }

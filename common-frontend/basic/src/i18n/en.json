@@ -259,20 +259,6 @@
       "capabilitiesFieldWarning": "Capabilities must contain 'storage' or 'compute' field"
     }
   },
-  "dataSource": {
-    "engine": "Storage Engine",
-    "enginePlaceholder": "Select storage engine",
-    "spatial": "Spatial",
-    "selected": "Selected: ",
-    "geometryColumn": "Geometry: ",
-    "srid": "SRID",
-    "noGeometry": "No geometry column",
-    "detecting": "Detecting table structure...",
-    "selectedCount": "{count} items selected",
-    "clearSelection": "Clear",
-    "requireSpatial": "Please select a spatial table (with geometry column)",
-    "loadChildrenFailed": "Failed to load children: {msg}"
-  },
   "excelPreview": {
     "sheetsTruncatedTitle": "Showing partial sheets",
     "sheetsTruncatedBody": "Only showing the first {limit} sheets. Download the Excel file to view all content.",

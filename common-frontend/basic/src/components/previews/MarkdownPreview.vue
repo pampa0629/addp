@@ -264,8 +264,7 @@ onBeforeUnmount(() => {
   color: var(--el-text-color-primary);
   line-height: 1.7;
   font-size: 14px;
-  overflow: auto;
-  max-height: 540px;
+  overflow-x: auto;
 }
 
 .markdown-body :deep(pre) {
@@ -430,8 +429,7 @@ onBeforeUnmount(() => {
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
   font-size: 13px;
   line-height: 1.6;
-  overflow: auto;
-  max-height: 540px;
+  overflow-x: auto;
   white-space: pre-wrap;
   word-break: break-word;
   margin: 0;

@@ -240,14 +240,14 @@ type CreateQueryServiceRequest struct {
 	// 存储引擎（table 模式必填；sql 模式 + DuckDB 时为 nil）
 	EngineID *uint `json:"engine_id"`
 
-	// 表配置字段（config_type='table'时需要）
+	// 表配置字段由 data_config.locator 服务端派生，仅作为执行快照返回。
 	SchemaName string `json:"schema_name"`
 	TableName  string `json:"table_name"`
 
 	// SQL配置字段（config_type='sql'时需要）
 	SqlQuery string `json:"sql_query"`
 
-	// 数据配置（可选，系统会自动检测）
+	// 数据配置。table 模式必须提供 locator，格式为带 item_id 的 ResourceLocator。
 	DataConfig map[string]interface{} `json:"data_config"`
 
 	// 协议配置（可选，使用默认值）

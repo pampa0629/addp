@@ -53,7 +53,8 @@ non-table raw copy 已形成第一版最小闭环：`document`、`media`、`unkn
     "representation": "native"
   },
   "target": {
-    "locator": "addp://engine/2/path/exports/roads.parquet?type=file",
+    "parent_locator": "addp://engine/2/path/exports?type=directory",
+    "name": "roads.parquet",
     "data_type": "table",
     "representation": "encoded",
     "format": "parquet",
@@ -83,10 +84,7 @@ non-table raw copy 已形成第一版最小闭环：`document`、`media`、`unkn
 常用接口：
 
 - `GET /ping`
-- `GET /engines`
-- `GET /engines/:engine_id/tree`
-- `GET /nodes/:node_id/children`
-- `GET /tables/metadata`
+- 资源选择、资源树和表字段读取统一走 Meta resource-tree / item API，Transfer 不提供私有数据源树代理。
 - `GET /capabilities`
 - `POST /tasks`
 - `GET /tasks`

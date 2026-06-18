@@ -38,9 +38,6 @@
           <template v-else-if="data.type === 'taskType'">
             <el-icon class="task-type-icon"><FolderOpened /></el-icon>
             <span class="task-type-name">{{ data.label }}</span>
-            <el-tag size="small" :type="getTaskTypeColor(data.metadata?.taskType)">
-              {{ data.metadata?.taskType }}
-            </el-tag>
             <el-badge
               :value="data.metadata?.taskCount || 0"
               class="task-count-badge"
@@ -73,13 +70,6 @@
                 :type="getStatusColor(data.metadata.status)"
               >
                 {{ data.metadata.status }}
-              </el-tag>
-              <el-tag
-                v-if="data.metadata?.taskType"
-                size="small"
-                :type="getTaskTypeColor(data.metadata.taskType)"
-              >
-                {{ data.metadata.taskType }}
               </el-tag>
               <el-tooltip
                 v-if="data.metadata?.editUrl"
@@ -143,6 +133,7 @@ async function loadAllTasks() {
     console.log('树形数据已构建:', treeData.value)
   } catch (error) {
     console.error('加载任务失败:', error)
+    console.error('任务库树数据:', treeData.value)
     ElMessage.error(t('orchestrator.taskPanel.loadFailed'))
   } finally {
     loading.value = false
@@ -317,24 +308,6 @@ function startDrag(data, event) {
   event.dataTransfer.effectAllowed = 'copy'
 }
 
-// 任务类型颜色
-function getTaskTypeColor(type) {
-  const colors = {
-    scan: 'primary',
-    import: 'success',
-    query: 'warning',
-    workflow: 'success',
-    script: 'info',
-    mvt_generation: 'warning',
-    embedding: 'success',
-    check: 'danger',
-    kg_build: 'primary',
-    orchestration: 'primary'
-  }
-  return colors[type] || 'info'
-}
-
-// 任务状态颜色
 function getStatusColor(status) {
   const colors = {
     pending: 'info',
@@ -466,6 +439,7 @@ function getStatusColor(status) {
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
+  margin-left: auto;
 }
 
 /* 覆盖 ResourceTree 的样式 */

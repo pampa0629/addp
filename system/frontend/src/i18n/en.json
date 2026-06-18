@@ -24,7 +24,7 @@
       "engineMgmt": "Engines",
       "appMgmt": "Applications",
       "auditLogs": "Audit Logs",
-      "cleanup": "Cleanup",
+      "cleanup": "Resource Reclaim",
       "logout": "Logout",
       "logoutSuccess": "Logged out successfully"
     },
@@ -616,6 +616,13 @@
         "module": "Module",
         "time": "Time"
       },
+      "actions": {
+        "cleanup_scan_created": "Resource reclaim assessment created",
+        "cleanup_execute_created": "Resource reclaim task created",
+        "cleanup_execute_confirmed": "Resource reclaim execution confirmed",
+        "cleanup_completed": "Resource reclaim completed",
+        "cleanup_failed": "Resource reclaim failed"
+      },
       "detail": {
         "title": "Action Details",
         "logId": "Log ID",
@@ -642,46 +649,76 @@
       }
     },
     "cleanup": {
-      "title": "Data Cleanup",
-      "scan": "Scan Garbage Data",
+      "title": "Resource Reclaim",
+      "subtitle": "Assess and reclaim inactive resources, derived artifacts, and runtime caches",
+      "scan": "Assess Reclaimable Resources",
       "refreshHistory": "Refresh History",
       "taskInProgress": "{action} task in progress",
       "taskId": "Task ID: {id}",
       "taskStatus": "Status: {status}",
       "scanResult": {
-        "title": "Scan Results",
-        "scanTime": "Scan Time",
-        "scanScope": "Scan Scope",
+        "title": "Assessment Results",
+        "scanTime": "Assessment Time",
+        "scanScope": "Assessment Scope",
+        "triggerType": "Trigger",
+        "causeEvent": "Cause Event",
+        "context": "Context",
         "riskLevel": "Risk Level",
-        "itemsToClean": "Items to Clean",
+        "itemsToClean": "Items to Handle",
+        "monitor": "Monitor",
         "items": "{count} items"
       },
-      "meta": {
-        "title": "Meta Module Scan Details",
-        "softDeleted": "Soft Deleted Data",
-        "nodes": "Nodes: {count}",
-        "invalidEngines": "Invalid Engine Data",
-        "engines": "engines",
-        "duplicateFingerprints": "Duplicate Fingerprints",
-        "count": "",
-        "invalidEngineDetail": "Invalid Engine Details",
-        "engineId": "Engine ID",
-        "engineName": "Engine Name",
-        "reason": "Reason",
-        "affectedNodes": "Affected Nodes",
-        "affectedItems": "Affected Items"
+      "overview": {
+        "items": "Items to Handle",
+        "risk": "Risk Level",
+        "freedBytes": "Reclaimable Space",
+        "modules": "Modules"
+      },
+      "modules": {
+        "title": "Module Handling Summary",
+        "columns": {
+          "module": "Module",
+          "status": "Status",
+          "scannedItems": "Found",
+          "affectedRecords": "Affected Records",
+          "stateChanges": "State Changes",
+          "releasedStorage": "Storage Release",
+          "exceptions": "Skipped / Errors",
+          "riskLevel": "Risk"
+        },
+        "names": {
+          "asset": "Asset Catalog",
+          "develop": "Data Development",
+          "graph": "Knowledge Graph",
+          "manager": "Data Management",
+          "meta": "Metadata",
+          "model": "Data Modeling",
+          "quality": "Data Quality",
+          "service": "Data Service",
+          "standard": "Data Standards",
+          "transfer": "Data Transfer"
+        },
+        "stateChanges": {
+          "missing": "Missing source {count}",
+          "outdated": "Outdated {count}",
+          "disabled": "Disabled tasks {count}"
+        },
+        "releasedStorageValue": "{artifacts} artifacts / {bytes}",
+        "exceptionsValue": "{skipped} / {errors}"
       },
       "cleanupNote": {
-        "title": "Cleanup Notes",
-        "softDelete": "Soft Delete",
-        "softDeleteDesc": "Mark invalid data as soft-deleted, can be recovered",
-        "hardDelete": "Hard Delete",
-        "hardDeleteDesc": "Permanently delete soft-deleted data, cannot be recovered"
+        "title": "Handling Options",
+        "logicalCleanup": "Mark Inactive",
+        "logicalCleanupDesc": "Remove stale resources from active views while preserving records for audit and diagnosis",
+        "physicalCleanup": "Release Storage",
+        "physicalCleanupDesc": "Delete registered storage objects, caches, or derived artifacts; confirm carefully"
       },
       "actions": {
-        "softDelete": "Soft Delete Invalid Data",
-        "hardDelete": "Hard Delete Soft-Deleted Data",
-        "hardDeleteConfirm": "Data will be permanently deleted. Are you sure?",
+        "logicalCleanup": "Mark Resources Inactive",
+        "physicalCleanup": "Release Storage",
+        "physicalCleanupConfirm": "Releasing storage deletes registered storage objects, caches, or derived artifacts. Continue?",
+        "viewMonitor": "View Monitor",
+        "viewAllMonitor": "Reclaim Monitor",
         "confirm": "Confirm",
         "cancel": "Cancel"
       },
@@ -690,17 +727,30 @@
         "columns": {
           "taskId": "Task ID",
           "actionType": "Action Type",
-          "deleteType": "Delete Type",
+          "cleanupMode": "Handling Mode",
+          "triggerType": "Trigger",
+          "causeEvent": "Cause Event",
+          "basedOnScan": "Based On Assessment",
+          "context": "Context",
           "status": "Status",
           "scope": "Scope",
           "startTime": "Start Time",
           "actions": "Actions"
         },
-        "actionScan": "Scan",
-        "actionCleanup": "Cleanup",
-        "softDelete": "Soft Delete",
-        "hardDelete": "Hard Delete",
+        "actionScan": "Assess",
+        "actionCleanup": "Reclaim",
+        "logicalCleanup": "Mark Inactive",
+        "physicalCleanup": "Release Storage",
         "viewDetail": "View Details"
+      },
+      "trigger": {
+        "manual": "Manual",
+        "scheduled": "Scheduled",
+        "event": "Event"
+      },
+      "causeEvent": {
+        "engine_deleted": "Engine deleted",
+        "tenant_deleted": "Tenant deleted"
       },
       "status": {
         "pending": "Pending",
@@ -714,16 +764,23 @@
         "medium": "Medium",
         "high": "High"
       },
+      "moduleStatus": {
+        "success": "Success",
+        "failed": "Failed",
+        "partialSuccess": "Partial Success",
+        "skipped": "Skipped",
+        "timeout": "Timeout"
+      },
       "detail": {
         "title": "Task Details"
       },
       "msg": {
-        "scanCreated": "Scan task created",
-        "scanFailed": "Failed to create scan task: {error}",
-        "cleanupCreated": "Cleanup task created",
-        "cleanupFailed": "Failed to create cleanup task: {error}",
+        "scanCreated": "Resource assessment task created",
+        "scanFailed": "Failed to create resource assessment task: {error}",
+        "cleanupCreated": "Resource reclaim task created",
+        "cleanupFailed": "Failed to create resource reclaim task: {error}",
         "taskFailed": "Task execution failed",
-        "noScanFirst": "Please run a scan first",
+        "noScanFirst": "Please run a resource assessment first",
         "detailFailed": "Failed to load task details"
       }
     },

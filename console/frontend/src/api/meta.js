@@ -7,32 +7,6 @@ const unwrapData = res => res?.data?.data ?? res?.data ?? res
 
 export const getEngines = () => unwrap(client.get('/meta/engines'), [])
 
-export const getSchemas = engineId =>
-  client.get(`/meta/engines/${engineId}/tree`).then(res => {
-    const nodes = res.data?.top_nodes ?? res.data?.data?.top_nodes ?? []
-    return nodes.map(node => ({
-      id: node.id,
-      name: node.name,
-      schema_name: node.name,
-      node_type: node.node_type,
-      path: node.path || node.full_name || node.name,
-      scan_status: node.scan_status,
-      scanned_at: node.scanned_at,
-      item_count: node.item_count || 0,
-      total_size_bytes: node.total_size_bytes || 0
-    }))
-  })
-
-export const listAvailableSchemas = engineId =>
-  client.get(`/system/engines/${engineId}/namespaces`).then(res => {
-    const namespaces = res.data?.namespaces ?? res.data?.data?.namespaces ?? []
-    return namespaces.map(item => ({
-      ...item,
-      schema_name: item.name || item.schema_name,
-      name: item.name || item.schema_name
-    }))
-  })
-
 export const createUnscannedScanRuns = () => client.post('/meta/scan/run/unscanned').then(res => res.data)
 
 export const getScanTasks = async engineId => {
@@ -95,8 +69,6 @@ export const deleteEngineScanTask = engineId =>
 
 export default {
   getEngines,
-  getSchemas,
-  listAvailableSchemas,
   createUnscannedScanRuns,
   getScanTasks,
   createScanTask,

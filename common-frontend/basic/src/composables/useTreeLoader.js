@@ -13,7 +13,7 @@
  * })
  *
  * // 增量加载子节点
- * const children = await treeLoader.loadNodeChildren('addp://engine/1/path/public?type=schema', 1)
+ * const children = await treeLoader.loadNodeChildren('addp://engine/1/path/public?type=schema')
  *
  * // 搜索节点
  * const results = await treeLoader.searchNodes(1, 'users', { nodeTypes: ['table'], limit: 50 })
@@ -27,20 +27,22 @@ import { ref } from 'vue'
 import { useTreeCache } from './useTreeCache'
 import { parseLocator } from '../types/resourceLocator'
 
+const unwrapResponse = (response) => response?.data?.data || response?.data || response
+
 /**
  * 创建树加载器
  * @param {Object} apiClient - API 客户端（axios 实例或类似对象）
  * @param {Object} options - 配置选项
  * @param {boolean} options.enableCache - 是否启用缓存，默认 true
  * @param {Object} options.cacheOptions - 缓存配置，传递给 useTreeCache
- * @param {string} options.apiBasePath - API 基础路径，默认为空（使用 `/tree`）
+ * @param {string} options.apiBasePath - API 基础路径，默认使用 `/meta`
  * @returns {Object} 树加载器
  */
 export function useTreeLoader(apiClient, options = {}) {
   const {
     enableCache = true,
     cacheOptions = {},
-    apiBasePath = ''
+    apiBasePath = '/meta'
   } = options
 
   const loading = ref(false)
@@ -52,11 +54,10 @@ export function useTreeLoader(apiClient, options = {}) {
   /**
    * 增量加载节点子节点
    * @param {string} locator - 父节点的 ResourceLocator URI
-   * @param {number} expandDepth - 展开深度（默认 1 = 只加载直接子节点）
    * @param {boolean} forceRefresh - 是否强制刷新（忽略缓存）
    * @returns {Promise<Array>} 子节点数组
    */
-  const loadNodeChildren = async (locator, expandDepth = 1, forceRefresh = false) => {
+  const loadNodeChildren = async (locator, forceRefresh = false) => {
     // 1. 检查缓存
     if (!forceRefresh && cache) {
       const cached = cache.getNodeChildrenCache(locator)
@@ -77,12 +78,13 @@ export function useTreeLoader(apiClient, options = {}) {
 
     try {
       // 3. 调用 API
-      const url = apiBasePath ? `${apiBasePath}/tree/${loc.engineId}/node` : `/tree/${loc.engineId}/node`
+      const url = `${apiBasePath}/resource-tree/${loc.engineId}/node`
       const response = await apiClient.get(url, {
-        params: { locator, expand_depth: expandDepth }
+        params: { locator }
       })
 
-      const children = response.children || []
+      const data = unwrapResponse(response)
+      const children = data?.children || []
 
       // 4. 更新缓存
       if (cache) {
@@ -138,9 +140,10 @@ export function useTreeLoader(apiClient, options = {}) {
         params.node_types = Array.isArray(nodeTypes) ? nodeTypes.join(',') : nodeTypes
       }
 
-      const url = apiBasePath ? `${apiBasePath}/tree/${engineId}/search` : `/tree/${engineId}/search`
+      const url = `${apiBasePath}/resource-tree/${engineId}/search`
       const response = await apiClient.get(url, { params })
-      const results = response.results || []
+      const data = unwrapResponse(response)
+      const results = data?.results || []
 
       // 更新缓存
       if (cache) {

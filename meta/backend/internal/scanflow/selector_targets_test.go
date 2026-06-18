@@ -95,10 +95,19 @@ func TestTargetPathsFromLocatorUsesTopCatalogForTable(t *testing.T) {
 	}
 }
 
+func TestTargetPathsFromLocatorUsesSharedParserDecoding(t *testing.T) {
+	t.Parallel()
+
+	got := TargetPathsFromLocator("addp://engine/9/path/bucket/folder%20name/report.pdf?type=object")
+	if !reflect.DeepEqual(got, []string{"bucket/folder name/report.pdf"}) {
+		t.Fatalf("TargetPathsFromLocator() = %#v", got)
+	}
+}
+
 func TestEngineIDFromLocator(t *testing.T) {
 	t.Parallel()
 
-	got, ok := EngineIDFromLocator("addp://engine/42/path/public")
+	got, ok := EngineIDFromLocator("addp://engine/42/path/public?type=schema")
 	if !ok || got != 42 {
 		t.Fatalf("EngineIDFromLocator() = %d, %v", got, ok)
 	}

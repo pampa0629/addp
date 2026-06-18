@@ -260,9 +260,9 @@ POST /api/v1/system/engines/:id/test
 
 ### 6.3 NodePanel 数据来源
 
-调用 Manager 树 API（已有）：
+调用 Meta resource-tree API：
 ```
-GET /api/manager/tree/:engine_id/node?locator=...
+GET /api/v1/meta/resource-tree/:engine_id/node?locator=...
 ```
 响应中的 `typeLabel` 字段直接用于展示，无需前端映射。
 
@@ -271,7 +271,7 @@ GET /api/manager/tree/:engine_id/node?locator=...
 元数据区：从树节点的 `metadata` 字段读取。资源树节点使用 `node_id`，数据项使用 `item_id`；如需详情，通过标准 locator 或对应真实 ID 调用后端接口。
 预览区：调用现有预览 API：
 ```
-GET /api/manager/preview?engineId=...&schema=...&table=...&itemType=...
+GET /api/v1/manager/preview?locator=...
 ```
 
 ---

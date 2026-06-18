@@ -60,7 +60,7 @@ func BuildRawCopyPlan(spec RawCopyTaskSpec, resolver EngineResolver) (*RawCopyBu
 	}
 	targetRef, err := spec.Target.EngineRef()
 	if err != nil {
-		return nil, fmt.Errorf("parse target locator: %w", err)
+		return nil, fmt.Errorf("parse target parent locator: %w", err)
 	}
 
 	sourceEngine, err := resolver.ResolveEngine(sourceRef)
@@ -84,7 +84,7 @@ func BuildRawCopyPlan(spec RawCopyTaskSpec, resolver EngineResolver) (*RawCopyBu
 	if err != nil {
 		return nil, fmt.Errorf("build raw copy source path: %w", err)
 	}
-	targetPath, err := endpointContentCatalogPath(spec.Target, "target")
+	targetPath, err := targetEndpointContentCatalogPath(spec.Target, "", nil)
 	if err != nil {
 		return nil, fmt.Errorf("build raw copy target path: %w", err)
 	}

@@ -18,11 +18,18 @@
 export const ResourceType = {
   TABLE: 'table',
   COLLECTION: 'collection',
+  GRAPH: 'graph',
   OBJECT: 'object',
+  FILE: 'file',
   DIRECTORY: 'directory',
+  PREFIX: 'prefix',
   DATABASE: 'database',
   SCHEMA: 'schema',
   BUCKET: 'bucket',
+  ROOT: 'root',
+  SERVER: 'server',
+  SERVICE: 'service',
+  DIR: 'dir',
   UNKNOWN: 'unknown'
 }
 
@@ -31,7 +38,7 @@ export const ResourceType = {
  * @typedef {Object} ResourceLocator
  * @property {number} engineId - 引擎 ID
  * @property {string[]} path - 资源路径（如 ["public", "users"]）
- * @property {string} type - 资源类型（table/collection/object/directory等）
+ * @property {string} type - catalog 术语（table/collection/object/file/directory/prefix/root/server/service等）
  * @property {number} [nodeId] - 可选：MetaNode ID
  * @property {number} [itemId] - 可选：MetaItem ID
  */
@@ -118,6 +125,39 @@ export function parseLocator(uri) {
 }
 
 /**
+ * 容错解析 ResourceLocator URI。
+ *
+ * 适用于 UI 展示、编辑回填等不应因无效 locator 中断页面渲染的场景。
+ *
+ * @param {string} uri - ResourceLocator URI 字符串
+ * @returns {ResourceLocator} 解析后的资源定位符，解析失败时返回空定位符
+ */
+export function parseLocatorSafe(uri) {
+  try {
+    return parseLocator(uri)
+  } catch {
+    return {
+      engineId: 0,
+      path: [],
+      type: '',
+      nodeId: undefined,
+      itemId: undefined
+    }
+  }
+}
+
+/**
+ * 从 ResourceTreePicker selection 中读取 locator path。
+ *
+ * @param {Object} selection - ResourceTreePicker 选择结果
+ * @returns {string[]} locator path，解析失败时返回空数组
+ */
+export function locatorPathFromSelection(selection) {
+  const locator = selection?.identity?.locator
+  return parseLocatorSafe(locator).path || []
+}
+
+/**
  * 构建 ResourceLocator URI
  *
  * @param {ResourceLocator} locator - 资源定位符对象
@@ -151,6 +191,32 @@ export function buildLocator(locator) {
   }
 
   return uri
+}
+
+/**
+ * 构建引擎 catalog root ResourceLocator URI。
+ *
+ * @param {number|Object} engineOrID - 引擎 ID 或 engine 对象
+ * @param {string} [type] - root 类型；未传入时按 engine_type 推断
+ * @returns {string} catalog root locator
+ */
+export function engineRootLocator(engineOrID, type = '') {
+  const engine = typeof engineOrID === 'object' && engineOrID !== null ? engineOrID : null
+  const engineId = Number(engine?.id || engine?.engine_id || engineOrID || 0)
+  const rootType = String(type || catalogRootTypeForEngine(engine) || 'root').trim()
+  return buildLocator({
+    engineId,
+    path: [],
+    type: rootType
+  })
+}
+
+export function catalogRootTypeForEngine(engine) {
+  const type = String(engine?.engine_type || engine?.resource_type || '').trim().toLowerCase()
+  if (type === 'minio' || type === 's3') return 'service'
+  if (type === 'nfs' || type === 'nas') return 'root'
+  if (['postgresql', 'mysql', 'doris', 'clickhouse', 'spark_sql', 'mongodb', 'neo4j'].includes(type)) return 'server'
+  return 'root'
 }
 
 /**
@@ -194,13 +260,38 @@ export function getFullName(locator) {
       return getPathString(locator)
 
     case ResourceType.OBJECT:
+    case ResourceType.FILE:
     case ResourceType.DIRECTORY:
-      // bucket/path/to/file 格式
+    case ResourceType.PREFIX:
+    case ResourceType.BUCKET:
+    case ResourceType.DIR:
+    case ResourceType.ROOT:
+    case ResourceType.SERVER:
+    case ResourceType.SERVICE:
+      // 文件、对象存储和结构根按 slash 路径语义展示
       return getPathString(locator)
 
     default:
       return getPathString(locator)
   }
+}
+
+/**
+ * 格式化 ResourceLocator 的 UI 展示路径。
+ *
+ * native 表按 schema.table 展示，其他资源按路径层级展示。
+ *
+ * @param {string} uri - ResourceLocator URI 字符串
+ * @param {string} representation - 资源表示形态
+ * @returns {string} 展示路径
+ */
+export function formatLocatorDisplayPath(uri, representation = '') {
+  const locator = parseLocatorSafe(uri)
+  if (!locator.path || locator.path.length === 0) return ''
+  if (String(representation || '').toLowerCase() === 'native' && String(locator.type || '').toLowerCase() === ResourceType.TABLE) {
+    return locator.path.slice(-2).join('.')
+  }
+  return locator.path.join('/')
 }
 
 /**
@@ -251,6 +342,10 @@ export function getParentLocator(locator) {
       parentType = ResourceType.DATABASE
       break
     case ResourceType.OBJECT:
+    case ResourceType.FILE:
+      parentType = ResourceType.DIRECTORY
+      break
+    case ResourceType.PREFIX:
       parentType = ResourceType.DIRECTORY
       break
     default:
@@ -262,29 +357,6 @@ export function getParentLocator(locator) {
     path: parentPath,
     type: parentType
     // 父节点的 nodeId 需要单独查询
-  }
-}
-
-/**
- * 从旧的 3 参数格式转换为 ResourceLocator
- * 用于兼容旧代码
- *
- * @param {number} engineId - 引擎 ID
- * @param {string} schema - Schema/Database 名称
- * @param {string} table - 表/集合名称
- * @param {string} type - 资源类型
- * @returns {ResourceLocator} 资源定位符对象
- *
- * @example
- * const locator = fromLegacyParams(1, 'public', 'users', 'table')
- * // { engineId: 1, path: ['public', 'users'], type: 'table' }
- */
-export function fromLegacyParams(engineId, schema, table, type) {
-  const path = [schema, table].filter(Boolean)
-  return {
-    engineId,
-    path,
-    type
   }
 }
 

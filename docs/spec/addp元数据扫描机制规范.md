@@ -74,6 +74,7 @@ Meta 扫描只保留四个核心维度：
 3. 同一个外部事件产生的同一批内容，不能同时用父目录 `catalog_paths` 和 `ref_groups` 表达。
 4. item refresh 必须由已入库 item 标准事实还原内容输入，不得退回为父目录 catalog scan。
 5. `item_id` selector 解析出的 `ScanScope` 和 execution config 必须保持 item 模式，不得为了执行方便补写父级 `catalog_paths` 或 sibling `ref_groups`。
+6. Manager preview、Meta 查询 API 和其他消费方只能读取已落库 attributes 与 `access_index`；缺失或不可用时应降级读取或提示用户执行 item refresh，不得在预览或查询链路自动触发扫描、写回 attributes 或临时构建 `access_index`。
 
 ## ScanTask 与 Execution 边界
 

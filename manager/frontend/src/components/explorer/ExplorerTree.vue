@@ -246,7 +246,7 @@ const handleNodeClick = async (node) => {
       try {
         const loc = parseLocator(locator)
         if (loc && loc.engineId) {
-          await store.loadNodeChildren(locator, 1, true)
+          await store.loadNodeChildren(locator, true)
         }
       } catch (error) {
         console.error('加载子节点失败:', error)
@@ -381,7 +381,7 @@ const handleNodeExpand = async (node) => {
       if (loc && loc.engineId) {
         // 只加载该节点的子节点，不重新加载整个树。
         // 强制刷新，绕过缓存，确保从后端加载数据
-        await store.loadNodeChildren(locator, 1, true)
+        await store.loadNodeChildren(locator, true)
       }
     } catch (error) {
       console.error('增量加载子节点失败:', error)

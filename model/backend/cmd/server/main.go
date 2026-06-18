@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 
 	commonClient "github.com/addp/common/client"
+	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/utils"
 	_ "github.com/addp/model/i18n"
 	"github.com/addp/model/internal/api"
@@ -42,6 +44,9 @@ func main() {
 	if err := db.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", cfg.DBSchema)).Error; err != nil {
 		log.Fatalf("Failed to create schema: %v", err)
 	}
+	if err := commonExecution.EnsureStore(db); err != nil {
+		log.Fatalf("Failed to ensure execution store: %v", err)
+	}
 
 	// 自动迁移 model schema 表（仅 Model 相关）
 	if err := db.AutoMigrate(
@@ -65,6 +70,7 @@ func main() {
 			Password: cfg.RedisPassword,
 			DB:       cfg.RedisDB,
 		})
+		defer redisClient.Close()
 	}
 
 	// 创建 System 客户端
@@ -85,6 +91,12 @@ func main() {
 	dwLayerSvc := service.NewDWLayerService(dwLayerRepo)
 	factMetricSvc := service.NewFactMetricService(factMetricRepo, logicalTableRepo)
 	tableRelationSvc := service.NewTableRelationService(tableRelationRepo, logicalTableRepo)
+	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
+	cleanupSvc := service.NewCleanupService(db, redisClient, taskExecutionRepo)
+	if err := cleanupSvc.Start(context.Background()); err != nil {
+		log.Printf("⚠️  Model cleanup executor 启动失败: %v", err)
+	}
+	defer cleanupSvc.Stop()
 
 	// 设置路由
 	router := api.SetupRouter(
@@ -114,7 +126,14 @@ func main() {
 	serviceHost := utils.GetServiceHost()
 	port := utils.GetModulePort("model")
 	serviceURL := utils.BuildServiceURL(serviceHost, port)
-	systemClient.RegisterAndHeartbeat("model", serviceURL, "/model")
+	systemClient.RegisterAndHeartbeatWithMetadata("model", serviceURL, "/model", map[string]interface{}{
+		"module": "model",
+		"capabilities": map[string]interface{}{
+			"cleanup_executor": map[string]interface{}{
+				"enabled": true,
+			},
+		},
+	})
 
 	// 阻塞主 goroutine
 	select {}

@@ -40,134 +40,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/engines": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "数据源 | Data Sources"
-                ],
-                "summary": "获取存储引擎列表 | List engines",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "引擎类型列表 | Engine types",
-                        "name": "engine_types",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "数据源类型列表 | Data source types",
-                        "name": "data_source_types",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "additionalProperties": true
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/engines/{engine_id}/tree": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "数据源 | Data Sources"
-                ],
-                "summary": "获取引擎元数据树 | Get engine metadata tree",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "引擎ID | Engine ID",
-                        "name": "engine_id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "default": 1,
-                        "description": "展开深度 | Expand depth",
-                        "name": "expand_depth",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
         "/executions": {
             "get": {
                 "security": [
@@ -510,211 +382,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/nodes/{node_id}/children": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "数据源 | Data Sources"
-                ],
-                "summary": "获取节点子节点 | Get node children",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "节点ID | Node ID",
-                        "name": "node_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "additionalProperties": true
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/object-storage/browse": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "对象存储 | Object Storage"
-                ],
-                "summary": "浏览对象存储目录 | Browse object storage directories",
-                "parameters": [
-                    {
-                        "description": "浏览请求 | Browse request",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.objectStorageBrowseRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "502": {
-                        "description": "Bad Gateway",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "503": {
-                        "description": "Service Unavailable",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/object-storage/list-files": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "对象存储 | Object Storage"
-                ],
-                "summary": "列出对象存储文件 | List object storage files",
-                "parameters": [
-                    {
-                        "description": "文件列表请求 | List files request",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.objectStorageBrowseRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "502": {
-                        "description": "Bad Gateway",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "503": {
-                        "description": "Service Unavailable",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
         "/ping": {
             "get": {
                 "produces": [
@@ -791,72 +458,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/tables/metadata": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "数据源 | Data Sources"
-                ],
-                "summary": "检测表元数据 | Detect table metadata",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "引擎ID | Engine ID",
-                        "name": "engine_id",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Schema",
-                        "name": "schema",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "表名 | Table",
-                        "name": "table",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
         "/task-definitions": {
             "post": {
                 "security": [
@@ -864,7 +465,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "创建一个新的 Transfer 任务。新任务 config 使用 source/target locator endpoint；source locator 带 item_id 时，Transfer 后端会通过 MetaClient 读取标准 attributes。| Create a new Transfer task. New config uses source/target locator endpoints; when source locator carries item_id, Transfer backend loads standard attributes through MetaClient.",
+                "description": "创建一个新的 Transfer 任务。config.source 使用 locator 指向已存在资源；config.target 使用 parent_locator + name 表达待写入资源。source locator 带 item_id 时，Transfer 后端会通过 MetaClient 读取标准 attributes。| Create a new Transfer task. config.source uses locator for existing resources; config.target uses parent_locator + name for the resource to write. When source locator carries item_id, Transfer backend loads standard attributes through MetaClient.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1029,7 +630,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "更新任务的配置信息。source 指向已入库 Meta item 时使用 config.source.locator 的 item_id；不支持在任务配置中直接传递 endpoint attributes。| Update task configuration. Use config.source.locator item_id for persisted Meta items; endpoint attributes are not accepted in task config.",
+                "description": "更新任务的配置信息。source 指向已入库 Meta item 时使用 config.source.locator 的 item_id；target 使用 parent_locator + name；不支持在任务配置中直接传递 endpoint attributes。| Update task configuration. Use config.source.locator item_id for persisted Meta items; target uses parent_locator + name; endpoint attributes are not accepted in task config.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1793,10 +1394,10 @@ const docTemplate = `{
                     "example": "batch"
                 },
                 "source": {
-                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.TransferEndpointDoc"
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.TransferSourceEndpointDoc"
                 },
                 "target": {
-                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.TransferEndpointDoc"
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.TransferTargetEndpointDoc"
                 },
                 "transforms": {
                     "type": "array",
@@ -1919,7 +1520,7 @@ const docTemplate = `{
                 "TaskStatusRunning"
             ]
         },
-        "github_com_addp_transfer_internal_models.TransferEndpointDoc": {
+        "github_com_addp_transfer_internal_models.TransferSourceEndpointDoc": {
             "type": "object",
             "properties": {
                 "data_type": {
@@ -1949,6 +1550,43 @@ const docTemplate = `{
                         "encoded"
                     ],
                     "example": "encoded"
+                }
+            }
+        },
+        "github_com_addp_transfer_internal_models.TransferTargetEndpointDoc": {
+            "type": "object",
+            "properties": {
+                "data_type": {
+                    "type": "string",
+                    "example": "table"
+                },
+                "format": {
+                    "type": "string",
+                    "example": "csv"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "roads_imported"
+                },
+                "options": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "parent_locator": {
+                    "type": "string",
+                    "example": "addp://engine/10/path/public?type=schema"
+                },
+                "policy": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "representation": {
+                    "type": "string",
+                    "enum": [
+                        "native",
+                        "encoded"
+                    ],
+                    "example": "native"
                 }
             }
         },
@@ -2193,20 +1831,6 @@ const docTemplate = `{
                 },
                 "write": {
                     "type": "boolean"
-                }
-            }
-        },
-        "internal_api.objectStorageBrowseRequest": {
-            "type": "object",
-            "required": [
-                "engine_id"
-            ],
-            "properties": {
-                "engine_id": {
-                    "type": "integer"
-                },
-                "prefix": {
-                    "type": "string"
                 }
             }
         }

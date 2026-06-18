@@ -1,7 +1,5 @@
 package models
 
-import "time"
-
 // InvalidEngineDetail - 无效引擎详情
 type InvalidEngineDetail struct {
 	EngineID      uint   `json:"engine_id"`
@@ -29,15 +27,6 @@ type MeilisearchRecordInfo struct {
 	Reason    string `json:"reason"`     // 原因(引擎已删除/软删除等)
 }
 
-// MinIOObjectInfo - MinIO 对象信息
-type MinIOObjectInfo struct {
-	Bucket   string    `json:"bucket"`   // bucket 名称
-	Key      string    `json:"key"`      // 对象键(路径)
-	Size     int64     `json:"size"`     // 对象大小(字节)
-	Modified time.Time `json:"modified"` // 最后修改时间
-	Reason   string    `json:"reason"`   // 原因(引擎已删除/过期等)
-}
-
 // MetaCleanupStatistics - Meta模块垃圾数据统计
 type MetaCleanupStatistics struct {
 	// 无效引擎的数据
@@ -58,12 +47,12 @@ type MetaCleanupStatistics struct {
 		ThresholdDays int `json:"threshold_days"` // 过期阈值（天）
 	} `json:"expired_data"`
 
-	// 软删除数据
-	SoftDeleted struct {
+	// 逻辑清理候选：已离开活跃路径、可进入物理清理评估的数据
+	LogicalCleanupCandidates struct {
 		Nodes      int  `json:"nodes"`
 		Items      int  `json:"items"`
 		CanRecover bool `json:"can_recover"`
-	} `json:"soft_deleted"`
+	} `json:"logical_cleanup_candidates"`
 
 	// 重复fingerprint
 	DuplicateFingerprints struct {
@@ -77,23 +66,19 @@ type MetaCleanupStatistics struct {
 		Sample []MeilisearchRecordInfo `json:"sample"`  // 样本记录（最多10条）
 	} `json:"meilisearch_indexes"`
 
-	// MinIO 对象统计
-	MinIOObjects struct {
-		Count          int               `json:"count"`            // 垃圾对象总数
-		TotalSizeBytes int64             `json:"total_size_bytes"` // 总大小(字节)
-		TotalSizeMB    float64           `json:"total_size_mb"`    // 总大小(MB)
-		ByBucket       map[string]int    `json:"by_bucket"`        // 按 bucket 分组统计
-		Sample         []MinIOObjectInfo `json:"sample"`           // 样本对象(最多10条)
-	} `json:"minio_objects"`
+	// 扫描任务定义残留
+	ScanTaskDefinitions struct {
+		Count int `json:"count"`
+	} `json:"scan_task_definitions"`
 }
 
 // MetaCleanupExecuteResult - Meta清理执行结果
 type MetaCleanupExecuteResult struct {
-	DeletedNodes              int      `json:"deleted_nodes"`
-	DeletedItems              int      `json:"deleted_items"`
-	DeletedFingerprints       int      `json:"deleted_fingerprints"`
-	DeletedMeilisearchIndexes int      `json:"deleted_meilisearch_indexes"` // 删除的索引记录数
-	DeletedMinIOObjects       int      `json:"deleted_minio_objects"`       // 删除的对象数
-	FreedSpaceMB              float64  `json:"freed_space_mb"`              // 释放的空间(MB)
-	Errors                    []string `json:"errors"`
+	DeletedNodes                int      `json:"deleted_nodes"`
+	DeletedItems                int      `json:"deleted_items"`
+	DeletedFingerprints         int      `json:"deleted_fingerprints"`
+	DeletedMeilisearchIndexes   int      `json:"deleted_meilisearch_indexes"` // 删除的索引记录数
+	DisabledScanTaskDefinitions int      `json:"disabled_scan_task_definitions"`
+	DeletedScanTaskDefinitions  int      `json:"deleted_scan_task_definitions"`
+	Errors                      []string `json:"errors"`
 }

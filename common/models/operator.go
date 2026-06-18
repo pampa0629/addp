@@ -40,7 +40,7 @@ type ParameterDescriptor struct {
 	DependsOn   string                         `json:"depends_on,omitempty"` // 依赖的参数名 (动态显示)
 	ShowWhen    map[string]interface{}         `json:"show_when,omitempty"`  // 显示条件 (格式: {param_name: value_or_list})
 	Notes       string                         `json:"notes,omitempty"`      // 注意事项/额外说明
-	UIType      string                         `json:"ui_type,omitempty"`    // UI 组件类型 (data_source_cascader/engine_select等)
+	UIType      string                         `json:"ui_type,omitempty"`    // UI 组件类型 (resource_tree_picker/nfs_file_picker等)
 	UIConfig    map[string]interface{}         `json:"ui_config,omitempty"`  // UI 组件配置参数
 }
 

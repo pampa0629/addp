@@ -1,18 +1,24 @@
 package models
 
+import "github.com/addp/common/events"
+
 // CleanupTask - 清理任务元数据
 type CleanupTask struct {
-	TaskID          string     `json:"task_id"`
-	Action          string     `json:"action"`                    // scan/execute
-	TenantID        uint       `json:"tenant_id"`
-	DeleteType      string     `json:"delete_type,omitempty"`    // soft_delete/hard_delete
-	Status          string     `json:"status"`                   // pending/running/completed/timeout/failed
-	ExpectedModules []string   `json:"expected_modules"`
-	RequestedBy     uint       `json:"requested_by"`
-	StartedAt       string     `json:"started_at"`
-	CompletedAt     *string    `json:"completed_at,omitempty"`
-	TimeoutAt       string     `json:"timeout_at"`
-	BasedOnScan     string     `json:"based_on_scan,omitempty"`
+	TaskID          string                 `json:"task_id"`
+	Action          string                 `json:"action"` // scan/execute
+	TenantID        uint                   `json:"tenant_id"`
+	CleanupMode     string                 `json:"cleanup_mode,omitempty"` // logical_cleanup/physical_cleanup
+	TriggerType     string                 `json:"trigger_type"`           // manual/scheduled/event
+	CauseEvent      string                 `json:"cause_event,omitempty"`  // 生命周期触发事件
+	Status          string                 `json:"status"`                 // pending/running/completed/timeout/failed
+	ExpectedModules []string               `json:"expected_modules"`
+	Context         map[string]interface{} `json:"context,omitempty"`
+	ExecutionID     string                 `json:"execution_id,omitempty"`
+	RequestedBy     uint                   `json:"requested_by"`
+	StartedAt       string                 `json:"started_at"`
+	CompletedAt     *string                `json:"completed_at,omitempty"`
+	TimeoutAt       string                 `json:"timeout_at"`
+	BasedOnScan     string                 `json:"based_on_scan,omitempty"`
 }
 
 // TaskStatusResponse - 任务状态响应
@@ -35,14 +41,11 @@ type TaskProgress struct {
 
 // TaskSummary - 任务汇总（仅scan任务）
 type TaskSummary struct {
-	TotalItemsToClean int     `json:"total_items_to_clean"`
-	TotalSizeMB       float64 `json:"total_size_mb"`
-	RiskLevel         string  `json:"risk_level"` // low/medium/high
+	events.CleanupResultSummary
 }
 
 // ExecuteSummary - 执行汇总（execute任务）
 type ExecuteSummary struct {
-	TotalDeleted int     `json:"total_deleted"`
-	FreedSpaceMB float64 `json:"freed_space_mb"`
-	HasErrors    bool    `json:"has_errors"`
+	events.CleanupResultSummary
+	HasErrors bool `json:"has_errors"`
 }

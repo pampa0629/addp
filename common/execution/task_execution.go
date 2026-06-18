@@ -36,7 +36,7 @@ type TaskExecution struct {
 	CurrentStep *string `gorm:"size:255" json:"current_step,omitempty"`                                 // 当前步骤（Orchestrator/Workflow）
 
 	// 触发信息
-	TriggerType string `gorm:"size:50;not null;index:idx_task_executions_trigger_type" json:"trigger_type"` // 'manual'/'scheduled'
+	TriggerType string `gorm:"size:50;not null;index:idx_task_executions_trigger_type" json:"trigger_type"` // 'manual'/'scheduled'/'event'
 	TriggeredBy *int   `json:"triggered_by,omitempty"`                                                      // 触发用户ID
 
 	// JSONB 字段
@@ -97,6 +97,7 @@ const (
 const (
 	TriggerTypeManual    = "manual"
 	TriggerTypeScheduled = "scheduled"
+	TriggerTypeEvent     = "event"
 )
 
 func NormalizeTriggerType(triggerType string) (string, error) {
@@ -105,10 +106,10 @@ func NormalizeTriggerType(triggerType string) (string, error) {
 		return TriggerTypeManual, nil
 	}
 	switch normalized {
-	case TriggerTypeManual, TriggerTypeScheduled:
+	case TriggerTypeManual, TriggerTypeScheduled, TriggerTypeEvent:
 		return normalized, nil
 	default:
-		return "", fmt.Errorf("unsupported trigger_type %q: use manual or scheduled", triggerType)
+		return "", fmt.Errorf("unsupported trigger_type %q: use manual, scheduled or event", triggerType)
 	}
 }
 
@@ -153,6 +154,9 @@ const (
 	TaskTypeKGBuild = "kg_build"
 	// Quality 模块
 	TaskTypeQualityCheck = "check"
+	// System 运维
+	TaskTypeCleanup         = "cleanup"
+	TaskTypeCleanupExecutor = "cleanup_executor"
 )
 
 // CalculateDuration 计算执行时长

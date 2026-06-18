@@ -252,7 +252,9 @@
       "resetSuccess": "Parameters reset",
       "defaultValue": "Default: {value}",
       "inputPlaceholder": "Enter {name}",
-      "dataSourceSelected": "Selected: {name}"
+      "dataSourceSelected": "Selected: {name}",
+      "targetTableName": "Target table name",
+      "targetTableNamePlaceholder": "Enter the table name to create or overwrite"
     },
     "notebook": {
       "listTitle": "Notebook List",

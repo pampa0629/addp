@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -110,6 +111,11 @@ func main() {
 	executionService := service.NewExecutionService(db, taskExecutionRepo) // 使用统一执行表
 	executionService.SetTaskQueue(taskQueue)
 	taskService.SetExecutionService(executionService) // 注入执行服务（避免循环依赖）
+	cleanupService := service.NewTransferCleanupService(db, redisClient, taskExecutionRepo)
+	if err := cleanupService.Start(context.Background()); err != nil {
+		logger.L().Warn("Transfer cleanup service start failed", "error", err)
+	}
+	defer cleanupService.Stop()
 
 	// 初始化 System 客户端（用于审计日志和服务间调用）
 	var systemClient *commonClient.SystemClient
@@ -117,10 +123,8 @@ func main() {
 		systemClient = commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
 		log.Printf("✅ SystemClient 已初始化: %s", cfg.SystemServiceURL)
 	}
-	objectStorageService := service.NewObjectStorageService(systemClient)
-
 	// 设置路由
-	router := api.SetupRouter(taskService, executionService, objectStorageService, cfg.SystemServiceURL, cfg.MetaServiceURL, redisClient, systemClient)
+	router := api.SetupRouter(taskService, executionService, cfg.SystemServiceURL, cfg.MetaServiceURL, redisClient, systemClient)
 
 	serviceHost := utils.GetServiceHost()
 	port := utils.GetModulePort("transfer")
@@ -129,7 +133,14 @@ func main() {
 	// ========== 模块注册（注册到 System service_registry）==========
 	if cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
 		registryClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
-		registryClient.RegisterAndHeartbeat("transfer", serviceURL, "/transfer")
+		registryClient.RegisterAndHeartbeatWithMetadata("transfer", serviceURL, "/transfer", map[string]interface{}{
+			"module": "transfer",
+			"capabilities": map[string]interface{}{
+				"cleanup_executor": map[string]interface{}{
+					"enabled": true,
+				},
+			},
+		})
 	}
 
 	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========

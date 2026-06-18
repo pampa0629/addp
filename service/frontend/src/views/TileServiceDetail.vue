@@ -291,14 +291,19 @@
         <!-- 动态图层配置 -->
         <template v-if="layerForm.layer_type === 'dynamic'">
           <el-form-item :label="t('service.tile.selectTableLabel')">
-            <DataSourceCascader
+            <ResourceTreePicker
               :api-base-url="metaApiBaseUrl"
-              :engine-types="['postgresql', 'mysql', 'doris', 'clickhouse']"
-              :selectable-node-types="['table']"
-              :enable-geometry-detection="true"
-              :require-geometry="true"
-              :show-selection-info="true"
-              @update:selection="handleLayerTableSelection"
+              :engine-types="NATIVE_TABLE_ENGINE_TYPES"
+              mode="item"
+              :node-filter="isNativeTableVisibleNode"
+              :selectable-filter="isNativeTableNode"
+              :show-selection-summary="true"
+              :engine-multiple="true"
+              :select-all-engines-by-default="true"
+              :search-selectable-only="true"
+              :show-disabled-label="false"
+              :show-count="false"
+              @update:model-value="handleLayerTableSelection"
             />
           </el-form-item>
 
@@ -364,7 +369,8 @@ import { Link } from '@element-plus/icons-vue'
 import tileServiceAPI from '@/api/tileService'
 import { TilePreview } from '@common-ui-map'
 import { copyToClipboard } from '../utils/serviceHelper'
-import { DataSourceCascader } from '@common-ui'
+import { ResourceTreePicker, detectTableMetadata, locatorPathFromSelection } from '@common-ui'
+import { NATIVE_TABLE_ENGINE_TYPES, isNativeTableNode, isNativeTableVisibleNode } from '@/utils/resourceSelection'
 
 const router = useRouter()
 const route = useRoute()
@@ -388,6 +394,7 @@ const layerForm = ref({
   enabled: true,
   layer_config: {
     source: {
+      locator: '',
       engine_id: null,
       schema: '',
       table: '',
@@ -410,11 +417,8 @@ const layerForm = ref({
 
 const serviceId = computed(() => route.params.id)
 
-// Service API 基础 URL（用于 DataSourceCascader）
-// 开发环境：通过 Vite proxy 代理到 Gateway (localhost:8000)
-// 生产环境：直接访问 Gateway
 const metaApiBaseUrl = computed(() => {
-  return '/api/v1/service'
+  return '/api/v1/meta'
 })
 
 // 计算服务端点
@@ -683,6 +687,7 @@ const resetLayerForm = () => {
     enabled: true,
     layer_config: {
       source: {
+        locator: '',
         engine_id: null,
         schema: '',
         table: '',
@@ -705,12 +710,13 @@ const resetLayerForm = () => {
   layerFormSpatialMetadata.value = null
 }
 
-// 处理表选择（DataSourceCascader 回调）
-const handleLayerTableSelection = (selection) => {
+// 处理表选择（ResourceTreePicker 回调）
+const handleLayerTableSelection = async (selection) => {
   console.log('[TileServiceDetail] Layer table selection:', selection)
 
   if (!selection) {
     // 清空选择
+    layerForm.value.layer_config.source.locator = ''
     layerForm.value.layer_config.source.engine_id = null
     layerForm.value.layer_config.source.schema = ''
     layerForm.value.layer_config.source.table = ''
@@ -720,25 +726,33 @@ const handleLayerTableSelection = (selection) => {
     return
   }
 
+  const path = locatorPathFromSelection(selection)
+
   // 更新表单字段
-  layerForm.value.layer_config.source.engine_id = selection.engineId
-  layerForm.value.layer_config.source.schema = selection.schema
-  layerForm.value.layer_config.source.table = selection.tableName
+  layerForm.value.layer_config.source.locator = selection.identity?.locator || ''
+  layerForm.value.layer_config.source.engine_id = selection.identity?.engine_id
+  layerForm.value.layer_config.source.schema = path[0] || ''
+  layerForm.value.layer_config.source.table = path[path.length - 1] || selection.display?.label || ''
+
+  const geometry = await detectTableMetadata('/api/v1/meta', {
+    locator: layerForm.value.layer_config.source.locator,
+    item_id: selection.identity?.item_id
+  })
 
   // 如果检测到几何列，自动填充
-  if (selection.hasGeometry) {
-    layerForm.value.layer_config.source.geometry_column = selection.geometryColumn
-    layerForm.value.layer_config.source.srid = selection.srid || 4326
+  if (geometry.has_geometry) {
+    layerForm.value.layer_config.source.geometry_column = geometry.geometry_column
+    layerForm.value.layer_config.source.srid = geometry.srid || 4326
 
     layerFormSpatialMetadata.value = {
       hasGeometry: true,
-      geometryColumn: selection.geometryColumn,
-      srid: selection.srid || 4326,
-      geometryTypes: selection.geometryType ? [selection.geometryType] : [],
-      extent: selection.extent
+      geometryColumn: geometry.geometry_column,
+      srid: geometry.srid || 4326,
+      geometryTypes: geometry.geometry_types || [],
+      extent: geometry.extent
     }
 
-    ElMessage.success(t('service.tile.spatialDetectedMsg', { column: selection.geometryColumn }))
+    ElMessage.success(t('service.tile.spatialDetectedMsg', { column: geometry.geometry_column }))
   } else {
     layerFormSpatialMetadata.value = { hasGeometry: false }
     ElMessage.warning(t('service.tile.noSpatialWarning'))

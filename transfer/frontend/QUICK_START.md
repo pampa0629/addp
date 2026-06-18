@@ -7,7 +7,7 @@
 | 功能 | 描述 | 文件 |
 |------|------|------|
 | **任务创建向导** | 7步可视化流程，无需手写JSON | [TaskWizard.vue](src/views/TaskWizard.vue) |
-| **数据源选择器** | 从System模块选择已配置资源 | TaskWizard.vue (内置) |
+| **资源树选择器** | 从 Meta 资源树中选择已配置资源 | TaskWizard.vue (内置) |
 | **字段映射编辑器** | 自动同名匹配 + 手动调整 | [FieldMappingEditor.vue](src/components/FieldMappingEditor.vue) |
 | **Cron表达式生成器** | 13个预设 + 自定义配置 | [CronBuilderDialog.vue](src/components/CronBuilderDialog.vue) |
 | **类型化配置表单** | PostgreSQL/MySQL/CSV/S3 专属表单 | TaskWizard.vue (动态表单) |
@@ -34,13 +34,13 @@ cd /Users/pampa/code/addp
   └─ 填写名称、选择类型、设置调度
 
 ② 选择源
-  └─ 选择PostgreSQL → 从下拉框选择已配置的数据库
+  └─ 选择PostgreSQL → 从资源树中选择可传输的数据项
 
 ③ 配置源
   └─ 输入SQL查询：SELECT * FROM users
 
 ④ 选择目标
-  └─ 选择CSV → 从下拉框选择MinIO存储
+  └─ 选择CSV → 从资源树中选择目标父节点
 
 ⑤ 配置目标
   └─ 输入路径：exports/users.csv
@@ -65,8 +65,8 @@ cd /Users/pampa/code/addp
 **特点**：
 - ✅ 7步分步引导
 - ✅ 每步验证，减少错误
-- ✅ 从System模块加载数据源
-- ✅ 动态表单（根据连接器类型）
+- ✅ 从 Meta 资源树加载资源
+- ✅ 动态表单（根据任务类型）
 
 ---
 
@@ -172,7 +172,7 @@ src/
 
 ### 新版（TaskWizard.vue）
 ```
-[选择数据源] ← 下拉框，从System模块加载
+[选择数据源] ← 资源树，从 Meta 资源树选择可用资源
 [查询方式]   ← 单选按钮（表/SQL）
 [SQL查询]    ← 语法高亮文本框
 [增量字段]   ← 输入框 + 提示
@@ -197,7 +197,7 @@ src/
 
 **快速测试**：
 ```bash
-# 1. 确保System模块有数据源
+# 1. 确保 Meta 中有可用资源树数据
 curl -H "Authorization: Bearer $TOKEN" \
   http://localhost:8180/api/engines
 

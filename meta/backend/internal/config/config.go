@@ -22,12 +22,6 @@ type Config struct {
 	MeilisearchMasterKey  string
 	MeilisearchAssetIndex string
 
-	// MinIO 配置（Infra MinIO，用于清理）
-	MinioEndpoint  string
-	MinioAccessKey string
-	MinioSecretKey string
-	MinioUseSSL    bool
-
 	// Redis 配置（用于资源变更事件同步和任务队列）
 	RedisHost     string
 	RedisPort     string
@@ -80,12 +74,6 @@ func LoadConfig() *Config {
 	cfg.MeilisearchURL = resolveMeilisearchURL()
 	cfg.MeilisearchMasterKey = commonConfig.GetEnv("MEILISEARCH_MASTER_KEY", "")
 	cfg.MeilisearchAssetIndex = commonConfig.GetEnv("MEILISEARCH_ASSET_INDEX", "assets")
-
-	// MinIO 配置（Infra MinIO）
-	cfg.MinioEndpoint = commonConfig.GetEnv("META_MINIO_ENDPOINT", "localhost:19000")
-	cfg.MinioAccessKey = commonConfig.GetEnv("META_MINIO_ACCESS_KEY", "minioadmin")
-	cfg.MinioSecretKey = commonConfig.GetEnv("META_MINIO_SECRET_KEY", "minioadmin")
-	cfg.MinioUseSSL = commonConfig.GetEnvBool("META_MINIO_USE_SSL", false)
 
 	// Redis 配置
 	cfg.RedisHost = commonConfig.GetEnv("REDIS_HOST", "localhost")

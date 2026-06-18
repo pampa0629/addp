@@ -18,7 +18,8 @@ func TestValidateNewTaskConfigAcceptsRawCopy(t *testing.T) {
 			"format":         string(format.FormatPDF),
 		},
 		"target": map[string]interface{}{
-			"locator":        "addp://engine/2/path/backup/a.pdf?type=file",
+			"parent_locator": "addp://engine/2/path/backup?type=directory",
+			"name":           "a.pdf",
 			"representation": "encoded",
 			"policy":         map[string]interface{}{"write_mode": "overwrite"},
 		},
@@ -38,7 +39,8 @@ func TestValidateNewTaskConfigStillAcceptsTableTransfer(t *testing.T) {
 			"representation": "native",
 		},
 		"target": map[string]interface{}{
-			"locator":        "addp://engine/2/path/exports/roads.csv?type=file",
+			"parent_locator": "addp://engine/2/path/exports?type=directory",
+			"name":           "roads.csv",
 			"data_type":      "table",
 			"representation": "encoded",
 			"format":         string(format.FormatCSV),

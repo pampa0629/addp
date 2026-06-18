@@ -7,16 +7,7 @@ export { default as StorageEngineForm } from './components/StorageEngineForm.vue
 export { default as EngineForm } from './components/EngineForm.vue'
 export { default as ImagePreview } from './components/ImagePreview.vue'
 export { default as ResourceTree } from './components/ResourceTree.vue'
-
-// Data Source Selector Components
-export { default as DataSourceSelector } from './components/DataSourceSelector.vue'
-export { default as DataSourceSelectorDialog } from './components/DataSourceSelectorDialog.vue'
-export { default as DataSourceSelectorCard } from './components/DataSourceSelectorCard.vue'
-
-// Data Source Cascader Components (级联选择器)
-export { default as DataSourceCascader } from './components/DataSourceCascader.vue'
-export { default as DataSourceCascaderDialog } from './components/DataSourceCascaderDialog.vue'
-export { default as DataSourceCascaderCard } from './components/DataSourceCascaderCard.vue'
+export { default as ResourceTreePicker } from './components/ResourceTreePicker.vue'
 
 // Schedule Components
 export { default as ScheduleConfig } from './components/ScheduleConfig.vue'
@@ -36,27 +27,19 @@ export * from './types/index'
 export * from './types/tree'
 // resourceLocator 已经通过 types/index 导出，无需重复
 
-// Data Source API (显式导出，避免命名冲突)
-export {
-  getEngines,
-  getEngineTree,
-  getNodeChildren,
-  detectTableMetadata,
-  extractDataSourceSelection,
-  parseLocator
-} from './api/dataSource'
+// Resource capability APIs
+export { detectTableMetadata } from './api/resourceCapability'
 
-// System Catalog API
+// Resource Tree API
 export {
-  normalizeCatalogPath,
-  listCatalogChildren,
-  listCatalogBrowserNodes,
-  browserPathToCatalogPath,
-  catalogPathToString,
-  catalogNodesFromResponse,
-  toCatalogBrowserNode,
-  catalogNodeBrowserType
-} from './api/catalog'
+  getResourceTree,
+  getResourceTreeAncestors,
+  getResourceTreeNode,
+  listResourceTreeEngines,
+  refreshResourceTreeNode,
+  searchResourceTree,
+  selectionFromResourceTreeNode
+} from './api/resourceTree'
 
 // Composables - Authentication
 export {

@@ -38,6 +38,12 @@ type Config struct {
 	// SQL 执行配置
 	DefaultQueryTimeout int // 默认查询超时(秒)
 	MaxQueryTimeout     int // 最大查询超时(秒)
+
+	// Redis 配置（cleanup request/result）
+	RedisHost     string
+	RedisPort     string
+	RedisPassword string
+	RedisDB       int
 }
 
 func Load() *Config {
@@ -87,6 +93,12 @@ func Load() *Config {
 		// SQL 执行配置
 		DefaultQueryTimeout: getEnvAsInt("DEFAULT_QUERY_TIMEOUT", 30), // 30秒
 		MaxQueryTimeout:     getEnvAsInt("MAX_QUERY_TIMEOUT", 300),    // 5分钟
+
+		// Redis 配置
+		RedisHost:     getEnv("REDIS_HOST", "localhost"),
+		RedisPort:     getEnv("REDIS_PORT", "16379"),
+		RedisPassword: getEnv("REDIS_PASSWORD", ""),
+		RedisDB:       getEnvAsInt("REDIS_DB", 0),
 	}
 }
 

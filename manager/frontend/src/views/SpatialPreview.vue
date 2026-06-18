@@ -1,15 +1,25 @@
 <template>
   <div class="page">
     <div class="toolbar">
-      <div class="field">{{ schema }}.{{ table }}</div>
+      <div class="field">{{ sourceLabel }}</div>
       <div class="spacer" />
       <div v-if="quickViewStatus" class="quick-view-actions">
-        <span v-if="quickViewStatus.can_use_quick_view" class="status-text">
-          {{ quickViewStatusText }}
-        </span>
-        <span v-else-if="!quickViewStatus.can_generate_tile_cache" class="status-text muted">
-          {{ quickViewStatus.unavailable_reason || t('manager.spatialPreview.quickViewUnavailable') }}
-        </span>
+        <el-tooltip
+          v-if="quickViewStatus.can_use_quick_view"
+          :content="quickViewStatusText"
+          placement="bottom"
+          :show-after="300"
+        >
+          <el-icon class="quick-view-status-icon is-success"><Select /></el-icon>
+        </el-tooltip>
+        <el-tooltip
+          v-else-if="!quickViewStatus.can_generate_tile_cache"
+          :content="quickViewUnavailableText"
+          placement="bottom"
+          :show-after="300"
+        >
+          <el-icon class="quick-view-status-icon is-info"><InfoFilled /></el-icon>
+        </el-tooltip>
         <el-button
           v-if="isQuickViewActive"
           size="small"
@@ -59,10 +69,10 @@
       <VectorTilePreview
         v-else-if="ready && isQuickViewActive && isTileQuickView"
         :locator="locator"
-        :engine-id="engineId"
-        :schema="schema"
-        :table="table"
-        :geom="geom"
+        :engine-id="sourceContext.engineId"
+        :schema="sourceContext.schema"
+        :table="sourceContext.table"
+        :geom="sourceGeometryColumn"
         :cols="cols"
         :tile-url-template="quickViewStatus?.quick_view?.tile_url_template || ''"
         :tile-render-info="quickViewStatus?.quick_view || {}"
@@ -93,6 +103,8 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { InfoFilled, Select } from '@element-plus/icons-vue'
+import { formatLocatorDisplayPath } from '@addp/common-frontend'
 import VectorTilePreview from '@/components/map/VectorTilePreview.vue'
 import GeoJSONQuickView from '@/components/map/GeoJSONQuickView.vue'
 import { quickViewAPI } from '@/api/quickView'
@@ -102,6 +114,7 @@ import {
   quickViewTileAdvisoryMessage as tileAdvisoryMessage,
   shouldShowQuickViewTileAdvisoryNotice
 } from '@/utils/quickViewTileAdvisory'
+import { quickViewReasonText } from '@/utils/quickViewReasonText'
 import {
   buildQuickViewOptimizationCreateQuery,
   buildTileCacheCreateQuery
@@ -112,15 +125,17 @@ const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 
-const engineId = computed(() => Number(route.query.engine_id || route.query.engineId || 0))
-const schema = computed(() => String(route.query.schema || 'public'))
-const table = computed(() => String(route.query.table || ''))
 const locator = computed(() => String(route.query.locator || '').trim())
 const itemId = computed(() => Number(route.query.item_id || route.query.itemId || 0))
-const geom = computed(() => route.query.geom ? String(route.query.geom) : '')
 const cols = computed(() => String(route.query.cols || '').split(',').filter(Boolean))
 const ready = computed(() => !!locator.value)
 const quickViewStatus = ref(null)
+const sourceContext = ref({
+  engineId: 0,
+  schema: '',
+  table: '',
+  geometryColumn: ''
+})
 const activePreviewMode = ref('table_geojson')
 const quickViewTileAdvisory = ref(null)
 const quickViewTileLastNotice = ref({ key: '', at: 0 })
@@ -128,6 +143,18 @@ const quickViewRenderSource = computed(() => String(
   quickViewStatus.value?.render_source || quickViewStatus.value?.quick_view?.render_source || ''
 ).trim())
 const isTileQuickView = computed(() => ['cached_tile', 'realtime_tile'].includes(quickViewRenderSource.value))
+const sourceGeometryColumn = computed(() => String(
+  quickViewStatus.value?.quick_view?.geometry_column ||
+  sourceContext.value.geometryColumn ||
+  ''
+).trim())
+const sourceLabel = computed(() => {
+  const schema = String(sourceContext.value.schema || '').trim()
+  const table = String(sourceContext.value.table || '').trim()
+  if (schema && table) return `${schema}.${table}`
+  const parsed = quickViewStatus.value?.locator || locator.value
+  return formatLocatorDisplayPath(parsed) || locator.value
+})
 const isQuickViewActive = computed(() => {
   return activePreviewMode.value === 'quick_view' && !!quickViewStatus.value?.can_use_quick_view
 })
@@ -149,6 +176,12 @@ const quickViewStatusText = computed(() => {
   }
   return t('manager.spatialPreview.quickViewReady')
 })
+
+const quickViewUnavailableText = computed(() => {
+  return quickViewReasonText(t, quickViewStatus.value?.unavailable_reason) ||
+    t('manager.spatialPreview.quickViewUnavailable')
+})
+
 const showQuickViewOptimizationAction = computed(() => {
   const realtime = quickViewStatus.value?.realtime_tile || {}
   const optimization = quickViewStatus.value?.optimization || {}
@@ -212,6 +245,12 @@ const loadQuickViewStatus = async () => {
   if (!ready.value) return
   try {
     quickViewStatus.value = await quickViewAPI.getQuickViewCapabilityByLocator(locator.value)
+    sourceContext.value = {
+      engineId: Number(quickViewStatus.value?.source_engine_id || 0),
+      schema: String(quickViewStatus.value?.source_schema || '').trim(),
+      table: String(quickViewStatus.value?.source_table || '').trim(),
+      geometryColumn: String(quickViewStatus.value?.quick_view?.geometry_column || '').trim()
+    }
     quickViewTileAdvisory.value = null
     quickViewTileLastNotice.value = { key: '', at: 0 }
     if (quickViewStatus.value?.preferred_mode === 'quick_view' && quickViewStatus.value?.can_use_quick_view) {
@@ -264,12 +303,12 @@ const openQuickViewOptimizationCreate = () => {
 }
 
 const spatialPreviewNavigationTarget = () => ({
-  engineId: engineId.value,
-  schema: schema.value,
-  table: table.value,
+  engineId: sourceContext.value.engineId,
+  schema: sourceContext.value.schema,
+  table: sourceContext.value.table,
   locator: locator.value,
   itemID: itemId.value,
-  geometryColumn: geom.value
+  geometryColumn: sourceGeometryColumn.value
 })
 
 const handleTileAdvisory = (advisory) => {
@@ -286,10 +325,11 @@ onMounted(() => {
   loadQuickViewStatus()
   loadBasicPreview()
 })
-watch([engineId, schema, table, locator], () => {
+watch(locator, () => {
   activePreviewMode.value = 'table_geojson'
   basicPreviewRequestSeq += 1
   basicPreviewData.value = null
+  sourceContext.value = { engineId: 0, schema: '', table: '', geometryColumn: '' }
   loadQuickViewStatus()
   loadBasicPreview()
 })
@@ -303,6 +343,16 @@ watch([engineId, schema, table, locator], () => {
 .preview-main { flex: 1; min-height: 0; }
 .basic-preview-empty { height: 100%; display: flex; align-items: center; justify-content: center; }
 .quick-view-actions { display: flex; align-items: center; gap: 10px; }
-.status-text { font-size: 13px; color: var(--addp-text-secondary); }
-.status-text.muted { color: var(--addp-text-tertiary); }
+.quick-view-status-icon {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 24px;
+  font-size: 16px;
+  cursor: help;
+}
+.quick-view-status-icon.is-success { color: var(--el-color-success); }
+.quick-view-status-icon.is-info { color: var(--el-color-info); }
 </style>

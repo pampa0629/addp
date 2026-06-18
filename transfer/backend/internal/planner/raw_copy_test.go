@@ -99,7 +99,8 @@ func minimalRawCopySpec() RawCopyTaskSpec {
 			Format:         format.FormatPDF,
 		},
 		Target: EndpointSpec{
-			Locator:        "addp://engine/2/path/backup/a.pdf?type=file",
+			ParentLocator:  "addp://engine/2/path/backup?type=directory",
+			Name:           "a.pdf",
 			DataType:       "document",
 			Representation: representationEncoded,
 			Format:         format.FormatPDF,

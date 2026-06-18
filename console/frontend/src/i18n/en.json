@@ -287,7 +287,7 @@
         "engines": "Engines",
         "applications": "Applications",
         "logs": "Audit Logs",
-        "cleanup": "Cleanup"
+        "cleanup": "Resource Reclaim"
       }
     }
   }

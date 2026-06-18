@@ -52,7 +52,8 @@ Transfer API / Frontend
     "representation": "native"
   },
   "target": {
-    "locator": "addp://engine/2/path/bucket/exports/roads.shp?type=object",
+    "parent_locator": "addp://engine/2/path/bucket/exports?type=prefix",
+    "name": "roads.shp",
     "data_type": "table",
     "representation": "encoded",
     "format": "shapefile",
@@ -75,7 +76,8 @@ Transfer API / Frontend
 
 关键规则：
 
-- `locator` 使用 common resource tree 的 ResourceLocator URI，包含 engine id、catalog path 和 `type`。
+- `source.locator` 使用 common resource tree 的 ResourceLocator URI，指向已存在资源。
+- `target.parent_locator` 指向已存在父 node，`target.name` 表达待写入资源名；target 不提交待创建资源的虚拟 locator。
 - `data_type` 稳定支持 `table`；`document`、`media`、`unknown` 已支持 encoded single raw copy。
 - `representation` 支持 `native` 和 `encoded`。
 - `format` 只用于 encoded endpoint。

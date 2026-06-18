@@ -67,7 +67,7 @@
               <span>{{ t('system.layout.auditLogs') }}</span>
             </el-menu-item>
             <el-menu-item index="/cleanup" @click="handleMenuClick('system', 'cleanup')">
-              <el-icon><Delete /></el-icon>
+              <el-icon><Refresh /></el-icon>
               <span>{{ t('system.layout.cleanup') }}</span>
             </el-menu-item>
           </el-sub-menu>
@@ -95,7 +95,7 @@ import {
   Connection,
   HomeFilled,
   Key,
-  Delete
+  Refresh
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'

@@ -2,9 +2,7 @@ package models
 
 // DataQueryRequest 数据查询请求
 type DataQueryRequest struct {
-	EngineID     uint     `json:"engine_id" binding:"required"`
-	Schema       string   `json:"schema" binding:"required"`
-	Table        string   `json:"table" binding:"required"`
+	Locator      string   `json:"locator" binding:"required"`
 	Columns      []string `json:"columns,omitempty"`       // 指定列，为空表示全部列
 	Filter       string   `json:"filter,omitempty"`        // WHERE 条件（需要防 SQL 注入）
 	OrderBy      string   `json:"order_by,omitempty"`      // 排序字段
@@ -33,9 +31,7 @@ type ColumnInfo struct {
 
 // AggregationRequest 聚合查询请求
 type AggregationRequest struct {
-	EngineID   uint              `json:"engine_id" binding:"required"`
-	Schema     string            `json:"schema" binding:"required"`
-	Table      string            `json:"table" binding:"required"`
+	Locator    string            `json:"locator" binding:"required"`
 	GroupBy    []string          `json:"group_by,omitempty"` // 分组字段
 	Aggregates []AggregateColumn `json:"aggregates"`         // 聚合列
 	Filter     string            `json:"filter,omitempty"`   // WHERE 条件

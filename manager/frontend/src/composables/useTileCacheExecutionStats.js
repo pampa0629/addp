@@ -85,6 +85,7 @@ export function useTileCacheExecutionStats({ t, metadata }) {
       return {
         visible: tileStatsAvailable.value,
         type: 'info',
+        label: t('manager.tileCache.statsCheckIncompleteTitle'),
         message: t('manager.tileCache.statsCheckIncomplete')
       }
     }
@@ -98,6 +99,7 @@ export function useTileCacheExecutionStats({ t, metadata }) {
       return {
         visible: true,
         type: 'warning',
+        label: t('manager.tileCache.statsCheckInvalidTitle'),
         message: t('manager.tileCache.statsCheckInvalid')
       }
     }
@@ -107,6 +109,7 @@ export function useTileCacheExecutionStats({ t, metadata }) {
       return {
         visible: true,
         type: 'warning',
+        label: t('manager.tileCache.statsCheckMismatchTitle'),
         message: t('manager.tileCache.statsCheckMismatch', {
           processed: formatInteger(processed),
           classified: formatInteger(classified)
@@ -117,6 +120,7 @@ export function useTileCacheExecutionStats({ t, metadata }) {
     return {
       visible: true,
       type: 'success',
+      label: t('manager.tileCache.statsCheckMatchedTitle'),
       message: t('manager.tileCache.statsCheckMatched', {
         processed: formatInteger(processed),
         classified: formatInteger(classified)

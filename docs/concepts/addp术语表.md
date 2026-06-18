@@ -79,6 +79,19 @@
 | ad-hoc execution | 一次性执行 | 不依赖持久任务定义、直接按本次配置创建的 execution。 | 可以没有 `source_task_id`，但必须在 `execution_config` 保存完整执行配置。 |
 | artifact state | 产物状态 | 描述派生产物当前是否可用、在哪里、由什么配置生成的状态对象。 | 例如瓦片缓存产物、embedding vectors；不是 execution。 |
 
+## Cleanup 与生命周期
+
+| 英文术语 | 中文术语 | 定义 | 备注 |
+|---|---|---|---|
+| cleanup | 系统级资源清理 | ADDP 中面向源事实、派生产物、物理产物、运行时缓存和任务定义残留的系统级清理与生命周期回收体系。 | 不是单一模块的“垃圾数据删除”；规范见 `docs/spec/addp-cleanup体系规范.md`。 |
+| cleanup coordinator | 清理协调方 | 发起 cleanup request、记录任务元信息、汇总模块结果并展示审计的角色。 | 当前由 System 承担；不执行模块私有资源清理。 |
+| cleanup executor | 清理执行方 | 扫描和清理本模块 owner 范围内资源，并写回 cleanup result 的角色。 | Meta、Manager、Transfer 等模块按 owner 范围分别承担。 |
+| cleanup request | 清理请求 | coordinator 发布的中性清理请求。 | 不携带模块私有表结构、bucket prefix 或物理删除规则。 |
+| cleanup result | 清理结果 | executor 写回的模块级清理结果。 | 包含通用摘要和模块私有统计。 |
+| owner module | 归属模块 | 某个事实、产物、任务定义或物理资源生命周期归属的模块。 | cleanup 责任跟随 owner module，不跟随触发事件来源。 |
+| physical artifact | 物理产物 | 可删除的实际存储资源。 | 例如对象存储 key、PG 派生对象、向量行、缓存 key。 |
+| lifecycle event | 生命周期事件 | 表示 engine、tenant、item 或配置发生生命周期变化的中性事件。 | 各模块独立消费并处理自身 owner 范围内资源。 |
+
 ## 能力与读取
 
 | 英文术语 | 中文术语 | 定义 | 备注 |

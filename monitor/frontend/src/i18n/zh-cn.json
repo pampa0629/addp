@@ -13,7 +13,10 @@
     },
     "execution": {
       "title": "执行记录查询",
+      "system_module": "系统运维",
       "filter": {
+        "preset": "预设",
+        "preset_placeholder": "选择预设",
         "module": "模块",
         "module_placeholder": "全部模块",
         "task_type": "任务类型",
@@ -30,6 +33,14 @@
         "search": "查询",
         "reset": "重置"
       },
+      "preset": {
+        "all": "全部执行",
+        "cleanup_system": "资源回收执行"
+      },
+      "task_type_names": {
+        "cleanup": "资源回收",
+        "cleanup_executor": "资源回收执行器"
+      },
       "status": {
         "pending": "等待中",
         "running": "运行中",
@@ -40,7 +51,8 @@
       },
       "trigger": {
         "manual": "手动",
-        "scheduled": "定时"
+        "scheduled": "定时",
+        "event": "事件"
       },
       "detail": {
         "title": "执行详情",

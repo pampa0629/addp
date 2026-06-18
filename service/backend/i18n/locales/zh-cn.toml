@@ -4,17 +4,8 @@ other = "服务名称已存在，请使用其他名称"
 [service.err.layer_required]
 other = "必须提供第一个图层配置"
 
-[service.err.missing_params]
-other = "缺少必要参数: engine_id, schema, table"
-
-[service.err.invalid_engine_id]
-other = "无效的引擎ID"
-
 [service.err.unsupported_type]
 other = "不支持的服务类型"
-
-[service.err.get_engines_failed]
-other = "获取引擎列表失败"
 
 [service.err.missing_ref]
 other = "缺少 ref 参数"

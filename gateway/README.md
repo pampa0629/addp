@@ -50,9 +50,9 @@ Gateway 根据 URL 路径前缀自动路由请求：
 | `/api/system/applications/*` | System | http://localhost:8180 | API Key | 无 | 应用管理 |
 | `/api/manager/engines/*` | Manager | http://localhost:8081 | API Key | ✅ 移除 `/manager` | 引擎数据访问 |
 | `/api/manager/preview/*` | Manager | http://localhost:8081 | API Key | ✅ 移除 `/manager` | 数据预览 |
-| `/api/manager/tree/*` | Manager | http://localhost:8081 | API Key | ✅ 移除 `/manager` | 目录树 |
 | `/api/meta/engines/*` | Meta | http://localhost:8082 | API Key | 无 | 引擎列表 |
 | `/api/meta/scan/*` | Meta | http://localhost:8082 | API Key | 无 | 元数据扫描 |
+| `/api/meta/resource-tree/*` | Meta | http://localhost:8082 | API Key | 无 | 资源树 |
 | `/api/transfer/tasks/*` | Transfer | http://localhost:8083 | API Key | 无 | 传输任务 |
 | `/api/transfer/executions/*` | Transfer | http://localhost:8083 | API Key | 无 | 任务执行 |
 | `/api/develop/engines/*` | Develop | http://localhost:8084 | API Key | 无 | 引擎列表 |

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/preview"
 	"github.com/addp/manager/internal/service"
@@ -101,6 +102,39 @@ func TestQuickViewFeatureCollectionUsesRequestedGeometryColumn(t *testing.T) {
 	}
 	if _, exists := properties["geom"]; exists {
 		t.Fatal("geometry column leaked into feature properties")
+	}
+}
+
+func TestQuickViewSourceFromPreviewCarriesCRSDefinition(t *testing.T) {
+	definition := &datatype.CRSDefinition{
+		ID:                 "ADDP:CRS:custom",
+		DefinitionEncoding: datatype.CRSDefinitionEncodingESRIWKT,
+		Definition:         `PROJCS["Custom_CRS"]`,
+		Source:             datatype.CRSDefinitionSourceSidecarPRJ,
+	}
+	tablePreview := &models.TablePreview{
+		EngineID:            26,
+		EngineType:          "nfs",
+		GeometryColumn:      "geometry",
+		GeometryColumns:     []string{"geometry"},
+		SourceCRS:           definition.ID,
+		SourceCRSDefinition: definition,
+		Extent:              []float64{1, 2, 3, 4},
+		Total:               127,
+	}
+
+	source := quickViewSourceFromPreview(
+		"addp://engine/26/path/shp/custom-crs.shp?type=file&item_id=99",
+		nil,
+		&preview.PreviewResult{},
+		tablePreview,
+	)
+
+	if source.SpatialMeta == nil {
+		t.Fatal("SpatialMeta is nil")
+	}
+	if source.SpatialMeta.SourceCRS != definition.ID || source.SpatialMeta.SourceCRSDefinition != definition {
+		t.Fatalf("CRS = %q/%#v, want %q/%#v", source.SpatialMeta.SourceCRS, source.SpatialMeta.SourceCRSDefinition, definition.ID, definition)
 	}
 }
 

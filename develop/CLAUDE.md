@@ -213,7 +213,7 @@ Python Workflow Engine 在内存中处理空间数据（GeoDataFrame）：
 
 ### 4. 与其他模块的交互
 
-- **System 模块** - 获取数据库连接信息（解密后的 ConnectionInfo）
+- **System / 控制面** - 获取数据库连接信息（解密后的 ConnectionInfo）
 - **Python Workflow/Spark Engine** - 执行空间计算工作流（提供算子）
 - **Jupyter Engine** - 执行 Python 代码和数据分析
 

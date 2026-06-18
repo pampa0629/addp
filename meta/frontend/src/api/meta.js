@@ -1,9 +1,4 @@
 import client from './client'
-import {
-  listCatalogChildren as listSystemCatalogChildren,
-  normalizeCatalogPath,
-  toCatalogBrowserNode
-} from '@common-ui'
 
 export default {
   // 统计
@@ -20,7 +15,7 @@ export default {
     return client.post('/meta/scan', data)
   },
 
-  // 获取引擎列表（从System模块）
+  // 获取引擎列表（从系统控制面）
   getResources() {
     return client.get('/meta/engines')
   },
@@ -47,7 +42,7 @@ export default {
     })
   },
 
-  // 获取指定引擎的实时 catalog 子节点（System 统一控制面）
+  // 获取指定引擎的实时 catalog 子节点（系统控制面）
   listCatalogChildren(engineId, path = { segments: [] }, options = {}) {
     return listSystemCatalogChildren(client, engineId, path, options)
   },
@@ -127,6 +122,72 @@ export default {
         engine_id: engineId
       })
   }
+}
+
+async function listSystemCatalogChildren(engineId, path = { segments: [] }, options = {}) {
+  const res = await client.post(`/system/engines/${engineId}/catalog/children`, {
+    path: normalizeCatalogPath(path),
+    options
+  })
+  if (Array.isArray(res?.nodes)) return res.nodes
+  if (Array.isArray(res?.data?.nodes)) return res.data.nodes
+  if (Array.isArray(res)) return res
+  return []
+}
+
+function normalizeCatalogPath(path = { segments: [] }) {
+  return {
+    segments: [],
+    ...path,
+    segments: Array.isArray(path?.segments) ? path.segments : []
+  }
+}
+
+function toCatalogBrowserNode(node) {
+  const nodePath = catalogPathToString(node.path) || node.name
+  const type = catalogNodeBrowserType(node)
+  return {
+    name: node.name,
+    schema_name: node.name,
+    path: nodePath,
+    catalog_path: node.path,
+    term: node.term,
+    kind: node.kind,
+    role: node.role,
+    type,
+    node_type: type,
+    is_container: node.role === 'branch',
+    is_item: node.role === 'leaf',
+    size_bytes: node.storage?.size_bytes ?? node.table?.size_bytes,
+    table: node.table,
+    storage: node.storage,
+    leaf_count: node.leaf_count,
+    updated_at: node.updated_at,
+    file_type: type === 'file' || type === 'object' ? fileExtension(node.name) : ''
+  }
+}
+
+function catalogPathToString(path) {
+  const segments = Array.isArray(path?.segments) ? path.segments : []
+  return segments.map(segment => segment.name).filter(Boolean).join('/')
+}
+
+function catalogNodeBrowserType(node) {
+  if (['bucket', 'root', 'prefix', 'object', 'file'].includes(node.kind)) {
+    return node.kind
+  }
+  if (node.kind === 'namespace') {
+    return node.term || 'namespace'
+  }
+  if (node.role === 'branch') {
+    return node.term || 'prefix'
+  }
+  return node.term || 'object'
+}
+
+function fileExtension(name = '') {
+  const index = name.lastIndexOf('.')
+  return index >= 0 ? name.slice(index) : ''
 }
 
 function findCatalogRootNode(tree) {

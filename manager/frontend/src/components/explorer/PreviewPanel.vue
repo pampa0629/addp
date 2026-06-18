@@ -100,26 +100,26 @@
               v-if="quickViewStatus?.can_use_quick_view"
               size="small"
               type="success"
-              class="quick-view-status"
+              class="quick-view-status-badge"
             >
-              {{ quickViewStatusText }}
+              <el-icon><Select /></el-icon>
             </el-tag>
-            <el-tag
+            <el-tooltip
               v-else-if="quickViewStatus && !quickViewStatus.can_generate_tile_cache"
-              size="small"
-              type="info"
-              class="quick-view-status"
+              :content="quickViewUnavailableText"
+              placement="bottom"
+              :show-after="300"
             >
-              {{ quickViewStatus.unavailable_reason || t('manager.spatialPreview.quickViewUnavailable') }}
-            </el-tag>
-            <el-tag
+              <el-icon class="quick-view-status-icon is-info"><InfoFilled /></el-icon>
+            </el-tooltip>
+            <el-tooltip
               v-else-if="quickViewLoadError"
-              size="small"
-              type="danger"
-              class="quick-view-status"
+              :content="quickViewLoadError"
+              placement="bottom"
+              :show-after="300"
             >
-              {{ quickViewLoadError }}
-            </el-tag>
+              <el-icon class="quick-view-status-icon is-danger"><WarningFilled /></el-icon>
+            </el-tooltip>
             <el-button
               v-if="isQuickViewActive"
               size="small"
@@ -218,7 +218,7 @@
     </div>
 
     <!-- 渲染预览组件 -->
-    <div v-else class="preview-content">
+    <div v-else class="preview-content" :class="{ 'is-document-flow': isMarkdownContent }">
       <el-alert
         v-if="previewRefreshAdvisory"
         class="preview-advisory"
@@ -229,7 +229,13 @@
       >
         <template #default>
           <div class="preview-advisory-body">
-            <span>{{ previewRefreshAdvisoryText }}</span>
+            <el-tooltip
+              :content="previewRefreshAdvisoryText"
+              placement="bottom"
+              :show-after="300"
+            >
+              <el-icon class="advisory-tip-icon"><InfoFilled /></el-icon>
+            </el-tooltip>
             <el-button
               size="small"
               type="primary"
@@ -358,7 +364,7 @@ import { computed, ref, watch, onUnmounted } from 'vue'
 import { ElMessage, ElNotification } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { MagicStick, Download, Location, Collection, Upload, Document, View, Refresh, Select } from '@element-plus/icons-vue'
+import { MagicStick, Download, Location, Collection, Upload, Document, View, Refresh, Select, InfoFilled, WarningFilled } from '@element-plus/icons-vue'
 import { getPreviewComponent } from '@/plugins/previews'
 import { parseLocator } from '@addp/common-frontend'
 import client from '@/api/client'
@@ -372,6 +378,7 @@ import {
   quickViewTileAdvisoryMessage as tileAdvisoryMessage,
   shouldShowQuickViewTileAdvisoryNotice
 } from '@/utils/quickViewTileAdvisory'
+import { quickViewReasonText } from '@/utils/quickViewReasonText'
 import {
   buildQuickViewOptimizationCreateQuery,
   buildTileCacheCreateQuery
@@ -1591,6 +1598,11 @@ const quickViewStatusText = computed(() => {
   return t('manager.spatialPreview.quickViewReady')
 })
 
+const quickViewUnavailableText = computed(() => {
+  return quickViewReasonText(t, quickViewStatus.value?.unavailable_reason) ||
+    t('manager.spatialPreview.quickViewUnavailable')
+})
+
 const quickViewOptimizationRecommended = computed(() => {
   const realtime = quickViewStatus.value?.realtime_tile || {}
   return realtime.optimization_recommended === true ||
@@ -1614,18 +1626,26 @@ const showMvtGridToggle = computed(() => {
   return isQuickViewActive.value && ['cached_tile', 'realtime_tile'].includes(quickViewRenderSource.value)
 })
 
+const quickViewSourceContext = computed(() => ({
+  engineId: Number(quickViewStatus.value?.source_engine_id || spatialPreviewTarget.value?.engineId || 0),
+  schema: String(quickViewStatus.value?.source_schema || spatialPreviewTarget.value?.schema || '').trim(),
+  table: String(quickViewStatus.value?.source_table || spatialPreviewTarget.value?.table || '').trim(),
+  geometryColumn: String(quickViewStatus.value?.quick_view?.geometry_column || spatialPreviewTarget.value?.geometryColumn || '').trim()
+}))
+
 const quickViewRendererProps = computed(() => {
   const target = spatialPreviewTarget.value
   if (!target || !quickViewStatus.value) return {}
   if (quickViewRenderSource.value === 'direct_geojson') {
     return { status: quickViewStatus.value }
   }
+  const source = quickViewSourceContext.value
   return {
     locator: target.locator,
-    engineId: target.engineId,
-    schema: target.schema,
-    table: target.table,
-    geom: quickViewStatus.value?.quick_view?.geometry_column || target.geometryColumn,
+    engineId: source.engineId,
+    schema: source.schema,
+    table: source.table,
+    geom: source.geometryColumn,
     tileUrlTemplate: quickViewStatus.value?.quick_view?.tile_url_template || '',
     tileRenderInfo: quickViewStatus.value?.quick_view || {},
     renderSource: quickViewRenderSource.value,
@@ -1641,9 +1661,9 @@ const quickViewRenderKey = computed(() => {
   if (!target) return 'quick-view-empty'
   return [
     'quick-view',
-    target.engineId,
-    target.schema || target.locator,
-    target.table || target.locatorType,
+    quickViewSourceContext.value.engineId,
+    quickViewSourceContext.value.schema || target.locator,
+    quickViewSourceContext.value.table || target.locatorType,
     quickViewRenderSource.value,
     quickViewStatus.value?.default_tile_cache_id || '',
     quickViewStatus.value?.quick_view?.geojson_url || ''
@@ -1743,7 +1763,7 @@ const handleTileAdvisory = (advisory) => {
 
 watch(
   () => spatialPreviewTarget.value
-    ? `${spatialPreviewTarget.value.engineId}:${spatialPreviewTarget.value.schema}:${spatialPreviewTarget.value.table}:${spatialPreviewTarget.value.locator}:${spatialPreviewTarget.value.recordCount}`
+    ? `${spatialPreviewTarget.value.locator}:${spatialPreviewTarget.value.recordCount}`
     : '',
   loadQuickViewStatus,
   { immediate: true }
@@ -2338,10 +2358,29 @@ const handleNavigate = (path) => {
   color: #ff2d20;
 }
 
-.quick-view-status {
-  max-width: 180px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.quick-view-status-badge {
+  width: 24px;
+  justify-content: center;
+  padding: 0;
+}
+
+.quick-view-status-icon {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 24px;
+  font-size: 16px;
+  cursor: help;
+}
+
+.quick-view-status-icon.is-info {
+  color: var(--el-color-info);
+}
+
+.quick-view-status-icon.is-danger {
+  color: var(--el-color-danger);
 }
 
 .empty-state {
@@ -2361,6 +2400,15 @@ const handleNavigate = (path) => {
   background: var(--addp-bg-primary) !important;
 }
 
+.preview-content.is-document-flow {
+  overflow: auto;
+  align-items: stretch;
+}
+
+.preview-content.is-document-flow > :deep(.markdown-preview-container) {
+  flex: 0 0 auto;
+}
+
 .quick-view-renderer {
   flex: 1;
   min-height: 0;
@@ -2376,14 +2424,15 @@ const handleNavigate = (path) => {
 .preview-advisory-body {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  justify-content: flex-end;
+  gap: 10px;
   width: 100%;
 }
 
-.preview-advisory-body span {
-  min-width: 0;
-  line-height: 1.5;
+.advisory-tip-icon {
+  flex: 0 0 auto;
+  color: var(--el-color-info);
+  cursor: help;
 }
 
 .preview-ref-toolbar {

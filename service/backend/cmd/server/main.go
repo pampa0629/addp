@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -9,16 +10,18 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
+	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
-	"github.com/addp/common/utils"
 	commonScheduler "github.com/addp/common/scheduler"
+	"github.com/addp/common/utils"
 	"github.com/addp/service/internal/api"
 	"github.com/addp/service/internal/config"
 	"github.com/addp/service/internal/repository"
-	"github.com/addp/service/internal/service/data"
 	serviceInternal "github.com/addp/service/internal/service"
+	"github.com/addp/service/internal/service/data"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/redis/go-redis/v9"
 )
 
 // @title           ADDP Service API
@@ -61,11 +64,19 @@ func main() {
 	registeredServiceRepo := repository.NewRegisteredServiceRepository(db)
 	tileServiceRepo := repository.NewTileServiceRepository(db)
 	graphQueryServiceRepo := repository.NewGraphQueryServiceRepository(db)
+	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
 
 	logger.L().Info("Service 配置加载完成",
 		"enable_integration", cfg.EnableIntegration,
 		"internal_api_key_set", cfg.InternalAPIKey != "",
 	)
+
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort),
+		Password: cfg.RedisPassword,
+		DB:       cfg.RedisDB,
+	})
+	defer redisClient.Close()
 
 	// 初始化 System 客户端
 	var systemClient *commonClient.SystemClient
@@ -116,6 +127,11 @@ func main() {
 	staticTileService := serviceInternal.NewStaticTileService(minioClient, minioBucket)
 	dynamicTileService := serviceInternal.NewDynamicTileService(systemClient)
 	tileCacheService := serviceInternal.NewTileCacheService(minioClient, minioBucket, "tiles")
+	cleanupService := serviceInternal.NewCleanupService(db, redisClient, taskExecutionRepo)
+	if err := cleanupService.Start(context.Background()); err != nil {
+		logger.L().Warn("Service cleanup service start failed", "error", err)
+	}
+	defer cleanupService.Stop()
 
 	queryService := data.NewQueryService(systemClient, metaClient)
 
@@ -128,13 +144,12 @@ func main() {
 	wmtsHandler := api.NewWMTSHandler(tileServiceService)
 	ogcTilesHandler := api.NewOGCTilesHandler(tileServiceService, tileEndpointHandler)
 	dataServiceHandler := api.NewDataServiceHandler(queryService)
-	engineHandler := api.NewEngineHandler(systemClient)
-	dataSourceHandler := api.NewDataSourceHandler(systemClient, cfg.MetaServiceURL)
+	resourceCapabilityHandler := api.NewResourceCapabilityHandler(systemClient, cfg.MetaServiceURL)
 	serviceEndpointHandler := api.NewServiceEndpointHandler(queryServiceService, registeredServiceService, tileServiceService)
 	graphQueryHandler := api.NewGraphQueryHandler(graphQueryServiceService, graphQueryExecutor)
 
 	// 设置路由（传递 systemClient 用于审计日志）
-	router := api.SetupRouter(cfg, db, dataServiceHandler, queryServiceHandler, ogcFeaturesHandler, registeredServiceHandler, tileServiceHandler, tileEndpointHandler, wmtsHandler, ogcTilesHandler, engineHandler, dataSourceHandler, serviceEndpointHandler, graphQueryHandler, systemClient)
+	router := api.SetupRouter(cfg, db, dataServiceHandler, queryServiceHandler, ogcFeaturesHandler, registeredServiceHandler, tileServiceHandler, tileEndpointHandler, wmtsHandler, ogcTilesHandler, resourceCapabilityHandler, serviceEndpointHandler, graphQueryHandler, systemClient)
 
 	// ========== 模块注册（注册到 System service_registry）==========
 	if cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
@@ -142,7 +157,14 @@ func main() {
 		port := utils.GetModulePort("service")
 		serviceURL := utils.BuildServiceURL(serviceHost, port)
 		registryClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
-		registryClient.RegisterAndHeartbeat("service", serviceURL, "/service")
+		registryClient.RegisterAndHeartbeatWithMetadata("service", serviceURL, "/service", map[string]interface{}{
+			"module": "service",
+			"capabilities": map[string]interface{}{
+				"cleanup_executor": map[string]interface{}{
+					"enabled": true,
+				},
+			},
+		})
 	}
 
 	// 初始化调度器

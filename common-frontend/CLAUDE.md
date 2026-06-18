@@ -2,17 +2,17 @@
 
 ## 模块定位
 
-`common-frontend/` 是 ADDP Vue 前端共享库，提供基础 UI、地图预览、资源树、数据源选择器、认证组合式函数、DAG/Graph 相关组件和通用格式化工具。
+`common-frontend/` 是 ADDP Vue 前端共享库，提供基础 UI、地图预览、资源树、资源树选择器、认证组合式函数、DAG/Graph 相关组件和通用格式化工具。
 
 ## 重要目录
 
 ```text
 common-frontend/
-├── basic/          # 基础组件、认证 composables、数据源选择器等
+├── basic/          # 基础组件、认证 composables、资源树选择器等
 ├── map/            # OpenLayers/地图相关预览组件
 ├── dag/            # DAG 组件与相关工具
 ├── graph/          # 图相关共享前端能力
-└── docs/           # 架构、风格、数据源选择器等文档
+└── docs/           # 架构、风格、资源树选择器等文档
 ```
 
 ## 开发规则
@@ -37,5 +37,5 @@ cd manager/frontend && npm run build
 - `common-frontend/README.md`
 - `common-frontend/docs/ARCHITECTURE.md`
 - `common-frontend/docs/addp前端风格设计规范.md`
-- `common-frontend/docs/数据源选择器使用指南.md`
+- `common-frontend/README.md`
 - `common-frontend/basic/composables/AUTH_USAGE_GUIDE.md`

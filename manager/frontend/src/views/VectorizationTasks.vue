@@ -3,7 +3,7 @@
     <el-card>
       <el-tabs v-model="activeTab" @tab-change="handleTabChange">
         <el-tab-pane :label="t('manager.vectorization.tasksTab')" name="tasks">
-          <div class="tab-toolbar">
+          <div class="tab-toolbar task-tab-toolbar">
             <el-button type="primary" :icon="Plus" @click="openCreateDialog">
               {{ t('manager.vectorization.create') }}
             </el-button>
@@ -389,13 +389,14 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowDown, Close, Plus, Refresh } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { openMonitorExecution, parseLocator, ResourceTree, ScheduleConfig, ScheduleDisplay } from '@addp/common-frontend'
+import { engineRootLocator, openMonitorExecution, parseLocatorSafe, ResourceTree, ScheduleConfig, ScheduleDisplay, catalogRootTypeForEngine } from '@addp/common-frontend'
 import client from '../api/client'
+import { dataExplorerAPI } from '../api/dataExplorer'
 import { formatDateTime } from '../utils/formatters'
 import {
   DEFAULT_VECTOR_MAX_FILE_SIZE_MB,
@@ -403,6 +404,7 @@ import {
   isVectorizableObjectNode,
   isVectorizableRangeNode
 } from '../utils/vectorization'
+import { mergeAncestorChainIntoResourceTree } from '../utils/tileCacheResourceTree'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -816,7 +818,7 @@ const loadResultResourceTrees = async (force = false) => {
 
 const resourceRootNode = (engine) => {
   const type = catalogRootTypeForEngine(engine)
-  const locator = `addp://engine/${engine.id}/path/?type=${type}`
+  const locator = engineRootLocator(engine, type)
   return {
     id: locator,
     locator,
@@ -830,13 +832,6 @@ const resourceRootNode = (engine) => {
     hasChildren: true,
     loaded: false
   }
-}
-
-const catalogRootTypeForEngine = (engine) => {
-  const type = String(engine?.engine_type || '').trim().toLowerCase()
-  if (type === 'minio' || type === 's3') return 'service'
-  if (type === 'nfs' || type === 'nas') return 'root'
-  return 'root'
 }
 
 const normalizeResourceNode = (node, engine, loaded = true) => {
@@ -872,42 +867,29 @@ const revealSelectedResource = async () => {
   if (!locator) return
   const engineID = Number(form.target.engine_id || locatorEngineID(locator))
   if (!engineID) return
-  let root = resourceTreeData.value.find((node) => Number(node.engineId) === engineID)
-  if (!root) return
-  if (isResourceRootNode(root) && !root.loaded) {
-    await loadResourceTreeRoot(root)
-  }
-  const path = findResourceNodePath(resourceTreeData.value, locator)
-  const expanded = new Set(resourceExpandedKeys.value)
-  if (path.length > 1) {
-    for (const node of path.slice(0, -1)) {
-      expanded.add(node.locator || node.id)
+  resourceLoading.value = true
+  try {
+    const response = await dataExplorerAPI.getTreeAncestors(engineID, locator)
+    const chain = Array.isArray(response?.ancestors) ? response.ancestors : []
+    if (!chain.length) return
+    const engine = engineOptions.value.find((item) => Number(item.id) === engineID) || null
+    const merged = mergeAncestorChainIntoResourceTree(resourceTreeData.value, chain, {
+      engine,
+      parseLocator: safeParseLocator
+    })
+    resourceTreeData.value = merged.nodes
+    const expanded = new Set(resourceExpandedKeys.value)
+    for (const key of merged.expandedKeys) {
+      expanded.add(key)
     }
-  } else {
-    root = resourceTreeData.value.find((node) => Number(node.engineId) === engineID) || root
-    expanded.add(root.locator || root.id)
+    resourceExpandedKeys.value = Array.from(expanded)
+    resourceCurrentKey.value = response?.target_locator || merged.target?.locator || merged.target?.id || locator
+  } catch (error) {
+    console.error('定位向量化资源失败:', error)
+    ElMessage.error(t('manager.vectorization.loadResourceTreeFailed'))
+  } finally {
+    resourceLoading.value = false
   }
-  resourceExpandedKeys.value = Array.from(expanded)
-  resourceCurrentKey.value = ''
-  await nextTick()
-  resourceCurrentKey.value = locator
-}
-
-const findResourceNodePath = (nodes, locator, path = []) => {
-  for (const node of nodes || []) {
-    const nodeLocator = node.locator || node.id
-    const nextPath = [...path, node]
-    if (nodeLocator === locator) {
-      return nextPath
-    }
-    if (node.children?.length) {
-      const found = findResourceNodePath(node.children, locator, nextPath)
-      if (found.length) {
-        return found
-      }
-    }
-  }
-  return []
 }
 
 const handleResourceNodeExpand = async (node) => {
@@ -987,9 +969,7 @@ const loadResultResourceTreeRoot = async (node) => {
   if (!engineID) return
   resultResourceLoading.value = true
   try {
-    const tree = await client.get(`/manager/tree/${engineID}`, {
-      params: { expand_depth: 2 }
-    })
+    const tree = await dataExplorerAPI.getTree(engineID, 2)
     const engine = {
       id: node.engineId,
       engine_type: node.engineType,
@@ -1015,9 +995,7 @@ const loadResultResourceNodeChildren = async (node) => {
   if (!locator || !engineID) return
   resultResourceLoading.value = true
   try {
-    const response = await client.get(`/manager/tree/${engineID}/node`, {
-      params: { locator, expand_depth: 1 }
-    })
+    const response = await dataExplorerAPI.getNodeChildren(engineID, locator)
     const engine = {
       id: node.engineId,
       engine_type: node.engineType,
@@ -1040,9 +1018,7 @@ const loadResourceTreeRoot = async (node) => {
   if (!engineID) return
   resourceLoading.value = true
   try {
-    const tree = await client.get(`/manager/tree/${engineID}`, {
-      params: { expand_depth: 2 }
-    })
+    const tree = await dataExplorerAPI.getTree(engineID, 2)
     const engine = {
       id: node.engineId,
       engine_type: node.engineType,
@@ -1068,9 +1044,7 @@ const loadResourceNodeChildren = async (node) => {
   if (!locator || !engineID) return
   resourceLoading.value = true
   try {
-    const response = await client.get(`/manager/tree/${engineID}/node`, {
-      params: { locator, expand_depth: 1 }
-    })
+    const response = await dataExplorerAPI.getNodeChildren(engineID, locator)
     const engine = {
       id: node.engineId,
       engine_type: node.engineType,
@@ -1170,11 +1144,8 @@ const isSelectableResultNode = (node) => {
 }
 
 const safeParseLocator = (locator) => {
-  try {
-    return parseLocator(locator)
-  } catch {
-    return null
-  }
+  const parsed = parseLocatorSafe(locator)
+  return parsed.engineId ? parsed : null
 }
 
 const locatorEngineID = (locator) => {

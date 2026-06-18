@@ -92,7 +92,7 @@
           <el-tag :type="getMethodType(row.http_method)" size="small" style="margin-right: 8px">
             {{ row.http_method }}
           </el-tag>
-          <span>{{ row.resource_path }}</span>
+          <span>{{ formatAction(row.resource_path) }}</span>
         </template>
       </el-table-column>
 
@@ -155,7 +155,7 @@
           <el-tag :type="getMethodType(currentLog.http_method)">
             {{ currentLog.http_method }}
           </el-tag>
-          <span style="margin-left: 8px">{{ currentLog.resource_path }}</span>
+          <span style="margin-left: 8px">{{ formatAction(currentLog.resource_path) }}</span>
         </el-descriptions-item>
         <el-descriptions-item :label="t('system.log.detail.result')">
           <el-tag :type="getStatusType(currentLog.http_status)">
@@ -237,6 +237,13 @@ const formatJSON = (jsonStr) => {
   } catch (e) {
     return jsonStr
   }
+}
+
+const formatAction = (action) => {
+  if (!action) return '-'
+  const key = `system.log.actions.${action.replaceAll('.', '_')}`
+  const translated = t(key)
+  return translated === key ? action : translated
 }
 
 // 根据HTTP状态码返回标签类型

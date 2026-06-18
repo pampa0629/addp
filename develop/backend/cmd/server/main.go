@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	commonExecution "github.com/addp/common/execution"
 	"log"
 	"os"
@@ -16,6 +18,7 @@ import (
 	"github.com/addp/develop/backend/internal/config"
 	"github.com/addp/develop/backend/internal/repository"
 	"github.com/addp/develop/backend/internal/service"
+	"github.com/redis/go-redis/v9"
 )
 
 // @title           ADDP Develop API
@@ -54,6 +57,13 @@ func main() {
 	devTaskRepo := repository.NewDevTaskRepository(db)
 	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db) // 统一执行记录仓库
 	log.Printf("✅ Repository 层初始化完成（使用统一执行表）")
+
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort),
+		Password: cfg.RedisPassword,
+		DB:       cfg.RedisDB,
+	})
+	defer redisClient.Close()
 
 	// ========== 创建 System Client ==========
 	systemClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
@@ -107,6 +117,12 @@ func main() {
 	devExecutor := service.NewDevExecutor(devTaskRepo, taskExecutionRepo, workflowEngine, sqlEngine, jupyterService, notebookExecutionService)
 	log.Printf("✅ DevExecutor 初始化完成（使用统一执行表）")
 
+	cleanupService := service.NewCleanupService(db, redisClient, taskExecutionRepo)
+	if err := cleanupService.Start(context.Background()); err != nil {
+		log.Printf("⚠️  Develop cleanup service start failed: %v", err)
+	}
+	defer cleanupService.Stop()
+
 	// 5. 算子发现服务（动态发现工作流引擎）
 	operatorDiscovery := service.NewOperatorDiscoveryService(
 		systemClient, // 新增：传入 System Client（动态发现引擎）
@@ -157,7 +173,14 @@ func main() {
 	// ========== 模块注册（注册到 System service_registry）==========
 	if cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
 		registryClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
-		registryClient.RegisterAndHeartbeat("develop", serviceURL, "/develop")
+		registryClient.RegisterAndHeartbeatWithMetadata("develop", serviceURL, "/develop", map[string]interface{}{
+			"module": "develop",
+			"capabilities": map[string]interface{}{
+				"cleanup_executor": map[string]interface{}{
+					"enabled": true,
+				},
+			},
+		})
 	}
 
 	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========

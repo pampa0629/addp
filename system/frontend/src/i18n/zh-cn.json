@@ -24,7 +24,7 @@
       "engineMgmt": "引擎管理",
       "appMgmt": "应用管理",
       "auditLogs": "日志审计",
-      "cleanup": "垃圾清理",
+      "cleanup": "资源回收",
       "logout": "退出登录",
       "logoutSuccess": "退出成功"
     },
@@ -616,6 +616,13 @@
         "module": "模块",
         "time": "时间"
       },
+      "actions": {
+        "cleanup_scan_created": "资源回收评估已创建",
+        "cleanup_execute_created": "资源回收任务已创建",
+        "cleanup_execute_confirmed": "资源回收执行已确认",
+        "cleanup_completed": "资源回收已完成",
+        "cleanup_failed": "资源回收失败"
+      },
       "detail": {
         "title": "操作详情",
         "logId": "日志ID",
@@ -642,46 +649,76 @@
       }
     },
     "cleanup": {
-      "title": "垃圾数据清理",
-      "scan": "扫描垃圾数据",
+      "title": "资源回收",
+      "subtitle": "评估并回收失效资源、派生产物和运行缓存",
+      "scan": "评估待回收资源",
       "refreshHistory": "刷新历史",
       "taskInProgress": "{action}任务进行中",
       "taskId": "任务ID: {id}",
       "taskStatus": "状态: {status}",
       "scanResult": {
-        "title": "扫描结果",
-        "scanTime": "扫描时间",
-        "scanScope": "扫描范围",
+        "title": "评估结果",
+        "scanTime": "评估时间",
+        "scanScope": "评估范围",
+        "triggerType": "触发方式",
+        "causeEvent": "触发事件",
+        "context": "上下文",
         "riskLevel": "风险等级",
-        "itemsToClean": "待清理项",
+        "itemsToClean": "待处理项",
+        "monitor": "监控",
         "items": "{count} 项"
       },
-      "meta": {
-        "title": "Meta 模块扫描详情",
-        "softDeleted": "软删除数据",
-        "nodes": "节点: {count}",
-        "invalidEngines": "无效引擎数据",
-        "engines": "个引擎",
-        "duplicateFingerprints": "重复指纹",
-        "count": "个",
-        "invalidEngineDetail": "无效引擎详情",
-        "engineId": "引擎ID",
-        "engineName": "引擎名称",
-        "reason": "原因",
-        "affectedNodes": "影响节点",
-        "affectedItems": "影响数据项"
+      "overview": {
+        "items": "待处理项",
+        "risk": "风险等级",
+        "freedBytes": "可释放空间",
+        "modules": "参与模块"
+      },
+      "modules": {
+        "title": "模块处理摘要",
+        "columns": {
+          "module": "模块",
+          "status": "状态",
+          "scannedItems": "发现项",
+          "affectedRecords": "影响记录",
+          "stateChanges": "状态处理",
+          "releasedStorage": "存储释放",
+          "exceptions": "跳过 / 错误",
+          "riskLevel": "风险"
+        },
+        "names": {
+          "asset": "资产目录",
+          "develop": "数据开发",
+          "graph": "知识图谱",
+          "manager": "数据管理",
+          "meta": "元数据",
+          "model": "数据建模",
+          "quality": "数据质量",
+          "service": "数据服务",
+          "standard": "数据标准",
+          "transfer": "数据传输"
+        },
+        "stateChanges": {
+          "missing": "缺源 {count}",
+          "outdated": "过期 {count}",
+          "disabled": "停用任务 {count}"
+        },
+        "releasedStorageValue": "{artifacts} 个产物 / {bytes}",
+        "exceptionsValue": "{skipped} / {errors}"
       },
       "cleanupNote": {
-        "title": "清理说明",
-        "softDelete": "标记删除",
-        "softDeleteDesc": "将无效数据标记为软删除状态，可以恢复",
-        "hardDelete": "物理删除",
-        "hardDeleteDesc": "永久删除已标记的软删除数据，不可恢复"
+        "title": "处理方式",
+        "logicalCleanup": "标记失效",
+        "logicalCleanupDesc": "将失效资源从活跃列表移出，保留记录用于审计和后续排查",
+        "physicalCleanup": "释放存储",
+        "physicalCleanupDesc": "删除已登记的存储对象、缓存或派生产物，需要谨慎确认"
       },
       "actions": {
-        "softDelete": "标记删除无效数据",
-        "hardDelete": "物理删除软删除数据",
-        "hardDeleteConfirm": "物理删除后数据将永久删除，确定继续吗？",
+        "logicalCleanup": "标记失效资源",
+        "physicalCleanup": "释放存储空间",
+        "physicalCleanupConfirm": "释放存储会删除已登记的存储对象、缓存或派生产物，确定继续吗？",
+        "viewMonitor": "查看监控",
+        "viewAllMonitor": "回收监控",
         "confirm": "确定",
         "cancel": "取消"
       },
@@ -690,17 +727,30 @@
         "columns": {
           "taskId": "任务ID",
           "actionType": "操作类型",
-          "deleteType": "删除类型",
+          "cleanupMode": "处理方式",
+          "triggerType": "触发方式",
+          "causeEvent": "触发事件",
+          "basedOnScan": "基于评估",
+          "context": "上下文",
           "status": "状态",
           "scope": "范围",
           "startTime": "开始时间",
           "actions": "操作"
         },
-        "actionScan": "扫描",
-        "actionCleanup": "清理",
-        "softDelete": "标记删除",
-        "hardDelete": "物理删除",
+        "actionScan": "评估",
+        "actionCleanup": "回收",
+        "logicalCleanup": "标记失效",
+        "physicalCleanup": "释放存储",
         "viewDetail": "查看详情"
+      },
+      "trigger": {
+        "manual": "手动",
+        "scheduled": "定时",
+        "event": "事件"
+      },
+      "causeEvent": {
+        "engine_deleted": "引擎删除",
+        "tenant_deleted": "租户删除"
       },
       "status": {
         "pending": "等待中",
@@ -714,16 +764,23 @@
         "medium": "中",
         "high": "高"
       },
+      "moduleStatus": {
+        "success": "成功",
+        "failed": "失败",
+        "partialSuccess": "部分成功",
+        "skipped": "跳过",
+        "timeout": "超时"
+      },
       "detail": {
         "title": "任务详情"
       },
       "msg": {
-        "scanCreated": "扫描任务已创建",
-        "scanFailed": "创建扫描任务失败: {error}",
-        "cleanupCreated": "清理任务已创建",
-        "cleanupFailed": "创建清理任务失败: {error}",
+        "scanCreated": "资源评估任务已创建",
+        "scanFailed": "创建资源评估任务失败: {error}",
+        "cleanupCreated": "资源回收任务已创建",
+        "cleanupFailed": "创建资源回收任务失败: {error}",
         "taskFailed": "任务执行失败",
-        "noScanFirst": "请先执行扫描",
+        "noScanFirst": "请先执行资源评估",
         "detailFailed": "加载任务详情失败"
       }
     },

@@ -87,13 +87,20 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 
 		// 新增：用于 Manager 模块的元数据查询接口
 		api.GET("/engines/:engine_id/tree", handler.GetMetadataTree)
+		api.GET("/resource-tree/:engine_id", handler.GetResourceTree)
+		api.GET("/resource-tree/:engine_id/node", handler.GetResourceTreeNode)
+		api.GET("/resource-tree/:engine_id/ancestors", handler.GetResourceTreeAncestors)
+		api.GET("/resource-tree/:engine_id/search", handler.SearchResourceTree)
+		api.POST("/resource-tree/:engine_id/refresh", handler.RefreshResourceTreeNode)
 		api.GET("/nodes/:node_id", handler.GetMetaNodeByID)
+		api.GET("/nodes/:node_id/ancestors", handler.GetNodeAncestors)
 		api.GET("/nodes/:node_id/children", handler.GetNodeChildren)
 		api.GET("/nodes/:node_id/items", handler.GetNodeItems)
 		api.GET("/nodes/by-catalog-path", handler.QueryNodeByCatalogPath)
 		api.GET("/items/by-catalog-path", handler.QueryItemByCatalogPath)
 		api.GET("/items/:item_id/fields", handler.GetItemFieldsByID)
 		api.GET("/items/:item_id/spatial", handler.GetItemSpatialMetadataByID)
+		api.GET("/items/:item_id/ancestors", handler.GetItemAncestors)
 		api.POST("/items/:item_id/refresh", handler.RefreshItem)
 		api.GET("/items/:item_id", handler.GetItemByID)
 

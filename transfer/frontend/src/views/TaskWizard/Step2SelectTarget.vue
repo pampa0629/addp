@@ -16,7 +16,7 @@
       })"
     />
 
-    <el-form :model="formData" label-width="120px">
+    <el-form class="target-form" :model="formData" label-width="120px">
       <el-form-item :label="t('transfer.taskWizard.targetEngineLabel')">
         <el-select
           v-model="formData.engineID"
@@ -36,41 +36,29 @@
         </el-select>
       </el-form-item>
 
-      <el-form-item v-if="isNativeTableTarget" :label="t('transfer.taskWizard.schemaLabel')">
-        <el-select
-          v-model="targetSchema"
-          :placeholder="t('transfer.taskWizard.schemaPlaceholder')"
-          filterable
-          :loading="loadingNamespaces"
-          :disabled="!formData.engineID"
-          @change="handleTargetSchemaChange"
-        >
-          <el-option
-            v-for="schema in namespaces"
-            :key="schema.name"
-            :label="schema.name"
-            :value="schema.name"
-          />
-        </el-select>
+      <el-form-item v-if="isNativeTableTarget" :label="t('transfer.taskWizard.targetParentNodeLabel')">
+        <ResourceTreePicker
+          v-model="targetParentSelection"
+          api-base-url="/api/v1/meta"
+          :engine-id="formData.engineID"
+          :show-engine-selector="false"
+          :selectable-filter="isTargetParentSelectable"
+          mode="any"
+          tree-height="320px"
+          :disabled-label="t('transfer.taskWizard.unsupportedTargetParentLabel')"
+          :show-selection-summary="false"
+          :show-count="false"
+          @select="handleTargetParentSelect"
+        />
       </el-form-item>
 
       <el-form-item v-if="isNativeTableTarget" :label="t('transfer.taskWizard.targetTableLabel')">
-        <el-select
+        <el-input
           v-model="targetTable"
           :placeholder="t('transfer.taskWizard.targetTablePlaceholder')"
-          filterable
-          allow-create
-          :loading="loadingTables"
-          :disabled="!formData.engineID || !targetSchema"
-          @change="syncTarget"
-        >
-          <el-option
-            v-for="table in targetTables"
-            :key="table.name"
-            :label="table.name"
-            :value="table.name"
-          />
-        </el-select>
+          :disabled="!formData.engineID || !targetParentSelection?.identity?.locator"
+          @input="syncTarget"
+        />
       </el-form-item>
 
       <el-form-item v-if="isNativeTableTarget" :label="t('transfer.taskWizard.writeModeLabel')">
@@ -88,6 +76,22 @@
           </el-option>
         </el-select>
         <div class="field-hint">{{ writeModeDescription(tableWriteMode) }}</div>
+      </el-form-item>
+
+      <el-form-item v-if="isContentTarget" :label="t('transfer.taskWizard.outputPathLabel')">
+        <ResourceTreePicker
+          v-model="targetParentSelection"
+          api-base-url="/api/v1/meta"
+          :engine-id="formData.engineID"
+          :show-engine-selector="false"
+          :selectable-filter="isTargetParentSelectable"
+          mode="any"
+          tree-height="320px"
+          :disabled-label="t('transfer.taskWizard.unsupportedTargetParentLabel')"
+          :show-selection-summary="false"
+          :show-count="false"
+          @select="handleTargetParentSelect"
+        />
       </el-form-item>
 
       <el-form-item v-if="isContentTarget" :label="t('transfer.taskWizard.outputFormatLabel')">
@@ -112,20 +116,6 @@
         </el-select>
         <div v-if="selectedOutputFormat.hintKey" class="field-hint">{{ t(selectedOutputFormat.hintKey) }}</div>
         <div v-else-if="isRawCopySource" class="field-hint">{{ t('transfer.taskWizard.rawCopyFormatHint') }}</div>
-      </el-form-item>
-
-      <el-form-item v-if="isContentTarget" :label="t('transfer.taskWizard.outputPathLabel')">
-        <el-input
-          v-model="outputPath"
-          :placeholder="t('transfer.taskWizard.storagePathPlaceholder')"
-          readonly
-          @click="showOutputPathPicker = true"
-          @input="syncTarget"
-        >
-          <template #append>
-            <el-button :disabled="!formData.engineID" @click="showOutputPathPicker = true">{{ t('transfer.taskWizard.browse') }}</el-button>
-          </template>
-        </el-input>
       </el-form-item>
 
       <el-form-item v-if="isContentTarget" :label="t('transfer.taskWizard.outputFileNameLabel')">
@@ -167,22 +157,6 @@
       />
     </el-form>
 
-    <ObjectStoragePathPicker
-      v-if="isObjectStorageTarget"
-      v-model:visible="showOutputPathPicker"
-      :resource-id="formData.engineID"
-      :initial-prefix="objectStorageInitialPrefix"
-      @selected="handleOutputPathSelected"
-    />
-
-    <CatalogDirectoryPicker
-      v-else-if="isContentTarget"
-      v-model:visible="showOutputPathPicker"
-      :engine-id="formData.engineID"
-      :initial-path="outputPath"
-      :storage-kind="targetStorageKind"
-      @selected="handleOutputPathSelected"
-    />
   </div>
 </template>
 
@@ -190,11 +164,10 @@
 import { ref, reactive, computed, watch, onMounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
+import { ResourceTreePicker, buildLocator as buildResourceLocator } from '@addp/common-frontend'
 import { capabilitiesAPI } from '@/api/capabilities'
 import { systemEnginesAPI } from '@/api/systemEngines'
-import { getSchemas, getTables } from '@/api/meta'
-import CatalogDirectoryPicker from '@/components/CatalogDirectoryPicker.vue'
-import ObjectStoragePathPicker from '@/components/ObjectStoragePathPicker.vue'
+import { parseTransferLocator } from '@/utils/resourceLocator'
 import {
   dataTypeLabel,
   engineOptionLabel,
@@ -225,18 +198,14 @@ const outputPath = ref('')
 const outputFileName = ref('')
 const csvHeaders = ref(true)
 const csvDelimiter = ref(',')
-const showOutputPathPicker = ref(false)
+const targetParentSelection = ref(null)
 const targetSchema = ref('')
 const targetTable = ref('')
-const targetTables = ref([])
-const namespaces = ref([])
 const tableWriteMode = ref('overwrite')
 const tableWriteModeOptions = ['overwrite', 'append']
 
 const engines = ref([])
 const loadingEngines = ref(false)
-const loadingNamespaces = ref(false)
-const loadingTables = ref(false)
 const restoringState = ref(false)
 const supportedEncodedSourceFormats = computed(() => props.wizardState.readableEncodedFormats?.value || new Set())
 const supportedRawCopyFormats = computed(() => props.wizardState.rawCopyFormats?.value || new Map())
@@ -258,7 +227,8 @@ const outputFormats = computed(() => outputFormatGroups.value.flatMap(group => g
 const geometryTypes = ['Point', 'LineString', 'Polygon', 'MultiPoint', 'MultiLineString', 'MultiPolygon']
 
 const selectedEngine = computed(() => {
-  return engines.value.find(engine => engine.id === formData.engineID) || null
+  const currentEngineID = normalizeEngineID(formData.engineID)
+  return engines.value.find(engine => normalizeEngineID(engine.id) === currentEngineID) || null
 })
 
 const sourceDataType = computed(() => props.wizardState.sourceDataType?.value || 'table')
@@ -301,29 +271,26 @@ const targetStorageKind = computed(() => {
   return isObjectStorageEngine(selectedEngine.value?.engine_type) ? 's3' : selectedEngine.value?.engine_type || ''
 })
 
-const isObjectStorageTarget = computed(() => {
-  return isContentTarget.value && targetStorageKind.value === 's3'
-})
-
-const objectStorageInitialPrefix = computed(() => {
-  if (!isObjectStorageTarget.value) return ''
-  return normalizeObjectStoragePickerPrefix(outputPath.value, objectStorageConfiguredBucket.value)
-})
-
-const objectStorageConfiguredBucket = computed(() => {
-  return String(selectedEngine.value?.connection_info?.bucket || selectedEngine.value?.connectionInfo?.bucket || '').trim()
-})
-
 const canProceed = computed(() => {
   if (isNativeTableTarget.value) {
-    return !!(formData.engineID && targetSchema.value.trim() && targetTable.value.trim())
+    const hasParentLocator = !!targetParentLocator.value
+    return !!(formData.engineID && hasParentLocator && targetTable.value.trim())
   }
   if (isContentTarget.value) {
-    const hasRequiredPath = targetStorageKind.value === 's3' ? !!outputPath.value.trim() : true
+    const hasRequiredPath = !!targetParentLocator.value
     const hasOutputFormat = isRawCopySource.value || !!selectedOutputFormat.value.value
     return !!(formData.engineID && hasRequiredPath && hasOutputFormat && outputFileName.value.trim() && !outputFileNameError.value)
   }
   return false
+})
+
+const targetParentLocator = computed(() => {
+  const selection = targetParentSelection.value
+  if (!selection?.identity?.locator) return ''
+  if (selection.resource?.kind === 'item') {
+    return parentLocatorForSelection(selection)
+  }
+  return selection.identity.locator
 })
 
 const selectedOutputFormat = computed(() => {
@@ -376,7 +343,7 @@ const isSpatialFormat = computed(() => {
 
 const sourceFileName = computed(() => {
   const sourceConfig = props.wizardState.sourceConfig?.value || {}
-  const loc = parseLocator(sourceConfig.locator || props.wizardState.sourceLocator?.value || '')
+  const loc = parseTransferLocator(sourceConfig.locator || props.wizardState.sourceLocator?.value || '')
   const fullPath = loc.path.join('/') || sourceConfig.sourceLabel || ''
   return normalizeFileCatalogPath(fullPath).split('/').filter(Boolean).pop() || ''
 })
@@ -418,7 +385,7 @@ watch(canProceed, (ready) => {
   if (ready) {
     syncTarget()
   } else {
-    clearTarget()
+    syncTargetDraft()
   }
 })
 
@@ -448,7 +415,7 @@ function isObjectStorageEngine(engineType) {
 
 function syncTarget() {
   if (!selectedEngine.value || !canProceed.value) {
-    clearTarget()
+    syncTargetDraft()
     return
   }
 
@@ -456,11 +423,13 @@ function syncTarget() {
     ? {
         schema: targetSchema.value,
         table: targetTable.value,
+        parentLocator: targetParentLocator.value,
         writeMode: tableWriteMode.value
       }
     : {
         format: isRawCopySource.value ? sourceFormat.value : outputFormat.value,
         backendFormat: selectedOutputFormat.value.backendType,
+        parentLocator: targetParentLocator.value,
         resourcePath: outputPath.value,
         resourceFile: isRawCopySource.value ? normalizeFileCatalogPath(outputFileName.value) : normalizedOutputFileName.value,
         includeHeader: !isRawCopySource.value && csvHeaders.value,
@@ -487,6 +456,50 @@ function clearTarget() {
   props.wizardState.clearTarget?.()
 }
 
+function syncTargetDraft() {
+  if (!selectedEngine.value || !formData.engineID) {
+    clearTarget()
+    return
+  }
+  props.wizardState.updateTarget({
+    engineID: normalizeEngineID(formData.engineID),
+    engineType: selectedEngine.value.engine_type,
+    targetType: targetStorageKind.value,
+    schema: '',
+    table: '',
+    representation: isNativeTableTarget.value ? 'native' : 'encoded',
+    extra: buildTargetDraftExtra()
+  })
+}
+
+function buildTargetDraftExtra() {
+  if (isNativeTableTarget.value) {
+    return {
+      schema: targetSchema.value,
+      table: targetTable.value,
+      parentLocator: targetParentLocator.value,
+      writeMode: tableWriteMode.value
+    }
+  }
+  if (isContentTarget.value) {
+    return {
+      format: isRawCopySource.value ? sourceFormat.value : outputFormat.value,
+      backendFormat: selectedOutputFormat.value.backendType,
+      parentLocator: targetParentLocator.value,
+      resourcePath: outputPath.value,
+      resourceFile: isRawCopySource.value ? normalizeFileCatalogPath(outputFileName.value) : normalizedOutputFileName.value,
+      includeHeader: !isRawCopySource.value && csvHeaders.value,
+      delimiter: isRawCopySource.value ? '' : (outputFormat.value === 'tsv' ? '\t' : csvDelimiter.value),
+      geometryField: isRawCopySource.value ? '' : primaryGeometryFieldName.value,
+      geometryType: isRawCopySource.value ? '' : primaryGeometryType.value,
+      backendOptions: isRawCopySource.value ? {} : selectedOutputFormat.value.options || {},
+      writeMode: 'overwrite',
+      extensionError: outputFileNameError.value
+    }
+  }
+  return {}
+}
+
 function handleOutputFormatChange() {
   applyOutputFileExtension({ replaceKnown: true })
   if (isSpatialFormat.value) {
@@ -496,39 +509,79 @@ function handleOutputFormatChange() {
 }
 
 async function handleTargetEngineChange() {
+  formData.engineID = normalizeEngineID(formData.engineID)
   outputPath.value = ''
   outputFileName.value = ''
+  targetParentSelection.value = null
   targetSchema.value = ''
   targetTable.value = ''
-  targetTables.value = []
-  namespaces.value = []
+  syncTarget()
+}
+
+function handleTargetParentSelect(selection) {
+  targetParentSelection.value = selection
   if (isNativeTableTarget.value) {
-    await loadNamespaces()
+    targetSchema.value = targetParentNameFromSelection(selection)
+    targetTable.value = selection.resource?.kind === 'item' ? targetNameFromSelection(selection) : ''
+  } else if (isContentTarget.value) {
+    outputPath.value = targetParentPathFromSelection(selection)
+    outputFileName.value = selection.resource?.kind === 'item' ? targetNameFromSelection(selection) : ''
   }
   syncTarget()
 }
 
-async function handleTargetSchemaChange() {
-  targetTable.value = ''
-  targetTables.value = []
-  await loadTargetTables()
-  syncTarget()
-}
-
-function handleOutputPathSelected(path) {
-  outputPath.value = normalizeFileCatalogPath(path)
-  syncTarget()
-}
-
-function normalizeObjectStoragePickerPrefix(path, configuredBucket = '') {
-  const normalized = normalizeFileCatalogPath(path)
-  if (!normalized) return ''
-  const bucket = normalizeFileCatalogPath(configuredBucket)
-  if (bucket && (normalized === bucket || normalized.startsWith(`${bucket}/`))) {
-    const prefix = normalized.slice(bucket.length).replace(/^\/+/, '')
-    return prefix ? `${prefix}/` : ''
+function isTargetParentSelectable(node) {
+  const type = String(node?.type || '').toLowerCase()
+  if (isNativeTableTarget.value) {
+    return ['schema', 'database', 'table'].includes(type)
   }
-  return normalized.endsWith('/') ? normalized : `${normalized}/`
+  return ['root', 'directory', 'dir', 'bucket', 'prefix', 'service', 'object', 'file'].includes(type)
+}
+
+function targetParentNameFromSelection(selection) {
+  const path = parseTransferLocator(selection?.identity?.locator || '').path
+  if (selection?.resource?.kind === 'item') {
+    return path[path.length - 2] || ''
+  }
+  return path[path.length - 1] || selection?.raw?.node?.label || ''
+}
+
+function targetParentPathFromSelection(selection) {
+  const path = parseTransferLocator(selection?.identity?.locator || '').path
+  if (selection?.resource?.kind === 'item') {
+    return path.slice(0, -1).join('/')
+  }
+  return path.join('/')
+}
+
+function targetNameFromSelection(selection) {
+  const path = parseTransferLocator(selection?.identity?.locator || '').path
+  return path[path.length - 1] || selection?.display?.label || selection?.raw?.node?.label || ''
+}
+
+function parentLocatorForSelection(selection) {
+  const loc = parseTransferLocator(selection?.identity?.locator || '')
+  if (!loc.engineID || loc.path.length === 0) return ''
+  const parentType = parentLocatorTypeForSelection(selection, loc)
+  const parentPath = loc.path.slice(0, -1)
+  if (!parentType) return ''
+  return buildResourceLocator({
+    engineId: loc.engineID,
+    type: parentType,
+    path: parentPath
+  })
+}
+
+function parentLocatorTypeForSelection(selection, loc) {
+  if (isNativeTableTarget.value) {
+    return loc.path.length > 1 ? 'schema' : 'database'
+  }
+  const nodeType = String(selection?.raw?.node?.metadata?.parent_type || '').toLowerCase()
+  if (nodeType) return nodeType
+  if (loc.path.length <= 1) {
+    return isObjectStorageEngine(selectedEngine.value?.engine_type) ? 'bucket' : 'root'
+  }
+  return isObjectStorageEngine(selectedEngine.value?.engine_type) ? 'prefix' : 'directory'
 }
 
 async function loadEngines() {
@@ -540,7 +593,7 @@ async function loadEngines() {
       engine?.id !== null &&
       hasStorageCapability(engine)
     )
-    if (formData.engineID && !engines.value.some(engine => engine.id === formData.engineID)) {
+    if (formData.engineID && !engines.value.some(engine => normalizeEngineID(engine.id) === normalizeEngineID(formData.engineID))) {
       formData.engineID = null
     }
   } catch (error) {
@@ -601,34 +654,6 @@ async function loadCapabilities() {
   }
 }
 
-async function loadNamespaces() {
-  if (!formData.engineID) return
-  loadingNamespaces.value = true
-  try {
-    const response = await getSchemas(formData.engineID)
-    const schemaList = Array.isArray(response?.data) ? response.data : (response || [])
-    namespaces.value = schemaList.filter(schema => schema?.name)
-  } catch (error) {
-    ElMessage.error(t('transfer.taskWizard.loadSchemaFailedMsg'))
-  } finally {
-    loadingNamespaces.value = false
-  }
-}
-
-async function loadTargetTables() {
-  if (!formData.engineID || !targetSchema.value) return
-  loadingTables.value = true
-  try {
-    const response = await getTables(formData.engineID, targetSchema.value)
-    const tableList = Array.isArray(response?.data) ? response.data : (response || [])
-    targetTables.value = tableList.map(item => ({ name: item.name || item })).filter(table => table.name)
-  } catch (error) {
-    ElMessage.error(t('transfer.taskWizard.loadTargetTableFailed'))
-  } finally {
-    loadingTables.value = false
-  }
-}
-
 async function restoreState() {
   const state = props.wizardState
   if (!state.targetEngineID.value) {
@@ -639,7 +664,7 @@ async function restoreState() {
   restoringState.value = true
   const config = state.targetConfig.value || {}
   try {
-    formData.engineID = state.targetEngineID.value
+    formData.engineID = normalizeEngineID(state.targetEngineID.value)
     await nextTick()
     outputFormat.value = isRawCopySource.value ? sourceFormat.value : (config.format || '')
     outputPath.value = normalizeFileCatalogPath(config.resourcePath || '')
@@ -649,10 +674,20 @@ async function restoreState() {
     targetSchema.value = config.schema || state.targetSchema?.value || ''
     targetTable.value = config.table || state.targetTable?.value || ''
     tableWriteMode.value = normalizeTableWriteMode(config.writeMode)
-    if (isNativeTableTarget.value) {
-      await loadNamespaces()
-      if (targetSchema.value) {
-        await loadTargetTables()
+    if (config.parentLocator) {
+      const label = isNativeTableTarget.value
+        ? targetSchema.value
+        : (normalizeFileCatalogPath(config.resourcePath || '') || '/')
+      targetParentSelection.value = {
+        identity: {
+          locator: config.parentLocator,
+          engine_id: formData.engineID
+        },
+        display: {
+          label,
+          path: label
+        },
+        raw: {}
       }
     }
   } finally {
@@ -664,22 +699,22 @@ function resetLocalTargetForm() {
   formData.engineID = null
   outputPath.value = ''
   outputFileName.value = ''
+  targetParentSelection.value = null
   targetSchema.value = ''
   targetTable.value = ''
-  targetTables.value = []
-  namespaces.value = []
   tableWriteMode.value = 'overwrite'
 }
 
 function targetStateMatchesLocal() {
   const state = props.wizardState
   const config = state.targetConfig.value || {}
-  return formData.engineID === state.targetEngineID.value &&
+  return normalizeEngineID(formData.engineID) === normalizeEngineID(state.targetEngineID.value) &&
     outputFormat.value === (isRawCopySource.value ? sourceFormat.value : (config.format || '')) &&
     outputPath.value === normalizeFileCatalogPath(config.resourcePath || '') &&
     outputFileName.value === (config.resourceFile || (isRawCopySource.value ? sourceFileName.value : '')) &&
     targetSchema.value === (config.schema || state.targetSchema?.value || '') &&
     targetTable.value === (config.table || state.targetTable?.value || '') &&
+    (targetParentSelection.value?.identity?.locator || '') === (config.parentLocator || '') &&
     tableWriteMode.value === normalizeTableWriteMode(config.writeMode)
 }
 
@@ -692,6 +727,7 @@ function targetConfigSignature(config) {
     delimiter: config.delimiter || ',',
     schema: config.schema || '',
     table: config.table || '',
+    parentLocator: config.parentLocator || '',
     writeMode: normalizeTableWriteMode(config.writeMode)
   })
 }
@@ -781,6 +817,11 @@ function normalizeTableWriteMode(value) {
   return 'overwrite'
 }
 
+function normalizeEngineID(value) {
+  const id = Number(value || 0)
+  return Number.isFinite(id) && id > 0 ? id : null
+}
+
 function normalizeFileCatalogPath(path) {
   return String(path || '')
     .replace(/\\/g, '/')
@@ -837,21 +878,6 @@ function emptyOutputFormat() {
   return { label: '', value: '', extension: '', options: {}, backendType: '' }
 }
 
-function parseLocator(locator) {
-  const result = { engineID: 0, path: [], type: '', itemID: 0 }
-  const match = String(locator || '').match(/^addp:\/\/engine\/(\d+)\/path\/([^?]*)(?:\?(.*))?$/)
-  if (!match) return result
-  result.engineID = Number(match[1] || 0)
-  result.path = String(match[2] || '')
-    .split('/')
-    .map(part => decodeURIComponent(part).trim())
-    .filter(Boolean)
-  const params = new URLSearchParams(match[3] || '')
-  result.type = String(params.get('type') || '').toLowerCase()
-  result.itemID = Number(params.get('item_id') || 0)
-  return result
-}
-
 onMounted(async () => {
   await loadCapabilities()
   await loadEngines()
@@ -861,13 +887,25 @@ onMounted(async () => {
 
 <style scoped>
 .step2-select-target {
-  max-width: 800px;
+  max-width: 1120px;
   margin: 0 auto;
 }
 
 .step-description {
   color: var(--addp-text-secondary);
   margin-bottom: 30px;
+}
+
+.target-form :deep(.el-form-item__content) {
+  width: min(960px, 100%);
+  max-width: 100%;
+}
+
+.target-form :deep(.el-select),
+.target-form :deep(.el-input),
+.target-form :deep(.resource-tree-picker) {
+  width: 100%;
+  min-width: 0;
 }
 
 .csv-options {

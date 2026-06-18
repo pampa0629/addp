@@ -345,15 +345,15 @@ LOAD_METADATA = OperatorMetadata(
             enum=["table", "nfs", "geojson"],
             default="table"
         ),
-        # 特殊参数：数据源级联选择器（仅在 source_type=table 时显示）
+        # 特殊参数：资源树选择器（仅在 source_type=table 时显示）
         OperatorParam(
             name="数据源",
             type="ui",
             data_type="object",
             required=False,
             description="选择数据表（推荐使用此方式）",
-            notes="使用可视化界面选择数据源，支持引擎→Schema→表的级联选择，自动填充下方参数",
-            ui_type="data_source_cascader",
+            notes="使用资源树选择数据表，保存 ResourceLocator；Develop Backend 会在执行前派生连接信息与表路径",
+            ui_type="resource_tree_picker",
             ui_config={
                 "api_base_url": "/api/v1/meta",
                 "engine_types": ["postgresql", "mysql", "doris", "clickhouse"],
@@ -365,33 +365,12 @@ LOAD_METADATA = OperatorMetadata(
             show_when={"source_type": "table"}
         ),
         OperatorParam(
-            name="engine_id",
-            type="param",
-            data_type="integer",
-            required=False,
-            description="存储引擎ID",
-            notes="source_type=table 时必填。注意：此参数由 Develop Backend 自动转换为 connection_info（包含解密后的数据库连接信息），算子执行时直接使用 connection_info，无需调用 System API。",
-            depends_on="source_type",
-            show_when={"source_type": "table"}
-        ),
-        OperatorParam(
-            name="schema",
+            name="locator",
             type="param",
             data_type="string",
             required=False,
-            description="数据库schema名称",
-            notes="仅 source_type=table 时有效，默认为 public",
-            default="public",
-            depends_on="source_type",
-            show_when={"source_type": "table"}
-        ),
-        OperatorParam(
-            name="table",
-            type="param",
-            data_type="string",
-            required=False,
-            description="数据库表名",
-            notes="仅 source_type=table 时必填",
+            description="源表 ResourceLocator",
+            notes="source_type=table 时由资源树选择器自动填充；执行前由 Develop Backend 派生 engine_id/schema/table/connection_info",
             depends_on="source_type",
             show_when={"source_type": "table"}
         ),
@@ -462,7 +441,7 @@ LOAD_METADATA = OperatorMetadata(
     ],
 
     use_cases=[
-        "从业务数据库加载河流数据: source_type=table, engine_id=1, table=rivers",
+        "从业务数据库加载河流数据: source_type=table, locator=addp://engine/1/path/public/rivers?type=table&item_id=10",
         "从NFS加载CSV文件: source_type=nfs, engine_id=3, path=data/points.csv",
         "从NFS加载Shapefile: source_type=nfs, engine_id=3, path=gis/roads.shp",
         "从内存GeoJSON加载临时数据: source_type=geojson, geojson={...}",
@@ -473,7 +452,7 @@ LOAD_METADATA = OperatorMetadata(
         "NFS 支持空间格式(shp/gpkg/geojson等)和非空间格式(csv/parquet/xlsx等)",
         "支持自动检测几何列,无需手动指定 geom_column (推荐)",
         "如果表中有多个几何列或自动检测失败,可通过 geom_column 参数指定",
-        "engine_id 由 Develop Backend 自动转换为 connection_info，工作流引擎无需依赖 System API"
+        "locator 由 Develop Backend 在执行前转换为 connection_info、schema 和 table，工作流引擎无需依赖 System 或 Meta API"
     ],
 
     workflow_example={
@@ -481,9 +460,7 @@ LOAD_METADATA = OperatorMetadata(
         'operator': 'load',
         'params': {
             'source_type': 'table',
-            'engine_id': 1,
-            'schema': 'public',
-            'table': 'rivers'
+            'locator': 'addp://engine/1/path/public/rivers?type=table&item_id=10'
         },
         'depends_on': []
     }
@@ -523,42 +500,33 @@ SAVE_METADATA = OperatorMetadata(
             data_type="object",
             required=False,
             description="选择保存的数据库和表",
-            ui_type="data_source_cascader",
+            ui_type="resource_tree_picker",
             ui_config={
-                "placeholder": "选择存储引擎 → Schema → 数据表",
-                "auto_fill_params": ["engine_id", "schema", "table"],
+                "placeholder": "选择目标父节点",
+                "selectable_parent_node_types": ["schema", "database"],
+                "auto_fill_params": ["target_parent_locator", "target_name"],
                 "allow_create_table": True  # 允许创建新表
             },
             depends_on="target_type",
             show_when={"target_type": "table"}
         ),
         OperatorParam(
-            name="engine_id",
+            name="target_parent_locator",
             type="param",
-            data_type="integer",
+            data_type="string",
             required=False,
-            description="存储引擎ID",
-            notes="由数据源选择器自动填充,对应 System 模块中的引擎ID。注意：此参数由 Develop Backend 自动转换为 connection_info（包含解密后的连接信息），算子执行时直接使用 connection_info。",
+            description="目标父节点 ResourceLocator",
+            notes="target_type=table 时由资源树选择器自动填充，必须指向 schema/database 等真实父节点",
             depends_on="target_type",
             show_when={"target_type": "table"}
         ),
         OperatorParam(
-            name="schema",
+            name="target_name",
             type="param",
             data_type="string",
             required=False,
-            description="数据库schema名称",
-            notes="由数据源选择器自动填充",
-            depends_on="target_type",
-            show_when={"target_type": "table"}
-        ),
-        OperatorParam(
-            name="table",
-            type="param",
-            data_type="string",
-            required=False,
-            description="数据库表名",
-            notes="由数据源选择器自动填充或手动输入新表名",
+            description="目标表名",
+            notes="target_type=table 时必填；执行前由 Develop Backend 派生 schema/table/connection_info",
             depends_on="target_type",
             show_when={"target_type": "table"}
         ),
@@ -632,7 +600,7 @@ SAVE_METADATA = OperatorMetadata(
     ],
 
     use_cases=[
-        "保存分析结果到数据库: target_type=table, engine_id=1, table=result, mode=replace",
+        "保存分析结果到数据库: target_type=table, target_parent_locator=addp://engine/1/path/public?type=schema&node_id=8, target_name=result, mode=replace",
         "保存结果到NFS CSV: target_type=nfs, engine_id=3, path=output/result.csv",
         "保存空间数据到NFS GeoPackage: target_type=nfs, engine_id=3, path=gis/result.gpkg",
         "工作流结束节点: 作为数据输出的最后一步"
@@ -644,7 +612,7 @@ SAVE_METADATA = OperatorMetadata(
         "NFS 空间格式(shp/gpkg等)需要 GeoDataFrame 输入",
         "保存空间数据到 PostgreSQL 时使用 PostGIS，自动创建几何索引",
         "mode=append 仅 table 模式支持，nfs 模式不支持追加",
-        "engine_id 由 Develop Backend 自动转换为 connection_info，工作流引擎无需依赖 System API"
+        "target_parent_locator 和 target_name 由 Develop Backend 在执行前转换为 connection_info、schema 和 table，工作流引擎无需依赖 System 或 Meta API"
     ],
 
     workflow_example={
@@ -653,9 +621,8 @@ SAVE_METADATA = OperatorMetadata(
         'params': {
             'input_df': {'$ref': 'task1'},  # 引用前一个任务的输出
             'target_type': 'table',
-            'engine_id': 1,
-            'schema': 'public',
-            'table': 'result_table',
+            'target_parent_locator': 'addp://engine/1/path/public?type=schema&node_id=8',
+            'target_name': 'result_table',
             'mode': 'replace'
         },
         'depends_on': ['task1']

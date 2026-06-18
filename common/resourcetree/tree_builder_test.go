@@ -32,9 +32,9 @@ func TestConvertNodeType(t *testing.T) {
 			want:         TypeBucket,
 		},
 		{
-			name:         "前缀（目录）",
+			name:         "对象存储前缀",
 			metaNodeType: "prefix",
-			want:         TypeDirectory,
+			want:         TypePrefix,
 		},
 		{
 			name:         "表",
@@ -493,6 +493,32 @@ func TestConvertMetaItemsForEngineUsesPathSemanticTableDepth(t *testing.T) {
 	}
 	if node.Attributes["item_id"] != uint(42) || node.Attributes["is_meta_item"] != true {
 		t.Fatalf("node attributes missing meta item identity: %#v", node.Attributes)
+	}
+}
+
+func TestBuildFromMetaKeepsObjectPrefixLocatorType(t *testing.T) {
+	builder := NewTreeBuilder()
+	engine := &models.Engine{
+		ID:         9,
+		Name:       "Object Store",
+		EngineType: "s3",
+	}
+	rootID := uint(1)
+	bucketID := uint(2)
+	tree, err := builder.BuildFromMeta(engine, []*models.MetaNode{
+		{ID: rootID, EngineID: 9, NodeType: "service", Name: "Object Store", FullName: "", ItemCount: 1},
+		{ID: bucketID, EngineID: 9, ParentNodeID: &rootID, NodeType: "bucket", Name: "addp", FullName: "addp", ItemCount: 1},
+		{ID: 3, EngineID: 9, ParentNodeID: &bucketID, NodeType: "prefix", Name: "reports", FullName: "addp/reports", ItemCount: 1},
+	}, -1)
+	if err != nil {
+		t.Fatalf("BuildFromMeta() error = %v", err)
+	}
+	prefix := tree.Children[0].Children[0]
+	if prefix.Type != "prefix" {
+		t.Fatalf("prefix.Type = %q, want prefix", prefix.Type)
+	}
+	if prefix.Locator != "addp://engine/9/path/addp/reports?type=prefix&node_id=3" {
+		t.Fatalf("prefix.Locator = %q, want prefix locator", prefix.Locator)
 	}
 }
 

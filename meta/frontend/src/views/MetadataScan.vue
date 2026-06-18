@@ -39,7 +39,6 @@
             v-loading="loadingResources"
             highlight-current-row
             @row-click="handleSelectResource"
-            height="600"
           >
             <el-table-column :label="t('meta.scan.engineInfo')" min-width="220">
               <template #default="{ row }">
@@ -176,7 +175,6 @@
               class="catalogEntry-table"
               :data="catalogEntries"
               v-loading="loadingCatalogEntries"
-              height="600"
               @selection-change="handleCatalogEntrySelectionChange"
               style="min-width: 720px"
             >
@@ -1600,7 +1598,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 600px;
+  padding: 48px 0;
 }
 
 .catalogEntry-table-wrapper {

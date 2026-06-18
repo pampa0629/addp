@@ -23,8 +23,13 @@ func (j *JSONBMap) Scan(value interface{}) error {
 		*j = nil
 		return nil
 	}
-	bytes, ok := value.([]byte)
-	if !ok {
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
 		return fmt.Errorf("cannot scan type %T into JSONBMap", value)
 	}
 	return json.Unmarshal(bytes, j)
@@ -65,10 +70,10 @@ type TypeDefinition struct {
 	TenantID      int64     `gorm:"not null;index"                                      json:"tenant_id"`
 	Name          string    `gorm:"size:100;not null"                                   json:"name"`
 	Code          string    `gorm:"size:50;not null;uniqueIndex:uidx_type_code_tenant"  json:"code"`
-	SourceModule  string    `gorm:"size:50"                                             json:"source_module"`   // meta/service/standard/develop/manual
-	AuthHandler   string    `gorm:"size:100"                                            json:"auth_handler"`    // soft/token
-	EntryType     string    `gorm:"size:50"                                             json:"entry_type"`      // preview/link/iframe/token
-	DiscoveryPath string    `gorm:"size:255"                                            json:"discovery_path"`  // 可发现资产的 API 路径，如 /api/meta/assets/discoverable
+	SourceModule  string    `gorm:"size:50"                                             json:"source_module"`  // meta/service/standard/develop/manual
+	AuthHandler   string    `gorm:"size:100"                                            json:"auth_handler"`   // soft/token
+	EntryType     string    `gorm:"size:50"                                             json:"entry_type"`     // preview/link/iframe/token
+	DiscoveryPath string    `gorm:"size:255"                                            json:"discovery_path"` // 可发现资产的 API 路径，如 /api/meta/assets/discoverable
 	IconURL       string    `gorm:"size:500"                                            json:"icon_url"`
 	Description   string    `gorm:"size:500"                                            json:"description"`
 	Enabled       bool      `gorm:"default:true"                                        json:"enabled"`
@@ -121,10 +126,10 @@ type Asset struct {
 	Tags            JSONBArray `gorm:"type:jsonb;default:'[]'"                   json:"tags"`
 	Status          string     `gorm:"size:50;not null;default:'draft';index"    json:"status"` // draft/published/offline
 	OwnerID         int64      `gorm:"not null;index"                            json:"owner_id"`
-	SourceModule    string     `gorm:"size:50"                                   json:"source_module"`    // 来源模块
-	SourceReference string     `gorm:"size:500"                                  json:"source_reference"` // 来源引用
+	SourceModule    string     `gorm:"size:50"                                   json:"source_module"`                               // 来源模块
+	SourceReference string     `gorm:"size:500"                                  json:"source_reference"`                            // 来源引用
 	Fingerprint     string     `gorm:"size:64;uniqueIndex:uidx_asset_fingerprint_tenant,where:fingerprint != ''" json:"fingerprint"` // 去重指纹
-	SourceAvailable bool       `gorm:"not null;default:true"                     json:"source_available"` // 来源资源是否仍然存在
+	SourceAvailable bool       `gorm:"not null;default:true"                     json:"source_available"`                            // 来源资源是否仍然存在
 	PublishedAt     *time.Time `json:"published_at,omitempty"`
 	CreatedBy       int64      `gorm:"not null"                                  json:"created_by"`
 	UpdatedBy       *int64     `json:"updated_by,omitempty"`
@@ -172,7 +177,7 @@ type Authorization struct {
 	AssetID       int64      `gorm:"not null;index"          json:"asset_id"`
 	ApplicationID *int64     `gorm:"index"                   json:"application_id,omitempty"` // 关联申请记录，可为空（管理员直接授权）
 	UserID        int64      `gorm:"not null;index"          json:"user_id"`
-	Credential    string     `gorm:"size:2000"               json:"credential"`              // 授权凭证（如 API Token），软性授权为空
+	Credential    string     `gorm:"size:2000"               json:"credential"` // 授权凭证（如 API Token），软性授权为空
 	ExpiresAt     *time.Time `json:"expires_at,omitempty"`
 	IsActive      bool       `gorm:"default:true;index"      json:"is_active"`
 	RevokedAt     *time.Time `json:"revoked_at,omitempty"`
@@ -190,7 +195,7 @@ type Rating struct {
 	TenantID  int64      `gorm:"not null;index"                                      json:"tenant_id"`
 	AssetID   int64      `gorm:"not null;uniqueIndex:uidx_rating_user_asset"         json:"asset_id"`
 	UserID    int64      `gorm:"not null;uniqueIndex:uidx_rating_user_asset"         json:"user_id"`
-	Score     float32    `gorm:"not null"                                            json:"score"`      // 1-5 分
+	Score     float32    `gorm:"not null"                                            json:"score"` // 1-5 分
 	Comment   string     `gorm:"size:2000"                                           json:"comment"`
 	Tags      JSONBArray `gorm:"type:jsonb;default:'[]'"                             json:"tags"`       // 反馈标签（问题反馈时填写，如：数据质量问题/文档不清晰）
 	IsHandled bool       `gorm:"default:false"                                       json:"is_handled"` // 管理员是否已处理问题反馈

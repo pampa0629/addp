@@ -4,6 +4,8 @@
 
 本文用于讨论 Transfer 后续任务语义，不以当前实现为约束。ADDP 当前处于积极开发阶段，本文默认 clean break：概念确认后可以推翻旧字段、旧任务类型和旧 UI 入口。
 
+说明：本文只讨论 Transfer 的任务语义、同步模式、写入策略和执行边界；资源选择统一走 locator / ResourceTreePicker，不在本专题中重新定义选择入口。
+
 当前任务体系阶段 1 只在 TaskProvider 和 `common.task_executions` 层声明 `task_type=import`。本文下方讨论的 `intent=import/export/sync` 仅是后续业务标签草案，不进入当前 TaskProvider `task_type`，也不要求当前接口并行支持导出或同步任务类型。
 
 ## 一、价值定位
@@ -272,9 +274,9 @@ GET  /executions/{execution_id}/logs
 6. Manager 入口创建 Transfer 任务时，Manager 负责用户交互、字段映射和入口语义；Transfer 负责执行计划与搬运。后续需要明确 Manager 到 Transfer 的创建契约，避免把 Manager UI 概念反向写成 Transfer planner 分支。
 7. Transfer 写后触发 Meta scan 属于执行后派生动作。后续需要明确它在父子 execution 中如何表达：是 Transfer execution 的 metadata，还是单独的 Meta 子 execution，并与 Orchestrator 的 `parent_execution_id` 语义保持一致。
 
-## 十一、来自任务体系主干的后续边界
+## 十一、任务体系后续边界
 
-以下内容从 `任务体系统一设计.md` 的后续清单并入本文，后续 Transfer 专题统一在这里推进，不再散落在任务体系主干文档中：
+以下内容作为 Transfer 专题继续推进，不进入任务体系主干文档：
 
 1. 是否扩展 `task_type` 必须由本文先确认。阶段 1 对外仍只声明 `task_type=import`；如果后续确认需要导出、同步等独立任务类型，必须先修订正式任务体系规范，再按 clean break 迁移。
 2. 导入 / 导出应优先作为 Manager 或其他业务模块的入口 intent / UI 标签 / 审计标签，而不是 Transfer planner 主路径的执行类型分支。

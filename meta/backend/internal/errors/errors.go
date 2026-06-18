@@ -23,6 +23,9 @@ var (
 	ErrItemNotFound     = errors.New("item not found")
 	ErrItemAccessDenied = errors.New("item access denied: tenant mismatch")
 
+	// 资源定位相关错误
+	ErrInvalidResourceLocator = errors.New("invalid resource locator")
+
 	// 扫描相关错误
 	ErrScanNotFound     = errors.New("scan task not found")
 	ErrScanAccessDenied = errors.New("scan access denied: tenant mismatch")
@@ -44,7 +47,8 @@ func HTTPStatusCode(err error) int {
 		errors.Is(err, ErrTenantMismatch):
 		return http.StatusForbidden
 
-	case errors.Is(err, ErrInvalidTenantID):
+	case errors.Is(err, ErrInvalidTenantID),
+		errors.Is(err, ErrInvalidResourceLocator):
 		return http.StatusBadRequest
 
 	default:
@@ -75,6 +79,9 @@ func ErrorMessage(err error) string {
 
 	case errors.Is(err, ErrInvalidTenantID):
 		return "invalid tenant ID"
+
+	case errors.Is(err, ErrInvalidResourceLocator):
+		return err.Error()
 
 	default:
 		return err.Error()

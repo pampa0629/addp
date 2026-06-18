@@ -4,53 +4,29 @@
     <p class="step-description">{{ t('transfer.taskWizard.selectSourcePageDesc') }}</p>
 
     <el-form :model="formData" label-width="120px">
-      <el-form-item :label="t('transfer.taskWizard.sourceEngineLabel')">
-        <el-select
-          v-model="formData.engineID"
-          :placeholder="t('transfer.taskWizard.selectSourceEngine')"
-          filterable
-          :loading="loadingEngines"
-          @change="handleEngineChange"
-        >
-          <el-option
-            v-for="engine in engines"
-            :key="engine.id"
-            :label="engineOptionLabel(engine)"
-            :value="engine.id"
-          />
-        </el-select>
-      </el-form-item>
-
-      <el-form-item v-if="formData.engineID" :label="t('transfer.taskWizard.sourceItemLabel')">
-        <ResourceTree
-          :tree-data="sourceTreeData"
-          :loading="loadingNodes"
-          :show-refresh-button="false"
+      <el-form-item class="source-picker-form-item" :label="t('transfer.taskWizard.sourceItemLabel')">
+        <ResourceTreePicker
+          v-model="pickerSelection"
+          api-base-url="/api/v1/meta"
+          :initial-locator="initialSourceLocator"
+          :engine-filter="hasStorageCapability"
+          :selectable-filter="isSelectablePickerNode"
+          mode="item"
+          tree-height="360px"
+          :engine-label="t('transfer.taskWizard.sourceEngineLabel')"
+          :engine-placeholder="t('transfer.taskWizard.selectSourceEngine')"
+          :search-placeholder="t('transfer.taskWizard.searchCurrentEngineSource')"
+          :search-all-engines-placeholder="t('transfer.taskWizard.searchAllEnginesSource')"
+          :search-empty-text="t('transfer.taskWizard.noSourceSearchResults')"
+          :show-disabled-label="false"
+          :search-selectable-only="true"
+          :engine-multiple="true"
+          :select-all-engines-by-default="true"
+          :show-selection-summary="false"
           :show-count="false"
-          :default-expand-root="true"
-          :expand-on-click-node="true"
-          :expanded-keys="expandedNodeKeys"
-          :current-node-key="currentNodeKey"
-          title=""
-          height="360px"
-          class="source-resource-tree"
-          @node-click="handleTreeNodeClick"
-          @node-expand="handleTreeNodeExpand"
-          @update:expanded-keys="expandedNodeKeys = $event"
-          @update:current-node-key="currentNodeKey = $event"
-        >
-          <template #node-label="{ data }">
-            <span class="tree-node-label">
-              <span>{{ data.label }}</span>
-              <el-tag v-if="data.metadata?.selectable" size="small" type="success">
-                {{ dataTypeLabel(data.metadata.dataType) }}
-              </el-tag>
-              <el-tag v-if="data.metadata?.format" size="small" type="info">
-                {{ formatLabel(data.metadata.format) }}
-              </el-tag>
-            </span>
-          </template>
-        </ResourceTree>
+          @engine-change="handlePickerEngineChange"
+          @select="handlePickerSelect"
+        />
         <div v-if="selectedSourceSummary" class="selected-source-summary">
           <div class="summary-main">
             <span class="summary-title">{{ t('transfer.taskWizard.selectedSourceSummaryTitle') }}</span>
@@ -83,17 +59,6 @@
         </div>
       </el-form-item>
 
-      <el-alert
-        v-if="selectedNode && !selectedSourceSupported"
-        type="warning"
-        :closable="false"
-        :title="t('transfer.taskWizard.unsupportedSourceDataTypeTitle')"
-        :description="t('transfer.taskWizard.unsupportedSourceShapeDesc', {
-          dataType: dataTypeLabel(selectedDataType),
-          representation: representationLabel(selectedRepresentation),
-          format: formatLabel(selectedFormat)
-        })"
-      />
     </el-form>
   </div>
 </template>
@@ -102,13 +67,12 @@
 import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
-import { ResourceTree } from '@addp/common-frontend'
+import { ResourceTreePicker, buildLocator as buildResourceLocator, parseLocatorSafe } from '@addp/common-frontend'
+import { parseTransferLocator } from '@/utils/resourceLocator'
 import { capabilitiesAPI } from '@/api/capabilities'
-import { getItemFieldsByCatalogPath, getTableFields, getTransferEngineTree, getTransferNodeChildren } from '@/api/meta'
-import { systemEnginesAPI } from '@/api/systemEngines'
+import { getItemFieldsByID } from '@/api/meta'
 import {
   dataTypeLabel,
-  engineOptionLabel,
   formatLabel,
   hasStorageCapability,
   isContentEngine,
@@ -128,29 +92,21 @@ const formData = reactive({
   engineID: null
 })
 
-const engines = ref([])
-const sourceTreeData = ref([])
-const expandedNodeKeys = ref([])
-const currentNodeKey = ref('')
 const selectedNode = ref(null)
+const pickerSelection = ref(null)
 
-const loadingEngines = ref(false)
-const loadingNodes = ref(false)
 const supportedEncodedSourceFormats = ref(new Set())
 const supportedRawCopyFormats = ref(new Map())
 
 const selectedEngine = computed(() => {
-  return engines.value.find(engine => engine.id === formData.engineID) || null
+  return pickerSelection.value?.raw?.engine || engineFromSelectedNode(selectedNode.value)
 })
 
 const selectedDataType = computed(() => nodeDataType(selectedNode.value))
 const selectedFormat = computed(() => nodeFormat(selectedNode.value))
-const selectedRepresentation = computed(() => representationForSelection(selectedNode.value))
 const selectedSourceLabel = computed(() => catalogPathForNode(selectedNode.value))
 const selectedSourceSummary = computed(() => buildSelectedSourceSummary(selectedNode.value))
-const selectedSourceSupported = computed(() => {
-  return isSupportedSourceShape(selectedDataType.value, selectedRepresentation.value, selectedFormat.value)
-})
+const initialSourceLocator = computed(() => props.wizardState.sourceLocator.value || '')
 
 watch(selectedNode, (node) => {
   if (node) {
@@ -161,31 +117,15 @@ watch(selectedNode, (node) => {
 watch(
   () => [
     props.wizardState.sourceEngineID.value,
-    props.wizardState.sourceConfig.value?.sourceItem?.item_id
+    props.wizardState.sourceLocator.value
   ],
-  async ([engineID]) => {
-    if (!engineID) return
+  ([engineID, locator]) => {
+    if (!engineID || !locator) return
     if (formData.engineID === engineID && selectedNode.value) return
-    await restoreState()
+    formData.engineID = engineID
   },
   { flush: 'post' }
 )
-
-async function loadEngines() {
-  loadingEngines.value = true
-  try {
-    const data = await systemEnginesAPI.list()
-    engines.value = (data || []).filter(engine =>
-      engine?.id !== undefined &&
-      engine?.id !== null &&
-      hasStorageCapability(engine)
-    )
-  } catch (error) {
-    ElMessage.error(t('transfer.taskWizard.loadEnginesFailedMsg'))
-  } finally {
-    loadingEngines.value = false
-  }
-}
 
 async function loadCapabilities() {
   try {
@@ -217,59 +157,48 @@ async function loadCapabilities() {
   }
 }
 
-async function handleEngineChange() {
-  sourceTreeData.value = []
-  expandedNodeKeys.value = []
-  currentNodeKey.value = ''
+function handlePickerEngineChange(engine) {
+  const nextEngines = Array.isArray(engine) ? engine : [engine].filter(Boolean)
+  const currentEngineID = Number(
+    pickerSelection.value?.identity?.engine_id ||
+    parseTransferLocator(selectedNode.value?.locator || '').engineID ||
+    0
+  )
+  if (Array.isArray(engine) && currentEngineID && nextEngines.some(item => Number(item?.id) === currentEngineID)) {
+    formData.engineID = currentEngineID
+    return
+  }
+  const nextEngine = Array.isArray(engine) ? null : engine
+  formData.engineID = nextEngine?.id || null
   selectedNode.value = null
+  pickerSelection.value = null
   props.wizardState.loadSourceFields([])
-  if (formData.engineID) {
-    await loadSourceTreeRoot()
-  }
 }
 
-async function loadSourceTreeRoot() {
-  if (!formData.engineID || !selectedEngine.value) return
-  loadingNodes.value = true
-  try {
-    const root = normalizeTreeNode(await getTransferEngineTree(formData.engineID, 1))
-    sourceTreeData.value = [root]
-    expandedNodeKeys.value = [root.id]
-  } catch (error) {
-    sourceTreeData.value = []
-    ElMessage.error(t('transfer.taskWizard.loadCatalogFailed', { error: error.response?.data?.error || error.message }))
-  } finally {
-    loadingNodes.value = false
-  }
+async function handlePickerSelect(selection) {
+  pickerSelection.value = selection
+  formData.engineID = selection?.identity?.engine_id || null
+  const catalogNode = treeNodeToCatalogEntry(selection?.raw?.node || {}, selection)
+  if (!catalogNode.locator) return
+  await selectNode(catalogNode)
 }
 
-function normalizeTreeNode(node) {
-  const normalized = {
-    ...node,
-    id: node.id || node.locator,
-    label: node.label || node.name || displayPath(pathSegmentsFromTreeNode(node)),
-    type: treeNodeType(node),
-    hasChildren: Boolean(node.hasChildren || node.has_children),
-    children: Array.isArray(node.children) ? node.children.map(normalizeTreeNode).filter(visibleSourceTreeNode) : [],
-    metadata: {
-      ...(node.metadata || {}),
-      childrenLoaded: Array.isArray(node.children) && node.children.length > 0
-    }
-  }
-  normalized.metadata.catalogNode = treeNodeToCatalogEntry(normalized)
-  normalized.metadata.selectable = isSelectableSourceItem(normalized.metadata.catalogNode)
-  normalized.metadata.dataType = nodeDataType(normalized.metadata.catalogNode)
-  normalized.metadata.format = nodeFormat(normalized.metadata.catalogNode)
-  return normalized
+function isSelectablePickerNode(node, context = {}) {
+  return isSelectableSourceItem(treeNodeToCatalogEntry(node, context.engine || selectedEngine.value))
 }
 
-function treeNodeToCatalogEntry(node) {
+function treeNodeToCatalogEntry(node, selectionOrEngine = selectedEngine.value) {
+  const selection = selectionOrEngine && typeof selectionOrEngine === 'object' && selectionOrEngine.identity
+    ? selectionOrEngine
+    : null
+  const engine = selection?.raw?.engine || selectionOrEngine || selectedEngine.value
   const metadata = node.metadata || {}
+  const itemID = resolveNodeItemID(node, selection)
   const attributes = {
     ...(metadata.attributes || {}),
     ...standardAttributeSections(metadata)
   }
-  const segments = pathSegmentsFromTreeNode(node)
+  const segments = pathSegmentsFromTreeNode(node, engine)
   return {
     name: node.label,
     kind: node.type,
@@ -279,15 +208,14 @@ function treeNodeToCatalogEntry(node) {
       segments
     },
     attributes,
-    meta_id: metadata.meta_id,
     full_name: metadata.full_name,
     data_type: metadata.data_type,
-    representation: metadata.representation,
+    representation: metadata.representation || representationForSelection(node, engine),
     format: metadata.format,
     layout: metadata.layout,
     physical_path: metadata.physical_path,
-    item_id: metadata.item_id,
-    meta_id: metadata.item_id || metadata.meta_id,
+    item_id: itemID > 0 ? itemID : undefined,
+    meta_id: itemID > 0 ? itemID : metadata.meta_id,
     locator: node.locator || node.id,
     size_bytes: metadata.size_bytes,
     last_modified_at: metadata.last_modified_at,
@@ -295,6 +223,16 @@ function treeNodeToCatalogEntry(node) {
     field_count: metadata.field_count,
     spatial: metadata.spatial
   }
+}
+
+function resolveNodeItemID(node, selection = null) {
+  return Number(
+    node?.item_id ||
+    node?.meta_id ||
+    selection?.identity?.item_id ||
+    parseTransferLocator(node?.locator || node?.id || '').itemID ||
+    0
+  )
 }
 
 function standardAttributeSections(metadata) {
@@ -307,47 +245,41 @@ function standardAttributeSections(metadata) {
   return sections
 }
 
-function pathSegmentsFromTreeNode(node) {
+function pathSegmentsFromTreeNode(node, engine = selectedEngine.value) {
   const locatorPath = parseLocatorPath(node.locator || node.id || '')
   if (locatorPath.length > 0) {
     return locatorPath.map((name, index) => ({
       name,
-      kind: index === locatorPath.length - 1 ? treeNodeType(node) : containerKindForPath(index),
-      term: index === locatorPath.length - 1 ? treeNodeType(node) : containerKindForPath(index)
+      kind: index === locatorPath.length - 1 ? treeNodeType(node) : containerKindForPath(index, engine),
+      term: index === locatorPath.length - 1 ? treeNodeType(node) : containerKindForPath(index, engine)
     }))
   }
   return String(node.metadata?.full_name || node.label || '')
-    .split(pathSeparatorForNode(node))
+    .split(pathSeparatorForNode(node, engine))
     .map(part => part.trim())
     .filter(Boolean)
     .map((name, index, parts) => ({
       name,
-      kind: index === parts.length - 1 ? treeNodeType(node) : containerKindForPath(index),
-      term: index === parts.length - 1 ? treeNodeType(node) : containerKindForPath(index)
+      kind: index === parts.length - 1 ? treeNodeType(node) : containerKindForPath(index, engine),
+      term: index === parts.length - 1 ? treeNodeType(node) : containerKindForPath(index, engine)
     }))
 }
 
 function parseLocatorPath(locator) {
-  const match = String(locator || '').match(/^addp:\/\/engine\/[^/]+\/path\/([^?]*)/)
-  if (!match) return []
-  return match[1]
-    .split('/')
-    .map(part => decodeURIComponent(part).trim())
-    .filter(Boolean)
+  return parseTransferLocator(locator).path
 }
 
-function pathSeparatorForNode(node) {
-  return isContentEngine(selectedEngine.value) || ['object', 'file', 'directory', 'dir', 'prefix', 'bucket'].includes(treeNodeType(node)) ? '/' : '.'
+function pathSeparatorForNode(node, engine = selectedEngine.value) {
+  return isContentEngine(engine) || ['object', 'file', 'directory', 'dir', 'prefix', 'bucket'].includes(treeNodeType(node)) ? '/' : '.'
 }
 
-function containerKindForPath(index) {
-  if (isObjectStorageEngine(selectedEngine.value?.engine_type) && index === 0) return 'bucket'
-  return isContentEngine(selectedEngine.value) ? 'directory' : 'schema'
+function containerKindForPath(index, engine = selectedEngine.value) {
+  if (isObjectStorageEngine(engine?.engine_type) && index === 0) return 'bucket'
+  return isContentEngine(engine) ? 'directory' : 'schema'
 }
 
 async function selectNode(node) {
   selectedNode.value = node
-  currentNodeKey.value = catalogTreeNodeKey(node)
   await loadFieldsForNode(node)
 }
 
@@ -357,11 +289,13 @@ async function loadFieldsForNode(node) {
     return
   }
 
-  const endpointResource = buildSourceEndpointResource(node)
   try {
-    const response = endpointResource.kind === 'native_table'
-      ? await getTableFields(formData.engineID, endpointResource.path.schema, endpointResource.path.table)
-      : await getItemFieldsByCatalogPath(formData.engineID, catalogPathForNode(node))
+    const itemID = resolveNodeItemID(node)
+    if (!itemID) {
+      props.wizardState.loadSourceFields([])
+      return
+    }
+    const response = await getItemFieldsByID(itemID)
     const fieldList = Array.isArray(response?.data) ? response.data : (response || [])
     props.wizardState.loadSourceFields(fieldList)
   } catch (error) {
@@ -394,8 +328,8 @@ function syncSource(node) {
       format: nodeFormat(node),
       locator,
       sourceItem: {
-        item_id: node.item_id,
-        meta_id: node.meta_id || node.item_id,
+        item_id: resolveNodeItemID(node) || undefined,
+        meta_id: resolveNodeItemID(node) || undefined,
         full_name: node.full_name,
         name: node.name,
         kind: node.kind,
@@ -416,9 +350,19 @@ function syncSource(node) {
 function sourceLocatorForNode(node) {
   const existing = String(node?.locator || node?.id || '').trim()
   if (existing.startsWith('addp://')) {
-    return ensureLocatorItemID(existing, node?.item_id || node?.meta_id)
+    return ensureLocatorItemID(existing, resolveNodeItemID(node))
   }
-  return buildLocator(formData.engineID, locatorTypeForNode(node), pathNames(node), node?.item_id || node?.meta_id)
+  const cleanEngineID = Number(formData.engineID)
+  const cleanType = String(locatorTypeForNode(node) || '').trim()
+  const path = pathNames(node)
+  const cleanItemID = resolveNodeItemID(node)
+  if (!cleanEngineID || !cleanType || path.length === 0) return ''
+  return buildResourceLocator({
+    engineId: cleanEngineID,
+    type: cleanType,
+    path,
+    itemId: cleanItemID > 0 ? cleanItemID : undefined
+  })
 }
 
 function locatorTypeForNode(node) {
@@ -426,23 +370,20 @@ function locatorTypeForNode(node) {
   return isObjectStorageEngine(selectedEngine.value?.engine_type) ? 'object' : 'file'
 }
 
-function buildLocator(engineID, type, segments = [], itemID = 0) {
-  const cleanEngineID = Number(engineID)
-  const cleanType = String(type || '').trim()
-  const path = (segments || []).map(segment => String(segment || '').trim()).filter(Boolean)
-  if (!cleanEngineID || !cleanType || path.length === 0) return ''
-  const encodedPath = path.map(segment => encodeURIComponent(segment)).join('/')
-  const params = new URLSearchParams({ type: cleanType })
-  const cleanItemID = Number(itemID || 0)
-  if (cleanItemID > 0) params.set('item_id', String(cleanItemID))
-  return `addp://engine/${cleanEngineID}/path/${encodedPath}?${params.toString()}`
-}
-
 function ensureLocatorItemID(locator, itemID = 0) {
   const cleanItemID = Number(itemID || 0)
-  if (!cleanItemID || /[?&]item_id=/.test(locator)) return locator
-  const separator = locator.includes('?') ? '&' : '?'
-  return `${locator}${separator}item_id=${cleanItemID}`
+  if (!cleanItemID) return locator
+  const loc = parseLocatorSafe(locator)
+  if (loc.itemId) return locator
+  if (!loc.engineId || !loc.type || !loc.path?.length) {
+    return locator
+  }
+  return buildResourceLocator({
+    engineId: loc.engineId,
+    type: loc.type,
+    path: loc.path || [],
+    itemId: cleanItemID
+  })
 }
 
 function buildSourceEndpointResource(node) {
@@ -485,11 +426,11 @@ function contentEndpointResourceFromNode(node) {
   }
 }
 
-function representationForSelection(node) {
+function representationForSelection(node, engine = selectedEngine.value) {
   if (!node) return ''
   if (nodeAttribute(node, 'representation')) return nodeAttribute(node, 'representation')
   if (nodeItemAttribute(node, 'representation')) return nodeItemAttribute(node, 'representation')
-  return isContentEngine(selectedEngine.value?.engine_type) ? 'encoded' : 'native'
+  return isContentEngine(engine) ? 'encoded' : 'native'
 }
 
 function nodeDataType(node) {
@@ -626,10 +567,6 @@ function formatDateTime(value) {
   return date.toLocaleString()
 }
 
-function visibleSourceTreeNode(node) {
-  return node?.type === 'engine' || node?.hasChildren || isSelectableSourceItem(node.metadata?.catalogNode)
-}
-
 function catalogRoleFromTreeNode(node) {
   return isItemTreeNode(node) ? 'leaf' : 'branch'
 }
@@ -676,11 +613,6 @@ function buildPathOnlyEndpointResource(node) {
     : nativeTableEndpointResourceFromNode(node)
 }
 
-function displayPath(segments) {
-  const names = (segments || []).map(segment => segment.name).filter(Boolean)
-  return names.length > 0 ? names.join('/') : '/'
-}
-
 function isObjectStorageEngine(engineType) {
   const type = String(engineType || '').toLowerCase()
   return type.includes('s3') || type.includes('minio') || type.includes('oss')
@@ -692,49 +624,12 @@ function normalizeEngineType(engineType) {
   return type
 }
 
-async function restoreState() {
-  const state = props.wizardState
-  if (!state.sourceEngineID.value) return
-
-  formData.engineID = state.sourceEngineID.value
-  await loadSourceTreeRoot()
-  const restoredNode = restoreSourceNodeFromState(state)
-  if (restoredNode) {
-    selectedNode.value = restoredNode
-    await expandAndSelectTreePath(selectedNode.value.path?.segments || [])
-    await loadFieldsForNode(selectedNode.value)
-  }
-}
-
-function restoreSourceNodeFromState(state) {
-  const config = state.sourceConfig.value || {}
-  const savedItem = config.sourceItem
-  if (savedItem) {
-    return {
-      ...savedItem,
-      role: savedItem.role || 'leaf',
-      data_type: state.sourceDataType.value || savedItem.data_type || 'table',
-      representation: state.sourceRepresentation.value || savedItem.representation || 'native',
-      format: state.sourceFormat.value || savedItem.format || '',
-      attributes: restoreSourceAttributes(state, savedItem.attributes)
-    }
-  }
-  return null
-}
-
-function restoreSourceAttributes(state, savedAttributes = {}) {
-  const attrs = { ...(savedAttributes || {}) }
-  const item = {
-    data_type: state.sourceDataType.value || 'table',
-    representation: state.sourceRepresentation.value || 'native',
-    format: state.sourceFormat.value || ''
-  }
-  delete attrs.data_type
-  delete attrs.representation
-  delete attrs.format
+function engineFromSelectedNode(node) {
+  const engineID = Number(formData.engineID || parseTransferLocator(node?.locator || '').engineID || 0)
+  if (!engineID) return null
   return {
-    ...attrs,
-    item
+    id: engineID,
+    engine_type: props.wizardState.sourceEngineType.value || ''
   }
 }
 
@@ -745,124 +640,21 @@ function treeNodeType(node) {
   return kind || (node?.role === 'branch' ? 'directory' : 'object')
 }
 
-function catalogTreeNodeKey(node) {
-  return node?.locator || node?.id || `catalog:${formData.engineID}:${displayPath(node?.path?.segments || [])}`
-}
-
-function findTreeNodeById(id, nodes = sourceTreeData.value) {
-  for (const node of nodes || []) {
-    if (node.id === id) return node
-    const found = findTreeNodeById(id, node.children || [])
-    if (found) return found
-  }
-  return null
-}
-
-async function handleTreeNodeClick(treeNode) {
-  const catalogNode = treeNode?.metadata?.catalogNode
-  if (!catalogNode) return
-  if (catalogNode.role === 'leaf') {
-    await selectNode(catalogNode)
-    return
-  }
-  if (catalogNode.role === 'branch') {
-    await loadTreeNodeChildren(treeNode)
-  }
-}
-
-async function handleTreeNodeExpand(treeNode) {
-  await loadTreeNodeChildren(treeNode)
-}
-
-async function loadTreeNodeChildren(treeNode) {
-  const target = findTreeNodeById(treeNode?.id)
-  if (!target || target.metadata?.childrenLoaded) return
-
-  const catalogNode = target.metadata?.catalogNode
-  if (catalogNode?.role !== 'branch') return
-
-  loadingNodes.value = true
-  try {
-    const metaID = target.metadata?.meta_id
-    target.children = metaID ? (await getTransferNodeChildren(metaID)).map(normalizeTreeNode).filter(visibleSourceTreeNode) : []
-    target.metadata.childrenLoaded = true
-    sourceTreeData.value = [...sourceTreeData.value]
-  } catch (error) {
-    ElMessage.error(t('transfer.taskWizard.loadCatalogFailed', { error: error.response?.data?.error || error.message }))
-  } finally {
-    loadingNodes.value = false
-  }
-}
-
-async function expandAndSelectTreePath(segments) {
-  if (!segments.length) return
-  const root = sourceTreeData.value[0]
-  if (!root) return
-
-  const keys = new Set([root.id, ...expandedNodeKeys.value])
-  let parent = root
-  let current = null
-  for (let index = 0; index < segments.length; index += 1) {
-    const segment = segments[index]
-    current = findChildTreeNodeBySegment(parent, segment)
-    if (!current) break
-    if (index < segments.length - 1) {
-      keys.add(current.id)
-      await loadTreeNodeChildren(current)
-      parent = findTreeNodeById(current.id) || current
-    }
-  }
-
-  expandedNodeKeys.value = Array.from(keys)
-  if (current) {
-    currentNodeKey.value = current.id
-    if (current.metadata?.catalogNode?.role === 'leaf') {
-      selectedNode.value = current.metadata.catalogNode
-    }
-  } else {
-    const restored = selectedNode.value
-    currentNodeKey.value = restored ? catalogTreeNodeKey(restored) : ''
-  }
-}
-
-function findChildTreeNodeBySegment(parent, segment) {
-  const wantedName = String(segment?.name || '').trim()
-  if (!wantedName) return null
-  const wantedKind = String(segment?.kind || segment?.term || '').toLowerCase()
-  const children = parent?.children || []
-  return children.find(child => {
-    const catalogNode = child.metadata?.catalogNode
-    if (String(catalogNode?.name || child.label || '').trim() !== wantedName) return false
-    if (!wantedKind) return true
-    const actualKind = String(catalogNode?.kind || catalogNode?.term || child.type || '').toLowerCase()
-    return actualKind === wantedKind || compatibleCatalogKinds(actualKind, wantedKind)
-  }) || children.find(child => String(child.metadata?.catalogNode?.name || child.label || '').trim() === wantedName) || null
-}
-
 function isItemTreeNode(node) {
   return ['table', 'collection', 'label', 'relationship', 'object', 'file'].includes(treeNodeType(node)) && !node.hasChildren
 }
 
-function compatibleCatalogKinds(actual, wanted) {
-  const groups = [
-    ['bucket', 'root', 'schema', 'namespace'],
-    ['prefix', 'directory', 'folder'],
-    ['object', 'file'],
-    ['table', 'relation']
-  ]
-  return groups.some(group => group.includes(actual) && group.includes(wanted))
-}
-
 onMounted(async () => {
   await loadCapabilities()
-  await loadEngines()
-  await restoreState()
+  if (props.wizardState.sourceEngineID.value) {
+    formData.engineID = props.wizardState.sourceEngineID.value
+  }
 })
 </script>
 
 <style scoped>
 .step1-select-source {
-  max-width: 1000px;
+  max-width: 1120px;
   margin: 0 auto;
 }
 
@@ -873,6 +665,16 @@ onMounted(async () => {
 
 .source-resource-tree {
   width: 100%;
+}
+
+.source-picker-form-item :deep(.el-form-item__content) {
+  width: min(960px, 100%);
+  max-width: 100%;
+}
+
+.source-picker-form-item :deep(.resource-tree-picker) {
+  width: 100%;
+  min-width: 0;
 }
 
 .tree-node-label {

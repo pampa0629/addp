@@ -76,14 +76,19 @@
             <span>{{ t('service.query.selectTableTitle') }}</span>
           </template>
 
-          <DataSourceCascader
+          <ResourceTreePicker
             :api-base-url="metaApiBaseUrl"
-            :engine-types="['postgresql', 'mysql', 'doris', 'clickhouse', 'minio', 's3']"
-            :selectable-node-types="['table']"
-            :enable-geometry-detection="true"
-            :require-geometry="false"
-            :show-selection-info="true"
-            @update:selection="handleTableSelection"
+            :engine-types="QUERY_TABLE_ENGINE_TYPES"
+            mode="item"
+            :node-filter="isQueryableTableVisibleNode"
+            :selectable-filter="isQueryableTableNode"
+            :show-selection-summary="true"
+            :engine-multiple="true"
+            :select-all-engines-by-default="true"
+            :search-selectable-only="true"
+            :show-disabled-label="false"
+            :show-count="false"
+            @update:model-value="handleTableSelection"
           />
 
           <el-form :model="form" label-width="120px" style="margin-top: 16px">
@@ -345,7 +350,13 @@ import { ElMessage } from 'element-plus'
 import { ArrowLeft, Grid, Document, Search } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import queryServiceAPI from '@/api/queryService'
-import { DataSourceCascader, detectTableMetadata } from '@common-ui'
+import { ResourceTreePicker, detectTableMetadata, locatorPathFromSelection } from '@common-ui'
+import {
+  QUERY_TABLE_ENGINE_TYPES,
+  isQueryableTableNode,
+  isQueryableTableVisibleNode,
+  objectTableConfigFromSelection
+} from '@/utils/resourceSelection'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -378,10 +389,9 @@ const form = reactive({
 // 存储引擎列表（SQL 模式下使用）
 const engines = ref([])
 
-// Service API 基础 URL（用于 DataSourceCascader）
-// 通过 Service 后端统一访问数据源信息
+// Meta resource-tree API 基础 URL。资源选择使用 locator 主身份，业务层按需检测空间能力。
 const metaApiBaseUrl = computed(() => {
-  return '/api/v1/service'
+  return '/api/v1/meta'
 })
 
 // 空间元数据
@@ -450,7 +460,7 @@ const canProceed = computed(() => {
     return !!form.config_type
   } else if (currentStep.value === 1) {
     if (form.config_type === 'table') {
-      return form.engine_id && form.schema_name && form.table_name
+      return !!form.locator
     } else {
       // SQL 模式：DuckDB 虚拟引擎（engine_id=null）只需要 sql_query
       const isDuckDB = form.engine_id === null && form.config_type === 'sql'
@@ -464,9 +474,6 @@ const canProceed = computed(() => {
 const detectSpatialFields = async () => {
   detecting.value = true
   try {
-    // TODO: 调用 Meta 模块的 API 检测空间字段
-    // const response = await metaAPI.getTableSpatialMetadata(form.engine_id, form.schema_name, form.table_name)
-
     // 临时模拟数据
     await new Promise(resolve => setTimeout(resolve, 1000))
     spatialMetadata.value = {
@@ -537,8 +544,8 @@ const detectSQLSpatialFields = async () => {
   }
 }
 
-// 方法：处理表选择（DataSourceCascader 回调）
-const handleTableSelection = (selection) => {
+// 方法：处理表选择（ResourceTreePicker 回调）
+const handleTableSelection = async (selection) => {
   console.log('[QueryServiceForm] Table selection:', selection)
 
   if (!selection) {
@@ -546,56 +553,45 @@ const handleTableSelection = (selection) => {
     form.engine_id = null
     form.schema_name = ''
     form.table_name = ''
+    form.locator = ''
     form.object_table = null
     spatialMetadata.value = null
     return
   }
 
+  const path = locatorPathFromSelection(selection)
+  const schemaName = path[0] || ''
+  const tableName = path[path.length - 1] || selection.display?.label || ''
+
   // 更新表单字段
-  form.engine_id = selection.engineId
-  form.schema_name = selection.schema
-  form.table_name = selection.tableName
+  form.engine_id = selection.identity?.engine_id
+  form.schema_name = schemaName
+  form.table_name = tableName
+  form.locator = selection.identity?.locator || ''
   form.object_table = objectTableConfigFromSelection(selection)
 
-  // 如果检测到几何列,自动启用 OGC Features
-  if (selection.hasGeometry) {
+  const geometry = await detectTableMetadata('/api/v1/meta', {
+    locator: form.locator,
+    item_id: selection.identity?.item_id
+  })
+
+  // 如果检测到几何列，自动启用 OGC Features
+  if (geometry.has_geometry) {
     spatialMetadata.value = {
       hasGeometry: true,
-      geometryColumn: selection.geometryColumn,
-      srid: selection.srid,
-      geometryTypes: selection.geometryType ? [selection.geometryType] : [],
-      extent: selection.extent
+      geometryColumn: geometry.geometry_column,
+      srid: geometry.srid,
+      geometryTypes: geometry.geometry_types || [],
+      extent: geometry.extent
     }
     enableOgcFeatures.value = true
-    ElMessage.success(t('service.query.detectSpatialSuccess', { column: selection.geometryColumn, srid: selection.srid }))
+    ElMessage.success(t('service.query.detectSpatialSuccess', { column: geometry.geometry_column, srid: geometry.srid }))
   } else {
     spatialMetadata.value = { hasGeometry: false }
     enableOgcFeatures.value = false
   }
 }
 
-const objectTableConfigFromSelection = (selection) => {
-  const metadata = selection?.metadata || {}
-  const dataType = String(metadata.data_type || '').toLowerCase()
-  const format = String(metadata.format || '').toLowerCase()
-  const layout = String(metadata.layout || 'single').toLowerCase()
-  const physicalPath = String(metadata.physical_path || '').trim()
-  if (dataType !== 'table' || !physicalPath || !['parquet', 'orc', 'avro'].includes(format)) {
-    return null
-  }
-  return {
-    physical_path: physicalPath,
-    layout,
-    format
-  }
-}
-
-// 方法：处理几何检测结果（DataSourceSelector 回调）
-const handleGeometryDetected = (result) => {
-  console.log('[QueryServiceForm] Geometry detected:', result)
-}
-
-// 方法：引擎变更（已被 DataSourceSelector 替代，不再需要）
 const onEngineChange = () => {
   form.schema_name = ''
   form.table_name = ''
@@ -660,6 +656,9 @@ const handleSubmit = async () => {
 
       // 构建 data_config
       const dataConfig = {}
+      if (form.locator) {
+        dataConfig.locator = form.locator
+      }
 
       // 默认字段
       if (defaultFieldsInput.value.trim()) {
@@ -757,6 +756,7 @@ onMounted(async () => {
       form.engine_id = service.engine_id
       form.schema_name = service.schema_name || ''
       form.table_name = service.table_name || ''
+      form.locator = service.data_config?.locator || ''
       form.sql_query = service.sql_query || ''
 
       console.log('[QueryServiceForm] 编辑模式：数据源配置', {
@@ -766,14 +766,12 @@ onMounted(async () => {
         table_name: form.table_name
       })
 
-      // 如果是 table 模式且有完整的数据源信息，重新检测空间字段
-      if (form.config_type === 'table' && form.engine_id && form.schema_name && form.table_name) {
+      // 如果是 table 模式且有 locator，按资源主身份重新检测空间字段。
+      if (form.config_type === 'table' && form.locator) {
         try {
           console.log('[QueryServiceForm] 编辑模式：开始检测空间字段...')
           const geometryInfo = await detectTableMetadata(metaApiBaseUrl.value, {
-            engine_id: form.engine_id,
-            schema: form.schema_name,
-            table: form.table_name
+            locator: form.locator
           })
 
           console.log('[QueryServiceForm] 编辑模式：检测结果', geometryInfo)

@@ -89,12 +89,16 @@ export const ResourceCategoryType = {
 export {
   ResourceType,
   parseLocator,
+  parseLocatorSafe,
+  locatorPathFromSelection,
   buildLocator,
+  catalogRootTypeForEngine,
+  engineRootLocator,
+  formatLocatorDisplayPath,
   getPathString,
   getFullName,
   getLastSegment,
   getParentLocator,
-  fromLegacyParams,
   cloneLocator,
   isLocatorEqual
 } from './resourceLocator.js'

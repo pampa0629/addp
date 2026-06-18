@@ -225,6 +225,18 @@ func main() {
 	if err := tileCacheTaskScheduler.Start(context.Background()); err != nil {
 		logger.L().Warn("瓦片缓存任务调度器启动失败", "error", err)
 	}
+	cleanupSvc := service.NewCleanupService(
+		redisClient,
+		metaClient,
+		taskExecRepo,
+		quickViewService.Repository(),
+		tileCacheTaskSvc,
+		embeddingRepo,
+		quickViewOptimizationTaskSvc,
+	)
+	if err := cleanupSvc.Start(context.Background()); err != nil {
+		logger.L().Warn("Manager cleanup 订阅启动失败", "error", err)
+	}
 
 	// 初始化 TaskProvider Handler
 	taskProviderHandler := api.NewTaskProviderHandler(embeddingTaskSvc, tileCacheTaskSvc, quickViewOptimizationTaskSvc, taskExecRepo)
@@ -258,7 +270,14 @@ func main() {
 	// ========== 服务注册（注册到 System service_registry）==========
 	if cfg.EnableIntegration && cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
 		registryClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
-		registryClient.RegisterAndHeartbeat("manager", serviceURL, "/manager")
+		registryClient.RegisterAndHeartbeatWithMetadata("manager", serviceURL, "/manager", map[string]interface{}{
+			"module": "manager",
+			"capabilities": map[string]interface{}{
+				"cleanup_executor": map[string]interface{}{
+					"enabled": true,
+				},
+			},
+		})
 	}
 
 	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========
@@ -301,6 +320,7 @@ func main() {
 		}
 		embeddingTaskScheduler.Stop()
 		tileCacheTaskScheduler.Stop()
+		cleanupSvc.Stop()
 
 		if err := mvtService.Close(); err != nil {
 			logger.L().Error("关闭数据库连接池失败", "error", err)

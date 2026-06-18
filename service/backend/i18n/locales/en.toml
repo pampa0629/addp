@@ -4,17 +4,8 @@ other = "Service name already exists, please use a different name"
 [service.err.layer_required]
 other = "First layer configuration is required"
 
-[service.err.missing_params]
-other = "Missing required parameters: engine_id, schema, table"
-
-[service.err.invalid_engine_id]
-other = "Invalid engine ID"
-
 [service.err.unsupported_type]
 other = "Unsupported service type"
-
-[service.err.get_engines_failed]
-other = "Failed to get engine list"
 
 [service.err.missing_ref]
 other = "Missing ref parameter"

@@ -1,10 +1,10 @@
 package scanflow
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/addp/common/dataitem"
+	"github.com/addp/common/resourcetree"
 	"github.com/addp/meta/internal/models"
 )
 
@@ -51,60 +51,26 @@ func TargetPathsFromAttributes(attrs map[string]interface{}) []string {
 }
 
 func TargetPathsFromLocator(locator string) []string {
-	locator = strings.TrimSpace(locator)
-	if locator == "" {
+	loc, err := resourcetree.ParseURI(strings.TrimSpace(locator))
+	if err != nil || len(loc.Path) == 0 {
 		return nil
 	}
-	typeIdx := strings.Index(locator, "?type=")
-	pathPart := locator
-	targetType := ""
-	if typeIdx >= 0 {
-		pathPart = locator[:typeIdx]
-		targetType = locator[typeIdx+6:]
-		if amp := strings.Index(targetType, "&"); amp >= 0 {
-			targetType = targetType[:amp]
-		}
+	switch loc.Type {
+	case resourcetree.TypeTable, resourcetree.TypeCollection, resourcetree.TypeGraph:
+		return []string{loc.Path[0]}
+	case resourcetree.TypeSchema, resourcetree.TypeDatabase:
+		return []string{loc.Path[0]}
+	default:
+		return []string{strings.Join(loc.Path, "/")}
 	}
-	pathMarker := "/path/"
-	pathIdx := strings.Index(pathPart, pathMarker)
-	if pathIdx < 0 {
-		return nil
-	}
-	path := strings.Trim(pathPart[pathIdx+len(pathMarker):], "/")
-	if path == "" {
-		return nil
-	}
-	path = strings.ReplaceAll(path, "%2F", "/")
-	path = strings.ReplaceAll(path, "%2f", "/")
-	switch targetType {
-	case "table", "collection", "graph":
-		parts := strings.Split(path, "/")
-		if len(parts) > 1 {
-			return []string{parts[0]}
-		}
-		return []string{path}
-	case "schema", "database":
-		return []string{strings.Split(path, "/")[0]}
-	}
-	return []string{path}
 }
 
 func EngineIDFromLocator(locator string) (uint, bool) {
-	locator = strings.TrimSpace(locator)
-	const prefix = "addp://engine/"
-	if !strings.HasPrefix(locator, prefix) {
+	loc, err := resourcetree.ParseURI(strings.TrimSpace(locator))
+	if err != nil || loc.EngineID == 0 {
 		return 0, false
 	}
-	rest := strings.TrimPrefix(locator, prefix)
-	idx := strings.Index(rest, "/")
-	if idx < 0 {
-		return 0, false
-	}
-	var id uint
-	if _, err := fmt.Sscanf(rest[:idx], "%d", &id); err != nil {
-		return 0, false
-	}
-	return id, id > 0
+	return loc.EngineID, true
 }
 
 func UniqueNonEmpty(values []string) []string {

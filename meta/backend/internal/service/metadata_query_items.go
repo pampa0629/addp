@@ -117,10 +117,36 @@ func (s *MetadataQueryService) GetNodeItems(tenantID, nodeID uint) ([]models.Met
 func (s *MetadataQueryService) GetItemByID(tenantID, itemID uint) (*models.MetaItemLite, error) {
 	var item models.MetaItem
 
-	if err := s.db.Where("tenant_id = ? AND id = ?", tenantID, itemID).First(&item).Error; err != nil {
+	if err := s.db.Where("tenant_id = ? AND id = ? AND deleted_at IS NULL", tenantID, itemID).First(&item).Error; err != nil {
 		return nil, fmt.Errorf("item not found: %w", err)
 	}
 
 	result := metaquery.ToMetaItemLite(item)
 	return &result, nil
+}
+
+func (s *MetadataQueryService) GetItemAncestors(tenantID, itemID uint) (*models.MetaItemAncestorsResponse, error) {
+	var item models.MetaItem
+	if err := s.db.Where("tenant_id = ? AND id = ? AND deleted_at IS NULL", tenantID, itemID).First(&item).Error; err != nil {
+		return nil, fmt.Errorf("item not found: %w", err)
+	}
+
+	var parent models.MetaNode
+	if err := s.db.Where("tenant_id = ? AND id = ? AND engine_id = ? AND deleted_at IS NULL", tenantID, item.NodeID, item.EngineID).First(&parent).Error; err != nil {
+		return nil, fmt.Errorf("item parent node not found: %w", err)
+	}
+
+	nodes, err := s.nodeAncestorChain(tenantID, parent)
+	if err != nil {
+		return nil, err
+	}
+	ancestors := make([]models.MetaNodeLite, len(nodes))
+	for i, node := range nodes {
+		ancestors[i] = metaquery.ToMetaNodeLite(node)
+	}
+
+	return &models.MetaItemAncestorsResponse{
+		Item:      metaquery.ToMetaItemLite(item),
+		Ancestors: ancestors,
+	}, nil
 }

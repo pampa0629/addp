@@ -39,3 +39,9 @@ other = "Heartbeat updated successfully"
 
 [system.module.deleted]
 other = "Module unregistered successfully"
+
+[system.cleanup.confirm_required]
+other = "Confirm the assessment result and impact scope before executing resource reclaim"
+
+[system.cleanup.confirm_token_required]
+other = "High-risk or storage release operations require confirmation text"

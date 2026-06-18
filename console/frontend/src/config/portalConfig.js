@@ -3,7 +3,7 @@ import {
   Upload, Box, DataAnalysis, Grid, CircleCheck, Edit, Link, Operation, DataLine,
   List, Timer, Connection, Search, Document, Share, DataBoard, Odometer,
   TrendCharts, SortDown, FolderOpened, Warning, Monitor, Notebook,
-  Files, Tickets, Key, Delete, User,
+  Files, Tickets, Key, Refresh, User,
 } from '@element-plus/icons-vue'
 
 // ─── 群组导航配置 ────────────────────────────────────────────────────────────
@@ -311,7 +311,7 @@ export const SIDEBAR_MENUS = {
       { index: '/system/engines',      icon: Connection, label: 'console.menus.system.engines' },
       { index: '/system/applications', icon: Key,        label: 'console.menus.system.applications' },
       { index: '/system/logs',         icon: Document,   label: 'console.menus.system.logs' },
-      { index: '/system/cleanup',      icon: Delete,     label: 'console.menus.system.cleanup' },
+      { index: '/system/cleanup',      icon: Refresh,    label: 'console.menus.system.cleanup' },
     ],
   },
 }

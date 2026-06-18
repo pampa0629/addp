@@ -27,7 +27,7 @@ table 类型 Transfer 主链路已经稳定：native table、encoded single file
 transfer/
 ├── backend/
 │   ├── cmd/server/main.go
-│   ├── internal/api/          # tasks、executions、engines、object-storage、transforms
+│   ├── internal/api/          # tasks、executions、engines、capabilities
 │   ├── internal/planner/      # source/target endpoint -> table transfer plan
 │   ├── internal/executor/     # 基于 common engine/format/contentio 的 table transfer executor
 │   ├── internal/service/      # task、execution、system engine resolver、Meta scan 触发
@@ -48,10 +48,10 @@ transfer/
 路由前缀：`/api/v1/transfer`。
 
 - 公共连通：`GET /ping`。
-- 数据源辅助：`GET /engines`、`GET /engines/:engine_id/tree`、`GET /nodes/:node_id/children`、`GET /tables/metadata`。
+- 资源选择与资源树：统一使用 Meta resource-tree / item API；Transfer 不保留私有数据源树、节点 children 或表 metadata 代理接口。
 - 任务：`POST /tasks`、`GET /tasks`、`GET /tasks/statistics`、`GET /tasks/:id`、`PUT /tasks/:id`、`DELETE /tasks/:id`、`POST /tasks/:id/start|stop|pause|resume`、`GET /tasks/:id/executions`。
 - 字段映射：`POST /tasks/:id/mappings`、`GET /tasks/:id/mappings`、`DELETE /mappings/:id`。该接口仍存在，但新执行主线只消费 `config.transforms[type=field_mapping]`。
-- 对象存储：`POST /object-storage/browse`、`POST /object-storage/list-files`。
+- 对象存储目录选择统一走 Meta resource-tree；Transfer 不再保留私有 object-storage 浏览 API。
 - 执行记录：`GET /executions`、`GET /executions/statistics`、`GET /executions/:execution_id`。
 - 执行管理：`POST /executions/:execution_id/cancel|retry`、`GET /executions/:execution_id/progress|logs` 按统一 `execution_id` 定位执行记录；TaskProvider 标准取消能力暂未声明，`supports_cancel=false` 时不得对 Orchestrator / Monitor 暴露跨模块取消入口。
 - 转换器：`GET /transforms`、`GET /transforms/stats`、`GET /transforms/:name`、`POST /transforms/:name/validate|test`。

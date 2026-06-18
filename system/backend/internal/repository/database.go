@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 
+	commonExecution "github.com/addp/common/execution"
 	commonUtils "github.com/addp/common/utils"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/pkg/utils"
@@ -51,6 +52,9 @@ func getEnv(key, defaultValue string) string {
 }
 
 func AutoMigrate(db *gorm.DB) error {
+	if err := commonExecution.EnsureStore(db); err != nil {
+		return err
+	}
 	if err := migrateEngineOrigin(db); err != nil {
 		return err
 	}

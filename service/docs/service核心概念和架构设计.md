@@ -37,8 +37,8 @@ Service 模块将服务分为三大类：
 #### 两种配置方式（互斥）
 
 **方式一：界面配置（Table 模式）**
-- 通过界面选择存储引擎、Schema、Table
-- 自动检测空间字段（调用 Meta 模块）
+- 通过资源树选择器选择资源
+- 自动检测空间字段（调用 Meta resource-tree / item 能力）
 - 支持配置默认返回字段和可过滤字段
 - 支持动态查询参数：filter、fields、orderBy、page、page_size、format
 
@@ -68,7 +68,7 @@ Service 模块将服务分为三大类：
 #### 图层类型
 
 **动态图层 (layer_type='dynamic')**
-- 数据源：数据表（engine_id + schema + table）
+- 数据源：通过 ResourceLocator 选择的空间表；`engine_id/schema/table` 只作为后端解析 locator 后形成的执行快照
 - 工作原理：实时查询数据库生成瓦片
 - 支持格式：MVT（矢量）
 - 缓存策略：可选启用瓦片缓存到 MinIO

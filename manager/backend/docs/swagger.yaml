@@ -232,6 +232,12 @@ definitions:
         $ref: '#/definitions/github_com_addp_manager_internal_service.QuickViewRenderFacts'
       render_source:
         type: string
+      source_engine_id:
+        type: integer
+      source_schema:
+        type: string
+      source_table:
+        type: string
       status:
         type: string
       tenant_id:
@@ -2374,164 +2380,6 @@ paths:
       security:
       - BearerAuth: []
       summary: 更新瓦片缓存生成任务配置 | Update tile cache generation task configuration
-      tags:
-      - Manager
-  /tree/{engine_id}:
-    get:
-      description: 获取指定存储引擎的完整资源树结构 | Get the complete resource tree structure for
-        a specific engine
-      parameters:
-      - description: 存储引擎ID | Engine ID
-        in: path
-        name: engine_id
-        required: true
-        type: integer
-      - description: 展开深度，默认2 | Expand depth, default 2
-        in: query
-        name: expand_depth
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 资源树 | Resource tree
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: 请求参数错误 | Bad request
-          schema:
-            additionalProperties: true
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取资源树 | Get resource tree
-      tags:
-      - Manager
-  /tree/{engine_id}/node:
-    get:
-      description: 增量加载指定节点的子节点，避免全量重载 | Incrementally load children of a specific
-        node to avoid full reload
-      parameters:
-      - description: 存储引擎ID | Engine ID
-        in: path
-        name: engine_id
-        required: true
-        type: integer
-      - description: 资源定位符URI | Resource locator URI
-        in: query
-        name: locator
-        required: true
-        type: string
-      - description: 展开深度，默认1 | Expand depth, default 1
-        in: query
-        name: expand_depth
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 子节点列表 | Children list
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: 请求参数错误 | Bad request
-          schema:
-            additionalProperties: true
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取节点子节点 | Get node children
-      tags:
-      - Manager
-  /tree/{engine_id}/refresh:
-    post:
-      description: 对指定资源节点提交后台深度扫描，返回扫描运行记录 | Submit a background deep scan for a
-        resource node and return the scan run
-      parameters:
-      - description: 资源定位符URI | Resource locator URI
-        in: query
-        name: locator
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "202":
-          description: 已提交的刷新运行 | Submitted refresh run
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: 请求参数错误 | Bad request
-          schema:
-            additionalProperties: true
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 刷新资源节点 | Refresh resource node
-      tags:
-      - Manager
-  /tree/{engine_id}/search:
-    get:
-      description: 在资源树中搜索匹配关键词的节点 | Search for nodes matching a keyword in the resource
-        tree
-      parameters:
-      - description: 存储引擎ID | Engine ID
-        in: path
-        name: engine_id
-        required: true
-        type: integer
-      - description: 搜索关键词（至少2个字符）| Search keyword (at least 2 characters)
-        in: query
-        name: q
-        required: true
-        type: string
-      - description: 节点类型过滤，逗号分隔 | Node type filter, comma-separated
-        in: query
-        name: node_types
-        type: string
-      - description: 返回数量限制，默认50 | Result limit, default 50
-        in: query
-        name: limit
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 搜索结果 | Search results
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: 请求参数错误 | Bad request
-          schema:
-            additionalProperties: true
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 搜索资源节点 | Search resource nodes
       tags:
       - Manager
 securityDefinitions:

@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 
 	commonClient "github.com/addp/common/client"
+	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/utils"
 	"github.com/addp/standard/internal/api"
 	"github.com/addp/standard/internal/config"
@@ -40,6 +42,9 @@ func main() {
 	if err := db.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", cfg.DBSchema)).Error; err != nil {
 		log.Fatalf("Failed to create schema: %v", err)
 	}
+	if err := commonExecution.EnsureStore(db); err != nil {
+		log.Fatalf("Failed to ensure execution store: %v", err)
+	}
 
 	// 自动迁移所有表
 	if err := db.AutoMigrate(
@@ -74,6 +79,7 @@ func main() {
 			Password: cfg.RedisPassword,
 			DB:       cfg.RedisDB,
 		})
+		defer redisClient.Close()
 	}
 
 	systemClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemURL, cfg.InternalAPIKey)
@@ -114,6 +120,12 @@ func main() {
 	metricSvc := service.NewMetricService(metricCatRepo, metricRepo)
 	documentSvc := service.NewDocumentService(documentRepo, minioClient)
 	dimHierarchySvc := service.NewDimensionHierarchyService(dimHierarchyRepo)
+	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
+	cleanupSvc := service.NewCleanupService(db, redisClient, taskExecutionRepo, minioClient)
+	if err := cleanupSvc.Start(context.Background()); err != nil {
+		log.Printf("⚠️  Standard cleanup executor 启动失败: %v", err)
+	}
+	defer cleanupSvc.Stop()
 
 	router := api.SetupRouter(
 		db,
@@ -142,7 +154,14 @@ func main() {
 	serviceHost := utils.GetServiceHost()
 	port := utils.GetModulePort("standard")
 	serviceURL := utils.BuildServiceURL(serviceHost, port)
-	systemClient.RegisterAndHeartbeat("standard", serviceURL, "/standard")
+	systemClient.RegisterAndHeartbeatWithMetadata("standard", serviceURL, "/standard", map[string]interface{}{
+		"module": "standard",
+		"capabilities": map[string]interface{}{
+			"cleanup_executor": map[string]interface{}{
+				"enabled": true,
+			},
+		},
+	})
 
 	select {}
 }

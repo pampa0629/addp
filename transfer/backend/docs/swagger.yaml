@@ -124,9 +124,9 @@ definitions:
         example: batch
         type: string
       source:
-        $ref: '#/definitions/github_com_addp_transfer_internal_models.TransferEndpointDoc'
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.TransferSourceEndpointDoc'
       target:
-        $ref: '#/definitions/github_com_addp_transfer_internal_models.TransferEndpointDoc'
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.TransferTargetEndpointDoc'
       transforms:
         items:
           $ref: '#/definitions/github_com_addp_transfer_internal_models.TransferTransformDoc'
@@ -208,7 +208,7 @@ definitions:
     x-enum-varnames:
     - TaskStatusIdle
     - TaskStatusRunning
-  github_com_addp_transfer_internal_models.TransferEndpointDoc:
+  github_com_addp_transfer_internal_models.TransferSourceEndpointDoc:
     properties:
       data_type:
         example: table
@@ -230,6 +230,33 @@ definitions:
         - native
         - encoded
         example: encoded
+        type: string
+    type: object
+  github_com_addp_transfer_internal_models.TransferTargetEndpointDoc:
+    properties:
+      data_type:
+        example: table
+        type: string
+      format:
+        example: csv
+        type: string
+      name:
+        example: roads_imported
+        type: string
+      options:
+        additionalProperties: true
+        type: object
+      parent_locator:
+        example: addp://engine/10/path/public?type=schema
+        type: string
+      policy:
+        additionalProperties: true
+        type: object
+      representation:
+        enum:
+        - native
+        - encoded
+        example: native
         type: string
     type: object
   github_com_addp_transfer_internal_models.TransferTask:
@@ -394,15 +421,6 @@ definitions:
       write:
         type: boolean
     type: object
-  internal_api.objectStorageBrowseRequest:
-    properties:
-      engine_id:
-        type: integer
-      prefix:
-        type: string
-    required:
-    - engine_id
-    type: object
 host: localhost:8083
 info:
   contact: {}
@@ -426,88 +444,6 @@ paths:
       summary: 获取传输能力 | Get transfer capabilities
       tags:
       - 传输能力 | Capabilities
-  /engines:
-    get:
-      parameters:
-      - description: 引擎类型列表 | Engine types
-        in: query
-        name: engine_types
-        type: string
-      - description: 数据源类型列表 | Data source types
-        in: query
-        name: data_source_types
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              additionalProperties: true
-              type: object
-            type: array
-        "401":
-          description: Unauthorized
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取存储引擎列表 | List engines
-      tags:
-      - 数据源 | Data Sources
-  /engines/{engine_id}/tree:
-    get:
-      parameters:
-      - description: 引擎ID | Engine ID
-        in: path
-        name: engine_id
-        required: true
-        type: integer
-      - default: 1
-        description: 展开深度 | Expand depth
-        in: query
-        name: expand_depth
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "401":
-          description: Unauthorized
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取引擎元数据树 | Get engine metadata tree
-      tags:
-      - 数据源 | Data Sources
   /executions:
     get:
       parameters:
@@ -726,137 +662,6 @@ paths:
       summary: 获取执行统计 | Get execution statistics
       tags:
       - 执行管理 | Execution Management
-  /nodes/{node_id}/children:
-    get:
-      parameters:
-      - description: 节点ID | Node ID
-        in: path
-        name: node_id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              additionalProperties: true
-              type: object
-            type: array
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取节点子节点 | Get node children
-      tags:
-      - 数据源 | Data Sources
-  /object-storage/browse:
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: 浏览请求 | Browse request
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/internal_api.objectStorageBrowseRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "404":
-          description: Not Found
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "502":
-          description: Bad Gateway
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "503":
-          description: Service Unavailable
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 浏览对象存储目录 | Browse object storage directories
-      tags:
-      - 对象存储 | Object Storage
-  /object-storage/list-files:
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: 文件列表请求 | List files request
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/internal_api.objectStorageBrowseRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "404":
-          description: Not Found
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "502":
-          description: Bad Gateway
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "503":
-          description: Service Unavailable
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 列出对象存储文件 | List object storage files
-      tags:
-      - 对象存储 | Object Storage
   /ping:
     get:
       produces:
@@ -906,58 +711,16 @@ paths:
       summary: 列出系统引擎 | List system engines
       tags:
       - 系统引擎 | System Engines
-  /tables/metadata:
-    get:
-      parameters:
-      - description: 引擎ID | Engine ID
-        in: query
-        name: engine_id
-        required: true
-        type: integer
-      - description: Schema
-        in: query
-        name: schema
-        required: true
-        type: string
-      - description: 表名 | Table
-        in: query
-        name: table
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 检测表元数据 | Detect table metadata
-      tags:
-      - 数据源 | Data Sources
   /task-definitions:
     post:
       consumes:
       - application/json
-      description: 创建一个新的 Transfer 任务。新任务 config 使用 source/target locator endpoint；source
-        locator 带 item_id 时，Transfer 后端会通过 MetaClient 读取标准 attributes。| Create a new
-        Transfer task. New config uses source/target locator endpoints; when source
-        locator carries item_id, Transfer backend loads standard attributes through
-        MetaClient.
+      description: 创建一个新的 Transfer 任务。config.source 使用 locator 指向已存在资源；config.target
+        使用 parent_locator + name 表达待写入资源。source locator 带 item_id 时，Transfer 后端会通过
+        MetaClient 读取标准 attributes。| Create a new Transfer task. config.source uses
+        locator for existing resources; config.target uses parent_locator + name for
+        the resource to write. When source locator carries item_id, Transfer backend
+        loads standard attributes through MetaClient.
       parameters:
       - description: 任务创建请求 | Task creation request
         in: body
@@ -1075,10 +838,10 @@ paths:
     put:
       consumes:
       - application/json
-      description: 更新任务的配置信息。source 指向已入库 Meta item 时使用 config.source.locator 的 item_id；不支持在任务配置中直接传递
-        endpoint attributes。| Update task configuration. Use config.source.locator
-        item_id for persisted Meta items; endpoint attributes are not accepted in
-        task config.
+      description: 更新任务的配置信息。source 指向已入库 Meta item 时使用 config.source.locator 的 item_id；target
+        使用 parent_locator + name；不支持在任务配置中直接传递 endpoint attributes。| Update task configuration.
+        Use config.source.locator item_id for persisted Meta items; target uses parent_locator
+        + name; endpoint attributes are not accepted in task config.
       parameters:
       - description: 任务ID | Task ID
         in: path

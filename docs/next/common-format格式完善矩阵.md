@@ -4,6 +4,8 @@
 
 只保留未决事项。
 
+说明：本文只讨论格式事实、扫描、预览和 reader / writer 边界；资源选择入口仍统一走 locator / ResourceTreePicker，不在 common/format 中另起一套选择语义。
+
 ## 未决事项
 
 1. 需要用真实样例继续核实 CSV / TSV、JSON / GeoJSON、Parquet、Shapefile、Excel、SQLite、GeoPackage、ZIP、text / markdown、image、PDF、DOCX、PPTX、WPS 的扫描、attributes、Manager 预览、分页和异常提示。

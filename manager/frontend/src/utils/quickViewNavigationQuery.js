@@ -18,9 +18,6 @@ const cleanQuery = (query) => Object.fromEntries(
 
 const withIdentityFields = (query, context) => ({
   ...query,
-  ...(context.engineId ? { engine_id: String(context.engineId) } : {}),
-  ...(context.schema ? { schema: context.schema } : {}),
-  ...(context.table ? { table: context.table } : {}),
   ...(context.locator ? { locator: context.locator } : {})
 })
 

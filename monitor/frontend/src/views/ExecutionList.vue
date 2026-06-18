@@ -9,6 +9,22 @@
 
       <!-- 过滤器 -->
       <el-form :inline="true" :model="filters" class="filter-form">
+        <el-form-item :label="t('monitor.execution.filter.preset')">
+          <el-select
+            v-model="selectedPreset"
+            :placeholder="t('monitor.execution.filter.preset_placeholder')"
+            clearable
+            style="width: 180px;"
+            @change="applyPreset"
+          >
+            <el-option
+              v-for="option in presetOptions"
+              :key="option.value || 'all'"
+              :label="option.label"
+              :value="option.value"
+            />
+          </el-select>
+        </el-form-item>
         <el-form-item :label="t('monitor.execution.filter.module')">
           <el-select v-model="filters.module" :placeholder="t('monitor.execution.filter.module_placeholder')" clearable style="width: 150px;">
             <el-option
@@ -75,6 +91,7 @@
           <el-select v-model="filters.trigger_type" :placeholder="t('monitor.execution.filter.trigger_placeholder')" clearable style="width: 150px;">
             <el-option :label="t('monitor.execution.trigger.manual')" value="manual" />
             <el-option :label="t('monitor.execution.trigger.scheduled')" value="scheduled" />
+            <el-option :label="t('monitor.execution.trigger.event')" value="event" />
           </el-select>
         </el-form-item>
         <el-form-item>
@@ -132,7 +149,7 @@
             <el-tag size="small" type="info">{{ currentExecution.source || '-' }}</el-tag>
           </el-descriptions-item>
           <el-descriptions-item :label="t('monitor.execution.detail.type')">
-            {{ currentExecution.task_type }}
+            {{ formatTaskType(currentExecution.task_type) }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('monitor.execution.detail.source_task_id')">
             {{ currentExecution.source_task_id || '-' }}
@@ -189,7 +206,7 @@
                     {{ executionDisplayName(data.execution) }}
                   </span>
                   <el-tag size="small" effect="plain">{{ data.execution.module }}</el-tag>
-                  <el-tag size="small" type="info" effect="plain">{{ data.execution.task_type }}</el-tag>
+                  <el-tag size="small" type="info" effect="plain">{{ formatTaskType(data.execution.task_type) }}</el-tag>
                   <el-tag size="small" :type="getStatusType(data.execution.status)">
                     {{ getStatusText(data.execution.status) }}
                   </el-tag>
@@ -292,6 +309,7 @@ const pagination = ref({
 // 数据
 const executions = ref([])
 const taskProviders = ref([])
+const selectedPreset = ref('')
 const loading = ref(false)
 const detailDialogVisible = ref(false)
 const currentExecution = ref(null)
@@ -311,7 +329,17 @@ const providerOptions = computed(() => taskProviders.value
   }))
   .sort((a, b) => a.label.localeCompare(b.label)))
 
-const moduleOptions = computed(() => providerOptions.value)
+const moduleOptions = computed(() => {
+  const options = [...providerOptions.value]
+  if (!options.some(option => option.value === 'system')) {
+    options.unshift({ value: 'system', label: t('monitor.execution.system_module') })
+  }
+  return options
+})
+const presetOptions = [
+  { label: t('monitor.execution.preset.all'), value: '' },
+  { label: t('monitor.execution.preset.cleanup_system'), value: 'cleanup_system' }
+]
 
 const sourceOptions = computed(() => {
   const options = new Map()
@@ -529,6 +557,24 @@ async function loadExecutions(options = {}) {
   }
 }
 
+function applyQueryFilters(query) {
+  const nextModule = firstQueryValue(query.module)
+  const nextTaskType = firstQueryValue(query.task_type)
+  const nextSource = firstQueryValue(query.source)
+  const nextTriggerType = firstQueryValue(query.trigger_type)
+  const nextStatus = firstQueryValue(query.status)
+  if (!nextModule && !nextTaskType && !nextSource && !nextTriggerType && !nextStatus) {
+    return false
+  }
+  filters.value.module = nextModule
+  filters.value.task_type = nextTaskType
+  filters.value.source = nextSource
+  filters.value.trigger_type = nextTriggerType
+  filters.value.status = nextStatus
+  pagination.value.page = 1
+  return true
+}
+
 async function loadTaskProviders() {
   try {
     taskProviders.value = await listTaskProviders()
@@ -552,6 +598,7 @@ function handleSearch() {
 
 // 重置
 function handleReset() {
+  selectedPreset.value = ''
   filters.value = {
     module: '',
     task_type: '',
@@ -559,6 +606,23 @@ function handleReset() {
     source: '',
     status: '',
     trigger_type: ''
+  }
+  pagination.value.page = 1
+  loadExecutions()
+}
+
+function applyPreset(preset) {
+  selectedPreset.value = preset || ''
+  if (preset === 'cleanup_system') {
+    filters.value.module = 'system'
+    filters.value.task_type = 'cleanup'
+    filters.value.trigger_type = ''
+    filters.value.source = 'system'
+  } else {
+    filters.value.module = ''
+    filters.value.task_type = ''
+    filters.value.source = ''
+    filters.value.trigger_type = ''
   }
   pagination.value.page = 1
   loadExecutions()
@@ -630,6 +694,13 @@ function executionDisplayName(execution) {
   return execution?.source_task_name || execution?.source_task_id || execution?.execution_id || '-'
 }
 
+function formatTaskType(taskType) {
+  if (!taskType) return '-'
+  const key = `monitor.execution.task_type_names.${taskType}`
+  const translated = t(key)
+  return translated === key ? taskType : translated
+}
+
 // 辅助函数
 function getStatusType(status) {
   const typeMap = {
@@ -694,7 +765,8 @@ function stopAutoRefresh() {
 function getTriggerText(triggerType) {
   const textMap = {
     manual: t('monitor.execution.trigger.manual'),
-    scheduled: t('monitor.execution.trigger.scheduled')
+    scheduled: t('monitor.execution.trigger.scheduled'),
+    event: t('monitor.execution.trigger.event')
   }
   return textMap[triggerType] || triggerType || '-'
 }
@@ -739,6 +811,7 @@ function formatDuration(ms) {
 // 初始化
 onMounted(async () => {
   await loadTaskProviders()
+  applyQueryFilters(route.query)
   await loadExecutions()
   await openExecutionByExecutionID(route.query.execution_id)
   if (hasRunningExecution.value) {
@@ -752,6 +825,15 @@ watch(
   () => route.query.execution_id,
   executionID => {
     openExecutionByExecutionID(executionID)
+  }
+)
+
+watch(
+  () => route.query,
+  query => {
+    if (applyQueryFilters(query)) {
+      loadExecutions()
+    }
   }
 )
 

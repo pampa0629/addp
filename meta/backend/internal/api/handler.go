@@ -18,6 +18,7 @@ type Handler struct {
 	taskService          *service.ScanTaskService
 	executionService     *service.ScanExecutionService
 	metadataQueryService *service.MetadataQueryService
+	resourceTreeService  *service.ResourceTreeService
 }
 
 func NewHandler(
@@ -33,6 +34,7 @@ func NewHandler(
 		taskService:          taskService,
 		executionService:     executionService,
 		metadataQueryService: metadataQueryService,
+		resourceTreeService:  service.NewResourceTreeService(engineService, metadataQueryService),
 	}
 }
 

@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
-import { parseLocator } from '@addp/common-frontend'
+import { catalogRootTypeForEngine, engineRootLocator, parseLocator } from '@addp/common-frontend'
 import client from '@/api/client'
+import { dataExplorerAPI } from '@/api/dataExplorer'
+import { mergeAncestorChainIntoResourceTree } from '@/utils/tileCacheResourceTree'
 
 const SCAN_RUN_POLL_INTERVAL_MS = 2000
 const ACTIVE_SCAN_STATUSES = new Set(['pending', 'running'])
@@ -200,9 +202,7 @@ export const useExplorerStore = defineStore('explorer', {
       }
 
       try {
-        const response = await client.get(`/manager/tree/${engineId}`, {
-          params: { expand_depth: expandDepth }
-        })
+        const response = await dataExplorerAPI.getTree(engineId, expandDepth)
         // 后端直接返回 tree 对象（符合 API 规范）
         // API 客户端的 extractData 已提取了 response.data
         const tree = response
@@ -253,9 +253,7 @@ export const useExplorerStore = defineStore('explorer', {
       try {
         const loc = parseLocator(locator)
         const previousDepth = this.engineTreeDepths[loc.engineId] || 2
-        const response = await client.post(`/manager/tree/${loc.engineId}/refresh`, null, {
-          params: { locator }
-        })
+        const response = await dataExplorerAPI.refreshNode(loc.engineId, locator)
         const result = response?.data || response
         const run = result?.run || result?.data?.run
         if (run) {
@@ -541,10 +539,9 @@ export const useExplorerStore = defineStore('explorer', {
     /**
      * 增量加载节点子节点（新增）
      * @param {string} locator - 父节点的 ResourceLocator URI
-     * @param {number} expandDepth - 展开深度（默认 1 = 只加载直接子节点）
      * @param {boolean} forceRefresh - 是否强制刷新（忽略缓存）
      */
-    async loadNodeChildren(locator, expandDepth = 1, forceRefresh = false) {
+    async loadNodeChildren(locator, forceRefresh = false) {
       const loc = parseLocator(locator)
       const existingNode = this.engineTrees[loc.engineId]
         ? findNodeByLocator(this.engineTrees[loc.engineId], locator)
@@ -563,9 +560,7 @@ export const useExplorerStore = defineStore('explorer', {
 
       try {
         // 3. 调用后端 API
-        const response = await client.get(`/manager/tree/${loc.engineId}/node`, {
-          params: { locator, expand_depth: expandDepth }
-        })
+        const response = await dataExplorerAPI.getNodeChildren(loc.engineId, locator)
         // API 客户端已经通过 extractData 提取了 response.data
         // 后端返回 { parent_locator: ..., children: [...] }
         const children = response.children || []
@@ -612,6 +607,63 @@ export const useExplorerStore = defineStore('explorer', {
     },
 
     /**
+     * 根据 locator 展开资源树并选中目标节点。
+     * 后端负责返回 catalog root 到目标自身的事实链，前端只合并树节点。
+     */
+    async revealLocator(locator) {
+      const loc = parseLocator(locator)
+      if (!loc?.engineId) {
+        throw new Error('invalid locator')
+      }
+      if (!loc.itemId && !loc.nodeId) {
+        throw new Error('locator requires node_id or item_id')
+      }
+
+      if (!this.engineTrees[loc.engineId]) {
+        await this.loadTree(loc.engineId, 1)
+      }
+
+      const response = await dataExplorerAPI.getTreeAncestors(loc.engineId, locator)
+      const chain = Array.isArray(response?.ancestors) ? response.ancestors : []
+      if (chain.length === 0) {
+        throw new Error('ancestor chain is empty')
+      }
+
+      const engine = this.engines.find(e => e.id === loc.engineId)
+      if (engine) {
+        chain.forEach(node => this.addEngineTypeToTree(node, engine.engine_type))
+      }
+
+      const merged = mergeAncestorChainIntoResourceTree(
+        this.engineTrees[loc.engineId] ? [this.engineTrees[loc.engineId]] : [],
+        chain,
+        { engine, parseLocator }
+      )
+      this.engineTrees = {
+        ...this.engineTrees,
+        [loc.engineId]: deepCloneTree(merged.path[0] || merged.nodes[0])
+      }
+      this.engineTreeDepths[loc.engineId] = Math.max(Number(this.engineTreeDepths[loc.engineId] || 0), 1)
+
+      const expanded = new Set(this.expandedLocators)
+      for (const nodeLocator of merged.expandedKeys) {
+        expanded.add(nodeLocator)
+      }
+      this.expandedLocators = expanded
+
+      const target = merged.target || chain[chain.length - 1]
+      const targetLocator = response?.target_locator || target.locator || target.id || locator
+      this.selectNodeContext(target, targetLocator)
+
+      return {
+        locator: targetLocator,
+        node: target,
+        path: merged.path.length ? merged.path : chain,
+        response
+      }
+    },
+
+    /**
      * 搜索资源树节点（新增）
      * @param {number} engineId - 引擎 ID
      * @param {string} keyword - 搜索关键词
@@ -640,7 +692,7 @@ export const useExplorerStore = defineStore('explorer', {
           params.node_types = Array.isArray(nodeTypes) ? nodeTypes.join(',') : nodeTypes
         }
 
-        const response = await client.get(`/manager/tree/${engineId}/search`, { params })
+        const response = await dataExplorerAPI.searchNodes(engineId, keyword, nodeTypes, limit)
         // API 客户端已经通过 extractData 提取了 response.data
         // 后端返回 { keyword: ..., total: ..., results: [...] }
         const rawResults = response.results || []
@@ -801,18 +853,6 @@ function depthRank(depth) {
 
 function depthCovers(cachedDepth, requiredDepth) {
   return cachedDepth === -1 || (requiredDepth !== -1 && Number(cachedDepth || 0) >= Number(requiredDepth || 0))
-}
-
-function catalogRootTypeForEngine(engine) {
-  const type = String(engine?.engine_type || '').trim().toLowerCase()
-  if (type === 'minio' || type === 's3') return 'service'
-  if (type === 'nfs' || type === 'nas') return 'root'
-  if (['postgresql', 'mysql', 'doris', 'clickhouse', 'spark_sql', 'mongodb', 'neo4j'].includes(type)) return 'server'
-  return 'root'
-}
-
-function engineRootLocator(engine) {
-  return `addp://engine/${engine.id}/path/?type=${catalogRootTypeForEngine(engine)}`
 }
 
 /**

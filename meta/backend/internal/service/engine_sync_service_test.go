@@ -45,9 +45,7 @@ func TestEngineSyncServiceDoesNotCreateAutomaticTaskOnCreateEvent(t *testing.T) 
 	defer server.Close()
 
 	engineSvc := NewEngineService(db, server.URL, "secret")
-	taskSvc := NewScanTaskService(db)
-	execSvc := NewScanExecutionService(db, NewScanService(db, engineSvc), engineSvc, nil)
-	syncSvc := NewEngineSyncService(nil, engineSvc, taskSvc, execSvc, nil)
+	syncSvc := NewEngineSyncService(nil, engineSvc)
 
 	if err := syncSvc.handleEngineChangeEvent(events.EngineChangeEvent{
 		EngineID:  engineID,
@@ -77,7 +75,6 @@ func TestEngineSyncServiceDoesNotDeleteAutomaticTaskOnUpdateEvent(t *testing.T) 
 
 	tenantID := uint(1)
 	engineID := uint(10)
-	taskSvc := NewScanTaskService(db)
 	now := time.Now()
 	existing := scantask.NewEngineScanTask(tenantID, 7, engineID, "Business MinIO", "15 3 * * *", "deep", now, nil)
 	if err := db.Create(existing).Error; err != nil {
@@ -101,8 +98,7 @@ func TestEngineSyncServiceDoesNotDeleteAutomaticTaskOnUpdateEvent(t *testing.T) 
 	defer server.Close()
 
 	engineSvc := NewEngineService(db, server.URL, "secret")
-	execSvc := NewScanExecutionService(db, NewScanService(db, engineSvc), engineSvc, nil)
-	syncSvc := NewEngineSyncService(nil, engineSvc, taskSvc, execSvc, nil)
+	syncSvc := NewEngineSyncService(nil, engineSvc)
 
 	if err := syncSvc.handleEngineChangeEvent(events.EngineChangeEvent{
 		EngineID:  engineID,
@@ -123,13 +119,12 @@ func TestEngineSyncServiceDoesNotDeleteAutomaticTaskOnUpdateEvent(t *testing.T) 
 	}
 }
 
-func TestEngineSyncServiceDeletesAutomaticTaskOnDeleteEvent(t *testing.T) {
+func TestEngineSyncServiceDoesNotDeleteAutomaticTaskOnDeleteEvent(t *testing.T) {
 	db := openObjectCatalogScanTestDB(t)
 	createScanTaskTable(t, db)
 
 	tenantID := uint(1)
 	engineID := uint(11)
-	taskSvc := NewScanTaskService(db)
 	now := time.Now()
 	existing := scantask.NewEngineScanTask(tenantID, 7, engineID, "Business MinIO", "15 3 * * *", "deep", now, nil)
 	if err := db.Create(existing).Error; err != nil {
@@ -137,8 +132,7 @@ func TestEngineSyncServiceDeletesAutomaticTaskOnDeleteEvent(t *testing.T) {
 	}
 
 	engineSvc := NewEngineService(db, "", "")
-	execSvc := NewScanExecutionService(db, nil, engineSvc, nil)
-	syncSvc := NewEngineSyncService(nil, engineSvc, taskSvc, execSvc, nil)
+	syncSvc := NewEngineSyncService(nil, engineSvc)
 	if err := syncSvc.handleEngineChangeEvent(events.EngineChangeEvent{
 		EngineID:  engineID,
 		Action:    events.ActionDelete,
@@ -153,7 +147,7 @@ func TestEngineSyncServiceDeletesAutomaticTaskOnDeleteEvent(t *testing.T) {
 		Count(&count).Error; err != nil {
 		t.Fatalf("count automatic task: %v", err)
 	}
-	if count != 0 {
-		t.Fatalf("automatic task count = %d, want 0", count)
+	if count != 1 {
+		t.Fatalf("automatic task count = %d, want 1", count)
 	}
 }

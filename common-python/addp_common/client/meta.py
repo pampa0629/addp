@@ -17,3 +17,10 @@ class MetaClient(BaseClient):
     async def list_metadata(self, page: int = 1, size: int = 20) -> Dict[str, Any]:
         """列出所有元数据"""
         return await self.get("/api/v1/meta/metadata", params={"page": page, "size": size})
+
+    async def get_resource_tree(self, engine_id: int, expand_depth: int = 2) -> Dict[str, Any]:
+        """获取指定引擎的标准资源树"""
+        return await self.get(
+            f"/api/v1/meta/resource-tree/{engine_id}",
+            params={"expand_depth": expand_depth},
+        )

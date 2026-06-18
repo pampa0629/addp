@@ -64,7 +64,8 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useTaskWizardState } from './useTaskWizardState'
 import { taskAPI } from '@/api/tasks'
-import { getItemByID, getItemFieldsByCatalogPath, getItemFieldsByID, getTableFields } from '@/api/meta'
+import { getItemByID, getItemFieldsByID } from '@/api/meta'
+import { parseTransferLocator } from '@/utils/resourceLocator'
 
 // 导入步骤组件
 import Step1SelectSource from './Step1SelectSource.vue'
@@ -124,7 +125,7 @@ async function loadTaskDetail() {
 }
 
 async function restoreSourceItemForEdit(task) {
-  const metaItemID = parseLocator(task.config?.source?.locator).itemID
+  const metaItemID = parseTransferLocator(task.config?.source?.locator).itemID
   if (!metaItemID) return
 
   try {
@@ -144,25 +145,15 @@ async function loadSourceFieldsForEdit(task) {
     wizardState.loadSourceFields([])
     return
   }
-  const sourceLoc = parseLocator(source.locator)
+  const sourceLoc = parseTransferLocator(source.locator)
 
   try {
-    let fieldList = []
-
-    if (sourceLoc.itemID) {
-      const response = await getItemFieldsByID(sourceLoc.itemID)
-      fieldList = Array.isArray(response?.data) ? response.data : (response || [])
-    } else {
-      const catalogPath = catalogPathFromEndpoint(source)
-      if (!catalogPath) {
-        wizardState.loadSourceFields([])
-        return
-      }
-      const response = sourceLoc.type === 'table'
-        ? await getTableFields(sourceLoc.engineID, sourceLoc.path[sourceLoc.path.length - 2] || '', sourceLoc.path[sourceLoc.path.length - 1] || '')
-        : await getItemFieldsByCatalogPath(sourceLoc.engineID, catalogPath)
-      fieldList = Array.isArray(response?.data) ? response.data : (response || [])
+    if (!sourceLoc.itemID) {
+      wizardState.loadSourceFields([])
+      return
     }
+    const response = await getItemFieldsByID(sourceLoc.itemID)
+    const fieldList = Array.isArray(response?.data) ? response.data : (response || [])
 
     wizardState.loadSourceFields(fieldList)
   } catch (error) {
@@ -171,51 +162,10 @@ async function loadSourceFieldsForEdit(task) {
   }
 }
 
-function catalogPathFromEndpoint(endpoint) {
-  const loc = parseLocator(endpoint?.locator)
-  if (loc.type === 'table') return loc.path.slice(-2).join('.')
-  return loc.path.join('/')
-}
-
 // 加载目标字段（编辑模式）
 async function loadTargetFieldsForEdit(task) {
   if (!task.config?.target) return
-
-  const target = task.config.target
-  if (target.representation !== 'native') return
-
-  const targetLoc = parseLocator(target.locator)
-
-  try {
-    let fieldList = []
-
-    const schema = targetLoc.path.length >= 2 ? targetLoc.path[targetLoc.path.length - 2] : ''
-    const table = targetLoc.path.length >= 1 ? targetLoc.path[targetLoc.path.length - 1] : ''
-    if (table) {
-      const response = await getTableFields(targetLoc.engineID, schema, table)
-      fieldList = Array.isArray(response?.data) ? response.data : (response || [])
-    }
-
-    wizardState.loadTargetFields(fieldList)
-  } catch (error) {
-    console.error('加载目标字段失败:', error)
-    // 不阻断整体加载流程，仅记录错误
-  }
-}
-
-function parseLocator(locator) {
-  const result = { engineID: 0, path: [], type: '', itemID: 0 }
-  const match = String(locator || '').match(/^addp:\/\/engine\/(\d+)\/path\/([^?]*)(?:\?(.*))?$/)
-  if (!match) return result
-  result.engineID = Number(match[1] || 0)
-  result.path = String(match[2] || '')
-    .split('/')
-    .map(part => decodeURIComponent(part).trim())
-    .filter(Boolean)
-  const params = new URLSearchParams(match[3] || '')
-  result.type = String(params.get('type') || '').toLowerCase()
-  result.itemID = Number(params.get('item_id') || 0)
-  return result
+  wizardState.loadTargetFields([])
 }
 
 // 提交任务

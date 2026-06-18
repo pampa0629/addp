@@ -164,6 +164,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
+import { formatLocatorDisplayPath } from '@addp/common-frontend'
 import { dataTypeLabel, formatLabel, representationLabel, writeModeLabel } from '@/utils/transferDisplay'
 
 const { t } = useI18n()
@@ -206,7 +207,7 @@ const hasWarnings = computed(() => warnings.value.length > 0)
 
 const sourceLocatorPath = computed(() => {
   const config = props.wizardState.sourceConfig.value || {}
-  return config.sourceLabel || locatorDisplayPath(props.wizardState.sourceLocator.value, props.wizardState.sourceRepresentation.value) || '-'
+  return config.sourceLabel || formatLocatorDisplayPath(props.wizardState.sourceLocator.value, props.wizardState.sourceRepresentation.value) || '-'
 })
 
 const targetResourcePath = computed(() => {
@@ -216,28 +217,6 @@ const targetResourcePath = computed(() => {
   }
   return [config.resourcePath, config.resourceFile].filter(Boolean).join('/') || '-'
 })
-
-function locatorDisplayPath(locator, representation = '') {
-  const loc = parseLocator(locator)
-  if (loc.path.length === 0) return ''
-  if (String(representation || '').toLowerCase() === 'native' && loc.type === 'table') {
-    return loc.path.slice(-2).join('.')
-  }
-  return loc.path.join('/')
-}
-
-function parseLocator(locator) {
-  const result = { path: [], type: '' }
-  const match = String(locator || '').match(/^addp:\/\/engine\/\d+\/path\/([^?]*)(?:\?(.*))?$/)
-  if (!match) return result
-  result.path = String(match[1] || '')
-    .split('/')
-    .map(part => decodeURIComponent(part).trim())
-    .filter(Boolean)
-  const params = new URLSearchParams(match[2] || '')
-  result.type = String(params.get('type') || '').toLowerCase()
-  return result
-}
 
 function copyConfig() {
   const config = JSON.stringify(props.wizardState.taskConfig.value, null, 2)

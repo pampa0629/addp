@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 
+	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	"github.com/addp/system/internal/config"
@@ -80,8 +81,11 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	registryService := service.NewRegistryService(engineRepo)
 	appService := service.NewApplicationService(appRepo)
 	taskProviderService := service.NewTaskProviderService(db)
-	cleanupOrchestratorService := service.NewCleanupOrchestratorService(redisClient)
+	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
 	moduleRegistryService := service.NewModuleRegistryService(moduleRegistryRepo)
+	cleanupOrchestratorService := service.NewCleanupOrchestratorService(redisClient, taskExecutionRepo, logService, moduleRegistryService)
+	engineService = engineService.WithCleanupOrchestrator(cleanupOrchestratorService)
+	tenantService = tenantService.WithCleanupOrchestrator(cleanupOrchestratorService)
 
 	// 日志中间件
 	router.Use(middleware.LoggerMiddleware(logService))

@@ -27,6 +27,9 @@ const (
 	MsgModuleRegistered = "system.module.registered"
 	MsgModuleHeartbeat = "system.module.heartbeat"
 	MsgModuleDeleted   = "system.module.deleted"
+
+	MsgCleanupConfirmRequired      = "system.cleanup.confirm_required"
+	MsgCleanupConfirmTokenRequired = "system.cleanup.confirm_token_required"
 )
 
 func init() {

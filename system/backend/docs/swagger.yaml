@@ -445,10 +445,18 @@ definitions:
         type: string
       based_on_scan:
         type: string
+      cause_event:
+        description: 生命周期触发事件
+        type: string
+      cleanup_mode:
+        description: logical_cleanup/physical_cleanup
+        type: string
       completed_at:
         type: string
-      delete_type:
-        description: soft_delete/hard_delete
+      context:
+        additionalProperties: true
+        type: object
+      execution_id:
         type: string
       expected_modules:
         items:
@@ -466,6 +474,9 @@ definitions:
       tenant_id:
         type: integer
       timeout_at:
+        type: string
+      trigger_type:
+        description: manual/scheduled/event
         type: string
     type: object
   github_com_addp_system_internal_models.ConnectionInfo:
@@ -811,12 +822,12 @@ definitions:
       based_on_scan:
         description: 基于哪次扫描
         type: string
-      delete_type:
-        description: soft_delete/hard_delete
+      cleanup_mode:
+        description: logical_cleanup/physical_cleanup
         type: string
     required:
     - based_on_scan
-    - delete_type
+    - cleanup_mode
     type: object
   internal_api.CreateExecuteTaskResponse:
     properties:
@@ -826,7 +837,7 @@ definitions:
   internal_api.CreateScanTaskRequest:
     properties:
       scope:
-        description: 扫描范围：meta/manager/transfer 等，为空则扫描所有
+        description: 扫描范围：已注册且启用 cleanup executor 的模块；为空则由 System 按模块注册能力生成
         items:
           type: string
         type: array
@@ -887,8 +898,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: 基于扫描结果，执行垃圾数据清理（软删除或物理删除）| Execute garbage data cleanup based on
-        scan results (soft delete or hard delete)
+      description: 基于扫描结果，执行系统级资源清理（逻辑清理或物理清理）| Execute system cleanup based on scan
+        results (logical or physical cleanup)
       parameters:
       - description: 执行请求 | Execute request
         in: body
@@ -957,8 +968,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: 扫描当前租户的垃圾数据（无效引擎、孤儿数据、软删除数据等）| Scan garbage data for current tenant
-        (invalid engines, orphan data, soft-deleted data, etc.)
+      description: 扫描当前租户的系统级资源清理候选；scope 为空时按已注册且启用 cleanup executor 的模块生成 expected_modules
+        | Scan system cleanup candidates for current tenant; when scope is empty,
+        expected_modules is generated from registered cleanup executors
       parameters:
       - description: 扫描请求 | Scan request
         in: body

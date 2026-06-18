@@ -16,7 +16,11 @@
         <el-tag size="small" type="info">{{ row.source || '-' }}</el-tag>
       </template>
     </el-table-column>
-    <el-table-column prop="task_type" :label="t('monitor.table.task_type')" width="120" />
+    <el-table-column prop="task_type" :label="t('monitor.table.task_type')" width="140">
+      <template #default="{ row }">
+        {{ formatTaskType(row.task_type) }}
+      </template>
+    </el-table-column>
     <el-table-column prop="source_task_id" :label="t('monitor.table.source_task_id')" width="130">
       <template #default="{ row }">
         {{ row.source_task_id || '-' }}
@@ -100,9 +104,17 @@ function getStatusText(status) {
 function getTriggerText(triggerType) {
   const textMap = {
     manual: t('monitor.execution.trigger.manual'),
-    scheduled: t('monitor.execution.trigger.scheduled')
+    scheduled: t('monitor.execution.trigger.scheduled'),
+    event: t('monitor.execution.trigger.event')
   }
   return textMap[triggerType] || triggerType || '-'
+}
+
+function formatTaskType(taskType) {
+  if (!taskType) return '-'
+  const key = `monitor.execution.task_type_names.${taskType}`
+  const translated = t(key)
+  return translated === key ? taskType : translated
 }
 
 function getProgressStatus(status) {

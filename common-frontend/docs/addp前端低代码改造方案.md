@@ -255,7 +255,7 @@ class ADDPClient {
     return response.json();
   }
 
-  // Manager模块API
+  // Manager 模块 API
   getResourceTree() {
     return this.request('/api/manager/resources/tree');
   }
@@ -264,7 +264,7 @@ class ADDPClient {
     return this.request(`/api/manager/object/${engineId}/preview?path=${path}`);
   }
 
-  // System模块API
+  // 控制面 API
   getStorageEngines() {
     return this.request('/api/system/engines');
   }

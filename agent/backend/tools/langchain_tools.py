@@ -54,7 +54,7 @@ def create_agent_tools(token: str, tenant_id: int = 1, user_id: int = 1) -> List
         参数:
           engine_id: 存储引擎 ID，从 list_engines 获取。
         返回结果包含每个节点的 locator URI，可直接用于 preview_data。"""
-        result = await manager.get_engine_tree(engine_id=engine_id, expand_depth=3)
+        result = await meta.get_resource_tree(engine_id=engine_id, expand_depth=3)
         return _to_str(result)
 
     @tool
@@ -64,7 +64,7 @@ def create_agent_tools(token: str, tenant_id: int = 1, user_id: int = 1) -> List
         参数:
           engine_id: 存储引擎 ID，从 list_engines 获取。
         返回每张表的名称、所属 schema 和 locator URI，不含 bucket/文件等非表资源。"""
-        result = await manager.get_engine_tree(engine_id=engine_id, expand_depth=3)
+        result = await meta.get_resource_tree(engine_id=engine_id, expand_depth=3)
 
         tables = []
 

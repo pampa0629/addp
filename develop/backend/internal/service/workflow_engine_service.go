@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/resourcetree"
 	"github.com/addp/common/utils"
 	"github.com/addp/develop/backend/internal/models"
 )
@@ -141,8 +143,9 @@ func toWorkflowResponse(result *plugin.WorkflowExecuteResult) *WorkflowResponse 
 	return resp
 }
 
-// preprocessWorkflowParams 预处理工作流参数
-// 将算子参数中的 engine_id 转换为实际的 connection_info
+// preprocessWorkflowParams 预处理工作流参数。
+// 表资源以 locator / parent_locator + name 作为存储契约，执行前在 Develop 边界派生 engine_id/schema/table，
+// 再将 engine_id 转换为实际的 connection_info。
 // 这样工作流引擎就不需要依赖 System 服务，实现解耦
 func (s *WorkflowEngineService) preprocessWorkflowParams(
 	ctx context.Context,
@@ -184,6 +187,10 @@ func (s *WorkflowEngineService) preprocessWorkflowParams(
 		params, ok := paramsInterface.(map[string]interface{})
 		if !ok {
 			continue
+		}
+
+		if err := deriveWorkflowTableParams(params); err != nil {
+			return nil, fmt.Errorf("任务 %d 表资源参数派生失败: %w", i, err)
 		}
 
 		// 检查是否有 engine_id 参数
@@ -237,6 +244,75 @@ func (s *WorkflowEngineService) preprocessWorkflowParams(
 	}
 
 	return result, nil
+}
+
+func deriveWorkflowTableParams(params map[string]interface{}) error {
+	if locator := stringParam(params, "locator"); locator != "" {
+		loc, err := resourcetree.ParseURI(locator)
+		if err != nil {
+			return fmt.Errorf("invalid locator: %w", err)
+		}
+		if loc.Type != resourcetree.TypeTable && loc.Type != resourcetree.TypeCollection {
+			return fmt.Errorf("locator must point to table or collection, got %s", loc.Type)
+		}
+		schema, table := schemaTableFromPath(loc.Path)
+		if table == "" {
+			return fmt.Errorf("locator path must include table name")
+		}
+		params["engine_id"] = loc.EngineID
+		params["schema"] = schema
+		params["table"] = table
+		delete(params, "locator")
+	}
+
+	if parentLocator := stringParam(params, "target_parent_locator"); parentLocator != "" {
+		loc, err := resourcetree.ParseURI(parentLocator)
+		if err != nil {
+			return fmt.Errorf("invalid target_parent_locator: %w", err)
+		}
+		targetName := strings.TrimSpace(stringParam(params, "target_name"))
+		if targetName == "" {
+			return fmt.Errorf("target_name is required when target_parent_locator is provided")
+		}
+		schema := lastPathSegment(loc.Path)
+		if schema == "" {
+			return fmt.Errorf("target_parent_locator path must include schema or database name")
+		}
+		params["engine_id"] = loc.EngineID
+		params["schema"] = schema
+		params["table"] = targetName
+		delete(params, "target_parent_locator")
+		delete(params, "target_name")
+	}
+
+	return nil
+}
+
+func schemaTableFromPath(path []string) (string, string) {
+	if len(path) == 0 {
+		return "", ""
+	}
+	table := path[len(path)-1]
+	if len(path) == 1 {
+		return "", table
+	}
+	return path[len(path)-2], table
+}
+
+func lastPathSegment(path []string) string {
+	if len(path) == 0 {
+		return ""
+	}
+	return path[len(path)-1]
+}
+
+func stringParam(params map[string]interface{}, key string) string {
+	switch value := params[key].(type) {
+	case string:
+		return strings.TrimSpace(value)
+	default:
+		return ""
+	}
 }
 
 // ListWorkflowEngines 获取支持workflow开发模式的工作流引擎列表

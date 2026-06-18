@@ -11,6 +11,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/datatype"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/common/spatial"
@@ -72,6 +73,13 @@ func NewQuickViewService(
 	}
 }
 
+func (s *QuickViewService) Repository() *repository.QuickViewRepository {
+	if s == nil {
+		return nil
+	}
+	return s.repo
+}
+
 type QuickViewCapabilityOptions struct {
 	DirectGeoJSONMaxRows  int
 	RealtimeTileTimeoutMS int
@@ -97,16 +105,18 @@ type QuickViewIdentity struct {
 }
 
 type SpatialMetadataResult struct {
-	GeomColumn         string
-	GeometryColumns    []string
-	SRID               int
-	ExtentSRID         int
-	PrimaryKey         string
-	Extent             []float64
-	RenderExtent       []float64
-	RenderExtentSRID   int
-	RenderExtentSource string
-	RecordCount        int64
+	GeomColumn          string
+	GeometryColumns     []string
+	SRID                int
+	SourceCRS           string
+	SourceCRSDefinition *datatype.CRSDefinition
+	ExtentSRID          int
+	PrimaryKey          string
+	Extent              []float64
+	RenderExtent        []float64
+	RenderExtentSRID    int
+	RenderExtentSource  string
+	RecordCount         int64
 }
 
 type QuickViewSource struct {
@@ -137,6 +147,9 @@ type QuickViewCapability struct {
 	TenantID             uint                       `json:"tenant_id"`
 	ItemFingerprint      string                     `json:"item_fingerprint,omitempty"`
 	Locator              string                     `json:"locator,omitempty"`
+	SourceEngineID       uint                       `json:"source_engine_id,omitempty"`
+	SourceSchema         string                     `json:"source_schema,omitempty"`
+	SourceTable          string                     `json:"source_table,omitempty"`
 	CanUseQuickView      bool                       `json:"can_use_quick_view"`
 	CanGenerateTileCache bool                       `json:"can_generate_tile_cache"`
 	PreferredMode        string                     `json:"preferred_mode"`
@@ -279,6 +292,9 @@ func (s *QuickViewService) BuildCapability(ctx context.Context, identity QuickVi
 		TenantID:          identity.TenantID,
 		ItemFingerprint:   identity.ItemFingerprint,
 		Locator:           identity.Locator,
+		SourceEngineID:    engineID,
+		SourceSchema:      strings.TrimSpace(schema),
+		SourceTable:       strings.TrimSpace(table),
 		PreferredMode:     preferredMode,
 		RecommendedMode:   "table_geojson",
 		ActiveMode:        preferredMode,
@@ -311,16 +327,18 @@ func (s *QuickViewService) BuildCapability(ctx context.Context, identity QuickVi
 		capability.TileCacheGeneration.Available = false
 		capability.TileCacheGeneration.Reason = spatialErr.Error()
 		capability.UnavailableReason = spatialErr.Error()
-	} else if !spatialMetaComplete(spatialMeta) {
-		capability.TileCacheGeneration.Available = false
-		capability.TileCacheGeneration.Reason = "spatial metadata is incomplete"
-		capability.UnavailableReason = capability.TileCacheGeneration.Reason
+	} else if reason := quickViewUnavailableReason(spatialMeta, true, s.directGeoJSONMaxRows()); reason != "" {
+		if !spatialMetaTileReady(spatialMeta) {
+			capability.TileCacheGeneration.Available = false
+			capability.TileCacheGeneration.Reason = tileCacheGenerationUnavailableReason(spatialMeta)
+		}
+		capability.UnavailableReason = reason
 	}
 
 	if capability.CanUseQuickView {
 		capability.CanGenerateTileCache = true
 		capability.TileCacheGeneration.Available = true
-	} else if capability.TileCacheGeneration.Available && spatialMetaComplete(spatialMeta) {
+	} else if capability.TileCacheGeneration.Available && spatialMetaTileReady(spatialMeta) {
 		capability.CanGenerateTileCache = true
 	}
 	if !capability.TileCacheGeneration.Available {
@@ -377,6 +395,9 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 		TenantID:          identity.TenantID,
 		ItemFingerprint:   identity.ItemFingerprint,
 		Locator:           identity.Locator,
+		SourceEngineID:    source.EngineID,
+		SourceSchema:      strings.TrimSpace(source.Schema),
+		SourceTable:       strings.TrimSpace(source.Table),
 		PreferredMode:     preferredMode,
 		RecommendedMode:   "table_geojson",
 		ActiveMode:        preferredMode,
@@ -406,10 +427,6 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 		capability.RecommendedMode = "quick_view"
 		capability.QuickView = renderInfoFromLocatorGeoJSON(source.SpatialMeta, source.GeoJSONURL)
 		capability.RealtimeTile = s.realtimeTileInfoFromTarget(source.RealtimeTileTarget)
-	} else if !spatialMetaComplete(source.SpatialMeta) {
-		capability.TileCacheGeneration.Available = false
-		capability.TileCacheGeneration.Reason = "spatial metadata is incomplete"
-		capability.UnavailableReason = capability.TileCacheGeneration.Reason
 	} else if source.RealtimeTileTarget != nil {
 		capability.CanUseQuickView = true
 		capability.Status = QuickViewStatusAvailable
@@ -419,12 +436,18 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 		capability.QuickView = renderInfoFromRealtimeTile(source.EngineID, source.Schema, source.Table, source.SpatialMeta)
 		capability.RealtimeTile = s.realtimeTileInfoFromTarget(source.RealtimeTileTarget)
 		capability.CanGenerateTileCache = true
+	} else if reason := quickViewUnavailableReason(source.SpatialMeta, source.DirectGeoJSON, s.directGeoJSONMaxRows()); reason != "" {
+		if !spatialMetaTileReady(source.SpatialMeta) {
+			capability.TileCacheGeneration.Available = false
+			capability.TileCacheGeneration.Reason = tileCacheGenerationUnavailableReason(source.SpatialMeta)
+		}
+		capability.UnavailableReason = reason
 	}
 
 	if capability.CanUseQuickView && source.CanTile {
 		capability.CanGenerateTileCache = true
 		capability.TileCacheGeneration.Available = true
-	} else if source.CanTile && capability.TileCacheGeneration.Available && spatialMetaComplete(source.SpatialMeta) {
+	} else if source.CanTile && capability.TileCacheGeneration.Available && spatialMetaTileReady(source.SpatialMeta) {
 		capability.CanGenerateTileCache = true
 	}
 	if !capability.TileCacheGeneration.Available {
@@ -681,6 +704,10 @@ func (s *QuickViewService) realtimeTileTimeoutBudgetMS() int {
 }
 
 func spatialMetaComplete(meta *SpatialMetadataResult) bool {
+	return spatialMetaTileReady(meta)
+}
+
+func spatialMetaTileReady(meta *SpatialMetadataResult) bool {
 	return meta != nil &&
 		strings.TrimSpace(meta.GeomColumn) != "" &&
 		meta.SRID > 0 &&
@@ -690,11 +717,55 @@ func spatialMetaComplete(meta *SpatialMetadataResult) bool {
 func spatialMetaDirectGeoJSONReady(meta *SpatialMetadataResult) bool {
 	return meta != nil &&
 		strings.TrimSpace(meta.GeomColumn) != "" &&
-		meta.SRID > 0
+		spatialMetaRenderableCRS(meta)
+}
+
+func spatialMetaRenderableCRS(meta *SpatialMetadataResult) bool {
+	if meta == nil {
+		return false
+	}
+	if meta.SRID > 0 {
+		return true
+	}
+	return strings.TrimSpace(meta.SourceCRS) != "" && meta.SourceCRSDefinition != nil
 }
 
 func directGeoJSONAvailable(maxRows int64, meta *SpatialMetadataResult) bool {
 	return spatialMetaDirectGeoJSONReady(meta) && meta.RecordCount > 0 && meta.RecordCount <= maxRows
+}
+
+func quickViewUnavailableReason(meta *SpatialMetadataResult, directGeoJSON bool, directGeoJSONMaxRows int64) string {
+	if meta == nil || strings.TrimSpace(meta.GeomColumn) == "" {
+		return "quick view geometry metadata is unavailable"
+	}
+	if directGeoJSON {
+		if !spatialMetaRenderableCRS(meta) {
+			return "quick view CRS is not renderable"
+		}
+		if meta.RecordCount <= 0 {
+			return "quick view row count is unavailable"
+		}
+		if directGeoJSONMaxRows > 0 && meta.RecordCount > directGeoJSONMaxRows {
+			return "direct GeoJSON quick view exceeds row limit"
+		}
+	}
+	if !spatialMetaTileReady(meta) {
+		return tileCacheGenerationUnavailableReason(meta)
+	}
+	return ""
+}
+
+func tileCacheGenerationUnavailableReason(meta *SpatialMetadataResult) string {
+	if meta == nil || strings.TrimSpace(meta.GeomColumn) == "" {
+		return "tile generation requires geometry metadata"
+	}
+	if meta.SRID <= 0 {
+		return "tile generation requires numeric SRID"
+	}
+	if len(meta.Extent) != 4 {
+		return "tile generation requires spatial extent"
+	}
+	return "tile generation is unavailable"
 }
 
 func (s *QuickViewService) realtimeTileInfoFromTarget(target *RealtimeTileTarget) *QuickViewRealtimeTileInfo {
@@ -991,15 +1062,6 @@ func tileCacheCreateURL(identity QuickViewIdentity, engineID uint, schema, table
 	values := url.Values{}
 	values.Set("tab", "tasks")
 	values.Set("create", "1")
-	if engineID > 0 {
-		values.Set("engine_id", fmt.Sprintf("%d", engineID))
-	}
-	if strings.TrimSpace(schema) != "" {
-		values.Set("schema", strings.TrimSpace(schema))
-	}
-	if strings.TrimSpace(table) != "" {
-		values.Set("table", strings.TrimSpace(table))
-	}
 	locator := strings.TrimSpace(identity.Locator)
 	if locator == "" {
 		locator = tableLocator(engineID, schema, table)

@@ -164,9 +164,7 @@ func SetupRouter(
 		// ========== 引擎管理 ==========
 		engines := api.Group("/engines")
 		{
-			engines.GET("", engineHandler.ListEngines)                               // 获取引擎列表
-			engines.GET("/nfs", engineHandler.ListNfsEngines)                        // 获取 NFS 引擎列表
-			engines.POST("/:id/catalog/children", engineHandler.ListCatalogChildren) // 获取实时 catalog 子节点
+			engines.GET("", engineHandler.ListEngines) // 获取引擎列表
 		}
 
 		// ========== 工作流引擎管理 ==========
