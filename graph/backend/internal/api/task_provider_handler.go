@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	commonAPI "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
 	commonAuth "github.com/addp/common/middleware/auth"
 	"github.com/addp/graph/internal/models"
@@ -29,6 +30,11 @@ type graphTaskProviderExecuteRequest struct {
 	Parameters        map[string]interface{} `json:"parameters"`
 }
 
+type graphTaskProviderExecuteResponse struct {
+	ExecutionID string `json:"execution_id"`
+	Status      string `json:"status"`
+}
+
 type graphTaskListItem struct {
 	ID          uint   `json:"id"`
 	TenantID    uint   `json:"tenant_id"`
@@ -41,13 +47,20 @@ type graphTaskListItem struct {
 	ExecutionID string `json:"last_execution_id,omitempty"`
 }
 
+type graphTaskListResponse struct {
+	Items    []graphTaskListItem `json:"items"`
+	Total    int                 `json:"total"`
+	Page     int                 `json:"page"`
+	PageSize int                 `json:"page_size"`
+}
+
 // ListProviderTasks 列出 Graph 构建任务。
 // @Summary 列出 TaskProvider 图谱构建任务 | List TaskProvider graph build tasks
 // @Description 按标准 TaskProvider 协议列出 Graph 构建任务；task_type 仅支持 kg_build。| List Graph build tasks through the standard TaskProvider protocol; task_type only supports kg_build.
 // @Tags 图谱构建 | Graph Build
 // @Produce json
 // @Param task_type query string false "任务类型，固定为 kg_build | Task type, fixed to kg_build"
-// @Success 200 {object} map[string]interface{} "任务列表 | Task list"
+// @Success 200 {object} graphTaskListResponse "任务列表 | Task list"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 500 {object} models.ErrorResponse
 // @Router /tasks [get]
@@ -57,6 +70,14 @@ func (h *TaskProviderHandler) ListProviderTasks(c *gin.Context) {
 	if taskType != "" && taskType != commonExecution.TaskTypeKGBuild {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported task_type: " + taskType})
 		return
+	}
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "100"))
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 100
 	}
 
 	tasks, err := h.buildSvc.ListAllTasks(commonAuth.GetTenantID(c))
@@ -69,10 +90,11 @@ func (h *TaskProviderHandler) ListProviderTasks(c *gin.Context) {
 	for _, task := range tasks {
 		items = append(items, graphTaskProviderListItem(task))
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"status": "success",
-		"data":   items,
-		"total":  len(items),
+	c.JSON(http.StatusOK, graphTaskListResponse{
+		Items:    items,
+		Total:    len(items),
+		Page:     page,
+		PageSize: pageSize,
 	})
 }
 
@@ -83,7 +105,7 @@ func (h *TaskProviderHandler) ListProviderTasks(c *gin.Context) {
 // @Produce json
 // @Param task_type path string true "任务类型，固定为 kg_build | Task type, fixed to kg_build"
 // @Param id path int true "构建任务ID | Build task ID"
-// @Success 200 {object} models.BuildTask
+// @Success 200 {object} graphTaskListItem
 // @Failure 400 {object} models.ErrorResponse
 // @Failure 404 {object} models.ErrorResponse
 // @Router /tasks/{task_type}/{id} [get]
@@ -105,7 +127,7 @@ func (h *TaskProviderHandler) GetProviderTask(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
 		return
 	}
-	c.JSON(http.StatusOK, task)
+	c.JSON(http.StatusOK, graphTaskProviderListItem(*task))
 }
 
 // ExecuteProviderTask 执行 Graph 构建任务。
@@ -117,7 +139,7 @@ func (h *TaskProviderHandler) GetProviderTask(c *gin.Context) {
 // @Param task_type path string true "任务类型，固定为 kg_build | Task type, fixed to kg_build"
 // @Param id path int true "构建任务ID | Build task ID"
 // @Param request body graphTaskProviderExecuteRequest false "TaskProvider 执行请求 | TaskProvider execution request"
-// @Success 200 {object} map[string]string "执行ID | Execution ID"
+// @Success 202 {object} graphTaskProviderExecuteResponse "执行ID | Execution ID"
 // @Failure 400 {object} models.ErrorResponse
 // @Failure 500 {object} models.ErrorResponse
 // @Router /tasks/{task_type}/{id}/execute [post]
@@ -136,7 +158,10 @@ func (h *TaskProviderHandler) ExecuteProviderTask(c *gin.Context) {
 	}
 
 	var req graphTaskProviderExecuteRequest
-	_ = c.ShouldBindJSON(&req)
+	if err := commonAPI.BindOptionalJSONStrict(c, &req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	if len(req.Parameters) > 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Graph task provider does not support execution parameter overrides"})
 		return
@@ -168,9 +193,9 @@ func (h *TaskProviderHandler) ExecuteProviderTask(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"execution_id": executionID,
-		"status":       commonExecution.ExecutionStatusRunning,
+	c.JSON(http.StatusAccepted, graphTaskProviderExecuteResponse{
+		ExecutionID: executionID,
+		Status:      commonExecution.ExecutionStatusRunning,
 	})
 }
 

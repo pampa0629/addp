@@ -632,21 +632,21 @@ python3 -m venv venv
 
 #### 问题根因
 
-**注册 API 路径缺少 `/api` 前缀**
+**注册 API 路径缺少 `/api/v1` 前缀**
 
 - **错误路径**: `http://localhost:8180/internal/engines/register`
-- **正确路径**: `http://localhost:8180/api/internal/engines/register`
+- **正确路径**: `http://localhost:8180/api/v1/internal/engines/register`
 
 System Backend 的路由定义在 `system/backend/internal/api/engine_handler.go`：
 
 ```go
-// POST /api/internal/engines/register
+// POST /api/v1/internal/engines/register
 func RegisterEngine(c *gin.Context) {
     // 引擎注册逻辑
 }
 ```
 
-所有内部 API 都必须带 `/api` 前缀，这是 System Backend 的统一路由规范。
+所有内部 API 都必须带 `/api/v1/internal` 前缀，这是 System Backend 的统一路由规范。
 
 #### 技术细节
 
@@ -685,7 +685,7 @@ response = requests.post(
 
 # 修改后
 response = requests.post(
-    f"{system_url}/api/internal/engines/register",
+    f"{system_url}/api/v1/internal/engines/register",
     # ...
 )
 ```
@@ -705,7 +705,7 @@ bash scripts/dev/restart.sh -python-workflow
 tail -f logs/python-workflow-engine-stderr.log
 
 # 预期输出：
-# 📤 发送注册请求到: http://localhost:8180/api/internal/engines/register
+# 📤 发送注册请求到: http://localhost:8180/api/v1/internal/engines/register
 # 📥 收到响应: status=202, body=...
 # ✅ Successfully registered to System Backend (Engine ID: xxx)
 ```
@@ -714,7 +714,7 @@ tail -f logs/python-workflow-engine-stderr.log
 ```bash
 # 查询已注册的引擎列表
 curl -H "Authorization: Bearer YOUR_TOKEN" \
-  http://localhost:8180/api/engines
+  http://localhost:8180/api/v1/system/engines
 
 # 应该能看到 python_workflow、math_workflow、spark_workflow
 ```

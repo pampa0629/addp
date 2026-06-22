@@ -502,7 +502,7 @@ func neo4jValueTypeToFieldType(nativeType string) datatype.FieldType {
 	case "MAP":
 		return datatype.FieldTypeJSON
 	case "POINT":
-		return datatype.FieldTypePoint
+		return datatype.FieldTypeGeometry
 	default:
 		return datatype.FieldTypeUnknown
 	}

@@ -202,7 +202,7 @@ func (h *ExplorerHandler) ListEngines(c *gin.Context) {
 // StorageStream 存储叶子内容流式传输（支持 Range 请求）
 // GET /api/v1/manager/storage-stream?engine_id=1&storage_ref=bucket/path/to/file
 // @Summary 存储内容流式传输 | Storage content streaming
-// @Description 支持 Range 请求的单存储叶子内容流式传输，用于图片、PDF、视频等在线预览；原始下载请使用 storage-download。storage_ref 在对象存储中为 bucket/path，在文件系统中为文件路径 | Storage leaf content streaming with Range request support for online previews such as images, PDF, and video; use storage-download for original downloads. storage_ref is bucket/path for object catalogs and file path for file catalogs
+// @Description 支持 Range 请求的单存储叶子内容流式传输，用于图片、PDF、视频等在线预览；用户下载请使用 downloads/file。storage_ref 在对象存储中为 bucket/path，在文件系统中为文件路径 | Storage leaf content streaming with Range request support for online previews such as images, PDF, and video; use downloads/file for user downloads. storage_ref is bucket/path for object catalogs and file path for file catalogs
 // @Tags Manager
 // @Produce octet-stream
 // @Param engine_id query int true "存储引擎ID | Engine ID"
@@ -283,71 +283,6 @@ func (h *ExplorerHandler) StorageStream(c *gin.Context) {
 	_, err = io.Copy(c.Writer, reader)
 	if err != nil {
 		logger.L().Error("存储内容流传输失败", "error", err)
-	}
-}
-
-// StorageDownload 逻辑存储对象下载。
-// GET /api/v1/manager/storage-download?engine_id=1&storage_ref=bucket/path/to/file
-// @Summary 逻辑存储对象下载 | Logical storage object download
-// @Description 基于 DownloadPlan 自动处理单叶子下载和 multi refs ZIP 打包下载；storage-stream 仍只用于单存储叶子 Range 流 | Resolve DownloadPlan and download a logical storage object as a single stream or ZIP bundle
-// @Tags Manager
-// @Produce octet-stream
-// @Param engine_id query int true "存储引擎ID | Engine ID"
-// @Param storage_ref query string true "存储内容引用 | Storage content reference"
-// @Success 200 "下载内容流 | Download content stream"
-// @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
-// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @Router /storage-download [get]
-// @Security BearerAuth
-func (h *ExplorerHandler) StorageDownload(c *gin.Context) {
-	tenantID := tenantIDFromContext(c)
-	engineIDStr := c.Query("engine_id")
-	storageRef := c.Query("storage_ref")
-
-	if engineIDStr == "" || storageRef == "" {
-		managerError(c, http.StatusBadRequest, manageri18n.MsgMissingEngineIDOrStorageRef)
-		return
-	}
-	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
-	if err != nil {
-		invalidEngineID(c)
-		return
-	}
-
-	plan, err := h.metadataService.ResolveStorageDownloadPlan(c.Request.Context(), uint(engineID), storageRef, tenantID)
-	if err != nil {
-		if err == service.ErrEngineAccessDenied || err == preview.ErrEngineAccessDenied {
-			accessDeniedToEngine(c)
-			return
-		}
-		if strings.Contains(err.Error(), "does not support storage streaming") || errors.Is(err, service.ErrDownloadNotSupported) {
-			commonAPI.BadRequestError(c, err.Error())
-			return
-		}
-		logger.L().Error("存储对象下载计划解析失败", "error", err)
-		commonAPI.InternalServerError(c, err.Error())
-		return
-	}
-
-	reader, err := h.metadataService.OpenStorageDownloadPlan(c.Request.Context(), uint(engineID), plan, tenantID)
-	if err != nil {
-		logger.L().Error("存储对象下载失败", "error", err)
-		commonAPI.InternalServerError(c, err.Error())
-		return
-	}
-	defer reader.Close()
-
-	contentType := plan.ContentType
-	if contentType == "" {
-		contentType = "application/octet-stream"
-	}
-	c.Header("Content-Type", contentType)
-	c.Header("Content-Disposition", attachmentContentDisposition(plan.FileName))
-	c.Status(http.StatusOK)
-
-	if _, err := io.Copy(c.Writer, reader); err != nil {
-		logger.L().Error("存储对象下载流传输失败", "error", err)
 	}
 }
 

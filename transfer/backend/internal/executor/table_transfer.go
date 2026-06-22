@@ -3,8 +3,10 @@ package executor
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/contentadapter"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	"github.com/addp/common/resume"
@@ -248,6 +250,7 @@ func (e *TableTransferExecutor) openTarget(plan TableTargetPlan) (TableBatchTarg
 		if e.TargetTableWriterProvider == nil && e.TargetMultiProvider == nil {
 			return nil, fmt.Errorf("encoded table target requires table writer provider")
 		}
+		refBasePath, refPathMapper := encodedTargetRelatedRefMapping(plan.Path)
 		return &encodedContentTableTarget{
 			writer:              e.TargetContentWriter,
 			deleter:             deleter,
@@ -255,6 +258,8 @@ func (e *TableTransferExecutor) openTarget(plan TableTargetPlan) (TableBatchTarg
 			multiProvider:       e.TargetMultiProvider,
 			connInfo:            plan.ConnInfo,
 			path:                plan.Path,
+			refBasePath:         refBasePath,
+			refPathMapper:       refPathMapper,
 			writeOptions:        plan.ContentWrite,
 			formatOptions:       plan.FormatOptions,
 			resumeMarker:        plan.ResumeMarker,
@@ -280,6 +285,33 @@ func (e *TableTransferExecutor) openTarget(plan TableTargetPlan) (TableBatchTarg
 	default:
 		return nil, fmt.Errorf("unsupported table target kind %q", plan.Kind)
 	}
+}
+
+func encodedTargetRelatedRefMapping(path engineplugin.CatalogPath) (string, contentadapter.RefCatalogPathMapper) {
+	bucket, objectPath := objectCatalogPathParts(path)
+	if bucket == "" || objectPath == "" {
+		return path.StringPath(), nil
+	}
+	return objectPath, contentadapter.SameObjectBucketPathMapper(path)
+}
+
+func objectCatalogPathParts(path engineplugin.CatalogPath) (string, string) {
+	bucket := ""
+	parts := make([]string, 0, len(path.Segments))
+	for _, segment := range path.Segments {
+		name := strings.Trim(segment.Name, "/")
+		if name == "" {
+			continue
+		}
+		if bucket == "" && (segment.Term == engineplugin.CatalogTermBucket || segment.Kind == engineplugin.CatalogKindBucket) {
+			bucket = name
+			continue
+		}
+		if bucket != "" {
+			parts = append(parts, name)
+		}
+	}
+	return bucket, strings.Join(parts, "/")
 }
 
 func (e *TableTransferExecutor) targetDeleter(plan TableTargetPlan) (*engineTargetResourceDeleter, error) {

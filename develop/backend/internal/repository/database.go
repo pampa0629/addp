@@ -159,6 +159,14 @@ WHERE content ? 'input_data'`,
 			name: "drop unsupported dev_type",
 			sql:  "DELETE FROM develop.dev_tasks WHERE dev_type NOT IN ('query', 'workflow', 'script')",
 		},
+		{
+			name: "drop unsupported dev task schedule columns",
+			sql: `
+ALTER TABLE develop.dev_tasks
+    DROP COLUMN IF EXISTS schedule,
+    DROP COLUMN IF EXISTS enabled,
+    DROP COLUMN IF EXISTS next_run_at`,
+		},
 	}
 
 	for _, stmt := range statements {

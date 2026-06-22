@@ -61,6 +61,9 @@ func AutoMigrate(db *gorm.DB) error {
 	if err := dropEngineScanConfig(db); err != nil {
 		return err
 	}
+	if err := dropUsersIsSuperuser(db); err != nil {
+		return err
+	}
 	return db.AutoMigrate(
 		&models.Tenant{},
 		&models.User{},
@@ -71,6 +74,25 @@ func AutoMigrate(db *gorm.DB) error {
 		&models.TaskProvider{},
 		&models.ModuleRegistry{},
 	)
+}
+
+func dropUsersIsSuperuser(db *gorm.DB) error {
+	return db.Exec(`
+		DO $$
+		BEGIN
+			IF to_regclass('system.users') IS NOT NULL THEN
+				IF EXISTS (
+					SELECT 1
+					FROM information_schema.columns
+					WHERE table_schema = 'system'
+					  AND table_name = 'users'
+					  AND column_name = 'is_superuser'
+				) THEN
+					ALTER TABLE system.users DROP COLUMN is_superuser;
+				END IF;
+			END IF;
+		END $$;
+	`).Error
 }
 
 func migrateEngineOrigin(db *gorm.DB) error {
@@ -182,7 +204,6 @@ func InitSuperAdmin(db *gorm.DB) error {
 			IsActive:     true,
 			UserType:     models.UserTypeSuperAdmin,
 			TenantID:     nil, // 超级管理员没有租户
-			IsSuperuser:  true,
 		}
 
 		if err := db.Create(&superAdminUser).Error; err != nil {
@@ -200,7 +221,6 @@ func InitSuperAdmin(db *gorm.DB) error {
 	// 如果SuperAdmin用户存在，确保类型正确
 	if user.UserType != models.UserTypeSuperAdmin {
 		user.UserType = models.UserTypeSuperAdmin
-		user.IsSuperuser = true
 		user.TenantID = nil
 		if err := db.Save(&user).Error; err != nil {
 			return err
@@ -282,7 +302,6 @@ func InitDefaultTenant(db *gorm.DB) error {
 			IsActive:     true,
 			UserType:     models.UserTypeTenantAdmin,
 			TenantID:     &tenant.ID, // 关联到默认租户
-			IsSuperuser:  false,
 		}
 
 		if err := db.Create(&tenantAdmin).Error; err != nil {
@@ -303,7 +322,6 @@ func InitDefaultTenant(db *gorm.DB) error {
 	if user.UserType != models.UserTypeTenantAdmin || user.TenantID == nil || *user.TenantID != tenant.ID {
 		user.UserType = models.UserTypeTenantAdmin
 		user.TenantID = &tenant.ID
-		user.IsSuperuser = false
 		if err := db.Save(&user).Error; err != nil {
 			log.Printf("❌ 更新租户管理员信息失败: %v\n", err)
 			return err
@@ -347,7 +365,7 @@ func MigrateTaskProviders(db *gorm.DB) error {
 	`).Scan(&colCount)
 
 	if colCount > 0 {
-		// 2. 删除旧列。任务创建/编辑入口必须由 task.capabilities/v1 的 task_types[] 声明。
+		// 2. 删除旧列。任务创建/编辑入口必须由 task.capabilities/v1 的 task_capabilities[] 声明。
 		if err := db.Exec(`
 			ALTER TABLE system.task_providers
 			DROP COLUMN IF EXISTS create_task_url,

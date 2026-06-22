@@ -46,7 +46,7 @@ func (s *TaskProviderRegistryService) Register() error {
 	// 能力描述（供 Orchestrator 查询）
 	capabilities := map[string]interface{}{
 		"schema_version": "task.capabilities/v1",
-		"task_types": []map[string]interface{}{
+		"task_capabilities": []map[string]interface{}{
 			{
 				"type":                      "query",
 				"display_name":              "查询任务",

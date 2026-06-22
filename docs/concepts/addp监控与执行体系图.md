@@ -31,7 +31,7 @@ ADDP 采用**统一执行监控架构**,通过 `common.task_executions` 表统�
 graph TB
     subgraph "任务执行模块"
         Meta[Meta 模块<br/>scan]
-        Transfer[Transfer 模块<br/>import]
+        Transfer[Transfer 模块<br/>sync]
         Develop[Develop 模块<br/>query / workflow / script]
         Manager[Manager 模块<br/>tile_cache_generation / quick_view_optimization / embedding]
         Quality[Quality 模块<br/>check]
@@ -77,7 +77,7 @@ graph TB
 | `id` | bigint | 执行记录 ID |
 | `tenant_id` | int | 租户 ID (租户隔离) |
 | `module` | string | 模块名称 (meta/transfer/develop/manager/quality/graph/orchestrator) |
-| `task_type` | string | 任务类型 (scan/import/orchestration/query/workflow/script/tile_cache_generation/quick_view_optimization/embedding/check/kg_build) |
+| `task_type` | string | 任务类型 (scan/sync/orchestration/query/workflow/script/tile_cache_generation/quick_view_optimization/embedding/check/kg_build) |
 | `source` | string | 触发来源模块 |
 | `source_task_id` | string | 任务 ID (对应模块内的任务定义 ID) |
 | `trigger_type` | string | `manual` / `scheduled` |
@@ -193,7 +193,7 @@ sequenceDiagram
 - 最近 24 小时任务执行统计
 - 按模块分组的成功率/失败率
 - 按任务类型分组的平均耗时
-- TaskProvider provider health：注册状态、模块 `/health`、标准 `GET /tasks?task_type=` 任务发现可调用性和 capabilities 基础结构
+- TaskProvider provider health：注册状态、模块 `/health`、capabilities 基础结构，以及标准 `GET /tasks?task_type=` 任务发现响应体是否符合 `{items,total,page,page_size}`
 
 **2. 历史执行记录**:
 - 按模块、任务类型、状态筛选
@@ -228,7 +228,7 @@ sequenceDiagram
 | 模块 | task_type | 说明 | 示例 |
 |------|-----------|------|------|
 | **Meta** | `scan` | 元数据扫描任务 | 扫描 PostgreSQL 数据库 |
-| **Transfer** | `import` | 数据导入任务 | 从 CSV 导入到 PostgreSQL |
+| **Transfer** | `sync` | 数据同步任务 | 表导入、表导出或跨格式同步 |
 | **Orchestrator** | `orchestration` | 编排任务执行 | 执行数据处理流水线 |
 | **Develop** | `query` | 查询执行任务 | SQL 查询执行 |
 | | `workflow` | 工作流执行任务 | 执行空间分析工作流 |

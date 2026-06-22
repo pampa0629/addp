@@ -568,7 +568,7 @@ defer func() {
 ```go
 // ✅ 推荐：模块前缀 + 业务 ID
 taskID := fmt.Sprintf("meta:scan:%d", resourceID)
-taskID := fmt.Sprintf("transfer:import:%d", taskID)
+taskID := fmt.Sprintf("transfer:sync:%d", transferTaskID)
 
 // ❌ 避免：纯数字 ID（可能冲突）
 taskID := fmt.Sprintf("%d", id)

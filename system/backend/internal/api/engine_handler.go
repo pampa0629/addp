@@ -225,7 +225,7 @@ func (h *EngineHandler) TestConnection(c *gin.Context) {
 	// 测试连接
 	if err := h.storageEngineService.TestConnection(engine); err != nil {
 		// 更新为offline
-		h.engineService.UpdateConnectionStatus(id, "offline", err.Error())
+		h.engineService.RecordConnectionStatus(id, "offline", err.Error())
 
 		commonapi.RespondSuccess(c, gin.H{
 			"success": false,
@@ -236,7 +236,7 @@ func (h *EngineHandler) TestConnection(c *gin.Context) {
 	}
 
 	// 更新为online
-	h.engineService.UpdateConnectionStatus(id, "online", "连接正常")
+	h.engineService.RecordConnectionStatus(id, "online", "连接正常")
 
 	commonapi.RespondSuccess(c, gin.H{
 		"success": true,
@@ -346,7 +346,6 @@ func (h *EngineHandler) ListInternal(c *gin.Context) {
 		return
 	}
 
-	// 保持原有逻辑（向后兼容）
 	engines, err := h.engineService.ListInternal(engineType, tenantIDUint)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -458,7 +457,7 @@ func (h *EngineHandler) ListCatalogChildren(c *gin.Context) {
 }
 
 // TriggerConnectionCheckInternal 触发连接检测（内部API，异步）
-// POST /api/internal/engines/:id/check-connection
+// POST /api/v1/internal/engines/:id/check-connection
 // 用于其他模块在连接失败时通知System刷新状态
 // 立即返回202 Accepted，实际检测在后台执行
 func (h *EngineHandler) TriggerConnectionCheckInternal(c *gin.Context) {
@@ -478,41 +477,6 @@ func (h *EngineHandler) TriggerConnectionCheckInternal(c *gin.Context) {
 	})
 }
 
-// UpdateConnectionStatusRequest 更新连接状态请求
-type UpdateConnectionStatusRequest struct {
-	ConnectionStatus string `json:"connection_status" binding:"required,oneof=online offline unknown checking"`
-	CheckMessage     string `json:"check_message"`
-}
-
-// UpdateConnectionStatusInternal 内部API：更新资源连接状态
-// PUT /api/internal/engines/:id/connection-status
-// 用于Meta模块在后台检测后更新资源连接状态缓存
-// 注意：此方法已废弃，建议使用TriggerConnectionCheckInternal让System自己检测
-// 保留是为了向后兼容
-func (h *EngineHandler) UpdateConnectionStatusInternal(c *gin.Context) {
-	id, err := commonapi.BindIDParam(c, "id")
-	if err != nil {
-		return
-	}
-
-	var req UpdateConnectionStatusRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		commonapi.RespondError(c, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	// 更新连接状态
-	if err := h.engineService.UpdateConnectionStatus(id, req.ConnectionStatus, req.CheckMessage); err != nil {
-		commonapi.RespondError(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	commonapi.RespondSuccess(c, gin.H{
-		"success": true,
-		"message": "连接状态已更新",
-	})
-}
-
 // RegisterEngineRequest 引擎自注册请求
 type RegisterEngineRequest struct {
 	EngineType     string                 `json:"engine_type" binding:"required"`
@@ -524,7 +488,7 @@ type RegisterEngineRequest struct {
 }
 
 // RegisterEngineInternal 内部API：引擎自注册（创建或更新引擎记录并触发连接检查）
-// POST /api/internal/engines/register
+// POST /api/v1/internal/engines/register
 // 用于工作流引擎启动时自动注册并触发连接检查
 func (h *EngineHandler) RegisterEngineInternal(c *gin.Context) {
 	var req RegisterEngineRequest

@@ -84,6 +84,7 @@ func NormalizeRefGroups(groups []models.ScanRefGroup) []models.ScanRefGroup {
 				Path:     path,
 				Role:     strings.TrimSpace(ref.Role),
 				Required: ref.Required,
+				Primary:  ref.Primary,
 			})
 		}
 		if primary == "" && len(refs) == 0 {

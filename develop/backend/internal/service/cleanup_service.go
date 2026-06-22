@@ -27,12 +27,11 @@ type CleanupService struct {
 }
 
 type DevelopCleanupStats struct {
-	DevTasks        int      `json:"dev_tasks"`
-	ArchivedTasks   int      `json:"archived_tasks,omitempty"`
-	DeletedTasks    int      `json:"deleted_tasks,omitempty"`
-	SkippedTasks    int      `json:"skipped_tasks,omitempty"`
-	UnscheduledRuns int      `json:"unscheduled_runs,omitempty"`
-	Errors          []string `json:"errors,omitempty"`
+	DevTasks      int      `json:"dev_tasks"`
+	ArchivedTasks int      `json:"archived_tasks,omitempty"`
+	DeletedTasks  int      `json:"deleted_tasks,omitempty"`
+	SkippedTasks  int      `json:"skipped_tasks,omitempty"`
+	Errors        []string `json:"errors,omitempty"`
 }
 
 func NewCleanupService(db *gorm.DB, redisClient *redis.Client, taskExecRepo *commonExecution.TaskExecutionRepository) *CleanupService {
@@ -222,18 +221,13 @@ func (s *CleanupService) listTenantCandidates(ctx context.Context, tenantID uint
 func (s *CleanupService) archiveTasks(ctx context.Context, candidates developCleanupCandidates, stats *DevelopCleanupStats) {
 	for _, item := range candidates.devTasks {
 		updates := map[string]interface{}{
-			"status":      "archived",
-			"enabled":     false,
-			"next_run_at": nil,
+			"status": "archived",
 		}
 		if err := s.db.WithContext(ctx).Model(&models.DevTask{}).Where("id = ?", item.ID).Updates(updates).Error; err != nil {
 			stats.Errors = append(stats.Errors, fmt.Sprintf("archive dev task %d failed: %v", item.ID, err))
 			continue
 		}
 		stats.ArchivedTasks++
-		if item.NextRunAt != nil || item.Enabled {
-			stats.UnscheduledRuns++
-		}
 	}
 }
 

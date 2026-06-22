@@ -56,7 +56,7 @@ type BoundingBox [4]float64
 func NewSingleGeometrySpatialInfo(columnName, geometryType string, srid int, dimension int) *SpatialInfo {
 	column := GeometryColumnInfo{
 		Name:         columnName,
-		GeometryType: geometryType,
+		GeometryType: normalizeGeometryTypeString(geometryType),
 	}
 	if srid > 0 {
 		column.SRID = &srid
@@ -183,7 +183,7 @@ func geometryColumnsFromPayload(payload map[string]interface{}) []GeometryColumn
 		}
 		column := GeometryColumnInfo{
 			Name:         name,
-			GeometryType: commonJSON.InterfaceString(columnPayload["geometry_type"]),
+			GeometryType: normalizeGeometryTypeString(commonJSON.InterfaceString(columnPayload["geometry_type"])),
 			CRSRef:       commonJSON.InterfaceString(columnPayload["crs_ref"]),
 		}
 		if srid := int(commonJSON.InterfaceInt64(columnPayload["srid"])); srid > 0 {
@@ -209,7 +209,7 @@ func geometryColumnPayloads(columns []GeometryColumnInfo) []map[string]interface
 		}
 		payload := commonJSON.MapFromStruct(geometryColumnPayload{
 			Name:         column.Name,
-			GeometryType: column.GeometryType,
+			GeometryType: normalizeGeometryTypeString(column.GeometryType),
 			SRID:         column.SRID,
 			CRSRef:       strings.TrimSpace(column.CRSRef),
 			Dimension:    column.Dimension,
@@ -221,6 +221,13 @@ func geometryColumnPayloads(columns []GeometryColumnInfo) []map[string]interface
 		result = append(result, payload)
 	}
 	return result
+}
+
+func normalizeGeometryTypeString(value string) string {
+	if geometryType := StandardGeometryType(value); geometryType != "" {
+		return geometryType
+	}
+	return strings.TrimSpace(value)
 }
 
 // Clone returns a deep copy of SpatialInfo.

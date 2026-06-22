@@ -139,7 +139,7 @@ const (
 	// Meta 模块
 	TaskTypeScan = "scan"
 	// Transfer 模块
-	TaskTypeImport = "import"
+	TaskTypeSync = "sync"
 	// Develop 模块
 	TaskTypeQuery    = "query"
 	TaskTypeWorkflow = "workflow"

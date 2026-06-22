@@ -13,6 +13,7 @@ type ContentCandidateSet struct {
 	Subdirs          []metaitem.StorageDirectoryRef
 	RecursiveFiles   []metaitem.StorageFileRef
 	RecursiveSubdirs []metaitem.StorageDirectoryRef
+	ResolveOptions   metaitem.ResolveOptions
 	CatalogPathFor   func(string) plugin.CatalogPath
 }
 
@@ -31,6 +32,7 @@ func ResolveContentCandidates(
 		DirPath:          candidates.DirPath,
 		Files:            candidates.Files,
 		Subdirs:          candidates.Subdirs,
+		Options:          candidates.ResolveOptions,
 		RecursiveFiles:   candidates.RecursiveFiles,
 		RecursiveSubdirs: candidates.RecursiveSubdirs,
 	})
@@ -51,5 +53,6 @@ func ResolveNonExclusiveContentCandidates(
 		DirPath:        candidates.DirPath,
 		Files:          candidates.Files,
 		Subdirs:        candidates.Subdirs,
+		Options:        candidates.ResolveOptions,
 	})
 }

@@ -55,7 +55,6 @@ func (s *DevTaskService) CreateDevTask(req *models.CreateDevTaskRequest, tenantI
 		DevType:         req.DevType,
 		Content:         req.Content,
 		ExecutionConfig: req.ExecutionConfig,
-		Schedule:        req.Schedule,
 		Timeout:         req.Timeout,
 		Description:     req.Description,
 		Tags:            req.Tags,
@@ -105,9 +104,6 @@ func (s *DevTaskService) UpdateDevTask(id uint, req *models.UpdateDevTaskRequest
 	}
 	if req.ExecutionConfig != nil {
 		item.ExecutionConfig = req.ExecutionConfig
-	}
-	if req.Schedule != "" {
-		item.Schedule = req.Schedule
 	}
 	if req.Timeout > 0 {
 		item.Timeout = req.Timeout
@@ -226,15 +222,6 @@ func (s *DevTaskService) UpdateLastExecution(id uint, tenantID uint, executionID
 		return fmt.Errorf("failed to update last execution: %w", err)
 	}
 	return nil
-}
-
-// FindScheduledItems 查找所有启用了调度的开发任务
-func (s *DevTaskService) FindScheduledItems(tenantID uint) ([]models.DevTask, error) {
-	items, err := s.devTaskRepo.FindScheduledItems(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to find scheduled items: %w", err)
-	}
-	return items, nil
 }
 
 // UpdateStatus 更新开发任务状态

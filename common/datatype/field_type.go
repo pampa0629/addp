@@ -27,11 +27,7 @@ const (
 
 	FieldTypeUUID FieldType = "uuid"
 
-	FieldTypeGeometry   FieldType = "geometry"
-	FieldTypePoint      FieldType = "point"
-	FieldTypeLineString FieldType = "linestring"
-	FieldTypePolygon    FieldType = "polygon"
-	FieldTypeMultiPoint FieldType = "multipoint"
+	FieldTypeGeometry FieldType = "geometry"
 )
 
 var knownFieldTypes = map[FieldType]struct{}{
@@ -52,10 +48,6 @@ var knownFieldTypes = map[FieldType]struct{}{
 	FieldTypeArray:      {},
 	FieldTypeUUID:       {},
 	FieldTypeGeometry:   {},
-	FieldTypePoint:      {},
-	FieldTypeLineString: {},
-	FieldTypePolygon:    {},
-	FieldTypeMultiPoint: {},
 }
 
 // ParseFieldType normalizes a string into a known ADDP field type.
@@ -95,12 +87,7 @@ func IsTemporalFieldType(fieldType FieldType) bool {
 
 // IsSpatialFieldType reports whether fieldType belongs to the spatial family.
 func IsSpatialFieldType(fieldType FieldType) bool {
-	switch fieldType {
-	case FieldTypeGeometry, FieldTypePoint, FieldTypeLineString, FieldTypePolygon, FieldTypeMultiPoint:
-		return true
-	default:
-		return false
-	}
+	return fieldType == FieldTypeGeometry
 }
 
 // IsSemiStructuredFieldType reports whether fieldType belongs to the semi-structured family.

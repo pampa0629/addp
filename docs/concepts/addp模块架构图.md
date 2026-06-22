@@ -146,7 +146,7 @@ graph TB
 - **网关层**: Gateway 统一处理外部请求并路由到对应的后端服务
 - **服务层**: 各业务模块的后端服务,提供 RESTful API
 - **Worker运行时**: 独立的后台任务处理进程
-  - **Transfer Worker**: 基于 Asynq 的异步任务队列,处理 Transfer 内部异步传输作业；统一任务体系阶段 1 只暴露 `task_type=import`
+  - **Transfer Worker**: 基于 Asynq 的异步任务队列,处理 Transfer 内部异步传输作业；统一任务体系阶段 1 只暴露 `task_type=sync`
   - **Meta Worker**: 基于 Asynq 的扫描任务处理,执行元数据扫描和索引
 - **Manager 快显与瓦片任务**: 当前 PostGIS + MVT 格式实现中，`tile_cache_generation` 由 Manager Backend 内的任务服务和调度器执行；任务定义为 `manager.tile_cache_tasks`，执行记录进入 `common.task_executions`，结果状态进入 `manager.tile_cache`。`quick_view_optimization` 由 Manager Backend 在手动或编排触发时执行，任务定义为 `manager.quick_view_optimization_tasks`，结果状态进入 `manager.quick_view_optimization`，当前不启动模块自身定时调度。若后续瓦片缓存生成或快显优化计算负载转移到 Manager 进程内、需要多执行器横向扩展，或引入专门 GIS 计算引擎，应将对应任务类型的唯一执行运行时切换为 Manager Worker 或 GIS 执行引擎，不允许 Backend 与 Worker 双轨并存。
 - **共享模块**: common 和 common-frontend 提供可复用的代码和组件
@@ -165,7 +165,7 @@ graph TB
 | **Manager** | 数据管理:数据存储目录展示、数据预览、空间快显和瓦片缓存 | 8081 / 8081 | Go, Gin, OpenLayers |
 | **Meta** | 元数据服务:扫描、索引、搜索 | 8082 / 8082 | Go, Gin, Meilisearch, Cron |
 | **Meta Worker** | Meta 扫描任务处理器 | - | Go, Asynq Worker |
-| **Transfer** | 数据传输:导入、导出、同步任务 | 8083 / 8083 | Go, Gin, Asynq |
+| **Transfer** | 数据传输:同步、搬运、格式转换任务 | 8083 / 8083 | Go, Gin, Asynq |
 | **Transfer Worker** | Transfer 后台任务处理器 | - | Go, Asynq Worker |
 | **Orchestrator** | 任务编排:跨模块任务编排调度 | 8084 / 8084 | Go, Gin, Cron |
 | **Develop** | 数据开发:查询执行、工作流、Notebook 开发 | 8085 / 8085 | Go, Gin, Monaco Editor |
@@ -322,7 +322,7 @@ graph TB
 
 | 运行时 | 所属模块 | 职责 | 技术栈 |
 |--------|---------|------|-------|
-| **Transfer Worker** | Transfer | 异步处理 Transfer 内部传输作业；统一任务体系阶段 1 只暴露 `task_type=import` | Go, Asynq, Redis |
+| **Transfer Worker** | Transfer | 异步处理 Transfer 内部传输作业；统一任务体系阶段 1 只暴露 `task_type=sync` | Go, Asynq, Redis |
 | **Meta Worker** | Meta | 异步处理元数据扫描和索引任务,支持定时调度 | Go, Asynq, Redis |
 | **TileCacheTaskScheduler** | Manager | 在 Manager Backend 内按 `manager.tile_cache_tasks.next_run_at` 触发 `tile_cache_generation`，执行记录写入 `common.task_executions` | Go, DB claim |
 | **QuickViewOptimizationTask** | Manager | 在 Manager Backend 内按用户手动或 Orchestrator 编排触发执行 `quick_view_optimization`，创建或刷新 Manager 管理的 3857 快显优化目标 | Go, TaskProvider API |
@@ -418,7 +418,7 @@ graph TB
 
     subgraph "2. System 模块注册中心"
         SystemReg --> RegTable[(module_registry 表<br/>存储模块URL和状态)]
-        RegTable --> RegAPI[注册 API<br/>/api/internal/modules/*]
+        RegTable --> RegAPI[注册 API<br/>/api/v1/internal/modules/*]
     end
 
     subgraph "3. Gateway 动态发现"
@@ -428,7 +428,7 @@ graph TB
     end
 
     subgraph "4. 请求路由"
-        Client[客户端请求<br/>/api/:module/*] --> Gateway
+        Client[客户端请求<br/>/api/v1/:module/*] --> Gateway
         Gateway --> DynamicRoute{动态路由查找}
         DynamicRoute -->|找到| Forward[转发到模块代理]
         DynamicRoute -->|未找到| Fallback[Fallback 硬编码路由]
@@ -473,14 +473,14 @@ graph TB
 graph LR
     Client[客户端] --> Gateway[Gateway<br/>:8000]
 
-    Gateway --> |/api/system/*| System[System Backend<br/>:8180]
-    Gateway --> |/api/manager/*| Manager[Manager Backend<br/>:8081]
-    Gateway --> |/api/meta/*| Meta[Meta Backend<br/>:8082]
-    Gateway --> |/api/transfer/*| Transfer[Transfer Backend<br/>:8083]
-    Gateway --> |/api/orchestrator/*| Orchestrator[Orchestrator Backend<br/>:8084]
-    Gateway --> |/api/develop/*| Develop[Develop Backend<br/>:8085]
-    Gateway --> |/api/service/*| Service[Service Backend<br/>:8086]
-    Gateway --> |/api/monitor/*| Monitor[Monitor Backend<br/>:8100]
+    Gateway --> |/api/v1/system/*| System[System Backend<br/>:8180]
+    Gateway --> |/api/v1/manager/*| Manager[Manager Backend<br/>:8081]
+    Gateway --> |/api/v1/meta/*| Meta[Meta Backend<br/>:8082]
+    Gateway --> |/api/v1/transfer/*| Transfer[Transfer Backend<br/>:8083]
+    Gateway --> |/api/v1/orchestrator/*| Orchestrator[Orchestrator Backend<br/>:8084]
+    Gateway --> |/api/v1/develop/*| Develop[Develop Backend<br/>:8085]
+    Gateway --> |/api/v1/service/*| Service[Service Backend<br/>:8086]
+    Gateway --> |/api/v1/monitor/*| Monitor[Monitor Backend<br/>:8100]
 
     classDef client fill:#69db7c,stroke:#2f9e44
     classDef gateway fill:#fff9c4,stroke:#f57f17
@@ -495,14 +495,14 @@ graph LR
 
 | 路径前缀 | 目标服务 | 端口 | 说明 |
 |---------|---------|------|------|
-| `/api/system/*` | System Backend | 8180 | 用户认证、引擎管理、日志 |
-| `/api/manager/*` | Manager Backend | 8081 | 数据管理、预览、空间快显和瓦片缓存 |
-| `/api/meta/*` | Meta Backend | 8082 | 元数据扫描、索引、搜索 |
-| `/api/transfer/*` | Transfer Backend | 8083 | 数据导入、导出、同步 |
-| `/api/orchestrator/*` | Orchestrator Backend | 8084 | 任务编排、调度 |
-| `/api/develop/*` | Develop Backend | 8085 | 查询、工作流、Notebook |
-| `/api/service/*` | Service Backend | 8086 | 数据服务发布、OGC 标准 |
-| `/api/monitor/*` | Monitor Backend | 8100 | 执行监控、统计分析 |
+| `/api/v1/system/*` | System Backend | 8180 | 用户认证、引擎管理、日志 |
+| `/api/v1/manager/*` | Manager Backend | 8081 | 数据管理、预览、空间快显和瓦片缓存 |
+| `/api/v1/meta/*` | Meta Backend | 8082 | 元数据扫描、索引、搜索 |
+| `/api/v1/transfer/*` | Transfer Backend | 8083 | 数据同步、搬运、格式转换 |
+| `/api/v1/orchestrator/*` | Orchestrator Backend | 8084 | 任务编排、调度 |
+| `/api/v1/develop/*` | Develop Backend | 8085 | 查询、工作流、Notebook |
+| `/api/v1/service/*` | Service Backend | 8086 | 数据服务发布、OGC 标准 |
+| `/api/v1/monitor/*` | Monitor Backend | 8100 | 执行监控、统计分析 |
 
 ### 配置环境变量
 
@@ -548,7 +548,7 @@ INTERNAL_API_KEY=your_internal_api_key_here
 - ✅ **故障自动恢复**：模块重启后自动重新注册为 `up` 状态
 - ✅ **健康监控**：通过心跳机制实时监控模块状态
 - ✅ **双层防护**：动态路由失败时自动 Fallback 到硬编码路由
-- ✅ **可观测性**：所有模块状态实时可查（`GET /api/internal/modules`）
+- ✅ **可观测性**：所有模块状态实时可查（`GET /api/v1/internal/modules`）
 
 ---
 
@@ -710,9 +710,9 @@ graph LR
 
 ---
 
-#### 二、任务编排层：各模块注册 → Orchestrator 编排
+#### 二、任务编排层：各模块向 System 注册 → Orchestrator 编排
 
-各业务模块向 System 注册自己提供的**可编排任务类型**，Orchestrator 读取注册表后动态调用。
+各业务模块向 System 注册自己提供的 **TaskProvider capabilities**，Orchestrator 读取注册表后动态调用。
 
 ```mermaid
 graph TB
@@ -722,25 +722,25 @@ graph TB
 
     subgraph Providers["任务提供者（各业务模块）"]
         MetaT["Meta<br/>scan"]
-        TransferT["Transfer<br/>import"]
+        TransferT["Transfer<br/>sync"]
         DevelopT["Develop<br/>query / workflow / script"]
         ManagerT["Manager<br/>tile_cache_generation / quick_view_optimization / embedding"]
         QualityT["Quality<br/>check"]
         GraphT["Graph<br/>kg_build"]
         OrchestratorT["Orchestrator<br/>orchestration"]
 
-        MetaT   -->|"启动时注册任务类型"| TaskRegistry
-        TransferT -->|"启动时注册任务类型"| TaskRegistry
-        DevelopT -->|"启动时注册任务类型"| TaskRegistry
-        ManagerT -->|"启动时注册任务类型"| TaskRegistry
-        QualityT -->|"启动时注册任务类型"| TaskRegistry
-        GraphT -->|"启动时注册任务类型"| TaskRegistry
-        OrchestratorT -->|"启动时注册任务类型"| TaskRegistry
+        MetaT   -->|"启动时注册 capabilities"| TaskRegistry
+        TransferT -->|"启动时注册 capabilities"| TaskRegistry
+        DevelopT -->|"启动时注册 capabilities"| TaskRegistry
+        ManagerT -->|"启动时注册 capabilities"| TaskRegistry
+        QualityT -->|"启动时注册 capabilities"| TaskRegistry
+        GraphT -->|"启动时注册 capabilities"| TaskRegistry
+        OrchestratorT -->|"启动时注册 capabilities"| TaskRegistry
     end
 
     subgraph Orchestrator["Orchestrator（编排调度）"]
         DAGEngine["DAG 调度引擎"]
-        DAGEngine -->|"① 拉取任务类型定义"| TaskRegistry
+        DAGEngine -->|"① 拉取 TaskProvider capabilities"| TaskRegistry
         DAGEngine -->|"② 按 DAG 顺序调用各模块 API"| MetaT
         DAGEngine -->|"② 按 DAG 顺序调用各模块 API"| TransferT
         DAGEngine -->|"② 按 DAG 顺序调用各模块 API"| DevelopT
@@ -780,7 +780,7 @@ graph LR
     subgraph "编排层"
         System_T["System 任务注册表"]
         Orchestrator["Orchestrator DAG 调度"]
-        Develop -->|"注册任务类型"| System_T
+        Develop -->|"注册 capabilities"| System_T
         Orchestrator -->|"调用 Develop 任务 API"| Develop
     end
 

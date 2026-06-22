@@ -41,7 +41,7 @@ type TaskProviderRegistration struct {
 func (s *TaskProviderRegistryService) Register() error {
 	capabilities := map[string]interface{}{
 		"schema_version": "task.capabilities/v1",
-		"task_types": []map[string]interface{}{
+		"task_capabilities": []map[string]interface{}{
 			{
 				"type":                      "check",
 				"display_name":              "质量检查",

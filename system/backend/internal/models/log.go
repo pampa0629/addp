@@ -15,7 +15,7 @@ type AuditLog struct {
 
 	// 操作信息 (必填)
 	HTTPMethod   string `gorm:"size:10;not null" json:"http_method"` // GET/POST/PUT/DELETE/PATCH
-	ResourcePath string `gorm:"not null" json:"resource_path"`       // /api/users/123
+	ResourcePath string `gorm:"not null" json:"resource_path"`       // /api/v1/system/users/123
 	HTTPStatus   int    `gorm:"not null;index" json:"http_status"`   // HTTP状态码
 	DurationMs   int    `gorm:"not null" json:"duration_ms"`         // 请求耗时(毫秒)
 

@@ -83,7 +83,6 @@ func (s *TenantService) Create(req *models.TenantCreateRequest, currentUserID ui
 			IsActive:     true,
 			UserType:     models.UserTypeTenantAdmin,
 			TenantID:     &tenant.ID,
-			IsSuperuser:  false,
 		}
 
 		if err := tx.Create(admin).Error; err != nil {

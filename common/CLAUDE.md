@@ -18,6 +18,7 @@ common/
 ├── execution/      # common.task_executions 统一执行记录模型、仓储和迁移入口
 ├── format/         # 文件格式、类型信息、格式信息、parser / analyzer
 ├── models/         # 通用模型、能力声明和跨模块 DTO / 值对象
+├── taskprovider/   # TaskProvider capabilities v1 解析和契约校验
 ├── repository/     # 通用数据库初始化和基础仓储错误映射
 ├── scheduler/      # 统一 Cron 调度
 ├── spatial/        # CRS、MVT、WKB、空间转换、PostGIS 空间 SQL 表达式
@@ -36,6 +37,7 @@ common/
 - `common/resourcetree` 负责把 Meta 已落库的 catalog / item 事实投影为跨模块资源树视图，并提供 `ResourceLocator` / provider `CatalogPath` 的纯转换能力。
 - `common/resourcetree` 不持有 System / Meta client，不主动读取远程服务，不处理租户权限、token、降级策略、扫描或内容读取。
 - `common/resourcetree` 中 attributes helper 只服务 `TreeNode.Metadata` 展示摘要，不作为通用 attributes 规范 API，也不写入持久 attributes。
+- `common/taskprovider` 只承载 TaskProvider capabilities 的纯解析和规范校验，不访问 System 注册表，不调用 owner 模块，不处理执行调度。
 - `common/client` 只放跨服务 HTTP/API 客户端，不作为 infra PostgreSQL `common` schema 的读写入口。
 - `common` schema 中的共享表应按领域归入 `common/<domain>`，由领域包提供模型、仓储和 `EnsureStore`；执行记录必须复用 `common/execution.TaskExecution`、`common/execution.TaskExecutionRepository` 和 `common/execution.EnsureStore`。
 - API 响应优先复用 `common/api`。

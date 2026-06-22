@@ -23,6 +23,11 @@ type Config struct {
 	RetryDelay      time.Duration
 	TaskQueueName   string
 	ConcurrentTasks int
+
+	BuiltinMinioEndpoint  string
+	BuiltinMinioAccessKey string
+	BuiltinMinioSecretKey string
+	BuiltinMinioUseSSL    bool
 }
 
 func Load() *Config {
@@ -43,6 +48,12 @@ func Load() *Config {
 		TaskQueueName:   commonConfig.GetEnv("TASK_QUEUE_NAME", "transfer:tasks"),
 		ConcurrentTasks: commonConfig.GetEnvInt("CONCURRENT_TASKS", 10),
 	}
+
+	minioCfg := commonConfig.LoadBuiltinMinIOConfig()
+	cfg.BuiltinMinioEndpoint = minioCfg.Endpoint
+	cfg.BuiltinMinioAccessKey = minioCfg.AccessKey
+	cfg.BuiltinMinioSecretKey = minioCfg.SecretKey
+	cfg.BuiltinMinioUseSSL = minioCfg.UseSSL
 
 	// 设置 BaseConfig 字段
 	cfg.SystemServiceURL = systemURL

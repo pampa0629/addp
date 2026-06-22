@@ -141,7 +141,7 @@ func newResourceTreeHandlerTestRouter(t *testing.T) (*gin.Engine, func()) {
 	db := metatest.OpenMetadataDB(t)
 	engineSvc := service.NewEngineService(db, systemServer.URL, "secret")
 	metadataSvc := service.NewMetadataQueryService(db)
-	handler := NewHandler(engineSvc, nil, nil, nil, metadataSvc)
+	handler := NewHandler(engineSvc, nil, nil, nil, metadataSvc, nil)
 
 	router := gin.New()
 	router.GET("/resource-tree/:engine_id/node", handler.GetResourceTreeNode)
@@ -178,7 +178,7 @@ func newResourceTreeRefreshHandlerTestRouter(t *testing.T) (*gin.Engine, func())
 
 	scanSvc := service.NewScanService(db, engineSvc)
 	executionSvc := service.NewScanExecutionService(db, scanSvc, engineSvc, nil)
-	handler := NewHandler(engineSvc, scanSvc, nil, executionSvc, service.NewMetadataQueryService(db))
+	handler := NewHandler(engineSvc, scanSvc, nil, executionSvc, service.NewMetadataQueryService(db), nil)
 
 	router := gin.New()
 	router.Use(func(c *gin.Context) {

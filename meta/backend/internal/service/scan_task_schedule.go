@@ -45,6 +45,14 @@ func (s *ScanTaskService) UpsertEngineScanTaskFromPolicy(tenantID, userID, engin
 		return nil, s.DeleteEngineTaskBinding(tenantID, engineID)
 	}
 
+	excludeTaskID := uint(0)
+	if findErr == nil {
+		excludeTaskID = existingTask.ID
+	}
+	if err := s.validateScheduledTaskScope(tenantID, excludeTaskID, engineID, scantask.EngineScope(engineID), cronExpr, true); err != nil {
+		return nil, err
+	}
+
 	now := time.Now()
 	nextRunAt := s.nextTimeFromSpec(cronExpr, now)
 	taskName := engineName

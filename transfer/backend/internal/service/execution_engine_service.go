@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/addp/common/format"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/resourcetree"
+	"github.com/addp/transfer/internal/config"
 	"github.com/addp/transfer/internal/executor"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
@@ -25,6 +27,7 @@ type ExecutionEngineService struct {
 	executionService *ExecutionService
 	systemClient     *commonClient.SystemClient
 	metaClient       *commonClient.MetaClient
+	cfg              *config.Config
 	logger           *slog.Logger
 }
 
@@ -41,6 +44,10 @@ func NewExecutionEngineService(
 		metaClient:       metaClient,
 		logger:           logger.With("component", "execution_engine_service"),
 	}
+}
+
+func (s *ExecutionEngineService) SetConfig(cfg *config.Config) {
+	s.cfg = cfg
 }
 
 // ExecuteTask 执行任务（由 Worker 调用）
@@ -73,7 +80,7 @@ func (s *ExecutionEngineService) executeCommonTransferTask(ctx context.Context, 
 			s.updateExecutionError(task, executionID, wrapped)
 			return wrapped
 		}
-		resolver := planner.NewSystemEngineResolver(s.systemClient)
+		resolver := planner.NewHybridEngineResolver(planner.NewSystemEngineResolver(s.systemClient), s.infraEngineResolver())
 		return s.executeCommonRawCopyTask(ctx, task, executionID, rawSpec, resolver)
 	}
 
@@ -89,8 +96,20 @@ func (s *ExecutionEngineService) executeCommonTransferTask(ctx context.Context, 
 		return wrapped
 	}
 
-	resolver := planner.NewSystemEngineResolver(s.systemClient)
+	resolver := planner.NewHybridEngineResolver(planner.NewSystemEngineResolver(s.systemClient), s.infraEngineResolver())
 	return s.executeCommonTableTransferTask(ctx, task, executionID, spec, resolver)
+}
+
+func (s *ExecutionEngineService) infraEngineResolver() *planner.InfraEngineResolver {
+	if s == nil || s.cfg == nil {
+		return nil
+	}
+	return planner.NewInfraEngineResolver(planner.InfraEngineConfig{
+		MinioEndpoint:  s.cfg.BuiltinMinioEndpoint,
+		MinioAccessKey: s.cfg.BuiltinMinioAccessKey,
+		MinioSecretKey: s.cfg.BuiltinMinioSecretKey,
+		MinioUseSSL:    s.cfg.BuiltinMinioUseSSL,
+	})
 }
 
 func (s *ExecutionEngineService) attachRawCopySourceMetaAttributes(task *models.TransferTask, spec *planner.RawCopyTaskSpec) error {
@@ -113,7 +132,7 @@ func (s *ExecutionEngineService) attachRawCopySourceMetaAttributes(task *models.
 
 func (s *ExecutionEngineService) attachSourceMetaAttributes(task *models.TransferTask, spec *planner.TableExportTaskSpec) error {
 	if task == nil || spec == nil || spec.Source.LocatorItemID() == 0 {
-		return nil
+		return s.attachSourceInspectAttributes(task, spec)
 	}
 	if s.metaClient == nil {
 		return fmt.Errorf("meta client is required when source locator item_id is set")
@@ -126,6 +145,27 @@ func (s *ExecutionEngineService) attachSourceMetaAttributes(task *models.Transfe
 		return fmt.Errorf("source meta item engine_id %d does not match source locator engine id %d", item.EngineID, spec.Source.LocatorEngineID())
 	}
 	spec.Source.Attributes = item.Attributes
+	return nil
+}
+
+func (s *ExecutionEngineService) attachSourceInspectAttributes(task *models.TransferTask, spec *planner.TableExportTaskSpec) error {
+	if task == nil || spec == nil || !planner.IsInfraLocatorURI(spec.Source.Locator) {
+		return nil
+	}
+	if s.metaClient == nil {
+		return fmt.Errorf("meta client is required when source locator is infra")
+	}
+	result, err := s.metaClient.WithTenantID(task.TenantID).InspectAttributes(commonClient.MetaInspectRequest{
+		Locator:   spec.Source.Locator,
+		ScanDepth: "deep",
+	})
+	if err != nil {
+		return err
+	}
+	if result == nil || len(result.Attributes) == 0 {
+		return fmt.Errorf("meta inspect returned empty attributes")
+	}
+	spec.Source.Attributes = result.Attributes
 	return nil
 }
 
@@ -160,7 +200,11 @@ func (s *ExecutionEngineService) executeCommonTableTransferTask(ctx context.Cont
 		return wrapped
 	}
 	s.updateTableTransferMetrics(executionID, metrics.RecordsRead, metrics.RecordsWritten)
+	s.updateTableTargetRefs(executionID, metrics.TargetRefs)
 
+	if task.AutoScanMetadata {
+		s.triggerMetadataScan(task, executionID, spec, buildResult.Plan.Target, metrics.TargetRefs)
+	}
 	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, ""); err != nil {
 		s.logger.Warn("failed to finish execution", "error", err)
 	}
@@ -169,9 +213,6 @@ func (s *ExecutionEngineService) executeCommonTableTransferTask(ctx context.Cont
 		"progress": 100.0,
 	}); err != nil {
 		s.logger.Warn("failed to update task after successful table transfer", "error", err, "task_id", task.ID)
-	}
-	if task.AutoScanMetadata {
-		s.triggerMetadataScan(task, spec, buildResult.Plan.Target, metrics.TargetRefs)
 	}
 	return nil
 }
@@ -203,6 +244,9 @@ func (s *ExecutionEngineService) executeCommonRawCopyTask(ctx context.Context, t
 	}
 	s.updateRawCopyMetrics(executionID, metrics)
 
+	if task.AutoScanMetadata {
+		s.triggerRawCopyMetadataScan(task, executionID, spec, buildResult.Plan.Target)
+	}
 	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, ""); err != nil {
 		s.logger.Warn("failed to finish execution", "error", err)
 	}
@@ -211,9 +255,6 @@ func (s *ExecutionEngineService) executeCommonRawCopyTask(ctx context.Context, t
 		"progress": 100.0,
 	}); err != nil {
 		s.logger.Warn("failed to update task after successful raw copy", "error", err, "task_id", task.ID)
-	}
-	if task.AutoScanMetadata {
-		s.triggerRawCopyMetadataScan(task, spec, buildResult.Plan.Target)
 	}
 	return nil
 }
@@ -255,6 +296,37 @@ func (s *ExecutionEngineService) updateTableTransferMetrics(executionID uint, re
 		"records_written": recordsWritten,
 	}); err != nil {
 		s.logger.Error("failed to update common transfer execution metrics", "error", err, "execution_id", executionID)
+	}
+}
+
+func (s *ExecutionEngineService) updateTableTargetRefs(executionID uint, refs []format.RelatedRef) {
+	if len(refs) == 0 {
+		return
+	}
+	payload := make([]map[string]interface{}, 0, len(refs))
+	for _, ref := range refs {
+		refPath := strings.TrimSpace(ref.Ref.Path)
+		if refPath == "" {
+			continue
+		}
+		payload = append(payload, map[string]interface{}{
+			"path":      refPath,
+			"role":      strings.TrimSpace(ref.Ref.Role),
+			"required":  ref.Required,
+			"primary":   ref.Primary,
+			"extension": format.NormalizeExtension(filepath.Ext(refPath)),
+		})
+	}
+	if len(payload) == 0 {
+		return
+	}
+	ctx := context.Background()
+	if err := s.executionService.UpdateExecution(ctx, executionID, map[string]interface{}{
+		"metadata": map[string]interface{}{
+			"target_refs": payload,
+		},
+	}); err != nil {
+		s.logger.Error("failed to update table target refs", "error", err, "execution_id", executionID)
 	}
 }
 
@@ -400,7 +472,7 @@ func runningProgress(batchIndex int64) float64 {
 	return progress
 }
 
-func (s *ExecutionEngineService) triggerMetadataScan(task *models.TransferTask, spec planner.TableExportTaskSpec, targetPlan executor.TableTargetPlan, targetRefs []format.RelatedRef) {
+func (s *ExecutionEngineService) triggerMetadataScan(task *models.TransferTask, executionID uint, spec planner.TableExportTaskSpec, targetPlan executor.TableTargetPlan, targetRefs []format.RelatedRef) {
 	if s.metaClient == nil {
 		s.logger.Warn("meta client not available, skipping metadata scan", "task_id", task.ID)
 		return
@@ -452,9 +524,10 @@ func (s *ExecutionEngineService) triggerMetadataScan(task *models.TransferTask, 
 		"task_id", task.ID,
 		"engine_id", targetEngineID,
 		"execution_id", run.ExecutionID)
+	s.updateMetadataScanExecution(executionID, run.ExecutionID, targetEngineID, catalogPaths, len(refGroups))
 }
 
-func (s *ExecutionEngineService) triggerRawCopyMetadataScan(task *models.TransferTask, spec planner.RawCopyTaskSpec, targetPlan executor.RawCopyEndpointPlan) {
+func (s *ExecutionEngineService) triggerRawCopyMetadataScan(task *models.TransferTask, executionID uint, spec planner.RawCopyTaskSpec, targetPlan executor.RawCopyEndpointPlan) {
 	if s.metaClient == nil {
 		s.logger.Warn("meta client not available, skipping metadata scan", "task_id", task.ID)
 		return
@@ -484,6 +557,31 @@ func (s *ExecutionEngineService) triggerRawCopyMetadataScan(task *models.Transfe
 		"task_id", task.ID,
 		"engine_id", targetEngineID,
 		"execution_id", run.ExecutionID)
+	s.updateMetadataScanExecution(executionID, run.ExecutionID, targetEngineID, nil, len(refGroups))
+}
+
+func (s *ExecutionEngineService) updateMetadataScanExecution(executionID uint, scanExecutionID string, engineID uint, catalogPaths []string, refGroupCount int) {
+	if executionID == 0 || s.executionService == nil || strings.TrimSpace(scanExecutionID) == "" {
+		return
+	}
+	payload := map[string]interface{}{
+		"execution_id": scanExecutionID,
+		"engine_id":    engineID,
+	}
+	if len(catalogPaths) > 0 {
+		payload["catalog_paths"] = catalogPaths
+	}
+	if refGroupCount > 0 {
+		payload["ref_group_count"] = refGroupCount
+	}
+	ctx := context.Background()
+	if err := s.executionService.UpdateExecution(ctx, executionID, map[string]interface{}{
+		"metadata": map[string]interface{}{
+			"metadata_scan": payload,
+		},
+	}); err != nil {
+		s.logger.Error("failed to update metadata scan execution", "error", err, "execution_id", executionID, "scan_execution_id", scanExecutionID)
+	}
 }
 
 func tableTargetRefGroups(target executor.TableTargetPlan, targetRefs []format.RelatedRef) []commonClient.MetaScanRefGroup {

@@ -48,10 +48,6 @@ definitions:
     - array
     - uuid
     - geometry
-    - point
-    - linestring
-    - polygon
-    - multipoint
     type: string
     x-enum-varnames:
     - FieldTypeUnknown
@@ -71,10 +67,6 @@ definitions:
     - FieldTypeArray
     - FieldTypeUUID
     - FieldTypeGeometry
-    - FieldTypePoint
-    - FieldTypeLineString
-    - FieldTypePolygon
-    - FieldTypeMultiPoint
   encoding_xml.Name:
     properties:
       local:

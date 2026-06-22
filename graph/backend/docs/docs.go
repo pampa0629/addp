@@ -2932,8 +2932,7 @@ const docTemplate = `{
                     "200": {
                         "description": "任务列表 | Task list",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/internal_api.graphTaskListResponse"
                         }
                     },
                     "400": {
@@ -2987,7 +2986,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_graph_internal_models.BuildTask"
+                            "$ref": "#/definitions/internal_api.graphTaskListItem"
                         }
                     },
                     "400": {
@@ -3048,13 +3047,10 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
-                    "200": {
+                    "202": {
                         "description": "执行ID | Execution ID",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/internal_api.graphTaskProviderExecuteResponse"
                         }
                     },
                     "400": {
@@ -4427,6 +4423,58 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.graphTaskListItem": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "graph_id": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "task_type": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.graphTaskListResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.graphTaskListItem"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api.graphTaskProviderExecuteRequest": {
             "type": "object",
             "properties": {
@@ -4441,6 +4489,17 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "trigger_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.graphTaskProviderExecuteResponse": {
+            "type": "object",
+            "properties": {
+                "execution_id": {
+                    "type": "string"
+                },
+                "status": {
                     "type": "string"
                 }
             }

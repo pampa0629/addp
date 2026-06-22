@@ -332,7 +332,7 @@ func (h *TenantHandler) Create(c *gin.Context) {
 | 审计日志 | `audit_logs.tenant_id` | 租户下的操作记录 |
 | Manager 资源 | `manager.*.tenant_id` | 上传目录、权限配置 |
 | Meta 资源 | `meta.*.tenant_id` | 元数据扫描任务、节点 |
-| Transfer 任务 | `transfer.*.tenant_id` | 数据导入导出任务 |
+| Transfer 任务 | `transfer.*.tenant_id` | 数据同步任务 |
 | Develop 项目 | `develop.*.tenant_id` | SQL 项目、工作流 |
 
 ### 6.2 SuperAdmin 特殊性
@@ -351,7 +351,7 @@ func (h *TenantHandler) Create(c *gin.Context) {
 
 ```bash
 # SuperAdmin 登录获取 Token
-TOKEN=$(curl -X POST http://localhost:8180/api/auth/login \
+TOKEN=$(curl -X POST http://localhost:8180/api/v1/system/login \
   -H "Content-Type: application/json" \
   -d '{"username": "SuperAdmin", "password": "20251001#SuperAdmin"}' \
   | jq -r '.access_token')

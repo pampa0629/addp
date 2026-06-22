@@ -4,10 +4,11 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"strconv"
+	"strings"
 
 	"github.com/addp/common/logger"
 	"github.com/addp/common/middleware/auth"
+	"github.com/addp/common/resourcetree"
 	manageri18n "github.com/addp/manager/i18n"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
@@ -21,16 +22,6 @@ func importError(c *gin.Context, err error) {
 		managerError(c, http.StatusBadRequest, manageri18n.MsgImportZipRequired)
 	case errors.Is(err, service.ErrImportUnsupportedFormat):
 		managerError(c, http.StatusBadRequest, manageri18n.MsgImportUnsupportedFormat)
-	case errors.Is(err, service.ErrImportSourceEngineNotConfigured):
-		managerError(c, http.StatusBadRequest, manageri18n.MsgImportSourceNotConfigured)
-	case errors.Is(err, service.ErrImportSourceEngineNotMatched):
-		managerError(c, http.StatusBadRequest, manageri18n.MsgImportSourceNotMatched)
-	case errors.Is(err, service.ErrImportSourceEngineAmbiguous):
-		managerError(c, http.StatusBadRequest, manageri18n.MsgImportSourceAmbiguous)
-	case errors.Is(err, service.ErrImportSourceEngineIDInvalid):
-		managerError(c, http.StatusBadRequest, manageri18n.MsgImportSourceIDInvalid)
-	case errors.Is(err, service.ErrImportSourceEngineInactive):
-		managerError(c, http.StatusBadRequest, manageri18n.MsgImportSourceInactive)
 	case errors.Is(err, service.ErrImportZipMissingShp):
 		managerError(c, http.StatusBadRequest, manageri18n.MsgImportZipMissingShp)
 	case errors.Is(err, service.ErrImportZipBasenameMismatch):
@@ -53,12 +44,11 @@ func NewImportHandler(importService *service.ImportService) *ImportHandler {
 }
 
 // ImportData 导入数据文件
-// POST /api/manager/import
+// POST /api/v1/manager/imports
 // Content-Type: multipart/form-data
 // 参数:
-//   - file: Shapefile ZIP 包
-//   - target_engine_id: 目标数据库引擎 ID（必填）
-//   - target_schema: 目标 Schema（默认 public）
+//   - files: Shapefile ZIP 包，或同一组 Shapefile 组件文件
+//   - target_node_locator: 目标数据库 node locator（必填）
 //   - target_table: 目标数据项名称（可选，默认使用文件名）
 //   - encoding: DBF 编码（可选，默认 UTF-8）
 //
@@ -67,14 +57,13 @@ func NewImportHandler(importService *service.ImportService) *ImportHandler {
 // @Tags Manager
 // @Accept multipart/form-data
 // @Produce json
-// @Param file formData file true "数据文件（Shapefile ZIP包等）| Data file (Shapefile ZIP, etc.)"
-// @Param target_engine_id formData int true "目标数据库引擎ID | Target database engine ID"
-// @Param target_schema formData string false "目标 Schema，默认 public | Target schema, default public"
+// @Param files formData file true "数据文件：单个 Shapefile ZIP，或同一组 .shp/.dbf/.shx/.prj/.qpj/.cpg 文件 | Data files: one Shapefile ZIP, or a Shapefile component set"
+// @Param target_node_locator formData string true "目标数据库节点 ResourceLocator | Target database node ResourceLocator"
 // @Param target_table formData string false "目标数据项名称，默认使用文件名 | Target item name, default from filename"
 // @Param encoding formData string false "DBF编码，默认UTF-8 | DBF encoding, default UTF-8"
-// @Success 202 {object} map[string]interface{} "导入任务已创建 | Import task created"
+// @Success 202 {object} service.ImportResult "导入请求已提交 | Import request submitted"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
-// @Router /import [post]
+// @Router /imports [post]
 // @Security BearerAuth
 func (h *ImportHandler) ImportData(c *gin.Context) {
 	log := logger.L()
@@ -85,36 +74,59 @@ func (h *ImportHandler) ImportData(c *gin.Context) {
 		return
 	}
 
-	// 获取上传文件
-	file, header, err := c.Request.FormFile("file")
-	if err != nil {
+	form := c.Request.MultipartForm
+	if form == nil || len(form.File["files"]) == 0 {
 		managerError(c, http.StatusBadRequest, manageri18n.MsgFileRequired)
 		return
 	}
-	defer file.Close()
 
-	// 读取文件内容
-	fileContent, err := io.ReadAll(file)
-	if err != nil {
-		managerErrorWithDetail(c, http.StatusInternalServerError, manageri18n.MsgReadFileFailed, err.Error())
-		return
+	files := make([]service.ImportUploadFile, 0, len(form.File["files"]))
+	totalSize := int64(0)
+	fileNames := make([]string, 0, len(form.File["files"]))
+	for _, header := range form.File["files"] {
+		file, err := header.Open()
+		if err != nil {
+			managerErrorWithDetail(c, http.StatusInternalServerError, manageri18n.MsgReadFileFailed, err.Error())
+			return
+		}
+		content, readErr := io.ReadAll(file)
+		closeErr := file.Close()
+		if readErr != nil {
+			managerErrorWithDetail(c, http.StatusInternalServerError, manageri18n.MsgReadFileFailed, readErr.Error())
+			return
+		}
+		if closeErr != nil {
+			managerErrorWithDetail(c, http.StatusInternalServerError, manageri18n.MsgReadFileFailed, closeErr.Error())
+			return
+		}
+		files = append(files, service.ImportUploadFile{
+			FileName: header.Filename,
+			Content:  content,
+		})
+		totalSize += header.Size
+		fileNames = append(fileNames, header.Filename)
 	}
 
-	// 解析目标引擎 ID（必填）
-	engineIDStr := c.PostForm("target_engine_id")
-	if engineIDStr == "" {
-		managerError(c, http.StatusBadRequest, manageri18n.MsgTargetEngineIDRequired)
+	targetNodeLocator := strings.TrimSpace(c.PostForm("target_node_locator"))
+	if targetNodeLocator == "" {
+		missingLocator(c)
 		return
 	}
-	engineIDUint64, err := strconv.ParseUint(engineIDStr, 10, 32)
+	targetLoc, err := resourcetree.ParseURI(targetNodeLocator)
 	if err != nil {
-		managerError(c, http.StatusBadRequest, manageri18n.MsgInvalidTargetEngineID)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	engineID := uint(engineIDUint64)
+	if targetLoc.Type != resourcetree.TypeSchema && targetLoc.Type != resourcetree.TypeDatabase {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "target_node_locator must reference a database node"})
+		return
+	}
 
 	// 获取可选参数
-	targetSchema := c.PostForm("target_schema")
+	targetSchema := ""
+	if len(targetLoc.Path) > 0 {
+		targetSchema = targetLoc.Path[len(targetLoc.Path)-1]
+	}
 	targetTable := c.PostForm("target_table")
 	encoding := c.PostForm("encoding")
 
@@ -122,9 +134,10 @@ func (h *ImportHandler) ImportData(c *gin.Context) {
 	tenantID := auth.GetTenantID(c)
 
 	log.Info("收到导入请求",
-		"filename", header.Filename,
-		"size", header.Size,
-		"engine_id", engineID,
+		"file_count", len(files),
+		"filenames", strings.Join(fileNames, ","),
+		"total_size", totalSize,
+		"engine_id", targetLoc.EngineID,
 		"schema", targetSchema,
 		"table", targetTable,
 		"tenant_id", tenantID,
@@ -132,23 +145,23 @@ func (h *ImportHandler) ImportData(c *gin.Context) {
 
 	// 执行导入
 	req := &service.ImportShapefileRequest{
-		FileContent:    fileContent,
-		FileName:       header.Filename,
-		TargetEngineID: engineID,
-		TargetSchema:   targetSchema,
-		TargetTable:    targetTable,
-		Encoding:       encoding,
-		TenantID:       tenantID,
+		Files:             files,
+		TargetNodeLocator: targetNodeLocator,
+		TargetEngineID:    targetLoc.EngineID,
+		TargetSchema:      targetSchema,
+		TargetTable:       targetTable,
+		Encoding:          encoding,
+		TenantID:          tenantID,
 	}
 
 	result, err := h.importService.ImportShapefile(c.Request.Context(), req)
 	if err != nil {
-		log.Error("导入失败", "error", err, "filename", header.Filename)
+		log.Error("导入失败", "error", err, "filenames", strings.Join(fileNames, ","))
 		importError(c, err)
 		return
 	}
 
-	log.Info("导入任务已创建",
+	log.Info("导入请求已提交",
 		"upload_uuid", result.UploadUUID,
 		"transfer_task_id", result.TransferTaskID,
 	)

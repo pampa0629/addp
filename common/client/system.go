@@ -401,8 +401,8 @@ func (c *SystemClient) ListSQLQueryEngines(tenantID uint) ([]models.Engine, erro
 		return nil, err
 	}
 
-	// 过滤出支持 "query" 开发模式的引擎
-	queryEngines := commonutils.FilterEnginesByDevMode(allEngines, "query")
+	// 过滤出支持 query 计算入口的引擎
+	queryEngines := commonutils.FilterEnginesByComputeEntrypoint(allEngines, "query")
 
 	return queryEngines, nil
 }
@@ -594,10 +594,9 @@ func (c *SystemClient) ListWorkflowEngines(tenantID uint) ([]models.Engine, erro
 	}
 
 	// 过滤出具备 compute.workflow 能力的引擎。
-	// SupportsDevMode 是兼容命名，实际读取的是 engine.capabilities/v1 的 compute.workflow.supported。
 	filtered := make([]models.Engine, 0)
 	for _, r := range engines {
-		if r.IsActive && commonutils.SupportsDevMode(&r, "workflow") {
+		if r.IsActive && commonutils.SupportsComputeEntrypoint(&r, "workflow") {
 			filtered = append(filtered, r)
 		}
 	}

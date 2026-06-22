@@ -64,6 +64,26 @@ func TestTableTransferExecutorConvertsEncodedCSVToJSONL(t *testing.T) {
 	}
 }
 
+func TestEncodedTargetRelatedRefMappingUsesBucketlessObjectKeys(t *testing.T) {
+	path := engineplugin.ObjectItemPath(0, "manager", "tenant_1/export/session/test.shp")
+	refBasePath, mapper := encodedTargetRelatedRefMapping(path)
+	if refBasePath != "tenant_1/export/session/test.shp" {
+		t.Fatalf("ref base path = %q, want bucketless object key", refBasePath)
+	}
+	if mapper == nil {
+		t.Fatal("mapper is nil, want object bucket mapper")
+	}
+	mapped, err := mapper(format.SameBasenameRelatedRefs(refBasePath, []format.RelatedRefSpec{
+		{Extension: ".dbf", Role: "attributes", Required: true},
+	})[0].Ref)
+	if err != nil {
+		t.Fatalf("mapper failed: %v", err)
+	}
+	if got := mapped.StringPath(); got != "manager/tenant_1/export/session/test.dbf" {
+		t.Fatalf("mapped path = %q, want bucket/object catalog path", got)
+	}
+}
+
 func TestTablePipelineProgressCarriesResumeAndCommitMarkers(t *testing.T) {
 	sourceMarker := &resume.Marker{
 		Version:      resume.MarkerVersionV1,

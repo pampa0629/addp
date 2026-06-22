@@ -69,15 +69,14 @@ ENABLE_SERVICE_INTEGRATION=true    # 启用配置中心
 # 回退配置已注释 (仅在集成禁用时使用)
 ```
 
-### Manager 上传导入中转对象存储
+### Manager 导入中转对象存储
 
-Manager 的 Shapefile 上传导入不是由 Manager 自己解析写库。Manager 只负责接收 ZIP 包、上传到中转对象存储，然后创建 Transfer 新 endpoint 任务：
+Manager 的 Shapefile 导入不是由 Manager 自己解析写库。Manager 只负责接收 ZIP 包、上传到中转对象存储，然后创建并触发 Transfer `sync`：
 
 ```json
 {
   "source": {
-    "engine": {"id": 9},
-    "resource": {"kind": "object", "path": {"bucket": "manager", "path": "temp/<uuid>/roads.shp"}},
+    "locator": "addp-infra://minio/manager/tenant_7/import/20260622/upload-uuid/roads.shp?type=object",
     "data_type": "table",
     "representation": "encoded",
     "format": "shapefile"
@@ -85,22 +84,22 @@ Manager 的 Shapefile 上传导入不是由 Manager 自己解析写库。Manager
 }
 ```
 
-这里的 source engine id 必须指向 System 中登记的对象存储引擎。Transfer 会通过 System engine resolver 获取 engine type 和 connection info；Manager 不在任务 JSON 中声明 engine type，也不根据 S3 / MinIO 做写死分支。
+Manager 上传导入文件时写入 ADDP infra MinIO 的 `manager` bucket，并通过 `addp-infra://minio/manager/...` locator 调用 Transfer。infra MinIO 不进入 System engines，上传暂存对象也不进入 Meta。
+对于 Shapefile 多文件上传，source locator 指向 primary `.shp`；同 basename 的 `.dbf`、`.shx`、`.prj`、`.cpg` 等组件随同写入同一暂存目录，由 Transfer 按格式能力读取相关 refs。
 
 相关环境变量：
 
 ```bash
-# 可选。Manager 上传导入 Shapefile 时使用的中转对象存储 engine id。
-# 留空时，Manager 会按 MINIO_SYSTEM_ENDPOINT / bucket / access key 在 System 对象存储引擎中自动匹配。
-MANAGER_IMPORT_SOURCE_ENGINE_ID=
+MINIO_SYSTEM_ENDPOINT=localhost:19000
+MINIO_SYSTEM_ACCESS_KEY=minioadmin
+MINIO_SYSTEM_SECRET_KEY=minioadmin
 ```
 
-匹配规则：
+规则：
 
-1. 如果配置了 `MANAGER_IMPORT_SOURCE_ENGINE_ID`，Manager 会优先使用该 engine id；启用 System 集成时会校验该引擎处于 active 状态。
-2. 如果未配置，Manager 通过 System 列出对象存储引擎，按中转 MinIO endpoint、bucket 和 access key 匹配。
-3. 如果匹配不到或匹配到多个对象存储引擎，导入会失败并提示显式配置 `MANAGER_IMPORT_SOURCE_ENGINE_ID`。
-4. 当前上传入口只接受一个 Shapefile ZIP 包；包内 `.shp/.dbf/.shx` 必须同 basename，不能混入多套 Shapefile。
+1. Manager 负责上传暂存和后续 cleanup，Transfer 只按 locator 读取。
+2. 暂存路径使用 `tenant_{tenant_id}/import/{yyyymmdd}/{upload_uuid}/...`。
+3. 当前导入入口支持一个 Shapefile ZIP 包，或浏览器同时选择同一套 Shapefile 的多个组件文件；`.shp/.dbf/.shx` 必须同 basename，不能混入多套 Shapefile。
 
 ### Manager 向量化配置
 
@@ -150,9 +149,12 @@ POSTGRES_DB=addp
 # Redis
 REDIS_PASSWORD=addp_redis
 
-# MinIO - 系统文件
-MINIO_SYSTEM_ROOT_USER=minioadmin
-MINIO_SYSTEM_ROOT_PASSWORD=minioadmin
+# Infra MinIO - 基础设施级对象存储
+# 用于系统文件、模块缓存、审计日志归档等，不等于业务对象存储引擎。
+MINIO_ROOT_USER=minioadmin
+MINIO_ROOT_PASSWORD=minioadmin
+MINIO_API_PORT=19000
+MINIO_BUCKET=system
 
 # MinIO - 业务数据 (部署在 business/docker-compose.yml)
 # 注意：Business 引擎连接信息由 ADDP 容器内服务使用，生产 Docker 部署请使用 business 网络服务名，不要写 localhost。
@@ -167,6 +169,11 @@ BUSINESS_MINIO_SECRET_KEY=minioadmin
 
 # 服务集成
 ENABLE_SERVICE_INTEGRATION=true  # 启用跨服务调用
+
+# 审计日志归档
+AUDIT_LOG_RETENTION_DAYS=90
+AUDIT_LOG_ARCHIVE_ENABLED=false
+AUDIT_LOG_ARCHIVE_CRON="0 2 * * *"
 ```
 
 ### 端口分配
@@ -214,12 +221,12 @@ DEFAULT_ADMIN_EMAIL=admin@addp.com
 
 ```bash
 # 使用超级管理员登录
-curl -X POST http://localhost:8180/api/auth/login \
+curl -X POST http://localhost:8180/api/v1/system/login \
   -H "Content-Type: application/json" \
   -d '{"username": "SuperAdmin", "password": "20251001#SuperAdmin"}'
 
 # 使用租户管理员登录
-curl -X POST http://localhost:8180/api/auth/login \
+curl -X POST http://localhost:8180/api/v1/system/login \
   -H "Content-Type: application/json" \
   -d '{"username": "admin", "password": "123456"}'
 ```
@@ -245,15 +252,15 @@ curl -X POST http://localhost:8180/api/auth/login \
 
 **公开**:
 
-- `POST /api/auth/login` - 登录
-- `POST /api/auth/register` - 注册
+- `POST /api/v1/system/login` - 登录
+- `POST /api/v1/system/register` - 注册
 
 **受保护** (需要 JWT):
 
-- `GET /api/users/me` - 当前用户
-- `GET /api/users` - 列出用户
-- `GET/PUT/DELETE /api/users/:id` - 用户 CRUD
-- `GET /api/logs` - 审计日志 (支持 `?user_id=X` 过滤)
-- `POST/GET/PUT/DELETE /api/engines` - 引擎 CRUD (支持 `?engine_type=X` 过滤)
+- `GET /api/v1/system/users/me` - 当前用户
+- `GET /api/v1/system/users` - 列出用户
+- `GET/PUT/DELETE /api/v1/system/users/:id` - 用户 CRUD
+- `GET /api/v1/system/logs` - 审计日志 (支持 `?user_id=X` 过滤)
+- `POST/GET/PUT/DELETE /api/v1/system/engines` - 引擎 CRUD (支持 `?engine_type=X` 过滤)
 
 **另请参阅**: 本文即为当前配置中心与环境变量说明入口。

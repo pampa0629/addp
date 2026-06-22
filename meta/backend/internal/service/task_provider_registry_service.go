@@ -46,7 +46,7 @@ func (s *TaskProviderRegistryService) Register() error {
 	// 构造能力描述（含前端集成 URL）
 	capabilities := map[string]interface{}{
 		"schema_version": "task.capabilities/v1",
-		"task_types": []map[string]interface{}{
+		"task_capabilities": []map[string]interface{}{
 			{
 				"type":                      "scan",
 				"display_name":              "元数据扫描",

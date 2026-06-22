@@ -7,7 +7,6 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/common/utils"
 	"github.com/addp/manager/internal/models"
 	pq "github.com/lib/pq"
 	"gorm.io/gorm"
@@ -16,14 +15,12 @@ import (
 var ErrMetadataSchemaMissing = errors.New("meta schema not initialized")
 
 type MetadataRepository struct {
-	db            *gorm.DB
-	encryptionKey []byte
+	db *gorm.DB
 }
 
-func NewMetadataRepository(db *gorm.DB, encryptionKey []byte) *MetadataRepository {
+func NewMetadataRepository(db *gorm.DB) *MetadataRepository {
 	return &MetadataRepository{
-		db:            db,
-		encryptionKey: encryptionKey,
+		db: db,
 	}
 }
 
@@ -106,38 +103,6 @@ func (r *MetadataRepository) GetObjectMetadataNode(engineID uint, bucketName, re
 
 	lite := convertMetaNodeToLite(*node)
 	return &lite, nil
-}
-
-// decryptSensitiveFields 解密连接信息中的敏感字段
-func (r *MetadataRepository) decryptSensitiveFields(connInfo models.ConnectionInfo) (models.ConnectionInfo, error) {
-	decrypted := make(models.ConnectionInfo)
-	for k, v := range connInfo {
-		decrypted[k] = v
-	}
-
-	// 定义需要解密的敏感字段
-	sensitiveFields := []string{"password", "access_key", "secret_key", "token", "api_key"}
-
-	for _, field := range sensitiveFields {
-		if val, exists := connInfo[field]; exists {
-			if strVal, ok := val.(string); ok && strVal != "" {
-				decryptedVal, err := utils.Decrypt(strVal, r.encryptionKey)
-				if err != nil {
-					// 如果解密失败，可能是未加密的旧数据，保持原值
-					decrypted[field] = strVal
-					continue
-				}
-				decrypted[field] = decryptedVal
-			}
-		}
-	}
-
-	return decrypted, nil
-}
-
-// DecryptConnectionInfo 对外暴露的连接信息解密方法
-func (r *MetadataRepository) DecryptConnectionInfo(connInfo models.ConnectionInfo) (models.ConnectionInfo, error) {
-	return r.decryptSensitiveFields(connInfo)
 }
 
 // GetNodeByName 根据资源ID和节点名称获取节点信息

@@ -112,8 +112,8 @@ func TestSpatialMetadataFromItemReadsCapabilitiesSpatial(t *testing.T) {
 	if meta.CRSRef != "EPSG:4326" || meta.CRSDefinition == nil || meta.CRSDefinition.DefinitionEncoding != "wkt" {
 		t.Fatalf("crs metadata = %q/%#v, want EPSG:4326 wkt", meta.CRSRef, meta.CRSDefinition)
 	}
-	if len(meta.GeometryTypes) != 1 || meta.GeometryTypes[0] != "POLYGON" {
-		t.Fatalf("geometry types = %#v, want POLYGON", meta.GeometryTypes)
+	if len(meta.GeometryTypes) != 1 || meta.GeometryTypes[0] != "Polygon" {
+		t.Fatalf("geometry types = %#v, want Polygon", meta.GeometryTypes)
 	}
 	if len(meta.Fields) != 1 || meta.Fields[0].Name != "id" || !meta.Fields[0].PrimaryKey {
 		t.Fatalf("fields = %#v, want partitioned fields", meta.Fields)

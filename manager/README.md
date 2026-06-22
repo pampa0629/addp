@@ -8,7 +8,7 @@
 - **[CLAUDE.md](./CLAUDE.md)** - 模块定位、核心 API、开发规则和文档导航
 - **[manager/docs/数据预览与资源树实现规范.md](./docs/数据预览与资源树实现规范.md)** - 数据探查、资源树、预览 API、PreviewResolver 和 PreviewProvider 当前实现规范
 - **[manager/docs/数据预览语义协议.md](./docs/数据预览语义协议.md)** - `content.kind`、`preview_material`、`frontend_renderer` 等预览响应语义
-- **[manager/docs/存储流与原始下载语义.md](./docs/存储流与原始下载语义.md)** - `storage-stream`、`storage-download` 与 DownloadPlan 语义
+- **[manager/docs/存储流与原始下载语义.md](./docs/存储流与原始下载语义.md)** - `storage-stream`、`downloads/file` 与 DownloadPlan 语义
 
 ## 🎯 核心功能
 
@@ -27,7 +27,7 @@
 # 启动基础设施
 bash scripts/infra/up.sh
 
-# 启动 Manager 模块（含依赖的 System 模块）
+# 启动 Manager 模块（含依赖的 System、Meta、Gateway、Console）
 bash scripts/dev/start.sh -manager
 ```
 
@@ -59,7 +59,11 @@ CSV、JSON、Parquet、Excel、Shapefile、GeoJSON、图片、PDF、文本
 ```
 数据预览:     GET  /api/v1/manager/preview
 存储流预览:   GET  /api/v1/manager/storage-stream
-原始下载:     GET  /api/v1/manager/storage-download
+原始下载:     GET  /api/v1/manager/downloads/file?locator={ResourceLocator}
+上传数据:     POST /api/v1/manager/uploads
+导入数据:     POST /api/v1/manager/imports
+导出数据:     POST /api/v1/manager/exports
+导出下载:     GET  /api/v1/manager/exports/{id}/file
 快显能力:     GET  /api/v1/manager/quick-view/capability?locator={ResourceLocator}
 快显GeoJSON: GET  /api/v1/manager/quick-view/geojson?locator={ResourceLocator}
 快显MVT瓦片: GET  /api/v1/manager/quick-view/tiles/{z}/{x}/{y}.mvt?locator={ResourceLocator}
@@ -105,7 +109,7 @@ CSV、JSON、Parquet、Excel、Shapefile、GeoJSON、图片、PDF、文本
 ```bash
 # 1. 检查存储引擎连接
 curl -H "Authorization: Bearer <token>" \
-  http://localhost:8081/api/v1/engines/<engine_id>/test
+  http://localhost:8180/api/v1/system/engines/<engine_id>/test
 
 # 2. 查看后端日志
 tail -f logs/manager-backend.log

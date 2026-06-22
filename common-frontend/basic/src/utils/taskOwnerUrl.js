@@ -151,13 +151,21 @@ export function findTaskTypeCapability(provider, taskType) {
   if (!provider || !hasValue(taskType)) return null
 
   const capabilities = parseCapabilities(provider.capabilities)
-  const taskTypes = Array.isArray(capabilities.task_types) ? capabilities.task_types : []
-  return taskTypes.find(item => item?.type === taskType && !item.deprecated) || null
+  const taskCapabilities = Array.isArray(capabilities.task_capabilities) ? capabilities.task_capabilities : []
+  return taskCapabilities.find(item => item?.type === taskType && !item.deprecated) || null
 }
 
 export function findTaskProvider(providers, moduleName) {
   if (!Array.isArray(providers) || !hasValue(moduleName)) return null
   return providers.find(provider => provider?.module_name === moduleName) || null
+}
+
+export function resolveTaskTypeDisplayName(providers, moduleName, taskType) {
+  if (!hasValue(taskType)) return ''
+
+  const provider = findTaskProvider(providers, moduleName)
+  const capability = findTaskTypeCapability(provider, taskType)
+  return capability?.display_name || capability?.type || ''
 }
 
 export function buildTaskEditUrlFromProviders(providers, execution, options = {}) {

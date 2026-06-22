@@ -241,6 +241,7 @@ func TestExecuteWithTaskProviderPassesTenantHeader(t *testing.T) {
 		case "/api/v1/quality/tasks/check/42/execute":
 			executeTenantHeader = r.Header.Get("X-Tenant-ID")
 			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
 			_ = json.NewEncoder(w).Encode(map[string]string{"execution_id": "child-exec"})
 		case "/api/v1/quality/executions/child-exec":
 			statusTenantHeader = r.Header.Get("X-Tenant-ID")
@@ -263,7 +264,7 @@ func TestExecuteWithTaskProviderPassesTenantHeader(t *testing.T) {
 					BaseURL:             server.URL,
 					TaskExecuteEndpoint: "/api/v1/quality/tasks/{task_type}/{id}/execute",
 					TaskStatusEndpoint:  "/api/v1/quality/executions/{execution_id}",
-					Capabilities:        jsonStringPtr(`{"schema_version":"task.capabilities/v1","task_types":[{"type":"check","deprecated":false,"execution_schema":{"type":"object","additionalProperties":false}}]}`),
+					Capabilities:        jsonStringPtr(taskCapabilitiesForTest("check", false, `{"type":"object","additionalProperties":false}`)),
 				},
 			},
 			cacheTTL:    time.Hour,
@@ -288,6 +289,65 @@ func TestExecuteWithTaskProviderPassesTenantHeader(t *testing.T) {
 	assert.Equal(t, "7", statusTenantHeader)
 }
 
+func TestExecuteWithTaskProviderDoesNotForwardOwnerScheduleFields(t *testing.T) {
+	var executePayload map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/transfer/tasks/sync/42/execute":
+			if err := json.NewDecoder(r.Body).Decode(&executePayload); err != nil {
+				t.Fatalf("decode execute payload: %v", err)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(map[string]string{"execution_id": "child-exec"})
+		case "/api/v1/transfer/executions/child-exec":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"execution_id": "child-exec",
+				"status":       "success",
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	executor := &Executor{
+		taskProviderRegistry: &TaskProviderRegistry{
+			providers: map[string]*commonModels.TaskProvider{
+				"transfer": {
+					ModuleName:          "transfer",
+					BaseURL:             server.URL,
+					TaskExecuteEndpoint: "/api/v1/transfer/tasks/{task_type}/{id}/execute",
+					TaskStatusEndpoint:  "/api/v1/transfer/executions/{execution_id}",
+					Capabilities:        jsonStringPtr(taskCapabilitiesForTest("sync", false, `{"type":"object"}`)),
+				},
+			},
+			cacheTTL:    time.Hour,
+			lastRefresh: time.Now(),
+		},
+	}
+
+	result, err := executor.executeWithTaskProvider(
+		context.Background(),
+		&models.Step{Provider: "transfer", TaskType: "sync", TaskID: 42, Timeout: 10},
+		map[string]interface{}{"batch_size": float64(1000)},
+		time.Now(),
+		"parent-exec",
+		"scheduled",
+		7,
+	)
+
+	assert.NoError(t, err)
+	assert.Equal(t, "success", result.Status)
+	assert.Equal(t, "scheduled", executePayload["trigger_type"])
+	assert.Equal(t, "orchestrator", executePayload["source"])
+	assert.Equal(t, "parent-exec", executePayload["parent_execution_id"])
+	assert.NotContains(t, executePayload, "schedule")
+	assert.NotContains(t, executePayload, "enabled")
+	assert.NotContains(t, executePayload, "next_run_at")
+}
+
 func TestExecuteWithTaskProviderRejectsDeprecatedTaskTypeBeforeHTTPCall(t *testing.T) {
 	called := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -304,7 +364,7 @@ func TestExecuteWithTaskProviderRejectsDeprecatedTaskTypeBeforeHTTPCall(t *testi
 					BaseURL:             server.URL,
 					TaskExecuteEndpoint: "/api/v1/develop/tasks/{task_type}/{id}/execute",
 					TaskStatusEndpoint:  "/api/v1/develop/executions/{execution_id}",
-					Capabilities:        jsonStringPtr(`{"schema_version":"task.capabilities/v1","task_types":[{"type":"workflow","deprecated":true}]}`),
+					Capabilities:        jsonStringPtr(taskCapabilitiesForTest("workflow", true, `{"type":"object","additionalProperties":false}`)),
 				},
 			},
 			cacheTTL:    time.Hour,
@@ -344,7 +404,7 @@ func TestExecuteWithTaskProviderRejectsDisallowedParametersBeforeHTTPCall(t *tes
 					BaseURL:             server.URL,
 					TaskExecuteEndpoint: "/api/v1/meta/tasks/{task_type}/{id}/execute",
 					TaskStatusEndpoint:  "/api/v1/meta/executions/{execution_id}",
-					Capabilities:        jsonStringPtr(`{"schema_version":"task.capabilities/v1","task_types":[{"type":"scan","deprecated":false,"execution_schema":{"type":"object","additionalProperties":false}}]}`),
+					Capabilities:        jsonStringPtr(taskCapabilitiesForTest("scan", false, `{"type":"object","additionalProperties":false}`)),
 				},
 			},
 			cacheTTL:    time.Hour,
@@ -380,18 +440,13 @@ func TestExtractProviderExecutionID(t *testing.T) {
 			want: "exec-top",
 		},
 		{
-			name: "wrapped execution id",
-			raw: map[string]interface{}{
-				"status": "success",
-				"data": map[string]interface{}{
-					"execution_id": "exec-data",
-				},
-			},
-			want: "exec-data",
-		},
-		{
 			name: "missing execution id",
 			raw:  map[string]interface{}{"status": "success"},
+			want: "",
+		},
+		{
+			name: "legacy id is rejected",
+			raw:  map[string]interface{}{"id": "legacy-exec", "status": "running"},
 			want: "",
 		},
 	}
@@ -401,6 +456,24 @@ func TestExtractProviderExecutionID(t *testing.T) {
 			assert.Equal(t, tt.want, extractProviderExecutionID(tt.raw))
 		})
 	}
+}
+
+func TestReplaceTaskProviderEndpointOnlyUsesStandardPlaceholders(t *testing.T) {
+	got := replaceTaskProviderEndpoint(
+		"/api/v1/meta/tasks/{task_type}/{id}/execute",
+		"scan",
+		"42",
+		"",
+	)
+	assert.Equal(t, "/api/v1/meta/tasks/scan/42/execute", got)
+
+	legacy := replaceTaskProviderEndpoint(
+		"/api/v1/meta/tasks/:task_type/:id/execute",
+		"scan",
+		"42",
+		"",
+	)
+	assert.Equal(t, "/api/v1/meta/tasks/:task_type/:id/execute", legacy)
 }
 
 // TestSplitPath 测试路径分割
@@ -511,34 +584,6 @@ func TestResolveStringTemplate(t *testing.T) {
 			assert.Equal(t, tt.expected, result)
 		})
 	}
-}
-
-func TestExtractProviderExecutionDataSupportsWrappedResponse(t *testing.T) {
-	raw := map[string]interface{}{
-		"status": "success",
-		"data": map[string]interface{}{
-			"execution_id": "exec-1",
-			"status":       "running",
-		},
-	}
-
-	got := extractProviderExecutionData(raw)
-
-	assert.Equal(t, "running", got["status"])
-	assert.Equal(t, "exec-1", got["execution_id"])
-}
-
-func TestExtractProviderExecutionDataSupportsDirectExecutionResponse(t *testing.T) {
-	raw := map[string]interface{}{
-		"execution_id": "exec-2",
-		"status":       "success",
-		"progress":     float64(100),
-	}
-
-	got := extractProviderExecutionData(raw)
-
-	assert.Equal(t, "success", got["status"])
-	assert.Equal(t, "exec-2", got["execution_id"])
 }
 
 func TestProviderExecutionErrorMessage(t *testing.T) {

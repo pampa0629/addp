@@ -41,6 +41,8 @@ detector 只负责回答“哪些资源组成哪些 data item”。它可以给�
 
 `catalog_paths` 和 `ref_groups` 都只是组织候选集合的输入形态。前者表示按引擎 catalog path 枚举或定位范围，后者表示一组 content refs 的可见边界；二者都必须进入 Meta detector，由 Meta 统一裁决 data item 边界、claims、exclusive 和落库结果。Transfer、Manager、Asset、Search 等模块不得因为掌握一组 refs 就绕过 Meta 自行生成或合并 `meta_item`。
 
+`catalog_paths`、`ref_groups.path` 以及进入 Meta scan 后的扫描期资源路径必须遵守 [ADDP 存储引擎路径体系规范](addp存储引擎路径体系规范.md) 的路径语义。尤其是对象存储场景：外部 `ref_groups.path` 使用 `bucket/object_key`，但 detector 候选资源进入对象存储资源规划层后应以 bucket 为 root、以 bucket 内 `object_key` 作为资源相对路径；不得把 `bucket/object_key` 再传给只接受 `object_key` 的 catalog mapper。
+
 ## 统一入口
 
 新扫描流程必须使用：

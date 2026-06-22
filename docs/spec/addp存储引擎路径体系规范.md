@@ -135,6 +135,28 @@ full_name 是相对于挂载点的路径，不包含挂载点本身：
 
 `ref_groups` 中的 path 仍必须遵守所属引擎的内容路径语义：对象存储以 bucket 开头，文件系统使用挂载根内相对路径或可被规范化为相对路径的输入。它不是 ResourceLocator，也不携带 `node_id` / `item_id`；进入 Meta 后由 ScanScope resolver 转换为引擎对应的 content ref 或 catalog path。
 
+### Meta scan 内部路径语义
+
+Meta scan 内部必须把“跨模块输入路径”和“扫描期规范化资源路径”分开处理。外部请求字段可以使用所属引擎的完整 content path；进入对象存储 catalog/resource 规划层后，bucket 必须成为独立 root 事实，不得继续混入 bucket 内 object key。
+
+| 路径语义 | 对象存储示例 | 文件系统 / NFS 示例 | 说明 |
+|---|---|---|---|
+| 外部 `catalog_paths` | `addp/image/photo.jpg` | `gis-data/sample.csv` | 跨模块请求输入，按所属引擎 catalog path 表达。 |
+| 外部 `ref_groups.path` | `addp/shp/roads.shp` | `shp/roads.shp` | 跨模块提交的一组 content refs；对象存储必须含 bucket，NFS 不含 `export_path`。 |
+| scan root / root name | `addp` | `""` | 对象存储为 bucket；NFS 为挂载根结构 root。 |
+| 扫描期资源相对路径 | `shp/roads.shp` | `shp/roads.shp` | 对象存储为 bucket 内 object key；NFS 为挂载根内相对路径。 |
+| 完整 content path / `full_name` | `addp/shp/roads.shp` | `shp/roads.shp` | data item 身份、primary content 和 ref 对外表达使用的完整路径。 |
+| `attributes.storage.path` | `shp/` | `shp/` | 目录路径，不含 bucket / root，不含文件名。 |
+| `attributes.storage.physical_path` | `addp/shp/roads.shp` | `shp/roads.shp` | 可还原 primary content 的完整 content path；不得作为第二套 catalog path 模型。 |
+
+实现约束：
+
+1. 对象存储 `ref_groups.path` 进入 Meta 后应先拆为 `bucket` 与 `object_key`；scan resource 的 `Path` 类字段只允许保存 `object_key`，完整路径另行保存为 `bucket/object_key`。
+2. 对象存储 `CatalogPathForBucket(bucket)` 这类 mapper 只允许消费 bucket 内 `object_key`；需要消费 `bucket/object_key` 时必须使用命名明确的 mapper，不得混用。
+3. 对象存储普通 `catalog_paths` scan 与 `ref_groups` scan 对同一个 object 必须生成一致的 scan resource 语义、`meta_item.full_name`、`attributes.storage.*` 和指纹输入。
+4. 文件系统 / NFS 没有 bucket 层，扫描期资源相对路径、完整 content path 与 `full_name` 在字符串上通常相同；实现不得为了对齐对象存储而给 NFS 额外引入 root 前缀或 bucket-like 段。
+5. `physical_path` 只表达已裁决 item 的 primary content 或 whole scope 根范围；扫描实现不得把它当作可自由拼接的 catalog selector，也不得把对象存储的 `bucket/object_key` 再交给只接受 `object_key` 的 mapper。
+
 ### 关系型数据库（PostgreSQL / MySQL / Doris / ClickHouse）
 
 full_name 使用引擎原生术语：
@@ -339,6 +361,29 @@ addp://engine/{engine_id}/path/{segments}?type={type}&node_id={node_id}&item_id=
 数据库与 branch/leaf 型引擎的解析语义：`branch = path[0]`，`leaf = join(path[1:])`，具体数据项类型由 locator 的 `type` 决定。关系型数据库的 schema/database、MongoDB/Neo4j 的 database 都是 server root 下的第一层 branch。
 Neo4j 的 catalog leaf 必须使用 `type=graph`；节点 label、relationship type 和连接模式属于 `type_info.graph`，不得作为独立 catalog leaf。
 NFS 物理路径重建公式为 `"/" + join(path, "/")`。
+
+### ADDP infra locator 与业务 ResourceLocator 的边界
+
+`addp://engine/...` 只定位用户可访问的数据引擎资源。ADDP 系统基础设施资源使用内部 `addp-infra://` locator，不属于本章定义的业务 ResourceLocator。
+
+```text
+addp-infra://{infra_kind}/{namespace}/{path...}?type={resource_type}
+```
+
+第一阶段已使用的 infra locator 形态：
+
+```text
+addp-infra://minio/manager/tenant_7/import/20260622/upload-uuid/roads.shp?type=object
+addp-infra://minio/manager/tenant_7/export/20260622/execution-id?type=prefix
+```
+
+边界规则：
+
+1. `addp-infra://` 只在后端模块间契约中使用，例如 Manager 调用 Transfer sync 时传递导入 source 或导出 target。
+2. infra locator 不携带 `engine_id`、`node_id` 或 `item_id`，不得进入前端资源树定位、Meta 扫描定位或用户可见资源选择。
+3. infra MinIO 使用系统基础设施 MinIO 配置，不通过 System engines 解析，不产生业务 engine 记录。
+4. Transfer endpoint 解析层可以把 `addp-infra://minio/...` 绑定到 infra MinIO 的 engine binding 和 catalog path，后续执行链路仍复用通用 content reader / writer 和 format reader / writer，不在 planner / executor 为 Manager 导入导出建立专用格式分支。
+5. 导出到 infra 暂存时 `auto_scan_metadata=false`；导入到业务库后是否扫描目标由 Transfer / Meta 正常任务链路处理。
 
 ---
 

@@ -145,18 +145,6 @@ func (r *DevTaskRepository) UpdateLastExecution(id uint, tenantID uint, executio
 		}).Error
 }
 
-// FindScheduledItems 查找所有启用了调度的开发任务
-func (r *DevTaskRepository) FindScheduledItems(tenantID uint) ([]models.DevTask, error) {
-	var items []models.DevTask
-	// 修改为使用 schedule 字段判断（替代已删除的 is_scheduled 字段）
-	if err := r.db.Where("tenant_id = ? AND schedule IS NOT NULL AND schedule != '' AND schedule != '0' AND status = ?",
-		tenantID, "active").
-		Find(&items).Error; err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 // UpdateStatus 更新开发任务状态
 func (r *DevTaskRepository) UpdateStatus(id uint, tenantID uint, status string) error {
 	return r.db.Model(&models.DevTask{}).

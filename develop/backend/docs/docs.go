@@ -282,7 +282,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "类型过滤 | Filter by type",
+                        "description": "Develop 内部类型过滤：query/workflow/script | Develop internal type filter: query/workflow/script",
                         "name": "dev_type",
                         "in": "query"
                     },
@@ -1265,7 +1265,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "类型过滤 | Filter by type",
+                        "description": "Develop 内部类型过滤：query/workflow/script | Develop internal type filter: query/workflow/script",
                         "name": "dev_type",
                         "in": "query"
                     },
@@ -1500,7 +1500,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "返回可供 TaskProvider 编排复用的开发任务 | List active develop tasks exposed by TaskProvider",
+                "description": "返回可供 TaskProvider 编排复用的开发任务；task_type 是对外任务类型契约，映射到 Develop 内部 dev_type。| List active develop tasks exposed by TaskProvider; task_type is the external task contract mapped to Develop internal dev_type.",
                 "produces": [
                     "application/json"
                 ],
@@ -1511,7 +1511,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型：query/workflow/script | Task type: query/workflow/script",
+                        "description": "TaskProvider 任务类型：query/workflow/script | TaskProvider task type: query/workflow/script",
                         "name": "task_type",
                         "in": "query"
                     },
@@ -1549,7 +1549,7 @@ const docTemplate = `{
         },
         "/tasks/{task_type}/{id}": {
             "get": {
-                "description": "按标准 TaskProvider 路径获取开发任务详情；task_type 支持 query/workflow/script。| Get development task detail through the standard TaskProvider path; task_type supports query/workflow/script.",
+                "description": "按标准 TaskProvider 路径获取开发任务详情；task_type 是对外任务类型契约，映射到 Develop 内部 dev_type。| Get development task detail through the standard TaskProvider path; task_type is the external task contract mapped to Develop internal dev_type.",
                 "produces": [
                     "application/json"
                 ],
@@ -1560,7 +1560,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型：query/workflow/script | Task type: query/workflow/script",
+                        "description": "TaskProvider 任务类型：query/workflow/script | TaskProvider task type: query/workflow/script",
                         "name": "task_type",
                         "in": "path",
                         "required": true
@@ -1599,7 +1599,7 @@ const docTemplate = `{
         },
         "/tasks/{task_type}/{id}/execute": {
             "post": {
-                "description": "按标准 TaskProvider 协议执行开发任务；task_type 支持 query/workflow/script，parameters 会传入本次执行。| Execute a development task through the standard TaskProvider protocol; task_type supports query/workflow/script and parameters are passed to this execution.",
+                "description": "按标准 TaskProvider 协议执行开发任务；task_type 是对外任务类型契约，映射到 Develop 内部 dev_type，parameters 会传入本次执行。| Execute a development task through the standard TaskProvider protocol; task_type is the external task contract mapped to Develop internal dev_type, and parameters are passed to this execution.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1613,7 +1613,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型：query/workflow/script | Task type: query/workflow/script",
+                        "description": "TaskProvider 任务类型：query/workflow/script | TaskProvider task type: query/workflow/script",
                         "name": "task_type",
                         "in": "path",
                         "required": true
@@ -1635,13 +1635,10 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
-                    "200": {
+                    "202": {
                         "description": "执行已启动 | Execution started",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/internal_api.providerExecuteDevResponse"
                         }
                     },
                     "400": {
@@ -1735,6 +1732,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "dev_type": {
+                    "description": "Develop 内部类型；TaskProvider 对外映射为 task_type",
                     "type": "string",
                     "enum": [
                         "query",
@@ -1750,9 +1748,6 @@ const docTemplate = `{
                     "additionalProperties": true
                 },
                 "name": {
-                    "type": "string"
-                },
-                "schedule": {
                     "type": "string"
                 },
                 "tags": {
@@ -1824,15 +1819,11 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "dev_type": {
-                    "description": "'query' | 'workflow' | 'script'",
+                    "description": "Develop 内部类型：'query' | 'workflow' | 'script'",
                     "type": "string"
                 },
                 "display_name": {
                     "type": "string"
-                },
-                "enabled": {
-                    "description": "调度开关",
-                    "type": "boolean"
                 },
                 "execution_config": {
                     "description": "执行配置（JSONB 字段，统一的执行配置）",
@@ -1856,13 +1847,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "name": {
-                    "type": "string"
-                },
-                "next_run_at": {
-                    "type": "string"
-                },
-                "schedule": {
-                    "description": "Cron 表达式",
                     "type": "string"
                 },
                 "status": {
@@ -2142,14 +2126,8 @@ const docTemplate = `{
                 "name": {
                     "type": "string"
                 },
-                "next_run_at": {
-                    "type": "string"
-                },
                 "parameters": {
                     "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTaskContent"
-                },
-                "schedule": {
-                    "type": "string"
                 },
                 "status": {
                     "type": "string"
@@ -2195,9 +2173,6 @@ const docTemplate = `{
                     "additionalProperties": true
                 },
                 "name": {
-                    "type": "string"
-                },
-                "schedule": {
                     "type": "string"
                 },
                 "status": {
@@ -2518,6 +2493,17 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "trigger_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.providerExecuteDevResponse": {
+            "type": "object",
+            "properties": {
+                "execution_id": {
+                    "type": "string"
+                },
+                "status": {
                     "type": "string"
                 }
             }

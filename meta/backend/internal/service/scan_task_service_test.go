@@ -393,6 +393,151 @@ func TestComputeInheritedTargetsIgnoresManualTasks(t *testing.T) {
 	}
 }
 
+func TestCreateTaskRejectsDuplicateEnabledScheduleScope(t *testing.T) {
+	db := openObjectCatalogScanTestDB(t)
+	createScanTaskTable(t, db)
+
+	taskSvc := NewScanTaskService(db)
+	ctx := context.Background()
+	req := &models.ScanTaskUpsertRequest{
+		Name:         "bucket c",
+		EngineID:     9,
+		CatalogPaths: []string{"bucket/c"},
+		Schedule:     "15 3 * * *",
+		Enabled:      true,
+		ScanDepth:    "deep",
+	}
+	if _, err := taskSvc.CreateTask(ctx, 1, 7, req); err != nil {
+		t.Fatalf("CreateTask() first error = %v", err)
+	}
+
+	_, err := taskSvc.CreateTask(ctx, 1, 7, &models.ScanTaskUpsertRequest{
+		Name:         "same bucket c",
+		EngineID:     9,
+		CatalogPaths: []string{"bucket/c"},
+		Schedule:     "30 4 * * *",
+		Enabled:      true,
+		ScanDepth:    "deep",
+	})
+	if err == nil {
+		t.Fatal("CreateTask() should reject duplicate enabled scheduled scope")
+	}
+}
+
+func TestCreateTaskAllowsDuplicateScopeWhenScheduleDisabled(t *testing.T) {
+	db := openObjectCatalogScanTestDB(t)
+	createScanTaskTable(t, db)
+
+	taskSvc := NewScanTaskService(db)
+	ctx := context.Background()
+	if _, err := taskSvc.CreateTask(ctx, 1, 7, &models.ScanTaskUpsertRequest{
+		Name:         "scheduled bucket",
+		EngineID:     9,
+		CatalogPaths: []string{"bucket/c"},
+		Schedule:     "15 3 * * *",
+		Enabled:      true,
+		ScanDepth:    "deep",
+	}); err != nil {
+		t.Fatalf("CreateTask() scheduled error = %v", err)
+	}
+	if _, err := taskSvc.CreateTask(ctx, 1, 7, &models.ScanTaskUpsertRequest{
+		Name:         "manual bucket",
+		EngineID:     9,
+		CatalogPaths: []string{"bucket/c"},
+		ScanDepth:    "deep",
+	}); err != nil {
+		t.Fatalf("CreateTask() manual duplicate scope error = %v", err)
+	}
+	if _, err := taskSvc.CreateTask(ctx, 1, 7, &models.ScanTaskUpsertRequest{
+		Name:         "disabled bucket",
+		EngineID:     9,
+		CatalogPaths: []string{"bucket/c"},
+		Schedule:     "30 4 * * *",
+		Enabled:      false,
+		ScanDepth:    "deep",
+	}); err != nil {
+		t.Fatalf("CreateTask() disabled duplicate scope error = %v", err)
+	}
+}
+
+func TestDeleteTaskRestoresParentScheduleInheritance(t *testing.T) {
+	db := openObjectCatalogScanTestDB(t)
+	createScanTaskTable(t, db)
+
+	taskSvc := NewScanTaskService(db)
+	ctx := context.Background()
+	parent, err := taskSvc.CreateTask(ctx, 1, 7, &models.ScanTaskUpsertRequest{
+		Name:         "parent",
+		EngineID:     9,
+		CatalogPaths: []string{"bucket/a", "bucket/b", "bucket/c"},
+		Schedule:     "15 3 * * *",
+		Enabled:      true,
+		ScanDepth:    "deep",
+	})
+	if err != nil {
+		t.Fatalf("CreateTask() parent error = %v", err)
+	}
+	child, err := taskSvc.CreateTask(ctx, 1, 7, &models.ScanTaskUpsertRequest{
+		Name:         "child",
+		EngineID:     9,
+		CatalogPaths: []string{"bucket/c"},
+		Schedule:     "*/15 * * * *",
+		Enabled:      true,
+		ScanDepth:    "deep",
+	})
+	if err != nil {
+		t.Fatalf("CreateTask() child error = %v", err)
+	}
+
+	execSvc := NewScanExecutionService(db, nil, nil, nil)
+	scheduler := NewScanTaskScheduler(taskSvc, execSvc)
+	beforeDelete := scheduler.computeInheritedTargets(parent)
+	if !reflect.DeepEqual(beforeDelete.CatalogPaths, []string{"bucket/a", "bucket/b"}) {
+		t.Fatalf("before delete catalog paths = %#v, want a/b", beforeDelete.CatalogPaths)
+	}
+
+	if err := taskSvc.DeleteTask(ctx, 1, child.ID); err != nil {
+		t.Fatalf("DeleteTask() error = %v", err)
+	}
+	afterDelete := scheduler.computeInheritedTargets(parent)
+	if !reflect.DeepEqual(afterDelete.CatalogPaths, []string{"bucket/a", "bucket/b", "bucket/c"}) {
+		t.Fatalf("after delete catalog paths = %#v, want a/b/c", afterDelete.CatalogPaths)
+	}
+}
+
+func TestUpsertEngineScanTaskRejectsDuplicateEnabledEngineSchedule(t *testing.T) {
+	db := openObjectCatalogScanTestDB(t)
+	createScanTaskTable(t, db)
+
+	taskSvc := NewScanTaskService(db)
+	if _, err := taskSvc.CreateTask(context.Background(), 1, 7, &models.ScanTaskUpsertRequest{
+		Name:      "manual engine plan",
+		EngineID:  9,
+		Schedule:  "15 3 * * *",
+		Enabled:   true,
+		ScanDepth: "deep",
+	}); err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+
+	_, err := taskSvc.UpsertEngineScanTaskFromPolicy(
+		1,
+		7,
+		9,
+		"Business MinIO",
+		&commonModels.ScanPolicy{
+			Enabled:       true,
+			ScheduledScan: true,
+			ScheduleMode:  "daily",
+			ScheduleTime:  "03:15",
+			ScanDepth:     "deep",
+		},
+	)
+	if err == nil {
+		t.Fatal("UpsertEngineScanTaskFromPolicy() should reject duplicate engine schedule")
+	}
+}
+
 func createTaskExecutionTable(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	if err := db.Exec("ATTACH DATABASE ':memory:' AS common").Error; err != nil {

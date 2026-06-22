@@ -1,8 +1,13 @@
 package repository
 
 import (
+	"context"
+	"errors"
+	"time"
+
 	"github.com/addp/orchestrator/internal/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // OrchestrationRepository 编排数据访问
@@ -67,6 +72,59 @@ func (r *OrchestrationRepository) ListEnabled() ([]models.Orchestration, error) 
 	var orchs []models.Orchestration
 	err := r.db.Where("enabled = ?", true).Find(&orchs).Error
 	return orchs, err
+}
+
+func (r *OrchestrationRepository) ListMissingNextRun(ctx context.Context) ([]models.Orchestration, error) {
+	var orchs []models.Orchestration
+	err := r.db.WithContext(ctx).
+		Where("enabled = ? AND schedule <> '' AND next_run_at IS NULL", true).
+		Find(&orchs).Error
+	return orchs, err
+}
+
+func (r *OrchestrationRepository) UpdateNextRunAt(ctx context.Context, id uint, nextRunAt *time.Time) error {
+	return r.db.WithContext(ctx).
+		Model(&models.Orchestration{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{"next_run_at": nextRunAt}).Error
+}
+
+func (r *OrchestrationRepository) ListDueIDs(ctx context.Context, now time.Time, limit int) ([]uint, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	var ids []uint
+	err := r.db.WithContext(ctx).
+		Model(&models.Orchestration{}).
+		Where("enabled = ? AND schedule <> '' AND next_run_at IS NOT NULL AND next_run_at <= ?", true, now).
+		Order("next_run_at ASC").
+		Limit(limit).
+		Pluck("id", &ids).Error
+	return ids, err
+}
+
+func (r *OrchestrationRepository) ClaimDue(ctx context.Context, id uint, schedule string, now time.Time, nextRunAt *time.Time) (*models.Orchestration, error) {
+	var claimed *models.Orchestration
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var orch models.Orchestration
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+			Where("id = ? AND enabled = ? AND schedule = ? AND next_run_at IS NOT NULL AND next_run_at <= ?", id, true, schedule, now).
+			First(&orch).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+
+		if err := tx.Model(&models.Orchestration{}).
+			Where("id = ?", orch.ID).
+			Updates(map[string]interface{}{"next_run_at": nextRunAt}).Error; err != nil {
+			return err
+		}
+		claimed = &orch
+		return nil
+	})
+	return claimed, err
 }
 
 // Update 更新编排

@@ -30,7 +30,7 @@
 
 ## 任务库机制
 
-**任务库** 是由各模块提供的可复用任务集合,通过能力注册机制实现跨模块调用。
+**任务库** 是由各模块提供的可复用任务集合,通过 TaskProvider capabilities 注册机制实现跨模块调用。
 
 ```mermaid
 graph TB
@@ -47,13 +47,13 @@ graph TB
     subgraph "TaskProvider 注册中心 (System 模块)"
         Registry[task_providers 表]
 
-        Meta --> |注册| MetaCap[Meta 任务类型<br/>scan]
-        Transfer --> |注册| TransferCap[Transfer 任务类型<br/>import]
-        Develop --> |注册| DevelopCap[Develop 任务类型<br/>query<br/>workflow<br/>script]
-        Manager --> |注册| ManagerCap[Manager 任务类型<br/>tile_cache_generation<br/>quick_view_optimization<br/>embedding]
-        Quality --> |注册| QualityCap[Quality 任务类型<br/>check]
-        Graph --> |注册| GraphCap[Graph 任务类型<br/>kg_build]
-        OrchestratorProvider --> |注册| OrchestratorCap[Orchestrator 任务类型<br/>orchestration]
+        Meta --> |注册 capabilities| MetaCap[Meta task_capabilities<br/>scan]
+        Transfer --> |注册 capabilities| TransferCap[Transfer task_capabilities<br/>sync]
+        Develop --> |注册 capabilities| DevelopCap[Develop task_capabilities<br/>query<br/>workflow<br/>script]
+        Manager --> |注册 capabilities| ManagerCap[Manager task_capabilities<br/>tile_cache_generation<br/>quick_view_optimization<br/>embedding]
+        Quality --> |注册 capabilities| QualityCap[Quality task_capabilities<br/>check]
+        Graph --> |注册 capabilities| GraphCap[Graph task_capabilities<br/>kg_build]
+        OrchestratorProvider --> |注册 capabilities| OrchestratorCap[Orchestrator task_capabilities<br/>orchestration]
 
         MetaCap --> Registry
         TransferCap --> Registry
@@ -95,10 +95,10 @@ graph TB
 
 **步骤 1: 模块注册任务能力**
 - 各模块在启动时向 System 模块注册自己的 TaskProvider 能力
-- 注册信息包括:模块名、任务类型集合、API 端点、定义 schema、执行 schema 和调度/取消能力
+- 注册信息包括:模块名、标准 API endpoint，以及 `task_capabilities[]` 中声明的任务类型、定义 schema、执行 schema 和调度/取消能力
 
 **步骤 2: Orchestrator 发现任务**
-- Orchestrator 通过 TaskProvider 注册中心发现可用任务
+- Orchestrator 通过 System 中的 TaskProvider 注册中心发现可用任务能力
 - 前端展示任务列表供用户选择
 
 **步骤 3: 配置编排**
@@ -114,7 +114,7 @@ graph TB
 | 模块 | 任务名称 | 任务 API | 参数示例 |
 |------|---------|---------|---------|
 | **Meta** | 扫描元数据 | `POST /api/v1/meta/tasks/{task_type}/{id}/execute` | `task_type=scan` |
-| **Transfer** | Transfer 任务 | `POST /api/v1/transfer/tasks/{task_type}/{id}/execute` | `task_type=import` |
+| **Transfer** | Transfer 任务 | `POST /api/v1/transfer/tasks/{task_type}/{id}/execute` | `task_type=sync` |
 | **Develop** | 执行查询 | `POST /api/v1/develop/tasks/{task_type}/{id}/execute` | `task_type=query` |
 | **Develop** | 执行工作流 | `POST /api/v1/develop/tasks/{task_type}/{id}/execute` | `task_type=workflow` |
 | **Develop** | 执行脚本 | `POST /api/v1/develop/tasks/{task_type}/{id}/execute` | `task_type=script` |
@@ -151,7 +151,7 @@ graph TB
         TaskWF[任务编排流<br/>Task Orchestration Flow]
 
         TaskWF --> TaskNode1[业务任务<br/>扫描元数据<br/>Meta.scan]
-        TaskWF --> TaskNode2[业务任务<br/>Transfer任务<br/>Transfer.import]
+        TaskWF --> TaskNode2[业务任务<br/>Transfer任务<br/>Transfer.sync]
         TaskWF --> TaskNode3[业务任务<br/>生成瓦片<br/>Manager.tile_cache_generation]
 
         TaskNode1 --> TaskNode2
@@ -211,7 +211,7 @@ Orchestrator 可以调用 Develop 模块已经创建好的工作流任务作为�
       "id": "run_transfer_task",
       "name": "执行 Transfer 任务",
       "provider": "transfer",
-      "task_type": "import",
+      "task_type": "sync",
       "task_id": 201,
       "parameters": {}
     }
@@ -228,7 +228,7 @@ Orchestrator 可以调用 Develop 模块已经创建好的工作流任务作为�
 ```mermaid
 flowchart TD
     Start([开始]) --> ScanMeta[扫描元数据<br/>Meta.scan<br/>task_id=11]
-    ScanMeta --> ImportData[Transfer任务<br/>Transfer.import<br/>task_id=21]
+    ScanMeta --> ImportData[Transfer任务<br/>Transfer.sync<br/>task_id=21]
     ImportData --> ExecuteWorkflow[执行工作流<br/>Develop.workflow<br/>参数: input={{ImportData.target_table}}]
     ExecuteWorkflow --> GenerateTileCache[生成瓦片缓存<br/>Manager.tile_cache_generation<br/>task_id=31]
     GenerateTileCache --> End([结束])
@@ -265,7 +265,7 @@ flowchart TD
       "id": "import_data",
       "name": "Transfer任务",
       "provider": "transfer",
-      "task_type": "import",
+      "task_type": "sync",
       "task_id": 21,
       "parameters": {},
       "depends_on": ["scan_metadata"],

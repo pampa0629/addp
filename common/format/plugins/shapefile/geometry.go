@@ -54,9 +54,9 @@ func determineShapefileGeometryType(shapeType shp.ShapeType) string {
 	case shp.POINT, shp.POINTZ, shp.POINTM:
 		return "Point"
 	case shp.POLYLINE, shp.POLYLINEZ, shp.POLYLINEM:
-		return "LineString"
+		return "MultiLineString"
 	case shp.POLYGON, shp.POLYGONZ, shp.POLYGONM:
-		return "Polygon"
+		return "MultiPolygon"
 	case shp.MULTIPOINT, shp.MULTIPOINTZ, shp.MULTIPOINTM:
 		return "MultiPoint"
 	default:
@@ -95,23 +95,23 @@ func shapeTypeFromTableInfo(tableInfo *datatype.TableInfo, spatialInfo *datatype
 
 func shapefileShapeTypeFromGeometryType(geometryType string, dimension int) (shp.ShapeType, error) {
 	z := dimension >= 3
-	switch normalizeGeometryTypeName(geometryType) {
-	case "point":
+	switch datatype.ParseGeometryType(geometryType) {
+	case datatype.GeometryTypePoint:
 		if z {
 			return shp.POINTZ, nil
 		}
 		return shp.POINT, nil
-	case "linestring", "multilinestring":
+	case datatype.GeometryTypeLineString, datatype.GeometryTypeMultiLineString:
 		if z {
 			return shp.POLYLINEZ, nil
 		}
 		return shp.POLYLINE, nil
-	case "polygon", "multipolygon":
+	case datatype.GeometryTypePolygon, datatype.GeometryTypeMultiPolygon:
 		if z {
 			return shp.POLYGONZ, nil
 		}
 		return shp.POLYGON, nil
-	case "multipoint":
+	case datatype.GeometryTypeMultiPoint:
 		if z {
 			return shp.MULTIPOINTZ, nil
 		}
@@ -119,10 +119,6 @@ func shapefileShapeTypeFromGeometryType(geometryType string, dimension int) (shp
 	default:
 		return shp.NULL, fmt.Errorf("unsupported or missing shapefile geometry type %q", geometryType)
 	}
-}
-
-func normalizeGeometryTypeName(geometryType string) string {
-	return strings.ToLower(strings.ReplaceAll(strings.TrimSpace(geometryType), "_", ""))
 }
 
 func shapeToGeom(shape shp.Shape) (geom.T, error) {

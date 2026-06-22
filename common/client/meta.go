@@ -38,6 +38,21 @@ type MetaScanOptions struct {
 	Source       string
 }
 
+type MetaInspectRequest struct {
+	Locator   string              `json:"locator"`
+	RefGroups []MetaScanRefGroup  `json:"ref_groups,omitempty"`
+	ScanDepth string              `json:"scan_depth,omitempty"`
+}
+
+type MetaInspectResult struct {
+	Attributes map[string]interface{} `json:"attributes"`
+	FullName   string                 `json:"full_name,omitempty"`
+	Name       string                 `json:"name,omitempty"`
+	DataType   string                 `json:"data_type,omitempty"`
+	Format     string                 `json:"format,omitempty"`
+	Layout     string                 `json:"layout,omitempty"`
+}
+
 type MetaScanRefGroup struct {
 	Primary string        `json:"primary"`
 	Refs    []MetaScanRef `json:"refs"`
@@ -47,6 +62,7 @@ type MetaScanRef struct {
 	Path     string `json:"path"`
 	Role     string `json:"role"`
 	Required bool   `json:"required"`
+	Primary  bool   `json:"primary,omitempty"`
 }
 
 func normalizeManualMetaTriggerType(triggerType string) (string, error) {
@@ -494,6 +510,34 @@ func (c *MetaClient) CreateManualScanRun(opts MetaScanOptions) (*commonExecution
 		}
 	}
 
+	return &result, nil
+}
+
+func (c *MetaClient) InspectAttributes(req MetaInspectRequest) (*MetaInspectResult, error) {
+	urlStr := fmt.Sprintf("%s/api/v1/meta/inspect", c.baseURL)
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal inspect request: %w", err)
+	}
+	httpReq, err := http.NewRequest("POST", urlStr, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create inspect request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	c.addAuth(httpReq)
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send inspect request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("meta inspect api returned status %d: %s", resp.StatusCode, string(respBody))
+	}
+	var result MetaInspectResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode inspect response: %w", err)
+	}
 	return &result, nil
 }
 

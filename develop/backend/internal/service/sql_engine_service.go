@@ -128,7 +128,7 @@ func (s *SQLEngineService) TestConnection(engineID uint) error {
 	return nil
 }
 
-// ListDatabaseResources 获取可用的数据库资源列表（支持 query 模式的引擎）
+// ListDatabaseResources 获取可用的数据库资源列表（支持 query 计算入口的引擎）
 func (s *SQLEngineService) ListDatabaseResources(ctx context.Context, tenantID uint) ([]commonModels.Engine, error) {
 	allResources, err := s.systemClient.ListEngines("", tenantID)
 	if err != nil {
@@ -137,7 +137,7 @@ func (s *SQLEngineService) ListDatabaseResources(ctx context.Context, tenantID u
 
 	var dbResources []commonModels.Engine
 	for _, res := range allResources {
-		if utils.SupportsDevMode(&res, "query") {
+		if utils.SupportsComputeEntrypoint(&res, "query") {
 			dbResources = append(dbResources, res)
 		}
 	}

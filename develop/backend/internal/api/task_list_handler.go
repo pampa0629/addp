@@ -25,10 +25,10 @@ func NewTaskListHandler(devTaskService *service.DevTaskService) *TaskListHandler
 
 // ListTasks 查询 TaskProvider 任务列表
 // @Summary 列出可编排任务 | List orchestratable tasks
-// @Description 返回可供 TaskProvider 编排复用的开发任务 | List active develop tasks exposed by TaskProvider
+// @Description 返回可供 TaskProvider 编排复用的开发任务；task_type 是对外任务类型契约，映射到 Develop 内部 dev_type。| List active develop tasks exposed by TaskProvider; task_type is the external task contract mapped to Develop internal dev_type.
 // @Tags Develop
 // @Produce json
-// @Param task_type query string false "任务类型：query/workflow/script | Task type: query/workflow/script"
+// @Param task_type query string false "TaskProvider 任务类型：query/workflow/script | TaskProvider task type: query/workflow/script"
 // @Param page query int false "页码 | Page" default(1)
 // @Param page_size query int false "每页数量 | Page size" default(20)
 // @Success 200 {object} models.ListProviderDevTasksResponse

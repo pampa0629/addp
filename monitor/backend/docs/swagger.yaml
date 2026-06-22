@@ -112,9 +112,9 @@ definitions:
         type: string
       status:
         type: string
-      task_types:
+      task_capabilities:
         items:
-          $ref: '#/definitions/github_com_addp_monitor_internal_service.ProviderTaskTypeStatus'
+          $ref: '#/definitions/github_com_addp_monitor_internal_service.ProviderTaskCapabilityStatus'
         type: array
     type: object
   github_com_addp_monitor_internal_service.ProviderHealthStatus:
@@ -140,6 +140,13 @@ definitions:
           $ref: '#/definitions/github_com_addp_monitor_internal_service.ProviderTaskDiscoveryCheck'
         type: array
     type: object
+  github_com_addp_monitor_internal_service.ProviderTaskCapabilityStatus:
+    properties:
+      deprecated:
+        type: boolean
+      type:
+        type: string
+    type: object
   github_com_addp_monitor_internal_service.ProviderTaskDiscoveryCheck:
     properties:
       endpoint:
@@ -153,13 +160,6 @@ definitions:
       status_code:
         type: integer
       task_type:
-        type: string
-    type: object
-  github_com_addp_monitor_internal_service.ProviderTaskTypeStatus:
-    properties:
-      deprecated:
-        type: boolean
-      type:
         type: string
     type: object
   models.ErrorResponse:
@@ -180,7 +180,7 @@ definitions:
         description: API 配置
         type: string
       capabilities:
-        description: 能力描述（JSON 格式，含 task.capabilities/v1、task_types 等）
+        description: 能力描述（JSON 格式，含 task.capabilities/v1、task_capabilities 等）
         type: string
       created_at:
         type: string

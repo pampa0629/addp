@@ -1,60 +1,13 @@
 package service
 
 import (
-	"encoding/json"
 	"fmt"
-	"regexp"
 	"strings"
 
+	"github.com/addp/common/taskprovider"
 	"github.com/addp/system/internal/models"
 	"gorm.io/gorm"
 )
-
-const taskProviderCapabilitiesSchemaVersion = "task.capabilities/v1"
-
-var taskProviderTaskTypePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
-
-var taskProviderAllowedTopLevelCapabilityFields = map[string]struct{}{
-	"schema_version": {},
-	"task_types":     {},
-}
-
-var taskProviderAllowedJSONSchemaKeywords = map[string]struct{}{
-	"type":                 {},
-	"title":                {},
-	"description":          {},
-	"properties":           {},
-	"required":             {},
-	"enum":                 {},
-	"default":              {},
-	"additionalProperties": {},
-	"items":                {},
-	"minimum":              {},
-	"maximum":              {},
-	"minLength":            {},
-	"maxLength":            {},
-	"minItems":             {},
-	"maxItems":             {},
-	"format":               {},
-}
-
-var taskProviderUnsupportedJSONSchemaKeywords = map[string]struct{}{
-	"$ref":  {},
-	"oneOf": {},
-	"anyOf": {},
-	"allOf": {},
-	"not":   {},
-}
-
-var taskProviderAllowedJSONSchemaTypes = map[string]struct{}{
-	"object":  {},
-	"array":   {},
-	"string":  {},
-	"number":  {},
-	"integer": {},
-	"boolean": {},
-	"null":    {},
-}
 
 type TaskProviderValidationError struct {
 	Message string
@@ -149,14 +102,14 @@ func validateTaskProvider(provider *models.TaskProvider) error {
 	if err := validateTaskProviderCapabilities(provider.Capabilities); err != nil {
 		return err
 	}
-	hasCancelableTaskType, err := taskProviderHasCancelableTaskType(provider.Capabilities)
+	capabilities, err := parseTaskProviderCapabilities(provider.Capabilities)
 	if err != nil {
 		return err
 	}
-	if hasCancelableTaskType && strings.TrimSpace(provider.TaskCancelEndpoint) == "" {
+	if capabilities.HasCancelableTaskType() && strings.TrimSpace(provider.TaskCancelEndpoint) == "" {
 		return validationError("task_cancel_endpoint is required when any task_type supports cancel")
 	}
-	if !hasCancelableTaskType && strings.TrimSpace(provider.TaskCancelEndpoint) != "" {
+	if !capabilities.HasCancelableTaskType() && strings.TrimSpace(provider.TaskCancelEndpoint) != "" {
 		return validationError("task_cancel_endpoint must be empty when no task_type supports cancel")
 	}
 	return nil
@@ -217,223 +170,19 @@ func validateTaskProviderEndpoints(provider *models.TaskProvider) error {
 }
 
 func validateTaskProviderCapabilities(capabilities *models.JSONString) error {
-	if capabilities == nil || strings.TrimSpace(string(*capabilities)) == "" {
-		return validationError("capabilities is required")
-	}
-
-	var payload map[string]interface{}
-	if err := json.Unmarshal([]byte(*capabilities), &payload); err != nil {
-		return validationError("invalid capabilities JSON: %v", err)
-	}
-	if got := strings.TrimSpace(asString(payload["schema_version"])); got != taskProviderCapabilitiesSchemaVersion {
-		return validationError("capabilities.schema_version must be %q", taskProviderCapabilitiesSchemaVersion)
-	}
-	for key := range payload {
-		if _, allowed := taskProviderAllowedTopLevelCapabilityFields[key]; allowed {
-			continue
-		}
-		if strings.HasPrefix(key, "x_") && len(key) > len("x_") {
-			continue
-		}
-		return validationError("capabilities.%s must be a standard field or x_ private extension", key)
-	}
-
-	rawTaskTypes, ok := payload["task_types"].([]interface{})
-	if !ok || len(rawTaskTypes) == 0 {
-		return validationError("capabilities.task_types must be a non-empty array")
-	}
-	seen := map[string]struct{}{}
-	for i, raw := range rawTaskTypes {
-		taskType, ok := raw.(map[string]interface{})
-		if !ok {
-			return validationError("capabilities.task_types[%d] must be an object", i)
-		}
-		typeName := strings.TrimSpace(asString(taskType["type"]))
-		if typeName == "" {
-			return validationError("capabilities.task_types[%d].type is required", i)
-		}
-		if !taskProviderTaskTypePattern.MatchString(typeName) {
-			return validationError("capabilities.task_types[%d].type must match ^[a-z][a-z0-9_]*$", i)
-		}
-		if _, exists := seen[typeName]; exists {
-			return validationError("duplicate task_type %q in capabilities.task_types", typeName)
-		}
-		seen[typeName] = struct{}{}
-
-		for _, field := range []string{"display_name", "description"} {
-			if strings.TrimSpace(asString(taskType[field])) == "" {
-				return validationError("capabilities.task_types[%d].%s is required", i, field)
-			}
-		}
-		for _, field := range []string{"create_url", "edit_url"} {
-			url := strings.TrimSpace(asString(taskType[field]))
-			if url == "" {
-				return validationError("capabilities.task_types[%d].%s is required", i, field)
-			}
-			if !isConsoleRouteURL(url) {
-				return validationError("capabilities.task_types[%d].%s must be a Console route starting with /", i, field)
-			}
-		}
-		for _, field := range []string{"definition_schema", "execution_schema"} {
-			schema, exists := taskType[field]
-			if !exists {
-				return validationError("capabilities.task_types[%d].%s is required", i, field)
-			}
-			schemaObject, ok := schema.(map[string]interface{})
-			if !ok {
-				return validationError("capabilities.task_types[%d].%s must be an object schema", i, field)
-			}
-			if schemaType := strings.TrimSpace(asString(schemaObject["type"])); schemaType != "object" {
-				return validationError("capabilities.task_types[%d].%s.type must be object", i, field)
-			}
-			if err := validateTaskProviderJSONSchema(schemaObject, fmt.Sprintf("capabilities.task_types[%d].%s", i, field)); err != nil {
-				return err
-			}
-		}
-		for _, field := range []string{"supports_schedule", "supports_cancel", "supports_inline_execution", "deprecated"} {
-			if _, ok := taskType[field].(bool); !ok {
-				return validationError("capabilities.task_types[%d].%s must be boolean", i, field)
-			}
-		}
-		if supportsInlineExecution, _ := taskType["supports_inline_execution"].(bool); supportsInlineExecution {
-			return validationError("capabilities.task_types[%d].supports_inline_execution must be false in task.capabilities/v1", i)
-		}
-	}
-	return nil
+	_, err := parseTaskProviderCapabilities(capabilities)
+	return err
 }
 
-func validateTaskProviderJSONSchema(schema map[string]interface{}, path string) error {
-	for key, value := range schema {
-		if _, unsupported := taskProviderUnsupportedJSONSchemaKeywords[key]; unsupported {
-			return validationError("%s.%s is not supported in task.capabilities/v1", path, key)
-		}
-		if _, allowed := taskProviderAllowedJSONSchemaKeywords[key]; !allowed {
-			return validationError("%s.%s is not allowed in task.capabilities/v1", path, key)
-		}
-		switch key {
-		case "type":
-			typeName, ok := value.(string)
-			if !ok {
-				return validationError("%s.type must be string", path)
-			}
-			if _, allowed := taskProviderAllowedJSONSchemaTypes[typeName]; !allowed {
-				return validationError("%s.type %q is not supported in task.capabilities/v1", path, typeName)
-			}
-		case "title", "description", "format":
-			if _, ok := value.(string); !ok {
-				return validationError("%s.%s must be string", path, key)
-			}
-		case "properties":
-			properties, ok := value.(map[string]interface{})
-			if !ok {
-				return validationError("%s.properties must be object", path)
-			}
-			for propertyName, propertySchema := range properties {
-				propertyObject, ok := propertySchema.(map[string]interface{})
-				if !ok {
-					return validationError("%s.properties.%s must be object schema", path, propertyName)
-				}
-				if err := validateTaskProviderJSONSchema(propertyObject, fmt.Sprintf("%s.properties.%s", path, propertyName)); err != nil {
-					return err
-				}
-			}
-		case "required":
-			items, ok := value.([]interface{})
-			if !ok {
-				return validationError("%s.required must be array", path)
-			}
-			seen := map[string]struct{}{}
-			for i, item := range items {
-				name := strings.TrimSpace(asString(item))
-				if name == "" {
-					return validationError("%s.required[%d] must be non-empty string", path, i)
-				}
-				if _, exists := seen[name]; exists {
-					return validationError("%s.required contains duplicate field %q", path, name)
-				}
-				seen[name] = struct{}{}
-			}
-		case "enum":
-			items, ok := value.([]interface{})
-			if !ok || len(items) == 0 {
-				return validationError("%s.enum must be non-empty array", path)
-			}
-		case "additionalProperties":
-			switch typed := value.(type) {
-			case bool:
-			case map[string]interface{}:
-				if err := validateTaskProviderJSONSchema(typed, path+".additionalProperties"); err != nil {
-					return err
-				}
-			default:
-				return validationError("%s.additionalProperties must be boolean or object schema", path)
-			}
-		case "items":
-			itemSchema, ok := value.(map[string]interface{})
-			if !ok {
-				return validationError("%s.items must be object schema", path)
-			}
-			if err := validateTaskProviderJSONSchema(itemSchema, path+".items"); err != nil {
-				return err
-			}
-		case "minimum", "maximum":
-			if !isJSONNumber(value) {
-				return validationError("%s.%s must be number", path, key)
-			}
-		case "minLength", "maxLength", "minItems", "maxItems":
-			if !isJSONNonNegativeInteger(value) {
-				return validationError("%s.%s must be non-negative integer", path, key)
-			}
-		}
+func parseTaskProviderCapabilities(capabilities *models.JSONString) (*taskprovider.Capabilities, error) {
+	if capabilities == nil {
+		return nil, validationError("capabilities is required")
 	}
-	return nil
-}
-
-func taskProviderHasCancelableTaskType(capabilities *models.JSONString) (bool, error) {
-	if capabilities == nil || strings.TrimSpace(string(*capabilities)) == "" {
-		return false, validationError("capabilities is required")
+	parsed, err := taskprovider.ParseCapabilities(string(*capabilities))
+	if err != nil {
+		return nil, validationError("%s", err.Error())
 	}
-
-	var payload map[string]interface{}
-	if err := json.Unmarshal([]byte(*capabilities), &payload); err != nil {
-		return false, validationError("invalid capabilities JSON: %v", err)
-	}
-
-	rawTaskTypes, ok := payload["task_types"].([]interface{})
-	if !ok || len(rawTaskTypes) == 0 {
-		return false, validationError("capabilities.task_types must be a non-empty array")
-	}
-	for _, raw := range rawTaskTypes {
-		taskType, ok := raw.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		if supportsCancel, _ := taskType["supports_cancel"].(bool); supportsCancel {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
-func isConsoleRouteURL(url string) bool {
-	return strings.HasPrefix(url, "/") && !strings.HasPrefix(url, "//")
-}
-
-func asString(value interface{}) string {
-	if s, ok := value.(string); ok {
-		return s
-	}
-	return ""
-}
-
-func isJSONNumber(value interface{}) bool {
-	_, ok := value.(float64)
-	return ok
-}
-
-func isJSONNonNegativeInteger(value interface{}) bool {
-	number, ok := value.(float64)
-	return ok && number >= 0 && number == float64(int64(number))
+	return parsed, nil
 }
 
 func validationError(format string, args ...interface{}) error {

@@ -37,6 +37,7 @@ item 归并见 [ADDP 数据项探测器规范](addp数据项探测器规范.md)�
 |---|---|---|
 | `DataType` | `common/datatype` | `table`、`document`、`media`、`container`、`graph`、`unknown` |
 | `FieldType` / `FieldInfo` | `common/datatype` | 平台通用字段类型和字段语义 |
+| `GeometryType` | `common/datatype` | 平台标准 OGC 几何拓扑类型 |
 | `TableInfo` / `DocumentInfo` / `MediaInfo` / `ContainerInfo` / `GraphInfo` | `common/datatype` | 各 data type 的通用 type info |
 | `SpatialInfo` | `common/datatype` | 空间横切事实，落点是 `attributes.capabilities.spatial` |
 | `AccessIndex` | 暂居 `common/datatype` | 内容读取索引，落点是 `attributes.access_index.<data_type>`；不是 data type，也不是 type info |
@@ -300,15 +301,38 @@ media 已使用同一原则：`MediaDescribeResult.Media` 写入 `type_info.medi
 
 空间表的几何字段遵循以下规则：
 
-- `FieldTypeGeometry` 只表达字段语义，不固定行值编码。
+- `FieldTypeGeometry` 只表达字段语义，表示该字段是空间几何字段；它不表达 Point、Polygon 等精确拓扑，也不固定行值编码。
+- 精确几何拓扑统一由 `datatype.GeometryType` 表达。第一版标准 canonical 值为 `Geometry`、`Point`、`MultiPoint`、`LineString`、`MultiLineString`、`Polygon`、`MultiPolygon`、`GeometryCollection`。
 - `datatype.SpatialInfo` 是空间事实入口，负责表达主空间字段、几何类型、SRID / CRS、extent、dimension 和空间索引等信息；它不属于 `datatype.TableInfo`。
+- `SpatialInfo.GeometryColumns[].GeometryType` 必须写入标准 `GeometryType` canonical 字符串。format plugin 和 engine type mapper 应先把 native 几何类型归一为 `datatype.GeometryType`，不能把 PostGIS typmod、Shapefile shape type、GeoJSON geometry 字符串等 native 值直接写入该字段。
 - table sample 默认返回 WKT 字符串，便于 Manager 预览、日志和调试。
 - continuous table reader 可以通过 `ParseOptions.GeometryEncoding` 请求 `wkt`、`wkb` 或 `ewkb`。默认值为 `wkt`。
 - `wkb` / `ewkb` 行值使用 `[]byte` 表达，供 Transfer 等批处理链路在目标 writer 明确支持时使用；调用方不得假定所有 engine writer 都能直接接收二进制几何参数。
 - SRID 优先由 `SpatialInfo.SRID` 表达；`ewkb` 可以携带 SRID，但不能替代 schema 级空间事实。
 - 各格式 native 几何类型必须在对应 format plugin 内转换为 ADDP 通用几何值，不得把 `shp.Shape` 等 native 类型暴露到 format 根接口、engine 或 Transfer 执行层。
-- 格式写出空间数据时，应根据 `SpatialInfo.GeometryType` 和 `SpatialInfo.Dimension` 选择自身 native 表达。例如 Shapefile writer 在 `dimension >= 3` 时写出 `PointZ`、`PolyLineZ`、`PolygonZ` 或 `MultiPointZ`；M / measure 不属于 ADDP 当前标准空间维度，除非后续有明确 measure 规范，否则不得伪装为 Z 坐标。
+- 格式写出空间数据时，应根据 `SpatialInfo.GeometryColumns[].GeometryType` 和 `Dimension` 选择自身 native 表达。例如 Shapefile writer 在 `dimension >= 3` 时写出 `PointZ`、`PolyLineZ`、`PolygonZ` 或 `MultiPointZ`；M / measure 不属于 ADDP 当前标准空间维度，除非后续有明确 measure 规范，否则不得伪装为 Z 坐标。
 - 格式写出 CRS 定义时，写入参数必须是 CRS 定义文本，不得把 CRS ID 当作定义。例如 Shapefile writer 的 `WriteOptions.ExtraParams["crs_definition"]` 只接受 WKT、ESRI WKT 或 proj4 文本；不得传入裸 `EPSG:<code>`。CRS ID 应写入 `SpatialInfo` / `capabilities.spatial.crs_ref`，定义文本应写入 `crs_definitions[].definition`。
+
+字段类型与几何类型的衔接伪代码如下：
+
+```go
+field := datatype.FieldInfo{
+    Name: "geom",
+    Type: datatype.FieldTypeGeometry,
+}
+
+spatial := datatype.SpatialInfo{
+    GeometryColumns: []datatype.GeometryColumnInfo{{
+        Name:         field.Name,
+        GeometryType: string(datatype.GeometryTypeMultiPolygon),
+        SRID:         &srid,
+        Dimension:    &dimension,
+    }},
+    PrimaryGeometryColumn: field.Name,
+}
+```
+
+也就是说，`type_info.table.fields[].type=geometry` 只让消费者知道这是一个空间字段；`capabilities.spatial.geometry_columns[].geometry_type=MultiPolygon` 才让 Transfer writer、Manager map preview 和后续空间能力知道它的标准拓扑类型。二者必须通过字段名关联，不得在 `FieldType` 中重新并列 `point`、`polygon`、`multipolygon` 等拓扑值。
 
 注意：`type_info.*` 只保存对应 data type 的元数据。内容样本、原始内容、缩略图、文本片段不是 info，不能为了上层使用方便塞进 `table info`、`document info` 或 `media info`。空间、时间、统计、提取、语义等横切事实进入 `capabilities`；内容读取索引进入 `access_index`；格式私有事实进入 `format_info`。
 
@@ -637,3 +661,13 @@ Transfer 不能只按 `connector type` 路由，也不能只看 format。它需�
 4. FormatPlugin、info provider、content reader 不按 `engine_id` 反向构造 engine reader。
 5. Manager 面向前端的 DTO 不进入 format 层。
 6. GeoJSON 是独立 `format=geojson`，默认 `data_type=table`、`layout=single`；空间事实仍由解析结果写入 `capabilities.spatial`，不得新增“空间表”数据类型。
+
+## 后续空间格式专题
+
+标准空间字段类型已经收敛为 `FieldType=geometry` 加 `datatype.GeometryType` 精确拓扑。后续新增或细化空间格式时，必须先补 native geometry 与 ADDP 标准 `GeometryType` 的映射，再接入读写链路。
+
+优先专题：
+
+1. 细化 GeoPackage、SpatiaLite、MySQL 在混合拓扑、SRID 和 CRS 定义文本上的映射规则。
+2. 增加端到端格式转换样例，覆盖 Shapefile -> PostGIS -> Shapefile / GeoJSON。
+3. 新增空间格式不得把精确拓扑重新塞回 `FieldType`，也不得为了绕过类型不匹配而默认降级为通用 `Geometry`。

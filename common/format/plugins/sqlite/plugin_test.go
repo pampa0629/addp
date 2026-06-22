@@ -130,7 +130,7 @@ func TestDescribeGeoPackageTableCarriesChildSpatialInfo(t *testing.T) {
 	if spatial == nil {
 		t.Fatal("spatial info missing")
 	}
-	if spatial.PrimaryGeometryName() != "geom" || spatial.PrimaryGeometryType() != "LINESTRING" || spatial.PrimarySRIDValue() != 4326 {
+	if spatial.PrimaryGeometryName() != "geom" || spatial.PrimaryGeometryType() != "LineString" || spatial.PrimarySRIDValue() != 4326 {
 		t.Fatalf("spatial = %#v", spatial)
 	}
 	if spatial.HasSpatialIndex == nil || !*spatial.HasSpatialIndex {

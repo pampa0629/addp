@@ -117,27 +117,26 @@ func ParseCommaSeparated(s string) []string {
 	return result
 }
 
-// SupportsDevMode 检查资源是否支持指定的开发入口。
-// 这是兼容命名；事实源是 engine.capabilities/v1 的 compute.query/workflow/script，
-// 不是旧版 capabilities.compute[].dev_modes 字段。
-// devMode: "query"/"sql", "workflow", "notebook"/"script"
-func SupportsDevMode(resource *models.Engine, devMode string) bool {
+// SupportsComputeEntrypoint 检查资源是否支持指定的计算入口。
+// 事实源是 engine.capabilities/v1 的 compute.query/workflow/script。
+// entrypoint: "query"/"sql", "workflow", "notebook"/"script"
+func SupportsComputeEntrypoint(resource *models.Engine, entrypoint string) bool {
 	cap, err := ParseCapabilities(resource.Capabilities)
 	if err != nil || cap == nil {
 		return false
 	}
 
-	return supportsDevMode(cap, devMode)
+	return supportsComputeEntrypoint(cap, entrypoint)
 }
 
-// GetSupportedDevModes 获取资源支持的开发入口名称，名称由 compute 能力派生。
-func GetSupportedDevModes(resource *models.Engine) []string {
+// GetSupportedComputeEntrypoints 获取资源支持的计算入口名称，名称由 compute 能力派生。
+func GetSupportedComputeEntrypoints(resource *models.Engine) []string {
 	cap, err := ParseCapabilities(resource.Capabilities)
 	if err != nil || cap == nil {
 		return []string{}
 	}
 
-	return devModes(cap)
+	return computeEntrypoints(cap)
 }
 
 func hasStorageFamily(capabilities *engineplugin.EngineCapabilities, storageType string) bool {
@@ -148,12 +147,12 @@ func hasStorageFamily(capabilities *engineplugin.EngineCapabilities, storageType
 	return capabilities.EngineFamily == storageType
 }
 
-func supportsDevMode(capabilities *engineplugin.EngineCapabilities, devMode string) bool {
+func supportsComputeEntrypoint(capabilities *engineplugin.EngineCapabilities, entrypoint string) bool {
 	if capabilities == nil || capabilities.Compute == nil {
 		return false
 	}
 
-	switch devMode {
+	switch entrypoint {
 	case "query", "sql":
 		return capabilities.Compute.Query != nil && capabilities.Compute.Query.Supported
 	case "workflow":
@@ -165,30 +164,30 @@ func supportsDevMode(capabilities *engineplugin.EngineCapabilities, devMode stri
 	}
 }
 
-func devModes(capabilities *engineplugin.EngineCapabilities) []string {
+func computeEntrypoints(capabilities *engineplugin.EngineCapabilities) []string {
 	if capabilities == nil || capabilities.Compute == nil {
 		return []string{}
 	}
 
-	modes := make([]string, 0, 3)
+	entrypoints := make([]string, 0, 3)
 	if capabilities.Compute.Query != nil && capabilities.Compute.Query.Supported {
-		modes = append(modes, "query")
+		entrypoints = append(entrypoints, "query")
 	}
 	if capabilities.Compute.Workflow != nil && capabilities.Compute.Workflow.Supported {
-		modes = append(modes, "workflow")
+		entrypoints = append(entrypoints, "workflow")
 	}
 	if capabilities.Compute.Script != nil && capabilities.Compute.Script.Supported {
-		modes = append(modes, "notebook")
+		entrypoints = append(entrypoints, "notebook")
 	}
-	return modes
+	return entrypoints
 }
 
-// FilterEnginesByDevMode 过滤出支持指定开发模式的引擎列表
-func FilterEnginesByDevMode(engines []models.Engine, devMode string) []models.Engine {
+// FilterEnginesByComputeEntrypoint 过滤出支持指定计算入口的引擎列表
+func FilterEnginesByComputeEntrypoint(engines []models.Engine, entrypoint string) []models.Engine {
 	filtered := make([]models.Engine, 0)
 
 	for _, engine := range engines {
-		if SupportsDevMode(&engine, devMode) {
+		if SupportsComputeEntrypoint(&engine, entrypoint) {
 			filtered = append(filtered, engine)
 		}
 	}

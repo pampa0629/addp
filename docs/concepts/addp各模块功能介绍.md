@@ -49,7 +49,7 @@
 - 审计日志记录（操作、登录、API 调用）
 - 系统配置和全局参数管理
 - 模块注册表（各模块向 System 声明自身 API 地址和能力）
-- 任务提供者注册（各模块向 Orchestrator 声明可编排的任务类型）
+- 任务提供者注册（各模块向 System 注册 TaskProvider capabilities，供 Orchestrator 和 Monitor 发现）
 - API 文档（统一维护平台 OpenAPI 接口文档）
 
 **端口**：
@@ -64,7 +64,7 @@
 **职责定位**：统一 API 入口，请求路由和转发
 
 **核心能力**：
-- 基于路径前缀的请求路由（`/api/system/*` → System Backend）
+- 基于路径前缀的请求路由（`/api/v1/system/*` → System Backend）
 - CORS 跨域支持
 - 请求头、正文、查询参数透明转发
 - 健康检查端点（`/health`）
@@ -124,12 +124,12 @@
 
 ### 6. Transfer（数据传输）
 
-**职责定位**：数据导入、导出、同步任务管理
+**职责定位**：数据同步、搬运和格式转换任务管理
 
 **核心能力**：
-- 数据导入（从外部源导入到 ADDP）：CSV、Shapefile、PostgreSQL、MySQL、S3
-- 数据导出（从 ADDP 导出到外部系统）：PostgreSQL、MySQL、MinIO、S3、CSV
-- 增量/全量同步（基于时间戳或 ID）
+- 数据同步（source endpoint 到 target endpoint）：PostgreSQL、MySQL、MinIO、S3、CSV、Shapefile
+- 格式转换（同一 data type 内 representation / format 转换）：CSV、GeoJSON、Parquet、Shapefile 等
+- 全量同步；增量、水位、CDC 等高级能力后续专题设计
 - 字段映射和类型转换
 - 异步任务队列（Asynq，优先级队列：critical / default / low）
 - 定时调度（Cron 表达式配置）

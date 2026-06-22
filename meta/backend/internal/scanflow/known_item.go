@@ -9,7 +9,6 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	"github.com/addp/meta/internal/metaitem"
-	"github.com/addp/meta/internal/metapath"
 	"github.com/addp/meta/internal/models"
 )
 
@@ -66,7 +65,7 @@ func KnownItemObjectPath(descriptor dataitem.ItemDescriptor, physicalPath string
 		return objectPath
 	}
 	objectPath = strings.Trim(physicalPath, "/")
-	if bucket, parsedPath := metapath.SplitObjectPath(objectPath); bucket == descriptor.StorageBucket && parsedPath != "" {
+	if bucket, parsedPath, err := plugin.SplitObjectRefPath(objectPath); err == nil && bucket == descriptor.StorageBucket {
 		return parsedPath
 	}
 	return objectPath
@@ -78,12 +77,9 @@ func KnownItemCatalogPathResolver(engineID uint, provider plugin.EnginePlugin, d
 	return func(rawPath string) plugin.CatalogPath {
 		pathValue := strings.Trim(rawPath, "/")
 		if bucket != "" {
-			if b, objectPath := metapath.SplitObjectPath(pathValue); b == bucket && objectPath != "" {
-				pathValue = objectPath
-			}
-			return plugin.ObjectItemPath(engineID, bucket, pathValue)
+			return plugin.ObjectItemPathFromBucketRef(engineID, bucket, pathValue)
 		}
-		if b, objectPath := metapath.SplitObjectPath(pathValue); b != "" && objectPath != "" && itemTerm == plugin.CatalogTermObject {
+		if b, objectPath, err := plugin.SplitObjectRefPath(pathValue); err == nil && itemTerm == plugin.CatalogTermObject {
 			return plugin.ObjectItemPath(engineID, b, objectPath)
 		}
 		return plugin.FileItemPath(engineID, pathValue)

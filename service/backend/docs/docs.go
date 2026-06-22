@@ -2547,11 +2547,7 @@ const docTemplate = `{
                 "json",
                 "array",
                 "uuid",
-                "geometry",
-                "point",
-                "linestring",
-                "polygon",
-                "multipoint"
+                "geometry"
             ],
             "x-enum-varnames": [
                 "FieldTypeUnknown",
@@ -2570,11 +2566,7 @@ const docTemplate = `{
                 "FieldTypeJSON",
                 "FieldTypeArray",
                 "FieldTypeUUID",
-                "FieldTypeGeometry",
-                "FieldTypePoint",
-                "FieldTypeLineString",
-                "FieldTypePolygon",
-                "FieldTypeMultiPoint"
+                "FieldTypeGeometry"
             ]
         },
         "encoding_xml.Name": {

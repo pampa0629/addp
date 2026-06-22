@@ -2,7 +2,7 @@
 
 ## 模块定位
 
-Transfer 模块是 ADDP 的数据传输中枢，负责导入、导出、同步任务、任务配置、字段映射 / 转换编排、写后 Meta 扫描触发和基于 Asynq 的异步执行。
+Transfer 模块是 ADDP 的数据传输中枢，统一负责 `sync` 任务、任务配置、字段映射 / 转换编排、写后 Meta 扫描触发和基于 Asynq 的异步执行。导入 / 导出是 Manager 等调用方的用户动作语义，不是 Transfer 的 `task_type`。
 
 当前主路径基于 `common/engine`、`common/format`、`common/contentio` 和 `common/engine/contentadapter`：
 
@@ -32,7 +32,7 @@ transfer/
 │   ├── internal/executor/     # 基于 common engine/format/contentio 的 table transfer executor
 │   ├── internal/service/      # task、execution、system engine resolver、Meta scan 触发
 │   ├── internal/worker/       # Asynq queue、handler、scheduler
-│   └── pkg/vfs/               # 兼容性辅助能力，非新 transfer reader/writer 主入口
+│   └── pkg/vfs/               # 底层虚拟文件辅助能力，非新 transfer reader/writer 主入口
 ├── docs/
 │   ├── 数据库架构.md
 │   ├── transfer-基本概念及配置说明.md
@@ -49,8 +49,9 @@ transfer/
 
 - 公共连通：`GET /ping`。
 - 资源选择与资源树：统一使用 Meta resource-tree / item API；Transfer 不保留私有数据源树、节点 children 或表 metadata 代理接口。
-- 任务：`POST /tasks`、`GET /tasks`、`GET /tasks/statistics`、`GET /tasks/:id`、`PUT /tasks/:id`、`DELETE /tasks/:id`、`POST /tasks/:id/start|stop|pause|resume`、`GET /tasks/:id/executions`。
-- 字段映射：`POST /tasks/:id/mappings`、`GET /tasks/:id/mappings`、`DELETE /mappings/:id`。该接口仍存在，但新执行主线只消费 `config.transforms[type=field_mapping]`。
+- TaskProvider 标准任务：`GET /tasks`、`GET /tasks/:task_type/:id`、`POST /tasks/:task_type/:id/execute`，其中 `task_type` 固定为 `sync`。
+- 任务定义：`POST /task-definitions`、`GET /task-definitions/statistics`、`GET /task-definitions/:id`、`PUT /task-definitions/:id`、`DELETE /task-definitions/:id`、`POST /task-definitions/:id/start|stop|pause|resume`、`GET /task-definitions/:id/executions`。
+- 字段映射：字段映射写入 `config.transforms[type=field_mapping]`，不提供独立 mappings 主路径。
 - 对象存储目录选择统一走 Meta resource-tree；Transfer 不再保留私有 object-storage 浏览 API。
 - 执行记录：`GET /executions`、`GET /executions/statistics`、`GET /executions/:execution_id`。
 - 执行管理：`POST /executions/:execution_id/cancel|retry`、`GET /executions/:execution_id/progress|logs` 按统一 `execution_id` 定位执行记录；TaskProvider 标准取消能力暂未声明，`supports_cancel=false` 时不得对 Orchestrator / Monitor 暴露跨模块取消入口。
@@ -59,6 +60,7 @@ transfer/
 ## 执行规则
 
 - 新任务配置必须使用 source / target endpoint JSON，旧 `connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等字段出现即拒绝。
+- Transfer 任务类型固定为 `sync`；不得新增或兼容 `import`、`export`、`transfer` 等旧任务类型。
 - table transfer 统一走 `internal/planner` + `internal/executor`，按 data type / representation / layout 分叉，不按具体引擎组合分叉。
 - encoded file/object 读写必须通过 `common/engine` content provider + `common/engine/contentadapter` + `common/format` provider，不在 Transfer 中新增私有 reader / writer。
 - Shapefile 等 multi 文件格式通过 `contentio.Reader` / `contentio.Writer` + `[]format.RelatedRef` 与 `common/format` multi table provider 接入。

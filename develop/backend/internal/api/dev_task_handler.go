@@ -112,10 +112,10 @@ func (h *DevTaskHandler) GetDevTask(c *gin.Context) {
 
 // ProviderGetDevTask 按 TaskProvider 标准路径获取开发任务详情。
 // @Summary 获取 TaskProvider 开发任务详情 | Get TaskProvider development task detail
-// @Description 按标准 TaskProvider 路径获取开发任务详情；task_type 支持 query/workflow/script。| Get development task detail through the standard TaskProvider path; task_type supports query/workflow/script.
+// @Description 按标准 TaskProvider 路径获取开发任务详情；task_type 是对外任务类型契约，映射到 Develop 内部 dev_type。| Get development task detail through the standard TaskProvider path; task_type is the external task contract mapped to Develop internal dev_type.
 // @Tags DevTask
 // @Produce json
-// @Param task_type path string true "任务类型：query/workflow/script | Task type: query/workflow/script"
+// @Param task_type path string true "TaskProvider 任务类型：query/workflow/script | TaskProvider task type: query/workflow/script"
 // @Param id path int true "开发任务ID | Development task ID"
 // @Success 200 {object} models.ProviderDevTask "开发任务详情 | Development task detail"
 // @Failure 400 {object} map[string]interface{} "参数错误 | Bad request"
@@ -162,7 +162,7 @@ func isDevelopTaskType(taskType string) bool {
 // @Produce json
 // @Param page query int false "页码 | Page number"
 // @Param page_size query int false "每页数量 | Page size"
-// @Param dev_type query string false "类型过滤 | Filter by type"
+// @Param dev_type query string false "Develop 内部类型过滤：query/workflow/script | Develop internal type filter: query/workflow/script"
 // @Param status query string false "状态过滤 | Filter by status"
 // @Param engine_id query int false "资源ID过滤 | Filter by engine ID"
 // @Param tag query string false "标签过滤 | Filter by tag"

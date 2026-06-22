@@ -27,7 +27,7 @@ quality/
 │   ├── go.mod                                # github.com/addp/quality
 │   └── internal/
 │       ├── api/
-│       │   ├── router.go                     # 路由配置（/api/quality 前缀）
+│       │   ├── router.go                     # 路由配置（/api/v1/quality 前缀）
 │       │   ├── rule_application_handler.go   # 规则应用 CRUD
 │       │   ├── check_task_handler.go         # 检查任务 CRUD + 手动执行
 │       │   ├── execution_handler.go          # 执行记录查询
@@ -156,9 +156,9 @@ GET    /api/v1/quality/executions/:execution_id   # 详情及结果（含质量�
 
 ### 问题工单
 ```
-GET    /api/quality/issues                     # 列表（支持过滤：status, engine_id）
-GET    /api/quality/issues/:id                 # 详情
-PUT    /api/quality/issues/:id/status          # 更新状态（resolved / ignored，仅对 open 状态有效）
+GET    /api/v1/quality/issues                     # 列表（支持过滤：status, engine_id）
+GET    /api/v1/quality/issues/:id                 # 详情
+PUT    /api/v1/quality/issues/:id/status          # 更新状态（resolved / ignored，仅对 open 状态有效）
 ```
 
 ### 健康检查

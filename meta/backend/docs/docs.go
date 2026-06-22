@@ -329,6 +329,59 @@ const docTemplate = `{
                 }
             }
         },
+        "/inspect": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "对给定 locator 或 ref_groups 动态识别标准 attributes，但不写入 Meta item 或 node | Dynamically inspect standard attributes for a locator or ref_groups without persisting Meta item or node",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta"
+                ],
+                "summary": "动态识别标准 attributes | Inspect standard attributes without persistence",
+                "parameters": [
+                    {
+                        "description": "识别请求 | Inspect request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_meta_internal_service.InspectRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "识别结果 | Inspect result",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_meta_internal_service.InspectResult"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/items/by-catalog-path": {
             "get": {
                 "security": [
@@ -2081,11 +2134,10 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
-                    "200": {
+                    "202": {
                         "description": "执行记录 | Execution",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/internal_api.taskProviderExecuteResponse"
                         }
                     },
                     "400": {
@@ -2194,11 +2246,7 @@ const docTemplate = `{
                 "json",
                 "array",
                 "uuid",
-                "geometry",
-                "point",
-                "linestring",
-                "polygon",
-                "multipoint"
+                "geometry"
             ],
             "x-enum-varnames": [
                 "FieldTypeUnknown",
@@ -2217,11 +2265,7 @@ const docTemplate = `{
                 "FieldTypeJSON",
                 "FieldTypeArray",
                 "FieldTypeUUID",
-                "FieldTypeGeometry",
-                "FieldTypePoint",
-                "FieldTypeLineString",
-                "FieldTypePolygon",
-                "FieldTypeMultiPoint"
+                "FieldTypeGeometry"
             ]
         },
         "github_com_addp_meta_internal_models.EngineScanMVTPreprocessPlan": {
@@ -2673,6 +2717,9 @@ const docTemplate = `{
                 "path": {
                     "type": "string"
                 },
+                "primary": {
+                    "type": "boolean"
+                },
                 "required": {
                     "type": "boolean"
                 },
@@ -2925,7 +2972,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "geometry_types": {
-                    "description": "几何类型列表，如 [\"ST_MultiPolygon\"]",
+                    "description": "几何类型列表，如 [\"MultiPolygon\"]",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -2940,6 +2987,46 @@ const docTemplate = `{
                 },
                 "srid": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_meta_internal_service.InspectRequest": {
+            "type": "object",
+            "properties": {
+                "locator": {
+                    "type": "string"
+                },
+                "ref_groups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_meta_internal_models.ScanRefGroup"
+                    }
+                },
+                "scan_depth": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_meta_internal_service.InspectResult": {
+            "type": "object",
+            "properties": {
+                "attributes": {
+                    "$ref": "#/definitions/github_com_addp_meta_internal_models.JSONMap"
+                },
+                "data_type": {
+                    "type": "string"
+                },
+                "format": {
+                    "type": "string"
+                },
+                "full_name": {
+                    "type": "string"
+                },
+                "layout": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
                 }
             }
         },
@@ -2969,6 +3056,17 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "trigger_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.taskProviderExecuteResponse": {
+            "type": "object",
+            "properties": {
+                "execution_id": {
+                    "type": "string"
+                },
+                "status": {
                     "type": "string"
                 }
             }

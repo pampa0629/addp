@@ -32,9 +32,10 @@ type SystemEngineDoc struct {
 type CreateTaskRequestDoc struct {
 	Name             string                     `json:"name" example:"导入道路 Shapefile"`
 	Description      string                     `json:"description,omitempty"`
-	TaskType         string                     `json:"task_type,omitempty" example:"import"`
+	TaskType         string                     `json:"task_type,omitempty" example:"sync"`
 	Config           TableTransferTaskConfigDoc `json:"config"`
 	Schedule         string                     `json:"schedule,omitempty"`
+	Enabled          bool                       `json:"enabled,omitempty"`
 	BatchSize        int                        `json:"batch_size,omitempty" example:"1000"`
 	AutoScanMetadata bool                       `json:"auto_scan_metadata,omitempty" example:"true"`
 }

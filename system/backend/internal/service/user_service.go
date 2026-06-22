@@ -60,7 +60,6 @@ func (s *UserService) Create(req *models.UserCreateRequest, creatorID uint) (*mo
 		IsActive:     true,
 		UserType:     userType,
 		TenantID:     creator.TenantID, // 继承创建者的租户ID
-		IsSuperuser:  userType == models.UserTypeSuperAdmin,
 	}
 
 	if err := s.repo.Create(user); err != nil {
@@ -189,7 +188,6 @@ func (s *UserService) Update(id uint, req *models.UserUpdateRequest, currentUser
 				return nil, err
 			}
 			user.UserType = *req.UserType
-			user.IsSuperuser = *req.UserType == models.UserTypeSuperAdmin
 		}
 	}
 
@@ -292,7 +290,6 @@ func (s *UserService) Register(req *models.UserCreateRequest) (*models.User, err
 		IsActive:     true,
 		UserType:     models.UserTypeUser,
 		TenantID:     nil, // 注册用户没有租户
-		IsSuperuser:  false,
 	}
 
 	if err := s.repo.Create(user); err != nil {

@@ -19,6 +19,7 @@ type Handler struct {
 	executionService     *service.ScanExecutionService
 	metadataQueryService *service.MetadataQueryService
 	resourceTreeService  *service.ResourceTreeService
+	inspectService       *service.InspectService
 }
 
 func NewHandler(
@@ -27,6 +28,7 @@ func NewHandler(
 	taskService *service.ScanTaskService,
 	executionService *service.ScanExecutionService,
 	metadataQueryService *service.MetadataQueryService,
+	inspectService *service.InspectService,
 ) *Handler {
 	return &Handler{
 		engineService:        engineService,
@@ -35,6 +37,7 @@ func NewHandler(
 		executionService:     executionService,
 		metadataQueryService: metadataQueryService,
 		resourceTreeService:  service.NewResourceTreeService(engineService, metadataQueryService),
+		inspectService:       inspectService,
 	}
 }
 
@@ -76,7 +79,7 @@ func (h *Handler) GetStats(c *gin.Context) {
 }
 
 // GetResources 获取存储引擎列表及 catalog 扫描统计
-// GET /api/meta/engines
+// GET /api/v1/meta/engines
 // @Summary 获取引擎列表 | Get engine list
 // @Description 获取当前租户的存储引擎列表及统计信息 | Get storage engine list with statistics for the current tenant
 // @Tags Meta

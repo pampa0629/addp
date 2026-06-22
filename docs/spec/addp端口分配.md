@@ -80,7 +80,7 @@ make ports-validate
 | Manager Frontend      | 5174     | 8091        | 独立访问                   |
 | Meta Backend          | 8082     | 8082        | 元数据、血缘               |
 | Meta Frontend         | 5175     | 8092        | 独立访问                   |
-| Transfer Backend      | 8083     | 8083        | 导入/导出任务              |
+| Transfer Backend      | 8083     | 8083        | 数据同步任务               |
 | Transfer Frontend     | 5176     | 8093        | 独立访问                   |
 | Orchestrator Backend  | 8084     | 8084        | 工作流编排                 |
 | Orchestrator Frontend | 5177     | 8094        | 独立访问                   |

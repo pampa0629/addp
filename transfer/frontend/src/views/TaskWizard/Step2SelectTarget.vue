@@ -224,7 +224,7 @@ const outputFormatGroups = computed(() => {
 })
 
 const outputFormats = computed(() => outputFormatGroups.value.flatMap(group => group.formats))
-const geometryTypes = ['Point', 'LineString', 'Polygon', 'MultiPoint', 'MultiLineString', 'MultiPolygon']
+const geometryTypes = ['Geometry', 'Point', 'MultiPoint', 'LineString', 'MultiLineString', 'Polygon', 'MultiPolygon', 'GeometryCollection']
 
 const selectedEngine = computed(() => {
   const currentEngineID = normalizeEngineID(formData.engineID)
@@ -807,7 +807,11 @@ function inferGeometryType(field) {
 }
 
 function normalizeGeometryType(value) {
-  const normalized = String(value || '').toLowerCase().replace(/[_\s-]/g, '')
+  let normalized = String(value || '').toLowerCase().replace(/[_\s-]/g, '')
+  if (normalized.startsWith('st')) {
+    normalized = normalized.slice(2)
+  }
+  normalized = normalized.replace(/(zm|z|m)$/, '')
   return geometryTypes.find(type => type.toLowerCase().replace(/[_\s-]/g, '') === normalized) || ''
 }
 

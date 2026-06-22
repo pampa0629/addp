@@ -2,9 +2,12 @@ package service
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	engineplugin "github.com/addp/common/engine/plugin"
+	commonutils "github.com/addp/common/utils"
+	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
 )
 
@@ -76,5 +79,43 @@ func TestValidateSystemEngineTypeAcceptsRegisteredPlugin(t *testing.T) {
 
 	if err := service.ValidateSystemEngineType("postgresql"); err != nil {
 		t.Fatalf("ValidateSystemEngineType(postgresql): %v", err)
+	}
+}
+
+func TestDecryptSensitiveFieldsRejectsPlainSensitiveValue(t *testing.T) {
+	service := NewEngineService(&repository.EngineRepository{}, nil, []byte("addp-dev-encryption-key-2025!!!!"), nil)
+
+	_, err := service.decryptSensitiveFields(models.ConnectionInfo{
+		"host":     "localhost",
+		"password": "plain-password",
+	})
+	if err == nil {
+		t.Fatal("decryptSensitiveFields succeeded, want error for plaintext sensitive value")
+	}
+	if !strings.Contains(err.Error(), "解密字段 password 失败") {
+		t.Fatalf("error = %q, want password decrypt failure", err.Error())
+	}
+}
+
+func TestDecryptSensitiveFieldsReturnsPlainConnectionInfo(t *testing.T) {
+	key := []byte("addp-dev-encryption-key-2025!!!!")
+	secret, err := commonutils.Encrypt("plain-password", key)
+	if err != nil {
+		t.Fatalf("encrypt: %v", err)
+	}
+	service := NewEngineService(&repository.EngineRepository{}, nil, key, nil)
+
+	connInfo, err := service.decryptSensitiveFields(models.ConnectionInfo{
+		"host":     "localhost",
+		"password": secret,
+	})
+	if err != nil {
+		t.Fatalf("decryptSensitiveFields: %v", err)
+	}
+	if connInfo["password"] != "plain-password" {
+		t.Fatalf("password = %q, want plaintext", connInfo["password"])
+	}
+	if connInfo["host"] != "localhost" {
+		t.Fatalf("host = %q, want localhost", connInfo["host"])
 	}
 }

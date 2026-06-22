@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
 	"path"
 	"strconv"
 	"strings"
@@ -17,6 +16,7 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/resourcetree"
 	"github.com/addp/manager/internal/catalogutil"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/objectcontent"
@@ -292,11 +292,47 @@ func (s *MetadataService) ResolveStorageDownloadPlan(ctx context.Context, resour
 	}
 	return &models.DownloadPlan{
 		Kind:        kind,
-		URL:         storageDownloadURL(resource.ID, displayPath),
 		FileName:    fileName,
 		ContentType: contentType,
 		Refs:        refs,
 	}, nil
+}
+
+func (s *MetadataService) ResolveStorageDownloadPlanByLocator(ctx context.Context, locatorURI string, tenantID *uint) (uint, *models.DownloadPlan, error) {
+	locatorURI = strings.TrimSpace(locatorURI)
+	if locatorURI == "" {
+		return 0, nil, fmt.Errorf("locator is required")
+	}
+	loc, err := resourcetree.ParseURI(locatorURI)
+	if err != nil {
+		return 0, nil, err
+	}
+	if !isStorageItemType(loc.Type) {
+		return 0, nil, fmt.Errorf("%w: locator must reference a storage item", ErrDownloadNotSupported)
+	}
+	resource, err := s.getResourceForTenant(loc.EngineID, tenantID)
+	if err != nil {
+		return 0, nil, ErrEngineAccessDenied
+	}
+	if !storageCanRead(resource) {
+		return 0, nil, fmt.Errorf("%w: engine does not support content read", ErrDownloadNotSupported)
+	}
+	storageRef := storageRefFromLocator(resource.EngineType, loc)
+	plan, err := s.ResolveStorageDownloadPlan(ctx, loc.EngineID, storageRef, tenantID)
+	return loc.EngineID, plan, err
+}
+
+func storageRefFromLocator(engineType string, loc *resourcetree.ResourceLocator) string {
+	if loc == nil {
+		return ""
+	}
+	if catalogutil.ItemTermMatches(engineType, plugin.CatalogTermObject) {
+		return strings.Join(loc.Path, "/")
+	}
+	if catalogutil.ItemTermMatches(engineType, plugin.CatalogTermFile) {
+		return strings.Join(loc.Path, "/")
+	}
+	return strings.Join(loc.Path, "/")
 }
 
 func (s *MetadataService) StreamStorageDownloadPlan(ctx context.Context, resourceID uint, plan *models.DownloadPlan, tenantID *uint, writer io.Writer) error {
@@ -541,10 +577,6 @@ func bundleFileName(storageRef string, descriptor dataitem.ItemDescriptor) strin
 		base = "download"
 	}
 	return base + ".zip"
-}
-
-func storageDownloadURL(engineID uint, storageRef string) string {
-	return fmt.Sprintf("/api/v1/manager/storage-download?engine_id=%d&storage_ref=%s", engineID, url.QueryEscape(storageRef))
 }
 
 func uniqueZipEntryName(name string, used map[string]int) string {

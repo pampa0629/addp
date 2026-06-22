@@ -10,9 +10,12 @@ import (
 	"strings"
 	"time"
 
+	commonAPI "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
+	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/taskprovider"
 	_ "github.com/addp/orchestrator/i18n"
 	"github.com/addp/orchestrator/internal/models"
 	"github.com/addp/orchestrator/internal/repository"
@@ -25,7 +28,6 @@ type OrchestrationHandler struct {
 	orchRepo             *repository.OrchestrationRepository
 	executionService     *service.ExecutionService
 	executor             *service.Executor
-	scheduler            *service.Scheduler
 	taskProviderRegistry *service.TaskProviderRegistry
 	httpClient           *http.Client
 }
@@ -37,12 +39,16 @@ type orchestrationTaskProviderExecuteRequest struct {
 	Parameters        map[string]interface{} `json:"parameters"`
 }
 
+type orchestrationTaskProviderExecuteResponse struct {
+	ExecutionID string `json:"execution_id"`
+	Status      string `json:"status"`
+}
+
 // NewOrchestrationHandler 创建处理器
 func NewOrchestrationHandler(
 	orchRepo *repository.OrchestrationRepository,
 	executionService *service.ExecutionService,
 	executor *service.Executor,
-	scheduler *service.Scheduler,
 	taskProviderRegistry *service.TaskProviderRegistry,
 	httpClient *http.Client,
 ) *OrchestrationHandler {
@@ -54,7 +60,6 @@ func NewOrchestrationHandler(
 		orchRepo:             orchRepo,
 		executionService:     executionService,
 		executor:             executor,
-		scheduler:            scheduler,
 		taskProviderRegistry: taskProviderRegistry,
 		httpClient:           httpClient,
 	}
@@ -84,7 +89,7 @@ func (h *OrchestrationHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if err := h.taskProviderRegistry.ValidateStepTaskTypes(c.Request.Context(), req.Steps); err != nil {
+	if err := h.taskProviderRegistry.ValidateStepTaskReferences(c.Request.Context(), req.Steps); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -92,18 +97,14 @@ func (h *OrchestrationHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if err := service.ApplyOrchestrationSchedule(&req, time.Now()); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	if err := h.orchRepo.Create(&req); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
-	}
-
-	// 如果启用且有 Cron 表达式，调度任务
-	if req.Enabled && req.Schedule != "" {
-		if err := h.scheduler.Schedule(req.ID, req.Schedule); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, "orchestrator.error.schedule_failed", err.Error())})
-			return
-		}
 	}
 
 	c.JSON(http.StatusCreated, req)
@@ -189,7 +190,7 @@ func (h *OrchestrationHandler) Update(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if err := h.taskProviderRegistry.ValidateStepTaskTypes(c.Request.Context(), req.Steps); err != nil {
+	if err := h.taskProviderRegistry.ValidateStepTaskReferences(c.Request.Context(), req.Steps); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -197,19 +198,14 @@ func (h *OrchestrationHandler) Update(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if err := service.ApplyOrchestrationSchedule(&req, time.Now()); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	if err := h.orchRepo.Update(&req); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
-	}
-
-	// 重新调度
-	h.scheduler.Unschedule(req.ID)
-	if req.Enabled && req.Schedule != "" {
-		if err := h.scheduler.Schedule(req.ID, req.Schedule); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, "orchestrator.error.schedule_failed", err.Error())})
-			return
-		}
 	}
 
 	c.JSON(http.StatusOK, req)
@@ -228,8 +224,6 @@ func (h *OrchestrationHandler) Delete(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, "orchestrator.error.invalid_id")})
 		return
 	}
-
-	h.scheduler.Unschedule(uint(id))
 
 	if err := h.orchRepo.Delete(uint(id)); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -414,6 +408,7 @@ func (h *OrchestrationHandler) ListTaskProviders(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{}
 // @Failure 404 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
+// @Failure 502 {object} map[string]interface{}
 // @Router /tasks [get]
 // @Security BearerAuth
 func (h *OrchestrationHandler) ListModuleTasks(c *gin.Context) {
@@ -429,6 +424,10 @@ func (h *OrchestrationHandler) ListModuleTasks(c *gin.Context) {
 	provider, err := h.taskProviderRegistry.GetProvider(ctx, moduleName)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.TWithDetail(c, "orchestrator.error.provider_not_found", fmt.Sprintf("%s: %v", moduleName, err))})
+		return
+	}
+	if err := validateRequestedProviderTaskType(provider, c.Query("task_type")); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -475,7 +474,7 @@ func (h *OrchestrationHandler) ListModuleTasks(c *gin.Context) {
 
 	resp, err := h.httpClient.Do(req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, "orchestrator.error.call_module_api_failed", err.Error())})
+		c.JSON(http.StatusBadGateway, gin.H{"error": commoni18n.TWithDetail(c, "orchestrator.error.call_module_api_failed", err.Error())})
 		return
 	}
 	defer resp.Body.Close()
@@ -489,7 +488,7 @@ func (h *OrchestrationHandler) ListModuleTasks(c *gin.Context) {
 
 	// 检查 HTTP 状态码
 	if resp.StatusCode != http.StatusOK {
-		c.JSON(http.StatusInternalServerError, gin.H{
+		c.JSON(http.StatusBadGateway, gin.H{
 			"error":       fmt.Sprintf("%s，状态码: %d", commoni18n.T(c, "orchestrator.error.module_api_error"), resp.StatusCode),
 			"target_url":  targetURL,
 			"status_code": resp.StatusCode,
@@ -501,7 +500,7 @@ func (h *OrchestrationHandler) ListModuleTasks(c *gin.Context) {
 	// 7. 解析并标准化响应格式
 	var respData interface{}
 	if err := json.Unmarshal(body, &respData); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
+		c.JSON(http.StatusBadGateway, gin.H{
 			"error":      commoni18n.TWithDetail(c, "orchestrator.error.parse_response_failed", err.Error()),
 			"target_url": targetURL,
 			"body":       string(body),
@@ -510,7 +509,15 @@ func (h *OrchestrationHandler) ListModuleTasks(c *gin.Context) {
 	}
 
 	// 8. 统一返回格式
-	result := h.standardizeTaskListResponse(respData)
+	result, err := h.standardizeTaskListResponse(respData)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{
+			"error":      commoni18n.TWithDetail(c, "orchestrator.error.parse_response_failed", err.Error()),
+			"target_url": targetURL,
+			"body":       string(body),
+		})
+		return
+	}
 	c.JSON(http.StatusOK, result)
 }
 
@@ -597,7 +604,7 @@ func (h *OrchestrationHandler) GetProviderOrchestrationTask(c *gin.Context) {
 // @Param task_type path string true "任务类型，固定为 orchestration | Task type, fixed to orchestration"
 // @Param id path int true "编排 ID | Orchestration ID"
 // @Param request body orchestrationTaskProviderExecuteRequest false "TaskProvider 执行请求 | TaskProvider execution request"
-// @Success 202 {object} map[string]string
+// @Success 202 {object} orchestrationTaskProviderExecuteResponse
 // @Failure 400 {object} map[string]interface{}
 // @Failure 404 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
@@ -614,6 +621,16 @@ func (h *OrchestrationHandler) ExecuteProviderOrchestrationTask(c *gin.Context) 
 		return
 	}
 
+	var req orchestrationTaskProviderExecuteRequest
+	if err := commonAPI.BindOptionalJSONStrict(c, &req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if len(req.Parameters) > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Orchestrator task provider does not support execution parameter overrides"})
+		return
+	}
+
 	tenantID := commonAuth.GetTenantID(c)
 	if tenantID == 0 {
 		tenantID = 1
@@ -623,12 +640,6 @@ func (h *OrchestrationHandler) ExecuteProviderOrchestrationTask(c *gin.Context) 
 		return
 	}
 
-	var req orchestrationTaskProviderExecuteRequest
-	_ = c.ShouldBindJSON(&req)
-	if len(req.Parameters) > 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Orchestrator task provider does not support execution parameter overrides"})
-		return
-	}
 	source := strings.TrimSpace(req.Source)
 	if source == "" {
 		source = commonExecution.ModuleOrchestrator
@@ -653,9 +664,9 @@ func (h *OrchestrationHandler) ExecuteProviderOrchestrationTask(c *gin.Context) 
 	}
 	h.executor.ExecuteAsync(uint(execution.ID))
 
-	c.JSON(http.StatusAccepted, gin.H{
-		"execution_id": execution.ExecutionID,
-		"status":       execution.Status,
+	c.JSON(http.StatusAccepted, orchestrationTaskProviderExecuteResponse{
+		ExecutionID: execution.ExecutionID,
+		Status:      execution.Status,
 	})
 }
 
@@ -682,72 +693,49 @@ func (h *OrchestrationHandler) GetProviderExecution(c *gin.Context) {
 	c.JSON(http.StatusOK, exec)
 }
 
-// standardizeTaskListResponse 统一任务列表响应格式
-// 将不同模块的返回格式统一为 {items: [...], total: X}
-// 同时确保每个任务都有 display_name 字段（用于前端中文显示）
-func (h *OrchestrationHandler) standardizeTaskListResponse(respData interface{}) map[string]interface{} {
-	if items, ok := respData.([]interface{}); ok {
-		return map[string]interface{}{
-			"items": h.ensureDisplayNames(items),
-			"total": len(items),
-		}
-	}
-
+// standardizeTaskListResponse 统一任务列表响应格式。
+// TaskProvider 列表契约使用 {items,total,page,page_size}；历史模块使用的非标准格式不再兼容。
+func (h *OrchestrationHandler) standardizeTaskListResponse(respData interface{}) (map[string]interface{}, error) {
 	resultMap, ok := respData.(map[string]interface{})
 	if !ok {
-		// 非对象响应，直接返回空列表
-		return map[string]interface{}{
-			"items": []interface{}{},
-			"total": 0,
-		}
+		return nil, fmt.Errorf("TaskProvider task list response must be an object with items")
 	}
 
-	// 情况 1: 已经是标准格式 {items: [...], total: X}
-	if items, hasItems := resultMap["items"]; hasItems {
-		total := 0
-		if t, ok := resultMap["total"].(float64); ok {
-			total = int(t)
-		} else if t, ok := resultMap["total"].(int); ok {
-			total = t
-		}
-		return map[string]interface{}{
-			"items": h.ensureDisplayNames(items),
-			"total": total,
-		}
+	parsed, err := taskprovider.ParseTaskListObject(resultMap)
+	if err != nil {
+		return nil, err
 	}
-
-	// 情况 2: Transfer 格式 {data: [...], total: X, page: X, page_size: X}
-	if data, hasData := resultMap["data"]; hasData {
-		total := 0
-		if t, ok := resultMap["total"].(float64); ok {
-			total = int(t)
-		} else if t, ok := resultMap["total"].(int); ok {
-			total = t
-		}
-		return map[string]interface{}{
-			"items": h.ensureDisplayNames(data),
-			"total": total,
-		}
-	}
-
-	// 情况 3: Develop 格式 {tasks: [...], total: X, page: X, page_size: X}
-	if tasks, hasTasks := resultMap["tasks"]; hasTasks {
-		total := 0
-		if t, ok := resultMap["total"].(float64); ok {
-			total = int(t)
-		} else if t, ok := resultMap["total"].(int); ok {
-			total = t
-		}
-		return map[string]interface{}{
-			"items": h.ensureDisplayNames(tasks),
-			"total": total,
-		}
-	}
-
 	return map[string]interface{}{
-		"items": []interface{}{},
-		"total": 0,
+		"items":     h.ensureDisplayNames(parsed.Items),
+		"total":     parsed.Total,
+		"page":      parsed.Page,
+		"page_size": parsed.PageSize,
+	}, nil
+}
+
+func validateRequestedProviderTaskType(provider *commonModels.TaskProvider, taskType string) error {
+	taskType = strings.TrimSpace(taskType)
+	if taskType == "" {
+		return nil
 	}
+	if provider == nil {
+		return fmt.Errorf("provider is nil")
+	}
+	if provider.Capabilities == nil || strings.TrimSpace(string(*provider.Capabilities)) == "" {
+		return fmt.Errorf("provider %q capabilities is required", provider.ModuleName)
+	}
+	capabilities, err := taskprovider.ParseCapabilities(string(*provider.Capabilities))
+	if err != nil {
+		return fmt.Errorf("provider %q capabilities invalid: %w", provider.ModuleName, err)
+	}
+	capability := capabilities.CapabilityFor(taskType)
+	if capability == nil {
+		return fmt.Errorf("task_type %q is not declared by provider %q", taskType, provider.ModuleName)
+	}
+	if capability.Deprecated {
+		return fmt.Errorf("task_type %q of provider %q is deprecated", taskType, provider.ModuleName)
+	}
+	return nil
 }
 
 // ensureDisplayNames 确保任务列表中每个任务都有 display_name 字段

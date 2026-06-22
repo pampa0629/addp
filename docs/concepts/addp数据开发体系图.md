@@ -276,7 +276,7 @@ sequenceDiagram
 
     User->>Develop: 1. 选择开发界面<br/>(查询工作台/工作流编辑器/Notebook)
     Develop->>Develop: 2. 确定需要的 compute 能力<br/>(query/workflow/script)
-    Develop->>System: 3. GET /api/system/engines
+    Develop->>System: 3. GET /api/v1/system/engines
     System-->>Develop: 4. 返回所有引擎<br/>(含 capabilities)
     Develop->>Develop: 5. 筛选支持对应能力的引擎<br/>读取 capabilities.compute
 

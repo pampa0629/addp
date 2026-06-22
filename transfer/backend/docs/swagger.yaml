@@ -1,17 +1,5 @@
 basePath: /api/v1/transfer
 definitions:
-  api.PaginatedResponse:
-    properties:
-      data: {}
-      page:
-        type: integer
-      page_size:
-        type: integer
-      total:
-        type: integer
-      total_pages:
-        type: integer
-    type: object
   github_com_addp_transfer_internal_models.CreateTaskRequestDoc:
     properties:
       auto_scan_metadata:
@@ -24,13 +12,15 @@ definitions:
         $ref: '#/definitions/github_com_addp_transfer_internal_models.TableTransferTaskConfigDoc'
       description:
         type: string
+      enabled:
+        type: boolean
       name:
         example: 导入道路 Shapefile
         type: string
       schedule:
         type: string
       task_type:
-        example: import
+        example: sync
         type: string
     type: object
   github_com_addp_transfer_internal_models.ExecutionStatus:
@@ -75,6 +65,19 @@ definitions:
     type: object
   github_com_addp_transfer_internal_models.JSONMap:
     additionalProperties: true
+    type: object
+  github_com_addp_transfer_internal_models.ListProviderTasksResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/github_com_addp_transfer_internal_models.TransferTask'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
     type: object
   github_com_addp_transfer_internal_models.LocalTime:
     properties:
@@ -152,6 +155,8 @@ definitions:
         type: integer
       logs:
         type: string
+      metadata:
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.JSONMap'
       records_read:
         type: integer
       records_written:
@@ -300,7 +305,7 @@ definitions:
       status:
         $ref: '#/definitions/github_com_addp_transfer_internal_models.TaskStatus'
       task_type:
-        description: Transfer 当前统一任务类型，固定为 import
+        description: Transfer 当前统一任务类型，固定为 sync
         type: string
       tenant_id:
         type: integer
@@ -363,6 +368,13 @@ definitions:
       source:
         type: string
       trigger_type:
+        type: string
+    type: object
+  internal_api.ProviderExecuteResponse:
+    properties:
+      execution_id:
+        type: string
+      status:
         type: string
     type: object
   internal_api.TransferCapabilitiesResponse:
@@ -1085,7 +1097,7 @@ paths:
         in: query
         name: page_size
         type: integer
-      - description: 任务类型，当前固定为 import | Task type, currently fixed to import
+      - description: 任务类型，当前固定为 sync | Task type, currently fixed to sync
         in: query
         name: task_type
         type: string
@@ -1099,14 +1111,7 @@ paths:
         "200":
           description: 获取成功 | Retrieved successfully
           schema:
-            allOf:
-            - $ref: '#/definitions/api.PaginatedResponse'
-            - properties:
-                data:
-                  items:
-                    $ref: '#/definitions/github_com_addp_transfer_internal_models.TransferTask'
-                  type: array
-              type: object
+            $ref: '#/definitions/github_com_addp_transfer_internal_models.ListProviderTasksResponse'
         "400":
           description: 不支持的任务类型 | Unsupported task type
           schema:
@@ -1126,11 +1131,11 @@ paths:
       - 任务管理 | Task Management
   /tasks/{task_type}/{id}:
     get:
-      description: 按标准 TaskProvider 路径获取 Transfer 任务详情；task_type 仅支持 import。| Get
-        Transfer task detail through the standard TaskProvider path; task_type only
-        supports import.
+      description: 按标准 TaskProvider 路径获取 Transfer 任务详情；task_type 仅支持 sync。| Get Transfer
+        task detail through the standard TaskProvider path; task_type only supports
+        sync.
       parameters:
-      - description: 任务类型，固定为 import | Task type, fixed to import
+      - description: 任务类型，固定为 sync | Task type, fixed to sync
         in: path
         name: task_type
         required: true
@@ -1168,11 +1173,11 @@ paths:
     post:
       consumes:
       - application/json
-      description: 按标准 TaskProvider 协议启动 Transfer 任务；task_type 仅支持 import，parameters
+      description: 按标准 TaskProvider 协议启动 Transfer 任务；task_type 仅支持 sync，parameters
         当前不支持覆盖。| Start a Transfer task through the standard TaskProvider protocol;
-        task_type only supports import and parameters overrides are not supported.
+        task_type only supports sync and parameters overrides are not supported.
       parameters:
-      - description: 任务类型，固定为 import | Task type, fixed to import
+      - description: 任务类型，固定为 sync | Task type, fixed to sync
         in: path
         name: task_type
         required: true
@@ -1190,10 +1195,10 @@ paths:
       produces:
       - application/json
       responses:
-        "200":
+        "202":
           description: 执行记录 | Execution
           schema:
-            $ref: '#/definitions/github_com_addp_transfer_internal_models.TaskExecution'
+            $ref: '#/definitions/internal_api.ProviderExecuteResponse'
         "400":
           description: 参数错误 | Bad request
           schema:

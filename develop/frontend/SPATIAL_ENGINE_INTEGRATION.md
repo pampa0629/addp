@@ -8,7 +8,7 @@ ADDP平台现已支持多空间引擎架构。Develop模块通过新的API可以
 
 ### 获取空间引擎列表
 
-**端点**: `GET /api/develop/spatial/engines`
+**端点**: `GET /api/v1/develop/spatial/engines`
 
 **响应示例**:
 ```json
@@ -50,7 +50,7 @@ import client from './client'
 
 /**
  * 获取支持空间工作流的引擎列表
- * @returns {Promise} 返回支持workflow开发模式的引擎列表
+ * @returns {Promise} 返回支持 compute.workflow 能力的引擎列表
  */
 export function listSpatialEngines() {
   return client.get('/develop/spatial/engines')
@@ -265,11 +265,11 @@ onMounted(async () => {
 
 ### 引擎能力过滤
 
-系统会自动过滤出支持 `workflow` 开发模式的引擎:
+系统会自动过滤出支持 `compute.workflow` 能力的引擎:
 
 ```go
 // 后端自动过滤逻辑 (develop/backend/internal/service/spatial_workflow_service.go)
-workflowEngines := utils.FilterResourcesByDevMode(allResources, "workflow")
+workflowEngines := utils.FilterEnginesByComputeEntrypoint(allEngines, "workflow")
 ```
 
 ### 引擎状态监控
@@ -294,7 +294,7 @@ async function checkEngineHealth(engine) {
 ```bash
 # 获取空间引擎列表
 curl -H "Authorization: Bearer YOUR_TOKEN" \
-  http://localhost:8000/api/develop/spatial/engines
+  http://localhost:8000/api/v1/develop/spatial/engines
 ```
 
 ### 2. 测试引擎能力

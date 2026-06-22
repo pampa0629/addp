@@ -29,7 +29,6 @@
 | `is_active` | BOOLEAN | DEFAULT true | 是否激活 |
 | `user_type` | VARCHAR(20) | NOT NULL, DEFAULT 'user' | 用户类型:super_admin/tenant_admin/user |
 | `tenant_id` | INTEGER | FK → tenants.id, NULLABLE, INDEXED | 租户 ID(SuperAdmin 为 NULL) |
-| `is_superuser` | BOOLEAN | DEFAULT false | 兼容旧代码的超级用户标志 |
 | `created_at` | TIMESTAMP | DEFAULT NOW() | 创建时间 |
 | `updated_at` | TIMESTAMP | DEFAULT NOW() | 更新时间 |
 
@@ -99,7 +98,6 @@ type User struct {
     IsActive     bool      `gorm:"default:true" json:"is_active"`
     UserType     UserType  `gorm:"type:varchar(20);default:'user';not null" json:"user_type"`
     TenantID     *uint     `gorm:"index" json:"tenant_id"`
-    IsSuperuser  bool      `gorm:"default:false" json:"is_superuser"` // 兼容旧代码
     CreatedAt    time.Time `json:"created_at"`
     UpdatedAt    time.Time `json:"updated_at"`
 }
@@ -139,7 +137,7 @@ type ChangePasswordRequest struct {
 
 ### 5.1 认证 API
 
-#### POST /api/auth/login - 用户登录
+#### POST /api/v1/system/login - 用户登录
 
 **请求体**:
 
@@ -182,7 +180,7 @@ type ChangePasswordRequest struct {
 
 ---
 
-#### POST /api/auth/register - 用户注册
+#### POST /api/v1/system/register - 用户注册
 
 **权限**:需要配置 `ALLOW_PUBLIC_REGISTRATION=true`(默认关闭)
 
@@ -221,7 +219,7 @@ type ChangePasswordRequest struct {
 
 ### 5.2 用户管理 API(需要认证)
 
-#### POST /api/users - 创建用户
+#### POST /api/v1/system/users - 创建用户
 
 **权限**:TenantAdmin(本租户) 或 SuperAdmin
 
@@ -268,7 +266,7 @@ Content-Type: application/json
 
 ---
 
-#### GET /api/users - 列出用户
+#### GET /api/v1/system/users - 列出用户
 
 **权限**:SuperAdmin(查看所有) 或 TenantAdmin(查看本租户)
 
@@ -305,7 +303,7 @@ Content-Type: application/json
 
 ---
 
-#### GET /api/users/me - 获取当前用户信息
+#### GET /api/v1/system/users/me - 获取当前用户信息
 
 **权限**:已认证用户
 
@@ -327,7 +325,7 @@ Content-Type: application/json
 
 ---
 
-#### GET /api/users/:id - 获取指定用户
+#### GET /api/v1/system/users/:id - 获取指定用户
 
 **权限**:用户本人 / TenantAdmin(本租户) / SuperAdmin
 
@@ -343,7 +341,7 @@ Content-Type: application/json
 
 ---
 
-#### PUT /api/users/:id - 更新用户信息
+#### PUT /api/v1/system/users/:id - 更新用户信息
 
 **权限**:用户本人 / TenantAdmin(本租户) / SuperAdmin
 
@@ -368,7 +366,7 @@ Content-Type: application/json
 
 ---
 
-#### PUT /api/users/:id/change-password - 修改密码
+#### PUT /api/v1/system/users/:id/change-password - 修改密码
 
 **权限**:用户本人
 
@@ -404,7 +402,7 @@ Content-Type: application/json
 
 ---
 
-#### DELETE /api/users/:id - 删除用户
+#### DELETE /api/v1/system/users/:id - 删除用户
 
 **权限**:TenantAdmin(本租户) / SuperAdmin
 
@@ -491,7 +489,7 @@ err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
 ### 8.1 登录获取 Token
 
 ```bash
-curl -X POST http://localhost:8180/api/auth/login \
+curl -X POST http://localhost:8180/api/v1/system/login \
   -H "Content-Type: application/json" \
   -d '{
     "username": "admin",
@@ -515,7 +513,7 @@ curl -X POST http://localhost:8180/api/auth/login \
 ```bash
 TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 
-curl -X POST http://localhost:8180/api/users \
+curl -X POST http://localhost:8180/api/v1/system/users \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -532,7 +530,7 @@ curl -X POST http://localhost:8180/api/users \
 ### 8.3 查询用户列表
 
 ```bash
-curl http://localhost:8180/api/users?page=1&page_size=10 \
+curl http://localhost:8180/api/v1/system/users?page=1&page_size=10 \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -541,7 +539,7 @@ curl http://localhost:8180/api/users?page=1&page_size=10 \
 ### 8.4 获取当前用户信息
 
 ```bash
-curl http://localhost:8180/api/users/me \
+curl http://localhost:8180/api/v1/system/users/me \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -550,7 +548,7 @@ curl http://localhost:8180/api/users/me \
 ### 8.5 修改密码
 
 ```bash
-curl -X PUT http://localhost:8180/api/users/2/change-password \
+curl -X PUT http://localhost:8180/api/v1/system/users/2/change-password \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{

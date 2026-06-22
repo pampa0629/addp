@@ -1,8 +1,6 @@
 package metaattr
 
 import (
-	"strings"
-
 	"github.com/addp/common/datatype"
 	"github.com/addp/meta/internal/models"
 )
@@ -39,32 +37,10 @@ func cloneInterfaceMap(values map[string]interface{}) map[string]interface{} {
 }
 
 func NormalizeGeometryType(value string) string {
-	switch normalizeGeometryToken(value) {
-	case "point":
-		return "Point"
-	case "linestring":
-		return "LineString"
-	case "polygon":
-		return "Polygon"
-	case "multipoint":
-		return "MultiPoint"
-	case "multilinestring":
-		return "MultiLineString"
-	case "multipolygon":
-		return "MultiPolygon"
-	default:
-		return "Geometry"
+	if standard := datatype.StandardGeometryType(value); standard != "" {
+		return standard
 	}
-}
-
-func normalizeGeometryToken(value string) string {
-	token := strings.ToLower(strings.TrimSpace(value))
-	token = strings.TrimPrefix(token, "st_")
-	token = strings.TrimPrefix(token, "st")
-	token = strings.ReplaceAll(token, "_", "")
-	token = strings.ReplaceAll(token, "-", "")
-	token = strings.ReplaceAll(token, " ", "")
-	return token
+	return string(datatype.GeometryTypeGeometry)
 }
 
 func BuildDynamicSchemaAttributes(input DynamicSchemaAttributesInput) models.JSONMap {

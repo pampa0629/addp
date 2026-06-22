@@ -47,11 +47,13 @@ func (d *commonDataItemResolver) ResolveItems(ctx context.Context, input Directo
 		return result, nil
 	}
 	for _, item := range resolved.Items {
-		if item.Layout != format.LayoutMulti {
+		if item.Layout != format.LayoutMulti && !input.Options.IncludeSingleResources {
 			continue
 		}
 		detected := detectedItemFromResolvedItem(input.DirPath, item)
-		enrichRefTableInfo(ctx, input.ContentReader, input.ConnInfo, input.EngineID, input.CatalogPathFor, item, detected)
+		if item.Layout == format.LayoutMulti {
+			enrichRefTableInfo(ctx, input.ContentReader, input.ConnInfo, input.EngineID, input.CatalogPathFor, item, detected)
+		}
 		result.Items = append(result.Items, detected)
 		for _, path := range detected.RefFilePaths() {
 			result.Claims[path] = true

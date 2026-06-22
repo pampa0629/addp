@@ -664,10 +664,10 @@ const docTemplate = `{
                 "status": {
                     "type": "string"
                 },
-                "task_types": {
+                "task_capabilities": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_addp_monitor_internal_service.ProviderTaskTypeStatus"
+                        "$ref": "#/definitions/github_com_addp_monitor_internal_service.ProviderTaskCapabilityStatus"
                     }
                 }
             }
@@ -707,6 +707,17 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_monitor_internal_service.ProviderTaskCapabilityStatus": {
+            "type": "object",
+            "properties": {
+                "deprecated": {
+                    "type": "boolean"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_monitor_internal_service.ProviderTaskDiscoveryCheck": {
             "type": "object",
             "properties": {
@@ -726,17 +737,6 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "task_type": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_addp_monitor_internal_service.ProviderTaskTypeStatus": {
-            "type": "object",
-            "properties": {
-                "deprecated": {
-                    "type": "boolean"
-                },
-                "type": {
                     "type": "string"
                 }
             }
@@ -766,7 +766,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "capabilities": {
-                    "description": "能力描述（JSON 格式，含 task.capabilities/v1、task_types 等）",
+                    "description": "能力描述（JSON 格式，含 task.capabilities/v1、task_capabilities 等）",
                     "type": "string"
                 },
                 "created_at": {

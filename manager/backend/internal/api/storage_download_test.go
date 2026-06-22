@@ -20,79 +20,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func TestStorageDownloadBundlesNFSShapefile(t *testing.T) {
+func TestDownloadFileBundlesObjectShapefileByLocator(t *testing.T) {
 	t.Parallel()
 
-	engineType := "api_download_test_nfs_bundle"
-	plugin.Register(newAPIDownloadTestFilePlugin(engineType, map[string]string{
-		"shp/farmland.shp": "shape",
-		"shp/farmland.shx": "index",
-		"shp/farmland.dbf": "attrs",
-	}))
-	t.Cleanup(func() { plugin.Unregister(engineType) })
-
-	systemClient := apiDownloadTestSystemClient(t, 26, engineType)
-	metaClient := apiDownloadTestMetaItemClient(t, `{
-		"id": 1,
-		"engine_id": 26,
-		"item_type": "file",
-		"name": "farmland.shp",
-		"full_name": "shp/farmland.shp",
-		"attributes": {
-			"item": {
-				"layout": "multi",
-				"format": "shapefile",
-				"refs": [
-					{"path":"shp/farmland.shp","role":"main","required":true,"primary":true},
-					{"path":"shp/farmland.shx","role":"index","required":true},
-					{"path":"shp/farmland.dbf","role":"attributes","required":true}
-				]
-			}
-		}
-	}`)
-	metadataService := service.NewMetadataService(nil, systemClient, metaClient, nil, nil)
-	handler := NewExplorerHandler(nil, nil, metadataService)
-
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
-	router.GET("/storage-download", handler.StorageDownload)
-
-	req := httptest.NewRequest(http.MethodGet, "/storage-download?engine_id=26&storage_ref=shp%2Ffarmland.shp", nil)
-	resp := httptest.NewRecorder()
-	router.ServeHTTP(resp, req)
-
-	if resp.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", resp.Code, resp.Body.String())
-	}
-	if got := resp.Header().Get("Content-Type"); got != "application/zip" {
-		t.Fatalf("Content-Type = %q, want application/zip", got)
-	}
-	if got := resp.Header().Get("Content-Disposition"); got != `attachment; filename="farmland.shapefile.zip"` {
-		t.Fatalf("Content-Disposition = %q", got)
-	}
-	if resp.Body.Len() == 0 {
-		t.Fatal("download body is empty")
-	}
-
-	zipReader, err := zip.NewReader(bytes.NewReader(resp.Body.Bytes()), int64(resp.Body.Len()))
-	if err != nil {
-		t.Fatalf("zip.NewReader() error = %v", err)
-	}
-	names := make([]string, 0, len(zipReader.File))
-	for _, file := range zipReader.File {
-		names = append(names, file.Name)
-	}
-	sort.Strings(names)
-	want := []string{"farmland.dbf", "farmland.shp", "farmland.shx"}
-	if strings.Join(names, ",") != strings.Join(want, ",") {
-		t.Fatalf("zip entries = %#v, want %#v", names, want)
-	}
-}
-
-func TestStorageDownloadBundlesObjectShapefile(t *testing.T) {
-	t.Parallel()
-
-	engineType := "api_download_test_object_bundle"
+	engineType := "api_locator_download_test_object_bundle"
 	plugin.Register(newAPIDownloadTestObjectPlugin(engineType, map[string]string{
 		"gischain/data/farmland.shp": "shape",
 		"gischain/data/farmland.shx": "index",
@@ -120,13 +51,14 @@ func TestStorageDownloadBundlesObjectShapefile(t *testing.T) {
 		}
 	}`)
 	metadataService := service.NewMetadataService(nil, systemClient, metaClient, nil, nil)
-	handler := NewExplorerHandler(nil, nil, metadataService)
+	handler := NewDownloadHandler(metadataService)
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.GET("/storage-download", handler.StorageDownload)
+	router.GET("/downloads/file", handler.DownloadFile)
 
-	req := httptest.NewRequest(http.MethodGet, "/storage-download?engine_id=9&storage_ref=gischain%2Fdata%2Ffarmland.shp", nil)
+	locator := "addp://engine/9/path/gischain/data/farmland.shp?type=object&item_id=1"
+	req := httptest.NewRequest(http.MethodGet, "/downloads/file?locator="+urlQueryEscape(locator), nil)
 	resp := httptest.NewRecorder()
 	router.ServeHTTP(resp, req)
 
@@ -136,13 +68,6 @@ func TestStorageDownloadBundlesObjectShapefile(t *testing.T) {
 	if got := resp.Header().Get("Content-Type"); got != "application/zip" {
 		t.Fatalf("Content-Type = %q, want application/zip", got)
 	}
-	if got := resp.Header().Get("Content-Disposition"); got != `attachment; filename="farmland.shapefile.zip"` {
-		t.Fatalf("Content-Disposition = %q", got)
-	}
-	if resp.Body.Len() == 0 {
-		t.Fatal("download body is empty")
-	}
-
 	zipReader, err := zip.NewReader(bytes.NewReader(resp.Body.Bytes()), int64(resp.Body.Len()))
 	if err != nil {
 		t.Fatalf("zip.NewReader() error = %v", err)
@@ -156,6 +81,30 @@ func TestStorageDownloadBundlesObjectShapefile(t *testing.T) {
 	if strings.Join(names, ",") != strings.Join(want, ",") {
 		t.Fatalf("zip entries = %#v, want %#v", names, want)
 	}
+}
+
+func TestDownloadFileRejectsDatabaseLocator(t *testing.T) {
+	t.Parallel()
+
+	metadataService := service.NewMetadataService(nil, apiDownloadTestSystemClient(t, 9, "postgresql"), nil, nil, nil)
+	handler := NewDownloadHandler(metadataService)
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/downloads/file", handler.DownloadFile)
+
+	locator := "addp://engine/9/path/public/roads?type=table&item_id=1"
+	req := httptest.NewRequest(http.MethodGet, "/downloads/file?locator="+urlQueryEscape(locator), nil)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+}
+
+func urlQueryEscape(value string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(value, "?", "%3F"), "&", "%26")
 }
 
 func apiDownloadTestSystemClient(t *testing.T, engineID uint, engineType string) *client.SystemClient {

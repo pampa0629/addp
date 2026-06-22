@@ -210,7 +210,7 @@ func main() {
 
 	// 启动日志归档定时任务（如果启用）
 	var scheduler *service.SchedulerService
-	if service.IsArchiveEnabled() {
+	if cfg.AuditLogArchiveEnabled {
 		// 初始化 MinIO 客户端
 		minioClient, err := service.InitMinIOClient(cfg)
 		if err != nil {
@@ -218,11 +218,16 @@ func main() {
 		} else {
 			// 创建归档服务
 			logRepo := repository.NewLogRepository(db)
-			archiveService := service.NewLogArchiveService(logRepo, minioClient)
+			archiveService := service.NewLogArchiveService(logRepo, minioClient, cfg.InfraMinIOBucket)
 
-			// 创建并启动调度器（每天凌晨2点执行）
-			scheduler = service.NewSchedulerService(archiveService, "0 2 * * *")
-			if err := scheduler.Start(); err != nil {
+			scheduler, err = service.NewSchedulerService(
+				archiveService,
+				cfg.AuditLogArchiveCron,
+				cfg.AuditLogRetentionDays,
+			)
+			if err != nil {
+				logger.L().Error("日志归档调度器初始化失败", "error", err)
+			} else if err := scheduler.Start(); err != nil {
 				logger.L().Error("日志归档调度器启动失败", "error", err)
 			}
 		}
@@ -234,6 +239,10 @@ func main() {
 	<-quit
 
 	logger.L().Info("正在关闭 System 服务器...")
+
+	if scheduler != nil {
+		scheduler.Stop()
+	}
 
 	// 关闭所有数据库连接池
 	dbbridge.CloseAllPools()

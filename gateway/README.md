@@ -39,43 +39,25 @@ docker run -d -p 8000:8000 addp-gateway
 
 Gateway 根据 URL 路径前缀自动路由请求：
 
-| 请求路径 | 目标服务 | 服务地址 | 认证要求 | 路径重写 | 用途 |
+| 请求路径 | 目标服务 | 服务地址 | 认证要求 | 转发方式 | 用途 |
 |---------|---------|---------|---------|---------|-----|
-| `POST /api/system/login` | System | http://localhost:8180 | **公开** | 无 | 用户登录 |
-| `POST /api/system/register` | System | http://localhost:8180 | **公开** | 无 | 用户注册 |
-| `/api/system/users/*` | System | http://localhost:8180 | API Key | 无 | 用户管理 |
-| `/api/system/tenants/*` | System | http://localhost:8180 | API Key | 无 | 租户管理 |
-| `/api/system/engines/*` | System | http://localhost:8180 | API Key | 无 | 引擎管理 |
-| `/api/system/logs/*` | System | http://localhost:8180 | API Key | 无 | 日志查询 |
-| `/api/system/applications/*` | System | http://localhost:8180 | API Key | 无 | 应用管理 |
-| `/api/manager/engines/*` | Manager | http://localhost:8081 | API Key | ✅ 移除 `/manager` | 引擎数据访问 |
-| `/api/manager/preview/*` | Manager | http://localhost:8081 | API Key | ✅ 移除 `/manager` | 数据预览 |
-| `/api/meta/engines/*` | Meta | http://localhost:8082 | API Key | 无 | 引擎列表 |
-| `/api/meta/scan/*` | Meta | http://localhost:8082 | API Key | 无 | 元数据扫描 |
-| `/api/meta/resource-tree/*` | Meta | http://localhost:8082 | API Key | 无 | 资源树 |
-| `/api/transfer/tasks/*` | Transfer | http://localhost:8083 | API Key | 无 | 传输任务 |
-| `/api/transfer/executions/*` | Transfer | http://localhost:8083 | API Key | 无 | 任务执行 |
-| `/api/develop/engines/*` | Develop | http://localhost:8084 | API Key | 无 | 引擎列表 |
-| `/api/develop/sql/*` | Develop | http://localhost:8084 | API Key | 无 | SQL 执行 |
-| `/api/develop/workflows/*` | Develop | http://localhost:8084 | API Key | 无 | 工作流管理 |
-| `/api/service/services/*` | Service | http://localhost:8086 | API Key | 无 | 数据服务 |
-| `/api/service/ogc/*` | Service | http://localhost:8086 | API Key | 无 | OGC 标准 |
-| `/api/copilot/*` | Copilot | http://localhost:8087 | API Key | ✅ 移除 `/api` | AI 助手 |
+| `POST /api/v1/system/login` | System | http://localhost:8180 | **公开** | 透明转发 | 用户登录 |
+| `POST /api/v1/system/register` | System | http://localhost:8180 | **公开** | 透明转发 | 用户注册 |
+| `/api/v1/system/*` | System | http://localhost:8180 | API Key | 透明转发 | 用户、租户、引擎、日志 |
+| `/api/v1/manager/*` | Manager | http://localhost:8081 | API Key | 透明转发 | 数据管理、预览、上传下载 |
+| `/api/v1/meta/*` | Meta | http://localhost:8082 | API Key | 透明转发 | 元数据扫描和资源树 |
+| `/api/v1/transfer/*` | Transfer | http://localhost:8083 | API Key | 透明转发 | 数据同步和格式转换 |
+| `/api/v1/develop/*` | Develop | http://localhost:8085 | API Key | 透明转发 | SQL、工作流、Notebook |
+| `/api/v1/service/*` | Service | http://localhost:8086 | API Key | 透明转发 | 数据服务 |
+| `/api/v1/copilot/*` | Copilot | http://localhost:8087 | API Key | 透明转发 | AI 助手 |
 
-### 路径重写说明
+### 转发说明
 
-部分模块使用路径重写机制，Gateway 会移除路径前缀后转发：
+Gateway 使用 `/api/v1/:module/*path` 提取模块名，并将完整请求路径透明转发到目标服务：
 
-**Manager 模块示例**：
 ```
-请求: GET /api/manager/engines/1
-转发: GET /api/engines/1 (Manager 服务)
-```
-
-**Copilot 模块示例**：
-```
-请求: POST /api/copilot/chat
-转发: POST /chat (Copilot 服务)
+请求: GET http://localhost:8000/api/v1/manager/engines
+转发: GET http://localhost:8081/api/v1/manager/engines
 ```
 
 ### 健康检查
@@ -158,17 +140,17 @@ Gateway 透明传递认证信息
 **通过 Gateway 访问** (推荐):
 ```bash
 # 所有服务通过统一入口访问
-curl http://localhost:8000/api/auth/login
-curl http://localhost:8000/api/datasources
-curl http://localhost:8000/api/metadata/tables
+curl http://localhost:8000/api/v1/system/login
+curl http://localhost:8000/api/v1/manager/engines
+curl http://localhost:8000/api/v1/meta/scan/tasks
 ```
 
 **直接访问服务**:
 ```bash
 # 也可以直接访问各个服务
-curl http://localhost:8180/api/auth/login    # System
-curl http://localhost:8081/api/datasources   # Manager
-curl http://localhost:8082/api/metadata      # Meta
+curl http://localhost:8180/api/v1/system/login    # System
+curl http://localhost:8081/api/v1/manager/engines   # Manager
+curl http://localhost:8082/api/v1/meta/scan/tasks      # Meta
 ```
 
 ### 生产环境

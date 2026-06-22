@@ -301,7 +301,7 @@ Meta attributes 不维护旧字段兼容层。字段可空性只写 `nullable`�
   "geometry_columns": [
     {
       "name": "geometry",
-      "geometry_type": "geometry",
+      "geometry_type": "Geometry",
       "srid": 4326,
       "crs_ref": "EPSG:4326",
       "dimension": 2,
@@ -338,7 +338,7 @@ Meta attributes 不维护旧字段兼容层。字段可空性只写 `nullable`�
 | 字段 | 规则 |
 |---|---|
 | `geometry_columns` | 支持多个 Geometry 字段。每个元素描述一个空间字段；非字段型空间对象不得虚构字段名，可省略该字段。 |
-| `geometry_type` | 写入声明类型或格式天然可确定的类型。PostGIS 字段声明为 `geometry` 时就写 `geometry`，不得为了得到 Point/Polygon 等具体类型扫描全表。 |
+| `geometry_type` | 写入标准 `GeometryType` canonical 值，例如 `Geometry`、`Point`、`MultiPolygon`。PostGIS 字段声明为 `geometry` 时就写 `Geometry`，不得为了得到 Point/Polygon 等具体类型扫描全表。 |
 | `srid` | 能确定 EPSG/SRID 编号时写数字，例如 `4326`。字段型空间对象优先写在对应 `geometry_columns[]` 内；非字段型空间对象写在 `capabilities.spatial.srid` 顶层。 |
 | `crs_ref` | 当前空间对象或几何字段引用的 CRS ID。能确定 EPSG 时写 `EPSG:<code>`；不能确定 EPSG 但能获得定义文本时写 `ADDP:CRS:<sha256>`。字段型空间对象优先写在对应 `geometry_columns[]` 内；非字段型空间对象写在顶层。 |
 | `crs_definitions` | CRS 定义集合。只允许写在 `capabilities.spatial` 顶层，字段通过 `crs_ref` 引用，不得在各字段内重复写定义文本。 |

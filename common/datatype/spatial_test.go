@@ -11,7 +11,7 @@ func TestSpatialInfoHelpersDoNotAssumeGeometryName(t *testing.T) {
 	hasIndex := false
 	info := &SpatialInfo{
 		GeometryColumns: []GeometryColumnInfo{
-			{Name: "shape", GeometryType: string(FieldTypePolygon), SRID: &srid, Dimension: &dimension},
+			{Name: "shape", GeometryType: string(GeometryTypePolygon), SRID: &srid, Dimension: &dimension},
 		},
 		HasSpatialIndex: &hasIndex,
 	}
@@ -23,8 +23,8 @@ func TestSpatialInfoHelpersDoNotAssumeGeometryName(t *testing.T) {
 	if got := info.PrimaryGeometryName(); got != "shape" {
 		t.Fatalf("PrimaryGeometryName() = %q, want shape", got)
 	}
-	if got := info.PrimaryGeometryType(); got != string(FieldTypePolygon) {
-		t.Fatalf("PrimaryGeometryType() = %q, want polygon", got)
+	if got := info.PrimaryGeometryType(); got != string(GeometryTypePolygon) {
+		t.Fatalf("PrimaryGeometryType() = %q, want Polygon", got)
 	}
 	if got := info.PrimarySRIDValue(); got != 4326 {
 		t.Fatalf("PrimarySRIDValue() = %d, want 4326", got)

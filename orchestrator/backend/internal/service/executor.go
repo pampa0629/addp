@@ -265,7 +265,7 @@ func (e *Executor) executeWithTaskProvider(ctx context.Context, step *models.Ste
 }
 
 func validateProviderStepExecutable(provider *commonModels.TaskProvider, step *models.Step, resolvedParams map[string]interface{}) error {
-	taskTypeCapability, err := providerTaskTypeCapability(provider, step.TaskType)
+	taskTypeCapability, err := providerTaskCapability(provider, step.TaskType)
 	if err != nil {
 		return fmt.Errorf("provider %q capabilities invalid: %w", step.Provider, err)
 	}
@@ -283,11 +283,6 @@ func validateProviderStepExecutable(provider *commonModels.TaskProvider, step *m
 func extractProviderExecutionID(respData map[string]interface{}) string {
 	if executionID, ok := respData["execution_id"].(string); ok && strings.TrimSpace(executionID) != "" {
 		return executionID
-	}
-	if data, ok := respData["data"].(map[string]interface{}); ok {
-		if executionID, ok := data["execution_id"].(string); ok && strings.TrimSpace(executionID) != "" {
-			return executionID
-		}
 	}
 	return ""
 }
@@ -335,14 +330,13 @@ func (e *Executor) pollTaskProviderExecution(ctx context.Context, provider *comm
 			}
 			resp.Body.Close()
 
-			execData := extractProviderExecutionData(respData)
-			execStatus, _ := execData["status"].(string)
+			execStatus, _ := respData["status"].(string)
 
 			switch execStatus {
 			case "success":
-				return execData, nil
+				return respData, nil
 			case "failed":
-				errMsg := providerExecutionErrorMessage(execData)
+				errMsg := providerExecutionErrorMessage(respData)
 				if errMsg != "" {
 					return nil, fmt.Errorf("任务失败: %s", errMsg)
 				}
@@ -352,15 +346,6 @@ func (e *Executor) pollTaskProviderExecution(ctx context.Context, provider *comm
 			}
 		}
 	}
-}
-
-func extractProviderExecutionData(respData map[string]interface{}) map[string]interface{} {
-	if data, ok := respData["data"].(map[string]interface{}); ok {
-		if _, hasStatus := data["status"].(string); hasStatus {
-			return data
-		}
-	}
-	return respData
 }
 
 func providerExecutionErrorMessage(execData map[string]interface{}) string {

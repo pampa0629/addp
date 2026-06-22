@@ -185,7 +185,7 @@ func postgresExpectedSpatialFactsForField(field datatype.FieldInfo, spatialInfo 
 		}
 	}
 	if geometryType == "" {
-		geometryType = postgresGeometryTypeForFieldType(field.Type)
+		geometryType = string(datatype.GeometryTypeGeometry)
 	}
 	return geometryType, srid, dimension
 }
@@ -240,7 +240,7 @@ func postgresSpatialTypeForField(field datatype.FieldInfo, spatialInfo *datatype
 		}
 	}
 	if geometryType == "" {
-		geometryType = postgresGeometryTypeForFieldType(field.Type)
+		geometryType = string(datatype.GeometryTypeGeometry)
 	}
 	if geometryType == "" {
 		return ""
@@ -262,21 +262,6 @@ func postgresSpatialColumnForField(spatialInfo *datatype.SpatialInfo, fieldName 
 		}
 	}
 	return nil
-}
-
-func postgresGeometryTypeForFieldType(fieldType datatype.FieldType) string {
-	switch fieldType {
-	case datatype.FieldTypePoint:
-		return "Point"
-	case datatype.FieldTypeLineString:
-		return "LineString"
-	case datatype.FieldTypePolygon:
-		return "Polygon"
-	case datatype.FieldTypeMultiPoint:
-		return "MultiPoint"
-	default:
-		return ""
-	}
 }
 
 func postgresGeometryTypeWithDimension(geometryType string, dimension int64) string {
@@ -322,14 +307,6 @@ func postgresSQLTypeForCommonType(fieldType datatype.FieldType) (string, bool) {
 		return "BYTEA", true
 	case datatype.FieldTypeGeometry:
 		return "GEOMETRY", true
-	case datatype.FieldTypePoint:
-		return "GEOMETRY(Point)", true
-	case datatype.FieldTypeLineString:
-		return "GEOMETRY(LineString)", true
-	case datatype.FieldTypePolygon:
-		return "GEOMETRY(Polygon)", true
-	case datatype.FieldTypeMultiPoint:
-		return "GEOMETRY(MultiPoint)", true
 	case datatype.FieldTypeJSON:
 		return "JSONB", true
 	case datatype.FieldTypeUUID:

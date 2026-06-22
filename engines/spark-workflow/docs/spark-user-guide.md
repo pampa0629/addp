@@ -298,7 +298,7 @@ spark.hadoop.fs.s3a.path.style.access=true
 - 选择 PostgreSQL/PostGIS 表
 - 选择导出格式: GeoParquet
 - 目标存储: MinIO (`s3a://business-data/geoparquet/`)
-- 触发导出任务
+- 触发导出执行
 
 ### 5.3 数据加载性能对比
 

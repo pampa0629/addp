@@ -38,7 +38,7 @@ func (s *ExecutionService) SetTaskQueue(taskQueue TaskQueue) {
 	s.taskQueue = taskQueue
 }
 
-// convertToTransferExecution 将统一执行记录转换为 Transfer 执行记录格式（API 兼容层）
+// convertToTransferExecution 将统一执行记录转换为 Transfer API 的执行记录 DTO。
 func (s *ExecutionService) convertToTransferExecution(exec *commonExecution.TaskExecution) *models.TaskExecution {
 	if exec == nil {
 		return nil
@@ -71,6 +71,7 @@ func (s *ExecutionService) convertToTransferExecution(exec *commonExecution.Task
 	}
 	// checkpoint 数据存在 metadata JSONB 中
 	if exec.Metadata != nil {
+		transferExec.Metadata = exec.Metadata
 		if offset, ok := exec.Metadata["checkpoint_offset"].(float64); ok {
 			v := int64(offset)
 			transferExec.CheckpointOffset = v
@@ -180,7 +181,7 @@ func (s *ExecutionService) ListExecutions(ctx context.Context, taskID, tenantID 
 	filter := commonExecution.TaskExecutionFilter{
 		TenantID:     int(tenantID),
 		Module:       commonExecution.ModuleTransfer,
-		TaskType:     commonExecution.TaskTypeImport,
+		TaskType:     commonExecution.TaskTypeSync,
 		SourceTaskID: sourceTaskID,
 		Page:         page,
 		PageSize:     pageSize,
@@ -213,7 +214,7 @@ func (s *ExecutionService) ListAllExecutions(ctx context.Context, tenantID uint,
 	filter := commonExecution.TaskExecutionFilter{
 		TenantID: int(tenantID),
 		Module:   commonExecution.ModuleTransfer,
-		TaskType: commonExecution.TaskTypeImport,
+		TaskType: commonExecution.TaskTypeSync,
 		Page:     page,
 		PageSize: pageSize,
 	}
@@ -256,7 +257,7 @@ func (s *ExecutionService) GetLatestExecution(ctx context.Context, taskID, tenan
 	filter := commonExecution.TaskExecutionFilter{
 		TenantID:     int(tenantID),
 		Module:       commonExecution.ModuleTransfer,
-		TaskType:     commonExecution.TaskTypeImport,
+		TaskType:     commonExecution.TaskTypeSync,
 		SourceTaskID: sourceTaskID,
 		Page:         1,
 		PageSize:     1,
@@ -280,7 +281,7 @@ func (s *ExecutionService) GetRunningExecutions(ctx context.Context) ([]models.T
 	filter := commonExecution.TaskExecutionFilter{
 		TenantID: 0, // 0 表示不过滤租户
 		Module:   commonExecution.ModuleTransfer,
-		TaskType: commonExecution.TaskTypeImport,
+		TaskType: commonExecution.TaskTypeSync,
 		Status:   commonExecution.ExecutionStatusRunning,
 		Page:     1,
 		PageSize: 1000, // 假设最多1000个运行中任务
@@ -333,7 +334,7 @@ func (s *ExecutionService) CreateExecutionWithContext(ctx context.Context, taskI
 		TenantID:          int(task.TenantID),
 		ExecutionID:       uuid.New().String(),
 		Module:            commonExecution.ModuleTransfer,
-		TaskType:          commonExecution.TaskTypeImport,
+		TaskType:          commonExecution.TaskTypeSync,
 		Source:            source,
 		SourceTaskID:      commonExecution.NewSourceTaskIDFromUint(taskID),
 		SourceTaskName:    &task.Name,
@@ -375,6 +376,8 @@ func (s *ExecutionService) UpdateExecution(ctx context.Context, id uint, updates
 		case "checkpoint_offset", "checkpoint_state":
 			// checkpoint 数据存入 metadata JSONB，需先获取当前值再合并
 			// 此处仅标记需要更新 metadata，统一在循环后处理
+		case "metadata":
+			// 统一在循环后合并入 metadata JSONB。
 		case "error_msg":
 			// 错误信息存入 error_details
 			unifiedUpdates["error_details"] = commonModels.JSONMap{
@@ -391,7 +394,25 @@ func (s *ExecutionService) UpdateExecution(ctx context.Context, id uint, updates
 		return err
 	}
 
-	// 处理 checkpoint 数据：合并入现有 metadata
+	// 处理通用 metadata 和 checkpoint 数据：合并入现有 metadata。
+	if _, hasMetadata := updates["metadata"]; hasMetadata {
+		metadata := execution.Metadata
+		if metadata == nil {
+			metadata = commonModels.JSONMap{}
+		}
+		if values, ok := updates["metadata"].(map[string]interface{}); ok {
+			for key, value := range values {
+				metadata[key] = value
+			}
+		} else if values, ok := updates["metadata"].(commonModels.JSONMap); ok {
+			for key, value := range values {
+				metadata[key] = value
+			}
+		} else {
+			return fmt.Errorf("metadata update must be map[string]interface{}")
+		}
+		unifiedUpdates["metadata"] = metadata
+	}
 	if _, hasOffset := updates["checkpoint_offset"]; hasOffset {
 		metadata := execution.Metadata
 		if metadata == nil {

@@ -734,9 +734,7 @@ func parquetNodeForField(field datatype.FieldInfo) parquetgo.Node {
 		node = parquetgo.Date()
 	case datatype.FieldTypeTimestamp, datatype.FieldTypeTime:
 		node = parquetgo.String()
-	case datatype.FieldTypeJSON, datatype.FieldTypeArray,
-		datatype.FieldTypeGeometry, datatype.FieldTypePoint, datatype.FieldTypeLineString,
-		datatype.FieldTypePolygon, datatype.FieldTypeMultiPoint:
+	case datatype.FieldTypeJSON, datatype.FieldTypeArray, datatype.FieldTypeGeometry:
 		node = parquetgo.String()
 	case datatype.FieldTypeUUID:
 		node = parquetgo.UUID()
@@ -781,9 +779,7 @@ func parquetWriterValue(value interface{}, fieldType datatype.FieldType) any {
 		return dateValue(value)
 	case datatype.FieldTypeTimestamp, datatype.FieldTypeTime:
 		return temporalString(value)
-	case datatype.FieldTypeJSON, datatype.FieldTypeArray,
-		datatype.FieldTypeGeometry, datatype.FieldTypePoint, datatype.FieldTypeLineString,
-		datatype.FieldTypePolygon, datatype.FieldTypeMultiPoint:
+	case datatype.FieldTypeJSON, datatype.FieldTypeArray, datatype.FieldTypeGeometry:
 		return jsonString(value)
 	default:
 		return fmt.Sprint(value)

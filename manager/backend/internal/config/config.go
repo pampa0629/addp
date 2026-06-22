@@ -1,7 +1,6 @@
 package config
 
 import (
-	"fmt"
 	"log"
 	"strconv"
 	"strings"
@@ -46,19 +45,27 @@ type Config struct {
 	RedisPassword string
 	RedisDB       int
 
-	// MinIO 配置（用于 MVT 瓦片存储和数据导入中转）
+	// MinIO 配置（用于 MVT 瓦片存储和数据导入中转，读取平台内置 MinIO）
 	MinioEndpoint  string
 	MinioAccessKey string
 	MinioSecretKey string
 	MinioUseSSL    bool
 
-	// Transfer 服务配置（用于数据导入任务创建）
-	TransferServiceURL      string
-	ImportSourceEngineID    uint
-	ImportSourceEngineIDSet bool
+	// Transfer 服务配置（用于导入 / 导出时创建并触发 sync）
+	TransferServiceURL string
+
+	// 导出暂存清理配置。当前作为 Manager 内部默认值，不暴露为运维环境变量。
+	ExportCleanup ExportCleanupConfig
 
 	// 瓦片缓存生成配置
 	TileCache TileCacheConfig
+}
+
+type ExportCleanupConfig struct {
+	SuccessRetention time.Duration
+	FailedRetention  time.Duration
+	MaxRunningAge    time.Duration
+	Interval         time.Duration
 }
 
 // TileCacheConfig 瓦片缓存生成相关配置
@@ -159,24 +166,20 @@ func Load() *Config {
 	cfg.RedisPassword = commonConfig.GetEnv("REDIS_PASSWORD", "")
 	cfg.RedisDB = commonConfig.GetEnvInt("REDIS_DB", 0)
 
-	// MinIO 配置（用于 MVT 瓦片存储）
-	// 注意：Manager 模块使用系统 infra MinIO，端口从 MINIO_API_PORT 读取
-	minioPort := commonConfig.GetEnv("MINIO_API_PORT", "9000")
-	defaultEndpoint := fmt.Sprintf("localhost:%s", minioPort)
-	cfg.MinioEndpoint = commonConfig.GetEnv("MINIO_SYSTEM_ENDPOINT", commonConfig.GetEnv("MINIO_ENDPOINT", defaultEndpoint))
-	cfg.MinioAccessKey = commonConfig.GetEnv("MINIO_SYSTEM_ACCESS_KEY", commonConfig.GetEnv("MINIO_ROOT_USER", commonConfig.GetEnv("MINIO_ACCESS_KEY", "minioadmin")))
-	cfg.MinioSecretKey = commonConfig.GetEnv("MINIO_SYSTEM_SECRET_KEY", commonConfig.GetEnv("MINIO_ROOT_PASSWORD", commonConfig.GetEnv("MINIO_SECRET_KEY", "minioadmin")))
-	cfg.MinioUseSSL = commonConfig.GetEnvBool("MINIO_USE_SSL", false)
+	minioCfg := commonConfig.LoadBuiltinMinIOConfig()
+	cfg.MinioEndpoint = minioCfg.Endpoint
+	cfg.MinioAccessKey = minioCfg.AccessKey
+	cfg.MinioSecretKey = minioCfg.SecretKey
+	cfg.MinioUseSSL = minioCfg.UseSSL
 
 	// Transfer 服务配置
 	cfg.TransferServiceURL = commonConfig.GetEnv("TRANSFER_URL", "http://localhost:8083")
-	if rawSourceEngineID := strings.TrimSpace(commonConfig.GetEnv("MANAGER_IMPORT_SOURCE_ENGINE_ID", "")); rawSourceEngineID != "" {
-		if parsed, err := strconv.ParseUint(rawSourceEngineID, 10, 32); err == nil && parsed > 0 {
-			cfg.ImportSourceEngineID = uint(parsed)
-			cfg.ImportSourceEngineIDSet = true
-		} else {
-			log.Printf("⚠️  MANAGER_IMPORT_SOURCE_ENGINE_ID 无效: %s", rawSourceEngineID)
-		}
+
+	cfg.ExportCleanup = ExportCleanupConfig{
+		SuccessRetention: 24 * time.Hour,
+		FailedRetention:  6 * time.Hour,
+		MaxRunningAge:    6 * time.Hour,
+		Interval:         30 * time.Minute,
 	}
 
 	// 瓦片缓存生成配置

@@ -73,10 +73,11 @@ func main() {
 	// 初始化 repositories
 	logger.L().Info("开始初始化 Manager repositories")
 	searchHistoryRepo := repository.NewSearchHistoryRepository(db)
-	metadataRepo := repository.NewMetadataRepository(db, cfg.EncryptionKey)
+	metadataRepo := repository.NewMetadataRepository(db)
 	embeddingRepo := repository.NewEmbeddingRepository(db)
 	tileCacheRepo := repository.NewTileCacheRepository(db)
 	quickViewOptimizationRepo := repository.NewQuickViewOptimizationRepository(db)
+	exportSessionRepo := repository.NewExportSessionRepository(db)
 	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
 	logger.L().Info("Manager repositories 初始化完成")
 
@@ -210,6 +211,7 @@ func main() {
 	tileCacheTaskSvc := service.NewTileCacheTaskService(tileCacheRepo, taskExecRepo)
 	quickViewOptimizationTaskSvc := service.NewQuickViewOptimizationTaskService(quickViewOptimizationRepo, taskExecRepo)
 	quickViewOptimizationTaskSvc.SetDBProvider(mvtService)
+	quickViewOptimizationTaskSvc.SetQuickViewRepository(quickViewService.Repository())
 	tileCacheTaskSvc.SetQuickViewService(quickViewService)
 	tileCacheTaskSvc.SetRealtimeTileTargetResolver(mvtService)
 	tileCacheTaskSvc.SetTileCacheRuntimeCacheInvalidator(spatialPreviewService)
@@ -233,6 +235,15 @@ func main() {
 		tileCacheTaskSvc,
 		embeddingRepo,
 		quickViewOptimizationTaskSvc,
+		exportSessionRepo,
+		minioClient,
+		minioBucket,
+		service.ExportCleanupOptions{
+			SuccessRetention: cfg.ExportCleanup.SuccessRetention,
+			FailedRetention:  cfg.ExportCleanup.FailedRetention,
+			MaxRunningAge:    cfg.ExportCleanup.MaxRunningAge,
+			Interval:         cfg.ExportCleanup.Interval,
+		},
 	)
 	if err := cleanupSvc.Start(context.Background()); err != nil {
 		logger.L().Warn("Manager cleanup 订阅启动失败", "error", err)
@@ -250,18 +261,25 @@ func main() {
 	importService := service.NewImportService(
 		minioClient,
 		minioBucket,
-		cfg.MinioEndpoint,
-		cfg.MinioAccessKey,
-		cfg.MinioSecretKey,
-		cfg.ImportSourceEngineID,
-		cfg.ImportSourceEngineIDSet,
-		systemClient,
 		transferClient,
+		quickViewOptimizationTaskSvc,
 	)
 	importHandler := api.NewImportHandler(importService)
+	uploadService := service.NewUploadService(systemClient, metaClient)
+	uploadHandler := api.NewUploadHandler(uploadService)
+	resourceActionService := service.NewResourceActionService(systemClient)
+	resourceActionHandler := api.NewResourceActionHandler(resourceActionService)
+	exportService := service.NewExportService(
+		systemClient,
+		transferClient,
+		exportSessionRepo,
+		minioClient,
+		minioBucket,
+	)
+	exportHandler := api.NewExportHandler(exportService)
 	logger.L().Info("数据导入服务已初始化", "transfer_url", cfg.TransferServiceURL)
 
-	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, metaClient, cacheManager, redisClient, embeddingService, taskProviderHandler, importHandler)
+	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, metaClient, cacheManager, redisClient, embeddingService, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler)
 
 	serviceHost := utils.GetServiceHost()
 	port := utils.GetModulePort("manager")

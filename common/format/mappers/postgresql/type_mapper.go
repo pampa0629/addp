@@ -62,14 +62,8 @@ func (m *TypeMapper) ToCommon(pgType string) datatype.FieldType {
 		return datatype.FieldTypeBytes
 
 	// 地理空间类型
-	case "geometry":
+	case "geometry", "point", "linestring", "polygon", "multipoint", "multilinestring", "multipolygon", "geometrycollection":
 		return datatype.FieldTypeGeometry
-	case "point":
-		return datatype.FieldTypePoint
-	case "linestring":
-		return datatype.FieldTypeLineString
-	case "polygon":
-		return datatype.FieldTypePolygon
 
 	// 复杂类型
 	case "json", "jsonb":
@@ -113,12 +107,6 @@ func (m *TypeMapper) FromCommon(commonType datatype.FieldType) (string, int, int
 		return "BYTEA", 0, 0
 	case datatype.FieldTypeGeometry:
 		return "GEOMETRY", 0, 0
-	case datatype.FieldTypePoint:
-		return "GEOMETRY(Point)", 0, 0
-	case datatype.FieldTypeLineString:
-		return "GEOMETRY(LineString)", 0, 0
-	case datatype.FieldTypePolygon:
-		return "GEOMETRY(Polygon)", 0, 0
 	case datatype.FieldTypeJSON:
 		return "JSONB", 0, 0
 	case datatype.FieldTypeUUID:

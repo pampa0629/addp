@@ -1151,8 +1151,8 @@ func TestFileTablePreviewProviderMultiPreviewKeepsNFSFullStorageRef(t *testing.T
 	if preview.Object.Path != "shp/farmland.shp" || preview.Object.StorageRef != "shp/farmland.shp" {
 		t.Fatalf("object path/storage_ref = %q/%q, want full NFS path", preview.Object.Path, preview.Object.StorageRef)
 	}
-	if got := preview.Object.Download.URL; !strings.Contains(got, "storage_ref=shp%2Ffarmland.shp") {
-		t.Fatalf("download url = %q, want full NFS storage_ref", got)
+	if got := preview.Object.Download.URL; !strings.Contains(got, "/downloads/file?locator=") || !strings.Contains(got, "path%2Fshp%2Ffarmland.shp") || !strings.Contains(got, "type%3Dfile") {
+		t.Fatalf("download url = %q, want file locator with full NFS path", got)
 	}
 	if preview.Object.Download.FileName != "farmland.shapefile.zip" {
 		t.Fatalf("download filename = %q, want farmland.shapefile.zip", preview.Object.Download.FileName)
@@ -1201,8 +1201,8 @@ func TestFileTablePreviewProviderMultiPreviewKeepsObjectStorageRef(t *testing.T)
 	if preview.Object.Path != "data/farmland.shp" || preview.Object.StorageRef != "gischain/data/farmland.shp" {
 		t.Fatalf("object path/storage_ref = %q/%q, want object storage ref with bucket", preview.Object.Path, preview.Object.StorageRef)
 	}
-	if got := preview.Object.Download.URL; !strings.Contains(got, "storage_ref=gischain%2Fdata%2Ffarmland.shp") {
-		t.Fatalf("download url = %q, want object storage_ref with bucket", got)
+	if got := preview.Object.Download.URL; !strings.Contains(got, "/downloads/file?locator=") || !strings.Contains(got, "path%2Fgischain%2Fdata%2Ffarmland.shp") || !strings.Contains(got, "type%3Dobject") {
+		t.Fatalf("download url = %q, want object locator with bucket path", got)
 	}
 	if preview.Object.Download.FileName != "farmland.shapefile.zip" {
 		t.Fatalf("download filename = %q, want farmland.shapefile.zip", preview.Object.Download.FileName)

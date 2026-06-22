@@ -46,11 +46,11 @@ func (s *TaskProviderRegistryService) Register() error {
 	// 构造能力描述（含前端集成 URL）
 	capabilities := map[string]interface{}{
 		"schema_version": "task.capabilities/v1",
-		"task_types": []map[string]interface{}{
+		"task_capabilities": []map[string]interface{}{
 			{
-				"type":                      "import",
-				"display_name":              "数据导入",
-				"description":               "执行 Transfer 导入任务定义",
+				"type":                      "sync",
+				"display_name":              "数据同步",
+				"description":               "执行 Transfer 同步任务定义",
 				"definition_schema":         map[string]interface{}{"type": "object"},
 				"execution_schema":          map[string]interface{}{"type": "object", "additionalProperties": false},
 				"supports_schedule":         true,
@@ -76,7 +76,7 @@ func (s *TaskProviderRegistryService) Register() error {
 	registration := TaskProviderRegistration{
 		ModuleName:  "transfer",
 		DisplayName: "数据传输",
-		Description: "数据导入任务",
+		Description: "数据同步任务",
 
 		// API 端点配置
 		BaseURL:             s.transferURL,

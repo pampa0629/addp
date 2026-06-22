@@ -397,8 +397,7 @@ const handlePersistQueryTask = async () => {
       query_type: task.content?.query_type || 'sql',
       description: task.description,
       tags: task.tags || [],
-      timeout: task.timeout,
-      schedule: task.schedule
+      timeout: task.timeout
     })
     ElMessage.success(t('develop.query.updateTaskSuccess'))
   } catch (error) {

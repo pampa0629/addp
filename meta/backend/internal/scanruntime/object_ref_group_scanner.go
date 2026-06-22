@@ -48,7 +48,7 @@ func scanObjectRefGroups(
 		if primary == "" {
 			continue
 		}
-		bucket, objectPath, err := scanflow.SplitObjectRefPath(primary)
+		bucket, objectPath, err := plugin.SplitObjectRefPath(primary)
 		if err != nil {
 			return result, err
 		}

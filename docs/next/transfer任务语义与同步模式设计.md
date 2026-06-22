@@ -2,11 +2,13 @@
 
 更新时间：2026-06-09
 
+状态说明：本文中的 `task_type=import` 语义已被正式任务体系规范取代。当前实现和正式任务体系按 clean break 收敛为 Transfer 唯一任务类型 `task_type=sync`；稳定规则见 `docs/spec/addp任务体系规范.md` 和 `transfer/docs/transfer-基本概念及配置说明.md`，本文仅作为增量、CDC、水位、实时同步等后续专题的早期讨论记录保留。
+
 本文用于讨论 Transfer 后续任务语义，不以当前实现为约束。ADDP 当前处于积极开发阶段，本文默认 clean break：概念确认后可以推翻旧字段、旧任务类型和旧 UI 入口。
 
 说明：本文只讨论 Transfer 的任务语义、同步模式、写入策略和执行边界；资源选择统一走 locator / ResourceTreePicker，不在本专题中重新定义选择入口。
 
-当前任务体系阶段 1 只在 TaskProvider 和 `common.task_executions` 层声明 `task_type=import`。本文下方讨论的 `intent=import/export/sync` 仅是后续业务标签草案，不进入当前 TaskProvider `task_type`，也不要求当前接口并行支持导出或同步任务类型。
+当前任务体系阶段 1 只在 TaskProvider 和 `common.task_executions` 层声明 `task_type=sync`。本文下方讨论的 `intent=import/export/sync` 仅是早期业务标签草案，不进入当前 TaskProvider `task_type`，也不要求当前接口并行支持导入、导出等任务类型。
 
 ## 一、价值定位
 
@@ -245,7 +247,7 @@ source
 
 ```text
 provider=transfer
-task_type=import
+task_type=sync
 ```
 
 Transfer 内部任务语义、同步模式、取消、重试、进度和日志仍作为本专题后续处理，不在当前任务体系主线中展开。
@@ -270,7 +272,7 @@ GET  /executions/{execution_id}/logs
 2. 当前不声明标准取消能力，即 `supports_cancel=false`，因此 Orchestrator 和 Monitor 不应展示 Transfer 标准取消入口。只有在明确 worker 可中断、资源可清理、状态可一致落库后，才能开放 `POST /executions/{execution_id}/cancel`。
 3. `retry` 当前是 restartable retry，不是 checkpoint resumable。后续如果要支持从中断点续跑，需要先定义 checkpoint commit / resume marker / 写入幂等语义，不能只复用现有 retry 按钮。
 4. `progress` 和 `logs` 当前是 Transfer 私有执行视图。后续要决定哪些信息沉淀到 `common.task_executions.metadata/error_details`，哪些保留在 Transfer 私有观测表或日志中。
-5. `task_type=import` 只是阶段 1 的对外任务类型，不代表 Transfer 长期只做导入。后续是否仍用单一 task type 加 `intent/load/trigger/write_mode` 表达，还是拆分更多 task type，需要结合本专题的全量、增量和实时语义一起决定。
+5. `task_type=sync` 是 Transfer 阶段 1 的唯一对外任务类型。导入 / 导出是 Manager 等调用方入口语义，不进入 Transfer task_type。
 6. Manager 入口创建 Transfer 任务时，Manager 负责用户交互、字段映射和入口语义；Transfer 负责执行计划与搬运。后续需要明确 Manager 到 Transfer 的创建契约，避免把 Manager UI 概念反向写成 Transfer planner 分支。
 7. Transfer 写后触发 Meta scan 属于执行后派生动作。后续需要明确它在父子 execution 中如何表达：是 Transfer execution 的 metadata，还是单独的 Meta 子 execution，并与 Orchestrator 的 `parent_execution_id` 语义保持一致。
 
@@ -278,7 +280,7 @@ GET  /executions/{execution_id}/logs
 
 以下内容作为 Transfer 专题继续推进，不进入任务体系主干文档：
 
-1. 是否扩展 `task_type` 必须由本文先确认。阶段 1 对外仍只声明 `task_type=import`；如果后续确认需要导出、同步等独立任务类型，必须先修订正式任务体系规范，再按 clean break 迁移。
+1. 是否扩展 `task_type` 必须先修订正式任务体系规范。阶段 1 对外只声明 `task_type=sync`，不得并行保留 `import`、`export`、`transfer` 等旧任务类型。
 2. 导入 / 导出应优先作为 Manager 或其他业务模块的入口 intent / UI 标签 / 审计标签，而不是 Transfer planner 主路径的执行类型分支。
 3. 全量、增量、实时增量的任务定义结构需要在本文中统一，包括 `load.mode`、`trigger.type`、水位状态、写入策略和 retry 语义。
 4. 当前 TaskProvider capabilities 对外只声明 `restartable_retry`，不得声明 checkpoint resumable。checkpoint 仍是观测和诊断信息，真正断点续跑需要 source seek、target 幂等提交和 provider marker 消费同时成立。

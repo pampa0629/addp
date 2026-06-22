@@ -104,6 +104,10 @@ func (e EndpointSpec) ResourceLocator() (*resourcetree.ResourceLocator, error) {
 	return loc, nil
 }
 
+func (e EndpointSpec) InfraLocator() (*InfraLocator, error) {
+	return ParseInfraLocatorURI(strings.TrimSpace(e.Locator))
+}
+
 func (e EndpointSpec) ParentResourceLocator() (*resourcetree.ResourceLocator, error) {
 	loc, err := resourcetree.ParseURI(strings.TrimSpace(e.ParentLocator))
 	if err != nil {
@@ -112,7 +116,25 @@ func (e EndpointSpec) ParentResourceLocator() (*resourcetree.ResourceLocator, er
 	return loc, nil
 }
 
+func (e EndpointSpec) ParentInfraLocator() (*InfraLocator, error) {
+	return ParseInfraLocatorURI(strings.TrimSpace(e.ParentLocator))
+}
+
 func (e EndpointSpec) EngineRef() (EngineRef, error) {
+	if IsInfraLocatorURI(e.Locator) {
+		loc, err := e.InfraLocator()
+		if err != nil {
+			return EngineRef{}, err
+		}
+		return loc.EngineRef(), nil
+	}
+	if IsInfraLocatorURI(e.ParentLocator) {
+		loc, err := e.ParentInfraLocator()
+		if err != nil {
+			return EngineRef{}, err
+		}
+		return loc.EngineRef(), nil
+	}
 	loc, err := e.endpointEngineLocator()
 	if err != nil {
 		return EngineRef{}, err
@@ -121,6 +143,9 @@ func (e EndpointSpec) EngineRef() (EngineRef, error) {
 }
 
 func (e EndpointSpec) LocatorEngineID() uint {
+	if IsInfraLocatorURI(e.Locator) {
+		return 0
+	}
 	loc, err := e.endpointEngineLocator()
 	if err != nil || loc == nil {
 		return 0
@@ -129,6 +154,9 @@ func (e EndpointSpec) LocatorEngineID() uint {
 }
 
 func (e EndpointSpec) LocatorItemID() uint {
+	if IsInfraLocatorURI(e.Locator) {
+		return 0
+	}
 	loc, err := e.ResourceLocator()
 	if err != nil || loc == nil || loc.ItemID == nil {
 		return 0
@@ -137,6 +165,13 @@ func (e EndpointSpec) LocatorItemID() uint {
 }
 
 func (e EndpointSpec) LocatorType() resourcetree.ResourceType {
+	if IsInfraLocatorURI(e.Locator) {
+		loc, err := e.InfraLocator()
+		if err != nil || loc == nil {
+			return ""
+		}
+		return loc.Type
+	}
 	loc, err := e.ResourceLocator()
 	if err != nil || loc == nil {
 		return ""
@@ -149,6 +184,13 @@ func (e EndpointSpec) TargetResourceType() resourcetree.ResourceType {
 	case representationNative:
 		return resourcetree.TypeTable
 	case representationEncoded:
+		if IsInfraLocatorURI(e.ParentLocator) {
+			parent, err := e.ParentInfraLocator()
+			if err != nil {
+				return ""
+			}
+			return targetContentResourceTypeFromParent(parent.Type)
+		}
 		parent, err := e.ParentResourceLocator()
 		if err != nil {
 			return ""
@@ -308,6 +350,13 @@ func sourceFormatFromEndpoint(endpoint EndpointSpec, descriptor dataitem.ItemDes
 }
 
 func sourceEndpointContentCatalogPath(endpoint EndpointSpec, descriptor dataitem.ItemDescriptor) (engineplugin.CatalogPath, error) {
+	if IsInfraLocatorURI(endpoint.Locator) {
+		loc, err := endpoint.InfraLocator()
+		if err != nil {
+			return engineplugin.CatalogPath{}, err
+		}
+		return loc.CatalogPath()
+	}
 	loc, err := endpoint.ResourceLocator()
 	if err != nil {
 		return engineplugin.CatalogPath{}, err
@@ -835,10 +884,17 @@ func validateSourceEndpointIdentity(endpoint EndpointSpec, role, dataType string
 		return fmt.Errorf("%s endpoint must use locator only; parent_locator/name are only valid for target", role)
 	}
 	loc, err := endpoint.ResourceLocator()
-	if err != nil {
+	if IsInfraLocatorURI(endpoint.Locator) {
+		infraLoc, infraErr := endpoint.InfraLocator()
+		if infraErr != nil {
+			return fmt.Errorf("%s locator is invalid: %w", role, infraErr)
+		}
+		if infraLoc.EngineRef().Type == "" {
+			return fmt.Errorf("%s infra locator kind is required", role)
+		}
+	} else if err != nil {
 		return fmt.Errorf("%s locator is invalid: %w", role, err)
-	}
-	if loc.EngineID == 0 {
+	} else if loc.EngineID == 0 {
 		return fmt.Errorf("%s locator engine_id is required", role)
 	}
 	if endpoint.DataType != dataType {
@@ -858,10 +914,17 @@ func validateTargetEndpointIdentity(endpoint EndpointSpec, dataType string) erro
 		return fmt.Errorf("target name is required")
 	}
 	loc, err := endpoint.ParentResourceLocator()
-	if err != nil {
+	if IsInfraLocatorURI(endpoint.ParentLocator) {
+		infraLoc, infraErr := endpoint.ParentInfraLocator()
+		if infraErr != nil {
+			return fmt.Errorf("target parent_locator is invalid: %w", infraErr)
+		}
+		if infraLoc.EngineRef().Type == "" {
+			return fmt.Errorf("target infra parent_locator kind is required")
+		}
+	} else if err != nil {
 		return fmt.Errorf("target parent_locator is invalid: %w", err)
-	}
-	if loc.EngineID == 0 {
+	} else if loc.EngineID == 0 {
 		return fmt.Errorf("target parent_locator engine_id is required")
 	}
 	if strings.Contains(strings.TrimSpace(endpoint.Name), "/") {
@@ -990,6 +1053,25 @@ func tabularNamespaceTerm(engine EngineBinding) string {
 }
 
 func targetEndpointContentCatalogPath(endpoint EndpointSpec, formatType format.FormatType, writeOptions *format.WriteOptions) (engineplugin.CatalogPath, error) {
+	if IsInfraLocatorURI(endpoint.ParentLocator) {
+		parent, err := endpoint.ParentInfraLocator()
+		if err != nil {
+			return engineplugin.CatalogPath{}, err
+		}
+		name := strings.TrimSpace(endpoint.Name)
+		if name == "" {
+			return engineplugin.CatalogPath{}, fmt.Errorf("target name is required")
+		}
+		if parent.Type != resourcetree.TypePrefix && parent.Type != resourcetree.TypeDirectory {
+			return engineplugin.CatalogPath{}, fmt.Errorf("target infra parent_locator type must be %q or %q, got %q", resourcetree.TypePrefix, resourcetree.TypeDirectory, parent.Type)
+		}
+		objectPath := strings.Trim(pathpkg.Join(strings.Join(parent.Path, "/"), name), "/")
+		normalizedPath, err := normalizeTargetContentPathExtension(objectPath, formatType, writeOptions)
+		if err != nil {
+			return engineplugin.CatalogPath{}, err
+		}
+		return engineplugin.ObjectItemPath(0, parent.Namespace, normalizedPath), nil
+	}
 	parent, err := endpoint.ParentResourceLocator()
 	if err != nil {
 		return engineplugin.CatalogPath{}, err

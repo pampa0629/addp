@@ -160,7 +160,7 @@ monitor/
     {
       "id": 3,
       "module": "transfer",
-      "task_type": "import",
+      "task_type": "sync",
       "source": "transfer",
       "status": "failed",
       "execution_time_ms": 162
@@ -168,7 +168,7 @@ monitor/
     {
       "id": 2,
       "module": "transfer",
-      "task_type": "import",
+      "task_type": "sync",
       "source": "transfer",
       "status": "pending"
     },
@@ -337,7 +337,7 @@ GO_MODULES=(
 |---------|-----------|------|
 | `task_id` | `source_task_id` | 任务ID，按字符串软引用写入 |
 | - | `module` | 固定值 "transfer" |
-| - | `task_type` | 从 task.type 获取 |
+| - | `task_type` | 由 owner 模块按 TaskProvider 契约写入 |
 | - | `source` | 默认 "transfer" |
 | `records_read` | `records_read` | 读取记录数 |
 | `checkpoint_offset` | `checkpoint_offset` | 断点续传偏移 |

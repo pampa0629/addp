@@ -22,7 +22,7 @@ type TaskProvider struct {
 	TaskStatusEndpoint  string `gorm:"column:task_status_endpoint;size:255" json:"task_status_endpoint"`
 	TaskCancelEndpoint  string `gorm:"column:task_cancel_endpoint;size:255" json:"task_cancel_endpoint,omitempty"`
 
-	// 能力描述（JSON 格式，含 task.capabilities/v1、task_types 等）
+	// 能力描述（JSON 格式，含 task.capabilities/v1、task_capabilities 等）
 	Capabilities *commonModels.JSONString `gorm:"column:capabilities;type:json" json:"capabilities,omitempty"`
 
 	// 状态

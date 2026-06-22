@@ -83,9 +83,9 @@ type TransferTask struct {
 	TenantID         uint       `gorm:"not null;index" json:"tenant_id"`
 	Name             string     `gorm:"type:varchar(255);not null" json:"name"`
 	Description      string     `gorm:"type:text" json:"description"`
-	TaskType         string     `gorm:"type:varchar(20);not null;default:'import';index" json:"task_type"` // Transfer 当前统一任务类型，固定为 import
-	Config           JSONMap    `gorm:"type:jsonb;not null" json:"config"`                                 // Reader-Transform-Writer 管道配置
-	Schedule         string     `gorm:"type:varchar(100)" json:"schedule"`                                 // Cron 表达式
+	TaskType         string     `gorm:"type:varchar(20);not null;default:'sync';index" json:"task_type"` // Transfer 当前统一任务类型，固定为 sync
+	Config           JSONMap    `gorm:"type:jsonb;not null" json:"config"`                               // Reader-Transform-Writer 管道配置
+	Schedule         string     `gorm:"type:varchar(100)" json:"schedule"`                               // Cron 表达式
 	BatchSize        int        `gorm:"default:1000" json:"batch_size"`
 	Enabled          bool       `gorm:"default:false;index" json:"enabled"`
 	AutoScanMetadata bool       `json:"auto_scan_metadata"`
@@ -133,6 +133,7 @@ type TaskExecution struct {
 	Logs             string          `json:"logs,omitempty"`
 	CheckpointOffset int64           `json:"checkpoint_offset"`
 	CheckpointState  JSONMap         `json:"checkpoint_state,omitempty"`
+	Metadata         JSONMap         `json:"metadata,omitempty"`
 	TriggerType      string          `json:"trigger_type"`
 	TriggerBy        *uint           `json:"trigger_by,omitempty"`
 }
@@ -149,9 +150,10 @@ func (e *TaskExecution) Duration() time.Duration {
 type CreateTaskRequest struct {
 	Name             string                 `json:"name" binding:"required"`
 	Description      string                 `json:"description"`
-	TaskType         string                 `json:"task_type"`                 // Transfer 当前统一任务类型，固定为 import
+	TaskType         string                 `json:"task_type"`                 // Transfer 当前统一任务类型，固定为 sync
 	Config           map[string]interface{} `json:"config" binding:"required"` // 包含 source locator 与 target parent_locator/name endpoint 配置；source locator item_id 可引用 Meta item
 	Schedule         string                 `json:"schedule"`
+	Enabled          *bool                  `json:"enabled"`
 	BatchSize        int                    `json:"batch_size"`
 	AutoScanMetadata *bool                  `json:"auto_scan_metadata"`
 }
@@ -174,6 +176,14 @@ type ListTasksRequest struct {
 	TaskType string      `form:"task_type"`
 	Page     int         `form:"page" binding:"min=1"`
 	PageSize int         `form:"page_size" binding:"min=1,max=100"`
+}
+
+// ListProviderTasksResponse 是 TaskProvider 标准任务列表响应。
+type ListProviderTasksResponse struct {
+	Items    []TransferTask `json:"items"`
+	Total    int64          `json:"total"`
+	Page     int            `json:"page"`
+	PageSize int            `json:"page_size"`
 }
 
 // TaskStatistics 任务统计

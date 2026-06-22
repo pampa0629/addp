@@ -216,7 +216,7 @@
 
    2. 添加到帮助信息（约第19行）:
       ```bash
-      echo "  -your-module  只启动 YourModule 模块 (依赖: System)"
+      echo "  -your-module  启动 YourModule 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
       ```
 
    3. 添加到参数解析（约第135行）:
@@ -230,11 +230,9 @@
       START_YOUR_MODULE_FRONTEND=true
       ```
 
-   5. 添加依赖启动逻辑（参考其他模块的 case 分支）:
+   5. 添加模块启动逻辑（参考其他模块的 case 分支）。只写模块本体和真实额外依赖；System Backend、Meta Backend、Meta Worker、Gateway 和 Console 由 `enable_single_module_common_dependencies` 统一处理，不要在每个分支重复写：
       ```bash
       your-module)
-        START_SYSTEM_BACKEND=true
-        START_SYSTEM_FRONTEND=true
         START_YOUR_MODULE_BACKEND=true
         START_YOUR_MODULE_FRONTEND=true
         ;;
@@ -296,7 +294,7 @@
 
    **验证步骤**:
    ```bash
-   # 测试独立启动
+   # 测试单模块启动；应同时带起公共依赖
    bash scripts/dev/start.sh -your-module
 
    # 测试重启
@@ -917,7 +915,7 @@ client.get('/model/domains')  →  /api/model/domains  →  后端 /api/model/do
 **参考其他模块的正确写法**:
 ```javascript
 // manager 模块
-client.get('/manager/directories')      // ✅ 正确
+client.get('/manager/engines')          // ✅ 正确
 
 // meta 模块
 client.get('/meta/datasources')         // ✅ 正确
@@ -983,7 +981,7 @@ app.mount('#app')
 - [ ] API 路径不含 `/api` 前缀（格式：`/module-name/resource`）
 
 **脚本集成**:
-- [ ] 修改 `scripts/dev/start.sh` (8个位置)
+- [ ] 修改 `scripts/dev/start.sh`（参数、启动标志、全量启动、模块 case、编译、启动、前端配置；单模块公共依赖不要重复写）
 - [ ] 修改 `scripts/dev/restart.sh` (3个位置)
 - [ ] 修改 `scripts/utils/detect-common.sh`
 - [ ] 验证独立启动 (`-your-module`)

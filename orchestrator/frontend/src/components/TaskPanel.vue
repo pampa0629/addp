@@ -143,30 +143,25 @@ async function loadAllTasks() {
 // 加载单个任务提供者的任务
 async function loadProviderTasks(provider) {
   const identifier = provider.module_name
-  const taskTypes = parseTaskTypes(provider.capabilities)
+  const taskCapabilities = parseTaskCapabilities(provider.capabilities)
   let tasks = []
 
   try {
     console.log(`加载任务提供者任务: ${identifier}`)
 
     // 按 capabilities 中声明的 task_type 拉取任务，避免跨类型任务由前端猜测过滤。
-    if (taskTypes.length > 0) {
-      const results = await Promise.all(taskTypes.map(async taskType => {
-        const data = await modulesApi.listTasksByModule(identifier, { task_type: taskType.type })
-        return data.items || []
-      }))
-      tasks = results.flat()
-    } else {
-      const data = await modulesApi.listTasksByModule(identifier)
-      tasks = data.items || []
-    }
+    const results = await Promise.all(taskCapabilities.map(async taskType => {
+      const data = await modulesApi.listTasksByModule(identifier, { task_type: taskType.type })
+      return data.items || []
+    }))
+    tasks = results.flat()
 
     console.log(`任务提供者 ${identifier} 的任务:`, tasks)
   } catch (error) {
     console.error(`加载任务提供者 ${identifier} 任务失败:`, error)
   }
 
-  const children = buildTaskTypeNodes(identifier, taskTypes, tasks)
+  const children = buildTaskTypeNodes(identifier, taskCapabilities, tasks)
 
   return {
     id: identifier,
@@ -184,10 +179,10 @@ function hasValue(value) {
   return value !== null && value !== undefined && String(value).trim() !== ''
 }
 
-function parseTaskTypes(capabilities) {
+function parseTaskCapabilities(capabilities) {
   const parsed = parseCapabilities(capabilities)
-  const taskTypes = Array.isArray(parsed.task_types) ? parsed.task_types : []
-  return taskTypes
+  const taskCapabilities = Array.isArray(parsed.task_capabilities) ? parsed.task_capabilities : []
+  return taskCapabilities
     .filter(item => hasValue(item?.type) && !item.deprecated)
     .map(item => ({
       type: item.type,
@@ -207,16 +202,10 @@ function parseCapabilities(capabilities) {
   }
 }
 
-function buildTaskTypeNodes(identifier, taskTypes, tasks) {
-  if (taskTypes.length === 0) {
-    return tasks
-      .map(task => buildTaskNode(identifier, task, null))
-      .filter(Boolean)
-  }
-
-  return taskTypes.map(taskType => {
+function buildTaskTypeNodes(identifier, taskCapabilities, tasks) {
+  return taskCapabilities.map(taskType => {
     const children = tasks
-      .filter(task => (task.task_type || task.type) === taskType.type)
+      .filter(task => task.task_type === taskType.type)
       .map(task => buildTaskNode(identifier, task, taskType))
       .filter(Boolean)
 
@@ -237,7 +226,7 @@ function buildTaskTypeNodes(identifier, taskTypes, tasks) {
 }
 
 function buildTaskNode(identifier, task, taskTypeDef) {
-  const taskType = task.task_type || task.type
+  const taskType = task.task_type
   if (!hasValue(task.id) || !hasValue(taskType)) {
     return null
   }

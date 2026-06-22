@@ -3,8 +3,8 @@ package datatype
 import "testing"
 
 func TestFieldTypeHelpers(t *testing.T) {
-	if got := ParseFieldType(" LineString "); got != FieldTypeLineString {
-		t.Fatalf("ParseFieldType() = %q, want %q", got, FieldTypeLineString)
+	if got := ParseFieldType(" geometry "); got != FieldTypeGeometry {
+		t.Fatalf("ParseFieldType() = %q, want %q", got, FieldTypeGeometry)
 	}
 	if !IsNumericFieldType(FieldTypeDecimal) || IsNumericFieldType(FieldTypeString) {
 		t.Fatalf("numeric field type helper returned unexpected result")
@@ -12,7 +12,7 @@ func TestFieldTypeHelpers(t *testing.T) {
 	if !IsTemporalFieldType(FieldTypeTimestamp) || IsTemporalFieldType(FieldTypeUUID) {
 		t.Fatalf("temporal field type helper returned unexpected result")
 	}
-	if !IsSpatialFieldType(FieldTypePolygon) || IsSpatialFieldType(FieldTypeJSON) {
+	if !IsSpatialFieldType(FieldTypeGeometry) || IsSpatialFieldType(FieldTypeJSON) {
 		t.Fatalf("spatial field type helper returned unexpected result")
 	}
 	if !IsSemiStructuredFieldType(FieldTypeArray) || IsSemiStructuredFieldType(FieldTypeBytes) {

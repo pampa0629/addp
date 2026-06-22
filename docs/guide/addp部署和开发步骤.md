@@ -53,6 +53,15 @@ bash scripts/dev/stop.sh
 bash scripts/dev/restart.sh
 ```
 
+按模块启动或重启:
+
+```bash
+bash scripts/dev/start.sh -manager
+bash scripts/dev/restart.sh -transfer
+```
+
+单模块开发时，脚本会统一启动公共依赖：System Backend、Meta Backend、Meta Worker、Gateway 和 Console。Meta 用于资源树、元数据扫描和跨模块通用元数据能力。模块自身如有额外依赖，例如 Manager 依赖 Transfer、Develop 依赖 Python Workflow Engine，会在此基础上继续启动。
+
 ### 第三步: 构建模式 (用于 Docker 镜像构建)
 
 ```bash

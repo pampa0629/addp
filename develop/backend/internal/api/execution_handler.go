@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	commonAPI "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	developi18n "github.com/addp/develop/backend/i18n"
@@ -141,7 +142,7 @@ func (h *ExecutionHandler) GetExecution(c *gin.Context) {
 // @Param page query int false "页码 | Page number"
 // @Param page_size query int false "每页数量 | Page size"
 // @Param source_task_id query string false "任务定义 ID 过滤 | Filter by source task ID"
-// @Param dev_type query string false "类型过滤 | Filter by type"
+// @Param dev_type query string false "Develop 内部类型过滤：query/workflow/script | Develop internal type filter: query/workflow/script"
 // @Param status query string false "状态过滤 | Filter by status"
 // @Param trigger_type query string false "触发类型过滤 | Filter by trigger type"
 // @Param start_date query string false "开始日期 YYYY-MM-DD | Start date YYYY-MM-DD"
@@ -251,16 +252,21 @@ type providerExecuteDevRequest struct {
 	Parameters        map[string]interface{} `json:"parameters"`
 }
 
+type providerExecuteDevResponse struct {
+	Status      string `json:"status"`
+	ExecutionID string `json:"execution_id"`
+}
+
 // ProviderExecuteDevTask 按 TaskProvider 标准协议执行开发任务。
 // @Summary 执行 TaskProvider 开发任务 | Execute TaskProvider development task
-// @Description 按标准 TaskProvider 协议执行开发任务；task_type 支持 query/workflow/script，parameters 会传入本次执行。| Execute a development task through the standard TaskProvider protocol; task_type supports query/workflow/script and parameters are passed to this execution.
+// @Description 按标准 TaskProvider 协议执行开发任务；task_type 是对外任务类型契约，映射到 Develop 内部 dev_type，parameters 会传入本次执行。| Execute a development task through the standard TaskProvider protocol; task_type is the external task contract mapped to Develop internal dev_type, and parameters are passed to this execution.
 // @Tags Execution
 // @Accept json
 // @Produce json
-// @Param task_type path string true "任务类型：query/workflow/script | Task type: query/workflow/script"
+// @Param task_type path string true "TaskProvider 任务类型：query/workflow/script | TaskProvider task type: query/workflow/script"
 // @Param id path int true "开发任务ID | Development task ID"
 // @Param request body providerExecuteDevRequest false "TaskProvider 执行请求 | TaskProvider execution request"
-// @Success 200 {object} map[string]string "执行已启动 | Execution started"
+// @Success 202 {object} providerExecuteDevResponse "执行已启动 | Execution started"
 // @Failure 400 {object} map[string]interface{} "参数错误 | Bad request"
 // @Failure 500 {object} map[string]interface{} "服务器错误 | Server error"
 // @Router /tasks/{task_type}/{id}/execute [post]
@@ -277,7 +283,10 @@ func (h *ExecutionHandler) ProviderExecuteDevTask(c *gin.Context) {
 	}
 
 	var req providerExecuteDevRequest
-	_ = c.ShouldBindJSON(&req)
+	if err := commonAPI.BindOptionalJSONStrict(c, &req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	triggerType, err := commonExecution.NormalizeTriggerType(req.TriggerType)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -311,9 +320,8 @@ func (h *ExecutionHandler) ProviderExecuteDevTask(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"status":       "success",
-		"execution_id": executionID,
-		"message":      commoni18n.T(c, developi18n.MsgParamExecStarted),
+	c.JSON(http.StatusAccepted, providerExecuteDevResponse{
+		Status:      commonExecution.ExecutionStatusRunning,
+		ExecutionID: executionID,
 	})
 }

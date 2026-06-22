@@ -430,6 +430,13 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
                     }
                 }
             }
@@ -535,10 +542,7 @@ const docTemplate = `{
                     "202": {
                         "description": "Accepted",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/internal_api.orchestrationTaskProviderExecuteResponse"
                         }
                     },
                     "400": {
@@ -863,6 +867,17 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "trigger_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.orchestrationTaskProviderExecuteResponse": {
+            "type": "object",
+            "properties": {
+                "execution_id": {
+                    "type": "string"
+                },
+                "status": {
                     "type": "string"
                 }
             }

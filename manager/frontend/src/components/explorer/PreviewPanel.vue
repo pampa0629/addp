@@ -56,17 +56,6 @@
             {{ markdownRawMode ? t('manager.explorer.mdRendered') : t('manager.explorer.mdRaw') }}
           </el-button>
 
-          <!-- 导入数据按钮（仅 PostgreSQL schema 节点） -->
-          <el-button
-            v-if="showImportButton"
-            size="small"
-            type="warning"
-            @click="importDialogVisible = true"
-          >
-            <el-icon><Upload /></el-icon>
-            {{ t('manager.explorer.importData') }}
-          </el-button>
-
           <!-- 向量化按钮 -->
           <el-button
             v-if="showVectorizeButton"
@@ -190,6 +179,16 @@
           >
             <el-icon><Download /></el-icon>
             {{ t('manager.explorer.downloadPage') }}
+          </el-button>
+          <el-button
+            v-if="showExportControl"
+            size="small"
+            type="primary"
+            :loading="exporting"
+            @click="openExportDialog"
+          >
+            <el-icon><Download /></el-icon>
+            {{ t('manager.explorer.exportData') }}
           </el-button>
         </div>
       </div>
@@ -347,13 +346,12 @@
       />
     </div>
 
-    <!-- 导入数据对话框 -->
-    <ImportDialog
-      v-model="importDialogVisible"
-      :engine-id="selectedNode?.engineId"
-      :engine-name="selectedNode?.engineName || ''"
-      :schema-name="selectedNode?.schema || ''"
-      @success="handleImportSuccess"
+    <ExportDialog
+      v-model="exportDialogVisible"
+      :formats="exportFormats"
+      :default-file-name="defaultExportFileName"
+      :exporting="exporting"
+      @confirm="handleExport"
     />
   </el-card>
 </template>
@@ -363,12 +361,13 @@ import { computed, ref, watch, onUnmounted } from 'vue'
 import { ElMessage, ElNotification } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { MagicStick, Download, Location, Collection, Upload, Document, View, Refresh, Select, InfoFilled, WarningFilled } from '@element-plus/icons-vue'
+import { MagicStick, Download, Location, Collection, Document, View, Refresh, Select, InfoFilled, WarningFilled } from '@element-plus/icons-vue'
 import { getPreviewComponent } from '@/plugins/previews'
 import { parseLocator } from '@addp/common-frontend'
 import client from '@/api/client'
+import { dataExplorerAPI } from '@/api/dataExplorer'
 import { quickViewAPI } from '@/api/quickView'
-import ImportDialog from '@/components/explorer/ImportDialog.vue'
+import ExportDialog from '@/components/explorer/ExportDialog.vue'
 import GeoJSONQuickView from '@/components/map/GeoJSONQuickView.vue'
 import VectorTilePreview from '@/components/map/VectorTilePreview.vue'
 import { useExplorerStore } from '@/stores/explorer'
@@ -423,205 +422,13 @@ const quickViewTileAdvisory = ref(null)
 const quickViewTileLastNotice = ref({ key: '', at: 0 })
 const activePreviewMode = ref('table_geojson')
 const mvtGridVisible = ref(false)
+const resourceActions = ref(null)
+const exportDialogVisible = ref(false)
+const exporting = ref(false)
+let exportPollTimer = null
 let quickViewRequestSeq = 0
 
 const DIRECT_GEOJSON_MAX_ROWS = 2000
-
-const sanitizeBase64 = (value) => {
-  if (typeof value !== 'string') return ''
-  return value.replace(/\s+/g, '')
-}
-
-const pickUrl = (target) => {
-  if (!target || typeof target !== 'object') return ''
-  const keys = [
-    'download_url',
-    'downloadUrl',
-    'preview_url',
-    'previewUrl',
-    'url',
-    'signed_url',
-    'signedUrl'
-  ]
-  for (const key of keys) {
-    const val = target[key]
-    if (typeof val === 'string' && val.trim()) {
-      return val
-    }
-  }
-  return ''
-}
-
-const isStorageManagedDownloadUrl = (url) => {
-  if (!url || typeof url !== 'string') return false
-  try {
-    const parsed = new URL(url, window.location.origin)
-    return [
-      '/api/v1/manager/storage-download',
-      '/manager/storage-download'
-    ].includes(parsed.pathname)
-  } catch {
-    return url.startsWith('/api/v1/manager/storage-download') ||
-      url.startsWith('/manager/storage-download')
-  }
-}
-
-const guessExtensionFromMime = (mime) => {
-  if (!mime || typeof mime !== 'string') return ''
-  const normalized = mime.toLowerCase()
-  const map = {
-    'application/pdf': 'pdf',
-    'application/json': 'json',
-    'application/geo+json': 'geojson',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
-    'application/vnd.ms-works': 'wps',
-    'application/wps-office.doc': 'wps',
-    'application/x-wps': 'wps',
-    'application/kswps': 'wps',
-    'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
-    'application/vnd.ms-excel': 'xls',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
-    'application/vnd.sqlite3': 'sqlite',
-    'text/plain': 'txt',
-    'image/jpeg': 'jpg',
-    'image/png': 'png',
-    'image/gif': 'gif',
-    'image/webp': 'webp'
-  }
-  return map[normalized] || ''
-}
-
-const contentPreviewMaterial = (content = {}) =>
-  (
-    content.preview_material ||
-    content.previewMaterial ||
-    content.metadata?.preview_material ||
-    content.metadata?.previewMaterial ||
-    ''
-  ).toString().toLowerCase()
-
-const guessExtensionFromKind = (kind) => {
-  const normalized = (kind || '').toLowerCase()
-  switch (normalized) {
-    case 'pdf':
-      return 'pdf'
-    case 'docx':
-      return 'docx'
-    case 'wps':
-      return 'wps'
-    case 'pptx':
-      return 'pptx'
-    case 'json':
-      return 'json'
-    case 'text':
-      return 'txt'
-    case 'sqlite':
-      return 'sqlite'
-    case 'parquet':
-      return 'parquet'
-    case 'image':
-      return ''
-    default:
-      return ''
-  }
-}
-
-const ensureExtension = (name, extension) => {
-  if (!name) return `download${extension}`
-  if (!extension) return name
-  const normalizedExt = extension.startsWith('.') ? extension.toLowerCase() : `.${extension.toLowerCase()}`
-  if (name.toLowerCase().endsWith(normalizedExt)) {
-    return name
-  }
-  return `${name}${normalizedExt}`
-}
-
-const extractExtension = (name) => {
-  if (!name) return ''
-  const match = String(name).match(/\.([^.]+)$/)
-  return match ? match[1].toLowerCase() : ''
-}
-
-const pickDownloadFileName = (target) => {
-  if (!target || typeof target !== 'object') return ''
-  const value = target.filename || target.fileName || target.name || ''
-  if (typeof value !== 'string') return ''
-  const trimmed = value.trim()
-  if (!trimmed) return ''
-  const parts = trimmed.split('/').filter(Boolean)
-  return parts.pop() || trimmed
-}
-
-const guessMimeFromKind = (kind, fallbackMime = '') => {
-  const normalized = (kind || '').toLowerCase()
-  switch (normalized) {
-    case 'pdf':
-      return 'application/pdf'
-    case 'docx':
-      return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-    case 'wps':
-      return 'application/vnd.ms-works'
-    case 'pptx':
-      return 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
-    case 'json':
-      return 'application/json'
-    case 'text':
-      return 'text/plain'
-    case 'sqlite':
-      return 'application/vnd.sqlite3'
-    case 'image':
-      return 'image/png'
-    default:
-      return fallbackMime || 'application/octet-stream'
-  }
-}
-
-const deriveBaseFileName = (data, node) => {
-  const objectPath = data?.object?.path || data?.object?.storage_ref || data?.object?.storageRef || ''
-  if (objectPath) {
-    const parts = objectPath.split('/').filter(Boolean)
-    const last = parts.pop()
-    if (last) return last
-  }
-
-  if (node?.path) {
-    const parts = String(node.path).split('/').filter(Boolean)
-    const last = parts.pop()
-    if (last) return last
-  }
-
-  if (node?.table && node?.schema) {
-    return `${node.schema}.${node.table}`
-  }
-
-  return node?.label || 'download'
-}
-
-const toBlobFromBase64 = (base64, mime) => {
-  const clean = sanitizeBase64(base64)
-  if (!clean) {
-    throw new Error(t('manager.explorer.missingBase64Data'))
-  }
-  const binary = atob(clean)
-  const length = binary.length
-  const bytes = new Uint8Array(length)
-  for (let i = 0; i < length; i++) {
-    bytes[i] = binary.charCodeAt(i)
-  }
-  return new Blob([bytes], { type: mime || 'application/octet-stream' })
-}
-
-const downloadBlob = (blob, fileName) => {
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = fileName || 'download'
-  link.rel = 'noopener'
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
-  URL.revokeObjectURL(url)
-}
 
 const withAuthToken = (url) => {
   if (!url || typeof url !== 'string') return ''
@@ -644,65 +451,12 @@ const withAuthToken = (url) => {
 
 const downloadFromUrl = (url, fileName) => {
   const link = document.createElement('a')
-  link.href = withAuthToken(normalizeClientURL(url))
+  link.href = withAuthToken(url)
   link.download = fileName || 'download'
   link.rel = 'noopener'
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)
-}
-
-const normalizeClientURL = (url) => {
-  if (!url || /^https?:\/\//i.test(url)) {
-    return url
-  }
-  if (url.startsWith('/manager/')) {
-    return `/api/v1${url}`
-  }
-  if (url.startsWith('/api/v1/')) {
-    return url
-  }
-  return url
-}
-
-const stringifyJson = (value) => {
-  if (typeof value === 'string') {
-    return value
-  }
-  try {
-    return JSON.stringify(value, null, 2)
-  } catch (error) {
-    console.warn('JSON 序列化失败', error)
-    return String(value)
-  }
-}
-
-const buildCsv = (columns, rows) => {
-  if (!Array.isArray(columns) || columns.length === 0) {
-    return ''
-  }
-
-  const escapeCell = (value) => {
-    if (value === null || value === undefined) return ''
-    let str = ''
-    if (typeof value === 'object') {
-      str = stringifyJson(value)
-    } else {
-      str = String(value)
-    }
-    if (str.includes('"') || str.includes(',') || str.includes('\n') || str.includes('\r')) {
-      return `"${str.replace(/"/g, '""')}"`
-    }
-    return str
-  }
-
-  const lines = []
-  lines.push(columns.map(escapeCell).join(','))
-  rows.forEach((row) => {
-    const values = columns.map((col) => escapeCell(row?.[col]))
-    lines.push(values.join(','))
-  })
-  return `\uFEFF${lines.join('\r\n')}`
 }
 
 // 获取预览插件信息
@@ -1040,18 +794,28 @@ const engineId = computed(() => {
 })
 
 const storageDownloadUrl = computed(() => {
-  const storageRef =
-    objectData.value?.storage_ref ||
-    objectData.value?.storageRef ||
-    ''
-  if (!storageRef || !engineId.value) {
+  const locator = props.selectedNode?.locator || ''
+  if (!locator || !selectedActionSupported('download')) {
     return ''
   }
-  return `/manager/storage-download?engine_id=${encodeURIComponent(engineId.value)}&storage_ref=${encodeURIComponent(storageRef)}`
+  return `/api/v1/manager/downloads/file?locator=${encodeURIComponent(locator)}`
+})
+
+const selectedAction = (name) => resourceActions.value?.actions?.[name] || null
+const selectedActionSupported = (name) => selectedAction(name)?.supported === true
+const exportFormats = computed(() => selectedAction('export')?.formats || [])
+
+const defaultExportFileName = computed(() => {
+  const node = props.selectedNode || {}
+  if (node.table) return String(node.table)
+
+  const source = node.path || node.label || node.id || ''
+  const parts = String(source).split(/[\\/]/).filter(Boolean)
+  return parts.pop() || 'export'
 })
 
 const downloadInfo = computed(() => {
-  if (!props.previewData || !props.selectedNode) {
+  if (!props.selectedNode) {
     return { available: false, reason: '' }
   }
 
@@ -1059,171 +823,19 @@ const downloadInfo = computed(() => {
     return { available: false, reason: t('manager.explorer.dirNodeNoDownload') }
   }
 
-  const baseName = deriveBaseFileName(props.previewData, props.selectedNode)
-
-  const content = objectData.value?.content || {}
-  const metadata = content.metadata || {}
-  const material = contentPreviewMaterial(content)
-  const contentType =
-    metadata.content_type ||
-    metadata.contentType ||
-    objectData.value?.content_type ||
-    objectData.value?.contentType ||
-    props.previewData?.content_type ||
-    ''
-  const ext = extractExtension(baseName)
-  const inferredExt = ext || guessExtensionFromMime(contentType) || guessExtensionFromKind(content.kind)
-  const fileName = inferredExt ? ensureExtension(baseName, `.${inferredExt}`) : baseName
-
-  const objectDownloadUrl = pickUrl(objectData.value?.download)
-  if (objectDownloadUrl) {
-    return {
-      available: true,
-      kind: 'url',
-      fileName: pickDownloadFileName(objectData.value?.download) || fileName,
-      url: objectDownloadUrl
-    }
-  }
-
   if (storageDownloadUrl.value) {
     return {
       available: true,
       kind: 'url',
-      fileName,
+      fileName: props.selectedNode?.label || 'download',
       url: storageDownloadUrl.value
     }
   }
 
-  if (previewMode.value === 'table') {
-    const columns = Array.isArray(props.previewData.columns) ? props.previewData.columns : []
-    const rows = Array.isArray(props.previewData.rows) ? props.previewData.rows : []
-    if (!columns.length) {
-      return { available: false, reason: t('manager.explorer.noTableDataToExport') }
-    }
-    return {
-      available: true,
-      kind: 'csv',
-      fileName: ensureExtension(baseName, '.csv'),
-      columns,
-      rows,
-      note: t('manager.explorer.downloadNotePreviewOnly')
-    }
-  }
-
-  const nodeType = (objectData.value?.node_type || objectData.value?.nodeType || '').toLowerCase()
-  if (['directory', 'bucket', 'prefix'].includes(nodeType)) {
-    return { available: false, reason: t('manager.explorer.dirNodeNoDownload') }
-  }
-
-  const urlCandidates = []
-  const collectUrl = (target) => {
-    const url = pickUrl(target)
-    if (url) {
-      urlCandidates.push(url)
-    }
-  }
-
-  collectUrl(props.previewData)
-  collectUrl(props.previewData?.download)
-  collectUrl(objectData.value)
-  collectUrl(objectData.value?.download)
-  collectUrl(content)
-  collectUrl(content?.download)
-  collectUrl(metadata)
-
-  const managedDownloadUrlCandidate = urlCandidates.find(isStorageManagedDownloadUrl)
-  if (managedDownloadUrlCandidate) {
-    return {
-      available: true,
-      kind: 'url',
-      fileName,
-      url: managedDownloadUrlCandidate
-    }
-  }
-
-  const renderer = (
-    content.frontend_renderer ||
-    content.frontendRenderer ||
-    metadata.frontend_renderer ||
-    metadata.frontendRenderer ||
-    ''
-  ).toString().toLowerCase()
-  const kind = (content.kind || '').toLowerCase()
-  if (renderer === 'unsupported' || material === 'unsupported' || kind === 'unsupported') {
-    return { available: false, reason: t('manager.explorer.noDownloadSource') }
-  }
-
-  if (urlCandidates.length > 0) {
-    return {
-      available: true,
-      kind: 'url',
-      fileName,
-      url: urlCandidates[0]
-    }
-  }
-
-  const base64Data =
-    sanitizeBase64(
-      content.data ||
-        content.Data ||
-        content.pdf_data ||
-        content.pdfData ||
-        ''
-    )
-
-  if (base64Data) {
-    const mime = contentType || guessMimeFromKind(content.kind, 'application/octet-stream')
-    return {
-      available: true,
-      kind: 'base64',
-      fileName,
-      base64: base64Data,
-      mime
-    }
-  }
-
-  if (content.text) {
-    let mime = 'text/plain;charset=utf-8'
-    let extension = '.txt'
-    if (material === 'geojson') {
-      mime = 'application/geo+json;charset=utf-8'
-      extension = '.geojson'
-    } else if (kind === 'json') {
-      mime = 'application/json;charset=utf-8'
-      extension = '.json'
-    }
-    return {
-      available: true,
-      kind: 'text',
-      fileName: ensureExtension(baseName, extension),
-      text: content.text,
-      mime
-    }
-  }
-
-  if (content.json || content.JSON || content.geojson || content.GeoJSON) {
-    const jsonValue = content.json || content.JSON || content.geojson || content.GeoJSON
-    const material = contentPreviewMaterial(content)
-    let mime = 'application/json;charset=utf-8'
-    let extension = '.json'
-    if (material === 'geojson' || content.geojson || content.GeoJSON) {
-      mime = 'application/geo+json;charset=utf-8'
-      extension = '.geojson'
-    }
-    return {
-      available: true,
-      kind: 'json',
-      fileName: ensureExtension(baseName, extension),
-      json: jsonValue,
-      mime
-    }
-  }
-
-  return { available: false, reason: t('manager.explorer.noDownloadSource') }
+  return { available: false, reason: t('manager.explorer.downloadNotSupported') }
 })
 
 const downloading = ref(false)
-const importDialogVisible = ref(false)
 const refreshingPreviewItem = ref(false)
 const selectedEmbeddingState = ref(null)
 
@@ -1271,27 +883,6 @@ watch(
   }
 )
 
-// 导入按钮：仅在 PostgreSQL schema 节点显示
-const showImportButton = computed(() => {
-  if (!props.selectedNode) return false
-  const nodeType = (props.selectedNode.type || '').toLowerCase()
-  const engineType = (props.selectedNode.engineType || '').toLowerCase()
-  return nodeType === 'schema' && engineType === 'postgresql'
-})
-
-const handleImportSuccess = async () => {
-  importDialogVisible.value = false
-  // 刷新当前项，重新拉取 Meta 和预览数据
-  if (props.selectedNode?.locator) {
-    try {
-      await store.refreshItem(props.selectedNode.locator)
-      ElMessage.success(t('manager.explorer.importSuccessRefreshed'))
-    } catch (error) {
-      console.error('刷新节点失败:', error)
-    }
-  }
-}
-
 const previewRefreshAdvisory = computed(() => {
   const advisories = Array.isArray(props.previewData?.preview_advisories)
     ? props.previewData.preview_advisories
@@ -1332,13 +923,19 @@ const handlePreviewAdvisoryRefresh = async () => {
 }
 
 const showDownloadControl = computed(() => {
-  if (!props.previewData || !props.selectedNode) return false
+  if (!props.selectedNode) return false
   if (isGraphOverview.value) return false
-  return previewMode.value !== 'node'
+  return selectedActionSupported('download') && previewMode.value !== 'node'
 })
 
 const downloadDisabled = computed(() => !downloadInfo.value.available)
 const downloadTip = computed(() => downloadInfo.value.reason || '')
+
+const showExportControl = computed(() => {
+  if (!props.selectedNode) return false
+  if (isGraphOverview.value) return false
+  return selectedActionSupported('export') && exportFormats.value.length > 0
+})
 
 const handleDownload = async () => {
   if (!downloadInfo.value.available) {
@@ -1353,31 +950,6 @@ const handleDownload = async () => {
       case 'url':
         await downloadFromUrl(info.url, info.fileName)
         break
-      case 'base64': {
-        const blob = toBlobFromBase64(info.base64, info.mime)
-        downloadBlob(blob, info.fileName)
-        break
-      }
-      case 'text': {
-        const blob = new Blob([info.text], { type: info.mime || 'text/plain;charset=utf-8' })
-        downloadBlob(blob, info.fileName)
-        break
-      }
-      case 'json': {
-        const jsonText = stringifyJson(info.json)
-        const blob = new Blob([jsonText], { type: info.mime || 'application/json;charset=utf-8' })
-        downloadBlob(blob, info.fileName)
-        break
-      }
-      case 'csv': {
-        const csv = buildCsv(info.columns, info.rows)
-        if (!csv) {
-          throw new Error(t('manager.explorer.noTableDataToExport'))
-        }
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-        downloadBlob(blob, info.fileName)
-        break
-      }
       default:
         throw new Error(t('manager.explorer.unknownDownloadType'))
     }
@@ -1394,12 +966,75 @@ const handleDownload = async () => {
   }
 }
 
+const waitForExportReady = async (sessionId) => {
+  for (let i = 0; i < 60; i += 1) {
+    const response = await dataExplorerAPI.getExport(sessionId)
+    const session = response?.data || response
+    if (session?.status === 'success' && session?.download_url) {
+      return session
+    }
+    if (session?.status === 'failed') {
+      throw new Error(session?.error_message || t('manager.explorer.exportFailedUnknown'))
+    }
+    await new Promise(resolve => {
+      exportPollTimer = window.setTimeout(resolve, 1500)
+    })
+  }
+  throw new Error(t('manager.explorer.exportTimeout'))
+}
+
+const openExportDialog = () => {
+  if (exporting.value) return
+  exportDialogVisible.value = true
+}
+
+const handleExport = async ({ format, fileName }) => {
+  const locator = props.selectedNode?.locator || ''
+  if (!locator || !format || exporting.value) return
+  exporting.value = true
+  try {
+    const response = await dataExplorerAPI.createExport({
+      source_item_locator: locator,
+      format,
+      file_name: fileName || defaultExportFileName.value
+    })
+    const created = response?.data || response
+    exportDialogVisible.value = false
+    ElMessage.success(t('manager.explorer.exportSubmitted'))
+    const ready = await waitForExportReady(created.id)
+    await downloadFromUrl(ready.download_url, ready.file_name || fileName || defaultExportFileName.value)
+    ElMessage.success(t('manager.explorer.downloadStarted'))
+  } catch (error) {
+    console.error('导出失败:', error)
+    ElMessage.error(t('manager.explorer.exportFailed', { error: error.response?.data?.error || error.message || error }))
+  } finally {
+    exporting.value = false
+  }
+}
+
 watch(
   () => props.previewData,
   () => {
     downloading.value = false
     loadSelectedItemEmbeddingState()
   }
+)
+
+watch(
+  () => props.selectedNode?.locator || '',
+  async (locator) => {
+    resourceActions.value = null
+    exportDialogVisible.value = false
+    if (!locator) return
+    try {
+      const response = await dataExplorerAPI.getResourceActions(locator)
+      resourceActions.value = response?.data || response
+    } catch (error) {
+      console.warn('加载资源动作能力失败:', error)
+      resourceActions.value = null
+    }
+  },
+  { immediate: true }
 )
 
 watch(
@@ -1414,6 +1049,11 @@ watch(
 // 组件卸载时清理状态（防止 race condition 导致的错误）
 onUnmounted(() => {
   downloading.value = false
+  exporting.value = false
+  if (exportPollTimer) {
+    window.clearTimeout(exportPollTimer)
+    exportPollTimer = null
+  }
   quickViewRequestSeq += 1
 })
 
@@ -2265,6 +1905,9 @@ const handleNavigate = (path) => {
 
 <style scoped>
 .preview-panel {
+  flex: 1;
+  height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: var(--addp-bg-primary) !important;
@@ -2277,7 +1920,8 @@ const handleNavigate = (path) => {
 
 .preview-panel :deep(.el-card__body) {
   flex: 1;
-  overflow: visible;
+  min-height: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   background: var(--addp-bg-primary) !important;
@@ -2391,7 +2035,8 @@ const handleNavigate = (path) => {
 
 .preview-content {
   flex: 1;
-  overflow: visible;
+  min-height: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 10px;

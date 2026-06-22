@@ -29,7 +29,7 @@ func GetSystemUserName(action string) string {
 	switch {
 	case contains(action, "/internal/"):
 		return SystemUserNameInternal
-	case contains(action, "/api/auth/login"):
+	case contains(action, "/api/v1/system/login"):
 		return SystemUserNameAnonymous
 	case contains(action, "cron"):
 		return SystemUserNameScheduler

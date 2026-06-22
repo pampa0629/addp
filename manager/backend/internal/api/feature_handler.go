@@ -33,7 +33,7 @@ func NewFeatureHandler(systemClient *commonClient.SystemClient, metadataRepo *re
 }
 
 // GetFeatureCentroid 获取要素的几何中心点（用于表格行定位到地图）
-// GET /api/manager/engines/:id/spatial/features/:feature_id/centroid?schema=xxx&table=xxx&geom=geometry_column
+// GET /api/v1/manager/engines/:id/spatial/features/:feature_id/centroid?schema=xxx&table=xxx&geom=geometry_column
 // @Summary 获取要素几何中心点 | Get feature centroid
 // @Description 获取指定要素的源坐标几何中心点和 CRS 元数据，后端不做 CRS transform | Get the source-CRS centroid and CRS metadata without backend CRS transform
 // @Tags Manager
@@ -151,7 +151,7 @@ func (h *FeatureHandler) GetFeatureCentroid(c *gin.Context) {
 }
 
 // GetFeatureGeometry 获取要素的完整几何（用于地图高亮显示）
-// GET /api/manager/engines/:id/spatial/features/:feature_id/geometry?schema=xxx&table=xxx&geom=geometry_column
+// GET /api/v1/manager/engines/:id/spatial/features/:feature_id/geometry?schema=xxx&table=xxx&geom=geometry_column
 // @Summary 获取要素完整几何 | Get feature geometry
 // @Description 获取指定要素的源坐标完整几何数据和 CRS 元数据，后端不做 CRS transform | Get source-CRS feature geometry and CRS metadata without backend CRS transform
 // @Tags Manager

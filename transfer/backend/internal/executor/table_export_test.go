@@ -411,6 +411,14 @@ func TestTableTransferExecutorWritesShapefileUsingNativeSourceSpatialInfo(t *tes
 		TargetContentWriter:        writer,
 		TargetMultiProvider:        shapefileformat.NewPlugin(nil),
 	}
+	sourceSpatialInfo := datatype.NewSingleGeometrySpatialInfo("SmGeometry", "MultiPolygon", 4549, 0)
+	sourceSpatialInfo.GeometryColumns[0].CRSRef = datatype.EPSGCRSRef(4549)
+	sourceSpatialInfo.CRSDefinitions = []datatype.CRSDefinition{{
+		ID:                 datatype.EPSGCRSRef(4549),
+		DefinitionEncoding: datatype.CRSDefinitionEncodingWKT,
+		Definition:         `PROJCS["CGCS2000 / 3-degree Gauss-Kruger CM 120E"]`,
+		Source:             datatype.CRSDefinitionSourcePostGISSpatialRefSys,
+	}}
 
 	metrics, err := exec.Execute(context.Background(), TableTransferPlan{
 		Source: TableSourcePlan{
@@ -419,7 +427,7 @@ func TestTableTransferExecutorWritesShapefileUsingNativeSourceSpatialInfo(t *tes
 				{Name: "id", Type: "int"},
 				{Name: "SmGeometry", Type: "geometry"},
 			}},
-			SpatialInfo: datatype.NewSingleGeometrySpatialInfo("SmGeometry", "MultiPolygon", 4549, 0),
+			SpatialInfo: sourceSpatialInfo,
 		},
 		Target: TableTargetPlan{
 			Kind:         TableEndpointEncoded,
@@ -441,10 +449,16 @@ func TestTableTransferExecutorWritesShapefileUsingNativeSourceSpatialInfo(t *tes
 	if metrics.RecordsRead != 1 || metrics.RecordsWritten != 1 {
 		t.Fatalf("metrics = %#v, want 1 read/written", metrics)
 	}
-	for _, path := range []string{"exports/a4.shp", "exports/a4.shx", "exports/a4.dbf", "exports/a4.cpg"} {
+	for _, path := range []string{"exports/a4.shp", "exports/a4.shx", "exports/a4.dbf", "exports/a4.cpg", "exports/a4.prj"} {
 		if len(writer.files[path]) == 0 {
 			t.Fatalf("ref %s was not written", path)
 		}
+	}
+	if got := string(writer.files["exports/a4.prj"]); got != sourceSpatialInfo.CRSDefinitions[0].Definition {
+		t.Fatalf("prj = %q, want source CRS definition", got)
+	}
+	if len(metrics.TargetRefs) != 5 {
+		t.Fatalf("target refs = %#v, want five refs including prj", metrics.TargetRefs)
 	}
 }
 

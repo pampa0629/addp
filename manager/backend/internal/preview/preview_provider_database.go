@@ -530,16 +530,10 @@ func (p *DatabaseTablePreviewProvider) getColumnMetadataFromMeta(
 			// 使用更精确的几何类型描述
 			// 例如: "GEOMETRY(MULTIPOLYGON, 4326)" 而不是 "USER-DEFINED"
 			if len(spatialMeta.Extent) > 0 {
-				// 尝试从 geometry_types 中提取具体的几何类型
+				// geometry_types 已是标准 OGC 写法，例如 MultiPolygon
 				geomType := ""
 				if len(spatialMeta.GeometryTypes) > 0 {
-					// Meta 存储格式如 "ST_MultiPolygon"，需要转换为 "MULTIPOLYGON"
-					rawType := spatialMeta.GeometryTypes[0]
-					if strings.HasPrefix(rawType, "ST_") {
-						geomType = strings.ToUpper(strings.TrimPrefix(rawType, "ST_"))
-					} else {
-						geomType = strings.ToUpper(rawType)
-					}
+					geomType = spatialMeta.GeometryTypes[0]
 				}
 
 				// 构建完整的几何类型描述

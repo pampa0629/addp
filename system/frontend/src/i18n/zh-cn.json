@@ -249,7 +249,6 @@
           "no": "否",
           "type": "类型",
           "engine": "引擎",
-          "devModes": "开发模式",
           "description": "描述"
         },
         "scan": {

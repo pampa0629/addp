@@ -25,7 +25,7 @@ You know how to publish data from any ADDP-managed storage engine as a queryable
 ### Step 1: Authenticate
 
 ```bash
-curl -X POST http://localhost:8180/api/system/login \
+curl -X POST http://localhost:8180/api/v1/system/login \
   -H "Content-Type: application/json" \
   -d '{"username":"admin","password":"123456"}'
 # Extract access_token from response
@@ -34,7 +34,7 @@ curl -X POST http://localhost:8180/api/system/login \
 ### Step 2: Find the engine ID
 
 ```bash
-curl -X GET "http://localhost:8180/api/system/engines" \
+curl -X GET "http://localhost:8180/api/v1/system/engines" \
   -H "Authorization: Bearer $TOKEN"
 # Find the engine by name, note its id
 ```
@@ -43,14 +43,14 @@ curl -X GET "http://localhost:8180/api/system/engines" \
 
 ```bash
 # locator format: addp://engine/{engine_id}/path/{schema}/{table}?type=table
-curl -X GET "http://localhost:8081/api/manager/preview?locator=addp://engine/8/path/public/my_table?type=table" \
+curl -X GET "http://localhost:8081/api/v1/manager/preview?locator=addp://engine/8/path/public/my_table?type=table" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
 ### Step 4: Create the query service
 
 ```bash
-curl -X POST "http://localhost:8086/api/service/query" \
+curl -X POST "http://localhost:8086/api/v1/service/query" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -75,7 +75,7 @@ For SQL-based services, use `"config_type": "sql"` and provide `"sql_query"` ins
 
 To update:
 ```bash
-curl -X PUT "http://localhost:8086/api/service/query/{id}" \
+curl -X PUT "http://localhost:8086/api/v1/service/query/{id}" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{ ...same fields..., "public_access": true }'
@@ -98,7 +98,7 @@ The canonical public endpoint goes through the Gateway: `http://localhost:8000/a
 
 ## Key Parameters
 
-**Create/Update service (`POST/PUT /api/service/query`):**
+**Create/Update service (`POST/PUT /api/v1/service/query`):**
 
 | Field | Required | Notes |
 |-------|----------|-------|
@@ -127,13 +127,13 @@ The canonical public endpoint goes through the Gateway: `http://localhost:8000/a
 
 ```bash
 # List all services
-GET /api/service/query
+GET /api/v1/service/query
 
 # Get one service
-GET /api/service/query/{id}
+GET /api/v1/service/query/{id}
 
 # Delete service
-DELETE /api/service/query/{id}
+DELETE /api/v1/service/query/{id}
 ```
 
 ## Related Skills

@@ -199,7 +199,7 @@ src/
 ```bash
 # 1. 确保 Meta 中有可用资源树数据
 curl -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8180/api/engines
+  http://localhost:8180/api/v1/system/engines
 
 # 2. 访问Transfer前端
 open http://localhost:5176/tasks

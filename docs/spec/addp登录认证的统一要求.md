@@ -24,7 +24,7 @@
 
 ### 认证流程
 
-1. 用户提交凭据到 `POST /api/auth/login`
+1. 用户提交凭据到 `POST /api/v1/system/login`
 2. 后端使用 bcrypt 验证,返回 JWT (HS256,使用 `JWT_SECRET` 签名)
 3. 前端将 token 存储在 localStorage (`auth.js` Pinia store)
 4. Axios 拦截器 (`api/client.js`) 在所有请求中添加 `Authorization: Bearer <token>`
@@ -63,7 +63,7 @@ import { createAuthAPI } from '@common-ui'
 
 // ✅ 正确: 创建专用的 System 客户端用于认证
 const systemClient = axios.create({
-  baseURL: import.meta.env.DEV ? 'http://localhost:8180/api' : '/api',
+  baseURL: import.meta.env.DEV ? 'http://localhost:8180/api/v1/system' : '/api/v1/system',
   timeout: 10000
 })
 

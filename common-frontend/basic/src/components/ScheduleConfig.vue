@@ -17,10 +17,10 @@
         size="small"
         :type="isPresetSelected(preset.key) ? 'primary' : 'default'"
         :disabled="disabled || readonly"
-        :title="t(`schedule.presetDesc.${preset.i18nKey}`, preset.description)"
+        :title="presetDescription(preset)"
         @click="handlePresetClick(preset.key)"
       >
-        {{ t(`schedule.presetLabel.${preset.i18nKey}`, preset.label) }}
+        {{ presetLabel(preset) }}
       </el-button>
       <el-button
         size="small"
@@ -198,10 +198,43 @@ const customForm = ref({
   cronExpr: ''
 })
 
+// 有效的预设列表（支持自定义）
+const effectivePresets = computed(() => {
+  return props.presetList || presetOptions
+})
+
+const presetLabel = (preset) => {
+  if (props.presetList) {
+    return preset.label
+  }
+  return t(`schedule.presetLabel.${preset.i18nKey}`, preset.label)
+}
+
+const presetDescription = (preset) => {
+  if (props.presetList) {
+    return preset.description
+  }
+  return t(`schedule.presetDesc.${preset.i18nKey}`, preset.description)
+}
+
+const findPresetByCron = (cron) => {
+  if (!cron) return null
+  const normalized = cron.trim().replace(/\s+/g, ' ')
+  return effectivePresets.value.find(preset => preset.cron === normalized)
+}
+
+const describeSchedule = (cron) => {
+  const preset = findPresetByCron(cron)
+  if (preset) {
+    return presetDescription(preset)
+  }
+  return describeCron(cron, t)
+}
+
 // 当前配置描述
 const description = computed(() => {
   if (!props.modelValue) return ''
-  return describeCron(props.modelValue, t)
+  return describeSchedule(props.modelValue)
 })
 
 // 自定义配置预览
@@ -210,20 +243,15 @@ const customPreview = computed(() => {
     if (!customForm.value.cronExpr) {
       return t('schedule.error.enterCron')
     }
-    return describeCron(customForm.value.cronExpr, t)
+    return describeSchedule(customForm.value.cronExpr)
   }
   return generateScheduleDescription(customForm.value, t)
-})
-
-// 有效的预设列表（支持自定义）
-const effectivePresets = computed(() => {
-  return props.presetList || presetOptions
 })
 
 // 判断某个预设是否被选中
 const isPresetSelected = (key) => {
   if (!props.modelValue) return false
-  const preset = presetOptionMapByKey[key]
+  const preset = effectivePresets.value.find(item => item.key === key) || presetOptionMapByKey[key]
   return preset && preset.cron === props.modelValue
 }
 
@@ -237,7 +265,7 @@ const isCustomSchedule = computed(() => {
 
 // 点击预设选项
 const handlePresetClick = (key) => {
-  const option = presetOptionMapByKey[key]
+  const option = effectivePresets.value.find(item => item.key === key) || presetOptionMapByKey[key]
   if (option) {
     emit('update:modelValue', option.cron)
   }

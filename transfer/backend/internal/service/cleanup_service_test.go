@@ -138,7 +138,7 @@ func createTransferCleanupTestTask(t *testing.T, db *gorm.DB, tenantID uint, nam
 	task := models.TransferTask{
 		TenantID:  tenantID,
 		Name:      name,
-		TaskType:  commonExecution.TaskTypeImport,
+		TaskType:  commonExecution.TaskTypeSync,
 		Config:    transferCleanupTestTaskConfig(sourceEngineID, targetEngineID),
 		BatchSize: 100,
 		Enabled:   enabled,

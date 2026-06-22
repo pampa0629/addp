@@ -83,8 +83,8 @@ graph TB
 - Key 命名规范: `{module}:{middleware}:{function}:{id}`
 
 **MinIO** (端口 19000-19001):
-- 用户头像 (`system` bucket)
-- 预览缓存 (`manager` bucket)
+- 用户头像、审计日志归档 (`system` bucket)
+- 预览缓存、导入暂存、导出中转产物 (`manager` bucket)
 - 瓦片缓存对象 (`manager` bucket,通过 Manager API 和 `storage_ref` 访问)
 - 临时文件
 - Bucket 隔离: `system`, `manager`, `meta`, `transfer`, `orchestrator`, `develop`, `service`
@@ -132,7 +132,7 @@ graph TB
 
     PG --> PGEx["system schema: 用户/引擎/日志<br/>manager schema: 数据源/预览配置<br/>meta schema: 元数据索引<br/>transfer schema: 传输任务<br/>orchestrator schema: 编排定义<br/>develop schema: 查询/工作流/Notebook<br/>service schema: 服务配置"]
 
-    MinIOIso --> MinIOEx["system bucket: 用户头像/系统文件<br/>manager bucket: 预览缓存/瓦片缓存对象<br/>meta bucket: 扫描临时文件<br/>transfer bucket: 导入导出临时文件<br/>orchestrator bucket: 编排执行日志<br/>develop bucket: 查询结果/工作流输出<br/>service bucket: 服务缓存"]
+    MinIOIso --> MinIOEx["system bucket: 用户头像/系统文件/审计日志归档<br/>manager bucket: 预览缓存/瓦片缓存对象/导入暂存/导出中转<br/>meta bucket: 扫描临时文件<br/>transfer bucket: 内部执行临时文件<br/>orchestrator bucket: 编排执行日志<br/>develop bucket: 查询结果/工作流输出<br/>service bucket: 服务缓存"]
 
     RedisIso --> RedisEx["system:cache:user:123<br/>system:session:abc<br/>manager:cache:preview:456<br/>transfer:asynq:task:789<br/>meta:scan:status:101"]
 
@@ -159,8 +159,40 @@ graph TB
 **2. MinIO Bucket 隔离**:
 - 按模块隔离: `system`、`manager`、`meta`、`transfer`、`orchestrator`、`develop`、`service`
 - 避免文件冲突,配额独立管理
-- `manager` bucket 保存预览缓存和瓦片缓存对象，前端通过 Manager API 访问，不直接依赖公开 bucket 路径
+- `manager` bucket 保存预览缓存、瓦片缓存对象、Manager 导入暂存和导出中转产物，前端通过 Manager API 访问，不直接依赖公开 bucket 路径
 - 其他 bucket 均为私有访问
+
+### ADDP infra locator
+
+`addp-infra://` 是 ADDP 后端内部使用的基础设施资源定位符，用于 Manager、Transfer 等模块在服务间契约中定位系统基础设施资源。它不是业务 ResourceLocator，不进入用户资源树，不进入 System engines，也不写入 Meta item。
+
+通用形式：
+
+```text
+addp-infra://{infra_kind}/{namespace}/{path...}?type={resource_type}
+```
+
+| 组成 | 说明 |
+|---|---|
+| `infra_kind` | 基础设施类型，例如 `minio`、`postgres`、`redis`、`meilisearch`。 |
+| `namespace` | infra 内部命名空间。对 MinIO 是 bucket；对 PostgreSQL 可是 schema；对 Redis 可是 key namespace；对 Meilisearch 可是 index。 |
+| `path` | namespace 内部路径或对象名。 |
+| `type` | infra resource type，例如 `object`、`prefix`、`table`、`key`、`index`。 |
+
+第一阶段执行链路只支持 `addp-infra://minio/...` 的 `object` / `prefix`，用于 Manager import source 和 Manager export target：
+
+```text
+addp-infra://minio/manager/tenant_7/import/20260622/upload-uuid/roads.shp?type=object
+addp-infra://minio/manager/tenant_7/export/20260622/execution-id?type=prefix
+```
+
+约束：
+
+1. infra MinIO 使用 `.env` 中系统 MinIO 配置，即 19000-19001 的 ADDP infra MinIO。
+2. infra MinIO 不在 System engines 中登记，也不得被用户选择为业务数据引擎。
+3. infra 暂存对象不写入 Meta node / item，不参与资源树展示或业务库扫描。
+4. Manager 拥有自身 import / export 暂存对象的生命周期和 cleanup；Transfer 只按 locator 读取或写入，不承担 Manager 暂存清理职责。
+5. `addp-infra://` 的设计不能假设 infra 只有 MinIO；新增 infra kind 前必须先补规范，再接入对应模块。
 
 **3. Redis Key 命名规范**:
 - 格式: `{module}:{middleware}:{function}:{id}`

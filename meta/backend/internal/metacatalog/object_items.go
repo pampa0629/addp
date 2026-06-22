@@ -165,6 +165,7 @@ func PlanObjectCatalogCompositeItem(engineID uint, composite ObjectCatalogCompos
 		return ObjectCatalogCompositeItemPlan{}, false
 	}
 
+	qualifyObjectDetectedItemPaths(composite.Bucket, composite.Item)
 	itemName, objectPath := ObjectCatalogCompositeName(composite)
 	parentPath := ParentObjectPath(objectPath)
 	fullName := commonModels.JoinObjectPath(composite.Bucket, parentPath, itemName)
@@ -176,6 +177,7 @@ func PlanObjectCatalogCompositeItem(engineID uint, composite ObjectCatalogCompos
 	metaattr.SetStorage(attrs, "bucket", composite.Bucket)
 	metaattr.SetStorage(attrs, "path", parentPath)
 	metaattr.SetStorage(attrs, "name", itemName)
+	metaattr.SetStorage(attrs, "physical_path", fullName)
 	metaattr.SetItem(attrs, "mode", ObjectCatalogCompositeMode(composite.Item))
 
 	return ObjectCatalogCompositeItemPlan{
@@ -188,6 +190,39 @@ func PlanObjectCatalogCompositeItem(engineID uint, composite ObjectCatalogCompos
 		SizeBytes:   composite.Item.Size(),
 		Attributes:  attrs,
 	}, true
+}
+
+func qualifyObjectDetectedItemPaths(bucket string, item *metaitem.DetectedItem) {
+	if item == nil || strings.Trim(bucket, "/") == "" {
+		return
+	}
+	item.PrimaryContentPath = qualifyObjectContentPath(bucket, item.PrimaryContentPath)
+	item.ScopePath = qualifyObjectContentPath(bucket, item.ScopePath)
+	if item.PhysicalPath != "" {
+		item.PhysicalPath = qualifyObjectContentPath(bucket, item.PhysicalPath)
+	}
+	for i := range item.RefList {
+		item.RefList[i].Path = qualifyObjectContentPath(bucket, item.RefList[i].Path)
+	}
+	if len(item.RefPaths) > 0 {
+		qualified := map[string]string{}
+		for role, pathValue := range item.RefPaths {
+			qualified[role] = qualifyObjectContentPath(bucket, pathValue)
+		}
+		item.RefPaths = qualified
+	}
+}
+
+func qualifyObjectContentPath(bucket, pathValue string) string {
+	pathValue = strings.Trim(pathValue, "/")
+	if pathValue == "" {
+		return ""
+	}
+	objectPath := ObjectPathFromClaim(bucket, pathValue)
+	if objectPath == "" {
+		return pathValue
+	}
+	return strings.Trim(strings.Trim(bucket, "/")+"/"+objectPath, "/")
 }
 
 func ParentObjectPath(pathValue string) string {

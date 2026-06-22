@@ -94,7 +94,7 @@ export function useTaskWizardState() {
     const config = {
       name: taskName.value,
       description: taskDescription.value,
-      task_type: taskTypeForShape(sourceEndpoint, targetEndpoint),
+      task_type: 'sync',
       config: {
         mode: 'batch',
         source: sourceEndpoint,
@@ -181,13 +181,6 @@ export function useTaskWizardState() {
       })
     }
     return compactOptions(config.options || {})
-  }
-
-  function taskTypeForShape(sourceEndpoint, targetEndpoint) {
-    if (isRawCopyEndpoint(sourceEndpoint) && targetEndpoint?.representation === 'encoded') return 'transfer'
-    if (sourceEndpoint?.representation === 'encoded' && targetEndpoint?.representation === 'native') return 'import'
-    if (sourceEndpoint?.representation === 'native' && targetEndpoint?.representation === 'encoded') return 'export'
-    return 'transfer'
   }
 
   function isSupportedSourceShape() {

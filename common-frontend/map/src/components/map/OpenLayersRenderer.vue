@@ -36,7 +36,7 @@ const props = defineProps({
 const emit = defineEmits(['feature-click'])
 
 const mapContainer = ref(null)
-const { initMap, renderFeatures, focusFeature, showPopup, hidePopup, destroy } = useOpenLayersMap(props.config)
+const { mapInstance, initMap, renderFeatures, focusFeature, showPopup, hidePopup, destroy } = useOpenLayersMap(props.config)
 
 let isInitialized = false
 
@@ -127,10 +127,17 @@ const hidePopupContent = () => {
   hidePopup()
 }
 
+const resize = () => {
+  if (mapInstance.value && typeof mapInstance.value.updateSize === 'function') {
+    mapInstance.value.updateSize()
+  }
+}
+
 defineExpose({
   focusFeature: focusFeatureByKey,
   showPopup: showPopupContent,
-  hidePopup: hidePopupContent
+  hidePopup: hidePopupContent,
+  resize
 })
 </script>
 

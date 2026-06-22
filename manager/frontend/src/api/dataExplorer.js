@@ -68,6 +68,22 @@ export const dataExplorerAPI = {
       timeout: 60000 // 空间数据预览可能需要更长时间（60秒）
     })
   },
+  getResourceActions(locator) {
+    return client.get('/manager/resource-actions', {
+      params: { locator }
+    })
+  },
+  uploadFiles(formData) {
+    return client.post('/manager/uploads', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+  },
+  createExport(payload) {
+    return client.post('/manager/exports', payload)
+  },
+  getExport(id) {
+    return client.get(`/manager/exports/${id}`)
+  },
   // 获取要素的几何中心点（用于表格行定位到地图）
   // 注意：这是空间数据服务路由，不是引擎管理
   getFeatureCentroid(engineId, schema, table, featureId, geom = 'geom', primaryKey = 'id') {

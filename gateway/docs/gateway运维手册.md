@@ -195,16 +195,16 @@ curl http://localhost:8000/
 
 ```bash
 # 测试有效的 API Key
-curl -X GET http://localhost:8000/api/manager/engines \
+curl -X GET http://localhost:8000/api/v1/manager/engines \
   -H "X-API-Key: sk_live_your_api_key_here"
 
 # 测试无效的 API Key
-curl -X GET http://localhost:8000/api/manager/engines \
+curl -X GET http://localhost:8000/api/v1/manager/engines \
   -H "X-API-Key: invalid_key"
 # 响应: 401 Unauthorized
 
 # 测试无 API Key
-curl -X GET http://localhost:8000/api/manager/engines
+curl -X GET http://localhost:8000/api/v1/manager/engines
 # 响应: 正常处理（跳过 API Key 验证，可能依赖 JWT）
 ```
 
@@ -213,7 +213,7 @@ curl -X GET http://localhost:8000/api/manager/engines
 ```bash
 # 发送大量请求触发限流（假设限额 1000/分钟）
 for i in {1..1100}; do
-  curl -X GET http://localhost:8000/api/manager/engines \
+  curl -X GET http://localhost:8000/api/v1/manager/engines \
     -H "X-API-Key: sk_live_your_api_key_here"
 done
 

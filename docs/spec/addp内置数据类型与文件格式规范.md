@@ -210,6 +210,8 @@ Shapefile 是空间矢量表，不是单个 `.shp` 文件。ref 匹配规则是�
 - `.shp` 提供平台统一几何字段。
 - 平台统一几何字段的字段类型为 `geometry`。默认 sample 行值为 WKT 字符串；连续读取可通过 `ParseOptions.GeometryEncoding` 请求 `wkb` 或 `ewkb`，行值为 `[]byte`。
 - `ewkb` 可以携带 SRID；Shapefile 的 SRID / CRS 事实仍以 `.prj` 解析结果和 `capabilities.spatial` / `TableInfo.SpatialInfo` 为准。
+- Shapefile 原生 shape type 是格式事实，写入 `format_info.shapefile.shape_type` 或 `type_info.table.native.shape_type`；平台标准几何拓扑必须写入 `capabilities.spatial.geometry_columns[].geometry_type`。
+- Shapefile `Point` family 归一为 `Point`，`MultiPoint` family 归一为 `MultiPoint`，`PolyLine` family 归一为 `MultiLineString`，`Polygon` family 归一为 `MultiPolygon`。`NullShape` 不生成空间字段；其他未纳入标准主路径的 shape type 必须返回明确 unsupported 或落为 `Geometry`，不得伪造成具体拓扑。
 - 字段类型映射为 ADDP 通用字段类型。原始 DBF 类型属于 Shapefile format plugin 内部事实；如需给 Manager 展示，只能写入只读 attributes，不能进入 Transfer / engine / format writer 的执行决策。
 - 记录数来自真实 Shapefile 记录数，不写固定占位值。
 - 写出 `.prj` 时，format writer 只接受 `WriteOptions.ExtraParams["crs_definition"]` 作为 CRS 定义文本；该字段表达定义内容，不得写成 `format` 或 PostGIS `spatial_ref_sys`。
@@ -263,7 +265,7 @@ Shapefile 是空间矢量表，不是单个 `.shp` 文件。ref 匹配规则是�
       "geometry_columns": [
         {
           "name": "geometry",
-          "geometry_type": "Polygon",
+          "geometry_type": "MultiPolygon",
           "srid": 0,
           "dimension": 2,
           "nullable": false

@@ -3,107 +3,146 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"sync"
+	"time"
 
 	commonExecution "github.com/addp/common/execution"
-	commonScheduler "github.com/addp/common/scheduler"
+	"github.com/addp/common/logger"
 	"github.com/addp/orchestrator/internal/repository"
 )
 
-// Scheduler 定时调度器（使用公共调度模块）
+const orchestrationSchedulePollInterval = time.Minute
+
+// Scheduler 按 orchestrator.orchestrations.next_run_at 触发编排定时执行。
 type Scheduler struct {
-	scheduler        commonScheduler.Scheduler // 公共调度器
 	orchRepo         *repository.OrchestrationRepository
 	executionService *ExecutionService
 	executor         *Executor
+	log              *slog.Logger
+
+	stopCh   chan struct{}
+	stopOnce sync.Once
+	wg       sync.WaitGroup
 }
 
-// NewScheduler 创建调度器
+// NewScheduler 创建调度器。
 func NewScheduler(
 	orchRepo *repository.OrchestrationRepository,
 	executionService *ExecutionService,
 	executor *Executor,
 ) *Scheduler {
-	// 创建公共调度器
-	scheduler, err := commonScheduler.NewScheduler(commonScheduler.Options{
-		Name: "orchestrator",
-	})
-	if err != nil {
-		panic(fmt.Sprintf("failed to create scheduler: %v", err))
-	}
-
 	return &Scheduler{
-		scheduler:        scheduler,
 		orchRepo:         orchRepo,
 		executionService: executionService,
 		executor:         executor,
+		log:              logger.With("component", "orchestrator_scheduler"),
+		stopCh:           make(chan struct{}),
 	}
 }
 
-// Start 启动调度器
+// Start 启动调度器。
 func (s *Scheduler) Start() error {
 	ctx := context.Background()
+	if err := s.ensureNextRuns(ctx); err != nil {
+		return err
+	}
+	s.wg.Add(1)
+	go s.scheduledLoop(ctx)
+	s.log.Info("orchestrator scheduler started")
+	return nil
+}
 
-	// 手动加载已启用的编排任务
-	orchestrations, err := s.orchRepo.ListEnabled()
+// Stop 停止调度器。
+func (s *Scheduler) Stop() {
+	if s == nil {
+		return
+	}
+	s.stopOnce.Do(func() {
+		close(s.stopCh)
+	})
+	s.wg.Wait()
+	s.log.Info("orchestrator scheduler stopped")
+}
+
+func (s *Scheduler) ensureNextRuns(ctx context.Context) error {
+	orchestrations, err := s.orchRepo.ListMissingNextRun(ctx)
 	if err != nil {
 		return err
 	}
-
-	for _, orch := range orchestrations {
-		if orch.Schedule != "" {
-			handler := s.createHandler(orch.ID)
-			if err := s.scheduler.Schedule(ctx, fmt.Sprintf("%d", orch.ID), orch.Schedule, handler); err != nil {
-				// 记录错误但继续启动其他任务
-				fmt.Printf("Failed to schedule orchestration %d: %v\n", orch.ID, err)
-			}
+	now := time.Now()
+	for i := range orchestrations {
+		orch := orchestrations[i]
+		if err := ApplyOrchestrationSchedule(&orch, now); err != nil {
+			s.log.Warn("calculate orchestration next_run_at failed", "orchestration_id", orch.ID, "error", err)
+			continue
+		}
+		if err := s.orchRepo.UpdateNextRunAt(ctx, orch.ID, orch.NextRunAt); err != nil {
+			s.log.Warn("update orchestration next_run_at failed", "orchestration_id", orch.ID, "error", err)
 		}
 	}
-
-	// 启动调度器
-	return s.scheduler.Start(ctx)
+	return nil
 }
 
-// Stop 停止调度器
-func (s *Scheduler) Stop() {
-	ctx := context.Background()
-	s.scheduler.Stop(ctx)
-}
+func (s *Scheduler) scheduledLoop(ctx context.Context) {
+	defer s.wg.Done()
 
-// Schedule 调度编排任务
-func (s *Scheduler) Schedule(orchID uint, cronExpr string) error {
-	ctx := context.Background()
-	handler := s.createHandler(orchID)
-	return s.scheduler.Schedule(ctx, fmt.Sprintf("%d", orchID), cronExpr, handler)
-}
+	s.runDue(context.Background())
+	ticker := time.NewTicker(orchestrationSchedulePollInterval)
+	defer ticker.Stop()
 
-// Unschedule 取消调度
-func (s *Scheduler) Unschedule(orchID uint) {
-	ctx := context.Background()
-	s.scheduler.Unschedule(ctx, fmt.Sprintf("%d", orchID))
-}
-
-// createHandler 创建任务处理器
-func (s *Scheduler) createHandler(orchID uint) commonScheduler.TaskHandler {
-	return func(ctx context.Context, taskID string) error {
-		s.triggerOrchestration(orchID)
-		return nil
+	for {
+		select {
+		case <-s.stopCh:
+			return
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.runDue(context.Background())
+		}
 	}
 }
 
-// triggerOrchestration 触发编排执行
-func (s *Scheduler) triggerOrchestration(orchID uint) {
-	ctx := context.Background()
+func (s *Scheduler) runDue(ctx context.Context) {
+	now := time.Now()
+	ids, err := s.orchRepo.ListDueIDs(ctx, now, 100)
+	if err != nil {
+		s.log.Warn("list due orchestrations failed", "error", err)
+		return
+	}
+	for _, id := range ids {
+		if err := s.claimAndExecute(ctx, id, now); err != nil {
+			s.log.Warn("trigger scheduled orchestration failed", "orchestration_id", id, "error", err)
+		}
+	}
+}
+
+func (s *Scheduler) claimAndExecute(ctx context.Context, id uint, now time.Time) error {
+	orch, err := s.orchRepo.GetByID(id)
+	if err != nil || orch == nil {
+		return err
+	}
+	nextOrch := *orch
+	if err := ApplyOrchestrationSchedule(&nextOrch, now); err != nil {
+		return err
+	}
+	claimed, err := s.orchRepo.ClaimDue(ctx, id, orch.Schedule, now, nextOrch.NextRunAt)
+	if err != nil || claimed == nil {
+		return err
+	}
+	return s.triggerOrchestration(ctx, claimed.ID)
+}
+
+func (s *Scheduler) triggerOrchestration(ctx context.Context, orchID uint) error {
 	orch, err := s.orchRepo.GetByID(orchID)
 	if err != nil || !orch.Enabled {
-		return
+		return err
 	}
 
-	// 使用统一执行服务创建执行记录
 	execution, err := s.executionService.CreateExecution(ctx, orchID, orch.TenantID, commonExecution.TriggerTypeScheduled)
 	if err != nil {
-		fmt.Printf("Failed to create execution for orchestration %d: %v\n", orchID, err)
-		return
+		return fmt.Errorf("create scheduled orchestration execution: %w", err)
 	}
-
 	s.executor.ExecuteAsync(uint(execution.ID))
+	return nil
 }

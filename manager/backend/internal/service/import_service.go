@@ -13,88 +13,77 @@ import (
 	"time"
 
 	"github.com/addp/common/client"
+	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/format"
 	"github.com/addp/common/format/plugins/shapefile"
 	"github.com/addp/common/logger"
-	commonModels "github.com/addp/common/models"
 	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
 )
 
 var (
-	ErrImportTableNameRequired         = errors.New("import table name required")
-	ErrImportZipRequired               = errors.New("import zip package required")
-	ErrImportUnsupportedFormat         = errors.New("import unsupported file format")
-	ErrImportSourceEngineNotConfigured = errors.New("import source engine not configured")
-	ErrImportSourceEngineNotMatched    = errors.New("import source engine not matched")
-	ErrImportSourceEngineAmbiguous     = errors.New("import source engine ambiguous")
-	ErrImportSourceEngineIDInvalid     = errors.New("import source engine id invalid")
-	ErrImportSourceEngineInactive      = errors.New("import source engine inactive")
-	ErrImportZipMissingShp             = errors.New("import zip missing shapefile shp")
-	ErrImportZipBasenameMismatch       = errors.New("import zip shapefile basename mismatch")
-	ErrImportZipMissingRequiredSet     = errors.New("import zip missing shapefile required set")
+	ErrImportTableNameRequired     = errors.New("import table name required")
+	ErrImportZipRequired           = errors.New("import zip package required")
+	ErrImportUnsupportedFormat     = errors.New("import unsupported file format")
+	ErrImportZipMissingShp         = errors.New("import zip missing shapefile shp")
+	ErrImportZipBasenameMismatch   = errors.New("import zip shapefile basename mismatch")
+	ErrImportZipMissingRequiredSet = errors.New("import zip missing shapefile required set")
 )
-
-type importSystemClient interface {
-	GetEngine(engineID uint) (*commonModels.Engine, error)
-	ListObjectStorages(tenantID uint) ([]commonModels.Engine, error)
-}
 
 // ImportService 数据导入服务
 // 职责：接收上传文件 → 存储到 MinIO temp 前缀 → 调用 Transfer API 创建并触发任务
 type ImportService struct {
-	minioClient          *minio.Client
-	minioBucket          string
-	minioEndpoint        string
-	minioAccessKey       string
-	minioSecretKey       string
-	sourceEngineID       uint
-	sourceEngineExplicit bool
-	systemClient         importSystemClient
-	transferClient       *client.TransferClient
+	minioClient                  *minio.Client
+	minioBucket                  string
+	transferClient               importTransferClient
+	quickViewOptimizationCleaner importQuickViewOptimizationCleaner
+}
+
+type importTransferClient interface {
+	CreateTask(req *client.CreateTransferTaskRequest) (*client.TransferTaskResponse, error)
+	TriggerTask(taskID, tenantID uint) (*client.TriggerTaskResponse, error)
+}
+
+type importQuickViewOptimizationCleaner interface {
+	DeleteResultsForSourceTable(ctx context.Context, tenantID uint, engineID uint, schema string, table string) error
 }
 
 // NewImportService 创建导入服务
 func NewImportService(
 	minioClient *minio.Client,
 	minioBucket string,
-	minioEndpoint string,
-	minioAccessKey string,
-	minioSecretKey string,
-	sourceEngineID uint,
-	sourceEngineExplicit bool,
-	systemClient importSystemClient,
-	transferClient *client.TransferClient,
+	transferClient importTransferClient,
+	quickViewOptimizationCleaner importQuickViewOptimizationCleaner,
 ) *ImportService {
 	return &ImportService{
-		minioClient:          minioClient,
-		minioBucket:          minioBucket,
-		minioEndpoint:        minioEndpoint,
-		minioAccessKey:       minioAccessKey,
-		minioSecretKey:       minioSecretKey,
-		sourceEngineID:       sourceEngineID,
-		sourceEngineExplicit: sourceEngineExplicit,
-		systemClient:         systemClient,
-		transferClient:       transferClient,
+		minioClient:                  minioClient,
+		minioBucket:                  minioBucket,
+		transferClient:               transferClient,
+		quickViewOptimizationCleaner: quickViewOptimizationCleaner,
 	}
 }
 
 // ImportShapefileRequest 导入 Shapefile 请求
 type ImportShapefileRequest struct {
-	FileContent    []byte // Shapefile ZIP 包内容
-	FileName       string // 原始文件名
-	TargetEngineID uint   // 目标数据库引擎 ID
-	TargetSchema   string // 目标 schema（默认 public）
-	TargetTable    string // 目标表名（可选，默认使用文件名）
-	Encoding       string // DBF 编码（默认 UTF-8）
-	TenantID       uint   // 租户 ID
+	Files             []ImportUploadFile
+	TargetNodeLocator string // 目标数据库 node locator
+	TargetEngineID    uint   // 目标数据库引擎 ID
+	TargetSchema      string // 目标 schema（默认 public）
+	TargetTable       string // 目标表名（可选，默认使用文件名）
+	Encoding          string // DBF 编码（默认 UTF-8）
+	TenantID          uint   // 租户 ID
+}
+
+type ImportUploadFile struct {
+	FileName string
+	Content  []byte
 }
 
 // ImportResult 导入结果
 type ImportResult struct {
 	UploadUUID          string `json:"upload_uuid"`
 	TransferTaskID      uint   `json:"transfer_task_id"`
-	TransferExecutionID uint   `json:"transfer_execution_id"`
+	TransferExecutionID string `json:"transfer_execution_id"`
 	Status              string `json:"status"`
 }
 
@@ -105,35 +94,33 @@ func (s *ImportService) ImportShapefile(ctx context.Context, req *ImportShapefil
 	// 1. 自动推断目标表名（使用文件名去掉扩展名）
 	tableName := req.TargetTable
 	if tableName == "" {
-		tableName = inferTableName(req.FileName)
+		tableName = inferTableName(primaryImportFileName(req.Files))
 	}
 	if tableName == "" {
-		return nil, fmt.Errorf("%w: %s", ErrImportTableNameRequired, req.FileName)
+		return nil, ErrImportTableNameRequired
+	}
+
+	targetSchema := req.TargetSchema
+	if targetSchema == "" {
+		targetSchema = "public"
 	}
 
 	// 2. 生成上传 UUID（用于 MinIO 路径）
 	uploadUUID := uuid.New().String()
-	prefix := fmt.Sprintf("temp/%s/", uploadUUID)
+	prefix := managerImportStagingPrefix(req.TenantID, uploadUUID, time.Now())
 
 	// 3. 提取文件并上传到 MinIO
-	log.Info("开始上传 Shapefile 到 MinIO", "upload_uuid", uploadUUID, "filename", req.FileName)
+	log.Info("开始上传 Shapefile 到 MinIO", "upload_uuid", uploadUUID, "file_count", len(req.Files))
 
-	ext := strings.ToLower(filepath.Ext(req.FileName))
 	var files map[string][]byte
-
-	switch ext {
-	case ".zip":
-		// 解压 ZIP 包
-		var err error
-		files, err = extractShapefileZip(req.FileContent)
-		if err != nil {
-			return nil, fmt.Errorf("failed to extract shapefile zip: %w", err)
+	files, err := collectImportShapefileFiles(req.Files)
+	if err != nil {
+		return nil, err
+	}
+	if s.quickViewOptimizationCleaner != nil {
+		if err := s.quickViewOptimizationCleaner.DeleteResultsForSourceTable(ctx, req.TenantID, req.TargetEngineID, targetSchema, tableName); err != nil {
+			return nil, fmt.Errorf("failed to cleanup manager quick view optimization before import: %w", err)
 		}
-	case ".shp":
-		// 单个 .shp 文件（不支持，需要 ZIP 包）
-		return nil, ErrImportZipRequired
-	default:
-		return nil, fmt.Errorf("%w: %s", ErrImportUnsupportedFormat, ext)
 	}
 
 	// 4. 上传所有文件到 MinIO
@@ -149,25 +136,16 @@ func (s *ImportService) ImportShapefile(ctx context.Context, req *ImportShapefil
 		log.Info("文件上传成功", "object_key", objectKey, "size", len(content))
 	}
 
-	sourceEngineID, err := s.resolveImportSourceEngine(req.TenantID)
-	if err != nil {
-		return nil, err
-	}
 	sourceObjectPath := prefix + primaryShapefileName(files)
 
 	// 6. 创建 Transfer 任务
 	taskName := fmt.Sprintf("import_%s_%s", tableName, time.Now().Format("20060102_150405"))
 
-	targetSchema := req.TargetSchema
-	if targetSchema == "" {
-		targetSchema = "public"
-	}
-
 	autoScanMetadata := true
 	createReq := &client.CreateTransferTaskRequest{
 		Name:             taskName,
-		TaskType:         "import",
-		Config:           s.buildShapefileImportTaskConfig(sourceEngineID, sourceObjectPath, req, targetSchema, tableName),
+		TaskType:         commonExecution.TaskTypeSync,
+		Config:           s.buildShapefileImportTaskConfig(sourceObjectPath, req, targetSchema, tableName, hasShapefileCPG(files)),
 		AutoScanMetadata: &autoScanMetadata,
 		BatchSize:        1000,
 		TenantID:         req.TenantID,
@@ -189,31 +167,25 @@ func (s *ImportService) ImportShapefile(ctx context.Context, req *ImportShapefil
 	}
 
 	log.Info("Transfer 任务已触发", "task_id", taskResp.ID, "execution_id", triggerResp.ExecutionID)
+	if strings.TrimSpace(triggerResp.ExecutionID) == "" {
+		return nil, fmt.Errorf("transfer sync execution id is empty")
+	}
 
 	return &ImportResult{
 		UploadUUID:          uploadUUID,
 		TransferTaskID:      taskResp.ID,
-		TransferExecutionID: triggerResp.ExecutionID,
+		TransferExecutionID: strings.TrimSpace(triggerResp.ExecutionID),
 		Status:              "pending",
 	}, nil
 }
 
-func (s *ImportService) buildShapefileImportTaskConfig(sourceEngineID uint, sourceObjectPath string, req *ImportShapefileRequest, targetSchema string, tableName string) map[string]interface{} {
+func (s *ImportService) buildShapefileImportTaskConfig(sourceObjectPath string, req *ImportShapefileRequest, targetSchema string, tableName string, hasCPG bool) map[string]interface{} {
 	options := map[string]interface{}{}
-	if req != nil && strings.TrimSpace(req.Encoding) != "" {
+	if !hasCPG && req != nil && strings.TrimSpace(req.Encoding) != "" {
 		options["encoding"] = strings.TrimSpace(req.Encoding)
 	}
 	source := map[string]interface{}{
-		"engine": map[string]interface{}{
-			"id": sourceEngineID,
-		},
-		"resource": map[string]interface{}{
-			"kind": "object",
-			"path": map[string]interface{}{
-				"bucket": s.minioBucket,
-				"path":   sourceObjectPath,
-			},
-		},
+		"locator":        managerInfraMinioObjectLocator(s.minioBucket, sourceObjectPath),
 		"data_type":      "table",
 		"representation": "encoded",
 		"format":         "shapefile",
@@ -225,16 +197,8 @@ func (s *ImportService) buildShapefileImportTaskConfig(sourceEngineID uint, sour
 		"mode":   "batch",
 		"source": source,
 		"target": map[string]interface{}{
-			"engine": map[string]interface{}{
-				"id": req.TargetEngineID,
-			},
-			"resource": map[string]interface{}{
-				"kind": "native_table",
-				"path": map[string]interface{}{
-					"schema": targetSchema,
-					"table":  tableName,
-				},
-			},
+			"parent_locator": importTargetParentLocator(req, targetSchema),
+			"name":           tableName,
 			"data_type":      "table",
 			"representation": "native",
 			"policy": map[string]interface{}{
@@ -244,103 +208,22 @@ func (s *ImportService) buildShapefileImportTaskConfig(sourceEngineID uint, sour
 	}
 }
 
-func (s *ImportService) resolveImportSourceEngine(tenantID uint) (uint, error) {
-	if s.sourceEngineExplicit {
-		return s.resolveExplicitImportSourceEngine()
+func importTargetParentLocator(req *ImportShapefileRequest, targetSchema string) string {
+	if req != nil && strings.TrimSpace(req.TargetNodeLocator) != "" {
+		return strings.TrimSpace(req.TargetNodeLocator)
 	}
-	if s.systemClient == nil {
-		return 0, ErrImportSourceEngineNotConfigured
-	}
-	engines, err := s.systemClient.ListObjectStorages(tenantID)
-	if err != nil {
-		return 0, fmt.Errorf("list object storage engines for import source: %w", err)
-	}
-	matches := make([]commonModels.Engine, 0, 1)
-	for _, engine := range engines {
-		if !engine.IsActive {
-			continue
-		}
-		if s.matchesConfiguredStagingObjectStore(engine) {
-			matches = append(matches, engine)
-		}
-	}
-	switch len(matches) {
-	case 1:
-		return matches[0].ID, nil
-	case 0:
-		return 0, fmt.Errorf("%w: endpoint=%s bucket=%s", ErrImportSourceEngineNotMatched, s.minioEndpoint, s.minioBucket)
-	default:
-		sort.Slice(matches, func(i, j int) bool { return matches[i].ID < matches[j].ID })
-		ids := make([]string, 0, len(matches))
-		for _, engine := range matches {
-			ids = append(ids, fmt.Sprintf("%d", engine.ID))
-		}
-		return 0, fmt.Errorf("%w: endpoint=%s bucket=%s ids=%s", ErrImportSourceEngineAmbiguous, s.minioEndpoint, s.minioBucket, strings.Join(ids, ","))
-	}
-}
-
-func (s *ImportService) resolveExplicitImportSourceEngine() (uint, error) {
-	if s.sourceEngineID == 0 {
-		return 0, ErrImportSourceEngineIDInvalid
-	}
-	if s.systemClient == nil {
-		return s.sourceEngineID, nil
-	}
-	engine, err := s.systemClient.GetEngine(s.sourceEngineID)
-	if err != nil {
-		return 0, fmt.Errorf("get manager import source engine %d: %w", s.sourceEngineID, err)
-	}
-	if engine == nil || !engine.IsActive {
-		return 0, fmt.Errorf("%w: %d", ErrImportSourceEngineInactive, s.sourceEngineID)
-	}
-	return engine.ID, nil
-}
-
-func (s *ImportService) matchesConfiguredStagingObjectStore(engine commonModels.Engine) bool {
-	conn := engine.ConnectionInfo
-	if conn == nil {
-		return false
-	}
-	if !sameEndpoint(connectionString(conn, "endpoint"), s.minioEndpoint) {
-		return false
-	}
-	if bucket := strings.TrimSpace(connectionString(conn, "bucket")); bucket != "" && bucket != strings.TrimSpace(s.minioBucket) {
-		return false
-	}
-	accessKey := connectionString(conn, "access_key")
-	if accessKey == "" {
-		accessKey = connectionString(conn, "accessKey")
-	}
-	if accessKey != "" && accessKey != s.minioAccessKey {
-		return false
-	}
-	return true
-}
-
-func connectionString(values map[string]interface{}, key string) string {
-	value, ok := values[key]
-	if !ok {
+	if req == nil {
 		return ""
 	}
-	switch typed := value.(type) {
-	case string:
-		return strings.TrimSpace(typed)
-	case fmt.Stringer:
-		return strings.TrimSpace(typed.String())
-	default:
-		return strings.TrimSpace(fmt.Sprintf("%v", typed))
-	}
+	return fmt.Sprintf("addp://engine/%d/path/%s?type=schema", req.TargetEngineID, targetSchema)
 }
 
-func sameEndpoint(left, right string) bool {
-	return normalizeEndpoint(left) == normalizeEndpoint(right)
+func managerImportStagingPrefix(tenantID uint, uploadUUID string, now time.Time) string {
+	return fmt.Sprintf("tenant_%d/import/%s/%s/", tenantID, now.Format("20060102"), uploadUUID)
 }
 
-func normalizeEndpoint(endpoint string) string {
-	endpoint = strings.ToLower(strings.TrimSpace(endpoint))
-	endpoint = strings.TrimPrefix(endpoint, "http://")
-	endpoint = strings.TrimPrefix(endpoint, "https://")
-	return strings.TrimRight(endpoint, "/")
+func managerInfraMinioObjectLocator(bucket, objectPath string) string {
+	return fmt.Sprintf("addp-infra://minio/%s/%s?type=object", strings.Trim(bucket, "/"), strings.Trim(objectPath, "/"))
 }
 
 // extractShapefileZip 从 ZIP 包中解压 Shapefile 相关文件
@@ -413,6 +296,63 @@ func extractShapefileZip(zipData []byte) (map[string][]byte, error) {
 	return files, nil
 }
 
+func collectImportShapefileFiles(uploaded []ImportUploadFile) (map[string][]byte, error) {
+	if len(uploaded) == 0 {
+		return nil, ErrImportZipRequired
+	}
+	if len(uploaded) == 1 && strings.EqualFold(filepath.Ext(uploaded[0].FileName), ".zip") {
+		files, err := extractShapefileZip(uploaded[0].Content)
+		if err != nil {
+			return nil, fmt.Errorf("failed to extract shapefile zip: %w", err)
+		}
+		return files, nil
+	}
+	files := make(map[string][]byte, len(uploaded))
+	allowed := shapefileImportAllowedExtensions()
+	for _, file := range uploaded {
+		name := filepath.Base(file.FileName)
+		ext := format.NormalizeExtension(filepath.Ext(name))
+		if !allowed[ext] {
+			return nil, fmt.Errorf("%w: %s", ErrImportUnsupportedFormat, ext)
+		}
+		files[name] = append([]byte(nil), file.Content...)
+	}
+	if err := validateShapefileComponents(files); err != nil {
+		return nil, err
+	}
+	return files, nil
+}
+
+func validateShapefileComponents(files map[string][]byte) error {
+	componentsByBase := map[string]map[string]bool{}
+	for filename := range files {
+		ext := format.NormalizeExtension(filepath.Ext(filename))
+		base := strings.TrimSuffix(strings.ToLower(filepath.Base(filename)), ext)
+		if _, ok := componentsByBase[base]; !ok {
+			componentsByBase[base] = map[string]bool{}
+		}
+		componentsByBase[base][ext] = true
+	}
+	if primaryShapefileName(files) == "" {
+		return ErrImportZipMissingShp
+	}
+	if len(componentsByBase) > 1 {
+		bases := make([]string, 0, len(componentsByBase))
+		for base := range componentsByBase {
+			bases = append(bases, base)
+		}
+		sort.Strings(bases)
+		return fmt.Errorf("%w: %s", ErrImportZipBasenameMismatch, strings.Join(bases, ","))
+	}
+	requiredExts := shapefileImportRequiredExtensions()
+	for _, exts := range componentsByBase {
+		if hasAllExtensions(exts, requiredExts) {
+			return nil
+		}
+	}
+	return ErrImportZipMissingRequiredSet
+}
+
 func shapefileImportAllowedExtensions() map[string]bool {
 	extensions := map[string]bool{}
 	for _, spec := range shapefile.RelatedRefSpecs() {
@@ -458,6 +398,35 @@ func primaryShapefileName(files map[string][]byte) string {
 		return ""
 	}
 	return names[0]
+}
+
+func hasShapefileCPG(files map[string][]byte) bool {
+	for name := range files {
+		if strings.EqualFold(filepath.Ext(name), ".cpg") {
+			return true
+		}
+	}
+	return false
+}
+
+func primaryImportFileName(files []ImportUploadFile) string {
+	if len(files) == 0 {
+		return ""
+	}
+	if len(files) == 1 {
+		return files[0].FileName
+	}
+	names := make([]string, 0, len(files))
+	for _, file := range files {
+		if strings.EqualFold(filepath.Ext(file.FileName), ".shp") {
+			names = append(names, file.FileName)
+		}
+	}
+	sort.Strings(names)
+	if len(names) > 0 {
+		return names[0]
+	}
+	return files[0].FileName
 }
 
 // inferTableName 从文件名推断表名

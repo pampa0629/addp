@@ -20,7 +20,7 @@ func TestNormalizedScanRefsAddsPrimaryAndDeduplicates(t *testing.T) {
 	})
 
 	want := []models.ScanRef{
-		{Path: "bucket/roads.shp", Role: "main", Required: true},
+		{Path: "bucket/roads.shp", Role: "main", Required: true, Primary: true},
 		{Path: "bucket/roads.dbf", Role: "sidecar", Required: true},
 	}
 	if !reflect.DeepEqual(refs, want) {
@@ -83,7 +83,7 @@ func TestObjectResourcesFromScanRefGroupRejectsCrossBucketRefs(t *testing.T) {
 	}
 }
 
-func TestObjectRefGroupCandidateSetUsesBucketQualifiedDetectionScope(t *testing.T) {
+func TestObjectRefGroupCandidateSetUsesBucketRelativeDetectionScope(t *testing.T) {
 	t.Parallel()
 
 	resources, err := ObjectResourcesFromScanRefGroup(7, "bucket", models.ScanRefGroup{
@@ -95,28 +95,28 @@ func TestObjectRefGroupCandidateSetUsesBucketQualifiedDetectionScope(t *testing.
 	if err != nil {
 		t.Fatalf("ObjectResourcesFromScanRefGroup() error = %v", err)
 	}
+	if len(resources) != 2 || resources[0].Path != "path/roads.shp" || resources[0].FullPath != "bucket/path/roads.shp" {
+		t.Fatalf("resources = %#v, want bucket-relative Path and bucket-qualified FullPath", resources)
+	}
 
 	candidates := ObjectRefGroupCandidateSet(7, "bucket", "path/roads.shp", resources)
 
-	if candidates.DirPath != "bucket/path" {
-		t.Fatalf("DirPath = %q, want bucket/path", candidates.DirPath)
+	if candidates.DirPath != "path" {
+		t.Fatalf("DirPath = %q, want path", candidates.DirPath)
 	}
-	if len(candidates.Files) != 2 || candidates.Files[0].Path != "bucket/path/roads.shp" || candidates.Files[1].Path != "bucket/path/roads.dbf" {
+	if len(candidates.Files) != 2 || candidates.Files[0].Path != "path/roads.shp" || candidates.Files[1].Path != "path/roads.dbf" {
 		t.Fatalf("candidate files = %#v", candidates.Files)
 	}
-	if got := candidates.CatalogPathFor("bucket/path/roads.shp").StringPath(); got != "bucket/path/roads.shp" {
+	if got := candidates.CatalogPathFor("path/roads.shp").StringPath(); got != "bucket/path/roads.shp" {
 		t.Fatalf("catalog path = %q", got)
 	}
 }
 
-func TestSplitObjectRefPath(t *testing.T) {
+func TestObjectRefGroupCandidateSetAcceptsBucketQualifiedPath(t *testing.T) {
 	t.Parallel()
 
-	bucket, objectPath, err := SplitObjectRefPath("/bucket/path/roads.shp")
-	if err != nil {
-		t.Fatalf("SplitObjectRefPath() error = %v", err)
-	}
-	if bucket != "bucket" || objectPath != "path/roads.shp" {
-		t.Fatalf("bucket/object = %q/%q", bucket, objectPath)
+	candidates := ObjectRefGroupCandidateSet(7, "bucket", "path/roads.shp", nil)
+	if got := candidates.CatalogPathFor("bucket/path/roads.shp").StringPath(); got != "bucket/path/roads.shp" {
+		t.Fatalf("catalog path = %q, want bucket/path/roads.shp", got)
 	}
 }

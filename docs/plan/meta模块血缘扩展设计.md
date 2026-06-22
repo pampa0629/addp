@@ -273,7 +273,7 @@ Orchestrator 执行编排流时，按步骤追踪数据流向。
 ### 5.1 查询上游血缘（数据从哪来）
 
 ```
-GET /api/meta/lineage/upstream?engine_id=1&schema=dwd&table=dwd_orders&depth=3
+GET /api/v1/meta/lineage/upstream?engine_id=1&schema=dwd&table=dwd_orders&depth=3
 ```
 
 响应（图结构）:
@@ -299,13 +299,13 @@ GET /api/meta/lineage/upstream?engine_id=1&schema=dwd&table=dwd_orders&depth=3
 ### 5.2 查询下游血缘（影响哪些表）
 
 ```
-GET /api/meta/lineage/downstream?engine_id=1&schema=ods&table=ods_orders&depth=3
+GET /api/v1/meta/lineage/downstream?engine_id=1&schema=ods&table=ods_orders&depth=3
 ```
 
 ### 5.3 影响分析
 
 ```
-GET /api/meta/lineage/impact?engine_id=1&schema=ods&table=ods_orders
+GET /api/v1/meta/lineage/impact?engine_id=1&schema=ods&table=ods_orders
 ```
 
 响应:
@@ -325,7 +325,7 @@ GET /api/meta/lineage/impact?engine_id=1&schema=ods&table=ods_orders
 ### 5.4 血缘路径查询
 
 ```
-GET /api/meta/lineage/path?source_engine_id=2&source_table=orders&target_engine_id=1&target_table=ads_daily_report
+GET /api/v1/meta/lineage/path?source_engine_id=2&source_table=orders&target_engine_id=1&target_table=ads_daily_report
 ```
 
 响应:
@@ -369,17 +369,17 @@ GET /api/meta/lineage/path?source_engine_id=2&source_table=orders&target_engine_
 
 ## 七、新增 API 清单
 
-以下 API 新增到 **Meta 模块**（路径以 `/api/meta/lineage/` 开头）：
+以下 API 新增到 **Meta 模块**（路径以 `/api/v1/meta/lineage/` 开头）：
 
 | 方法 | 路径 | 说明 |
 |-----|-----|-----|
-| GET | `/api/meta/lineage/upstream` | 查询上游血缘 |
-| GET | `/api/meta/lineage/downstream` | 查询下游血缘 |
-| GET | `/api/meta/lineage/impact` | 影响分析 |
-| GET | `/api/meta/lineage/path` | 血缘路径查询 |
-| GET | `/api/meta/lineage/jobs` | 产生血缘的任务列表 |
-| POST | `/api/meta/lineage/scan` | 手动触发血缘采集（扫描历史执行记录） |
-| DELETE | `/api/meta/lineage/nodes/:id` | 删除血缘节点（及相关边） |
+| GET | `/api/v1/meta/lineage/upstream` | 查询上游血缘 |
+| GET | `/api/v1/meta/lineage/downstream` | 查询下游血缘 |
+| GET | `/api/v1/meta/lineage/impact` | 影响分析 |
+| GET | `/api/v1/meta/lineage/path` | 血缘路径查询 |
+| GET | `/api/v1/meta/lineage/jobs` | 产生血缘的任务列表 |
+| POST | `/api/v1/meta/lineage/scan` | 手动触发血缘采集（扫描历史执行记录） |
+| DELETE | `/api/v1/meta/lineage/nodes/:id` | 删除血缘节点（及相关边） |
 
 ---
 

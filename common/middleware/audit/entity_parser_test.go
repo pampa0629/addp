@@ -59,3 +59,60 @@ func TestParseEntityFromPathManagerEmbeddingRoutes(t *testing.T) {
 		})
 	}
 }
+
+func TestParseEntityFromPathVersionedModuleRoutes(t *testing.T) {
+	tests := []struct {
+		name       string
+		method     string
+		path       string
+		wantType   string
+		wantEntity string
+	}{
+		{
+			name:       "system user",
+			method:     "PUT",
+			path:       "/api/v1/system/users/123",
+			wantType:   "user",
+			wantEntity: "123",
+		},
+		{
+			name:       "system engine sub action",
+			method:     "POST",
+			path:       "/api/v1/system/engines/456/test",
+			wantType:   "engine",
+			wantEntity: "456",
+		},
+		{
+			name:       "transfer task",
+			method:     "GET",
+			path:       "/api/v1/transfer/tasks/sync/789",
+			wantType:   "transfer_task",
+			wantEntity: "789",
+		},
+		{
+			name:       "old unversioned system route is not accepted",
+			method:     "GET",
+			path:       "/api/users/123",
+			wantType:   "",
+			wantEntity: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParseEntityFromPath(tt.method, tt.path)
+			if tt.wantType == "" {
+				if got != nil {
+					t.Fatalf("ParseEntityFromPath() = %s/%s, want nil", got.Type, got.ID)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatalf("ParseEntityFromPath() = nil, want %s/%s", tt.wantType, tt.wantEntity)
+			}
+			if got.Type != tt.wantType || got.ID != tt.wantEntity {
+				t.Fatalf("ParseEntityFromPath() = %s/%s, want %s/%s", got.Type, got.ID, tt.wantType, tt.wantEntity)
+			}
+		})
+	}
+}

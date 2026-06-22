@@ -267,7 +267,10 @@ func (s *EngineService) Update(id uint, req *models.EngineUpdateRequest, current
 	}
 	if req.ConnectionInfo != nil {
 		// 合并连接信息：如果新值是脱敏占位符，保留原值
-		mergedConnInfo := s.mergeConnectionInfo(engine.ConnectionInfo, *req.ConnectionInfo)
+		mergedConnInfo, err := s.mergeConnectionInfo(engine.ConnectionInfo, *req.ConnectionInfo)
+		if err != nil {
+			return nil, err
+		}
 
 		// 加密敏感字段
 		encryptedConnInfo, err := s.encryptSensitiveFields(mergedConnInfo)
@@ -461,7 +464,10 @@ func (s *EngineService) BuildConnectionTestEngine(id uint, currentUserID uint, o
 	}
 
 	if override != nil {
-		mergedConnInfo := s.mergeConnectionInfo(engine.ConnectionInfo, *override)
+		mergedConnInfo, err := s.mergeConnectionInfo(engine.ConnectionInfo, *override)
+		if err != nil {
+			return nil, err
+		}
 		engine.ConnectionInfo = s.stripConnectionInfoMetaFields(mergedConnInfo)
 	}
 
@@ -469,7 +475,7 @@ func (s *EngineService) BuildConnectionTestEngine(id uint, currentUserID uint, o
 }
 
 // mergeConnectionInfo 合并连接信息，识别前端掩码占位并保留原始敏感值
-func (s *EngineService) mergeConnectionInfo(original, updated models.ConnectionInfo) models.ConnectionInfo {
+func (s *EngineService) mergeConnectionInfo(original, updated models.ConnectionInfo) (models.ConnectionInfo, error) {
 	merged := make(models.ConnectionInfo)
 
 	// 先复制原始字段，并对敏感字段做解密，得到可操作的明文值
@@ -489,12 +495,11 @@ func (s *EngineService) mergeConnectionInfo(original, updated models.ConnectionI
 			continue
 		}
 
-		if decrypted, err := commonutils.Decrypt(strVal, s.encryptionKey); err == nil {
-			merged[k] = decrypted
-		} else {
-			// 兼容旧数据（未加密或格式异常），保持原值
-			merged[k] = strVal
+		decrypted, err := commonutils.Decrypt(strVal, s.encryptionKey)
+		if err != nil {
+			return nil, fmt.Errorf("解密字段 %s 失败: %w", k, err)
 		}
+		merged[k] = decrypted
 	}
 
 	// 再合并更新字段，对于敏感字段，需要判断是否仍为掩码占位
@@ -523,7 +528,7 @@ func (s *EngineService) mergeConnectionInfo(original, updated models.ConnectionI
 		merged[k] = strVal
 	}
 
-	return merged
+	return merged, nil
 }
 
 func (s *EngineService) stripConnectionInfoMetaFields(connInfo models.ConnectionInfo) models.ConnectionInfo {
@@ -621,17 +626,10 @@ func (s *EngineService) decryptSensitiveFields(connInfo models.ConnectionInfo) (
 	for _, field := range sensitiveFields {
 		if val, exists := connInfo[field]; exists {
 			if strVal, ok := val.(string); ok && strVal != "" {
-				log.Printf("🔐 [DECRYPT] 开始解密字段 '%s' | 密文长度: %d", field, len(strVal))
 				decryptedVal, err := commonutils.Decrypt(strVal, s.encryptionKey)
 				if err != nil {
-					// 如果解密失败，可能是未加密的旧数据，保持原值
-					// 在生产环境中应该记录日志
-					log.Printf("❌ [DECRYPT] 解密字段 '%s' 失败: %v | 密文前30字符: %s...",
-						field, err, strVal[:min(len(strVal), 30)])
-					decrypted[field] = strVal
-					continue
+					return nil, fmt.Errorf("解密字段 %s 失败: %w", field, err)
 				}
-				log.Printf("✅ [DECRYPT] 解密字段 '%s' 成功 | 明文长度: %d 字节", field, len(decryptedVal))
 				decrypted[field] = decryptedVal
 			}
 		}
@@ -968,11 +966,8 @@ func (s *EngineService) updateConnectionStatus(engineID uint, status, message st
 	return s.repo.Update(engine)
 }
 
-// UpdateConnectionStatus 更新资源连接状态（用于缓存优化）
-// 由Meta模块在后台检测后调用，更新资源的连接状态缓存
-// 注意：此方法已废弃，建议使用AsyncCheckConnection触发System自己检测
-// 保留是为了向后兼容
-func (s *EngineService) UpdateConnectionStatus(engineID uint, status string, message string) error {
+// RecordConnectionStatus 记录 System 自身连接检测得到的资源连接状态。
+func (s *EngineService) RecordConnectionStatus(engineID uint, status string, message string) error {
 	return s.updateConnectionStatus(engineID, status, message)
 }
 

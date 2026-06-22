@@ -1038,7 +1038,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "任务类型，当前固定为 import | Task type, currently fixed to import",
+                        "description": "任务类型，当前固定为 sync | Task type, currently fixed to sync",
                         "name": "task_type",
                         "in": "query"
                     },
@@ -1053,22 +1053,7 @@ const docTemplate = `{
                     "200": {
                         "description": "获取成功 | Retrieved successfully",
                         "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/api.PaginatedResponse"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "type": "array",
-                                            "items": {
-                                                "$ref": "#/definitions/github_com_addp_transfer_internal_models.TransferTask"
-                                            }
-                                        }
-                                    }
-                                }
-                            ]
+                            "$ref": "#/definitions/github_com_addp_transfer_internal_models.ListProviderTasksResponse"
                         }
                     },
                     "400": {
@@ -1099,7 +1084,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "按标准 TaskProvider 路径获取 Transfer 任务详情；task_type 仅支持 import。| Get Transfer task detail through the standard TaskProvider path; task_type only supports import.",
+                "description": "按标准 TaskProvider 路径获取 Transfer 任务详情；task_type 仅支持 sync。| Get Transfer task detail through the standard TaskProvider path; task_type only supports sync.",
                 "produces": [
                     "application/json"
                 ],
@@ -1110,7 +1095,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型，固定为 import | Task type, fixed to import",
+                        "description": "任务类型，固定为 sync | Task type, fixed to sync",
                         "name": "task_type",
                         "in": "path",
                         "required": true
@@ -1158,7 +1143,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "按标准 TaskProvider 协议启动 Transfer 任务；task_type 仅支持 import，parameters 当前不支持覆盖。| Start a Transfer task through the standard TaskProvider protocol; task_type only supports import and parameters overrides are not supported.",
+                "description": "按标准 TaskProvider 协议启动 Transfer 任务；task_type 仅支持 sync，parameters 当前不支持覆盖。| Start a Transfer task through the standard TaskProvider protocol; task_type only supports sync and parameters overrides are not supported.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1172,7 +1157,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型，固定为 import | Task type, fixed to import",
+                        "description": "任务类型，固定为 sync | Task type, fixed to sync",
                         "name": "task_type",
                         "in": "path",
                         "required": true
@@ -1194,10 +1179,10 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
-                    "200": {
+                    "202": {
                         "description": "执行记录 | Execution",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_transfer_internal_models.TaskExecution"
+                            "$ref": "#/definitions/internal_api.ProviderExecuteResponse"
                         }
                     },
                     "400": {
@@ -1223,24 +1208,6 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "api.PaginatedResponse": {
-            "type": "object",
-            "properties": {
-                "data": {},
-                "page": {
-                    "type": "integer"
-                },
-                "page_size": {
-                    "type": "integer"
-                },
-                "total": {
-                    "type": "integer"
-                },
-                "total_pages": {
-                    "type": "integer"
-                }
-            }
-        },
         "github_com_addp_transfer_internal_models.CreateTaskRequestDoc": {
             "type": "object",
             "properties": {
@@ -1258,6 +1225,9 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
+                "enabled": {
+                    "type": "boolean"
+                },
                 "name": {
                     "type": "string",
                     "example": "导入道路 Shapefile"
@@ -1267,7 +1237,7 @@ const docTemplate = `{
                 },
                 "task_type": {
                     "type": "string",
-                    "example": "import"
+                    "example": "sync"
                 }
             }
         },
@@ -1326,6 +1296,26 @@ const docTemplate = `{
         "github_com_addp_transfer_internal_models.JSONMap": {
             "type": "object",
             "additionalProperties": true
+        },
+        "github_com_addp_transfer_internal_models.ListProviderTasksResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_transfer_internal_models.TransferTask"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
         },
         "github_com_addp_transfer_internal_models.LocalTime": {
             "type": "object",
@@ -1436,6 +1426,9 @@ const docTemplate = `{
                 },
                 "logs": {
                     "type": "string"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.JSONMap"
                 },
                 "records_read": {
                     "type": "integer"
@@ -1652,7 +1645,7 @@ const docTemplate = `{
                     "$ref": "#/definitions/github_com_addp_transfer_internal_models.TaskStatus"
                 },
                 "task_type": {
-                    "description": "Transfer 当前统一任务类型，固定为 import",
+                    "description": "Transfer 当前统一任务类型，固定为 sync",
                     "type": "string"
                 },
                 "tenant_id": {
@@ -1745,6 +1738,17 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "trigger_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.ProviderExecuteResponse": {
+            "type": "object",
+            "properties": {
+                "execution_id": {
+                    "type": "string"
+                },
+                "status": {
                     "type": "string"
                 }
             }

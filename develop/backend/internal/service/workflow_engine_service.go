@@ -315,7 +315,7 @@ func stringParam(params map[string]interface{}, key string) string {
 	}
 }
 
-// ListWorkflowEngines 获取支持workflow开发模式的工作流引擎列表
+// ListWorkflowEngines 获取支持 compute.workflow 能力的工作流引擎列表
 // 用于工作流画布的引擎选择功能
 func (s *WorkflowEngineService) ListWorkflowEngines(ctx context.Context, tenantID uint) ([]commonModels.Engine, error) {
 	// 从System获取所有资源
@@ -324,8 +324,8 @@ func (s *WorkflowEngineService) ListWorkflowEngines(ctx context.Context, tenantI
 		return nil, fmt.Errorf("failed to fetch engines from system: %w", err)
 	}
 
-	// 过滤出支持 workflow 开发模式的引擎
-	workflowEngines := utils.FilterEnginesByDevMode(allEngines, "workflow")
+	// 过滤出支持 compute.workflow 能力的引擎
+	workflowEngines := utils.FilterEnginesByComputeEntrypoint(allEngines, "workflow")
 
 	log.Printf("✅ Develop: 获取工作流引擎列表成功 (tenant_id=%d, total=%d)", tenantID, len(workflowEngines))
 	return workflowEngines, nil

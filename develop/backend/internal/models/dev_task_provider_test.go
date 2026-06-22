@@ -16,7 +16,6 @@ func TestProviderDevTaskUsesTaskTypeContract(t *testing.T) {
 		DevType:         "workflow",
 		Content:         DevTaskContent{"inputs": map[string]interface{}{"area": "farmland"}},
 		ExecutionConfig: DevTaskContent{"type": "workflow"},
-		Enabled:         true,
 		Timeout:         300,
 		Status:          "active",
 		CreatedAt:       now,
@@ -44,5 +43,14 @@ func TestProviderDevTaskUsesTaskTypeContract(t *testing.T) {
 	}
 	if decoded["task_type"] != "workflow" {
 		t.Fatalf("task_type = %v, want workflow", decoded["task_type"])
+	}
+	if _, ok := decoded["schedule"]; ok {
+		t.Fatalf("provider task JSON must not expose schedule while supports_schedule=false: %s", payload)
+	}
+	if _, ok := decoded["enabled"]; ok {
+		t.Fatalf("provider task JSON must not expose enabled while supports_schedule=false: %s", payload)
+	}
+	if _, ok := decoded["next_run_at"]; ok {
+		t.Fatalf("provider task JSON must not expose next_run_at while supports_schedule=false: %s", payload)
 	}
 }

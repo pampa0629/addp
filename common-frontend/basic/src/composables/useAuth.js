@@ -398,8 +398,8 @@ export function createRefreshInterceptor(authStoreOrGetter, config = {}) {
     console.log(`[${moduleName} RefreshInterceptor] Starting token refresh...`)
 
     try {
-      // 调用 System 的 /api/auth/refresh 端点
-      const refreshURL = `${systemBaseURL}/api/auth/refresh`
+      // 调用 System 的 /api/v1/system/refresh 端点
+      const refreshURL = `${systemBaseURL}/api/v1/system/refresh`
       const currentToken = authStore.token || localStorage.getItem('token')
 
       if (!currentToken) {

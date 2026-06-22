@@ -343,7 +343,7 @@ GET /api/security/masking/table-config?engine_id=1&schema=public&table=users
 
 ### 5.3 静态脱敏集成（与 Transfer 导出集成）
 
-Transfer 模块在执行数据导出任务时，调用 Security 模块获取脱敏配置，在导出数据前对敏感字段进行永久脱敏。
+Transfer 模块执行导出型数据同步时，调用 Security 模块获取脱敏配置，在写出数据前对敏感字段进行永久脱敏。
 
 ---
 

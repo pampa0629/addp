@@ -14,8 +14,87 @@ import (
 	_ "github.com/addp/common/format/plugins/parquet"
 	_ "github.com/addp/common/format/plugins/pdf"
 	_ "github.com/addp/common/format/plugins/shapefile"
+	"github.com/addp/common/resourcetree"
 	"github.com/addp/transfer/internal/executor"
 )
+
+func TestParseInfraLocatorURIForMinioObject(t *testing.T) {
+	loc, err := ParseInfraLocatorURI("addp-infra://minio/manager/tenant_7/import/20260619/upload/roads.shp?type=object")
+	if err != nil {
+		t.Fatalf("ParseInfraLocatorURI failed: %v", err)
+	}
+	if loc.Kind != "minio" || loc.Namespace != "manager" || loc.Type != resourcetree.TypeObject {
+		t.Fatalf("locator = %#v, want minio manager object locator", loc)
+	}
+	if got := strings.Join(loc.Path, "/"); got != "tenant_7/import/20260619/upload/roads.shp" {
+		t.Fatalf("locator path = %q, want tenant_7/import/20260619/upload/roads.shp", got)
+	}
+
+	catalogPath, err := loc.CatalogPath()
+	if err != nil {
+		t.Fatalf("CatalogPath failed: %v", err)
+	}
+	if catalogPath.EngineID != 0 {
+		t.Fatalf("catalog engine id = %d, want 0 for infra resolver path", catalogPath.EngineID)
+	}
+	if got := catalogPath.StringPath(); got != "manager/tenant_7/import/20260619/upload/roads.shp" {
+		t.Fatalf("catalog path = %q, want manager/tenant_7/import/20260619/upload/roads.shp", got)
+	}
+}
+
+func TestBuildTableTransferPlanForInfraObjectToNativeTable(t *testing.T) {
+	spec := minimalEncodedToNativeSpec()
+	spec.Source.Locator = infraObjectLocator("manager", "tenant_7/import/20260619/upload/roads.shp")
+	spec.Source.Format = format.FormatShapefile
+	spec.Source.Options = map[string]interface{}{"encoding": "GBK"}
+
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		0: {Type: "minio"},
+		2: {Type: "postgresql"},
+	})
+	if err != nil {
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
+	}
+	if result.SourceEngineType != "minio" || result.TargetEngineType != "postgresql" {
+		t.Fatalf("engine types = %q -> %q, want minio -> postgresql", result.SourceEngineType, result.TargetEngineType)
+	}
+	if result.Plan.Source.Kind != executor.TableEndpointEncoded || result.Plan.Target.Kind != executor.TableEndpointNative {
+		t.Fatalf("endpoint kinds = %q -> %q, want encoded -> native", result.Plan.Source.Kind, result.Plan.Target.Kind)
+	}
+	if got := result.Plan.Source.Path.StringPath(); got != "manager/tenant_7/import/20260619/upload/roads.shp" {
+		t.Fatalf("source path = %q, want infra manager object path", got)
+	}
+	if got := result.Plan.Target.Path.StringPath(); got != "public/roads" {
+		t.Fatalf("target path = %q, want public/roads", got)
+	}
+	if result.Plan.Source.ParseOptions == nil || result.Plan.Source.ParseOptions.Encoding != "GBK" {
+		t.Fatalf("source parse options = %#v, want GBK encoding", result.Plan.Source.ParseOptions)
+	}
+}
+
+func TestBuildTableTransferPlanForNativeTableToInfraPrefix(t *testing.T) {
+	spec := minimalNativeToEncodedSpec()
+	spec.Target.ParentLocator = infraPrefixLocator("manager", "tenant_7/export/20260619/export-uuid")
+	spec.Target.Name = "roads"
+	spec.Target.Format = format.FormatCSV
+
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		1: {Type: "postgresql"},
+		0: {Type: "minio"},
+	})
+	if err != nil {
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
+	}
+	if result.SourceEngineType != "postgresql" || result.TargetEngineType != "minio" {
+		t.Fatalf("engine types = %q -> %q, want postgresql -> minio", result.SourceEngineType, result.TargetEngineType)
+	}
+	if result.Plan.Source.Kind != executor.TableEndpointNative || result.Plan.Target.Kind != executor.TableEndpointEncoded {
+		t.Fatalf("endpoint kinds = %q -> %q, want native -> encoded", result.Plan.Source.Kind, result.Plan.Target.Kind)
+	}
+	if got := result.Plan.Target.Path.StringPath(); got != "manager/tenant_7/export/20260619/export-uuid/roads.csv" {
+		t.Fatalf("target path = %q, want infra manager export object path", got)
+	}
+}
 
 func TestBuildTableTransferPlanForNativeTableToEncodedFile(t *testing.T) {
 	spec := minimalNativeToEncodedSpec()
@@ -1032,6 +1111,14 @@ func objectLocator(engineID uint, bucket, path string) string {
 
 func bucketLocator(engineID uint, bucket string) string {
 	return "addp://engine/" + strconv.Itoa(int(engineID)) + "/path/" + bucket + "?type=bucket"
+}
+
+func infraObjectLocator(bucket, path string) string {
+	return "addp-infra://minio/" + bucket + "/" + strings.Trim(path, "/") + "?type=object"
+}
+
+func infraPrefixLocator(bucket, prefix string) string {
+	return "addp-infra://minio/" + bucket + "/" + strings.Trim(prefix, "/") + "?type=prefix"
 }
 
 func setFileTarget(spec *TableExportTaskSpec, engineID uint, fullPath string) {

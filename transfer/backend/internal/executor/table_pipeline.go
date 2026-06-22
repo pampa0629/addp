@@ -66,6 +66,7 @@ type multiTargetResourceDeleter struct {
 	provider engineplugin.ResourceDeleteProvider
 	connInfo engineplugin.ConnectionInfo
 	basePath engineplugin.CatalogPath
+	mapRef   contentadapter.RefCatalogPathMapper
 	refs     []format.RelatedRef
 }
 
@@ -74,7 +75,13 @@ func (d *multiTargetResourceDeleter) DeleteTarget(ctx context.Context) error {
 		return nil
 	}
 	for _, ref := range d.refs {
-		path, err := contentadapter.CatalogPath(d.basePath, ref.Ref)
+		mapRef := d.mapRef
+		if mapRef == nil {
+			mapRef = func(ref contentio.Ref) (engineplugin.CatalogPath, error) {
+				return contentadapter.CatalogPath(d.basePath, ref)
+			}
+		}
+		path, err := mapRef(ref.Ref)
 		if err != nil {
 			return err
 		}
@@ -816,6 +823,8 @@ type encodedContentTableTarget struct {
 	multiProvider       format.MultiTableWriterProvider
 	connInfo            engineplugin.ConnectionInfo
 	path                engineplugin.CatalogPath
+	refBasePath         string
+	refPathMapper       contentadapter.RefCatalogPathMapper
 	writeOptions        engineplugin.WriteOptions
 	formatOptions       *format.WriteOptions
 	resumeMarker        *resume.Marker
@@ -876,11 +885,13 @@ func (t *encodedContentTableTarget) deleteExistingTarget(ctx context.Context) er
 		}
 		return nil
 	}
+	refBasePath := t.relatedRefBasePath()
 	multiDeleter := &multiTargetResourceDeleter{
 		provider: t.deleter.provider,
 		connInfo: t.deleter.connInfo,
 		basePath: t.path,
-		refs:     format.SameBasenameRelatedRefs(t.path.StringPath(), t.multiProvider.RelatedRefSpecs()),
+		mapRef:   t.refPathMapper,
+		refs:     format.SameBasenameRelatedRefs(refBasePath, t.multiProvider.RelatedRefSpecs()),
 	}
 	if err := multiDeleter.DeleteTarget(ctx); err != nil {
 		return fmt.Errorf("delete encoded multi target before write: %w", err)
@@ -893,12 +904,27 @@ func (t *encodedContentTableTarget) contentWriter() contentio.Writer {
 }
 
 func (t *encodedContentTableTarget) refWriter(specs []format.RelatedRefSpec) (*trackingContentWriter, []format.RelatedRef) {
-	refs := format.SameBasenameRelatedRefs(t.path.StringPath(), specs)
+	refBasePath := t.relatedRefBasePath()
+	refs := format.SameBasenameRelatedRefs(refBasePath, specs)
+	delegate := contentadapter.NewWriter(t.writer, t.connInfo, t.path, t.writeOptions)
+	if t.refPathMapper != nil {
+		delegate = contentadapter.NewMappedWriter(t.writer, t.connInfo, t.refPathMapper, t.writeOptions)
+	}
 	writer := &trackingContentWriter{
-		delegate:    contentadapter.NewWriter(t.writer, t.connInfo, t.path, t.writeOptions),
+		delegate:    delegate,
 		plannedRefs: relatedRefsByPath(refs),
 	}
 	return writer, refs
+}
+
+func (t *encodedContentTableTarget) relatedRefBasePath() string {
+	if t != nil && strings.TrimSpace(t.refBasePath) != "" {
+		return strings.Trim(t.refBasePath, "/")
+	}
+	if t == nil {
+		return ""
+	}
+	return t.path.StringPath()
 }
 
 type trackingContentWriter struct {

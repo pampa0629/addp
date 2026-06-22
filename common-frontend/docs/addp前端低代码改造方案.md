@@ -257,20 +257,20 @@ class ADDPClient {
 
   // Manager 模块 API
   getResourceTree() {
-    return this.request('/api/manager/resources/tree');
+    return this.request('/api/v1/manager/resources/tree');
   }
 
   previewObject(engineId, path) {
-    return this.request(`/api/manager/object/${engineId}/preview?path=${path}`);
+    return this.request(`/api/v1/manager/object/${engineId}/preview?path=${path}`);
   }
 
   // 控制面 API
   getStorageEngines() {
-    return this.request('/api/system/engines');
+    return this.request('/api/v1/system/engines');
   }
 
   createStorageEngine(data) {
-    return this.request('/api/system/engines', {
+    return this.request('/api/v1/system/engines', {
       method: 'POST',
       body: JSON.stringify(data)
     });
@@ -353,7 +353,7 @@ CORS_ALLOWED_ORIGINS=https://yida-customer-a.com,https://amis-customer-a.com
 
 **方式A: 通过登录接口获取**:
 ```bash
-curl -X POST https://addp.customer-a.com/api/system/auth/login \
+curl -X POST https://addp.customer-a.com/api/v1/system/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"lowcode-api","password":"..."}'
 ```

@@ -157,7 +157,7 @@ Common 不维护全量业务 `task_type` 编译期枚举。`task_type` 由 owner
 | 模块 | task_type | 任务定义 |
 | --- | --- | --- |
 | Meta | `scan` | `meta.scan_tasks` |
-| Transfer | `import` | `transfer.transfer_tasks` |
+| Transfer | `sync` | `transfer.transfer_tasks` |
 | Develop | `query` / `workflow` / `script` | `develop.dev_tasks` |
 | Manager | `tile_cache_generation` / `quick_view_optimization` / `embedding` | `manager.tile_cache_tasks` / `manager.quick_view_optimization_tasks` / `manager.embedding_tasks` |
 | Quality | `check` | `quality.check_tasks` |
@@ -166,7 +166,7 @@ Common 不维护全量业务 `task_type` 编译期枚举。`task_type` 由 owner
 
 System 资源回收（cleanup）不纳入 TaskProvider，也不进入 Orchestrator 编排。cleanup 属于系统级运维资源回收流程，不属于用户数据处理任务；但 cleanup 必须进入 `common.task_executions` 和 System 审计体系。System 创建 `module=system`、`task_type=cleanup` 的父 execution，各模块资源回收执行方创建 `task_type=cleanup_executor` 的子 execution，并通过 `parent_execution_id` 关联。cleanup 不得声明为可编排业务任务，不得出现在 Orchestrator 的任务选择列表中。
 
-Transfer 的内部任务语义由 Transfer 专题确认。阶段 1 先把接口层纳入统一任务体系，对外只声明 `task_type=import`，并通过 TaskProvider 和 `common.task_executions` 关联任务定义。后续如专题确认需要增加导出、同步等任务类型，必须先修订本文，再按 clean break 方式迁移，不在同一阶段并行保留 `import`、`export`、`sync`、`transfer` 多套语义。
+Transfer 的内部任务语义统一收敛为同步执行。阶段 1 对外只声明 `task_type=sync`，并通过 TaskProvider 和 `common.task_executions` 关联任务定义。Manager 的导入 / 导出入口通过 client 创建并触发 Transfer `sync`，不得在 Transfer 侧并行保留 `import`、`export`、`transfer` 等旧任务类型。
 
 Manager 的瓦片缓存生成、快显性能优化、embedding、QuickView 细节由 Manager 专题确认。本文只要求 Manager 用同一个 provider 声明多个任务类型，并按 `module + task_type + source_task_id` 关联执行记录。瓦片缓存生成任务类型为 `tile_cache_generation`，任务定义表为 `manager.tile_cache_tasks`；快显性能优化任务类型为 `quick_view_optimization`，任务定义表为 `manager.quick_view_optimization_tasks`，结果表为 `manager.quick_view_optimization`；MVT 是瓦片缓存格式，应进入任务配置，例如 `config.tile.format=mvt`，不作为任务类型。持久化 embedding 任务执行必须复用任务服务创建的主 execution；ad-hoc embedding 可以自行创建 execution，但不得产生 owner 任务定义，且没有 `source_task_id` 时必须写完整 `execution_config`。
 
@@ -184,7 +184,7 @@ Develop 的 `create_url` / `edit_url` 必须指向具体开发方式的专属页
 
 TaskProvider 是模块的一种角色，不是独立业务 owner。System 保存 provider 注册信息，供 Orchestrator 和 Monitor 发现模块任务能力。
 
-TaskProvider 按模块注册，不按任务类型注册。一个模块只有一个 provider，但 provider 可以声明多个 `task_types`。
+TaskProvider 按模块注册，不按任务类型注册。一个模块只有一个 provider，并通过 `task_capabilities[]` 声明多个任务类型能力。
 
 ### Provider 基本字段
 
@@ -218,6 +218,37 @@ TaskProvider 按模块注册，不按任务类型注册。一个模块只有一�
 
 System 注册 TaskProvider 时必须校验标准 endpoint：任务详情和执行 endpoint 必须包含 `{task_type}` 与 `{id}`，执行状态 endpoint 必须包含 `{execution_id}`，并且必须分别使用 `/tasks`、`/tasks/{task_type}/{id}`、`/tasks/{task_type}/{id}/execute`、`/executions/{execution_id}` 和 `/executions/{execution_id}/cancel` 标准后缀，不得使用 `/provider/tasks`、`/scan/runs/{execution_id}`、`/tasks/{id}/run` 等私有或旧路径。Orchestrator 调用 provider 时只替换 `{task_type}`、`{id}`、`{execution_id}` 三类标准占位符；模块私有 UI 或 CRUD 路径可以继续使用 `:id`、`:task_id` 等前端或 Gin 写法，但不得进入 TaskProvider endpoint 契约。
 
+### 标准响应体
+
+TaskProvider 标准 endpoint 必须使用直接响应，不得使用 `{status,data}`、`{status,message}` 或模块私有包装格式。
+
+TaskProvider 任务列表是跨模块编排专用契约，不适用通用业务分页响应 `{data,total,page,page_size,total_pages}`；Orchestrator 和 Monitor 只消费本节定义的 `items` 列表形态。
+
+`GET /tasks?task_type=` 返回任务列表对象：
+
+```json
+{
+  "items": [],
+  "total": 0,
+  "page": 1,
+  "page_size": 20
+}
+```
+
+`GET /tasks/{task_type}/{id}` 直接返回 owner 模块的任务定义摘要对象。对象必须包含 `id`、`task_type`、`name`、`enabled` 等可供 Orchestrator 和 Monitor 展示的稳定字段；多任务类型 provider 可以按 `task_type` 返回不同任务定义 DTO，但不得再包一层 `data`。
+
+`GET /executions/{execution_id}` 直接返回统一 execution 对象，`execution_id` 必须是 `common.task_executions.execution_id`。
+
+错误响应统一使用 ADDP API 规范的 `{error}`：
+
+```json
+{
+  "error": "任务不存在"
+}
+```
+
+HTTP 状态码表达错误类型，响应体不得重复携带 `status=error`。
+
 ### 执行请求体
 
 执行请求体统一为：
@@ -241,7 +272,7 @@ System 注册 TaskProvider 时必须校验标准 endpoint：任务详情和执�
 6. 参数模板解析只返回被引用输出的原始值，不做隐式类型转换。运行时如果引用步骤没有结果、字段路径不存在，或路径试图进入非对象值，当前 Step 必须失败，不得把缺失值静默改为 `null` 继续执行。
 7. provider 不支持参数覆盖时必须明确拒绝，不得静默忽略。
 
-执行响应必须返回本次执行的统一 `execution_id`。标准最小响应为：
+执行成功受理时 HTTP 状态码必须为 `202 Accepted`，响应体必须返回本次执行的统一 `execution_id`。标准最小响应为：
 
 ```json
 {
@@ -250,7 +281,7 @@ System 注册 TaskProvider 时必须校验标准 endpoint：任务详情和执�
 }
 ```
 
-如果模块使用统一响应包装，`data.execution_id` 必须指向同一个 unified execution，顶层仍建议保留 `execution_id`，便于 Orchestrator 直接追踪。
+执行响应不得使用 `{status,data}` 包装；`status` 字段表示 execution status，不表示 HTTP 请求成功或失败。
 
 ### 多任务类型 provider
 
@@ -271,14 +302,14 @@ System 注册 TaskProvider 时必须校验标准 endpoint：任务详情和执�
 3. Monitor 展示任务详情时必须按 `module + task_type + source_task_id` 回查 owner provider。
 4. 不得为了多任务类型把一个模块拆成多个 provider，例如 `manager_mvt`、`manager_embedding`。
 
-### capabilities.task_types
+### capabilities.task_capabilities
 
-TaskProvider 注册时必须使用 `task.capabilities/v1` schema，并声明稳定的 `task_types[]`：
+TaskProvider 注册时必须使用 `task.capabilities/v1` schema，并声明稳定的 `task_capabilities[]` 任务类型能力数组：
 
 ```json
 {
   "schema_version": "task.capabilities/v1",
-  "task_types": [
+  "task_capabilities": [
     {
       "type": "scan",
       "display_name": "扫描任务",
@@ -317,7 +348,7 @@ TaskProvider 注册时必须使用 `task.capabilities/v1` schema，并声明稳�
 2. `create_url` 和 `edit_url` 属于具体 `task_type`，不得放在 provider 顶层。
 3. System 注册入口必须校验 capabilities schema，不符合规范的 provider 不得注册成功。
 4. `task_type` 是 provider 对外契约，不能随 UI 文案变化；不得使用大写、短横线、空格或本地化文本。
-5. provider 顶层私有扩展字段必须使用 `x_` 前缀，例如 `x_owner_features`；未加 `x_` 前缀的未知顶层字段必须被 System 注册入口拒绝，避免与未来标准字段冲突。
+5. provider 顶层私有扩展字段必须使用 `x_` 前缀，例如 `x_owner_features`；未加 `x_` 前缀的未知顶层字段必须被 System 注册入口拒绝，避免与未来标准字段冲突。`task_capabilities[]` 内部只允许本文列出的标准字段，不允许私有扩展字段；任务类型级扩展需要先修订 capabilities 规范。
 6. `definition_schema` 和 `execution_schema` 当前必须声明为 JSON 对象 schema，最小值为 `{ "type": "object" }`。System 注册入口必须校验平台 v1 可理解的 JSON Schema 子集：允许 `type`、`title`、`description`、`properties`、`required`、`enum`、`default`、`additionalProperties`、`items`、`minimum`、`maximum`、`minLength`、`maxLength`、`minItems`、`maxItems`、`format`；不得使用 `$ref`、`oneOf`、`anyOf`、`allOf`、`not` 等复杂组合或远程引用。字段级 schema 可逐步细化，但 Orchestrator 不得自行猜测 owner 私有定义。
 7. 不支持执行参数覆盖的 provider，应在对应 `task_type.execution_schema` 声明 `{ "type": "object", "additionalProperties": false }`，并在执行入口拒绝非空 `parameters`，不得静默忽略。
 8. `supports_inline_execution` 在 `task.capabilities/v1` 中必须为 `false`。内联执行需要新的 endpoint、执行配置 schema 和 Orchestrator Step 模型，必须作为后续专题设计，不得只通过 capabilities 布尔值打开。
@@ -326,6 +357,8 @@ TaskProvider 注册时必须使用 `task.capabilities/v1` schema，并声明稳�
 11. `create_url` / `edit_url` 应使用 Console 路由形式，可包含模块内深层路径和 query，例如 `/transfer/tasks/:id/edit`、`/develop/workflow?action=edit&id=:id`、`/graph/graphs/:graph_id/build/tasks/:id`；前端负责替换 `:id` / `{id}` / `:task_id` / `{task_id}` / `:graph_id` / `{graph_id}`。
 12. 模块新增或删除任务类型时，必须更新自身 capabilities、文档和 Swagger。
 13. `deprecated=true` 的 task type 不再作为可用任务类型处理。Orchestrator 保存和执行编排时都必须拒绝引用 deprecated task type；ADDP 当前不为废弃任务类型保留兼容迁移路径。历史 execution 查询只按既有 execution 记录展示，不要求 owner 继续提供可编辑任务定义入口。
+
+`common/taskprovider` 是 TaskProvider 契约的公共解析和校验边界，负责校验 `task.capabilities/v1` 与标准任务列表响应 `{items,total,page,page_size}`。System 注册入口、Monitor provider health、Orchestrator 编排保存和执行前校验必须复用该公共能力，不得在各模块重复维护一套 capabilities 或任务发现响应校验逻辑。owner 模块负责生成自身 capabilities 并实现标准 endpoint；`common/taskprovider` 不访问 System 注册表，不调用 owner 模块，也不处理执行调度。
 
 当前不应默认打开任何模块的 `supports_cancel=true`。标准取消能力必须先在专题中确认 worker 中断、资源清理、状态一致落库、重复取消幂等和可观测诊断等前置条件，再单独更新对应模块能力声明。
 
@@ -407,6 +440,13 @@ Orchestrator 的调度和 Step 引用任务的自身调度不是继承关系，�
 
 长期应以 DB-driven due task claim 为主。进程内 Cron 只作为触发器或辅助工具，避免多实例、重启恢复、漏跑补偿和调度审计问题。
 
+调度实现边界：
+
+1. `common/scheduler` 是业务代码使用 `robfig/cron` 的统一封装边界。模块需要 Cron 校验、下次执行时间计算或轻量进程内维护任务时，应通过 `common/scheduler` 调用；业务模块不得直接注册 `cron.New` / `AddFunc`。
+2. DB-driven due task claim 的多实例主路线以 PostgreSQL 事务内行锁为准，推荐使用 `FOR UPDATE SKIP LOCKED` claim 到期任务并在同一事务中推进或占用任务；SQLite 单测只验证基础计算和推进行为，不作为多实例锁语义来源。
+3. 新增、删除或变更任何 `supports_schedule=true` 的 task type 时，必须同步巡检 owner 任务定义是否具备完整调度闭环，并更新 capabilities、Swagger/API 文档和用户可见调度入口。
+4. 审计日志归档属于 System 固定系统维护任务，不属于 owner task schedule。它可以使用配置驱动的进程内调度，但必须复用 `common/scheduler`，只使用 infra MinIO 的 system bucket，不使用 System 引擎管理中的业务对象存储；归档路径按 `tenant_{id}/audit-logs/...` 组织，平台级日志归入 `tenant_0`。
+
 平台级约束：
 
 1. 用户可配置、可持久化、可重复执行的任务定义型调度，默认必须采用 DB-driven due task claim 路线。
@@ -440,9 +480,9 @@ provider health 至少检查以下内容：
 | 检查项 | 来源 | 说明 |
 | --- | --- | --- |
 | registration | System `task_providers` | provider 是否启用并具备基础 endpoint。 |
-| capabilities | System `task_providers.capabilities` | JSON 是否可解析、`schema_version` 是否为 `task.capabilities/v1`、`task_types` 是否非空。 |
+| capabilities | System `task_providers.capabilities` | JSON 是否可解析、`schema_version` 是否为 `task.capabilities/v1`、`task_capabilities[]` 是否非空。 |
 | module_health | `provider.base_url + /health` | 模块进程是否可访问。 |
-| task_discovery | `provider.base_url + task_list_endpoint + ?task_type=` | 每个未 deprecated task type 的标准任务发现 endpoint 是否可访问。 |
+| task_discovery | `provider.base_url + task_list_endpoint + ?task_type=` | 每个未 deprecated task type 的标准任务发现 endpoint 是否可访问，且响应体必须是标准任务列表对象，包含 `items`、`total`、`page`、`page_size`。 |
 
 provider health 状态只使用：
 
@@ -480,7 +520,7 @@ cleanup execution 属于系统运维执行记录。Monitor 必须能展示 clean
 - `trigger_type` 只写 `manual` / `scheduled`。
 - `source` 写触发来源。
 - `task_type` 稳定并声明到 TaskProvider capabilities。
-- 多任务类型模块使用一个 provider 和多个 `task_types`。
+- 多任务类型模块使用一个 provider，并在 `task_capabilities[]` 中声明多个任务类型能力。
 - execution 能按 `module + task_type + source_task_id` 回查任务定义。
 - ad-hoc execution 保存完整 `execution_config`。
 - Swagger 和模块文档同步。

@@ -1,4 +1,3 @@
--- 删除 tasks 表的 type 字段
--- 该字段从未在业务逻辑中使用，纯粹是僵尸字段
+-- 删除旧任务类型字段。Transfer 当前唯一任务类型字段是 task_type，固定为 sync。
 
-ALTER TABLE transfer.tasks DROP COLUMN IF EXISTS type;
+ALTER TABLE transfer.transfer_tasks DROP COLUMN IF EXISTS type;

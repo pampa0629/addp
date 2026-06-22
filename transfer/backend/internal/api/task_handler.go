@@ -95,9 +95,9 @@ func (h *TaskHandler) GetTask(c *gin.Context) {
 // @Produce json
 // @Param page query int false "页码 | Page number" default(1)
 // @Param page_size query int false "每页大小 | Page size" default(20)
-// @Param task_type query string false "任务类型，当前固定为 import | Task type, currently fixed to import"
+// @Param task_type query string false "任务类型，当前固定为 sync | Task type, currently fixed to sync"
 // @Param status query string false "任务定义状态: idle, running | Task definition status"
-// @Success 200 {object} commonAPI.PaginatedResponse{data=[]models.TransferTask} "获取成功 | Retrieved successfully"
+// @Success 200 {object} models.ListProviderTasksResponse "获取成功 | Retrieved successfully"
 // @Failure 400 {object} map[string]string "不支持的任务类型 | Unsupported task type"
 // @Failure 500 {object} map[string]string "服务器错误 | Server error"
 // @Router /tasks [get]
@@ -113,7 +113,7 @@ func (h *TaskHandler) ListTasks(c *gin.Context) {
 		req.PageSize = 20
 	}
 	req.TaskType = strings.TrimSpace(req.TaskType)
-	if req.TaskType != "" && req.TaskType != commonExecution.TaskTypeImport {
+	if req.TaskType != "" && req.TaskType != commonExecution.TaskTypeSync {
 		commonAPI.BadRequestError(c, "unsupported task_type: "+req.TaskType)
 		return
 	}
@@ -132,7 +132,12 @@ func (h *TaskHandler) ListTasks(c *gin.Context) {
 		return
 	}
 
-	commonAPI.SendPaginatedResponse(c, tasks, total, req.Page, req.PageSize)
+	c.JSON(http.StatusOK, models.ListProviderTasksResponse{
+		Items:    tasks,
+		Total:    total,
+		Page:     req.Page,
+		PageSize: req.PageSize,
+	})
 }
 
 // UpdateTask 更新任务
@@ -237,12 +242,17 @@ type ProviderExecuteRequest struct {
 	Parameters        map[string]interface{} `json:"parameters"`
 }
 
+type ProviderExecuteResponse struct {
+	Status      string `json:"status"`
+	ExecutionID string `json:"execution_id"`
+}
+
 // ProviderGetTask 获取标准 TaskProvider 任务详情。
 // @Summary 获取 TaskProvider 任务详情 | Get TaskProvider task detail
-// @Description 按标准 TaskProvider 路径获取 Transfer 任务详情；task_type 仅支持 import。| Get Transfer task detail through the standard TaskProvider path; task_type only supports import.
+// @Description 按标准 TaskProvider 路径获取 Transfer 任务详情；task_type 仅支持 sync。| Get Transfer task detail through the standard TaskProvider path; task_type only supports sync.
 // @Tags         任务管理 | Task Management
 // @Produce json
-// @Param task_type path string true "任务类型，固定为 import | Task type, fixed to import"
+// @Param task_type path string true "任务类型，固定为 sync | Task type, fixed to sync"
 // @Param id path int true "任务ID | Task ID"
 // @Success 200 {object} models.TransferTask "任务详情 | Task detail"
 // @Failure 400 {object} map[string]string "参数错误 | Bad request"
@@ -251,7 +261,7 @@ type ProviderExecuteRequest struct {
 // @Security BearerAuth
 func (h *TaskHandler) ProviderGetTask(c *gin.Context) {
 	taskType := c.Param("task_type")
-	if taskType != commonExecution.TaskTypeImport {
+	if taskType != commonExecution.TaskTypeSync {
 		commonAPI.BadRequestError(c, "unsupported task_type: "+taskType)
 		return
 	}
@@ -260,21 +270,21 @@ func (h *TaskHandler) ProviderGetTask(c *gin.Context) {
 
 // ProviderExecuteTask 使用 TaskProvider 标准协议启动 Transfer 任务。
 // @Summary 执行 TaskProvider Transfer 任务 | Execute TaskProvider Transfer task
-// @Description 按标准 TaskProvider 协议启动 Transfer 任务；task_type 仅支持 import，parameters 当前不支持覆盖。| Start a Transfer task through the standard TaskProvider protocol; task_type only supports import and parameters overrides are not supported.
+// @Description 按标准 TaskProvider 协议启动 Transfer 任务；task_type 仅支持 sync，parameters 当前不支持覆盖。| Start a Transfer task through the standard TaskProvider protocol; task_type only supports sync and parameters overrides are not supported.
 // @Tags         任务管理 | Task Management
 // @Accept json
 // @Produce json
-// @Param task_type path string true "任务类型，固定为 import | Task type, fixed to import"
+// @Param task_type path string true "任务类型，固定为 sync | Task type, fixed to sync"
 // @Param id path int true "任务ID | Task ID"
 // @Param request body ProviderExecuteRequest false "TaskProvider 执行请求 | TaskProvider execution request"
-// @Success 200 {object} models.TaskExecution "执行记录 | Execution"
+// @Success 202 {object} ProviderExecuteResponse "执行记录 | Execution"
 // @Failure 400 {object} map[string]string "参数错误 | Bad request"
 // @Failure 500 {object} map[string]string "服务器错误 | Server error"
 // @Router /tasks/{task_type}/{id}/execute [post]
 // @Security BearerAuth
 func (h *TaskHandler) ProviderExecuteTask(c *gin.Context) {
 	taskType := c.Param("task_type")
-	if taskType != commonExecution.TaskTypeImport {
+	if taskType != commonExecution.TaskTypeSync {
 		commonAPI.BadRequestError(c, "unsupported task_type: "+taskType)
 		return
 	}
@@ -285,7 +295,10 @@ func (h *TaskHandler) ProviderExecuteTask(c *gin.Context) {
 	}
 
 	var req ProviderExecuteRequest
-	_ = c.ShouldBindJSON(&req)
+	if err := commonAPI.BindOptionalJSONStrict(c, &req); err != nil {
+		commonAPI.BadRequestError(c, err.Error())
+		return
+	}
 	if len(req.Parameters) > 0 {
 		commonAPI.BadRequestError(c, "Transfer task provider does not support execution parameter overrides")
 		return
@@ -314,11 +327,9 @@ func (h *TaskHandler) ProviderExecuteTask(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"status":       "success",
-		"execution_id": execution.ExecutionID,
-		"id":           execution.ID,
-		"data":         execution,
+	c.JSON(http.StatusAccepted, ProviderExecuteResponse{
+		Status:      string(execution.Status),
+		ExecutionID: execution.ExecutionID,
 	})
 }
 

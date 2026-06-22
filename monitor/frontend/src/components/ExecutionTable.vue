@@ -18,7 +18,7 @@
     </el-table-column>
     <el-table-column prop="task_type" :label="t('monitor.table.task_type')" width="140">
       <template #default="{ row }">
-        {{ formatTaskType(row.task_type) }}
+        {{ formatTaskType(row) }}
       </template>
     </el-table-column>
     <el-table-column prop="source_task_id" :label="t('monitor.table.source_task_id')" width="130">
@@ -65,11 +65,16 @@
 
 <script setup>
 import { useI18n } from 'vue-i18n'
+import { resolveTaskTypeDisplayName } from '@common-ui'
 
 const { t } = useI18n()
 
-defineProps({
+const props = defineProps({
   executions: {
+    type: Array,
+    default: () => []
+  },
+  taskProviders: {
     type: Array,
     default: () => []
   }
@@ -110,8 +115,11 @@ function getTriggerText(triggerType) {
   return textMap[triggerType] || triggerType || '-'
 }
 
-function formatTaskType(taskType) {
+function formatTaskType(row) {
+  const taskType = row?.task_type
   if (!taskType) return '-'
+  const capabilityName = resolveTaskTypeDisplayName(props.taskProviders, row?.module, taskType)
+  if (capabilityName) return capabilityName
   const key = `monitor.execution.task_type_names.${taskType}`
   const translated = t(key)
   return translated === key ? taskType : translated

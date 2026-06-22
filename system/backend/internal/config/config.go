@@ -39,6 +39,13 @@ type Config struct {
 	RedisPassword string
 	RedisDB       int
 
+	// Infra MinIO 配置（系统文件存储，不是业务引擎）
+	InfraMinIOEndpoint  string
+	InfraMinIOAccessKey string
+	InfraMinIOSecretKey string
+	InfraMinIOBucket    string
+	InfraMinIOUseSSL    bool
+
 	// 内置引擎服务 URL（用于 extension_api_config.base_url）
 	SystemServiceURL       string
 	MetaServiceURL         string
@@ -48,11 +55,10 @@ type Config struct {
 	DevelopServiceURL      string
 	GeopandasURL           string
 
-	// 日志归档配置
-	LogRetentionDays int    // 日志保留天数
-	LogArchiveEnable bool   // 是否启用归档
-	LogCleanupEnable bool   // 是否启用清理
-	LogArchiveCron   string // 归档任务 cron 表达式
+	// 审计日志归档配置
+	AuditLogRetentionDays  int    // 审计日志数据库保留天数
+	AuditLogArchiveEnabled bool   // 是否启用审计日志归档
+	AuditLogArchiveCron    string // 审计日志归档任务 cron 表达式
 
 	// CORS 配置
 	AllowedOrigins []string // CORS 白名单
@@ -145,6 +151,13 @@ func Load() *Config {
 		RedisPassword: getEnv("REDIS_PASSWORD", ""),
 		RedisDB:       getEnvAsInt("REDIS_DB", 0),
 
+		// Infra MinIO 配置（系统文件存储，不是业务引擎）
+		InfraMinIOEndpoint:  getInfraMinIOEndpoint(),
+		InfraMinIOAccessKey: getEnv("MINIO_ROOT_USER", "minioadmin"),
+		InfraMinIOSecretKey: getEnv("MINIO_ROOT_PASSWORD", "minioadmin"),
+		InfraMinIOBucket:    getEnv("MINIO_BUCKET", "system"),
+		InfraMinIOUseSSL:    getEnvAsBool("MINIO_USE_SSL", false),
+
 		// 内置引擎服务 URL
 		SystemServiceURL:       getEnv("SYSTEM_URL", "http://localhost:8180"),
 		MetaServiceURL:         getEnv("META_URL", "http://localhost:8082"),
@@ -154,11 +167,10 @@ func Load() *Config {
 		DevelopServiceURL:      getEnv("DEVELOP_URL", "http://localhost:8085"),
 		GeopandasURL:           getEnv("GEOPANDAS_URL", "http://localhost:8090"),
 
-		// 日志归档配置
-		LogRetentionDays: getEnvAsInt("LOG_RETENTION_DAYS", 30),     // 默认保留30天
-		LogArchiveEnable: getEnvAsBool("LOG_ARCHIVE_ENABLE", false), // 默认不启用归档
-		LogCleanupEnable: getEnvAsBool("LOG_CLEANUP_ENABLE", true),  // 默认启用清理
-		LogArchiveCron:   getEnv("LOG_ARCHIVE_CRON", "0 2 * * *"),   // 每天凌晨2点执行
+		// 审计日志归档配置
+		AuditLogRetentionDays:  getEnvAsPositiveInt("AUDIT_LOG_RETENTION_DAYS", 90), // 默认保留90天
+		AuditLogArchiveEnabled: getEnvAsBool("AUDIT_LOG_ARCHIVE_ENABLED", false),    // 默认不启用归档
+		AuditLogArchiveCron:    getEnv("AUDIT_LOG_ARCHIVE_CRON", "0 2 * * *"),       // 每天凌晨2点执行
 
 		// CORS 配置
 		AllowedOrigins: allowedOrigins,
@@ -192,6 +204,24 @@ func getEnvAsInt(key string, defaultValue int) int {
 		}
 	}
 	return defaultValue
+}
+
+func getEnvAsPositiveInt(key string, defaultValue int) int {
+	value := getEnvAsInt(key, defaultValue)
+	if value < 1 {
+		log.Printf("WARNING: %s must be greater than 0, using default value %d", key, defaultValue)
+		return defaultValue
+	}
+	return value
+}
+
+func getInfraMinIOEndpoint() string {
+	if endpoint := getEnv("MINIO_ENDPOINT", ""); endpoint != "" {
+		return endpoint
+	}
+	host := getEnv("MINIO_HOST", "localhost")
+	port := getEnv("MINIO_API_PORT", "19000")
+	return host + ":" + port
 }
 
 // loadEncryptionKey 加载加密密钥 (32字节 AES-256)

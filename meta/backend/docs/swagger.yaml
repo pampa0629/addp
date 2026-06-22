@@ -59,10 +59,6 @@ definitions:
     - array
     - uuid
     - geometry
-    - point
-    - linestring
-    - polygon
-    - multipoint
     type: string
     x-enum-varnames:
     - FieldTypeUnknown
@@ -82,10 +78,6 @@ definitions:
     - FieldTypeArray
     - FieldTypeUUID
     - FieldTypeGeometry
-    - FieldTypePoint
-    - FieldTypeLineString
-    - FieldTypePolygon
-    - FieldTypeMultiPoint
   github_com_addp_meta_internal_models.EngineScanMVTPreprocessPlan:
     properties:
       concurrency:
@@ -385,6 +377,8 @@ definitions:
     properties:
       path:
         type: string
+      primary:
+        type: boolean
       required:
         type: boolean
       role:
@@ -554,7 +548,7 @@ definitions:
       geometry_column:
         type: string
       geometry_types:
-        description: 几何类型列表，如 ["ST_MultiPolygon"]
+        description: 几何类型列表，如 ["MultiPolygon"]
         items:
           type: string
         type: array
@@ -565,6 +559,32 @@ definitions:
         type: integer
       srid:
         type: integer
+    type: object
+  github_com_addp_meta_internal_service.InspectRequest:
+    properties:
+      locator:
+        type: string
+      ref_groups:
+        items:
+          $ref: '#/definitions/github_com_addp_meta_internal_models.ScanRefGroup'
+        type: array
+      scan_depth:
+        type: string
+    type: object
+  github_com_addp_meta_internal_service.InspectResult:
+    properties:
+      attributes:
+        $ref: '#/definitions/github_com_addp_meta_internal_models.JSONMap'
+      data_type:
+        type: string
+      format:
+        type: string
+      full_name:
+        type: string
+      layout:
+        type: string
+      name:
+        type: string
     type: object
   gorm.DeletedAt:
     properties:
@@ -584,6 +604,13 @@ definitions:
       source:
         type: string
       trigger_type:
+        type: string
+    type: object
+  internal_api.taskProviderExecuteResponse:
+    properties:
+      execution_id:
+        type: string
+      status:
         type: string
     type: object
   resourcetree.TreeNode:
@@ -832,6 +859,42 @@ paths:
       summary: 获取执行详情 | Get execution
       tags:
       - Meta Scan
+  /inspect:
+    post:
+      consumes:
+      - application/json
+      description: 对给定 locator 或 ref_groups 动态识别标准 attributes，但不写入 Meta item 或 node
+        | Dynamically inspect standard attributes for a locator or ref_groups without
+        persisting Meta item or node
+      parameters:
+      - description: 识别请求 | Inspect request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_meta_internal_service.InspectRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 识别结果 | Inspect result
+          schema:
+            $ref: '#/definitions/github_com_addp_meta_internal_service.InspectResult'
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 动态识别标准 attributes | Inspect standard attributes without persistence
+      tags:
+      - Meta
   /items/{item_id}:
     get:
       description: 按数据项 ID 获取元数据项详情 | Get metadata item detail by ID
@@ -2000,11 +2063,10 @@ paths:
       produces:
       - application/json
       responses:
-        "200":
+        "202":
           description: 执行记录 | Execution
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/internal_api.taskProviderExecuteResponse'
         "400":
           description: 请求参数错误 | Bad request
           schema:

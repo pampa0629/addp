@@ -418,14 +418,14 @@ async function loadTaskProviderRuntimeMetadata() {
     providers.forEach(provider => {
       const moduleName = provider.module_name
       const capabilities = parseCapabilities(provider.capabilities)
-      const taskTypes = Array.isArray(capabilities.task_types) ? capabilities.task_types : []
-      taskTypes
+      const taskCapabilities = Array.isArray(capabilities.task_capabilities) ? capabilities.task_capabilities : []
+      taskCapabilities
         .filter(item => hasValue(item?.type) && !item.deprecated && hasValue(item?.edit_url))
         .forEach(item => {
           editUrlIndex.set(taskTypeIndexKey(moduleName, item.type), item.edit_url)
         })
 
-      taskTypes
+      taskCapabilities
         .filter(item => hasValue(item?.type) && !item.deprecated)
         .forEach(item => {
           taskListRequests.push(
@@ -433,7 +433,7 @@ async function loadTaskProviderRuntimeMetadata() {
               .then(data => {
                 const tasks = Array.isArray(data?.items) ? data.items : []
                 tasks.forEach(task => {
-                  const taskType = task.task_type || task.type || item.type
+                  const taskType = task.task_type
                   if (!hasValue(task?.id) || !hasValue(taskType)) return
                   contextIndex.set(taskContextIndexKey(moduleName, taskType, task.id), {
                     graphId: task.graph_id || null

@@ -1,5 +1,87 @@
 basePath: /api/v1/manager
 definitions:
+  execution.TaskExecution:
+    properties:
+      bytes_read:
+        description: Transfer 读取字节数
+        type: integer
+      bytes_written:
+        description: Transfer 写入字节数
+        type: integer
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      current_step:
+        description: 当前步骤（Orchestrator/Workflow）
+        type: string
+      error_details:
+        allOf:
+        - $ref: '#/definitions/github_com_addp_common_models.JSONMap'
+        description: 错误详情（仅失败时有值）
+      execution_config:
+        allOf:
+        - $ref: '#/definitions/github_com_addp_common_models.JSONMap'
+        description: JSONB 字段
+      execution_id:
+        description: 执行标识
+        type: string
+      execution_time_ms:
+        description: 性能指标
+        type: integer
+      id:
+        type: integer
+      metadata:
+        allOf:
+        - $ref: '#/definitions/github_com_addp_common_models.JSONMap'
+        description: 模块特有扩展数据（结果、断点、步骤结果等）
+      module:
+        description: 模块标识
+        type: string
+      parent_execution_id:
+        description: 父执行（Orchestrator 子步骤追踪父编排）
+        type: string
+      progress:
+        description: 0-100
+        type: integer
+      records_read:
+        description: Transfer 读取记录数
+        type: integer
+      records_written:
+        description: Transfer 写入记录数
+        type: integer
+      rows_affected:
+        description: SQL 影响行数
+        type: integer
+      source:
+        description: 触发来源模块
+        type: string
+      source_task_id:
+        description: 关联原始任务
+        type: string
+      source_task_name:
+        description: 任务名称（冗余，便于查询）
+        type: string
+      started_at:
+        description: 时间戳
+        type: string
+      status:
+        description: 执行状态
+        type: string
+      task_type:
+        description: provider 声明的稳定任务类型
+        type: string
+      tenant_id:
+        type: integer
+      trigger_type:
+        description: 触发信息
+        type: string
+      triggered_by:
+        description: 触发用户ID
+        type: integer
+      updated_at:
+        type: string
+    type: object
   github_com_addp_common_models.JSONMap:
     additionalProperties: true
     type: object
@@ -202,6 +284,53 @@ definitions:
       recursive:
         type: boolean
     type: object
+  github_com_addp_manager_internal_service.ExportRequest:
+    properties:
+      file_name:
+        type: string
+      format:
+        type: string
+      source_item_locator:
+        type: string
+    type: object
+  github_com_addp_manager_internal_service.ExportSessionResponse:
+    properties:
+      created_at:
+        type: string
+      download_url:
+        type: string
+      error_message:
+        type: string
+      file_name:
+        type: string
+      format:
+        type: string
+      id:
+        type: integer
+      source_item_locator:
+        type: string
+      status:
+        type: string
+      target_locator:
+        type: string
+      transfer_execution_id:
+        type: string
+      transfer_task_id:
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  github_com_addp_manager_internal_service.ImportResult:
+    properties:
+      status:
+        type: string
+      transfer_execution_id:
+        type: string
+      transfer_task_id:
+        type: integer
+      upload_uuid:
+        type: string
+    type: object
   github_com_addp_manager_internal_service.QuickViewCapability:
     properties:
       active_mode:
@@ -343,6 +472,34 @@ definitions:
       tile_url_template:
         type: string
     type: object
+  github_com_addp_manager_internal_service.ResourceActionStatus:
+    properties:
+      data_types:
+        items:
+          type: string
+        type: array
+      formats:
+        items:
+          type: string
+        type: array
+      reason:
+        type: string
+      supported:
+        type: boolean
+    type: object
+  github_com_addp_manager_internal_service.ResourceActionsResponse:
+    properties:
+      actions:
+        additionalProperties:
+          $ref: '#/definitions/github_com_addp_manager_internal_service.ResourceActionStatus'
+        type: object
+      engine_category:
+        type: string
+      kind:
+        type: string
+      locator:
+        type: string
+    type: object
   github_com_addp_manager_internal_service.SearchDocument:
     properties:
       asset_id:
@@ -445,6 +602,26 @@ definitions:
       reason:
         type: string
     type: object
+  github_com_addp_manager_internal_service.UploadResult:
+    properties:
+      files:
+        items:
+          $ref: '#/definitions/github_com_addp_manager_internal_service.UploadedFileResult'
+        type: array
+      scan_execution_id:
+        type: string
+      scan_run:
+        $ref: '#/definitions/execution.TaskExecution'
+      target_node_locator:
+        type: string
+    type: object
+  github_com_addp_manager_internal_service.UploadedFileResult:
+    properties:
+      file_name:
+        type: string
+      locator:
+        type: string
+    type: object
   github_com_addp_manager_internal_service.VectorDocument:
     properties:
       asset_id:
@@ -509,6 +686,56 @@ definitions:
       next_run_at:
         type: string
       schedule:
+        type: string
+    type: object
+  internal_api.EmbeddingTaskResponse:
+    properties:
+      config:
+        $ref: '#/definitions/github_com_addp_common_models.JSONMap'
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      description:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: integer
+      last_execution_id:
+        type: string
+      last_execution_status:
+        type: string
+      last_run_at:
+        type: string
+      name:
+        type: string
+      next_run_at:
+        type: string
+      schedule:
+        type: string
+      target:
+        $ref: '#/definitions/internal_api.EmbeddingTaskTargetResponse'
+      task_type:
+        type: string
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  internal_api.EmbeddingTaskTargetResponse:
+    properties:
+      engine_id:
+        type: integer
+      item_id:
+        type: integer
+      locator:
+        type: string
+      node_id:
+        type: integer
+      recursive:
+        type: boolean
+      scope:
         type: string
     type: object
   internal_api.QuickViewOptimizationTaskGeometryResponse:
@@ -602,6 +829,45 @@ definitions:
       trigger_type:
         description: manual|scheduled，默认 manual
         type: string
+    type: object
+  internal_api.TaskExecuteResponse:
+    properties:
+      execution_id:
+        type: string
+      status:
+        type: string
+    type: object
+  internal_api.TaskListItem:
+    properties:
+      description:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: integer
+      last_execution_id:
+        type: string
+      last_execution_status:
+        type: string
+      name:
+        type: string
+      task_type:
+        type: string
+      tenant_id:
+        type: integer
+    type: object
+  internal_api.TaskListResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/internal_api.TaskListItem'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
     type: object
   internal_api.TileCacheTaskRequest:
     properties:
@@ -719,6 +985,42 @@ paths:
       summary: 获取地图服务配置 | Get map service configuration
       tags:
       - Manager
+  /downloads/file:
+    get:
+      description: 按 ResourceLocator 下载存储型 engine 的 item；单文件直接流式下载，多文件组合自动打包 ZIP |
+        Download a storage engine item by ResourceLocator; bundles multi-ref items
+        as ZIP
+      parameters:
+      - description: 资源定位符 URI | Resource locator URI
+        in: query
+        name: locator
+        required: true
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: 下载内容流 | Download content stream
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 下载存储数据项 | Download storage item
+      tags:
+      - Manager
   /embedding_executions:
     post:
       consumes:
@@ -805,7 +1107,7 @@ paths:
         "201":
           description: 创建的任务配置 | Created task configuration
           schema:
-            $ref: '#/definitions/internal_api.TileCacheTaskResponse'
+            $ref: '#/definitions/internal_api.EmbeddingTaskResponse'
         "400":
           description: 请求参数错误 | Bad request
           schema:
@@ -856,9 +1158,10 @@ paths:
       - application/json
       responses:
         "200":
-          description: 任务详情 | Task detail
+          description: 任务详情，按 task_type 返回 TileCacheTaskResponse、QuickViewOptimizationTaskResponse
+            或 EmbeddingTaskResponse | Task detail, returns TileCacheTaskResponse,
+            QuickViewOptimizationTaskResponse, or EmbeddingTaskResponse by task_type
           schema:
-            additionalProperties: true
             type: object
         "400":
           description: 请求参数错误 | Bad request
@@ -897,7 +1200,7 @@ paths:
         "200":
           description: 更新后的任务配置 | Updated task configuration
           schema:
-            $ref: '#/definitions/internal_api.TileCacheTaskResponse'
+            $ref: '#/definitions/internal_api.EmbeddingTaskResponse'
         "400":
           description: 请求参数错误 | Bad request
           schema:
@@ -1194,8 +1497,7 @@ paths:
         "200":
           description: 执行状态 | Execution status
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/execution.TaskExecution'
         "404":
           description: 执行记录不存在 | Execution not found
           schema:
@@ -1206,26 +1508,132 @@ paths:
       summary: 获取执行状态 | Get execution status
       tags:
       - Manager
-  /import:
+  /exports:
+    post:
+      consumes:
+      - application/json
+      description: 基于数据库 table item 创建导出会话，内部调用 Transfer sync 写入 Manager infra 暂存区；导出完成后通过会话文件接口下载。|
+        Create an export session for a database table item. Manager calls Transfer
+        sync internally and stores the output in Manager infra staging before download.
+      parameters:
+      - description: 导出请求 | Export request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_manager_internal_service.ExportRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: 导出会话已创建 | Export session created
+          schema:
+            $ref: '#/definitions/github_com_addp_manager_internal_service.ExportSessionResponse'
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 导出数据库数据项 | Export database item
+      tags:
+      - Manager
+  /exports/{id}:
+    get:
+      description: 查询导出会话状态；若底层 Transfer 已完成，响应中包含 download_url。| Query export session
+        status. When the underlying Transfer execution succeeds, the response contains
+        download_url.
+      parameters:
+      - description: 导出会话 ID | Export session ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 导出会话 | Export session
+          schema:
+            $ref: '#/definitions/github_com_addp_manager_internal_service.ExportSessionResponse'
+        "404":
+          description: 会话不存在 | Session not found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取导出会话 | Get export session
+      tags:
+      - Manager
+  /exports/{id}/file:
+    get:
+      description: 下载已完成导出会话的结果文件。| Download the result file of a completed export
+        session.
+      parameters:
+      - description: 导出会话 ID | Export session ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: 下载内容流 | Download content stream
+        "404":
+          description: 会话不存在 | Session not found
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: 导出尚未完成 | Export not ready
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 下载导出结果 | Download export result
+      tags:
+      - Manager
+  /imports:
     post:
       consumes:
       - multipart/form-data
       description: 上传并导入数据文件（如Shapefile ZIP包）到目标数据库 | Upload and import data files
         (e.g. Shapefile ZIP) to target database
       parameters:
-      - description: 数据文件（Shapefile ZIP包等）| Data file (Shapefile ZIP, etc.)
+      - description: '数据文件：单个 Shapefile ZIP，或同一组 .shp/.dbf/.shx/.prj/.qpj/.cpg 文件
+          | Data files: one Shapefile ZIP, or a Shapefile component set'
         in: formData
-        name: file
+        name: files
         required: true
         type: file
-      - description: 目标数据库引擎ID | Target database engine ID
+      - description: 目标数据库节点 ResourceLocator | Target database node ResourceLocator
         in: formData
-        name: target_engine_id
+        name: target_node_locator
         required: true
-        type: integer
-      - description: 目标 Schema，默认 public | Target schema, default public
-        in: formData
-        name: target_schema
         type: string
       - description: 目标数据项名称，默认使用文件名 | Target item name, default from filename
         in: formData
@@ -1239,10 +1647,9 @@ paths:
       - application/json
       responses:
         "202":
-          description: 导入任务已创建 | Import task created
+          description: 导入请求已提交 | Import request submitted
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/github_com_addp_manager_internal_service.ImportResult'
         "400":
           description: 请求参数错误 | Bad request
           schema:
@@ -1798,6 +2205,43 @@ paths:
       summary: 更新快显性能优化任务配置 | Update quick view optimization task configuration
       tags:
       - Manager
+  /resource-actions:
+    get:
+      description: 按 ResourceLocator 返回当前资源可显示的 Manager 用户动作及格式限制 | Return Manager
+        user actions and format constraints for a resource locator
+      parameters:
+      - description: 资源定位符 URI | Resource locator URI
+        in: query
+        name: locator
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 资源动作能力 | Resource action capabilities
+          schema:
+            $ref: '#/definitions/github_com_addp_manager_internal_service.ResourceActionsResponse'
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询资源动作能力 | Get resource action capabilities
+      tags:
+      - Manager
   /search:
     get:
       description: 执行全文检索与向量语义检索的混合搜索 | Execute hybrid search combining full-text
@@ -1926,54 +2370,13 @@ paths:
       summary: 删除搜索历史记录 | Delete search history item
       tags:
       - Manager
-  /storage-download:
-    get:
-      description: 基于 DownloadPlan 自动处理单叶子下载和 multi refs ZIP 打包下载；storage-stream 仍只用于单存储叶子
-        Range 流 | Resolve DownloadPlan and download a logical storage object as a
-        single stream or ZIP bundle
-      parameters:
-      - description: 存储引擎ID | Engine ID
-        in: query
-        name: engine_id
-        required: true
-        type: integer
-      - description: 存储内容引用 | Storage content reference
-        in: query
-        name: storage_ref
-        required: true
-        type: string
-      produces:
-      - application/octet-stream
-      responses:
-        "200":
-          description: 下载内容流 | Download content stream
-        "400":
-          description: 请求参数错误 | Bad request
-          schema:
-            additionalProperties: true
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: 服务器内部错误 | Internal server error
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 逻辑存储对象下载 | Logical storage object download
-      tags:
-      - Manager
   /storage-stream:
     get:
-      description: 支持 Range 请求的单存储叶子内容流式传输，用于图片、PDF、视频等在线预览；原始下载请使用 storage-download。storage_ref
+      description: 支持 Range 请求的单存储叶子内容流式传输，用于图片、PDF、视频等在线预览；用户下载请使用 downloads/file。storage_ref
         在对象存储中为 bucket/path，在文件系统中为文件路径 | Storage leaf content streaming with Range
-        request support for online previews such as images, PDF, and video; use storage-download
-        for original downloads. storage_ref is bucket/path for object catalogs and
-        file path for file catalogs
+        request support for online previews such as images, PDF, and video; use downloads/file
+        for user downloads. storage_ref is bucket/path for object catalogs and file
+        path for file catalogs
       parameters:
       - description: 存储引擎ID | Engine ID
         in: query
@@ -2036,8 +2439,7 @@ paths:
         "200":
           description: 任务列表 | Task list
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/internal_api.TaskListResponse'
         "400":
           description: 不支持的任务类型 | Unsupported task type
           schema:
@@ -2073,9 +2475,10 @@ paths:
       - application/json
       responses:
         "200":
-          description: 任务详情 | Task detail
+          description: 任务详情，按 task_type 返回 TileCacheTaskResponse、QuickViewOptimizationTaskResponse
+            或 EmbeddingTaskResponse | Task detail, returns TileCacheTaskResponse,
+            QuickViewOptimizationTaskResponse, or EmbeddingTaskResponse by task_type
           schema:
-            additionalProperties: true
             type: object
         "400":
           description: 请求参数错误 | Bad request
@@ -2117,11 +2520,10 @@ paths:
       produces:
       - application/json
       responses:
-        "200":
+        "202":
           description: 执行ID | Execution ID
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/internal_api.TaskExecuteResponse'
         "400":
           description: 请求参数错误 | Bad request
           schema:
@@ -2380,6 +2782,50 @@ paths:
       security:
       - BearerAuth: []
       summary: 更新瓦片缓存生成任务配置 | Update tile cache generation task configuration
+      tags:
+      - Manager
+  /uploads:
+    post:
+      consumes:
+      - multipart/form-data
+      description: 将用户本地文件原样写入存储型引擎节点，完成后提交 Meta 后台扫描 | Upload local files to a storage
+        engine node and submit a Meta background scan
+      parameters:
+      - description: 目标存储节点 ResourceLocator | Target storage node ResourceLocator
+        in: formData
+        name: target_node_locator
+        required: true
+        type: string
+      - description: 一个或多个文件 | One or more files
+        in: formData
+        name: files
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: 上传结果 | Upload result
+          schema:
+            $ref: '#/definitions/github_com_addp_manager_internal_service.UploadResult'
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 上传文件到存储节点 | Upload files to storage node
       tags:
       - Manager
 securityDefinitions:

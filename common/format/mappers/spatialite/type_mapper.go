@@ -59,18 +59,8 @@ func (m *TypeMapper) ToCommon(sqliteType string) datatype.FieldType {
 		return datatype.FieldTypeBytes
 
 	// 地理空间类型（SpatiaLite 扩展）
-	case "GEOMETRY":
+	case "GEOMETRY", "POINT", "LINESTRING", "POLYGON", "MULTIPOINT", "MULTILINESTRING", "MULTIPOLYGON", "GEOMETRYCOLLECTION":
 		return datatype.FieldTypeGeometry
-	case "POINT":
-		return datatype.FieldTypePoint
-	case "LINESTRING":
-		return datatype.FieldTypeLineString
-	case "POLYGON":
-		return datatype.FieldTypePolygon
-	case "MULTIPOINT":
-		return datatype.FieldTypeMultiPoint
-	case "MULTILINESTRING", "MULTIPOLYGON", "GEOMETRYCOLLECTION":
-		return datatype.FieldTypeGeometry // 映射到通用 geometry 类型
 
 	// 默认为字符串（SQLite 的亲和类型机制）
 	default:
@@ -105,14 +95,6 @@ func (m *TypeMapper) FromCommon(commonType datatype.FieldType) (string, int, int
 		return "BLOB", 0, 0
 	case datatype.FieldTypeGeometry:
 		return "GEOMETRY", 0, 0
-	case datatype.FieldTypePoint:
-		return "POINT", 0, 0
-	case datatype.FieldTypeLineString:
-		return "LINESTRING", 0, 0
-	case datatype.FieldTypePolygon:
-		return "POLYGON", 0, 0
-	case datatype.FieldTypeMultiPoint:
-		return "MULTIPOINT", 0, 0
 	case datatype.FieldTypeJSON:
 		return "TEXT", 0, 0 // SQLite 3.38.0+ 支持 JSON 函数，但存为 TEXT
 	case datatype.FieldTypeUUID:

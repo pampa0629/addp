@@ -184,27 +184,29 @@ func main() {
 	}
 
 	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========
-	taskProviderRegistry := service.NewTaskProviderRegistryService(
-		cfg.SystemServiceURL,
-		cfg.InternalAPIKey,
-		serviceURL,
-	)
+	if cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
+		taskProviderRegistry := service.NewTaskProviderRegistryService(
+			cfg.SystemServiceURL,
+			cfg.InternalAPIKey,
+			serviceURL,
+		)
 
-	// 后台异步注册（不阻塞启动，支持重试）
-	go func() {
-		time.Sleep(2 * time.Second) // 等待服务完全启动
-		maxRetries := 5
-		for attempt := 1; attempt <= maxRetries; attempt++ {
-			if err := taskProviderRegistry.Register(); err != nil {
-				log.Printf("⚠️  Registration attempt %d/%d failed: %v", attempt, maxRetries, err)
-				time.Sleep(time.Duration(attempt*2) * time.Second) // 指数退避
-				continue
+		// 后台异步注册（不阻塞启动，支持重试）
+		go func() {
+			time.Sleep(2 * time.Second) // 等待服务完全启动
+			maxRetries := 5
+			for attempt := 1; attempt <= maxRetries; attempt++ {
+				if err := taskProviderRegistry.Register(); err != nil {
+					log.Printf("⚠️  Registration attempt %d/%d failed: %v", attempt, maxRetries, err)
+					time.Sleep(time.Duration(attempt*2) * time.Second) // 指数退避
+					continue
+				}
+				log.Printf("✅ Develop task provider registered successfully")
+				return
 			}
-			log.Printf("✅ Develop task provider registered successfully")
-			return
-		}
-		log.Printf("❌ Develop task provider registration failed after %d attempts", maxRetries)
-	}()
+			log.Printf("❌ Develop task provider registration failed after %d attempts", maxRetries)
+		}()
+	}
 
 	// 设置优雅关闭
 	sigCh := make(chan os.Signal, 1)

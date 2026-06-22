@@ -71,23 +71,6 @@
         />
         <span style="margin-left: 10px; color: var(--addp-text-tertiary)">{{ t('develop.saveQueryDialog.seconds') }}</span>
       </el-form-item>
-
-      <el-divider content-position="left">{{ t('develop.saveQueryDialog.scheduleSettings') }}</el-divider>
-
-      <el-form-item :label="t('develop.saveQueryDialog.enableSchedule')">
-        <el-switch v-model="scheduledEnabled" />
-      </el-form-item>
-
-      <el-form-item
-        v-if="scheduledEnabled"
-        :label="t('develop.saveQueryDialog.scheduleConfig')"
-        prop="schedule"
-      >
-        <ScheduleConfig
-          v-model="formData.schedule"
-          :allow-custom-cron="true"
-        />
-      </el-form-item>
     </el-form>
 
     <template #footer>
@@ -103,7 +86,6 @@
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
-import { ScheduleConfig } from '@addp/common-frontend'
 
 const { t } = useI18n()
 
@@ -137,18 +119,7 @@ const formData = ref({
   display_name: '',
   description: '',
   tags: [],
-  timeout: 300,
-  schedule: ''  // 删除 is_scheduled 字段
-})
-
-// 计算属性：根据 schedule 判断是否启用调度（替代 is_scheduled 字段）
-const scheduledEnabled = computed({
-  get: () => formData.value.schedule !== '' && formData.value.schedule !== null,
-  set: (val) => {
-    if (!val) {
-      formData.value.schedule = ''
-    }
-  }
+  timeout: 300
 })
 
 const tagOptions = ref([
@@ -164,19 +135,6 @@ const rules = {
     { required: true, message: t('develop.saveQueryDialog.nameRequired'), trigger: 'blur' },
     { min: 2, max: 100, message: t('develop.saveQueryDialog.nameLengthHint'), trigger: 'blur' },
     { pattern: /^[a-zA-Z0-9_\u4e00-\u9fa5]+$/, message: t('develop.saveQueryDialog.namePatternHint'), trigger: 'blur' }
-  ],
-  schedule: [
-    {
-      validator: (rule, value, callback) => {
-        // 使用计算属性判断是否启用调度
-        if (scheduledEnabled.value && !value) {
-          callback(new Error(t('develop.saveQueryDialog.scheduleRequired')))
-        } else {
-          callback()
-        }
-      },
-      trigger: 'change'
-    }
   ]
 }
 
@@ -193,8 +151,7 @@ const resetForm = () => {
     display_name: '',
     description: '',
     tags: [],
-    timeout: 300,
-    schedule: ''  // 删除 is_scheduled 字段
+    timeout: 300
   }
   formRef.value?.clearValidate()
 }
@@ -216,8 +173,7 @@ const handleSave = async () => {
       query: props.sql,
       description: formData.value.description,
       tags: formData.value.tags,
-      timeout: formData.value.timeout,
-      schedule: formData.value.schedule  // 不再发送 is_scheduled 字段
+      timeout: formData.value.timeout
     }
 
     emit('saved', taskData)

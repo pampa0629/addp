@@ -2084,11 +2084,7 @@ const docTemplate = `{
                 "json",
                 "array",
                 "uuid",
-                "geometry",
-                "point",
-                "linestring",
-                "polygon",
-                "multipoint"
+                "geometry"
             ],
             "x-enum-varnames": [
                 "FieldTypeUnknown",
@@ -2107,11 +2103,7 @@ const docTemplate = `{
                 "FieldTypeJSON",
                 "FieldTypeArray",
                 "FieldTypeUUID",
-                "FieldTypeGeometry",
-                "FieldTypePoint",
-                "FieldTypeLineString",
-                "FieldTypePolygon",
-                "FieldTypeMultiPoint"
+                "FieldTypeGeometry"
             ]
         },
         "datatype.TableInfo": {
@@ -2338,7 +2330,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "resource_path": {
-                    "description": "/api/users/123",
+                    "description": "/api/v1/system/users/123",
                     "type": "string"
                 },
                 "tenant_id": {
@@ -3091,10 +3083,6 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "is_active": {
-                    "type": "boolean"
-                },
-                "is_superuser": {
-                    "description": "保留以兼容旧代码",
                     "type": "boolean"
                 },
                 "tenant_id": {

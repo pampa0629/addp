@@ -204,6 +204,13 @@ definitions:
       trigger_type:
         type: string
     type: object
+  internal_api.orchestrationTaskProviderExecuteResponse:
+    properties:
+      execution_id:
+        type: string
+      status:
+        type: string
+    type: object
   models.JSONMap:
     additionalProperties: true
     type: object
@@ -479,6 +486,11 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "502":
+          description: Bad Gateway
+          schema:
+            additionalProperties: true
+            type: object
       security:
       - BearerAuth: []
       summary: 列出模块任务 | List module tasks
@@ -551,9 +563,7 @@ paths:
         "202":
           description: Accepted
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/internal_api.orchestrationTaskProviderExecuteResponse'
         "400":
           description: Bad Request
           schema:

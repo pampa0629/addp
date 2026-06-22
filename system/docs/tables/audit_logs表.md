@@ -110,7 +110,7 @@ type AuditLogCreateRequest struct {
 | `user_id` | JWT Payload | 从 Context 提取 |
 | `username` | JWT Payload | 从 Context 提取 |
 | `tenant_id` | JWT Payload | 从 Context 提取(SuperAdmin 为 NULL) |
-| `action` | HTTP Request | `{METHOD} {PATH}`,如 `POST /api/engines` |
+| `action` | HTTP Request | `{METHOD} {PATH}`,如 `POST /api/v1/system/engines` |
 | `engine_type` | 请求体 | 根据路径推断或从请求体提取 |
 | `engine_id` | 请求体/URL | 从 URL 参数或响应提取 |
 | `details` | 请求体 | JSON 序列化的请求体 |
@@ -163,7 +163,7 @@ func LoggerMiddleware(logService *service.LogService, userRepo *repository.UserR
 
 ## 五、API 端点说明
 
-### 5.1 GET /api/logs - 查询审计日志
+### 5.1 GET /api/v1/system/logs - 查询审计日志
 
 **权限**:
 - TenantAdmin:查看本租户日志
@@ -190,7 +190,7 @@ Authorization: Bearer <jwt_token>
       "user_id": 2,
       "username": "admin",
       "tenant_id": 1,
-      "action": "POST /api/engines",
+      "action": "POST /api/v1/system/engines",
       "engine_type": "engine",
       "engine_id": "5",
       "details": "{\"name\":\"PostgreSQL-测试\",\"engine_type\":\"postgresql\"}",
@@ -202,7 +202,7 @@ Authorization: Bearer <jwt_token>
       "user_id": 2,
       "username": "admin",
       "tenant_id": 1,
-      "action": "PUT /api/users/3",
+      "action": "PUT /api/v1/system/users/3",
       "engine_type": "user",
       "engine_id": "3",
       "details": "{\"full_name\":\"新名字\"}",
@@ -222,7 +222,7 @@ Authorization: Bearer <jwt_token>
 
 ---
 
-### 5.2 GET /api/logs/:id - 获取指定日志
+### 5.2 GET /api/v1/system/logs/:id - 获取指定日志
 
 **权限**:本租户用户 / SuperAdmin
 
@@ -234,7 +234,7 @@ Authorization: Bearer <jwt_token>
   "user_id": 2,
   "username": "admin",
   "tenant_id": 1,
-  "action": "POST /api/engines",
+  "action": "POST /api/v1/system/engines",
   "engine_type": "engine",
   "engine_id": "5",
   "details": "{\"name\":\"PostgreSQL-测试\",\"engine_type\":\"postgresql\",\"connection_info\":{\"host\":\"localhost\",\"port\":\"5432\"}}",
@@ -260,7 +260,7 @@ Authorization: Bearer <jwt_token>
 **操作**:
 
 ```bash
-curl -X POST http://localhost:8180/api/engines \
+curl -X POST http://localhost:8180/api/v1/system/engines \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -277,7 +277,7 @@ curl -X POST http://localhost:8180/api/engines \
   "user_id": 2,
   "username": "admin",
   "tenant_id": 1,
-  "action": "POST /api/engines",
+  "action": "POST /api/v1/system/engines",
   "engine_type": "engine",
   "engine_id": "5",
   "details": "{\"name\":\"PostgreSQL-测试\",\"engine_type\":\"postgresql\"}",
@@ -292,7 +292,7 @@ curl -X POST http://localhost:8180/api/engines \
 **操作**:
 
 ```bash
-curl -X PUT http://localhost:8180/api/users/3 \
+curl -X PUT http://localhost:8180/api/v1/system/users/3 \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"full_name": "新名字"}'
@@ -305,7 +305,7 @@ curl -X PUT http://localhost:8180/api/users/3 \
   "user_id": 2,
   "username": "admin",
   "tenant_id": 1,
-  "action": "PUT /api/users/3",
+  "action": "PUT /api/v1/system/users/3",
   "engine_type": "user",
   "engine_id": "3",
   "details": "{\"full_name\":\"新名字\"}",
@@ -348,7 +348,7 @@ curl -X DELETE http://localhost:8180/api/tenants/2 \
 ```bash
 TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 
-curl "http://localhost:8180/api/logs?page=1&page_size=20" \
+curl "http://localhost:8180/api/v1/system/logs?page=1&page_size=20" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -357,7 +357,7 @@ curl "http://localhost:8180/api/logs?page=1&page_size=20" \
 ### 7.2 查询指定用户的操作日志
 
 ```bash
-curl "http://localhost:8180/api/logs?user_id=2&page=1&page_size=50" \
+curl "http://localhost:8180/api/v1/system/logs?user_id=2&page=1&page_size=50" \
   -H "Authorization: Bearer $TOKEN"
 ```
 

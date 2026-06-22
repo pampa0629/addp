@@ -41,6 +41,58 @@ const docTemplate = `{
                 }
             }
         },
+        "/downloads/file": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按 ResourceLocator 下载存储型 engine 的 item；单文件直接流式下载，多文件组合自动打包 ZIP | Download a storage engine item by ResourceLocator; bundles multi-ref items as ZIP",
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "下载存储数据项 | Download storage item",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "资源定位符 URI | Resource locator URI",
+                        "name": "locator",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "下载内容流 | Download content stream"
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "无权访问 | Access denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/embedding_executions": {
             "post": {
                 "security": [
@@ -172,7 +224,7 @@ const docTemplate = `{
                     "201": {
                         "description": "创建的任务配置 | Created task configuration",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.TileCacheTaskResponse"
+                            "$ref": "#/definitions/internal_api.EmbeddingTaskResponse"
                         }
                     },
                     "400": {
@@ -211,10 +263,9 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "任务详情 | Task detail",
+                        "description": "任务详情，按 task_type 返回 TileCacheTaskResponse、QuickViewOptimizationTaskResponse 或 EmbeddingTaskResponse | Task detail, returns TileCacheTaskResponse, QuickViewOptimizationTaskResponse, or EmbeddingTaskResponse by task_type",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "type": "object"
                         }
                     },
                     "400": {
@@ -272,7 +323,7 @@ const docTemplate = `{
                     "200": {
                         "description": "更新后的任务配置 | Updated task configuration",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.TileCacheTaskResponse"
+                            "$ref": "#/definitions/internal_api.EmbeddingTaskResponse"
                         }
                     },
                     "400": {
@@ -750,8 +801,7 @@ const docTemplate = `{
                     "200": {
                         "description": "执行状态 | Execution status",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/execution.TaskExecution"
                         }
                     },
                     "404": {
@@ -764,7 +814,167 @@ const docTemplate = `{
                 }
             }
         },
-        "/import": {
+        "/exports": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "基于数据库 table item 创建导出会话，内部调用 Transfer sync 写入 Manager infra 暂存区；导出完成后通过会话文件接口下载。| Create an export session for a database table item. Manager calls Transfer sync internally and stores the output in Manager infra staging before download.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "导出数据库数据项 | Export database item",
+                "parameters": [
+                    {
+                        "description": "导出请求 | Export request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_service.ExportRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "导出会话已创建 | Export session created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_service.ExportSessionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "无权访问 | Access denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/exports/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "查询导出会话状态；若底层 Transfer 已完成，响应中包含 download_url。| Query export session status. When the underlying Transfer execution succeeds, the response contains download_url.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "获取导出会话 | Get export session",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "导出会话 ID | Export session ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "导出会话 | Export session",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_service.ExportSessionResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "会话不存在 | Session not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/exports/{id}/file": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "下载已完成导出会话的结果文件。| Download the result file of a completed export session.",
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "下载导出结果 | Download export result",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "导出会话 ID | Export session ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "下载内容流 | Download content stream"
+                    },
+                    "404": {
+                        "description": "会话不存在 | Session not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "导出尚未完成 | Export not ready",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/imports": {
             "post": {
                 "security": [
                     {
@@ -785,23 +995,17 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "file",
-                        "description": "数据文件（Shapefile ZIP包等）| Data file (Shapefile ZIP, etc.)",
-                        "name": "file",
-                        "in": "formData",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "description": "目标数据库引擎ID | Target database engine ID",
-                        "name": "target_engine_id",
+                        "description": "数据文件：单个 Shapefile ZIP，或同一组 .shp/.dbf/.shx/.prj/.qpj/.cpg 文件 | Data files: one Shapefile ZIP, or a Shapefile component set",
+                        "name": "files",
                         "in": "formData",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "目标 Schema，默认 public | Target schema, default public",
-                        "name": "target_schema",
-                        "in": "formData"
+                        "description": "目标数据库节点 ResourceLocator | Target database node ResourceLocator",
+                        "name": "target_node_locator",
+                        "in": "formData",
+                        "required": true
                     },
                     {
                         "type": "string",
@@ -818,10 +1022,9 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "202": {
-                        "description": "导入任务已创建 | Import task created",
+                        "description": "导入请求已提交 | Import request submitted",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_manager_internal_service.ImportResult"
                         }
                     },
                     "400": {
@@ -1637,6 +1840,61 @@ const docTemplate = `{
                 }
             }
         },
+        "/resource-actions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按 ResourceLocator 返回当前资源可显示的 Manager 用户动作及格式限制 | Return Manager user actions and format constraints for a resource locator",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "查询资源动作能力 | Get resource action capabilities",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "资源定位符 URI | Resource locator URI",
+                        "name": "locator",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "资源动作能力 | Resource action capabilities",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_service.ResourceActionsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "无权访问 | Access denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/search": {
             "get": {
                 "security": [
@@ -1830,65 +2088,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/storage-download": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "基于 DownloadPlan 自动处理单叶子下载和 multi refs ZIP 打包下载；storage-stream 仍只用于单存储叶子 Range 流 | Resolve DownloadPlan and download a logical storage object as a single stream or ZIP bundle",
-                "produces": [
-                    "application/octet-stream"
-                ],
-                "tags": [
-                    "Manager"
-                ],
-                "summary": "逻辑存储对象下载 | Logical storage object download",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "存储引擎ID | Engine ID",
-                        "name": "engine_id",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "存储内容引用 | Storage content reference",
-                        "name": "storage_ref",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "下载内容流 | Download content stream"
-                    },
-                    "400": {
-                        "description": "请求参数错误 | Bad request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "服务器内部错误 | Internal server error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
         "/storage-stream": {
             "get": {
                 "security": [
@@ -1896,7 +2095,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "支持 Range 请求的单存储叶子内容流式传输，用于图片、PDF、视频等在线预览；原始下载请使用 storage-download。storage_ref 在对象存储中为 bucket/path，在文件系统中为文件路径 | Storage leaf content streaming with Range request support for online previews such as images, PDF, and video; use storage-download for original downloads. storage_ref is bucket/path for object catalogs and file path for file catalogs",
+                "description": "支持 Range 请求的单存储叶子内容流式传输，用于图片、PDF、视频等在线预览；用户下载请使用 downloads/file。storage_ref 在对象存储中为 bucket/path，在文件系统中为文件路径 | Storage leaf content streaming with Range request support for online previews such as images, PDF, and video; use downloads/file for user downloads. storage_ref is bucket/path for object catalogs and file path for file catalogs",
                 "produces": [
                     "application/octet-stream"
                 ],
@@ -1990,8 +2189,7 @@ const docTemplate = `{
                     "200": {
                         "description": "任务列表 | Task list",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/internal_api.TaskListResponse"
                         }
                     },
                     "400": {
@@ -2044,10 +2242,9 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "任务详情 | Task detail",
+                        "description": "任务详情，按 task_type 返回 TileCacheTaskResponse、QuickViewOptimizationTaskResponse 或 EmbeddingTaskResponse | Task detail, returns TileCacheTaskResponse, QuickViewOptimizationTaskResponse, or EmbeddingTaskResponse by task_type",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "type": "object"
                         }
                     },
                     "400": {
@@ -2110,11 +2307,10 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
-                    "200": {
+                    "202": {
                         "description": "执行ID | Execution ID",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/internal_api.TaskExecuteResponse"
                         }
                     },
                     "400": {
@@ -2507,9 +2703,194 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/uploads": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "将用户本地文件原样写入存储型引擎节点，完成后提交 Meta 后台扫描 | Upload local files to a storage engine node and submit a Meta background scan",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "上传文件到存储节点 | Upload files to storage node",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "目标存储节点 ResourceLocator | Target storage node ResourceLocator",
+                        "name": "target_node_locator",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "file",
+                        "description": "一个或多个文件 | One or more files",
+                        "name": "files",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "上传结果 | Upload result",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_service.UploadResult"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "无权访问 | Access denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
+        "execution.TaskExecution": {
+            "type": "object",
+            "properties": {
+                "bytes_read": {
+                    "description": "Transfer 读取字节数",
+                    "type": "integer"
+                },
+                "bytes_written": {
+                    "description": "Transfer 写入字节数",
+                    "type": "integer"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "current_step": {
+                    "description": "当前步骤（Orchestrator/Workflow）",
+                    "type": "string"
+                },
+                "error_details": {
+                    "description": "错误详情（仅失败时有值）",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                        }
+                    ]
+                },
+                "execution_config": {
+                    "description": "JSONB 字段",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                        }
+                    ]
+                },
+                "execution_id": {
+                    "description": "执行标识",
+                    "type": "string"
+                },
+                "execution_time_ms": {
+                    "description": "性能指标",
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "metadata": {
+                    "description": "模块特有扩展数据（结果、断点、步骤结果等）",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                        }
+                    ]
+                },
+                "module": {
+                    "description": "模块标识",
+                    "type": "string"
+                },
+                "parent_execution_id": {
+                    "description": "父执行（Orchestrator 子步骤追踪父编排）",
+                    "type": "string"
+                },
+                "progress": {
+                    "description": "0-100",
+                    "type": "integer"
+                },
+                "records_read": {
+                    "description": "Transfer 读取记录数",
+                    "type": "integer"
+                },
+                "records_written": {
+                    "description": "Transfer 写入记录数",
+                    "type": "integer"
+                },
+                "rows_affected": {
+                    "description": "SQL 影响行数",
+                    "type": "integer"
+                },
+                "source": {
+                    "description": "触发来源模块",
+                    "type": "string"
+                },
+                "source_task_id": {
+                    "description": "关联原始任务",
+                    "type": "string"
+                },
+                "source_task_name": {
+                    "description": "任务名称（冗余，便于查询）",
+                    "type": "string"
+                },
+                "started_at": {
+                    "description": "时间戳",
+                    "type": "string"
+                },
+                "status": {
+                    "description": "执行状态",
+                    "type": "string"
+                },
+                "task_type": {
+                    "description": "provider 声明的稳定任务类型",
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "trigger_type": {
+                    "description": "触发信息",
+                    "type": "string"
+                },
+                "triggered_by": {
+                    "description": "触发用户ID",
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_common_models.JSONMap": {
             "type": "object",
             "additionalProperties": true
@@ -2815,6 +3196,78 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_manager_internal_service.ExportRequest": {
+            "type": "object",
+            "properties": {
+                "file_name": {
+                    "type": "string"
+                },
+                "format": {
+                    "type": "string"
+                },
+                "source_item_locator": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_service.ExportSessionResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "download_url": {
+                    "type": "string"
+                },
+                "error_message": {
+                    "type": "string"
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "format": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "source_item_locator": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "target_locator": {
+                    "type": "string"
+                },
+                "transfer_execution_id": {
+                    "type": "string"
+                },
+                "transfer_task_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_service.ImportResult": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string"
+                },
+                "transfer_execution_id": {
+                    "type": "string"
+                },
+                "transfer_task_id": {
+                    "type": "integer"
+                },
+                "upload_uuid": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_manager_internal_service.QuickViewCapability": {
             "type": "object",
             "properties": {
@@ -3029,6 +3482,49 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_manager_internal_service.ResourceActionStatus": {
+            "type": "object",
+            "properties": {
+                "data_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "formats": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "supported": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_service.ResourceActionsResponse": {
+            "type": "object",
+            "properties": {
+                "actions": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/github_com_addp_manager_internal_service.ResourceActionStatus"
+                    }
+                },
+                "engine_category": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "locator": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_manager_internal_service.SearchDocument": {
             "type": "object",
             "properties": {
@@ -3181,6 +3677,37 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_manager_internal_service.UploadResult": {
+            "type": "object",
+            "properties": {
+                "files": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_manager_internal_service.UploadedFileResult"
+                    }
+                },
+                "scan_execution_id": {
+                    "type": "string"
+                },
+                "scan_run": {
+                    "$ref": "#/definitions/execution.TaskExecution"
+                },
+                "target_node_locator": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_manager_internal_service.UploadedFileResult": {
+            "type": "object",
+            "properties": {
+                "file_name": {
+                    "type": "string"
+                },
+                "locator": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_manager_internal_service.VectorDocument": {
             "type": "object",
             "properties": {
@@ -3276,6 +3803,82 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "schedule": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.EmbeddingTaskResponse": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "last_execution_status": {
+                    "type": "string"
+                },
+                "last_run_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "next_run_at": {
+                    "type": "string"
+                },
+                "schedule": {
+                    "type": "string"
+                },
+                "target": {
+                    "$ref": "#/definitions/internal_api.EmbeddingTaskTargetResponse"
+                },
+                "task_type": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.EmbeddingTaskTargetResponse": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "integer"
+                },
+                "item_id": {
+                    "type": "integer"
+                },
+                "locator": {
+                    "type": "string"
+                },
+                "node_id": {
+                    "type": "integer"
+                },
+                "recursive": {
+                    "type": "boolean"
+                },
+                "scope": {
                     "type": "string"
                 }
             }
@@ -3415,6 +4018,66 @@ const docTemplate = `{
                 "trigger_type": {
                     "description": "manual|scheduled，默认 manual",
                     "type": "string"
+                }
+            }
+        },
+        "internal_api.TaskExecuteResponse": {
+            "type": "object",
+            "properties": {
+                "execution_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.TaskListItem": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "last_execution_status": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "task_type": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.TaskListResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.TaskListItem"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
                 }
             }
         },

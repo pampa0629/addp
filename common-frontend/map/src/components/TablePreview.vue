@@ -165,9 +165,9 @@ const { t } = useI18n()
 
 const wktFormat = new WKT()
 const geojsonFormat = new GeoJSON()
-const DEFAULT_MAP_HEIGHT = 520
+const DEFAULT_MAP_HEIGHT = 360
 const MIN_MAP_HEIGHT = 240
-const MIN_TABLE_HEIGHT = 80
+const MIN_TABLE_HEIGHT = 180
 const CONTAINER_GAP = 12
 
 const WKT_TYPE_RE = /^(POINT|LINESTRING|POLYGON|MULTIPOINT|MULTILINESTRING|MULTIPOLYGON|GEOMETRYCOLLECTION)/i
@@ -286,12 +286,13 @@ const structuredDialogJSON = ref('')
 const selectedRecordColumns = ref([])
 
 let resizeObserver = null
+let mapResizeFrame = null
 
 const getDefaultMapHeight = () => {
   const containerH = tablePreviewRef.value?.clientHeight || 0
   const viewportH = typeof window !== 'undefined' ? window.innerHeight : DEFAULT_MAP_HEIGHT
   const base = containerH > 300 ? containerH : viewportH
-  return Math.max(MIN_MAP_HEIGHT, Math.round(base * 0.58))
+  return Math.max(MIN_MAP_HEIGHT, Math.round(base * 0.45))
 }
 
 const syncMapHeight = (forceDefault = false) => {
@@ -315,9 +316,23 @@ const syncMapHeight = (forceDefault = false) => {
   }
 }
 
+const scheduleMapResize = () => {
+  if (typeof window === 'undefined') return
+  if (mapResizeFrame) {
+    window.cancelAnimationFrame(mapResizeFrame)
+  }
+  mapResizeFrame = window.requestAnimationFrame(() => {
+    mapResizeFrame = null
+    if (mapRef.value && typeof mapRef.value.resize === 'function') {
+      mapRef.value.resize()
+    }
+  })
+}
+
 const scheduleMapHeightSync = (forceDefault = false) => {
   nextTick(() => {
     syncMapHeight(forceDefault)
+    scheduleMapResize()
   })
 }
 
@@ -686,8 +701,16 @@ watch(
     if (mapRef.value && typeof mapRef.value.hidePopup === 'function') {
       mapRef.value.hidePopup()
     }
+    scheduleMapResize()
   },
   { deep: true }
+)
+
+watch(
+  mapHeight,
+  () => {
+    scheduleMapResize()
+  }
 )
 
 onMounted(() => {
@@ -699,6 +722,7 @@ onMounted(() => {
   if (typeof ResizeObserver !== 'undefined') {
     resizeObserver = new ResizeObserver(() => {
       syncMapHeight(false)
+      scheduleMapResize()
     })
     ;[
       tablePreviewRef.value,
@@ -722,6 +746,10 @@ onBeforeUnmount(() => {
   }
   if (typeof window !== 'undefined') {
     window.removeEventListener('resize', handleWindowResize)
+  }
+  if (mapResizeFrame && typeof window !== 'undefined') {
+    window.cancelAnimationFrame(mapResizeFrame)
+    mapResizeFrame = null
   }
 })
 </script>
@@ -825,14 +853,16 @@ body.is-v-resizing .map-splitter::before {
 
 .table-wrapper {
   flex: 1 1 auto;
-  min-height: 80px;
+  min-height: 180px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  overflow: hidden;
 }
 
 .table-wrapper :deep(.el-table) {
   flex: 1;
+  min-height: 0;
 }
 
 .record-preview-toolbar {

@@ -207,8 +207,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		internal.GET("/engines", engineHandler.ListInternal)
 		internal.GET("/engines/:id", engineHandler.GetByIDInternal)
 		internal.POST("/engines", engineHandler.CreateInternal)
-		internal.POST("/engines/register", engineHandler.RegisterEngineInternal) // 引擎自注册
-		internal.PUT("/engines/:id/connection-status", engineHandler.UpdateConnectionStatusInternal)
+		internal.POST("/engines/register", engineHandler.RegisterEngineInternal)                     // 引擎自注册
 		internal.POST("/engines/:id/check-connection", engineHandler.TriggerConnectionCheckInternal) // 触发异步连接检测
 
 		// 能力注册 API

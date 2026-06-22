@@ -66,7 +66,47 @@ func writeOptionsWithSpatialInfo(opts *format.WriteOptions, info *datatype.Table
 		*next = *opts
 	}
 	next.SpatialInfo = spatialInfoForWriteOptions(next, info, spatialInfo)
+	applySpatialCRSDefinitionWriteOption(next)
 	return next
+}
+
+func applySpatialCRSDefinitionWriteOption(opts *format.WriteOptions) {
+	if opts == nil || opts.SpatialInfo == nil {
+		return
+	}
+	if opts.ExtraParams != nil {
+		if existing := strings.TrimSpace(optionString(opts.ExtraParams, format.CRSDefinitionOptionKey)); existing != "" {
+			return
+		}
+	}
+	definition := primaryCRSDefinition(opts.SpatialInfo)
+	if definition == nil || strings.TrimSpace(definition.Definition) == "" {
+		return
+	}
+	switch strings.TrimSpace(definition.DefinitionEncoding) {
+	case datatype.CRSDefinitionEncodingWKT, datatype.CRSDefinitionEncodingESRIWKT:
+	default:
+		return
+	}
+	if opts.ExtraParams == nil {
+		opts.ExtraParams = map[string]interface{}{}
+	}
+	opts.ExtraParams[format.CRSDefinitionOptionKey] = strings.TrimSpace(definition.Definition)
+}
+
+func primaryCRSDefinition(spatialInfo *datatype.SpatialInfo) *datatype.CRSDefinition {
+	if spatialInfo == nil {
+		return nil
+	}
+	if ref := spatialInfo.PrimaryCRSRef(); ref != "" {
+		if definition := spatialInfo.CRSDefinitionByID(ref); definition != nil {
+			return definition
+		}
+	}
+	if len(spatialInfo.CRSDefinitions) == 1 {
+		return &spatialInfo.CRSDefinitions[0]
+	}
+	return nil
 }
 
 func spatialInfoForWriteOptions(opts *format.WriteOptions, info *datatype.TableInfo, fallback *datatype.SpatialInfo) *datatype.SpatialInfo {
@@ -112,7 +152,29 @@ func spatialInfoForWriteOptions(opts *format.WriteOptions, info *datatype.TableI
 	if geometryField == "" && geometryType == "" {
 		return spatialInfo
 	}
-	return datatype.NewSingleGeometrySpatialInfo(geometryField, geometryType, srid, dimension)
+	next := datatype.NewSingleGeometrySpatialInfo(geometryField, geometryType, srid, dimension)
+	if spatialInfo != nil {
+		next.CRSRef = spatialInfo.CRSRef
+		next.CRSDefinitions = append([]datatype.CRSDefinition(nil), spatialInfo.CRSDefinitions...)
+		next.IndexName = spatialInfo.IndexName
+		if spatialInfo.Extent != nil {
+			extent := *spatialInfo.Extent
+			next.Extent = &extent
+		}
+		if spatialInfo.HasSpatialIndex != nil {
+			hasSpatialIndex := *spatialInfo.HasSpatialIndex
+			next.HasSpatialIndex = &hasSpatialIndex
+		}
+		if primary := spatialInfo.PrimaryGeometry(); primary != nil && len(next.GeometryColumns) > 0 {
+			if strings.TrimSpace(next.GeometryColumns[0].CRSRef) == "" {
+				next.GeometryColumns[0].CRSRef = strings.TrimSpace(primary.CRSRef)
+			}
+			if next.GeometryColumns[0].CRSRef == "" && primary.SRID != nil && *primary.SRID > 0 {
+				next.GeometryColumns[0].CRSRef = datatype.EPSGCRSRef(*primary.SRID)
+			}
+		}
+	}
+	return next
 }
 
 func optionString(values map[string]interface{}, key string) string {

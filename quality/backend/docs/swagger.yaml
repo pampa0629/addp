@@ -1,18 +1,30 @@
 basePath: /api/v1/quality
 definitions:
-  github_com_addp_quality_internal_models.CheckTask:
+  internal_api.qualityTaskProviderExecuteRequest:
     properties:
-      created_at:
+      parameters:
+        additionalProperties: true
+        type: object
+      parent_execution_id:
         type: string
-      created_by:
-        type: integer
+      source:
+        type: string
+      trigger_type:
+        type: string
+    type: object
+  internal_api.qualityTaskProviderExecuteResponse:
+    properties:
+      execution_id:
+        type: string
+      status:
+        type: string
+    type: object
+  internal_api.taskProviderTaskListItem:
+    properties:
       description:
         type: string
       enabled:
         type: boolean
-      engine_id:
-        description: 目标引擎
-        type: integer
       id:
         type: integer
       last_execution_id:
@@ -25,29 +37,23 @@ definitions:
         type: string
       next_run_at:
         type: string
-      schema_name:
-        type: string
-      table_name:
-        description: 可选：限定表
+      task_type:
         type: string
       tenant_id:
         type: integer
-      updated_at:
-        type: string
-      updated_by:
-        type: integer
     type: object
-  internal_api.qualityTaskProviderExecuteRequest:
+  internal_api.taskProviderTaskListResponse:
     properties:
-      parameters:
-        additionalProperties: true
-        type: object
-      parent_execution_id:
-        type: string
-      source:
-        type: string
-      trigger_type:
-        type: string
+      items:
+        items:
+          $ref: '#/definitions/internal_api.taskProviderTaskListItem'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
     type: object
 host: localhost:8182
 info:
@@ -445,8 +451,7 @@ paths:
         "200":
           description: 任务列表 | Task list
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/internal_api.taskProviderTaskListResponse'
         "400":
           description: 请求参数错误 | Bad request
           schema:
@@ -484,7 +489,7 @@ paths:
         "200":
           description: 任务详情 | Task detail
           schema:
-            $ref: '#/definitions/github_com_addp_quality_internal_models.CheckTask'
+            $ref: '#/definitions/internal_api.taskProviderTaskListItem'
         "400":
           description: 请求参数错误 | Bad request
           schema:
@@ -526,12 +531,10 @@ paths:
       produces:
       - application/json
       responses:
-        "200":
+        "202":
           description: 执行ID | Execution ID
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/internal_api.qualityTaskProviderExecuteResponse'
         "400":
           description: 请求参数错误 | Bad request
           schema:

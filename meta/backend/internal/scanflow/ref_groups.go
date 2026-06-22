@@ -20,12 +20,13 @@ func FileRefGroupCandidateSet(engineID uint, primary string, group models.ScanRe
 	return ContentCandidateSet{
 		DirPath:        dirPath,
 		Files:          FileRefsFromScanRefGroup(engineID, group),
+		ResolveOptions: metaitem.ResolveOptions{IncludeSingleResources: true},
 		CatalogPathFor: plugin.FileItemPathForEngine(engineID),
 	}
 }
 
 func ObjectRefGroupCandidateSet(engineID uint, bucket, objectPath string, resources []metacatalog.StorageResource) ContentCandidateSet {
-	prefix := objectRefGroupPrefix(bucket, objectPath)
+	prefix := objectRefGroupPrefix(objectPath)
 	files := metacatalog.ObjectResourcesByParentPrefix(resources)[bucket+"\x00"+prefix]
 	if len(files) == 0 {
 		files = resources
@@ -33,7 +34,8 @@ func ObjectRefGroupCandidateSet(engineID uint, bucket, objectPath string, resour
 	return ContentCandidateSet{
 		DirPath:        prefix,
 		Files:          objectStorageFileRefs(files),
-		CatalogPathFor: objectRefCatalogPathForEngine(engineID),
+		ResolveOptions: metaitem.ResolveOptions{IncludeSingleResources: true},
+		CatalogPathFor: objectRefCatalogPathForBucket(engineID, bucket),
 	}
 }
 
@@ -55,17 +57,18 @@ func ObjectResourcesFromScanRefGroup(engineID uint, bucket string, group models.
 	refs := NormalizedScanRefs(group)
 	resources := make([]metacatalog.StorageResource, 0, len(refs))
 	for _, ref := range refs {
-		refBucket, objectPath, err := SplitObjectRefPath(ref.Path)
+		refBucket, objectPath, err := plugin.SplitObjectRefPath(ref.Path)
 		if err != nil {
 			return nil, err
 		}
 		if refBucket != bucket {
 			return nil, fmt.Errorf("ref group crosses object buckets: %s != %s", refBucket, bucket)
 		}
+		objectPath = strings.Trim(objectPath, "/")
 		fullPath := strings.Trim(refBucket+"/"+objectPath, "/")
 		resources = append(resources, metacatalog.StorageResource{
 			RootName:    bucket,
-			Path:        fullPath,
+			Path:        objectPath,
 			FullPath:    fullPath,
 			NodeType:    plugin.CatalogKindObject,
 			ObjectCount: 1,
@@ -87,7 +90,7 @@ func NormalizedScanRefs(group models.ScanRefGroup) []models.ScanRef {
 		refs = append(refs, ref)
 	}
 	if group.Primary != "" {
-		add(models.ScanRef{Path: group.Primary, Role: "main", Required: true})
+		add(models.ScanRef{Path: group.Primary, Role: "main", Required: true, Primary: true})
 	}
 	for _, ref := range group.Refs {
 		add(ref)
@@ -107,28 +110,12 @@ func ScanRefGroupPrimaryPath(group models.ScanRefGroup) string {
 	return ""
 }
 
-func SplitObjectRefPath(refPath string) (bucket, objectPath string, err error) {
-	trimmed := strings.Trim(refPath, "/")
-	parts := strings.SplitN(trimmed, "/", 2)
-	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
-		return "", "", fmt.Errorf("object ref path must be bucket/object: %s", refPath)
-	}
-	return strings.TrimSpace(parts[0]), strings.Trim(parts[1], "/"), nil
+func objectRefGroupPrefix(objectPath string) string {
+	return strings.Trim(metacatalog.ParentObjectPath(objectPath), "/")
 }
 
-func objectRefGroupPrefix(bucket, objectPath string) string {
-	primaryPath := strings.Trim(bucket+"/"+objectPath, "/")
-	return strings.Trim(metacatalog.ParentObjectPath(primaryPath), "/")
-}
-
-func objectRefCatalogPathForEngine(engineID uint) func(string) plugin.CatalogPath {
-	return func(refPath string) plugin.CatalogPath {
-		bucket, objectPath, err := SplitObjectRefPath(refPath)
-		if err != nil {
-			return plugin.ObjectItemPath(engineID, "", strings.Trim(refPath, "/"))
-		}
-		return plugin.ObjectItemPath(engineID, bucket, objectPath)
-	}
+func objectRefCatalogPathForBucket(engineID uint, bucket string) func(string) plugin.CatalogPath {
+	return plugin.ObjectItemPathForBucketRef(engineID, bucket)
 }
 
 func objectStorageFileRefs(resources []metacatalog.StorageResource) []metaitem.StorageFileRef {

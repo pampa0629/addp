@@ -109,6 +109,7 @@
       <!-- 执行记录表格 -->
       <execution-table
         :executions="executions"
+        :task-providers="taskProviders"
         @view="handleViewExecution"
         v-loading="loading"
       />
@@ -149,7 +150,7 @@
             <el-tag size="small" type="info">{{ currentExecution.source || '-' }}</el-tag>
           </el-descriptions-item>
           <el-descriptions-item :label="t('monitor.execution.detail.type')">
-            {{ formatTaskType(currentExecution.task_type) }}
+            {{ formatTaskType(currentExecution) }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('monitor.execution.detail.source_task_id')">
             {{ currentExecution.source_task_id || '-' }}
@@ -206,7 +207,7 @@
                     {{ executionDisplayName(data.execution) }}
                   </span>
                   <el-tag size="small" effect="plain">{{ data.execution.module }}</el-tag>
-                  <el-tag size="small" type="info" effect="plain">{{ formatTaskType(data.execution.task_type) }}</el-tag>
+                  <el-tag size="small" type="info" effect="plain">{{ formatTaskType(data.execution) }}</el-tag>
                   <el-tag size="small" :type="getStatusType(data.execution.status)">
                     {{ getStatusText(data.execution.status) }}
                   </el-tag>
@@ -282,7 +283,7 @@ import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Link } from '@element-plus/icons-vue'
-import { buildTaskEditUrlFromProviders } from '@common-ui'
+import { buildTaskEditUrlFromProviders, resolveTaskTypeDisplayName } from '@common-ui'
 import { listExecutions, getExecutionTree, getExecutionTreeByExecutionID, listTaskProviders } from '@/api/monitor'
 import ExecutionTable from '@/components/ExecutionTable.vue'
 
@@ -362,7 +363,7 @@ const taskTypeOptions = computed(() => {
     if (selectedModule && provider.module_name !== selectedModule) {
       continue
     }
-    for (const taskType of parseTaskTypes(provider.capabilities)) {
+    for (const taskType of parseTaskCapabilities(provider.capabilities)) {
       if (!options.has(taskType.value)) {
         options.set(taskType.value, taskType.label)
       }
@@ -385,10 +386,10 @@ const executionMetadataText = computed(() => JSON.stringify(currentExecutionMeta
 
 const metadataSummaryItems = computed(() => buildMetadataSummaryItems(currentExecutionMetadata.value))
 
-function parseTaskTypes(capabilities) {
+function parseTaskCapabilities(capabilities) {
   const parsed = parseCapabilities(capabilities)
-  const taskTypes = Array.isArray(parsed.task_types) ? parsed.task_types : []
-  return taskTypes
+  const taskCapabilities = Array.isArray(parsed.task_capabilities) ? parsed.task_capabilities : []
+  return taskCapabilities
     .filter(item => hasValue(item?.type) && !item.deprecated)
     .map(item => ({
       value: item.type,
@@ -694,8 +695,15 @@ function executionDisplayName(execution) {
   return execution?.source_task_name || execution?.source_task_id || execution?.execution_id || '-'
 }
 
-function formatTaskType(taskType) {
+function formatTaskType(execution) {
+  const taskType = execution?.task_type
   if (!taskType) return '-'
+  const capabilityName = resolveTaskTypeDisplayName(
+    taskProviders.value,
+    execution?.module,
+    taskType
+  )
+  if (capabilityName) return capabilityName
   const key = `monitor.execution.task_type_names.${taskType}`
   const translated = t(key)
   return translated === key ? taskType : translated

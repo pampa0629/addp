@@ -241,7 +241,7 @@ type ComputeCapabilities struct {
 
 `compute` 表达引擎可被 ADDP 统一调用的计算运行时能力，而不是 UI 开发模式标签。旧版 `dev_modes` 只能回答“应该出现在哪个开发界面”，不能表达查询语言、运行协议、动态算子、脚本模式和对应 Provider，因此不再进入 `engine.capabilities/v1`。
 
-Develop 等上层模块如仍需“开发模式”概念，应从 `compute` 能力派生：
+Develop 等上层模块如仍需面向用户的开发入口，应从 `compute` 能力派生：
 
 | 派生开发入口 | 能力事实源 |
 | --- | --- |
@@ -249,7 +249,7 @@ Develop 等上层模块如仍需“开发模式”概念，应从 `compute` 能�
 | 工作流编辑器 | `compute.workflow.supported=true` |
 | Notebook / 脚本编辑器 | `compute.script.supported=true`，并结合 `compute.script.modes` |
 
-这些派生名称可作为兼容 API、前端路由或展示文案使用，但不得反向写回为 `dev_modes` 字段。
+这些派生名称可作为前端路由或展示文案使用，但不得反向写回为 `dev_modes` 字段。
 
 ### 4.1 QueryCapability
 

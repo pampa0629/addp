@@ -94,12 +94,6 @@ other = "File is required"
 [manager.error.read_file_failed]
 other = "Failed to read file"
 
-[manager.error.target_engine_id_required]
-other = "Target engine ID is required"
-
-[manager.error.invalid_target_engine_id]
-other = "Invalid target engine ID"
-
 [manager.error.locator_engine_mismatch]
 other = "Locator engine ID does not match path engine ID"
 
@@ -155,31 +149,16 @@ other = "Geometry column is missing from metadata"
 other = "Cannot infer target item name from filename; enter it manually"
 
 [manager.error.import_zip_required]
-other = "Upload a ZIP package containing .shp/.dbf/.shx files"
+other = "Upload one Shapefile ZIP, or a matching .shp/.dbf/.shx/.prj/.qpj/.cpg file set"
 
 [manager.error.import_unsupported_format]
-other = "Unsupported file format; only ZIP packages are supported"
-
-[manager.error.import_source_not_configured]
-other = "Import staging source engine is not configured; set MANAGER_IMPORT_SOURCE_ENGINE_ID or enable System integration"
-
-[manager.error.import_source_not_matched]
-other = "No object storage engine matches the current import staging MinIO"
-
-[manager.error.import_source_ambiguous]
-other = "Multiple import staging object storage engines matched; set MANAGER_IMPORT_SOURCE_ENGINE_ID"
-
-[manager.error.import_source_id_invalid]
-other = "MANAGER_IMPORT_SOURCE_ENGINE_ID must be a positive integer"
-
-[manager.error.import_source_inactive]
-other = "Import staging source engine is inactive"
+other = "Unsupported file format; only Shapefile ZIP or .shp/.dbf/.shx/.prj/.qpj/.cpg file sets are supported"
 
 [manager.error.import_zip_missing_shp]
-other = "ZIP package is missing a .shp file"
+other = "Missing .shp primary file"
 
 [manager.error.import_zip_basename_mismatch]
-other = "Shapefile components in the ZIP package must use the same basename"
+other = "Shapefile components must use the same basename"
 
 [manager.error.import_zip_missing_required]
-other = "ZIP package is missing a .shp/.dbf/.shx component set with the same basename"
+other = "Missing a .shp/.dbf/.shx component set with the same basename"

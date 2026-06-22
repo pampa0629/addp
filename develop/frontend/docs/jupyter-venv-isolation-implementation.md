@@ -48,7 +48,7 @@ cd /Users/pampa/code/addp/engines/jupyter
 - 默认 API 地址改为 `http://localhost:8000`
 
 **功能**:
-- Kernel 启动时自动调用 `/api/system/engines?tenant_id=X`
+- Kernel 启动时自动调用 `/api/v1/system/engines?tenant_id=X`
 - 注入 `ds_8`, `ds_9`, ... 到全局命名空间
 - 美化输出显示可用数据源
 
@@ -65,11 +65,11 @@ cd /Users/pampa/code/addp/engines/jupyter
 **文件**: `develop/backend/internal/api/jupyter_venv_handler.go`
 
 **端点**:
-- `GET /api/develop/jupyter/venv/status` - 获取租户虚拟环境状态
-- `POST /api/develop/jupyter/venv/init` - 初始化租户虚拟环境
-- `DELETE /api/develop/jupyter/venv` - 删除租户虚拟环境
-- `GET /api/develop/jupyter/venvs` - 列出所有虚拟环境 (管理员)
-- `GET /api/develop/jupyter/server/status` - Jupyter Server 状态
+- `GET /api/v1/develop/jupyter/venv/status` - 获取租户虚拟环境状态
+- `POST /api/v1/develop/jupyter/venv/init` - 初始化租户虚拟环境
+- `DELETE /api/v1/develop/jupyter/venv` - 删除租户虚拟环境
+- `GET /api/v1/develop/jupyter/venvs` - 列出所有虚拟环境 (管理员)
+- `GET /api/v1/develop/jupyter/server/status` - Jupyter Server 状态
 
 ### 5. 路由集成
 **文件**: `develop/backend/internal/api/router.go`, `develop/backend/cmd/server/main.go`
@@ -144,7 +144,7 @@ const jupyterUrl = computed(() => {
     ↓
 用户点击 "立即初始化"
     ↓
-调用 POST /api/develop/jupyter/venv/init
+调用 POST /api/v1/develop/jupyter/venv/init
     ↓
 显示加载动画 + 进度提示
     ↓
@@ -252,11 +252,11 @@ cd engines/jupyter
 ```bash
 # 获取状态
 curl -H "Authorization: Bearer <token>" \
-  http://localhost:8185/api/develop/jupyter/venv/status
+  http://localhost:8185/api/v1/develop/jupyter/venv/status
 
 # 初始化虚拟环境
 curl -X POST -H "Authorization: Bearer <token>" \
-  http://localhost:8185/api/develop/jupyter/venv/init
+  http://localhost:8185/api/v1/develop/jupyter/venv/init
 ```
 
 ### 5. 测试前端界面

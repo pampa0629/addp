@@ -23,7 +23,7 @@ func NewRegistryHandler(registryService *service.RegistryService, engineService 
 }
 
 // RegisterCapability 注册能力
-// POST /internal/registry/capabilities
+// POST /api/v1/internal/registry/capabilities
 func (h *RegistryHandler) RegisterCapability(c *gin.Context) {
 	var req models.CapabilityRegistrationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -50,7 +50,7 @@ func (h *RegistryHandler) RegisterCapability(c *gin.Context) {
 }
 
 // ListCapabilities 查询能力列表
-// GET /internal/registry/capabilities?resource_type=compute_engine&is_builtin=true
+// GET /api/v1/internal/registry/capabilities?resource_type=compute_engine&is_builtin=true
 func (h *RegistryHandler) ListCapabilities(c *gin.Context) {
 	filters := make(map[string]interface{})
 
@@ -75,7 +75,7 @@ func (h *RegistryHandler) ListCapabilities(c *gin.Context) {
 }
 
 // GetCapabilityByIdentifier 根据 unique_identifier 查询能力
-// GET /internal/registry/capabilities/:identifier
+// GET /api/v1/internal/registry/capabilities/:identifier
 func (h *RegistryHandler) GetCapabilityByIdentifier(c *gin.Context) {
 	identifier := c.Param("identifier")
 	if identifier == "" {
@@ -93,7 +93,7 @@ func (h *RegistryHandler) GetCapabilityByIdentifier(c *gin.Context) {
 }
 
 // ListComputeEngines 查询所有具有计算能力的引擎
-// GET /internal/registry/compute-engines
+// GET /api/v1/internal/registry/compute-engines
 func (h *RegistryHandler) ListComputeEngines(c *gin.Context) {
 	ctx := c.Request.Context()
 

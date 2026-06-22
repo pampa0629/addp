@@ -707,7 +707,7 @@ const saveTask = async () => {
     await loadTasks()
   } catch (error) {
     console.error('保存向量化任务失败:', error)
-    ElMessage.error(error.response?.data?.message || t('manager.vectorization.saveFailed'))
+    ElMessage.error(error.response?.data?.error || t('manager.vectorization.saveFailed'))
   } finally {
     saving.value = false
   }

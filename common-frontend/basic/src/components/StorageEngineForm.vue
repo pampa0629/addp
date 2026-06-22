@@ -378,36 +378,11 @@
       <!-- 2.1 定时扫描详细配置（仅在开关打开时显示） -->
       <template v-if="scheduledScanEnabled">
         <el-form-item :label="t('storageEngine.scanFrequency')" style="margin-left: 30px;">
-          <el-radio-group v-model="formState.scan_config.schedule_mode">
-            <el-radio value="daily">{{ t('schedule.mode.daily') }}</el-radio>
-            <el-radio value="weekly">{{ t('schedule.mode.weekly') }}</el-radio>
-          </el-radio-group>
-        </el-form-item>
-
-        <el-form-item :label="t('schedule.execTime')" style="margin-left: 30px;">
-          <el-time-select
-            v-model="formState.scan_config.schedule_time"
-            start="00:00"
-            step="01:00"
-            end="23:00"
-            :placeholder="t('schedule.selectTime')"
+          <ScheduleConfig
+            v-model="scheduledScanCron"
+            :allow-custom-cron="false"
+            compact-mode
           />
-        </el-form-item>
-
-        <el-form-item
-          v-if="formState.scan_config.schedule_mode === 'weekly'"
-          :label="t('schedule.execDay')"
-          style="margin-left: 30px;"
-        >
-          <el-checkbox-group v-model="formState.scan_config.schedule_value">
-            <el-checkbox :value="1">{{ t('storageEngine.weekly_days.1') }}</el-checkbox>
-            <el-checkbox :value="2">{{ t('storageEngine.weekly_days.2') }}</el-checkbox>
-            <el-checkbox :value="3">{{ t('storageEngine.weekly_days.3') }}</el-checkbox>
-            <el-checkbox :value="4">{{ t('storageEngine.weekly_days.4') }}</el-checkbox>
-            <el-checkbox :value="5">{{ t('storageEngine.weekly_days.5') }}</el-checkbox>
-            <el-checkbox :value="6">{{ t('storageEngine.weekly_days.6') }}</el-checkbox>
-            <el-checkbox :value="0">{{ t('storageEngine.weekly_days.0') }}</el-checkbox>
-          </el-checkbox-group>
         </el-form-item>
 
         <!-- 2.2 定时扫描深度提示（固定深度扫描） -->
@@ -424,6 +399,8 @@
 import { computed, reactive, ref, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowDown, ArrowRight } from '@element-plus/icons-vue'
+import ScheduleConfig from './ScheduleConfig.vue'
+import { buildScheduleFromForm, decodeScheduleToForm } from '../utils/schedule'
 
 const { t } = useI18n()
 
@@ -485,7 +462,53 @@ const immediateScanEnabled = ref(true)  // 默认启用立即扫描
 const scheduledScanEnabled = ref(false) // 默认不启用定时扫描
 const scanConfigExpanded = ref(false)   // 扫描配置折叠状态（默认折叠）
 
-  const ensureConnectionDefaults = (form) => {
+const defaultScheduledScanCron = '0 0 * * *'
+
+const scanPolicyToCron = (scanConfig = {}) => {
+  if (!scanConfig.scheduled_scan) {
+    return ''
+  }
+  if (scanConfig.schedule_mode === 'cron') {
+    return scanConfig.cron_expression || ''
+  }
+
+  const form = {
+    mode: scanConfig.schedule_mode || 'daily',
+    time: scanConfig.schedule_time || '00:00',
+    weekDays: (scanConfig.schedule_value || []).map(value => String(value)),
+    dayOfMonth: scanConfig.schedule_value?.[0] || 1
+  }
+  return buildScheduleFromForm(form)?.cron || defaultScheduledScanCron
+}
+
+const applyCronToScanPolicy = (cron) => {
+  const normalized = (cron || '').trim().replace(/\s+/g, ' ')
+  if (!normalized) {
+    scheduledScanEnabled.value = false
+    formState.scan_config.scheduled_scan = false
+    formState.scan_config.schedule_mode = 'cron'
+    formState.scan_config.cron_expression = ''
+    formState.scan_config.schedule_time = '00:00'
+    formState.scan_config.schedule_value = []
+    return
+  }
+
+  const decoded = decodeScheduleToForm(normalized)
+  scheduledScanEnabled.value = true
+  formState.scan_config.scheduled_scan = true
+  formState.scan_config.schedule_mode = 'cron'
+  formState.scan_config.cron_expression = normalized
+  formState.scan_config.schedule_time = decoded?.time || '00:00'
+  if (decoded?.mode === 'weekly') {
+    formState.scan_config.schedule_value = decoded.weekDays.map(value => Number(value))
+  } else if (decoded?.mode === 'monthly') {
+    formState.scan_config.schedule_value = [decoded.dayOfMonth]
+  } else {
+    formState.scan_config.schedule_value = []
+  }
+}
+
+const ensureConnectionDefaults = (form) => {
   if (!form.connection_info || typeof form.connection_info !== 'object') {
     form.connection_info = {}
   }
@@ -617,7 +640,8 @@ const formState = reactive({
     immediate_scan: true,  // 默认启用立即扫描
     immediate_depth: 'basic',  // 立即扫描默认基础
     scheduled_scan: false,  // 默认只立即扫描一次
-    schedule_mode: 'daily',  // 默认每天
+    schedule_mode: 'cron',
+    cron_expression: '',
     schedule_time: '00:00',  // 凌晨执行
     schedule_value: []
   }
@@ -637,7 +661,8 @@ const syncFromProps = (value) => {
       immediate_scan: value.scan_config.immediate_scan !== undefined ? value.scan_config.immediate_scan : true,
       immediate_depth: value.scan_config.immediate_depth || 'basic',
       scheduled_scan: value.scan_config.scheduled_scan !== undefined ? value.scan_config.scheduled_scan : true,
-      schedule_mode: value.scan_config.schedule_mode || 'daily',
+      schedule_mode: 'cron',
+      cron_expression: scanPolicyToCron(value.scan_config),
       schedule_time: value.scan_config.schedule_time || '00:00',
       schedule_value: value.scan_config.schedule_value || []
     }
@@ -652,7 +677,8 @@ const syncFromProps = (value) => {
       immediate_scan: true,
       immediate_depth: 'basic',
       scheduled_scan: false,
-      schedule_mode: 'daily',
+      schedule_mode: 'cron',
+      cron_expression: '',
       schedule_time: '00:00',
       schedule_value: []
     }
@@ -684,6 +710,15 @@ const scanConfigEnabled = computed(() => {
   return immediateScanEnabled.value || scheduledScanEnabled.value
 })
 
+const scheduledScanCron = computed({
+  get() {
+    return scanPolicyToCron(formState.scan_config)
+  },
+  set(value) {
+    applyCronToScanPolicy(value)
+  }
+})
+
 // 监听立即扫描开关，同步到 formState
 watch(immediateScanEnabled, (value) => {
   formState.scan_config.immediate_scan = value
@@ -694,9 +729,12 @@ watch(scheduledScanEnabled, (value) => {
   formState.scan_config.scheduled_scan = value
   if (!value) {
     // 禁用定时扫描时，重置相关配置
-    formState.scan_config.schedule_mode = 'daily'
+    formState.scan_config.schedule_mode = 'cron'
+    formState.scan_config.cron_expression = ''
     formState.scan_config.schedule_time = '00:00'
     formState.scan_config.schedule_value = []
+  } else if (!formState.scan_config.cron_expression) {
+    applyCronToScanPolicy(defaultScheduledScanCron)
   }
 })
 

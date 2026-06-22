@@ -262,7 +262,8 @@ addp (database)
 
 ```
 MinIO
-├── system/             → System 模块（用户头像、系统配置）
+├── system/             → System 模块（用户头像、系统配置、审计日志归档）
+│   └── tenant_<id>/audit-logs/ → 审计日志归档对象；平台级日志使用 tenant_0
 ├── manager/            → Manager 模块（预览缓存、瓦片缓存对象）
 │   └── tenant_<id>/mvt-tiles/ → 瓦片缓存对象，由 Manager API 按 storage_ref 访问
 ├── meta/               → Meta 模块（元数据相关文件）
@@ -397,7 +398,7 @@ POSTGRES_IMAGE=imresamu/postgis-arm64:15-3.4 ./scripts/infra/up.sh
 **功能**: 初始化 MinIO buckets（模块化组织）
 
 **创建的 Buckets**:
-- `system` - System 模块（用户头像、系统配置）
+- `system` - System 模块（用户头像、系统配置、审计日志归档）
 - `manager` - Manager 模块（预览缓存、瓦片缓存对象）- **私有**
 - `meta` - Meta 模块（元数据相关文件）
 - `transfer` - Transfer 模块（传输临时文件）

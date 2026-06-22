@@ -13,7 +13,7 @@ type EntityInfo struct {
 
 // PathRule 路径解析规则
 type PathRule struct {
-	Pattern    string // 路径模式（如 "/api/users/"）
+	Pattern    string // 路径模式（如 "/api/v1/system/users/"）
 	EntityType string // 资源类型
 	IDPosition int    // ID 在路径中的位置（从0开始）
 }
@@ -28,40 +28,40 @@ var pathPatterns = []PathRule{
 	{Pattern: "/api/v1/manager/tasks/embedding", EntityType: "embedding_execution", IDPosition: 5},
 
 	// System 模块
-	{Pattern: "/api/users/", EntityType: "user", IDPosition: 3},
-	{Pattern: "/api/engines/", EntityType: "engine", IDPosition: 3},
-	{Pattern: "/api/tenants/", EntityType: "tenant", IDPosition: 3},
-	{Pattern: "/api/logs/", EntityType: "audit_log", IDPosition: 3},
-	{Pattern: "/api/roles/", EntityType: "role", IDPosition: 3},
+	{Pattern: "/api/v1/system/users/", EntityType: "user", IDPosition: 4},
+	{Pattern: "/api/v1/system/engines/", EntityType: "engine", IDPosition: 4},
+	{Pattern: "/api/v1/system/tenants/", EntityType: "tenant", IDPosition: 4},
+	{Pattern: "/api/v1/system/logs/", EntityType: "audit_log", IDPosition: 4},
+	{Pattern: "/api/v1/system/roles/", EntityType: "role", IDPosition: 4},
 
 	// Meta 模块
-	{Pattern: "/api/meta/scan-tasks/", EntityType: "scan_task", IDPosition: 4},
-	{Pattern: "/api/meta/schemas/", EntityType: "schema", IDPosition: 4},
-	{Pattern: "/api/meta/object-storage/", EntityType: "object_storage", IDPosition: 4},
+	{Pattern: "/api/v1/meta/scan-tasks/", EntityType: "scan_task", IDPosition: 4},
+	{Pattern: "/api/v1/meta/schemas/", EntityType: "schema", IDPosition: 4},
+	{Pattern: "/api/v1/meta/object-storage/", EntityType: "object_storage", IDPosition: 4},
 
 	// Transfer 模块
-	{Pattern: "/api/tasks/", EntityType: "transfer_task", IDPosition: 3},
-	{Pattern: "/api/jobs/", EntityType: "transfer_job", IDPosition: 3},
+	{Pattern: "/api/v1/transfer/tasks/", EntityType: "transfer_task", IDPosition: 5},
+	{Pattern: "/api/v1/transfer/jobs/", EntityType: "transfer_job", IDPosition: 4},
 
 	// Orchestrator 模块
-	{Pattern: "/api/workflows/", EntityType: "workflow", IDPosition: 3},
-	{Pattern: "/api/workflow-instances/", EntityType: "workflow_instance", IDPosition: 3},
+	{Pattern: "/api/v1/orchestrator/workflows/", EntityType: "workflow", IDPosition: 4},
+	{Pattern: "/api/v1/orchestrator/workflow-instances/", EntityType: "workflow_instance", IDPosition: 4},
 
 	// Develop 模块
-	{Pattern: "/api/develop/queries/", EntityType: "query", IDPosition: 4},
-	{Pattern: "/api/develop/operators/", EntityType: "operator", IDPosition: 4},
+	{Pattern: "/api/v1/develop/queries/", EntityType: "query", IDPosition: 4},
+	{Pattern: "/api/v1/develop/operators/", EntityType: "operator", IDPosition: 4},
 
 	// Service 模块
-	{Pattern: "/api/services/", EntityType: "service", IDPosition: 3},
+	{Pattern: "/api/v1/service/services/", EntityType: "service", IDPosition: 4},
 }
 
 // ParseEntityFromPath 从 HTTP 请求路径解析资源类型和 ID
 //
 // 示例：
-//   - POST /api/users/123 → {Type: "user", ID: "123"}
-//   - PUT /api/engines/456/scan → {Type: "engine", ID: "456"}
-//   - DELETE /api/meta/scan-tasks/789 → {Type: "scan_task", ID: "789"}
-//   - POST /api/tasks → {Type: "transfer_task", ID: ""}（创建操作，无ID）
+//   - POST /api/v1/system/users/123 → {Type: "user", ID: "123"}
+//   - PUT /api/v1/system/engines/456/scan → {Type: "engine", ID: "456"}
+//   - DELETE /api/v1/meta/scan-tasks/789 → {Type: "scan_task", ID: "789"}
+//   - GET /api/v1/transfer/tasks/sync/123 → {Type: "transfer_task", ID: "123"}
 func ParseEntityFromPath(method, path string) *EntityInfo {
 	// 遍历所有规则
 	for _, rule := range pathPatterns {
@@ -74,7 +74,7 @@ func ParseEntityFromPath(method, path string) *EntityInfo {
 
 		// 检查路径部分是否足够长
 		if len(parts) <= rule.IDPosition {
-			// 路径较短，可能是列表查询或创建操作（如 POST /api/users）
+			// 路径较短，可能是列表查询或创建操作（如 POST /api/v1/system/users）
 			return &EntityInfo{Type: rule.EntityType, ID: ""}
 		}
 
@@ -86,7 +86,7 @@ func ParseEntityFromPath(method, path string) *EntityInfo {
 			return &EntityInfo{Type: rule.EntityType, ID: idPart}
 		}
 
-		// ID 无效，可能是子资源路径（如 /api/users/123/profile）
+		// ID 无效，可能是子资源路径（如 /api/v1/system/users/123/profile）
 		// 仍然返回资源类型，但不设置 ID
 		return &EntityInfo{Type: rule.EntityType, ID: ""}
 	}

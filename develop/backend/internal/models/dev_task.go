@@ -9,13 +9,13 @@ import (
 	"gorm.io/gorm"
 )
 
-// DevTask 统一开发任务定义（SQL查询、工作流、脚本等）
+// DevTask 是 Develop 私有开发任务定义（SQL 查询、工作流、脚本等）。
 type DevTask struct {
 	ID          uint   `gorm:"primaryKey" json:"id"`
 	TenantID    uint   `gorm:"not null;index:idx_dev_tasks_tenant_type" json:"tenant_id"`
 	Name        string `gorm:"size:255;not null" json:"name"`
 	DisplayName string `gorm:"size:255" json:"display_name,omitempty"`
-	DevType     string `gorm:"size:50;not null;index:idx_dev_tasks_tenant_type" json:"dev_type"` // 'query' | 'workflow' | 'script'
+	DevType     string `gorm:"size:50;not null;index:idx_dev_tasks_tenant_type" json:"dev_type"` // Develop 内部类型：'query' | 'workflow' | 'script'
 
 	// 内容存储（根据类型解析）
 	Content DevTaskContent `gorm:"type:jsonb;not null" json:"content"`
@@ -23,9 +23,7 @@ type DevTask struct {
 	// 执行配置（JSONB 字段，统一的执行配置）
 	ExecutionConfig DevTaskContent `gorm:"type:jsonb;column:execution_config" json:"execution_config,omitempty"`
 
-	Schedule string `gorm:"size:100" json:"schedule,omitempty"` // Cron 表达式
-	Enabled  bool   `gorm:"default:false" json:"enabled"`       // 调度开关
-	Timeout  int    `gorm:"default:300" json:"timeout"`         // 超时时间（秒）
+	Timeout int `gorm:"default:300" json:"timeout"` // 超时时间（秒）
 
 	// 元数据
 	Description string         `gorm:"type:text" json:"description,omitempty"`
@@ -43,7 +41,6 @@ type DevTask struct {
 	LastExecutionID     *string    `gorm:"size:36" json:"last_execution_id,omitempty"`                        // UUID，软引用 common.task_executions.execution_id
 	LastExecutionStatus string     `gorm:"size:50" json:"last_execution_status,omitempty"`
 	LastRunAt           *time.Time `json:"last_run_at,omitempty"`
-	NextRunAt           *time.Time `json:"next_run_at,omitempty"`
 }
 
 // ProviderDevTask 是 Develop 通过 TaskProvider API 暴露的标准任务定义。
@@ -54,11 +51,10 @@ type ProviderDevTask struct {
 	Name                string         `json:"name"`
 	DisplayName         string         `json:"display_name,omitempty"`
 	TaskType            string         `json:"task_type"`
+	Enabled             bool           `json:"enabled"`
 	Content             DevTaskContent `json:"content,omitempty"`
 	ExecutionConfig     DevTaskContent `json:"execution_config,omitempty"`
 	Parameters          DevTaskContent `json:"parameters,omitempty"`
-	Schedule            string         `json:"schedule,omitempty"`
-	Enabled             bool           `json:"enabled"`
 	Timeout             int            `json:"timeout"`
 	Description         string         `json:"description,omitempty"`
 	Tags                pq.StringArray `json:"tags,omitempty"`
@@ -70,7 +66,6 @@ type ProviderDevTask struct {
 	LastExecutionID     *string        `json:"last_execution_id,omitempty"`
 	LastExecutionStatus string         `json:"last_execution_status,omitempty"`
 	LastRunAt           *time.Time     `json:"last_run_at,omitempty"`
-	NextRunAt           *time.Time     `json:"next_run_at,omitempty"`
 }
 
 // ListProviderDevTasksResponse 是 TaskProvider 标准任务列表响应。
@@ -88,11 +83,10 @@ func NewProviderDevTask(item DevTask) ProviderDevTask {
 		Name:                item.Name,
 		DisplayName:         item.DisplayName,
 		TaskType:            item.DevType,
+		Enabled:             item.Status == "active",
 		Content:             item.Content,
 		ExecutionConfig:     item.ExecutionConfig,
 		Parameters:          providerTaskParameters(item),
-		Schedule:            item.Schedule,
-		Enabled:             item.Enabled,
 		Timeout:             item.Timeout,
 		Description:         item.Description,
 		Tags:                item.Tags,
@@ -104,7 +98,6 @@ func NewProviderDevTask(item DevTask) ProviderDevTask {
 		LastExecutionID:     item.LastExecutionID,
 		LastExecutionStatus: item.LastExecutionStatus,
 		LastRunAt:           item.LastRunAt,
-		NextRunAt:           item.NextRunAt,
 	}
 }
 
@@ -164,11 +157,6 @@ func (d *DevTask) GetEngineID() *uint {
 	return nil
 }
 
-// IsScheduledActive 判断是否启用调度
-func (d *DevTask) IsScheduledActive() bool {
-	return d.Schedule != "" && d.Schedule != "0"
-}
-
 // DevTaskContent 开发任务内容（支持任意 JSON 结构）
 type DevTaskContent map[string]interface{}
 
@@ -197,10 +185,9 @@ func (c *DevTaskContent) Scan(value interface{}) error {
 type CreateDevTaskRequest struct {
 	Name            string                 `json:"name" binding:"required"`
 	DisplayName     string                 `json:"display_name"`
-	DevType         string                 `json:"dev_type" binding:"required,oneof=query workflow script"`
+	DevType         string                 `json:"dev_type" binding:"required,oneof=query workflow script"` // Develop 内部类型；TaskProvider 对外映射为 task_type
 	Content         map[string]interface{} `json:"content" binding:"required"`
 	ExecutionConfig map[string]interface{} `json:"execution_config"`
-	Schedule        string                 `json:"schedule"`
 	Timeout         int                    `json:"timeout"`
 	Description     string                 `json:"description"`
 	Tags            []string               `json:"tags"`
@@ -212,7 +199,6 @@ type UpdateDevTaskRequest struct {
 	DisplayName     string                 `json:"display_name"`
 	Content         map[string]interface{} `json:"content"`
 	ExecutionConfig map[string]interface{} `json:"execution_config"`
-	Schedule        string                 `json:"schedule"`
 	Timeout         int                    `json:"timeout"`
 	Description     string                 `json:"description"`
 	Tags            []string               `json:"tags"`

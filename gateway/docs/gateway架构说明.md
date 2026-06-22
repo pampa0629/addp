@@ -25,7 +25,7 @@ Gateway（API 网关）是全域数据平台的**统一入口**，所有外部�
 客户端 → Manager (8081)
 客户端 → Meta (8082)
 客户端 → Transfer (8083)
-客户端 → Develop (8084)
+客户端 → Develop (8085)
 客户端 → Service (8086)
 客户端 → Copilot (8087)
 ```
@@ -44,7 +44,7 @@ Gateway（API 网关）是全域数据平台的**统一入口**，所有外部�
                         → Manager (8081)
                         → Meta (8082)
                         → Transfer (8083)
-                        → Develop (8084)
+                        → Develop (8085)
                         → Service (8086)
                         → Copilot (8087)
 ```
@@ -83,14 +83,14 @@ Gateway（API 网关）是全域数据平台的**统一入口**，所有外部�
 
 | 路由前缀 | 目标服务 | 说明 |
 |---------|---------|-----|
-| `/api/system/*` | System (8180) | 认证、用户、租户、引擎、日志 |
-| `/api/manager/*` | Manager (8081) | 数据源、预览、文件上传 |
-| `/api/meta/*` | Meta (8082) | 元数据扫描、对象存储 |
-| `/api/transfer/*` | Transfer (8083) | 数据传输任务 |
-| `/api/orchestrator/*` | Orchestrator (8084) | 任务编排、工作流编排 |
-| `/api/develop/*` | Develop (8085) | SQL 执行、工作流 |
-| `/api/service/*` | Service (8086) | 数据服务、OGC 标准 |
-| `/api/copilot/*` | Copilot (8087) | AI 助手 |
+| `/api/v1/system/*` | System (8180) | 认证、用户、租户、引擎、日志 |
+| `/api/v1/manager/*` | Manager (8081) | 数据源、预览、文件上传 |
+| `/api/v1/meta/*` | Meta (8082) | 元数据扫描、对象存储 |
+| `/api/v1/transfer/*` | Transfer (8083) | 数据传输任务 |
+| `/api/v1/orchestrator/*` | Orchestrator (8084) | 任务编排、工作流编排 |
+| `/api/v1/develop/*` | Develop (8085) | SQL 执行、工作流 |
+| `/api/v1/service/*` | Service (8086) | 数据服务、OGC 标准 |
+| `/api/v1/copilot/*` | Copilot (8087) | AI 助手 |
 
 ### 3. 限流控制 ⏱️
 
@@ -130,7 +130,7 @@ Redis 原子操作（Lua 脚本）
 ### 5. 其他功能
 
 - **请求代理**：完整转发 HTTP 请求（方法、头部、体、查询参数）
-- **路径重写**：支持模块化路由映射（如 `/api/manager/engines` → `/api/engines`）
+- **透明代理**：按 `/api/v1/:module/*path` 提取模块名，完整保留请求路径、头、体和查询参数
 - **跨域处理**：统一配置 CORS，允许前端跨域访问
 - **健康检查**：提供 `/health` 端点检查 Gateway 状态
 
@@ -170,7 +170,7 @@ Redis 原子操作（Lua 脚本）
          │        │        │        │        │        │        │
     ┌────▼───┐ ┌─▼────┐ ┌─▼────┐ ┌──▼────┐ ┌─▼─────┐ ┌─▼────┐ ┌─▼─────┐
     │System  │ │Manager│ │Meta  │ │Transfer│ │Develop│ │Service│ │Copilot│
-    │  8180  │ │ 8081 │ │ 8082 │ │ 8083  │ │ 8084  │ │ 8086  │ │ 8087  │
+    │  8180  │ │ 8081 │ │ 8082 │ │ 8083  │ │ 8085  │ │ 8086  │ │ 8087  │
     └────────┘ └──────┘ └──────┘ └───────┘ └───────┘ └───────┘ └───────┘
 ```
 
@@ -212,7 +212,7 @@ Response
 |------|---------|------|
 | **Config** | `internal/config/config.go` | 配置管理：从环境变量读取配置、提供默认值 |
 | **Router** | `internal/router/router.go` | 路由配置：定义路由规则、创建代理实例、配置中间件链 |
-| **Proxy** | `internal/proxy/proxy.go` | HTTP 代理：转发请求、保持完整性、支持路径重写 |
+| **Proxy** | `internal/proxy/proxy.go` | HTTP 代理：透明转发请求、保持路径、头部、正文和查询参数完整 |
 | **APIKeyAuthMiddleware** | `internal/middleware/api_key_auth.go` | 三层缓存验证 API Key |
 | **RateLimiterMiddleware** | `internal/middleware/rate_limiter.go` | Redis 令牌桶限流 |
 | **AccessLoggerMiddleware** | `internal/middleware/access_logger.go` | 异步记录访问日志 |
@@ -250,7 +250,7 @@ Gateway 支持两种路由模式：**硬编码路由**（默认）和**动态路
 
 ```
 1. 模块启动
-   - 调用 System API: POST /api/internal/modules/register
+   - 调用 System API: POST /api/v1/internal/modules/register
    - 传入：module_name, module_url, route_prefix, health_check_url
    ↓
 2. System 模块写入 module_registry 表（幂等操作）
@@ -259,7 +259,7 @@ Gateway 支持两种路由模式：**硬编码路由**（默认）和**动态路
    - 初始状态设为 'up'
    ↓
 3. 模块定期发送心跳
-   - 调用 System API: POST /api/internal/modules/heartbeat
+   - 调用 System API: POST /api/v1/internal/modules/heartbeat
    - System 更新 last_heartbeat 字段
    ↓
 4. System 定时任务（每 30 秒）检查超时模块
@@ -275,7 +275,7 @@ Gateway 支持两种路由模式：**硬编码路由**（默认）和**动态路
    - 如果启用，创建 ModuleDiscovery 实例
    ↓
 2. 初始化模块列表
-   - 调用 System API: GET /api/internal/modules?status=up
+   - 调用 System API: GET /api/v1/internal/modules?status=up
    - 获取所有活跃模块（status='up'）
    ↓
 3. 构建动态路由映射
@@ -290,7 +290,7 @@ Gateway 支持两种路由模式：**硬编码路由**（默认）和**动态路
      - 模块下线（status='down'） → 删除代理
    ↓
 5. 请求路由
-   - 客户端请求：GET /api/manager/engines
+   - 客户端请求：GET /api/v1/manager/engines
    - Gateway 提取 module_name = "manager"
    - 从 ModuleDiscovery 获取对应的 ServiceProxy
    - 如果模块存在且 status='up' → 转发请求
@@ -326,32 +326,23 @@ MODULE_REGISTRY_ENABLED=false       # 禁用模块发现（使用硬编码路由
 
 ### 路由表
 
-| 路由前缀 | 目标服务 | 端口 | 认证要求 | 路径重写 | 说明 |
+| 路由前缀 | 目标服务 | 端口 | 认证要求 | 转发方式 | 说明 |
 |---------|---------|------|---------|---------|-----|
-| `POST /api/system/login` | System | 8180 | **公开** | 无 | 用户登录 |
-| `POST /api/system/register` | System | 8180 | **公开** | 无 | 用户注册 |
-| `/api/system/*` | System | 8180 | API Key | 无 | 用户、租户、引擎、日志管理 |
-| `/api/manager/*` | Manager | 8081 | API Key | ✅ 移除 `/manager` | 数据源、预览、搜索 |
-| `/api/meta/*` | Meta | 8082 | API Key | 无 | 元数据扫描、对象存储 |
-| `/api/transfer/*` | Transfer | 8083 | API Key | 无 | 传输任务、连接管理 |
-| `/api/develop/*` | Develop | 8084 | API Key | 无 | SQL 执行、工作流 |
-| `/api/service/*` | Service | 8086 | API Key | 无 | 数据服务、OGC 标准 |
-| `/api/copilot/*` | Copilot | 8087 | API Key | ✅ 移除 `/api` | AI 助手 |
+| `POST /api/v1/system/login` | System | 8180 | **公开** | 透明转发 | 用户登录 |
+| `POST /api/v1/system/register` | System | 8180 | **公开** | 透明转发 | 用户注册 |
+| `/api/v1/system/*` | System | 8180 | API Key | 透明转发 | 用户、租户、引擎、日志管理 |
+| `/api/v1/manager/*` | Manager | 8081 | API Key | 透明转发 | 数据管理、预览、上传下载 |
+| `/api/v1/meta/*` | Meta | 8082 | API Key | 透明转发 | 元数据扫描、资源树 |
+| `/api/v1/transfer/*` | Transfer | 8083 | API Key | 透明转发 | 数据同步、格式转换 |
+| `/api/v1/develop/*` | Develop | 8085 | API Key | 透明转发 | SQL 执行、工作流 |
+| `/api/v1/service/*` | Service | 8086 | API Key | 透明转发 | 数据服务、OGC 标准 |
+| `/api/v1/copilot/*` | Copilot | 8087 | API Key | 透明转发 | AI 助手 |
 
-### 路径重写示例
+### 透明代理示例
 
-**Manager 模块**：
 ```
-请求: GET /api/manager/engines/1
-  ↓ 路径重写（移除 /manager 前缀）
-转发: GET /api/engines/1 (Manager 服务)
-```
-
-**Copilot 模块**：
-```
-请求: POST /api/copilot/chat
-  ↓ 路径重写（移除 /api 前缀）
-转发: POST /chat (Copilot 服务)
+请求: GET http://localhost:8000/api/v1/manager/engines
+转发: GET http://localhost:8081/api/v1/manager/engines
 ```
 
 ### 路由匹配规则
@@ -359,14 +350,13 @@ MODULE_REGISTRY_ENABLED=false       # 禁用模块发现（使用硬编码路由
 Gateway 使用 **前缀匹配**，支持通配符和查询参数透传：
 
 ```
-请求: GET /api/system/users/123
-匹配: /api/system/users/*
-代理到: http://localhost:8180/api/system/users/123
+请求: GET /api/v1/system/users/123
+匹配: /api/v1/system/users/*
+代理到: http://localhost:8180/api/v1/system/users/123
 
-请求: POST /api/manager/engines?type=postgresql
-匹配: /api/manager/engines/*
-路径重写: /api/engines?type=postgresql
-代理到: http://localhost:8081/api/engines?type=postgresql
+请求: POST /api/v1/manager/engines?type=postgresql
+匹配: /api/v1/manager/engines/*
+代理到: http://localhost:8081/api/v1/manager/engines?type=postgresql
 ```
 
 ## 数据存储设计
@@ -481,7 +471,7 @@ gateway/
 
 ```
 1. 客户端发起请求
-   GET http://localhost:8000/api/manager/engines
+   GET http://localhost:8000/api/v1/manager/engines
    Headers: X-API-Key: sk_live_abc123...
 
 2. Gateway 接收 → CORS 处理
@@ -500,9 +490,8 @@ gateway/
    - 记录请求开始时间
 
 6. 路由匹配 → 代理转发
-   - 匹配规则: /api/manager/* → managerProxy
-   - 路径重写: /api/manager/engines → /api/engines
-   - 转发到: http://localhost:8081/api/engines
+   - 匹配规则: /api/v1/manager/* → managerProxy
+   - 转发到: http://localhost:8081/api/v1/manager/engines
 
 7. Manager 服务处理并返回
 
@@ -531,14 +520,14 @@ AccessLoggerMiddleware
 ### 公开路由（登录）
 
 ```
-POST http://localhost:8000/api/system/login
+POST http://localhost:8000/api/v1/system/login
 Body: {"username": "admin", "password": "123456"}
   ↓
 CORS 中间件处理
   ↓
-路由匹配：/api/system/login（公开路由，无需 API Key）
+路由匹配：/api/v1/system/login（公开路由，无需 API Key）
   ↓
-代理转发：http://localhost:8180/api/system/login
+代理转发：http://localhost:8180/api/v1/system/login
   ↓
 System 服务验证用户名密码
   ↓
@@ -648,7 +637,7 @@ Gateway 的核心价值：
 3. ✅ **限流控制** - Redis 令牌桶，保护后端服务
 4. ✅ **访问日志** - PostgreSQL 持久化，支持审计和分析
 5. ✅ **透明代理** - 后端服务无感知
-6. ✅ **路径重写** - 支持模块化路由映射
+6. ✅ **透明代理** - 保持模块 API 契约一致，不在 Gateway 改写模块路径
 7. ✅ **集中管理** - 跨域、认证、日志统一处理
 8. ✅ **灵活扩展** - 易于添加新服务
 9. ✅ **生产就绪** - 支持监控、健康检查

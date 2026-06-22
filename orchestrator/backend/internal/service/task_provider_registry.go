@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -10,6 +9,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/taskprovider"
 	"github.com/addp/orchestrator/internal/models"
 )
 
@@ -108,9 +108,9 @@ func (r *TaskProviderRegistry) ListAllProviders(ctx context.Context) ([]*commonM
 	return providers, nil
 }
 
-// ValidateStepTaskTypes 校验编排步骤引用的 provider/task_type 已由 TaskProvider capabilities 声明。
-func (r *TaskProviderRegistry) ValidateStepTaskTypes(ctx context.Context, steps models.Steps) error {
-	capabilityCache := map[string]*taskProviderTaskTypeCapability{}
+// ValidateStepTaskReferences 校验编排步骤引用的 provider/task_type 已由 TaskProvider capabilities 声明。
+func (r *TaskProviderRegistry) ValidateStepTaskReferences(ctx context.Context, steps models.Steps) error {
+	capabilityCache := map[string]*taskprovider.TaskCapability{}
 	for i, step := range steps {
 		providerName := strings.TrimSpace(step.Provider)
 		taskType := strings.TrimSpace(step.TaskType)
@@ -126,7 +126,7 @@ func (r *TaskProviderRegistry) ValidateStepTaskTypes(ctx context.Context, steps 
 				return fmt.Errorf("steps[%d] provider %q is not registered: %w", i, providerName, err)
 			}
 
-			taskTypeCapability, err = providerTaskTypeCapability(provider, taskType)
+			taskTypeCapability, err = providerTaskCapability(provider, taskType)
 			if err != nil {
 				return fmt.Errorf("steps[%d] provider %q capabilities invalid: %w", i, providerName, err)
 			}
@@ -146,18 +146,7 @@ func (r *TaskProviderRegistry) ValidateStepTaskTypes(ctx context.Context, steps 
 	return nil
 }
 
-type taskProviderCapabilities struct {
-	SchemaVersion string                           `json:"schema_version"`
-	TaskTypes     []taskProviderTaskTypeCapability `json:"task_types"`
-}
-
-type taskProviderTaskTypeCapability struct {
-	Type            string                 `json:"type"`
-	Deprecated      bool                   `json:"deprecated"`
-	ExecutionSchema map[string]interface{} `json:"execution_schema"`
-}
-
-func providerTaskTypeCapability(provider *commonModels.TaskProvider, taskType string) (*taskProviderTaskTypeCapability, error) {
+func providerTaskCapability(provider *commonModels.TaskProvider, taskType string) (*taskprovider.TaskCapability, error) {
 	if provider == nil {
 		return nil, fmt.Errorf("provider is nil")
 	}
@@ -165,20 +154,11 @@ func providerTaskTypeCapability(provider *commonModels.TaskProvider, taskType st
 		return nil, fmt.Errorf("capabilities is required")
 	}
 
-	var capabilities taskProviderCapabilities
-	if err := json.Unmarshal([]byte(*provider.Capabilities), &capabilities); err != nil {
-		return nil, fmt.Errorf("invalid capabilities JSON: %w", err)
+	capabilities, err := taskprovider.ParseCapabilities(string(*provider.Capabilities))
+	if err != nil {
+		return nil, err
 	}
-	if capabilities.SchemaVersion != "task.capabilities/v1" {
-		return nil, fmt.Errorf("schema_version must be task.capabilities/v1")
-	}
-
-	for _, item := range capabilities.TaskTypes {
-		if strings.TrimSpace(item.Type) == taskType {
-			return &item, nil
-		}
-	}
-	return nil, nil
+	return capabilities.CapabilityFor(taskType), nil
 }
 
 func validateStepParametersByExecutionSchema(step models.Step, executionSchema map[string]interface{}) error {

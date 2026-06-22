@@ -1,13 +1,16 @@
 package repository
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	commonExecution "github.com/addp/common/execution"
 	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/transfer/internal/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // TaskRepository 任务数据访问层
@@ -116,6 +119,62 @@ func (r *TaskRepository) GetRunningTasks(tenantID uint) ([]models.TransferTask, 
 	return r.ListByStatus(tenantID, models.TaskStatusRunning)
 }
 
+func (r *TaskRepository) ListScheduledTasksMissingNextRun(ctx context.Context) ([]models.TransferTask, error) {
+	var tasks []models.TransferTask
+	err := r.db.WithContext(ctx).
+		Where("enabled = ? AND schedule <> '' AND next_run_at IS NULL", true).
+		Find(&tasks).Error
+	return tasks, err
+}
+
+func (r *TaskRepository) UpdateNextRunAt(ctx context.Context, id uint, nextRunAt *time.Time) error {
+	return r.db.WithContext(ctx).
+		Model(&models.TransferTask{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{"next_run_at": nextRunAt}).Error
+}
+
+func (r *TaskRepository) ListDueScheduledTaskIDs(ctx context.Context, now time.Time, limit int) ([]uint, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	var taskIDs []uint
+	err := r.db.WithContext(ctx).
+		Model(&models.TransferTask{}).
+		Where("enabled = ? AND schedule <> '' AND next_run_at IS NOT NULL AND next_run_at <= ? AND status <> ?", true, now, models.TaskStatusRunning).
+		Order("next_run_at ASC").
+		Limit(limit).
+		Pluck("id", &taskIDs).Error
+	return taskIDs, err
+}
+
+func (r *TaskRepository) ClaimDueScheduledTask(ctx context.Context, taskID uint, schedule string, now time.Time, nextRunAt *time.Time) (*models.TransferTask, error) {
+	var claimed *models.TransferTask
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var task models.TransferTask
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+			Where("id = ? AND enabled = ? AND schedule = ? AND next_run_at IS NOT NULL AND next_run_at <= ? AND status <> ?", taskID, true, schedule, now, models.TaskStatusRunning).
+			First(&task).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+
+		if err := tx.Model(&models.TransferTask{}).
+			Where("id = ?", task.ID).
+			Updates(map[string]interface{}{
+				"next_run_at": nextRunAt,
+			}).Error; err != nil {
+			return err
+		}
+
+		claimed = &task
+		return nil
+	})
+	return claimed, err
+}
+
 // GetTaskWithLastExecution 获取任务及其最后一次执行记录
 func (r *TaskRepository) GetTaskWithLastExecution(taskID uint) (*models.TransferTask, *models.TaskExecution, error) {
 	var task models.TransferTask
@@ -200,7 +259,7 @@ func (r *TaskRepository) fillExecutionStatistics(tenantID uint, stats *models.Ta
 	var executions []executionStatRow
 	if err := r.db.Table("common.task_executions").
 		Select("id, source_task_id, status, started_at, records_written, bytes_written").
-		Where("module = ? AND task_type = ? AND source_task_id IN ?", commonExecution.ModuleTransfer, commonExecution.TaskTypeImport, taskIDs).
+		Where("module = ? AND task_type = ? AND source_task_id IN ?", commonExecution.ModuleTransfer, commonExecution.TaskTypeSync, taskIDs).
 		Order("source_task_id ASC, started_at DESC, id DESC").
 		Find(&executions).Error; err != nil {
 		return err

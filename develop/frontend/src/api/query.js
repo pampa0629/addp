@@ -100,7 +100,6 @@ const toQueryDevTaskPayload = (taskData, includeDevType = true) => {
     execution_config: {
       engine_id: taskData.engine_id
     },
-    schedule: taskData.schedule,
     timeout: taskData.timeout,
     description: taskData.description,
     tags: taskData.tags

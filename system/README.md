@@ -56,11 +56,11 @@ docker-compose up -d
 ## 📡 主要 API 端点
 
 ```
-认证:     POST /api/auth/login
-租户管理: GET/POST/PUT/DELETE /api/tenants
-用户管理: GET/POST/PUT/DELETE /api/users
-引擎管理: GET/POST/PUT/DELETE /api/engines
-日志管理: GET /api/logs
+认证:     POST /api/v1/system/login
+租户管理: GET/POST/PUT/DELETE /api/v1/system/tenants
+用户管理: GET/POST/PUT/DELETE /api/v1/system/users
+引擎管理: GET/POST/PUT/DELETE /api/v1/system/engines
+日志管理: GET /api/v1/system/logs
 ```
 
 完整 API 文档请查看 [CLAUDE.md#API端点](./CLAUDE.md#api-端点)

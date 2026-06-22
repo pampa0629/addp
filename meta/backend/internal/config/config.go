@@ -32,6 +32,12 @@ type Config struct {
 	ConcurrentTasks int
 	MaxRetries      int
 	RetryDelay      time.Duration
+
+	// 平台内置 MinIO（用于 no-persist inspect 等内部读取）
+	BuiltinMinioEndpoint  string
+	BuiltinMinioAccessKey string
+	BuiltinMinioSecretKey string
+	BuiltinMinioUseSSL    bool
 }
 
 func resolveMeilisearchURL() string {
@@ -85,6 +91,12 @@ func LoadConfig() *Config {
 	cfg.ConcurrentTasks = commonConfig.GetEnvInt("CONCURRENT_TASKS", 10)
 	cfg.MaxRetries = commonConfig.GetEnvInt("MAX_RETRIES", 3)
 	cfg.RetryDelay = commonConfig.GetEnvDuration("RETRY_DELAY", "30s")
+
+	minioCfg := commonConfig.LoadBuiltinMinIOConfig()
+	cfg.BuiltinMinioEndpoint = minioCfg.Endpoint
+	cfg.BuiltinMinioAccessKey = minioCfg.AccessKey
+	cfg.BuiltinMinioSecretKey = minioCfg.SecretKey
+	cfg.BuiltinMinioUseSSL = minioCfg.UseSSL
 
 	return cfg
 }

@@ -17,7 +17,7 @@
 ```
 用户访问 Notebook
      ↓
-前端调用 /api/develop/jupyter/instance/start
+前端调用 /api/v1/develop/jupyter/instance/start
      ↓
 JupyterInstanceService 启动 Docker 容器
      - 容器名: jupyter-tenant-{tenant_id}
@@ -48,7 +48,7 @@ JupyterInstanceService 启动 Docker 容器
 
 **功能**:
 - 从环境变量读取 `ADDP_TENANT_ID`
-- 调用 `GET /api/system/engines?tenant_id={tenant_id}` 获取数据源
+- 调用 `GET /api/v1/system/engines?tenant_id={tenant_id}` 获取数据源
 - 为每个引擎创建 `ds_{engine_id}` 全局变量
 - 支持 PostgreSQL、MySQL、MinIO 等多种数据源类型
 - 美化的表格输出显示所有可用数据源
@@ -57,7 +57,7 @@ JupyterInstanceService 启动 Docker 容器
 ```python
 # 调用 ADDP System API
 response = requests.get(
-    f'{ADDP_API_BASE}/api/system/engines',
+    f'{ADDP_API_BASE}/api/v1/system/engines',
     params={'tenant_id': ADDP_TENANT_ID},
     timeout=5
 )
@@ -118,10 +118,10 @@ Resources: container.Resources{
 **文件**: `develop/backend/internal/api/jupyter_instance_handler.go`
 
 **API 端点**:
-- `POST /api/develop/jupyter/instance/start` - 启动实例
-- `POST /api/develop/jupyter/instance/stop` - 停止实例
-- `GET /api/develop/jupyter/instance/status` - 查询状态
-- `GET /api/develop/jupyter/instances` - 列出所有实例（管理员）
+- `POST /api/v1/develop/jupyter/instance/start` - 启动实例
+- `POST /api/v1/develop/jupyter/instance/stop` - 停止实例
+- `GET /api/v1/develop/jupyter/instance/status` - 查询状态
+- `GET /api/v1/develop/jupyter/instances` - 列出所有实例（管理员）
 
 **响应格式**:
 ```json

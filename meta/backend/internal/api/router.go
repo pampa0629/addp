@@ -35,9 +35,10 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 	}
 
 	metadataQueryService := service.NewMetadataQueryService(db)
+	inspectService := service.NewInspectService(cfg)
 
 	// 创建Handler
-	handler := NewHandler(engineService, scanService, taskService, executionService, metadataQueryService)
+	handler := NewHandler(engineService, scanService, taskService, executionService, metadataQueryService, inspectService)
 	assetDiscHandler := newAssetDiscoverableHandler(db)
 
 	// 健康检查
@@ -69,6 +70,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 		// 扫描相关
 		api.POST("/scan/run/unscanned", handler.CreateUnscannedScanRuns)
 		api.POST("/scan/run/manual", handler.CreateManualScanRun)
+		api.POST("/inspect", handler.InspectAttributes)
 		api.GET("/scan/runs", handler.ListScanRuns)
 		api.GET("/executions/:execution_id", handler.GetExecution)
 		api.GET("/tasks", handler.ListProviderScanTasks)

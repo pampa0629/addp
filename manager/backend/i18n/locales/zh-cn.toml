@@ -94,12 +94,6 @@ other = "缺少数据文件"
 [manager.error.read_file_failed]
 other = "读取数据文件失败"
 
-[manager.error.target_engine_id_required]
-other = "缺少目标存储引擎 ID"
-
-[manager.error.invalid_target_engine_id]
-other = "无效的目标存储引擎 ID"
-
 [manager.error.locator_engine_mismatch]
 other = "资源定位符中的存储引擎 ID 与路径参数不一致"
 
@@ -155,31 +149,16 @@ other = "元数据中缺少几何字段"
 other = "无法从文件名推断目标数据项名称，请手动填写"
 
 [manager.error.import_zip_required]
-other = "请上传包含 .shp/.dbf/.shx 文件的 ZIP 包"
+other = "请上传单个 Shapefile ZIP，或同一组 .shp/.dbf/.shx/.prj/.qpj/.cpg 文件"
 
 [manager.error.import_unsupported_format]
-other = "不支持的文件格式，目前仅支持 ZIP 包"
-
-[manager.error.import_source_not_configured]
-other = "导入暂存源引擎未配置，请配置 MANAGER_IMPORT_SOURCE_ENGINE_ID 或启用 System 集成"
-
-[manager.error.import_source_not_matched]
-other = "没有匹配当前导入暂存 MinIO 的对象存储引擎"
-
-[manager.error.import_source_ambiguous]
-other = "匹配到多个导入暂存对象存储引擎，请配置 MANAGER_IMPORT_SOURCE_ENGINE_ID"
-
-[manager.error.import_source_id_invalid]
-other = "MANAGER_IMPORT_SOURCE_ENGINE_ID 必须为正整数"
-
-[manager.error.import_source_inactive]
-other = "导入暂存源引擎未启用"
+other = "不支持的文件格式，仅支持 Shapefile ZIP 或同一组 .shp/.dbf/.shx/.prj/.qpj/.cpg 文件"
 
 [manager.error.import_zip_missing_shp]
-other = "ZIP 包缺少 .shp 文件"
+other = "缺少 .shp 主文件"
 
 [manager.error.import_zip_basename_mismatch]
-other = "ZIP 包中的 Shapefile 组件必须使用相同 basename"
+other = "Shapefile 组件必须使用相同 basename"
 
 [manager.error.import_zip_missing_required]
-other = "ZIP 包缺少同一 basename 的 .shp/.dbf/.shx 组件集合"
+other = "缺少同一 basename 的 .shp/.dbf/.shx 组件集合"

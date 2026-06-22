@@ -438,7 +438,60 @@ cleanup 不纳入 TaskProvider，也不进入 Orchestrator 编排。
 11. 用数据库 `soft_delete` / `hard_delete` 作为跨模块 cleanup 公共语言。
 12. cleanup 不写 Monitor execution 或不写审计日志。
 
-## 十三、迁移状态
+## 十三、运行态验收
+
+资源回收体系完成代码改造后，至少执行一次租户级运行态验收。推荐使用 `scope=["meta"]` 做最小闭环，避免回归验证产生过多模块记录。
+
+验收前提：
+
+- Gateway、System、Meta、Monitor、Redis、PostgreSQL 已启动。
+- 默认租户管理员 `admin / 123456` 可登录，JWT 中 `tenant_id=1`。
+- SuperAdmin `SuperAdmin / 20251001#SuperAdmin` 可登录，JWT 中 `tenant_id=0`。
+
+验收项：
+
+1. SuperAdmin 调用 `POST /api/v1/system/admin/cleanup/scan` 必须返回 HTTP 400，错误信息说明手动资源回收必须在明确租户范围内发起；`Accept-Language: zh-cn` 和 `Accept-Language: en` 都必须返回对应语言。
+2. 租户管理员以 `{"scope":["meta"]}` 调用 `POST /api/v1/system/admin/cleanup/scan` 后，`GET /api/v1/system/admin/cleanup/tasks/{task_id}` 必须最终返回 `completed` 或 `completed_with_errors`。
+3. scan 结果必须包含 `task.execution_id`、`task.expected_modules=["meta"]` 和 `results.meta`。
+4. System 审计日志必须能通过 `entity_type=cleanup&entity_id={task_id}` 查到 `cleanup.scan.created`；完成后还应查到 `cleanup.completed` 或 `cleanup.failed`。
+5. Monitor 必须能通过 `GET /api/v1/monitor/executions/by-execution-id/{execution_id}/tree` 查到 `module=system, task_type=cleanup` 的父 execution，以及 `module=meta, task_type=cleanup_executor` 的子 execution。
+
+示例命令骨架：
+
+```bash
+BASE=http://localhost:8000/api/v1
+
+ADMIN_TOKEN=$(curl -sS -X POST "$BASE/system/login" \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"123456"}' | jq -r .access_token)
+
+SUPER_TOKEN=$(curl -sS -X POST "$BASE/system/login" \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"SuperAdmin","password":"20251001#SuperAdmin"}' | jq -r .access_token)
+
+curl -sS -w '\n%{http_code}\n' -X POST "$BASE/system/admin/cleanup/scan" \
+  -H "Authorization: Bearer $SUPER_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -H 'Accept-Language: zh-cn' \
+  -d '{"scope":["meta"]}'
+
+TASK_ID=$(curl -sS -X POST "$BASE/system/admin/cleanup/scan" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"scope":["meta"]}' | jq -r .task_id)
+
+curl -sS "$BASE/system/admin/cleanup/tasks/$TASK_ID" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" | jq .
+
+curl -sS "$BASE/system/logs?entity_type=cleanup&entity_id=$TASK_ID&page=1&page_size=20" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" | jq .
+
+EXECUTION_ID=<task.execution_id>
+curl -sS "$BASE/monitor/executions/by-execution-id/$EXECUTION_ID/tree" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" | jq .
+```
+
+## 十四、迁移状态
 
 当前迁移遵循单一路线，不保留兼容分支：
 
@@ -465,7 +518,7 @@ cleanup 不纳入 TaskProvider，也不进入 Orchestrator 编排。
 | engine / tenant 生命周期事件触发自动资源回收 scan，并通过 `cause_event` / `context` 限定后续 executor 范围。 | 已完成主路径 |
 | `expected_modules` 从模块注册或 cleanup capability 生成，并由 executor 统一按公共协议 helper 判断是否响应。 | 已完成主路径 |
 
-## 十四、已确认决策
+## 十五、已确认决策
 
 以下决策作为后续实现约束：
 

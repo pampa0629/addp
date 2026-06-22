@@ -1120,6 +1120,8 @@ const pickNestedNumber = (source, paths) => {
 
 <style scoped>
 .item-panel {
+  flex: 1;
+  height: 100%;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -1161,15 +1163,24 @@ const pickNestedNumber = (source, paths) => {
 .item-tab-content {
   flex: 1;
   min-height: 0;
-  overflow: visible;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .preview-tab-pane {
+  flex: 1;
+  height: 100%;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .attributes-tab-pane {
-  overflow: visible;
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
   background: var(--addp-bg-primary);
 }
 

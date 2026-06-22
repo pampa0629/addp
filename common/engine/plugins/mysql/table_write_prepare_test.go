@@ -101,8 +101,11 @@ func TestMySQLSQLTypeForGeometryTypeNormalizesUnsupportedDimensions(t *testing.T
 	if got := mysqlSQLTypeForGeometryType("PointZ"); got != "POINT" {
 		t.Fatalf("mysqlSQLTypeForGeometryType(PointZ) = %q, want POINT", got)
 	}
-	if got := mysqlSQLTypeForGeometryType("MultiPolygonZ"); got != "GEOMETRY" {
-		t.Fatalf("mysqlSQLTypeForGeometryType(MultiPolygonZ) = %q, want GEOMETRY", got)
+	if got := mysqlSQLTypeForGeometryType("MultiPolygonZ"); got != "MULTIPOLYGON" {
+		t.Fatalf("mysqlSQLTypeForGeometryType(MultiPolygonZ) = %q, want MULTIPOLYGON", got)
+	}
+	if got := mysqlSQLTypeForGeometryType("GeometryCollection"); got != "GEOMETRYCOLLECTION" {
+		t.Fatalf("mysqlSQLTypeForGeometryType(GeometryCollection) = %q, want GEOMETRYCOLLECTION", got)
 	}
 }
 

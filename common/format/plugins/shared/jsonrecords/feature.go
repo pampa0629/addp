@@ -1,5 +1,7 @@
 package jsonrecords
 
+import "github.com/addp/common/datatype"
+
 // Feature 表示单条 GeoJSON Feature 或 JSON 对象记录。
 type Feature struct {
 	ID            interface{}
@@ -14,7 +16,10 @@ func (f *Feature) GeometryType() string {
 		return ""
 	}
 	if v, ok := f.Geometry["type"].(string); ok {
-		return v
+		if standard := datatype.StandardGeometryType(v); standard != "" {
+			return standard
+		}
+		return string(datatype.GeometryTypeGeometry)
 	}
 	return ""
 }

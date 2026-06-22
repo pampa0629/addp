@@ -5,7 +5,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -84,14 +83,4 @@ func (p *ServiceProxy) Handle(c *gin.Context) {
 	c.Status(resp.StatusCode)
 	respBody, _ := io.ReadAll(resp.Body)
 	c.Writer.Write(respBody)
-}
-
-// HandleWithPathRewrite 处理带路径重写的代理
-func (p *ServiceProxy) HandleWithPathRewrite(prefix string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		// 移除路径前缀
-		newPath := strings.TrimPrefix(c.Request.URL.Path, prefix)
-		c.Request.URL.Path = newPath
-		p.Handle(c)
-	}
 }

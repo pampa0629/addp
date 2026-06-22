@@ -29,8 +29,6 @@ export const formatSchedule = (cron) => {
 
 export const getTaskTypeLabel = (type) => {
   const labels = {
-    import: '导入',
-    export: '导出',
     sync: '同步'
   }
   return labels[type] || type

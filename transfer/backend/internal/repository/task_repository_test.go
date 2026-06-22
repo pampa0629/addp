@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -11,7 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestGetStatisticsUsesImportExecutionsAndStringSourceTaskID(t *testing.T) {
+func TestGetStatisticsUsesSyncExecutionsAndStringSourceTaskID(t *testing.T) {
 	db := newTaskRepositoryTestDB(t)
 	repo := NewTaskRepository(db)
 
@@ -19,9 +20,9 @@ func TestGetStatisticsUsesImportExecutionsAndStringSourceTaskID(t *testing.T) {
 	taskB := createTaskRepositoryTestTask(t, db, 7, "task-b")
 	createTaskRepositoryTestTask(t, db, 7, "task-c")
 
-	createTaskRepositoryTestExecution(t, db, taskA, commonExecution.TaskTypeImport, commonExecution.ExecutionStatusSuccess, time.Now().Add(-time.Hour))
+	createTaskRepositoryTestExecution(t, db, taskA, commonExecution.TaskTypeSync, commonExecution.ExecutionStatusSuccess, time.Now().Add(-time.Hour))
 	createTaskRepositoryTestExecution(t, db, taskA, "transfer", commonExecution.ExecutionStatusFailed, time.Now())
-	createTaskRepositoryTestExecution(t, db, taskB, commonExecution.TaskTypeImport, commonExecution.ExecutionStatusRunning, time.Now())
+	createTaskRepositoryTestExecution(t, db, taskB, commonExecution.TaskTypeSync, commonExecution.ExecutionStatusRunning, time.Now())
 
 	stats, err := repo.GetStatistics(7)
 	if err != nil {
@@ -42,6 +43,46 @@ func TestGetStatisticsUsesImportExecutionsAndStringSourceTaskID(t *testing.T) {
 	}
 	if stats.TotalExecutions != 2 {
 		t.Fatalf("TotalExecutions = %d, want 2", stats.TotalExecutions)
+	}
+}
+
+func TestClaimDueScheduledTaskAdvancesNextRunAt(t *testing.T) {
+	db := newTaskRepositoryTestDB(t)
+	repo := NewTaskRepository(db)
+
+	dueAt := time.Now().Add(-time.Minute)
+	nextRunAt := time.Now().Add(time.Hour)
+	task := createTaskRepositoryTestTask(t, db, 7, "scheduled-task")
+	if err := repo.UpdateFields(task.ID, map[string]interface{}{
+		"schedule":    "0 */5 * * * *",
+		"enabled":     true,
+		"next_run_at": dueAt,
+	}); err != nil {
+		t.Fatalf("update task: %v", err)
+	}
+
+	ids, err := repo.ListDueScheduledTaskIDs(context.Background(), time.Now(), 100)
+	if err != nil {
+		t.Fatalf("ListDueScheduledTaskIDs() error = %v", err)
+	}
+	if len(ids) != 1 || ids[0] != task.ID {
+		t.Fatalf("due ids = %#v, want [%d]", ids, task.ID)
+	}
+
+	claimed, err := repo.ClaimDueScheduledTask(context.Background(), task.ID, "0 */5 * * * *", time.Now(), &nextRunAt)
+	if err != nil {
+		t.Fatalf("ClaimDueScheduledTask() error = %v", err)
+	}
+	if claimed == nil || claimed.ID != task.ID {
+		t.Fatalf("claimed = %#v, want task %d", claimed, task.ID)
+	}
+
+	refreshed, err := repo.GetByID(task.ID)
+	if err != nil {
+		t.Fatalf("GetByID() error = %v", err)
+	}
+	if refreshed.NextRunAt == nil || !refreshed.NextRunAt.After(dueAt) {
+		t.Fatalf("next_run_at = %#v, want after %s", refreshed.NextRunAt, dueAt)
 	}
 }
 
@@ -124,7 +165,7 @@ func createTaskRepositoryTestTask(t *testing.T, db *gorm.DB, tenantID uint, name
 	task := models.TransferTask{
 		TenantID:  tenantID,
 		Name:      name,
-		TaskType:  commonExecution.TaskTypeImport,
+		TaskType:  commonExecution.TaskTypeSync,
 		Config:    models.JSONMap{"mode": "batch"},
 		BatchSize: 100,
 		Status:    models.TaskStatusIdle,

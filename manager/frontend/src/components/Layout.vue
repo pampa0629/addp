@@ -175,9 +175,8 @@ const handleLogout = () => {
 /* iframe 模式样式 */
 .content-only {
   width: 100%;
-  height: auto;
-  min-height: 0;
-  overflow: visible;
+  height: 100vh;
+  overflow: hidden;
   background: var(--addp-bg-secondary) !important;
 }
 </style>

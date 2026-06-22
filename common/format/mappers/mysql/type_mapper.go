@@ -60,17 +60,7 @@ func (m *TypeMapper) ToCommon(mysqlType string) datatype.FieldType {
 		return datatype.FieldTypeBytes
 
 	// 地理空间类型
-	case "geometry":
-		return datatype.FieldTypeGeometry
-	case "point":
-		return datatype.FieldTypePoint
-	case "linestring":
-		return datatype.FieldTypeLineString
-	case "polygon":
-		return datatype.FieldTypePolygon
-	case "multipoint":
-		return datatype.FieldTypeMultiPoint
-	case "multilinestring", "multipolygon", "geometrycollection":
+	case "geometry", "point", "linestring", "polygon", "multipoint", "multilinestring", "multipolygon", "geometrycollection":
 		return datatype.FieldTypeGeometry
 
 	// 复杂类型
@@ -109,14 +99,6 @@ func (m *TypeMapper) FromCommon(commonType datatype.FieldType) (string, int, int
 		return "BLOB", 0, 0
 	case datatype.FieldTypeGeometry:
 		return "GEOMETRY", 0, 0
-	case datatype.FieldTypePoint:
-		return "POINT", 0, 0
-	case datatype.FieldTypeLineString:
-		return "LINESTRING", 0, 0
-	case datatype.FieldTypePolygon:
-		return "POLYGON", 0, 0
-	case datatype.FieldTypeMultiPoint:
-		return "MULTIPOINT", 0, 0
 	case datatype.FieldTypeJSON:
 		return "JSON", 0, 0
 	case datatype.FieldTypeUUID:

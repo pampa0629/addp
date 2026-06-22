@@ -35,6 +35,7 @@ type ScanRef struct {
 	Path     string `json:"path"`
 	Role     string `json:"role"`
 	Required bool   `json:"required"`
+	Primary  bool   `json:"primary,omitempty"`
 }
 
 // ScanResponse 扫描响应
@@ -234,7 +235,7 @@ type MetaItemLite struct {
 // SpatialMetadataResponse 空间元数据响应（用于 Manager MVT 瓦片生成）
 type SpatialMetadataResponse struct {
 	GeometryColumn string                  `json:"geometry_column"`
-	GeometryTypes  []string                `json:"geometry_types,omitempty"` // 几何类型列表，如 ["ST_MultiPolygon"]
+	GeometryTypes  []string                `json:"geometry_types,omitempty"` // 几何类型列表，如 ["MultiPolygon"]
 	SRID           int                     `json:"srid"`
 	CRSRef         string                  `json:"crs_ref,omitempty"`
 	CRSDefinition  *datatype.CRSDefinition `json:"crs_definition,omitempty"`

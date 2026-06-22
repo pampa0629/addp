@@ -11,6 +11,17 @@
 - **name**: `开会.jpg` (文件名)
 - **full_name**: `addp/image/开会.jpg` (完整路径，拼接规则: `bucket + "/" + path + name`)
 
+对象存储路径必须区分两种语义：
+
+| 字段 / 语义 | 示例 | 说明 |
+|---|---|---|
+| `bucket` | `addp` | bucket 独立保存，不进入 `path`。 |
+| bucket 内 object key | `image/开会.jpg` | scan resource、content mapper 的 bucket 内输入。 |
+| `path` | `image/` | attributes 中的目录路径，不含 bucket，不含文件名。 |
+| `full_name` / 外部 ref path | `addp/image/开会.jpg` | item 身份、`catalog_paths`、`ref_groups.path` 对外表达。 |
+
+跨模块请求中的 `catalog_paths` 和 `ref_groups.path` 可以使用 `bucket/object_key`；进入 Meta scan 内部对象存储资源模型后，必须拆成 `bucket` 与 bucket 内 `object_key`。不得把 `bucket/object_key` 写入 `attributes.storage.path`，也不得把它传给只接受 bucket 内 key 的 mapper。
+
 ### 指纹计算（两步方式）
 
 ```go
@@ -38,6 +49,12 @@ path := "image"  // ❌ 错误
 
 // 错误3: 使用已删除的便利函数
 fingerprint := commonModels.GenerateObjectFingerprint(...)  // ❌ 已删除
+
+// 错误4: 把外部 ref path 当成 bucket 内 object key 再拼一次 bucket
+bucket := "addp"
+objectKey := "addp/image/开会.jpg" // ❌ 错误，应为 "image/开会.jpg"
+catalogPath := plugin.ObjectItemPathForBucket(engineID, bucket)(objectKey)
+// 结果会指向 addp/addp/image/开会.jpg
 ```
 
 ✅ **正确示例**:

@@ -28,6 +28,7 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	db, err := commonRepo.InitDatabase(dbConfig,
 		&models.SearchHistory{},
 		&models.EmbeddingTask{}, // 向量化任务定义表
+		&models.ExportSession{},
 	)
 	if err != nil {
 		return nil, err

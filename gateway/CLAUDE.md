@@ -10,7 +10,7 @@ Gateway 是 ADDP 平台的**统一 API 入口**，负责：
 2. **请求路由** - 按模块前缀转发到 7 个后端服务（System、Manager、Meta、Transfer、Develop、Service、Copilot）
 3. **限流控制** - 基于 Redis 令牌桶算法，按应用 ID 独立限流
 4. **访问日志** - 异步记录所有 API 访问到 PostgreSQL
-5. **路径重写** - 支持模块化路由映射（Manager、Copilot）
+5. **透明代理** - 按 `/api/v1/:module/*path` 保持模块路径原样转发
 6. **跨域处理** - 统一 CORS 配置
 
 ## 🏗️ 关键架构
@@ -32,7 +32,7 @@ APIKeyAuthMiddleware.Handler()
    ├─ Hit → 写入本地缓存 → 返回结果
    └─ Miss ↓
    ↓
-4. 调用 System API（/internal/api-keys/validate）
+4. 调用 System API（/api/v1/internal/api-keys/validate）
    ↓
 5. 反向传播：写入 Redis → 写入本地缓存
    ↓
@@ -92,7 +92,7 @@ gateway/
 ├── internal/
 │   ├── config/config.go         # 配置管理（7 个服务地址）
 │   ├── router/router.go         # 路由配置和中间件链
-│   ├── proxy/proxy.go           # HTTP 代理和路径重写
+│   ├── proxy/proxy.go           # HTTP 透明代理
 │   ├── middleware/
 │   │   ├── api_key_auth.go      # API Key 三层缓存验证
 │   │   ├── rate_limiter.go      # Redis 令牌桶限流
@@ -133,7 +133,7 @@ gateway/
 
 ### 路由和代理
 - [router.go](internal/router/router.go) - 路由配置，7 个服务映射，中间件链
-- [proxy.go](internal/proxy/proxy.go) - HTTP 代理和路径重写
+- [proxy.go](internal/proxy/proxy.go) - HTTP 透明代理
 
 ### 专用客户端
 - [system_client.go](pkg/client/system_client.go) - System API Key 验证客户端（100 行）
@@ -257,24 +257,19 @@ gateway/
    - 修改 System 模块中的应用配置
    - 或等待 1 分钟让计数器自动重置
 
-### 场景 4：添加路径重写
+### 场景 4：添加新模块路由
 
-**需求**：新模块 Analytics 需要路径重写
+**需求**：新模块 Analytics 需要通过 Gateway 访问
 
 **步骤**：
 
 ```go
-// 在 router.go 中使用 HandleWithPathRewrite
-analyticsGroup := api.Group("/analytics")
-{
-    // 移除 /analytics 前缀
-    analyticsGroup.Any("/reports", analyticsProxy.HandleWithPathRewrite("/analytics"))
-    analyticsGroup.Any("/reports/*path", analyticsProxy.HandleWithPathRewrite("/analytics"))
-}
+// 在硬编码 fallback 中添加 analyticsProxy，并在动态路由 fallback switch 中处理 "analytics"。
+// Analytics 后端必须暴露 /api/v1/analytics/... 路由。
 
 // 效果：
-// 请求: GET /api/analytics/reports/1
-// 转发: GET /api/reports/1 (Analytics 服务)
+// 请求: GET /api/v1/analytics/reports/1
+// 转发: GET http://analytics-backend/api/v1/analytics/reports/1
 ```
 
 ## ⚠️ 注意事项
@@ -299,15 +294,15 @@ analyticsGroup := api.Group("/analytics")
 - 使用 `InvalidateCache(keyHash)` 方法
 - 否则缓存会在 TTL 过期前仍然有效（最长 1 小时）
 
-### 5. 路径重写顺序
-- 路径重写发生在代理转发之前
-- 确保 `HandleWithPathRewrite` 的前缀参数正确
-- 测试所有路径重写路由
+### 5. 透明代理路径
+- Gateway 不改写模块路径。
+- 新模块后端必须暴露与 Gateway 入口一致的 `/api/v1/{module}` 前缀。
+- 测试 Gateway 路由时同时检查直接访问模块后端和通过 Gateway 访问的路径一致。
 
 ## 🔗 依赖的其他模块
 
 ### System 模块
-- **API**: `/internal/api-keys/validate` - API Key 验证
+- **API**: `/api/v1/internal/api-keys/validate` - API Key 验证
 - **认证**: `X-Internal-API-Key` 头部
 - **用途**: 验证外部 API Key，返回应用信息和限流配额
 
@@ -351,7 +346,7 @@ analyticsGroup := api.Group("/analytics")
 ### 单元测试
 - API Key 验证逻辑（三层缓存）
 - 限流算法（令牌桶）
-- 路径重写逻辑
+- 透明代理路径保持逻辑
 
 ### 集成测试
 - 完整请求流程（中间件链）

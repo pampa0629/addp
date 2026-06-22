@@ -38,7 +38,7 @@ func TestGetStatisticsFiltersBySourceTaskID(t *testing.T) {
 	insertTaskExecutionRepositoryTestRowWithSourceTask(t, db, 1, 7, "query-1", ModuleDevelop, TaskTypeQuery, ptrString("42"), ExecutionStatusSuccess, 120, "2026-01-01 10:00:00")
 	insertTaskExecutionRepositoryTestRowWithSourceTask(t, db, 2, 7, "query-2", ModuleDevelop, TaskTypeQuery, ptrString("42"), ExecutionStatusFailed, 240, "2026-01-01 10:01:00")
 	insertTaskExecutionRepositoryTestRowWithSourceTask(t, db, 3, 7, "query-other", ModuleDevelop, TaskTypeQuery, ptrString("99"), ExecutionStatusSuccess, 360, "2026-01-01 10:02:00")
-	insertTaskExecutionRepositoryTestRowWithSourceTask(t, db, 4, 7, "transfer-other", ModuleTransfer, TaskTypeImport, ptrString("42"), ExecutionStatusSuccess, 480, "2026-01-01 10:03:00")
+	insertTaskExecutionRepositoryTestRowWithSourceTask(t, db, 4, 7, "transfer-other", ModuleTransfer, TaskTypeSync, ptrString("42"), ExecutionStatusSuccess, 480, "2026-01-01 10:03:00")
 
 	stats, err := repo.GetStatistics(context.Background(), TaskExecutionFilter{
 		TenantID:     7,

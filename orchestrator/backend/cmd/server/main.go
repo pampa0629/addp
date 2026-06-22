@@ -105,7 +105,7 @@ func main() {
 	}
 
 	// 设置路由（传递 taskProviderRegistry、systemURL、redisClient 和 systemClient）
-	router := api.SetupRouter(orchRepo, executionService, executor, scheduler, taskProviderRegistry, cfg.SystemServiceURL, redisClient, systemClient)
+	router := api.SetupRouter(orchRepo, executionService, executor, taskProviderRegistry, cfg.SystemServiceURL, redisClient, systemClient)
 
 	serviceHost := utils.GetServiceHost()
 	port := utils.GetModulePort("orchestrator")

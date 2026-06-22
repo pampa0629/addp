@@ -92,15 +92,11 @@ func TestPostgresGeometryColumns(t *testing.T) {
 	fields := []datatype.FieldInfo{
 		{Name: "id", Type: "int"},
 		{Name: "geom", Type: "geometry"},
-		{Name: "shape", Type: "polygon"},
 	}
 
 	got := postgresGeometryColumns(fields)
 	if _, ok := got["geom"]; !ok {
 		t.Fatal("geom was not detected as geometry")
-	}
-	if _, ok := got["shape"]; !ok {
-		t.Fatal("shape was not detected as geometry")
 	}
 	if _, ok := got["id"]; ok {
 		t.Fatal("id was detected as geometry")

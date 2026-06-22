@@ -7,43 +7,43 @@ show_usage() {
   echo ""
   echo "选项:"
   echo "  无参数        启动所有模块"
-  echo "  -system       只启动 System 模块 (后端 + 前端)"
-  echo "  -manager      只启动 Manager 模块 (依赖: System)"
-  echo "  -meta         只启动 Meta 模块 (依赖: System)"
-  echo "  -transfer     只启动 Transfer 模块 (依赖: System)"
-  echo "  -orchestrator 只启动 Orchestrator 模块 (依赖: System)"
-  echo "  -develop      只启动 Develop 模块 (依赖: System + Python Workflow Engine)"
-  echo "  -service      只启动 Service 模块 (依赖: System)"
-  echo "  -monitor      只启动 Monitor 模块 (依赖: System)"
-  echo "  -copilot      只启动 Copilot 模块 (依赖: System + Meta + Develop)"
-  echo "  -agent        只启动 Agent 模块 (依赖: System)"
-  echo "  -standard     只启动 Standard 模块 (依赖: System)"
-  echo "  -model        只启动 Model 模块 (依赖: System + Standard)"
-  echo "  -quality      只启动 Quality 模块 (依赖: System + Standard)
-  -asset        只启动 Asset 模块 (依赖: System)
-  -portal       只启动 Portal 模块 (依赖: System + Asset)
-  -graph        只启动 Graph 模块 (依赖: System)"
-  echo "  -python-workflow    只启动 Python Workflow Engine"
-  echo "  -math-workflow      只启动 Math Workflow Engine"
-  echo "  -spark-workflow 只启动 Spark 工作流引擎"
-  echo "  -jupyter      只启动 Jupyter Engine"
+  echo "  -system       启动 System 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
+  echo "  -manager      启动 Manager 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
+  echo "  -meta         启动 Meta 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
+  echo "  -transfer     启动 Transfer 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
+  echo "  -orchestrator 启动 Orchestrator 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
+  echo "  -develop      启动 Develop 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console + Python Workflow Engine)"
+  echo "  -service      启动 Service 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
+  echo "  -monitor      启动 Monitor 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
+  echo "  -copilot      启动 Copilot 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console + Develop)"
+  echo "  -agent        启动 Agent 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
+  echo "  -standard     启动 Standard 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
+  echo "  -model        启动 Model 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console + Standard)"
+  echo "  -quality      启动 Quality 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console + Standard)"
+  echo "  -asset        启动 Asset 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
+  echo "  -portal       启动 Portal 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console + Asset)"
+  echo "  -graph        启动 Graph 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
+  echo "  -python-workflow    启动 Python Workflow Engine (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
+  echo "  -math-workflow      启动 Math Workflow Engine (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
+  echo "  -spark-workflow     启动 Spark 工作流引擎 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
+  echo "  -jupyter      启动 Jupyter Engine (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -gateway      启动 Gateway (依赖: 所有后端模块)"
   echo "  -console      启动 Console (依赖: 所有模块)"
   echo ""
   echo "说明:"
   echo "  - 指定模块时,会自动启动其依赖的模块"
-  echo "  - System 是基础模块,几乎所有模块都依赖它"
+  echo "  - 单模块启动统一带上 System Backend、Meta Backend/Worker、Gateway 和 Console"
   echo "  - 基础设施(PostgreSQL/Redis/MinIO/Meilisearch)总是会启动"
   echo ""
   echo "示例:"
   echo "  $0                # 启动所有模块"
-  echo "  $0 -system        # 只启动 System"
-  echo "  $0 -manager       # 启动 Manager + System"
-  echo "  $0 -develop       # 启动 Develop + System + Python Workflow"
-  echo "  $0 -python-workflow     # 只启动 Python Workflow Engine"
-  echo "  $0 -math-workflow       # 只启动 Math Workflow Engine"
-  echo "  $0 -spark-workflow  # 启动 Spark 工作流引擎"
-  echo "  $0 -jupyter       # 只启动 Jupyter Engine"
+  echo "  $0 -system        # 启动 System Backend/Frontend + Meta Backend/Worker + Gateway + Console"
+  echo "  $0 -manager       # 启动 Manager + 公共依赖 + Transfer"
+  echo "  $0 -develop       # 启动 Develop + 公共依赖 + 工作流引擎"
+  echo "  $0 -python-workflow     # 启动 Python Workflow Engine + 公共依赖"
+  echo "  $0 -math-workflow       # 启动 Math Workflow Engine + 公共依赖"
+  echo "  $0 -spark-workflow      # 启动 Spark 工作流引擎 + 公共依赖"
+  echo "  $0 -jupyter       # 启动 Jupyter Engine + 公共依赖"
   exit 1
 }
 
@@ -212,6 +212,14 @@ START_MATH_WORKFLOW=false
 START_SPARK_WORKFLOW=false
 START_JUPYTER=false
 
+enable_single_module_common_dependencies() {
+  START_SYSTEM_BACKEND=true
+  START_META_BACKEND=true
+  START_META_WORKER=true
+  START_GATEWAY=true
+  START_CONSOLE=true
+}
+
 # 根据选择的模块设置启动标志
 if [ "$START_ALL" = true ]; then
   # 启动所有模块
@@ -258,38 +266,27 @@ else
   # 根据选择的模块设置依赖
   case $SELECTED_MODULE in
     system)
-      START_SYSTEM_BACKEND=true
       START_SYSTEM_FRONTEND=true
       ;;
     manager)
-      START_SYSTEM_BACKEND=true
-      START_SYSTEM_FRONTEND=true
       START_MANAGER_BACKEND=true
       START_MANAGER_FRONTEND=true
+      START_TRANSFER_BACKEND=true
+      START_TRANSFER_WORKER=true
       ;;
     meta)
-      START_SYSTEM_BACKEND=true
-      START_SYSTEM_FRONTEND=true
-      START_META_BACKEND=true
       START_META_FRONTEND=true
-      START_META_WORKER=true
       ;;
     transfer)
-      START_SYSTEM_BACKEND=true
-      START_SYSTEM_FRONTEND=true
       START_TRANSFER_BACKEND=true
       START_TRANSFER_FRONTEND=true
       START_TRANSFER_WORKER=true
       ;;
     orchestrator)
-      START_SYSTEM_BACKEND=true
-      START_SYSTEM_FRONTEND=true
       START_ORCHESTRATOR_BACKEND=true
       START_ORCHESTRATOR_FRONTEND=true
       ;;
     develop)
-      START_SYSTEM_BACKEND=true
-      START_SYSTEM_FRONTEND=true
       START_DEVELOP_BACKEND=true
       START_DEVELOP_FRONTEND=true
       START_PYTHON_WORKFLOW=true
@@ -298,66 +295,48 @@ else
       START_JUPYTER=true
       ;;
     service)
-      START_SYSTEM_BACKEND=true
-      START_SYSTEM_FRONTEND=true
       START_SERVICE_BACKEND=true
       START_SERVICE_FRONTEND=true
       ;;
     monitor)
-      START_SYSTEM_BACKEND=true
-      START_SYSTEM_FRONTEND=true
       START_MONITOR_BACKEND=true
       START_MONITOR_FRONTEND=true
       ;;
     copilot)
-      START_SYSTEM_BACKEND=true
-      START_SYSTEM_FRONTEND=true
-      START_META_BACKEND=true
       START_DEVELOP_BACKEND=true
       START_PYTHON_WORKFLOW=true
       START_JUPYTER=true
       START_COPILOT_BACKEND=true
       ;;
     agent)
-      START_SYSTEM_BACKEND=true
-      START_SYSTEM_FRONTEND=true
       START_AGENT_BACKEND=true
       START_AGENT_FRONTEND=true
       ;;
     standard)
-      START_SYSTEM_BACKEND=true
-      START_SYSTEM_FRONTEND=true
       START_STANDARD_BACKEND=true
       START_STANDARD_FRONTEND=true
       ;;
     model)
-      START_SYSTEM_BACKEND=true
-      START_SYSTEM_FRONTEND=true
       START_STANDARD_BACKEND=true
       START_STANDARD_FRONTEND=true
       START_MODEL_BACKEND=true
       START_MODEL_FRONTEND=true
       ;;
     quality)
-      START_SYSTEM_BACKEND=true
       START_STANDARD_BACKEND=true
       START_QUALITY_BACKEND=true
       START_QUALITY_FRONTEND=true
       ;;
     asset)
-      START_SYSTEM_BACKEND=true
       START_ASSET_BACKEND=true
       START_ASSET_FRONTEND=true
       ;;
     portal)
-      START_SYSTEM_BACKEND=true
       START_ASSET_BACKEND=true
       START_PORTAL_BACKEND=true
       START_PORTAL_FRONTEND=true
       ;;
     graph)
-      START_SYSTEM_BACKEND=true
-      START_SYSTEM_FRONTEND=true
       START_GRAPH_BACKEND=true
       START_GRAPH_FRONTEND=true
       ;;
@@ -374,10 +353,7 @@ else
       START_JUPYTER=true
       ;;
     gateway)
-      START_SYSTEM_BACKEND=true
       START_MANAGER_BACKEND=true
-      START_META_BACKEND=true
-      START_META_WORKER=true
       START_TRANSFER_BACKEND=true
       START_TRANSFER_WORKER=true
       START_ORCHESTRATOR_BACKEND=true
@@ -393,13 +369,10 @@ else
       START_GATEWAY=true
       ;;
     console)
-      START_SYSTEM_BACKEND=true
       START_SYSTEM_FRONTEND=true
       START_MANAGER_BACKEND=true
       START_MANAGER_FRONTEND=true
-      START_META_BACKEND=true
       START_META_FRONTEND=true
-      START_META_WORKER=true
       START_TRANSFER_BACKEND=true
       START_TRANSFER_FRONTEND=true
       START_TRANSFER_WORKER=true
@@ -425,6 +398,10 @@ else
       START_JUPYTER=true
       ;;
   esac
+
+  # 单模块开发也统一保留 ADDP 基础服务和 Console 入口。
+  # 各模块前端和 Console 的 /api 代理都经由 Gateway；资源、任务和审计等通用能力依赖 System/Meta。
+  enable_single_module_common_dependencies
 fi
 
 # 显示启动计划

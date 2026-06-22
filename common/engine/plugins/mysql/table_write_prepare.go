@@ -255,7 +255,7 @@ func mysqlSpatialTypeForField(field datatype.FieldInfo, spatialInfo *datatype.Sp
 			return sqlType
 		}
 	}
-	return mysqlSQLTypeForGeometryFieldType(field.Type)
+	return "GEOMETRY"
 }
 
 func mysqlSpatialColumnForField(spatialInfo *datatype.SpatialInfo, fieldName string) *datatype.GeometryColumnInfo {
@@ -270,32 +270,23 @@ func mysqlSpatialColumnForField(spatialInfo *datatype.SpatialInfo, fieldName str
 	return nil
 }
 
-func mysqlSQLTypeForGeometryFieldType(fieldType datatype.FieldType) string {
-	switch datatype.ParseFieldType(string(fieldType)) {
-	case datatype.FieldTypePoint:
-		return "POINT"
-	case datatype.FieldTypeLineString:
-		return "LINESTRING"
-	case datatype.FieldTypePolygon:
-		return "POLYGON"
-	case datatype.FieldTypeMultiPoint:
-		return "MULTIPOINT"
-	default:
-		return "GEOMETRY"
-	}
-}
-
 func mysqlSQLTypeForGeometryType(geometryType string) string {
-	switch mysqlNormalizedGeometryType(geometryType) {
-	case "point":
+	switch datatype.ParseGeometryType(geometryType) {
+	case datatype.GeometryTypePoint:
 		return "POINT"
-	case "linestring":
+	case datatype.GeometryTypeLineString:
 		return "LINESTRING"
-	case "polygon":
+	case datatype.GeometryTypePolygon:
 		return "POLYGON"
-	case "multipoint":
+	case datatype.GeometryTypeMultiPoint:
 		return "MULTIPOINT"
-	case "geometry":
+	case datatype.GeometryTypeMultiLineString:
+		return "MULTILINESTRING"
+	case datatype.GeometryTypeMultiPolygon:
+		return "MULTIPOLYGON"
+	case datatype.GeometryTypeGeometryCollection:
+		return "GEOMETRYCOLLECTION"
+	case datatype.GeometryTypeGeometry:
 		return "GEOMETRY"
 	default:
 		return "GEOMETRY"
@@ -303,37 +294,7 @@ func mysqlSQLTypeForGeometryType(geometryType string) string {
 }
 
 func mysqlFieldTypeForGeometryType(geometryType string) datatype.FieldType {
-	switch mysqlNormalizedGeometryType(geometryType) {
-	case "point":
-		return datatype.FieldTypePoint
-	case "linestring":
-		return datatype.FieldTypeLineString
-	case "polygon":
-		return datatype.FieldTypePolygon
-	case "multipoint":
-		return datatype.FieldTypeMultiPoint
-	case "", "geometry":
-		return datatype.FieldTypeGeometry
-	default:
-		return datatype.FieldTypeGeometry
-	}
-}
-
-func mysqlNormalizedGeometryType(geometryType string) string {
-	value := strings.ToLower(strings.TrimSpace(geometryType))
-	value = strings.ReplaceAll(value, "_", "")
-	switch value {
-	case "pointz", "pointm", "pointzm":
-		return "point"
-	case "linestringz", "linestringm", "linestringzm":
-		return "linestring"
-	case "polygonz", "polygonm", "polygonzm":
-		return "polygon"
-	case "multipointz", "multipointm", "multipointzm":
-		return "multipoint"
-	default:
-		return value
-	}
+	return datatype.FieldTypeGeometry
 }
 
 func mysqlNativeTypeWithSize(nativeType string, size, precision int) string {

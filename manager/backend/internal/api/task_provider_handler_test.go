@@ -32,6 +32,177 @@ func TestTaskProviderListTasksRejectsUnsupportedTaskType(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusBadRequest, w.Body.String())
 	}
+	assertStandardErrorResponse(t, w.Body.Bytes())
+}
+
+func TestTaskProviderListTasksUsesStandardItemsShape(t *testing.T) {
+	db := newTaskProviderHandlerTestDB(t)
+	tileCacheRepo := repository.NewTileCacheRepository(db)
+	if err := tileCacheRepo.CreateTask(context.Background(), &models.TileCacheTask{
+		TenantID: 1,
+		Name:     "tile cache task",
+		Enabled:  true,
+		Config: commonModels.JSONMap{
+			"target": commonModels.JSONMap{
+				"item_id":          "99",
+				"source_engine_id": 11,
+				"locator":          "postgresql://11/public/roads",
+			},
+			"tile": commonModels.JSONMap{
+				"format":   "mvt",
+				"min_zoom": 0,
+				"max_zoom": 12,
+			},
+		},
+	}); err != nil {
+		t.Fatalf("create tile cache task: %v", err)
+	}
+
+	handler := NewTaskProviderHandler(
+		nil,
+		service.NewTileCacheTaskService(tileCacheRepo, nil),
+		nil,
+		nil,
+	)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("tenant_id", uint(1))
+		c.Next()
+	})
+	router.GET("/tasks", handler.ListTasks)
+
+	req := httptest.NewRequest(http.MethodGet, "/tasks?task_type="+commonExecution.TaskTypeTileCacheGeneration, nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+	var resp struct {
+		Items []struct {
+			TaskType string `json:"task_type"`
+		} `json:"items"`
+		Data []struct {
+			TaskType string `json:"task_type"`
+		} `json:"data"`
+		Total int64 `json:"total"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v; body=%s", err, w.Body.String())
+	}
+	if len(resp.Items) != 1 || resp.Items[0].TaskType != commonExecution.TaskTypeTileCacheGeneration {
+		t.Fatalf("items = %#v, want one tile cache task; body=%s", resp.Items, w.Body.String())
+	}
+	if resp.Data != nil {
+		t.Fatalf("data = %#v, want omitted in TaskProvider standard response; body=%s", resp.Data, w.Body.String())
+	}
+}
+
+func TestTaskProviderTaskDetailUsesDirectObjectShape(t *testing.T) {
+	db := newTaskProviderHandlerTestDB(t)
+	tileCacheRepo := repository.NewTileCacheRepository(db)
+	task := &models.TileCacheTask{
+		TenantID: 1,
+		Name:     "tile cache detail",
+		Enabled:  true,
+		Config: commonModels.JSONMap{
+			"target": commonModels.JSONMap{
+				"item_id":          "99",
+				"source_engine_id": 11,
+				"locator":          "postgresql://11/public/roads",
+			},
+			"tile": commonModels.JSONMap{
+				"format":   "mvt",
+				"min_zoom": 0,
+				"max_zoom": 12,
+			},
+		},
+	}
+	if err := tileCacheRepo.CreateTask(context.Background(), task); err != nil {
+		t.Fatalf("create tile cache task: %v", err)
+	}
+
+	handler := NewTaskProviderHandler(
+		nil,
+		service.NewTileCacheTaskService(tileCacheRepo, nil),
+		nil,
+		nil,
+	)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("tenant_id", uint(1))
+		c.Next()
+	})
+	router.GET("/tasks/:task_type/:id", handler.TaskDetail)
+
+	req := httptest.NewRequest(http.MethodGet, "/tasks/"+commonExecution.TaskTypeTileCacheGeneration+"/1", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+	var resp struct {
+		ID       uint   `json:"id"`
+		TaskType string `json:"task_type"`
+		Status   string `json:"status"`
+		Data     any    `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v; body=%s", err, w.Body.String())
+	}
+	if resp.ID != task.ID || resp.TaskType != commonExecution.TaskTypeTileCacheGeneration {
+		t.Fatalf("response = %#v, want direct tile cache task object; body=%s", resp, w.Body.String())
+	}
+	if resp.Status != "" || resp.Data != nil {
+		t.Fatalf("response wraps standard task detail, status=%q data=%#v body=%s", resp.Status, resp.Data, w.Body.String())
+	}
+}
+
+func TestTaskProviderExecutionStatusUsesDirectObjectShape(t *testing.T) {
+	db := newTaskProviderHandlerTestDB(t)
+	exec := commonExecution.TaskExecution{
+		TenantID:    1,
+		ExecutionID: "manager-exec-1",
+		Module:      commonExecution.ModuleManager,
+		TaskType:    commonExecution.TaskTypeEmbedding,
+		Source:      commonExecution.ModuleManager,
+		Status:      commonExecution.ExecutionStatusRunning,
+		TriggerType: commonExecution.TriggerTypeManual,
+	}
+	if err := db.Create(&exec).Error; err != nil {
+		t.Fatalf("create task execution: %v", err)
+	}
+
+	handler := NewTaskProviderHandler(nil, nil, nil, commonExecution.NewTaskExecutionRepository(db))
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("tenant_id", uint(1))
+		c.Next()
+	})
+	router.GET("/executions/:execution_id", handler.ExecutionStatus)
+
+	req := httptest.NewRequest(http.MethodGet, "/executions/manager-exec-1", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+	var resp struct {
+		ExecutionID string `json:"execution_id"`
+		Status      string `json:"status"`
+		Data        any    `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v; body=%s", err, w.Body.String())
+	}
+	if resp.ExecutionID != "manager-exec-1" || resp.Status != commonExecution.ExecutionStatusRunning {
+		t.Fatalf("response = %#v, want direct execution object; body=%s", resp, w.Body.String())
+	}
+	if resp.Data != nil {
+		t.Fatalf("response wraps standard execution status, data=%#v body=%s", resp.Data, w.Body.String())
+	}
 }
 
 func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
@@ -109,9 +280,9 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 	router.GET("/embedding_tasks", handler.ListEmbeddingTasks)
 	router.GET("/quick_view_optimization_tasks", handler.ListQuickViewOptimizationTasks)
 
-	assertTaskTypes(t, router, "/tile_cache_tasks", []string{commonExecution.TaskTypeTileCacheGeneration})
-	assertTaskTypes(t, router, "/embedding_tasks", []string{commonExecution.TaskTypeEmbedding})
-	assertTaskTypes(t, router, "/quick_view_optimization_tasks", []string{commonExecution.TaskTypeQuickViewOptimization})
+	assertListedTaskTypeValues(t, router, "/tile_cache_tasks", []string{commonExecution.TaskTypeTileCacheGeneration})
+	assertListedTaskTypeValues(t, router, "/embedding_tasks", []string{commonExecution.TaskTypeEmbedding})
+	assertListedTaskTypeValues(t, router, "/quick_view_optimization_tasks", []string{commonExecution.TaskTypeQuickViewOptimization})
 }
 
 func TestCreateEmbeddingTaskRejectsLegacyTopLevelFields(t *testing.T) {
@@ -153,6 +324,58 @@ func TestCreateEmbeddingTaskRejectsLegacyTopLevelFields(t *testing.T) {
 	}
 }
 
+func TestCreateEmbeddingTaskUsesDirectObjectShape(t *testing.T) {
+	db := newTaskProviderHandlerTestDB(t)
+	embeddingRepo := repository.NewEmbeddingRepository(db)
+	handler := NewTaskProviderHandler(
+		service.NewEmbeddingTaskService(embeddingRepo, nil, nil, nil),
+		nil,
+		nil,
+		nil,
+	)
+
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("tenant_id", uint(1))
+		c.Set("user_id", uint(9))
+		c.Next()
+	})
+	router.POST("/embedding_tasks", handler.CreateEmbeddingTask)
+
+	body := `{
+		"name":"embedding",
+		"enabled":true,
+		"config":{
+			"target":{"scope":"node","engine_id":12,"node_id":34}
+		}
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/embedding_tasks", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusCreated, w.Body.String())
+	}
+	var resp struct {
+		ID       uint   `json:"id"`
+		Name     string `json:"name"`
+		TaskType string `json:"task_type"`
+		Status   string `json:"status"`
+		Data     any    `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v; body=%s", err, w.Body.String())
+	}
+	if resp.ID == 0 || resp.Name != "embedding" || resp.TaskType != commonExecution.TaskTypeEmbedding {
+		t.Fatalf("response = %#v, want direct embedding task object; body=%s", resp, w.Body.String())
+	}
+	if resp.Status != "" || resp.Data != nil {
+		t.Fatalf("response wraps embedding task, status=%q data=%#v body=%s", resp.Status, resp.Data, w.Body.String())
+	}
+}
+
 func TestTaskExecuteRejectsUnknownFields(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	handler := NewTaskProviderHandler(nil, nil, nil, nil)
@@ -177,6 +400,30 @@ func TestTaskExecuteRejectsUnknownFields(t *testing.T) {
 	if !strings.Contains(w.Body.String(), "unknown field") {
 		t.Fatalf("body = %s, want unknown field error", w.Body.String())
 	}
+	assertStandardErrorResponse(t, w.Body.Bytes())
+}
+
+func TestTaskExecuteResponseUsesStandardExecutionShape(t *testing.T) {
+	body, err := json.Marshal(TaskExecuteResponse{
+		ExecutionID: "manager-exec-1",
+		Status:      commonExecution.ExecutionStatusRunning,
+	})
+	if err != nil {
+		t.Fatalf("marshal TaskExecuteResponse: %v", err)
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(body, &resp); err != nil {
+		t.Fatalf("decode response: %v; body=%s", err, body)
+	}
+	if resp["execution_id"] != "manager-exec-1" || resp["status"] != commonExecution.ExecutionStatusRunning {
+		t.Fatalf("response = %#v, want execution_id and status", resp)
+	}
+	for _, legacyField := range []string{"message", "data", "id"} {
+		if _, ok := resp[legacyField]; ok {
+			t.Fatalf("response contains non-standard field %q: %s", legacyField, body)
+		}
+	}
 }
 
 func TestDecodeEmbeddingExecutionRequestRejectsUnknownFields(t *testing.T) {
@@ -198,7 +445,7 @@ func TestDecodeEmbeddingExecutionRequestRejectsUnknownFields(t *testing.T) {
 	}
 }
 
-func assertTaskTypes(t *testing.T, router *gin.Engine, path string, want []string) {
+func assertListedTaskTypeValues(t *testing.T, router *gin.Engine, path string, want []string) {
 	t.Helper()
 
 	req := httptest.NewRequest(http.MethodGet, path, nil)
@@ -224,6 +471,24 @@ func assertTaskTypes(t *testing.T, router *gin.Engine, path string, want []strin
 		if item.TaskType != want[i] {
 			t.Fatalf("%s data[%d].task_type = %s, want %s; body=%s", path, i, item.TaskType, want[i], w.Body.String())
 		}
+	}
+}
+
+func assertStandardErrorResponse(t *testing.T, body []byte) {
+	t.Helper()
+
+	var resp map[string]any
+	if err := json.Unmarshal(body, &resp); err != nil {
+		t.Fatalf("decode error response: %v; body=%s", err, string(body))
+	}
+	if _, ok := resp["error"]; !ok {
+		t.Fatalf("error response missing error field: %s", string(body))
+	}
+	if _, ok := resp["status"]; ok {
+		t.Fatalf("error response contains legacy status field: %s", string(body))
+	}
+	if _, ok := resp["message"]; ok {
+		t.Fatalf("error response contains legacy message field: %s", string(body))
 	}
 }
 
@@ -299,6 +564,40 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 		deleted_at DATETIME
 	)`).Error; err != nil {
 		t.Fatalf("create quick_view_optimization_tasks table: %v", err)
+	}
+	if err := db.Exec("ATTACH DATABASE ':memory:' AS common").Error; err != nil {
+		t.Fatalf("attach common schema: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE common.task_executions (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		tenant_id INTEGER NOT NULL,
+		execution_id TEXT NOT NULL,
+		module TEXT NOT NULL,
+		task_type TEXT NOT NULL,
+		source TEXT NOT NULL DEFAULT '',
+		source_task_id TEXT,
+		source_task_name TEXT,
+		parent_execution_id TEXT,
+		status TEXT NOT NULL,
+		progress INTEGER,
+		current_step TEXT,
+		trigger_type TEXT NOT NULL,
+		triggered_by INTEGER,
+		execution_config JSON,
+		error_details JSON,
+		metadata JSON,
+		execution_time_ms INTEGER,
+		rows_affected INTEGER,
+		records_read INTEGER,
+		records_written INTEGER,
+		bytes_read INTEGER,
+		bytes_written INTEGER,
+		started_at DATETIME,
+		completed_at DATETIME,
+		created_at DATETIME,
+		updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create task_executions table: %v", err)
 	}
 	return db
 }

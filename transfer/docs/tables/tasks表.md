@@ -12,7 +12,7 @@
 | `tenant_id` | 租户 ID。 |
 | `name` | 任务名称。 |
 | `description` | 任务描述。 |
-| `task_type` | 当前固定为 `import`；执行主链路以 `config` 为准。 |
+| `task_type` | 当前固定为 `sync`；执行主链路以 `config` 为准。 |
 | `config` | source / target endpoint JSON。 |
 | `schedule` | Cron 表达式；为空表示手动任务。 |
 | `batch_size` | 默认批大小。 |
@@ -99,9 +99,9 @@
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| `GET` | `/tasks` | TaskProvider 任务列表，支持 `task_type=import`。 |
-| `GET` | `/tasks/import/:id` | TaskProvider 标准任务详情。 |
-| `POST` | `/tasks/import/:id/execute` | TaskProvider 标准任务执行入口。 |
+| `GET` | `/tasks` | TaskProvider 任务列表，支持 `task_type=sync`。 |
+| `GET` | `/tasks/{task_type}/{id}` | TaskProvider 标准任务详情，`task_type` 当前仅支持 `sync`。 |
+| `POST` | `/tasks/{task_type}/{id}/execute` | TaskProvider 标准任务执行入口，`task_type` 当前仅支持 `sync`。 |
 | `POST` | `/task-definitions` | 创建任务定义。 |
 | `GET` | `/task-definitions/statistics` | 查询任务统计。 |
 | `GET` | `/task-definitions/:id` | 查询任务定义详情。 |

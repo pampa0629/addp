@@ -94,3 +94,31 @@ func (r staticObjectContentReader) StoreSemantics() plugin.StoreSemantics {
 func (r staticObjectContentReader) OpenContent(context.Context, plugin.ConnectionInfo, plugin.CatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader(r.content)), nil
 }
+
+type recordingObjectContentReader struct {
+	content     string
+	openedPaths []string
+}
+
+func (r *recordingObjectContentReader) Type() string         { return "recording_static" }
+func (r *recordingObjectContentReader) DisplayName() string  { return "recording_static" }
+func (r *recordingObjectContentReader) EngineOrigin() string { return "general" }
+func (r *recordingObjectContentReader) TestConnection(context.Context, plugin.ConnectionInfo) error {
+	return nil
+}
+func (r *recordingObjectContentReader) ValidateConnectionInfo(plugin.ConnectionInfo) error {
+	return nil
+}
+func (r *recordingObjectContentReader) DefaultPort() int          { return 0 }
+func (r *recordingObjectContentReader) RequiredFields() []string  { return nil }
+func (r *recordingObjectContentReader) SensitiveFields() []string { return nil }
+func (r *recordingObjectContentReader) Capabilities() plugin.EngineCapabilities {
+	return plugin.EngineCapabilities{}
+}
+func (r *recordingObjectContentReader) StoreSemantics() plugin.StoreSemantics {
+	return plugin.StoreSemantics{}
+}
+func (r *recordingObjectContentReader) OpenContent(_ context.Context, _ plugin.ConnectionInfo, path plugin.CatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
+	r.openedPaths = append(r.openedPaths, path.StringPath())
+	return io.NopCloser(strings.NewReader(r.content)), nil
+}

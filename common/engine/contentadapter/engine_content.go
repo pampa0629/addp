@@ -242,16 +242,32 @@ func CatalogPath(base engineplugin.CatalogPath, ref contentio.Ref) (engineplugin
 
 func ObjectPathMapper(engineID uint) RefCatalogPathMapper {
 	return func(ref contentio.Ref) (engineplugin.CatalogPath, error) {
-		path := strings.Trim(ref.Path, "/")
-		if path == "" {
-			return engineplugin.CatalogPath{}, fmt.Errorf("content ref path is empty")
-		}
-		bucket, objectPath, ok := strings.Cut(path, "/")
-		if !ok || strings.TrimSpace(bucket) == "" || strings.TrimSpace(objectPath) == "" {
-			return engineplugin.CatalogPath{}, fmt.Errorf("object content ref %q must be bucket/object", ref.Path)
-		}
-		return engineplugin.ObjectItemPath(engineID, bucket, objectPath), nil
+		return engineplugin.ObjectItemPathFromRefPath(engineID, ref.Path)
 	}
+}
+
+// ObjectPathMapperForBucket maps content refs that already use object keys
+// into catalog paths under a fixed object bucket. Use it when the endpoint
+// bucket is known outside the content ref, for example infra MinIO locators.
+func ObjectPathMapperForBucket(engineID uint, bucket string) RefCatalogPathMapper {
+	bucket = strings.Trim(bucket, "/")
+	return func(ref contentio.Ref) (engineplugin.CatalogPath, error) {
+		if bucket == "" {
+			return engineplugin.CatalogPath{}, fmt.Errorf("object content bucket is required")
+		}
+		if strings.Trim(ref.Path, "/") == "" {
+			return engineplugin.CatalogPath{}, fmt.Errorf("object content ref path is empty")
+		}
+		return engineplugin.ObjectItemPathFromBucketRef(engineID, bucket, ref.Path), nil
+	}
+}
+
+// SameObjectBucketPathMapper maps refs as object keys under the bucket of base.
+// It keeps related-ref paths bucketless while preserving a fixed target bucket
+// at the engine boundary.
+func SameObjectBucketPathMapper(base engineplugin.CatalogPath) RefCatalogPathMapper {
+	bucket, _ := objectBaseParts(base)
+	return ObjectPathMapperForBucket(base.EngineID, bucket)
 }
 
 // FixedPathMapper maps every content ref to the same catalog path. It is for

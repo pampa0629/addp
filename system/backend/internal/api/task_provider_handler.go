@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	commonapi "github.com/addp/common/api"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/service"
 	"github.com/gin-gonic/gin"
@@ -21,7 +22,7 @@ func NewTaskProviderHandler(service *service.TaskProviderService) *TaskProviderH
 // POST /api/task-providers/register
 func (h *TaskProviderHandler) RegisterOrUpdate(c *gin.Context) {
 	var req models.TaskProvider
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := commonapi.BindOptionalJSONStrict(c, &req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}

@@ -916,6 +916,40 @@ definitions:
           type: integer
         type: array
     type: object
+  internal_api.graphTaskListItem:
+    properties:
+      description:
+        type: string
+      enabled:
+        type: boolean
+      graph_id:
+        type: integer
+      id:
+        type: integer
+      last_execution_id:
+        type: string
+      name:
+        type: string
+      status:
+        type: string
+      task_type:
+        type: string
+      tenant_id:
+        type: integer
+    type: object
+  internal_api.graphTaskListResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/internal_api.graphTaskListItem'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+    type: object
   internal_api.graphTaskProviderExecuteRequest:
     properties:
       parameters:
@@ -926,6 +960,13 @@ definitions:
       source:
         type: string
       trigger_type:
+        type: string
+    type: object
+  internal_api.graphTaskProviderExecuteResponse:
+    properties:
+      execution_id:
+        type: string
+      status:
         type: string
     type: object
 host: localhost:8186
@@ -2808,8 +2849,7 @@ paths:
         "200":
           description: 任务列表 | Task list
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/internal_api.graphTaskListResponse'
         "400":
           description: 请求参数错误 | Bad request
           schema:
@@ -2846,7 +2886,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_addp_graph_internal_models.BuildTask'
+            $ref: '#/definitions/internal_api.graphTaskListItem'
         "400":
           description: Bad Request
           schema:
@@ -2886,12 +2926,10 @@ paths:
       produces:
       - application/json
       responses:
-        "200":
+        "202":
           description: 执行ID | Execution ID
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/internal_api.graphTaskProviderExecuteResponse'
         "400":
           description: Bad Request
           schema:

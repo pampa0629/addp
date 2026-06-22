@@ -321,12 +321,11 @@ func (r *LogRepository) GetActionDistribution(tenantID *uint, startTime time.Tim
 // ============================================
 
 // GetLogsBeforeDate 查询指定日期之前的日志（用于归档）
-func (r *LogRepository) GetLogsBeforeDate(cutoffDate time.Time, offset, limit int) ([]models.AuditLog, error) {
+func (r *LogRepository) GetLogsBeforeDate(cutoffDate time.Time, limit int) ([]models.AuditLog, error) {
 	var logs []models.AuditLog
 	err := r.db.Model(&models.AuditLog{}).
 		Where("created_at < ?", cutoffDate).
 		Order("created_at ASC").
-		Offset(offset).
 		Limit(limit).
 		Find(&logs).Error
 	return logs, err

@@ -8,6 +8,7 @@ definitions:
       description:
         type: string
       dev_type:
+        description: Develop 内部类型；TaskProvider 对外映射为 task_type
         enum:
         - query
         - workflow
@@ -19,8 +20,6 @@ definitions:
         additionalProperties: true
         type: object
       name:
-        type: string
-      schedule:
         type: string
       tags:
         items:
@@ -73,13 +72,10 @@ definitions:
         description: 元数据
         type: string
       dev_type:
-        description: '''query'' | ''workflow'' | ''script'''
+        description: Develop 内部类型：'query' | 'workflow' | 'script'
         type: string
       display_name:
         type: string
-      enabled:
-        description: 调度开关
-        type: boolean
       execution_config:
         allOf:
         - $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskContent'
@@ -94,11 +90,6 @@ definitions:
       last_run_at:
         type: string
       name:
-        type: string
-      next_run_at:
-        type: string
-      schedule:
-        description: Cron 表达式
         type: string
       status:
         description: 状态
@@ -286,12 +277,8 @@ definitions:
         type: string
       name:
         type: string
-      next_run_at:
-        type: string
       parameters:
         $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskContent'
-      schedule:
-        type: string
       status:
         type: string
       tags:
@@ -322,8 +309,6 @@ definitions:
         additionalProperties: true
         type: object
       name:
-        type: string
-      schedule:
         type: string
       status:
         enum:
@@ -537,6 +522,13 @@ definitions:
       source:
         type: string
       trigger_type:
+        type: string
+    type: object
+  internal_api.providerExecuteDevResponse:
+    properties:
+      execution_id:
+        type: string
+      status:
         type: string
     type: object
   models.ConnectionInfo:
@@ -801,7 +793,8 @@ paths:
         in: query
         name: source_task_id
         type: string
-      - description: 类型过滤 | Filter by type
+      - description: 'Develop 内部类型过滤：query/workflow/script | Develop internal type
+          filter: query/workflow/script'
         in: query
         name: dev_type
         type: string
@@ -1437,7 +1430,8 @@ paths:
         in: query
         name: page_size
         type: integer
-      - description: 类型过滤 | Filter by type
+      - description: 'Develop 内部类型过滤：query/workflow/script | Develop internal type
+          filter: query/workflow/script'
         in: query
         name: dev_type
         type: string
@@ -1592,10 +1586,12 @@ paths:
       - DevTask
   /tasks:
     get:
-      description: 返回可供 TaskProvider 编排复用的开发任务 | List active develop tasks exposed
-        by TaskProvider
+      description: 返回可供 TaskProvider 编排复用的开发任务；task_type 是对外任务类型契约，映射到 Develop 内部
+        dev_type。| List active develop tasks exposed by TaskProvider; task_type is
+        the external task contract mapped to Develop internal dev_type.
       parameters:
-      - description: '任务类型：query/workflow/script | Task type: query/workflow/script'
+      - description: 'TaskProvider 任务类型：query/workflow/script | TaskProvider task
+          type: query/workflow/script'
         in: query
         name: task_type
         type: string
@@ -1628,11 +1624,12 @@ paths:
       - Develop
   /tasks/{task_type}/{id}:
     get:
-      description: 按标准 TaskProvider 路径获取开发任务详情；task_type 支持 query/workflow/script。|
-        Get development task detail through the standard TaskProvider path; task_type
-        supports query/workflow/script.
+      description: 按标准 TaskProvider 路径获取开发任务详情；task_type 是对外任务类型契约，映射到 Develop 内部
+        dev_type。| Get development task detail through the standard TaskProvider path;
+        task_type is the external task contract mapped to Develop internal dev_type.
       parameters:
-      - description: '任务类型：query/workflow/script | Task type: query/workflow/script'
+      - description: 'TaskProvider 任务类型：query/workflow/script | TaskProvider task
+          type: query/workflow/script'
         in: path
         name: task_type
         required: true
@@ -1666,12 +1663,13 @@ paths:
     post:
       consumes:
       - application/json
-      description: 按标准 TaskProvider 协议执行开发任务；task_type 支持 query/workflow/script，parameters
+      description: 按标准 TaskProvider 协议执行开发任务；task_type 是对外任务类型契约，映射到 Develop 内部 dev_type，parameters
         会传入本次执行。| Execute a development task through the standard TaskProvider protocol;
-        task_type supports query/workflow/script and parameters are passed to this
-        execution.
+        task_type is the external task contract mapped to Develop internal dev_type,
+        and parameters are passed to this execution.
       parameters:
-      - description: '任务类型：query/workflow/script | Task type: query/workflow/script'
+      - description: 'TaskProvider 任务类型：query/workflow/script | TaskProvider task
+          type: query/workflow/script'
         in: path
         name: task_type
         required: true
@@ -1689,12 +1687,10 @@ paths:
       produces:
       - application/json
       responses:
-        "200":
+        "202":
           description: 执行已启动 | Execution started
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/internal_api.providerExecuteDevResponse'
         "400":
           description: 参数错误 | Bad request
           schema:

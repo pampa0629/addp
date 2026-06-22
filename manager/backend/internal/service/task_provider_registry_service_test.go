@@ -2,12 +2,14 @@ package service
 
 import (
 	"encoding/json"
+
+	"github.com/addp/common/taskprovider"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 )
 
-type taskProviderTaskTypeCapability struct {
+type taskProviderTaskCapability struct {
 	Type                    string `json:"type"`
 	SupportsSchedule        bool   `json:"supports_schedule"`
 	SupportsCancel          bool   `json:"supports_cancel"`
@@ -56,10 +58,13 @@ func TestTaskProviderRegistryQuickViewOptimizationCapability(t *testing.T) {
 	if captured.Capabilities == nil {
 		t.Fatal("capabilities is nil")
 	}
+	if _, err := taskprovider.ParseCapabilities(*captured.Capabilities); err != nil {
+		t.Fatalf("capabilities contract invalid: %v; capabilities=%s", err, *captured.Capabilities)
+	}
 
 	var capabilities struct {
-		SchemaVersion string `json:"schema_version"`
-		TaskTypes     []taskProviderTaskTypeCapability `json:"task_types"`
+		SchemaVersion    string                       `json:"schema_version"`
+		TaskCapabilities []taskProviderTaskCapability `json:"task_capabilities"`
 	}
 	if err := json.Unmarshal([]byte(*captured.Capabilities), &capabilities); err != nil {
 		t.Fatalf("decode capabilities: %v; capabilities=%s", err, *captured.Capabilities)
@@ -68,7 +73,7 @@ func TestTaskProviderRegistryQuickViewOptimizationCapability(t *testing.T) {
 		t.Fatalf("schema_version = %q, want task.capabilities/v1", capabilities.SchemaVersion)
 	}
 
-	quickView := taskProviderCapabilityByType(t, capabilities.TaskTypes, "quick_view_optimization")
+	quickView := taskProviderCapabilityByType(t, capabilities.TaskCapabilities, "quick_view_optimization")
 	if quickView.SupportsSchedule {
 		t.Fatal("quick_view_optimization supports_schedule = true, want false")
 	}
@@ -89,14 +94,14 @@ func TestTaskProviderRegistryQuickViewOptimizationCapability(t *testing.T) {
 	}
 }
 
-func taskProviderCapabilityByType(t *testing.T, taskTypes []taskProviderTaskTypeCapability, taskType string) taskProviderTaskTypeCapability {
+func taskProviderCapabilityByType(t *testing.T, taskCapabilities []taskProviderTaskCapability, taskType string) taskProviderTaskCapability {
 	t.Helper()
-	for _, candidate := range taskTypes {
+	for _, candidate := range taskCapabilities {
 		if candidate.Type == taskType {
 			return candidate
 		}
 	}
 	t.Fatalf("task type %q not found in capabilities", taskType)
-	var zero taskProviderTaskTypeCapability
+	var zero taskProviderTaskCapability
 	return zero
 }

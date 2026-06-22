@@ -8,7 +8,7 @@
 
 - **统一开发任务管理**：支持 query（SQL/MQL）、workflow（工作流）、script 三类任务
 - **灵活内容存储**：使用 JSONB 存储不同类型的开发任务内容
-- **执行配置**：支持定时调度、超时配置、引擎绑定
+- **执行配置**：支持超时配置、引擎绑定
 - **状态追踪**：记录最后执行状态和时间
 - **软删除**：支持逻辑删除，保留历史记录
 
@@ -24,11 +24,9 @@
 | `tenant_id` | INTEGER | NOT NULL, INDEXED | 租户 ID |
 | `name` | VARCHAR(255) | NOT NULL | 开发任务名称（唯一标识符） |
 | `display_name` | VARCHAR(255) | | 显示名称（前端优先显示） |
-| `dev_type` | VARCHAR(50) | NOT NULL, INDEXED | 开发类型：'query'、'workflow'、'script' |
+| `dev_type` | VARCHAR(50) | NOT NULL, INDEXED | Develop 内部类型：'query'、'workflow'、'script'；TaskProvider 对外映射为 `task_type` |
 | `content` | JSONB | NOT NULL | 开发任务内容（SQL、工作流定义等），推荐结构见下文 |
 | `execution_config` | JSONB | | 执行配置（引擎、参数等），推荐结构见下文 |
-| `schedule` | VARCHAR(100) | | Cron 表达式（启用调度时必填） |
-| `enabled` | BOOLEAN | DEFAULT false | 调度开关；Develop 暂未对 TaskProvider 声明调度能力 |
 | `timeout` | INTEGER | DEFAULT 300 | 超时时间（秒） |
 | `description` | TEXT | | 描述信息 |
 | `tags` | TEXT[] | | 标签数组（用于分类和搜索） |
@@ -41,7 +39,6 @@
 | `last_execution_id` | VARCHAR(36) | | 最近 execution ID，软引用 `common.task_executions.execution_id` |
 | `last_execution_status` | VARCHAR(50) | | 最后执行状态 |
 | `last_run_at` | TIMESTAMP | | 最后执行时间 |
-| `next_run_at` | TIMESTAMP | | 下次计划执行时间；仅表达任务定义字段，不代表已启用调度器 |
 
 ### 2.2 数据库索引
 
@@ -91,7 +88,9 @@
 
 ---
 
-## 三、DevType 说明
+## 三、DevType 与 TaskProvider task_type 边界
+
+`dev_type` 是 Develop 私有表字段，只用于 Develop 内部任务定义管理、查询过滤和执行分派。TaskProvider 标准接口、Orchestrator 编排引用、Monitor 回查和 `common.task_executions` 使用统一字段 `task_type`。Develop 对外暴露的 `task_type` 与内部 `dev_type` 一一映射，但外部模块不得直接依赖 `develop.dev_tasks.dev_type`。
 
 | 值 | 含义 | content 推荐结构 |
 |---|------|------------|

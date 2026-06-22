@@ -2,13 +2,13 @@
 
 ## 概述
 
-SQL 开发模块现已支持将 SQL 查询保存为可重用的任务,并支持定时调度执行。
+SQL 开发模块支持将 SQL 查询保存为可重用任务。当前 Develop 不具备 owner scheduler / `next_run_at` due claim 闭环，因此 SQL 查询任务只支持手动执行，不提供自身定时调度配置。
 
 ## 功能特性
 
 ### 1. SQL 编辑器增强
 
-**位置**: [develop/frontend/src/views/SQLEditor.vue](develop/frontend/src/views/SQLEditor.vue:51)
+**位置**: [develop/frontend/src/views/QueryEditor.vue](develop/frontend/src/views/QueryEditor.vue)
 
 新增功能:
 - **保存为任务按钮**: 在工具栏添加"保存为任务"按钮
@@ -17,49 +17,22 @@ SQL 开发模块现已支持将 SQL 查询保存为可重用的任务,并支持�
 
 ### 2. SQL 任务管理
 
-**位置**: [develop/frontend/src/views/SQLTasks.vue](develop/frontend/src/views/SQLTasks.vue)
+**位置**: [develop/frontend/src/views/QueryTasks.vue](develop/frontend/src/views/QueryTasks.vue)
 
 功能列表:
 - **任务列表**: 查看所有已保存的 SQL 任务
-- **搜索过滤**: 按名称、描述、状态、调度状态筛选
+- **搜索过滤**: 按名称、描述、状态筛选
 - **快速执行**: 一键执行任务
 - **任务编辑**: 修改任务配置
 - **任务删除**: 删除不需要的任务
 
-### 3. 任务调度配置
-
-**位置**: [develop/frontend/src/components/SaveSQLDialog.vue](develop/frontend/src/components/SaveSQLDialog.vue:86-89)
-
-**使用 common-frontend 统一调度组件**: `ScheduleConfig`
-
-调度功能:
-- **启用/禁用调度**: 开关控制是否启用定时执行
-- **11 种快捷预设**: 每分钟、每15分钟、每30分钟、每小时、每天凌晨、每周一零点、每月1号零点等
-- **4 种调度模式**:
-  - `daily`: 每天指定时刻
-  - `weekly`: 指定星期几 + 时刻
-  - `monthly`: 指定日期 + 时刻
-  - `cron`: 自定义标准 Cron 表达式
-- **实时中文描述**: 自动将 Cron 表达式翻译为可读描述
-- **在线工具**: 集成 Crontab.guru 链接
-
-常用 Cron 表达式:
-```
-* * * * *       # 每分钟执行
-*/15 * * * *    # 每15分钟执行
-0 0 * * *       # 每天凌晨执行
-0 0 * * 1       # 每周一零点执行
-0 0 1 * *       # 每月1号零点执行
-```
-
-### 4. 任务元数据
+### 3. 任务元数据
 
 每个 SQL 任务包含以下信息:
 - **基本信息**: 名称、显示名称、描述
 - **SQL 内容**: 完整的 SQL 语句
 - **数据源**: 关联的数据库资源 ID
 - **执行配置**: 超时时间(默认 300 秒)
-- **调度配置**: Cron 表达式、是否启用
 - **标签**: 多个标签用于分类
 - **状态**: active(活跃) / inactive(停用) / archived(归档)
 - **执行历史**: 最后执行时间、执行状态、执行 ID
@@ -68,15 +41,15 @@ SQL 开发模块现已支持将 SQL 查询保存为可重用的任务,并支持�
 
 ### SQL 任务管理 API
 
-**基础路径**: `/api/develop/sql/tasks`
+**基础路径**: `/api/v1/develop/task-definitions`
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/develop/sql/tasks` | 创建 SQL 任务 |
-| GET | `/api/develop/sql/tasks` | 获取任务列表 |
-| GET | `/api/develop/sql/tasks/:id` | 获取任务详情 |
-| PUT | `/api/develop/sql/tasks/:id` | 更新任务 |
-| DELETE | `/api/develop/sql/tasks/:id` | 删除任务 |
+| POST | `/api/v1/develop/task-definitions` | 创建开发任务定义，SQL 任务使用 `dev_type=query` |
+| GET | `/api/v1/develop/task-definitions?dev_type=query` | 获取 SQL 任务列表 |
+| GET | `/api/v1/develop/task-definitions/:id` | 获取任务详情 |
+| PUT | `/api/v1/develop/task-definitions/:id` | 更新任务 |
+| DELETE | `/api/v1/develop/task-definitions/:id` | 删除任务 |
 
 ### 创建任务请求示例
 
@@ -84,13 +57,17 @@ SQL 开发模块现已支持将 SQL 查询保存为可重用的任务,并支持�
 {
   "name": "daily_user_report",
   "display_name": "每日用户报表",
-  "engine_id": 1,
-  "sql": "SELECT COUNT(*) FROM users WHERE created_at >= CURRENT_DATE",
+  "dev_type": "query",
+  "content": {
+    "query_type": "sql",
+    "query": "SELECT COUNT(*) FROM users WHERE created_at >= CURRENT_DATE"
+  },
+  "execution_config": {
+    "engine_id": 1
+  },
   "description": "统计每日新增用户数量",
   "tags": ["报表", "用户"],
-  "timeout": 300,
-  "is_scheduled": true,
-  "schedule": "0 0 * * *"
+  "timeout": 300
 }
 ```
 
@@ -99,8 +76,7 @@ SQL 开发模块现已支持将 SQL 查询保存为可重用的任务,并支持�
 任务可以通过以下方式执行:
 
 1. **手动执行**: 在任务管理页面点击"执行"按钮
-2. **定时执行**: 通过配置的 Cron 表达式自动触发(需要调度器支持)
-3. **API 调用**: 通过 `POST /api/v1/develop/task-definitions/{id}/execute` 执行
+2. **API 调用**: 通过 `POST /api/v1/develop/task-definitions/{id}/execute` 执行
 
 执行结果会记录在 `common.task_executions` 表中,包含:
 - 执行 ID
@@ -122,12 +98,10 @@ CREATE TABLE develop.dev_tasks (
   dev_type VARCHAR(50) NOT NULL,  -- 'query' | 'workflow' | 'script'
 
   -- 内容存储 (JSONB)
-  content JSONB NOT NULL,  -- { "sql": "...", "engine_id": 1 }
+  content JSONB NOT NULL,  -- { "query_type": "sql", "query": "..." }
 
   -- 执行配置
-  engine_id INTEGER,
-  schedule VARCHAR(100),
-  is_scheduled BOOLEAN DEFAULT false,
+  execution_config JSONB,  -- { "engine_id": 1 }
   timeout INTEGER DEFAULT 300,
 
   -- 元数据
@@ -138,9 +112,9 @@ CREATE TABLE develop.dev_tasks (
 
   -- 状态
   status VARCHAR(50) DEFAULT 'active',
-  last_execution_id INTEGER,
+  last_execution_id VARCHAR(36),
   last_execution_status VARCHAR(50),
-  last_executed_at TIMESTAMP,
+  last_run_at TIMESTAMP,
 
   -- 审计
   created_at TIMESTAMP DEFAULT NOW(),
@@ -215,10 +189,7 @@ CREATE TABLE common.task_executions (
    - 描述
    - 标签
    - 超时时间
-6. 配置调度(可选):
-   - 启用调度开关
-   - 填写 Cron 表达式
-7. 点击"保存"
+6. 点击"保存"
 
 ### 2. 管理任务
 
@@ -244,7 +215,7 @@ CREATE TABLE common.task_executions (
 
 1. **任务名称唯一性**: 同一租户下任务名称不能重复
 2. **超时时间**: 默认 300 秒,最大不超过配置的 `MaxQueryTimeout`
-3. **调度执行**: 需要配置调度器服务才能自动执行定时任务
+3. **调度能力**: 当前 Develop 不声明自身定时调度能力；如后续需要，必须先补 owner scheduler / `next_run_at` due claim 闭环。
 4. **资源权限**: 用户只能访问所属租户的资源和任务
 5. **SQL 安全**: 建议对 SQL 内容进行审核,避免危险操作
 
@@ -264,8 +235,8 @@ CREATE TABLE common.task_executions (
 ### 后端架构
 
 - **Handler 层**: [develop/backend/internal/api/sql_handler.go](develop/backend/internal/api/sql_handler.go)
-  - 新增 5 个 API endpoint
-  - 集成 DevTaskService 管理任务
+  - 查询执行相关 API
+  - SQL 任务定义统一由 DevTaskService 管理
 
 - **Service 层**:
   - [develop/backend/internal/service/dev_task_service.go](develop/backend/internal/service/dev_task_service.go) - 任务 CRUD
@@ -279,25 +250,23 @@ CREATE TABLE common.task_executions (
 ### 前端架构
 
 - **页面组件**:
-  - `SQLEditor.vue` - SQL 编辑器(已增强)
-  - `SQLTasks.vue` - SQL 任务管理(新增)
+  - `QueryEditor.vue` - 查询编辑器
+  - `QueryTasks.vue` - 查询任务管理
 
 - **对话框组件**:
-  - `SaveSQLDialog.vue` - 保存任务对话框(新增)
+  - `SaveQueryDialog.vue` - 保存查询任务对话框
 
 - **API 客户端**:
-  - [develop/frontend/src/api/sql.js](develop/frontend/src/api/sql.js) - 新增 5 个 API 方法
+  - [develop/frontend/src/api/query.js](develop/frontend/src/api/query.js) - 查询与查询任务 API
 
 - **依赖包**:
-  - `@addp/common-frontend` - 统一调度组件 (ScheduleConfig, ScheduleDisplay)
   - `dayjs` - 时间格式化
 
 ## 总结
 
-SQL 任务功能为 ADDP 平台的 SQL 开发模块提供了完整的任务管理和调度能力,使用户能够:
+SQL 任务功能为 ADDP 平台的 SQL 开发模块提供了任务管理能力,使用户能够:
 
 ✅ 保存常用的 SQL 查询为可重用任务
-✅ 配置定时调度自动执行
 ✅ 统一管理所有 SQL 任务
 ✅ 追踪任务执行历史和结果
 

@@ -34,13 +34,6 @@
           <el-radio-button value="active">{{ t('develop.queryTasks.filterActive') }}</el-radio-button>
           <el-radio-button value="inactive">{{ t('develop.queryTasks.filterInactive') }}</el-radio-button>
         </el-radio-group>
-
-        <el-divider direction="vertical" />
-
-        <span>{{ t('develop.queryTasks.scheduleLabel') }}:</span>
-        <el-checkbox v-model="filterScheduled" @change="loadTasks">
-          {{ t('develop.queryTasks.filterScheduled') }}
-        </el-checkbox>
       </el-space>
     </div>
 
@@ -72,16 +65,6 @@
               {{ t('develop.queryTasks.resourceId', { id: getEngineID(row) }) }}
             </el-tag>
             <span v-else>-</span>
-          </template>
-        </el-table-column>
-
-        <el-table-column :label="t('develop.queryTasks.colSchedule')" width="200">
-          <template #default="{ row }">
-            <ScheduleDisplay
-              v-if="row.schedule && row.schedule !== ''"
-              :schedule="row.schedule"
-            />
-            <span v-else style="color: var(--addp-text-tertiary)">{{ t('develop.queryTasks.manualTrigger') }}</span>
           </template>
         </el-table-column>
 
@@ -209,7 +192,7 @@ import {
   Edit,
   Delete
 } from '@element-plus/icons-vue'
-import { ScheduleDisplay, openMonitorExecution } from '@addp/common-frontend'
+import { openMonitorExecution } from '@addp/common-frontend'
 import SaveQueryDialog from '../components/SaveQueryDialog.vue'
 import { listQueryTasks, deleteQueryTask, updateQueryTask } from '../api/query.js'
 import { executeDevTask } from '../api/devTask.js'
@@ -226,7 +209,6 @@ const currentPage = ref(1)
 const pageSize = ref(20)
 const searchKeyword = ref('')
 const filterStatus = ref('')
-const filterScheduled = ref(false)
 
 const showEditDialog = ref(false)
 const editingTask = ref(null)

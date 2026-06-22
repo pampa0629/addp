@@ -93,15 +93,6 @@ func SetupRouter(
 		})
 	})
 
-	router.GET("/api/develop/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"status":  "ok",
-			"service": "develop",
-			"message": "Develop 数据开发模块运行正常",
-			"phase":   "3",
-		})
-	})
-
 	// 公开 API 路由组（无需认证）- 用于算子发现等公开信息
 	publicAPI := router.Group("/api/v1/develop")
 	{

@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/addp/common/events"
 	"github.com/addp/develop/backend/internal/models"
@@ -39,8 +38,8 @@ func TestDevelopCleanupEngineContextDoesNotTreatUserTasksAsReclaimCandidates(t *
 	if err := db.First(&updated, task.ID).Error; err != nil {
 		t.Fatalf("load dev task: %v", err)
 	}
-	if updated.Status != "active" || !updated.Enabled || updated.NextRunAt == nil {
-		t.Fatalf("task status=%q enabled=%v next_run_at=%v, want unchanged user task", updated.Status, updated.Enabled, updated.NextRunAt)
+	if updated.Status != "active" {
+		t.Fatalf("task status=%q, want active", updated.Status)
 	}
 
 	stats, err = svc.ScanReclaimCandidates(context.Background(), 7, nil)
@@ -97,8 +96,6 @@ func newDevelopCleanupTestDB(t *testing.T) *gorm.DB {
 			dev_type TEXT NOT NULL,
 			content JSON NOT NULL,
 			execution_config JSON,
-			schedule TEXT,
-			enabled BOOLEAN,
 			timeout INTEGER,
 			description TEXT,
 			tags TEXT,
@@ -110,8 +107,7 @@ func newDevelopCleanupTestDB(t *testing.T) *gorm.DB {
 			status TEXT,
 			last_execution_id TEXT,
 			last_execution_status TEXT,
-			last_run_at DATETIME,
-			next_run_at DATETIME
+			last_run_at DATETIME
 		)`,
 	}
 	for _, stmt := range statements {
@@ -124,18 +120,14 @@ func newDevelopCleanupTestDB(t *testing.T) *gorm.DB {
 
 func createDevelopCleanupTask(t *testing.T, db *gorm.DB, tenantID uint, name string, devType string, executionConfig map[string]interface{}) models.DevTask {
 	t.Helper()
-	nextRunAt := time.Now().Add(time.Hour)
 	item := models.DevTask{
 		TenantID:        tenantID,
 		Name:            name,
 		DevType:         devType,
 		Content:         models.DevTaskContent{},
 		ExecutionConfig: models.DevTaskContent(executionConfig),
-		Schedule:        "0 * * * *",
-		Enabled:         true,
 		Timeout:         300,
 		Status:          "active",
-		NextRunAt:       &nextRunAt,
 	}
 	if item.ExecutionConfig == nil {
 		item.ExecutionConfig = models.DevTaskContent{}

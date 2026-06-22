@@ -115,6 +115,7 @@ func main() {
 		systemClient,
 		metaClient,
 	)
+	executionEngineService.SetConfig(cfg)
 
 	// 2. 创建 TaskService (负责任务 CRUD，传入 executionEngineService)
 	taskService := service.NewTaskService(db, executionEngineService, cfg, taskQueue)

@@ -55,6 +55,11 @@ type DetectionResult struct {
 	Exclusive bool
 }
 
+// ResolveOptions 控制扫描期 item 识别结果的范围。
+type ResolveOptions struct {
+	IncludeSingleResources bool
+}
+
 // DetectedItem 是 Meta 识别后的标准化 data item 计划。
 type DetectedItem struct {
 	dataitem.ResolvedItem
@@ -136,6 +141,7 @@ type DirectoryResolveInput struct {
 	DirPath        string
 	Files          []StorageFileRef
 	Subdirs        []StorageDirectoryRef
+	Options        ResolveOptions
 	// RecursiveFiles/RecursiveSubdirs 由扫描入口在需要识别 whole scope 时提供。
 	// resolver 只消费观察资源，不自行遍历存储引擎。
 	RecursiveFiles   []StorageFileRef

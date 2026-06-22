@@ -33,34 +33,34 @@ func extractFromURL(path string) (string, string) {
 		entityType string
 	}{
 		// System 模块
-		{regexp.MustCompile(`^/api/users/(\d+)`), "user"},
-		{regexp.MustCompile(`^/api/engines/(\d+)`), "engine"},
-		{regexp.MustCompile(`^/api/tenants/(\d+)`), "tenant"},
-		{regexp.MustCompile(`^/api/applications/(\d+)`), "application"},
+		{regexp.MustCompile(`^/api/v1/system/users/(\d+)`), "user"},
+		{regexp.MustCompile(`^/api/v1/system/engines/(\d+)`), "engine"},
+		{regexp.MustCompile(`^/api/v1/system/tenants/(\d+)`), "tenant"},
+		{regexp.MustCompile(`^/api/v1/system/applications/(\d+)`), "application"},
 
 		// Manager 模块
-		{regexp.MustCompile(`^/api/resources/(\d+)`), "resource"},
-		{regexp.MustCompile(`^/api/object-storage/(\d+)`), "storage"},
+		{regexp.MustCompile(`^/api/v1/manager/resources/(\d+)`), "resource"},
+		{regexp.MustCompile(`^/api/v1/manager/object-storage/(\d+)`), "storage"},
 
 		// Meta 模块
-		{regexp.MustCompile(`^/api/meta/schemas/(\d+)`), "schema"},
-		{regexp.MustCompile(`^/api/meta/tables/(\d+)`), "table"},
+		{regexp.MustCompile(`^/api/v1/meta/schemas/(\d+)`), "schema"},
+		{regexp.MustCompile(`^/api/v1/meta/tables/(\d+)`), "table"},
 
 		// Transfer 模块
-		{regexp.MustCompile(`^/api/tasks/(\d+)`), "task"},
-		{regexp.MustCompile(`^/api/jobs/(\d+)`), "job"},
+		{regexp.MustCompile(`^/api/v1/transfer/tasks/[^/]+/(\d+)`), "task"},
+		{regexp.MustCompile(`^/api/v1/transfer/jobs/(\d+)`), "job"},
 
 		// Orchestrator 模块
-		{regexp.MustCompile(`^/api/workflows/(\d+)`), "workflow"},
-		{regexp.MustCompile(`^/api/dag/(\d+)`), "dag"},
+		{regexp.MustCompile(`^/api/v1/orchestrator/workflows/(\d+)`), "workflow"},
+		{regexp.MustCompile(`^/api/v1/orchestrator/dag/(\d+)`), "dag"},
 
 		// Develop 模块
-		{regexp.MustCompile(`^/api/queries/(\d+)`), "query"},
-		{regexp.MustCompile(`^/api/scripts/(\d+)`), "script"},
+		{regexp.MustCompile(`^/api/v1/develop/queries/(\d+)`), "query"},
+		{regexp.MustCompile(`^/api/v1/develop/scripts/(\d+)`), "script"},
 
 		// Service 模块
-		{regexp.MustCompile(`^/api/services/(\d+)`), "service"},
-		{regexp.MustCompile(`^/api/endpoints/(\d+)`), "endpoint"},
+		{regexp.MustCompile(`^/api/v1/service/services/(\d+)`), "service"},
+		{regexp.MustCompile(`^/api/v1/service/endpoints/(\d+)`), "endpoint"},
 	}
 
 	for _, pattern := range patterns {

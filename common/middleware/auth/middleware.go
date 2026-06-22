@@ -19,7 +19,7 @@ const (
 	ContextUserInfoKey = "user_info"
 )
 
-// UserInfo mirrors the payload returned by the System service /api/users/me endpoint.
+// UserInfo mirrors the payload returned by the System service /api/v1/system/users/me endpoint.
 type UserInfo struct {
 	ID       uint   `json:"id"`
 	Username string `json:"username"`

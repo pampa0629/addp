@@ -46,7 +46,7 @@ func (s *TaskProviderRegistryService) Register() error {
 	// 构造能力描述
 	capabilities := map[string]interface{}{
 		"schema_version": "task.capabilities/v1",
-		"task_types": []map[string]interface{}{
+		"task_capabilities": []map[string]interface{}{
 			{
 				"type":                      "tile_cache_generation",
 				"display_name":              "瓦片缓存生成",

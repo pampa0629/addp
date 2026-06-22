@@ -73,7 +73,7 @@ func registerPreviewRoutingModelPlugin(t *testing.T, model plugin.CatalogModelSp
 
 func TestLoadPreviewPluginsRegistersBuiltinDefaultsWithoutFiles(t *testing.T) {
 	registry := NewPreviewRegistry()
-	repo := repository.NewMetadataRepository(nil, nil)
+	repo := repository.NewMetadataRepository(nil)
 	LoadPreviewPlugins(registry, repo, nil, objectcontent.NewObjectContentRegistry(), "", "")
 
 	for _, name := range []string{
@@ -156,7 +156,7 @@ func TestLoadPreviewPluginsCanDisableDefaultProvider(t *testing.T) {
 	}
 
 	registry := NewPreviewRegistry()
-	repo := repository.NewMetadataRepository(nil, nil)
+	repo := repository.NewMetadataRepository(nil)
 	LoadPreviewPlugins(registry, repo, nil, objectcontent.NewObjectContentRegistry(), "", dir)
 
 	if _, err := registry.GetByName("builtin:file-catalog"); err == nil {
@@ -176,7 +176,7 @@ func TestLoadPreviewPluginsUsesFallbackDefaultsWithPreviewConfig(t *testing.T) {
 	}
 
 	registry := NewPreviewRegistry()
-	repo := repository.NewMetadataRepository(nil, nil)
+	repo := repository.NewMetadataRepository(nil)
 	LoadPreviewPlugins(registry, repo, nil, objectcontent.NewObjectContentRegistry(), "", dir)
 
 	if _, err := registry.GetByName("builtin:file-table"); err != nil {
@@ -196,7 +196,7 @@ func TestLoadPreviewPluginsRejectsLegacyDefaultProvidersField(t *testing.T) {
 	}
 
 	registry := NewPreviewRegistry()
-	repo := repository.NewMetadataRepository(nil, nil)
+	repo := repository.NewMetadataRepository(nil)
 	LoadPreviewPlugins(registry, repo, nil, objectcontent.NewObjectContentRegistry(), "", dir)
 
 	if _, err := registry.GetByName("builtin:file-table"); err == nil {
@@ -213,7 +213,7 @@ func TestLoadPreviewPluginsRejectsContentPluginField(t *testing.T) {
 	}
 
 	registry := NewPreviewRegistry()
-	repo := repository.NewMetadataRepository(nil, nil)
+	repo := repository.NewMetadataRepository(nil)
 	LoadPreviewPlugins(registry, repo, nil, objectcontent.NewObjectContentRegistry(), "", dir)
 
 	if _, err := registry.GetByName("builtin:file-table"); err == nil {

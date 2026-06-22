@@ -48,7 +48,7 @@ graph/
 │   ├── go.mod
 │   └── internal/
 │       ├── api/
-│       │   ├── router.go            # 路由（/api/graph/*）
+│       │   ├── router.go            # 路由（/api/v1/graph/*）
 │       │   ├── ontology_handler.go  # 本体 CRUD handler
 │       │   ├── knowledge_graph_handler.go
 │       │   └── browse_handler.go    # 图谱浏览 handler（schema/stats/overview/search/expand/path）

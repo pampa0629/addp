@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
+	"time"
 
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
@@ -68,6 +70,18 @@ func (s *TaskService) CreateTask(ctx context.Context, req *models.CreateTaskRequ
 	if err := validateNewTaskConfig(req.Config, batchSize); err != nil {
 		return nil, err
 	}
+	schedule := strings.TrimSpace(req.Schedule)
+	enabled := false
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+	if schedule == "" {
+		enabled = false
+	}
+	nextRunAt, err := transferTaskNextRunAt(schedule, enabled, time.Now())
+	if err != nil {
+		return nil, err
+	}
 
 	// 构建任务对象
 	task := &models.TransferTask{
@@ -75,11 +89,12 @@ func (s *TaskService) CreateTask(ctx context.Context, req *models.CreateTaskRequ
 		Description: req.Description,
 		TaskType:    req.TaskType,
 		Config:      req.Config,
-		Schedule:    req.Schedule,
+		Schedule:    schedule,
 		BatchSize:   batchSize,
 		Status:      models.TaskStatusIdle,
 		Progress:    0,
-		Enabled:     req.Schedule != "", // 有 schedule 的任务默认不启用，需要用户手动启动
+		Enabled:     enabled,
+		NextRunAt:   nextRunAt,
 		TenantID:    tenantID,
 		CreatedBy:   &userID,
 	}
@@ -161,7 +176,7 @@ func (s *TaskService) UpdateTask(ctx context.Context, id, tenantID uint, req *mo
 		task.Config = req.Config
 	}
 	if req.Schedule != nil {
-		task.Schedule = *req.Schedule
+		task.Schedule = strings.TrimSpace(*req.Schedule)
 	}
 	if req.BatchSize != nil {
 		task.BatchSize = *req.BatchSize
@@ -169,9 +184,17 @@ func (s *TaskService) UpdateTask(ctx context.Context, id, tenantID uint, req *mo
 	if req.Enabled != nil {
 		task.Enabled = *req.Enabled
 	}
+	if task.Schedule == "" {
+		task.Enabled = false
+	}
 	if req.AutoScanMetadata != nil {
 		task.AutoScanMetadata = *req.AutoScanMetadata
 	}
+	nextRunAt, err := transferTaskNextRunAt(task.Schedule, task.Enabled, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	task.NextRunAt = nextRunAt
 
 	if err := s.taskRepo.Update(task); err != nil {
 		return nil, fmt.Errorf("failed to update task: %w", err)
@@ -182,13 +205,11 @@ func (s *TaskService) UpdateTask(ctx context.Context, id, tenantID uint, req *mo
 }
 
 func normalizeTransferTaskType(taskType *string) error {
-	if taskType == nil || *taskType == "" {
-		if taskType != nil {
-			*taskType = commonExecution.TaskTypeImport
-		}
-		return nil
+	if taskType == nil || strings.TrimSpace(*taskType) == "" {
+		return fmt.Errorf("%w: task_type must be sync", ErrUnsupportedTaskType)
 	}
-	if *taskType != commonExecution.TaskTypeImport {
+	*taskType = strings.TrimSpace(*taskType)
+	if *taskType != commonExecution.TaskTypeSync {
 		return fmt.Errorf("%w: %s", ErrUnsupportedTaskType, *taskType)
 	}
 	return nil
@@ -242,7 +263,7 @@ func (s *TaskService) ListTasks(ctx context.Context, tenantID uint, req *models.
 		filters["status"] = *req.Status
 	}
 	if req.TaskType != "" {
-		if req.TaskType != commonExecution.TaskTypeImport {
+		if req.TaskType != commonExecution.TaskTypeSync {
 			return nil, 0, fmt.Errorf("%w: %s", ErrUnsupportedTaskType, req.TaskType)
 		}
 		filters["task_type"] = req.TaskType
@@ -277,6 +298,9 @@ func (s *TaskService) StartTaskWithContext(ctx context.Context, id, tenantID, us
 	}
 
 	// 3. 启动前再次校验，阻止历史旧 JSON 任务进入 worker。
+	if err := normalizeTransferTaskType(&task.TaskType); err != nil {
+		return nil, err
+	}
 	if err := validateNewTaskConfig(task.Config, task.BatchSize); err != nil {
 		return nil, err
 	}
@@ -373,7 +397,8 @@ func (s *TaskService) PauseTask(ctx context.Context, id, tenantID uint) error {
 	}
 
 	updates := map[string]interface{}{
-		"enabled": false,
+		"enabled":     false,
+		"next_run_at": nil,
 	}
 
 	// 如果任务正在运行，需要停止当前执行
@@ -412,8 +437,13 @@ func (s *TaskService) ResumeTask(ctx context.Context, id, tenantID uint) error {
 		return fmt.Errorf("task is already enabled")
 	}
 
+	nextRunAt, err := transferTaskNextRunAt(task.Schedule, true, time.Now())
+	if err != nil {
+		return err
+	}
 	updates := map[string]interface{}{
-		"enabled": true,
+		"enabled":     true,
+		"next_run_at": nextRunAt,
 	}
 
 	if err := s.taskRepo.UpdateFields(id, updates); err != nil {
@@ -422,6 +452,13 @@ func (s *TaskService) ResumeTask(ctx context.Context, id, tenantID uint) error {
 
 	s.logger.Info("task resumed", "task_id", id)
 	return nil
+}
+
+func transferTaskNextRunAt(schedule string, enabled bool, now time.Time) (*time.Time, error) {
+	if strings.TrimSpace(schedule) == "" || !enabled {
+		return nil, nil
+	}
+	return nextTransferRunAt(schedule, now)
 }
 
 // ExecuteTask 执行任务（由 Worker 调用，委托给 ExecutionEngineService）

@@ -206,6 +206,50 @@ func ObjectItemPathForBucket(engineID uint, bucket string) func(path string) Cat
 	}
 }
 
+// SplitObjectRefPath parses an external object ref path in bucket/object form.
+// The returned objectPath is bucket-relative and never includes the bucket.
+func SplitObjectRefPath(refPath string) (bucket, objectPath string, err error) {
+	trimmed := strings.Trim(strings.TrimSpace(refPath), "/")
+	parts := strings.SplitN(trimmed, "/", 2)
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("object ref path must be bucket/object: %s", refPath)
+	}
+	bucket = strings.TrimSpace(parts[0])
+	objectPath = strings.Trim(parts[1], "/")
+	if bucket == "" || strings.TrimSpace(objectPath) == "" {
+		return "", "", fmt.Errorf("object ref path must be bucket/object: %s", refPath)
+	}
+	return bucket, objectPath, nil
+}
+
+// ObjectItemPathFromRefPath maps an external bucket/object ref to an object
+// catalog leaf path.
+func ObjectItemPathFromRefPath(engineID uint, refPath string) (CatalogPath, error) {
+	bucket, objectPath, err := SplitObjectRefPath(refPath)
+	if err != nil {
+		return CatalogPath{}, err
+	}
+	return ObjectItemPath(engineID, bucket, objectPath), nil
+}
+
+// ObjectItemPathFromBucketRef maps either a bucket-relative object key or an
+// external bucket/object ref under the same bucket to one object catalog path.
+// Use it at boundaries where metadata paths may already be bucket-qualified.
+func ObjectItemPathFromBucketRef(engineID uint, bucket, pathValue string) CatalogPath {
+	bucket = strings.Trim(bucket, "/")
+	objectPath := strings.Trim(pathValue, "/")
+	if refBucket, parsedPath, err := SplitObjectRefPath(objectPath); err == nil && refBucket == bucket {
+		objectPath = parsedPath
+	}
+	return ObjectItemPath(engineID, bucket, objectPath)
+}
+
+func ObjectItemPathForBucketRef(engineID uint, bucket string) func(path string) CatalogPath {
+	return func(path string) CatalogPath {
+		return ObjectItemPathFromBucketRef(engineID, bucket, path)
+	}
+}
+
 func buildObjectPath(engineID uint, bucket, objectPath string, isContainer bool) CatalogPath {
 	path := CatalogRootPath(ObjectCatalogModel(), engineID)
 	bucket = strings.Trim(bucket, "/")

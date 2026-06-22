@@ -333,7 +333,7 @@ System engine 表不保存元数据扫描策略。注册引擎时的扫描计划
 
 #### 列表查询
 ```
-GET /api/engines?engine_type={type}&is_active={true|false}
+GET /api/v1/system/engines?engine_type={type}&is_active={true|false}
 ```
 
 **查询参数**：
@@ -368,12 +368,12 @@ GET /api/engines?engine_type={type}&is_active={true|false}
 
 #### 获取单个引擎
 ```
-GET /api/engines/:id
+GET /api/v1/system/engines/:id
 ```
 
 #### 创建引擎
 ```
-POST /api/engines
+POST /api/v1/system/engines
 Content-Type: application/json
 
 {
@@ -392,7 +392,7 @@ Content-Type: application/json
 
 #### 更新引擎
 ```
-PUT /api/engines/:id
+PUT /api/v1/system/engines/:id
 Content-Type: application/json
 
 {
@@ -408,7 +408,7 @@ Content-Type: application/json
 
 #### 删除引擎
 ```
-DELETE /api/engines/:id
+DELETE /api/v1/system/engines/:id
 ```
 
 **限制**：
@@ -417,7 +417,7 @@ DELETE /api/engines/:id
 
 #### 测试连接（创建前）
 ```
-POST /api/engines/test-connection
+POST /api/v1/system/engines/test-connection
 Content-Type: application/json
 
 {
@@ -434,7 +434,7 @@ Content-Type: application/json
 
 #### 测试连接（已创建）
 ```
-POST /api/engines/:id/test
+POST /api/v1/system/engines/:id/test
 ```
 
 请求体可选。编辑页面可传入当前表单中的 `connection_info`，用于测试尚未保存的连接配置；接口仍会同步更新该引擎的 `connection_status`、`last_check_at` 和 `check_message`。
@@ -460,7 +460,7 @@ GET /internal/engines/:id
 
 #### 注册能力
 ```
-POST /internal/registry/capabilities
+POST /api/v1/internal/registry/capabilities
 Content-Type: application/json
 
 {
@@ -492,12 +492,12 @@ Content-Type: application/json
 
 #### 查询能力
 ```
-GET /internal/registry/capabilities?filter={key}={value}
+GET /api/v1/internal/registry/capabilities?filter={key}={value}
 ```
 
 #### 查询计算引擎
 ```
-GET /internal/registry/compute-engines
+GET /api/v1/internal/registry/compute-engines
 ```
 
 ---
@@ -569,7 +569,7 @@ GET /internal/registry/compute-engines
    - 更新 `connection_status`、`last_check_at`、`check_message`
 
 2. **用户手动触发**
-   - API：`POST /api/engines/:id/test`
+   - API：`POST /api/v1/system/engines/:id/test`
    - 同步返回检测结果并更新状态
 
 3. **不实施后台定时检测**
@@ -583,7 +583,7 @@ GET /internal/registry/compute-engines
 ### 9.1 创建 Standard 引擎（PostgreSQL）
 
 ```bash
-curl -X POST http://localhost:8180/api/engines \
+curl -X POST http://localhost:8180/api/v1/system/engines \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{
@@ -603,7 +603,7 @@ curl -X POST http://localhost:8180/api/engines \
 ### 9.2 创建 Extension 引擎（Python Workflow）
 
 ```bash
-curl -X POST http://localhost:8180/api/engines \
+curl -X POST http://localhost:8180/api/v1/system/engines \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{
@@ -636,7 +636,7 @@ curl -X POST http://localhost:8180/api/engines \
 ### 9.3 测试连接
 
 ```bash
-curl -X POST http://localhost:8180/api/engines/1/test \
+curl -X POST http://localhost:8180/api/v1/system/engines/1/test \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -656,7 +656,7 @@ curl -X POST http://localhost:8180/api/engines/1/test \
 ### 9.4 查询计算引擎（内部 API）
 
 ```bash
-curl http://localhost:8180/internal/registry/compute-engines
+curl http://localhost:8180/api/v1/internal/registry/compute-engines
 ```
 
 **响应示例**：

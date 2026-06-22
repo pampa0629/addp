@@ -163,9 +163,9 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 		}
 	}
 
-	connInfo, err := p.decryptedConnectionInfo(resource)
+	connInfo, err := p.connectionInfo(resource)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt connection info: %w", err)
+		return nil, fmt.Errorf("failed to get connection info: %w", err)
 	}
 
 	pl, err := plugin.Get(resource.EngineType)
@@ -238,7 +238,7 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 		return nil, fmt.Errorf("object path is empty")
 	}
 	preview.Object.StorageRef = fmt.Sprintf("%s/%s", bucket, objectPath)
-	preview.Object.Download = previewDownloadPlan(resource.ID, preview.Object.StorageRef, objectPath, "")
+	preview.Object.Download = previewDownloadPlan(resource.ID, "object", preview.Object.StorageRef, objectPath, "")
 
 	stat, err := catalogutil.ObjectStorageFacts(ctx, factsProvider, connInfo, resource.ID, bucket, objectPath)
 	if err != nil {
@@ -384,19 +384,11 @@ func getTokenFromContext(ctx context.Context) string {
 	return ""
 }
 
-func (p *objectCatalogPreviewProvider) decryptedConnectionInfo(engine *models.Engine) (plugin.ConnectionInfo, error) {
+func (p *objectCatalogPreviewProvider) connectionInfo(engine *models.Engine) (plugin.ConnectionInfo, error) {
 	if engine == nil {
 		return nil, fmt.Errorf("engine is required")
 	}
-	connInfo := engine.ConnectionInfo
-	if p != nil && p.metadataRepo != nil {
-		decrypted, err := p.metadataRepo.DecryptConnectionInfo(engine.ConnectionInfo)
-		if err != nil {
-			return nil, err
-		}
-		connInfo = decrypted
-	}
-	return plugin.ConnectionInfo(connInfo), nil
+	return plugin.ConnectionInfo(engine.ConnectionInfo), nil
 }
 
 func listObjectPreviewChildren(ctx context.Context, catalogProvider plugin.CatalogProvider, connInfo plugin.ConnectionInfo, engineID uint, bucket, prefix string) ([]models.ObjectPreviewChild, error) {

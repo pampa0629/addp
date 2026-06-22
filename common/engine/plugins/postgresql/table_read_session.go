@@ -353,27 +353,14 @@ func normalizePostgresGeometryType(value string) (string, int) {
 	normalized := strings.TrimPrefix(strings.TrimSpace(value), "ST_")
 	dimension := 0
 	lower := strings.ToLower(normalized)
-	if strings.HasSuffix(lower, "z") {
+	if strings.HasSuffix(lower, "z") || strings.HasSuffix(lower, "zm") {
 		dimension = 3
-		normalized = strings.TrimSuffix(normalized, normalized[len(normalized)-1:])
-		lower = strings.ToLower(normalized)
 	}
-	switch lower {
-	case "point":
-		return "Point", dimension
-	case "linestring":
-		return "LineString", dimension
-	case "polygon":
-		return "Polygon", dimension
-	case "multipoint":
-		return "MultiPoint", dimension
-	case "multilinestring":
-		return "MultiLineString", dimension
-	case "multipolygon":
-		return "MultiPolygon", dimension
-	default:
+	geometryType := datatype.ParseGeometryType(normalized)
+	if geometryType == datatype.GeometryTypeUnknown {
 		return "", 0
 	}
+	return string(geometryType), dimension
 }
 
 func hintString(values map[string]interface{}, key string) string {

@@ -175,10 +175,10 @@ func TestObjectCatalogBasicScanGroupsShapefileRefsWithoutSidecarItems(t *testing
 		t.Fatalf("item identity = %s/%s, want manager/a5.shp", item.FullName, item.Name)
 	}
 	assertShapefileLogicalItem(t, item.Attributes, []string{
-		"a5.shp",
-		"a5.shx",
-		"a5.dbf",
-		"a5.cpg",
+		"manager/a5.shp",
+		"manager/a5.shx",
+		"manager/a5.dbf",
+		"manager/a5.cpg",
 	}, nil)
 }
 

@@ -109,7 +109,12 @@ const hidePopup = () => {
   rendererRef.value.hidePopup()
 }
 
-defineExpose({ focusFeature, showPopup, hidePopup })
+const resize = () => {
+  if (!rendererRef.value || typeof rendererRef.value.resize !== 'function') return
+  rendererRef.value.resize()
+}
+
+defineExpose({ focusFeature, showPopup, hidePopup, resize })
 </script>
 
 <style scoped>

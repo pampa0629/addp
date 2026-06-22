@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -13,6 +14,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/contentio"
 	engineplugin "github.com/addp/common/engine/plugin"
+	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
 	commonModels "github.com/addp/common/models"
@@ -144,6 +146,7 @@ func TestTriggerMetadataScanSubmitsEncodedTargetRefGroups(t *testing.T) {
 	}
 	service.triggerMetadataScan(
 		&models.TransferTask{TenantID: 7},
+		0,
 		planner.TableExportTaskSpec{Target: planner.EndpointSpec{Locator: "addp://engine/9/path/bucket/exports/roads.shp?type=object"}},
 		executor.TableTargetPlan{
 			Kind:   executor.TableEndpointEncoded,
@@ -188,6 +191,7 @@ func TestTriggerMetadataScanSkipsEncodedMultiTargetWithoutActualRefs(t *testing.
 	}
 	service.triggerMetadataScan(
 		&models.TransferTask{TenantID: 7},
+		0,
 		planner.TableExportTaskSpec{Target: planner.EndpointSpec{Locator: "addp://engine/9/path/bucket/exports/roads.shp?type=object"}},
 		executor.TableTargetPlan{
 			Kind:   executor.TableEndpointEncoded,
@@ -223,11 +227,42 @@ func TestTriggerRawCopyMetadataScanSubmitsSingleRefGroup(t *testing.T) {
 	}
 	service.triggerRawCopyMetadataScan(
 		&models.TransferTask{TenantID: 7},
+		0,
 		planner.RawCopyTaskSpec{Target: planner.EndpointSpec{Locator: "addp://engine/9/path/backup/report.pdf?type=file"}},
 		executor.RawCopyEndpointPlan{Path: engineplugin.FileItemPath(9, "backup/report.pdf")},
 	)
 
 	assertTransferScanPayloadUsesRefGroups(t, gotPayload, "backup/report.pdf")
+}
+
+func TestUpdateMetadataScanExecutionPersistsScanExecutionID(t *testing.T) {
+	ctx := context.Background()
+	db := newExecutionServiceTestDB(t)
+	task := createExecutionServiceTestTask(t, db)
+	execution := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusSuccess)
+	executionService := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
+	service := &ExecutionEngineService{
+		executionService: executionService,
+		logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+
+	service.updateMetadataScanExecution(uint(execution.ID), "meta-run-1", 9, []string{"public"}, 0)
+
+	dto, err := executionService.GetExecutionByExecutionID(ctx, execution.ExecutionID, uint(task.TenantID))
+	if err != nil {
+		t.Fatalf("GetExecutionByExecutionID() error = %v", err)
+	}
+	metadataScan, ok := dto.Metadata["metadata_scan"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("metadata_scan = %#v, want object", dto.Metadata["metadata_scan"])
+	}
+	if metadataScan["execution_id"] != "meta-run-1" || metadataScan["engine_id"] != float64(9) {
+		t.Fatalf("metadata_scan = %#v, want execution id and engine id", metadataScan)
+	}
+	paths, ok := metadataScan["catalog_paths"].([]interface{})
+	if !ok || len(paths) != 1 || paths[0] != "public" {
+		t.Fatalf("metadata_scan catalog_paths = %#v, want [public]", metadataScan["catalog_paths"])
+	}
 }
 
 func assertTransferScanPayloadUsesRefGroups(t *testing.T, payload map[string]interface{}, primary string) {

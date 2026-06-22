@@ -82,6 +82,7 @@ const mapEl = ref(null)
 let map
 let mvtGridMoveKey = null
 let mapMoveStartKey = null
+let sizeUpdateFrame = null
 
 const error = ref('')
 const tileRenderInfo = ref(null)
@@ -184,6 +185,19 @@ const renderStatusTipContent = computed(() => {
 function resetTileRenderState() {
   resetTileStatus()
   resetMvtGrid(map)
+}
+
+function scheduleMapSizeUpdate() {
+  if (!map || typeof window === 'undefined') return
+  if (sizeUpdateFrame) {
+    window.cancelAnimationFrame(sizeUpdateFrame)
+  }
+  sizeUpdateFrame = window.requestAnimationFrame(() => {
+    sizeUpdateFrame = null
+    if (map) {
+      map.updateSize()
+    }
+  })
 }
 
 const createMVTLayer = () => {
@@ -318,6 +332,8 @@ async function initMap() {
     })
   })
 
+  scheduleMapSizeUpdate()
+
   // 6. 如果有 extent，自动全幅显示
   fitToRenderExtent()
   updateMvtGrid(map)
@@ -408,6 +424,10 @@ onBeforeUnmount(() => {
   if (map) {
     map.setTarget(null)
     map = null
+  }
+  if (sizeUpdateFrame && typeof window !== 'undefined') {
+    window.cancelAnimationFrame(sizeUpdateFrame)
+    sizeUpdateFrame = null
   }
   disposeMvtGrid()
 })

@@ -898,7 +898,7 @@ async function waitForScanRun(run, hooks = {}) {
   let latest = run
   notifyRefreshHook(hooks.onProgress, latest)
   while (true) {
-    latest = await client.get(`/meta/scan/runs/${runID}`)
+    latest = await client.get(`/meta/executions/${runID}`)
     notifyRefreshHook(hooks.onProgress, latest)
     const status = String(latest?.status || '').toLowerCase()
     if (SUCCESS_SCAN_STATUSES.has(status)) {

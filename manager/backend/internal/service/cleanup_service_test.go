@@ -2,9 +2,11 @@ package service
 
 import (
 	"testing"
+	"time"
 
 	"github.com/addp/common/events"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/manager/internal/models"
 )
 
 func TestCleanupExpectedForModuleProtocolHelper(t *testing.T) {
@@ -219,5 +221,52 @@ func TestCleanupTaskTargetSourceExistsTreatsDeletedEngineAsMissing(t *testing.T)
 	}
 	if got := service.taskTargetSourceExists(nil, 1, cleanupTaskTarget{}, nil); !got {
 		t.Fatal("empty task target should be treated as existing to avoid broad cleanup")
+	}
+}
+
+func TestNormalizeExportCleanupOptionsUsesInternalDefaults(t *testing.T) {
+	t.Parallel()
+
+	got := normalizeExportCleanupOptions(ExportCleanupOptions{})
+	if got.SuccessRetention != 24*time.Hour {
+		t.Fatalf("success retention = %v, want 24h", got.SuccessRetention)
+	}
+	if got.FailedRetention != 6*time.Hour {
+		t.Fatalf("failed retention = %v, want 6h", got.FailedRetention)
+	}
+	if got.MaxRunningAge != 6*time.Hour {
+		t.Fatalf("max running age = %v, want 6h", got.MaxRunningAge)
+	}
+	if got.Interval != 30*time.Minute {
+		t.Fatalf("interval = %v, want 30m", got.Interval)
+	}
+}
+
+func TestExportSessionCleanupPrefixUsesParentLocator(t *testing.T) {
+	t.Parallel()
+
+	service := &CleanupService{minioBucket: "manager"}
+	session := &models.ExportSession{
+		TargetParentLocator: "addp-infra://minio/manager/tenant_7/export/20260620/session-1?type=prefix",
+		TargetLocator:       "addp-infra://minio/manager/tenant_7/export/20260620/session-1/roads.csv?type=object",
+	}
+	got, err := service.exportSessionCleanupPrefix(session)
+	if err != nil {
+		t.Fatalf("exportSessionCleanupPrefix() error = %v", err)
+	}
+	if got != "tenant_7/export/20260620/session-1/" {
+		t.Fatalf("prefix = %q", got)
+	}
+}
+
+func TestExportSessionCleanupPrefixRejectsDifferentBucket(t *testing.T) {
+	t.Parallel()
+
+	service := &CleanupService{minioBucket: "manager"}
+	session := &models.ExportSession{
+		TargetParentLocator: "addp-infra://minio/other/tenant_7/export/20260620/session-1?type=prefix",
+	}
+	if _, err := service.exportSessionCleanupPrefix(session); err == nil {
+		t.Fatal("exportSessionCleanupPrefix() accepted different bucket")
 	}
 }

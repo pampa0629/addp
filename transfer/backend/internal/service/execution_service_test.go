@@ -183,6 +183,59 @@ func TestRetryExecutionRejectsAppendTask(t *testing.T) {
 	}
 }
 
+func TestUpdateExecutionMergesMetadataAndDTOExposesIt(t *testing.T) {
+	ctx := context.Background()
+	db := newExecutionServiceTestDB(t)
+	task := createExecutionServiceTestTask(t, db)
+	execution := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusRunning)
+	execution.Metadata = commonModels.JSONMap{"existing": "kept"}
+	if err := db.Save(&execution).Error; err != nil {
+		t.Fatalf("save execution metadata: %v", err)
+	}
+	service := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
+
+	err := service.UpdateExecution(ctx, uint(execution.ID), map[string]interface{}{
+		"metadata": map[string]interface{}{
+			"target_refs": []map[string]interface{}{
+				{
+					"path":      "tenant_7/export/20260621/session/roads.shp",
+					"role":      "main",
+					"required":  true,
+					"primary":   true,
+					"extension": ".shp",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpdateExecution() error = %v", err)
+	}
+
+	var stored commonExecution.TaskExecution
+	if err := db.First(&stored, execution.ID).Error; err != nil {
+		t.Fatalf("load execution: %v", err)
+	}
+	if stored.Metadata["existing"] != "kept" {
+		t.Fatalf("stored metadata = %#v, want existing key preserved", stored.Metadata)
+	}
+	refs, ok := stored.Metadata["target_refs"].([]interface{})
+	if !ok || len(refs) != 1 {
+		t.Fatalf("stored target_refs = %#v, want one ref", stored.Metadata["target_refs"])
+	}
+
+	dto, err := service.GetExecutionByExecutionID(ctx, execution.ExecutionID, uint(task.TenantID))
+	if err != nil {
+		t.Fatalf("GetExecutionByExecutionID() error = %v", err)
+	}
+	if dto.Metadata["existing"] != "kept" {
+		t.Fatalf("dto metadata = %#v, want existing key", dto.Metadata)
+	}
+	dtoRefs, ok := dto.Metadata["target_refs"].([]interface{})
+	if !ok || len(dtoRefs) != 1 {
+		t.Fatalf("dto target_refs = %#v, want one ref", dto.Metadata["target_refs"])
+	}
+}
+
 func TestFinishErrorDetailsPreservesLogsOnSuccess(t *testing.T) {
 	details, changed := finishErrorDetails(commonModels.JSONMap{
 		"logs":    "batch=1\n",
@@ -422,7 +475,7 @@ func createExecutionServiceTestTask(t *testing.T, db *gorm.DB) models.TransferTa
 	task := models.TransferTask{
 		TenantID:  7,
 		Name:      "retry source",
-		TaskType:  commonExecution.TaskTypeImport,
+		TaskType:  commonExecution.TaskTypeSync,
 		Config:    models.JSONMap{"mode": "batch"},
 		BatchSize: 100,
 		Status:    models.TaskStatusIdle,
@@ -441,7 +494,7 @@ func createExecutionServiceTestExecution(t *testing.T, db *gorm.DB, task models.
 		TenantID:       int(task.TenantID),
 		ExecutionID:    fmt.Sprintf("execution-%s", status),
 		Module:         commonExecution.ModuleTransfer,
-		TaskType:       commonExecution.TaskTypeImport,
+		TaskType:       commonExecution.TaskTypeSync,
 		Source:         commonExecution.ModuleTransfer,
 		SourceTaskID:   commonExecution.NewSourceTaskIDFromUint(task.ID),
 		SourceTaskName: &taskName,

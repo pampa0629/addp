@@ -175,7 +175,7 @@ const loadTasks = async () => {
       }
     })
     const res = await taskAPI.list(params)
-    tasks.value = res.data || []
+    tasks.value = res.items || []
     pagination.value.total = res.total || 0
   } catch (error) {
     console.error('加载任务列表失败:', error)

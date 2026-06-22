@@ -13,6 +13,12 @@ func TestNormalizeGeometryType(t *testing.T) {
 	if got := NormalizeGeometryType("ST_MultiPolygon"); got != "MultiPolygon" {
 		t.Fatalf("NormalizeGeometryType() = %q", got)
 	}
+	if got := NormalizeGeometryType("geometrycollection"); got != "GeometryCollection" {
+		t.Fatalf("NormalizeGeometryType() = %q", got)
+	}
+	if got := NormalizeGeometryType("not-a-geometry"); got != "Geometry" {
+		t.Fatalf("NormalizeGeometryType() = %q", got)
+	}
 }
 
 func TestSetTableFieldsWritesDatatypeFieldFacts(t *testing.T) {

@@ -642,8 +642,7 @@ const docTemplate = `{
                     "200": {
                         "description": "任务列表 | Task list",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/internal_api.taskProviderTaskListResponse"
                         }
                     },
                     "400": {
@@ -698,7 +697,7 @@ const docTemplate = `{
                     "200": {
                         "description": "任务详情 | Task detail",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_quality_internal_models.CheckTask"
+                            "$ref": "#/definitions/internal_api.taskProviderTaskListItem"
                         }
                     },
                     "400": {
@@ -761,13 +760,10 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
-                    "200": {
+                    "202": {
                         "description": "执行ID | Execution ID",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/internal_api.qualityTaskProviderExecuteResponse"
                         }
                     },
                     "400": {
@@ -789,24 +785,43 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "github_com_addp_quality_internal_models.CheckTask": {
+        "internal_api.qualityTaskProviderExecuteRequest": {
             "type": "object",
             "properties": {
-                "created_at": {
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "parent_execution_id": {
                     "type": "string"
                 },
-                "created_by": {
-                    "type": "integer"
+                "source": {
+                    "type": "string"
                 },
+                "trigger_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.qualityTaskProviderExecuteResponse": {
+            "type": "object",
+            "properties": {
+                "execution_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.taskProviderTaskListItem": {
+            "type": "object",
+            "properties": {
                 "description": {
                     "type": "string"
                 },
                 "enabled": {
                     "type": "boolean"
-                },
-                "engine_id": {
-                    "description": "目标引擎",
-                    "type": "integer"
                 },
                 "id": {
                     "type": "integer"
@@ -826,39 +841,31 @@ const docTemplate = `{
                 "next_run_at": {
                     "type": "string"
                 },
-                "schema_name": {
-                    "type": "string"
-                },
-                "table_name": {
-                    "description": "可选：限定表",
+                "task_type": {
                     "type": "string"
                 },
                 "tenant_id": {
                     "type": "integer"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "updated_by": {
-                    "type": "integer"
                 }
             }
         },
-        "internal_api.qualityTaskProviderExecuteRequest": {
+        "internal_api.taskProviderTaskListResponse": {
             "type": "object",
             "properties": {
-                "parameters": {
-                    "type": "object",
-                    "additionalProperties": true
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.taskProviderTaskListItem"
+                    }
                 },
-                "parent_execution_id": {
-                    "type": "string"
+                "page": {
+                    "type": "integer"
                 },
-                "source": {
-                    "type": "string"
+                "page_size": {
+                    "type": "integer"
                 },
-                "trigger_type": {
-                    "type": "string"
+                "total": {
+                    "type": "integer"
                 }
             }
         }

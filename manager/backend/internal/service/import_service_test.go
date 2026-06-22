@@ -5,28 +5,15 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/addp/common/client"
 	"github.com/addp/common/format"
-	commonModels "github.com/addp/common/models"
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 )
-
-type fakeImportSystemClient struct {
-	engines []commonModels.Engine
-}
-
-func (c fakeImportSystemClient) GetEngine(engineID uint) (*commonModels.Engine, error) {
-	for _, engine := range c.engines {
-		if engine.ID == engineID {
-			return &engine, nil
-		}
-	}
-	return nil, nil
-}
-
-func (c fakeImportSystemClient) ListObjectStorages(uint) ([]commonModels.Engine, error) {
-	return c.engines, nil
-}
 
 func TestBuildShapefileImportTaskConfigUsesEndpointSpec(t *testing.T) {
 	service := &ImportService{minioBucket: "manager"}
@@ -35,7 +22,7 @@ func TestBuildShapefileImportTaskConfigUsesEndpointSpec(t *testing.T) {
 		Encoding:       "GBK",
 	}
 
-	config := service.buildShapefileImportTaskConfig(3, "temp/upload/roads.shp", req, "public", "roads")
+	config := service.buildShapefileImportTaskConfig("tenant_1/import/20260619/upload/roads.shp", req, "public", "roads", false)
 	if _, ok := config["source_config"]; ok {
 		t.Fatalf("config = %#v, must not contain legacy source_config", config)
 	}
@@ -44,20 +31,11 @@ func TestBuildShapefileImportTaskConfigUsesEndpointSpec(t *testing.T) {
 	}
 
 	source := config["source"].(map[string]interface{})
-	sourceEngine := source["engine"].(map[string]interface{})
-	if sourceEngine["id"] != uint(3) {
-		t.Fatalf("source engine = %#v, want id 3", sourceEngine)
-	}
-	if _, ok := sourceEngine["type"]; ok {
-		t.Fatalf("source engine = %#v, must not declare engine type", sourceEngine)
-	}
 	if source["representation"] != "encoded" || source["format"] != "shapefile" {
 		t.Fatalf("source = %#v, want encoded shapefile", source)
 	}
-	sourceResource := source["resource"].(map[string]interface{})
-	sourcePath := sourceResource["path"].(map[string]interface{})
-	if sourceResource["kind"] != "object" || sourcePath["bucket"] != "manager" || sourcePath["path"] != "temp/upload/roads.shp" {
-		t.Fatalf("source resource = %#v, want manager/temp/upload/roads.shp object", sourceResource)
+	if source["locator"] != "addp-infra://minio/manager/tenant_1/import/20260619/upload/roads.shp?type=object" {
+		t.Fatalf("source locator = %#v, want infra manager object locator", source["locator"])
 	}
 	sourceOptions := source["options"].(map[string]interface{})
 	if sourceOptions["encoding"] != "GBK" {
@@ -65,42 +43,103 @@ func TestBuildShapefileImportTaskConfigUsesEndpointSpec(t *testing.T) {
 	}
 
 	target := config["target"].(map[string]interface{})
-	targetEngine := target["engine"].(map[string]interface{})
-	if targetEngine["id"] != uint(7) {
-		t.Fatalf("target engine = %#v, want id 7", targetEngine)
-	}
-	targetResource := target["resource"].(map[string]interface{})
-	targetPath := targetResource["path"].(map[string]interface{})
-	if targetResource["kind"] != "native_table" || targetPath["schema"] != "public" || targetPath["table"] != "roads" {
-		t.Fatalf("target resource = %#v, want public.roads native table", targetResource)
+	if target["parent_locator"] != "addp://engine/7/path/public?type=schema" || target["name"] != "roads" {
+		t.Fatalf("target = %#v, want public.roads native table locator endpoint", target)
 	}
 }
 
-func TestResolveImportSourceEngineMatchesConfiguredObjectStore(t *testing.T) {
+func TestImportShapefileCleansQuickViewOptimizationsBeforeUpload(t *testing.T) {
+	cleaner := &recordingImportOptimizationCleaner{}
+	minioClient, err := minio.New("127.0.0.1:1", &minio.Options{
+		Creds:  credentials.NewStaticV4("minioadmin", "minioadmin", ""),
+		Secure: false,
+	})
+	if err != nil {
+		t.Fatalf("new minio client: %v", err)
+	}
 	service := &ImportService{
-		minioEndpoint:  "http://business-minio:9000",
-		minioBucket:    "manager",
-		minioAccessKey: "minioadmin",
-		systemClient: fakeImportSystemClient{engines: []commonModels.Engine{
-			{
-				ID:         9,
-				EngineType: "s3",
-				IsActive:   true,
-				ConnectionInfo: commonModels.ConnectionInfo{
-					"endpoint":   "business-minio:9000",
-					"access_key": "minioadmin",
-					"bucket":     "manager",
-				},
-			},
-		}},
+		minioClient:                  minioClient,
+		minioBucket:                  "manager",
+		quickViewOptimizationCleaner: cleaner,
+	}
+	req := &ImportShapefileRequest{
+		Files:          completeImportShapefileUploadFiles("roads"),
+		TargetEngineID: 7,
+		TargetSchema:   "public",
+		TargetTable:    "roads",
+		TenantID:       3,
 	}
 
-	id, err := service.resolveImportSourceEngine(1)
-	if err != nil {
-		t.Fatalf("resolveImportSourceEngine() error = %v", err)
+	_, err = service.ImportShapefile(context.Background(), req)
+	if err == nil || !strings.Contains(err.Error(), "failed to upload") {
+		t.Fatalf("ImportShapefile() error = %v, want upload failure after cleanup", err)
 	}
-	if id != 9 {
-		t.Fatalf("resolved engine = %d, want 9", id)
+	if cleaner.calls != 1 {
+		t.Fatalf("cleanup calls = %d, want 1", cleaner.calls)
+	}
+	if cleaner.tenantID != 3 || cleaner.engineID != 7 || cleaner.schema != "public" || cleaner.table != "roads" {
+		t.Fatalf("cleanup args = tenant:%d engine:%d %s.%s", cleaner.tenantID, cleaner.engineID, cleaner.schema, cleaner.table)
+	}
+}
+
+func TestImportShapefileStopsWhenQuickViewOptimizationCleanupFails(t *testing.T) {
+	cleaner := &recordingImportOptimizationCleaner{err: errors.New("cleanup failed")}
+	transferClient := &recordingImportTransferClient{}
+	service := &ImportService{
+		minioBucket:                  "manager",
+		transferClient:               transferClient,
+		quickViewOptimizationCleaner: cleaner,
+	}
+	req := &ImportShapefileRequest{
+		Files:          completeImportShapefileUploadFiles("roads"),
+		TargetEngineID: 7,
+		TargetSchema:   "public",
+		TargetTable:    "roads",
+		TenantID:       3,
+	}
+
+	_, err := service.ImportShapefile(context.Background(), req)
+	if err == nil || !strings.Contains(err.Error(), "cleanup manager quick view optimization") {
+		t.Fatalf("ImportShapefile() error = %v, want cleanup failure", err)
+	}
+	if transferClient.createCalls != 0 || transferClient.triggerCalls != 0 {
+		t.Fatalf("transfer calls = create:%d trigger:%d, want none", transferClient.createCalls, transferClient.triggerCalls)
+	}
+}
+
+func TestBuildShapefileImportTaskConfigUsesTargetNodeLocator(t *testing.T) {
+	service := &ImportService{minioBucket: "manager"}
+	req := &ImportShapefileRequest{
+		TargetEngineID:    7,
+		TargetNodeLocator: "addp://engine/7/path/app?type=database&node_id=3",
+	}
+
+	config := service.buildShapefileImportTaskConfig("tenant_1/import/20260619/upload/roads.shp", req, "app", "roads", false)
+	target := config["target"].(map[string]interface{})
+	if target["parent_locator"] != req.TargetNodeLocator {
+		t.Fatalf("target parent_locator = %#v, want target node locator", target["parent_locator"])
+	}
+}
+
+func TestBuildShapefileImportTaskConfigSkipsEncodingWhenCPGExists(t *testing.T) {
+	service := &ImportService{minioBucket: "manager"}
+	req := &ImportShapefileRequest{
+		TargetEngineID: 7,
+		Encoding:       "GBK",
+	}
+
+	config := service.buildShapefileImportTaskConfig("tenant_1/import/20260619/upload/roads.shp", req, "public", "roads", true)
+	source := config["source"].(map[string]interface{})
+	if _, ok := source["options"]; ok {
+		t.Fatalf("source = %#v, must not contain encoding options when cpg exists", source)
+	}
+}
+
+func TestManagerImportStagingPrefixUsesSingleDateDirectory(t *testing.T) {
+	got := managerImportStagingPrefix(7, "upload-uuid", time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC))
+	want := "tenant_7/import/20260619/upload-uuid/"
+	if got != want {
+		t.Fatalf("managerImportStagingPrefix() = %q, want %q", got, want)
 	}
 }
 
@@ -207,48 +246,62 @@ func TestExtractShapefileZipKeepsQPJSidecar(t *testing.T) {
 	}
 }
 
-func TestExplicitImportSourceEngineRequiresActiveEngine(t *testing.T) {
-	service := &ImportService{
-		sourceEngineID:       4,
-		sourceEngineExplicit: true,
-		systemClient: fakeImportSystemClient{engines: []commonModels.Engine{
-			{ID: 4, EngineType: "s3", IsActive: false},
-		}},
-	}
+func TestHasShapefileCPG(t *testing.T) {
+	t.Parallel()
 
-	_, err := service.resolveImportSourceEngine(1)
-	if err == nil {
-		t.Fatal("resolveImportSourceEngine() error = nil, want inactive engine error")
+	if !hasShapefileCPG(map[string][]byte{"roads.CPG": []byte("GBK")}) {
+		t.Fatal("hasShapefileCPG() = false, want true")
+	}
+	if hasShapefileCPG(map[string][]byte{"roads.prj": []byte("wkt")}) {
+		t.Fatal("hasShapefileCPG() = true, want false")
 	}
 }
 
-func TestResolveExplicitImportSourceEngineWithoutSystemClient(t *testing.T) {
-	service := &ImportService{
-		sourceEngineID:       4,
-		sourceEngineExplicit: true,
-	}
-
-	id, err := service.resolveImportSourceEngine(1)
-	if err != nil {
-		t.Fatalf("resolveImportSourceEngine() error = %v", err)
-	}
-	if id != 4 {
-		t.Fatalf("resolved engine = %d, want 4", id)
+func TestManagerInfraMinioObjectLocatorNormalizesPath(t *testing.T) {
+	got := managerInfraMinioObjectLocator("manager", "/tenant_7/import/20260619/upload/roads.shp")
+	want := "addp-infra://minio/manager/tenant_7/import/20260619/upload/roads.shp?type=object"
+	if got != want {
+		t.Fatalf("managerInfraMinioObjectLocator() = %q, want %q", got, want)
 	}
 }
 
-func TestResolveImportSourceEngineRequiresSystemClientWithoutExplicitEngine(t *testing.T) {
-	service := &ImportService{}
-
-	_, err := service.resolveImportSourceEngine(1)
-	if err == nil {
-		t.Fatal("resolveImportSourceEngine() error = nil, want missing System integration error")
-	}
+type recordingImportOptimizationCleaner struct {
+	calls    int
+	tenantID uint
+	engineID uint
+	schema   string
+	table    string
+	err      error
 }
 
-func TestConnectionStringHandlesContextStringer(t *testing.T) {
-	got := connectionString(map[string]interface{}{"value": context.Canceled}, "value")
-	if got != context.Canceled.Error() {
-		t.Fatalf("connectionString() = %q, want %q", got, context.Canceled.Error())
+func (c *recordingImportOptimizationCleaner) DeleteResultsForSourceTable(_ context.Context, tenantID uint, engineID uint, schema string, table string) error {
+	c.calls++
+	c.tenantID = tenantID
+	c.engineID = engineID
+	c.schema = schema
+	c.table = table
+	return c.err
+}
+
+type recordingImportTransferClient struct {
+	createCalls  int
+	triggerCalls int
+}
+
+func (c *recordingImportTransferClient) CreateTask(*client.CreateTransferTaskRequest) (*client.TransferTaskResponse, error) {
+	c.createCalls++
+	return &client.TransferTaskResponse{ID: 1}, nil
+}
+
+func (c *recordingImportTransferClient) TriggerTask(taskID, tenantID uint) (*client.TriggerTaskResponse, error) {
+	c.triggerCalls++
+	return &client.TriggerTaskResponse{ID: taskID, ExecutionID: "execution-1", Status: "running"}, nil
+}
+
+func completeImportShapefileUploadFiles(base string) []ImportUploadFile {
+	return []ImportUploadFile{
+		{FileName: base + ".shp", Content: []byte("shp")},
+		{FileName: base + ".shx", Content: []byte("shx")},
+		{FileName: base + ".dbf", Content: []byte("dbf")},
 	}
 }

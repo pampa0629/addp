@@ -10,7 +10,6 @@ require (
 	github.com/hibiken/asynq v0.25.1
 	github.com/jonas-p/go-shp v0.1.1
 	github.com/lib/pq v1.10.9
-	github.com/minio/minio-go/v7 v7.0.97
 	github.com/redis/go-redis/v9 v9.17.2
 	github.com/swaggo/files v1.0.1
 	github.com/swaggo/gin-swagger v1.6.0
@@ -46,6 +45,7 @@ require (
 	github.com/klauspost/crc32 v1.3.0 // indirect
 	github.com/mailru/easyjson v0.7.6 // indirect
 	github.com/mattn/go-sqlite3 v1.14.32 // indirect
+	github.com/minio/minio-go/v7 v7.0.97 // indirect
 	github.com/montanaflynn/stats v0.0.0-20171201202039-1bf9dbcd8cbe // indirect
 	github.com/neo4j/neo4j-go-driver/v5 v5.28.4 // indirect
 	github.com/nicksnyder/go-i18n/v2 v2.6.1 // indirect

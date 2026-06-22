@@ -68,7 +68,7 @@
 **认证中心化设计**：
 
 1. **统一登录接口**（`system/backend/internal/api/auth_handler.go`）：
-   - 所有模块调用 `POST http://localhost:8180/api/auth/login`
+   - 所有模块调用 `POST http://localhost:8180/api/v1/system/login`
    - System 管理唯一的用户表（`system.users`）
    - System 使用统一的 `JWT_SECRET` 生成 token
 

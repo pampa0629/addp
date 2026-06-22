@@ -17,7 +17,7 @@ import (
 )
 
 // CachedSystemAuthMiddleware is similar to SystemAuthMiddleware but caches user info in Redis.
-// This significantly reduces load on the System service by avoiding repeated /api/users/me calls
+// This significantly reduces load on the System service by avoiding repeated /api/v1/system/users/me calls
 // for the same token within the TTL window.
 //
 // Architecture:

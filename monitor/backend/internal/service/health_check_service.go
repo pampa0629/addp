@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"github.com/addp/common/models"
+	"github.com/addp/common/taskprovider"
 )
 
 var ErrTaskProviderNotFound = errors.New("task provider not found")
@@ -65,13 +65,13 @@ type ProviderHealthStatus struct {
 }
 
 type ProviderCapabilitiesStatus struct {
-	Status        string                    `json:"status"`
-	SchemaVersion string                    `json:"schema_version,omitempty"`
-	Message       string                    `json:"message,omitempty"`
-	TaskTypes     []*ProviderTaskTypeStatus `json:"task_types"`
+	Status           string                          `json:"status"`
+	SchemaVersion    string                          `json:"schema_version,omitempty"`
+	Message          string                          `json:"message,omitempty"`
+	TaskCapabilities []*ProviderTaskCapabilityStatus `json:"task_capabilities"`
 }
 
-type ProviderTaskTypeStatus struct {
+type ProviderTaskCapabilityStatus struct {
 	Type       string `json:"type"`
 	Deprecated bool   `json:"deprecated"`
 }
@@ -83,16 +83,6 @@ type ProviderTaskDiscoveryCheck struct {
 	StatusCode int    `json:"status_code,omitempty"`
 	Latency    int64  `json:"latency"`
 	Message    string `json:"message,omitempty"`
-}
-
-type taskProviderCapabilitiesPayload struct {
-	SchemaVersion string                           `json:"schema_version"`
-	TaskTypes     []taskProviderCapabilityTaskType `json:"task_types"`
-}
-
-type taskProviderCapabilityTaskType struct {
-	Type       string `json:"type"`
-	Deprecated bool   `json:"deprecated"`
 }
 
 // GetModules 获取所有模块（从 System 的 task_providers 表）
@@ -165,7 +155,7 @@ func (s *HealthCheckService) checkProviderHealth(ctx context.Context, provider *
 	result.Capabilities = parseProviderCapabilities(provider.Capabilities)
 	result.ModuleHealth, _ = s.CheckModuleHealth(ctx, provider.ModuleName, provider.BaseURL)
 	if result.Capabilities.Status == "up" {
-		for _, taskType := range result.Capabilities.TaskTypes {
+		for _, taskType := range result.Capabilities.TaskCapabilities {
 			if taskType.Deprecated {
 				continue
 			}
@@ -183,36 +173,15 @@ func parseProviderCapabilities(capabilities *models.JSONString) *ProviderCapabil
 		return status
 	}
 
-	var payload taskProviderCapabilitiesPayload
-	if err := json.Unmarshal([]byte(*capabilities), &payload); err != nil {
-		status.Message = "capabilities JSON invalid: " + err.Error()
+	payload, err := taskprovider.ParseCapabilities(string(*capabilities))
+	if err != nil {
+		status.Message = err.Error()
 		return status
 	}
 	status.SchemaVersion = payload.SchemaVersion
-	if payload.SchemaVersion != "task.capabilities/v1" {
-		status.Message = "unsupported schema_version: " + payload.SchemaVersion
-		return status
-	}
-	if len(payload.TaskTypes) == 0 {
-		status.Message = "task_types is empty"
-		status.Status = "unknown"
-		return status
-	}
-
-	seen := map[string]struct{}{}
-	for _, item := range payload.TaskTypes {
-		taskType := strings.TrimSpace(item.Type)
-		if taskType == "" {
-			status.Message = "task_type is empty"
-			return status
-		}
-		if _, exists := seen[taskType]; exists {
-			status.Message = "duplicate task_type: " + taskType
-			return status
-		}
-		seen[taskType] = struct{}{}
-		status.TaskTypes = append(status.TaskTypes, &ProviderTaskTypeStatus{
-			Type:       taskType,
+	for _, item := range payload.TaskCapabilities {
+		status.TaskCapabilities = append(status.TaskCapabilities, &ProviderTaskCapabilityStatus{
+			Type:       item.Type,
 			Deprecated: item.Deprecated,
 		})
 	}
@@ -252,12 +221,21 @@ func (s *HealthCheckService) checkTaskDiscovery(ctx context.Context, provider *m
 
 	check.StatusCode = resp.StatusCode
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		if err := validateTaskDiscoveryResponse(resp.Body); err != nil {
+			check.Message = err.Error()
+			return check
+		}
 		check.Status = "up"
 		return check
 	}
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
 	check.Message = strings.TrimSpace(string(body))
 	return check
+}
+
+func validateTaskDiscoveryResponse(body io.Reader) error {
+	_, err := taskprovider.ParseTaskListResponse(body)
+	return err
 }
 
 func summarizeProviderHealth(status *ProviderHealthStatus) (string, string) {

@@ -16,7 +16,7 @@
 | `tenant_id` | 租户 ID。 |
 | `name` | 任务名称。 |
 | `description` | 任务描述。 |
-| `task_type` | 当前固定为 `import`；执行主链路统一由 `config` 决定。 |
+| `task_type` | 当前固定为 `sync`；执行主链路统一由 `config` 决定。 |
 | `config` | source / target endpoint 任务配置。 |
 | `schedule` | Cron 表达式；为空表示手动任务。 |
 | `batch_size` | 批大小；config 内未声明时作为 planner 默认值。 |

@@ -86,9 +86,31 @@ func TestLogRepositoryListFiltersResourceIdentity(t *testing.T) {
 	}
 }
 
+func TestLogRepositoryGetLogsBeforeDateReturnsEarliestBatch(t *testing.T) {
+	db := newLogRepositoryTestDB(t)
+	repo := NewLogRepository(db)
+
+	insertAuditLog(t, db, 1, "cleanup.execute.created", "cleanup", "cleanup-task-1")
+	insertAuditLog(t, db, 2, "cleanup.execute.created", "cleanup", "cleanup-task-2")
+	insertAuditLog(t, db, 3, "cleanup.execute.created", "cleanup", "cleanup-task-3")
+
+	cutoff := time.Date(2026, 6, 18, 10, 4, 0, 0, time.UTC)
+	logs, err := repo.GetLogsBeforeDate(cutoff, 2)
+	if err != nil {
+		t.Fatalf("GetLogsBeforeDate() error = %v", err)
+	}
+	if len(logs) != 2 {
+		t.Fatalf("len(logs) = %d, want 2", len(logs))
+	}
+	if logs[0].ID != 1 || logs[1].ID != 2 {
+		t.Fatalf("log IDs = [%d %d], want [1 2]", logs[0].ID, logs[1].ID)
+	}
+}
+
 func newLogRepositoryTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+	dsn := "file:" + strings.ReplaceAll(t.Name(), "/", "_") + "?mode=memory&cache=shared"
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}

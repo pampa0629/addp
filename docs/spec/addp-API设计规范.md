@@ -15,7 +15,7 @@
 1. **统一性** - 所有模块遵循统一的响应格式、命名规范和错误处理
 2. **简洁性** - 优先采用简单直观的设计，避免过度工程化
 3. **RESTful** - 遵循 REST 架构风格，使用标准 HTTP 方法和语义
-4. **向前兼容** - 通过版本控制支持 API 演进
+4. **版本化演进** - 通过统一版本前缀管理接口契约，避免隐式旧路径
 5. **开发友好** - 清晰的文档、统一的错误码、便于调试
 
 ### 1.2 适用场景
@@ -177,7 +177,7 @@ ADDP 采用**灵活响应策略**，根据场景选择最合适的响应格式�
 **请求参数：**
 
 ```
-GET /api/users?page=1&page_size=20
+GET /api/v1/system/users?page=1&page_size=20
 ```
 
 | 参数      | 类型 | 默认值 | 说明                          |
@@ -211,49 +211,64 @@ GET /api/users?page=1&page_size=20
 | page_size   | int  | 每页大小       |
 | total_pages | int  | 总页数         |
 
+**例外：TaskProvider 标准任务列表**
+
+TaskProvider 是跨模块任务编排契约，不使用本节的通用分页列表格式。标准 `GET /tasks?task_type=` 必须返回：
+
+```json
+{
+  "items": [],
+  "total": 0,
+  "page": 1,
+  "page_size": 20
+}
+```
+
+该响应不得包含 `data`、`status`、`message`、`total_pages` 或 `tasks` 等字段。详细约束以 `docs/spec/addp任务体系规范.md` 为准。
+
 ---
 
 ## 三、RESTful 设计规范
 
 ### 3.1 资源命名规则
 
-1. **使用复数名词**：`/api/v1/users`、`/api/v1/engines`
-2. **小写字母 + 下划线**：`/api/v1/audit_logs`（与数据库字段命名一致）
-3. **避免动词**：❌ `/api/v1/getUsers`、✅ `/api/v1/users`
-4. **使用名词表示资源**：❌ `/api/v1/create_user`、✅ `POST /api/v1/users`
+1. **使用复数名词**：`/api/v1/system/users`、`/api/v1/system/engines`
+2. **小写字母 + 下划线**：`/api/v1/system/audit_logs`（与数据库字段命名一致）
+3. **避免动词**：❌ `/api/v1/system/getUsers`、✅ `/api/v1/system/users`
+4. **使用名词表示资源**：❌ `/api/v1/system/create_user`、✅ `POST /api/v1/system/users`
 
 ### 3.2 HTTP 方法语义
 
 | 方法   | 语义         | 示例                         | 幂等性 | 响应码      |
 |--------|--------------|------------------------------|--------|-------------|
-| GET    | 查询资源     | GET /api/v1/users            | 是     | 200         |
-| POST   | 创建资源     | POST /api/v1/users           | 否     | 201         |
-| PUT    | 完整更新     | PUT /api/v1/users/:id        | 是     | 200         |
-| PATCH  | 部分更新     | PATCH /api/v1/users/:id      | 是     | 200         |
-| DELETE | 删除资源     | DELETE /api/v1/users/:id     | 是     | 200         |
+| GET    | 查询资源     | GET /api/v1/system/users            | 是     | 200         |
+| POST   | 创建资源     | POST /api/v1/system/users           | 否     | 201         |
+| PUT    | 完整更新     | PUT /api/v1/system/users/:id        | 是     | 200         |
+| PATCH  | 部分更新     | PATCH /api/v1/system/users/:id      | 是     | 200         |
+| DELETE | 删除资源     | DELETE /api/v1/system/users/:id     | 是     | 200         |
 
 ### 3.3 标准资源操作
 
 ```
-GET    /api/v1/users           # 列表查询（支持过滤、排序、分页）
-POST   /api/v1/users           # 创建用户
-GET    /api/v1/users/:id       # 查询单个用户
-PUT    /api/v1/users/:id       # 更新用户（完整替换）
-PATCH  /api/v1/users/:id       # 更新用户（部分字段）
-DELETE /api/v1/users/:id       # 删除用户
+GET    /api/v1/system/users           # 列表查询（支持过滤、排序、分页）
+POST   /api/v1/system/users           # 创建用户
+GET    /api/v1/system/users/:id       # 查询单个用户
+PUT    /api/v1/system/users/:id       # 更新用户（完整替换）
+PATCH  /api/v1/system/users/:id       # 更新用户（部分字段）
+DELETE /api/v1/system/users/:id       # 删除用户
 ```
 
 ### 3.4 子资源设计
 
 ```
-GET    /api/v1/tenants/:id/users        # 获取租户下的用户列表
-POST   /api/v1/tenants/:id/users        # 为租户创建用户
-DELETE /api/v1/tenants/:id/users/:uid   # 删除租户下的某个用户
+GET    /api/v1/system/tenants/:id/users        # 获取租户下的用户列表
+POST   /api/v1/system/tenants/:id/users        # 为租户创建用户
+DELETE /api/v1/system/tenants/:id/users/:uid   # 删除租户下的某个用户
 ```
 
 **规则：**
 - 子资源深度建议不超过 2 层
-- 超过 2 层时考虑使用查询参数：`GET /api/v1/users?tenant_id=1`
+- 超过 2 层时考虑使用查询参数：`GET /api/v1/system/users?tenant_id=1`
 
 ### 3.5 特殊操作的 RESTful 化
 
@@ -374,9 +389,9 @@ RESTful是指导原则，不是教条。优秀的API设计应该在RESTful原则
 **统一使用 `/api/v1/` 路径前缀：**
 
 ```
-/api/v1/users        # 当前使用
-/api/v1/engines      # 当前使用
-/api/v2/users        # 未来破坏性变更时升级
+/api/v1/system/users        # 当前使用
+/api/v1/system/engines      # 当前使用
+/api/v2/system/users        # 未来破坏性变更时升级
 ```
 
 **版本控制的优点：**
@@ -386,40 +401,31 @@ RESTful是指导原则，不是教条。优秀的API设计应该在RESTful原则
 
 ### 5.2 版本演进规则
 
-- **破坏性变更**（字段删除、类型变更、接口移除）→ 升级大版本（v1 → v2）
-- **新增字段、新增接口** → 不需要升级版本（保持向后兼容）
-- **废弃接口**：标记为 `@deprecated`，在下一大版本移除
+- ADDP 当前处于积极开发阶段，默认采用 clean break：不保留旧路径、旧字段、旧 query 或双轨兼容分支。
+- 接口契约变化必须先更新规范、Swagger 和调用方，再一次性切换到新的唯一主路径。
+- 若未来已经对外发布稳定 API，且确实需要长期并行两个契约，才通过 `/api/v2/` 引入新版本；该决策必须先形成明确设计文档。
 
-### 5.3 迁移操作
+### 5.3 路由前缀要求
 
-**Go 端（Gin）**：修改各模块 `router.go` 中的 Group 路径，一行改动：
+**Go 端（Gin）**：各模块必须使用 `/api/v1/{module}`：
 
 ```go
-// 修改前
-v1 := r.Group("/api/system")
-// 修改后
 v1 := r.Group("/api/v1/system")
 ```
 
-**Python 端（FastAPI）**：修改 `include_router` 的 prefix，一行改动：
+**Python 端（FastAPI）**：各模块必须使用 `/api/v1/{module}`：
 
 ```python
-# 修改前
-app.include_router(router, prefix="/api/agent")
-# 修改后
 app.include_router(router, prefix="/api/v1/agent")
 ```
 
-**Gateway**：路由转发规则同步更新：
+**Gateway**：路由转发规则必须匹配 `/api/v1/:module/*path`：
 
 ```go
-// 修改前
-protected.Any("/api/:module/*path", ...)
-// 修改后
 protected.Any("/api/v1/:module/*path", ...)
 ```
 
-**前端**：全局搜索替换 `/api/system`、`/api/manager` 等路径，统一加 `/v1`。
+**前端**：必须调用 `/api/v1/system`、`/api/v1/manager` 等模块路径，不得新增 `/api/{module}` 旧路径。
 
 ---
 
@@ -430,9 +436,9 @@ protected.Any("/api/v1/:module/*path", ...)
 通过 Query 参数过滤：
 
 ```
-GET /api/v1/users?username=admin&is_active=true
-GET /api/v1/logs?start_time=2024-01-01&end_time=2024-12-31&action=create
-GET /api/v1/engines?engine_type=postgresql&tenant_id=1
+GET /api/v1/system/users?username=admin&is_active=true
+GET /api/v1/system/logs?start_time=2024-01-01&end_time=2024-12-31&action=create
+GET /api/v1/system/engines?engine_type=postgresql&tenant_id=1
 ```
 
 **规则：**
@@ -443,8 +449,8 @@ GET /api/v1/engines?engine_type=postgresql&tenant_id=1
 ### 6.2 排序参数
 
 ```
-GET /api/v1/users?sort=created_at&order=desc
-GET /api/v1/users?sort=created_at&order=asc
+GET /api/v1/system/users?sort=created_at&order=desc
+GET /api/v1/system/users?sort=created_at&order=asc
 ```
 
 | 参数  | 值            | 说明           |
@@ -459,8 +465,8 @@ GET /api/v1/users?sort=created_at&order=asc
 ### 6.3 搜索参数
 
 ```
-GET /api/v1/users?search=张三
-GET /api/v1/engines?search=postgres
+GET /api/v1/system/users?search=张三
+GET /api/v1/system/engines?search=postgres
 ```
 
 - `search` 参数用于全文搜索（模糊匹配 name、description 等字段）
@@ -603,7 +609,7 @@ X-API-Key: <app_api_key>
 ### 8.3 Token 刷新
 
 ```
-POST /api/auth/refresh
+POST /api/v1/system/refresh
 Authorization: Bearer <expired_token>
 ```
 
@@ -865,19 +871,19 @@ func MapErrorToHTTPStatus(err error) int {
 **示例：**
 ```http
 # 用户名密码错误
-POST /api/auth/login
+POST /api/v1/system/login
 Response: 401 {"error": "用户名或密码错误"}
 
 # Token过期
-GET /api/users
+GET /api/v1/system/users
 Response: 401 {"error": "token已过期"}
 
 # JSON格式错误
-POST /api/users
+POST /api/v1/system/users
 Response: 400 {"error": "JSON格式错误"}
 
 # 已登录但无权限
-GET /api/admin/users
+GET /api/v1/system/admin/users
 Response: 403 {"error": "无权访问该资源"}
 ```
 
@@ -920,11 +926,11 @@ Response: 403 {"error": "无权访问该资源"}
 
 **A:** 使用 POST 请求，body 传递批量数据：
 ```
-POST /api/v1/users/batch_delete
+POST /api/v1/system/users/batch_delete
 Body: {"user_ids": [1, 2, 3]}
 ```
 
-### Q7: 内部 API（/internal）是否也需要遵循规范？
+### Q7: 内部 API（/api/v1/internal）是否也需要遵循规范？
 
 **A:** 是的。内部 API 也应遵循统一响应格式和命名规范，便于维护和调试。
 
@@ -1225,11 +1231,11 @@ class DevelopClient(AddpBaseClient):
 
 | 操作     | 方法   | 路径                   | 响应码 |
 |----------|--------|------------------------|--------|
-| 列表查询 | GET    | /api/v1/users          | 200    |
-| 创建     | POST   | /api/v1/users          | 201    |
-| 查询详情 | GET    | /api/v1/users/:id      | 200    |
-| 更新     | PUT    | /api/v1/users/:id      | 200    |
-| 删除     | DELETE | /api/v1/users/:id      | 200    |
+| 列表查询 | GET    | /api/v1/system/users          | 200    |
+| 创建     | POST   | /api/v1/system/users          | 201    |
+| 查询详情 | GET    | /api/v1/system/users/:id      | 200    |
+| 更新     | PUT    | /api/v1/system/users/:id      | 200    |
+| 删除     | DELETE | /api/v1/system/users/:id      | 200    |
 
 ### B. 响应格式对照
 
@@ -1252,7 +1258,7 @@ class DevelopClient(AddpBaseClient):
 
 | 类型         | 规范          | 示例                     |
 |--------------|---------------|--------------------------|
-| URL 路径     | snake_case    | /api/v1/audit_logs       |
+| URL 路径     | snake_case    | /api/v1/system/audit_logs |
 | JSON 字段    | snake_case    | user_id, created_at      |
 | 时间格式     | ISO 8601      | 2024-01-01T12:00:00Z     |
 | 布尔值       | true/false    | is_active: true          |
@@ -1266,7 +1272,7 @@ class DevelopClient(AddpBaseClient):
 **主要修订内容（v1.2）：**
 1. **调整为灵活响应策略** - 简单 CRUD 直接返回数据，复杂场景适度包装，避免冗余
 2. **错误格式简化** - 使用简洁的 `{error: "..."}` 格式，充分利用 HTTP 状态码
-3. **暂不强制版本前缀** - 当前阶段（v0.x）保持 `/api/` 路径，v1.0 后统一迁移
+3. **统一版本前缀** - 所有模块 API 使用 `/api/v1/{module}`，旧 `/api/{module}` 路径不再保留
 4. **承认动词路径的合理性** - 更新推荐做法，认可 `change-password`、`export`、`test-connection` 等实用路径
 5. **删除不合理的迁移建议** - System 模块当前实现已是最佳实践，无需调整
 6. **更新实施指南和常见问题** - 反映实际的灵活响应策略和实用主义原则
@@ -1274,7 +1280,7 @@ class DevelopClient(AddpBaseClient):
 **设计理念：**
 - 规范应反映实际的最佳实践，而非理想化的标准
 - 实用性优于教条主义，可读性优于完美一致性
-- 当前阶段（v0.x）优先保持灵活性，v1.0 后再统一标准化
+- 当前阶段（v0.x）优先保持概念和接口收敛，发现旧路径或旧契约时直接清理，不做兼容分支
 
 **参考实现：**
 System 模块已完整实现本规范，可作为其他模块的参考标准。

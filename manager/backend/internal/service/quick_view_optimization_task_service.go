@@ -26,9 +26,10 @@ type QuickViewOptimizationDBProvider interface {
 }
 
 type QuickViewOptimizationTaskService struct {
-	repo         *repository.QuickViewOptimizationRepository
-	taskExecRepo *commonExecution.TaskExecutionRepository
-	dbProvider   QuickViewOptimizationDBProvider
+	repo          *repository.QuickViewOptimizationRepository
+	quickViewRepo *repository.QuickViewRepository
+	taskExecRepo  *commonExecution.TaskExecutionRepository
+	dbProvider    QuickViewOptimizationDBProvider
 }
 
 type quickViewOptimizationIdentity struct {
@@ -82,6 +83,10 @@ func NewQuickViewOptimizationTaskService(
 
 func (s *QuickViewOptimizationTaskService) SetDBProvider(provider QuickViewOptimizationDBProvider) {
 	s.dbProvider = provider
+}
+
+func (s *QuickViewOptimizationTaskService) SetQuickViewRepository(repo *repository.QuickViewRepository) {
+	s.quickViewRepo = repo
 }
 
 func (s *QuickViewOptimizationTaskService) Create(ctx context.Context, task *models.QuickViewOptimizationTask) error {
@@ -147,6 +152,49 @@ func (s *QuickViewOptimizationTaskService) DeleteResult(ctx context.Context, id 
 		return fmt.Errorf("drop quick view optimization target: %w", err)
 	}
 	return s.repo.DeleteResult(ctx, id, tenantID)
+}
+
+func (s *QuickViewOptimizationTaskService) DeleteResultsForSourceTable(ctx context.Context, tenantID uint, engineID uint, schema string, table string) error {
+	if s.repo == nil {
+		return errors.New("quick view optimization repository is required")
+	}
+	schema = strings.TrimSpace(schema)
+	table = strings.TrimSpace(table)
+	if tenantID == 0 || engineID == 0 || schema == "" || table == "" {
+		return errors.New("quick view optimization source table identity is required")
+	}
+	results, err := s.repo.ListResultsBySourceTable(ctx, tenantID, engineID, schema, table)
+	if err != nil {
+		return err
+	}
+	for _, result := range results {
+		if result == nil {
+			continue
+		}
+		if result.Status == models.QuickViewOptimizationStatusDeleted {
+			continue
+		}
+		if result.TargetKind != models.QuickViewOptimizationTargetKindSourceSchemaMaterializedView {
+			return fmt.Errorf("unsupported quick view optimization target_kind %q", result.TargetKind)
+		}
+		if err := s.DeleteResult(ctx, result.ID, tenantID); err != nil {
+			return err
+		}
+		if s.quickViewRepo != nil && strings.TrimSpace(result.ItemFingerprint) != "" {
+			if err := s.quickViewRepo.DeleteByTenantAndFingerprint(ctx, tenantID, result.ItemFingerprint); err != nil {
+				return err
+			}
+		}
+	}
+	if s.quickViewRepo != nil {
+		sourceFingerprint := spatialItemFingerprint(engineID, schema, table)
+		if sourceFingerprint != "" {
+			if err := s.quickViewRepo.DeleteByTenantAndFingerprint(ctx, tenantID, sourceFingerprint); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (s *QuickViewOptimizationTaskService) recordQuickViewOptimizationCleanupFailure(ctx context.Context, result *models.QuickViewOptimization, cleanupErr error) {

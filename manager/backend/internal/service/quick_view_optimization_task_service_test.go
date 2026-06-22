@@ -225,6 +225,58 @@ func TestQuickViewOptimizationDeleteResultRecordsCleanupFailure(t *testing.T) {
 	}
 }
 
+func TestQuickViewOptimizationDeleteResultsForSourceTableDeletesPreference(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	repo := repository.NewQuickViewOptimizationRepository(db)
+	quickViewRepo := repository.NewQuickViewRepository(db)
+	svc := NewQuickViewOptimizationTaskService(repo, nil)
+	svc.SetQuickViewRepository(quickViewRepo)
+
+	result := newQuickViewOptimizationResult()
+	result.Status = models.QuickViewOptimizationStatusDeleted
+	if err := repo.CreateResult(context.Background(), result); err != nil {
+		t.Fatalf("create quick view optimization result: %v", err)
+	}
+	if err := quickViewRepo.UpdatePreferredMode(result.TenantID, result.ItemFingerprint, result.Locator, "quick_view"); err != nil {
+		t.Fatalf("create quick view preference: %v", err)
+	}
+
+	if err := svc.DeleteResultsForSourceTable(context.Background(), result.TenantID, result.SourceEngineID, result.SourceSchema, result.SourceTable); err != nil {
+		t.Fatalf("delete results for source table: %v", err)
+	}
+
+	if _, err := quickViewRepo.GetByIdentity(result.TenantID, result.ItemFingerprint, result.Locator); !errors.Is(err, commonapi.ErrNotFound) {
+		t.Fatalf("quick view preference error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestQuickViewOptimizationListResultsBySourceTableFiltersPrecisely(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	repo := repository.NewQuickViewOptimizationRepository(db)
+
+	target := newQuickViewOptimizationResult()
+	target.Status = models.QuickViewOptimizationStatusDeleted
+	if err := repo.CreateResult(context.Background(), target); err != nil {
+		t.Fatalf("create target result: %v", err)
+	}
+	other := newQuickViewOptimizationResult()
+	other.SourceTable = "buildings"
+	other.TargetTable = "addp_qvo_other"
+	other.ItemFingerprint = spatialItemFingerprint(other.SourceEngineID, other.SourceSchema, other.SourceTable)
+	other.Locator = tableLocator(other.SourceEngineID, other.SourceSchema, other.SourceTable)
+	if err := repo.CreateResult(context.Background(), other); err != nil {
+		t.Fatalf("create other result: %v", err)
+	}
+
+	results, err := repo.ListResultsBySourceTable(context.Background(), target.TenantID, target.SourceEngineID, target.SourceSchema, target.SourceTable)
+	if err != nil {
+		t.Fatalf("list by source table: %v", err)
+	}
+	if len(results) != 1 || results[0].SourceTable != target.SourceTable {
+		t.Fatalf("results = %#v, want only %s", results, target.SourceTable)
+	}
+}
+
 type quickViewOptimizationTestDBProvider struct {
 	db *sql.DB
 }

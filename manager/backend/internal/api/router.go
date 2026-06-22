@@ -34,6 +34,9 @@ func SetupRouter(
 	embeddingService *service.EmbeddingService,
 	taskProviderHandler *TaskProviderHandler,
 	importHandler *ImportHandler,
+	uploadHandler *UploadHandler,
+	resourceActionHandler *ResourceActionHandler,
+	exportHandler *ExportHandler,
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -83,10 +86,10 @@ func SetupRouter(
 		api.GET("/items/:item_id/embedding", embeddingHandler.GetItemEmbedding)
 
 		// ===== 标准 TaskProvider API =====
-		// GET    /api/manager/tasks                       → 任务列表
-		// GET    /api/manager/tasks/:task_type/:id        → 任务详情
-		// POST   /api/manager/tasks/:task_type/:id/execute → 触发执行
-		// GET    /api/manager/executions/:execution_id    → 执行状态
+		// GET    /api/v1/manager/tasks                       → 任务列表
+		// GET    /api/v1/manager/tasks/:task_type/:id        → 任务详情
+		// POST   /api/v1/manager/tasks/:task_type/:id/execute → 触发执行
+		// GET    /api/v1/manager/executions/:execution_id    → 执行状态
 		api.GET("/tasks", taskProviderHandler.ListTasks)
 		api.GET("/tasks/:task_type/:id", taskProviderHandler.TaskDetail)
 		api.POST("/tasks/:task_type/:id/execute", taskProviderHandler.TaskExecute)
@@ -141,20 +144,26 @@ func SetupRouter(
 			configGroup.GET("/map", configHandler.GetMapConfig)
 		}
 
-		// 数据导入 API
-		api.POST("/import", importHandler.ImportData)
+		// Manager 用户动作 API
+		api.GET("/resource-actions", resourceActionHandler.GetResourceActions)
+		api.POST("/uploads", uploadHandler.UploadFiles)
+		api.POST("/imports", importHandler.ImportData)
+		api.POST("/exports", exportHandler.CreateExport)
+		api.GET("/exports/:id", exportHandler.GetExport)
+		api.GET("/exports/:id/file", exportHandler.DownloadExportFile)
 
-		// 数据探查 API（Manager 核心功能，直接挂在 /api/manager 下）
+		// 数据探查 API（Manager 核心功能，直接挂在 /api/v1/manager 下）
 		previewRegistry := metadataService.PreviewRegistry()
 		previewResolver := preview.NewPreviewResolver(previewRegistry, systemClient, metaClient)
 		explorerService := service.NewExplorerService(systemClient, metaClient, previewResolver)
 		explorerHandler := NewExplorerHandler(explorerService, previewResolver, metadataService)
 		metadataHandler := NewMetadataHandler(metadataService)
+		downloadHandler := NewDownloadHandler(metadataService)
 
 		api.GET("/engines", explorerHandler.ListEngines) // 获取可用引擎列表（只读）
 		api.POST("/engines/:id/items/refresh", metadataHandler.RefreshItem)
 		api.GET("/preview", explorerHandler.Preview)
-		api.GET("/storage-download", explorerHandler.StorageDownload)
+		api.GET("/downloads/file", downloadHandler.DownloadFile)
 		api.GET("/storage-stream", explorerHandler.StorageStream)
 
 		// ============================================================

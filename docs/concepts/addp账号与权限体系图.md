@@ -106,7 +106,8 @@ graph TB
         MinIO --> Bucket2[manager bucket]
 
         Bucket1 --> Path1[/tenant_1/avatars/]
-        Bucket1 --> Path2[/tenant_2/avatars/]
+        Bucket1 --> Path2[/tenant_1/audit-logs/]
+        Bucket1 --> Path3[/tenant_0/audit-logs/]
 
         Bucket2 --> Path3[/tenant_1/files/]
         Bucket2 --> Path4[/tenant_2/files/]
@@ -148,10 +149,11 @@ graph TB
 
 **2. 对象存储隔离**:
 - MinIO 按租户组织目录结构
-- 路径前缀: `/{bucket}/{tenant_id}/{category}/{resource}/`
+- 路径前缀: `/{bucket}/tenant_{id}/{category}/{resource}/`
   - `bucket`: 模块名(如 system、manager)
   - `category`: 模块内的功能分类(如 avatars、files)
 - 示例: `/system/tenant_1/avatars/user123.png`
+- 平台级对象使用 `tenant_0`,例如 `/system/tenant_0/audit-logs/2026/03/...`
 
 **3. 缓存隔离**:
 - Redis Key 命名规范: `{module}:{middleware}:{function}:tenant_{id}:{resource_id}`
@@ -181,10 +183,11 @@ sequenceDiagram
     participant Frontend as 前端
     participant Gateway as Gateway
     participant System as System Backend
+    participant Manager as Manager Backend
     participant DB as PostgreSQL
 
     User->>Frontend: 1. 输入用户名/密码
-    Frontend->>Gateway: 2. POST /api/system/login<br/>{username, password}
+    Frontend->>Gateway: 2. POST /api/v1/system/login<br/>{username, password}
     Gateway->>System: 3. 转发登录请求
     System->>DB: 4. SELECT * FROM users<br/>WHERE username = ?
     DB-->>System: 5. 返回用户信息<br/>(含 password_hash, tenant_id)
@@ -199,12 +202,12 @@ sequenceDiagram
         Note over User,DB: === 后续请求 ===
 
         User->>Frontend: 11. 访问受保护资源
-        Frontend->>Gateway: 12. GET /api/manager/data<br/>Header: Authorization: Bearer {token}
-        Gateway->>Gateway: 13. 验证 JWT Token<br/>提取 tenant_id
-        Gateway->>System: 14. 转发请求<br/>(附带 tenant_id)
-        System->>DB: 15. SELECT * FROM data<br/>WHERE tenant_id = ?
-        DB-->>System: 16. 返回租户数据
-        System-->>Gateway: 17. 返回结果
+        Frontend->>Gateway: 12. GET /api/v1/manager/preview<br/>Header: Authorization: Bearer {token}
+        Gateway->>Manager: 13. 转发请求
+        Manager->>Manager: 14. 验证 JWT Token<br/>提取 tenant_id
+        Manager->>DB: 15. SELECT * FROM data<br/>WHERE tenant_id = ?
+        DB-->>Manager: 16. 返回租户数据
+        Manager-->>Gateway: 17. 返回结果
         Gateway-->>Frontend: 18. 返回数据
         Frontend-->>User: 19. 展示数据
     else 密码错误

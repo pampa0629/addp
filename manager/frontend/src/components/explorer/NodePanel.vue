@@ -3,16 +3,36 @@
     <template #header>
       <div class="panel-header">
         <span class="header-title">{{ selectedNode?.label || t('manager.explorer.dataPreview') }}</span>
-        <el-button
-          v-if="showVectorizeButton"
-          size="small"
-          type="success"
-          :loading="vectorizing"
-          @click="handleVectorizeNode"
-        >
-          <el-icon><MagicStick /></el-icon>
-          {{ t('manager.explorer.batchVectorize') }}
-        </el-button>
+        <div class="header-actions">
+          <el-button
+            v-if="showUploadButton"
+            size="small"
+            type="primary"
+            @click="uploadDialogVisible = true"
+          >
+            <el-icon><Upload /></el-icon>
+            {{ t('manager.explorer.uploadData') }}
+          </el-button>
+          <el-button
+            v-if="showImportButton"
+            size="small"
+            type="warning"
+            @click="importDialogVisible = true"
+          >
+            <el-icon><Upload /></el-icon>
+            {{ t('manager.explorer.importData') }}
+          </el-button>
+          <el-button
+            v-if="showVectorizeButton"
+            size="small"
+            type="success"
+            :loading="vectorizing"
+            @click="handleVectorizeNode"
+          >
+            <el-icon><MagicStick /></el-icon>
+            {{ t('manager.explorer.batchVectorize') }}
+          </el-button>
+        </div>
       </div>
     </template>
 
@@ -75,19 +95,39 @@
         @current-change="itemPage = $event"
       />
     </div>
+
+    <ImportDialog
+      v-model="importDialogVisible"
+      :engine-id="selectedEngineId"
+      :engine-name="selectedEngineName"
+      :schema-name="selectedNode?.label || ''"
+      :target-node-locator="selectedNode?.locator || ''"
+      @success="handleImportSuccess"
+    />
+    <UploadDialog
+      v-model="uploadDialogVisible"
+      :target-node-locator="selectedNode?.locator || ''"
+      :target-label="selectedNode?.label || ''"
+      @success="handleUploadSuccess"
+    />
   </el-card>
 </template>
 
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { MagicStick } from '@element-plus/icons-vue'
+import { MagicStick, Upload } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { parseLocator } from '@addp/common-frontend'
 import client from '@/api/client'
+import { dataExplorerAPI } from '@/api/dataExplorer'
+import ImportDialog from '@/components/explorer/ImportDialog.vue'
+import UploadDialog from '@/components/explorer/UploadDialog.vue'
+import { useExplorerStore } from '@/stores/explorer'
 import { isVectorizableRangeNode } from '@/utils/vectorization'
 
 const { t } = useI18n()
+const store = useExplorerStore()
 
 const props = defineProps({
   selectedNode: {
@@ -106,10 +146,15 @@ const pageSize = 50
 const childNodePage = ref(1)
 const itemPage = ref(1)
 const vectorizing = ref(false)
+const importDialogVisible = ref(false)
+const uploadDialogVisible = ref(false)
+const resourceActions = ref(null)
 
 watch(() => props.selectedNode?.locator, () => {
   childNodePage.value = 1
   itemPage.value = 1
+  importDialogVisible.value = false
+  uploadDialogVisible.value = false
 })
 
 const itemTypes = new Set(['table', 'view', 'collection', 'graph', 'file', 'object'])
@@ -164,8 +209,49 @@ const scanStatusLabel = computed(() => {
 })
 
 const scannedAt = computed(() => props.selectedNode?.metadata?.scanned_at || '-')
+const selectedEngineId = computed(() => {
+  const direct = Number(props.selectedNode?.engineId || props.selectedNode?.engine_id || 0)
+  if (direct > 0) {
+    return direct
+  }
+  const locator = props.selectedNode?.locator || props.selectedNode?.id || ''
+  if (!locator) {
+    return 0
+  }
+  try {
+    return Number(parseLocator(locator)?.engineId || 0)
+  } catch {
+    return 0
+  }
+})
+const selectedEngineName = computed(() => {
+  const directName = String(props.selectedNode?.engineName || props.selectedNode?.engine_name || '').trim()
+  if (directName) {
+    return directName
+  }
+  const engine = store.engines.find(item => Number(item.id) === selectedEngineId.value)
+  return engine?.name || ''
+})
 
 const showVectorizeButton = computed(() => isVectorizableRangeNode(props.selectedNode))
+const showUploadButton = computed(() => resourceActions.value?.actions?.upload?.supported === true)
+const showImportButton = computed(() => resourceActions.value?.actions?.import?.supported === true)
+
+watch(
+  () => props.selectedNode?.locator || '',
+  async (locator) => {
+    resourceActions.value = null
+    if (!locator) return
+    try {
+      const response = await dataExplorerAPI.getResourceActions(locator)
+      resourceActions.value = response?.data || response
+    } catch (error) {
+      resourceActions.value = null
+      console.warn('加载资源动作能力失败:', error)
+    }
+  },
+  { immediate: true }
+)
 
 const handleVectorizeNode = async () => {
   const node = props.selectedNode
@@ -210,17 +296,47 @@ const resolveTypeLabel = (row) => {
 const openNode = (row) => {
   emit('open-node', row?.locator || row?.id)
 }
+
+const handleImportSuccess = async () => {
+  importDialogVisible.value = false
+  if (!props.selectedNode?.locator) return
+  try {
+    await store.loadNodeChildren(props.selectedNode.locator, true)
+    ElMessage.success(t('manager.explorer.importSuccessRefreshed'))
+  } catch (error) {
+    console.error('刷新节点失败:', error)
+  }
+}
+
+const handleUploadSuccess = async () => {
+  uploadDialogVisible.value = false
+  if (!props.selectedNode?.locator) return
+  try {
+    await store.loadNodeChildren(props.selectedNode.locator, true)
+    ElMessage.success(t('manager.explorer.uploadSuccessRefreshed'))
+  } catch (error) {
+    console.error('刷新节点失败:', error)
+  }
+}
 </script>
 
 <style scoped>
 .node-panel {
   display: flex;
   flex-direction: column;
+  height: 100%;
+  min-height: 0;
   border: none;
 }
 
 :deep(.el-card__body) {
-  overflow: visible;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.panel-content {
+  min-height: 0;
 }
 
 .meta-block {
@@ -240,6 +356,14 @@ const openNode = (row) => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-left: auto;
 }
 
 .empty-state {

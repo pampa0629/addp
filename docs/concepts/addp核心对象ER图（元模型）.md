@@ -66,7 +66,7 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 | ------------ | ------------- | ------------- | ----------------------------------------------------- |
 | 任务（抽象） | Task          | —             | 抽象概念，以下均为派生                                |
 | 扫描任务     | ScanTask      | metadata      | 对某个 Engine 的元数据扫描任务定义                    |
-| 传输任务     | TransferTask  | transfer      | 数据导入任务定义，阶段 1 统一任务体系只暴露 `task_type=import` |
+| 传输任务     | TransferTask  | transfer      | 数据同步任务定义，阶段 1 统一任务体系只暴露 `task_type=sync` |
 | 开发任务     | DevTask       | develop       | 可执行的开发工件（query/workflow/script），本质也是任务 |
 | 编排工作流   | Orchestration | orchestrator  | 跨模块任务的 DAG 编排定义，**本身也是一种任务**       |
 | 瓦片缓存生成任务 | TileCacheTask | manager | 生成瓦片缓存的任务定义，执行后更新 TileCache 结果事实 |
@@ -82,7 +82,7 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 
 **任务类型（task_type in common.task_executions）**：
 - Meta: `scan`
-- Transfer: `import`
+- Transfer: `sync`
 - Develop: `query` / `workflow` / `script`
 - Orchestrator: `orchestration`
 - Manager: `tile_cache_generation` / `quick_view_optimization` / `embedding`
@@ -124,7 +124,7 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 
 | 中文     | 英文标识符   | 说明                                                     |
 | -------- | ------------ | -------------------------------------------------------- |
-| 传输任务 | TransferTask | Task 派生，阶段 1 对统一任务体系暴露为数据导入任务定义    |
+| 传输任务 | TransferTask | Task 派生，阶段 1 对统一任务体系暴露为数据同步任务定义    |
 | 字段映射 | FieldMapping | TransferTask 的子对象，定义源→目标字段的映射规则         |
 
 ---
@@ -275,7 +275,7 @@ erDiagram
         string task_execute_endpoint "POST /api/tasks/{task_type}/{id}/execute"
         string task_status_endpoint "GET /api/executions/{execution_id}"
         string task_cancel_endpoint "POST /api/executions/{execution_id}/cancel，仅当存在 supports_cancel=true 的 task type"
-        json capabilities "声明支持的 task_types 及前端路由(JSONB)"
+        json capabilities "声明支持的 task_capabilities[] 任务类型能力及前端路由(JSONB)"
         bool is_enabled
         timestamp created_at
         timestamp updated_at
@@ -350,7 +350,7 @@ erDiagram
         uint tenant_id FK
         string name
         string description
-        string task_type "内部业务类型：import | export | sync；不作为统一任务体系 task_type"
+        string task_type "固定为 sync；Manager 导入/导出是调用方业务语义"
         json config "Reader-Transform-Writer 管道配置(JSONB)"
         string schedule "Cron 表达式"
         int batch_size
@@ -496,7 +496,7 @@ erDiagram
         string execution_id UK "UUID，全局唯一，跨模块追踪"
         uint tenant_id FK
         string module "meta|transfer|develop|orchestrator|manager|quality|graph"
-        string task_type "scan|import|query|workflow|script|orchestration|tile_cache_generation|quick_view_optimization|embedding|check|kg_build"
+        string task_type "scan|sync|query|workflow|script|orchestration|tile_cache_generation|quick_view_optimization|embedding|check|kg_build"
         string source "触发来源模块"
         string source_task_id "对应模块任务 ID（字符串，无 DB FK）"
         string source_task_name "任务名称（冗余，便于展示）"

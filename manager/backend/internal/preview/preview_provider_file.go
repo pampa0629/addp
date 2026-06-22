@@ -15,6 +15,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
+	"github.com/addp/common/resourcetree"
 	commonSpatial "github.com/addp/common/spatial"
 	"github.com/addp/manager/internal/catalogutil"
 	"github.com/addp/manager/internal/models"
@@ -276,7 +277,7 @@ func (p *FileTablePreviewProvider) previewStreamable(
 			ContentType: p.getContentType(formatType),
 			EngineID:    previewRequestEngineID(req),
 			StorageRef:  storageRefForPreview(req, bucket, fullPath),
-			Download:    previewDownloadPlan(previewRequestEngineID(req), storageRefForPreview(req, bucket, fullPath), fullPath, p.getContentType(formatType)),
+			Download:    previewDownloadPlan(previewRequestEngineID(req), req.ItemType, storageRefForPreview(req, bucket, fullPath), fullPath, p.getContentType(formatType)),
 			Content: &models.ObjectPreviewContent{
 				Kind: string(formatType),
 			},
@@ -588,7 +589,7 @@ func (p *FileTablePreviewProvider) previewRefs(
 			ContentType: p.getContentType(formatType),
 			EngineID:    previewRequestEngineID(req),
 			StorageRef:  storageRef,
-			Download:    previewDownloadPlan(previewRequestEngineID(req), storageRef, objectPath, "application/zip"),
+			Download:    previewDownloadPlan(previewRequestEngineID(req), req.ItemType, storageRef, objectPath, "application/zip"),
 			Content: &models.ObjectPreviewContent{
 				Kind: string(formatType),
 			},
@@ -674,7 +675,7 @@ func attachMultiRefPreview(preview *models.TablePreview, formatType format.Forma
 	}
 }
 
-func previewDownloadPlan(engineID uint, storageRef, fileName, contentType string) *models.DownloadPlan {
+func previewDownloadPlan(engineID uint, itemType string, storageRef, fileName, contentType string) *models.DownloadPlan {
 	storageRef = strings.Trim(storageRef, "/")
 	if engineID == 0 || storageRef == "" {
 		return nil
@@ -683,9 +684,14 @@ func previewDownloadPlan(engineID uint, storageRef, fileName, contentType string
 	if fileName == "." || fileName == "/" || fileName == "" {
 		fileName = path.Base(storageRef)
 	}
+	downloadLocator := (&resourcetree.ResourceLocator{
+		EngineID: engineID,
+		Path:     resourcetree.ParseFullNamePath("", itemType, storageRef),
+		Type:     resourcetree.ResourceType(strings.TrimSpace(itemType)),
+	}).ToURI()
 	return &models.DownloadPlan{
 		Kind:        models.DownloadKindStream,
-		URL:         "/api/v1/manager/storage-download?engine_id=" + fmt.Sprintf("%d", engineID) + "&storage_ref=" + url.QueryEscape(storageRef),
+		URL:         "/api/v1/manager/downloads/file?locator=" + url.QueryEscape(downloadLocator),
 		FileName:    fileName,
 		ContentType: contentType,
 		Refs: []models.DownloadRef{{

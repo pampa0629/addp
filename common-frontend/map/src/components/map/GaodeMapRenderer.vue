@@ -32,7 +32,7 @@ const props = defineProps({
 const emit = defineEmits(['feature-click'])
 
 const mapContainer = ref(null)
-const { initMap, renderFeatures, focusFeature, showPopup, hidePopup, destroy } = useGaodeMap(props.config, props.baseMapProfile)
+const { mapInstance, initMap, renderFeatures, focusFeature, showPopup, hidePopup, destroy } = useGaodeMap(props.config, props.baseMapProfile)
 
 let isInitialized = false
 
@@ -113,10 +113,17 @@ const hidePopupContent = () => {
   hidePopup()
 }
 
+const resize = () => {
+  if (mapInstance.value && typeof mapInstance.value.resize === 'function') {
+    mapInstance.value.resize()
+  }
+}
+
 defineExpose({
   focusFeature: focusFeatureByKey,
   showPopup: showPopupContent,
-  hidePopup: hidePopupContent
+  hidePopup: hidePopupContent,
+  resize
 })
 </script>
 

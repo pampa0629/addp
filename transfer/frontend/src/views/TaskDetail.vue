@@ -145,6 +145,28 @@ const canStartSchedule = computed(() => !task.value?.enabled)
 const canPauseSchedule = computed(() => task.value?.enabled)
 const canEditTask = computed(() => task.value?.status !== 'running')
 
+let refreshTimer = null
+
+const isTaskRunning = (taskData) => taskData?.status === 'running'
+
+const stopAutoRefresh = () => {
+  if (refreshTimer) {
+    clearInterval(refreshTimer)
+    refreshTimer = null
+  }
+}
+
+const syncAutoRefresh = () => {
+  if (isTaskRunning(task.value)) {
+    if (!refreshTimer) {
+      refreshTimer = setInterval(loadTask, 5000)
+    }
+    return
+  }
+
+  stopAutoRefresh()
+}
+
 const loadTask = async () => {
   if (!route.params.id) return
   loading.value = true
@@ -154,6 +176,7 @@ const loadTask = async () => {
 
     task.value = taskData || {}
     executions.value = executionsRes?.data || []
+    syncAutoRefresh()
   } finally {
     loading.value = false
   }
@@ -340,18 +363,12 @@ const copyToClipboard = (text) => {
   }
 }
 
-let refreshTimer = null
-
 onMounted(() => {
   loadTask()
-  refreshTimer = setInterval(loadTask, 5000)
 })
 
 onBeforeUnmount(() => {
-  if (refreshTimer) {
-    clearInterval(refreshTimer)
-    refreshTimer = null
-  }
+  stopAutoRefresh()
 })
 </script>
 

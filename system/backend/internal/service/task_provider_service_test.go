@@ -19,8 +19,8 @@ func TestValidateTaskProviderAcceptsTaskCapabilitiesV1(t *testing.T) {
 func TestValidateTaskProviderAcceptsTopLevelPrivateExtension(t *testing.T) {
 	provider := validTaskProviderForTest(strings.Replace(
 		validTaskCapabilitiesForTest(),
-		`"task_types":[{`,
-		`"x_owner_features":{"supports_preview":true},"task_types":[{`,
+		`"task_capabilities":[{`,
+		`"x_owner_features":{"supports_preview":true},"task_capabilities":[{`,
 		1,
 	))
 
@@ -32,8 +32,8 @@ func TestValidateTaskProviderAcceptsTopLevelPrivateExtension(t *testing.T) {
 func TestValidateTaskProviderRejectsUnknownTopLevelField(t *testing.T) {
 	provider := validTaskProviderForTest(strings.Replace(
 		validTaskCapabilitiesForTest(),
-		`"task_types":[{`,
-		`"owner_features":{"supports_preview":true},"task_types":[{`,
+		`"task_capabilities":[{`,
+		`"owner_features":{"supports_preview":true},"task_capabilities":[{`,
 		1,
 	))
 
@@ -42,7 +42,7 @@ func TestValidateTaskProviderRejectsUnknownTopLevelField(t *testing.T) {
 
 func TestValidateTaskProviderRejectsMissingSchemaVersion(t *testing.T) {
 	provider := validTaskProviderForTest(`{
-		"task_types":[{
+		"task_capabilities":[{
 			"type":"scan",
 			"display_name":"扫描任务",
 			"description":"执行元数据扫描",
@@ -60,16 +60,16 @@ func TestValidateTaskProviderRejectsMissingSchemaVersion(t *testing.T) {
 	assertTaskProviderValidationError(t, validateTaskProvider(provider), "capabilities.schema_version")
 }
 
-func TestValidateTaskProviderRejectsMissingTaskTypes(t *testing.T) {
+func TestValidateTaskProviderRejectsMissingTaskCapabilities(t *testing.T) {
 	provider := validTaskProviderForTest(`{"schema_version":"task.capabilities/v1"}`)
 
-	assertTaskProviderValidationError(t, validateTaskProvider(provider), "capabilities.task_types")
+	assertTaskProviderValidationError(t, validateTaskProvider(provider), "capabilities.task_capabilities")
 }
 
-func TestValidateTaskProviderRejectsMissingTaskTypeSchema(t *testing.T) {
+func TestValidateTaskProviderRejectsMissingTaskCapabilitySchema(t *testing.T) {
 	provider := validTaskProviderForTest(`{
 		"schema_version":"task.capabilities/v1",
-		"task_types":[{
+		"task_capabilities":[{
 			"type":"scan",
 			"display_name":"扫描任务",
 			"description":"执行元数据扫描",
@@ -84,6 +84,17 @@ func TestValidateTaskProviderRejectsMissingTaskTypeSchema(t *testing.T) {
 	}`)
 
 	assertTaskProviderValidationError(t, validateTaskProvider(provider), "execution_schema")
+}
+
+func TestValidateTaskProviderRejectsUnknownTaskCapabilityField(t *testing.T) {
+	provider := validTaskProviderForTest(strings.Replace(
+		validTaskCapabilitiesForTest(),
+		`"deprecated":false`,
+		`"deprecated":false,"owner_runtime":"custom"`,
+		1,
+	))
+
+	assertTaskProviderValidationError(t, validateTaskProvider(provider), "owner_runtime is not allowed")
 }
 
 func TestValidateTaskProviderRejectsInvalidTaskTypeName(t *testing.T) {
@@ -122,7 +133,7 @@ func TestValidateTaskProviderRejectsNonObjectSchemaType(t *testing.T) {
 func TestValidateTaskProviderAcceptsSupportedTaskTypeSchemaSubset(t *testing.T) {
 	provider := validTaskProviderForTest(`{
 		"schema_version":"task.capabilities/v1",
-		"task_types":[{
+		"task_capabilities":[{
 			"type":"scan",
 			"display_name":"扫描任务",
 			"description":"执行元数据扫描",
@@ -167,7 +178,7 @@ func TestValidateTaskProviderAcceptsSupportedTaskTypeSchemaSubset(t *testing.T) 
 func TestValidateTaskProviderAcceptsDevelopStyleOpenExecutionSchema(t *testing.T) {
 	provider := validTaskProviderForTest(`{
 		"schema_version":"task.capabilities/v1",
-		"task_types":[{
+		"task_capabilities":[{
 			"type":"workflow",
 			"display_name":"工作流任务",
 			"description":"执行 Develop 工作流任务",
@@ -280,7 +291,7 @@ func TestValidateTaskProviderRejectsInlineExecutionInV1(t *testing.T) {
 func TestValidateTaskProviderRejectsMissingTaskTypeCreateURL(t *testing.T) {
 	provider := validTaskProviderForTest(`{
 		"schema_version":"task.capabilities/v1",
-		"task_types":[{
+		"task_capabilities":[{
 			"type":"scan",
 			"display_name":"扫描任务",
 			"description":"执行元数据扫描",
@@ -300,7 +311,7 @@ func TestValidateTaskProviderRejectsMissingTaskTypeCreateURL(t *testing.T) {
 func TestValidateTaskProviderRejectsDuplicateTaskType(t *testing.T) {
 	provider := validTaskProviderForTest(`{
 		"schema_version":"task.capabilities/v1",
-		"task_types":[
+		"task_capabilities":[
 			{
 				"type":"scan",
 				"display_name":"扫描任务",
@@ -336,7 +347,7 @@ func TestValidateTaskProviderRejectsDuplicateTaskType(t *testing.T) {
 func TestValidateTaskProviderRejectsAbsoluteTaskTypeURL(t *testing.T) {
 	provider := validTaskProviderForTest(`{
 		"schema_version":"task.capabilities/v1",
-		"task_types":[{
+		"task_capabilities":[{
 			"type":"scan",
 			"display_name":"扫描任务",
 			"description":"执行元数据扫描",
@@ -357,7 +368,7 @@ func TestValidateTaskProviderRejectsAbsoluteTaskTypeURL(t *testing.T) {
 func TestValidateTaskProviderRejectsProtocolRelativeTaskTypeURL(t *testing.T) {
 	provider := validTaskProviderForTest(`{
 		"schema_version":"task.capabilities/v1",
-		"task_types":[{
+		"task_capabilities":[{
 			"type":"scan",
 			"display_name":"扫描任务",
 			"description":"执行元数据扫描",
@@ -389,9 +400,24 @@ func TestValidateTaskProviderRejectsDetailEndpointWithoutTaskType(t *testing.T) 
 	assertTaskProviderValidationError(t, validateTaskProvider(provider), "{task_type}")
 }
 
+func TestValidateTaskProviderRejectsGinStyleTaskEndpointPlaceholders(t *testing.T) {
+	provider := validTaskProviderForTest(validTaskCapabilitiesForTest())
+	provider.TaskDetailEndpoint = "/api/v1/meta/tasks/:task_type/:id"
+	provider.TaskExecuteEndpoint = "/api/v1/meta/tasks/:task_type/:id/execute"
+
+	assertTaskProviderValidationError(t, validateTaskProvider(provider), "{task_type}")
+}
+
 func TestValidateTaskProviderRejectsStatusEndpointWithoutExecutionID(t *testing.T) {
 	provider := validTaskProviderForTest(validTaskCapabilitiesForTest())
 	provider.TaskStatusEndpoint = "/api/v1/meta/scan/runs/{id}"
+
+	assertTaskProviderValidationError(t, validateTaskProvider(provider), "{execution_id}")
+}
+
+func TestValidateTaskProviderRejectsGinStyleExecutionEndpointPlaceholder(t *testing.T) {
+	provider := validTaskProviderForTest(validTaskCapabilitiesForTest())
+	provider.TaskStatusEndpoint = "/api/v1/meta/executions/:execution_id"
 
 	assertTaskProviderValidationError(t, validateTaskProvider(provider), "{execution_id}")
 }
@@ -473,7 +499,7 @@ func validTaskProviderForTest(capabilities string) *models.TaskProvider {
 func validTaskCapabilitiesForTest() string {
 	return `{
 		"schema_version":"task.capabilities/v1",
-		"task_types":[{
+		"task_capabilities":[{
 			"type":"scan",
 			"display_name":"扫描任务",
 			"description":"执行元数据扫描",

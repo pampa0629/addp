@@ -31,18 +31,18 @@ npm run preview
 ### 认证
 
 Manager 前端使用 System 模块的认证服务：
-- 登录请求发送到 System backend (localhost:8180/api/auth/login)
+- 登录请求发送到 System backend (localhost:8180/api/v1/system/login)
 - JWT token 存储在 localStorage
 - 所有请求携带 token 访问 Manager backend
 
 ### API 端点
 
 **开发模式**:
-- 认证 API: `http://localhost:8180/api/auth/*`
-- Manager API: `http://localhost:8081/api/*`
+- 认证 API: `http://localhost:8180/api/v1/system/*`
+- Manager API: `http://localhost:8081/api/v1/manager/*`
 
 **生产模式**:
-- 所有请求通过 Gateway: `http://localhost:8000/api/*`
+- 所有请求通过 Gateway: `http://localhost:8000/api/v1/*`
 - Gateway 自动路由到相应的后端服务
 
 ### 路由

@@ -28,7 +28,7 @@ func TestStructuredCapabilitiesStorageFilter(t *testing.T) {
 	}
 }
 
-func TestStructuredCapabilitiesDevModes(t *testing.T) {
+func TestStructuredCapabilitiesComputeEntrypoints(t *testing.T) {
 	caps := `{
 		"schema_version":"engine.capabilities/v1",
 		"engine_type":"jupyter",
@@ -38,10 +38,10 @@ func TestStructuredCapabilitiesDevModes(t *testing.T) {
 	capabilities := models.JSONString(caps)
 	engine := &models.Engine{Capabilities: &capabilities}
 
-	if !SupportsDevMode(engine, "notebook") {
-		t.Fatal("expected script capability to support notebook dev mode")
+	if !SupportsComputeEntrypoint(engine, "notebook") {
+		t.Fatal("expected script capability to support notebook compute entrypoint")
 	}
-	if SupportsDevMode(engine, "workflow") {
-		t.Fatal("did not expect workflow dev mode")
+	if SupportsComputeEntrypoint(engine, "workflow") {
+		t.Fatal("did not expect workflow compute entrypoint")
 	}
 }

@@ -21,7 +21,7 @@ func NewModuleRegistryHandler(service *service.ModuleRegistryService) *ModuleReg
 }
 
 // Register 模块注册(幂等)
-// POST /api/internal/modules/register
+// POST /api/v1/internal/modules/register
 func (h *ModuleRegistryHandler) Register(c *gin.Context) {
 	var req models.ModuleRegistrationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -41,7 +41,7 @@ func (h *ModuleRegistryHandler) Register(c *gin.Context) {
 }
 
 // Heartbeat 心跳更新
-// POST /api/internal/modules/heartbeat
+// POST /api/v1/internal/modules/heartbeat
 func (h *ModuleRegistryHandler) Heartbeat(c *gin.Context) {
 	var req models.HeartbeatRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -61,7 +61,7 @@ func (h *ModuleRegistryHandler) Heartbeat(c *gin.Context) {
 }
 
 // ListModules 查询模块列表
-// GET /api/internal/modules
+// GET /api/v1/internal/modules
 func (h *ModuleRegistryHandler) ListModules(c *gin.Context) {
 	// 支持查询参数: ?status=up 只返回活跃模块
 	status := c.Query("status")
@@ -87,7 +87,7 @@ func (h *ModuleRegistryHandler) ListModules(c *gin.Context) {
 }
 
 // GetModule 查询单个模块
-// GET /api/internal/modules/:name
+// GET /api/v1/internal/modules/:name
 func (h *ModuleRegistryHandler) GetModule(c *gin.Context) {
 	moduleName := c.Param("name")
 
@@ -101,7 +101,7 @@ func (h *ModuleRegistryHandler) GetModule(c *gin.Context) {
 }
 
 // DeleteModule 模块注销
-// DELETE /api/internal/modules/:name
+// DELETE /api/v1/internal/modules/:name
 func (h *ModuleRegistryHandler) DeleteModule(c *gin.Context) {
 	moduleName := c.Param("name")
 

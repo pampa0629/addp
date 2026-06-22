@@ -78,11 +78,6 @@ func (p *commandPreviewProvider) Name() string {
 }
 
 func (p *commandPreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
-	decrypted, err := p.metadataRepo.DecryptConnectionInfo(req.Engine.ConnectionInfo)
-	if err != nil {
-		return nil, fmt.Errorf("plugin %s failed to decrypt connection info: %w", p.Name(), err)
-	}
-
 	payload := map[string]interface{}{
 		"schema":    req.Schema,
 		"table":     req.Table,
@@ -93,7 +88,7 @@ func (p *commandPreviewProvider) Preview(ctx context.Context, req *PreviewReques
 			"id":              req.Engine.ID,
 			"name":            req.Engine.Name,
 			"resource_type":   req.Engine.EngineType,
-			"connection_info": decrypted,
+			"connection_info": req.Engine.ConnectionInfo,
 			"description":     req.Engine.Description,
 		},
 	}

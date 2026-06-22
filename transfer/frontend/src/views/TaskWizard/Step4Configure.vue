@@ -35,30 +35,11 @@
       </el-form-item>
 
       <el-form-item v-if="scheduleMode === 'cron'" :label="t('transfer.taskWizard.cronExpression')">
-        <div class="cron-config">
-          <el-input
-            v-model="formData.schedule"
-            :placeholder="t('transfer.taskWizard.cronPlaceholder')"
-            style="margin-bottom: 12px"
-          />
-          <div class="cron-presets">
-            <el-tag
-            v-for="preset in cronPresets"
-            :key="preset.value"
-              @click="formData.schedule = preset.value"
-              style="cursor: pointer; margin-right: 8px; margin-bottom: 8px"
-            >
-              {{ preset.label }}
-            </el-tag>
-          </div>
-          <div class="cron-hint">
-            <el-alert
-              :title="t('transfer.taskWizard.cronFormat')"
-              type="info"
-              :closable="false"
-            />
-          </div>
-        </div>
+        <ScheduleConfig
+          v-model="formData.schedule"
+          :preset-list="transferSchedulePresets"
+          :allow-custom-cron="true"
+        />
       </el-form-item>
 
       <el-form-item v-if="scheduleMode === 'cron'" :label="t('transfer.taskWizard.enableScheduleLabel')">
@@ -85,6 +66,7 @@
 <script setup>
 import { reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { ScheduleConfig } from '@common-ui'
 
 const { t } = useI18n()
 
@@ -105,12 +87,42 @@ const formData = reactive({
   batchSize: props.wizardState.batchSize.value
 })
 
-const cronPresets = [
-  { label: t('transfer.taskWizard.cronPresetEveryHour'), value: '0 0 * * * *' },
-  { label: t('transfer.taskWizard.cronPresetEveryDayMidnight'), value: '0 0 0 * * *' },
-  { label: t('transfer.taskWizard.cronPresetEveryDay8'), value: '0 0 8 * * *' },
-  { label: t('transfer.taskWizard.cronPresetEveryMonday'), value: '0 0 0 * * 1' },
-  { label: t('transfer.taskWizard.cronPresetEveryMonth1'), value: '0 0 0 1 * *' }
+const transferSchedulePresets = [
+  {
+    key: 'transfer-hourly',
+    i18nKey: 'transferHourly',
+    label: t('transfer.taskWizard.cronPresetEveryHour'),
+    cron: '0 0 * * * *',
+    description: t('transfer.taskWizard.cronPresetEveryHour')
+  },
+  {
+    key: 'transfer-daily-midnight',
+    i18nKey: 'transferDailyMidnight',
+    label: t('transfer.taskWizard.cronPresetEveryDayMidnight'),
+    cron: '0 0 0 * * *',
+    description: t('transfer.taskWizard.cronPresetEveryDayMidnight')
+  },
+  {
+    key: 'transfer-daily-8',
+    i18nKey: 'transferDaily8',
+    label: t('transfer.taskWizard.cronPresetEveryDay8'),
+    cron: '0 0 8 * * *',
+    description: t('transfer.taskWizard.cronPresetEveryDay8')
+  },
+  {
+    key: 'transfer-weekly-monday',
+    i18nKey: 'transferWeeklyMonday',
+    label: t('transfer.taskWizard.cronPresetEveryMonday'),
+    cron: '0 0 0 * * 1',
+    description: t('transfer.taskWizard.cronPresetEveryMonday')
+  },
+  {
+    key: 'transfer-monthly-first',
+    i18nKey: 'transferMonthlyFirst',
+    label: t('transfer.taskWizard.cronPresetEveryMonth1'),
+    cron: '0 0 0 1 * *',
+    description: t('transfer.taskWizard.cronPresetEveryMonth1')
+  }
 ]
 
 const rules = {
@@ -147,18 +159,6 @@ watch(scheduleMode, (mode) => {
 .step-description {
   color: var(--addp-text-secondary);
   margin-bottom: 30px;
-}
-
-.cron-config {
-  width: 100%;
-}
-
-.cron-presets {
-  margin-bottom: 12px;
-}
-
-.cron-hint {
-  margin-top: 8px;
 }
 
 .form-hint {

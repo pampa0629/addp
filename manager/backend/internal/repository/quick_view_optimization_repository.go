@@ -199,6 +199,21 @@ func (r *QuickViewOptimizationRepository) GetLatestReadyByFingerprint(ctx contex
 	return &result, err
 }
 
+func (r *QuickViewOptimizationRepository) ListResultsBySourceTable(ctx context.Context, tenantID uint, engineID uint, schema string, table string) ([]*models.QuickViewOptimization, error) {
+	var results []*models.QuickViewOptimization
+	err := r.db.WithContext(ctx).
+		Where(
+			"tenant_id = ? AND source_engine_id = ? AND source_schema = ? AND source_table = ?",
+			tenantID,
+			engineID,
+			strings.TrimSpace(schema),
+			strings.TrimSpace(table),
+		).
+		Order("updated_at DESC, id DESC").
+		Find(&results).Error
+	return results, err
+}
+
 func (r *QuickViewOptimizationRepository) GetReadyByFingerprintGeometry(ctx context.Context, tenantID uint, itemFingerprint, geometryColumn string, targetSRID int) (*models.QuickViewOptimization, error) {
 	var result models.QuickViewOptimization
 	err := r.db.WithContext(ctx).

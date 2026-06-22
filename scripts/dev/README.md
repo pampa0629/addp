@@ -80,6 +80,8 @@ bash scripts/dev/modtidy.sh
 
 **功能**: 启动完整开发环境
 
+指定单个模块启动时，脚本仍会统一启动公共依赖：System Backend、Meta Backend、Meta Worker、Gateway 和 Console。模块自己的前端和额外依赖在此基础上按需启动，例如 `-manager` 会额外启动 Transfer Backend / Worker，`-develop` 会额外启动工作流引擎。
+
 **执行步骤**:
 1. **Step 0**: Go 依赖检查(`go mod tidy`,可跳过)
 2. **Step 1**: 启动基础设施(调用 `scripts/infra/up.sh`)

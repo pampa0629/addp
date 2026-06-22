@@ -11,8 +11,8 @@ ADDP 平台使用 **JWT (JSON Web Token)** 进行用户认证，流程简单清�
 ### 核心组件
 
 **后端 (System 模块)**：
-- `/api/auth/login` - 登录接口，返回 JWT Token
-- `/api/auth/refresh` - 刷新过期的 Token
+- `/api/v1/system/login` - 登录接口，返回 JWT Token
+- `/api/v1/system/refresh` - 刷新过期的 Token
 - `AuthMiddleware` - 验证每个请求的 Token
 
 **前端 (各模块)**：
@@ -34,7 +34,7 @@ sequenceDiagram
     Note over User,DB: === 登录阶段 ===
 
     User->>Frontend: 1. 输入用户名/密码
-    Frontend->>Gateway: 2. POST /api/system/login
+    Frontend->>Gateway: 2. POST /api/v1/system/login
     Gateway->>System: 3. 转发登录请求
     System->>DB: 4. 查询用户<br/>(users 表)
     DB-->>System: 5. 返回用户信息<br/>(含 password_hash, tenant_id)
@@ -47,12 +47,12 @@ sequenceDiagram
     Note over User,DB: === 访问资源阶段 ===
 
     User->>Frontend: 11. 访问受保护资源
-    Frontend->>Gateway: 12. GET /api/manager/data<br/>Header: Authorization: Bearer {token}
-    Gateway->>Gateway: 13. 验证 JWT Token<br/>提取 tenant_id
-    Gateway->>System: 14. 转发请求<br/>(附带 tenant_id)
-    System->>DB: 15. 查询数据<br/>(WHERE tenant_id = ?)
-    DB-->>System: 16. 返回租户数据
-    System-->>Gateway: 17. 返回结果
+    Frontend->>Gateway: 12. GET /api/v1/manager/preview<br/>Header: Authorization: Bearer {token}
+    Gateway->>Manager: 13. 转发请求
+    Manager->>Manager: 14. 验证 JWT Token<br/>提取 tenant_id
+    Manager->>DB: 15. 查询租户内资源
+    DB-->>Manager: 16. 返回租户数据
+    Manager-->>Gateway: 17. 返回结果
     Gateway-->>Frontend: 18. 返回数据
     Frontend-->>User: 19. 展示数据
 ```
@@ -91,7 +91,7 @@ Vue Router 触发
 【前端】authStore.login(username, password)
     ↓
 【前端】authAPI.login(username, password)
-    └─→ POST http://localhost:8180/api/auth/login
+    └─→ POST http://localhost:8180/api/v1/system/login
         Body: {
           "username": "admin",
           "password": "123456"
@@ -119,7 +119,7 @@ Vue Router 触发
     └─ localStorage.setItem('token', access_token)
     ↓
 【前端】authStore.fetchUser()
-    └─→ GET http://localhost:8180/api/users/me
+    └─→ GET http://localhost:8180/api/v1/system/users/me
         Headers: {
           "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
         }
@@ -192,7 +192,7 @@ Vue Router 触发
 【前端】HTTP 响应拦截器 createRefreshInterceptor()
     ├─ 检测到 401 状态码
     ├─ 标记 isRefreshing = true
-    └─→ POST http://localhost:8180/api/auth/refresh
+    └─→ POST http://localhost:8180/api/v1/system/refresh
         Headers: {
           "Authorization": "Bearer <old_expired_token>"
         }
@@ -223,8 +223,8 @@ Vue Router 触发
 
 - 访问地址：`http://localhost:5178/develop/editor`
 - 登录页面：`/develop/login`
-- 后端 API：依然是 **System 后端** `http://localhost:8180/api/auth/login`
-- 业务 API：Develop 后端 `http://localhost:8085/api/develop/*`
+- 后端 API：依然是 **System 后端** `http://localhost:8180/api/v1/system/login`
+- 业务 API：Develop 后端 `http://localhost:8085/api/v1/develop/*`
 
 **关键点**：
 - ✅ **所有模块的认证都通过 System 模块完成**（统一的用户表和 JWT Secret）
@@ -274,7 +274,7 @@ graph TB
 用户在 Console Login.vue 输入用户名/密码
     ↓
 【Console】authStore.login(username, password)
-    └─→ POST http://localhost:8180/api/auth/login
+    └─→ POST http://localhost:8180/api/v1/system/login
     ↓
 【System 后端】返回 JWT Token
     ↓
@@ -338,7 +338,7 @@ graph TB
 | 特性 | Meta 独立登录 | Develop 独立登录 | Console 统一登录 |
 |------|-------------|----------------|----------------|
 | **登录入口** | http://localhost:5175/meta/login | http://localhost:5178/develop/login | http://localhost:5170/login |
-| **认证接口** | System `/api/auth/login` | System `/api/auth/login` | System `/api/auth/login` |
+| **认证接口** | System `/api/v1/system/login` | System `/api/v1/system/login` | System `/api/v1/system/login` |
 | **Token 存储** | Meta localStorage | Develop localStorage | Console localStorage |
 | **Token 传递** | - | - | ✅ 通过 URL query 传递到子模块 |
 | **用户体验** | 需要单独登录 Meta | 需要单独登录 Develop | **一次登录，访问所有模块** |
@@ -418,7 +418,7 @@ client.interceptors.response.use(
             error.config._retry = true
 
             // 调用刷新接口
-            const response = await fetch('/api/auth/refresh', {
+            const response = await fetch('/api/v1/system/refresh', {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${oldToken}` }
             })
@@ -480,8 +480,8 @@ router.beforeEach((to, from, next) => {
 ```
 Console (localhost:5170)
   └─ iframe src="http://localhost:5175/meta"
-       └─ Meta 发起 API 请求: /api/meta/scan
-          └─ 浏览器解析为 http://localhost:5175/api/meta/scan
+       └─ Meta 发起 API 请求: /api/v1/meta/scan/tasks
+          └─ 浏览器解析为 http://localhost:5175/api/v1/meta/scan/tasks
              └─ 命中 Meta 的 Vite 代理 /api → Gateway (8000)
              ✅ 正确路由，无需特殊处理
 ```
@@ -595,7 +595,7 @@ return db.Where("tenant_id = ?", tenantID).Find(&tasks).Error
 
 ### Q4: Token 过期后用户需要重新登录吗？
 
-**A**: 不需要。前端自动调用 `/api/auth/refresh` 刷新 token，用户无感知。
+**A**: 不需要。前端自动调用 `/api/v1/system/refresh` 刷新 token，用户无感知。
 
 ### Q5: 如何测试 Token 刷新机制？
 
@@ -608,7 +608,7 @@ TOKEN_EXPIRE_MINUTES=1
 cd system/backend && go run cmd/server/main.go
 
 # 3. 登录后等待 1 分钟，继续操作
-# 4. 打开浏览器 Network 面板，观察是否自动调用 /api/auth/refresh
+# 4. 打开浏览器 Network 面板，观察是否自动调用 /api/v1/system/refresh
 ```
 
 ---

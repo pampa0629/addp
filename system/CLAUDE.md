@@ -385,7 +385,7 @@ frontend/src/
 - `POST /api/v1/system/admin/cleanup/execute` - 创建资源回收执行任务
 - `GET /api/v1/system/admin/cleanup/history` - 获取资源回收任务历史
 
-### 内部 API（`/api/internal`，X-Internal-API-Key 认证）
+### 内部 API（`/api/v1/internal`，X-Internal-API-Key 认证）
 
 **配置**:
 - `GET /api/v1/internal/config` - 获取共享配置
@@ -395,7 +395,6 @@ frontend/src/
 - `GET /api/v1/internal/engines/:id` - 获取引擎详情（内部使用）
 - `POST /api/v1/internal/engines` - 创建引擎（内部使用）
 - `POST /api/v1/internal/engines/register` - 引擎自注册
-- `PUT /api/v1/internal/engines/:id/connection-status` - 更新连接状态
 - `POST /api/v1/internal/engines/:id/check-connection` - 触发异步连接检测
 
 **能力注册**:
